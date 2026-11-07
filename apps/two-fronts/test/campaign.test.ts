@@ -1,6 +1,6 @@
 // The campaign's Durable Object behind the Worker, hosted in-process by Rusty Buns with the same
 // SQLite storage shape Cloudflare gives it.
-import { expect, test } from "bun:test";
+import { afterAll, expect, test } from "bun:test";
 import { Database } from "bun:sqlite";
 import { durableObject, installCloudflareGlobals, sqlStorage } from "@rustybuns/shell-bun";
 import worker, { CampaignRoom } from "../src/edge/worker.ts";
@@ -17,6 +17,21 @@ env.CAMPAIGN = durableObject(CampaignRoom as never, env);
 const call = (path: string, token?: string, body?: unknown) => worker.fetch(new Request(`https://two-fronts.test${path}`, {
   method: body === undefined ? "GET" : "POST",
   headers: token ? { Authorization: `Bearer ${token}` } : {},
+  body: body === undefined ? undefined : JSON.stringify(body),
+}), env);
+
+// A local eqosys's keys, and the tokens it signs for three players.
+const signer = { EQOSYS_SIGNING_KEY: await newKey() };
+const eq = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: async () => Response.json(await jwksOf(signer)) });
+afterAll(() => eq.stop(true));
+env.EQOSYS_URL = `http://127.0.0.1:${eq.port}`;
+const tokenFor = (id: string, name: string) => sign(signer, env.EQOSYS_URL, { user: { id, email: `${id}@example.com`, name }, app: "two-fronts", source: "two-fronts", access: ["play"] });
+const [ada, bo, cy] = (await Promise.all([tokenFor("u_ada", "Ada"), tokenFor("u_bo", "Bo"), tokenFor("u_cy", "Cy")])) as string[];
+type Seat = { id: string; token: string; faction: string };
+/** A call as a signed-in player: `token` is a seat's (or none), `eqosys` their eqosys token. */
+const as = (eqosys: string | undefined, path: string, token?: string, body?: unknown) => worker.fetch(new Request(`https://two-fronts.test${path}`, {
+  method: body === undefined ? "GET" : "POST",
+  headers: { ...(token && { Authorization: `Bearer ${token}` }), ...(eqosys && { [EQOSYS_HEADER]: eqosys }) },
   body: body === undefined ? undefined : JSON.stringify(body),
 }), env);
 
@@ -157,13 +172,7 @@ test("the vote online: each seat POSTs one vote, the other screen hears it at on
 });
 
 test("a war from an eqosys party: each seat is the account that claimed it, on any device", async () => {
-  const signer = { EQOSYS_SIGNING_KEY: await newKey() };
-  const eq = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: async () => Response.json(await jwksOf(signer)) });
-  env.EQOSYS_URL = `http://127.0.0.1:${eq.port}`;
-  try {
-    const tokenFor = (id: string, name: string) => sign(signer, env.EQOSYS_URL, { user: { id, email: `${id}@example.com`, name }, app: "two-fronts", source: "two-fronts", access: ["play"] });
-    const [ada, bo, cy] = await Promise.all([tokenFor("u_ada", "Ada"), tokenFor("u_bo", "Bo"), tokenFor("u_cy", "Cy")]);
-    type Seat = { id: string; token: string; faction: string };
+  {
     const ask = (seat: number, eqosys?: string | null) => worker.fetch(new Request("https://two-fronts.test/api/parties/QZT9RK", {
       method: "POST", headers: eqosys ? { [EQOSYS_HEADER]: eqosys } : {}, body: JSON.stringify({ seat, side: "wooka", galaxy: "short" }),
     }), env);
@@ -188,8 +197,32 @@ test("a war from an eqosys party: each seat is the account that claimed it, on a
     for (const t of [friend.token, phone.token]) expect(((await (await call(`/api/campaigns/${friend.id}`, t)).json()) as View).seat).toBe("marines");
     // One account never holds both: Ada asking for seat 1 gets her own back.
     expect(((await (await ask(1, ada)).json()) as Seat).faction).toBe("wooka");
-  } finally {
-    delete env.EQOSYS_URL;
-    eq.stop(true);
   }
+});
+
+test("my wars: an online war is the starter's account's, the invite's first signed-in open is the friend's, and either opens it anywhere", async () => {
+  // Ada starts one signed in, playing the Wooka; the Marines' link goes to Bo.
+  const started = await as(ada, "/api/campaigns", undefined, { seats: { marines: "human", wooka: "human" }, galaxy: "short", side: "wooka" });
+  const { id, tokens } = (await started.json()) as { id: string; tokens: Record<string, string> };
+  // Each account's wars, as far as this one goes (the party test's are on Ada's and Bo's lists too).
+  const wars = async (eqosys?: string) => { const r = await as(eqosys, "/api/wars"); return r.ok ? ((await r.json()) as { id: string }[]).filter((w) => w.id === id) : r.status; };
+  expect(await wars(ada)).toMatchObject([{ id, faction: "wooka", galaxy: "short" }]);
+  expect(await wars(bo)).toEqual([]);
+  expect(await wars()).toBe(401);
+
+  // Bo opens his invite signed in: the Marines are his from then on. Cy opening the same link later changes nothing.
+  expect(((await (await as(bo, `/api/campaigns/${id}`, tokens.marines)).json()) as View).seat).toBe("marines");
+  await as(cy, `/api/campaigns/${id}`, tokens.marines);
+  expect(await wars(bo)).toMatchObject([{ id, faction: "marines" }]);
+  expect(await wars(cy)).toEqual([]);
+
+  // On another device, with no link: each opens their own seat from the list, and the old links still work.
+  const phone = (await (await as(bo, `/api/campaigns/${id}/seat`, undefined, {})).json()) as Seat;
+  expect(phone).toMatchObject({ id, faction: "marines" });
+  for (const t of [phone.token, tokens.marines]) expect(((await (await as(undefined, `/api/campaigns/${id}`, t)).json()) as View).seat).toBe("marines");
+  expect(((await (await as(ada, `/api/campaigns/${id}/seat`, undefined, {})).json()) as Seat).faction).toBe("wooka");
+  // Someone the war isn't theirs can't, signed in or not, nor reach the room's own paths.
+  expect((await as(cy, `/api/campaigns/${id}/seat`, undefined, {})).status).toBe(403);
+  expect((await as(undefined, `/api/campaigns/${id}/seat`, undefined, {})).status).toBe(403);
+  expect((await as(ada, `/api/campaigns/${id}/wars`)).status).toBe(404);
 });

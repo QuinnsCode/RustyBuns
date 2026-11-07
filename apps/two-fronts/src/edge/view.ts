@@ -88,6 +88,14 @@ export type Started = Of<typeof Started>;
 /** A party's ask for its seat (POST /api/parties/<room>): which seat eqosys gave it, and the war the host picked. */
 export const PartyAsk = obj({ seat: int(0, 1000), side: faction, galaxy: str(40) });
 export type PartyAsk = Of<typeof PartyAsk>;
+/** A war an eqosys account sits in, as its list of wars keeps it: the campaign, its side, the map and when it joined. */
+export const War = obj({ id, faction, galaxy: str(40), at: num(0, 1e15) });
+export type War = Of<typeof War>;
+/** How many wars an account's list keeps. */
+export const MAX_WARS = 100;
+/** A signed-in player's wars (GET /api/wars), the newest first. */
+export const Wars = arr(War, MAX_WARS);
+
 /** The header a party's ask carries its eqosys token in (a URL gets logged). */
 export const EQOSYS_HEADER = "X-Eqosys-Token";
 /** A party seat, claimed: the campaign, this seat's token and which side it is. */
