@@ -37,9 +37,10 @@ function player(token: string) {
 }
 
 test("the host's rules hold at the door and in chat; block, unblock and a new host", async () => {
-  const tokens = await Promise.all(["Ada7", "Bo7", "Cy7"].map(signUp)), [ada, bo, cy] = tokens.map(player);
+  const [adaToken, boToken, cyToken] = (await Promise.all(["Ada7", "Bo7", "Cy7"].map(signUp))) as [string, string, string];
+  const ada = player(adaToken), bo = player(boToken), cy = player(cyToken);
   // An open party, minted from this file's own address: the mint limit is per address, and party.test.ts spends "local"'s.
-  const code = ((await (await fetch(`${base}/q/party?open=1`, { method: "POST", headers: { authorization: `Bearer ${tokens[0]}`, "cf-connecting-ip": "203.0.113.7" } })).json()) as { code: string }).code;
+  const code = ((await (await fetch(`${base}/q/party?open=1`, { method: "POST", headers: { authorization: `Bearer ${adaToken}`, "cf-connecting-ip": "203.0.113.7" } })).json()) as { code: string }).code;
   ada.p.join(code);
   await until(() => ada.heard.rules);
   expect(ada.heard.rules).toEqual(defaultRules(true));
