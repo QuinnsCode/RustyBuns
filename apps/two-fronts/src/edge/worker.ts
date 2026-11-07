@@ -1,7 +1,7 @@
 // Cloudflare entry for campaigns played a turn at a time: serves the page, and routes
 // /api/campaigns/<id>/... to that campaign's Durable Object, the vote's pointer socket included.
 // POST /api/campaigns starts one and hands back its id and a seat token for each human side.
-import { CampaignRoom } from "./campaign.ts";
+import { CampaignRoom, warsOf } from "./campaign.ts";
 import { allowStart } from "./limits.ts";
 import { EQOSYS_HEADER, PartyAsk, TICKET_SEAT_HEADER } from "./view.ts";
 import { APP, EQOSYS } from "../account.ts";
@@ -29,6 +29,19 @@ const door = (e: Env): Door => ({ app: APP, eqosys: e.EQOSYS_URL || EQOSYS, fall
 // Cloudflare's ids are 64 hex characters; the in-process host's are 32 (a named one 16).
 const ID = /^[0-9a-f]{16,64}$/;
 
+/** The paths under /api/campaigns/<id> a client may ask for; the room's own (create, party, wars) aren't among them. */
+const PATHS = new Set(["", "/history", "/orders", "/battle", "/vote", "/pointers", "/seat"]);
+
+/** The eqosys account behind a request's token ("eq:" + its id); "" when it has none or it doesn't check out. */
+async function account(req: Request, e: Env): Promise<string> {
+  const token = req.headers.get(EQOSYS_HEADER);
+  if (!token) return "";
+  const who = await whoIs(new URL(`https://two-fronts/?${new URLSearchParams({ token })}`), door(e));
+  return who instanceof Response ? "" : who.uid;
+}
+/** The header the room reads the account from; only the Worker sets it. */
+const asUser = (uid: string): Record<string, string> => (uid ? { "X-User-Id": uid } : {});
+
 export default {
   async fetch(req: Request, env: Env): Promise<Response> {
     const url = new URL(req.url);
@@ -53,23 +66,30 @@ export default {
       const headers: Record<string, string> = { "X-User-Id": who.uid, ...(seat !== null && { [TICKET_SEAT_HEADER]: seat }) };
       return env.CAMPAIGN.get(id).fetch(new Request(`https://campaign/party?id=${id.toString()}`, { method: "POST", headers, body: text }));
     }
+    // A signed-in player's wars, the newest first: the list kept in their account's own object.
+    if (url.pathname === "/api/wars" && req.method === "GET") {
+      const uid = await account(req, env);
+      if (!uid) return Response.json({ error: "Sign in with eqosys to see your wars" }, { status: 401 });
+      return env.CAMPAIGN.get(warsOf(env.CAMPAIGN, uid)).fetch(new Request("https://campaign/wars"));
+    }
     if (!url.pathname.startsWith("/api/campaigns")) return env.ASSETS.fetch(req);
     if (url.pathname === "/api/campaigns" && req.method === "POST") {
       const ip = req.headers.get("CF-Connecting-IP");
       if (ip && !allowStart(ip, Date.now())) return Response.json({ error: "Too many new campaigns, try again in a minute" }, { status: 429 });
-      // The room answers with a `Started`: its id and a seat token for each human side.
+      // The room answers with a `Started`: its id and a seat token for each human side. Signed in, the starter's seat is their account's.
       const id = env.CAMPAIGN.newUniqueId();
-      return env.CAMPAIGN.get(id).fetch(new Request(`https://campaign/create?id=${id.toString()}`, { method: "POST", body: await req.text() }));
+      return env.CAMPAIGN.get(id).fetch(new Request(`https://campaign/create?id=${id.toString()}`, { method: "POST", headers: asUser(await account(req, env)), body: await req.text() }));
     }
     const m = url.pathname.match(/^\/api\/campaigns\/([^/]+)(\/[a-z]+)?\/?$/);
-    if (!m || !ID.test(m[1]!)) return Response.json({ error: "No such campaign" }, { status: 404 });
+    if (!m || !ID.test(m[1]!) || !PATHS.has(m[2] ?? "")) return Response.json({ error: "No such campaign" }, { status: 404 });
     const room = env.CAMPAIGN.get(env.CAMPAIGN.idFromString(m[1]!));
     // The vote's pointer socket goes through as it came, Upgrade header and all.
     if (m[2] === "/pointers") return room.fetch(new Request("https://campaign/pointers", req));
-    const headers = new Headers({ "Content-Type": "application/json" });
+    // Signed in, a seat's first open makes it the account's, and /seat opens a war of yours on this device.
+    const headers = new Headers({ "Content-Type": "application/json", ...asUser(await account(req, env)) });
     const auth = req.headers.get("Authorization");
     if (auth) headers.set("Authorization", auth);
     const body = req.method === "POST" ? await req.text() : undefined;
-    return room.fetch(new Request(`https://campaign${m[2] ?? "/"}`, { method: req.method, headers, body }));
+    return room.fetch(new Request(`https://campaign${m[2] ?? "/"}?id=${m[1]}`, { method: req.method, headers, body }));
   },
 };

@@ -40,7 +40,7 @@ import { audit } from "./audit.ts";
 import { json, type Env, need, readBody } from "./env.ts";
 import { arr, bool, obj, oneOf, opt, raw, str } from "@rustybuns/util/guard";
 import { repoRow } from "./repos.ts";
-import { hex } from "./util.ts";
+import { hex, hmacHex } from "./util.ts";
 
 export const EVENTS = ["commit", "branch.opened", "branch.merged", "deploy.finished", "check_run"] as const;
 export type Event = (typeof EVENTS)[number];
@@ -56,8 +56,7 @@ export const GITHUB_EVENT: Record<Event, string> = {
 export interface HookMessage { id: string; n: number }
 
 export async function sign(secret: string, body: string) {
-  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
-  return "sha256=" + hex(await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(body)));
+  return "sha256=" + await hmacHex(secret, body);
 }
 
 interface Delivery { id: string; event: string; payload: string; attempts: number }

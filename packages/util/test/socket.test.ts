@@ -58,6 +58,25 @@ test("a link: what was sent before it opened goes on open; frames come through t
   w.stop();
 });
 
+test("pages a world closed together come back spread out, none sooner than they asked", async () => {
+  const w = world(), wait = 200, back: number[] = [];
+  let closedAt = 0;
+  const links = Array.from({ length: 8 }, () => connectSocket<Msg, string>(w.url, {
+    decode, encode: (m) => m, onMessage: () => {},
+    onOpen: (tries) => { if (tries) back.push(performance.now() - closedAt); },
+    onClose: () => wait,
+  }));
+  await until(() => links.every((l) => l.open));
+  closedAt = performance.now();
+  for (const l of links) l.send("bye");
+  for (let i = 0; i < 100 && back.length < 8; i++) await Bun.sleep(10);
+  expect(back.length).toBe(8);
+  expect(Math.min(...back)).toBeGreaterThanOrEqual(wait - 5);
+  expect(Math.max(...back) - Math.min(...back)).toBeGreaterThan(15); // half the wait at random: ~100 ms apart
+  for (const l of links) l.close();
+  w.stop();
+});
+
 test("no world behind the address: the close is reported with nothing seen, and no retry stays closed", async () => {
   const closes: number[] = [];
   const link = connectSocket<Msg, string>("ws://localhost:1/ws", { decode, onMessage: () => {}, onClose: (e) => { closes.push(e.tries); expect(e.seen).toBe(false); } });

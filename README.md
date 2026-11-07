@@ -299,8 +299,9 @@ A studio is an eqosys account that makes apps, at any size from one person to a 
 
 A person's eqosys account plays; a studio's makes. Each studio has members (owner, admin, maker) and a shelf of the apps it
 makes, each with four doors: play it, keep your things in it, make it (its codeSplitter repo) and ship it (what is live). The
-super admin's QNTBR studio is made the first time they open eqosys, with every app in `APPS` on its shelf. The tools are
-`eq_studios`, `eq_studio_make` and `eq_studio_add`. The plan, and how Qollab (the Durable Object layer: a hub a player, then a
+super admin's QNTBR studio is made the first time they open eqosys, with every app in `APPS` on its shelf. The Studio tab
+on eqosys's home shows each studio you are in, your role, its members and the shelf; an owner or admin adds people there by
+email, and anyone can make one (`src/app/Studio.tsx`). The tools are `eq_studios`, `eq_studio_make` and `eq_studio_add`. The plan, and how Qollab (the Durable Object layer: a hub a player, then a
 party or space a room) sits under it, is [apps/eqosys/VISION.md](apps/eqosys/VISION.md).
 
 </details>

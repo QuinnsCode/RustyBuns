@@ -55,6 +55,8 @@ export interface Env {
   QLAVE_URL?: string;
   /** Shared with Qlave: the HMAC key on its POST /q/qlave/roster of who is in each voice room. Unset, every roster is 401. */
   QLAVE_ROSTER_SECRET?: string;
+  /** Shared with whoever deploys: the HMAC key on POST /api/deploys, the Ship door's reports (deploys.ts). Unset, every report is 503. */
+  DEPLOY_REPORT_KEY?: string;
 }
 
 /** Loopback returns, for developing an app on this machine (LOOPBACK_RETURNS). */
