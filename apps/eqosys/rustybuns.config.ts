@@ -48,9 +48,11 @@ export default defineConfig({
   // Its own name; every other *.qntbr.com name stays with the wildcard route in front of qntbr.com.
   targets: { edge: { provider: "cloudflare", domain: "eqosys.qntbr.com" } },
   // `--stage preview`: a whole second eqosys on its own name and its own empty database, for trying a change (Qollab's move,
-  // #3816) before production. Deploy apps/qollab with the same stage first: each stage's Qollab binds that stage's eqosys.
+  // #3816) before production. Each stage's Qollab binds that stage's eqosys and the other way round, so a new stage goes
+  // eqosys, qollab, eqosys: bootstrap leaves out the bindings into qollab until qollab is deployed in the stage.
   stages: {
     preview: {
+      bootstrap: true,
       domain: "eqosys-preview.qntbr.com",
       bindings: { DB: { databaseName: "eqosys-preview-db", protect: false }, BETTER_AUTH_URL: { value: "https://eqosys-preview.qntbr.com" } },
     },
