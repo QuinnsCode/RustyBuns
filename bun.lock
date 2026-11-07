@@ -733,6 +733,22 @@
         "wrangler": "4.141.0",
       },
     },
+    "apps/qollab": {
+      "name": "qollab",
+      "version": "0.0.1",
+      "devDependencies": {
+        "@alchemy.run/cloudflare": "2.0.0-beta.84",
+        "@effect/platform-bun": "4.0.5",
+        "@effect/platform-node": "4.0.5",
+        "@rustybuns/cli": "^0.1.12",
+        "@rustybuns/shell-bun": "^0.1.12",
+        "@rustybuns/util": "workspace:*",
+        "alchemy": "2.0.0-beta.84",
+        "effect": "4.0.5",
+        "eqosys": "workspace:*",
+        "wrangler": "4.141.0",
+      },
+    },
     "apps/qwik-example": {
       "name": "qwik-example",
       "version": "0.1.0",
@@ -3756,6 +3772,8 @@
     "pure-rand": ["pure-rand@6.1.0", "", {}, "sha512-bVWawvoZoBYpp6yIoQtQXHZjmz35RSVHnUOTefl8Vcjr8snTPY1wnpSPMWekcFwbxI6gtmT7rSYPFvz71ldiOA=="],
 
     "qcrm": ["qcrm@workspace:apps/qcrm"],
+
+    "qollab": ["qollab@workspace:apps/qollab"],
 
     "qs": ["qs@6.14.2", "", { "dependencies": { "side-channel": "^1.1.0" } }, "sha512-V/yCWTTF7VJ9hIh18Ugr2zhJMP01MY7c5kh4J870L7imm6/DIzBsNLTXzMwUA3yZ5b/KBqLx8Kp3uRvd7xSe3Q=="],
 

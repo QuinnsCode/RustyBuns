@@ -137,10 +137,8 @@ const app = defineApp([
   ]),
 ]);
 
-export { Hub } from "./qollab/hub.ts";
-export { Party } from "./qollab/party.ts";
+// Hub, Party and Space live in Qollab's Worker (apps/qollab, #3816); this one binds them there. The Vault stays: privacy is eqosys's.
 export { Vault } from "./vault.ts";
-export { Space } from "./qollab/space.ts";
 // The EQ binding of an eq_execute program (codemode.ts): a stub of this class, made for the caller, runs each tool call as them.
 const cf = await import("cloudflare:workers").then((m) => m as unknown as { WorkerEntrypoint: new (ctx: unknown, env: unknown) => { env: unknown; ctx: { props: unknown } }; exports: Record<string, ((o: { props: unknown }) => unknown) | undefined> });
 export class EQBridge extends cf.WorkerEntrypoint {

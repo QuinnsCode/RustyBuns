@@ -7,8 +7,14 @@ object too. One `Hub` a player (friends, presence, notes), then one object a roo
 group), plus cloud saves and Qlave's roster. Its code is `src/qollab/` and its paths are one router, `src/qollab/routes.ts`
 (`/hub`, `/api/hub`, `/q/party*`, `/q/space*`, `/q/save/*`, `/q/qlave/roster`), entered only with an app's token through
 `src/door.ts`. eqosys keeps who you are: accounts, sign-in, tokens, access, the app library, achievements, studios, privacy.
-Qollab still ships inside eqosys's Worker (one deploy, no data moved); lifting `src/qollab/` into a Worker of its own is the
-next step, tracked in its own issue.
+
+**Its own Worker (#3816):** `apps/qollab` serves those paths and hosts `Hub`, `Party` and `Space`. eqosys still answers on
+eqosys.qntbr.com and hands every Qollab path to it over a service binding (`QOLLAB`, `isQollab` in `routes.ts`), so no game
+changes a URL; eqosys's pages, account delete and privacy export call the three objects there through cross-script bindings.
+Qollab reads eqosys's D1 (a reference into eqosys's stack, so the user id stays the only key and nothing is copied), keeps
+eqosys's `Vault` where it is, and checks a token against eqosys's public keys over a binding back (`EQOSYS`), holding the
+signing key only for Qlave tickets. `bun run dev` in `apps/eqosys` runs both Workers. Deploy Qollab first: its first deploy
+moves the three classes, with their data, out of eqosys's Worker; then eqosys, which binds them there.
 
 ## What it is
 

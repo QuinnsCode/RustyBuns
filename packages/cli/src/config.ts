@@ -20,11 +20,31 @@ export type Binding =
        * under the new name first, and adopt takes that over.
        */
       renamedFrom?: string;
+      /**
+       * Another rustybuns app's database, bound here as well: that app's stack (its `name`) owns it under this
+       * same binding name and runs its migrations; this app only reads and writes it. Deploy that app first.
+       */
+      app?: string;
     }
   | { type: "kv"; protect?: boolean }
   | { type: "r2"; bucketName: string; protect?: boolean }
   /** `protect`: destroy leaves this Worker, so the class and its storage stay on the account (protect.ts). */
-  | { type: "durable_object"; className: string; scriptName?: string; protect?: boolean }
+  | {
+      type: "durable_object"; className: string; scriptName?: string; protect?: boolean;
+      /** Hosted by another rustybuns app's Worker (that app's `name`): a cross-script binding, like `scriptName` but found through its stack. */
+      app?: string;
+      /**
+       * The class lived in another rustybuns app's Worker (that app's `name`) and moves here with its data on this app's
+       * next deploy (Cloudflare's `transferred_classes`). Deploy this app first; the other app then binds it with `app`.
+       * Inert once the move is done, so it can stay.
+       */
+      transferredFrom?: string;
+    }
+  /**
+   * Another rustybuns app's Worker (its `name`) as a service binding: `env.NAME.fetch(req)`, or RPC on its
+   * `entrypoint` (a named `WorkerEntrypoint` export). Deploy that app first. Off the edge it has no twin.
+   */
+  | { type: "service"; app: string; entrypoint?: string }
   /** Cloudflare Artifacts: git repos created at runtime. Locally, bare repos served over git HTTP. */
   | { type: "artifacts"; namespace: string }
   /**

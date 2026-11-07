@@ -29,10 +29,11 @@ const QueueConsumer = Schema.Struct({
 });
 
 const Binding = Schema.Union([
-  Schema.Struct({ type: Schema.Literal("d1"), databaseName: Str, migrationsDir: opt(Str), renamedFrom: opt(Str), protect: opt(Bool) }),
+  Schema.Struct({ type: Schema.Literal("d1"), databaseName: Str, migrationsDir: opt(Str), renamedFrom: opt(Str), protect: opt(Bool), app: opt(Str) }),
   Schema.Struct({ type: Schema.Literal("kv"), protect: opt(Bool) }),
   Schema.Struct({ type: Schema.Literal("r2"), bucketName: Str, protect: opt(Bool) }),
-  Schema.Struct({ type: Schema.Literal("durable_object"), className: Str, scriptName: opt(Str), protect: opt(Bool) }),
+  Schema.Struct({ type: Schema.Literal("durable_object"), className: Str, scriptName: opt(Str), protect: opt(Bool), app: opt(Str), transferredFrom: opt(Str) }),
+  Schema.Struct({ type: Schema.Literal("service"), app: Str, entrypoint: opt(Str) }),
   Schema.Struct({ type: Schema.Literal("artifacts"), namespace: Str }),
   Schema.Struct({ type: Schema.Literal("images") }),
   Schema.Struct({ type: Schema.Literal("send_email"), allowedSenderAddresses: opt(Strs) }),
