@@ -14,7 +14,7 @@
     "desktop:build": "rustybuns build desktop --check"
   },
   "dependencies": {
-    "@rustybuns/game-controls": "workspace:*",
+    "@rustybuns/game-controls": "^0.1.12",
     "@rustybuns/models": "workspace:*",
     "@rustybuns/terrain": "workspace:*",
     "@rustybuns/util": "^0.1.12",

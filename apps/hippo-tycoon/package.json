@@ -14,7 +14,7 @@
     "deploy": "bunx rustybuns deploy"
   },
   "dependencies": {
-    "@rustybuns/game-controls": "workspace:*",
+    "@rustybuns/game-controls": "^0.1.12",
     "@rustybuns/util": "^0.1.12",
     "@rustybuns/cli": "^0.1.12",
     "@rustybuns/shell-bun": "^0.1.12",

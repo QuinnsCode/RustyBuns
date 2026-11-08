@@ -3,7 +3,7 @@
 // packages that depend on the previous release (0.1.6 shipped that way).
 import { readFileSync } from "node:fs";
 
-const PKGS = ["ports", "ui", "util", "shell-bun", "native", "cli"];
+const PKGS = ["ports", "ui", "util", "game-controls", "shell-bun", "native", "cli"];
 const lock = readFileSync("bun.lock", "utf8");
 const bad: string[] = [];
 const versions = new Set<string>();

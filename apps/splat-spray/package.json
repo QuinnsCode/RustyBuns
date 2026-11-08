@@ -13,7 +13,7 @@
     "desktop:build": "rustybuns build desktop --check"
   },
   "dependencies": {
-    "@rustybuns/game-controls": "workspace:*",
+    "@rustybuns/game-controls": "^0.1.12",
     "@rustybuns/util": "^0.1.12",
     "@rustybuns/shell-bun": "^0.1.12",
     "@sparkjsdev/spark": "2.2.0",
