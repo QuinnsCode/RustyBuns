@@ -8,15 +8,18 @@
 // you can see from a distance where a friend went and follow them to a lair. A long jump (fast travel, landing beside
 // a friend, a new region) clears it rather than drawing prints across the gap.
 //
-// Cheap on purpose: one figure is three meshes sharing geometry and materials with every other figure, and its disc is
-// one small plane whose waves are drawn by its shader, and its trail one mesh of a fixed ring of quads. No skin, no
-// puppet, no model to load.
+// The figure is a lanky shape in black with a shaggy mop, bell-bottoms and big sneakers, the Book in one hand,
+// skinned to a humanoid rig: it stands, looks about, walks and runs by its speed. Built in Blender by `bun run
+// bearer` (blender/bearer.json is its look). One skinned mesh of three materials, shared by every figure; its disc is
+// one small plane whose waves are drawn by its shader, and its trail one mesh of a fixed ring of quads.
 import * as THREE from "three";
-import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
+import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+import { clone as cloneRig } from "three/examples/jsm/utils/SkeletonUtils.js";
+import { clamp } from "@rustybuns/util";
 import { hum, PALETTE } from "./hues.ts";
 
-/** The figure is this tall (metres), hood to hem: a name tag sits a little over it. */
-export const HEIGHT = 1.8;
+/** The figure is this tall (metres), hair to sole: a name tag sits a little over it. */
+export const HEIGHT = 1.96;
 /** The disc is this wide (metres), and this many quads across: enough for its crests to rise as a surface. */
 const PATCH = 3.4;
 const SEGS = 20;
@@ -201,32 +204,82 @@ class Trail {
   dispose() { this.mesh.geometry.dispose(); }
 }
 
-/** The figure's three meshes (cloak, book cover, pages), built once, facing +x, feet at y = 0. */
-let figure: { cloak: THREE.BufferGeometry; cover: THREE.BufferGeometry; pages: THREE.BufferGeometry; mats: THREE.Material[] } | null = null;
-function figureParts() {
-  if (figure) return figure;
-  // the cloak: a robe lathed from hem to shoulders, a hood over it, two sleeves reaching to the book at the chest
-  const robe = new THREE.LatheGeometry([[0, 0], [0.42, 0], [0.38, 0.35], [0.3, 0.9], [0.24, 1.3], [0.2, 1.42], [0, 1.46]].map(([x, y]) => new THREE.Vector2(x, y)), 9);
-  const hood = new THREE.SphereGeometry(0.17, 9, 7, 0, Math.PI * 2, 0, Math.PI * 0.75);
-  hood.scale(1.05, 1.25, 1.05); hood.translate(-0.03, 1.6, 0);
-  const sleeve = (side: number) => {
-    const s = new THREE.CylinderGeometry(0.06, 0.08, 0.5, 6);
-    s.rotateZ(Math.PI / 2 - 0.5); s.translate(0.2, 1.12, side * 0.17);
-    return s;
-  };
-  const cloak = mergeGeometries([robe, hood, sleeve(1), sleeve(-1)].map((g) => g.toNonIndexed()))!;
-  // the Book, held open at the chest, tipped up toward the face
-  const book = (w: number, h: number, d: number) => { const b = new THREE.BoxGeometry(w, h, d); b.rotateZ(0.6); b.translate(0.42, 1.08, 0); return b; };
-  const cover = book(0.26, 0.05, 0.36), pages = book(0.24, 0.07, 0.32);
-  pages.translate(0.005, 0.015, 0);
-  const mats = [
-    new THREE.MeshStandardMaterial({ color: 0x0d0b12, roughness: 1, emissive: 0x1a1428, emissiveIntensity: 0.4 }),
-    new THREE.MeshStandardMaterial({ color: 0x2a1610, roughness: 0.7 }),
-    // the possessed Book's pages give off a faint warm light, so a figure reads at night by its book and its ground
-    new THREE.MeshStandardMaterial({ color: 0xe8d9b0, emissive: 0xffb24a, emissiveIntensity: 0.9 }),
-  ];
-  figure = { cloak, cover, pages, mats };
-  return figure;
+/** The bearer (public/models/bearer.glb, built by `bun run bearer`): a lanky figure in black, the Book in one hand,
+ *  skinned to a humanoid rig with its clips (idle, look, walk, run, cast). Loaded once; every figure is a clone
+ *  sharing its geometry and materials. Null when it can't load (no page, no file): the figure is then not drawn. */
+export const MODEL_URL = "/models/bearer.glb";
+type Model = { scene: THREE.Object3D; clips: THREE.AnimationClip[] };
+let modelP: Promise<Model | null> | null = null;
+export function bearerModel(): Promise<Model | null> {
+  return modelP ??= new GLTFLoader().loadAsync(MODEL_URL).then((g) => {
+    g.scene.traverse((o) => {
+      if (!(o instanceof THREE.Mesh)) return;
+      o.castShadow = true;
+      for (const m of [o.material].flat()) if (m instanceof THREE.MeshStandardMaterial) {
+        // black, with a faint violet of its own so a figure still reads at night; the pages and eyes glow warm
+        if (m.name === "bearer") { m.emissive.set(0x1a1428); m.emissiveIntensity = 0.4; }
+        if (m.name === "glow") m.emissiveIntensity = 1.2;
+      }
+    });
+    return { scene: g.scene, clips: g.animations };
+  }).catch(() => null);
+}
+
+/** What the figure is doing, by how fast it goes (m/s). */
+export type Gait = "idle" | "look" | "walk" | "run";
+/** The clips' own speeds (m/s, at time scale 1): a gait plays faster or slower to keep the feet with the ground. */
+const WALK_SPEED = 1.5, RUN_SPEED = 4.8;
+/** Slower than this is standing; faster than this is a run. */
+const STILL = 0.4, RUNNING = 3.2;
+/** Standing this long (s), the figure looks round about it once. */
+const LOOK_AFTER = 7;
+/** The model faces +z; the figure's yaw 0 is +x. */
+const FACE = Math.PI / 2;
+
+/** One figure's clips, cross-faded by its speed. */
+export class Gaits {
+  private readonly mixer: THREE.AnimationMixer;
+  private readonly acts = new Map<string, THREE.AnimationAction>();
+  gait: Gait = "idle";
+  private still = 0;
+  private speed = 0;
+
+  constructor(root: THREE.Object3D, clips: THREE.AnimationClip[]) {
+    this.mixer = new THREE.AnimationMixer(root);
+    for (const c of clips) this.acts.set(c.name, this.mixer.clipAction(c));
+    const look = this.acts.get("look");
+    if (look) { look.setLoop(THREE.LoopOnce, 1); look.clampWhenFinished = false; }
+    this.acts.get("idle")?.play();
+    // each figure starts its idle at its own point, so a party doesn't breathe in step
+    this.mixer.setTime(Math.random() * 3);
+  }
+
+  private to(next: Gait) {
+    if (next === this.gait) return;
+    const from = this.acts.get(this.gait), to = this.acts.get(next);
+    if (!to) return;
+    to.reset().play();
+    if (from) to.crossFadeFrom(from, next === "run" || this.gait === "run" ? 0.18 : 0.3, false);
+    this.gait = next;
+  }
+
+  /** `moved` metres in `dt` seconds. */
+  update(moved: number, dt: number) {
+    if (dt <= 0) return;
+    // smoothed, so one short frame doesn't flicker the gait
+    this.speed += (moved / dt - this.speed) * Math.min(1, dt * 10);
+    const v = this.speed;
+    this.still = v < STILL ? this.still + dt : 0;
+    if (v >= RUNNING) this.to("run");
+    else if (v >= STILL) this.to("walk");
+    // a look fades back into the idle before it ends: a once-only clip that ends leaves no pose at all for a frame
+    else if (this.gait === "look") { const l = this.acts.get("look")!; if (l.time > l.getClip().duration - 0.4) { this.to("idle"); this.still = 0; } }
+    else this.to(this.still > LOOK_AFTER && this.acts.has("look") ? "look" : "idle");
+    const walk = this.acts.get("walk"), run = this.acts.get("run");
+    if (walk) walk.timeScale = clamp(v / WALK_SPEED, 0.6, 1.8);
+    if (run) run.timeScale = clamp(v / RUN_SPEED, 0.75, 2.2);
+    this.mixer.update(dt);
+  }
 }
 
 /** One player in the world: their figure, the disc of their ground under it, and the trail of prints behind. */
@@ -236,7 +289,9 @@ export class Bearer {
   private readonly patch: THREE.Mesh;
   private readonly pos: THREE.BufferAttribute;
   private readonly trail: Trail;
-  private walked = 0;
+  private gaits: Gaits | null = null;
+  private gone = false;
+  private then = NaN;
   private laid = { x: NaN, y: NaN, z: NaN };
   private last = { x: NaN, z: NaN };
   private worn: number;
@@ -244,12 +299,13 @@ export class Bearer {
   /** `ground(x, z)` is the height to stand and lay the disc on; `colour` is one of the 64 (world/hues.ts), or null for a
    *  figure who isn't a player (Gary). */
   constructor(readonly id: string, parent: THREE.Object3D, private readonly ground: (x: number, z: number) => number, colour: number | null) {
-    const f = figureParts();
-    for (const [g, m] of [[f.cloak, f.mats[0]], [f.cover, f.mats[1]], [f.pages, f.mats[2]]] as const) {
-      const mesh = new THREE.Mesh(g, m);
-      mesh.castShadow = true;
-      this.body.add(mesh);
-    }
+    void bearerModel().then((m) => {
+      if (!m || this.gone) return;
+      const fig = cloneRig(m.scene);
+      fig.rotation.y = FACE;
+      this.body.add(fig);
+      this.gaits = new Gaits(fig, m.clips);
+    });
     const plane = new THREE.PlaneGeometry(PATCH, PATCH, SEGS, SEGS);
     plane.rotateX(-Math.PI / 2);
     this.worn = colour ?? 0;
@@ -271,7 +327,10 @@ export class Bearer {
   /** Trail stones still showing behind them. */
   get stones() { return this.trail.count; }
 
-  /** Stand at (x, z) facing `yaw` (0 is +x), on `y`. The figure sways a little as it walks; the disc is laid on the
+  /** What the figure is doing: standing, looking about, walking or running (idle until its model is in). */
+  get gait(): Gait { return this.gaits?.gait ?? "idle"; }
+
+  /** Stand at (x, z) facing `yaw` (0 is +x), on `y`. The figure walks or runs by how far it came; the disc is laid on the
    *  ground again every step, and whenever the ground under it changes (the patch round you rebuilt after a trip, a piece
    *  rising), so it never floats over the ground or sinks under it; and a print is left every stride (`now` in ms ages them). */
   update(x: number, y: number, z: number, yaw: number, now = performance.now()) {
@@ -279,9 +338,11 @@ export class Bearer {
     TIME.value = now / 1000;
     const moved = Number.isNaN(this.last.x) ? 0 : Math.hypot(x - this.last.x, z - this.last.z);
     this.last = { x, z };
-    if (moved < 2) this.walked += moved;
-    const k = this.walked * 2.6; // a bob a stride
-    this.body.position.set(x, y + Math.abs(Math.sin(k)) * 0.05, z);
+    const dt = Number.isNaN(this.then) ? 0 : Math.min(0.1, (now - this.then) / 1000);
+    this.then = now;
+    // a jump (travel, a new region) is not a sprint
+    this.gaits?.update(moved < 2 ? moved : 0, dt);
+    this.body.position.set(x, y, z);
     this.body.rotation.y = -yaw;
     if (Math.hypot(x - this.laid.x, z - this.laid.z) < 0.1 && Math.abs(y - this.laid.y) < 0.02) return;
     this.laid = { x, y, z };
@@ -296,5 +357,5 @@ export class Bearer {
     this.patch.geometry.computeBoundingSphere();
   }
 
-  dispose() { this.group.removeFromParent(); this.patch.geometry.dispose(); this.trail.dispose(); }
+  dispose() { this.gone = true; this.group.removeFromParent(); this.patch.geometry.dispose(); this.trail.dispose(); }
 }
