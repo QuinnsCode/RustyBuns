@@ -27,7 +27,7 @@
   "stop_hook1_title": "Your AI, if you like",
   "stop_hook1_text": "<p>Review the merged change, or have the last word before the tests spend anything. Off, <code>ai</code> or <code>ask</code>.</p>",
   "stop_ester_title": "Ester",
-  "stop_ester_text": "<p>Runs only the lanes this change calls for, and sorts any red by whose it is: main's, flaky, the PR's own, or the merge's.</p><p><a href=\"/ester\">Her case file</a></p>",
+  "stop_ester_text": "<p>Picks only the lanes this change calls for. A PR whose own CI is red waits on the board until it's green.</p><p><a href=\"/ester\">Her case file</a></p>",
   "stop_hook2_title": "One more say",
   "stop_hook2_text": "<p>It's green. Does an AI or a person still want to look before it ships?</p>",
   "stop_yours_title": "Your code",
