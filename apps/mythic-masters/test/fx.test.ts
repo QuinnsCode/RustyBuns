@@ -49,6 +49,26 @@ describe("move effects", () => {
     expect(ahead("ultimate")).toBeGreaterThan(jab * 2 + 20);
   });
 
+  // ATTACKS.md step 4: a stream (the ember Flame Breath, held) pours harder as it roars up; a fade (the wild Roar)
+  // bursts and then sputters out. The target stands out of reach, so what's on screen is the pour, not hit sparks.
+  test.each([
+    ["a held stream pours harder as it roars up", "hodag", 15, 100, "more"],
+    ["a fade pours less as it sputters out", "agropelter", 10, 50, "less"],
+  ] as const)("%s", (_name, id, early, late, way) => {
+    const r = rig(creature(id), devil);
+    r.m.f[0].energy = 100; r.m.f[1].pos = { x: 14, y: 0, z: 0 };
+    const seen: number[] = [];
+    let start = -1;
+    for (let t = 0; t < 200; t++) {
+      r.tick([hold({ big: true }), IDLE]);
+      if (start < 0 && r.m.areas.length) start = t;
+      if (start >= 0 && (t - start === early || t - start === late)) seen.push(r.live());
+    }
+    const [a, b] = seen as [number, number];
+    if (way === "more") expect(b).toBeGreaterThan(a * 1.3);
+    else expect(b).toBeLessThan(a * 0.7);
+  });
+
   test("a hit flashes the one struck for eight ticks, and a landing raises dust by how hard it was", () => {
     const r = rig(creature("hodag"), creature("jackalope"));
     r.m.f[1].pos = { x: -4.6, y: 0, z: 0 }; r.m.f[1].yaw = Math.PI;

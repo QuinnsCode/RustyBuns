@@ -1034,6 +1034,14 @@ body > .gc-dialog .gc-card .gc-binds button.gc-icon:disabled { visibility: hidde
 .folio .moves li small { order: 2; margin-left: 0; white-space: nowrap; font-style: italic; font-size: 14px; }
 .folio .moves li::after { content: ""; order: 1; flex: 1 0 12px; border-bottom: 2px dotted rgba(70, 42, 18, 0.4); transform: translateY(-4px); }
 .folio .moves .dot { align-self: center; }
+/* the card's line under each move: its shape drawn small, then its numbers (moveline.ts) */
+.folio .moves li { flex-wrap: wrap; }
+.folio .moves li .line { order: 3; flex: 1 0 100%; display: flex; align-items: center; gap: 6px; font-family: var(--f-book); font-size: 13px; color: var(--ink-faded); padding-left: 18px; }
+svg.shape { flex: none; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linejoin: round; overflow: visible; }
+svg.shape .me { fill: currentColor; stroke: none; }
+.folio .moves li .line svg.shape { width: 40px; }
+svg.shape .lane { stroke-dasharray: 1.5 2; opacity: 0.6; }
+.select.book .card > .moves i svg.shape { width: auto; height: 16px; vertical-align: -2px; margin-right: 3px; stroke-width: 1.7; color: var(--ink-b); }
 /* the versus book written, not a dashboard (#3671 round 85): each beast an entry around its engraved radar (its name in
  * the hand, what it is in the book's italic, its moves named in a sentence, not a row of chips); the field legend a
  * line of words in the hand, the one picked in red ink, no coloured dots */

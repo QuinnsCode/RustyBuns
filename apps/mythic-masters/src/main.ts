@@ -22,6 +22,7 @@ import { bot, type Bot } from "./bot.ts";
 import { buttons, NO_STICK, PAD_ACTIONS, PAD_START, PAD_ZONE, push, readPad, touchStick, TOUCH_BUTTONS, type Stick } from "./controls.ts";
 import { icon } from "./icons.ts";
 import { ART, radar, tradingCard } from "./card.ts";
+import { moveLine, shapeSvg } from "./moveline.ts";
 import { entry, folio, halves, neighbour, notePlate, ordinal, regionChart, spread, stepTo, type Dir, type Known } from "./compendium.ts";
 import { FIELDS, hex, type Field } from "./fields.ts";
 import { mountFieldChart } from "./fieldchart.ts";
@@ -144,7 +145,7 @@ function card(c: Creature, side: "A" | "B", on: boolean) {
   return `<button class="card${on ? " on" : ""}" data-side="${side}" data-id="${esc(c.id)}">
     <b>${esc(c.name)}</b><small>${aOrAn(c.archetype)} ${esc(c.archetype)} of ${c.fields.join(" and ")}</small>${radar(c)}
     <span class="body">${c.massKg} kg, ${c.heightM} m tall; it ${b.air === "flight" ? "flies" : "walks and hops"} ${b.air === "flight" ? icon("feather", "Flies") : icon("footprints", "Hops")}</span>
-    <span class="moves"><em>Its moves:</em> ${c.moves.map((m, k) => `<i title="${m.slot}, ${m.field}, power ${m.power}">${esc(m.name)}</i>${k < c.moves.length - 2 ? "," : k === c.moves.length - 2 ? " and" : "."}`).join(" ")}</span></button>`;
+    <span class="moves"><em>Its moves:</em> ${c.moves.map((m, k) => `<i title="${esc(`${m.slot}, ${m.field}: ${moveLine(m)}`)}">${m.delivery.shape === "touch" ? "" : shapeSvg(m.delivery)}${esc(m.name)}</i>${k < c.moves.length - 2 ? "," : k === c.moves.length - 2 ? " and" : "."}`).join(" ")}</span></button>`;
 }
 
 // What each creature has been taught (the harness's `teach`); everyone else fights with what it was born knowing.
