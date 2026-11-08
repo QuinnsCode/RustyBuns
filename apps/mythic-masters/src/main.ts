@@ -969,6 +969,9 @@ for (const [id, c] of [["#titleFrontis", "title"], ["#witchFrontis", "witch"], [
 $("#titleRing").innerHTML = ring(); // the thorn ring round the title page's frontispiece (#3662 round 74)
 // the facing leaves of the Settings and result spreads carry an engraving each, in a thorn ring (#3671 round 81)
 for (const [name, c] of [["--verso-hands", "title"], ["--verso-rest", "witch"]] as const) document.documentElement.style.setProperty(name, `${inkUrl(emblem(c))} 50% 132px / 150px 80px no-repeat, ${inkUrl(ring())} 50% 64px / 216px 216px no-repeat`);
+// the result spread is drawn to the screen's size (#3963), so it places the same two engravings itself, in its own units
+document.documentElement.style.setProperty("--ink-witch", inkUrl(emblem("witch")));
+document.documentElement.style.setProperty("--ink-ring", inkUrl(ring()));
 $("#closeJournal").addEventListener("click", () => openJournal(false));
 $("#openJournal").innerHTML = icon("book-open");
 $("#openJournal").addEventListener("click", () => openJournal());
