@@ -10,6 +10,7 @@ import { actionOf } from "../binds.ts";
 import { NO_STICK, push, type Stick } from "../controls.ts";
 import { icon } from "../icons.ts";
 import { NIGHT, tierOf } from "../tiers.ts";
+import { PACE } from "../net/party.ts";
 import { Walker3d } from "./walker3d.ts";
 import { Bearer, HEIGHT, NO_ID } from "./bearer.ts";
 import { body, creature, ROSTER, type Creature } from "../roster.ts";
@@ -832,7 +833,7 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
     if (p) { me.x = p.x; me.z = p.z; }
     trekAt.band = bandAt(me.x, me.z); trekAt.armed = false; crumbs = [];
   }
-  let lead: Creature | null = null, speed = 8, yaw = 0, facing = 0, snap = true; // snap: put the camera straight there, no glide
+  let lead: Creature | null = null, yaw = 0, facing = 0, snap = true; // snap: put the camera straight there, no glide
   let shownOnce = false;
   // Pieces whose road opened while you were away (in the arena that opened it): shown rising when you're back.
   let toReveal: Region[] = [];
@@ -1006,8 +1007,6 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
   function wear(c: Creature) {
     lead = c;
     bearer ??= new Bearer(NO_ID, group, standY, colour);
-    // The world is wide: a region is an hour's walk at your fighting pace and a half, half that running.
-    speed = body(c).topSpeed * 1.2;
   }
   function look() { if (explore(seen, me.x, me.z)) { seenDirty = true; drawWhere(); } }
   function travel(n: number) { if (!openRegions(beaten).has(n)) return; Object.assign(me, spawn(n)); onTrail(); snap = true; look(); drawWhere(); drawMap(); arrive(regionN(n)); }
@@ -1136,7 +1135,7 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
       const wading = waterLevel(me.x, me.z) - fineY(me.x, me.z) > WADE;
       if (mx || mz) {
         facing = Math.atan2(mz, mx);
-        const v = speed * (on("dash") ? 2 : 1) * (wading ? 0.45 : 1) * dt;
+        const v = (on("dash") ? PACE.run : PACE.walk) * (wading ? 0.45 : 1) * dt;
         for (const e of trek(me, trekAt, mx * v, mz * v, beaten, hooks.cleared)) say(e);
         look();
         const last = crumbs[0];

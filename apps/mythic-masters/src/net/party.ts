@@ -149,9 +149,10 @@ export function plausible(met: MetAt | null | undefined, f: Extract<Event, { e: 
   return since >= f.s * 1000 - FIGHT.slackMs && since <= FIGHT.withinMs;
 }
 
-/** The fastest anyone moves on foot, in metres a second: the quickest beast's top speed (roster.ts, 11 m/s), a fifth up
- *  when you walk as it, doubled when you run (world/view.ts). */
-export const RUN_MPS = 27;
+/** You cross the world on foot at a person's pace, the line-up following (#3934): a walk, and Shift runs. Metres a second. */
+export const PACE = { walk: 1.5, run: 5 } as const;
+/** The fastest anyone moves on foot, in metres a second: a run (PACE), with three fifths more for clocks that drift. */
+export const RUN_MPS = PACE.run * 1.6;
 /** Room for clocks, bunched messages and decimetres: a pose may be this much further on than RUN_MPS allows. */
 const JUMP_SLACK_M = 40;
 /** Did a player get from pose `was` to `now` in `ms` faster than anyone walks? Travel, fast travel, being sent home and
