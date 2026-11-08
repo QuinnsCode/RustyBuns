@@ -1,6 +1,7 @@
 // The campaign: the levels as one climb, from the kitchen floor out through the backyard and the
-// garden, down to Yosemite's valley floor, and up the granite to the rim. Each chapter is a level and
-// its mission (missions.ts), with a few lines of story, and opens when the one before it is won.
+// garden, down to Yosemite's valley floor, up the granite to the rim, and home to the front room to topple
+// the empire. Each chapter is a level and its mission (missions.ts), with a few lines of story, and opens
+// when the one before it is won.
 // Battles and "fight anywhere" still play any level; only the menu's list is the climb.
 //
 // The story: somebody committed the nuclear launch codes to main, and the Conflict's folders want
@@ -70,6 +71,13 @@ export const CAMPAIGN: Chapter[] = [
     height: "Glacier Point, 2,200 m",
     ...chapter("glacier-point"),
     beats: ["sweep", "onslaught", "extraction", "gag"],
+  },
+  {
+    level: "front-room",
+    title: "Topple the empire",
+    height: "The front room",
+    ...chapter("front-room"),
+    beats: ["insertion", "onslaught", "barrage", "extraction", "gag"],
   },
 ];
 

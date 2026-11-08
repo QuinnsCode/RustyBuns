@@ -255,7 +255,7 @@ html.touch .bl { bottom: 156px; }
    grit.svg 0.4 KB, insignia.svg 0.7 KB, stamp.svg 0.4 KB, map.svg 1.2 KB, clip.svg 0.5 KB, coffee.svg 0.6 KB,
    soldier-won/lost.webp 8.2 KB (baked by scripts/menu-art.ts). Scoped to .menu, .results, the Controls panel and the eqosys surfaces (src/eqosys.ts SKIN), so
    the HUD keeps codeSplitter's paper. */
-.menu, .results, .credits, html .ui-house, .eq {
+.menu, .results, .credits, .newsreel, html .ui-house, .eq {
   --br-ink: #141414; --br-dim: #4f4d48; --br-rule: #cfccc4; --br-hot: #e8590c; --br-hot-ink: #b8460a; --br-sheet: #fbfaf7;
   --br-stencil: "Avenir Next Condensed", "Arial Narrow", "Roboto Condensed", Impact, sans-serif;
   /* The scope's corner brackets, drawn inside a frame's padding box. */
@@ -532,3 +532,27 @@ html .ui-house .gc-key { white-space: normal; height: auto; min-height: 40px; pa
   .polaroid[data-n="3"] { --x: 17%; --y: 492px; --r: 5deg; }
   .polaroid[data-n="4"] { --x: 53%; --y: 486px; --r: -4deg; }
 }
+
+/* --- The newsreel (src/ui/credits.ts, #3620): Command's wartime recruitment reel before the credits, played straight.
+   The engine's footage goes black and white and slow under a flickering grain, poster slogans slam up over it in
+   stencil, and the announcer is captioned along the bottom. A cut between clips dips to black. */
+body.reeling canvas#view { filter: grayscale(1) sepia(0.18) contrast(1.35) brightness(0.95); }
+.newsreel { position: fixed; inset: 0; z-index: 40; display: grid; place-items: center; padding: 16px; overflow: hidden; pointer-events: auto;
+  background: radial-gradient(ellipse at center, #0000 52%, #000a 100%), rgb(0 0 0 / max(var(--dip, 0), 1 - var(--out, 1))); }
+.newsreel .grain { position: absolute; inset: -40px; pointer-events: none; opacity: 0.4; mix-blend-mode: multiply;
+  background: url(/menu/grit.svg) 0 0 / 160px; animation: grain 0.24s steps(3) infinite; }
+@keyframes grain { 0% { transform: translate(0, 0); } 33% { transform: translate(-17px, 9px); } 66% { transform: translate(11px, -13px); } 100% { transform: translate(0, 0); } }
+.newsreel .slate { display: grid; justify-items: center; gap: 8px; max-width: min(760px, 100%); text-align: center; opacity: var(--in, 0);
+  transform: scale(calc(1.25 - var(--in, 0) * 0.25)) rotate(-2deg); }
+.newsreel .slate p { margin: 0; }
+.newsreel .slate .poster { padding: 10px 22px 8px; font: 900 clamp(34px, 8vw, 88px)/0.95 var(--br-stencil); text-transform: uppercase; letter-spacing: 0.02em;
+  color: var(--br-sheet); background: var(--br-hot); border: 4px solid var(--br-sheet); box-shadow: 8px 8px 0 #000c; }
+.newsreel .slate .title { font: 800 clamp(30px, 7vw, 72px)/1 var(--br-stencil); text-transform: uppercase; letter-spacing: 0.14em; color: var(--br-sheet);
+  border-top: 3px solid var(--br-sheet); border-bottom: 3px solid var(--br-sheet); padding: 10px 6px 8px; text-shadow: 3px 3px 0 #000; }
+.newsreel .slate .sub { padding: 5px 12px 4px; font: 700 clamp(13px, 2.4vw, 20px)/1.2 var(--mono); letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--br-ink); background: var(--br-sheet); }
+.newsreel .announcer { position: absolute; left: 50%; bottom: max(40px, 8vh); width: min(720px, calc(100% - 32px)); margin: 0; transform: translateX(-50%);
+  padding: 8px 14px; font: 600 clamp(14px, 2.2vw, 19px)/1.35 var(--mono); text-align: center; color: #f4f1e8; background: #000b; }
+.newsreel .announcer:empty { display: none; }
+.newsreel .skip { position: absolute; right: 16px; bottom: 12px; margin: 0; font: 700 10px/1 var(--mono); letter-spacing: 0.18em; text-transform: uppercase; color: #f4f1e8aa; }
+@media (prefers-reduced-motion: reduce) { .newsreel .grain { animation: none; } }

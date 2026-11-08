@@ -1,9 +1,10 @@
-// The credits on the page (src/sim/credits.ts has the scenes): the briefing file the strips are typed onto, and the
-// polaroids that drop onto the table round it. Each polaroid is a photograph of the engine: the outtake is staged on
+// The newsreel and the credits on the page (src/sim/credits.ts has the scenes). The newsreel is the engine's footage
+// under poster slogans, an announcer's captions and film grain. The credits are the briefing file the strips are
+// typed onto, and the polaroids that drop onto the table round it. Each polaroid is a photograph of the engine: the outtake is staged on
 // the film set's game, the world drawn from where the take left the camera, and the canvas cropped square.
 import type * as THREE from "three";
 import type { Frame } from "@rustybuns/util/director";
-import { OUTTAKES, stageOuttake, type OuttakeId, type Setup } from "../sim/credits.ts";
+import { clipAt, clipShot, OUTTAKES, rollClip, SLOW, stageClip, stageOuttake, type Clip, type OuttakeId, type Setup } from "../sim/credits.ts";
 import type { Stage } from "../sim/director.ts";
 import type { Game } from "../sim/game.ts";
 import type { World } from "./scene.ts";
@@ -23,7 +24,7 @@ export function frameOuttake(set: Lot, id: OuttakeId, camera: THREE.PerspectiveC
   aim(camera, st);
   return st;
 }
-export function aim(camera: THREE.PerspectiveCamera, st: Setup) {
+export function aim(camera: THREE.PerspectiveCamera, st: Pick<Setup, "cam">) {
   camera.position.set(st.cam.from.x, st.cam.from.y, st.cam.from.z);
   camera.lookAt(st.cam.at.x, st.cam.at.y, st.cam.at.z);
   camera.fov = 50;
@@ -84,5 +85,51 @@ export function mountCredits() {
       for (const el of photos.querySelectorAll<HTMLElement>(".polaroid")) if (!f.photos.some((p) => p.photo.id === el.dataset.id)) el.remove();
     },
     hide() { root.hidden = true; lines.innerHTML = shown = ""; photos.innerHTML = ""; },
+  };
+}
+
+/**
+ * The newsreel's footage on the set: at second `t`, the clip on then, staged when it comes on (or when a seek goes
+ * back) and rolled on in slow motion to `t`, drawn from its tripod.
+ */
+export function footage(set: Lot) {
+  let clip: Clip | null = null, done = 0;
+  return (t: number, dt: number, camera: THREE.PerspectiveCamera) => {
+    const c = clipAt(t), k = Math.max(0, (t - c.from) * SLOW);
+    const fresh = !clip || clip.id !== c.id || k < done - 1e-6;
+    if (fresh) clip = stageClip(set.game, c.id), done = 0, set.world.stage(BARE, set.game.time, 0);
+    const before = done;
+    done = rollClip(set.game, clip!, done, k);
+    // A fresh take, or a jump ahead: the figures settle into their poses; otherwise they move with the footage.
+    if (fresh || done - before > 0.2) for (let i = 0; i < 8; i++) set.world.sync(set.game, 0.25);
+    else set.world.sync(set.game, done - before);
+    aim(camera, { cam: clipShot(set.game, clip!) });
+  };
+}
+
+/** The newsreel's screen over the footage: the poster on now, the announcer's caption, the grain and a cut's black. */
+export function mountNewsreel() {
+  const root = Object.assign(document.createElement("section"), { id: "newsreel", className: "newsreel", hidden: true });
+  root.setAttribute("aria-live", "polite");
+  root.innerHTML = `<i class="grain" aria-hidden="true"></i><div class="slate"></div><p class="announcer"></p><p class="skip">Any key to skip</p>`;
+  document.body.append(root);
+  const poster = root.querySelector<HTMLElement>(".slate")!, said = root.querySelector<HTMLElement>(".announcer")!;
+  let shown = "", line = "";
+  return {
+    root,
+    draw(f: Frame) {
+      root.hidden = f.scene?.id !== "newsreel";
+      document.body.classList.toggle("reeling", !root.hidden);
+      if (root.hidden) return;
+      root.style.setProperty("--dip", f.look.dip.toFixed(3));
+      root.style.setProperty("--out", f.out.toFixed(3));
+      const on = f.cards.at(-1);
+      poster.style.setProperty("--in", (on?.in ?? 0).toFixed(3));
+      const html = on ? `<p class="${on.card.kind ?? "poster"}">${on.card.text}</p>${on.card.sub ? `<p class="sub">${on.card.sub}</p>` : ""}` : "";
+      if (html !== shown) poster.innerHTML = shown = html, poster.dataset.kind = on?.card.kind ?? "";
+      const text = f.line?.text ?? "";
+      if (text !== line) said.textContent = line = text;
+    },
+    hide() { root.hidden = true; document.body.classList.remove("reeling"); poster.innerHTML = shown = ""; said.textContent = line = ""; },
   };
 }
