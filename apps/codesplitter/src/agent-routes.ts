@@ -409,7 +409,7 @@ const PICTURES = ["image/png", "image/jpeg", "image/gif", "image/webp", "image/a
 
 /**
  * A run's thread (#3711), for the repo's crew: GET ?after=n {thread, runs, messages after n, here, last}; its socket (`ws?after=n`,
- * the page's last message, so it gets only what it lacks); POST {text, go?} says something. To a running agent it is also a note it hears (claude as it works, any other on its next run).
+ * the page's last message, so it gets only what it lacks; `&watch=1` for a run card, #3737); POST {text, go?} says something. To a running agent it is also a note it hears (claude as it works, any other on its next run).
  * With the last run ended, the owner's `go` (or @agent in the text) starts the next run on the same task, with the thread so far.
  * POST `files`?name&text (the bytes) drops a file in (#3723): a running agent gets it in its folder with the note; GET `files/<id>` reads one.
  * A crew member's go or @agent asks the owner instead (#3728): it lands in the owner's inbox, and their Go starts it. A desktop run is
@@ -435,7 +435,7 @@ async function threadRoute(req: Request, env: Env, self: (req: Request) => Promi
     if (req.headers.get("upgrade")?.toLowerCase() !== "websocket") return json({ error: "a socket only" }, 426);
     const h = new Headers(req.headers);
     h.set("x-codesplitter-user", user);
-    return threadFetch(env, owner, repo, thread, `/ws?after=${after}`, { headers: h });
+    return threadFetch(env, owner, repo, thread, `/ws?after=${after}${url.searchParams.get("watch") === "1" ? "&watch=1" : ""}`, { headers: h });
   }
   const { results } = await env.DB.prepare("SELECT * FROM agent_runs WHERE owner = ? AND repo = ? AND (id = ? OR json_extract(result, '$.thread') = ?) ORDER BY id")
     .bind(owner, repo, thread, thread).all<Row>();

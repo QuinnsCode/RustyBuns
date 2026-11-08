@@ -67,7 +67,8 @@ export const sentPath = (id: number, name: string) => `.thread/${id}-${name}`;
 export const fileName = (s: string) => s.replace(/^.*[\\/]/, "").replace(/[^\w.-]+/g, "_").replace(/\.\.+/g, ".").replace(/^[.]+/, "").slice(-80) || "file";
 interface Kept extends Sent { bytes: Uint8Array<ArrayBuffer> }
 
-type Who = { user: string };
+/** A watcher (`?watch=1`) is a run card on a file or repo page (#3737): it hears runs and messages but isn't someone in the thread. */
+type Who = { user: string; watch?: true };
 type Out = { t: "hello"; messages: Message[]; runs: RunCard[]; here: string[]; last: number }
   | { t: "msg"; message: Message } | { t: "run"; run: RunCard } | { t: "here"; here: string[] };
 
@@ -93,7 +94,7 @@ export class AgentThread {
 
   /** Who has the thread open, each once. */
   here(): string[] {
-    return [...new Set(this.sockets.open().map((ws) => this.sockets.who(ws)?.user).filter((u): u is string => !!u))].sort();
+    return [...new Set(this.sockets.open().map((ws) => this.sockets.who(ws)).filter((w) => !w?.watch).map((w) => w?.user).filter((u): u is string => !!u))].sort();
   }
 
   /** The number of the newest message (0 before any). */
@@ -176,10 +177,12 @@ export class AgentThread {
       if (req.headers.get("upgrade")?.toLowerCase() !== "websocket") return json({ error: "a socket only" }, 426);
       const user = req.headers.get("x-codesplitter-user");
       if (!user) return json({ error: "who?" }, 401);
-      const { server, response } = this.sockets.upgrade({ user });
-      const [messages, runs, last] = await Promise.all([this.read(afterOf(url)), this.runs(), this.last()]);
+      const watch = url.searchParams.get("watch") === "1";
+      const { server, response } = this.sockets.upgrade(watch ? { user, watch } : { user });
+      // A watcher has the card already: it wants what comes next, not the thread so far.
+      const [messages, runs, last] = await Promise.all([watch ? [] : this.read(afterOf(url)), this.runs(), this.last()]);
       this.sockets.send(server, { t: "hello", messages, runs, here: this.here(), last });
-      this.sockets.broadcast({ t: "here", here: this.here() }, server);
+      if (!watch) this.sockets.broadcast({ t: "here", here: this.here() }, server);
       return response;
     }
     if (url.pathname === "/say" && req.method === "POST") {
