@@ -12,7 +12,7 @@
     "prove": "bun prove.ts"
   },
   "dependencies": {
-    "@rustybuns/util": "workspace:*"
+    "@rustybuns/util": "^0.1.12"
   },
   "devDependencies": {
     "@rustybuns/cli": "^0.1.12",

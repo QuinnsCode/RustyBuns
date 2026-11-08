@@ -15,7 +15,7 @@
     "@gltf-transform/core": "^4.2.1",
     "@gltf-transform/extensions": "^4.2.1",
     "@rustybuns/shell-bun": "^0.1.12",
-    "@rustybuns/util": "workspace:*",
+    "@rustybuns/util": "^0.1.12",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },

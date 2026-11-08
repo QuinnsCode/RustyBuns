@@ -18,8 +18,8 @@
     "@rustybuns/cli": "^0.1.12",
     "@rustybuns/native": "^0.1.12",
     "@rustybuns/shell-bun": "^0.1.12",
-    "@rustybuns/ui": "workspace:*",
-    "@rustybuns/util": "workspace:*",
+    "@rustybuns/ui": "^0.1.12",
+    "@rustybuns/util": "^0.1.12",
     "lucide": "1.55.0",
     "onnxruntime-web": "1.23.2"
   },

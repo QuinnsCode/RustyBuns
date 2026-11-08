@@ -21,7 +21,7 @@
     "@rustybuns/game-controls": "workspace:*",
     "@rustybuns/models": "workspace:*",
     "@rustybuns/rig": "workspace:*",
-    "@rustybuns/util": "workspace:*",
+    "@rustybuns/util": "^0.1.12",
     "three": "^0.180.0"
   },
   "devDependencies": {
