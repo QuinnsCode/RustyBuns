@@ -21,6 +21,12 @@ const inline = (s: unknown, defs: Record<string, Schema>): any => {
   return Object.fromEntries(Object.entries(s).map(([k, v]) => [k, inline(v, defs)]));
 };
 
+/** An operation's named failures (#3804), for its description: the `tag` a failed call's reply carries. */
+const failsWith = (op: Schema) => {
+  const e: { tag: string }[] = op["x-codesplitter-errors"] ?? [];
+  return e.length ? `Fails with (the reply's tag): ${e.map((x) => x.tag).join(", ")}.` : "";
+};
+
 /** The tools, from the OpenAPI spec. */
 export function tools(): Tool[] {
   const spec = openapi("");
@@ -42,7 +48,7 @@ export function tools(): Tool[] {
       const risky = !!op["x-codesplitter-risky"], read = method === "get";
       out.push({
         name: op.operationId, title: op.summary, tag: op.tags[0], risky,
-        description: [op.summary, op.description, `(${method.toUpperCase()} /api${path})`, risky && "Changes who can get in or see what, can't be undone, or ships code: ask the person first."].filter(Boolean).join(" "),
+        description: [op.summary, op.description, `(${method.toUpperCase()} /api${path})`, risky && "Changes who can get in or see what, can't be undone, or ships code: ask the person first.", failsWith(op)].filter(Boolean).join(" "),
         inputSchema: { type: "object", properties, ...(required.length && { required }), additionalProperties: false },
         annotations: { title: op.summary, readOnlyHint: read, destructiveHint: risky, idempotentHint: read || method === "put", openWorldHint: false },
         method: method.toUpperCase(), path, pathParams, queryParams, hasBody: !!body,

@@ -37,6 +37,72 @@ interface Op {
   risky?: true;
 }
 
+/**
+ * codeSplitter's named failures (#3804). A route's 4xx reply is `{error, tag, ...}`: `error` the sentence a person
+ * reads, `tag` one of these, which a client matches on instead of guessing from the status (client.ts makes each one
+ * an error class). Each is [its status, what it means]. Route files move onto tags one at a time: branches.ts first.
+ */
+export const ERRORS = {
+  BadInput: [400, "the body or query isn't what the operation takes"],
+  BadBranchName: [400, "a branch name git wouldn't take"],
+  NoHarness: [400, "that coding agent isn't installed on this machine"],
+  TextOnlyMainOrBranch: [400, "this conflict takes main or branch, not text"],
+  NoWriteAccess: [403, "you aren't on the repo's crew, or the token is read-only"],
+  OwnerOnly: [403, "only the repo's owner does this"],
+  PersonOnly: [403, "a person's word, said on the site signed in: an API token can't give it"],
+  BranchProtected: [403, "main is protected: someone other than the branch's author merges it"],
+  AgentRunBatch: [403, "an agent run's batch lands when its owner accepts it, not on a crew merge"],
+  RunBranchLocked: [403, "an agent run's branch is written by its agent and the owner only"],
+  AuthorCantSay: [403, "someone other than the branch's author says yay or nay"],
+  AdminsOnly: [403, "on the hosted site, only its admins run this"],
+  PolicyFile: [403, "only the owner changes the path policy or the checks' commands on main"],
+  NoSuchBranch: [404, "no branch by that name (open, for a parent or a merge)"],
+  NoSuchFile: [404, "no such file on the branch"],
+  NoSuchChange: [404, "that hunk changed or went: review the branch again"],
+  NoSuchConflict: [404, "no conflict on that line now: review the branch again"],
+  NoSuchHook: [404, "no hook by that name"],
+  BranchExists: [409, "a branch by that name exists"],
+  FileExists: [409, "the file exists"],
+  BranchClosed: [409, "the branch is merged, not open"],
+  BranchMoved: [409, "the branch changed since you read it: read it again"],
+  Stacked: [409, "it's stacked on a branch still open: merge that one first"],
+  StrandedFork: [409, "files forked from the branch under it didn't move onto main cleanly when it merged"],
+  BuildFiles: [409, "it changes build or deploy files: read them, then merge with build_ok"],
+  ChecksHold: [409, "required checks failed or haven't finished"],
+  BinaryMoved: [409, "main changed a binary file the branch changed too"],
+  Conflicts: [409, "conflicts: settle each one in `resolve` and merge again"],
+  MergeBroken: [409, "merged, it wouldn't parse, build or compile"],
+  TestsFail: [409, "merged, its tests fail"],
+  HookHold: [409, "a pipeline hook said nay or waits for a person"],
+  HookOff: [409, "that hook is off in this repo's pipeline"],
+  NothingToMerge: [409, "the branch has nothing on it yet"],
+  PipelineInvalid: [422, "codesplitter.pipeline.json doesn't parse"],
+  BudgetSpent: [429, "the hosted agents' budget is spent for now"],
+  AgentsUnavailable: [501, "coding agents don't run here"],
+  AgentFailed: [502, "the coding agent didn't answer"],
+} as const satisfies Record<string, readonly [number, string]>;
+export type ErrorTag = keyof typeof ERRORS;
+
+const NO_BRANCH = ["NoSuchBranch"] as const, WRITE = ["NoWriteAccess", "NoSuchBranch"] as const;
+const MERGE = [...WRITE, "BranchClosed", "BadInput", "PersonOnly", "BranchProtected", "AgentRunBatch", "Stacked", "StrandedFork", "PolicyFile",
+  "BuildFiles", "ChecksHold", "BinaryMoved", "Conflicts", "MergeBroken", "TestsFail", "HookHold"] as const;
+/** The tags each operation's own failures carry, by operationId. A reply with any other tag is a bug (test/errors.test.ts). */
+export const OP_ERRORS = {
+  start_branch: ["NoWriteAccess", "BadBranchName", "NoSuchBranch", "BranchExists"],
+  review_branch: NO_BRANCH,
+  reject_hunk: [...WRITE, "RunBranchLocked", "BranchClosed", "NoSuchChange", "BranchMoved"],
+  suggest_resolution: [...WRITE, "AgentsUnavailable", "AdminsOnly", "BadInput", "NoHarness", "NoSuchConflict", "TextOnlyMainOrBranch", "BudgetSpent", "AgentFailed"],
+  delete_branch_file: [...WRITE, "RunBranchLocked", "BranchClosed", "BadInput", "NoSuchFile"],
+  merge_branch: MERGE,
+  land: MERGE,
+  merge_clean_branches: ["NoWriteAccess", "BadInput"],
+  get_branch_hooks: [...NO_BRANCH, "PipelineInvalid"],
+  say_hook: [...WRITE, "PipelineInvalid", "NoSuchHook", "PersonOnly", "AuthorCantSay", "HookOff", "BranchClosed", "BadInput", "BranchMoved"],
+  set_mervin_learning: ["OwnerOnly", "BadInput"],
+  delete_mervin_learning: ["OwnerOnly"],
+} as const satisfies Record<string, readonly ErrorTag[]>;
+export type OpWithErrors = keyof typeof OP_ERRORS;
+
 const repo = "/repos/{owner}/{repo}";
 const filePath = { path: { ...str("the file's path in the repo, like src/app.ts"), required: true } };
 const onBranch = { branch: str("an open branch's copy of the file, instead of main's") };
@@ -414,7 +480,7 @@ const OPS: Record<string, Record<string, Op>> = {
       "One with a conflict, failing or waiting required checks, or build files without `build_ok` stays open and is listed in `skipped` with why; merge it alone with merge_branch. " +
       "`branches` limits it to those names, `car` to a merge-train car's branches (get_train): a green car's runs stand in for each of its branches', so the whole car merges without rerunning. A branch with nothing on it yet is skipped.",
     body: obj({ branches: arr(str()), car: int("a merge-train car's id"), build_ok: bool() }),
-    ok: obj({ merged: arr(str("a branch name")), skipped: arr(obj({ branch: str(), error: str(), files: arr(str("the conflicting or build files")) })) }) } },
+    ok: obj({ merged: arr(str("a branch name")), skipped: arr(obj({ branch: str(), error: str(), tag: str("why, by name: an ERRORS tag"), files: arr(str("the conflicting or build files")) })) }) } },
   [`${repo}/merge-plan`]: { get: { id: "get_merge_plan", summary: "The open branches in merge waves: each wave merges together, a branch waits for the ones before it that it clashes with", tag: "Branches",
     description: "Two branches clash when the second merges clean into main now but not once the first has landed, by codeSplitter's own merge (line ids, then the lint), so a pair it settles by itself holds nothing up. " +
       "`order` is the order merge_clean_branches takes them: oldest first, the ones whose required checks passed ahead of the ones they hold (`held`). A stacked branch waits for the one it's on. " +
@@ -544,7 +610,7 @@ const OPS: Record<string, Record<string, Op>> = {
 };
 
 const SCHEMAS: Record<string, Schema> = {
-  Error: obj({ error: str() }, ["error"]),
+  Error: obj({ error: str("what went wrong, for a person"), tag: { type: "string", enum: Object.keys(ERRORS), description: "which failure it is, to match on: the operation's `x-codesplitter-errors` lists its own (not every route sends one yet)" } }, ["error"]),
   Ok: obj({ ok: bool() }),
   Beam: obj({ id: str(), owner: str(), repo: str(), branch: str(), kind: { type: "string", enum: ["git", "codesplitter"] }, by: str(), to: { type: ["string", "null"] }, title: str(), message: str(),
     onto: obj({ sha: str(), label: str('"main", or "upstream <repo>@<branch>"') }), sha: str("the clean commit, at refs/beams/{id}: the top one of a stacked branch's"), commits: int("commits in the stack it squashed; 0 for a codeSplitter branch"),
@@ -610,6 +676,7 @@ export function openapi(origin: string) {
         security: [...(o.open ? [{}] : []), { token: [] }, { oauth: [method === "get" ? "read" : "write"] }],
         "x-codesplitter-scope": method === "get" ? "read" : "write",
         ...(o.risky && { "x-codesplitter-risky": true }),
+        ...(o.id in OP_ERRORS && { "x-codesplitter-errors": OP_ERRORS[o.id as OpWithErrors].map((tag) => ({ tag, status: ERRORS[tag][0], description: ERRORS[tag][1] })) }),
         responses: {
           [String(o.status ?? 200)]: { description: "OK", content: { "application/json": { schema: o.ok ?? ref("Ok") } } },
           400: err("bad input"), 401: err("no token, or it's expired or revoked"), 403: err("not yours to do, or the token is read-only"),
