@@ -351,3 +351,11 @@ body:has(#hud[hidden]) .hud-chooser { display: none; }
 .booktalk .wait { margin: 12px 0 0; font-style: italic; opacity: 0.75; }
 .paper .demand .ledger { display: block; margin-top: 6px; font-size: 17px; color: var(--ink-faded); text-decoration: none; }
 .paper .demand .ledger::before { content: "On you: "; }
+/* Your ground's colour (Settings, Account): 64 swatches, 8 across; a friend's is crossed out, yours ringed. Over the tome's
+   own .paper button look (tome.css), hover included. */
+.gc-acct .hues { display: grid; grid-template-columns: repeat(8, 28px); gap: 5px; }
+.gc-dialog .gc-acct .hues button[data-hue], .gc-dialog .gc-acct .hues button[data-hue]:hover:not(:disabled) { width: 28px; height: 28px; padding: 0; border: 2px solid rgba(70, 42, 18, 0.35); border-radius: 50%; background: var(--hue); cursor: pointer; transform: none; }
+.gc-dialog .gc-acct .hues button[data-hue]:hover:not(:disabled) { transform: scale(1.12); }
+.gc-dialog .gc-acct .hues button[data-hue][aria-pressed="true"] { border-color: var(--ink-b, #222); box-shadow: 0 0 0 2px var(--hue); }
+.gc-dialog .gc-acct .hues button[data-hue]:disabled { cursor: not-allowed; opacity: 0.35; background: linear-gradient(135deg, transparent 45%, #000a 45% 55%, transparent 55%), var(--hue); }
+.gc-dialog .gc-acct .hues button[data-hue]:focus-visible { outline: 2px solid var(--ink-b, #e8590c); outline-offset: 2px; }

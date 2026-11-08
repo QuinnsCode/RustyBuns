@@ -64,7 +64,8 @@ import { findTape, lightFire, sight, tapeOf, tapesFound, WITCH_CAMP } from "./wo
 import { regionsCleared, visit, WITCH } from "./witch.ts";
 import { close as closeHunt, HUNTS, stageOf, take, CLUES } from "./world/hunts.ts";
 import { FORAGE_MEND } from "./world/nature.ts";
-import { Online, roomCode } from "./net/online.ts";
+import { Online, roomCode, uid } from "./net/online.ts";
+import { COLOURS, css as hueCss, firstColour, wornColour } from "./world/hues.ts";
 import { joinParty, openParty, partyCode } from "./net/lobby.ts";
 import type { Friend } from "./world/view.ts";
 import { ARENA, head, held as holding, HZ, IDLE, swingPhase, warning, type Fighter, type Input, type Match, type V3 } from "./sim.ts";
@@ -217,8 +218,13 @@ function drawTogether() {
 /** The party's others where they are this frame, in the region you stand in. */
 const friendsNow = (o: Online, region: number, now: number): Friend[] => [...o.ghosts.values()].flatMap((g) => {
   const at = g.at(now);
-  return at && at.region === region ? [{ id: g.id, name: g.name, lead: at.lead, follow: at.follow, x: at.x, z: at.z, yaw: at.yaw }] : [];
+  return at && at.region === region ? [{ id: g.id, name: g.name, lead: at.lead, follow: at.follow, x: at.x, z: at.z, yaw: at.yaw, colour: at.colour ?? firstColour(g.id) }] : [];
 });
+/** The colour your ground hums in (world/hues.ts): the one you picked in Settings (saved per browser; until then one seeded
+ *  from this browser), unless a friend in the room was wearing it first. */
+const HUE_KEY = `${KEY}.colour`;
+let hueChosen = (() => { try { const n = Number(localStorage.getItem(HUE_KEY)); if (localStorage.getItem(HUE_KEY) !== null && Number.isInteger(n) && n >= 0 && n < COLOURS) return n; } catch { /* first visit below */ } return firstColour(uid()); })();
+const hueWorn = () => (online ? wornColour(hueChosen, online.you, online.colours()) : hueChosen);
 let pickA = creature(params.get("a") ?? "").id, pickB = creature(params.get("b") ?? ROSTER[1]?.id ?? "").id;
 if (!params.get("b") && pickB === pickA) pickB = ROSTER[1]?.id ?? pickA;
 const skinSel = $<HTMLSelectElement>("#skin");
@@ -1330,7 +1336,25 @@ function layoutRows(pane: HTMLElement) {
   return { sync: () => { presets(); box.checked = moveCardOn; drawHints(); } };
 }
 
-/** The Account tab: who is signed in through eqosys, and the way in or out. */
+/** Your ground's colour, under the Account tab: the 64 as swatches, the ones friends in your room wear taken. */
+function huePicker(pane: HTMLElement) {
+  const taken = new Set(online?.colours().flatMap((o) => (o.colour === undefined ? [] : [o.colour])) ?? []), worn = hueWorn();
+  const box = Object.assign(document.createElement("div"), { className: "hues", role: "group", ariaLabel: "Your ground's colour" });
+  box.innerHTML = Array.from({ length: COLOURS }, (_, i) => {
+    const gone = taken.has(i) && i !== worn;
+    return `<button type="button" data-hue="${i}" style="--hue:${hueCss(i)}" aria-pressed="${i === worn}"${gone ? " disabled" : ""} title="${gone ? `Colour ${i + 1}, a friend's` : `Colour ${i + 1}`}" aria-label="${gone ? `Colour ${i + 1}, a friend's` : `Colour ${i + 1}`}"></button>`;
+  }).join("");
+  box.onclick = (e) => {
+    const b = e.target instanceof Element ? e.target.closest<HTMLButtonElement>("button[data-hue]") : null;
+    if (!b || b.disabled) return;
+    hueChosen = Number(b.dataset.hue);
+    try { localStorage.setItem(HUE_KEY, String(hueChosen)); } catch { /* this session only */ }
+    box.querySelectorAll("button").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+  };
+  pane.append(Object.assign(document.createElement("p"), { textContent: "Your ground: the colour the waves round your feet hum in, which friends know you by. A colour a friend in your room wears is taken." }), box);
+}
+
+/** The Account tab: who is signed in through eqosys, and the way in or out, and your ground's colour. */
 function accountPane(pane: HTMLElement) {
   pane.classList.add("gc-acct");
   const draw = () => {
@@ -1342,6 +1366,7 @@ function accountPane(pane: HTMLElement) {
     if (signInNote) pane.insertAdjacentHTML("beforeend", `<p>${esc(signInNote)}</p>`);
     pane.querySelector("#acctIn")?.addEventListener("click", () => void signIn());
     pane.querySelector("#acctOut")?.addEventListener("click", () => { signOut(); draw(); drawAccount(); });
+    huePicker(pane);
   };
   draw();
   return { sync: draw };
@@ -1540,7 +1565,9 @@ function frame(now: number) {
     const shared = online?.clock(now);
     if (shared != null) world.share(shared); // the party's one clock: the same wilds, sun and weather for everyone
     world.update(dt * director.stage.slow, still ? new Set() : actions(), held || still ? NO_STICK : stickFinger ? touchMove : padMove, turn);
-    if (online) { const p = world.pose(); online.update(p.region, p.x, p.z, p.yaw, p.lead, now, p.follow); if (online.you) world.seat(online.you); world.friends(friendsNow(online, p.region, now), dt); }
+    const hue = hueWorn();
+    world.hue(hue);
+    if (online) { const p = world.pose(); online.update(p.region, p.x, p.z, p.yaw, p.lead, now, p.follow, hue); if (online.you) world.seat(online.you); world.friends(friendsNow(online, p.region, now), dt); }
   }
   else if (m) { const t = director.stage.freeze > 0.5 ? 0 : dt * director.stage.slow; draw(m, t); moveFx.update(t); } else if (shelf) shelf.update(dt); else if (crowdView) crowdCam(now); else { camera.position.set(Math.cos(now / 4000) * 22, 9, Math.sin(now / 4000) * 22); camera.lookAt(0, 0, 0); }
   frameShot(director.stage.shot);

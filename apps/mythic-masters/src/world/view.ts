@@ -11,7 +11,7 @@ import { NO_STICK, push, type Stick } from "../controls.ts";
 import { icon } from "../icons.ts";
 import { NIGHT, tierOf } from "../tiers.ts";
 import { Walker3d } from "./walker3d.ts";
-import { Bearer, HEIGHT, NO_ID, tileLook } from "./bearer.ts";
+import { Bearer, HEIGHT, NO_ID } from "./bearer.ts";
 import { body, creature, ROSTER, type Creature } from "../roster.ts";
 import { REGIONS, type Biome, type Region } from "../regions.ts";
 import { SECTIONS, sections } from "../journey.ts";
@@ -734,7 +734,7 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
     if (dark && !wasDark) {
       if (hooks.firstNight?.()) {
         const it = stalkerNear(open);
-        gary = { b: new Bearer("gary", group, standY, false), t: 0, x: me.x + 2, z: me.z, said: 0, it: it ? creature(it.id).name : "Jersey Devil" };
+        gary = { b: new Bearer("gary", group, standY, null), t: 0, x: me.x + 2, z: me.z, said: 0, it: it ? creature(it.id).name : "Jersey Devil" };
       } else if (!shelter) toast(`${icon("moon")} Night falls. Stay on the lit paths, or by a fire.`);
     } else if (shelter && !wasSheltered) toast(shelterLine(shelter));
     walkGary(dt, open);
@@ -816,12 +816,14 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
 
   // --- you ---------------------------------------------------------------------------------------------------
   const me = spawn(1), trekAt = newTrek(me);
-  // You are a shadowy figure carrying the Book, on your own patch of ground leaving a trail of it (bearer.ts, #3774, #3786); your whole line-up walks
+  // You are a shadowy figure carrying the Book, on your own humming ground leaving a trail of prints (bearer.ts, #3774, #3786); your whole line-up walks
   // behind you, each a few steps back along where you went.
   let followers: Walker3d[] = [], crumbs: { x: number; z: number; yaw: number }[] = [];
   /** Where a figure stands and lays its patch: the ground as drawn near you. */
   const standY = (x: number, z: number) => Math.max(patchY(near, x, z) ?? fineY(x, z), -0.6);
   let bearer: Bearer | null = null;
+  /** The colour your ground hums in (world/hues.ts), as main.ts works it out from your pick and the room's. */
+  let colour = 0;
   /** On a trail you haven't finished, past its open sections (a fresh journey, or sent home to the arena): back to the next keeper. */
   function onTrail() {
     const done = hooks.cleared(me.region), b = bandAt(me.x, me.z);
@@ -1003,7 +1005,7 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
   }
   function wear(c: Creature) {
     lead = c;
-    bearer ??= new Bearer(NO_ID, group, standY);
+    bearer ??= new Bearer(NO_ID, group, standY, colour);
     // The world is wide: a region is an hour's walk at your fighting pace and a half, half that running.
     speed = body(c).topSpeed * 1.2;
   }
@@ -1011,7 +1013,7 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
   function travel(n: number) { if (!openRegions(beaten).has(n)) return; Object.assign(me, spawn(n)); onTrail(); snap = true; look(); drawWhere(); drawMap(); arrive(regionN(n)); }
 
   // Friends walking the same region (#3663, src/net/online.ts): each one a figure with the Book like you, told apart by
-  // the ground under them (seeded from their public id), their line-up behind and their name over them.
+  // the colour and figure of the ground humming under them, their line-up behind and their name over them.
   // A frame's cost, not a hitch: a party of six is fifteen beasts, so a friend who arrives is built one a frame (FRIENDS_A_FRAME),
   // and the loop allocates nothing: a generation stamp marks who is still here, one vector projects the tags, and a tag's
   // markup is written when its name changes rather than every frame.
@@ -1041,10 +1043,11 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
         // the IK is most of a beast's frame (#3709's flame graph): a friend's line-up poses every other frame, staggered, with
         // half the iterations; yours and the wild ones keep every frame
         for (const w of team) w.lod(FRIEND_LOD.every, FRIEND_LOD.iterations);
-        o = { b: new Bearer(f.id, group, standY), lead: f.lead, tag, name: null, team, crumbs: [], seen: 0 };
+        o = { b: new Bearer(f.id, group, standY, f.colour), lead: f.lead, tag, name: null, team, crumbs: [], seen: 0 };
         friends.set(f.id, o);
       }
       o.seen = gen;
+      o.b.colour = f.colour;
       const ground = standY(f.x, f.z);
       o.b.update(f.x, ground, f.z, f.yaw);
       // Their line-up walks their trail behind them, the way yours walks yours.
@@ -1074,8 +1077,10 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
   return {
     /** Where you stand and as what, for walking together (src/net/online.ts): the region, metres, facing (0 is +x) and your lead. */
     pose: () => ({ region: me.region, x: me.x, z: me.z, yaw: facing, lead: lead?.id ?? "", follow: followers.slice(1).map((f) => f.c.id) }),
-    /** Your public id in the room (src/net/online.ts): your ground tiles are seeded from it, as your friends' pages draw them. */
-    seat(id: string) { if (bearer && bearer.id !== id) { bearer.dispose(); bearer = new Bearer(id, group, standY); } },
+    /** Your public id in the room (src/net/online.ts), as your friends' pages know you. */
+    seat(id: string) { if (bearer && bearer.id !== id) { bearer.dispose(); bearer = new Bearer(id, group, standY, colour); } },
+    /** The colour your ground hums in, one of the 64 (world/hues.ts). */
+    hue(n: number) { colour = n; if (bearer) bearer.colour = n; },
     /** Draw the friends in this region where they are now (an empty list clears them); call it once a frame after `update`. */
     friends: drawFriends,
     /** The room's clock in seconds (src/net/party.ts worldClock), before `update`: the wilds circle their dens, the sun and
@@ -1275,7 +1280,7 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
         rising: REGIONS.filter((r) => rise[r.n] !== want[r.n]).map((r) => r.n), shot: shot !== null,
         beaten: [...beaten].sort((a, b) => a - b), open: [...open].sort((a, b) => a - b),
         ground: { loaded: stream.loaded(), tiles: landStats(), patches: { near: near.at, mid: mid.at, far: far.at, dirty: [near.dirty, mid.dirty, far.dirty], lift: +lf(me.x, me.z).toFixed(3), water: +waterLevel(me.x, me.z).toFixed(2), ground: +fineY(me.x, me.z).toFixed(2), drawn: +groundY(me.x, me.z).toFixed(2) } }, section: trekAt.band, wilds: [...roamers.values()].map(({ c }) => ({ id: c.id, level: c.level, x: +c.x.toFixed(1), z: +c.z.toFixed(1) })),
-        bearer: bearer && { id: bearer.id, tiles: tileLook(bearer.id), trail: bearer.stones }, friends: [...friends].map(([id, o]) => ({ id, tiles: tileLook(id), trail: o.b.stones, team: o.team.map((t) => t.c.id) })),
+        bearer: bearer && { id: bearer.id, colour: bearer.colour, trail: bearer.stones }, friends: [...friends].map(([id, o]) => ({ id, colour: o.b.colour, trail: o.b.stones, team: o.team.map((t) => t.c.id) })),
         plants: plants.spots, far: plants.far, tufts: plants.tufts, motes: life.motes, wading: waterLevel(me.x, me.z) - fineY(me.x, me.z) > WADE, depth: +(waterLevel(me.x, me.z) - fineY(me.x, me.z)).toFixed(2),
         night: tonight && { night: tonight.night, houses: tonight.houses.map((h) => h.id), paths: tonight.paths.length, safe: +safeD.toFixed(1), dread: +dread.toFixed(2), stalker: stalker?.id ?? null, lamps: lamp[0].count, gary: gary && { t: +gary.t.toFixed(1), x: +gary.x.toFixed(1), z: +gary.z.toFixed(1), off: !!gary.to } },
         day: { hour: +L.hour.toFixed(2), dark, shelter: shelter?.id ?? null, wind: +wind(clock).toFixed(2), rain: +W.rain.toFixed(2), snow: +W.snow.toFixed(2), mist: +W.mist.toFixed(2) }, life: life.state(), places: places.state(g.n), hunts: places.hunts(g.n) };
@@ -1283,5 +1288,5 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
   };
 }
 /** A friend as the world draws them (src/net/party.ts Ghost, placed for this frame). */
-export interface Friend { id: string; name: string; lead: string; follow: readonly string[]; x: number; z: number; yaw: number }
+export interface Friend { id: string; name: string; lead: string; follow: readonly string[]; x: number; z: number; yaw: number; colour: number }
 export type WorldView = ReturnType<typeof worldView>;

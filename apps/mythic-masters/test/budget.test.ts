@@ -23,7 +23,7 @@ export const BUDGET: Record<Row["view"], { p95: number; max: number; over50: num
  * frame rate (p50 33 ms, 95 and 23 frames over 50 ms); a friend's line-up posing every other frame brought p50 back to a
  * 60 Hz frame. #3796 round 6 draws a friend's beasts merged, one mesh each (about 2 calls in place of 7), so the party adds
  * 51 calls (desktop, from 131) and 20 (phone, from 102) on the builder. Still to win (the goal in the issue: p95 under 16.7
- * and at most 12 calls more): desktop's p95 is 33 ms, and the friends' figures and ground tiles. The heap: 12 to 15 MB of 60. */
+ * and at most 12 calls more): desktop's p95 is 33 ms, and the friends' figures and humming ground. The heap: 12 to 15 MB of 60. */
 export const PARTY: Record<Row["view"], { p95: number; max: number; over50: number; calls: number; heapMB: number }> = {
   desktop: { p95: 34, max: 50, over50: 0, calls: 55, heapMB: 60 },
   phone: { p95: 34, max: 51, over50: 1, calls: 30, heapMB: 60 },

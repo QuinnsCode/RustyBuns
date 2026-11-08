@@ -378,11 +378,14 @@ describe("the wire", () => {
     expect(delta(a, quantise(5, 1234.6, 789.0, Math.PI / 2, "hodag"))).toBeNull(); // under a decimetre: nothing to send
     expect(delta(a, quantise(5, 1240, 789.01, Math.PI / 2, "hodag"))).toEqual({ x: 12400 });
     expect(JSON.stringify(delta(a, quantise(5, 1240, 790, 0, "hodag"))).length).toBeLessThan(30);
+    // the colour your ground hums in rides along, and goes out again only when you pick another
+    expect(delta(quantise(5, 1, 1, 0, "hodag", [], false, 12), quantise(5, 1, 1, 0, "hodag", [], false, 40))).toEqual({ c: 40 });
   });
 
   test.each([
     ["off the map", { x: -5 }],
     ["a creature id that isn't one", { l: "<img>" }],
+    ["a colour past the palette's 64", { c: 64 }],
     ["nothing", {}],
     ["not an object", "x=1"],
   ])("a delta with %s is refused", (_, raw) => { expect(parseDelta(raw)).toBeNull(); });
