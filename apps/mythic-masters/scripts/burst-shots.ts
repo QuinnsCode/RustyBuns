@@ -8,6 +8,8 @@
 //              swing locking near the other (its dodge and the punish after, #3511 round 3)
 //   --fly      only the winged bipeds held in flight in the gallery, from the side, flying forward at speed: two
 //              frames 0.45 s apart each (a bot fight rarely catches a flyer in the air)
+//   --hit      the heavies struck in the gallery, side on: one hard blow, frames at rest then 0.05, 0.12, 0.2 and 0.35 s
+//              after it, the same blow every run (a bot fight's hits land at random, on random bodies, at random angles)
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { ROSTER } from "../src/roster.ts";
@@ -29,11 +31,11 @@ const COMBAT: [string, string, string][] = [
   ["skirmisher", "wampus-cat", "black-shuck"],
   ["flyer", "jersey-devil", "rougarou"],
 ];
-const combat = process.argv.includes("--combat"), fly = process.argv.includes("--fly");
-const FIGHTS: [string, string, string, Cue[]][] = fly ? [] : combat
+const combat = process.argv.includes("--combat"), fly = process.argv.includes("--fly"), hit = process.argv.includes("--hit");
+const FIGHTS: [string, string, string, Cue[]][] = fly || hit ? [] : combat
   ? COMBAT.map(([s, a, b]) => [s, a, b, ["strike", "locked", "stun"]])
   : ART.map(([s, a, b, k, n]) => [s, a, b, Array<Cue>(n).fill(k)]);
-const CLOSE = fly ? ["jersey-devil", "mothman", "sasabonsam"] : combat ? [] : ["black-shuck", "rougarou", "jersey-devil"];
+const CLOSE = hit ? ["sasquatch", "hodag", "yeti", "rougarou"] : fly ? ["jersey-devil", "mothman", "sasabonsam"] : combat ? [] : ["black-shuck", "rougarou", "jersey-devil"];
 const GAP = combat ? 200 : 300, HIT_GAP = 100;
 
 const [dir, prefix = "now"] = process.argv.slice(2).filter((a) => !a.startsWith("--"));
@@ -84,7 +86,7 @@ try {
     const tab = await openTab(cdp, { w: 800, h: 800 });
     try {
       await load(cdp, tab, `${vite.url}?gallery=${Math.floor(ROSTER.findIndex((c) => c.id === id) / PAGE)}`, 1500);
-      const ok = await tab.eval<boolean>(`(async () => { const g = mythicMasters.shelf(); await g.ready(); const ok = g.focus(${JSON.stringify(id)}, ${fly ? '"side"' : '"three-quarter"'});
+      const ok = await tab.eval<boolean>(`(async () => { const g = mythicMasters.shelf(); await g.ready(); const ok = g.focus(${JSON.stringify(id)}, ${fly || hit ? '"side"' : '"three-quarter"'});
         const s = g.stands.find((x) => x.id === ${JSON.stringify(id)});
         if (${fly} && s) { s.f.flying = true; s.f.onGround = false; s.f.vel = { x: s.f.b.topSpeed * 0.8, y: 0, z: 0 }; }
         return ok; })()`);
@@ -92,6 +94,12 @@ try {
       await tab.eval(`document.querySelectorAll("#hud, button, .shelf").forEach((e) => e.style.display = "none")`);
       await Bun.sleep(fly ? 3000 : 4000);
       if (fly) for (let i = 0; i < 2; i++) { await shoot(tab, `fly-${id}-${i}`); await Bun.sleep(450); }
+      else if (hit) {
+        await shoot(tab, `hit-${id}-rest`);
+        const at = performance.now();
+        await tab.eval(`(() => { const s = mythicMasters.shelf().stands.find((x) => x.id === ${JSON.stringify(id)}); s.f.state = "stun"; s.f.stun = 22; })()`);
+        for (const [i, t] of [50, 120, 200, 350].entries()) { await Bun.sleep(Math.max(0, at + t - performance.now())); await shoot(tab, `hit-${id}-${i}`); }
+      }
       else await shoot(tab, `close-${id}`);
     } finally { await tab.close(); }
   }

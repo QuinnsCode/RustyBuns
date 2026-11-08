@@ -255,18 +255,25 @@ test("an upright beast's arms and tail hang where it stands, trail a quick turn 
   expect(trail()).toBeLessThan(0.02 * h);
 }, 30_000);
 
-test("a heavy blow flattens the struck body front to back, which rebounds past its length and settles", async () => {
+test("a heavy blow flattens the struck body front to back and curls it over the blow, then it rebounds and settles", async () => {
   const c = ROSTER.find((x) => x.id === "hodag")!;
   const p = new Puppet(await beast(c.id), body(c), c.archetype);
   const f = newMatch(c, c).f[0];
   f.pos = { x: 0, y: 0, z: 0 }; f.vel = { x: 0, y: 0, z: 0 }; f.yaw = 0; f.onGround = true;
   const span = () => p.headWorld()[0]!.x - p.tailWorld()!.x;
+  // how far the head stands above the tail: a body tipping back as one rigid block see-saws it, head up and tail down
+  const tip = () => p.headWorld()[0]!.y - p.tailWorld()!.y;
   for (let i = 0; i < 60; i++) p.update(f, 1 / 60, i);
-  const rest = span();
-  let least = Infinity, most = -Infinity;
+  const rest = span(), level = tip();
+  let least = Infinity, most = -Infinity, seesaw = 0;
   f.state = "stun"; f.stun = 22;
-  for (let i = 60; i < 120; i++) { f.stun = Math.max(0, f.stun - 1); if (f.stun === 0) f.state = "free"; p.update(f, 1 / 60, i); least = Math.min(least, span()); if (i > 75) most = Math.max(most, span()); }
+  for (let i = 60; i < 120; i++) {
+    f.stun = Math.max(0, f.stun - 1); if (f.stun === 0) f.state = "free"; p.update(f, 1 / 60, i);
+    least = Math.min(least, span()); if (i > 75) most = Math.max(most, span()); if (i < 72) seesaw = Math.max(seesaw, tip() - level);
+  }
   expect(least).toBeLessThan(rest * 0.88);
+  // inside 0.2 s, on the hit's flash, the body folds around the blow instead (without the curl it see-saws 0.6 of its height)
+  expect(seesaw).toBeLessThan(body(c).height * 0.4);
   expect(most).toBeGreaterThan(rest * 1.03);
   for (let i = 120; i < 300; i++) p.update(f, 1 / 60, i);
   expect(Math.abs(span() - rest)).toBeLessThan(rest * 0.03);
