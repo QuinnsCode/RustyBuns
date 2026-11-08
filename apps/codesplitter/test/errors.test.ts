@@ -83,6 +83,42 @@ test("each branch route's failure comes back as the tag it declares", async () =
   expect(swept).toMatchObject({ skipped: [{ branch: "gone", tag: "NoSuchBranch" }] });
 });
 
+test("each worker.ts route's failure comes back as the tag it declares", async () => {
+  const call = await boot();
+  opened.push(call);
+  const as = (user: string) => codesplitter({ url: ORIGIN, retries: 0, send: async (r) => call(user, r.url.slice(ORIGIN.length), { method: r.method, headers: r.headers, ...(r.body && { body: await r.text() }) }) });
+  const post = (u: string, url: string, body: unknown, method = "POST") => call(u, url, { method, body: JSON.stringify(body) });
+  for (const u of ["ana", "bo", "cy"]) await post(u, "/api/login", { name: u });
+  expect((await post("ana", "/api/repos", { name: "lab" })).status).toBe(201);
+  expect((await post("ana", "/api/repos", { name: "hid", visibility: "private" })).status).toBe(201);
+  expect((await post("ana", "/api/repos/ana/lab/files", { path: "a.ts", content: "export const a = 1;" })).status).toBe(201);
+  await post("ana", "/api/repos/ana/lab/collaborators", { name: "bo" });
+  await post("ana", "/api/repos/ana/lab/protect", { on: true }, "PUT");
+  const ana = as("ana"), bo = as("bo"), cy = as("cy"), at = { owner: "ana", repo: "lab" };
+
+  const cases: [string, Effect.Effect<unknown, Failure<OpWithErrors>>, string][] = [
+    ["a profile nobody has", ana.call("get_user", { name: "nobody" }), "NoSuchUser"],
+    ["a repo name that won't do", ana.call("create_repo", { body: { name: "a b" } }), "BadInput"],
+    ["a private repo you can't see", cy.call("get_repo", { owner: "ana", repo: "hid" }), "NoSuchRepo"],
+    ["visibility, not the owner", bo.call("set_repo_visibility", { ...at, body: { visibility: "private" } }), "OwnerOnly"],
+    ["deleting, confirmed with the wrong name", ana.call("delete_repo", { ...at, confirm: "lb" }), "BadInput"],
+    ["inviting a handle nobody has", ana.call("invite", { ...at, body: { name: "nobody" } }), "NoSuchUser"],
+    ["removing someone not in the crew", ana.call("remove_collaborator", { ...at, name: "cy" }), "NotInCrew"],
+    ["adding a file off the crew", cy.call("add_file", { ...at, body: { path: "b.ts", content: "b" } }), "NoWriteAccess"],
+    ["adding a file that's there", ana.call("add_file", { ...at, body: { path: "a.ts", content: "a" } }), "FileExists"],
+    ["adding onto a branch that isn't open", ana.call("add_file", { ...at, body: { path: "b.ts", content: "b", branch: "nope" } }), "NoSuchBranch"],
+    ["reading a file that isn't there", ana.call("read_file", { ...at, path: "zz.ts" }), "NoSuchFile"],
+    ["the crew, editing protected main", bo.call("edit_lines", { ...at, path: "a.ts", body: { ops: [] } }), "MainProtected"],
+    ["searching a repo you can't see", cy.call("search_code", { q: "a", repo: "ana/hid" }), "NoSuchRepo"],
+    ["a collection with no title", ana.call("create_collection", { body: { title: " " } }), "BadInput"],
+    ["a collection nobody made", ana.call("get_collection", { id: 999 }), "NoSuchCollection"],
+    ["adding to someone else's collection", ana.call("collect_lines", { id: 999, body: { owner: "ana", repo: "lab", path: "a.ts", from: 1, to: 1 } }), "NotYourCollection"],
+  ];
+  const got = [];
+  for (const [why, e, want] of cases) got.push([why, await tagOf(e), want]);
+  expect(got.filter(([, tag, want]) => tag !== want)).toEqual([]);
+});
+
 test("a reply the route didn't declare, a rate limit and a 5xx come back as the common failures", async () => {
   const tags = (id: string, status: number, reply: unknown, retry?: string): [string, number | undefined] => { const f = failure(id, status, reply, retry); return [f._tag, "retryAfter" in f ? f.retryAfter : undefined]; };
   expect([

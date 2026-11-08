@@ -56,6 +56,20 @@ export class PipelineInvalid extends Schema.TaggedError<PipelineInvalid>()("Pipe
 export class BudgetSpent extends Schema.TaggedError<BudgetSpent>()("BudgetSpent", named) {}
 export class AgentsUnavailable extends Schema.TaggedError<AgentsUnavailable>()("AgentsUnavailable", named) {}
 export class AgentFailed extends Schema.TaggedError<AgentFailed>()("AgentFailed", named) {}
+export class MainProtected extends Schema.TaggedError<MainProtected>()("MainProtected", named) {}
+export class NotYourCollection extends Schema.TaggedError<NotYourCollection>()("NotYourCollection", named) {}
+export class NoSuchRepo extends Schema.TaggedError<NoSuchRepo>()("NoSuchRepo", named) {}
+export class NoSuchUser extends Schema.TaggedError<NoSuchUser>()("NoSuchUser", named) {}
+export class NotInCrew extends Schema.TaggedError<NotInCrew>()("NotInCrew", named) {}
+export class NoPushClash extends Schema.TaggedError<NoPushClash>()("NoPushClash", named) {}
+export class NoSuchCollection extends Schema.TaggedError<NoSuchCollection>()("NoSuchCollection", named) {}
+export class NoSuchRoute extends Schema.TaggedError<NoSuchRoute>()("NoSuchRoute", named) {}
+export class NoGit extends Schema.TaggedError<NoGit>()("NoGit", named) {}
+export class PushClash extends Schema.TaggedError<PushClash>()("PushClash", named) {}
+export class HoldingLines extends Schema.TaggedError<HoldingLines>()("HoldingLines", named) {}
+export class TooBig extends Schema.TaggedError<TooBig>()("TooBig", named) {}
+export class BinaryFile extends Schema.TaggedError<BinaryFile>()("BinaryFile", named) {}
+export class NoEuStorage extends Schema.TaggedError<NoEuStorage>()("NoEuStorage", named) {}
 
 type Named = { message: string; status: number; reply: unknown };
 /** One class per tag the server sends: a tag added to ERRORS without one here won't compile. */
@@ -64,6 +78,8 @@ export const NAMED = {
   RunBranchLocked, AuthorCantSay, AdminsOnly, PolicyFile, NoSuchBranch, NoSuchFile, NoSuchChange, NoSuchConflict, NoSuchHook,
   BranchExists, FileExists, BranchClosed, BranchMoved, Stacked, StrandedFork, BuildFiles, ChecksHold, BinaryMoved, Conflicts,
   MergeBroken, TestsFail, HookHold, HookOff, NothingToMerge, PipelineInvalid, BudgetSpent, AgentsUnavailable, AgentFailed,
+  MainProtected, NotYourCollection, NoSuchRepo, NoSuchUser, NotInCrew, NoPushClash, NoSuchCollection, NoSuchRoute, NoGit, PushClash,
+  HoldingLines, TooBig, BinaryFile, NoEuStorage,
 } satisfies { [K in ErrorTag]: new (a: Named) => { readonly _tag: K } };
 
 // What any call can meet, whatever the operation: they come from before a route answers, or from no answer at all.
