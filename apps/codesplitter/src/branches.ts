@@ -33,7 +33,7 @@ import { changedLines, isBuildFile } from "./buildfiles.ts";
 import { branchEdited, mergeBlock, refChecks, waiting } from "./checks.ts";
 import { settings as deploySettings } from "./deploy.ts";
 import { branchNameError, json, type Env, need, readBody } from "./env.ts";
-import { arr, Bad, bool, check, maybe, num, obj, oneOf, opt, rec, str } from "@rustybuns/util/guard";
+import { arr, Bad, bool, check, maybe, num, obj, oneOf, opt, raw, rec, str } from "@rustybuns/util/guard";
 import { byToken } from "./tokens.ts";
 import { emit } from "./hooks.ts";
 import { diffToOps, keptPairs } from "./sync.ts";
@@ -427,6 +427,8 @@ async function checkedAnswer(env: Env, owner: string, repo: string, branch: Bran
 
 /** Conflicts one merge asks a coding agent about on its own, at most: each is a run on the site's budget. */
 export const MAX_ASKED = 3;
+/** What `GET .../branches/:b/hunks` answers, as far as a waiting agent run passes it on: the file's hunks and the branch's other files. */
+export const HunksReply = obj({ hunks: arr(raw, Infinity), others: opt(arr(raw, Infinity)) });
 
 /** Which conflict an answer was for: the same line in another conflict needs another answer. */
 async function conflictKey(c: Conflict) {
@@ -1257,7 +1259,7 @@ export async function branchRoutes(req: Request, env: Env, p: string[], owner: s
     return json({ ...branch, deploys: (await deploySettings(env, owner, repo)).on_commit, checks: await refChecks(env, owner, repo, name), files: out, ...(followed?.moved.length && { moved: followed.moved }), ...(followed?.left.length && { stranded: followed.left }) });
   }
 
-  // GET /api/repos/:o/:r/branches/:b/hunks?path=  what the branch changed in one file, as hunks against where it forked.
+  // GET /api/repos/:o/:r/branches/:b/hunks?path=  (its reply is HunksReply)  what the branch changed in one file, as hunks against where it forked.
   if (p[6] === "hunks" && !p[7] && req.method === "GET") {
     const path = new URL(req.url).searchParams.get("path") ?? "";
     const all = await files(), f = all.find((x) => x.path === path && !x.merged && !x.deleted && !x.blob);

@@ -59,15 +59,17 @@ import { HARNESSES, HOSTED_HARNESSES, RUNS_COMMANDS, blenderMcpFor, harnessComma
 import { Interrupted, localSandbox, runAgent, type Conflict, type Exec, type Given, type Sandbox } from "./agent-run.ts";
 import { containerSandbox, LOGINS } from "./sandbox.ts";
 import { agentGithubToken } from "./github.ts";
-import { toFile } from "./archive.ts";
-import { MERGE_CONFLICTS, text, type Doc } from "./lines.ts";
-import { bool, check, obj, oneOf, opt, str } from "@rustybuns/util/guard";
+import { docIn, toFile } from "./archive.ts";
+import { ClaimRefused } from "./file-do.ts";
+import { MERGE_CONFLICTS, text } from "./lines.ts";
+import { arr, bool, check, num, obj, oneOf, opt, str, type Of } from "@rustybuns/util/guard";
+import { readJson } from "@rustybuns/util/http";
 import { FILE_MAX, SAY_CHARS, keepIn, sayIn, threadFetch, threadFiles, threadLasts, threadMessages, threadRun, threadSay, threadSession, keepSession, transcript, type Message, type RunCard } from "./thread-do.ts";
 import { askOwner, seeThread } from "./mentions.ts";
 import { policyOf, type Over, type Policy } from "./policy.ts";
 import { HANDOFFS, handoffTask, noteFor, short } from "./budget.ts";
 import { cheapest } from "./conflict-agent.ts";
-import { branchHash, dispatchHint } from "./branches.ts";
+import { branchHash, dispatchHint, HunksReply } from "./branches.ts";
 import type { Busy } from "@rustybuns/util/overlap";
 import { MERVIN } from "./mervin.ts";
 import { readStats } from "./stats.ts";
@@ -137,7 +139,9 @@ export interface Run {
 }
 
 /** Something someone on the crew told a running agent, and who (`by`; notes from before #3711 have none). */
-export interface Note { text: string; at: number; by?: string }
+export const Note = obj({ text: str(Infinity, { min: 0 }), at: num(0, Number.MAX_SAFE_INTEGER), by: opt(str(200)) });
+export type Note = Of<typeof Note>;
+const Notes = arr(Note, Infinity);
 /** A note as the agent reads it: who said it first, since the crew share a run (#3711). */
 export const said = (n: Note) => n.by ? `@${n.by}: ${n.text}` : n.text;
 
@@ -242,7 +246,8 @@ export async function hostedBudget(env: Env): Promise<Response | null> {
 /** `path`'s policy, from main's `.gitattributes` over the defaults, read as its owner. */
 export async function policyFor(env: Env, owner: string, repo: string, path: string): Promise<Policy> {
   const res = await toFile(env, owner, repo, ".gitattributes", owner, "file").catch(() => null);
-  return policyOf(path, res?.ok ? text(await res.json() as Doc) : "");
+  const doc = res?.ok ? await docIn(res) : null;
+  return policyOf(path, doc ? text(doc) : "");
 }
 
 /** Why no agent edits `path`: `.gitattributes` locks it (a lockfile, or `codesplitter-live=locked`). */
@@ -616,7 +621,7 @@ async function waitingOn(env: Env, self: (req: Request) => Promise<Response>, ur
     const p = resultOf(r).pending;
     return p ? [(async () => {
       const res = await call(user, `/api/repos/${owner}/${repo}/branches/${encodeURIComponent(p.branch)}/hunks?path=${encodeURIComponent(path)}`);
-      const got = res.ok ? ((await res.json()) as { hunks: unknown[]; others?: unknown[] }) : null;
+      const got = res.ok ? await readJson(res, HunksReply) : null;
       return { id: r.id, agent: r.agent, started: r.started, pending: p, hunks: got?.hunks ?? [], others: got?.others ?? [] };
     })()] : [];
   }));
@@ -676,7 +681,7 @@ async function land(env: Env, self: (req: Request) => Promise<Response>, origin:
     return json({ landed: true, kept });
   }
   // Not now: it waits, held, saying why.
-  const why = ((await res.json().catch(() => ({}))) as { error?: string }).error ?? `merge: ${res.status}`;
+  const why = (await readJson(res, ClaimRefused))?.error ?? `merge: ${res.status}`;
   await env.DB.prepare("UPDATE agent_runs SET result = ? WHERE id = ?").bind(JSON.stringify({ ...rest, pending: { ...p, until: null, why } }), id).run();
   return json({ error: why, held: true }, 409);
 }
@@ -825,7 +830,7 @@ async function execute(env: Env, self: (req: Request) => Promise<Response>, orig
     const read = (async () => {
       const r = await env.DB.prepare("SELECT status, notes FROM agent_runs WHERE id = ?").bind(id).first<Pick<Row, "status" | "notes">>();
       if (r?.status !== "running") stopper.abort();
-      return r ? JSON.parse(r.notes) as Note[] : [];
+      return r ? check(Notes, parseJson<unknown>(r.notes, null)) ?? [] : [];
     })();
     peeked = { at: Date.now(), read };
     read.catch(() => { if (peeked?.read === read) peeked = null; });

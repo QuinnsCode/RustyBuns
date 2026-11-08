@@ -22,8 +22,10 @@
 
 import { esc } from "./util.ts";
 import { json, readBody, type Env } from "./env.ts";
-import { toFile } from "./archive.ts";
-import type { Applied, Line, Op } from "./lines.ts";
+import { docIn, toFile } from "./archive.ts";
+import { FileDoc, FileReply, LogReply } from "./file-do.ts";
+import { readJson } from "@rustybuns/util/http";
+import type { Op } from "./lines.ts";
 import { repoRow, live } from "./repos.ts";
 /** The public repo whose files are the page. */
 export const PAGE_REPO = "page";
@@ -105,7 +107,7 @@ async function repoFile(env: Env, name: string, path: string) {
   if (!(await hasPage(env, name))) return null;
   const res = await toFile(env, name, PAGE_REPO, path, "anon", "file", { headers: { "x-codesplitter-crew": "0" } }).catch(() => null);
   if (!res?.ok) return null;
-  const doc = await res.json().catch(() => null) as { lines?: { text: string }[] } | null;
+  const doc = await readJson(res, FileReply);
   return doc?.lines?.length ? doc.lines.map((l) => l.text).join("\n") : null;
 }
 
@@ -115,7 +117,7 @@ async function pageVersion(env: Env, name: string) {
   const { results } = await env.DB.prepare("SELECT path FROM files WHERE owner = ? AND repo = ? ORDER BY path").bind(name, PAGE_REPO).all<{ path: string }>();
   const revs = await Promise.all(results.map(async ({ path }) => {
     const res = await toFile(env, name, PAGE_REPO, path, "anon", "file", { headers: { "x-codesplitter-crew": "0" } }).catch(() => null);
-    return `${path}:${res?.ok ? ((await res.json().catch(() => null)) as { rev?: number } | null)?.rev ?? 0 : 0}`;
+    return `${path}:${res?.ok ? (await readJson(res, FileDoc))?.rev ?? 0 : 0}`;
   }));
   return revs.join(" ");
 }
@@ -232,12 +234,11 @@ renderer.setAnimationLoop((t) => { towers.forEach((m, i) => (m.rotation.y = t / 
 `,
 };
 
-const asDoc = async (res: Response) => (await res.json()) as { lines: Line[] };
-
 /** Make `path` in the owner's page repo say `content` ("" empties it), as edits: its lines go, the new ones come in at the top, last first. */
 async function setText(env: Env, owner: string, path: string, content: string) {
   await env.DB.prepare("INSERT OR IGNORE INTO files (owner, repo, path) VALUES (?, ?, ?)").bind(owner, PAGE_REPO, path).run();
-  const now = await asDoc(await toFile(env, owner, PAGE_REPO, path, owner, "file"));
+  const now = await docIn(await toFile(env, owner, PAGE_REPO, path, owner, "file"));
+  if (!now) throw new Error(`${path}: the page repo's copy isn't a lines doc`);
   if (now.lines.map((l) => l.text).join("\n") === content) return false;
   const ops: Op[] = now.lines.map((l) => ({ kind: "delete", line: l.id, base: l.rev }));
   if (content) for (const text of content.split("\n").reverse()) ops.push({ kind: "insert", after: null, text });
@@ -251,14 +252,16 @@ async function textAt(env: Env, owner: string, path: string, cutoff: number) {
   for (let i = 0; i < 100; i++) {
     const res = await toFile(env, owner, PAGE_REPO, path, owner, "log", {}, `?since=${since}`);
     if (!res.ok) return null;
-    const page = (await res.json()) as { ops: Applied[]; next: number | null };
+    const page = await readJson(res, LogReply);
+    if (!page) return null;
     for (const o of page.ops) if (o.at <= cutoff) rev = Math.max(rev, o.rev);
     if (page.next == null || page.next <= since) break;
     since = page.next;
   }
   if (!rev) return "";
   const res = await toFile(env, owner, PAGE_REPO, path, owner, "at", {}, `?rev=${rev}`);
-  return res.ok ? (await asDoc(res)).lines.map((l) => l.text).join("\n") : null;
+  const doc = res.ok ? await docIn(res) : null;
+  return doc ? doc.lines.map((l) => l.text).join("\n") : null;
 }
 
 export const HOUR_MS = 3_600_000;
