@@ -230,7 +230,7 @@ const OPS: Record<string, Record<string, Op>> = {
   },
   [`${repo}/git-state`]: { get: { id: "get_git_state", summary: "Where the repo's git stands: mirror, push, pull, uncommitted files, clashes", tag: "Repos", open: true,
     description: "What the git bar on the repo page shows, in one answer: the mirror's state and how far ahead or behind it is, files committed here that git hasn't taken yet, files with edits no commit has taken, and any mirror or push clash.",
-    ok: obj({ mirror: { description: "null when the repo isn't mirrored: {url, branch, state, pullOnly, primary, held, ahead, behind, syncedAt, downSince, error}" }, dug: { description: "for a repo dug from GitHub and not mirrored: {moved, behind, heardAt}; else null" },
+    ok: obj({ mirror: { description: "null when the repo isn't mirrored: {url, branch, state, pullOnly, primary, held, ahead, behind, syncedAt, downSince, error, upstream: {who, behind, ahead, line, says}, upstream's side said plainly, e.g. \"GitHub is behind by 3 commits\"}" }, dug: { description: "for a repo dug from GitHub and not mirrored: {moved, behind, heardAt}; else null" },
       uncommitted: obj({ count: int(), files: arr(obj({ path: str(), since: int() })) }), waitingForGit: arr(str()), gitError: { type: ["string", "null"] },
       conflicts: obj({ mirror: { description: "{state, files} on a clash or rewrite; else null" }, push: arr(str()) }) }) } },
   [`${repo}/try`]: {
