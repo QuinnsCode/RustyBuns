@@ -83,6 +83,7 @@ import { emit } from "./hooks.ts";
 import { LOCKFILES as LOCKFILE_NAMES } from "./lockfiles.ts";
 import { NEED_LABEL, imageCaps, scanNeeds, needsText, type Need } from "./needs.ts";
 import type { RepoRef } from "./repos";
+import type { LaneCall } from "./pipeline.ts";
 
 export const RUNNERS = ["desktop", "container", "github", "external"] as const;
 export const STATUSES = ["queued", "running", "passed", "failed", "cancelled"] as const;
@@ -251,12 +252,13 @@ export async function updateRun(env: Env, run: CheckRun, u: { status?: Status; l
 
 /**
  * Something new to check on `ref` at `sha` (a commit to main, a branch pushed or
- * pulled): queue our own checks if they run here, and watch GitHub's if they run there.
+ * pulled): queue our own checks if they run here, and watch GitHub's if they run there. `files`, when
+ * known, are what the change touched: a pipeline's lanes call on them, and on main their counts move on.
  */
-export async function startChecks(env: Env, owner: string, repo: string, ref: string, sha: string, by: string) {
+export async function startChecks(env: Env, owner: string, repo: string, ref: string, sha: string, by: string, files?: string[]) {
   try {
     const s = await checkSettings(env, owner, repo);
-    if (s.here) await queueHere(env, owner, repo, ref, sha, by, s.where === "github" ? "GitHub is down, so this runs here instead. GitHub's checks run when the mirror catches up.\n" : "");
+    if (s.here) await queueHere(env, owner, repo, ref, sha, by, s.where === "github" ? "GitHub is down, so this runs here instead. GitHub's checks run when the mirror catches up.\n" : "", false, undefined, files);
     if ((s.where === "github" || s.where === "both") && s.github) await watchGithub(env, owner, repo, ref, sha);
   } catch {
     // Checks never get in the way of what happened.
@@ -405,6 +407,27 @@ export async function planChecks(env: Env, owner: string, repo: string, ref: str
 }
 
 /**
+ * What a change touching `paths` queues on `ref`. With a pipeline file on main (pipeline-lanes.ts), only the lanes whose
+ * call is run or depart: a lane's own command as a check of its name, or, with none, the repo's own checks (planChecks);
+ * the required checks with a command go too, since a merge waits on them. Without a file, unknown paths (a Run on main,
+ * upstream's commits) or pinned, planChecks as it is. `calls` is each lane's call, for the note on a run and the counts.
+ */
+export async function planLanes(env: Env, owner: string, repo: string, ref: string, s: { required: Required[]; pinned: boolean }, paths: string[] | null):
+  Promise<{ checks: { name: string; command?: string; why?: string }[]; calls: LaneCall[] | null }> {
+  const lanes = paths && !s.pinned ? await (await import("./pipeline-lanes.ts")).laneCalls(env, owner, repo, paths) : null;
+  if (!lanes) return { checks: await planChecks(env, owner, repo, ref, s.required, paths, s.pinned), calls: null };
+  const go = lanes.filter(({ call }) => call.go === "run" || call.go === "depart");
+  const checks = new Map<string, { name: string; command?: string; why?: string }>();
+  for (const r of requiredFor(s.required.filter((r) => r.command && r.name !== "*"), paths)) checks.set(r.name, { name: r.name, command: r.command });
+  for (const { lane, call } of go) {
+    const why = `lane ${lane.name} (${lane.cadence}): ${call.why}\n`;
+    if (lane.run) { if (!checks.has(lane.name)) checks.set(lane.name, { name: lane.name, command: lane.run, why }); }
+    else if (!call.ai) for (const c of await planChecks(env, owner, repo, ref, s.required, paths)) if (!checks.has(c.name)) checks.set(c.name, { ...c, why });
+  }
+  return { checks: [...checks.values()], calls: lanes.map((l) => l.call) };
+}
+
+/**
  * Our own checks on `ref` at `sha`, on this machine or in a container, for a runner to
  * claim: what planChecks says the ref's changes call for. One that's queued or running
  * already isn't queued again; after an edit, one queued at all on the ref isn't. A new
@@ -428,7 +451,7 @@ export async function handToDesktop(env: Env, run: CheckRun, tool: Need) {
 export const RUN_ON = ["desktop", "hosted"] as const;
 export type RunOn = (typeof RUN_ON)[number];
 
-async function queueHere(env: Env, owner: string, repo: string, ref: string, sha: string, by: string, why = "", edit = false, on?: RunOn) {
+async function queueHere(env: Env, owner: string, repo: string, ref: string, sha: string, by: string, why = "", edit = false, on?: RunOn, files?: string[]) {
   const runner: Runner = on === "desktop" ? "desktop" : on === "hosted" || env.CI_RUNNER || typeof Bun === "undefined" ? "container" : "desktop";
   const s = await checkSettings(env, owner, repo);
   if (!edit) {
@@ -436,7 +459,10 @@ async function queueHere(env: Env, owner: string, repo: string, ref: string, sha
     const { results } = await env.DB.prepare("SELECT * FROM check_runs WHERE owner = ? AND repo = ? AND ref = ? AND (sha != ? OR ?) AND runner IN ('desktop', 'container') AND status = 'queued'").bind(owner, repo, ref, sha, on ? 1 : 0).all<CheckRun>();
     for (const old of results) await updateRun(env, old, { status: "cancelled", append: old.sha === sha ? `\n@${by} sent it ${on === "hosted" ? "to the hosted container" : "to the desktop or a runner of their own"} instead: cancelled\n` : `\n${sha.slice(0, 12)} came along before a runner did: cancelled\n` }, by);
   }
-  for (const { name, command } of await planChecks(env, owner, repo, ref, s.required, await touched(env, owner, repo, ref), s.pinned)) {
+  const { checks, calls } = await planLanes(env, owner, repo, ref, s, files ?? await touched(env, owner, repo, ref));
+  // A change that landed on main moves each lane's count on; a branch's checks only read them (pipeline-lanes.ts).
+  if (calls && ref === "main" && files) await (await import("./pipeline-lanes.ts")).keepCounts(env, owner, repo, calls);
+  for (const { name, command, why: lane } of checks) {
     const live = edit
       ? await env.DB.prepare("SELECT 1 FROM check_runs WHERE owner = ? AND repo = ? AND ref = ? AND name = ? AND runner IN ('desktop', 'container') AND status = 'queued'").bind(owner, repo, ref, name).first()
       : await env.DB.prepare("SELECT 1 FROM check_runs WHERE owner = ? AND repo = ? AND ref = ? AND sha = ? AND name = ? AND runner != 'github' AND status IN ('queued', 'running')").bind(owner, repo, ref, sha, name).first();
@@ -446,7 +472,7 @@ async function queueHere(env: Env, owner: string, repo: string, ref: string, sha
     const run = await recordRun(env, { owner, repo, ref, sha, name, runner: needs.length ? "desktop" : runner, command }, by);
     const note = needs.length ? `${needsText(needs)} Needs desktop: ${HANDED} or a runner of your own (scripts/runner.ts).\n` : "";
     const pusher = by !== owner && by !== "upstream" && by !== "codesplitters" ? PUSHED(by) : "";
-    if (pusher || why || note) await env.DB.prepare("UPDATE check_runs SET log = ? WHERE id = ?").bind(pusher + why + note, run.id).run();
+    if (pusher || why || lane || note) await env.DB.prepare("UPDATE check_runs SET log = ? WHERE id = ?").bind(pusher + why + (lane ?? "") + note, run.id).run();
   }
   await (await import("./ci-runner.ts")).kick(env, owner, repo).catch(() => null);
 }

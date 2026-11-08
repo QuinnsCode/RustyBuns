@@ -241,7 +241,7 @@ export async function commitMain(env: Env, owner: string, repo: string, user: st
       head_commit: { id: git.commit, message, timestamp: new Date().toISOString(), author: { name: user, username: user }, ...made },
     });
     await deployOnCommit(env, owner, repo, user);
-    await startChecks(env, owner, repo, "main", git.commit, user);
+    await startChecks(env, owner, repo, "main", git.commit, user, [...made.added, ...made.modified, ...made.removed]);
     await kickMirror(env, owner, repo);
   }
   return git;

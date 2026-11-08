@@ -44,10 +44,10 @@ test("a repo's pipeline file sets its road, and a bad one says which field", asy
 
   expect((await road("files=a.ts")).source).toBe("default");
   await post(call, "ana", "/api/repos/ana/r/files", { path: "codesplitter.pipeline.json", content: JSON.stringify(EXAMPLE_PIPELINE, null, 2) });
-  const r = await road("files=src/a.ts&counts=stress:1");
+  const r = await road("files=src/a.ts");
   expect(r.source).toBe("codesplitter.pipeline.json");
   expect(r.plan.map((s) => s.at)).toContain("before-ester");
-  expect(r.counts.stress).toBe(2);
+  expect(r.counts.stress).toBe(1);
 
   const bad = await post(call, null, "/api/pipeline", { pipeline: { lanes: [{ name: "x", cadence: "sometimes" }] }, change: { files: [] } });
   expect(bad.status).toBe(400);
@@ -99,4 +99,51 @@ test("the hooks run at a merge: an AI's nay holds it with the reason, an edit as
   expect((await post(call, "ana", "/api/repos/ana/r/branches/b1/hooks/after-ester", { say: "yay", hash: again.hash })).status).toBe(200);
   expect((await merge()).status).toBe(200);
   expect(await (await call("ana", "/api/repos/ana/r/do/file?path=a.ts")).json()).toMatchObject({ lines: [{ text: "x(5);" }] });
+});
+
+test("lanes drive the checks: a commit queues only the lanes it calls for, and the repo keeps each lane's count", async () => {
+  const call = await local({ GH_CLI: "off" });
+  const R = "/api/repos/ana/r";
+  await post(call, "ana", "/api/login", { name: "ana" });
+  await post(call, "ana", "/api/repos", { name: "r" });
+  await call("ana", `${R}/checks/settings`, { method: "PUT", body: JSON.stringify({ where: "here" }) });
+  await post(call, "ana", `${R}/files`, { path: "codesplitter.pipeline.json", content: JSON.stringify({ lanes: [
+    { name: "unit", cadence: "always", paths: ["src/**"], run: "bun test" },
+    { name: "stress", cadence: "often", every: 2, paths: ["src/**"], run: "bun run stress" },
+    { name: "docs", cadence: "bus", seats: 5, paths: ["**/*.md"] },
+  ] }) });
+  await post(call, "ana", `${R}/do/commit?path=codesplitter.pipeline.json`, { message: "pipeline" });
+  type Run = { id: number; name: string; status: string };
+  const runsOn = async (ref: string) => ((await (await call("ana", `${R}/checks?ref=${ref}`)).json()) as { runs: Run[] }).runs;
+  const commit = async (path: string, content: string) => {
+    await post(call, "ana", `${R}/files`, { path, content });
+    expect((await post(call, "ana", `${R}/do/commit?path=${path}`, { message: path })).status).toBe(200);
+    // A commit cancels the runs still queued on the one before it: what's left is what this one queued.
+    return (await runsOn("main")).filter((r) => r.status !== "cancelled");
+  };
+  /** What each lane's count becomes after a change to `file`, from the counts the repo keeps. */
+  const after = async (file: string) => ((await (await call("ana", `${R}/pipeline?files=${file}`)).json()) as { counts: Record<string, number> }).counts;
+
+  // The first change to src/: unit runs, stress owes its run (1 of every 2), the docs bus doesn't stop.
+  const first = await commit("src/a.ts", "a");
+  expect(first.map((r) => r.name)).toEqual(["unit"]);
+  const unit = (await (await call("ana", `${R}/checks/${first[0]!.id}`)).json()) as { command: string; log: string };
+  expect(unit.command).toBe("bun test");
+  expect(unit.log).toContain("lane unit (always): touches src/a.ts");
+  // GET .../pipeline reads the kept counts: the next src/ change is stress's 2nd, so it would run and start again.
+  expect(await after("src/x.ts")).toEqual({ unit: 0, stress: 0 });
+
+  // A docs change takes a seat and queues nothing.
+  expect(await commit("README.md", "hi")).toEqual([]);
+  // A branch's checks go by the same counts (its src/ edit is stress's 2nd) but don't move them: only main does.
+  await post(call, "ana", `${R}/branches`, { name: "b1" });
+  const doc = (await (await call("ana", `${R}/do/file?path=src/a.ts&branch=b1`)).json()) as { lines: { id: string; rev: number }[] };
+  await post(call, "ana", `${R}/do/ops?path=src/a.ts&branch=b1`, { ops: [{ kind: "set", line: doc.lines[0]!.id, base: doc.lines[0]!.rev, text: "A" }] });
+  for (const end = performance.now() + 10_000; !(await runsOn("b1")).length && performance.now() < end;) await Bun.sleep(10);
+  expect((await runsOn("b1")).map((r) => r.name).sort()).toEqual(["stress", "unit"]);
+  expect(await after("README.md")).toEqual({ unit: 0, stress: 1, docs: 2 });
+
+  // The second src/ change on main: stress's turn comes, and it starts again at 0.
+  expect((await commit("src/b.ts", "b")).map((r) => r.name).sort()).toEqual(["stress", "unit"]);
+  expect(await after("README.md")).toEqual({ unit: 0, stress: 0, docs: 2 });
 });
