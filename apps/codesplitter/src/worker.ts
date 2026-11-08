@@ -932,7 +932,7 @@ async function route(req: Request, env: Env): Promise<Response> {
           // A token (a prompt-injected agent may hold one) is not the owner reading it, so its commits wait for an approval.
           if (user === owner && !byToken(req) && !user.startsWith("agent-") && git.deployCommit && commit.writers?.every((w) => w === owner)) await clearOwn(env, owner, repo, git.deployCommit);
           await deployOnCommit(env, owner, repo, user);
-          await startChecks(env, owner, repo, "main", git.commit, user!);
+          await startChecks(env, owner, repo, "main", git.commit, user!, [path]);
           // A mirror hands the commit upstream now, if upstream's there to take it.
           await kickMirror(env, owner, repo);
         }

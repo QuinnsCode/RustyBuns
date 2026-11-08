@@ -13,7 +13,7 @@
 //   - A red car splits into two halves, each queued as a car of its own, until a car of one is red: `blocks` names
 //     that branch, on it and every car it came from.
 
-import { checkSettings, planChecks, PUSHED, recordRun, type CheckRun } from "./checks.ts";
+import { checkSettings, planLanes, PUSHED, recordRun, type CheckRun } from "./checks.ts";
 import { json, type Env } from "./env.ts";
 import { parseJson } from "./util.ts";
 
@@ -65,9 +65,9 @@ export async function queueCar(env: Env, owner: string, repo: string, branches: 
   // A car a crew member queued carries their mark, like a run their push queued: claimRun keeps it from them, so they can't pass their own branch's checks unrun.
   const mark = by !== owner && by !== "upstream" && by !== "codesplitters" ? PUSHED(by) : "";
   const note = `${mark}merge-train car ${id}: main with ${branches.join(", ")} in. ${why}\n`;
-  for (const { name, command } of await planChecks(env, owner, repo, "main", s.required, paths, s.pinned)) {
+  for (const { name, command, why: lane } of (await planLanes(env, owner, repo, "main", s, paths)).checks) {
     const run = await recordRun(env, { owner, repo, ref: carRef(id), sha: `${carRef(id)}@${now}`, name, runner, command }, by);
-    await env.DB.prepare("UPDATE check_runs SET log = ? WHERE id = ?").bind(note, run.id).run();
+    await env.DB.prepare("UPDATE check_runs SET log = ? WHERE id = ?").bind(note + (lane ?? ""), run.id).run();
   }
   await (await import("./ci-runner.ts")).kick(env, owner, repo).catch(() => null);
   return { id, branches };

@@ -446,11 +446,11 @@ const OPS: Record<string, Record<string, Op>> = {
   [`${repo}/pipeline`]: { get: { id: "get_pipeline", summary: "The road one change takes in this repo: branch, coordinate, Mervin, Ester's test lanes, yours, and the AI hooks that are on", tag: "Branches", open: true,
     description: "Read from `codesplitter.pipeline.json` on main (`source`), or the default (no hooks, one lane that tests every change). Hooks sit after-mervin, before-ester and after-ester and are off, ai (an AI says yay or nay) or ask (a person does). " +
       "Each lane has a cadence: always (every change touching its paths), often (every Nth, and at a release), release (only at a release), bus (changes take a seat; when it's full or a release is cut, one pass over all of them, an AI's when it has no command) or train (with fresh_main, main moving reruns the open branches as one car per merge wave: get_train). " +
-      "`counts` is each lane's count since it last ran: pass back the answer's `counts` with the next change.",
-    query: { files: str("comma list of the paths the change touches"), release: bool("the change cuts a release"), counts: str("lane:count pairs, comma separated, from the last answer's counts") },
+      "With a pipeline file, the checks queue goes by this plan: only lanes whose call is run or depart queue a check. The repo keeps each lane's count since it last ran, moved on when a change lands on main; `counts` is what they'd be after this one.",
+    query: { files: str("comma list of the paths the change touches"), release: bool("the change cuts a release") },
     ok: obj({ source: str("codesplitter.pipeline.json, or default"), pipeline: loose("{hooks?: {after-mervin, before-ester, after-ester}, lanes?: [{name, cadence, paths?, run?, every?, seats?}]}"),
       plan: arr(loose("a stop {kind: \"stop\", at, who, does, lanes?: [{lane, cadence, go: run|skip|board|depart, why, run?, ai?, owed?}]} or a hook {kind: \"hook\", at, mode: ai|ask, does}")),
-      counts: loose("{lane: count} to send with the next change") }) } },
+      counts: loose("{lane: count} after this change lands") }) } },
   [`${repo}/mervin`]: {
     get: { id: "get_mervin_learning", summary: "Whether Mervin learns this repo's merge patterns, and last week's report", tag: "Branches", open: true,
       ok: obj({ learning: bool(), report: loose("{days, settled, asked, wrong, fighting: [{path_hash, ext, asked}], rules_proposed}, only while learning is on") }) },

@@ -10,7 +10,7 @@
  *   mervin       Mervin            merges by line id; real clashes become waves or a card
  *     hook  after-mervin           an AI or a person looks at the merged change before it goes on
  *     hook  before-ester           the last word before the tests spend anything
- *   ester        Ester             picks the lanes this change calls for; a PR with red CI waits
+ *   ester        Ester             queues the lanes this change calls for; a PR with red CI waits
  *     hook  after-ester            green: does anyone still want a say?
  *   yours        you               your code from here: ship it, deploy it, release it
  *
@@ -22,7 +22,8 @@
  * branches as one car per merge-plan wave, main with the whole wave in, rather than one run per branch: train.ts).
  *
  * A repo writes its hooks and lanes in `codesplitter.pipeline.json` at the top of main (PIPELINE_FILE); plan()
- * says what one change does, and tally() carries the lanes' counts to the next one. It is pure, so the API
+ * says what one change does, and tally() carries the lanes' counts to the next one (kept per repo in D1, and
+ * the checks queue goes by the same calls: pipeline-lanes.ts). It is pure, so the API
  * (GET .../pipeline, POST /api/pipeline), the MCP tool, the CLI and the /concepts page all give the same answer.
  */
 
@@ -45,7 +46,7 @@ export const STOP_INFO: Record<Stop, { who: string; does: string }> = {
   branch: { who: "Artifacts", does: "a git repo per branch, made in milliseconds, for an agent or a person" },
   coordinate: { who: "Durable Objects", does: "each file's lines in one place: edits land in order, nobody waits on anyone's copy" },
   mervin: { who: "Mervin", does: "merges by line id; real clashes go into waves or come back as a card" },
-  ester: { who: "Ester", does: "picks the lanes this change calls for; a PR with red CI waits" },
+  ester: { who: "Ester", does: "queues the checks of the lanes this change calls for; a PR with red CI waits" },
   yours: { who: "you", does: "your code from here: ship, deploy, release" },
 };
 /** The stop each hook comes after. */
