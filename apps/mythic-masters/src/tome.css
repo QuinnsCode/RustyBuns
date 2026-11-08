@@ -987,12 +987,11 @@ body > .gc-dialog .gc-card button.gc-sec-h svg:last-child { opacity: 0.5; }
       radial-gradient(ellipse at 50% 40%, transparent 60%, rgba(10, 5, 2, 0.55)) border-box, url("/paper/bark.png") 0 0 / 192px 192px repeat border-box;
     box-shadow: 0 22px 44px rgba(0, 0, 0, 0.65), inset 0 1px 0 rgba(255, 225, 190, 0.12), inset 0 0 14px rgba(0, 0, 0, 0.6); }
 } }
-/* the end-of-fight book opens across the screen (#3963), not as a card in the middle of it: each leaf is as wide as
- * half the screen allows (and the height under the HUD's buttons), and everything on it, words, buttons, engravings,
- * seal and plate, is drawn in --u, one 440px-wide leaf's pixel at that size, so it reads as the same book, larger */
+/* the end-of-fight book is the Book's one size (--book-w by --book-h, below), and what is written in it is drawn to
+ * that size (#3963), not to the old 440px leaf: words, buttons, engravings, seal and plate are in --u, one pixel of a
+ * 440px leaf at the leaf's real width, so it reads as the same page, larger */
 @media (min-width: 900px) { @supports (-webkit-mask-box-image: none) {
-  .result { --page: min(44vw, 760px, calc((100dvh - 110px) / 0.9)); --u: calc(var(--page) / 440);
-    grid-template-columns: repeat(2, var(--page)); grid-template-rows: minmax(calc(var(--page) * 0.9), auto); }
+  .result { --u: calc(var(--book-w) / 880); }
   .result .note { padding: calc(34 * var(--u)) calc(40 * var(--u)) calc(30 * var(--u)) calc(52 * var(--u)); }
   .result .note h2 { font-size: calc(40 * var(--u)); }
   .result .note p { font-size: calc(17 * var(--u)); margin: 0.45em 0; }
@@ -1009,9 +1008,13 @@ body > .gc-dialog .gc-card button.gc-sec-h svg:last-child { opacity: 0.5; }
     background: var(--ink-witch) 50% calc(132 * var(--u)) / calc(150 * var(--u)) calc(80 * var(--u)) no-repeat, var(--ink-ring) 50% calc(64 * var(--u)) / calc(216 * var(--u)) calc(216 * var(--u)) no-repeat,
       url("/paper/gutter.png") calc(100% + 167px) 0 / 320px 384px repeat-y, var(--parchment); }
 } }
-/* on a phone the note is the screen's width already: its words and buttons are drawn for a hand, and it stands tall */
+/* a single leaf (a phone, or a browser that can't deckle the spread) is a set size, not the size of its words: the
+ * screen's width and most of its height, however short the note; its words and buttons are drawn for a hand */
+@media (min-width: 900px) { @supports not (-webkit-mask-box-image: none) {
+  .result .note { width: min(88vw, 1000px); max-width: none; min-height: min(78dvh, 720px); display: flex; flex-direction: column; justify-content: center; }
+} }
 @media (max-width: 899px) {
-  .result .note { min-height: min(62dvh, 560px); display: flex; flex-direction: column; justify-content: center; }
+  .result .note { width: min(620px, calc(100vw - 32px)); min-height: min(62dvh, 560px); display: flex; flex-direction: column; justify-content: center; }
   .result .note h2 { font-size: clamp(38px, 10vw, 52px); }
   .result .note p { font-size: clamp(19px, 5vw, 24px); margin: 0.45em 0; }
   .result .note p.demand { font-size: clamp(26px, 7vw, 34px); }
