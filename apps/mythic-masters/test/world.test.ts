@@ -6,6 +6,7 @@ import { GRID, PLACES } from "../src/world/places.ts";
 import { creature, ROSTER } from "../src/roster.ts";
 import { inSeason, NIGHT, tierOf, TIERED, TIER_LEVEL } from "../src/tiers.ts";
 import { holds } from "../src/net/dens.ts";
+import type { Gait } from "../src/world/world.ts";
 import { lightFire, POIS, shelterAt, SHELTER_R } from "../src/world/poi.ts";
 import { CATCH_FAR, CATCH_NEAR, HOUSES, lightsNear, nightOf, safePaths, stalk, toSafety } from "../src/world/night.ts";
 import { DAY } from "../src/world/nature.ts";
@@ -200,7 +201,7 @@ describe("trailheads", () => {
   });
 });
 
-describe("the flier gate", () => {
+describe("beast travel", () => {
   test("Mothman's hollows stay shut until a flier is in the line-up; the Jersey Devil is one", async () => {
     const { creature } = await import("../src/roster.ts");
     const { gateShut, openRegions, setTravel } = await import("../src/world/world.ts");
@@ -216,5 +217,48 @@ describe("the flier gate", () => {
       expect(gateShut(hollows, beaten)).toBeUndefined();
     } finally { setTravel(null); }
     expect(openRegions(beaten).has(2)).toBe(true); // bots and the sim never see a gate
+  });
+
+  test("the south opens to a swimmer, the Andes to a flier as well, and you can walk on where you stand", async () => {
+    const { creature } = await import("../src/roster.ts");
+    const { arenaOf, openRegions, setTravel, spawn, walk } = await import("../src/world/world.ts");
+    const { REGIONS } = await import("../src/regions.ts");
+    const beaten = new Set([1, 2, 3, 5, 7, 8]); // the Bayou and the Ozarks border Mexico, Yucatán and (through the hollows) the Caribbean
+    const south = [9, 10, 11, 12, 14, 15, 16];
+    try {
+      setTravel([creature("hodag"), creature("jersey-devil")]);
+      expect(south.filter((n) => openRegions(beaten).has(n))).toEqual([]);
+      setTravel([creature("champ"), creature("hodag")]);
+      expect(south.filter((n) => openRegions(beaten).has(n))).toEqual(south);
+      expect(openRegions(beaten).has(13)).toBe(false);
+      setTravel([creature("lizard-man"), creature("jersey-devil")]);
+      expect(openRegions(beaten).has(13)).toBe(true);
+      // Swap the swimmer out while in Mexico: you can still walk Mexico, but not on into Yucatán.
+      setTravel([creature("hodag")]);
+      const me = spawn(9), a = arenaOf(REGIONS[8]!);
+      expect(walk(me, 5, 0, beaten).some((e) => e.kind === "blocked")).toBe(false);
+      expect(Math.hypot(me.x - a.x - 5, me.z - (a.z + 12))).toBeLessThan(1e-6);
+    } finally { setTravel(null); }
+  });
+
+  test("a swimmer swims the water a wade would slow, a flier glides a slope, and nothing outruns the streaming", async () => {
+    const { creature } = await import("../src/roster.ts");
+    const { pace, PACE_MAX, setTravel } = await import("../src/world/world.ts");
+    try {
+      const rows: [string[], boolean, number, number, Gait, number][] = [
+        // line-up, dash, depth, slope, gait, pace for a base of 8 m/s
+        [["hodag"], false, 0, 0, "walk", 8],
+        [["hodag"], false, 0.6, 0, "wade", 3.6],
+        [["champ"], false, 0.6, 0, "swim", 10],
+        [["hodag"], false, 0, -0.3, "walk", 8],
+        [["jersey-devil"], false, 0, -0.3, "glide", 12],
+        [["jersey-devil"], false, 0, 0.3, "walk", 8],
+        [["jersey-devil"], true, 0, -0.3, "glide", PACE_MAX],
+      ];
+      for (const [party, dash, depth, slope, gait, v] of rows) {
+        setTravel(party.map(creature));
+        expect({ party, ...pace(8, dash, depth, slope) }).toEqual({ party, v, gait });
+      }
+    } finally { setTravel(null); }
   });
 });

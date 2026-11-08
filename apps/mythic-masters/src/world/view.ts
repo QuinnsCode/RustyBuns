@@ -16,7 +16,7 @@ import { Bearer, HEIGHT, NO_ID } from "./bearer.ts";
 import { body, creature, ROSTER, type Creature } from "../roster.ts";
 import { REGIONS, type Biome, type Region } from "../regions.ts";
 import { SECTIONS, sections } from "../journey.ts";
-import { arenaOf, COLS, CELL, explore, explored, gateShut, setTravel, FOG, FOG_W, isSeen, meet, NIGHT_MEET_R, newSeen, openRegions, opensRoadTo, OWNER, regionAt, riverAt, ROWS, sendHome, spawn, STEP, GROUND_N, surface, waterAt, wildsNear, heightAt, type Wild } from "./world.ts";
+import { arenaOf, COLS, CELL, explore, explored, gateShut, setTravel, travelOf, pace, WADE_DEPTH, type Gait, FOG, FOG_W, isSeen, meet, NIGHT_MEET_R, newSeen, openRegions, opensRoadTo, OWNER, regionAt, riverAt, ROWS, sendHome, spawn, STEP, GROUND_N, surface, waterAt, wildsNear, heightAt, type Wild } from "./world.ts";
 import { FEEL_ATTR, groundFeel, groundLook, groundWeights, loadGround, WEIGHT_ATTRS, LAYER_COUNT, type Cover } from "./ground.ts";
 import { FLORA, flora, grove, scatterFar, scatterFlora, scatterTurf, TREELINE, turfAt as grassCover, TURF } from "./flora.ts";
 import { lifeView, type LifeEvent } from "./life.ts";
@@ -46,7 +46,6 @@ const TURF_SNAP = 16;   // the grass round your feet is laid again this often
 const CALM_MS = 90_000; // a den you fought stays quiet this long
 const SEA = 0x2f6a98, SAND = 0xc8b890, MUD = 0x6e5c42, DIRT = 0xa08a62, ROCK = 0x8a8580, SNOW = 0xf2f4f8, CLOSED = 0x5a5e66, PARCHMENT = 0xf1e7cf;
 const ROCK_Y = 55, SNOW_Y = 72; // game metres: bare rock above the one, snow above the other (the Andes, the Alps, the Himalaya)
-const WADE = 0.1;               // water this deep over the ground is a wade, at half pace
 const PATH_W = 2.6;             // metres either side of a trail worn to dirt
 const PRECIP = 1600, CLOUDS = 40; // raindrops or flakes round the camera; clouds overhead
 const RISE = 2.8; // seconds a piece takes to rise when its road opens
@@ -833,6 +832,7 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
     if (p) { me.x = p.x; me.z = p.z; }
     trekAt.band = bandAt(me.x, me.z); trekAt.armed = false; crumbs = [];
   }
+  let gait: Gait = "walk"; const told = new Set<Gait>(); // how you crossed the ground last frame; which carries were toasted
   let lead: Creature | null = null, yaw = 0, facing = 0, snap = true; // snap: put the camera straight there, no glide
   let shownOnce = false;
   // Pieces whose road opened while you were away (in the arena that opened it): shown rising when you're back.
@@ -1131,11 +1131,18 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
       const fx = shot ? 0 : fx0, sx = shot ? 0 : sx0;
       // yaw 0 looks north (-z).
       const mx = Math.sin(yaw) * fx + Math.cos(yaw) * sx, mz = -Math.cos(yaw) * fx + Math.sin(yaw) * sx;
-      // Water slows you to a wade.
-      const wading = waterLevel(me.x, me.z) - fineY(me.x, me.z) > WADE;
+      // Water slows you to a wade, unless a swimmer in the line-up carries you; a flier glides you down a slope.
       if (mx || mz) {
         facing = Math.atan2(mz, mx);
-        const v = (on("dash") ? PACE.run : PACE.walk) * (wading ? 0.45 : 1) * dt;
+        const m = Math.hypot(mx, mz), ahead = fineY(me.x + (mx / m) * 2, me.z + (mz / m) * 2) - fineY(me.x, me.z);
+        const p = pace(on("dash") ? PACE.run : PACE.walk, waterLevel(me.x, me.z) - fineY(me.x, me.z), ahead / 2);
+        if (p.gait !== gait && (p.gait === "swim" || p.gait === "glide") && !told.has(p.gait)) {
+          told.add(p.gait);
+          const who = followers.map((f) => f.c).find((c) => travelOf(c).includes(p.gait === "swim" ? "swimmer" : "flier"));
+          toast(p.gait === "swim" ? `${icon("waves")} ${esc(who?.name ?? "Your swimmer")} carries you over the water.` : `${icon("feather")} ${esc(who?.name ?? "Your flier")} glides you down the slope.`);
+        }
+        gait = p.gait;
+        const v = p.v * dt;
         for (const e of trek(me, trekAt, mx * v, mz * v, beaten, hooks.cleared)) say(e);
         look();
         const last = crumbs[0];
@@ -1280,7 +1287,7 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
         beaten: [...beaten].sort((a, b) => a - b), open: [...open].sort((a, b) => a - b),
         ground: { loaded: stream.loaded(), tiles: landStats(), patches: { near: near.at, mid: mid.at, far: far.at, dirty: [near.dirty, mid.dirty, far.dirty], lift: +lf(me.x, me.z).toFixed(3), water: +waterLevel(me.x, me.z).toFixed(2), ground: +fineY(me.x, me.z).toFixed(2), drawn: +groundY(me.x, me.z).toFixed(2) } }, section: trekAt.band, wilds: [...roamers.values()].map(({ c }) => ({ id: c.id, level: c.level, x: +c.x.toFixed(1), z: +c.z.toFixed(1) })),
         bearer: bearer && { id: bearer.id, colour: bearer.colour, trail: bearer.stones, gait: bearer.gait }, friends: [...friends].map(([id, o]) => ({ id, colour: o.b.colour, trail: o.b.stones, team: o.team.map((t) => t.c.id) })),
-        plants: plants.spots, far: plants.far, tufts: plants.tufts, motes: life.motes, wading: waterLevel(me.x, me.z) - fineY(me.x, me.z) > WADE, depth: +(waterLevel(me.x, me.z) - fineY(me.x, me.z)).toFixed(2),
+        plants: plants.spots, far: plants.far, tufts: plants.tufts, motes: life.motes, wading: waterLevel(me.x, me.z) - fineY(me.x, me.z) > WADE_DEPTH, gait, depth: +(waterLevel(me.x, me.z) - fineY(me.x, me.z)).toFixed(2),
         night: tonight && { night: tonight.night, houses: tonight.houses.map((h) => h.id), paths: tonight.paths.length, safe: +safeD.toFixed(1), dread: +dread.toFixed(2), stalker: stalker?.id ?? null, lamps: lamp[0].count, gary: gary && { t: +gary.t.toFixed(1), x: +gary.x.toFixed(1), z: +gary.z.toFixed(1), off: !!gary.to } },
         day: { hour: +L.hour.toFixed(2), dark, shelter: shelter?.id ?? null, wind: +wind(clock).toFixed(2), rain: +W.rain.toFixed(2), snow: +W.snow.toFixed(2), mist: +W.mist.toFixed(2) }, life: life.state(), places: places.state(g.n), hunts: places.hunts(g.n) };
     },
