@@ -10,7 +10,7 @@
  *   mervin       Mervin            merges by line id; real clashes become waves or a card
  *     hook  after-mervin           an AI or a person looks at the merged change before it goes on
  *     hook  before-ester           the last word before the tests spend anything
- *   ester        Ester             runs the lanes this change calls for, and sorts any red by whose it is
+ *   ester        Ester             picks the lanes this change calls for; a PR with red CI waits
  *     hook  after-ester            green: does anyone still want a say?
  *   yours        you               your code from here: ship it, deploy it, release it
  *
@@ -45,7 +45,7 @@ export const STOP_INFO: Record<Stop, { who: string; does: string }> = {
   branch: { who: "Artifacts", does: "a git repo per branch, made in milliseconds, for an agent or a person" },
   coordinate: { who: "Durable Objects", does: "each file's lines in one place: edits land in order, nobody waits on anyone's copy" },
   mervin: { who: "Mervin", does: "merges by line id; real clashes go into waves or come back as a card" },
-  ester: { who: "Ester", does: "runs the lanes this change calls for and sorts any red by whose it is" },
+  ester: { who: "Ester", does: "picks the lanes this change calls for; a PR with red CI waits" },
   yours: { who: "you", does: "your code from here: ship, deploy, release" },
 };
 /** The stop each hook comes after. */
