@@ -16,7 +16,7 @@ import { arr, bool, check, num, nul, obj, type Of } from "@rustybuns/util/guard"
 // Region 1's arena toward region 5's: the line runs on open ground into region 3 at about 5.7 km, a border that is
 // open from the start (beat 1 to 3). The walk starts half its length short of that border.
 const AIM = 5, TO = 3;
-const RUN = 12; // metres a second: a running walker, so 90 s crosses the near patch's 64 m snap ~17 times and the mid's twice
+const RUN = 12; // metres a second: over twice a run (src/net/party.ts PACE, 5) on purpose, the stress case, so 90 s crosses the near patch's 64 m snap ~17 times and the mid's twice
 const app = resolve(import.meta.dir, "..");
 
 /** Runs in the page from its first script: marks the first frame the world can be walked in. */

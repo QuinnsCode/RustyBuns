@@ -142,7 +142,7 @@ describe("two friends in one region", () => {
     di.update(5, 13810, 5600, 0, "jersey-devil", performance.now());
     await until(() => cy.status === "in" && di.status === "in");
     const cyAt = () => [...di.ghosts.values()][0]?.pose.x;
-    // 21 hops of 38 m, a fifth of a second apart (190 m/s, seven times a run): each is inside the 40 m slack on its own.
+    // 21 hops of 38 m, a fifth of a second apart (190 m/s, nearly forty times a run): each is inside the 40 m slack on its own.
     for (let i = 1; i <= 21; i++) { await Bun.sleep(210); cy!.update(5, 14600 - (800 * i) / 21, 5550, 0, "hodag", performance.now()); }
     await until(() => cyAt() === 138000); // 50 m from the stone, not beside Di
     on.set("5.13900.5600", 0);
@@ -358,9 +358,9 @@ test("the world clock wraps on a whole number of days, small enough for a shader
 });
 
 test.each([
-  ["a run, a pose every fifth of a second", 5, 200, 30, false, 0],
-  ["a run after a minute alone (the page sends nothing then)", 1500, 60_000, 1, false, 0],
-  ["a 3 s network stall, then its 15 poses of a run in one burst", 5.2, 0, 15, false, 3000],
+  ["a run, a pose every fifth of a second", 1, 200, 30, false, 0],
+  ["a run after a minute alone (the page sends nothing then)", 300, 60_000, 1, false, 0],
+  ["a 3 s network stall, then its 15 poses of a run in one burst", 1, 0, 15, false, 3000],
   ["3 km in a fifth of a second", 3000, 200, 1, true, 0],
   ["39 m hops all at once: the slack is spent once", 39, 0, 2, true, 0],
   ["after a 3 s stall, 39 m hops all at once: the bank and the slack are spent once", 39, 0, 4, true, 3000],
