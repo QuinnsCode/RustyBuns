@@ -71,6 +71,25 @@ if [ "$MAC" ]; then cores=$(sysctl -n hw.ncpu); gb=$(( $(sysctl -n hw.memsize) /
 else cores=$(nproc); gb=$(( $(awk '/MemTotal/ {print $2}' /proc/meminfo) / 1048576 )); fi
 echo "$r in $(( $(date +%s) - start ))s on $cores cores, $gb GB"
 
+if [ "$MAC" ]; then
+  # What the agents are running, in this Mac's menu bar (#3951): SwiftBar runs ~/builder/bar/bob.10s.sh every 10 s,
+  # which reads the run records scripts/remote-ci.ts leaves in ~/builder/runs. No daemon, no root, nothing else.
+  say "Menu bar: what the builder is running"
+  mkdir -p "$ROOT/runs/done" "$ROOT/bar"
+  if [ -f "$ROOT/slot-1/scripts/builder-bar.ts" ] && bun build "$ROOT/slot-1/scripts/builder-bar.ts" --target bun --outfile "$ROOT/bar.js" >/dev/null; then
+    printf '#!/bin/sh\nexec "$HOME/.bun/bin/bun" "$HOME/builder/bar.js"\n' > "$ROOT/bar/bob.10s.sh"
+    chmod +x "$ROOT/bar/bob.10s.sh"
+    if [ -d /Applications/SwiftBar.app ]; then
+      defaults write com.ameba.SwiftBar PluginDirectory -string "$ROOT/bar"
+      open -a SwiftBar && echo "SwiftBar shows \"Bob: idle\"; in its menu, Preferences > Launch at login"
+    else
+      echo "missing SwiftBar: brew install --cask swiftbar, then run this again"
+    fi
+  else
+    echo "slot-1 has no scripts/builder-bar.ts yet: run this again once it pulls main"
+  fi
+fi
+
 say "Last step, on the office Mac"
 # A cloud VM has no .local name: use its Tailscale name (tailscale up), or its public address.
 if [ "$MAC" ]; then name="$(whoami)@$(scutil --get LocalHostName).local"; else name="$(whoami)@$(hostname)"; fi
