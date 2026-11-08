@@ -1,6 +1,8 @@
 import { expect, test } from "bun:test";
 import { ALL_SKINS, fightSkin, REGIONS, sacredIds } from "../src/regions.ts";
 import { ROSTER } from "../src/roster.ts";
+import { POCKETS, roomAt } from "../src/pockets.ts";
+import { ARENA } from "../src/sim.ts";
 
 test("the route is numbered in order, and only the built regions have an arena", () => {
   expect(REGIONS.map((r) => r.n)).toEqual(REGIONS.map((_, i) => i + 1));
@@ -20,15 +22,20 @@ test("a being held sacred is never a fighter", () => {
   for (const c of ROSTER) expect(sacredIds.has(c.id)).toBe(false);
 });
 
-test("the Pine Barrens' mythic fights in its lair, every other fight in the open", () => {
-  const at = (id: string) => REGIONS.find((r) => r.id === id)!;
-  const soon = REGIONS.find((r) => !r.skin)!;
-  for (const [g, kind, skin] of [
-    [at("pine-barrens"), "mythic", "pine-barrens-lair"],
-    [at("pine-barrens"), "keeper", "pine-barrens"],
-    [at("pine-barrens"), "wild", "pine-barrens"],
-    [at("appalachian-hollows"), "mythic", "appalachian-hollows"],
-    [soon, "mythic", "stadium"],
-  ] as const) expect(fightSkin(g, kind)).toBe(skin);
-  expect(ALL_SKINS["pine-barrens-lair"]).toMatchObject({ pocket: "pine-barrens-lair", ground: ALL_SKINS["pine-barrens"]!.ground });
+test("every playable region's mythic fights in its own lair, every other fight in the open", () => {
+  for (const g of REGIONS.filter((r) => r.tier === "playable")) {
+    const lair = fightSkin(g, "mythic");
+    expect(lair).toBe(`${g.id}-lair`);
+    expect(ALL_SKINS[lair]).toMatchObject({ pocket: lair, ground: ALL_SKINS[g.id]!.ground });
+    for (const kind of ["keeper", "wild"] as const) expect(fightSkin(g, kind)).toBe(g.id);
+  }
+  expect(fightSkin(REGIONS.find((r) => r.tier === "high-level")!, "mythic")).toBe(REGIONS.find((r) => r.tier === "high-level")!.id);
+  expect(fightSkin(REGIONS.find((r) => !r.skin)!, "mythic")).toBe("stadium");
+});
+
+test("a lair's rooms open off its wall without running into each other", () => {
+  for (const p of Object.values(POCKETS)) {
+    const wall = ARENA.radius + p.walls.out, at = p.rooms.map((m) => ({ m, ...roomAt(m, wall) }));
+    for (const [i, a] of at.entries()) for (const b of at.slice(i + 1)) expect(Math.hypot(a.x - b.x, a.z - b.z)).toBeGreaterThan(a.m.r + b.m.r);
+  }
 });

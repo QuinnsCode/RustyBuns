@@ -25,6 +25,7 @@ import type { Ambient } from "./ambience.ts";
 import { fireSpot, poiById, shelterAt, SHELTER_R, type Poi, type Shelter } from "./poi.ts";
 import { lightsNear, nightOf, safePaths, stalk, toSafety, type Night } from "./night.ts";
 import { HUNTS, waiting } from "./hunts.ts";
+import { caveMouth, lairOf, POCKETS } from "../pockets.ts";
 import { poiView, type PlaceHooks } from "./poi-view.ts";
 import { cellAt, cellsApart, createStream, type Box } from "./stream.ts";
 import { GRID } from "./places.ts";
@@ -497,12 +498,15 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
   }
 
   // --- markers: an arena ring and beacon per playable region, a red beacon over each high-level one --------
+  // A region whose mythic fights in a lair (src/pockets.ts) has the lair's cave mouth over its ring, open toward the
+  // trail's last stretch, so walking into the ring is walking into the cave.
   const beacons = new Map<number, { mat: THREE.MeshBasicMaterial; parts: THREE.Object3D[] }>();
   /** Stands a region's beam (and ring) on the arena's ground as it is now. */
   function placeBeacon(g: Region, parts: THREE.Object3D[]) {
     const a = arenaOf(g), y = heightAt(w, a.x, a.z);
     parts[0]!.position.set(a.x, y + 30, a.z);
     parts[1]?.position.set(a.x, y + 0.2, a.z);
+    parts[2]?.position.set(a.x, y - 0.3, a.z);
   }
   let glow: THREE.CanvasTexture | null = null;
   const rimGlow = () => glow ??= (() => { // RingGeometry's UVs are planar, so the fade is a radial gradient: 0 at the inner edge, full at the rim
@@ -523,6 +527,8 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
       const ring = new THREE.Mesh(new THREE.RingGeometry(2.6, 4.25, 64), ringMat);
       ring.rotation.x = -Math.PI / 2;
       parts.push(ring);
+      const lair = lairOf(g.id), t = TRAILS.get(g.n), from = t?.pts.at(-2);
+      if (lair) parts.push(caveMouth(POCKETS[lair]!, from ? Math.atan2(from.z - a.z, from.x - a.x) : 0));
     }
     placeBeacon(g, parts);
     group.add(...parts);
@@ -938,6 +944,14 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
       ctx.fillStyle = beaten.has(g.n) ? "#6ad37a" : "#ff4a3a";
       ctx.beginPath(); ctx.arc(a.x * k, a.z * k, 2, 0, Math.PI * 2); ctx.fill();
     }
+    // a lair's cave mouth, once you've seen its ground: a dark arch over a black throat
+    for (const g of REGIONS) if (g.tier === "playable" && open.has(g.n) && !beaten.has(g.n) && lairOf(g.id)) {
+      const a = arenaOf(g);
+      if (!isSeen(seen, Math.floor(a.z / FOG) * FOG_W + Math.floor(a.x / FOG))) continue;
+      const x = a.x * k, y = a.z * k;
+      ctx.fillStyle = "#5a4a3a"; ctx.beginPath(); ctx.arc(x, y + 1.5, 3.5, Math.PI, 0); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = "#0a0806"; ctx.beginPath(); ctx.arc(x, y + 1.5, 1.8, Math.PI, 0); ctx.closePath(); ctx.fill();
+    }
     places.marks(ctx, k, open, (x, z) => isSeen(seen, Math.floor(z / FOG) * FOG_W + Math.floor(x / FOG)));
     ctx.save(); ctx.translate(me.x * k, me.z * k); ctx.rotate(facing);
     ctx.fillStyle = "#fff"; ctx.strokeStyle = "#1d3a52"; ctx.lineWidth = 1;
@@ -1099,7 +1113,7 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
     friendMet(den: string, who: string, id: string) {
       const lair = den.startsWith("hunt:"), stone = /^(keeper|mythic):/.test(den);
       if (!lair && !stone) calm.set(den, performance.now() + CALM_MS);
-      toast(`${icon("users")} ${esc(who || "A friend")} is fighting ${esc(shrouded(id) ? "something" : creature(id).name)}${lair ? " at its lair. Go and help" : den.startsWith("mythic:") ? " at the arena. Go and help" : stone ? " at the lit stone" : ""}.`);
+      toast(`${icon("users")} ${esc(who || "A friend")} is fighting ${esc(shrouded(id) ? "something" : creature(id).name)}${lair ? " at its lair. Go and help" : den.startsWith("mythic:") ? " in the cave. Go and help" : stone ? " at the lit stone" : ""}.`);
     },
     /** A line from the party (src/net/online.ts), in the world's toast. */
     note: (html: string) => toast(html),
