@@ -368,6 +368,7 @@
 .deck.paper { position: fixed; background: var(--grain), radial-gradient(ellipse at 50% 0%, var(--paper-hi), var(--paper) 50%, var(--paper-lo)); }
 .deck.paper::before { display: none; }
 .deck.paper .keys { color: var(--ink-faded); }
+.deck > .demand { max-width: 1200px; margin-inline: auto; } /* the Book wants the card on top (src/demand.ts deckDemandOf) */
 .deck .tcard { background: rgba(255, 249, 232, 0.55); color: var(--ink-b); border-color: color-mix(in srgb, var(--fc) 55%, #4a2e16); border-radius: 6px; box-shadow: 2px 3px 0 rgba(70, 42, 18, 0.15); }
 .deck .tcard > header b { font-family: var(--f-hand); font-size: 23px; font-weight: 400; }
 .deck .tcard .meta { color: var(--ink-faded); font-size: 14px; }
