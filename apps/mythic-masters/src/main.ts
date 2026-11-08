@@ -877,7 +877,7 @@ function showFolio(id: string | null) {
   if (!id) cursor = openFolio;
   openFolio = id;
   drawJournal(); turnPage(forward, was);
-  $("#journal").scrollTo({ top: 0 });
+  for (const el of [$("#journal"), $("#journalBody")]) el.scrollTo({ top: 0 }); // the page, or on a wide screen the leaves that scroll inside the book
   const land = plate(forward);
   if (!land || !lift) return;
   if (!forward) land.closest(".entry")?.scrollIntoView({ block: "center" });
