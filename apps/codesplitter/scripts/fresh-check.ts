@@ -19,7 +19,7 @@ import { local, type Call } from "../src/local.ts";
 import { STEP } from "../src/fresh.ts";
 import { push } from "../src/git.ts";
 import type { Artifacts, ArtifactsRepo, TreeEntry } from "../src/env.ts";
-import { parseAuthToken } from "./move-resources.ts";
+import { parseAuthToken } from "./release.ts";
 
 const account = process.env.CLOUDFLARE_ACCOUNT_ID;
 /** Wrangler's login as a token. Its plain output moved to stderr in 4.155 (#2669); --json keeps it on stdout. */

@@ -3,9 +3,9 @@
 // edge case each. Nothing here runs a command or touches Cloudflare.
 
 import { describe, expect, test } from "bun:test";
-import { checkPlan, release, Stop, type IO, type Mode, type Ran } from "../scripts/release.ts";
+import { checkPlan, parseAuthToken, release, Stop, type IO, type Mode, type Ran } from "../scripts/release.ts";
 
-const plain: Mode = { checksNew: false, move: false };
+const plain: Mode = { checksNew: false };
 const plan = (...lines: string[]) => lines.join("\n");
 /** As `rustybuns plan` really prints it: Alchemy logs the plan through Effect, a prefix on every line; the CLI's own warnings are plain. */
 const logged = (...lines: string[]) => lines.map((l) => l.startsWith("warning: ") || !l ? l : `[00:01:08.172] INFO (#1): ${l}`).join("\n");
@@ -32,7 +32,17 @@ describe("checkPlan", () => {
     for (const row of ["[FILES] delete", "[Worker] replace", "[JOBS] orphaned", "[Worker/CI_RUNNER] unbind", "[Migrate] drop [action]"])
       expect(checkPlan(plan("Plan: 1 to update", row), plain).stop).toContain(row);
   });
+});
 
+describe("parseAuthToken", () => {
+  const TOKEN = "Xq3v8mN0pLkJ7hGfDsA1zYwTr5eB2cVuI9oP4n6M";
+  test("reads `wrangler auth token --json`: JSON.stringify({ type, token }, null, 2), no banner", () => {
+    expect(parseAuthToken(JSON.stringify({ type: "oauth", token: TOKEN }, null, 2) + "\n")).toBe(TOKEN);
+  });
+  test("not logged in: wrangler's error is no token", () => {
+    expect(parseAuthToken("✘ [ERROR] Not logged in. Please run `wrangler login` to authenticate.\n")).toBeNull();
+    expect(parseAuthToken("")).toBeNull();
+  });
 });
 
 // ---- the release, on a fake Mac ----
@@ -43,13 +53,12 @@ const CONFIG = `BETTER_AUTH_URL: { type: "var", value: "https://codesplitter.exa
 
 class Mac implements IO {
   calls: string[] = []; envs: Record<string, string | undefined>[] = []; said: string[] = []; asked: string[] = [];
-  touched: string[] = []; renamed: [string, string][] = [];
+  touched: string[] = [];
   files = new Set(["/w", STATES, "/Applications/Docker.app", "/h/.codesplitters-checks-on"]);
   answers: boolean[] = [];
   head = "a"; main = "a";
   status = "";
   plans = [UPDATE];
-  levels = [23, 23];
   /** Exit codes per command, in turn (the last repeats); 0 when none. */
   codes: Record<string, number[]> = {};
   /** Runs before the command answers: main moving, a login landing. */
@@ -74,8 +83,6 @@ class Mac implements IO {
     if (c === "git -C /c rev-parse origin/main") return ok(this.main);
     if (c.startsWith("bunx rustybuns plan")) { const p = this.plans.length > 1 ? this.plans.shift()! : this.plans[0]!; return ok(p); }
     if (c.startsWith("bunx rustybuns deploy")) return { code: this.next("deploy"), out: "" };
-    if (c === "bun scripts/move-resources.ts --copy") return { code: this.next("copy"), out: "" };
-    if (c === "bun scripts/move-resources.ts") return { code: this.next("dry"), out: "" };
     return ok();
   }
   async ask(q: string) { this.asked.push(q); return this.answers.shift() ?? false; }
@@ -84,11 +91,7 @@ class Mac implements IO {
   exists(p: string) { return this.files.has(p); }
   read() { return CONFIG; }
   touch(p: string) { this.touched.push(p); }
-  rename(a: string, b: string) { this.renamed.push([a, b]); this.files.delete(a); this.files.add(b); }
-  async get(url: string) {
-    if (url.endsWith("/api/levels")) { const n = this.levels.length > 1 ? this.levels.shift()! : this.levels[0]!; return { status: 200, body: JSON.stringify(Array.from({ length: n }, () => ({ status: "ready" }))) }; }
-    return { status: 200, body: "{}" };
-  }
+  async get() { return { status: 200, body: "{}" }; }
   ran(re: RegExp) { return this.calls.filter((c) => re.test(c)); }
   at(re: RegExp) { return this.calls.findIndex((c) => re.test(c)); }
 }
@@ -110,7 +113,6 @@ describe("release", () => {
     expect(deployEnv).toMatchObject({ CODESPLITTER_CHECKS: "1", CODESPLITTER_DEPLOYS: "1", CODESPLITTER_AGENTS: "1", CODESPLITTER_PUSH_EVENTS: "1", CLOUDFLARE_API_TOKEN: "x".repeat(40) });
     // The token left in the terminal never reaches wrangler's login check.
     expect(mac.envs[mac.at(/wrangler whoami/)]!.CLOUDFLARE_API_TOKEN).toBeUndefined();
-    expect(mac.ran(/move-resources/)).toEqual([]);
     // Warned up front that a y/N follows the plan.
     expect(mac.said[0]).toContain("then asks y/N before deploying");
   });

@@ -1,5 +1,5 @@
 #!/bin/zsh
-# Release codeSplitter to the live site: zsh ~/release-codesplitters.sh [--checks | --move]
+# Release codeSplitter to the live site: zsh ~/release-codesplitters.sh [--checks]
 # Run it from any folder. ~/release-codesplitters.sh is a copy of this file
 # (apps/codesplitter/scripts/release-codesplitters.sh), and each run refreshes it from main.
 # It puts the release worktree on origin/main and hands over to scripts/release.ts there,

@@ -83,7 +83,6 @@
   "test/mirror-fork.test.ts": 12487,
   "test/mirror-pushes.test.ts": 18852,
   "test/mirror.test.ts": 14467,
-  "test/move-resources.test.ts": 33,
   "test/needs.test.ts": 3,
   "test/oauth.test.ts": 4429,
   "test/office-preview-stage.test.ts": 0,

@@ -21,7 +21,6 @@
   "apps/codesplitter/scripts/jam-report.ts": 1,
   "apps/codesplitter/scripts/live-demo.ts": 2,
   "apps/codesplitter/scripts/merge-replay.ts": 2,
-  "apps/codesplitter/scripts/move-resources.ts": 1,
   "apps/codesplitter/scripts/phone.ts": 1,
   "apps/codesplitter/scripts/runner.ts": 4,
   "apps/codesplitter/scripts/stress.ts": 2,
