@@ -1121,6 +1121,14 @@ function playerInput(): Input {
 const hudMem = { now: newMemory() };
 const plain = (id: string) => id.replace(/^wild-/, "");
 const artOf = (id: string) => { const p = ART[plain(id)]; const pic = p?.color ?? p?.bw; return pic ? `/${pic.src}` : null; };
+const bindKey = () => keymap.get("bind").map(keyName).join(" / ") || "?";
+/** The bind prompt: what to do while the foe is too strong, a call to act once the ink can hold. A knockout can't be bound. */
+function bindView(m: Match) {
+  if (!trip || !bindable(trip)) return null;
+  const mythic = trip.kind === "mythic", chance = bindChance(m.f[1].hp / m.f[1].b.hp, mythic);
+  const note = bindNote || (!trip.ink ? "" : chance > 0 ? "Bind it now, before it drops" : `Wear it under ${Math.round(bindBelow(mythic) * 100)}%, then bind`);
+  return { chance, ink: trip.ink, key: bindKey(), note };
+}
 function hud(m: Match) {
   const root = $("#hud");
   dressHud(root);
@@ -1128,8 +1136,9 @@ function hud(m: Match) {
   const party = trip && journey ? { size: journey.party.length, down: [...trip.out], up: trip.slot } : null;
   root.innerHTML = skinNow().render(viewOf(m, hudMem.now, {
     party: [party, null], bots: [!!bots[0], !!bots[1]], art: artOf, tier: (id) => tierOf(plain(id)),
-    bind: trip && bindable(trip) ? { chance: bindChance(m.f[1].hp / m.f[1].b.hp, trip.kind === "mythic"), ink: trip.ink, key: keymap.get("bind").map(keyName).join(" / ") || "?", note: bindNote } : null,
+    bind: bindView(m),
   }));
+  root.classList.toggle("bind-ready", !!trip && bindable(trip) && trip.ink > 0 && bindChance(m.f[1].hp / m.f[1].b.hp, trip.kind === "mythic") > 0);
   if (choosing) chooser();
 }
 /** ?hud=: a chip in the bottom left that names the skin and steps through them. */
@@ -1268,7 +1277,7 @@ function tripOver(m: Match, bound: boolean, how: string) {
       else lines.push(`The bog-light lifts. Section ${t.k + 2} of ${SECTIONS} is open.`);
     }
     if (t.foe.hunt && closeHunt(j, t.foe.hunt)) lines.push(`The sighting is closed: ${esc(t.foe.title ?? foe.name)} won't trouble ${esc(sections(t.region)[HUNTS.get(t.foe.hunt)?.k ?? 0]!.name)} again.`);
-    else if (t.kind === "wild" && !bound) lines.push("It slinks off into the brush.");
+    else if (t.kind === "wild" && !bound) lines.push(`It slinks off into the brush. A knocked-out beast can't be bound: wear it under ${Math.round(bindBelow(false) * 100)}%, then press ${esc(bindKey())} before it drops.`);
     if (bound) outcome = { kind: "bound", item: boundCount(j), repeat };
     if (bound && !repeat) say("bind", { n: t.region.n, item: boundCount(j) });
     const at = { n: t.region.n, regionId: t.region.id, region: t.region.name };
@@ -1318,8 +1327,8 @@ let moveCardOn = (() => { try { return localStorage.getItem(MOVE_CARD) !== "off"
 const moveCard = Object.assign(document.createElement("aside"), { id: "moveKeys", className: "move-keys", hidden: true, ariaLabel: "Movement keys" });
 document.body.append(moveCard);
 const cineEl = $("#cine");
-let moveCardFor: "fight" | "world" | null = null;
-function drawMoveCard(where: "fight" | "world") {
+let moveCardFor: "fight" | "hunt" | "world" | null = null;
+function drawMoveCard(where: "fight" | "hunt" | "world") {
   moveCardFor = where;
   moveCard.classList.toggle("world", where === "world");
   moveCard.innerHTML = moveKeys(where).map((k) => `<span><kbd>${esc(k.keys)}</kbd>${esc(k.does)}</span>`).join("");
@@ -1559,7 +1568,7 @@ function frame(now: number) {
   const moving = world.shown || (!!m && !m.over && !bots[0]);
   document.body.classList.toggle("in-fight", !!m && !m.over && !world.shown);
   touchEl.hidden = !(touchy && moving);
-  const where = world.shown ? "world" : "fight";
+  const where = world.shown ? "world" : bindable(trip) ? "hunt" : "fight";
   if (moveCardFor !== where) drawMoveCard(where);
   moveCard.hidden = !moveCardOn || touchy || !moving || paused || journalOpen || !!talking || !cineEl.hidden;
   touchEl.classList.toggle("world", world.shown);
