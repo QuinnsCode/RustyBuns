@@ -53,7 +53,7 @@ import { answer as answerBook, holdOf, lossBeats, momentFor, notesOf, signedOf, 
 import { bookParty, type Seat } from "./book-party.ts";
 import { peek } from "@rustybuns/util/token";
 import { party } from "./account.ts";
-import { choosing, dress as dressHud, SKINS as HUD_SKINS, skinNow, stepSkin, useSkin } from "./hud/index.ts";
+import { choosing, dress as dressHud, ring as hudRing, SKINS as HUD_SKINS, skinNow, stepSkin, useSkin } from "./hud/index.ts";
 import { newMemory, remember as rememberHud, viewOf } from "./hud/skin.ts";
 import { FX_AMOUNT } from "./effects.ts";
 import { darken, warmWith } from "./world/walker3d.ts";
@@ -1147,11 +1147,11 @@ function chooser() {
   if (!c) {
     c = document.createElement("nav"); c.id = "hudChooser"; c.className = "hud-chooser";
     c.innerHTML = `<button data-by="-1" title="Previous HUD" aria-label="Previous HUD">&lsaquo;</button><span></span><button data-by="1" title="Next HUD" aria-label="Next HUD">&rsaquo;</button>`;
-    c.addEventListener("click", (e) => { const b = e.target instanceof Element ? e.target.closest<HTMLElement>("[data-by]") : null; if (b) stepSkin(Number(b.dataset.by)); });
+    c.addEventListener("click", (e) => { const b = e.target instanceof Element ? e.target.closest<HTMLElement>("[data-by]") : null; if (b && stepSkin(Number(b.dataset.by)) && m) hud(m); }); // redraw now: a paused or finished fight doesn't tick
     document.body.append(c);
   }
   c.hidden = $("#hud").hidden;
-  const s = skinNow(), label = `${HUD_SKINS.indexOf(s)}/${HUD_SKINS.length - 1} ${s.name}`;
+  const s = skinNow(), r = hudRing(), label = `${HUD_SKINS.indexOf(s)} ${s.name} · ${r.indexOf(s) + 1}/${r.length}`;
   const span = c.querySelector("span")!;
   if (span.textContent !== label) { span.textContent = label; span.title = s.idea; }
 }
@@ -1746,7 +1746,7 @@ Object.assign(window, {
     /** The fight HUD's skins (src/hud/skins/): `hud()` lists them and names the one showing, `hud(id)` wears one (an id or its index). */
     /** The quality tier drawn at `now` (low, mid or high), each step the frame budget took to get there (`?quality=` sets where it starts), and the plant budget that tier set. */
     quality: () => ({ now: tiers.quality, steps: tiers.steps, plants: plantBudget() }),
-    hud: (id?: string) => { if (id !== undefined && !useSkin(String(id))) return null; return { now: skinNow().id, skins: HUD_SKINS.map((s) => ({ id: s.id, name: s.name, idea: s.idea })) }; },
+    hud: (id?: string) => { if (id !== undefined && !useSkin(String(id))) return null; if (id !== undefined && m) hud(m); return { now: skinNow().id, skins: HUD_SKINS.map((s) => ({ id: s.id, name: s.name, idea: s.idea })) }; },
     /** The open world: `enter()`, `state()` (where you are, what you've beaten, what's open and rising), `travel(n)` to an open region n's arena, `places(n?)` the region's tapes, campfires, landmarks and sighting boards (also in `state().places`), `hunts(n?)` its sighting-board contracts (stage, next sign, lair; also `state().hunts`), `fastTravel(id)` to a lit campfire, `teleport(x, z)` onto open ground (`state().wilds` says where the wild ones roam, `trails()` where each keeper's stone is), `setHour(h)` for the time of day, `setWeather({ rain, snow, mist })` (or null) to hold the weather, `layer(name, on)` to hide a drawn layer, `beat(n)` as if you won its arena, `reset()`. */
     /** Walking together, for an agent or the two-page journey: the party's view, and a contract told to the room. */
     together: {

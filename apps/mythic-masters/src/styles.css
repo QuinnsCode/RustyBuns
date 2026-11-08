@@ -13,7 +13,7 @@ button.go { background: var(--hot); color: #1b1408; border-color: transparent; f
 /* A skin that doesn't slide its own sides (src/hud/skins/00-classic.ts does) drops in from the top as one. */
 .hud:not([data-skin="classic"]) { opacity: var(--hud-in); transform: translateY(calc((var(--hud-in) - 1) * 80px)); }
 .hud-chooser { position: fixed; left: 12px; bottom: 12px; z-index: 5; display: flex; align-items: center; gap: 6px; background: var(--panel); border-radius: 999px; padding: 4px; font-size: 13px; }
-.hud-chooser span { min-width: 16ch; text-align: center; white-space: nowrap; }
+.hud-chooser span { min-width: 24ch; text-align: center; white-space: nowrap; }
 .hud-chooser button { padding: 2px 10px; border-radius: 999px; font-size: 18px; line-height: 1; }
 
 .select, .result { position: fixed; inset: 0; overflow: auto; padding: 24px 16px; background: linear-gradient(rgba(10, 13, 18, 0.55), rgba(10, 13, 18, 0.9)); }
