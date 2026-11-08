@@ -22,8 +22,8 @@
     "@rustybuns/models": "workspace:*",
     "@rustybuns/shell-bun": "^0.1.12",
     "@rustybuns/terrain": "workspace:*",
-    "@rustybuns/ui": "workspace:*",
-    "@rustybuns/util": "workspace:*",
+    "@rustybuns/ui": "^0.1.12",
+    "@rustybuns/util": "^0.1.12",
     "three": "^0.180.0"
   },
   "devDependencies": {
