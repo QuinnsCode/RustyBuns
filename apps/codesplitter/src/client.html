@@ -1489,7 +1489,8 @@ async function wireAudit(el, path, showRepo) {
 }
 const app = $("#app");
 let socket = null;
-let agentTimer = null;
+// The run cards' thread sockets on this page (watchRuns), closed when the page goes.
+let runWatch = null;
 // What the page is showing, so the palette can offer what makes sense here.
 let ctx = {};
 // The open file's picker, for the palette and agents: set by the file page, null elsewhere.
@@ -3212,6 +3213,47 @@ function drawRuns(el, rs, { owner, repo, file, scope = {}, lines, refresh, empty
     catch (err) { toast(err.message); }
     refresh();
   };
+}
+/**
+ * Run cards that keep themselves current (#3737): each running (or waiting) run's thread socket (`?watch=1`: no presence,
+ * no backlog) pushes its state (`{t: "run"}`) and every log line (an event message), so no page asks GET .../agents while
+ * a run goes. `draw(rs)` redraws the cards; a run ending, its batch landing or a socket coming back calls `reread()` once,
+ * for the result. `watch(rs)` takes the list after each read; `close()` drops every socket.
+ */
+function watchRuns(owner, repo, draw, reread) {
+  let cur = [], shut = false;
+  const open = new Map(), io = import("/page-socket.js");
+  const heard = (m) => {
+    if (m.t === "run") {
+      const x = cur.find((r) => r.id === m.run.id);
+      // A new run in the thread, an ending, or a batch that landed or went: read the list for what it says now.
+      if (!x || m.run.status !== x.status || !!m.run.pending !== !!x.pending) reread();
+    } else if (m.t === "msg" && m.message.kind === "event" && m.message.run) {
+      const x = cur.find((r) => r.id === m.message.run && r.status === "running");
+      if (!x) return;
+      x.log = [...x.log, m.message.text].slice(-20);
+      draw(cur);
+    }
+  };
+  const watch = async (rs) => {
+    cur = rs;
+    const going = new Set(rs.filter((x) => x.status === "running" || x.pending).map((x) => x.thread ?? x.id));
+    for (const [t, sock] of open) if (!going.has(t)) { sock.close(); open.delete(t); }
+    const { liveSocket } = await io;
+    if (shut) return;
+    for (const t of going) {
+      if (open.has(t)) continue;
+      open.set(t, liveSocket({
+        open: () => new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/api/repos/${owner}/${repo}/agents/${t}/thread/ws?watch=1`),
+        onMessage: (data) => { let m; try { m = JSON.parse(data); } catch { return; } heard(m); },
+        onNet: () => {},
+        // Back after a drop: what was said meanwhile went to nobody.
+        resync: reread,
+      }));
+    }
+  };
+  runWatch?.close();
+  return runWatch = { watch, close: () => { shut = true; for (const sock of open.values()) sock.close(); open.clear(); } };
 }
 const readmeOf = (tree) => tree.entries.find((e) => e.type === "file" && /^readme(\.|$)/i.test(e.name)) ?? tree.entries.find((e) => e.type === "file");
 function table(tree, href) {
@@ -5423,15 +5465,18 @@ const views = {
     views.wireBranches(owner, repo, r, { phone: true });
     views.wireThreads(owner, repo);
     if (!$("#m-runs")) return;
-    // Every run on the repo, polled while one is going; its lines land live on the file's page.
-    const poll = async () => {
-      clearTimeout(agentTimer);
-      const rs = await api(`/repos/${owner}/${repo}/agents`).catch(() => []);
+    // Every run on the repo, read once; a running one's card hears its thread (watchRuns), its lines land live on the file's page.
+    const draw = (rs) => {
       const el = $("#m-runs");
-      if (!el) return;
+      if (!el?.isConnected) return void live.close();
       drawRuns(el, rs, { owner, repo, file: true, refresh: poll, empty: `<span class="muted">No agents yet.${isOwner ? " Pick a file and give one a task." : ""}</span>` });
-      if (rs.some((x) => x.status === "running" || x.pending)) agentTimer = setTimeout(poll, 2000);
     };
+    const poll = async () => {
+      const rs = await api(`/repos/${owner}/${repo}/agents`).catch(() => []);
+      draw(rs);
+      if ($("#m-runs")?.isConnected) void live.watch(rs);
+    };
+    const live = watchRuns(owner, repo, draw, poll);
     poll();
     const f = $("#m-agent");
     if (!f) return;
@@ -6157,18 +6202,22 @@ const views = {
     }
     // The crew see the file's runs and can tell one something (#3711); the owner also has the Agent button to start one.
     const runsEl = $("#agent-runs");
-    // Runs are polled while one is going; the edits themselves arrive on the file's socket like anyone's, and so
-    // does a ping when a run here starts or ends (#3714), so an idle list isn't asked again.
-    const pollAgents = async () => {
-      clearTimeout(agentTimer);
-      const rs = await api(`/repos/${owner}/${repo}/agents?path=${encodeURIComponent(path)}`).catch(() => []);
-      if (!runsEl?.isConnected) return;
+    // The runs are read when one here starts or ends (the file's socket pings, #3714); a running one's card hears its
+    // thread for its state and log line (watchRuns, #3737). The edits themselves arrive on the file's socket like anyone's.
+    const drawAgents = (rs) => {
+      if (!runsEl?.isConnected) return void runsLive.close();
       drawRuns(runsEl, rs, { owner, repo, scope: { path }, lines: () => selLines().map((l) => l.id), refresh: pollAgents,
         empty: `<span class="muted">No agents on this file yet.${owner === me() ? " Press Agent to give one a task." : ""}</span>` });
+    };
+    const pollAgents = async () => {
+      const rs = await api(`/repos/${owner}/${repo}/agents?path=${encodeURIComponent(path)}`).catch(() => []);
+      if (!runsEl?.isConnected) return void runsLive.close();
+      drawAgents(rs);
+      void runsLive.watch(rs);
       // The crew's waiting batches come from pollWaits, with their hunks.
       if (role === "owner") void setRuns(rs);
-      if (rs.some((x) => x.status === "running" || x.pending)) agentTimer = setTimeout(pollAgents, 1500);
     };
+    const runsLive = watchRuns(owner, repo, drawAgents, pollAgents);
     if (runsEl) { pollAgents(); ctx.pollAgents = pollAgents; }
     if ($("#agent")) {
       popover($("#agent"));
@@ -8559,7 +8608,7 @@ async function route() {
   fileLeave?.(); fileLeave = null;
   followed = fetchingFollows = null;
   socket?.close(); socket = null; showNet(null);
-  clearTimeout(agentTimer);
+  runWatch?.close(); runWatch = null;
   stopIntro();
   stopStrip();
   stopBoard();
