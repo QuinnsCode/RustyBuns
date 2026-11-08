@@ -82,7 +82,9 @@ export async function qollab(req: Request, conf: Env): Promise<Response | null> 
       conf.DB.prepare("DELETE FROM party_seats WHERE at < ?").bind(now - PARTY_LIFE_MAX),
       conf.DB.prepare("INSERT INTO party_seats (user_id, code, at) VALUES (?, ?, ?) ON CONFLICT (user_id, code) DO UPDATE SET at = excluded.at").bind(t.who.id, code, now),
     ]);
-    return echoProtocol(await partyOf(conf.PARTY, code).fetch(new Request(`https://party/socket?${new URLSearchParams({ ...t.who, code, iss: issuer(req, conf) })}`, { headers: { upgrade: "websocket" } })), sock.offered);
+    // The invite key a party link carried (?invite=), for a party where only the host invites.
+    const invite = new URL(req.url).searchParams.get("invite")?.match(/^[\w-]{1,64}$/)?.[0];
+    return echoProtocol(await partyOf(conf.PARTY, code).fetch(new Request(`https://party/socket?${new URLSearchParams({ ...t.who, code, iss: issuer(req, conf), ...(invite && { invite }) })}`, { headers: { upgrade: "websocket" } })), sock.offered);
   }
 
   // Qollab spaces (space.ts): GET /q/space lists yours, POST { name } makes one, POST /q/space/join { invite } joins one,

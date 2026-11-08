@@ -1,6 +1,6 @@
 // A party's rules (#3881): the host sets them from the lobby and the party holds everyone to them at the door and in chat;
 // the host takes people out, blocks them (kept out, or let in hidden), and hands the party over; who may mute and report,
-// and how long the party lives, are the host's to set too (#3903).
+// and how long the party lives, are the host's to set too (#3903); with only the host inviting, the door wants the host's link (#3908).
 import { afterAll, expect, setDefaultTimeout, test } from "bun:test";
 import { durableObject, serve } from "@rustybuns/shell-bun";
 import { newKey } from "@rustybuns/util/token";
@@ -29,9 +29,9 @@ const until = async (f: () => unknown) => { const end = Date.now() + 10_000; whi
 /** A player's page: their party client and what it has heard. */
 function player(token: string) {
   const p = party({ url: () => base, token: () => token });
-  const heard = { members: [] as PartyMember[], rules: null as PartyRules | null, blocked: [] as { name: string }[], gone: "", refused: "", said: [] as string[] };
+  const heard = { members: [] as PartyMember[], rules: null as PartyRules | null, blocked: [] as { name: string }[], invite: "", gone: "", refused: "", said: [] as string[] };
   p.onMembers((m) => (heard.members = m));
-  p.onRules((m) => { heard.rules = m.rules; if (m.blocked) heard.blocked = m.blocked; });
+  p.onRules((m) => { heard.rules = m.rules; heard.invite = m.invite ?? ""; if (m.blocked) heard.blocked = m.blocked; });
   p.onGone((w) => (heard.gone = w));
   p.onRefused((w) => (heard.refused = w));
   p.onSay((m) => heard.said.push(`${m.from.name}: ${m.text}`));
@@ -136,6 +136,45 @@ test("who may mute and report, a blocked guest let in hidden from the host, and 
     await until(() => ada.heard.gone && bo.heard.gone);
   } finally { Date.now = now; }
   expect([ada.heard.gone, bo.heard.gone]).toEqual(["The host ended the party.", "The host ended the party."]);
+  ada.p.leave(); bo.p.leave(); cy.p.leave();
+});
+
+test("only the host invites: a bare code is refused, the host's link gets in, and a new link retires the old one", async () => {
+  const [adaToken, boToken, cyToken] = (await Promise.all(["Ada9", "Bo9", "Cy9"].map(signUp))) as [string, string, string];
+  const ada = player(adaToken), bo = player(boToken), cy = player(cyToken);
+  const code = ((await (await fetch(`${base}/q/party?open=1`, { method: "POST", headers: { authorization: `Bearer ${adaToken}`, "cf-connecting-ip": "203.0.113.9" } })).json()) as { code: string }).code;
+  ada.p.join(code);
+  await until(() => ada.heard.invite);
+  const anyone = ada.heard.invite;
+  // Turning inviting to the host's mints a fresh key: links anyone else handed out stop working.
+  ada.p.rules({ ...ada.heard.rules!, invite: "host" });
+  await until(() => ada.heard.rules?.invite === "host");
+  const first = ada.heard.invite;
+  expect(first).not.toBe(anyone);
+  for (const key of [undefined, anyone]) {
+    bo.heard.gone = "";
+    bo.p.join(code, key);
+    await until(() => bo.heard.gone);
+    expect(bo.heard.gone).toBe("Only the host can invite people to this party: ask them for a fresh link.");
+    bo.p.leave();
+  }
+  bo.p.join(code, first);
+  await until(() => ada.names() === "Ada9*,Bo9");
+  expect(bo.heard.invite).toBe(""); // not Bo's to hand out
+  // In once, Bo comes back on the bare code (a reload, a game that dropped the key from its address).
+  bo.p.leave();
+  await until(() => ada.names() === "Ada9*");
+  bo.p.join(code);
+  await until(() => ada.names() === "Ada9*,Bo9");
+
+  // A new link: the old one no longer lets anyone in, the new one does.
+  ada.p.relink();
+  await until(() => ada.heard.invite !== first);
+  cy.p.join(code, first);
+  await until(() => cy.heard.gone);
+  cy.p.leave();
+  cy.p.join(code, ada.heard.invite);
+  await until(() => ada.names() === "Ada9*,Bo9,Cy9");
   ada.p.leave(); bo.p.leave(); cy.p.leave();
 });
 

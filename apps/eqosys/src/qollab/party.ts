@@ -5,11 +5,12 @@
 // an unknown or expired code is a 404 and a member from another app a 403.
 // Members are read off the open sockets; storage holds the app, host, ready ids and whether the host has started.
 // The host's rules (@rustybuns/util/party-rules, #3881) decide who gets in, how many, whether late, what start needs and
-// who may talk, mute, report and invite, and how long the party lives; the host also kicks, blocks (their list: refused at
+// who may talk, mute, report and invite (with "the host", a link carries a key the door checks, #3908), and how long the party lives; the host also kicks, blocks (their list: refused at
 // the door, or let in hidden from the host by the `block` rule) and hands the party to someone else.
 import { check, bool, obj, oneOf, opt, str, type Of } from "@rustybuns/util/guard";
 import { refuseSocket, Sockets, type RoomCtx, type RoomSocket } from "@rustybuns/util/room";
 import { sign, START_S, startAud } from "@rustybuns/util/token";
+import { b64url } from "@rustybuns/util/bytes";
 import { defaultRules, LIVES, may, PartyRules, readyEnough } from "@rustybuns/util/party-rules";
 import { ChatGate, SAY_MAX, type Said } from "./chat.ts";
 import { appOf, HOME } from "../apps.ts";
@@ -25,6 +26,7 @@ const DOOR = {
   blocked: { code: 4405, why: "The host has blocked you from this party." },
   late: { code: 4408, why: "This party has started and isn't taking late joiners." },
   full: { code: 4407, why: "This party is full." },
+  uninvited: { code: 4410, why: "Only the host can invite people to this party: ask them for a fresh link." },
 } as const;
 /** A member the host took out: closed with this, free to come back unless blocked too. */
 const CLOSE_KICKED = 4406;
@@ -40,18 +42,19 @@ export type Member = Of<typeof Member>;
 export type Seen = Member & { ready: boolean; host: boolean };
 /** What a member sends: ready up or stand down, and (the host only) start. */
 const PartyIn = obj({
-  t: oneOf(["ready", "start", "say", "mute", "report", "rules", "kick", "block", "host"]), ready: opt(bool()),
+  t: oneOf(["ready", "start", "say", "mute", "report", "rules", "kick", "block", "host", "relink"]), ready: opt(bool()),
   text: opt(str(SAY_MAX)), id: opt(str(200, { min: 1 })), on: opt(bool()), rules: opt(PartyRules),
 });
-const Who = obj({ id: str(200, { min: 1 }), name: str(200), app: str(64, { min: 1 }), code: opt(str(12)), iss: opt(str(200)) });
+const Who = obj({ id: str(200, { min: 1 }), name: str(200), app: str(64, { min: 1 }), code: opt(str(12)), iss: opt(str(200)), invite: opt(str(64)) });
 export type PartyOut =
   | { t: "members"; app: string; members: Seen[] }
   /** The host started: go to this room, in this seat (0 is the host's, then by name). `ticket` is eqosys's word on both,
    *  for the game's Worker to check (`startTicket` in @rustybuns/util/token); absent with no signing key. */
   | { t: "start"; room: string; seat: number; ticket?: string }
   | { t: "refused"; why: string }
-  /** The party's rules, on joining and whenever the host changes them; `blocked` (the host's list) goes to the host alone. */
-  | { t: "rules"; rules: PartyRules; blocked?: Member[] }
+  /** The party's rules, on joining and whenever the host changes them; `blocked` (the host's list) goes to the host alone,
+   *  `invite` (the key a link carries) to whoever the `invite` rule lets hand one out. */
+  | { t: "rules"; rules: PartyRules; blocked?: Member[]; invite?: string }
   /** A chat message, from the live party or the last of its history. */
   | ({ t: "say" } & Said)
   /** To the host: someone reported a member. */
@@ -72,6 +75,9 @@ export const mintCode = (): string => Array.from(crypto.getRandomValues(new Uint
 export const PARTY_LIFE = 24 * 60 * 60 * 1000;
 /** The longest a party can live (the `hours` rule's top choice): how long a seat is remembered. */
 export const PARTY_LIFE_MAX = Math.max(...LIVES) * 60 * 60 * 1000;
+
+/** A fresh invite key: what a party link carries so that, with the `invite` rule at "host", the door knows the host handed it out. */
+const mintKey = (): string => b64url(crypto.getRandomValues(new Uint8Array(12)));
 
 /** A room code as a person types it: letters and digits, case ignored. Null when it can't be one. */
 export const codeOf = (raw: string): string | null => /^[A-Za-z0-9]{4,12}$/.test(raw) ? raw.toUpperCase() : null;
@@ -104,6 +110,8 @@ export class Party {
       await this.ctx.storage.put("open", url.searchParams.get("open") === "1");
       await this.ctx.storage.put("rules", defaultRules(url.searchParams.get("open") === "1"));
       await this.ctx.storage.put("blocked", []);
+      await this.ctx.storage.put("invite", mintKey());
+      await this.ctx.storage.put("admitted", []);
       await this.ctx.storage.put("startedWith", []);
       await this.ctx.storage.put("started", false);
       // A code comes round again once its party expired: nothing of the old one (its chat, its mutes) reaches the new one's members.
@@ -148,7 +156,7 @@ export class Party {
     if (msg.t === "say") return this.say(ws, me, msg.text ?? "");
     if (msg.t === "mute") return this.mute(ws, me, msg.id ?? "", msg.on ?? true);
     if (msg.t === "report") return this.report(ws, me, msg.id ?? "");
-    if (msg.t === "rules" || msg.t === "kick" || msg.t === "block" || msg.t === "host") return this.hostDoes(ws, me, msg);
+    if (msg.t === "rules" || msg.t === "kick" || msg.t === "block" || msg.t === "host" || msg.t === "relink") return this.hostDoes(ws, me, msg);
     const ready = new Set(await this.ctx.storage.get<string[]>("ready") ?? []);
     if (msg.t === "ready") {
       if (msg.ready ?? true) ready.add(me.id); else ready.delete(me.id);
@@ -192,18 +200,39 @@ export class Party {
   }
 
   private async rulesFor(id: string): Promise<PartyOut> {
-    const host = id === await this.ctx.storage.get<string>("host");
-    return { t: "rules", rules: await this.rules(), ...(host && { blocked: await this.ctx.storage.get<Member[]>("blocked") ?? [] }) };
+    const host = id === await this.ctx.storage.get<string>("host"), rules = await this.rules(), invite = may(rules.invite, host) && await this.inviteKey();
+    return { t: "rules", rules, ...(host && { blocked: await this.ctx.storage.get<Member[]>("blocked") ?? [] }), ...(invite && { invite }) };
   }
 
-  /** Why `who` may not come in, or null. The host always may; someone already in (another tab) is never counted twice. */
-  private async door(who: Member, app: string): Promise<{ code: number; why: string } | null> {
+  /** The key party links carry; a party made before keys gets one now. */
+  private async inviteKey(): Promise<string> {
+    const key = await this.ctx.storage.get<string>("invite");
+    if (key) return key;
+    const fresh = mintKey();
+    await this.ctx.storage.put("invite", fresh);
+    return fresh;
+  }
+
+  /** Why `who` may not come in, or null; let in, they are remembered, so coming back (a reload, after a start) needs no link. */
+  private async door(who: Member & { invite?: string }, app: string): Promise<{ code: number; why: string } | null> {
+    const no = await this.doorRules(who, app);
+    if (!no) {
+      const admitted = await this.ctx.storage.get<string[]>("admitted") ?? [];
+      if (!admitted.includes(who.id)) await this.ctx.storage.put("admitted", [...admitted, who.id].slice(-500));
+    }
+    return no;
+  }
+
+  /** The door's rules. The host always may; someone already in (another tab) is never counted twice. With the `invite`
+   *  rule at "host", a newcomer needs the key from a link the host handed out. */
+  private async doorRules(who: Member & { invite?: string }, app: string): Promise<{ code: number; why: string } | null> {
     const host = await this.ctx.storage.get<string>("host") ?? "";
     if (who.id === host) return null;
     const rules = await this.rules(), members = this.members(), here = members.some((m) => m.id === who.id);
     if (rules.block === "out" && (await this.ctx.storage.get<Member[]>("blocked") ?? []).some((b) => b.id === who.id)) return DOOR.blocked;
     if (!here && members.length >= rules.size) return DOOR.full;
     if (!rules.late && await this.ctx.storage.get<boolean>("started") && !(await this.ctx.storage.get<string[]>("startedWith") ?? []).includes(who.id)) return DOOR.late;
+    if (rules.invite === "host" && !here && who.invite !== await this.inviteKey() && !(await this.ctx.storage.get<string[]>("admitted") ?? []).includes(who.id)) return DOOR.uninvited;
     if (rules.join === "anyone" || await this.friendOf(host, await this.ctx.storage.get<string>("hostName") ?? "", app, who.id)) return null;
     if (rules.join === "friends" || rules.invite === "host") return { code: 4403, why: FRIENDS_ONLY };
     for (const m of members) if (m.id !== host && await this.friendOf(m.id, m.name, app, who.id)) return null;
@@ -222,8 +251,12 @@ export class Party {
     const host = await this.ctx.storage.get<string>("host"), app = await this.ctx.storage.get<string>("app") ?? "";
     if (me.id !== host) return this.sockets.send(ws, { t: "refused", why: "only the host can do that" });
     const tell = async () => { for (const sock of this.sockets.open()) { const m = this.sockets.who(sock); if (m) this.sockets.send(sock, await this.rulesFor(m.id)); } };
+    // A new link: the key every link out there carries stops working.
+    if (msg.t === "relink") { await this.ctx.storage.put("invite", mintKey()); return tell(); }
     if (msg.t === "rules") {
       if (!msg.rules) return;
+      // Inviting turns the host's: links others handed out stop working.
+      if (msg.rules.invite === "host" && (await this.rules()).invite !== "host") await this.ctx.storage.put("invite", mintKey());
       await this.ctx.storage.put("rules", msg.rules);
       // The lifetime counts from when the party was made; shortened past its age, the party ends now.
       const made = await this.ctx.storage.get<number>("made") ?? (await this.ctx.storage.get<number>("expires") ?? 0) - PARTY_LIFE;
@@ -245,6 +278,8 @@ export class Party {
       if (!them) return this.sockets.send(ws, { t: "refused", why: "they aren't in the party" });
       await this.ctx.storage.put("host", them.id);
       await this.ctx.storage.put("hostName", them.name);
+      // The old host may not invite any more: their links stop working too.
+      if ((await this.rules()).invite === "host") await this.ctx.storage.put("invite", mintKey());
       await this.announce(app);
       return tell();
     }
@@ -287,7 +322,7 @@ export class Party {
       return json({ ok: true });
     }
     for (const ws of this.sockets.open()) if (this.sockets.who(ws)?.id === id) try { ws.close(4001, "account deleted"); } catch { /* closing */ }
-    for (const key of ["ready", "muted", "startedWith"]) await this.ctx.storage.put(key, (await this.ctx.storage.get<string[]>(key) ?? []).filter((x) => x !== id));
+    for (const key of ["ready", "muted", "startedWith", "admitted"]) await this.ctx.storage.put(key, (await this.ctx.storage.get<string[]>(key) ?? []).filter((x) => x !== id));
     await this.ctx.storage.put("blocked", (await this.ctx.storage.get<Member[]>("blocked") ?? []).filter((b) => b.id !== id));
     await this.ctx.storage.put("chat", (await this.ctx.storage.get<Said[]>("chat") ?? []).filter((m) => m.from.id !== id));
     await this.announce(app);

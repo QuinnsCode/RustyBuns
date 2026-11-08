@@ -246,10 +246,10 @@ export type PartyMember = Of<typeof PartyMember>;
 export const PartyMsg: Guard<
   { t: "members"; members: PartyMember[] } | { t: "start"; room: string; seat: number; ticket?: string } | { t: "refused"; why: string }
   | { t: "say"; from: { id: string; name: string }; text: string; at: number } | { t: "reported"; by: string; id: string; name: string }
-  | { t: "rules"; rules: PartyRules; blocked?: { id: string; name: string }[] }
+  | { t: "rules"; rules: PartyRules; blocked?: { id: string; name: string }[]; invite?: string }
 > = (v) => {
   const t = check(obj({ t: oneOf(["members", "start", "refused", "say", "reported", "rules"]) }), v)?.t;
-  if (t === "rules") { const r = obj({ rules: PartyRules, blocked: opt(arr(obj({ id: str(200), name: str(200) }), 1000)) })(v); return { t, rules: r.rules, ...(r.blocked && { blocked: r.blocked }) }; }
+  if (t === "rules") { const r = obj({ rules: PartyRules, blocked: opt(arr(obj({ id: str(200), name: str(200) }), 1000)), invite: opt(str(64)) })(v); return { t, rules: r.rules, ...(r.blocked && { blocked: r.blocked }), ...(r.invite && { invite: r.invite }) }; }
   if (t === "members") return { t, members: obj({ members: arr(PartyMember, 1000) })(v).members };
   if (t === "start") { const st = obj({ room: str(64), seat: int(0, 1000), ticket: opt(str(4096)) })(v); return { t, room: st.room, seat: st.seat, ...(st.ticket && { ticket: st.ticket }) }; }
   if (t === "refused") return { t, why: obj({ why: str(500) })(v).why };
@@ -293,14 +293,15 @@ export function party({ url, token }: PartyConfig) {
 
   /** Who was in at the last word from the party, for a listener that joins after it. */
   let members: PartyMember[] | null = null;
-  /** Open the party's socket. `onGone` hears "no such party" or any close that isn't a retry. Joined already: who is in, again. */
-  function join(code: string) {
+  /** Open the party's socket, with the invite key the party link carried (the door wants it when only the host invites).
+   *  `onGone` hears "no such party" or any close that isn't a retry. Joined already: who is in, again. */
+  function join(code: string, invite?: string) {
     if (link && joined === code) { if (members) onMembers.hear(members); return; }
     const t = token();
     if (!t) { onGone.hear("Sign in with eqosys first."); return; }
     link?.close();
     joined = code; members = null; lastWhy = "";
-    link = connectSocket<PartyMsg, Out>(() => `${url().replace(/^http/, "ws")}/q/party/${encodeURIComponent(code)}`, {
+    link = connectSocket<PartyMsg, Out>(() => `${url().replace(/^http/, "ws")}/q/party/${encodeURIComponent(code)}${invite ? `?invite=${encodeURIComponent(invite)}` : ""}`, {
       protocols: [SOCKET_PROTOCOL, t],
       decode: (v) => check(PartyMsg, v),
       queue: 4,
@@ -309,7 +310,7 @@ export function party({ url, token }: PartyConfig) {
         if (e.code === 4000) { onGone.hear("This party is open in another tab."); return; }
         // The door's refusals (party.ts): its own words came just before the close; stop trying.
         if (e.code === 4403) { onGone.hear(lastWhy || "Only the host's friends can join: ask them to add you on eqosys."); return; }
-        if (e.code === 4405 || e.code === 4407 || e.code === 4408) { onGone.hear(lastWhy || "The party didn't let you in."); return; }
+        if (e.code === 4405 || e.code === 4407 || e.code === 4408 || e.code === 4410) { onGone.hear(lastWhy || "The party didn't let you in."); return; }
         if (e.code === 4406) { onGone.hear("The host took you out of the party."); return; }
         if (e.code === 4409) { onGone.hear("The host ended the party."); return; }
         if (!e.seen) onGone.hear("No such party.");
@@ -332,6 +333,8 @@ export function party({ url, token }: PartyConfig) {
     kick: (id: string) => void link?.send({ t: "kick", id }),
     block: (id: string, on = true) => void link?.send({ t: "block", id, on }),
     makeHost: (id: string) => void link?.send({ t: "host", id }),
+    /** Host only: a fresh invite key, so every party link handed out so far stops letting people in. */
+    relink: () => void link?.send({ t: "relink" }),
     /** Mute someone for yourself only: their chat lines stop reaching this page. Kept in this browser. */
     hide, hidden,
     onRules: onRules.add,
