@@ -166,6 +166,16 @@ const GLSL_FRAG_MAIN = `
     float gCrack = vGk.x * (1.0 - smoothstep(0.3, 0.65, gWet)), gRipple = vGk.y;
     float w[8];
     w[0] = vGw0.x; w[1] = vGw0.y; w[2] = vGw0.z; w[3] = vGw0.w; w[4] = vGw1.x; w[5] = vGw1.y; w[6] = vGw1.z; w[7] = vGw1.w;
+    // a mixed floor gathers into clumps a few metres across (a drift of needles, a bare sandy scrape, a dirt hollow) rather
+    // than every layer laid thin over every metre, so it reads from the walking camera; a layer that covers most of the ground (a trail, snow) keeps it
+    // three noises shared by all eight layers (each takes one of the two big ones, or its inverse, so the layers that
+    // share a floor trade ground rather than clump together), not two noises a layer: the forest's frame cost
+    float gNa = gNoise(vGp.xz * 0.21), gNb = gNoise(vGp.xz * 0.21 + vec2(31.7, 9.2)), gNc = gNoise(vGp.xz * 0.83 - vec2(4.1, 13.0)) * 0.35;
+    for (int i = 0; i < 8; i++) {
+      if (w[i] < 0.02) continue;
+      float n = (i % 2 == 0 ? 1.0 : -1.0) * ((i / 2) % 2 == 0 ? gNa - 0.5 : gNb - 0.5) * 0.65 + 0.5 + gNc - 0.175;
+      w[i] *= mix(0.12 + 1.76 * smoothstep(0.3, 0.7, n), 1.0, smoothstep(0.55, 0.85, w[i]));
+    }
     float total = 0.0;
     for (int i = 0; i < 8; i++) {
       if (w[i] < 0.02) continue;
@@ -193,6 +203,10 @@ const GLSL_FRAG_MAIN = `
     }
     gDetail = total > 0.0 ? gDetail / total : vec3(1.0);
     gNormal = total > 0.0 ? gNormal / total * gNear : vec2(0.0);
+    // the detail maps bring light and shade, the vertex colour the hue: keep a little of the maps' own tint (the needle
+    // bake's floor runs lavender, which a clump of needles would show as pink)
+    float gLum = dot(gDetail, vec3(0.3, 0.55, 0.15));
+    gDetail = gLum + (gDetail - gLum) * 0.35;
     gDetail = mix(vec3(1.0), max(vec3(1.0) + (gDetail - 1.0) * 2.1, 0.15), gGrain);
     // big soft patches over the lot, so no two hectares match: lighter and darker, a touch warmer and cooler
     float m = gNoise(vGp.xz * 0.031) * 0.55 + gNoise(vGp.xz * 0.0071 + 7.0) * 0.45;
