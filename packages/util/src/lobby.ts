@@ -1,9 +1,10 @@
 // The party lobby panel, shared by every page that plays through a Qollab party (apps/eqosys/src/qollab/party.ts): who is in and
 // who is ready, a Ready button (Start for the host), Copy link, and Settings: every party rule (./party-rules.ts) in one menu,
-// the host's to change and everyone's to read, with each member's mute-for-me and the host's make host, take out and block.
+// the host's to change and everyone's to read, with each member's mute-for-me, mute-for-all and report as the rules allow, and the
+// host's make host, take out and block.
 // What happens on start is the page's own. The box wears the page's eqosys skin (./skin.ts); where it sits is the page's.
 import type { PartyMember, party } from "./eqosys.ts";
-import { CHAT, JOINS, READY, RULE_TEXT, type PartyRules } from "./party-rules.ts";
+import { BLOCKS, CHAT, INVITE, JOINS, LIVES, may, MUTE, READY, REPORT, RULE_TEXT, type PartyRules } from "./party-rules.ts";
 import { eqButton, wearSkin } from "./skin.ts";
 
 export interface LobbyPanel {
@@ -32,19 +33,21 @@ const el = (tag: string, o: { className?: string; textContent?: string } = {}, .
 /** Join the party and keep `box` showing it. Returns a function that leaves and hides the box. */
 export function lobbyPanel({ code, box, party: p, name, link, onStart, say }: LobbyPanel) {
   let members: PartyMember[] = [], note = "", rules: PartyRules | null = null, blocked: { id: string; name: string }[] = [], open = false;
+  /** Who this page quieted for the whole party, so the button reads right (the party says no more than a refusal). */
+  const quiet = new Set<string>();
   wearSkin();
   box.classList.add("eq", "rb-lobby");
 
   /** One rule's control: the host's select (or checkbox, or number), anyone else's words. */
-  const rule = <K extends keyof PartyRules>(key: K, host: boolean, choices?: readonly string[]): HTMLElement => {
+  const rule = <K extends keyof PartyRules>(key: K, host: boolean, choices?: readonly (string | number)[]): HTMLElement => {
     const r = rules!, words: Record<string, string> = RULE_TEXT[key];
     const set = (v: PartyRules[K]) => p.rules({ ...r, [key]: v });
     let control: HTMLElement;
     if (!host) control = el("span", { textContent: key === "size" ? String(r.size) : key === "late" ? words[r.late ? "on" : "off"]! : words[String(r[key])]! });
     else if (choices) {
       const s = document.createElement("select");
-      for (const c of choices) s.append(Object.assign(document.createElement("option"), { value: c, textContent: words[c]!, selected: r[key] === c }));
-      s.onchange = () => set(s.value as PartyRules[K]);
+      for (const c of choices) s.append(Object.assign(document.createElement("option"), { value: String(c), textContent: words[c]!, selected: r[key] === c }));
+      s.onchange = () => set(choices.find((c) => String(c) === s.value) as PartyRules[K]);
       control = s;
     } else if (key === "late") {
       const c = Object.assign(document.createElement("input"), { type: "checkbox", checked: r.late });
@@ -64,6 +67,9 @@ export function lobbyPanel({ code, box, party: p, name, link, onStart, say }: Lo
     if (m.id !== me?.id) {
       const hid = p.hidden().has(m.id);
       acts.append(eqButton({ text: hid ? `Unmute ${m.name} for you` : `Mute ${m.name} for you`, icon: hid ? "volume-2" : "volume-x", onClick: () => { p.hide(m.id, !hid); draw(); } }));
+      const q = quiet.has(m.id), host = !!me?.host;
+      if (rules && may(rules.mute, host)) acts.append(eqButton({ text: q ? `Let ${m.name} talk again` : `Mute ${m.name} for everyone`, icon: q ? "mic" : "mic-off", onClick: () => { p.mute(m.id, !q); if (q) quiet.delete(m.id); else quiet.add(m.id); draw(); } }));
+      if (rules && may(rules.report, host)) acts.append(eqButton({ text: `Report ${m.name}`, icon: "flag", onClick: () => { p.report(m.id); note = `Reported ${m.name}`; draw(); } }));
       if (me?.host) acts.append(
         eqButton({ text: `Make ${m.name} the host`, icon: "crown", onClick: () => p.makeHost(m.id) }),
         eqButton({ text: `Take ${m.name} out`, icon: "user-x", onClick: () => p.kick(m.id) }),
@@ -79,6 +85,7 @@ export function lobbyPanel({ code, box, party: p, name, link, onStart, say }: Lo
     box.append(
       el("h3", { textContent: host ? "Rules (yours to set)" : "Rules (the host sets these)" }),
       rule("join", host, JOINS), rule("late", host), rule("size", host), rule("ready", host, READY), rule("chat", host, CHAT),
+      rule("mute", host, MUTE), rule("report", host, REPORT), rule("invite", host, INVITE), rule("hours", host, LIVES), rule("block", host, BLOCKS),
       el("h3", { textContent: "People" }), el("ul", {}, ...members.map((m) => member(m, me))),
     );
     if (host) box.append(el("h3", { textContent: "Blocked" }), blocked.length
@@ -93,7 +100,8 @@ export function lobbyPanel({ code, box, party: p, name, link, onStart, say }: Lo
     box.replaceChildren(
       el("div", { className: "rb-lobby-who", textContent: `Party ${code}: ${list}${note ? ` - ${note}` : ""}` }),
       mine?.host ? eqButton({ text: "Start", primary: true, onClick: () => p.start() }) : eqButton({ text: mine?.ready ? "Not ready" : "Ready", primary: !mine?.ready, onClick: () => p.ready(!mine?.ready) }),
-      eqButton({ text: "Copy link", onClick: () => void navigator.clipboard?.writeText(link()).then(() => say?.("Link copied"), () => {}) }),
+      // Inviting is the host's alone when the rules say so.
+      ...(!rules || may(rules.invite, !!mine?.host) ? [eqButton({ text: "Copy link", onClick: () => void navigator.clipboard?.writeText(link()).then(() => say?.("Link copied"), () => {}) })] : []),
       eqButton({ text: open ? "Close settings" : "Settings", icon: "sliders-horizontal", onClick: () => { open = !open; draw(); } }),
       ...(open ? [settings(mine)] : []),
     );

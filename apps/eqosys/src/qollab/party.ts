@@ -1,15 +1,16 @@
 // One Durable Object a party (Qollab, QOLLAB.md): the lobby a game's players meet in before the game starts its own room.
 // Nobody reaches a party directly. The Worker checks the token at /q/party/<code> (handle.ts) and calls it as
 //   /socket?id=&name=&app=&iss=   a member's live socket: the member list on connect and whenever someone joins or leaves
-// A party is made by POST /q/party (handle.ts), belongs to the app of whoever made it, and is good 24 hours:
+// A party is made by POST /q/party (handle.ts), belongs to the app of whoever made it, and is good 24 hours (the host's `hours` rule):
 // an unknown or expired code is a 404 and a member from another app a 403.
 // Members are read off the open sockets; storage holds the app, host, ready ids and whether the host has started.
 // The host's rules (@rustybuns/util/party-rules, #3881) decide who gets in, how many, whether late, what start needs and
-// who may talk; the host also kicks, blocks (their list, refused at the door) and hands the party to someone else.
+// who may talk, mute, report and invite, and how long the party lives; the host also kicks, blocks (their list: refused at
+// the door, or let in hidden from the host by the `block` rule) and hands the party to someone else.
 import { check, bool, obj, oneOf, opt, str, type Of } from "@rustybuns/util/guard";
 import { refuseSocket, Sockets, type RoomCtx, type RoomSocket } from "@rustybuns/util/room";
 import { sign, START_S, startAud } from "@rustybuns/util/token";
-import { defaultRules, PartyRules, readyEnough } from "@rustybuns/util/party-rules";
+import { defaultRules, LIVES, may, PartyRules, readyEnough } from "@rustybuns/util/party-rules";
 import { ChatGate, SAY_MAX, type Said } from "./chat.ts";
 import { appOf, HOME } from "../apps.ts";
 import { json, type Env } from "../env.ts";
@@ -27,6 +28,8 @@ const DOOR = {
 } as const;
 /** A member the host took out: closed with this, free to come back unless blocked too. */
 const CLOSE_KICKED = 4406;
+/** Everyone, when the host shortened the party past its age. */
+const CLOSE_ENDED = 4409;
 
 /** Chat: how many messages a party keeps (length and rate are chat.ts's). */
 export const CHAT_KEPT = 200;
@@ -67,6 +70,8 @@ const LETTERS = "BCDFGHJKLMNPQRSTVWXYZ";
 export const mintCode = (): string => Array.from(crypto.getRandomValues(new Uint8Array(6)), (b) => LETTERS[b % LETTERS.length]).join("");
 /** How long a party's code is good. */
 export const PARTY_LIFE = 24 * 60 * 60 * 1000;
+/** The longest a party can live (the `hours` rule's top choice): how long a seat is remembered. */
+export const PARTY_LIFE_MAX = Math.max(...LIVES) * 60 * 60 * 1000;
 
 /** A room code as a person types it: letters and digits, case ignored. Null when it can't be one. */
 export const codeOf = (raw: string): string | null => /^[A-Za-z0-9]{4,12}$/.test(raw) ? raw.toUpperCase() : null;
@@ -93,6 +98,7 @@ export class Party {
       await this.ctx.storage.put("host", who.id);
       await this.ctx.storage.put("hostName", who.name);
       await this.ctx.storage.put("code", who.code ?? "");
+      await this.ctx.storage.put("made", now);
       await this.ctx.storage.put("expires", now + PARTY_LIFE);
       await this.ctx.storage.put("ready", []);
       await this.ctx.storage.put("open", url.searchParams.get("open") === "1");
@@ -128,7 +134,8 @@ export class Party {
     this.sockets.replace(server, (m) => m.id === who.id, 4000, "joined from another tab");
     await this.announce(app);
     this.sockets.send(server, await this.rulesFor(who.id));
-    for (const m of await this.ctx.storage.get<Said[]>("chat") ?? []) this.sockets.send(server, { t: "say", ...m });
+    const apart = await this.apart();
+    for (const m of await this.ctx.storage.get<Said[]>("chat") ?? []) if (!apart(who.id, m.from.id)) this.sockets.send(server, { t: "say", ...m });
     // Someone who arrives after the start is handed the same room.
     if (await this.ctx.storage.get<boolean>("started")) this.sockets.send(server, await this.startFor(who, url.searchParams.get("code") ?? ""));
     return response;
@@ -163,9 +170,25 @@ export class Party {
     }
   }
 
-  /** The party's rules: what the host set, or how a party made before rules behaves. */
+  /** The party's rules: what the host set, over how a party made before rules (or before a rule) behaves. */
   private async rules(): Promise<PartyRules> {
-    return await this.ctx.storage.get<PartyRules>("rules") ?? defaultRules(!!(await this.ctx.storage.get<boolean>("open")));
+    return { ...defaultRules(!!(await this.ctx.storage.get<boolean>("open"))), ...await this.ctx.storage.get<Partial<PartyRules>>("rules") };
+  }
+
+  /** Whether two members are kept from each other: with blocked people let in hidden, the host and anyone on their list. */
+  private async apart(): Promise<(a: string, b: string) => boolean> {
+    if ((await this.rules()).block !== "hidden") return () => false;
+    const host = await this.ctx.storage.get<string>("host"), blocked = new Set((await this.ctx.storage.get<Member[]>("blocked") ?? []).map((b) => b.id));
+    return (a, b) => (a === host && blocked.has(b)) || (b === host && blocked.has(a));
+  }
+
+  /** Every socket of a blocked person, closed: when blocked people are kept out. */
+  private async shutOut() {
+    const blocked = new Set((await this.ctx.storage.get<Member[]>("blocked") ?? []).map((b) => b.id));
+    for (const sock of this.sockets.open()) if (blocked.has(this.sockets.who(sock)?.id ?? "")) {
+      this.sockets.send(sock, { t: "refused", why: DOOR.blocked.why });
+      try { sock.close(DOOR.blocked.code, "blocked by the host"); } catch { /* closing */ }
+    }
   }
 
   private async rulesFor(id: string): Promise<PartyOut> {
@@ -178,11 +201,11 @@ export class Party {
     const host = await this.ctx.storage.get<string>("host") ?? "";
     if (who.id === host) return null;
     const rules = await this.rules(), members = this.members(), here = members.some((m) => m.id === who.id);
-    if ((await this.ctx.storage.get<Member[]>("blocked") ?? []).some((b) => b.id === who.id)) return DOOR.blocked;
+    if (rules.block === "out" && (await this.ctx.storage.get<Member[]>("blocked") ?? []).some((b) => b.id === who.id)) return DOOR.blocked;
     if (!here && members.length >= rules.size) return DOOR.full;
     if (!rules.late && await this.ctx.storage.get<boolean>("started") && !(await this.ctx.storage.get<string[]>("startedWith") ?? []).includes(who.id)) return DOOR.late;
     if (rules.join === "anyone" || await this.friendOf(host, await this.ctx.storage.get<string>("hostName") ?? "", app, who.id)) return null;
-    if (rules.join === "friends") return { code: 4403, why: FRIENDS_ONLY };
+    if (rules.join === "friends" || rules.invite === "host") return { code: 4403, why: FRIENDS_ONLY };
     for (const m of members) if (m.id !== host && await this.friendOf(m.id, m.name, app, who.id)) return null;
     return DOOR.friendsOfMembers;
   }
@@ -202,6 +225,16 @@ export class Party {
     if (msg.t === "rules") {
       if (!msg.rules) return;
       await this.ctx.storage.put("rules", msg.rules);
+      // The lifetime counts from when the party was made; shortened past its age, the party ends now.
+      const made = await this.ctx.storage.get<number>("made") ?? (await this.ctx.storage.get<number>("expires") ?? 0) - PARTY_LIFE;
+      const expires = made + msg.rules.hours * 60 * 60 * 1000;
+      await this.ctx.storage.put("expires", expires);
+      if (expires <= Date.now()) {
+        for (const sock of this.sockets.open()) try { sock.close(CLOSE_ENDED, "the host ended the party"); } catch { /* closing */ }
+        return;
+      }
+      if (msg.rules.block === "out") await this.shutOut();
+      await this.announce(app);
       return tell();
     }
     const id = msg.id ?? "";
@@ -221,7 +254,9 @@ export class Party {
     const name = them?.name ?? [...(await this.ctx.storage.get<Said[]>("chat") ?? [])].reverse().find((m) => m.from.id === id)?.from.name ?? "someone";
     if (msg.on ?? true) blocked.push({ id, name });
     await this.ctx.storage.put("blocked", blocked);
-    if (msg.on ?? true) out("blocked by the host");
+    // Kept out: out now. Let in hidden: they stay, and the host and they drop off each other's list.
+    if ((msg.on ?? true) && (await this.rules()).block === "out") out("blocked by the host");
+    else await this.announce(app);
     this.sockets.send(ws, await this.rulesFor(me.id));
   }
 
@@ -236,7 +271,8 @@ export class Party {
     const m: Said = { from: me, text: t, at: Date.now() };
     const kept = [...(await this.ctx.storage.get<Said[]>("chat") ?? []), m].slice(-CHAT_KEPT);
     await this.ctx.storage.put("chat", kept);
-    this.sockets.broadcast({ t: "say", ...m });
+    const apart = await this.apart();
+    this.sockets.broadcast({ t: "say", ...m }, undefined, (to) => !apart(to.id, me.id));
   }
 
   /** The person's account was deleted: close their sockets, and forget their ready flag, mute and messages. A party they hosted ends. */
@@ -258,9 +294,11 @@ export class Party {
     return json({ ok: true });
   }
 
-  /** The host quiets a member (or lets them speak again) for the whole party, now. */
+  /** Someone the `mute` rule allows (the host, by default) quiets a member (or lets them speak again) for the whole party, now. */
   private async mute(ws: RoomSocket, me: Member, id: string, on: boolean) {
-    if (me.id !== await this.ctx.storage.get<string>("host")) return this.sockets.send(ws, { t: "refused", why: "only the host can mute" });
+    const rule = (await this.rules()).mute;
+    if (!may(rule, me.id === await this.ctx.storage.get<string>("host")))
+      return this.sockets.send(ws, { t: "refused", why: rule === "host" ? "only the host can mute" : "nobody can mute in this party" });
     const muted = new Set(await this.ctx.storage.get<string[]>("muted") ?? []);
     if (on && id !== me.id) muted.add(id); else muted.delete(id);
     await this.ctx.storage.put("muted", [...muted]);
@@ -270,10 +308,11 @@ export class Party {
   private async report(ws: RoomSocket, me: Member, id: string) {
     // A report files a public issue under the app's name, so it is about someone else: not a way to file issues at will.
     if (id === me.id) return this.sockets.send(ws, { t: "refused", why: "you can't report yourself" });
+    const host = await this.ctx.storage.get<string>("host"), rule = (await this.rules()).report;
+    if (!may(rule, me.id === host)) return this.sockets.send(ws, { t: "refused", why: rule === "host" ? "only the host can report" : "reports are off in this party" });
     const said = [...(await this.ctx.storage.get<Said[]>("chat") ?? [])].reverse().find((m) => m.from.id === id);
     const name = this.members().find((m) => m.id === id)?.name ?? said?.from.name;
     if (!name) return this.sockets.send(ws, { t: "refused", why: "no such member" });
-    const host = await this.ctx.storage.get<string>("host");
     for (const sock of this.sockets.open()) if (this.sockets.who(sock)?.id === host) this.sockets.send(sock, { t: "reported", by: me.name, id, name });
     const app = appOf(await this.ctx.storage.get<string>("app"));
     if (!app) return;
@@ -310,7 +349,10 @@ export class Party {
   /** The member list with ready flags, to everyone in the party. `gone` is a socket that is closing and no longer counts. */
   private async announce(app: string, gone?: RoomSocket) {
     const ready = new Set(await this.ctx.storage.get<string[]>("ready") ?? []), host = await this.ctx.storage.get<string>("host");
-    const members = this.members(gone).map((m): Seen => ({ ...m, ready: ready.has(m.id), host: m.id === host }));
-    this.sockets.broadcast({ t: "members", app, members }, gone);
+    const members = this.members(gone).map((m): Seen => ({ ...m, ready: ready.has(m.id), host: m.id === host })), apart = await this.apart();
+    for (const ws of this.sockets.open()) {
+      const to = ws === gone ? null : this.sockets.who(ws);
+      if (to) this.sockets.send(ws, { t: "members", app, members: members.filter((m) => !apart(to.id, m.id)) });
+    }
   }
 }

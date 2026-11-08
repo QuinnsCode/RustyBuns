@@ -5,7 +5,7 @@ import { onSite } from "../apps.ts";
 import { json, loopbackOn, type Env } from "../env.ts";
 import { bearerOf, cors, echoProtocol, issuer, socketToken, tokenOf } from "../door.ts";
 import { hubAsk, hubOf, Op } from "./hub.ts";
-import { codeOf, mintCode, PARTY_LIFE, partyOf } from "./party.ts";
+import { codeOf, mintCode, PARTY_LIFE, PARTY_LIFE_MAX, partyOf } from "./party.ts";
 import { SPACE_MEMBERS, SPACE_NAME, SPACES_OWNED, spaceOf } from "./space.ts";
 import { rosterIn } from "./qlave.ts";
 import { get as getSave, MAX_BODY, put as putSave, slotOf } from "./saves.ts";
@@ -76,10 +76,10 @@ export async function qollab(req: Request, conf: Env): Promise<Response | null> 
     if (req.headers.get("upgrade")?.toLowerCase() !== "websocket") return json({ error: "a websocket" }, 426);
     const origin = req.headers.get("origin");
     if (origin && !onSite(t.app, origin, loopbackOn(conf))) return json({ error: "not from that app's site" }, 403);
-    // Remember the seat so deleting the account can clear it (members.ts); seats older than a party lives are pruned here.
+    // Remember the seat so deleting the account can clear it (members.ts); seats older than the longest a party lives are pruned here.
     const now = Date.now();
     await conf.DB.batch([
-      conf.DB.prepare("DELETE FROM party_seats WHERE at < ?").bind(now - PARTY_LIFE),
+      conf.DB.prepare("DELETE FROM party_seats WHERE at < ?").bind(now - PARTY_LIFE_MAX),
       conf.DB.prepare("INSERT INTO party_seats (user_id, code, at) VALUES (?, ?, ?) ON CONFLICT (user_id, code) DO UPDATE SET at = excluded.at").bind(t.who.id, code, now),
     ]);
     return echoProtocol(await partyOf(conf.PARTY, code).fetch(new Request(`https://party/socket?${new URLSearchParams({ ...t.who, code, iss: issuer(req, conf) })}`, { headers: { upgrade: "websocket" } })), sock.offered);

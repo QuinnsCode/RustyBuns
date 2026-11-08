@@ -1,5 +1,6 @@
 // A party's rules (#3881): the host sets them from the lobby and the party holds everyone to them at the door and in chat;
-// the host takes people out, blocks them, and hands the party over.
+// the host takes people out, blocks them (kept out, or let in hidden), and hands the party over; who may mute and report,
+// and how long the party lives, are the host's to set too (#3903).
 import { afterAll, expect, setDefaultTimeout, test } from "bun:test";
 import { durableObject, serve } from "@rustybuns/shell-bun";
 import { newKey } from "@rustybuns/util/token";
@@ -28,11 +29,12 @@ const until = async (f: () => unknown) => { const end = Date.now() + 10_000; whi
 /** A player's page: their party client and what it has heard. */
 function player(token: string) {
   const p = party({ url: () => base, token: () => token });
-  const heard = { members: [] as PartyMember[], rules: null as PartyRules | null, blocked: [] as { name: string }[], gone: "", refused: "" };
+  const heard = { members: [] as PartyMember[], rules: null as PartyRules | null, blocked: [] as { name: string }[], gone: "", refused: "", said: [] as string[] };
   p.onMembers((m) => (heard.members = m));
   p.onRules((m) => { heard.rules = m.rules; if (m.blocked) heard.blocked = m.blocked; });
   p.onGone((w) => (heard.gone = w));
   p.onRefused((w) => (heard.refused = w));
+  p.onSay((m) => heard.said.push(`${m.from.name}: ${m.text}`));
   return { p, heard, names: () => heard.members.map((m) => `${m.name}${m.host ? "*" : ""}`).sort().join() };
 }
 
@@ -79,6 +81,61 @@ test("the host's rules hold at the door and in chat; block, unblock and a new ho
   await until(() => ada.names() === "Ada7,Bo7*");
   ada.p.rules({ ...ada.heard.rules!, chat: "off" });
   await until(() => ada.heard.refused === "only the host can do that");
+  ada.p.leave(); bo.p.leave(); cy.p.leave();
+});
+
+test("who may mute and report, a blocked guest let in hidden from the host, and how long the party lives", async () => {
+  const [adaToken, boToken, cyToken] = (await Promise.all(["Ada8", "Bo8", "Cy8"].map(signUp))) as [string, string, string];
+  const ada = player(adaToken), bo = player(boToken), cy = player(cyToken);
+  const code = ((await (await fetch(`${base}/q/party?open=1`, { method: "POST", headers: { authorization: `Bearer ${adaToken}`, "cf-connecting-ip": "203.0.113.8" } })).json()) as { code: string }).code;
+  ada.p.join(code);
+  await until(() => ada.heard.rules);
+  // Anyone may mute for all, and nobody may report.
+  ada.p.rules({ ...ada.heard.rules!, mute: "everyone", report: "nobody", block: "hidden" });
+  await until(() => ada.heard.rules?.mute === "everyone");
+  bo.p.join(code); cy.p.join(code);
+  await until(() => ada.names() === "Ada8*,Bo8,Cy8");
+  const ids = new Map(ada.heard.members.map((m) => [m.name, m.id])), id = (n: string) => ids.get(n)!;
+  bo.p.mute(id("Cy8"));
+  bo.p.report(id("Cy8"));
+  await until(() => bo.heard.refused);
+  expect(bo.heard.refused).toBe("reports are off in this party");
+  cy.p.say("am I quiet?");
+  bo.p.say("Cy is quiet");
+  await until(() => ada.heard.said.length);
+  expect(ada.heard.said).toEqual(["Bo8: Cy is quiet"]);
+
+  // Blocked, let in hidden: Cy stays, the host and Cy drop off each other's list and stop hearing each other; Bo sees both.
+  ada.p.block(id("Cy8"));
+  await until(() => ada.names() === "Ada8*,Bo8" && cy.names() === "Bo8,Cy8");
+  expect(bo.names()).toBe("Ada8*,Bo8,Cy8");
+  bo.p.mute(id("Cy8"), false);
+  bo.p.say("Cy may talk");
+  await until(() => bo.heard.said.length === 2); // Bo's own line back: the unmute went first
+  cy.p.say("hidden from Ada");
+  ada.p.say("hidden from Cy");
+  await until(() => bo.heard.said.length === 4 && ada.heard.said.length === 3 && cy.heard.said.length === 3);
+  expect(ada.heard.said).toEqual(["Bo8: Cy is quiet", "Bo8: Cy may talk", "Ada8: hidden from Cy"]);
+  expect(cy.heard.said).toEqual(["Bo8: Cy is quiet", "Bo8: Cy may talk", "Cy8: hidden from Ada"]);
+  // Kept out after all: Cy is closed now.
+  ada.p.rules({ ...ada.heard.rules!, block: "out" });
+  await until(() => cy.heard.gone);
+  expect(cy.heard.gone).toBe("The host has blocked you from this party.");
+
+  // A day's party shortened to an hour is younger than that, so it carries on.
+  ada.p.rules({ ...ada.heard.rules!, hours: 1 });
+  await until(() => ada.heard.rules?.hours === 1);
+  ada.p.say("still here");
+  await until(() => bo.heard.said.includes("Ada8: still here"));
+  expect(ada.heard.gone).toBe("");
+  // Two hours on, the same hour-long rule ends it for everyone.
+  const now = Date.now;
+  Date.now = () => now() + 2 * 60 * 60 * 1000;
+  try {
+    ada.p.rules({ ...ada.heard.rules!, size: 15 });
+    await until(() => ada.heard.gone && bo.heard.gone);
+  } finally { Date.now = now; }
+  expect([ada.heard.gone, bo.heard.gone]).toEqual(["The host ended the party.", "The host ended the party."]);
   ada.p.leave(); bo.p.leave(); cy.p.leave();
 });
 
