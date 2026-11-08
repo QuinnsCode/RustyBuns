@@ -24,5 +24,5 @@ export default defineConfig({
   // runs the Worker and its Region rooms on :8790, and a page
   // opened with ?world=1&room=CODE reaches them through here. Solo play never opens a socket, so nothing needs it running.
   // MM_PARTY moves it (the two-page test runs its own on a free port).
-  server: { proxy: { "/ws": { target: `ws://127.0.0.1:${process.env.MM_PARTY ?? 8790}`, ws: true } } },
+  server: { proxy: { "/ws": { target: `ws://127.0.0.1:${process.env.MM_PARTY ?? 8790}`, ws: true }, "/duel": { target: `ws://127.0.0.1:${process.env.MM_PARTY ?? 8790}`, ws: true } } },
 });

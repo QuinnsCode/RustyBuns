@@ -4,7 +4,7 @@
 // run out the player goes through eqosys again, which is one click when they are still signed in there.
 // Worked example: apps/park-hide-seek/src/ui/eqosys.ts.
 import { b64url, digest } from "./bytes.ts";
-import { arr, bool, check, int, nul, obj, oneOf, opt, str, type Guard, type Of } from "./guard.ts";
+import { arr, bool, check, int, nul, num, obj, oneOf, opt, str, type Guard, type Of } from "./guard.ts";
 import { getJson } from "./http.ts";
 import { connectSocket, type Link } from "./socket.ts";
 import { mountReportButton, sendReport, type ReportIn, type Sent } from "./report.ts";
@@ -180,6 +180,7 @@ export function eqosys({ app, url, from, prefix, skin }: EqosysConfig) {
   const token = () => { const l = login(); return l && fresh(l, 5_000) ? l.token : null; };
   const partyClient = () => party({ url: eqosysUrl, token });
   const spaceClient = () => space({ url: eqosysUrl, token });
+  const hubClient = () => hub({ url: eqosysUrl, token });
 
   /**
    * The account chip, in `slot`: the eqosys name and a way out, a way in where eqosys can send the player back, or nothing.
@@ -197,7 +198,7 @@ export function eqosys({ app, url, from, prefix, skin }: EqosysConfig) {
     return slot;
   }
 
-  return { signIn, finishSignIn, login, fresh, signOut, who, eqosysUrl, canSignIn, accountChip, report, reportButton, party: partyClient, space: spaceClient, achieve, achievements, sendHeld, celebrate };
+  return { signIn, finishSignIn, login, fresh, signOut, who, eqosysUrl, canSignIn, accountChip, report, reportButton, party: partyClient, space: spaceClient, hub: hubClient, achieve, achievements, sendHeld, celebrate };
 }
 
 /**
@@ -351,6 +352,41 @@ export function party({ url, token }: PartyConfig) {
 function ears<T>() {
   const fs: ((v: T) => void)[] = [];
   return { add: (f: (v: T) => void) => { fs.push(f); }, hear: (v: T) => { for (const f of fs) f(v); } };
+}
+
+/** A friend as a person's hub (apps/eqosys/src/hub.ts) shows them to an app: who, and which apps they have open. */
+export const HubFriend = obj({ id: str(200), name: str(200, { min: 0 }), presence: arr(obj({ app: str(64), doing: str(80, { min: 0 }) }), 50) });
+export type HubFriend = Of<typeof HubFriend>;
+/** A note in the hub: a friend's ask or answer, or what an app told you for them (`app`, with its text and link). */
+export const HubNote = obj({ key: str(64), at: num(0, 1e14), kind: str(16), from: obj({ id: str(200), name: str(200, { min: 0 }) }), app: opt(str(64)), text: opt(str(280)), link: opt(str(2000)) });
+export type HubNote = Of<typeof HubNote>;
+/** What an app reads of the hub: friends and notes (asks are eqosys's own page's business). */
+export const HubView = obj({ friends: arr(HubFriend, 1000), notes: arr(HubNote, 1000) });
+export type HubView = Of<typeof HubView>;
+
+/**
+ * The page's side of a person's Qollab hub, one op at a time (POST /api/hub with the app's token): `state()` for their
+ * friends and notes, `notify(id, text, link)` to tell one friend something from this app (a link on the app's own
+ * site, an invite say), which lands in that friend's notes. Friends are made on eqosys's own page (`friendsPage`).
+ */
+export function hub({ url, token }: PartyConfig) {
+  async function op(body: Record<string, string>): Promise<{ ok: true; view: HubView | null } | { ok: false; error: string }> {
+    const t = token();
+    if (!t) return { ok: false, error: "Sign in with eqosys first." };
+    const res = await fetch(`${url()}/api/hub`, { method: "POST", headers: { authorization: `Bearer ${t}`, "content-type": "application/json" }, body: JSON.stringify(body) }).catch(() => null);
+    if (!res) return { ok: false, error: "eqosys can't be reached." };
+    const v: unknown = await res.json().catch(() => null);
+    if (!res.ok) return { ok: false, error: check(obj({ error: str(500) }), v)?.error ?? "eqosys said no." };
+    return { ok: true, view: check(HubView, v) };
+  }
+  return {
+    /** Friends and notes, or null when signed out or eqosys can't be reached. */
+    state: async (): Promise<HubView | null> => { const r = await op({ op: "state" }); return r.ok ? r.view : null; },
+    /** Tell friend `id`: null when sent, else why not. */
+    notify: async (id: string, text: string, link?: string): Promise<string | null> => { const r = await op({ op: "notify", id, text, ...(link ? { link } : {}) }); return r.ok ? null : r.error; },
+    /** Where on eqosys a person adds friends. */
+    friendsPage: () => `${url()}/?tab=friends`,
+  };
 }
 
 /** A message in a space's channel: its number there, and who said what when. */
