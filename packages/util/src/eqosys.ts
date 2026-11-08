@@ -311,6 +311,7 @@ export function party({ url, token }: PartyConfig) {
         if (e.code === 4403) { onGone.hear(lastWhy || "Only the host's friends can join: ask them to add you on eqosys."); return; }
         if (e.code === 4405 || e.code === 4407 || e.code === 4408) { onGone.hear(lastWhy || "The party didn't let you in."); return; }
         if (e.code === 4406) { onGone.hear("The host took you out of the party."); return; }
+        if (e.code === 4409) { onGone.hear("The host ended the party."); return; }
         if (!e.seen) onGone.hear("No such party.");
         return e.seen && e.tries < 4 ? 1000 * e.tries : null;
       },
@@ -322,7 +323,7 @@ export function party({ url, token }: PartyConfig) {
     ready: (r: boolean) => void link?.send({ t: "ready", ready: r }),
     start: () => void link?.send({ t: "start" }),
     say: (text: string) => void link?.send({ t: "say", text }),
-    /** Host only: quiet a member for the whole party (or `false` to let them speak again). */
+    /** Quiet a member for the whole party (or `false` to let them speak again): the host's, or whoever the `mute` rule says. */
     mute: (id: string, on = true) => void link?.send({ t: "mute", id, on }),
     report: (id: string) => void link?.send({ t: "report", id }),
     /** Host only: the party's rules (@rustybuns/util/party-rules), all at once. */

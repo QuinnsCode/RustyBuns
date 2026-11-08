@@ -65,7 +65,7 @@ its own Worker behind the same paths; nothing in a game changes.
 3. The party DO is the lobby: members, ready flags, a host, chat. When the host starts, the party tells every
    member `{ kind: "start", room, seat }` and the game does what it does now with its own world DO. Qollab's
    job in a session ends at "start"; it stays open only for chat and for a late joiner to be handed the same room.
-4. Room codes are minted by the party DO (`RoomMintGate` at the door), six characters, no vowels, 24 hours.
+4. Room codes are minted by the party DO (`RoomMintGate` at the door), six characters, no vowels, 24 hours unless the host picks another lifetime (an hour to a week, the `hours` rule).
 
 A game that already has a lobby (`park-hide-seek`) deletes it; a game with none (`skate-tech-park`) gets one
 for the price of the socket above. The shared client is a small `party()` beside `eqosys()` in
