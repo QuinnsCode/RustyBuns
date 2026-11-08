@@ -134,6 +134,8 @@ export const ClaimsReply = arr(obj({ id: str(200), who: str(200), bot: bool(), l
 export const ClaimRefused = obj({ error: opt(str(Infinity, { min: 0 })), updating: opt(bool()), retryAfter: opt(num(0, Infinity)) });
 /** What `/ops` answers: the rev after and the ops that landed, or (409) what it refused and why. */
 export const OpsReply = obj({ rev: int(0, Number.MAX_SAFE_INTEGER), applied: arr(raw, Infinity) });
+/** What `/log` answers, as far as a reader of the history reads each op (its rev and when): a page, and the rev to ask from next. */
+export const LogReply = obj({ ops: arr(obj({ rev: int(0, Number.MAX_SAFE_INTEGER), at: num(0, Number.MAX_SAFE_INTEGER) }), Infinity), next: nul(int(0, Number.MAX_SAFE_INTEGER)) });
 export const OpsRefused = obj({ updating: opt(bool()), conflicts: opt(arr(obj({ index: int(-1, Number.MAX_SAFE_INTEGER), reason: str(Infinity, { min: 0 }), claim: opt(str(200)) }), Infinity)) });
 /** What `/private` (its private line ids) and `/here` (who has it open) answer. */
 export const Names = arr(str(Infinity, { min: 0 }), Infinity);
