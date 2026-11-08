@@ -1,4 +1,5 @@
-// A case file: dossier strips on manila, damage taken is redacted in black, hits are stamped.
+// A case file: dossier strips on manila, the health left is a black bar that shrinks toward its own side, the part lost
+// is bare paper, and hits are stamped.
 import { esc } from "@rustybuns/util";
 import { icon } from "../../icons.ts";
 import { pct, type HudSide, type HudSkin, type HudView } from "../skin.ts";
@@ -21,7 +22,7 @@ const side = (f: HudSide, i: number, v: HudView) => {
 
 const S = '.hud[data-skin="case-file"]';
 export const skin: HudSkin = {
-  id: "case-file", name: "Case file", idea: "Manila dossier strips: lost health is blacked out, hits get stamped.",
+  id: "case-file", name: "Case file", idea: "Manila dossier strips: health left is the black bar, what's lost is bare paper, hits get stamped.",
   css: `
 ${S} { display: grid; grid-template-columns: 1fr auto 1fr; gap: 12px; padding: 12px 60px 0 14px; font-family: "Courier New", Courier, monospace; color: #2b2118; }
 ${S} .side { position: relative; display: grid; gap: 4px; padding: 8px 10px; background: #e8d5a6; border: 1px solid #a8905a; box-shadow: 0 2px 0 #a8905a, 0 4px 8px rgba(0,0,0,.4); }
@@ -30,11 +31,11 @@ ${S} .tab { position: absolute; left: 10px; top: -13px; background: #e8d5a6; bor
 ${S} .s1 .tab { left: auto; right: 10px; }
 ${S} .head { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; font-size: 15px; text-transform: uppercase; }
 ${S} .launch { font-size: 11px; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
-${S} .hp { position: relative; display: flex; height: 22px; background: #14110d; border: 1px solid #14110d; }
+${S} .hp { position: relative; display: flex; height: 22px; background: #f6ecd0; border: 1px solid #14110d; }
 ${S} .s1 .hp { flex-direction: row-reverse; }
-${S} .rest { background: #f6ecd0; font-size: 12px; font-weight: 700; display: grid; align-items: center; padding: 0 6px; overflow: hidden; white-space: nowrap; transition: width .15s linear; }
+${S} .rest { background: repeating-linear-gradient(135deg, #14110d 0 5px, #231d15 5px 10px); color: #f6ecd0; font-size: 12px; font-weight: 700; display: grid; align-items: center; padding: 0 6px; overflow: hidden; white-space: nowrap; transition: width .15s linear; }
 ${S} .s1 .rest { text-align: right; justify-items: end; }
-${S} .redact { flex: 1; background: repeating-linear-gradient(135deg, #14110d 0 5px, #231d15 5px 10px); }
+${S} .redact { flex: 1; background: #f6ecd0; }
 ${S} .row { display: flex; align-items: center; gap: 6px; font-size: 10px; letter-spacing: .08em; }
 ${S} .row em { font-style: normal; width: 8ch; }
 ${S} .line { flex: 1; height: 6px; border-bottom: 1px solid #2b2118; position: relative; }
