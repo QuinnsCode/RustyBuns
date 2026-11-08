@@ -52,9 +52,9 @@ The demands and receipts in `src/demand.ts` (`demandOf`, `reactionOf`). Add your
 | Result: a wild win, no bind | You beat it and let it walk. That is not how a ledger works. | yes |
 | Result: a keeper beaten | A keeper is not an item. (then the standing demand) | yes |
 | Result: the mythic fled | It ran. I have its smell on this page now. Go back for it. | yes |
-| Result: one down, more left | Get up. Send the next one. | yes |
-| Result: all down | All of them, down. The ledger is patient. I am less so. | no |
-| Result: a deadly wild one | I said bring it. I did not say go and lie down near it. | no |
+| Result: one down, more left | This one can't fight. Send in the next. | no |
+| Result: all down | No creatures left to fight. Back to the last stone. | no |
+| Result: a deadly wild one | You lost. Heal up and try again. | no |
 | Result: versus | Practice. I keep no accounts of practice. | no |
 | Bestiary folio: a bound one | Item 4. Entered. (within the hour: The ink is still wet.) | no |
 | Bestiary folio: one only seen | Seen. Not entered. Looking is not collecting. | no |
