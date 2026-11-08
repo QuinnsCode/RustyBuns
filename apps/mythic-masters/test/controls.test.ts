@@ -83,6 +83,7 @@ describe("what the screen shows and what Settings lists", () => {
   test("the movement card shows only how to move where you are, from the keys as they are bound now", () => {
     const k = createBindings(ACTIONS);
     expect(moveKeys("fight", k.get)).toEqual([{ keys: "WASD", does: "Move" }, { keys: "Space", does: "Jump" }, { keys: "Shift", does: "Dash" }]);
+    expect(moveKeys("hunt", k.get).at(-1)).toEqual({ keys: "B", does: "Bind" }); // a world fight also says how to bind
     expect(moveKeys("world", k.get).map((r) => r.does)).toEqual(["Walk", "Run", "Turn"]);
     k.apply(PRESETS.find((p) => p.id === "arrows")!.keys);
     expect(moveKeys("world", k.get)).toEqual([{ keys: "↑←↓→", does: "Walk" }, { keys: "Shift", does: "Run" }, { keys: "Q E", does: "Turn" }]);
