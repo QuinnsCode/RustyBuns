@@ -14,12 +14,13 @@ const COMMIT_REST: f64 = 8.0;
 fn sidestep(a: Archetype) -> f64 {
     match a {
         Archetype::Skirmisher => 0.3,
-        Archetype::Flyer => 0.25,
-        Archetype::Bruiser => 0.2,
-        Archetype::Tank => 0.05,
+        Archetype::Flyer => 0.4,
+        Archetype::Bruiser => 0.35,
+        Archetype::Tank => 0.08,
     }
 }
 const PUNISH: f64 = 60.0;
+const STANDOFF: f64 = 0.8;
 fn dodge(a: Archetype) -> f64 {
     match a {
         Archetype::Skirmisher => 0.25,
@@ -250,23 +251,26 @@ impl Bot {
             return c.i;
         }
 
-        if swing_phase(o) == Some(Phase::Locked)
-            && o.act.as_ref().is_some_and(|a| o.t < frames(&a.mv, a.tired).startup)
-            && me.on_ground
-            && !me.exhausted
-            && me.stamina >= me.b.dash_cost
-        {
+        let phase = swing_phase(o);
+        if phase.is_some() && o.act.as_ref().is_some_and(|a| o.t < frames(&a.mv, a.tired).startup) && me.on_ground {
             let (sreach, ahead) = sweep(o, me, o.act.as_ref().unwrap().mv.slot);
             let kx = cos(o.yaw);
             let kz = sin(o.yaw);
-            let in_sweep = d < sreach + 0.4 && (-dx * kx - dz * kz) / d > ahead - 0.15;
-            if in_sweep && c.bot.rnd.float() < sidestep(me.c.archetype) {
-                let s = if -dx * -kz + -dz * kx >= 0.0 { 1.0 } else { -1.0 };
+            if d < sreach + 0.4 && (-dx * kx - dz * kz) / d > ahead - 0.15 {
+                let mut s = if -dx * -kz + -dz * kx >= 0.0 { 1.0 } else { -1.0 };
+                if hypot(me.pos.x - kz * s * 5.0, me.pos.z + kx * s * 5.0) > ARENA_RADIUS - 1.0 {
+                    s = -s;
+                }
                 c.i.mx = -kz * s;
                 c.i.mz = kx * s;
-                c.press(me, Key::Dash);
-                if c.i.dash {
-                    c.bot.punish = PUNISH;
+                if phase == Some(Phase::Locked) && !me.exhausted && me.stamina >= me.b.dash_cost && c.bot.rnd.float() < sidestep(me.c.archetype) {
+                    c.press(me, Key::Dash);
+                    if c.i.dash {
+                        c.bot.punish = PUNISH;
+                        return c.i;
+                    }
+                }
+                if me.c.archetype != Archetype::Tank && me.c.archetype != Archetype::Skirmisher {
                     return c.i;
                 }
             }
@@ -518,7 +522,9 @@ impl Bot {
                     c.i.mz = 0.0;
                     return c.i;
                 }
-                if d < reach + 0.3 && facing && (open || (c.bot.commit > 0.0 && !wind && !low)) {
+                let eyes = (-dx * cos(o.yaw) - dz * sin(o.yaw)) / d > 0.6;
+                let standoff = !open && o.state == State::Free && o.on_ground && eyes && (o.c.archetype == Archetype::Bruiser || o.c.archetype == Archetype::Tank);
+                if d < reach + 0.3 && facing && (open || (c.bot.commit > 0.0 && !wind && !low)) && !(standoff && c.bot.rnd.float() < STANDOFF) {
                     let chart = m.chart;
                     if chart.type_mul(me.mv(Slot::Launcher).field, &o.c.fields) > chart.type_mul(me.mv(Slot::Heavy).field, &o.c.fields)
                         && c.bot.rnd.float() < 0.3

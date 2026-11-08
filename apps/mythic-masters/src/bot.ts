@@ -17,11 +17,17 @@ export type Bot = (m: Match) => Input;
 export const RING = 0.8;
 export const COMMIT = { chance: 0.12, ticks: 45, rest: 8 } as const;
 /** A heavy swing locked on us (sim LUNGE.lock) and we're in its sweep: the chance each tick of dashing out sideways, by
- * archetype. Over a locked beat most read it in time (#3511 round 3); the tank mostly takes it on its guard. */
-export const SIDESTEP = { skirmisher: 0.3, flyer: 0.25, bruiser: 0.2, tank: 0.05 } as const;
+ * archetype. Only a read in its first few ticks gets out (#3688 round 4: a dash 1-2 ticks in escapes 97% of the time,
+ * 8 ticks in under half), so most read it at once; the tank mostly takes it on its guard. */
+export const SIDESTEP = { skirmisher: 0.3, flyer: 0.4, bruiser: 0.35, tank: 0.08 } as const;
 /** Ticks after that sidestep in which the swing it dodged is the bot's opening: once the whiff is recovering, it comes
  * straight back in (a dash if it's far) and hits before the swinger is up again. */
 export const PUNISH = 60;
+/** A standoff: both free, facing each other, close enough to swing. Bodies the same size cross the same reach on the same
+ * tick, so two heavies stepping in swung into each other (#3688 round 4: one swing in seven started on the other's
+ * tick). Each tick of it facing a heavy, the chance a heavy holds its swing and lets the other go first, to step out of
+ * its wedge. */
+export const STANDOFF = 0.8;
 /** A ranged move painted on the ground under us (sim `warning`, or a lob still in the air): the chance each tick of
  * dashing out of it, by archetype; a tick it doesn't, it walks out (ATTACKS.md step 5). The light ones read it best. */
 export const DODGE = { skirmisher: 0.25, flyer: 0.2, bruiser: 0.15, tank: 0.08 } as const;
@@ -115,14 +121,23 @@ export function bot(side: 0 | 1, seed: number): Bot {
     // Anyone can swat a flyer that hovers low overhead.
     if (above > 1.2 && above < 4.5 && d < reach + 1 && rnd() < 0.5) { i.up = true; press("heavy"); return i; }
 
-    // A heavy swing that has stopped turning to follow: step out of its sweep, to the side we're already on, and its
-    // whiff leaves it open (its recovery is the punish).
-    if (swingPhase(o) === "locked" && o.act && o.t < frames(o.act.move, o.act.tired).startup && me.onGround && !me.exhausted && me.stamina >= me.b.dashCost) {
+    // Inside the sweep of a heavy swing that hasn't come out yet: never start a swing into it (#3688 round 4). Once it
+    // has stopped turning to follow, dash out of it to the side we're already on, and its whiff leaves it open (its
+    // recovery is the punish). Until then, or a tick the dash isn't read, walk out sideways.
+    const phase = swingPhase(o);
+    if (phase && o.act && o.t < frames(o.act.move, o.act.tired).startup && me.onGround) {
       const { reach, ahead } = sweep(o, me, o.act.move.slot), kx = cos(o.yaw), kz = sin(o.yaw);
-      const inSweep = d < reach + 0.4 && (-dx * kx - dz * kz) / d > ahead - 0.15;
-      if (inSweep && rnd() < SIDESTEP[me.c.archetype]) {
-        const s = -dx * -kz + -dz * kx >= 0 ? 1 : -1;
-        i.mx = -kz * s; i.mz = kx * s; press("dash"); if (i.dash) { punish = PUNISH; return i; }
+      if (d < reach + 0.4 && (-dx * kx - dz * kz) / d > ahead - 0.15) {
+        // Near the edge that side may run off the ring (and press won't dash off it): then the other side.
+        let s = -dx * -kz + -dz * kx >= 0 ? 1 : -1;
+        if (hypot(me.pos.x - kz * s * 5, me.pos.z + kx * s * 5) > ARENA.radius - 1) s = -s;
+        i.mx = -kz * s; i.mz = kx * s;
+        if (phase === "locked" && !me.exhausted && me.stamina >= me.b.dashCost && rnd() < SIDESTEP[me.c.archetype]) {
+          press("dash"); if (i.dash) { punish = PUNISH; return i; }
+        }
+        // The tank takes it on its guard instead (below), and the skirmisher keeps circling for the blind spot: walking
+        // out of every wedge too, it beat the heavies two fights in three.
+        if (me.c.archetype !== "tank" && me.c.archetype !== "skirmisher") return i;
       }
     }
 
@@ -242,7 +257,8 @@ export function bot(side: 0 | 1, seed: number): Bot {
         // Winded or facing a big wind-up in reach: guard it or back off, don't trade.
         if (low && d < reach + 2 && (wind || o.state === "attack")) { if (!me.exhausted) i.guard = true; i.mx = 0; i.mz = 0; return i; }
         // Commit to a swing only when it's open, or free and we've rested; then circle again.
-        if (d < reach + 0.3 && facing && (open || (commit > 0 && !wind && !low))) {
+        const eyes = (-dx * cos(o.yaw) - dz * sin(o.yaw)) / d > 0.6, standoff = !open && o.state === "free" && o.onGround && eyes && (o.c.archetype === "bruiser" || o.c.archetype === "tank");
+        if (d < reach + 0.3 && facing && (open || (commit > 0 && !wind && !low)) && !(standoff && rnd() < STANDOFF)) {
           // Play the type chart: when the target shrugs off its heavy, the launcher may not be.
           if (typeMul(me.moves.launcher.field, o.c.fields) > typeMul(me.moves.heavy.field, o.c.fields) && rnd() < 0.3) i.up = true;
           rest = COMMIT.rest + Math.floor(rnd() * COMMIT.rest); commit = 0;
