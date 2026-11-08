@@ -100,6 +100,12 @@ function operation({ method, path, op }: Op, from: string): string {
   if (body) out.push("", "**Body** (JSON)", "", describe(body, from));
   const [status, ok] = Object.entries(op.responses as Record<string, Schema>).find(([code]) => code.startsWith("2"))!;
   out.push("", `**Answers ${status}**`, "", describe(ok.content?.["application/json"]?.schema, from));
+  // Its named failures (#3804): the reply's `tag`. Older versions' specs have none.
+  const fails = (op["x-codesplitter-errors"] ?? []) as { tag: string; status: number; description: string }[];
+  if (fails.length) {
+    out.push("", "**Fails with** (the reply's `tag`)", "", "| Tag | Status | When |", "|---|---|---|");
+    for (const e of fails) out.push(`| \`${e.tag}\` | ${e.status} | ${cell(e.description)} |`);
+  }
   return out.join("\n");
 }
 

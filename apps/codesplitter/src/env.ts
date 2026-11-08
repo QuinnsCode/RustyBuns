@@ -213,10 +213,20 @@ export interface Env {
 // A JSON reply and a client's unchecked body, shared with every app (`@rustybuns/util/http`); routes import them from here.
 import { json, readBody, type Body } from "@rustybuns/util/http";
 export { json, readBody, type Body };
+import { ERRORS, type ErrorTag } from "./openapi.ts";
+import { isPlainObject } from "./util.ts";
+
+/** A named failure (#3804): `error` the sentence a person reads, `tag` what a client matches on. The status is the tag's (openapi.ts ERRORS). */
+export const fail = (tag: ErrorTag, error: string, extra?: Record<string, unknown>) => json({ ...extra, error, tag }, ERRORS[tag][0]);
+/** Another module's failure reply, named: its body kept, the tag added. */
+export async function named(res: Response, tag: ErrorTag): Promise<Response> {
+  const b: unknown = await res.json().catch(() => null);
+  return fail(tag, isPlainObject(b) && typeof b.error === "string" ? b.error : ERRORS[tag][1], isPlainObject(b) ? b : {});
+}
 
 /** A body through a guard (`@rustybuns/util/guard`): the value typed, or a 400 saying what's wrong, in `why`'s words when given. */
 export const need = <T>(v: unknown, g: Guard<T>, why?: string): T | Response => {
-  try { return g(v); } catch (e) { if (e instanceof Bad) return json({ error: why ?? e.message }, 400); throw e; }
+  try { return g(v); } catch (e) { if (e instanceof Bad) return fail("BadInput", why ?? e.message); throw e; }
 };
 
 // Single dashes only, so "owner--repo" names an artifact unambiguously.

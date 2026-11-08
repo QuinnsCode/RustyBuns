@@ -32,7 +32,7 @@ import { docIn, fileDoc, catalogueBlob, handleFor, listDir, materialize, toFile,
 import { changedLines, isBuildFile } from "./buildfiles.ts";
 import { branchEdited, mergeBlock, refChecks, waiting } from "./checks.ts";
 import { settings as deploySettings } from "./deploy.ts";
-import { branchNameError, json, type Env, need, readBody } from "./env.ts";
+import { branchNameError, fail, json, named, type Env, need, readBody } from "./env.ts";
 import { arr, Bad, bool, check, maybe, num, obj, oneOf, opt, raw, rec, str } from "@rustybuns/util/guard";
 import { byToken } from "./tokens.ts";
 import { emit } from "./hooks.ts";
@@ -129,11 +129,11 @@ export async function createOn(env: Env, owner: string, repo: string, branch: st
     return json({ path, branch }, 201);
   }
   // The branch it's stacked on has it: that's the file it sees. One that deleted it doesn't.
-  if (src && !src.deleted) return json({ error: "file exists" }, 409);
+  if (src && !src.deleted) return fail("FileExists", "file exists");
   const onMain = src ? null : await materialize(env, owner, repo, path);
-  if (onMain && (!("error" in onMain) || onMain.status !== 404)) return json({ error: "file exists" }, 409);
+  if (onMain && (!("error" in onMain) || onMain.status !== 404)) return fail("FileExists", "file exists");
   const r = await env.DB.prepare("INSERT OR IGNORE INTO branch_files (owner, repo, branch, path) VALUES (?, ?, ?, ?)").bind(owner, repo, branch, path).run();
-  if (!r.meta?.changes) return json({ error: "file exists" }, 409);
+  if (!r.meta?.changes) return fail("FileExists", "file exists");
   await toFile(env, owner, repo, path, user, "fork", { method: "POST", body: JSON.stringify({ doc: empty() }) }, "", branch);
   await toFile(env, owner, repo, path, user, "ops", { method: "POST", body: JSON.stringify({ ops: fromText(content) }) }, "", branch);
   return json({ path, branch }, 201);
@@ -146,12 +146,12 @@ export async function createOn(env: Env, owner: string, repo: string, branch: st
  */
 export async function deleteOn(env: Env, owner: string, repo: string, branch: string, path: string, by = "upstream") {
   const row = await env.DB.prepare("SELECT deleted, blob FROM branch_files WHERE owner = ? AND repo = ? AND branch = ? AND path = ?").bind(owner, repo, branch, path).first();
-  if (row?.deleted) return json({ error: "no such file" }, 404);
+  if (row?.deleted) return fail("NoSuchFile", "no such file");
   // "Main" here is what the branch sees under its own copies: the branch it's stacked on, or main.
   const src = await forkSource(env, owner, repo, branch, path);
   const onMain = src ? null : await materialize(env, owner, repo, path);
   const mainHas = src ? !src.deleted : !("error" in onMain!) || onMain!.status !== 404;
-  if (!mainHas && !row) return json({ error: "no such file" }, 404);
+  if (!mainHas && !row) return fail("NoSuchFile", "no such file");
   if (row && !row.blob) await toFile(env, owner, repo, path, "upstream", "wipe", { method: "POST" }, "", branch);
   if (!mainHas) await env.DB.prepare("DELETE FROM branch_files WHERE owner = ? AND repo = ? AND branch = ? AND path = ?").bind(owner, repo, branch, path).run();
   else await env.DB.prepare("INSERT INTO branch_files (owner, repo, branch, path, deleted) VALUES (?, ?, ?, ?, 1) ON CONFLICT (owner, repo, branch, path) DO UPDATE SET deleted = 1, merged = 0, blob = NULL, mode = NULL").bind(owner, repo, branch, path).run();
@@ -617,7 +617,7 @@ async function testedMerge(env: Env, owner: string, repo: string, branch: Branch
     if (!("skipped" in t) && !t.ok) {
       const lint = "merged with main's changes, the tests fail: settle it as the branch to land it anyway";
       return {
-        error: `merged, its tests fail: ${both.map((d) => d.path).join(", ")}`, failure: t.out.slice(-4000),
+        tag: "TestsFail" as const, error: `merged, its tests fail: ${both.map((d) => d.path).join(", ")}`, failure: t.out.slice(-4000),
         conflicts: both.map((d) => ({ path: d.path, leftover: d.policy.leftover, conflicts: [explain({ line: "lint:tests", base: "", main: null, branch: null, lint })] })),
       };
     }
@@ -627,7 +627,7 @@ async function testedMerge(env: Env, owner: string, repo: string, branch: Branch
   if ("skipped" in c || c.ok) return null;
   const lint = "merged with main's changes, it no longer parses or compiles: settle it as the branch to land it anyway";
   return {
-    error: `merged, it no longer parses or compiles: ${code.map((d) => d.path).join(", ")}`, failure: c.out.slice(-4000),
+    tag: "MergeBroken" as const, error: `merged, it no longer parses or compiles: ${code.map((d) => d.path).join(", ")}`, failure: c.out.slice(-4000),
     conflicts: code.map((d) => ({ path: d.path, leftover: d.policy.leftover, conflicts: [explain({ line: "lint:syntax", base: "", main: null, branch: null, lint })] })),
   };
 }
@@ -683,7 +683,7 @@ async function dryRun(env: Env, owner: string, repo: string, branch: BranchRow, 
         conflicts: conflicts.map((c) => { const a = answers.get(`${path}\n${c.line}`); return { ...explain(c), ...(a && { answer: a }) }; }),
       };
     });
-    return { blocked: { error: broken.length ? `merged, it wouldn't build: ${broken.join("; ")}` : "conflicts", conflicts: blocked, ...(fix && "id" in fix && { fix: fix.id }) } };
+    return { blocked: { tag: broken.length ? "MergeBroken" as const : "Conflicts" as const, error: broken.length ? `merged, it wouldn't build: ${broken.join("; ")}` : "conflicts", conflicts: blocked, ...(fix && "id" in fix && { fix: fix.id }) } };
   }
   const failed = await testedMerge(env, owner, repo, branch, dry, resolve, user);
   return failed ? { blocked: failed } : { dry, mergiraf: mergirafSettled };
@@ -839,33 +839,33 @@ async function rebuildOnMain(env: Env, owner: string, repo: string, b: BranchRow
 async function mergeBranch(env: Env, owner: string, repo: string, branch: BranchRow, user: string, body: { resolve?: unknown; build_ok?: unknown }, req: Request): Promise<Response> {
   const name = branch.name;
   // build_ok is someone reading the build files: an API token (a prompt-injected agent may hold one) can't say it.
-  if (body.build_ok && byToken(req)) return json({ error: "API tokens can't pass build_ok: read the build files and merge on the site, signed in" }, 403);
+  if (body.build_ok && byToken(req)) return fail("PersonOnly", "API tokens can't pass build_ok: read the build files and merge on the site, signed in");
   // Protected main (#1426): someone other than a branch's author accepts it. The owner's merges are their own to make.
-  if (user !== owner && user === branch.by && await protectOn(env, owner, repo)) return json({ error: "main is protected: someone other than the branch's author merges it", protected: true }, 403);
+  if (user !== owner && user === branch.by && await protectOn(env, owner, repo)) return fail("BranchProtected", "main is protected: someone other than the branch's author merges it", { protected: true });
   // An agent run's batch is the owner's to land (its accept, or the timer, agent-routes.ts land()): the branch is in the owner's name,
   // so without this any crew member could pass it off as "someone other than the author" and land a held batch.
   const agentRun = /^agent-run-\d+$/.test(name);
-  if (agentRun && user !== owner) return json({ error: "an agent run's batch lands when its owner accepts it (or its timer runs out), not on a crew merge" }, 403);
+  if (agentRun && user !== owner) return fail("AgentRunBatch", "an agent run's batch lands when its owner accepts it (or its timer runs out), not on a crew merge");
   const files = async () => ((await env.DB.prepare("SELECT path, merged, deleted, blob, mode FROM branch_files WHERE owner = ? AND repo = ? AND branch = ? ORDER BY path").bind(owner, repo, name).all<FileRow>()).results);
   // build_ok is a reader's word: the owner's, or someone other than the branch's author.
   const resolve = parseResolve(body.resolve), build_ok = body.build_ok && (user === owner || user !== branch.by);
-  if (typeof resolve === "string") return json({ error: resolve }, 400);
+  if (typeof resolve === "string") return fail("BadInput", resolve);
   // Stacked on a branch that's still open: that one's changes are in this one's copies, so it goes first.
   const under = (await ancestors(env, owner, repo, name))[0];
-  if (under) return json({ error: `${name} is stacked on ${under}: merge ${under} first` }, 409);
+  if (under) return fail("Stacked", `${name} is stacked on ${under}: merge ${under} first`);
   const stuck = (await env.DB.prepare("SELECT path, source FROM branch_files WHERE owner = ? AND repo = ? AND branch = ? AND merged = 0 AND source IS NOT NULL ORDER BY path").bind(owner, repo, name).all<{ path: string; source: string }>()).results;
-  if (stuck.length) return json({ error: `${stuck.map((f) => f.path).join(", ")} forked from ${stuck[0]!.source}'s copies and didn't move onto main cleanly when it merged: copy your changes into a branch off main`, files: stuck.map((f) => f.path) }, 409);
+  if (stuck.length) return fail("StrandedFork", `${stuck.map((f) => f.path).join(", ")} forked from ${stuck[0]!.source}'s copies and didn't move onto main cleanly when it merged: copy your changes into a branch off main`, { files: stuck.map((f) => f.path) });
   await followRenames(env, owner, repo, name, user);
   const rows = await files(), todo = rows.filter((f) => !f.merged);
   // The path policy and the checks' commands are the owner's to change on main (#1567): a merge is no way round it.
-  for (const f of todo) { const closed = policyClosed(owner, f.path, user); if (closed) return closed; }
+  for (const f of todo) { const closed = policyClosed(owner, f.path, user); if (closed) return named(closed, "PolicyFile"); }
   // Build or deploy files on a merge the owner's next commit would ship: read them first.
   const build = todo.map((f) => f.path).filter(isBuildFile);
   // An agent's batch touching them waits for an accept whatever the deploy setting: codesplitter.ci and .gitattributes drive what runs and who may edit what.
-  if (build.length && !build_ok && (agentRun || (await deploySettings(env, owner, repo)).on_commit)) return json({ error: "this branch changes build or deploy files: read them, then merge with build_ok (the owner, or someone other than the branch's author)", build }, 409);
+  if (build.length && !build_ok && (agentRun || (await deploySettings(env, owner, repo)).on_commit)) return fail("BuildFiles", "this branch changes build or deploy files: read them, then merge with build_ok (the owner, or someone other than the branch's author)", { build });
   // Required checks that failed, or haven't finished, hold it, as a GitHub branch protection rule would.
   const held = await mergeBlock(env, owner, repo, name);
-  if (held) return json(held, 409);
+  if (held) return fail("ChecksHold", held.error, { ...held });
   // A binary (or too big) file has no lines to merge: one main changed too since the branch left it waits, not overwritten.
   // Text too big to dig is merged by lines against main's, as git would (#1773); the rest waits.
   const { blobMovedOnMain, mergeBlobWithMain } = await import("./mirror.ts");
@@ -876,13 +876,13 @@ async function mergeBranch(env: Env, owner: string, repo: string, branch: Branch
     if (bytes) { joined.set(f.path, bytes); return null; }
     return f.path;
   }))).filter((p): p is string => !!p);
-  if (moved.length) return json({ error: `main changed ${moved.join(", ")} too, and it has no lines to merge: bring main into the branch upstream, then pull`, files: moved }, 409);
+  if (moved.length) return fail("BinaryMoved", `main changed ${moved.join(", ")} too, and it has no lines to merge: bring main into the branch upstream, then pull`, { files: moved });
   // A dry run first, so a conflict anywhere merges nothing.
   const run = await dryRun(env, owner, repo, branch, rows, resolve, user);
   if ("blocked" in run) return json(run.blocked, 409);
   // The pipeline's hooks (pipeline-hooks.ts): Mervin has said it merges, and the checks are green; each hook that's on says yay first.
   const hold = await hookGate(env, owner, repo, name, () => branchHash(env, owner, repo, name), () => branchDiff(env, owner, repo, name, todo, user), `/api/repos/${owner}/${repo}`);
-  if (hold) return json(hold, 409);
+  if (hold) return fail("HookHold", hold.error, { hook: hold.hook });
   // The open branches that clash with this one (merge-plan.ts), read before main moves: each takes main in after (#1162).
   const others = (await openBranches(env, owner, repo)).filter((b) => b.name !== name && b.parent !== name);
   const clashing = others.length ? await clashesIn(env, owner, repo, [name, ...others.map((b) => b.name)], user, name).catch(() => []) : [];
@@ -948,7 +948,7 @@ async function mergeBranch(env: Env, owner: string, repo: string, branch: Branch
   const git = conflicts.length || !lines.length ? null : await (await import("./pick.ts")).commitMain(env, owner, repo, user, `Merge ${name}`, lines, {},
     { added: lines.filter((p) => added.has(p)), modified: lines.filter((p) => !added.has(p)), removed: merged.filter((m) => m.deleted).map((m) => m.path) });
   const docs = conflicts.length ? [] : await rebuilt(env, owner, repo, merged.filter((m) => !m.deleted && !m.binary).map((m) => m.path), run.dry, user);
-  return json({ status: conflicts.length ? "open" : "merged", merged, conflicts, ...(docs.length && { regenerated: docs }), ...(run.mergiraf.length && { mergiraf: run.mergiraf }), ...(took.length && { took }), ...(git && { git }) }, conflicts.length ? 409 : 200);
+  return json({ status: conflicts.length ? "open" : "merged", ...(conflicts.length && { error: "conflicts", tag: "Conflicts" }), merged, conflicts, ...(docs.length && { regenerated: docs }), ...(run.mergiraf.length && { mergiraf: run.mergiraf }), ...(took.length && { took }), ...(git && { git }) }, conflicts.length ? 409 : 200);
 }
 
 /**
@@ -958,7 +958,7 @@ async function mergeBranch(env: Env, owner: string, repo: string, branch: Branch
  */
 async function land(env: Env, owner: string, repo: string, branch: BranchRow, user: string, body: { resolve?: unknown; build_ok?: unknown }, req: Request): Promise<Response> {
   const resolve = parseResolve(body.resolve);
-  if (typeof resolve === "string") return json({ error: resolve }, 400);
+  if (typeof resolve === "string") return fail("BadInput", resolve);
   let res = await mergeBranch(env, owner, repo, branch, user, { ...body, resolve }, req);
   if (res.status !== 409) return res;
   let out: unknown = await res.clone().json();
@@ -1127,7 +1127,7 @@ export async function runBranchLocked(env: Env, owner: string, repo: string, bra
   const id = /^agent-run-(\d+)$/.exec(branch ?? "")?.[1];
   if (!id || user === owner) return null;
   const row = await env.DB.prepare("SELECT agent FROM agent_runs WHERE owner = ? AND repo = ? AND id = ?").bind(owner, repo, Number(id)).first<{ agent: string }>();
-  return row && row.agent === user ? null : json({ error: "an agent run's batch is written by its agent and the repo's owner only" }, 403);
+  return row && row.agent === user ? null : fail("RunBranchLocked", "an agent run's batch is written by its agent and the repo's owner only");
 }
 
 export async function branchRoutes(req: Request, env: Env, p: string[], owner: string, repo: string, user: string | null, a: Access): Promise<Response | null> {
@@ -1136,29 +1136,29 @@ export async function branchRoutes(req: Request, env: Env, p: string[], owner: s
   // different lines (a README edit, a package.json bump) both land; one that conflicts, or that its
   // checks hold, stays open and says why.
   if (p[4] === "merges" && !p[5] && req.method === "POST") {
-    if (!a.write) return json({ error: "no write access" }, 403);
+    if (!a.write) return fail("NoWriteAccess", "no write access");
     const b = await readBody<"branches" | "build_ok" | "car">(req);
     // A green merge-train car merges whole (train.ts): its runs stand in for each branch's, so none reruns.
     let named: unknown = b.branches;
     if (b.car !== undefined) {
       const ride = typeof b.car === "number" ? await env.DB.prepare("SELECT branches FROM train_cars WHERE owner = ? AND repo = ? AND id = ?").bind(owner, repo, b.car).first<string>("branches") : null;
-      if (!ride) return json({ error: "car: a merge-train car's id (GET .../train)" }, 400);
+      if (!ride) return fail("BadInput", "car: a merge-train car's id (GET .../train)");
       named = parseJson<string[]>(ride, []);
     }
-    if (named !== undefined && !(Array.isArray(named) && named.every((x): x is string => typeof x === "string"))) return json({ error: "branches: [name]" }, 400);
+    if (named !== undefined && !(Array.isArray(named) && named.every((x): x is string => typeof x === "string"))) return fail("BadInput", "branches: [name]");
     const open = await openBranches(env, owner, repo);
     const todo = named ? open.filter((r) => named.includes(r.name)) : open;
     const merged: string[] = [];
-    const skipped: { branch: string; error: string; files?: string[] }[] = (named ?? []).filter((n) => !todo.some((r) => r.name === n)).map((n) => ({ branch: n, error: "no open branch" }));
+    const skipped: { branch: string; error: string; tag?: string; files?: string[] }[] = (named ?? []).filter((n) => !todo.some((r) => r.name === n)).map((n) => ({ branch: n, error: "no open branch", tag: "NoSuchBranch" }));
     for (const br of todo) {
       const name = br.name;
       // A branch with nothing on it yet is someone's work about to start: leave it open.
       const left = await env.DB.prepare("SELECT COUNT(*) AS n FROM branch_files WHERE owner = ? AND repo = ? AND branch = ? AND merged = 0").bind(owner, repo, name).first<{ n: number }>();
-      if (!left?.n) { skipped.push({ branch: name, error: "nothing to merge" }); continue; }
+      if (!left?.n) { skipped.push({ branch: name, error: "nothing to merge", tag: "NothingToMerge" }); continue; }
       const res = await mergeBranch(env, owner, repo, br, user!, { build_ok: b.build_ok }, req);
-      const out = check(obj({ error: maybe(str(Infinity)), conflicts: maybe(arr(obj({ path: str(Infinity) }), 100000)), build: maybe(arr(str(Infinity), 100000)) }), await res.json().catch(() => null)) ?? {};
+      const out = check(obj({ error: maybe(str(Infinity)), tag: maybe(str(64)), conflicts: maybe(arr(obj({ path: str(Infinity) }), 100000)), build: maybe(arr(str(Infinity), 100000)) }), await res.json().catch(() => null)) ?? {};
       if (res.ok) merged.push(name);
-      else skipped.push({ branch: name, error: out.error ?? "conflicts", ...((out.conflicts?.length || out.build) && { files: out.build ?? out.conflicts!.map((c) => c.path) }) });
+      else skipped.push({ branch: name, error: out.error ?? "conflicts", ...(out.tag && { tag: out.tag }), ...((out.conflicts?.length || out.build) && { files: out.build ?? out.conflicts!.map((c) => c.path) }) });
     }
     return json({ merged, skipped });
   }
@@ -1170,10 +1170,10 @@ export async function branchRoutes(req: Request, env: Env, p: string[], owner: s
   if (p[4] === "mervin" && !p[5]) {
     if (req.method === "GET") return json(await learningState(env, owner, repo));
     if (req.method === "PUT" || req.method === "DELETE") {
-      if (user !== owner) return json({ error: "only the owner changes this" }, 403);
+      if (user !== owner) return fail("OwnerOnly", "only the owner changes this");
       if (req.method === "DELETE") return json({ ok: true, deleted: await deleteLearning(env, owner, repo) });
       const b = await readBody<"learning" | "hash_paths">(req);
-      if (typeof b.learning !== "boolean") return json({ error: "learning: true | false" }, 400);
+      if (typeof b.learning !== "boolean") return fail("BadInput", "learning: true | false");
       await setLearning(env, owner, repo, b.learning, typeof b.hash_paths === "boolean" ? b.hash_paths : undefined);
       return json(await learningState(env, owner, repo));
     }
@@ -1195,31 +1195,31 @@ export async function branchRoutes(req: Request, env: Env, p: string[], owner: s
   }
   // POST /api/repos/:o/:r/branches {name, parent?}  parent: an open branch to stack this one on (#1025)
   if (!name && req.method === "POST") {
-    if (!a.write) return json({ error: "no write access" }, 403);
+    if (!a.write) return fail("NoWriteAccess", "no write access");
     const { name: b, parent } = await readBody<"name" | "parent">(req);
-    if (typeof b !== "string") return json({ error: `bad branch name: ${branchNameError("")}` }, 400);
+    if (typeof b !== "string") return fail("BadBranchName", `bad branch name: ${branchNameError("")}`);
     const bad = branchNameError(b);
-    if (bad) return json({ error: `bad branch name: ${bad}` }, 400);
-    if (parent !== undefined && parent !== null && (typeof parent !== "string" || !(await openBranch(env, owner, repo, parent)))) return json({ error: `parent: no open branch ${parent}` }, 404);
+    if (bad) return fail("BadBranchName", `bad branch name: ${bad}`);
+    if (parent !== undefined && parent !== null && (typeof parent !== "string" || !(await openBranch(env, owner, repo, parent)))) return fail("NoSuchBranch", `parent: no open branch ${parent}`);
     const on = typeof parent === "string" ? parent : null;
     const r = await env.DB.prepare("INSERT OR IGNORE INTO branches (owner, repo, name, by, status, created_at, parent) VALUES (?, ?, ?, ?, 'open', ?, ?)").bind(owner, repo, b, user, Date.now(), on).run();
-    if (!r.meta?.changes) return json({ error: "branch exists" }, 409);
+    if (!r.meta?.changes) return fail("BranchExists", "branch exists");
     await emit(env, owner, repo, "branch.opened", user!, { ref: b, ref_type: "branch", master_branch: on ?? "main" });
     return json({ name: b, by: user, status: "open", parent: on }, 201);
   }
 
   const branch = name && await env.DB.prepare("SELECT * FROM branches WHERE owner = ? AND repo = ? AND name = ?").bind(owner, repo, name).first<BranchRow>();
-  if (!branch) return json({ error: "no such branch" }, 404);
+  if (!branch) return fail("NoSuchBranch", "no such branch");
   const files = async () => ((await env.DB.prepare("SELECT path, merged, deleted, blob, mode FROM branch_files WHERE owner = ? AND repo = ? AND branch = ? ORDER BY path").bind(owner, repo, name).all<{ path: string; merged: number; deleted: number; blob: string | null; mode: string | null }>()).results);
 
   // DELETE /api/repos/:o/:r/branches/:b/files?path=  delete a file on the branch; merging deletes it from main.
   if (p[6] === "files" && req.method === "DELETE") {
-    if (!a.write) return json({ error: "no write access" }, 403);
+    if (!a.write) return fail("NoWriteAccess", "no write access");
     const locked = await runBranchLocked(env, owner, repo, name, user);
     if (locked) return locked;
-    if (branch.status !== "open") return json({ error: `branch is ${branch.status}` }, 409);
+    if (branch.status !== "open") return fail("BranchClosed", `branch is ${branch.status}`);
     const path = new URL(req.url).searchParams.get("path") ?? "";
-    if (!path) return json({ error: "path?" }, 400);
+    if (!path) return fail("BadInput", "path?");
     return deleteOn(env, owner, repo, name, path, user ?? "upstream");
   }
 
@@ -1270,45 +1270,45 @@ export async function branchRoutes(req: Request, env: Env, p: string[], owner: s
   }
   // POST /api/repos/:o/:r/branches/:b/hunks/reject {path, key}  put one hunk back as it was where the branch forked.
   if (p[6] === "hunks" && p[7] === "reject" && req.method === "POST") {
-    if (!a.write) return json({ error: "no write access" }, 403);
+    if (!a.write) return fail("NoWriteAccess", "no write access");
     const locked = await runBranchLocked(env, owner, repo, name, user);
     if (locked) return locked;
-    if (branch.status !== "open") return json({ error: `branch is ${branch.status}` }, 409);
+    if (branch.status !== "open") return fail("BranchClosed", `branch is ${branch.status}`);
     const b = await readBody<"path" | "key">(req);
     const f = typeof b.path === "string" && (await files()).find((x) => x.path === b.path && !x.merged && !x.deleted && !x.blob);
     const got = f && await fileHunks(env, owner, repo, name, f.path, user!, true);
     const h = got && got.hunks.find((x) => x.key === b.key);
-    if (!f || !got || !h) return json({ error: `no change ${b.key} in ${b.path} on ${name}: read the review again` }, 404);
+    if (!f || !got || !h) return fail("NoSuchChange", `no change ${b.key} in ${b.path} on ${name}: read the review again`);
     const res = await toFile(env, owner, repo, f.path, user!, "ops", { method: "POST", body: JSON.stringify({ ops: revertOps(got.doc, h), ifRev: got.doc.rev }) }, "", name);
     const body: unknown = await res.json().catch(() => null);
     const out = check(obj({ rev: num(0, Infinity) }), body);
     // The owner leaving a stretch of their agent's batch out is still the batch they read.
     if (res.ok && user === owner) await rehashBatch(env, owner, repo, name);
-    return res.ok ? json({ path: f.path, key: h.key, rev: out?.rev }) : json({ error: "the branch changed under you: read the review again", ...(isPlainObject(body) ? body : {}) }, 409);
+    return res.ok ? json({ path: f.path, key: h.key, rev: out?.rev }) : fail("BranchMoved", "the branch changed under you: read the review again", isPlainObject(body) ? body : {});
   }
 
   // POST /api/repos/:o/:r/branches/:b/conflicts/agent {path, line, harness, model?}
   // A coding agent writes the settled text for one conflict: {text}, to merge with as {text}. Nothing lands.
   if (p[6] === "conflicts" && p[7] === "agent" && req.method === "POST") {
-    if (!a.write) return json({ error: "no write access" }, 403);
+    if (!a.write) return fail("NoWriteAccess", "no write access");
     const why = agentsUnavailable(env);
-    if (why) return json({ error: why }, 501);
-    if (adminsOnly(env, user)) return json({ error: ADMINS_ONLY }, 403);
+    if (why) return fail("AgentsUnavailable", why);
+    if (adminsOnly(env, user)) return fail("AdminsOnly", ADMINS_ONLY);
     const b = need(await readBody(req), obj({ harness: oneOf(HARNESSES), path: str(4096), line: str(), model: opt(str(200, { min: 0 })) }));
     if (b instanceof Response) return b;
     const { harness } = b;
-    if (!installedHarnesses(env).includes(harness)) return json({ error: `${harness} isn't installed on this machine` }, 400);
+    if (!installedHarnesses(env).includes(harness)) return fail("NoHarness", `${harness} isn't installed on this machine`);
     const rows = await files();
     const f = rows.find((x) => x.path === b.path && !x.merged && !x.deleted && !x.blob);
     const m = f && await mergeFile(env, owner, repo, branch, f.path, user!, undefined, true);
     // A fact check (#1254) is asked about as a conflict is: the stretch both changed, to settle true.
     const c = m && [...m.conflicts, ...m.checks ?? []].find((x) => x.line === b.line);
-    if (!c) return json({ error: `no conflict ${b.line} in ${b.path} on ${name}` }, 404);
-    if (!explain(c).choices.includes("text")) return json({ error: "this conflict only takes main or branch" }, 400);
+    if (!c) return fail("NoSuchConflict", `no conflict ${b.line} in ${b.path} on ${name}`);
+    if (!explain(c).choices.includes("text")) return fail("TextOnlyMainOrBranch", "this conflict only takes main or branch");
     const spent = await hostedBudget(env);
-    if (spent) return spent;
+    if (spent) return named(spent, "BudgetSpent");
     const r = await checkedAnswer(env, owner, repo, branch, rows, b.path, c, { harness, model: b.model?.trim() || undefined }, user!, req.signal);
-    if ("error" in r) return json({ error: r.error }, 502);
+    if ("error" in r) return fail("AgentFailed", r.error);
     return json({ path: b.path, line: b.line, ...r });
   }
 
@@ -1320,8 +1320,8 @@ export async function branchRoutes(req: Request, env: Env, p: string[], owner: s
   // "main", "branch", "both", "both:branch-first" or {text}
   // POST /api/repos/:o/:r/branches/:b/land, the same body: merge, or the one conflict left and why (#1013)
   if ((p[6] === "merge" || p[6] === "land") && req.method === "POST") {
-    if (!a.write) return json({ error: "no write access" }, 403);
-    if (branch.status !== "open") return json({ error: `branch is ${branch.status}` }, 409);
+    if (!a.write) return fail("NoWriteAccess", "no write access");
+    if (branch.status !== "open") return fail("BranchClosed", `branch is ${branch.status}`);
     return (p[6] === "land" ? land : mergeBranch)(env, owner, repo, branch, user!, await readBody<"resolve" | "build_ok">(req), req);
   }
   return null;
@@ -1330,25 +1330,25 @@ export async function branchRoutes(req: Request, env: Env, p: string[], owner: s
 /** A branch's hook cards: read them, or say yay or nay at one as a person, signed in on the site. */
 async function hookRoutes(req: Request, env: Env, hook: string | undefined, owner: string, repo: string, branch: BranchRow, user: string | null, a: Access): Promise<Response> {
   const r = await repoPipeline(env, owner, repo);
-  if ("error" in r) return json({ error: r.error }, 422);
+  if ("error" in r) return fail("PipelineInvalid", r.error);
   const on = hooksOn(r.pipeline), hash = await branchHash(env, owner, repo, branch.name);
   if (!hook && req.method === "GET") {
     const kept = new Map((await verdicts(env, owner, repo, branch.name)).filter((v) => v.hash === hash).map((v) => [v.hook, v]));
     return json({ hash, hooks: on.map((h) => { const v = kept.get(h.at); return { ...h, say: v?.say ?? "unasked", ...(v?.by && { by: v.by }), ...(v?.reason && { reason: v.reason }) }; }) });
   }
-  if (!hook || req.method !== "POST") return json({ error: "not found" }, 404);
-  if (!a.write) return json({ error: "no write access" }, 403);
+  if (!hook || req.method !== "POST") return fail("NoSuchHook", "not found");
+  if (!a.write) return fail("NoWriteAccess", "no write access");
   // A hook's yay is a person's word, like build_ok: an API token (an agent may hold one) can't give it, nor can the branch's author.
-  if (byToken(req)) return json({ error: "a hook's yay or nay is a person's: say it on the site, signed in" }, 403);
-  if (user === branch.by && user !== owner) return json({ error: "someone other than the branch's author says yay or nay" }, 403);
+  if (byToken(req)) return fail("PersonOnly", "a hook's yay or nay is a person's: say it on the site, signed in");
+  if (user === branch.by && user !== owner) return fail("AuthorCantSay", "someone other than the branch's author says yay or nay");
   const at = HOOKS.find((h) => h === hook);
-  if (!at) return json({ error: `no hook ${hook}: they are ${HOOKS.join(", ")}` }, 404);
-  if (!on.some((h) => h.at === at)) return json({ error: `the ${at} hook is off in this repo's pipeline` }, 409);
-  if (branch.status !== "open") return json({ error: `branch is ${branch.status}` }, 409);
+  if (!at) return fail("NoSuchHook", `no hook ${hook}: they are ${HOOKS.join(", ")}`);
+  if (!on.some((h) => h.at === at)) return fail("HookOff", `the ${at} hook is off in this repo's pipeline`);
+  if (branch.status !== "open") return fail("BranchClosed", `branch is ${branch.status}`);
   const said = need(await readBody(req), Said);
   if (said instanceof Response) return said;
   // The answer names the branch the person read (its hash, from GET .../hooks): an edit landed since asks again, like an agent batch's accept.
-  if (said.hash !== hash) return json({ error: "the branch changed since you read it: read it again (GET .../hooks), then answer", hash }, 409);
+  if (said.hash !== hash) return fail("BranchMoved", "the branch changed since you read it: read it again (GET .../hooks), then answer", { hash });
   await keepVerdict(env, owner, repo, branch.name, { hook: at, hash, say: said.say, by: user!, ...(said.reason && { reason: said.reason }) });
   return json({ hook: at, hash, say: said.say });
 }
