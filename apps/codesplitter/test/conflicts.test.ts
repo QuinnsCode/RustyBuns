@@ -477,7 +477,7 @@ describe("over the API", () => {
     expect(r.status).toBe(200);
     const out = await r.json() as any;
     expect(out.merged.sort()).toEqual(["bump", "docs", "more"]);
-    expect(out.skipped).toEqual([{ branch: "b1", error: "conflicts", files: ["a.ts"] }, { branch: "empty", error: "nothing to merge" }]);
+    expect(out.skipped).toEqual([{ branch: "b1", error: "conflicts", tag: "Conflicts", files: ["a.ts"] }, { branch: "empty", error: "nothing to merge", tag: "NothingToMerge" }]);
     const read = async (path: string) => text(await (await call("ana", `/api/repos/ana/r/do/file?path=${path}`)).json() as Doc);
     expect(await read("README.md")).toBe("# r, documented");
     expect(await read("package.json")).toBe('{\n  "version": "1.0.1"\n}');
@@ -486,7 +486,7 @@ describe("over the API", () => {
     expect(open).toEqual(["b1", "empty"]);
 
     const named = await (await post("ana", "/api/repos/ana/r/merges", { branches: ["b1", "gone"] })).json() as any;
-    expect(named).toEqual({ merged: [], skipped: [{ branch: "gone", error: "no open branch" }, { branch: "b1", error: "conflicts", files: ["a.ts"] }] });
+    expect(named).toEqual({ merged: [], skipped: [{ branch: "gone", error: "no open branch", tag: "NoSuchBranch" }, { branch: "b1", error: "conflicts", tag: "Conflicts", files: ["a.ts"] }] });
   });
 
   test("leftovers to AI: a merge asks a checked agent on its own, once per conflict, on the cheapest model (#1012)", async () => {
