@@ -15,8 +15,9 @@
 // Exits with the worst code. Only send your own branches: the builder runs what it gets.
 // No builder (unset, or ssh can't reach it in 5 s): `run` runs its command here; a base-ref run names the
 // suites GitHub CI will run and exits 0, so you push and let `bun run pr <n>` wait for them.
+// Each run leaves a record on the builder (runs/<slot>.json and .log, then runs/done) for its menu bar: scripts/builder-bar.ts.
 import { homedir, tmpdir } from "node:os";
-import { relative, resolve } from "node:path";
+import { basename, relative, resolve } from "node:path";
 
 export type Job = { app: string; test: string; prep: string };
 
@@ -117,10 +118,19 @@ async function stream(p: ReturnType<typeof remote>, label: string, quiet = false
   return { code: await p.exited, out };
 }
 
-// Claim a free slot, waiting while every slot is busy. The same round trip reads the builder's battery.
-export async function claim(b: Builder): Promise<{ slot: string; batt: Battery }> {
-  const script = `mkdir -p locks && find locks -mindepth 1 -maxdepth 1 -mmin +${STALE_MIN} -exec rmdir {} + ; `
-    + `for d in slot-*; do [ -d "$d/.git" ] && mkdir "locks/$d" 2>/dev/null && { echo "$d"; pmset -g batt 2>/dev/null; exit 0; }; done; exit ${BUSY}`;
+// What a run leaves on the builder for its menu bar (scripts/builder-bar.ts): runs/<slot>.json and .log while it
+// runs, then both in runs/done, the last KEEP of them.
+export type RunRecord = { who: string; cmd: string; started: number; ended?: number; code?: number };
+const KEEP = 10;
+const LOG = (slot: string) => `L="$PWD/runs/${slot}.log"; set -o pipefail; `;
+const teed = (cmd: string) => `{ ${cmd}; } 2>&1 | tee -a "$L"`;
+
+// Claim a free slot, waiting while every slot is busy. The same round trip writes the slot's run record and
+// reads the builder's battery.
+export async function claim(b: Builder, rec?: RunRecord): Promise<{ slot: string; batt: Battery }> {
+  const write = rec ? `printf '%s' ${q(JSON.stringify(rec))} > "runs/$d.json"; : > "runs/$d.log"; ` : "";
+  const script = `mkdir -p locks runs/done && find locks -mindepth 1 -maxdepth 1 -mmin +${STALE_MIN} -exec rmdir {} + ; `
+    + `for d in slot-*; do [ -d "$d/.git" ] && mkdir "locks/$d" 2>/dev/null && { ${write}echo "$d"; pmset -g batt 2>/dev/null; exit 0; }; done; exit ${BUSY}`;
   for (let waited = false; ; waited = true) {
     const { code, out } = await stream(remote(b, script), "claim", true);
     if (code === 0) { const [slot = "", ...rest] = out.trim().split("\n"); return { slot, batt: battery(rest.join("\n")) }; }
@@ -130,7 +140,15 @@ export async function claim(b: Builder): Promise<{ slot: string; batt: Battery }
   }
 }
 
-export const release = (b: Builder, slot: string) => stream(remote(b, `rmdir locks/${q(slot)}`), "release", true);
+// Give the slot back; with its record, mark the run done and keep only the last KEEP finished ones. Without one
+// (a slot claimed and handed back unrun), its record goes.
+export function release(b: Builder, slot: string, rec?: RunRecord) {
+  const s = q(slot), id = q(`done/${rec?.started ?? 0}-${slot}`);
+  const done = rec ? `printf '%s' ${q(JSON.stringify(rec))} > runs/${id}.json; mv -f runs/${s}.log runs/${id}.log 2>/dev/null; rm -f runs/${s}.json; `
+    + `ls -t runs/done/*.json 2>/dev/null | tail -n +${KEEP + 1} | while read -r f; do rm -f "$f" "${"$"}{f%.json}.log"; done; `
+    : `rm -f runs/${s}.json runs/${s}.log; `;
+  return stream(remote(b, `${done}rmdir locks/${s}`), "release", true);
+}
 
 // Send the commit straight to the slot's own repo, then check it out on top of its warm node_modules.
 export async function load(b: Builder, slot: string, sha: string, cwd: string) {
@@ -139,8 +157,8 @@ export async function load(b: Builder, slot: string, sha: string, cwd: string) {
     cwd, stdout: "inherit", stderr: "inherit", env: { ...process.env, GIT_SSH_COMMAND: b.ssh.join(" ") },
   });
   if (await push.exited) return 1;
-  const { code } = await stream(remote(b, `cd ${q(slot)} && git checkout -q -f --detach ${sha} && git update-ref -d ${ref} `
-    + `&& git clean -fdq && bun install --frozen-lockfile --silent`), "setup");
+  const { code } = await stream(remote(b, LOG(slot) + teed(`cd ${q(slot)} && git checkout -q -f --detach ${sha} && git update-ref -d ${ref} `
+    + `&& git clean -fdq && bun install --frozen-lockfile --silent`)), "setup");
   return code;
 }
 
@@ -200,10 +218,15 @@ export async function main(argv: string[], cwd: string): Promise<number> {
   }
 
   const poll = Number(process.env.BUILDER_POLL_MS ?? 30_000);
+  const branch = (await Bun.$`git rev-parse --abbrev-ref HEAD`.cwd(cwd).quiet().nothrow().text()).trim();
+  // Who, for the builder's menu bar: the worker (office/<name>), or the worktree's folder on a detached HEAD.
+  const who = process.env.BUILDER_WHO || (branch && branch !== "HEAD" ? branch.replace(/^office\//, "") : basename(cwd));
+  const rec: RunRecord = { who, started: Date.now(),
+    cmd: argv[0] === "run" ? `${argv[1]}: ${argv.slice(2).join(" ")}` : `suites: ${jobs.map((j) => j.label).join(", ")}` };
   let slot = "", cap = Number(process.env.BUILDER_WORKERS ?? 4);
   for (let said = ""; ; ) {
     const up = await reachable(b);
-    const got = up ? await claim(b) : undefined;
+    const got = up ? await claim(b, { ...rec, started: (rec.started = Date.now()) }) : undefined;
     const p = plan(v, up, got?.batt ?? { onPower: true, pct: 100 }, cap);
     if (p.where === "bob") { slot = got!.slot; cap = p.cap; if (p.why) console.log(p.why); break; }
     if (got) await release(b, got.slot);
@@ -212,21 +235,23 @@ export async function main(argv: string[], cwd: string): Promise<number> {
     await Bun.sleep(poll);
   }
 
-  const giveBack = () => { release(b, slot).finally(() => process.exit(130)); };
+  const finish = (code: number) => release(b, slot, { ...rec, ended: Date.now(), code });
+  const giveBack = () => { finish(130).finally(() => process.exit(130)); };
   process.once("SIGINT", giveBack);
   process.once("SIGTERM", giveBack);
+  let code = 1;
   try {
     const setup = await load(b, slot, await snapshot(cwd), cwd);
-    if (setup) return setup;
+    if (setup) return (code = setup);
     console.log(`running ${jobs.map((j) => j.label).join(", ")} on ${host} (${slot}), ${cap} at a time`);
     const t0 = performance.now();
-    const worst = await pool(jobs, cap, async (j) => (await stream(remote(b, `cd ${q(`${slot}/${j.dir}`)} && ${j.cmd}`), j.label)).code);
+    const worst = await pool(jobs, cap, async (j) => (await stream(remote(b, LOG(slot) + teed(`cd ${q(`${slot}/${j.dir}`)} && ${j.cmd}`)), j.label)).code);
     console.log(`${worst ? "failed" : "passed"} in ${((performance.now() - t0) / 1000).toFixed(1)}s on ${host}`);
-    return worst;
+    return (code = worst);
   } finally {
     process.off("SIGINT", giveBack);
     process.off("SIGTERM", giveBack);
-    await release(b, slot);
+    await finish(code);
   }
 }
 
