@@ -6,6 +6,7 @@
 // fields that changed since the last one. Nobody sends a frame per frame: SEND_MS apart at most, and nothing at all
 // while you stand still, so a party standing at a campfire costs nothing and lets the room hibernate.
 import { clamp } from "@rustybuns/util";
+import { COLOURS } from "../world/hues.ts";
 import { arr, Bad, bool, check, int, num, obj, oneOf, opt, str, type Guard } from "@rustybuns/util/guard";
 
 /** Players in one region's room: a hunting party, not a crowd. */
@@ -20,8 +21,9 @@ export const COAST_MS = 300;
 
 /** Whole decimetres east and south, a 256th of a turn, the region you are in, the creature you walk as, the next two of
  *  your line-up who follow you (`f`, comma-joined; empty for none), and whether you are on the move (`m`, 1 or 0: the
- *  message that stops you carries where you stopped and `m: 0`, so a friend's page knows not to coast past it). */
-export interface Pose { r: number; x: number; z: number; y: number; l: string; f: string; m: number }
+ *  message that stops you carries where you stopped and `m: 0`, so a friend's page knows not to coast past it), and the
+ *  colour your ground hums in (`c`, one of world/hues.ts's 64; a page from before it sends none). */
+export interface Pose { r: number; x: number; z: number; y: number; l: string; f: string; m: number; c?: number }
 export type Delta = Partial<Pose>;
 
 /** The continent is 77 x 51 km: a decimetre grid fits in an int that JSON spells in six digits. */
@@ -29,10 +31,10 @@ const SPAN = 1_000_000;
 const ID = /^[a-z0-9-]{1,40}$/;
 /** The followers shown behind a friend. */
 export const FOLLOWERS = 2;
-const POSE = { r: int(1, 64), x: int(0, SPAN), z: int(0, SPAN), y: int(0, 255), l: str(40, { re: ID }), f: str(81, { min: 0, re: /^([a-z0-9-]{1,40}(,[a-z0-9-]{1,40})?)?$/ }), m: int(0, 1) };
-const DELTA: Guard<Delta> = obj({ r: opt(POSE.r), x: opt(POSE.x), z: opt(POSE.z), y: opt(POSE.y), l: opt(POSE.l), f: opt(POSE.f), m: opt(POSE.m) });
+const POSE = { r: int(1, 64), x: int(0, SPAN), z: int(0, SPAN), y: int(0, 255), l: str(40, { re: ID }), f: str(81, { min: 0, re: /^([a-z0-9-]{1,40}(,[a-z0-9-]{1,40})?)?$/ }), m: int(0, 1), c: opt(int(0, COLOURS - 1)) };
+const DELTA: Guard<Delta> = obj({ r: opt(POSE.r), x: opt(POSE.x), z: opt(POSE.z), y: opt(POSE.y), l: opt(POSE.l), f: opt(POSE.f), m: opt(POSE.m), c: POSE.c });
 const FULL: Guard<Pose> = obj(POSE);
-const KEYS = ["r", "x", "z", "y", "l", "f", "m"] as const;
+const KEYS = ["r", "x", "z", "y", "l", "f", "m", "c"] as const;
 
 /** A delta off the wire, or null when it isn't one (an unknown field, a number off the map, an empty message). */
 export function parseDelta(raw: unknown): Delta | null {
@@ -47,9 +49,9 @@ export function parseDelta(raw: unknown): Delta | null {
 export const whole = (p: Delta): Pose | null => check(FULL, p);
 
 /** Metres and radians (yaw 0 is +x, the world's own) to the wire's grid. */
-export function quantise(region: number, x: number, z: number, yaw: number, lead: string, follow: readonly string[] = [], moving = false): Pose {
+export function quantise(region: number, x: number, z: number, yaw: number, lead: string, follow: readonly string[] = [], moving = false, colour?: number): Pose {
   const turn = (((yaw / (2 * Math.PI)) % 1) + 1) % 1;
-  return { r: region, x: Math.round(clamp(x * 10, 0, SPAN)), z: Math.round(clamp(z * 10, 0, SPAN)), y: Math.round(turn * 256) % 256, l: lead, f: follow.slice(0, FOLLOWERS).join(","), m: moving ? 1 : 0 };
+  return { r: region, x: Math.round(clamp(x * 10, 0, SPAN)), z: Math.round(clamp(z * 10, 0, SPAN)), y: Math.round(turn * 256) % 256, l: lead, f: follow.slice(0, FOLLOWERS).join(","), m: moving ? 1 : 0, ...(colour === undefined ? {} : { c: colour }) };
 }
 export const metres = (p: Pose) => ({ x: p.x / 10, z: p.z / 10, yaw: (p.y / 256) * 2 * Math.PI });
 
@@ -273,12 +275,12 @@ export class Ghost {
 
   /** Where to draw them at `now`: BEHIND_MS in the past between two updates. Past the newest, a friend whose last update
    *  said they stopped stands there; one still moving coasts on a little (a late update), never past COAST_MS. */
-  at(now: number): { x: number; z: number; yaw: number; region: number; lead: string; follow: string[] } | null {
+  at(now: number): { x: number; z: number; yaw: number; region: number; lead: string; follow: string[]; colour?: number } | null {
     // (after the newest update: held there if it said they stopped, else coasting COAST_MS on the way they went)
     const p = whole(this.pose), s = this.samples;
     if (!p || !s.length) return null;
     const t = now - BEHIND_MS, last = s[s.length - 1]!;
-    const out = (x: number, z: number, yaw: number) => ({ x, z, yaw, region: p.r, lead: p.l, follow: p.f ? p.f.split(",") : [] });
+    const out = (x: number, z: number, yaw: number) => ({ x, z, yaw, region: p.r, lead: p.l, follow: p.f ? p.f.split(",") : [], colour: p.c });
     if (t <= s[0]!.at) return out(s[0]!.x, s[0]!.z, s[0]!.yaw);
     for (let i = s.length - 1; i > 0; i--) {
       const a = s[i - 1]!, b = s[i]!;

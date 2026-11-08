@@ -65,7 +65,7 @@ export interface OnlineOpts {
 
 export class Online {
   readonly ghosts = new Map<string, Ghost>();
-  /** Our own public id in the room (its `all`), which seeds our ground tiles (world/bearer.ts); empty until seated. */
+  /** Our own public id in the room (its `all`), as friends' pages know us; empty until seated. */
   you = "";
   status: Status = "joining";
   /** Bytes sent, for the probe's bytes-per-second line. */
@@ -153,12 +153,13 @@ export class Online {
     this.o.onChange?.();
   }
 
-  /** Where we are now (metres, radians), every frame: it goes out only when it changed and SEND_MS has passed. */
-  update(region: number, x: number, z: number, yaw: number, lead: string, now: number, follow: readonly string[] = []) {
+  /** Where we are now (metres, radians), every frame: it goes out only when it changed and SEND_MS has passed. `colour`
+   *  is the one our ground hums in (world/hues.ts). */
+  update(region: number, x: number, z: number, yaw: number, lead: string, now: number, follow: readonly string[] = [], colour?: number) {
     if (this.status === "off") return; // open in another tab: that one has the room
     const was = this.here;
     if (was && (was.x !== Math.round(x * 10) || was.z !== Math.round(z * 10))) this.movedAt = now;
-    this.here = quantise(region, x, z, yaw, lead, follow, now - this.movedAt < STILL_MS);
+    this.here = quantise(region, x, z, yaw, lead, follow, now - this.movedAt < STILL_MS, colour);
     // Just stopped: say so (and where) at once, out of turn, so a friend's page never coasts past where you stand.
     if (was?.m === 1 && this.here.m === 0 && this.nearby()) { this.sendPose(); return; }
     if (!this.link) this.open();
@@ -249,6 +250,9 @@ export class Online {
   }
 
   close() { clearInterval(this.pinger); this.link?.close(); this.link = null; this.ghosts.clear(); this.status = "off"; }
+
+  /** The colour each other player's ground hums in, as they last said (world/hues.ts). */
+  colours(): { id: string; colour?: number }[] { return [...this.ghosts.values()].map((g) => ({ id: g.id, colour: g.pose.c })); }
 
   /** The others and the region each is in, for the chip. */
   where(): { name: string; region: number }[] { return [...this.ghosts.values()].flatMap((g) => (g.pose.r === undefined ? [] : [{ name: g.name, region: g.pose.r }])); }

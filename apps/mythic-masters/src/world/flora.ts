@@ -58,8 +58,15 @@ export const TREELINE = 46; // game metres: no tree stands higher
 export const BARE = 60;     // game metres: nothing but rock and snow above this
 export const SNOWLINE = 38; // game metres: trees above this carry snow
 const WATER_EDGE = 1.2;     // metres above the water: reeds grow this close to it and little else
-const TURF_R = 70;          // metres round you the grass is drawn
-const TURF_GRID = 1.15;     // metres between grass tufts
+const TURF_R = 70;          // metres round you the grass is drawn thick
+const TURF_GRID = 1.15;     // metres between grass tufts, there
+const TURF_FAR = 190;       // metres round you the grass goes on, thinner, in bigger tufts
+const TURF_FAR_GRID = 2.6;  // metres between those tufts
+/** The two rings of grass: the thick one round your feet, then the sparse one out to TURF_FAR (each tuft wider and taller,
+ * so from a walking camera the ground stays green to the trees, not to a line 70 m off). Rings overlap a few metres. */
+const TURF_RINGS = [{ grid: TURF_GRID, r0: 0, r1: TURF_R, salt: 31, size: 1 }, { grid: TURF_FAR_GRID, r0: TURF_R - 6, r1: TURF_FAR, salt: 61, size: 1.7 }] as const;
+/** Tufts the grass mesh can hold: each ring's candidate spots, about 4 in 5 of which are ever grass. */
+const TURF_CAP = TURF_RINGS.reduce((n, g) => n + Math.ceil((Math.PI * (g.r1 ** 2 - g.r0 ** 2)) / g.grid ** 2 * 0.8), 0);
 
 /** What a quality tier (@rustybuns/util/quality) plants: `reach`, metres round the near patch's centre the plants stand in
  * (past it the tall kinds go on as far cards and the small ones aren't drawn), and `lod`, metres past which a grown plant
@@ -148,7 +155,7 @@ export interface Flora {
   /** The far forest's next laying, row by row (scatterFar), until it is copied into `cards` at once. */
   farJob: { cx: number; cz: number; gz: number; counts: Map<Kind, number>; mats: Map<Kind, Float32Array>; cols: Map<Kind, Float32Array> } | null;
   /** The grass's next laying, row by row (scatterTurf), until it is copied into `turf` at once. */
-  turfJob: { cx: number; cz: number; gz: number; n: number; mats: Float32Array; cols: Float32Array } | null;
+  turfJob: { cx: number; cz: number; ring: number; gz: number; n: number; mats: Float32Array; cols: Float32Array } | null;
   /** Near plants, far cards and grass tufts planted now. */
   spots: number; far: number; tufts: number;
   /** Near plants and far cards in the camera's view at the last pick: what the GPU is handed (src/world/cull.ts). */
@@ -381,7 +388,7 @@ export function flora(loaded: () => void): Flora {
         f.cards.set(kind, c); f.group.add(c); f.culled.set(c, new Culled(c));
       }
     }
-    f.turf = new THREE.InstancedMesh(kinds.get("grass")!, plantMaterial(f.you, time, gust, SWAY.grass!, true), Math.ceil((TURF_R * 2 / TURF_GRID) ** 2 * 0.8));
+    f.turf = new THREE.InstancedMesh(kinds.get("grass")!, plantMaterial(f.you, time, gust, SWAY.grass!, true), TURF_CAP);
     f.turf.count = 0; f.turf.frustumCulled = false;
     f.group.add(f.turf);
     loaded();
@@ -525,34 +532,40 @@ export function scatterFar(f: Flora, cx: number, cz: number, inner: number, oute
   return true;
 }
 
-/** The grass within TURF_R of (cx, cz): a tuft every TURF_GRID metres where the biome's turf covers, in its colour. Lays
- * rows for up to `budget` ms into arrays of its own and answers true once they are copied into the mesh, all at once, so no
- * frame draws half the old grass and half the new; called again for another centre, it starts over there. */
+/** The grass round (cx, cz): a tuft every TURF_GRID metres out to TURF_R and every TURF_FAR_GRID out to TURF_FAR (fewer as
+ * the outer ring ends, so it has no edge), where the biome's turf covers, in its colour. Lays rows for up to `budget` ms
+ * into arrays of its own and answers true once they are copied into the mesh, all at once, so no frame draws half the old
+ * grass and half the new; called again for another centre, it starts over there. A phone on low stops at its plants' reach. */
 export function scatterTurf(f: Flora, cx: number, cz: number, regionOf: (x: number, z: number) => Region | undefined, yAt: (x: number, z: number) => number, waterAt: (x: number, z: number) => number = () => 0, budget = Infinity): boolean {
   const m = f.turf;
   if (!m) return true;
-  const t0 = performance.now(), gz0 = Math.floor((cz - TURF_R) / TURF_GRID), gz1 = Math.floor((cz + TURF_R) / TURF_GRID);
+  const t0 = performance.now(), cap = m.instanceMatrix.count;
   let j = f.turfJob;
-  if (!j || j.cx !== cx || j.cz !== cz) j = f.turfJob = { cx, cz, gz: gz0, n: 0, mats: j?.mats ?? new Float32Array(m.instanceMatrix.array.length), cols: j?.cols ?? new Float32Array(m.instanceMatrix.count * 3) };
+  if (!j || j.cx !== cx || j.cz !== cz) j = f.turfJob = { cx, cz, ring: 0, gz: NaN, n: 0, mats: j?.mats ?? new Float32Array(m.instanceMatrix.array.length), cols: j?.cols ?? new Float32Array(cap * 3) };
   let n = j.n;
-  for (; j.gz <= gz1; j.gz++) {
-    if (j.gz > gz0 && performance.now() - t0 > budget) { j.n = n; return false; }
-    const gz = j.gz;
-    for (let gx = Math.floor((cx - TURF_R) / TURF_GRID); gx <= Math.floor((cx + TURF_R) / TURF_GRID); gx++) {
-      if (n >= m.instanceMatrix.count) break;
-      const x = (gx + hash(gx, gz, 31)) * TURF_GRID, z = (gz + hash(gx, gz, 32)) * TURF_GRID;
-      if (Math.hypot(x - cx, z - cz) > TURF_R) continue;
-      const g = regionOf(x, z);
-      if (!g) continue;
-      const turf = TURF[g.biome], y = yAt(x, z);
-      const lump = clumped(turf.clump ?? CLUMP, x, z);
-      if (y - waterAt(x, z) < 0.3 || y > TREELINE + 6 || hash(gx, gz, 33) > turfAt(g.biome, x, z) * lump.chance) continue;
-      const h = turf.height * (0.7 + 0.6 * hash(gx, gz, 34)) * lump.size;
-      o.position.set(x, y - 0.03, z); o.rotation.set(0, hash(gx, gz, 35) * Math.PI, 0); o.scale.set(h * 2.2, h, h * 2.2);
-      o.updateMatrix();
-      o.matrix.toArray(j.mats, n * 16);
-      tint(gx, gz, y).multiply(turfC.setHex(turf.colour)).multiplyScalar(2.2).toArray(j.cols, n * 3);
-      n++;
+  for (; j.ring < TURF_RINGS.length; j.ring++, j.gz = NaN) {
+    const { grid, r0, salt, size } = TURF_RINGS[j.ring]!, r1 = Math.min(TURF_RINGS[j.ring]!.r1, Math.max(TURF_R, reachU.value)), fade = j.ring === TURF_RINGS.length - 1 ? r1 - 25 : Infinity;
+    const gz0 = Math.floor((cz - r1) / grid), gz1 = Math.floor((cz + r1) / grid);
+    if (Number.isNaN(j.gz)) j.gz = gz0;
+    for (; j.gz <= gz1; j.gz++) {
+      if ((j.ring > 0 || j.gz > gz0) && performance.now() - t0 > budget) { j.n = n; return false; }
+      const gz = j.gz;
+      for (let gx = Math.floor((cx - r1) / grid); gx <= Math.floor((cx + r1) / grid); gx++) {
+        if (n >= cap) break;
+        const x = (gx + hash(gx, gz, salt)) * grid, z = (gz + hash(gx, gz, salt + 1)) * grid, d = Math.hypot(x - cx, z - cz);
+        if (d > r1 || d < r0 || (d > fade && hash(gx, gz, salt + 5) < (d - fade) / (r1 - fade))) continue;
+        const g = regionOf(x, z);
+        if (!g) continue;
+        const turf = TURF[g.biome], y = yAt(x, z);
+        const lump = clumped(turf.clump ?? CLUMP, x, z);
+        if (y - waterAt(x, z) < 0.3 || y > TREELINE + 6 || hash(gx, gz, salt + 2) > turfAt(g.biome, x, z) * lump.chance) continue;
+        const h = turf.height * (0.7 + 0.6 * hash(gx, gz, salt + 3)) * lump.size * (size > 1 ? 1.25 : 1);
+        o.position.set(x, y - 0.03, z); o.rotation.set(0, hash(gx, gz, salt + 4) * Math.PI, 0); o.scale.set(h * 2.2 * size, h, h * 2.2 * size);
+        o.updateMatrix();
+        o.matrix.toArray(j.mats, n * 16);
+        tint(gx, gz, y).multiply(turfC.setHex(turf.colour)).multiplyScalar(2.2).toArray(j.cols, n * 3);
+        n++;
+      }
     }
   }
   m.instanceMatrix.array.set(j.mats.subarray(0, n * 16));
