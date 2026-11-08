@@ -40,7 +40,8 @@ interface Op {
 /**
  * codeSplitter's named failures (#3804). A route's 4xx reply is `{error, tag, ...}`: `error` the sentence a person
  * reads, `tag` one of these, which a client matches on instead of guessing from the status (client.ts makes each one
- * an error class). Each is [its status, what it means]. Route files move onto tags one at a time: branches.ts first.
+ * an error class). Each is [its status, what it means]. Route files move onto tags one at a time: branches.ts, then worker.ts.
+ * A 401 (sign in) and a 5xx stay untagged: the client makes them Unauthorized and Transient for every operation.
  */
 export const ERRORS = {
   BadInput: [400, "the body or query isn't what the operation takes"],
@@ -56,6 +57,14 @@ export const ERRORS = {
   AuthorCantSay: [403, "someone other than the branch's author says yay or nay"],
   AdminsOnly: [403, "on the hosted site, only its admins run this"],
   PolicyFile: [403, "only the owner changes the path policy or the checks' commands on main"],
+  MainProtected: [403, "main is protected: edit on a branch, and the owner merges it"],
+  NotYourCollection: [403, "that collection isn't yours"],
+  NoSuchRepo: [404, "no such repo, or it's private and you can't see it"],
+  NoSuchUser: [404, "no one has that handle here"],
+  NotInCrew: [404, "they aren't on the repo's crew"],
+  NoPushClash: [404, "no push clashes with that file"],
+  NoSuchCollection: [404, "no such collection"],
+  NoSuchRoute: [404, "no API route there"],
   NoSuchBranch: [404, "no branch by that name (open, for a parent or a merge)"],
   NoSuchFile: [404, "no such file on the branch"],
   NoSuchChange: [404, "that hunk changed or went: review the branch again"],
@@ -76,30 +85,67 @@ export const ERRORS = {
   HookHold: [409, "a pipeline hook said nay or waits for a person"],
   HookOff: [409, "that hook is off in this repo's pipeline"],
   NothingToMerge: [409, "the branch has nothing on it yet"],
+  NoGit: [409, "the repo has no git yet"],
+  PushClash: [409, "a push to the repo's git changed the same lines as edits here: the owner keeps one side, then commit"],
+  HoldingLines: [409, "you hold lines in another file: let go of them before you wait in line here"],
+  TooBig: [413, "the file is too big or too long to dig"],
+  BinaryFile: [415, "a binary file: it has no lines to read or edit"],
   PipelineInvalid: [422, "codesplitter.pipeline.json doesn't parse"],
   BudgetSpent: [429, "the hosted agents' budget is spent for now"],
   AgentsUnavailable: [501, "coding agents don't run here"],
+  NoEuStorage: [501, "this codeSplitter has no EU storage"],
   AgentFailed: [502, "the coding agent didn't answer"],
 } as const satisfies Record<string, readonly [number, string]>;
 export type ErrorTag = keyof typeof ERRORS;
 
-const NO_BRANCH = ["NoSuchBranch"] as const, WRITE = ["NoWriteAccess", "NoSuchBranch"] as const;
+// Every route under a repo answers NoSuchRepo first, for one you can't see too (worker.ts).
+const REPO = ["NoSuchRepo"] as const, NO_BRANCH = [...REPO, "NoSuchBranch"] as const, WRITE = [...REPO, "NoWriteAccess", "NoSuchBranch"] as const;
+const FILE_READ = [...REPO, "NoSuchBranch", "NoSuchFile", "TooBig", "BinaryFile"] as const;
+const FILE_WRITE = [...FILE_READ, "NoWriteAccess", "RunBranchLocked", "MainProtected", "PolicyFile"] as const;
 const MERGE = [...WRITE, "BranchClosed", "BadInput", "PersonOnly", "BranchProtected", "AgentRunBatch", "Stacked", "StrandedFork", "PolicyFile",
   "BuildFiles", "ChecksHold", "BinaryMoved", "Conflicts", "MergeBroken", "TestsFail", "HookHold"] as const;
 /** The tags each operation's own failures carry, by operationId. A reply with any other tag is a bug (test/errors.test.ts). */
 export const OP_ERRORS = {
-  start_branch: ["NoWriteAccess", "BadBranchName", "NoSuchBranch", "BranchExists"],
+  start_branch: [...REPO, "NoWriteAccess", "BadBranchName", "NoSuchBranch", "BranchExists"],
   review_branch: NO_BRANCH,
   reject_hunk: [...WRITE, "RunBranchLocked", "BranchClosed", "NoSuchChange", "BranchMoved"],
   suggest_resolution: [...WRITE, "AgentsUnavailable", "AdminsOnly", "BadInput", "NoHarness", "NoSuchConflict", "TextOnlyMainOrBranch", "BudgetSpent", "AgentFailed"],
   delete_branch_file: [...WRITE, "RunBranchLocked", "BranchClosed", "BadInput", "NoSuchFile"],
   merge_branch: MERGE,
   land: MERGE,
-  merge_clean_branches: ["NoWriteAccess", "BadInput"],
+  merge_clean_branches: [...REPO, "NoWriteAccess", "BadInput"],
   get_branch_hooks: [...NO_BRANCH, "PipelineInvalid"],
   say_hook: [...WRITE, "PipelineInvalid", "NoSuchHook", "PersonOnly", "AuthorCantSay", "HookOff", "BranchClosed", "BadInput", "BranchMoved"],
-  set_mervin_learning: ["OwnerOnly", "BadInput"],
-  delete_mervin_learning: ["OwnerOnly"],
+  set_mervin_learning: [...REPO, "OwnerOnly", "BadInput"],
+  delete_mervin_learning: [...REPO, "OwnerOnly"],
+  // worker.ts
+  update_me: ["BadInput"],
+  get_user: ["NoSuchUser"],
+  create_repo: ["BadInput", "NoEuStorage"],
+  get_repo: REPO,
+  set_repo_visibility: [...REPO, "OwnerOnly", "BadInput"],
+  delete_repo: [...REPO, "OwnerOnly", "BadInput"],
+  share_repo: [...REPO, "BadBranchName", "NoGit"],
+  revert_commit: [...REPO, "NoWriteAccess", "MainProtected"],
+  cherry_pick: [...REPO, "NoWriteAccess", "MainProtected"],
+  invite: [...REPO, "OwnerOnly", "BadInput", "NoSuchUser"],
+  remove_collaborator: [...REPO, "OwnerOnly", "NotInCrew"],
+  add_file: [...REPO, "NoWriteAccess", "BadInput", "NoSuchBranch", "PolicyFile", "MainProtected", "FileExists"],
+  read_file: FILE_READ,
+  read_file_at: FILE_READ,
+  file_log: FILE_READ,
+  file_commits: FILE_READ,
+  list_claims: FILE_READ,
+  private_lines: FILE_READ,
+  edit_lines: FILE_WRITE,
+  release_claim: FILE_WRITE,
+  claim_lines: [...FILE_WRITE, "HoldingLines"],
+  commit_file: [...FILE_WRITE, "BadInput", "PushClash"],
+  set_private_lines: [...FILE_WRITE, "BadInput", "OwnerOnly"],
+  search_code: REPO,
+  create_collection: ["BadInput"],
+  collect_lines: ["NotYourCollection", "BadInput", "NoSuchRepo", "NoSuchFile", "TooBig", "BinaryFile"],
+  get_collection: ["NoSuchCollection"],
 } as const satisfies Record<string, readonly ErrorTag[]>;
 export type OpWithErrors = keyof typeof OP_ERRORS;
 
