@@ -182,11 +182,19 @@ test("deploy guardrail: refuses without a matching plan, accepts --yes", async (
   // --stage plans that stage's stack; without it, the config as written (#1211)
   const plain = await Bun.file(r + "/rustybuns.config.ts").text();
   writeFileSync(r + "/rustybuns.config.ts", plain.replace(/\}\);\n$/, `, stages: { staging: { bindings: { MODE: { type: "var", value: "staging" } } } } });\n`));
+  // the refusal names the stage, so following it doesn't plan production instead
+  const d0 = run("deploy", "--stage", "staging");
+  expect(d0.exitCode).toBe(2);
+  expect(d0.stderr.toString()).toContain("`rustybuns plan --stage staging`");
   expect(run("plan", "--stage", "staging").exitCode).toBe(0);
   expect(await Bun.file(r + "/.rustybuns/alchemy.run.ts").text()).toContain(`MODE: "staging"`);
+  // the checked-in wrangler.jsonc stays the config as written (#3905)
+  expect(await Bun.file(r + "/wrangler.jsonc").text()).not.toContain("staging");
   expect(await Bun.file(r + "/calls.log").text()).toMatch(/STUB alchemy plan .*--stage staging/);
   expect(run("plan").exitCode).toBe(0);
   expect(await Bun.file(r + "/.rustybuns/alchemy.run.ts").text()).not.toContain("MODE");
+  // each stage keeps its own plan: the production plan above doesn't refuse the staging deploy
+  expect(run("deploy", "--stage", "staging").exitCode).toBe(0);
   writeFileSync(r + "/rustybuns.config.ts", plain);
   // config change invalidates the plan
   writeFileSync(r + "/rustybuns.config.ts", (await Bun.file(r + "/rustybuns.config.ts").text()).replace('"name": "g"', '"name": "g2"'));

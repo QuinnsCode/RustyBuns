@@ -698,6 +698,9 @@ async function generate(opts: { adopt: boolean; stage?: string }) {
     stack = b.cfg;
     if (b.waiting.length) console.log(`stage ${opts.stage} (bootstrap): ${b.waiting.join(", ")} not deployed in it yet, so its bindings into them are left out. Deploy ${b.waiting.join(", ")} --stage ${opts.stage}, then this app again.`);
   }
+  // The checked-in wrangler.jsonc only feeds the Vite plugin and local dev; a stage build reads just `main`
+  // back from vite's output (builtEntry), and Alchemy binds from alchemy.run.ts, so no stage writes into it (#3905).
+  const local = forStage(raw, "");
   if (!cfg.worker && !cfg.targets.box) { console.log("desktop-only config: nothing to generate for the edge"); return; }
   // A bad cron fails here, not on Cloudflare's side halfway into a deploy.
   if (cfg.worker?.crons?.length) {
@@ -718,11 +721,11 @@ async function generate(opts: { adopt: boolean; stage?: string }) {
   // The app's own wrangler.json or .toml stays the one the Vite plugin and wrangler read.
   const other = !existsSync("wrangler.jsonc") && !opts.adopt ? ["wrangler.json", "wrangler.toml"].find((f) => existsSync(f)) : undefined;
   if (other) {
-    await Bun.write("wrangler.generated.jsonc", generateWrangler(cfg, null));
+    await Bun.write("wrangler.generated.jsonc", generateWrangler(local, null));
     console.log(`${other} is hand-written; wrote wrangler.generated.jsonc beside it. Diff it, then delete ${other} and \`rustybuns adopt\` to make wrangler.jsonc the one config (wrangler reads ${other} first while it's there).`);
     return;
   }
-  const r = await writeIfChanged("wrangler.jsonc", generateWrangler(cfg, existsSync("wrangler.jsonc") ? readFileSync("wrangler.jsonc", "utf8") : null), opts);
+  const r = await writeIfChanged("wrangler.jsonc", generateWrangler(local, existsSync("wrangler.jsonc") ? readFileSync("wrangler.jsonc", "utf8") : null), opts);
   if (r === "conflict") console.log("wrangler.jsonc is hand-written and differs; wrote wrangler.generated.jsonc. Diff it" + (wranglerLosses().length ? " (it lacks " + wranglerLosses().join(", ") + ", so adopt will refuse)." : ", then `rustybuns adopt`."));
   else console.log(`wrangler.jsonc ${r}`);
 }
@@ -1028,14 +1031,17 @@ const alchemy = (sub: string, rawArgs: string[]) => runScoped(Effect.gen(functio
   if (profiled && !offline) guardDeploy(sub, cfg, stage, { force, allowDelete });
   if (check) yield* step(() => checkStack(prof, checker));
   const hash = yield* step(stackHash);
-  const stampFile = ".rustybuns/planned";
+  // One stamp per stage, so a production plan doesn't wipe out the preview one.
+  const stampFile = `.rustybuns/planned.${stage}`;
+  // The hint repeats the --stage the user gave: a bare `rustybuns plan` plans production.
+  const planCmd = "rustybuns plan" + (rawArgs.some((a) => a === "--stage" || a.startsWith("--stage=")) ? ` --stage ${stage}` : "");
   if (sub === "deploy" && !args.includes("--yes")) {
     // GUARDRAIL: deploy creates real resources. Require a plan for THIS exact
     // config first, so nobody provisions a stack they have not looked at.
     const planned = (yield* step(() => Bun.file(stampFile).exists())) ? (yield* step(() => Bun.file(stampFile).text())).trim() : null;
     if (planned !== hash) throw new DeployRefused({ message: planned
-      ? "config changed since the last plan. Run `rustybuns plan` again, or pass --yes to skip."
-      : "no plan on record for this config. Run `rustybuns plan` first (creates nothing), or pass --yes to skip." });
+      ? `config changed since the last plan. Run \`${planCmd}\` again, or pass --yes to skip.`
+      : `no plan on record for this config. Run \`${planCmd}\` first (creates nothing), or pass --yes to skip.` });
   }
   // Cloudflare's login before any build, so a missing or refused one costs a second, not a build (#1170).
   const cf = sub !== "dev" && !offline && edgeOn(cfg) ? yield* step(() => cloudflareLogin(cfg, args)) : undefined;
