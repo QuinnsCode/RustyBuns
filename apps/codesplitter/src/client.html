@@ -956,6 +956,12 @@
   .check { font-size: 12.5px; color: var(--muted); min-height: 19px; margin: 0; }
   .check.ok::before { content: "● "; color: var(--accent-ink); } .check.no { color: var(--del-fg); }
   .formmsg { font-size: 12.5px; color: var(--del-fg); margin: 0; min-height: 0; }
+  /* Keys (#3793): a command a row, its key (press it to change) and a clear. */
+  .keys-g { display: grid; gap: 2px; } .keys-g > b { font-size: 12px; font-weight: 600; margin-bottom: 4px; }
+  .keyrow { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--border); font-size: 13.5px; }
+  .keyrow > span { flex: 1; min-width: 0; display: flex; gap: 8px; align-items: center; } .keyrow > span svg { flex: none; color: var(--muted); }
+  .keyrow .keycap { font: 600 12.5px var(--mono); min-width: 34px; justify-content: center; } .keyrow .rec { border-color: var(--accent); color: var(--accent); }
+  .formmsg.ok { color: var(--muted); }
   .small { font-size: 12.5px; }
   .rule { display: flex; align-items: center; gap: 6px; padding: 5px 0; border-top: 1px solid var(--border); font-size: 13px; color: var(--faint); }
   .rule:first-of-type { border-top: 0; }
@@ -1183,6 +1189,7 @@
   @media (max-width: 480px) {
     .top { gap: 6px; } #who { gap: 2px; } .top .btn.ghost { padding: 7px 6px 6px; } .brand { font-size: 0; gap: 0; }
     .jump { flex: none; padding: 6px 7px; } .jump kbd { display: none; } #topplay { font-size: 0; gap: 0; }
+    #keys-btn { display: none; } /* a phone has no keyboard to bind; ⌘K still has Keys… */
   }
 </style>
 </head>
@@ -1196,6 +1203,7 @@
   </a>
   <button class="jump" id="jump" type="button"><i data-lucide="search"></i><span>Search or run a command</span><kbd>⌘K</kbd></button>
   <span class="grow"></span>
+  <button class="btn ghost" id="keys-btn" type="button" title="Keys" aria-label="Keys"><i data-lucide="keyboard"></i></button>
   <button class="btn ghost" id="theme-toggle" type="button" title="light or dark"><i data-lucide="moon"></i></button>
   <a class="btn ghost" id="topplay" href="/play.html#l/mitt" title="the game"><i data-lucide="gamepad-2"></i>Play</a>
   <span id="who"></span>
@@ -7448,8 +7456,8 @@ async function commands() {
     if (c.canWrite) add("This repo", "github", "Fetch GitHub's checks now", `POST /api/repos/${c.owner}/${c.repo}/checks/github`, async () => {
       try { const p = await api(`/repos/${c.owner}/${c.repo}/checks/github`, {}); toast(p.polled.length ? `Fetched ${p.polled.reduce((n, x) => n + (x.imported ?? 0), 0)} GitHub jobs` : "No shas waiting on GitHub"); route(); } catch (e) { toast(e.message); }
     });
-    if (c.canWrite) add("This repo", "messages-square", "Open the newest thread", `GET /api/repos/${c.owner}/${c.repo}/threads`, () => openNewestThread(c.owner, c.repo));
-    if (c.canWrite) add("This repo", "messages-square", "Every thread at once: search, or pick who said it", `GET /api/repos/${c.owner}/${c.repo}/threads`, () => openThread(c.owner, c.repo, "all"));
+    // The keyable ones (KEYABLE): the palette shows the key picked for each.
+    for (const k of KEYABLE) if (k.ok(c)) { add(k.group, k.ic, k.title, k.api(c), () => k.run(c)); out.at(-1).key = k.id; }
     if (c.view !== "m") add("This repo", "smartphone", "Phone view: agents and branches", `GET /api/repos/${c.owner}/${c.repo}/agents`, () => (location.hash = `#/m/${c.owner}/${c.repo}`));
     if (u) add("This repo", "gauge", "Show this repo's limits", `GET /api/repos/${c.owner}/${c.repo}/limits`, () => { const b = $("#limits"); if (b) { b.click(); } });
     if (c.clone) add("This repo", "terminal", "Copy the git clone command", `GET /api/repos/${c.owner}/${c.repo}`, () => copy(c.clone, "Clone command copied"));
@@ -7463,6 +7471,7 @@ async function commands() {
   }
   add("Anywhere", "search", "Search code", "GET /api/search?q=", (q) => (location.hash = "#/search/" + encodeURIComponent(q)), "what to look for");
   if (u) add("Anywhere", "book-plus", "New repo", "POST /api/repos", async (name) => { await api("/repos", { name }); location.hash = `#/r/${u}/${name}`; }, "repo name");
+  add("Anywhere", "keyboard", "Keys…", "", () => keysDrawer(), undefined, true);
   if (u) add("Anywhere", "user", "Your profile", `GET /api/users/${u}`, () => (location.hash = `#/u/${u}`));
   for (const l of await api("/levels").catch(() => [])) if (l.status === "ready") add("Levels", "landmark", `Go to ${l.title}`, `GET /api/levels/${l.slug}/tree`, () => (location.hash = `#/l/${l.slug}`));
   add("Anywhere", "home", "Home", "", () => (location.hash = "#/"));
@@ -7482,6 +7491,62 @@ async function commands() {
   if (tourState()) add("Tour", "list-plus", "Queue a scene…", "", async (spec) => { if (!tourSceneOk(spec)) throw new Error(`no scene "${spec}"`); const t = tourState(); tourSave({ ...t, queue: [...(t.queue ?? []), spec] }); tour(); }, sceneAsk, true);
   return out;
 }
+
+// Keys you pick (#3793, @rustybuns/util/keys): each command here starts with no key, so nothing fires until you
+// choose one in Keys (⌘K "Keys…", or the keyboard button up top). They are kept in this browser, shown beside the
+// command in the palette, and never fire while you type or while a dialog is open. A new keyable command goes here.
+const KEYABLE = [
+  { id: "thread_newest", group: "This repo", ic: "messages-square", title: "Open the newest thread", where: "a repo you can write to",
+    ok: (c) => !!(c.owner && c.canWrite), api: (c) => `GET /api/repos/${c.owner}/${c.repo}/threads`, run: (c) => openNewestThread(c.owner, c.repo) },
+  { id: "thread_all", group: "This repo", ic: "messages-square", title: "Every thread at once: search, or pick who said it", where: "a repo you can write to",
+    ok: (c) => !!(c.owner && c.canWrite), api: (c) => `GET /api/repos/${c.owner}/${c.repo}/threads`, run: (c) => openThread(c.owner, c.repo, "all") },
+];
+const csKeys = rbCommands.keys.keyStore("cs_keys");
+const keyable = (id) => KEYABLE.find((k) => k.id === id);
+/** This page's chosen keys, only for commands it still has. */
+const chosenKeys = () => Object.fromEntries(Object.entries(csKeys.get()).filter(([id]) => keyable(id)));
+rbCommands.keys.bindKeys({ keys: chosenKeys, run: (id) => { const k = keyable(id); return k.ok(ctx) ? k.run(ctx) : toast(`${k.title} works on ${k.where}`); } });
+
+// Recording: the next key pressed while a Record button waits. On the window in capture, ahead of the palette's ⌘K,
+// so a browser key is named and refused rather than acted on; Esc stops waiting.
+let keyRec = null;
+addEventListener("keydown", (e) => {
+  if (!keyRec) return;
+  e.preventDefault(); e.stopImmediatePropagation(); // the palette's ⌘K listens on the window too
+  if (e.key === "Escape" && !e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey) return keysDrawer();
+  const name = rbCommands.keys.keyOf(e);
+  if (!name) return; // a modifier on its own: wait for the key
+  const id = keyRec, why = rbCommands.keys.refuseKey(name, id, chosenKeys(), (o) => keyable(o)?.title ?? o);
+  if (why) return keysDrawer(why);
+  csKeys.set(id, name);
+  keysDrawer(`${name}: ${keyable(id).title}`, true);
+}, true);
+
+/** The Keys sheet: a row a command, its key (press it to change, ✕ to clear) or Record. `say` is the last answer. */
+function keysDrawer(say = "", ok = false) {
+  keyRec = null;
+  const keys = chosenKeys();
+  const row = (k) => `<div class="keyrow" data-key-id="${k.id}"><span>${icon(k.ic)}${esc(k.title)}</span>${keys[k.id]
+    ? `<button type="button" class="btn keycap" data-key-rec title="press to pick another key">${esc(keys[k.id])}</button><button type="button" class="btn ghost" data-key-clear title="clear ${esc(keys[k.id])}" aria-label="clear the key">${icon("x")}</button>`
+    : `<button type="button" class="btn" data-key-rec title="then press the key">${icon("keyboard")}Record</button>`}</div>`;
+  drawer.open("Keys", `
+    <h2 id="drawer-title">Keys</h2>
+    <p class="muted lede">A key of your own for a command, kept in this browser. None is set until you pick one, and none fires while you type or a dialog is open.</p>
+    ${[...new Set(KEYABLE.map((k) => k.group))].map((g) => `<div class="keys-g"><b class="muted">${esc(g)}</b>${KEYABLE.filter((k) => k.group === g).map(row).join("")}</div>`).join("")}
+    <p class="formmsg${ok ? " ok" : ""}" id="keysmsg" role="status">${esc(say)}</p>`);
+  for (const r of $("#drawer-body").querySelectorAll(".keyrow")) {
+    const id = r.dataset.keyId;
+    r.querySelector("[data-key-clear]")?.addEventListener("click", () => { const was = keys[id]; csKeys.set(id, null); keysDrawer(`${was} cleared`, true); });
+    r.querySelector("[data-key-rec]").addEventListener("click", (e) => {
+      keysDrawer();
+      keyRec = id;
+      const b = $(`.keyrow[data-key-id="${id}"] [data-key-rec]`);
+      b.classList.add("rec"); b.textContent = "Press a key…"; b.focus();
+      $("#keysmsg").className = "formmsg ok"; $("#keysmsg").textContent = "Esc to stop";
+    });
+  }
+}
+$("#keys-btn").addEventListener("click", () => keysDrawer());
 
 // The ⌘K palette is the house one (@rustybuns/util/palette, from /commands.js) over the commands below, which
 // webTools() adds afresh on each open: Enter waits for them, so "connect" typed straight after ⌘K runs the command.
@@ -7654,7 +7719,7 @@ async function webTools(opening = false) {
   const cmds = list.map((c, i) => {
     const t = toolName(c.title), agent = !!t && !c.noTool && !seen.has(t), read = !c.api || c.api.startsWith("GET") || c.api.startsWith("WS");
     if (agent) seen.add(t);
-    return { name: agent ? t : `cs_palette_${i}`, title: c.title, group: c.group, icon: c.ic, note: c.api, answers: false, agent,
+    return { name: agent ? t : `cs_palette_${i}`, title: c.title, group: c.group, icon: c.ic, note: c.api, answers: false, agent, ...(c.key && chosenKeys()[c.key] && { keys: chosenKeys()[c.key] }),
       description: `${c.group}: ${c.title}${c.ask ? ` (input: ${c.ask})` : ""}. The palette's ${c.api || "navigation"}.`,
       ...(c.ask && { ask: c.ask, inputSchema: { type: "object", properties: { input: { type: "string", description: c.ask } }, required: ["input"] } }),
       ...(c.tidy && { tidy: c.tidy, preview: (line) => branchSay(c.tidy(line)) }),
