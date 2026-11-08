@@ -70,6 +70,14 @@ export class HoldingLines extends Schema.TaggedError<HoldingLines>()("HoldingLin
 export class TooBig extends Schema.TaggedError<TooBig>()("TooBig", named) {}
 export class BinaryFile extends Schema.TaggedError<BinaryFile>()("BinaryFile", named) {}
 export class NoEuStorage extends Schema.TaggedError<NoEuStorage>()("NoEuStorage", named) {}
+export class NoSuchRun extends Schema.TaggedError<NoSuchRun>()("NoSuchRun", named) {}
+export class NotTheAgent extends Schema.TaggedError<NotTheAgent>()("NotTheAgent", named) {}
+export class PathLocked extends Schema.TaggedError<PathLocked>()("PathLocked", named) {}
+export class RunEnded extends Schema.TaggedError<RunEnded>()("RunEnded", named) {}
+export class NotesFull extends Schema.TaggedError<NotesFull>()("NotesFull", named) {}
+export class NothingWaiting extends Schema.TaggedError<NothingWaiting>()("NothingWaiting", named) {}
+export class AlreadyLanding extends Schema.TaggedError<AlreadyLanding>()("AlreadyLanding", named) {}
+export class BatchHeld extends Schema.TaggedError<BatchHeld>()("BatchHeld", named) {}
 
 type Named = { message: string; status: number; reply: unknown };
 /** One class per tag the server sends: a tag added to ERRORS without one here won't compile. */
@@ -80,6 +88,7 @@ export const NAMED = {
   MergeBroken, TestsFail, HookHold, HookOff, NothingToMerge, PipelineInvalid, BudgetSpent, AgentsUnavailable, AgentFailed,
   MainProtected, NotYourCollection, NoSuchRepo, NoSuchUser, NotInCrew, NoPushClash, NoSuchCollection, NoSuchRoute, NoGit, PushClash,
   HoldingLines, TooBig, BinaryFile, NoEuStorage,
+  NoSuchRun, NotTheAgent, PathLocked, RunEnded, NotesFull, NothingWaiting, AlreadyLanding, BatchHeld,
 } satisfies { [K in ErrorTag]: new (a: Named) => { readonly _tag: K } };
 
 // What any call can meet, whatever the operation: they come from before a route answers, or from no answer at all.

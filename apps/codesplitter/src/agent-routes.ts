@@ -50,7 +50,7 @@
 
 import { b64, parseJson } from "./util.ts";
 import { protectOn } from "./protect.ts";
-import { json, need, type Env, readBody } from "./env.ts";
+import { fail, json, named, need, type Env, readBody } from "./env.ts";
 import { byToken } from "./tokens.ts";
 import { charge, every, SITE } from "./limits.ts";
 import { accountsOn, actingAs, isAdmin } from "./identity.ts";
@@ -268,7 +268,7 @@ export async function agentRoutes(req: Request, env: Env, p: string[], url: URL,
   if (p[1] === "repos" && p[2] && p[3] && p[4] === "threads" && !p[5] && req.method === "GET") return threadList(env, user, (await access(p[2], p[3])).write, p[2], p[3]);
   if (p[1] === "repos" && p[2] && p[3] && p[4] === "threads" && !p[5] && req.method === "POST") {
     const a = await access(p[2], p[3]);
-    if (!a.read) return json({ error: "not found" }, 404);
+    if (!a.read) return fail("NoSuchRepo", "not found");
     return openThread(req, env, user, a.write, p[2], p[3]);
   }
   if (!(p[1] === "repos" && p[2] && p[3] && p[4] === "agents")) return null;
@@ -276,7 +276,7 @@ export async function agentRoutes(req: Request, env: Env, p: string[], url: URL,
   const sub = !p[7] ? "" : p[7] === "ws" && !p[8] ? "ws" : p[7] === "files" && !p[8] ? "files" : p[7] === "files" && /^\d+$/.test(p[8] ?? "") && !p[9] ? `files/${p[8]}` : null;
   if (p[5] && /^\d+$/.test(p[5]) && p[6] === "thread" && sub !== null) {
     const a = await access(owner, repo);
-    if (!a.read) return json({ error: "not found" }, 404);
+    if (!a.read) return fail("NoSuchRepo", "not found");
     return threadRoute(req, env, self, url, user, a.write, owner, repo, Number(p[5]), sub);
   }
   const stop = p[5] === "stop" && !p[6], one = !!p[5] && /^\d+$/.test(p[5]) && !p[7];
@@ -284,20 +284,20 @@ export async function agentRoutes(req: Request, env: Env, p: string[], url: URL,
   const engine = p[5] === "engine" && !p[6];
   if (p[5] && !stop && !note && !review && !waiting && !engine) return null;
   const a = await access(owner, repo);
-  if (!a.read) return json({ error: "not found" }, 404);
+  if (!a.read) return fail("NoSuchRepo", "not found");
   if (waiting) return req.method === "GET" ? waitingOn(env, self, url, owner, repo, user, a.write) : null;
   if (engine) {
     if (req.method !== "GET") return null;
-    if (user !== owner) return json({ error: "only the repo's owner can see its coding agents" }, 403);
+    if (user !== owner) return fail("OwnerOnly", "only the repo's owner can see its coding agents");
     return json(await engineSaid(env, owner, repo));
   }
   if (stop || note || review) {
     if (req.method !== "POST") return null;
     // The crew can tell a run something (#3711), put a batch off (look) or stop its clock (hold); stopping, landing or binning it is the owner's.
     const crewMay = note || review && (p[6] === "look" || p[6] === "hold");
-    if (crewMay ? !a.write : user !== owner) return json({ error: crewMay ? "only the repo's crew can tell an agent something, or hold or look at its batch" : "only the repo's owner can stop, accept or reject its coding agents" }, 403);
+    if (crewMay ? !a.write : user !== owner) return crewMay ? fail("NoWriteAccess", "only the repo's crew can tell an agent something, or hold or look at its batch") : fail("OwnerOnly", "only the repo's owner can stop, accept or reject its coding agents");
     // An accept is a person reading the batch (it lands build files): a token can't give it.
-    if (review && p[6] === "accept" && byToken(req)) return json({ error: "API tokens can't accept a batch: accept it on the site, signed in" }, 403);
+    if (review && p[6] === "accept" && byToken(req)) return fail("PersonOnly", "API tokens can't accept a batch: accept it on the site, signed in");
     if (review) return reviewRun(env, self, url.origin, owner, repo, Number(p[5]), p[6]!, user!, p[6] === "accept" ? (await readBody<"hash">(req)).hash : undefined);
     return stop ? stopRuns(req, env, owner, repo, user!, caller(self, url.origin)) : tell(req, env, owner, repo, Number(p[5]), user!);
   }
@@ -305,7 +305,7 @@ export async function agentRoutes(req: Request, env: Env, p: string[], url: URL,
   if (req.method === "GET") {
     // A run's task and output can quote the repo's code (private lines too) and the agent's chatter,
     // so only the crew, who share its thread (#3711), see them.
-    if (!a.write) return json({ error: "only the repo's crew can see its coding agents" }, 403);
+    if (!a.write) return fail("NoWriteAccess", "only the repo's crew can see its coding agents");
     const path = url.searchParams.get("path");
     const { results } = await env.DB.prepare(`SELECT * FROM agent_runs WHERE owner = ? AND repo = ?${path ? " AND path = ?" : ""} ORDER BY id DESC LIMIT ${KEEP}`)
       .bind(...[owner, repo, path].filter((x) => x !== null)).all<Row>();
@@ -343,20 +343,20 @@ async function startRun(env: Env, self: (req: Request) => Promise<Response>, ori
   body: Partial<Record<StartField, unknown>>, thread?: number): Promise<Response> {
   const { path, harness: h, task, model, lines } = body;
   const why = agentsUnavailable(env);
-  if (why) return json({ error: why }, 501);
-  if (user !== owner) return json({ error: "only the repo's owner can start a coding agent" }, 403);
-  if (adminsOnly(env, user)) return json({ error: ADMINS_ONLY }, 403);
-  if (lines !== undefined && !(Array.isArray(lines) && lines.every((l): l is string => typeof l === "string"))) return json({ error: "lines: line ids" }, 400);
-  if (typeof path !== "string" || !path) return json({ error: "path required" }, 400);
+  if (why) return fail("AgentsUnavailable", why);
+  if (user !== owner) return fail("OwnerOnly", "only the repo's owner can start a coding agent");
+  if (adminsOnly(env, user)) return fail("AdminsOnly", ADMINS_ONLY);
+  if (lines !== undefined && !(Array.isArray(lines) && lines.every((l): l is string => typeof l === "string"))) return fail("BadInput", "lines: line ids");
+  if (typeof path !== "string" || !path) return fail("BadInput", "path required");
   const harness = HARNESSES.find((x) => x === h);
-  if (!harness) return json({ error: `harness: ${HARNESSES.join(", ")}` }, 400);
-  if (!installedHarnesses(env).includes(harness)) return json({ error: `${harness} isn't installed on this machine` }, 400);
-  if (typeof task !== "string" || !task.trim()) return json({ error: "task required" }, 400);
-  if (model !== undefined && model !== null && typeof model !== "string") return json({ error: "model: text" }, 400);
+  if (!harness) return fail("BadInput", `harness: ${HARNESSES.join(", ")}`);
+  if (!installedHarnesses(env).includes(harness)) return fail("NoHarness", `${harness} isn't installed on this machine`);
+  if (typeof task !== "string" || !task.trim()) return fail("BadInput", "task required");
+  if (model !== undefined && model !== null && typeof model !== "string") return fail("BadInput", "model: text");
   // A locked path is regenerated, never edited live: refused before a container starts or a token is spent.
-  if ((await policyFor(env, owner, repo, path)).live === "locked") return json({ error: locked(path) }, 409);
+  if ((await policyFor(env, owner, repo, path)).live === "locked") return fail("PathLocked", locked(path));
   const spent = await hostedBudget(env);
-  if (spent) return spent;
+  if (spent) return named(spent, "BudgetSpent");
 
   // The agent edits as its own collaborator, so blame shows which agent wrote what.
   const agent = `agent-${harness}`, call = caller(self, origin);
@@ -384,11 +384,11 @@ const ThreadOpen = obj({ path: str(1000, { min: 1 }), task: str(2000, { min: 1 }
 
 /** Opens a thread your own agent answers in (#3742): the crew's, on a file of the repo, with you (or your agent's handle) as its agent. */
 async function openThread(req: Request, env: Env, user: string | null, crew: boolean, owner: string, repo: string): Promise<Response> {
-  if (!user || !crew) return json({ error: "only the repo's crew opens a thread on it" }, 403);
+  if (!user || !crew) return fail("NoWriteAccess", "only the repo's crew opens a thread on it");
   const body = need(await readBody(req), ThreadOpen);
   if (body instanceof Response) return body;
   const path = body.path.trim(), task = body.task.trim();
-  if (!path || !task) return json({ error: "path and task required" }, 400);
+  if (!path || !task) return fail("BadInput", "path and task required");
   const row = (await env.DB.prepare("INSERT INTO agent_runs (owner, repo, path, harness, task, agent, status, started) VALUES (?, ?, ?, ?, ?, ?, 'running', ?) RETURNING *")
     .bind(owner, repo, path, OWN, task.slice(0, 2000), user, Date.now()).first<Row>())!;
   await env.DB.prepare(`DELETE FROM agent_runs WHERE owner = ? AND repo = ? AND id NOT IN (SELECT id FROM agent_runs WHERE owner = ? AND repo = ? ORDER BY id DESC LIMIT ${KEEP})`)
@@ -418,14 +418,14 @@ const PICTURES = ["image/png", "image/jpeg", "image/gif", "image/webp", "image/a
 async function threadRoute(req: Request, env: Env, self: (req: Request) => Promise<Response>, url: URL, user: string | null, crew: boolean,
   owner: string, repo: string, id: number, sub: string): Promise<Response> {
   const after = Math.max(0, Math.floor(Number(url.searchParams.get("after"))) || 0);
-  if (!user || !crew) return json({ error: "only the repo's crew is in its agents' threads" }, 403);
+  if (!user || !crew) return fail("NoWriteAccess", "only the repo's crew is in its agents' threads");
   const first = await getRow(env, id);
-  if (!first || first.owner !== owner || first.repo !== repo) return json({ error: "no such run" }, 404);
+  if (!first || first.owner !== owner || first.repo !== repo) return fail("NoSuchRun", "no such run");
   const thread = toRun(first, env).thread, origin = url.origin;
   if (sub.startsWith("files/")) {
     if (req.method !== "GET") return json({ error: "GET" }, 405);
     const res = await threadFetch(env, owner, repo, thread, `/${sub}`);
-    if (!res.ok) return json({ error: "no such file" }, 404);
+    if (!res.ok) return fail("NoSuchFile", "no such file");
     const type = res.headers.get("content-type") ?? "", name = res.headers.get("x-name") ?? "file", picture = PICTURES.includes(type);
     return new Response(res.body, { headers: {
       "content-type": picture ? type : "application/octet-stream", "x-content-type-options": "nosniff", "content-security-policy": "sandbox; default-src 'none'",
@@ -449,8 +449,8 @@ async function threadRoute(req: Request, env: Env, self: (req: Request) => Promi
   let text: string, go = false, message: Message | null;
   if (sub === "files") {
     const name = url.searchParams.get("name")?.trim();
-    if (!name) return json({ error: "name: the file's name" }, 400);
-    const big = json({ error: `a file of up to ${FILE_MAX / 1e6} MB` }, 413);
+    if (!name) return fail("BadInput", "name: the file's name");
+    const big = fail("TooBig", `a file of up to ${FILE_MAX / 1e6} MB`);
     if (Number(req.headers.get("content-length")) > FILE_MAX) return big;
     const bytes = await req.arrayBuffer();
     if (!bytes.byteLength || bytes.byteLength > FILE_MAX) return big;
@@ -460,10 +460,10 @@ async function threadRoute(req: Request, env: Env, self: (req: Request) => Promi
     const post = need(await readBody(req), ThreadPost);
     if (post instanceof Response) return post;
     text = post.text.trim(); go = !!post.go;
-    if (!text) return json({ error: "text required" }, 400);
+    if (!text) return fail("BadInput", "text required");
     // A brought agent answers as the agent, in its own open thread only.
     if (post.as === "agent" || post.done) {
-      if (!last || last.harness !== OWN || last.agent !== user || last.status !== "running") return json({ error: "only an open thread's own agent answers as the agent, or closes it" }, 403);
+      if (!last || last.harness !== OWN || last.agent !== user || last.status !== "running") return fail("NotTheAgent", "only an open thread's own agent answers as the agent, or closes it");
       message = await sayIn(env, owner, repo, thread, { who: user, kind: "agent", text, run: last.id });
       if (post.done) {
         await env.DB.prepare("UPDATE agent_runs SET status = 'done' WHERE id = ? AND status = 'running'").bind(last.id).run();
@@ -503,7 +503,7 @@ const THREADS_LISTED = 50;
  * and who has it open. The run list stays the owner's; the crew can read the code these quote anyway.
  */
 async function threadList(env: Env, user: string | null, crew: boolean, owner: string, repo: string): Promise<Response> {
-  if (!user || !crew) return json({ error: "only the repo's crew sees its agents' threads" }, 403);
+  if (!user || !crew) return fail("NoWriteAccess", "only the repo's crew sees its agents' threads");
   const { results } = await env.DB.prepare("SELECT * FROM agent_runs WHERE owner = ? AND repo = ? ORDER BY id").bind(owner, repo).all<Row>();
   const by = new Map<number, Run[]>();
   for (const r of results) { const run = toRun(r, env); by.set(run.thread, [...by.get(run.thread) ?? [], run]); }
@@ -538,8 +538,8 @@ async function launch(env: Env, self: (req: Request) => Promise<Response>, origi
 /** Stops the repo's running runs that match every filter given (none: all of them). */
 async function stopRuns(req: Request, env: Env, owner: string, repo: string, user: string, call: ReturnType<typeof caller>) {
   const { ids, path, harness, lines } = await readBody<"ids" | "path" | "harness" | "lines">(req);
-  if (ids !== undefined && !(Array.isArray(ids) && ids.every((i): i is number => Number.isInteger(i)))) return json({ error: "ids: run ids" }, 400);
-  if (lines !== undefined && !(Array.isArray(lines) && lines.every((l): l is string => typeof l === "string"))) return json({ error: "lines: line ids" }, 400);
+  if (ids !== undefined && !(Array.isArray(ids) && ids.every((i): i is number => Number.isInteger(i)))) return fail("BadInput", "ids: run ids");
+  if (lines !== undefined && !(Array.isArray(lines) && lines.every((l): l is string => typeof l === "string"))) return fail("BadInput", "lines: line ids");
   const { results } = await env.DB.prepare("SELECT * FROM agent_runs WHERE owner = ? AND repo = ? AND status = 'running'").bind(owner, repo).all<Row>();
   const want = lines && new Set(lines);
   const hit = results.filter((r) => {
@@ -576,10 +576,10 @@ async function addNote(env: Env, id: number, text: string, by: string): Promise<
  */
 async function tell(req: Request, env: Env, owner: string, repo: string, id: number, by: string) {
   const { text } = await readBody<"text">(req);
-  if (typeof text !== "string" || !text.trim()) return json({ error: "text required" }, 400);
+  if (typeof text !== "string" || !text.trim()) return fail("BadInput", "text required");
   const row = await getRow(env, id);
-  if (!row || row.owner !== owner || row.repo !== repo) return json({ error: "no such run" }, 404);
-  if (!await addNote(env, id, text, by)) return json({ error: row.status === "running" ? `a run takes ${NOTES} notes at most` : `this run is ${row.status}: start a new one with what you'd tell it` }, 409);
+  if (!row || row.owner !== owner || row.repo !== repo) return fail("NoSuchRun", "no such run");
+  if (!await addNote(env, id, text, by)) return row.status === "running" ? fail("NotesFull", `a run takes ${NOTES} notes at most`) : fail("RunEnded", `this run is ${row.status}: start a new one with what you'd tell it`);
   await threadSay(env, owner, repo, toRun(row, env).thread)({ who: by, kind: "person", text, run: id });
   return json(toRun((await getRow(env, id))!, env));
 }
@@ -613,7 +613,7 @@ export interface Waiting { id: number; agent: string; started: number; pending: 
  */
 async function waitingOn(env: Env, self: (req: Request) => Promise<Response>, url: URL, owner: string, repo: string, user: string | null, crew: boolean) {
   const path = url.searchParams.get("path");
-  if (!path) return json({ error: "path is required" }, 400);
+  if (!path) return fail("BadInput", "path is required");
   const { results } = await env.DB.prepare(`SELECT * FROM agent_runs WHERE owner = ? AND repo = ? AND path = ? ORDER BY id DESC LIMIT ${KEEP}`).bind(owner, repo, path).all<Row>();
   const rows = results, day = Date.now() - 86_400_000;
   const call = caller(self, url.origin);
@@ -652,17 +652,17 @@ async function landDue(env: Env, self: (req: Request) => Promise<Response>, orig
  */
 async function land(env: Env, self: (req: Request) => Promise<Response>, origin: string, id: number, by: string, read?: unknown): Promise<Response> {
   const row = await getRow(env, id), run = resultOf(row), p = run.pending;
-  if (!row || !p) return json({ error: run.landed ? "it already landed" : "nothing of this run's is waiting" }, 409);
+  if (!row || !p) return fail("NothingWaiting", run.landed ? "it already landed" : "nothing of this run's is waiting");
   // Take it, so a landing and an accept at once merge it once.
   const { pending: _, ...rest } = run;
-  if (!(await swap(env, id, run, rest))) return json({ error: "it's landing already" }, 409);
+  if (!(await swap(env, id, run, rest))) return fail("AlreadyLanding", "it's landing already");
   // It lands as the branch that finished, and an accept as the branch its reader saw. Changed since (the agent
   // wrote it again, or the owner edited it by hand): it waits, held, as it is now, to be read again.
   const now = await branchHash(env, row.owner, row.repo, p.branch);
   if (now !== p.hash || (by !== "auto" && read !== p.hash)) {
     const why = now !== p.hash ? "its branch changed after the run finished: read it again, then accept" : "accept names the batch you read (hash): read it again, then accept";
     await env.DB.prepare("UPDATE agent_runs SET result = ? WHERE id = ?").bind(JSON.stringify({ ...rest, pending: { ...p, until: null, why, hash: now } }), id).run();
-    return json({ error: why, held: true }, 409);
+    return fail("BranchMoved", why, { held: true });
   }
   const call = caller(self, origin), url = `/api/repos/${row.owner}/${row.repo}/branches/${encodeURIComponent(p.branch)}/merge`;
   const resolve: Record<string, Record<string, string>> = {}, kept: NonNullable<Run["kept"]> = [];
@@ -683,28 +683,28 @@ async function land(env: Env, self: (req: Request) => Promise<Response>, origin:
   // Not now: it waits, held, saying why.
   const why = (await readJson(res, ClaimRefused))?.error ?? `merge: ${res.status}`;
   await env.DB.prepare("UPDATE agent_runs SET result = ? WHERE id = ?").bind(JSON.stringify({ ...rest, pending: { ...p, until: null, why } }), id).run();
-  return json({ error: why, held: true }, 409);
+  return fail("BatchHeld", why, { held: true });
 }
 
 /** Accept, hold, look at or reject run `id`'s waiting batch. */
 async function reviewRun(env: Env, self: (req: Request) => Promise<Response>, origin: string, owner: string, repo: string, id: number, what: string, user: string, hash?: unknown) {
   const row = await getRow(env, id);
-  if (!row || row.owner !== owner || row.repo !== repo) return json({ error: "no such run" }, 404);
+  if (!row || row.owner !== owner || row.repo !== repo) return fail("NoSuchRun", "no such run");
   const run = resultOf(row), p = run.pending;
-  if (!p) return json({ error: run.landed ? "it already landed" : run.rejected ? "it was rejected" : "nothing of this run's is waiting" }, 409);
+  if (!p) return fail("NothingWaiting", run.landed ? "it already landed" : run.rejected ? "it was rejected" : "nothing of this run's is waiting");
   if (what === "accept") {
-    if (user === row.agent && user !== owner && await protectOn(env, owner, repo)) return json({ error: "main is protected: someone other than the agent accepts its batch" }, 403);
+    if (user === row.agent && user !== owner && await protectOn(env, owner, repo)) return fail("BranchProtected", "main is protected: someone other than the agent accepts its batch");
     return land(env, self, origin, id, user, hash);
   }
   if (what === "reject") {
     const { pending: _, ...rest } = run;
-    if (!(await swap(env, id, run, { ...rest, rejected: { at: Date.now(), by: user } }))) return json({ error: "it's landing already" }, 409);
+    if (!(await swap(env, id, run, { ...rest, rejected: { at: Date.now(), by: user } }))) return fail("AlreadyLanding", "it's landing already");
     await dropBranch(env, owner, repo, p.branch, row.path);
     return json(toRun((await getRow(env, id))!, env));
   }
   // Hold stops the clock; a look puts it off a little (a held one stays held).
   const until = what === "hold" || p.until === null ? null : Math.max(p.until, Date.now() + LOOK_MS);
-  if (until !== p.until && !(await swap(env, id, run, { ...run, pending: { ...p, until } }))) return json({ error: "it's landing already" }, 409);
+  if (until !== p.until && !(await swap(env, id, run, { ...run, pending: { ...p, until } }))) return fail("AlreadyLanding", "it's landing already");
   return json(toRun((await getRow(env, id))!, env));
 }
 
