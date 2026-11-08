@@ -10,6 +10,7 @@
     "tune": "bun scripts/tune.ts",
     "beasts": "bun scripts/beasts.ts --render",
     "flora": "bun scripts/flora.ts",
+    "bearer": "bun scripts/bearer.ts --render",
     "desktop:dev": "rustybuns build desktop --dev --check && rustybuns run desktop",
     "desktop:build": "rustybuns build desktop --check",
     "ground": "bun scripts/ground.ts",
