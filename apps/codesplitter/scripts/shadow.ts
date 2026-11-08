@@ -213,14 +213,16 @@ export function writeTree(dir: string, tree: string) {
 
 export interface Check {
   /**
-   * pass; fail (a test fails that passes on what landed); same (failures, but
+   * pass (flaky failures only, too); fail (a test fails twice that passes on what landed); same (failures, but
    * what landed fails them too: the sandbox, a native build); untested (no
    * tests for these files).
    */
   result: "pass" | "fail" | "same" | "untested";
   runs: (Run & { ok: boolean })[];
-  /** The tests that fail here and pass on what landed, `dir: name`. */
+  /** The tests that fail here and pass on what landed, `dir: name`, failing again on one retry. */
   failed?: string[];
+  /** The ones of those that passed when run again here: flaky, not the merge. */
+  flaky?: string[];
   /** The end of each failing run's output. */
   log?: string;
 }
@@ -249,6 +251,22 @@ async function sh(root: string, run: Run, env: Record<string, string>) {
 export function failures(run: Run, out: string) {
   const names = [...new Set([...out.matchAll(/^\(fail\) (.+?)(?: \[[\d.]+m?s\])?$/gm)].map((m) => `${run.dir}: ${m[1]}`))];
   return names.length ? names : [`${run.dir}: ${run.cmd}`];
+}
+
+/** One failure run again by itself: its run's command narrowed to the test's own name (the whole command when it named none). */
+export function retryRun(runs: Run[], failure: string): Run | undefined {
+  const run = runs.find((r) => failure.startsWith(`${r.dir}: `));
+  if (!run) return undefined;
+  const name = failure.slice(run.dir.length + 2);
+  if (name === run.cmd) return { dir: run.dir, cmd: run.cmd };
+  // bun's -t is a regex over the test's full name; its last label is enough to find it.
+  const pattern = name.split(" > ").at(-1)!.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return { dir: run.dir, cmd: `${run.cmd} -t '${pattern.replaceAll("'", "'\\''")}'` };
+}
+
+/** Splits what failed here and passed as landed into the ones that failed again on their retry and the flaky rest. */
+export function settle(failed: string[], again: (f: string) => boolean) {
+  return { failed: failed.filter(again), flaky: failed.filter((f) => !again(f)) };
 }
 
 /**
@@ -290,8 +308,19 @@ export async function check(main: string, branch: string, landed: string, ours: 
     if (!o.failed.length) return { result: "pass", runs: o.runs };
     writeTree(join(tmp, "landed"), landed);
     const l = new Set((await testTree(join(tmp, "landed"), runs, env)).failed);
-    const failed = o.failed.filter((f) => !l.has(f));
-    return { result: failed.length ? "fail" : "same", runs: o.runs, failed, log: o.log };
+    const suspects = o.failed.filter((f) => !l.has(f));
+    // One retry each, not a loop: a test that passes the second time here is flaky, not the merge's fault.
+    const again = new Set<string>();
+    for (const f of suspects) {
+      const run = retryRun(runs, f);
+      if (!run) { again.add(f); continue; }
+      const r = await sh(join(tmp, "ours"), run, env);
+      if (!r.ok) again.add(f);
+    }
+    const { failed, flaky } = settle(suspects, (f) => again.has(f));
+    // Only flaky failures: the merge passes. Some fail as landed too: same.
+    const result = failed.length ? "fail" : flaky.length === o.failed.length ? "pass" : "same";
+    return { result, runs: o.runs, failed, ...(flaky.length ? { flaky } : {}), log: o.log };
   } finally { rmSync(tmp, { recursive: true, force: true }); }
 }
 
@@ -341,7 +370,7 @@ if (import.meta.main) {
       const c = await check(j.main, j.branch, j.landed, new Map(gitOnly.map((f) => [f.path, f.s.ours.text!])));
       checks[c.result]++;
       for (const f of gitOnly) f.check = c;
-      console.error(`[${++done}/${pending.length}] ${j.label}: ${c.result}${c.failed?.length ? ` (${c.failed.join("; ")})` : ""}`);
+      console.error(`[${++done}/${pending.length}] ${j.label}: ${c.result}${c.failed?.length ? ` (${c.failed.join("; ")})` : ""}${c.flaky?.length ? ` flaky: ${c.flaky.join("; ")}` : ""}`);
     }
   }));
   if (process.argv.includes("--json")) console.log(JSON.stringify({ tally, ...checking && { checks }, found }, null, 2));
@@ -356,7 +385,11 @@ if (import.meta.main) {
       const note = s.landed ? ` (landed: ${matched || "neither"}${s.ours.clean && !s.landed.ours ? `, ${s.landed.reordered ? "ours reordered" : `${s.landed.off} lines off ours`}` : ""})` : "";
       const ran = c ? ` check: ${c.result}${c.runs.length ? ` (${c.runs.map((r) => `${r.dir} ${r.cmd} ${r.ok ? "ok" : "failed"}`).join(", ")})` : ""}` : "";
       console.log(`${label} ${path}: ${s.verdict}${note}${why ? ` [${why}]` : ""}${ran}`);
-      if (c?.failed?.length && !logged.has(c)) { logged.add(c); console.log(c.failed.map((f) => `    fails here, passes as landed: ${f}`).join("\n")); }
+      if (c && !logged.has(c)) {
+        logged.add(c);
+        for (const f of c.failed ?? []) console.log(`    fails here, passes as landed: ${f}`);
+        for (const f of c.flaky ?? []) console.log(`    flaky (passed on a retry here): ${f}`);
+      }
     }
   }
 }
