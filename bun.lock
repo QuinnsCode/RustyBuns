@@ -45,7 +45,7 @@
       "name": "alien-disc-golf",
       "version": "0.0.1",
       "dependencies": {
-        "@rustybuns/game-controls": "workspace:*",
+        "@rustybuns/game-controls": "^0.1.12",
         "@rustybuns/util": "^0.1.12",
         "three": "^0.180.0",
         "topojson-client": "^3.1.0",
@@ -223,7 +223,7 @@
       "name": "delayed-reaction",
       "version": "0.0.1",
       "dependencies": {
-        "@rustybuns/game-controls": "workspace:*",
+        "@rustybuns/game-controls": "^0.1.12",
         "@rustybuns/shell-bun": "^0.1.12",
         "@rustybuns/util": "^0.1.12",
         "lucide": "1.55.0",
@@ -443,7 +443,7 @@
       "name": "git-recon",
       "version": "0.0.1",
       "dependencies": {
-        "@rustybuns/game-controls": "workspace:*",
+        "@rustybuns/game-controls": "^0.1.12",
         "@rustybuns/models": "workspace:*",
         "@rustybuns/shell-bun": "^0.1.12",
         "@rustybuns/terrain": "workspace:*",
@@ -473,7 +473,7 @@
       "version": "0.1.0",
       "dependencies": {
         "@rustybuns/cli": "^0.1.12",
-        "@rustybuns/game-controls": "workspace:*",
+        "@rustybuns/game-controls": "^0.1.12",
         "@rustybuns/shell-bun": "^0.1.12",
         "@rustybuns/util": "^0.1.12",
         "lucide": "1.55.0",
@@ -569,7 +569,7 @@
       "name": "mythic-masters",
       "version": "0.0.1",
       "dependencies": {
-        "@rustybuns/game-controls": "workspace:*",
+        "@rustybuns/game-controls": "^0.1.12",
         "@rustybuns/models": "workspace:*",
         "@rustybuns/rig": "workspace:*",
         "@rustybuns/util": "^0.1.12",
@@ -647,7 +647,7 @@
       "dependencies": {
         "@fontsource/gloria-hallelujah": "^5.3.0",
         "@fontsource/lacquer": "^5.3.0",
-        "@rustybuns/game-controls": "workspace:*",
+        "@rustybuns/game-controls": "^0.1.12",
         "@rustybuns/models": "workspace:*",
         "@rustybuns/shell-bun": "^0.1.12",
         "@rustybuns/terrain": "workspace:*",
@@ -824,7 +824,7 @@
       "name": "skate-tech-park",
       "version": "0.0.1",
       "dependencies": {
-        "@rustybuns/game-controls": "workspace:*",
+        "@rustybuns/game-controls": "^0.1.12",
         "@rustybuns/models": "workspace:*",
         "@rustybuns/shell-bun": "^0.1.12",
         "@rustybuns/terrain": "workspace:*",
@@ -903,7 +903,7 @@
         "@fontsource/barlow-condensed": "^5.2.5",
         "@fontsource/ibm-plex-sans": "^5.2.5",
         "@rustybuns/cli": "^0.1.12",
-        "@rustybuns/game-controls": "workspace:*",
+        "@rustybuns/game-controls": "^0.1.12",
         "@rustybuns/shell-bun": "^0.1.12",
         "@rustybuns/util": "^0.1.12",
         "lucide": "1.55.0",
@@ -930,7 +930,7 @@
       "name": "splat-spray",
       "version": "0.0.1",
       "dependencies": {
-        "@rustybuns/game-controls": "workspace:*",
+        "@rustybuns/game-controls": "^0.1.12",
         "@rustybuns/shell-bun": "^0.1.12",
         "@rustybuns/util": "^0.1.12",
         "@sparkjsdev/spark": "2.2.0",
@@ -1034,7 +1034,7 @@
       "name": "two-fronts",
       "version": "0.0.1",
       "dependencies": {
-        "@rustybuns/game-controls": "workspace:*",
+        "@rustybuns/game-controls": "^0.1.12",
         "@rustybuns/shell-bun": "^0.1.12",
         "@rustybuns/ui": "^0.1.12",
         "@rustybuns/util": "^0.1.12",
@@ -1106,7 +1106,7 @@
     },
     "packages/game-controls": {
       "name": "@rustybuns/game-controls",
-      "version": "0.0.0",
+      "version": "0.1.12",
       "dependencies": {
         "@rustybuns/ui": "workspace:*",
         "lucide": "1.55.0",

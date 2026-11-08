@@ -19,7 +19,7 @@
     "cms": "bun ../../packages/cms/src/cli.ts content --title \"Mythic Masters\" --port 4705"
   },
   "dependencies": {
-    "@rustybuns/game-controls": "workspace:*",
+    "@rustybuns/game-controls": "^0.1.12",
     "@rustybuns/models": "workspace:*",
     "@rustybuns/rig": "workspace:*",
     "@rustybuns/util": "^0.1.12",

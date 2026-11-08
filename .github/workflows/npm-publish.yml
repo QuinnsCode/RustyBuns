@@ -40,10 +40,10 @@ jobs:
           v="$(bun -p 'require("./packages/cli/package.json").version')"
           [ "$GITHUB_REF_NAME" = "v$v" ] || { echo "tag $GITHUB_REF_NAME, packages are $v"; exit 1; }
       - name: Pack
-        run: for p in ports ui util shell-bun native cli; do (cd "packages/$p" && bun pm pack --destination ../../npm-dist --quiet); done
+        run: for p in ports ui util game-controls shell-bun native cli; do (cd "packages/$p" && bun pm pack --destination ../../npm-dist --quiet); done
       - name: Publish
         # Dependencies first, so the CLI never lands pointing at a version that isn't up yet.
         run: |
-          for p in ports ui util shell-bun native cli; do
+          for p in ports ui util game-controls shell-bun native cli; do
             npm publish ./npm-dist/rustybuns-$p-*.tgz --provenance --access public ${{ github.event_name != 'push' && '--dry-run' || '' }}
           done
