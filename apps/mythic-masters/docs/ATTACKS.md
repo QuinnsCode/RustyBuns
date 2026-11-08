@@ -1,6 +1,6 @@
 # Attacks redesign: shape, tempo, and the big moves
 
-Status: steps 1 (shapes in the sim), 2 (tempo, damage ranges, the Big button) and 3 (field kits, signature tempos, a fresh `edge` fit) are built; steps 4-6 are still plan, tracked in #3268. The kit table lives in `KIT` in `src/moves.ts`; signatures get their tempo from their look in `tempoOf`. Two rows are simplified for now: Will-o'-Wisp is a slow column that does not drift toward the target, and Iron Shard chips through guard only as every iron move does (40% instead of 20%).
+Status: built, all six steps (#3268). The kit table lives in `KIT` in `src/moves.ts`; signatures get their tempo from their look in `tempoOf`. Through a ranged move's wind-up the ground shows where it will land (sim `warning`, drawn by `fx.ts` `warn`); streams and fades pour by how far they have roared up or died down (`fx.ts` `pour`); the bot steps out of a painted shape (`bot.ts` `wayOut`, mirrored in `sim-rs/src/bot.rs`); and the versus picker and the compendium's folio print each move's card line with its shape drawn (`src/moveline.ts`). Two rows are simplified for now: Will-o'-Wisp is a slow column that does not drift toward the target, and Iron Shard chips through guard only as every iron move does (40% instead of 20%).
 
 ## The idea
 

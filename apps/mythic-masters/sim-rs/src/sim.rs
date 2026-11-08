@@ -1334,6 +1334,39 @@ pub fn head(a: &Area) -> V3 {
     }
 }
 
+/// sim.ts warning.
+pub fn warning(m: &Match, side: usize) -> Option<Area> {
+    let f = &m.f[side];
+    if f.state != State::Attack {
+        return None;
+    }
+    let act = f.act.as_ref()?;
+    if act.mv.delivery.is_touch() || f.t >= frames(&act.mv, act.tired).startup {
+        return None;
+    }
+    Some(loose(f, side, &act.mv, act.mv.delivery, m.f[1 - side].pos))
+}
+
+/// sim.ts under.
+pub fn under(a: &Area, t: &Fighter) -> bool {
+    let r = t.b.radius;
+    let dx = t.pos.x - a.at.x;
+    let dz = t.pos.z - a.at.z;
+    let h = or1(hypot(a.dir.x, a.dir.z));
+    let ux = a.dir.x / h;
+    let uz = a.dir.z / h;
+    let along = dx * ux + dz * uz;
+    let side = (-dx * uz + dz * ux).abs();
+    let dist = hypot(dx, dz);
+    match a.d {
+        Delivery::Column { length, width, .. } => along > -r && along < length + r && side < width / 2.0 + r,
+        Delivery::Wall { width, depth, travel, .. } => along > -r && along < travel + depth + r && side < width / 2.0 + r,
+        Delivery::Cone { angle, length } => along > 0.0 && dist < length + r && atan2(side, along) - atan2(r, max(dist, 0.01)) < (angle * PI) / 360.0,
+        Delivery::Blast { radius, .. } | Delivery::Nova { radius } => dist < radius + r,
+        Delivery::Touch => false,
+    }
+}
+
 /// sim.ts covers.
 pub fn covers(a: &Area, t: &Fighter) -> bool {
     let r = t.b.radius;

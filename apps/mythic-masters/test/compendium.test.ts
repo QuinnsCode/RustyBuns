@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { entry, folio, hauntsOf, marginOf, neighbour, stepTo, type Spot } from "../src/compendium.ts";
 import { TALE } from "../src/creatures.ts";
 import { creature, ROSTER } from "../src/roster.ts";
+import { moveLine } from "../src/moveline.ts";
 
 // The Eldritch Compendium's bestiary keeps a cryptid under smoke until you meet it: the page must not give away
 // its name or its picture before then, and binding it is what writes its kind on the page.
@@ -63,4 +64,24 @@ test("every beast has its own line in the Background", () => {
   expect(missing).toEqual([]);
   const c = ROSTER[0]!, page = folio(c, "bound", { tier: "common", member: null, item: 1, rests: "in these pages" });
   expect(page).toContain(TALE[c.id]!.slice(0, 30));
+});
+
+// ATTACKS.md step 6, the beast card: each move reads as a stat line off the sim's own numbers (its shape, tempo, the
+// damage from the shape's weak end to its strong one, its cost), with its shape drawn beside it on the bound folio.
+describe("the beast card's move lines", () => {
+  const line = (id: string, slot: string) => moveLine(creature(id).moves.find((m) => m.slot === slot)!);
+  test.each([
+    ["Torrent, a charged column", "squonk", "beam", "column 14 x 1.2 m · charge 1.2 s · 77-252 · 35 energy"],
+    ["Flame Breath, a stream", "hodag", "beam", "cone 60 deg x 6 m · build-up 2 s · 3-17 a tick · 35 over its run"],
+    ["Ember Orb, a quick lob", "hodag", "special", "blast r 1.5 m @ 10 m · quick · 25-45 · 15 energy"],
+    ["a jab", "hodag", "light", "touch · quick · 24 · free"],
+  ] as const)("%s", (_name, id, slot, want) => expect(line(id, slot)).toBe(want));
+
+  test("a bound folio prints a line and a drawing for every move; a seen one keeps them under the smudge", () => {
+    const c = creature("squonk"), member = { id: c.id, level: 5, xp: 0, hp: 1 };
+    const page = folio(c, "bound", { tier: "common", member, item: 1, rests: "in these pages" });
+    expect(page.match(/<svg class="shape"/g)?.length).toBe(c.moves.length);
+    for (const mv of c.moves) expect(page).toContain(moveLine(mv));
+    expect(folio(c, "seen", { tier: "common", member: null, item: 1, rests: "" })).not.toContain("svg class=\"shape\"");
+  });
 });

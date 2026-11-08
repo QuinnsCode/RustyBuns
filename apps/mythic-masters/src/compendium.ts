@@ -12,6 +12,7 @@ import { caseNo } from "./casefile.ts";
 import { hex } from "./fields.ts";
 import { icon } from "./icons.ts";
 import { frame, GUESSES, marginalia, rumour, struck } from "./ornaments.ts";
+import { moveLine, shapeSvg } from "./moveline.ts";
 import { atLevel, sections, TRAIL_REGIONS, type Member } from "./journey.ts";
 import { TALE } from "./creatures.ts";
 import { REGIONS } from "./regions.ts";
@@ -138,9 +139,10 @@ export function folio(c: Creature, known: Known, o: FolioOpts): string {
         const was = then?.[a] ?? nowStats[a], gain = nowStats[a] - was;
         return `<span>${a} ${gain > 0 ? `<s>${was}</s> ` : ""}<b>${nowStats[a]}</b>${gain > 0 ? ` <i class="gain">+${gain}</i>` : ""}</span>`;
       }).join(", ")}.</p></div>`;
-    // the moves as a contents list: the name in the hand, a dotted leader, what it is and how hard it lands
+    // the moves as a contents list: the name in the hand, a dotted leader, its slot and field; under it the card's line
+    // (ATTACKS.md "The beast card"): its shape drawn and its numbers, tempo, damage range and cost
     kit = `<div class="kit inks"><h3>Moves</h3><ol class="moves">${c.moves.map((mv) =>
-      `<li>${dot(mv.field)}<b>${esc(mv.name)}${mv.slot === "ultimate" ? icon("star") : ""}</b><small>${mv.slot} · ${mv.field}${mv.ranged ? " · ranged" : ""} · ${mv.power}</small></li>`).join("")}</ol></div>`;
+      `<li>${dot(mv.field)}<b>${esc(mv.name)}${mv.slot === "ultimate" ? icon("star") : ""}</b><small>${mv.slot} · ${mv.field}</small><span class="line">${shapeSvg(mv.delivery)}${esc(moveLine(mv))}</span></li>`).join("")}</ol></div>`;
   }
   const drying = o.member?.caught ? now - o.member.caught.at : Infinity;
   return `<article class="folio ${known}" data-id="${esc(c.id)}" data-fol="${o.fol ?? ""}">
