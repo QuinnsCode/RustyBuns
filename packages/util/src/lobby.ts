@@ -2,6 +2,8 @@
 // who is ready, a Ready button (Start for the host), Copy link, and Settings: every party rule (./party-rules.ts) in one menu,
 // the host's to change and everyone's to read, with each member's mute-for-me, mute-for-all and report as the rules allow, and the
 // host's make host, take out and block.
+// A party link carries the party's invite key (`?invite=`), which the door checks when only the host invites (#3908): Copy link
+// adds the key eqosys gave this member, and joining hands on the key the page was opened with, whatever else the game keeps in its address.
 // What happens on start is the page's own. The box wears the page's eqosys skin (./skin.ts); where it sits is the page's.
 import type { PartyMember, party } from "./eqosys.ts";
 import { BLOCKS, CHAT, INVITE, JOINS, LIVES, may, MUTE, READY, REPORT, RULE_TEXT, type PartyRules } from "./party-rules.ts";
@@ -21,6 +23,28 @@ export interface LobbyPanel {
   say?: (note: string) => void;
 }
 
+/** Where a party link's key waits while the page goes to sign in and back, which can drop it from the address. */
+const KEPT = "eq.party.invite.";
+/** The invite key in an address, for the party it names (`?party=`), or for whatever party when it names none. */
+const keyIn = (search: string, code: string): string | null => {
+  const q = new URLSearchParams(search), party = q.get("party")?.toUpperCase();
+  return (!party || party === code.toUpperCase()) && q.get("invite")?.match(/^[\w-]{1,64}$/)?.[0] || null;
+};
+const keep = (code: string, key: string) => { try { sessionStorage.setItem(KEPT + code.toUpperCase(), key); } catch { /* private window: this address only */ } };
+const kept = (code: string): string | undefined => { try { return sessionStorage.getItem(KEPT + code.toUpperCase()) ?? undefined; } catch { return undefined; } };
+// Kept the moment the page loads, before a sign-in can take it somewhere else.
+if (typeof location !== "undefined") {
+  const party = new URLSearchParams(location.search).get("party"), key = party && keyIn(location.search, party);
+  if (party && key) keep(party, key);
+}
+
+/** `link` with this party's invite key on it (or none: a link from a member who may not invite carries none). */
+const withInvite = (link: string, key: string): string => {
+  const u = new URL(link, typeof location === "undefined" ? "http://x" : location.href);
+  if (key) u.searchParams.set("invite", key); else u.searchParams.delete("invite");
+  return u.toString();
+};
+
 /** An element with a class or text, and its children. */
 const el = (tag: string, o: { className?: string; textContent?: string } = {}, ...kids: (Node | string)[]): HTMLElement => {
   const e = document.createElement(tag);
@@ -33,6 +57,8 @@ const el = (tag: string, o: { className?: string; textContent?: string } = {}, .
 /** Join the party and keep `box` showing it. Returns a function that leaves and hides the box. */
 export function lobbyPanel({ code, box, party: p, name, link, onStart, say }: LobbyPanel) {
   let members: PartyMember[] = [], note = "", rules: PartyRules | null = null, blocked: { id: string; name: string }[] = [], open = false;
+  /** The key Copy link carries: eqosys hands it to members the `invite` rule lets invite, and to nobody else. */
+  let key = "";
   /** Who this page quieted for the whole party, so the button reads right (the party says no more than a refusal). */
   const quiet = new Set<string>();
   wearSkin();
@@ -100,18 +126,19 @@ export function lobbyPanel({ code, box, party: p, name, link, onStart, say }: Lo
     box.replaceChildren(
       el("div", { className: "rb-lobby-who", textContent: `Party ${code}: ${list}${note ? ` - ${note}` : ""}` }),
       mine?.host ? eqButton({ text: "Start", primary: true, onClick: () => p.start() }) : eqButton({ text: mine?.ready ? "Not ready" : "Ready", primary: !mine?.ready, onClick: () => p.ready(!mine?.ready) }),
-      // Inviting is the host's alone when the rules say so.
-      ...(!rules || may(rules.invite, !!mine?.host) ? [eqButton({ text: "Copy link", onClick: () => void navigator.clipboard?.writeText(link()).then(() => say?.("Link copied"), () => {}) })] : []),
+      // Inviting is the host's alone when the rules say so: then the key is theirs alone, and they can retire it.
+      ...(key && rules && may(rules.invite, !!mine?.host) ? [eqButton({ text: "Copy link", onClick: () => void navigator.clipboard?.writeText(withInvite(link(), key)).then(() => say?.("Link copied"), () => {}) })] : []),
+      ...(mine?.host && rules?.invite === "host" ? [eqButton({ text: "New link: the ones handed out stop working", icon: "refresh-cw", onClick: () => { p.relink(); note = "New link made: copy it again"; draw(); } })] : []),
       eqButton({ text: open ? "Close settings" : "Settings", icon: "sliders-horizontal", onClick: () => { open = !open; draw(); } }),
       ...(open ? [settings(mine)] : []),
     );
   };
   p.onMembers((m) => { members = m; note = ""; draw(); });
-  p.onRules((m) => { rules = m.rules; if (m.blocked) blocked = m.blocked; draw(); });
+  p.onRules((m) => { rules = m.rules; key = m.invite ?? ""; if (m.blocked) blocked = m.blocked; draw(); });
   p.onRefused((why) => { note = why; draw(); });
   p.onGone((why) => { note = why; members = []; draw(); });
   p.onStart(onStart);
-  p.join(code);
+  p.join(code, keyIn(location.search, code) ?? kept(code));
   box.hidden = false;
   draw();
   return () => { p.leave(); box.hidden = true; };
