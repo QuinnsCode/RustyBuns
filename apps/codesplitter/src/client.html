@@ -4149,14 +4149,17 @@ const views = {
       pill(say[0], say[1], `<b>Mirrored</b> ${esc(say[2])}`, `${m.url} ${m.branch}${m.syncedAt ? ` · checked ${ago(m.syncedAt)}` : ""}${m.primary === "here" ? " · this copy leads" : " · upstream leads"}`, jump("mirror"));
     } else if (g.dug) pill("ok", "shovel", "<b>Dug up</b> from GitHub", "Dug from GitHub, not mirrored: it listens for new commits", jump("listen"));
     else pill("ok", "git-fork", "Not mirrored", "This repo's git lives here only");
+    // This copy leads (#2954): one pill from GitHub's side, "GitHub is behind by 3", in place of to push / to pull.
+    const lag = m?.primary === "here" && !m.pullOnly ? m.upstream : null;
+    if (lag) pill(lag.behind || lag.ahead || m.state !== "ok" ? "warn" : "ok", "cloud", esc(lag.line), `${lag.says}. This copy leads; ${m.url} is its mirror${m.syncedAt ? `, checked ${ago(m.syncedAt)}` : ""}. Sync now sends and takes what's waiting.`, jump("mirror"));
     // Pushing out?
     if (m?.pullOnly) pill("ok", "lock", "Pull-only", "Syncs hear from upstream and nothing goes back up", jump("mirror"));
-    else if (m) pill(m.ahead ? "warn" : "ok", "arrow-up", m.ahead ? `<b>${n(m.ahead, "commit")}</b> to push` : "Nothing to push", m.ahead ? "Commits here that upstream doesn't have yet. Sync now sends them." : "Upstream has everything committed here", jump("mirror"));
+    else if (m && !lag) pill(m.ahead ? "warn" : "ok", "arrow-up", m.ahead ? `<b>${n(m.ahead, "commit")}</b> to push` : "Nothing to push", m.ahead ? "Commits here that upstream doesn't have yet. Sync now sends them." : "Upstream has everything committed here", jump("mirror"));
     if (g.waitingForGit.length) pill("warn", "hourglass", `<b>${n(g.waitingForGit.length, "file")}</b> waiting for git`, `Committed here, and land with the next push that does: ${g.waitingForGit.join(", ")}`);
     if (g.gitError) pill("bad", "triangle-alert", "Last git push failed", g.gitError);
     // Pulling in?
     const behind = m ? m.behind : g.dug?.moved ? (g.dug.behind ?? 1) : 0;
-    if (m || g.dug) pill(behind ? "warn" : "ok", "arrow-down", behind ? (m || g.dug.behind != null ? `<b>${n(behind, "commit")}</b> to pull` : "<b>New commits</b> to pull") : "Up to date", behind ? "Upstream has commits that aren't here yet" : "Nothing new upstream", jump(m ? "mirror" : "listen"));
+    if ((m && !lag) || (!m && g.dug)) pill(behind ? "warn" : "ok", "arrow-down", behind ? (m || g.dug.behind != null ? `<b>${n(behind, "commit")}</b> to pull` : "<b>New commits</b> to pull") : "Up to date", behind ? "Upstream has commits that aren't here yet" : "Nothing new upstream", jump(m ? "mirror" : "listen"));
     // Changes to commit?
     const u = g.uncommitted;
     pill(u.count ? "warn" : "ok", "pencil", u.count ? `<b>${n(u.count, "file")}</b> to commit` : "All committed", u.count ? "Edited since the last commit: click to list them" : "Every edit is in a commit", u.count ? 'data-files="1"' : "");
@@ -4292,7 +4295,7 @@ const views = {
       : `<button class="btn" data-crew="1"${picAttr("crew")}>${icon("lock")}Push the crew's copy</button>`) : "";
     // Which side leads, and with this copy leading, how far behind its backup upstream is.
     const lead = m.primary === "here"
-      ? `<p class="muted" style="font-size:12px">${icon("hard-drive")}This copy leads${note(`<code>${esc(m.url)}</code> is the backup, ${m.ahead ? `<b>${m.ahead} commit${m.ahead === 1 ? "" : "s"} behind</b>` : "up to date"}${m.syncedAt ? ` as of ${ago(m.syncedAt)}` : ""}. Syncs push first.`)} <a href="#" data-primary="upstream">Let upstream lead</a></p>`
+      ? `<p class="muted" style="font-size:12px">${icon("hard-drive")}This copy leads${note(`<code>${esc(m.url)}</code> is the mirror. <b>${esc(m.upstream.says)}</b>${m.syncedAt ? ` as of ${ago(m.syncedAt)}` : ""}. Syncs push first.`)} <a href="#" data-primary="upstream">Let upstream lead</a></p>`
       : `<p class="muted" style="font-size:12px">${icon("cloud")}Upstream leads${note("Syncs hear from it, then push.")} <a href="#" data-primary="here">Make this copy the source of truth</a></p>`;
     // Pull-only (#1009): one-way, for a mirror kept for local CI.
     const pull = m.pullOnly

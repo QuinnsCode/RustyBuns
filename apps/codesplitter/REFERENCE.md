@@ -117,7 +117,7 @@ The pitch is in [README.md](README.md).
   In the Upstream panel, **Make this copy the source of truth** (`POST /api/repos/:o/:r/mirror {primary: "here"}`; `"upstream"` switches back) flips it: the bare repo in `~/.codesplitters` leads and upstream is its backup and the trigger for its Actions.
   A sync with commits waiting pushes them first, before fetching anything, and only fetches and merges when upstream moved too (the push is turned away, never forced).
   A clash still stops and asks, with Keep mine offered first.
-  The panel says how many commits behind upstream is and as of when, so with the app closed you know what GitHub has: everything up to the last push.
+  The git bar and the panel say where upstream stands from its side, as of the last check: "GitHub is behind by 3 commits", "ahead by 1" when a push reached GitHub that this copy hasn't pulled, or "in step" (#2954). The API has it as `mirror.upstream` (`{who, behind, ahead, line, says}`) in `git-state` and the mirror route, so an agent reads the same sentence, never a git error.
   If upstream is down, nothing stops.
   **Your own tools use it as a remote:** the Clone button's popover has a `git clone` line (read token, an hour) and, for the owner on the desktop, a **Push back** line, `git remote add codesplitter http://127.0.0.1:…/__rb/git/codesplitters/<owner>--<repo>.git` with a day-long write token (tokens live in memory, so a restart means copying a fresh one), served by the desktop's `git http-backend`.
   Make it a terminal's, an editor's or Agent Office's `origin` with GitHub as a second remote; what you push reaches upstream on the next sync.

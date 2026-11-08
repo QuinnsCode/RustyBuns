@@ -698,6 +698,24 @@ async function depsList(lg: LocalGit, r: Row, branch: string) {
   return pkgs.sort();
 }
 
+/** What upstream is called on the page: its host when it's one people know by name, else "Upstream". */
+const hostName = (url: string) => /(^|[@/.])github\.com[:/]/.test(url) ? "GitHub" : /(^|[@/.])gitlab\.com[:/]/.test(url) ? "GitLab" : "Upstream";
+
+/**
+ * Upstream's side of it, for a copy that leads (#2954): `behind` is how many commits here it hasn't had yet,
+ * `ahead` how many it got (a push there) that this copy hasn't pulled. `line` is the short form the page's pill shows and `says` adds why it waits; never a git error: "GitHub is behind by 3", "GitHub is ahead by 1", "GitHub is in step", or why it's waiting.
+ * Counts are as of the last fetch (`syncedAt`).
+ */
+export function upstreamLag(m: { url: string; state: string; ahead: number; behind: number; pullOnly: boolean }) {
+  const who = hostName(m.url), behind = m.pullOnly ? 0 : m.ahead, ahead = m.behind;
+  const commits = (k: number) => `${k} commit${k === 1 ? "" : "s"}`;
+  const parts = [behind ? `behind by ${commits(behind)}` : "", ahead ? `ahead by ${commits(ahead)}` : ""].filter(Boolean);
+  const why = m.state === "down" ? `${who} isn't answering` : m.state === "refused" ? `${who} turned the push away`
+    : m.state === "clash" ? "both sides changed the same lines" : m.state === "rewritten" ? `${who}'s history was rewritten` : "";
+  const line = `${who} is ${parts.length ? parts.join(" and ") : "in step"}`;
+  return { who, behind, ahead, line, says: why ? `${line}: ${why}, so it waits for you` : line };
+}
+
 /** Where a mirror stands: its state, and how far ahead and behind it was at the last fetch. */
 export async function mirrorStatus(env: Env, owner: string, repo: string) {
   const r = await repoRow(env, owner, repo, "artifact, crew_artifact, mirror_push_crew, mirror_primary, mirror_pull_only, mirror_path, branch, mirror_url, mirror_state, mirror_error, mirror_clash, mirror_down_since, mirror_synced_at, mirror_next_at, upstream_commit", { mirrored: true });
@@ -706,8 +724,11 @@ export async function mirrorStatus(env: Env, owner: string, repo: string) {
   const branch = (r.branch ?? "main") as string;
   const counts = await git(["rev-list", "--left-right", "--count", `refs/heads/${branch}...refs/upstream/${branch}`], await syncedDir(lg, r as unknown as Row));
   const [ahead, behind] = counts.code ? [0, 0] : counts.out.trim().split(/\s+/).map(Number);
+  const state = (r.mirror_state ?? "ok") as State, pullOnly = !!r.mirror_pull_only, url = String(r.mirror_url);
   return {
-    url: shownUrl(r.mirror_url as string), branch, state: (r.mirror_state ?? "ok") as State, error: r.mirror_error ?? null,
+    // Upstream's side, said plainly (#2954): how far behind and ahead of this copy GitHub is.
+    upstream: upstreamLag({ url, state, ahead: ahead ?? 0, behind: behind ?? 0, pullOnly }),
+    url: shownUrl(url), branch, state, error: r.mirror_error ?? null,
     clash: r.mirror_clash ? JSON.parse(r.mirror_clash as string) as string[] : [], downSince: r.mirror_down_since ?? null,
     syncedAt: r.mirror_synced_at ?? null, nextAt: r.mirror_next_at ?? null, upstreamCommit: r.upstream_commit ?? null,
     ahead: ahead ?? 0, behind: behind ?? 0, identity: gitIdentity(), truth: await truthOf(env, owner),
@@ -716,7 +737,7 @@ export async function mirrorStatus(env: Env, owner: string, repo: string) {
     // Which side leads (#464). With "here", ahead is how far behind upstream (the backup) is, as of syncedAt.
     primary: primaryOf(r.mirror_primary),
     // One-way (#1009): it pulls, and nothing it does pushes.
-    pullOnly: !!r.mirror_pull_only,
+    pullOnly,
     // A folder mirror (folder-mirror.ts): the folder of upstream it mirrors, and the branch its work goes up as.
     path: (r.mirror_path ?? null) as string | null, sends: r.mirror_path ? sendBranch(repo) : null,
     // The workspace packages outside the folder it depends on, read-only at refs/folder-deps/<branch>.
