@@ -19,6 +19,9 @@ import { obj, str } from "@rustybuns/util/guard";
 import { buildArena, crowdOf, floorOf, gradeOf, SKINS, tickArena, type Skin } from "./arena.ts";
 import { forgetBeast, loadBeast, Puppet } from "./beasts.ts";
 import { bot, type Bot } from "./bot.ts";
+import { temper } from "./opener.ts";
+import { mountVersus } from "./versus.ts";
+import { duelCode, sum } from "./net/duel.ts";
 import { buttons, NO_STICK, PAD_ACTIONS, PAD_START, PAD_ZONE, push, readPad, touchStick, TOUCH_BUTTONS, type Stick } from "./controls.ts";
 import { icon } from "./icons.ts";
 import { ART, radar, tradingCard } from "./card.ts";
@@ -319,7 +322,7 @@ $("#pickerBack").addEventListener("click", () => showTitle());
 // The bestiary (src/card.ts): every beast's card, its pictures, its radar with the numbers, its signature.
 const deck = $("#deck");
 // Every menu screen is a page of one book (src/page.ts), in reading order: changing screen turns a leaf.
-const pages = book(["#title", "#starters", "#select", "#deck", "#journal", "#result"].map((id) => $(id)));
+const pages = book(["#title", "#starters", "#select", "#deck", "#journal", "#result", "#friends"].map((id) => $(id)));
 function showDeck(open: boolean) {
   if (open && !deck.querySelector(".tcard")) $("#deckCards").innerHTML = ROSTER.map(tradingCard).join("");
   if (open) { const d = deckDemandOf(journey); $("#deckDemand").innerHTML = hand(d.ask, d.signed); }
@@ -357,6 +360,8 @@ function wearBeast(f: Fighter, g: THREE.Group, i: number) {
 // same fight either way, tick for tick (test/sim-rust.test.ts). `live` steps it; `m` is the Match everything reads.
 let sim: Sim = tsSim, live: Live | null = null;
 fetch(simWasm).then((r) => r.arrayBuffer()).then(wasmSim).then((s) => { sim = s; }, (e) => console.warn("sim.wasm didn't load; fights stay on sim.ts", e));
+/** A fight against a friend is on (`versus`), and which fighter is you: seat 1 sees the fight from the other side. */
+let versusOn = false, mine: 0 | 1 = 0;
 let m: Match | null = null, arena: THREE.Group | null = null, models: THREE.Group[] = [], puppets: (Puppet | null)[] = [null, null], bots: (Bot | null)[] = [null, null];
 const moveFx = new MoveFx(scene, Math.random, matchMedia("(max-width: 700px)").matches ? MAX_LIVE_PHONE : MAX_LIVE);
 let hitStop = 0; // seconds the fight holds still after a big hit lands, so the blow reads
@@ -390,7 +395,8 @@ function start(a: string, b: string, skin: string, watch = false) {
   faceUp();
   history.replaceState(null, "", `?${new URLSearchParams({ a, b, skin, ...(watch ? { watch: "1" } : {}) })}`);
 }
-function fight(a: Creature, b: Creature, skin: string, watch = false) {
+function fight(a: Creature, b: Creature, skin: string, watch = false, vs = false) {
+  versusOn = vs; if (!vs) mine = 0;
   world.hide(); shelf?.dispose(); shelf = null;
   for (const o of [arena, ...models, ...puppets.map((p) => p?.group)]) if (o) scene.remove(o);
   puppets = [null, null]; moveFx.clear();
@@ -403,7 +409,7 @@ function fight(a: Creature, b: Creature, skin: string, watch = false) {
   hudMem.now = newMemory();
   models = m.f.map((f, i) => { const g = creatureModel(f.c); scene.add(g); wearBeast(f, g, i); return g; });
   const seed = Math.floor(Math.random() * 1e6) + 1;
-  bots = [watch ? bot(0, seed) : null, bot(1, seed + 1)];
+  bots = versusOn ? [null, null] : [watch ? temper(bot(0, seed), 0, seed) : null, temper(bot(1, seed + 1), 1, seed + 1)];
   pages.show(null); $("#hud").hidden = false;
 }
 
@@ -704,6 +710,7 @@ function showTitle() {
   if (lead) $("#continue").innerHTML = `${icon("play")} ${esc(LANDING.title.continue.replace("{name}", creature(lead.id).name).replace("{level}", String(lead.level)))}`;
   $("#newGame").innerHTML = `${icon("moon")} ${esc(LANDING.title.newJourney)}`;
   $("#newGame").classList.toggle("go", !journey);
+  $("#duelBtn").innerHTML = `${icon("users")} ${esc(LANDING.title.duel)}`;
   hideScreens($("#title"));
   history.replaceState(null, "", location.pathname);
 }
@@ -736,6 +743,7 @@ $("#newGame").addEventListener("click", () => {
   if (journey && !startingOver) { startingOver = true; $("#newGame").innerHTML = `${icon("triangle-alert")} ${esc(LANDING.title.startOver)}`; return; }
   showStarters();
 });
+$("#duelBtn").addEventListener("click", () => versus.open());
 $("#versus").addEventListener("click", () => { hideScreens($("#select")); history.replaceState(null, "", location.pathname); });
 $("#starterCards").addEventListener("click", (e) => {
   const id = (e.target as HTMLElement).closest<HTMLElement>(".starter")?.dataset.id;
@@ -1163,7 +1171,7 @@ function draw(m: Match, alpha: number) {
   });
   moveFx.draw(m);
   // Soft lock: behind you, looking past you at them, high enough to see a flyer.
-  const [me, them] = m.f;
+  const me = m.f[mine], them = m.f[mine ? 0 : 1];
   const dx = them.pos.x - me.pos.x, dz = them.pos.z - me.pos.z, d = Math.hypot(dx, dz) || 1;
   // side-on far enough back that both bodies and a flyer overhead fit, however close they stand
   const side = 2.6 + Math.max(me.b.height, them.b.height) * 1.15 + d * 0.5 + Math.abs(me.pos.y - them.pos.y) * 0.45;
@@ -1201,11 +1209,36 @@ function finish(m: Match, bound = false) {
   const w = m.f[m.winner!]!, how = ko?.kind === "ko" ? { hp: "was knocked out", "ring-out": "was pushed out of the ring", time: "had less health when time ran out" }[ko.how] : "";
   const lost = bound ? "" : `${esc(m.f[m.winner ? 0 : 1]!.c.name)} ${how}.`;
   if (trip && journey) { tripOver(m, bound, lost); return; }
+  if (versusOn) { duelOver(m.winner === mine ? "You win" : `${versus.friend() ?? "Your friend"} wins`, `${esc(w.c.name)} wins. ${lost}`); return; }
   $("#result").innerHTML = `<div class="note paper"><h2>${esc(w.c.name)} wins</h2>${reaction({ kind: "versus" })}<p>${lost}</p>
     <div class="row"><button class="go" id="again">${icon("rotate-ccw")} Rematch</button><button id="pick">${icon("users")} Pick again</button></div></div>`;
   pages.show($("#result"));
   $("#again").onclick = () => start(m.f[0].c.id, m.f[1].c.id, skinSel.value, !!bots[0]);
   $("#pick").onclick = () => { $("#hud").hidden = true; pages.show($("#select")); };
+}
+
+// --- fighting a friend (src/versus.ts): Qollab friends, challenges, and a duel's room --------------------------------
+const versus = mountVersus($("#friends"), {
+  show: (el) => hideScreens(el),
+  title: () => showTitle(),
+  lineUp: () => journey?.party ?? null,
+  fight: (go, you, names) => {
+    trip = null; shroudFoe = false; bindNote = ""; crowdView = false;
+    mine = you; acc = 0; hitStop = 0;
+    const [a, b] = go.picks;
+    fight(atLevel(creature(a.c), a.lv), atLevel(creature(b.c), b.lv), "stadium", false, true);
+    faceUp(`${names[0]} vs ${names[1]}`);
+  },
+  broken: (why) => { if (versusOn && m && !m.over) { m.over = true; duelOver("No contest", esc(why)); } },
+});
+/** A duel is over (or off): who won, and a rematch, another pick, or home. */
+function duelOver(head: string, line: string) {
+  $("#result").innerHTML = `<div class="note paper"><h2>${esc(head)}</h2><p>${line}</p>
+    <div class="row"><button class="go" id="again">${icon("rotate-ccw")} Rematch</button><button id="pick">${icon("users")} Pick again</button><button id="home">${icon("x")} Leave</button></div></div>`;
+  pages.show($("#result"));
+  $("#again").onclick = () => versus.rematch();
+  $("#pick").onclick = () => { $("#hud").hidden = true; versus.room(); };
+  $("#home").onclick = () => { $("#hud").hidden = true; versus.leave(); };
 }
 
 /** A world fight ended: XP, a bound creature into the line-up or the journal, a section cleared and its page written,
@@ -1524,23 +1557,28 @@ function frame(now: number) {
   crowdOf(arena)?.update(dt);
   tickArena(arena, performance.now() / 1000);
   const moving = world.shown || (!!m && !m.over && !bots[0]);
+  document.body.classList.toggle("in-fight", !!m && !m.over && !world.shown);
   touchEl.hidden = !(touchy && moving);
   const where = world.shown ? "world" : "fight";
   if (moveCardFor !== where) drawMoveCard(where);
   moveCard.hidden = !moveCardOn || touchy || !moving || paused || journalOpen || !!talking || !cineEl.hidden;
   touchEl.classList.toggle("world", world.shown);
   touchEl.classList.toggle("bindable", bindable(trip));
-  touchEl.classList.toggle("ult-ready", !!m && m.f[0].energy >= 100);
+  touchEl.classList.toggle("ult-ready", !!m && m.f[mine].energy >= 100);
   if (padKeys.length && director.skippable) poke = true;
   director.step(dt, poke); poke = false;
   if (pending && !director.holding) { const p = pending; pending = null; finish(p.m, p.bound); }
   nextTalk();
-  if (m && live && !m.over && !paused && !journalOpen && !director.holding && !talking) {
+  const step = versusOn ? versus.link()?.step ?? null : null;
+  // A fight against a friend never pauses: a menu open over it only stops your hands.
+  if (m && live && !m.over && (step || ((!paused && !journalOpen) && !versusOn)) && !director.holding && !talking) {
     pollPad();
     if (hitStop > 0) hitStop -= dt; else acc += dt;
     while (acc >= 1 / HZ && !m.over && hitStop <= 0) {
       const cur = m;
-      live.step([bots[0] ? bots[0](cur) : playerInput(), bots[1] ? bots[1](cur) : IDLE]);
+      const both: [Input, Input] | null = step ? step.next(() => (paused || journalOpen ? IDLE : playerInput())) : [bots[0] ? bots[0](cur) : playerInput(), bots[1] ? bots[1](cur) : IDLE];
+      if (!both) { acc = Math.min(acc, 0.25); break; } // the friend's input isn't in yet: wait a frame, never guess
+      live.step(both);
       moveFx.events(cur, cur.events);
       rememberHud(hudMem.now, cur);
       for (const e of cur.events) if (e.kind === "hit" && !e.guarded) {
@@ -1556,6 +1594,7 @@ function frame(now: number) {
       acc -= 1 / HZ;
       if (cur.over) ended(cur);
     }
+    if (step) versus.link()?.flush(m);
     hud(m);
   }
   if (world.shown && !paused && !journalOpen && !talking && sitting === null) {
@@ -1632,6 +1671,8 @@ else if (params.get("gallery") !== null) {
 else if (params.get("world") === "1") { const a = STARTERS.find((s) => s === params.get("a")) ?? STARTERS[0]; if (!journey && params.get("a")) { journey = newJourney([a, ...STARTERS.filter((s) => s !== a)].slice(0, PICKS)); saveJourney(); } enterWorld(); }
 else if (params.get("a") && params.get("b")) start(pickA, pickB, skinSel.value, params.get("watch") === "1");
 else if (params.get("versus") !== null) pages.show($("#select"));
+else if (duelCode(location.search)) versus.enter(duelCode(location.search)!);
+else if (params.get("vs") === "1") versus.open();
 else showTitle();
 // ?scene=<name>&t=<seconds> (@rustybuns/util/director): one of the director's scenes over a fight (the a and b of the
 // link, or the first two), held at second t, for a look at one frame without playing to it.
@@ -1646,6 +1687,7 @@ const askedParty = (params.get("party") ?? "").toUpperCase().match(/^[A-Z0-9]{4,
 // Signed in: redraw the title's chip with the name.
 void signedIn.then((back) => {
   if (back) { signInNote = back.error ?? ""; drawAccount(); }
+  if (back?.login && back.then === "versus") versus.open(); // signed in from Fight a Friend: back to the friends list
   if (askedParty && login()) joinReaders(askedParty);
   else if (askedParty) { signInNote = "Sign in to read the Book with this party."; drawAccount(); }
   drawReaders();
@@ -1661,6 +1703,14 @@ const tripState = () => trip && { ...trip, out: [...trip.out], region: trip.regi
 Object.assign(window, {
   mythicMasters: {
     state: fightState,
+    /** Fighting a friend: the duel's link, who sits where, the round, the tick it plays next and how long it's waited,
+     *  and the fight's hash (net/duel.ts `sum`), the same on both pages while they play the same fight. */
+    duel: () => { const l = versus.link(); return l && { code: l.code, status: l.status, seats: l.seats, round: l.step?.r ?? null, next: l.step?.tick ?? null, waited: l.step?.waited ?? 0, delay: l.step?.delay ?? null, mine, on: versusOn, tick: m?.tick ?? null, over: m?.over ?? null, sum: m ? sum(m) : null, screen: document.querySelector("#result:not([hidden]) h2")?.textContent ?? null }; },
+    /** Pick line-up member `i` in the duel's room (what a tap on its card does). */
+    /** Leave the duel (the room's Leave button), and open or close the Settings menu (the pause menu, over a fight). */
+    duelLeave: () => versus.leave(),
+    settings: (open = true) => { if (open) controls.open(); else controls.close(); return controls.isOpen(); },
+    duelPick: (i: number) => { const b = document.querySelector<HTMLElement>(`#friends [data-pick="${i}"]`); b?.click(); return !!b; },
     /** The last frame's draw calls and triangles (every pass), the geometries and textures the GPU holds, and the shader programs compiled so far: for scripts/walk-budget.ts. */
     perf: () => { const { render, memory, programs } = renderer.info; return { calls: render.calls, triangles: render.triangles, geometries: memory.geometries, textures: memory.textures, programs: programs?.length ?? 0, particles: moveFx.count, cap: moveFx.cap }; },
     /** The field chart: open() / close() it, ask(you, them) sets its asker (one or two fields a side), state() reads it. */

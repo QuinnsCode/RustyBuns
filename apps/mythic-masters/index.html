@@ -55,6 +55,7 @@
             <div class="menu">
               <button id="continue" class="go"></button>
               <button id="newGame"></button>
+              <button id="duelBtn"></button>
               <button id="versus" data-copy="title.versus"></button>
             </div>
             <p class="imprint" data-copy="title.imprint"></p>
@@ -137,6 +138,8 @@
       <span class="skip" hidden>any key skips</span>
     </div>
     <section id="result" class="result" hidden></section>
+    <!-- Fight a Friend (src/versus.ts): your Qollab friends and their challenges, then a duel's room -->
+    <section id="friends" class="select starters friends" aria-label="Fight a friend" hidden></section>
     <header id="worldHud" class="world-hud" hidden>
       <div class="where"></div>
       <div class="together" role="status" hidden></div>

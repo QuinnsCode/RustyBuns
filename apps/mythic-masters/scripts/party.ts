@@ -10,7 +10,7 @@
 // Attachments are cloned like workerd serialises them, so a Region that leaned on live object references would fail here too.
 import type { ServerWebSocket } from "bun";
 import type { RoomSocket } from "@rustybuns/util/room";
-import worker, { Region } from "../src/edge/worker.ts";
+import worker, { Duel, Region } from "../src/edge/worker.ts";
 
 /** How long a Durable Object with only hibernatable sockets stays in memory after its last event before it sleeps. */
 export const IDLE_MS = 10_000;
@@ -46,7 +46,9 @@ class Sock implements RoomSocket {
   bind(ws: ServerWebSocket<Bound>) { this.ws = ws; for (const d of this.held) ws.send(d); this.held = []; if (this.closing) ws.close(this.closing.code, this.closing.reason); }
 }
 interface Bound { sock: Sock; room: Room | null }
-interface Room { name: string; obj: Region; socks: Sock[]; m: Meter }
+/** What the adapter needs of a Durable Object with hibernating sockets: the Region or a Duel. */
+interface Hosted { fetch(r: Request): Promise<Response>; webSocketMessage(ws: RoomSocket, raw: string): void; webSocketClose(ws: RoomSocket): void }
+interface Room { name: string; obj: Hosted; socks: Sock[]; m: Meter }
 
 /** The pair the next upgrade makes, taken by the adapter right after the Region returns its 101. */
 let made: Sock[] = [];
@@ -60,21 +62,23 @@ export function serveParty(port = 0, o: { guests?: boolean } = {}) {
   const last: { room: Room | null } = { room: null };
   /** The room the Worker just routed to (read through a call, so the null set before the await doesn't narrow it). */
   const routed = (): Room | null => last.room;
-  const REGION = {
+  type Ctx = ConstructorParameters<typeof Duel>[0];
+  const binding = (make: (ctx: Ctx) => Hosted) => ({
     idFromName: (n: string) => n,
     get: (id: unknown) => {
       const name = String(id);
       let r = rooms.get(name);
       if (!r) {
         const socks: Sock[] = [];
-        r = { name, socks, m: meter(), obj: new Region({ acceptWebSocket: (ws) => { if (ws instanceof Sock) socks.push(ws); }, getWebSockets: () => socks.filter((s) => s.readyState === 1) }, {}) };
+        r = { name, socks, m: meter(), obj: make({ acceptWebSocket: (ws) => { if (ws instanceof Sock) socks.push(ws); }, getWebSockets: () => socks.filter((s) => s.readyState === 1) }) };
         rooms.set(name, r);
       }
       const room = r;
       return { fetch: (req: Request) => { last.room = room; meterFor = room.m; return room.obj.fetch(req); } };
     },
-  };
-  const env = { GUESTS: o.guests === false ? undefined : "1", ASSETS: { fetch: async () => new Response("the page is served by vite here", { status: 404 }) }, REGION };
+  });
+  const REGION = binding((ctx) => new Region(ctx, {})), DUEL = binding((ctx) => new Duel(ctx));
+  const env = { GUESTS: o.guests === false ? undefined : "1", ASSETS: { fetch: async () => new Response("the page is served by vite here", { status: 404 }) }, REGION, DUEL };
   // One upgrade at a time, so the pair a Region made is the one this request gets.
   let line: Promise<unknown> = Promise.resolve();
 

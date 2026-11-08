@@ -1247,3 +1247,18 @@ body > .gc-dialog .gc-card button.gc-close:hover, .journal #closeJournal:hover, 
   .result { grid-template-rows: minmax(var(--book-h), auto); }
   body > .gc-dialog::after, .result::after { margin: -16px -20px -20px; }
 } }
+
+/* Fight a Friend (src/versus.ts): the friends list and a duel's room, on the starters' sheet */
+.friends .sheet { max-width: 760px; }
+.friends h1 small { font-size: 0.55em; letter-spacing: 0.12em; color: var(--ink-faded); }
+.friends h2 { font-family: var(--f-title); color: var(--blood); margin: 18px 0 6px; }
+.vs-list { list-style: none; margin: 0; padding: 0; }
+.vs-list li { display: flex; align-items: center; gap: 12px; padding: 8px 4px; border-bottom: 1px dashed var(--ink-line); }
+.vs-list li b { font-family: var(--f-hand); font-size: 20px; font-weight: 400; }
+.vs-list li small { flex: 1; color: var(--ink-faded); font-style: italic; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.friends .note { color: var(--blood); font-style: italic; }
+.friends .row { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 18px; }
+
+/* The pause menu over a fight is see-through: the fight shows behind it (and against a friend it never stops) */
+body.in-fight > .gc-dialog { background: radial-gradient(ellipse at center, rgba(10, 6, 3, 0.05), rgba(5, 3, 1, 0.35)); }
+body.in-fight > .gc-dialog { opacity: 0.74; }
