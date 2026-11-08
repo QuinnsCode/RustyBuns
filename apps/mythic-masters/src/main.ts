@@ -1190,8 +1190,8 @@ function ended(m: Match, bound = false) {
 }
 function finish(m: Match, bound = false) {
   const ko = m.events.find((e) => e.kind === "ko");
-  const w = m.f[m.winner!]!, how = ko?.kind === "ko" ? { hp: "knocked out", "ring-out": "rang out", time: "outlasted on time" }[ko.how] : "";
-  const lost = bound ? "" : `${esc(m.f[m.winner ? 0 : 1]!.c.name)} ${how === "outlasted on time" ? "was outlasted on time" : how}.`;
+  const w = m.f[m.winner!]!, how = ko?.kind === "ko" ? { hp: "was knocked out", "ring-out": "was pushed out of the ring", time: "had less health when time ran out" }[ko.how] : "";
+  const lost = bound ? "" : `${esc(m.f[m.winner ? 0 : 1]!.c.name)} ${how}.`;
   if (trip && journey) { tripOver(m, bound, lost); return; }
   $("#result").innerHTML = `<div class="note paper"><h2>${esc(w.c.name)} wins</h2>${reaction({ kind: "versus" })}<p>${lost}</p>
     <div class="row"><button class="go" id="again">${icon("rotate-ccw")} Rematch</button><button id="pick">${icon("users")} Pick again</button></div></div>`;
@@ -1237,19 +1237,22 @@ function tripOver(m: Match, bound: boolean, how: string) {
     t.out.add(t.slot);
     wound(me, 0);
     const next = nextUp(j, t.out);
-    outcome = { kind: "down", next: next >= 0 && t.kind !== "deadly", deadly: t.kind === "deadly" };
-    title = `${esc(creature(me.id).name)} is down`;
+    const left = next >= 0 && t.kind !== "deadly";
+    outcome = { kind: "down", next: left, deadly: t.kind === "deadly" };
+    title = left || t.kind === "deadly" ? `${esc(creature(me.id).name)} is knocked out` : "Your whole team is knocked out";
     lines.push(how);
     const lost = tally(j, true), at = { n: t.region.n, regionId: t.region.id, down: creature(me.id).name };
-    lossBeats(lost, next >= 0 && t.kind !== "deadly").some((b) => say(b, at));
-    if (next >= 0 && t.kind !== "deadly") {
+    lossBeats(lost, left).some((b) => say(b, at));
+    if (left) {
       const up = creature(j.party[next]!.id);
-      lines.push(`${esc(m.f[1].c.name)} has ${Math.round(m.f[1].hp)} health left.`);
+      lines.push(`${esc(m.f[1].c.name)} still has ${Math.round(m.f[1].hp)} health. Send in your next creature to keep fighting, or run back to the world.`);
       go = `${icon("arrow-left-right")} Send in ${esc(up.name)}`;
       again = () => { t.slot = next; t.foeHp = m.f[1].hp; fightTrip(); };
     } else {
       heal(j); // waking by the last stone mends the line-up, or nobody could fight again
-      lines.push(t.kind === "deadly" ? "You wake on the doorstep of your last arena." : "The whole line-up is down. You wake by the last stone you lit.");
+      lines.push(t.kind === "deadly"
+        ? "You lost this fight. Your team is healed, and you are back outside the arena you came from."
+        : "None of your creatures can fight now. Your team is healed, and you are back at the last stone you lit.");
     }
   }
   saveJourney();

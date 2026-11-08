@@ -58,9 +58,10 @@ export function reactionOf(o: Outcome, j: Journey | null): { ask: string; signed
       if (o.foe === "keeper") return { ask: `A keeper is not an item. ${demandOf(j)}`, signed: true };
       return { ask: "Noted. Not entered.", signed: false };
     case "down":
-      if (o.deadly) return { ask: "I said bring it. I did not say go and lie down near it.", signed: false };
-      if (o.next) return { ask: "Get up. Send the next one.", signed: true };
-      return { ask: "All of them, down. The ledger is patient. I am less so.", signed: false };
+      // plain words on a loss: what happened and what to do next (the owner adds the Book's flair on top)
+      if (o.deadly) return { ask: "You lost. Heal up and try again.", signed: false };
+      if (o.next) return { ask: "This one can't fight. Send in the next.", signed: false };
+      return { ask: "No creatures left to fight. Back to the last stone.", signed: false };
     case "versus":
       return { ask: "Practice. I keep no accounts of practice.", signed: false };
   }
