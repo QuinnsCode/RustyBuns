@@ -122,8 +122,9 @@ async function stream(p: ReturnType<typeof remote>, label: string, quiet = false
 // runs, then both in runs/done, the last KEEP of them.
 export type RunRecord = { who: string; cmd: string; started: number; ended?: number; code?: number };
 const KEEP = 10;
-const LOG = (slot: string) => `L="$PWD/runs/${slot}.log"; set -o pipefail; `;
-const teed = (cmd: string) => `{ ${cmd}; } 2>&1 | tee -a "$L"`;
+const LOG = (slot: string) => `L="$PWD/runs/${slot}.log"; `;
+// The command's own exit code, not tee's, without pipefail (dash has none): each ssh shell has its own $$.
+const teed = (cmd: string) => `{ ${cmd}; echo $? > "$L.$$"; } 2>&1 | tee -a "$L"; c=$(cat "$L.$$"); rm -f "$L.$$"; exit "\${c:-1}"`;
 
 // Claim a free slot, waiting while every slot is busy. The same round trip writes the slot's run record and
 // reads the builder's battery.
