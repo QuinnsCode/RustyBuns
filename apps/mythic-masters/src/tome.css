@@ -1231,3 +1231,19 @@ body > .gc-dialog .gc-card button.gc-close:hover, .journal #closeJournal:hover, 
 @keyframes book-lands { from { transform: translateY(18vh) scale(0.82) rotateX(24deg); opacity: 0; } }
 @keyframes cover-open { to { transform: rotateY(-180deg); } }
 @media (prefers-reduced-motion: reduce) { .booktalk.first-open .tome, .booktalk.first-open .tome > .cover { animation: none; } .booktalk.first-open .tome > .cover { display: none; } }
+/* the Book is one size on screen, whatever is open in it: the title, the journal, a result note and Settings are all
+ * the same spread, --book-w by --book-h inside the same boards. A chapter longer than the spread scrolls within its
+ * leaves, the book stays put; a result note too long for it is the one thing that may grow the spread. */
+@media (min-width: 900px) {
+  :root { --book-w: min(1200px, calc(100vw - 160px)); --book-h: min(860px, calc(100dvh - 80px)); }
+  :is(.journal, .title) .tome { width: var(--book-w); height: var(--book-h); min-height: 0; max-width: none; margin: auto; display: flex; flex-direction: column; }
+  :is(.journal, .title) .tome > .boards { inset: -16px -20px -20px; }
+  .journal { display: grid; padding: 46px 40px 34px; }
+  :is(.journal, .title) .tome > .leaf { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: rgba(94, 70, 48, 0.45) transparent; }
+}
+@media (min-width: 900px) { @supports (-webkit-mask-box-image: none) {
+  body > .gc-dialog, .result { grid-template-columns: repeat(2, calc(var(--book-w) / 2)); }
+  body > .gc-dialog { grid-template-rows: var(--book-h); }
+  .result { grid-template-rows: minmax(var(--book-h), auto); }
+  body > .gc-dialog::after, .result::after { margin: -16px -20px -20px; }
+} }
