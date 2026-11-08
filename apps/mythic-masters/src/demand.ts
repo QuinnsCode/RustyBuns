@@ -66,3 +66,14 @@ export function reactionOf(o: Outcome, j: Journey | null): { ask: string; signed
   }
 }
 const RECEIPTS = ["", " Late.", " Smaller than described.", " Wipe its feet.", "", " About time."];
+
+/** The book's line on the bestiary deck: it wants the card on top, the first in the deck's order it does not have,
+ * by name (the deck prints every name anyway). With every card bound it only keeps them in order. */
+export function deckDemandOf(j: Journey | null, roster: readonly Creature[] = ROSTER): { ask: string; signed: boolean } {
+  if (!j) return { ask: `Item 1: the ${roster[0]?.name ?? "first one"}, top of this deck. Then the rest, in order.`, signed: true };
+  const owned = new Set([...j.party, ...j.journal].map((m) => m.id)), top = roster.find((c) => !owned.has(c.id));
+  if (!top) return { ask: "Every card in this deck is mine. Keep them in order.", signed: false };
+  const item = owned.size + 1;
+  if (j.seen.includes(top.id)) return { ask: `Item ${item}: the ${top.name}, top of my deck. You have seen it. Bring it.`, signed: true };
+  return { ask: `Item ${item}: the ${top.name}, top of my deck. Go and find it.`, signed: true };
+}

@@ -58,6 +58,9 @@ The demands and receipts in `src/demand.ts` (`demandOf`, `reactionOf`). Add your
 | Result: versus | Practice. I keep no accounts of practice. | no |
 | Bestiary folio: a bound one | Item 4. Entered. (within the hour: The ink is still wet.) | no |
 | Bestiary folio: one only seen | Seen. Not entered. Looking is not collecting. | no |
+| Bestiary deck, no journey yet | Item 1: the Jersey Devil, top of this deck. Then the rest, in order. | yes |
+| Bestiary deck: top card unmet | Item 4: the Jersey Devil, top of my deck. Go and find it. (seen: You have seen it. Bring it.) | yes |
+| Bestiary deck: every card bound | Every card in this deck is mine. Keep them in order. | no |
 
 ## Twenty margin lines from the first pass
 

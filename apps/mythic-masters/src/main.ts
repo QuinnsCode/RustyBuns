@@ -40,7 +40,7 @@ import { accountChip, achieve, canSignIn, finishSignIn, fresh, login, reportButt
 import { asCreature, atLevel, bind, downed, heal, hpOf, wound, bindBelow, bindChance, clearSection, cleared, gainXp, INK, loadJourney, moveUp, mythicOf, newJourney, nextUp, call, owns, PICKS, rest, SAVE_KEY, SECTIONS, sections, see, slots, STARTERS, TRAIL_REGIONS, toNext, WITCH_SAYS, type Journey, mend } from "./journey.ts";
 import { LORE } from "./lore.ts";
 import { bare, blank, dry, handOf, knownOf, PAGE_INK, poolOf, ribbonsOf, summon, type Summoned } from "./grimoire.ts";
-import { demandOf, reactionOf, SIGNATURE, type Outcome } from "./demand.ts";
+import { deckDemandOf, demandOf, reactionOf, SIGNATURE, type Outcome } from "./demand.ts";
 import { tierOf } from "./tiers.ts";
 import { book, cardTurn, fly, penSound, pressed, soak, thumb, turnLeaf } from "./page.ts";
 import { emblem, frame as ring, inkUrl, seal, tear } from "./ornaments.ts";
@@ -315,6 +315,7 @@ const deck = $("#deck");
 const pages = book(["#title", "#starters", "#select", "#deck", "#journal", "#result"].map((id) => $(id)));
 function showDeck(open: boolean) {
   if (open && !deck.querySelector(".tcard")) $("#deckCards").innerHTML = ROSTER.map(tradingCard).join("");
+  if (open) { const d = deckDemandOf(journey); $("#deckDemand").innerHTML = hand(d.ask, d.signed); }
   pages.show(open ? deck : $("#select"));
   history.replaceState(null, "", open ? "?cards=1" : location.pathname);
 }
