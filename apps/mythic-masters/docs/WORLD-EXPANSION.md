@@ -190,8 +190,12 @@ Each item is one PR, and each is useful on its own.
 4. **Pockets:** the layout format and one cave, used for the Pine Barrens' mythic. First cut: `src/pockets.ts` (walls, roof,
    fog, flickering lanterns laid over a region's arena look; a skin with `pocket` builds them in place of the open sky), and
    `fightSkin` in `regions.ts` sends a region's mythic fight to its lair. Still to come: walking into a pocket from the
-   overworld (a door or cave mouth on the map), rooms beyond one ring, small creatures inside, and the other regions' lairs.
-5. **Beast travel:** swim and glide first, gating the crossing south.
-6. **Packs:** the format and the first pack, a winter island in time for the December legends.
+   overworld (a door or cave mouth on the map), rooms beyond one ring, small creatures inside, and the other regions' lairs: #3959.
+5. **Beast travel:** swim and glide first, gating the crossing south. Done: `pace` and `GATES` in `src/world/world.ts`.
+   A beast whose first field is the tide swims you over water a wade would slow (a quarter faster than walking), a flier
+   glides you down any slope steeper than 8% at half again your pace, and nothing goes past `PACE_MAX` (20 m/s, a near
+   patch every three seconds). The south (9-16) needs a swimmer in the line-up, the Andes a flier as well. Burrow and a
+   ridden run are later.
+6. **Packs:** the format and the first pack, a winter island in time for the December legends: #3960.
 
 Distant tree cards and the shrouded teasers are follow-ups once those land.
