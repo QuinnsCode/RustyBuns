@@ -187,10 +187,12 @@ Each item is one PR, and each is useful on its own.
    region's landmarks are boards; the report plays like a tape, three signs appear one at a time about 220 m
    apart (a wisp over the spot, a ring on the map), and the last leads to a lair where a named creature four
    levels over its section waits. Beating or binding it closes the contract (`journey.hunts`).
-4. **Pockets:** the layout format and one cave, used for the Pine Barrens' mythic. First cut: `src/pockets.ts` (walls, roof,
-   fog, flickering lanterns laid over a region's arena look; a skin with `pocket` builds them in place of the open sky), and
-   `fightSkin` in `regions.ts` sends a region's mythic fight to its lair. Still to come: walking into a pocket from the
-   overworld (a door or cave mouth on the map), rooms beyond one ring, small creatures inside, and the other regions' lairs: #3959.
+4. **Pockets:** `src/pockets.ts`, a layout per lair: walls, roof, fog and flickering lanterns laid over a region's arena
+   look (a skin with `pocket` builds them in place of the open sky), rooms opening off the ring past its wall (each with a
+   heap of fallen rock and maybe its own light), and the small creatures that live there (bats and moths under the roof,
+   fireflies and glowworms, rats, crayfish and scorpions round the floor, one instanced mesh per kind). Every playable
+   region's mythic fights in its own (#3835, #3959), and on the open world its arena ring sits under the lair's cave mouth,
+   open toward the trail, and a cave on the map. Still to come: towns as pockets (#3966).
 5. **Beast travel:** swim and glide first, gating the crossing south. Done: `pace` and `GATES` in `src/world/world.ts`.
    A beast whose first field is the tide swims you over water a wade would slow (a quarter faster than walking), a flier
    glides you down any slope steeper than 8% at half again your pace, and nothing goes past `PACE_MAX` (20 m/s, a near
