@@ -17,7 +17,7 @@ export const SIZES = { phone: { w: 390, h: 844, mobile: true }, tablet: { w: 820
 export const SCREENS: Record<string, { screens: Record<string, string>; frames?: Record<string, number[]> }> = {
   "git-recon": {
     screens: { menu: "/", loadout: "/?screen=loadout", won: "/?screen=won", lost: "/?screen=lost" },
-    frames: { credits: [2.5, 7.3, 18] },
+    frames: { credits: [2.5, 7.3, 18], newsreel: [1.5, 4.5, 7, 13, 18] },
   },
   "mythic-masters": { screens: { title: "/" }, frames: { faceoff: [1.2], abduction: [8], freeze: [1] } },
 };

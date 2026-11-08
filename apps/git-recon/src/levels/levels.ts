@@ -5,6 +5,7 @@
 //   backyard      a plastic-army backyard: a sandbox, a raised deck, garden rows and a dug trench (stamps, Druids Curse style)
 //   kitchen       the kitchen floor: table and chair legs to fight round, the sink cabinet a sheer plateau
 //   garden        vegetable rows, a hose snaking across, and a pond standing in a crater (the water table)
+//   front-room    the Conflict's capital on the rug: sofa cliffs, a bookcase tower, the coffee table round its palace
 // and placeLevel() makes one more from any lat/long (src/levels/place.ts reads the ground in the page).
 
 import { heightmapTerrain, stampTerrain, zoneData, type Stamp, type Terrain, type ZoneData } from "@rustybuns/terrain";
@@ -144,6 +145,35 @@ export const LEVELS: LevelDef[] = [
       }),
     repo: rustybuns,
     seed: 4,
+  },
+  {
+    id: "front-room",
+    name: "The Front Room",
+    blurb: "The Conflict's capital on the rug: the sofa a cliff, the bookcase a tower, the coffee table their palace. Plastic-army ground, built from stamps.",
+    ground: () =>
+      stampTerrain({
+        R: 110,
+        seed: 0xe3b,
+        amp: 0.3,
+        freq: 0.035,
+        stamps: [
+          // The sofa along the back wall: two cushions too sheer to climb.
+          { kind: "plateau", x: -10, z: -112, r: 26, h: 8, falloff: 1 },
+          { kind: "plateau", x: 30, z: -112, r: 26, h: 8, falloff: 1 },
+          // The bookcase by the side wall, standing taller than anything.
+          { kind: "plateau", x: -112, z: 10, r: 16, h: 14, falloff: 0.8 },
+          // The coffee table's four legs round the palace in the middle of the rug.
+          ...legs(0, 0, 12, 1.6, 6),
+          { kind: "plateau", x: 0, z: 0, r: 6, h: 3, falloff: 3 },
+          // The rug's fringe, and a fold kicked up in it.
+          { kind: "ridge", x1: -50, z1: 50, x2: 50, z2: 50, w: 0.8, h: 0.6, falloff: 1.2 },
+          { kind: "ridge", x1: 60, z1: -30, x2: 78, z2: 20, w: 1.2, h: 2.2, falloff: 0.6 },
+          // Where the plant pot stood before it was knocked over.
+          { kind: "crater", x: 70, z: 70, r: 6, h: 1.2, falloff: 2 },
+        ],
+      }),
+    repo: rustybuns,
+    seed: 2,
   },
 ];
 

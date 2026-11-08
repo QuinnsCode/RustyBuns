@@ -1,10 +1,10 @@
-// The end of the campaign: the credits, typed onto the briefing file, and the outtakes, polaroids dropping onto the
-// table one at a time. The outtakes are real frames from the engine: each stages a moment in the game (a parachute
+// The end of the campaign: Command's newsreel (slow-motion footage under poster slogans), then the credits, typed
+// onto the briefing file, and the outtakes, polaroids dropping onto the table one at a time. The outtakes are real frames from the engine: each stages a moment in the game (a parachute
 // pulled at two metres, a dive-roll into a file), runs the sim into it, and the director holds that frame. The page
 // photographs it (src/ui/credits.ts). The tone is an end-of-film outtake reel: the takes that went wrong.
 //
 // Scenes on the shared director (@rustybuns/util/director), so each plays by name: `?scene=credits&t=<seconds>`, or
-// `?scene=outtake-chute` for one outtake's frame held live. No DOM and no three.js here.
+// `?scene=outtake-chute` for one outtake's frame held live, `?scene=newsreel&t=6` for the footage. No DOM and no three.js here.
 import type { Card, Photo, Scene, SceneTable } from "@rustybuns/util/director";
 import type { Stage } from "./director.ts";
 import { ROLL_TIME, type Game, type Input, type Soldier } from "./game.ts";
@@ -22,15 +22,15 @@ export const OUTTAKES = [
 ] as const;
 export type OuttakeId = (typeof OUTTAKES)[number]["id"];
 
-const idle: Input = { right: 0, forward: 0, yaw: 0, pitch: 0, jump: false, roll: false, crouch: false, fire: false };
-const DT = 1 / 30;
+export const idle: Input = { right: 0, forward: 0, yaw: 0, pitch: 0, jump: false, roll: false, crouch: false, fire: false };
+export const DT = 1 / 30;
 
 /** You, put back on your feet at (x, z), facing `yaw`, nothing carried over from the last take. */
-function mark(game: Game, s: Soldier, x: number, z: number, yaw: number) {
+export function mark(game: Game, s: Soldier, x: number, z: number, yaw: number) {
   Object.assign(s, { x, z, y: game.ground(x, z, Infinity), vx: 0, vy: 0, vz: 0, yaw, alive: true, hp: s.maxHp, shield: s.maxShield,
     roll: 0, rollCd: 0, prone: false, crouch: false, chute: false, grounded: true, air: 0, vehicle: -1, lean: 0, burn: 0 });
 }
-function run(game: Game, seconds: number, input: Partial<Input>) {
+export function run(game: Game, seconds: number, input: Partial<Input>) {
   for (let t = 0; t < seconds; t += DT) game.step(DT, { ...idle, yaw: game.you().yaw, ...input });
 }
 const lookAt = (s: Soldier, dx: number, dy: number, dz: number, up = 1): Setup["cam"] => ({ from: { x: s.x + dx, y: s.y + dy, z: s.z + dz }, at: { x: s.x, y: s.y + up, z: s.z } });
@@ -101,10 +101,98 @@ export function outtake(id: OuttakeId, set: Setup): Scene {
   return { id: `outtake-${id}`, seconds: 4, skip: true, hold: true, lines: [[0, o.caption]], shot: () => ({ ...set.cam, mix: 1, fov: 50 }) };
 }
 
+/* ---------------- the newsreel: Command's own, before the credits ---------------- */
+
+// A wartime recruitment newsreel, played straight: an announcer, poster slogans over the footage, film grain, and
+// the footage itself the engine's, in slow motion. Each clip stages you on the set (near HEAD, the guards at their
+// compounds) and the page rolls the sim on under the take's input at SLOW speed, a tripod at `from` following you.
+
+/** How fast the footage runs, and how long the newsreel is. */
+export const SLOW = 0.3, NEWSREEL = 20;
+export const CLIPS = [
+  { id: "over", from: 0, to: 5.5 },
+  { id: "charge", from: 5.5, to: 10.5 },
+  { id: "roll", from: 10.5, to: 15 },
+  { id: "drop", from: 15, to: NEWSREEL },
+] as const;
+export type ClipId = (typeof CLIPS)[number]["id"];
+/** A clip staged: where the camera stands, and what you do `k` seconds (sim time) into the take. */
+export interface Clip { id: ClipId; from: P; drive(k: number): Partial<Input> }
+
+/** The clip on at second `t` of the newsreel. */
+export const clipAt = (t: number) => CLIPS.find((c) => t < c.to) ?? CLIPS.at(-1)!;
+/** Facing (dx, dz). */
+const face = (dx: number, dz: number) => Math.atan2(-dx, -dz);
+
+/** Stages clip `id` on `game`: you on your mark, the camera on its tripod. */
+export function stageClip(game: Game, id: ClipId): Clip {
+  const s = game.you(), sp = game.map.spawn;
+  const ground = (x: number, z: number) => game.ground(x, z, Infinity);
+  if (id === "over") {
+    // Over the top: a run at the nearest file low enough to mantle, up onto it and down the far side.
+    const b = game.map.blocks.filter((k) => {
+      const lip = k.y + k.h - ground(k.x - k.w / 2 - 3, k.z);
+      return lip > 1 && lip < 2.6 && k.w >= 1.2 && k.w <= 4 && k.d >= 1.2;
+    }).sort((a, c) => Math.hypot(a.x - sp.x, a.z - sp.z) - Math.hypot(c.x - sp.x, c.z - sp.z))[0];
+    const x = b ? b.x - b.w / 2 - 3 : sp.x, z = b ? b.z : sp.z, yaw = face(1, 0);
+    mark(game, s, x, z, yaw);
+    // From low down beside the wall, looking up at it: the poster angle.
+    return { id, from: { x: x + 3, y: s.y + 0.4, z: z + 6.5 }, drive: (k) => ({ forward: 1, yaw, jump: k > 0.1 && k < 0.2 }) };
+  }
+  if (id === "charge") {
+    // Straight at the camera across the rug, at a run.
+    const yaw = sp.yaw + 0.2, f = { x: -Math.sin(yaw), z: -Math.cos(yaw) };
+    mark(game, s, sp.x, sp.z, yaw);
+    const fx = sp.x + f.x * 11, fz = sp.z + f.z * 11;
+    return { id, from: { x: fx + f.z * 1.5, y: ground(fx, fz) + 0.5, z: fz - f.x * 1.5 }, drive: () => ({ forward: 1, yaw }) };
+  }
+  if (id === "roll") {
+    // A dive-roll across the front of the camera, and up running.
+    const yaw = sp.yaw - 1.2, f = { x: -Math.sin(yaw), z: -Math.cos(yaw) };
+    mark(game, s, sp.x - f.x * 3, sp.z - f.z * 3, yaw);
+    return { id, from: { x: sp.x + f.z * 5, y: ground(sp.x, sp.z) + 0.8, z: sp.z - f.x * 5 }, drive: (k) => ({ forward: 1, yaw, roll: k > 0.15 && k < 0.25 }) };
+  }
+  // In by parachute, the canopy open high up, down onto HEAD.
+  mark(game, s, sp.x + 2, sp.z + 2, sp.yaw);
+  Object.assign(s, { y: s.y + 9, vy: -3, grounded: false, air: 2, chute: true });
+  return { id, from: { x: sp.x + 9, y: ground(sp.x + 9, sp.z - 4) + 0.3, z: sp.z - 4 }, drive: () => ({}) };
+}
+/** Rolls a staged clip on from `done` to `to` seconds of sim time, under its input; answers the seconds now done. */
+export function rollClip(game: Game, clip: Clip, done: number, to: number): number {
+  for (; done + DT <= to + 1e-6; done += DT) game.step(DT, { ...idle, yaw: game.you().yaw, ...clip.drive(done) });
+  return done;
+}
+/** The tripod's view of you. */
+export function clipShot(game: Game, clip: Clip): Setup["cam"] {
+  const s = game.you();
+  return { from: clip.from, at: { x: s.x, y: s.y + 1, z: s.z } };
+}
+
+const slogans: [number, number, Card][] = [
+  [0.2, 3.4, { kind: "title", text: "Command Newsreel", sub: "No. 7: The empire falls" }],
+  [3.4, 5.5, { kind: "poster", text: "Every commit counts!" }],
+  [8, 10.5, { kind: "poster", text: "Merge for the cause!" }],
+  [12.4, 15, { kind: "poster", text: "Your branch needs you", sub: "Enlist at HEAD" }],
+  [17.2, NEWSREEL, { kind: "poster", text: "Resolve! Resolve! Resolve!", sub: "A message from Command" }],
+];
+const announcer: [number, string][] = [
+  [0.4, "Announcer: From the front room, the news the whole history has waited for!"],
+  [2.4, "Announcer: Our boys go over the top. Over the files. Over the top of the files!"],
+  [5.7, "Announcer: Straight at the empire, and they do not stop for anything. Not even the camera."],
+  [10.7, "Announcer: Not one conflict left standing. Not one!"],
+  [15.2, "Announcer: And so, home to HEAD, and to dinner. Which is at six."],
+];
+/** The newsreel: the footage in slow motion with a hard cut between clips, the slogans and the announcer over it. */
+export function newsreel(): Scene {
+  const cut = (t: number) => Math.max(0, ...CLIPS.slice(1).map((c) => 1 - Math.abs(t - c.from) / 0.12));
+  return { id: "newsreel", seconds: NEWSREEL, skip: true, hold: true, lines: announcer, cards: slogans, look: (t) => ({ slow: SLOW, dip: cut(t) }) };
+}
+
 /** Where the film's scenes play: `setup` stages an outtake on the set and says how it was left. */
 export interface FilmSet { setup(id: OuttakeId): Setup }
 /** Every scene the page has by name, for `?scene=`, `window.__scenes` and the recon_scene command. */
 export const SCENES: SceneTable<FilmSet> = {
   credits: () => credits(),
+  newsreel: () => newsreel(),
   ...Object.fromEntries(OUTTAKES.map((o) => [`outtake-${o.id}`, (w: FilmSet) => outtake(o.id, w.setup(o.id))])),
 };
