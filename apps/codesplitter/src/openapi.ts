@@ -40,7 +40,7 @@ interface Op {
 /**
  * codeSplitter's named failures (#3804). A route's 4xx reply is `{error, tag, ...}`: `error` the sentence a person
  * reads, `tag` one of these, which a client matches on instead of guessing from the status (client.ts makes each one
- * an error class). Each is [its status, what it means]. Route files move onto tags one at a time: branches.ts, then worker.ts.
+ * an error class). Each is [its status, what it means]. Route files move onto tags one at a time: branches.ts, then worker.ts, then agent-routes.ts.
  * A 401 (sign in) and a 5xx stay untagged: the client makes them Unauthorized and Transient for every operation.
  */
 export const ERRORS = {
@@ -65,6 +65,8 @@ export const ERRORS = {
   NoPushClash: [404, "no push clashes with that file"],
   NoSuchCollection: [404, "no such collection"],
   NoSuchRoute: [404, "no API route there"],
+  NoSuchRun: [404, "no coding-agent run by that id in this repo"],
+  NotTheAgent: [403, "only an open thread's own agent answers as the agent, or closes it"],
   NoSuchBranch: [404, "no branch by that name (open, for a parent or a merge)"],
   NoSuchFile: [404, "no such file on the branch"],
   NoSuchChange: [404, "that hunk changed or went: review the branch again"],
@@ -87,6 +89,12 @@ export const ERRORS = {
   NothingToMerge: [409, "the branch has nothing on it yet"],
   NoGit: [409, "the repo has no git yet"],
   PushClash: [409, "a push to the repo's git changed the same lines as edits here: the owner keeps one side, then commit"],
+  PathLocked: [409, "the file is locked (codesplitter-live=locked): it's regenerated, so no agent edits it"],
+  RunEnded: [409, "the run has ended: start a new one with what you'd tell it"],
+  NotesFull: [409, "the run took all the notes it takes: it hears the thread when it runs again"],
+  NothingWaiting: [409, "nothing of the run's waits to land: it landed, was rejected or never had a batch"],
+  AlreadyLanding: [409, "the batch is landing already"],
+  BatchHeld: [409, "the batch didn't land: it waits, held, and the error says what stopped it"],
   HoldingLines: [409, "you hold lines in another file: let go of them before you wait in line here"],
   TooBig: [413, "the file is too big or too long to dig"],
   BinaryFile: [415, "a binary file: it has no lines to read or edit"],
@@ -146,6 +154,21 @@ export const OP_ERRORS = {
   create_collection: ["BadInput"],
   collect_lines: ["NotYourCollection", "BadInput", "NoSuchRepo", "NoSuchFile", "TooBig", "BinaryFile"],
   get_collection: ["NoSuchCollection"],
+  // agent-routes.ts
+  list_agent_runs: [...REPO, "NoWriteAccess"],
+  start_agent: [...REPO, "AgentsUnavailable", "OwnerOnly", "AdminsOnly", "BadInput", "NoHarness", "PathLocked", "BudgetSpent"],
+  stop_agents: [...REPO, "OwnerOnly", "BadInput"],
+  tell_agent: [...REPO, "NoWriteAccess", "BadInput", "NoSuchRun", "NotesFull", "RunEnded"],
+  list_agent_threads: ["NoWriteAccess"],
+  open_agent_thread: [...REPO, "NoWriteAccess", "BadInput"],
+  read_agent_thread: [...REPO, "NoWriteAccess", "NoSuchRun"],
+  say_in_agent_thread: [...REPO, "NoWriteAccess", "NoSuchRun", "BadInput", "NotTheAgent"],
+  waiting_agent_batches: [...REPO, "BadInput"],
+  rebuild_engine_lines: [...REPO, "OwnerOnly"],
+  accept_agent_batch: [...REPO, "OwnerOnly", "PersonOnly", "NoSuchRun", "NothingWaiting", "BranchProtected", "AlreadyLanding", "BranchMoved", "BatchHeld"],
+  hold_agent_batch: [...REPO, "NoWriteAccess", "NoSuchRun", "NothingWaiting", "AlreadyLanding"],
+  look_at_agent_batch: [...REPO, "NoWriteAccess", "NoSuchRun", "NothingWaiting", "AlreadyLanding"],
+  reject_agent_batch: [...REPO, "OwnerOnly", "NoSuchRun", "NothingWaiting", "AlreadyLanding"],
 } as const satisfies Record<string, readonly ErrorTag[]>;
 export type OpWithErrors = keyof typeof OP_ERRORS;
 

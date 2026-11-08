@@ -140,3 +140,53 @@ test("a reply the route didn't declare, a rate limit and a 5xx come back as the 
   expect(await tagOf(held.call("merge_branch", { owner: "ana", repo: "lab", branch: "fix", body: {} }))).toBe("ChecksHold");
   expect(m).toBe(1);
 });
+
+test("each agent route's failure comes back as the tag it declares", async () => {
+  const call = await boot();
+  opened.push(call);
+  // A fake CLI that upper-cases the file; its batch waits a minute on main, so it can be read, held and accepted.
+  call.env.AGENT_EXEC = async (_cmd: unknown, cwd: string) => { const f = join(cwd, "a.ts"); writeFileSync(f, (await Bun.file(f).text()).toUpperCase()); return { code: 0, out: "done" }; };
+  call.env.AGENT_REVIEW_MS = "60000";
+  const as = (user: string) => codesplitter({ url: ORIGIN, retries: 0, send: async (r) => call(user, r.url.slice(ORIGIN.length), { method: r.method, headers: r.headers, ...(r.body && { body: await r.text() }) }) });
+  const post = (u: string, url: string, body: unknown) => call(u, url, { method: "POST", body: JSON.stringify(body) });
+  for (const u of ["ana", "bo", "cy"]) await post(u, "/api/login", { name: u });
+  expect((await post("ana", "/api/repos", { name: "lab" })).status).toBe(201);
+  expect((await post("ana", "/api/repos", { name: "hid", visibility: "private" })).status).toBe(201);
+  expect((await post("ana", "/api/repos/ana/lab/files", { path: "a.ts", content: "export const a = 1;" })).status).toBe(201);
+  expect((await post("ana", "/api/repos/ana/lab/files", { path: ".gitattributes", content: "gen.ts codesplitter-live=locked\n" })).status).toBe(201);
+  await post("ana", "/api/repos/ana/lab/collaborators", { name: "bo" });
+  const ana = as("ana"), bo = as("bo"), cy = as("cy"), at = { owner: "ana", repo: "lab" };
+  const task = { path: "a.ts", harness: "claude", task: "shout" };
+
+  const cases: [string, Effect.Effect<unknown, Failure<OpWithErrors>>, string][] = [
+    ["runs of a repo you can't see", cy.call("list_agent_runs", { owner: "ana", repo: "hid" }), "NoSuchRepo"],
+    ["runs, off the crew", cy.call("list_agent_runs", at), "NoWriteAccess"],
+    ["the crew starting one", bo.call("start_agent", { ...at, body: task }), "OwnerOnly"],
+    ["a harness there isn't", ana.call("start_agent", { ...at, body: { ...task, harness: "nope" } }), "BadInput"],
+    ["a locked file", ana.call("start_agent", { ...at, body: { ...task, path: "gen.ts" } }), "PathLocked"],
+    ["stopping by ids that aren't", ana.call("stop_agents", { ...at, body: { ids: "x" } }), "BadInput"],
+    ["telling a run there isn't", ana.call("tell_agent", { ...at, id: 999, body: { text: "hi" } }), "NoSuchRun"],
+    ["a thread, off the crew", cy.call("open_agent_thread", { ...at, body: { path: "a.ts", task: "t" } }), "NoWriteAccess"],
+    ["a thread with no task", bo.call("open_agent_thread", { ...at, body: { path: "a.ts", task: "" } }), "BadInput"],
+    ["reading a thread there isn't", bo.call("read_agent_thread", { ...at, id: 999 }), "NoSuchRun"],
+    ["the engine lines, not the owner", bo.call("rebuild_engine_lines", at), "OwnerOnly"],
+    ["the crew rejecting a batch", bo.call("reject_agent_batch", { ...at, id: 999 }), "OwnerOnly"],
+    ["holding a run there isn't", bo.call("hold_agent_batch", { ...at, id: 999 }), "NoSuchRun"],
+  ];
+  const got = [];
+  for (const [why, e, want] of cases) got.push([why, await tagOf(e), want]);
+  expect(got.filter(([, tag, want]) => tag !== want)).toEqual([]);
+
+  // A run that finished, its batch waiting on main.
+  const { id } = await (await post("ana", "/api/repos/ana/lab/agents", task)).json() as { id: number };
+  const run = async () => ((await (await call("ana", "/api/repos/ana/lab/agents")).json()) as { id: number; status: string; pending?: { hash: string } }[]).find((r) => r.id === id);
+  for (const end = performance.now() + 15_000; performance.now() < end && !(await run())?.pending;) await Bun.sleep(20);
+  const after = [
+    ["telling a run that ended", await tagOf(bo.call("tell_agent", { ...at, id, body: { text: "more" } })), "RunEnded"],
+    ["speaking as an agent that isn't yours", await tagOf(bo.call("say_in_agent_thread", { ...at, id, body: { text: "hi", as: "agent" } })), "NotTheAgent"],
+    ["accepting a batch you didn't read", await tagOf(ana.call("accept_agent_batch", { ...at, id, body: { hash: "old" } })), "BranchMoved"],
+    ["accepting it, read", await tagOf(ana.call("accept_agent_batch", { ...at, id, body: { hash: (await run())!.pending!.hash } })), "ok"],
+    ["holding one that landed", await tagOf(bo.call("hold_agent_batch", { ...at, id })), "NothingWaiting"],
+  ];
+  expect(after.filter(([, tag, want]) => tag !== want)).toEqual([]);
+});
