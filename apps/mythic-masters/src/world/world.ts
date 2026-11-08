@@ -381,12 +381,11 @@ export const PACE_MAX = 20;  // m/s: no beast carries you faster than the ground
 const GLIDE_SLOPE = -0.08;   // the ground falling this steeply ahead (metres down per metre on) and a flier glides
 export type Gait = "walk" | "wade" | "swim" | "glide";
 /**
- * How fast you cross the ground, and how: `base` is the lead's walking pace, `depth` the water over the ground where you
+ * How fast you cross the ground, and how: `v` is the pace on dry level ground (walking or running), `depth` the water over the ground where you
  * stand (above WADE_DEPTH is a wade at under half pace, or a swim with a swimmer along), `slope` the ground's fall ahead
  * (negative is downhill: a flier glides it half as fast again). Never past PACE_MAX.
  */
-export function pace(base: number, dash: boolean, depth: number, slope: number): { v: number; gait: Gait } {
-  const v = base * (dash ? 2 : 1);
+export function pace(v: number, depth: number, slope: number): { v: number; gait: Gait } {
   const wet = depth > WADE_DEPTH, gait: Gait = wet ? (can?.has("swimmer") ? "swim" : "wade") : slope < GLIDE_SLOPE && can?.has("flier") ? "glide" : "walk";
   const k = gait === "wade" ? 0.45 : gait === "swim" ? 1.25 : gait === "glide" ? 1.5 : 1;
   return { v: Math.min(PACE_MAX, v * k), gait };

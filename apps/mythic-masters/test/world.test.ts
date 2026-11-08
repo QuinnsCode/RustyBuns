@@ -246,7 +246,7 @@ describe("beast travel", () => {
     const { pace, PACE_MAX, setTravel } = await import("../src/world/world.ts");
     try {
       const rows: [string[], boolean, number, number, Gait, number][] = [
-        // line-up, dash, depth, slope, gait, pace for a base of 8 m/s
+        // line-up, dash, depth, slope, gait, pace for 8 m/s walking, 16 running
         [["hodag"], false, 0, 0, "walk", 8],
         [["hodag"], false, 0.6, 0, "wade", 3.6],
         [["champ"], false, 0.6, 0, "swim", 10],
@@ -257,7 +257,7 @@ describe("beast travel", () => {
       ];
       for (const [party, dash, depth, slope, gait, v] of rows) {
         setTravel(party.map(creature));
-        expect({ party, ...pace(8, dash, depth, slope) }).toEqual({ party, v, gait });
+        expect({ party, ...pace(dash ? 16 : 8, depth, slope) }).toEqual({ party, v, gait });
       }
     } finally { setTravel(null); }
   });
