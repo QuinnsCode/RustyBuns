@@ -7348,7 +7348,8 @@ function checkRow(c, canRun = false) {
  * what to expect while GitHub is down, and main's own checks, where GitHub's catch up.
  */
 async function wireCheckHead(el, owner, repo, r) {
-  const [s, main] = await Promise.all([api(`/repos/${owner}/${repo}/checks/settings`).catch(() => null), api(`/repos/${owner}/${repo}/checks?ref=main`).catch(() => null)]);
+  const [s, main, road] = await Promise.all([api(`/repos/${owner}/${repo}/checks/settings`).catch(() => null), api(`/repos/${owner}/${repo}/checks?ref=main`).catch(() => null),
+    r.canWrite ? api(`/repos/${owner}/${repo}/pipeline`).catch(() => null) : null]);
   if (!s) return;
   document.getElementById("checkhead")?.remove();
   const isOwner = owner === me();
@@ -7359,15 +7360,23 @@ async function wireCheckHead(el, owner, repo, r) {
     <button id="check-fresh" class="btn ghost" aria-pressed="${!!s.fresh_main}" title="${s.fresh_main ? "Fresh main: once a branch merges, the others' checks run again on main as it is now before they can merge. Click to let an older green count" : "A branch's green counts even after another merges into main. Click to check each again on main as it is now (merge train)"}">${icon("train-front")}</button>` : "";
   const down = s.offline ? `<span class="muted">${icon("cloud-off")} GitHub has been down${s.down_since ? ` since ${new Date(s.down_since).toLocaleTimeString()}` : ""}. Keep going: commits, branches and merges work here, checks run on this machine, and everything syncs to GitHub when it's back.</span>` : "";
   const mainRow = main?.runs.length ? `<div class="commit"><code>main</code><span class="muted">checks on the latest commit${s.github ? ", GitHub's included once it has them" : ""}</span>${checkRow(main)}</div>` : "";
-  if (!pick && !down && !mainRow) return;
+  // A release cut (#3313): with a pipeline file and checks here, every often and release lane runs and every bus leaves.
+  const lanes = road?.source === "codesplitter.pipeline.json" && s.here ? road.plan.find((x) => x.lanes)?.lanes.filter((l) => l.cadence === "often" || l.cadence === "release" || l.cadence === "bus") ?? [] : [];
+  const cut = lanes.length ? `<button id="cut-release" class="btn" title="cut a release: run ${esc(lanes.map((l) => l.lane).join(", "))} on main now, whatever their counts, and send every bus off. A version tag (v1.2) does the same">${icon("rocket")}Release</button>` : "";
+  if (!pick && !down && !mainRow && !cut) return;
   const ci = isOwner ? `<details id="citokens" style="margin-top:6px"><summary class="muted" style="font-size:12px;cursor:pointer">${icon("key-round")} CI tokens: report checks from Jenkins, CircleCI or any CI that talks to GitHub</summary><div class="body"></div></details>` : "";
-  el.insertAdjacentHTML("beforebegin", `<div id="checkhead" class="commit" style="display:block">${pick}${down ? `<div>${down}</div>` : ""}${mainRow}${ci}</div>`);
+  el.insertAdjacentHTML("beforebegin", `<div id="checkhead" class="commit" style="display:block">${pick}${cut}${down ? `<div>${down}</div>` : ""}${mainRow}${ci}</div>`);
   $("#citokens")?.addEventListener("toggle", (e) => { if (e.target.open) wireCiTokens(owner, repo); }, { once: true });
   // Picking an option only stages it: a focused select also changes on a stray key (type-ahead,
   // arrows) or a scroll, so nothing is saved until Save is clicked (#657).
   const sel = $("#check-where"), save = $("#check-where-save"), saved = s.where ?? "";
   sel?.addEventListener("change", () => { save.hidden = sel.value === saved; });
   save?.lastElementChild.addEventListener("click", () => { sel.value = saved; save.hidden = true; });
+  $("#cut-release")?.addEventListener("click", async (e) => {
+    if (!e.isTrusted) return;
+    try { const c = await api(`/repos/${owner}/${repo}/pipeline/release`, {}); toast(`Release cut: ${c.lanes.filter((l) => l.go !== "skip").map((l) => l.lane).join(", ")} on main`); route(); }
+    catch (err) { toast(`No release: ${err.message}`); }
+  });
   // Pinned (#1010): what runs comes from these settings only, never from files a merge can change.
   $("#check-pin")?.addEventListener("click", async (e) => {
     if (!e.isTrusted) return;

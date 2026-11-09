@@ -6,12 +6,15 @@
 //        with each lane's count as the repo keeps it (pipeline-lanes.ts): the checks queue goes by the same plan
 //   POST /api/pipeline {pipeline?, change: {files, release?, counts?}}
 //        the same for a pipeline you send, so an agent can try one before committing it
+//   POST /api/repos/:o/:r/pipeline/release
+//        the crew cuts a release at main's tip: every often and release lane runs and every bus leaves (cutRelease
+//        in checks.ts). A version tag made here (tags.ts) does the same. 409 without a pipeline file or checks run here
 
 import { arr, bool, int, obj, opt, rec, str } from "@rustybuns/util/guard";
 import { json, need, readBody, type Env } from "./env.ts";
 import { repoPipeline } from "./pipeline-hooks.ts";
 import { laneCounts } from "./pipeline-lanes.ts";
-import { DEFAULT_PIPELINE, Pipeline, plan, tally, type Change, type LaneCall } from "./pipeline.ts";
+import { DEFAULT_PIPELINE, PIPELINE_FILE, Pipeline, plan, tally, type Change, type LaneCall } from "./pipeline.ts";
 
 const Change = obj({ files: arr(str(500), 2000), release: opt(bool()), counts: opt(rec(int(0, 1e6), 50)) });
 const Body = obj({ pipeline: opt(Pipeline), change: Change });
@@ -23,8 +26,20 @@ function answer(p: Pipeline, change: Change, source: string) {
   return { source, pipeline: p, plan: steps, counts: tally(change.counts ?? {}, lanes) };
 }
 
-export async function pipelineRoutes(req: Request, env: Env, p: string[], url: URL,
+export async function pipelineRoutes(req: Request, env: Env, p: string[], url: URL, user: string | null,
   access: (owner: string, repo: string) => Promise<{ read: boolean; write: boolean }>): Promise<Response | null> {
+  if (p[1] === "repos" && p[2] && p[3] && p[4] === "pipeline" && p[5] === "release" && !p[6] && req.method === "POST") {
+    const [owner, repo] = [p[2], p[3]];
+    const { read, write } = await access(owner, repo);
+    if (!read) return json({ error: "not found" }, 404);
+    if (!write || !user) return json({ error: "no write access" }, 403);
+    const { cutRelease, headOf, refChecks } = await import("./checks.ts");
+    const sha = await headOf(env, owner, repo, "main");
+    if (!sha) return json({ error: "main has no commit yet" }, 409);
+    const lanes = await cutRelease(env, owner, repo, sha, user);
+    if (!lanes) return json({ error: `a release runs the lanes in ${PIPELINE_FILE}: this repo needs one on main, and its checks running here` }, 409);
+    return json({ sha, lanes, checks: await refChecks(env, owner, repo, "main") }, 202);
+  }
   if (p[1] === "pipeline" && !p[2] && req.method === "POST") {
     const b = need(await readBody(req), Body);
     if (b instanceof Response) return b;

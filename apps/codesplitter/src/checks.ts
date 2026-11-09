@@ -258,7 +258,7 @@ export async function updateRun(env: Env, run: CheckRun, u: { status?: Status; l
 export async function startChecks(env: Env, owner: string, repo: string, ref: string, sha: string, by: string, files?: string[]) {
   try {
     const s = await checkSettings(env, owner, repo);
-    if (s.here) await queueHere(env, owner, repo, ref, sha, by, s.where === "github" ? "GitHub is down, so this runs here instead. GitHub's checks run when the mirror catches up.\n" : "", false, undefined, files);
+    if (s.here) await queueHere(env, owner, repo, ref, sha, by, s.where === "github" ? "GitHub is down, so this runs here instead. GitHub's checks run when the mirror catches up.\n" : "", false, undefined, files && { files });
     if ((s.where === "github" || s.where === "both") && s.github) await watchGithub(env, owner, repo, ref, sha);
   } catch {
     // Checks never get in the way of what happened.
@@ -271,6 +271,20 @@ export async function upstreamMoved(env: Env, owner: string, repo: string, ref: 
     const s = await checkSettings(env, owner, repo);
     if ((s.where === "github" || s.where === "both") && s.github) await watchGithub(env, owner, repo, ref, sha);
   } catch {}
+}
+
+/**
+ * Cut a release at main's `sha` (the pipeline's Release button, or a version tag made here, `tag`): every often and
+ * release lane runs and every bus leaves, whatever the counts, and they all start again at 0 (pipeline-lanes.ts).
+ * Null when it can't: checks don't run here, or the repo has no pipeline file (its one lane already runs every change).
+ */
+export async function cutRelease(env: Env, owner: string, repo: string, sha: string, by: string, tag?: string) {
+  const s = await checkSettings(env, owner, repo);
+  if (!s.here) return null;
+  const calls = await (await import("./pipeline-lanes.ts")).laneCalls(env, owner, repo, [], true);
+  if (!calls) return null;
+  await queueHere(env, owner, repo, "main", sha, by, `@${by} cut a release${tag ? ` (tag ${tag})` : ""}\n`, false, undefined, { files: [], release: true });
+  return calls.map((l) => l.call);
 }
 
 /** The mirror took upstream's commits onto `ref`, now at `sha` here: run our own checks on them, when checks run here. */
@@ -411,10 +425,12 @@ export async function planChecks(env: Env, owner: string, repo: string, ref: str
  * call is run or depart: a lane's own command as a check of its name, or, with none, the repo's own checks (planChecks);
  * the required checks with a command go too, since a merge waits on them. Without a file, unknown paths (a Run on main,
  * upstream's commits) or pinned, planChecks as it is. `calls` is each lane's call, for the note on a run and the counts.
+ * A release (cutRelease) is no one change: every often and release lane runs and every bus leaves, each over everything.
  */
-export async function planLanes(env: Env, owner: string, repo: string, ref: string, s: { required: Required[]; pinned: boolean }, paths: string[] | null):
+export async function planLanes(env: Env, owner: string, repo: string, ref: string, s: { required: Required[]; pinned: boolean }, paths: string[] | null, release = false):
   Promise<{ checks: { name: string; command?: string; why?: string }[]; calls: LaneCall[] | null }> {
-  const lanes = paths && !s.pinned ? await (await import("./pipeline-lanes.ts")).laneCalls(env, owner, repo, paths) : null;
+  const lanes = (paths || release) && !s.pinned ? await (await import("./pipeline-lanes.ts")).laneCalls(env, owner, repo, paths ?? [], release) : null;
+  if (release) paths = null;
   if (!lanes) return { checks: await planChecks(env, owner, repo, ref, s.required, paths, s.pinned), calls: null };
   const go = lanes.filter(({ call }) => call.go === "run" || call.go === "depart");
   const checks = new Map<string, { name: string; command?: string; why?: string }>();
@@ -451,7 +467,7 @@ export async function handToDesktop(env: Env, run: CheckRun, tool: Need) {
 export const RUN_ON = ["desktop", "hosted"] as const;
 export type RunOn = (typeof RUN_ON)[number];
 
-async function queueHere(env: Env, owner: string, repo: string, ref: string, sha: string, by: string, why = "", edit = false, on?: RunOn, files?: string[]) {
+async function queueHere(env: Env, owner: string, repo: string, ref: string, sha: string, by: string, why = "", edit = false, on?: RunOn, change?: { files: string[]; release?: boolean }) {
   const runner: Runner = on === "desktop" ? "desktop" : on === "hosted" || env.CI_RUNNER || typeof Bun === "undefined" ? "container" : "desktop";
   const s = await checkSettings(env, owner, repo);
   if (!edit) {
@@ -459,9 +475,9 @@ async function queueHere(env: Env, owner: string, repo: string, ref: string, sha
     const { results } = await env.DB.prepare("SELECT * FROM check_runs WHERE owner = ? AND repo = ? AND ref = ? AND (sha != ? OR ?) AND runner IN ('desktop', 'container') AND status = 'queued'").bind(owner, repo, ref, sha, on ? 1 : 0).all<CheckRun>();
     for (const old of results) await updateRun(env, old, { status: "cancelled", append: old.sha === sha ? `\n@${by} sent it ${on === "hosted" ? "to the hosted container" : "to the desktop or a runner of their own"} instead: cancelled\n` : `\n${sha.slice(0, 12)} came along before a runner did: cancelled\n` }, by);
   }
-  const { checks, calls } = await planLanes(env, owner, repo, ref, s, files ?? await touched(env, owner, repo, ref));
-  // A change that landed on main moves each lane's count on; a branch's checks only read them (pipeline-lanes.ts).
-  if (calls && ref === "main" && files) await (await import("./pipeline-lanes.ts")).keepCounts(env, owner, repo, calls);
+  const { checks, calls } = await planLanes(env, owner, repo, ref, s, change?.files ?? await touched(env, owner, repo, ref), change?.release);
+  // A change that landed on main (or a release cut) moves each lane's count on; a branch's checks only read them (pipeline-lanes.ts).
+  if (calls && ref === "main" && change) await (await import("./pipeline-lanes.ts")).keepCounts(env, owner, repo, calls);
   for (const { name, command, why: lane } of checks) {
     const live = edit
       ? await env.DB.prepare("SELECT 1 FROM check_runs WHERE owner = ? AND repo = ? AND ref = ? AND name = ? AND runner IN ('desktop', 'container') AND status = 'queued'").bind(owner, repo, ref, name).first()
