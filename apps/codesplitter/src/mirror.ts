@@ -189,8 +189,22 @@ async function crewSynced(lg: LocalGit, r: { artifact: string; crew_artifact: st
 /** The git that's kept in step with upstream: the crew's copy (see crewSynced), else the repo's own. */
 const syncedDir = async (lg: LocalGit, r: Parameters<typeof crewSynced>[1]) => lg.path(await crewSynced(lg, r) ? r.crew_artifact! : r.artifact);
 
-/** A try that didn't work: say why, and back off (1, 2, 4… minutes, up to MAX_WAIT). */
-async function failed(env: Env, r: Row, state: Exclude<State, "ok">, error: string, clash: string[] = []) {
+/** What a push upstream turned away says to the person, in plain words. */
+const PUSH_SAYS = {
+  refused: "upstream turned the push away: the sign-in this mirror uses may not write to that branch",
+  down: "upstream didn't take the push, so it tries again shortly",
+} as const;
+/** Git's words for a push turned away because of who we are (no rights, a protected branch): refused, not down. */
+const REFUSED = /\b40[13]\b|denied|permission|not allowed|protected branch|authentication|forbidden/i;
+/** A push that failed: refused or down, with git's own words along for the log only. */
+const turnedAway = (said: string) => ({ state: REFUSED.test(said) ? "refused" as const : "down" as const, git: said });
+
+/**
+ * A try that didn't work: say why, and back off (1, 2, 4… minutes, up to MAX_WAIT). `error` is what the person reads, a plain
+ * sentence; `gitSaid` is git's own words, which only the log keeps (the hide-git mission).
+ */
+async function failed(env: Env, r: Row, state: Exclude<State, "ok">, error: string, clash: string[] = [], gitSaid = "") {
+  if (gitSaid) console.warn(`mirror ${r.owner}/${r.name} ${state}: ${gitSaid.slice(0, 2000)}`);
   const fails = (r.mirror_fails ?? 0) + 1, now = Date.now();
   const downSince = state === "down" ? r.mirror_down_since ?? now : null;
   await env.DB.prepare("UPDATE repos SET mirror_state = ?, mirror_error = ?, mirror_clash = ?, mirror_down_since = ?, mirror_fails = ?, mirror_next_at = ? WHERE owner = ? AND name = ?")
@@ -267,8 +281,7 @@ async function step(env: Env, owner: string, repo: string, o: { resolve?: Resolv
     if (!p.code) return null;
     const said = [p.err, p.out].filter(Boolean).join("\n");
     if (/\[rejected\]|non-fast-forward|fetch first/.test(said)) return "moved" as const;
-    const refused = /\b40[13]\b|denied|permission|not allowed|protected branch|authentication|forbidden/i.test(said);
-    return { state: refused ? "refused" as const : "down" as const, said: said || "upstream didn't take the push" };
+    return turnedAway(said);
   };
   try {
     // Commits pushed to this git from outside reach the files open here first (#773).
@@ -280,7 +293,7 @@ async function step(env: Env, owner: string, repo: string, o: { resolve?: Resolv
       if (!known.code && last !== tip && await isAncestor(dir, last, tip)) {
         const p = await push(tip);
         if (!p) { await must(["update-ref", up, tip], dir); return settled(env, r, tip); }
-        if (p !== "moved") return failed(env, r, p.state, p.said);
+        if (p !== "moved") return failed(env, r, p.state, PUSH_SAYS[p.state], [], p.git);
       }
     }
     // The crew's copy was forked from the repo's own git, which may have synced upstream since: fetch that agreed commit from it.
@@ -298,7 +311,7 @@ async function step(env: Env, owner: string, repo: string, o: { resolve?: Resolv
     const fetch = (limit: string[]) => git(["fetch", "--quiet", "--no-tags", ...limit, r.mirror_url, `+${heads}:${into}`], dir, net);
     let f = await fetch(since ? [`--shallow-since=${since}`] : []);
     if (since && f.code && /shallow/i.test(f.err)) f = await fetch([]);
-    if (f.code) return failed(env, r, "down", f.err || "upstream didn't answer");
+    if (f.code) return failed(env, r, "down", "upstream didn't answer, so it tries again shortly", [], f.err);
     if (r.mirror_path) {
       const source = await must(["rev-parse", into], dir), last = (await git(["rev-parse", "--verify", "--quiet", splitFromRef(branch)], dir)).out.trim();
       if (last !== source) {
@@ -337,7 +350,7 @@ async function step(env: Env, owner: string, repo: string, o: { resolve?: Resolv
         const m = await git(["merge-tree", "--write-tree", "--name-only", "--no-messages", ours, theirs], dir);
         if (m.code > 1) {
           // No common history to merge on, and no agreed commit to tell which commits are ours: all that's left is upstream's.
-          if (resolve !== "upstream") return failed(env, r, "rewritten", `${whose}: ${m.err}`);
+          if (resolve !== "upstream") return failed(env, r, "rewritten", whose, [], m.err);
         } else {
           const [tree, ...files] = m.out.trim().split("\n");
           let merged = tree!;
@@ -373,13 +386,13 @@ async function step(env: Env, owner: string, repo: string, o: { resolve?: Resolv
       const p = await push(ours);
       // Upstream moved since the fetch: the next round merges it in, then pushes.
       if (p === "moved") return again(env, r);
-      if (p) return failed(env, r, p.state, p.said);
+      if (p) return failed(env, r, p.state, PUSH_SAYS[p.state], [], p.git);
       await must(["update-ref", up, ours], dir);
       theirs = ours;
     }
     return settled(env, r, theirs, "ok", null, ours !== before);
   } catch (e) {
-    return failed(env, r, "clash", `sync stopped: ${String((e as Error).message ?? e)}`);
+    return failed(env, r, "clash", "the sync stopped partway, so it tries again shortly", [], String((e as Error).message ?? e));
   }
 }
 
@@ -398,8 +411,8 @@ async function send(env: Env, r: Row, dir: string, net: Record<string, string>, 
   // The branch is this copy's own proposal: a new send replaces it. Upstream's main is never pushed.
   const p = await git(["push", "--porcelain", r.mirror_url, `+${c}:refs/heads/${to}`], dir, net);
   if (p.code) {
-    const said = [p.err, p.out].filter(Boolean).join("\n") || "upstream didn't take the push";
-    return failed(env, r, /\b40[13]\b|denied|permission|not allowed|protected branch|authentication|forbidden/i.test(said) ? "refused" : "down", said);
+    const t = turnedAway([p.err, p.out].filter(Boolean).join("\n"));
+    return failed(env, r, t.state, PUSH_SAYS[t.state], [], t.git);
   }
   const gh = /^https:\/\/github\.com\/([\w.-]+\/[\w.-]+?)(?:\.git)?$/.exec(r.mirror_url)?.[1];
   return settled(env, r, theirs, "held", `sent up as branch ${to}${gh ? `: open a pull request at https://github.com/${gh}/compare/${branch}...${to}` : ", for a pull request"}`, took);
@@ -1205,7 +1218,7 @@ export async function pushBranch(env: Env, owner: string, repo: string, name: st
   if (p.code) {
     const said = [p.err, p.out].filter(Boolean).join("\n");
     if (/\[rejected\]|non-fast-forward|fetch first/.test(said)) return fail("UpstreamMoved", `upstream's ${ref} moved while pushing: push again`);
-    if (/\b40[13]\b|denied|permission|not allowed|protected branch|authentication|forbidden/i.test(said)) { console.warn(`mirror: push refused: ${said}`); return fail("UpstreamRefused", `upstream turned ${ref} away: the token can't write there, or upstream protects that branch`); }
+    if (REFUSED.test(said)) { console.warn(`mirror: push refused: ${said}`); return fail("UpstreamRefused", `upstream turned ${ref} away: the token can't write there, or upstream protects that branch`); }
     return down("upstream didn't take the push", said);
   }
   await must(["update-ref", track, c], dir);
