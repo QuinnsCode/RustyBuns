@@ -3,7 +3,7 @@ import { existsSync } from "node:fs";
 
 import { freshness } from "../public/fresh.js";
 
-type Entry = { name: string; line: string; play?: string; app?: string; download?: string; note?: string; stage: number; best: string[]; store?: string };
+type Entry = { name: string; line: string; play?: string; app?: string; download?: string; note?: string; soon?: boolean; stage: number; best: string[]; store?: string };
 const apps: Entry[] = await Bun.file(`${import.meta.dir}/../public/apps.json`).json();
 
 test("every entry with a source link names an app folder that exists", () => {
