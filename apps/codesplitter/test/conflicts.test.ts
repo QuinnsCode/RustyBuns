@@ -171,6 +171,19 @@ describe("settled without asking (#933)", () => {
     expect(merged(calls, `${calls}\ng(count + 1);`, calls.replace(/count/g, "total"))).toBe("const total = 1;\nf(total);\nz\ng(total + 1);");
   });
 
+  test("a field both sides put into the same calls reaches the calls each side added (#4133, fm-daw net.ts)", () => {
+    // Main put `floor` into each status call and added one; the branch put `locked` in and added one. Every call ends with both.
+    const was = "a();\non(snap, { peers });\non(seen, { peers });\nz();";
+    const onMain = "a();\non(snap, { peers, floor });\non(seen, { peers, floor });\non(held, { peers, floor });\nz();";
+    const onBranch = "a();\non(snap, { peers, locked });\non(seen, { peers, locked });\nz();\non(lock, { peers, locked });";
+    const all = (k: string) => `on(${k}, { peers, floor, locked });`;
+    expect(merged(was, onMain, onBranch)).toBe(["a();", all("snap"), all("seen"), all("held"), "z();", all("lock")].join("\n"));
+    // On one line it's an edit, not a pattern: the new lines stay as written.
+    const one = "a();\non(snap, { peers });\nz();";
+    expect(merged(one, "a();\non(snap, { peers, floor });\non(held, { peers, floor });\nz();", "a();\non(snap, { peers, locked });\nz();"))
+      .toBe("a();\non(snap, { peers, floor, locked });\non(held, { peers, floor });\nz();");
+  });
+
   test("no rename carried where it isn't one: the old name still on main, one line changed, two new names, or prose words", () => {
     const was = "a(x.hero);\nb(x.hero);\nc(x.hero);\nz";
     // Main still has a `.hero` left.

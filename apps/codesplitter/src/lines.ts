@@ -334,6 +334,12 @@ function mergeLines(base: Doc, branch: Doc, main: Doc, given: Resolve, deleter: 
     const into = new Set([...movedOnBranch.values()].map((l) => l.id)), scoped = scopes(branch.lines);
     branch = { ...branch, lines: branch.lines.map((l) => was.has(l.id) || into.has(l.id) ? l : { ...l, text: carry(l.text, mainRenames, loose(l.text), scoped.get(l.id)) }) };
   }
+  // An edit both sides made to the same lines, each its own way, reaches the lines each side wrote like them (#4133).
+  const echo = kind === "code" ? echoes(base, main, branch, loose) : { onMain: [], onBranch: [] };
+  if (echo.onBranch.length) {
+    const into = new Set([...movedOnBranch.values()].map((l) => l.id));
+    branch = { ...branch, lines: branch.lines.map((l) => was.has(l.id) || into.has(l.id) ? l : { ...l, text: echoed(l.text, echo.onBranch) }) };
+  }
   const moveOf = new Map([...movedOnBranch].map(([id, l]) => [l.id, id]));
   const mainPos = places(base, main), branchPos = places(base, branch);
   const mainHunks = hunks(base, main, mainPos, movedOnMain), branchHunks = hunks(base, branch, branchPos, movedOnBranch);
@@ -448,7 +454,9 @@ function mergeLines(base: Doc, branch: Doc, main: Doc, given: Resolve, deleter: 
       for (const m of ms) if (!keep.has(m.id)) push({ kind: "delete", line: m.id, base: m.rev }, deleter);
       for (const e of both) {
         if (!e.m) { insert(e.text, e.by); continue; }
-        if (e.text !== e.m.text) push({ kind: "set", line: e.m.id, base: e.m.rev, text: e.text }, e.by);
+        // A line main added here gets the branch's echoes, as its new lines outside a stretch do below.
+        const t = was.has(e.m.id) ? e.text : echoed(e.text, echo.onMain);
+        if (t !== e.m.text) push({ kind: "set", line: e.m.id, base: e.m.rev, text: t }, e.by);
         after = e.m.id;
       }
       return;
@@ -515,11 +523,11 @@ function mergeLines(base: Doc, branch: Doc, main: Doc, given: Resolve, deleter: 
     if (m) after = m.id;
   }
   while (r < regions.length) settle(regions[r++]!);
-  if (branchRenames.length) {
+  if (branchRenames.length || echo.onMain.length) {
     const touched = new Set(ops.flatMap((o) => o.kind === "insert" ? [] : [o.line])), scoped = scopes(main.lines);
     for (const m of main.lines) {
       if (was.has(m.id) || movedIn.has(m.id) || touched.has(m.id) || inRegion(mainPos.get(m.id)!)) continue;
-      const t = carry(m.text, branchRenames, loose(m.text), scoped.get(m.id));
+      const t = echoed(carry(m.text, branchRenames, loose(m.text), scoped.get(m.id)), echo.onMain);
       if (t !== m.text) push({ kind: "set", line: m.id, base: m.rev, text: t }, m.by);
     }
   }
@@ -1301,6 +1309,51 @@ const declares = (t: string, name: string, head: boolean) =>
 /** `t`, a line one side added in the function `scope`, with the other side's renames carried into it. Prose and comments skip short and common words. */
 const carry = (t: string, rs: Rename[], loose: boolean, scope: string | null | undefined) =>
   rs.reduce((s, r) => (r.scope && r.scope !== scope) || (loose && (r.moved || r.from.length < 3 || STOP.has(r.from.toLowerCase()))) ? s : renamed(s, r), t);
+
+/** One side's edit as it reads on the other side's text: `from` (the words it changes, with a few around them) becomes `to`. */
+interface Echo { from: string; to: string }
+
+/**
+ * Edits both sides made to the same lines (#4133, fm-daw net.ts): main put `floor` and the branch `locked` into
+ * each `onStatus({ state, peers })`, and the word merge keeps both there. But main also wrote new
+ * `onStatus({ …, peers, floor })` lines the branch never saw, and the branch new `…, peers, locked })` ones: each
+ * lacks the other side's field. Where the blend of two or more such lines makes the same swap on one side's text
+ * (`peers, floor })` to `peers, floor, locked })`), that side's new lines get it too (`onMain` for main's,
+ * `onBranch` for the branch's). A swap that reads two ways isn't carried.
+ */
+function echoes(base: Doc, main: Doc, branch: Doc, loose: (t: string) => boolean): { onMain: Echo[]; onBranch: Echo[] } {
+  const m = new Map(main.lines.map((l) => [l.id, l.text])), b = new Map(branch.lines.map((l) => [l.id, l.text]));
+  const onMain: Echo[] = [], onBranch: Echo[] = [];
+  for (const l of base.lines) {
+    const mt = m.get(l.id), bt = b.get(l.id);
+    if (mt === undefined || bt === undefined || mt === l.text || bt === l.text || mt === bt || loose(l.text)) continue;
+    const both = blendLine(l.text, mt, bt, false);
+    if (both === null) continue;
+    const a = swap(mt, both), c = swap(bt, both);
+    if (a) onMain.push(a);
+    if (c) onBranch.push(c);
+  }
+  const held = (es: Echo[]) => es.filter((e, i) => es.findIndex((x) => x.from === e.from && x.to === e.to) === i
+    && es.filter((x) => x.from === e.from && x.to === e.to).length >= 2 && !es.some((x) => x.from === e.from && x.to !== e.to));
+  return { onMain: held(onMain), onBranch: held(onBranch) };
+}
+
+/** What turned `side` into `both`, with three words either side of it, or null when that says too little to look for. */
+function swap(side: string, both: string): Echo | null {
+  const s = words(side), x = words(both);
+  let p = 0, q = 0;
+  while (p < s.length && p < x.length && s[p] === x[p]) p++;
+  while (q < s.length - p && q < x.length - p && s[s.length - 1 - q] === x[x.length - 1 - q]) q++;
+  if (p === s.length && p === x.length) return null;
+  let lo = p, hi = s.length - q;
+  for (let n = 0; lo > 0 && n < 3; lo--) if (/\S/.test(s[lo - 1]!)) n++;
+  for (let n = 0; hi < s.length && n < 3; hi++) if (/\S/.test(s[hi]!)) n++;
+  const from = s.slice(lo, hi).join(""), to = x.slice(lo, x.length - (s.length - hi)).join("");
+  return from.trim().length >= 8 && /\w{2}/.test(from) ? { from, to } : null;
+}
+
+/** `t`, a line one side added, with each of the other side's echoes in it. */
+const echoed = (t: string, es: Echo[]) => es.reduce((s, e) => s.includes(e.to) ? s : s.split(e.from).join(e.to), t);
 
 /**
  * One line both changed: word by word, else as a list both added items to (see mergeWords).
