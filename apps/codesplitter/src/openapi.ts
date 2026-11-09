@@ -85,6 +85,7 @@ export const ERRORS = {
   NoSuchTag: [404, "no tag by that name here"],
   NoSuchFolder: [404, "upstream's branch has no folder by that path"],
   NoSuchInvite: [404, "no pending invite by that id or link: it was revoked, or never was"],
+  NoSuchJob: [404, "no request of yours by that id waits in line or ran"],
   NotOnGitHub: [404, "GitHub has no repo there that this server can read: a private one digs up in the desktop app"],
   NoPageRepo: [404, "no page repo yet: make a public repo named page"],
   BranchExists: [409, "a branch by that name exists"],
@@ -246,6 +247,8 @@ export const OP_ERRORS = {
   withdraw_beam: ["NoSuchBeam", "NotYourBeam"],
   beam_patch: ["NoSuchBeam", "BeamGone", "NoSuchRepo", "GitUnavailable", "NoGit"],
   my_beams: ["SignInFirst"],
+  // limits.ts
+  get_job: ["NoSuchJob"],
 } as const satisfies Record<string, readonly ErrorTag[]>;
 export type OpWithErrors = keyof typeof OP_ERRORS;
 

@@ -330,3 +330,14 @@ test("each beam route's failure comes back as the tag it declares", async () => 
   expect(await tagOf(ana.call("withdraw_beam", { id }))).toBe("ok");
   expect(await tagOf(nobody.call("beam_patch", { id }))).toBe("BeamGone");
 });
+
+test("a job that isn't yours and the limits' admin routes come back named", async () => {
+  const call = await boot();
+  opened.push(call);
+  call.env.ADMINS = "root"; // with no accounts, everyone here is an admin
+  await call("ana", "/api/login", { method: "POST", body: JSON.stringify({ name: "ana" }) });
+  const ana = codesplitter({ url: ORIGIN, retries: 0, send: async (r) => call("ana", r.url.slice(ORIGIN.length), { method: r.method, headers: r.headers, ...(r.body && { body: await r.text() }) }) });
+  expect(await tagOf(ana.call("get_job", { id: 999 }))).toBe("NoSuchJob");
+  const reset = await call("ana", "/api/admin/limits/reset", { method: "POST", body: JSON.stringify({ who: "bo" }) });
+  expect([reset.status, ((await reset.json()) as { tag?: string }).tag]).toEqual([403, "AdminsOnly"]);
+});
