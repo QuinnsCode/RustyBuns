@@ -53,7 +53,7 @@ export const META: MetaTool[] = [
     annotations: annotations("Describe codeSplitter tools", { readOnlyHint: true, idempotentHint: true }) },
   { name: "execute", title: "Run a program over the tools",
     description: "Run JavaScript over codeSplitter's tools and get back only what it returns. Prefer this to calling tools one at a time: read, filter, claim, edit and release in one program, and the file's lines never enter your context. "
-      + "The program is the body of an async function. Each tool is `await tools.<name>({...})`, with the arguments describe_tools gives; its JSON answer comes back parsed, and an error throws with its status first (`409: …`, so catch a 409, read again and retry). console.log lines come back too. "
+      + "The program is the body of an async function. Each tool is `await tools.<name>({...})`, with the arguments describe_tools gives; its JSON answer comes back parsed, and an error throws with its status first and then the JSON reply, whose tag names the failure (`409: {\"tag\":\"LinesChanged\",…}`, so catch it, read again and retry). console.log lines come back too. "
       + "`return` a small answer: a count, ids, a few lines, never a whole file. "
       + `At most ${MAX_CALLS} tool calls, ${RUN_MS / 1000} s, ${MAX_BACK.toLocaleString("en")} characters back; no network but the tools. Your token's scope applies. Tools marked risky (they ship code, change who can get in or see what, or can't be undone) aren't callable here: use call_tool, so the person is asked. `
       + "A program that worked can be kept: save_program({ name, body: { code, description } }), then execute { program: name, input } reruns it, and list_programs lists yours; write programs to take what varies (owner, repo, path) from `input`. "
