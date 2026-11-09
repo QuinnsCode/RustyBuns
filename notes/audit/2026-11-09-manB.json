@@ -1,0 +1,418 @@
+[
+  {
+    "n": 3215,
+    "verdict": "taste",
+    "why": "Ears only: pick which of the twelve dub setups (#3214 merged 2026-11-01) has the feel.",
+    "dupOf": null
+  },
+  {
+    "n": 3232,
+    "verdict": "taste",
+    "why": "eqosys is live past #3230 (live eqosys answers POST /api/deploys, from #3896 on 2026-11-07); left: the owner's own sign-in bounce, the achievement toast's look, and eq_execute signed in.",
+    "dupOf": null
+  },
+  {
+    "n": 3291,
+    "verdict": "taste",
+    "why": "Carousel drift/drag/pad feel on the owner's eye and pad (#3290 merged 2026-11-03).",
+    "dupOf": null
+  },
+  {
+    "n": 3306,
+    "verdict": "duplicate",
+    "why": "Comments say superseded by #3448 (Priority: Bob steps), which has every step left.",
+    "dupOf": 3448
+  },
+  {
+    "n": 3319,
+    "verdict": "taste",
+    "why": "Approve the stadium crowd's cheer takes by eye.",
+    "dupOf": null
+  },
+  {
+    "n": 3326,
+    "verdict": "taste",
+    "why": "Owner's Mac: Docker folder is still 146 GB and the data volume 97% full (15 GiB free) on 2026-11-09; urgent.",
+    "dupOf": null
+  },
+  {
+    "n": 3331,
+    "verdict": "taste",
+    "why": "Feel check on a controller for squaring up (#3328 merged).",
+    "dupOf": null
+  },
+  {
+    "n": 3336,
+    "verdict": "taste",
+    "why": "Camera reels in motion, eyes only (#3335 merged).",
+    "dupOf": null
+  },
+  {
+    "n": 3342,
+    "verdict": "done",
+    "why": "https://qcrm.qntbr.com and /demo both answer 200 (2026-11-09), so the deploy landed; the App Center card is QuinnsCode/qbear3#87, another repo.",
+    "dupOf": null
+  },
+  {
+    "n": 3346,
+    "verdict": "duplicate",
+    "why": "Same six-app first deploy; #3399 is the later sheet (fm-daw dropped) with the same apps.",
+    "dupOf": 3399
+  },
+  {
+    "n": 3352,
+    "verdict": "duplicate",
+    "why": "Comment says moved to #4058 (one script for all 8 names, then v0.1.12); #4059 merged 2026-11-09.",
+    "dupOf": 4058
+  },
+  {
+    "n": 3386,
+    "verdict": "taste",
+    "why": "Owner's Mac disk sweep (--go and sending worktrees home are the owner's call); disk still 97% full today.",
+    "dupOf": null
+  },
+  {
+    "n": 3396,
+    "verdict": "taste",
+    "why": "eqosys is live past #3391/#3394 (deployed after #3896); left: the owner signs in to Skate Tech Park and tries Spaces. Qlave secret half is #3444.",
+    "dupOf": null
+  },
+  {
+    "n": 3397,
+    "verdict": "duplicate",
+    "why": "Comments say superseded by #3448.",
+    "dupOf": 3448
+  },
+  {
+    "n": 3399,
+    "verdict": "taste",
+    "why": "Owner's deploys: mythic-masters, splat-rooms, sharesplat answer 200 but motion-midi and auto-rig .workers.dev still 404, and splat-spray.notryanquinn.workers.dev 404.",
+    "dupOf": null
+  },
+  {
+    "n": 3413,
+    "verdict": "taste",
+    "why": "Owner's own score of the ground decides #3262.",
+    "dupOf": null
+  },
+  {
+    "n": 3434,
+    "verdict": "taste",
+    "why": "Needs the owner's office:update first; then the refuse/hold check from a worker terminal (an agent can do steps 2-3 once the office runs #3426).",
+    "dupOf": null
+  },
+  {
+    "n": 3439,
+    "verdict": "taste",
+    "why": "Needs a native Spanish speaker.",
+    "dupOf": null
+  },
+  {
+    "n": 3442,
+    "verdict": "taste",
+    "why": "Two browsers with microphones talking on the live voice channel.",
+    "dupOf": null
+  },
+  {
+    "n": 3443,
+    "verdict": "duplicate",
+    "why": "Comments say superseded by #3448.",
+    "dupOf": 3448
+  },
+  {
+    "n": 3444,
+    "verdict": "taste",
+    "why": "1Password item plus a wrangler secret on the owner's clave checkout.",
+    "dupOf": null
+  },
+  {
+    "n": 3445,
+    "verdict": "taste",
+    "why": "Owner's redeploys from their checkout; auto-rig and motion-midi still 404 (overlaps #3399); freshness of the others not checkable from here.",
+    "dupOf": null
+  },
+  {
+    "n": 3448,
+    "verdict": "taste",
+    "why": "Bob and the Apple account: Xcode sign-in, Team ID, iOS day; owner's hardware and account.",
+    "dupOf": null
+  },
+  {
+    "n": 3450,
+    "verdict": "done",
+    "why": "eqosys was redeployed after #3449 (live has #3896's /api/deploys route, merged 2026-11-07), so the width fix is live.",
+    "dupOf": null
+  },
+  {
+    "n": 3458,
+    "verdict": "taste",
+    "why": "Owner's deploy: https://at-lens.notryanquinn.workers.dev still 404 on 2026-11-09.",
+    "dupOf": null
+  },
+  {
+    "n": 3461,
+    "verdict": "done",
+    "why": "Owner picked 0 Classic, 8 Case file, 19 Sketchbook on 2026-11-08 (comment); round 2 is #3962.",
+    "dupOf": null
+  },
+  {
+    "n": 3512,
+    "verdict": "taste",
+    "why": "Faces on the owner's own photos.",
+    "dupOf": null
+  },
+  {
+    "n": 3517,
+    "verdict": "taste",
+    "why": "Whether the cornered rally feels fair in play.",
+    "dupOf": null
+  },
+  {
+    "n": 3525,
+    "verdict": "taste",
+    "why": "desktop-drop.yml is the owner's to dispatch, plus a look at the faces on each OS.",
+    "dupOf": null
+  },
+  {
+    "n": 3536,
+    "verdict": "taste",
+    "why": "eqosys /privacy answers 200 with \"What we keep\" (deployed); left: download the owner's own data and read the page.",
+    "dupOf": null
+  },
+  {
+    "n": 3573,
+    "verdict": "taste",
+    "why": "Two eqosys accounts that are friends, reading the Book together on the live game.",
+    "dupOf": null
+  },
+  {
+    "n": 3576,
+    "verdict": "taste",
+    "why": "Direction given 2026-11-05 (comment) but the owner's score out of 10 is still unrecorded.",
+    "dupOf": null
+  },
+  {
+    "n": 3618,
+    "verdict": "taste",
+    "why": "eqosys POST /api/visit answers 400 (route live) and the Playground is up; left: the owner's phone visit and the \"real person\" judgement.",
+    "dupOf": null
+  },
+  {
+    "n": 3625,
+    "verdict": "taste",
+    "why": "Whether flyer landing feels right in play.",
+    "dupOf": null
+  },
+  {
+    "n": 3636,
+    "verdict": "taste",
+    "why": "Owner resolves the admin email from 1Password and reads the live D1.",
+    "dupOf": null
+  },
+  {
+    "n": 3652,
+    "verdict": "taste",
+    "why": "Owner's Twilio/Plivo and Slack accounts; qCRM deploy of the files bucket not checkable from here.",
+    "dupOf": null
+  },
+  {
+    "n": 3655,
+    "verdict": "taste",
+    "why": "eqosys is live past #3654; left: sign in from each outside app with the owner's accounts.",
+    "dupOf": null
+  },
+  {
+    "n": 3661,
+    "verdict": "done",
+    "why": "eqosys redeployed after #3646 (live has #3896's /api/deploys) and token routes still answer (/api/privacy 401, /api/tools 200), so migration 0010 is in.",
+    "dupOf": null
+  },
+  {
+    "n": 3697,
+    "verdict": "taste",
+    "why": "Deploy done 2026-11-05 (comment); left: the walk with a friend.",
+    "dupOf": null
+  },
+  {
+    "n": 3719,
+    "verdict": "taste",
+    "why": "codeSplitter live bundle has threads and #3926's watchRuns, so it is deployed past #3711; left: a run with a teammate and the real claude CLI.",
+    "dupOf": null
+  },
+  {
+    "n": 3727,
+    "verdict": "taste",
+    "why": "eqosys and codeSplitter both redeployed after #3730; left: the signed-in check of code mode's limits on the edge.",
+    "dupOf": null
+  },
+  {
+    "n": 3735,
+    "verdict": "taste",
+    "why": "Real claude CLI run on the deployed site (deployed past #3732).",
+    "dupOf": null
+  },
+  {
+    "n": 3740,
+    "verdict": "taste",
+    "why": "Real signed-in claude resuming in a new container on the live site (#3741 deployed).",
+    "dupOf": null
+  },
+  {
+    "n": 3745,
+    "verdict": "taste",
+    "why": "Florence, another person, tries the message.",
+    "dupOf": null
+  },
+  {
+    "n": 3749,
+    "verdict": "taste",
+    "why": "WebKit/desktop app look at the tome closing (#3752 merged).",
+    "dupOf": null
+  },
+  {
+    "n": 3756,
+    "verdict": "taste",
+    "why": "Owner's Mac: no ~/.rustybuns/ledger/daily.log and no com.rustybuns.ledger launchd job yet, so --install has not run.",
+    "dupOf": null
+  },
+  {
+    "n": 3780,
+    "verdict": "taste",
+    "why": "Whether night is scary enough.",
+    "dupOf": null
+  },
+  {
+    "n": 3813,
+    "verdict": "taste",
+    "why": "A real phone.",
+    "dupOf": null
+  },
+  {
+    "n": 3820,
+    "verdict": "taste",
+    "why": "eqosys deployed past studios (#3896 builds on it); left: the super admin sees QNTBR on the shelf.",
+    "dupOf": null
+  },
+  {
+    "n": 3824,
+    "verdict": "backburner",
+    "why": "Model work runs headless and the beast loop says no Blender MCP; installing one on a machine is the owner's call, nothing waits on it.",
+    "dupOf": null
+  },
+  {
+    "n": 3829,
+    "verdict": "taste",
+    "why": "Live Two Fronts bundle has \"With friends\" (#3828 deployed); left: two friend accounts.",
+    "dupOf": null
+  },
+  {
+    "n": 3868,
+    "verdict": "done",
+    "why": "#3866 merged; `bun run builder` on 2026-11-09 says \"valve shut ... builder q@MacBook-Pro-Ryan.local answers\", and this session's guard sends tests to Bob.",
+    "dupOf": null
+  },
+  {
+    "n": 3879,
+    "verdict": "taste",
+    "why": "Live Git Recon bundle has the party lobby (party=, Copy link); left: two accounts playing.",
+    "dupOf": null
+  },
+  {
+    "n": 3889,
+    "verdict": "taste",
+    "why": "eqosys deployed past #3888; left: the owner reads the Scale tab.",
+    "dupOf": null
+  },
+  {
+    "n": 3899,
+    "verdict": "taste",
+    "why": "Live POST /api/deploys answers 503 (\"deploy reports are off\"), so the deploy-report 1Password item is not set yet.",
+    "dupOf": null
+  },
+  {
+    "n": 3920,
+    "verdict": "taste",
+    "why": "Two accounts in a party game; whether eqosys is deployed past #3919 (2026-11-08) not checkable from outside.",
+    "dupOf": null
+  },
+  {
+    "n": 3927,
+    "verdict": "easy",
+    "why": "Not done; a local run with a real agent in a browser, which an agent can do.",
+    "prompt": "Read AGENTS.md. Do MANUAL RUN #3927 yourself and report on it: start codeSplitter locally (`bun run thread-demo` in apps/codesplitter gives a signed-in /as/demo link), open a file you own, press Agent and give it a small task. In Chrome's Network panel, or by reading network requests, check the run card's grey last line updates live while it works, that no `GET .../agents` request repeats (#3926 replaced the 1.5 s poll with `watchRuns` in client.html), and that the card shows done at the end. Comment Yes or No on #3927 with what you saw. If a request repeats, fix `watchRuns`, add one journey test and open a PR from main that says Part of #3927.",
+    "dupOf": null
+  },
+  {
+    "n": 3930,
+    "verdict": "taste",
+    "why": "Live Mythic Masters bundle has Duel (deployed); left: a duel between two friend accounts.",
+    "dupOf": null
+  },
+  {
+    "n": 3932,
+    "verdict": "taste",
+    "why": "Pressing a real Cmd+K while recording: browser shortcuts don't go through automation.",
+    "dupOf": null
+  },
+  {
+    "n": 3936,
+    "verdict": "duplicate",
+    "why": "Comment says moved to #4058.",
+    "dupOf": 4058
+  },
+  {
+    "n": 3946,
+    "verdict": "easy",
+    "why": "Bob answers today (`bun run builder`); the run needs no owner hands beyond Bob staying on.",
+    "prompt": "Read AGENTS.md. Run the full #1141 shadow check on Bob: first `bun run builder` must say the builder answers. Then follow the command block in #1141's 2026-11-08 comment (`bun run issue 1141 --full`): build .shadow-prs.json with `gh pr list --state merged`, and for each PR run `bun run builder run apps/codesplitter sh -c \"... bun scripts/shadow.ts --from .shadow-prs.json --pr $P --check --json\"`, stripping the `[apps/codesplitter] ` prefix before parsing. About 81 merges over 59 PRs, about 3 hours. Delete .shadow-prs.json afterwards, post the triage (pass/fail per merge, flaky vs real) as a comment on #1141, and file an issue for each real failure. Comment on #3946 that the run is done so it can be closed.",
+    "dupOf": null
+  },
+  {
+    "n": 3948,
+    "verdict": "duplicate",
+    "why": "Comment says moved to #4058.",
+    "dupOf": 4058
+  },
+  {
+    "n": 3962,
+    "verdict": "taste",
+    "why": "Owner picks from the round 2 HUD looks.",
+    "dupOf": null
+  },
+  {
+    "n": 4023,
+    "verdict": "done",
+    "why": "https://eqosys-preview.qntbr.com now 302s to its own /login (eqosys's page), not to qntbr.com, on 2026-11-09.",
+    "dupOf": null
+  },
+  {
+    "n": 4025,
+    "verdict": "taste",
+    "why": "Live Park Hide & Seek bundle has \"Left the search area\" (#4024 deployed); left: the feel in a two-player round.",
+    "dupOf": null
+  },
+  {
+    "n": 4028,
+    "verdict": "taste",
+    "why": "A look at the wide game page; deploy past #4027 not checkable signed out (page redirects to /login).",
+    "dupOf": null
+  },
+  {
+    "n": 4058,
+    "verdict": "taste",
+    "why": "Owner's npm account claims 8 names, then pushes the v0.1.12 tag (#4059 merged).",
+    "dupOf": null
+  },
+  {
+    "n": 4062,
+    "verdict": "taste",
+    "why": "Owner's Touch ID deploy: codesplitter-office-preview.notryanquinn.workers.dev still 404 on 2026-11-09; #4061, #4069, #4074 merged.",
+    "dupOf": null
+  },
+  {
+    "n": 4066,
+    "verdict": "taste",
+    "why": "A look at the Dexter box on desktop and phone (#4067 merged; live bundle has Dexter).",
+    "dupOf": null
+  }
+]
