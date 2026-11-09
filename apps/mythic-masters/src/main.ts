@@ -44,7 +44,7 @@ import { accountChip, achieve, canSignIn, finishSignIn, fresh, login, reportButt
 import { asCreature, atLevel, bind, downed, heal, hpOf, wound, bindBelow, bindChance, clearSection, cleared, gainXp, INK, loadJourney, moveUp, mythicOf, newJourney, nextUp, call, owns, PICKS, rest, SAVE_KEY, SECTIONS, sections, see, slots, STARTERS, TRAIL_REGIONS, toNext, WITCH_SAYS, type Journey, mend } from "./journey.ts";
 import { LORE } from "./lore.ts";
 import { bare, blank, dry, handOf, knownOf, PAGE_INK, poolOf, ribbonsOf, summon, type Summoned } from "./grimoire.ts";
-import { deckDemandOf, demandOf, reactionOf, SIGNATURE, type Outcome } from "./demand.ts";
+import { deckDemandOf, demandOf, reactionOf, SIGNATURE, thumbAt, worldLineOf, type Back, type Outcome } from "./demand.ts";
 import { tierOf } from "./tiers.ts";
 import { book, cardTurn, fly, penSound, pressed, soak, thumb, turnLeaf } from "./page.ts";
 import { emblem, frame as ring, inkUrl, seal, tear } from "./ornaments.ts";
@@ -575,6 +575,13 @@ function drawDemand() {
 const hand = (ask: string, signed: boolean) => `<span class="ask">${esc(ask)}</span>${signed ? `<span class="sig">${esc(SIGNATURE)}</span>` : ""}`;
 /** The book's line on a result note, under its heading (src/demand.ts reactionOf). */
 const reaction = (o: Outcome) => { const r = reactionOf(o, journey); return `<p class="demand">${hand(r.ask, r.signed)}</p>`; };
+/** The book's line in the world's toast once a fight is behind you (src/demand.ts worldLineOf), on a scrap of its
+ * paper with its thumbprint pressed somewhere new each time. */
+let scraps = 0;
+const bookToast = (b: Back) => {
+  const r = worldLineOf(b, journey), t = thumbAt(scraps++);
+  return `<p class="demand">${hand(r.ask, r.signed)}</p><i class="thumb" aria-hidden="true" style="left: ${t.x}%; top: ${t.y}%; width: ${Math.round(t.size * 0.8)}px; transform: translate(-50%, -50%) rotate(${t.turn}deg)"></i>`;
+};
 
 // --- the Book talks back (src/book.ts): at a beat the journey stops until you answer ------------------------------
 // A beat queues a moment; it opens once no scene is playing and no fight is on, and the fight and the walk wait (like
@@ -1262,7 +1269,7 @@ function tripOver(m: Match, bound: boolean, how: string) {
   if (won) void achieve("first-win");
   if (bound) void achieve("first-bind");
   const lines: string[] = [], repeat = owns(j, foe.id);
-  let title = "", outcome: Outcome = { kind: "won", foe: t.kind }, go = `${icon("map")} Back to the world`, again: (() => void) | null = null;
+  let title = "", outcome: Outcome = { kind: "won", foe: t.kind }, go = `${icon("map")} Back to the world`, again: (() => void) | null = null, back: Back | null = null;
   if (won) {
     tally(j, false);
     const ups = gainXp(me, t.foe.level), had = slots(j);
@@ -1282,6 +1289,8 @@ function tripOver(m: Match, bound: boolean, how: string) {
     if (t.foe.hunt && closeHunt(j, t.foe.hunt)) lines.push(`The sighting is closed: ${esc(t.foe.title ?? foe.name)} won't trouble ${esc(sections(t.region)[HUNTS.get(t.foe.hunt)?.k ?? 0]!.name)} again.`);
     else if (t.kind === "wild" && !bound) lines.push(`It slinks off into the brush. A knocked-out beast can't be bound: wear it under ${Math.round(bindBelow(false) * 100)}%, then press ${esc(bindKey())} before it drops.`);
     if (bound) outcome = { kind: "bound", item: boundCount(j), repeat };
+    if (bound) back = { kind: "bound", repeat };
+    else if (t.kind === "keeper" || t.kind === "mythic") back = { kind: "cleared", section: sections(t.region)[t.k]!.name, k: t.k, of: SECTIONS, mythic: t.kind === "mythic" ? foe.name : mythicOf(t.region).name, beat: t.kind === "mythic" };
     if (bound && !repeat) say("bind", { n: t.region.n, item: boundCount(j) });
     const at = { n: t.region.n, regionId: t.region.id, region: t.region.name };
     if (t.kind === "mythic") say("mythic", { ...at, mythic: foe.name, item: boundCount(j) });
@@ -1314,7 +1323,7 @@ function tripOver(m: Match, bound: boolean, how: string) {
   const plate = outcome.kind === "bound" ? notePlate(foe, false) : outcome.kind === "down" ? notePlate(creature(me.id), true) : "";
   $("#result").innerHTML = `<div class="note paper o-${outcome.kind}"${torn ? ` style="--tear: ${torn.clip}"` : ""}>${mark}<p class="leaf-head" aria-hidden="true">Eldritch Compendium<span>fol. ${j.journal.length + j.party.length + (j.seen?.length ?? 0) + 1}</span></p>${plate}<h2>${title}</h2>${reaction(outcome)}${lines.map((l) => `<p>${l}</p>`).join("")}<div class="row"><button class="go" id="back">${go}</button>${again ? `<button id="flee">${icon("map")} Run back</button>` : ""}</div></div>`;
   pages.show($("#result"));
-  const home = () => { trip = null; enterWorld(); world.afterFight(won); };
+  const home = () => { trip = null; enterWorld(); world.afterFight(won); if (back) world.note(bookToast(back)); };
   $("#back").onclick = again ?? home;
   const flee = document.querySelector<HTMLElement>("#flee");
   if (flee) flee.onclick = home;

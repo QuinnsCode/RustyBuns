@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { deckDemandOf, demandOf, reactionOf, thumbAt, type Outcome } from "../src/demand.ts";
+import { deckDemandOf, demandOf, reactionOf, thumbAt, worldLineOf, type Back, type Outcome } from "../src/demand.ts";
 import { newJourney } from "../src/journey.ts";
 import { ROSTER } from "../src/roster.ts";
 
@@ -57,5 +57,20 @@ describe("the book on the bestiary deck", () => {
     expect(deckDemandOf(j).ask).toEndWith("You have seen it. Bring it.");
     j.journal = ROSTER.filter((c) => !j.party.some((m) => m.id === c.id)).map((c) => ({ ...j.party[0]!, id: c.id }));
     expect(deckDemandOf(j)).toEqual({ ask: "Every card in this deck is mine. Keep them in order.", signed: false });
+  });
+});
+
+describe("the book in the world's toast after a fight", () => {
+  test("it enters a bind and names the next item, and sends you on from a cleared section", () => {
+    const j = newJourney(["hodag", "squonk", "jackalope"])!;
+    const sec = { kind: "cleared", section: "The Sunk Road", of: 12, mythic: "Jersey Devil" } as const;
+    const cases: [Back, string][] = [
+      [{ kind: "bound", repeat: false }, `Entered. ${demandOf(j)}`],
+      [{ kind: "bound", repeat: true }, `A copy. I keep one of each. ${demandOf(j)}`],
+      [{ ...sec, k: 2, beat: false }, "The Sunk Road, written in. The next stone is lit. Walk."],
+      [{ ...sec, k: 10, beat: false }, "The Sunk Road, written in. The Jersey Devil is at the arena. Bring it."],
+      [{ ...sec, k: 11, beat: true }, "The Sunk Road, written in. The roads are open. The Jersey Devil is not in my pages yet. Go back for it."],
+    ];
+    for (const [b, ask] of cases) expect(worldLineOf(b, j)).toEqual({ ask, signed: true });
   });
 });

@@ -1295,3 +1295,11 @@ body > .gc-dialog .gc-card button.gc-close:hover, .journal #closeJournal:hover, 
 /* The pause menu over a fight is see-through: the fight shows behind it (and against a friend it never stops) */
 body.in-fight > .gc-dialog { background: radial-gradient(ellipse at center, rgba(10, 6, 3, 0.05), rgba(5, 3, 1, 0.35)); }
 body.in-fight > .gc-dialog { opacity: 0.74; }
+
+/* the Book's line in the world's toast after a fight (src/demand.ts worldLineOf): a scrap of its paper, its hand, a thumbprint */
+.world-hud .toast:has(> .demand) { display: block; overflow: hidden; max-width: min(460px, calc(100% - 32px)); padding: 12px 18px 10px; color: var(--ink-b); border: 1px solid #b48b4f; border-radius: 3px; box-shadow: 2px 4px 0 rgba(40, 22, 10, 0.35);
+  background: var(--grain), linear-gradient(170deg, var(--paper-hi), var(--paper) 45%, var(--paper-lo)); transform: translateX(-50%) rotate(-0.8deg); }
+.world-hud .toast > .demand { position: relative; z-index: 1; margin: 0; font-family: var(--f-hand); font-size: 22px; line-height: 1.15; color: var(--blood); text-wrap: balance; }
+.world-hud .toast > .demand .ask { text-decoration: underline 1.5px var(--blood); text-underline-offset: 4px; }
+.world-hud .toast > .demand .sig { display: block; text-align: right; font-size: 18px; color: var(--ink-faded); margin-top: 2px; }
+.world-hud .toast > .demand .sig::before { content: "\2014\00a0"; }
