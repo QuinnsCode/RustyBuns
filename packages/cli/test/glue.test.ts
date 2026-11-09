@@ -732,6 +732,17 @@ test("workflow, analytics engine, worker loader, observability, routes: wrangler
   expect(wranglerToConfig({ name: "g", ...w }).worker!.observability).toEqual(c.worker.observability);
 });
 
+test.each([
+  [undefined, `{"enabled":true,"logs":{"enabled":true,"invocationLogs":true},"redactQueryString":true}`],
+  [{ enabled: true, headSamplingRate: 0.5 }, `{"enabled":true,"headSamplingRate":0.5,"redactQueryString":true}`],
+])("redactQueryStrings goes up with the Worker's observability (observability %j)", (observability, out) => {
+  const a = generateAlchemy({
+    name: "g", worker: { main: "src/worker.ts", compatibilityDate: "2026-06-01", compatibilityFlags: [], redactQueryStrings: true, observability },
+    bindings: {}, targets: { edge: { provider: "cloudflare" } },
+  } as any);
+  expect(a).toContain(`  observability: ${out},`);
+});
+
 test("container: wrangler and alchemy bind the class and its image; the desktop host leaves it out", () => {
   const c = {
     name: "g", worker: { main: "src/worker.ts", compatibilityDate: "2026-06-01", compatibilityFlags: [] },

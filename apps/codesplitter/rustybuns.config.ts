@@ -78,7 +78,7 @@ export default defineConfig({
     // file Durable Objects, so the Worker runs near those instead of near the visitor.
     placement: { mode: "smart" },
     // Workers Logs drop each URL's query string (OAuth codes, ?confirm= handles), as #/privacy
-    // says. Each upload resets it, so rustybuns deploy sets it again after (#553).
+    // says. It goes up with each deploy (Alchemy's observability.redactQueryString).
     redactQueryStrings: true,
     // build.ts minifies the Worker; its source map goes up with it so traces still read (#612).
     sourceMaps: true,
