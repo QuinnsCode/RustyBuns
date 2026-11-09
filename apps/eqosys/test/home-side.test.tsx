@@ -69,7 +69,10 @@ test("the home shows your party and your spaces beside your friends, and a space
   expect((await space({ url: () => base, token: () => bo.token }).join(made.invite))?.name).toBe("game-night");
   const boInSpace = sock(`/q/space/${made.id}`, bo.token, PARK);
   // A party both sit in, Bo ready.
-  const { code } = await (await fetch(`${base}/q/party?open=1`, { method: "POST", headers: { authorization: `Bearer ${ada.token}` } })).json() as { code: string };
+  // Its own address: the mint gate is the module's, and the other party tests in this process count against "local".
+  const minted = await fetch(`${base}/q/party?open=1`, { method: "POST", headers: { authorization: `Bearer ${ada.token}`, "cf-connecting-ip": "203.0.113.7" } });
+  expect(minted.status).toBe(200);
+  const { code } = await minted.json() as { code: string };
   const adaInParty = sock(`/q/party/${code}`, ada.token, PARK), boInParty = sock(`/q/party/${code}`, bo.token, PARK);
   await opened(adaInParty, "Ada's party socket");
   await opened(boInParty, "Bo's party socket");
