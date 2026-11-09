@@ -216,6 +216,14 @@ test("add deploy: pinned install command and overrides per package manager", asy
   expect(applyOverrides({}, "yarn").pkg.resolutions["effect"]).toBe("4.0.5");
 });
 
+test("add deploy: an override whose range covers the pin is left alone", async () => {
+  const { applyOverrides } = await import("../src/glue/deploy-deps.ts");
+  for (const [have, want] of [["^4.0.5", "^4.0.5"], [undefined, "4.0.5"], ["^3.0.0", "4.0.5"]] as const) {
+    const pkg = applyOverrides({ overrides: have ? { effect: have } : {} }, "bun").pkg;
+    expect([have, pkg.overrides.effect]).toEqual([have, want]);
+  }
+});
+
 test("infer worker build from the release script", async () => {
   const { inferWorkerBuild } = await import("../src/glue/build-script.ts");
   const scripts = {
