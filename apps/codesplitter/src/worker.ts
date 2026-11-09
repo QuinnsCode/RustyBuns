@@ -480,7 +480,7 @@ async function route(req: Request, env: Env): Promise<Response> {
   if (seen) return seen;
 
   // /api/office/:floor  the Agent Office floor: queue, desks, roster, its socket; the owner only for now (office.ts, #3423)
-  const office = await officeRoutes(req, env, p, user, admin);
+  const office = await officeRoutes(req, env, p, user, admin, (r) => app.fetch(r, env));
   if (office) return office;
 
   // GET|PUT /api/me/settings, your light/dark choice and the like, in a Durable Object of your own (settings.ts)

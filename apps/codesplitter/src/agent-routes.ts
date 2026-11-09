@@ -74,6 +74,7 @@ import { branchHash, dispatchHint, HunksReply } from "./branches.ts";
 import type { Busy } from "@rustybuns/util/overlap";
 import { MERVIN } from "./mervin.ts";
 import { readStats } from "./stats.ts";
+import { deskHeard } from "./office.ts";
 import { engineLines, type Engine } from "./heal.ts";
 import { isBuildFile } from "./buildfiles.ts";
 
@@ -203,6 +204,8 @@ async function pushRun(env: Env, id: number) {
   if (!row) return;
   const r = toRun(row, env);
   await threadRun(env, r.owner, r.repo, r.thread, cardOf(r));
+  // A run hired at an Agent Office desk (#3423 slice 3) tells its desk too.
+  await deskHeard(env, r).catch(() => {});
 }
 
 /** A JOBS message that starts hosted run `agent` (or with `land`, lands its batch when its clock runs out); `origin` is the site's, for the agent's calls to the API. */

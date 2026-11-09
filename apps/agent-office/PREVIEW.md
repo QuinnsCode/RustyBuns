@@ -10,7 +10,13 @@ ever shares a name with the live stage.
 build order): `/api/office/<floor>` answers with its queue, desks and roster, takes the office's socket messages at
 `/api/office/<floor>/ws`, and is bound on this stage only, for the signed-in owner only.
 
-**What is not built yet.** The 3D client served from the Worker and the four gaps in MOVE.md (PTY over WebSocket,
+**Desks run codeSplitter agents** (slice 3). `POST /api/office/<floor>` with `{t: "worker.spawn", repo: "owner/name", path, prompt}`
+seats a worker and starts an agent run on that file as you, through the repo's agents route, so its checks hold (the repo's owner,
+`ADMINS`, the daily `hosted` budget, two `AgentSandbox` containers at most). The desk then shows the run: working while
+it goes, then done or exited, with the branch its batch waits on and the tail of its output. Sending that worker home
+through the same POST (`worker.kill`) stops the run. There is no terminal at the desk (slice 4).
+
+**What is not built yet.** The 3D client served from the Worker (slice 2) and the four gaps in MOVE.md (PTY over WebSocket,
 container lifetime, per-floor cost cap, auth mapping) are not in it, so checks 1 to 5 below can't pass until those land.
 They are filed as follow-ups; this stage is where they get tried.
 
