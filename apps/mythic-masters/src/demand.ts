@@ -78,3 +78,19 @@ export function deckDemandOf(j: Journey | null, roster: readonly Creature[] = RO
   if (j.seen.includes(top.id)) return { ask: `Item ${item}: the ${top.name}, top of my deck. You have seen it. Bring it.`, signed: true };
   return { ask: `Item ${item}: the ${top.name}, top of my deck. Go and find it.`, signed: true };
 }
+
+/** What a world fight left the book with, for the toast when you walk back out (#3912): a creature bound (`repeat`
+ * when it already had one), or a section's keeper beaten or bound (`k`, `of` sections, `mythic` the region's own). */
+export type Back =
+  | { kind: "bound"; repeat: boolean }
+  | { kind: "cleared"; section: string; k: number; of: number; mythic: string; beat: boolean };
+
+/** The book's line in the world's toast after a fight: not the receipt (the result note gave that) but what it wants
+ * next. A bind is entered and the next item named; a cleared section is written in and you are sent on to the next
+ * stone, or to the arena once the last keeper is down; a mythic beaten and let go is wanted back. */
+export function worldLineOf(b: Back, j: Journey | null): { ask: string; signed: boolean } {
+  if (b.kind === "bound") return { ask: `${b.repeat ? "A copy. I keep one of each." : "Entered."} ${demandOf(j)}`, signed: true };
+  if (b.beat) return { ask: `${b.section}, written in. The roads are open. The ${b.mythic} is not in my pages yet. Go back for it.`, signed: true };
+  if (b.k >= b.of - 2) return { ask: `${b.section}, written in. The ${b.mythic} is at the arena. Bring it.`, signed: true };
+  return { ask: `${b.section}, written in. The next stone is lit. Walk.`, signed: true };
+}

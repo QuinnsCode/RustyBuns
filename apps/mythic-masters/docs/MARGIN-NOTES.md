@@ -40,7 +40,7 @@ reading below is optional: a line may carry it, but none needs it.
 
 ## The ledger: lines in use
 
-The demands and receipts in `src/demand.ts` (`demandOf`, `reactionOf`). Add yours here when it ships.
+The demands and receipts in `src/demand.ts` (`demandOf`, `reactionOf`, `deckDemandOf`, `worldLineOf`). Add yours here when it ships.
 
 | Where | Line | Signed |
 |---|---|---|
@@ -61,6 +61,11 @@ The demands and receipts in `src/demand.ts` (`demandOf`, `reactionOf`). Add your
 | Bestiary deck, no journey yet | Item 1: the Jersey Devil, top of this deck. Then the rest, in order. | yes |
 | Bestiary deck: top card unmet | Item 4: the Jersey Devil, top of my deck. Go and find it. (seen: You have seen it. Bring it.) | yes |
 | Bestiary deck: every card bound | Every card in this deck is mine. Keep them in order. | no |
+| World toast: a new bind | Entered. (then the next demand: Item 5: the Squonk. You saw it. You let it go. Bring it.) | yes |
+| World toast: a bind it has | A copy. I keep one of each. (then the next demand) | yes |
+| World toast: a keeper beaten | The Sunk Road, written in. The next stone is lit. Walk. | yes |
+| World toast: the last keeper | The Sunk Road, written in. The Jersey Devil is at the arena. Bring it. | yes |
+| World toast: the mythic fled | The Sunk Road, written in. The roads are open. The Jersey Devil is not in my pages yet. Go back for it. | yes |
 
 ## Twenty margin lines from the first pass
 
