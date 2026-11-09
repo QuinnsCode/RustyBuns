@@ -1,0 +1,24 @@
+[
+  { "kind": "fire", "name": "The landing fire", "at": [0.5, 0.92] },
+  { "kind": "landmark", "name": "The ferry slip", "at": [0.42, 0.97] },
+  { "kind": "tape", "name": "Ferryman's log", "at": [0.6, 0.8], "tape": { "title": "Ferryman's log, 4 December", "lines": [
+    "Ferryman: Last crossing before the ice. Two passengers out, none back, which is normal for December.",
+    "Ferryman: The harbour master says the island keeps its own calendar. Thirteen nights before Christmas and twelve after.",
+    "Ferryman: Something left hoofprints on the slip. One hoof. Then a boot. Then a hoof. I've stopped writing these down. Mostly."
+  ] } },
+  { "kind": "tape", "name": "Gary narrates", "at": [0.25, 0.55], "tape": { "title": "Gary narrates", "lines": [
+    "Gary: We're on the Yule Isle, which is like a regular island but everyone here is very interested in whether you got new socks.",
+    "Gary: The lady at the shop said keep the fire lit all night. For warmth? No, she said. Not for warmth.",
+    "Gary: That's a birch switch on the doorstep. Just one. Leaning there. Like a message. Cut. Don't cut. Cut."
+  ] } },
+  { "kind": "tape", "name": "Shepherd's tape", "at": [0.78, 0.3], "tape": { "title": "Shepherd's tape, Twelfth Night", "lines": [
+    "Shepherd: The milk turned again. Third time this week. My wife says it's them, back up from under.",
+    "Shepherd: They saw all year, she says, and when they come up the tree's nearly through. Then it heals and they start over.",
+    "Shepherd: I asked what happens if they ever finish. She put another log on the fire and didn't answer."
+  ] } },
+  { "kind": "fire", "name": "The turf house hearth", "at": [0.3, 0.3] },
+  { "kind": "landmark", "name": "The cairn of thirteen stones", "at": [0.5, 0.45] },
+  { "kind": "landmark", "name": "The fell with the cave mouth", "at": [0.85, 0.12] },
+  { "kind": "board", "name": "Sighting board at the fish sheds", "at": [0.7, 0.7] },
+  { "kind": "cabin", "name": "The empty sheep hut", "at": [0.12, 0.2] }
+]

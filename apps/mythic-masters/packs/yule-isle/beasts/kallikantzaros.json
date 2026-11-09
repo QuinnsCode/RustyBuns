@@ -1,0 +1,56 @@
+{
+  "id": "kallikantzaros",
+  "name": "Kallikantzaros",
+  "about": "Greek and Balkan lore of the twelve days of Christmas: small, black, hairy goblins who spend the year underground sawing at the tree that holds up the earth, and come up between Christmas and Epiphany to sour the milk, ride people like horses and put out the hearth fire. Red eyes, a long tongue, goat's ears and a donkey's legs.",
+  "archetype": "skirmisher",
+  "feet": 2,
+  "wings": 0,
+  "budget": 5200,
+  "root": "belly",
+  "material": "fur",
+  "belly": "belly",
+  "belly_turn": -0.3,
+  "branch_smoothing": 1.0,
+  "palette": {
+    "fur": [0.07, 0.06, 0.06, 0.95, 0],
+    "belly": [0.16, 0.12, 0.1, 0.9, 0],
+    "tongue": [0.75, 0.15, 0.15, 0.45, 0],
+    "hoof": [0.25, 0.22, 0.2, 0.5, 0],
+    "iron": [0.5, 0.5, 0.52, 0.35, 0.85],
+    "eye": [1.0, 0.15, 0.1, 0.3, 0, 5]
+  },
+  "nodes": {
+    "tail2": [-0.32, 0.5, 0, 0.025],
+    "tail1": [-0.18, 0.56, 0, 0.04],
+    "hip": [0, 0.58, 0, 0.13],
+    "belly": [0.04, 0.72, 0, 0.15],
+    "chest": [0.1, 0.88, 0, 0.15],
+    "neck": [0.18, 0.98, 0, 0.08],
+    "head": [0.26, 1.07, 0, 0.13],
+    "muzzle": [0.38, 1.02, 0, 0.06],
+    "l_hipj": [0, 0.54, 0.1, 0.08],
+    "l_knee": [0.1, 0.34, 0.12, 0.06],
+    "l_ankle": [-0.04, 0.12, 0.12, 0.045],
+    "l_foot": [0.04, 0.04, 0.12, 0.045],
+    "l_shoulder": [0.1, 0.94, 0.19, 0.07],
+    "l_elbow": [0.16, 0.7, 0.26, 0.05],
+    "l_hand": [0.3, 0.56, 0.26, 0.05]
+  },
+  "links": [
+    ["tail2", "tail1"], ["tail1", "hip"], ["hip", "belly"], ["belly", "chest"], ["chest", "neck"], ["neck", "head"], ["head", "muzzle"],
+    ["hip", "l_hipj"], ["l_hipj", "l_knee"], ["l_knee", "l_ankle"], ["l_ankle", "l_foot"],
+    ["chest", "l_shoulder"], ["l_shoulder", "l_elbow"], ["l_elbow", "l_hand"]
+  ],
+  "parts": [
+    {"kind": "ear", "at": "head", "off": [-0.02, 0.06, 0.1], "dir": [-0.3, 0.6, 1], "len": 0.16, "width": 0.06, "tilt": 30, "cup": 10, "mirror": true, "material": "fur"},
+    {"kind": "eye", "at": "head", "off": [0.1, 0.03, 0.06], "r": 0.025, "mirror": true, "material": "eye"},
+    {"kind": "horn", "at": "muzzle", "off": [0.04, -0.03, 0], "dir": [0.6, -1, 0], "len": 0.22, "base": 0.02, "curve": 25, "bend": [1, 0, 0], "flat": 0.4, "material": "tongue"},
+    {"kind": "teeth", "along": ["head", "muzzle"], "n": 3, "len": 0.04, "base": 0.015, "lower": true, "material": "iron"},
+    {"kind": "tuft", "along": ["head", "neck", "chest", "belly", "hip"], "n": 10, "rows": 6, "spread": 200, "len": 0.14, "base": 0.04, "curve": 40, "flat": 0.3, "material": "fur"},
+    {"kind": "horn", "at": "l_hand", "off": [0.03, 0, 0], "dir": [0.4, 1, 0], "len": 0.38, "base": 0.02, "tip_base": 0.035, "flat": 0.2, "material": "iron"},
+    {"kind": "limb", "along": ["l_hipj", "l_knee", "l_ankle"], "radii": [0.08, 0.05, 0.035], "calf": 0.35, "depth": 1.1, "mirror": true, "material": "fur"},
+    {"kind": "foot", "at": "l_foot", "form": "hoof", "len": 0.11, "width": 0.07, "toes": 1, "sole": 0.035, "mirror": true, "material": "hoof"},
+    {"kind": "limb", "along": ["l_shoulder", "l_elbow", "l_hand"], "radii": [0.06, 0.04, 0.04], "calf": 0.25, "mirror": true, "material": "fur"},
+    {"kind": "foot", "at": "l_hand", "form": "paw", "len": 0.08, "width": 0.07, "toes": 4, "claw": 0.03, "sole": 0.03, "mirror": true}
+  ]
+}
