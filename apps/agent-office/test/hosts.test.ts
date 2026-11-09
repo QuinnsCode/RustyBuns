@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { hostname } from "node:os";
 import path from "node:path";
 import { allowedHosts, guardHost, hostName } from "../live/hosts.ts";
-import { unpackPinned } from "./pinned.ts";
+import { unpackPinned, pinnedTest } from "./pinned.ts";
 
 setDefaultTimeout(60_000);
 
@@ -34,7 +34,7 @@ test("guardHost answers 421 to a name it doesn't know", () => {
   expect(status).toBe(421);
 });
 
-test("the pinned release still has the request handler and upgrade lines the guard is patched in front of", async () => {
+pinnedTest("the pinned release still has the request handler and upgrade lines the guard is patched in front of", async () => {
   const srv = path.join(await unpackPinned(), "dist/server/server");
   const script = readFileSync(path.join(import.meta.dir, "../scripts/rustybunsify.ts"), "utf8");
   for (const [file, anchor] of [["http/router.js", "    return async (req, res) => {\n        const { cfg, auth } = ctx;\n"],

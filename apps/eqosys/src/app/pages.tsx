@@ -693,8 +693,17 @@ export const Privacy = () => (
     <p>Delete your account from any Q app's settings or at <a href="/delete">eqosys.qntbr.com/delete</a>. Everything above goes at once, every
       Q app that keeps data of its own is told to erase it, and a Sign in with Apple link is revoked at Apple. Your vault goes first, so any
       copy of your saves left in a backup can never be opened again.</p>
+    <h2>If you're in the EU, the EEA, the UK or Switzerland</h2>
+    <p>What is in place today: your vault (the key to your saves, and the record of what you agreed to and asked for) is kept in the EU; you can
+      download everything we keep and delete it all yourself, any time, without asking anyone; and each thing you agree to is written down
+      with the time, so you can see it in the download.</p>
+    <p>What we are still working on: your account itself (email, name and sign-in links) sits in one database that is not kept in the EU. It
+      is still only on Cloudflare and still goes when you delete your account. We will also name who is responsible for your data and a
+      private contact for privacy requests here; until then, the ways below are the ones there are.</p>
     <h2>Questions</h2>
-    <p>Open an issue at <a href="https://github.com/QuinnsCode/RustyBuns/issues">github.com/QuinnsCode/RustyBuns</a>, or use Report in any Q app.</p>
+    <p>For your data, download and delete above need no one's help. For anything else, use Report in any Q app while signed in: it reaches us
+      tied to your account, so we can find what is yours without you giving any details. Reports become issues on a public GitHub page that name
+      you only by a short id, so write the question, not your email or anything personal. Please don't open GitHub issues about your own data.</p>
   </>
 );
 
