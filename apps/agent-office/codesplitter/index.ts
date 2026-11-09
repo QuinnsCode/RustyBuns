@@ -10,6 +10,7 @@ import { issueText, issuesIn } from "../queue/match.ts";
 import { queueAdd, taskText, type Hint, type QueueAdd } from "./hint.ts";
 import { faviconWithDot, markCanvas, markSvg } from "./mark.ts";
 import { BOARDS, fresh, type Board, type Summary } from "./news.ts";
+import { el } from "@rustybuns/util/dom";
 
 const KEY = "rb.codesplitter";
 interface Saved { on?: boolean; repo?: string; seen?: Partial<Record<Board, string>> }
@@ -245,12 +246,6 @@ function card(msg: QueueAdd, busy: Hint["busy"], done: (m: QueueAdd | null) => v
 }
 
 // ---- the setting --------------------------------------------------------------------------------------------
-
-const el = <K extends keyof HTMLElementTagNameMap>(tag: K, props: Partial<HTMLElementTagNameMap[K]> = {}, ...kids: (Node | string)[]): HTMLElementTagNameMap[K] => {
-  const e = Object.assign(document.createElement(tag), props);
-  e.append(...kids);
-  return e;
-};
 
 function setting() {
   const s = load();

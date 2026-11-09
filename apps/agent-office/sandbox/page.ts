@@ -3,15 +3,10 @@
 import { Check, ScrollText, ShieldCheck, X, createElement, type IconNode } from "lucide";
 import type { Entry } from "../live/camera.ts";
 import type { Edit, Perms } from "./box.ts";
+import { el } from "@rustybuns/util/dom";
 
 type State = { from: string; perms: Perms; log: Entry[]; limits: { cpus: number; memory: string } | null; docker: boolean;
   health: { running: false } | { running: true; status: string; health: string; answers: boolean; healthy: boolean; restart: boolean } };
-
-const el = <K extends keyof HTMLElementTagNameMap>(tag: K, props: Partial<HTMLElementTagNameMap[K]> = {}, ...kids: (Node | string)[]) => {
-  const e = Object.assign(document.createElement(tag), props);
-  e.append(...kids);
-  return e;
-};
 
 // an icon button: the word is the tooltip and the accessible name, so nothing wraps on a narrow screen
 const iconButton = (node: IconNode, word: string, onclick: () => void) => el("button", { title: word, ariaLabel: word, onclick, style: "display:inline-flex;align-items:center;justify-content:center;min-width:32px;min-height:32px" }, createElement(node));

@@ -7,6 +7,7 @@
 import type { SpaceMember, SpaceMessage, SpaceRow, SpaceVoice, space } from "./eqosys.ts";
 import { join as joinVoice, type Speaker, type VoiceHandle } from "./voice.ts";
 import { wearSkin } from "./skin.ts";
+import { el } from "./dom.ts";
 
 /** What the panel uses of a joined voice room: `join`'s handle without its debug `call`. */
 export type VoiceCall = Omit<VoiceHandle, "call">;
@@ -51,11 +52,6 @@ export function spacesPanel({ box, space: sp, name, icon, say, join = joinVoice,
   box.classList.add("eq", "rb-spaces");
   for (const k of ["keydown", "keyup", "keypress"]) box.addEventListener(k, (e) => e.stopPropagation());
 
-  const el = <K extends keyof HTMLElementTagNameMap>(tag: K, props: object = {}, ...kids: (Node | string)[]) => {
-    const e = Object.assign(document.createElement(tag), props);
-    e.append(...kids);
-    return e;
-  };
   const btn = (glyph: SpaceIcon, text: string, on: () => void, show = false, cls = "") => {
     const b = el("button", { type: "button", title: text, ariaLabel: text, className: `eq-btn${show ? "" : " icon"}${cls ? ` ${cls}` : ""}` }, icon(glyph), ...(show ? [text] : []));
     b.addEventListener("click", on);

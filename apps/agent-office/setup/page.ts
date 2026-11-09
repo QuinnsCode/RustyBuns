@@ -2,12 +2,8 @@
 // a first-run walk-through. Data and wording come from model.ts; this file only draws.
 import { CircleAlert, Hammer, KeyRound, Plug, RefreshCw, Trash2, createElement, type IconNode } from "lucide";
 import { LIGHT, WALKTHROUGH, accessWords, act, connectGithub, isFirstRun, loadBuilder, loadSetup, nightlyLine, type Builder, type Connection, type Pending, type Setup } from "./model.ts";
+import { el } from "@rustybuns/util/dom";
 
-const el = <K extends keyof HTMLElementTagNameMap>(tag: K, props: Partial<HTMLElementTagNameMap[K]> = {}, ...kids: (Node | string)[]) => {
-  const e = Object.assign(document.createElement(tag), props);
-  e.append(...kids);
-  return e;
-};
 // a card carries its kind, id and status as data-attributes (dataset is read-only, so it can't go through el's props)
 const data = <E extends HTMLElement>(e: E, d: Record<string, string>) => { Object.assign(e.dataset, d); return e; };
 const icon = (node: IconNode) => createElement(node);

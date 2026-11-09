@@ -28,6 +28,7 @@
     "./commands": "./src/commands.ts",
     "./dexter": "./src/dexter.ts",
     "./director": "./src/director.ts",
+    "./dom": "./src/dom.ts",
     "./eqosys": "./src/eqosys.ts",
     "./features": "./src/features.ts",
     "./guard": "./src/guard.ts",

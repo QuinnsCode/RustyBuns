@@ -4,16 +4,11 @@
 // Nothing upstream is patched: the cards poll /__rb/asks, and an answer POSTs to /__rb/asks/<id>.
 import type { Ask } from "../live/floorguard.ts";
 import { hot } from "../reload/hot.ts";
+import { el } from "@rustybuns/util/dom";
 
 const POLL_MS = 3000;
 const answered = new Set<string>();
 let box: HTMLElement | undefined, sheet: HTMLElement | undefined, timer: ReturnType<typeof setTimeout> | undefined, stopped = false;
-
-const el = <K extends keyof HTMLElementTagNameMap>(tag: K, props: Partial<HTMLElementTagNameMap[K]> = {}, ...kids: (Node | string)[]) => {
-  const e = Object.assign(document.createElement(tag), props);
-  e.append(...kids);
-  return e;
-};
 
 const left = (until: number) => {
   const s = Math.max(0, Math.ceil((until - Date.now()) / 1000));
