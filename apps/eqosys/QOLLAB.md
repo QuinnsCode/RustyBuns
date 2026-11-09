@@ -131,7 +131,8 @@ friends who play different games still share one.
 - **Moderation:** the owner mutes (text and voice) and kicks; anyone reports, which reaches the owner and files a row through the game-report path.
 - **Deletion:** deleting an account deletes the spaces it owns (everyone is closed out) and takes its messages out of the rest.
 - **In a game:** `spacesPanel` in `@rustybuns/util/spaces` (beside the party's `lobbyPanel`) lists your spaces, makes and joins them, and opens one: channel tabs, the messages with "Load older", a text box, who is online, voice channels (join, who is talking, mute yourself, hang up), and the owner's add and delete channel, copy invite, mute and kick. Styleless; the page skins it and hands it its icons. Skate Tech Park opens it from the HUD for a signed-in rider.
-- **Not yet:** a page on eqosys that shows spaces, and Qlave telling eqosys who is in each voice room (QLAVE.md §4).
+- **On eqosys:** the home lists your spaces beside your friends (how many are on in each, from the space's `/on`), and the party you sit in now (its room code, seats and who is ready, from the party's `/peek`; `src/qollab/side.ts`). Each space opens on `/spaces`, the same `spacesPanel`, on a token for eqosys's own pages (`GET /api/home-token`, ten minutes, asked again while open). Only the spaces' doors take that token, and only from eqosys's own origin.
+- **Not yet:** voice from `/spaces` (the page's CSP keeps it to eqosys's own origin, so Qlave's socket can't open), and Qlave telling eqosys who is in each voice room (QLAVE.md §4).
 
 ## After "start": seats ([#3878](https://github.com/QuinnsCode/RustyBuns/issues/3878))
 

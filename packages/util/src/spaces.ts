@@ -26,6 +26,8 @@ export interface SpacesPanel {
   say?: (note: string) => void;
   /** How a voice channel is joined: Qlave's client by default; a harness passes one with a fake microphone. */
   join?: (url: string, ticket: string) => Promise<VoiceCall>;
+  /** A space to open once the list is in (a link to one), when this person is in it. */
+  start?: string;
 }
 
 /** What the panel is showing, for a harness: the list of spaces, or one space, its channel and messages. */
@@ -39,7 +41,7 @@ export interface SpacesState {
  * Keep `box` showing this person's spaces. Returns the panel's handle: `state()` for a harness, `close()` to hang up
  * and hide it. Keys typed in the panel stop at the box, so a game's own keys don't fire while someone writes.
  */
-export function spacesPanel({ box, space: sp, name, icon, say, join = joinVoice }: SpacesPanel) {
+export function spacesPanel({ box, space: sp, name, icon, say, join = joinVoice, start }: SpacesPanel) {
   let rows: SpaceRow[] = [], open: SpaceRow | null = null, note = "";
   let channels: string[] = [], channel = "general", owner = false, online: SpaceMember[] = [];
   // Voice: the channels, the one this page is in (or asked to join), its handle once Qlave let us in, who is in it, our own mute.
@@ -70,6 +72,9 @@ export function spacesPanel({ box, space: sp, name, icon, say, join = joinVoice 
 
   async function list() {
     rows = (await sp.mine()) ?? [];
+    const first = start && rows.find((r) => r.id === start);
+    start = undefined;
+    if (first && !open) return enter(first);
     if (!open) draw();
   }
   function enter(row: SpaceRow) {
