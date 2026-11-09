@@ -3,7 +3,7 @@
 // new entry in SKINS, not new rules.
 import * as THREE from "three";
 import { mulberry32 } from "@rustybuns/util";
-import { toCreasedNormals } from "three/examples/jsm/utils/BufferGeometryUtils.js";
+import { mergeGeometries, toCreasedNormals } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { ARENA } from "./sim.ts";
 import { buildCrowd, type Crowd, type Seat } from "./crowd.ts";
 import type { Biome } from "./regions.ts";
@@ -411,32 +411,140 @@ function hills(skin: Skin, horizon: Horizon = "hills"): THREE.Mesh {
 
 /** A stadium bowl: concrete terraces stepping up and back from the ring, with a crowd of codeSplitter-avatar people on them, who cheer (src/crowd.ts) when a hit lands. */
 function stands(R: number, prop: number, arena: THREE.Group): THREE.Group {
-  const g = new THREE.Group(), STEPS = 7, RUN = 1.5, RISE = 0.85, inner = R + 3.5, base = -0.6;
-  const profile = [new THREE.Vector2(inner, -4)];
+  const g = new THREE.Group(), STEPS = 7, RUN = 1.5, RISE = 0.85, inner = R + 3.5, base = -0.6, SEG = 128;
+  const outer = inner + STEPS * RUN, top = base + STEPS * RISE, BACK = 3.4;
+  // Sections between aisles: seats in alternating colours, a stair and a handrail up each aisle.
+  const SECTIONS = 16, AISLE = 1.4, SEAT_COLOURS = [0x2b5ea8, 0xb8402c];
+  const sectionOf = (t: number, r: number) => {
+    const per = (Math.PI * 2) / SECTIONS, k = Math.floor((t + per / 2) / per), off = (t + per / 2) - k * per - per / 2; // off: angle from the aisle
+    return { k: ((k % SECTIONS) + SECTIONS) % SECTIONS, aisle: Math.abs(off) * r < AISLE / 2 };
+  };
+  // Rows further back sit under the roof, out of the sun: each tier a shade darker.
+  const shadeOf = (i: number) => 1 - 0.38 * (i / (STEPS - 1)) ** 1.3;
+  const tinted = (geo: THREE.BufferGeometry, c: THREE.Color) => {
+    const n = geo.attributes.position!.count;
+    geo.setAttribute("color", new THREE.Float32BufferAttribute(Array.from({ length: n }, () => [c.r, c.g, c.b]).flat(), 3));
+    return geo;
+  };
+  const tread = new THREE.Color(prop).lerp(new THREE.Color(0xb8b4aa), 0.4), riser = new THREE.Color(prop).multiplyScalar(0.42);
+  const parts: THREE.BufferGeometry[] = [];
   for (let i = 0; i < STEPS; i++) {
-    const r = inner + i * RUN, y = base + i * RISE;
-    profile.push(new THREE.Vector2(r, y + RISE), new THREE.Vector2(r + RUN, y + RISE));
+    const r = inner + i * RUN, y = base + (i + 1) * RISE, s = shadeOf(i);
+    parts.push(tinted(new THREE.RingGeometry(r, r + RUN, SEG, 1).rotateX(-Math.PI / 2).translate(0, y, 0), tread.clone().multiplyScalar(s)));
+    parts.push(tinted(new THREE.CylinderGeometry(r, r, RISE + (i ? 0 : 4), SEG, 1, true).translate(0, y - (RISE + (i ? 0 : 4)) / 2, 0), riser.clone().multiplyScalar(s)));
   }
-  profile.push(new THREE.Vector2(inner + STEPS * RUN, base + STEPS * RISE + 1.4), new THREE.Vector2(inner + STEPS * RUN + 0.4, base + STEPS * RISE + 1.4), new THREE.Vector2(inner + STEPS * RUN + 0.4, -4));
-  const bowl = new THREE.Mesh(new THREE.LatheGeometry(profile, 96), new THREE.MeshStandardMaterial({ color: prop, roughness: 0.95, side: THREE.DoubleSide, map: (() => { const t = mottle(3); t.repeat.set(40, 3); return t; })() }));
+  // the back wall and the roof over the top rows: dark, so the bowl has a back and the light falls off into it
+  const back = new THREE.Color(0x2a2e36);
+  parts.push(tinted(new THREE.CylinderGeometry(outer, outer, BACK + 4.6, SEG, 1, true).translate(0, top + (BACK - 4.6) / 2, 0), back));
+  parts.push(tinted(new THREE.CylinderGeometry(outer - 4.2, outer + 0.2, 1.1, SEG, 1, true).translate(0, top + BACK + 0.5, 0), back.clone().multiplyScalar(0.8)));
+  const bowl = new THREE.Mesh(mergeGeometries(parts.map((p) => p.toNonIndexed())), new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness: 0.95, side: THREE.DoubleSide, map: (() => { const t = mottle(3); t.repeat.set(40, 3); return t; })() }));
   bowl.receiveShadow = true;
   g.add(bowl);
-  // the front wall facing the ring, darker, with a painted band along its top
-  const wall = new THREE.Mesh(new THREE.CylinderGeometry(inner, inner, 0.5, 96, 1, true), new THREE.MeshStandardMaterial({ color: 0x2c5a8a, roughness: 0.6, side: THREE.DoubleSide }));
-  wall.position.y = base + RISE - 0.2; g.add(wall);
-  const rnd = mulberry32(5), seats: Seat[] = [];
+  // the roof's front edge, a painted fascia with floodlights under it
+  const fascia = new THREE.Mesh(new THREE.CylinderGeometry(outer - 4.2, outer - 4.2, 0.45, SEG, 1, true), new THREE.MeshStandardMaterial({ color: 0x1d3f73, roughness: 0.6, side: THREE.DoubleSide }));
+  fascia.position.y = top + BACK + 0.05; g.add(fascia);
+  const LAMPS = 32, lamps = new THREE.InstancedMesh(new THREE.BoxGeometry(0.5, 0.2, 0.9), new THREE.MeshStandardMaterial({ color: 0x202020, emissive: 0xfff4d8, emissiveIntensity: 1.6 }), LAMPS);
+  const o = new THREE.Object3D();
+  for (let i = 0; i < LAMPS; i++) {
+    const t = ((i + 0.5) / LAMPS) * Math.PI * 2, r = outer - 4.0;
+    o.position.set(Math.cos(t) * r, top + BACK - 0.25, Math.sin(t) * r); o.rotation.set(0, -t, 0); o.updateMatrix();
+    lamps.setMatrixAt(i, o.matrix);
+  }
+  g.add(lamps);
+  // the boards round the front, the arena's own names and colours, and a rail along the first row
+  const boards = new THREE.Mesh(new THREE.CylinderGeometry(inner - 0.04, inner - 0.04, 0.8, SEG, 1, true), new THREE.MeshStandardMaterial({ map: boardTexture(), roughness: 0.55, side: THREE.DoubleSide }));
+  boards.position.y = 0.35; g.add(boards);
+  const steel = new THREE.MeshStandardMaterial({ color: 0x7a8088, metalness: 0.6, roughness: 0.45 });
+  const rail = new THREE.Mesh(new THREE.TorusGeometry(inner + 0.15, 0.035, 6, SEG * 2), steel);
+  rail.rotation.x = Math.PI / 2; rail.position.y = base + RISE + 0.95; g.add(rail);
+  // up each aisle: a step at every tier's half and a handrail; a hanging banner on the back wall between them
+  const half = new THREE.BoxGeometry(RUN / 2, RISE / 2, AISLE * 0.9), stairs = new THREE.InstancedMesh(half, new THREE.MeshStandardMaterial({ roughness: 0.95 }), SECTIONS * STEPS);
+  const step = tread.clone().lerp(riser, 0.35);
+  const poles = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.022, 0.022, 1, 5), steel, SECTIONS);
+  const banner = bannerMaterials(), flags: THREE.Mesh[] = [];
+  const per = (Math.PI * 2) / SECTIONS, slope = Math.hypot(STEPS * RUN, STEPS * RISE);
+  for (let k = 0; k < SECTIONS; k++) {
+    const t = k * per, c = Math.cos(t), s = Math.sin(t);
+    for (let i = 0; i < STEPS; i++) {
+      const r = inner + i * RUN + RUN * 0.75, y = base + (i + 1) * RISE + RISE / 4;
+      o.position.set(c * r, y, s * r); o.rotation.set(0, -t, 0); o.updateMatrix(); stairs.setMatrixAt(k * STEPS + i, o.matrix); stairs.setColorAt(k * STEPS + i, step.clone().multiplyScalar(shadeOf(i)));
+    }
+    const mid = (inner + outer) / 2;
+    o.position.set(c * mid, (base + RISE + top) / 2 + 0.95, s * mid); o.rotation.set(0, -t, -Math.atan2(STEPS * RUN, STEPS * RISE));
+    o.scale.set(1, slope, 1); o.updateMatrix(); poles.setMatrixAt(k, o.matrix); o.scale.set(1, 1, 1);
+    const b = t + per / 2, flag = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 2.6), banner[k % banner.length]!);
+    flag.position.set(Math.cos(b) * (outer - 0.06), top + BACK - 1.6, Math.sin(b) * (outer - 0.06)); flag.lookAt(0, flag.position.y, 0);
+    flags.push(flag);
+  }
+  stairs.receiveShadow = true;
+  g.add(stairs, poles, ...flags);
+  // the seats, every one, coloured by section; people stand on 70% of them
+  const rnd = mulberry32(5), seats: Seat[] = [], chairs: { m: THREE.Matrix4; c: THREE.Color }[] = [];
+  const chair = mergeGeometries([new THREE.BoxGeometry(0.42, 0.07, 0.44).translate(0, 0.3, 0), new THREE.BoxGeometry(0.07, 0.42, 0.44).translate(0.22, 0.5, 0)]);
   for (let i = 0; i < STEPS; i++) {
-    const r = inner + i * RUN + RUN * 0.55, y = base + (i + 1) * RISE, n = Math.floor((Math.PI * 2 * r) / 0.9);
+    const r = inner + i * RUN + RUN * 0.55, y = base + (i + 1) * RISE, n = Math.floor((Math.PI * 2 * r) / 0.9), shade = shadeOf(i);
     for (let j = 0; j < n; j++) {
+      const t = ((j + 0.5) / n) * Math.PI * 2, sec = sectionOf(t, r);
+      if (sec.aisle) continue;
+      o.position.set(Math.cos(t) * (r + 0.05), y, Math.sin(t) * (r + 0.05)); o.rotation.set(0, -t, 0); o.updateMatrix();
+      chairs.push({ m: o.matrix.clone(), c: new THREE.Color(SEAT_COLOURS[sec.k % 2]!).multiplyScalar(shade) });
       if (rnd() < 0.3) continue; // empty seats
-      const t = ((j + rnd() * 0.4) / n) * Math.PI * 2;
-      seats.push({ pos: new THREE.Vector3(Math.cos(t) * r, y, Math.sin(t) * r), yaw: -t });
+      const tt = t + ((rnd() - 0.5) * 0.25 * Math.PI * 2) / n;
+      seats.push({ pos: new THREE.Vector3(Math.cos(tt) * r, y, Math.sin(tt) * r), yaw: -tt, shade });
     }
   }
+  const seatMesh = new THREE.InstancedMesh(chair, new THREE.MeshStandardMaterial({ roughness: 0.5 }), chairs.length);
+  chairs.forEach(({ m, c }, i) => { seatMesh.setMatrixAt(i, m); seatMesh.setColorAt(i, c); });
+  g.add(seatMesh);
   const crowd = buildCrowd(seats, rnd);
   g.add(crowd.group);
   crowds.set(arena, crowd); // crowdOf looks it up by the arena it stands in
   return g;
+}
+
+/** The boards round the stadium's front wall: five panels, each its own colour with a name across it, four times round.
+ * Seen from inside the wall, so the picture runs backwards along it (repeat.x < 0) to read the right way. */
+function boardTexture(): THREE.Texture {
+  if (typeof document === "undefined") return new THREE.DataTexture(new Uint8Array([40, 70, 130, 255]), 1, 1);
+  const PANELS: [string, string, string][] = [["#1d3f73", "#f4f1e8", "MYTHIC MASTERS"], ["#b8402c", "#fff3d6", "CRYPTID CUP"], ["#22302a", "#e8c46a", "THE BESTIARY"], ["#f0e6cc", "#1d3f73", "HUNT  BIND  FIGHT"], ["#3c2a5a", "#f4f1e8", "THE BOOK IS WATCHING"]];
+  const W = 512, H = 64, c = document.createElement("canvas"), x = c.getContext("2d")!;
+  c.width = W * PANELS.length; c.height = H;
+  PANELS.forEach(([bg, ink, word], i) => {
+    x.fillStyle = bg; x.fillRect(i * W, 0, W, H);
+    x.fillStyle = "rgba(255,255,255,0.12)"; x.fillRect(i * W, 0, W, 6);
+    x.fillStyle = "rgba(0,0,0,0.35)"; x.fillRect(i * W, 0, 4, H);
+    x.fillStyle = ink; x.font = "bold 34px system-ui, sans-serif"; x.textAlign = "center"; x.textBaseline = "middle";
+    x.fillText(word, i * W + W / 2, H / 2 + 2);
+  });
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = THREE.RepeatWrapping; t.repeat.set(-4, 1); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8;
+  return t;
+}
+
+/** The banners hanging on the stands' back wall: a colour field, a hem, and an emblem (a ring, a diamond, a star, a claw mark). */
+function bannerMaterials(): THREE.MeshStandardMaterial[] {
+  const SETS: [string, string][] = [["#1d3f73", "#e8c46a"], ["#b8402c", "#f4f1e8"], ["#22302a", "#e8c46a"], ["#3c2a5a", "#f4f1e8"]];
+  return SETS.map(([bg, ink], k) => {
+    const m = new THREE.MeshStandardMaterial({ color: bg, roughness: 0.8, side: THREE.DoubleSide });
+    if (typeof document === "undefined") return m;
+    const c = document.createElement("canvas"), x = c.getContext("2d")!, W = 96, H = 166;
+    c.width = W; c.height = H;
+    x.fillStyle = bg; x.fillRect(0, 0, W, H);
+    x.fillStyle = ink; x.fillRect(0, 8, W, 5); x.fillRect(0, H - 30, W, 5);
+    // a swallowtail hem: cut a notch out of the bottom
+    x.globalCompositeOperation = "destination-out"; x.beginPath(); x.moveTo(0, H); x.lineTo(W / 2, H - 18); x.lineTo(W, H); x.fill();
+    x.globalCompositeOperation = "source-over"; x.strokeStyle = ink; x.fillStyle = ink; x.lineWidth = 7;
+    const cx = W / 2, cy = 70;
+    x.beginPath();
+    if (k === 0) { x.arc(cx, cy, 24, 0, Math.PI * 2); x.stroke(); }
+    else if (k === 1) { x.moveTo(cx, cy - 30); x.lineTo(cx + 22, cy); x.lineTo(cx, cy + 30); x.lineTo(cx - 22, cy); x.closePath(); x.fill(); }
+    else if (k === 2) { for (let i = 0; i < 10; i++) { const a = -Math.PI / 2 + (i * Math.PI) / 5, r = i % 2 ? 11 : 28; x.lineTo(cx + Math.cos(a) * r, cy + Math.sin(a) * r); } x.closePath(); x.fill(); }
+    else for (const dx of [-14, 0, 14]) { x.moveTo(cx + dx - 6, cy - 28); x.quadraticCurveTo(cx + dx + 8, cy, cx + dx - 2, cy + 28); x.stroke(); x.beginPath(); }
+    const t = new THREE.CanvasTexture(c);
+    t.colorSpace = THREE.SRGBColorSpace;
+    m.map = t; m.color.set(0xffffff); m.transparent = true; m.alphaTest = 0.5;
+    return m;
+  });
 }
 
 /** What moves in a regional arena each frame (fireflies, fog), keyed by its group. */

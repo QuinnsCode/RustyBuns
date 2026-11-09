@@ -10,7 +10,8 @@ import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js
 import { cleanAvatar, drawFace, PARTS, type Avatar } from "@rustybuns/util/avatar";
 import RECORDED from "./crowd.json";
 
-export interface Seat { pos: THREE.Vector3; yaw: number }
+/** `shade` darkens a seat out of the light (the stands' back rows under the roof), 1 in full light. */
+export interface Seat { pos: THREE.Vector3; yaw: number; shade?: number }
 /** A recorded cheer: `frames` poses over a loop of `seconds`, each [bob, lean, latL, fwdL, latR, fwdR] (scripts/crowd.ts). */
 export interface Clip { name: string; seconds: number; weight: number; frames: number[][] }
 
@@ -209,7 +210,7 @@ export function buildCrowd(seats: Seat[], rnd: () => number, cast = CAST, clips 
     list.forEach((seat, i) => {
       mesh.setMatrixAt(i, m4.compose(seat.pos, q.setFromAxisAngle(Y, seat.yaw), one));
       // the cast member's shape and face, this seat's colours: mostly human skin, now and then a mythic green or blue
-      const set = (a: THREE.InstancedBufferAttribute, c: THREE.Color) => a.setXYZ(i, c.r, c.g, c.b);
+      const k = seat.shade ?? 1, set = (a: THREE.InstancedBufferAttribute, c: THREE.Color) => a.setXYZ(i, c.r * k, c.g * k, c.b * k);
       set(skin, hex(rnd() < 0.05 ? pickOf(ODD_SKIN) : pickOf(REAL_SKIN)));
       set(hair, hex(pickOf(PARTS.hairColor)));
       set(top, hex(pickOf(PARTS.topColor)).lerp(new THREE.Color(0x707070), 0.25));
