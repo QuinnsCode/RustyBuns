@@ -67,6 +67,10 @@ export function needs(l: Load) {
   return { rooms, msgs, tb, cores, ramGb, connects };
 }
 
+/** Player-hours a month: players online on average, for the share of the month rooms are busy. The unit a game's
+ *  own numbers come in, so a bill can be read as a price per hour played. */
+export const playerHours = (l: Load) => l.ccu * (MONTH / 3600) * l.awake;
+
 export type Cost = { usd: number; lines: [string, number][]; note: string };
 
 const over = (used: number, free: number, per: number, unit: number) => (Math.max(0, used - free) / unit) * per;

@@ -1,11 +1,13 @@
 // The super admin's Scale tab: what Qollab's rooms cost a month on each home as players grow, where each one gets
 // cheaper than Durable Objects, the path from here to servers behind Cloudflare, and what hurts along the way.
 import { btn } from "./Glass.tsx";
-import { DEFAULT, ONE_BOX, PATHS, PRESETS, crossover, gamesPerBox, needs, sweep, type Load, type PathId } from "../scale.ts";
+import { DEFAULT, ONE_BOX, PATHS, PRESETS, crossover, gamesPerBox, needs, playerHours, sweep, type Load, type PathId } from "../scale.ts";
 
 const COLOR: Record<PathId, string> = { do: "#e8743b", rivet: "#6c7bd9", hetzner: "#2fa58a", ha: "#c2559a" };
 const usd = (v: number) => (v >= 1e6 ? `${+(v / 1e6).toFixed(1)}M` : v >= 10_000 ? `$${Math.round(v / 1000).toLocaleString("en-US")}k` : `$${Math.round(v).toLocaleString("en-US")}`);
 const people = (v: number) => (v >= 1e6 ? `${+(v / 1e6).toFixed(1)}M` : v >= 10_000 ? `${Math.round(v / 1000)}k` : v.toLocaleString("en-US"));
+/** A price per 1,000 player-hours: cents stay readable where dollars round to $0. */
+const perK = (usdPerHour: number) => { const v = usdPerHour * 1000; return v >= 1 ? `$${v.toFixed(2)}` : `${+(v * 100).toPrecision(2)}c`; };
 const href = (l: Load) => `/?tab=scale&${new URLSearchParams(Object.entries(l).map(([k, v]) => [k, String(v)]))}`;
 
 export const SCALE_CSS = `
@@ -111,6 +113,7 @@ function OneBox() {
 export function Scale({ l }: { l: Load }) {
   const n = needs(l), costs = PATHS.map((p) => ({ ...p, c: p.cost(l) }));
   const best = costs.reduce((a, b) => (b.c.usd < a.c.usd ? b : a));
+  const ph = playerHours(l);
   const levels = [100, 1000, 10_000, 100_000, 1_000_000];
   return (
     <div className="scale" style={{ display: "contents" }}>
@@ -124,15 +127,16 @@ export function Scale({ l }: { l: Load }) {
             <b>{usd(p.c.usd)}</b>
             <span><i style={{ background: COLOR[p.id] }} />{p.name}{p.id === best.id ? ", cheapest" : ""}</span>
             <ul>{p.c.lines.filter(([, v]) => v >= 0.5).map(([k, v]) => <li key={k}><span>{k}</span><span>{usd(v)}</span></li>)}</ul>
-            <span className="mut" style={{ fontSize: ".72rem" }}>{p.c.note}</span>
+            <span className="mut" style={{ fontSize: ".72rem" }}>{p.c.note}{ph > 0 ? `; ${perK(p.c.usd / ph)} per 1,000 player-hours` : ""}</span>
           </div>
         ))}
       </div>
-      <h2>Crossovers<em>players online where each gets cheaper than Durable Objects</em></h2>
+      <h2>Crossovers<em>players online, and player-hours a month, where each gets cheaper than Durable Objects</em></h2>
       <div className="tiles">
         {PATHS.filter((p) => p.id !== "do").map((p) => {
           const at = crossover(l, "do", p.id);
-          return <div key={p.id} className="card tile"><b>{at === null ? "never" : people(at)}</b><span><i style={{ background: COLOR[p.id] }} />{p.name}{at === null ? " (up to 10M)" : ""}</span></div>;
+          return <div key={p.id} className="card tile"><b>{at === null ? "never" : people(at)}</b><span><i style={{ background: COLOR[p.id] }} />{p.name}{at === null ? " (up to 10M)" : ""}</span>
+            {at !== null && <span className="mut" style={{ fontSize: ".72rem" }}>{people(Math.round(playerHours({ ...l, ccu: at })))} player-hours a month</span>}</div>;
         })}
       </div>
       <Chart l={l} />
