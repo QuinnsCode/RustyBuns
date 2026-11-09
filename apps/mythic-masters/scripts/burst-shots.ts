@@ -5,12 +5,14 @@
 //   bun scripts/burst-shots.ts <outdir> [prefix]     prefix names the files (default "now"): <prefix>-<scene>-b<n>.jpg
 //   --combat   the combat-feel climb (#3465): one fight per archetype, a burst cued on a wind-up near the other and
 //              one cued on a hit landing (a fighter stunned), frames 0.2 s apart, no close-ups; and six frames from a heavy
-//              swing locking near the other (its dodge and the punish after, #3511 round 3)
+//              swing locking near the other (its dodge and the punish after, #3511 round 3), shot up to four times and
+//              kept from the first try whose defender dashes inside it (#4046 round 5: the sim dashes out about half the
+//              time, but one try at random rarely caught it)
 //   --fly      only the winged bipeds held in flight in the gallery, from the side, flying forward at speed: two
 //              frames 0.45 s apart each (a bot fight rarely catches a flyer in the air)
 //   --hit      the heavies struck in the gallery, side on: one hard blow, frames at rest then 0.05, 0.12, 0.2 and 0.35 s
 //              after it, the same blow every run (a bot fight's hits land at random, on random bodies, at random angles)
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { ROSTER } from "../src/roster.ts";
 import { PAGE } from "../src/gallery.ts";
@@ -56,7 +58,13 @@ const cue = (kind: Cue) => `new Promise((ok) => { const end = performance.now() 
   const hit = ${JSON.stringify(kind)} === "stun" ? a?.state === "stun" || b?.state === "stun"
     : ${JSON.stringify(kind)} === "locked" ? ((a?.swing === "locked" && b?.state === "free") || (b?.swing === "locked" && a?.state === "free")) && near
     : ${JSON.stringify(kind)} === "strike" ? (a?.state === "attack" || b?.state === "attack") && near : a?.flying && !a.onGround;
+  if (hit && ${JSON.stringify(kind)} === "locked") watchDash(a?.swing === "locked" ? 1 : 0);
   if (hit || performance.now() > end) ok(!!hit); else requestAnimationFrame(tick); }; tick(); })`;
+/** Set up by a locked cue: notes in `window.__dashed` whether the free defender dashes in the next 1.2 s (the burst's span). */
+const WATCH = `window.watchDash = (i) => { window.__dashed = false; const end = performance.now() + 1200;
+  const tick = () => { if (mythicMasters.state()?.fighters?.[i]?.state === "dash") window.__dashed = true;
+    if (!window.__dashed && performance.now() < end) requestAnimationFrame(tick); }; tick(); }`;
+const TRIES = 4;
 
 const vite = await startVite(resolve(import.meta.dir, ".."));
 const { cdp, stop } = await launchChrome();
@@ -66,17 +74,30 @@ try {
     try {
       await load(cdp, tab, `${vite.url}?a=${a}&b=${b}&skin=stadium&watch=1`, 2500);
       await tab.eval(`mythicMasters.camera("side")`);
+      await tab.eval(WATCH);
       await Bun.sleep(2500); // intro, first approach
       for (const [n, kind] of cues.entries()) {
-        const ok = await tab.eval<boolean>(cue(kind));
         const name = combat ? `${scene}-${kind === "stun" ? "hit" : kind === "locked" ? "dodge" : "windup"}` : `${scene}${cues.length > 1 ? n + 1 : ""}`;
-        // A burst stops at the fight's end, so it never shoots the result page.
-        let shots = 0;
-        for (let i = 0; i < (kind === "locked" ? 6 : 4); i++) {
-          if (i > 0 && await tab.eval<boolean>(`!!mythicMasters.state()?.over`)) break;
-          await shoot(tab, `${name}-b${i}`); shots++; await Bun.sleep(kind === "stun" && !combat ? HIT_GAP : GAP);
+        const frames = kind === "locked" ? 6 : 4;
+        // A locked cue is shot again (to a scratch name) until a try catches the defender dashing out; the last try stands if none does.
+        let ok = false, shots = 0, dashed = false, tries = 0;
+        while (tries < (kind === "locked" ? TRIES : 1) && !dashed) {
+          if (tries > 0 && await tab.eval<boolean>(`!!mythicMasters.state()?.over`)) break;
+          tries++;
+          ok = await tab.eval<boolean>(cue(kind));
+          // A burst stops at the fight's end, so it never shoots the result page.
+          shots = 0;
+          for (let i = 0; i < frames; i++) {
+            if (await tab.eval<boolean>(`!!mythicMasters.state()?.over`)) break;
+            await shoot(tab, `try-${name}-b${i}`); shots++; await Bun.sleep(kind === "stun" && !combat ? HIT_GAP : GAP);
+          }
+          dashed = kind === "locked" && ok && await tab.eval<boolean>(`!!window.__dashed`);
+          if (kind === "locked" && !dashed) await Bun.sleep(1000);
         }
-        console.log(`${name}: ${ok ? "cued" : "timed out, shot anyway"}${shots < (kind === "locked" ? 6 : 4) ? `, cut to ${shots} at the fight's end` : ""}`);
+        for (let i = shots; i < frames; i++) rmSync(join(out, `${prefix}-try-${name}-b${i}.jpg`), { force: true }); // an earlier, longer try's tail
+        for (let i = 0; i < shots; i++) renameSync(join(out, `${prefix}-try-${name}-b${i}.jpg`), join(out, `${prefix}-${name}-b${i}.jpg`));
+        const dodge = kind === "locked" ? `, ${dashed ? "dashed out" : "no dash"} on try ${tries} of ${TRIES}` : "";
+        console.log(`${name}: ${ok ? "cued" : "timed out, shot anyway"}${dodge}${shots < frames ? `, cut to ${shots} at the fight's end` : ""}`);
         await Bun.sleep(2500);
       }
       if (tab.noise.length) console.log(`${scene} noise: ${[...new Set(tab.noise)].slice(0, 3).join("; ")}`);
