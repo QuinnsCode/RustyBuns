@@ -28,6 +28,7 @@
 // ?scene=<name>&t=<seconds>, window.__scenes) or a test can play it anywhere.
 //
 // No three.js and no DOM: main.ts draws the stage, the tests play it. The clock is the page's (real seconds).
+import { identified } from "./casefile.ts";
 import INTRO from "../content/intro.json";
 import TAPE from "../content/tape.json";
 import { cheese, clamp, crane, dollyZoom, follow, inOut, orbit, reel, smoothstep as smooth, spiralShot, sweepShot, truck, type Vec3 } from "@rustybuns/util";
@@ -366,8 +367,9 @@ export class Director extends Base<Scene> {
 
 // --- every scene by name -----------------------------------------------------------------------------------------
 
-/** Where a scene is played from a name: where you stand, the land worth a look, the region's number, a variant, a place's name. */
-export interface Where { at: Vec3; view: Vec3; n: number; k: number; name: string }
+/** Where a scene is played from a name: where you stand, the land worth a look, the region's number, a variant, a place's name.
+ *  A memory played back (src/memories.ts) brings what it was: a tape's lines and label, the creature a bind identified. */
+export interface Where { at: Vec3; view: Vec3; n: number; k: number; name: string; lines?: readonly string[]; label?: string; creature?: string }
 const SAMPLE_CARD = (name: string, tier: string): VsCard => ({ name, sub: "Lv 5", art: null, tier });
 /**
  * Every scene the director has, playable anywhere from a name: the page's mm_scene command and an agent's harness
@@ -382,6 +384,7 @@ export const SCENES = {
   freeze: (w: Where) => freeze("won", w.at, w.k),
   bound: (w: Where) => freeze("bound", w.at, w.k),
   lost: (w: Where) => freeze("lost", w.at, w.k),
-  found: (w: Where) => found(w.name, ["Gary: Is this thing on?", "You: It's on. It's always on."], w.at, w.k),
+  found: (w: Where) => found(w.name, w.lines ?? ["Gary: Is this thing on?", "You: It's on. It's always on."], w.at, w.k, w.label),
+  identified: (w: Where) => identified(w.creature ?? "jersey-devil", w.name, Math.max(1, w.n), w.at, w.k),
 } satisfies SceneTable<Where, Scene>;
 export type SceneName = keyof typeof SCENES;

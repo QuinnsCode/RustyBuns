@@ -55,6 +55,14 @@ The [five primitives](ADOPTION.md#the-five-primitives) are what Rusty Buns gives
 
 Two primitives are the same for every framework because the host owns them. **memory** is the Bun process (or the isolate on the edge). **identity** arrives as `X-User-Id` and `X-User-Name` request headers, which the framework's middleware or loaders read.
 
+Queues, Cron and Email (RWSDK's, or any framework's) are bindings too, and each has a local twin on the desktop and a box. `init` carries them over from `wrangler.jsonc`:
+
+- **Queues:** a `queue` binding sends to a sqlite queue in the host process, and the Worker's `queue()` gets the batches, each a low job on the host's scheduler, with retries and a dead-letter queue as on the edge.
+- **Cron:** `triggers.crons` becomes `worker.crons`, and a minute timer runs the Worker's `scheduled()` on each match.
+- **Email:** a `send_email` binding writes each `send()` as an `.eml` file under `email/<binding>/` in the data dir instead of sending it. Incoming mail (Email Routing calling the Worker's `email()` handler) has no local twin.
+
+The auth UI, background job runners and email templates a full-stack framework ships are its own: Rusty Buns gives the bindings underneath, not those features.
+
 Support links to the row in the [matrix](#matrix), and to [FRAMEWORK_COVERAGE.md](FRAMEWORK_COVERAGE.md) once a framework has had a real-app run. Known issues are this repo's open issues for the framework (there are no per-framework labels yet, so it's a name search plus the tracking issues).
 
 | Framework | http | storage | comms | Support | Known issues |
@@ -123,7 +131,7 @@ Easiest first, judged by each framework's Cloudflare build and a `fit` sweep ove
 
 ## The sample app contract
 
-The check is [`scripts/counter.ts`](scripts/counter.ts): one HTTP journey (no browser) that every example's `test/desktop.test.ts` calls in one line. Done so far: [`apps/hono-example`](apps/hono-example), [`apps/elysia-example`](apps/elysia-example), [`apps/astro-example`](apps/astro-example), [`apps/react-router-example`](apps/react-router-example), [`apps/sveltekit-example`](apps/sveltekit-example), [`apps/nuxt-example`](apps/nuxt-example), [`apps/solidstart-example`](apps/solidstart-example), [`apps/qwik-example`](apps/qwik-example), [`apps/nextjs-example`](apps/nextjs-example), [`apps/svelte-spa-example`](apps/svelte-spa-example) (a client-only Vite SPA: `counterJourney` with `spa`, the count in a `"use server"` action).
+The check is [`scripts/counter.ts`](scripts/counter.ts): one HTTP journey (no browser) that every example's `test/desktop.test.ts` calls in one line. Done so far: [`apps/hono-example`](apps/hono-example), [`apps/elysia-example`](apps/elysia-example), [`apps/astro-example`](apps/astro-example), [`apps/react-router-example`](apps/react-router-example), [`apps/sveltekit-example`](apps/sveltekit-example), [`apps/nuxt-example`](apps/nuxt-example), [`apps/solidstart-example`](apps/solidstart-example), [`apps/qwik-example`](apps/qwik-example), [`apps/nextjs-example`](apps/nextjs-example), [`apps/svelte-spa-example`](apps/svelte-spa-example), [`apps/vue-spa-example`](apps/vue-spa-example) and [`apps/solid-spa-example`](apps/solid-spa-example) (client-only Vite SPAs: `counterJourney` with `spa`, the count in a `"use server"` action).
 
 Every `apps/<fw>-example` does the same small thing, so a single smoke test covers them all:
 
@@ -156,7 +164,7 @@ It uses Playwright Chromium and is run against both the dev host and the compile
 - [ ] Set up the CI workflow (below) running only `spa-example`.
 
 ### Phase 1: SPA trio
-- [x] `apps/svelte-spa-example`: a client-only Svelte 5 + Vite app, `init` unchanged (spa mode); the count lives in a `"use server"` action the host runs. [ ] `apps/vue-example`, `apps/solid-example` the same way.
+- [x] `apps/svelte-spa-example`: a client-only Svelte 5 + Vite app, `init` unchanged (spa mode); the count lives in a `"use server"` action the host runs. [x] `apps/vue-spa-example` (Vue 3) and `apps/solid-spa-example` (Solid) the same way, each desktop-only without RWSDK.
 - [ ] Give `add desktop` a per-framework entry template (`main.ts` using `createApp`, `mount`, or `render`).
 - [ ] Verify that `"use server"` proxies resolve in non-React client bundles.
 

@@ -35,6 +35,8 @@ h1 { margin: 4px 0 8px; font-size: 40px; letter-spacing: -0.02em; }
 h1::after { content: ""; display: inline-block; width: 12px; height: 12px; border-radius: 50%; background: var(--accent); margin-left: 8px; vertical-align: middle; }
 .lede { margin: 0 0 16px; color: var(--muted); }
 /* Maps scroll in their own box so the start page stays short. */
+.memories { margin-top: 12px; }
+.memories button svg { width: 12px; height: 12px; vertical-align: -1px; margin-right: 4px; }
 .levels { display: grid; gap: 8px; max-height: 232px; overflow-y: auto; padding: 0 4px 4px 0; }
 .level { flex: none; }
 .level span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }

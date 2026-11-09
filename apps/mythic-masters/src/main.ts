@@ -57,8 +57,9 @@ import { choosing, dress as dressHud, ring as hudRing, SKINS as HUD_SKINS, skinN
 import { newMemory, remember as rememberHud, viewOf } from "./hud/skin.ts";
 import { FX_AMOUNT } from "./effects.ts";
 import { darken, warmWith } from "./world/walker3d.ts";
-import { abduction, arrival, Director, faceoff, found, freeze, lookout, SCENES, trail, type Stage, type VsCard } from "./director.ts";
+import { abduction, arrival, Director, faceoff, found, freeze, lookout, SCENES, trail, type Stage, type VsCard, type Where } from "./director.ts";
 import { mountScenes, playNamed, sceneLink } from "@rustybuns/util/director";
+import { Memories } from "@rustybuns/util/memories";
 import { budgetQuality } from "@rustybuns/util/quality";
 import { identified, intro, type Subject } from "./casefile.ts";
 import { drowner } from "./drown.ts";
@@ -387,6 +388,10 @@ const keys = new Set<string>(); // the keys and mouse buttons down, by code; `ac
 let held: Set<string> | null = null; // the actions an agent asked to hold, instead of the keyboard
 // --- the director's scenes (src/director.ts): the tape, the standoffs, the freeze frames --------------------------
 const director = new Director();
+// The scenes you've seen to their end, kept on this device across journeys so the journal can play them again
+// (@rustybuns/util/memories). Only what is wrapped in memories.mark below is kept: the tapes, the arrivals, the
+// landmarks, a first binding. A passing gag or a fight's faceoff never is.
+const memories = new Memories("mythic-masters.memories");
 let poke = false; // a key or a tap this frame, to cut a scene short
 let pending: { m: Match; bound: boolean } | null = null; // a fight over, its result waiting on a freeze frame
 const talked = new Set<string>(); // the trail sections that have had their line on tape this session
@@ -519,7 +524,7 @@ const world = worldView(scene, camera, {
   cleared: (n) => (journey ? cleared(journey, n) : 0),
   owns: (id) => !!journey && owns(journey, id),
   firstNight: () => { if (!journey || journey.nights) return false; journey.nights = 1; saveJourney(); return true; },
-  arrived: (g, fresh) => { if (fresh && worldUp && world.shown) director.play(arrival(g.n, world.here(), world.vista())); },
+  arrived: (g, fresh) => { if (fresh && worldUp && world.shown) director.play(memories.mark(arrival(g.n, world.here(), world.vista()), { id: `arrival:${g.n}`, scene: "arrival", title: `Arriving in ${g.name}`, args: { n: g.n } })); },
   places: {
     log: () => journey,
     // A tape plays where it lies, once, and the journal keeps it. A fire is where you rest: lit the first time, saved every time.
@@ -528,7 +533,7 @@ const world = worldView(scene, camera, {
       if (!journey) return;
       if (p.kind === "tape") {
         const t = tapeOf(p);
-        if (journey.found.includes(p.id) || !director.play(found(t.title, t.lines, world.here(), p.tape ?? 0))) return;
+        if (journey.found.includes(p.id) || !director.play(memories.mark(found(t.title, t.lines, world.here(), p.tape ?? 0), { id: `tape:${p.id}`, scene: "found", title: t.title, sub: "Found tape", args: { name: t.title, lines: t.lines, k: p.tape ?? 0 } }))) return;
         findTape(journey, p); saveJourney();
         return `Found a tape: ${t.title}`;
       }
@@ -538,7 +543,7 @@ const world = worldView(scene, camera, {
         if (!h) return;
         if (st === undefined) {
           take(journey, p.id); saveJourney(); online?.hunt(p.id, 0);
-          director.play(found(h.title, h.report, world.here(), p.k, "SIGHTING"));
+          director.play(memories.mark(found(h.title, h.report, world.here(), p.k, "SIGHTING"), { id: `sighting:${p.id}`, scene: "found", title: h.title, sub: "Sighting", args: { name: h.title, lines: h.report, k: p.k, label: "SIGHTING" } }));
           return `Contract taken: ${h.title}. Follow the signs.`;
         }
         return st > CLUES ? `${h.title}: closed.` : st === CLUES ? `${h.title} waits at its lair.` : `${h.title}: ${st} of ${CLUES} signs read.`;
@@ -559,7 +564,8 @@ const world = worldView(scene, camera, {
     sight: (p) => {
       if (!journey || !sight(journey, p)) return;
       saveJourney();
-      if (!director.beat) director.play(lookout(p.name, world.here(), { x: p.x, y: world.groundAt(p.x, p.z) + 6, z: p.z }, journey.sights.length));
+      if (!director.beat) { const view = { x: p.x, y: world.groundAt(p.x, p.z) + 6, z: p.z }, k = journey.sights.length;
+        director.play(memories.mark(lookout(p.name, world.here(), view, k), { id: `lookout:${p.id}`, scene: "lookout", title: p.name, sub: "Landmark", args: { name: p.name, k, vx: view.x, vy: view.y, vz: view.z } })); }
     },
     // Travelling home to her camp sits you down with her too.
     travelled: (p) => { if (p.id === WITCH_CAMP && sitWithWitch()) return WITCH.camp; },
@@ -769,7 +775,7 @@ function begin(picks: readonly string[]): boolean {
   const j = newJourney(picks);
   if (!j) return false;
   journey = j; chosen.length = 0; saveJourney(); world.reset(); enterWorld();
-  director.play(abduction(world.here())); // tape 1
+  director.play(memories.mark(abduction(world.here()), { id: "abduction", scene: "abduction", title: "Tape 1: the saucer", sub: "Nobody will believe this" })); // tape 1
   // the first page is said somewhere too, so a callback to it can count the regions since
   const n = world.state().region;
   say("open", { n, regionId: REGIONS[n - 1]?.id });
@@ -892,7 +898,10 @@ function drawJournal(edit = true) {
     // the country not walked yet, written once as a line under the chart instead of a heading each
     const unknown = TRAIL_REGIONS.filter((g) => !walked(g));
     const still = unknown.length ? `<p class="unwalked"><b>Not yet walked:</b> ${unknown.map((g) => `${g.n}.&nbsp;${esc(g.name)}`).join("; ")}.</p>` : "";
-    body.innerHTML = spread(chart().replace('class="chart"', 'class="chart one-page"') + still.replace('class="unwalked"', 'class="unwalked one-page"') + l.map(page).join(""),
+    // what you've seen to its end, kept to watch again (memories): a tape, an arrival, a landmark, a first binding
+    const kept = memories.list();
+    const recalled = kept.length ? `<h3>Remembered · ${kept.length}</h3><ol class="pages memories">${kept.map((mm) => `<li><button data-recall="${esc(mm.id)}" title="Watch it again" aria-label="Watch ${esc(mm.title)} again">${icon("play")}</button><b>${esc(mm.title)}</b>${mm.sub ? ` <span class="dim">${esc(mm.sub)}</span>` : ""}</li>`).join("")}</ol>` : "";
+    body.innerHTML = spread(chart().replace('class="chart"', 'class="chart one-page"') + still.replace('class="unwalked"', 'class="unwalked one-page"') + recalled + l.map(page).join(""),
       chart().replace('class="chart"', 'class="chart two-leaves"') + still.replace('class="unwalked"', 'class="unwalked two-leaves"') + r.map(page).join(""));
   }
   // the book's first opening prints the chapter's engraving, the vine rule and the inscription over what the Book
@@ -992,6 +1001,8 @@ $("#journalBody").addEventListener("click", (e) => {
   if (!j) return;
   const go = el.closest<HTMLElement>("[data-go]")?.dataset.go;
   if (go) { journalNav(go === "back" ? "back" : go === "next" ? "right" : "left"); return; }
+  const again = el.closest<HTMLElement>("[data-recall]")?.dataset.recall;
+  if (again) { recall(again); return; }
   if (!b) { const en = el.closest<HTMLElement>(".entry[data-id]"); if (en?.dataset.id) { cursor = en.dataset.id; showFolio(en.dataset.id); return; } }
   if (!b) { const li = el.closest<HTMLElement>("[data-pick]"); if (li) { picked = Number(li.dataset.pick) === picked ? -1 : Number(li.dataset.pick); drawJournal(); } return; }
   const i = Number(b.dataset.i), ei = Number(b.dataset.e);
@@ -1250,7 +1261,7 @@ function ended(m: Match, bound = false) {
   }
   // The first of its kind the totem binds is the moment you find out what it was (src/casefile.ts).
   const first = bound && journey && !owns(journey, t.foe.id) && t.kind !== "deadly" ? journey : null;
-  director.play(first ? identified(t.foe.id, creature(t.foe.id).name, boundCount(first) + 1, { ...loser.pos }, t.k) : freeze(bound ? "bound" : won ? "won" : "lost", { ...loser.pos }, t.k));
+  director.play(first ? memories.mark(identified(t.foe.id, creature(t.foe.id).name, boundCount(first) + 1, { ...loser.pos }, t.k), { id: `identified:${t.foe.id}`, scene: "identified", title: creature(t.foe.id).name, sub: "Bound for the first time", args: { creature: t.foe.id, name: creature(t.foe.id).name, n: boundCount(first) + 1, k: t.k } }) : freeze(bound ? "bound" : won ? "won" : "lost", { ...loser.pos }, t.k));
   pending = { m, bound };
 }
 function finish(m: Match, bound = false) {
@@ -1595,9 +1606,26 @@ addEventListener("pointerdown", () => { if (director.skippable) poke = true; });
  *  A second `t` jumps there and holds it. No name: the scenes' names. */
 function playScene(name: string | undefined, k = 0, t: number | null = null): boolean | string[] {
   if (!name) return Object.keys(SCENES);
+  return playNamed(director, SCENES, name, whereNow(k), t);
+}
+/** Where a scene played by name happens: where you stand in the world, or over the fight. */
+function whereNow(k = 0): Where {
   const inWorld = world.shown, at = inWorld ? world.here() : m ? { ...m.f[1].pos } : { x: 0, y: 0, z: 0 };
   const view = inWorld ? world.vista() : { x: at.x, y: at.y + 2, z: at.z - 60 };
-  return playNamed(director, SCENES, name, { at, view, n: inWorld ? world.state().region : 1, k, name: inWorld ? world.state().name : "The Arena" }, t);
+  return { at, view, n: inWorld ? world.state().region : 1, k, name: inWorld ? world.state().name : "The Arena" };
+}
+/** Watches a memory again (memories above): its scene from SCENES, where you stand now, with what it was (a tape's
+ *  lines, a landmark's place). Only one you've seen to its end is there to play. A second `t` holds that frame. */
+function recall(id: string, t: number | null = null): boolean {
+  const mem = memories.get(id);
+  if (!mem) return false;
+  const a = mem.args ?? {}, w = whereNow(typeof a.k === "number" ? a.k : 0);
+  const n = (key: string) => typeof a[key] === "number" ? a[key] : undefined, txt = (key: string) => typeof a[key] === "string" ? a[key] : undefined;
+  const vx = n("vx"), vy = n("vy"), vz = n("vz"), lines = a.lines;
+  const where: Where = { ...w, n: n("n") ?? w.n, name: txt("name") ?? w.name, label: txt("label"), creature: txt("creature"),
+    ...(Array.isArray(lines) ? { lines } : {}), ...(vx !== undefined && vy !== undefined && vz !== undefined ? { view: { x: vx, y: vy, z: vz } } : {}) };
+  if (journalOpen) openJournal(false);
+  return playNamed(director, SCENES, mem.scene, where, t);
 }
 mountScenes({ list: () => Object.keys(SCENES), play: (name, t) => playScene(name, 0, t ?? null) === true, state: () => ({ beat: director.beat, paused: director.paused, ...director.stage }) });
 
@@ -1617,7 +1645,7 @@ function frame(now: number) {
   touchEl.classList.toggle("bindable", bindable(trip));
   touchEl.classList.toggle("ult-ready", !!m && m.f[mine].energy >= 100);
   if (padKeys.length && director.skippable) poke = true;
-  director.step(dt, poke); poke = false;
+  memories.step(director.step(dt, poke)); poke = false;
   if (pending && !director.holding) { const p = pending; pending = null; finish(p.m, p.bound); }
   nextTalk();
   const step = versusOn ? versus.link()?.step ?? null : null;
@@ -1882,6 +1910,8 @@ Object.assign(window, {
         const id = f.c.id.replace(/^wild-/, ""), g = REGIONS[creature(id).region - 1] ?? REGIONS[0]!;
         return director.play(intro(subject(id, g, { kind, known, bound, place: g.name, sub: `Keeper of ${g.name} · Lv 5` }), f.pos, f.b.height, 0));
       },
+      /** The scenes you've seen to their end, to watch again; `recall(id)` plays one (`t`: held at that second). */
+      memories: () => memories.list(), recall: (id: string, t?: number) => recall(id, t ?? null),
       /** Plays the reveal of binding the foe as the `bound`-th creature (src/casefile.ts). */
       identified: (bound = 3) => { const f = m?.f[1]; return !!f && director.play(identified(f.c.id, f.c.name, bound, f.pos, 0)); } },
   },

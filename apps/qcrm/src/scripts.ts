@@ -11,13 +11,18 @@
 // What the body returns is the run's result.
 //
 //   GET    /api/orgs/:org/scripts                 (seasonal+)   POST  …/scripts {name, body}       (manager+)
-//   GET    /api/orgs/:org/scripts/:id             (seasonal+)   PUT   …/scripts/:id {name?, body?, enabled?} (manager+)
+//   GET    /api/orgs/:org/scripts/:id             (seasonal+)   PUT   …/scripts/:id {name?, body?, enabled?, cron?} (manager+)
 //   DELETE /api/orgs/:org/scripts/:id             (owner+, soft)
 //   POST   /api/orgs/:org/scripts/:id/run {input?} (employee+)  → the run row
 //   GET    /api/orgs/:org/scripts/:id/runs        (seasonal+)   the last 50
 //   POST   /api/orgs/:org/scripts/examples        (manager+)    install the three examples
+//   GET    /api/orgs/:org/scripts/limits          (seasonal+)   PUT   …/scripts/limits {runs_per_day} (owner+)
+//
+// Every run counts against the org's limits (LIMITS, below), scheduled ones too: past one, the run
+// route answers 429 and the hourly cron skips the script. A script with cron "0 * * * *" (hourly is
+// the only schedule) runs from hourly() as the person who made it, with their role in the org now.
 
-import { error, json, parseJson, readBody, type Env, type Row } from "./env.ts";
+import { b64url, error, json, parseJson, readBody, sha256, type Env, type Row } from "./env.ts";
 import type { Ctx } from "./orgs.ts";
 import { rank, type Role } from "./rbac.ts";
 import { EXAMPLES } from "./script-examples.ts";
@@ -90,30 +95,62 @@ function fetcher(env: Env, c: Caller, dispatch: (r: Request) => Promise<Response
 const rpcBase = import("cloudflare:workers").then((m) => (m as unknown as { RpcTarget: new () => object }).RpcTarget, () => undefined);
 
 const shown = (s: Row) => ({ ...s, enabled: !!s.enabled });
+const COLS = "id, org_id, name, body, lang, created_by, created_at, updated_at, enabled, cron";
 const scriptRow = (env: Env, org: string, id: string) =>
-  env.DB.prepare("SELECT id, org_id, name, body, lang, created_by, created_at, updated_at, enabled FROM scripts WHERE org_id = ? AND id = ? AND deleted_at IS NULL").bind(org, id).first();
+  env.DB.prepare(`SELECT ${COLS} FROM scripts WHERE org_id = ? AND id = ? AND deleted_at IS NULL`).bind(org, id).first();
 
-function checkScript(b: { name?: unknown; body?: unknown; enabled?: unknown } | null, partial: boolean): { name?: string; body?: string; enabled?: number } | string {
-  const out: { name?: string; body?: string; enabled?: number } = {};
+/** The one schedule: on the hour, when the cron fires. "@hourly" is the same thing. */
+export const HOURLY = "0 * * * *";
+const DAY = 86_400_000;
+
+/**
+ * The org's run limits, a stack checked in order like codeSplitter's rate-limit rules: each counts
+ * the org's runs in its window (script_runs is the counter) against its cap, and the first one over
+ * says why. A new limit (per person, per role) is one more row.
+ */
+const LIMITS: { label: string; window: number; max: (org: Row) => number }[] = [
+  { label: "runs a day", window: DAY, max: (o) => Number(o.script_runs_per_day) },
+];
+
+/** Why the org can't run another script now, or null. */
+async function overLimit(env: Env, org: string): Promise<string | null> {
+  const row = await env.DB.prepare("SELECT script_runs_per_day FROM orgs WHERE id = ?").bind(org).first();
+  if (!row) return null;
+  for (const l of LIMITS) {
+    const n = (await env.DB.prepare("SELECT COUNT(*) AS n FROM script_runs WHERE org_id = ? AND started_at > ?").bind(org, Date.now() - l.window).first<number>("n")) ?? 0;
+    const max = l.max(row);
+    if (n >= max) return `this org's scripts are limited to ${max} ${l.label}; try again later`;
+  }
+  return null;
+}
+
+type Checked = { name?: string; body?: string; enabled?: number; cron?: string | null };
+function checkScript(b: { name?: unknown; body?: unknown; enabled?: unknown; cron?: unknown } | null, partial: boolean): Checked | string {
+  const out: Checked = {};
   if (b?.name !== undefined || !partial) { if (typeof b?.name !== "string" || !b.name.trim() || b.name.length > 120) return "name: up to 120 characters"; out.name = b.name.trim(); }
   if (b?.body !== undefined || !partial) { if (typeof b?.body !== "string" || b.body.length > MAX_BODY) return `body: JavaScript, up to ${MAX_BODY} characters`; out.body = b.body; }
   if (b?.enabled !== undefined) { if (typeof b.enabled !== "boolean") return "enabled: true or false"; out.enabled = b.enabled ? 1 : 0; }
+  if (b?.cron !== undefined) {
+    if (b.cron !== null && b.cron !== HOURLY && b.cron !== "@hourly") return `cron: "${HOURLY}" (hourly is the only schedule) or null`;
+    out.cron = b.cron === null ? null : HOURLY;
+  }
   return out;
 }
 
-export async function insert(env: Env, org: string, by: string, name: string, body: string) {
+export async function insert(env: Env, org: string, by: string, name: string, body: string, cron: string | null = null) {
   const now = Date.now();
-  const s = { id: crypto.randomUUID(), org_id: org, name, body, lang: "js", created_by: by, created_at: now, updated_at: now, enabled: true };
-  await env.DB.prepare("INSERT INTO scripts (id, org_id, name, body, lang, created_by, created_at, updated_at, enabled) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)").bind(s.id, org, name, body, "js", by, now, now).run();
+  const s = { id: crypto.randomUUID(), org_id: org, name, body, lang: "js", created_by: by, created_at: now, updated_at: now, enabled: true, cron };
+  await env.DB.prepare("INSERT INTO scripts (id, org_id, name, body, lang, created_by, created_at, updated_at, enabled, cron) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?)").bind(s.id, org, name, body, "js", by, now, now, cron).run();
   return s;
 }
 
+/** Who a run acts as: their credentials for the calls back in, and their id for the run row. */
+interface Runner extends Caller { user: string }
+
 /** One run, recorded whatever happens. */
-async function run(env: Env, c: Ctx, script: Row, input: unknown, dispatch: (r: Request) => Promise<Response>) {
-  const origin = env.BETTER_AUTH_URL ?? c.url.origin;
-  const auth = c.req.headers.get("authorization"), cookie = c.req.headers.get("cookie");
-  const headers: Record<string, string> = auth ? { authorization: auth } : { cookie: cookie ?? "", origin };
-  const q = fetcher(env, { headers, org: c.org, origin }, dispatch, await rpcBase);
+async function run(env: Env, c: Runner, script: Row, input: unknown, dispatch: (r: Request) => Promise<Response>) {
+  const { origin } = c;
+  const q = fetcher(env, c, dispatch, await rpcBase);
   const started = Date.now(), id = crypto.randomUUID();
   let status = "ok", log: string[] = [], result: unknown = null, timer: ReturnType<typeof setTimeout> | undefined;
   try {
@@ -134,29 +171,65 @@ async function run(env: Env, c: Ctx, script: Row, input: unknown, dispatch: (r: 
   } finally { clearTimeout(timer); }
   let text = log.join("\n");
   if (text.length > MAX_LOG) text = text.slice(0, MAX_LOG - 20) + "\n… (log cut here)";
-  const row = { id, org_id: c.org, script_id: script.id, actor_user_id: c.user.id, started_at: started, finished_at: Date.now(), status, log: text, result, calls: q.calls() };
+  const row = { id, org_id: c.org, script_id: script.id, actor_user_id: c.user, started_at: started, finished_at: Date.now(), status, log: text, result, calls: q.calls() };
   await env.DB.prepare("INSERT INTO script_runs (id, org_id, script_id, actor_user_id, started_at, finished_at, status, log, result, calls) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
-    .bind(id, c.org, script.id, c.user.id, started, row.finished_at, status, text, JSON.stringify(result ?? null), row.calls).run();
+    .bind(id, c.org, script.id, c.user, started, row.finished_at, status, text, JSON.stringify(result ?? null), row.calls).run();
   return row;
 }
 
 const atLeast = (role: Role, need: Role) => rank(role) >= rank(need);
+
+/**
+ * The hourly cron's part: each enabled script with a schedule runs once, as its maker, while they
+ * are still an employee or more in the org and the org is under its limits. The calls back in go
+ * on a key that lives for the run (hidden from the keys list by its grant_id) and is then deleted.
+ */
+export async function runScheduled(env: Env): Promise<number> {
+  if (!env.LOADER) return 0;
+  const { handleApi } = await import("./api.ts");
+  const { results } = await env.DB.prepare(`SELECT s.${COLS.split(", ").join(", s.")}, m.role FROM scripts s JOIN memberships m ON m.org_id = s.org_id AND m.user_id = s.created_by
+    WHERE s.cron IS NOT NULL AND s.enabled = 1 AND s.deleted_at IS NULL LIMIT 500`).all();
+  const origin = env.BETTER_AUTH_URL ?? "http://localhost";
+  let ran = 0;
+  for (const s of results) {
+    const org = String(s.org_id), user = String(s.created_by);
+    if (!atLeast(s.role as Role, "employee") || await overLimit(env, org)) continue;
+    const secret = "qo_" + b64url(crypto.getRandomValues(new Uint8Array(24))), keyId = crypto.randomUUID();
+    await env.DB.prepare("INSERT INTO api_keys (id, org_id, user_id, name, hash, prefix, created_at, expires_at, grant_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
+      .bind(keyId, org, user, `scheduled: ${s.name}`, await sha256(secret), secret.slice(0, 8), Date.now(), Date.now() + RUN_MS + 30_000, `script:${s.id}`).run();
+    try { await run(env, { headers: { authorization: `Bearer ${secret}` }, org, origin, user }, s, { scheduled: true }, (r) => handleApi(r, env)); ran++; }
+    finally { await env.DB.prepare("DELETE FROM api_keys WHERE id = ?").bind(keyId).run(); }
+  }
+  return ran;
+}
 
 export async function scriptRoutes(c: Ctx, dispatch: (r: Request) => Promise<Response>): Promise<Response | null> {
   const { req, env, org, role, user, p } = c;
   if (p[0] !== "scripts") return null;
   if (!env.LOADER) return error(503, "scripts off");
   if (!p[1] && req.method === "GET") {
-    const { results } = await env.DB.prepare("SELECT id, name, lang, created_by, created_at, updated_at, enabled FROM scripts WHERE org_id = ? AND deleted_at IS NULL ORDER BY updated_at DESC LIMIT 200").bind(org).all();
+    const { results } = await env.DB.prepare("SELECT id, name, lang, created_by, created_at, updated_at, enabled, cron FROM scripts WHERE org_id = ? AND deleted_at IS NULL ORDER BY updated_at DESC LIMIT 200").bind(org).all();
     return json(results.map(shown));
   }
   if (!p[1] && req.method === "POST") {
     if (!atLeast(role, "manager")) return error(403, "managers and up write scripts");
     const v = checkScript(await readBody(req), false);
     if (typeof v === "string") return error(400, v);
-    const s = await insert(env, org, user.id, v.name!, v.body!);
+    const s = await insert(env, org, user.id, v.name!, v.body!, v.cron ?? null);
     await c.audit("script.create", s.id, s.name);
     return json(s, 201);
+  }
+  if (p[1] === "limits" && !p[2]) {
+    if (req.method === "PUT") {
+      if (!atLeast(role, "owner")) return error(403, "owners and up set script limits");
+      const n = (await readBody<{ runs_per_day?: unknown }>(req))?.runs_per_day;
+      if (typeof n !== "number" || !Number.isInteger(n) || n < 0 || n > 100_000) return error(400, "runs_per_day: a whole number, 0 to 100000");
+      await env.DB.prepare("UPDATE orgs SET script_runs_per_day = ? WHERE id = ?").bind(n, org).run();
+      await c.audit("script.limits", null, { runs_per_day: n });
+    } else if (req.method !== "GET") return null;
+    const max = await env.DB.prepare("SELECT script_runs_per_day FROM orgs WHERE id = ?").bind(org).first<number>("script_runs_per_day");
+    const used = await env.DB.prepare("SELECT COUNT(*) AS n FROM script_runs WHERE org_id = ? AND started_at > ?").bind(org, Date.now() - DAY).first<number>("n");
+    return json({ runs_per_day: max, runs_last_day: used ?? 0 });
   }
   if (p[1] === "examples" && !p[2] && req.method === "POST") {
     if (!atLeast(role, "manager")) return error(403, "managers and up write scripts");
@@ -173,7 +246,7 @@ export async function scriptRoutes(c: Ctx, dispatch: (r: Request) => Promise<Res
     const v = checkScript(await readBody(req), true);
     if (typeof v === "string") return error(400, v);
     const next = { ...script, ...v, updated_at: Date.now() };
-    await env.DB.prepare("UPDATE scripts SET name = ?, body = ?, enabled = ?, updated_at = ? WHERE id = ?").bind(next.name, next.body, next.enabled ? 1 : 0, next.updated_at, script.id).run();
+    await env.DB.prepare("UPDATE scripts SET name = ?, body = ?, enabled = ?, cron = ?, updated_at = ? WHERE id = ?").bind(next.name, next.body, next.enabled ? 1 : 0, next.cron ?? null, next.updated_at, script.id).run();
     await c.audit("script.update", script.id as string);
     return json(shown(next));
   }
@@ -186,8 +259,13 @@ export async function scriptRoutes(c: Ctx, dispatch: (r: Request) => Promise<Res
   if (p[2] === "run" && !p[3] && req.method === "POST") {
     if (!atLeast(role, "employee")) return error(403, "employees and up run scripts");
     if (!script.enabled) return error(409, "this script is switched off");
+    const over = await overLimit(env, org);
+    if (over) return error(429, over);
     const b = await readBody<{ input?: unknown }>(req);
-    return json(await run(env, c, script, b?.input, dispatch), 201);
+    const origin = env.BETTER_AUTH_URL ?? c.url.origin;
+    const auth = req.headers.get("authorization");
+    const headers: Record<string, string> = auth ? { authorization: auth } : { cookie: req.headers.get("cookie") ?? "", origin };
+    return json(await run(env, { headers, org, origin, user: user.id }, script, b?.input, dispatch), 201);
   }
   if (p[2] === "runs" && !p[3] && req.method === "GET") {
     const { results } = await env.DB.prepare("SELECT id, actor_user_id, started_at, finished_at, status, log, result, calls FROM script_runs WHERE org_id = ? AND script_id = ? ORDER BY started_at DESC LIMIT 50").bind(org, script.id).all();

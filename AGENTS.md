@@ -62,6 +62,7 @@ Ask a script `--help` before reading its source: it prints the script's top comm
   A climb is a baton, not a pile: one worker runs one round, and `bun run climbs --next` (`--hire` to hire for it) hands
   the next round to whoever is free, with the baton prompt from `scripts/climbs.ts` (how a round is scored, reported and
   hopped forward). Climbs stay at the top of the issues; other issues, manual runs included, sink unless the owner says otherwise.
+- `bun run phil` (`--hire`): the oldest open Mythic Masters issue nobody holds (no MANUAL RUNs, climbs or owner-waiting ones), with its baton prompt.
 - `bun run outline <file> [name]`: a TS file's symbols with line ranges and the first doc line; with a name, just that symbol's source. Use it instead of paging a file with `sed -n`.
 - Reading code: the guard turns away `cat` and `sed -n` ranges over 150 lines on a code file over 200 lines. Use `bun run outline <file>` first, then `bun run outline <file> <name>`.
 - For a codeSplitter chore no CLI covers, its MCP in code mode runs one `execute` program that reads, filters, claims and edits, and returns only the answer.
