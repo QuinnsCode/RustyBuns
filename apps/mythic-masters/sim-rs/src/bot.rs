@@ -20,6 +20,9 @@ fn sidestep(a: Archetype) -> f64 {
     }
 }
 const PUNISH: f64 = 60.0;
+const WAIT_CHANCE: f64 = 0.5;
+const WAIT_CLOSING: f64 = 0.5;
+const WAIT_BACK: f64 = 20.0;
 fn dodge(a: Archetype) -> f64 {
     match a {
         Archetype::Skirmisher => 0.25,
@@ -83,6 +86,7 @@ pub struct Bot {
     rest: f64,
     commit: f64,
     punish: f64,
+    back: f64,
     dir: f64,
     orbit: f64,
 }
@@ -108,6 +112,7 @@ impl Bot {
             rest: 0.0,
             commit: 0.0,
             punish: 0.0,
+            back: 0.0,
             dir,
             orbit,
         }
@@ -505,7 +510,12 @@ impl Bot {
                     c.bot.commit = COMMIT_TICKS;
                 }
                 let inside = open || c.bot.commit > 0.0;
-                let range = if inside {
+                if c.bot.back > 0.0 {
+                    c.bot.back -= 1.0;
+                }
+                let range = if c.bot.back > 0.0 {
+                    sweep(o, me, Slot::Heavy).0 + 0.4
+                } else if inside {
                     reach - 0.4
                 } else if low {
                     reach + 3.5
@@ -525,6 +535,16 @@ impl Bot {
                     return c.i;
                 }
                 if d < reach + 0.3 && facing && (open || (c.bot.commit > 0.0 && !wind && !low)) {
+                    let closing = o.state == State::Free && -(o.vel.x * dx + o.vel.z * dz) / d > WAIT_CLOSING && -(dx * cos(o.yaw) + dz * sin(o.yaw)) / d > 0.6;
+                    if !open && closing && c.bot.rnd.float() < WAIT_CHANCE {
+                        c.bot.commit = 0.0;
+                        c.bot.rest = COMMIT_REST * 2.0;
+                        c.bot.back = WAIT_BACK;
+                        c.bot.punish = PUNISH;
+                        c.i.mx = -dx / d;
+                        c.i.mz = -dz / d;
+                        return c.i;
+                    }
                     let chart = m.chart;
                     if chart.type_mul(me.mv(Slot::Launcher).field, &o.c.fields) > chart.type_mul(me.mv(Slot::Heavy).field, &o.c.fields)
                         && c.bot.rnd.float() < 0.3
