@@ -55,6 +55,9 @@ const until = async (what: string, f: () => Promise<unknown> | unknown, ms = 10_
   for (const end = Date.now() + ms; Date.now() < end; await Bun.sleep(50)) if (await f()) return;
   throw new Error(`never saw ${what}`);
 };
+/** A step that names itself when it doesn't finish, so a hang says where. */
+const step = <T,>(what: string, p: Promise<T>, ms = 15_000) => Promise.race([p, Bun.sleep(ms).then(() => { throw new Error(`stuck: ${what}`); })]);
+const opened = (ws: WebSocket, what: string) => step(what, new Promise((ok, no) => { ws.onopen = ok; ws.onclose = (e) => no(new Error(`${what} closed ${e.code} ${e.reason}`)); }));
 const sock = (path: string, token: string, origin: string) => new WebSocket(`ws://127.0.0.1:${shell.port}${path}`, { headers: { origin }, protocols: ["eqosys", token] } as never);
 
 test("the home shows your party and your spaces beside your friends, and a space opens on /spaces", async () => {
@@ -62,13 +65,14 @@ test("the home shows your party and your spaces beside your friends, and a space
   const bo = await signUp("Bo");
 
   // A space they share, with Bo in it now.
-  const made = await (await fetch(`${base}/q/space`, { method: "POST", headers: { authorization: `Bearer ${ada.token}`, "content-type": "application/json" }, body: JSON.stringify({ name: "game-night" }) })).json() as { id: string; invite: string };
+  const made = await (await step("making the space", fetch(`${base}/q/space`, { method: "POST", headers: { authorization: `Bearer ${ada.token}`, "content-type": "application/json" }, body: JSON.stringify({ name: "game-night" }) }))).json() as { id: string; invite: string };
   expect((await space({ url: () => base, token: () => bo.token }).join(made.invite))?.name).toBe("game-night");
   const boInSpace = sock(`/q/space/${made.id}`, bo.token, PARK);
   // A party both sit in, Bo ready.
   const { code } = await (await fetch(`${base}/q/party?open=1`, { method: "POST", headers: { authorization: `Bearer ${ada.token}` } })).json() as { code: string };
   const adaInParty = sock(`/q/party/${code}`, ada.token, PARK), boInParty = sock(`/q/party/${code}`, bo.token, PARK);
-  await new Promise((ok) => (boInParty.onopen = ok));
+  await opened(adaInParty, "Ada's party socket");
+  await opened(boInParty, "Bo's party socket");
   boInParty.send(JSON.stringify({ t: "ready", ready: true }));
   await until("the side panel's party and space", async () => {
     const s = await sideOf(conf, ada.id);
@@ -79,7 +83,7 @@ test("the home shows your party and your spaces beside your friends, and a space
 
   for (const [w, h, mobile] of [[1440, 900, false], [390, 844, true]] as const) {
     const tab = await openTab(chrome.cdp, { w, h }, mobile);
-    await load(chrome.cdp, tab, `${base}/`, 300);
+    await step(`the home at ${w}`, load(chrome.cdp, tab, `${base}/`, 300), 25_000);
     const side = await tab.eval<{ party: string; ready: string; spaces: string[]; wide: number }>(`({
       party: document.querySelector('[aria-label="Your party"] .code')?.textContent,
       ready: document.querySelector('[aria-label="Your party"] small')?.textContent,
@@ -93,7 +97,7 @@ test("the home shows your party and your spaces beside your friends, and a space
   // The space's link: /spaces, signed in, opens it in the shared panel with Bo online.
   const tab = await openTab(chrome.cdp, { w: 390, h: 844 }, true);
   await tab.call("Network.setCookies", { cookies: ada.cookie.split("; ").map((c) => ({ name: c.slice(0, c.indexOf("=")), value: c.slice(c.indexOf("=") + 1), url: base })) });
-  await load(chrome.cdp, tab, `${base}/spaces?open=${made.id}`, 0);
+  await step("/spaces", load(chrome.cdp, tab, `${base}/spaces?open=${made.id}`, 0), 25_000);
   const state = () => tab.eval<SpacesState | null>("window.__spaces?.state() ?? null").catch(() => null);
   try { await until("game-night open with Bo on", async () => { const s = await state(); return s?.open === "game-night" && [...s.online].sort().join() === "Ada,Bo"; }); }
   catch (e) { throw new Error(`${(e as Error).message}: ${JSON.stringify(await state())} ${tab.noise.join(" | ")}`); }
