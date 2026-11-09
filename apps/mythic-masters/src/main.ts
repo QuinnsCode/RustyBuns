@@ -444,6 +444,8 @@ function setOut(region: Region, kind: Trip["kind"], foe: Foe, k = 0) {
   if (!journey) return;
   const known = owns(journey, foe.id) ? "known" : journey.seen.includes(foe.id) ? "met" : "new";
   const spare = spendInk(journey); // a drop the Book handed over at a talk (src/book.ts)
+  // A lair walked into afresh: what friends did to it on an earlier trip is gone; the room tells what they have done now.
+  if (foe.hunt) lairHurt.delete(`hunt:${foe.hunt}`);
   trip = { region, kind, k, foe, slot: nextUp(journey, downed(journey)), out: downed(journey), ink: INK + spare, foeHp: null, known, friendsHp: 0 };
   // A wild one goes to the party from the world (hooks.met); a keeper's stone and the arena's mythic from here.
   if (kind === "keeper" || kind === "mythic") online?.met(kind === "mythic" ? `mythic:${region.n}` : `keeper:${region.n}:${k}`, foe.id, foe.level);
