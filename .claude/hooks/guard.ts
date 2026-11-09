@@ -231,6 +231,44 @@ export function heavy(cmd: string, cwd: string, root: string, shut: boolean): st
   return null;
 }
 
+// The read valve: a whole code file by `cat`, or a `sed -n A,Bp` wider than WIDE lines, costs the most tokens in the
+// office (every later turn re-reads the result). Turn it away with the outline commands to use; small files, narrow
+// ranges, non-code files, files outside the repo and reads piped into grep/head/tail/wc go through.
+const CODE = /\.(tsx?|jsx?|mjs|cjs|css|html|rs|swift|py|sql)$/;
+const BIG_FILE = 200, WIDE = 150;
+const countLines = (abs: string): number => { try { return readFileSync(abs, "utf8").split("\n").length; } catch { return 0; } };
+export function wideRead(cmd: string, cwd: string, root: string, linesOf: (abs: string) => number = countLines): string | null {
+  // a heredoc's body is text, not commands
+  if (cmd.includes("<<")) return null;
+  let dir = cwd;
+  for (const chunk of cmd.split(/&&|\|\||;|\n/)) {
+    const t = strip(chunk.trim().split(/\s+/).filter(Boolean).map(unquote)).rest;
+    if (t[0] === "cd" && t[1]) { dir = resolve(dir, t[1].replace(/^~(?=\/|$)/, homedir())); continue; }
+    // piped into a filter, or written somewhere: not a read to the screen
+    if (/\||>/.test(chunk)) continue;
+    const c = t[0];
+    if (c !== "cat" && c !== "sed") continue;
+    let from = 1, to = Infinity;
+    if (c === "sed") {
+      const k = t.findIndex((x, i) => i > 0 && /^-[a-z]*n[a-z]*$/.test(x));
+      const m = k > 0 ? /^(\d+),(\d+|\$)p$/.exec(t[k + 1] ?? "") : null;
+      if (!m) continue;
+      from = Number(m[1]); to = m[2] === "$" ? Infinity : Number(m[2]);
+      if (to - from + 1 <= WIDE) continue;
+    }
+    const files = t.slice(c === "sed" ? 3 : 1).filter((x) => !x.startsWith("-") && CODE.test(x));
+    for (const file of files) {
+      const abs = resolve(dir, file.replace(/^~(?=\/|$)/, homedir()));
+      if (!abs.startsWith(root + "/")) continue;
+      const n = linesOf(abs);
+      if (n <= BIG_FILE || (c === "sed" && Math.min(to, n) - from + 1 <= WIDE)) continue;
+      const rel = relative(root, abs);
+      return `the read valve: ${rel} is ${n} lines, and a whole-file ${c} costs every later turn too. See its symbols with line ranges: \`bun run outline ${rel}\`, then \`bun run outline ${rel} <name>\` for one symbol's source, or a narrow \`sed -n 'A,Bp' ${rel}\` (150 lines or fewer)`;
+    }
+  }
+  return null;
+}
+
 const gitBranch: BranchOf = (cwd) => {
   const r = Bun.spawnSync(["git", "-C", cwd, "rev-parse", "--abbrev-ref", "HEAD"], { stderr: "ignore" });
   return r.exitCode === 0 ? r.stdout.toString().trim() : null;
@@ -259,6 +297,12 @@ if (import.meta.main) {
     const root = shut ? Bun.spawnSync(["git", "-C", cwd, "rev-parse", "--show-toplevel"], { stderr: "ignore" }).stdout.toString().trim() : "";
     const busy = heavy(String(input.tool_input?.command ?? ""), cwd, root || cwd, shut);
     if (busy) { console.error(`Blocked by .claude/hooks/guard.ts: ${busy}.`); process.exit(2); }
+  }
+  if (input.tool_name === "Bash") {
+    const cwd = input.cwd ?? process.cwd(), cmd = String(input.tool_input?.command ?? "");
+    const top = /\b(cat|sed)\b/.test(cmd) ? Bun.spawnSync(["git", "-C", cwd, "rev-parse", "--show-toplevel"], { stderr: "ignore" }).stdout.toString().trim() : "";
+    const wide = top ? wideRead(cmd, cwd, top) : null;
+    if (wide) { console.error(`Blocked by .claude/hooks/guard.ts: ${wide}.`); process.exit(2); }
   }
   const why = check(input);
   if (why) {
