@@ -2,6 +2,24 @@
 // every frame through one decoder, and try again after a close when the caller says how long.
 // The world's side is `Sockets` in ./room.ts.
 
+/** How a game's world closes a seat's socket (`Seats` in ./seats.ts), so every page reads it the same way. */
+export const SEAT_CLOSE = {
+  /** The same player joined from another tab or device: stay closed, the newer one plays. */
+  replaced: 4001,
+  /** The room has all the players it takes. */
+  full: 4002,
+  /** Nobody has played for a while: the room closed itself. */
+  idle: 4003,
+} as const;
+
+/** What a page tells its player when its seat closed with one of SEAT_CLOSE, or null for any other close. */
+export function seatClosed(code: number): string | null {
+  return code === SEAT_CLOSE.replaced ? "You joined from somewhere else."
+    : code === SEAT_CLOSE.full ? "That room is full."
+    : code === SEAT_CLOSE.idle ? "The room closed after a while with nobody playing."
+    : null;
+}
+
 export interface LinkOpts<In, Out> {
   /** A text frame's JSON, checked. null drops the frame. */
   decode(v: unknown): In | null;
@@ -13,13 +31,18 @@ export interface LinkOpts<In, Out> {
   /**
    * The socket closed (not by `close()`). `seen`: a message had arrived on it; `tries`: closes
    * since the last open, this one included. Return the ms to wait before opening again, or
-   * nothing to stay closed.
+   * nothing to stay closed. Up to `jitter` of the wait is added at random.
    */
   onClose?(e: { code: number; reason: string; seen: boolean; tries: number }): number | null | void;
   /** Messages kept while the socket is not open and sent once it is (default: none, they are dropped). */
   queue?: number;
   /** Subprotocols to offer: where a token rides instead of the URL, which access logs keep. */
   protocols?: string[];
+  /**
+   * Share of each retry wait added at random, 0 to 1 (default 0.5): pages a deploy or failover closed together
+   * come back spread out instead of all at once, and none sooner than `onClose` asked.
+   */
+  jitter?: number;
   /** `send` turns a message into a frame with this (default JSON.stringify). */
   encode?(m: Out): string;
 }
@@ -68,7 +91,7 @@ export function connectSocket<In, Out>(url: string | URL | (() => string | URL),
       if (ws === s) ws = null;
       if (closed) return;
       const wait = opts.onClose?.({ code: e.code, reason: e.reason, seen, tries: ++tries });
-      if (typeof wait === "number" && wait >= 0) timer = setTimeout(connect, wait);
+      if (typeof wait === "number" && wait >= 0) timer = setTimeout(connect, wait * (1 + (opts.jitter ?? 0.5) * Math.random()));
     };
   };
   connect();

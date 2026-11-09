@@ -1,6 +1,7 @@
 // eqosys's half of voice channels (QLAVE.md): the one-use ticket a member takes to Qlave, and the orders eqosys sends
 // it when the owner mutes or kicks, an account is deleted, or a space or voice channel goes. Both are ES256 JWTs from
 // eqosys's own key (`sign` in @rustybuns/util/token), so Qlave checks them against the same JWKS the games do.
+import { hmacSigned } from "@rustybuns/util/bytes";
 import { arr, check, int, obj, str, type Of } from "@rustybuns/util/guard";
 import { sign, type Signer } from "@rustybuns/util/token";
 import { HOME } from "../apps.ts";
@@ -52,18 +53,10 @@ export const roomParts = (room: string) => {
   return m ? { space: m[1]!, channel: m[2]! } : null;
 };
 
-/** Whether `sig` (lowercase hex) is the HMAC-SHA256 of `body` under `secret`. crypto.subtle.verify compares in constant time. */
-export async function rosterSigned(secret: string, body: string, sig: string): Promise<boolean> {
-  if (!/^[0-9a-f]{64}$/.test(sig)) return false;
-  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["verify"]);
-  const bytes = Uint8Array.from(sig.match(/../g)!, (h) => parseInt(h, 16));
-  return crypto.subtle.verify("HMAC", key, bytes, new TextEncoder().encode(body));
-}
-
 /** Qlave's roster POST, checked: 401 unsigned, 400 malformed or stale, else what to forward to the space. */
 export async function rosterIn(req: Request, secret: string | undefined, now = Date.now()): Promise<{ status: 401 | 400 } | { space: string; channel: string; roster: Roster }> {
   const body = await req.text();
-  if (!secret || !await rosterSigned(secret, body, req.headers.get("x-qlave-signature") ?? "")) return { status: 401 };
+  if (!secret || !await hmacSigned(secret, body, req.headers.get("x-qlave-signature") ?? "")) return { status: 401 };
   let parsed: unknown = null;
   try { parsed = JSON.parse(body); } catch { /* bad JSON is a bad body */ }
   const roster = check(Roster, parsed), parts = roster && roomParts(roster.room);

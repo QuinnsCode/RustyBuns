@@ -2,7 +2,8 @@ import { describe, expect, test } from "bun:test";
 import { appendFileSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { debtLines, insight, releaseOnly, shard, hold, hurtLines, hurting, keep, kept, packagesChanged, report, rows, slowChecks, triage, waitLines } from "../scripts/ester.ts";
+import type { Pipeline } from "../src/pipeline.ts";
+import { debtLines, insight, releaseMove, releaseOnly, shard, hold, hurtLines, hurting, keep, kept, packagesChanged, report, rows, slowChecks, triage, waitLines } from "../scripts/ester.ts";
 import type { Row } from "../scripts/ester.ts";
 import type { Stage } from "../scripts/mervin-board.ts";
 
@@ -118,8 +119,22 @@ describe("ester: slow-lane follow-ups", () => {
   test("a long check that never catches anything is the release-only candidate, and Ester asks", () => {
     const rs = [1, 2, 3, 4, 5].map((n) => row(n, n === 5 ? { failed: ["typecheck"] } : {}));
     expect(releaseOnly(rs).map((c) => [c.name, c.score, c.caught])).toEqual([["stress.ts", 2400, 0], ["typecheck", 80, 1]]);
-    expect(insight(rs)).toBe("Ester: stress.ts took about 40 min over 5 PRs and caught 0 that nothing else did. Run it only at release?");
-    expect(insight(rs.slice(0, 3))).toBeNull();
+    expect(insight(rs.slice(0, 3))).toEqual([]);
+  });
+
+  // What Ester says to the question's yes, by what the repo's pipeline file holds; she never writes it.
+  const asks: [string, Pipeline | null, string[]][] = [
+    ["no pipeline file: a new release lane", null, ["stress.ts", 'add to lanes: {"name":"stress.ts","cadence":"release","run":"<its command>"}']],
+    ["its lane runs often: turn it to release", { lanes: [{ name: "stress.ts", cadence: "often", every: 5, run: "bun run stress" }] }, ["stress.ts", 'lane stress.ts: cadence "often" -> "release"']],
+    ["already a release lane: ask about the next one", { lanes: [{ name: "stress.ts", cadence: "release" }] }, ["typecheck", 'add to lanes: {"name":"typecheck","cadence":"release","run":"<its command>"}']],
+  ];
+  test.each(asks)("the release-only question's yes: %s", (_, pipeline, [name, yes]) => {
+    const rs = [1, 2, 3, 4, 5].map((n) => row(n, n === 5 ? { failed: ["typecheck"] } : {}));
+    const [ask, edit] = insight(rs, pipeline);
+    expect(ask).toStartWith(`Ester: ${name} took about `);
+    expect(ask).toEndWith("Run it only at release?");
+    expect(edit).toContain(`codesplitter.pipeline.json: ${yes} (Ester won't edit it`);
+    expect(releaseMove(pipeline, "stress.ts")?.lane).not.toHaveProperty("every");
   });
 
   test("shards balance by time", () => {

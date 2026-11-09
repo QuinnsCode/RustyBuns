@@ -10,6 +10,7 @@
 // Plain three.js meshes and sprites from a few shared geometries and one soft texture, pooled, so a busy fight
 // allocates nothing.
 import * as THREE from "three";
+import { lerp } from "@rustybuns/util";
 import type { Floor } from "./arena.ts";
 import { COLOR, type Field } from "./fields.ts";
 import type { Fx, Slot } from "./moves.ts";
@@ -19,6 +20,16 @@ import { footprint, frames, head, held, HZ, LUNGE, sweep, swingPhase, warning, t
 function flight(a: Area): V3 {
   const p = head(a), q = head({ ...a, t: a.t + 1 });
   return { x: (q.x - p.x) * HZ, y: (q.y - p.y) * HZ, z: (q.z - p.z) * HZ };
+}
+/** How hard a lasting shape pours this tick, 0 to 1 (0 for a one-hit shape, and for a lob still in the air): a stream
+ * roars up from its first trickle as it is held (sim `ramp`), a fade dies down from its burst to a sputter, on the
+ * same curves the sim weighs their hits by (sim `strength`). */
+export function pour(a: Area): number {
+  const tempo = a.move.tempo;
+  if (a.t < a.land - 1) return 0;
+  if (tempo.kind === "build") return lerp(tempo.from, 1, a.ramp);
+  if (tempo.kind === "fade") return lerp(1, tempo.to, a.t / a.life);
+  return 0;
 }
 /** How big a shape's glowing front is drawn. */
 const trail = (a: Area) => a.d.shape === "column" ? a.d.width / 2 : a.d.shape === "wall" ? a.d.depth / 2 : 0.5;
@@ -173,8 +184,9 @@ export class MoveFx {
     }
     for (const f of m.f) this.tick(m, f);
     for (const a of m.areas) {
+      this.stream(a);
       // a tail behind a column's tip, a wall's front and a lob, longer and brighter on a fast column
-      if (a.d.shape === "cone" || a.d.shape === "nova") continue;
+      if (a.d.shape === "cone" || a.d.shape === "nova" || (a.d.shape === "blast" && a.t >= a.land - 1)) continue;
       const p = head(a), vel = flight(a), beam = a.d.shape === "column" && a.d.speed > 20, size = trail(a);
       const back = { x: p.x - vel.x * 0.02, y: p.y - vel.y * 0.02, z: p.z - vel.z * 0.02 };
       this.spawn(beam ? "streak" : "glow", COLOR[a.move.field], back, { x: (this.rnd() - 0.5) * 1.5, y: (this.rnd() - 0.5) * 1.5, z: (this.rnd() - 0.5) * 1.5 }, size * (beam ? 0.5 : 1.6), beam ? 0.25 : 0.35, { alpha: 0.7 });
@@ -225,13 +237,42 @@ export class MoveFx {
       this.aim(p, p.vel, 0.5);
       if (move.fx === "rampage" && i === 0) this.dust({ x: f.pos.x - fwd.x * r, y: f.pos.y, z: f.pos.z - fwd.z * r }, 1, 0.5);
     }
-    if (move.fx === "breath" && t >= fr.startup && t < fr.startup + fr.active + fr.recovery * 0.6) {
-      // a breath pours out for as long as the move holds, from the mouth, widening as it goes
-      for (let i = 0; i < 3; i++) {
-        const a = f.yaw + (this.rnd() - 0.5) * 0.5, sp = 9 + this.rnd() * 6;
-        this.spawn(move.field === "ember" ? "glow" : GRAIN[move.field].shape, color, front, { x: Math.cos(a) * sp, y: (this.rnd() - 0.4) * 2, z: Math.sin(a) * sp }, 0.12 + this.rnd() * 0.12, 0.45, { grow: 1.6, alpha: 0.8, spin: 4 });
+  }
+
+  /** A stream or a fade while it lasts (`pour`): grains through its shape, more, bigger and brighter as a stream roars up,
+   * fewer and patchier as a fade sputters out. A cone pours from the mouth out to its tip, a column runs along its lane, a
+   * wall rolls across its front, a blast's cloud or a nova's ring churns where it is. */
+  private stream(a: Area) {
+    const p = pour(a);
+    if (p <= 0 || this.rnd() > 0.35 + 0.65 * p) return; // a dying fade sputters: some ticks it gives nothing
+    const field = a.move.field, color = COLOR[field], grain = field === "ember" ? "glow" : GRAIN[field].shape;
+    const h = Math.hypot(a.dir.x, a.dir.z) || 1, ux = a.dir.x / h, uz = a.dir.z / h, n = 1 + Math.round(4 * p), size = 0.1 + 0.14 * p, alpha = 0.45 + 0.45 * p;
+    for (let i = 0; i < n; i++) {
+      const r = this.rnd(), w = this.rnd() - 0.5;
+      switch (a.d.shape) {
+        case "cone": {
+          // out from the mouth, spread across the fan, quick enough to reach the tip as it fades
+          const yaw = Math.atan2(uz, ux) + w * (a.d.angle * Math.PI) / 180, sp = (a.d.length / 0.45) * (0.7 + 0.3 * r);
+          this.spawn(grain, color, a.at, { x: Math.cos(yaw) * sp, y: (this.rnd() - 0.4) * 2, z: Math.sin(yaw) * sp }, size, 0.45, { grow: 1.6 + 2 * p, alpha, spin: 4 });
+          break;
+        }
+        case "column": {
+          const tip = Math.min(a.d.length, (a.d.speed * a.t) / HZ), at = r * tip;
+          this.spawn(grain, color, { x: a.at.x + a.dir.x * at - uz * w * a.d.width, y: a.at.y + a.dir.y * at, z: a.at.z + a.dir.z * at + ux * w * a.d.width }, { x: a.dir.x * 6, y: a.dir.y * 6 + 0.5, z: a.dir.z * 6 }, size * (0.6 + a.d.width), 0.3, { alpha, spin: 3 });
+          break;
+        }
+        case "wall": {
+          const c = head(a);
+          this.spawn(grain, color, { x: c.x - uz * w * a.d.width, y: a.at.y + r * 1.6, z: c.z + ux * w * a.d.width }, { x: ux * a.d.speed * 0.6, y: 0.6, z: uz * a.d.speed * 0.6 }, size * 1.4, 0.3, { alpha, spin: 3 });
+          break;
+        }
+        case "blast": case "nova": {
+          // a churning cloud on the ground: grains rise and drift out from anywhere in the ring
+          const t = this.rnd() * Math.PI * 2, d = Math.sqrt(r) * a.d.radius;
+          this.spawn(grain, color, { x: a.at.x + Math.cos(t) * d, y: a.at.y + 0.2 + this.rnd() * 0.8, z: a.at.z + Math.sin(t) * d }, { x: Math.cos(t) * 0.8, y: 1 + p, z: Math.sin(t) * 0.8 }, size * 1.6, 0.5, { grow: 1 + p, alpha: alpha * 0.8, spin: 2 });
+          break;
+        }
       }
-      this.spawn("glow", color, front, { x: 0, y: 0, z: 0 }, 0.8, 0.1, { alpha: 0.6 });
     }
   }
 

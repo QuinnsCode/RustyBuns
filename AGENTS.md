@@ -21,7 +21,9 @@ all apps plus `bun test packages` when `packages/` or the lockfile moved). Comma
 - The 64 GB builder Mac runs them faster and off this machine: `bun run builder run apps/<app> bun test test/foo.test.ts`
   sends your working tree as it is (no commit or push needed); `bun run builder origin/main` runs every suite you touched.
   The valve (`bun run builder off|on`, bare `bun run builder` says which) is shut by default once `BUILDER_HOST` is set:
-  tests and `build:native` go to Bob and wait while he is off (one suite at a time on battery, wait under 20%). Open, with
+  tests and `build:native` go to Bob and wait while he is off (one suite at a time on battery, wait under 20%). Shut, the
+  guard hook turns away `bun test`, `bun run build`, `vite build` and `cargo build` here with the `builder run` line to use,
+  and opening it is the owner's. Open, with
   no builder (`BUILDER_HOST` unset, or Bob off: ssh gives up after 5 s) `run` runs the test here, and a base-ref run
   names the suites GitHub CI will run and exits 0: push, then `bun run pr <n>`. Setting one up: [MAC_SETUP.md](MAC_SETUP.md#part-4-a-builder-20-min-plus-the-first-installs).
 - No root `bun test`, no whole-app suites, no repo-wide typecheck "to be safe". Push; CI does it.
@@ -144,6 +146,11 @@ stop, every "not checked" or "follow-up" line in your PR is done, an issue, or a
 "4 of 4, nothing left". "PR is open" alone is not a status. Check `gh pr view` and `bun run pr <n> --no-wait` first, and
 base every PR on `main`. Never stack one on another PR's branch: when the base merges, its branch is deleted
 and every PR on it closes unmerged.
+
+Done means back on `main`. PRs are squash-merged, so your branch still holds commits main doesn't: once yours
+lands, check `git diff HEAD origin/main` shows none of your work and `git reset --hard origin/main`, leaving
+`git log origin/main..HEAD` empty. Work that didn't merge isn't kept on a branch: it is an open PR you are still
+landing, or an issue.
 
 ## Manual runs: the owner's hands, in plain sight
 

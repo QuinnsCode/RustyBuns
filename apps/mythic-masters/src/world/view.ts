@@ -10,20 +10,24 @@ import { actionOf } from "../binds.ts";
 import { NO_STICK, push, type Stick } from "../controls.ts";
 import { icon } from "../icons.ts";
 import { NIGHT, tierOf } from "../tiers.ts";
+import { PACE } from "../net/party.ts";
 import { Walker3d } from "./walker3d.ts";
-import { Bearer, HEIGHT, NO_ID, tileLook } from "./bearer.ts";
+import { Bearer, HEIGHT, NO_ID } from "./bearer.ts";
 import { body, creature, ROSTER, type Creature } from "../roster.ts";
 import { REGIONS, type Biome, type Region } from "../regions.ts";
 import { SECTIONS, sections } from "../journey.ts";
-import { arenaOf, COLS, CELL, explore, explored, gateShut, setTravel, FOG, FOG_W, isSeen, meet, NIGHT_MEET_R, newSeen, openRegions, opensRoadTo, OWNER, regionAt, riverAt, ROWS, sendHome, spawn, STEP, GROUND_N, surface, waterAt, wildsNear, heightAt, type Wild } from "./world.ts";
+import { arenaOf, COLS, CELL, explore, explored, gateShut, setTravel, travelOf, pace, WADE_DEPTH, type Gait, FOG, FOG_W, isSeen, meet, NIGHT_MEET_R, newSeen, openRegions, opensRoadTo, OWNER, regionAt, riverAt, ROWS, sendHome, spawn, STEP, GROUND_N, surface, waterAt, wildsNear, heightAt, type Wild } from "./world.ts";
 import { FEEL_ATTR, groundFeel, groundLook, groundWeights, loadGround, WEIGHT_ATTRS, LAYER_COUNT, type Cover } from "./ground.ts";
 import { FLORA, flora, grove, scatterFar, scatterFlora, scatterTurf, TREELINE, turfAt as grassCover, TURF } from "./flora.ts";
 import { lifeView, type LifeEvent } from "./life.ts";
 import { DAWN_HOUR, DAY, daylight, hourAt, weather, wind, type Patch as Forage, type Weather } from "./nature.ts";
 import type { Ambient } from "./ambience.ts";
-import { fireSpot, poiById, shelterAt, SHELTER_R, type Poi, type Shelter } from "./poi.ts";
+import { fireSpot, marked, poiById, shelterAt, SHELTER_R, type Poi, type Shelter } from "./poi.ts";
 import { lightsNear, nightOf, safePaths, stalk, toSafety, type Night } from "./night.ts";
-import { HUNTS, waiting } from "./hunts.ts";
+import { HUNTS, stageOf, waiting } from "./hunts.ts";
+import { beside, BOARD, DEEP, DOORSTEP, line as townLine, onLot, outside, roomAt, step as townStep, toLocal, toWorld, TOWNS, type Town } from "./towns.ts";
+import { buildTown } from "./town-view.ts";
+import { caveMouth, lairOf, POCKETS } from "../pockets.ts";
 import { poiView, type PlaceHooks } from "./poi-view.ts";
 import { cellAt, cellsApart, createStream, type Box } from "./stream.ts";
 import { GRID } from "./places.ts";
@@ -45,7 +49,6 @@ const TURF_SNAP = 16;   // the grass round your feet is laid again this often
 const CALM_MS = 90_000; // a den you fought stays quiet this long
 const SEA = 0x2f6a98, SAND = 0xc8b890, MUD = 0x6e5c42, DIRT = 0xa08a62, ROCK = 0x8a8580, SNOW = 0xf2f4f8, CLOSED = 0x5a5e66, PARCHMENT = 0xf1e7cf;
 const ROCK_Y = 55, SNOW_Y = 72; // game metres: bare rock above the one, snow above the other (the Andes, the Alps, the Himalaya)
-const WADE = 0.1;               // water this deep over the ground is a wade, at half pace
 const PATH_W = 2.6;             // metres either side of a trail worn to dirt
 const PRECIP = 1600, CLOUDS = 40; // raindrops or flakes round the camera; clouds overhead
 const RISE = 2.8; // seconds a piece takes to rise when its road opens
@@ -408,8 +411,8 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
   }
   let peace = false;
   const plants = flora(() => { floraDirty = farDirty = true; });
-  /** Open ground whose piece has fully risen, where things may grow. */
-  const grows = (x: number, z: number) => { const g = regionAt(x, z), open = openRegions(beaten); return g && open.has(g.n) && rise[g.n] === 1 ? g : undefined; };
+  /** Open ground whose piece has fully risen, where things may grow: not on a town's lot. */
+  const grows = (x: number, z: number) => { const g = regionAt(x, z), open = openRegions(beaten); return g && open.has(g.n) && rise[g.n] === 1 && !onLot(x, z) ? g : undefined; };
   /** Plants only grow on a piece that has fully risen. */
   function regrow() {
     scatterFlora(plants, near.at.x, near.at.z, HOLE - 10, grows, (x, z) => patchY(near, x, z) ?? fineY(x, z), w, waterLevel);
@@ -497,12 +500,15 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
   }
 
   // --- markers: an arena ring and beacon per playable region, a red beacon over each high-level one --------
+  // A region whose mythic fights in a lair (src/pockets.ts) has the lair's cave mouth over its ring, open toward the
+  // trail's last stretch, so walking into the ring is walking into the cave.
   const beacons = new Map<number, { mat: THREE.MeshBasicMaterial; parts: THREE.Object3D[] }>();
   /** Stands a region's beam (and ring) on the arena's ground as it is now. */
   function placeBeacon(g: Region, parts: THREE.Object3D[]) {
     const a = arenaOf(g), y = heightAt(w, a.x, a.z);
     parts[0]!.position.set(a.x, y + 30, a.z);
     parts[1]?.position.set(a.x, y + 0.2, a.z);
+    parts[2]?.position.set(a.x, y - 0.3, a.z);
   }
   let glow: THREE.CanvasTexture | null = null;
   const rimGlow = () => glow ??= (() => { // RingGeometry's UVs are planar, so the fade is a radial gradient: 0 at the inner edge, full at the rim
@@ -523,6 +529,8 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
       const ring = new THREE.Mesh(new THREE.RingGeometry(2.6, 4.25, 64), ringMat);
       ring.rotation.x = -Math.PI / 2;
       parts.push(ring);
+      const lair = lairOf(g.id), t = TRAILS.get(g.n), from = t?.pts.at(-2);
+      if (lair) parts.push(caveMouth(POCKETS[lair]!, from ? Math.atan2(from.z - a.z, from.x - a.x) : 0));
     }
     placeBeacon(g, parts);
     group.add(...parts);
@@ -734,7 +742,7 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
     if (dark && !wasDark) {
       if (hooks.firstNight?.()) {
         const it = stalkerNear(open);
-        gary = { b: new Bearer("gary", group, standY, false), t: 0, x: me.x + 2, z: me.z, said: 0, it: it ? creature(it.id).name : "Jersey Devil" };
+        gary = { b: new Bearer("gary", group, standY, null), t: 0, x: me.x + 2, z: me.z, said: 0, it: it ? creature(it.id).name : "Jersey Devil" };
       } else if (!shelter) toast(`${icon("moon")} Night falls. Stay on the lit paths, or by a fire.`);
     } else if (shelter && !wasSheltered) toast(shelterLine(shelter));
     walkGary(dt, open);
@@ -816,12 +824,14 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
 
   // --- you ---------------------------------------------------------------------------------------------------
   const me = spawn(1), trekAt = newTrek(me);
-  // You are a shadowy figure carrying the Book, on your own patch of ground leaving a trail of it (bearer.ts, #3774, #3786); your whole line-up walks
+  // You are a shadowy figure carrying the Book, on your own humming ground leaving a trail of prints (bearer.ts, #3774, #3786); your whole line-up walks
   // behind you, each a few steps back along where you went.
   let followers: Walker3d[] = [], crumbs: { x: number; z: number; yaw: number }[] = [];
   /** Where a figure stands and lays its patch: the ground as drawn near you. */
   const standY = (x: number, z: number) => Math.max(patchY(near, x, z) ?? fineY(x, z), -0.6);
   let bearer: Bearer | null = null;
+  /** The colour your ground hums in (world/hues.ts), as main.ts works it out from your pick and the room's. */
+  let colour = 0;
   /** On a trail you haven't finished, past its open sections (a fresh journey, or sent home to the arena): back to the next keeper. */
   function onTrail() {
     const done = hooks.cleared(me.region), b = bandAt(me.x, me.z);
@@ -830,7 +840,8 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
     if (p) { me.x = p.x; me.z = p.z; }
     trekAt.band = bandAt(me.x, me.z); trekAt.armed = false; crumbs = [];
   }
-  let lead: Creature | null = null, speed = 8, yaw = 0, facing = 0, snap = true; // snap: put the camera straight there, no glide
+  let gait: Gait = "walk"; const told = new Set<Gait>(); // how you crossed the ground last frame; which carries were toasted
+  let lead: Creature | null = null, yaw = 0, facing = 0, snap = true; // snap: put the camera straight there, no glide
   let shownOnce = false;
   // Pieces whose road opened while you were away (in the arena that opened it): shown rising when you're back.
   let toReveal: Region[] = [];
@@ -883,11 +894,85 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
   const ctx = map.getContext("2d"), img = ctx?.createImageData(MW, MH), base = new Uint8ClampedArray(MW * MH * 4);
   let toastUntil = 0, mapAt = 0, mapStale = false;
   function toast(html: string) { toastEl.innerHTML = html; toastEl.hidden = false; toastUntil = performance.now() + 3500; }
-  const places = poiView(group, camera, drawnY, hooks.places);
+  const places = poiView(group, camera, drawnY, hooks.places, (p) => enterTown(p.id));
+
+  // --- towns (towns.ts): a sighting board's door walks you into the town's pocket, its own small scene: the gas station,
+  // the diner and the motel office, where the board and the people are. The open world is put away while you are in;
+  // your line-up waits at the door. Out of the front door, you stand on the street again.
+  interface Inside { t: Town; at: { x: number; z: number }; facing: number; y: number; room: ReturnType<typeof buildTown>; you: Bearer; near: string | null }
+  let inside: Inside | null = null;
+  /** Walks into town `id` (its board's place id) at the front door. False if there is no such town or you are in one. */
+  function enterTown(id: string): boolean {
+    const t = TOWNS.get(id);
+    if (!t || inside || !group.visible) return false;
+    const room = buildTown(t), y = Math.max(0, groundY(t.door.x, t.door.z));
+    room.group.position.set(t.door.x, y, t.door.z); room.group.rotation.y = t.yaw;
+    scene.add(room.group);
+    inside = { t, at: { ...DOORSTEP }, facing: -Math.PI / 2, y, room, you: new Bearer(bearer?.id ?? NO_ID, room.group, () => 0, colour), near: null };
+    group.visible = false;
+    scene.background = new THREE.Color(0x0c1220); scene.fog = new THREE.Fog(0x0c1220, 18, 60);
+    scene.environmentIntensity = ROOM * 0.4;
+    yaw = -t.yaw; snap = true; // looking in, away from the door
+    toast(`${icon("house")} ${esc(t.name)}: the gas station, the diner and the motel office.`);
+    return true;
+  }
+  /** Puts the town away, wherever you stand on the open ground (still the door, unless something moved you). */
+  function dropTown() {
+    const s = inside;
+    if (!s) return;
+    inside = null;
+    scene.remove(s.room.group); s.you.dispose(); s.room.dispose();
+    scene.background = new THREE.Color(0xa8c8e8); scene.fog = new THREE.Fog(0xa8c8e8, 700, 9000);
+    scene.environmentIntensity = ROOM;
+    group.visible = true; snap = true;
+  }
+  /** Out of the front door: a few steps out on the street, facing away from it; the door doesn't take you in again
+   *  until you have walked off and come back. */
+  function leaveTown() {
+    const s = inside, p = s && poiById(s.t.id);
+    if (!s) return;
+    dropTown();
+    if (p) places.stand(p);
+    const out = toWorld(s.t, { x: 0, z: 3 });
+    me.x = out.x; me.z = out.z;
+    facing = Math.atan2(Math.cos(s.t.yaw), Math.sin(s.t.yaw)); yaw = Math.PI - s.t.yaw;
+  }
+  /** One frame in town: the same keys walk you round the rooms, the board is read and the people talk as you come up to
+   * them, and the camera stays a few metres behind you, under the ceiling and inside the walls. */
+  function walkInside(s: Inside, dt: number, keys: ReadonlySet<string>, stick: Stick, turn: number) {
+    const on = (k: string) => keys.has(k), t = s.t;
+    yaw += ((on("turnRight") ? 1 : 0) - (on("turnLeft") ? 1 : 0)) * 1.8 * dt + turn;
+    const { fx, sx } = push(keys, stick), mx = Math.sin(yaw) * fx + Math.cos(yaw) * sx, mz = -Math.cos(yaw) * fx + Math.sin(yaw) * sx;
+    if (mx || mz) {
+      // the keys walk relative to the camera, which turns with the town: into the town's own metres
+      const c = Math.cos(t.yaw), sn = Math.sin(t.yaw), lx = mx * c - mz * sn, lz = mx * sn + mz * c, v = (on("dash") ? 3.5 : PACE.walk) * Math.min(dt, 0.05);
+      s.at = townStep(t, s.at, lx * v, lz * v); s.facing = Math.atan2(lz, lx);
+      if (outside(s.at)) { leaveTown(); return; }
+    }
+    clock += dt;
+    const by = beside(t, s.at), key = by ? ("board" in by ? "board" : by.person.id) : null, log = hooks.places?.log() ?? null;
+    if (key !== s.near) {
+      s.near = key;
+      const p = poiById(t.id);
+      if (by && "board" in by && p) { const said = hooks.places?.reach(p, !marked(log, p)); if (said) toast(`${icon("binoculars")}${esc(said)}`); }
+      else if (by && "person" in by) toast(`${icon("message-circle")}${esc(townLine(t, by.person, stageOf(log, t.id)))}`);
+    }
+    if (toastUntil && performance.now() > toastUntil) { toastEl.hidden = true; toastUntil = 0; }
+    s.you.update(s.at.x, 0, s.at.z, s.facing);
+    s.room.tick(clock);
+    const here = toWorld(t, s.at), back = eye?.back ?? 4.6;
+    const cam = toLocal(t, { x: here.x - Math.sin(yaw) * back, z: here.z + Math.cos(yaw) * back });
+    const kept = toWorld(t, { x: clamp(cam.x, -15.6, 15.6), z: clamp(cam.z, -DEEP + 0.4, -0.3) });
+    follow.lerp(new THREE.Vector3(kept.x, s.y + (eye?.up ?? 2.4), kept.z), snap ? 1 : clamp(dt * 6, 0, 1)); snap = false;
+    camera.position.copy(follow);
+    camera.lookAt(followLook.set(here.x, s.y + (eye?.look ?? 1.3), here.z));
+    camera.updateMatrixWorld();
+  }
   /** Travel to a lit campfire (from the big map, or an agent): you stand beside it and it doesn't rest you again until you walk off. */
   function fastTravel(id: string) {
     const j = hooks.places?.log(), p = j && poiById(id), spot = j && fireSpot(j, id);
     if (!p || !spot || !openRegions(beaten).has(spot.n)) return false;
+    dropTown();
     me.x = spot.x; me.z = spot.z; me.region = spot.n; trekAt.band = bandAt(spot.x, spot.z); trekAt.armed = true; snap = true;
     places.stand(p); look(); drawWhere(); drawMap();
     const line = hooks.places?.travelled?.(p);
@@ -935,6 +1020,14 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
       ctx.fillStyle = beaten.has(g.n) ? "#6ad37a" : "#ff4a3a";
       ctx.beginPath(); ctx.arc(a.x * k, a.z * k, 2, 0, Math.PI * 2); ctx.fill();
     }
+    // a lair's cave mouth, once you've seen its ground: a dark arch over a black throat
+    for (const g of REGIONS) if (g.tier === "playable" && open.has(g.n) && !beaten.has(g.n) && lairOf(g.id)) {
+      const a = arenaOf(g);
+      if (!isSeen(seen, Math.floor(a.z / FOG) * FOG_W + Math.floor(a.x / FOG))) continue;
+      const x = a.x * k, y = a.z * k;
+      ctx.fillStyle = "#5a4a3a"; ctx.beginPath(); ctx.arc(x, y + 1.5, 3.5, Math.PI, 0); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = "#0a0806"; ctx.beginPath(); ctx.arc(x, y + 1.5, 1.8, Math.PI, 0); ctx.closePath(); ctx.fill();
+    }
     places.marks(ctx, k, open, (x, z) => isSeen(seen, Math.floor(z / FOG) * FOG_W + Math.floor(x / FOG)));
     ctx.save(); ctx.translate(me.x * k, me.z * k); ctx.rotate(facing);
     ctx.fillStyle = "#fff"; ctx.strokeStyle = "#1d3a52"; ctx.lineWidth = 1;
@@ -966,7 +1059,7 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
     if (g && beaten.has(g.n)) travel(g.n);
     hud.classList.remove("big-map");
   });
-  window.addEventListener("keydown", (e: KeyboardEvent) => { if (group.visible && actionOf(e.code) === "map") hud.classList.toggle("big-map"); });
+  window.addEventListener("keydown", (e: KeyboardEvent) => { if ((group.visible || inside) && actionOf(e.code) === "map") hud.classList.toggle("big-map"); });
 
   // Crossing into a region: its name across the top for a moment, and "Discovered" the first time you're in it.
   const arriveEl = hud.querySelector<HTMLElement>(".arrive")!;
@@ -1003,15 +1096,13 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
   }
   function wear(c: Creature) {
     lead = c;
-    bearer ??= new Bearer(NO_ID, group, standY);
-    // The world is wide: a region is an hour's walk at your fighting pace and a half, half that running.
-    speed = body(c).topSpeed * 1.2;
+    bearer ??= new Bearer(NO_ID, group, standY, colour);
   }
   function look() { if (explore(seen, me.x, me.z)) { seenDirty = true; drawWhere(); } }
-  function travel(n: number) { if (!openRegions(beaten).has(n)) return; Object.assign(me, spawn(n)); onTrail(); snap = true; look(); drawWhere(); drawMap(); arrive(regionN(n)); }
+  function travel(n: number) { if (!openRegions(beaten).has(n)) return; dropTown(); Object.assign(me, spawn(n)); onTrail(); snap = true; look(); drawWhere(); drawMap(); arrive(regionN(n)); }
 
   // Friends walking the same region (#3663, src/net/online.ts): each one a figure with the Book like you, told apart by
-  // the ground under them (seeded from their public id), their line-up behind and their name over them.
+  // the colour and figure of the ground humming under them, their line-up behind and their name over them.
   // A frame's cost, not a hitch: a party of six is fifteen beasts, so a friend who arrives is built one a frame (FRIENDS_A_FRAME),
   // and the loop allocates nothing: a generation stamp marks who is still here, one vector projects the tags, and a tag's
   // markup is written when its name changes rather than every frame.
@@ -1041,10 +1132,11 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
         // the IK is most of a beast's frame (#3709's flame graph): a friend's line-up poses every other frame, staggered, with
         // half the iterations; yours and the wild ones keep every frame
         for (const w of team) w.lod(FRIEND_LOD.every, FRIEND_LOD.iterations);
-        o = { b: new Bearer(f.id, group, standY), lead: f.lead, tag, name: null, team, crumbs: [], seen: 0 };
+        o = { b: new Bearer(f.id, group, standY, f.colour), lead: f.lead, tag, name: null, team, crumbs: [], seen: 0 };
         friends.set(f.id, o);
       }
       o.seen = gen;
+      o.b.colour = f.colour;
       const ground = standY(f.x, f.z);
       o.b.update(f.x, ground, f.z, f.yaw);
       // Their line-up walks their trail behind them, the way yours walks yours.
@@ -1074,8 +1166,10 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
   return {
     /** Where you stand and as what, for walking together (src/net/online.ts): the region, metres, facing (0 is +x) and your lead. */
     pose: () => ({ region: me.region, x: me.x, z: me.z, yaw: facing, lead: lead?.id ?? "", follow: followers.slice(1).map((f) => f.c.id) }),
-    /** Your public id in the room (src/net/online.ts): your ground tiles are seeded from it, as your friends' pages draw them. */
-    seat(id: string) { if (bearer && bearer.id !== id) { bearer.dispose(); bearer = new Bearer(id, group, standY); } },
+    /** Your public id in the room (src/net/online.ts), as your friends' pages know you. */
+    seat(id: string) { if (bearer && bearer.id !== id) { bearer.dispose(); bearer = new Bearer(id, group, standY, colour); } },
+    /** The colour your ground hums in, one of the 64 (world/hues.ts). */
+    hue(n: number) { colour = n; if (bearer) bearer.colour = n; },
     /** Draw the friends in this region where they are now (an empty list clears them); call it once a frame after `update`. */
     friends: drawFriends,
     /** The room's clock in seconds (src/net/party.ts worldClock), before `update`: the wilds circle their dens, the sun and
@@ -1095,7 +1189,7 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
     friendMet(den: string, who: string, id: string) {
       const lair = den.startsWith("hunt:"), stone = /^(keeper|mythic):/.test(den);
       if (!lair && !stone) calm.set(den, performance.now() + CALM_MS);
-      toast(`${icon("users")} ${esc(who || "A friend")} is fighting ${esc(shrouded(id) ? "something" : creature(id).name)}${lair ? " at its lair. Go and help" : den.startsWith("mythic:") ? " at the arena. Go and help" : stone ? " at the lit stone" : ""}.`);
+      toast(`${icon("users")} ${esc(who || "A friend")} is fighting ${esc(shrouded(id) ? "something" : creature(id).name)}${lair ? " at its lair. Go and help" : den.startsWith("mythic:") ? " in the cave. Go and help" : stone ? " at the lit stone" : ""}.`);
     },
     /** A line from the party (src/net/online.ts), in the world's toast. */
     note: (html: string) => toast(html),
@@ -1113,12 +1207,20 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
       // The first time in, everything is already where it stands; after that, a piece that opened rises.
       refresh(shownOnce); shownOnce = true; look(); drawWhere(); arrive(regionN(me.region));
     },
-    hide() { group.visible = false; hud.hidden = true; scene.environmentIntensity = ROOM; },
-    get shown() { return group.visible; },
+    hide() { dropTown(); group.visible = false; hud.hidden = true; scene.environmentIntensity = ROOM; },
+    get shown() { return group.visible || inside !== null; },
+    /** Walks into town `id` (a sighting board's place id) as its door does; false if you are in one already. */
+    enterTown,
+    /** Out of the town's front door onto the street. */
+    leaveTown,
+    /** Stand at (x, z) in the town you are in, in its own metres (the door at 0, 0, the street toward +z): what is there
+     *  (the board, someone's line) happens the next frame. For an agent; false outside a town or on no floor. */
+    standInside(x: number, z: number) { if (!inside) return false; inside.at = { x, z }; snap = true; return true; },
     /** One frame: `keys` are the action ids held (binds.ts). Forward / back / left / right or a stick walks (relative to
      *  the camera, a light push walks slowly), dash runs, turnLeft / turnRight turn the camera, `turn` (radians, from a
      *  right stick or a drag) turns it too, and the map action opens the big map. */
     update(dt: number, keys: ReadonlySet<string>, stick: Stick = NO_STICK, turn = 0) {
+      if (inside) { walkInside(inside, dt, keys, stick, turn); return; }
       const on = (k: string) => keys.has(k);
       yaw += ((on("turnRight") ? 1 : 0) - (on("turnLeft") ? 1 : 0)) * 1.8 * dt + turn;
       const { fx: fx0, sx: sx0 } = push(keys, stick);
@@ -1127,11 +1229,18 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
       const fx = shot ? 0 : fx0, sx = shot ? 0 : sx0;
       // yaw 0 looks north (-z).
       const mx = Math.sin(yaw) * fx + Math.cos(yaw) * sx, mz = -Math.cos(yaw) * fx + Math.sin(yaw) * sx;
-      // Water slows you to a wade.
-      const wading = waterLevel(me.x, me.z) - fineY(me.x, me.z) > WADE;
+      // Water slows you to a wade, unless a swimmer in the line-up carries you; a flier glides you down a slope.
       if (mx || mz) {
         facing = Math.atan2(mz, mx);
-        const v = speed * (on("dash") ? 2 : 1) * (wading ? 0.45 : 1) * dt;
+        const m = Math.hypot(mx, mz), ahead = fineY(me.x + (mx / m) * 2, me.z + (mz / m) * 2) - fineY(me.x, me.z);
+        const p = pace(on("dash") ? PACE.run : PACE.walk, waterLevel(me.x, me.z) - fineY(me.x, me.z), ahead / 2);
+        if (p.gait !== gait && (p.gait === "swim" || p.gait === "glide") && !told.has(p.gait)) {
+          told.add(p.gait);
+          const who = followers.map((f) => f.c).find((c) => travelOf(c).includes(p.gait === "swim" ? "swimmer" : "flier"));
+          toast(p.gait === "swim" ? `${icon("waves")} ${esc(who?.name ?? "Your swimmer")} carries you over the water.` : `${icon("feather")} ${esc(who?.name ?? "Your flier")} glides you down the slope.`);
+        }
+        gait = p.gait;
+        const v = p.v * dt;
         for (const e of trek(me, trekAt, mx * v, mz * v, beaten, hooks.cleared)) say(e);
         look();
         const last = crumbs[0];
@@ -1237,13 +1346,13 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
     /** Region n's sighting-board contracts (default: where you are): each one's board, creature, stage, next sign and lair. */
     hunts: (n = me.region) => places.hunts(n),
     /** Where you stand, on the ground. */
-    here: () => { const y = fineY(me.x, me.z); return { x: me.x, y: Number.isFinite(y) ? y : drawnY(me.x, me.z), z: me.z }; },
+    here: () => { if (inside) { const p = toWorld(inside.t, inside.at); return { x: p.x, y: inside.y, z: p.z }; } const y = fineY(me.x, me.z); return { x: me.x, y: Number.isFinite(y) ? y : drawnY(me.x, me.z), z: me.z }; },
     /** The ground's height at (x, z), the drawn one where it is near. */
     groundAt: (x: number, z: number) => { const y = fineY(x, z); return Number.isFinite(y) ? y : drawnY(x, z); },
     /** The land worth a look from where you stand (the highest rise in your eye, @rustybuns/util vista): the director aims its reveals there. */
     vista: () => vista((x, z) => heightAt(w, x, z), { x: me.x, y: Math.max(0, fineY(me.x, me.z)), z: me.z }),
     /** Stand at (x, z) at once, for an agent's harness: the stone of a section, beside a roamer. */
-    teleport(x: number, z: number) { const g = regionAt(x, z); if (!g || !openRegions(beaten).has(g.n)) return false; me.x = x; me.z = z; me.region = g.n; trekAt.band = bandAt(x, z); trekAt.armed = true; snap = true; look(); drawWhere(); return true; },
+    teleport(x: number, z: number) { const g = regionAt(x, z); if (!g || !openRegions(beaten).has(g.n)) return false; dropTown(); me.x = x; me.z = z; me.region = g.n; trekAt.band = bandAt(x, z); trekAt.armed = true; snap = true; look(); drawWhere(); return true; },
     trails: () => [...TRAILS.values()].map((t) => ({ n: t.n, stones: t.stones.map((p) => ({ x: +p.x.toFixed(1), z: +p.z.toFixed(1) })) })),
     reset() { beaten.clear(); save(); seen = newSeen(); saveSeen(); visited.clear(); saveVisited(); arrived.n = 0; toReveal = []; shot = null; calm.clear(); life.reset(); dayOff = 0; travel(1); refresh(); },
     /** Shows or hides one drawn layer, for an agent telling them apart: "near", "mid", "far" (the ground patches), "nearWater", "midWater", "land", "plants", "precip", "clouds", "sky". */
@@ -1275,13 +1384,14 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
         rising: REGIONS.filter((r) => rise[r.n] !== want[r.n]).map((r) => r.n), shot: shot !== null,
         beaten: [...beaten].sort((a, b) => a - b), open: [...open].sort((a, b) => a - b),
         ground: { loaded: stream.loaded(), tiles: landStats(), patches: { near: near.at, mid: mid.at, far: far.at, dirty: [near.dirty, mid.dirty, far.dirty], lift: +lf(me.x, me.z).toFixed(3), water: +waterLevel(me.x, me.z).toFixed(2), ground: +fineY(me.x, me.z).toFixed(2), drawn: +groundY(me.x, me.z).toFixed(2) } }, section: trekAt.band, wilds: [...roamers.values()].map(({ c }) => ({ id: c.id, level: c.level, x: +c.x.toFixed(1), z: +c.z.toFixed(1) })),
-        bearer: bearer && { id: bearer.id, tiles: tileLook(bearer.id), trail: bearer.stones }, friends: [...friends].map(([id, o]) => ({ id, tiles: tileLook(id), trail: o.b.stones, team: o.team.map((t) => t.c.id) })),
-        plants: plants.spots, far: plants.far, tufts: plants.tufts, motes: life.motes, wading: waterLevel(me.x, me.z) - fineY(me.x, me.z) > WADE, depth: +(waterLevel(me.x, me.z) - fineY(me.x, me.z)).toFixed(2),
+        bearer: bearer && { id: bearer.id, colour: bearer.colour, trail: bearer.stones, gait: bearer.gait }, friends: [...friends].map(([id, o]) => ({ id, colour: o.b.colour, trail: o.b.stones, team: o.team.map((t) => t.c.id) })),
+        plants: plants.spots, far: plants.far, tufts: plants.tufts, motes: life.motes, wading: waterLevel(me.x, me.z) - fineY(me.x, me.z) > WADE_DEPTH, gait, depth: +(waterLevel(me.x, me.z) - fineY(me.x, me.z)).toFixed(2),
         night: tonight && { night: tonight.night, houses: tonight.houses.map((h) => h.id), paths: tonight.paths.length, safe: +safeD.toFixed(1), dread: +dread.toFixed(2), stalker: stalker?.id ?? null, lamps: lamp[0].count, gary: gary && { t: +gary.t.toFixed(1), x: +gary.x.toFixed(1), z: +gary.z.toFixed(1), off: !!gary.to } },
-        day: { hour: +L.hour.toFixed(2), dark, shelter: shelter?.id ?? null, wind: +wind(clock).toFixed(2), rain: +W.rain.toFixed(2), snow: +W.snow.toFixed(2), mist: +W.mist.toFixed(2) }, life: life.state(), places: places.state(g.n), hunts: places.hunts(g.n) };
+        day: { hour: +L.hour.toFixed(2), dark, shelter: shelter?.id ?? null, wind: +wind(clock).toFixed(2), rain: +W.rain.toFixed(2), snow: +W.snow.toFixed(2), mist: +W.mist.toFixed(2) }, life: life.state(), places: places.state(g.n), hunts: places.hunts(g.n),
+        town: inside && { id: inside.t.id, name: inside.t.name, x: +inside.at.x.toFixed(2), z: +inside.at.z.toFixed(2), room: roomAt(inside.at)?.id ?? null, near: inside.near, board: BOARD.read, people: inside.t.people.map((p) => ({ id: p.id, who: p.who, ...p.at })) } };
     },
   };
 }
 /** A friend as the world draws them (src/net/party.ts Ghost, placed for this frame). */
-export interface Friend { id: string; name: string; lead: string; follow: readonly string[]; x: number; z: number; yaw: number }
+export interface Friend { id: string; name: string; lead: string; follow: readonly string[]; x: number; z: number; yaw: number; colour: number }
 export type WorldView = ReturnType<typeof worldView>;

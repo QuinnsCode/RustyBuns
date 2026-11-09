@@ -47,10 +47,8 @@ const turnstileSiteKey = "0x4AAAAAAFTyaxcLpAqRT0pg";
 const IMAGE_CAPS = { docker: false, rust: false };
 const op = (ref: string, optional?: true) => ({ type: "secret" as const, op: `op://codesplitter/${ref}`, optional });
 
-// Everything below was named codesplitters until #809. On Cloudflare the names moved together,
-// their data copied first by scripts/move-resources.ts (a deploy that renames one without
-// --allow-delete is refused). renamedFrom has the desktop pick its old database and queued
-// messages up under the new names.
+// Everything below was named codesplitters until #809 (moved with its data on 2026-10-11).
+// renamedFrom has the desktop pick its old database and queued messages up under the new names.
 export default defineConfig({
   name: "codesplitter",
   experimental: { wheel: "human" },
@@ -221,8 +219,7 @@ export default defineConfig({
   targets: {
     // Live as D1 codesplitters-db, first deployed with wrangler; adopted by rustybuns deploy on
     // 2026-10-09 (#170). Keep adopt on: a new clone or stage starts with empty state, and adopt
-    // takes these over instead of duplicating them (it's how the copies made by
-    // scripts/move-resources.ts are taken over, too). The Worker was renamed to codesplitter on
+    // takes these over instead of duplicating them. The Worker was renamed to codesplitter on
     // 2026-10-11, and renamedFrom moved its files, game rooms and search over with their data.
     // The containers started empty.
     // D1 migrations are Alchemy's (__alchemy_migrations); never apply them with wrangler (README).

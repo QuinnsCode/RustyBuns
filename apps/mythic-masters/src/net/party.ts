@@ -6,6 +6,7 @@
 // fields that changed since the last one. Nobody sends a frame per frame: SEND_MS apart at most, and nothing at all
 // while you stand still, so a party standing at a campfire costs nothing and lets the room hibernate.
 import { clamp } from "@rustybuns/util";
+import { COLOURS } from "../world/hues.ts";
 import { arr, Bad, bool, check, int, num, obj, oneOf, opt, str, type Guard } from "@rustybuns/util/guard";
 
 /** Players in one region's room: a hunting party, not a crowd. */
@@ -20,8 +21,9 @@ export const COAST_MS = 300;
 
 /** Whole decimetres east and south, a 256th of a turn, the region you are in, the creature you walk as, the next two of
  *  your line-up who follow you (`f`, comma-joined; empty for none), and whether you are on the move (`m`, 1 or 0: the
- *  message that stops you carries where you stopped and `m: 0`, so a friend's page knows not to coast past it). */
-export interface Pose { r: number; x: number; z: number; y: number; l: string; f: string; m: number }
+ *  message that stops you carries where you stopped and `m: 0`, so a friend's page knows not to coast past it), and the
+ *  colour your ground hums in (`c`, one of world/hues.ts's 64; a page from before it sends none). */
+export interface Pose { r: number; x: number; z: number; y: number; l: string; f: string; m: number; c?: number }
 export type Delta = Partial<Pose>;
 
 /** The continent is 77 x 51 km: a decimetre grid fits in an int that JSON spells in six digits. */
@@ -29,10 +31,10 @@ const SPAN = 1_000_000;
 const ID = /^[a-z0-9-]{1,40}$/;
 /** The followers shown behind a friend. */
 export const FOLLOWERS = 2;
-const POSE = { r: int(1, 64), x: int(0, SPAN), z: int(0, SPAN), y: int(0, 255), l: str(40, { re: ID }), f: str(81, { min: 0, re: /^([a-z0-9-]{1,40}(,[a-z0-9-]{1,40})?)?$/ }), m: int(0, 1) };
-const DELTA: Guard<Delta> = obj({ r: opt(POSE.r), x: opt(POSE.x), z: opt(POSE.z), y: opt(POSE.y), l: opt(POSE.l), f: opt(POSE.f), m: opt(POSE.m) });
+const POSE = { r: int(1, 64), x: int(0, SPAN), z: int(0, SPAN), y: int(0, 255), l: str(40, { re: ID }), f: str(81, { min: 0, re: /^([a-z0-9-]{1,40}(,[a-z0-9-]{1,40})?)?$/ }), m: int(0, 1), c: opt(int(0, COLOURS - 1)) };
+const DELTA: Guard<Delta> = obj({ r: opt(POSE.r), x: opt(POSE.x), z: opt(POSE.z), y: opt(POSE.y), l: opt(POSE.l), f: opt(POSE.f), m: opt(POSE.m), c: POSE.c });
 const FULL: Guard<Pose> = obj(POSE);
-const KEYS = ["r", "x", "z", "y", "l", "f", "m"] as const;
+const KEYS = ["r", "x", "z", "y", "l", "f", "m", "c"] as const;
 
 /** A delta off the wire, or null when it isn't one (an unknown field, a number off the map, an empty message). */
 export function parseDelta(raw: unknown): Delta | null {
@@ -47,9 +49,9 @@ export function parseDelta(raw: unknown): Delta | null {
 export const whole = (p: Delta): Pose | null => check(FULL, p);
 
 /** Metres and radians (yaw 0 is +x, the world's own) to the wire's grid. */
-export function quantise(region: number, x: number, z: number, yaw: number, lead: string, follow: readonly string[] = [], moving = false): Pose {
+export function quantise(region: number, x: number, z: number, yaw: number, lead: string, follow: readonly string[] = [], moving = false, colour?: number): Pose {
   const turn = (((yaw / (2 * Math.PI)) % 1) + 1) % 1;
-  return { r: region, x: Math.round(clamp(x * 10, 0, SPAN)), z: Math.round(clamp(z * 10, 0, SPAN)), y: Math.round(turn * 256) % 256, l: lead, f: follow.slice(0, FOLLOWERS).join(","), m: moving ? 1 : 0 };
+  return { r: region, x: Math.round(clamp(x * 10, 0, SPAN)), z: Math.round(clamp(z * 10, 0, SPAN)), y: Math.round(turn * 256) % 256, l: lead, f: follow.slice(0, FOLLOWERS).join(","), m: moving ? 1 : 0, ...(colour === undefined ? {} : { c: colour }) };
 }
 export const metres = (p: Pose) => ({ x: p.x / 10, z: p.z / 10, yaw: (p.y / 256) * 2 * Math.PI });
 
@@ -74,6 +76,25 @@ const FIGHT_PER_DEN = 6;
 /** What a newcomer should know: the patches picked lately and the flocks up (with their world-clock times), the flocks
  *  that have landed somewhere new, and the dens a friend is busy at. */
 export interface Seen { picks: { id: string; at: number }[]; flown: { id: string; at: number; h: number }[]; roost: { id: string; x: number; z: number }[]; busy: string[] }
+/** How much of the region's wilds the room keeps for a late joiner (#3859): the newest of each kind. Small, because it rides
+ *  on every seat's socket attachment (about 2 KB each, with the seat's own pose): a full record is under 1.3 KB. */
+export const KEEP = { picks: 12, flown: 8, roost: 6, busy: 6 } as const;
+export const NO_SEEN: Seen = { picks: [], flown: [], roost: [], busy: [] };
+/** The room's record of the region's wilds with `add` folded in: the newest of each kind first, one per patch, flock or den. */
+export function keepSeen(kept: Seen, add: Seen): Seen {
+  const fold = <T>(news: readonly T[], olds: readonly T[], key: (x: T) => string, cap: number) => {
+    const by = new Map<string, T>();
+    for (const x of [...news, ...olds]) if (!by.has(key(x))) by.set(key(x), x);
+    return [...by.values()].slice(0, cap);
+  };
+  return {
+    picks: fold(add.picks, kept.picks, (x) => x.id, KEEP.picks),
+    flown: fold(add.flown, kept.flown, (x) => x.id, KEEP.flown),
+    roost: fold(add.roost, kept.roost, (x) => x.id, KEEP.roost),
+    busy: fold(add.busy, kept.busy, (x) => x, KEEP.busy),
+  };
+}
+export const seenEmpty = (s: Seen) => !s.picks.length && !s.flown.length && !s.roost.length && !s.busy.length;
 const SEEN = {
   picks: arr(obj({ id: str(24, { re: CELL }), at: num(0, 7200) }), 30),
   flown: arr(obj({ id: str(24, { re: CELL }), at: num(0, 7200), h: num(-10, 10, 0) }), 30),
@@ -128,9 +149,10 @@ export function plausible(met: MetAt | null | undefined, f: Extract<Event, { e: 
   return since >= f.s * 1000 - FIGHT.slackMs && since <= FIGHT.withinMs;
 }
 
-/** The fastest anyone moves on foot, in metres a second: the quickest beast's top speed (roster.ts, 11 m/s), a fifth up
- *  when you walk as it, doubled when you run (world/view.ts). */
-export const RUN_MPS = 27;
+/** You cross the world on foot at a person's pace, the line-up following (#3934): a walk, and Shift runs. Metres a second. */
+export const PACE = { walk: 1.5, run: 5 } as const;
+/** The fastest anyone moves on foot, in metres a second: a run (PACE), with three fifths more for clocks that drift. */
+export const RUN_MPS = PACE.run * 1.6;
 /** Room for clocks, bunched messages and decimetres: a pose may be this much further on than RUN_MPS allows. */
 const JUMP_SLACK_M = 40;
 /** Did a player get from pose `was` to `now` in `ms` faster than anyone walks? Travel, fast travel, being sent home and
@@ -192,7 +214,7 @@ export interface Player { id: string; name: string; p: Delta }
  * `hi` / `p` / `den` / `hunt` / `fought` / `bye` as people come, move, fight, track and go. `vouch` is to you alone: the room
  * trusts where you stand again after a jump, so tell it again what it dropped meanwhile. */
 export type ServerMsg =
-  | { t: "all"; you: string; age: number; players: Player[] }
+  | { t: "all"; you: string; age: number; players: Player[]; seen?: Seen }
   | { t: "hi"; id: string; name: string }
   | { t: "p"; id: string; d: Delta }
   | { t: "den"; id: string; den: string; c: string }
@@ -217,7 +239,7 @@ const NAME = str(24, { min: 0 });
 const PLAYER = obj({ id: PID, name: NAME, p: (v: unknown) => parseDelta(v) ?? {} });
 const SERVER: Guard<ServerMsg> = (v) => {
   const t = typeof v === "object" && v !== null && "t" in v ? v.t : undefined;
-  if (t === "all") return obj({ t: oneOf(["all"]), you: PID, age: int(0, 1e12), players: arr(PLAYER, MAX_PLAYERS) })(v);
+  if (t === "all") return obj({ t: oneOf(["all"]), you: PID, age: int(0, 1e12), players: arr(PLAYER, MAX_PLAYERS), seen: opt(obj(SEEN)) })(v);
   if (t === "den") return obj({ t: oneOf(["den"]), id: PID, den: str(48, { re: DEN }), c: POSE.l })(v);
   if (t === "seen") return obj({ t: oneOf(["seen"]), id: PID, ...SEEN })(v);
   if (t === "time") return obj({ t: oneOf(["time"]), age: int(0, 1e12) })(v);
@@ -254,12 +276,12 @@ export class Ghost {
 
   /** Where to draw them at `now`: BEHIND_MS in the past between two updates. Past the newest, a friend whose last update
    *  said they stopped stands there; one still moving coasts on a little (a late update), never past COAST_MS. */
-  at(now: number): { x: number; z: number; yaw: number; region: number; lead: string; follow: string[] } | null {
+  at(now: number): { x: number; z: number; yaw: number; region: number; lead: string; follow: string[]; colour?: number } | null {
     // (after the newest update: held there if it said they stopped, else coasting COAST_MS on the way they went)
     const p = whole(this.pose), s = this.samples;
     if (!p || !s.length) return null;
     const t = now - BEHIND_MS, last = s[s.length - 1]!;
-    const out = (x: number, z: number, yaw: number) => ({ x, z, yaw, region: p.r, lead: p.l, follow: p.f ? p.f.split(",") : [] });
+    const out = (x: number, z: number, yaw: number) => ({ x, z, yaw, region: p.r, lead: p.l, follow: p.f ? p.f.split(",") : [], colour: p.c });
     if (t <= s[0]!.at) return out(s[0]!.x, s[0]!.z, s[0]!.yaw);
     for (let i = s.length - 1; i > 0; i--) {
       const a = s[i - 1]!, b = s[i]!;

@@ -498,7 +498,7 @@ test("pinned, only the settings' commands run: codesplitter.ci and package.json 
   await send("ryan", "/api/repos/ryan/lab/checks/settings", { where: "github", required: [{ name: "test", command: "bun test ./a" }] }, "PUT");
   await send("ryan", "/api/repos/ryan/lab/checks/run", { ref: "main" });
   expect((await checks()).runs.map((r: any) => r.name)).toEqual(["test", "lint"]);
-  expect(await (await send("ryan", "/api/repos/ryan/lab/checks/settings", { pinned: "yes" }, "PUT")).json()).toEqual({ error: "pinned: true or false" });
+  expect(await (await send("ryan", "/api/repos/ryan/lab/checks/settings", { pinned: "yes" }, "PUT")).json()).toEqual({ error: "pinned: true or false", tag: "BadInput" });
   expect(await (await send("ryan", "/api/repos/ryan/lab/checks/settings", { pinned: true }, "PUT")).json()).toMatchObject({ pinned: true, where: "github", required: [{ name: "test", command: "bun test ./a" }] });
   expect(await (await send("ryan", "/api/repos/ryan/lab/checks/claim", { runner_label: "box" })).json()).toMatchObject({ name: "test", command: "bun test ./a" });
   expect((await send("ryan", "/api/repos/ryan/lab/checks/claim", { runner_label: "box" })).status).toBe(204);

@@ -3,14 +3,19 @@ import { APPS, GENRES, appOf, type QApp } from "../apps.ts";
 import type { Me } from "../auth.ts";
 import { NAME, VERSION } from "../env.ts";
 import type { Friend, HubState, Note } from "../qollab/hub.ts";
+import type { Side } from "../qollab/side.ts";
 import type { Member } from "../members.ts";
 import { Glass, btn, greeting } from "./Glass.tsx";
 import { Art } from "./Art.tsx";
-import { Badge, CAROUSEL_SCRIPT, Rail, SpeedMenu } from "./Carousel.tsx";
+import { Badge } from "./Badge.tsx";
 import { ACHIEVEMENTS, shownFor, TOTAL, type Achievement } from "../achievements.ts";
 import { cardOf } from "../cards.ts";
 import { HOLDERS } from "../privacy.ts";
 import type { Visitors as Counts } from "../visitors.ts";
+import type { Load } from "../scale.ts";
+import { SCALE_CSS, Scale } from "./Scale.tsx";
+import { STUDIO_CSS, Studios } from "./Studio.tsx";
+import type { Studio } from "../studios.ts";
 
 type Unlocks = Map<string, Map<string, number>>;
 
@@ -30,6 +35,10 @@ export const MESSAGES: Record<string, string> = {
   hub: "That didn't go through. Try again.",
   confirm: "That isn't your email. Nothing was deleted.",
   nohub: "Friends are off right now.",
+  nobody: "Nobody has signed up with that email yet.",
+  studio: "Only a studio's owner or admin adds people, and only an owner makes another owner.",
+  owned: "You own three studios already.",
+  name: "A studio's name is 1 to 60 characters.",
 };
 
 const nameOf = (id: string) => cardOf(id, appOf(id)?.name ?? id).name;
@@ -97,70 +106,96 @@ function Friends({ hub, counts }: { hub: HubState; counts: Map<string, number> }
   );
 }
 
-// The home page: the same sky and glass as sign-in (Glass.tsx), a wider column, and every Q app as a card.
-// One card component for games and suites (Card below); its words come from cards.json (cards.ts).
+// The home page: the same sky and glass as sign-in (Glass.tsx), laid out like a game store's home and as wide as the window
+// allows: the menu on the left, then your games (one big, the ones you played last, a shelf of screenshot tiles a genre), then
+// which friends are on. Its words come from cards.json (cards.ts); the pictures are the apps' screenshots (public/cards).
 const HOME_CSS = `
-.home{width:min(100%,64rem);margin:0 auto;display:grid;grid-template-columns:minmax(0,1fr);gap:1rem}
+.home{width:min(100%,110rem);margin:0 auto;display:grid;grid-template-columns:minmax(0,1fr);gap:1rem;align-items:start}
 .home .top{display:grid;gap:1rem;padding:1.5rem 1.8rem 1.1rem}
 .home .top .brand{margin:0;justify-content:space-between}
 .home .top .brand span{display:flex;align-items:center;gap:.5rem}
 .home .top h1{font-size:2.4rem}
 .home .top .sub{margin:-.4rem 0 0;color:var(--mut);font-size:.95rem}
+.home .body{display:grid;gap:1rem;min-width:0}
 .home h2{font-family:Lexend,system-ui,sans-serif;font-weight:600;font-size:.8rem;letter-spacing:.12em;text-transform:uppercase;margin:1rem .4rem 0;color:var(--ink);opacity:.8;
  text-shadow:0 1px 12px color-mix(in oklab,var(--paper) 90%,transparent)}
 .home h2 em{font-style:normal;font-weight:400;opacity:.7;margin-left:.4rem;font-variant-numeric:tabular-nums}
 .home .mut{color:var(--mut)}
-.home .rail{display:flex;gap:1.1rem;overflow-x:auto;overscroll-behavior-x:contain;scrollbar-width:none;padding:.3rem .2rem 1.2rem;margin:0 -.2rem;cursor:grab}
-.home .rail::-webkit-scrollbar{display:none}.home .rail.drag{cursor:grabbing;user-select:none}.home .rail .copy{display:contents}
-.home .rail>.card-app,.home .rail .copy>.card-app{flex:0 0 100%;min-width:0}
-.home .rail:not([data-loop="1"]){scroll-snap-type:x mandatory}.home .rail:not([data-loop="1"])>.card-app{scroll-snap-align:start}
 .home .rowhead{display:flex;align-items:center;justify-content:space-between;gap:1rem}.home .rowhead h2{margin:1rem .4rem 0}
-.home .speed{display:inline-flex;align-items:center;gap:.5rem;color:var(--mut);font-size:.78rem}.home .speed select{padding:.25rem .6rem;font-size:.78rem}
-.home .badge-m{display:inline-grid;place-items:center;width:1.7rem;height:1.7rem;border-radius:50%;border:1px solid var(--rim);background:var(--field);color:var(--mut)}
+.home .badge-m{display:inline-grid;place-items:center;width:1.7rem;height:1.7rem;border-radius:50%;border:1px solid var(--rim);background:var(--field);color:var(--mut);flex:none}
 .home .badge-m svg{width:.95rem;height:.95rem}.home .badge-m.beta{color:var(--acc)}.home .badge-m.experimental{color:color-mix(in oklab,#d9822b var(--flipp),#ffc27a)}
-.home .card-app .name{display:flex;align-items:center;gap:.6rem}
-.home .card-app .title{color:inherit;text-decoration:none}.home .card-app .title:after{content:"";position:absolute;inset:0;border-radius:22px;z-index:1}
-.home .card-app .title:focus-visible{outline:none}.home .card-app:has(.title:focus-visible){outline:2px solid var(--acc);outline-offset:3px}
-.home .card-app a.play{position:relative;z-index:2;text-decoration:none}
-.home .card-app.hero{border-color:color-mix(in oklab,var(--acc) 35%,var(--rim))}
-.home .detail{display:grid;gap:1.2rem}.home .detail .pane{display:grid;gap:1rem}.home .detail .shot{position:relative;aspect-ratio:16/9;overflow:hidden;border-radius:16px;background:color-mix(in oklab,var(--ink) 6%,transparent)}
-.home .detail .shot img,.home .detail .shot .art{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
-.home .detail h1{margin:0;font-size:2.2rem}.home .detail .kick{font-size:.72rem;font-weight:500;letter-spacing:.14em;text-transform:uppercase;color:var(--acc)}
-.home .detail .more{white-space:pre-line;line-height:1.6;text-wrap:pretty}.home .detail .facts{display:flex;flex-wrap:wrap;align-items:center;gap:.7rem;color:var(--mut);font-size:.85rem}
-.home .detail .facts span{display:inline-flex;align-items:center;gap:.4rem}
-.home .back{display:inline-flex;align-items:center;gap:.4rem;color:var(--ink);text-decoration:none;font-size:.9rem;opacity:.85}
-.home .card-app{position:relative;display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr);grid-template-areas:"shot cap" "shot foot";grid-template-rows:1fr auto;min-width:0;border-radius:22px;overflow:hidden;color:var(--ink);text-decoration:none;
- background:var(--paper);border:1px solid var(--rim);backdrop-filter:blur(22px) saturate(1.5);-webkit-backdrop-filter:blur(22px) saturate(1.5);
- box-shadow:0 18px 40px -26px rgba(0,0,0,.45),inset 0 1px 0 var(--edge);transition:transform .25s,box-shadow .25s,border-color .25s}
-.home .card-app .shot{grid-area:shot;position:relative;aspect-ratio:16/9;overflow:hidden;margin:.5rem;border-radius:16px;background:color-mix(in oklab,var(--ink) 6%,transparent)}
-.home .card-app .shot img,.home .card-app .shot .art{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transition:transform .5s}
-.home .card-app .shot:after{content:"";position:absolute;inset:0;pointer-events:none;box-shadow:inset 0 0 0 1px color-mix(in oklab,var(--ink) 8%,transparent);border-radius:16px}
-.home .card-app .cap{grid-area:cap;display:grid;align-content:center;gap:.5rem;padding:1.2rem 1.5rem .4rem 1rem;min-width:0}
-.home .card-app .more{font-size:.86rem;line-height:1.5;opacity:.7;white-space:pre-line;text-wrap:pretty}
-.home .card-app .kick{font-size:.68rem;font-weight:500;letter-spacing:.14em;text-transform:uppercase;color:var(--acc);min-height:1em}
-.home .card-app b{font-family:Lexend,system-ui,sans-serif;font-weight:600;font-size:1.9rem;line-height:1.05;letter-spacing:-.03em;text-wrap:balance}
-.home .card-app .blurb{font-size:1.02rem;line-height:1.4;opacity:.82;text-wrap:pretty}
-.home .card-app .foot{grid-area:foot;display:flex;align-items:center;justify-content:space-between;gap:.6rem;padding:.55rem 1rem .9rem;margin-top:auto}
-.home .card-app .last{display:flex;align-items:center;gap:.5rem;font-size:.74rem;color:var(--mut);font-variant-numeric:tabular-nums;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.home .card-app .tally{display:inline-flex;align-items:center;gap:.25rem;padding:.1rem .45rem;border-radius:999px;border:1px solid var(--rim);color:var(--ink);opacity:.8}
-.home .card-app .tally svg{width:.75rem;height:.75rem}
-.home .card-app .play{display:inline-flex;align-items:center;gap:.35rem;flex:none;white-space:nowrap;font-size:.86rem;font-weight:500;color:var(--ink);padding:.42rem .85rem;border-radius:999px;border:1px solid var(--rim);background:var(--field);transition:background .2s,color .2s,border-color .2s}
-.home .card-app .play svg{width:.9rem;height:.9rem;transition:transform .2s}
-.home .card-app:hover,.home .card-app:focus-visible{transform:translateY(-3px);border-color:color-mix(in oklab,var(--acc) 60%,transparent);box-shadow:0 26px 44px -22px rgba(0,0,0,.55),inset 0 1px 0 var(--edge)}
-.home .card-app:hover .shot img,.home .card-app:hover .shot .art{transform:scale(1.04)}
-.home .card-app:hover .play,.home .card-app:focus-visible .play{background:var(--acc);color:var(--onacc);border-color:transparent}
-.home .card-app:hover .play svg{transform:translate(2px,-2px)}
-.home .card-app:focus-visible{outline:2px solid var(--acc);outline-offset:3px}
-/* Wide screens: each app a full-width row, picture left, words in the middle, when-played and the button on the right. */
-@media(min-width:46rem){.home .card-app{display:grid;grid-template-columns:minmax(0,20rem) minmax(0,1fr) auto;align-items:center;gap:1.4rem;padding:.5rem 1.4rem .5rem .5rem}
- .home .card-app .shot{margin:0}.home .card-app .cap{padding:0}.home .card-app b{font-size:1.6rem}.home .card-app .blurb{font-size:1rem}
- .home .card-app .foot{flex-direction:column;align-items:flex-end;justify-content:center;padding:0;margin:0}}
-@media(prefers-reduced-motion:reduce){.home .card-app,.home .card-app .shot img,.home .card-app .shot .art{transition:none}}
+.home .glass{position:relative;min-width:0;border-radius:22px;overflow:hidden;color:var(--ink);background:var(--paper);border:1px solid var(--rim);
+ backdrop-filter:blur(22px) saturate(1.5);-webkit-backdrop-filter:blur(22px) saturate(1.5);box-shadow:0 18px 40px -26px rgba(0,0,0,.45),inset 0 1px 0 var(--edge)}
+.home .shot{position:relative;display:block;width:100%;aspect-ratio:16/9;max-width:100%;overflow:hidden;background:color-mix(in oklab,var(--ink) 6%,transparent)}
+.home .shot img,.home .shot .art{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transition:transform .5s}
+.home .play{position:relative;z-index:2;display:inline-flex;align-items:center;gap:.35rem;flex:none;white-space:nowrap;font-size:.9rem;font-weight:500;color:var(--onacc);
+ padding:.5rem 1rem;border-radius:999px;background:var(--acc);text-decoration:none;transition:filter .2s}
+.home .play:hover{filter:brightness(1.08)}.home .play svg{width:.9rem;height:.9rem}
+.home .play.ghost{color:var(--ink);background:var(--field);border:1px solid var(--rim)}
+.home .play.icon{width:2.4rem;height:2.4rem;padding:0;justify-content:center}
+.home .kick{font-size:.68rem;font-weight:500;letter-spacing:.14em;text-transform:uppercase;color:var(--acc);min-height:1em}
+.home .title{color:inherit;text-decoration:none}.home .title:after{content:"";position:absolute;inset:0;z-index:1}
+.home .glass:has(.title:focus-visible){outline:2px solid var(--acc);outline-offset:3px}.home .title:focus-visible{outline:none}
+.home .tally{display:inline-flex;align-items:center;gap:.25rem;padding:.1rem .45rem;border-radius:999px;border:1px solid var(--rim);color:var(--ink);opacity:.8;font-size:.74rem;font-variant-numeric:tabular-nums}
+.home .tally svg{width:.75rem;height:.75rem}
+/* The big one: the featured game you played last, its screenshot beside its words. */
+.home .feature{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(0,1fr)}
+.home .feature .shot{aspect-ratio:auto;min-height:18rem}
+.home .feature .cap{display:grid;align-content:center;gap:.7rem;padding:1.6rem 1.8rem}
+.home .feature b{font-family:Lexend,system-ui,sans-serif;font-weight:600;font-size:2.4rem;line-height:1.05;letter-spacing:-.03em;text-wrap:balance}
+.home .feature .blurb{font-size:1.05rem;line-height:1.45;opacity:.85;text-wrap:pretty}
+.home .feature .facts{display:flex;flex-wrap:wrap;align-items:center;gap:.5rem;color:var(--mut);font-size:.82rem}
+/* Pick up where you left off: the last few you played, a small picture and a Play button each. */
+.home .recent{display:grid;grid-template-columns:repeat(auto-fill,minmax(17rem,1fr));gap:.8rem}
+.home .recent .glass{display:flex;align-items:center;gap:.8rem;padding:.6rem .8rem .6rem .6rem}
+.home .recent .shot{width:5.5rem;flex:none;border-radius:12px}
+.home .recent span.w{display:grid;min-width:0;flex:1}.home .recent b{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.home .recent small{color:var(--mut);font-size:.78rem;white-space:nowrap}
+/* A shelf: a genre's games as screenshot tiles, as many across as the width holds. */
+.home .shelf{display:grid;grid-template-columns:repeat(auto-fill,minmax(15rem,1fr));gap:1rem}
+.home .game{display:grid;transition:transform .25s,box-shadow .25s,border-color .25s}
+.home .game .cap{display:grid;gap:.25rem;padding:.75rem .9rem .85rem}
+.home .game .name{display:flex;align-items:center;justify-content:space-between;gap:.5rem}
+.home .game b{font-family:Lexend,system-ui,sans-serif;font-weight:600;font-size:1.1rem;line-height:1.15;letter-spacing:-.02em;min-width:0}
+.home .game small{display:flex;align-items:center;gap:.5rem;color:var(--mut);font-size:.76rem;font-variant-numeric:tabular-nums}
+.home .game:hover,.home .game:focus-within{transform:translateY(-3px);border-color:color-mix(in oklab,var(--acc) 60%,transparent);box-shadow:0 26px 44px -22px rgba(0,0,0,.55),inset 0 1px 0 var(--edge)}
+.home .game:hover .shot img,.home .game:hover .shot .art{transform:scale(1.04)}
+/* Friends on the right: who is on and where. */
+.home .lib{display:grid;grid-template-columns:minmax(0,1fr);gap:1rem;min-width:0}
+.home .lib>div{display:grid;gap:1rem;min-width:0}
+.home .side{display:grid;gap:.8rem;align-content:start;align-self:start;min-width:0}
+.home .rail{display:grid;gap:.4rem;padding:1rem 1.1rem;align-content:start;min-width:0}
+.home .rail h2{margin:0 0 .3rem;display:flex;align-items:center;gap:.45rem}.home .rail h2 svg{width:1.05rem;height:1.05rem;flex:none;color:var(--mut)}
+.home .party{border-color:color-mix(in oklab,var(--acc) 55%,transparent)}
+.home .party .code{font:600 1.35rem/1 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.22em}
+.home .rail .seats{display:flex;flex-wrap:wrap;gap:.4rem}
+.home .rail .seats li{position:relative;display:grid;place-items:center;width:2.1rem;height:2.1rem;padding:0;border-radius:50%;background:var(--field);border:1px solid var(--rim);font:500 .78rem Lexend,system-ui,sans-serif;text-transform:uppercase}
+.home .rail .seats li.ready{box-shadow:0 0 0 2px #3fb871}
+.home .rail .seats li svg{position:absolute;right:-4px;bottom:-4px;width:.85rem;height:.85rem;padding:1px;border-radius:50%;background:#3fb871;color:#fff}
+.home .rail .seats li.open{border-style:dashed;color:var(--mut)}
+.home .rail .spaces li{padding:0}.home .rail .spaces a{display:flex;align-items:center;gap:.5rem;width:100%;min-width:0;padding:.45rem .55rem;border-radius:.6rem;color:var(--ink);text-decoration:none;border:1px solid var(--rim)}
+.home .rail .spaces a:hover{background:var(--field)}.home .rail .spaces svg{width:.95rem;height:.95rem;flex:none;color:var(--mut)}
+.home .rail .spaces b{flex:1}.home .rail .spaces small.on{color:#3fb871}
+.home .rail ul{list-style:none;margin:0;padding:0;display:grid;gap:.15rem}
+.home .rail li{display:flex;align-items:center;gap:.7rem;padding:.4rem 0;min-width:0}
+.home .rail li i{position:relative;flex:none;display:grid;place-items:center;width:2.1rem;height:2.1rem;border-radius:50%;background:var(--field);border:1px solid var(--rim);font:500 .9rem Lexend,system-ui,sans-serif;font-style:normal;text-transform:uppercase}
+.home .rail li i:after{content:"";position:absolute;right:-2px;bottom:-2px;width:.65rem;height:.65rem;border-radius:50%;background:var(--mut);border:2px solid var(--paper)}
+.home .rail li.on i:after{background:#3fb871}
+.home .rail li span{display:grid;min-width:0}.home .rail li b{font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.home .rail li small{color:var(--mut);font-size:.76rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.home .rail>a{font-size:.85rem}
+@media(prefers-reduced-motion:reduce){.home .game,.home .shot img,.home .shot .art{transition:none}}
 .home .tabs{display:flex;gap:.3rem;flex-wrap:wrap}
 .home .tabs a{display:inline-flex;align-items:center;gap:.4rem;padding:.45rem .95rem;border-radius:999px;color:var(--mut);text-decoration:none;font-weight:500;border:1px solid transparent}
 .home .tabs a:hover{color:var(--ink)}
 .home .tabs a[aria-current]{color:var(--ink);background:color-mix(in oklab,var(--acc) 22%,transparent);border-color:color-mix(in oklab,var(--acc) 45%,transparent)}
 .home .tabs em{font-style:normal;font-size:.72rem;padding:.05rem .4rem;border-radius:999px;background:var(--acc);color:var(--onacc)}
+/* Wide: the menu becomes a column on the left that stays put, and the friends a column on the right. */
+@media(min-width:68rem){.home{grid-template-columns:15rem minmax(0,1fr)}
+ .home .top{position:sticky;top:1.5rem;padding:1.4rem 1.2rem}.home .top h1{font-size:1.8rem}
+ .home .tabs{flex-direction:column}.home .tabs a{justify-content:space-between}}
+@media(min-width:84rem){.home .lib{grid-template-columns:minmax(0,1fr) 17rem}.home .side{position:sticky;top:4.5rem;margin-top:3rem}}
+@media(max-width:52rem){.home .feature{grid-template-columns:minmax(0,1fr)}.home .feature .shot{aspect-ratio:16/9;min-height:0}.home .feature .cap{padding:1.1rem 1.2rem 1.3rem}.home .feature b{font-size:1.9rem}}
 .home .trophies{display:grid;gap:.6rem}
 .home .trophies header{display:flex;align-items:baseline;gap:.6rem;margin-bottom:.7rem}.home .trophies header b{flex:1;font-family:Lexend,system-ui,sans-serif;font-weight:600}
 .home .trophies meter{width:100%;height:.4rem;margin:-.3rem 0 .8rem}
@@ -182,18 +217,24 @@ const HOME_CSS = `
 .home a{color:var(--acc)}
 @media(max-width:40rem){.home{padding-top:2.4rem}.home .top{padding:1.3rem 1.2rem 1rem;gap:.8rem}.home .top h1{font-size:1.9rem}.home .top .sub{font-size:.88rem}
  .home .tabs{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;margin:0 -1.2rem;padding:0 1.2rem}.home .tabs::-webkit-scrollbar{display:none}.home .tabs a{flex:none;padding:.4rem .8rem}
- .home .card-app{grid-template-columns:1fr;grid-template-areas:"shot" "cap" "foot";grid-template-rows:auto}.home .card-app .cap{padding:.9rem 1rem .4rem}.home .card-app b{font-size:1.5rem}}
-@media(max-width:52rem){.home .card-app .more{display:none}}
+ .home .shelf{grid-template-columns:repeat(auto-fill,minmax(10rem,1fr));gap:.7rem}}
 .home .range{display:flex;gap:.3rem;margin:0 .4rem}.home .range a{padding:.25rem .7rem;border-radius:999px;color:var(--mut);text-decoration:none;font-size:.82rem;border:1px solid var(--rim)}
 .home .range a[aria-current]{color:var(--ink);border-color:color-mix(in oklab,var(--acc) 55%,transparent)}
 .home .tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(8.5rem,1fr));gap:.6rem}
-.home .tile{display:grid;gap:.2rem;padding:.9rem 1.1rem}.home .tile b{font-family:Lexend,system-ui,sans-serif;font-weight:600;font-size:2rem;line-height:1;font-variant-numeric:tabular-nums}
-.home .tile span{font-size:.8rem;color:var(--mut)}.home .tile.hero{border-color:color-mix(in oklab,var(--acc) 45%,var(--rim))}.home .tile.hero b{font-size:2.6rem}
+.home .tiles .tile{display:grid;gap:.2rem;padding:.9rem 1.1rem}.home .tiles .tile b{font-family:Lexend,system-ui,sans-serif;font-weight:600;font-size:2rem;line-height:1;font-variant-numeric:tabular-nums}
+.home .tiles .tile span{font-size:.8rem;color:var(--mut)}.home .tiles .tile.hero{display:grid;border-color:color-mix(in oklab,var(--acc) 45%,var(--rim))}.home .tiles .tile.hero b{font-size:2.6rem}
 .home .bars{display:flex;align-items:flex-end;gap:2px;height:8rem;border-bottom:1px solid var(--rim)}
 .home .bars>div{flex:1;height:100%;display:flex;align-items:flex-end}.home .bars>div:hover i{opacity:.75}
 .home .bars i{display:block;width:100%;min-height:2px;border-radius:4px 4px 0 0;background:var(--acc)}
 .home .axis{display:flex;justify-content:space-between;font-size:.72rem;color:var(--mut);margin-top:.35rem;font-variant-numeric:tabular-nums}
 .home .num{text-align:right;font-variant-numeric:tabular-nums}.home .ua{max-width:16rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:.78rem}
+.home.detail{width:min(100%,64rem)}.home.detail .shot{border-radius:16px}
+.home .detail .pane,.home.detail .pane{display:grid;gap:1rem}
+.home.detail h1{margin:0;font-size:2.2rem}
+.spaces-page #spaces{min-width:0}.spaces-page .rb-spaces{max-height:none}
+.home.detail .more{white-space:pre-line;line-height:1.6;text-wrap:pretty}.home.detail .facts{display:flex;flex-wrap:wrap;align-items:center;gap:.7rem;color:var(--mut);font-size:.85rem}
+.home.detail .facts span{display:inline-flex;align-items:center;gap:.4rem}
+.home .back{display:inline-flex;align-items:center;gap:.4rem;color:var(--ink);text-decoration:none;font-size:.9rem;opacity:.85}
 `;
 
 const Out = () => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M7 7h10v10" /><path d="M7 17 17 7" /></svg>;
@@ -241,45 +282,160 @@ function Achievements({ unlocks }: { unlocks: Unlocks }) {
 const ctaOf = (app: QApp, c = cardOf(app.id, app.name)) => c.cta || (app.kind === "game" ? "Play it" : "Open it");
 const whatOf = (app: QApp, mine: Member["apps"][number] | undefined) => mine ? `${app.kind === "game" ? "played" : "opened"} ${day(mine.last_at)}` : app.kind === "game" ? "not played yet" : "not opened yet";
 
-/** One app as a wide panel: its picture, badge, kicker, name and line (cards.json). The name opens the app's page; Play it goes straight in. */
-function Card({ app, mine, unlocks, hero }: { app: QApp; mine: Member["apps"][number] | undefined; unlocks: Unlocks; hero?: boolean }) {
-  const c = cardOf(app.id, app.name), what = whatOf(app, mine), t = tally(app.id, unlocks);
+type Used = Member["apps"][number] | undefined;
+
+/** An app's screenshot (public/cards/<id>.jpg), or its drawn key art when it has none. */
+const Shot = ({ app, eager }: { app: QApp; eager?: boolean }) => (
+  <span className="shot">{app.shot ? <img src={`/cards/${app.id}.jpg`} alt="" loading={eager ? undefined : "lazy"} draggable={false} /> : <Art id={app.id} />}</span>
+);
+const PlayLink = ({ app, small }: { app: QApp; small?: boolean }) => app.origins[0] ? (small
+  ? <a className="play ghost icon" href={app.origins[0]} title={ctaOf(app)} aria-label={`${ctaOf(app)}: ${cardOf(app.id, app.name).name}`}><Out /></a>
+  : <a className="play" href={app.origins[0]}>{ctaOf(app)} <Out /></a>) : null;
+
+/** The big one at the top: its screenshot, kicker, name, line, badge and Play. */
+function Feature({ app, mine, unlocks }: { app: QApp; mine: Used; unlocks: Unlocks }) {
+  const c = cardOf(app.id, app.name), t = tally(app.id, unlocks);
   return (
-    <div className={hero ? "card-app hero" : "card-app"}>
-      <span className="shot">{app.shot ? <img src={`/cards/${app.id}.jpg`} alt="" loading="lazy" draggable={false} /> : <Art id={app.id} />}</span>
+    <section className="glass feature" aria-label="Featured">
+      <Shot app={app} eager />
       <span className="cap">
         {c.kicker && <span className="kick">{c.kicker}</span>}
-        <span className="name"><b><a className="title" href={`/app/${app.id}`}>{c.name}</a></b><Badge m={app.maturity ?? "alpha"} /></span>
-        <span className="blurb">{c.blurb}</span>{c.more && <span className="more">{c.more}</span>}
+        <b><a className="title" href={`/app/${app.id}`}>{c.name}</a></b>
+        <span className="blurb">{c.blurb}</span>
+        <span className="facts"><Badge m={app.maturity ?? "alpha"} /><span>{whatOf(app, mine)}</span>{t && <span className="tally"><Trophy />{t[0]}/{t[1]}</span>}</span>
+        <span><PlayLink app={app} /></span>
       </span>
-      <span className="foot"><span className="last">{what}{t && <span className="tally"><Trophy />{t[0]}/{t[1]}</span>}</span>
-        {app.origins[0] && <a className="play" href={app.origins[0]}>{ctaOf(app, c)} <Out /></a>}</span>
-    </div>
-  );
-}
-
-/** A row of apps: a carousel with a heading. */
-function Row({ title, apps, mine, unlocks, hero, head }: { title: string; apps: QApp[]; mine: Member | undefined; unlocks: Unlocks; hero?: boolean; head?: React.ReactNode }) {
-  const used = new Map(mine?.apps.map((a) => [a.app, a]));
-  return (
-    <section>
-      <div className="rowhead"><h2>{title}<em>{apps.length}</em></h2>{head}</div>
-      <Rail label={title} items={apps.map((a) => <Card key={a.id} app={a} mine={used.get(a.id)} unlocks={unlocks} hero={hero} />)} />
     </section>
   );
 }
 
-/** Featured on top, then a row per genre; inside a row the ones this person uses come first, most recent first. */
-function Library({ mine, unlocks }: { mine: Member | undefined; unlocks: Unlocks }) {
+/** One app on a shelf: its screenshot, name, badge and when you last played. The tile opens the app's page. */
+function Tile({ app, mine, unlocks }: { app: QApp; mine: Used; unlocks: Unlocks }) {
+  const c = cardOf(app.id, app.name), t = tally(app.id, unlocks);
+  return (
+    <div className="glass game">
+      <Shot app={app} />
+      <span className="cap">
+        <span className="name"><b><a className="title" href={`/app/${app.id}`}>{c.name}</a></b><Badge m={app.maturity ?? "alpha"} /></span>
+        <small>{whatOf(app, mine)}{t && <span className="tally"><Trophy />{t[0]}/{t[1]}</span>}</small>
+      </span>
+    </div>
+  );
+}
+
+const Icon = ({ d }: { d: string[] }) => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{d.map((p) => <path key={p} d={p} />)}</svg>;
+// lucide: users, door-open, hash, check.
+const USERS = ["M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2", "M9 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8z", "M22 21v-2a4 4 0 0 0-3-3.87", "M16 3.13a4 4 0 0 1 0 7.75"];
+const DOOR = ["M13 4h3a2 2 0 0 1 2 2v14", "M2 20h3", "M13 20h9", "M10 12v.01", "M13 4.562v16.157a1 1 0 0 1-1.242.97L5 20V5.562a2 2 0 0 1 1.515-1.94l4-1A2 2 0 0 1 13 4.561Z"];
+const HASH = ["M4 9h16", "M4 15h16", "M10 3 8 21", "M16 3l-2 18"];
+const CHECK = ["M20 6 9 17l-5-5"];
+
+/** The party you are in now: its room code, a seat a member (ringed when ready), an open seat while there's room, and how many are ready. */
+function PartyCard({ party }: { party: NonNullable<Side["party"]> }) {
+  const ready = party.members.filter((m) => m.ready).length;
+  return (
+    <section className="glass rail party" aria-label="Your party">
+      <h2><Icon d={DOOR} />Your party</h2>
+      <span className="code" title="Room code">{party.code}</span>
+      <ul className="seats">
+        {party.members.map((m) => <li key={m.id} className={m.ready ? "ready" : undefined} title={`${m.name}${m.host ? ", host" : ""}${m.ready ? ", ready" : ""}`}>{m.name.slice(0, 2)}{m.ready && <Icon d={CHECK} />}</li>)}
+        {party.members.length < party.size && <li className="open" title="An open seat">+</li>}
+      </ul>
+      <small>{nameOf(party.app)}. {ready} of {party.members.length} ready.</small>
+    </section>
+  );
+}
+
+/** Your spaces, the first few by name, with how many are in each now; each opens on /spaces. */
+function Spaces({ side }: { side: Side }) {
+  return (
+    <section className="glass rail" aria-label="Your spaces">
+      <h2><Icon d={HASH} />Your spaces</h2>
+      {side.spaces.length === 0 ? <span className="mut">None yet. A space is a group that lasts between games.</span> : (
+        <ul className="spaces">{side.spaces.map((sp) => (
+          <li key={sp.id}><a href={`/spaces?open=${sp.id}`}><Icon d={HASH} /><b>{sp.name}</b>{sp.on !== null && <small className={sp.on ? "on" : undefined}>{sp.on} on</small>}</a></li>
+        ))}</ul>
+      )}
+      <a href="/spaces">{side.more ? `All spaces (${side.more} more)` : side.spaces.length ? "All spaces" : "Make or join a space"}</a>
+    </section>
+  );
+}
+
+/** Who of your friends is on, and in which game; the rest below them. */
+function Online({ hub }: { hub: HubState }) {
+  const friends = [...hub.friends].sort((a, b) => b.presence.length - a.presence.length), asked = hub.incoming.length;
+  return (
+    <section className="glass rail" aria-label="Friends">
+      <h2><Icon d={USERS} />Friends<em>{friends.filter((f) => f.presence.length).length} on</em></h2>
+      {friends.length === 0 ? <span className="mut">Nobody yet.</span> : (
+        <ul>{friends.slice(0, 12).map((f) => (
+          <li key={f.id} className={f.presence.length ? "on" : undefined}><i>{f.name.slice(0, 1)}</i><span><b>{f.name}</b><small>{f.presence.length ? where(f) : "off"}</small></span></li>
+        ))}</ul>
+      )}
+      <a href="/?tab=friends">{asked ? `${asked} asking to be friends` : friends.length ? "All friends" : "Ask a friend"}</a>
+    </section>
+  );
+}
+
+/** The column beside the library: your party while you're in one, then friends, then your spaces. */
+function SidePanel({ hub, side }: { hub: HubState | null; side: Side | null }) {
+  if (!hub && !side) return null;
+  return (
+    <aside className="side">
+      {side?.party && <PartyCard party={side.party} />}
+      {hub && <Online hub={hub} />}
+      {side && <Spaces side={side} />}
+    </aside>
+  );
+}
+
+/** Home: the featured game you played last up top, the ones you played last, then a shelf a genre (yours first, most recent first), friends beside. */
+function Library({ mine, unlocks, hub, side }: { mine: Member | undefined; unlocks: Unlocks; hub: HubState | null; side: Side | null }) {
   const used = new Map(mine?.apps.map((a) => [a.app, a]));
   const recent = (a: QApp) => used.get(a.id)?.last_at ?? -1;
   const sorted = (list: QApp[]) => [...list].sort((a, b) => recent(b) - recent(a));
+  const top = sorted(APPS.filter((a) => a.featured))[0] ?? APPS[0]!;
+  const last = sorted(APPS.filter((a) => used.has(a.id) && a.id !== top.id)).slice(0, 4);
   return (
-    <>
-      <Row title="Featured" apps={APPS.filter((a) => a.featured)} mine={mine} unlocks={unlocks} hero head={<SpeedMenu />} />
-      {GENRES.map((g) => { const list = APPS.filter((a) => a.genre === g); return list.length ? <Row key={g} title={g} apps={sorted(list)} mine={mine} unlocks={unlocks} /> : null; })}
-      <script dangerouslySetInnerHTML={{ __html: CAROUSEL_SCRIPT }} />
-    </>
+    <div className="lib">
+      <div>
+        <Feature app={top} mine={used.get(top.id)} unlocks={unlocks} />
+        {last.length > 0 && (
+          <section aria-label="Pick up where you left off">
+            <h2>Pick up where you left off</h2>
+            <div className="recent">{last.map((a) => (
+              <div key={a.id} className="glass"><Shot app={a} /><span className="w"><b><a className="title" href={`/app/${a.id}`}>{cardOf(a.id, a.name).name}</a></b><small>{whatOf(a, used.get(a.id))}</small></span><PlayLink app={a} small /></div>
+            ))}</div>
+          </section>
+        )}
+        {GENRES.map((g) => {
+          const list = sorted(APPS.filter((a) => a.genre === g));
+          return list.length ? (
+            <section key={g} aria-label={g}>
+              <h2>{g}<em>{list.length}</em></h2>
+              <div className="shelf">{list.map((a) => <Tile key={a.id} app={a} mine={used.get(a.id)} unlocks={unlocks} />)}</div>
+            </section>
+          ) : null;
+        })}
+      </div>
+      <SidePanel hub={hub} side={side} />
+    </div>
+  );
+}
+
+/** Your spaces: the panel a game opens (spaces.client.ts mounts it in #spaces), on the sky. */
+export function SpacesPage({ t0 }: { t0: number }) {
+  return (
+    <Glass t0={t0} css={HOME_CSS}>
+      <div className="home detail spaces-page">
+        <a className="back" href="/">&larr; Home</a>
+        <section className="pane">
+          <h1>Your spaces</h1>
+          <p className="mut">A space is a group that lasts between games, with channels. Make one, or join one with its invite.</p>
+          <div id="spaces" aria-label="Your spaces"><span className="mut">Loading your spaces.</span></div>
+        </section>
+      </div>
+    </Glass>
   );
 }
 
@@ -304,8 +460,8 @@ export function AppPage({ app, mine, unlocks, t0 }: { app: QApp; mine: Member["a
   );
 }
 
-const TABS = [["library", "Library"], ["achievements", "Achievements"], ["friends", "Friends"], ["people", "People"], ["visitors", "Visitors"], ["account", "Account"]] as const;
-const ADMIN_TABS = new Set<string>(["people", "visitors"]);
+const TABS = [["library", "Home"], ["achievements", "Achievements"], ["friends", "Friends"], ["studio", "Studio"], ["people", "People"], ["visitors", "Visitors"], ["scale", "Scale"], ["account", "Account"]] as const;
+const ADMIN_TABS = new Set<string>(["people", "visitors", "scale"]);
 
 const KIND: Record<string, string> = { person: "browser", agent: "agent", bot: "bot" };
 const short = (t: number) => new Date(t).toISOString().slice(5, 10);
@@ -382,32 +538,30 @@ function Visitors({ v }: { v: Counts }) {
 export type Tab = (typeof TABS)[number][0];
 export const tabOf = (v: unknown): Tab => TABS.find(([k]) => k === v)?.[0] ?? "library";
 
-export function Home({ me, mine, hub, everyone, unlocks, counts, error, t0, tab, visitors }: { visitors?: Counts | null; counts: Map<string, number>; me: Me; mine: Member | undefined; hub: HubState | null; everyone: Member[] | null; unlocks: Unlocks; error?: string; t0: number; tab: Tab }) {
-  const games = APPS.filter((a) => a.kind === "game").length, suites = APPS.length - games;
-  const tabs = TABS.filter(([k]) => !ADMIN_TABS.has(k) || everyone);
+export function Home({ me, mine, hub, side, everyone, unlocks, counts, error, t0, tab, visitors, scale, studios }: { side?: Side | null; visitors?: Counts | null; scale?: Load | null; studios?: Studio[] | null; counts: Map<string, number>; me: Me; mine: Member | undefined; hub: HubState | null; everyone: Member[] | null; unlocks: Unlocks; error?: string; t0: number; tab: Tab }) {
+    const tabs = TABS.filter(([k]) => !ADMIN_TABS.has(k) || everyone);
   const asked = hub?.incoming.length ?? 0;
   return (
-    <Glass t0={t0} css={HOME_CSS}>
+    <Glass t0={t0} css={HOME_CSS + SCALE_CSS + STUDIO_CSS}>
       <div className="home">
         <section className="pane top">
           <div className="brand"><span><i /><b>{NAME}</b></span><span className="mut">v{VERSION}</span></div>
           <h1>{greeting(t0)}</h1>
-          <p className="sub">{me.name || me.email} · {games} games and {suites} suites, one account.</p>
+          <p className="sub">{me.name || me.email} · your games, friends, saves and studio, in one place.</p>
           {messageOf(error) && <p className="bad" role="alert">{messageOf(error)}</p>}
           <nav className="tabs" aria-label="eqosys">
             {tabs.map(([k, label]) => <a key={k} href={k === "library" ? "/" : `/?tab=${k}`} aria-current={k === tab ? "page" : undefined}>{label}{k === "friends" && asked > 0 && <em>{asked}</em>}</a>)}
           </nav>
         </section>
 
-        {tab === "library" && (
-          <>
-            <Library mine={mine} unlocks={unlocks} />
-          </>
-        )}
+        <div className="body">
+        {tab === "library" && <Library mine={mine} unlocks={unlocks} hub={hub} side={side ?? null} />}
 
         {tab === "achievements" && <><h2>Achievements</h2><Achievements unlocks={unlocks} /></>}
 
         {tab === "friends" && (hub ? <Friends hub={hub} counts={counts} /> : <p className="card mut">{MESSAGES.nohub}</p>)}
+
+        {tab === "studio" && studios && <Studios studios={studios} unlocks={unlocks} />}
 
         {tab === "people" && everyone && (
           <>
@@ -444,6 +598,8 @@ export function Home({ me, mine, hub, everyone, unlocks, counts, error, t0, tab,
 
         {tab === "visitors" && everyone && visitors && <Visitors v={visitors} />}
 
+        {tab === "scale" && everyone && scale && <Scale l={scale} />}
+
         {tab === "account" && (
           <>
             <h2>Account</h2>
@@ -457,6 +613,7 @@ export function Home({ me, mine, hub, everyone, unlocks, counts, error, t0, tab,
             </details>
           </>
         )}
+        </div>
       </div>
     </Glass>
   );

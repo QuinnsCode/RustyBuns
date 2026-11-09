@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { failures, shadow, testRuns, useRepo, writeMerge, writeTree } from "../scripts/shadow.ts";
+import { failures, retryRun, settle, shadow, testRuns, useRepo, writeMerge, writeTree } from "../scripts/shadow.ts";
 
 // scripts/shadow.ts (#1014): codeSplitter's merge beside git's, one file's three versions at a time.
 describe("shadow mode", () => {
@@ -82,6 +82,16 @@ describe("shadow --check", () => {
     const out = "(pass) ok [1.00ms]\n(fail) the container's /test > a bad remote fails cleanly [14.37ms]\n(fail) slow one [5001.11ms]\n  ^ this test timed out\n(fail) the container's /test > a bad remote fails cleanly [14.37ms]\n";
     expect(failures(run, out)).toEqual(["apps/codesplitters: the container's /test > a bad remote fails cleanly", "apps/codesplitters: slow one"]);
     expect(failures(run, "error: Cannot find module")).toEqual(["apps/codesplitters: bun test test"]);
+  });
+
+  test("a test that fails here and passes as landed is run once more: failing again fails the merge, passing is flaky", () => {
+    const runs = [{ dir: "apps/codesplitter", cmd: "bun test test" }, { dir: ".", cmd: "bun test packages" }];
+    expect(retryRun(runs, "apps/codesplitter: swarm stage > it's (up) in 4ms")).toEqual({ dir: "apps/codesplitter", cmd: "bun test test -t 'it'\\''s \\(up\\) in 4ms'" });
+    expect(retryRun(runs, ".: bun test packages")).toEqual({ dir: ".", cmd: "bun test packages" });
+    const failed = ["apps/codesplitter: swarm stage > flaky one", "apps/codesplitter: merge > real one"];
+    const again = new Set(["apps/codesplitter: merge > real one"]);
+    expect(settle(failed, (f) => again.has(f))).toEqual({ failed: ["apps/codesplitter: merge > real one"], flaky: ["apps/codesplitter: swarm stage > flaky one"] });
+    expect(settle(failed, () => false)).toEqual({ failed: [], flaky: failed });
   });
 
   test("writes git's merge with ours over its conflicts and what landed over the rest", () => {

@@ -50,12 +50,14 @@
             <select id="battle-level" aria-label="Level"></select>
             <div id="battle-mode" class="chips" role="radiogroup" aria-label="Mode"></div>
             <button id="battle-host" type="button" class="primary" title="Open a battle on this level and repo to your network">Host</button>
+            <button id="battle-party" type="button" hidden title="Open a party: friends join by its link, ready up, and you start" aria-label="Open a party"></button>
           </div>
           <div class="row">
             <input id="battle-addr" placeholder="192.168.1.20:41234" spellcheck="false" aria-label="The host's address" />
             <input id="battle-pass" placeholder="passphrase" spellcheck="false" aria-label="The host's passphrase" />
             <button id="battle-join" type="submit" title="Join a battle someone's hosting (no address: this machine's)">Join</button>
           </div>
+          <div id="battle-lobby" class="battle-lobby" hidden></div>
           <p id="battle-status" class="battle-status" role="status"></p>
         </form>
         <p class="touch-hint">On a touch screen: the left stick moves, drag anywhere else to aim, and the buttons on the right fire, jump, dive-roll, crouch, reload, swap guns and step the rebase scope in and out. Tap the prompt by the crosshair to get in a vehicle or open the parachute.</p>

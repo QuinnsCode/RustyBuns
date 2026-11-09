@@ -26,7 +26,7 @@
 //   POST   /api/admin/deploy-keys/reseal             {keys, states, failed}
 
 import { audit } from "./audit.ts";
-import { json, readBody, type Env } from "./env.ts";
+import { fail, json, readBody, type Env } from "./env.ts";
 import { accountsOn, isAdmin } from "./identity.ts";
 import { repoRow } from "./repos.ts";
 import type { RepoRef } from "./repos";
@@ -152,9 +152,9 @@ const ACCOUNT = /^[0-9a-f]{32}$/;
 export async function deployKeyRoutes(req: Request, env: Env, p: string[], user: string | null): Promise<Response | null> {
   if (!(p[1] === "repos" && p[2] && p[3] && p[4] === "deploy" && p[5] === "key" && !p[7])) return null;
   const [owner, repo, provider] = [p[2], p[3], p[6] ?? "cloudflare"];
-  if (!isProvider(provider)) return json({ error: `no such provider: ${provider} (${NAMES.join(", ")})` }, 404);
-  if (user !== owner) return json({ error: "only the repo's owner can manage its deploy keys" }, 403);
-  if (!(await repoRow(env, owner, repo, "1"))) return json({ error: "not found" }, 404);
+  if (!isProvider(provider)) return fail("NoSuchProvider", `no such provider: ${provider} (${NAMES.join(", ")})`);
+  if (user !== owner) return fail("OwnerOnly", "only the repo's owner can manage its deploy keys");
+  if (!(await repoRow(env, owner, repo, "1"))) return fail("NoSuchRepo", "no such repo");
 
   if (req.method === "GET") return json({ ...(await keyInfo(env, owner, repo, provider)), hosted: !hostedWhy(env, user), why: hostedWhy(env, user) });
   if (req.method === "DELETE") {
@@ -164,11 +164,11 @@ export async function deployKeyRoutes(req: Request, env: Env, p: string[], user:
   }
   if (req.method === "PUT") {
     const why = hostedWhy(env, user);
-    if (why) return json({ error: why }, 403);
+    if (why) return fail("NoHostedDeploys", why);
     const { token, account_id } = await readBody<keyof DeployKey>(req);
     const t = String(token ?? "").trim(), a = String(account_id ?? "").trim().toLowerCase();
-    if (!/^[A-Za-z0-9_-]{20,200}$/.test(t)) return json({ error: `token: ${PROVIDERS[provider].token}` }, 400);
-    if (provider === "cloudflare" && !ACCOUNT.test(a)) return json({ error: "account_id: the 32-character Cloudflare account ID the token is scoped to" }, 400);
+    if (!/^[A-Za-z0-9_-]{20,200}$/.test(t)) return fail("BadInput", `token: ${PROVIDERS[provider].token}`);
+    if (provider === "cloudflare" && !ACCOUNT.test(a)) return fail("BadInput", "account_id: the 32-character Cloudflare account ID the token is scoped to");
     const sealed = await seal(env, owner, repo, provider === "cloudflare" ? { token: t, account_id: a } : { token: t }, provider);
     await env.DB.prepare(`INSERT INTO deploy_keys (owner, repo, provider, sealed, last4, set_by, set_at) VALUES (?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT (owner, repo, provider) DO UPDATE SET sealed = excluded.sealed, last4 = excluded.last4, set_by = excluded.set_by, set_at = excluded.set_at`)
@@ -216,13 +216,13 @@ async function legacyKeys(env: Env) {
 
 export async function resealRoutes(req: Request, env: Env, p: string[], admin: boolean): Promise<Response | null> {
   if (!(p[1] === "admin" && p[2] === "deploy-keys")) return null;
-  if (!admin) return json({ error: "admins only" }, 403);
+  if (!admin) return fail("AdminsOnly", "admins only");
   if (req.method === "GET" && !p[3]) {
     const n = await env.DB.prepare("SELECT COUNT(*) AS n FROM deploy_keys").first();
     return json({ hosted: !!env.DEPLOY_RUNNER, rotating: !!env.DEPLOY_SECRETS_KEY_OLD, keys: n?.n ?? 0, legacy: await legacyKeys(env), legacyAad: env.DEPLOY_LEGACY_AAD !== "0" });
   }
   if (req.method === "POST" && p[3] === "reseal" && !p[4]) {
-    if (!env.DEPLOY_SECRETS_KEY) return json({ error: "DEPLOY_SECRETS_KEY isn't set" }, 400);
+    if (!env.DEPLOY_SECRETS_KEY) return fail("NoSecretsKey", "DEPLOY_SECRETS_KEY isn't set");
     return json(await resealAll(env));
   }
   return null;

@@ -13,7 +13,7 @@ button.go { background: var(--hot); color: #1b1408; border-color: transparent; f
 /* A skin that doesn't slide its own sides (src/hud/skins/00-classic.ts does) drops in from the top as one. */
 .hud:not([data-skin="classic"]) { opacity: var(--hud-in); transform: translateY(calc((var(--hud-in) - 1) * 80px)); }
 .hud-chooser { position: fixed; left: 12px; bottom: 12px; z-index: 5; display: flex; align-items: center; gap: 6px; background: var(--panel); border-radius: 999px; padding: 4px; font-size: 13px; }
-.hud-chooser span { min-width: 16ch; text-align: center; white-space: nowrap; }
+.hud-chooser span { min-width: 24ch; text-align: center; white-space: nowrap; }
 .hud-chooser button { padding: 2px 10px; border-radius: 999px; font-size: 18px; line-height: 1; }
 
 .select, .result { position: fixed; inset: 0; overflow: auto; padding: 24px 16px; background: linear-gradient(rgba(10, 13, 18, 0.55), rgba(10, 13, 18, 0.9)); }
@@ -351,3 +351,16 @@ body:has(#hud[hidden]) .hud-chooser { display: none; }
 .booktalk .wait { margin: 12px 0 0; font-style: italic; opacity: 0.75; }
 .paper .demand .ledger { display: block; margin-top: 6px; font-size: 17px; color: var(--ink-faded); text-decoration: none; }
 .paper .demand .ledger::before { content: "On you: "; }
+/* Your ground's colour (Settings, Account): 64 swatches, 8 across; a friend's is crossed out, yours ringed. Over the tome's
+   own .paper button look (tome.css), hover included. */
+.gc-acct .hues { display: grid; grid-template-columns: repeat(8, 28px); gap: 5px; }
+.gc-dialog .gc-acct .hues button[data-hue], .gc-dialog .gc-acct .hues button[data-hue]:hover:not(:disabled) { width: 28px; height: 28px; padding: 0; border: 2px solid rgba(70, 42, 18, 0.35); border-radius: 50%; background: var(--hue); cursor: pointer; transform: none; }
+.gc-dialog .gc-acct .hues button[data-hue]:hover:not(:disabled) { transform: scale(1.12); }
+.gc-dialog .gc-acct .hues button[data-hue][aria-pressed="true"] { border-color: var(--ink-b, #222); box-shadow: 0 0 0 2px var(--hue); }
+.gc-dialog .gc-acct .hues button[data-hue]:disabled { cursor: not-allowed; opacity: 0.35; background: linear-gradient(135deg, transparent 45%, #000a 45% 55%, transparent 55%), var(--hue); }
+.gc-dialog .gc-acct .hues button[data-hue]:focus-visible { outline: 2px solid var(--ink-b, #e8590c); outline-offset: 2px; }
+/* The bind prompt, in every HUD skin: dim while the foe is too strong for the ink, pulsing once it can hold. */
+#hud:not(.bind-ready) .bind { filter: saturate(0.4) brightness(0.8); }
+#hud.bind-ready .bind { animation: bind-ready 0.7s ease-in-out infinite alternate; }
+@keyframes bind-ready { from { filter: brightness(1) drop-shadow(0 0 0 #7dffb0); } to { filter: brightness(1.35) drop-shadow(0 0 10px #7dffb0); } }
+@media (prefers-reduced-motion: reduce) { #hud.bind-ready .bind { animation: none; filter: brightness(1.3) drop-shadow(0 0 8px #7dffb0); } }

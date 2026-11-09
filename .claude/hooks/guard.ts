@@ -4,8 +4,10 @@
 // the same things inside `a && b`, `$(...)`, `FOO=1 env`, `git -C dir push`, and Read/Grep paths.
 // A speed bump, not a sandbox: a script the agent writes can still read a file. Exit 2 blocks the
 // call and shows stderr to the agent.
+import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { basename, resolve } from "node:path";
+import { basename, relative, resolve } from "node:path";
+import { valveFile, valveOf } from "../../scripts/remote-ci.ts";
 
 export type HookInput = { tool_name: string; tool_input: Record<string, unknown>; cwd?: string };
 type BranchOf = (cwd: string) => string | null;
@@ -201,6 +203,34 @@ function checkBash(cmd: string, cwd: string, branchOf: BranchOf): string | null 
   return null;
 }
 
+// Tests and builds, run here: `bun test`, `bun run test|build`, `vite build`, `cargo build|test`. `bun run builder ...`
+// is the way round, and `build:native` sends itself to the builder.
+function heavyRun(t: string[]): boolean {
+  const c = basename(t[0] ?? ""), [, a1, a2] = t;
+  if (c === "bun" && (a1 === "test" || (a1 === "run" && (a2 === "test" || a2 === "build")))) return true;
+  if (c === "cargo" && (a1 === "build" || a1 === "test")) return true;
+  const vite = ["bunx", "npx", "pnpx"].includes(c) || (c === "bun" && a1 === "x") ? t.slice(c === "bun" ? 2 : 1).filter((x) => !x.startsWith("-")) : t;
+  return basename(vite[0] ?? "") === "vite" && vite[1] === "build";
+}
+
+// The builder valve (scripts/remote-ci.ts): shut, this Mac runs no tests or builds, so a call that would gets the
+// `bun run builder run` line to use instead; and opening the valve is the owner's. `root` is the repo's top folder.
+export function heavy(cmd: string, cwd: string, root: string, shut: boolean): string | null {
+  if (!shut) return null;
+  let dir = cwd;
+  for (const seg of segments(cmd)) {
+    const t = strip(seg).rest;
+    if (t[0] === "cd" && t[1]) { dir = resolve(dir, t[1].replace(/^~(?=\/|$)/, homedir())); continue; }
+    if (t[0] === "bun" && t[1] === "run" && t[2] === "builder" && t[3] === "on") return "the valve is the owner's: only they open it (`bun run builder on`)";
+    if (heavyRun(t)) {
+      // The command as typed (bunx kept), less any FOO=1 in front, which the builder would run as a command.
+      const typed = seg.slice(seg.findIndex((x) => !/^\w+=/.test(x)));
+      return `the builder valve is shut, so tests and builds don't run on this Mac. Send it to the builder: \`bun run builder run ${relative(root, dir) || "."} ${typed.join(" ")}\` (it waits while the builder is off)`;
+    }
+  }
+  return null;
+}
+
 const gitBranch: BranchOf = (cwd) => {
   const r = Bun.spawnSync(["git", "-C", cwd, "rev-parse", "--abbrev-ref", "HEAD"], { stderr: "ignore" });
   return r.exitCode === 0 ? r.stdout.toString().trim() : null;
@@ -222,7 +252,15 @@ export function check(input: HookInput, branchOf: BranchOf = gitBranch): string 
 }
 
 if (import.meta.main) {
-  const why = check(JSON.parse(await Bun.stdin.text()));
+  const input: HookInput = JSON.parse(await Bun.stdin.text());
+  if (input.tool_name === "Bash") {
+    const cwd = input.cwd ?? process.cwd();
+    const shut = valveOf((() => { try { return readFileSync(valveFile(), "utf8"); } catch { return ""; } })()) === "off";
+    const root = shut ? Bun.spawnSync(["git", "-C", cwd, "rev-parse", "--show-toplevel"], { stderr: "ignore" }).stdout.toString().trim() : "";
+    const busy = heavy(String(input.tool_input?.command ?? ""), cwd, root || cwd, shut);
+    if (busy) { console.error(`Blocked by .claude/hooks/guard.ts: ${busy}.`); process.exit(2); }
+  }
+  const why = check(input);
   if (why) {
     console.error(`Blocked by .claude/hooks/guard.ts: ${why}. Secrets stay in 1Password and resolve through varlock at deploy; read .env.schema for names. main, tags, rulesets and release workflows are the owner's. See AGENTS.md "Secrets and pushes".`);
     process.exit(2);

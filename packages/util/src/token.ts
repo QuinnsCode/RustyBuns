@@ -4,7 +4,7 @@
 // eqosys signs with `sign` and serves `jwksOf`; an app verifies with `TokenChecker`, and its test signs its
 // own with `newKey` and `sign` instead of reaching into eqosys.
 import { b64url, digest, unb64url } from "./bytes.ts";
-import { arr, check, num, obj, oneOf, str, type Of } from "./guard.ts";
+import { arr, check, int, num, obj, oneOf, str, type Of } from "./guard.ts";
 
 /**
  * What a token says: who, for which app, from where they first came, what they may do, and until when (seconds since the epoch).
@@ -109,9 +109,9 @@ export const jwksOf = async (conf: Signer): Promise<Jwks> => {
 
 /**
  * Extras a token may carry beyond the claims: OpenID's (the client's nonce, whether the email is known to be theirs),
- * and a one-use ticket's (a Qlave voice ticket's `room` and its `jti`, apps/eqosys/QLAVE.md).
+ * a one-use ticket's (a Qlave voice ticket's `room` and its `jti`, apps/eqosys/QLAVE.md), and a party's start ticket's `room` and `seat`.
  */
-export interface IdExtras { nonce?: string; email_verified?: boolean; room?: string; jti?: string }
+export interface IdExtras { nonce?: string; email_verified?: boolean; room?: string; jti?: string; seat?: number }
 
 /** `who` as a token for their app, good for TOKEN_S seconds; null with no signing key. `extras` make it an OpenID id_token; `life` is seconds. */
 export async function sign(conf: Signer, iss: string, who: Handoff, now = Date.now(), extras: IdExtras = {}, life = TOKEN_S): Promise<string | null> {
@@ -229,4 +229,27 @@ export async function whoIs(url: URL, door: Door): Promise<Who | Response> {
   const uid = url.searchParams.get("uid") ?? "";
   if (!UID.test(uid)) return new Response("bad player id", { status: 400 });
   return { uid, name: clean(url.searchParams.get("name"), 24) || door.fallbackName };
+}
+
+/**
+ * A Qollab party's start ticket (apps/eqosys/src/qollab/party.ts): handed to each member on start, it says eqosys saw
+ * this account in the party that started `room`, in `seat`. Its audience is `start:<app>`, never the app's own, so it is
+ * no login for the game and a login is no ticket. A game's Worker checks one with `startTicket`.
+ */
+export const startAud = (app: string) => `start:${app}`;
+/** How long a start ticket is good for, in seconds: the time to go from the lobby to the game's room, with room to spare. */
+export const START_S = 600;
+
+const StartExtras = obj({ room: str(64, { min: 1 }), seat: int(0, 1000) });
+/** What a start ticket vouches for, once checked. */
+export interface StartTicket { sub: string; room: string; seat: number }
+
+/** `ticket`'s room and seat, when eqosys at `eqosys` signed it for a start in `app` and it hasn't run out; else null. */
+export async function startTicket(eqosys: string, app: string, ticket: string, get?: (url: string) => Promise<Response>, now = Date.now()): Promise<StartTicket | null> {
+  const claims = await checkerFor(eqosys, startAud(app), get).check(ticket, now);
+  if (!claims) return null;
+  try {
+    const extras = check(StartExtras, decode(ticket.split(".")[1] ?? ""));
+    return extras && { sub: claims.sub, room: extras.room, seat: extras.seat };
+  } catch { return null; }
 }

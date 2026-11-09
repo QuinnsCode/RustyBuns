@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { demandOf, reactionOf, thumbAt, type Outcome } from "../src/demand.ts";
+import { deckDemandOf, demandOf, reactionOf, thumbAt, type Outcome } from "../src/demand.ts";
 import { newJourney } from "../src/journey.ts";
 import { ROSTER } from "../src/roster.ts";
 
@@ -36,13 +36,26 @@ describe("the book on a result note", () => {
     [{ kind: "bound", item: 4, repeat: true }, "I have one of those.", true],
     [{ kind: "won", foe: "keeper" }, "A keeper is not an item. Item 4:", true],
     [{ kind: "won", foe: "wild" }, "You beat it and let it walk.", true],
-    [{ kind: "down", next: true, deadly: false }, "Get up.", true],
-    [{ kind: "down", next: false, deadly: false }, "All of them, down.", false],
+    [{ kind: "down", next: true, deadly: false }, "This one can't fight.", false],
+    [{ kind: "down", next: false, deadly: false }, "No creatures left to fight.", false],
     [{ kind: "versus" }, "Practice.", false],
   ] satisfies [Outcome, string, boolean][])("%o", (o, start, signed) => {
     const r = reactionOf(o, j);
     expect(r.ask).toStartWith(start);
     expect(r.signed).toBe(signed);
     expect(r.ask.length).toBeLessThan(120);
+  });
+});
+
+describe("the book on the bestiary deck", () => {
+  test("it wants the top card it does not have, by name, and keeps quiet once it has them all", () => {
+    expect(deckDemandOf(null)).toEqual({ ask: `Item 1: the ${ROSTER[0]!.name}, top of this deck. Then the rest, in order.`, signed: true });
+    const j = newJourney(["hodag", "squonk", "jackalope"])!;
+    const top = ROSTER.find((c) => !j.party.some((m) => m.id === c.id))!;
+    expect(deckDemandOf(j)).toEqual({ ask: `Item 4: the ${top.name}, top of my deck. Go and find it.`, signed: true });
+    j.seen.push(top.id);
+    expect(deckDemandOf(j).ask).toEndWith("You have seen it. Bring it.");
+    j.journal = ROSTER.filter((c) => !j.party.some((m) => m.id === c.id)).map((c) => ({ ...j.party[0]!, id: c.id }));
+    expect(deckDemandOf(j)).toEqual({ ask: "Every card in this deck is mine. Keep them in order.", signed: false });
   });
 });

@@ -373,6 +373,23 @@ describe("ranged moves are shapes on the ground", () => {
     expect(inside(footprint(warned!), it.pos.x, it.pos.z)).toBe(true);
     expect(inside(footprint(warned!), it.pos.x, it.pos.z + 6)).toBe(false); // a long step to the side is out of it
   });
+
+  // ATTACKS.md step 5: the bot reads that warning and steps out of it, sideways from a lane, outward from a ring.
+  test.each([
+    ["a column", hare, "special", skirmisher, 6], // quick and narrow: a light one sidesteps it, a slow tank is often still in it
+    ["a stream's cone", creature("chupacabra"), "big", skirmisher, 3], // venom's Miasma Stream, held
+    ["a lobbed blast", bruiser, "ultimate", tank, 6],
+  ] as const)("a bot steps out of %s it sees painted under it, where one standing still is hit", (_name, caster, slot, target, gap) => {
+    const struck = (seed: number | null) => {
+      const m = newMatch(caster, target), [me, it] = m.f, b = seed === null ? () => IDLE : bot(1, seed);
+      Object.assign(me, { pos: { x: -gap / 2, y: 0, z: 0 }, yaw: 0, energy: 100 });
+      Object.assign(it, { pos: { x: gap / 2, y: 0, z: 0 }, yaw: Math.PI });
+      for (let t = 0; t < 150; t++) { step(m, [hold({ [slot]: t < 90 }), b(m)]); if (m.events.some((e) => e.kind === "hit" && e.on === 1)) return true; }
+      return false;
+    };
+    expect(struck(null)).toBe(true);
+    expect([1, 2, 3, 4, 5].filter(struck).length).toBeLessThanOrEqual(1);
+  });
 });
 
 describe("tempo: charges, streams and fades", () => {

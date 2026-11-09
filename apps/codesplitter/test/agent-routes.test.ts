@@ -159,11 +159,12 @@ function gated(call: { env: any }, o: { session?: string } = {}) {
     void gate.then(() => { listening = false; }, () => {});
     void (async () => {
       while (listening) {
-        // Files first, as execCommand's listen puts them: a note that names one finds it there.
-        await give(cwd, await ear!.files?.() ?? []);
+        // As execCommand's listen does: notes, then the files they may name, so a note finds its file there.
         const got = await ear!.poll();
-        heard.push(...got);
+        await give(cwd, await ear!.files?.() ?? []);
+        // The folder first: a test waiting on `heard` then reads the files that came with the note.
         if (got.length) files.push(held(cwd));
+        heard.push(...got);
         for (const n of got) ear!.said?.(`ok: ${n}`);
         await Bun.sleep(10);
       }
@@ -325,6 +326,29 @@ test("a thread (#3711): the crew talks to a running agent, it hears them as it w
   cli.go();
   await until(async () => (await runsOf(call))[0].status !== "running");
   expect((await runsOf(call))[0]).toMatchObject({ status: "done", runs: 1, log: expect.arrayContaining(["claude: couldn't pick its last session up; reading the thread instead"]) });
+});
+
+test("a run card on the file page hears its run instead of asking (#3737): each log line, then how it ended, and it isn't someone in the thread", async () => {
+  const { call, post } = await app();
+  await post("sam", "/api/login", { name: "sam" });
+  await post("ryan", "/api/repos/ryan/lab/collaborators", { name: "sam" });
+  const cli = gated(call);
+  const run = await (await post("ryan", "/api/repos/ryan/lab/agents", { path: "a.js", harness: "claude", task: "shout" })).json() as any;
+  await cli.started(1);
+  const thread = `/api/repos/ryan/lab/agents/${run.id}/thread`;
+  // The card has the run from its one read: its socket brings nothing old, and nobody sees it there.
+  const card = await listen(call, "sam", `${thread}/ws?watch=1`);
+  expect(card[0]).toMatchObject({ t: "hello", messages: [], here: [] });
+  const room = await listen(call, "ryan", `${thread}/ws`);
+  expect(room[0].here).toEqual(["ryan"]);
+  // Its log lines reach the card as they're written, and the run ending comes pushed too.
+  await post("sam", thread, { text: "leave b alone" });
+  await until(async () => cli.heard.length > 0);
+  cli.go();
+  await until(async () => card.some((m) => m.t === "run" && m.run.status === "done"));
+  const lines = card.filter((m) => m.t === "msg" && m.message.kind === "event" && m.message.run === run.id).map((m) => m.message.text);
+  expect(lines).toContain("claude: heard a note while it worked");
+  expect(card.find((m) => m.t === "run")).toMatchObject({ run: { id: run.id, status: "done" } });
 });
 
 test("a file dropped into a thread (#3723): everyone sees it, the running agent finds it in its folder with the note, and the next run starts with it", async () => {

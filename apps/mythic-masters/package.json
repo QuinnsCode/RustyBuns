@@ -10,6 +10,7 @@
     "tune": "bun scripts/tune.ts",
     "beasts": "bun scripts/beasts.ts --render",
     "flora": "bun scripts/flora.ts",
+    "bearer": "bun scripts/bearer.ts --render",
     "desktop:dev": "rustybuns build desktop --dev --check && rustybuns run desktop",
     "desktop:build": "rustybuns build desktop --check",
     "ground": "bun scripts/ground.ts",
@@ -18,10 +19,10 @@
     "cms": "bun ../../packages/cms/src/cli.ts content --title \"Mythic Masters\" --port 4705"
   },
   "dependencies": {
-    "@rustybuns/game-controls": "workspace:*",
+    "@rustybuns/game-controls": "^0.1.12",
     "@rustybuns/models": "workspace:*",
     "@rustybuns/rig": "workspace:*",
-    "@rustybuns/util": "workspace:*",
+    "@rustybuns/util": "^0.1.12",
     "three": "^0.180.0"
   },
   "devDependencies": {

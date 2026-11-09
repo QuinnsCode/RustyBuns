@@ -57,7 +57,7 @@ test("friends only: a stranger is refused, a friend is in; an open party takes a
   const code = await mint(ada, "10.0.0.1");
 
   const stranger = seat(cy, code);
-  await until(() => stranger.gone());
+  await until(() => stranger.gone() === "Only the host's friends can join: ask them to add you on eqosys.");
   const friend = seat(bo, code);
   const host = seat(ada, code);
   friend.c.say("hi");

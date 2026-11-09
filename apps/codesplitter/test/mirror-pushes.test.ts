@@ -1,7 +1,7 @@
 import { describe, expect, setDefaultTimeout, test } from "bun:test";
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { git, pushBranch, upstreamMessages } from "../src/mirror.ts";
+import { git, pushBranch, upstreamLag, upstreamMessages } from "../src/mirror.ts";
 import type { Exec } from "../src/agent-run.ts";
 import { root, up, sh, post, get, sync, file, editHere, upstreamRewrite, mirrored, upstreamCommit, upLog, commit, pushClash, upShow } from "./mirror-kit.ts";
 
@@ -28,7 +28,7 @@ describe("mirrors: primary, pull-only, pushes and tags", () => {
     writeFileSync(join(work, "TOOLS.md"), "from a terminal\n");
     await sh(`git add -A && git commit -qm "from a terminal" && git push -q codesplitter main`, work);
     // Upstream is a commit behind until the next sync, and the panel says so.
-    expect(await get(call, "/api/repos/ana/up/mirror")).toMatchObject({ primary: "here", ahead: 1 });
+    expect(await get(call, "/api/repos/ana/up/mirror")).toMatchObject({ primary: "here", ahead: 1, upstream: { behind: 1, ahead: 0, says: "Upstream is behind by 1 commit" } });
     expect(await sync(call)).toMatchObject({ state: "ok", ahead: 0, behind: 0 });
     expect(await upLog("%s")).toBe("from a terminal");
     expect(await upShow("TOOLS.md")).toBe("from a terminal");
@@ -44,12 +44,23 @@ describe("mirrors: primary, pull-only, pushes and tags", () => {
     // Both changed the same lines: it still asks, even with this copy leading.
     await upstreamCommit({ README: "bo's hello\nworld\n" }, "bo's readme");
     await editHere(call, "README", 1, "ana's hello");
-    expect(await sync(call)).toMatchObject({ state: "clash", clash: ["README"], primary: "here" });
+    expect(await sync(call)).toMatchObject({ state: "clash", clash: ["README"], primary: "here", upstream: { ahead: 1 } });
+    expect((await get(call, "/api/repos/ana/up/mirror")).upstream.says).toContain("ahead by 1 commit");
     expect(await sync(call, { resolve: "mine" })).toMatchObject({ state: "ok" });
     expect(await upShow("README")).toBe("ana's hello\nworld");
+    expect((await get(call, "/api/repos/ana/up/mirror")).upstream).toMatchObject({ behind: 0, ahead: 0, says: "Upstream is in step" });
 
     // Only the owner gets a remote that writes.
     expect((await (await call("bo", "/api/repos/ana/up")).json() as any).push).toBeUndefined();
+  });
+
+  test.each([
+    ["https://github.com/ana/up.git", "ok", 3, 0, false, "GitHub is behind by 3 commits"],
+    ["git@github.com:ana/up.git", "clash", 1, 2, false, "GitHub is behind by 1 commit and ahead by 2 commits: both sides changed the same lines, so it waits for you"],
+    ["https://gitlab.com/ana/up", "down", 2, 0, false, "GitLab is behind by 2 commits: GitLab isn't answering, so it waits for you"],
+    ["https://git.example.org/up", "ok", 4, 1, true, "Upstream is ahead by 1 commit"],
+  ] as const)("a copy that leads says where %s stands, never a git error (#2954)", (url, state, ahead, behind, pullOnly, says) => {
+    expect(upstreamLag({ url, state, ahead, behind, pullOnly }).says).toBe(says);
   });
 
   test("pull-only: syncs take upstream's commits and never push, and branch and tag pushes answer 409 (#1009)", async () => {
@@ -70,7 +81,7 @@ describe("mirrors: primary, pull-only, pushes and tags", () => {
     // A branch and a tag can't go up.
     expect((await post(call, "/api/repos/ana/up/branches", { name: "tidy" })).status).toBe(201);
     expect((await post(call, "/api/repos/ana/up/files", { path: "src/c.ts", content: "export const c = 1", branch: "tidy" })).status).toBe(201);
-    expect(await (await post(call, "/api/repos/ana/up/mirror/branches/tidy/push")).json()).toEqual({ error: "this mirror is pull-only, so nothing goes upstream" });
+    expect(await (await post(call, "/api/repos/ana/up/mirror/branches/tidy/push")).json()).toEqual({ error: "this mirror is pull-only, so nothing goes upstream", tag: "PullOnly" });
     expect((await post(call, "/api/repos/ana/up/tags", { name: "v9" })).status).toBe(201);
     expect((await post(call, "/api/repos/ana/up/mirror/tags/v9/push")).status).toBe(409);
     expect(await sh(`git --git-dir ${up} for-each-ref --format='%(refname)' refs/heads refs/tags`)).toBe("refs/heads/main");
@@ -225,7 +236,7 @@ describe("mirrors: primary, pull-only, pushes and tags", () => {
     // Made here: main's tip by default, or a commit; a name git won't take, or one that's taken, is turned away.
     expect(await (await post(call, "/api/repos/ana/up/tags", { name: "v2" })).json()).toEqual({ name: "v2", commit: b });
     expect((await post(call, "/api/repos/ana/up/tags", { name: "v2" })).status).toBe(409);
-    expect(await (await post(call, "/api/repos/ana/up/tags", { name: "a b" })).json()).toEqual({ error: "no spaces in a tag name: use - instead" });
+    expect(await (await post(call, "/api/repos/ana/up/tags", { name: "a b" })).json()).toEqual({ error: "no spaces in a tag name: use - instead", tag: "BadInput" });
     expect((await post(call, "/api/repos/ana/up/tags", { name: "rc", commit: b })).status).toBe(201);
     expect((await post(call, "/api/repos/ana/up/tags", { name: "x", commit: "f".repeat(40) })).status).toBe(404);
 

@@ -1,0 +1,67 @@
+{
+  "id": "gryla",
+  "name": "Grýla",
+  "about": "Icelandic Christmas lore since the 1200s: the ogress of the mountains who comes down at Yule with a sack for the children who misbehaved and cooks them in her pot. The old rhymes give her fifteen tails, a hundred bags on each, hooves for feet and ears that hang to her shoulders; she is the mother of the Yule Lads and keeps the Yule Cat.",
+  "archetype": "tank",
+  "feet": 2,
+  "wings": 0,
+  "budget": 7200,
+  "root": "belly",
+  "material": "skin",
+  "belly": "belly",
+  "belly_turn": -0.3,
+  "branch_smoothing": 1.0,
+  "palette": {
+    "skin": [0.5, 0.48, 0.45, 0.95, 0],
+    "belly": [0.58, 0.55, 0.5, 0.95, 0],
+    "hair": [0.2, 0.18, 0.17, 0.95, 0],
+    "sack": [0.48, 0.38, 0.24, 0.95, 0],
+    "hoof": [0.12, 0.1, 0.09, 0.5, 0],
+    "frost": [0.88, 0.94, 1.0, 0.6, 0],
+    "eye": [0.95, 0.85, 0.5, 0.3, 0, 2]
+  },
+  "nodes": {
+    "tail2": [-0.85, 0.75, 0, 0.05],
+    "tail1": [-0.45, 0.95, 0, 0.08],
+    "hip": [0, 1.15, 0, 0.32],
+    "belly": [0.08, 1.48, 0, 0.42],
+    "chest": [0.18, 1.85, 0, 0.36],
+    "hump": [-0.08, 2.0, 0, 0.3],
+    "neck": [0.38, 2.08, 0, 0.18],
+    "head": [0.56, 2.2, 0, 0.24],
+    "nose": [0.8, 2.12, 0, 0.1],
+    "l_hipj": [0, 1.05, 0.24, 0.16],
+    "l_knee": [0.12, 0.6, 0.28, 0.13],
+    "l_ankle": [0.02, 0.18, 0.29, 0.1],
+    "l_foot": [0.2, 0.07, 0.29, 0.11],
+    "l_shoulder": [0.2, 2.0, 0.44, 0.15],
+    "l_elbow": [0.32, 1.45, 0.58, 0.11],
+    "l_hand": [0.48, 0.98, 0.58, 0.11],
+    "l_finger": [0.58, 0.78, 0.58, 0.08]
+  },
+  "links": [
+    ["tail2", "tail1"], ["tail1", "hip"], ["hip", "belly"], ["belly", "chest"], ["chest", "hump"], ["chest", "neck"], ["neck", "head"], ["head", "nose"],
+    ["hip", "l_hipj"], ["l_hipj", "l_knee"], ["l_knee", "l_ankle"], ["l_ankle", "l_foot"],
+    ["chest", "l_shoulder"], ["l_shoulder", "l_elbow"], ["l_elbow", "l_hand"], ["l_hand", "l_finger"]
+  ],
+  "blobs": [
+    {"at": "belly", "r": [0.48, 0.5, 0.44], "off": [0.02, 0, 0]},
+    {"at": "hump", "r": [0.32, 0.4, 0.34], "off": [-0.22, -0.1, 0], "material": "sack"}
+  ],
+  "parts": [
+    {"kind": "ear", "at": "head", "off": [-0.04, 0.02, 0.2], "dir": [-0.1, -1, 0.4], "len": 0.46, "width": 0.14, "tilt": 15, "cup": 15, "mirror": true, "material": "skin"},
+    {"kind": "horn", "at": "head", "off": [0.12, 0.2, 0], "dir": [-0.4, 1, 0], "len": 0.18, "base": 0.05, "mirror": false, "material": "hair"},
+    {"kind": "eye", "at": "head", "off": [0.18, 0.07, 0.11], "r": 0.035, "mirror": true, "material": "eye"},
+    {"kind": "ridge", "at": "head", "off": [0.18, 0.11, 0.1], "dir": [0.2, 0.2, 1], "len": 0.15, "base": 0.05, "curve": 25, "mirror": true, "material": "hair"},
+    {"kind": "teeth", "along": ["head", "nose"], "n": 3, "len": 0.08, "base": 0.03, "lower": true, "material": "frost"},
+    {"kind": "tuft", "along": ["head", "neck", "hump"], "n": 8, "rows": 6, "spread": 180, "len": 0.4, "base": 0.08, "curve": 30, "flat": 0.3, "material": "hair"},
+    {"kind": "horn", "at": "tail1", "off": [0, 0, 0.12], "dir": [-1, -0.4, 0.5], "len": 0.7, "base": 0.04, "curve": 30, "bend": [0, -1, 0], "mirror": true, "material": "skin"},
+    {"kind": "horn", "at": "tail1", "off": [0, 0.08, 0.06], "dir": [-1, -0.2, 0.25], "len": 0.75, "base": 0.04, "curve": 30, "bend": [0, -1, 0], "mirror": true, "material": "skin"},
+    {"kind": "horn", "at": "tail1", "off": [0, -0.08, 0.18], "dir": [-1, -0.6, 0.8], "len": 0.6, "base": 0.04, "curve": 30, "bend": [0, -1, 0], "mirror": true, "material": "skin"},
+    {"kind": "eye", "at": "tail2", "off": [0, -0.08, 0.0], "r": 0.1, "material": "sack"},
+    {"kind": "limb", "along": ["l_hipj", "l_knee", "l_ankle"], "radii": [0.18, 0.13, 0.08], "calf": 0.3, "depth": 1.1, "mirror": true},
+    {"kind": "foot", "at": "l_foot", "form": "hoof", "len": 0.26, "width": 0.18, "toes": 2, "sole": 0.07, "mirror": true, "material": "hoof"},
+    {"kind": "limb", "along": ["l_shoulder", "l_elbow", "l_hand", "l_finger"], "radii": [0.16, 0.11, 0.12, 0.1], "calf": 0.2, "mirror": true},
+    {"kind": "foot", "at": "l_finger", "form": "paw", "len": 0.26, "width": 0.22, "toes": 4, "claw": 0.07, "sole": 0.07, "mirror": true}
+  ]
+}

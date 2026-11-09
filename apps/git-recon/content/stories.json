@@ -26,7 +26,12 @@
   },
   "glacier-point": {
     "story": "The rim. The last of the Conflict is dug in on the drop with a force-push queued and the codes in the commit message. Merge every folder before the upload finishes. It's a big file. We have minutes. Probably.",
-    "won": "Debrief: push blocked. The codes stay on HEAD, the force-push died on a conflict in the commit message, and the war is over. Dinner's at six.",
+    "won": "Debrief: push blocked. The codes stay on HEAD and the force-push died on a conflict in the commit message. The war is over, says Command, apart from the empire, which is the war.",
     "lost": "Debrief: they pushed. The codes are on a public remote with fourteen stars. Everybody change the codes. Again."
+  },
+  "front-room": {
+    "story": "The rest of it was the Conflict's outposts. This is the Conflict: an empire of folders on the front-room rug, its palace under the coffee table, the bookcase its tower, the sofa a wall nobody climbs. Merge every folder and the empire falls over. Command has had a newsreel made already, to save time.",
+    "won": "Debrief: the empire is merged. Every folder, one history, no conflicts. The newsreel was right, which has never happened before.",
+    "lost": "Debrief: the empire stands. The newsreel has been shelved, and so, briefly, has Command."
   }
 }

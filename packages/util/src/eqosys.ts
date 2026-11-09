@@ -4,12 +4,13 @@
 // run out the player goes through eqosys again, which is one click when they are still signed in there.
 // Worked example: apps/park-hide-seek/src/ui/eqosys.ts.
 import { b64url, digest } from "./bytes.ts";
-import { arr, bool, check, int, nul, obj, oneOf, opt, str, type Guard, type Of } from "./guard.ts";
+import { arr, bool, check, int, nul, num, obj, oneOf, opt, str, type Guard, type Of } from "./guard.ts";
 import { getJson } from "./http.ts";
 import { connectSocket, type Link } from "./socket.ts";
 import { mountReportButton, sendReport, type ReportIn, type Sent } from "./report.ts";
 import { eqBadge, eqButton, wearSkin, ICONS, type Skin } from "./skin.ts";
 import { peek } from "./token.ts";
+import { PartyRules } from "./party-rules.ts";
 
 export type { Skin } from "./skin.ts";
 
@@ -111,6 +112,9 @@ export function eqosys({ app, url, from, prefix, skin }: EqosysConfig) {
 
   function signOut() { kept.put("login", ""); }
 
+  /** Who this page joins a game's room as (`whoIs` / `seatDoor` read it): the eqosys token while it lasts, else `guest` (`guestId`). */
+  const who = (guest: string): { token: string } | { uid: string } => { const l = login(); return l && fresh(l) ? { token: l.token } : { uid: guest }; };
+
   /** Send a bug report, suggestion or error to the RustyBuns repo through eqosys (needs a fresh login). */
   const report = async (r: ReportIn): Promise<Sent> => {
     const l = login();
@@ -176,6 +180,7 @@ export function eqosys({ app, url, from, prefix, skin }: EqosysConfig) {
   const token = () => { const l = login(); return l && fresh(l, 5_000) ? l.token : null; };
   const partyClient = () => party({ url: eqosysUrl, token });
   const spaceClient = () => space({ url: eqosysUrl, token });
+  const hubClient = () => hub({ url: eqosysUrl, token });
 
   /**
    * The account chip, in `slot`: the eqosys name and a way out, a way in where eqosys can send the player back, or nothing.
@@ -193,7 +198,24 @@ export function eqosys({ app, url, from, prefix, skin }: EqosysConfig) {
     return slot;
   }
 
-  return { signIn, finishSignIn, login, fresh, signOut, eqosysUrl, canSignIn, accountChip, report, reportButton, party: partyClient, space: spaceClient, achieve, achievements, sendHeld, celebrate };
+  return { signIn, finishSignIn, login, fresh, signOut, who, eqosysUrl, canSignIn, accountChip, report, reportButton, party: partyClient, space: spaceClient, hub: hubClient, achieve, achievements, sendHeld, celebrate };
+}
+
+/**
+ * A guest's secret id for a game's rooms, kept under `key`: in localStorage, so the browser comes back as the same
+ * player, or with `tab` in sessionStorage, so a reload rejoins but two tabs are two players (handy for trying it alone).
+ * The room only shows others `publicId` of it.
+ */
+export function guestId(key: string, o: { tab?: boolean } = {}): string {
+  const make = () => Array.from(crypto.getRandomValues(new Uint8Array(12)), (b) => b.toString(16).padStart(2, "0")).join("");
+  try {
+    const store = o.tab ? sessionStorage : localStorage;
+    const kept = store.getItem(key);
+    if (kept) return kept;
+    const made = make();
+    store.setItem(key, made);
+    return made;
+  } catch { return make(); }
 }
 
 /** The achievement toast, at the top of the page in its eqosys skin: `achieve` shows it for each first unlock. Gone after `ms`. */
@@ -223,12 +245,14 @@ export const PartyMember = obj({ id: str(200), name: str(200), ready: bool(false
 export type PartyMember = Of<typeof PartyMember>;
 /** What a party says: who is in, that the host started (go to `room`, sit in `seat`), or why a request was refused. */
 export const PartyMsg: Guard<
-  { t: "members"; members: PartyMember[] } | { t: "start"; room: string; seat: number } | { t: "refused"; why: string }
+  { t: "members"; members: PartyMember[] } | { t: "start"; room: string; seat: number; ticket?: string } | { t: "refused"; why: string }
   | { t: "say"; from: { id: string; name: string }; text: string; at: number } | { t: "reported"; by: string; id: string; name: string }
+  | { t: "rules"; rules: PartyRules; blocked?: { id: string; name: string }[]; invite?: string }
 > = (v) => {
-  const t = check(obj({ t: oneOf(["members", "start", "refused", "say", "reported"]) }), v)?.t;
+  const t = check(obj({ t: oneOf(["members", "start", "refused", "say", "reported", "rules"]) }), v)?.t;
+  if (t === "rules") { const r = obj({ rules: PartyRules, blocked: opt(arr(obj({ id: str(200), name: str(200) }), 1000)), invite: opt(str(64)) })(v); return { t, rules: r.rules, ...(r.blocked && { blocked: r.blocked }), ...(r.invite && { invite: r.invite }) }; }
   if (t === "members") return { t, members: obj({ members: arr(PartyMember, 1000) })(v).members };
-  if (t === "start") return { t, ...obj({ room: str(64), seat: int(0, 1000) })(v) };
+  if (t === "start") { const st = obj({ room: str(64), seat: int(0, 1000), ticket: opt(str(4096)) })(v); return { t, room: st.room, seat: st.seat, ...(st.ticket && { ticket: st.ticket }) }; }
   if (t === "refused") return { t, why: obj({ why: str(500) })(v).why };
   if (t === "say") return { t, ...obj({ from: obj({ id: str(200), name: str(200) }), text: str(280), at: int(0, 1e15) })(v) };
   if (t === "reported") return { t, ...obj({ by: str(200), id: str(200), name: str(200) })(v) };
@@ -245,14 +269,19 @@ export interface PartyConfig {
 
 /**
  * The page's side of a Qollab party (apps/eqosys, QOLLAB.md): `make()` a code, `join(code)`, `ready(bool)`, and the host's
- * `start()`. Everyone hears `onStart({ room, seat })` and carries on in their own world. `onMembers` hears who is in and who is ready.
+ * `start()`. Everyone hears `onStart({ room, seat, ticket })` (the ticket: eqosys's word on both, for the game's Worker) and carries on in their own world. `onMembers` hears who is in and who is ready.
  * eqosys seats a player once per party, so a page keeps one client per party: each `on...` adds a listener, and
  * joining the code already joined is the same socket, so a lobby and another panel on one page can share it.
  */
 export function party({ url, token }: PartyConfig) {
-  type Out = { t: string; ready?: boolean; text?: string; id?: string; on?: boolean };
-  let link: Link<Out> | null = null, joined = "";
-  const onStart = ears<{ room: string; seat: number }>(), onMembers = ears<PartyMember[]>(), onRefused = ears<string>(), onGone = ears<string>();
+  type Out = { t: string; ready?: boolean; text?: string; id?: string; on?: boolean; rules?: PartyRules };
+  let link: Link<Out> | null = null, joined = "", lastWhy = "";
+  const onRules = ears<Extract<PartyMsg, { t: "rules" }>>();
+  /** Who this player muted for themselves: kept in this browser, never told to the party. Their lines don't reach `onSay`. */
+  const HIDDEN = "eq.party.hidden";
+  const hidden = (): Set<string> => { try { const v: unknown = JSON.parse(localStorage.getItem(HIDDEN) ?? "[]"); return new Set(Array.isArray(v) ? v.filter((x): x is string => typeof x === "string").slice(0, 500) : []); } catch { return new Set(); } };
+  const hide = (id: string, on = true) => { const h = hidden(); if (on) h.add(id); else h.delete(id); try { localStorage.setItem(HIDDEN, JSON.stringify([...h])); } catch { /* private window: for this page only */ } };
+  const onStart = ears<{ room: string; seat: number; ticket?: string }>(), onMembers = ears<PartyMember[]>(), onRefused = ears<string>(), onGone = ears<string>();
   const onSay = ears<Extract<PartyMsg, { t: "say" }>>(), onReported = ears<Extract<PartyMsg, { t: "reported" }>>();
 
   /** A new party's code, or null when signed out or eqosys refused (too many parties just now, say). */
@@ -265,19 +294,29 @@ export function party({ url, token }: PartyConfig) {
 
   /** Who was in at the last word from the party, for a listener that joins after it. */
   let members: PartyMember[] | null = null;
-  /** Open the party's socket. `onGone` hears "no such party" or any close that isn't a retry. Joined already: who is in, again. */
-  function join(code: string) {
+  /** Open the party's socket, with the invite key the party link carried (the door wants it when only the host invites).
+   *  `onGone` hears "no such party" or any close that isn't a retry. Joined already: who is in, again. */
+  function join(code: string, invite?: string) {
     if (link && joined === code) { if (members) onMembers.hear(members); return; }
     const t = token();
     if (!t) { onGone.hear("Sign in with eqosys first."); return; }
     link?.close();
-    joined = code; members = null;
-    link = connectSocket<PartyMsg, Out>(() => `${url().replace(/^http/, "ws")}/q/party/${encodeURIComponent(code)}`, {
+    joined = code; members = null; lastWhy = "";
+    link = connectSocket<PartyMsg, Out>(() => `${url().replace(/^http/, "ws")}/q/party/${encodeURIComponent(code)}${invite ? `?invite=${encodeURIComponent(invite)}` : ""}`, {
       protocols: [SOCKET_PROTOCOL, t],
       decode: (v) => check(PartyMsg, v),
       queue: 4,
-      onMessage: (m) => { if (m.t === "members") onMembers.hear(members = m.members); else if (m.t === "start") onStart.hear(m); else if (m.t === "say") onSay.hear(m); else if (m.t === "reported") onReported.hear(m); else onRefused.hear(m.why); },
-      onClose: (e) => { if (e.code === 4000) { onGone.hear("This party is open in another tab."); return; } if (!e.seen) onGone.hear("No such party."); return e.seen && e.tries < 4 ? 1000 * e.tries : null; },
+      onMessage: (m) => { if (m.t === "members") onMembers.hear(members = m.members); else if (m.t === "start") onStart.hear(m); else if (m.t === "say") { if (!hidden().has(m.from.id)) onSay.hear(m); } else if (m.t === "reported") onReported.hear(m); else if (m.t === "rules") onRules.hear(m); else onRefused.hear(lastWhy = m.why); },
+      onClose: (e) => {
+        if (e.code === 4000) { onGone.hear("This party is open in another tab."); return; }
+        // The door's refusals (party.ts): its own words came just before the close; stop trying.
+        if (e.code === 4403) { onGone.hear(lastWhy || "Only the host's friends can join: ask them to add you on eqosys."); return; }
+        if (e.code === 4405 || e.code === 4407 || e.code === 4408 || e.code === 4410) { onGone.hear(lastWhy || "The party didn't let you in."); return; }
+        if (e.code === 4406) { onGone.hear("The host took you out of the party."); return; }
+        if (e.code === 4409) { onGone.hear("The host ended the party."); return; }
+        if (!e.seen) onGone.hear("No such party.");
+        return e.seen && e.tries < 4 ? 1000 * e.tries : null;
+      },
     });
   }
 
@@ -286,9 +325,20 @@ export function party({ url, token }: PartyConfig) {
     ready: (r: boolean) => void link?.send({ t: "ready", ready: r }),
     start: () => void link?.send({ t: "start" }),
     say: (text: string) => void link?.send({ t: "say", text }),
-    /** Host only: quiet a member for the whole party (or `false` to let them speak again). */
+    /** Quiet a member for the whole party (or `false` to let them speak again): the host's, or whoever the `mute` rule says. */
     mute: (id: string, on = true) => void link?.send({ t: "mute", id, on }),
     report: (id: string) => void link?.send({ t: "report", id }),
+    /** Host only: the party's rules (@rustybuns/util/party-rules), all at once. */
+    rules: (rules: PartyRules) => void link?.send({ t: "rules", rules }),
+    /** Host only: take a member out (they may come back), block or unblock someone (refused at the door), or hand them the party. */
+    kick: (id: string) => void link?.send({ t: "kick", id }),
+    block: (id: string, on = true) => void link?.send({ t: "block", id, on }),
+    makeHost: (id: string) => void link?.send({ t: "host", id }),
+    /** Host only: a fresh invite key, so every party link handed out so far stops letting people in. */
+    relink: () => void link?.send({ t: "relink" }),
+    /** Mute someone for yourself only: their chat lines stop reaching this page. Kept in this browser. */
+    hide, hidden,
+    onRules: onRules.add,
     onSay: onSay.add,
     onReported: onReported.add,
     leave: () => { link?.close(); link = null; joined = ""; members = null; },
@@ -302,6 +352,41 @@ export function party({ url, token }: PartyConfig) {
 function ears<T>() {
   const fs: ((v: T) => void)[] = [];
   return { add: (f: (v: T) => void) => { fs.push(f); }, hear: (v: T) => { for (const f of fs) f(v); } };
+}
+
+/** A friend as a person's hub (apps/eqosys/src/hub.ts) shows them to an app: who, and which apps they have open. */
+export const HubFriend = obj({ id: str(200), name: str(200, { min: 0 }), presence: arr(obj({ app: str(64), doing: str(80, { min: 0 }) }), 50) });
+export type HubFriend = Of<typeof HubFriend>;
+/** A note in the hub: a friend's ask or answer, or what an app told you for them (`app`, with its text and link). */
+export const HubNote = obj({ key: str(64), at: num(0, 1e14), kind: str(16), from: obj({ id: str(200), name: str(200, { min: 0 }) }), app: opt(str(64)), text: opt(str(280)), link: opt(str(2000)) });
+export type HubNote = Of<typeof HubNote>;
+/** What an app reads of the hub: friends and notes (asks are eqosys's own page's business). */
+export const HubView = obj({ friends: arr(HubFriend, 1000), notes: arr(HubNote, 1000) });
+export type HubView = Of<typeof HubView>;
+
+/**
+ * The page's side of a person's Qollab hub, one op at a time (POST /api/hub with the app's token): `state()` for their
+ * friends and notes, `notify(id, text, link)` to tell one friend something from this app (a link on the app's own
+ * site, an invite say), which lands in that friend's notes. Friends are made on eqosys's own page (`friendsPage`).
+ */
+export function hub({ url, token }: PartyConfig) {
+  async function op(body: Record<string, string>): Promise<{ ok: true; view: HubView | null } | { ok: false; error: string }> {
+    const t = token();
+    if (!t) return { ok: false, error: "Sign in with eqosys first." };
+    const res = await fetch(`${url()}/api/hub`, { method: "POST", headers: { authorization: `Bearer ${t}`, "content-type": "application/json" }, body: JSON.stringify(body) }).catch(() => null);
+    if (!res) return { ok: false, error: "eqosys can't be reached." };
+    const v: unknown = await res.json().catch(() => null);
+    if (!res.ok) return { ok: false, error: check(obj({ error: str(500) }), v)?.error ?? "eqosys said no." };
+    return { ok: true, view: check(HubView, v) };
+  }
+  return {
+    /** Friends and notes, or null when signed out or eqosys can't be reached. */
+    state: async (): Promise<HubView | null> => { const r = await op({ op: "state" }); return r.ok ? r.view : null; },
+    /** Tell friend `id`: null when sent, else why not. */
+    notify: async (id: string, text: string, link?: string): Promise<string | null> => { const r = await op({ op: "notify", id, text, ...(link ? { link } : {}) }); return r.ok ? null : r.error; },
+    /** Where on eqosys a person adds friends. */
+    friendsPage: () => `${url()}/?tab=friends`,
+  };
 }
 
 /** A message in a space's channel: its number there, and who said what when. */

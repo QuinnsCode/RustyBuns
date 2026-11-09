@@ -12,6 +12,8 @@ export interface D1Statement {
   run(): Promise<unknown>;
 }
 export interface D1 { prepare(sql: string): D1Statement; batch(stmts: D1Statement[]): Promise<unknown[]> }
+/** A service binding to another Worker. */
+export interface Fetcher { fetch(req: Request | string, init?: RequestInit): Promise<Response> }
 
 export interface Env {
   DB: D1;
@@ -51,10 +53,16 @@ export interface Env {
   VAULT?: Vaults;
   /** One Durable Object a space: its channels, their messages and who is online (space.ts). */
   SPACE?: Spaces;
+  /** eqosys's binding to Qollab's own Worker (apps/qollab): every Qollab path goes there. Unset (tests, the desktop), qollab/ runs in this Worker. */
+  QOLLAB?: Fetcher;
+  /** Qollab's binding back to eqosys: its public keys, so Qollab checks a token without holding a signing key for it (door.ts). */
+  EQOSYS?: Fetcher;
   /** Qlave, which carries voice channels' audio (qlave.ts, QLAVE.md). Unset is https://qlave.dev. */
   QLAVE_URL?: string;
   /** Shared with Qlave: the HMAC key on its POST /q/qlave/roster of who is in each voice room. Unset, every roster is 401. */
   QLAVE_ROSTER_SECRET?: string;
+  /** Shared with whoever deploys: the HMAC key on POST /api/deploys, the Ship door's reports (deploys.ts). Unset, every report is 503. */
+  DEPLOY_REPORT_KEY?: string;
 }
 
 /** Loopback returns, for developing an app on this machine (LOOPBACK_RETURNS). */

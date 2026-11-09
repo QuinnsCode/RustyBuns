@@ -6,7 +6,7 @@
 // a HEAD that doesn't contain origin/main, and any deploy that would delete a
 // resource holding data.
 
-import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { existsSync, lstatSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import type { RustyBunsConfig } from "./config.ts";
 
@@ -108,10 +108,11 @@ export function protectedClassDrops(projectDir: string, cfg: Pick<RustyBunsConfi
  * The app name that holds this stage's state, when it isn't the config's: the
  * app was renamed and its state wasn't moved, so Alchemy would find none and
  * make every resource again. Null when the state is where it should be, or
- * there is none at all.
+ * there is none at all. Another app's stack this one refs (`refs`, or any link: linkReferencedStates)
+ * is that app's state, not ours under an old name.
  */
-export function strayState(projectDir: string, name: string, stage: string): string | null {
+export function strayState(projectDir: string, name: string, stage: string, refs: string[] = []): string | null {
   const root = join(projectDir, ".alchemy", "state");
   if (!existsSync(root) || existsSync(join(root, name, stage))) return null;
-  return readdirSync(root).find((d) => d !== name && existsSync(join(root, d, stage))) ?? null;
+  return readdirSync(root).find((d) => d !== name && !refs.includes(d) && !lstatSync(join(root, d)).isSymbolicLink() && existsSync(join(root, d, stage))) ?? null;
 }

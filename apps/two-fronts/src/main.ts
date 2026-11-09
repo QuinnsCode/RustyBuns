@@ -9,7 +9,7 @@ import {
   type Attack, type Campaign, type Card, type Deck, type Order, type Orders, type Retreat, type Where,
 } from "./war/rules.ts";
 import { aiVote, castVote, handIn, heroFaction, humans, newTable, report, tally, waitingOn, type Seats, type Table, type Vote } from "./war/table.ts";
-import { claimSeat, fetchView, linkInHash, pointerSocket, seatLink, sendBattle, sendOrders, sendVote, startOnline, type Online, type View } from "./net.ts";
+import { claimSeat, fetchView, fetchWars, linkInHash, openWar, pointerSocket, seatLink, sendBattle, sendOrders, sendVote, startOnline, type Online, type View } from "./net.ts";
 import { EVENT_ICONS, eventLine, eventNow, eventSoon, forecasting, galeAt, sheltered } from "./war/gale.ts";
 import { yearOf } from "./war/objectives.ts";
 import { LAST, PHASES, attacking as attackingOrder, banner, forecast, phaseOf, standing, summary, won, type Battle, type PhaseNo, type Standing } from "./war/phases.ts";
@@ -701,6 +701,7 @@ document.addEventListener("click", (e) => {
   if (t.id === "overview-toggle") { overviewOpen = !overviewOpen; render(); return; }
   if (t.id === "new-war" || t.id === "restart") return chooseGame();
   if (t.dataset.start === "friends") return void withFriends();
+  if (t.dataset.war) return void openMine(t.dataset.war);
   if (t.dataset.start) return startGame(t.dataset.start as "ai" | "hotseat" | "online");
   if (t.id === "invite") return showInvite();
   if (t.id === "copy-link") { void navigator.clipboard?.writeText($<HTMLInputElement>("seat-link").value); flash("Link copied"); return; }
@@ -774,9 +775,36 @@ function chooseGame(first = false) {
       <button type="button" data-start="online" title="Two players, a turn at a time, each from their own link">${icon("link", 15)} Online</button>
       ${canSignIn() ? `<button type="button" data-start="friends" title="${login() ? "Open a party your eqosys friends join, then start the war together" : "Sign in with eqosys to play your friends"}">${icon("user-plus", 15)} With friends</button>` : ""}
     </div>
+    <div id="my-wars" hidden></div>
     ${first ? "" : `<button type="button" id="close" class="link">Keep playing</button>`}`);
+  void showWars();
   // Who you are, on the title as in the panel: your eqosys name with Sign out, or Sign in.
   $("modal-body").querySelector("header.crest")?.append(accountChip(Object.assign(document.createElement("span"), { className: "account" }), { onSignOut: () => chooseGame(first) }));
+}
+
+/** Signed in, the online wars your eqosys account sits in, from any device: each opens your seat on this one. */
+async function showWars() {
+  const wars = await fetchWars().catch(() => []);
+  const box = document.getElementById("my-wars");
+  if (!box || !wars.length) return;
+  const here = game.kind === "online" ? game.link.id : "";
+  box.innerHTML = `<h3>Your wars</h3><div class="choices wars">${wars.slice(0, 6).map((w) => `<button type="button" data-war="${esc(w.id)}" class="${w.faction}"${w.id === here ? " disabled" : ""}
+    title="${w.id === here ? "The war on this screen" : "Open your seat in this war"}">${icon(w.id === here ? "map-pin" : "swords", 15)} <b>${FACTION_NAMES[w.faction]}</b>
+    <small>${esc(GALAXIES[w.galaxy as GalaxyId]?.name ?? w.galaxy)}, since ${new Date(w.at).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</small></button>`).join("")}</div>`;
+  box.hidden = false;
+}
+
+/** A war from your list: a token for your seat on this device, then its table. */
+async function openMine(id: string) {
+  try {
+    const got = await openWar(id);
+    turnStart = null; phase = 1; $("modal").classList.remove("fresh");
+    const link = { id: got.id, token: got.token };
+    useGame({ kind: "online", link, view: await fetchView(link) });
+    hideModal(); afterTurn();
+  } catch (e) {
+    flash(`Couldn't open that war: ${(e as Error).message}`);
+  }
 }
 
 /** "With friends": signed in, a party for the war picked here; signed out, eqosys's sign-in first. */
@@ -796,9 +824,9 @@ function showParty(p: NonNullable<ReturnType<typeof partyIn>>) {
     <button type="button" id="leave-party" class="link">Not now</button>`);
   // eqosys sends players back to the page without its query, so the party rides along in `then` (boot reads it).
   if (!signedIn) return void ($("party-sign-in").onclick = () => void signIn(`party${location.search}`));
-  const leave = joinParty(p.code, $("party-lobby"), async ({ room, seat }) => {
+  const leave = joinParty(p.code, $("party-lobby"), async ({ room, seat, ticket }) => {
     try {
-      const got = await claimSeat(room, { seat, side: p.side, galaxy: p.galaxy });
+      const got = await claimSeat(room, { seat, side: p.side, galaxy: p.galaxy, ...(ticket && { ticket }) });
       leave();
       history.replaceState(null, "", location.pathname);
       turnStart = null; phase = 1; $("modal").classList.remove("fresh");
@@ -825,7 +853,7 @@ async function startGame(kind: "ai" | "hotseat" | "online",
     return hotseat() ? passTo(seatUp()) : afterTurn();
   }
   try {
-    const { id, tokens } = await startOnline(seats, galaxy);
+    const { id, tokens } = await startOnline(seats, galaxy, side);
     const link = { id, token: tokens[side]!, invite: tokens[foe] };
     useGame({ kind: "online", link, view: await fetchView(link) });
     showInvite();

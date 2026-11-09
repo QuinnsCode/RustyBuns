@@ -19,4 +19,4 @@ export const SKIN = { theme: {
   "--ui-soft": "#f3ece1", "--ui-dim": "#6e6e73", "--ui-accent-soft": "#fde9df", "--ui-on-accent": "var(--paper)", "--ui-scrim": "#1b1b1f66",
 } };
 
-export const { signIn, finishSignIn, login, fresh, signOut, canSignIn, accountChip, reportButton, party, space, achieve } = eqosys({ app: APP, url: EQOSYS, from: SIGN_IN_FROM, prefix: "stp", skin: SKIN });
+export const { signIn, finishSignIn, login, fresh, signOut, who, canSignIn, accountChip, reportButton, party, space, achieve } = eqosys({ app: APP, url: EQOSYS, from: SIGN_IN_FROM, prefix: "stp", skin: SKIN });

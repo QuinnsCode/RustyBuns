@@ -4,6 +4,7 @@
 // Cloudflare and in-process under Bun on the desktop.
 
 import { pipelineRoutes } from "./pipeline-routes.ts";
+import { reviewOf, runQueuedReviews } from "./pipeline-hooks.ts";
 import { isPlainObject, parseJson } from "./util.ts";
 import { artifactMoveRoutes } from "./artifact-move.ts";
 import { featureRankRoutes } from "./feature-ranks.ts";
@@ -29,8 +30,11 @@ import {
 import { repoRow, live, branchOf } from "./repos.ts";
 import {
   code,
+  fail,
+  unread,
   json,
   NAME,
+  named,
   need,
   readBody,
   type DigMessage,
@@ -303,6 +307,10 @@ const TOP_FRIENDS = 7;
 const BIO_MAX = 1000, THEME_MAX = 64 * 1024;
 /** What GET /api/me answers of a person's own row. */
 const ME_COLUMNS = "name, bio, theme_html, updated_at, github_account, agent_github, pulse, git_truth, city_public, tier, avatar, hidden, share_usage, top8, created_at";
+/** protect.ts's refusals, named. */
+const closedMain = async (env: Env, owner: string, repo: string, user: string | null | undefined) => { const c = await mainClosed(env, owner, repo, user); return c && named(c, "MainProtected"); };
+const closedPolicy = (owner: string, path: string, user: string | null | undefined) => { const c = policyClosed(owner, path, user); return c && named(c, "PolicyFile"); };
+
 const DO_ROUTES = new Set(["file", "ops", "log", "at", "commit", "commits", "ws", "private", "claims", "release"]);
 
 // FTS5 treats punctuation as syntax; quote every word so a search is just words.
@@ -314,7 +322,7 @@ async function route(req: Request, env: Env): Promise<Response> {
   const p = url.pathname.split("/").filter(Boolean).map(decodeURIComponent);
   // PAGES_ORIGIN: its host answers only page reads, with no sign-in; the app's host sends them there (page.ts)
   const pages = pagesHost(req, env, p);
-  if (pages === "pages") return (await pageRoutes(req, env, p, null, true)) ?? json({ error: "no such file" }, 404);
+  if (pages === "pages") return (await pageRoutes(req, env, p, null, true)) ?? fail("NoSuchFile", "no such file");
   if (pages) return pages;
   // GET /.well-known/oauth-*  where apps and MCP clients find OAuth sign-in (oauth.ts)
   const known = wellKnown(req, p, url.origin);
@@ -432,7 +440,7 @@ async function route(req: Request, env: Env): Promise<Response> {
   if (mentions) return mentions;
   const agents = await agentRoutes(req, env, p, url, user, (o, r) => access(env, o, r, user), (r) => app.fetch(r, env));
   if (agents) return agents;
-  const road = await pipelineRoutes(req, env, p, url, (o, r) => access(env, o, r, user));
+  const road = await pipelineRoutes(req, env, p, url, user, (o, r) => access(env, o, r, user));
   if (road) return road;
   const edit = await editRoutes(req, p, url, user, (r) => app.fetch(r, env));
   if (edit) return edit;
@@ -498,10 +506,10 @@ async function route(req: Request, env: Env): Promise<Response> {
         share_usage: opt(bool()), hidden: opt(arr(oneOf(PROFILE_SECTIONS), 100)), top8: opt(arr(str(), TOP_FRIENDS)) }));
       if (b instanceof Response) return b;
       for (const h of b.top8 ?? []) if (h === user || !(await env.DB.prepare("SELECT 1 FROM users WHERE name = ?").bind(h).first()))
-        return json({ error: `top8: up to ${TOP_FRIENDS} other people who have a profile` }, 400);
+        return fail("BadInput", `top8: up to ${TOP_FRIENDS} other people who have a profile`);
       // avatar: the parts (packages/util/src/avatar.ts), or null to take it off.
       const avatar = raw.avatar === undefined ? null : raw.avatar === null ? "" : cleanAvatar(raw.avatar);
-      if (avatar === null && raw.avatar !== undefined) return json({ error: `avatar: every part (${Object.keys(PARTS).join(", ")}), each one of its options, colors as #rrggbb` }, 400);
+      if (avatar === null && raw.avatar !== undefined) return fail("BadInput", `avatar: every part (${Object.keys(PARTS).join(", ")}), each one of its options, colors as #rrggbb`);
       await env.DB.prepare("UPDATE users SET bio = COALESCE(?, bio), theme_html = COALESCE(?, theme_html), pulse = COALESCE(?, pulse), git_truth = COALESCE(?, git_truth), avatar = COALESCE(?, avatar), share_usage = COALESCE(?, share_usage), hidden = COALESCE(?, hidden), top8 = COALESCE(?, top8) WHERE name = ?")
         .bind(b.bio ?? null, b.theme_html ?? null, b.pulse === undefined ? null : b.pulse ? 1 : 0, b.git_truth ?? null, avatar === null ? null : avatar === "" ? "" : JSON.stringify(avatar), b.share_usage === undefined ? null : b.share_usage ? 1 : 0, b.hidden === undefined ? null : JSON.stringify([...new Set(b.hidden)]), b.top8 === undefined ? null : JSON.stringify([...new Set(b.top8)]), user).run();
       // Saying no (or changing your mind) takes back what was shared (usage.ts).
@@ -522,7 +530,7 @@ async function route(req: Request, env: Env): Promise<Response> {
   // an agent's (agent-…) also says who runs it, where, and its runs (actors.ts)
   if (p[1] === "users" && p[2]) {
     const row = await env.DB.prepare("SELECT name, bio, theme_html, pulse, city_public, tier, avatar, hidden, top8 FROM users WHERE name = ?").bind(p[2]).first();
-    if (!row) return json({ error: "no such user" }, 404);
+    if (!row) return fail("NoSuchUser", "no such user");
     // Top 8: Mervin holds slot 1 (the client draws him); the owner's picks fill the rest, else the people they follow, newest first.
     const top8 = (row.top8 ? parseJson<string[]>(row.top8 as string, []) : (await listFollows(env.DB, p[2], null)).flatMap((f) => f.kind === "user" ? [f.name] : [])).slice(0, TOP_FRIENDS);
     const u = { ...row, tier: tierById(row.tier), hidden: parseJson<string[]>(row.hidden as string, []), top8 };
@@ -539,10 +547,10 @@ async function route(req: Request, env: Env): Promise<Response> {
   if (p[1] === "repos" && !p[2] && req.method === "POST") {
     if (!user) return json({ error: "sign in first" }, 401);
     const { name, visibility = "public", region } = await body<"name" | "visibility" | "region">();
-    if (typeof name !== "string" || !NAME.test(name)) return json({ error: "bad repo name" }, 400);
-    if (visibility !== "public" && visibility !== "private") return json({ error: "visibility: public or private" }, 400);
-    if (region !== undefined && region !== "eu") return json({ error: "region: eu, or leave it out" }, 400);
-    if (region === "eu" && !env.ARTIFACTS_EU) return json({ error: "this codeSplitter has no EU storage" }, 501);
+    if (typeof name !== "string" || !NAME.test(name)) return fail("BadInput", "bad repo name");
+    if (visibility !== "public" && visibility !== "private") return fail("BadInput", "visibility: public or private");
+    if (region !== undefined && region !== "eu") return fail("BadInput", "region: eu, or leave it out");
+    if (region === "eu" && !env.ARTIFACTS_EU) return fail("NoEuStorage", "this codeSplitter has no EU storage");
     const namespace = region ?? null;
     await env.DB.prepare("INSERT INTO repos (owner, name, visibility, created_at, branch, namespace) VALUES (?, ?, ?, ?, 'main', ?)").bind(user, name, visibility, Date.now(), namespace).run();
     const arts = artifactsFor(env, namespace);
@@ -560,7 +568,7 @@ async function route(req: Request, env: Env): Promise<Response> {
     const [owner, repo] = [p[2], p[3]];
     const a = await access(env, owner, repo, user);
     // A private repo you can't see looks the same as one that doesn't exist.
-    if (!a.read) return json({ error: "not found" }, 404);
+    if (!a.read) return fail("NoSuchRepo", "not found");
 
     // GET /api/repos/:o/:r
     if (!p[4] && req.method === "GET") {
@@ -590,9 +598,9 @@ async function route(req: Request, env: Env): Promise<Response> {
     }
     // PUT /api/repos/:o/:r {visibility}  (owner only)
     if (!p[4] && req.method === "PUT") {
-      if (user !== owner) return json({ error: "owner only" }, 403);
+      if (user !== owner) return fail("OwnerOnly", "owner only");
       const { visibility } = await body<"visibility">();
-      if (visibility !== "public" && visibility !== "private") return json({ error: "visibility: public or private" }, 400);
+      if (visibility !== "public" && visibility !== "private") return fail("BadInput", "visibility: public or private");
       await env.DB.prepare("UPDATE repos SET visibility = ? WHERE owner = ? AND name = ?").bind(visibility, owner, repo).run();
       // The vector index's tags follow on the next hourly embed; search checks D1 till then.
       await restaleSearch(env, owner, repo).catch(() => null);
@@ -607,8 +615,8 @@ async function route(req: Request, env: Env): Promise<Response> {
     // DELETE /api/repos/:o/:r?confirm=:r  (owner only) the repo and everything of it here: rows, file DOs, git.
     // GitHub never hears, and a stack it deployed stays up.
     if (!p[4] && req.method === "DELETE") {
-      if (user !== owner) return json({ error: "owner only" }, 403);
-      if (url.searchParams.get("confirm") !== repo) return json({ error: `to delete it, confirm with its name: ?confirm=${repo}` }, 400);
+      if (user !== owner) return fail("OwnerOnly", "owner only");
+      if (url.searchParams.get("confirm") !== repo) return fail("BadInput", `to delete it, confirm with its name: ?confirm=${repo}`);
       await evict(env, owner, repo);
       await audit(env, req, { actor: user, action: "repo.delete", owner, repo });
       return json({ deleted: `${owner}/${repo}` });
@@ -632,12 +640,12 @@ async function route(req: Request, env: Env): Promise<Response> {
     // GET /api/repos/:o/:r/share[?branch=&ttl=]  a git clone line with a read token that lasts ttl seconds (a day by default, a week at most, an hour for crew on a private repo: removing them can't recall it), to hand to someone
     if (p[4] === "share" && !p[5] && req.method === "GET") {
       const branch = url.searchParams.get("branch");
-      if (branch && !/^[\w][\w./-]*$/.test(branch)) return json({ error: "that isn't a branch name" }, 400);
+      if (branch && !/^[\w][\w./-]*$/.test(branch)) return fail("BadBranchName", "that isn't a branch name");
       // A token can't be recalled once handed out (#1819), and a public repo can go private tomorrow: a non-owner's lives an hour at most, whatever the repo's visibility is today.
       const cap = user !== owner ? SHARE_CREW_PRIVATE_S : SHARE_MAX_S;
       const ttl = Math.max(60, Math.min(cap, Math.floor(Number(url.searchParams.get("ttl"))) || Math.min(cap, SHARE_DEFAULT_S)));
       const h = await handleFor(env, owner, repo).catch(() => null);
-      if (!h) return json({ error: "this repo has no git to share" }, 409);
+      if (!h) return fail("NoGit", "this repo has no git to share");
       const art = await artifactAccess(h.handle, h.remote, "read", ttl);
       return json({ command: `git clone${branch ? ` -b ${branch}` : ""} ${art.remote.replace("://", `://x:${art.token.split("?")[0]}@`)} ${repo}`, ttl, expiresAt: Date.now() + ttl * 1000, ...(branch && { branch }) });
     }
@@ -695,9 +703,9 @@ async function route(req: Request, env: Env): Promise<Response> {
     // POST /api/repos/:o/:r/commits/:sha/revert {branch?}  a commit undone, as line edits (pick.ts)
     // POST /api/repos/:o/:r/commits/:sha/pick {branch?}  a commit taken again, onto main or an open branch
     if (p[4] === "commits" && p[5] && (p[6] === "revert" || p[6] === "pick") && !p[7] && req.method === "POST") {
-      if (!a.write) return json({ error: "no write access" }, 403);
+      if (!a.write) return fail("NoWriteAccess", "no write access");
       const b = await readBody<"branch">(req);
-      if (!b.branch || b.branch === "main") { const closed = await mainClosed(env, owner, repo, user); if (closed) return closed; }
+      if (!b.branch || b.branch === "main") { const closed = await closedMain(env, owner, repo, user); if (closed) return closed; }
       return pickRoute(env, owner, repo, user!, p[6], p[5], b);
     }
     // GET /api/repos/:o/:r/tree?path=dir[&branch=b]  the repo's git tree, plus files written here but not catalogued yet
@@ -750,10 +758,10 @@ async function route(req: Request, env: Env): Promise<Response> {
     }
     // POST /api/repos/:o/:r/pushes {path, take: "mine" | "pushed"}  settle a push that clashed with edits here (#788)
     if (p[4] === "pushes" && !p[5] && req.method === "POST") {
-      if (user !== owner) return json({ error: "owner only" }, 403);
+      if (user !== owner) return fail("OwnerOnly", "owner only");
       const { path, take } = await body<"path" | "take">();
-      if (typeof path !== "string" || !path || (take !== "mine" && take !== "pushed")) return json({ error: "{path, take: \"mine\" | \"pushed\"}, please" }, 400);
-      if (!(await settlePush(env, owner, repo, path, take))) return json({ error: `no push clashes with ${path}` }, 404);
+      if (typeof path !== "string" || !path || (take !== "mine" && take !== "pushed")) return fail("BadInput", "{path, take: \"mine\" | \"pushed\"}, please");
+      if (!(await settlePush(env, owner, repo, path, take))) return fail("NoPushClash", `no push clashes with ${path}`);
       return json({ ok: true });
     }
     // GET|POST /api/repos/:o/:r/mirror  where a mirror stands with upstream; sync it now (mirror.ts)
@@ -780,22 +788,22 @@ async function route(req: Request, env: Env): Promise<Response> {
     if (checks) return checks;
     // POST /api/repos/:o/:r/collaborators {name}  (owner only; this is how agents get in)
     if (p[4] === "collaborators" && req.method === "POST") {
-      if (user !== owner) return json({ error: "owner only" }, 403);
+      if (user !== owner) return fail("OwnerOnly", "owner only");
       const { name } = await body<"name">();
-      if (typeof name !== "string" || !NAME.test(name)) return json({ error: "bad name" }, 400);
+      if (typeof name !== "string" || !NAME.test(name)) return fail("BadInput", "bad name");
       // A person has to have signed up first, so adding one never takes a handle nobody chose.
       // agent- handles are ours to give (no person can pick one): a hosted agent comes in this way.
       if (isAgentHandle(name)) await env.DB.prepare("INSERT OR IGNORE INTO users (name, created_at) VALUES (?, ?)").bind(name, Date.now()).run();
-      else if (!(await env.DB.prepare("SELECT 1 FROM users WHERE name = ?").bind(name).first())) return json({ error: `no one's @${name} here yet: send them an invite link` }, 404);
+      else if (!(await env.DB.prepare("SELECT 1 FROM users WHERE name = ?").bind(name).first())) return fail("NoSuchUser", `no one's @${name} here yet: send them an invite link`);
       const r = await env.DB.prepare("INSERT OR IGNORE INTO collaborators (owner, repo, name) VALUES (?, ?, ?)").bind(owner, repo, name).run();
       if (r.meta?.changes) await audit(env, req, { actor: user, action: "crew.add", owner, repo, target: name });
       return json({ ok: true });
     }
     // DELETE /api/repos/:o/:r/collaborators/:name  (owner only) out of the crew; what they wrote stays theirs
     if (p[4] === "collaborators" && p[5] && !p[6] && req.method === "DELETE") {
-      if (user !== owner) return json({ error: "owner only" }, 403);
+      if (user !== owner) return fail("OwnerOnly", "owner only");
       const r = await env.DB.prepare("DELETE FROM collaborators WHERE owner = ? AND repo = ? AND name = ?").bind(owner, repo, p[5]).run();
-      if (!r.meta?.changes) return json({ error: `@${p[5]} isn't in the crew` }, 404);
+      if (!r.meta?.changes) return fail("NotInCrew", `@${p[5]} isn't in the crew`);
       // An agent's token for this repo goes with it.
       await env.DB.prepare("DELETE FROM api_tokens WHERE name = ? AND repo = ?").bind(p[5], `${owner}/${repo}`).run();
       await revokeSockets(env, owner, repo, { user: p[5] });
@@ -809,56 +817,56 @@ async function route(req: Request, env: Env): Promise<Response> {
     if (invites) return invites;
     // POST /api/repos/:o/:r/files {path, content, branch?}
     if (p[4] === "files" && req.method === "POST") {
-      if (!a.write) return json({ error: "no write access" }, 403);
+      if (!a.write) return fail("NoWriteAccess", "no write access");
       const { path, content = "", branch } = await body<"path" | "content" | "branch">();
-      if (typeof path !== "string" || !path || path.length > 200 || path.includes("..") || path.startsWith("/")) return json({ error: "bad path" }, 400);
-      if (typeof content !== "string" || (branch !== undefined && typeof branch !== "string")) return json({ error: "content and branch: text" }, 400);
+      if (typeof path !== "string" || !path || path.length > 200 || path.includes("..") || path.startsWith("/")) return fail("BadInput", "bad path");
+      if (typeof content !== "string" || (branch !== undefined && typeof branch !== "string")) return fail("BadInput", "content and branch: text");
       if (branch) {
-        if (!(await openBranch(env, owner, repo, branch))) return json({ error: "no open branch " + branch }, 404);
+        if (!(await openBranch(env, owner, repo, branch))) return fail("NoSuchBranch", "no open branch " + branch);
         return createOn(env, owner, repo, branch, path, content, user!);
       }
-      const closed = policyClosed(owner, path, user) ?? await mainClosed(env, owner, repo, user);
+      const closed = await (closedPolicy(owner, path, user) ?? closedMain(env, owner, repo, user));
       if (closed) return closed;
       const r = await env.DB.prepare("INSERT OR IGNORE INTO files (owner, repo, path) VALUES (?, ?, ?)").bind(owner, repo, path).run();
-      if (!r.meta?.changes) return json({ error: "file exists" }, 409);
+      if (!r.meta?.changes) return fail("FileExists", "file exists");
       await toFile(env, owner, repo, path, user!, "ops", { method: "POST", body: JSON.stringify({ ops: fromText(content) }) });
       return json({ path }, 201);
     }
     // /api/repos/:o/:r/do/(file|ops|log|at|commit|commits|ws|private|claims|release)?path=...&branch=...  -> the file's DO, or its copy on a branch
     if (p[4] === "do" && DO_ROUTES.has(p[5] ?? "")) {
       const path = url.searchParams.get("path") ?? "", branch = url.searchParams.get("branch") || undefined;
-      if (branch && !(await openBranch(env, owner, repo, branch))) return json({ error: "no open branch " + branch }, 404);
+      if (branch && !(await openBranch(env, owner, repo, branch))) return fail("NoSuchBranch", "no open branch " + branch);
       // A branch catalogues when it merges into main, not before.
-      if (branch && p[5] === "commit") return json({ error: "merge the branch, then commit main" }, 400);
-      if (branch && p[5] === "private") return json({ error: "mark lines private on main" }, 400);
+      if (branch && p[5] === "commit") return fail("BadInput", "merge the branch, then commit main");
+      if (branch && p[5] === "private") return fail("BadInput", "mark lines private on main");
       const m = branch ? await materializeOn(env, owner, repo, branch, path) : await materialize(env, owner, repo, path);
-      if ("error" in m) return json({ error: m.error }, m.status);
+      if ("error" in m) return unread(m);
       const writes = p[5] === "ops" || p[5] === "commit" || ((p[5] === "private" || p[5] === "claims" || p[5] === "release") && req.method === "POST");
-      if (writes && !a.write) return json({ error: "no write access" }, 403);
+      if (writes && !a.write) return fail("NoWriteAccess", "no write access");
       const runLocked = (writes || p[5] === "ws") && a.write ? await runBranchLocked(env, owner, repo, branch, user) : null;
       if (writes && runLocked) return runLocked;
-      if (writes && !branch) { const closed = await mainClosed(env, owner, repo, user); if (closed) return closed; }
-      if ((writes || p[5] === "ws") && !branch && a.write) { const closed = policyClosed(owner, path, user); if (closed) return closed; }
+      if (writes && !branch) { const closed = await closedMain(env, owner, repo, user); if (closed) return closed; }
+      if ((writes || p[5] === "ws") && !branch && a.write) { const closed = closedPolicy(owner, path, user); if (closed) return closed; }
       // On the desktop, a push to the repo's git from outside reaches main's files when they're opened or
       // committed, so a commit here never writes their old lines back over it (#773).
       if (!branch && (p[5] === "commit" || (p[5] === "file" && req.method === "GET")) && mirrorsOn(env)) await landPushes(env, owner, repo).catch(() => {});
       // One whose edits here clashed with a push waits for the owner to pick a side, so it can't undo the push (#788).
       if (!branch && p[5] === "commit" && mirrorsOn(env) && await pushHolds(env, owner, repo, path))
-        return json({ error: `a push to this repo's git changed the same lines as edits here: keep yours or take the pushed ones, then commit`, pushClash: path }, 409);
+        return fail("PushClash", `a push to this repo's git changed the same lines as edits here: keep yours or take the pushed ones, then commit`, { pushClash: path });
       // Hiding lines is the crew's; showing them again (to git and search on the next commit) the owner's.
       const sent = writes ? await req.text() : undefined;
       // The few fields read here; the file's Durable Object checks the whole body.
       const said = (() => { try { const v: unknown = JSON.parse(sent ?? ""); return isPlainObject(v) ? v : {}; } catch { return {}; } })();
       if (p[5] === "private" && req.method === "POST") {
         const on = said.private;
-        if (typeof on !== "boolean") return json({ error: "{lines, private: true|false}, please" }, 400);
-        if (!on && user !== owner) return json({ error: "only the owner makes private lines public" }, 403);
+        if (typeof on !== "boolean") return fail("BadInput", "{lines, private: true|false}, please");
+        if (!on && user !== owner) return fail("OwnerOnly", "only the owner makes private lines public");
       }
       // No waiting in line here while holding lines in another file: that's how two waiters end up
       // waiting on each other for ever. The file itself refuses it for lines held in it (file-do.ts).
       if (p[5] === "claims" && req.method === "POST" && user) {
         const holding = said.wait && !said.soft ? await heldElsewhere(env, user, [owner, repo, path]) : [];
-        if (holding.length) return json({ error: `you hold lines in ${holding.map((h) => h.path).join(", ")}: let go of them before you wait in line here, or work elsewhere`, holding }, 409);
+        if (holding.length) return fail("HoldingLines", `you hold lines in ${holding.map((h) => h.path).join(", ")}: let go of them before you wait in line here, or work elsewhere`, { holding });
       }
       // How the path takes live edits (#1011), read as the merge reads it: main's .gitattributes over the defaults.
       const pol = (p[5] === "ops" || p[5] === "ws" || (p[5] === "claims" && req.method === "POST")) && a.write ? await pathPolicy(env, owner, repo, path, user!) : undefined;
@@ -932,7 +940,7 @@ async function route(req: Request, env: Env): Promise<Response> {
           // A token (a prompt-injected agent may hold one) is not the owner reading it, so its commits wait for an approval.
           if (user === owner && !byToken(req) && !user.startsWith("agent-") && git.deployCommit && commit.writers?.every((w) => w === owner)) await clearOwn(env, owner, repo, git.deployCommit);
           await deployOnCommit(env, owner, repo, user);
-          await startChecks(env, owner, repo, "main", git.commit, user!);
+          await startChecks(env, owner, repo, "main", git.commit, user!, [path]);
           // A mirror hands the commit upstream now, if upstream's there to take it.
           await kickMirror(env, owner, repo);
         }
@@ -947,7 +955,7 @@ async function route(req: Request, env: Env): Promise<Response> {
     const q = url.searchParams.get("q") ?? "", only = url.searchParams.get("repo");
     if (!only) return json(await searchAll(env, user, q));
     const [o, r] = only.split("/");
-    if (!o || !r || !(await access(env, o, r, user)).read) return json({ error: "not found" }, 404);
+    if (!o || !r || !(await access(env, o, r, user)).read) return fail("NoSuchRepo", "not found");
     return json(await searchRepo(env, o, r, q));
   }
 
@@ -955,24 +963,24 @@ async function route(req: Request, env: Env): Promise<Response> {
   if (p[1] === "playlists" && !p[2] && req.method === "POST") {
     if (!user) return json({ error: "sign in first" }, 401);
     const { title } = await body<"title">();
-    if (typeof title !== "string" || !title.trim()) return json({ error: "title required" }, 400);
+    if (typeof title !== "string" || !title.trim()) return fail("BadInput", "title required");
     const r = await env.DB.prepare("INSERT INTO playlists (owner, title) VALUES (?, ?) RETURNING id").bind(user, title.trim().slice(0, 80)).first<{ id: number }>();
     return json({ id: r!.id, owner: user, title }, 201);
   }
   // POST /api/playlists/:id/tracks {owner, repo, path, from, to, note}
   if (p[1] === "playlists" && p[2] && p[3] === "tracks" && req.method === "POST") {
     const pl = await env.DB.prepare("SELECT * FROM playlists WHERE id = ?").bind(Number(p[2])).first();
-    if (!pl || pl.owner !== user) return json({ error: "not your playlist" }, 403);
+    if (!pl || pl.owner !== user) return fail("NotYourCollection", "not your playlist");
     const t = await body<"owner" | "repo" | "path" | "from" | "to" | "note">();
     if (typeof t.owner !== "string" || typeof t.repo !== "string" || typeof t.path !== "string" || typeof t.from !== "number" || typeof t.to !== "number"
-      || (t.note !== undefined && typeof t.note !== "string")) return json({ error: "owner, repo, path, from and to required" }, 400);
-    if (!(await access(env, t.owner, t.repo, user)).read) return json({ error: "not found" }, 404);
+      || (t.note !== undefined && typeof t.note !== "string")) return fail("BadInput", "owner, repo, path, from and to required");
+    if (!(await access(env, t.owner, t.repo, user)).read) return fail("NoSuchRepo", "not found");
     const m = await materialize(env, t.owner, t.repo, t.path);
-    if ("error" in m) return json({ error: m.error }, m.status);
+    if ("error" in m) return unread(m);
     const from = Math.max(1, Math.floor(t.from)), to = Math.max(from, Math.floor(t.to));
     const lines = await fileLines(env, t.owner, t.repo, t.path, user!, true);
     const first = lines[from - 1], last = lines[Math.min(to, lines.length) - 1];
-    if (!first || !last) return json({ error: "no such lines" }, 400);
+    if (!first || !last) return fail("BadInput", "no such lines");
     await env.DB.prepare("INSERT INTO tracks (playlist, owner, repo, path, from_line, to_line, from_id, to_id, note) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
       .bind(pl.id, t.owner, t.repo, t.path, from, to, first.id, last.id, (t.note ?? "").slice(0, 280)).run();
     return json({ ok: true }, 201);
@@ -980,7 +988,7 @@ async function route(req: Request, env: Env): Promise<Response> {
   // GET /api/playlists/:id  each track with its lines as they are now
   if (p[1] === "playlists" && p[2] && req.method === "GET") {
     const pl = await env.DB.prepare("SELECT * FROM playlists WHERE id = ?").bind(Number(p[2])).first();
-    if (!pl) return json({ error: "not found" }, 404);
+    if (!pl) return fail("NoSuchCollection", "not found");
     const { results } = await env.DB.prepare("SELECT * FROM tracks WHERE playlist = ? ORDER BY id").bind(pl.id).all();
     const tracks = await Promise.all(results.map(async (t: any) => {
       // A track pointing into a repo that went private just disappears for you; private lines are placeholders unless you're crew.
@@ -995,7 +1003,7 @@ async function route(req: Request, env: Env): Promise<Response> {
     return json({ ...pl, tracks: tracks.filter(Boolean) });
   }
 
-  return json({ error: "not found" }, 404);
+  return fail("NoSuchRoute", "not found");
 }
 
 const app = {
@@ -1061,12 +1069,13 @@ const app = {
     // ARTIFACT_EVENTS: what Artifacts says about its repos; only pushes are heard for now (push-events.ts).
     if (batch.messages.some((m) => artifactsEvent(m.body))) await logPushes(env, batch.messages.flatMap((m) => pushedEvent(m.body) ?? []));
     else if (batch.messages.some((m) => typeof (m.body as DigMessage)?.dig === "string")) await runDigs(batch as Parameters<typeof runDigs>[0], env);
-    else if (batch.messages.some((m) => typeof (m.body as JobMessage)?.job === "number" || typeof (m.body as AgentMessage)?.agent === "number" || typeof (m.body as DigestMessage)?.digest === "string")) {
-      // JOBS: hosted agent runs (agent-routes.ts) and feed digests (feed.ts) beside queued requests.
+    else if (batch.messages.some((m) => typeof (m.body as JobMessage)?.job === "number" || typeof (m.body as AgentMessage)?.agent === "number" || typeof (m.body as DigestMessage)?.digest === "string" || reviewOf(m.body))) {
+      // JOBS: hosted agent runs (agent-routes.ts), the pipeline's AI reviews (pipeline-hooks.ts) and feed digests (feed.ts) beside queued requests.
       const agents = batch.messages.filter((m) => typeof (m.body as AgentMessage)?.agent === "number") as { body: AgentMessage; ack(): void }[];
       const jobs = batch.messages.filter((m) => typeof (m.body as JobMessage)?.job === "number") as { body: JobMessage; ack(): void }[];
       const digests = batch.messages.filter((m) => typeof (m.body as DigestMessage)?.digest === "string") as { body: DigestMessage; ack(): void }[];
-      await Promise.all([runQueuedAgents(agents, env, (r) => app.fetch(r, env)), runJobs({ messages: jobs }, env, (r) => app.fetch(r, env)), runQueuedDigests(digests, env)]);
+      const reviews = batch.messages.filter((m) => reviewOf(m.body));
+      await Promise.all([runQueuedAgents(agents, env, (r) => app.fetch(r, env)), runQueuedReviews(reviews, env), runJobs({ messages: jobs }, env, (r) => app.fetch(r, env)), runQueuedDigests(digests, env)]);
     }
     else await deliverHooks(batch as { messages: readonly { body: HookMessage; ack(): void }[] }, env);
   },

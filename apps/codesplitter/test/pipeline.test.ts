@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Exec } from "../src/agent-run.ts";
+import { reviewsDone } from "../src/pipeline-hooks.ts";
 import { EXAMPLE_PIPELINE, laneCall, plan, tally, type Change, type Lane, type LaneCall } from "../src/pipeline.ts";
 import { glob } from "../src/util.ts";
 import { local, post } from "./app-kit.ts";
@@ -44,10 +45,10 @@ test("a repo's pipeline file sets its road, and a bad one says which field", asy
 
   expect((await road("files=a.ts")).source).toBe("default");
   await post(call, "ana", "/api/repos/ana/r/files", { path: "codesplitter.pipeline.json", content: JSON.stringify(EXAMPLE_PIPELINE, null, 2) });
-  const r = await road("files=src/a.ts&counts=stress:1");
+  const r = await road("files=src/a.ts");
   expect(r.source).toBe("codesplitter.pipeline.json");
   expect(r.plan.map((s) => s.at)).toContain("before-ester");
-  expect(r.counts.stress).toBe(2);
+  expect(r.counts.stress).toBe(1);
 
   const bad = await post(call, null, "/api/pipeline", { pipeline: { lanes: [{ name: "x", cadence: "sometimes" }] }, change: { files: [] } });
   expect(bad.status).toBe(400);
@@ -58,7 +59,7 @@ test("a repo's pipeline file sets its road, and a bad one says which field", asy
   expect(glob("**/**/a").source).toBe(glob("**/a").source);
 });
 
-test("the hooks run at a merge: an AI's nay holds it with the reason, an edit asks again, then a person's yay lands it", async () => {
+test("the hooks run at a merge: an AI's review runs off the request, its nay holds it with the reason, an edit asks again, then a person's yay lands it", async () => {
   const call = await local({ GH_CLI: "off", HEAL: "1" });
   const answers = ["NAY: x(3) drops the null check", "YAY", "YAY"], prompts: string[] = [];
   call.env.AGENT_EXEC = (async (cmd, cwd) => {
@@ -75,6 +76,12 @@ test("the hooks run at a merge: an AI's nay holds it with the reason, an edit as
   await edit("x(3);", 2);
   const merge = async () => { const r = await post(call, "ana", "/api/repos/ana/r/branches/b1/merge", {}); return { status: r.status, body: await r.json() as { error?: string; hook?: { at: string; say: string; reason?: string } } }; };
 
+  // The merge doesn't wait for the agent: the card says it's reading, and the review is asked once.
+  const reading = await merge();
+  expect(reading.status).toBe(409);
+  expect(reading.body.hook).toMatchObject({ at: "before-ester", say: "running" });
+  await reviewsDone();
+  expect(prompts).toHaveLength(1);
   const nay = await merge();
   expect(nay.status).toBe(409);
   expect(nay.body.hook).toMatchObject({ at: "before-ester", say: "nay", reason: "x(3) drops the null check" });
@@ -84,6 +91,8 @@ test("the hooks run at a merge: an AI's nay holds it with the reason, an edit as
   expect(prompts).toHaveLength(1);
 
   expect((await edit("x(4);", 1)).status).toBe(200);
+  expect((await merge()).body.hook?.say).toBe("running");
+  await reviewsDone();
   const waiting = await merge();
   expect(prompts).toHaveLength(2);
   expect(waiting.body.hook).toMatchObject({ at: "after-ester", say: "waiting" });
@@ -97,6 +106,174 @@ test("the hooks run at a merge: an AI's nay holds it with the reason, an edit as
   const again = await (await call("ana", "/api/repos/ana/r/branches/b1/hooks")).json() as { hash: string };
   expect(again.hash).not.toBe(cards.hash);
   expect((await post(call, "ana", "/api/repos/ana/r/branches/b1/hooks/after-ester", { say: "yay", hash: again.hash })).status).toBe(200);
+  // The edit asks the AI hook again too; once it says yay, the merge lands.
+  expect((await merge()).body.hook).toMatchObject({ at: "before-ester", say: "running" });
+  await reviewsDone();
   expect((await merge()).status).toBe(200);
+  expect(prompts).toHaveLength(3);
   expect(await (await call("ana", "/api/repos/ana/r/do/file?path=a.ts")).json()).toMatchObject({ lines: [{ text: "x(5);" }] });
+});
+
+test("lanes drive the checks: a commit queues only the lanes it calls for, and the repo keeps each lane's count", async () => {
+  const call = await local({ GH_CLI: "off" });
+  const R = "/api/repos/ana/r";
+  await post(call, "ana", "/api/login", { name: "ana" });
+  await post(call, "ana", "/api/repos", { name: "r" });
+  await call("ana", `${R}/checks/settings`, { method: "PUT", body: JSON.stringify({ where: "here" }) });
+  await post(call, "ana", `${R}/files`, { path: "codesplitter.pipeline.json", content: JSON.stringify({ lanes: [
+    { name: "unit", cadence: "always", paths: ["src/**"], run: "bun test" },
+    { name: "stress", cadence: "often", every: 2, paths: ["src/**"], run: "bun run stress" },
+    { name: "docs", cadence: "bus", seats: 5, paths: ["**/*.md"] },
+  ] }) });
+  await post(call, "ana", `${R}/do/commit?path=codesplitter.pipeline.json`, { message: "pipeline" });
+  type Run = { id: number; name: string; status: string };
+  const runsOn = async (ref: string) => ((await (await call("ana", `${R}/checks?ref=${ref}`)).json()) as { runs: Run[] }).runs;
+  const commit = async (path: string, content: string) => {
+    await post(call, "ana", `${R}/files`, { path, content });
+    expect((await post(call, "ana", `${R}/do/commit?path=${path}`, { message: path })).status).toBe(200);
+    // A commit cancels the runs still queued on the one before it: what's left is what this one queued.
+    return (await runsOn("main")).filter((r) => r.status !== "cancelled");
+  };
+  /** What each lane's count becomes after a change to `file`, from the counts the repo keeps. */
+  const after = async (file: string) => ((await (await call("ana", `${R}/pipeline?files=${file}`)).json()) as { counts: Record<string, number> }).counts;
+
+  // The first change to src/: unit runs, stress owes its run (1 of every 2), the docs bus doesn't stop.
+  const first = await commit("src/a.ts", "a");
+  expect(first.map((r) => r.name)).toEqual(["unit"]);
+  const unit = (await (await call("ana", `${R}/checks/${first[0]!.id}`)).json()) as { command: string; log: string };
+  expect(unit.command).toBe("bun test");
+  expect(unit.log).toContain("lane unit (always): touches src/a.ts");
+  // GET .../pipeline reads the kept counts: the next src/ change is stress's 2nd, so it would run and start again.
+  expect(await after("src/x.ts")).toEqual({ unit: 0, stress: 0 });
+
+  // A docs change takes a seat and queues nothing.
+  expect(await commit("README.md", "hi")).toEqual([]);
+  // A branch's checks go by the same counts (its src/ edit is stress's 2nd) but don't move them: only main does.
+  await post(call, "ana", `${R}/branches`, { name: "b1" });
+  const doc = (await (await call("ana", `${R}/do/file?path=src/a.ts&branch=b1`)).json()) as { lines: { id: string; rev: number }[] };
+  await post(call, "ana", `${R}/do/ops?path=src/a.ts&branch=b1`, { ops: [{ kind: "set", line: doc.lines[0]!.id, base: doc.lines[0]!.rev, text: "A" }] });
+  for (const end = performance.now() + 10_000; !(await runsOn("b1")).length && performance.now() < end;) await Bun.sleep(10);
+  expect((await runsOn("b1")).map((r) => r.name).sort()).toEqual(["stress", "unit"]);
+  expect(await after("README.md")).toEqual({ unit: 0, stress: 1, docs: 2 });
+
+  // The second src/ change on main: stress's turn comes, and it starts again at 0.
+  expect((await commit("src/b.ts", "b")).map((r) => r.name).sort()).toEqual(["stress", "unit"]);
+  expect(await after("README.md")).toEqual({ unit: 0, stress: 0, docs: 2 });
+});
+
+test("a release cut: the button and a version tag each run every often and release lane and send every bus off", async () => {
+  const call = await local({ GH_CLI: "off" });
+  const R = "/api/repos/ana/r";
+  await post(call, "ana", "/api/login", { name: "ana" });
+  await post(call, "ana", "/api/repos", { name: "r" });
+  // Without a pipeline file there's nothing to cut: the one default lane already runs every change.
+  await post(call, "ana", `${R}/files`, { path: "src/a.ts", content: "a" });
+  await post(call, "ana", `${R}/do/commit?path=src/a.ts`, { message: "a" });
+  await call("ana", `${R}/checks/settings`, { method: "PUT", body: JSON.stringify({ where: "here" }) });
+  expect((await post(call, "ana", `${R}/pipeline/release`, {})).status).toBe(409);
+  await post(call, "ana", `${R}/files`, { path: "codesplitter.pipeline.json", content: JSON.stringify({ lanes: [
+    { name: "unit", cadence: "always", paths: ["src/**"], run: "bun test" },
+    { name: "stress", cadence: "often", every: 5, paths: ["src/**"], run: "bun run stress" },
+    { name: "ios", cadence: "release", run: "bun run ios" },
+    { name: "docs", cadence: "bus", seats: 10, paths: ["**/*.md"], run: "bun run docs" },
+  ] }) });
+  await post(call, "ana", `${R}/do/commit?path=codesplitter.pipeline.json`, { message: "pipeline" });
+  await post(call, "ana", `${R}/files`, { path: "README.md", content: "hi" });
+  await post(call, "ana", `${R}/do/commit?path=README.md`, { message: "docs" });
+  const counts = async () => ((await (await call("ana", `${R}/pipeline?files=x`)).json()) as { counts: Record<string, number> }).counts;
+  expect(await counts()).toEqual({ docs: 1 });
+
+  type Run = { id: number; name: string; status: string; log: string };
+  const cut = await post(call, "ana", `${R}/pipeline/release`, {});
+  expect(cut.status).toBe(202);
+  const body = (await cut.json()) as { lanes: { lane: string; go: string }[]; checks: { runs: Run[] } };
+  expect(body.lanes.map((l) => [l.lane, l.go])).toEqual([["unit", "skip"], ["stress", "run"], ["ios", "run"], ["docs", "depart"]]);
+  const queued = body.checks.runs.filter((r) => r.status === "queued");
+  expect(queued.map((r) => r.name).sort()).toEqual(["docs", "ios", "stress"]);
+  const ios = (await (await call("ana", `${R}/checks/${queued.find((r) => r.name === "ios")!.id}`)).json()) as { log: string };
+  expect(ios.log).toContain("@ana cut a release");
+  expect(ios.log).toContain("lane ios (release): a release is being cut");
+  // Every lane that ran starts again, and the bus left, so its seats do too.
+  expect(await counts()).toEqual({ stress: 0, ios: 0, docs: 0 });
+
+  // A version tag cuts one too; any other tag is only a tag.
+  const tag = async (name: string) => (await (await post(call, "ana", `${R}/tags`, { name })).json()) as { release?: { lane: string; go: string }[] };
+  expect((await tag("nightly")).release).toBeUndefined();
+  expect((await tag("v1.0")).release?.filter((l) => l.go !== "skip").map((l) => l.lane)).toEqual(["stress", "ios", "docs"]);
+});
+
+test("the bus's AI pass: a bus with no command seats changes, then one agent run reads them all, once per bus", async () => {
+  const call = await local({ GH_CLI: "off", HEAL: "1" });
+  const R = "/api/repos/ana/r";
+  const answers = ["YAY", "NAY: docs/c.md links to a page that isn't there"], given: string[] = [];
+  let hold: Promise<void> | null = null;
+  call.env.AGENT_EXEC = (async (_cmd, cwd) => {
+    given.push(await Bun.file(join(cwd, "VERDICT.md")).text());
+    await hold;
+    writeFileSync(join(cwd, "VERDICT.md"), answers[given.length - 1] + "\n");
+    return { code: 0, out: "" };
+  }) as Exec;
+  await post(call, "ana", "/api/login", { name: "ana" });
+  await post(call, "ana", "/api/repos", { name: "r" });
+  await call("ana", `${R}/checks/settings`, { method: "PUT", body: JSON.stringify({ where: "here" }) });
+  await post(call, "ana", `${R}/files`, { path: "codesplitter.pipeline.json", content: JSON.stringify({ lanes: [
+    { name: "unit", cadence: "always", paths: ["src/**"], run: "bun test" },
+    { name: "docs", cadence: "bus", seats: 2, paths: ["**/*.md"] },
+  ] }) });
+  await post(call, "ana", `${R}/do/commit?path=codesplitter.pipeline.json`, { message: "pipeline" });
+  type Run = { id: number; name: string; status: string; sha: string; log: string };
+  const commit = async (path: string, content: string) => {
+    await post(call, "ana", `${R}/files`, { path, content });
+    expect((await post(call, "ana", `${R}/do/commit?path=${path}`, { message: `write ${path}` })).status).toBe(200);
+    await reviewsDone();
+  };
+  /** The docs lane's runs on main, newest first, each with its log. */
+  const passes = async () => Promise.all(((await (await call("ana", `${R}/checks?ref=main`)).json()) as { runs: Run[] }).runs.filter((r) => r.name === "docs")
+    .map(async (r) => (await (await call("ana", `${R}/checks/${r.id}`)).json()) as Run));
+
+  // The first doc takes a seat: no agent, no run.
+  await commit("README.md", "hello");
+  expect(given).toEqual([]);
+  // The second fills the bus: the commit answers while the agent still reads, its run saying so.
+  let go = () => {};
+  hold = new Promise((r) => { go = r; });
+  await post(call, "ana", `${R}/files`, { path: "docs/b.md", content: "bee" });
+  expect((await post(call, "ana", `${R}/do/commit?path=docs/b.md`, { message: "write docs/b.md" })).status).toBe(200);
+  expect((await passes()).map((r) => r.status)).toEqual(["running"]);
+  go();
+  await reviewsDone();
+  // One agent run read both changes, and its yay passes the lane's run.
+  expect(given.length).toBe(1);
+  expect(given[0]).toContain("write README.md");
+  expect(given[0]).toContain("+++ b/docs/b.md");
+  expect(given[0]).toContain("+ hello");
+  expect(given[0]).not.toContain("codesplitter.pipeline.json");
+  const [yay] = await passes();
+  expect(yay!.status).toBe("passed");
+  expect(yay!.log).toContain("An AI pass over the 2 changes aboard");
+
+  // A retry of the bus that left (the same commit's ride again) reads its verdict and doesn't pay twice.
+  const { busRide } = await import("../src/pipeline-bus.ts");
+  const docs: Lane = { name: "docs", cadence: "bus", seats: 2, paths: ["**/*.md"] };
+  await busRide(call.env, "ana", "r", yay!.sha, [{ lane: docs, call: { lane: "docs", cadence: "bus", go: "depart", why: "full", ai: true } }], "ana");
+  expect(given.length).toBe(1);
+  // A release right after it left finds the bus empty: nothing to read.
+  expect((await post(call, "ana", `${R}/pipeline/release`, {})).status).toBe(202);
+  expect(given.length).toBe(1);
+
+  // The next bus: a nay fails the run with the reason.
+  await commit("docs/c.md", "[see](gone.md)");
+  await commit("docs/d.md", "dee");
+  expect(given.length).toBe(2);
+  expect(given[1]).not.toContain("docs/b.md");
+  const nay = (await passes()).find((r) => r.status === "failed");
+  expect(nay?.log).toContain("said nay: docs/c.md links to a page that isn't there");
+
+  // With no agent to ask (healing off), the bus still leaves; its run says why and is left to a person, at no cost.
+  call.env.HEAL = "off";
+  await commit("docs/e.md", "e");
+  await commit("docs/f.md", "f");
+  expect(given.length).toBe(2);
+  const off = (await passes()).find((r) => r.status === "cancelled");
+  expect(off?.log).toContain("self-healing is off");
 });

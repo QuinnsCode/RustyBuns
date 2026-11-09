@@ -10,6 +10,7 @@
 // (spikes, horns) follows its bones.
 import { Tile, type Pip } from "./tiles.ts";
 import * as THREE from "three";
+import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { arr, int, num, obj, str, type Of } from "@rustybuns/util/guard";
 import { getJson } from "@rustybuns/util/http";
 import { clamp01 } from "@rustybuns/util";
@@ -141,6 +142,8 @@ const cache = new Map<string, Promise<Beast | null>>();
 const settled = new Set<string>(); // ids whose load finished; a load in flight is never evicted
 const stale = new Set<string>();
 
+/** A beast's skin merged into one geometry (Puppet's `merged`), built once and shared. */
+const MERGED = new WeakMap<Beast, THREE.BufferGeometry>();
 /** Frees a beast's geometry and every texture its materials hold (puppets clone the geometry and materials, not the textures). */
 function release(b: Beast | null) {
   if (!b) return;
@@ -343,7 +346,10 @@ export class Puppet {
   private radius = 1;
   private readonly contact: THREE.Mesh;      // pitch, smoothed so a hit's recoil and a dash's lean don't snap
 
-  constructor(readonly beast: Beast, b: Body, archetype: Archetype = "bruiser", fields: readonly Field[] = [], fxAmount = 1) {
+  /** `merged`: the whole skin as one mesh with one material, each part's colour baked into its vertices (pupils and all), for a
+   * beast in a friend's line-up: about 2 draw calls in place of 7, at the cost of the eyes' blink and gloss and each part's own
+   * finish (#3796). */
+  constructor(readonly beast: Beast, b: Body, archetype: Archetype = "bruiser", fields: readonly Field[] = [], fxAmount = 1, opts: { merged?: boolean } = {}) {
     const look = fieldLook(fields), amt = { value: fxAmount };
     const { model, rig, sheet } = beast;
     this.top.value = sheet.height;
@@ -366,7 +372,8 @@ export class Puppet {
     inner.updateMatrixWorld(true);
     const skeleton = new THREE.Skeleton(this.bones);
     const surface = surfaceOf(model.parts.flatMap((p) => (Array.isArray(p.material) ? p.material : [p.material]).map((m) => m.name)));
-    for (const part of model.parts) {
+    if (opts.merged) inner.add(this.mergedSkin(model, rig, skeleton, look, amt, surface));
+    else for (const part of model.parts) {
       const g = part.geometry.clone();
       g.setAttribute("skinIndex", new THREE.Uint16BufferAttribute(rig.skinIndex.slice(part.start * 4, (part.start + part.count) * 4), 4));
       g.setAttribute("skinWeight", new THREE.Float32BufferAttribute(rig.skinWeight.slice(part.start * 4, (part.start + part.count) * 4), 4));
@@ -458,10 +465,54 @@ export class Puppet {
     g.rotation.y = -f.yaw;
     g.updateMatrixWorld(true);
   }
+  /** Every part of the skin in one SkinnedMesh: each part's material colour (with a little of its glow) baked into a colour
+   * attribute, the pupils in black, under one stylized vertex-coloured material. */
+  private mergedSkin(model: Model, rig: RigResult, skeleton: THREE.Skeleton, look: FieldLook | null, amt: { value: number }, surface: Surface): THREE.SkinnedMesh {
+    const pieces: THREE.BufferGeometry[] = [], c = new THREE.Color();
+    /** One part: its own vertex colour (the builder's tone and paint) times its material's colour, plus `glow`. */
+    const piece = (g: THREE.BufferGeometry, si: ArrayLike<number>, sw: ArrayLike<number>, color: THREE.Color, glow = new THREE.Color(0, 0, 0)) => {
+      const out = new THREE.BufferGeometry(), n = g.getAttribute("position").count, cols = new Float32Array(n * 3), own = g.getAttribute("color");
+      for (let i = 0; i < n; i++) {
+        const k = own && own.itemSize >= 3 ? [own.getX(i), own.getY(i), own.getZ(i)] : [1, 1, 1];
+        cols[i * 3] = color.r * k[0]! + glow.r; cols[i * 3 + 1] = color.g * k[1]! + glow.g; cols[i * 3 + 2] = color.b * k[2]! + glow.b;
+      }
+      out.setAttribute("position", g.getAttribute("position").clone());
+      out.setAttribute("normal", g.getAttribute("normal")?.clone() ?? (() => { const k = g.clone(); k.computeVertexNormals(); return k.getAttribute("normal"); })());
+      out.setAttribute("skinIndex", new THREE.BufferAttribute(Uint16Array.from(si), 4));
+      out.setAttribute("skinWeight", new THREE.BufferAttribute(Float32Array.from(sw), 4));
+      out.setAttribute("color", new THREE.BufferAttribute(cols, 3));
+      if (g.index) out.setIndex(g.index.clone());
+      pieces.push(out);
+    };
+    if (!MERGED.has(this.beast)) for (const part of model.parts) {
+      const si = rig.skinIndex.slice(part.start * 4, (part.start + part.count) * 4), sw = rig.skinWeight.slice(part.start * 4, (part.start + part.count) * 4);
+      const m = (Array.isArray(part.material) ? part.material[0] : part.material) as THREE.MeshStandardMaterial;
+      const glow = m.emissiveIntensity > 0 ? m.emissive.clone().multiplyScalar(Math.min(m.emissiveIntensity, 1.2) * 0.6) : undefined;
+      piece(part.geometry, si, sw, c.copy(m.color), glow);
+      const pupil = m.name === "eye" ? pupils(part.geometry, si, sw) : null;
+      if (pupil) piece(pupil, pupil.getAttribute("skinIndex").array, pupil.getAttribute("skinWeight").array, c.setHex(0x0a0806));
+    }
+    // merged once per beast and shared by every puppet of it (a skinned mesh binds its own skeleton to shared geometry)
+    let geo = MERGED.get(this.beast);
+    if (!geo) {
+      geo = mergeGeometries(pieces.every((p) => p.index) ? pieces : pieces.map((p) => (p.index ? p.toNonIndexed() : p)))!;
+      MERGED.set(this.beast, geo);
+    }
+    const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85 });
+    stylize(mat, this.top, "hide", look, amt, surface);
+    this.materials.push(mat); this.glow.push({ color: mat.emissive.clone(), intensity: 0 });
+    const sm = new THREE.SkinnedMesh(geo, mat);
+    sm.bind(skeleton, new THREE.Matrix4());
+    sm.frustumCulled = false;
+    sm.castShadow = true;
+    return sm;
+  }
+
   /** Frees what this puppet cloned (geometry, materials); the textures belong to the cached Beast. */
   dispose() {
     this.group.removeFromParent();
-    this.group.traverse((o) => { if (o instanceof THREE.Mesh) o.geometry.dispose(); });
+    const shared = MERGED.get(this.beast); // other puppets of this beast still draw it
+    this.group.traverse((o) => { if (o instanceof THREE.Mesh && o.geometry !== shared) o.geometry.dispose(); });
     for (const m of this.materials) m.dispose();
   }
   private homeWorld(ft: Foot, out: THREE.Vector3) { return out.copy(ft.home).multiplyScalar(this.scale).applyMatrix4(this.group.matrixWorld); }
@@ -560,6 +611,10 @@ export class Puppet {
     const br = this.sec.breath() * this.sec.depth;   // the chest swells and settles
     const bl = this.blow * 0.3;
     this.pivot.scale.set(1 + sq * 0.5 + br * 0.5 + bl, 1 - sq + br - bl * 0.5, 1 + sq * 0.5 + br * 0.5 - bl * 0.5);
+    // the curl: the same blow folds the spine around where it struck, hips punched back, chest hunched over it, head
+    // and tail whipped forward into a C; the rebound's stretch then uncurls it. It rides the blow's spring directly
+    // (not the lean's), so it lands on the hit's frame instead of easing in behind the flash.
+    const curl = Math.max(0, -this.blow);
     const shut = this.sec.lids();
     for (const l of this.lids) l.m.color.lerpColors(l.open, l.shut, shut);
     for (const p of this.pupilMeshes) p.visible = shut < 0.5;
@@ -570,7 +625,7 @@ export class Puppet {
     this.leanV += (lk * (pitch - this.lean) - ld * this.leanV) * ldt;
     this.lean += this.leanV * ldt;
     // a roll is one full tumble forward on top of the lean
-    this.pivot.rotation.set(roll, twist, this.lean - (off?.kind === "roll" ? offE * Math.PI * 2 : 0));
+    this.pivot.rotation.set(roll, twist, this.lean - curl * 0.32 - (off?.kind === "roll" ? offE * Math.PI * 2 : 0));
     g.position.set(f.pos.x, f.pos.y, f.pos.z);
     // a real meet: the sim lands a melee blow up to a metre short of the other body, so the striker's whole body slides
     // the rest of the way on the strike and holds there while the move is live (the contact stop below then jars it),
@@ -683,7 +738,7 @@ export class Puppet {
     this.ksV += (400 * (kt - this.ks) - 2 * 0.35 * 20 * this.ksV) * kdt;
     this.ks += this.ksV * kdt;
     const past = Math.max(0, this.ks - kt);
-    let rx = (past * 0.18 + lunge * 0.14 + jab * 0.03 - rear * 0.06 - back * 0.08 - stunK * 0.07 - this.stagger * 0.12) * h; // a hit knocks the hips back
+    let rx = (past * 0.18 + lunge * 0.14 + jab * 0.03 - rear * 0.06 - back * 0.08 - stunK * 0.07 - this.stagger * 0.12 - curl * 0.14) * h; // a hit knocks the hips back
     // contact: the bodies meet instead of passing through. Each keeps its front (snout, horns) outside the other's
     // body (taken as wide as its own); a lunge that would cross it stops there, and the stop jars the striker: a squash along
     // the blow, the same spring a hit rings. Already too close, the body leans back from the other, a little.
@@ -718,7 +773,8 @@ export class Puppet {
       this.tmp.set(look.x, look.y, look.z).applyMatrix4(this.inv).sub(this.head[0]!.rest);
       if (this.tmp.x > 0) this.look.set(0, Math.max(-1, Math.min(1, this.tmp.y / (this.tmp.length() || 1))), Math.max(-1, Math.min(1, this.tmp.z / (this.tmp.length() || 1)))).multiplyScalar(0.08 * h);
     }
-    this.look.x += (past * 0.3 + lunge * 0.12 + jab * 0.1 + rear * 0.04 - back * 0.08 - stunK * 0.06) * h;
+    this.look.x += (past * 0.3 + lunge * 0.12 + jab * 0.1 + rear * 0.04 - back * 0.08 - stunK * 0.06 + curl * 0.16) * h;
+    this.look.y -= curl * 0.12 * h;
     this.look.y += (rear * 0.08 - lunge * 0.04 + (upward && !grounded ? k * 0.1 : 0) + stunK * 0.08 - (f.state === "guard" ? 0.06 : 0)) * h;
     if (pose?.fx === "breath" && pose.k > 0) this.look.z += Math.sin(tick * 0.45) * 0.1 * pose.k * h;
     if (pose?.fx === "beam" && pose.k > 0) this.look.z += Math.sin(tick * 2.1) * 0.012 * h;
@@ -752,6 +808,7 @@ export class Puppet {
       tl.lag.lerp(this.tmp, 1 - Math.exp(-6 * dt));
       this.tmp.copy(tl.lag).applyMatrix4(this.inv).sub(tl.rest);
       if (this.tmp.length() > 0.18 * h) this.tmp.setLength(0.18 * h);
+      this.tmp.x += curl * 0.14 * h; this.tmp.y -= curl * 0.08 * h;
       if (forward) { this.tmp.z += (wind * 0.12 - k * 0.12) * h; if (pose?.fx === "wave") this.tmp.y -= k * 0.1 * h; }
       // a volley rears the tail up over the back through the wind-up, then flicks it forward on the strike
       if (mo === "volley") { this.tmp.y += (wind * 0.5 - mk * 0.15) * h; this.tmp.x += (wind * 0.25 + mk * (0.2 + Math.sin(tick * 1.6) * 0.1)) * h; }

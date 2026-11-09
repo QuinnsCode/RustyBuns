@@ -1,8 +1,14 @@
 # eqosys
 
-One account for every Q app, games and suite alike. A small RWSDK app on one Worker and one D1 database:
-Better Auth holds the accounts, a Durable Object a person holds their friends and who of them is on, and eqosys remembers which app each person first came in through, every app
-they've used since, and what they may do in each. Working title.
+**Your home for every Q game: one account with your games, friends, saves and the studio where you make them.**
+
+eqosys is who you are; [Qollab](../qollab/README.md) is who you are with. eqosys holds the account and the home: sign-in, your
+library, saves and achievements, and the studio. Qollab is the live part it ships with (friends online, parties, rooms and
+spaces), and is its own product too ([QOLLAB.md](QOLLAB.md)). Every Q game gets both. The words the pages use are in
+[VISION.md](VISION.md#the-words).
+
+Under the hood: a small RWSDK app on one Worker and one D1 database. Better Auth holds the accounts, and eqosys remembers
+which app each person first came in through, every app they've used since, and what they may do in each.
 
 **Live:** https://eqosys.qntbr.com
 
@@ -11,13 +17,16 @@ they've used since, and what they may do in each. Working title.
 | `/login?app=&return=&challenge=&state=` | Sign in or sign up (email and password; GitHub, Google and Apple once their keys are set), then Continue back to the app. |
 | `POST /api/exchange` `{ app, code, verifier }` | The app trades the one-minute code for `{ user, app, source, access, token }`. CORS is open to the app's own origins, so a game with no server can call it from its page. |
 | `GET` / `POST /q/space`, `POST /q/space/join`, `/q/space/<id>` (WebSocket) | Qollab spaces, with the token as a bearer: groups that last, with text channels (see [QOLLAB.md](QOLLAB.md#spaces)). GET lists yours (`{ spaces: [{ id, name, owner, invite? }] }`, the invite only on ones you own), POST `{ name }` makes one (10 a person) and answers `{ id, invite }`, `join` takes `{ invite }`. The socket is for members only (404 otherwise) and answers to `say`, `history`, and the owner's `channel`, `mute` and `kick`. In a page: `eqosys().space()` (`@rustybuns/util/eqosys`). |
+| `GET /api/home-token` | A token for eqosys's own pages (`aud: "eqosys"`, ten minutes), signed in and from eqosys's own page only (403 from anywhere else): the `/spaces` page's way into the spaces' doors, the only ones that take it. |
+| `/spaces` | Your spaces in the panel a game mounts (`spacesPanel`); `?open=<id>` opens one. The home's side panel links each space here. |
 | `PUT` / `GET /q/save/<slot>` | Qollab cloud saves, with the token as a bearer: an opaque body up to 256 KB (413 past it), never read. A slot keeps its last 5 versions, a game 20 slots, a person 50 MB across games (409 / 507 past those). Last write wins; the PUT reply is `{ ok, id, at, previous: { id, at } \| null }` so a game can offer the cloud copy, and `GET ?v=<id>` fetches an older one. GET answers the bytes with `x-save-id` and `x-save-at`. |
 | `POST` / `GET /q/achieve` | Achievements, with the token as a bearer: POST `{ id }` unlocks one from the app's catalog in `src/achievements.ts` (404 for any other), answered `{ achievement, new }`; kept the first time, so unlocking again is safe. GET lists the whole catalog for the person, earned first, a secret one hidden until earned. In a page, `eqosys().achieve(id)` (`@rustybuns/util/eqosys`) does it, and keeps unlocks earned signed out until the next sign-in. The home page's Achievements tab shows every game's, each with its badge (a lucide icon, or a letter in the console font). Every game's list opens with the same ones (`SHARED`: `played`, then `alpha` or `beta`, which only unlock while the app is at that stage, else 409). A new unlock tells each friend's hub once (a note "unlocked …"), and the Friends tab shows how many each friend has. |
 | `POST /api/report` `{ kind, title, body, page?, build?, detail? }` | A bug, suggestion or error from a game, with the token as a bearer. Filed as an issue on the RustyBuns repo labelled `external`, `game:<id>` and `bug`/`enhancement`, titled `[external][<game>] Bug: …`, with a header of game, kind, page, build and an opaque reporter id (never an email). Limited to 5 a minute per IP, then 5 an hour and 20 a day per account; 503 until `GITHUB_REPORT_TOKEN` is set. In a page, `eqosys().reportButton()` (`@rustybuns/util/report`) is a corner button that does it all. |
+| `POST /api/deploys` `{ app, stage, version, at }` | A deploy telling the Ship door what went out: `rustybuns deploy` sends it after a good deploy, and `rustybuns report-deploy --app <id>` after a plain `wrangler deploy`. Signed with `DEPLOY_REPORT_KEY` (the deploying side's `RB_DEPLOY_REPORT_KEY`) as a hex HMAC-SHA256 of the body in `x-eqosys-signature`; `at` within 5 minutes of now, the app in `APPS`, and a late older report never overwrites a newer one. 503 until the key is set (`src/deploys.ts`). |
 | `GET /.well-known/jwks.json` | The public key `token` is signed with (ES256). An app's server or Durable Object checks a token with it and never calls back. |
 | `/hub` (WebSocket) | A page's live line to its person's hub: friends, who is on in which app, requests and notifications, sent on connect and after every change. Send ops as JSON frames, plus `{ op: "status", doing }`. Opens only from the token's own app's site. |
 | `POST /api/hub` `{ op, … }` | One op with `Authorization: Bearer <token>`, answered with the same state: `state`, `befriend { email }`, `accept { id }`, `drop { id }`, `notify { id, text, link? }` (a friend only; the link on your app's site), `clear`. |
-| `/` | Your apps, where you came from, what you may do; your friends and where each is right now, requests to accept or drop, notifications, and a box to ask someone by email. The super admin also sees everyone and grants or takes away a role in an app, and has a Visitors tab (below). |
+| `/` | Home: the featured game you played last, the ones to pick up again, a shelf of screenshot tiles for each genre, and which friends are on and where, as wide as the window allows. Tabs for achievements, friends (requests to accept or drop, notifications, a box to ask someone by email), the studio and the account. The super admin also sees everyone and grants or takes away a role in an app, and has a Visitors tab (below). |
 | `POST /api/visit` `{ site, engaged?, ref? }` | A page's visit beacon (`navigator.sendBeacon`, text/plain, no preflight): a view from a page with no Worker of its own (the Playground), and `engaged: true` on the first tap, key or scroll (the Playground and eqosys's own pages). `site` is `eqosys` from its own origin or an app from one of its origins in `src/apps.ts`, else 403. 204, nothing back. |
 | `/delete?app=` | Delete my account, for an iOS app to open (App Store 5.1.1(v)): type your email, everything eqosys holds goes (sign-in, access, friends, who hears you left), then a link back to the app. |
 | `POST /api/account/delete` | The same from inside the app, with its token as a bearer: `{ ok: true }`. |
@@ -171,6 +180,15 @@ It serves on `eqosys.qntbr.com` (`BETTER_AUTH_URL` and the `edge` target in `rus
 | `apple` | `client-id` (Services ID), `client-secret` (from `bun scripts/apple-secret.ts <teamId> <keyId> <servicesId> < AuthKey.p8`, good six months, so renew it) and optionally the app's bundle id | no; needed before an iOS app turns on GitHub or Google (App Store 4.8) |
 
 Then `cd apps/eqosys && bun run deploy`, open the site, sign up with the admin email and check that "Everyone" shows.
+
+Before a go-live, `bun scripts/live-check.ts --url https://eqosys-preview.qntbr.com` walks the friends journey on a live
+stage: two throwaway `livecheck+…@example.com` accounts sign up through Park Hide & Seek's handoff, ask and accept by email,
+see each other online on the hub socket, meet in a party by code, unfriend, and are deleted (even when a step fails), so it
+is safe on production too. One line a step; the first failure exits 1.
+`bun scripts/live-check-two-fronts.ts --url https://eqosys.qntbr.com` does the same for Two Fronts' party seats (#3895):
+two friends ready up and start, each claims its own seat in the same war with its start ticket, a third account is told to
+join the party first, and the host's "Chat: Only the host" refuses the friend's message. Two Fronts trusts only the eqosys
+it was built for, so `--url` must be that one (`--game` points at another Two Fronts).
 
 Not yet: an app opening the hub (Park Hide & Seek signs in but doesn't say where it is hiding yet).
 

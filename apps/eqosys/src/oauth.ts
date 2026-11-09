@@ -10,8 +10,8 @@
 // public (token_endpoint_auth_method "none"): the verifier proves the code, not a secret, so a secret sent along is ignored.
 import { appOf, returnTo } from "./apps.ts";
 import { askOf, askQuery, see } from "./handle.ts";
-import { cors, issuer } from "./door.ts";
-import { emailVerified, exchange, mintRefresh, revokeRefresh, spendRefresh, standing } from "./members.ts";
+import { cors, issuer, standing } from "./door.ts";
+import { emailVerified, exchange, mintRefresh, revokeRefresh, spendRefresh } from "./members.ts";
 import { json, loopbackOn, type Env } from "./env.ts";
 import { audOf, jwksOf, sign, TOKEN_S, verify, type Handoff } from "@rustybuns/util/token";
 import { json as publicJson } from "@rustybuns/util/http";

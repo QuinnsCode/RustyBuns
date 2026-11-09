@@ -1,0 +1,10 @@
+{
+  "id": "yule-isle",
+  "name": "The Yule Isle",
+  "about": "Winter's legends together on one island: the ogress who comes down from the mountain with her sack, the horned one with the birch switch, and the goblins who climb out from under the world for the twelve nights. Through December the Yule Cat walks the whole continent.",
+  "season": { "from": [12, 1], "to": [1, 6] },
+  "land": { "cell": [1, -2], "port": 3, "at": [49.4, -57.6], "km": 300 },
+  "tier": "coming-soon",
+  "events": ["yule-cat"],
+  "credits": []
+}

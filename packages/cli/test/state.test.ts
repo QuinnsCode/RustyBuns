@@ -1,8 +1,9 @@
 import { test, expect } from "bun:test";
-import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { adoptNote, alchemyStage, linkSharedState, lockState, sharedStateBase, unlinkSharedState } from "../src/state.ts";
+import type { RustyBunsConfig } from "../src/config.ts";
+import { adoptNote, alchemyStage, bootstrapped, deployedIn, linkReferencedStates, linkSharedState, lockState, sharedStateBase, unlinkSharedState } from "../src/state.ts";
 
 function repoWithWorktree() {
   const root = realpathSync(mkdtempSync(join(tmpdir(), "rb-state-")));
@@ -93,4 +94,52 @@ test("alchemy stage: --stage, then $ALCHEMY_STAGE, then live_$USER", () => {
   expect(alchemyStage([], { USER: "me" })).toBe("live_me");
   // No name after --stage: it used to take the next flag, or "".
   for (const args of [["--stage", "--yes"], ["--stage"], ["--stage="]]) expect(() => alchemyStage(args, { USER: "me" })).toThrow("--stage needs a name");
+});
+
+test("bootstrap: a new stage of two apps that bind each other leaves out the other's bindings until it is deployed", () => {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "rb-boot-")));
+  const eqosys = join(root, "eqosys");
+  mkdirSync(eqosys);
+  const cfg: Pick<RustyBunsConfig, "bindings"> = { bindings: {
+    DB: { type: "d1", databaseName: "eqosys-db" },
+    HUB: { type: "durable_object", className: "Hub", app: "qollab" },
+    QOLLAB: { type: "service", app: "qollab" },
+  } };
+  const first = bootstrapped(cfg, (app) => deployedIn(eqosys, app, "preview"));
+  expect(first.waiting).toEqual(["qollab"]);
+  expect(Object.keys(first.cfg.bindings)).toEqual(["DB"]);
+  // qollab deployed in the stage: everything binds.
+  mkdirSync(join(root, "qollab", ".alchemy", "state", "qollab", "preview"), { recursive: true });
+  writeFileSync(join(root, "qollab", ".alchemy", "state", "qollab", "preview", "Worker.json"), "{}");
+  const second = bootstrapped(cfg, (app) => deployedIn(eqosys, app, "preview"));
+  expect(second.waiting).toEqual([]);
+  expect(Object.keys(second.cfg.bindings)).toEqual(["DB", "HUB", "QOLLAB"]);
+});
+
+test("cross-app refs: an app that binds another reads that app's stack, each stage, through a link in its own state", () => {
+  const r = repoWithWorktree();
+  const eqosys = join(r.wt, "apps", "eqosys"), qollab = join(r.wt, "apps", "qollab");
+  mkdirSync(eqosys, { recursive: true });
+  mkdirSync(qollab, { recursive: true });
+  const eqState = join(linkSharedState(eqosys)!, "state");
+  for (const stage of ["preview", "live_me"]) {
+    mkdirSync(join(eqState, "eqosys", stage), { recursive: true });
+    writeFileSync(join(eqState, "eqosys", stage, "Worker.json"), `{"stage":"${stage}"}`);
+  }
+  const qBase = linkSharedState(qollab)!;
+  // Alchemy's local state reads <cwd>/.alchemy/state/<stack>/<stage>/<id>.json.
+  const ref = (stage: string) => join(qollab, ".alchemy", "state", "eqosys", stage, "Worker.json");
+  expect(existsSync(ref("preview"))).toBe(false);
+  expect(linkReferencedStates(qollab, ["eqosys"])).toHaveLength(1);
+  expect(readFileSync(ref("preview"), "utf8")).toBe(`{"stage":"preview"}`);
+  expect(readFileSync(ref("live_me"), "utf8")).toBe(`{"stage":"live_me"}`);
+  // The same relative link the owner made by hand; a second run leaves it.
+  expect(readlinkSync(join(qBase, "state", "eqosys"))).toBe("../../eqosys/state/eqosys");
+  expect(linkReferencedStates(qollab, ["eqosys"])).toEqual([]);
+  // A real stack dir of the same name is never moved or replaced, and an app with no state gets no link.
+  rmSync(join(qBase, "state", "eqosys"));
+  mkdirSync(join(qBase, "state", "eqosys", "dev"), { recursive: true });
+  expect(linkReferencedStates(qollab, ["eqosys", "nobody"])).toEqual([]);
+  expect(lstatSync(join(qBase, "state", "eqosys")).isDirectory()).toBe(true);
+  expect(existsSync(join(qBase, "state", "nobody"))).toBe(false);
 });

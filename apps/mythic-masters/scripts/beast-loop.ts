@@ -1,12 +1,12 @@
 // The look half of the beast loop (scripts/beasts.ts --shots / --judge): the four ?gallery pages as PNGs from headless
 // Chrome, and a fresh judge (a `claude -p` with no memory of the work) that scores BEFORE against NOW. Needs Chrome
 // (CHROME=/path overrides where it looks) and, for the judge, the `claude` CLI.
-import { mkdirSync, readdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { launchChrome, load, openTab, startVite } from "../../../scripts/chrome.ts";
+import { APP, judgePairs, OUT } from "./judge-loop.ts";
 
-const APP = join(import.meta.dir, "..");
-export const OUT = join(APP, "blender", "out");
+export { OUT };
 export const shotDir = (label: string) => join(OUT, "shots", label);
 
 // Each beast is shot alone, filling a square frame from three-quarter (the gallery's focus()), and the page's sixteen
@@ -78,13 +78,11 @@ export async function judge(): Promise<string> {
   const before = readdirSync(shotDir("before")).filter((f) => f.endsWith(".png")).sort();
   if (before.length === 0) throw new Error("no BEFORE shots: run `bun scripts/beasts.ts --shots --as before` on the old build first");
   await shoot("now", before.map((f) => Number(/(\d+)\.png$/.exec(f)?.[1])));
-  const prompt = `You are a fresh art judge for a creature-fighting game. Each pair below is the same gallery page, BEFORE a change and NOW: a 4 x 4 contact sheet, one beast per tile, close up from three-quarter, its name in the tile's top-left corner.
-${before.map((f) => `BEFORE ${f}: ${join(shotDir("before"), f)}\nNOW    ${f}: ${join(shotDir("now"), f)}`).join("\n")}
-Read every image. For each beast that looks different between BEFORE and NOW, score NOW from 1 to 10 on: silhouette (reads at a glance, unlike its neighbours), anatomy (limbs, head and tail attach where they should), and polish (no stretched, torn or floating geometry). Say BEFORE's total too.
-Answer with ONLY a markdown table, one row per changed beast: | beast | silhouette | anatomy | polish | BEFORE total | NOW total | note (one short phrase) |, then one line "Verdict: better | same | worse".`;
-  const p = Bun.spawn(["claude", "-p", prompt, "--no-session-persistence", "--allowedTools", "Read", "--add-dir", OUT], { cwd: APP, stdout: "pipe", stderr: "pipe" });
-  const text = (await new Response(p.stdout).text()).trim();
-  if ((await p.exited) !== 0 || !text) throw new Error(`the judge did not answer:\n${(await new Response(p.stderr).text()).slice(-400)}`);
-  writeFileSync(join(OUT, "judge.md"), text + "\n");
-  return text;
+  return judgePairs(shotDir("before"), shotDir("now"), {
+    subject: "the same gallery page: a 4 x 4 contact sheet, one beast per tile, close up from three-quarter, its name in the tile's top-left corner",
+    rubric: "For each beast that looks different between BEFORE and NOW, score NOW from 1 to 10 on: silhouette (reads at a glance, unlike its neighbours), anatomy (limbs, head and tail attach where they should), and polish (no stretched, torn or floating geometry). Say BEFORE's total too.",
+    row: "| beast | silhouette | anatomy | polish | BEFORE total | NOW total | note (one short phrase) |",
+    out: join(OUT, "judge.md"),
+    take: "run `bun scripts/beasts.ts --shots --as before` on the old build first",
+  });
 }

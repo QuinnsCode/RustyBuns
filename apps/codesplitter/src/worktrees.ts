@@ -23,7 +23,7 @@
 import { existsSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { git, localGit } from "./mirror.ts";
-import { json, readBody, type Env } from "./env.ts";
+import { fail, json, readBody, type Env } from "./env.ts";
 import { repoRow } from "./repos.ts";
 
 /** How long a run's worktree is kept if nobody removes it. */
@@ -44,7 +44,7 @@ type Made = { name: string; path: string; branch: string | null; sha: string; ba
  */
 export async function addWorktree(bare: string, o: { branch?: string; from?: string; sha?: string }): Promise<Made> {
   const name = worktreeName(o), path = join(worktreeRoot(bare), name);
-  if (existsSync(path)) throw Object.assign(new Error(`there's a worktree at ${path} already`), { status: 409 });
+  if (existsSync(path)) throw Object.assign(new Error(`there's a worktree at ${path} already`), { exists: true });
   const run = async (args: string[]) => { const r = await git(args, bare); if (r.code) throw new Error(r.err || `git ${args[0]} exited ${r.code}`); return r.out.trim(); };
   await git(["worktree", "prune"], bare);
   if (o.branch) {
@@ -113,12 +113,12 @@ export async function dropWorktrees(env: Env, owner: string, repo: string) {
 /** /api/repos/:o/:r/worktrees[/:name], desktop only, for the repo's owner. */
 export async function worktreeRoute(req: Request, env: Env, p: string[], owner: string, repo: string, user: string | null) {
   if (p[4] !== "worktrees" || p[6]) return null;
-  if (user !== owner) return json({ error: "owner only" }, 403);
+  if (user !== owner) return fail("OwnerOnly", "only the repo's owner makes worktrees of it");
   const lg = localGit(env), r = await repoOf(env, owner, repo);
-  if (!lg) return json({ error: "worktrees need the repo's git on your machine: the desktop app" }, 501);
-  if (!r?.artifact) return json({ error: "this repo has no git yet: commit something first" }, 409);
+  if (!lg) return fail("GitUnavailable", "worktrees need the repo's git on your machine: the desktop app");
+  if (!r?.artifact) return fail("NoGit", "this repo has no git yet: commit something first");
   // Private lines are blank in this git; a checkout of it would read as if they were gone.
-  if (r.crew_artifact) return json({ error: "this repo has private lines, and its git holds them blank" }, 409);
+  if (r.crew_artifact) return fail("PrivateLines", "this repo has private lines, and its git holds them blank: a worktree of it would read as if they were gone");
   const bare = lg.path(r.artifact), main = r.branch ?? "main";
   const list = async () => {
     await pruneWorktrees(env, owner, repo);
@@ -129,7 +129,7 @@ export async function worktreeRoute(req: Request, env: Env, p: string[], owner: 
   if (req.method === "GET" && !p[5]) return json(await list());
   if (req.method === "DELETE" && p[5]) {
     const w = await env.DB.prepare("SELECT path FROM worktrees WHERE owner = ? AND repo = ? AND name = ?").bind(owner, repo, p[5]).first();
-    if (!w) return json({ error: "no such worktree" }, 404);
+    if (!w) return fail("NoSuchWorktree", "no worktree by that name");
     await removeWorktree(bare, w.path as string);
     await env.DB.prepare("DELETE FROM worktrees WHERE owner = ? AND repo = ? AND name = ?").bind(owner, repo, p[5]).run();
     return json({ removed: p[5] });
@@ -138,14 +138,15 @@ export async function worktreeRoute(req: Request, env: Env, p: string[], owner: 
 
   const b = await readBody<"branch" | "from" | "sha">(req);
   const branch = typeof b.branch === "string" ? b.branch : undefined, sha = typeof b.sha === "string" ? b.sha : undefined;
-  if (!branch === !sha) return json({ error: "give a git branch, or a sha for a run" }, 400);
-  if (b.from !== undefined && (typeof b.from !== "string" || !branch || b.from.startsWith("-"))) return json({ error: "from: a branch or commit to start a new branch off" }, 400);
+  if (!branch === !sha) return fail("BadInput", "give a branch, or a sha for a run");
+  if (b.from !== undefined && (typeof b.from !== "string" || !branch || b.from.startsWith("-"))) return fail("BadInput", "from: a branch or commit to start a new branch off");
   if (branch) {
-    if (branch === main) return json({ error: `${main} moves by itself here: ask for its commit (sha), or start a branch off it` }, 409);
-    if ((await git(["check-ref-format", "--branch", branch])).code || branch.startsWith("-")) return json({ error: "bad branch name" }, 400);
+    if (branch === main) return fail("MainMoves", `${main} moves by itself here: ask for its commit (sha), or start a branch off it`);
+    if ((await git(["check-ref-format", "--branch", branch])).code || branch.startsWith("-")) return fail("BadBranchName", "a branch name git wouldn't take");
   } else {
-    if (!isSha(sha!) || (await git(["cat-file", "-e", `${sha}^{commit}`], bare)).code) return json({ error: `${sha} isn't a commit in the repo's git` }, 404);
+    if (!isSha(sha!) || (await git(["cat-file", "-e", `${sha}^{commit}`], bare)).code) return fail("NoSuchCommit", `${sha} isn't a commit in this repo`);
   }
+  if ((await git(["rev-parse", "--verify", "--quiet", `refs/heads/${main}^{commit}`], bare)).code) return fail("NoGit", `${main} has no commits yet: commit something first`);
   // Rows whose directory went, and worktrees done with, go first: their names are free again.
   await pruneWorktrees(env, owner, repo);
   try {
@@ -154,7 +155,8 @@ export async function worktreeRoute(req: Request, env: Env, p: string[], owner: 
       .bind(owner, repo, w.name, w.branch, w.sha, w.base, w.path, Date.now()).run();
     return json({ name: w.name, path: w.path, branch: w.branch, sha: w.sha }, 201);
   } catch (e) {
-    const err = e as Error & { status?: number };
-    return json({ error: err.message }, err.status ?? 409);
+    // git's own words stay here: the reply says what to do about it.
+    if (e instanceof Error && "exists" in e) return fail("WorktreeExists", e.message);
+    return fail("WorktreeFailed", "the worktree couldn't be made: the branch may be out in another worktree, or from names no branch or commit");
   }
 }

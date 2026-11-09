@@ -12,9 +12,9 @@
     "deploy": "vite build && bunx wrangler deploy"
   },
   "dependencies": {
-    "@rustybuns/game-controls": "workspace:*",
+    "@rustybuns/game-controls": "^0.1.12",
     "lucide": "1.55.0",
-    "@rustybuns/util": "workspace:*",
+    "@rustybuns/util": "^0.1.12",
     "@rustybuns/shell-bun": "^0.1.12"
   },
   "devDependencies": {

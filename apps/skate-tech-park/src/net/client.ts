@@ -1,21 +1,14 @@
 // The page's side of a room: `?room=ABCD` joins one, and it sends our pose and hears everyone else's.
 // No room in the address, or no server behind /ws (the dev server, the desktop app), and it stays single player.
-import { connectSocket, type Link } from "@rustybuns/util/socket";
-import { fresh, login } from "../eqosys.ts";
+import { guestId } from "@rustybuns/util/eqosys";
+import { connectSocket, SEAT_CLOSE, type Link } from "@rustybuns/util/socket";
+import { who } from "../eqosys.ts";
 import { decodeServer, type Pose, type Rider, type ServerMsg } from "./room.ts";
 
 const SEND_MS = 50;
 
 /** A secret id kept in this browser; the server only ever shows others a hash of it. */
-export function uid(): string {
-  try {
-    const kept = localStorage.getItem("stp-uid");
-    if (kept) return kept;
-    const made = Array.from(crypto.getRandomValues(new Uint8Array(12)), (b) => b.toString(16).padStart(2, "0")).join("");
-    localStorage.setItem("stp-uid", made);
-    return made;
-  } catch { return Array.from(crypto.getRandomValues(new Uint8Array(12)), (b) => b.toString(16).padStart(2, "0")).join(""); }
-}
+export const uid = () => guestId("stp-uid");
 
 export const roomCode = (search: string) => (new URLSearchParams(search).get("room") ?? "").toUpperCase().match(/^[A-Z0-9]{4,8}$/)?.[0] ?? null;
 /** `&pve=1`: a room where boards pass through each other. */
@@ -32,8 +25,8 @@ export class Online {
 
   constructor(readonly room: string, level: string, pve: boolean, real: boolean, private onChange: () => void) {
     const proto = location.protocol === "https:" ? "wss" : "ws";
-    const signed = login(); // a signed-in rider goes by their eqosys token, else by the uid this browser made
-    const q = new URLSearchParams({ room, level, ...(signed && fresh(signed) ? { token: signed.token } : { uid: uid() }), ...(pve ? { pve: "1" } : {}), ...(real ? { real: "1" } : {}) });
+    // a signed-in rider goes by their eqosys token, else by the uid this browser made
+    const q = new URLSearchParams({ room, level, ...who(uid()), ...(pve ? { pve: "1" } : {}), ...(real ? { real: "1" } : {}) });
     this.link = connectSocket<ServerMsg, Pose>(`${proto}://${location.host}/ws?${q}`, {
       decode: decodeServer,
       encode: (pose) => JSON.stringify({ skin: pose.skin, n: pose.n.map((v) => Math.round(v * 1000) / 1000) }),
@@ -41,7 +34,7 @@ export class Online {
       onMessage: (m) => { if (m.t === "view") { this.riders = m.view.riders; this.onChange(); } },
       onClose: (e) => {
         this.riders = [];
-        if (e.code === 4001) { this.status = "off"; this.onChange(); return; } // this rider joined from another tab
+        if (e.code === SEAT_CLOSE.replaced) { this.status = "off"; this.onChange(); return; } // this rider joined from another tab
         this.status = this.status === "joining" && e.tries > 1 ? "full" : "joining"; // never got in: the room is full, or there is no server
         this.onChange();
         return e.tries < 4 ? 1000 * (1 + e.tries) : null;

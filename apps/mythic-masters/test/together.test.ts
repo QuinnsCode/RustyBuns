@@ -41,12 +41,13 @@ test.skipIf(!chromePath() || !!process.env.CI)("two friends walk one world: see 
     expect(seen.online.friends.map((f) => f.lead)).toEqual(["hodag"]);
     // 60 fps is 16.7 ms; a loaded dev machine or agent box runs it near 20. Past 50 a friend in view has made it choppy.
     expect(seen.frameMs).toBeLessThan(50);
-    // Each is a figure with the Book on their own ground (#3774): B draws A on the tiles A's page lays for itself,
-    // with A's beast walking behind and a trail of A's tiles where A walked (#3786), and B's own ground is another.
-    type Tiles = { id: string; tiles: unknown; trail: number; team?: string[] };
-    const [mine, theirs, own] = await Promise.all([a.eval<Tiles>(`mythicMasters.world.state().bearer`), b.eval<Tiles[]>(`mythicMasters.world.state().friends`), b.eval<Tiles>(`mythicMasters.world.state().bearer`)]);
-    expect(theirs.map((f) => ({ id: f.id, tiles: f.tiles, lead: f.team?.[0] }))).toEqual([{ id: mine.id, tiles: mine.tiles, lead: "hodag" }]);
-    expect(own.tiles).not.toEqual(mine.tiles);
+    // Each is a figure with the Book on their own humming ground (#3774): B draws A's ground in the colour A's page wears,
+    // with A's beast walking behind and a trail of prints where A walked (#3786), and B wears another colour (two in a
+    // room never share one, world/hues.ts).
+    type Ground = { id: string; colour: number; trail: number; team?: string[] };
+    const [mine, theirs, own] = await Promise.all([a.eval<Ground>(`mythicMasters.world.state().bearer`), b.eval<Ground[]>(`mythicMasters.world.state().friends`), b.eval<Ground>(`mythicMasters.world.state().bearer`)]);
+    expect(theirs.map((f) => ({ id: f.id, colour: f.colour, lead: f.team?.[0] }))).toEqual([{ id: mine.id, colour: mine.colour, lead: "hodag" }]);
+    expect(own.colour).not.toBe(mine.colour);
     expect(theirs[0]!.trail).toBeGreaterThan(0);
     const clock = "mythicMasters.world.online().clock";
     const [aClock, bClock] = await Promise.all([a.eval<number>(clock), b.eval<number>(clock)]);
@@ -97,14 +98,14 @@ test.skipIf(!chromePath() || !!process.env.CI)("two friends walk one world: see 
     await until(() => b.eval<{ picks: { id: string }[] }>(`mythicMasters.together.seen()`), (s) => s.picks.some((p) => p.id === "272,28"));
     await until(() => b.eval<number | null>(`mythicMasters.journey.state()?.hunts?.["1.19074.1638"] ?? null`), (s) => s === 2);
 
-    // Both by the campfire 559 m from region 1's other board. A jumps to 100 m short of the board (no road takes you
-    // there that fast, so the room stops vouching for A), then on to it, and takes its contract there: it goes nowhere. B jogs over to A, who stands
+    // Both by the campfire 559 m from region 1's other board. A jumps straight onto the board's town door (no road takes you there
+    // that fast, so the room stops vouching for A), walks in and reads the board: the contract goes nowhere (#3800). B jogs over to A, who stands
     // still; once B is beside A the room trusts A again, and A's page tells the contract.
     const other = "1.20002.6206", stage = `mythicMasters.journey.state()?.hunts?.["${other}"] ?? null`;
     const settle = "await new Promise((r) => setTimeout(r, 600));";
     // No wild one jumps either of them on the way: a lost fight opens the Book and holds the page's poses back.
     await Promise.all([back.eval(`(async () => { mythicMasters.world.peace(true); mythicMasters.world.teleport(20185, 5674); ${settle} })()`), b.eval(`(async () => { mythicMasters.world.peace(true); mythicMasters.world.teleport(20165, 5674); ${settle} })()`)]);
-    await back.eval(`(async () => { mythicMasters.world.teleport(20002, 6306); ${settle} mythicMasters.world.teleport(20002, 6206); ${settle} })()`);
+    await back.eval(`(async () => { mythicMasters.world.teleport(20002, 6206); ${settle} mythicMasters.world.standInside(4.6, -7.9); ${settle} })()`);
     await until(() => back.eval<number | null>(stage), (s) => s === 0);
     await Bun.sleep(1000);
     expect(await b.eval<number | null>(stage)).toBeNull();

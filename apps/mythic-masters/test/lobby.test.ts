@@ -15,7 +15,7 @@ const Exchanged = obj({ user: obj({ id: str(200) }), token: str(4096) });
 const stops: (() => unknown)[] = [];
 afterAll(async () => { for (const s of stops.reverse()) await s(); });
 
-test.skipIf(!chromePath() || !!process.env.CI)("a party's lobby: Walk together, a friend opens the link, Ready, Start, and both walk one room", async () => {
+test.skipIf(!chromePath() || !!process.env.CI)("a party's lobby: Walk together, a friend opens the link (a stranger is told to ask), Ready, Start, and both walk one room", async () => {
   // eqosys and its shell are loaded here, not at the top: CI installs only this app's packages, and skips this test.
   const { durableObject, serve } = await import("../../../packages/shell-bun/src/index.ts");
   const { handle } = await import("../../eqosys/src/handle.ts");
@@ -49,7 +49,7 @@ test.skipIf(!chromePath() || !!process.env.CI)("a party's lobby: Walk together, 
     if (!got) throw new Error(`no login for ${name}`);
     return { id: got.user.id, login: { name, email: `${name.toLowerCase()}@example.com`, token: got.token } };
   };
-  const ada0 = await signUp("Ada"), bo0 = await signUp("Bo");
+  const ada0 = await signUp("Ada"), bo0 = await signUp("Bo"), cy0 = await signUp("Cy");
   // A party the host makes admits the host's eqosys friends: Bo asks for Ada, and she says yes.
   const hub = async (token: string, body: unknown) => (await call("/api/hub", { json: body, bearer: token, origin: new URL(vite.url).origin })).res.status;
   expect(await hub(bo0.login.token, { op: "befriend", email: ada0.login.email })).toBe(200);
@@ -80,6 +80,10 @@ test.skipIf(!chromePath() || !!process.env.CI)("a party's lobby: Walk together, 
   // Bo opens the link she sent him: both see both, and he says he's ready.
   const bo = await player(bo0, `?world=1&party=${code}&a=jersey-devil`);
   await until(() => lobby(ada), (l) => l.includes("Bo"));
+  // Cy, who isn't Ada's friend, opens the same link: the lobby says why they can't join, not that the code is wrong.
+  const cy = await player(cy0, `?world=1&party=${code}&a=hodag`);
+  await until(() => lobby(cy), (l) => l.includes("Only the host's friends can join: ask them to add you on eqosys."));
+  expect(await lobby(ada)).not.toContain("Cy");
   expect(await press(bo, "Ready")).toBe(true);
   await until(() => lobby(ada), (l) => l.includes("Bo ready"));
   // Ada starts: both pages go to the room the party was given, through the door that checks their tokens, and each
@@ -90,5 +94,5 @@ test.skipIf(!chromePath() || !!process.env.CI)("a party's lobby: Walk together, 
   const friends = (t: Tab) => t.eval<{ name: string }[]>(`mythicMasters.world.online()?.friends ?? []`);
   const walk = (t: Tab) => t.eval(`(async () => { const w = mythicMasters.world, s = w.state(); for (let i = 0; i < 4; i++) { w.teleport(s.x + 3 + i * 0.4, s.z - 6); await new Promise((r) => setTimeout(r, 200)); } })()`);
   await until(() => Promise.all([walk(ada), walk(bo)]).then(() => Promise.all([friends(ada), friends(bo)])), ([a, b]) => a[0]?.name === "Bo" && b[0]?.name === "Ada");
-  expect([...ada.noise, ...bo.noise].filter((n) => !/favicon|api\/me|401/.test(n))).toEqual([]);
+  expect([...ada.noise, ...bo.noise, ...cy.noise].filter((n) => !/favicon|api\/me|401/.test(n))).toEqual([]);
 });

@@ -79,7 +79,7 @@ export { json };
 export const error = (status: number, message: string) => json({ error: message }, status);
 
 // Small helpers every file may use; look here before writing a toHex or a digest again.
-export { b64url, digest, hex, sha256 } from "@rustybuns/util/bytes";
+export { b64url, digest, hex, hmacHex, sha256 } from "@rustybuns/util/bytes";
 /** `s` parsed as JSON, or `fallback`: one bad stored row spoils one entry, not the listing. */
 export const parseJson = <T>(s: unknown, fallback: T): T => { try { return typeof s === "string" && s ? JSON.parse(s) : fallback; } catch { return fallback; } };
 

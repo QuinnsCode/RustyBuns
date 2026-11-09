@@ -147,6 +147,7 @@ vec3 gLayer(float i, vec2 uv, vec2 uv2, vec4 d, vec4 d2, float near) {
 const GLSL_FRAG_MAIN = `
   vec3 gDetail = vec3(0.0);
   vec2 gNormal = vec2(0.0);
+  float gGrey = 0.0;
   {
     float gDist = length(vViewPosition);
     float gNear = 1.0 - smoothstep(30.0, 150.0, gDist);       // relief fades out with distance, grain a good deal later
@@ -162,16 +163,46 @@ const GLSL_FRAG_MAIN = `
     // wet and dry: patches 40 to 120 m across over the biome's own damp, wetter under the trees
     float gBig = gNoise(vGp.xz * 0.0087 + 5.0) * 0.6 + gNoise(vGp.xz * 0.023 + 11.0) * 0.4;
     gWet = clamp(vGk.z + (gBig - 0.5) * 1.3, 0.0, 1.0);
-    // a feature kept, by layer: the dry crack network (less where it is wet) and the sand's ripples
-    float gCrack = vGk.x * (1.0 - smoothstep(0.3, 0.65, gWet)), gRipple = vGk.y;
     float w[8];
     w[0] = vGw0.x; w[1] = vGw0.y; w[2] = vGw0.z; w[3] = vGw0.w; w[4] = vGw1.x; w[5] = vGw1.y; w[6] = vGw1.z; w[7] = vGw1.w;
+    // the ground in patches of something else, 10 to 30 m across, so a biome is not one texture to the horizon: a bare
+    // pan of dirt (cracked where dry) out of the sand, grass or litter, a spread of gravel at its heart, and in damp ground
+    // a dark hollow where the water stands; snow keeps its own
+    float gP = gNoise(vGp.xz * 0.045 + vec2(17.0, 3.0)) * 0.75 + gNoise(vGp.xz * 0.16 - 9.0) * 0.25;
+    float gOpen = 1.0 - w[7] - w[3] * smoothstep(0.5, 0.8, w[3]);   // not on snow, nor a trail that is dirt already
+    float gPan = smoothstep(0.65, 0.71, gP) * gOpen, gGravel = smoothstep(0.73, 0.78, gP) * gOpen * (1.0 - 0.7 * gWet);
+    float gHollow = (1.0 - smoothstep(0.2, 0.3, gP)) * smoothstep(0.2, 0.55, vGk.z) * gOpen;
+    // and where the floor has a litter (needles or leaves), its low ground is a thick mat of it that the grass gives way to
+    float gMat = (1.0 - smoothstep(0.27, 0.36, gP)) * gOpen * step(0.02, w[0] + w[1]);
+    float gMatI = w[0] >= w[1] ? 0.0 : 1.0;   // which litter, chosen before the weights move
+    gWet = clamp(gWet + gHollow * 0.45, 0.0, 1.0);
+    for (int i = 0; i < 8; i++) w[i] *= 1.0 - gPan - gMat;
+    w[3] += gPan * (1.0 - gGravel); w[6] += gPan * gGravel;
+    w[0] += gMat * (1.0 - gMatI); w[1] += gMat * gMatI;
+    // a feature kept, by layer: the dry crack network (less where it is wet) and the sand's ripples, which the wind lays
+    // in fields (strong, faint, gone) and never on a pan
+    float gCrack = vGk.x * (1.0 - smoothstep(0.3, 0.65, gWet));
+    float gRipple = vGk.y * smoothstep(0.12, 0.45, gNoise(vGp.xz * 0.028 + vec2(41.0, 7.0))) * (1.0 - gPan);
+    // a mixed floor gathers into clumps a few metres across (a drift of needles, a bare sandy scrape, a dirt hollow) rather
+    // than every layer laid thin over every metre, so it reads from the walking camera; a layer that covers most of the ground (a trail, snow) keeps it
+    // three noises shared by all eight layers (each takes one of the two big ones, or its inverse, so the layers that
+    // share a floor trade ground rather than clump together), not two noises a layer: the forest's frame cost
+    float gNa = gNoise(vGp.xz * 0.21), gNb = gNoise(vGp.xz * 0.21 + vec2(31.7, 9.2)), gNc = gNoise(vGp.xz * 0.83 - vec2(4.1, 13.0)) * 0.35;
+    for (int i = 0; i < 8; i++) {
+      if (w[i] < 0.02) continue;
+      float n = (i % 2 == 0 ? 1.0 : -1.0) * ((i / 2) % 2 == 0 ? gNa - 0.5 : gNb - 0.5) * 0.65 + 0.5 + gNc - 0.175;
+      w[i] *= mix(0.12 + 1.76 * smoothstep(0.3, 0.7, n), 1.0, smoothstep(0.55, 0.85, w[i]));
+    }
     float total = 0.0;
     for (int i = 0; i < 8; i++) {
       if (w[i] < 0.02) continue;
       total += w[i];
       vec3 c = gLayer(float(i), uv, uv2, d, d2, gNear);
+      // the needle bake is pale needles on a pale floor, which a thick mat shows as a white smear: a mat lies darker and flatter
+      if (i == 0) c = 0.8 + (c - 1.0) * 0.45;
       if (i == 6) {
+        // the rock's bake is pale, made for a cliff's grey vertices: as gravel on a pan it lies darker, dark flecks kept
+        c = mix(c, 0.7 + (c - 1.0) * 0.4, gGravel);
         // rock leans into cliffs: the other two faces of the cube, by the slope
         vec3 n = abs(normalize(vGn)); float side = smoothstep(0.55, 0.85, 1.0 - n.y);
         if (side > 0.01) {
@@ -193,7 +224,16 @@ const GLSL_FRAG_MAIN = `
     }
     gDetail = total > 0.0 ? gDetail / total : vec3(1.0);
     gNormal = total > 0.0 ? gNormal / total * gNear : vec2(0.0);
+    // the detail maps bring light and shade, the vertex colour the hue: keep a little of the maps' own tint (the needle
+    // bake's floor runs lavender, which a clump of needles would show as pink)
+    float gLum = dot(gDetail, vec3(0.3, 0.55, 0.15));
+    gDetail = gLum + (gDetail - gLum) * 0.35;
     gDetail = mix(vec3(1.0), max(vec3(1.0) + (gDetail - 1.0) * 2.1, 0.15), gGrain);
+    // the stuff's own tone over the biome's palette: needle mats lie dark, a pan a touch darker and warmer, gravel and the
+    // bare sand of a mixed floor (not a dune's, which ripples) go grey (gGrey takes the hue out of the vertex colour)
+    float gNd = total > 0.0 ? w[0] / total : 0.0, gSd = total > 0.0 ? w[5] / total : 0.0;
+    gDetail *= mix(vec3(1.0), vec3(0.7, 0.64, 0.58), gNd) * mix(vec3(1.0), vec3(0.9, 0.85, 0.8), gPan * (1.0 - gGravel));
+    gGrey = gGravel * 0.45 + gSd * 0.4 * (1.0 - vGk.y);
     // big soft patches over the lot, so no two hectares match: lighter and darker, a touch warmer and cooler
     float m = gNoise(vGp.xz * 0.031) * 0.55 + gNoise(vGp.xz * 0.0071 + 7.0) * 0.45;
     gDetail *= vec3(1.0 + (m - 0.5) * 0.36, 1.0 + (m - 0.5) * 0.30, 1.0 + (m - 0.5) * 0.2);
@@ -211,7 +251,7 @@ export function groundLook(mat: THREE.MeshStandardMaterial, tex: GroundTextures,
     sh.vertexShader = sh.vertexShader.replace("#include <common>", `#include <common>\n${GLSL_VERT_DECL}`)
       .replace("#include <begin_vertex>", "#include <begin_vertex>\nvGw0 = gw0; vGw1 = gw1; vGk = gk; vGp = position; vGn = normal;");
     sh.fragmentShader = sh.fragmentShader.replace("#include <common>", `#include <common>\n${GLSL_FRAG_DECL}`)
-      .replace("#include <map_fragment>", `#include <map_fragment>\n${GLSL_FRAG_MAIN}\n  diffuseColor.rgb *= gDetail;`)
+      .replace("#include <map_fragment>", `#include <map_fragment>\n${GLSL_FRAG_MAIN}\n  diffuseColor.rgb = mix(diffuseColor.rgb, vec3(dot(diffuseColor.rgb, vec3(0.3, 0.55, 0.15))), gGrey) * gDetail;`)
       .replace("#include <roughnessmap_fragment>", "#include <roughnessmap_fragment>\n  roughnessFactor *= 1.0 - 0.3 * smoothstep(0.4, 1.0, gWet);")
       .replace("#include <normal_fragment_maps>", `#include <normal_fragment_maps>
   {

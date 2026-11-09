@@ -1,12 +1,13 @@
 // Studios: the account that makes apps, beside the person's account that plays them (VISION.md). One person, a team or a business,
 // with the same shape at every size: members with a role, and the apps the studio makes. Each app on a studio's shelf shows the
 // four doors: play it (its site), keep (the person's own saves and unlocks in it, already in eqosys), make (its code, once a
-// codeSplitter repo is linked) and ship (live, or not deployed yet).
+// codeSplitter repo is linked) and ship: live, and the stage, version and time its last deploy reported (deploys.ts), or not deployed yet.
 //
 // QNTBR is the first studio, the super admin's (`house`): it holds every app in APPS that no other studio has claimed.
 import { oneOf, str } from "@rustybuns/util/guard";
 import { APPS, appOf } from "./apps.ts";
 import type { Env } from "./env.ts";
+import { lastDeploys, type Shipped } from "./deploys.ts";
 
 export const KINDS = ["solo", "team", "business"] as const;
 export type Kind = (typeof KINDS)[number];
@@ -20,24 +21,33 @@ export const OWNED = 3;
 /** The super admin's studio: a fixed id, so making it twice is a no-op. */
 export const HOUSE = { id: "qntbr", name: "QNTBR", kind: "business" as Kind };
 
-export interface ShelfApp { id: string; name: string; play: string | null; make: string | null; ship: "live" | "not deployed" }
-export interface Studio { id: string; name: string; kind: Kind; role: Role; members: number; apps: ShelfApp[] }
+/** `ship` is "live" once the app has reported a deploy, or has a site in APPS (an app shipped before reports began); `shipped` is that report. */
+export interface ShelfApp { id: string; name: string; play: string | null; make: string | null; ship: "live" | "not deployed"; shipped: Shipped | null }
+export interface StudioPerson { name: string; email: string; role: Role }
+export interface Studio { id: string; name: string; kind: Kind; role: Role; members: number; people: StudioPerson[]; apps: ShelfApp[] }
 
-const shelfApp = (id: string, repo: string | null): ShelfApp => {
+const shelfApp = (id: string, repo: string | null, shipped: Shipped | null): ShelfApp => {
   const a = appOf(id);
-  return { id, name: a?.name ?? id, play: a?.origins[0] ?? null, make: repo, ship: a?.origins.length ? "live" : "not deployed" };
+  return { id, name: a?.name ?? id, play: a?.origins[0] ?? null, make: repo, ship: shipped || a?.origins.length ? "live" : "not deployed", shipped };
 };
 
-/** The studios a person is in, with their role, how many members, and each app on the shelf. */
+/** The studios a person is in, with their role, who else is in (owners first), and each app on the shelf. */
 export async function studiosOf(conf: Env, userId: string): Promise<Studio[]> {
   const { results: mine } = await conf.DB.prepare(
     `SELECT s.id, s.name, s.kind, m.role, (SELECT COUNT(*) FROM studio_members c WHERE c.studio_id = s.id) AS members
      FROM studio_members m JOIN studios s ON s.id = m.studio_id WHERE m.user_id = ? ORDER BY s.name`,
   ).bind(userId).all<{ id: string; name: string; kind: Kind; role: Role; members: number }>();
   if (!mine.length) return [];
-  const { results: apps } = await conf.DB.prepare(`SELECT app, studio_id, repo FROM studio_apps WHERE studio_id IN (${mine.map(() => "?").join(", ")}) ORDER BY app`)
-    .bind(...mine.map((s) => s.id)).all<{ app: string; studio_id: string; repo: string | null }>();
-  return mine.map((s) => ({ ...s, apps: apps.filter((a) => a.studio_id === s.id).map((a) => shelfApp(a.app, a.repo)) }));
+  const ids = mine.map((s) => s.id), marks = ids.map(() => "?").join(", ");
+  const [{ results: apps }, { results: people }] = await Promise.all([
+    conf.DB.prepare(`SELECT app, studio_id, repo FROM studio_apps WHERE studio_id IN (${marks}) ORDER BY app`).bind(...ids).all<{ app: string; studio_id: string; repo: string | null }>(),
+    conf.DB.prepare(`SELECT m.studio_id, u.name, u.email, m.role FROM studio_members m JOIN "user" u ON u.id = m.user_id WHERE m.studio_id IN (${marks})
+      ORDER BY CASE m.role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END, u.name`).bind(...ids).all<StudioPerson & { studio_id: string }>(),
+  ]);
+  const shipped = await lastDeploys(conf, apps.map((a) => a.app));
+  return mine.map((s) => ({ ...s,
+    people: people.filter((p) => p.studio_id === s.id).map(({ name, email, role }) => ({ name, email, role })),
+    apps: apps.filter((a) => a.studio_id === s.id).map((a) => shelfApp(a.app, a.repo, shipped.get(a.app) ?? null)) }));
 }
 
 export type Made = { ok: true; id: string } | { ok: false; status: number; error: string };

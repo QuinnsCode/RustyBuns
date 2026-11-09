@@ -28,7 +28,7 @@ export const SKIN = {
 };
 
 const account = eqosys({ app: APP, url: EQOSYS, from: SIGN_IN_FROM, prefix: "mm", skin: SKIN });
-export const { signIn, finishSignIn, login, fresh, signOut, canSignIn, accountChip, reportButton, achieve } = account;
+export const { signIn, finishSignIn, login, fresh, signOut, canSignIn, accountChip, reportButton, achieve, hub } = account;
 let partyClient: ReturnType<typeof account.party> | undefined;
 /** The page's one party client: eqosys seats a player once per party, so the world's lobby and the Book's readers
  *  (both at `?party=`) listen on one socket, or each knocks the other out. */

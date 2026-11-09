@@ -29,10 +29,11 @@ const QueueConsumer = Schema.Struct({
 });
 
 const Binding = Schema.Union([
-  Schema.Struct({ type: Schema.Literal("d1"), databaseName: Str, migrationsDir: opt(Str), renamedFrom: opt(Str), protect: opt(Bool) }),
+  Schema.Struct({ type: Schema.Literal("d1"), databaseName: Str, migrationsDir: opt(Str), renamedFrom: opt(Str), protect: opt(Bool), app: opt(Str) }),
   Schema.Struct({ type: Schema.Literal("kv"), protect: opt(Bool) }),
   Schema.Struct({ type: Schema.Literal("r2"), bucketName: Str, protect: opt(Bool) }),
-  Schema.Struct({ type: Schema.Literal("durable_object"), className: Str, scriptName: opt(Str), protect: opt(Bool) }),
+  Schema.Struct({ type: Schema.Literal("durable_object"), className: Str, scriptName: opt(Str), protect: opt(Bool), app: opt(Str), transferredFrom: opt(Str) }),
+  Schema.Struct({ type: Schema.Literal("service"), app: Str, entrypoint: opt(Str) }),
   Schema.Struct({ type: Schema.Literal("artifacts"), namespace: Str }),
   Schema.Struct({ type: Schema.Literal("images") }),
   Schema.Struct({ type: Schema.Literal("send_email"), allowedSenderAddresses: opt(Strs) }),
@@ -101,7 +102,7 @@ const Route = Schema.Struct({ pattern: Str, zoneName: opt(Str), zoneId: opt(Str)
 const Stage = Schema.Struct({
   workerName: opt(WorkerName), accountId: opt(AccountId),
   domain: opt(Schema.Union([Str, Strs])), routes: opt(Schema.Array(Route)),
-  workersDev: opt(Bool), previewUrls: opt(Bool), crons: opt(Strs),
+  workersDev: opt(Bool), previewUrls: opt(Bool), crons: opt(Strs), bootstrap: opt(Bool),
   bindings: opt(Schema.Record(Str, Schema.Union([Binding, Schema.Struct({
     value: opt(Str), databaseName: opt(Str), bucketName: opt(Str), queueName: opt(Str),
     indexName: opt(Str), protect: opt(Bool), dataset: opt(Str), namespaceId: opt(Str), configName: opt(Str),

@@ -1,11 +1,10 @@
 // Signing in through eqosys, page side: the shared client (@rustybuns/util/eqosys) with this game's id.
-// Campaigns are played from secret seat links; a party (With friends) hands each friend theirs, so the login is the name shown
-// in the panel and nothing the Worker checks yet.
+// Campaigns are played from secret seat links. A party (With friends) seat belongs to the eqosys account that claimed it:
+// the Worker checks the login, and the same account claims it again from any device.
 import { eqosys } from "@rustybuns/util/eqosys";
+import { APP, EQOSYS } from "./account.ts";
 
-/** This game's id in eqosys's APPS. */
-export const APP = "two-fronts";
-export const EQOSYS = "https://eqosys.qntbr.com";
+export { APP, EQOSYS };
 /** The origin eqosys sends players back to. A local page or the desktop window stays a guest. */
 export const SIGN_IN_FROM = ["https://two-fronts.notryanquinn.workers.dev"];
 

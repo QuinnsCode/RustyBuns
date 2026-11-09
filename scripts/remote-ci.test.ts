@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import { chmodSync, mkdtempSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
+import { menu, readRuns } from "./builder-bar.ts";
 import { battery, main, parseJobs, plan, pool, snapshot, type Valve } from "./remote-ci.ts";
 
 const AC = "Now drawing from 'AC Power'\n -InternalBattery-0 (id=1)\t100%; charged; 0:00 remaining present: true";
@@ -40,7 +41,8 @@ test("the pool never runs more than the cap and returns the worst code", async (
 });
 
 // The builder is a folder of slot clones; "ssh" is a script that runs the command in that folder's home.
-test("a run sends the working tree, untracked files too, to a free slot and gives it back", async () => {
+// Each run leaves a record its menu bar reads: who and what while it runs, then how it ended.
+test("a run sends the working tree, untracked files too, to a free slot, shows on the builder's menu and gives it back", async () => {
   const root = mkdtempSync(`${tmpdir()}/remote-ci-`), work = `${root}/work`, home = `${root}/home`;
   const id = { GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@t", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@t" };
   await Bun.write(`${work}/package.json`, `{"name":"w"}`);
@@ -54,13 +56,23 @@ test("a run sends the working tree, untracked files too, to a free slot and give
   chmodSync(pmset, 0o755);
   await Bun.write(`${root}/rb/valve`, "off\n");
   const saved = { ...process.env };
-  Object.assign(process.env, id, { BUILDER_HOST: "max", BUILDER_SSH: ssh, GIT_SSH_VARIANT: "simple", RUSTYBUNS_HOME: `${root}/rb`, BUILDER_POLL_MS: "10" });
+  Object.assign(process.env, id, { BUILDER_HOST: "max", BUILDER_SSH: ssh, GIT_SSH_VARIANT: "simple", RUSTYBUNS_HOME: `${root}/rb`, BUILDER_POLL_MS: "10", BUILDER_WHO: "byte" });
+  const builder = `${home}/builder`;
   try {
     await Bun.write(`${work}/new.txt`, "hello");
-    expect(await main(["run", ".", "cat", "new.txt"], work)).toBe(0);
-    expect(await Bun.file(`${home}/builder/slot-1/new.txt`).text()).toBe("hello");
-    expect(await main(["run", ".", "false"], work)).toBe(1);
-    expect(readdirSync(`${home}/builder/locks`)).toEqual([]);
+    // Mid-run, the slot is locked and its record is there: what the menu bar shows.
+    expect(await main(["run", ".", "sh", "-c", `cat new.txt; cp -R ${builder} ${root}/mid`], work)).toBe(0);
+    expect(await Bun.file(`${builder}/slot-1/new.txt`).text()).toBe("hello");
+    const mid = readRuns(`${root}/mid`);
+    expect(mid.running.map((r) => [r.slot, r.who, r.cmd, r.last])).toEqual([["slot-1", "byte", expect.stringContaining(".: sh -c cat new.txt"), "hello"]]);
+    expect(menu(mid, mid.running[0]!.started + 75_000).split("\n").slice(0, 3)).toEqual(["Bob: 1 running", "---", expect.stringMatching(/^slot-1 {2}byte {2}1m 15s \|/)]);
+
+    expect(await main(["run", ".", "sh", "-c", "echo nope; exit 1"], work)).toBe(1);
+    expect(readdirSync(`${builder}/locks`)).toEqual([]);
+    const after = readRuns(builder);
+    expect(after.running).toEqual([]);
+    expect(after.done.map((r) => [r.code, r.last])).toEqual([[1, "nope"], [0, "hello"]]);
+    expect(menu(after, Date.now()).split("\n")[0]).toBe("Bob: idle");
     expect(await Bun.file(`${root}/up`).exists()).toBe(true);
     expect((await Bun.$`git status --porcelain`.cwd(work).text()).trim()).toBe("?? new.txt");
   } finally {

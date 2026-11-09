@@ -42,19 +42,28 @@
       "binding": "LOADER"
     }
   ],
+  "services": [
+    {
+      "binding": "QOLLAB",
+      "service": "qollab"
+    }
+  ],
   "durable_objects": {
     "bindings": [
       {
         "name": "HUB",
-        "class_name": "Hub"
+        "class_name": "Hub",
+        "script_name": "qollab"
       },
       {
         "name": "PARTY",
-        "class_name": "Party"
+        "class_name": "Party",
+        "script_name": "qollab"
       },
       {
         "name": "SPACE",
-        "class_name": "Space"
+        "class_name": "Space",
+        "script_name": "qollab"
       },
       {
         "name": "VAULT",

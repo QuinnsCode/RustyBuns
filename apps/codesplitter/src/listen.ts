@@ -22,7 +22,7 @@
 import { fileDoc, materialize, toFile } from "./archive.ts";
 import { fromDisk } from "./agent-run.ts";
 import { createOn, deleteOn, materializeOn } from "./branches.ts";
-import { branchNameError, json, readBody, type Env } from "./env.ts";
+import { branchNameError, fail, json, readBody, type Env } from "./env.ts";
 import { gh, githubToken, gitTip } from "./github.ts";
 import { emit } from "./hooks.ts";
 import type { Doc } from "./lines.ts";
@@ -121,20 +121,20 @@ async function mainText(env: Env, owner: string, repo: string, path: string) {
  */
 export async function takeUpstream(env: Env, f: Fork, user: string, name?: string) {
   const up = upstreamOf(f.upstream, f.branch);
-  if (!up) return json({ error: "upstream isn't a GitHub repo" }, 409);
+  if (!up) return fail("NotAGitHubFork", "upstream isn't a GitHub repo");
   const token = (await githubToken(env, f.owner).catch(() => null))?.token;
   const tip = await gitTip(up.repo, up.branch).catch(() => null) ?? f.upstream_tip;
-  if (!tip) return json({ error: `GitHub has no ${up.repo} with a ${up.branch} branch` }, 404);
-  if (tip === f.upstream_commit) return json({ error: "nothing new upstream" }, 409);
+  if (!tip) return fail("NoUpstreamBranch", `GitHub has no ${up.repo} with a ${up.branch} branch`);
+  if (tip === f.upstream_commit) return fail("NothingNew", "nothing new upstream");
   const c = await compare(up.repo, f.upstream_commit, tip, token);
-  if ("error" in c) return json({ error: c.error }, c.status);
+  if ("error" in c) return c.status === 404 ? fail("ForkBaseGone", c.error) : c.status === 429 ? fail("GitHubRateLimit", c.error) : json({ error: c.error }, c.status);
   const changed = c.files ?? [];
-  if (changed.length >= COMPARE_FILES) return json({ error: `upstream changed ${COMPARE_FILES} files or more, past what GitHub lists: dig it up again instead` }, 422);
+  if (changed.length >= COMPARE_FILES) return fail("UpstreamTooBig", `upstream changed ${COMPARE_FILES} files or more, past what GitHub lists: dig it up again instead`);
 
   const b = name ?? `upstream-${tip.slice(0, 7)}`, bad = branchNameError(b);
-  if (bad) return json({ error: `bad branch name: ${bad}` }, 400);
+  if (bad) return fail("BadBranchName", `bad branch name: ${bad}`);
   const claim = await env.DB.prepare("INSERT OR IGNORE INTO branches (owner, repo, name, by, status, created_at) VALUES (?, ?, ?, ?, 'open', ?)").bind(f.owner, f.name, b, user, Date.now()).run();
-  if (!claim.meta?.changes) return json({ error: "branch exists" }, 409);
+  if (!claim.meta?.changes) return fail("BranchExists", `there's a branch ${b} already: name another`);
 
   // Paths here: under the dug folder, with it taken off the front.
   const here = (p: string) => !up.folder ? p : p.startsWith(`${up.folder}/`) ? p.slice(up.folder.length + 1) : null;
@@ -167,18 +167,18 @@ export async function takeUpstream(env: Env, f: Fork, user: string, name?: strin
 export async function listenRoute(req: Request, env: Env, p: string[], owner: string, repo: string, user: string | null) {
   if (p[4] !== "upstream") return null;
   const f = await fork(env, owner, repo);
-  if (!f) return !p[5] && req.method === "GET" ? json({ listens: false }) : json({ error: "not a fork of a GitHub repo" }, 404);
+  if (!f) return !p[5] && req.method === "GET" ? json({ listens: false }) : fail("NotAGitHubFork", "this repo isn't dug from a GitHub repo");
   if (!p[5] && req.method === "GET") {
     if (f.upstream_heard_at && Date.now() - f.upstream_heard_at < HEAR_EVERY) return json(status(f));
     const h = await hear(env, f);
     return json(status(h.fork, h.error));
   }
   if (req.method !== "POST" || p[6]) return null;
-  if (user !== owner) return json({ error: "owner only" }, 403);
+  if (user !== owner) return fail("OwnerOnly", "only the repo's owner takes from upstream");
   if (p[5] === "hear") { const h = await hear(env, f); return json(status(h.fork, h.error)); }
   if (p[5] === "take") {
     const { name } = await readBody<"name">(req);
-    if (name !== undefined && typeof name !== "string") return json({ error: "name: the branch to open" }, 400);
+    if (name !== undefined && typeof name !== "string") return fail("BadInput", "name: the branch to open");
     return takeUpstream(env, f, user, name);
   }
   return null;

@@ -1,7 +1,8 @@
 // Playing with the people you know on eqosys. "With friends" mints an eqosys party and opens `?party=CODE` with the war
 // the host picked (side, galaxy); a friend opens the same link, says Ready, the host says Start, and each page claims
 // its seat in the war named after the party's room (POST /api/parties/<room>, src/edge/campaign.ts). From there it is
-// an online campaign like any other: the seat's token is kept in this browser. Spaces is the signed-in player's
+// an online campaign like any other, with the seat's token kept in this browser. The seat is the eqosys account's: the
+// same account opening the party link on another device gets its own seat there. Spaces is the signed-in player's
 // Qollab groups (text and voice), behind a button in the panel's header. Qollab's side: apps/eqosys/src/party.ts, space.ts.
 import { ArrowLeft, ArrowUp, Copy, createElement, Flag, Hash, LogIn, LogOut, MessagesSquare, Mic, MicOff, PhoneOff, Plus, Send, Trash2, UserX, Volume2 } from "lucide";
 import { lobbyPanel } from "@rustybuns/util/lobby";
@@ -30,7 +31,7 @@ export async function openParty(side: Faction, galaxy: GalaxyId): Promise<boolea
 }
 
 /** Join the party and keep `box` showing it; the host's Start hands each page its room and seat. Returns leave. */
-export const joinParty = (code: string, box: HTMLElement, onStart: (s: { room: string; seat: number }) => void) =>
+export const joinParty = (code: string, box: HTMLElement, onStart: (s: { room: string; seat: number; ticket?: string }) => void) =>
   lobbyPanel({ code, box, party: party(), name: () => login()?.name, link: () => location.href, onStart });
 
 const ICONS: Record<SpaceIcon, Parameters<typeof createElement>[0]> = {

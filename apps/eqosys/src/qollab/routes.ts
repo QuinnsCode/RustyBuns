@@ -5,7 +5,7 @@ import { onSite } from "../apps.ts";
 import { json, loopbackOn, type Env } from "../env.ts";
 import { bearerOf, cors, echoProtocol, issuer, socketToken, tokenOf } from "../door.ts";
 import { hubAsk, hubOf, Op } from "./hub.ts";
-import { codeOf, mintCode, PARTY_LIFE, partyOf } from "./party.ts";
+import { codeOf, mintCode, PARTY_LIFE, PARTY_LIFE_MAX, partyOf } from "./party.ts";
 import { SPACE_MEMBERS, SPACE_NAME, SPACES_OWNED, spaceOf } from "./space.ts";
 import { rosterIn } from "./qlave.ts";
 import { get as getSave, MAX_BODY, put as putSave, slotOf } from "./saves.ts";
@@ -14,6 +14,10 @@ import { RoomMintGate } from "@rustybuns/util/limits";
 import { check, obj, str } from "@rustybuns/util/guard";
 
 const mints = new RoomMintGate(12, 60_000);
+
+/** The paths below, the ones eqosys hands to Qollab's own Worker. `/q/achieve` is eqosys's (achievements). */
+export const isQollab = (pathname: string) =>
+  /^\/(?:hub|api\/hub|q\/party(?:\/[^/]+)?|q\/space(?:\/[^/]+)?|q\/qlave\/roster|q\/save\/[^/]+)$/.test(pathname);
 
 /** A Qollab path's answer, or null when the path isn't Qollab's. */
 export async function qollab(req: Request, conf: Env): Promise<Response | null> {
@@ -72,13 +76,15 @@ export async function qollab(req: Request, conf: Env): Promise<Response | null> 
     if (req.headers.get("upgrade")?.toLowerCase() !== "websocket") return json({ error: "a websocket" }, 426);
     const origin = req.headers.get("origin");
     if (origin && !onSite(t.app, origin, loopbackOn(conf))) return json({ error: "not from that app's site" }, 403);
-    // Remember the seat so deleting the account can clear it (members.ts); seats older than a party lives are pruned here.
+    // Remember the seat so deleting the account can clear it (members.ts); seats older than the longest a party lives are pruned here.
     const now = Date.now();
     await conf.DB.batch([
-      conf.DB.prepare("DELETE FROM party_seats WHERE at < ?").bind(now - PARTY_LIFE),
+      conf.DB.prepare("DELETE FROM party_seats WHERE at < ?").bind(now - PARTY_LIFE_MAX),
       conf.DB.prepare("INSERT INTO party_seats (user_id, code, at) VALUES (?, ?, ?) ON CONFLICT (user_id, code) DO UPDATE SET at = excluded.at").bind(t.who.id, code, now),
     ]);
-    return echoProtocol(await partyOf(conf.PARTY, code).fetch(new Request(`https://party/socket?${new URLSearchParams({ ...t.who, code })}`, { headers: { upgrade: "websocket" } })), sock.offered);
+    // The invite key a party link carried (?invite=), for a party where only the host invites.
+    const invite = new URL(req.url).searchParams.get("invite")?.match(/^[\w-]{1,64}$/)?.[0];
+    return echoProtocol(await partyOf(conf.PARTY, code).fetch(new Request(`https://party/socket?${new URLSearchParams({ ...t.who, code, iss: issuer(req, conf), ...(invite && { invite }) })}`, { headers: { upgrade: "websocket" } })), sock.offered);
   }
 
   // Qollab spaces (space.ts): GET /q/space lists yours, POST { name } makes one, POST /q/space/join { invite } joins one,
@@ -87,7 +93,7 @@ export async function qollab(req: Request, conf: Env): Promise<Response | null> 
     const head = { ...cors(req, conf), "access-control-allow-methods": "GET, POST" };
     if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: head });
     if (!conf.SPACE) return json({ error: "no spaces here" }, 503, head);
-    const t = await tokenOf(req, conf, bearerOf(req));
+    const t = await tokenOf(req, conf, bearerOf(req), { home: true });
     if (!t) return json({ error: "send the token /api/exchange gave you" }, 401, head);
     if (req.method === "GET" && pathname === "/q/space") {
       const { results } = await conf.DB.prepare("SELECT s.id, s.name, s.owner, s.invite FROM space_members m JOIN spaces s ON s.id = m.space_id WHERE m.user_id = ? ORDER BY s.name")
@@ -133,7 +139,7 @@ export async function qollab(req: Request, conf: Env): Promise<Response | null> 
   if (spaceAt) {
     if (!conf.SPACE) return json({ error: "no spaces here" }, 503);
     const sock = socketToken(req);
-    const t = await tokenOf(req, conf, sock.token);
+    const t = await tokenOf(req, conf, sock.token, { home: true });
     if (!t) return json({ error: "send the token /api/exchange gave you" }, 401);
     if (req.headers.get("upgrade")?.toLowerCase() !== "websocket") return json({ error: "a websocket" }, 426);
     const origin = req.headers.get("origin");

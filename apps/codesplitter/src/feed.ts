@@ -17,7 +17,7 @@
 //   GET  /api/me/feed/digest           your latest digest: {harness, status, since, through, text?, error?, at} or null
 //   POST /api/me/feed/digest {harness, model?}  an agent digests what's new since the last one (202)
 
-import { json, type Env, readBody } from "./env.ts";
+import { fail, json, type Env, readBody } from "./env.ts";
 import { listFollows, type Follow } from "./follows.ts";
 import { HARNESSES, harnessCommand, type Harness } from "./harness.ts";
 import { localSandbox, type Exec, type Sandbox } from "./agent-run.ts";
@@ -173,27 +173,27 @@ const digestOf = (env: Env, handle: string) => env.DB.prepare("SELECT name, harn
 
 export async function feedRoutes(req: Request, env: Env, p: string[], url: URL, user: string | null): Promise<Response | null> {
   if (!(p[1] === "me" && p[2] === "feed")) return null;
-  if (!user) return json({ error: "sign in first" }, 401);
+  if (!user) return fail("SignInFirst", "sign in to see your feed");
   if (!p[3] && req.method === "GET") {
     const now = Date.now(), raw = url.searchParams.get("since");
     const since = raw === null ? now - WEEK : Number(raw);
-    if (!Number.isFinite(since)) return json({ error: "since: ms since the epoch" }, 400);
+    if (!Number.isFinite(since)) return fail("BadInput", "since: ms since the epoch");
     return json({ ...(await feedFor(env, user, Math.max(since, now - KEEP_MS))), digest: await digestOf(env, user) });
   }
   if (p[3] !== "digest" || p[4]) return null;
   if (req.method === "GET") return json(await digestOf(env, user));
   if (req.method !== "POST") return null;
   const why = agentsUnavailable(env);
-  if (why) return json({ error: why }, 501);
+  if (why) return fail("AgentsUnavailable", why);
   // Hosted digests bill the site's own keys: admins only, as with coding agents.
-  if (adminsOnly(env, user)) return json({ error: ADMINS_ONLY }, 403);
+  if (adminsOnly(env, user)) return fail("AdminsOnly", ADMINS_ONLY);
   const { harness: h, model } = await readBody<"harness" | "model">(req);
   const harness = HARNESSES.find((x) => x === h);
-  if (!harness) return json({ error: `harness: ${HARNESSES.join(", ")}` }, 400);
-  if (model !== undefined && typeof model !== "string") return json({ error: "model: text" }, 400);
-  if (!installedHarnesses(env).includes(harness)) return json({ error: `${harness} isn't installed on this machine` }, 400);
+  if (!harness) return fail("BadInput", `harness: ${HARNESSES.join(", ")}`);
+  if (model !== undefined && typeof model !== "string") return fail("BadInput", "model: text");
+  if (!installedHarnesses(env).includes(harness)) return fail("NoHarness", `${harness} isn't installed on this machine`);
   const now = Date.now(), last = await digestOf(env, user);
-  if (last?.status === "running" && now - last.at < 15 * 60_000) return json({ error: "a digest is already being written" }, 409);
+  if (last?.status === "running" && now - last.at < 15 * 60_000) return fail("DigestRunning", "a digest is already being written");
   const spent = await hostedBudget(env);
   if (spent) return spent;
   // What's new since the last digest that worked; a week the first time.

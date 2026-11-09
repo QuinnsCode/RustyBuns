@@ -4,6 +4,7 @@
 import { clamp, lerp } from "@rustybuns/util";
 import { int, obj, rec, str } from "@rustybuns/util/guard";
 import { ROWS as CREATURES } from "../creatures.ts";
+import { roamingEvents } from "../packs.ts";
 import { REGIONS, type Biome, type Region } from "../regions.ts";
 import { awake, inSeason, ROAM_WEIGHT, tierOf, TIER_LEVEL } from "../tiers.ts";
 import { GRID, PLACES } from "./places.ts";
@@ -358,16 +359,40 @@ export function openRegions(beaten: ReadonlySet<number>): Set<number> {
 }
 
 // Some roads need more than an arena: a creature in your line-up that can get you across. Beat the Jersey Devil, bind it,
-// keep it in the line-up, and the flier crosses the gorge to Mothman's hollows.
-export type Travel = "flier";
+// keep it in the line-up, and the flier crosses the gorge to Mothman's hollows. The south is over water: a swimmer
+// (a beast of the lakes and rivers, Champ or the Lizard Man) carries you over the gulf, and the Andes past it need a
+// flier for the passes. So the map opens by what you have collected, not by your level.
+export type Travel = "flier" | "swimmer";
+const GULF = "the gulf is too wide to wade: bring a swimmer in your line-up (Champ, the Lizard Man, the Loveland Frogman: a beast of the water you have bound)";
 export const GATES: Record<number, { needs: Travel; why: string }> = {
   2: { needs: "flier", why: "a gorge too wide to walk: bring a flier in your line-up (the Jersey Devil, once you have beaten it and bound it)" },
+  ...Object.fromEntries([9, 10, 11, 12, 14, 15, 16].map((n) => [n, { needs: "swimmer" as const, why: GULF }])),
+  13: { needs: "flier", why: "passes too high to climb: bring a flier in your line-up to glide them" },
 };
-/** What a creature can carry you over. */
-export const travelOf = (c: { archetype: string }): Travel[] => (c.archetype === "flyer" ? ["flier"] : []);
+/** What a creature can carry you over: a flyer flies, a beast whose first field is the tide swims. */
+export const travelOf = (c: { archetype: string; fields?: readonly string[] }): Travel[] =>
+  [...(c.archetype === "flyer" ? ["flier" as const] : []), ...(c.fields?.[0] === "tide" ? ["swimmer" as const] : [])];
 let can: ReadonlySet<Travel> | null = null;
 /** Sets who is in the line-up; `null` (the default, for the bots and the sim) means no gate holds. */
-export const setTravel = (party: readonly { archetype: string }[] | null) => { can = party && new Set(party.flatMap(travelOf)); };
+export const setTravel = (party: readonly { archetype: string; fields?: readonly string[] }[] | null) => { can = party && new Set(party.flatMap(travelOf)); };
+/** Whether the line-up can travel this way (always, for the bots and the sim). */
+export const canTravel = (t: Travel) => !can || can.has(t);
+
+export const PACE_MAX = 20;  // m/s: no beast carries you faster than the ground streams in (a near patch every 3 s)
+const GLIDE_SLOPE = -0.08;   // the ground falling this steeply ahead (metres down per metre on) and a flier glides
+export type Gait = "walk" | "wade" | "swim" | "glide";
+/**
+ * How fast you cross the ground, and how: `v` is the pace on dry level ground (walking or running), `depth` the water over the ground where you
+ * stand (above WADE_DEPTH is a wade at under half pace, or a swim with a swimmer along), `slope` the ground's fall ahead
+ * (negative is downhill: a flier glides it half as fast again). Never past PACE_MAX.
+ */
+export function pace(v: number, depth: number, slope: number): { v: number; gait: Gait } {
+  const wet = depth > WADE_DEPTH, gait: Gait = wet ? (can?.has("swimmer") ? "swim" : "wade") : slope < GLIDE_SLOPE && can?.has("flier") ? "glide" : "walk";
+  const k = gait === "wade" ? 0.45 : gait === "swim" ? 1.25 : gait === "glide" ? 1.5 : 1;
+  return { v: Math.min(PACE_MAX, v * k), gait };
+}
+export const WADE_DEPTH = 0.1; // water this deep over the ground is a wade (or a swim)
+
 /** The gate holding region g shut: only its arena road is open, but the line-up can't cross. */
 export const gateShut = (g: Region, beaten: ReadonlySet<number>) => GATES[g.n] && reach(beaten).has(g.n) && !openRegions(beaten).has(g.n) ? GATES[g.n] : undefined;
 
@@ -417,6 +442,7 @@ export function spawn(n = 1): Walker {
  * given, closes more ground inside open regions (a trail's sections not reached yet, src/world/trail.ts): true blocks. */
 export function walk(me: Walker, dx: number, dz: number, beaten: ReadonlySet<number>, fence?: (x: number, z: number) => boolean): WalkEvent[] {
   const out: WalkEvent[] = [], open = openRegions(beaten);
+  open.add(me.region); // where you stand stays walkable, even after the beast that brought you left the line-up
   const can = (x: number, z: number) => {
     if (x < 0 || z < 0 || x >= GRID.w * CELL || z >= GRID.h * CELL) return false;
     const g = regionAt(x, z);
@@ -498,16 +524,18 @@ export const TICK_R = 2;         // dens further than this many regions from you
 export interface Wild { den: string; id: string; region: number; level: number; x: number; z: number; heading: number }
 
 /** Who may roam region n on a day: its own creatures three times over and the ones from the regions either side
- * once, each as often as its tier turns up (src/tiers.ts); mythics stay home, event creatures keep their season, and
- * the night ones (`NIGHT` there) come out only when `night` is set. */
+ * once, each as often as its tier turns up (src/tiers.ts); mythics stay home, event creatures keep their season (and
+ * an in-season pack's, src/packs.ts, roam every region, so you meet the pack before its island), and the night
+ * ones (`NIGHT` there) come out only when `night` is set. */
 const pools = new Map<string, Map<number, string[]>>();
 export function poolOf(n: number, date: Date, night = false): string[] {
   const day = `${date.getMonth()}-${date.getDate()}-${night}`;
   let byRegion = pools.get(day);
   if (!byRegion) {
+    const roaming = roamingEvents(date);
     byRegion = new Map(REGIONS.map((g) => [g.n, CREATURES.flatMap((c) => {
       const home = c.region === g.n, t = tierOf(c.id);
-      if (!inSeason(c.id, date) || !awake(c.id, night) || !(home || (Math.abs(c.region - g.n) === 1 && t !== "mythic"))) return [];
+      if (!inSeason(c.id, date) || !awake(c.id, night) || !(home || roaming.has(c.id) || (Math.abs(c.region - g.n) === 1 && t !== "mythic"))) return [];
       return Array<string>(ROAM_WEIGHT[t] * (home ? 3 : 1)).fill(c.id);
     })]));
     if (pools.size > 1) pools.clear();

@@ -22,6 +22,8 @@ function resource(name: string, b: Binding, adopt: boolean): string | null {
   const id = ident(name);
   switch (b.type) {
     case "d1":
+      // Another app's database: a reference into its stack (same stage), which owns it and runs its migrations.
+      if (b.app) return `export const ${id} = Cloudflare.D1.Database.ref("${name}", { stack: ${JSON.stringify(b.app)} });`;
       return `export const ${id} = Cloudflare.D1.Database("${name}"${propsArg({ name: adopt ? b.databaseName : undefined, migrations: b.migrationsDir })});`;
     case "kv":
       return `export const ${id} = Cloudflare.KV.Namespace("${name}");`;
@@ -88,9 +90,22 @@ function resource(name: string, b: Binding, adopt: boolean): string | null {
     }
     case "var":
     case "secret":
+    case "service":
       return null;
   }
 }
+
+/** The other rustybuns apps a config's bindings reach into, each by its stack's Worker. */
+export function otherApps(bindings: Record<string, Binding>): string[] {
+  const apps = Object.values(bindings).flatMap((b) => b.type === "service" ? [b.app] : b.type === "durable_object" ? [b.app, b.transferredFrom] : []);
+  return [...new Set(apps.filter((a): a is string => !!a))].sort();
+}
+/** Every app whose stack this config refs: otherApps, plus another app's D1 (`app`). */
+export const referencedApps = (bindings: Record<string, Binding>): string[] =>
+  [...new Set([...otherApps(bindings), ...Object.values(bindings).flatMap((b) => b.type === "d1" && b.app ? [b.app] : [])])].sort();
+/** Another app's Worker reference in the generated stack, and the name it is yielded as inside the Worker's Effect. */
+const appRef = (app: string) => `App_${ident(app)}`;
+const appVar = (app: string) => appRef(app).toLowerCase();
 
 /** protect: destroy skips the provider's delete, so the resource and its data stay on the account. */
 const keep = (decl: string) => decl.replace(/^(export const \w+ = )([\s\S]*);$/, "$1($2).pipe(Alchemy.RemovalPolicy.retain());");
@@ -202,13 +217,20 @@ export function generateAlchemy(c: RustyBunsConfig): string {
 
   if (edge) {
     const envEntries: string[] = [];
+    // Another app's Worker, by its stack (same stage): yielded inside the Worker's Effect for its script name and service bindings.
+    const others = otherApps(bindings);
+    for (const app of others) lines.push(`export const ${appRef(app)} = Cloudflare.Worker.ref("Worker", { stack: ${JSON.stringify(app)} });`);
     for (const [name, b] of Object.entries(bindings)) {
-      const decl = resource(name, b, adopt), r = decl && isProtected(b) ? keep(decl) : decl;
+      const decl = resource(name, b, adopt), r = decl && isProtected(b) && !(b.type === "d1" && b.app) ? keep(decl) : decl;
       // A consumer-only queue exists in the stack but not in env.
       if (r) { lines.push(r); if (!(b.type === "queue" && b.producer === false)) envEntries.push(`${name}: ${ident(name)}`); }
       else if (b.type === "durable_object")
         envEntries.push(`${name}: Cloudflare.DurableObject("${name}", { className: "${b.className}"${b.scriptName ? `, scriptName: "${b.scriptName}"`
+          : b.app ? `, scriptName: ${appVar(b.app)}.workerName`
+          : b.transferredFrom ? `, transferredFrom: ${appVar(b.transferredFrom)}.workerName`
           : renamedFrom ? `, transferredFrom: ${JSON.stringify(renamedFrom)}` : ""} })`);
+      else if (b.type === "service")
+        envEntries.push(`${name}: ${b.entrypoint ? `Cloudflare.WorkerEntrypoint(${appVar(b.app)}, { entrypoint: ${JSON.stringify(b.entrypoint)} })` : appVar(b.app)}`);
       else if (b.type === "var") envEntries.push(`${name}: ${JSON.stringify(b.value)}`);
       else if (b.type === "secret" && !b.boxOnly) envEntries.push(minted.has(name) ? `${name}: ${ident(name)}`
         : b.optional ? `...(process.env.${name} ? { ${name}: Config.Redacted("${name}") } : {})`
@@ -259,7 +281,7 @@ export function generateAlchemy(c: RustyBunsConfig): string {
     if (adopt) lines.push(`// targets.edge.adopt: an existing Worker named ${JSON.stringify(workerName(c))} is taken over, not duplicated.`);
     // worker.protect, or protect on a class it hosts: destroy leaves the Worker, its classes and their storage.
     const policies = [adopt ? "Alchemy.AdoptPolicy.adopt(true)" : "", workerKept(c) ? "Alchemy.RemovalPolicy.retain()" : ""].filter(Boolean);
-    lines.push(...withMinted("Worker", "Cloudflare.Worker", wb, policies.length ? `.pipe(${policies.join(", ")})` : ""));
+    lines.push(...withMinted("Worker", "Cloudflare.Worker", wb, policies.length ? `.pipe(${policies.join(", ")})` : "", others.map((a) => [a, appRef(a)] as const)));
     lines.push(``);
     lines.push(`/** The typed env the Worker AND the desktop shell compile against. */`);
     lines.push(`export type WorkerEnv = Cloudflare.InferEnv<typeof Worker>;`);

@@ -46,7 +46,7 @@
 // file's DO counts each edit with a Tally: in memory, written to D1 in the
 // background, so a keystroke never waits on D1.
 
-import { json, type Body, type Env, readBody } from "./env.ts";
+import { fail, json, type Body, type Env, readBody } from "./env.ts";
 import { actingAs, queuedByToken } from "./identity.ts";
 import { TIERS, forgetTiers, multOf, tierById } from "./tiers.ts";
 
@@ -265,6 +265,7 @@ export async function limit(req: Request, env: Env, rule: string | null, user: s
   // Only a signed-in caller can be queued: the job runs as them, and only they may poll it.
   const over = who ? await hit(env, rule!, who, !!user) : null;
   if (!over) return null;
+  // A limit's 429s carry no tag: any operation can meet one, and the client names an untagged 429 RateLimited, with retry-after's wait.
   if ("error" in over) return json({ error: over.error }, 429, { "retry-after": String(over.wait) });
   const r = over.queue, span = r.window_s * 1000;
   // The line holds one window's worth; past that, it's a 429 like any other.
@@ -401,7 +402,7 @@ export async function jobRoutes(req: Request, env: Env, p: string[], user: strin
     return json({ jobs });
   }
   const j = await env.DB.prepare("SELECT rule, who, user FROM limit_jobs WHERE id = ?").bind(Number(p[2])).first<Pick<Job, "rule" | "who" | "user">>();
-  if (!j || (j.user !== user && !admin)) return json({ error: "not found" }, 404);
+  if (!j || (j.user !== user && !admin)) return fail("NoSuchJob", "no request of yours by that id waits in line or ran");
   await drain(env, j.rule, j.who, self);
   return json(await place(env, Number(p[2])));
 }
@@ -451,11 +452,11 @@ export function spread(hist: [number, number][], max: number) {
  */
 export async function limitRoutes(req: Request, env: Env, p: string[], admin: boolean): Promise<Response | null> {
   if (p[1] !== "admin" || p[2] !== "limits") return null;
-  if (!admin) return json({ error: "admins only" }, 403);
+  if (!admin) return fail("AdminsOnly", "admins only");
   if (p[3] === "reset" && req.method === "POST") {
     const b = await readBody<"who" | "rule">(req);
-    if (typeof b.who !== "string" || !b.who) return json({ error: "who required" }, 400);
-    if (b.rule !== undefined && typeof b.rule !== "string") return json({ error: "rule: a rule's name" }, 400);
+    if (typeof b.who !== "string" || !b.who) return fail("BadInput", "who required");
+    if (b.rule !== undefined && typeof b.rule !== "string") return fail("BadInput", "rule: a rule's name");
     const only = b.rule ? " AND rule = ?" : "", args = b.rule ? [b.who, b.rule] : [b.who];
     await env.DB.batch([
       env.DB.prepare("DELETE FROM limit_hits WHERE who = ?" + only).bind(...args),
@@ -466,25 +467,25 @@ export async function limitRoutes(req: Request, env: Env, p: string[], admin: bo
   if (p[3] === "tier" && req.method === "PUT") {
     const b = await readBody<"who" | "tier">(req);
     const who = typeof b.who === "string" ? b.who.replace(/^@/, "") : "";
-    if (!who) return json({ error: "who required" }, 400);
-    if (b.tier !== null && !tierById(b.tier)) return json({ error: `tier: ${TIERS.map((t) => t.id).join(", ")}, or null for free` }, 400);
+    if (!who) return fail("BadInput", "who required");
+    if (b.tier !== null && !tierById(b.tier)) return fail("BadInput", `tier: ${TIERS.map((t) => t.id).join(", ")}, or null for free`);
     const done = await env.DB.prepare("UPDATE users SET tier = ? WHERE name = ?").bind(b.tier, who).run();
-    if (!done.meta.changes) return json({ error: `no one's @${who} here` }, 404);
+    if (!done.meta.changes) return fail("NoSuchUser", `no one's @${who} here`);
     forgetTiers();
     return json({ ok: true, who, tier: tierById(b.tier) });
   }
   if (p[3]) return null;
   if (req.method === "PUT") {
     const b = await readBody<"rules">(req);
-    if (b.rules !== undefined && !Array.isArray(b.rules)) return json({ error: "rules: a list" }, 400);
+    if (b.rules !== undefined && !Array.isArray(b.rules)) return fail("BadInput", "rules: a list");
     const set: { name: string; max: number; window_s: number; enabled: boolean; on_fail?: Action }[] = [];
     for (const r of (b.rules ?? []) as (Body<"name" | "max" | "window_s" | "enabled" | "on_fail"> | null)[]) {
       const d = RULES.find((d) => d.name === r?.name);
-      if (!r || !d) return json({ error: `no rule ${r?.name}` }, 400);
-      if (!(typeof r.max === "number" && Number.isInteger(r.max) && r.max >= 1 && r.max <= 100_000)) return json({ error: `${r.name}: max is a whole number, 1 to 100000` }, 400);
-      if (!(typeof r.window_s === "number" && Number.isInteger(r.window_s) && r.window_s >= 1 && r.window_s <= 30 * DAY)) return json({ error: `${r.name}: the window is 1 second to 30 days` }, 400);
-      if (r.on_fail !== undefined && !isAction(r.on_fail)) return json({ error: `${r.name}: on_fail is ${ACTIONS.join(", ")}` }, 400);
-      if (r.on_fail === "queue" && !d.queueable) return json({ error: `${r.name}: only slow, costly jobs can queue` }, 400);
+      if (!r || !d) return fail("BadInput", `no rule ${r?.name}`);
+      if (!(typeof r.max === "number" && Number.isInteger(r.max) && r.max >= 1 && r.max <= 100_000)) return fail("BadInput", `${r.name}: max is a whole number, 1 to 100000`);
+      if (!(typeof r.window_s === "number" && Number.isInteger(r.window_s) && r.window_s >= 1 && r.window_s <= 30 * DAY)) return fail("BadInput", `${r.name}: the window is 1 second to 30 days`);
+      if (r.on_fail !== undefined && !isAction(r.on_fail)) return fail("BadInput", `${r.name}: on_fail is ${ACTIONS.join(", ")}`);
+      if (r.on_fail === "queue" && !d.queueable) return fail("BadInput", `${r.name}: only slow, costly jobs can queue`);
       set.push({ name: d.name, max: r.max, window_s: r.window_s, enabled: !!r.enabled, on_fail: r.on_fail });
     }
     const current = await rules(env);

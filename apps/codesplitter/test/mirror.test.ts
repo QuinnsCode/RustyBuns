@@ -41,7 +41,8 @@ describe("mirrors", () => {
     renameSync(up, up + ".away");
     await editHere(call, "README", 2, "world, offline");
     const down = await sync(call);
-    expect(down).toMatchObject({ state: "down", ahead: 1 });
+    // What the person reads is a plain sentence: git's own words (fatal: ..., does not appear to be a git repository) go to the log.
+    expect(down).toMatchObject({ state: "down", ahead: 1, error: "upstream didn't answer, so it tries again shortly" });
     expect(down.downSince).toBeGreaterThan(0);
     expect(down.nextAt).toBeGreaterThan(Date.now());
     await editHere(call, "src/a.ts", 1, "export const a = 3");
@@ -57,7 +58,7 @@ describe("mirrors", () => {
     await upstreamCommit({ "README": "hello from bo\nworld, offline\n", "src/b.ts": "export const b = 2\n" }, "bo again");
     await editHere(call, "README", 1, "hello from ana");
     const clash = await sync(call);
-    expect(clash).toMatchObject({ state: "clash", clash: ["README"] });
+    expect(clash).toMatchObject({ state: "clash", clash: ["README"], error: "upstream and this copy changed the same lines" });
     expect(await upShow("README")).toBe("hello from bo\nworld, offline");
     expect((await post(call, "/api/repos/ana/up/mirror", { resolve: "sideways" })).status).toBe(400);
     expect((await call("bob", "/api/repos/ana/up/mirror", { method: "POST", body: "{}" })).status).toBe(403);

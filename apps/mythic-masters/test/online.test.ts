@@ -2,7 +2,7 @@
 // the real Region Durable Object (scripts/party.ts runs them on Bun's sockets), then the wire and the door.
 import { afterAll, describe, expect, setDefaultTimeout, test } from "bun:test";
 import worker from "../src/edge/worker.ts";
-import { bestOffset, COAST_MS, MAX_PLAYERS, step, Ghost, BEHIND_MS, decodeServer, delta, parseDelta, parseEvent, plausible, quantise, WORLD_CYCLE, worldClock } from "../src/net/party.ts";
+import { bestOffset, COAST_MS, KEEP, keepSeen, MAX_PLAYERS, NO_SEEN, step, Ghost, BEHIND_MS, decodeServer, delta, parseDelta, parseEvent, plausible, quantise, WORLD_CYCLE, worldClock } from "../src/net/party.ts";
 import { DAY } from "../src/world/nature.ts";
 import { Online } from "../src/net/online.ts";
 import { serveParty } from "../scripts/party.ts";
@@ -18,7 +18,7 @@ const until = async (ok: () => boolean, ms = 3000) => { const end = Date.now() +
 const heard: string[] = [];
 /** A save far enough along that region 5's trail (where these walks are) is open. */
 const OPENED = [1, 2, 3, 4, 5, 6];
-const join = (name: string, room = "WALK1", base = party.url, more: { onCompany?: () => void; opened?: () => readonly number[] } = {}) => new Online(room, {
+const join = (name: string, room = "WALK1", base = party.url, more: Pick<NonNullable<ConstructorParameters<typeof Online>[1]>, "onCompany" | "opened" | "posed"> = {}) => new Online(room, {
   opened: () => OPENED, ...more, base, guest: { uid: `${name}-uid-0000`, name },
   onDen: (den, who, c) => heard.push(`${name}: ${who} at ${c} ${den}`),
   onHunt: (h, s, who) => heard.push(`${name}: ${who} hunt ${h} ${s}`),
@@ -142,7 +142,7 @@ describe("two friends in one region", () => {
     di.update(5, 13810, 5600, 0, "jersey-devil", performance.now());
     await until(() => cy.status === "in" && di.status === "in");
     const cyAt = () => [...di.ghosts.values()][0]?.pose.x;
-    // 21 hops of 38 m, a fifth of a second apart (190 m/s, seven times a run): each is inside the 40 m slack on its own.
+    // 21 hops of 38 m, a fifth of a second apart (190 m/s, nearly forty times a run): each is inside the 40 m slack on its own.
     for (let i = 1; i <= 21; i++) { await Bun.sleep(210); cy!.update(5, 14600 - (800 * i) / 21, 5550, 0, "hodag", performance.now()); }
     await until(() => cyAt() === 138000); // 50 m from the stone, not beside Di
     on.set("5.13900.5600", 0);
@@ -190,6 +190,21 @@ describe("two friends in one region", () => {
     ed.close(); fay.close();
   });
 
+  test("a page that joins already standing in a region its save hasn't opened starts doubted; an honest start is trusted", async () => {
+    const from = heard.length, since = () => heard.slice(from);
+    // Gus's save opened regions 1 and 4, yet his first pose stands at region 5's board: nothing to measure it from, but
+    // not a region he claims. Hal's save opened region 5, and he starts 900 m off, mid-walk, away from any campfire.
+    const gus = join("Gus", "FIRST1", party.url, { opened: () => [1, 4] }), hal = join("Hal", "FIRST1");
+    gus.update(5, 13900, 5600, 0, "hodag", performance.now());
+    hal.update(5, 13000, 5600, 0, "squonk", performance.now());
+    await until(() => gus.status === "in" && hal.status === "in" && gus.ghosts.size === 1 && hal.ghosts.size === 1);
+    gus.hunt("5.13900.5600", 0); hal.hunt("5.13900.5600", 0);
+    await until(() => since().includes("Gus: Hal hunt 5.13900.5600 0"));
+    await Bun.sleep(200);
+    expect(since().filter((l) => l.startsWith("Hal:"))).toEqual([]); // Gus's contract went nowhere
+    gus.close(); hal.close();
+  });
+
   test("a friend walking up to one the room doubts brings them back: the den and contract they were refused reach the party, then the fight", async () => {
     const from = heard.length, since = () => heard.slice(from);
     const on = new Map<string, number>();
@@ -216,6 +231,57 @@ describe("two friends in one region", () => {
     ed.close(); fi.close();
   });
 
+  test("a contract taken in the same frame as a jump is checked where the jump landed, not where it started", async () => {
+    const from = heard.length, since = () => heard.slice(from);
+    // Ivy stands by region 1's campfire, Jo beside her. In one frame Ivy lands on the sighting board 559 m off (no road
+    // takes you there that fast) and takes its contract, before that frame's pose goes out (#3800).
+    let at = { region: 1, x: 20175, z: 5674 };
+    const ivy = join("Ivy", "JUMP1", party.url, { posed: () => ({ ...at, yaw: 0, lead: "hodag", follow: [] }) }), jo = join("Jo", "JUMP1");
+    ivy.update(1, at.x, at.z, 0, "hodag", performance.now());
+    jo.update(1, 20180, 5674, 0, "squonk", performance.now());
+    await until(() => ivy.status === "in" && jo.status === "in" && ivy.ghosts.size === 1 && jo.ghosts.size === 1);
+    // the room has her at the campfire first, to measure the jump from
+    ivy.update(1, 20176, 5674, 0, "hodag", performance.now());
+    await until(() => [...jo.ghosts.values()][0]?.pose.x === 201760);
+    await Bun.sleep(250);
+    at = { region: 1, x: 20002, z: 6206 };
+    ivy.hunt("1.20002.6206", 0);
+    await until(() => [...jo.ghosts.values()][0]?.pose.x === 200020); // Jo sees her land: the jump reached the room first
+    await Bun.sleep(300);
+    expect(since().filter((l) => l.includes("hunt"))).toEqual([]); // and the room doubted it, so the contract went nowhere
+    ivy.close(); jo.close();
+  });
+
+  test("what a friend picked and flushed outlasts them: one who joins after they left still finds it", async () => {
+    const ada = join("Ada", "KEEP1"), bo = join("Bo", "KEEP1");
+    ada.update(5, 13800, 5600, 0, "hodag", performance.now()); bo.update(5, 13810, 5600, 0, "hodag", performance.now());
+    await until(() => ada.status === "in" && bo.status === "in");
+    walk(ada, 5, 13800, 4); walk(bo, 5, 13810, 4);
+    await until(() => [...ada.ghosts.values()].some((g) => g.pose.r === 5) && [...bo.ghosts.values()].some((g) => g.pose.r === 5));
+    ada.life("pick", "197,80"); ada.life("flush", "125,50", 1.5);
+    await until(() => heard.includes("Bo: flush 125,50") && heard.includes("Bo: pick 197,80"));
+    ada.close();
+    await Bun.sleep(300);
+    const cy = join("Cy", "KEEP1");
+    cy.update(5, 13820, 5600, 0, "hodag", performance.now());
+    await until(() => cy.status === "in", 8000);
+    await until(() => heard.some((l) => l.startsWith("Cy: pick 197,80 at")) && heard.some((l) => l.startsWith("Cy: flush 125,50 at")));
+    cy.close(); bo.close();
+  });
+
+  test("the room's record of the wilds keeps the newest of each kind, one per patch, and fits on a seat's socket", () => {
+    const cell = (i: number) => `${10_000 + i},${-10_000 - i}`, den = (i: number) => `hunt:${"9".repeat(40)}${i}`;
+    let k = NO_SEEN;
+    for (let i = 0; i < 40; i++) k = keepSeen(k, { picks: [{ id: cell(i), at: 7199.5 }], flown: [{ id: cell(i), at: 7199.5, h: -9.99 }], roost: [{ id: cell(i), x: 99_999.9, z: 99_999.9 }], busy: [den(i)] });
+    k = keepSeen(k, { ...NO_SEEN, picks: [{ id: cell(39), at: 1 }] }); // told again: one entry, the newest
+    expect([k.picks.length, k.flown.length, k.roost.length, k.busy.length]).toEqual([KEEP.picks, KEEP.flown, KEEP.roost, KEEP.busy]);
+    expect(k.picks[0]).toEqual({ id: cell(39), at: 1 });
+    expect(k.picks.filter((p) => p.id === cell(39)).length).toBe(1);
+    // with the seat's own pose and anchor beside it, well inside a socket attachment's 2 KB
+    const seat = { id: "f".repeat(16), name: "W".repeat(40), p: { r: 64, x: 999_999, z: 999_999, y: 9999, l: "beast-of-bray-road", f: ["fresno-nightcrawler", "loveland-frogman"] }, a: { x: 999_999, z: 999_999, t: Date.now() }, open: Array.from({ length: 64 }, (_, i) => i + 1), wilds: k };
+    expect(JSON.stringify(seat).length).toBeLessThan(2048);
+  });
+
   test(`a full room (${MAX_PLAYERS}) turns the next one away and keeps everyone else in`, async () => {
     const six = Array.from({ length: MAX_PLAYERS }, (_, i) => join(`p${i}`, "FULL1"));
     six.forEach((o, i) => o.update(3, 100 + i, 100, 0, "hodag", performance.now()));
@@ -226,6 +292,33 @@ describe("two friends in one region", () => {
     expect(six.every((o) => o.status === "in")).toBe(true);
     for (const o of [...six, late]) o.close();
   });
+});
+
+test("a page that drops and rejoins within a few seconds keeps the room's doubt, or its trust (#3862)", async () => {
+  const from = heard.length, since = () => heard.slice(from);
+  const lu = join("Lu", "BLIP1");
+  let kim = join("Kim", "BLIP1"), max = join("Max", "BLIP1");
+  lu.update(5, 13000, 6000, 0, "squonk", performance.now());
+  kim.update(5, 13000, 5600, 0, "hodag", performance.now());
+  max.update(5, 13800, 5600, 0, "hodag", performance.now());
+  await until(() => [lu, kim, max].every((o) => o.status === "in" && o.ghosts.size === 2));
+  kim.update(5, 13001, 5600, 0, "hodag", performance.now()); max.update(5, 13801, 5600, 0, "hodag", performance.now());
+  await until(() => [...lu.ghosts.values()].every((g) => g.pose.x === 130010 || g.pose.x === 138010));
+  // Kim jumps 890 m onto region 5's board at once (no road takes you there that fast): the room doubts her.
+  await Bun.sleep(250); kim.update(5, 13890, 5600, 0, "hodag", performance.now());
+  await until(() => [...lu.ghosts.values()].some((g) => g.pose.x === 138900));
+  // Both drop and come straight back where they were (Max a few steps on, as an honest walk does).
+  kim.close(); max.close();
+  await until(() => lu.ghosts.size === 0);
+  kim = join("Kim", "BLIP1"); max = join("Max", "BLIP1");
+  kim.update(5, 13890, 5600, 0, "hodag", performance.now());
+  max.update(5, 13805, 5600, 0, "hodag", performance.now());
+  await until(() => kim.status === "in" && max.status === "in" && lu.ghosts.size === 2);
+  kim.hunt("5.13900.5600", 0); max.hunt("5.13900.5600", 0);
+  await until(() => since().includes("Lu: Max hunt 5.13900.5600 0")); // Max kept the room's trust
+  await Bun.sleep(300);
+  expect(since().filter((l) => l.includes("Kim hunt"))).toEqual([]); // Kim kept its doubt: reconnecting didn't shed it
+  lu.close(); kim.close(); max.close();
 });
 
 test("a page that vanished without closing is swept once it stops pinging, and its seat is free again", async () => {
@@ -265,9 +358,9 @@ test("the world clock wraps on a whole number of days, small enough for a shader
 });
 
 test.each([
-  ["a run, a pose every fifth of a second", 5, 200, 30, false, 0],
-  ["a run after a minute alone (the page sends nothing then)", 1500, 60_000, 1, false, 0],
-  ["a 3 s network stall, then its 15 poses of a run in one burst", 5.2, 0, 15, false, 3000],
+  ["a run, a pose every fifth of a second", 1, 200, 30, false, 0],
+  ["a run after a minute alone (the page sends nothing then)", 300, 60_000, 1, false, 0],
+  ["a 3 s network stall, then its 15 poses of a run in one burst", 1, 0, 15, false, 3000],
   ["3 km in a fifth of a second", 3000, 200, 1, true, 0],
   ["39 m hops all at once: the slack is spent once", 39, 0, 2, true, 0],
   ["after a 3 s stall, 39 m hops all at once: the bank and the slack are spent once", 39, 0, 4, true, 3000],
@@ -285,11 +378,14 @@ describe("the wire", () => {
     expect(delta(a, quantise(5, 1234.6, 789.0, Math.PI / 2, "hodag"))).toBeNull(); // under a decimetre: nothing to send
     expect(delta(a, quantise(5, 1240, 789.01, Math.PI / 2, "hodag"))).toEqual({ x: 12400 });
     expect(JSON.stringify(delta(a, quantise(5, 1240, 790, 0, "hodag"))).length).toBeLessThan(30);
+    // the colour your ground hums in rides along, and goes out again only when you pick another
+    expect(delta(quantise(5, 1, 1, 0, "hodag", [], false, 12), quantise(5, 1, 1, 0, "hodag", [], false, 40))).toEqual({ c: 40 });
   });
 
   test.each([
     ["off the map", { x: -5 }],
     ["a creature id that isn't one", { l: "<img>" }],
+    ["a colour past the palette's 64", { c: 64 }],
     ["nothing", {}],
     ["not an object", "x=1"],
   ])("a delta with %s is refused", (_, raw) => { expect(parseDelta(raw)).toBeNull(); });

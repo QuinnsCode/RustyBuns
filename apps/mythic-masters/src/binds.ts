@@ -53,10 +53,12 @@ export const PRESETS: { id: string; label: string; hint: string; keys: Bindings 
 ];
 
 /** The few keys the on-screen card shows where you are (moving only; every other key is in Settings), from the bindings as they are now. */
-export function moveKeys(where: "fight" | "world", get: (id: string) => string[] = keymap.get): { keys: string; does: string }[] {
+/** `hunt` is a world fight: the fight's keys plus the ink, since a beast you can bind is one you walked into. */
+export function moveKeys(where: "fight" | "hunt" | "world", get: (id: string) => string[] = keymap.get): { keys: string; does: string }[] {
   const first = (id: string) => keyName(get(id)[0] ?? "") || "?";
   const walk = ["forward", "left", "back", "right"].map(first).join("");
-  return where === "fight"
-    ? [{ keys: walk, does: "Move" }, { keys: first("jump"), does: "Jump" }, { keys: first("dash"), does: "Dash" }]
+  const fight = [{ keys: walk, does: "Move" }, { keys: first("jump"), does: "Jump" }, { keys: first("dash"), does: "Dash" }];
+  return where === "fight" ? fight
+    : where === "hunt" ? [...fight, { keys: first("bind"), does: "Bind" }]
     : [{ keys: walk, does: "Walk" }, { keys: first("dash"), does: "Run" }, { keys: `${first("turnLeft")} ${first("turnRight")}`, does: "Turn" }];
 }

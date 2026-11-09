@@ -75,7 +75,7 @@
 //   POST /api/repos/:o/:r/checks/:id/cancel    stop one of ours that's queued or running (the crew)
 
 import { httpUrl, listOf, parseJson } from "./util.ts";
-import { json, need, readBody, type Env } from "./env.ts";
+import { fail, json, need, readBody, type Env } from "./env.ts";
 import { arr, bool, obj, oneOf, opt, str, type Of } from "@rustybuns/util/guard";
 import { repoRow } from "./repos.ts";
 import { githubToken, parseRepo } from "./github.ts";
@@ -83,6 +83,7 @@ import { emit } from "./hooks.ts";
 import { LOCKFILES as LOCKFILE_NAMES } from "./lockfiles.ts";
 import { NEED_LABEL, imageCaps, scanNeeds, needsText, type Need } from "./needs.ts";
 import type { RepoRef } from "./repos";
+import type { Lane, LaneCall } from "./pipeline.ts";
 
 export const RUNNERS = ["desktop", "container", "github", "external"] as const;
 export const STATUSES = ["queued", "running", "passed", "failed", "cancelled"] as const;
@@ -251,12 +252,13 @@ export async function updateRun(env: Env, run: CheckRun, u: { status?: Status; l
 
 /**
  * Something new to check on `ref` at `sha` (a commit to main, a branch pushed or
- * pulled): queue our own checks if they run here, and watch GitHub's if they run there.
+ * pulled): queue our own checks if they run here, and watch GitHub's if they run there. `files`, when
+ * known, are what the change touched: a pipeline's lanes call on them, and on main their counts move on.
  */
-export async function startChecks(env: Env, owner: string, repo: string, ref: string, sha: string, by: string) {
+export async function startChecks(env: Env, owner: string, repo: string, ref: string, sha: string, by: string, files?: string[]) {
   try {
     const s = await checkSettings(env, owner, repo);
-    if (s.here) await queueHere(env, owner, repo, ref, sha, by, s.where === "github" ? "GitHub is down, so this runs here instead. GitHub's checks run when the mirror catches up.\n" : "");
+    if (s.here) await queueHere(env, owner, repo, ref, sha, by, s.where === "github" ? "GitHub is down, so this runs here instead. GitHub's checks run when the mirror catches up.\n" : "", false, undefined, files && { files });
     if ((s.where === "github" || s.where === "both") && s.github) await watchGithub(env, owner, repo, ref, sha);
   } catch {
     // Checks never get in the way of what happened.
@@ -269,6 +271,20 @@ export async function upstreamMoved(env: Env, owner: string, repo: string, ref: 
     const s = await checkSettings(env, owner, repo);
     if ((s.where === "github" || s.where === "both") && s.github) await watchGithub(env, owner, repo, ref, sha);
   } catch {}
+}
+
+/**
+ * Cut a release at main's `sha` (the pipeline's Release button, or a version tag made here, `tag`): every often and
+ * release lane runs and every bus leaves, whatever the counts, and they all start again at 0 (pipeline-lanes.ts).
+ * Null when it can't: checks don't run here, or the repo has no pipeline file (its one lane already runs every change).
+ */
+export async function cutRelease(env: Env, owner: string, repo: string, sha: string, by: string, tag?: string) {
+  const s = await checkSettings(env, owner, repo);
+  if (!s.here) return null;
+  const calls = await (await import("./pipeline-lanes.ts")).laneCalls(env, owner, repo, [], true);
+  if (!calls) return null;
+  await queueHere(env, owner, repo, "main", sha, by, `@${by} cut a release${tag ? ` (tag ${tag})` : ""}\n`, false, undefined, { files: [], release: true });
+  return calls.map((l) => l.call);
 }
 
 /** The mirror took upstream's commits onto `ref`, now at `sha` here: run our own checks on them, when checks run here. */
@@ -405,6 +421,29 @@ export async function planChecks(env: Env, owner: string, repo: string, ref: str
 }
 
 /**
+ * What a change touching `paths` queues on `ref`. With a pipeline file on main (pipeline-lanes.ts), only the lanes whose
+ * call is run or depart: a lane's own command as a check of its name, or, with none, the repo's own checks (planChecks);
+ * the required checks with a command go too, since a merge waits on them. Without a file, unknown paths (a Run on main,
+ * upstream's commits) or pinned, planChecks as it is. `calls` is each lane's call, for the note on a run and the counts.
+ * A release (cutRelease) is no one change: every often and release lane runs and every bus leaves, each over everything.
+ */
+export async function planLanes(env: Env, owner: string, repo: string, ref: string, s: { required: Required[]; pinned: boolean }, paths: string[] | null, release = false):
+  Promise<{ checks: { name: string; command?: string; why?: string }[]; calls: LaneCall[] | null; lanes: { lane: Lane; call: LaneCall }[] | null }> {
+  const lanes = (paths || release) && !s.pinned ? await (await import("./pipeline-lanes.ts")).laneCalls(env, owner, repo, paths ?? [], release) : null;
+  if (release) paths = null;
+  if (!lanes) return { checks: await planChecks(env, owner, repo, ref, s.required, paths, s.pinned), calls: null, lanes: null };
+  const go = lanes.filter(({ call }) => call.go === "run" || call.go === "depart");
+  const checks = new Map<string, { name: string; command?: string; why?: string }>();
+  for (const r of requiredFor(s.required.filter((r) => r.command && r.name !== "*"), paths)) checks.set(r.name, { name: r.name, command: r.command });
+  for (const { lane, call } of go) {
+    const why = `lane ${lane.name} (${lane.cadence}): ${call.why}\n`;
+    if (lane.run) { if (!checks.has(lane.name)) checks.set(lane.name, { name: lane.name, command: lane.run, why }); }
+    else if (!call.ai) for (const c of await planChecks(env, owner, repo, ref, s.required, paths)) if (!checks.has(c.name)) checks.set(c.name, { ...c, why });
+  }
+  return { checks: [...checks.values()], calls: lanes.map((l) => l.call), lanes };
+}
+
+/**
  * Our own checks on `ref` at `sha`, on this machine or in a container, for a runner to
  * claim: what planChecks says the ref's changes call for. One that's queued or running
  * already isn't queued again; after an edit, one queued at all on the ref isn't. A new
@@ -428,7 +467,7 @@ export async function handToDesktop(env: Env, run: CheckRun, tool: Need) {
 export const RUN_ON = ["desktop", "hosted"] as const;
 export type RunOn = (typeof RUN_ON)[number];
 
-async function queueHere(env: Env, owner: string, repo: string, ref: string, sha: string, by: string, why = "", edit = false, on?: RunOn) {
+async function queueHere(env: Env, owner: string, repo: string, ref: string, sha: string, by: string, why = "", edit = false, on?: RunOn, change?: { files: string[]; release?: boolean }) {
   const runner: Runner = on === "desktop" ? "desktop" : on === "hosted" || env.CI_RUNNER || typeof Bun === "undefined" ? "container" : "desktop";
   const s = await checkSettings(env, owner, repo);
   if (!edit) {
@@ -436,7 +475,10 @@ async function queueHere(env: Env, owner: string, repo: string, ref: string, sha
     const { results } = await env.DB.prepare("SELECT * FROM check_runs WHERE owner = ? AND repo = ? AND ref = ? AND (sha != ? OR ?) AND runner IN ('desktop', 'container') AND status = 'queued'").bind(owner, repo, ref, sha, on ? 1 : 0).all<CheckRun>();
     for (const old of results) await updateRun(env, old, { status: "cancelled", append: old.sha === sha ? `\n@${by} sent it ${on === "hosted" ? "to the hosted container" : "to the desktop or a runner of their own"} instead: cancelled\n` : `\n${sha.slice(0, 12)} came along before a runner did: cancelled\n` }, by);
   }
-  for (const { name, command } of await planChecks(env, owner, repo, ref, s.required, await touched(env, owner, repo, ref), s.pinned)) {
+  const { checks, calls, lanes } = await planLanes(env, owner, repo, ref, s, change?.files ?? await touched(env, owner, repo, ref), change?.release);
+  // A change that landed on main (or a release cut) moves each lane's count on; a branch's checks only read them (pipeline-lanes.ts).
+  if (calls && ref === "main" && change) await (await import("./pipeline-lanes.ts")).keepCounts(env, owner, repo, calls);
+  for (const { name, command, why: lane } of checks) {
     const live = edit
       ? await env.DB.prepare("SELECT 1 FROM check_runs WHERE owner = ? AND repo = ? AND ref = ? AND name = ? AND runner IN ('desktop', 'container') AND status = 'queued'").bind(owner, repo, ref, name).first()
       : await env.DB.prepare("SELECT 1 FROM check_runs WHERE owner = ? AND repo = ? AND ref = ? AND sha = ? AND name = ? AND runner != 'github' AND status IN ('queued', 'running')").bind(owner, repo, ref, sha, name).first();
@@ -446,9 +488,11 @@ async function queueHere(env: Env, owner: string, repo: string, ref: string, sha
     const run = await recordRun(env, { owner, repo, ref, sha, name, runner: needs.length ? "desktop" : runner, command }, by);
     const note = needs.length ? `${needsText(needs)} Needs desktop: ${HANDED} or a runner of your own (scripts/runner.ts).\n` : "";
     const pusher = by !== owner && by !== "upstream" && by !== "codesplitters" ? PUSHED(by) : "";
-    if (pusher || why || note) await env.DB.prepare("UPDATE check_runs SET log = ? WHERE id = ?").bind(pusher + why + note, run.id).run();
+    if (pusher || why || lane || note) await env.DB.prepare("UPDATE check_runs SET log = ? WHERE id = ?").bind(pusher + why + (lane ?? "") + note, run.id).run();
   }
   await (await import("./ci-runner.ts")).kick(env, owner, repo).catch(() => null);
+  // A bus with no command that took this change's seat keeps it; one that leaves runs its AI pass, once per bus (pipeline-bus.ts).
+  if (lanes && ref === "main" && change) await (await import("./pipeline-bus.ts")).busRide(env, owner, repo, sha, lanes, by, change.release);
 }
 
 /** The open branches `name` waits for to merge first: the merge plan's `after` (branches.ts) still open. */
@@ -760,7 +804,7 @@ interface Access { read: boolean; write: boolean }
 export async function checkRoutes(req: Request, env: Env, p: string[], url: URL, owner: string, repo: string, user: string | null, a: Access): Promise<Response | null> {
   if (p[4] !== "checks") return null;
   const body = <K extends string = never>() => readBody<K>(req);
-  const crew = () => a.write ? null : json({ error: "no write access" }, 403);
+  const crew = () => a.write ? null : fail("NoWriteAccess", "no write access");
 
   if (!p[5] && req.method === "GET") {
     const ref = url.searchParams.get("ref") || "main";
@@ -773,7 +817,7 @@ export async function checkRoutes(req: Request, env: Env, p: string[], url: URL,
     const b = need(await body(), obj({ ref: str(), sha: str(), name: str(100), runner: opt(oneOf(RUNNERS)), status: opt(oneOf(STATUSES)), url: text }));
     if (b instanceof Response) return b;
     const { status } = b;
-    if (status && status !== "queued" && user !== owner) return json({ error: "only a runner says how a check went: record it queued for one to claim, or report through a CI token" }, 403);
+    if (status && status !== "queued" && user !== owner) return fail("RunnerOnly", "only a runner says how a check went: record it queued for one to claim, or report through a CI token");
     const run = await recordRun(env, { owner, repo, ref: b.ref, sha: b.sha, name: b.name, runner: b.runner ?? "desktop", status, url: b.url, runner_label: `by hand: @${user}` }, user!);
     await env.DB.prepare("UPDATE check_runs SET log = ? WHERE id = ?").bind(HAND(user!), run.id).run();
     return json(await get(env, run.id), 201);
@@ -784,16 +828,16 @@ export async function checkRoutes(req: Request, env: Env, p: string[], url: URL,
     if (b instanceof Response) return b;
     const { ref = "main", on } = b;
     // Running here is always on offer, whatever the setting: local first, GitHub as the backup.
-    if (ref !== "main" && !(await env.DB.prepare("SELECT 1 FROM branches WHERE owner = ? AND repo = ? AND name = ? AND status = 'open'").bind(owner, repo, ref).first())) return json({ error: "no open branch " + ref }, 404);
+    if (ref !== "main" && !(await env.DB.prepare("SELECT 1 FROM branches WHERE owner = ? AND repo = ? AND name = ? AND status = 'open'").bind(owner, repo, ref).first())) return fail("NoSuchBranch", "no open branch " + ref);
     const sha = await headOf(env, owner, repo, ref);
-    if (!sha) return json({ error: "main has no commit yet" }, 409);
+    if (!sha) return fail("NoGit", "main has no commit yet");
     await queueHere(env, owner, repo, ref, sha, user!, "", false, on);
     return json(await refChecks(env, owner, repo, ref), 202);
   }
   if (p[5] === "github" && req.method === "POST") {
     const no = crew(); if (no) return no;
     const { ref } = await body<"ref">();
-    if (ref !== undefined && typeof ref !== "string") return json({ error: "ref: a branch name" }, 400);
+    if (ref !== undefined && typeof ref !== "string") return fail("BadInput", "ref: a branch name");
     const { results } = await env.DB.prepare(`SELECT ref, sha FROM check_watches WHERE owner = ? AND repo = ?${ref ? " AND ref = ?" : ""}`).bind(...[owner, repo, ...(ref ? [ref] : [])]).all<{ ref: string; sha: string }>();
     const out = [];
     for (const w of results) out.push(await importGithub(env, owner, repo, w.ref, w.sha));
@@ -808,7 +852,7 @@ export async function checkRoutes(req: Request, env: Env, p: string[], url: URL,
   }
   if (p[5] === "settings" && req.method === "GET") return json(await checkSettings(env, owner, repo));
   if (p[5] === "settings" && req.method === "PUT") {
-    if (user !== owner) return json({ error: "owner only" }, 403);
+    if (user !== owner) return fail("OwnerOnly", "owner only");
     const raw = await body<"where">();
     const b = need(raw, obj({ where: opt(oneOf(["here", "github", "both"])), required: opt(arr((v) => REQUIRED(typeof v === "string" ? { name: v } : v), 1000)), post_statuses: opt(bool()), pinned: opt(bool()), fresh_main: opt(bool()) }));
     if (b instanceof Response) return b;
@@ -824,7 +868,7 @@ export async function checkRoutes(req: Request, env: Env, p: string[], url: URL,
 
   const id = Number(p[5]);
   const run = Number.isInteger(id) && id > 0 ? await get(env, id) : null;
-  if (!run || run.owner !== owner || run.repo !== repo) return json({ error: "no such check run" }, 404);
+  if (!run || run.owner !== owner || run.repo !== repo) return fail("NoSuchCheck", "no such check run");
   if (!p[6] && req.method === "GET") {
     // On a repo with private lines what a run printed can quote them, so the log and junit are the crew's.
     const hide = !a.write && await logsAreCrews(env, owner, repo);
@@ -835,19 +879,19 @@ export async function checkRoutes(req: Request, env: Env, p: string[], url: URL,
     const b = need(await body(), obj({ status: opt(oneOf(STATUSES)), log: text, append: text, junit: text, runner_label: text, url: text }));
     if (b instanceof Response) return b;
     const { status } = b;
-    if (run.runner === "github") return json({ error: "GitHub's runs come from GitHub" }, 409);
+    if (run.runner === "github") return fail("GitHubRun", "GitHub's runs come from GitHub");
     // Its log too: rewritten by anyone, a run recorded by hand would lose the line that keeps its recorder from claiming it.
     if (user !== owner && run.claimed_by !== user && (b.status && b.status !== run.status || [b.log, b.append, b.junit, b.url].some((v) => v !== undefined)))
-      return json({ error: "only the runner that claimed it says how it went: POST .../checks/claim first" }, 403);
+      return fail("RunnerOnly", "only the runner that claimed it says how it went: POST .../checks/claim first");
     // A runner that went quiet and lost its claim stops: the run is someone else's now.
-    if (b.runner_label && b.runner_label !== run.runner_label && !DONE.has(run.status)) return json({ error: run.runner_label ? `${run.runner_label} has it now` : "it went back in the queue: no word from you in time" }, 409);
+    if (b.runner_label && b.runner_label !== run.runner_label && !DONE.has(run.status)) return fail("CheckTaken", run.runner_label ? `${run.runner_label} has it now` : "it went back in the queue: no word from you in time");
     const after = await updateRun(env, run, { status, log: b.log, append: b.append, junit: b.junit, url: b.url }, user!);
-    return after ? json(after) : json({ error: `it's ${run.status} already` }, 409);
+    return after ? json(after) : fail("CheckDone", `it's ${run.status} already`);
   }
   if (p[6] === "cancel" && req.method === "POST") {
     const no = crew(); if (no) return no;
-    if (run.runner === "github") return json({ error: `cancel it on GitHub${run.url ? `: ${run.url}` : ""}` }, 409);
-    if (DONE.has(run.status)) return json({ error: `it's ${run.status} already` }, 409);
+    if (run.runner === "github") return fail("GitHubRun", `cancel it on GitHub${run.url ? `: ${run.url}` : ""}`);
+    if (DONE.has(run.status)) return fail("CheckDone", `it's ${run.status} already`);
     return json(await updateRun(env, run, { status: "cancelled", append: `\ncancelled by ${user}\n` }, user!));
   }
   return null;

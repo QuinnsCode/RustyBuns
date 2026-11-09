@@ -13,6 +13,7 @@ import World from "../../packages/desktop/world.ts";
 import { sha256 } from "@rustybuns/util/bytes";
 import { RoomMintGate, originAllowed } from "@rustybuns/util/limits";
 import { tooOld } from "@rustybuns/util/protocol";
+import { seatDoor } from "@rustybuns/util/seats";
 import { APP, EQOSYS, MIN_PROTOCOL, REPORT_REASONS, ROOM, STORE_URL } from "../api.ts";
 import { whoIs, type Door } from "@rustybuns/util/token";
 import { Matchmaker, type DONamespace } from "./match.ts";
@@ -62,22 +63,9 @@ export default {
     }
     if (url.pathname === "/api/report") return report(req, url, env);
     if (url.pathname !== "/ws") return env.ASSETS.fetch(req);
-
-    if (req.headers.get("Upgrade")?.toLowerCase() !== "websocket") return new Response("websocket only", { status: 426 });
-    if (!originAllowed(req.headers.get("Origin"), url)) return new Response("cross-origin websocket refused", { status: 403 });
-    const room = (url.searchParams.get("room") ?? "").toUpperCase();
-    if (!ROOM.test(room)) return new Response("bad room code", { status: 400 });
-    const who = await whoIs(url, door(env));
-    if (who instanceof Response) return who;
-    const ip = req.headers.get("CF-Connecting-IP");
-    if (ip && !mintGate.allow(ip, room, Date.now())) return new Response("too many new rooms, try again in a minute", { status: 429 });
-
-    const headers = new Headers(req.headers);
-    for (const k of [...headers.keys()]) if (k.toLowerCase().startsWith("x-")) headers.delete(k);   // never a client's word
-    headers.set("X-User-Id", who.uid);
-    headers.set("X-User-Name", who.name);
-    headers.set("X-RB-Principal", "guest");
-    return env.WORLD.get(env.WORLD.idFromName(room)).fetch(new Request(req, { headers }));
+    const seat = await seatDoor(req, { door: door(env), room: ROOM, gate: mintGate });
+    if (seat instanceof Response) return seat;
+    return env.WORLD.get(env.WORLD.idFromName(seat.room)).fetch(seat.request);
   },
 };
 

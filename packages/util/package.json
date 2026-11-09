@@ -1,11 +1,65 @@
 {
   "name": "@rustybuns/util",
-  "private": true,
   "type": "module",
-  "version": "0.0.0",
-  "description": "Small helpers the apps used to copy between themselves. Plain TS; its one dependency is the house UI kit (@rustybuns/ui), whose tokens the eqosys skin reads. Not published.",
+  "version": "0.1.12",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/QuinnsCode/RustyBuns"
+  },
+  "homepage": "https://github.com/QuinnsCode/RustyBuns",
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "bun": ">=1.4.0"
+  },
+  "description": "Small helpers the Rusty Buns apps share (bytes, guards, http, limits, rooms, sockets, eqosys). Plain TS; its one dependency is the house UI kit (@rustybuns/ui), whose tokens the eqosys skin reads.",
   "main": "./src/index.ts",
   "types": "./src/index.ts",
-  "dependencies": { "@rustybuns/ui": "workspace:*" },
-  "exports": { ".": "./src/index.ts", "./avatar": "./src/avatar.ts", "./bytes": "./src/bytes.ts", "./codemode": "./src/codemode.ts", "./commands": "./src/commands.ts", "./director": "./src/director.ts", "./eqosys": "./src/eqosys.ts", "./features": "./src/features.ts", "./guard": "./src/guard.ts", "./http": "./src/http.ts", "./limits": "./src/limits.ts", "./lobby": "./src/lobby.ts", "./spaces": "./src/spaces.ts", "./matchmaker": "./src/matchmaker.ts", "./overlap": "./src/overlap.ts", "./palette": "./src/palette.ts", "./privacy": "./src/privacy.ts", "./protocol": "./src/protocol.ts", "./report": "./src/report.ts", "./quality": "./src/quality.ts", "./room": "./src/room.ts", "./skin": "./src/skin.ts", "./socket": "./src/socket.ts", "./token": "./src/token.ts", "./train": "./src/train.ts", "./visitors": "./src/visitors.ts", "./voice": "./src/voice.ts", "./wasm-shared": "./src/wasm-shared.ts" }
+  "dependencies": {
+    "@rustybuns/ui": "workspace:*"
+  },
+  "exports": {
+    ".": "./src/index.ts",
+    "./avatar": "./src/avatar.ts",
+    "./bytes": "./src/bytes.ts",
+    "./codemode": "./src/codemode.ts",
+    "./commands": "./src/commands.ts",
+    "./director": "./src/director.ts",
+    "./eqosys": "./src/eqosys.ts",
+    "./features": "./src/features.ts",
+    "./guard": "./src/guard.ts",
+    "./http": "./src/http.ts",
+    "./keys": "./src/keys.ts",
+    "./limits": "./src/limits.ts",
+    "./lobby": "./src/lobby.ts",
+    "./spaces": "./src/spaces.ts",
+    "./matchmaker": "./src/matchmaker.ts",
+    "./overlap": "./src/overlap.ts",
+    "./party-rules": "./src/party-rules.ts",
+    "./palette": "./src/palette.ts",
+    "./privacy": "./src/privacy.ts",
+    "./protocol": "./src/protocol.ts",
+    "./report": "./src/report.ts",
+    "./quality": "./src/quality.ts",
+    "./room": "./src/room.ts",
+    "./seats": "./src/seats.ts",
+    "./skin": "./src/skin.ts",
+    "./socket": "./src/socket.ts",
+    "./token": "./src/token.ts",
+    "./train": "./src/train.ts",
+    "./visitors": "./src/visitors.ts",
+    "./voice": "./src/voice.ts",
+    "./wasm-shared": "./src/wasm-shared.ts"
+  },
+  "files": [
+    "src"
+  ],
+  "keywords": [
+    "rustybuns",
+    "bun",
+    "cloudflare",
+    "workers"
+  ]
 }

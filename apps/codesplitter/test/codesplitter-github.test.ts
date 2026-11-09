@@ -187,13 +187,18 @@ describe("github", () => {
         expect(inv.status).toBe(201);
         expect(imports[2].source).toEqual({ url: "https://github.com/ana-gh/invited.git", branch: "dev", depth: 1 });
         const miss = await post(call, "ana", "/api/github/dig", { repo: "ana-gh/gone" });
-        expect([miss.status, ((await miss.json()) as any).error]).toEqual([404, expect.stringContaining("gh auth login")]);
+        const m = await miss.json() as { tag?: string; error?: string };
+        expect([miss.status, m.tag, m.error]).toEqual([404, "NotOnGitHub", expect.stringContaining("gh auth login")]);
       } finally { for (const k of ["GIT_CONFIG_COUNT", "GIT_CONFIG_KEY_0", "GIT_CONFIG_VALUE_0"]) if (was[k] === undefined) delete process.env[k]; else process.env[k] = was[k]; }
+      // Digging it again under the same name, or something that isn't a repo, comes back named too.
+      const tagOf = async (repo: string) => ((await (await post(call, "ana", "/api/github/dig", { repo })).json()) as { tag?: string }).tag;
+      expect([await tagOf("ana-gh/secret"), await tagOf("nope")]).toEqual(["RepoExists", "BadInput"]);
       // Cloudflare Artifacts imports public repos only: say so instead of failing later.
       Object.defineProperty(call.artifacts, "privateImports", { value: false });
       expect((await (await call("ana", "/api/github/repos")).json() as any).privateOk).toBe(false);
       const edge = await post(call, "ana", "/api/github/dig", { repo: "ana-gh/secret", name: "secret-2" });
-      expect([edge.status, ((await edge.json()) as any).error]).toEqual([422, expect.stringContaining("desktop app")]);
+      const g = await edge.json() as { tag?: string; error?: string };
+      expect([edge.status, g.tag, g.error]).toEqual([422, "PrivateOnGitHub", expect.stringContaining("desktop app")]);
     } finally { globalThis.fetch = real; }
   });
 });

@@ -53,6 +53,9 @@ export interface OnlineOpts {
   onLand?: (region: number, x: number, z: number, name: string) => void;
   /** The regions our save has opened: the room believes a jump (travel, a campfire) only into one of them. */
   opened?: () => readonly number[];
+  /** Where we stand this instant (the world's pose): a den or contract taken mid-frame, after a jump and before the
+   *  frame's `update`, is checked against it, not against the frame before (#3800). */
+  posed?: () => { region: number; x: number; z: number; yaw: number; lead: string; follow: readonly string[] } | null;
   /** Where /ws is (default: this page's host). */
   base?: string;
   /** Who we are when not signed in (default: this browser's uid and no name). */
@@ -62,7 +65,7 @@ export interface OnlineOpts {
 
 export class Online {
   readonly ghosts = new Map<string, Ghost>();
-  /** Our own public id in the room (its `all`), which seeds our ground tiles (world/bearer.ts); empty until seated. */
+  /** Our own public id in the room (its `all`), as friends' pages know us; empty until seated. */
   you = "";
   status: Status = "joining";
   /** Bytes sent, for the probe's bytes-per-second line. */
@@ -118,6 +121,9 @@ export class Online {
     });
   }
 
+  /** A friend's (or the room's) catch-up on the wilds: each pick and flush with its time on the world clock, then the roosts and busy dens. */
+  private told(m: Seen) { for (const p of m.picks) this.o.onLife?.("pick", p.id, 0, p.at); for (const f of m.flown) this.o.onLife?.("flush", f.id, f.h, f.at); this.o.onSeen?.({ roost: m.roost, busy: m.busy }); }
+
   private hear(m: ServerMsg, now: number) {
     if (m.t === "all") {
       this.heard = [{ age: m.age, at: now }]; this.ghosts.clear(); this.you = m.you;
@@ -125,12 +131,13 @@ export class Online {
       if (!this.landed) for (const p of m.players) this.before.add(p.id);
       for (const g of this.ghosts.values()) this.land(g);
       if (m.players.length) this.o.onCompany?.();
+      if (m.seen) this.told(m.seen); // what the room kept of the region's wilds, told by friends who may have left
     }
     else if (m.t === "hi") { this.ghosts.set(m.id, new Ghost(m.id, m.name)); this.sent = null; this.o.onCompany?.(); } // they need all of our pose
     else if (m.t === "vouch") { this.retell(); if (this.ghosts.size) this.o.onCompany?.(); return; } // the den it refused, then the contracts
     else if (m.t === "time") { this.heard.push({ age: m.age, at: now }); if (this.heard.length > 8) this.heard.shift(); return; }
     else if (m.t === "life") this.o.onLife?.(m.k, m.f, m.h);
-    else if (m.t === "seen") { for (const p of m.picks) this.o.onLife?.("pick", p.id, 0, p.at); for (const f of m.flown) this.o.onLife?.("flush", f.id, f.h, f.at); this.o.onSeen?.({ roost: m.roost, busy: m.busy }); }
+    else if (m.t === "seen") this.told(m);
     else if (m.t === "hunt") this.o.onHunt?.(m.h, m.s, this.ghosts.get(m.id)?.name ?? "");
     else if (m.t === "fought") this.o.onFought?.({ who: this.ghosts.get(m.id)?.name ?? "", c: m.c, lv: m.lv, won: m.won, bound: m.bound });
     else if (m.t === "p") {
@@ -146,12 +153,13 @@ export class Online {
     this.o.onChange?.();
   }
 
-  /** Where we are now (metres, radians), every frame: it goes out only when it changed and SEND_MS has passed. */
-  update(region: number, x: number, z: number, yaw: number, lead: string, now: number, follow: readonly string[] = []) {
+  /** Where we are now (metres, radians), every frame: it goes out only when it changed and SEND_MS has passed. `colour`
+   *  is the one our ground hums in (world/hues.ts). */
+  update(region: number, x: number, z: number, yaw: number, lead: string, now: number, follow: readonly string[] = [], colour?: number) {
     if (this.status === "off") return; // open in another tab: that one has the room
     const was = this.here;
     if (was && (was.x !== Math.round(x * 10) || was.z !== Math.round(z * 10))) this.movedAt = now;
-    this.here = quantise(region, x, z, yaw, lead, follow, now - this.movedAt < STILL_MS);
+    this.here = quantise(region, x, z, yaw, lead, follow, now - this.movedAt < STILL_MS, colour);
     // Just stopped: say so (and where) at once, out of turn, so a friend's page never coasts past where you stand.
     if (was?.m === 1 && this.here.m === 0 && this.nearby()) { this.sendPose(); return; }
     if (!this.link) this.open();
@@ -174,6 +182,7 @@ export class Online {
   /** We walked into the wild one at `den` (creature `c`, level `lv`): tell the party. */
   met(den: string, c: string, lv: number) {
     this.lastDen = { den, c, lv, at: performance.now(), n: 0 };
+    this.refresh();
     // Where we stand first (alone in a region we may not have said for a while): the room checks the den against it.
     if (this.sendPose()) this.link?.send({ e: "den", den, c, lv, ago: 0, n: 0 });
   }
@@ -186,7 +195,18 @@ export class Online {
    *  drop (the room forgot it), or when the room trusts where we stand again (it refused it meanwhile). */
   private retell() {
     const d = this.lastDen, ago = d ? performance.now() - d.at : Infinity;
+    this.refresh();
     if (d && ago < AGO_MS && this.sendPose()) this.link?.send({ e: "den", den: d.den, c: d.c, lv: d.lv, ago: Math.max(1, Math.round(ago)), n: d.n });
+  }
+  /** Where we stand this instant, from `posed`, before a den or contract goes out, so a jump this very frame is the
+   *  pose the room checks it against; and the regions we have opened, first, so a jump into one just opened is believed. */
+  private refresh() {
+    const p = this.o.posed?.(), now = performance.now();
+    if (!p || this.status === "off") return;
+    const was = this.here;
+    if (was && (was.x !== Math.round(p.x * 10) || was.z !== Math.round(p.z * 10))) this.movedAt = now;
+    this.here = quantise(p.region, p.x, p.z, p.yaw, p.lead, p.follow, now - this.movedAt < STILL_MS);
+    this.claim();
   }
   /** Our pose now, out of turn, if it changed: true when the room has it. */
   private sendPose(): boolean {
@@ -222,7 +242,7 @@ export class Online {
     this.link?.send({ e: "life", k, id, h: Math.round(h * 1000) / 1000 });
   }
   /** We took contract `h` (`s` 0) or read its `s`-th sign: the party can follow. */
-  hunt(h: string, s: number) { if (this.sendPose()) this.link?.send({ e: "hunt", h, s }); } // where we stand first: the room checks the board
+  hunt(h: string, s: number) { this.refresh(); if (this.sendPose()) this.link?.send({ e: "hunt", h, s }); } // where we stand first: the room checks the board
   /** Our fight at the den we last walked into ended after `s` seconds. */
   fought(c: string, lv: number, won: boolean, bound: boolean, s: number) {
     if (this.lastDen) this.lastDen.n++;
@@ -230,6 +250,9 @@ export class Online {
   }
 
   close() { clearInterval(this.pinger); this.link?.close(); this.link = null; this.ghosts.clear(); this.status = "off"; }
+
+  /** The colour each other player's ground hums in, as they last said (world/hues.ts). */
+  colours(): { id: string; colour?: number }[] { return [...this.ghosts.values()].map((g) => ({ id: g.id, colour: g.pose.c })); }
 
   /** The others and the region each is in, for the chip. */
   where(): { name: string; region: number }[] { return [...this.ghosts.values()].flatMap((g) => (g.pose.r === undefined ? [] : [{ name: g.name, region: g.pose.r }])); }

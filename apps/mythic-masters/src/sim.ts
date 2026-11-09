@@ -636,6 +636,20 @@ export function footprint(a: Area): [number, number][] {
   }
 }
 
+/** Does fighter `t` stand anywhere in `a`'s footprint, its whole reach on the ground (not just where its front is this
+ * frame)? What a bot reads off a `warning` to know it has to move. */
+export function under(a: Area, t: Fighter): boolean {
+  const r = t.b.radius, dx = t.pos.x - a.at.x, dz = t.pos.z - a.at.z;
+  const h = hypot(a.dir.x, a.dir.z) || 1, ux = a.dir.x / h, uz = a.dir.z / h;
+  const along = dx * ux + dz * uz, side = Math.abs(-dx * uz + dz * ux), dist = hypot(dx, dz);
+  switch (a.d.shape) {
+    case "column": return along > -r && along < a.d.length + r && side < a.d.width / 2 + r;
+    case "wall": return along > -r && along < a.d.travel + a.d.depth + r && side < a.d.width / 2 + r;
+    case "cone": return along > 0 && dist < a.d.length + r && atan2(side, along) - atan2(r, Math.max(dist, 0.01)) < (a.d.angle * Math.PI) / 360;
+    case "blast": case "nova": return dist < a.d.radius + r;
+  }
+}
+
 /** Is fighter `t` inside live shape `a` this frame? Its body counts: a capsule `b.radius` wide and `b.height` tall. */
 export function covers(a: Area, t: Fighter): boolean {
   const r = t.b.radius, dx = t.pos.x - a.at.x, dz = t.pos.z - a.at.z;

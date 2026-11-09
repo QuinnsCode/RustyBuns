@@ -577,8 +577,9 @@ export function desktopEntry(c: RustyBunsConfig, host: HostKind = "desktop"): st
       case "worker_loader": bind.push(`  ${name}: local.workerLoader(${JSON.stringify(name)}),`); break;
       case "analytics_engine": bind.push(`  ${name}: local.analyticsEngine(${JSON.stringify(b.dataset ?? name)}),`); break;
       case "container": bind.push(`  // ${name}: Cloudflare Container (${b.className}) has no local twin; the app runs without it`); break;
+      case "service": bind.push(`  // ${name}: the ${b.app} app's Worker has no local twin here; the app runs without it`); break;
       case "durable_object":
-        if (b.scriptName) bind.push(`  // ${name}: DO in another script (${b.scriptName}) has no local twin`);
+        if (b.scriptName || b.app) bind.push(`  // ${name}: DO in another script (${b.scriptName ?? b.app}) has no local twin`);
         else dos.push({ name, className: b.className });
         break;
     }

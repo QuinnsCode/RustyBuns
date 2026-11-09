@@ -60,8 +60,17 @@ import { describeBlast, load, rank } from "./blast.ts";
 import { debtLines, hold, hurtLines, insight, keep, kept, packagesChanged, report, rows, slowChecks, triage, waitLines } from "./ester.ts";
 import { fromJunit, hot, recall, recallLines, remember, resolve as resolveTest, withJunit } from "./ester-memory.ts";
 import { heal, layout } from "../layout.ts";
+import { check } from "@rustybuns/util/guard";
+import { PIPELINE_FILE, Pipeline } from "../src/pipeline.ts";
 import type { Lane, LaneStep, Line } from "../src/mervin-replay.ts";
 import { sandbox, shadow, testRuns, testTree, writeTree } from "./shadow.ts";
+
+/** The repo's pipeline file at `top`, for Ester's release-only question, or null when it has none (or one that isn't a pipeline). */
+function pipelineAt(top: string): Pipeline | null {
+  const file = join(top, PIPELINE_FILE);
+  if (!existsSync(file)) return null;
+  try { return check(Pipeline, JSON.parse(readFileSync(file, "utf8"))); } catch { return null; }
+}
 
 export type Tier = "certain" | "agree" | "mervin" | "differ" | "card";
 /** The generated file: its Layout table is rebuilt from the merged tree (`bun run layout`), not kept as text-merged (#1540). */
@@ -580,8 +589,8 @@ if (import.meta.main) {
         if (hurt.length) console.log(hurt.join("\n"));
         const owed = debtLines(kept(file), main);
         if (owed.length) console.log(owed.join("\n"));
-        const ask = insight(kept(file));
-        if (ask) console.log(ask);
+        const ask = insight(kept(file), pipelineAt(top));
+        if (ask.length) console.log(ask.join("\n"));
         const waits = waitLines(board.stages);
         if (waits.length) console.log(waits.join("\n"));
         if (hold(verdicts).length) console.log(`Ester says hold: ${hold(verdicts).map((n) => `#${n}`).join(", ")}`);

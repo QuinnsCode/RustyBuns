@@ -1,11 +1,10 @@
 import { env } from "cloudflare:workers";
 import { except, render, route } from "rwsdk/router";
 import { defineApp } from "rwsdk/worker";
-import { AppPage, Deleted, DeletePage, ErrorPage, Home, Privacy, tabOf } from "./app/pages.tsx";
+import { AppPage, Deleted, DeletePage, ErrorPage, Home, Privacy, SpacesPage, tabOf } from "./app/pages.tsx";
 import { Login } from "./app/Login.tsx";
 import { phaseAt } from "./app/Sky.tsx";
 import { THEME_SCRIPT } from "./app/Theme.tsx";
-import { CAROUSEL_SCRIPT } from "./app/Carousel.tsx";
 import { appOf } from "./apps.ts";
 import { Document } from "./app/Document.tsx";
 import { authOn, isAdmin, meOf, onApple, providers } from "./auth.ts";
@@ -13,6 +12,7 @@ import { askOf, atHome, handle } from "./handle.ts";
 import { edge } from "./codemode.ts";
 import { bridgeCall } from "./tools.ts";
 import { hubAsk } from "./qollab/hub.ts";
+import { sideOf } from "./qollab/side.ts";
 import { link, members } from "./members.ts";
 import { countsOf, unlocksOf } from "./achievements.ts";
 import { newKey } from "@rustybuns/util/token";
@@ -27,8 +27,10 @@ import spacesSql from "../migrations/0007_spaces.sql?raw";
 import privacySql from "../migrations/0008_privacy.sql?raw";
 import visitsSql from "../migrations/0009_visits.sql?raw";
 import studiosSql from "../migrations/20261106000000_studios.sql?raw";
-import { house } from "./studios.ts";
+import deploysSql from "../migrations/20261107000000_deploys.sql?raw";
+import { house, studiosOf } from "./studios.ts";
 import { markStaff, tally, visitorsOf } from "./visitors.ts";
+import { loadOf } from "./scale.ts";
 import { regionAt } from "@rustybuns/util/privacy";
 
 // vite dev gives the Worker the production BETTER_AUTH_URL and no secret: on the dev server the request's own
@@ -48,17 +50,17 @@ const e = (req?: Request): AppEnv => {
 // One statement at a time, so a column added on an earlier run ("duplicate column") doesn't stop the rest.
 let migrated: Promise<unknown> | undefined;
 const devMigrate = (db: AppEnv["DB"]) => (migrated ??= (async () => {
-  for (const q of [initSql, oauthSql, reportsSql, savesSql, seatsSql, unlocksSql, spacesSql, privacySql, visitsSql, studiosSql].join("\n").split("\n").filter((l) => !l.trimStart().startsWith("--")).join("\n").split(/;\s*\n/)
+  for (const q of [initSql, oauthSql, reportsSql, savesSql, seatsSql, unlocksSql, spacesSql, privacySql, visitsSql, studiosSql, deploysSql].join("\n").split("\n").filter((l) => !l.trimStart().startsWith("--")).join("\n").split(/;\s*\n/)
     .map((q) => q.trim().replace(/;$/, "")).filter(Boolean)
     .map((q) => q.replace(/^create (table|index|unique index) /i, "create $1 if not exists ")))
     await db.prepare(q).run().catch((err: unknown) => { if (!/duplicate column/i.test(String(err))) throw err; });
 })());
 
-// The sky switch's and the rows' carousel inline scripts are allowed by their hashes, and the commands' module script (app/commands.client.ts,
+// The sky switch's inline script is allowed by its hash, and the commands' module script (app/commands.client.ts,
 // with the palette and the WebMCP tools) by the nonce rwsdk puts on it, so the CSP still lets nothing else run.
 let scriptSrc: Promise<string> | undefined;
 const hashOf = (text: string) => crypto.subtle.digest("SHA-256", new TextEncoder().encode(text)).then((d) => `'sha256-${btoa(String.fromCharCode(...new Uint8Array(d)))}'`);
-const themeHash = () => (scriptSrc ??= Promise.all([THEME_SCRIPT, CAROUSEL_SCRIPT].map(hashOf)).then((h) => h.join(" ")));
+const themeHash = () => (scriptSrc ??= hashOf(THEME_SCRIPT));
 
 const see = (to: string) => new Response(null, { status: 302, headers: { location: to } });
 
@@ -88,18 +90,27 @@ const app = defineApp([
       if (!authOn(conf)) { response.status = 503; return <ErrorPage status={503} />; }
       const me = await meOf(request, conf);
       if (!me) return see("/login");
-      // Everything the page shows, read at once.
-      const [, [mine], hub, unlocks, everyone] = await Promise.all([
+      const tab = tabOf(new URL(request.url).searchParams.get("tab"));
+      // Everything the page shows, read at once. Your spaces and party sit beside the library alone.
+      const [, [mine], hub, unlocks, everyone, , side] = await Promise.all([
         link(conf, me.id, null, regionAt(request)), members(conf, me.id), conf.HUB ? hubAsk(conf.HUB, atHome(me), { op: "state" }) : null,
         unlocksOf(conf, me.id), isAdmin(me, conf) ? members(conf) : null, isAdmin(me, conf) ? house(conf, me.id) : null,
+        tab === "library" ? sideOf(conf, me.id).catch(() => null) : null,
       ]);
       const shown = hub && !("error" in hub) ? hub : null;
-      const tab = tabOf(new URL(request.url).searchParams.get("tab"));
       // The super admin's own visits stay out of the counts; the Visitors tab is theirs alone.
-      const [counts, visitors] = await Promise.all([countsOf(conf, shown?.friends.map((f) => f.id) ?? []),
-        everyone ? markStaff(conf, request).then(() => tab === "visitors" ? visitorsOf(conf, Number(new URL(request.url).searchParams.get("days")) || 7) : null) : null]);
-      return <Home visitors={visitors} counts={counts} t0={phaseAt(new URL(request.url).searchParams.get("at"))} me={me} mine={mine} hub={shown} everyone={everyone} unlocks={unlocks}
-        error={new URL(request.url).searchParams.get("e") ?? undefined} tab={tab} />;
+      const [counts, visitors, studios] = await Promise.all([countsOf(conf, shown?.friends.map((f) => f.id) ?? []),
+        everyone ? markStaff(conf, request).then(() => tab === "visitors" ? visitorsOf(conf, Number(new URL(request.url).searchParams.get("days")) || 7) : null) : null,
+        tab === "studio" ? studiosOf(conf, me.id) : null]);
+      return <Home visitors={visitors} counts={counts} t0={phaseAt(new URL(request.url).searchParams.get("at"))} me={me} mine={mine} hub={shown} side={side} everyone={everyone} unlocks={unlocks}
+        error={new URL(request.url).searchParams.get("e") ?? undefined} tab={tab} studios={studios}
+        scale={everyone && tab === "scale" ? loadOf(new URL(request.url).searchParams) : null} />;
+    }),
+    route("/spaces", async ({ request, response }) => {
+      const conf = e(request);
+      if (!authOn(conf)) { response.status = 503; return <ErrorPage status={503} />; }
+      if (!await meOf(request, conf)) return see("/login");
+      return <SpacesPage t0={phaseAt(new URL(request.url).searchParams.get("at"))} />;
     }),
     route("/app/:id", async ({ request, params, response }) => {
       const conf = e(request);
@@ -133,10 +144,8 @@ const app = defineApp([
   ]),
 ]);
 
-export { Hub } from "./qollab/hub.ts";
-export { Party } from "./qollab/party.ts";
+// Hub, Party and Space live in Qollab's Worker (apps/qollab, #3816); this one binds them there. The Vault stays: privacy is eqosys's.
 export { Vault } from "./vault.ts";
-export { Space } from "./qollab/space.ts";
 // The EQ binding of an eq_execute program (codemode.ts): a stub of this class, made for the caller, runs each tool call as them.
 const cf = await import("cloudflare:workers").then((m) => m as unknown as { WorkerEntrypoint: new (ctx: unknown, env: unknown) => { env: unknown; ctx: { props: unknown } }; exports: Record<string, ((o: { props: unknown }) => unknown) | undefined> });
 export class EQBridge extends cf.WorkerEntrypoint {

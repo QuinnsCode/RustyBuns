@@ -444,7 +444,7 @@ export function serve<Env>(opts: ServeOptions<Env> = {}): BunShell<Env> {
           b.toBrowser = (d) => { ws.send(d as any); };
           b.closeBrowser = (code, reason) => ws.close(code, reason);
           for (const d of b.queue.splice(0)) ws.send(d as any);
-          if (b.readyState === 3) ws.close(1000, "closed before attach");
+          if (b.readyState === 3) ws.close(...(b.closedWith ?? [1000, "closed before attach"]));
           return;
         }
         wsRoutes.get(ws.data.path)?.open?.(w);

@@ -58,11 +58,23 @@ export function reactionOf(o: Outcome, j: Journey | null): { ask: string; signed
       if (o.foe === "keeper") return { ask: `A keeper is not an item. ${demandOf(j)}`, signed: true };
       return { ask: "Noted. Not entered.", signed: false };
     case "down":
-      if (o.deadly) return { ask: "I said bring it. I did not say go and lie down near it.", signed: false };
-      if (o.next) return { ask: "Get up. Send the next one.", signed: true };
-      return { ask: "All of them, down. The ledger is patient. I am less so.", signed: false };
+      // plain words on a loss: what happened and what to do next (the owner adds the Book's flair on top)
+      if (o.deadly) return { ask: "You lost. Heal up and try again.", signed: false };
+      if (o.next) return { ask: "This one can't fight. Send in the next.", signed: false };
+      return { ask: "No creatures left to fight. Back to the last stone.", signed: false };
     case "versus":
       return { ask: "Practice. I keep no accounts of practice.", signed: false };
   }
 }
 const RECEIPTS = ["", " Late.", " Smaller than described.", " Wipe its feet.", "", " About time."];
+
+/** The book's line on the bestiary deck: it wants the card on top, the first in the deck's order it does not have,
+ * by name (the deck prints every name anyway). With every card bound it only keeps them in order. */
+export function deckDemandOf(j: Journey | null, roster: readonly Creature[] = ROSTER): { ask: string; signed: boolean } {
+  if (!j) return { ask: `Item 1: the ${roster[0]?.name ?? "first one"}, top of this deck. Then the rest, in order.`, signed: true };
+  const owned = new Set([...j.party, ...j.journal].map((m) => m.id)), top = roster.find((c) => !owned.has(c.id));
+  if (!top) return { ask: "Every card in this deck is mine. Keep them in order.", signed: false };
+  const item = owned.size + 1;
+  if (j.seen.includes(top.id)) return { ask: `Item ${item}: the ${top.name}, top of my deck. You have seen it. Bring it.`, signed: true };
+  return { ask: `Item ${item}: the ${top.name}, top of my deck. Go and find it.`, signed: true };
+}

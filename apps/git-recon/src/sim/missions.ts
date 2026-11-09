@@ -16,6 +16,7 @@ export const MISSIONS: Record<string, Mission> = {
   "el-capitan": { kind: "carry" },
   "half-dome": { kind: "defend", seconds: 150, wave: 18 },
   "glacier-point": { kind: "clear" },
+  "front-room": { kind: "clear" },
 };
 
 export const missionFor = (levelId: string): Mission => MISSIONS[levelId] ?? { kind: "clear" };

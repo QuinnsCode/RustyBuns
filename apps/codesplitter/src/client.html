@@ -956,6 +956,12 @@
   .check { font-size: 12.5px; color: var(--muted); min-height: 19px; margin: 0; }
   .check.ok::before { content: "● "; color: var(--accent-ink); } .check.no { color: var(--del-fg); }
   .formmsg { font-size: 12.5px; color: var(--del-fg); margin: 0; min-height: 0; }
+  /* Keys (#3793): a command a row, its key (press it to change) and a clear. */
+  .keys-g { display: grid; gap: 2px; } .keys-g > b { font-size: 12px; font-weight: 600; margin-bottom: 4px; }
+  .keyrow { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--border); font-size: 13.5px; }
+  .keyrow > span { flex: 1; min-width: 0; display: flex; gap: 8px; align-items: center; } .keyrow > span svg { flex: none; color: var(--muted); }
+  .keyrow .keycap { font: 600 12.5px var(--mono); min-width: 34px; justify-content: center; } .keyrow .rec { border-color: var(--accent); color: var(--accent); }
+  .formmsg.ok { color: var(--muted); }
   .small { font-size: 12.5px; }
   .rule { display: flex; align-items: center; gap: 6px; padding: 5px 0; border-top: 1px solid var(--border); font-size: 13px; color: var(--faint); }
   .rule:first-of-type { border-top: 0; }
@@ -1183,6 +1189,7 @@
   @media (max-width: 480px) {
     .top { gap: 6px; } #who { gap: 2px; } .top .btn.ghost { padding: 7px 6px 6px; } .brand { font-size: 0; gap: 0; }
     .jump { flex: none; padding: 6px 7px; } .jump kbd { display: none; } #topplay { font-size: 0; gap: 0; }
+    #keys-btn { display: none; } /* a phone has no keyboard to bind; ⌘K still has Keys… */
   }
 </style>
 </head>
@@ -1196,6 +1203,7 @@
   </a>
   <button class="jump" id="jump" type="button"><i data-lucide="search"></i><span>Search or run a command</span><kbd>⌘K</kbd></button>
   <span class="grow"></span>
+  <button class="btn ghost" id="keys-btn" type="button" title="Keys" aria-label="Keys"><i data-lucide="keyboard"></i></button>
   <button class="btn ghost" id="theme-toggle" type="button" title="light or dark"><i data-lucide="moon"></i></button>
   <a class="btn ghost" id="topplay" href="/play.html#l/mitt" title="the game"><i data-lucide="gamepad-2"></i>Play</a>
   <span id="who"></span>
@@ -1489,7 +1497,8 @@ async function wireAudit(el, path, showRepo) {
 }
 const app = $("#app");
 let socket = null;
-let agentTimer = null;
+// The run cards' thread sockets on this page (watchRuns), closed when the page goes.
+let runWatch = null;
 // What the page is showing, so the palette can offer what makes sense here.
 let ctx = {};
 // The open file's picker, for the palette and agents: set by the file page, null elsewhere.
@@ -3213,6 +3222,47 @@ function drawRuns(el, rs, { owner, repo, file, scope = {}, lines, refresh, empty
     refresh();
   };
 }
+/**
+ * Run cards that keep themselves current (#3737): each running (or waiting) run's thread socket (`?watch=1`: no presence,
+ * no backlog) pushes its state (`{t: "run"}`) and every log line (an event message), so no page asks GET .../agents while
+ * a run goes. `draw(rs)` redraws the cards; a run ending, its batch landing or a socket coming back calls `reread()` once,
+ * for the result. `watch(rs)` takes the list after each read; `close()` drops every socket.
+ */
+function watchRuns(owner, repo, draw, reread) {
+  let cur = [], shut = false;
+  const open = new Map(), io = import("/page-socket.js");
+  const heard = (m) => {
+    if (m.t === "run") {
+      const x = cur.find((r) => r.id === m.run.id);
+      // A new run in the thread, an ending, or a batch that landed or went: read the list for what it says now.
+      if (!x || m.run.status !== x.status || !!m.run.pending !== !!x.pending) reread();
+    } else if (m.t === "msg" && m.message.kind === "event" && m.message.run) {
+      const x = cur.find((r) => r.id === m.message.run && r.status === "running");
+      if (!x) return;
+      x.log = [...x.log, m.message.text].slice(-20);
+      draw(cur);
+    }
+  };
+  const watch = async (rs) => {
+    cur = rs;
+    const going = new Set(rs.filter((x) => x.status === "running" || x.pending).map((x) => x.thread ?? x.id));
+    for (const [t, sock] of open) if (!going.has(t)) { sock.close(); open.delete(t); }
+    const { liveSocket } = await io;
+    if (shut) return;
+    for (const t of going) {
+      if (open.has(t)) continue;
+      open.set(t, liveSocket({
+        open: () => new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/api/repos/${owner}/${repo}/agents/${t}/thread/ws?watch=1`),
+        onMessage: (data) => { let m; try { m = JSON.parse(data); } catch { return; } heard(m); },
+        onNet: () => {},
+        // Back after a drop: what was said meanwhile went to nobody.
+        resync: reread,
+      }));
+    }
+  };
+  runWatch?.close();
+  return runWatch = { watch, close: () => { shut = true; for (const sock of open.values()) sock.close(); open.clear(); } };
+}
 const readmeOf = (tree) => tree.entries.find((e) => e.type === "file" && /^readme(\.|$)/i.test(e.name)) ?? tree.entries.find((e) => e.type === "file");
 function table(tree, href) {
   if (!tree.entries.length) return '<div class="body muted">Nothing unearthed yet.</div>';
@@ -4099,14 +4149,17 @@ const views = {
       pill(say[0], say[1], `<b>Mirrored</b> ${esc(say[2])}`, `${m.url} ${m.branch}${m.syncedAt ? ` · checked ${ago(m.syncedAt)}` : ""}${m.primary === "here" ? " · this copy leads" : " · upstream leads"}`, jump("mirror"));
     } else if (g.dug) pill("ok", "shovel", "<b>Dug up</b> from GitHub", "Dug from GitHub, not mirrored: it listens for new commits", jump("listen"));
     else pill("ok", "git-fork", "Not mirrored", "This repo's git lives here only");
+    // This copy leads (#2954): one pill from GitHub's side, "GitHub is behind by 3", in place of to push / to pull.
+    const lag = m?.primary === "here" && !m.pullOnly ? m.upstream : null;
+    if (lag) pill(lag.behind || lag.ahead || m.state !== "ok" ? "warn" : "ok", "cloud", esc(lag.line), `${lag.says}. This copy leads; ${m.url} is its mirror${m.syncedAt ? `, checked ${ago(m.syncedAt)}` : ""}. Sync now sends and takes what's waiting.`, jump("mirror"));
     // Pushing out?
     if (m?.pullOnly) pill("ok", "lock", "Pull-only", "Syncs hear from upstream and nothing goes back up", jump("mirror"));
-    else if (m) pill(m.ahead ? "warn" : "ok", "arrow-up", m.ahead ? `<b>${n(m.ahead, "commit")}</b> to push` : "Nothing to push", m.ahead ? "Commits here that upstream doesn't have yet. Sync now sends them." : "Upstream has everything committed here", jump("mirror"));
+    else if (m && !lag) pill(m.ahead ? "warn" : "ok", "arrow-up", m.ahead ? `<b>${n(m.ahead, "commit")}</b> to push` : "Nothing to push", m.ahead ? "Commits here that upstream doesn't have yet. Sync now sends them." : "Upstream has everything committed here", jump("mirror"));
     if (g.waitingForGit.length) pill("warn", "hourglass", `<b>${n(g.waitingForGit.length, "file")}</b> waiting for git`, `Committed here, and land with the next push that does: ${g.waitingForGit.join(", ")}`);
     if (g.gitError) pill("bad", "triangle-alert", "Last git push failed", g.gitError);
     // Pulling in?
     const behind = m ? m.behind : g.dug?.moved ? (g.dug.behind ?? 1) : 0;
-    if (m || g.dug) pill(behind ? "warn" : "ok", "arrow-down", behind ? (m || g.dug.behind != null ? `<b>${n(behind, "commit")}</b> to pull` : "<b>New commits</b> to pull") : "Up to date", behind ? "Upstream has commits that aren't here yet" : "Nothing new upstream", jump(m ? "mirror" : "listen"));
+    if ((m && !lag) || (!m && g.dug)) pill(behind ? "warn" : "ok", "arrow-down", behind ? (m || g.dug.behind != null ? `<b>${n(behind, "commit")}</b> to pull` : "<b>New commits</b> to pull") : "Up to date", behind ? "Upstream has commits that aren't here yet" : "Nothing new upstream", jump(m ? "mirror" : "listen"));
     // Changes to commit?
     const u = g.uncommitted;
     pill(u.count ? "warn" : "ok", "pencil", u.count ? `<b>${n(u.count, "file")}</b> to commit` : "All committed", u.count ? "Edited since the last commit: click to list them" : "Every edit is in a commit", u.count ? 'data-files="1"' : "");
@@ -4242,7 +4295,7 @@ const views = {
       : `<button class="btn" data-crew="1"${picAttr("crew")}>${icon("lock")}Push the crew's copy</button>`) : "";
     // Which side leads, and with this copy leading, how far behind its backup upstream is.
     const lead = m.primary === "here"
-      ? `<p class="muted" style="font-size:12px">${icon("hard-drive")}This copy leads${note(`<code>${esc(m.url)}</code> is the backup, ${m.ahead ? `<b>${m.ahead} commit${m.ahead === 1 ? "" : "s"} behind</b>` : "up to date"}${m.syncedAt ? ` as of ${ago(m.syncedAt)}` : ""}. Syncs push first.`)} <a href="#" data-primary="upstream">Let upstream lead</a></p>`
+      ? `<p class="muted" style="font-size:12px">${icon("hard-drive")}This copy leads${note(`<code>${esc(m.url)}</code> is the mirror. <b>${esc(m.upstream.says)}</b>${m.syncedAt ? ` as of ${ago(m.syncedAt)}` : ""}. Syncs push first.`)} <a href="#" data-primary="upstream">Let upstream lead</a></p>`
       : `<p class="muted" style="font-size:12px">${icon("cloud")}Upstream leads${note("Syncs hear from it, then push.")} <a href="#" data-primary="here">Make this copy the source of truth</a></p>`;
     // Pull-only (#1009): one-way, for a mirror kept for local CI.
     const pull = m.pullOnly
@@ -5423,15 +5476,18 @@ const views = {
     views.wireBranches(owner, repo, r, { phone: true });
     views.wireThreads(owner, repo);
     if (!$("#m-runs")) return;
-    // Every run on the repo, polled while one is going; its lines land live on the file's page.
-    const poll = async () => {
-      clearTimeout(agentTimer);
-      const rs = await api(`/repos/${owner}/${repo}/agents`).catch(() => []);
+    // Every run on the repo, read once; a running one's card hears its thread (watchRuns), its lines land live on the file's page.
+    const draw = (rs) => {
       const el = $("#m-runs");
-      if (!el) return;
+      if (!el?.isConnected) return void live.close();
       drawRuns(el, rs, { owner, repo, file: true, refresh: poll, empty: `<span class="muted">No agents yet.${isOwner ? " Pick a file and give one a task." : ""}</span>` });
-      if (rs.some((x) => x.status === "running" || x.pending)) agentTimer = setTimeout(poll, 2000);
     };
+    const poll = async () => {
+      const rs = await api(`/repos/${owner}/${repo}/agents`).catch(() => []);
+      draw(rs);
+      if ($("#m-runs")?.isConnected) void live.watch(rs);
+    };
+    const live = watchRuns(owner, repo, draw, poll);
     poll();
     const f = $("#m-agent");
     if (!f) return;
@@ -6157,18 +6213,22 @@ const views = {
     }
     // The crew see the file's runs and can tell one something (#3711); the owner also has the Agent button to start one.
     const runsEl = $("#agent-runs");
-    // Runs are polled while one is going; the edits themselves arrive on the file's socket like anyone's, and so
-    // does a ping when a run here starts or ends (#3714), so an idle list isn't asked again.
-    const pollAgents = async () => {
-      clearTimeout(agentTimer);
-      const rs = await api(`/repos/${owner}/${repo}/agents?path=${encodeURIComponent(path)}`).catch(() => []);
-      if (!runsEl?.isConnected) return;
+    // The runs are read when one here starts or ends (the file's socket pings, #3714); a running one's card hears its
+    // thread for its state and log line (watchRuns, #3737). The edits themselves arrive on the file's socket like anyone's.
+    const drawAgents = (rs) => {
+      if (!runsEl?.isConnected) return void runsLive.close();
       drawRuns(runsEl, rs, { owner, repo, scope: { path }, lines: () => selLines().map((l) => l.id), refresh: pollAgents,
         empty: `<span class="muted">No agents on this file yet.${owner === me() ? " Press Agent to give one a task." : ""}</span>` });
+    };
+    const pollAgents = async () => {
+      const rs = await api(`/repos/${owner}/${repo}/agents?path=${encodeURIComponent(path)}`).catch(() => []);
+      if (!runsEl?.isConnected) return void runsLive.close();
+      drawAgents(rs);
+      void runsLive.watch(rs);
       // The crew's waiting batches come from pollWaits, with their hunks.
       if (role === "owner") void setRuns(rs);
-      if (rs.some((x) => x.status === "running" || x.pending)) agentTimer = setTimeout(pollAgents, 1500);
     };
+    const runsLive = watchRuns(owner, repo, drawAgents, pollAgents);
     if (runsEl) { pollAgents(); ctx.pollAgents = pollAgents; }
     if ($("#agent")) {
       popover($("#agent"));
@@ -7255,13 +7315,13 @@ const noChecks = () => `<span class="muted" data-checks-empty title="Press Run: 
 
 /**
  * A branch's pipeline hooks (GET .../branches/:b/hooks, pipeline-hooks.ts), each with its verdict: yay, nay and its reason,
- * waiting on a person, or not asked yet (an ai hook asks at the merge). `say` (a person signed in, with write access, not the
+ * waiting on a person, running (an ai hook's review, asked at the merge, still reading), or not asked yet. `say` (a person signed in, with write access, not the
  * branch's author) adds Yay, and Nay with a reason, which POST .../hooks/:hook.
  */
 function hookRow(branch, h, say = false) {
   if (!h?.hooks.length) return "";
-  const ICON = { yay: "thumbs-up", nay: "thumbs-down", waiting: "hourglass", unasked: "circle-dashed" };
-  const WORD = { yay: "yay", nay: "nay", waiting: "waits for a person", unasked: "not asked yet" };
+  const ICON = { yay: "thumbs-up", nay: "thumbs-down", waiting: "hourglass", running: "loader", unasked: "circle-dashed" };
+  const WORD = { yay: "yay", nay: "nay", waiting: "waits for a person", running: "reading the branch", unasked: "not asked yet" };
   return `<span class="checks" data-hooks="${esc(branch)}" title="the pipeline's hooks: a merge waits for each one's yay">${h.hooks.map((k) => {
     const who = k.by ? (k.by.startsWith("ai") ? ` (${k.by === "ai" ? "the AI" : k.by.slice(3)})` : ` (@${k.by})`) : "";
     const buttons = say && k.say !== "yay" ? ` <button type="button" class="btn icon-only" data-hook-say="yay" data-hook="${esc(k.at)}" data-branch="${esc(branch)}" title="say yay: the merge can go on past ${esc(k.at)}" aria-label="yay at ${esc(k.at)}">${icon("thumbs-up")}</button>`
@@ -7288,7 +7348,8 @@ function checkRow(c, canRun = false) {
  * what to expect while GitHub is down, and main's own checks, where GitHub's catch up.
  */
 async function wireCheckHead(el, owner, repo, r) {
-  const [s, main] = await Promise.all([api(`/repos/${owner}/${repo}/checks/settings`).catch(() => null), api(`/repos/${owner}/${repo}/checks?ref=main`).catch(() => null)]);
+  const [s, main, road] = await Promise.all([api(`/repos/${owner}/${repo}/checks/settings`).catch(() => null), api(`/repos/${owner}/${repo}/checks?ref=main`).catch(() => null),
+    r.canWrite ? api(`/repos/${owner}/${repo}/pipeline`).catch(() => null) : null]);
   if (!s) return;
   document.getElementById("checkhead")?.remove();
   const isOwner = owner === me();
@@ -7299,15 +7360,23 @@ async function wireCheckHead(el, owner, repo, r) {
     <button id="check-fresh" class="btn ghost" aria-pressed="${!!s.fresh_main}" title="${s.fresh_main ? "Fresh main: once a branch merges, the others' checks run again on main as it is now before they can merge. Click to let an older green count" : "A branch's green counts even after another merges into main. Click to check each again on main as it is now (merge train)"}">${icon("train-front")}</button>` : "";
   const down = s.offline ? `<span class="muted">${icon("cloud-off")} GitHub has been down${s.down_since ? ` since ${new Date(s.down_since).toLocaleTimeString()}` : ""}. Keep going: commits, branches and merges work here, checks run on this machine, and everything syncs to GitHub when it's back.</span>` : "";
   const mainRow = main?.runs.length ? `<div class="commit"><code>main</code><span class="muted">checks on the latest commit${s.github ? ", GitHub's included once it has them" : ""}</span>${checkRow(main)}</div>` : "";
-  if (!pick && !down && !mainRow) return;
+  // A release cut (#3313): with a pipeline file and checks here, every often and release lane runs and every bus leaves.
+  const lanes = road?.source === "codesplitter.pipeline.json" && s.here ? road.plan.find((x) => x.lanes)?.lanes.filter((l) => l.cadence === "often" || l.cadence === "release" || l.cadence === "bus") ?? [] : [];
+  const cut = lanes.length ? `<button id="cut-release" class="btn" title="cut a release: run ${esc(lanes.map((l) => l.lane).join(", "))} on main now, whatever their counts, and send every bus off. A version tag (v1.2) does the same">${icon("rocket")}Release</button>` : "";
+  if (!pick && !down && !mainRow && !cut) return;
   const ci = isOwner ? `<details id="citokens" style="margin-top:6px"><summary class="muted" style="font-size:12px;cursor:pointer">${icon("key-round")} CI tokens: report checks from Jenkins, CircleCI or any CI that talks to GitHub</summary><div class="body"></div></details>` : "";
-  el.insertAdjacentHTML("beforebegin", `<div id="checkhead" class="commit" style="display:block">${pick}${down ? `<div>${down}</div>` : ""}${mainRow}${ci}</div>`);
+  el.insertAdjacentHTML("beforebegin", `<div id="checkhead" class="commit" style="display:block">${pick}${cut}${down ? `<div>${down}</div>` : ""}${mainRow}${ci}</div>`);
   $("#citokens")?.addEventListener("toggle", (e) => { if (e.target.open) wireCiTokens(owner, repo); }, { once: true });
   // Picking an option only stages it: a focused select also changes on a stray key (type-ahead,
   // arrows) or a scroll, so nothing is saved until Save is clicked (#657).
   const sel = $("#check-where"), save = $("#check-where-save"), saved = s.where ?? "";
   sel?.addEventListener("change", () => { save.hidden = sel.value === saved; });
   save?.lastElementChild.addEventListener("click", () => { sel.value = saved; save.hidden = true; });
+  $("#cut-release")?.addEventListener("click", async (e) => {
+    if (!e.isTrusted) return;
+    try { const c = await api(`/repos/${owner}/${repo}/pipeline/release`, {}); toast(`Release cut: ${c.lanes.filter((l) => l.go !== "skip").map((l) => l.lane).join(", ")} on main`); route(); }
+    catch (err) { toast(`No release: ${err.message}`); }
+  });
   // Pinned (#1010): what runs comes from these settings only, never from files a merge can change.
   $("#check-pin")?.addEventListener("click", async (e) => {
     if (!e.isTrusted) return;
@@ -7448,8 +7517,8 @@ async function commands() {
     if (c.canWrite) add("This repo", "github", "Fetch GitHub's checks now", `POST /api/repos/${c.owner}/${c.repo}/checks/github`, async () => {
       try { const p = await api(`/repos/${c.owner}/${c.repo}/checks/github`, {}); toast(p.polled.length ? `Fetched ${p.polled.reduce((n, x) => n + (x.imported ?? 0), 0)} GitHub jobs` : "No shas waiting on GitHub"); route(); } catch (e) { toast(e.message); }
     });
-    if (c.canWrite) add("This repo", "messages-square", "Open the newest thread", `GET /api/repos/${c.owner}/${c.repo}/threads`, () => openNewestThread(c.owner, c.repo));
-    if (c.canWrite) add("This repo", "messages-square", "Every thread at once: search, or pick who said it", `GET /api/repos/${c.owner}/${c.repo}/threads`, () => openThread(c.owner, c.repo, "all"));
+    // The keyable ones (KEYABLE): the palette shows the key picked for each.
+    for (const k of KEYABLE) if (k.ok(c)) { add(k.group, k.ic, k.title, k.api(c), () => k.run(c)); out.at(-1).key = k.id; }
     if (c.view !== "m") add("This repo", "smartphone", "Phone view: agents and branches", `GET /api/repos/${c.owner}/${c.repo}/agents`, () => (location.hash = `#/m/${c.owner}/${c.repo}`));
     if (u) add("This repo", "gauge", "Show this repo's limits", `GET /api/repos/${c.owner}/${c.repo}/limits`, () => { const b = $("#limits"); if (b) { b.click(); } });
     if (c.clone) add("This repo", "terminal", "Copy the git clone command", `GET /api/repos/${c.owner}/${c.repo}`, () => copy(c.clone, "Clone command copied"));
@@ -7463,6 +7532,7 @@ async function commands() {
   }
   add("Anywhere", "search", "Search code", "GET /api/search?q=", (q) => (location.hash = "#/search/" + encodeURIComponent(q)), "what to look for");
   if (u) add("Anywhere", "book-plus", "New repo", "POST /api/repos", async (name) => { await api("/repos", { name }); location.hash = `#/r/${u}/${name}`; }, "repo name");
+  add("Anywhere", "keyboard", "Keys…", "", () => keysDrawer(), undefined, true);
   if (u) add("Anywhere", "user", "Your profile", `GET /api/users/${u}`, () => (location.hash = `#/u/${u}`));
   for (const l of await api("/levels").catch(() => [])) if (l.status === "ready") add("Levels", "landmark", `Go to ${l.title}`, `GET /api/levels/${l.slug}/tree`, () => (location.hash = `#/l/${l.slug}`));
   add("Anywhere", "home", "Home", "", () => (location.hash = "#/"));
@@ -7482,6 +7552,62 @@ async function commands() {
   if (tourState()) add("Tour", "list-plus", "Queue a scene…", "", async (spec) => { if (!tourSceneOk(spec)) throw new Error(`no scene "${spec}"`); const t = tourState(); tourSave({ ...t, queue: [...(t.queue ?? []), spec] }); tour(); }, sceneAsk, true);
   return out;
 }
+
+// Keys you pick (#3793, @rustybuns/util/keys): each command here starts with no key, so nothing fires until you
+// choose one in Keys (⌘K "Keys…", or the keyboard button up top). They are kept in this browser, shown beside the
+// command in the palette, and never fire while you type or while a dialog is open. A new keyable command goes here.
+const KEYABLE = [
+  { id: "thread_newest", group: "This repo", ic: "messages-square", title: "Open the newest thread", where: "a repo you can write to",
+    ok: (c) => !!(c.owner && c.canWrite), api: (c) => `GET /api/repos/${c.owner}/${c.repo}/threads`, run: (c) => openNewestThread(c.owner, c.repo) },
+  { id: "thread_all", group: "This repo", ic: "messages-square", title: "Every thread at once: search, or pick who said it", where: "a repo you can write to",
+    ok: (c) => !!(c.owner && c.canWrite), api: (c) => `GET /api/repos/${c.owner}/${c.repo}/threads`, run: (c) => openThread(c.owner, c.repo, "all") },
+];
+const csKeys = rbCommands.keys.keyStore("cs_keys");
+const keyable = (id) => KEYABLE.find((k) => k.id === id);
+/** This page's chosen keys, only for commands it still has. */
+const chosenKeys = () => Object.fromEntries(Object.entries(csKeys.get()).filter(([id]) => keyable(id)));
+rbCommands.keys.bindKeys({ keys: chosenKeys, run: (id) => { const k = keyable(id); return k.ok(ctx) ? k.run(ctx) : toast(`${k.title} works on ${k.where}`); } });
+
+// Recording: the next key pressed while a Record button waits. On the window in capture, ahead of the palette's ⌘K,
+// so a browser key is named and refused rather than acted on; Esc stops waiting.
+let keyRec = null;
+addEventListener("keydown", (e) => {
+  if (!keyRec) return;
+  e.preventDefault(); e.stopImmediatePropagation(); // the palette's ⌘K listens on the window too
+  if (e.key === "Escape" && !e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey) return keysDrawer();
+  const name = rbCommands.keys.keyOf(e);
+  if (!name) return; // a modifier on its own: wait for the key
+  const id = keyRec, why = rbCommands.keys.refuseKey(name, id, chosenKeys(), (o) => keyable(o)?.title ?? o);
+  if (why) return keysDrawer(why);
+  csKeys.set(id, name);
+  keysDrawer(`${name}: ${keyable(id).title}`, true);
+}, true);
+
+/** The Keys sheet: a row a command, its key (press it to change, ✕ to clear) or Record. `say` is the last answer. */
+function keysDrawer(say = "", ok = false) {
+  keyRec = null;
+  const keys = chosenKeys();
+  const row = (k) => `<div class="keyrow" data-key-id="${k.id}"><span>${icon(k.ic)}${esc(k.title)}</span>${keys[k.id]
+    ? `<button type="button" class="btn keycap" data-key-rec title="press to pick another key">${esc(keys[k.id])}</button><button type="button" class="btn ghost" data-key-clear title="clear ${esc(keys[k.id])}" aria-label="clear the key">${icon("x")}</button>`
+    : `<button type="button" class="btn" data-key-rec title="then press the key">${icon("keyboard")}Record</button>`}</div>`;
+  drawer.open("Keys", `
+    <h2 id="drawer-title">Keys</h2>
+    <p class="muted lede">A key of your own for a command, kept in this browser. None is set until you pick one, and none fires while you type or a dialog is open.</p>
+    ${[...new Set(KEYABLE.map((k) => k.group))].map((g) => `<div class="keys-g"><b class="muted">${esc(g)}</b>${KEYABLE.filter((k) => k.group === g).map(row).join("")}</div>`).join("")}
+    <p class="formmsg${ok ? " ok" : ""}" id="keysmsg" role="status">${esc(say)}</p>`);
+  for (const r of $("#drawer-body").querySelectorAll(".keyrow")) {
+    const id = r.dataset.keyId;
+    r.querySelector("[data-key-clear]")?.addEventListener("click", () => { const was = keys[id]; csKeys.set(id, null); keysDrawer(`${was} cleared`, true); });
+    r.querySelector("[data-key-rec]").addEventListener("click", (e) => {
+      keysDrawer();
+      keyRec = id;
+      const b = $(`.keyrow[data-key-id="${id}"] [data-key-rec]`);
+      b.classList.add("rec"); b.textContent = "Press a key…"; b.focus();
+      $("#keysmsg").className = "formmsg ok"; $("#keysmsg").textContent = "Esc to stop";
+    });
+  }
+}
+$("#keys-btn").addEventListener("click", () => keysDrawer());
 
 // The ⌘K palette is the house one (@rustybuns/util/palette, from /commands.js) over the commands below, which
 // webTools() adds afresh on each open: Enter waits for them, so "connect" typed straight after ⌘K runs the command.
@@ -7654,7 +7780,7 @@ async function webTools(opening = false) {
   const cmds = list.map((c, i) => {
     const t = toolName(c.title), agent = !!t && !c.noTool && !seen.has(t), read = !c.api || c.api.startsWith("GET") || c.api.startsWith("WS");
     if (agent) seen.add(t);
-    return { name: agent ? t : `cs_palette_${i}`, title: c.title, group: c.group, icon: c.ic, note: c.api, answers: false, agent,
+    return { name: agent ? t : `cs_palette_${i}`, title: c.title, group: c.group, icon: c.ic, note: c.api, answers: false, agent, ...(c.key && chosenKeys()[c.key] && { keys: chosenKeys()[c.key] }),
       description: `${c.group}: ${c.title}${c.ask ? ` (input: ${c.ask})` : ""}. The palette's ${c.api || "navigation"}.`,
       ...(c.ask && { ask: c.ask, inputSchema: { type: "object", properties: { input: { type: "string", description: c.ask } }, required: ["input"] } }),
       ...(c.tidy && { tidy: c.tidy, preview: (line) => branchSay(c.tidy(line)) }),
@@ -7775,19 +7901,19 @@ const TOUR = [
     say: () => "Deploy is a button only a person presses. The new version is live once its health check passes." },
   { ch: "self", ic: "shield-check", t: "The watchdog has your back", at: null, on: "any",
     say: () => "A separate Worker checks the live app on a timer. If a deploy goes bad it rolls back to the last good version, and says what shipped it." },
-  // Mervin and Ester, the pair the merge round is built around: he orders the open branches into waves, she sorts what's red, and the
+  // Mervin and Ester, the pair the merge round is built around: he orders the open branches into waves, she shows what's red, and the
   // merge that follows is a person's. The steps show only on a repo with open branches (a step whose `at` isn't drawn is skipped).
   { ch: "queue", ic: "users", t: "Meet the trio", at: null, on: "any",
-    say: () => "Mervin merges, Ester sorts the tests, Dexter trims the tokens. Each is a deterministic script: rules and replay, no model, no tokens spent. Around here we think of them as more than that: they have names, track records and a badge in the corner of Agent Office, and they get better as they learn." },
+    say: () => "Mervin merges, Ester picks the test lanes, Dexter counts the tokens (he lives in Agent Office for now). Each is a deterministic script: rules and replay, no model, no tokens spent. Around here we think of them as more than that: they have names, track records and a badge in the corner of Agent Office, and Mervin gets better as he learns." },
   { ch: "queue", ic: "git-pull-request", t: "Mervin reads the board", at: "[data-board]", on: "repo",
     say: () => "Every open PR on one line: its CI, what it's stacked on, clashes with other PRs, and who owns it. Hover a row for the reasons. A clock is held, a tick can merge." },
   { ch: "queue", ic: "list-ordered", t: "Mervin queues the merges", at: "[data-plan]", on: "repo",
     say: () => "He orders the branches into waves: those sharing no file go together, and a clashing one waits for the wave before. Merge a wave and the next wave's branches take main in by themselves." },
-  { ch: "queue", ic: "flask-conical", t: "Ester sorts the red tests", at: "[data-board]", on: "repo",
-    say: () => "When checks go red, Ester sorts each failing test by who owns it: red on main too (not yours), flaky, that PR's own, waiting on its CI, or blocking the merge. What blocks is held back, and the rest queues." },
+  { ch: "queue", ic: "flask-conical", t: "Ester flags the red tests", at: "[data-board]", on: "repo",
+    say: () => "When a PR's own checks go red, the board says so and names the failing ones. That PR is held back until it's green, and the rest queues." },
   { ch: "queue", ic: "git-merge", t: "Queue the merge", at: '.dpanels > .sec[data-key="branches"] [data-merge]', on: "repo", you: "A merge changes main, so you press this one.",
     go: () => { const b = $('.dpanels > .sec[data-key="branches"] [data-merge]:not([disabled])'); if (!b) return "Nothing is ready: Mervin holds a branch until its checks pass."; b.click(); return "Merged by line id. The next wave is free to go."; },
-    say: () => "Mervin suggests the order and Ester clears the tests, but main moves when you press Merge. Agents don't." },
+    say: () => "Mervin suggests the order and the board shows what's red, but main moves when you press Merge. Agents don't." },
   // Agents on one repo (features: agents, claims, same-line, smart-merges, agents-rebase, hosted-agents, agents-cant-ship). `feat` is the
   // feature id in features/order.txt, so tour-smoke can check the strip is covered.
   { ch: "agents", feat: "agents", ic: "bot", t: "Agents on one repo", at: "#agent", on: "repo",
@@ -8559,7 +8685,7 @@ async function route() {
   fileLeave?.(); fileLeave = null;
   followed = fetchingFollows = null;
   socket?.close(); socket = null; showNet(null);
-  clearTimeout(agentTimer);
+  runWatch?.close(); runWatch = null;
   stopIntro();
   stopStrip();
   stopBoard();

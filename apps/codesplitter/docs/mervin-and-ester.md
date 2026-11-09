@@ -74,7 +74,8 @@ weeds that out the same way. When the board's check goes red she sorts every fai
 
 A slow verdict is a debt, not a pass: she lists each slow check owed by the PRs that merged without it (one run
 against the last green sha settles them all), scores checks for release-only by median time x (1 - catch rate), and
-ends with a question to the owner when one looks worth moving. Long test files can be sharded by the per-test times
+ends with a question to the owner when one looks worth moving, and the edit to `codesplitter.pipeline.json` that says
+yes: its lane turned to `release`, or a new release lane. She never writes the file. Long test files can be sharded by the per-test times
 the ledger already keeps.
 
 Only `blocks` stops a merge. She also keeps a running record, so she can say which dependencies hurt, which checks

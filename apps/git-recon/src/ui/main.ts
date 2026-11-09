@@ -19,7 +19,7 @@ import type { FromWorld, RosterEntry } from "../net/wire.ts";
 import { briefing, missionFor, OVERRUN } from "../sim/missions.ts";
 import { CAMPAIGN, chapterOf, nextChapter, opened } from "../sim/campaign.ts";
 import { Director, type Stage } from "../sim/director.ts";
-import { createElement, Lock, LogIn, LogOut } from "lucide";
+import { createElement, Lock, LogIn, LogOut, Users } from "lucide";
 import { achieve, canSignIn, finishSignIn, fresh, login, reportButton, signIn, signOut } from "../eqosys.ts";
 import { KEYS, keyLabel, WEAPONS, type WeaponId } from "../sim/weapons.ts";
 import { isRole, nextRole, ROLE_ORDER, ROLES, type RoleId } from "../sim/roles.ts";
@@ -28,6 +28,7 @@ import { weaponIcon } from "./icons.ts";
 import { FIELD, muffle, place, play, VOICES, type Voice } from "./audio.ts";
 import { BUILDS, type BuildId } from "./figure.ts";
 import { Battle } from "./net.ts";
+import { joinParty, makeParty, partyCode, ROOM } from "./lobby.ts";
 import { headById, headCanvas, HEADS, isOpen } from "./heads.ts";
 import { blockOf, buildWorld, type World } from "./scene.ts";
 import { mountTouch } from "./touch.ts";
@@ -38,8 +39,8 @@ import { mountPalette } from "@rustybuns/util/palette";
 import { drawTally } from "./tally.ts";
 import { mountPortrait } from "./portrait.ts";
 import { Director as Film, mountScenes, playNamed, sceneLink } from "@rustybuns/util/director";
-import { SCENES as FILM, type Setup } from "../sim/credits.ts";
-import { aim, frameOuttake, mountCredits, photograph, type Lot } from "./credits.ts";
+import { credits, SCENES as FILM, type Setup } from "../sim/credits.ts";
+import { aim, footage, frameOuttake, mountCredits, mountNewsreel, photograph, type Lot } from "./credits.ts";
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const canvas = $<HTMLCanvasElement>("view");
@@ -294,7 +295,7 @@ $("back").onclick = toMenu;
 
 /** What the host this page runs on says about itself: the desktop app is "git-recon", a plain web page has none, online (src/edge/worker.ts) says so. */
 let info: { app?: string; version?: string; online?: boolean } | null = null;
-void fetch("/__rb/info").then((r) => (r.ok ? r.json() : null)).then((i) => (info = i, i?.online && goOnline())).catch(() => {});
+const infoIn = fetch("/__rb/info").then((r) => (r.ok ? r.json() : null)).then((i) => (info = i)).catch(() => null);
 
 // No 0/O or 1/I, so a code read out loud comes out right.
 const CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -309,6 +310,40 @@ function goOnline() {
   code.placeholder = "Room code", code.setAttribute("aria-label", "The battle's room code");
   code.value = new URLSearchParams(location.search).get("room")?.toUpperCase() ?? "";
   $("battle-pass").hidden = true;
+  partyButton.hidden = !canSignIn();
+}
+
+// Online and signed in, Party opens a Qollab lobby (./lobby.ts): friends see who's in and ready, and the host's Start
+// sends everyone into one room, the host's page picking the level, mode and repo as Host does.
+const partyButton = $<HTMLButtonElement>("battle-party");
+partyButton.replaceChildren(createElement(Users, { width: 16, height: 16 }));
+let leaveParty: (() => void) | null = null;
+function enterParty(code: string) {
+  const l = login();
+  if (!l || !fresh(l)) { battleStatus(`Sign in to join party ${code}.`); return void signIn(`party:${code}`); }
+  leaveParty?.();
+  history.replaceState(null, "", `?party=${code}`);
+  battleStatus("The host picks the level and mode, then Start.");
+  leaveParty = joinParty(code, $("battle-lobby"), (room, seat) => {
+    const leave = leaveParty;
+    leaveParty = null, leave?.();
+    battleStatus("");
+    if (seat === 0) void host(room);
+    else joinRoom(room);
+  }, (note) => battleStatus(note));
+}
+partyButton.onclick = async () => {
+  const l = login();
+  if (!l || !fresh(l)) return void signIn("party");
+  battleStatus("Opening a party…");
+  const code = await makeParty();
+  if (!code) return battleStatus("eqosys couldn't open a party just now. Host with a room code instead.", true);
+  enterParty(code);
+};
+/** A room by its code: the battle there, or a wait for its host to pick one. */
+function joinRoom(room: string) {
+  history.replaceState(null, "", `?room=${room}`);
+  connect(new Battle("guest", "/ws", { ...who(), room }), null);
 }
 const roomLink = (room: string) => `${location.origin}${location.pathname}?room=${room}`;
 
@@ -365,7 +400,15 @@ function showAccount(note = "") {
 account.onclick = () => { if (login()) { signOut(); nameBox.value = store.get("name", ""); showAccount(); } else void signIn(); };
 showAccount();
 reportButton();
-void finishSignIn().then((back) => back && showAccount(back.error));
+// Online, a ?party= link (or coming back from signing in to join one) opens that party's lobby.
+void Promise.all([finishSignIn(), infoIn]).then(([back]) => {
+  if (back) showAccount(back.error);
+  if (!info?.online) return;
+  goOnline();
+  const code = back?.login && back.then.startsWith("party:") ? back.then.slice(6) : partyCode(location.search);
+  if (code) enterParty(code);
+  else if (back?.login && back.then === "party") partyButton.click();
+});
 
 /** Your look and name for the world, on the socket's query. */
 const who = () => {
@@ -385,7 +428,8 @@ async function battleLevel(): Promise<{ def: LevelDef; zone?: ZoneData }> {
   return { def: placeLevel(zone), zone };
 }
 
-$("battle-host").onclick = async () => {
+/** Open a battle and send the setup: online in `room` (a fresh code unless a party named one), else on this machine. */
+async function host(room?: string) {
   battleStatus("");
   let picked: Awaited<ReturnType<typeof battleLevel>>;
   try {
@@ -396,7 +440,7 @@ $("battle-host").onclick = async () => {
   const { def, zone } = picked;
   let hosting: string | null = null;
   if (info?.online) {
-    const room = roomCode();
+    room ??= roomCode();
     history.replaceState(null, "", `?room=${room}`);
     const b = new Battle("host", "/ws", { ...who(), room });
     b.setup({ level: def.id, mode, repo: chosen ?? def.repo });
@@ -417,7 +461,8 @@ $("battle-host").onclick = async () => {
   const b = new Battle("host", "/ws", who());
   b.setup({ level: def.id, mode, repo: chosen ?? def.repo, ...(zone ? { zone } : {}) });
   connect(b, hosting);
-};
+}
+$("battle-host").onclick = () => void host();
 
 $("battle").onsubmit = (e) => {
   e.preventDefault();
@@ -425,9 +470,8 @@ $("battle").onsubmit = (e) => {
   const addr = $<HTMLInputElement>("battle-addr").value.trim().replace(/^\w+:\/\//, "").replace(/\/.*$/, "");
   if (info?.online) {
     const room = addr.toUpperCase();
-    if (!/^[A-Z0-9]{4,8}$/.test(room)) return battleStatus("Type the room code your friend sent, like K7QX2M.", true);
-    history.replaceState(null, "", `?room=${room}`);
-    return connect(new Battle("guest", "/ws", { ...who(), room }), null);
+    if (!ROOM.test(room)) return battleStatus("Type the room code your friend sent, like K7QX2M.", true);
+    return joinRoom(room);
   }
   store.set("addr", addr);
   // No address: this machine's own battle (a second tab, or back into the one you host).
@@ -669,13 +713,13 @@ function placeCamera(game: Game, dt: number) {
   }
 }
 
-/* ---------------- the film: the credits and the outtakes (src/sim/credits.ts) ---------------- */
+/* ---------------- the film: the newsreel, the credits and the outtakes (src/sim/credits.ts) ---------------- */
 
-/** The page's own scenes on the shared director: the credits, and each outtake held. Any key or a tap skips. */
+/** The page's own scenes on the shared director: the newsreel, the credits, and each outtake held. Any key or a tap skips. */
 const film = new Film(0.6);
-const creditsEl = mountCredits();
-creditsEl.root.addEventListener("pointerdown", () => { filmSkip = true; });
-let filmSkip = false, pics = new Map<string, string>(), held: Setup | null = null, lot: Lot | null = null;
+const creditsEl = mountCredits(), reelEl = mountNewsreel();
+for (const el of [creditsEl.root, reelEl.root]) el.addEventListener("pointerdown", () => { filmSkip = true; });
+let filmSkip = false, pics = new Map<string, string>(), held: Setup | null = null, lot: Lot | null = null, reel: ReturnType<typeof footage> | null = null;
 /** The film set: the level you're in (the last chapter, after a win), or the last chapter's level built for the take. */
 function lotFor(): Lot {
   if (current && !current.net) return (lot = { game: current.game, world: current.world });
@@ -687,25 +731,33 @@ function lotFor(): Lot {
   applyQuality(auto.quality, renderer, suns);
   return (lot = { game, world });
 }
-/** Plays one of the film's scenes by name (FILM), over everything; a second `t` holds that frame. Then the menu. */
+/**
+ * Plays one of the film's scenes by name (FILM), over everything; a second `t` holds that frame. Then the menu. The
+ * newsreel rolls into the credits, so their outtakes are photographed before it starts.
+ */
 function playFilm(name: string, t: number | null = null): boolean {
   if (!Object.hasOwn(FILM, name)) return false;
   const set = lotFor();
-  if (name === "credits") pics = photograph(set, renderer, camera), resize();
+  if (name === "credits" || name === "newsreel") pics = photograph(set, renderer, camera), resize();
+  reel = name === "newsreel" ? footage(set) : null;
   document.exitPointerLock?.();
   $("menu").hidden = true, $("results").hidden = true, $("hud").hidden = true;
-  return playNamed(film, FILM, name, { setup: (id) => (held = frameOuttake(set, id, camera)) }, t);
+  const ok = playNamed(film, FILM, name, { setup: (id) => (held = frameOuttake(set, id, camera)) }, t);
+  if (ok && name === "newsreel") film.play(credits());
+  return ok;
 }
 function filmFrame(dt: number) {
   const f = film.step(dt, filmSkip);
   filmSkip = false;
+  reelEl.draw(f);
   creditsEl.draw(f, pics);
-  // An outtake held: the take's frame, live.
-  if (f.scene && f.scene.id !== "credits" && held && lot) aim(camera, held), renderer.render(lot.world.scene, camera);
-  if (!film.beat) { creditsEl.hide(); held = null; toMenu(); }
+  // The newsreel's footage, rolling in slow motion; or an outtake held: the take's frame, live.
+  if (f.scene?.id === "newsreel" && reel && lot) reel(f.t, f.dt, camera), renderer.render(lot.world.scene, camera);
+  else if (f.scene && f.scene.id !== "credits" && held && lot) aim(camera, held), renderer.render(lot.world.scene, camera);
+  if (!film.beat) { creditsEl.hide(); reelEl.hide(); held = null; reel = null; toMenu(); }
 }
 mountScenes({ list: () => Object.keys(FILM), play: (name, t) => playFilm(name, t ?? null),
-  state: () => ({ beat: film.beat, paused: film.paused, cards: film.frame.cards.map((c) => c.card.text), photos: film.frame.photos.map((p) => ({ id: p.photo.id, drop: +p.drop.toFixed(2), shot: !!pics.get(p.photo.id) })) }) });
+  state: () => ({ beat: film.beat, paused: film.paused, line: film.frame.line?.text ?? null, cards: film.frame.cards.map((c) => c.card.text), photos: film.frame.photos.map((p) => ({ id: p.photo.id, drop: +p.drop.toFixed(2), shot: !!pics.get(p.photo.id) })) }) });
 
 /** A set piece's camera (director.ts) over yours, by how much of the view it has. */
 const shotAt = new THREE.Vector3(), shotTo = new THREE.Vector3(), shotQ = new THREE.Quaternion(), shotM = new THREE.Matrix4();
@@ -946,8 +998,8 @@ function results(game: Game) {
   if (next) $("next").textContent = `Next: ${next.title}`, $("next").onclick = () => start(levelById(next.level));
   else if (won && !game.mode && chapterOf(current!.def.id) === CAMPAIGN.length - 1) {
     $("results-body").textContent += " That's the top of the climb.";
-    // The end of the campaign: the credits roll, with the outtakes.
-    $("next").hidden = false, $("next").textContent = "Roll the credits", $("next").onclick = () => playFilm("credits");
+    // The end of the campaign: Command's newsreel, then the credits roll, with the outtakes.
+    $("next").hidden = false, $("next").textContent = "Roll the newsreel", $("next").onclick = () => playFilm("newsreel");
   }
   drawRoles();
   $("results").hidden = false;
@@ -1193,7 +1245,7 @@ addCommands([
 mountPalette();
 
 // `?scene=<name>&t=<seconds>` (@rustybuns/util/director) plays one of the film's scenes, held at second t: the credits,
-// or an outtake's frame (`bun run probe git-recon "/?scene=credits&t=18" --shot out.png`).
+// the newsreel's footage, or an outtake's frame (`bun run probe git-recon "/?scene=credits&t=18" --shot out.png`).
 {
   const link = sceneLink(location.search);
   if (link) playFilm(link.name, link.t);

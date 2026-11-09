@@ -39,6 +39,12 @@ const BASE = `
 @media (prefers-reduced-motion:reduce){.eq-toast{animation:none}}
 .rb-lobby{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:10px 12px;border:var(--ui-border) solid var(--ui-line);border-radius:var(--ui-radius);background:var(--ui-bg);box-shadow:var(--ui-shadow)}
 .rb-lobby[hidden]{display:none}.rb-lobby-who{flex:1 1 200px;min-width:0}
+.rb-lobby-rules{flex:1 1 100%;display:grid;gap:6px;margin:0;padding:8px 0 0;border-top:var(--ui-border) solid var(--ui-line)}
+.rb-lobby-rules label,.rb-lobby-rules li{display:flex;gap:8px;align-items:center;justify-content:space-between;min-height:32px}
+.rb-lobby-rules ul{list-style:none;margin:0;padding:0}.rb-lobby-rules h3{margin:6px 0 0;font:700 13px/1.2 var(--ui-font-head);color:var(--ui-dim)}
+.rb-lobby-rules select,.rb-lobby-rules input[type=number]{max-width:60%;min-height:32px}.rb-lobby-acts{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:4px}
+.rb-lobby-rules label>span:last-child{display:inline-flex;gap:6px;align-items:center;white-space:nowrap}.rb-lobby-rules input[type=checkbox]{width:18px;height:18px;margin:0}
+.rb-lobby .eq-btn.icon{min-width:32px;min-height:32px;padding:0}
 .rb-spaces{display:flex;flex-direction:column;gap:8px;padding:10px 12px;border:var(--ui-border) solid var(--ui-line);border-radius:var(--ui-radius);background:var(--ui-bg);box-shadow:var(--ui-shadow)}
 .rb-spaces[hidden]{display:none}
 .rb-spaces h2{margin:0;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font:700 16px/1.2 var(--ui-font-head)}
@@ -114,6 +120,18 @@ export const ICONS = {
   "log-out": svg('<path d="m16 17 5-5-5-5"/><path d="M21 12H9"/><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>'),
   trophy: svg('<path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/>'),
   flag: svg('<path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" x2="4" y1="22" y2="15"/>'),
+  // The party lobby's Settings (./lobby.ts): the menu, and a member's mute-for-me, make host, take out and block.
+  "sliders-horizontal": svg('<line x1="21" x2="14" y1="4" y2="4"/><line x1="10" x2="3" y1="4" y2="4"/><line x1="21" x2="12" y1="12" y2="12"/><line x1="8" x2="3" y1="12" y2="12"/><line x1="21" x2="16" y1="20" y2="20"/><line x1="12" x2="3" y1="20" y2="20"/><line x1="14" x2="14" y1="2" y2="6"/><line x1="8" x2="8" y1="10" y2="14"/><line x1="16" x2="16" y1="18" y2="22"/>'),
+  "volume-x": svg('<path d="M11 4.702a.705.705 0 0 0-1.203-.498L6.413 7.587A1.4 1.4 0 0 1 5.416 8H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2.416a1.4 1.4 0 0 1 .997.413l3.383 3.384A.705.705 0 0 0 11 19.298z"/><line x1="22" x2="16" y1="9" y2="15"/><line x1="16" x2="22" y1="9" y2="15"/>'),
+  "volume-2": svg('<path d="M11 4.702a.705.705 0 0 0-1.203-.498L6.413 7.587A1.4 1.4 0 0 1 5.416 8H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2.416a1.4 1.4 0 0 1 .997.413l3.383 3.384A.705.705 0 0 0 11 19.298z"/><path d="M16 9a5 5 0 0 1 0 6"/><path d="M19.364 18.364a9 9 0 0 0 0-12.728"/>'),
+  crown: svg('<path d="M11.562 3.266a.5.5 0 0 1 .876 0L15.39 8.87a1 1 0 0 0 1.516.294L21.183 5.5a.5.5 0 0 1 .798.519l-2.834 10.246a1 1 0 0 1-.956.734H5.81a1 1 0 0 1-.957-.734L2.02 6.02a.5.5 0 0 1 .798-.519l4.276 3.664a1 1 0 0 0 1.516-.294z"/><path d="M5 21h14"/>'),
+  "user-x": svg('<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="17" x2="22" y1="8" y2="13"/><line x1="22" x2="17" y1="8" y2="13"/>'),
+  ban: svg('<circle cx="12" cy="12" r="10"/><path d="m4.9 4.9 14.2 14.2"/>'),
+  // The host's New link (the `invite` rule at "host"): links handed out so far stop working.
+  "refresh-cw": svg('<path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/>'),
+  // Mute for everyone (the `mute` rule), and let them talk again.
+  mic: svg('<path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/>'),
+  "mic-off": svg('<line x1="2" x2="22" y1="2" y2="22"/><path d="M18.89 13.23A7.12 7.12 0 0 0 19 12v-2"/><path d="M5 10v2a7 7 0 0 0 12 5"/><path d="M15 9.34V5a3 3 0 0 0-5.68-1.33"/><path d="M9 9v3a3 3 0 0 0 5.12 2.12"/><line x1="12" x2="12" y1="19" y2="22"/>'),
 } as const;
 
 /** eqosys's badge tag (see BADGE): the word on black and a slow oil-slick strip, the same in every game. */

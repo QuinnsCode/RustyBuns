@@ -7,8 +7,11 @@
 // The vouched X-User-Id is the player's login: whoever sends it again is them.
 // So it never enters the game. Each player plays under publicId(uid), a hash
 // of it, and that is the id views carry, so nobody can lift another's login.
+// Seats, the other tab taking over and the tick are @rustybuns/util/seats.
 import { Room, TICK_MS } from "../../src/room.ts";
-import { Sockets, type RoomCtx, type RoomSocket } from "@rustybuns/util/room";
+import type { RoomCtx, RoomSocket } from "@rustybuns/util/room";
+import { Loop, Seats, vouched } from "@rustybuns/util/seats";
+import { APP } from "../../src/api.ts";
 import { QUICK } from "../../src/edge/match.ts";
 import { parseMsg, type ServerMsg } from "../../src/hunt/game.ts";
 import { fetchWeather } from "../../src/weather.ts";
@@ -17,28 +20,20 @@ import { fetchWeather } from "../../src/weather.ts";
 const SEND_MS = 66;
 // Positions come in about 20 a second; anything past this is dropped.
 const LIMITS = { maxBytes: 4096, rate: 40, burst: 80 };
-// The same player from another tab or a reconnect: the older socket is closed with this.
-export const CLOSE_REPLACED = 4001;
 
 interface Ctx extends RoomCtx { storage: { setAlarm(at: number): Promise<void> } }
 /** What a socket carries through hibernation. */
 interface Player { id: string }
 
-/** The id a player is known by in the game and in every view: a one-way hash of their secret uid. */
-export async function publicId(uid: string): Promise<string> {
-  const hash = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode("park-hide-seek:" + uid)));
-  return Array.from(hash.subarray(0, 8), (b) => b.toString(16).padStart(2, "0")).join("");
-}
-
 export default class World {
   // The host looks up the park's weather; guests get it in their views.
   private room = new Room(Date.now(), fetchWeather);
-  private sockets: Sockets<Player, ServerMsg>;
-  private timer: ReturnType<typeof setInterval> | null = null;
+  private sockets: Seats<Player, ServerMsg>;
+  private loop = new Loop(TICK_MS, () => this.tick());
   private sent = new WeakMap<object, { v: number; at: number }>();
 
   constructor(private ctx: Ctx, _env: unknown) {
-    this.sockets = new Sockets(ctx, LIMITS);
+    this.sockets = new Seats(ctx, LIMITS);
   }
 
   async fetch(request: Request): Promise<Response> {
@@ -49,21 +44,15 @@ export default class World {
       await this.ctx.storage.setAlarm(at);
       return new Response(null, { status: 204 });
     }
-    if (request.headers.get("Upgrade") !== "websocket") return new Response("websocket only", { status: 400 });
-    const uid = request.headers.get("X-User-Id");
-    if (!uid) return new Response("Unauthenticated", { status: 401 });
-    const id = await publicId(uid);
-    const name = request.headers.get("X-User-Name") || "Ranger";
-    const host = request.headers.get("X-RB-Principal") !== "guest";
-    const now = Date.now();
+    const who = await vouched(request, APP, "Ranger");
+    if (who instanceof Response) return who;
+    const { id, name, host } = who, now = Date.now();
     if (!this.room.game.join(id, name, now, { host })) return Response.json({ error: "full" }, { status: 503 });
-    const { server, response } = this.sockets.upgrade({ id });
-    // one socket per player: a reconnect or second tab replaces the older one (after
-    // the new one is in, so the old one's close does not take the player out)
-    this.sockets.replace(server, (a) => a.id === id, CLOSE_REPLACED);
+    // one socket per player: a reconnect or second tab takes the seat over
+    const { server, response } = this.sockets.take({ id });
     this.flush(true);
     this.send(server, id, now);
-    if (!this.timer) this.timer = setInterval(() => this.tick(), TICK_MS);
+    this.loop.start();
     return response;
   }
 
@@ -92,9 +81,9 @@ export default class World {
   webSocketError(ws: RoomSocket) { this.gone(ws); }
 
   private gone(ws: RoomSocket) {
-    const id = this.sockets.who(ws)?.id;
-    if (id && !this.sockets.others(ws, (a) => a.id === id).length) this.room.game.leave(id, Date.now());
-    if (!this.sockets.open().length && this.timer) { clearInterval(this.timer); this.timer = null; }
+    const id = this.sockets.leave(ws);
+    if (id) this.room.game.leave(id, Date.now());
+    if (!this.sockets.open().length) this.loop.stop();
     this.flush();
   }
 

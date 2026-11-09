@@ -187,11 +187,27 @@ Each item is one PR, and each is useful on its own.
    region's landmarks are boards; the report plays like a tape, three signs appear one at a time about 220 m
    apart (a wisp over the spot, a ring on the map), and the last leads to a lair where a named creature four
    levels over its section waits. Beating or binding it closes the contract (`journey.hunts`).
-4. **Pockets:** the layout format and one cave, used for the Pine Barrens' mythic. First cut: `src/pockets.ts` (walls, roof,
-   fog, flickering lanterns laid over a region's arena look; a skin with `pocket` builds them in place of the open sky), and
-   `fightSkin` in `regions.ts` sends a region's mythic fight to its lair. Still to come: walking into a pocket from the
-   overworld (a door or cave mouth on the map), rooms beyond one ring, small creatures inside, and the other regions' lairs.
-5. **Beast travel:** swim and glide first, gating the crossing south.
-6. **Packs:** the format and the first pack, a winter island in time for the December legends.
+4. **Pockets:** `src/pockets.ts`, a layout per lair: walls, roof, fog and flickering lanterns laid over a region's arena
+   look (a skin with `pocket` builds them in place of the open sky), rooms opening off the ring past its wall (each with a
+   heap of fallen rock and maybe its own light), and the small creatures that live there (bats and moths under the roof,
+   fireflies and glowworms, rats, crayfish and scorpions round the floor, one instanced mesh per kind). Every playable
+   region's mythic fights in its own (#3835, #3959), and on the open world its arena ring sits under the lair's cave mouth,
+   open toward the trail, and a cave on the map. Towns are pockets too (#3966, `src/world/towns.ts`): each sighting
+   board hangs in a town, a gas station, a diner and a motel in a row on a cleared lot with one door. Walk up to the door and
+   you are inside, a pocket you walk round rather than fight in (`town-view.ts`, its own lights and fog, the open world put
+   away and the line-up waiting outside): the board on the diner's back wall past the counter, and the cook, the clerk, the
+   night manager and the witness who pinned the report up, each with a line that follows the contract. Out of the front
+   door, you are on the street again.
+5. **Beast travel:** swim and glide first, gating the crossing south. Done: `pace` and `GATES` in `src/world/world.ts`.
+   A beast whose first field is the tide swims you over water a wade would slow (a quarter faster than walking), a flier
+   glides you down any slope steeper than 8% at half again your pace, and nothing goes past `PACE_MAX` (20 m/s, a near
+   patch every three seconds). The south (9-16) needs a swimmer in the line-up, the Andes a flier as well. Burrow and a
+   ridden run are later.
+6. **Packs:** the format and the first pack, a winter island in time for the December legends. Format done in #3960:
+   `src/packs.ts` reads each `packs/<id>/` through a guard, and `test/packs.test.ts` checks its lore, licences,
+   sacred marks, the island's place by its port and its places' spacing. The first pack is `packs/yule-isle/` (Krampus,
+   Grýla and the kallikantzaros, a lair, ten places and the narrator's lines), and through its season (1 December to
+   6 January) the Yule Cat roams every playable region. Still to come: the island as a map reached by boat (#3992), and
+   its three beasts as fighters (#3993).
 
 Distant tree cards and the shrouded teasers are follow-ups once those land.

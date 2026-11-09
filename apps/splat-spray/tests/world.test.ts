@@ -2,7 +2,8 @@
 // join, one presses start, both race to the thing, and the board names the faster one.
 import { afterAll, expect, setDefaultTimeout, test } from "bun:test";
 import { serve, durableObject } from "@rustybuns/shell-bun";
-import World, { CLOSE_REPLACED } from "../packages/desktop/world.ts";
+import World from "../packages/desktop/world.ts";
+import { SEAT_CLOSE } from "@rustybuns/util/seats";
 import { MATCH, parseServerMsg, type View } from "../src/match/game.ts";
 
 setDefaultTimeout(30_000);
@@ -61,7 +62,7 @@ test("the same player again replaces their older socket and stays in the match",
   await until(() => one.view);
   const two = open("player-solo");
   await until(() => two.view && one.closed !== null);
-  expect(one.closed).toBe(CLOSE_REPLACED);
+  expect(one.closed).toBe(SEAT_CLOSE.replaced);
   expect(two.view!.players.filter((p) => p.name === "player-solo").length).toBe(1);
   two.ws.close();
 });

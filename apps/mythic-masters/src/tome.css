@@ -118,8 +118,12 @@
 .title .verso .demand { max-width: 30ch; }
 @media (min-width: 960px) {
   .title .verso { order: -1; } /* the frontispiece faces the title page */
-  .title .tome { min-height: min(640px, calc(100dvh - 80px)); display: flex; flex-direction: column; }
-  .title .leaf { flex: 1; align-content: stretch; }
+  /* the book fits the window and each leaf scrolls on its own when its words run longer than the page, so nothing
+   * spills off the paper; the frontispiece starts at the head of its leaf, the title page centres while it fits */
+  .title .tome { height: max(360px, calc(100dvh - 70px)); min-height: 0; display: flex; flex-direction: column; }
+  .title .leaf { flex: 1; min-height: 0; grid-template-rows: minmax(0, 1fr); align-content: stretch; }
+  .title .page { min-height: 0; overflow-y: auto; overscroll-behavior: contain; justify-content: safe center; scrollbar-width: thin; scrollbar-color: var(--ink-line) transparent; }
+  .title .verso { justify-content: flex-start; }
 }
 @media (max-width: 959px) {
   .title { align-content: start; } /* taller than the screen: it scrolls from its head, never cut off above */
@@ -364,6 +368,7 @@
 .deck.paper { position: fixed; background: var(--grain), radial-gradient(ellipse at 50% 0%, var(--paper-hi), var(--paper) 50%, var(--paper-lo)); }
 .deck.paper::before { display: none; }
 .deck.paper .keys { color: var(--ink-faded); }
+.deck > .demand { max-width: 1200px; margin-inline: auto; } /* the Book wants the card on top (src/demand.ts deckDemandOf) */
 .deck .tcard { background: rgba(255, 249, 232, 0.55); color: var(--ink-b); border-color: color-mix(in srgb, var(--fc) 55%, #4a2e16); border-radius: 6px; box-shadow: 2px 3px 0 rgba(70, 42, 18, 0.15); }
 .deck .tcard > header b { font-family: var(--f-hand); font-size: 23px; font-weight: 400; }
 .deck .tcard .meta { color: var(--ink-faded); font-size: 14px; }
@@ -982,6 +987,39 @@ body > .gc-dialog .gc-card button.gc-sec-h svg:last-child { opacity: 0.5; }
       radial-gradient(ellipse at 50% 40%, transparent 60%, rgba(10, 5, 2, 0.55)) border-box, url("/paper/bark.png") 0 0 / 192px 192px repeat border-box;
     box-shadow: 0 22px 44px rgba(0, 0, 0, 0.65), inset 0 1px 0 rgba(255, 225, 190, 0.12), inset 0 0 14px rgba(0, 0, 0, 0.6); }
 } }
+/* the end-of-fight book is the Book's one size (--book-w by --book-h, below), and what is written in it is drawn to
+ * that size (#3963), not to the old 440px leaf: words, buttons, engravings, seal and plate are in --u, one pixel of a
+ * 440px leaf at the leaf's real width, so it reads as the same page, larger */
+@media (min-width: 900px) { @supports (-webkit-mask-box-image: none) {
+  .result { --u: calc(var(--book-w) / 880); }
+  .result .note { padding: calc(34 * var(--u)) calc(40 * var(--u)) calc(30 * var(--u)) calc(52 * var(--u)); }
+  .result .note h2 { font-size: calc(40 * var(--u)); }
+  .result .note p { font-size: calc(17 * var(--u)); margin: 0.45em 0; }
+  .result .note p.demand { font-size: calc(23 * var(--u)); }
+  .result .note .leaf-head { font-size: calc(14 * var(--u)); margin: calc(-18 * var(--u)) calc(-10 * var(--u)) calc(8 * var(--u)); }
+  .result .note .row { gap: calc(14 * var(--u)); margin-top: calc(18 * var(--u)); }
+  .result .note .row button { font-size: calc(17 * var(--u)); padding: calc(8 * var(--u)) calc(16 * var(--u)); gap: calc(6 * var(--u)); }
+  .result .note .row button svg { width: calc(18 * var(--u)); height: calc(18 * var(--u)); }
+  .result .note .seal { width: calc(112 * var(--u)); bottom: calc(-30 * var(--u)); }
+  .result .note .tear { width: calc(150 * var(--u)); }
+  .result .note .note-plate { width: calc(124 * var(--u)); } /* a little under scale: a journey note has the most lines */
+  .result .note .note-plate .initial { font-size: calc(52 * var(--u)); }
+  .result::before { padding-top: calc(296 * var(--u)); font-size: calc(19 * var(--u));
+    background: var(--ink-witch) 50% calc(132 * var(--u)) / calc(150 * var(--u)) calc(80 * var(--u)) no-repeat, var(--ink-ring) 50% calc(64 * var(--u)) / calc(216 * var(--u)) calc(216 * var(--u)) no-repeat,
+      url("/paper/gutter.png") calc(100% + 167px) 0 / 320px 384px repeat-y, var(--parchment); }
+} }
+/* a single leaf (a phone, or a browser that can't deckle the spread) is a set size, not the size of its words: the
+ * screen's width and most of its height, however short the note; its words and buttons are drawn for a hand */
+@media (min-width: 900px) { @supports not (-webkit-mask-box-image: none) {
+  .result .note { width: min(88vw, 1000px); max-width: none; min-height: min(78dvh, 720px); display: flex; flex-direction: column; justify-content: center; }
+} }
+@media (max-width: 899px) {
+  .result .note { width: min(620px, calc(100vw - 32px)); min-height: min(62dvh, 560px); display: flex; flex-direction: column; justify-content: center; }
+  .result .note h2 { font-size: clamp(38px, 10vw, 52px); }
+  .result .note p { font-size: clamp(19px, 5vw, 24px); margin: 0.45em 0; }
+  .result .note p.demand { font-size: clamp(26px, 7vw, 34px); }
+  .result .note .row button { font-size: clamp(19px, 5vw, 24px); min-height: 52px; padding: 10px 20px; }
+}
 /* the line-up written as entries (#3662 round 79), not ruled into a form: no column heads, no rules between rows; the
  * portrait at the head of each entry, its name in the hand, a sentence in the book's type with the ink still owed
  * underlined and hatched in as it fills, the lead's gloss in red, and raising or resting it two small marks at the
@@ -1030,6 +1068,14 @@ body > .gc-dialog .gc-card .gc-binds button.gc-icon:disabled { visibility: hidde
 .folio .moves li small { order: 2; margin-left: 0; white-space: nowrap; font-style: italic; font-size: 14px; }
 .folio .moves li::after { content: ""; order: 1; flex: 1 0 12px; border-bottom: 2px dotted rgba(70, 42, 18, 0.4); transform: translateY(-4px); }
 .folio .moves .dot { align-self: center; }
+/* the card's line under each move: its shape drawn small, then its numbers (moveline.ts) */
+.folio .moves li { flex-wrap: wrap; }
+.folio .moves li .line { order: 3; flex: 1 0 100%; display: flex; align-items: center; gap: 6px; font-family: var(--f-book); font-size: 13px; color: var(--ink-faded); padding-left: 18px; }
+svg.shape { flex: none; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linejoin: round; overflow: visible; }
+svg.shape .me { fill: currentColor; stroke: none; }
+.folio .moves li .line svg.shape { width: 40px; }
+svg.shape .lane { stroke-dasharray: 1.5 2; opacity: 0.6; }
+.select.book .card > .moves i svg.shape { width: auto; height: 16px; vertical-align: -2px; margin-right: 3px; stroke-width: 1.7; color: var(--ink-b); }
 /* the versus book written, not a dashboard (#3671 round 85): each beast an entry around its engraved radar (its name in
  * the hand, what it is in the book's italic, its moves named in a sentence, not a row of chips); the field legend a
  * line of words in the hand, the one picked in red ink, no coloured dots */
@@ -1065,7 +1111,11 @@ body > .gc-dialog .gc-card .gc-profiles .gc-tab.gc-prof[aria-pressed=true] { col
  * hand under it, so the right-hand page is a page of drawings, not bare paper */
 .drawn { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px 22px; margin: 6px 0 18px; }
 .drawn > div { display: grid; justify-items: center; }
-.drawn .note-plate { width: 132px; margin: 0; }
+/* three or fewer fill the leaf as large plates, two over one (#3765: the owner wanted the bare paper under them used);
+ * a fuller line-up keeps them small enough to fit. Scoped to the tome so they beat the note plate's own 156 px. */
+.journal .tome .drawn .note-plate { width: 172px; margin: 0; }
+.journal .tome .drawn:has(> div:nth-child(3)):not(:has(> div:nth-child(4))) ~ .vignette.rest { display: none; } /* three plates, two over one, are the leaf's drawing: no cauldron under them as well */
+.journal .tome .drawn:has(> div:nth-child(4)) .note-plate { width: 132px; }
 .drawn p { margin: 2px 0 0; font-family: var(--f-hand); font-size: 20px; color: var(--ink-b); }
 .journal .tome .drawn .note-plate img { filter: sepia(0.9) contrast(1.05) brightness(0.9) saturate(1.2); } /* printed as gently as the folio's plate, so the three match; the lights the colour of the leaf */ /* the lights the colour of the leaf */
 /* the Librarian's key is a small brass boss on the boards, not a labelled pill over the world (#3671 round 91): the key
@@ -1214,3 +1264,34 @@ body > .gc-dialog .gc-card button.gc-close:hover, .journal #closeJournal:hover, 
 @keyframes book-lands { from { transform: translateY(18vh) scale(0.82) rotateX(24deg); opacity: 0; } }
 @keyframes cover-open { to { transform: rotateY(-180deg); } }
 @media (prefers-reduced-motion: reduce) { .booktalk.first-open .tome, .booktalk.first-open .tome > .cover { animation: none; } .booktalk.first-open .tome > .cover { display: none; } }
+/* the Book is one size on screen, whatever is open in it: the title, the journal, a result note and Settings are all
+ * the same spread, --book-w by --book-h inside the same boards. A chapter longer than the spread scrolls within its
+ * leaves, the book stays put; a result note too long for it is the one thing that may grow the spread. */
+@media (min-width: 900px) {
+  :root { --book-w: min(1200px, calc(100vw - 160px)); --book-h: min(860px, calc(100dvh - 80px)); }
+  :is(.journal, .title) .tome { width: var(--book-w); height: var(--book-h); min-height: 0; max-width: none; margin: auto; display: flex; flex-direction: column; }
+  :is(.journal, .title) .tome > .boards { inset: -16px -20px -20px; }
+  .journal { display: grid; padding: 46px 40px 34px; }
+  :is(.journal, .title) .tome > .leaf { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: rgba(94, 70, 48, 0.45) transparent; }
+}
+@media (min-width: 900px) { @supports (-webkit-mask-box-image: none) {
+  body > .gc-dialog, .result { grid-template-columns: repeat(2, calc(var(--book-w) / 2)); }
+  body > .gc-dialog { grid-template-rows: var(--book-h); }
+  .result { grid-template-rows: minmax(var(--book-h), auto); }
+  body > .gc-dialog::after, .result::after { margin: -16px -20px -20px; }
+} }
+
+/* Fight a Friend (src/versus.ts): the friends list and a duel's room, on the starters' sheet */
+.friends .sheet { max-width: 760px; }
+.friends h1 small { font-size: 0.55em; letter-spacing: 0.12em; color: var(--ink-faded); }
+.friends h2 { font-family: var(--f-title); color: var(--blood); margin: 18px 0 6px; }
+.vs-list { list-style: none; margin: 0; padding: 0; }
+.vs-list li { display: flex; align-items: center; gap: 12px; padding: 8px 4px; border-bottom: 1px dashed var(--ink-line); }
+.vs-list li b { font-family: var(--f-hand); font-size: 20px; font-weight: 400; }
+.vs-list li small { flex: 1; color: var(--ink-faded); font-style: italic; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.friends .note { color: var(--blood); font-style: italic; }
+.friends .row { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 18px; }
+
+/* The pause menu over a fight is see-through: the fight shows behind it (and against a friend it never stops) */
+body.in-fight > .gc-dialog { background: radial-gradient(ellipse at center, rgba(10, 6, 3, 0.05), rgba(5, 3, 1, 0.35)); }
+body.in-fight > .gc-dialog { opacity: 0.74; }

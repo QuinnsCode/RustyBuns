@@ -36,11 +36,17 @@ function label(name: string, b: Binding): string {
   return `${KIND[b.type]} ${named ?? name}`;
 }
 
+/** Another app's D1 (`app`): a ref into its stack, so this app's destroy never touches it. */
+const ref = (b: Binding) => b.type === "d1" && !!b.app;
+/** The other apps' resources this config only refs, as "D1 eqosys-db" with the app that owns each. */
+export const refNames = (cfg: Pick<RustyBunsConfig, "bindings">) =>
+  Object.entries(cfg.bindings ?? {}).flatMap(([n, b]) => b.type === "d1" && b.app ? [{ name: label(n, b), app: b.app }] : []);
+
 /** Each protected resource, as "D1 app-db": data bindings, containers, and the Worker with its classes. */
 export function protectedNames(cfg: Cfg): string[] {
   const bindings = Object.entries(cfg.bindings ?? {});
   return [
-    ...bindings.filter(([, b]) => b.type in KIND && isProtected(b)).map(([n, b]) => label(n, b)),
+    ...bindings.filter(([, b]) => b.type in KIND && !ref(b) && isProtected(b)).map(([n, b]) => label(n, b)),
     ...bindings.flatMap(([, b]) => b.type === "container" && b.protect ? [`Container ${b.className}`] : []),
     ...(workerKept(cfg) ? [`Worker ${cfg.targets?.edge?.workerName ?? cfg.name ?? "worker"}`, ...ownClasses(cfg)] : []),
   ];
@@ -54,7 +60,7 @@ export function unprotectableNames(cfg: Pick<RustyBunsConfig, "bindings">): stri
 /** Names this destroy WILL delete: the data-holding resources that are not protected, and the ones protect can't keep. */
 export function destroyedNames(cfg: Cfg): string[] {
   return [
-    ...Object.entries(cfg.bindings ?? {}).filter(([, b]) => b.type in KIND && !isProtected(b)).map(([n, b]) => label(n, b)),
+    ...Object.entries(cfg.bindings ?? {}).filter(([, b]) => b.type in KIND && !ref(b) && !isProtected(b)).map(([n, b]) => label(n, b)),
     ...(workerKept(cfg) ? [] : ownClasses(cfg)),
     ...unprotectableNames(cfg),
   ];
@@ -65,15 +71,16 @@ export function destroyedNames(cfg: Cfg): string[] {
  * "will this wipe my vector index?" never has to be read out of a plan. Empty when no binding holds data.
  */
 export function protectReport(cfg: Cfg, sub: string): string {
-  const kept = protectedNames(cfg), gone = destroyedNames(cfg);
-  if (!kept.length && !gone.length) return "";
+  const kept = protectedNames(cfg), gone = destroyedNames(cfg), refs = refNames(cfg);
+  if (!kept.length && !gone.length && !refs.length) return "";
   const lines = ["protection (destroy):"];
   for (const n of kept) lines.push(`  [KEPT]    ${n}: destroy leaves it, and its data, on the account`);
   const fixed = new Set(unprotectableNames(cfg));
   const why = (n: string) => fixed.has(n) ? " (protect can't keep this kind)"
     : n.startsWith("Durable Object ") ? " (with the Worker: `protect: true` on the binding or `worker.protect` keeps it)" : "";
   for (const n of gone) lines.push(`  [REMOVED] ${n}: destroy deletes it, and its data${why(n)}`);
+  for (const r of refs) lines.push(`  [NOT OURS] ${r.name}: ${r.app} owns it, so this destroy leaves it`);
   if (kept.length && sub !== "destroy") lines.push(`  protect saves with the resource, so a new \`protect: true\` counts from the next deploy: deploy before you destroy.`);
-  if (!kept.length && !fixed.size) lines.push(`  nothing is protected. Set \`protect: true\` on a binding to keep it through destroy.`);
+  if (!kept.length && !fixed.size && gone.length) lines.push(`  nothing is protected. Set \`protect: true\` on a binding to keep it through destroy.`);
   return lines.join("\n");
 }

@@ -8,7 +8,7 @@ import { mulberry32 } from "@rustybuns/util";
 import { atan2, cos, hypot, sin } from "./dmath.ts";
 import { typeMul } from "./fields.ts";
 import { reachOf } from "./moves.ts";
-import { ARENA, COST, covers, DIVE, frames, head, held, HZ, IDLE, ORBIT, ROUND_TICKS, sweep, swingPhase, TAKEOFF, type Fighter, type Input, type Match } from "./sim.ts";
+import { ARENA, COST, covers, DIVE, frames, head, held, HZ, IDLE, ORBIT, ROUND_TICKS, sweep, swingPhase, TAKEOFF, under, warning, type Area, type Fighter, type Input, type Match } from "./sim.ts";
 
 export type Bot = (m: Match) => Input;
 
@@ -22,6 +22,23 @@ export const SIDESTEP = { skirmisher: 0.3, flyer: 0.25, bruiser: 0.2, tank: 0.05
 /** Ticks after that sidestep in which the swing it dodged is the bot's opening: once the whiff is recovering, it comes
  * straight back in (a dash if it's far) and hits before the swinger is up again. */
 export const PUNISH = 60;
+/** A ranged move painted on the ground under us (sim `warning`, or a lob still in the air): the chance each tick of
+ * dashing out of it, by archetype; a tick it doesn't, it walks out (ATTACKS.md step 5). The light ones read it best. */
+export const DODGE = { skirmisher: 0.25, flyer: 0.2, bruiser: 0.15, tank: 0.08 } as const;
+
+/** Which way out of shape `a` for fighter `me`, as a unit [x, z]: sideways out of a column's or wall's lane or a cone's fan,
+ * to the side it already stands on; straight out from a ring's middle. A way that runs off the ring turns: a lane's to its
+ * other side, a ring's along its edge, toward the middle. */
+export function wayOut(a: Area, me: Fighter): [number, number] {
+  const h = hypot(a.dir.x, a.dir.z) || 1, ux = a.dir.x / h, uz = a.dir.z / h, ex = me.pos.x - a.at.x, ez = me.pos.z - a.at.z, e = hypot(ex, ez);
+  const ring = a.d.shape === "blast" || a.d.shape === "nova", s = -ex * uz + ez * ux >= 0 ? 1 : -1;
+  let [ox, oz] = ring && e > 0.3 ? [ex / e, ez / e] : [-uz * s, ux * s];
+  if (hypot(me.pos.x + ox * 3, me.pos.z + oz * 3) > ARENA.radius - 1.5) {
+    if (!ring) { ox = -ox; oz = -oz; }
+    else { const tx = -oz, tz = ox, k = tx * -me.pos.x + tz * -me.pos.z >= 0 ? 1 : -1; ox = tx * k; oz = tz * k; }
+  }
+  return [ox, oz];
+}
 /** A flyer's stamina, as a share of full, where it lands and where it takes off again (#3518). The sim lets it take off
  * from TAKEOFF, but a short hop up costs a landing; staying up to the dregs and resting nearly full won the most pairings. */
 export const WINGS = { land: 0.1, fly: Math.max(TAKEOFF, 0.9) } as const;
@@ -121,6 +138,14 @@ export function bot(side: 0 | 1, seed: number): Bot {
         if (d > reach + 1.5 && !me.exhausted && me.stamina >= me.b.dashCost) { press("dash"); if (i.dash) return i; }
         return i;
       }
+    }
+
+    // A ranged move winding up at us paints where it will land (and a lob keeps its ring while it flies): get out of it.
+    const w = warning(m, side ? 0 : 1) ?? m.areas.find((a) => a.owner !== side && a.d.shape === "blast" && a.t < a.land);
+    if (w && me.onGround && under(w, me)) {
+      [i.mx, i.mz] = wayOut(w, me);
+      if (!me.exhausted && me.stamina >= me.b.dashCost && rnd() < DODGE[me.c.archetype]) press("dash");
+      return i;
     }
 
     if (threat && !me.exhausted && rnd() < (me.b.mass < 30 ? 0.08 : 0.03)) {

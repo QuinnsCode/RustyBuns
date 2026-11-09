@@ -114,7 +114,7 @@ describe("mirrors: a dug fork turned into one (#875)", () => {
     await editHere(call, "README", 1, "hello from the dig");
     const was = await sides(call);
     renameSync(up, up + ".away");
-    expect(await (await turn(call, { ahead: 1 })).json()).toMatchObject({ state: "down", ahead: 1 });
+    expect(await (await turn(call, { ahead: 1 })).json()).toMatchObject({ state: "down", ahead: 1, error: "upstream didn't answer, so it tries again shortly" });
     renameSync(up + ".away", up);
     expect(await sides(call)).toEqual(was);
     expect(await sync(call)).toMatchObject({ state: "ok", ahead: 0 });
@@ -125,7 +125,9 @@ describe("mirrors: a dug fork turned into one (#875)", () => {
     writeFileSync(join(up, "hooks", "pre-receive"), "#!/bin/sh\necho 'permission denied to ana' >&2\nexit 1\n", { mode: 0o755 });
     await editHere(no, "README", 1, "hello from the dig");
     const before = await sides(no);
-    expect(await (await turn(no, { ahead: 1 })).json()).toMatchObject({ state: "refused", ahead: 1 });
+    // Upstream's hook said "permission denied to ana" through git's "remote:" lines: the person reads why, not git.
+    expect(await (await turn(no, { ahead: 1 })).json()).toMatchObject({ state: "refused", ahead: 1, error: "upstream turned the push away: the sign-in this mirror uses may not write to that branch" });
+    expect((await get(no, "/api/repos/ana/up/mirror")).error).not.toMatch(/remote:|permission denied|pre-receive/);
     expect(await sides(no)).toEqual(before);
   });
 

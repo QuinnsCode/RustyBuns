@@ -3,7 +3,7 @@
 use crate::data::{Archetype, Slot};
 use crate::dmath::{atan2, cos, hypot, max, min, or1, sin};
 use crate::sim::{
-    covers, frames, head, held, sweep, swing_phase, Fighter, Input, Key, Match, Phase, State, ARENA_RADIUS, COST, DIVE_TUCK, HZ, IDLE, ORBIT_FREE, ROUND_TICKS,
+    covers, frames, head, held, sweep, swing_phase, under, warning, Area, Fighter, Input, Key, Match, Phase, State, ARENA_RADIUS, COST, DIVE_TUCK, HZ, IDLE, ORBIT_FREE, ROUND_TICKS,
     TAKEOFF,
 };
 
@@ -20,6 +20,40 @@ fn sidestep(a: Archetype) -> f64 {
     }
 }
 const PUNISH: f64 = 60.0;
+fn dodge(a: Archetype) -> f64 {
+    match a {
+        Archetype::Skirmisher => 0.25,
+        Archetype::Flyer => 0.2,
+        Archetype::Bruiser => 0.15,
+        Archetype::Tank => 0.08,
+    }
+}
+
+/// bot.ts wayOut.
+fn way_out(a: &Area, me: &Fighter) -> (f64, f64) {
+    let h = or1(hypot(a.dir.x, a.dir.z));
+    let ux = a.dir.x / h;
+    let uz = a.dir.z / h;
+    let ex = me.pos.x - a.at.x;
+    let ez = me.pos.z - a.at.z;
+    let e = hypot(ex, ez);
+    let ring = a.d.is_blast() || matches!(a.d, crate::data::Delivery::Nova { .. });
+    let s = if -ex * uz + ez * ux >= 0.0 { 1.0 } else { -1.0 };
+    let (mut ox, mut oz) = if ring && e > 0.3 { (ex / e, ez / e) } else { (-uz * s, ux * s) };
+    if hypot(me.pos.x + ox * 3.0, me.pos.z + oz * 3.0) > ARENA_RADIUS - 1.5 {
+        if !ring {
+            ox = -ox;
+            oz = -oz;
+        } else {
+            let tx = -oz;
+            let tz = ox;
+            let k = if tx * -me.pos.x + tz * -me.pos.z >= 0.0 { 1.0 } else { -1.0 };
+            ox = tx * k;
+            oz = tz * k;
+        }
+    }
+    (ox, oz)
+}
 const WINGS_LAND: f64 = 0.1;
 const WINGS_FLY: f64 = if TAKEOFF > 0.9 { TAKEOFF } else { 0.9 };
 
@@ -271,6 +305,25 @@ impl Bot {
                     if c.i.dash {
                         return c.i;
                     }
+                }
+                return c.i;
+            }
+        }
+
+        let w = warning(m, 1 - side).or_else(|| {
+            m.areas.iter().find(|a| {
+                let a = a.borrow();
+                a.owner != side && a.d.is_blast() && a.t < a.land
+            })
+            .map(|a| a.borrow().clone())
+        });
+        if let Some(w) = w.as_ref() {
+            if me.on_ground && under(w, me) {
+                let (ox, oz) = way_out(w, me);
+                c.i.mx = ox;
+                c.i.mz = oz;
+                if !me.exhausted && me.stamina >= me.b.dash_cost && c.bot.rnd.float() < dodge(me.c.archetype) {
+                    c.press(me, Key::Dash);
                 }
                 return c.i;
             }

@@ -74,7 +74,9 @@ test("personal API tokens: made once, scoped, limited and revoked", async () => 
     const u = await make("read");
     expect((await call("ryan", `/api/tokens/${u.id}`, { method: "DELETE" })).status).toBe(200);
     expect((await as(u.token, "/api/me")).status).toBe(401);
-    expect((await call("mallory", `/api/tokens/${t.id}`, { method: "DELETE" })).status).toBe(404);
+    // Someone else's token isn't theirs to revoke (#3940: named).
+    const gone = await call("mallory", `/api/tokens/${t.id}`, { method: "DELETE" });
+    expect([gone.status, ((await gone.json()) as { tag?: string }).tag]).toEqual([404, "NoSuchToken"]);
   }
 
   // a token is never an admin, can't touch tokens or the account, and opens no sockets
@@ -105,8 +107,10 @@ test("personal API tokens: made once, scoped, limited and revoked", async () => 
   // a token needs a label, a scope and 1 to 365 days, and a cookie to be made
   {
     const { call, send } = j;
-    for (const body of [{ scope: "read" }, { label: "x", scope: "root" }, { label: "x", scope: "read", days: 0 }, { label: "x", scope: "read", days: 366 }, { label: "x", scope: "read", days: 1.5 }])
-      expect((await send("ryan", "/api/tokens", body)).status).toBe(400);
+    for (const body of [{ scope: "read" }, { label: "x", scope: "root" }, { label: "x", scope: "read", days: 0 }, { label: "x", scope: "read", days: 366 }, { label: "x", scope: "read", days: 1.5 }]) {
+      const res = await send("ryan", "/api/tokens", body);
+      expect([body, res.status, ((await res.json()) as { tag?: string }).tag]).toEqual([body, 400, "BadInput"]);
+    }
     expect((await call(null, "/api/tokens", { method: "POST", body: JSON.stringify({ label: "x", scope: "read" }) })).status).toBe(401);
   }
 });
@@ -126,9 +130,9 @@ describe("GET /api/openapi.json", () => {
         expect(o.parameters.filter((p: any) => p.in === "path").map((p: any) => p.name)).toEqual([...path.matchAll(/\{(\w+)\}/g)].map((m) => m[1]));
     // Executor's policy keys off these.
     const risky = Object.values(s.paths).flatMap((m: any) => Object.values(m).filter((o: any) => o["x-codesplitter-risky"]).map((o: any) => o.operationId)).sort();
-    expect(risky).toEqual(["accept_agent_batch", "beam_branch", "cherry_pick", "claim_invite", "commit_file", "create_ci_token", "create_invite", "delete_branch_file", "delete_mervin_learning", "delete_repo", "delete_share", "delete_tag", "deploy", "deploy_destroy", "invite", "land",
-      "make_tag", "merge_branch", "merge_clean_branches", "record_check", "reject_agent_batch", "remove_collaborator", "revert_commit", "revoke_ci_token", "revoke_invite", "run_cut", "set_check_settings", "set_mervin_learning", "set_private_lines",
-      "set_protect_main", "set_repo_visibility", "share_lines", "start_agent", "stop_agents", "take_upstream", "update_check", "withdraw_beam"]);
+    expect(risky).toEqual(["accept_agent_batch", "beam_branch", "cherry_pick", "claim_invite", "commit_file", "create_ci_token", "create_invite", "create_mirror", "delete_branch_file", "delete_mervin_learning", "delete_repo", "delete_share", "delete_tag", "deploy", "deploy_destroy", "invite", "land",
+      "make_tag", "merge_branch", "merge_clean_branches", "push_branch_upstream", "push_tag_upstream", "record_check", "reject_agent_batch", "remove_collaborator", "revert_commit", "revoke_ci_token", "revoke_invite", "run_cut", "set_check_settings", "set_mervin_learning", "set_private_lines",
+      "set_protect_main", "set_repo_visibility", "share_lines", "start_agent", "stop_agents", "sync_mirror", "take_upstream", "turn_into_mirror", "update_check", "withdraw_beam"]);
   });
 
   test("every read in it answers a token", async () => {
@@ -163,8 +167,8 @@ describe("GET /api/openapi.json", () => {
       const q = methods.get.parameters.filter((p: any) => p.in === "query").map((p: any) => `${p.name}=${query[p.name] ?? ""}`).join("&");
       answers[path] = (await as(t.token, `/api${url}${q ? `?${q}` : ""}`)).status;
     }
-    // A level that isn't dug yet (409), and a job that never was (404), still answered as routes.
-    expect(Object.entries(answers).filter(([p, n]) => n >= 400 && !(p.startsWith("/levels/") && n === 409) && !(p === "/jobs/{id}" && n === 404))).toEqual([]);
+    // A level that isn't dug yet (409), a job that never was (404), and lab, which is no mirror or fork (404, 409), still answered as routes.
+    expect(Object.entries(answers).filter(([p, n]) => n >= 400 && !(p.startsWith("/levels/") && n === 409) && !(p === "/jobs/{id}" && n === 404) && !(p.includes("/mirror") && (n === 404 || n === 409)))).toEqual([]);
   });
 
   test("a write token edits code but can't manage the repo; admin can; a token can be held to a repo", async () => {

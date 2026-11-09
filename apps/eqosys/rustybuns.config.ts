@@ -18,12 +18,15 @@ export default defineConfig({
   },
   bindings: {
     DB: { type: "d1", databaseName: "eqosys-db", protect: true, migrationsDir: "migrations" },
-    // One hub a person (src/hub.ts): friends, who is on in which app, notifications. Hibernating sockets, no alarms.
-    HUB: { type: "durable_object", className: "Hub" },
-    // One party a room code (src/party.ts, QOLLAB.md): the lobby a game's players meet in. Hibernating sockets, no alarms.
-    PARTY: { type: "durable_object", className: "Party" },
-    // One space a space id (src/space.ts, QOLLAB.md): its text channels and their history. Hibernating sockets, no alarms.
-    SPACE: { type: "durable_object", className: "Space" },
+    // Qollab (apps/qollab, QOLLAB.md) hosts these three since #3816; eqosys's pages, account delete and privacy export still call them.
+    // One hub a person (src/qollab/hub.ts): friends, who is on in which app, notifications. Hibernating sockets, no alarms.
+    HUB: { type: "durable_object", className: "Hub", app: "qollab" },
+    // One party a room code (src/qollab/party.ts): the lobby a game's players meet in. Hibernating sockets, no alarms.
+    PARTY: { type: "durable_object", className: "Party", app: "qollab" },
+    // One space a space id (src/qollab/space.ts): its text channels and their history. Hibernating sockets, no alarms.
+    SPACE: { type: "durable_object", className: "Space", app: "qollab" },
+    // Qollab's Worker: every Qollab path (/hub, /api/hub, /q/party, /q/space, /q/save, /q/qlave/roster) is handed to it.
+    QOLLAB: { type: "service", app: "qollab" },
     // One vault a person (src/vault.ts, src/privacy.ts): the key their saves are sealed with, consents and requests. Made in the EU
     // jurisdiction (VAULT.jurisdiction("eu")) for anyone whose first sign-in came from Europe. No sockets, no alarms.
     VAULT: { type: "durable_object", className: "Vault" },
@@ -44,4 +47,14 @@ export default defineConfig({
   experimental: { wheel: "human" },
   // Its own name; every other *.qntbr.com name stays with the wildcard route in front of qntbr.com.
   targets: { edge: { provider: "cloudflare", domain: "eqosys.qntbr.com" } },
+  // `--stage preview`: a whole second eqosys on its own name and its own empty database, for trying a change (Qollab's move,
+  // #3816) before production. Each stage's Qollab binds that stage's eqosys and the other way round, so a new stage goes
+  // eqosys, qollab, eqosys: bootstrap leaves out the bindings into qollab until qollab is deployed in the stage.
+  stages: {
+    preview: {
+      bootstrap: true,
+      domain: "eqosys-preview.qntbr.com",
+      bindings: { DB: { databaseName: "eqosys-preview-db", protect: false }, BETTER_AUTH_URL: { value: "https://eqosys-preview.qntbr.com" } },
+    },
+  },
 });

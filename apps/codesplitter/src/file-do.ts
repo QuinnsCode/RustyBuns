@@ -27,7 +27,7 @@
 // time travel and the live socket. A commit hands back that public text too,
 // for git and search, so the real text never leaves the app.
 
-import { json, need, readBody, type Env } from "./env.ts";
+import { fail, json, need, readBody, type Env } from "./env.ts";
 import { arr, bool, check, int, nul, num, obj, opt, raw, str, type Of } from "@rustybuns/util/guard";
 import { recordEdits, type Recent } from "./line-events.ts";
 import { noteStep } from "./insights.ts";
@@ -134,6 +134,8 @@ export const ClaimsReply = arr(obj({ id: str(200), who: str(200), bot: bool(), l
 export const ClaimRefused = obj({ error: opt(str(Infinity, { min: 0 })), updating: opt(bool()), retryAfter: opt(num(0, Infinity)) });
 /** What `/ops` answers: the rev after and the ops that landed, or (409) what it refused and why. */
 export const OpsReply = obj({ rev: int(0, Number.MAX_SAFE_INTEGER), applied: arr(raw, Infinity) });
+/** What `/log` answers, as far as a reader of the history reads each op (its rev and when): a page, and the rev to ask from next. */
+export const LogReply = obj({ ops: arr(obj({ rev: int(0, Number.MAX_SAFE_INTEGER), at: num(0, Number.MAX_SAFE_INTEGER) }), Infinity), next: nul(int(0, Number.MAX_SAFE_INTEGER)) });
 export const OpsRefused = obj({ updating: opt(bool()), conflicts: opt(arr(obj({ index: int(-1, Number.MAX_SAFE_INTEGER), reason: str(Infinity, { min: 0 }), claim: opt(str(200)) }), Infinity)) });
 /** What `/private` (its private line ids) and `/here` (who has it open) answer. */
 export const Names = arr(str(Infinity, { min: 0 }), Infinity);
@@ -283,7 +285,7 @@ export class FileDurableObject {
       if (b instanceof Response) return b;
       if (b.proto !== undefined && b.proto !== PROTOCOL) return json(this.stale(), 409);
       const ops = parseOps(b.ops);
-      if (typeof ops === "string") return json({ error: ops }, 400);
+      if (typeof ops === "string") return fail("BadInput", ops);
       const r = await this.edit(by, ops, b.ifRev, b.claim, live);
       return r.ok ? json({ rev: r.rev, applied: r.applied }) : json(refused(r), 409);
     }
@@ -294,7 +296,7 @@ export class FileDurableObject {
       }
       if (req.method === "GET" && route === "at") return json(this.shown(await this.at(Number(url.searchParams.get("rev"))), crew));
     } catch (e) {
-      if (e instanceof Trimmed) return json({ error: e.message, from: e.from }, 410);
+      if (e instanceof Trimmed) return fail("HistoryTrimmed", e.message, { from: e.from });
       throw e;
     }
     if (req.method === "GET" && route === "base") return json(this.base && this.shown(this.base, crew));
@@ -302,7 +304,7 @@ export class FileDurableObject {
     if (req.method === "POST" && route === "private") {
       // Crew only (the Worker checks). A line keeps its id when it's edited, so it stays private.
       const { lines, private: on } = (await req.json().catch(() => ({}))) as { lines?: unknown; private?: unknown };
-      if (typeof on !== "boolean" || !isIds(lines)) return json({ error: "{lines: [line id], private: true|false}, please" }, 400);
+      if (typeof on !== "boolean" || !isIds(lines)) return fail("BadInput", "{lines: [line id], private: true|false}, please");
       for (const id of lines) on ? this.secret.add(id) : this.secret.delete(id);
       await this.ctx.storage.put("private", [...this.secret]);
       // Each page fetches the file again, and gets it as its reader may see it.
@@ -347,7 +349,7 @@ export class FileDurableObject {
       const b = need(await readBody(req), CLAIM_ASK);
       if (b instanceof Response) return b;
       if (b.release) return json({ released: await this.release(b.id ?? "") });
-      if (live === "locked") return json({ error: LOCKED }, 409);
+      if (live === "locked") return fail("PathLocked", LOCKED);
       const rank = Number(req.headers.get("x-codesplitter-rank"));
       return this.claim(by, b, req.headers.has("x-codesplitter-rank") && Number.isFinite(rank) ? rank : undefined);
     }
@@ -432,7 +434,7 @@ export class FileDurableObject {
       const m: Map<string, Commit> = await this.ctx.storage.list({ prefix: "commit:" });
       return json([...m.values()].reverse());
     }
-    return json({ error: "not found" }, 404);
+    return fail("NoSuchRoute", "not found");
   }
 
   async commit(by: string, message?: string) {
@@ -729,7 +731,7 @@ export class FileDurableObject {
     const bot = by.startsWith("agent-"), now = Date.now();
     const old = b.id ? this.claims.get(b.id) : undefined;
     if (old && old.who !== by) {
-      if (!(b.extend && !bot && old.bot)) return json({ error: `claim ${b.id} is ${old.who}'s`, claims: [old], retryAfter: retryAfter([old]) }, 409);
+      if (!(b.extend && !bot && old.bot)) return fail("NotYourClaim", `claim ${b.id} is ${old.who}'s`, { claims: [old], retryAfter: retryAfter([old]) });
       old.cap = now + LEASE_CAP_MS;
       old.until = Math.min(Math.max(old.until ?? 0, now + LEASE_MS), old.cap);
       await this.ctx.storage.put("claim:" + old.id, old);
@@ -739,7 +741,7 @@ export class FileDurableObject {
     }
     const have = new Set(this.doc.lines.map((l) => l.id));
     const lines = [...new Set(b.lines ?? old?.lines ?? this.waits.find((w) => w.id === b.id && w.who === by)?.lines ?? [])].filter((id) => have.has(id));
-    if (!lines.length) return json({ error: "lines required: ids of lines in the file" }, 400);
+    if (!lines.length) return fail("BadInput", "lines required: ids of lines in the file");
     // An intent keeps nobody off its lines, so nothing's in its way.
     const soft = b.soft ?? old?.soft ?? false, want = new Set(lines);
     // A deploy is coming: no new claims or places in line. Renewals (above, `old`) and soft intents carry on; edits are never refused.
@@ -750,16 +752,16 @@ export class FileDurableObject {
     }
     // An agent whose claim just ended at or near its cap can't lay a fresh one (and a fresh cap) on those lines straight away.
     const rest = old || soft ? undefined : [...this.rests.values()].filter((r) => r.who === by && r.lines.some((id) => want.has(id))).sort((a, b) => b.until - a.until)[0];
-    if (rest) return json({ error: `@${by} just held these lines for ${LEASE_CAP_MS / 60_000} minutes: others get a turn first`, retryAfter: Math.max(1, Math.ceil((rest.until - now) / 1000)) }, 409);
+    if (rest) return fail("TakeTurns", `@${by} just held these lines for ${LEASE_CAP_MS / 60_000} minutes: others get a turn first`, { retryAfter: Math.max(1, Math.ceil((rest.until - now) / 1000)) });
     if (!soft) {
       const clash = [...new Set(lines.map((id) => this.claimOf.get(id)).filter((c) => c && c !== old))] as Claim[];
       // People steer agents: a person's hold doesn't wait behind agents in line for free lines.
       const ahead = bot || b.wait ? this.ahead(b.id, want) : [];
       if (clash.length || ahead.length) {
         if (b.wait) return this.wait(by, b, lines, rank);
-        if (clash.length) return json({ error: `held by ${clash.map((c) => "@" + c.who).join(", ")}`, claims: clash, retryAfter: retryAfter(clash) }, 409);
+        if (clash.length) return fail("LinesHeld", `held by ${clash.map((c) => "@" + c.who).join(", ")}`, { claims: clash, retryAfter: retryAfter(clash) });
         const blocking = this.blocking(ahead);
-        return json({ error: `${ahead.length} waiting in line for these lines: claim with wait to join them`, queued: ahead.length, claims: blocking, retryAfter: retryAfter(blocking) }, 409);
+        return fail("LinesQueued", `${ahead.length} waiting in line for these lines: claim with wait to join them`, { queued: ahead.length, claims: blocking, retryAfter: retryAfter(blocking) });
       }
     }
     // An agent's claim is a lease (LEASE_MS unless it asks for less or more, never past its cap);
@@ -842,10 +844,10 @@ export class FileDurableObject {
    */
   async wait(by: string, b: ClaimAsk, lines: string[], rank?: number) {
     const holding = [...this.claims.values()].filter((c) => c.who === by && !c.soft);
-    if (holding.length) return json({ error: `you hold lines here (${holding.map((c) => c.id).join(", ")}): finish with them and let go before you wait for more`, claims: holding }, 409);
+    if (holding.length) return fail("HoldingLines", `you hold lines here (${holding.map((c) => c.id).join(", ")}): finish with them and let go before you wait for more`, { claims: holding });
     const now = Date.now();
     let w = this.waits.find((x) => x.id === b.id);
-    if (w && w.who !== by) return json({ error: `${b.id} is @${w.who}'s place in line` }, 409);
+    if (w && w.who !== by) return fail("NotYourClaim", `${b.id} is @${w.who}'s place in line`);
     if (!w) {
       w = { id: b.id ?? newId(now), who: by, lines, ...(b.task ? { task: b.task.slice(0, 200) } : {}), at: now, seen: now, ...(rank !== undefined && { rank }) };
       // Under a ranked policy (codesplitter-order=rank) it steps ahead of waiters of lower rank, behind its equals.
@@ -869,7 +871,7 @@ export class FileDurableObject {
     if (!still) {
       // Granted as the ask ended, or it left the line (released, or the file was wiped).
       const c = this.claims.get(id);
-      return c?.who === by ? json(c, 201) : json({ error: "no longer in line: claim again" }, 409);
+      return c?.who === by ? json(c, 201) : fail("LeftLine", "no longer in line: claim again");
     }
     still.seen = Date.now();
     const place = this.waits.indexOf(still) + 1;

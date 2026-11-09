@@ -8,7 +8,7 @@ import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseWrangler, parseWranglerToml, wranglerToConfig, wranglerStages, droppedWranglerKeys, embeddingDims } from "./wrangler.ts";
 import { hasPagesFunctions, writePagesWorker, compilesAtStartup, EVAL_AT_STARTUP_DEFAULT_DATE, PAGES_ENTRY } from "./pages-functions.ts";
-import { generateAlchemy } from "./gen/alchemy.ts";
+import { generateAlchemy, referencedApps } from "./gen/alchemy.ts";
 import { generateWrangler } from "./gen/wrangler.ts";
 import { buildDesktop } from "./build.ts";
 import { smoke } from "./smoke.ts";
@@ -49,12 +49,13 @@ import { installCommand, applyOverrides, workspaceRoot, DEPLOY_DEPS } from "./gl
 import { workspacePrebuild } from "./glue/workspace-build.ts";
 import { Profiler } from "./profile.ts";
 import { adoptProblem, adoptQuestion, confirmAdopt, forceFresh, isolationFlags, ISOLATION_ARGS, modeLine } from "./isolation.ts";
-import { adoptNote, alchemyStage, linkSharedState, lockState, noteChild, unlinkSharedState } from "./state.ts";
+import { adoptNote, alchemyStage, bootstrapped, deployedIn, linkReferencedStates, linkSharedState, lockState, noteChild, transferNote, unlinkSharedState } from "./state.ts";
 import { runScoped, spawnScoped, step } from "./lifecycle.ts";
 import { commitsBehindMain, protectedClassDrops, statefulDeletes, strayState } from "./guard.ts";
 import { checkSpend, costReport } from "./costs.ts";
 import { cloudflareEnv, cloudflareProblem, withAccount, realTokenCheck, realWrangler, wranglerCli, PINNED_WRANGLER } from "./cloudflare-auth.ts";
 import { deployedWorker, redactQueryStrings } from "./redact.ts";
+import { reportDeploy, versionHere } from "./report-deploy.ts";
 import { tidySourceMaps } from "./sourcemaps.ts";
 import { formatOfflinePlan, plannedResources } from "./offline-plan.ts";
 import { infraGraph, infraText } from "./infra.ts";
@@ -691,6 +692,15 @@ function wranglerLosses(): string[] {
 async function generate(opts: { adopt: boolean; stage?: string }) {
   const raw = await loadRawConfig();
   const cfg = forStage(raw, opts.stage ?? "");
+  let stack = cfg;
+  if (opts.stage !== undefined && raw.stages?.[opts.stage]?.bootstrap) {
+    const b = bootstrapped(cfg, (app) => deployedIn(process.cwd(), app, opts.stage!));
+    stack = b.cfg;
+    if (b.waiting.length) console.log(`stage ${opts.stage} (bootstrap): ${b.waiting.join(", ")} not deployed in it yet, so its bindings into them are left out. Deploy ${b.waiting.join(", ")} --stage ${opts.stage}, then this app again.`);
+  }
+  // The checked-in wrangler.jsonc only feeds the Vite plugin and local dev; a stage build reads just `main`
+  // back from vite's output (builtEntry), and Alchemy binds from alchemy.run.ts, so no stage writes into it (#3905).
+  const local = forStage(raw, "");
   if (!cfg.worker && !cfg.targets.box) { console.log("desktop-only config: nothing to generate for the edge"); return; }
   // A bad cron fails here, not on Cloudflare's side halfway into a deploy.
   if (cfg.worker?.crons?.length) {
@@ -700,7 +710,7 @@ async function generate(opts: { adopt: boolean; stage?: string }) {
   const cpu = cfg.worker?.cpuMs;
   if (cpu !== undefined && !(Number.isInteger(cpu) && cpu >= 10 && cpu <= 300_000)) throw new Error(`worker.cpuMs: ${cpu} isn't a whole number of ms from 10 to 300000`);
   await mkdir(".rustybuns", { recursive: true });
-  await Bun.write(".rustybuns/alchemy.run.ts", generateAlchemy(opts.stage === undefined ? cfg : forStage(raw, opts.stage)));
+  await Bun.write(".rustybuns/alchemy.run.ts", generateAlchemy(stack));
   console.log("wrote .rustybuns/alchemy.run.ts");
   await writeEnvSchema(cfg);
   if (!cfg.worker) return;   // box-only: no wrangler.jsonc
@@ -711,11 +721,11 @@ async function generate(opts: { adopt: boolean; stage?: string }) {
   // The app's own wrangler.json or .toml stays the one the Vite plugin and wrangler read.
   const other = !existsSync("wrangler.jsonc") && !opts.adopt ? ["wrangler.json", "wrangler.toml"].find((f) => existsSync(f)) : undefined;
   if (other) {
-    await Bun.write("wrangler.generated.jsonc", generateWrangler(cfg, null));
+    await Bun.write("wrangler.generated.jsonc", generateWrangler(local, null));
     console.log(`${other} is hand-written; wrote wrangler.generated.jsonc beside it. Diff it, then delete ${other} and \`rustybuns adopt\` to make wrangler.jsonc the one config (wrangler reads ${other} first while it's there).`);
     return;
   }
-  const r = await writeIfChanged("wrangler.jsonc", generateWrangler(cfg, existsSync("wrangler.jsonc") ? readFileSync("wrangler.jsonc", "utf8") : null), opts);
+  const r = await writeIfChanged("wrangler.jsonc", generateWrangler(local, existsSync("wrangler.jsonc") ? readFileSync("wrangler.jsonc", "utf8") : null), opts);
   if (r === "conflict") console.log("wrangler.jsonc is hand-written and differs; wrote wrangler.generated.jsonc. Diff it" + (wranglerLosses().length ? " (it lacks " + wranglerLosses().join(", ") + ", so adopt will refuse)." : ", then `rustybuns adopt`."));
   else console.log(`wrangler.jsonc ${r}`);
 }
@@ -895,7 +905,7 @@ function guardDeploy(sub: string, cfg: RustyBunsConfig, stage: string, waive: { 
   const behind = cfg.targets.edge?.adopt && !waive.force ? commitsBehindMain(process.cwd()) : null;
   if (behind) problems.push(`HEAD is ${behind} commit${behind === 1 ? "" : "s"} behind origin/main, and this is a live site (targets.edge.adopt): ` +
     `deploying would roll back what main shipped since. Rebase on origin/main first, or pass --force.`);
-  const stray = waive.force ? null : strayState(process.cwd(), cfg.name, stage);
+  const stray = waive.force ? null : strayState(process.cwd(), cfg.name, stage, referencedApps(cfg.bindings ?? {}));
   if (stray) problems.push(`stage ${stage}'s Alchemy state is under the app name "${stray}", not "${cfg.name}": deploying would make every resource again. ` +
     `Move .alchemy/state/${stray} to .alchemy/state/${cfg.name} first, or pass --force.`);
   const deletes = waive.allowDelete ? [] : statefulDeletes(process.cwd(), cfg, stage, readFileSync(".rustybuns/alchemy.run.ts", "utf8"));
@@ -998,6 +1008,9 @@ const alchemy = (sub: string, rawArgs: string[]) => runScoped(Effect.gen(functio
     const base = linkSharedState(process.cwd());
     if (base) { yield* Effect.acquireRelease(Effect.sync(() => lockState(base, sub)), (release) => Effect.sync(release)); lockBase = base; }
   }
+  // A ref into another app's stack (service, Durable Object, d1 `app`) reads that app's state through a link in ours.
+  const referenced = referencedApps(cfg.bindings ?? {});
+  if (!offline && referenced.length) linkReferencedStates(process.cwd(), referenced);
   // Said first and last, so "is this touching real resources?" never has to be worked out from a plan.
   const mode = modeLine(cfg, { forced: iso.fresh, offline });
   if (profiled || drifting || sub === "destroy") console.log(mode + "\n");
@@ -1016,17 +1029,22 @@ const alchemy = (sub: string, rawArgs: string[]) => runScoped(Effect.gen(functio
   }
   const note = profiled && !offline ? adoptNote(process.cwd(), cfg, stage) : null;
   if (note) console.log(note + "\n");
+  const moves = profiled && !offline ? transferNote(process.cwd(), cfg, stage) : null;
+  if (moves) console.log(moves + "\n");
   if (profiled && !offline) guardDeploy(sub, cfg, stage, { force, allowDelete });
   if (check) yield* step(() => checkStack(prof, checker));
   const hash = yield* step(stackHash);
-  const stampFile = ".rustybuns/planned";
+  // One stamp per stage, so a production plan doesn't wipe out the preview one.
+  const stampFile = `.rustybuns/planned.${stage}`;
+  // The hint repeats the --stage the user gave: a bare `rustybuns plan` plans production.
+  const planCmd = "rustybuns plan" + (rawArgs.some((a) => a === "--stage" || a.startsWith("--stage=")) ? ` --stage ${stage}` : "");
   if (sub === "deploy" && !args.includes("--yes")) {
     // GUARDRAIL: deploy creates real resources. Require a plan for THIS exact
     // config first, so nobody provisions a stack they have not looked at.
     const planned = (yield* step(() => Bun.file(stampFile).exists())) ? (yield* step(() => Bun.file(stampFile).text())).trim() : null;
     if (planned !== hash) throw new DeployRefused({ message: planned
-      ? "config changed since the last plan. Run `rustybuns plan` again, or pass --yes to skip."
-      : "no plan on record for this config. Run `rustybuns plan` first (creates nothing), or pass --yes to skip." });
+      ? `config changed since the last plan. Run \`${planCmd}\` again, or pass --yes to skip.`
+      : `no plan on record for this config. Run \`${planCmd}\` first (creates nothing), or pass --yes to skip.` });
   }
   // Cloudflare's login before any build, so a missing or refused one costs a second, not a build (#1170).
   const cf = sub !== "dev" && !offline && edgeOn(cfg) ? yield* step(() => cloudflareLogin(cfg, args)) : undefined;
@@ -1099,6 +1117,8 @@ const alchemy = (sub: string, rawArgs: string[]) => runScoped(Effect.gen(functio
   if (profiled || sub === "destroy") console.log("\n" + mode);
   // A check of the live app right after this (a smoke run, a health probe) can still meet the old code (#3433).
   if (sub === "deploy" && objects) console.log("\nbusy Durable Objects keep the old code until they go idle, up to 5 minutes; a check before then may still meet it");
+  // A studio's Ship door on eqosys (report-deploy.ts): what went out, where and when. Off without RB_DEPLOY_REPORT_KEY.
+  if (sub === "deploy") console.log("\n" + (yield* step(async () => reportDeploy({ app: cfg.name, stage, version: await versionHere(), at: Date.now() }))));
   if (sub === "deploy" && edgeOn(cfg) && cfg.worker?.redactQueryStrings) yield* step(() => redactAfterDeploy(cfg, stage));
   if (sub === "deploy" && cfg.targets.box) console.log(cfg.targets.box.provider === "railway"
     ? "\nthe box bills by usage from now on (less while asleep); `rustybuns destroy` stops it."
@@ -1231,7 +1251,7 @@ async function containersCommand(args: string[]) {
   }
 }
 
-const COMMANDS = ["init", "copy-site", "pages-functions", "jekyll", "generate", "adopt", "deploy", "destroy", "plan", "drift", "login", "dev", "prof", "mem", "history", "triage", "add", "run", "boundary", "infra", "build", "containers", "smoke", "eject", "version"];
+const COMMANDS = ["init", "copy-site", "pages-functions", "jekyll", "generate", "adopt", "deploy", "destroy", "plan", "drift", "login", "dev", "prof", "mem", "history", "triage", "add", "run", "boundary", "infra", "build", "containers", "smoke", "eject", "version", "report-deploy"];
 const isVersion = cmd === "--version" || cmd === "-v" || cmd === "version";
 if (!isVersion && !checkDisabled()) {
   const advice = await checkVersion(VERSION);
@@ -1256,6 +1276,14 @@ try {
     case "generate": await generate({ adopt: false }); break;
     case "adopt": await generate({ adopt: true }); break;
     case "deploy": await alchemy("deploy", rest); break;
+    case "report-deploy": {
+      // After a plain `wrangler deploy`: `rustybuns report-deploy --app <eqosys app id> [--stage production] [--version v]`.
+      const flag = (n: string) => { const i = rest.indexOf(`--${n}`); return i >= 0 ? rest[i + 1] : undefined; };
+      const app = flag("app");
+      if (!app) throw new UsageError({ message: "report-deploy needs --app <the app's id in eqosys's APPS>" });
+      console.log(await reportDeploy({ app, stage: flag("stage") ?? "production", version: flag("version") ?? await versionHere(), at: Date.now() }));
+      break;
+    }
     case "destroy": await alchemy("destroy", rest); break;
     case "plan": await alchemy("plan", rest); break;
     case "drift": await alchemy("drift", rest); break;
@@ -1454,11 +1482,14 @@ Box and ship the web app you already have. A dev dependency, never in prod.
   eject                      copy alchemy.run.ts to the root; you own the stack from then on
   version                    print the version, and whether it is a known-bad release or out of date
                              (every command checks once a day and warns on a known-bad release)
+  report-deploy --app <id>   tell eqosys's Ship door a deploy went out (deploy does it itself);
+                             [--stage s] (production) [--version v] (package.json + commit)
 
   Env:  RB_NO_BROWSER=1      do not open a browser; print the token URL instead
         RB_BUN=<path>        a Bun with \`bun check\` to type check with (e.g. a canary)
         RUSTYBUNS_NO_UPDATE_CHECK=1  skip the daily version check (CI skips it too)
         RUSTYBUNS_STOP_GRACE_MS=<ms>  how long a stopped plan/deploy waits for Alchemy to exit (default 10000)
+        RB_DEPLOY_REPORT_KEY=<key>   eqosys's DEPLOY_REPORT_KEY: deploy reports what went out (RB_EQOSYS_URL elsewhere)
   Docs: README.md · GETTING_STARTED.md`);
   }
 } catch (e) {

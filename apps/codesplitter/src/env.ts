@@ -67,6 +67,7 @@ export interface D1 {
 
 /** The Worker Loader binding (codemode.ts), shared with the other apps that have a code mode. */
 import type { WorkerLoaderLike } from "@rustybuns/util/codemode";
+import type { ReviewMessage } from "./pipeline-hooks.ts";
 export type { WorkerLoaderLike };
 
 export interface Env {
@@ -198,8 +199,8 @@ export interface Env {
   HOOKS: { send(body: { id: string; n: number }, opts?: { delaySeconds?: number }): Promise<void>; sendBatch(messages: Iterable<{ body: { id: string; n: number }; delaySeconds?: number }>): Promise<void> };
   /** Level digs (levels.ts, swarm.ts): a dig's first step, then a big level's parts, side by side. Unset, an import runs in its request. */
   LEVEL_DIGS?: { send(body: DigMessage): Promise<void>; sendBatch(messages: Iterable<{ body: DigMessage; delaySeconds?: number }>): Promise<void> };
-  /** Queued requests, one message each (limits.ts), delayed until the caller's window has room, and hosted agent runs (agent-routes.ts): the same Worker's queue() consumes it. */
-  JOBS: { send(body: { job: number } | { agent: number; origin: string; land?: true } | { digest: string }, opts?: { delaySeconds?: number }): Promise<void> };
+  /** Queued requests, one message each (limits.ts), delayed until the caller's window has room, hosted agent runs (agent-routes.ts) and the pipeline's AI reviews (pipeline-hooks.ts): the same Worker's queue() consumes it. */
+  JOBS: { send(body: { job: number } | { agent: number; origin: string; land?: true } | { digest: string } | { review: ReviewMessage }, opts?: { delaySeconds?: number }): Promise<void> };
   /** Fix tasks (heal.ts), one message each, apart from JOBS so a rebuild doesn't wait behind feature runs (#1234). Unset, they ride JOBS. */
   FIXES?: { send(body: { agent: number; origin: string }): Promise<void> };
   /** Tests only: stands in for fetch when a webhook is delivered (see hooks.ts). */
@@ -213,10 +214,24 @@ export interface Env {
 // A JSON reply and a client's unchecked body, shared with every app (`@rustybuns/util/http`); routes import them from here.
 import { json, readBody, type Body } from "@rustybuns/util/http";
 export { json, readBody, type Body };
+import { ERRORS, type ErrorTag } from "./openapi.ts";
+import { isPlainObject } from "./util.ts";
+
+/** A named failure (#3804): `error` the sentence a person reads, `tag` what a client matches on. The status is the tag's (openapi.ts ERRORS). */
+export const fail = (tag: ErrorTag, error: string, extra?: Record<string, unknown>) => json({ ...extra, error, tag }, ERRORS[tag][0]);
+/** Another module's failure reply, named: its body kept, the tag added. */
+export async function named(res: Response, tag: ErrorTag): Promise<Response> {
+  const b: unknown = await res.json().catch(() => null);
+  return fail(tag, isPlainObject(b) && typeof b.error === "string" ? b.error : ERRORS[tag][1], isPlainObject(b) ? b : {});
+}
+
+/** A file read's failure (archive.ts readText, materialize), named by its status (a 5xx stays untagged: a client retries it). */
+export const unread = (m: { error: string; status: number }) =>
+  m.status === 404 ? fail("NoSuchFile", m.error) : m.status === 413 ? fail("TooBig", m.error) : m.status === 415 ? fail("BinaryFile", m.error) : json({ error: m.error }, m.status);
 
 /** A body through a guard (`@rustybuns/util/guard`): the value typed, or a 400 saying what's wrong, in `why`'s words when given. */
 export const need = <T>(v: unknown, g: Guard<T>, why?: string): T | Response => {
-  try { return g(v); } catch (e) { if (e instanceof Bad) return json({ error: why ?? e.message }, 400); throw e; }
+  try { return g(v); } catch (e) { if (e instanceof Bad) return fail("BadInput", why ?? e.message); throw e; }
 };
 
 // Single dashes only, so "owner--repo" names an artifact unambiguously.

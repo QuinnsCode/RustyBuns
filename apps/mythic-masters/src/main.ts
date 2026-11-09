@@ -19,9 +19,13 @@ import { obj, str } from "@rustybuns/util/guard";
 import { buildArena, crowdOf, floorOf, gradeOf, SKINS, tickArena, type Skin } from "./arena.ts";
 import { forgetBeast, loadBeast, Puppet } from "./beasts.ts";
 import { bot, type Bot } from "./bot.ts";
+import { temper } from "./opener.ts";
+import { mountVersus } from "./versus.ts";
+import { duelCode, sum } from "./net/duel.ts";
 import { buttons, NO_STICK, PAD_ACTIONS, PAD_START, PAD_ZONE, push, readPad, touchStick, TOUCH_BUTTONS, type Stick } from "./controls.ts";
 import { icon } from "./icons.ts";
 import { ART, radar, tradingCard } from "./card.ts";
+import { moveLine, shapeSvg } from "./moveline.ts";
 import { entry, folio, halves, neighbour, notePlate, ordinal, regionChart, spread, stepTo, type Dir, type Known } from "./compendium.ts";
 import { FIELDS, hex, type Field } from "./fields.ts";
 import { mountFieldChart } from "./fieldchart.ts";
@@ -40,7 +44,7 @@ import { accountChip, achieve, canSignIn, finishSignIn, fresh, login, reportButt
 import { asCreature, atLevel, bind, downed, heal, hpOf, wound, bindBelow, bindChance, clearSection, cleared, gainXp, INK, loadJourney, moveUp, mythicOf, newJourney, nextUp, call, owns, PICKS, rest, SAVE_KEY, SECTIONS, sections, see, slots, STARTERS, TRAIL_REGIONS, toNext, WITCH_SAYS, type Journey, mend } from "./journey.ts";
 import { LORE } from "./lore.ts";
 import { bare, blank, dry, handOf, knownOf, PAGE_INK, poolOf, ribbonsOf, summon, type Summoned } from "./grimoire.ts";
-import { demandOf, reactionOf, SIGNATURE, type Outcome } from "./demand.ts";
+import { deckDemandOf, demandOf, reactionOf, SIGNATURE, type Outcome } from "./demand.ts";
 import { tierOf } from "./tiers.ts";
 import { book, cardTurn, fly, penSound, pressed, soak, thumb, turnLeaf } from "./page.ts";
 import { emblem, frame as ring, inkUrl, seal, tear } from "./ornaments.ts";
@@ -49,7 +53,7 @@ import { answer as answerBook, holdOf, lossBeats, momentFor, notesOf, signedOf, 
 import { bookParty, type Seat } from "./book-party.ts";
 import { peek } from "@rustybuns/util/token";
 import { party } from "./account.ts";
-import { choosing, dress as dressHud, SKINS as HUD_SKINS, skinNow, stepSkin, useSkin } from "./hud/index.ts";
+import { choosing, dress as dressHud, ring as hudRing, SKINS as HUD_SKINS, skinNow, stepSkin, useSkin } from "./hud/index.ts";
 import { newMemory, remember as rememberHud, viewOf } from "./hud/skin.ts";
 import { FX_AMOUNT } from "./effects.ts";
 import { darken, warmWith } from "./world/walker3d.ts";
@@ -63,7 +67,8 @@ import { findTape, lightFire, sight, tapeOf, tapesFound, WITCH_CAMP } from "./wo
 import { regionsCleared, visit, WITCH } from "./witch.ts";
 import { close as closeHunt, HUNTS, stageOf, take, CLUES } from "./world/hunts.ts";
 import { FORAGE_MEND } from "./world/nature.ts";
-import { Online, roomCode } from "./net/online.ts";
+import { Online, roomCode, uid } from "./net/online.ts";
+import { COLOURS, css as hueCss, firstColour, wornColour } from "./world/hues.ts";
 import { joinParty, openParty, partyCode } from "./net/lobby.ts";
 import type { Friend } from "./world/view.ts";
 import { ARENA, head, held as holding, HZ, IDLE, swingPhase, warning, type Fighter, type Input, type Match, type V3 } from "./sim.ts";
@@ -144,7 +149,7 @@ function card(c: Creature, side: "A" | "B", on: boolean) {
   return `<button class="card${on ? " on" : ""}" data-side="${side}" data-id="${esc(c.id)}">
     <b>${esc(c.name)}</b><small>${aOrAn(c.archetype)} ${esc(c.archetype)} of ${c.fields.join(" and ")}</small>${radar(c)}
     <span class="body">${c.massKg} kg, ${c.heightM} m tall; it ${b.air === "flight" ? "flies" : "walks and hops"} ${b.air === "flight" ? icon("feather", "Flies") : icon("footprints", "Hops")}</span>
-    <span class="moves"><em>Its moves:</em> ${c.moves.map((m, k) => `<i title="${m.slot}, ${m.field}, power ${m.power}">${esc(m.name)}</i>${k < c.moves.length - 2 ? "," : k === c.moves.length - 2 ? " and" : "."}`).join(" ")}</span></button>`;
+    <span class="moves"><em>Its moves:</em> ${c.moves.map((m, k) => `<i title="${esc(`${m.slot}, ${m.field}: ${moveLine(m)}`)}">${m.delivery.shape === "touch" ? "" : shapeSvg(m.delivery)}${esc(m.name)}</i>${k < c.moves.length - 2 ? "," : k === c.moves.length - 2 ? " and" : "."}`).join(" ")}</span></button>`;
 }
 
 // What each creature has been taught (the harness's `teach`); everyone else fights with what it was born knowing.
@@ -158,6 +163,7 @@ const room = roomCode(location.search);
 const online = room ? new Online(room, {
   onChange: () => drawTogether(),
   opened: () => world.opened(),
+  posed: () => world.pose(), // a den or contract taken mid-frame is checked where you stand now, not a frame ago
   onDen: (den, who, c) => world.friendMet(den, who, c),
   onHunt: (h, s, who) => joinHunt(h, s, who),
   onFought: (f) => world.note(`${icon("users")} ${esc(f.who || "A friend")} ${f.bound ? "bound" : f.won ? "beat" : "lost to"} ${esc(creature(f.c).name)} (Lv ${f.lv}).`),
@@ -215,8 +221,13 @@ function drawTogether() {
 /** The party's others where they are this frame, in the region you stand in. */
 const friendsNow = (o: Online, region: number, now: number): Friend[] => [...o.ghosts.values()].flatMap((g) => {
   const at = g.at(now);
-  return at && at.region === region ? [{ id: g.id, name: g.name, lead: at.lead, follow: at.follow, x: at.x, z: at.z, yaw: at.yaw }] : [];
+  return at && at.region === region ? [{ id: g.id, name: g.name, lead: at.lead, follow: at.follow, x: at.x, z: at.z, yaw: at.yaw, colour: at.colour ?? firstColour(g.id) }] : [];
 });
+/** The colour your ground hums in (world/hues.ts): the one you picked in Settings (saved per browser; until then one seeded
+ *  from this browser), unless a friend in the room was wearing it first. */
+const HUE_KEY = `${KEY}.colour`;
+let hueChosen = (() => { try { const n = Number(localStorage.getItem(HUE_KEY)); if (localStorage.getItem(HUE_KEY) !== null && Number.isInteger(n) && n >= 0 && n < COLOURS) return n; } catch { /* first visit below */ } return firstColour(uid()); })();
+const hueWorn = () => (online ? wornColour(hueChosen, online.you, online.colours()) : hueChosen);
 let pickA = creature(params.get("a") ?? "").id, pickB = creature(params.get("b") ?? ROSTER[1]?.id ?? "").id;
 if (!params.get("b") && pickB === pickA) pickB = ROSTER[1]?.id ?? pickA;
 const skinSel = $<HTMLSelectElement>("#skin");
@@ -311,9 +322,10 @@ $("#pickerBack").addEventListener("click", () => showTitle());
 // The bestiary (src/card.ts): every beast's card, its pictures, its radar with the numbers, its signature.
 const deck = $("#deck");
 // Every menu screen is a page of one book (src/page.ts), in reading order: changing screen turns a leaf.
-const pages = book(["#title", "#starters", "#select", "#deck", "#journal", "#result"].map((id) => $(id)));
+const pages = book(["#title", "#starters", "#select", "#deck", "#journal", "#result", "#friends"].map((id) => $(id)));
 function showDeck(open: boolean) {
   if (open && !deck.querySelector(".tcard")) $("#deckCards").innerHTML = ROSTER.map(tradingCard).join("");
+  if (open) { const d = deckDemandOf(journey); $("#deckDemand").innerHTML = hand(d.ask, d.signed); }
   pages.show(open ? deck : $("#select"));
   history.replaceState(null, "", open ? "?cards=1" : location.pathname);
 }
@@ -348,6 +360,8 @@ function wearBeast(f: Fighter, g: THREE.Group, i: number) {
 // same fight either way, tick for tick (test/sim-rust.test.ts). `live` steps it; `m` is the Match everything reads.
 let sim: Sim = tsSim, live: Live | null = null;
 fetch(simWasm).then((r) => r.arrayBuffer()).then(wasmSim).then((s) => { sim = s; }, (e) => console.warn("sim.wasm didn't load; fights stay on sim.ts", e));
+/** A fight against a friend is on (`versus`), and which fighter is you: seat 1 sees the fight from the other side. */
+let versusOn = false, mine: 0 | 1 = 0;
 let m: Match | null = null, arena: THREE.Group | null = null, models: THREE.Group[] = [], puppets: (Puppet | null)[] = [null, null], bots: (Bot | null)[] = [null, null];
 const moveFx = new MoveFx(scene, Math.random, matchMedia("(max-width: 700px)").matches ? MAX_LIVE_PHONE : MAX_LIVE);
 let hitStop = 0; // seconds the fight holds still after a big hit lands, so the blow reads
@@ -381,7 +395,8 @@ function start(a: string, b: string, skin: string, watch = false) {
   faceUp();
   history.replaceState(null, "", `?${new URLSearchParams({ a, b, skin, ...(watch ? { watch: "1" } : {}) })}`);
 }
-function fight(a: Creature, b: Creature, skin: string, watch = false) {
+function fight(a: Creature, b: Creature, skin: string, watch = false, vs = false) {
+  versusOn = vs; if (!vs) mine = 0;
   world.hide(); shelf?.dispose(); shelf = null;
   for (const o of [arena, ...models, ...puppets.map((p) => p?.group)]) if (o) scene.remove(o);
   puppets = [null, null]; moveFx.clear();
@@ -394,7 +409,7 @@ function fight(a: Creature, b: Creature, skin: string, watch = false) {
   hudMem.now = newMemory();
   models = m.f.map((f, i) => { const g = creatureModel(f.c); scene.add(g); wearBeast(f, g, i); return g; });
   const seed = Math.floor(Math.random() * 1e6) + 1;
-  bots = [watch ? bot(0, seed) : null, bot(1, seed + 1)];
+  bots = versusOn ? [null, null] : [watch ? temper(bot(0, seed), 0, seed) : null, temper(bot(1, seed + 1), 1, seed + 1)];
   pages.show(null); $("#hud").hidden = false;
 }
 
@@ -695,6 +710,7 @@ function showTitle() {
   if (lead) $("#continue").innerHTML = `${icon("play")} ${esc(LANDING.title.continue.replace("{name}", creature(lead.id).name).replace("{level}", String(lead.level)))}`;
   $("#newGame").innerHTML = `${icon("moon")} ${esc(LANDING.title.newJourney)}`;
   $("#newGame").classList.toggle("go", !journey);
+  $("#duelBtn").innerHTML = `${icon("users")} ${esc(LANDING.title.duel)}`;
   hideScreens($("#title"));
   history.replaceState(null, "", location.pathname);
 }
@@ -727,6 +743,7 @@ $("#newGame").addEventListener("click", () => {
   if (journey && !startingOver) { startingOver = true; $("#newGame").innerHTML = `${icon("triangle-alert")} ${esc(LANDING.title.startOver)}`; return; }
   showStarters();
 });
+$("#duelBtn").addEventListener("click", () => versus.open());
 $("#versus").addEventListener("click", () => { hideScreens($("#select")); history.replaceState(null, "", location.pathname); });
 $("#starterCards").addEventListener("click", (e) => {
   const id = (e.target as HTMLElement).closest<HTMLElement>(".starter")?.dataset.id;
@@ -874,7 +891,7 @@ function showFolio(id: string | null) {
   if (!id) cursor = openFolio;
   openFolio = id;
   drawJournal(); turnPage(forward, was);
-  $("#journal").scrollTo({ top: 0 });
+  for (const el of [$("#journal"), $("#journalBody")]) el.scrollTo({ top: 0 }); // the page, or on a wide screen the leaves that scroll inside the book
   const land = plate(forward);
   if (!land || !lift) return;
   if (!forward) land.closest(".entry")?.scrollIntoView({ block: "center" });
@@ -952,6 +969,9 @@ for (const [id, c] of [["#titleFrontis", "title"], ["#witchFrontis", "witch"], [
 $("#titleRing").innerHTML = ring(); // the thorn ring round the title page's frontispiece (#3662 round 74)
 // the facing leaves of the Settings and result spreads carry an engraving each, in a thorn ring (#3671 round 81)
 for (const [name, c] of [["--verso-hands", "title"], ["--verso-rest", "witch"]] as const) document.documentElement.style.setProperty(name, `${inkUrl(emblem(c))} 50% 132px / 150px 80px no-repeat, ${inkUrl(ring())} 50% 64px / 216px 216px no-repeat`);
+// the result spread is drawn to the screen's size (#3963), so it places the same two engravings itself, in its own units
+document.documentElement.style.setProperty("--ink-witch", inkUrl(emblem("witch")));
+document.documentElement.style.setProperty("--ink-ring", inkUrl(ring()));
 $("#closeJournal").addEventListener("click", () => openJournal(false));
 $("#openJournal").innerHTML = icon("book-open");
 $("#openJournal").addEventListener("click", () => openJournal());
@@ -1104,6 +1124,14 @@ function playerInput(): Input {
 const hudMem = { now: newMemory() };
 const plain = (id: string) => id.replace(/^wild-/, "");
 const artOf = (id: string) => { const p = ART[plain(id)]; const pic = p?.color ?? p?.bw; return pic ? `/${pic.src}` : null; };
+const bindKey = () => keymap.get("bind").map(keyName).join(" / ") || "?";
+/** The bind prompt: what to do while the foe is too strong, a call to act once the ink can hold. A knockout can't be bound. */
+function bindView(m: Match) {
+  if (!trip || !bindable(trip)) return null;
+  const mythic = trip.kind === "mythic", chance = bindChance(m.f[1].hp / m.f[1].b.hp, mythic);
+  const note = bindNote || (!trip.ink ? "" : chance > 0 ? "Bind it now, before it drops" : `Wear it under ${Math.round(bindBelow(mythic) * 100)}%, then bind`);
+  return { chance, ink: trip.ink, key: bindKey(), note };
+}
 function hud(m: Match) {
   const root = $("#hud");
   dressHud(root);
@@ -1111,8 +1139,9 @@ function hud(m: Match) {
   const party = trip && journey ? { size: journey.party.length, down: [...trip.out], up: trip.slot } : null;
   root.innerHTML = skinNow().render(viewOf(m, hudMem.now, {
     party: [party, null], bots: [!!bots[0], !!bots[1]], art: artOf, tier: (id) => tierOf(plain(id)),
-    bind: trip && bindable(trip) ? { chance: bindChance(m.f[1].hp / m.f[1].b.hp, trip.kind === "mythic"), ink: trip.ink, key: keymap.get("bind").map(keyName).join(" / ") || "?", note: bindNote } : null,
+    bind: bindView(m),
   }));
+  root.classList.toggle("bind-ready", !!trip && bindable(trip) && trip.ink > 0 && bindChance(m.f[1].hp / m.f[1].b.hp, trip.kind === "mythic") > 0);
   if (choosing) chooser();
 }
 /** ?hud=: a chip in the bottom left that names the skin and steps through them. */
@@ -1121,11 +1150,11 @@ function chooser() {
   if (!c) {
     c = document.createElement("nav"); c.id = "hudChooser"; c.className = "hud-chooser";
     c.innerHTML = `<button data-by="-1" title="Previous HUD" aria-label="Previous HUD">&lsaquo;</button><span></span><button data-by="1" title="Next HUD" aria-label="Next HUD">&rsaquo;</button>`;
-    c.addEventListener("click", (e) => { const b = e.target instanceof Element ? e.target.closest<HTMLElement>("[data-by]") : null; if (b) stepSkin(Number(b.dataset.by)); });
+    c.addEventListener("click", (e) => { const b = e.target instanceof Element ? e.target.closest<HTMLElement>("[data-by]") : null; if (b && stepSkin(Number(b.dataset.by)) && m) hud(m); }); // redraw now: a paused or finished fight doesn't tick
     document.body.append(c);
   }
   c.hidden = $("#hud").hidden;
-  const s = skinNow(), label = `${HUD_SKINS.indexOf(s)}/${HUD_SKINS.length - 1} ${s.name}`;
+  const s = skinNow(), r = hudRing(), label = `${HUD_SKINS.indexOf(s)} ${s.name} · ${r.indexOf(s) + 1}/${r.length}`;
   const span = c.querySelector("span")!;
   if (span.textContent !== label) { span.textContent = label; span.title = s.idea; }
 }
@@ -1154,7 +1183,7 @@ function draw(m: Match, alpha: number) {
   });
   moveFx.draw(m);
   // Soft lock: behind you, looking past you at them, high enough to see a flyer.
-  const [me, them] = m.f;
+  const me = m.f[mine], them = m.f[mine ? 0 : 1];
   const dx = them.pos.x - me.pos.x, dz = them.pos.z - me.pos.z, d = Math.hypot(dx, dz) || 1;
   // side-on far enough back that both bodies and a flyer overhead fit, however close they stand
   const side = 2.6 + Math.max(me.b.height, them.b.height) * 1.15 + d * 0.5 + Math.abs(me.pos.y - them.pos.y) * 0.45;
@@ -1189,14 +1218,39 @@ function ended(m: Match, bound = false) {
 }
 function finish(m: Match, bound = false) {
   const ko = m.events.find((e) => e.kind === "ko");
-  const w = m.f[m.winner!]!, how = ko?.kind === "ko" ? { hp: "knocked out", "ring-out": "rang out", time: "outlasted on time" }[ko.how] : "";
-  const lost = bound ? "" : `${esc(m.f[m.winner ? 0 : 1]!.c.name)} ${how === "outlasted on time" ? "was outlasted on time" : how}.`;
+  const w = m.f[m.winner!]!, how = ko?.kind === "ko" ? { hp: "was knocked out", "ring-out": "was pushed out of the ring", time: "had less health when time ran out" }[ko.how] : "";
+  const lost = bound ? "" : `${esc(m.f[m.winner ? 0 : 1]!.c.name)} ${how}.`;
   if (trip && journey) { tripOver(m, bound, lost); return; }
+  if (versusOn) { duelOver(m.winner === mine ? "You win" : `${versus.friend() ?? "Your friend"} wins`, `${esc(w.c.name)} wins. ${lost}`); return; }
   $("#result").innerHTML = `<div class="note paper"><h2>${esc(w.c.name)} wins</h2>${reaction({ kind: "versus" })}<p>${lost}</p>
     <div class="row"><button class="go" id="again">${icon("rotate-ccw")} Rematch</button><button id="pick">${icon("users")} Pick again</button></div></div>`;
   pages.show($("#result"));
   $("#again").onclick = () => start(m.f[0].c.id, m.f[1].c.id, skinSel.value, !!bots[0]);
   $("#pick").onclick = () => { $("#hud").hidden = true; pages.show($("#select")); };
+}
+
+// --- fighting a friend (src/versus.ts): Qollab friends, challenges, and a duel's room --------------------------------
+const versus = mountVersus($("#friends"), {
+  show: (el) => hideScreens(el),
+  title: () => showTitle(),
+  lineUp: () => journey?.party ?? null,
+  fight: (go, you, names) => {
+    trip = null; shroudFoe = false; bindNote = ""; crowdView = false;
+    mine = you; acc = 0; hitStop = 0;
+    const [a, b] = go.picks;
+    fight(atLevel(creature(a.c), a.lv), atLevel(creature(b.c), b.lv), "stadium", false, true);
+    faceUp(`${names[0]} vs ${names[1]}`);
+  },
+  broken: (why) => { if (versusOn && m && !m.over) { m.over = true; duelOver("No contest", esc(why)); } },
+});
+/** A duel is over (or off): who won, and a rematch, another pick, or home. */
+function duelOver(head: string, line: string) {
+  $("#result").innerHTML = `<div class="note paper"><h2>${esc(head)}</h2><p>${line}</p>
+    <div class="row"><button class="go" id="again">${icon("rotate-ccw")} Rematch</button><button id="pick">${icon("users")} Pick again</button><button id="home">${icon("x")} Leave</button></div></div>`;
+  pages.show($("#result"));
+  $("#again").onclick = () => versus.rematch();
+  $("#pick").onclick = () => { $("#hud").hidden = true; versus.room(); };
+  $("#home").onclick = () => { $("#hud").hidden = true; versus.leave(); };
 }
 
 /** A world fight ended: XP, a bound creature into the line-up or the journal, a section cleared and its page written,
@@ -1226,7 +1280,7 @@ function tripOver(m: Match, bound: boolean, how: string) {
       else lines.push(`The bog-light lifts. Section ${t.k + 2} of ${SECTIONS} is open.`);
     }
     if (t.foe.hunt && closeHunt(j, t.foe.hunt)) lines.push(`The sighting is closed: ${esc(t.foe.title ?? foe.name)} won't trouble ${esc(sections(t.region)[HUNTS.get(t.foe.hunt)?.k ?? 0]!.name)} again.`);
-    else if (t.kind === "wild" && !bound) lines.push("It slinks off into the brush.");
+    else if (t.kind === "wild" && !bound) lines.push(`It slinks off into the brush. A knocked-out beast can't be bound: wear it under ${Math.round(bindBelow(false) * 100)}%, then press ${esc(bindKey())} before it drops.`);
     if (bound) outcome = { kind: "bound", item: boundCount(j), repeat };
     if (bound && !repeat) say("bind", { n: t.region.n, item: boundCount(j) });
     const at = { n: t.region.n, regionId: t.region.id, region: t.region.name };
@@ -1236,19 +1290,22 @@ function tripOver(m: Match, bound: boolean, how: string) {
     t.out.add(t.slot);
     wound(me, 0);
     const next = nextUp(j, t.out);
-    outcome = { kind: "down", next: next >= 0 && t.kind !== "deadly", deadly: t.kind === "deadly" };
-    title = `${esc(creature(me.id).name)} is down`;
+    const left = next >= 0 && t.kind !== "deadly";
+    outcome = { kind: "down", next: left, deadly: t.kind === "deadly" };
+    title = left || t.kind === "deadly" ? `${esc(creature(me.id).name)} is knocked out` : "Your whole team is knocked out";
     lines.push(how);
     const lost = tally(j, true), at = { n: t.region.n, regionId: t.region.id, down: creature(me.id).name };
-    lossBeats(lost, next >= 0 && t.kind !== "deadly").some((b) => say(b, at));
-    if (next >= 0 && t.kind !== "deadly") {
+    lossBeats(lost, left).some((b) => say(b, at));
+    if (left) {
       const up = creature(j.party[next]!.id);
-      lines.push(`${esc(m.f[1].c.name)} has ${Math.round(m.f[1].hp)} health left.`);
+      lines.push(`${esc(m.f[1].c.name)} still has ${Math.round(m.f[1].hp)} health. Send in your next creature to keep fighting, or run back to the world.`);
       go = `${icon("arrow-left-right")} Send in ${esc(up.name)}`;
       again = () => { t.slot = next; t.foeHp = m.f[1].hp; fightTrip(); };
     } else {
       heal(j); // waking by the last stone mends the line-up, or nobody could fight again
-      lines.push(t.kind === "deadly" ? "You wake on the doorstep of your last arena." : "The whole line-up is down. You wake by the last stone you lit.");
+      lines.push(t.kind === "deadly"
+        ? "You lost this fight. Your team is healed, and you are back outside the arena you came from."
+        : "None of your creatures can fight now. Your team is healed, and you are back at the last stone you lit.");
     }
   }
   saveJourney();
@@ -1273,8 +1330,8 @@ let moveCardOn = (() => { try { return localStorage.getItem(MOVE_CARD) !== "off"
 const moveCard = Object.assign(document.createElement("aside"), { id: "moveKeys", className: "move-keys", hidden: true, ariaLabel: "Movement keys" });
 document.body.append(moveCard);
 const cineEl = $("#cine");
-let moveCardFor: "fight" | "world" | null = null;
-function drawMoveCard(where: "fight" | "world") {
+let moveCardFor: "fight" | "hunt" | "world" | null = null;
+function drawMoveCard(where: "fight" | "hunt" | "world") {
   moveCardFor = where;
   moveCard.classList.toggle("world", where === "world");
   moveCard.innerHTML = moveKeys(where).map((k) => `<span><kbd>${esc(k.keys)}</kbd>${esc(k.does)}</span>`).join("");
@@ -1324,7 +1381,25 @@ function layoutRows(pane: HTMLElement) {
   return { sync: () => { presets(); box.checked = moveCardOn; drawHints(); } };
 }
 
-/** The Account tab: who is signed in through eqosys, and the way in or out. */
+/** Your ground's colour, under the Account tab: the 64 as swatches, the ones friends in your room wear taken. */
+function huePicker(pane: HTMLElement) {
+  const taken = new Set(online?.colours().flatMap((o) => (o.colour === undefined ? [] : [o.colour])) ?? []), worn = hueWorn();
+  const box = Object.assign(document.createElement("div"), { className: "hues", role: "group", ariaLabel: "Your ground's colour" });
+  box.innerHTML = Array.from({ length: COLOURS }, (_, i) => {
+    const gone = taken.has(i) && i !== worn;
+    return `<button type="button" data-hue="${i}" style="--hue:${hueCss(i)}" aria-pressed="${i === worn}"${gone ? " disabled" : ""} title="${gone ? `Colour ${i + 1}, a friend's` : `Colour ${i + 1}`}" aria-label="${gone ? `Colour ${i + 1}, a friend's` : `Colour ${i + 1}`}"></button>`;
+  }).join("");
+  box.onclick = (e) => {
+    const b = e.target instanceof Element ? e.target.closest<HTMLButtonElement>("button[data-hue]") : null;
+    if (!b || b.disabled) return;
+    hueChosen = Number(b.dataset.hue);
+    try { localStorage.setItem(HUE_KEY, String(hueChosen)); } catch { /* this session only */ }
+    box.querySelectorAll("button").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+  };
+  pane.append(Object.assign(document.createElement("p"), { textContent: "Your ground: the colour the waves round your feet hum in, which friends know you by. A colour a friend in your room wears is taken." }), box);
+}
+
+/** The Account tab: who is signed in through eqosys, and the way in or out, and your ground's colour. */
 function accountPane(pane: HTMLElement) {
   pane.classList.add("gc-acct");
   const draw = () => {
@@ -1336,6 +1411,7 @@ function accountPane(pane: HTMLElement) {
     if (signInNote) pane.insertAdjacentHTML("beforeend", `<p>${esc(signInNote)}</p>`);
     pane.querySelector("#acctIn")?.addEventListener("click", () => void signIn());
     pane.querySelector("#acctOut")?.addEventListener("click", () => { signOut(); draw(); drawAccount(); });
+    huePicker(pane);
   };
   draw();
   return { sync: draw };
@@ -1493,23 +1569,28 @@ function frame(now: number) {
   crowdOf(arena)?.update(dt);
   tickArena(arena, performance.now() / 1000);
   const moving = world.shown || (!!m && !m.over && !bots[0]);
+  document.body.classList.toggle("in-fight", !!m && !m.over && !world.shown);
   touchEl.hidden = !(touchy && moving);
-  const where = world.shown ? "world" : "fight";
+  const where = world.shown ? "world" : bindable(trip) ? "hunt" : "fight";
   if (moveCardFor !== where) drawMoveCard(where);
   moveCard.hidden = !moveCardOn || touchy || !moving || paused || journalOpen || !!talking || !cineEl.hidden;
   touchEl.classList.toggle("world", world.shown);
   touchEl.classList.toggle("bindable", bindable(trip));
-  touchEl.classList.toggle("ult-ready", !!m && m.f[0].energy >= 100);
+  touchEl.classList.toggle("ult-ready", !!m && m.f[mine].energy >= 100);
   if (padKeys.length && director.skippable) poke = true;
   director.step(dt, poke); poke = false;
   if (pending && !director.holding) { const p = pending; pending = null; finish(p.m, p.bound); }
   nextTalk();
-  if (m && live && !m.over && !paused && !journalOpen && !director.holding && !talking) {
+  const step = versusOn ? versus.link()?.step ?? null : null;
+  // A fight against a friend never pauses: a menu open over it only stops your hands.
+  if (m && live && !m.over && (step || ((!paused && !journalOpen) && !versusOn)) && !director.holding && !talking) {
     pollPad();
     if (hitStop > 0) hitStop -= dt; else acc += dt;
     while (acc >= 1 / HZ && !m.over && hitStop <= 0) {
       const cur = m;
-      live.step([bots[0] ? bots[0](cur) : playerInput(), bots[1] ? bots[1](cur) : IDLE]);
+      const both: [Input, Input] | null = step ? step.next(() => (paused || journalOpen ? IDLE : playerInput())) : [bots[0] ? bots[0](cur) : playerInput(), bots[1] ? bots[1](cur) : IDLE];
+      if (!both) { acc = Math.min(acc, 0.25); break; } // the friend's input isn't in yet: wait a frame, never guess
+      live.step(both);
       moveFx.events(cur, cur.events);
       rememberHud(hudMem.now, cur);
       for (const e of cur.events) if (e.kind === "hit" && !e.guarded) {
@@ -1525,6 +1606,7 @@ function frame(now: number) {
       acc -= 1 / HZ;
       if (cur.over) ended(cur);
     }
+    if (step) versus.link()?.flush(m);
     hud(m);
   }
   if (world.shown && !paused && !journalOpen && !talking && sitting === null) {
@@ -1534,7 +1616,9 @@ function frame(now: number) {
     const shared = online?.clock(now);
     if (shared != null) world.share(shared); // the party's one clock: the same wilds, sun and weather for everyone
     world.update(dt * director.stage.slow, still ? new Set() : actions(), held || still ? NO_STICK : stickFinger ? touchMove : padMove, turn);
-    if (online) { const p = world.pose(); online.update(p.region, p.x, p.z, p.yaw, p.lead, now, p.follow); if (online.you) world.seat(online.you); world.friends(friendsNow(online, p.region, now), dt); }
+    const hue = hueWorn();
+    world.hue(hue);
+    if (online) { const p = world.pose(); online.update(p.region, p.x, p.z, p.yaw, p.lead, now, p.follow, hue); if (online.you) world.seat(online.you); world.friends(friendsNow(online, p.region, now), dt); }
   }
   else if (m) { const t = director.stage.freeze > 0.5 ? 0 : dt * director.stage.slow; draw(m, t); moveFx.update(t); } else if (shelf) shelf.update(dt); else if (crowdView) crowdCam(now); else { camera.position.set(Math.cos(now / 4000) * 22, 9, Math.sin(now / 4000) * 22); camera.lookAt(0, 0, 0); }
   frameShot(director.stage.shot);
@@ -1599,6 +1683,8 @@ else if (params.get("gallery") !== null) {
 else if (params.get("world") === "1") { const a = STARTERS.find((s) => s === params.get("a")) ?? STARTERS[0]; if (!journey && params.get("a")) { journey = newJourney([a, ...STARTERS.filter((s) => s !== a)].slice(0, PICKS)); saveJourney(); } enterWorld(); }
 else if (params.get("a") && params.get("b")) start(pickA, pickB, skinSel.value, params.get("watch") === "1");
 else if (params.get("versus") !== null) pages.show($("#select"));
+else if (duelCode(location.search)) versus.enter(duelCode(location.search)!);
+else if (params.get("vs") === "1") versus.open();
 else showTitle();
 // ?scene=<name>&t=<seconds> (@rustybuns/util/director): one of the director's scenes over a fight (the a and b of the
 // link, or the first two), held at second t, for a look at one frame without playing to it.
@@ -1613,6 +1699,7 @@ const askedParty = (params.get("party") ?? "").toUpperCase().match(/^[A-Z0-9]{4,
 // Signed in: redraw the title's chip with the name.
 void signedIn.then((back) => {
   if (back) { signInNote = back.error ?? ""; drawAccount(); }
+  if (back?.login && back.then === "versus") versus.open(); // signed in from Fight a Friend: back to the friends list
   if (askedParty && login()) joinReaders(askedParty);
   else if (askedParty) { signInNote = "Sign in to read the Book with this party."; drawAccount(); }
   drawReaders();
@@ -1628,6 +1715,14 @@ const tripState = () => trip && { ...trip, out: [...trip.out], region: trip.regi
 Object.assign(window, {
   mythicMasters: {
     state: fightState,
+    /** Fighting a friend: the duel's link, who sits where, the round, the tick it plays next and how long it's waited,
+     *  and the fight's hash (net/duel.ts `sum`), the same on both pages while they play the same fight. */
+    duel: () => { const l = versus.link(); return l && { code: l.code, status: l.status, seats: l.seats, round: l.step?.r ?? null, next: l.step?.tick ?? null, waited: l.step?.waited ?? 0, delay: l.step?.delay ?? null, mine, on: versusOn, tick: m?.tick ?? null, over: m?.over ?? null, sum: m ? sum(m) : null, screen: document.querySelector("#result:not([hidden]) h2")?.textContent ?? null }; },
+    /** Pick line-up member `i` in the duel's room (what a tap on its card does). */
+    /** Leave the duel (the room's Leave button), and open or close the Settings menu (the pause menu, over a fight). */
+    duelLeave: () => versus.leave(),
+    settings: (open = true) => { if (open) controls.open(); else controls.close(); return controls.isOpen(); },
+    duelPick: (i: number) => { const b = document.querySelector<HTMLElement>(`#friends [data-pick="${i}"]`); b?.click(); return !!b; },
     /** The last frame's draw calls and triangles (every pass), the geometries and textures the GPU holds, and the shader programs compiled so far: for scripts/walk-budget.ts. */
     perf: () => { const { render, memory, programs } = renderer.info; return { calls: render.calls, triangles: render.triangles, geometries: memory.geometries, textures: memory.textures, programs: programs?.length ?? 0, particles: moveFx.count, cap: moveFx.cap }; },
     /** The field chart: open() / close() it, ask(you, them) sets its asker (one or two fields a side), state() reads it. */
@@ -1654,8 +1749,8 @@ Object.assign(window, {
     /** The fight HUD's skins (src/hud/skins/): `hud()` lists them and names the one showing, `hud(id)` wears one (an id or its index). */
     /** The quality tier drawn at `now` (low, mid or high), each step the frame budget took to get there (`?quality=` sets where it starts), and the plant budget that tier set. */
     quality: () => ({ now: tiers.quality, steps: tiers.steps, plants: plantBudget() }),
-    hud: (id?: string) => { if (id !== undefined && !useSkin(String(id))) return null; return { now: skinNow().id, skins: HUD_SKINS.map((s) => ({ id: s.id, name: s.name, idea: s.idea })) }; },
-    /** The open world: `enter()`, `state()` (where you are, what you've beaten, what's open and rising), `travel(n)` to an open region n's arena, `places(n?)` the region's tapes, campfires, landmarks and sighting boards (also in `state().places`), `hunts(n?)` its sighting-board contracts (stage, next sign, lair; also `state().hunts`), `fastTravel(id)` to a lit campfire, `teleport(x, z)` onto open ground (`state().wilds` says where the wild ones roam, `trails()` where each keeper's stone is), `setHour(h)` for the time of day, `setWeather({ rain, snow, mist })` (or null) to hold the weather, `layer(name, on)` to hide a drawn layer, `beat(n)` as if you won its arena, `reset()`. */
+    hud: (id?: string) => { if (id !== undefined && !useSkin(String(id))) return null; if (id !== undefined && m) hud(m); return { now: skinNow().id, skins: HUD_SKINS.map((s) => ({ id: s.id, name: s.name, idea: s.idea })) }; },
+    /** The open world: `enter()`, `state()` (where you are, what you've beaten, what's open and rising), `travel(n)` to an open region n's arena, `places(n?)` the region's tapes, campfires, landmarks and sighting boards (also in `state().places`), `hunts(n?)` its sighting-board contracts (stage, next sign, lair; also `state().hunts`), `fastTravel(id)` to a lit campfire, `enterTown(id)` into a sighting board's town (its door does it too; `state().town` says where you stand inside, the board and the people), `standInside(x, z)` there in the town's own metres and `leaveTown()`, `teleport(x, z)` onto open ground (`state().wilds` says where the wild ones roam, `trails()` where each keeper's stone is), `setHour(h)` for the time of day, `setWeather({ rain, snow, mist })` (or null) to hold the weather, `layer(name, on)` to hide a drawn layer, `beat(n)` as if you won its arena, `reset()`. */
     /** Walking together, for an agent or the two-page journey: the party's view, and a contract told to the room. */
     together: {
       state: () => online && { room: online.room, status: online.status, where: online.where() },
@@ -1664,7 +1759,7 @@ Object.assign(window, {
       pick: (id: string) => { world.lifeHeard({ k: "pick", id }); online?.life("pick", id); },
       seen: () => world.seen(),
     },
-    world: { enter: enterWorld, state: world.state, friends: world.friends, online: () => online && { room: online.room, status: online.status, clock: online.clock(performance.now()), sentBytes: online.sentBytes, friends: friendsNow(online, world.pose().region, performance.now()) }, travel: world.travel, beat: world.beat, teleport: world.teleport, eye: world.eye, setHour: world.setHour, peace: world.peace, setWeather: world.setWeather, layer: world.layer, reset: world.reset, trails: world.trails, places: world.places, hunts: world.hunts, fastTravel: world.fastTravel },
+    world: { enter: enterWorld, state: world.state, friends: world.friends, online: () => online && { room: online.room, status: online.status, clock: online.clock(performance.now()), sentBytes: online.sentBytes, friends: friendsNow(online, world.pose().region, performance.now()) }, travel: world.travel, beat: world.beat, teleport: world.teleport, eye: world.eye, setHour: world.setHour, peace: world.peace, setWeather: world.setWeather, layer: world.layer, reset: world.reset, trails: world.trails, places: world.places, hunts: world.hunts, fastTravel: world.fastTravel, enterTown: world.enterTown, standInside: world.standInside, leaveTown: world.leaveTown },
     /** The journey: `state()` (line-up, journal, sections cleared, pages), `begin([a, b, c])` a fresh one with three starters, `bind()` tries the ink
      * in a world fight, `journal(open)`, `trip()` what the current world fight is. */
     journey: {

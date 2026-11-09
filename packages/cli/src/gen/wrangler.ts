@@ -11,7 +11,7 @@ import { parseWrangler } from "../wrangler.ts";
  * for any class still not created. Cloudflare refuses a deployed tag that
  * changes (code 10074), so history is only ever appended to.
  */
-export function doMigrations(classes: string[], previous: DoMigration[] = [], declared: DoMigration[] = [], flagged: Record<string, string> = {}): DoMigration[] {
+export function doMigrations(classes: string[], previous: DoMigration[] = [], declared: DoMigration[] = [], flagged: Record<string, string> = {}, moved: string[] = []): DoMigration[] {
   const history = [...previous];
   for (const m of declared) if (!history.some((h) => h.tag === m.tag)) history.push(m);
   const live = new Set<string>();
@@ -20,7 +20,8 @@ export function doMigrations(classes: string[], previous: DoMigration[] = [], de
     for (const r of m.renamed_classes ?? []) { live.delete(r.from); live.add(r.to); }
     for (const k of m.deleted_classes ?? []) live.delete(k);
   }
-  const gone = [...live].filter((k) => !classes.includes(k));
+  // `moved`: still bound, but hosted by another app now (a durable_object's `app`); its data went with it, so it isn't gone.
+  const gone = [...live].filter((k) => !classes.includes(k) && !moved.includes(k));
   if (gone.length) throw new Error(unboundMessage(gone, nextTag(history), flagged));
   const added = classes.filter((k) => !live.has(k));
   if (added.length) history.push({ tag: nextTag(history), new_sqlite_classes: added });
@@ -90,7 +91,7 @@ export function generateWrangler(c: RustyBunsConfig, previous: string | null = n
       ...(c.worker.notFoundHandling ? { not_found_handling: c.worker.notFoundHandling } : {}) };
   }
   const d1: unknown[] = [], kv: unknown[] = [], r2: unknown[] = [], dos: unknown[] = [], artifacts: unknown[] = [], containers: unknown[] = [], sendEmail: unknown[] = [], ratelimits: unknown[] = [], vectorize: unknown[] = [], hyperdrive: unknown[] = [];
-  const producers: unknown[] = [], consumers: unknown[] = [], workflows: unknown[] = [], analytics: unknown[] = [], loaders: unknown[] = [];
+  const producers: unknown[] = [], consumers: unknown[] = [], workflows: unknown[] = [], analytics: unknown[] = [], loaders: unknown[] = [], services: unknown[] = [];
   const vars: Record<string, string> = {};
   const sqliteClasses: string[] = [];
   // No database_id / KV id: local dev doesn't need them, and a placeholder makes
@@ -100,7 +101,13 @@ export function generateWrangler(c: RustyBunsConfig, previous: string | null = n
     if (b.type === "d1") d1.push({ binding: name, database_name: b.databaseName, ...(b.migrationsDir ? { migrations_dir: b.migrationsDir } : {}) });
     if (b.type === "kv") kv.push({ binding: name });
     if (b.type === "r2") r2.push({ binding: name, bucket_name: b.bucketName });
-    if (b.type === "durable_object") { dos.push({ name, class_name: b.className, ...(b.scriptName ? { script_name: b.scriptName } : {}) }); if (!b.scriptName) sqliteClasses.push(b.className); }
+    // Locally another app's Worker goes by its app name (each app's wrangler.jsonc `name`), run beside this one (vite's auxiliaryWorkers).
+    if (b.type === "durable_object") {
+      const host = b.scriptName ?? b.app;
+      dos.push({ name, class_name: b.className, ...(host ? { script_name: host } : {}) });
+      if (!host) sqliteClasses.push(b.className);
+    }
+    if (b.type === "service") services.push({ binding: name, service: b.app, ...(b.entrypoint ? { entrypoint: b.entrypoint } : {}) });
     if (b.type === "var") vars[name] = b.value;
     if (b.type === "artifacts") artifacts.push({ binding: name, namespace: b.namespace });
     // Wrangler takes one Images binding, as an object.
@@ -142,8 +149,10 @@ export function generateWrangler(c: RustyBunsConfig, previous: string | null = n
   if (workflows.length) w["workflows"] = workflows;
   if (analytics.length) w["analytics_engine_datasets"] = analytics;
   if (loaders.length) w["worker_loaders"] = loaders;
+  if (services.length) w["services"] = services;
   if (dos.length) w["durable_objects"] = { bindings: dos };
-  const migrations = doMigrations(sqliteClasses, previousMigrations(previous), c.worker.migrations, c.worker.flaggedClasses);
+  const moved = Object.values(c.bindings ?? {}).flatMap((b) => b.type === "durable_object" && b.app ? [b.className] : []);
+  const migrations = doMigrations(sqliteClasses, previousMigrations(previous), c.worker.migrations, c.worker.flaggedClasses, moved);
   if (migrations.length) w["migrations"] = migrations;
   if (Object.keys(vars).length) w["vars"] = vars;
   if (c.worker.cpuMs) w["limits"] = { cpu_ms: c.worker.cpuMs };

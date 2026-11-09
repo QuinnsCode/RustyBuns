@@ -67,25 +67,26 @@ test("the worktrees route: owner only, never main itself, and a run's goes when 
   const call = await boot();
   opened.push(call);
   const post = (user: string, path: string, body: unknown) => call(user, path, { method: "POST", body: JSON.stringify(body) });
+  const named = async (r: Response) => [r.status, ((await r.json()) as { tag?: string }).tag];
   await post("ana", "/api/login", { name: "ana" });
   expect((await post("ana", "/api/repos", { name: "wt" })).status).toBe(201);
   // No git until something's committed.
-  expect((await post("ana", "/api/repos/ana/wt/worktrees", { branch: "x" })).status).toBe(409);
+  expect(await named(await post("ana", "/api/repos/ana/wt/worktrees", { branch: "x" }))).toEqual([409, "NoGit"]);
   expect((await post("ana", "/api/repos/ana/wt/files", { path: "a.txt", content: "hi" })).status).toBeLessThan(300);
   expect((await post("ana", "/api/repos/ana/wt/do/commit?path=a.txt", { message: "first" })).status).toBe(200);
   const bare = call.artifacts.path("ana--wt"), main = await sh(`git --git-dir ${bare} rev-parse main`);
 
-  expect((await post("bo", "/api/repos/ana/wt/worktrees", { branch: "x" })).status).toBe(403);   // not the owner
-  expect((await post("ana", "/api/repos/ana/wt/worktrees", { branch: "main" })).status).toBe(409);
-  expect((await post("ana", "/api/repos/ana/wt/worktrees", { branch: "x", sha: main })).status).toBe(400);
-  expect((await post("ana", "/api/repos/ana/wt/worktrees", { sha: "0".repeat(40) })).status).toBe(404);
+  expect(await named(await post("bo", "/api/repos/ana/wt/worktrees", { branch: "x" }))).toEqual([403, "OwnerOnly"]);
+  expect(await named(await post("ana", "/api/repos/ana/wt/worktrees", { branch: "main" }))).toEqual([409, "MainMoves"]);
+  expect(await named(await post("ana", "/api/repos/ana/wt/worktrees", { branch: "x", sha: main }))).toEqual([400, "BadInput"]);
+  expect(await named(await post("ana", "/api/repos/ana/wt/worktrees", { sha: "0".repeat(40) }))).toEqual([404, "NoSuchCommit"]);
 
   const b = await post("ana", "/api/repos/ana/wt/worktrees", { branch: "x" });
   expect(b.status).toBe(201);
   const made = await b.json() as any;
   expect(made).toMatchObject({ name: "x", branch: "x", sha: main });
   expect(await Bun.file(join(made.path, "a.txt")).text()).toBe("hi\n");
-  expect((await post("ana", "/api/repos/ana/wt/worktrees", { branch: "x" })).status).toBe(409);
+  expect(await named(await post("ana", "/api/repos/ana/wt/worktrees", { branch: "x" }))).toEqual([409, "WorktreeExists"]);
   const run = await (await post("ana", "/api/repos/ana/wt/worktrees", { sha: main })).json() as any;
   expect((await (await call("ana", "/api/repos/ana/wt/worktrees")).json() as any[]).map((w) => w.name)).toEqual(["x", run.name]);
 
