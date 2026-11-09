@@ -25,6 +25,7 @@
       <p>Every result an agent reads is paid for again on every later turn. A 2,000-line log, a 131-tool menu, a rulebook nobody reread: all of it rides along. Dexter takes this personally.</p></section>
     <section><h2>Observed behaviour</h2>
       <p>Reads Claude Code's own transcripts and adds up the tokens by day. Names the tools whose results sat biggest in the context, each with a plain tip. Proposes trims to the text every session pays for (<code>CLAUDE.md</code>, <code>AGENTS.md</code>, the memory index) as a diff you approve. He never edits a file himself.</p>
+      <p>In codeSplitter he is off until a repo's owner switches him on, and switching him off deletes what he kept. Each agent run the repo hosts reports its numbers once, at its end: tokens in and out, turns, and per tool its calls and how big its results were. Never the text. He keeps them 30 days, and a daily sum for a year. Approve one of his trims to <code>AGENTS.md</code> or <code>CLAUDE.md</code> and it lands on a branch for you to merge.</p>
       <p>Measured on this repo's own swarm, 14% of the spend went to merge fights and 4% to board reads, test output and oversized results. The rest, 82%, went to the work.</p></section>
     <section><h2>Psychological profile</h2>
       <div class="score"><span>Fat tolerated</span><span class="bar"><i style="width:3%"></i></span><span>03</span></div>

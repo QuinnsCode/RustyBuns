@@ -163,6 +163,9 @@ export class NoDeployKey extends Schema.TaggedError<NoDeployKey>()("NoDeployKey"
 export class RunnerOnly extends Schema.TaggedError<RunnerOnly>()("RunnerOnly", named) {}
 export class NoHostedDeploys extends Schema.TaggedError<NoHostedDeploys>()("NoHostedDeploys", named) {}
 export class NoSuchCheck extends Schema.TaggedError<NoSuchCheck>()("NoSuchCheck", named) {}
+export class NoSuchTrim extends Schema.TaggedError<NoSuchTrim>()("NoSuchTrim", named) {}
+export class DexterOff extends Schema.TaggedError<DexterOff>()("DexterOff", named) {}
+export class TrimStale extends Schema.TaggedError<TrimStale>()("TrimStale", named) {}
 export class NotYourClaim extends Schema.TaggedError<NotYourClaim>()("NotYourClaim", named) {}
 export class TakeTurns extends Schema.TaggedError<TakeTurns>()("TakeTurns", named) {}
 export class LinesHeld extends Schema.TaggedError<LinesHeld>()("LinesHeld", named) {}
@@ -224,7 +227,7 @@ export const NAMED = {
   BadHookToken, NoSuchFloor,
   HandleTaken, HasHandle, SignInOff,
   TooManyTokens, NoSuchToken,
-  DesktopOnly, NoDeployKey, RunnerOnly, NoHostedDeploys, NoSuchCheck, NotYourClaim, TakeTurns, LinesHeld, LinesQueued, LeftLine, GitHubRun, CheckTaken, CheckDone, DeployRunning, DiffCutShort, DeployWaits, PlanStale, HistoryTrimmed,
+  DesktopOnly, NoDeployKey, RunnerOnly, NoHostedDeploys, NoSuchCheck, NoSuchTrim, DexterOff, TrimStale, NotYourClaim, TakeTurns, LinesHeld, LinesQueued, LeftLine, GitHubRun, CheckTaken, CheckDone, DeployRunning, DiffCutShort, DeployWaits, PlanStale, HistoryTrimmed,
   NoSuchLevel, LevelNotDug, LevelTooBig, NoArtifacts, NoSuchWorktree, NoSuchCommit, MainMoves, WorktreeExists, WorktreeFailed,
   NoSecretsKey, NotYourShare, NotAGitHubFork, ForkBaseGone, NoSuchCut, NoSuchShare, NoSuchProvider, TryRunning, TagRefused, StillCopying, NothingNew, PickClash, NothingToPick, DigestRunning, CommitTooBig, UpstreamTooBig, GitHubRateLimit,
   TooManyWebhooks, TooManyWatched, TooManyCiTokens, FollowToVisit, CrossSite, BotCheck, NoSuchWebhook, NoSuchDelivery, NoSuchCar, NoDeletedHandle, NoPublicCity, NoSuchProgram, NoSuchGrant, NoSuchBoardRow, NoSuchFollow, NoSuchOldGit, NoPulse, WrongMethod, DoctorRunning, RoomFull, ChecksElsewhere, CarUnsettled, NoReleaseLanes, TooManyPrograms, NoVectorIndex, NoArtifactsNext, SocketOnly,

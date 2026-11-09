@@ -4478,6 +4478,40 @@ const views = {
       } catch (e) { toast(`Not changed: ${e.message}`); }
       box.remove(); views.wireLearning(owner, repo, el);
     }));
+    views.wireDexter(owner, repo, el);
+  },
+  /** Dexter here, opt in (GET|PUT /repos/:o/:r/dexter): the week's token use per tool, and his trims to approve onto a branch. */
+  async wireDexter(owner, repo, el) {
+    const d = await api(`/repos/${owner}/${repo}/dexter`).catch(() => null);
+    if (!d) return;
+    const mine = owner === me(), w = d.week, kn = (n) => n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${Math.round(n / 1e3)}k` : String(n);
+    const open = (d.trims ?? []).filter((t) => t.status === "open");
+    const box = document.createElement("div");
+    box.innerHTML = `<p class="muted" style="margin-top:8px">${icon("scissors")} Dexter: ${d.on ? "on" : "off"}${note(d.on ? "Each agent run here keeps its token use per tool, never its text. Off deletes it all." : "Off until the owner turns it on.")}</p>`
+      + (w ? `<p title="the last 7 days, in input-token units"><b>${w.runs}</b> runs · <b>${kn(w.units)}</b> units</p>`
+        + (w.tools.length ? `<ul class="fit-why">${w.tools.slice(0, 3).map((t) => `<li title="${esc(t.tip)}"><code>${esc(t.tool)}</code> ${kn(t.tokens)} over ${t.calls} calls, worst ${kn(t.worst)}</li>`).join("")}</ul>` : "") : "")
+      + open.map((t) => `<details><summary>${esc(t.file)}: about ${t.saved} tokens a session</summary><pre class="verse">${esc(t.diff)}</pre>`
+        + `<p><button class="btn" data-trim="${t.id}" data-approve="1" title="put it on a branch to merge">${icon("check")}</button> <button class="btn ghost" data-trim="${t.id}" title="decline" aria-label="decline">${icon("x")}</button></p></details>`).join("")
+      + (d.on ? `<p><button class="btn ghost" data-dexter="trims" title="propose trims to AGENTS.md and CLAUDE.md">${icon("scissors")}</button>${mine ? ` <button class="btn" data-dexter="off">Turn off</button>` : ""}</p>`
+        : mine ? `<p><button class="btn" data-dexter="on">Turn on</button></p>` : "");
+    el.appendChild(box);
+    const again = () => { box.remove(); views.wireDexter(owner, repo, el); };
+    box.querySelectorAll("[data-dexter]").forEach((b) => b.addEventListener("click", async () => {
+      const what = b.dataset.dexter;
+      try {
+        if (what === "trims") { const s = await api(`/repos/${owner}/${repo}/dexter/trims`, {}); if (!s.trims.some((t) => t.status === "open")) toast("Nothing to trim"); }
+        else await api(`/repos/${owner}/${repo}/dexter`, { on: what === "on" }, "PUT");
+      } catch (e) { toast(`Not changed: ${e.message}`); }
+      again();
+    }));
+    box.querySelectorAll("[data-trim]").forEach((b) => b.addEventListener("click", async () => {
+      try {
+        const s = await api(`/repos/${owner}/${repo}/dexter/trims/${b.dataset.trim}`, { approve: !!b.dataset.approve });
+        const t = s.trims.find((x) => String(x.id) === b.dataset.trim);
+        if (t?.branch) toast(`On branch ${t.branch}: merge it when you're happy`);
+      } catch (e) { toast(`Not changed: ${e.message}`); }
+      again();
+    }));
   },
   /** Could `rustybuns init` box this repo as a desktop binary, a Worker and a server? A monorepo lists its apps. */
   async wireFit(owner, repo, dir = "") {

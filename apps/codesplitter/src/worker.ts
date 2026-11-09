@@ -785,6 +785,12 @@ async function route(req: Request, env: Env): Promise<Response> {
     if (p[4] === "upstream") { const r = await listenRoute(req, env, p, owner, repo, user); if (r) return r; }
     // GET|POST /api/repos/:o/:r/worktrees, DELETE .../worktrees/:name  real checkouts off the desktop's bare git (worktrees.ts)
     if (p[4] === "worktrees") { const r = await worktreeRoute(req, env, p, owner, repo, user); if (r) return r; }
+    // GET|PUT /api/repos/:o/:r/dexter, POST .../dexter/trims[/:id]  Dexter, opt in: token use per tool, trims to approve (dexter.ts)
+    if (p[4] === "dexter") {
+      const { caller } = await import("./deps.ts");
+      const r = await (await import("./dexter.ts")).dexterRoutes(req, env, caller((q) => app.fetch(q, env), url.origin), p, owner, repo, user, a.write);
+      if (r) return r;
+    }
     const fresh = await freshRoutes(req, env, p, url, owner, repo, user);
     if (fresh) return fresh;
     const branches = await branchRoutes(req, env, p, owner, repo, user, a);
@@ -1058,6 +1064,8 @@ const app = {
     ctx.waitUntil(sweepTraffic(env));
     ctx.waitUntil(sweepLineEvents(env));
     ctx.waitUntil(sweepConflicts(env));
+    // Dexter: today's and yesterday's rollup, then what is past its keep and each repo past its newest 5,000 runs (dexter.ts).
+    ctx.waitUntil(import("./dexter.ts").then((d) => d.sweepDexter(env)));
     ctx.waitUntil(sweepOAuth(env));
     if (accountsOn(env)) ctx.waitUntil(sweepSessions(env));
     ctx.waitUntil(drainJobs(env, (r) => app.fetch(r, env)));

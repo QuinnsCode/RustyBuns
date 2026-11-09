@@ -958,6 +958,8 @@ async function execute(env: Env, self: (req: Request) => Promise<Response>, orig
     const kept = !local && r.kept?.id === r.session && r.kept && await keepSession(env, owner, repo, home, r.kept);
     const session = r.session && (local || kept) ? { id: r.session, last: (await threadMessages(env, owner, repo, home, 1e12)).last } : undefined;
     const done = await finish(env, id, "done", { ...extra, ...(session && { session }), ...(engine.length && { engine }), ...(pushed && { pushed }), applied: r.applied, rev: r.rev, runs: r.runs, conflicts: r.conflicts, output: r.output.slice(-4000), spent: r.spent, ...(r.edited && { edited: r.edited }), ...(r.private && { private: r.private }), ...(pending ? { pending } : {}), ...(handoff && { handoff }) });
+    // Its token use, per tool, if the repo has Dexter on (dexter.ts). Never fails the run.
+    await (await import("./dexter.ts")).recordRun(env, owner, repo, String(id), r.dexter);
     // Stopped just as it ended: nothing waits.
     if (pending?.until && done.meta?.changes) await landLater(env, id, origin, wait);
     else if (own && !pending) await dropBranch(env, owner, repo, own, path);

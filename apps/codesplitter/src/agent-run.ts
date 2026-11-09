@@ -16,6 +16,7 @@ import { ClaimRefused, ClaimsReply, FileDoc, OpsRefused, OpsReply } from "./file
 import { arr, check, obj, opt, str } from "@rustybuns/util/guard";
 import { parseJson } from "@rustybuns/util/http";
 import type { Session } from "./thread-do.ts";
+import { newReport, tally, type Report } from "@rustybuns/util/dexter";
 
 /** The parts of a claude stream-json line a listening run reads: its type, and an assistant message's text blocks. */
 const StreamLine = obj({ type: str(40), message: opt(obj({ content: opt(arr(obj({ type: str(40), text: opt(str(100_000)) }), 200, { drop: true })) })) });
@@ -209,6 +210,8 @@ export interface Result {
   session?: string;
   /** That session's log, from a container, which keeps nothing once the run ends (#3715): the thread keeps it. */
   kept?: Session;
+  /** What claude reported as it worked (its stream-json, read the way the office reads a transcript): usage, turns, each tool. Only when it reported a turn; a repo with Dexter on keeps it (dexter.ts). */
+  dexter?: Report;
 }
 
 /** The session a claude run's stream-json answer names on its result line, or undefined. */
@@ -384,6 +387,7 @@ export async function runAgent(plain: Call, opts: {
   let resume = opts.harness === "claude" ? opts.resume : undefined, session: string | undefined, kept: Session | undefined;
   let applied = 0, changed = false, runs = 0, retried = 0, noteRuns = 0, conflicts: Conflict[] = [], rev = 0, output = "", spent = opts.spent ?? 0, trip: Trip | undefined;
   const told: string[] = [], touched = new Set<string>(), failures: string[] = [];
+  const dexter = newReport(true);
   /** Every private line any round read: what it says is cut of them before it goes anywhere. */
   const read = new Set<string>();
   /** How many of `told` the last prompt carried. */
@@ -472,6 +476,7 @@ export async function runAgent(plain: Call, opts: {
     }
     // What it says it read and wrote, where its CLI says (#1088, #1118); else it read the prompt and every file, and wrote its reply and the files back.
     const usage = usageOf(run.out);
+    if (opts.harness === "claude") tally(run.out.split("\n"), dexter);
     output = redact((usage?.reply ?? run.out).trim(), read);
     if (!spoke && output && run.code === 0) say(output);
     spent += usage?.tokens ?? tokens(prompt.length + snapshot.lines.reduce((n, l) => n + l.text.length + 1, 0) * 2
@@ -515,6 +520,6 @@ export async function runAgent(plain: Call, opts: {
     const res = await call(user, `${file}/commit${q}`, { method: "POST", body: JSON.stringify({ message: opts.commit }) });
     if (!res.ok) throw new Error(`committing ${path}: ${failed(res.status, await res.text())}`);
   }
-  return { harness: opts.harness, path, changed, applied, runs, conflicts, rev, output, spent, ...(session && { session }), ...(kept && { kept }), ...(touched.size && { edited: [...touched] }), ...(read.size && { private: true as const }), ...(trip && { tripped: trip, failures, unheard: told.slice(heard) }) };
+  return { harness: opts.harness, path, changed, applied, runs, conflicts, rev, output, spent, ...(session && { session }), ...(kept && { kept }), ...(dexter.turns && { dexter }), ...(touched.size && { edited: [...touched] }), ...(read.size && { private: true as const }), ...(trip && { tripped: trip, failures, unheard: told.slice(heard) }) };
   }
 }
