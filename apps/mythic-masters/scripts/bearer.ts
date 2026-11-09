@@ -15,6 +15,7 @@ import { mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import * as THREE from "three";
 import { arr, num, obj, rec, str } from "@rustybuns/util/guard";
+import { runBlender } from "@rustybuns/cli/blender";
 import { GlbWriter, readGlb, type GNode } from "./gltf-lite.ts";
 
 const APP = join(import.meta.dir, "..");
@@ -143,7 +144,5 @@ for (const [k, v] of Object.entries(sheet.turn)) for (const n of sides(k)) {
 mkdirSync(join(APP, "blender/out"), { recursive: true });
 await Bun.write(STRETCHED, rewrite(new Uint8Array(readFileSync(RIG)), { scale, turn }));
 const args = ["--rig", STRETCHED, "--sheet", SHEET, "--out", OUT, ...(argv.includes("--render") ? ["--render", join(APP, "blender/out/bearer.png")] : [])];
-const p = Bun.spawn(["blender", "-b", "--factory-startup", "--python-exit-code", "1", "-P", join(APP, "blender/bearer.py"), "--", ...args], { cwd: APP, stdout: "pipe", stderr: "pipe" });
-const [o, e] = await Promise.all([new Response(p.stdout).text(), new Response(p.stderr).text()]);
-if ((await p.exited) !== 0) { console.error((o + e).split("\n").slice(-30).join("\n")); process.exit(1); }
+const { out: o } = await runBlender({ script: join(APP, "blender/bearer.py"), args, cwd: APP });
 console.log(o.split("\n").filter((l) => /^(bearer|render|->)/.test(l)).join("\n"));

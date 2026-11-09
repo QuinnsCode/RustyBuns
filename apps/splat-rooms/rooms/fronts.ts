@@ -7,6 +7,7 @@
 import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { arr, num } from "@rustybuns/util/guard";
+import { runBlender } from "@rustybuns/cli/blender";
 import { THEMES } from "./catalog.ts";
 import { inBatches, model } from "./polyhaven.ts";
 
@@ -26,10 +27,7 @@ const paths = await inBatches(ids, 6, model);
 const out = resolve(args.out!);
 const job = join(import.meta.dir, ".fronts.json");
 await Bun.write(job, JSON.stringify({ models: ids.map((id, i) => [id, seen.get(id)!.label, seen.get(id)!.turn, paths[i]]), out, turns: only ? [0, 90, 180, 270] : undefined }));
-const p = Bun.spawn(["blender", "-b", "--factory-startup", "-P", join(import.meta.dir, "fronts.py"), "--", job], { stdout: "pipe", stderr: "inherit" });
-const log = await new Response(p.stdout).text();
-await Bun.file(job).delete();
-if ((await p.exited) !== 0) throw new Error(log.slice(-2000));
+const log = await runBlender({ script: join(import.meta.dir, "fronts.py"), args: [job] }).then((r) => r.out).finally(() => Bun.file(job).delete());
 for (const l of log.split("\n")) {
   if (l.startsWith("[fronts] ")) console.log(l);
   const m = /^\[fronts-size\] (\S+) (\[.*\])$/.exec(l);

@@ -17,6 +17,7 @@
 // 16 GB Mac has. Each keeps Blender's default thread count: `-t` changes the decimated mesh, so a GLB is only
 // the same build to build on the same thread count (one per core), and a Mac with more cores writes other GLBs.
 import { readdirSync, watch } from "node:fs";
+import { runBlender } from "@rustybuns/cli/blender";
 import { availableParallelism } from "node:os";
 import { join } from "node:path";
 import { int, num, obj, oneOf, opt, str } from "@rustybuns/util/guard";
@@ -69,14 +70,12 @@ const SNAP_STEPS = ["1e-3", "5e-4", "2e-3", "2.5e-4", "4e-3", "1e-4"];
 
 // Blender's thread count changes the decimated mesh, so it is pinned (8 is what the committed GLBs were built with)
 // and a Mac with another core count makes the same GLBs. Running several Blenders at once is safe: each uses 8 threads' worth of work.
-const BLENDER_THREADS = "8";
+const BLENDER_THREADS = 8;
 
 async function blender(id: string, step: string): Promise<string[]> {
-  const args = ["blender", "-b", "--factory-startup", "--python-exit-code", "1", "-t", BLENDER_THREADS, "-P", "blender/beast.py", "--", SHEETS.get(id)!, ...(flags.has("--render") ? ["--render"] : []), ...(flags.has("--silhouette") ? ["--silhouette"] : [])];
-  const p = Bun.spawn(args, { cwd: APP, env: { ...process.env, SNAP_STEP: step }, stdout: "pipe", stderr: "pipe" });
-  const out = await new Response(p.stdout).text() + await new Response(p.stderr).text();
-  if ((await p.exited) !== 0) throw new Error(`blender failed on ${id}:\n${out.split("\n").filter((l) => /Error|Traceback|line \d+/.test(l)).join("\n")}`);
-  return out.split("\n").filter((l) => /triangles|render ->/.test(l));
+  const args = [SHEETS.get(id)!, ...(flags.has("--render") ? ["--render"] : []), ...(flags.has("--silhouette") ? ["--silhouette"] : [])];
+  const { out, err } = await runBlender({ script: "blender/beast.py", args, cwd: APP, env: { SNAP_STEP: step }, threads: BLENDER_THREADS });
+  return (out + err).split("\n").filter((l) => /triangles|render ->/.test(l));
 }
 
 async function rig(id: string, feet: number, expectWings?: number) {

@@ -9,6 +9,7 @@
 import { readdirSync, statSync } from "node:fs";
 import { availableParallelism } from "node:os";
 import { join } from "node:path";
+import { runBlender } from "@rustybuns/cli/blender";
 import { judgePairs, keep, keptDir, OUT } from "./judge-loop.ts";
 
 const APP = join(import.meta.dir, "..");
@@ -21,9 +22,7 @@ const flags = new Set(argv.filter((a) => a.startsWith("--")));
 const picked = argv.filter((a, i) => !a.startsWith("--") && i !== asAt + 1);
 
 async function blender(...args: string[]): Promise<string> {
-  const p = Bun.spawn(["blender", "-b", "--factory-startup", "--python-exit-code", "1", "-P", "blender/ground.py", "--", ...args], { cwd: APP, stdout: "pipe", stderr: "pipe" });
-  const out = await new Response(p.stdout).text() + await new Response(p.stderr).text();
-  if ((await p.exited) !== 0) throw new Error(`blender failed on ${args.join(" ")}:\n${out.split("\n").filter((l) => /Error|Traceback|line \d+/.test(l)).join("\n")}`);
+  const { out } = await runBlender({ script: "blender/ground.py", args, cwd: APP });
   return out.split("\n").filter((l) => /^ground /.test(l)).join("\n");
 }
 
