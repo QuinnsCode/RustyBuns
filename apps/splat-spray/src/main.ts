@@ -14,7 +14,8 @@ import { getJson, readJson } from "@rustybuns/util/http";
 import { joinRoom, menu, panel, racers, secs, tabPlayerId, type Session } from "./online.ts";
 import { MatchReply, SpotSignup } from "./api.ts";
 import { obj, bool } from "@rustybuns/util/guard";
-import { achieve, finishSignIn, reportButton, who } from "./eqosys.ts";
+import { achieve, canSignIn, finishSignIn, login, reportButton, signIn, who } from "./eqosys.ts";
+import { joinParty, makeParty, partyCode, partyLink, partyReady, type Arrival } from "./party.ts";
 import { MATCH, type View } from "./match/game.ts";
 import { createElement, Hand, ScanLine } from "lucide";
 import { brief, clearStamp, closeBrief, stamp } from "./briefing.ts";
@@ -90,6 +91,8 @@ let trigger: Trigger | null = null;
 let mode: "menu" | "solo" | "online" = "menu";
 let session: Session | null = null;
 let view: View | null = null;
+/** Set while the party's host's page waits in the safehouse for everyone the party sent, to start the mission for them. */
+let arrival: Arrival | null = null;
 let layoutApplied = 0;
 /** This round's find was made here (the world confirms it on the board). */
 let foundHere = false;
@@ -286,7 +289,7 @@ async function goSolo() {
 
 function toMenu(message = "") {
   session?.close();
-  session = null; view = null; mode = "menu"; layoutApplied = 0;
+  session = null; view = null; arrival = null; mode = "menu"; layoutApplied = 0;
   document.body.classList.remove("online");
   for (const id of ["lobby", "racers", "count", "leave"]) $(id).hidden = true;
   field.reset(); field.focus(-1); flyTo(null);
@@ -315,6 +318,28 @@ async function goOnline(room: string, name: string) {
     status: (s) => { if (s.state === "closed") toMenu(s.error ?? ""); },
   });
   try { history.replaceState(null, "", `#room=${code}`); } catch { /* not worth failing for */ }
+}
+
+// Play with friends: a Qollab party (src/party.ts). Its lobby, ready flags and Start are Qollab's; the race after is ours.
+let leaveParty: (() => void) | null = null;
+const menuNote = (note: string) => setText("menu-msg", note);
+function openParty(code: string) {
+  leaveParty?.();
+  try { history.replaceState(null, "", partyLink(code)); } catch { /* not worth failing for */ }
+  leaveParty = joinParty(code, $("menu-party"), (a) => {
+    leaveParty = null;
+    arrival = a;
+    void goOnline(a.room, login()?.name ?? "Agent");
+  }, menuNote);
+}
+async function withFriends(code = partyCode(location.search)) {
+  if (!login()) {
+    if (canSignIn()) void signIn(code ? `party:${code}` : "party"); else menuNote("Playing with friends needs an eqosys account, on the online version.");
+    return;
+  }
+  if (code) return openParty(code);
+  const made = await makeParty();
+  if (made) openParty(made); else menuNote("Couldn't start a party just now. Sign in again, or try in a minute.");
 }
 
 /** Put this round's layout of the room on screen: the same one, from the same seed, for everyone. */
@@ -365,6 +390,7 @@ function onView(v: View) {
   const prev = view;
   view = v;
   if (!prev || prev.phase !== v.phase || prev.round !== v.round) enterPhase(v);
+  if (partyReady(arrival, v)) { arrival = null; session?.send({ t: "start" }); }
   racers(v);
   panel.show(v, session!.room, {
     start: () => session?.send({ t: "start" }),
@@ -616,12 +642,17 @@ reportButton();
 void Promise.all([finishSignIn(), scannedRooms()]).then(([back, rooms]) => {
   menu({
     join: (r, name) => { try { localStorage.setItem("splat-spray.name", name); } catch { /* private window */ } goOnline(r, name); },
+    friends: () => void withFriends(),
     solo: goSolo,
     scanned: (id) => { useScanned(id).catch((e) => { toMenu(e instanceof Error ? e.message : "That room would not load."); }); },
   }, savedName, rooms);
   const want = new URLSearchParams(location.search).get("level");
   if (want && rooms.some((r) => r.id === want)) useScanned(want).catch((e) => toMenu(e instanceof Error ? e.message : ""));
   if (back?.error) setText("menu-msg", back.error);
+  // Back from signing in for a party, or opened from a friend's party link.
+  const then = back?.login ? back.then : "";
+  if (then === "party" || then.startsWith("party:")) void withFriends(then.slice(6) || null);
+  else if (partyCode(location.search)) { if (login()) void withFriends(); else menuNote("A friend's party: press With friends to sign in through eqosys and join it."); }
 });
 
 renderer.setAnimationLoop(() => {
