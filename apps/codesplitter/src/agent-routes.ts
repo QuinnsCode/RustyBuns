@@ -261,7 +261,11 @@ export const installedHarnesses = (env: Env) => env.AGENT_EXEC ? HARNESSES : env
  * This codeSplitter on this machine, as a short name: its git folder's hash. A thread's place is the same path every
  * run (so claude resumes), and two codeSplitters on one machine (tests run side by side) mustn't share one.
  */
-const instance = async (env: Env) => { const lg = localGit(env); return lg ? (await sha256(lg.path(""))).slice(0, 8) : "here"; };
+const instance = async (env: Env) => {
+  const lg = localGit(env);
+  // The folder its repos sit in: a repo's own path, one level up (path() takes only a valid repo name).
+  return lg ? (await sha256(lg.path("x").replace(/[\\/][^\\/]*$/, ""))).slice(0, 8) : "here";
+};
 
 export async function agentRoutes(req: Request, env: Env, p: string[], url: URL, user: string | null,
   access: (owner: string, repo: string) => Promise<{ read: boolean; write: boolean }>,
