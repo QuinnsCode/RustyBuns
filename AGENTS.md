@@ -134,8 +134,8 @@ A PR that deletes more than it adds is the goal. codeSplitter's own helpers are 
 - The Druids-skinned Agent Office running inside codeSplitter is the owner's priority but **not built yet** (tracked in
   [#3423](https://github.com/QuinnsCode/RustyBuns/issues/3423); #1384, #1412 and #2952 were closed without it; plan in
   [apps/agent-office/MOVE.md](apps/agent-office/MOVE.md)). Once it is deployed and until the owner says they have seen it running, never
-  `rustybuns destroy --stage office-preview` and don't send home the worker driving it. Whether codeSplitter moves to
-  its own home is still open on that issue, so don't guess.
+  `rustybuns destroy --stage office-preview` and don't send home the worker driving it. codeSplitter stays in this
+  repo for now (owner, 2026-11-09). The build order and prices are in MOVE.md's "Build order".
 
 ## Finishing: say what is left, and leave nothing in your head
 
