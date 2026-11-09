@@ -20,6 +20,7 @@ export const SKIN = {
     "--ui-accent": "var(--blood)", "--ui-accent-soft": "var(--paper-lo)", "--ui-on-accent": "var(--paper-hi)", "--ui-scrim": "#1a0e0699",
     "--ui-radius": "3px", "--ui-radius-sm": "3px", "--ui-border": "1.5px",
     "--ui-font": "var(--f-book)", "--ui-font-head": "var(--f-title)", "--ui-shadow": "0 16px 32px -14px rgba(40, 20, 6, 0.75)",
+    "--ui-top": "52px", // under the cog and the field chart, top right
   },
   css: `.eq-form,.eq-toast,.eq-chip.in{background:var(--grain),linear-gradient(170deg,var(--paper-hi),var(--paper) 45%,var(--paper-lo))}
 .eq-who{font-family:var(--f-hand);font-size:20px;font-weight:400}.eq-title,.eq-toast b{font-weight:600;font-size:19px}

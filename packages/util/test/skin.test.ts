@@ -40,22 +40,51 @@ test.skipIf(!chromePath())("a skin's tokens land on the chip, report form, toast
   for (const [name, l] of Object.entries((await looks("", true)).surfaces)) expect({ name, bg: l.bg }).toEqual({ name, bg: "rgb(28, 33, 40)" });
 });
 
+// #3600: eqosys's badge is its own mark: the same pixels on the report form and the toast whatever a game's skin does.
+test.skipIf(!chromePath())("the eqosys badge looks the same in Two Fronts, Mythic Masters, Skate Tech Park and the house look", async () => {
+  const badges = async (query: string) => {
+    const tab = await openTab(chrome!.cdp, { w: 1024, h: 700 });
+    await tab.call("Emulation.setEmulatedMedia", { features: [{ name: "prefers-reduced-motion", value: "reduce" }] });
+    await load(chrome!.cdp, tab, `http://127.0.0.1:${server.port}/${query}`, 300);
+    const got = await tab.eval<unknown[]>(`[".rb-report .eq-badge", ".eq-toast .eq-badge"].map((sel) => {
+      const look = (el, keys) => { const s = getComputedStyle(el), r = el.getBoundingClientRect(); return [Math.round(r.width), Math.round(r.height), ...keys.map((k) => s[k])]; };
+      const b = document.querySelector(sel);
+      return [look(b, ["borderRadius", "boxShadow", "opacity"]), look(b.querySelector("b"), ["backgroundImage", "color", "fontFamily", "fontSize", "fontWeight", "letterSpacing", "textTransform"]), look(b.querySelector("i"), ["filter"])];
+    })`);
+    await tab.close();
+    return got;
+  };
+  const house = await badges("?house");
+  expect(house[0]).toEqual(house[1]);
+  for (const game of ["two-fronts", "mythic-masters", "skate-tech-park"]) expect({ game, badge: await badges(`?game=${game}`) }).toEqual({ game, badge: house });
+});
+
 // #3069: at phone width the worded corner button sat on games' bottom-row controls; there it is a flag alone, and its form still fits.
 test.skipIf(!chromePath())("the Report button is a small flag at phone width, worded on a desktop, and its form opens on screen", async () => {
   const corner = async (w: number, h: number) => {
     const tab = await openTab(chrome!.cdp, { w, h }, w < 600);
     await load(chrome!.cdp, tab, `http://127.0.0.1:${server.port}/`, 300);
-    const got = await tab.eval<{ button: number[]; form: number[] }>(`(() => {
+    const got = await tab.eval<{ button: number[]; form: number[]; flag: boolean; closed: boolean }>(`(() => {
       const rect = (el) => { const r = el.getBoundingClientRect(); return [r.left, r.top, r.right, r.bottom].map(Math.round); };
-      return { button: rect(document.querySelector(".rb-report > .eq-btn")), form: rect(document.querySelector(".rb-report .eq-form")) };
+      const flag = document.querySelector(".rb-report > .eq-btn"), form = document.querySelector(".rb-report .eq-form");
+      form.hidden = true;
+      const button = rect(flag);
+      flag.click();
+      const open = { form: rect(form), flag: flag.getBoundingClientRect().width > 0 };
+      form.querySelector(".eq-head .eq-btn").click();
+      return { button, ...open, closed: form.hidden };
     })()`);
     await tab.close();
     return got;
   };
   const phone = await corner(390, 844);
   expect(phone.button).toEqual([342, 796, 378, 832]);
+  // Open on a phone, the form is a sheet across the bottom, under half the screen, the flag gives way and Close shuts it.
   const [l, t, r, b] = phone.form;
-  expect(l >= 0 && t >= 0 && r <= 390 && b <= 844).toBe(true);
+  expect([l, r, b]).toEqual([0, 390, 844]);
+  expect(t).toBeGreaterThan(844 / 2);
+  expect(phone.flag).toBe(false);
+  expect(phone.closed).toBe(true);
   const desk = await corner(1024, 700);
   expect(desk.button[2]! - desk.button[0]!).toBeGreaterThan(60);
 });

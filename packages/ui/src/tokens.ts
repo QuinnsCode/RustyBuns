@@ -19,6 +19,8 @@ export const TOKENS = {
   "--ui-font": "ui-rounded,'SF Pro Rounded',system-ui,sans-serif",
   "--ui-font-head": "var(--ui-font)",
   "--ui-shadow": "0 10px 28px -12px #14141459",
+  /** How tall the game's own top bar is: toasts that drop from the top sit under it. */
+  "--ui-top": "0px",
 } as const;
 
 /** Token name (with or without the leading `--`) to CSS value. */

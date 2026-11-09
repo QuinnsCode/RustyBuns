@@ -625,7 +625,7 @@ body > .gc-dialog .gc-card output, body > .gc-dialog .gc-keys dd, body > .gc-dia
 body > .gc-dialog .gc-note { color: var(--blood); font-style: italic; }
 body > .gc-dialog .gc-card input[type=range], body > .gc-dialog .gc-card input[type=checkbox] { accent-color: var(--blood); }
 body > .gc-dialog .gc-card label { border-bottom: 1px dashed var(--ink-line); }
-body > .gc-dialog .gc-close, body > .gc-dialog .gc-icon, body > .gc-dialog .gc-key, body > .gc-dialog .gc-reset, body > .gc-dialog .gc-card button:not(.gc-tab) {
+body > .gc-dialog .gc-close, body > .gc-dialog .gc-icon, body > .gc-dialog .gc-key, body > .gc-dialog .gc-reset, body > .gc-dialog .gc-card button:not(.gc-tab, .eq-btn) {
   font-family: var(--f-hand); font-size: 18px; color: var(--ink-b); background: rgba(255, 248, 228, 0.28); border: 1.5px solid var(--ink-line); border-radius: 4px 10px 5px 11px / 10px 4px 11px 5px; }
 body > .gc-dialog .gc-close:hover, body > .gc-dialog .gc-icon:hover:not(:disabled), body > .gc-dialog .gc-key:hover, body > .gc-dialog .gc-reset:hover { border-color: var(--ink-b); background: rgba(255, 248, 228, 0.55); }
 body > .gc-dialog .gc-key.on { border-color: var(--blood); color: var(--blood); }

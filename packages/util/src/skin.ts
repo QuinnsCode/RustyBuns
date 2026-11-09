@@ -24,18 +24,20 @@ const BASE = `
 .eq-who{font-family:var(--ui-font-head);font-weight:700;max-width:12em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .eq-note{flex-basis:100%;margin:0;color:var(--ui-dim);font-size:12px}
 .rb-report{position:fixed;right:max(12px,env(safe-area-inset-right));bottom:max(12px,env(safe-area-inset-bottom));z-index:2147483000;display:grid;justify-items:end;gap:6px}
-@media (max-width:600px){.rb-report>.eq-btn{padding:0}.rb-report>.eq-btn>span{display:none}}
+@media (max-width:600px){.rb-report>.eq-btn{padding:0}.rb-report>.eq-btn>span{display:none}
+.rb-report .eq-form{position:fixed;left:0;right:0;bottom:0;width:auto;max-height:min(60dvh,420px);overflow-y:auto;border-width:var(--ui-border) 0 0;border-radius:var(--ui-radius) var(--ui-radius) 0 0;padding-bottom:max(14px,env(safe-area-inset-bottom))}
+.rb-report .eq-form textarea{min-height:72px}.rb-report:has(.eq-form:not([hidden]))>.eq-btn{display:none}}
 .eq-form{display:grid;gap:8px;width:min(320px,calc(100vw - 24px));padding:14px;border:var(--ui-border) solid var(--ui-line);border-radius:var(--ui-radius);background:var(--ui-bg);box-shadow:var(--ui-shadow)}
 .eq-form[hidden]{display:none}
 .eq-title{margin:0;font:700 17px/1.2 var(--ui-font-head);color:var(--ui-ink)}
 .eq-status{min-height:1em;color:var(--ui-dim);font-size:12px}
-.eq-toasts{position:fixed;left:16px;right:16px;top:16px;z-index:2147483001;display:grid;gap:8px;justify-items:center;pointer-events:none}
+.eq-toasts{position:fixed;left:16px;right:16px;top:calc(max(16px,env(safe-area-inset-top)) + var(--ui-top));z-index:2147483001;display:grid;gap:8px;justify-items:center;pointer-events:none}
 .eq-toast{display:flex;align-items:center;gap:12px;max-width:min(420px,calc(100vw - 32px));padding:10px 18px 10px 12px;border:var(--ui-border) solid var(--ui-line);border-radius:var(--ui-radius);background:var(--ui-toast-bg);color:var(--ui-toast-ink);box-shadow:var(--ui-shadow);animation:eq-in .3s ease-out}
 .eq-toast svg{width:30px;height:30px;flex:none;color:var(--ui-accent)}
 .eq-toast small{display:block;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--ui-accent)}
 .eq-toast b{display:block;font:700 16px/1.2 var(--ui-font-head)}.eq-toast span{display:block;font-size:13px;opacity:.8}
 @keyframes eq-in{from{opacity:0;transform:translateY(-12px)}}
-.eq-head{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.eq-head{display:flex;align-items:center;justify-content:space-between;gap:10px}.eq-head .eq-title{flex:1}.eq-head .eq-btn{min-height:30px;min-width:30px}
 .eq-toast .eq-badge{align-self:flex-start;margin-left:4px}
 @media (prefers-reduced-motion:reduce){.eq-toast{animation:none}}
 .rb-lobby{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:10px 12px;border:var(--ui-border) solid var(--ui-line);border-radius:var(--ui-radius);background:var(--ui-bg);box-shadow:var(--ui-shadow)}
@@ -120,6 +122,7 @@ export const ICONS = {
   "log-in": svg('<path d="m10 17 5-5-5-5"/><path d="M15 12H3"/><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/>'),
   "log-out": svg('<path d="m16 17 5-5-5-5"/><path d="M21 12H9"/><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>'),
   trophy: svg('<path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/>'),
+  x: svg('<path d="M18 6 6 18"/><path d="m6 6 12 12"/>'),
   flag: svg('<path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" x2="4" y1="22" y2="15"/>'),
   // The party lobby's Settings (./lobby.ts): the menu, and a member's mute-for-me, make host, take out and block.
   "sliders-horizontal": svg('<line x1="21" x2="14" y1="4" y2="4"/><line x1="10" x2="3" y1="4" y2="4"/><line x1="21" x2="12" y1="12" y2="12"/><line x1="8" x2="3" y1="12" y2="12"/><line x1="21" x2="16" y1="20" y2="20"/><line x1="12" x2="3" y1="20" y2="20"/><line x1="14" x2="14" y1="2" y2="6"/><line x1="8" x2="8" y1="10" y2="14"/><line x1="16" x2="16" y1="18" y2="22"/>'),

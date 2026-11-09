@@ -40,7 +40,7 @@ import { body, creature as rosterCreature, learnset, ROSTER, teach, type Creatur
 import { worldView, type Foe } from "./world/view.ts";
 import { plantBudget, setPlantBudget } from "./world/flora.ts";
 import { pickQuality, QUALITY } from "@rustybuns/util/quality";
-import { accountChip, achieve, canSignIn, finishSignIn, fresh, login, reportButton, signIn, signOut } from "./account.ts";
+import { accountChip, achieve, canSignIn, finishSignIn, fresh, login, reportButton } from "./account.ts";
 import { asCreature, atLevel, bind, downed, heal, hpOf, wound, bindBelow, bindChance, clearSection, cleared, gainXp, INK, loadJourney, moveUp, mythicOf, newJourney, nextUp, call, owns, PICKS, rest, SAVE_KEY, SECTIONS, sections, see, slots, STARTERS, TRAIL_REGIONS, toNext, WITCH_SAYS, type Journey, mend } from "./journey.ts";
 import { LORE } from "./lore.ts";
 import { bare, blank, dry, handOf, knownOf, PAGE_INK, poolOf, ribbonsOf, summon, type Summoned } from "./grimoire.ts";
@@ -1449,18 +1449,16 @@ function huePicker(pane: HTMLElement) {
   pane.append(Object.assign(document.createElement("p"), { textContent: "Your ground: the colour the waves round your feet hum in, which friends know you by. A colour a friend in your room wears is taken." }), box);
 }
 
-/** The Account tab: who is signed in through eqosys, and the way in or out, and your ground's colour. */
+/** The Account tab: the shared eqosys chip (who is signed in, the way in or out) under a line of the Book's, and your ground's colour. */
 function accountPane(pane: HTMLElement) {
   pane.classList.add("gc-acct");
   const draw = () => {
     const who = login(), can = canSignIn();
-    pane.innerHTML = who
-      ? `<p>Signed in through eqosys as</p><b>${esc(who.name)}</b><button type="button" id="acctOut">${icon("log-out")} Sign out</button>`
-      : can ? `<p>Sign in through eqosys to carry your name across the Q games.</p><button type="button" class="primary" id="acctIn">${icon("log-in")} Sign in with eqosys</button>`
-        : `<p>Signing in opens once Mythic Masters is online. Until then you play under a local name, and your save stays in this browser.</p>`;
-    if (signInNote) pane.insertAdjacentHTML("beforeend", `<p>${esc(signInNote)}</p>`);
-    pane.querySelector("#acctIn")?.addEventListener("click", () => void signIn());
-    pane.querySelector("#acctOut")?.addEventListener("click", () => { signOut(); draw(); drawAccount(); });
+    const say = who ? "Signed in through eqosys: your name goes with you across the Q games."
+      : can ? "Sign in through eqosys to carry your name across the Q games."
+        : "Signing in opens once Mythic Masters is online. Until then you play under a local name, and your save stays in this browser.";
+    pane.replaceChildren(Object.assign(document.createElement("p"), { textContent: say }));
+    if (who || can) pane.append(accountChip(document.createElement("div"), { note: signInNote, onSignOut: () => { draw(); drawAccount(); } }));
     huePicker(pane);
   };
   draw();

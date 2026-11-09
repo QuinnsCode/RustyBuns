@@ -51,10 +51,7 @@ const classic = `
 .gc-craft .gc-sec{border-color:var(--gc-rule)}.gc-craft .gc-sec-h:hover{background:var(--gc-soft)}
 .gc-craft .gc-key{font-family:ui-monospace,Menlo,monospace;font-size:13px}
 .gc-craft .gc-acct{display:grid;gap:10px;justify-items:start}
-.gc-craft .gc-acct button{padding:9px 14px;justify-content:center;border:1px solid var(--gc-edge);border-radius:5px;background:var(--gc-grain),var(--gc-paper);font:500 13px ui-sans-serif,system-ui,sans-serif;cursor:pointer;display:inline-flex;gap:7px;align-items:center}
-.gc-craft .gc-acct button.primary{background:var(--gc-grain),var(--gc-ink);border-color:var(--gc-ink);color:#fff}
 .gc-craft .gc-acct p{margin:0;color:var(--gc-dim)}
-.gc-craft .gc-acct b{color:var(--gc-ink);font-size:16px}
 @media (max-width:520px){.gc-dialog{align-items:end}.gc-card{border-radius:14px 14px 0 0}}
 `;
 

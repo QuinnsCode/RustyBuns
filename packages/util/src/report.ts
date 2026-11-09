@@ -44,7 +44,9 @@ export function mountReportButton(host: ReportHost, parent: HTMLElement = docume
   const note = Object.assign(document.createElement("div"), { className: "eq-status" });
   note.setAttribute("role", "status");
   const top = Object.assign(document.createElement("div"), { className: "eq-head" });
-  top.append(head, eqBadge());
+  const shut = () => { form.hidden = true; open.focus(); };
+  top.append(head, eqBadge(), eqButton({ text: "Close", icon: "x", onClick: shut }));
+  form.addEventListener("keydown", (e) => { if (e.key === "Escape") shut(); });
   form.append(top, kind, title, body, send, note);
   open.onclick = () => { form.hidden = !form.hidden; note.textContent = ""; };
   form.onsubmit = async (e) => {
