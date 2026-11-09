@@ -33,7 +33,7 @@ describe("towns as pockets (#3966)", () => {
     // the counter is in the way of a beeline to the back wall
     expect(walk(t, DOORSTEP, { x: 0, z: -8 }).z).toBeCloseTo(-6, 1);
     // round the end of it to the board
-    const atBoard = walk(t, DOORSTEP, { x: 4.6, z: -4 }, BOARD.read);
+    const atBoard = walk(t, DOORSTEP, { x: 2.6, z: -4.4 }, { x: 4.6, z: -4.4 }, BOARD.read);
     expect(beside(t, atBoard)).toEqual({ board: true });
     // the witness is one of the people inside, and says something different once the contract is taken and once it's closed
     const witness = t.people.find((p) => p.who === t.hunt.witness)!;
@@ -41,13 +41,14 @@ describe("towns as pockets (#3966)", () => {
     take(j, t.id);
     said.push(line(t, witness, j.hunts![t.id]), line(t, witness, CLUES), line(t, witness, DONE));
     expect(new Set(said).size).toBe(4);
-    // the gas station on the left, the motel office on the right, each through its doorway
-    const gas = walk(t, atBoard, { x: -3, z: -5.1 }, { x: -8, z: -5.1 }, { x: -8.3, z: -1.2 });
+    // the gas station on the left, the motel office on the right, each through its doorway (behind the witness, who
+    // leans on the counter)
+    const gas = walk(t, atBoard, { x: 4.6, z: -4.8 }, { x: -8, z: -4.8 }, { x: -8.3, z: -4.2 });
     expect([roomAt(gas)?.id, beside(t, gas)]).toEqual(["gas", { person: t.people.find((p) => p.id === "clerk")! }]);
-    const motel = walk(t, gas, { x: -8, z: -5.1 }, { x: 9.7, z: -5.1 }, { x: 9.7, z: -4 });
+    const motel = walk(t, gas, { x: -8, z: -4.8 }, { x: 7, z: -4.8 }, { x: 7, z: -3.7 }, { x: 9.7, z: -3.9 });
     expect([roomAt(motel)?.id, beside(t, motel)]).toEqual(["motel", { person: t.people.find((p) => p.id === "manager")! }]);
     // and back out of the front door onto the street
-    const out = walk(t, motel, { x: 3, z: -4 }, { x: 0, z: -1.5 }, { x: 0, z: 1.5 });
+    const out = walk(t, motel, { x: 7, z: -3.7 }, { x: 0, z: -3.7 }, { x: 0, z: 1.5 });
     expect(outside(out)).toBe(true);
   });
 });

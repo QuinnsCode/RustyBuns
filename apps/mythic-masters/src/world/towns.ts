@@ -53,7 +53,7 @@ export const DOORSTEP: Spot = { x: 0, z: -1 };
 const STAFF: Person[] = [
   { id: "cook", who: "Diner cook", at: { x: -0.5, z: -8.0 }, room: "diner" },
   { id: "clerk", who: "Clerk", at: { x: -8.3, z: -3.1 }, room: "gas" },
-  { id: "manager", who: "Night manager", at: { x: 9.7, z: -6.1 }, room: "motel" },
+  { id: "manager", who: "Night manager", at: { x: 9.7, z: -5.9 }, room: "motel" },
 ];
 const BY_BOARD = { x: 1.8, z: -5.9 }; // leaning on the counter
 
