@@ -377,6 +377,7 @@ const SHORT_HOP: f64 = 0.55;
 const FAST_FALL: f64 = 11.0;
 pub const DIVE_FALL: f64 = 12.0;
 pub const DIVE_TUCK: f64 = 4.0;
+pub const DIVE_REACH: f64 = 0.6;
 const LEDGE_REACH: f64 = 0.6;
 const LEDGE_BELOW: f64 = 1.5;
 pub const ORBIT_FREE: f64 = 1.2;
@@ -1017,7 +1018,7 @@ fn attack_frames(m: &mut Match, side: usize, i: &Input) {
         let ahead = d < 0.01 || (dx * k.0 + dz * k.1) / d > sweep(f, o, mv.slot).1;
         let dy = o.pos.y - f.pos.y;
         let v_reach = if mv.slot == Slot::Launcher { 4.5 } else { f.b.height + 0.5 };
-        let below = if dive { -(o.b.height + 1.0) } else { -1.5 };
+        let below = if dive || f.flying { -o.b.height * DIVE_REACH } else { -1.5 };
         if d <= reach && ahead && dy > below && dy < v_reach {
             let at = if d < 0.01 {
                 o.pos

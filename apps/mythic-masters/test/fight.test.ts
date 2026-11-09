@@ -114,6 +114,20 @@ describe("nothing hides in the air", () => {
     expect(open.rising).toBe(true);
     expect(guarded.damage).toBeCloseTo(open.damage * 0.2, 1);
   });
+
+  test("a flyer's swing on the wing lands only once it is down at the target's chest, not from overhead", () => {
+    const swing = (share: number) => {
+      const m = newMatch(flyer, tank);
+      const [me, it] = m.f;
+      Object.assign(me, { flying: true, onGround: false, pos: { x: it.pos.x - it.b.radius - me.b.radius - 0.5, y: it.b.height * share, z: 0 }, yaw: 0 });
+      step(m, [hold({ heavy: true }), IDLE]);
+      let hit = false;
+      for (let t = 0; t < 60 && !hit; t++) { step(m, [IDLE, IDLE]); hit = m.events.some((e) => e.kind === "hit" && e.by === 0); }
+      return hit;
+    };
+    expect(swing(0.3)).toBe(true);
+    expect(swing(1)).toBe(false);
+  });
 });
 
 describe("fields leave marks", () => {
