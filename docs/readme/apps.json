@@ -239,6 +239,16 @@
         "line": "A client-only Svelte 5 + Vite app (no server) as a desktop app, its counter in a `\"use server\"` action the host runs."
       },
       {
+        "app": "vue-spa-example",
+        "name": "Vue SPA",
+        "line": "A client-only Vue 3 + Vite app (no server) as a desktop app, its counter in a `\"use server\"` action the host runs."
+      },
+      {
+        "app": "solid-spa-example",
+        "name": "Solid SPA",
+        "line": "A client-only Solid + Vite app (no server) as a desktop app, its counter in a `\"use server\"` action the host runs."
+      },
+      {
         "app": "hono-example",
         "name": "Hono",
         "line": "A Hono Worker from Hono's own docs (one KV binding) as a desktop app with no edits: the sample app contract every framework example meets, checked by one shared HTTP journey"

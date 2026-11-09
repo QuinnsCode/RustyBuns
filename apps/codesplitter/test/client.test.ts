@@ -249,3 +249,17 @@ test("the review page's hook row: each verdict, and buttons only for someone who
   expect(hookRow("b1", { hash: "x", hooks: [] }, true)).toBe("");
   expect(hookRow("b1", null, true)).toBe("");
 });
+
+// #3927: a run ending says so on its thread twice and on the file's socket once, a few ms apart; the cards read GET .../agents once.
+test("a run's ending reads the run cards once, and the next change reads again", async () => {
+  const src = html.slice(html.indexOf("function oneRead("), html.indexOf("/**\n * Run cards that keep themselves current"));
+  const oneRead = new Function(`${src}; return oneRead;`)();
+  let reads = 0;
+  const poll = oneRead(async () => ++reads, 20);
+  const asks = [poll(), poll()];
+  await Bun.sleep(5);
+  asks.push(poll());
+  expect(await Promise.all(asks)).toEqual([1, 1, 1]);
+  await Bun.sleep(30);
+  expect(await poll()).toBe(2);
+});
