@@ -393,3 +393,61 @@ test("an agent's hire on files an open PR or a queued task is changing is refuse
     resetOverlap();
   }
 });
+
+test("a second hire on a file a worker with no PR yet is changing is refused, then held until that worker is done (#3427)", async () => {
+  // a checkout on main, a gh that lists no open PRs, and each hired worker's worktree cloned from it
+  const dir = mkdtempSync(path.join(tmpdir(), "rb-seated-"));
+  const bin = mkdtempSync(path.join(tmpdir(), "rb-gh-"));
+  mkdirSync(path.join(dir, "apps/x/src"), { recursive: true });
+  for (const f of ["a.ts", "b.ts", "c.ts"]) writeFileSync(path.join(dir, "apps/x/src", f), "");
+  const git = (cwd: string, ...a: string[]) => spawnSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", ...a], { cwd });
+  git(dir, "init", "-q", "-b", "main");
+  git(dir, "add", ".");
+  git(dir, "commit", "-qm", "start");
+  writeFileSync(path.join(bin, "gh"), "#!/bin/sh\necho '[]'\n");
+  chmodSync(path.join(bin, "gh"), 0o755);
+  const PATH = process.env.PATH;
+  process.env.PATH = `${bin}:${PATH}`;
+  resetOverlap();
+  try {
+    const { ctx, ws } = office(0);
+    const tasks: { id: string; title: string; status: string; prompt: string }[] = [];
+    const floor = ctx.workerFloor() as any;
+    Object.assign(floor, { dir, plan: { wing: [{ id: "d1", kind: "desk" }] }, project: { agentProviders: ["claude"], branch: undefined } });
+    floor.queue = { state: () => ({ tasks }), add: (prompt: string, _by: string, title: string) => (tasks.push({ id: "q1", title, status: "queued", prompt }), undefined) };
+    // each hire seats a worker in its own worktree, as the office does
+    Object.assign(floor.workers, {
+      deskOccupied: () => false, ownerOf: () => undefined,
+      spawn: (_d: string, _by: string, prompt: string) => {
+        const id = `w${ws.length + 1}`, name = `Hire${ws.length - 1}`;
+        git(dir, "clone", "-q", dir, `wt-${id}`);
+        ws.push({ ...worker(id, name), prompt, worktree: { path: `wt-${id}`, branch: `office/${name}` } });
+        return { id, name };
+      },
+    });
+
+    expect((await call(ctx, "", { prompt: "Fix the bug in apps/x/src/a.ts" })).status).toBe(200);
+    const first = ws.at(-1)!;
+    // minutes later it has also started on b.ts, which its prompt never named
+    writeFileSync(path.join(dir, `wt-${first.id}/apps/x/src/b.ts`), "changed");
+
+    const byPrompt = await call(ctx, "", { prompt: "Refactor a.ts" });
+    expect(byPrompt.status).toBe(409);
+    expect(byPrompt.body.error).toContain(`${first.name}, at work with no PR yet (apps/x/src/a.ts)`);
+    expect((await call(ctx, "", { prompt: "Tidy b.ts" })).status).toBe(409);
+    expect((await call(ctx, "", { prompt: "Tidy c.ts" })).status).toBe(200);
+
+    // held: queued once the first worker is done and gone
+    const held = await call(ctx, "", { prompt: "Refactor a.ts", hold: true });
+    expect(held.status).toBe(202);
+    expect(held.body.held.message).toContain(`once ${first.name}'s work has merged`);
+    const later = Date.now() + 61_000;
+    expect(await releaseHeld(undefined, later)).toBe(0);
+    ws.splice(ws.indexOf(first), 1);
+    expect(await releaseHeld(undefined, later + 61_000)).toBe(1);
+    expect(tasks.at(-1)!.title).toBe("Refactor a.ts");
+  } finally {
+    process.env.PATH = PATH;
+    resetOverlap();
+  }
+});
