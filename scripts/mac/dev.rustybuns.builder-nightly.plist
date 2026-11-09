@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Runs scripts/builder-nightly.sh on the builder twice a day (#2500). scripts/builder-setup.sh clones ~/builder/nightly/src, copies this to
+     ~/Library/LaunchAgents with YOU's home filled in and loads it. Its log is ~/builder/nightly/log. -->
+<plist version="1.0"><dict>
+  <key>Label</key><string>dev.rustybuns.builder-nightly</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/sh</string>
+    <string>/Users/YOU/builder/nightly/src/scripts/builder-nightly.sh</string>
+  </array>
+  <key>StartCalendarInterval</key>
+  <array>
+    <dict><key>Hour</key><integer>5</integer><key>Minute</key><integer>0</integer></dict>
+    <dict><key>Hour</key><integer>17</integer><key>Minute</key><integer>0</integer></dict>
+  </array>
+</dict></plist>
