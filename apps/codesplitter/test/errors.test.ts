@@ -193,41 +193,41 @@ test("each agent route's failure comes back as the tag it declares", async () =>
 
 test("each mirror route's failure comes back named, and with no git in its words", async () => {
   // Upstream: a bare git with main and one other branch. Mirrors take any git URL on the desktop (file:// here).
-  const up = join(root, "up.git"), seed = mkdtempSync(join(root, "seed-"));
+  const upGit = join(root, "up.git"), seed = mkdtempSync(join(root, "seed-"));
   const sh = (cmd: string) => Bun.$`sh -c ${cmd}`.cwd(seed).quiet();
-  await sh(`git init -q --bare ${up} && git clone -q ${up} . 2>/dev/null; echo a > a.ts && git add -A && git commit -qm init && git push -q origin HEAD:main`);
+  await sh(`git init -q --bare ${upGit} && git clone -q ${upGit} . 2>/dev/null; echo a > a.ts && git add -A && git commit -qm init && git push -q origin HEAD:main`);
   await sh(`git checkout -qb feat && echo b > b.ts && git add -A && git commit -qm feat && git push -q origin feat`);
   const call = await boot();
   opened.push(call);
-  const send = (u: string, url: string, body?: unknown) => call(u, url, body === undefined ? {} : { method: "POST", body: JSON.stringify(body) });
-  for (const u of ["ana", "bo"]) await send(u, "/api/login", { name: u });
-  expect((await send("ana", "/api/mirrors", { url: `file://${up}` })).status).toBe(201);
-  expect((await send("ana", "/api/repos", { name: "lab" })).status).toBe(201);
-  expect((await send("ana", "/api/repos/ana/up/mirror/branches", { ref: "feat" })).status).toBe(201);
-  expect((await send("ana", "/api/repos/ana/up/branches", { name: "loc" })).status).toBe(201);
-  /** A reply's tag, or its status when it has none. */
-  const named = async (r: Response) => { const b = await r.json() as { tag?: string }; return b.tag ?? r.status; };
+  const as = (user: string) => codesplitter({ url: ORIGIN, retries: 0, send: async (r) => call(user, r.url.slice(ORIGIN.length), { method: r.method, headers: r.headers, ...(r.body && { body: await r.text() }) }) });
+  for (const u of ["ana", "bo"]) await call(u, "/api/login", { method: "POST", body: JSON.stringify({ name: u }) });
+  const ana = as("ana"), bo = as("bo"), mir = { owner: "ana", repo: "up" }, lab = { owner: "ana", repo: "lab" };
+  expect(await tagOf(ana.call("create_mirror", { body: { url: `file://${upGit}` } }))).toBe("ok");
+  expect(await tagOf(ana.call("create_repo", { body: { name: "lab" } }))).toBe("ok");
+  expect(await tagOf(ana.call("open_upstream_branch", { ...mir, body: { ref: "feat" } }))).toBe("ok");
+  expect(await tagOf(ana.call("start_branch", { ...mir, body: { name: "loc" } }))).toBe("ok");
+  expect(await tagOf(ana.call("mirror_status", mir))).toBe("ok");
 
-  const cases: [string, () => Promise<Response>, string | number][] = [
-    ["syncing, not the owner", () => send("bo", "/api/repos/ana/up/mirror", {}), "OwnerOnly"],
-    ["a name you have a repo by", () => send("ana", "/api/mirrors", { url: `file://${up}` }), "RepoExists"],
-    ["something that isn't a remote", () => send("ana", "/api/mirrors", { url: "not a remote" }), "BadInput"],
-    ["a repo that isn't a mirror", () => send("ana", "/api/repos/ana/lab/mirror", {}), "NotAMirror"],
-    ["opening upstream's main as a branch", () => send("ana", "/api/repos/ana/up/mirror/branches", { ref: "main" }), "BadBranchName"],
-    ["a branch upstream doesn't have", () => send("ana", "/api/repos/ana/up/mirror/branches", { ref: "nope" }), "NoUpstreamBranch"],
-    ["opening it twice", () => send("ana", "/api/repos/ana/up/mirror/branches", { ref: "feat" }), "BranchExists"],
-    ["pushing no branch", () => send("ana", "/api/repos/ana/up/mirror/branches/nope/push", {}), "NoSuchBranch"],
-    ["pulling one that never went up", () => send("ana", "/api/repos/ana/up/mirror/branches/loc/pull", {}), "NotUpstream"],
-    ["pushing a tag there isn't", () => send("ana", "/api/repos/ana/up/mirror/tags/v9/push", {}), "NoSuchTag"],
-    ["turning a mirror into one", () => send("ana", "/api/repos/ana/up/mirror/turn"), "AlreadyMirror"],
-    ["turning a repo that's no fork", () => send("ana", "/api/repos/ana/lab/mirror/turn"), "NotAFork"],
+  const cases: [string, Effect.Effect<unknown, Failure<OpWithErrors>>, string][] = [
+    ["syncing, not the owner", bo.call("sync_mirror", { ...mir, body: {} }), "OwnerOnly"],
+    ["a name you have a repo by", ana.call("create_mirror", { body: { url: `file://${upGit}` } }), "RepoExists"],
+    ["something that isn't a remote", ana.call("create_mirror", { body: { url: "not a remote" } }), "BadInput"],
+    ["a repo that isn't a mirror", ana.call("sync_mirror", { ...lab, body: {} }), "NotAMirror"],
+    ["opening upstream's main as a branch", ana.call("open_upstream_branch", { ...mir, body: { ref: "main" } }), "BadBranchName"],
+    ["a branch upstream doesn't have", ana.call("open_upstream_branch", { ...mir, body: { ref: "nope" } }), "NoUpstreamBranch"],
+    ["opening it twice", ana.call("open_upstream_branch", { ...mir, body: { ref: "feat" } }), "BranchExists"],
+    ["pushing no branch", ana.call("push_branch_upstream", { ...mir, branch: "nope" }), "NoSuchBranch"],
+    ["pulling one that never went up", ana.call("pull_upstream_branch", { ...mir, branch: "loc" }), "NotUpstream"],
+    ["pushing a tag there isn't", ana.call("push_tag_upstream", { ...mir, name: "v9" }), "NoSuchTag"],
+    ["turning a mirror into one", ana.call("mirror_turn_preview", mir), "AlreadyMirror"],
+    ["turning a repo that's no fork", ana.call("mirror_turn_preview", lab), "NotAFork"],
   ];
   const got = [];
-  for (const [why, r, want] of cases) got.push([why, await named(await r()), want]);
+  for (const [why, e, want] of cases) got.push([why, await tagOf(e), want]);
   expect(got.filter(([, tag, want]) => tag !== want)).toEqual([]);
 
   // Upstream not there: a 502 a client retries, said without git's own words.
-  const gone = await send("ana", "/api/mirrors", { url: `file://${join(root, "nothing-here.git")}`, name: "gone" });
+  const gone = await call("ana", "/api/mirrors", { method: "POST", body: JSON.stringify({ url: `file://${join(root, "nothing-here.git")}`, name: "gone" }) });
   expect(gone.status).toBe(502);
   expect((await gone.json() as { error: string }).error).not.toMatch(/fatal|does not appear|repository/i);
 });

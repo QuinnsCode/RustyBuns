@@ -127,7 +127,9 @@ export type ErrorTag = keyof typeof ERRORS;
 
 // Every route under a repo answers NoSuchRepo first, for one you can't see too (worker.ts).
 const REPO = ["NoSuchRepo"] as const, NO_BRANCH = [...REPO, "NoSuchBranch"] as const, WRITE = [...REPO, "NoWriteAccess", "NoSuchBranch"] as const;
-const FILE_READ = [...REPO, "NoSuchBranch", "NoSuchFile", "TooBig", "BinaryFile"] as const;
+/** A mirror's branch and tag routes: a folder mirror sends its work up as one branch, so it has neither. */
+const MIRROR_BRANCH = [...REPO, "FolderMirror"] as const;
+const FILE_READ = [...REPO,"NoSuchBranch", "NoSuchFile", "TooBig", "BinaryFile"] as const;
 const FILE_WRITE = [...FILE_READ, "NoWriteAccess", "RunBranchLocked", "MainProtected", "PolicyFile"] as const;
 const MERGE = [...WRITE, "BranchClosed", "BadInput", "PersonOnly", "BranchProtected", "AgentRunBatch", "Stacked", "StrandedFork", "PolicyFile",
   "BuildFiles", "ChecksHold", "BinaryMoved", "Conflicts", "MergeBroken", "TestsFail", "HookHold"] as const;
@@ -188,6 +190,19 @@ export const OP_ERRORS = {
   hold_agent_batch: [...REPO, "NoWriteAccess", "NoSuchRun", "NothingWaiting", "AlreadyLanding"],
   look_at_agent_batch: [...REPO, "NoWriteAccess", "NoSuchRun", "NothingWaiting", "AlreadyLanding"],
   reject_agent_batch: [...REPO, "OwnerOnly", "NoSuchRun", "NothingWaiting", "AlreadyLanding"],
+  // mirror.ts
+  create_mirror: ["GitUnavailable", "BadInput", "BadBranchName", "RepoExists", "NoSuchFolder"],
+  mirror_status: [...REPO, "NotAMirror"],
+  sync_mirror: [...REPO, "OwnerOnly", "BadInput", "FolderMirror", "NotAMirror"],
+  mirror_turn_preview: [...REPO, "OwnerOnly", "GitUnavailable", "AlreadyMirror", "NotAFork", "NoSyncBase"],
+  turn_into_mirror: [...REPO, "OwnerOnly", "GitUnavailable", "BadInput", "AlreadyMirror", "NotAFork", "NoSyncBase", "CommitsAhead"],
+  list_upstream_branches: [...MIRROR_BRANCH, "NotAMirror"],
+  open_upstream_branch: [...MIRROR_BRANCH, "OwnerOnly", "BadInput", "NotAMirror", "BadBranchName", "NoUpstreamBranch", "BranchExists"],
+  pull_upstream_branch: [...MIRROR_BRANCH, "OwnerOnly", "NotAMirror", "NoSuchBranch", "BranchClosed", "NotUpstream", "NoUpstreamBranch"],
+  push_branch_upstream: [...MIRROR_BRANCH, "OwnerOnly", "NotAMirror", "PullOnly", "PrivateLines", "NoSuchBranch", "BranchClosed", "MirrorMain", "UpstreamClash", "UpstreamMoved", "UpstreamRefused"],
+  list_upstream_tags: [...MIRROR_BRANCH, "NotAMirror", "PrivateLines"],
+  fetch_upstream_tags: [...MIRROR_BRANCH, "OwnerOnly", "BadInput", "NotAMirror", "PrivateLines"],
+  push_tag_upstream: [...MIRROR_BRANCH, "OwnerOnly", "BadInput", "NotAMirror", "PrivateLines", "PullOnly", "NoSuchTag", "TagExists"],
 } as const satisfies Record<string, readonly ErrorTag[]>;
 export type OpWithErrors = keyof typeof OP_ERRORS;
 
@@ -470,6 +485,43 @@ const OPS: Record<string, Record<string, Op>> = {
   [`${repo}/upstream/take`]: { post: { id: "take_upstream", risky: true, summary: "Open what upstream changed since the fork's commit as a branch, to review and merge; the fork then stands at upstream's tip (the owner)", tag: "Branches",
     body: obj({ name: str("the branch to open; upstream-<sha> if left out") }),
     ok: loose("{name, from, commit, commits, files, deleted, skipped}: the branch, the upstream commits it spans, and its paths (binary ones are skipped)"), status: 201 } },
+  // Mirrors (mirror.ts): a repo here that keeps in step with any git remote, both ways. Desktop only: they need git on the machine.
+  "/mirrors": { post: { id: "create_mirror", risky: true, summary: "Make a mirror: a repo you own that keeps in step with any git remote, or one folder of it", tag: "Mirrors",
+    description: "`url` is a GitHub owner/name, an https or ssh URL, or git@host:path; a GitHub folder URL (.../tree/<branch>/<path>) mirrors that folder alone. Upstream not answering is a 502.",
+    body: obj({ url: str("the git remote"), name: str("the repo's name here; the remote's (or the folder's) without it"), visibility: { type: "string", enum: ["public", "private"] }, pullOnly: bool("true: it pulls, and nothing here goes upstream"),
+      path: str("one folder of the remote, like apps/web"), branch: str("upstream's branch to follow; its default without it") }, ["url"]),
+    ok: loose("{owner, name, upstream, commit, mirror: true, pullOnly}"), status: 201 } },
+  [`${repo}/mirror`]: {
+    get: { id: "mirror_status", summary: "Where a mirror stands with upstream: ahead, behind, its state and any clash", tag: "Mirrors", open: true,
+      ok: loose("{upstream: {who, behind, ahead, line, says}, url, branch, state, error, clash, downSince, syncedAt, nextAt, upstreamCommit, ahead, behind, identity, truth, private, pushCrew, primary, pullOnly, path, sends, deps}") },
+    post: { id: "sync_mirror", risky: true, summary: "Sync a mirror with upstream now, or change how it syncs (owner only)", tag: "Mirrors",
+      description: "A sync takes upstream's news and sends this copy's commits up (unless it's pull-only). `resolve` settles a clash: mine, upstream or rebase.",
+      body: obj({ resolve: { type: "string", enum: ["mine", "upstream", "rebase"] }, pushCrew: bool("push the crew's copy (real text of private lines) upstream"), pullOnly: bool(), primary: { type: "string", enum: ["upstream", "here"], description: "which side leads" } }),
+      ok: loose("the same as mirror_status") },
+  },
+  [`${repo}/mirror/turn`]: {
+    get: { id: "mirror_turn_preview", summary: "Whether a dug fork can become a two-way mirror, and how many commits made here would go up (owner only)", tag: "Mirrors",
+      ok: obj({ url: str(), branch: str(), commit: str(), ahead: int() }) },
+    post: { id: "turn_into_mirror", risky: true, summary: "Turn a dug fork into a two-way mirror of its upstream; its commits made here go up (owner only)", tag: "Mirrors",
+      body: obj({ ahead: int("the commits that would go up, as mirror_turn_preview counts them: a mismatch is CommitsAhead"), pullOnly: bool("true: it pulls, and nothing goes up") }),
+      ok: loose("the same as mirror_status"), status: 201 },
+  },
+  [`${repo}/mirror/branches`]: {
+    get: { id: "list_upstream_branches", summary: "A mirror's upstream branches besides main, and which are open here", tag: "Mirrors", open: true, ok: loose("[{ref, commit, at, branch, status}]") },
+    post: { id: "open_upstream_branch", summary: "Open an upstream branch here, to edit and push back (owner only)", tag: "Mirrors",
+      body: obj({ ref: str("upstream's branch"), name: str("the branch's name here; ref without it") }, ["ref"]), ok: loose("{name, ref, commit, files}"), status: 201 },
+  },
+  [`${repo}/mirror/branches/{branch}/pull`]: { post: { id: "pull_upstream_branch", summary: "A branch takes what its upstream branch got since it last did (owner only)", tag: "Mirrors", ok: loose("{ref, commit, files}") } },
+  [`${repo}/mirror/branches/{branch}/push`]: { post: { id: "push_branch_upstream", risky: true, summary: "Push a branch upstream as a git branch: one commit on main's tip, never forced (owner only)", tag: "Mirrors",
+    ok: obj({ ref: str(), commit: str(), pushed: bool(), took: { description: "the files it took in from upstream's branch first" } }) } },
+  [`${repo}/mirror/tags`]: {
+    get: { id: "list_upstream_tags", summary: "A mirror's upstream tags, each here (same commit), differing, or not here", tag: "Mirrors", open: true,
+      ok: arr(obj({ name: str(), commit: str(), here: { type: ["string", "null"], enum: ["same", "differs", null] } })) },
+    post: { id: "fetch_upstream_tags", summary: "Fetch upstream's tags that aren't here: all, or these (owner only)", tag: "Mirrors",
+      body: obj({ names: arr(str()) }), ok: obj({ fetched: arr(str()), kept: arr(str()), missing: arr(str()) }) },
+  },
+  [`${repo}/mirror/tags/{name}/push`]: { post: { id: "push_tag_upstream", risky: true, summary: "Push a tag upstream, never forced (owner only)", tag: "Mirrors",
+    ok: obj({ pushed: bool(), name: str(), commit: str() }) } },
   [`${repo}/branches`]: {
     get: { id: "list_branches", summary: "A repo's branches", tag: "Branches", open: true, ok: arr(ref("Branch")) },
     post: { id: "start_branch", summary: "Open a branch, named as git allows (slashes, dots, capitals; no spaces): edit its files with ?branch=, then merge it (the crew)", tag: "Branches",
