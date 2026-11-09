@@ -12,7 +12,9 @@
 //
 // --url and --token stand in for the variables. On the desktop (aliases, no
 // accounts) --as NAME signs in as that handle instead of a token. The answer is
-// printed as the app sent it; a failed call prints its status to stderr and exits 1.
+// printed as the app sent it. A failed call goes through the typed client (client.ts):
+// stderr gets the app's sentence (or what to do, for a token or the network), stdout the
+// reply's fields (conflicts, files), and it exits 1.
 //
 // Or install it, no checkout needed (build.ts bundles this to /cli.js, which runs on
 // Bun or Node 18+, and the site serves the script at /install.sh):
@@ -23,8 +25,12 @@
 
 import { chmodSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { TRIAGE_USAGE, triage } from "@rustybuns/cli/triage";
+import { Effect } from "effect";
+import { codesplitter, type Failure } from "./client.ts";
 import { agentPrompt } from "./src/agent-prompt.ts";
-import { tool, tools, toRequest } from "./src/mcp.ts";
+import { explain } from "./src/failed.ts";
+import { tool, tools } from "./src/mcp.ts";
+import { isPlainObject } from "./src/util.ts";
 import { splittersContext } from "./triage/context.ts";
 import PLAYBOOK from "./triage/PLAYBOOK.md" with { type: "text" };
 
@@ -69,12 +75,23 @@ export async function main(argv: string[], env: Record<string, string | undefine
   const u = new URL(site), launch = u.searchParams.get("token"), url = u.origin + u.pathname;
   const cookie = [launch && `rb_token_${u.port}=${launch}`, !token && `cs_user=${as}`].filter(Boolean).join("; ");
   // Its own user agent, so the admins' insights page shows CLI calls apart from other token calls.
-  const headers: Record<string, string> = { "user-agent": "codesplitter-cli/1", ...(token && { authorization: `Bearer ${token}` }), ...(cookie && { cookie }) };
-  const req = toRequest(t, args, url.replace(/\/$/, ""), headers);
-  if (typeof req === "string") return fail(`${req}: codesplitter help ${name}`);
-  const res = await send(req);
-  const text = await res.text();
-  return res.ok ? ok(text) : { code: 1, out: text, err: `${res.status} ${res.statusText}`.trim() };
+  const cs = codesplitter({ url, token, send, headers: { "user-agent": "codesplitter-cli/1", ...(cookie && { cookie }) } });
+  return Effect.runPromise(cs.call(name, args).pipe(Effect.match({
+    onSuccess: (body) => ok(typeof body === "string" ? body : JSON.stringify(body)),
+    onFailure: (e): Out => e._tag === "BadArgs" ? fail(`${e.message}: codesplitter help ${name}`)
+      : { code: 1, out: "reply" in e && e.reply !== null && typeof e.reply !== "string" ? JSON.stringify(e.reply) : "", err: say(e, url.replace(/\/$/, "")) },
+  })));
+}
+
+/** A failed call as a sentence a person acts on: the app's own, with what its tag means when the app's is terse; what to do for the rest. */
+export function say(e: Failure<string>, site: string): string {
+  switch (e._tag) {
+    case "Unauthorized": return `${e.message}. Make a token at ${site}/#/me/tokens and run: codesplitter login`;
+    case "TokenCantDo": return `${e.message}. Make a token${e.scope ? ` with ${e.scope} scope` : ""} at ${site}/#/me/tokens and run: codesplitter login`;
+    case "RateLimited": return `Too many calls for now: try again in ${e.retryAfter} seconds.`;
+    case "Transient": return `${site} didn't answer, after a few tries: try again in a minute.`;
+    default: return explain(e.message, "reply" in e && isPlainObject(e.reply) ? e.reply.tag : null);
+  }
 }
 
 async function readStdin() {

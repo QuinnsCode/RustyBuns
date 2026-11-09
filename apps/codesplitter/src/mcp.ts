@@ -26,6 +26,7 @@ import { INSTRUCTIONS as CODE_INSTRUCTIONS, META, edge, answer, describe, execut
 import { json, type WorkerLoaderLike } from "./env.ts";
 import { tools, type Tool } from "./mcp-tools.ts";
 import type { ErrorTag } from "./openapi.ts";
+import { failed } from "./failed.ts";
 import { check, obj, opt, str } from "@rustybuns/util/guard";
 import { parseJson } from "@rustybuns/util/http";
 
@@ -81,7 +82,7 @@ const result = (text: string, isError = false) => ({ content: [{ type: "text", t
 async function call(t: Tool, args: Record<string, unknown>, origin: string, auth: string, dispatch: (r: Request) => Promise<Response>) {
   const { status, text } = await fetchTool(t, args, origin, auth, dispatch);
   // A 202 is a queued request or a run that's started: an answer, not an error.
-  return status >= 200 && status < 300 ? result(text) : result(status === 400 && !text.startsWith("{") ? text : `${status}: ${text}`, true);
+  return status >= 200 && status < 300 ? result(text) : result(failed(status, text), true);
 }
 
 /** Code mode's four tools: find, describe, run a program, and the way to a risky one. */
@@ -95,7 +96,7 @@ async function meta(name: string, args: Record<string, unknown>, mine: Tool[], l
       if (typeof args.program === "string" && args.program) {
         const get = mine.find((t) => t.name === "get_program");
         const got = get && await run(get, { name: args.program });
-        if (!got || got.status !== 200) return result(got?.status === 404 ? `no saved program ${args.program}: list_programs lists yours` : `${got?.status ?? 404}: ${got?.text ?? "no get_program tool for this token"}`, true);
+        if (!got || got.status !== 200) return result(got?.status === 404 ? `no saved program ${args.program}: list_programs lists yours` : got ? failed(got.status, got.text) : "no get_program tool for this token", true);
         const saved = check(SavedProgram, parseJson(got.text));
         if (!saved) return result(`the saved program ${args.program} has no code`, true);
         code = saved.code;

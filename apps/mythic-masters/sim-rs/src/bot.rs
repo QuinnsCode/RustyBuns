@@ -3,7 +3,7 @@
 use crate::data::{Archetype, Slot};
 use crate::dmath::{atan2, cos, hypot, max, min, or1, sin};
 use crate::sim::{
-    covers, frames, head, held, sweep, swing_phase, under, warning, Area, Fighter, Input, Key, Match, Phase, State, ARENA_RADIUS, COST, DIVE_TUCK, HZ, IDLE, ORBIT_FREE, ROUND_TICKS,
+    covers, frames, head, held, sweep, swing_phase, under, warning, Area, Fighter, Input, Key, Match, Phase, State, ARENA_RADIUS, COST, DIVE_REACH, DIVE_TUCK, HZ, IDLE, ORBIT_FREE, ROUND_TICKS,
     TAKEOFF,
 };
 
@@ -460,7 +460,13 @@ impl Bot {
                     c.i.down = true;
                     return c.swing(me, Key::Heavy);
                 }
-                if d < reach && facing && above.abs() < 1.5 {
+                let level = -above < o.b.height * DIVE_REACH * 0.8 && above < 1.5;
+                if me.flying && d < reach + 1.5 && !level && -above > 0.0 {
+                    c.i.up = false;
+                    c.i.down = true;
+                }
+                if d < reach && facing && level {
+                    c.i.down = false;
                     let k = if c.bot.rnd.float() < 0.6 { Key::Heavy } else { Key::Light };
                     return c.swing(me, k);
                 }

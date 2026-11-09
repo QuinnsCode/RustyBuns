@@ -216,7 +216,10 @@ export function bot(side: 0 | 1, seed: number): Bot {
         const busy = o.state === "attack" && !!o.act && o.t < frames(o.act.move).startup;
         // The dive: from above, onto a target that isn't already swinging.
         if (me.flying && -above > 2 && d > 1.5 && d < 3 + -above && !busy && rnd() < 0.2) { i.mx = dx / d; i.mz = dz / d; i.down = true; return swing("heavy"); }
-        if (d < reach && facing && Math.abs(above) < 1.5) return swing(rnd() < 0.6 ? "heavy" : "light");
+        // Close in on the wing, it comes down to the target's chest before it swings (sim DIVE.reach): no blows from overhead.
+        const level = -above < o.b.height * DIVE.reach * 0.8 && above < 1.5;
+        if (me.flying && d < reach + 1.5 && !level && -above > 0) { i.up = false; i.down = true; }
+        if (d < reach && facing && level) { i.down = false; return swing(rnd() < 0.6 ? "heavy" : "light"); }
         const melee = !me.moves.ultimate.ranged;
         if (me.energy >= 100 && (!melee || d < reach + 0.5)) return swing("ultimate");
         // Bank energy for the beam: a bolt only when there is a beam's worth left over.

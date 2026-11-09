@@ -161,7 +161,10 @@ export const SHORT_HOP = 0.55;
 /** Falling with guard (or down) held, past the top of a jump: this fast, m/s. */
 export const FAST_FALL = 11;
 
-export const DIVE = { fall: 12, tuck: 4 } as const;
+/** A dive falls at `fall` m/s, live `tuck` ticks after the press. A flyer's strike (a dive, or a swing on the wing) lands
+ * only once its feet are down to `reach` of the target's height, so it comes down to the body it hits instead of
+ * landing blows from a body-length up (#3840). */
+export const DIVE = { fall: 12, tuck: 4, reach: 0.6 } as const;
 /** How far past the ring's edge (beyond your own radius) and how far below it you can still catch the ledge. */
 export const LEDGE = { reach: 0.6, below: 1.5 } as const;
 /**
@@ -481,7 +484,7 @@ function attackFrames(m: Match, side: 0 | 1, i: Input) {
     const ahead = d < 0.01 || (dx * k.x + dz * k.z) / d > sweep(f, o, move.slot).ahead; // in its sweep, not beside or behind
     const dy = o.pos.y - f.pos.y;
     const vReach = move.slot === "launcher" ? 4.5 : f.b.height + 0.5;  // the launcher is everyone's anti-air
-    const below = dive ? -(o.b.height + 1) : -1.5;                    // a dive hits what it lands on
+    const below = dive || f.flying ? -o.b.height * DIVE.reach : -1.5;  // a flyer comes down to what it hits
     if (d <= reach && ahead && dy > below && dy < vReach) {
       // it lands on the near side of the struck body at chest height, where the sparks fly from, not at its feet
       const at = d < 0.01 ? o.pos : { x: o.pos.x - (dx / d) * o.b.radius, y: o.pos.y + o.b.height * 0.55, z: o.pos.z - (dz / d) * o.b.radius };

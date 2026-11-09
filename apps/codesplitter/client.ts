@@ -75,6 +75,7 @@ export class NotTheAgent extends Schema.TaggedError<NotTheAgent>()("NotTheAgent"
 export class PathLocked extends Schema.TaggedError<PathLocked>()("PathLocked", named) {}
 export class RunEnded extends Schema.TaggedError<RunEnded>()("RunEnded", named) {}
 export class NotesFull extends Schema.TaggedError<NotesFull>()("NotesFull", named) {}
+export class LinesChanged extends Schema.TaggedError<LinesChanged>()("LinesChanged", named) {}
 export class NothingWaiting extends Schema.TaggedError<NothingWaiting>()("NothingWaiting", named) {}
 export class AlreadyLanding extends Schema.TaggedError<AlreadyLanding>()("AlreadyLanding", named) {}
 export class BatchHeld extends Schema.TaggedError<BatchHeld>()("BatchHeld", named) {}
@@ -210,7 +211,7 @@ export const NAMED = {
   MergeBroken, TestsFail, HookHold, HookOff, NothingToMerge, PipelineInvalid, BudgetSpent, AgentsUnavailable, AgentFailed,
   MainProtected, NotYourCollection, NoSuchRepo, NoSuchUser, NotInCrew, NoPushClash, NoSuchCollection, NoSuchRoute, NoGit, PushClash,
   HoldingLines, TooBig, BinaryFile, NoEuStorage,
-  NoSuchRun, NotTheAgent, PathLocked, RunEnded, NotesFull, NothingWaiting, AlreadyLanding, BatchHeld,
+  NoSuchRun, NotTheAgent, PathLocked, RunEnded, NotesFull, NothingWaiting, LinesChanged, AlreadyLanding, BatchHeld,
   UpstreamRefused, NotAMirror, NoUpstreamBranch, NoSuchTag, NoSuchFolder, FolderMirror, NotUpstream, PullOnly, PrivateLines, MirrorMain,
   UpstreamClash, UpstreamMoved, TagExists, RepoExists, AlreadyMirror, NotAFork, NoSyncBase, CommitsAhead, GitUnavailable,
   TooManyInvites, NotYourInvite, NoSuchInvite, AlreadyInCrew, InviteUsed, InviteExpired,
@@ -239,10 +240,12 @@ export class TokenCantDo extends Schema.TaggedError<TokenCantDo>()("TokenCantDo"
 export class RateLimited extends Schema.TaggedError<RateLimited>()("RateLimited", { message: Schema.String, retryAfter: Schema.Number }) {}
 /** A 5xx with no tag, or the network: worth a retry, and the only one retried. */
 export class Transient extends Schema.TaggedError<Transient>()("Transient", { message: Schema.String, status: Schema.Number }) {}
+/** The call never went: no operation by that id, or a required argument is missing. */
+export class BadArgs extends Schema.TaggedError<BadArgs>()("BadArgs", { message: Schema.String }) {}
 /** Any other failure: an untagged 4xx from a route not moved onto tags yet, or a tag the operation doesn't declare (a server bug). */
 export class Unexpected extends Schema.TaggedError<Unexpected>()("Unexpected", { message: Schema.String, status: Schema.Number, reply: Schema.Unknown }) {}
 
-type Common = Unauthorized | TokenCantDo | RateLimited | Transient | Unexpected;
+type Common = BadArgs | Unauthorized | TokenCantDo | RateLimited | Transient | Unexpected;
 /** How operation `Id` can fail: its declared tags' classes, plus the common ones. */
 export type Failure<Id extends string> = (Id extends OpWithErrors ? InstanceType<(typeof NAMED)[(typeof OP_ERRORS)[Id][number]]> : never) | Common;
 
@@ -251,7 +254,7 @@ const declares = (id: string, tag: string): tag is ErrorTag => id in OP_ERRORS &
 /** A failed reply, as operation `id`'s error. Plain, so a test can hand it any reply. */
 export function failure<Id extends string>(id: Id, status: number, reply: unknown, retryAfter?: string | null, authenticate?: string | null): Failure<Id> {
   const body = isPlainObject(reply) ? reply : {};
-  const message = typeof body.error === "string" ? body.error : typeof body.message === "string" ? body.message : `${id}: ${status}`;
+  const message = typeof body.error === "string" ? body.error : typeof body.message === "string" ? body.message : `${id} didn't go through, and the server didn't say why`;
   if (typeof body.tag === "string" && declares(id, body.tag)) return new NAMED[body.tag]({ message, status, reply }) as Failure<Id>;
   if (status === 401) return new Unauthorized({ message });
   if (status === 403 && body.tag === TOKEN_CANT_DO) {
@@ -266,22 +269,27 @@ export function failure<Id extends string>(id: Id, status: number, reply: unknow
 export interface Options {
   url: string;
   token?: string;
+  /** Sent with every call, beside the token (a user agent, the desktop's launch cookie). */
+  headers?: Record<string, string>;
   /** Stands in for fetch (a test's local server). */
   send?: (req: Request) => Promise<Response>;
   /** Tries for a Transient failure before it's handed back. */
   retries?: number;
 }
 
+const reply = (text: string): unknown => { try { return JSON.parse(text); } catch { return text || null; } };
+
 /** A client for one site, as one token. */
 export function codesplitter(o: Options) {
   const send = o.send ?? ((r: Request) => fetch(r));
-  const headers: Record<string, string> = o.token ? { authorization: `Bearer ${o.token}` } : {};
+  const headers: Record<string, string> = { ...o.headers, ...(o.token && { authorization: `Bearer ${o.token}` }) };
   const once = <Id extends string>(id: Id, args: Record<string, unknown>): Effect.Effect<unknown, Failure<Id>> => {
     const t = tool(id);
     const req = t ? toRequest(t, args, o.url.replace(/\/$/, ""), headers) : `no operation ${id}`;
-    if (typeof req === "string") return Effect.fail(new Unexpected({ message: req, status: 0, reply: null }));
+    if (typeof req === "string") return Effect.fail(new BadArgs({ message: req }));
     return Effect.tryPromise({ try: () => send(req), catch: (e) => new Transient({ message: String(e), status: 0 }) }).pipe(
-      Effect.flatMap((res) => Effect.promise(async () => ({ res, body: await res.json().catch((): unknown => null) }))),
+      // JSON as JSON; a text reply (beam_patch) as its text.
+      Effect.flatMap((res) => Effect.promise(async () => ({ res, body: reply(await res.text().catch(() => "")) }))),
       Effect.flatMap(({ res, body }) => res.ok ? Effect.succeed(body) : Effect.fail(failure(id, res.status, body, res.headers.get("retry-after"), res.headers.get("www-authenticate")))),
     );
   };

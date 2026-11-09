@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { check, heavy } from "./guard";
+import { check, heavy, wideRead } from "./guard";
 
 const cwd = "/repo";
 const bash = (command: string, branch = "feature") => check({ tool_name: "Bash", tool_input: { command }, cwd }, () => branch);
