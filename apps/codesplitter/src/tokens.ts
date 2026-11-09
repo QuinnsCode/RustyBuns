@@ -33,6 +33,7 @@ import { audit, via } from "./audit.ts";
 import { actingAs, queuedByToken } from "./identity.ts";
 import { repoRow } from "./repos.ts";
 import { b64url, sha256 } from "./util.ts";
+import { TOKEN_CANT_DO } from "./openapi.ts";
 
 export const SCOPES = ["read", "write", "admin"] as const;
 export type Scope = (typeof SCOPES)[number];
@@ -61,6 +62,13 @@ const bearerOf = (req: Request) => {
 };
 
 /**
+ * The gate's 403: the token is good but can't do this. Any operation can meet it, so it's a common tag (TOKEN_CANT_DO
+ * in openapi.ts) rather than one an operation declares; `scope` is the one it would take, when a wider token would do.
+ */
+const cantDo = (error: string, scope?: "write" | "admin") =>
+  json({ error, tag: TOKEN_CANT_DO }, 403, scope ? { "www-authenticate": `Bearer error="insufficient_scope", scope="${scope}"` } : {});
+
+/**
  * Who a request's bearer token acts as, null when it has none (the cookie decides),
  * or the refusal: a bad token, or a route tokens can't reach.
  */
@@ -72,11 +80,11 @@ export async function bearer(req: Request, env: Env, p: string[]): Promise<Token
   const t = secret && await env.DB.prepare("SELECT id, name AS user, scope, label, expires_at, last_used_at, repo, grant_id IS NOT NULL AS oauth FROM api_tokens WHERE hash = ?").bind(await sha256(secret)).first<Token & { last_used_at: number | null }>();
   // The gate's 401 and 403s carry no tag: any operation can meet one (the client makes a 401 Unauthorized).
   if (!t || t.expires_at <= now) return json({ error: "this API token is expired, revoked or wrong: make one on your profile page" }, 401, { "www-authenticate": 'Bearer error="invalid_token"' });
-  if (COOKIE_ONLY.has(p[1] ?? "")) return json({ error: "API tokens can't reach this: sign in on the site" }, 403);
-  if (p.at(-1) === "ws") return json({ error: "API tokens don't open live sockets: use the HTTP routes" }, 403);
-  if (t.repo && !heldTo(t.repo, p, req.method, new URL(req.url).searchParams.get("repo"))) return json({ error: `this API token is for ${t.repo} only` }, 403);
-  if (t.scope === "read" && req.method !== "GET" && req.method !== "HEAD") return json({ error: "this API token is read-only" }, 403, { "www-authenticate": 'Bearer error="insufficient_scope", scope="write"' });
-  if (t.scope !== "admin" && adminRoute(p, req.method)) return json({ error: "this API token can't manage the repo itself (delete, visibility, crew, invites, CI tokens, webhooks, deploy keys, check settings): make an admin token on your profile page, or sign in on the site" }, 403, { "www-authenticate": 'Bearer error="insufficient_scope", scope="admin"' });
+  if (COOKIE_ONLY.has(p[1] ?? "")) return cantDo("API tokens can't reach this: sign in on the site");
+  if (p.at(-1) === "ws") return cantDo("API tokens don't open live sockets: use the HTTP routes");
+  if (t.repo && !heldTo(t.repo, p, req.method, new URL(req.url).searchParams.get("repo"))) return cantDo(`this API token is for ${t.repo} only`);
+  if (t.scope === "read" && req.method !== "GET" && req.method !== "HEAD") return cantDo("this API token is read-only", "write");
+  if (t.scope !== "admin" && adminRoute(p, req.method)) return cantDo("this API token can't manage the repo itself (delete, visibility, crew, invites, CI tokens, webhooks, deploy keys, check settings): make an admin token on your profile page, or sign in on the site", "admin");
   // Last used, to the minute: one write a minute at most, not one a request.
   if (!t.last_used_at || now - t.last_used_at > 60_000) await env.DB.prepare("UPDATE api_tokens SET last_used_at = ? WHERE id = ?").bind(now, t.id).run();
   return { id: t.id, user: t.user, scope: t.scope, label: t.label, expires_at: t.expires_at, repo: t.repo, oauth: !!t.oauth };

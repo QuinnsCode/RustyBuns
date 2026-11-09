@@ -42,6 +42,7 @@ interface Op {
  * reads, `tag` one of these, which a client matches on instead of guessing from the status (client.ts makes each one
  * an error class). Each is [its status, what it means]. Route files move onto tags one at a time: branches.ts, then worker.ts, agent-routes.ts, mirror.ts, invites.ts, page.ts and beam.ts.
  * A 401 (sign in) and a 5xx stay untagged: the client makes them Unauthorized and Transient for every operation.
+ * The token gate's 403 (a good token that can't do this) is tagged TOKEN_CANT_DO, a common failure: see below.
  */
 export const ERRORS = {
   BadInput: [400, "the body or query isn't what the operation takes"],
@@ -200,6 +201,12 @@ export const ERRORS = {
   SignInOff: [503, "this site has no way to sign in set up"],
 } as const satisfies Record<string, readonly [number, string]>;
 export type ErrorTag = keyof typeof ERRORS;
+/**
+ * The token gate's 403 (tokens.ts bearer), which any operation can meet: the token is read-only, held to another repo,
+ * not admin scope, or the route is cookie-only or a live socket. When a wider token would do, `www-authenticate` says
+ * `scope="write"` or `scope="admin"`. The client makes it TokenCantDo for every operation.
+ */
+export const TOKEN_CANT_DO = "TokenCantDo";
 
 // Every route under a repo answers NoSuchRepo first, for one you can't see too (worker.ts).
 const REPO = ["NoSuchRepo"] as const, NO_BRANCH = [...REPO, "NoSuchBranch"] as const, WRITE = [...REPO, "NoWriteAccess", "NoSuchBranch"] as const;
