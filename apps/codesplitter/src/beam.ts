@@ -42,7 +42,7 @@ import { rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { startChecks } from "./checks.ts";
-import { branchNameError, json, readBody, type Body, type Env } from "./env.ts";
+import { branchNameError, fail, json, readBody, type Body, type Env } from "./env.ts";
 import { repoRow, liveRepo, branchOf } from "./repos.ts";
 import { access as artifactAccess, fileDoc, handleFor, readTree, toFile } from "./archive.ts";
 import { ancestors } from "./branches.ts";
@@ -129,10 +129,10 @@ const repoOf = (env: Env, owner: string, repo: string) => repoRow<RepoRow>(env, 
 /** The repo's bare git on this machine, or why there isn't one to beam from. */
 async function bareOf(env: Env, owner: string, repo: string): Promise<{ error: Response } | { r: RepoRow; dir: string; main: string }> {
   const lg = localGit(env);
-  if (!lg) return { error: json({ error: "beams need git on this machine: beam from the desktop app" }, 501) };
+  if (!lg) return { error: fail("GitUnavailable", "beams need git on this machine: beam from the desktop app") };
   const r = await repoOf(env, owner, repo);
-  if (!r) return { error: json({ error: "no such repo" }, 404) };
-  if (!r.artifact) return { error: json({ error: "this repo has no git yet" }, 409) };
+  if (!r) return { error: fail("NoSuchRepo", "no such repo") };
+  if (!r.artifact) return { error: fail("NoGit", "this repo has no git yet") };
   return { r, dir: lg.path(r.artifact), main: r.branch ?? "main" };
 }
 
@@ -146,12 +146,12 @@ type Stack = { error: Response } | { base: string; layers: { branch: string; tip
 /** A git branch's stack: where it left main, its tip, and its commits, oldest first. */
 async function gitStack(dir: string, main: string, branch: string): Promise<Stack> {
   const tip = (await git(["rev-parse", "--verify", "--quiet", `refs/heads/${branch}^{commit}`], dir)).out.trim();
-  if (!tip) return { error: json({ error: `this repo's git has no branch ${branch}` }, 404) };
+  if (!tip) return { error: fail("NoSuchBranch", `this repo's git has no branch ${branch}`) };
   const mainTip = await must(["rev-parse", `refs/heads/${main}`], dir);
   const mb = await git(["merge-base", mainTip, tip], dir);
-  if (mb.code) return { error: json({ error: `${branch} shares no history with ${main}` }, 409) };
+  if (mb.code) return { error: fail("NoSharedHistory", `${branch} shares no history with ${main}`) };
   const base = mb.out.trim();
-  if (await isAncestor(dir, tip, mainTip)) return { error: json({ error: `${main} has all of ${branch} already: nothing to beam` }, 409) };
+  if (await isAncestor(dir, tip, mainTip)) return { error: fail("NothingToBeam", `${main} has all of ${branch} already: nothing to beam`) };
   const log = (await must(["log", "--reverse", "--format=%an%x1f%ae%x1f%s%x1f%b%x1e", `${base}..${tip}`], dir)).split("\x1e").map((e) => e.trim()).filter(Boolean)
     .map((e) => { const [name, email, subject, body] = e.split("\x1f"); return { name: name!, email: email!, subject: subject!, body: body ?? "" }; });
   return { base, layers: [{ branch, tip, log }] };
@@ -165,8 +165,8 @@ type StackFile = { branch: string; path: string; deleted: number; blob: string |
  */
 async function stackFiles(env: Env, owner: string, repo: string, branch: string): Promise<{ error: Response } | { by: string; chain: string[]; rows: StackFile[] }> {
   const br = await env.DB.prepare("SELECT by, status FROM branches WHERE owner = ? AND repo = ? AND name = ?").bind(owner, repo, branch).first<{ by: string; status: string }>();
-  if (!br) return { error: json({ error: `this repo has no codeSplitter branch ${branch}` }, 404) };
-  if (br.status !== "open") return { error: json({ error: `${branch} is ${br.status} already: nothing to beam` }, 409) };
+  if (!br) return { error: fail("NoSuchBranch", `this repo has no codeSplitter branch ${branch}`) };
+  if (br.status !== "open") return { error: fail("BranchClosed", `${branch} is ${br.status} already: nothing to beam`) };
   const chain = [...(await ancestors(env, owner, repo, branch)).reverse(), branch];
   const marks = chain.map(() => "?").join(", ");
   const rows = (await env.DB.prepare(`SELECT f.branch, f.path, f.deleted, f.blob, f.mode, f.source, b.by FROM branch_files f ${branchOf("f")}
@@ -178,7 +178,7 @@ async function stackFiles(env: Env, owner: string, repo: string, branch: string)
     const there = under && rows.find((x) => x.branch === under && x.path === f.path)!;
     return there && !there.deleted && !there.blob && f.source !== under;
   });
-  if (stale.length) return { error: json({ error: `${stale.map((f) => `${f.branch}'s ${f.path}`).join(", ")} forked from main before the branch under it changed that file: a beam would take that change back out`, clash: stale.map((f) => f.path) }, 409) };
+  if (stale.length) return { error: fail("StaleCopy", `${stale.map((f) => `${f.branch}'s ${f.path}`).join(", ")} forked from main before the branch under it changed that file: a beam would take that change back out`, { clash: stale.map((f) => f.path) }) };
   return { by: br.by, chain, rows };
 }
 
@@ -201,33 +201,33 @@ async function linesStack(env: Env, owner: string, repo: string, dir: string, ma
     tip = await must(["commit-tree", tree, "-p", tip, "-m", subject], dir, me);
     layers.push({ branch: name, tip, log: [{ ...(by === owner ? { name: me.GIT_AUTHOR_NAME!, email: me.GIT_AUTHOR_EMAIL! } : { name: by, email: `${by}@${GIT_EMAIL_DOMAIN}` }), subject, body: "" }] });
   }
-  if (await must(["rev-parse", `${tip}^{tree}`], dir) === await must(["rev-parse", `${base}^{tree}`], dir)) return { error: json({ error: `${main} has all of ${branch} already: nothing to beam` }, 409) };
+  if (await must(["rev-parse", `${tip}^{tree}`], dir) === await must(["rev-parse", `${base}^{tree}`], dir)) return { error: fail("NothingToBeam", `${main} has all of ${branch} already: nothing to beam`) };
   return { base, layers };
 }
 
 /** Beam branch `branch` of owner/repo, a git one or (`kind: "codesplitter"`) one of ours: see the top of this file. */
 export async function makeBeam(env: Env, owner: string, repo: string, user: string, body: Body<"branch" | "kind" | "onto" | "to" | "title" | "message" | "keep" | "drop">): Promise<Response> {
   const lg = localGit(env), r = await repoOf(env, owner, repo);
-  if (!r) return json({ error: "no such repo" }, 404);
-  if (!r.artifact) return json({ error: "this repo has no git yet" }, 409);
+  if (!r) return fail("NoSuchRepo", "no such repo");
+  if (!r.artifact) return fail("NoGit", "this repo has no git yet");
   const main = r.branch ?? "main";
-  if (r.crew_artifact) return json({ error: "this repo has private lines, and its git holds them blank: a beam of it would carry the blanks" }, 409);
+  if (r.crew_artifact) return fail("PrivateLines", "this repo has private lines, and its git holds them blank: a beam of it would carry the blanks");
   const branch = typeof body.branch === "string" ? body.branch : "";
   const bad = branchNameError(branch);
-  if (bad || branch === main) return json({ error: bad ?? `${main} is what a beam goes on top of: beam a branch off it` }, 400);
+  if (bad || branch === main) return bad ? fail("BadBranchName", bad) : fail("BadInput", `${main} is what a beam goes on top of: beam a branch off it`);
   const kind = body.kind ?? (lg ? "git" : "codesplitter");
-  if (kind !== "git" && kind !== "codesplitter") return json({ error: 'kind: "git" or "codesplitter"' }, 400);
+  if (kind !== "git" && kind !== "codesplitter") return fail("BadInput", 'kind: "git" or "codesplitter"');
   const onto = body.onto ?? "main";
-  if (onto !== "main" && onto !== "upstream") return json({ error: 'onto: "main" or "upstream"' }, 400);
+  if (onto !== "main" && onto !== "upstream") return fail("BadInput", 'onto: "main" or "upstream"');
   const paths = (v: unknown) => Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
   const to = typeof body.to === "string" && body.to ? body.to : null;
-  if (body.to && !to) return json({ error: "to: a handle" }, 400);
+  if (body.to && !to) return fail("BadInput", "to: a handle");
   const askTitle = typeof body.title === "string" ? body.title : undefined, askMessage = typeof body.message === "string" ? body.message : undefined;
-  if ((body.title != null && askTitle === undefined) || (body.message != null && askMessage === undefined)) return json({ error: "title and message: text" }, 400);
-  if (to && !await env.DB.prepare("SELECT 1 FROM users WHERE name = ?").bind(to).first()) return json({ error: `nobody here goes by ${to}` }, 404);
+  if ((body.title != null && askTitle === undefined) || (body.message != null && askMessage === undefined)) return fail("BadInput", "title and message: text");
+  if (to && !await env.DB.prepare("SELECT 1 FROM users WHERE name = ?").bind(to).first()) return fail("NoSuchUser", `nobody here goes by ${to}`);
   if (!lg) {
-    if (kind === "git") return json({ error: "git branches live in the desktop app's git: beam one from there, or beam a codeSplitter branch here" }, 501);
-    if (onto === "upstream") return json({ error: "beaming onto upstream fetches it with git: beam onto main here, or onto upstream from the desktop app" }, 501);
+    if (kind === "git") return fail("GitUnavailable", "git branches live in the desktop app's git: beam one from there, or beam a codeSplitter branch here");
+    if (onto === "upstream") return fail("GitUnavailable", "beaming onto upstream fetches it with git: beam onto main here, or onto upstream from the desktop app");
     return hostedBeam(env, owner, repo, user, main, { branch, to, title: askTitle, message: askMessage, keep: paths(body.keep), drop: paths(body.drop) });
   }
   const dir = lg.path(r.artifact);
@@ -237,7 +237,7 @@ export async function makeBeam(env: Env, owner: string, repo: string, user: stri
   const { base, layers } = st, top = layers.at(-1)!;
   const mainTip = await must(["rev-parse", `refs/heads/${main}`], dir);
   const { kept, dropped } = sortOut(changesOf(await must(["diff", "--name-status", "-z", "--no-renames", base, top.tip], dir)), { keep: paths(body.keep), drop: paths(body.drop) });
-  if (!kept.length) return json({ error: "everything it changes is noise, so a beam of it would be empty: `keep` the files you meant", dropped }, 409);
+  if (!kept.length) return fail("AllNoise", "everything it changes is noise, so a beam of it would be empty: `keep` the files you meant", { dropped });
 
   // Each layer's tree with the noise put back as it was where the stack began.
   const back: string[] = [];
@@ -260,11 +260,11 @@ export async function makeBeam(env: Env, owner: string, repo: string, user: stri
   let ontoSha = mainTip, ontoLabel = main;
   if (onto === "upstream") {
     const up = r.upstream ? upstreamOf(r.upstream, r.branch) : null;
-    if (!up) return json({ error: "this repo wasn't dug from GitHub, so it has no upstream to beam onto: beam onto main" }, 409);
-    if (up.folder) return json({ error: "a dug folder's files sit at another path upstream: beam onto main" }, 409);
+    if (!up) return fail("NoUpstream", "this repo wasn't dug from GitHub, so it has no upstream to beam onto: beam onto main");
+    if (up.folder) return fail("NoUpstream", "a dug folder's files sit at another path upstream: beam onto main");
     // Not shallow: only the commits since what this repo has come down, and they join its history.
     const f = await git(["fetch", "--quiet", "--no-tags", `https://github.com/${up.repo}.git`, `+refs/heads/${up.branch}:refs/beams/upstream`], dir);
-    if (f.code) return json({ error: `couldn't fetch ${up.repo}@${up.branch}: ${f.err.trim() || "git fetch failed"}` }, 502);
+    if (f.code) { console.warn(`beam: fetch ${up.repo}@${up.branch}: ${f.err.trim()}`); return json({ error: `GitHub didn't answer for ${up.repo}@${up.branch}: try again shortly` }, 502); }
     ontoSha = await must(["rev-parse", "refs/beams/upstream"], dir);
     ontoLabel = `upstream ${up.repo}@${up.branch}`;
   }
@@ -278,13 +278,13 @@ export async function makeBeam(env: Env, owner: string, repo: string, user: stri
     // name it, or the merge would bring along whatever main has that `onto` doesn't (git 2.40+).
     const named = await isAncestor(dir, base, ontoSha) ? [] : [`--merge-base=${base}`];
     const m = await git(["merge-tree", "--write-tree", "--name-only", "--no-messages", ...named, ontoSha, stack], dir);
-    if (m.code === 1) return json({ error: `it doesn't sit cleanly on ${ontoLabel}: these files changed there too`, clash: m.out.trim().split("\n").slice(1).filter(Boolean) }, 409);
-    if (m.code && /unknown option .merge-base/.test(m.err)) return json({ error: `beaming onto ${ontoLabel} from here needs git 2.40 or newer` }, 501);
-    if (m.code) return json({ error: m.err.trim() || "git merge-tree failed" }, 500);
+    if (m.code === 1) return fail("BeamClash", `it doesn't sit cleanly on ${ontoLabel}: these files changed there too`, { clash: m.out.trim().split("\n").slice(1).filter(Boolean) });
+    if (m.code && /unknown option .merge-base/.test(m.err)) return fail("GitUnavailable", `beaming onto ${ontoLabel} from here needs git 2.40 or newer`);
+    if (m.code) { console.warn(`beam: merge-tree onto ${ontoLabel}: ${m.err.trim()}`); return json({ error: `the beam couldn't be laid on ${ontoLabel}: try again` }, 500); }
     trees.push(m.out.trim().split("\n")[0]!);
   }
   const ontoTree = await must(["rev-parse", `${ontoSha}^{tree}`], dir);
-  if (trees.at(-1) === ontoTree) return json({ error: `${ontoLabel} has all of it already: nothing to beam` }, 409);
+  if (trees.at(-1) === ontoTree) return fail("NothingToBeam", `${ontoLabel} has all of it already: nothing to beam`);
 
   // A commit per layer, each on the one before: the stack's author if it had one, else whoever beams
   // (this machine's git identity). Yours to title is the top one; a layer that adds nothing is left out.
@@ -348,12 +348,12 @@ async function entryAt(env: Env, handle: Hosted["handle"], tree: string, path: s
 async function hostedBeam(env: Env, owner: string, repo: string, user: string, main: string,
   o: { branch: string; to: string | null; title?: string; message?: string; keep: string[]; drop: string[] }): Promise<Response> {
   const h = await handleFor(env, owner, repo);
-  if (!h) return json({ error: "this repo has no git yet" }, 409);
+  if (!h) return fail("NoGit", "this repo has no git yet");
   const { branch } = o;
   const st = await stackFiles(env, owner, repo, branch);
   if ("error" in st) return st.error;
   const [tip] = await h.handle.log({ ref: main, limit: 1 });
-  if (!tip) return json({ error: `${main} has no commits yet: there's nothing to beam onto` }, 409);
+  if (!tip) return fail("NoGit", `${main} has no commits yet: there's nothing to beam onto`);
 
   // What each branch changes over the one under it, the bottom one over main's tip. `now` is each
   // path's blob as the branches so far leave it (null: gone), `onMain` what main's tip has there.
@@ -364,7 +364,7 @@ async function hostedBeam(env: Env, owner: string, repo: string, user: string, m
     for (const f of mine) {
       if (!onMain.has(f.path)) {
         const was = await entryAt(env, h.handle, tip.treeHash, f.path);
-        if (was?.type === "tree") return json({ error: `${f.path} is a folder on ${main}` }, 409);
+        if (was?.type === "tree") return fail("PathIsFolder", `${f.path} is a folder on ${main}`);
         onMain.set(f.path, was?.hash ?? null);
       }
       const under = now.has(f.path) ? now.get(f.path)! : onMain.get(f.path)!;
@@ -373,7 +373,7 @@ async function hostedBeam(env: Env, owner: string, repo: string, user: string, m
       else if (f.blob) {
         if (under === f.blob) continue;
         const bytes = await (await h.handle.readBlob(f.blob))?.arrayBuffer();
-        if (!bytes) return json({ error: `${f.path}'s bytes aren't in this repo's git` }, 409);
+        if (!bytes) return fail("BytesMissing", `${f.path}'s bytes aren't in this repo's git`);
         next = { bytes: new Uint8Array(bytes), mode: f.mode ?? undefined };
         hash = f.blob;
       } else {
@@ -392,9 +392,9 @@ async function hostedBeam(env: Env, owner: string, repo: string, user: string, m
   // What the stack changes against main's tip, file by file, and the noise in it, left as main has it in every commit.
   const list: Change[] = [...now].filter(([path, hash]) => hash !== onMain.get(path)).sort(([a], [b]) => (a < b ? -1 : 1))
     .map(([path, hash]) => ({ path, status: hash === null ? "D" : onMain.get(path) ? "M" : "A" }));
-  if (!list.length) return json({ error: `${main} has all of ${branch} already: nothing to beam` }, 409);
+  if (!list.length) return fail("NothingToBeam", `${main} has all of ${branch} already: nothing to beam`);
   const { kept, dropped } = sortOut(list, { keep: o.keep, drop: o.drop });
-  if (!kept.length) return json({ error: "everything it changes is noise, so a beam of it would be empty: `keep` the files you meant", dropped }, 409);
+  if (!kept.length) return fail("AllNoise", "everything it changes is noise, so a beam of it would be empty: `keep` the files you meant", { dropped });
   for (const l of layers) for (const d of dropped) delete l.changes[d.path];
 
   // A commit per branch that still changes something; yours to title is the top one.
@@ -524,10 +524,10 @@ export async function beamRoutes(req: Request, env: Env, p: string[], user: stri
   if (p[1] === "repos" && p[4] === "beams" && !p[5]) {
     const [owner, repo] = [p[2]!, p[3]!];
     const a = await access(owner, repo);
-    if (!a.read) return json({ error: "no such repo" }, 404);
+    if (!a.read) return fail("NoSuchRepo", "no such repo");
     if (req.method === "POST") {
-      if (!user) return json({ error: "sign in first" }, 401);
-      if (!a.write) return json({ error: "only the crew can beam from this repo" }, 403);
+      if (!user) return fail("SignInFirst", "sign in first");
+      if (!a.write) return fail("NoWriteAccess", "only the crew can beam from this repo");
       return makeBeam(env, owner, repo, user, await readBody(req));
     }
     if (req.method !== "GET") return null;
@@ -542,7 +542,7 @@ export async function beamRoutes(req: Request, env: Env, p: string[], user: stri
 
   // /api/me/beams
   if (p[1] === "me" && p[2] === "beams" && !p[3] && req.method === "GET") {
-    if (!user) return json({ error: "sign in first" }, 401);
+    if (!user) return fail("SignInFirst", "sign in first");
     const [to, from] = await Promise.all([
       env.DB.prepare(`SELECT b.* FROM beams b ${liveRepo("b")} WHERE b.to_user = ? AND b.status = 'open' ORDER BY b.created_at DESC LIMIT 50`).bind(Date.now(), user).all<BeamRow>(),
       env.DB.prepare(`SELECT b.* FROM beams b ${liveRepo("b")} WHERE b.by = ? ORDER BY b.created_at DESC LIMIT 50`).bind(Date.now(), user).all<BeamRow>(),
@@ -553,30 +553,30 @@ export async function beamRoutes(req: Request, env: Env, p: string[], user: stri
   // /api/beams/:id[/patch]
   if (p[1] !== "beams" || !p[2]) return null;
   const b = await beamRow(env, p[2]);
-  if (!b) return json({ error: "no such beam" }, 404);
+  if (!b) return fail("NoSuchBeam", "no such beam");
   if (req.method === "DELETE" && !p[3]) {
-    if (user !== b.by && user !== b.owner) return json({ error: "only whoever beamed it, or the repo's owner" }, 403);
+    if (user !== b.by && user !== b.owner) return fail("NotYourBeam", "only whoever beamed it, or the repo's owner");
     await withdraw(env, b);
     return json({ ok: true });
   }
   if (req.method !== "GET") return null;
-  if (b.status !== "open") return p[3] ? json({ error: "this beam was withdrawn" }, 410) : json(view(b));
+  if (b.status !== "open") return p[3] ? fail("BeamGone", "this beam was withdrawn") : json(view(b));
   if (p[3] && p[3] !== "patch") return null;
   if (!localGit(env)) {
     const h = await handleFor(env, b.owner, b.repo);
     if (p[3] === "patch") {
       const patch = h && await hostedPatch(env, h, b);
-      return patch ? new Response(patch, { headers: patchHeaders(b.id) }) : json({ error: "this beam's commit is gone from the repo's git" }, 410);
+      return patch ? new Response(patch, { headers: patchHeaders(b.id) }) : fail("BeamGone", "this beam's commit is gone from the repo's git");
     }
     const files = h && await hostedFiles(env, h, b);
-    if (!files) return json({ error: "this beam's commit is gone from the repo's git" }, 410);
+    if (!files) return fail("BeamGone", "this beam's commit is gone from the repo's git");
     return json({ ...view(b), ...cut(unifiedDiff(files)) });
   }
   const g = await bareOf(env, b.owner, b.repo);
   if ("error" in g) return g.error;
   if (p[3] === "patch") {
     const r = await git(["format-patch", "--stdout", "--no-color", `${b.onto}..${b.sha}`], g.dir);
-    if (r.code) return json({ error: "this beam's commit is gone from the repo's git" }, 410);
+    if (r.code) return fail("BeamGone", "this beam's commit is gone from the repo's git");
     return new Response(r.out, { headers: patchHeaders(b.id) });
   }
   const d = await git(["diff", "--no-color", b.onto, b.sha], g.dir);

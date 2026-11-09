@@ -291,3 +291,42 @@ test("each page route's failure comes back named", async () => {
     await tag(call(null, "/api/users/ana/page/assets/dog.png")),
   ]).toEqual(["NoSuchFile", "NotPageText", "PageSandboxOnly", "BadInput", "NoSuchFile"]);
 });
+
+test("each beam route's failure comes back as the tag it declares", async () => {
+  const call = await boot();
+  opened.push(call);
+  const as = (user: string | null) => codesplitter({ url: ORIGIN, retries: 0, send: async (r) => call(user, r.url.slice(ORIGIN.length), { method: r.method, headers: r.headers, ...(r.body && { body: await r.text() }) }) });
+  for (const u of ["ana", "bo"]) await call(u, "/api/login", { method: "POST", body: JSON.stringify({ name: u }) });
+  const ana = as("ana"), bo = as("bo"), nobody = as(null), at = { owner: "ana", repo: "lab" };
+  expect(await tagOf(ana.call("create_repo", { body: { name: "lab" } }))).toBe("ok");
+  expect(await tagOf(ana.call("add_file", { ...at, body: { path: "a.ts", content: "export const a = 1;" } }))).toBe("ok");
+  for (const name of ["empty", "tune"]) expect(await tagOf(ana.call("start_branch", { ...at, body: { name } }))).toBe("ok");
+  expect(await tagOf(ana.call("add_file", { ...at, body: { path: "b.ts", content: "export const b = 1;", branch: "tune" } }))).toBe("ok");
+  const beam = (who: typeof ana, body: { branch: string; kind?: "git" | "codesplitter"; onto?: "main" | "upstream"; to?: string }) => who.call("beam_branch", { ...at, body });
+  // Main's file isn't committed yet: there's nothing in git to beam onto. Committed, there is.
+  expect(await tagOf(beam(ana, { branch: "tune", kind: "codesplitter" }))).toBe("NoGit");
+  expect((await call("ana", "/api/repos/ana/lab/do/commit?path=a.ts", { method: "POST", body: JSON.stringify({ message: "add a.ts" }) })).status).toBe(200);
+
+  const cases: [string, Effect.Effect<unknown, Failure<OpWithErrors>>, string][] = [
+    ["beaming, signed out", beam(nobody, { branch: "tune" }), "SignInFirst"],
+    ["beaming, not on the crew", beam(bo, { branch: "tune" }), "NoWriteAccess"],
+    ["beaming main", beam(ana, { branch: "main" }), "BadBranchName"],
+    ["a name git wouldn't take", beam(ana, { branch: "a b" }), "BadBranchName"],
+    ["to nobody", beam(ana, { branch: "tune", to: "nobody" }), "NoSuchUser"],
+    ["a git branch there isn't", beam(ana, { branch: "tune" }), "NoSuchBranch"],
+    ["a codeSplitter branch there isn't", beam(ana, { branch: "nope", kind: "codesplitter" }), "NoSuchBranch"],
+    ["a branch with nothing on it", beam(ana, { branch: "empty", kind: "codesplitter" }), "NothingToBeam"],
+    ["onto upstream, not dug", beam(ana, { branch: "tune", kind: "codesplitter", onto: "upstream" }), "NoUpstream"],
+    ["your beams, signed out", nobody.call("my_beams", {}), "SignInFirst"],
+    ["a beam there isn't", nobody.call("get_beam", { id: "nope" }), "NoSuchBeam"],
+  ];
+  const got = [];
+  for (const [why, e, want] of cases) got.push([why, await tagOf(e), want]);
+  expect(got.filter(([, tag, want]) => tag !== want)).toEqual([]);
+
+  // A beam: only whoever beamed it withdraws it, and its patch is gone after.
+  const { id } = await Effect.runPromise(beam(ana, { branch: "tune", kind: "codesplitter" })) as { id: string };
+  expect(await tagOf(bo.call("withdraw_beam", { id }))).toBe("NotYourBeam");
+  expect(await tagOf(ana.call("withdraw_beam", { id }))).toBe("ok");
+  expect(await tagOf(nobody.call("beam_patch", { id }))).toBe("BeamGone");
+});

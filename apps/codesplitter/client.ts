@@ -108,6 +108,18 @@ export class NoPageRepo extends Schema.TaggedError<NoPageRepo>()("NoPageRepo", n
 export class AssetsFull extends Schema.TaggedError<AssetsFull>()("AssetsFull", named) {}
 export class NotPageText extends Schema.TaggedError<NotPageText>()("NotPageText", named) {}
 export class NoAssetStore extends Schema.TaggedError<NoAssetStore>()("NoAssetStore", named) {}
+export class SignInFirst extends Schema.TaggedError<SignInFirst>()("SignInFirst", named) {}
+export class NoSuchBeam extends Schema.TaggedError<NoSuchBeam>()("NoSuchBeam", named) {}
+export class NotYourBeam extends Schema.TaggedError<NotYourBeam>()("NotYourBeam", named) {}
+export class NoSharedHistory extends Schema.TaggedError<NoSharedHistory>()("NoSharedHistory", named) {}
+export class NothingToBeam extends Schema.TaggedError<NothingToBeam>()("NothingToBeam", named) {}
+export class StaleCopy extends Schema.TaggedError<StaleCopy>()("StaleCopy", named) {}
+export class AllNoise extends Schema.TaggedError<AllNoise>()("AllNoise", named) {}
+export class NoUpstream extends Schema.TaggedError<NoUpstream>()("NoUpstream", named) {}
+export class BeamClash extends Schema.TaggedError<BeamClash>()("BeamClash", named) {}
+export class PathIsFolder extends Schema.TaggedError<PathIsFolder>()("PathIsFolder", named) {}
+export class BytesMissing extends Schema.TaggedError<BytesMissing>()("BytesMissing", named) {}
+export class BeamGone extends Schema.TaggedError<BeamGone>()("BeamGone", named) {}
 
 type Named = { message: string; status: number; reply: unknown };
 /** One class per tag the server sends: a tag added to ERRORS without one here won't compile. */
@@ -123,6 +135,7 @@ export const NAMED = {
   UpstreamClash, UpstreamMoved, TagExists, RepoExists, AlreadyMirror, NotAFork, NoSyncBase, CommitsAhead, GitUnavailable,
   TooManyInvites, NotYourInvite, NoSuchInvite, AlreadyInCrew, InviteUsed, InviteExpired,
   PageSandboxOnly, NoPageRepo, AssetsFull, NotPageText, NoAssetStore,
+  SignInFirst, NoSuchBeam, NotYourBeam, NoSharedHistory, NothingToBeam, StaleCopy, AllNoise, NoUpstream, BeamClash, PathIsFolder, BytesMissing, BeamGone,
 } satisfies { [K in ErrorTag]: new (a: Named) => { readonly _tag: K } };
 
 // What any call can meet, whatever the operation: they come from before a route answers, or from no answer at all.
