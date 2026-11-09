@@ -3,7 +3,7 @@
 // edge case each. Nothing here runs a command or touches Cloudflare.
 
 import { describe, expect, test } from "bun:test";
-import { checkPlan, parseAuthToken, release, Stop, type IO, type Mode, type Ran } from "../scripts/release.ts";
+import { answer, checkPlan, deployLine, parseAuthToken, release, Stop, type IO, type Mode, type Ran } from "../scripts/release.ts";
 
 const plain: Mode = { checksNew: false };
 const plan = (...lines: string[]) => lines.join("\n");
@@ -64,6 +64,8 @@ class Mac implements IO {
   /** Runs before the command answers: main moving, a login landing. */
   hooks: [RegExp, (mac: Mac) => void][] = [];
   loggedIn = true;
+  /** What each deploy prints, in turn (the last repeats). */
+  deployOut = [""];
 
   private next(key: string) { const q = this.codes[key]; if (!q?.length) return 0; return q.length > 1 ? q.shift()! : q[0]!; }
   async run(cmd: string[], opts: { env?: Record<string, string | undefined> } = {}): Promise<Ran> {
@@ -82,7 +84,7 @@ class Mac implements IO {
     if (c === "git -C /w rev-parse HEAD") return ok(this.head);
     if (c === "git -C /c rev-parse origin/main") return ok(this.main);
     if (c.startsWith("bunx rustybuns plan")) { const p = this.plans.length > 1 ? this.plans.shift()! : this.plans[0]!; return ok(p); }
-    if (c.startsWith("bunx rustybuns deploy")) return { code: this.next("deploy"), out: "" };
+    if (c.startsWith("bunx rustybuns deploy")) return { code: this.next("deploy"), out: this.deployOut.length > 1 ? this.deployOut.shift()! : this.deployOut[0]! };
     return ok();
   }
   async ask(q: string) { this.asked.push(q); return this.answers.shift() ?? false; }
@@ -160,4 +162,33 @@ describe("release", () => {
     await stopsWith(go(mac), "the deploy failed");
   });
 
+  test("a deploy the CLI refused for being behind main goes again; any other failure stops, even if main moved", async () => {
+    const refused = new Mac(); refused.answers = [true, true]; refused.codes.deploy = [1, 0];
+    refused.deployOut = ["warning: HEAD is 1 commit behind origin/main, and this is a live site (targets.edge.adopt)", ""];
+    await go(refused);
+    expect(refused.ran(/rustybuns deploy/)).toHaveLength(2);
+
+    const half = new Mac(); half.answers = [true, true]; half.codes.deploy = [1];
+    half.deployOut = ["[AGENT_SANDBOX] fail — TooManyRequests: Rate limited. Please wait and consider throttling your request speed"];
+    half.hooks.push([/rustybuns deploy/, (m) => { m.main = "b"; }]);
+    await stopsWith(go(half), "rate-limited");
+    expect(half.ran(/rustybuns deploy/)).toHaveLength(1);
+  });
+});
+
+test("answer: y or n, blank is no, anything else asks again", () => {
+  for (const [raw, want] of [["y", true], [" YES ", true], ["n", false], ["", false], [null, false], ["xf", null], ["xfy", null]] as const)
+    expect(answer(raw)).toBe(want);
+});
+
+test("deployLine hides noops and a container build's log, keeps progress and failures", () => {
+  for (const [line, shown] of [
+    ["[00:00:01.000] INFO (#1): [DB] noop", false],
+    ["[23:34:35.613] INFO (#4066): [AGENT_SANDBOX] #9 0.907 Get:1 http://deb.debian.org/debian bookworm InRelease [151 kB]", false],
+    ["[23:35:03.701] INFO (#4066): [AGENT_SANDBOX] (Reading database ... 5%", false],
+    ["[23:33:53.749] INFO (#4066): [AGENT_SANDBOX] ", false],
+    ["[23:33:52.761] INFO (#4040): [AGENT_SANDBOX] Building container image registry.cloudflare.com/x:1...", true],
+    ["[23:45:02.232] INFO (#2803): [AGENT_SANDBOX] fail — TooManyRequests: Rate limited.", true],
+    ["[23:33:53.374] INFO (#2795): [DB] updated (2.7s)", true],
+  ] as const) expect(deployLine(line)).toBe(shown);
 });
