@@ -19,6 +19,7 @@
     "pr": "bun scripts/pr.ts",
     "issue": "bun scripts/issue.ts",
     "climbs": "bun scripts/climbs.ts",
+    "phil": "bun scripts/phil.ts",
     "probe": "bun scripts/probe.ts",
     "shots": "bun scripts/shots.ts",
     "outline": "bun scripts/outline.ts",

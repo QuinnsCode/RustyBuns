@@ -1,4 +1,4 @@
-import { beforeAll, expect, setDefaultTimeout, test } from "bun:test";
+import { expect, setDefaultTimeout } from "bun:test";
 import { writeFileSync } from "node:fs";
 import path from "node:path";
 import { checkTallyServer, SERVER_IMPORT } from "../checks/patch.ts";
@@ -6,7 +6,7 @@ import { chipText, type Card } from "../train/chip.ts";
 import { mergeTrainServer } from "../train/patch.ts";
 import { mergeTrain, type Floor } from "../train/server.ts";
 import { fakeGitHub } from "../../../packages/util/test/fake-gh.ts";
-import { read, unpackPinned } from "./pinned.ts";
+import { read, unpackPinned, beforePinned, pinnedTest } from "./pinned.ts";
 
 // the first run downloads the pinned release into .cache, as rustybunsify.ts does
 setDefaultTimeout(60_000);
@@ -16,7 +16,7 @@ type GitHub = Floor["github"] & { merge(n: number, method: string, deleteBranch:
 let GitHub: new (dir: string, onIssues: () => void, onPulls: (b: Board) => void, runGh: (args: string[]) => Promise<string>) => GitHub;
 
 // upstream's GitHub boards, patched as rustybunsify.ts patches them
-beforeAll(async () => {
+beforePinned(async () => {
   const dir = path.join(await unpackPinned(), "dist/server/server");
   writeFileSync(path.join(dir, "rb-checks.js"), "export const tally = () => undefined;\n");
   writeFileSync(path.join(dir, "github.js"), SERVER_IMPORT + mergeTrainServer(checkTallyServer(read(path.join(dir, "github.js")))));
@@ -28,7 +28,7 @@ async function until(ok: () => boolean) {
   expect(ok()).toBe(true);
 }
 
-test("Merge when ready on two PRs that pass alone but break together: one merges, the other is pulled before main", async () => {
+pinnedTest("Merge when ready on two PRs that pass alone but break together: one merges, the other is pulled before main", async () => {
   const fake = fakeGitHub({ defines: ["BEASTS", "SHEETS"], uses: [] });
   fake.open(2761, { drop: ["BEASTS"], use: ["SHEETS"] });
   fake.open(2778, { use: ["BEASTS"] });
