@@ -81,7 +81,7 @@ describe("packs", () => {
   ] as const)("a pack with %s doesn't load", async (_, bad, why) => {
     const read = (f: string) => Bun.file(join(DIR, "yule-isle", f)).json();
     const files = { pack: await read("pack.json"), pocket: await read("pocket.json"), poi: await read("poi.json"), lore: await read("lore.json"), director: await read("director.json") };
-    const pack = "pack" in bad ? { ...files.pack, ...bad.pack } : files.pack;
-    expect(() => loadPack({ ...files, ...bad, pack })).toThrow(why);
+    const pack = "pack" in bad ? { ...files.pack, ...bad.pack } : files.pack, pocket = "pocket" in bad ? { ...files.pocket, ...bad.pocket } : files.pocket;
+    expect(() => loadPack({ ...files, ...bad, pack, pocket })).toThrow(why);
   });
 });
