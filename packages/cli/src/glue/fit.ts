@@ -29,11 +29,11 @@ const LABEL: Record<Stack, string> = {
 };
 
 /**
- * Frameworks `init` doesn't infer yet, and the issue tracking each: #318 for the ones with a
- * Cloudflare build (ranked in FRAMEWORKS.md), #404 for CRA and Vue CLI (`init --port-vite`), #849 for custom webpack.
+ * Frameworks `init` doesn't infer, or infers only with their Cloudflare adapter, and the issue tracking each:
+ * #2455 for the ones with a Cloudflare build (ranked in FRAMEWORKS.md), #404 for CRA and Vue CLI (`init --port-vite`), #849 for custom webpack.
  */
 const TRACKED: Partial<Record<Stack, number>> = {
-  next: 318, sveltekit: 318, "react-router": 318, angular: 318, gatsby: 318,
+  next: 2455, sveltekit: 2455, "react-router": 2455, angular: 2455, gatsby: 2455,
   cra: 404, "vue-cli": 404, webpack: 849,
 };
 const ISSUES = "https://github.com/QuinnsCode/RustyBuns/issues/";

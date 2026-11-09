@@ -126,20 +126,16 @@ const OPS: Record<string, Record<string, Op>> = {
   [`${org}/scripts`]: {
     get: { id: "list_scripts", summary: "The org's scripts", tag: "Scripts", role: "seasonal", ok: arr(ref("Script")) },
     post: { id: "create_script", summary: "Keep a script: JavaScript, the inside of `async ({ input, qcrm, log }) => { … }`", tag: "Scripts", role: "manager",
-      description: "qcrm.list(entity, params), get(entity, id), create(entity, data), update(entity, id, data), remove(entity, id) and insights() each make one API call as whoever runs it; log(...) adds a line; what the body returns is the run's result. Calls reach contacts, companies, deals, activities and insights only: members, webhooks, keys and other scripts answer 403. A run has no network, 200 calls and 10 s. Every run, scheduled ones too, counts against the org's runs a day (scripts/limits); past it a run answers 429.",
-      body: obj({ name: str(), body: str("up to 64 KB"), cron: { type: ["string", "null"], description: '"0 * * * *" runs it every hour as you (hourly is the only schedule); null for none' } }, ["name", "body"]), ok: ref("Script"), status: 201 },
-  },
-  [`${org}/scripts/limits`]: {
-    get: { id: "get_script_limits", summary: "How many script runs the org gets a day, and how many it has used in the last 24 hours", tag: "Scripts", role: "seasonal", ok: obj({ runs_per_day: int(), runs_last_day: int() }) },
-    put: { id: "set_script_limits", summary: "Set how many script runs the org gets a day (0 stops them all)", tag: "Scripts", role: "owner", body: obj({ runs_per_day: int("0 to 100000") }, ["runs_per_day"]), ok: obj({ runs_per_day: int(), runs_last_day: int() }) },
+      description: "qcrm.list(entity, params), get(entity, id), create(entity, data), update(entity, id, data), remove(entity, id) and insights() each make one API call as whoever runs it; log(...) adds a line; what the body returns is the run's result. Calls reach contacts, companies, deals, activities and insights only: members, webhooks, keys and other scripts answer 403. A run has no network, 200 calls and 10 s.",
+      body: obj({ name: str(), body: str("up to 64 KB") }, ["name", "body"]), ok: ref("Script"), status: 201 },
   },
   [`${org}/scripts/examples`]: { post: { id: "install_example_scripts", summary: "Install the three example scripts", tag: "Scripts", role: "manager", ok: arr(ref("Script")), status: 201 } },
   [`${org}/scripts/{id}`]: {
     get: { id: "get_script", summary: "One script with its body", tag: "Scripts", role: "seasonal", ok: ref("Script") },
-    put: { id: "update_script", summary: "Change a script's name, body or schedule, or switch it off", tag: "Scripts", role: "manager", body: obj({ name: str(), body: str(), enabled: bool(), cron: { type: ["string", "null"], description: '"0 * * * *" runs it every hour as you (hourly is the only schedule); null for none' } }), ok: ref("Script") },
+    put: { id: "update_script", summary: "Change a script's name, body or switch it off", tag: "Scripts", role: "manager", body: obj({ name: str(), body: str(), enabled: bool() }), ok: ref("Script") },
     delete: { id: "delete_script", summary: "Delete a script", tag: "Scripts", role: "owner", risky: true, ok: ref("Ok") },
   },
-  [`${org}/scripts/{id}/run`]: { post: { id: "run_script", summary: "Run a script now, as you, and get the run row back (status, log, result, calls)", tag: "Scripts", role: "employee", description: "The script's calls reach contacts, companies, deals, activities and insights only; members, webhooks, keys and other scripts answer 403. Past the org's runs a day it answers 429.", body: obj({ input: loose("anything JSON, handed to the script as `input`") }), ok: ref("ScriptRun"), status: 201 } },
+  [`${org}/scripts/{id}/run`]: { post: { id: "run_script", summary: "Run a script now, as you, and get the run row back (status, log, result, calls)", tag: "Scripts", role: "employee", description: "The script's calls reach contacts, companies, deals, activities and insights only; members, webhooks, keys and other scripts answer 403.", body: obj({ input: loose("anything JSON, handed to the script as `input`") }), ok: ref("ScriptRun"), status: 201 } },
   [`${org}/scripts/{id}/runs`]: { get: { id: "list_script_runs", summary: "A script's last 50 runs", tag: "Scripts", role: "seasonal", ok: arr(ref("ScriptRun")) } },
   // Plugins (src/plugins.ts). Their inbound URL, POST /api/in/{token}, is left out on purpose: Twilio, Plivo and website forms call it, not agents.
   [`${org}/plugins`]: { get: { id: "list_plugins", summary: "The org's plugins (twilio, plivo, form): connected or not, secrets masked, each inbound URL by its tail", tag: "Plugins", role: "seasonal", risky: true, ok: arr(ref("Plugin")) } },
@@ -185,7 +181,7 @@ const SCHEMAS: Record<string, Schema> = {
   Plugin: obj({ kind: en(["twilio", "plivo", "form"]), connected: bool(), disabled: bool(), config: loose("account_sid (twilio) or auth_id (plivo), from, and auth_token as its last four (…a1b2); {} for form"),
     inbound_url: { type: ["string", "null"], description: "where the provider or form posts: in full when made or rotated, after that only its tail (…/api/in/…a1b2)" }, created_at: { type: ["integer", "null"] }, updated_at: { type: ["integer", "null"] } }),
   Key: obj({ id: str(), name: str(), prefix: str("the first 8 characters"), secret: str("when made only"), user_id: str(), created_at: int(), last_used_at: { type: ["integer", "null"] } }),
-  Script: obj({ id: str(), org_id: str(), name: str(), body: str("in the single-script read only"), lang: str("js"), created_by: str(), created_at: int(), updated_at: int(), enabled: bool(), cron: { type: ["string", "null"], description: '"0 * * * *" when it runs every hour' } }),
+  Script: obj({ id: str(), org_id: str(), name: str(), body: str("in the single-script read only"), lang: str("js"), created_by: str(), created_at: int(), updated_at: int(), enabled: bool() }),
   ScriptRun: obj({ id: str(), script_id: str(), actor_user_id: str(), started_at: int(), finished_at: int(), status: en(["ok", "error", "timeout"]), log: str("lines, 16 KB at most"), result: loose("what the script returned"), calls: int("API calls the run made") }),
   File: obj(FILE_PROPS),
   AuditEntry: obj({ id: str(), actor_user_id: { type: ["string", "null"] }, actor_name: { type: ["string", "null"] }, actor_email: { type: ["string", "null"] }, action: str(), target: { type: ["string", "null"] }, target_name: { type: ["string", "null"] }, target_type: str("member, key, webhook, export, seed…"), at: int(), detail: loose("what changed") }),

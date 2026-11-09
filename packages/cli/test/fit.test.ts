@@ -43,7 +43,7 @@ test("ready: supported frameworks, Workers and fetch-handler servers", () => {
 test("needs work: a framework init doesn't infer yet links its issue", () => {
   const f = fit({ pkg: pkg({ "@angular/core": "20" }), files: ["tsconfig.json"] });
   expect(f).toMatchObject({ verdict: "needs-work", stack: "angular", label: "Angular, TypeScript" });
-  expect(f.issue).toMatch(/issues\/318$/);
+  expect(f.issue).toMatch(/issues\/2455$/);
 });
 
 test("Angular and Gatsby say they are out of scope, not 'not yet'", () => {
@@ -62,7 +62,7 @@ test("Next.js is ready with @opennextjs/cloudflare, needs work without it", () =
   const plain = fit({ pkg: pkg(next), files: ["tsconfig.json"] });
   expect(plain).toMatchObject({ verdict: "needs-work", stack: "next" });
   expect(plain.reasons[0]).toContain("@opennextjs/cloudflare");
-  expect(plain.issue).toMatch(/issues\/318$/);
+  expect(plain.issue).toMatch(/issues\/2455$/);
 });
 
 test("React Router is ready built as a Worker (@cloudflare/vite-plugin), needs work on Node", () => {
@@ -73,7 +73,7 @@ test("React Router is ready built as a Worker (@cloudflare/vite-plugin), needs w
   const node = fit({ pkg: deps, files: [], viteConfig: `import { reactRouter } from "@react-router/dev/vite";` });
   expect(node).toMatchObject({ verdict: "needs-work", stack: "react-router" });
   expect(node.reasons[0]).toContain("@cloudflare/vite-plugin");
-  expect(node.issue).toMatch(/issues\/318$/);
+  expect(node.issue).toMatch(/issues\/2455$/);
 });
 
 test("needs work: webpack builds point at the Vite port issue", () => {
@@ -137,5 +137,5 @@ test("SvelteKit is ready with adapter-cloudflare, needs work without it", () => 
   const auto = fit({ pkg: pkg({ ...sk, "@sveltejs/adapter-auto": "6" }), files: [] });
   expect(auto).toMatchObject({ verdict: "needs-work", stack: "sveltekit" });
   expect(auto.reasons[0]).toContain("adapter-cloudflare");
-  expect(auto.issue).toMatch(/issues\/318$/);
+  expect(auto.issue).toMatch(/issues\/2455$/);
 });
