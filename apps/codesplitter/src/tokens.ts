@@ -28,7 +28,7 @@
 //   DELETE /api/tokens/:id   revoke it
 //   GET    /api/tokens/audit what you did that the audit log keeps (audit.ts)
 
-import { json, type Env, readBody } from "./env.ts";
+import { fail, json, type Env, readBody } from "./env.ts";
 import { audit, via } from "./audit.ts";
 import { actingAs, queuedByToken } from "./identity.ts";
 import { repoRow } from "./repos.ts";
@@ -70,6 +70,7 @@ export async function bearer(req: Request, env: Env, p: string[]): Promise<Token
   if (secret === null) return null;
   const now = Date.now();
   const t = secret && await env.DB.prepare("SELECT id, name AS user, scope, label, expires_at, last_used_at, repo, grant_id IS NOT NULL AS oauth FROM api_tokens WHERE hash = ?").bind(await sha256(secret)).first<Token & { last_used_at: number | null }>();
+  // The gate's 401 and 403s carry no tag: any operation can meet one (the client makes a 401 Unauthorized).
   if (!t || t.expires_at <= now) return json({ error: "this API token is expired, revoked or wrong: make one on your profile page" }, 401, { "www-authenticate": 'Bearer error="invalid_token"' });
   if (COOKIE_ONLY.has(p[1] ?? "")) return json({ error: "API tokens can't reach this: sign in on the site" }, 403);
   if (p.at(-1) === "ws") return json({ error: "API tokens don't open live sockets: use the HTTP routes" }, 403);
@@ -100,7 +101,7 @@ export async function mint(env: Env, user: string, label: string, scope: Scope, 
 /** /api/tokens: the signed-in person's own, by cookie (bearer() keeps tokens out). */
 export async function tokenRoutes(req: Request, env: Env, p: string[], user: string | null): Promise<Response | null> {
   if (p[1] !== "tokens") return null;
-  if (!user) return json({ error: "sign in first" }, 401);
+  if (!user) return fail("SignInFirst", "sign in first");
   if (!p[2] && req.method === "GET") {
     const { results } = await env.DB.prepare("SELECT id, label, scope, repo, last4, created_at, expires_at, last_used_at FROM api_tokens WHERE name = ? AND grant_id IS NULL ORDER BY created_at DESC").bind(user).all();
     return json(results.map((t: any) => ({ ...t, expired: t.expires_at <= Date.now() })));
@@ -108,25 +109,25 @@ export async function tokenRoutes(req: Request, env: Env, p: string[], user: str
   if (!p[2] && req.method === "POST") {
     const b = await readBody<"label" | "scope" | "days" | "repo">(req);
     const label = String(b.label ?? "").trim().slice(0, 60);
-    if (!label) return json({ error: "label: what it's for, like executor" }, 400);
+    if (!label) return fail("BadInput", "label: what it's for, like executor");
     const scope = SCOPES.find((s) => s === b.scope);
-    if (!scope) return json({ error: "scope: read, write or admin" }, 400);
+    if (!scope) return fail("BadInput", "scope: read, write or admin");
     const days = b.days ?? 30;
-    if (typeof days !== "number" || !Number.isInteger(days) || days < 1 || days > MAX_DAYS) return json({ error: `days: 1 to ${MAX_DAYS}` }, 400);
+    if (typeof days !== "number" || !Number.isInteger(days) || days < 1 || days > MAX_DAYS) return fail("BadInput", `days: 1 to ${MAX_DAYS}`);
     const repo = b.repo == null || b.repo === "" ? null : String(b.repo);
     if (repo !== null) {
       const [o, r, ...rest] = repo.split("/");
-      if (!o || !r || rest.length || !(await repoRow(env, o, r, "1"))) return json({ error: "repo: owner/name of one that exists" }, 400);
+      if (!o || !r || rest.length || !(await repoRow(env, o, r, "1"))) return fail("BadInput", "repo: owner/name of one that exists");
     }
     const n = await env.DB.prepare("SELECT COUNT(*) AS n FROM api_tokens WHERE name = ? AND grant_id IS NULL AND expires_at > ?").bind(user, Date.now()).first();
-    if ((n?.n as number ?? 0) >= MAX_TOKENS) return json({ error: `at most ${MAX_TOKENS} live tokens: revoke one first` }, 400);
+    if ((n?.n as number ?? 0) >= MAX_TOKENS) return fail("TooManyTokens", `at most ${MAX_TOKENS} live tokens: revoke one first`);
     const t = await mint(env, user, label, scope, days, repo);
     await audit(env, req, { actor: user, action: "token.create", target: t.id, detail: `${t.scope}${repo ? ` on ${repo}` : ""}: ${label}` });
     return json(t, 201);
   }
   if (p[2] && !p[3] && req.method === "DELETE") {
     const r = await env.DB.prepare("DELETE FROM api_tokens WHERE id = ? AND name = ? AND grant_id IS NULL").bind(p[2], user).run();
-    if (!r.meta?.changes) return json({ error: "no such token" }, 404);
+    if (!r.meta?.changes) return fail("NoSuchToken", "no such token of yours");
     await audit(env, req, { actor: user, action: "token.revoke", target: p[2] });
     return json({ ok: true });
   }

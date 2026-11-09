@@ -74,7 +74,9 @@ test("personal API tokens: made once, scoped, limited and revoked", async () => 
     const u = await make("read");
     expect((await call("ryan", `/api/tokens/${u.id}`, { method: "DELETE" })).status).toBe(200);
     expect((await as(u.token, "/api/me")).status).toBe(401);
-    expect((await call("mallory", `/api/tokens/${t.id}`, { method: "DELETE" })).status).toBe(404);
+    // Someone else's token isn't theirs to revoke (#3940: named).
+    const gone = await call("mallory", `/api/tokens/${t.id}`, { method: "DELETE" });
+    expect([gone.status, ((await gone.json()) as { tag?: string }).tag]).toEqual([404, "NoSuchToken"]);
   }
 
   // a token is never an admin, can't touch tokens or the account, and opens no sockets
@@ -105,8 +107,10 @@ test("personal API tokens: made once, scoped, limited and revoked", async () => 
   // a token needs a label, a scope and 1 to 365 days, and a cookie to be made
   {
     const { call, send } = j;
-    for (const body of [{ scope: "read" }, { label: "x", scope: "root" }, { label: "x", scope: "read", days: 0 }, { label: "x", scope: "read", days: 366 }, { label: "x", scope: "read", days: 1.5 }])
-      expect((await send("ryan", "/api/tokens", body)).status).toBe(400);
+    for (const body of [{ scope: "read" }, { label: "x", scope: "root" }, { label: "x", scope: "read", days: 0 }, { label: "x", scope: "read", days: 366 }, { label: "x", scope: "read", days: 1.5 }]) {
+      const res = await send("ryan", "/api/tokens", body);
+      expect([body, res.status, ((await res.json()) as { tag?: string }).tag]).toEqual([body, 400, "BadInput"]);
+    }
     expect((await call(null, "/api/tokens", { method: "POST", body: JSON.stringify({ label: "x", scope: "read" }) })).status).toBe(401);
   }
 });
