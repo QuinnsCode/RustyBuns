@@ -17,6 +17,8 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname } from "node:path";
 import type { CheckTime, Stage } from "./mervin-board.ts";
+import { check } from "@rustybuns/util/guard";
+import { PIPELINE_FILE, Pipeline, type Lane } from "../src/pipeline.ts";
 
 export type Owner = "main" | "flaky" | "own" | "wait" | "slow" | "blocks";
 export interface Verdict { test: string; owner: Owner; prs: number[]; why: string }
@@ -206,11 +208,36 @@ export function releaseOnly(rs: Row[], min = 5): Candidate[] {
   }).sort((a, b) => b.score - a.score || a.name.localeCompare(b.name));
 }
 
-/** The insight from the record, ending in a question to the owner (null until a check has run `min` times). */
-export function insight(rs: Row[], min = 5): string | null {
-  const c = releaseOnly(rs, min)[0];
-  if (!c || c.secs < 60) return null;
-  return `Ester: ${c.name} took about ${Math.max(1, Math.round(c.secs / 60))} min over ${c.ran} PRs and caught ${c.caught} that nothing else did. Run it only at release?`;
+/**
+ * The edit to the repo's pipeline file (pipeline.ts) that would run `name` only at a release: its lane (the one named
+ * after it, as the checks queue names a lane's run) turned to `release`, or a new release lane. Null when its lane is
+ * one already. Ester only says it: a person makes the edit, or doesn't.
+ */
+export function releaseMove(p: Pipeline | null, name: string): { lane: Lane; was?: Lane } | null {
+  const was = p?.lanes?.find((l) => l.name === name);
+  if (was?.cadence === "release") return null;
+  if (was) { const { every: _e, seats: _s, ...rest } = was; return { lane: { ...rest, cadence: "release" }, was }; }
+  return { lane: { name: name.replace(/[^\w.-]+/g, "-").slice(0, 60), cadence: "release" } };
+}
+
+/**
+ * The insight from the record, ending in a question to the owner, then the pipeline edit that says yes (empty until a
+ * check has run `min` times). A check whose lane in `pipeline` already runs at release only is skipped for the next.
+ */
+export function insight(rs: Row[], pipeline: Pipeline | null = null, min = 5): string[] {
+  for (const c of releaseOnly(rs, min)) {
+    if (c.secs < 60) return [];
+    const move = releaseMove(pipeline, c.name);
+    if (!move) continue;
+    const yes = move.was
+      ? `lane ${move.was.name}: cadence "${move.was.cadence}" -> "release"`
+      : `add to lanes: ${JSON.stringify({ ...move.lane, run: "<its command>" })}`;
+    return [
+      `Ester: ${c.name} took about ${Math.max(1, Math.round(c.secs / 60))} min over ${c.ran} PRs and caught ${c.caught} that nothing else did. Run it only at release?`,
+      `  to say yes, in ${PIPELINE_FILE}: ${yes} (Ester won't edit it: check it with POST /api/pipeline, then commit it)`,
+    ];
+  }
+  return [];
 }
 
 export interface Timed { name: string; ms: number }
@@ -227,6 +254,13 @@ export function shard(tests: Timed[], n: number, fallback = 100): Timed[][] {
     lightest.total += t.ms || fallback;
   }
   return out.map((x) => x.tests);
+}
+
+/** The repo's pipeline file at `top`, or null when it has none (or one that isn't a pipeline). */
+export function pipelineAt(top: string): Pipeline | null {
+  const file = `${top}/${PIPELINE_FILE}`;
+  if (!existsSync(file)) return null;
+  try { return check(Pipeline, JSON.parse(readFileSync(file, "utf8"))); } catch { return null; }
 }
 
 /** Appends this run's rows to the JSONL `file`, one line per PR stamped with `at`. */

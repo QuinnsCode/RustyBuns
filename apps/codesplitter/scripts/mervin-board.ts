@@ -57,7 +57,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { describeBlast, load, rank } from "./blast.ts";
-import { debtLines, hold, hurtLines, insight, keep, kept, packagesChanged, report, rows, slowChecks, triage, waitLines } from "./ester.ts";
+import { debtLines, hold, hurtLines, insight, keep, pipelineAt, kept, packagesChanged, report, rows, slowChecks, triage, waitLines } from "./ester.ts";
 import { fromJunit, hot, recall, recallLines, remember, resolve as resolveTest, withJunit } from "./ester-memory.ts";
 import { heal, layout } from "../layout.ts";
 import type { Lane, LaneStep, Line } from "../src/mervin-replay.ts";
@@ -580,8 +580,8 @@ if (import.meta.main) {
         if (hurt.length) console.log(hurt.join("\n"));
         const owed = debtLines(kept(file), main);
         if (owed.length) console.log(owed.join("\n"));
-        const ask = insight(kept(file));
-        if (ask) console.log(ask);
+        const ask = insight(kept(file), pipelineAt(top));
+        if (ask.length) console.log(ask.join("\n"));
         const waits = waitLines(board.stages);
         if (waits.length) console.log(waits.join("\n"));
         if (hold(verdicts).length) console.log(`Ester says hold: ${hold(verdicts).map((n) => `#${n}`).join(", ")}`);
