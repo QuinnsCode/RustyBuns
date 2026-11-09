@@ -2,7 +2,7 @@ import { expect, setDefaultTimeout, test } from "bun:test";
 import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { dropSecrets, secretName } from "../live/env.ts";
-import { unpackPinned } from "./pinned.ts";
+import { unpackPinned, pinnedTest } from "./pinned.ts";
 
 setDefaultTimeout(60_000);
 
@@ -24,7 +24,7 @@ test("dropSecrets keeps the agents' own auth and the names AGENT_OFFICE_ENV_PASS
   expect(dropped.sort()).toEqual(["CLOUDFLARE_API_TOKEN", "GH_TOKEN"]);
 });
 
-test("the pinned release's childEnv, patched, hands workers no secrets", async () => {
+pinnedTest("the pinned release's childEnv, patched, hands workers no secrets", async () => {
   const srv = path.join(await unpackPinned(), "dist/server/server");
   const file = path.join(srv, "workers/env.js");
   const anchor = "            env[k] = v;\n    return env;\n}";

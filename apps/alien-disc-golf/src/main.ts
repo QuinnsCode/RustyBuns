@@ -10,7 +10,7 @@ import { mountPalette } from "@rustybuns/util/palette";
 import { cssUrl, forecastStrip, fronds, lieGlyph, markFor, orbitMark, punchStrip, routeMap, turnRose, windRose, type CardHole, type Vane } from "./board.ts";
 import { countries, countryAt } from "./countries.ts";
 import currentsUrl from "./currents.bin?url";
-import { loadCurrents, paddleToward, startSwim, SWIM_S, swimKm, swimOver, swimStep, type Currents, type Swim } from "./currents.ts";
+import { loadCurrents, PADDLE_KMS, paddleToward, SEA_DRIFT, startSwim, SWIM_S, swimKm, swimOver, swimStep, type Currents, type Swim } from "./currents.ts";
 import { BASKET_KM, coursePar, makeCourse, type Course, type Hole } from "./course.ts";
 import { carryKm, hangTime, levelFor, MAX_POWER, MIN_POWER, POWER_STEP, powerFor, simulateThrow, type Flight, type Loft } from "./flight.ts";
 import { arc, bearing, compass, destination, distanceKm, windHeading, type LatLon } from "./geo.ts";
@@ -225,7 +225,7 @@ function renderPanel() {
       <p>The disc is in the sea and the current has it. Paddle against it before the clock runs out, or ride it to a shore.</p>
       <div class="board">${windRose([{ vane: { speed: ROSE_SCALE.sea / 2, to: 0 }, scale: ROSE_SCALE.sea, kind: "sea", on: true }], swim.heading, bearing(swim.pos, hole.basket))}<div class="wind"><span class="lvl">Current</span><span id="swim-cur" class="on"></span><span id="swim-arrow" class="arrow on">${icon("arrow-up")}</span>
         <span class="lvl">Basket</span><span id="swim-km"></span><span></span>
-        <span class="lvl">${icon("timer")}</span><span><span id="swim-clock" class="swim-clock"></span><span class="tip" title="The swim lasts ${SWIM_S} s. A 1 m/s current carries the disc 150 km a second; paddling makes 60.">${icon("info")}</span></span><span></span></div></div>
+        <span class="lvl">${icon("timer")}</span><span><span id="swim-clock" class="swim-clock"></span><span class="tip" title="The swim lasts ${SWIM_S} s. A 1 m/s current carries the disc ${fmt(SEA_DRIFT)} km a second; paddling makes ${fmt(PADDLE_KMS)}.">${icon("info")}</span></span><span></span></div></div>
       <div class="row"><label>${icon("navigation")} Paddle</label><input id="heading" type="range" min="0" max="359" step="1" value="${swim.heading}" /><output id="heading-out">${swim.heading}° ${compass(swim.heading)}</output></div>
       <p class="dim">Hold the button<span class="keys">, <kbd>Space</kbd> or <kbd>↑</kbd></span> to paddle; tap the planet<span class="keys"> or <kbd>←</kbd><kbd>→</kbd></span> to steer.</p>
       <div class="actions"><button type="button" id="paddle" class="primary">${icon("waves")} Hold to paddle</button></div>`;
