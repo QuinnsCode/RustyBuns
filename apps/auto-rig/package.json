@@ -17,8 +17,8 @@
     "@rustybuns/native": "^0.1.12",
     "@rustybuns/rig": "^0.1.12",
     "@rustybuns/shell-bun": "^0.1.12",
-    "react": "19.2.8",
-    "react-dom": "19.2.8",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
     "three": "^0.180.0"
   },
   "devDependencies": {
@@ -34,7 +34,7 @@
     "@types/three": "^0.180.0",
     "alchemy": "2.0.0-beta.84",
     "effect": "4.0.5",
-    "vite": "^6.2.6"
+    "vite": "^6.4.4"
   },
   "overrides": {
     "effect": "4.0.5",

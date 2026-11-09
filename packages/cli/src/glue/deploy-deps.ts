@@ -43,7 +43,13 @@ export function applyOverrides(pkg: any, pm: string): { pkg: any; changed: boole
   const key = pm === "yarn" ? "resolutions" : "overrides";
   const target = pm === "pnpm" ? (pkg.pnpm ??= {}) : pkg;
   const before = JSON.stringify(target[key] ?? {});
-  target[key] = { ...(target[key] ?? {}), ...DEPLOY_OVERRIDES };
+  const next: Record<string, unknown> = { ...(target[key] ?? {}) };
+  // A range that already covers the pin stays: narrowing a monorepo root's "^4.0.5" to "4.0.5" would downgrade every app (#3803).
+  for (const [name, pin] of Object.entries(DEPLOY_OVERRIDES)) {
+    const have = next[name];
+    if (typeof have !== "string" || !Bun.semver.satisfies(pin, have)) next[name] = pin;
+  }
+  target[key] = next;
   return { pkg, changed: before !== JSON.stringify(target[key]) };
 }
 

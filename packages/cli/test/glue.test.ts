@@ -216,6 +216,14 @@ test("add deploy: pinned install command and overrides per package manager", asy
   expect(applyOverrides({}, "yarn").pkg.resolutions["effect"]).toBe("4.0.5");
 });
 
+test("add deploy: an override whose range covers the pin is left alone", async () => {
+  const { applyOverrides } = await import("../src/glue/deploy-deps.ts");
+  for (const [have, want] of [["^4.0.5", "^4.0.5"], [undefined, "4.0.5"], ["^3.0.0", "4.0.5"]] as const) {
+    const pkg = applyOverrides({ overrides: have ? { effect: have } : {} }, "bun").pkg;
+    expect([have, pkg.overrides.effect]).toEqual([have, want]);
+  }
+});
+
 test("infer worker build from the release script", async () => {
   const { inferWorkerBuild } = await import("../src/glue/build-script.ts");
   const scripts = {
@@ -236,6 +244,14 @@ test("infer worker build from the release script", async () => {
     release: `echo "Release started at $(date)" && node scripts/pre-deploy-gate.mjs && npm run clean && npm run build && node scripts/assert-deploy-target.mjs app && node scripts/check-tdz.mjs && wrangler deploy`,
   })).toEqual({ build: "rm -rf dist && vite build", from: "release" });
   expect(inferWorkerBuild({ release: "node scripts/generate-routes.mjs && vite build && wrangler deploy" }).build).toBe("node scripts/generate-routes.mjs && vite build");
+  // A build that runs a script by path (one that migrates D1 --remote inside) is no vite build;
+  // the app's own build:<x> that is one wins over the bare default (RavelloH/InsightFlare, #2167).
+  expect(inferWorkerBuild({
+    build: "tsx scripts/build.ts --target cf",
+    "build:packages": "pnpm run build:package:ui && pnpm run build:package:product-ui",
+    "build:start": "pnpm run build:packages && vite build",
+    deploy: "tsx scripts/deploy.ts --target cf",
+  })).toEqual({ build: "pnpm run build:packages && vite build", from: "build:start" });
 });
 
 test("isRemoteStep: migrations, schema pushes, seeds and deploys never run in a local build", async () => {
@@ -730,6 +746,17 @@ test("workflow, analytics engine, worker loader, observability, routes: wrangler
   expect(host).toContain(`  AE: local.analyticsEngine("events"),`);
   expect(wranglerToConfig({ name: "g", ...w }).bindings).toEqual(c.bindings);
   expect(wranglerToConfig({ name: "g", ...w }).worker!.observability).toEqual(c.worker.observability);
+});
+
+test.each([
+  [undefined, `{"enabled":true,"logs":{"enabled":true,"invocationLogs":true},"redactQueryString":true}`],
+  [{ enabled: true, headSamplingRate: 0.5 }, `{"enabled":true,"headSamplingRate":0.5,"redactQueryString":true}`],
+])("redactQueryStrings goes up with the Worker's observability (observability %j)", (observability, out) => {
+  const a = generateAlchemy({
+    name: "g", worker: { main: "src/worker.ts", compatibilityDate: "2026-06-01", compatibilityFlags: [], redactQueryStrings: true, observability },
+    bindings: {}, targets: { edge: { provider: "cloudflare" } },
+  } as any);
+  expect(a).toContain(`  observability: ${out},`);
 });
 
 test("container: wrangler and alchemy bind the class and its image; the desktop host leaves it out", () => {

@@ -8,6 +8,7 @@
 import type { PartyMember, party } from "./eqosys.ts";
 import { BLOCKS, CHAT, INVITE, JOINS, LIVES, may, MUTE, READY, REPORT, RULE_TEXT, type PartyRules } from "./party-rules.ts";
 import { eqButton, wearSkin } from "./skin.ts";
+import { el } from "./dom.ts";
 
 export interface LobbyPanel {
   code: string;
@@ -43,15 +44,6 @@ const withInvite = (link: string, key: string): string => {
   const u = new URL(link, typeof location === "undefined" ? "http://x" : location.href);
   if (key) u.searchParams.set("invite", key); else u.searchParams.delete("invite");
   return u.toString();
-};
-
-/** An element with a class or text, and its children. */
-const el = (tag: string, o: { className?: string; textContent?: string } = {}, ...kids: (Node | string)[]): HTMLElement => {
-  const e = document.createElement(tag);
-  if (o.className) e.className = o.className;
-  if (o.textContent !== undefined) e.textContent = o.textContent;
-  e.append(...kids);
-  return e;
 };
 
 /** Join the party and keep `box` showing it. Returns a function that leaves and hides the box. */

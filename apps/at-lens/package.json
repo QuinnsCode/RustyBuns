@@ -11,10 +11,10 @@
     "deploy": "vite build && bunx wrangler deploy"
   },
   "dependencies": {
-    "@atproto/oauth-client-browser": "0.5.9",
+    "@atproto/oauth-client-browser": "0.5.11",
     "@rustybuns/util": "^0.1.12"
   },
   "devDependencies": {
-    "vite": "^6.2.6"
+    "vite": "^6.4.4"
   }
 }
