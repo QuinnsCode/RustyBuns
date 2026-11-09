@@ -136,11 +136,13 @@ vec3 gTile(float i, vec2 uv, vec4 d) {
   vec3 b = textureGrad(uGAlb, vec3(gUvB, i), gDB.xy, gDB.zw).rgb;
   return mix(a, b, gPick);
 }
-vec3 gLayer(float i, vec2 uv, vec2 uv2, vec4 d, vec4 d2, float near) {
+// big is how much of the larger, turned copy goes over the tile (it carries the bake's cracks, which its own normal
+// map's fade never reaches, so a cracked layer gives it less where the ground keeps no cracks)
+vec3 gLayer(float i, vec2 uv, vec2 uv2, vec4 d, vec4 d2, float near, float big) {
   vec3 a = gTile(i, uv, d) * 2.0;
   if (near <= 0.0) return a;
   vec3 b = textureGrad(uGAlb, vec3(uv2, i), d2.xy, d2.zw).rgb * 2.0;
-  return a * mix(vec3(1.0), b, 0.5);
+  return a * mix(vec3(1.0), b, big);
 }
 `;
 /** The fragment's detail colour (multiplies the vertex colour) and, in gNormal, the way the texture leans the surface. */
@@ -172,8 +174,10 @@ const GLSL_FRAG_MAIN = `
     float gOpen = 1.0 - w[7] - w[3] * smoothstep(0.5, 0.8, w[3]);   // not on snow, nor a trail that is dirt already
     float gPan = smoothstep(0.65, 0.71, gP) * gOpen, gGravel = smoothstep(0.73, 0.78, gP) * gOpen * (1.0 - 0.7 * gWet);
     float gHollow = (1.0 - smoothstep(0.2, 0.3, gP)) * smoothstep(0.2, 0.55, vGk.z) * gOpen;
-    // and where the floor has a litter (needles or leaves), its low ground is a thick mat of it that the grass gives way to
-    float gMat = (1.0 - smoothstep(0.27, 0.36, gP)) * gOpen * step(0.02, w[0] + w[1]);
+    // and where the floor has a litter (needles or leaves), its low ground is a thick mat of it that the grass gives way to,
+    // its edge a ragged thinning over a metre or two rather than a line
+    float gMatP = gP + (gNoise(vGp.xz * 0.9 + vec2(5.3, 21.0)) - 0.5) * 0.08;
+    float gMat = (1.0 - smoothstep(0.22, 0.37, gMatP)) * gOpen * step(0.02, w[0] + w[1]);
     float gMatI = w[0] >= w[1] ? 0.0 : 1.0;   // which litter, chosen before the weights move
     gWet = clamp(gWet + gHollow * 0.45, 0.0, 1.0);
     for (int i = 0; i < 8; i++) w[i] *= 1.0 - gPan - gMat;
@@ -181,7 +185,7 @@ const GLSL_FRAG_MAIN = `
     w[0] += gMat * (1.0 - gMatI); w[1] += gMat * gMatI;
     // a feature kept, by layer: the dry crack network (less where it is wet) and the sand's ripples, which the wind lays
     // in fields (strong, faint, gone) and never on a pan
-    float gCrack = vGk.x * (1.0 - smoothstep(0.3, 0.65, gWet));
+    float gCrack = vGk.x * (1.0 - smoothstep(0.3, 0.65, gWet)) * (1.0 - smoothstep(0.05, 0.4, vGk.w)) * (1.0 - gHollow);
     float gRipple = vGk.y * smoothstep(0.12, 0.45, gNoise(vGp.xz * 0.028 + vec2(41.0, 7.0))) * (1.0 - gPan);
     // a mixed floor gathers into clumps a few metres across (a drift of needles, a bare sandy scrape, a dirt hollow) rather
     // than every layer laid thin over every metre, so it reads from the walking camera; a layer that covers most of the ground (a trail, snow) keeps it
@@ -197,9 +201,19 @@ const GLSL_FRAG_MAIN = `
     for (int i = 0; i < 8; i++) {
       if (w[i] < 0.02) continue;
       total += w[i];
-      vec3 c = gLayer(float(i), uv, uv2, d, d2, gNear);
+      vec3 c = gLayer(float(i), uv, uv2, d, d2, gNear, i == 3 || i == 4 ? 0.5 * mix(0.15, 1.0, gCrack) : 0.5);
       // the needle bake is pale needles on a pale floor, which a thick mat shows as a white smear: a mat lies darker and flatter
-      if (i == 0) c = 0.8 + (c - 1.0) * 0.45;
+      if (i == 0) {
+        // but a mat keeps its needle grain, and a second, smaller layer of needles lies on top, the light ones caught by the sun
+        float gM = gMat * gGrain;
+        c = 0.8 + (c - 1.0) * mix(0.45, 0.8, gM);
+        if (gM > 0.01) {
+          vec2 uvT = turnB * uv * 1.7 + vec2(0.13, 0.52);
+          vec3 top = textureGrad(uGAlb, vec3(uvT, 0.0), turnB * d.xy * 1.7, turnB * d.zw * 1.7).rgb * 2.0;
+          float lit = smoothstep(1.0, 1.35, dot(top, vec3(0.3, 0.55, 0.15)));
+          c = mix(c, vec3(1.3, 1.18, 1.0), lit * 0.65 * gM);
+        }
+      }
       if (i == 6) {
         // the rock's bake is pale, made for a cliff's grey vertices: as gravel on a pan it lies darker, dark flecks kept
         c = mix(c, 0.7 + (c - 1.0) * 0.4, gGravel);
@@ -216,7 +230,9 @@ const GLSL_FRAG_MAIN = `
       vec2 lean = nm.rg * 2.0 - 1.0;
       if (feat) {
         // the feature fades where the ground keeps none of it: cracks fill to the layer's mean, ripples flatten to a grain
-        float gone = nm.b * (1.0 - (i == 5 ? gRipple : gCrack)) * (i == 5 ? 0.8 : 0.95);
+        // (where the tile is its turned copy, the copy's own mask: the cracks it shows are not the ones under uv)
+        float mask = gPick > 0.01 ? mix(nm.b, textureGrad(uGNrm, vec3(gUvB, float(i)), gDB.xy, gDB.zw).b, gPick) : nm.b;
+        float gone = mask * (1.0 - (i == 5 ? gRipple : gCrack)) * (i == 5 ? 0.8 : 0.95);
         c = mix(c, vec3(1.0), gone); lean *= 1.0 - gone;
       }
       gDetail += w[i] * c;
@@ -232,7 +248,7 @@ const GLSL_FRAG_MAIN = `
     // the stuff's own tone over the biome's palette: needle mats lie dark, a pan a touch darker and warmer, gravel and the
     // bare sand of a mixed floor (not a dune's, which ripples) go grey (gGrey takes the hue out of the vertex colour)
     float gNd = total > 0.0 ? w[0] / total : 0.0, gSd = total > 0.0 ? w[5] / total : 0.0;
-    gDetail *= mix(vec3(1.0), vec3(0.7, 0.64, 0.58), gNd) * mix(vec3(1.0), vec3(0.9, 0.85, 0.8), gPan * (1.0 - gGravel));
+    gDetail *= mix(vec3(1.0), mix(vec3(0.7, 0.64, 0.58), vec3(0.8, 0.73, 0.64), gMat), gNd) * mix(vec3(1.0), vec3(0.9, 0.85, 0.8), gPan * (1.0 - gGravel));
     gGrey = gGravel * 0.45 + gSd * 0.4 * (1.0 - vGk.y);
     // big soft patches over the lot, so no two hectares match: lighter and darker, a touch warmer and cooler
     float m = gNoise(vGp.xz * 0.031) * 0.55 + gNoise(vGp.xz * 0.0071 + 7.0) * 0.45;
