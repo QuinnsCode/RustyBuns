@@ -370,3 +370,18 @@ test("a claim on held lines, and the check routes, come back named", async () =>
   for (const [why, e, want] of cases) got.push([why, await tagOf(e), want]);
   expect(got.filter(([, tag, want]) => tag !== want)).toEqual([]);
 });
+
+test("a level not dug up, or not there, comes back named", async () => {
+  const call = await boot();
+  opened.push(call);
+  const as = (user: string | null) => codesplitter({ url: ORIGIN, retries: 0, send: async (r) => call(user, r.url.slice(ORIGIN.length), { method: r.method, headers: r.headers, ...(r.body && { body: await r.text() }) }) });
+  const anon = as(null);
+  const cases: [string, Effect.Effect<unknown, Failure<OpWithErrors>>, string][] = [
+    ["a level that isn't one", anon.call("list_level_files", { slug: "nope" }), "NoSuchLevel"],
+    ["a level not dug up yet", anon.call("read_level_file", { slug: "preact", path: "README.md" }), "LevelNotDug"],
+    ["forking one not dug up", anon.call("fork_level", { slug: "preact", body: {} }), "LevelNotDug"],
+  ];
+  const got = [];
+  for (const [why, e, want] of cases) got.push([why, await tagOf(e), want]);
+  expect(got.filter(([, tag, want]) => tag !== want)).toEqual([]);
+});

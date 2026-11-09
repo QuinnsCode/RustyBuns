@@ -129,6 +129,15 @@ export class HasHandle extends Schema.TaggedError<HasHandle>()("HasHandle", name
 export class SignInOff extends Schema.TaggedError<SignInOff>()("SignInOff", named) {}
 export class TooManyTokens extends Schema.TaggedError<TooManyTokens>()("TooManyTokens", named) {}
 export class NoSuchToken extends Schema.TaggedError<NoSuchToken>()("NoSuchToken", named) {}
+export class NoSuchLevel extends Schema.TaggedError<NoSuchLevel>()("NoSuchLevel", named) {}
+export class NoSuchWorktree extends Schema.TaggedError<NoSuchWorktree>()("NoSuchWorktree", named) {}
+export class NoSuchCommit extends Schema.TaggedError<NoSuchCommit>()("NoSuchCommit", named) {}
+export class LevelNotDug extends Schema.TaggedError<LevelNotDug>()("LevelNotDug", named) {}
+export class LevelTooBig extends Schema.TaggedError<LevelTooBig>()("LevelTooBig", named) {}
+export class MainMoves extends Schema.TaggedError<MainMoves>()("MainMoves", named) {}
+export class WorktreeExists extends Schema.TaggedError<WorktreeExists>()("WorktreeExists", named) {}
+export class WorktreeFailed extends Schema.TaggedError<WorktreeFailed>()("WorktreeFailed", named) {}
+export class NoArtifacts extends Schema.TaggedError<NoArtifacts>()("NoArtifacts", named) {}
 export class DesktopOnly extends Schema.TaggedError<DesktopOnly>()("DesktopOnly", named) {}
 export class NoDeployKey extends Schema.TaggedError<NoDeployKey>()("NoDeployKey", named) {}
 export class RunnerOnly extends Schema.TaggedError<RunnerOnly>()("RunnerOnly", named) {}
@@ -168,6 +177,7 @@ export const NAMED = {
   HandleTaken, HasHandle, SignInOff,
   TooManyTokens, NoSuchToken,
   DesktopOnly, NoDeployKey, RunnerOnly, NoHostedDeploys, NoSuchCheck, NotYourClaim, TakeTurns, LinesHeld, LinesQueued, LeftLine, GitHubRun, CheckTaken, CheckDone, DeployRunning, DiffCutShort, DeployWaits, PlanStale, HistoryTrimmed,
+  NoSuchLevel, LevelNotDug, LevelTooBig, NoArtifacts, NoSuchWorktree, NoSuchCommit, MainMoves, WorktreeExists, WorktreeFailed,
 } satisfies { [K in ErrorTag]: new (a: Named) => { readonly _tag: K } };
 
 // What any call can meet, whatever the operation: they come from before a route answers, or from no answer at all.
