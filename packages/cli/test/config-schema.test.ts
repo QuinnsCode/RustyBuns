@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { readdirSync, existsSync } from "node:fs";
+import { readdirSync, readFileSync, existsSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { Effect, Exit } from "effect";
 import { decodeConfig } from "../src/config-schema.ts";
@@ -7,7 +7,10 @@ import { forStage, type RustyBunsConfig } from "../src/config.ts";
 import { generateAlchemy } from "../src/gen/alchemy.ts";
 
 const apps = resolve(import.meta.dir, "../../../apps");
-const configs = readdirSync(apps).map((a) => join(apps, a, "rustybuns.config.ts")).filter((f) => existsSync(f));
+// A parked app (a "parked" note in its package.json) is out of the workspace, so its config's imports don't resolve.
+const parked = (a: string) => "parked" in JSON.parse(readFileSync(join(apps, a, "package.json"), "utf8"));
+const configs = readdirSync(apps).filter((a) => existsSync(join(apps, a, "package.json")) && !parked(a))
+  .map((a) => join(apps, a, "rustybuns.config.ts")).filter((f) => existsSync(f));
 
 // Every config in the repo is a real one: the schema must take all of them, or it would
 // reject apps that work (or one of them has a mistake nobody had caught).
@@ -23,7 +26,7 @@ const problems = (c: unknown) =>
 test("names each field, every problem at once", async () => {
   expect(await problems(ok)).toEqual([]);
   expect(await problems({ ...ok, bindings: { KV: { type: "kvv" }, DB: { type: "d1" } }, state: "shard" })).toEqual([
-    `bindings.KV.type: "kvv" isn't one of d1, kv, r2, durable_object, artifacts, images, send_email, ratelimit, vectorize, ai, container, queue, workflow, analytics_engine, worker_loader, hyperdrive, var, secret`,
+    `bindings.KV.type: "kvv" isn't one of d1, kv, r2, durable_object, service, artifacts, images, send_email, ratelimit, vectorize, ai, container, queue, workflow, analytics_engine, worker_loader, hyperdrive, var, secret`,
     "bindings.DB.databaseName: missing",
     `state: expected "shared" | "project", got "shard"`,
   ]);
