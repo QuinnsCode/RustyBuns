@@ -1,16 +1,16 @@
-import { beforeAll, expect, setDefaultTimeout, test } from "bun:test";
+import { expect, setDefaultTimeout } from "bun:test";
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { hookTokensManager, hookTokensPersist, hookTokensUtil } from "../scripts/hooktokens.ts";
-import { unpackPinned } from "./pinned.ts";
+import { unpackPinned, beforePinned, pinnedTest } from "./pinned.ts";
 
 // the first run downloads the pinned release into .cache, as rustybunsify.ts does
 setDefaultTimeout(60_000);
 
 let workers = "";
 let manager = "";
-beforeAll(async () => {
+beforePinned(async () => {
   workers = path.join(await unpackPinned(), "dist/server/server/workers");
   manager = readFileSync(path.join(workers, "manager.js"), "utf8");
   for (const [rel, change] of [["util.js", hookTokensUtil], ["persist.js", hookTokensPersist], ["manager.js", hookTokensManager]] as const)
@@ -20,7 +20,7 @@ beforeAll(async () => {
 const TOKEN = "0123456789abcdef0123456789abcdef";
 const info = (id: string) => ({ id, kind: "agent", provider: "claude", deskId: "", name: "Pixel", worktree: undefined });
 
-test("workers.json keeps a hash of each hook token, and a worker picked back up after a restart still signs in with its token", async () => {
+pinnedTest("workers.json keeps a hash of each hook token, and a worker picked back up after a restart still signs in with its token", async () => {
   const { saveWorkers, restoreWorkers } = await import(path.join(workers, "persist.js"));
   const { __rbHookOk } = await import(path.join(workers, "util.js"));
   const { DESK_BY_ID } = await import(path.join(workers, "../../shared/layout.js"));
@@ -47,7 +47,7 @@ test("workers.json keeps a hash of each hook token, and a worker picked back up 
   expect(JSON.parse(readFileSync(file, "utf8"))[0].hookHash).toBe(JSON.parse(saved)[0].hookHash);
 });
 
-test("an older workers.json's plaintext token is hashed on the way in and never written back", async () => {
+pinnedTest("an older workers.json's plaintext token is hashed on the way in and never written back", async () => {
   const { saveWorkers, restoreWorkers } = await import(path.join(workers, "persist.js"));
   const { __rbHookOk } = await import(path.join(workers, "util.js"));
   const { DESK_BY_ID } = await import(path.join(workers, "../../shared/layout.js"));
@@ -61,7 +61,7 @@ test("an older workers.json's plaintext token is hashed on the way in and never 
   expect(readFileSync(file, "utf8")).not.toContain(TOKEN);
 });
 
-test("a fresh worker signs in with its in-memory token, and a launch drops the old hash", async () => {
+pinnedTest("a fresh worker signs in with its in-memory token, and a launch drops the old hash", async () => {
   const { newWorker } = await import(path.join(workers, "worker.js"));
   const { __rbHookOk } = await import(path.join(workers, "util.js"));
   const w = newWorker(info("w3"), {});
