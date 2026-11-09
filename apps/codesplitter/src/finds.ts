@@ -5,15 +5,15 @@
 // The keys are what the client reports: the three backrooms modes, the unicycle on a file's history, the city,
 // the bartender in it, and a profile page.
 
-import { json, readBody, type Env } from "./env.ts";
+import { fail, json, readBody, type Env } from "./env.ts";
 
 export const SPOTS = ["horde", "wreck", "removed", "unicycle", "city", "bartender", "page"] as const;
 
 export async function findRoutes(req: Request, env: Env, p: string[], user: string | null): Promise<Response | null> {
   if (p[1] === "me" && p[2] === "finds" && !p[3] && req.method === "PUT") {
-    if (!user) return json({ error: "sign in first" }, 401);
+    if (!user) return fail("SignInFirst", "sign in first");
     const b = await readBody<"key">(req);
-    if (!SPOTS.includes(b.key as (typeof SPOTS)[number])) return json({ error: `key: one of ${SPOTS.join(", ")}` }, 400);
+    if (!SPOTS.includes(b.key as (typeof SPOTS)[number])) return fail("BadInput", `key: one of ${SPOTS.join(", ")}`);
     await env.DB.prepare("INSERT OR IGNORE INTO finds (name, key, at) VALUES (?, ?, ?)").bind(user, b.key, Date.now()).run();
     return json({ ok: true, ...(await findsOf(env, user, true)) });
   }

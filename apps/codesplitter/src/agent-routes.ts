@@ -241,7 +241,7 @@ export const ADMINS_ONLY = "hosted agents are limited to this site's admins (ADM
 export async function hostedBudget(env: Env): Promise<Response | null> {
   if (!env.AGENT_SANDBOX) return null;
   const over = await charge(env, "hosted", SITE);
-  return over ? json({ error: over }, 429) : null;
+  return over ? fail("BudgetSpent", over) : null;
 }
 
 /** `path`'s policy, from main's `.gitattributes` over the defaults, read as its owner. */
@@ -434,7 +434,7 @@ async function threadRoute(req: Request, env: Env, self: (req: Request) => Promi
   if (!first || first.owner !== owner || first.repo !== repo) return fail("NoSuchRun", "no such run");
   const thread = toRun(first, env).thread, origin = url.origin;
   if (sub.startsWith("files/")) {
-    if (req.method !== "GET") return json({ error: "GET" }, 405);
+    if (req.method !== "GET") return fail("WrongMethod", "GET only");
     const res = await threadFetch(env, owner, repo, thread, `/${sub}`);
     if (!res.ok) return fail("NoSuchFile", "no such file");
     const type = res.headers.get("content-type") ?? "", name = res.headers.get("x-name") ?? "file", picture = PICTURES.includes(type);
@@ -443,7 +443,7 @@ async function threadRoute(req: Request, env: Env, self: (req: Request) => Promi
       "content-disposition": `${picture ? "inline" : "attachment"}; filename="${name}"`, "cache-control": "private, max-age=3600" } });
   }
   if (sub === "ws") {
-    if (req.headers.get("upgrade")?.toLowerCase() !== "websocket") return json({ error: "a socket only" }, 426);
+    if (req.headers.get("upgrade")?.toLowerCase() !== "websocket") return fail("SocketOnly", "a socket only");
     const h = new Headers(req.headers);
     h.set("x-codesplitter-user", user);
     return threadFetch(env, owner, repo, thread, `/ws?after=${after}${url.searchParams.get("watch") === "1" ? "&watch=1" : ""}`, { headers: h });
@@ -456,7 +456,7 @@ async function threadRoute(req: Request, env: Env, self: (req: Request) => Promi
     await seeThread(env, user, owner, repo, thread).catch(() => {});
     return json({ thread, owner, ...(await threadMessages(env, owner, repo, thread, after)), runs });
   }
-  if (req.method !== "POST") return json({ error: "GET or POST" }, 405);
+  if (req.method !== "POST") return fail("WrongMethod", "GET or POST");
   let text: string, go = false, message: Message | null;
   if (sub === "files") {
     const name = url.searchParams.get("name")?.trim();

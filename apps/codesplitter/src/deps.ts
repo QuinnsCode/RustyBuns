@@ -104,7 +104,7 @@ import { workspaceDirs, workspaceGlobs } from "./fit.ts";
 import { diffToOps, merge3 } from "./sync.ts";
 import { checkEnv } from "./check-env.ts";
 import { isCleared, review, waitingNote } from "./deploy-review.ts";
-import { json, readBody, type Env } from "./env.ts";
+import { fail, json, readBody, type Env } from "./env.ts";
 import { execCommand, fromDisk, toDisk, type Exec } from "./agent-run.ts";
 import { CLAUDE_TOOLS, FIX_HARNESSES, harnessCommand, type Command, type Harness } from "./harness.ts";
 import { hitsFor } from "./watch.ts";
@@ -1718,8 +1718,8 @@ export async function depRoutes(req: Request, env: Env, p: string[], url: URL, u
   if (!(p[1] === "repos" && p[2] && p[3] && p[4] === "deps")) return null;
   const [owner, repo] = [p[2], p[3]];
   // Settings and reports quote the repo's test output, so they're the owner's alone.
-  if (user !== owner) return json({ error: "only the repo's owner can see its dependency doctor" }, 403);
-  if (!(await repoRow(env, owner, repo, "1"))) return json({ error: "not found" }, 404);
+  if (user !== owner) return fail("OwnerOnly", "only the repo's owner can see its dependency doctor");
+  if (!(await repoRow(env, owner, repo, "1"))) return fail("NoSuchRepo", "not found");
   await env.DB.prepare("INSERT OR IGNORE INTO dep_watches (owner, repo) VALUES (?, ?)").bind(owner, repo).run();
 
   if (!p[5] && req.method === "GET") {
@@ -1732,12 +1732,12 @@ export async function depRoutes(req: Request, env: Env, p: string[], url: URL, u
     const set: [column: string, value: unknown][] = [];
     for (const [k, f] of fields) {
       const w = f.write(s[k]);
-      if ("error" in w) return json({ error: w.error }, 400);
+      if ("error" in w) return fail("BadInput", w.error);
       set.push([f.column ?? k, w.value]);
     }
     if (s.on) {
       const others = await env.DB.prepare("SELECT COUNT(*) AS n FROM dep_watches WHERE owner = ? AND repo != ? AND enabled = 1").bind(owner, repo).first();
-      if ((others?.n as number) >= MAX_WATCHED) return json({ error: `the doctor watches ${MAX_WATCHED} of your repos at most: turn it off on one first` }, 400);
+      if ((others?.n as number) >= MAX_WATCHED) return fail("TooManyWatched", `the doctor watches ${MAX_WATCHED} of your repos at most: turn it off on one first`);
     }
     await env.DB.prepare(`UPDATE dep_watches SET ${set.map(([c]) => `${c} = ?`).join(", ")} WHERE owner = ? AND repo = ?`)
       .bind(...set.map(([, v]) => v), owner, repo).run();
@@ -1768,8 +1768,8 @@ export async function depRoutes(req: Request, env: Env, p: string[], url: URL, u
     // {rank}: this run's own ranking, "bring these up, solve around them", run once.
     const b = await readBody<"rank">(req);
     const rank = b.rank === undefined ? undefined : rankOf(b.rank);
-    if (rank === null) return json({ error: RANK_ERROR }, 400);
-    if (!(await claim(env, owner, repo))) return json({ error: "already checking" }, 409);
+    if (rank === null) return fail("BadInput", RANK_ERROR);
+    if (!(await claim(env, owner, repo))) return fail("DoctorRunning", "already checking");
     const done = runDoctor(env, caller(self, url.origin), owner, repo, rank ? { rank } : {});
     // A run that installs and tests takes minutes: answer now, and the page polls.
     // Not on Cloudflare, where work left after the response is cut off.

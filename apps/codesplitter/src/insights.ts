@@ -23,7 +23,7 @@
 // Edits over a file's socket never reach the Worker, so the file's DO notes the
 // first one on each socket (file-do.ts).
 
-import { json, type Env } from "./env.ts";
+import { fail, json, type Env } from "./env.ts";
 import { actingAs, identify, isAdmin } from "./identity.ts";
 import { ruleFor, viaMcp } from "./limits.ts";
 import { conflictStats } from "./usage.ts";
@@ -208,8 +208,8 @@ async function health(env: Env, now: number): Promise<{ db_ms: number; checks: C
  */
 export async function insightRoutes(req: Request, env: Env, p: string[], url: URL, admin: boolean): Promise<Response | null> {
   if (p[1] !== "admin" || p[2] !== "insights" || p[3]) return null;
-  if (!admin) return json({ error: "admins only" }, 403);
-  if (req.method !== "GET") return json({ error: "GET only" }, 405);
+  if (!admin) return fail("AdminsOnly", "admins only");
+  if (req.method !== "GET") return fail("WrongMethod", "GET only");
   const now = Date.now(), days = Math.min(KEEP_DAYS, Math.max(1, Number(url.searchParams.get("days")) || 7));
   const from = now - (now % DAY) - (days - 1) * DAY;
   const all = async (sql: string, ...args: unknown[]) => (await env.DB.prepare(sql).bind(...args).all<Record<string, any>>()).results;

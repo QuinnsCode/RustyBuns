@@ -1,6 +1,6 @@
 // POST /api/repos/:o/:r/do/edit?path=&branch=: claim the lines the ops touch (in line if held), apply them naming the claim, release it.
 // Every check lives in the routes it calls (do/claims, do/ops), so access, locks, policy and limits answer as they do there.
-import { json, need, readBody } from "./env.ts";
+import { fail, json, need, readBody } from "./env.ts";
 import { arr, int, num, obj, opt, raw, str } from "@rustybuns/util/guard";
 import { actingAs, onBehalfOf } from "./identity.ts";
 import { isPlainObject } from "./util.ts";
@@ -22,8 +22,8 @@ const bodyOf = (r: Response): Promise<unknown> => r.json().catch(() => null);
 
 export async function editRoutes(req: Request, p: string[], url: URL, user: string | null, self: (r: Request) => Promise<Response>): Promise<Response | null> {
   if (!(p[1] === "repos" && p[2] && p[3] && p[4] === "do" && p[5] === "edit" && !p[6])) return null;
-  if (req.method !== "POST") return json({ error: "POST {ops, id?, task?, ifRev?, timeout?}" }, 405);
-  if (!user) return json({ error: "sign in to edit" }, 401);
+  if (req.method !== "POST") return fail("WrongMethod", "POST {ops, id?, task?, ifRev?, timeout?}");
+  if (!user) return fail("SignInFirst", "sign in to edit");
   const whole = opt(int(-Infinity, Infinity));
   const b = need(await readBody(req), obj({ ops: arr(raw, Infinity, { min: 1 }), id: opt(str()), task: opt(str(Infinity, { min: 0 })), ifRev: whole, proto: whole, timeout: opt(num(0, MAX_WAIT_S)) }));
   if (b instanceof Response) return b;

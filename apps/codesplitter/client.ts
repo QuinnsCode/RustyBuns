@@ -173,6 +173,33 @@ export class DiffCutShort extends Schema.TaggedError<DiffCutShort>()("DiffCutSho
 export class DeployWaits extends Schema.TaggedError<DeployWaits>()("DeployWaits", named) {}
 export class PlanStale extends Schema.TaggedError<PlanStale>()("PlanStale", named) {}
 export class HistoryTrimmed extends Schema.TaggedError<HistoryTrimmed>()("HistoryTrimmed", named) {}
+export class TooManyWebhooks extends Schema.TaggedError<TooManyWebhooks>()("TooManyWebhooks", named) {}
+export class TooManyWatched extends Schema.TaggedError<TooManyWatched>()("TooManyWatched", named) {}
+export class TooManyCiTokens extends Schema.TaggedError<TooManyCiTokens>()("TooManyCiTokens", named) {}
+export class FollowToVisit extends Schema.TaggedError<FollowToVisit>()("FollowToVisit", named) {}
+export class CrossSite extends Schema.TaggedError<CrossSite>()("CrossSite", named) {}
+export class BotCheck extends Schema.TaggedError<BotCheck>()("BotCheck", named) {}
+export class NoSuchWebhook extends Schema.TaggedError<NoSuchWebhook>()("NoSuchWebhook", named) {}
+export class NoSuchDelivery extends Schema.TaggedError<NoSuchDelivery>()("NoSuchDelivery", named) {}
+export class NoSuchCar extends Schema.TaggedError<NoSuchCar>()("NoSuchCar", named) {}
+export class NoDeletedHandle extends Schema.TaggedError<NoDeletedHandle>()("NoDeletedHandle", named) {}
+export class NoPublicCity extends Schema.TaggedError<NoPublicCity>()("NoPublicCity", named) {}
+export class NoSuchProgram extends Schema.TaggedError<NoSuchProgram>()("NoSuchProgram", named) {}
+export class NoSuchGrant extends Schema.TaggedError<NoSuchGrant>()("NoSuchGrant", named) {}
+export class NoSuchBoardRow extends Schema.TaggedError<NoSuchBoardRow>()("NoSuchBoardRow", named) {}
+export class NoSuchFollow extends Schema.TaggedError<NoSuchFollow>()("NoSuchFollow", named) {}
+export class NoSuchOldGit extends Schema.TaggedError<NoSuchOldGit>()("NoSuchOldGit", named) {}
+export class NoPulse extends Schema.TaggedError<NoPulse>()("NoPulse", named) {}
+export class WrongMethod extends Schema.TaggedError<WrongMethod>()("WrongMethod", named) {}
+export class DoctorRunning extends Schema.TaggedError<DoctorRunning>()("DoctorRunning", named) {}
+export class RoomFull extends Schema.TaggedError<RoomFull>()("RoomFull", named) {}
+export class ChecksElsewhere extends Schema.TaggedError<ChecksElsewhere>()("ChecksElsewhere", named) {}
+export class CarUnsettled extends Schema.TaggedError<CarUnsettled>()("CarUnsettled", named) {}
+export class NoReleaseLanes extends Schema.TaggedError<NoReleaseLanes>()("NoReleaseLanes", named) {}
+export class TooManyPrograms extends Schema.TaggedError<TooManyPrograms>()("TooManyPrograms", named) {}
+export class NoVectorIndex extends Schema.TaggedError<NoVectorIndex>()("NoVectorIndex", named) {}
+export class NoArtifactsNext extends Schema.TaggedError<NoArtifactsNext>()("NoArtifactsNext", named) {}
+export class SocketOnly extends Schema.TaggedError<SocketOnly>()("SocketOnly", named) {}
 
 type Named = { message: string; status: number; reply: unknown };
 /** One class per tag the server sends: a tag added to ERRORS without one here won't compile. */
@@ -196,6 +223,7 @@ export const NAMED = {
   DesktopOnly, NoDeployKey, RunnerOnly, NoHostedDeploys, NoSuchCheck, NotYourClaim, TakeTurns, LinesHeld, LinesQueued, LeftLine, GitHubRun, CheckTaken, CheckDone, DeployRunning, DiffCutShort, DeployWaits, PlanStale, HistoryTrimmed,
   NoSuchLevel, LevelNotDug, LevelTooBig, NoArtifacts, NoSuchWorktree, NoSuchCommit, MainMoves, WorktreeExists, WorktreeFailed,
   NoSecretsKey, NotYourShare, NotAGitHubFork, ForkBaseGone, NoSuchCut, NoSuchShare, NoSuchProvider, TryRunning, TagRefused, StillCopying, NothingNew, PickClash, NothingToPick, DigestRunning, CommitTooBig, UpstreamTooBig, GitHubRateLimit,
+  TooManyWebhooks, TooManyWatched, TooManyCiTokens, FollowToVisit, CrossSite, BotCheck, NoSuchWebhook, NoSuchDelivery, NoSuchCar, NoDeletedHandle, NoPublicCity, NoSuchProgram, NoSuchGrant, NoSuchBoardRow, NoSuchFollow, NoSuchOldGit, NoPulse, WrongMethod, DoctorRunning, RoomFull, ChecksElsewhere, CarUnsettled, NoReleaseLanes, TooManyPrograms, NoVectorIndex, NoArtifactsNext, SocketOnly,
 } satisfies { [K in ErrorTag]: new (a: Named) => { readonly _tag: K } };
 
 // What any call can meet, whatever the operation: they come from before a route answers, or from no answer at all.

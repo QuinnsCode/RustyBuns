@@ -17,7 +17,7 @@
 //   GET /api/repos/:o/:r/audit   the repo's last 100 (owner only), on its settings
 //   GET /api/tokens/audit        what you did, the last 100 (cookie only), on your tokens page
 
-import { json, type Env } from "./env.ts";
+import { fail, json, type Env } from "./env.ts";
 
 export type Via = "cookie" | "token" | "oauth" | "job" | "invite";
 /** What each request was signed in with, set where it's identified (worker.ts). */
@@ -42,13 +42,13 @@ export async function audit(env: Env, req: Request | null, e: Entry) {
 export async function auditRoutes(req: Request, env: Env, p: string[], user: string | null): Promise<Response | null> {
   if (req.method !== "GET") return null;
   if (p[1] === "tokens" && p[2] === "audit" && !p[3]) {
-    if (!user) return json({ error: "sign in first" }, 401);
+    if (!user) return fail("SignInFirst", "sign in first");
     const { results } = await env.DB.prepare(`SELECT ${COLUMNS} FROM audit WHERE actor = ? ORDER BY id DESC LIMIT ${LIMIT}`).bind(user).all();
     return json(results);
   }
   if (p[1] === "repos" && p[2] && p[3] && p[4] === "audit" && !p[5]) {
     // Who's in the crew and how they got there is the owner's to see.
-    if (user !== p[2]) return json({ error: "owner only" }, 403);
+    if (user !== p[2]) return fail("OwnerOnly", "owner only");
     const { results } = await env.DB.prepare(`SELECT ${COLUMNS} FROM audit WHERE owner = ? AND repo = ? ORDER BY id DESC LIMIT ${LIMIT}`).bind(p[2], p[3]).all();
     return json(results);
   }

@@ -7,7 +7,7 @@
 //   DELETE /api/me/programs/:name
 // `execute` takes { program: name, input? } in place of code; the program reads its `input`.
 
-import { json, need, readBody, type Env } from "./env.ts";
+import { fail, json, need, readBody, type Env } from "./env.ts";
 import { obj, str } from "@rustybuns/util/guard";
 
 export const MAX_PROGRAMS = 50;
@@ -16,7 +16,7 @@ const NAME = /^[a-z0-9][a-z0-9_-]{0,47}$/;
 
 export async function programRoutes(req: Request, env: Env, p: string[], user: string | null): Promise<Response | null> {
   if (p[1] !== "me" || p[2] !== "programs" || p[4]) return null;
-  if (!user) return json({ error: "sign in first" }, 401);
+  if (!user) return fail("SignInFirst", "sign in first");
   const name = p[3];
   if (!name) {
     if (req.method !== "GET") return null;
@@ -25,14 +25,14 @@ export async function programRoutes(req: Request, env: Env, p: string[], user: s
   }
   if (req.method === "GET") {
     const row = await env.DB.prepare("SELECT name, description, code, updated_at FROM programs WHERE owner = ? AND name = ?").bind(user, name).first();
-    return row ? json(row) : json({ error: `no saved program ${name}` }, 404);
+    return row ? json(row) : fail("NoSuchProgram", `no saved program ${name}`);
   }
   if (req.method === "DELETE") {
     const r = await env.DB.prepare("DELETE FROM programs WHERE owner = ? AND name = ?").bind(user, name).run();
-    return r.meta?.changes ? json({ ok: true }) : json({ error: `no saved program ${name}` }, 404);
+    return r.meta?.changes ? json({ ok: true }) : fail("NoSuchProgram", `no saved program ${name}`);
   }
   if (req.method !== "PUT") return null;
-  if (!NAME.test(name)) return json({ error: "name: lower-case letters, digits, - and _, up to 48, starting with a letter or digit" }, 400);
+  if (!NAME.test(name)) return fail("BadInput", "name: lower-case letters, digits, - and _, up to 48, starting with a letter or digit");
   const b = need(await readBody(req), obj({ code: str(MAX_CODE, { re: /\S/ }), description: str(300, { min: 0, dflt: "" }) }),
     `code is required: the body of an async function, up to ${MAX_CODE.toLocaleString("en")} characters`);
   if (b instanceof Response) return b;
@@ -44,6 +44,6 @@ export async function programRoutes(req: Request, env: Env, p: string[], user: s
     WHERE EXISTS (SELECT 1 FROM programs WHERE owner = ?1 AND name = ?2) OR (SELECT COUNT(*) FROM programs WHERE owner = ?1) < ?6
     ON CONFLICT (owner, name) DO UPDATE SET description = excluded.description, code = excluded.code, updated_at = excluded.updated_at`)
     .bind(user, name, description, b.code, at, MAX_PROGRAMS).run();
-  if (!r.meta?.changes) return json({ error: `at most ${MAX_PROGRAMS} saved programs: delete one first` }, 409);
+  if (!r.meta?.changes) return fail("TooManyPrograms", `at most ${MAX_PROGRAMS} saved programs: delete one first`);
   return json({ name, description, updated_at: at }, had ? 200 : 201);
 }

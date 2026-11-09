@@ -3,7 +3,7 @@
 // and, when `at` comes, {t:"draining"}; from then on its file takes no new claims or places in line (file-do.ts drain).
 // `rustybuns deploy --drain-url` calls it, waits out the warning, then deploys. { cancel: true } lifts it.
 
-import { json, readBody, type Env } from "./env.ts";
+import { fail, json, readBody, type Env } from "./env.ts";
 import { toFile } from "./archive.ts";
 import { sha256 } from "./util.ts";
 
@@ -26,7 +26,7 @@ export async function drainRoutes(req: Request, env: Env, p: string[]): Promise<
   if (!(p[1] === "admin" && p[2] === "drain" && !p[3] && req.method === "POST")) return null;
   const secret = env.DRAIN_SECRET, given = req.headers.get("authorization")?.replace(/^Bearer /, "") ?? "";
   // Compared as digests so the check takes the same time wherever it differs.
-  if (!secret || (await sha256(given)) !== (await sha256(secret))) return json({ error: "not found" }, 404);
+  if (!secret || (await sha256(given)) !== (await sha256(secret))) return fail("NoSuchRoute", "not found");
   const b = await readBody<"in" | "cancel">(req), rooms = await activeRooms(env);
   const sent = await Promise.all(rooms.map((r) => toFile(env, r.owner, r.repo, r.path, "drain", "drain", { method: "POST", body: JSON.stringify(b.cancel ? { cancel: true } : { in: b.in }) }, "", r.branch ?? undefined)
     .then((res) => res.ok, () => false)));

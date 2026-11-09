@@ -18,7 +18,8 @@ import { access, artifactsFor, flushPending, handleFor, MAX_BYTES, MAX_LINES, re
 import { copyObjects, GIT_BOT, rawObj, type Obj } from "./git.ts";
 import { digCap } from "./github.ts";
 import { usage } from "./limits.ts";
-import { json, type Env } from "./env.ts";
+import { fail, json, type Env } from "./env.ts";
+import type { ErrorTag } from "./openapi.ts";
 import { repoRow } from "./repos.ts";
 import type { RepoRef } from "./repos";
 
@@ -44,16 +45,16 @@ export async function freshRoutes(req: Request, env: Env, p: string[], url: URL,
   if (p[4] === "limits" && req.method === "GET") return json(await limits(env, owner, repo, user));
   if (p[4] !== "fresh") return null;
   if (req.method === "GET") return json(await advance(env, owner, repo));
-  if (user !== owner) return json({ error: "owner only" }, 403);
+  if (user !== owner) return fail("OwnerOnly", "owner only");
   if (req.method === "POST") {
     const f = await start(env, owner, repo);
-    return "status" in f ? json({ error: f.error }, f.status) : json(await advance(env, owner, repo), 202);
+    return "tag" in f ? fail(f.tag, f.error) : json(await advance(env, owner, repo), 202);
   }
   if (req.method === "DELETE") {
     const name = url.searchParams.get("artifact") ?? "";
     const r = await repoRow(env, owner, repo, "old_artifacts, namespace");
     const old: string[] = JSON.parse((r?.old_artifacts as string) ?? "[]");
-    if (!old.includes(name)) return json({ error: "that isn't git this repo moved off" }, 404);
+    if (!old.includes(name)) return fail("NoSuchOldGit", "that isn't git this repo moved off");
     await artifactsFor(env, r?.namespace)?.delete?.(name);
     await env.DB.prepare("UPDATE repos SET old_artifacts = ? WHERE owner = ? AND name = ?").bind(JSON.stringify(old.filter((n) => n !== name)), owner, repo).run();
     return json({ deleted: name });
@@ -93,13 +94,13 @@ export async function startIfFull(env: Env, owner: string, repo: string) {
   const r = await repoRow(env, owner, repo, "git_bytes, git_error");
   if (!isFull(r) || running(await row(env, owner, repo))) return null;
   const f = await start(env, owner, repo);
-  return "status" in f ? null : advance(env, owner, repo);
+  return "tag" in f ? null : advance(env, owner, repo);
 }
 
-async function start(env: Env, owner: string, repo: string): Promise<Fresh | { error: string; status: number }> {
+async function start(env: Env, owner: string, repo: string): Promise<Fresh | { error: string; tag: ErrorTag }> {
   // A mirror's git builds on upstream's history (mirror.ts); one root commit would cut it off.
   if (await repoRow(env, owner, repo, "1", { mirrored: true }))
-    return { error: "a mirror's git shares upstream's history, so it doesn't start fresh", status: 409 };
+    return { error: "a mirror's git shares upstream's history, so it doesn't start fresh", tag: "AlreadyMirror" };
   const f = await row(env, owner, repo);
   if (running(f)) return f!;
   if (f?.state === "failed") {
@@ -110,9 +111,9 @@ async function start(env: Env, owner: string, repo: string): Promise<Fresh | { e
   const h = await handleFor(env, owner, repo);
   const r = await repoRow(env, owner, repo, "artifact, namespace");
   const arts = artifactsFor(env, r?.namespace);
-  if (!h || !arts) return { error: "this repo has no git to move", status: 409 };
+  if (!h || !arts) return { error: "this repo has no git to move", tag: "NoGit" };
   const [tip] = await h.handle.log({ ref: h.branch, limit: 1 });
-  if (!tip) return { error: "nothing in git yet", status: 409 };
+  if (!tip) return { error: "nothing in git yet", tag: "NoGit" };
   const previous = r!.artifact as string;
   const art = await arts.create(`${previous.replace(/\.f[0-9a-z]+$/, "")}.f${Date.now().toString(36)}`, { description: `${owner}/${repo}, started fresh`, setDefaultBranch: h.branch });
   await env.DB.batch([

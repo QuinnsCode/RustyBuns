@@ -1469,7 +1469,7 @@ const MIRROR_BODY = obj({ url: str(4096, { min: 0, dflt: "" }), name: opt(str(10
 /** POST /api/mirrors {url, name?, visibility?}: clone any git remote into a repo you own that keeps in step with it. */
 export async function mirrorRoutes(req: Request, env: Env, p: string[], user: string | null): Promise<Response | null> {
   if (p[1] !== "mirrors" || p[2] || req.method !== "POST") return null;
-  if (!user) return json({ error: "sign in first" }, 401);
+  if (!user) return fail("SignInFirst", "sign in first");
   const lg = localGit(env);
   if (!lg) return fail("GitUnavailable", "mirrors need git on your machine: dig it up in the desktop app");
   const b = need(await readBody(req), MIRROR_BODY);
@@ -1585,7 +1585,7 @@ async function turnable(env: Env, owner: string, repo: string): Promise<Turn | {
 /** GET|POST /api/repos/:o/:r/mirror/turn, for the owner. */
 export async function turnRoute(req: Request, env: Env, owner: string, repo: string, user: string | null) {
   if (user !== owner) return fail("OwnerOnly", "owner only");
-  if (req.method !== "GET" && req.method !== "POST") return json({ error: "GET or POST" }, 405);
+  if (req.method !== "GET" && req.method !== "POST") return fail("WrongMethod", "GET or POST");
   const b = req.method === "POST" ? await readBody<"ahead" | "pullOnly">(req) : {};
   const turned = await serial(owner, repo, async () => {
     const t = await turnable(env, owner, repo);

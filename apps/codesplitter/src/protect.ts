@@ -5,7 +5,7 @@
 //
 //   GET|PUT /api/repos/:o/:r/protect   {on: boolean}  (PUT: owner only)
 import { revokeSockets } from "./archive.ts";
-import { json, readBody, type Env } from "./env.ts";
+import { fail, json, readBody, type Env } from "./env.ts";
 import { PIPELINE_FILE } from "./pipeline.ts";
 
 export async function protectOn(env: Env, owner: string, repo: string): Promise<boolean> {
@@ -16,7 +16,7 @@ export async function protectOn(env: Env, owner: string, repo: string): Promise<
 /** An error response when `user` may not write main directly here, else null. */
 export async function mainClosed(env: Env, owner: string, repo: string, user: string | null | undefined): Promise<Response | null> {
   if (user === owner || !(await protectOn(env, owner, repo))) return null;
-  return json({ error: "main is protected: edit on a branch, and the owner merges it", protected: true }, 403);
+  return fail("MainProtected", "main is protected: edit on a branch, and the owner merges it", { protected: true });
 }
 
 /** The files that set the path policy, the checks' commands and the merge hooks: only the owner rewrites them live on main (#1567). */
@@ -25,15 +25,15 @@ export const POLICY_FILES = new Set([".gitattributes", "codesplitter.ci", PIPELI
 /** An error response when `user` may not edit this path live on main (protect-main or not), else null. */
 export function policyClosed(owner: string, path: string, user: string | null | undefined): Response | null {
   if (user === owner || !POLICY_FILES.has(path.replace(/^(\.\/)+/, ""))) return null;
-  return json({ error: `only the owner edits ${path} on main: change it on a branch, and the owner merges it`, policy: true }, 403);
+  return fail("PolicyFile", `only the owner edits ${path} on main: change it on a branch, and the owner merges it`, { policy: true });
 }
 
 export async function protectRoute(req: Request, env: Env, owner: string, repo: string, user: string | null): Promise<Response> {
   if (req.method === "GET") return json({ on: await protectOn(env, owner, repo) });
-  if (req.method !== "PUT") return json({ error: "GET or PUT" }, 405);
-  if (user !== owner) return json({ error: "only the owner protects main" }, 403);
+  if (req.method !== "PUT") return fail("WrongMethod", "GET or PUT");
+  if (user !== owner) return fail("OwnerOnly", "only the owner protects main");
   const b = await readBody<"on">(req);
-  if (typeof b.on !== "boolean") return json({ error: "{on: true|false}, please" }, 400);
+  if (typeof b.on !== "boolean") return fail("BadInput", "{on: true|false}, please");
   await env.DB.prepare("INSERT INTO protect_main (owner, repo, on_) VALUES (?, ?, ?) ON CONFLICT (owner, repo) DO UPDATE SET on_ = excluded.on_").bind(owner, repo, b.on ? 1 : 0).run();
   // A crew socket checked its write flag at the upgrade: close the ones open on main so they come back read-only.
   if (b.on) await revokeSockets(env, owner, repo, { keep: [owner] }, true);

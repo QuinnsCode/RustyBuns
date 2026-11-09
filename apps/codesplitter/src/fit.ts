@@ -13,7 +13,7 @@ import { fit, type Fit } from "@rustybuns/cli/fit";
 import type { Doc } from "./lines.ts";
 import type { Env } from "./env.ts";
 import { actingAs } from "./identity.ts";
-import { json } from "./env.ts";
+import { fail, json } from "./env.ts";
 
 type Self = (r: Request) => Promise<Response>;
 type Entry = { path: string; type: string };
@@ -55,7 +55,7 @@ export async function workspaceDirs(globs: string[], list: (dir: string) => Prom
 
 export async function repoFit(env: Env, self: Self, origin: string, owner: string, repo: string, user: string | null, dir = ""): Promise<Response> {
   dir = dir.replace(/^\/+|\/+$/g, "");
-  if (dir.split("/").some((s) => s === ".." || s === ".")) return json({ error: "dir: a folder in the repo" }, 400);
+  if (dir.split("/").some((s) => s === ".." || s === ".")) return fail("BadInput", "dir: a folder in the repo");
   const get = (path: string) => { const r = new Request(origin + `/api/repos/${owner}/${repo}` + path); if (user) actingAs.set(r, user); return self(r); };
   const tree = async (d: string) => {
     const r = await get(`/tree?path=${encodeURIComponent(d)}`);
@@ -85,7 +85,7 @@ export async function repoFit(env: Env, self: Self, origin: string, owner: strin
   };
 
   const t = await tree(dir);
-  if (dir && !t?.entries.length) return json({ error: `no folder ${dir} in this repo` }, 404);
+  if (dir && !t?.entries.length) return fail("NoSuchFolder", `no folder ${dir} in this repo`);
   if (!t) return json({ error: "this repo's files aren't ready yet" }, 202);
   // A repo with no commit yet isn't cached; its files are all still in flight.
   const key = t.commit && FIT_V + t.commit.hash;

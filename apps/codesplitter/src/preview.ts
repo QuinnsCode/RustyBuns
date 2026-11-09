@@ -25,7 +25,7 @@ import { arr, Bad, bool, check, int, nul, num, obj, oneOf, opt, raw, str, type G
 import { access as artifactAccess, handleFor } from "./archive.ts";
 import { settings } from "./deploy.ts";
 import { isCleared, review, waitingNote } from "./deploy-review.ts";
-import { json, type Env } from "./env.ts";
+import { fail, json, type Env } from "./env.ts";
 import { repoRow } from "./repos.ts";
 
 // A run is one wire shape: the deploy runner (deploy-runner.ts) answers it, deploy.ts reads it, both through these guards.
@@ -384,8 +384,8 @@ export async function previewRoutes(req: Request, env: Env, p: string[], user: s
   if (!(p[1] === "repos" && p[2] && p[3] && p[4] === "preview" && !p[5])) return null;
   const [owner, repo] = [p[2], p[3]], key = `${owner}/${repo}`;
   // It deploys with this machine's logins and shows the repo's output: the owner's alone.
-  if (user !== owner) return json({ error: "only the repo's owner can run a preview deploy" }, 403);
-  if (!(await repoRow(env, owner, repo, "1"))) return json({ error: "not found" }, 404);
+  if (user !== owner) return fail("OwnerOnly", "only the repo's owner can run a preview deploy");
+  if (!(await repoRow(env, owner, repo, "1"))) return fail("NoSuchRepo", "no such repo");
   const runner = runnerFor(env);
   if (req.method === "GET") {
     // On the site, the dependency doctor's previews run in the repo's deploy container (deploy-runner.ts).
@@ -394,18 +394,18 @@ export async function previewRoutes(req: Request, env: Env, p: string[], user: s
     return json({ can_run: !!runner, ...(await history(env, owner, repo, true, live)) });
   }
   if (req.method !== "POST") return null;
-  if (!runner) return json({ error: "preview deploys run on the desktop app, with your own logins" }, 400);
-  if (runs.get(key) && !runs.get(key)!.done) return json({ error: "a preview is already running" }, 409);
+  if (!runner) return fail("DesktopOnly", "preview deploys run on the desktop app, with your own logins");
+  if (runs.get(key) && !runs.get(key)!.done) return fail("DeployRunning", "a preview is already running");
   // The crew's remote when there is one: a preview builds the real private lines.
   const h = await handleFor(env, owner, repo, true);
   const art = h && await artifactAccess(h.handle, h.remote, "read", 3600);
-  if (!art) return json({ error: "this repo has no git remote yet: commit its files first" }, 400);
+  if (!art) return fail("NoGit", "this repo has no git remote yet: commit its files first");
   const remote = art.remote.replace("://", `://x:${art.token.split("?")[0]}@`);
   // Main's code runs here with this machine's logins, as a deploy's does: commits that aren't the owner's own wait for their approval
   // (deploy-review.ts). The review reads the same crew remote the clone comes from, so the clone has to be the tip it cleared:
   // a crew commit landing in between fails the clone rather than running unread.
   const checked = await review(env, owner, repo);
-  if (!isCleared(checked)) return json({ error: waitingNote(checked), review: { tip: checked.tip, commits: checked.commits, more: checked.more } }, 409);
+  if (!isCleared(checked)) return fail("DeployWaits", waitingNote(checked), { review: { tip: checked.tip, commits: checked.commits, more: checked.more } });
   const { dir } = await settings(env, owner, repo);
   const id = crypto.randomUUID().slice(0, 8);
   const run: Run = { id, at: Date.now(), stage: `preview-${id}`, steps: STEPS.map((key) => ({ key, status: "waiting", out: "" })), done: false };

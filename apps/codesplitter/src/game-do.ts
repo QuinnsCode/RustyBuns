@@ -26,7 +26,7 @@
 //   {t:"note", text}                 why a start or ready did nothing
 // Players live on their sockets (attachments survive hibernation); the stored keys are the round and the setup.
 
-import { json } from "./env.ts";
+import { fail, json } from "./env.ts";
 
 declare const WebSocketPair: { new (): Record<0 | 1, unknown> };
 
@@ -74,7 +74,7 @@ export class GameRoom {
       const r = await this.round();
       return json({ state: r.state, players: this.sockets().map((ws) => this.me(ws).user) });
     }
-    if (this.sockets().length >= MAX_PLAYERS) return json({ error: "room is full" }, 429);
+    if (this.sockets().length >= MAX_PLAYERS) return fail("RoomFull", "room is full");
     const [client, server] = Object.values(new WebSocketPair()) as [unknown, any];
     this.ctx.acceptWebSocket(server);
     const r = await this.round();

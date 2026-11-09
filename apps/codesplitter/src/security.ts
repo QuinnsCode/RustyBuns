@@ -12,7 +12,7 @@
 //              mail, ...) in memory at each location before D1's counters write a row (limits.ts).
 
 import { createHash } from "node:crypto";
-import { json, type Env } from "./env.ts";
+import { fail, json, type Env } from "./env.ts";
 
 /** Turnstile's script and its iframe come from here. */
 export const TURNSTILE_ORIGIN = "https://challenges.cloudflare.com";
@@ -80,7 +80,7 @@ export function crossSite(req: Request, env: Env): Response | null {
   const origin = req.headers.get("origin");
   const ours = (o: string) => ownOrigin(o, new URL(req.url)) || (!!env.BETTER_AUTH_URL && o === new URL(env.BETTER_AUTH_URL).origin);
   const foreign = origin ? !ours(origin) : req.headers.get("sec-fetch-site") === "cross-site";
-  return foreign ? json({ error: "cross-site request refused: send it from this site, or with Authorization: Bearer" }, 403) : null;
+  return foreign ? fail("CrossSite", "cross-site request refused: send it from this site, or with Authorization: Bearer") : null;
 }
 
 /** Turnstile is on: the page shows the widget and these routes want its answer. */
@@ -94,7 +94,7 @@ export const wantsTurnstile = (method: string, p: string[]) =>
 export async function turnstile(req: Request, env: Env): Promise<Response | null> {
   if (!turnstileOn(env)) return null;
   const answer = req.headers.get("x-turnstile");
-  const refuse = (why: string) => json({ error: `bot check: ${why}` }, 403);
+  const refuse = (why: string) => fail("BotCheck", `bot check: ${why}`);
   if (!answer) return refuse("solve the check on the page and try again");
   const form = new FormData();
   form.set("secret", env.TURNSTILE_SECRET!);

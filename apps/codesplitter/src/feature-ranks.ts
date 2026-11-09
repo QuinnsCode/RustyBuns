@@ -4,7 +4,7 @@
 //   POST /api/feature-comments {text}  one comment, and then a 10 minute wait
 // Scores are the average of the tiers people gave (S 4, A 3, B 2, C 1), unranked left out.
 
-import { json, readBody, type Env } from "./env.ts";
+import { fail, json, readBody, type Env } from "./env.ts";
 
 export const TIERS = ["S", "A", "B", "C"] as const;
 export const POINTS: Record<string, number> = { S: 4, A: 3, B: 2, C: 1 };
@@ -48,11 +48,11 @@ export async function featureRankRoutes(req: Request, env: Env, p: string[], use
     const next = user ? Math.max(0, (await lastComment(env.DB, user)) + COMMENT_GAP_MS) : 0;
     return json({ signed_in: !!user, scores, mine, comments: said, comment_after: next > now ? next : 0 });
   }
-  if (!user) return json({ error: "sign in to rank the features" }, 401);
+  if (!user) return fail("SignInFirst", "sign in to rank the features");
   const body = await readBody<"tiers" | "text">(req);
   if (rank) {
     const tiers = parseTiers(body.tiers);
-    if (typeof tiers === "string") return json({ error: tiers }, 400);
+    if (typeof tiers === "string") return fail("BadInput", tiers);
     await env.DB.batch([
       env.DB.prepare("DELETE FROM feature_ranks WHERE user = ?").bind(user),
       ...Object.entries(tiers).map(([f, t]) => env.DB.prepare("INSERT INTO feature_ranks (user, feature, tier, at) VALUES (?, ?, ?, ?)").bind(user, f, t, now)),
@@ -60,7 +60,7 @@ export async function featureRankRoutes(req: Request, env: Env, p: string[], use
     return json({ tiers });
   }
   const text = typeof body.text === "string" ? body.text.trim().slice(0, 280) : "";
-  if (!text) return json({ error: "write something first" }, 400);
+  if (!text) return fail("BadInput", "write something first");
   const wait = (await lastComment(env.DB, user)) + COMMENT_GAP_MS - now;
   if (wait > 0) return json({ error: `thanks for the enthusiasm! Another comment in ${Math.ceil(wait / 60_000)} min.`, comment_after: now + wait }, 429, { "retry-after": String(Math.ceil(wait / 1000)) });
   await env.DB.prepare("INSERT INTO feature_comments (user, text, at) VALUES (?, ?, ?)").bind(user, text, now).run();

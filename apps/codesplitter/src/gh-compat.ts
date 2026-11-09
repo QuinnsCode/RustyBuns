@@ -29,7 +29,7 @@
 
 import { DONE, fromCheckRun, fromState, get, logsAreCrews, recordRun, shaped, updateRun, type CheckRun, type Status } from "./checks.ts";
 import { audit } from "./audit.ts";
-import { json, type Env, readBody } from "./env.ts";
+import { fail as tagged, json, type Env, readBody } from "./env.ts";
 import { limit } from "./limits.ts";
 import { DAY, MAX_DAYS } from "./tokens.ts";
 import { httpUrl, b64url, sha256 } from "./util.ts";
@@ -43,7 +43,7 @@ const fail = (message: string, status: number, headers?: Record<string, string>)
 /** /api/repos/:o/:r/checks/tokens: the owner's to make and revoke. */
 export async function ciTokenRoutes(req: Request, env: Env, p: string[], owner: string, repo: string, user: string | null): Promise<Response | null> {
   if (p[4] !== "checks" || p[5] !== "tokens") return null;
-  if (user !== owner) return json({ error: "owner only" }, 403);
+  if (user !== owner) return tagged("OwnerOnly", "owner only");
   if (!p[6] && req.method === "GET") {
     const { results } = await env.DB.prepare("SELECT id, label, last4, created_by, created_at, expires_at, last_used_at FROM ci_tokens WHERE owner = ? AND repo = ? ORDER BY created_at DESC").bind(owner, repo).all();
     return json(results.map((t: any) => ({ ...t, expired: t.expires_at <= Date.now() })));
@@ -51,11 +51,11 @@ export async function ciTokenRoutes(req: Request, env: Env, p: string[], owner: 
   if (!p[6] && req.method === "POST") {
     const b = await readBody<"label" | "days">(req);
     const label = typeof b.label === "string" ? b.label.trim().slice(0, 60) : "";
-    if (!label) return json({ error: "label: which CI it's for, like jenkins" }, 400);
+    if (!label) return tagged("BadInput", "label: which CI it's for, like jenkins");
     const days = b.days ?? CI_TOKEN_DAYS;
-    if (typeof days !== "number" || !Number.isInteger(days) || days < 1 || days > MAX_DAYS) return json({ error: `days: 1 to ${MAX_DAYS}` }, 400);
+    if (typeof days !== "number" || !Number.isInteger(days) || days < 1 || days > MAX_DAYS) return tagged("BadInput", `days: 1 to ${MAX_DAYS}`);
     const n = await env.DB.prepare("SELECT COUNT(*) AS n FROM ci_tokens WHERE owner = ? AND repo = ?").bind(owner, repo).first();
-    if ((n?.n as number ?? 0) >= MAX_TOKENS) return json({ error: `at most ${MAX_TOKENS} CI tokens a repo: revoke one first` }, 400);
+    if ((n?.n as number ?? 0) >= MAX_TOKENS) return tagged("TooManyCiTokens", `at most ${MAX_TOKENS} CI tokens a repo: revoke one first`);
     const secret = "csci_" + b64url(crypto.getRandomValues(new Uint8Array(32)));
     const now = Date.now();
     const t = { id: crypto.randomUUID().slice(0, 8), label, last4: secret.slice(-4), created_by: user, created_at: now, expires_at: now + days * DAY };
@@ -66,7 +66,7 @@ export async function ciTokenRoutes(req: Request, env: Env, p: string[], owner: 
   }
   if (p[6] && !p[7] && req.method === "DELETE") {
     const r = await env.DB.prepare("DELETE FROM ci_tokens WHERE id = ? AND owner = ? AND repo = ?").bind(p[6], owner, repo).run();
-    if (!r.meta?.changes) return json({ error: "no such token" }, 404);
+    if (!r.meta?.changes) return tagged("NoSuchToken", "no such token");
     await audit(env, req, { actor: user, action: "ci_token.revoke", owner, repo, target: p[6] });
     return json({ ok: true });
   }

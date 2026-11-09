@@ -14,7 +14,7 @@
 //     that branch, on it and every car it came from.
 
 import { checkSettings, planLanes, PUSHED, recordRun, type CheckRun } from "./checks.ts";
-import { json, type Env } from "./env.ts";
+import { fail, json, type Env } from "./env.ts";
 import { parseJson } from "./util.ts";
 
 /** A car's ref: no branch can be named this, since git refuses a colon in a ref. */
@@ -157,17 +157,21 @@ export async function trainRoutes(req: Request, env: Env, p: string[], owner: st
   if (p[4] !== "train") return null;
   if (!p[5] && req.method === "GET") return json({ on: await trainOn(env, owner, repo), cars: await listCars(env, owner, repo) });
   if (!p[5] && req.method === "POST") {
-    if (!a.write || !user) return json({ error: "no write access" }, 403);
-    if (!(await checkSettings(env, owner, repo)).here) return json({ error: "checks don't run here: a car is our own check run (PUT .../checks/settings {where: here})" }, 409);
+    if (!a.write || !user) return fail("NoWriteAccess", "no write access");
+    if (!(await checkSettings(env, owner, repo)).here) return fail("ChecksElsewhere", "checks don't run here: a car is our own check run (PUT .../checks/settings {where: here})");
     return json({ cars: await queueCars(env, owner, repo, user, `Queued by @${user}.`) });
   }
   if (p[5] && p[6] === "files" && !p[7] && req.method === "GET") {
     // The tree is built with the crew's eyes (private lines' real text): only the crew reads it; a runner reads it in-process (carTree).
-    if (!a.write) return json({ error: "no write access" }, 403);
+    if (!a.write) return fail("NoWriteAccess", "no write access");
     const c = await car(env, owner, repo, Number(p[5]));
-    if (!c) return json({ error: "no such car" }, 404);
+    if (!c) return fail("NoSuchCar", "no such car");
     try { return json({ branches: c.branches, files: await (await import("./branches.ts")).carFiles(env, owner, repo, c.branches, user ?? "upstream") }); }
-    catch (e) { return json({ error: (e as Error).message }, 409); }
+    catch (e) {
+      // carFiles says which branches and file; a reader's own failure could carry anything, so that stays in the log.
+      console.warn("train car files:", (e as Error).message);
+      return fail("CarUnsettled", "the car's branches don't lay over main cleanly: two of them clash in a file, or one can't be read");
+    }
   }
   return null;
 }

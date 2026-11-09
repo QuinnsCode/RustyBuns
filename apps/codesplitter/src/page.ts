@@ -148,12 +148,12 @@ export function pagesHost(req: Request, env: Env, p: string[]): Response | "page
 
 export async function pageRoutes(req: Request, env: Env, p: string[], user?: string | null, onPagesHost = false): Promise<Response | null> {
   if (p[1] === "me" && p[2] === "page" && p[3] === "revert" && !p[4] && req.method === "POST") {
-    if (!user) return json({ error: "sign in first" }, 401);
+    if (!user) return fail("SignInFirst", "sign in first");
     const b = await readBody<"to">(req);
     return revertPage(env, user, b.to);
   }
   if (p[1] === "me" && p[2] === "page" && !p[3] && req.method === "PUT") {
-    if (!user) return json({ error: "sign in first" }, 401);
+    if (!user) return fail("SignInFirst", "sign in first");
     const b = await readBody<"path" | "content">(req), path = pagePath(typeof b.path === "string" ? b.path.split("/") : [""]);
     if (!path || !TYPES[path.split(".").pop()!.toLowerCase()]) return fail("BadInput", `path: a text file of the page (${Object.keys(TYPES).join(", ")})`);
     if (typeof b.content !== "string") return fail("BadInput", "content: the file's whole text");
@@ -162,7 +162,7 @@ export async function pageRoutes(req: Request, env: Env, p: string[], user?: str
     return json({ path, changed: await setText(env, user, path, b.content) });
   }
   if (p[1] === "me" && p[2] === "page" && p[3] === "assets" && p[4] && !p[5] && req.method === "PUT") {
-    if (!user) return json({ error: "sign in first" }, 401);
+    if (!user) return fail("SignInFirst", "sign in first");
     const file = assetName(p[4]);
     if (!file) return fail("BadInput", `name: letters, digits, . _ -, ending in ${Object.keys(ASSET_TYPES).join(", ")}`);
     if (!env.LEVEL_CHUNKS) return fail("NoAssetStore", "binary files need R2, which this server has not got");

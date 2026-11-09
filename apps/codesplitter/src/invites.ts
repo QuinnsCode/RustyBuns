@@ -158,7 +158,7 @@ async function newAgent(env: Env, name: string) {
 export async function inviteRoutes(req: Request, env: Env, p: string[], user: string | null): Promise<Response | null> {
   if (p[1] !== "invites" || p[3]) return null;
   if (!p[2] && req.method === "GET") {
-    if (!user) return json({ error: "sign in first" }, 401);
+    if (!user) return fail("SignInFirst", "sign in first");
     const { results } = await env.DB.prepare(`SELECT * FROM invites WHERE kind = 'handle' AND target = ? AND ${pendingWhere} ORDER BY created_at DESC`).bind(user, Date.now()).all<Invite>();
     return json(results.map((i) => ({ ...shown(i), owner: i.owner, repo: i.repo })));
   }
@@ -185,7 +185,7 @@ async function claim(req: Request, env: Env, user: string | null): Promise<Respo
   const base = origin(env, req), where = { owner: i.owner, repo: i.repo, url: `${base}/#/r/${i.owner}/${i.repo}` };
 
   if (b.as === "person") {
-    if (!user) return json({ error: "sign in first (and pick your handle), then claim it" }, 401);
+    if (!user) return fail("SignInFirst", "sign in first (and pick your handle), then claim it");
     if (isAgentHandle(user)) return fail("BadInput", "agents come in through the agent door: as: agent");
     if (i.kind === "handle" && i.target !== user) return fail("NotYourInvite", `this invite is for @${i.target}`);
     if (await inCrew(env, i, user)) return fail("AlreadyInCrew", `you're already in the crew of ${i.owner}/${i.repo}`);

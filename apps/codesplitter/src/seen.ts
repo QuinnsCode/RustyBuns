@@ -4,14 +4,14 @@
 //   PUT /api/me/seen {key, rev}  you've seen it at rev
 // A key is the page's own name for a file (owner/repo:branch:path); the newest LAST_SEEN stay.
 
-import { json, need, readBody, type Env } from "./env.ts";
+import { fail, json, need, readBody, type Env } from "./env.ts";
 import { int, obj, str } from "@rustybuns/util/guard";
 
 export const LAST_SEEN = 500;
 
 export async function seenRoutes(req: Request, env: Env, p: string[], url: URL, user: string | null): Promise<Response | null> {
   if (p[1] !== "me" || p[2] !== "seen" || p[3] || (req.method !== "GET" && req.method !== "PUT")) return null;
-  if (!user) return json({ error: "sign in first" }, 401);
+  if (!user) return fail("SignInFirst", "sign in first");
   if (req.method === "GET") {
     const key = url.searchParams.get("key") ?? "";
     const r = key ? await env.DB.prepare("SELECT rev FROM last_seen WHERE name = ? AND key = ?").bind(user, key).first() : null;

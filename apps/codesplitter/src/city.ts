@@ -15,7 +15,7 @@
 import { fileIds, fileLines, handleFor, MAX_BYTES, readTree } from "./archive.ts";
 import { cleanAvatar, type Avatar } from "@rustybuns/util/avatar";
 import { renderCity } from "./card.ts";
-import { json, readBody, type Env } from "./env.ts";
+import { fail, json, readBody, type Env } from "./env.ts";
 import { esc, plural } from "./util.ts";
 import { live } from "./repos.ts";
 
@@ -226,9 +226,9 @@ const mayVisit = async (env: Env, name: string, viewer: string | null) =>
 
 export async function cityRoutes(req: Request, env: Env, p: string[], user: string | null): Promise<Response | null> {
   if (p[1] === "me" && p[2] === "city" && !p[3] && req.method === "PUT") {
-    if (!user) return json({ error: "sign in first" }, 401);
+    if (!user) return fail("SignInFirst", "sign in first");
     const body = await readBody<"public">(req);
-    if (typeof body.public !== "boolean") return json({ error: "public: true or false" }, 400);
+    if (typeof body.public !== "boolean") return fail("BadInput", "public: true or false");
     await env.DB.prepare("UPDATE users SET city_public = ? WHERE name = ?").bind(body.public ? 1 : 0, user).run();
     return json({ public: body.public });
   }
@@ -236,17 +236,17 @@ export async function cityRoutes(req: Request, env: Env, p: string[], user: stri
   const sharing = p[3] === "city" && p[4] === "share";
   const name = p[2];
   if (p[3] === "city" && p[4] === "ws") {
-    if (!(await visible(env, name, user)) || !(await mayVisit(env, name, user))) return json({ error: "follow them to walk their city" }, 403);
-    if (req.headers.get("upgrade")?.toLowerCase() !== "websocket") return json({ error: "a WebSocket" }, 426);
+    if (!(await visible(env, name, user)) || !(await mayVisit(env, name, user))) return fail("FollowToVisit", "follow them to walk their city");
+    if (req.headers.get("upgrade")?.toLowerCase() !== "websocket") return fail("SocketOnly", "a WebSocket");
     const h = new Headers(req.headers);
     h.set("x-codesplitter-user", user!);
     return env.GAMES.get(env.GAMES.idFromName(`c/${name}`)).fetch(new Request(req.url, { headers: h }));
   }
   if (p[4] && !sharing) return null;
   const city = await cityOf(env, name, user);
-  if (!city) return json({ error: "no public city here" }, 404);
+  if (!city) return fail("NoPublicCity", "no public city here");
   if (sharing) {
-    if (!city.public) return json({ error: "no public city here" }, 404);
+    if (!city.public) return fail("NoPublicCity", "no public city here");
     const url = new URL(req.url), title = `@${name}'s code city`, to = `/play.html#c/${encodeURIComponent(name)}`;
     const desc = `${plural(city.districts.length, "district")}, ${plural(city.files, "building")}, ${plural(city.lines, "line")}: a rainy night in miniature. Walk in on codeSplitter.`;
     const image = `${url.origin}/api/users/${encodeURIComponent(name)}/city.png?at=${Math.floor(Date.now() / 86_400_000)}`;
@@ -259,7 +259,7 @@ export async function cityRoutes(req: Request, env: Env, p: string[], user: stri
   }
   if (p[3] === "city") return json({ ...city, visit: await mayVisit(env, name, user) });
   // The postcard is the public city, whoever asks: a link to it unfurls the same for everyone.
-  if (!city.public) return json({ error: "no public city here" }, 404);
+  if (!city.public) return fail("NoPublicCity", "no public city here");
   const png = await renderCity(city);
   return new Response(png, { headers: { "content-type": "image/png", "cache-control": "public, max-age=600" } });
 }
