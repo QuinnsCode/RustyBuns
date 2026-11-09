@@ -5,6 +5,7 @@
 import { arr, bool, Bad, check, int, obj, oneOf, opt, raw, str, type Guard } from "@rustybuns/util/guard";
 import { privateJson as json } from "@rustybuns/util/http";
 import { APPS, GENRES, HOME, MATURITY, playOf } from "./apps.ts";
+import { appsOf, Draft, isListing, listings, pull, review, save, send, type Done } from "./listings.ts";
 import { ACHIEVEMENTS, shownFor, TOTAL, unlocksOf } from "./achievements.ts";
 import { hubAsk, Who } from "./qollab/hub.ts";
 import { edge, execute, MAX_BACK, MAX_CALLS as MAX_PROGRAM_CALLS, RUN_MS, type ToolAnswer } from "./codemode.ts";
@@ -41,7 +42,11 @@ const tool = <A>(guard: Guard<A>, t: Spec & { run(c: Ctx, a: A): Promise<unknown
 });
 const READ: Hints = { readOnlyHint: true, openWorldHint: false };
 
-const unlocked = (list: { at: number | null }[]) => list.filter((a) => a.at !== null).length;
+/** A listing step's answer, or its refusal. */
+const done = (r: Done) => { if (!r.ok) throw new Refused(r.error, r.status); return r.listing; };
+/** A studio's games change from the signed-in page, not from one app's token. */
+const onPage = (c: Ctx) => { if (!c.email) throw new Refused("a studio's games change from the signed-in page, not an app's token", 403); };
+const unlocked =(list: { at: number | null }[]) => list.filter((a) => a.at !== null).length;
 const knownApp = (id: string) => APPS.some((a) => a.id === id) ? id : (() => { throw new Refused(`no app "${id}": ${APPS.map((a) => a.id).join(", ")}`); })();
 /** The one app an app's token may read the person's data for (its own), or null on eqosys's page, which reads them all. */
 const tokenApp = (c: Ctx) => c.who.app === HOME ? null : c.who.app;
@@ -66,8 +71,8 @@ export const TOOLS: Tool[] = [
       const own = tokenApp(c);
       const mine = new Map((await members(c.conf, c.who.id))[0]?.apps.filter((x) => !own || x.app === own).map((x) => [x.app, x.access]) ?? []);
       const q = a.q?.toLowerCase();
-      return { apps: APPS.filter((x) => (!a.genre || x.genre === a.genre) && (!a.maturity || (x.maturity ?? "alpha") === a.maturity) && (!q || x.id.includes(q) || x.name.toLowerCase().includes(q)))
-        .map((x) => ({ id: x.id, name: x.name, kind: x.kind, genre: x.genre, maturity: x.maturity ?? "alpha", featured: !!x.featured, url: playOf(x), mine: mine.get(x.id) ?? null })) };
+      return { apps: (await appsOf(c.conf)).filter((x) => (!a.genre || x.genre === a.genre) && (!a.maturity || (x.maturity ?? "alpha") === a.maturity) && (!q || x.id.includes(q) || x.name.toLowerCase().includes(q)))
+        .map((x) => ({ id: x.id, name: x.name, kind: x.kind, genre: x.genre, maturity: x.maturity ?? "alpha", featured: !!x.featured, url: playOf(x), mine: mine.get(x.id) ?? null, ...(isListing(x) ? { studio: x.studio.name } : {}) })) };
     },
   }),
   tool(obj({ app: opt(str(64)) }), {
@@ -141,6 +146,38 @@ export const TOOLS: Tool[] = [
       if (!r.ok) throw new Refused(r.error, r.status);
       return { ok: true };
     },
+  }),
+  tool(Draft, {
+    name: "eq_listing_save", title: "Save a studio's game", annotations: { readOnlyHint: false, idempotentHint: true, openWorldHint: false },
+    description: "A studio's owner or admin puts its own game in the Library as a draft, or changes it: `studio` (its id from eq_studios), `id` (a slug, 3-40 characters, unique across the Library), `name`, `genre`, " +
+      "`origins` (1-4 https origins its pages run on), and optionally `kind` (game or suite), `returns` (exact URLs a sign-in comes back to; left out, each origin's /), `erase` (a URL eqosys POSTs to when an account is deleted) and `blurb` (the card's line). " +
+      "A draft signs in only the studio's own members. It starts experimental, with play. Changing origins, returns or erase on a game in review or listed makes it a draft again. Answers { listing }.",
+    input: { studio: { type: "string" }, id: { type: "string" }, name: { type: "string" }, genre: { enum: [...GENRES] }, kind: { enum: ["game", "suite"] },
+      origins: { type: "array", items: { type: "string" } }, returns: { type: "array", items: { type: "string" } }, erase: { type: "string" }, blurb: { type: "string" } },
+    required: ["studio", "id", "name", "genre", "origins"],
+    run: async (c, a) => { onPage(c); return { listing: done(await save(c.conf, c.who.id, a)) }; },
+  }),
+  tool(obj({ id: str(40) }), {
+    name: "eq_listing_send", title: "Send a game to review", annotations: { readOnlyHint: false, idempotentHint: false, openWorldHint: false },
+    description: "A studio's owner or admin sends its draft (or a refused game, fixed) to the review queue. Answers { listing }.",
+    input: { id: { type: "string" } }, required: ["id"],
+    run: async (c, a) => { onPage(c); return { listing: done(await send(c.conf, c.who.id, a.id)) }; },
+  }),
+  tool(obj({ id: opt(str(40)), verdict: opt(oneOf(["list", "refuse"])), note: str(500, { min: 0, dflt: "" }) }), {
+    name: "eq_listing_review", title: "Review studios' games (admin)", annotations: { readOnlyHint: false, idempotentHint: false, openWorldHint: false }, admin: true,
+    description: "Super admin only. With no `id`: the review queue (every game in review, oldest first). With `id` and `verdict`: `list` puts it on everyone's shelf, `refuse` sends it back to its studio with `note` (required) saying why. Answers { queue } or { listing }.",
+    input: { id: { type: "string" }, verdict: { enum: ["list", "refuse"] }, note: { type: "string" } },
+    run: async (c, a) => {
+      if (!a.id) return { queue: await listings(c.conf, { states: ["in review"] }) };
+      if (!a.verdict) throw new Refused("say `verdict`: list or refuse");
+      return { listing: done(await review(c.conf, a.id, a.verdict, a.note)) };
+    },
+  }),
+  tool(obj({ id: str(40) }), {
+    name: "eq_listing_pull", title: "Pull a studio's game", annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+    description: "Take a studio's game out of the Library: the super admin, or its own studio's owner or admin. Its tile goes and its sign-ins and tokens stop; players' saves in it are kept 30 days, then erased. Answers { listing }.",
+    input: { id: { type: "string" } }, required: ["id"],
+    run: async (c, a) => { onPage(c); return { listing: done(await pull(c.conf, c.who.id, c.admin, a.id)) }; },
   }),
 ];
 

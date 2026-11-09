@@ -25,7 +25,7 @@ export async function qollab(req: Request, conf: Env): Promise<Response | null> 
   // A person's hub (hub.ts): a live socket at /hub (the token as a subprotocol, see socketToken), or one op at POST /api/hub with the token as a bearer.
   // The token is the proof, so the hub needs no cookie; a socket stays open after its token expires.
   if (pathname === "/hub" || pathname === "/api/hub") {
-    const socket = pathname === "/hub", head = cors(req, conf);
+    const socket = pathname === "/hub", head = await cors(req, conf);
     if (!socket && req.method === "OPTIONS") return new Response(null, { status: 204, headers: head });
     if (!conf.HUB) return json({ error: "no hub here" }, 503, head);
     const sock = socketToken(req);
@@ -48,7 +48,7 @@ export async function qollab(req: Request, conf: Env): Promise<Response | null> 
 
   // Qollab: POST /q/party (bearer token) mints a code, good 24 hours, thirteen a minute refused per address.
   if (pathname === "/q/party") {
-    const head = cors(req, conf);
+    const head = await cors(req, conf);
     if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: head });
     if (req.method !== "POST") return json({ error: "POST with the token as a bearer" }, 405, head);
     if (!conf.PARTY) return json({ error: "no parties here" }, 503, head);
@@ -90,7 +90,7 @@ export async function qollab(req: Request, conf: Env): Promise<Response | null> 
   // Qollab spaces (space.ts): GET /q/space lists yours, POST { name } makes one, POST /q/space/join { invite } joins one,
   // and /q/space/<id> is a member's socket (the token as a subprotocol). A space is the person's, not an app's: a token from any Q app opens it.
   if (pathname === "/q/space" || pathname === "/q/space/join") {
-    const head = { ...cors(req, conf), "access-control-allow-methods": "GET, POST" };
+    const head = { ...await cors(req, conf), "access-control-allow-methods": "GET, POST" };
     if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: head });
     if (!conf.SPACE) return json({ error: "no spaces here" }, 503, head);
     const t = await tokenOf(req, conf, bearerOf(req), { home: true });
@@ -154,7 +154,7 @@ export async function qollab(req: Request, conf: Env): Promise<Response | null> 
   // Qollab cloud saves (saves.ts): PUT /q/save/<slot> keeps an opaque body, GET brings the newest (or ?v=<id>) back. The token's own app is the save's.
   const save = /^\/q\/save\/([^/]+)$/.exec(pathname);
   if (save) {
-    const head = { ...cors(req, conf), "access-control-allow-methods": "GET, PUT", "access-control-expose-headers": "x-save-id, x-save-at" };
+    const head = { ...await cors(req, conf), "access-control-allow-methods": "GET, PUT", "access-control-expose-headers": "x-save-id, x-save-at" };
     if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: head });
     if (req.method !== "PUT" && req.method !== "GET") return json({ error: "PUT a save or GET one, with the token as a bearer" }, 405, head);
     const slot = slotOf(save[1]!);

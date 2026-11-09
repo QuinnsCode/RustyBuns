@@ -5,7 +5,8 @@
 //
 // QNTBR is the first studio, the super admin's (`house`): it holds every app in APPS that no other studio has claimed.
 import { oneOf, str } from "@rustybuns/util/guard";
-import { APPS, appOf, playOf } from "./apps.ts";
+import { APPS, ourApp, playOf, type QApp } from "./apps.ts";
+import { listings, type Listing, type State } from "./listings.ts";
 import type { Env } from "./env.ts";
 import { lastDeploys, type Shipped } from "./deploys.ts";
 
@@ -21,14 +22,17 @@ export const OWNED = 3;
 /** The super admin's studio: a fixed id, so making it twice is a no-op. */
 export const HOUSE = { id: "qntbr", name: "QNTBR", kind: "business" as Kind };
 
-/** `ship` is "live" once the app has reported a deploy, or has a site in APPS (an app shipped before reports began); `shipped` is that report. */
-export interface ShelfApp { id: string; name: string; play: string | null; make: string | null; ship: "live" | "not deployed"; shipped: Shipped | null }
+/** `ship` is "live" once the app has reported a deploy, or has a site in APPS (an app shipped before reports began); `shipped` is that report.
+ * A studio's own game (listings.ts) is live once listed, and says where its review stands, with the reviewer's `note` on a refusal. */
+export interface ShelfApp { id: string; name: string; play: string | null; make: string | null; ship: "live" | "not deployed"; shipped: Shipped | null; state?: State; note?: string }
 export interface StudioPerson { name: string; email: string; role: Role }
 export interface Studio { id: string; name: string; kind: Kind; role: Role; members: number; people: StudioPerson[]; apps: ShelfApp[] }
 
-const shelfApp = (id: string, repo: string | null, shipped: Shipped | null): ShelfApp => {
-  const a = appOf(id);
-  return { id, name: a?.name ?? id, play: a ? playOf(a) : null, make: repo, ship: shipped || a?.origins.length ? "live" : "not deployed", shipped };
+const shelfApp = (id: string, repo: string | null, shipped: Shipped | null, theirs: Listing[]): ShelfApp => {
+  const l = theirs.find((x) => x.id === id), a: QApp | undefined = ourApp(id) ?? l;
+  const live = l ? l.state === "listed" : !!(shipped || a?.origins.length);
+  return { id, name: a?.name ?? id, play: a && l?.state !== "pulled" && l?.state !== "refused" ? playOf(a) : null, make: repo, ship: live ? "live" : "not deployed", shipped,
+    ...(l ? { state: l.state, ...(l.note ? { note: l.note } : {}) } : {}) };
 };
 
 /** The studios a person is in, with their role, who else is in (owners first), and each app on the shelf. */
@@ -44,10 +48,10 @@ export async function studiosOf(conf: Env, userId: string): Promise<Studio[]> {
     conf.DB.prepare(`SELECT m.studio_id, u.name, u.email, m.role FROM studio_members m JOIN "user" u ON u.id = m.user_id WHERE m.studio_id IN (${marks})
       ORDER BY CASE m.role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END, u.name`).bind(...ids).all<StudioPerson & { studio_id: string }>(),
   ]);
-  const shipped = await lastDeploys(conf, apps.map((a) => a.app));
+  const [shipped, theirs] = await Promise.all([lastDeploys(conf, apps.map((a) => a.app)), Promise.all(ids.map((studio) => listings(conf, { studio }))).then((l) => l.flat())]);
   return mine.map((s) => ({ ...s,
     people: people.filter((p) => p.studio_id === s.id).map(({ name, email, role }) => ({ name, email, role })),
-    apps: apps.filter((a) => a.studio_id === s.id).map((a) => shelfApp(a.app, a.repo, shipped.get(a.app) ?? null)) }));
+    apps: apps.filter((a) => a.studio_id === s.id).map((a) => shelfApp(a.app, a.repo, shipped.get(a.app) ?? null, theirs)) }));
 }
 
 export type Made = { ok: true; id: string } | { ok: false; status: number; error: string };
@@ -97,6 +101,8 @@ export function studioErase(conf: Env, userId: string) {
   const alone = `SELECT studio_id FROM studio_members m WHERE m.user_id = ?1 AND m.role = 'owner'
     AND NOT EXISTS (SELECT 1 FROM studio_members o WHERE o.studio_id = m.studio_id AND o.role = 'owner' AND o.user_id <> ?1)`;
   return [
+    // Its games are pulled (their saves go in 30 days, listings.ts); the ids stay taken.
+    conf.DB.prepare(`UPDATE listings SET state = 'pulled', at = ?2 WHERE state <> 'pulled' AND studio_id IN (${alone})`).bind(userId, Date.now()),
     conf.DB.prepare(`DELETE FROM studio_apps WHERE studio_id IN (${alone})`).bind(userId),
     conf.DB.prepare(`DELETE FROM studios WHERE id IN (${alone})`).bind(userId),
     conf.DB.prepare(`DELETE FROM studio_members WHERE studio_id NOT IN (SELECT id FROM studios)`),

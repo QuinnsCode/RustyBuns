@@ -8,7 +8,8 @@
 //   POST /oauth/revoke                        throw a refresh token away (signing out of a native app)
 // A client is an app in APPS: client_id is its id, and redirect_uri one of its registered returns (or on its scheme). Clients are
 // public (token_endpoint_auth_method "none"): the verifier proves the code, not a secret, so a secret sent along is ignored.
-import { appOf, returnTo } from "./apps.ts";
+import { returnTo } from "./apps.ts";
+import { appOf, mayUse } from "./listings.ts";
 import { askOf, askQuery, see } from "./handle.ts";
 import { cors, issuer, standing } from "./door.ts";
 import { emailVerified, exchange, mintRefresh, revokeRefresh, spendRefresh } from "./members.ts";
@@ -55,11 +56,11 @@ async function bodyOf(req: Request): Promise<Record<string, unknown>> {
 }
 
 /** The client a request names: client_id in the body, or the user half of HTTP Basic (some clients send it there). */
-function clientOf(req: Request, body: { client_id?: string }) {
+function clientOf(req: Request, conf: Env, body: { client_id?: string }) {
   const basic = /^Basic (\S+)$/.exec(req.headers.get("authorization") ?? "")?.[1];
   let id = body.client_id;
   if (!id && basic) try { id = decodeURIComponent(atob(basic).split(":")[0] ?? ""); } catch { /* not base64: no client */ }
-  return appOf(id);
+  return appOf(conf, id);
 }
 
 async function tokens(conf: Env, iss: string, who: Handoff, nonce: string | null, refresh: boolean) {
@@ -83,7 +84,7 @@ export async function oauth(req: Request, conf: Env): Promise<Response | null> {
   if (pathname === "/oauth/authorize" && req.method === "GET") {
     const q = url.searchParams;
     // A client or redirect that isn't one of ours gets eqosys's own error page, never a redirect to somewhere it named.
-    const app = appOf(q.get("client_id")), back = app && returnTo(app, q.get("redirect_uri"), loopbackOn(conf));
+    const app = await appOf(conf, q.get("client_id")), back = app && returnTo(app, q.get("redirect_uri"), loopbackOn(conf));
     if (!app || !back) return see("/login?e=app");
     // Anything else wrong goes back to the client the way OAuth says, most likely a missing PKCE challenge.
     const fail = (error: string) => {
@@ -93,19 +94,19 @@ export async function oauth(req: Request, conf: Env): Promise<Response | null> {
     };
     if (q.get("response_type") !== "code") return fail("unsupported_response_type");
     const names: Record<string, string> = { app: "client_id", return: "redirect_uri", challenge: "code_challenge" };
-    const ask = q.get("code_challenge_method") === "S256" ? askOf((k) => q.get(names[k] ?? k), conf) : null;
+    const ask = q.get("code_challenge_method") === "S256" ? await askOf((k) => q.get(names[k] ?? k), conf) : null;
     return ask && ask !== "bad" ? see(`/login?${askQuery(ask)}`) : fail("invalid_request");
   }
 
   if (pathname === "/oauth/token") {
-    const head = cors(req, conf);
+    const head = await cors(req, conf);
     if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: head });
     if (req.method !== "POST") return oops("invalid_request", "POST a form", 405, head);
     const raw = await bodyOf(req);
     const body = check(Grant, raw);
     if (!body) return oops(raw.grant_type && !["authorization_code", "refresh_token"].includes(String(raw.grant_type)) ? "unsupported_grant_type" : "invalid_request", "send grant_type and its fields", 400, head);
-    const app = clientOf(req, body);
-    if (!app) return oops("invalid_client", "client_id is an app in eqosys's APPS", 401, head);
+    const app = await clientOf(req, conf, body);
+    if (!app) return oops("invalid_client", "client_id is an app in eqosys", 401, head);
     if (!(await jwksOf(conf)).keys.length) return oops("temporarily_unavailable", "eqosys has no signing key yet", 503, head);
 
     if (body.grant_type === "authorization_code") {
@@ -124,12 +125,12 @@ export async function oauth(req: Request, conf: Env): Promise<Response | null> {
   }
 
   if (pathname === "/oauth/userinfo") {
-    const head = cors(req, conf);
+    const head = await cors(req, conf);
     if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: head });
     const token = /^Bearer (\S+)$/.exec(req.headers.get("authorization") ?? "")?.[1];
-    const app = token ? appOf(audOf(token)) : undefined;
+    const app = token ? await appOf(conf, audOf(token)) : undefined;
     const signed = token && app ? await verify(token, await jwksOf(conf), { iss, aud: app.id }) : null;
-    const claims = signed && app && await standing(conf, signed.sub, app.id, signed.iat) ? signed : null;
+    const claims = signed && app && await standing(conf, signed.sub, app.id, signed.iat) && await mayUse(conf, app, signed.sub) ? signed : null;
     if (!claims) return json({ error: "invalid_token" }, 401, { ...head, "www-authenticate": 'Bearer error="invalid_token"' });
     const { sub, email, name, source, access } = claims;
     return json({ sub, email, email_verified: await emailVerified(conf, sub), name, source, access }, 200, head);
@@ -139,7 +140,7 @@ export async function oauth(req: Request, conf: Env): Promise<Response | null> {
     const body = await bodyOf(req);
     // RFC 7009: the answer is 200 whether or not the token was there, so it tells a guesser nothing.
     if (typeof body.token === "string" && body.token.length <= 100) await revokeRefresh(conf, body.token);
-    return json({}, 200, cors(req, conf));
+    return json({}, 200, await cors(req, conf));
   }
 
   return null;

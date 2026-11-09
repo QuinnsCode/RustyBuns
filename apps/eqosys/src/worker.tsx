@@ -5,7 +5,7 @@ import { AppPage, Deleted, DeletePage, ErrorPage, Home, Privacy, SpacesPage, tab
 import { Login } from "./app/Login.tsx";
 import { phaseAt } from "./app/Sky.tsx";
 import { THEME_SCRIPT } from "./app/Theme.tsx";
-import { appOf } from "./apps.ts";
+import { appOf, appsOf, mayUse } from "./listings.ts";
 import { Document } from "./app/Document.tsx";
 import { authOn, isAdmin, meOf, onApple, providers } from "./auth.ts";
 import { askOf, atHome, handle } from "./handle.ts";
@@ -99,10 +99,10 @@ const app = defineApp([
       ]);
       const shown = hub && !("error" in hub) ? hub : null;
       // The super admin's own visits stay out of the counts; the Visitors tab is theirs alone.
-      const [counts, visitors, studios] = await Promise.all([countsOf(conf, shown?.friends.map((f) => f.id) ?? []),
+      const [counts, visitors, studios, apps] = await Promise.all([countsOf(conf, shown?.friends.map((f) => f.id) ?? []),
         everyone ? markStaff(conf, request).then(() => tab === "visitors" ? visitorsOf(conf, Number(new URL(request.url).searchParams.get("days")) || 7) : null) : null,
-        tab === "studio" ? studiosOf(conf, me.id) : null]);
-      return <Home visitors={visitors} counts={counts} t0={phaseAt(new URL(request.url).searchParams.get("at"))} me={me} mine={mine} hub={shown} side={side} everyone={everyone} unlocks={unlocks}
+        tab === "studio" ? studiosOf(conf, me.id) : null, appsOf(conf)]);
+      return <Home apps={apps} visitors={visitors} counts={counts} t0={phaseAt(new URL(request.url).searchParams.get("at"))} me={me} mine={mine} hub={shown} side={side} everyone={everyone} unlocks={unlocks}
         error={new URL(request.url).searchParams.get("e") ?? undefined} tab={tab} studios={studios}
         scale={everyone && tab === "scale" ? loadOf(new URL(request.url).searchParams) : null} />;
     }),
@@ -115,7 +115,7 @@ const app = defineApp([
     route("/app/:id", async ({ request, params, response }) => {
       const conf = e(request);
       if (!authOn(conf)) { response.status = 503; return <ErrorPage status={503} />; }
-      const me = await meOf(request, conf), app = appOf(params.id);
+      const me = await meOf(request, conf), found = await appOf(conf, params.id), app = found && me && await mayUse(conf, found, me.id) ? found : undefined;
       if (!me) return see("/login");
       if (!app) { response.status = 404; return <ErrorPage status={404} />; }
       const [[mine], unlocks] = await Promise.all([members(conf, me.id), unlocksOf(conf, me.id)]);
@@ -125,7 +125,7 @@ const app = defineApp([
       const conf = e(request);
       if (!authOn(conf)) { response.status = 503; return <ErrorPage status={503} />; }
       const q = new URL(request.url).searchParams;
-      const ask = askOf((k) => q.get(k), conf);
+      const ask = await askOf((k) => q.get(k), conf);
       const me = await meOf(request, conf);
       if (me && !ask) return see("/");
       const apple = onApple(request.headers.get("user-agent"));

@@ -3,7 +3,7 @@
 // DEPLOY_REPORT_KEY in `x-eqosys-signature` (hex HMAC-SHA256 of the body, @rustybuns/util/bytes). One row per app and stage.
 import { hmacSigned } from "@rustybuns/util/bytes";
 import { check, int, obj, str, type Of } from "@rustybuns/util/guard";
-import { appOf } from "./apps.ts";
+import { ourApp } from "./apps.ts";
 import type { Env } from "./env.ts";
 
 export const DeployReport = obj({ app: str(64, { min: 1 }), stage: str(32, { min: 1 }), version: str(64, { min: 1 }), at: int(0, 1e15) });
@@ -21,7 +21,7 @@ export async function recordDeploy(conf: Env, req: Request, now = Date.now()): P
   try { parsed = JSON.parse(body); } catch { /* bad JSON is a bad body */ }
   const d = check(DeployReport, parsed);
   if (!d || Math.abs(d.at - now) > DEPLOY_SKEW_MS) return { status: 400 };
-  if (!appOf(d.app)) return { status: 404 };
+  if (!ourApp(d.app)) return { status: 404 };
   // An older report arriving late never overwrites a newer one.
   await conf.DB.prepare(`INSERT INTO deploys (app, stage, version, at) VALUES (?, ?, ?, ?)
     ON CONFLICT (app, stage) DO UPDATE SET version = excluded.version, at = excluded.at WHERE excluded.at > deploys.at`).bind(d.app, d.stage, d.version, d.at).run();

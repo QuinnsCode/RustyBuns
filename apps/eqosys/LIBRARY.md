@@ -25,9 +25,11 @@ So the review is a review of the origins and returns as much as of the game: onc
 
 `APPS` stays ours: in code, reviewed by PR, and the only place `member`, a native `scheme` or `featured` can come from.
 A studio's game is a **listing**, a row in D1 with the same fields plus its studio and a state. `appsOf(conf)` is
-`APPS` plus the listings that are listed, read once a minute per isolate, and every caller above asks it instead of the
-fixed list. An id in `APPS` can't be taken by a listing, and a listing's id is its studio's slug and its own
-(`acme/rocket-golf`), so two studios can't collide either.
+`APPS` plus the listings that are listed, read once a minute per isolate. Every caller above asks `appOf(conf, id)` in
+`src/listings.ts` instead of the fixed list, and `mayUse` for who: a draft or a game in review answers only its studio.
+A listing's id is a plain slug (`rocket-golf`), unique across the Library and kept by its studio once taken (even after
+a pull): an id in `APPS` can't be taken, and two studios can't collide. (Studios have no slug of their own yet, and an id
+rides in URLs, `aud` and labels, so it has no `/`.)
 
 ## The steps
 
@@ -65,3 +67,12 @@ Who reviews: the super admin for now. A reviewer role comes when there are more 
 
 The machine half of the review leans on the harness: the eqosys sign-in, the Qollab party and `window.<game>.state()`
 that #4053 puts in every new game. A game made without the template can still be listed; its maker adds the handle by hand.
+
+## What is built
+
+[#4075](https://github.com/QuinnsCode/RustyBuns/issues/4075) built the listings (`src/listings.ts`, migration `20261109000000_listings.sql`),
+the four tools (`eq_listing_save`, `eq_listing_send`, `eq_listing_review`, `eq_listing_pull`), the shelf and tile, and one
+journey (`test/library.test.ts`). Until the studio's reports inbox exists, a report from a studio's game is refused, so none
+reaches this repo. Still to come: the machine checks ([#4090](https://github.com/QuinnsCode/RustyBuns/issues/4090), after the
+template), and the Studio page's form, reports to the studio and shared achievements
+([#4091](https://github.com/QuinnsCode/RustyBuns/issues/4091)).

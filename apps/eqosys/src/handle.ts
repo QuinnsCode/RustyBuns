@@ -7,7 +7,8 @@
 //   3. eqosys sends them to <return>?code=eq_…&state=…
 //   4. the app POSTs /api/exchange { app, code, verifier } and gets back who they are, where they came from and their access,
 //      plus a token signed with the key at /.well-known/jwks.json that its server can pass around and check on its own
-import { appOf, HOME, returnTo, type QApp } from "./apps.ts";
+import { HOME, returnTo, type QApp } from "./apps.ts";
+import { appOf, mayUse } from "./listings.ts";
 import { authFor, authOn, isAdmin, meOf, providers, type Me } from "./auth.ts";
 import { b64url, crossSite, json, loopbackOn, VERSION, type Env } from "./env.ts";
 import { hubAnnounce, hubAsk, type Who } from "./qollab/hub.ts";
@@ -39,9 +40,9 @@ export interface Ask {
 const CHALLENGE = str(128, { min: 43, re: /^[A-Za-z0-9_-]+$/ });
 
 /** The ask in a query or a form: an Ask, null for none, "bad" for one that names an unknown app or a return it doesn't own. */
-export function askOf(get: (k: string) => unknown, conf: Env): Ask | null | "bad" {
+export async function askOf(get: (k: string) => unknown, conf: Env): Promise<Ask | null | "bad"> {
   if (!get("app")) return null;
-  const app = appOf(get("app"));
+  const app = await appOf(conf, get("app"));
   const back = app && returnTo(app, get("return"), loopbackOn(conf));
   const challenge = check(CHALLENGE, get("challenge"));
   if (!app || !back || !challenge) return "bad";
@@ -85,9 +86,10 @@ const field = (f: FormData, k: string) => String(f.get(k) ?? "");
 /** The signed-in person on eqosys's own pages, as their hub sees them: the app they are in is eqosys itself. */
 export const atHome = (me: Me): Who => ({ id: me.id, name: me.name, app: HOME });
 
-/** Signed in: on to the app with a fresh code, or home when nobody asked. */
+/** Signed in: on to the app with a fresh code, or home when nobody asked. A studio's game still in the making sends only its studio on. */
 async function onward(conf: Env, region: Region, userId: string, ask: Ask | null, from?: Response) {
   if (!ask) { await link(conf, userId, null, region); return see("/", from); }
+  if (!(await mayUse(conf, ask.app, userId))) return see("/?e=making", from);
   const [code] = await Promise.all([mint(conf, userId, ask.app, ask.challenge, ask.back, ask.nonce), link(conf, userId, ask.app, region)]);
   const to = new URL(ask.back);
   to.searchParams.set("code", code);
@@ -108,18 +110,18 @@ export async function handle(req: Request, conf: Env): Promise<Response | null> 
   if (q) return q;
 
   if (pathname === "/api/exchange") {
-    if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: cors(req, conf) });
+    if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: await cors(req, conf) });
     if (req.method !== "POST") return json({ error: "POST { app, code, verifier }" }, 405);
     const body = check(Exchange, await req.json().catch(() => null));
-    if (!body) return json({ error: "send { app, code, verifier }" }, 400, cors(req, conf));
+    if (!body) return json({ error: "send { app, code, verifier }" }, 400, await cors(req, conf));
     const traded = await exchange(conf, body.app, body.code, body.verifier, body.return);
-    if (!traded) return json({ error: "that code is used, late, for another app, or the verifier is wrong" }, 400, cors(req, conf));
-    return json({ ...traded.who, token: await sign(conf, issuer(req, conf), traded.who) }, 200, cors(req, conf));
+    if (!traded) return json({ error: "that code is used, late, for another app, or the verifier is wrong" }, 400, await cors(req, conf));
+    return json({ ...traded.who, token: await sign(conf, issuer(req, conf), traded.who) }, 200, await cors(req, conf));
   }
 
   // Achievements (achievements.ts): POST /q/achieve { id } unlocks one of the token's app's, GET lists its whole catalog for the person.
   if (pathname === "/q/achieve") {
-    const head = { ...cors(req, conf), "access-control-allow-methods": "GET, POST" };
+    const head = { ...await cors(req, conf), "access-control-allow-methods": "GET, POST" };
     if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: head });
     if (req.method !== "POST" && req.method !== "GET") return json({ error: "POST { id } or GET, with the token as a bearer" }, 405, head);
     const t = await tokenOf(req, conf, bearerOf(req));
@@ -148,7 +150,7 @@ export async function handle(req: Request, conf: Env): Promise<Response | null> 
   // portability); GET /api/privacy is what is kept, why and how long, plus their vault (region, consents, requests). The session
   // cookie, or an app's token as a bearer.
   if (pathname === "/api/privacy" || pathname === "/api/privacy/export") {
-    const head = { ...cors(req, conf), "access-control-allow-methods": "GET" };
+    const head = { ...await cors(req, conf), "access-control-allow-methods": "GET" };
     if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: head });
     if (req.method !== "GET") return json({ error: "GET, signed in or with the token as a bearer" }, 405, head);
     const bearer = bearerOf(req);
@@ -163,7 +165,7 @@ export async function handle(req: Request, conf: Env): Promise<Response | null> 
 
   // Account deletion from inside an app (App Store guideline 5.1.1(v)): the app's own token is the proof.
   if (pathname === "/api/account/delete") {
-    const head = cors(req, conf);
+    const head = await cors(req, conf);
     if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: head });
     if (req.method !== "POST") return json({ error: "POST with the token as a bearer" }, 405, head);
     const t = await tokenOf(req, conf, bearerOf(req));
@@ -181,7 +183,7 @@ export async function handle(req: Request, conf: Env): Promise<Response | null> 
     return json(status === 200 ? { ok: true } : { error: status === 503 ? "deploy reports are off here" : status === 401 ? "unsigned" : status === 404 ? "no such app" : "bad or stale report" }, status);
   }
   if (pathname === "/api/report") {
-    const head = cors(req, conf);
+    const head = await cors(req, conf);
     if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: head });
     if (req.method !== "POST") return json({ error: "POST { kind, title, body } with the token as a bearer" }, 405, head);
     const t = await tokenOf(req, conf, bearerOf(req));
@@ -223,7 +225,7 @@ export async function handle(req: Request, conf: Env): Promise<Response | null> 
   // with a code, no page. Anyone else falls through to the sign-in page.
   if (pathname === "/login" && req.method === "GET") {
     const q = new URL(req.url).searchParams;
-    const ask = askOf((k) => q.get(k), conf);
+    const ask = await askOf((k) => q.get(k), conf);
     if (ask === "bad") return see("/login?e=app");
     const me = ask ? await meOf(req, conf) : null;
     const mark = socialMarkIn(req);
@@ -251,14 +253,14 @@ export async function handle(req: Request, conf: Env): Promise<Response | null> 
   const form = await req.formData().catch(() => new FormData());
   // The page an app opens for deleting an account (/delete): typing the email is the confirmation. Before the ask, which it doesn't carry.
   if (act === "delete") {
-    const me = await meOf(req, conf), app = appOf(field(form, "app"));
+    const me = await meOf(req, conf), app = await appOf(conf, field(form, "app"));
     if (!me) return see("/login?e=in");
     if (field(form, "confirm").trim().toLowerCase() !== me.email.toLowerCase()) return see(`/delete?e=confirm${app ? "&app=" + app.id : ""}`);
     const out = await authFor(req, conf).api.signOut({ headers: req.headers, asResponse: true }).catch(() => undefined);
     await deleteAccount(conf, me.id, issuer(req, conf));
     return see(`/deleted${app ? "?app=" + app.id : ""}`, out);
   }
-  const ask = askOf((k) => form.get(k), conf);
+  const ask = await askOf((k) => form.get(k), conf);
   if (ask === "bad") return see("/login?e=app");
   const back = (e: string) => see(`/login?e=${e}${ask ? "&" + askQuery(ask) : ""}`);
 

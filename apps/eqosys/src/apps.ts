@@ -27,6 +27,8 @@ export interface QApp {
   maturity?: Maturity;
   /** Also listed in the Featured row at the top of the home. */
   featured?: boolean;
+  /** A studio's own game's card line (listings.ts); ours come from cards.json. */
+  blurb?: string;
   /** Listed as coming soon, with no link into it, until the owner says it is ready. It still signs in from its origins. */
   soon?: boolean;
 }
@@ -73,7 +75,8 @@ export const APPS: QApp[] = [
 /** The source tag of someone who signed up here rather than through an app. */
 export const HOME = "eqosys";
 
-export const appOf = (id: unknown) => APPS.find((a) => a.id === id);
+/** One of ours by id. Who signs in or calls asks `appOf` in listings.ts, which knows the studios' games too. */
+export const ourApp = (id: unknown) => APPS.find((a) => a.id === id);
 
 /** Where a link into the app goes: its first origin, or null while it has none or is coming soon. */
 export const playOf = (app: QApp) => (app.soon ? null : app.origins[0] ?? null);
