@@ -231,6 +231,8 @@ export async function makeBeam(env: Env, owner: string, repo: string, user: stri
     return hostedBeam(env, owner, repo, user, main, { branch, to, title: askTitle, message: askMessage, keep: paths(body.keep), drop: paths(body.drop) });
   }
   const dir = lg.path(r.artifact);
+  // A repo whose files aren't committed yet has no main in its git to lay a beam on (hostedBeam says the same).
+  if ((await git(["rev-parse", "--verify", "--quiet", `refs/heads/${main}^{commit}`], dir)).code) return fail("NoGit", `${main} has no commits yet: there's nothing to beam onto`);
 
   const st = kind === "git" ? await gitStack(dir, main, branch) : await linesStack(env, owner, repo, dir, main, branch);
   if ("error" in st) return st.error;
