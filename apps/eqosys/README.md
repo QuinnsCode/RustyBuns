@@ -181,6 +181,11 @@ It serves on `eqosys.qntbr.com` (`BETTER_AUTH_URL` and the `edge` target in `rus
 
 Then `cd apps/eqosys && bun run deploy`, open the site, sign up with the admin email and check that "Everyone" shows.
 
+Before a go-live, `bun scripts/live-check.ts --url https://eqosys-preview.qntbr.com` walks the friends journey on a live
+stage: two throwaway `livecheck+…@example.com` accounts sign up through Park Hide & Seek's handoff, ask and accept by email,
+see each other online on the hub socket, meet in a party by code, unfriend, and are deleted (even when a step fails), so it
+is safe on production too. One line a step; the first failure exits 1.
+
 Not yet: an app opening the hub (Park Hide & Seek signs in but doesn't say where it is hiding yet).
 
 App Review wants a fixed account per app: `bun scripts/review-account.ts <appId> <email> <password>` makes it through the app's own handoff (or checks it still signs in).
