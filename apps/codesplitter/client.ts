@@ -110,6 +110,8 @@ export class AssetsFull extends Schema.TaggedError<AssetsFull>()("AssetsFull", n
 export class NotPageText extends Schema.TaggedError<NotPageText>()("NotPageText", named) {}
 export class NoAssetStore extends Schema.TaggedError<NoAssetStore>()("NoAssetStore", named) {}
 export class SignInFirst extends Schema.TaggedError<SignInFirst>()("SignInFirst", named) {}
+export class BadHookToken extends Schema.TaggedError<BadHookToken>()("BadHookToken", named) {}
+export class NoSuchFloor extends Schema.TaggedError<NoSuchFloor>()("NoSuchFloor", named) {}
 export class NoSuchBeam extends Schema.TaggedError<NoSuchBeam>()("NoSuchBeam", named) {}
 export class NotYourBeam extends Schema.TaggedError<NotYourBeam>()("NotYourBeam", named) {}
 export class NoSharedHistory extends Schema.TaggedError<NoSharedHistory>()("NoSharedHistory", named) {}
@@ -219,6 +221,7 @@ export const NAMED = {
   SignInFirst, NoSuchBeam, NotYourBeam, NoSharedHistory, NothingToBeam, StaleCopy, AllNoise, NoUpstream, BeamClash, PathIsFolder, BytesMissing, BeamGone,
   NotYourGitHub, NotOnGitHub, PrivateOnGitHub,
   NoSuchJob,
+  BadHookToken, NoSuchFloor,
   HandleTaken, HasHandle, SignInOff,
   TooManyTokens, NoSuchToken,
   DesktopOnly, NoDeployKey, RunnerOnly, NoHostedDeploys, NoSuchCheck, NotYourClaim, TakeTurns, LinesHeld, LinesQueued, LeftLine, GitHubRun, CheckTaken, CheckDone, DeployRunning, DiffCutShort, DeployWaits, PlanStale, HistoryTrimmed,

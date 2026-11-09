@@ -5,7 +5,7 @@ import { LocalArtifacts, applyD1Migrations, d1, durableObject, gitHttp, installC
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import worker, { AgentThread, FileDurableObject, GameRoom, RepoSearch, UserSettings } from "./worker.ts";
+import worker, { AgentThread, FileDurableObject, OfficeFloor, GameRoom, RepoSearch, UserSettings } from "./worker.ts";
 
 // Each queue here is consumed at once, not through the host scheduler: that one is the process's, and holds its slots for
 // the CPU budget and for every other instance's deliveries, so in a busy test process a dig waited past a test's timeout (#1446).
@@ -20,6 +20,8 @@ export async function local(extra: Record<string, unknown> = {}) {
   env.SEARCH = durableObject(RepoSearch as any, env);
   env.SETTINGS = durableObject(UserSettings as any, env);
   env.THREADS = durableObject(AgentThread as any, env);
+  // The office is the office-preview stage's alone, so only a test that asks for it (`OFFICE: true`) gets a floor.
+  if (extra.OFFICE === true) env.OFFICE = durableObject(OfficeFloor as any, env);
   // Webhook tries, consumed in-process as the desktop host does.
   env.HOOKS = queue(":memory:", "codesplitter-hooks");
   const stopHooks = env.HOOKS.consume((batch: any) => worker.queue(batch, env), { scheduler: now });

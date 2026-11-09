@@ -6,8 +6,11 @@ rate-limit namespace, takes nothing over from the live Worker (`renamedFrom` is 
 Worker name), protects nothing, runs no crons and has Turnstile off. `test/office-preview-stage.test.ts` fails if it
 ever shares a name with the live stage.
 
-**What is not built yet.** This is the stage and the runbook only. The office itself (the Durable Object for the
-queue, desks and roster, and the 3D client served from the Worker) and the four gaps in MOVE.md (PTY over WebSocket,
+**What is built.** The floor's Durable Object (`OfficeFloor` in `apps/codesplitter/src/office.ts`, slice 1 of MOVE.md's
+build order): `/api/office/<floor>` answers with its queue, desks and roster, takes the office's socket messages at
+`/api/office/<floor>/ws`, and is bound on this stage only, for the signed-in owner only.
+
+**What is not built yet.** The 3D client served from the Worker and the four gaps in MOVE.md (PTY over WebSocket,
 container lifetime, per-floor cost cap, auth mapping) are not in it, so checks 1 to 5 below can't pass until those land.
 They are filed as follow-ups; this stage is where they get tried.
 
