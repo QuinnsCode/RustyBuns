@@ -10,7 +10,7 @@ import { serveEdge } from "../scripts/edge.ts";
 import { serveParty } from "../scripts/party.ts";
 import { Online } from "../src/net/online.ts";
 
-setDefaultTimeout(180_000);
+setDefaultTimeout(240_000);
 
 test.skipIf(!chromePath() || !!process.env.CI)("two friends walk one world: see each other, the same hour, leave and come back", async () => {
   const port = await freePort();
@@ -99,8 +99,9 @@ test.skipIf(!chromePath() || !!process.env.CI)("two friends walk one world: see 
     await until(() => b.eval<number | null>(`mythicMasters.journey.state()?.hunts?.["1.19074.1638"] ?? null`), (s) => s === 2);
 
     // Both by the campfire 559 m from region 1's other board. A jumps straight onto the board's town door (no road takes you there
-    // that fast, so the room stops vouching for A), walks in and reads the board: the contract goes nowhere (#3800). B jogs over to A, who stands
-    // still; once B is beside A the room trusts A again, and A's page tells the contract.
+    // that fast, so the room stops vouching for A), walks in and reads the board: the contract goes nowhere (#3800). B runs over to A, who stands
+    // still; once B is beside A the room trusts A again, and A's page tells the contract. B runs at 7 m/s by the clock, under
+    // the room's RUN_MPS (8, party.ts): any faster and B is a jump too, and nobody vouches for anybody (a minute's run).
     const other = "1.20002.6206", stage = `mythicMasters.journey.state()?.hunts?.["${other}"] ?? null`;
     const settle = "await new Promise((r) => setTimeout(r, 600));";
     // No wild one jumps either of them on the way: a lost fight opens the Book and holds the page's poses back.
@@ -109,8 +110,12 @@ test.skipIf(!chromePath() || !!process.env.CI)("two friends walk one world: see 
     await until(() => back.eval<number | null>(stage), (s) => s === 0);
     await Bun.sleep(1000);
     expect(await b.eval<number | null>(stage)).toBeNull();
-    await b.eval(`(async () => { const w = mythicMasters.world, s = w.state(); const dx = 20002 - s.x, dz = 6206 - s.z, d = Math.hypot(dx, dz), n = Math.ceil((d - 15) / 5);
-      for (let i = 1; i <= n; i++) { w.teleport(s.x + (dx * i * 5) / d, s.z + (dz * i * 5) / d); await new Promise((r) => setTimeout(r, 220)); } })()`);
+    // In legs of 20 s at most (a CDP call gives up at 60), the start kept on the page so the pace holds across them.
+    const run = `(async () => { const w = mythicMasters.world, s = w.state(), r = (window.__run ??= { x: s.x, z: s.z, t0: performance.now() });
+      const dx = 20002 - r.x, dz = 6206 - r.z, d = Math.hypot(dx, dz), end = performance.now() + 20000; let m = 0;
+      while (m < d - 15 && performance.now() < end) { await new Promise((ok) => setTimeout(ok, 250)); m = Math.min(d - 15, (7 * (performance.now() - r.t0)) / 1000); w.teleport(r.x + (dx * m) / d, r.z + (dz * m) / d); }
+      return m >= d - 15; })()`;
+    while (!(await b.eval<boolean>(run)));
     await until(() => b.eval<number | null>(stage), (s) => s === 0);
     expect([...b.noise, ...back.noise].filter((n) => !/favicon|api\/me|401/.test(n))).toEqual([]);
   } finally {
