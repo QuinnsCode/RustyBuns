@@ -356,7 +356,7 @@ export class MoveFx {
     if (e.guarded) { this.flash(WHITE, at, 1.4, 0.18, 0.6); this.burst(field, at, 4, 0.6); return; }
     const big = Math.min(2.2, 0.6 + damage / 25);
     this.flash(e.rear ? 0xff5040 : WHITE, at, big * (e.rear ? 1.5 : 1), 0.12);
-    this.flash(color, at, big * 2, 0.22, 0.5);
+    this.flash(color, at, big * 1.3, 0.14, 0.4); // a big hit's glow was a blob that hid both bodies (#4046 round 5)
     const n = Math.min(26, 6 + damage), sp = 1 + damage / 40;
     // sparks fly out of the wound along the blow, hot white streaks plus a puff of grit off the floor
     const ox = at.x - d.pos.x, oz = at.z - d.pos.z, ol = Math.hypot(ox, oz) || 1;

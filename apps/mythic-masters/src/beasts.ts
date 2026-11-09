@@ -555,7 +555,9 @@ export class Puppet {
     const wt = pose ? WEIGHT[pose.slot] : 0;
     dip += wind * wt * 0.06; pitch -= mk * wt * 0.1 * A.amp;
     const stunK = f.state === "stun" ? Math.min(1, f.stun / 20) : 0;
-    if (stunK) pitch += 0.24 * stunK;
+    // a blow sits the body down into its legs for the whole stun, deepest on a heavy one (#4046 round 5: struck bodies
+    // stood upright through the burst, so a hit read only as a tint)
+    if (stunK) { pitch += 0.24 * stunK; dip += (0.04 + 0.08 * this.stagger) * stunK; }
     if (f.state === "guard") { dip += 0.09; pitch -= 0.08; }
     if (held(f) > 0) { dip += 0.06 + Math.sin(tick * 1.3) * 0.008; roll = Math.sin(tick * 0.9) * 0.02; }
     if (f.state === "dash") { pitch -= 0.22; dip += 0.05; }
@@ -596,7 +598,7 @@ export class Puppet {
     // contact: a fresh hit (stun jumps up) squashes the body along the blow, then it springs back past rest
     if (f.stun > this.prevStun + 1) { this.joltV = -9; this.blowV = -(3 + 5 * Math.min(1, (f.stun - this.prevStun) / 22)); }
     if (f.stun > this.prevStun + 8) this.stagger = Math.min(1, (f.stun - this.prevStun) / 22);
-    this.stagger *= Math.exp(-4 * dt);
+    this.stagger *= Math.exp(-2.5 * dt); // eases off over about 0.4 s, long enough to see the shove
     this.prevStun = f.stun;
     this.joltV += (-120 * this.jolt - 11 * this.joltV) * dt;
     this.jolt += this.joltV * dt;
