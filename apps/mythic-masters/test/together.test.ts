@@ -125,8 +125,9 @@ test.skipIf(!chromePath())("two friends walk one world: see each other, the same
 
     // One fight at one den, joined together. Both land by the campfire 377 m from the first contract's lair, and each tells
     // the other it read the last sign, so the Rougarou waits there for both. They walk over at a pace the room believes;
-    // A walks into it, and B hears who is fighting what, and where. B walks in too: the same creature at the same level, in
-    // B's own fight. A's ends (worn down, so it is quick), and B hears how it went.
+    // A walks into it, and B hears who is fighting what, and where. B walks in too: the same creature at the same level,
+    // and the same health: A wears it down to half, and B's creature is down to half too (#4063). A's fight ends (worn
+    // down, so it is quick), and B hears how it went.
     const first = "1.19074.1638", lair = { x: 19426, z: 2391.2 }, fire = { x: 19490, z: 2763 };
     const ready = (dx: number) => `(async () => { mythicMasters.world.peace(true); mythicMasters.world.teleport(${fire.x + dx}, ${fire.z}); ${settle} mythicMasters.together.hunt("${first}", 3); })()`;
     await Promise.all([back.eval(ready(12)), b.eval(ready(-12))]);
@@ -147,6 +148,10 @@ test.skipIf(!chromePath())("two friends walk one world: see each other, the same
     // A fight report is believed only once it has lasted 3 s (party.ts FIGHT), by the fight's own clock: 4 s of ticks
     // (a CI runner's page ticks slower than the wall clock).
     await until(() => back.eval<number>(`mythicMasters.state()?.tick ?? 0`), (t) => t >= 4 * 60, 90_000);
+    await back.eval(`mythicMasters.journey.wear(0.5)`);
+    type Lair = { den: string; hp: number; friends: Record<string, number> } | null;
+    const lairOf = "mythicMasters.together.state()?.lair ?? null";
+    await until(() => b.eval<Lair>(lairOf), (l) => !!l && l.den === `hunt:${first}` && l.hp <= 0.52, 20_000);
     await back.eval(`mythicMasters.journey.wear(0.01, 0)`);
     const aFight = "(() => { const s = mythicMasters.state(); return s && { tick: s.tick, over: s.over, winner: s.winner, hp: s.fighters.map((f) => f.hp) }; })()";
     await until(() => Promise.all([b.eval<Fight[]>(heard), back.eval<unknown>(aFight)]), ([fs]) => fs.some((x) => x.c === "rougarou" && x.won === false), 60_000);

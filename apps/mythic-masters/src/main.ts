@@ -68,6 +68,7 @@ import { regionsCleared, visit, WITCH } from "./witch.ts";
 import { close as closeHunt, HUNTS, stageOf, take, CLUES } from "./world/hunts.ts";
 import { FORAGE_MEND } from "./world/nature.ts";
 import { Online, roomCode, uid } from "./net/online.ts";
+import { HURT_FULL } from "./net/party.ts";
 import { COLOURS, css as hueCss, firstColour, wornColour } from "./world/hues.ts";
 import { joinParty, openParty, partyCode } from "./net/lobby.ts";
 import type { Friend } from "./world/view.ts";
@@ -166,12 +167,16 @@ const params = new URLSearchParams(location.search);
 const room = roomCode(location.search);
 /** The friends' fights this page heard of lately, newest last: who walked into which den, and how it went once told. */
 const fights: { who: string; den: string; c: string; lv?: number; won?: boolean; bound?: boolean }[] = [];
+/** A contract's lair holds one creature, whoever fights it (#4063): what each friend there has taken off its health so
+ *  far (thousandths, net/party.ts HURT_FULL), by lair and friend, as the room tells it. */
+const lairHurt = new Map<string, Map<string, number>>();
 const online = room ? new Online(room, {
   onChange: () => drawTogether(),
   opened: () => world.opened(),
   posed: () => world.pose(), // a den or contract taken mid-frame is checked where you stand now, not a frame ago
   onDen: (den, who, c) => { fights.push({ who, den, c }); fights.splice(0, fights.length - 8); world.friendMet(den, who, c); },
   onHunt: (h, s, who) => joinHunt(h, s, who),
+  onHurt: (den, id, d) => { let by = lairHurt.get(den); if (!by) lairHurt.set(den, (by = new Map())); by.set(id, Math.max(d, by.get(id) ?? 0)); },
   onFought: (f) => {
     const at = fights.findLast((x) => x.who === f.who && x.c === f.c && x.won === undefined);
     if (at) Object.assign(at, { lv: f.lv, won: f.won, bound: f.bound });
@@ -395,7 +400,7 @@ drawPicker(); // after the journey is loaded: the book's ribbons are its line-up
 // A fight the world started. `slot` is the line-up member fighting, `out` the ones already down; a keeper guards
 // section k of the region's trail, a mythic its arena, a wild one roams; "deadly" is the high-level south's ambush.
 // `known` is how well you knew the foe walking in: never met, met before, or bound (its intro's case file, src/casefile.ts).
-interface Trip { region: Region; kind: "keeper" | "wild" | "mythic" | "deadly"; k: number; foe: Foe; slot: number; out: Set<number>; ink: number; foeHp: number | null; known: "new" | "met" | "known" }
+interface Trip { region: Region; kind: "keeper" | "wild" | "mythic" | "deadly"; k: number; foe: Foe; slot: number; out: Set<number>; ink: number; foeHp: number | null; known: "new" | "met" | "known"; friendsHp: number }
 let trip: Trip | null = null;
 const bindable = (t: Trip | null) => !!t && t.kind !== "deadly";
 
@@ -439,12 +444,25 @@ function setOut(region: Region, kind: Trip["kind"], foe: Foe, k = 0) {
   if (!journey) return;
   const known = owns(journey, foe.id) ? "known" : journey.seen.includes(foe.id) ? "met" : "new";
   const spare = spendInk(journey); // a drop the Book handed over at a talk (src/book.ts)
-  trip = { region, kind, k, foe, slot: nextUp(journey, downed(journey)), out: downed(journey), ink: INK + spare, foeHp: null, known };
+  trip = { region, kind, k, foe, slot: nextUp(journey, downed(journey)), out: downed(journey), ink: INK + spare, foeHp: null, known, friendsHp: 0 };
   // A wild one goes to the party from the world (hooks.met); a keeper's stone and the arena's mythic from here.
   if (kind === "keeper" || kind === "mythic") online?.met(kind === "mythic" ? `mythic:${region.n}` : `keeper:${region.n}:${k}`, foe.id, foe.level);
   if (kind !== "deadly") see(journey, foe.id);
   if (kind !== "deadly" || spare) saveJourney();
   fightTrip();
+}
+/** At a contract's lair with friends: their blows come off this page's copy of the creature (the room's word for how much,
+ *  never more than it believes), and ours go to them. Every frame of a lair trip; a message only when a share grew. */
+function shareLair() {
+  if (!trip?.foe.hunt || !online || !m || versusOn) return;
+  const full = m.f[1].b.hp, by = lairHurt.get(`hunt:${trip.foe.hunt}`);
+  const theirs = Math.min(full, ([...(by?.values() ?? [])].reduce((a, b) => a + b, 0) * full) / HURT_FULL), more = theirs - trip.friendsHp;
+  // Between rounds (the result's up) it waits: the next round starts from the foe's health then, and takes it off.
+  if (more > 0 && !m.over) {
+    m.f[1].hp = Math.max(0, m.f[1].hp - more); trip.friendsHp = theirs;
+    if (!bindNote) bindNote = `${[...(by?.keys() ?? [])].map((id) => online.ghosts.get(id)?.name || "A friend").join(" and ")} fighting it too`;
+  }
+  online.hurt(((full - Math.max(0, m.f[1].hp) - trip.friendsHp) / full) * HURT_FULL);
 }
 /** The trip's next round: the line-up member up now against the foe, its health carried over from the last round. */
 function fightTrip() {
@@ -1601,6 +1619,7 @@ function frame(now: number) {
   if (pending && !director.holding) { const p = pending; pending = null; finish(p.m, p.bound); }
   nextTalk();
   const step = versusOn ? versus.link()?.step ?? null : null;
+  shareLair();
   // A fight against a friend never pauses: a menu open over it only stops your hands.
   if (m && live && !m.over && (step || ((!paused && !journalOpen) && !versusOn)) && !director.holding && !talking) {
     pollPad();
@@ -1772,7 +1791,7 @@ Object.assign(window, {
     /** The open world: `enter()`, `state()` (where you are, what you've beaten, what's open and rising), `travel(n)` to an open region n's arena, `places(n?)` the region's tapes, campfires, landmarks and sighting boards (also in `state().places`), `hunts(n?)` its sighting-board contracts (stage, next sign, lair; also `state().hunts`), `fastTravel(id)` to a lit campfire, `enterTown(id)` into a sighting board's town (its door does it too; `state().town` says where you stand inside, the board and the people), `standInside(x, z)` there in the town's own metres and `leaveTown()`, `teleport(x, z)` onto open ground (`state().wilds` says where the wild ones roam, `trails()` where each keeper's stone is), `setHour(h)` for the time of day, `setWeather({ rain, snow, mist })` (or null) to hold the weather, `layer(name, on)` to hide a drawn layer, `beat(n)` as if you won its arena, `reset()`. */
     /** Walking together, for an agent or the two-page journey: the party's view, and a contract told to the room. */
     together: {
-      state: () => online && { room: online.room, status: online.status, where: online.where(), fights: fights.map((f) => ({ ...f })) },
+      state: () => online && { room: online.room, status: online.status, where: online.where(), fights: fights.map((f) => ({ ...f })), lair: trip?.foe.hunt && m ? { den: `hunt:${trip.foe.hunt}`, hp: m.f[1].hp / m.f[1].b.hp, friends: Object.fromEntries(lairHurt.get(`hunt:${trip.foe.hunt}`) ?? []) } : null },
       hunt: (h: string, s: number) => online?.hunt(h, s),
       /** As if you had picked patch `id` (a grid cell, `gx,gz`), for the two-page journey. */
       pick: (id: string) => { world.lifeHeard({ k: "pick", id }); online?.life("pick", id); },

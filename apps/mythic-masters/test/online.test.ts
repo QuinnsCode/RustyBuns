@@ -269,6 +269,34 @@ describe("two friends in one region", () => {
     cy.close(); bo.close();
   });
 
+  test("a lair's creature is one creature: a friend's blows reach the other, and one who walks in late finds it hurt", async () => {
+    // Region 1's first contract: the Rougarou, level 9, at its lair (the two-page journey's lair too).
+    const den = "hunt:1.19074.1638", hurts: string[] = [];
+    const page = (name: string) => new Online("LAIR1", { opened: () => OPENED, base: party.url, guest: { uid: `${name}-uid-0000`, name }, onHurt: (d, _id, n) => hurts.push(`${name}: ${d} ${n}`) });
+    const ada = page("Ada"), bo = page("Bo");
+    ada.update(1, 19420, 2395, 0, "hodag", performance.now()); bo.update(1, 19430, 2395, 0, "squonk", performance.now());
+    await until(() => ada.status === "in" && bo.status === "in");
+    ada.met(den, "rougarou", 9); bo.met(den, "rougarou", 9);
+    // Half its health off in the first second can't be (a whole creature takes 3 s at the least): the room believes
+    // a third of it, and Bo hears that.
+    await Bun.sleep(1000);
+    ada.hurt(500);
+    await until(() => hurts.length > 0);
+    const [said] = hurts.map((h) => Number(h.split(" ").at(-1)));
+    expect(said).toBeGreaterThan(300);
+    expect(said).toBeLessThan(400);
+    // Later, her share grows; Cy walks in after and the room tells him at once how hurt it is.
+    await Bun.sleep(1000);
+    ada.hurt(600);
+    await until(() => hurts.includes(`Bo: ${den} 600`));
+    const cy = page("Cy");
+    cy.update(1, 19425, 2390, 0, "hodag", performance.now());
+    await until(() => cy.status === "in");
+    cy.met(den, "rougarou", 9);
+    await until(() => hurts.includes(`Cy: ${den} 600`));
+    ada.close(); bo.close(); cy.close();
+  });
+
   test("the room's record of the wilds keeps the newest of each kind, one per patch, and fits on a seat's socket", () => {
     const cell = (i: number) => `${10_000 + i},${-10_000 - i}`, den = (i: number) => `hunt:${"9".repeat(40)}${i}`;
     let k = NO_SEEN;

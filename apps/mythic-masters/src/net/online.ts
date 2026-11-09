@@ -7,7 +7,7 @@
 // and keeps trying, backing off to every 8 s; nothing about the trip is kept on the server.
 import { connectSocket, type Link } from "@rustybuns/util/socket";
 import { fresh, login } from "../account.ts";
-import { AGO_MS, bestOffset, type Seen, decodeServer, delta, Ghost, jumped, quantise, SEND_MS, WORLD_CYCLE, type Delta, type Event, type Pose, type ServerMsg } from "./party.ts";
+import { AGO_MS, bestOffset, sharedDen, type Seen, decodeServer, delta, Ghost, jumped, quantise, SEND_MS, WORLD_CYCLE, type Delta, type Event, type Pose, type ServerMsg } from "./party.ts";
 
 export const roomCode = (search: string) => (new URLSearchParams(search).get("room") ?? "").toUpperCase().match(/^[A-Z0-9]{4,12}$/)?.[0] ?? null;
 
@@ -30,6 +30,8 @@ type Ping = { ping: true };
 export const PING_MS = 30_000;
 /** No step for this long and you have stopped (`m: 0`): long enough that a slow walk, a decimetre at a time, doesn't flicker it. */
 const STILL_MS = 100;
+/** A share of a lair's creature (`hurt`) goes out this often at most: 4 a second, under the room's 8. */
+const HURT_MS = 250;
 
 export type Status = "joining" | "in" | "offline" | "full" | "signin" | "off";
 /** The room's close codes (edge/region.ts, edge/worker.ts). */
@@ -42,6 +44,8 @@ export interface OnlineOpts {
   onHunt?: (h: string, s: number, who: string) => void;
   /** A friend's fight ended, and the room believed the report. */
   onFought?: (f: { who: string; c: string; lv: number; won: boolean; bound: boolean }) => void;
+  /** A friend fighting the creature at lair `den` has taken `d` thousandths of its health off it, all told. */
+  onHurt?: (den: string, id: string, d: number) => void;
   /** A friend flushed a flock (`h`: its heading) or picked a food patch; `at` is when on the world clock, when it was earlier. */
   onLife?: (k: "flush" | "pick", id: string, h: number, at?: number) => void;
   /** What a friend who was here first knew: flocks landed somewhere new, and dens they are busy at. */
@@ -79,7 +83,7 @@ export class Online {
   private heard: { age: number; at: number }[] = [];
   /** Where we stand (quantised), every frame, for a den event; and the last den, to tell the room again after a drop. */
   private here: Pose | null = null;
-  private lastDen: { den: string; c: string; lv: number; at: number; n: number } | null = null;
+  private lastDen: { den: string; c: string; lv: number; at: number; n: number; d: number } | null = null;
   /** When we last moved (performance.now()): `m` stays 1 a moment after, so a slow walk doesn't flicker it. */
   private movedAt = -Infinity;
   private sent: Pose | null = null;
@@ -139,6 +143,7 @@ export class Online {
     else if (m.t === "life") this.o.onLife?.(m.k, m.f, m.h);
     else if (m.t === "seen") this.told(m);
     else if (m.t === "hunt") this.o.onHunt?.(m.h, m.s, this.ghosts.get(m.id)?.name ?? "");
+    else if (m.t === "hurt") { this.o.onHurt?.(m.den, m.id, m.d); return; }
     else if (m.t === "fought") this.o.onFought?.({ who: this.ghosts.get(m.id)?.name ?? "", c: m.c, lv: m.lv, won: m.won, bound: m.bound });
     else if (m.t === "p") {
       let g = this.ghosts.get(m.id);
@@ -181,7 +186,7 @@ export class Online {
 
   /** We walked into the wild one at `den` (creature `c`, level `lv`): tell the party. */
   met(den: string, c: string, lv: number) {
-    this.lastDen = { den, c, lv, at: performance.now(), n: 0 };
+    this.lastDen = { den, c, lv, at: performance.now(), n: 0, d: 0 };
     this.refresh();
     // Where we stand first (alone in a region we may not have said for a while): the room checks the den against it.
     if (this.sendPose()) this.link?.send({ e: "den", den, c, lv, ago: 0, n: 0 });
@@ -196,8 +201,16 @@ export class Online {
   private retell() {
     const d = this.lastDen, ago = d ? performance.now() - d.at : Infinity;
     this.refresh();
-    if (d && ago < AGO_MS && this.sendPose()) this.link?.send({ e: "den", den: d.den, c: d.c, lv: d.lv, ago: Math.max(1, Math.round(ago)), n: d.n });
+    if (d && ago < AGO_MS && this.sendPose() && this.link?.send({ e: "den", den: d.den, c: d.c, lv: d.lv, ago: Math.max(1, Math.round(ago)), n: d.n }) && d.d) this.link.send({ e: "hurt", d: d.d });
   }
+  /** At the lair we last walked into, we have taken `d` thousandths of its creature's health off, all told: the friends
+   *  fighting it take it off theirs. The page calls it every frame; it goes out when it grew, HURT_MS apart at most. */
+  hurt(d: number, now = performance.now()) {
+    const l = this.lastDen, v = Math.round(d);
+    if (!l || !sharedDen(l.den) || v <= l.d || now - this.hurtAt < HURT_MS || !this.link?.open) return;
+    if (this.link.send({ e: "hurt", d: v })) { l.d = v; this.hurtAt = now; }
+  }
+  private hurtAt = -Infinity;
   /** Where we stand this instant, from `posed`, before a den or contract goes out, so a jump this very frame is the
    *  pose the room checks it against; and the regions we have opened, first, so a jump into one just opened is believed. */
   private refresh() {
