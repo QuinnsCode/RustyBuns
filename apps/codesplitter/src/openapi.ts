@@ -126,6 +126,8 @@ export const ERRORS = {
   NoSyncBase: [409, "its git lost the commit it was dug at, so there's nothing to sync from: make a new mirror instead"],
   CommitsAhead: [409, "commits made here would go up: say how many with `ahead`"],
   AlreadyInCrew: [409, "they're on the repo's crew already"],
+  HandleTaken: [409, "someone has that handle, or had it and deleted their account"],
+  HasHandle: [409, "your account has its handle already, for good"],
   NoSharedHistory: [409, "the branch shares no history with main"],
   NothingToBeam: [409, "main (or upstream) has all of the branch already: nothing to beam"],
   StaleCopy: [409, "a stacked branch's copy of a file is older than the branch under it changed it: a beam would take that change out (`clash` lists them)"],
@@ -149,6 +151,7 @@ export const ERRORS = {
   GitUnavailable: [501, "this needs git on this machine (2.40 or newer for some of it): the desktop app has it"],
   NoAssetStore: [501, "binary files need storage this server hasn't got"],
   AgentFailed: [502, "the coding agent didn't answer"],
+  SignInOff: [503, "this site has no way to sign in set up"],
 } as const satisfies Record<string, readonly [number, string]>;
 export type ErrorTag = keyof typeof ERRORS;
 

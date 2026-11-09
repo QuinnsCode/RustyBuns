@@ -124,6 +124,9 @@ export class NotYourGitHub extends Schema.TaggedError<NotYourGitHub>()("NotYourG
 export class NotOnGitHub extends Schema.TaggedError<NotOnGitHub>()("NotOnGitHub", named) {}
 export class PrivateOnGitHub extends Schema.TaggedError<PrivateOnGitHub>()("PrivateOnGitHub", named) {}
 export class NoSuchJob extends Schema.TaggedError<NoSuchJob>()("NoSuchJob", named) {}
+export class HandleTaken extends Schema.TaggedError<HandleTaken>()("HandleTaken", named) {}
+export class HasHandle extends Schema.TaggedError<HasHandle>()("HasHandle", named) {}
+export class SignInOff extends Schema.TaggedError<SignInOff>()("SignInOff", named) {}
 
 type Named = { message: string; status: number; reply: unknown };
 /** One class per tag the server sends: a tag added to ERRORS without one here won't compile. */
@@ -142,6 +145,7 @@ export const NAMED = {
   SignInFirst, NoSuchBeam, NotYourBeam, NoSharedHistory, NothingToBeam, StaleCopy, AllNoise, NoUpstream, BeamClash, PathIsFolder, BytesMissing, BeamGone,
   NotYourGitHub, NotOnGitHub, PrivateOnGitHub,
   NoSuchJob,
+  HandleTaken, HasHandle, SignInOff,
 } satisfies { [K in ErrorTag]: new (a: Named) => { readonly _tag: K } };
 
 // What any call can meet, whatever the operation: they come from before a route answers, or from no answer at all.
