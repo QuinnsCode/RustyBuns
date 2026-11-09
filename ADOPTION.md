@@ -26,7 +26,7 @@ Your app comes down to five things. Each one has a real implementation on every 
 | **memory** | in-process state, workers, `SharedArrayBuffer`, optional FFI | (no FFI on the edge) | all of it |
 | **identity** | `X-User-Id`-style headers, vouched by whatever fronts the app | your Worker or auth | a launch token (desktop), a guest id (box) |
 
-So one app runs as a Worker + Durable Object + D1 + R2 on the edge, as `Bun.serve()` + an in-process object + sqlite + a folder on the desktop, and the same way on a Hetzner or Railway volume. One config, three columns. Auth UI, background jobs and email are left to your framework: the five primitives are what they run on, not a replacement for them. The full provider matrix is in [notes/ROADMAP.md](notes/ROADMAP.md).
+So one app runs as a Worker + Durable Object + D1 + R2 on the edge, as `Bun.serve()` + an in-process object + sqlite + a folder on the desktop, and the same way on a Hetzner or Railway volume. One config, three columns. The full provider matrix is in [notes/ROADMAP.md](notes/ROADMAP.md).
 
 ### The same five, elsewhere
 

@@ -607,7 +607,7 @@ test("init: React Router on @cloudflare/vite-plugin runs its Worker build, on th
   const node = rr('import { reactRouter } from "@react-router/dev/vite";\nexport default { plugins: [reactRouter()] };\n');
   const n = node.run("init");
   expect(n.code).not.toBe(0);
-  expect(n.out).toMatch(/@cloudflare\/vite-plugin.*issues\/318/);
+  expect(n.out).toMatch(/@cloudflare\/vite-plugin.*issues\/2455/);
   expect(existsSync(join(node.dir, "rustybuns.config.ts"))).toBe(false);
 });
 
@@ -714,7 +714,7 @@ test("init: Next.js on @opennextjs/cloudflare runs the Worker OpenNext builds on
   const plain = next({}).run("init");
   expect(plain.code).not.toBe(0);
   expect(plain.out).toContain("@opennextjs/cloudflare");
-  expect(plain.out).toMatch(/issues\/318/);
+  expect(plain.out).toMatch(/issues\/2455/);
 });
 
 const CRA = {
@@ -1038,7 +1038,7 @@ test("init: SvelteKit on adapter-cloudflare runs its Worker build on the desktop
   const auto = sk({ "@sveltejs/adapter-auto": "^6" });
   const n = auto.run("init");
   expect(n.code).not.toBe(0);
-  expect(n.out).toMatch(/adapter-cloudflare.*issues\/318/);
+  expect(n.out).toMatch(/adapter-cloudflare.*issues\/2455/);
   expect(existsSync(join(auto.dir, "rustybuns.config.ts"))).toBe(false);
 });
 
