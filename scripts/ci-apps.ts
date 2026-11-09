@@ -53,6 +53,8 @@ export const APPS: Record<string, App> = {
   "nextjs-example":    { test: "bun test test", boot: true },
   "nuxt-example":      { test: "bun test test", boot: true },
   "svelte-spa-example": { test: "bun test test", boot: true },
+  "vue-spa-example":   { test: "bun test test", boot: true },
+  "solid-spa-example": { test: "bun test test", boot: true },
   "hippo-tycoon":      { test: "bun test --parallel test", prep: "bun run build:native", check: true, boot: true },
   "meshy-studio":      { test: "bun test --parallel tests", check: true, boot: true },
   "motion-midi":       { test: "bun test test", prep: "bun run build:native", perOs: true, check: true, boot: true },

@@ -53,12 +53,22 @@ async function fetchSnapshot(env: Env): Promise<Snapshot> {
 /** The snapshot as one day sees it: each table newest first (the order lists page in), and by id. */
 export interface View { rows: Record<Table, Row[]>; byId: Record<Table, Map<string, Row>> }
 
-let stored: Promise<Snapshot> | null = null;
-let shown: { day: number; view: View } | null = null;
+// Kept per bucket, not once per module: a worker has one DEMO binding, but a test suite has many
+// envs in one process, and a snapshot loaded without a bucket must not stop another bucket's put.
+const NO_BUCKET = {};
+const stored = new WeakMap<object, Promise<Snapshot>>();
+const views = new WeakMap<Snapshot, { day: number; view: View }>();
 
 export async function demoView(env: Env): Promise<View> {
-  const snap = await (stored ??= fetchSnapshot(env).catch((e) => { stored = null; throw e; }));
+  const key = env.DEMO ?? NO_BUCKET;
+  let pending = stored.get(key);
+  if (!pending) {
+    pending = fetchSnapshot(env).catch((e) => { stored.delete(key); throw e; });
+    stored.set(key, pending);
+  }
+  const snap = await pending;
   const day = Math.floor((Date.now() - snap.built_at) / DAY);
+  const shown = views.get(snap);
   if (shown?.day === day) return shown.view;
   const shift = day * DAY;
   const rows = {} as View["rows"], byId = {} as View["byId"];
@@ -70,8 +80,9 @@ export async function demoView(env: Env): Promise<View> {
     }).sort(newestFirst);
     byId[t] = new Map(rows[t].map((r) => [String(r.id), r]));
   }
-  shown = { day, view: { rows, byId } };
-  return shown.view;
+  const view = { rows, byId };
+  views.set(snap, { day, view });
+  return view;
 }
 
 /** Lists' order: updated_at, then id, both descending. */
