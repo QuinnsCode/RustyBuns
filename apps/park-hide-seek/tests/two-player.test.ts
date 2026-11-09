@@ -4,7 +4,7 @@ import { afterAll, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
 import { serve, durableObject } from "@rustybuns/shell-bun";
 import World from "../packages/desktop/world.ts";
 import { HUNT, circleAt, dropOk, isServerMsg, type Msg, type View } from "../src/hunt/game.ts";
-import { step, tryMove, wrap, type Body } from "../src/hunt/sim.ts";
+import { resolve, step, wrap, type Body } from "../src/hunt/sim.ts";
 import { loadZoneData, zoneById, type Zone } from "../src/zones/zone.ts";
 
 setDefaultTimeout(60_000);
@@ -108,15 +108,21 @@ test("a camper outside the closing circle gets a countdown, is safe back inside,
   /**
    * Away from (+1) or toward (-1) the circle's middle until `stop`, a report every 50 ms. Quicker than a person
    * runs (the middle can be a long way off), but inside what the host accepts from one report to the next.
+   * Each step is the host's own move (straight on, then pushed out of whatever it walked into), so the body here
+   * stays where the host has it; held by a trunk or boulder, the next step goes half sideways round it.
    */
   const walk = async (dir: 1 | -1, stop: () => boolean) => {
     const end = Date.now() + 40_000;
+    let side = 0;
     while (!stop()) {
       if (Date.now() > end) throw new Error("walk timed out");
       await Bun.sleep(50);
-      const d = fromMiddle() || 1;
-      tryMove(z, cb, ((dir * (cb.x - k.x)) / d) * 0.8, ((dir * (cb.y - k.y)) / d) * 0.8);
-      cb.yaw = Math.atan2(dir * (cb.x - k.x), dir * (cb.y - k.y));
+      const before = fromMiddle(), d = before || 1;
+      const ux = (dir * (cb.x - k.x)) / d, uy = (dir * (cb.y - k.y)) / d, s = 0.8 / Math.hypot(1, side);
+      cb.x += (ux - side * uy) * s; cb.y += (uy + side * ux) * s;
+      resolve(z, cb);
+      side = Math.abs(fromMiddle() - before) < 0.2 ? 1 : 0;
+      cb.yaw = Math.atan2(ux, uy);
       camper.send(pos(cb));
     }
   };
