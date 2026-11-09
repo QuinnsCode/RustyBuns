@@ -13,10 +13,10 @@ const DAY_S = 86_400, MONTH_S = 30 * DAY_S;
 /** How long an idle Durable Object stays in memory (and billed) after its last event; Cloudflare evicts after 70-140 s. */
 export const DO_IDLE_S = 70;
 /** Duration bills the 128 MB an object is given, whatever it uses. */
-const DO_GB = 0.128;
+export const DO_GB = 0.128;
 
 /** Workers Paid ($5 a month): what it includes a month and the price per million past that. */
-const PRICES: Record<string, { label: string; included: number; perMillion: number }> = {
+export const PRICES: Record<string, { label: string; included: number; perMillion: number }> = {
   workerRequests: { label: "Worker requests", included: 10e6, perMillion: 0.30 },
   requests: { label: "DO requests", included: 1e6, perMillion: 0.15 },
   gbS: { label: "DO duration, GB-s", included: 400_000, perMillion: 12.50 },

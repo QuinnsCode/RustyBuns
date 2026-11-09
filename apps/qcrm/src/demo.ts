@@ -12,6 +12,7 @@ import { demoView, TABLES, warmDemo } from "./demo-snapshot.ts";
 import { b64url, error, json, sha256, type Env } from "./env.ts";
 import { createOrg, deleteOrg } from "./orgs.ts";
 import { sweepOAuth } from "./oauth.ts";
+import { runScheduled } from "./scripts.ts";
 
 export const DEMO_TTL = 3600_000;
 export const DEMO_PER_DAY = 3;
@@ -61,7 +62,7 @@ export async function demoOver(env: Env, user: User): Promise<Response | null> {
   return json({ error: "Your demo hour is up. Make an account to keep going.", ended: true }, 410);
 }
 
-/** Demos past their hour and scenario orgs a day old go, with their accounts; visits a day old are forgotten. Called once an hour by worker.tsx. */
+/** Demos past their hour and scenario orgs a day old go, with their accounts; visits a day old are forgotten; scheduled scripts run. Called once an hour by worker.tsx. */
 export async function hourly(env: Env): Promise<void> {
   // Builds and stores the snapshot when the bucket has none, so the first visitor doesn't wait on it.
   await warmDemo(env).catch(() => {});
@@ -82,6 +83,8 @@ export async function hourly(env: Env): Promise<void> {
   }
   await env.DB.prepare("DELETE FROM demo_visits WHERE at < ?").bind(Date.now() - DAY).run();
   await sweepOAuth(env);
+  // Scripts on a schedule (scripts.ts): hourly is the only one, so each runs once here.
+  await runScheduled(env).catch(() => {});
   // A retry whose queue message was lost (the delay window passed by more than an hour) gets a fresh one.
   const stale = await env.DB.prepare("SELECT id, attempts FROM webhook_deliveries WHERE status = 'pending' AND next_at < ? LIMIT 100").bind(Date.now() - 3600_000).all<{ id: string; attempts: number }>();
   for (const d of stale.results) await env.HOOKS?.send({ delivery: d.id, attempt: d.attempts + 1 });

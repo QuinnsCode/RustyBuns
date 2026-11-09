@@ -126,6 +126,11 @@ const git = (...args: string[]) => {
   return r.exitCode === 0 ? r.stdout.toString() : null;
 };
 const show = (rev: string, path: string) => git("show", `${rev}:${path}`);
+// A file as it is, for writing a tree: a model or image read as text comes out mangled (#3113's GLBs).
+const showBytes = (rev: string, path: string) => {
+  const r = Bun.spawnSync(["git", "show", `${rev}:${path}`], { cwd });
+  return r.exitCode === 0 ? r.stdout : null;
+};
 /** Runs the git commands below in `repo` (tests only). */
 export const useRepo = (repo?: string) => { cwd = repo; };
 // merge-tree's paths and archive's files are the current folder's: run them at the top.
@@ -187,7 +192,7 @@ export function writeMerge(dir: string, main: string, branch: string, landed: st
   const conflicted = new Set(rest.slice(0, Math.max(0, rest.indexOf(""))));
   writeTree(dir, tree!);
   for (const path of conflicted) {
-    const t = ours.get(path) ?? show(landed, path);
+    const t = ours.get(path) ?? showBytes(landed, path);
     if (t === null) rmSync(join(dir, path), { force: true });
     else { mkdirSync(dirname(join(dir, path)), { recursive: true }); writeFileSync(join(dir, path), t); }
   }

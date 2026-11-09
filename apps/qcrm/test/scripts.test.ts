@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { hourly } from "../src/demo.ts";
 import { local, person, post } from "./app-kit.ts";
 
 test("a script lists contacts and writes an activity; the run row says ok", async () => {
@@ -92,4 +93,40 @@ test("roles: seasonal reads but cannot write or run; employee runs; owner delete
   const off = await local({ LOADER: undefined });
   const d = await person(off, "dave@qcrm.test");
   expect((await off(d.cookie, `/api/orgs/${d.org}/scripts`)).status).toBe(503);
+});
+
+test("an org's runs a day: past the cap a run is 429; a script on the hour runs from the cron as its maker", async () => {
+  const app = await local();
+  const { cookie, org, user } = await person(app, "alice@qcrm.test");
+  const scripts = `/api/orgs/${org}/scripts`;
+  const s = await (await post(app, cookie, scripts, { name: "one", body: "return 1;" })).json();
+  expect((await post(app, cookie, `${scripts}/limits`, { runs_per_day: 2 }, "PUT")).status).toBe(200);
+  expect((await post(app, cookie, `${scripts}/${s.id}/run`, {})).status).toBe(201);
+  expect((await post(app, cookie, `${scripts}/${s.id}/run`, {})).status).toBe(201);
+  const over = await post(app, cookie, `${scripts}/${s.id}/run`, {});
+  expect(over.status).toBe(429);
+  expect((await over.json()).error).toContain("2 runs a day");
+  expect(await (await app(cookie, `${scripts}/limits`)).json()).toEqual({ runs_per_day: 2, runs_last_day: 2 });
+
+  // Hourly is the only schedule; the cron skips an org at its cap, and runs it once there's room.
+  expect((await post(app, cookie, scripts, { name: "x", body: "return 1;", cron: "*/5 * * * *" })).status).toBe(400);
+  const ada = await (await post(app, cookie, `/api/orgs/${org}/contacts`, { first_name: "Ada" })).json();
+  const timed = await (await post(app, cookie, scripts, { name: "nightly note", cron: "@hourly", body: `
+    const note = await qcrm.create("activities", { type: "note", contact_id: (await qcrm.list("contacts")).items[0].id, body: "on the hour" });
+    return { scheduled: input.scheduled, note: note.id };` })).json();
+  expect(timed.cron).toBe("0 * * * *");
+  await hourly(app.env);
+  expect(await (await app(cookie, `${scripts}/${timed.id}/runs`)).json()).toEqual([]);
+
+  await post(app, cookie, `${scripts}/limits`, { runs_per_day: 10 }, "PUT");
+  await hourly(app.env);
+  const runs = await (await app(cookie, `${scripts}/${timed.id}/runs`)).json();
+  expect(runs).toHaveLength(1);
+  expect(runs[0].status).toBe("ok");
+  expect(runs[0].actor_user_id).toBe(user.id);
+  expect(runs[0].result.scheduled).toBe(true);
+  const note = await (await app(cookie, `/api/orgs/${org}/activities/${runs[0].result.note}`)).json();
+  expect(note.contact_id).toBe(ada.id);
+  // The run's key is gone, and was never in the org's key list.
+  expect(await (await app(cookie, `/api/orgs/${org}/keys`)).json()).toEqual([]);
 });
