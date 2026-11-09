@@ -234,6 +234,7 @@ import { askUsage, forget, sweepConflicts } from "./usage.ts";
 import { hasPage, pageRoutes, pagesHost } from "./page.ts";
 import { seenRoutes } from "./seen.ts";
 import { settingsRoutes } from "./settings.ts";
+import { officeHook, officeRoutes } from "./office.ts";
 import { agentPromptResponse } from "./agent-prompt.ts";
 import { installScript } from "./install.ts";
 import {
@@ -284,6 +285,7 @@ export { GameRoom } from "./game-do.ts";
 export { RepoSearch } from "./search.ts";
 export { UserSettings } from "./settings.ts";
 export { AgentThread } from "./thread-do.ts";
+export { OfficeFloor } from "./office.ts";
 import { mentionRoutes } from "./mentions.ts";
 export { AgentSandbox } from "./sandbox.ts";
 export { DeployRunner } from "./deploy-runner.ts";
@@ -371,6 +373,9 @@ async function route(req: Request, env: Env): Promise<Response> {
   // /api/oauth/*  an app signs in as you, and gets tokens like the ones below (oauth.ts)
   const oauth = await oauthRoutes(req, env, p, url);
   if (oauth) return oauth;
+  // POST /api/office/:floor/hook  an office worker's report, its hook token as the bearer, so before the API-token check (office.ts)
+  const hook = officeHook(req, env, p, url);
+  if (hook) return hook;
   // A personal API token (tokens.ts) stands in for the cookie, and is never an admin.
   const token = await bearer(req, env, p);
   if (token instanceof Response) return token;
@@ -473,6 +478,10 @@ async function route(req: Request, env: Env): Promise<Response> {
   // GET|PUT /api/me/seen, the rev of each file you last saw (seen.ts)
   const seen = await seenRoutes(req, env, p, url, user);
   if (seen) return seen;
+
+  // /api/office/:floor  the Agent Office floor: queue, desks, roster, its socket; the owner only for now (office.ts, #3423)
+  const office = await officeRoutes(req, env, p, user, admin);
+  if (office) return office;
 
   // GET|PUT /api/me/settings, your light/dark choice and the like, in a Durable Object of your own (settings.ts)
   const settings = await settingsRoutes(req, env, p, user);

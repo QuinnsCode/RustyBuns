@@ -213,6 +213,8 @@ export default defineConfig({
         AUTH_LIMIT: { namespaceId: "6471" },
         BETTER_AUTH_URL: { value: "https://codesplitter-office-preview.notryanquinn.workers.dev" },
         TURNSTILE_SITE_KEY: { value: "" },
+        // The Agent Office floor (src/office.ts, #3423 slice 1): one SQLite-backed object per floor, here and not live.
+        OFFICE: { type: "durable_object", className: "OfficeFloor" },
       },
     },
   },

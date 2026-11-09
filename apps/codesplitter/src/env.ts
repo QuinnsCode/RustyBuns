@@ -81,6 +81,8 @@ export interface Env {
   SETTINGS: { idFromName(n: string): unknown; get(id: unknown, opts?: { locationHint?: string }): { fetch(r: Request): Promise<Response> } };
   /** One agent thread per run and the runs after it: its messages and sockets (thread-do.ts, #3711). */
   THREADS: { idFromName(n: string): unknown; get(id: unknown): { fetch(r: Request): Promise<Response> } };
+  /** The Agent Office: one floor per object (office.ts, #3423). Bound on the office-preview stage only. */
+  OFFICE?: { idFromName(n: string): unknown; get(id: unknown): { fetch(r: Request): Promise<Response> } };
   /** One code search index per repo (search.ts). */
   SEARCH: { idFromName(n: string): unknown; get(id: unknown): { fetch(r: Request): Promise<Response> } };
   /**

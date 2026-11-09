@@ -27,6 +27,11 @@ test("office-preview takes nothing over from the live Worker, protects nothing a
   expect(preview.worker!.crons).toBeUndefined();
 });
 
+test("the office floor is bound on office-preview and not live (#3423)", () => {
+  expect(preview.bindings.OFFICE).toEqual({ type: "durable_object", className: "OfficeFloor" });
+  expect(live.bindings.OFFICE).toBeUndefined();
+});
+
 test("the live stage keeps every database, bucket, KV and index through a destroy", () => {
   const data = Object.entries(live.bindings).filter(([, b]) => ["d1", "r2", "kv", "vectorize"].includes(b.type));
   expect(data.length).toBeGreaterThan(0);
