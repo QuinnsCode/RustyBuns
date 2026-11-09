@@ -353,6 +353,7 @@ body:has(#hud[hidden]) .hud-chooser { display: none; }
 .paper .demand .ledger::before { content: "On you: "; }
 /* Your ground's colour (Settings, Account): 64 swatches, 8 across; a friend's is crossed out, yours ringed. Over the tome's
    own .paper button look (tome.css), hover included. */
+.gc-dialog .gc-acct > p { font-family: var(--f-book); font-weight: 400; font-size: 17px; color: var(--ink-faded); }
 .gc-acct .hues { display: grid; grid-template-columns: repeat(8, 28px); gap: 5px; }
 .gc-dialog .gc-acct .hues button[data-hue], .gc-dialog .gc-acct .hues button[data-hue]:hover:not(:disabled) { width: 28px; height: 28px; padding: 0; border: 2px solid rgba(70, 42, 18, 0.35); border-radius: 50%; background: var(--hue); cursor: pointer; transform: none; }
 .gc-dialog .gc-acct .hues button[data-hue]:hover:not(:disabled) { transform: scale(1.12); }
