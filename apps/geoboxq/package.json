@@ -22,7 +22,7 @@
     "@alchemy.run/hetzner": "2.0.0-beta.84",
     "@alchemy.run/neon": "2.0.0-beta.84",
     "@alchemy.run/railway": "2.0.0-beta.84",
-    "@cloudflare/vite-plugin": "1.60.2",
+    "@cloudflare/vite-plugin": "1.66.0",
     "@effect/platform-bun": "4.0.5",
     "@effect/platform-node": "4.0.5",
     "@rustybuns/cli": "^0.1.12",
@@ -31,8 +31,8 @@
     "@rustybuns/util": "^0.1.12",
     "alchemy": "2.0.0-beta.84",
     "effect": "4.0.5",
-    "vite": "8.3.3",
-    "wrangler": "4.141.0"
+    "vite": "8.3.5",
+    "wrangler": "4.156.0"
   },
   "overrides": {
     "effect": "4.0.5",

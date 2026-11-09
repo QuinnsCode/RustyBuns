@@ -21,8 +21,8 @@
     "@rustybuns/native": "^0.1.12",
     "@rustybuns/shell-bun": "^0.1.12",
     "@rustybuns/util": "^0.1.12",
-    "react": "19.2.8",
-    "react-dom": "19.2.8"
+    "react": "19.3.1",
+    "react-dom": "19.3.1"
   },
   "devDependencies": {
     "@alchemy.run/cloudflare": "2.0.0-beta.84",
@@ -36,7 +36,7 @@
     "@types/react-dom": "19",
     "alchemy": "2.0.0-beta.84",
     "effect": "4.0.5",
-    "vite": "^6.2.6"
+    "vite": "^6.4.4"
   },
   "overrides": {
     "effect": "4.0.5",
