@@ -80,6 +80,8 @@ export class Director<S extends Scene = Scene> {
 
   /** The scene playing, and seconds into it. */
   get beat(): { id: S["id"]; t: number } | null { return this.now && { id: this.now.s.id, t: this.now.t }; }
+  /** The scene playing itself (for a page to file it as a memory, memories.ts). */
+  get scene(): S | null { return this.now?.s ?? null; }
   get holding(): boolean { return !!this.now?.s.hold; }
   get skippable(): boolean { return !!this.now?.s.skip; }
 
