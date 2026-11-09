@@ -235,6 +235,18 @@ html[data-sky=system] .skyswitch [data-sky-pick=system],html[data-sky=day] .skys
     padding: 4px 9px 3px; border-radius: 99px; color: #fff; background: var(--crust); box-shadow: 0 2px 0 color-mix(in oklab, var(--crust) 70%, #000); }
   .bun[data-r="4"] { --crust: #e8892e; } .bun[data-r="3"] { --crust: #b8742f; } .bun[data-r="2"] { --crust: #8a6a4a; } .bun[data-r="1"] { --crust: #6b6660; }
   main .fwc .ui-btn { align-self: flex-start; min-height: 36px; padding: 0 12px; font-size: 14px; }
+  /* The shelf: the parts a game can add, a card each with its picture, what it does and the line that adds it. */
+  .shelf { margin-top: 56px; }
+  .part { flex: 0 0 260px; padding: 0; overflow: hidden; }
+  .part .shot { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; display: block; border-bottom: 1px solid var(--edge); }
+  .part > div { padding: 0 14px 14px; display: flex; flex-direction: column; gap: 8px; flex: 1; }
+  .part h3 { margin-top: 4px; }
+  .part .does { margin: 0; font-size: 14px; line-height: 1.35; flex: 1; }
+  .part .used { color: var(--mute); font-size: 13px; }
+  .add { display: flex; align-items: center; gap: 6px; border: 1px solid var(--edge); border-radius: 6px; background: color-mix(in oklab, var(--paper) 80%, #000 4%); }
+  .add code { flex: 1; min-width: 0; overflow-wrap: anywhere; padding: 7px 8px; font-size: 12.5px; }
+  .add button { border: 0; background: none; padding: 6px 8px; cursor: pointer; color: inherit; }
+  .add svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
   .empty { text-align: center; color: #fff; font-size: 22px; text-shadow: 0 2px 12px rgba(0,0,0,.5); }
   @media (prefers-reduced-motion: reduce) { h1 span, .card, .gate, .ui-btn.play svg { animation: none; } .card, .gate, .ui-btn { transition: none; } }
 </style>
@@ -294,6 +306,11 @@ var s=get();if(s)go(s,false)})();</script>
     <div class="rows" id="apps"></div>
   </section>
   <p class="empty" id="empty" hidden>Nothing here yet. Try another word.</p>
+  <section class="fw shelf" aria-labelledby="shelf-title">
+    <h2 id="shelf-title">Parts on the shelf</h2>
+    <p>The pieces our games share, each one line from yours: models, rigs, ground, controls and the UI kit. Each reads itself off its package's <code>package.json</code>.</p>
+    <div class="strip" id="parts"></div>
+  </section>
   <section class="fw" aria-labelledby="fw-title">
     <h2 id="fw-title">Frameworks it runs</h2>
     <p>Each one an app on that framework, its code unchanged, rated fresh to stale against the framework's latest release. More in <a href="https://github.com/QuinnsCode/RustyBuns/blob/main/FRAMEWORKS.md">FRAMEWORKS.md</a>.</p>
@@ -354,6 +371,8 @@ const ICONS = {
   desktop: ["M4 3h16a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z", "M8 21h8", "M12 17v4"],
   gamepad: ["M6 11h4", "M8 9v4", "M15 12h.01", "M18 10h.01", "M17.32 5H6.68a4 4 0 0 0-3.978 3.59c-.006.052-.01.101-.017.152C2.604 9.416 2 14.456 2 16a3 3 0 0 0 3 3c1 0 1.5-.5 2-1l1.414-1.414A2 2 0 0 1 9.828 16h4.344a2 2 0 0 1 1.414.586L17 18c.5.5 1 1 2 1a3 3 0 0 0 3-3c0-1.545-.604-6.584-.685-7.258-.007-.05-.011-.1-.017-.151A4 4 0 0 0 17.32 5z"],
   store: ["m2 7 4.41-4.41A2 2 0 0 1 7.83 2h8.34a2 2 0 0 1 1.42.59L22 7", "M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8", "M15 22v-4a2 2 0 0 0-2-2h-2a2 2 0 0 0-2 2v4", "M2 7h20", "M22 7v3a2 2 0 0 1-2 2a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 16 12a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 12 12a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 8 12a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 4 12a2 2 0 0 1-2-2V7"],
+  copy: ["M8 8h12a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H10a2 2 0 0 1-2-2z", "M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"],
+  check: ["M20 6 9 17l-5-5"],
   dice: ["M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z", "M8 8h.01", "M16 8h.01", "M12 12h.01", "M8 16h.01", "M16 16h.01"],
 };
 const el = (tag, attrs = {}, ...kids) => {
@@ -378,6 +397,8 @@ const link = (text, href, kind, cls = "ui-btn") => el("a", { href, className: cl
 
 const apps = await (await fetch("apps.json")).json();
 const fw = await (await fetch("frameworks.json")).json();
+const parts = await (await fetch("shelf.json")).json();
+const partsBox = document.getElementById("parts");
 // Each entry's `group` says where it goes: the gateway strip on top, then the games, then the apps.
 const boxes = { gateway: document.getElementById("gateway"), games: document.getElementById("games"), apps: document.getElementById("apps") };
 const empty = document.getElementById("empty");
@@ -433,6 +454,7 @@ const SECTIONS = [
   ["gateway", "Start here", (list) => list.filter((a) => a.group === "gateway")],
   ["games-title", "Games", (list) => list.filter((a) => a.group === "games")],
   ["apps-title", "Apps", (list) => list.filter((a) => (a.group ?? "apps") === "apps")],
+  ["shelf-title", "Parts", () => partsShown()],
   ["fw-title", "Frameworks", () => fwShown()],
 ];
 let current = "gateway";
@@ -444,6 +466,18 @@ const seen = new IntersectionObserver((hits) => {
   mark();
 }, { rootMargin: "-20% 0px -70% 0px" });
 const fwShown = () => { const needle = q.value.trim().toLowerCase(); return fw.frameworks.filter((f) => !needle || `${f.name} ${f.pkg}`.toLowerCase().includes(needle)); };
+
+const partsShown = () => { const needle = q.value.trim().toLowerCase(); return parts.filter((p) => !needle || `${p.name} ${p.pkg} ${p.does}`.toLowerCase().includes(needle)); };
+/** One part: its picture (a game that uses it), what it does, the line that adds it with a copy button, and who uses it. */
+const part = (p) => {
+  const copy = el("button", { type: "button", title: "Copy", ariaLabel: `Copy ${p.add}` }, icon(ICONS.copy));
+  copy.onclick = async () => { try { await navigator.clipboard.writeText(p.add); copy.replaceChildren(icon(ICONS.check)); setTimeout(() => copy.replaceChildren(icon(ICONS.copy)), 1500); } catch {} };
+  const img = el("img", { className: "shot", src: `shots/${p.picture}.jpg`, alt: "", loading: "lazy", onerror() { img.remove(); } });
+  return el("div", { className: "fwc part" }, img, el("div", {}, el("h3", { textContent: p.name }), el("p", { className: "does", textContent: p.does }),
+    el("div", { className: "add", title: p.published ? "From npm" : "Inside the Rusty Buns repo: add it to your package.json" }, el("code", { textContent: p.add }), copy),
+    el("span", { className: "used", textContent: `In ${p.usedBy.length} ${p.usedBy.length === 1 ? "app" : "apps"}: ${p.usedBy.join(", ")}` }),
+    link("Source", `${REPO}/tree/main/packages/${p.dir}`, "source")));
+};
 
 const draw = () => {
   const needle = q.value.trim().toLowerCase();
@@ -461,6 +495,9 @@ const draw = () => {
     return a;
   }));
   mark();
+  const ps = partsShown();
+  partsBox.replaceChildren(...ps.map(part));
+  partsBox.parentElement.hidden = ps.length === 0;
   const fws = fwShown();
   strip.replaceChildren(...fws.map((f) => {
     const r = freshness(f.version, f.latest);
@@ -474,7 +511,7 @@ const draw = () => {
 };
 q.oninput = draw;
 draw();
-for (const sec of [boxes.gateway, boxes.games.parentElement, boxes.apps.parentElement, strip.parentElement]) seen.observe(sec);
+for (const sec of [boxes.gateway, boxes.games.parentElement, boxes.apps.parentElement, partsBox.parentElement, strip.parentElement]) seen.observe(sec);
 </script>
 </body>
 </html>

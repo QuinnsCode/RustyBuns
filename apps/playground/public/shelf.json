@@ -1,0 +1,92 @@
+[
+  {
+    "pkg": "@rustybuns/game-controls",
+    "dir": "game-controls",
+    "name": "Controls",
+    "does": "The cog-menu Controls panel every game shares: X, Y and touch look sensitivity, invert Y, a key list, saved per game.",
+    "add": "bun add @rustybuns/game-controls",
+    "published": true,
+    "picture": "git-recon",
+    "usedBy": [
+      "alien-disc-golf",
+      "delayed-reaction",
+      "git-recon",
+      "hippo-tycoon",
+      "mythic-masters",
+      "park-hide-seek",
+      "skate-tech-park",
+      "splat-rooms",
+      "splat-spray",
+      "two-fronts"
+    ]
+  },
+  {
+    "pkg": "@rustybuns/models",
+    "dir": "models",
+    "name": "Models",
+    "does": "three.js models apps share (the rocket roadster; shrubs and cacti) and the shapes and GLB writer model scripts build with. Plain TS on three; each app brings its own materials.",
+    "add": "bun add @rustybuns/models",
+    "published": true,
+    "picture": "skate-tech-park",
+    "usedBy": [
+      "git-recon",
+      "mythic-masters",
+      "park-hide-seek",
+      "skate-tech-park"
+    ]
+  },
+  {
+    "pkg": "@rustybuns/render",
+    "dir": "render",
+    "name": "Native renderer",
+    "does": "Spike: a Rusty Buns app's page, unchanged, run in Bun on a DOM whose changes go out as ops for a Rust engine to lay out and paint, with input coming back as DOM events. Mirror is the TS twin of that engine.",
+    "add": "\"@rustybuns/render\": \"workspace:*\"",
+    "published": false,
+    "picture": "qcrm",
+    "usedBy": [
+      "qcrm"
+    ]
+  },
+  {
+    "pkg": "@rustybuns/rig",
+    "dir": "rig",
+    "name": "Rigs",
+    "does": "auto-rig's voxel rigger (skeleton and skin weights from any mesh), its wire codec, the GLB bake that feeds it, and the closed-chain IK that poses the result. auto-rig and Mythic Masters share it; the Rust twin stays in apps/auto-rig/native.",
+    "add": "bun add @rustybuns/rig",
+    "published": true,
+    "picture": "auto-rig",
+    "usedBy": [
+      "auto-rig",
+      "mythic-masters"
+    ]
+  },
+  {
+    "pkg": "@rustybuns/terrain",
+    "dir": "terrain",
+    "name": "Terrain",
+    "does": "Ground for the 3D example apps: real park heightmaps (the seven zones), noise-and-stamp terrain, and level pads. No dependencies, plain TS.",
+    "add": "bun add @rustybuns/terrain",
+    "published": true,
+    "picture": "park-hide-seek",
+    "usedBy": [
+      "git-recon",
+      "park-hide-seek",
+      "skate-tech-park"
+    ]
+  },
+  {
+    "pkg": "@rustybuns/ui",
+    "dir": "ui",
+    "name": "UI kit",
+    "does": "The soft, bold UI kit: design tokens and small DOM components (button, chip, toggle, slider, tabs, panel, dialog, toast) that a game re-themes with CSS custom properties. No dependencies.",
+    "add": "bun add @rustybuns/ui",
+    "published": true,
+    "picture": "two-fronts",
+    "usedBy": [
+      "eqosys",
+      "park-hide-seek",
+      "pixel-rag",
+      "two-fronts"
+    ]
+  }
+]

@@ -15,6 +15,7 @@
     "bun": ">=1.4.0"
   },
   "description": "Ground for the 3D example apps: real park heightmaps (the seven zones), noise-and-stamp terrain, and level pads. No dependencies, plain TS.",
+  "shelf": { "name": "Terrain", "picture": "park-hide-seek" },
   "main": "./src/index.ts",
   "types": "./src/index.ts",
   "exports": {

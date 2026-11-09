@@ -13,6 +13,10 @@ bun run deploy    # your Cloudflare account, static assets only
 
 It is assets only, no Worker code, so it bills nothing past the free static tier. Visits are counted on eqosys instead: the page sends a beacon to `eqosys.qntbr.com/api/visit` when it opens and on the first tap, key or scroll (not from localhost), and the super admin reads them on eqosys's Visitors tab.
 
+## The shelf
+
+After the apps, **Parts on the shelf** lists the packages a game can add (models, rigs, terrain, controls, the UI kit, the native renderer): a picture, what it does, the line that adds it (`bun add @rustybuns/<part>` for the published ones, a `workspace:*` line for the rest) with a copy button, and the apps that use it. `public/shelf.json` is written by `bun run shelf` from each package's own `package.json`: its `description` is what it does, and a `shelf` field (`{ "name": "Models", "picture": "skate-tech-park" }`) puts it on the shelf, the picture being the screenshot of an app that uses it. A package without that field stays off. Run it after adding a part or changing a description; the test fails when the file is stale. A maker's own parts, published from their studio, come later.
+
 ## Putting an app on it
 
 A browser app with no host needs a `wrangler.jsonc` with `"assets": { "directory": "<its dist>" }` and a `deploy` script (`splat-spray` and `hello-world` are the smallest). Deploy it, then add its `play` URL to `apps.json`. An app with "use server" actions (`fm-daw`, `auto-rig`, `splat-rooms`, `motion-midi`) runs `rustybuns boundary` before its `vite build`, so those actions become proxies that fail on the web and the page falls back. Those and `mythic-masters` and `hippo-tycoon` deploy through `rustybuns`: in the app's folder, `bunx rustybuns plan`, then `bun run deploy`. Each pins its Worker's name (`targets.edge.workerName`), so the URL is `<app>.<subdomain>.workers.dev`. Apps that need their desktop host (`tscircuit-desktop`, `meshy-studio`) take more work first.

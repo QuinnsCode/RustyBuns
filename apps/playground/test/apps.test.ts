@@ -41,6 +41,13 @@ test.each([
   expect(freshness(pinned, latest)).toBe(r);
 });
 
+test("public/shelf.json is the shelf the packages describe, and each part's picture is there", async () => {
+  const { shelf } = await import("../scripts/shelf.ts");
+  const parts = await shelf();
+  expect(await Bun.file(`${import.meta.dir}/../public/shelf.json`).json()).toEqual(parts);
+  for (const p of parts) expect(existsSync(`${import.meta.dir}/../public/shots/${p.picture}.jpg`)).toBe(true);
+});
+
 test("public/ui.js is the current packages/ui bundle", async () => {
   const { bundle } = await import("../scripts/ui.ts");
   expect(await Bun.file(`${import.meta.dir}/../public/ui.js`).text()).toBe(await bundle());
