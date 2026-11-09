@@ -192,7 +192,12 @@ Each item is one PR, and each is useful on its own.
    heap of fallen rock and maybe its own light), and the small creatures that live there (bats and moths under the roof,
    fireflies and glowworms, rats, crayfish and scorpions round the floor, one instanced mesh per kind). Every playable
    region's mythic fights in its own (#3835, #3959), and on the open world its arena ring sits under the lair's cave mouth,
-   open toward the trail, and a cave on the map. Still to come: towns as pockets (#3966).
+   open toward the trail, and a cave on the map. Towns are pockets too (#3966, `src/world/towns.ts`): each sighting
+   board hangs in a town, a gas station, a diner and a motel in a row on a cleared lot with one door. Walk up to the door and
+   you are inside, a pocket you walk round rather than fight in (`town-view.ts`, its own lights and fog, the open world put
+   away and the line-up waiting outside): the board on the diner's back wall past the counter, and the cook, the clerk, the
+   night manager and the witness who pinned the report up, each with a line that follows the contract. Out of the front
+   door, you are on the street again.
 5. **Beast travel:** swim and glide first, gating the crossing south. Done: `pace` and `GATES` in `src/world/world.ts`.
    A beast whose first field is the tide swims you over water a wade would slow (a quarter faster than walking), a flier
    glides you down any slope steeper than 8% at half again your pace, and nothing goes past `PACE_MAX` (20 m/s, a near

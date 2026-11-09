@@ -30,6 +30,8 @@ export interface Hunt {
   board: Spot;
   creature: string;
   level: number;
+  /** Who saw it and pinned the report up: "Trucker". They are in the town (src/world/towns.ts). */
+  witness: string;
   /** What it is called by the people who saw it: "The Batsto Prowler". */
   title: string;
   /** The report on the board, "Who: what", played like a tape. */
@@ -71,7 +73,7 @@ function hunt(p: Poi): Hunt | null {
   }
   const title = `The ${s.name} ${NAMES[c.archetype]}`, who = WITNESSES[Math.floor(rnd() * WITNESSES.length)]!;
   return {
-    id: p.id, n: p.n, k: p.k, board: { x: p.x, z: p.z }, creature: id, level: s.level + LEVEL_UP, title, lair: at, clues,
+    id: p.id, n: p.n, k: p.k, board: { x: p.x, z: p.z }, creature: id, level: s.level + LEVEL_UP, witness: who, title, lair: at, clues,
     report: [
       `${who}: Something has been out by ${s.name}. Folks are calling it ${title.replace(/^The/, "the")}.`,
       `${who}: ${SIGNS[c.archetype][0]}. Then nothing. Then more of it, further on.`,
