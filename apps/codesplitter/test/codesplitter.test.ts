@@ -423,24 +423,27 @@ describe("handles", () => {
   test("six or more characters, free, and not an agent's; an admin gives out short ones by email", async () => {
     const { call, signup, session, claim, person } = await accounts({ ADMINS: "boss-person" });
     const free = async (name: string) => (await (await call(null, `/api/handle?name=${name}`)).json()) as any;
+    // A failure's status and its tag (#3940).
+    const named = async (r: Response | Promise<Response>) => { const res = await r; return [res.status, ((await res.json()) as { tag?: string }).tag]; };
     const boss = await person("boss@example.com", "boss-person");
     expect(await session(boss)).toMatchObject({ user: "boss-person", admin: true });
 
     const ana = await signup("ana@example.com", "Ana");
     expect((await session(ana)).pick.suggest).toBe("ana-digger");                        // too short to offer
-    expect((await claim(ana, "ana")).status).toBe(400);
+    expect(await named(claim(ana, "ana"))).toEqual([400, "BadInput"]);
     expect(await free("ana")).toEqual({ name: "ana", ok: false, why: "at least 6 characters" });
     expect(await free("boss-person")).toMatchObject({ ok: false, why: "taken" });
-    expect((await claim(ana, "boss-person")).status).toBe(409);
+    expect(await named(claim(ana, "boss-person"))).toEqual([409, "HandleTaken"]);
     expect((await claim(ana, "Ana_Bee")).status).toBe(400);
     expect(await free("agent-codex")).toMatchObject({ ok: false, why: "agent- handles are for coding agents" });
     expect(await free("anabee")).toMatchObject({ ok: true });
     expect((await claim(ana, "anabee")).status).toBe(201);
+    expect(await named(claim(ana, "anabee-two"))).toEqual([409, "HasHandle"]);
 
     const grant = (cookie: string, body: unknown) => call(null, "/api/admin/handles", { method: "POST", headers: { cookie }, body: JSON.stringify(body) });
-    expect((await grant(ana, { handle: "zed", email: "zed@example.com" })).status).toBe(403);   // admins only
-    expect((await grant(boss, { handle: "boss-person", email: "x@example.com" })).status).toBe(409);
-    expect((await grant(boss, { handle: "agent-codex", email: "y@example.com" })).status).toBe(400);
+    expect(await named(grant(ana, { handle: "zed", email: "zed@example.com" }))).toEqual([403, "AdminsOnly"]);
+    expect(await named(grant(boss, { handle: "boss-person", email: "x@example.com" }))).toEqual([409, "HandleTaken"]);
+    expect(await named(grant(boss, { handle: "agent-codex", email: "y@example.com" }))).toEqual([400, "BadInput"]);
     // A grant goes to a verified email only, since anyone can type one at signup.
     const typed = await signup("zed2@example.com", "Zed");
     const verified = await signup("zed3@example.com", "Zed");
@@ -451,7 +454,7 @@ describe("handles", () => {
     expect((await session(verified)).user).toBe("zed");
 
     const alias = await local();
-    expect((await post(alias, null, "/api/login", { name: "agent-codex" })).status).toBe(400);
+    expect(await named(post(alias, null, "/api/login", { name: "agent-codex" }))).toEqual([400, "BadInput"]);
   });
 });
 

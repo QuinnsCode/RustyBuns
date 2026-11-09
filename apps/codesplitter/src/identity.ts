@@ -12,7 +12,7 @@
 // email account gets handle grants and ADMIN_EMAIL like GitHub and Google do.
 
 import { betterAuth } from "better-auth";
-import { json, NAME, type Env, readBody } from "./env.ts";
+import { fail, json, NAME, type Env, readBody } from "./env.ts";
 import { esc } from "./util.ts";
 import { privacyNotice } from "./privacy.ts";
 import { turnstileOn } from "./security.ts";
@@ -255,15 +255,15 @@ export function isAdmin(env: Env, user: string | null) {
  */
 async function grantRoutes(req: Request, env: Env, p: string[]): Promise<Response | null> {
   if (p[1] !== "admin" || p[2] !== "handles") return null;
-  if (!isAdmin(env, await identify(req, env))) return json({ error: "admins only" }, 403);
+  if (!isAdmin(env, await identify(req, env))) return fail("AdminsOnly", "admins only");
   if (req.method === "GET") return json((await env.DB.prepare("SELECT handle, email FROM handle_grants ORDER BY handle").all()).results);
   if (req.method !== "POST") return null;
   const b = await readBody<"handle" | "email">(req);
   const email = String(b.email ?? "").trim().toLowerCase();
-  if (typeof b.handle !== "string" || !NAME.test(b.handle)) return json({ error: "handle: lowercase letters and digits, single dashes between" }, 400);
-  if (isAgentHandle(b.handle)) return json({ error: "agent- handles are for coding agents" }, 400);
-  if (!/^[^@\s]+@[^@\s]+$/.test(email)) return json({ error: "give an email" }, 400);
-  if (await env.DB.prepare("SELECT 1 FROM users WHERE name = ?").bind(b.handle).first()) return json({ error: `${b.handle} is taken` }, 409);
+  if (typeof b.handle !== "string" || !NAME.test(b.handle)) return fail("BadInput", "handle: lowercase letters and digits, single dashes between");
+  if (isAgentHandle(b.handle)) return fail("BadInput", "agent- handles are for coding agents");
+  if (!/^[^@\s]+@[^@\s]+$/.test(email)) return fail("BadInput", "give an email");
+  if (await env.DB.prepare("SELECT 1 FROM users WHERE name = ?").bind(b.handle).first()) return fail("HandleTaken", `${b.handle} is taken`);
   await env.DB.prepare("INSERT OR REPLACE INTO handle_grants (handle, email) VALUES (?, ?)").bind(b.handle, email).run();
   return json({ handle: b.handle, email }, 201);
 }
@@ -280,14 +280,14 @@ async function handleRoutes(req: Request, env: Env, url: URL) {
   }
   if (req.method !== "POST") return null;
   const a = await account(req, env);
-  if (!a) return json({ error: "sign in first" }, 401);
-  if (a.handle) return json({ error: `you're already @${a.handle}` }, 409);
+  if (!a) return fail("SignInFirst", "sign in first");
+  if (a.handle) return fail("HasHandle", `you're already @${a.handle}`);
   const { name = "" } = await readBody<"name">(req);
-  if (typeof name !== "string") return json({ error: "name: lowercase letters and digits, single dashes between" }, 400);
+  if (typeof name !== "string") return fail("BadInput", "name: lowercase letters and digits, single dashes between");
   const why = await unclaimable(env, name);
-  if (why) return json({ error: `@${name}: ${why}` }, why === "taken" ? 409 : 400);
+  if (why) return fail(why === "taken" ? "HandleTaken" : "BadInput", `@${name}: ${why}`);
   const r = await env.DB.prepare("INSERT OR IGNORE INTO users (name, auth_id, created_at) VALUES (?, ?, ?)").bind(name, a.user.id, Date.now()).run();
-  if (!r.meta?.changes) return json({ error: `@${name}: taken` }, 409);
+  if (!r.meta?.changes) return fail("HandleTaken", `@${name}: taken`);
   return json({ name }, 201);
 }
 
@@ -298,7 +298,7 @@ const tierStamp = async (env: Env, user: string | null) => { const tier = await 
 export async function identityRoutes(req: Request, env: Env, p: string[]): Promise<Response | null> {
   const grants = await grantRoutes(req, env, p);
   if (grants) return grants;
-  if (p[1] === "auth") return accountsOn(env) ? authFor(req, env).handler(req) : json({ error: "accounts are off; this app uses aliases" }, 404);
+  if (p[1] === "auth") return accountsOn(env) ? authFor(req, env).handler(req) : fail("NoSuchRoute", "accounts are off; this app uses aliases");
   if (p[1] === "session") {
     // privacy: who to write to about your data, on the #/privacy page. notice: a change to it that's coming.
     const notice = privacyNotice(env.PRIVACY_NOTICE);
@@ -319,14 +319,14 @@ export async function identityRoutes(req: Request, env: Env, p: string[]): Promi
       ...(a && !a.handle ? { pick: { suggest: await suggest(env, a.user), email: a.user.email } } : {}) });
   }
   if (accountsOn(env) && p[1] === "handle") return handleRoutes(req, env, new URL(req.url));
-  if (accountsOn(env)) return p[1] === "login" ? json({ error: "sign in with an account" }, 404) : null;
+  if (accountsOn(env)) return p[1] === "login" ? fail("NoSuchRoute", "sign in with an account") : null;
   if (p[1] === "login" && req.method === "POST") {
-    if (aliasesClosed(env)) return json({ error: "sign-in is off: this site runs on Cloudflare without BETTER_AUTH_SECRET" }, 503);
+    if (aliasesClosed(env)) return fail("SignInOff", "sign-in is off: this site runs on Cloudflare without BETTER_AUTH_SECRET");
     const { name } = await readBody<"name">(req);
-    if (typeof name !== "string" || !NAME.test(name)) return json({ error: "name: lowercase letters and digits, single dashes between" }, 400);
-    if (isAgentHandle(name)) return json({ error: "agent- handles are for coding agents" }, 400);
+    if (typeof name !== "string" || !NAME.test(name)) return fail("BadInput", "name: lowercase letters and digits, single dashes between");
+    if (isAgentHandle(name)) return fail("BadInput", "agent- handles are for coding agents");
     // A deleted account's handle, and @ghost that stands in for them (privacy.ts), stay retired here too.
-    if (await retired(env, name)) return json({ error: `@${name} was retired when its account was deleted` }, 409);
+    if (await retired(env, name)) return fail("HandleTaken", `@${name} was retired when its account was deleted`);
     await env.DB.prepare("INSERT OR IGNORE INTO users (name, created_at) VALUES (?, ?)").bind(name, Date.now()).run();
     return json({ name }, 200, { "set-cookie": `cs_user=${name}; Path=/; SameSite=Lax` });
   }
