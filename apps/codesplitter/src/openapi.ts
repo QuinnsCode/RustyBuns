@@ -40,7 +40,7 @@ interface Op {
 /**
  * codeSplitter's named failures (#3804). A route's 4xx reply is `{error, tag, ...}`: `error` the sentence a person
  * reads, `tag` one of these, which a client matches on instead of guessing from the status (client.ts makes each one
- * an error class). Each is [its status, what it means]. Route files move onto tags one at a time: branches.ts, then worker.ts, agent-routes.ts and mirror.ts.
+ * an error class). Each is [its status, what it means]. Route files move onto tags one at a time: branches.ts, then worker.ts, agent-routes.ts, mirror.ts, invites.ts, page.ts and beam.ts.
  * A 401 (sign in) and a 5xx stay untagged: the client makes them Unauthorized and Transient for every operation.
  */
 export const ERRORS = {
@@ -49,6 +49,7 @@ export const ERRORS = {
   NoHarness: [400, "that coding agent isn't installed on this machine"],
   TextOnlyMainOrBranch: [400, "this conflict takes main or branch, not text"],
   TooManyInvites: [400, "the repo has as many pending invites as it keeps: revoke some first"],
+  SignInFirst: [401, "sign in first: this takes someone signed in"],
   NoWriteAccess: [403, "you aren't on the repo's crew, or the token is read-only"],
   OwnerOnly: [403, "only the repo's owner does this"],
   PersonOnly: [403, "a person's word, said on the site signed in: an API token can't give it"],
@@ -69,6 +70,8 @@ export const ERRORS = {
   NoSuchCollection: [404, "no such collection"],
   NoSuchRoute: [404, "no API route there"],
   NoSuchRun: [404, "no coding-agent run by that id in this repo"],
+  NoSuchBeam: [404, "no beam by that id"],
+  NotYourBeam: [403, "only whoever beamed it, or the repo's owner, withdraws a beam"],
   NotTheAgent: [403, "only an open thread's own agent answers as the agent, or closes it"],
   UpstreamRefused: [403, "upstream turned the push away: the token can't write there, or upstream protects that branch"],
   NoSuchBranch: [404, "no branch by that name (open, for a parent or a merge)"],
@@ -109,7 +112,7 @@ export const ERRORS = {
   FolderMirror: [409, "a folder mirror sends its work up as one branch: this takes a whole-repo mirror"],
   NotUpstream: [409, "the branch hasn't gone upstream yet: push it first"],
   PullOnly: [409, "the mirror is pull-only: nothing goes upstream"],
-  PrivateLines: [409, "the repo has private lines: nothing goes upstream until the crew's copy is pushed"],
+  PrivateLines: [409, "the repo has private lines, and its git holds them blank: nothing goes upstream or into a beam until the crew's copy is pushed"],
   MirrorMain: [409, "that's the branch the mirror keeps in step, not one to push"],
   UpstreamClash: [409, "upstream's branch and main changed the same lines, or share no history: settle it upstream, then push again"],
   UpstreamMoved: [409, "upstream's branch moved while pushing: push again"],
@@ -120,17 +123,26 @@ export const ERRORS = {
   NoSyncBase: [409, "its git lost the commit it was dug at, so there's nothing to sync from: make a new mirror instead"],
   CommitsAhead: [409, "commits made here would go up: say how many with `ahead`"],
   AlreadyInCrew: [409, "they're on the repo's crew already"],
+  NoSharedHistory: [409, "the branch shares no history with main"],
+  NothingToBeam: [409, "main (or upstream) has all of the branch already: nothing to beam"],
+  StaleCopy: [409, "a stacked branch's copy of a file is older than the branch under it changed it: a beam would take that change out (`clash` lists them)"],
+  AllNoise: [409, "everything the branch changes is noise, so the beam would be empty: `keep` the files you meant (`dropped` lists them)"],
+  NoUpstream: [409, "the repo has no whole-repo upstream to beam onto: it wasn't dug from GitHub, or it's a dug folder"],
+  BeamClash: [409, "the branch doesn't sit cleanly on what it's beamed onto: those files changed there too (`clash` lists them)"],
+  PathIsFolder: [409, "a file the branch changes is a folder on main"],
+  BytesMissing: [409, "a file's bytes aren't in the repo's git any more"],
   TooBig: [413, "the file is too big or too long to dig"],
   AssetsFull: [413, "an account keeps so many asset files: replace one or delete another"],
   BinaryFile: [415, "a binary file: it has no lines to read or edit"],
   NotPageText: [415, "a page is text files only: binary files go in assets/"],
   InviteUsed: [410, "the invite was used already: ask whoever sent it for another"],
+  BeamGone: [410, "the beam was withdrawn, or its commit is gone from the repo's git"],
   InviteExpired: [410, "the invite expired: ask whoever sent it for another"],
   PipelineInvalid: [422, "codesplitter.pipeline.json doesn't parse"],
   BudgetSpent: [429, "the hosted agents' budget is spent for now"],
   AgentsUnavailable: [501, "coding agents don't run here"],
   NoEuStorage: [501, "this codeSplitter has no EU storage"],
-  GitUnavailable: [501, "mirrors need git on this machine: the desktop app has it"],
+  GitUnavailable: [501, "this needs git on this machine (2.40 or newer for some of it): the desktop app has it"],
   NoAssetStore: [501, "binary files need storage this server hasn't got"],
   AgentFailed: [502, "the coding agent didn't answer"],
 } as const satisfies Record<string, readonly [number, string]>;
@@ -223,6 +235,14 @@ export const OP_ERRORS = {
   // page.ts
   edit_my_page: ["BadInput", "TooBig", "NoPageRepo"],
   revert_my_page: ["BadInput", "NoPageRepo"],
+  // beam.ts
+  list_beams: REPO,
+  beam_branch: [...REPO, "SignInFirst", "NoWriteAccess", "NoGit", "PrivateLines", "BadBranchName", "BadInput", "NoSuchUser", "GitUnavailable", "NoSuchBranch",
+    "BranchClosed", "NoSharedHistory", "NothingToBeam", "StaleCopy", "AllNoise", "NoUpstream", "BeamClash", "PathIsFolder", "BytesMissing"],
+  get_beam: ["NoSuchBeam", "BeamGone", "NoSuchRepo", "GitUnavailable", "NoGit"],
+  withdraw_beam: ["NoSuchBeam", "NotYourBeam"],
+  beam_patch: ["NoSuchBeam", "BeamGone", "NoSuchRepo", "GitUnavailable", "NoGit"],
+  my_beams: ["SignInFirst"],
 } as const satisfies Record<string, readonly ErrorTag[]>;
 export type OpWithErrors = keyof typeof OP_ERRORS;
 
