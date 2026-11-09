@@ -63,6 +63,7 @@ Ask a script `--help` before reading its source: it prints the script's top comm
   the next round to whoever is free, with the baton prompt from `scripts/climbs.ts` (how a round is scored, reported and
   hopped forward). Climbs stay at the top of the issues; other issues, manual runs included, sink unless the owner says otherwise.
 - `bun run outline <file> [name]`: a TS file's symbols with line ranges and the first doc line; with a name, just that symbol's source. Use it instead of paging a file with `sed -n`.
+  `bun run outline --api <package or file>` (`packages/util`, `packages/util/src/eqosys.ts`): every export of its entry points as a one-line signature and doc line, no bodies. Read a shared library's API this way before opening it.
 - Reading code: the guard turns away `cat` and `sed -n` ranges over 150 lines on a code file over 200 lines. Use `bun run outline <file>` first, then `bun run outline <file> <name>`.
 - For a codeSplitter chore no CLI covers, its MCP in code mode runs one `execute` program that reads, filters, claims and edits, and returns only the answer.
 
