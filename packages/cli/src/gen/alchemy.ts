@@ -139,6 +139,20 @@ export function buildOutdir(w: Pick<NonNullable<RustyBunsConfig["worker"]>, "bui
   return top && top !== "." && top !== ".." ? top : "dist";
 }
 
+/**
+ * The config's routes plus `<domain>/*` for the Worker's custom domain. On Cloudflare a zone
+ * route beats a Custom Domain on the same hostname, so another Worker's `*.zone/*` would take
+ * every request (#4006); the most specific route wins, so the exact one brings them back.
+ * Aliases only redirect, and redirect rules run before any route.
+ */
+function edgeRoutes(edge: RustyBunsConfig["targets"]["edge"]): { pattern: string; zoneName?: string; zoneId?: string }[] {
+  const routes = [...(edge?.routes ?? [])];
+  const name = Array.isArray(edge?.domain) ? edge.domain[0] : edge?.domain;
+  const pattern = name && `${name}/*`;
+  if (pattern && !routes.some((r) => r.pattern === pattern)) routes.push({ pattern });
+  return routes;
+}
+
 export function generateAlchemy(c: RustyBunsConfig): string {
   // Edge is on when asked for, or when nothing else is (configs from before targets.box).
   const edge = !!c.targets.edge || !c.targets.box;
@@ -272,7 +286,8 @@ export function generateAlchemy(c: RustyBunsConfig): string {
     const domain = c.targets.edge?.domain;
     if (typeof domain === "string") wb.push(`  domain: ${JSON.stringify(domain)},`);
     else if (domain) wb.push(`  domain: ${JSON.stringify({ name: domain[0], ...(domain.length > 1 ? { aliases: domain.slice(1) } : {}) })},`);
-    if (c.targets.edge?.routes?.length) wb.push(`  routes: ${JSON.stringify(c.targets.edge.routes)},`);
+    const routes = edgeRoutes(c.targets.edge);
+    if (routes.length) wb.push(`  routes: ${JSON.stringify(routes)},`);
     const dev = JSON.parse(JSON.stringify({ enabled: c.targets.edge?.workersDev, previewsEnabled: c.targets.edge?.previewUrls }));
     if (Object.keys(dev).length) wb.push(`  workersDev: ${JSON.stringify(dev)},  // targets.edge.workersDev / previewUrls`);
     wb.push(`  env: { ${envEntries.join(", ")} },`);
