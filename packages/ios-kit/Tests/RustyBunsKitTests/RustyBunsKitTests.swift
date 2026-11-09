@@ -128,6 +128,7 @@ final class RustyBunsKitTests: XCTestCase {
         XCTAssertEqual(s?.incoming.first?.name, "Di")
         XCTAssertNil(HubState.decode(#"{"t":"error","error":"nope"}"#))
         XCTAssertEqual(HubOp.status("hiding in the hedge").json(), #"{"doing":"hiding in the hedge","op":"status"}"#)
-        XCTAssertEqual(client.hubURL(token: "a.b.c").absoluteString, "wss://eqosys.qntbr.com/hub?token=a.b.c")
+        XCTAssertEqual(client.hubURL().absoluteString, "wss://eqosys.qntbr.com/hub")
+        XCTAssertEqual(client.hubProtocols(token: "a.b.c"), ["eqosys", "a.b.c"])
     }
 }

@@ -63,7 +63,7 @@ public final class HubLink {
     private var closed = false
 
     public init(client: EqosysClient, token: String) {
-        task = URLSession.shared.webSocketTask(with: client.hubURL(token: token))
+        task = URLSession.shared.webSocketTask(with: client.hubURL(), protocols: client.hubProtocols(token: token))
         task.resume()
         listen()
     }
