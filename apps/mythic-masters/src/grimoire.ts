@@ -25,15 +25,18 @@ export const poolOf = (j: Journey | null, roster: readonly Creature[], tier: (id
   j && !librarian ? roster.filter((c) => knownOf(j, c.id, tier(c.id)) !== "unknown") : [...roster];
 
 export type Outcome = "arrives" | "grumpy" | "misread";
-export interface Summoned { id: string; outcome: Outcome; line: string }
+export interface Summoned { id: string; outcome: Outcome; line: string; signed: boolean }
 
-const LINES: Record<Outcome, string[]> = {
-  arrives: ["It steps out of the ink, already looking for the exit.", "Summoned, as written. The book is smug about it.", "A clean page. The book would like the credit."],
-  grumpy: ["It came, but it wants you to know it was mid-nap.", "Present. Unimpressed. Please do not make eye contact.", "It arrives with a note: 'I had plans.'"],
-  misread: ["The book read the wrong line and sends this instead. It says sorry. It does not mean it.", "Smudged ink! You asked politely and got this.", "A page stuck to another page. Enjoy the surprise."],
+// What the book says when something steps out of the ink. A line that wants something done is a demand, signed
+// "the Book" on the versus spread; the rest are margin notes (docs/MARGIN-NOTES.md).
+const LINES: Record<Outcome, [line: string, signed: boolean][]> = {
+  arrives: [["It steps out of the ink, already looking for the exit.", false], ["Summoned, as written. The book is smug about it.", false], ["Practice on this one. Then bring me one I do not have.", true]],
+  grumpy: [["It came, but it wants you to know it was mid-nap.", false], ["Present. Unimpressed. Please do not make eye contact.", false], ["It came mid-nap. Wake it properly. I want it on its feet.", true]],
+  misread: [["The book read the wrong line and sends this instead. It says sorry. It does not mean it.", false], ["Smudged ink! You asked politely and got this.", false], ["A page stuck to another page. Enjoy the surprise.", false]],
 };
 export const blank = "The circle is cold. Choose a field, then spend some ink.";
-export const bare = "The book has no page for that yet. Go and meet something first.";
+/** The circle with nothing met to summon: the book wants something met first, so this one is signed. */
+export const bare = "I have no page for that yet. Go and meet something first.";
 export const dry = "The pot is dry. Pressing Fight will have the book fetch more.";
 
 /** Draw a beast from `pool` for the circle of `field` (null for any): usually one of that field, sometimes a misread. */
@@ -42,6 +45,13 @@ export function summon(field: Field | null, roll: () => number, pool: readonly C
   const pick = (from: readonly Creature[]) => from[Math.floor(roll() * from.length) % from.length]!;
   const of = field ? pool.filter((c) => c.fields.includes(field)) : pool;
   const outcome: Outcome = !of.length || roll() < MISREAD ? "misread" : roll() < GRUMPY ? "grumpy" : "arrives";
-  const lines = LINES[outcome];
-  return { id: pick(outcome === "misread" ? pool : of).id, outcome, line: lines[Math.floor(roll() * lines.length) % lines.length]! };
+  const lines = LINES[outcome], [line, signed] = lines[Math.floor(roll() * lines.length) % lines.length]!;
+  return { id: pick(outcome === "misread" ? pool : of).id, outcome, line, signed };
+}
+
+/** The book's line in the circle on the versus spread: what the last summon brought, else why nothing came. */
+export function circleLineOf(s: Summoned | null, bareLine: boolean, ink: number): { ask: string; signed: boolean } {
+  if (s) return { ask: s.line, signed: s.signed };
+  if (bareLine) return { ask: bare, signed: true };
+  return { ask: ink > 0 ? blank : dry, signed: false };
 }

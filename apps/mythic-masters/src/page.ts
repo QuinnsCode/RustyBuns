@@ -568,7 +568,7 @@ export function book(pages: readonly HTMLElement[]) {
 /** The book's one recurring stain (src/demand.ts): a rust-brown thumbprint pressed on the page, somewhere new each
  * time it is opened. It sits on the page's paper (the versus spread's: one of its two leaves) and never catches a click. */
 export function thumb(page: HTMLElement, n: number) {
-  const leaves = page.matches(".paper") ? [page] : [...page.querySelectorAll<HTMLElement>(".paper, .picks > div")];
+  const leaves = page.matches(".paper, .gc-card") ? [page] : [...page.querySelectorAll<HTMLElement>(".paper, .picks > div")];
   for (const old of page.querySelectorAll(".thumb")) old.remove();
   const leaf = leaves[n % Math.max(1, leaves.length)];
   if (!leaf) return;

@@ -582,6 +582,8 @@
 .select.book .circle .go { color: #f6e8cb; font-family: var(--f-hand); font-size: 20px; }
 .select.book .circle .go:disabled { cursor: default; color: var(--blood); text-shadow: none; }
 .select.book .margin { margin: 0; font-family: var(--f-hand); font-size: 20px; color: var(--blood-hi); min-height: 2.6em; }
+.select.book .margin .sig { display: block; text-align: right; font-size: 17px; color: var(--ink-faded); } /* a summon line that is a demand is signed */
+.select.book .margin .sig::before { content: "\2014\00a0"; }
 .pots { display: flex; gap: 6px; }
 .pot { width: 16px; height: 20px; border-radius: 3px 3px 8px 8px; border: 2px solid var(--ink-faded); background: transparent; }
 .pot.full { background: var(--ink-b); }
@@ -645,6 +647,8 @@ body > .gc-dialog .gc-card button:focus-visible { outline: 2px dashed var(--bloo
 .paper .demand .ask { text-decoration: underline 1.5px var(--blood); text-underline-offset: 4px; }
 .paper .demand .sig { display: block; text-align: right; font-size: 20px; color: var(--ink-faded); margin-top: 2px; }
 .paper .demand .sig::before { content: "\2014\00a0"; }
+/* the Settings card is a page of the same book: the Book's margin note under its heading (demand.ts settingsLineOf) */
+body > .gc-dialog .gc-card > .demand { font-family: var(--f-hand); font-size: 19px; line-height: 1.15; color: var(--blood); margin: -6px 0 0; transform: rotate(-1.2deg); text-shadow: 0.4px 0.4px 0 rgba(123, 29, 20, 0.45); }
 .select.book .picks > div { position: relative; }
 .thumb { position: absolute; z-index: 0; aspect-ratio: 0.78; pointer-events: none; mix-blend-mode: multiply; opacity: 0.6;
   background: repeating-radial-gradient(ellipse 60% 70% at 50% 62%, rgba(122, 52, 24, 0.8) 0 1.1px, transparent 1.6px 3.3px);

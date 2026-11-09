@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { handOf, knownOf, MISREAD, poolOf, ribbonsOf, summon } from "../src/grimoire.ts";
+import { circleLineOf, handOf, knownOf, MISREAD, poolOf, ribbonsOf, summon } from "../src/grimoire.ts";
 import { newJourney } from "../src/journey.ts";
 import { ROSTER } from "../src/roster.ts";
 
@@ -23,6 +23,15 @@ describe("the book's hand and its circle", () => {
     expect(s.outcome).toBe(outcome);
     expect(s.line.length).toBeGreaterThan(5);
     if (inField) expect(ROSTER.find((c) => c.id === s.id)!.fields).toContain("ember");
+  });
+
+  test("the circle's line: a summon's own, signed only when it is a demand; an empty circle wants something met", () => {
+    // every outcome's lines, by walking the line roll across them (it comes right after the outcome rolls)
+    const said = [0, 0.4, 0.8].flatMap((r) => [[0.5, 0.9, r, 0], [0.5, 0.1, r, 0], [0, r, 0]].map((rolls) => summon("ember", seq(...rolls), ROSTER)!));
+    expect(said.filter((s) => s.signed).map((s) => s.outcome).sort()).toEqual(["arrives", "grumpy"]);
+    for (const s of said) expect(circleLineOf(s, false, 1)).toEqual({ ask: s.line, signed: s.signed });
+    expect(circleLineOf(null, true, 1).signed).toBe(true);
+    expect(circleLineOf(null, false, 1).ask).not.toBe(circleLineOf(null, false, 0).ask);
   });
 
   test("an empty pool summons nothing", () => expect(summon(null, Math.random, [])).toBeNull());

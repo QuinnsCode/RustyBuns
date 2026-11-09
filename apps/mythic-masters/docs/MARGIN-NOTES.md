@@ -66,6 +66,12 @@ The demands and receipts in `src/demand.ts` (`demandOf`, `reactionOf`, `deckDema
 | World toast: a keeper beaten | The Sunk Road, written in. The next stone is lit. Walk. | yes |
 | World toast: the last keeper | The Sunk Road, written in. The Jersey Devil is at the arena. Bring it. | yes |
 | World toast: the mythic fled | The Sunk Road, written in. The roads are open. The Jersey Devil is not in my pages yet. Go back for it. | yes |
+| Settings, from the title | Move the keys where you like. The accounts stay where they are. | no |
+| Settings, over a fight or the walk | Rest if you must. The ledger does not pause. | no |
+| Settings, quill sound off | You turned my quill down. I am still writing. | no |
+| Versus circle: a clean summon | Practice on this one. Then bring me one I do not have. | yes |
+| Versus circle: a grumpy summon | It came mid-nap. Wake it properly. I want it on its feet. | yes |
+| Versus circle: nothing met yet | I have no page for that yet. Go and meet something first. | yes |
 
 ## Twenty margin lines from the first pass
 
@@ -97,7 +103,8 @@ phone-book one that is on hold.
 
 ## Where lines live
 
-- Summon results: `LINES` in `src/grimoire.ts` (arrives, grumpy, misread). Keep their present shape: one sentence the book says.
+- Summon results: `LINES` in `src/grimoire.ts` (arrives, grumpy, misread). Keep their present shape: one sentence the book says, flagged signed when it is a demand.
+- The Settings card's note: `settingsLineOf` in `src/demand.ts`, under the card's heading.
 - The versus tag line (`#bookTag`) and any new page's scrawl: same rules, same list.
 - Empty-state labels ("an empty ribbon"): rule 3, no joke needed.
 

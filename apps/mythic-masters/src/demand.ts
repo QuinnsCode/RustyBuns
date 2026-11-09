@@ -94,3 +94,11 @@ export function worldLineOf(b: Back, j: Journey | null): { ask: string; signed: 
   if (b.k >= b.of - 2) return { ask: `${b.section}, written in. The ${b.mythic} is at the arena. Bring it.`, signed: true };
   return { ask: `${b.section}, written in. The next stone is lit. Walk.`, signed: true };
 }
+
+/** The book's margin note on the Settings card, true for when it was opened: over a fight or the walk it is the pause,
+ * and the book does not stop counting; with its quill turned down it is still writing; on the title, the keys. */
+export function settingsLineOf(o: { paused: boolean; quillMuted: boolean }): string {
+  if (o.quillMuted) return "You turned my quill down. I am still writing.";
+  if (o.paused) return "Rest if you must. The ledger does not pause.";
+  return "Move the keys where you like. The accounts stay where they are.";
+}
