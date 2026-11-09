@@ -3,7 +3,7 @@
  * A repo with a `codesplitter.pipeline.json` on main (pipeline.ts) has its checks queued by lane (checks.ts):
  * only the lanes whose call is `run` or `depart` queue anything. A lane with a `run` command queues that command
  * as a check named after the lane; one without queues the repo's own checks (codesplitter.ci or package.json). A
- * bus with no command departs into an AI pass, which queues no check. A repo with no pipeline file keeps the plain
+ * bus with no command departs into an AI pass (pipeline-bus.ts) instead of a queued check. A repo with no pipeline file keeps the plain
  * queue: the default pipeline is one lane that runs everything.
  *
  * Each lane's count since it last ran lives in `lane_counts`, so nobody passes counts in. A branch's checks read

@@ -83,7 +83,7 @@ import { emit } from "./hooks.ts";
 import { LOCKFILES as LOCKFILE_NAMES } from "./lockfiles.ts";
 import { NEED_LABEL, imageCaps, scanNeeds, needsText, type Need } from "./needs.ts";
 import type { RepoRef } from "./repos";
-import type { LaneCall } from "./pipeline.ts";
+import type { Lane, LaneCall } from "./pipeline.ts";
 
 export const RUNNERS = ["desktop", "container", "github", "external"] as const;
 export const STATUSES = ["queued", "running", "passed", "failed", "cancelled"] as const;
@@ -428,10 +428,10 @@ export async function planChecks(env: Env, owner: string, repo: string, ref: str
  * A release (cutRelease) is no one change: every often and release lane runs and every bus leaves, each over everything.
  */
 export async function planLanes(env: Env, owner: string, repo: string, ref: string, s: { required: Required[]; pinned: boolean }, paths: string[] | null, release = false):
-  Promise<{ checks: { name: string; command?: string; why?: string }[]; calls: LaneCall[] | null }> {
+  Promise<{ checks: { name: string; command?: string; why?: string }[]; calls: LaneCall[] | null; lanes: { lane: Lane; call: LaneCall }[] | null }> {
   const lanes = (paths || release) && !s.pinned ? await (await import("./pipeline-lanes.ts")).laneCalls(env, owner, repo, paths ?? [], release) : null;
   if (release) paths = null;
-  if (!lanes) return { checks: await planChecks(env, owner, repo, ref, s.required, paths, s.pinned), calls: null };
+  if (!lanes) return { checks: await planChecks(env, owner, repo, ref, s.required, paths, s.pinned), calls: null, lanes: null };
   const go = lanes.filter(({ call }) => call.go === "run" || call.go === "depart");
   const checks = new Map<string, { name: string; command?: string; why?: string }>();
   for (const r of requiredFor(s.required.filter((r) => r.command && r.name !== "*"), paths)) checks.set(r.name, { name: r.name, command: r.command });
@@ -440,7 +440,7 @@ export async function planLanes(env: Env, owner: string, repo: string, ref: stri
     if (lane.run) { if (!checks.has(lane.name)) checks.set(lane.name, { name: lane.name, command: lane.run, why }); }
     else if (!call.ai) for (const c of await planChecks(env, owner, repo, ref, s.required, paths)) if (!checks.has(c.name)) checks.set(c.name, { ...c, why });
   }
-  return { checks: [...checks.values()], calls: lanes.map((l) => l.call) };
+  return { checks: [...checks.values()], calls: lanes.map((l) => l.call), lanes };
 }
 
 /**
@@ -475,7 +475,7 @@ async function queueHere(env: Env, owner: string, repo: string, ref: string, sha
     const { results } = await env.DB.prepare("SELECT * FROM check_runs WHERE owner = ? AND repo = ? AND ref = ? AND (sha != ? OR ?) AND runner IN ('desktop', 'container') AND status = 'queued'").bind(owner, repo, ref, sha, on ? 1 : 0).all<CheckRun>();
     for (const old of results) await updateRun(env, old, { status: "cancelled", append: old.sha === sha ? `\n@${by} sent it ${on === "hosted" ? "to the hosted container" : "to the desktop or a runner of their own"} instead: cancelled\n` : `\n${sha.slice(0, 12)} came along before a runner did: cancelled\n` }, by);
   }
-  const { checks, calls } = await planLanes(env, owner, repo, ref, s, change?.files ?? await touched(env, owner, repo, ref), change?.release);
+  const { checks, calls, lanes } = await planLanes(env, owner, repo, ref, s, change?.files ?? await touched(env, owner, repo, ref), change?.release);
   // A change that landed on main (or a release cut) moves each lane's count on; a branch's checks only read them (pipeline-lanes.ts).
   if (calls && ref === "main" && change) await (await import("./pipeline-lanes.ts")).keepCounts(env, owner, repo, calls);
   for (const { name, command, why: lane } of checks) {
@@ -491,6 +491,8 @@ async function queueHere(env: Env, owner: string, repo: string, ref: string, sha
     if (pusher || why || lane || note) await env.DB.prepare("UPDATE check_runs SET log = ? WHERE id = ?").bind(pusher + why + (lane ?? "") + note, run.id).run();
   }
   await (await import("./ci-runner.ts")).kick(env, owner, repo).catch(() => null);
+  // A bus with no command that took this change's seat keeps it; one that leaves runs its AI pass, once per bus (pipeline-bus.ts).
+  if (lanes && ref === "main" && change) await (await import("./pipeline-bus.ts")).busRide(env, owner, repo, sha, lanes, by, change.release);
 }
 
 /** The open branches `name` waits for to merge first: the merge plan's `after` (branches.ts) still open. */
