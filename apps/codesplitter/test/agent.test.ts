@@ -173,6 +173,13 @@ describe("claims", () => {
     })).rejects.toThrow("held by @ryan");
   });
 
+  test("a run that can't read its file says why, by name (#3804)", async () => {
+    const call = await local();
+    await expect(runAgent(call, {
+      user: "agent-x", owner: "ryan", repo: "nope", path: "a.js", harness: "pi", task: "x", exec: editor("a.js", "x\n"),
+    })).rejects.toThrow("read a.js: 404 NoSuchRepo: not found: no such repo, or it's private and you can't see it");
+  });
+
   test("a claim follows its lines, any of the crew can lift it, and two agents of one harness can't write in each other's", async () => {
     const call = await local();
     await setup(call, "a\nb\nc");

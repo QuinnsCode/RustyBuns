@@ -11,8 +11,10 @@ import { ASK_BY_NAME, harnessCommand, LISTEN_ASK, pictureType, picturesIn, strea
 import { diffToOps, rebase } from "./sync.ts";
 import { NOTE_ASK, tokens, tripped, usageOf, type Budget, type Trip } from "./budget.ts";
 import { leakIn, redact } from "./leaks.ts";
+import { failed } from "./failed.ts";
 import { ClaimRefused, ClaimsReply, FileDoc, OpsRefused, OpsReply } from "./file-do.ts";
 import { arr, check, obj, opt, str } from "@rustybuns/util/guard";
+import { parseJson } from "@rustybuns/util/http";
 import type { Session } from "./thread-do.ts";
 
 /** The parts of a claude stream-json line a listening run reads: its type, and an assistant message's text blocks. */
@@ -328,7 +330,7 @@ export async function runAgent(plain: Call, opts: {
   const get = async (p = path) => {
     const res = await call(user, `${file}/file${at(p)}`);
     if (res.status === 503) throw new Interrupted(`reading ${p}`);
-    if (!res.ok) throw new Error(`read ${p}: ${res.status} ${await res.text()}`);
+    if (!res.ok) throw new Error(`read ${p}: ${failed(res.status, await res.text())}`);
     return FileDoc(await res.json());
   };
 
@@ -342,8 +344,8 @@ export async function runAgent(plain: Call, opts: {
     for (let i = 0; ; i++) {
       const res = await call(user, `${file}/claims${onMain}`, { method: "POST", body: JSON.stringify({ id: claim, lines: opts.lines, task: opts.task }) });
       if (res.ok) break;
-      const body = check(ClaimRefused, await res.json().catch(() => null)) ?? {};
-      if (!body.updating && res.status !== 503) throw new Error(`claiming its lines: ${body.error ?? res.status}`);
+      const said = await res.text().catch(() => ""), body = check(ClaimRefused, parseJson(said)) ?? {};
+      if (!body.updating && res.status !== 503) throw new Error(`claiming its lines: ${failed(res.status, said)}`);
       if (i >= 4) throw new Interrupted("its file is being updated");
       await pause(Math.min(body.retryAfter ?? 5, 30) * 1000);
     }
@@ -419,7 +421,7 @@ export async function runAgent(plain: Call, opts: {
         applied += body.applied.length;
         conflicts.push(...lost);
         return body.rev;
-      } else if (res.status !== 409) throw new Error(`ops: ${res.status} ${await res.text()}`);
+      } else if (res.status !== 409) throw new Error(`posting its edit to ${p}: ${failed(res.status, await res.text())}`);
       else {
         const body = OpsRefused(await res.json());
         // This run started on another build than the file runs now: its diff is not posted through the new rules.
@@ -511,7 +513,7 @@ export async function runAgent(plain: Call, opts: {
   }
   if (opts.commit && applied && !opts.branch) {
     const res = await call(user, `${file}/commit${q}`, { method: "POST", body: JSON.stringify({ message: opts.commit }) });
-    if (!res.ok) throw new Error(`commit: ${res.status} ${await res.text()}`);
+    if (!res.ok) throw new Error(`committing ${path}: ${failed(res.status, await res.text())}`);
   }
   return { harness: opts.harness, path, changed, applied, runs, conflicts, rev, output, spent, ...(session && { session }), ...(kept && { kept }), ...(touched.size && { edited: [...touched] }), ...(read.size && { private: true as const }), ...(trip && { tripped: trip, failures, unheard: told.slice(heard) }) };
   }
