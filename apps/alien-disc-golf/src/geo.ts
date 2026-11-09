@@ -2,6 +2,8 @@
 // Frame: x through 0°E on the equator, y through 90°E, z through the north pole.
 
 export const EARTH_KM = 6371;
+/** How wide the disc is drawn on the planet, km: a country-sized frisbee. The sea scales its swim by it. */
+export const DISC_KM = 255;
 export type Vec3 = [number, number, number];
 export interface LatLon { lat: number; lon: number }
 
