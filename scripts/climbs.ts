@@ -20,6 +20,7 @@
 //   bun run climbs --json
 import { arr, check, num, obj, str } from "../packages/util/src/guard.ts";
 import { tidy, view } from "./issue.ts";
+import { help } from "./help.ts";
 
 const text = (max: number) => str(max, { min: 0, dflt: "" });
 const Row = obj({ number: num(1, 1e9), title: text(400), body: text(200_000), updatedAt: text(40) });
@@ -113,6 +114,7 @@ export async function climbs(): Promise<Climb[]> {
 }
 
 if (import.meta.main) {
+  help(import.meta.path);
   const all = await climbs(), argv = process.argv;
   if (argv.includes("--next")) {
     const c = next(all);

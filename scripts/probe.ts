@@ -11,12 +11,14 @@
 //   bun run probe two-fronts "/?battle=1" --cmd tf_state                   run a page command (@rustybuns/util/commands) with optional JSON args
 //   bun run probe skate-tech-park "/?level=el-capitan" --shot out.png        a picture, when eyes are needed
 //   bun run probe --list                                                     every game's handle and what it does
+//   bun run probe --list mythic-masters                                      one game's handle
 //
 // --size WxH (default 1280x720), --mobile (phone size, touch, 2x), --settle <ms> (default 3000) to wait before the
 // expression, --url <http://...> to use a server already running instead of starting one, --shot <file.png>.
 // The expression is the body of an async function: `await` works, and its last expression is the answer.
 import { resolve } from "node:path";
 import { launchChrome, load, openTab, startVite } from "./chrome.ts";
+import { help } from "./help.ts";
 
 /** Each game's handle on `window`, the expression for its state, and the rest of what the handle does. */
 export const HANDLES: Record<string, { state: string; does: string }> = {
@@ -57,12 +59,14 @@ export const MAX_OUT = 4000;
 /** The answer as JSON, cut at MAX_OUT characters with a note; `undefined` says so. */
 export const show = (v: unknown) => { const s = v === undefined ? "undefined" : JSON.stringify(v, null, 1); return s.length > MAX_OUT ? `${s.slice(0, MAX_OUT)}\n… ${s.length - MAX_OUT} more characters: ask for less` : s; };
 
-export const listLines = () => [...Object.entries(HANDLES).flatMap(([app, h]) => [`${app}: ${h.state}`, `  ${h.does}`]),
+/** Every game's handle (or just `app`'s) and what it does. */
+export const listLines = (app?: string) => [...Object.entries(HANDLES).filter(([a]) => !app || a === app).flatMap(([a, h]) => [`${a}: ${h.state}`, `  ${h.does}`]),
   "any page on @rustybuns/util/commands: __commands.list(), await __commands.run(name, args) (its WebMCP tools and Cmd+K palette)"];
 
 if (import.meta.main) {
+  help(import.meta.path);
   const p = parse(process.argv.slice(2));
-  if (p.list) { console.log(listLines().join("\n")); process.exit(0); }
+  if (p.list) { console.log(listLines(p.app).join("\n")); process.exit(0); }
   if (!p.app && !p.url) { console.error("usage: bun run probe <app> [path] [--js <expr> | --cmd name '{json}'] [--shot <file.png>] [--size WxH] [--mobile] [--settle <ms>] [--url <url>] | --list"); process.exit(2); }
   const root = resolve(import.meta.dir, "..");
   const server = p.url ? { url: p.url.replace(/\/?$/, "/"), stop: () => {} } : await startVite(resolve(root, "apps", p.app!));
