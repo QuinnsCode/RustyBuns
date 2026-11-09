@@ -10,6 +10,6 @@
   },
   "devDependencies": {
     "geoboxq": "workspace:*",
-    "wrangler": "4.141.0"
+    "wrangler": "4.158.0"
   }
 }

@@ -17,15 +17,15 @@
     "@alchemy.run/hetzner": "2.0.0-beta.84",
     "@alchemy.run/neon": "2.0.0-beta.84",
     "@alchemy.run/railway": "2.0.0-beta.84",
-    "@effect/platform-bun": "4.0.5",
-    "@effect/platform-node": "4.0.5",
+    "@effect/platform-bun": "4.1.2",
+    "@effect/platform-node": "4.1.2",
     "alchemy": "2.0.0-beta.84",
-    "effect": "4.0.5"
+    "effect": "4.1.2"
   },
   "overrides": {
-    "effect": "4.0.5",
-    "@effect/platform-bun": "4.0.5",
-    "@effect/platform-node": "4.0.5",
+    "effect": "4.1.2",
+    "@effect/platform-bun": "4.1.2",
+    "@effect/platform-node": "4.1.2",
     "@effect/platform-node-shared": "4.0.5",
     "@effect/vitest": "4.0.5"
   }

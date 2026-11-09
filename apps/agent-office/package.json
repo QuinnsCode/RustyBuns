@@ -23,7 +23,7 @@
     "@rustybuns/shell-bun": "^0.1.12",
     "@rustybuns/util": "^0.1.12",
     "@types/three": "^0.180.0",
-    "lucide": "1.55.0",
+    "lucide": "1.70.0",
     "three": "0.186.1"
   }
 }

@@ -12,10 +12,10 @@
   },
   "dependencies": {
     "@rustybuns/util": "^0.1.12",
-    "react": "19.2.8",
-    "react-dom": "19.2.8",
-    "react-server-dom-webpack": "19.2.8",
-    "rwsdk": "1.7.4"
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "react-server-dom-webpack": "19.3.1",
+    "rwsdk": "1.7.5"
   },
   "devDependencies": {
     "@alchemy.run/cloudflare": "2.0.0-beta.84",
@@ -23,22 +23,22 @@
     "@alchemy.run/hetzner": "2.0.0-beta.84",
     "@alchemy.run/neon": "2.0.0-beta.84",
     "@alchemy.run/railway": "2.0.0-beta.84",
-    "@cloudflare/vite-plugin": "1.60.2",
-    "@cloudflare/workers-types": "5.20260801.1",
-    "@effect/platform-bun": "4.0.5",
-    "@effect/platform-node": "4.0.5",
+    "@cloudflare/vite-plugin": "1.67.0",
+    "@cloudflare/workers-types": "5.20261106.1",
+    "@effect/platform-bun": "4.1.2",
+    "@effect/platform-node": "4.1.2",
     "@rustybuns/cli": "^0.1.12",
     "@types/react": "19",
     "@types/react-dom": "19",
     "alchemy": "2.0.0-beta.84",
-    "effect": "4.0.5",
-    "vite": "8.3.3",
-    "wrangler": "4.141.0"
+    "effect": "4.1.2",
+    "vite": "8.3.6",
+    "wrangler": "4.158.0"
   },
   "overrides": {
-    "effect": "4.0.5",
-    "@effect/platform-bun": "4.0.5",
-    "@effect/platform-node": "4.0.5",
+    "effect": "4.1.2",
+    "@effect/platform-bun": "4.1.2",
+    "@effect/platform-node": "4.1.2",
     "@effect/platform-node-shared": "4.0.5",
     "@effect/vitest": "4.0.5"
   }
