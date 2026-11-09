@@ -48,7 +48,8 @@ an app changing ([#3816](https://github.com/QuinnsCode/RustyBuns/issues/3816)).
 A **person** plays: their library, friends, saves and unlocks. A **studio** makes: an account at any size, one person
 (`solo`), a `team` or a `business`, with members (`owner`, `admin`, `maker`) and a shelf of the apps it makes
 (`src/studios.ts`). **QNTBR** is the first studio, the super admin's business, made the first time they open eqosys, holding
-every app in `APPS` no other studio has claimed.
+every app in `APPS` no other studio has claimed. Another studio's game comes into the Library as a listing, after a
+review: [LIBRARY.md](LIBRARY.md).
 
 ## Four doors on every app
 

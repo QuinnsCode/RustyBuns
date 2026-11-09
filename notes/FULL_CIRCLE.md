@@ -62,7 +62,8 @@ Not tried with more than one game on a host yet.
 3. **The shelf** ([#4054](https://github.com/QuinnsCode/RustyBuns/issues/4054)). A listing of the packages as parts, each with a picture, what it does and the line that adds it, read
    from each package's own `package.json`. Ours first; a maker's own parts later, published from their studio.
 4. **Games from other studios in the Library** ([#4055](https://github.com/QuinnsCode/RustyBuns/issues/4055)). Today `APPS` is our list. A studio's game needs a review step before it
-   is on everyone's shelf.
+   is on everyone's shelf. Designed in [apps/eqosys/LIBRARY.md](../apps/eqosys/LIBRARY.md); the build is
+   [#4075](https://github.com/QuinnsCode/RustyBuns/issues/4075), after the template.
 5. **Many games on one box** ([#4056](https://github.com/QuinnsCode/RustyBuns/issues/4056)). One Hetzner host running two games' Workers in-process, measured.
 6. **Qollab sold alone** ([#3978](https://github.com/QuinnsCode/RustyBuns/issues/3978)), for makers who bring their own
    sign-in.
