@@ -294,8 +294,8 @@ const OPS: Record<string, Record<string, Op>> = {
       description: "Version tags first, the highest first, then the rest by name. An annotated tag names the commit it points at.",
       ok: obj({ tags: arr(obj({ name: str(), commit: str() })) }) },
     post: { id: "make_tag", risky: true, summary: "Tag a commit (owner only)", tag: "Repos",
-      description: "A lightweight tag: main's tip, or `commit`. A name that's taken is a 409; delete it first to move it.",
-      body: obj({ name: str("git's rule, as for a branch"), commit: str("a full commit hash; main's tip without it") }, ["name"]), ok: obj({ name: str(), commit: str() }), status: 201 },
+      description: "A lightweight tag: main's tip, or `commit`. A name that's taken is a 409; delete it first to move it. A version tag (v1.2, 3.0-rc1) in a repo with a pipeline file whose checks run here cuts a release, as cut_release does; `release` is each lane's call.",
+      body: obj({ name: str("git's rule, as for a branch"), commit: str("a full commit hash; main's tip without it") }, ["name"]), ok: obj({ name: str(), commit: str(), release: loose("[{lane, cadence, go, why}], when the tag cut a release") }), status: 201 },
   },
   [`${repo}/git-state`]: { get: { id: "get_git_state", summary: "Where the repo's git stands: mirror, push, pull, uncommitted files, clashes", tag: "Repos", open: true,
     description: "What the git bar on the repo page shows, in one answer: the mirror's state and how far ahead or behind it is, files committed here that git hasn't taken yet, files with edits no commit has taken, and any mirror or push clash.",
@@ -586,6 +586,10 @@ const OPS: Record<string, Record<string, Op>> = {
     ok: obj({ source: str("codesplitter.pipeline.json, or default"), pipeline: loose("{hooks?: {after-mervin, before-ester, after-ester}, lanes?: [{name, cadence, paths?, run?, every?, seats?}]}"),
       plan: arr(loose("a stop {kind: \"stop\", at, who, does, lanes?: [{lane, cadence, go: run|skip|board|depart, why, run?, ai?, owed?}]} or a hook {kind: \"hook\", at, mode: ai|ask, does}")),
       counts: loose("{lane: count} after this change lands") }) } },
+  [`${repo}/pipeline/release`]: { post: { id: "cut_release", summary: "Cut a release on main: every often and release lane runs and every bus leaves (the crew)", tag: "Checks",
+    description: "Whatever the counts, each often and release lane queues its check on main's tip and each bus departs (one with no command is an AI pass, which queues nothing yet); they all start again at 0. " +
+      "The required checks with a command go too. A version tag made here does the same (make_tag). 409 without `codesplitter.pipeline.json` on main or with checks not running here.",
+    ok: obj({ sha: str(), lanes: arr(loose("{lane, cadence, go: run|skip|depart, why, run?, ai?}")), checks: loose("main's checks, as `checks` answers") }), status: 202 } },
   [`${repo}/mervin`]: {
     get: { id: "get_mervin_learning", summary: "Whether Mervin learns this repo's merge patterns, and last week's report", tag: "Branches", open: true,
       ok: obj({ learning: bool(), report: loose("{days, settled, asked, wrong, fighting: [{path_hash, ext, asked}], rules_proposed}, only while learning is on") }) },

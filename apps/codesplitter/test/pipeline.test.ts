@@ -147,3 +147,44 @@ test("lanes drive the checks: a commit queues only the lanes it calls for, and t
   expect((await commit("src/b.ts", "b")).map((r) => r.name).sort()).toEqual(["stress", "unit"]);
   expect(await after("README.md")).toEqual({ unit: 0, stress: 0, docs: 2 });
 });
+
+test("a release cut: the button and a version tag each run every often and release lane and send every bus off", async () => {
+  const call = await local({ GH_CLI: "off" });
+  const R = "/api/repos/ana/r";
+  await post(call, "ana", "/api/login", { name: "ana" });
+  await post(call, "ana", "/api/repos", { name: "r" });
+  // Without a pipeline file there's nothing to cut: the one default lane already runs every change.
+  await post(call, "ana", `${R}/files`, { path: "src/a.ts", content: "a" });
+  await post(call, "ana", `${R}/do/commit?path=src/a.ts`, { message: "a" });
+  await call("ana", `${R}/checks/settings`, { method: "PUT", body: JSON.stringify({ where: "here" }) });
+  expect((await post(call, "ana", `${R}/pipeline/release`, {})).status).toBe(409);
+  await post(call, "ana", `${R}/files`, { path: "codesplitter.pipeline.json", content: JSON.stringify({ lanes: [
+    { name: "unit", cadence: "always", paths: ["src/**"], run: "bun test" },
+    { name: "stress", cadence: "often", every: 5, paths: ["src/**"], run: "bun run stress" },
+    { name: "ios", cadence: "release", run: "bun run ios" },
+    { name: "docs", cadence: "bus", seats: 10, paths: ["**/*.md"], run: "bun run docs" },
+  ] }) });
+  await post(call, "ana", `${R}/do/commit?path=codesplitter.pipeline.json`, { message: "pipeline" });
+  await post(call, "ana", `${R}/files`, { path: "README.md", content: "hi" });
+  await post(call, "ana", `${R}/do/commit?path=README.md`, { message: "docs" });
+  const counts = async () => ((await (await call("ana", `${R}/pipeline?files=x`)).json()) as { counts: Record<string, number> }).counts;
+  expect(await counts()).toEqual({ docs: 1 });
+
+  type Run = { id: number; name: string; status: string; log: string };
+  const cut = await post(call, "ana", `${R}/pipeline/release`, {});
+  expect(cut.status).toBe(202);
+  const body = (await cut.json()) as { lanes: { lane: string; go: string }[]; checks: { runs: Run[] } };
+  expect(body.lanes.map((l) => [l.lane, l.go])).toEqual([["unit", "skip"], ["stress", "run"], ["ios", "run"], ["docs", "depart"]]);
+  const queued = body.checks.runs.filter((r) => r.status === "queued");
+  expect(queued.map((r) => r.name).sort()).toEqual(["docs", "ios", "stress"]);
+  const ios = (await (await call("ana", `${R}/checks/${queued.find((r) => r.name === "ios")!.id}`)).json()) as { log: string };
+  expect(ios.log).toContain("@ana cut a release");
+  expect(ios.log).toContain("lane ios (release): a release is being cut");
+  // Every lane that ran starts again, and the bus left, so its seats do too.
+  expect(await counts()).toEqual({ stress: 0, ios: 0, docs: 0 });
+
+  // A version tag cuts one too; any other tag is only a tag.
+  const tag = async (name: string) => (await (await post(call, "ana", `${R}/tags`, { name })).json()) as { release?: { lane: string; go: string }[] };
+  expect((await tag("nightly")).release).toBeUndefined();
+  expect((await tag("v1.0")).release?.filter((l) => l.go !== "skip").map((l) => l.lane)).toEqual(["stress", "ios", "docs"]);
+});

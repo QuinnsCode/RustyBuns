@@ -7,7 +7,9 @@
  * queue: the default pipeline is one lane that runs everything.
  *
  * Each lane's count since it last ran lives in `lane_counts`, so nobody passes counts in. A branch's checks read
- * them; a change landing on main (a commit, a merge) moves them on with tally().
+ * them; a change landing on main (a commit, a merge) moves them on with tally(), and a release cut (cutRelease in
+ * checks.ts: the pipeline's Release button, or a version tag made here) runs every often and release lane and sends
+ * every bus off, so they all start again at 0.
  */
 
 import { type Env } from "./env.ts";
@@ -29,10 +31,10 @@ export async function keepCounts(env: Env, owner: string, repo: string, calls: L
   await env.DB.batch(moved.map(([lane, n]) => put.bind(owner, repo, lane, n)));
 }
 
-/** Ester's call on each of the repo's lanes for a change touching `files`, or null without a pipeline file (or with one that doesn't parse). */
-export async function laneCalls(env: Env, owner: string, repo: string, files: string[]): Promise<{ lane: Lane; call: LaneCall }[] | null> {
+/** Ester's call on each of the repo's lanes for a change touching `files` (or a release being cut: every often and release lane runs, every bus leaves), or null without a pipeline file (or with one that doesn't parse). */
+export async function laneCalls(env: Env, owner: string, repo: string, files: string[], release = false): Promise<{ lane: Lane; call: LaneCall }[] | null> {
   const p = await repoPipeline(env, owner, repo).catch(() => null);
   if (!p || "error" in p || p.source !== PIPELINE_FILE) return null;
   const counts = await laneCounts(env, owner, repo);
-  return (p.pipeline.lanes ?? []).map((lane) => ({ lane, call: laneCall(lane, { files, counts }) }));
+  return (p.pipeline.lanes ?? []).map((lane) => ({ lane, call: laneCall(lane, { files, counts, release }) }));
 }

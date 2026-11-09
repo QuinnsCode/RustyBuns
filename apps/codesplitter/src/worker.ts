@@ -441,7 +441,7 @@ async function route(req: Request, env: Env): Promise<Response> {
   if (mentions) return mentions;
   const agents = await agentRoutes(req, env, p, url, user, (o, r) => access(env, o, r, user), (r) => app.fetch(r, env));
   if (agents) return agents;
-  const road = await pipelineRoutes(req, env, p, url, (o, r) => access(env, o, r, user));
+  const road = await pipelineRoutes(req, env, p, url, user, (o, r) => access(env, o, r, user));
   if (road) return road;
   const edit = await editRoutes(req, p, url, user, (r) => app.fetch(r, env));
   if (edit) return edit;

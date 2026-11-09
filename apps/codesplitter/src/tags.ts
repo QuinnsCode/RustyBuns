@@ -7,7 +7,8 @@
 // git itself (mirror.ts).
 //
 //   GET    /api/repos/:o/:r/tags          {tags: [{name, commit}]}, newest-looking first
-//   POST   /api/repos/:o/:r/tags          {name, commit?} (owner) tag main's tip, or a commit
+//   POST   /api/repos/:o/:r/tags          {name, commit?} (owner) tag main's tip, or a commit; a version tag
+//                                         (v1.2, 3.0-rc1) cuts a release in a repo with a pipeline file (checks.ts)
 //   DELETE /api/repos/:o/:r/tags/:name    (owner)
 
 import { access, handleFor } from "./archive.ts";
@@ -16,6 +17,9 @@ import { obj, opt, str } from "@rustybuns/util/guard";
 import { remoteRefs, setRef, ZERO } from "./git.ts";
 
 export interface Tag { name: string; commit: string }
+
+/** A tag that names a version (v1.2, 3.0-rc1), the kind that cuts a release. */
+const VERSION = /^v?\d/;
 
 /** What's wrong with `name` as a tag name, or null: git's rule, as for a branch ("main" is fine for a tag). */
 export const tagNameError = (name: string) => name === "main" ? null : branchNameError(name)?.replace(/\bbranch\b/g, "tag") ?? null;
@@ -75,7 +79,10 @@ export async function tagRoutes(req: Request, env: Env, p: string[], owner: stri
     if (!commit) return json({ error: "this repo has no commits yet" }, 409);
     if (b.commit && !(await g.h.handle.readCommit(commit).catch(() => null))) return json({ error: `no commit ${commit.slice(0, 7)} in this repo` }, 404);
     const why = await setRef(g.remote, g.token, `refs/tags/${tag}`, ZERO, commit);
-    return why ? json({ error: `git didn't take it: ${why}` }, 409) : json({ name: tag, commit }, 201);
+    if (why) return json({ error: `git didn't take it: ${why}` }, 409);
+    // A version tag is a release: the pipeline's often and release lanes run and its buses leave (pipeline-lanes.ts).
+    const release = VERSION.test(tag) && await (await import("./checks.ts")).cutRelease(env, owner, repo, commit, user, tag).catch(() => null);
+    return json({ name: tag, commit, ...(release && { release }) }, 201);
   } catch (e) {
     if (code(e) === "FORK_IN_PROGRESS" || code(e) === "IMPORT_IN_PROGRESS") return json({ error: "this repo is still being copied in" }, 409);
     throw e;
