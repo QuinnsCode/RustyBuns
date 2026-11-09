@@ -261,3 +261,33 @@ test("each invite route's failure comes back as the tag it declares", async () =
   for (const [why, e, want] of cases) got.push([why, await tagOf(e), want]);
   expect(got.filter(([, tag, want]) => tag !== want)).toEqual([]);
 });
+
+test("each page route's failure comes back named", async () => {
+  const call = await boot();
+  opened.push(call);
+  const as = (user: string) => codesplitter({ url: ORIGIN, retries: 0, send: async (r) => call(user, r.url.slice(ORIGIN.length), { method: r.method, headers: r.headers, ...(r.body && { body: await r.text() }) }) });
+  for (const u of ["ana", "bo"]) await call(u, "/api/login", { method: "POST", body: JSON.stringify({ name: u }) });
+  const ana = as("ana"), bo = as("bo");
+  expect(await tagOf(ana.call("create_repo", { body: { name: "page" } }))).toBe("ok");
+  expect(await tagOf(ana.call("edit_my_page", { body: { path: "index.html", content: "<p>hi</p>" } }))).toBe("ok");
+
+  const cases: [string, Effect.Effect<unknown, Failure<OpWithErrors>>, string][] = [
+    ["a page before its repo", bo.call("edit_my_page", { body: { path: "index.html", content: "x" } }), "NoPageRepo"],
+    ["a file a page can't serve", ana.call("edit_my_page", { body: { path: "a.exe", content: "x" } }), "BadInput"],
+    ["reverting to neither", ana.call("revert_my_page", { body: { to: "never" } }), "BadInput"],
+    ["reverting with no page repo", bo.call("revert_my_page", { body: { to: "default" } }), "NoPageRepo"],
+  ];
+  const got = [];
+  for (const [why, e, want] of cases) got.push([why, await tagOf(e), want]);
+  expect(got.filter(([, tag, want]) => tag !== want)).toEqual([]);
+
+  // The page's own reads and its asset upload aren't typed operations, so their replies carry the tag.
+  const tag = async (r: Promise<Response>) => ((await (await r).json()) as { tag?: string }).tag;
+  expect([
+    await tag(call(null, "/api/users/ana/page/nope.js")),
+    await tag(call(null, "/api/users/ana/page/pic.png")),
+    await tag(call(null, "/api/users/ana/page/index.html", { headers: { "sec-fetch-site": "same-origin", "sec-fetch-dest": "script" } })),
+    await tag(call("ana", "/api/me/page/assets/run.exe", { method: "PUT", body: new Uint8Array([1]) })),
+    await tag(call(null, "/api/users/ana/page/assets/dog.png")),
+  ]).toEqual(["NoSuchFile", "NotPageText", "PageSandboxOnly", "BadInput", "NoSuchFile"]);
+});

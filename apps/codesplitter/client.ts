@@ -103,6 +103,11 @@ export class NoSuchInvite extends Schema.TaggedError<NoSuchInvite>()("NoSuchInvi
 export class AlreadyInCrew extends Schema.TaggedError<AlreadyInCrew>()("AlreadyInCrew", named) {}
 export class InviteUsed extends Schema.TaggedError<InviteUsed>()("InviteUsed", named) {}
 export class InviteExpired extends Schema.TaggedError<InviteExpired>()("InviteExpired", named) {}
+export class PageSandboxOnly extends Schema.TaggedError<PageSandboxOnly>()("PageSandboxOnly", named) {}
+export class NoPageRepo extends Schema.TaggedError<NoPageRepo>()("NoPageRepo", named) {}
+export class AssetsFull extends Schema.TaggedError<AssetsFull>()("AssetsFull", named) {}
+export class NotPageText extends Schema.TaggedError<NotPageText>()("NotPageText", named) {}
+export class NoAssetStore extends Schema.TaggedError<NoAssetStore>()("NoAssetStore", named) {}
 
 type Named = { message: string; status: number; reply: unknown };
 /** One class per tag the server sends: a tag added to ERRORS without one here won't compile. */
@@ -117,6 +122,7 @@ export const NAMED = {
   UpstreamRefused, NotAMirror, NoUpstreamBranch, NoSuchTag, NoSuchFolder, FolderMirror, NotUpstream, PullOnly, PrivateLines, MirrorMain,
   UpstreamClash, UpstreamMoved, TagExists, RepoExists, AlreadyMirror, NotAFork, NoSyncBase, CommitsAhead, GitUnavailable,
   TooManyInvites, NotYourInvite, NoSuchInvite, AlreadyInCrew, InviteUsed, InviteExpired,
+  PageSandboxOnly, NoPageRepo, AssetsFull, NotPageText, NoAssetStore,
 } satisfies { [K in ErrorTag]: new (a: Named) => { readonly _tag: K } };
 
 // What any call can meet, whatever the operation: they come from before a route answers, or from no answer at all.

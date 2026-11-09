@@ -61,6 +61,7 @@ export const ERRORS = {
   MainProtected: [403, "main is protected: edit on a branch, and the owner merges it"],
   NotYourCollection: [403, "that collection isn't yours"],
   NotYourInvite: [403, "the invite is made out to someone else, or to a person and not an agent"],
+  PageSandboxOnly: [403, "a page's files run only inside its own sandbox: open it on its own"],
   NoSuchRepo: [404, "no such repo, or it's private and you can't see it"],
   NoSuchUser: [404, "no one has that handle here"],
   NotInCrew: [404, "they aren't on the repo's crew"],
@@ -80,6 +81,7 @@ export const ERRORS = {
   NoSuchTag: [404, "no tag by that name here"],
   NoSuchFolder: [404, "upstream's branch has no folder by that path"],
   NoSuchInvite: [404, "no pending invite by that id or link: it was revoked, or never was"],
+  NoPageRepo: [404, "no page repo yet: make a public repo named page"],
   BranchExists: [409, "a branch by that name exists"],
   FileExists: [409, "the file exists"],
   BranchClosed: [409, "the branch is merged, not open"],
@@ -119,7 +121,9 @@ export const ERRORS = {
   CommitsAhead: [409, "commits made here would go up: say how many with `ahead`"],
   AlreadyInCrew: [409, "they're on the repo's crew already"],
   TooBig: [413, "the file is too big or too long to dig"],
+  AssetsFull: [413, "an account keeps so many asset files: replace one or delete another"],
   BinaryFile: [415, "a binary file: it has no lines to read or edit"],
+  NotPageText: [415, "a page is text files only: binary files go in assets/"],
   InviteUsed: [410, "the invite was used already: ask whoever sent it for another"],
   InviteExpired: [410, "the invite expired: ask whoever sent it for another"],
   PipelineInvalid: [422, "codesplitter.pipeline.json doesn't parse"],
@@ -127,6 +131,7 @@ export const ERRORS = {
   AgentsUnavailable: [501, "coding agents don't run here"],
   NoEuStorage: [501, "this codeSplitter has no EU storage"],
   GitUnavailable: [501, "mirrors need git on this machine: the desktop app has it"],
+  NoAssetStore: [501, "binary files need storage this server hasn't got"],
   AgentFailed: [502, "the coding agent didn't answer"],
 } as const satisfies Record<string, readonly [number, string]>;
 export type ErrorTag = keyof typeof ERRORS;
@@ -215,6 +220,9 @@ export const OP_ERRORS = {
   revoke_invite: [...REPO, "OwnerOnly", "NoSuchInvite"],
   get_invite: ["NoSuchInvite", "InviteUsed", "InviteExpired"],
   claim_invite: ["BadInput", "NoSuchInvite", "InviteUsed", "InviteExpired", "NotYourInvite", "AlreadyInCrew"],
+  // page.ts
+  edit_my_page: ["BadInput", "TooBig", "NoPageRepo"],
+  revert_my_page: ["BadInput", "NoPageRepo"],
 } as const satisfies Record<string, readonly ErrorTag[]>;
 export type OpWithErrors = keyof typeof OP_ERRORS;
 
