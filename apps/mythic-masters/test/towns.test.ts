@@ -48,7 +48,7 @@ describe("towns as pockets (#3966)", () => {
     const motel = walk(t, gas, { x: -8, z: -4.8 }, { x: 7, z: -4.8 }, { x: 7, z: -3.7 }, { x: 9.7, z: -3.9 });
     expect([roomAt(motel)?.id, beside(t, motel)]).toEqual(["motel", { person: t.people.find((p) => p.id === "manager")! }]);
     // and back out of the front door onto the street
-    const out = walk(t, motel, { x: 7, z: -3.7 }, { x: 0, z: -3.7 }, { x: 0, z: 1.5 });
+    const out = walk(t, motel, { x: 7, z: -3.7 }, { x: 7, z: -4.8 }, { x: 0, z: -4.8 }, { x: 0, z: 1.5 });
     expect(outside(out)).toBe(true);
   });
 });
