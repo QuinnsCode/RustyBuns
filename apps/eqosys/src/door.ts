@@ -1,6 +1,6 @@
 // eqosys's front door for an app's token: who a token names, a socket's token and its 101, and CORS for an app's own page.
 // Shared by eqosys's own routes (handle.ts) and Qollab's (qollab/routes.ts), so Qollab never reads a session cookie.
-import { appOf, APPS, isLoopback } from "./apps.ts";
+import { appOf, APPS, HOME, isLoopback, type QApp } from "./apps.ts";
 import { loopbackOn, type Env, type Fetcher } from "./env.ts";
 import { SOCKET_PROTOCOL } from "@rustybuns/util/eqosys";
 import { audOf, jwksOf, TokenChecker, verify } from "@rustybuns/util/token";
@@ -18,9 +18,17 @@ export async function standing(conf: Env, sub: string, app: string, iat: number)
     .bind(sub, sub, app).first<{ here: number | null; cut: number | null }>();
   return !!row?.here && (row.cut === null || iat > row.cut);
 }
+/**
+ * eqosys's own pages as an app (`aud: "eqosys"`, HOME_LIFE seconds, from /api/home-token): its one origin is eqosys's own.
+ * Not in APPS, so it has no tile, sign-in or handoff; only the doors that pass `{ home: true }` (the spaces) take its token.
+ */
+export const homeApp = (req: Request, conf: Env): QApp => ({ id: HOME, name: "eqosys", kind: "suite", origins: [issuer(req, conf)], starts: [], genre: "Work & Tools" });
+export const HOME_LIFE = 10 * 60;
+
 /** A token's app and who it names, or null when it isn't one eqosys signed for a known app, or it outlived its account or a sign-out (`standing`). */
-export async function tokenOf(req: Request, conf: Env, token: string | null | undefined) {
-  const app = token ? appOf(audOf(token)) : undefined;
+export async function tokenOf(req: Request, conf: Env, token: string | null | undefined, { home = false } = {}) {
+  const aud = token ? audOf(token) : undefined;
+  const app = home && aud === HOME ? homeApp(req, conf) : appOf(aud);
   const claims = token && app ? await (conf.EQOSYS ? checker(conf.EQOSYS, issuer(req, conf), app.id).check(token)
     : verify(token, await jwksOf(conf), { iss: issuer(req, conf), aud: app.id })) : null;
   return app && claims && await standing(conf, claims.sub, app.id, claims.iat) ? { app, who: { id: claims.sub, name: claims.name, app: app.id } } : null;
