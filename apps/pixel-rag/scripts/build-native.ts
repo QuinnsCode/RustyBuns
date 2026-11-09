@@ -29,7 +29,9 @@ if (process.argv.includes("--optional")) {
 }
 
 if (!process.argv.includes("--wasm")) {
-  const lite = process.argv.includes("--lite") ? ["--no-default-features"] : [];
+  // Intel Macs are always lite: ort ships no prebuilt ONNX Runtime for x86_64-apple-darwin, and
+  // the host already finds faces in the page when the cdylib has none (pr_features).
+  const lite = process.argv.includes("--lite") || tag === "darwin-x64" ? ["--no-default-features"] : [];
   await $`cargo build --release --manifest-path ${manifest} ${lite}`;
   const out = join("native", "dist", crate, tag);
   await mkdir(out, { recursive: true });

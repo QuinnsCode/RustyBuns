@@ -177,7 +177,9 @@ function gated(call: { env: any }, o: { session?: string } = {}) {
   }) as Exec;
   /** Waits for its `n`th run to start. */
   const started = (n: number) => until(async () => prompts.length >= n);
-  return { prompts, cmds, heard, files, opts, go: () => go(), started };
+  /** What the latest run's folder holds now: a note's file can land a poll after the note (a fetch that missed once). */
+  const folder = () => held(cmds.at(-1)!.cwd);
+  return { prompts, cmds, heard, files, folder, opts, go: () => go(), started };
 }
 
 /** A page's socket as `who`: every frame it gets, the ones sent before it attached (the hello) first, as Cloudflare buffers them. */
@@ -368,7 +370,8 @@ test("a file dropped into a thread (#3723): everyone sees it, the running agent 
   expect(shot).toMatchObject({ message: { who: "sam", text: "like this", file: { id: 1, name: "my_shot.png", type: "image/png", size: 7, path: ".thread/1-my_shot.png" } }, told: run.id });
   await until(async () => cli.heard.length > 0);
   expect(cli.heard).toEqual(["@sam: like this (sent a file: .thread/1-my_shot.png)"]);
-  expect(cli.files.at(-1)).toEqual({ "1-my_shot.png": "PNG-ish" });
+  await until(async () => "1-my_shot.png" in cli.folder());
+  expect(cli.folder()).toEqual({ "1-my_shot.png": "PNG-ish" });
 
   // The crew reads it back: a picture shows, anything else downloads and never runs as a page. Not the read-only, nor a big one.
   const read = await call("sam", `${thread}/files/1`);

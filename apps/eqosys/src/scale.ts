@@ -27,7 +27,7 @@ export type Load = {
    *  scripts/room-stress.ts measured 210-240k on an M1 Pro core (2026-11-06); a shared Hetzner vCPU is
    *  taken as about half that. */
   perCore: number;
-  /** Memory one room holds, MB. */
+  /** Memory one room holds, MB. A room of 4 measured about 1 MB on a box host (ONE_BOX below); 4 leaves room for bigger state. */
   roomMb: number;
   /** Wall-clock ms a Durable Object spends handling one incoming message (what it is billed while hibernating).
    *  The relay's own JavaScript measured 0.014-0.028 ms (scripts/room-stress.ts); workerd's per-event cost on
@@ -66,6 +66,10 @@ export function needs(l: Load) {
   const connects = (l.ccu * MONTH) / 3600; // a player opens a socket about once an hour
   return { rooms, msgs, tb, cores, ramGb, connects };
 }
+
+/** Player-hours a month: players online on average, for the share of the month rooms are busy. The unit a game's
+ *  own numbers come in, so a bill can be read as a price per hour played. */
+export const playerHours = (l: Load) => l.ccu * (MONTH / 3600) * l.awake;
 
 export type Cost = { usd: number; lines: [string, number][]; note: string };
 
@@ -202,3 +206,19 @@ export const PRESETS: { id: string; name: string; what: string; load: Partial<Lo
   { id: "action", name: "Action room", what: "four players at 20 inputs a second", load: { room: 4, rate: 20, awake: 1, bytes: 120 } },
   { id: "space", name: "Big space", what: "fifty in one space, five updates a second", load: { room: 50, rate: 5, awake: 1, bytes: 100 } },
 ];
+
+/** Games side by side on one host, each its own box host process: MB with nobody in and with `rooms` rooms of 4
+ *  players. scripts/one-box.ts on the builder Mac (darwin-arm64, Bun 1.4.3), 2026-11-09 (#4056). */
+export const ONE_BOX = {
+  measured: "2026-11-09", rooms: 16,
+  games: [{ name: "Park Hide & Seek", idleMb: 43, busyMb: 63 }, { name: "Git Recon", idleMb: 28, busyMb: 41 }],
+};
+
+/** How many games like the measured ones fit on a box, a fifth kept back for the OS and spikes, and euros a game a
+ *  month; against a Durable Object room that can't hibernate, which bills 128 MB all month whatever it holds. */
+export function gamesPerBox(box: Box = HETZNER[0]!.boxes[0]!) {
+  const g = ONE_BOX.games, avgMb = g.reduce((a, x) => a + x.busyMb, 0) / g.length;
+  const roomMb = g.reduce((a, x) => a + (x.busyMb - x.idleMb), 0) / g.length / ONE_BOX.rooms;
+  const fit = Math.floor((box.gb * 1024 * 0.8) / avgMb);
+  return { box, avgMb, roomMb, fit, eurPerGame: box.eur / fit, doRoomUsd: MONTH * 0.125 * 12.5 / 1e6 };
+}

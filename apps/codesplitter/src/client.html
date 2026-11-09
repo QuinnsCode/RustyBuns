@@ -3224,6 +3224,14 @@ function drawRuns(el, rs, { owner, repo, file, scope = {}, lines, refresh, empty
   };
 }
 /**
+ * `read` once for every ask that lands within `ms` of the first (#3927): a run ending tells its thread twice (status,
+ * then its batch) and the file's socket once, all in a few ms, and each would read GET .../agents on its own.
+ */
+function oneRead(read, ms = 50) {
+  let due = null;
+  return () => due ??= new Promise((ok) => setTimeout(() => { due = null; ok(read()); }, ms));
+}
+/**
  * Run cards that keep themselves current (#3737): each running (or waiting) run's thread socket (`?watch=1`: no presence,
  * no backlog) pushes its state (`{t: "run"}`) and every log line (an event message), so no page asks GET .../agents while
  * a run goes. `draw(rs)` redraws the cards; a run ending, its batch landing or a socket coming back calls `reread()` once,
@@ -5524,11 +5532,11 @@ const views = {
       if (!el?.isConnected) return void live.close();
       drawRuns(el, rs, { owner, repo, file: true, refresh: poll, empty: `<span class="muted">No agents yet.${isOwner ? " Pick a file and give one a task." : ""}</span>` });
     };
-    const poll = async () => {
+    const poll = oneRead(async () => {
       const rs = await api(`/repos/${owner}/${repo}/agents`).catch(() => []);
       draw(rs);
       if ($("#m-runs")?.isConnected) void live.watch(rs);
-    };
+    });
     const live = watchRuns(owner, repo, draw, poll);
     poll();
     const f = $("#m-agent");
@@ -6262,14 +6270,14 @@ const views = {
       drawRuns(runsEl, rs, { owner, repo, scope: { path }, lines: () => selLines().map((l) => l.id), refresh: pollAgents,
         empty: `<span class="muted">No agents on this file yet.${owner === me() ? " Press Agent to give one a task." : ""}</span>` });
     };
-    const pollAgents = async () => {
+    const pollAgents = oneRead(async () => {
       const rs = await api(`/repos/${owner}/${repo}/agents?path=${encodeURIComponent(path)}`).catch(() => []);
       if (!runsEl?.isConnected) return void runsLive.close();
       drawAgents(rs);
       void runsLive.watch(rs);
       // The crew's waiting batches come from pollWaits, with their hunks.
       if (role === "owner") void setRuns(rs);
-    };
+    });
     const runsLive = watchRuns(owner, repo, drawAgents, pollAgents);
     if (runsEl) { pollAgents(); ctx.pollAgents = pollAgents; }
     if ($("#agent")) {
