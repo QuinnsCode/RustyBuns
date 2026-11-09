@@ -7,7 +7,7 @@
 // The host's rules (@rustybuns/util/party-rules, #3881) decide who gets in, how many, whether late, what start needs and
 // who may talk, mute, report and invite (with "the host", a link carries a key the door checks, #3908), and how long the party lives; the host also kicks, blocks (their list: refused at
 // the door, or let in hidden from the host by the `block` rule) and hands the party to someone else.
-import { check, bool, obj, oneOf, opt, str, type Of } from "@rustybuns/util/guard";
+import { arr, check, bool, nul, num, obj, oneOf, opt, str, type Of } from "@rustybuns/util/guard";
 import { refuseSocket, Sockets, type RoomCtx, type RoomSocket } from "@rustybuns/util/room";
 import { sign, START_S, startAud } from "@rustybuns/util/token";
 import { b64url } from "@rustybuns/util/bytes";
@@ -40,6 +40,9 @@ const Member = obj({ id: str(200, { min: 1 }), name: str(200) });
 export type Member = Of<typeof Member>;
 /** A member as the party shows them: ready, and the host marked. */
 export type Seen = Member & { ready: boolean; host: boolean };
+/** What `/peek` answers: the party someone is in right now (its room code, game, seats and who is ready), or null. */
+export const PartyPeek = obj({ party: nul(obj({ code: str(12), app: str(64), size: num(1, 1000), members: arr(obj({ id: str(200, { min: 1 }), name: str(200), ready: bool(), host: bool() }), 1000) })) });
+export type PartyPeek = Of<typeof PartyPeek>;
 /** What a member sends: ready up or stand down, and (the host only) start. */
 const PartyIn = obj({
   t: oneOf(["ready", "start", "say", "mute", "report", "rules", "kick", "block", "host", "relink"]), ready: opt(bool()),
@@ -120,6 +123,7 @@ export class Party {
       return json({ ok: true });
     }
     if (url.pathname === "/erase") return this.erase(url.searchParams.get("id") ?? "");
+    if (url.pathname === "/peek") return json(await this.peek(url.searchParams.get("id") ?? "", now));
     // Signed out (members.ts closeSockets): the person's socket here closes if their cut tokens were this party's app's. They stay a member and may come back.
     if (url.pathname === "/out") {
       const id = url.searchParams.get("id"), app = url.searchParams.get("app") ?? "*";
@@ -176,6 +180,15 @@ export class Party {
       const m = this.sockets.who(sock);
       if (m) this.sockets.send(sock, await this.startFor(m, room));
     }
+  }
+
+  /** The party as the eqosys home shows it beside your friends: only while `id` is in it now, and only the members they may see. */
+  private async peek(id: string, now: number): Promise<PartyPeek> {
+    const app = await this.ctx.storage.get<string>("app"), expires = await this.ctx.storage.get<number>("expires");
+    if (!app || !expires || expires <= now || !this.members().some((m) => m.id === id)) return { party: null };
+    const ready = new Set(await this.ctx.storage.get<string[]>("ready") ?? []), host = await this.ctx.storage.get<string>("host"), apart = await this.apart();
+    const members = this.members().filter((m) => !apart(id, m.id)).map((m): Seen => ({ ...m, ready: ready.has(m.id), host: m.id === host }));
+    return { party: { code: await this.ctx.storage.get<string>("code") ?? "", app, size: (await this.rules()).size, members } };
   }
 
   /** The party's rules: what the host set, over how a party made before rules (or before a rule) behaves. */

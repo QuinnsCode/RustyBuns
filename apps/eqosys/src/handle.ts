@@ -12,7 +12,7 @@ import { authFor, authOn, isAdmin, meOf, providers, type Me } from "./auth.ts";
 import { b64url, crossSite, json, loopbackOn, VERSION, type Env } from "./env.ts";
 import { hubAnnounce, hubAsk, type Who } from "./qollab/hub.ts";
 import { isQollab, qollab } from "./qollab/routes.ts";
-import { bearerOf, cors, issuer, tokenOf } from "./door.ts";
+import { bearerOf, cors, HOME_LIFE, issuer, tokenOf } from "./door.ts";
 import { deleteAccount, exchange, link, mint, setAccess, signOutApps } from "./members.ts";
 import { oauth } from "./oauth.ts";
 import { appleEvents } from "./apple.ts";
@@ -130,6 +130,18 @@ export async function handle(req: Request, conf: Env): Promise<Response | null> 
     const r = await unlock(conf, t.who.id, t.app.id, body.id);
     if (r.ok && r.new && conf.HUB) await hubAnnounce(conf.HUB, t.who, `unlocked ${r.achievement.name}`);
     return r.ok ? json({ achievement: r.achievement, new: r.new }, 200, head) : json({ error: r.error }, r.status, head);
+  }
+
+  // eqosys's own pages as an app (door.ts homeApp): GET /api/home-token, signed in, from eqosys's own page only, is a token for
+  // the Qollab doors that take one (the spaces), good HOME_LIFE seconds; the /spaces page asks again before it runs out.
+  if (pathname === "/api/home-token") {
+    if (req.method !== "GET") return json({ error: "GET, signed in" }, 405);
+    const origin = req.headers.get("origin"), site = req.headers.get("sec-fetch-site");
+    if ((origin && origin !== issuer(req, conf)) || (site && site !== "same-origin")) return json({ error: "only eqosys's own pages" }, 403);
+    const me = await meOf(req, conf);
+    if (!me) return json({ error: "sign in at /login first" }, 401);
+    const token = await sign(conf, issuer(req, conf), { user: { id: me.id, email: me.email, name: me.name }, app: HOME, source: HOME, access: [] }, Date.now(), {}, HOME_LIFE);
+    return token ? json({ token, name: me.name, life: HOME_LIFE }) : json({ error: "no signing key here" }, 503);
   }
 
   // Privacy (privacy.ts): GET /api/privacy/export is everything eqosys holds about the person as one JSON file (GDPR's access and

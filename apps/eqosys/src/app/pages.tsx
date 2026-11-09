@@ -3,6 +3,7 @@ import { APPS, GENRES, appOf, type QApp } from "../apps.ts";
 import type { Me } from "../auth.ts";
 import { NAME, VERSION } from "../env.ts";
 import type { Friend, HubState, Note } from "../qollab/hub.ts";
+import type { Side } from "../qollab/side.ts";
 import type { Member } from "../members.ts";
 import { Glass, btn, greeting } from "./Glass.tsx";
 import { Art } from "./Art.tsx";
@@ -162,8 +163,19 @@ const HOME_CSS = `
 /* Friends on the right: who is on and where. */
 .home .lib{display:grid;grid-template-columns:minmax(0,1fr);gap:1rem;min-width:0}
 .home .lib>div{display:grid;gap:1rem;min-width:0}
-.home .rail{display:grid;gap:.4rem;padding:1rem 1.1rem;align-content:start;align-self:start}
-.home .rail h2{margin:0 0 .3rem}
+.home .side{display:grid;gap:.8rem;align-content:start;align-self:start;min-width:0}
+.home .rail{display:grid;gap:.4rem;padding:1rem 1.1rem;align-content:start;min-width:0}
+.home .rail h2{margin:0 0 .3rem;display:flex;align-items:center;gap:.45rem}.home .rail h2 svg{width:1.05rem;height:1.05rem;flex:none;color:var(--mut)}
+.home .party{border-color:color-mix(in oklab,var(--acc) 55%,transparent)}
+.home .party .code{font:600 1.35rem/1 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.22em}
+.home .rail .seats{display:flex;flex-wrap:wrap;gap:.4rem}
+.home .rail .seats li{position:relative;display:grid;place-items:center;width:2.1rem;height:2.1rem;padding:0;border-radius:50%;background:var(--field);border:1px solid var(--rim);font:500 .78rem Lexend,system-ui,sans-serif;text-transform:uppercase}
+.home .rail .seats li.ready{box-shadow:0 0 0 2px #3fb871}
+.home .rail .seats li svg{position:absolute;right:-4px;bottom:-4px;width:.85rem;height:.85rem;padding:1px;border-radius:50%;background:#3fb871;color:#fff}
+.home .rail .seats li.open{border-style:dashed;color:var(--mut)}
+.home .rail .spaces li{padding:0}.home .rail .spaces a{display:flex;align-items:center;gap:.5rem;width:100%;min-width:0;padding:.45rem .55rem;border-radius:.6rem;color:var(--ink);text-decoration:none;border:1px solid var(--rim)}
+.home .rail .spaces a:hover{background:var(--field)}.home .rail .spaces svg{width:.95rem;height:.95rem;flex:none;color:var(--mut)}
+.home .rail .spaces b{flex:1}.home .rail .spaces small.on{color:#3fb871}
 .home .rail ul{list-style:none;margin:0;padding:0;display:grid;gap:.15rem}
 .home .rail li{display:flex;align-items:center;gap:.7rem;padding:.4rem 0;min-width:0}
 .home .rail li i{position:relative;flex:none;display:grid;place-items:center;width:2.1rem;height:2.1rem;border-radius:50%;background:var(--field);border:1px solid var(--rim);font:500 .9rem Lexend,system-ui,sans-serif;font-style:normal;text-transform:uppercase}
@@ -182,7 +194,7 @@ const HOME_CSS = `
 @media(min-width:68rem){.home{grid-template-columns:15rem minmax(0,1fr)}
  .home .top{position:sticky;top:1.5rem;padding:1.4rem 1.2rem}.home .top h1{font-size:1.8rem}
  .home .tabs{flex-direction:column}.home .tabs a{justify-content:space-between}}
-@media(min-width:84rem){.home .lib{grid-template-columns:minmax(0,1fr) 17rem}.home .rail{position:sticky;top:4.5rem;margin-top:3rem}}
+@media(min-width:84rem){.home .lib{grid-template-columns:minmax(0,1fr) 17rem}.home .side{position:sticky;top:4.5rem;margin-top:3rem}}
 @media(max-width:52rem){.home .feature{grid-template-columns:minmax(0,1fr)}.home .feature .shot{aspect-ratio:16/9;min-height:0}.home .feature .cap{padding:1.1rem 1.2rem 1.3rem}.home .feature b{font-size:1.9rem}}
 .home .trophies{display:grid;gap:.6rem}
 .home .trophies header{display:flex;align-items:baseline;gap:.6rem;margin-bottom:.7rem}.home .trophies header b{flex:1;font-family:Lexend,system-ui,sans-serif;font-weight:600}
@@ -219,6 +231,7 @@ const HOME_CSS = `
 .home.detail{width:min(100%,64rem)}.home.detail .shot{border-radius:16px}
 .home .detail .pane,.home.detail .pane{display:grid;gap:1rem}
 .home.detail h1{margin:0;font-size:2.2rem}
+.spaces-page #spaces{min-width:0}.spaces-page .rb-spaces{max-height:none}
 .home.detail .more{white-space:pre-line;line-height:1.6;text-wrap:pretty}.home.detail .facts{display:flex;flex-wrap:wrap;align-items:center;gap:.7rem;color:var(--mut);font-size:.85rem}
 .home.detail .facts span{display:inline-flex;align-items:center;gap:.4rem}
 .home .back{display:inline-flex;align-items:center;gap:.4rem;color:var(--ink);text-decoration:none;font-size:.9rem;opacity:.85}
@@ -310,25 +323,74 @@ function Tile({ app, mine, unlocks }: { app: QApp; mine: Used; unlocks: Unlocks 
   );
 }
 
+const Icon = ({ d }: { d: string[] }) => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{d.map((p) => <path key={p} d={p} />)}</svg>;
+// lucide: users, door-open, hash, check.
+const USERS = ["M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2", "M9 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8z", "M22 21v-2a4 4 0 0 0-3-3.87", "M16 3.13a4 4 0 0 1 0 7.75"];
+const DOOR = ["M13 4h3a2 2 0 0 1 2 2v14", "M2 20h3", "M13 20h9", "M10 12v.01", "M13 4.562v16.157a1 1 0 0 1-1.242.97L5 20V5.562a2 2 0 0 1 1.515-1.94l4-1A2 2 0 0 1 13 4.561Z"];
+const HASH = ["M4 9h16", "M4 15h16", "M10 3 8 21", "M16 3l-2 18"];
+const CHECK = ["M20 6 9 17l-5-5"];
+
+/** The party you are in now: its room code, a seat a member (ringed when ready), an open seat while there's room, and how many are ready. */
+function PartyCard({ party }: { party: NonNullable<Side["party"]> }) {
+  const ready = party.members.filter((m) => m.ready).length;
+  return (
+    <section className="glass rail party" aria-label="Your party">
+      <h2><Icon d={DOOR} />Your party</h2>
+      <span className="code" title="Room code">{party.code}</span>
+      <ul className="seats">
+        {party.members.map((m) => <li key={m.id} className={m.ready ? "ready" : undefined} title={`${m.name}${m.host ? ", host" : ""}${m.ready ? ", ready" : ""}`}>{m.name.slice(0, 2)}{m.ready && <Icon d={CHECK} />}</li>)}
+        {party.members.length < party.size && <li className="open" title="An open seat">+</li>}
+      </ul>
+      <small>{nameOf(party.app)}. {ready} of {party.members.length} ready.</small>
+    </section>
+  );
+}
+
+/** Your spaces, the first few by name, with how many are in each now; each opens on /spaces. */
+function Spaces({ side }: { side: Side }) {
+  return (
+    <section className="glass rail" aria-label="Your spaces">
+      <h2><Icon d={HASH} />Your spaces</h2>
+      {side.spaces.length === 0 ? <span className="mut">None yet. A space is a group that lasts between games.</span> : (
+        <ul className="spaces">{side.spaces.map((sp) => (
+          <li key={sp.id}><a href={`/spaces?open=${sp.id}`}><Icon d={HASH} /><b>{sp.name}</b>{sp.on !== null && <small className={sp.on ? "on" : undefined}>{sp.on} on</small>}</a></li>
+        ))}</ul>
+      )}
+      <a href="/spaces">{side.more ? `All spaces (${side.more} more)` : side.spaces.length ? "All spaces" : "Make or join a space"}</a>
+    </section>
+  );
+}
+
 /** Who of your friends is on, and in which game; the rest below them. */
-function Online({ hub }: { hub: HubState | null }) {
-  if (!hub) return null;
+function Online({ hub }: { hub: HubState }) {
   const friends = [...hub.friends].sort((a, b) => b.presence.length - a.presence.length), asked = hub.incoming.length;
   return (
-    <aside className="glass rail" aria-label="Friends">
-      <h2>Friends<em>{friends.filter((f) => f.presence.length).length} on</em></h2>
+    <section className="glass rail" aria-label="Friends">
+      <h2><Icon d={USERS} />Friends<em>{friends.filter((f) => f.presence.length).length} on</em></h2>
       {friends.length === 0 ? <span className="mut">Nobody yet.</span> : (
         <ul>{friends.slice(0, 12).map((f) => (
           <li key={f.id} className={f.presence.length ? "on" : undefined}><i>{f.name.slice(0, 1)}</i><span><b>{f.name}</b><small>{f.presence.length ? where(f) : "off"}</small></span></li>
         ))}</ul>
       )}
       <a href="/?tab=friends">{asked ? `${asked} asking to be friends` : friends.length ? "All friends" : "Ask a friend"}</a>
+    </section>
+  );
+}
+
+/** The column beside the library: your party while you're in one, then friends, then your spaces. */
+function SidePanel({ hub, side }: { hub: HubState | null; side: Side | null }) {
+  if (!hub && !side) return null;
+  return (
+    <aside className="side">
+      {side?.party && <PartyCard party={side.party} />}
+      {hub && <Online hub={hub} />}
+      {side && <Spaces side={side} />}
     </aside>
   );
 }
 
 /** Home: the featured game you played last up top, the ones you played last, then a shelf a genre (yours first, most recent first), friends beside. */
-function Library({ mine, unlocks, hub }: { mine: Member | undefined; unlocks: Unlocks; hub: HubState | null }) {
+function Library({ mine, unlocks, hub, side }: { mine: Member | undefined; unlocks: Unlocks; hub: HubState | null; side: Side | null }) {
   const used = new Map(mine?.apps.map((a) => [a.app, a]));
   const recent = (a: QApp) => used.get(a.id)?.last_at ?? -1;
   const sorted = (list: QApp[]) => [...list].sort((a, b) => recent(b) - recent(a));
@@ -356,8 +418,24 @@ function Library({ mine, unlocks, hub }: { mine: Member | undefined; unlocks: Un
           ) : null;
         })}
       </div>
-      <Online hub={hub} />
+      <SidePanel hub={hub} side={side} />
     </div>
+  );
+}
+
+/** Your spaces: the panel a game opens (spaces.client.ts mounts it in #spaces), on the sky. */
+export function SpacesPage({ t0 }: { t0: number }) {
+  return (
+    <Glass t0={t0} css={HOME_CSS}>
+      <div className="home detail spaces-page">
+        <a className="back" href="/">&larr; Home</a>
+        <section className="pane">
+          <h1>Your spaces</h1>
+          <p className="mut">A space is a group that lasts between games, with channels. Make one, or join one with its invite.</p>
+          <div id="spaces" aria-label="Your spaces"><span className="mut">Loading your spaces.</span></div>
+        </section>
+      </div>
+    </Glass>
   );
 }
 
@@ -460,7 +538,7 @@ function Visitors({ v }: { v: Counts }) {
 export type Tab = (typeof TABS)[number][0];
 export const tabOf = (v: unknown): Tab => TABS.find(([k]) => k === v)?.[0] ?? "library";
 
-export function Home({ me, mine, hub, everyone, unlocks, counts, error, t0, tab, visitors, scale, studios }: { visitors?: Counts | null; scale?: Load | null; studios?: Studio[] | null; counts: Map<string, number>; me: Me; mine: Member | undefined; hub: HubState | null; everyone: Member[] | null; unlocks: Unlocks; error?: string; t0: number; tab: Tab }) {
+export function Home({ me, mine, hub, side, everyone, unlocks, counts, error, t0, tab, visitors, scale, studios }: { side?: Side | null; visitors?: Counts | null; scale?: Load | null; studios?: Studio[] | null; counts: Map<string, number>; me: Me; mine: Member | undefined; hub: HubState | null; everyone: Member[] | null; unlocks: Unlocks; error?: string; t0: number; tab: Tab }) {
     const tabs = TABS.filter(([k]) => !ADMIN_TABS.has(k) || everyone);
   const asked = hub?.incoming.length ?? 0;
   return (
@@ -477,7 +555,7 @@ export function Home({ me, mine, hub, everyone, unlocks, counts, error, t0, tab,
         </section>
 
         <div className="body">
-        {tab === "library" && <Library mine={mine} unlocks={unlocks} hub={hub} />}
+        {tab === "library" && <Library mine={mine} unlocks={unlocks} hub={hub} side={side ?? null} />}
 
         {tab === "achievements" && <><h2>Achievements</h2><Achievements unlocks={unlocks} /></>}
 

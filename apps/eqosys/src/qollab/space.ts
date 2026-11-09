@@ -81,6 +81,8 @@ export class Space {
       return json({ ok: true });
     }
     if (url.pathname === "/mine") return this.mine(url.searchParams.get("id") ?? "");
+    // How many people are in it now (two tabs are one), for the eqosys home's list of your spaces.
+    if (url.pathname === "/on") return json({ on: (await this.members()).length });
     if (url.pathname === "/roster") return this.roster(check(RosterIn, await req.json().catch(() => null)));
     const who = check(Who, Object.fromEntries(url.searchParams));
     if (url.pathname !== "/socket" || !who) return json({ error: "not found" }, 404);
