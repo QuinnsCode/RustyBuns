@@ -1,8 +1,14 @@
 # eqosys
 
-One account for every Q app, games and suite alike. A small RWSDK app on one Worker and one D1 database:
-Better Auth holds the accounts, a Durable Object a person holds their friends and who of them is on, and eqosys remembers which app each person first came in through, every app
-they've used since, and what they may do in each. Working title.
+**Your home for every Q game: one account with your games, friends, saves and the studio where you make them.**
+
+eqosys is who you are; [Qollab](../qollab/README.md) is who you are with. eqosys holds the account and the home: sign-in, your
+library, saves and achievements, and the studio. Qollab is the live part it ships with (friends online, parties, rooms and
+spaces), and is its own product too ([QOLLAB.md](QOLLAB.md)). Every Q game gets both. The words the pages use are in
+[VISION.md](VISION.md#the-words).
+
+Under the hood: a small RWSDK app on one Worker and one D1 database. Better Auth holds the accounts, and eqosys remembers
+which app each person first came in through, every app they've used since, and what they may do in each.
 
 **Live:** https://eqosys.qntbr.com
 
@@ -18,7 +24,7 @@ they've used since, and what they may do in each. Working title.
 | `GET /.well-known/jwks.json` | The public key `token` is signed with (ES256). An app's server or Durable Object checks a token with it and never calls back. |
 | `/hub` (WebSocket) | A page's live line to its person's hub: friends, who is on in which app, requests and notifications, sent on connect and after every change. Send ops as JSON frames, plus `{ op: "status", doing }`. Opens only from the token's own app's site. |
 | `POST /api/hub` `{ op, … }` | One op with `Authorization: Bearer <token>`, answered with the same state: `state`, `befriend { email }`, `accept { id }`, `drop { id }`, `notify { id, text, link? }` (a friend only; the link on your app's site), `clear`. |
-| `/` | Your apps, where you came from, what you may do; your friends and where each is right now, requests to accept or drop, notifications, and a box to ask someone by email. The super admin also sees everyone and grants or takes away a role in an app, and has a Visitors tab (below). |
+| `/` | Home: the featured game you played last, the ones to pick up again, a shelf of screenshot tiles for each genre, and which friends are on and where, as wide as the window allows. Tabs for achievements, friends (requests to accept or drop, notifications, a box to ask someone by email), the studio and the account. The super admin also sees everyone and grants or takes away a role in an app, and has a Visitors tab (below). |
 | `POST /api/visit` `{ site, engaged?, ref? }` | A page's visit beacon (`navigator.sendBeacon`, text/plain, no preflight): a view from a page with no Worker of its own (the Playground), and `engaged: true` on the first tap, key or scroll (the Playground and eqosys's own pages). `site` is `eqosys` from its own origin or an app from one of its origins in `src/apps.ts`, else 403. 204, nothing back. |
 | `/delete?app=` | Delete my account, for an iOS app to open (App Store 5.1.1(v)): type your email, everything eqosys holds goes (sign-in, access, friends, who hears you left), then a link back to the app. |
 | `POST /api/account/delete` | The same from inside the app, with its token as a bearer: `{ ok: true }`. |

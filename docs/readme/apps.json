@@ -73,12 +73,12 @@
       {
         "app": "eqosys",
         "name": "eqosys",
-        "line": "One account for every Q app: Better Auth on D1, a PKCE code handoff to each app with a signed token it can check alone, which app each person came from and what they may do in each, and a Durable Object a person for friends, presence and notifications. Also a plain OpenID provider, so a site's own Better Auth or a native app signs in with it"
+        "line": "Your home for every Q game: your games, friends, saves and studio on one account. Under it, Better Auth on D1, a PKCE code handoff to each app with a signed token it can check alone, which app each person came from and what they may do in each, and a Durable Object a person for friends, presence and notifications. Also a plain OpenID provider, so a site's own Better Auth or a native app signs in with it"
       },
       {
         "app": "qollab",
         "name": "Qollab",
-        "line": "eqosys's multiplayer layer as a Worker of its own: friends, parties, spaces and saves on the same paths, with their Durable Objects moved out of eqosys along with their data, and eqosys's database read in place"
+        "line": "Realtime rooms for any app on Cloudflare: rooms, seats, parties, presence and saves in one call. Built into eqosys as a Worker of its own, with a Durable Object a player and a room"
       },
       {
         "app": "playground",
