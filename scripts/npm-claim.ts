@@ -20,7 +20,7 @@ const REPO = "QuinnsCode/RustyBuns";
 const NPM = ["npx", "-y", "npm@11.15.0"];
 
 const sh = (cmd: string[], quiet = false) => Bun.spawnSync(cmd, { stdio: quiet ? ["ignore", "pipe", "pipe"] : ["inherit", "inherit", "inherit"] });
-const text = (cmd: string[]) => { const r = sh(cmd, true); return r.exitCode === 0 ? r.stdout.toString().trim() : null; };
+const text = (cmd: string[]) => { const r = sh(cmd, true); return r.exitCode === 0 ? String(r.stdout ?? "").trim() : null; };
 
 const list = text(["bun", "scripts/check-release.ts", "--list"]);
 if (!list) throw new Error("bun scripts/check-release.ts --list failed");
