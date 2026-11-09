@@ -225,6 +225,10 @@ export async function named(res: Response, tag: ErrorTag): Promise<Response> {
   return fail(tag, isPlainObject(b) && typeof b.error === "string" ? b.error : ERRORS[tag][1], isPlainObject(b) ? b : {});
 }
 
+/** A file read's failure (archive.ts readText, materialize), named by its status (a 5xx stays untagged: a client retries it). */
+export const unread = (m: { error: string; status: number }) =>
+  m.status === 404 ? fail("NoSuchFile", m.error) : m.status === 413 ? fail("TooBig", m.error) : m.status === 415 ? fail("BinaryFile", m.error) : json({ error: m.error }, m.status);
+
 /** A body through a guard (`@rustybuns/util/guard`): the value typed, or a 400 saying what's wrong, in `why`'s words when given. */
 export const need = <T>(v: unknown, g: Guard<T>, why?: string): T | Response => {
   try { return g(v); } catch (e) { if (e instanceof Bad) return fail("BadInput", why ?? e.message); throw e; }

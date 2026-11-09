@@ -31,6 +31,7 @@ import { repoRow, live, branchOf } from "./repos.ts";
 import {
   code,
   fail,
+  unread,
   json,
   NAME,
   named,
@@ -306,9 +307,6 @@ const TOP_FRIENDS = 7;
 const BIO_MAX = 1000, THEME_MAX = 64 * 1024;
 /** What GET /api/me answers of a person's own row. */
 const ME_COLUMNS = "name, bio, theme_html, updated_at, github_account, agent_github, pulse, git_truth, city_public, tier, avatar, hidden, share_usage, top8, created_at";
-/** materialize's failure, named by its status (a 5xx stays untagged: a client retries it). */
-const unmade = (m: { error: string; status: number }) =>
-  m.status === 404 ? fail("NoSuchFile", m.error) : m.status === 413 ? fail("TooBig", m.error) : m.status === 415 ? fail("BinaryFile", m.error) : json({ error: m.error }, m.status);
 /** protect.ts's refusals, named. */
 const closedMain = async (env: Env, owner: string, repo: string, user: string | null | undefined) => { const c = await mainClosed(env, owner, repo, user); return c && named(c, "MainProtected"); };
 const closedPolicy = (owner: string, path: string, user: string | null | undefined) => { const c = policyClosed(owner, path, user); return c && named(c, "PolicyFile"); };
@@ -842,7 +840,7 @@ async function route(req: Request, env: Env): Promise<Response> {
       if (branch && p[5] === "commit") return fail("BadInput", "merge the branch, then commit main");
       if (branch && p[5] === "private") return fail("BadInput", "mark lines private on main");
       const m = branch ? await materializeOn(env, owner, repo, branch, path) : await materialize(env, owner, repo, path);
-      if ("error" in m) return unmade(m);
+      if ("error" in m) return unread(m);
       const writes = p[5] === "ops" || p[5] === "commit" || ((p[5] === "private" || p[5] === "claims" || p[5] === "release") && req.method === "POST");
       if (writes && !a.write) return fail("NoWriteAccess", "no write access");
       const runLocked = (writes || p[5] === "ws") && a.write ? await runBranchLocked(env, owner, repo, branch, user) : null;
@@ -978,7 +976,7 @@ async function route(req: Request, env: Env): Promise<Response> {
       || (t.note !== undefined && typeof t.note !== "string")) return fail("BadInput", "owner, repo, path, from and to required");
     if (!(await access(env, t.owner, t.repo, user)).read) return fail("NoSuchRepo", "not found");
     const m = await materialize(env, t.owner, t.repo, t.path);
-    if ("error" in m) return unmade(m);
+    if ("error" in m) return unread(m);
     const from = Math.max(1, Math.floor(t.from)), to = Math.max(from, Math.floor(t.to));
     const lines = await fileLines(env, t.owner, t.repo, t.path, user!, true);
     const first = lines[from - 1], last = lines[Math.min(to, lines.length) - 1];

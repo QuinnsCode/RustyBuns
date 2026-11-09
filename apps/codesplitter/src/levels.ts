@@ -8,7 +8,7 @@
 import { listDir, readText } from "./archive.ts";
 import { seeGit } from "./mirror.ts";
 import { chunkRepo, importChunks } from "./chunks.ts";
-import { code, json, NAME, type ArtifactsRepo, type DigMessage, type Env, readBody } from "./env.ts";
+import { code, fail, json, NAME, type ArtifactsRepo, type DigMessage, type Env, readBody, unread } from "./env.ts";
 import { githubHead, githubTarball, githubToken, importRepo, submodules } from "./github.ts";
 import { tooBigToImport, whenFree } from "./tarball.ts";
 import { digPart, Later, planSwarm, progress } from "./swarm.ts";
@@ -172,13 +172,13 @@ export async function levelRoutes(req: Request, env: Env, p: string[], url: URL,
   if (!p[2]) return json(await states(env));
   const slug = p[2];
   const level = LEVELS.find((l) => l.slug === slug);
-  if (!level) return json({ error: "no such level" }, 404);
+  if (!level) return fail("NoSuchLevel", "no such level");
 
   // POST /api/levels/:slug/import  (admins): a shallow, read-only copy of the default branch.
   // Again on a level already in Artifacts, it replaces that repo: a fresh dig, with a fresh HEAD.
   if (p[3] === "import" && req.method === "POST") {
-    if (!admin) return json({ error: "admins only" }, 403);
-    if (!env.ARTIFACTS) return json({ error: "no Artifacts binding" }, 501);
+    if (!admin) return fail("AdminsOnly", "only the site's admins import a level");
+    if (!env.ARTIFACTS) return fail("NoArtifacts", "this server has no Artifacts to dig a level into");
     const was = await env.DB.prepare("SELECT status, store FROM levels WHERE slug = ?").bind(slug).first();
     const again = was?.status === "ready" && was.store !== "r2";
     // With a queue, the dig runs off it, so it carries on when the page that asked goes away.
@@ -193,26 +193,26 @@ export async function levelRoutes(req: Request, env: Env, p: string[], url: URL,
   }
 
   const r = await levelSource(env, slug);
-  if (!r) return json({ error: "this level hasn't been excavated yet" }, 409);
+  if (!r) return fail("LevelNotDug", "this level hasn't been dug up yet");
 
   // GET /api/levels/:slug/tree?path=dir
   if (p[3] === "tree") {
     const listing = await listDir(env, r.handle, level.branch, url.searchParams.get("path") ?? "");
-    if (!listing.entries) return json({ error: "no such folder" }, 404);
+    if (!listing.entries) return fail("NoSuchFolder", "the level has no folder by that path");
     return json({ ...listing, commit: listing.commit && { hash: listing.commit.hash, message: listing.commit.message.split("\n")[0] } });
   }
   // GET /api/levels/:slug/file?path=  read-only; fork the level to edit it
   if (p[3] === "file") {
     const got = await readText(r.handle, level.branch, url.searchParams.get("path") ?? "");
-    return "error" in got ? json({ error: got.error }, got.status) : json(got);
+    return "error" in got ? unread(got) : json(got);
   }
   // POST /api/levels/:slug/fork {name}  dig it up: your own fork, writable, with the level's history
   if (p[3] === "fork" && req.method === "POST") {
-    if (!user) return json({ error: "sign in first" }, 401);
-    if (r.r2) return json({ error: `${level.title} is too big for Artifacts, so it has no git to fork here: browse it, play it, or clone ${level.repo} from GitHub` }, 409);
+    if (!user) return fail("SignInFirst", "sign in to fork a level");
+    if (r.r2) return fail("LevelTooBig", `${level.title} is too big for Artifacts, so there's nothing to fork here: browse it, play it, or clone ${level.repo} from GitHub`);
     const { name = slug } = await readBody<"name">(req);
-    if (typeof name !== "string" || !NAME.test(name)) return json({ error: "bad repo name" }, 400);
-    if (await repoRow(env, user, name, "1")) return json({ error: "you already have a repo with that name" }, 409);
+    if (typeof name !== "string" || !NAME.test(name)) return fail("BadInput", "name: lowercase letters, digits and single dashes, up to 39");
+    if (await repoRow(env, user, name, "1")) return fail("RepoExists", "you already have a repo with that name");
     const art = await r.handle.fork(`${user}--${name}`, { description: `${user}'s dig of ${level.title}`, defaultBranchOnly: true });
     const [tip] = await r.handle.log({ ref: level.branch, limit: 1 });
     await env.DB.prepare("INSERT INTO repos (owner, name, visibility, created_at, artifact, artifact_remote, branch, level, upstream, upstream_commit) VALUES (?, ?, 'public', ?, ?, ?, ?, ?, ?, ?)")
@@ -221,6 +221,6 @@ export async function levelRoutes(req: Request, env: Env, p: string[], url: URL,
     await seeGit(env, user, name);
     return json({ owner: user, name }, 201);
   }
-  return json({ error: "not found" }, 404);
+  return fail("NoSuchRoute", "no levels route there");
 }
 
