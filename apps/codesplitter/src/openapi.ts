@@ -761,6 +761,7 @@ const OPS: Record<string, Record<string, Op>> = {
         gate: obj({ required: arr(str("the ones this ref needs")), ok: bool(), passed: arr(str()), waiting: arr(str()), failed: arr(str()),
           hung: { type: "object", additionalProperties: str(), description: "a failed check that ran out of time: the test file it hung in, from the `::error title=hung::` line in its log (scripts/ci-test-count.ts prints one), or setup" }, deferred: arr(str("GitHub's, put off while it's down")),
           skipped: arr(str("required checks scoped to paths this branch doesn't touch")) }),
+        ester: { ...arr(obj({ test: str("the red check"), owner: { type: "string", enum: ["main", "flaky", "own", "wait", "blocks"] }, prs: arr(str("the branches it names")), why: str() })), description: "on a branch: Ester's sort of each red check (left out when nothing's red)" },
         heal: obj({ max: int(), running: bool(), gave_up: bool("its fix tasks are spent: a person's turn"), attempts: arr(loose("{id, path, harness, status, started, why, applied?, error?, also?: the branch's other files it could edit, edited?: those it did}")) }) }) },
     post: { id: "record_check", risky: true, summary: "Record a check run by hand (the crew queues one; only the owner may give it a status past queued)", tag: "Checks",
       body: obj({ ref: str(), sha: str(), name: str(), runner: { type: "string", enum: ["desktop", "container", "github", "external"] }, status: ref("CheckStatus"), url: str() }, ["ref", "sha", "name"]),
@@ -774,6 +775,12 @@ const OPS: Record<string, Record<string, Op>> = {
     description: "Marks it running for runner_label and answers {id, ref, sha, name, clone_url, command?, stale_after_s}, or 204 when nothing's queued. A sha like `<branch>@<time>` is a branch not pushed as a git commit: check out main and write the branch's files over it (scripts/runner.ts does). A run nobody claims in 6 hours is cancelled. Report with update_check, passing runner_label: each call is a heartbeat, and a run quiet for stale_after_s goes back in the queue.",
     body: obj({ runner_label: str("what this runner calls itself"), names: arr(str("only these checks")) }, ["runner_label"]),
     ok: obj({ id: int(), ref: str(), sha: str(), name: str(), clone_url: { type: ["string", "null"] }, command: str("what to run: the required check's command, else the repo's codesplitter.ci or package.json script; none means the runner's default"), stale_after_s: int() }) } },
+  [`${repo}/checks/ester`]: {
+    get: { id: "ester_memory", summary: "Ester's memory of a repo's checks: runs, fails, what people said each red one was", tag: "Checks", open: true,
+      ok: obj({ checks: arr(obj({ name: str(), runs: int(), fails: int(), last_fail: { type: ["integer", "null"] }, answers: arr(loose("{name, kind, ref, note, by_user, at}")), rule: { type: ["string", "null"], description: "flaky when the last answer said so: it sorts as flaky on every branch" }, unexplained: bool("it failed and nobody has said what it was since") })) }) },
+    post: { id: "answer_ester", risky: true, summary: "Say what a red check was: fix, stale or flaky (the crew). Flaky becomes her rule until someone says fix or stale", tag: "Checks",
+      body: obj({ name: str("the check"), kind: { type: "string", enum: ["fix", "stale", "flaky"] }, ref: str("the branch it went red on"), note: str() }, ["name", "kind"]), ok: loose("her memory, as ester_memory answers"), status: 201 },
+  },
   [`${repo}/checks/settings`]: {
     get: { id: "check_settings", summary: "Where a repo's checks run, and which ones a merge waits on", tag: "Checks", open: true, ok: ref("CheckSettings") },
     put: { id: "set_check_settings", risky: true, summary: "Set where checks run, which are required, and whether ours go to GitHub (owner only)", tag: "Checks",

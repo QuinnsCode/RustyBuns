@@ -5256,6 +5256,13 @@ const views = {
       try { await api(`${base}/${encodeURIComponent(branch)}/hooks/${encodeURIComponent(hook)}`, { say, hash: hooks.get(branch)?.hash, ...(reason && say === "nay" && { reason }) }); toast(say === "yay" ? `Yay at ${hook}` : `Nay at ${hook}: ${branch} holds`); route(); }
       catch (e) { toast(`Not said: ${e.message}`); btn.disabled = false; }
     }));
+    // A word to Ester about a red check: flaky becomes her rule for this repo, fix ends it.
+    el.querySelectorAll("[data-ester-say]").forEach((btn) => btn.addEventListener("click", async () => {
+      const { esterSay: kind, esterCheck: name, ref } = btn.dataset;
+      btn.disabled = true;
+      try { await api(`/repos/${owner}/${repo}/checks/ester`, { name, kind, ref }); toast(kind === "flaky" ? `Ester will sort ${name} as flaky` : `Ester counts ${name} again`); route(); }
+      catch (e) { toast(`Not said: ${e.message}`); btn.disabled = false; }
+    }));
     // Our own checks, queued for a runner on the branch as it is now.
     el.querySelectorAll("[data-checks]").forEach((btn) => btn.addEventListener("click", async () => {
       btn.disabled = true;
@@ -7340,7 +7347,22 @@ function checkRow(c, canRun = false) {
   const g = c.gate, why = g.ok ? "" : [g.failed.length && `${g.failed.join(", ")} failed`, g.waiting.length && `waiting on ${g.waiting.join(", ")}`].filter(Boolean).join("; ");
   const later = g.deferred?.length ? `<span class="muted">${icon("cloud-off")} GitHub is down: ${esc(g.deferred.join(", "))} put off until it's back. Ours passed, so it merges now.</span>` : "";
   const tip = !g.ok && c.offline ? " GitHub is down: run checks here, and once they pass it can merge without it." : "";
-  return `<span class="checks">${icon("list-checks")}${runs || (canRun ? noChecks() : '<span class="muted">No checks yet</span>')}${c.sha ? `<code class="muted">${esc(c.sha.slice(0, 7))}</code>` : ""}</span>${why ? `<span class="muted">${icon("shield-alert")} Merge waits for required checks: ${esc(why)}.${esc(tip)}</span>` : ""}${later}`;
+  return `<span class="checks">${icon("list-checks")}${runs || (canRun ? noChecks() : '<span class="muted">No checks yet</span>')}${c.sha ? `<code class="muted">${esc(c.sha.slice(0, 7))}</code>` : ""}</span>${why ? `<span class="muted">${icon("shield-alert")} Merge waits for required checks: ${esc(why)}.${esc(tip)}</span>` : ""}${later}${esterRow(c, canRun)}`;
+}
+
+// Ester's sort of a branch's red checks (ester-checks.ts): whose each one is, why, and for the crew a word that becomes
+// her rule: flaky sorts it flaky on every branch until someone says it's fixed.
+const ESTER_WORDS = { main: "fails on main too", flaky: "flaky", own: "this branch's own", wait: "wait", blocks: "only breaks together" };
+function esterRow(c, canSay) {
+  if (!c.ester?.length) return "";
+  const say = (v, kind, ic, tip) => ` <button type="button" class="btn icon-only" data-ester-say="${kind}" data-ester-check="${esc(v.test)}" data-ref="${esc(c.ref)}" title="${esc(tip)}" aria-label="${esc(tip)}">${icon(ic)}</button>`;
+  return `<span class="muted" data-ester>${icon("flask-conical")} Ester: ${c.ester.map((v) => {
+    const names = v.prs.filter((n) => n !== c.ref);
+    const ruled = v.owner === "flaky" && v.why.startsWith("@");
+    const buttons = !canSay ? "" : ruled ? say(v, "fix", "wrench", `${v.test} is fixed: Ester stops sorting it flaky`)
+      : v.owner === "flaky" || v.owner === "main" ? "" : say(v, "flaky", "dices", `${v.test} is flaky: Ester remembers, and sorts it flaky on every branch until someone says it's fixed`);
+    return `<span class="ester-verdict ${v.owner}" title="${esc(v.why)}">${esc(v.test)} <b>${esc(ESTER_WORDS[v.owner] ?? v.owner)}</b>${names.length ? ` (${esc(names.join(", "))})` : ""}${buttons}</span>`;
+  }).join(" · ")}</span>`;
 }
 
 /**
@@ -7910,7 +7932,7 @@ const TOUR = [
   { ch: "queue", ic: "list-ordered", t: "Mervin queues the merges", at: "[data-plan]", on: "repo",
     say: () => "He orders the branches into waves: those sharing no file go together, and a clashing one waits for the wave before. Merge a wave and the next wave's branches take main in by themselves." },
   { ch: "queue", ic: "flask-conical", t: "Ester flags the red tests", at: "[data-board]", on: "repo",
-    say: () => "When a PR's own checks go red, the board says so and names the failing ones. That PR is held back until it's green, and the rest queues." },
+    say: () => "When a PR's own checks go red, the board says so and names the failing ones. On a branch here, Ester sorts each red check: main's, flaky, the branch's own, or one that breaks only riding with others. Tell her one is flaky and it becomes her rule for the repo. A red branch is held back until it's green, and the rest queues." },
   { ch: "queue", ic: "git-merge", t: "Queue the merge", at: '.dpanels > .sec[data-key="branches"] [data-merge]', on: "repo", you: "A merge changes main, so you press this one.",
     go: () => { const b = $('.dpanels > .sec[data-key="branches"] [data-merge]:not([disabled])'); if (!b) return "Nothing is ready: Mervin holds a branch until its checks pass."; b.click(); return "Merged by line id. The next wave is free to go."; },
     say: () => "Mervin suggests the order and the board shows what's red, but main moves when you press Merge. Agents don't." },

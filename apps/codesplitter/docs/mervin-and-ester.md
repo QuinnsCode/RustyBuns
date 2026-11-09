@@ -85,6 +85,13 @@ where failures land, which tests have never failed in many runs without being a 
 files get rewritten more than they catch anything ([mervin.md](mervin.md#ester-the-tester)). These are easy,
 deterministic wins: nobody asks a model whether a test that fails on `main` is the PR's fault.
 
+Inside codeSplitter she does the same for a repo's own check runs. Each red check on a branch is sorted by the
+same rule (`src/ester-sort.ts`, shared with the script): main's, flaky (it passed when run again on the same
+commit), the branch's own, wait (main's run of it hasn't finished), or blocks (only a merge-train car with other
+branches breaks it). Her memory is a plain D1 table per repo: when the crew says a check is flaky, that answer
+becomes her rule, and it sorts as flaky on every branch until someone says it's fixed (`GET`/`POST
+/api/repos/:o/:r/checks/ester`). The merge still waits for red checks, whatever she calls them.
+
 ## What this adds up to
 
 On this repo's own history, jammed PRs stayed open 0.79 hours against 0.22 for clean ones and took 2.6 commits against

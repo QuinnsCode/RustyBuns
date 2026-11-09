@@ -741,8 +741,10 @@ export async function refChecks(env: Env, owner: string, repo: string, ref: stri
     const at = hungIn((await env.DB.prepare("SELECT substr(log, -4096) AS tail FROM check_runs WHERE id = ?").bind(r.id).first<string>("tail")) ?? "");
     if (at) hung[name] = at;
   }
+  // Ester sorts each red check of a branch: main's, flaky, its own, or the car-mate that broke it (ester-checks.ts).
+  const ester = branch && sha && failed.length ? await (await import("./ester-checks.ts")).sortBranch(env, owner, repo, ref, from, sha, failed, car?.branches) : [];
   return {
-    ref, sha, where: s.where, here: s.here, offline: s.offline, runs, stale, behind, changed_at: changed,
+    ref, sha, where: s.where, here: s.here, offline: s.offline, runs, stale, behind, changed_at: changed, ...(ester.length && { ester }),
     ...(car && { car: { id: car.id, branches: car.branches, blocks: car.blocks } }),
     gate: { required: applies, ok: !waiting.length && !failed.length, passed, waiting, failed, hung, deferred, skipped },
   };
@@ -850,6 +852,7 @@ export async function checkRoutes(req: Request, env: Env, p: string[], url: URL,
     const got = await claimRun(env, owner, repo, b.runner_label.trim(), b.names, Date.now(), user);
     return got ? json(got) : new Response(null, { status: 204 });
   }
+  if (p[5] === "ester" && !p[6]) return (await import("./ester-checks.ts")).esterRoutes(req, env, owner, repo, user, a.write);
   if (p[5] === "settings" && req.method === "GET") return json(await checkSettings(env, owner, repo));
   if (p[5] === "settings" && req.method === "PUT") {
     if (user !== owner) return fail("OwnerOnly", "owner only");
