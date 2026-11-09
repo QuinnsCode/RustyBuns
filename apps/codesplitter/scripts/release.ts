@@ -139,6 +139,19 @@ export interface IO {
 
 export interface Where { clone: string; wt: string; app: string; home: string }
 
+/** A y/N answer: true, false (blank is the default no), or null for anything else, so it's asked again. */
+export const answer = (raw: string | null): boolean | null => {
+  const a = (raw ?? "").trim().toLowerCase();
+  return a === "y" || a === "yes" ? true : a === "n" || a === "no" || a === "" ? false : null;
+};
+
+/** The CLI's refusal of a HEAD behind main, which it gives before changing anything. */
+const BEHIND = /behind origin\/main, and this is a live site/;
+const RATE_LIMITED = /TooManyRequests|Rate limited/;
+
+/** Which deploy lines reach the terminal: not noops, and not a container build's step-by-step log (its tail prints if the deploy fails). */
+export const deployLine = (l: string) => !/\] noop/.test(l) && !/\[[A-Z_]+\] (#\d+ |\(Reading database|$)/.test(l);
+
 export class Stop extends Error {}
 const stop = (why: string): never => { throw new Stop(why); };
 
@@ -256,7 +269,7 @@ export async function release(io: IO, mode: Mode, where: Where, env: Record<stri
     }
     const env = await run();
     const args = ["bunx", "rustybuns", "deploy", "--yes"];
-    const d = await io.run(args, { cwd: appDir, env, show: (l) => !/\] noop/.test(l) });
+    const d = await io.run(args, { cwd: appDir, env, show: deployLine });
     if (d.code === 0) {
       // Deployed means the live site answers, not just that the command finished.
       const s = await io.get(`${site}/api/session`);
@@ -264,9 +277,14 @@ export async function release(io: IO, mode: Mode, where: Where, env: Record<stri
       if (mode.checksNew) { io.touch(checksOn); io.say("     checks in a container are on; later releases keep them on (no flag needed)."); }
       return { site, head: (await git("log", "--oneline", "-1", "HEAD")).out.trim().slice(0, 60) };
     }
-    // A merge can still land in the seconds before the deploy checks; anything else is a real failure.
-    if (!(await behind())) stop("the deploy failed (above); nothing was marked deployed. Paste this to Claude.");
-    io.say(yellow("main moved just as it deployed; nothing changed on Cloudflare. Syncing and planning again."));
+    // A merge can land in the seconds before the deploy checks: the CLI then refuses before touching
+    // anything, so sync and go again. Any other failure may have put part of the release live already.
+    if (!BEHIND.test(d.out)) {
+      io.say(d.out.split("\n").filter((l) => !deployLine(l)).slice(-25).join("\n"));
+      if (RATE_LIMITED.test(d.out)) stop("Cloudflare rate-limited the deploy (TooManyRequests). Part of it may be live already; wait 5 minutes and rerun to finish it.");
+      stop("the deploy failed (above). Part of it may be live already; paste this to Claude.");
+    }
+    io.say(yellow("main moved just before the deploy; the deploy refused, so nothing changed. Syncing and planning again."));
     await sync(); await plan();
   }
   return stop("main kept moving (3 tries). Nothing was deployed; rerun in a minute.");
@@ -313,8 +331,12 @@ export const realIO: IO = {
       process.stdout.write("\x07");
       try { Bun.spawn(notifyCmd("codeSplitter release is waiting on you", q), { stdout: "ignore", stderr: "ignore" }); } catch {}
     }
-    const a = prompt(`\x1b[1;38;5;117m${q} [y/N]\x1b[0m`);
-    return a?.trim().toLowerCase() === "y";
+    // Keys pressed while the log scrolled sit in the input and answer first: ask again until it's a yes or a no.
+    for (;;) {
+      const a = answer(prompt(`\x1b[1;38;5;117m${q} [y/N]\x1b[0m`));
+      if (a !== null) return a;
+      console.log("     answer y or n");
+    }
   },
   say: (l) => console.log(l),
   sleep: (ms) => Bun.sleep(ms),
