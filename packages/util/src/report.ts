@@ -32,6 +32,7 @@ export function mountReportButton(host: ReportHost, parent: HTMLElement = docume
   const root = Object.assign(document.createElement("div"), { className: "eq rb-report" }); // the Cmd+K palette's corner button (palette.ts) steps up over it
   const open = eqButton({ text: "Report", icon: "flag", show: true });
   open.title = "Report a bug or suggest something";
+  open.lastChild?.replaceWith(Object.assign(document.createElement("span"), { textContent: "Report" })); // the word goes at phone width (skin.ts)
   const form = Object.assign(document.createElement("form"), { className: "eq-form", hidden: true });
   form.setAttribute("aria-label", "Report");
   const head = Object.assign(document.createElement("h2"), { className: "eq-title", textContent: "Tell the developer" });

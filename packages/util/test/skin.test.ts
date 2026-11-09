@@ -39,3 +39,23 @@ test.skipIf(!chromePath())("a skin's tokens land on the chip, report form, toast
   for (const [name, l] of Object.entries((await looks("?house", true)).surfaces)) expect({ name, bg: l.bg }).toEqual({ name, bg: "rgb(23, 23, 26)" });
   for (const [name, l] of Object.entries((await looks("", true)).surfaces)) expect({ name, bg: l.bg }).toEqual({ name, bg: "rgb(28, 33, 40)" });
 });
+
+// #3069: at phone width the worded corner button sat on games' bottom-row controls; there it is a flag alone, and its form still fits.
+test.skipIf(!chromePath())("the Report button is a small flag at phone width, worded on a desktop, and its form opens on screen", async () => {
+  const corner = async (w: number, h: number) => {
+    const tab = await openTab(chrome!.cdp, { w, h }, w < 600);
+    await load(chrome!.cdp, tab, `http://127.0.0.1:${server.port}/`, 300);
+    const got = await tab.eval<{ button: number[]; form: number[] }>(`(() => {
+      const rect = (el) => { const r = el.getBoundingClientRect(); return [r.left, r.top, r.right, r.bottom].map(Math.round); };
+      return { button: rect(document.querySelector(".rb-report > .eq-btn")), form: rect(document.querySelector(".rb-report .eq-form")) };
+    })()`);
+    await tab.close();
+    return got;
+  };
+  const phone = await corner(390, 844);
+  expect(phone.button).toEqual([342, 796, 378, 832]);
+  const [l, t, r, b] = phone.form;
+  expect(l >= 0 && t >= 0 && r <= 390 && b <= 844).toBe(true);
+  const desk = await corner(1024, 700);
+  expect(desk.button[2]! - desk.button[0]!).toBeGreaterThan(60);
+});

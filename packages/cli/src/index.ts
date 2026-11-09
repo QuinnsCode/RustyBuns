@@ -20,7 +20,9 @@ import { buildEnv, emptyHome, hostCommand, withLocalBins, hostEnv, wantsSandbox 
 import { desktopServers, forStage, workerName, type RustyBunsConfig } from "./config.ts";
 import { Effect } from "effect";
 import { decodeConfig } from "./config-schema.ts";
-import { AlchemyFailed, ConfigLoadFailed, DeployRefused, UsageError, closest, flag, intFlag, renderError, triagePrompt } from "./errors.ts";
+import { AlchemyFailed, ConfigLoadFailed, DeployRefused, NodeTooOld, UsageError, closest, flag, intFlag, renderError, triagePrompt } from "./errors.ts";
+import { homedir } from "node:os";
+import { newestSupported, nodeFloors, nodeSupported } from "./node-version.ts";
 import { infer, readPackageJson, appsBelow, siblingServers, proxyServers, bunServerEntry } from "./glue/infer.ts";
 import { unsupported } from "./glue/fit.ts";
 
@@ -158,6 +160,12 @@ async function addDeploy(dryRun: boolean) {
   const where = root ? `the workspace root (${pkgPath})` : "package.json";
   if (dryRun) { console.log(`would write ${inf.pm === "pnpm" ? "pnpm.overrides" : "overrides"} to ${where} and run:\n  ${cmd}`); return; }
   if (changed) { await Bun.write(pkgPath, JSON.stringify(pkg, null, 2) + "\n"); console.log(`wrote overrides to ${where}`); }
+  // `plan` beside `deploy`, so the deploy refusal's "plan again" works as `<pm> run plan` too (#3743).
+  const own = root ? await Bun.file("package.json").json() : pkg;
+  const scripts: Record<string, unknown> = own.scripts && typeof own.scripts === "object" ? own.scripts : (own.scripts = {});
+  const added = (["plan", "deploy"] as const).filter((s) => scripts[s] === undefined);
+  for (const s of added) scripts[s] = `rustybuns ${s}`;
+  if (added.length) { await Bun.write("package.json", JSON.stringify(own, null, 2) + "\n"); console.log(`added ${added.join(" and ")} to package.json scripts`); }
   console.log(`$ ${cmd}`);
   // npm's strict peer check refuses trees whose own vitest/@effect peers disagree with the overrides (TerraViz);
   // the pinned set is known to work together, so a second try may skip that check.
@@ -777,6 +785,27 @@ function alchemyCli(): string[] {
     : `no Alchemy in this project. ${installAlchemyHint()}`);
 }
 
+/**
+ * Alchemy runs under `node` and turns an old one away only after the build (#3743): check it first,
+ * against the installed alchemy's `engines.node`. No alchemy package here (a stub) or no node: skip.
+ */
+function checkNode() {
+  let pkg: string;
+  try { pkg = Bun.resolveSync("alchemy/package.json", process.cwd()); } catch { return; }
+  if (pkg.includes("/.bun/install/cache/")) return;
+  const r = Bun.which("node") ? Bun.spawnSync(["node", "--version"]) : null;
+  const version = r?.success ? r.stdout.toString().trim() : "";
+  if (!version) return;
+  const engines = JSON.parse(readFileSync(pkg, "utf8"))?.engines?.node;
+  const floors = nodeFloors(typeof engines === "string" ? engines : undefined);
+  if (nodeSupported(version, floors)) return;
+  let nvm: string[] = [];
+  try { nvm = readdirSync(join(process.env.NVM_DIR ?? join(homedir(), ".nvm"), "versions", "node")); } catch { /* no nvm */ }
+  const have = newestSupported(nvm, floors);
+  throw new NodeTooOld({ message: `node ${version} is too old for Alchemy (needs ${floors.join(", ")} or newer on that line). `
+    + (have ? `Run \`nvm use ${have.replace(/^v/, "")}\`, then try again.` : `Run \`nvm install ${floors.at(-1)!.split(".")[0]}\`, then \`nvm use\` with it, or put a newer node on PATH.`) });
+}
+
 /** Alchemy's provider names, for `rustybuns login <provider>`. */
 const PROVIDERS: Record<string, string> = { cloudflare: "Cloudflare", hetzner: "Hetzner", railway: "Railway" };
 
@@ -1036,12 +1065,14 @@ const alchemy = (sub: string, rawArgs: string[]) => runScoped(Effect.gen(functio
   const moves = profiled && !offline ? transferNote(process.cwd(), cfg, stage) : null;
   if (moves) console.log(moves + "\n");
   if (profiled && !offline) guardDeploy(sub, cfg, stage, { force, allowDelete });
+  if (sub !== "dev" && !offline) yield* step(async () => checkNode());
   if (check) yield* step(() => checkStack(prof, checker));
   const hash = yield* step(stackHash);
   // One stamp per stage, so a production plan doesn't wipe out the preview one.
   const stampFile = `.rustybuns/planned.${stage}`;
   // The hint repeats the --stage the user gave: a bare `rustybuns plan` plans production.
-  const planCmd = "rustybuns plan" + (rawArgs.some((a) => a === "--stage" || a.startsWith("--stage=")) ? ` --stage ${stage}` : "");
+  // As this app's package manager runs it (`bunx rustybuns plan`): apps rarely have a `plan` script.
+  const planCmd = infer().execCmd("rustybuns plan") +(rawArgs.some((a) => a === "--stage" || a.startsWith("--stage=")) ? ` --stage ${stage}` : "");
   if (sub === "deploy" && !args.includes("--yes")) {
     // GUARDRAIL: deploy creates real resources. Require a plan for THIS exact
     // config first, so nobody provisions a stack they have not looked at.

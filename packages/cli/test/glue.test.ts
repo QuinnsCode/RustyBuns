@@ -236,6 +236,14 @@ test("infer worker build from the release script", async () => {
     release: `echo "Release started at $(date)" && node scripts/pre-deploy-gate.mjs && npm run clean && npm run build && node scripts/assert-deploy-target.mjs app && node scripts/check-tdz.mjs && wrangler deploy`,
   })).toEqual({ build: "rm -rf dist && vite build", from: "release" });
   expect(inferWorkerBuild({ release: "node scripts/generate-routes.mjs && vite build && wrangler deploy" }).build).toBe("node scripts/generate-routes.mjs && vite build");
+  // A build that runs a script by path (one that migrates D1 --remote inside) is no vite build;
+  // the app's own build:<x> that is one wins over the bare default (RavelloH/InsightFlare, #2167).
+  expect(inferWorkerBuild({
+    build: "tsx scripts/build.ts --target cf",
+    "build:packages": "pnpm run build:package:ui && pnpm run build:package:product-ui",
+    "build:start": "pnpm run build:packages && vite build",
+    deploy: "tsx scripts/deploy.ts --target cf",
+  })).toEqual({ build: "pnpm run build:packages && vite build", from: "build:start" });
 });
 
 test("isRemoteStep: migrations, schema pushes, seeds and deploys never run in a local build", async () => {

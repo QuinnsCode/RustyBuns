@@ -14,6 +14,8 @@ html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); 
 #lives { height: 100%; width: 100%; background: #fff; transition: width 200ms; }
 #lives[data-low="1"] { background: #ff5fa2; }
 
+/* The eqosys Report flag would sit in the K pad's corner, so it goes while a run plays (the menu, results included, shows it). */
+body:has(#menu[hidden]) .rb-report { display: none; }
 /* Four thumb pads, each at least a quarter of the width and a fifth of the height: a thumb never misses. */
 #pads { position: fixed; left: 0; right: 0; bottom: 0; display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; padding: 8px 8px calc(8px + env(safe-area-inset-bottom)); height: min(28vh, 220px); }
 .pad { border: 1.5px solid rgba(255, 255, 255, 0.7); border-radius: 16px; background: #000; color: rgba(255, 255, 255, 0.5); font: 700 22px system-ui, sans-serif; touch-action: none; transition: transform 60ms, background 60ms; }
