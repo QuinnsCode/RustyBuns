@@ -53,6 +53,21 @@ const PATH_W = 2.6;             // metres either side of a trail worn to dirt
 const PRECIP = 1600, CLOUDS = 40; // raindrops or flakes round the camera; clouds overhead
 const RISE = 2.8; // seconds a piece takes to rise when its road opens
 const EASE_CAM = 0.9; // seconds the camera takes to climb to the shot of a rising piece, and to come back
+// The follow camera by how fast you go (m/s): over your right shoulder at a walk, further back and higher at a run,
+// and the old high shot only at a beast's speed. `side` is metres to your right; `look` is how high it aims.
+const CAM_PACE = [
+  { v: 0, back: 6, up: 2.6, look: 1.6, side: 1.5 },
+  { v: PACE.walk, back: 6, up: 2.6, look: 1.6, side: 1.5 },
+  { v: PACE.run, back: 8.5, up: 3.4, look: 1.5, side: 1.1 },
+  { v: 12, back: 16, up: 8, look: 1.5, side: 0 },
+] as const;
+const CAM_EASE = 1.2; // per second: how quickly the camera follows a change of pace
+/** Where the follow camera sits at speed `v`, between the rows of CAM_PACE. */
+export function camAt(v: number): { back: number; up: number; look: number; side: number } {
+  const i = Math.max(0, CAM_PACE.findLastIndex((r) => r.v <= v)), a = CAM_PACE[i]!, b = CAM_PACE[Math.min(i + 1, CAM_PACE.length - 1)]!;
+  const k = b.v > a.v ? clamp((v - a.v) / (b.v - a.v), 0, 1) : 0;
+  return { back: lerp(a.back, b.back, k), up: lerp(a.up, b.up, k), look: lerp(a.look, b.look, k), side: lerp(a.side, b.side, k) };
+}
 const TIER = { playable: "", "high-level": "High level: deadly wild creatures", "coming-soon": "Coming soon" } as const;
 // The land's colour: a built region's arena ground, else its biome's.
 const BIOME: Record<Biome, number> = { "pine-barrens": 0xc9b98a, forest: 0x4f6b3a, rainforest: 0x3f5f32, lake: 0x7a9a5a, desert: 0xd09a5f, swamp: 0x4a5a2f,
@@ -848,6 +863,7 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
   // The camera's shot of them: high above, looking down at them and you, then gliding back to follow you.
   let shot: { t: number; end: number; at: THREE.Vector3; look: THREE.Vector3; back: number } | null = null;
   let eye: { back: number; up: number; look: number } | null = null;
+  let speed = 0, camV = 0; // how fast you went last frame; the pace the camera has eased to
   const follow = new THREE.Vector3(), followLook = new THREE.Vector3();
   function startShot(rs: Region[]) {
     const pts = [...rs.map(arenaOf), { x: me.x, z: me.z }];
@@ -1227,6 +1243,7 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
       // Any move skips the shot of a rising piece; you don't walk blind while it plays.
       if (shot && (fx0 || sx0) && shot.t < shot.end - EASE_CAM) shot.t = shot.end - EASE_CAM;
       const fx = shot ? 0 : fx0, sx = shot ? 0 : sx0;
+      speed = 0;
       // yaw 0 looks north (-z).
       const mx = Math.sin(yaw) * fx + Math.cos(yaw) * sx, mz = -Math.cos(yaw) * fx + Math.sin(yaw) * sx;
       // Water slows you to a wade, unless a swimmer in the line-up carries you; a flier glides you down a slope.
@@ -1239,7 +1256,7 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
           const who = followers.map((f) => f.c).find((c) => travelOf(c).includes(p.gait === "swim" ? "swimmer" : "flier"));
           toast(p.gait === "swim" ? `${icon("waves")} ${esc(who?.name ?? "Your swimmer")} carries you over the water.` : `${icon("feather")} ${esc(who?.name ?? "Your flier")} glides you down the slope.`);
         }
-        gait = p.gait;
+        gait = p.gait; speed = p.v * Math.min(1, Math.hypot(mx, mz));
         const v = p.v * dt;
         for (const e of trek(me, trekAt, mx * v, mz * v, beaten, hooks.cleared)) say(e);
         look();
@@ -1306,10 +1323,15 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
       });
       if (keeper) keeper.b.update(keeper.x, Math.max(0, fineY(keeper.x, keeper.z)), keeper.z, Math.PI / 2, dt);
       plants.you.set(me.x, y + 1, me.z);
-      const cam = new THREE.Vector3(me.x - Math.sin(yaw) * (eye?.back ?? 16), y + (eye?.up ?? 8), me.z + Math.cos(yaw) * (eye?.back ?? 16));
-      cam.y = Math.max(cam.y, heightAt(w, cam.x, cam.z) + (eye ? 0.4 : 2));
+      camV = snap ? speed : lerp(camV, speed, clamp(dt * CAM_EASE, 0, 1));
+      // A tall phone screen sees less sideways: stand further back, higher (over the line-up behind you) and nearer your shoulder.
+      const narrow = Math.sqrt(Math.min(1, camera.aspect)), at = camAt(camV);
+      const e = eye ? { ...eye, side: 0 } : { ...at, back: at.back / narrow, up: at.up / narrow, side: at.side * narrow };
+      const rx = Math.cos(yaw) * e.side, rz = Math.sin(yaw) * e.side;
+      const cam = new THREE.Vector3(me.x - Math.sin(yaw) * e.back + rx, y + e.up, me.z + Math.cos(yaw) * e.back + rz);
+      cam.y = Math.max(cam.y, heightAt(w, cam.x, cam.z) + (eye ? 0.4 : 1.2));
       follow.lerp(cam, snap ? 1 : clamp(dt * 5, 0, 1)); snap = false;
-      followLook.set(me.x, y + (eye?.look ?? 1.5), me.z);
+      followLook.set(me.x + rx * 0.5, y + e.look, me.z + rz * 0.5);
       if (shot) {
         shot.t += dt;
         const k = ease(clamp(Math.min(shot.t, shot.end - shot.t) / EASE_CAM, 0, 1));
