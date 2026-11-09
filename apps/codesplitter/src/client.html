@@ -626,6 +626,7 @@
   .checks { grid-column: 2; display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; font-size: 12px; margin: 2px 0; }
   .check { display: inline-flex; align-items: center; gap: 4px; } .check a { color: inherit; } .check.failed, .check.cancelled { color: var(--del-fg); } .check.running svg { animation: spin 1.2s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
+  .ester-verdict { display: inline-flex; align-items: center; gap: 4px; } .ester-verdict .btn.icon-only { padding: 1px 6px; }
   .hook-verdict { display: inline-flex; align-items: center; gap: 4px; } .hook-verdict.nay { color: var(--del-fg); } .hook-verdict input { font-size: 12px; width: 11em; }
   #mirror-sync svg.spin { animation: spin 1s linear infinite; }
   .legend { display: inline-flex; gap: 10px; font: 500 11.5px var(--mono); color: var(--muted); }
@@ -7356,13 +7357,13 @@ const ESTER_WORDS = { main: "fails on main too", flaky: "flaky", own: "this bran
 function esterRow(c, canSay) {
   if (!c.ester?.length) return "";
   const say = (v, kind, ic, tip) => ` <button type="button" class="btn icon-only" data-ester-say="${kind}" data-ester-check="${esc(v.test)}" data-ref="${esc(c.ref)}" title="${esc(tip)}" aria-label="${esc(tip)}">${icon(ic)}</button>`;
-  return `<span class="muted" data-ester>${icon("flask-conical")} Ester: ${c.ester.map((v) => {
+  return `<span class="checks" data-ester title="Ester's sort of the red checks: hover one for why">${icon("flask-conical")}<b>Ester</b>${c.ester.map((v) => {
     const names = v.prs.filter((n) => n !== c.ref);
     const ruled = v.owner === "flaky" && v.why.startsWith("@");
     const buttons = !canSay ? "" : ruled ? say(v, "fix", "wrench", `${v.test} is fixed: Ester stops sorting it flaky`)
       : v.owner === "flaky" || v.owner === "main" ? "" : say(v, "flaky", "dices", `${v.test} is flaky: Ester remembers, and sorts it flaky on every branch until someone says it's fixed`);
-    return `<span class="ester-verdict ${v.owner}" title="${esc(v.why)}">${esc(v.test)} <b>${esc(ESTER_WORDS[v.owner] ?? v.owner)}</b>${names.length ? ` (${esc(names.join(", "))})` : ""}${buttons}</span>`;
-  }).join(" · ")}</span>`;
+    return `<span class="ester-verdict ${v.owner}" title="${esc(v.why)}">${esc(v.test)} <span class="muted">${esc(ESTER_WORDS[v.owner] ?? v.owner)}</span>${names.length ? ` (${esc(names.join(", "))})` : ""}${buttons}</span>`;
+  }).join("")}</span>`;
 }
 
 /**
