@@ -102,22 +102,25 @@ describe("shadow --check", () => {
       if (r.exitCode) throw new Error(r.stderr.toString());
       return r.stdout.toString().trim();
     };
-    const commit = (files: Record<string, string>) => {
+    const commit = (files: Record<string, string | Uint8Array>) => {
       for (const [p, t] of Object.entries(files)) writeFileSync(join(repo, p), t);
       sh("git add -A && git commit -qm c");
       return sh("git rev-parse HEAD");
     };
+    // A rebuilt model both sides changed: bytes that aren't UTF-8, so a text round trip would mangle them.
+    const glb = (n: number) => new Uint8Array([0x67, 0x6c, 0x54, 0x46, 0, 0xff, 0xfe, 0x80, n]);
     try {
       sh("git init -q");
-      const base = commit({ "a.ts": "a\nb\nc\n", "b.ts": "x\n", "c.ts": "1\n2\n3\n4\n5\n" });
-      const main = commit({ "a.ts": "A\nb\nc\n", "b.ts": "main\n", "c.ts": "one\n2\n3\n4\n5\n" });
+      const base = commit({ "a.ts": "a\nb\nc\n", "b.ts": "x\n", "c.ts": "1\n2\n3\n4\n5\n", "m.glb": glb(0) });
+      const main = commit({ "a.ts": "A\nb\nc\n", "b.ts": "main\n", "c.ts": "one\n2\n3\n4\n5\n", "m.glb": glb(1) });
       sh(`git checkout -q ${base}`);
-      const branch = commit({ "a.ts": "a\nB\nc\n", "b.ts": "branch\n", "c.ts": "1\n2\n3\n4\nfive\n" });
-      const landed = commit({ "a.ts": "A\nB\nc\n", "b.ts": "both\n", "c.ts": "landed's own\n" });
+      const branch = commit({ "a.ts": "a\nB\nc\n", "b.ts": "branch\n", "c.ts": "1\n2\n3\n4\nfive\n", "m.glb": glb(2) });
+      const landed = commit({ "a.ts": "A\nB\nc\n", "b.ts": "both\n", "c.ts": "landed's own\n", "m.glb": glb(3) });
       useRepo(repo);
       writeMerge(out, main, branch, landed, new Map([["a.ts", "A\nB\nc\n"]]));
       expect(readFileSync(join(out, "a.ts"), "utf8")).toBe("A\nB\nc\n");   // ours over git's conflict
       expect(readFileSync(join(out, "b.ts"), "utf8")).toBe("both\n");        // a conflict ours didn't take: what landed
+      expect(new Uint8Array(readFileSync(join(out, "m.glb")))).toEqual(glb(3)); // and a binary one byte for byte
       expect(readFileSync(join(out, "c.ts"), "utf8")).toBe("one\n2\n3\n4\nfive\n"); // git's clean merge, not what landed
       expect(existsSync(join(out, ".git"))).toBe(false);
     } finally {

@@ -1,0 +1,39 @@
+{
+  "name": "solid-spa-example",
+  "private": true,
+  "type": "module",
+  "version": "0.1.0",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "desktop:dev": "rustybuns build desktop --dev && rustybuns run desktop",
+    "desktop:build": "rustybuns build desktop",
+    "test": "bun test test"
+  },
+  "dependencies": {
+    "solid-js": "1.9.17"
+  },
+  "devDependencies": {
+    "@alchemy.run/cloudflare": "2.0.0-beta.84",
+    "@alchemy.run/frontend-frameworks": "2.0.0-beta.84",
+    "@alchemy.run/hetzner": "2.0.0-beta.84",
+    "@alchemy.run/neon": "2.0.0-beta.84",
+    "@alchemy.run/railway": "2.0.0-beta.84",
+    "@effect/platform-bun": "4.0.5",
+    "@effect/platform-node": "4.0.5",
+    "@rustybuns/cli": "^0.1.12",
+    "@rustybuns/shell-bun": "^0.1.12",
+    "vite-plugin-solid": "2.11.14",
+    "alchemy": "2.0.0-beta.84",
+    "effect": "4.0.5",
+    "vite": "8.3.5",
+    "wrangler": "4.141.0"
+  },
+  "overrides": {
+    "effect": "4.0.5",
+    "@effect/platform-bun": "4.0.5",
+    "@effect/platform-node": "4.0.5",
+    "@effect/platform-node-shared": "4.0.5",
+    "@effect/vitest": "4.0.5"
+  }
+}

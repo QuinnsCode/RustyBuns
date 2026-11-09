@@ -77,7 +77,7 @@ export async function seed(call: Call) {
   if (!Number.isInteger(id)) throw new Error(`no run id in ${JSON.stringify(run)}`);
   const minted = await post(CREW, "/tokens", { label: "thread demo", scope: "write" });
   const token = typeof minted === "object" && minted && "token" in minted && typeof minted.token === "string" ? minted.token : "";
-  return { id, token, thread: `#/t/${OWNER}/${REPO}/${id}`, file: `#/r/${OWNER}/${REPO}/${encodeURIComponent(FILE)}` };
+  return { id, token, thread: `#/t/${OWNER}/${REPO}/${id}`, file: `#/f/${OWNER}/${REPO}/${encodeURIComponent(FILE)}` };
 }
 
 /**

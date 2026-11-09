@@ -1,16 +1,16 @@
-import { beforeAll, expect, setDefaultTimeout, test } from "bun:test";
+import { expect, setDefaultTimeout, test } from "bun:test";
 import path from "node:path";
 import { checksBarClient, checkTallyServer, SERVER_IMPORT } from "../checks/patch.ts";
 import { countOf as annotated, hungOf, TestCounts } from "../checks/server.ts";
 import { barWidth, describe, tally, took } from "../checks/tally.ts";
 import { countOf, hung, notice } from "../../../scripts/ci-test-count.ts";
-import { askOf, read, unpackPinned } from "./pinned.ts";
+import { askOf, read, unpackPinned, beforePinned, pinnedTest } from "./pinned.ts";
 
 // the first run downloads the pinned release into .cache, as rustybunsify.ts does
 setDefaultTimeout(60_000);
 
 let pkg = "";
-beforeAll(async () => { pkg = await unpackPinned(); });
+beforePinned(async () => { pkg = await unpackPinned(); });
 
 const run = (conclusion: string | null, startedAt: string, completedAt?: string, status = conclusion ? "COMPLETED" : "IN_PROGRESS") =>
   ({ __typename: "CheckRun", conclusion, status, startedAt, completedAt: completedAt ?? "0001-01-01T00:00:00Z" });
@@ -104,7 +104,7 @@ test("a job that ran out of time: the bar says which test file it hung in (#1218
   expect(describe(t)).toBe("2 checks: 1 passed, 1 failed · 10m · hung in test/b.test.ts");
 });
 
-test("the pinned release's PR list gains each PR's tally", async () => {
+pinnedTest("the pinned release's PR list gains each PR's tally", async () => {
   const file = path.join(pkg, "dist/server/server/github.js");
   const patched = SERVER_IMPORT + checkTallyServer(read(file));
   expect(patched.split("checkTally: __rbTally(p.statusCheckRollup)").length).toBe(2);
@@ -112,7 +112,7 @@ test("the pinned release's PR list gains each PR's tally", async () => {
   expect(() => checkTallyServer(patched.replace(SERVER_IMPORT, ""))).toThrow(/patch target moved/);
 });
 
-test("the pinned release's PR card shows the bar in place of its checks dot, and falls back to the dot", () => {
+pinnedTest("the pinned release's PR card shows the bar in place of its checks dot, and falls back to the dot", () => {
   const js = read(askOf(pkg));
   const patched = checksBarClient(js);
   expect(patched.split("globalThis.__rbChecksBar?.(e)??km[e.checks]").length).toBe(2);
