@@ -12,7 +12,8 @@
 // A round ends with a comment on the issue that starts with a line like `Score: 6.0/10 (target 9)` (or
 // `Score: 98.1/100`), then a `Next:` line. Without a Score line the board guesses from the last "x/10" it
 // can find and marks it `~`. Three rounds with no gain end with a comment that starts `Stalled:`, and the
-// climb waits for a person.
+// climb waits for a person. A climb whose newest comment says "Moved up to #N" but was left open shows as
+// "(moved up to #N, close it)" and is never handed out.
 //
 //   bun run climbs                  the board
 //   bun run climbs --next           the round to hand out (not taken by an open PR, not stalled, under target)
@@ -31,6 +32,7 @@ export type Climb = {
   number: number; title: string; score: number | null; scale: number; target: number | null; guessed: boolean; touched: string;
   /** The open PR that names it, so a worker is on this round. */ taken: number | null;
   /** The newest comment starts `Stalled:`. */ stalled: boolean;
+  /** The newest comment says "Moved up to #N": the climb went on there and this issue was left open by mistake. */ moved?: number | null;
 };
 
 const TITLE = /hill.?climb|\d\s*\/\s*10\b|aim for \d|scorecard/i;
@@ -66,16 +68,19 @@ export function board(climbs: Climb[], now = Date.now()): string[] {
   return [...climbs].sort((a, b) => gap(b) - gap(a)).map((c) => {
     const s = c.score === null ? "?" : `${c.guessed ? "~" : ""}${c.score}`;
     const t = c.target === null ? "?" : String(c.target);
-    const d = days(c.touched, now), who = c.taken ? `  (PR #${c.taken})` : c.stalled ? "  (stalled)" : "";
+    const d = days(c.touched, now), who = c.moved ? `  (moved up to #${c.moved}, close it)` : c.taken ? `  (PR #${c.taken})` : c.stalled ? "  (stalled)" : "";
     return `#${c.number}  ${s} of ${t} /${c.scale}`.padEnd(24) + `${d}d`.padStart(4) + `  ${c.title}${who}`;
   });
 }
 
 const STALLED = /^\s*\**stalled\**:/i;
 
+/** The issue a climb hopped to, from its newest comment's "Moved up to #N", else null. */
+export const movedTo = (comment: string) => { const m = /moved up to #(\d+)/i.exec(comment); return m ? Number(m[1]) : null; };
+
 /** The round to hand out: under target (or unscored), not taken, not stalled; furthest from target, then idle longest. */
 export function next(climbs: Climb[]): Climb | null {
-  const open = climbs.filter((c) => !c.taken && !c.stalled && !(c.score !== null && c.target !== null && c.score >= c.target));
+  const open = climbs.filter((c) => !c.taken && !c.stalled && !c.moved && !(c.score !== null && c.target !== null && c.score >= c.target));
   const gap = (c: Climb) => (c.score === null || c.target === null ? 1 : 1 - c.score / c.target);
   return open.sort((a, b) => gap(b) - gap(a) || a.touched.localeCompare(b.touched))[0] ?? null;
 }
@@ -108,8 +113,8 @@ export async function climbs(): Promise<Climb[]> {
     const texts = [tidy(i.body), ...i.comments.map((c) => tidy(c.body))];
     const goal = target(i.title, texts), named = new RegExp(`#${i.number}\\b`);
     const taken = prs.find((p) => named.test(p.title) || named.test(p.body))?.number ?? null;
-    const stalled = STALLED.test(i.comments.at(-1)?.body ?? "");
-    return { number: i.number, title: i.title, target: goal, touched: i.updatedAt, taken, stalled, ...score([i.title, ...texts], goal) };
+    const last = i.comments.at(-1)?.body ?? "", stalled = STALLED.test(last), moved = movedTo(last);
+    return { number: i.number, title: i.title, target: goal, touched: i.updatedAt, taken, stalled, moved, ...score([i.title, ...texts], goal) };
   }));
 }
 
