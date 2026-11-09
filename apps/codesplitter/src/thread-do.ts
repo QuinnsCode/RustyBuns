@@ -24,7 +24,7 @@
 // The session log is `s:<i>`, PART characters each (a key holds 2 MB), under `session` ({id, cwd, parts}).
 import { arr, bool, check, int, obj, oneOf, opt, str, type Of } from "@rustybuns/util/guard";
 import { Sockets, type RoomCtx } from "@rustybuns/util/room";
-import { need, json, type Env } from "./env.ts";
+import { fail, need, json, type Env } from "./env.ts";
 import { mentionsIn } from "./mentions.ts";
 
 /** Who said it: a person (`who` their handle), the agent (`who` its name), or what a run did. */
@@ -159,9 +159,9 @@ export class AgentThread {
     }
     if (url.pathname === "/files" && req.method === "POST") {
       const who = url.searchParams.get("who"), name = url.searchParams.get("name");
-      if (!who || !name) return json({ error: "who and name" }, 400);
+      if (!who || !name) return fail("BadInput", "who and name");
       const bytes = new Uint8Array(await req.arrayBuffer());
-      if (!bytes.length || bytes.length > FILE_MAX) return json({ error: `a file of up to ${FILE_MAX / 1e6} MB` }, 413);
+      if (!bytes.length || bytes.length > FILE_MAX) return fail("TooBig", `a file of up to ${FILE_MAX / 1e6} MB`);
       return json({ message: await this.keep(who, name, req.headers.get("content-type") ?? "", bytes, url.searchParams.get("text") ?? "") });
     }
     if (url.pathname === "/files" && req.method === "GET") {
@@ -171,12 +171,12 @@ export class AgentThread {
     const one = /^\/files\/(\d+)$/.exec(url.pathname);
     if (one && req.method === "GET") {
       const f = await this.ctx.storage.get<Kept>(`f:${one[1]!.padStart(12, "0")}`);
-      return f ? new Response(f.bytes, { headers: { "content-type": f.type || "application/octet-stream", "x-name": f.name } }) : json({ error: "no such file" }, 404);
+      return f ? new Response(f.bytes, { headers: { "content-type": f.type || "application/octet-stream", "x-name": f.name } }) : fail("NoSuchFile", "no such file");
     }
     if (url.pathname === "/ws") {
-      if (req.headers.get("upgrade")?.toLowerCase() !== "websocket") return json({ error: "a socket only" }, 426);
+      if (req.headers.get("upgrade")?.toLowerCase() !== "websocket") return fail("SocketOnly", "a socket only");
       const user = req.headers.get("x-codesplitter-user");
-      if (!user) return json({ error: "who?" }, 401);
+      if (!user) return fail("SignInFirst", "who?");
       const watch = url.searchParams.get("watch") === "1";
       const { server, response } = this.sockets.upgrade(watch ? { user, watch } : { user });
       // A watcher has the card already: it wants what comes next, not the thread so far.
@@ -203,7 +203,7 @@ export class AgentThread {
       return json({ last: recent.findLast((m) => m.kind !== "event") ?? recent.at(-1) ?? null, here: this.here() });
     }
     if (req.method === "GET") return json({ messages: await this.read(afterOf(url)), here: this.here(), last: await this.last() });
-    return json({ error: "not found" }, 404);
+    return fail("NoSuchRoute", "not found");
   }
 
   // Listening only: what a page sends is a keep-alive at most.

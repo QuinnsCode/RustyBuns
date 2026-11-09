@@ -15,7 +15,7 @@
 //
 // The old namespace and its repos stay until the new ones are checked. Admins only.
 
-import { json, readBody, type Artifacts, type Env } from "./env.ts";
+import { fail, json, readBody, type Artifacts, type Env } from "./env.ts";
 
 const PAGE = 10;
 
@@ -98,10 +98,10 @@ export async function rewriteRemotes(env: Env) {
 /** POST /api/admin/artifacts/copy {after?}, /verify {after?} and /rewrite. */
 export async function artifactMoveRoutes(req: Request, env: Env, p: string[], admin: boolean): Promise<Response | null> {
   if (p[1] !== "admin" || p[2] !== "artifacts" || (p[3] !== "copy" && p[3] !== "verify" && p[3] !== "rewrite") || p[4]) return null;
-  if (!admin) return json({ error: "admins only" }, 403);
-  if (req.method !== "POST") return json({ error: "POST only" }, 405);
+  if (!admin) return fail("AdminsOnly", "admins only");
+  if (req.method !== "POST") return fail("WrongMethod", "POST only");
   if (p[3] === "rewrite") return json(await rewriteRemotes(env));
-  if (!env.ARTIFACTS || !env.ARTIFACTS_NEXT) return json({ error: "ARTIFACTS_NEXT isn't bound: deploy with it first" }, 409);
+  if (!env.ARTIFACTS || !env.ARTIFACTS_NEXT) return fail("NoArtifactsNext", "ARTIFACTS_NEXT isn't bound: deploy with it first");
   const { after } = await readBody<"after">(req);
   const from = typeof after === "string" ? after : "";
   return json(await (p[3] === "verify" ? verifyPage(env, from) : copyPage(env, from)));

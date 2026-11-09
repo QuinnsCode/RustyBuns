@@ -56,7 +56,7 @@ import { begin, finish, remoteFor, stateSuffix, type DeployFlags } from "./deplo
 import { isCleared, review, waitingNote } from "./deploy-review.ts";
 import { deployKeys, keyEnv, keysInfo, keysLabel, resealState, sealState, unsealState, type Provider } from "./deploy-keys.ts";
 import { bool, check, num, obj, oneOf, opt, rec, str, type Of } from "@rustybuns/util/guard";
-import { json, need, type Env } from "./env.ts";
+import { fail, json, need, type Env } from "./env.ts";
 import { isAdmin } from "./identity.ts";
 import { charge, SITE } from "./limits.ts";
 import { logEnd, logStart, preview, STEPS as PREVIEW_STEPS, type PreviewAnswer, type PreviewResult, type Run, type RunReply, type Runner, type StartReply } from "./preview.ts";
@@ -208,7 +208,7 @@ export class DeployRunner {
   /** Start a plan-only try-out of main (or `files` over it), if the container is free. */
   private async tryIt(owner: string, repo: string, dir: string | undefined, stage: string, files?: Record<string, string>): Promise<Response> {
     const job = await this.load();
-    if (job && !job.run.done) return json({ error: job.trial ? "a trial is already running" : "a deploy is running in this repo's deploy container: try again when it's done" }, 409);
+    if (job && !job.run.done) return job.trial ? fail("TryRunning", "a trial is already running") : fail("DeployRunning", "a deploy is running in this repo's deploy container: try again when it's done");
     const over = (this.env.ADMINS && isAdmin(this.env, owner) ? null : await charge(this.env, "preview", `@${owner}`))
       ?? await charge(this.env, "containers", SITE);
     if (over) return json({ error: over }, 429);

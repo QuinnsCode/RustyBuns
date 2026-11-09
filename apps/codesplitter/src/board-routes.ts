@@ -4,7 +4,7 @@
 
 import { parseJson } from "./util.ts";
 import type { Env } from "./env.ts";
-import { json, need, readBody } from "./env.ts";
+import { fail, json, need, readBody } from "./env.ts";
 import { arr, Bad, bool, int, obj, opt, raw, str } from "@rustybuns/util/guard";
 import { ask, brief, canMerge, pick, hitRate, parseRound, parseRow, roundsHit, waves, type BoardRow, type Hits, type Round } from "./board.ts";
 
@@ -15,7 +15,7 @@ export async function boardRoutes(req: Request, env: Env, owner: string, repo: s
     .flatMap((r) => { const row = parseJson<BoardRow | null>(r.row, null); return row ? [{ ...row, at: r.updated_at }] : []; });
 
   if (req.method === "POST") {
-    if (!write) return json({ error: "no write access" }, 403);
+    if (!write) return fail("NoWriteAccess", "no write access");
     const row = (x: unknown) => { const r = parseRow(x); if (typeof r === "string") throw new Bad(r); return r; };
     const b = need(await readBody(req), obj({ main: str(), prs: arr(row, MAX_ROWS), drop: opt(arr(int(0, Infinity), MAX_ROWS)), replace: opt(bool()), hits: raw, record: opt(bool()), round: raw }));
     if (b instanceof Response) return b;
@@ -28,12 +28,12 @@ export async function boardRoutes(req: Request, env: Env, owner: string, repo: s
       ...[...(b.drop ?? []), ...gone].map((n) => env.DB.prepare("DELETE FROM board_prs WHERE owner = ? AND repo = ? AND pr = ?").bind(owner, repo, n)),
     ];
     const hits = b.hits && typeof b.hits === "object" && !Array.isArray(b.hits) ? JSON.stringify(b.hits) : null;
-    if (hits && hits.length > MAX_HITS) return json({ error: `hits: up to ${MAX_HITS} characters` }, 400);
+    if (hits && hits.length > MAX_HITS) return fail("BadInput", `hits: up to ${MAX_HITS} characters`);
     stmts.push(env.DB.prepare("INSERT INTO board_meta (owner, repo, main, hits, updated_at) VALUES (?, ?, ?, COALESCE(?, '{}'), ?) ON CONFLICT (owner, repo) DO UPDATE SET main = excluded.main, hits = COALESCE(?, board_meta.hits), updated_at = excluded.updated_at")
       .bind(owner, repo, b.main, hits, now, hits));
     // Consent first (#1521): `record: true` turns recording on, `false` off and forgets what was kept; a round is kept only while it is on.
     const round = b.round === undefined ? null : parseRound(b.round);
-    if (typeof round === "string") return json({ error: round }, 400);
+    if (typeof round === "string") return fail("BadInput", round);
     stmts.push(env.DB.prepare("INSERT INTO board_meta (owner, repo, main, updated_at, record_rounds) VALUES (?, ?, ?, ?, ?) ON CONFLICT (owner, repo) DO UPDATE SET record_rounds = COALESCE(?, board_meta.record_rounds)")
       .bind(owner, repo, b.main, now, b.record ? 1 : 0, b.record === undefined ? null : b.record ? 1 : 0));
     if (b.record === false) stmts.push(env.DB.prepare("DELETE FROM board_rounds WHERE owner = ? AND repo = ?").bind(owner, repo));
@@ -49,7 +49,7 @@ export async function boardRoutes(req: Request, env: Env, owner: string, repo: s
   const n = Number(q.get("pr"));
   if (n) {
     const a = ask(n, all);
-    return a ? json(a) : json({ error: "not on the board" }, 404);
+    return a ? json(a) : fail("NoSuchBoardRow", "not on the board");
   }
   if (/^(1|true)$/.test(q.get("brief") ?? "")) return json({ brief: brief(all).join("\n") });
   const fields = q.get("fields")?.split(",").map((f) => f.trim()).filter(Boolean);

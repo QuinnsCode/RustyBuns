@@ -497,7 +497,7 @@ async function route(req: Request, env: Env): Promise<Response> {
 
   // GET|PUT /api/me
   if (p[1] === "me") {
-    if (!user) return json({ error: "sign in first" }, 401);
+    if (!user) return fail("SignInFirst", "sign in first");
     let warning: string | undefined;
     if (req.method === "PUT") {
       // Only what's sent changes, so turning the pulse off leaves the bio be.
@@ -545,7 +545,7 @@ async function route(req: Request, env: Env): Promise<Response> {
 
   // POST /api/repos {name, visibility}
   if (p[1] === "repos" && !p[2] && req.method === "POST") {
-    if (!user) return json({ error: "sign in first" }, 401);
+    if (!user) return fail("SignInFirst", "sign in first");
     const { name, visibility = "public", region } = await body<"name" | "visibility" | "region">();
     if (typeof name !== "string" || !NAME.test(name)) return fail("BadInput", "bad repo name");
     if (visibility !== "public" && visibility !== "private") return fail("BadInput", "visibility: public or private");
@@ -961,7 +961,7 @@ async function route(req: Request, env: Env): Promise<Response> {
 
   // POST /api/playlists {title}
   if (p[1] === "playlists" && !p[2] && req.method === "POST") {
-    if (!user) return json({ error: "sign in first" }, 401);
+    if (!user) return fail("SignInFirst", "sign in first");
     const { title } = await body<"title">();
     if (typeof title !== "string" || !title.trim()) return fail("BadInput", "title required");
     const r = await env.DB.prepare("INSERT INTO playlists (owner, title) VALUES (?, ?) RETURNING id").bind(user, title.trim().slice(0, 80)).first<{ id: number }>();

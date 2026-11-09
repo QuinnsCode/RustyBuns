@@ -8,7 +8,7 @@
 // to stamp and see stamped, like its text.
 
 import { fileLines, materialize, toFile, type FileLine } from "./archive.ts";
-import { json, readBody, type Env } from "./env.ts";
+import { fail, json, readBody, unread, type Env } from "./env.ts";
 import { liveRepo } from "./repos.ts";
 
 export const STAMPS = ["+1", "heart", "binoculars", "shovel", "gem", "skull", "lgtm"] as const;
@@ -22,9 +22,9 @@ export async function stampRoutes(req: Request, env: Env, p: string[], url: URL,
   if (p[4] !== "stamps" || p[5]) return null;
   const q = req.method === "POST" ? await readBody<"path" | "line" | "lines" | "stamp" | "from" | "to">(req) : Object.fromEntries(url.searchParams);
   const path = String(q.path ?? "");
-  if (!path) return json({ error: "path required" }, 400);
+  if (!path) return fail("BadInput", "path required");
   const m = await materialize(env, owner, repo, path);
-  if ("error" in m) return json({ error: m.error }, m.status);
+  if ("error" in m) return unread(m);
   const lines = await fileLines(env, owner, repo, path, "stamp", a.write);
   // Outside the crew a private line's stamps are hidden, as its text is.
   const shown = (l: FileLine) => a.write || !l.private;
@@ -45,9 +45,9 @@ export async function stampRoutes(req: Request, env: Env, p: string[], url: URL,
   }
 
   if (req.method !== "POST" && req.method !== "DELETE") return null;
-  if (!user) return json({ error: "sign in first" }, 401);
+  if (!user) return fail("SignInFirst", "sign in first");
   const stamp = String(q.stamp ?? "");
-  if (!(STAMPS as readonly string[]).includes(stamp)) return json({ error: `stamp: ${STAMPS.join(", ")}` }, 400);
+  if (!(STAMPS as readonly string[]).includes(stamp)) return fail("BadInput", `stamp: ${STAMPS.join(", ")}`);
 
   if (req.method === "DELETE") {
     await env.DB.prepare("DELETE FROM stamps WHERE owner = ? AND repo = ? AND path = ? AND line = ? AND stamp = ? AND by = ?")
@@ -64,8 +64,8 @@ export async function stampRoutes(req: Request, env: Env, p: string[], url: URL,
     const from = Math.max(1, Math.floor(Number(q.from))), to = Math.min(lines.length, Math.max(from, Math.floor(Number(q.to ?? q.from))));
     picked = lines.slice(from - 1, to).filter(shown);
   }
-  if (!picked.length) return json({ error: "no such lines" }, 400);
-  if (picked.length > MAX_LINES) return json({ error: `stamp at most ${MAX_LINES} lines at once` }, 400);
+  if (!picked.length) return fail("BadInput", "no such lines");
+  if (picked.length > MAX_LINES) return fail("BadInput", `stamp at most ${MAX_LINES} lines at once`);
   const now = Date.now();
   await env.DB.batch(picked.map((l) => env.DB.prepare("INSERT OR IGNORE INTO stamps (owner, repo, path, line, stamp, by, author, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
     .bind(owner, repo, path, l.id, stamp, user, l.by, now)));

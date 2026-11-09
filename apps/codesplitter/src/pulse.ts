@@ -17,7 +17,7 @@
 //                                    the mini profile at a random moment of the week
 //   GET /api/pulse?names=a,b         many pulses at once, for crew lists (off ones left out)
 
-import { json, type Env } from "./env.ts";
+import { fail, json, type Env } from "./env.ts";
 import { renderPulseCard } from "./card.ts";
 import { esc } from "./util.ts";
 
@@ -88,12 +88,12 @@ export async function pulseRoutes(req: Request, env: Env, p: string[], url: URL,
   if (route !== "pulse" && route !== "pulse.png" && route !== "share") return null;
   const name = p[2];
   const [pulse] = await pulses(env, [name], route === "pulse" ? user : null);
-  if (route === "pulse") return pulse ? json(pulse) : json({ error: `@${name} keeps their pulse to themselves` }, 404);
+  if (route === "pulse") return pulse ? json(pulse) : fail("NoPulse", `@${name} keeps their pulse to themselves`);
   // The card and the share page are for the world: public repos only, whoever asks.
   if (route === "pulse.png") {
-    if (!pulse) return json({ error: "no public pulse" }, 404);
+    if (!pulse) return fail("NoPulse", "no public pulse");
     const slot = Number(url.searchParams.get("slot") ?? 0);
-    if (!Number.isInteger(slot) || slot < 0 || slot >= SLOTS) return json({ error: `slot is 0 to ${SLOTS - 1}` }, 400);
+    if (!Number.isInteger(slot) || slot < 0 || slot >= SLOTS) return fail("BadInput", `slot is 0 to ${SLOTS - 1}`);
     // A capture is drawn once and kept in R2 for the day, so a link unfurling a lot costs one render.
     const key = `og/${name}/${Math.floor(Date.now() / 86_400_000)}-${slot}.png`;
     const kept = slot && env.LEVEL_CHUNKS ? await env.LEVEL_CHUNKS.get(key) : null;

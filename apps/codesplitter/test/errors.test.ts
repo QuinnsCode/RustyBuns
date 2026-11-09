@@ -436,3 +436,30 @@ test("tags, picks, cuts, shares and upstream come back named", async () => {
   for (const [why, e, want] of cases) got.push([why, await tagOf(e), want]);
   expect(got.filter(([, tag, want]) => tag !== want)).toEqual([]);
 });
+
+test("the last route files (#3940) come back named", async () => {
+  const call = await boot();
+  opened.push(call);
+  const post = (u: string, url: string, body: unknown) => call(u, url, { method: "POST", body: JSON.stringify(body) });
+  for (const u of ["ana", "bo", "cy"]) await post(u, "/api/login", { name: u });
+  expect((await post("ana", "/api/repos", { name: "lab" })).status).toBe(201);
+  expect((await post("ana", "/api/repos/ana/lab/files", { path: "a.ts", content: "export const a = 1;" })).status).toBe(201);
+  await post("ana", "/api/repos/ana/lab/collaborators", { name: "bo" });
+  const as = (user: string | null) => codesplitter({ url: ORIGIN, retries: 0, send: async (r) => call(user, r.url.slice(ORIGIN.length), { method: r.method, headers: r.headers, ...(r.body && { body: await r.text() }) }) });
+  const ana = as("ana"), bo = as("bo"), cy = as("cy"), anon = as(null), at = { owner: "ana", repo: "lab" };
+
+  const cases: [string, Effect.Effect<unknown, Failure<OpWithErrors>>, string][] = [
+    ["mentions, signed out", anon.call("my_mentions", {}), "SignInFirst"],
+    ["a repo, signed out", anon.call("create_repo", { body: { name: "x" } }), "SignInFirst"],
+    ["a program never saved", ana.call("get_program", { name: "nope" }), "NoSuchProgram"],
+    ["a follow that isn't there", cy.call("unfollow", { id: 999 }), "NoSuchFollow"],
+    ["protecting main, not the owner", bo.call("set_protect_main", { ...at, body: { on: true } }), "OwnerOnly"],
+    ["a CI token with no label", ana.call("create_ci_token", { ...at, body: { label: "" } }), "BadInput"],
+    ["the audit log, not the owner", bo.call("repo_audit", at), "OwnerOnly"],
+    ["a train car that isn't there", ana.call("get_train_car_files", { ...at, id: 999 }), "NoSuchCar"],
+    ["a train, checks not run here", ana.call("queue_train", { ...at, body: {} }), "ChecksElsewhere"],
+  ];
+  const got = [];
+  for (const [why, e, want] of cases) got.push([why, await tagOf(e), want]);
+  expect(got.filter(([, tag, want]) => tag !== want)).toEqual([]);
+});

@@ -501,7 +501,7 @@ export async function githubRoutes(req: Request, env: Env, p: string[], user: st
   // POST /api/github/active {id}  dig and list as this one of your linked GitHubs.
   // Linking and unlinking are Better Auth's (/api/auth/link-social, /api/auth/unlink-account).
   if (p[2] === "active" && req.method === "POST") {
-    if (!user || !accountsOn(env)) return json({ error: "sign in first" }, 401);
+    if (!user || !accountsOn(env)) return fail("SignInFirst", "sign in first");
     const { id } = await readBody<"id">(req);
     if (!(await githubAccounts(env, user)).some((a) => a.id === id)) return fail("NotYourGitHub", "that GitHub isn't linked to you");
     await env.DB.prepare("UPDATE users SET github_account = ? WHERE name = ?").bind(id, user).run();
@@ -511,7 +511,7 @@ export async function githubRoutes(req: Request, env: Env, p: string[], user: st
   // POST /api/github/agent {id|null}  your hosted agents work as this one of your linked GitHubs
   // (a bot account, say), so theirs and yours stay apart on GitHub; null: as none.
   if (p[2] === "agent" && req.method === "POST") {
-    if (!user || !accountsOn(env)) return json({ error: "sign in first" }, 401);
+    if (!user || !accountsOn(env)) return fail("SignInFirst", "sign in first");
     const { id = null } = await readBody<"id">(req);
     if (id !== null && !(await githubAccounts(env, user)).some((a) => a.id === id)) return fail("NotYourGitHub", "that GitHub isn't linked to you");
     await env.DB.prepare("UPDATE users SET agent_github = ? WHERE name = ?").bind(id, user).run();
@@ -530,7 +530,7 @@ export async function githubRoutes(req: Request, env: Env, p: string[], user: st
 
   // POST /api/github/dig {repo, name?, visibility?}  fork a GitHub repo into one you own here
   if (p[2] === "dig" && req.method === "POST") {
-    if (!user) return json({ error: "sign in first" }, 401);
+    if (!user) return fail("SignInFirst", "sign in first");
     const b = need(await readBody(req), DIG_BODY);
     return b instanceof Response ? b : digRepo(env, user, t, b);
   }
@@ -546,7 +546,7 @@ export async function githubRoutes(req: Request, env: Env, p: string[], user: st
     if (await cached()) return room({ owner: WRECK_OWNER, name });
     // Only a new copy costs an import, so only that counts against the site's hourly budget.
     const over = await charge(env, "wreck", SITE);
-    if (over) return json({ error: over }, 429);
+    if (over) return fail("BudgetSpent", over);
     const res = await digRepo(env, WRECK_OWNER, null, { repo: full, name, visibility: "public" });
     // A second visitor racing the first finds the copy already there.
     if (res.status === 409 || (await cached())) return room({ owner: WRECK_OWNER, name });

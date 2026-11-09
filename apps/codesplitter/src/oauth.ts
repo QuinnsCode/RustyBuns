@@ -27,7 +27,7 @@
 //   POST /api/oauth/revoke       RFC 7009 {token}
 //   GET  /api/oauth/grants       yours (cookie only)     DELETE /api/oauth/grants/:id
 
-import { json, readBody, type Env } from "./env.ts";
+import { fail, json, readBody, type Env } from "./env.ts";
 import { identify } from "./identity.ts";
 import { ownOrigin } from "./security.ts";
 import { DAY, MAX_DAYS } from "./tokens.ts";
@@ -270,9 +270,9 @@ export async function oauthRoutes(req: Request, env: Env, p: string[], url: URL)
   }
   if (p[2] === "grants") {
     // Your apps, by cookie: a token can't list or end grants.
-    if (req.headers.has("authorization")) return json({ error: "API tokens can't reach this: sign in on the site" }, 403);
+    if (req.headers.has("authorization")) return fail("PersonOnly", "API tokens can't reach this: sign in on the site");
     const user = await identify(req, env);
-    if (!user) return json({ error: "sign in first" }, 401);
+    if (!user) return fail("SignInFirst", "sign in first");
     if (!p[3] && req.method === "GET") {
       const { results } = await env.DB.prepare(`SELECT g.id, g.client_id, g.client_name, g.scope, g.created_at, g.expires_at,
         MAX(COALESCE((SELECT MAX(last_used_at) FROM api_tokens WHERE grant_id = g.id), 0), COALESCE(g.last_used_at, 0)) AS last_used_at
@@ -281,12 +281,12 @@ export async function oauthRoutes(req: Request, env: Env, p: string[], url: URL)
     }
     if (p[3] && !p[4] && req.method === "DELETE") {
       const g = await env.DB.prepare("SELECT id FROM oauth_grants WHERE id = ? AND name = ?").bind(p[3], user).first<{ id: string }>();
-      if (!g) return json({ error: "no such app" }, 404);
+      if (!g) return fail("NoSuchGrant", "no such app");
       await revokeGrant(env, g.id);
       return json({ ok: true });
     }
   }
-  return json({ error: "no such OAuth route" }, 404);
+  return fail("NoSuchRoute", "no such OAuth route");
 }
 
 /** Hourly: drop stale sign-ins, expired grants and their tokens, and apps that registered but never signed in. */

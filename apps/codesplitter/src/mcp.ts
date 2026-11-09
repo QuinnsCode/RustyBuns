@@ -25,6 +25,7 @@
 import { INSTRUCTIONS as CODE_INSTRUCTIONS, META, edge, answer, describe, execute, search, type CSProps, type ToolAnswer } from "./codemode.ts";
 import { json, type WorkerLoaderLike } from "./env.ts";
 import { tools, type Tool } from "./mcp-tools.ts";
+import type { ErrorTag } from "./openapi.ts";
 import { check, obj, opt, str } from "@rustybuns/util/guard";
 import { parseJson } from "@rustybuns/util/http";
 
@@ -50,7 +51,7 @@ const listed = (t: Pick<Tool, "name" | "title" | "description" | "inputSchema" |
 
 const rpc = (id: unknown, result: unknown) => json({ jsonrpc: "2.0", id, result });
 const rpcError = (id: unknown, code: number, message: string, status = 200) => json({ jsonrpc: "2.0", id: id ?? null, error: { code, message } }, status);
-const unauthorized = (why: string, origin: string) => json({ error: why }, 401,
+const unauthorized = (why: string, origin: string) => json({ error: why, tag: "SignInFirst" satisfies ErrorTag }, 401,
   { "www-authenticate": `Bearer realm="codeSplitter", error="invalid_token", resource_metadata="${origin}/.well-known/oauth-protected-resource/api/mcp"` });
 
 /** A tool by name (the CLI, cli.ts, calls them too). */
@@ -113,7 +114,7 @@ async function meta(name: string, args: Record<string, unknown>, mine: Tool[], l
 }
 
 export async function mcp(req: Request, origin: string, dispatch: (r: Request) => Promise<Response>, loader?: WorkerLoaderLike): Promise<Response> {
-  if (req.method !== "POST") return json({ error: "POST JSON-RPC here; this server keeps no sessions or streams" }, 405, { allow: "POST" });
+  if (req.method !== "POST") return json({ error: "POST JSON-RPC here; this server keeps no sessions or streams", tag: "WrongMethod" satisfies ErrorTag }, 405, { allow: "POST" });
   const auth = req.headers.get("authorization");
   if (!auth || !/^Bearer\s+cst_\S+$/i.test(auth)) return unauthorized("sign in with OAuth, or send a personal API token from your profile page: Authorization: Bearer cst_…", origin);
 

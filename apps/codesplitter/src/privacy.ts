@@ -16,7 +16,7 @@ import { evict, openToken } from "./github.ts";
 import { fileStub, toFile } from "./archive.ts";
 import { listFollows } from "./follows.ts";
 import { settingsStub } from "./settings.ts";
-import { json, readBody, type Env } from "./env.ts";
+import { fail, json, readBody, type Env } from "./env.ts";
 import type { RepoRef } from "./repos";
 
 const all = async (env: Env, sql: string, ...args: unknown[]) => (await env.DB.prepare(sql).bind(...args).all()).results;
@@ -229,12 +229,12 @@ export async function privacyRoutes(req: Request, env: Env, p: string[], url: UR
   const exporting = p[2] === "export" && !p[3] && req.method === "GET";
   const erasing = !p[2] && req.method === "DELETE";
   if (!exporting && !erasing) return null;
-  if (!user) return json({ error: "sign in first" }, 401);
-  if (!person) return json({ error: "only you can do this, signed in on the site: not a token, an app or an agent" }, 403);
+  if (!user) return fail("SignInFirst", "sign in first");
+  if (!person) return fail("PersonOnly", "only you can do this, signed in on the site: not a token, an app or an agent");
   if (exporting) {
     return json(await exportFor(env, user), 200, { "content-disposition": `attachment; filename="codesplitter-${user}.json"`, "cache-control": "no-store" });
   }
-  if (url.searchParams.get("confirm") !== user) return json({ error: `to delete your account, confirm with your handle: ?confirm=${user}` }, 400);
+  if (url.searchParams.get("confirm") !== user) return fail("BadInput", `to delete your account, confirm with your handle: ?confirm=${user}`);
   const revokeYourself = await eraseUser(env, user, { scrub: url.searchParams.get("scrub") === "1" });
   // Alias mode's cookie, and Better Auth's (its __Secure- twin is cleared the same way on https).
   const gone = ["cs_user", "better-auth.session_token", "better-auth.session_data", "__Secure-better-auth.session_token", "__Secure-better-auth.session_data"];
@@ -278,18 +278,18 @@ export async function backfillAuthors(env: Env, after: BackfillCursor | null = n
  */
 export async function scrubRoutes(req: Request, env: Env, p: string[], admin: boolean): Promise<Response | null> {
   if (p[1] !== "admin" || p[2] !== "scrub" || (p[3] && p[3] !== "backfill") || p[4]) return null;
-  if (!admin) return json({ error: "admins only" }, 403);
-  if (req.method !== "POST") return json({ error: "POST only" }, 405);
+  if (!admin) return fail("AdminsOnly", "admins only");
+  if (req.method !== "POST") return fail("WrongMethod", "POST only");
   if (p[3]) {
     // The cursor is a `next` this route handed out: strings all through, or none.
     const { after } = await readBody<"after">(req);
     const cursor = after == null ? null : Object(after) as Record<keyof BackfillCursor, unknown>;
-    if (cursor && !(typeof cursor.owner === "string" && typeof cursor.repo === "string" && typeof cursor.path === "string" && (cursor.branch === undefined || typeof cursor.branch === "string"))) return json({ error: "after: the `next` the last page gave" }, 400);
+    if (cursor && !(typeof cursor.owner === "string" && typeof cursor.repo === "string" && typeof cursor.path === "string" && (cursor.branch === undefined || typeof cursor.branch === "string"))) return fail("BadInput", "after: the `next` the last page gave");
     return json(await backfillAuthors(env, cursor as BackfillCursor | null));
   }
   const b = await readBody<"handle">(req), handle = typeof b.handle === "string" ? b.handle : "";
   const grant = await env.DB.prepare("SELECT email FROM handle_grants WHERE handle = ?").bind(handle).first();
-  if (handle === GHOST || grant?.email !== `retired:${handle}`) return json({ error: `@${handle} isn't a deleted account's handle` }, 404);
+  if (handle === GHOST || grant?.email !== `retired:${handle}`) return fail("NoDeletedHandle", `@${handle} isn't a deleted account's handle`);
   return json(await scrubHandle(env, handle));
 }
 

@@ -9,7 +9,7 @@
 // Only the crew is named: a handle outside it, the speaker and the agents themselves are left out. A mention
 // of a repo you've left since stays in the table but no longer shows.
 import { arr, int, obj, opt } from "@rustybuns/util/guard";
-import { json, need, readBody, type Env } from "./env.ts";
+import { fail, json, need, readBody, type Env } from "./env.ts";
 import { liveRepo } from "./repos.ts";
 import type { Message } from "./thread-do.ts";
 
@@ -70,9 +70,9 @@ const Seen = obj({ ids: opt(arr(int(1, 1e12), 500)) });
 
 export async function mentionRoutes(req: Request, env: Env, p: string[], user: string | null): Promise<Response | null> {
   if (!(p[1] === "me" && p[2] === "mentions" && (!p[3] || (p[3] === "seen" && !p[4])))) return null;
-  if (!user) return json({ error: "sign in first" }, 401);
+  if (!user) return fail("SignInFirst", "sign in first");
   if (p[3] === "seen") {
-    if (req.method !== "POST") return json({ error: "POST" }, 405);
+    if (req.method !== "POST") return fail("WrongMethod", "POST only");
     const b = need(await readBody(req), Seen);
     if (b instanceof Response) return b;
     const ids = b.ids ?? [];
@@ -80,7 +80,7 @@ export async function mentionRoutes(req: Request, env: Env, p: string[], user: s
       .bind(Date.now(), user, ...ids).run();
     return json({ unread: await unread(env, user) });
   }
-  if (req.method !== "GET") return json({ error: "GET" }, 405);
+  if (req.method !== "GET") return fail("WrongMethod", "GET only");
   const { results } = await env.DB.prepare(`SELECT m.id, m.owner, m.repo, m.thread, m.n, m.by, m.kind, m.text, m.at, m.seen_at FROM mentions m ${SHOWN} ORDER BY m.id DESC LIMIT ${PAGE}`)
     .bind(Date.now(), user).all<Row>();
   const mentions = results.map(({ seen_at, ...m }) => ({ ...m, seen: seen_at !== null }));

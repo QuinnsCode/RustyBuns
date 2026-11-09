@@ -16,7 +16,7 @@
 // a repo whose visibility changed, an embed that failed) is counted in repo_search.stale,
 // and the hourly cron embeds it (embedDue), as does POST /api/admin/scale/search-embed.
 
-import { json, type Env } from "./env.ts";
+import { fail, json, type Env } from "./env.ts";
 import { repoRow, live, liveRepo } from "./repos.ts";
 import { digest, hex } from "./util.ts";
 import type { RepoRef } from "./repos";
@@ -348,9 +348,9 @@ async function fanOut(env: Env, user: string | null, q: string, limit: number): 
 export async function searchRoutes(req: Request, env: Env, p: string[], admin: boolean): Promise<Response | null> {
   // POST /api/admin/scale/search-embed  one round of the cron's embedding; call until `left` is 0.
   if (p[1] === "admin" && p[2] === "scale" && p[3] === "search-embed") {
-    if (!admin) return json({ error: "admins only" }, 403);
-    if (req.method !== "POST") return json({ error: "POST only" }, 405);
-    if (!vectorsOn(env)) return json({ error: "no vector index here (CODESPLITTER_VECTORS=1 binds it)" }, 409);
+    if (!admin) return fail("AdminsOnly", "admins only");
+    if (req.method !== "POST") return fail("WrongMethod", "POST only");
+    if (!vectorsOn(env)) return fail("NoVectorIndex", "no vector index here (CODESPLITTER_VECTORS=1 binds it)");
     return json(await embedDue(env));
   }
   return null;

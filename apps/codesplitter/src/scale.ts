@@ -8,7 +8,7 @@
 // The walls are estimates from the code and Cloudflare's published limits, not
 // load tests. Readings are cheap queries over D1, taken when the page asks.
 
-import { json, type Env } from "./env.ts";
+import { fail, json, type Env } from "./env.ts";
 import { TALLY_MS } from "./limits.ts";
 
 export type State = "ok" | "warn" | "bad" | "unmeasured";
@@ -154,8 +154,8 @@ export async function readings(env: Env, now = Date.now()): Promise<Record<strin
 
 export async function scaleRoutes(req: Request, env: Env, p: string[], admin: boolean): Promise<Response | null> {
   if (p[1] !== "admin" || p[2] !== "scale" || p[3]) return null;
-  if (!admin) return json({ error: "admins only" }, 403);
-  if (req.method !== "GET") return json({ error: "GET only" }, 405);
+  if (!admin) return fail("AdminsOnly", "admins only");
+  if (req.method !== "GET") return fail("WrongMethod", "GET only");
   const r = await readings(env);
   const cards = CARDS.map((c) => ({ ...c, reading: r[c.id] ?? null, state: stateOf(r[c.id]) }));
   const order: State[] = ["bad", "warn", "ok", "unmeasured"];

@@ -383,7 +383,7 @@ function what(j: Pick<Job, "path" | "body">) {
 export async function jobRoutes(req: Request, env: Env, p: string[], user: string | null, admin: boolean, self: (r: Request) => Promise<Response>): Promise<Response | null> {
   if (p[1] !== "jobs" || p[3] || req.method !== "GET") return null;
   if (!p[2]) {
-    if (!user) return json({ error: "sign in first" }, 401);
+    if (!user) return fail("SignInFirst", "sign in first");
     const { results: lines } = await env.DB.prepare("SELECT DISTINCT rule, who FROM limit_jobs WHERE user = ? AND state = 'waiting'").bind(user).all<{ rule: string; who: string }>();
     for (const { rule, who } of lines) await drain(env, rule, who, self);
     const { results } = await env.DB.prepare("SELECT id, path, body, at FROM limit_jobs WHERE user = ? ORDER BY id DESC LIMIT 50").bind(user).all<Pick<Job, "id" | "path" | "body" | "at">>();

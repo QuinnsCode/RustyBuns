@@ -40,8 +40,8 @@ interface Op {
 /**
  * codeSplitter's named failures (#3804). A route's 4xx reply is `{error, tag, ...}`: `error` the sentence a person
  * reads, `tag` one of these, which a client matches on instead of guessing from the status (client.ts makes each one
- * an error class). Each is [its status, what it means]. Route files move onto tags one at a time: branches.ts, then worker.ts, agent-routes.ts, mirror.ts, invites.ts, page.ts and beam.ts.
- * A 401 (sign in) and a 5xx stay untagged: the client makes them Unauthorized and Transient for every operation.
+ * an error class). Each is [its status, what it means]. Every route's 4xx carries one (#3940), but for what any operation
+ * can meet: a 401 (sign in), a rate limit's 429 and a 5xx stay untagged, and the client makes them Unauthorized, RateLimited and Transient.
  * The token gate's 403 (a good token that can't do this) is tagged TOKEN_CANT_DO, a common failure: see below.
  */
 export const ERRORS = {
@@ -57,7 +57,7 @@ export const ERRORS = {
   SignInFirst: [401, "sign in first: this takes someone signed in"],
   NoWriteAccess: [403, "you aren't on the repo's crew, or the token is read-only"],
   OwnerOnly: [403, "only the repo's owner does this"],
-  PersonOnly: [403, "a person's word, said on the site signed in: an API token can't give it"],
+  PersonOnly: [403, "a person's word, said on the site signed in: an API token can't give it, or do it"],
   BranchProtected: [403, "main is protected: someone other than the branch's author merges it"],
   AgentRunBatch: [403, "an agent run's batch lands when its owner accepts it, not on a crew merge"],
   RunBranchLocked: [403, "an agent run's branch is written by its agent and the owner only"],
@@ -96,7 +96,7 @@ export const ERRORS = {
   NoSuchWorktree: [404, "no worktree by that name"],
   NoSuchCommit: [404, "no commit by that sha in the repo"],
   NoSuchInvite: [404, "no pending invite by that id or link: it was revoked, or never was"],
-  NoSuchToken: [404, "you have no API token by that id"],
+  NoSuchToken: [404, "no API token of yours, or CI token of the repo's, by that id"],
   NoSuchJob: [404, "no request of yours by that id waits in line or ran"],
   NotOnGitHub: [404, "GitHub has no repo there that this server can read: a private one digs up in the desktop app"],
   NoPageRepo: [404, "no page repo yet: make a public repo named page"],
@@ -139,7 +139,7 @@ export const ERRORS = {
   UpstreamMoved: [409, "upstream's branch moved while pushing: push again"],
   TagExists: [409, "a tag by that name names another commit (here, or upstream for a mirror): delete it first to move it"],
   RepoExists: [409, "you have a repo by that name already"],
-  AlreadyMirror: [409, "the repo is a mirror already"],
+  AlreadyMirror: [409, "the repo is a mirror already: it can't become one again, or start its git fresh"],
   NotAFork: [409, "only a whole repo dug from an upstream becomes a mirror"],
   NoSyncBase: [409, "its git lost the commit it was dug at, so there's nothing to sync from: make a new mirror instead"],
   CommitsAhead: [409, "commits made here would go up: say how many with `ahead`"],
@@ -162,7 +162,7 @@ export const ERRORS = {
   GitHubRun: [409, "GitHub's runs come from GitHub: change them there"],
   CheckTaken: [409, "another runner has the check now, or it went back in the queue"],
   CheckDone: [409, "the check run has finished already"],
-  DeployRunning: [409, "a deploy or plan is already running: try when it's done"],
+  DeployRunning: [409, "a deploy, plan or preview is already running: try when it's done"],
   DiffCutShort: [409, "the diff was cut short: read the rest, then approve with approve_unseen: true"],
   DeployWaits: [409, "commits that aren't the owner's wait for the owner to read and approve them"],
   PlanStale: [409, "the plan named is gone, didn't pass, or ran on an older main: plan again"],
@@ -178,7 +178,7 @@ export const ERRORS = {
   PickClash: [409, "files the commit changes changed here too (`clashes` lists them)"],
   NothingToPick: [409, "the commit's changes are here already, or gone: nothing to do"],
   DigestRunning: [409, "a digest is already being written"],
-  TooBig: [413, "the file is too big or too long to dig"],
+  TooBig: [413, "the file is too big or too long"],
   AssetsFull: [413, "an account keeps so many asset files: replace one or delete another"],
   CommitTooBig: [413, "the commit changes too many files to pick or revert here"],
   BinaryFile: [415, "a binary file: it has no lines to read or edit"],
@@ -190,7 +190,7 @@ export const ERRORS = {
   PipelineInvalid: [422, "codesplitter.pipeline.json doesn't parse"],
   PrivateOnGitHub: [422, "the repo is private on GitHub: only the desktop app digs those up"],
   UpstreamTooBig: [422, "upstream changed more files than GitHub lists: dig it up again instead"],
-  BudgetSpent: [429, "the hosted agents' budget is spent for now"],
+  BudgetSpent: [429, "the site's budget for this (its hosted agents, say) is spent for now: try later"],
   GitHubRateLimit: [429, "GitHub's rate limit is spent: try later, or sign in with GitHub"],
   AgentsUnavailable: [501, "coding agents don't run here"],
   NoEuStorage: [501, "this codeSplitter has no EU storage"],
@@ -199,6 +199,33 @@ export const ERRORS = {
   NoAssetStore: [501, "binary files need storage this server hasn't got"],
   AgentFailed: [502, "the coding agent didn't answer"],
   SignInOff: [503, "this site has no way to sign in set up"],
+  TooManyWebhooks: [400, "the repo has as many webhooks as it keeps: delete one first"],
+  TooManyWatched: [400, "the dependency doctor watches as many of your repos as it can: turn it off on one first"],
+  TooManyCiTokens: [400, "the repo has as many CI tokens as it keeps: revoke one first"],
+  FollowToVisit: [403, "follow them to walk their city"],
+  CrossSite: [403, "a cookie-signed request from another site: send it from this site, or with Authorization: Bearer"],
+  BotCheck: [403, "the bot check wasn't solved or didn't pass: solve it on the page and try again"],
+  NoSuchWebhook: [404, "no webhook by that id in this repo"],
+  NoSuchDelivery: [404, "no delivery by that id for this webhook"],
+  NoSuchCar: [404, "no merge-train car by that id in this repo"],
+  NoDeletedHandle: [404, "no deleted account had that handle"],
+  NoPublicCity: [404, "no public city here: it's private, or no one has that handle"],
+  NoSuchProgram: [404, "you have no saved program by that name"],
+  NoSuchGrant: [404, "you have no app signed in by that id"],
+  NoSuchBoardRow: [404, "that PR isn't on the board"],
+  NoSuchFollow: [404, "you have no follow by that id"],
+  NoSuchOldGit: [404, "no git by that name that the repo moved off"],
+  NoPulse: [404, "no pulse to show: no one has that handle, or they keep it to themselves"],
+  WrongMethod: [405, "that method isn't one this route takes"],
+  DoctorRunning: [409, "the dependency doctor is already checking the repo: try when it's done"],
+  RoomFull: [409, "the game room has as many players as it takes: try again soon"],
+  ChecksElsewhere: [409, "checks don't run here: set the repo's checks to run here first"],
+  CarUnsettled: [409, "the car's branches don't lay over main cleanly: two of them clash in a file, or one can't be read"],
+  NoReleaseLanes: [409, "a release runs the lanes in codesplitter.pipeline.json: the repo needs one on main, and its checks running here"],
+  TooManyPrograms: [409, "you have as many saved programs as one person keeps: delete one first"],
+  NoVectorIndex: [409, "no vector index here: CODESPLITTER_VECTORS=1 binds it"],
+  NoArtifactsNext: [409, "ARTIFACTS_NEXT isn't bound: deploy with it first"],
+  SocketOnly: [426, "this route takes a websocket upgrade only"],
 } as const satisfies Record<string, readonly [number, string]>;
 export type ErrorTag = keyof typeof ERRORS;
 /**
@@ -213,7 +240,7 @@ const REPO = ["NoSuchRepo"] as const, NO_BRANCH = [...REPO, "NoSuchBranch"] as c
 /** A mirror's branch and tag routes: a folder mirror sends its work up as one branch, so it has neither. */
 const MIRROR_BRANCH = [...REPO, "FolderMirror"] as const;
 const FILE_READ = [...REPO,"NoSuchBranch", "NoSuchFile", "TooBig", "BinaryFile"] as const;
-const PICK = [...REPO, "NoWriteAccess", "MainProtected", "NoSuchBranch", "BadInput", "StillCopying", "NoGit", "NoSuchCommit", "CommitTooBig", "PickClash", "NothingToPick", "BranchMoved"] as const;
+const PICK = [...REPO, "NoWriteAccess", "MainProtected", "PolicyFile", "NoSuchBranch", "BadInput", "StillCopying", "NoGit", "NoSuchCommit", "CommitTooBig", "PickClash", "NothingToPick", "BranchMoved"] as const;
 const FILE_WRITE = [...FILE_READ, "NoWriteAccess", "RunBranchLocked", "MainProtected", "PolicyFile"] as const;
 const MERGE = [...WRITE, "BranchClosed", "BadInput", "PersonOnly", "BranchProtected", "AgentRunBatch", "Stacked", "StrandedFork", "PolicyFile",
   "BuildFiles", "ChecksHold", "BinaryMoved", "Conflicts", "MergeBroken", "TestsFail", "HookHold"] as const;
@@ -232,9 +259,9 @@ export const OP_ERRORS = {
   set_mervin_learning: [...REPO, "OwnerOnly", "BadInput"],
   delete_mervin_learning: [...REPO, "OwnerOnly"],
   // worker.ts
-  update_me: ["BadInput"],
+  update_me: ["BadInput", "SignInFirst"],
   get_user: ["NoSuchUser"],
-  create_repo: ["BadInput", "NoEuStorage"],
+  create_repo: ["BadInput", "NoEuStorage", "SignInFirst"],
   get_repo: REPO,
   set_repo_visibility: [...REPO, "OwnerOnly", "BadInput"],
   delete_repo: [...REPO, "OwnerOnly", "BadInput"],
@@ -256,7 +283,7 @@ export const OP_ERRORS = {
   commit_file: [...FILE_WRITE, "BadInput", "PushClash"],
   set_private_lines: [...FILE_WRITE, "BadInput", "OwnerOnly"],
   search_code: REPO,
-  create_collection: ["BadInput"],
+  create_collection: ["BadInput", "SignInFirst"],
   collect_lines: ["NotYourCollection", "BadInput", "NoSuchRepo", "NoSuchFile", "TooBig", "BinaryFile"],
   get_collection: ["NoSuchCollection"],
   // agent-routes.ts
@@ -275,7 +302,7 @@ export const OP_ERRORS = {
   look_at_agent_batch: [...REPO, "NoWriteAccess", "NoSuchRun", "NothingWaiting", "AlreadyLanding"],
   reject_agent_batch: [...REPO, "OwnerOnly", "NoSuchRun", "NothingWaiting", "AlreadyLanding"],
   // mirror.ts
-  create_mirror: ["GitUnavailable", "BadInput", "BadBranchName", "RepoExists", "NoSuchFolder"],
+  create_mirror: ["GitUnavailable", "BadInput", "BadBranchName", "RepoExists", "NoSuchFolder", "SignInFirst"],
   mirror_status: [...REPO, "NotAMirror"],
   sync_mirror: [...REPO, "OwnerOnly", "BadInput", "FolderMirror", "NotAMirror"],
   mirror_turn_preview: [...REPO, "OwnerOnly", "GitUnavailable", "AlreadyMirror", "NotAFork", "NoSyncBase"],
@@ -292,10 +319,10 @@ export const OP_ERRORS = {
   create_invite: [...REPO, "OwnerOnly", "BadInput", "NoSuchUser", "AlreadyInCrew", "TooManyInvites"],
   revoke_invite: [...REPO, "OwnerOnly", "NoSuchInvite"],
   get_invite: ["NoSuchInvite", "InviteUsed", "InviteExpired"],
-  claim_invite: ["BadInput", "NoSuchInvite", "InviteUsed", "InviteExpired", "NotYourInvite", "AlreadyInCrew"],
+  claim_invite: ["BadInput", "NoSuchInvite", "InviteUsed", "InviteExpired", "NotYourInvite", "AlreadyInCrew", "SignInFirst", "BotCheck"],
   // page.ts
-  edit_my_page: ["BadInput", "TooBig", "NoPageRepo"],
-  revert_my_page: ["BadInput", "NoPageRepo"],
+  edit_my_page: ["BadInput", "TooBig", "NoPageRepo", "SignInFirst"],
+  revert_my_page: ["BadInput", "NoPageRepo", "SignInFirst"],
   // beam.ts
   list_beams: REPO,
   beam_branch: [...REPO, "SignInFirst", "NoWriteAccess", "NoGit", "PrivateLines", "BadBranchName", "BadInput", "NoSuchUser", "GitUnavailable", "NoSuchBranch",
@@ -344,6 +371,40 @@ export const OP_ERRORS = {
   deploy_plan_status: [...REPO, "OwnerOnly"],
   deploy_plan: [...REPO, "OwnerOnly", "DesktopOnly", "DeployRunning", "NoGit", "DeployWaits"],
   deploy_destroy: [...REPO, "OwnerOnly", "DesktopOnly", "DeployRunning", "BadInput", "NoGit", "DeployWaits"],
+  // batch 3 (#3940): the route files under 8 each
+  get_me: ["SignInFirst"],
+  get_pulse: ["NoPulse"],
+  list_jobs: ["SignInFirst"],
+  my_mentions: ["SignInFirst"],
+  see_mentions: ["SignInFirst", "BadInput"],
+  my_invites: ["SignInFirst"],
+  get_city: ["NoPublicCity"],
+  set_city: ["BadInput"],
+  get_pipeline: [...REPO, "PipelineInvalid"],
+  cut_release: [...REPO, "NoWriteAccess", "NoGit", "NoReleaseLanes"],
+  list_stamps: [...REPO, "BadInput", "NoSuchFile", "TooBig", "BinaryFile"],
+  stamp_lines: [...REPO, "SignInFirst", "BadInput", "NoSuchFile", "TooBig", "BinaryFile"],
+  unstamp_line: [...REPO, "SignInFirst", "BadInput", "NoSuchFile", "TooBig", "BinaryFile"],
+  queue_train: [...REPO, "NoWriteAccess", "ChecksElsewhere"],
+  get_train_car_files: [...REPO, "NoWriteAccess", "NoSuchCar", "CarUnsettled"],
+  get_protect_main: [...REPO],
+  set_protect_main: [...REPO, "WrongMethod", "OwnerOnly", "BadInput"],
+  list_programs: ["SignInFirst"],
+  get_program: ["SignInFirst", "NoSuchProgram"],
+  save_program: ["SignInFirst", "BadInput", "TooManyPrograms"],
+  delete_program: ["SignInFirst", "NoSuchProgram"],
+  list_ci_tokens: [...REPO, "OwnerOnly"],
+  create_ci_token: [...REPO, "OwnerOnly", "BadInput", "TooManyCiTokens"],
+  revoke_ci_token: [...REPO, "OwnerOnly", "NoSuchToken"],
+  get_board: [...REPO, "NoSuchBoardRow"],
+  update_board: [...REPO, "NoWriteAccess", "BadInput"],
+  rank_features: ["SignInFirst", "BadInput"],
+  comment_on_features: ["SignInFirst", "BadInput"],
+  follow: ["SignInFirst", "BadInput", "NoSuchUser", "NoSuchRepo", "NoSuchFile", "TooBig", "BinaryFile"],
+  unfollow: ["SignInFirst", "NoSuchFollow"],
+  list_following: ["SignInFirst"],
+  set_find: ["SignInFirst", "BadInput"],
+  repo_audit: [...REPO, "OwnerOnly"],
 } as const satisfies Record<string, readonly ErrorTag[]>;
 export type OpWithErrors = keyof typeof OP_ERRORS;
 
@@ -895,7 +956,7 @@ const OPS: Record<string, Record<string, Op>> = {
 };
 
 const SCHEMAS: Record<string, Schema> = {
-  Error: obj({ error: str("what went wrong, for a person"), tag: { type: "string", enum: Object.keys(ERRORS), description: "which failure it is, to match on: the operation's `x-codesplitter-errors` lists its own (not every route sends one yet)" } }, ["error"]),
+  Error: obj({ error: str("what went wrong, for a person"), tag: { type: "string", enum: Object.keys(ERRORS), description: "which failure it is, to match on: the operation's `x-codesplitter-errors` lists its own, and any operation can answer TokenCantDo; a 401, a rate limit's 429 and a 5xx carry none" } }, ["error"]),
   Ok: obj({ ok: bool() }),
   Beam: obj({ id: str(), owner: str(), repo: str(), branch: str(), kind: { type: "string", enum: ["git", "codesplitter"] }, by: str(), to: { type: ["string", "null"] }, title: str(), message: str(),
     onto: obj({ sha: str(), label: str('"main", or "upstream <repo>@<branch>"') }), sha: str("the clean commit, at refs/beams/{id}: the top one of a stacked branch's"), commits: int("commits in the stack it squashed; 0 for a codeSplitter branch"),

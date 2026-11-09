@@ -37,7 +37,7 @@
 //   POST   /api/repos/:o/:r/hooks/:id/deliveries/:d/redeliver
 
 import { audit } from "./audit.ts";
-import { json, type Env, need, readBody } from "./env.ts";
+import { fail, json, type Env, need, readBody } from "./env.ts";
 import { arr, bool, obj, oneOf, opt, raw, str } from "@rustybuns/util/guard";
 import { repoRow } from "./repos.ts";
 import { hex, hmacHex } from "./util.ts";
@@ -212,8 +212,8 @@ export async function hookRoutes(req: Request, env: Env, p: string[], user: stri
   if (!(p[1] === "repos" && p[2] && p[3] && p[4] === "hooks")) return null;
   const [owner, repo, id] = [p[2], p[3], p[5]];
   // Hooks carry a secret and say what happens in the repo: the owner's alone.
-  if (user !== owner) return json({ error: "only the repo's owner can manage its webhooks" }, 403);
-  if (!(await repoRow(env, owner, repo, "1"))) return json({ error: "not found" }, 404);
+  if (user !== owner) return fail("OwnerOnly", "only the repo's owner can manage its webhooks");
+  if (!(await repoRow(env, owner, repo, "1"))) return fail("NoSuchRepo", "not found");
 
   if (!id && req.method === "GET") {
     const { results } = await env.DB.prepare(`SELECT h.id, h.url, h.events, h.github_compat, h.owner_only, h.created_at,
@@ -225,9 +225,9 @@ export async function hookRoutes(req: Request, env: Env, p: string[], user: stri
     const b = need(await readBody(req), obj({ url: raw, events: opt(arr(oneOf(EVENTS), 100, { min: 1 })), secret: opt(str(1000, { min: 16 })), github_compat: opt(bool()), owner_only: opt(bool()) }));
     if (b instanceof Response) return b;
     const url = checkUrl(b.url), events = b.events ?? [...EVENTS];
-    if (!url) return json({ error: "url: an http(s) URL out on the internet (not a private or loopback address), without a password in it" }, 400);
+    if (!url) return fail("BadInput", "url: an http(s) URL out on the internet (not a private or loopback address), without a password in it");
     const n = await env.DB.prepare("SELECT COUNT(*) AS n FROM webhooks WHERE owner = ? AND repo = ?").bind(owner, repo).first<{ n: number }>();
-    if ((n?.n ?? 0) >= MAX_HOOKS) return json({ error: `a repo has at most ${MAX_HOOKS} webhooks` }, 400);
+    if ((n?.n ?? 0) >= MAX_HOOKS) return fail("TooManyWebhooks", `a repo has at most ${MAX_HOOKS} webhooks`);
     const hook = { id: crypto.randomUUID().slice(0, 8), url, events: [...new Set(events)], secret: b.secret ?? hex(crypto.getRandomValues(new Uint8Array(24)).buffer), github_compat: b.github_compat ?? false, owner_only: b.owner_only ?? false, created_at: Date.now() };
     await env.DB.prepare("INSERT INTO webhooks (id, owner, repo, url, secret, events, github_compat, owner_only, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
       .bind(hook.id, owner, repo, hook.url, hook.secret, hook.events.join(","), hook.github_compat ? 1 : 0, hook.owner_only ? 1 : 0, hook.created_at).run();
@@ -236,7 +236,7 @@ export async function hookRoutes(req: Request, env: Env, p: string[], user: stri
   }
 
   const hook = id && await env.DB.prepare("SELECT id, url, secret FROM webhooks WHERE id = ? AND owner = ? AND repo = ?").bind(id, owner, repo).first();
-  if (!hook) return json({ error: "no such webhook" }, 404);
+  if (!hook) return fail("NoSuchWebhook", "no such webhook");
   if (!p[6] && req.method === "DELETE") {
     await env.DB.batch([
       env.DB.prepare("DELETE FROM webhooks WHERE id = ?").bind(id),
@@ -251,7 +251,7 @@ export async function hookRoutes(req: Request, env: Env, p: string[], user: stri
   }
   if (p[6] === "deliveries" && p[7] && p[8] === "redeliver" && req.method === "POST") {
     const d = await env.DB.prepare("SELECT id FROM webhook_deliveries WHERE id = ? AND hook = ?").bind(p[7], id).first();
-    if (!d) return json({ error: "no such delivery" }, 404);
+    if (!d) return fail("NoSuchDelivery", "no such delivery");
     // A fresh run of tries, starting now; messages left from the last run are stale.
     await env.DB.prepare("UPDATE webhook_deliveries SET status = 'pending', attempts = 0, next_at = ? WHERE id = ?").bind(Date.now(), d.id).run();
     await env.HOOKS.send({ id: d.id as string, n: 0 } satisfies HookMessage);

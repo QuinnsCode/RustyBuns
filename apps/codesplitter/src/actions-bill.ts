@@ -9,7 +9,7 @@
 
 import { GhUser, githubToken } from "./github.ts";
 import { readJson } from "@rustybuns/util/http";
-import { json, type Env } from "./env.ts";
+import { fail, json, type Env } from "./env.ts";
 
 const API = "https://api.github.com";
 export const BILLING_PAGE = "https://github.com/settings/billing";
@@ -58,7 +58,7 @@ export async function actionsBill(env: Env, user: string, now = new Date()): Pro
 /** GET /api/admin/actions */
 export async function actionsRoutes(req: Request, env: Env, p: string[], user: string | null, admin: boolean): Promise<Response | null> {
   if (p[1] !== "admin" || p[2] !== "actions" || p[3]) return null;
-  if (!admin || !user) return json({ error: "admins only" }, 403);
-  if (req.method !== "GET") return json({ error: "GET only" }, 405);
+  if (!admin || !user) return fail("AdminsOnly", "admins only");
+  if (req.method !== "GET") return fail("WrongMethod", "GET only");
   return json(await actionsBill(env, user));
 }
