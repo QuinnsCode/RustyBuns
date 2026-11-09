@@ -72,16 +72,18 @@ test("checkVersion: fetches once a day, keeps the cache when offline", async () 
   const path = join(mkdtempSync(join(tmpdir(), "rb-adv-")), "check.json");
   const calls: string[] = [];
   const t0 = 1_000_000;
-  expect(await checkVersion("0.1.6", { path, now: t0, fetcher: fakeFetch(bad, "0.1.10", calls) })).toContain("known-bad");
+  // No release-age gate: the repo root's bunfig.toml has one, and with it a run from the root fetches the packument too.
+  const gate = null;
+  expect(await checkVersion("0.1.6", { path, now: t0, gate, fetcher: fakeFetch(bad, "0.1.10", calls) })).toContain("known-bad");
   expect(calls.length).toBe(2);
 
   // Within the day: the cache answers.
-  expect(await checkVersion("0.1.6", { path, now: t0 + 1000, fetcher: fakeFetch([], "9.9.9", calls) })).toContain("@0.1.10");
+  expect(await checkVersion("0.1.6", { path, now: t0 + 1000, gate, fetcher: fakeFetch([], "9.9.9", calls) })).toContain("@0.1.10");
   expect(calls.length).toBe(2);
 
   // A day later, offline: the old facts still answer, and nothing throws.
   const offline = (async () => { throw new Error("offline"); }) as unknown as typeof fetch;
-  expect(await checkVersion("0.1.6", { path, now: t0 + 2 * 86_400_000, fetcher: offline })).toContain("known-bad");
+  expect(await checkVersion("0.1.6", { path, now: t0 + 2 * 86_400_000, gate, fetcher: offline })).toContain("known-bad");
   expect(JSON.parse(readFileSync(path, "utf8")).latest).toBe("0.1.10");
 });
 
