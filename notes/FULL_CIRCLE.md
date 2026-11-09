@@ -63,8 +63,8 @@ machine, opens rooms of sockets on each and reads every host's memory. On the bu
 
 A room costs about 1 MB on the box. On Cloudflare an awake room bills its full 128 MB of Durable Object duration:
 $0.0058 an hour past the 868 room-hours Workers Paid includes, $4.15 a month for a room open around the clock.
-So a 4 GB box holds about 60 games like these, a few euros a month for all of them, where each always-busy room on
-Cloudflare is $4. The same run on Linux is [#4084](https://github.com/QuinnsCode/RustyBuns/issues/4084) (a manual run).
+So a 4 GB box (a CPX22, EUR 19.99 a month) holds about 60 games like these, about 30 cents a game, where each
+always-busy room on Cloudflare is $4. eqosys's Scale tab shows it under "Many games, one box". The same run on Linux is [#4084](https://github.com/QuinnsCode/RustyBuns/issues/4084) (a manual run).
 What's still missing is the deploy: each app's stack makes its own Hetzner server, so two apps get two servers.
 A shared box host is [#4083](https://github.com/QuinnsCode/RustyBuns/issues/4083).
 

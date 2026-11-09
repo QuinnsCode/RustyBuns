@@ -1,7 +1,7 @@
 // The super admin's Scale tab: what Qollab's rooms cost a month on each home as players grow, where each one gets
 // cheaper than Durable Objects, the path from here to servers behind Cloudflare, and what hurts along the way.
 import { btn } from "./Glass.tsx";
-import { DEFAULT, PATHS, PRESETS, crossover, needs, sweep, type Load, type PathId } from "../scale.ts";
+import { DEFAULT, ONE_BOX, PATHS, PRESETS, crossover, gamesPerBox, needs, sweep, type Load, type PathId } from "../scale.ts";
 
 const COLOR: Record<PathId, string> = { do: "#e8743b", rivet: "#6c7bd9", hetzner: "#2fa58a", ha: "#c2559a" };
 const usd = (v: number) => (v >= 1e6 ? `${+(v / 1e6).toFixed(1)}M` : v >= 10_000 ? `$${Math.round(v / 1000).toLocaleString("en-US")}k` : `$${Math.round(v).toLocaleString("en-US")}`);
@@ -81,6 +81,33 @@ const PAINS: { who: string; pain: string; fix: string }[] = [
   { who: "Servers", pain: "Ops is ours.", fix: "OS patches, full disks, certificates, alerts. Cloudflare and Rivet do that for you; Alchemy makes the boxes, not their upkeep." },
 ];
 
+/** The long tail of games packed onto one box: what each one measured, and what that makes a game cost. */
+function OneBox() {
+  const b = gamesPerBox();
+  return (
+    <>
+      <h2>Many games, one box<em>the long tail of games shares a server; hot ones stay on Durable Objects</em></h2>
+      <div className="tiles">
+        <div className="card tile"><b>{Math.round(b.avgMb)} MB</b><span>a game with {ONE_BOX.rooms} rooms in</span></div>
+        <div className="card tile"><b>{b.roomMb.toFixed(1)} MB</b><span>a room of 4 on a box</span></div>
+        <div className="card tile hero lead"><b>{b.fit}</b><span>games on one {b.box.name} ({b.box.gb} GB, EUR {b.box.eur})</span></div>
+        <div className="card tile"><b>EUR {b.eurPerGame.toFixed(2)}</b><span>a game a month there, against {usd(b.doRoomUsd)} a month for one Durable Object room that can't hibernate</span></div>
+      </div>
+      <div className="card" style={{ overflowX: "auto" }}>
+        <table>
+          <thead><tr><th>Game</th><th className="num">Nobody in</th><th className="num">{ONE_BOX.rooms} rooms of 4</th></tr></thead>
+          <tbody>{ONE_BOX.games.map((g) => <tr key={g.name}><td>{g.name}</td><td className="num">{g.idleMb} MB</td><td className="num">{g.busyMb} MB</td></tr>)}</tbody>
+        </table>
+      </div>
+      <p className="mut" style={{ margin: "0 .4rem", fontSize: ".8rem" }}>
+        Each game is its own box host process, side by side on one machine (scripts/one-box.ts on the builder Mac,
+        {" "}{ONE_BOX.measured}; the Linux run is #4084). A fifth of the box is kept back for the OS and spikes. Deploying
+        several games onto one Hetzner server is still to build (#4083): today each game's stack makes its own.
+      </p>
+    </>
+  );
+}
+
 export function Scale({ l }: { l: Load }) {
   const n = needs(l), costs = PATHS.map((p) => ({ ...p, c: p.cost(l) }));
   const best = costs.reduce((a, b) => (b.c.usd < a.c.usd ? b : a));
@@ -131,6 +158,7 @@ export function Scale({ l }: { l: Load }) {
         figures. The vCPU rate and DO ms come from a relay room under load (scripts/room-stress.ts), halved for a shared vCPU and padded
         for workerd. Sums in apps/eqosys/src/scale.ts.
       </p>
+      <OneBox />
       <h2>The path out<em>Cloudflare in front, wherever Alchemy puts the boxes</em></h2>
       <div className="card route">{ROUTE.map(([b, t]) => <div key={b}><b>{b}</b><div className="mut">{t}</div></div>)}</div>
       <h2>What hurts on the way</h2>

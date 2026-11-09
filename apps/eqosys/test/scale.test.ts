@@ -3,7 +3,7 @@
 import { expect, test } from "bun:test";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { DEFAULT, PRESETS, crossover, durableObjects, loadOf } from "../src/scale.ts";
+import { DEFAULT, EUR_USD, PRESETS, crossover, durableObjects, gamesPerBox, loadOf } from "../src/scale.ts";
 import { Home } from "../src/app/pages.tsx";
 import type { Me } from "../src/auth.ts";
 
@@ -31,4 +31,10 @@ test("a query a person types can't put the sums out of range", () => {
   const html = renderToStaticMarkup(createElement(Home, { counts: new Map(), t0: 0, me: BOSS,
     mine: undefined, hub: null, everyone: [], unlocks: new Map(), tab: "scale", scale: loadOf(new URLSearchParams("ccu=1e99&room=1")) }));
   expect(html).not.toContain("NaN");
+});
+
+test("the long tail packs onto one box: about sixty measured games on a 4 GB server, cents each", () => {
+  const b = gamesPerBox();
+  expect(b.fit).toBeGreaterThan(50);
+  expect(b.eurPerGame * EUR_USD).toBeLessThan(b.doRoomUsd / 10); // a whole game for under a tenth of one awake room
 });
