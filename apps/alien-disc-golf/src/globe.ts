@@ -8,7 +8,7 @@ import type { Country } from "./countries.ts";
 import { arc, destination, toLatLon, toVec, type LatLon } from "./geo.ts";
 import { sampleWind, type WindLevel } from "./grib2.ts";
 import { BASKET_KM } from "./course.ts";
-import { EARTH_KM } from "./geo.ts";
+import { DISC_KM, EARTH_KM } from "./geo.ts";
 
 const PARTICLES = 3200;
 const SPEED_DEG = 0.2;    // degrees of travel per second per m/s of wind: visible flow, not a blur
@@ -106,7 +106,7 @@ export class Globe {
     this.scene.add(this.ghost);
     this.aimDot = new THREE.Mesh(new THREE.SphereGeometry(0.008, 10, 10), new THREE.MeshBasicMaterial({ color: 0x9fe8ff }));
     this.scene.add(this.aimDot);
-    this.disc = new THREE.Mesh(new THREE.CylinderGeometry(0.016, 0.02, 0.005, 24), new THREE.MeshPhongMaterial({ color: 0x8cf5ff, emissive: 0x2bb1c9, emissiveIntensity: 0.9, shininess: 80 }));
+    this.disc = new THREE.Mesh(new THREE.CylinderGeometry((0.8 * DISC_KM) / 2 / EARTH_KM, DISC_KM / 2 / EARTH_KM, 0.005, 24), new THREE.MeshPhongMaterial({ color: 0x8cf5ff, emissive: 0x2bb1c9, emissiveIntensity: 0.9, shininess: 80 }));
     this.disc.visible = false;
     this.scene.add(this.disc);
     this.trail = new THREE.Line(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: 0x8cf5ff, transparent: true, opacity: 0.9 }));
