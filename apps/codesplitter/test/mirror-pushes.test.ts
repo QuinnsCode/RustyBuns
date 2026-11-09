@@ -81,7 +81,7 @@ describe("mirrors: primary, pull-only, pushes and tags", () => {
     // A branch and a tag can't go up.
     expect((await post(call, "/api/repos/ana/up/branches", { name: "tidy" })).status).toBe(201);
     expect((await post(call, "/api/repos/ana/up/files", { path: "src/c.ts", content: "export const c = 1", branch: "tidy" })).status).toBe(201);
-    expect(await (await post(call, "/api/repos/ana/up/mirror/branches/tidy/push")).json()).toEqual({ error: "this mirror is pull-only, so nothing goes upstream" });
+    expect(await (await post(call, "/api/repos/ana/up/mirror/branches/tidy/push")).json()).toEqual({ error: "this mirror is pull-only, so nothing goes upstream", tag: "PullOnly" });
     expect((await post(call, "/api/repos/ana/up/tags", { name: "v9" })).status).toBe(201);
     expect((await post(call, "/api/repos/ana/up/mirror/tags/v9/push")).status).toBe(409);
     expect(await sh(`git --git-dir ${up} for-each-ref --format='%(refname)' refs/heads refs/tags`)).toBe("refs/heads/main");
