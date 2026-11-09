@@ -13,7 +13,7 @@
 // Worker sends tags and never imports effect (EFFECT.md ruling 9).
 
 import { Effect, Schedule, Schema } from "effect";
-import { ERRORS, OP_ERRORS, type ErrorTag, type OpWithErrors } from "./src/openapi.ts";
+import { ERRORS, OP_ERRORS, TOKEN_CANT_DO, type ErrorTag, type OpWithErrors } from "./src/openapi.ts";
 import { tool, toRequest } from "./src/mcp.ts";
 import { isPlainObject } from "./src/util.ts";
 
@@ -201,6 +201,12 @@ export const NAMED = {
 // What any call can meet, whatever the operation: they come from before a route answers, or from no answer at all.
 /** No token, or it's expired or revoked. */
 export class Unauthorized extends Schema.TaggedError<Unauthorized>()("Unauthorized", { message: Schema.String }) {}
+/**
+ * A good token that can't do this (openapi.ts TOKEN_CANT_DO): read-only, held to another repo, not admin scope, or a
+ * route a token never reaches (cookie-only, a live socket). `scope` is the one it would take ("write" or "admin"),
+ * from `www-authenticate`; none when no token would do and only signing in on the site does.
+ */
+export class TokenCantDo extends Schema.TaggedError<TokenCantDo>()("TokenCantDo", { message: Schema.String, scope: Schema.optional(Schema.Literals(["write", "admin"])) }) {}
 /** Over a rate limit: try again in `retryAfter` seconds. */
 export class RateLimited extends Schema.TaggedError<RateLimited>()("RateLimited", { message: Schema.String, retryAfter: Schema.Number }) {}
 /** A 5xx with no tag, or the network: worth a retry, and the only one retried. */
@@ -208,18 +214,22 @@ export class Transient extends Schema.TaggedError<Transient>()("Transient", { me
 /** Any other failure: an untagged 4xx from a route not moved onto tags yet, or a tag the operation doesn't declare (a server bug). */
 export class Unexpected extends Schema.TaggedError<Unexpected>()("Unexpected", { message: Schema.String, status: Schema.Number, reply: Schema.Unknown }) {}
 
-type Common = Unauthorized | RateLimited | Transient | Unexpected;
+type Common = Unauthorized | TokenCantDo | RateLimited | Transient | Unexpected;
 /** How operation `Id` can fail: its declared tags' classes, plus the common ones. */
 export type Failure<Id extends string> = (Id extends OpWithErrors ? InstanceType<(typeof NAMED)[(typeof OP_ERRORS)[Id][number]]> : never) | Common;
 
 const declares = (id: string, tag: string): tag is ErrorTag => id in OP_ERRORS && (OP_ERRORS[id as OpWithErrors] as readonly string[]).includes(tag);
 
 /** A failed reply, as operation `id`'s error. Plain, so a test can hand it any reply. */
-export function failure<Id extends string>(id: Id, status: number, reply: unknown, retryAfter?: string | null): Failure<Id> {
+export function failure<Id extends string>(id: Id, status: number, reply: unknown, retryAfter?: string | null, authenticate?: string | null): Failure<Id> {
   const body = isPlainObject(reply) ? reply : {};
   const message = typeof body.error === "string" ? body.error : typeof body.message === "string" ? body.message : `${id}: ${status}`;
   if (typeof body.tag === "string" && declares(id, body.tag)) return new NAMED[body.tag]({ message, status, reply }) as Failure<Id>;
   if (status === 401) return new Unauthorized({ message });
+  if (status === 403 && body.tag === TOKEN_CANT_DO) {
+    const scope = /scope="(write|admin)"/.exec(authenticate ?? "")?.[1];
+    return new TokenCantDo({ message, ...(scope === "write" || scope === "admin" ? { scope } : {}) });
+  }
   if (status === 429 && typeof body.tag !== "string") return new RateLimited({ message, retryAfter: Number(retryAfter ?? body.retryAfter) || 60 });
   if (status >= 500 && typeof body.tag !== "string") return new Transient({ message, status });
   return new Unexpected({ message: typeof body.tag === "string" ? `${id} answered ${body.tag}, which it doesn't declare: ${message}` : message, status, reply });
@@ -244,7 +254,7 @@ export function codesplitter(o: Options) {
     if (typeof req === "string") return Effect.fail(new Unexpected({ message: req, status: 0, reply: null }));
     return Effect.tryPromise({ try: () => send(req), catch: (e) => new Transient({ message: String(e), status: 0 }) }).pipe(
       Effect.flatMap((res) => Effect.promise(async () => ({ res, body: await res.json().catch((): unknown => null) }))),
-      Effect.flatMap(({ res, body }) => res.ok ? Effect.succeed(body) : Effect.fail(failure(id, res.status, body, res.headers.get("retry-after")))),
+      Effect.flatMap(({ res, body }) => res.ok ? Effect.succeed(body) : Effect.fail(failure(id, res.status, body, res.headers.get("retry-after"), res.headers.get("www-authenticate")))),
     );
   };
   return {

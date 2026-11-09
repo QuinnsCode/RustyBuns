@@ -141,6 +141,32 @@ test("a reply the route didn't declare, a rate limit and a 5xx come back as the 
   expect(m).toBe(1);
 });
 
+test("a token that can't do the call comes back TokenCantDo, with the scope that would", async () => {
+  const call = await boot();
+  opened.push(call);
+  const post = (url: string, body: unknown) => call("ana", url, { method: "POST", body: JSON.stringify(body) });
+  await post("/api/login", { name: "ana" });
+  for (const name of ["lab", "other"]) expect((await post("/api/repos", { name })).status).toBe(201);
+  const as = async (scope: string, repo?: string) => {
+    const { token } = await (await post("/api/tokens", { label: "agent", scope, ...(repo && { repo }) })).json() as { token: string };
+    return codesplitter({ url: ORIGIN, token, retries: 0, send: async (r) => call(null, r.url.slice(ORIGIN.length), { method: r.method, headers: r.headers, ...(r.body && { body: await r.text() }) }) });
+  };
+  const caught = async <Id extends string>(e: Effect.Effect<unknown, Failure<Id>>) => {
+    const exit = await Effect.runPromiseExit(e);
+    const f = Exit.isFailure(exit) ? exit.cause.reasons.find((r) => r._tag === "Fail") : undefined;
+    const err = f && "error" in f ? f.error : undefined;
+    return err ? [err._tag, "scope" in err ? err.scope : undefined] : ["ok"];
+  };
+  const read = await as("read"), write = await as("write"), held = await as("admin", "ana/lab");
+  const at = { owner: "ana", repo: "lab" };
+  expect([
+    await caught(read.call("add_file", { ...at, body: { path: "a.ts", content: "a" } })),
+    await caught(write.call("set_repo_visibility", { ...at, body: { visibility: "private" } })),
+    await caught(held.call("get_repo", { owner: "ana", repo: "other" })),
+    await caught(read.call("get_repo", at)),
+  ]).toEqual([["TokenCantDo", "write"], ["TokenCantDo", "admin"], ["TokenCantDo", undefined], ["ok"]]);
+});
+
 test("each agent route's failure comes back as the tag it declares", async () => {
   const call = await boot();
   opened.push(call);
