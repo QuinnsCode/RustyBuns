@@ -40,7 +40,7 @@ interface Op {
 /**
  * codeSplitter's named failures (#3804). A route's 4xx reply is `{error, tag, ...}`: `error` the sentence a person
  * reads, `tag` one of these, which a client matches on instead of guessing from the status (client.ts makes each one
- * an error class). Each is [its status, what it means]. Route files move onto tags one at a time: branches.ts, then worker.ts, then agent-routes.ts.
+ * an error class). Each is [its status, what it means]. Route files move onto tags one at a time: branches.ts, then worker.ts, agent-routes.ts and mirror.ts.
  * A 401 (sign in) and a 5xx stay untagged: the client makes them Unauthorized and Transient for every operation.
  */
 export const ERRORS = {
@@ -67,11 +67,16 @@ export const ERRORS = {
   NoSuchRoute: [404, "no API route there"],
   NoSuchRun: [404, "no coding-agent run by that id in this repo"],
   NotTheAgent: [403, "only an open thread's own agent answers as the agent, or closes it"],
+  UpstreamRefused: [403, "upstream turned the push away: the token can't write there, or upstream protects that branch"],
   NoSuchBranch: [404, "no branch by that name (open, for a parent or a merge)"],
   NoSuchFile: [404, "no such file on the branch"],
   NoSuchChange: [404, "that hunk changed or went: review the branch again"],
   NoSuchConflict: [404, "no conflict on that line now: review the branch again"],
   NoSuchHook: [404, "no hook by that name"],
+  NotAMirror: [404, "the repo doesn't keep in step with an upstream git"],
+  NoUpstreamBranch: [404, "upstream has no branch by that name"],
+  NoSuchTag: [404, "no tag by that name here"],
+  NoSuchFolder: [404, "upstream's branch has no folder by that path"],
   BranchExists: [409, "a branch by that name exists"],
   FileExists: [409, "the file exists"],
   BranchClosed: [409, "the branch is merged, not open"],
@@ -96,12 +101,26 @@ export const ERRORS = {
   AlreadyLanding: [409, "the batch is landing already"],
   BatchHeld: [409, "the batch didn't land: it waits, held, and the error says what stopped it"],
   HoldingLines: [409, "you hold lines in another file: let go of them before you wait in line here"],
+  FolderMirror: [409, "a folder mirror sends its work up as one branch: this takes a whole-repo mirror"],
+  NotUpstream: [409, "the branch hasn't gone upstream yet: push it first"],
+  PullOnly: [409, "the mirror is pull-only: nothing goes upstream"],
+  PrivateLines: [409, "the repo has private lines: nothing goes upstream until the crew's copy is pushed"],
+  MirrorMain: [409, "that's the branch the mirror keeps in step, not one to push"],
+  UpstreamClash: [409, "upstream's branch and main changed the same lines, or share no history: settle it upstream, then push again"],
+  UpstreamMoved: [409, "upstream's branch moved while pushing: push again"],
+  TagExists: [409, "upstream has a tag by that name on another commit"],
+  RepoExists: [409, "you have a repo by that name already"],
+  AlreadyMirror: [409, "the repo is a mirror already"],
+  NotAFork: [409, "only a whole repo dug from an upstream becomes a mirror"],
+  NoSyncBase: [409, "its git lost the commit it was dug at, so there's nothing to sync from: make a new mirror instead"],
+  CommitsAhead: [409, "commits made here would go up: say how many with `ahead`"],
   TooBig: [413, "the file is too big or too long to dig"],
   BinaryFile: [415, "a binary file: it has no lines to read or edit"],
   PipelineInvalid: [422, "codesplitter.pipeline.json doesn't parse"],
   BudgetSpent: [429, "the hosted agents' budget is spent for now"],
   AgentsUnavailable: [501, "coding agents don't run here"],
   NoEuStorage: [501, "this codeSplitter has no EU storage"],
+  GitUnavailable: [501, "mirrors need git on this machine: the desktop app has it"],
   AgentFailed: [502, "the coding agent didn't answer"],
 } as const satisfies Record<string, readonly [number, string]>;
 export type ErrorTag = keyof typeof ERRORS;

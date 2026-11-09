@@ -78,6 +78,25 @@ export class NotesFull extends Schema.TaggedError<NotesFull>()("NotesFull", name
 export class NothingWaiting extends Schema.TaggedError<NothingWaiting>()("NothingWaiting", named) {}
 export class AlreadyLanding extends Schema.TaggedError<AlreadyLanding>()("AlreadyLanding", named) {}
 export class BatchHeld extends Schema.TaggedError<BatchHeld>()("BatchHeld", named) {}
+export class UpstreamRefused extends Schema.TaggedError<UpstreamRefused>()("UpstreamRefused", named) {}
+export class NotAMirror extends Schema.TaggedError<NotAMirror>()("NotAMirror", named) {}
+export class NoUpstreamBranch extends Schema.TaggedError<NoUpstreamBranch>()("NoUpstreamBranch", named) {}
+export class NoSuchTag extends Schema.TaggedError<NoSuchTag>()("NoSuchTag", named) {}
+export class NoSuchFolder extends Schema.TaggedError<NoSuchFolder>()("NoSuchFolder", named) {}
+export class FolderMirror extends Schema.TaggedError<FolderMirror>()("FolderMirror", named) {}
+export class NotUpstream extends Schema.TaggedError<NotUpstream>()("NotUpstream", named) {}
+export class PullOnly extends Schema.TaggedError<PullOnly>()("PullOnly", named) {}
+export class PrivateLines extends Schema.TaggedError<PrivateLines>()("PrivateLines", named) {}
+export class MirrorMain extends Schema.TaggedError<MirrorMain>()("MirrorMain", named) {}
+export class UpstreamClash extends Schema.TaggedError<UpstreamClash>()("UpstreamClash", named) {}
+export class UpstreamMoved extends Schema.TaggedError<UpstreamMoved>()("UpstreamMoved", named) {}
+export class TagExists extends Schema.TaggedError<TagExists>()("TagExists", named) {}
+export class RepoExists extends Schema.TaggedError<RepoExists>()("RepoExists", named) {}
+export class AlreadyMirror extends Schema.TaggedError<AlreadyMirror>()("AlreadyMirror", named) {}
+export class NotAFork extends Schema.TaggedError<NotAFork>()("NotAFork", named) {}
+export class NoSyncBase extends Schema.TaggedError<NoSyncBase>()("NoSyncBase", named) {}
+export class CommitsAhead extends Schema.TaggedError<CommitsAhead>()("CommitsAhead", named) {}
+export class GitUnavailable extends Schema.TaggedError<GitUnavailable>()("GitUnavailable", named) {}
 
 type Named = { message: string; status: number; reply: unknown };
 /** One class per tag the server sends: a tag added to ERRORS without one here won't compile. */
@@ -89,6 +108,8 @@ export const NAMED = {
   MainProtected, NotYourCollection, NoSuchRepo, NoSuchUser, NotInCrew, NoPushClash, NoSuchCollection, NoSuchRoute, NoGit, PushClash,
   HoldingLines, TooBig, BinaryFile, NoEuStorage,
   NoSuchRun, NotTheAgent, PathLocked, RunEnded, NotesFull, NothingWaiting, AlreadyLanding, BatchHeld,
+  UpstreamRefused, NotAMirror, NoUpstreamBranch, NoSuchTag, NoSuchFolder, FolderMirror, NotUpstream, PullOnly, PrivateLines, MirrorMain,
+  UpstreamClash, UpstreamMoved, TagExists, RepoExists, AlreadyMirror, NotAFork, NoSyncBase, CommitsAhead, GitUnavailable,
 } satisfies { [K in ErrorTag]: new (a: Named) => { readonly _tag: K } };
 
 // What any call can meet, whatever the operation: they come from before a route answers, or from no answer at all.
