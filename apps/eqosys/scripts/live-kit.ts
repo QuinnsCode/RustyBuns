@@ -5,7 +5,7 @@ import { getJson } from "@rustybuns/util/http";
 import { ExchangeReply, SOCKET_PROTOCOL } from "@rustybuns/util/eqosys";
 import { HubState } from "../src/qollab/hub.ts";
 import { challengeOf } from "../src/members.ts";
-import { appOf } from "../src/apps.ts";
+import { ourApp } from "../src/apps.ts";
 
 export type Hub = Of<typeof HubState>;
 export type Person = { name: string; email: string; id: string; token: string; app: string; origin: string };
@@ -43,7 +43,7 @@ export async function liveCheck(title: string, body: (k: Kit) => Promise<void>):
 
   /** Sign up through the app's handoff, as its page does: /do/signup back to the app with a code, the code traded for a token. */
   const signUp = async (name: string, app: string): Promise<Person> => {
-    const origin = appOf(app)?.origins[0];
+    const origin = ourApp(app)?.origins[0];
     if (!origin) throw new Error(`${app} isn't an eqosys app with a page`);
     const email = `livecheck+${tag}-${name.toLowerCase()}@example.com`;
     const verifier = "v".repeat(20) + crypto.randomUUID().replaceAll("-", "");
@@ -71,6 +71,7 @@ export async function liveCheck(title: string, body: (k: Kit) => Promise<void>):
   const socket = <T>(path: string, p: Person, guard: Guard<T>) => {
     const got: T[] = [];
     let bad = "";
+    // @ts-expect-error Bun's WebSocket takes headers; the DOM type does not
     const ws = new WebSocket(`${base.replace(/^http/, "ws")}${path}`, { headers: { origin: p.origin }, protocols: [SOCKET_PROTOCOL, p.token] });
     sockets.push(ws);
     ws.onmessage = (e) => { const v = check(guard, JSON.parse(String(e.data))); if (v) got.push(v); else bad = String(e.data).slice(0, 200); };

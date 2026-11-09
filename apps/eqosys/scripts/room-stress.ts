@@ -27,7 +27,7 @@ if (process.argv[2] === "serve") {
   const env = { ROOM: durableObject(Relay, {}) };
   const shell = serve({ port: 0, hostname: "127.0.0.1" });
   shell.mount({
-    fetch(req, e) {
+    fetch(req, e: typeof env) {
       const u = new URL(req.url);
       if (u.pathname === "/stats") { const c = process.cpuUsage(); return Response.json({ cpuMs: (c.user + c.system) / 1000, msgs, handlerMs }); }
       return e.ROOM.getByName(u.searchParams.get("room") ?? "a").fetch(req);
