@@ -49,7 +49,7 @@ import { installCommand, applyOverrides, workspaceRoot, DEPLOY_DEPS } from "./gl
 import { workspacePrebuild } from "./glue/workspace-build.ts";
 import { Profiler } from "./profile.ts";
 import { adoptProblem, adoptQuestion, confirmAdopt, forceFresh, isolationFlags, ISOLATION_ARGS, modeLine } from "./isolation.ts";
-import { adoptNote, alchemyStage, bootstrapped, deployedIn, linkReferencedStates, linkSharedState, lockState, noteChild, transferNote, unlinkSharedState } from "./state.ts";
+import { adoptNote, alchemyStage, bootstrapped, deployedIn, linkReferencedStates, linkSharedState, lockState, noteChild, transferNote, unexportedClasses, unlinkSharedState } from "./state.ts";
 import { runScoped, spawnScoped, step } from "./lifecycle.ts";
 import { commitsBehindMain, protectedClassDrops, statefulDeletes, strayState } from "./guard.ts";
 import { checkSpend, costReport } from "./costs.ts";
@@ -908,6 +908,14 @@ function guardDeploy(sub: string, cfg: RustyBunsConfig, stage: string, waive: { 
   const stray = waive.force ? null : strayState(process.cwd(), cfg.name, stage, referencedApps(cfg.bindings ?? {}));
   if (stray) problems.push(`stage ${stage}'s Alchemy state is under the app name "${stray}", not "${cfg.name}": deploying would make every resource again. ` +
     `Move .alchemy/state/${stray} to .alchemy/state/${cfg.name} first, or pass --force.`);
+  // Cloudflare refuses the whole upload for a binding to a class the other app's Worker doesn't export yet (#4013).
+  const unexported = waive.force ? [] : unexportedClasses(process.cwd(), cfg, stage);
+  if (unexported.length) {
+    const apps = [...new Set(unexported.map((u) => u.app))];
+    problems.push(`${unexported.map((u) => `${u.binding} binds class ${u.className}`).join(", ")}, which ${apps.join(" and ")}'s Worker in stage ${stage} ` +
+      `doesn't export yet (its last deploy predates ${unexported.length === 1 ? "it" : "them"}), so Cloudflare would refuse this upload. ` +
+      `Deploy ${apps.join(", ")} --stage ${stage} first, then this app; or pass --force if that state is out of date.`);
+  }
   const deletes = waive.allowDelete ? [] : statefulDeletes(process.cwd(), cfg, stage, readFileSync(".rustybuns/alchemy.run.ts", "utf8"));
   // Not waived by --allow-delete: protect says no deploy deletes these, so protect comes off in a deploy of its own first.
   const kept = protectedClassDrops(process.cwd(), cfg, stage);
