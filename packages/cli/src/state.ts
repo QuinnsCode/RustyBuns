@@ -145,13 +145,40 @@ export function adoptNote(projectDir: string, cfg: Pick<RustyBunsConfig, "name" 
     `a deploy takes over the one already there by that name, if there is one. Anything else marked \`create\` is new.`;
 }
 
-/** Whether app `app` (the rustybuns app beside `projectDir`, in `apps/<app>`) has a Worker in stage `stage`'s Alchemy state. */
-export function deployedIn(projectDir: string, app: string, stage: string): boolean {
+/** App `app`'s (the rustybuns app beside `projectDir`, in `apps/<app>`) Worker state file in stage `stage`, if it has one. */
+function workerState(projectDir: string, app: string, stage: string): string | undefined {
   const dir = resolve(projectDir, "..", app);
   const base = sharedStateBase(dir);
   return [base && join(base, "state"), join(dir, ".alchemy", "state")]
-    .some((s) => !!s && existsSync(join(s, app, stage, "Worker.json")));
+    .map((s) => s && join(s, app, stage, "Worker.json")).find((f): f is string => !!f && existsSync(f));
 }
+
+/** Whether app `app` (the rustybuns app beside `projectDir`, in `apps/<app>`) has a Worker in stage `stage`'s Alchemy state. */
+export function deployedIn(projectDir: string, app: string, stage: string): boolean {
+  return workerState(projectDir, app, stage) !== undefined;
+}
+
+/**
+ * Durable Object bindings into another app (`app`) whose class that app's last deploy in `stage` doesn't export,
+ * as "BINDING (class C in app)" (#4013). Cloudflare refuses the whole upload for one, so the deploy that binds it waits
+ * for the other app's. An app not deployed in the stage is left to the ref (or a bootstrap stage), and a state file
+ * that names no classes can't say, so neither is listed.
+ */
+export function unexportedClasses(projectDir: string, cfg: Pick<RustyBunsConfig, "bindings">, stage: string): { binding: string; className: string; app: string }[] {
+  const out: { binding: string; className: string; app: string }[] = [];
+  for (const [binding, b] of Object.entries(cfg.bindings ?? {})) {
+    if (b.type !== "durable_object" || !b.app || b.scriptName) continue;
+    const file = workerState(projectDir, b.app, stage);
+    let state: unknown = null;
+    try { state = file ? JSON.parse(readFileSync(file, "utf8")) : null; } catch { /* unreadable: can't say */ }
+    const attr = isRecord(state) ? state.attr : undefined;
+    const classes = isRecord(attr) ? attr.durableObjectNamespaces : undefined;
+    if (isRecord(classes) && !(b.className in classes)) out.push({ binding, className: b.className, app: b.app });
+  }
+  return out;
+}
+
+const isRecord = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v);
 
 /**
  * Make each app in `apps` (beside `projectDir`, in `apps/<app>`) readable from this app's state, so a

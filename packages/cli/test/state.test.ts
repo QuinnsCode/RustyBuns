@@ -3,7 +3,7 @@ import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSy
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { RustyBunsConfig } from "../src/config.ts";
-import { adoptNote, alchemyStage, bootstrapped, deployedIn, linkReferencedStates, linkSharedState, lockState, sharedStateBase, unlinkSharedState } from "../src/state.ts";
+import { adoptNote, alchemyStage, bootstrapped, deployedIn, linkReferencedStates, linkSharedState, lockState, sharedStateBase, unexportedClasses, unlinkSharedState } from "../src/state.ts";
 
 function repoWithWorktree() {
   const root = realpathSync(mkdtempSync(join(tmpdir(), "rb-state-")));
@@ -142,4 +142,25 @@ test("cross-app refs: an app that binds another reads that app's stack, each sta
   expect(linkReferencedStates(qollab, ["eqosys", "nobody"])).toEqual([]);
   expect(lstatSync(join(qBase, "state", "eqosys")).isDirectory()).toBe(true);
   expect(existsSync(join(qBase, "state", "nobody"))).toBe(false);
+});
+
+test("cross-app Durable Objects: a class the other app's last deploy doesn't export is named before the upload", () => {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "rb-classes-")));
+  const qollab = join(root, "qollab"), eqState = join(root, "eqosys", ".alchemy", "state", "eqosys", "live_me");
+  mkdirSync(qollab);
+  const cfg: Pick<RustyBunsConfig, "bindings"> = { bindings: {
+    VAULT: { type: "durable_object", className: "Vault", app: "eqosys" },
+    HUB: { type: "durable_object", className: "Hub" },
+  } };
+  // eqosys not deployed in the stage: the ref (or a bootstrap stage) says so, not this.
+  expect(unexportedClasses(qollab, cfg, "live_me")).toEqual([]);
+  // Deployed before Vault: qollab's upload would be refused.
+  mkdirSync(eqState, { recursive: true });
+  const deployed = (classes: Record<string, string>) =>
+    writeFileSync(join(eqState, "Worker.json"), JSON.stringify({ resourceType: "Cloudflare.Worker", attr: { durableObjectNamespaces: classes } }));
+  deployed({ Hub: "a" });
+  expect(unexportedClasses(qollab, cfg, "live_me")).toEqual([{ binding: "VAULT", className: "Vault", app: "eqosys" }]);
+  // eqosys deployed again with Vault: clear.
+  deployed({ Hub: "a", Vault: "b" });
+  expect(unexportedClasses(qollab, cfg, "live_me")).toEqual([]);
 });
