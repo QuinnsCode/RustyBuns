@@ -4,17 +4,12 @@
 // settings. Automatic follows the browser's zone.
 import { hot } from "../reload/hot.ts";
 import { KEY, browserZone, clock, zones } from "./time.ts";
+import { el } from "@rustybuns/util/dom";
 
 const saved = () => { try { return localStorage.getItem(KEY); } catch { return null; } };
 const save = (zone: string) => { try { zone ? localStorage.setItem(KEY, zone) : localStorage.removeItem(KEY); } catch {} };
 
 (globalThis as { __rbClock?: (at: number) => string }).__rbClock = (at) => clock(at, saved());
-
-const el = <K extends keyof HTMLElementTagNameMap>(tag: K, props: Partial<HTMLElementTagNameMap[K]> = {}, ...kids: (Node | string)[]) => {
-  const e = Object.assign(document.createElement(tag), props);
-  e.append(...kids);
-  return e;
-};
 
 /** The setting, built like the office's own (div.setting, its head, a "Just you" scope). */
 function setting() {

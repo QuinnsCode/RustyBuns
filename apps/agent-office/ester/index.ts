@@ -7,6 +7,7 @@ import { hot } from "../reload/hot.ts";
 import type { ContextAlert, ModeEvent } from "./dexter.ts";
 import { helperState } from "../screens/read.ts";
 import type { EsterState } from "./run.ts";
+import { el } from "@rustybuns/util/dom";
 
 type Name = "ester" | "mervin" | "dexter";
 const WHO: Record<Name, { label: string; icon: IconNode; ask: string; job: string }> = {
@@ -16,12 +17,6 @@ const WHO: Record<Name, { label: string; icon: IconNode; ask: string; job: strin
 };
 const HEADER = { "x-rb-triage": "1" };
 const IDLE: EsterState = { phase: "idle", lines: [], hold: [] };
-
-const el = <K extends keyof HTMLElementTagNameMap>(tag: K, props: Partial<HTMLElementTagNameMap[K]> = {}, ...kids: (Node | string)[]) => {
-  const e = Object.assign(document.createElement(tag), props);
-  e.append(...kids);
-  return e;
-};
 
 const clock = (s: EsterState) => {
   const t = Math.round(((s.endedAt ?? Date.now()) - (s.startedAt ?? Date.now())) / 1000);

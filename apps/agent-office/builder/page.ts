@@ -2,14 +2,9 @@
 // last night's desktop builds (builder/server.ts).
 import { createElement, Hammer } from "lucide";
 import type { Nightly, Status } from "./server.ts";
+import { el } from "@rustybuns/util/dom";
 
 type State = { connections: { account: string; status: Status }[]; setup: string; nightly: Nightly | null };
-
-const el = <K extends keyof HTMLElementTagNameMap>(tag: K, props: Partial<HTMLElementTagNameMap[K]> = {}, ...kids: (Node | string)[]) => {
-  const e = Object.assign(document.createElement(tag), props);
-  e.append(...kids);
-  return e;
-};
 
 export function statusLine(s: State): string {
   const c = s.connections[0];

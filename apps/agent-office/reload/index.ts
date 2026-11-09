@@ -4,12 +4,8 @@
 // office's (live/reload.ts, /__rb/reload).
 import type { ReloadState } from "../live/reload.ts";
 import type { Hot } from "./hot.ts";
+import { el } from "@rustybuns/util/dom";
 
-const el = <K extends keyof HTMLElementTagNameMap>(tag: K, props: Partial<HTMLElementTagNameMap[K]> = {}, ...kids: (Node | string)[]) => {
-  const e = Object.assign(document.createElement(tag), props);
-  e.append(...kids);
-  return e;
-};
 const typing = () => {
   const a = document.activeElement as HTMLElement | null;
   return !!a && (a.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName));

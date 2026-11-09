@@ -10,6 +10,7 @@
 // The data: /__rb/helpers (ester/run.ts) every few seconds, /__rb/line every minute.
 import { CanvasTexture, Group, Matrix4, Mesh, MeshBasicMaterial, PlaneGeometry, Raycaster, SRGBColorSpace, Vector2, Vector3, type Camera, type Object3D, type Scene } from "three";
 import type { EsterState } from "../ester/run.ts";
+import { el } from "@rustybuns/util/dom";
 import {
   SCREENS, STATIONS, avoided, clock, esterStack, fixPrompt, helperState, line, mergedPrs, mervinBoard, openPrs, preventedOf, slots, tallyOf,
   type MergedPr, type OpenPr, type Screen, type Tally,
@@ -386,12 +387,6 @@ function fix(pr: number) {
 }
 
 // ---- the setting --------------------------------------------------------------------------------------------
-
-const el = <K extends keyof HTMLElementTagNameMap>(tag: K, props: Partial<HTMLElementTagNameMap[K]> = {}, ...kids: (Node | string)[]) => {
-  const e = Object.assign(document.createElement(tag), props);
-  e.append(...kids);
-  return e;
-};
 
 const LABEL: Record<Screen, string> = { gitpath: "gitpath", mervin: "Mervin", ester: "Ester" };
 function check(name: keyof Saved, label: string, then: () => void, title = "") {

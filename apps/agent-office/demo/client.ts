@@ -10,17 +10,13 @@ import "../setup/page.ts";
 import { SIZE, paint, press } from "../screens/index.ts";
 import { fromHash } from "./scenarios.ts";
 import { SCREENS, type Screen } from "../screens/read.ts";
+import { el } from "@rustybuns/util/dom";
 
 interface State {
   scenario: string; about: string; serves: number[]; scenarios: Record<string, { about: string; serves: number[] }>;
   workers: { name: string; state: string; task: string }[]; log: string[]; queued: string[]; waiting: boolean; screens: Screen[]; asking: number;
 }
 
-const el = <K extends keyof HTMLElementTagNameMap>(tag: K, props: Partial<HTMLElementTagNameMap[K]> = {}, ...kids: (Node | string)[]) => {
-  const e = Object.assign(document.createElement(tag), props);
-  e.append(...kids);
-  return e;
-};
 const icon = (n: IconNode) => createElement(n);
 const post = (path: string) => fetch(path, { method: "POST" }).then((r) => r.json());
 const get = async (): Promise<State> => (await fetch("/__stage/state")).json();

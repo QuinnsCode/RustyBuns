@@ -2,6 +2,7 @@
 // skip the frame on false. This answers from policy.ts, keeps the renderer's pixel ratio in step, and adds a
 // Graphics setting to Settings › You, kept in this browser like the time zone.
 import { KEY, fps, gate, parseMode, pixelRatio, type Mode } from "./policy.ts";
+import { el } from "@rustybuns/util/dom";
 
 const saved = (): Mode => { try { return parseMode(localStorage.getItem(KEY)); } catch { return "auto"; } };
 const save = (m: Mode) => { try { m === "auto" ? localStorage.removeItem(KEY) : localStorage.setItem(KEY, m); } catch {} };
@@ -24,12 +25,6 @@ type Renderer = { getPixelRatio(): number; setPixelRatio(r: number): void };
   const want = pixelRatio(mode, onBattery, devicePixelRatio);
   if (app.renderer && app.renderer.getPixelRatio() !== want) app.renderer.setPixelRatio(want);
 });
-
-const el = <K extends keyof HTMLElementTagNameMap>(tag: K, props: Partial<HTMLElementTagNameMap[K]> = {}, ...kids: (Node | string)[]): HTMLElementTagNameMap[K] => {
-  const e = Object.assign(document.createElement(tag), props);
-  e.append(...kids);
-  return e;
-};
 
 const NOTES: Record<Mode, string> = {
   auto: "Up to 60 frames a second while you play, 30 while you watch, 15 in the background; less, and fewer pixels, on battery.",
