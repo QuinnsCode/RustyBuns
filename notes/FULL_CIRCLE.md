@@ -50,7 +50,23 @@ This page is the picture and the gaps. Each layer's own design stays in its own 
 The engine's in-process Durable Objects and sqlite adapters ([ROADMAP.md](ROADMAP.md), the `ws / stateful` row) mean
 many small games can share one Linux host instead of one Worker and set of bindings each. Hot games stay on Cloudflare;
 the long tail packs onto a box. That is the scaling story: a studio's tenth game costs close to nothing to keep up.
-Not tried with more than one game on a host yet.
+
+Measured with `bun scripts/one-box.ts` (#4056): it builds each game's box host, starts them side by side on one
+machine, opens rooms of sockets on each and reads every host's memory. On the builder Mac (darwin-arm64, Bun 1.4.3),
+16 rooms of 4 players in each game, held 20 s:
+
+| Game | Idle | 16 rooms in |
+| --- | --- | --- |
+| park-hide-seek | 43 MB | 63 MB |
+| git-recon | 28 MB | 41 MB |
+| both | 70 MB | 104 MB |
+
+A room costs about 1 MB on the box. On Cloudflare an awake room bills its full 128 MB of Durable Object duration:
+$0.0058 an hour past the 868 room-hours Workers Paid includes, $4.15 a month for a room open around the clock.
+So a 4 GB box holds about 60 games like these, a few euros a month for all of them, where each always-busy room on
+Cloudflare is $4. The same run on Linux is [#4084](https://github.com/QuinnsCode/RustyBuns/issues/4084) (a manual run).
+What's still missing is the deploy: each app's stack makes its own Hetzner server, so two apps get two servers.
+A shared box host is [#4083](https://github.com/QuinnsCode/RustyBuns/issues/4083).
 
 ## The gaps, in order
 
@@ -64,7 +80,9 @@ Not tried with more than one game on a host yet.
 4. **Games from other studios in the Library** ([#4055](https://github.com/QuinnsCode/RustyBuns/issues/4055)). Today `APPS` is our list. A studio's game needs a review step before it
    is on everyone's shelf. Designed in [apps/eqosys/LIBRARY.md](../apps/eqosys/LIBRARY.md); the build is
    [#4075](https://github.com/QuinnsCode/RustyBuns/issues/4075), after the template.
-5. **Many games on one box** ([#4056](https://github.com/QuinnsCode/RustyBuns/issues/4056)). One Hetzner host running two games' Workers in-process, measured.
+5. **Many games on one box** ([#4056](https://github.com/QuinnsCode/RustyBuns/issues/4056)). Measured (above): two games share a host at about 1 MB a room.
+   Left: the shared box host in the deploy ([#4083](https://github.com/QuinnsCode/RustyBuns/issues/4083)) and the Linux run
+   ([#4084](https://github.com/QuinnsCode/RustyBuns/issues/4084)).
 6. **Qollab sold alone** ([#3978](https://github.com/QuinnsCode/RustyBuns/issues/3978)), for makers who bring their own
    sign-in.
 
