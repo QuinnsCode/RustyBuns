@@ -185,6 +185,10 @@ Before a go-live, `bun scripts/live-check.ts --url https://eqosys-preview.qntbr.
 stage: two throwaway `livecheck+…@example.com` accounts sign up through Park Hide & Seek's handoff, ask and accept by email,
 see each other online on the hub socket, meet in a party by code, unfriend, and are deleted (even when a step fails), so it
 is safe on production too. One line a step; the first failure exits 1.
+`bun scripts/live-check-two-fronts.ts --url https://eqosys.qntbr.com` does the same for Two Fronts' party seats (#3895):
+two friends ready up and start, each claims its own seat in the same war with its start ticket, a third account is told to
+join the party first, and the host's "Chat: Only the host" refuses the friend's message. Two Fronts trusts only the eqosys
+it was built for, so `--url` must be that one (`--game` points at another Two Fronts).
 
 Not yet: an app opening the hub (Park Hide & Seek signs in but doesn't say where it is hiding yet).
 
