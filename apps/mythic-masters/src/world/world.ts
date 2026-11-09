@@ -4,6 +4,7 @@
 import { clamp, lerp } from "@rustybuns/util";
 import { int, obj, rec, str } from "@rustybuns/util/guard";
 import { ROWS as CREATURES } from "../creatures.ts";
+import { roamingEvents } from "../packs.ts";
 import { REGIONS, type Biome, type Region } from "../regions.ts";
 import { awake, inSeason, ROAM_WEIGHT, tierOf, TIER_LEVEL } from "../tiers.ts";
 import { GRID, PLACES } from "./places.ts";
@@ -523,16 +524,18 @@ export const TICK_R = 2;         // dens further than this many regions from you
 export interface Wild { den: string; id: string; region: number; level: number; x: number; z: number; heading: number }
 
 /** Who may roam region n on a day: its own creatures three times over and the ones from the regions either side
- * once, each as often as its tier turns up (src/tiers.ts); mythics stay home, event creatures keep their season, and
- * the night ones (`NIGHT` there) come out only when `night` is set. */
+ * once, each as often as its tier turns up (src/tiers.ts); mythics stay home, event creatures keep their season (and
+ * an in-season pack's, src/packs.ts, roam every region, so you meet the pack before its island), and the night
+ * ones (`NIGHT` there) come out only when `night` is set. */
 const pools = new Map<string, Map<number, string[]>>();
 export function poolOf(n: number, date: Date, night = false): string[] {
   const day = `${date.getMonth()}-${date.getDate()}-${night}`;
   let byRegion = pools.get(day);
   if (!byRegion) {
+    const roaming = roamingEvents(date);
     byRegion = new Map(REGIONS.map((g) => [g.n, CREATURES.flatMap((c) => {
       const home = c.region === g.n, t = tierOf(c.id);
-      if (!inSeason(c.id, date) || !awake(c.id, night) || !(home || (Math.abs(c.region - g.n) === 1 && t !== "mythic"))) return [];
+      if (!inSeason(c.id, date) || !awake(c.id, night) || !(home || roaming.has(c.id) || (Math.abs(c.region - g.n) === 1 && t !== "mythic"))) return [];
       return Array<string>(ROAM_WEIGHT[t] * (home ? 3 : 1)).fill(c.id);
     })]));
     if (pools.size > 1) pools.clear();

@@ -1,0 +1,18 @@
+{
+  "name": "Grýla's kitchen under the fell",
+  "region": "yule-isle",
+  "walls": { "out": 5, "height": 13, "jag": 1.8, "color": 4869178 },
+  "roof": { "height": 16, "color": 3092271 },
+  "fog": { "near": 12, "far": 46, "color": 1316890 },
+  "lights": [
+    { "at": [0, 1.2, -13], "color": 16744490, "power": 110, "flicker": 0.6 },
+    { "at": [-11, 4, 7], "color": 16752202, "power": 60, "flicker": 0.4 },
+    { "at": [10, 6, 8], "color": 10541055, "power": 40, "flicker": 0.1 }
+  ],
+  "rooms": [
+    { "at": 180, "r": 6, "light": { "color": 16744490, "power": 30, "flicker": 0.5 } },
+    { "at": 60, "r": 4.5 },
+    { "at": 300, "r": 5 }
+  ],
+  "critters": [{ "kind": "bats", "n": 18 }, { "kind": "rats", "n": 10 }, { "kind": "glowworms", "n": 24 }]
+}

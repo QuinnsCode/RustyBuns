@@ -1,0 +1,23 @@
+{
+  "legends": {
+    "krampus": {
+      "legend": "On the night of 5 December, Saint Nicholas goes from house to house with gifts for the good children. Behind him comes the Krampus: black, shaggy, horned, a long red tongue hanging out, one goat's hoof and one man's foot, chains rattling and a bundle of birch switches for the bad ones. The worst go in the basket on his back. In the Alpine towns young men still dress as him and run through the streets that night.",
+      "from": "The eastern Alps (Austria, Bavaria, South Tyrol, Slovenia), a figure of the Saint Nicholas customs since at least the 1600s; the Krampus runs (Krampuslauf) are a living street custom.",
+      "sources": ["Maurice Bruce, The Krampus in Styria, Folklore 69 (1958)", "Al Ridenour, The Krampus and the Old, Dark Christmas (2016)"],
+      "sacred": "Saint Nicholas is a saint of the church and is marked sacred: he is in the island's story, never a fighter. The Krampus himself is a folk devil of the customs, not held sacred."
+    },
+    "gryla": {
+      "legend": "Grýla lives in a cave in the mountains with her lazy third husband Leppalúði, her thirteen sons the Yule Lads and the Yule Cat. At Yule she comes down to the farms for the children who misbehaved, puts them in her sack and takes them home to her pot. The old rhymes give her fifteen tails with a hundred bags on each, hooves, and ears that hang down to her shoulders.",
+      "from": "Iceland. Her name is in a list of troll-women's names in Snorri's Edda (1200s); the rhymes about her are from the 1600s on, and she became the Yule Lads' mother in the 1700s.",
+      "sources": ["Snorri Sturluson, Edda: Skáldskaparmál, the þulur of troll-women's names (1200s)", "Árni Björnsson, Icelandic Feasts and Holidays (1980)", "Jóhannes úr Kötlum, Jólin koma (1932)"],
+      "sacred": "Nothing sacred. A tale told to frighten children, so famously that a 1746 public decree is said to have forbidden it."
+    },
+    "kallikantzaros": {
+      "legend": "All year the kallikantzaroi live under the earth, sawing at the tree that holds the world up. On Christmas Eve, with the trunk nearly through, they climb out for the twelve nights to make mischief: they ride people like horses, sour the milk, foul the food and come down the chimney, so the fire is kept burning. At Epiphany the waters are blessed and they flee back under, to find the tree healed and start sawing again.",
+      "from": "Greece and the southern Balkans, from the Byzantine centuries on; told in villages into the 1900s.",
+      "sources": ["Leo Allatius, De Graecorum hodie quorundam opinationibus (1645)", "John Cuthbert Lawson, Modern Greek Folklore and Ancient Greek Religion (1910)"],
+      "sacred": "The blessing of the waters at Epiphany is a living rite of the Orthodox church: it is in the story as what sends them home, never shown as a fight."
+    }
+  },
+  "sacred": ["Saint Nicholas"]
+}

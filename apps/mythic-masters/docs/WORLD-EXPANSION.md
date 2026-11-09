@@ -198,6 +198,11 @@ Each item is one PR, and each is useful on its own.
    glides you down any slope steeper than 8% at half again your pace, and nothing goes past `PACE_MAX` (20 m/s, a near
    patch every three seconds). The south (9-16) needs a swimmer in the line-up, the Andes a flier as well. Burrow and a
    ridden run are later.
-6. **Packs:** the format and the first pack, a winter island in time for the December legends: #3960.
+6. **Packs:** the format and the first pack, a winter island in time for the December legends. Format done in #3960:
+   `src/packs.ts` reads each `packs/<id>/` through a guard, and `test/packs.test.ts` checks its lore, licences,
+   sacred marks, the island's place by its port and its places' spacing. The first pack is `packs/yule-isle/` (Krampus,
+   Grýla and the kallikantzaros, a lair, ten places and the narrator's lines), and through its season (1 December to
+   6 January) the Yule Cat roams every playable region. Still to come: the island as a map reached by boat (#3992), and
+   its three beasts as fighters (#3993).
 
 Distant tree cards and the shrouded teasers are follow-ups once those land.

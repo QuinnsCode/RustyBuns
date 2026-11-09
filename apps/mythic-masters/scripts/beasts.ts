@@ -52,7 +52,12 @@ if (flags.has("--shots")) {
   process.exit(0);
 }
 if (flags.has("--silhouette") && picked.length !== 1) { console.error("--silhouette takes one beast id"); process.exit(1); }
-const ids = readdirSync(join(APP, "beasts")).filter((f) => f.endsWith(".json")).map((f) => f.slice(0, -5)).filter((id) => picked.length === 0 || picked.includes(id));
+// A sheet's path by id: every one in beasts/, and a pack's (packs/<id>/beasts/) only when named, since a pack's beasts
+// are built when they join the roster.
+const sheetsIn = (dir: string) => readdirSync(join(APP, dir)).filter((f) => f.endsWith(".json")).map((f) => [f.slice(0, -5), `${dir}/${f}`] as const);
+const SHEETS = new Map([...readdirSync(join(APP, "packs")).flatMap((p) => sheetsIn(`packs/${p}/beasts`)), ...sheetsIn("beasts")]);
+const packSheet = (id: string) => !SHEETS.get(id)!.startsWith("beasts/");
+const ids = [...SHEETS.keys()].filter((id) => picked.length === 0 ? !packSheet(id) : picked.includes(id));
 if (ids.length === 0) { console.error("no beast sheets matched"); process.exit(1); }
 
 // The decimator is chaotic and the snap step in beast.py picks which valid decimation a beast gets, so a step can
@@ -65,7 +70,7 @@ const SNAP_STEPS = ["1e-3", "5e-4", "2e-3", "2.5e-4", "4e-3", "1e-4"];
 const BLENDER_THREADS = "8";
 
 async function blender(id: string, step: string): Promise<string[]> {
-  const args = ["blender", "-b", "--factory-startup", "--python-exit-code", "1", "-t", BLENDER_THREADS, "-P", "blender/beast.py", "--", `beasts/${id}.json`, ...(flags.has("--render") ? ["--render"] : []), ...(flags.has("--silhouette") ? ["--silhouette"] : [])];
+  const args = ["blender", "-b", "--factory-startup", "--python-exit-code", "1", "-t", BLENDER_THREADS, "-P", "blender/beast.py", "--", SHEETS.get(id)!, ...(flags.has("--render") ? ["--render"] : []), ...(flags.has("--silhouette") ? ["--silhouette"] : [])];
   const p = Bun.spawn(args, { cwd: APP, env: { ...process.env, SNAP_STEP: step }, stdout: "pipe", stderr: "pipe" });
   const out = await new Response(p.stdout).text() + await new Response(p.stderr).text();
   if ((await p.exited) !== 0) throw new Error(`blender failed on ${id}:\n${out.split("\n").filter((l) => /Error|Traceback|line \d+/.test(l)).join("\n")}`);
@@ -96,7 +101,7 @@ async function rig(id: string, feet: number, expectWings?: number) {
 }
 
 async function build(id: string): Promise<Built> {
-  const sheet = Sheet(await Bun.file(join(APP, "beasts", `${id}.json`)).json());
+  const sheet = Sheet(await Bun.file(join(APP, SHEETS.get(id)!)).json());
   if (flags.has("--rig-only")) return { id, sheet, notes: [], r: await rig(id, sheet.feet, sheet.wings) };
   let built: Built | undefined;
   for (const step of SNAP_STEPS) {
@@ -115,7 +120,7 @@ function report({ id, sheet, notes, r }: Built) {
 
 if (flags.has("--watch")) {
   if (picked.length !== 1) { console.error("--watch takes one beast id"); process.exit(1); }
-  const id = picked[0]!, sheetPath = join(APP, "beasts", `${id}.json`);
+  const id = picked[0]!, sheetPath = join(APP, SHEETS.get(id) ?? `beasts/${id}.json`);
   const rebuild = async () => { try { report(await build(id)); } catch (e) { console.error(e instanceof Error ? e.message : e); } };
   await rebuild();
   console.log(`watching beasts/${id}.json: a save rebuilds it, and a running dev server (bun run dev) swaps it into ?gallery`);
