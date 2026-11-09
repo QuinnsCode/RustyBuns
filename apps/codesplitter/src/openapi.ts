@@ -48,6 +48,7 @@ export const ERRORS = {
   BadBranchName: [400, "a branch name git wouldn't take"],
   NoHarness: [400, "that coding agent isn't installed on this machine"],
   TextOnlyMainOrBranch: [400, "this conflict takes main or branch, not text"],
+  TooManyInvites: [400, "the repo has as many pending invites as it keeps: revoke some first"],
   NoWriteAccess: [403, "you aren't on the repo's crew, or the token is read-only"],
   OwnerOnly: [403, "only the repo's owner does this"],
   PersonOnly: [403, "a person's word, said on the site signed in: an API token can't give it"],
@@ -59,6 +60,7 @@ export const ERRORS = {
   PolicyFile: [403, "only the owner changes the path policy or the checks' commands on main"],
   MainProtected: [403, "main is protected: edit on a branch, and the owner merges it"],
   NotYourCollection: [403, "that collection isn't yours"],
+  NotYourInvite: [403, "the invite is made out to someone else, or to a person and not an agent"],
   NoSuchRepo: [404, "no such repo, or it's private and you can't see it"],
   NoSuchUser: [404, "no one has that handle here"],
   NotInCrew: [404, "they aren't on the repo's crew"],
@@ -77,6 +79,7 @@ export const ERRORS = {
   NoUpstreamBranch: [404, "upstream has no branch by that name"],
   NoSuchTag: [404, "no tag by that name here"],
   NoSuchFolder: [404, "upstream's branch has no folder by that path"],
+  NoSuchInvite: [404, "no pending invite by that id or link: it was revoked, or never was"],
   BranchExists: [409, "a branch by that name exists"],
   FileExists: [409, "the file exists"],
   BranchClosed: [409, "the branch is merged, not open"],
@@ -114,8 +117,11 @@ export const ERRORS = {
   NotAFork: [409, "only a whole repo dug from an upstream becomes a mirror"],
   NoSyncBase: [409, "its git lost the commit it was dug at, so there's nothing to sync from: make a new mirror instead"],
   CommitsAhead: [409, "commits made here would go up: say how many with `ahead`"],
+  AlreadyInCrew: [409, "they're on the repo's crew already"],
   TooBig: [413, "the file is too big or too long to dig"],
   BinaryFile: [415, "a binary file: it has no lines to read or edit"],
+  InviteUsed: [410, "the invite was used already: ask whoever sent it for another"],
+  InviteExpired: [410, "the invite expired: ask whoever sent it for another"],
   PipelineInvalid: [422, "codesplitter.pipeline.json doesn't parse"],
   BudgetSpent: [429, "the hosted agents' budget is spent for now"],
   AgentsUnavailable: [501, "coding agents don't run here"],
@@ -203,6 +209,12 @@ export const OP_ERRORS = {
   list_upstream_tags: [...MIRROR_BRANCH, "NotAMirror", "PrivateLines"],
   fetch_upstream_tags: [...MIRROR_BRANCH, "OwnerOnly", "BadInput", "NotAMirror", "PrivateLines"],
   push_tag_upstream: [...MIRROR_BRANCH, "OwnerOnly", "BadInput", "NotAMirror", "PrivateLines", "PullOnly", "NoSuchTag", "TagExists"],
+  // invites.ts
+  list_invites: [...REPO, "OwnerOnly"],
+  create_invite: [...REPO, "OwnerOnly", "BadInput", "NoSuchUser", "AlreadyInCrew", "TooManyInvites"],
+  revoke_invite: [...REPO, "OwnerOnly", "NoSuchInvite"],
+  get_invite: ["NoSuchInvite", "InviteUsed", "InviteExpired"],
+  claim_invite: ["BadInput", "NoSuchInvite", "InviteUsed", "InviteExpired", "NotYourInvite", "AlreadyInCrew"],
 } as const satisfies Record<string, readonly ErrorTag[]>;
 export type OpWithErrors = keyof typeof OP_ERRORS;
 

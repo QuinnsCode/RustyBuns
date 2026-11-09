@@ -231,3 +231,33 @@ test("each mirror route's failure comes back named, and with no git in its words
   expect(gone.status).toBe(502);
   expect((await gone.json() as { error: string }).error).not.toMatch(/fatal|does not appear|repository/i);
 });
+
+test("each invite route's failure comes back as the tag it declares", async () => {
+  const call = await boot();
+  opened.push(call);
+  const as = (user: string) => codesplitter({ url: ORIGIN, retries: 0, send: async (r) => call(user, r.url.slice(ORIGIN.length), { method: r.method, headers: r.headers, ...(r.body && { body: await r.text() }) }) });
+  for (const u of ["ana", "bo", "cy"]) await call(u, "/api/login", { method: "POST", body: JSON.stringify({ name: u }) });
+  const ana = as("ana"), bo = as("bo"), cy = as("cy"), at = { owner: "ana", repo: "lab" };
+  expect(await tagOf(ana.call("create_repo", { body: { name: "lab" } }))).toBe("ok");
+  expect(await tagOf(ana.call("invite", { ...at, body: { name: "bo" } }))).toBe("ok");
+  const made = async (body: Record<string, unknown>) => (await Effect.runPromise(ana.call("create_invite", { ...at, body }))) as { id: string; token: string };
+  const forCy = await made({ handle: "cy" }), link = await made({}), used = await made({});
+  expect(await tagOf(cy.call("claim_invite", { body: { invite: used.token, as: "person" } }))).toBe("ok");
+
+  const cases: [string, Effect.Effect<unknown, Failure<OpWithErrors>>, string][] = [
+    ["the crew listing invites", bo.call("list_invites", at), "OwnerOnly"],
+    ["a handle and an email", ana.call("create_invite", { ...at, body: { handle: "cy", email: "cy@example.com" } }), "BadInput"],
+    ["a handle nobody has", ana.call("create_invite", { ...at, body: { handle: "nobody" } }), "NoSuchUser"],
+    ["someone on the crew already", ana.call("create_invite", { ...at, body: { handle: "bo" } }), "AlreadyInCrew"],
+    ["revoking one there isn't", ana.call("revoke_invite", { ...at, id: "nope" }), "NoSuchInvite"],
+    ["a link that never was", ana.call("get_invite", { token: "csi_nothing" }), "NoSuchInvite"],
+    ["a link someone used", bo.call("get_invite", { token: used.token }), "InviteUsed"],
+    ["claiming as neither", bo.call("claim_invite", { body: { invite: link.token, as: "cat" } }), "BadInput"],
+    ["claiming someone else's", bo.call("claim_invite", { body: { invite: forCy.token, as: "person" } }), "NotYourInvite"],
+    ["an agent through a person's invite", bo.call("claim_invite", { body: { invite: forCy.token, as: "agent" } }), "NotYourInvite"],
+    ["claiming into a crew you're on", bo.call("claim_invite", { body: { invite: link.token, as: "person" } }), "AlreadyInCrew"],
+  ];
+  const got = [];
+  for (const [why, e, want] of cases) got.push([why, await tagOf(e), want]);
+  expect(got.filter(([, tag, want]) => tag !== want)).toEqual([]);
+});
