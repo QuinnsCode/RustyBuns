@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { deckDemandOf, demandOf, reactionOf, thumbAt, worldLineOf, type Back, type Outcome } from "../src/demand.ts";
+import { deckDemandOf, demandOf, reactionOf, settingsLineOf, thumbAt, worldLineOf, type Back, type Outcome } from "../src/demand.ts";
 import { newJourney } from "../src/journey.ts";
 import { ROSTER } from "../src/roster.ts";
 
@@ -57,6 +57,12 @@ describe("the book on the bestiary deck", () => {
     expect(deckDemandOf(j).ask).toEndWith("You have seen it. Bring it.");
     j.journal = ROSTER.filter((c) => !j.party.some((m) => m.id === c.id)).map((c) => ({ ...j.party[0]!, id: c.id }));
     expect(deckDemandOf(j)).toEqual({ ask: "Every card in this deck is mine. Keep them in order.", signed: false });
+  });
+
+  test("the Settings card: a different note over a fight than on the title, and it notices the quill turned down", () => {
+    const lines = [settingsLineOf({ paused: false, quillMuted: false }), settingsLineOf({ paused: true, quillMuted: false }), settingsLineOf({ paused: true, quillMuted: true })];
+    expect(new Set(lines).size).toBe(3);
+    expect(lines[2]).toContain("quill");
   });
 });
 

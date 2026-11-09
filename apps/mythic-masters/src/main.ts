@@ -43,8 +43,8 @@ import { pickQuality, QUALITY } from "@rustybuns/util/quality";
 import { accountChip, achieve, canSignIn, finishSignIn, fresh, login, reportButton, signIn, signOut } from "./account.ts";
 import { asCreature, atLevel, bind, downed, heal, hpOf, wound, bindBelow, bindChance, clearSection, cleared, gainXp, INK, loadJourney, moveUp, mythicOf, newJourney, nextUp, call, owns, PICKS, rest, SAVE_KEY, SECTIONS, sections, see, slots, STARTERS, TRAIL_REGIONS, toNext, WITCH_SAYS, type Journey, mend } from "./journey.ts";
 import { LORE } from "./lore.ts";
-import { bare, blank, dry, handOf, knownOf, PAGE_INK, poolOf, ribbonsOf, summon, type Summoned } from "./grimoire.ts";
-import { deckDemandOf, demandOf, reactionOf, SIGNATURE, thumbAt, worldLineOf, type Back, type Outcome } from "./demand.ts";
+import { circleLineOf, handOf, knownOf, PAGE_INK, poolOf, ribbonsOf, summon, type Summoned } from "./grimoire.ts";
+import { deckDemandOf, demandOf, reactionOf, settingsLineOf, SIGNATURE, thumbAt, worldLineOf, type Back, type Outcome } from "./demand.ts";
 import { tierOf } from "./tiers.ts";
 import { book, cardTurn, fly, penSound, pressed, soak, thumb, turnLeaf } from "./page.ts";
 import { emblem, frame as ring, inkUrl, seal, tear } from "./ornaments.ts";
@@ -294,16 +294,17 @@ function drawPicker() {
     $("#bookTag").textContent = LANDING.versus.librarianTag;
     return;
   }
-  const hand = handOf(journey), n = ribbonsOf(journey);
-  if (!params.get("a") && !hand.includes(pickA)) pickA = hand[0] ?? pickA; // your first ribbon leads, unless a link named someone
+  const mine = handOf(journey), n = ribbonsOf(journey);
+  if (!params.get("a") && !mine.includes(pickA)) pickA = mine[0] ?? pickA; // your first ribbon leads, unless a link named someone
   $("#bookTag").textContent = LANDING.versus.bookTag;
   $("#pickA").innerHTML = card(creature(pickA), "A", true)
-    + `<h3 class="sub">Your ribbons · ${hand.length} of ${n}</h3><div class="tiles hand">${hand.map((id) => pageTile(creature(id), id === pickA)).join("")}${Array.from({ length: Math.max(0, n - hand.length) }, () => `<span class="tile empty">an empty ribbon</span>`).join("")}</div>`;
+    + `<h3 class="sub">Your ribbons · ${mine.length} of ${n}</h3><div class="tiles hand">${mine.map((id) => pageTile(creature(id), id === pickA)).join("")}${Array.from({ length: Math.max(0, n - mine.length) }, () => `<span class="tile empty">an empty ribbon</span>`).join("")}</div>`;
+  const said = circleLineOf(summoned, bareLine, pageInk);
   const pots = Array.from({ length: PAGE_INK }, (_, i) => `<i class="pot${i < pageInk ? " full" : ""}"></i>`).join("");
   $("#pickB").innerHTML = card(creature(pickB), "B", true)
     + `<h3 class="sub">The circle${only ? ` of ${only}` : ""}</h3><div class="circle"><div class="pots" title="Ink left">${pots}</div>
       <button id="summon" class="go"${pageInk > 0 ? "" : " disabled"}>Summon${only ? ` from ${only}` : " anything"}</button>
-      <p class="margin">${esc(summoned?.line ?? (bareLine ? bare : pageInk > 0 ? blank : dry))}</p></div>${pagesOf()}`;
+      <p class="margin">${hand(said.ask, said.signed)}</p></div>${pagesOf()}`;
   $("#pickB").classList.toggle("inking", inking);
   inking = false;
 }
@@ -608,7 +609,7 @@ function drawDemand() {
   const note = notesOf(journey).at(-1); // the last thing it wrote about you, under what it wants
   for (const p of document.querySelectorAll("[data-demand]")) p.innerHTML = hand(demandOf(journey), true) + (note ? `<span class="ledger">${esc(note)}</span>` : "");
 }
-const hand = (ask: string, signed: boolean) => `<span class="ask">${esc(ask)}</span>${signed ? `<span class="sig">${esc(SIGNATURE)}</span>` : ""}`;
+function hand(ask: string, signed: boolean) { return `<span class="ask">${esc(ask)}</span>${signed ? `<span class="sig">${esc(SIGNATURE)}</span>` : ""}`; }
 /** The book's line on a result note, under its heading (src/demand.ts reactionOf). */
 const reaction = (o: Outcome) => { const r = reactionOf(o, journey); return `<p class="demand">${hand(r.ask, r.signed)}</p>`; };
 /** The book's line in the world's toast once a fight is behind you (src/demand.ts worldLineOf), on a scrap of its
@@ -1473,8 +1474,25 @@ const controls = mountControls({
   account: accountPane,
   extras: layoutRows, pad,
   onChange: (s) => { lookScale = s.touch; drawHints(); },
-  onToggle: (open) => { paused = open; keys.clear(); fingers.clear(); const d = document.querySelector<HTMLElement>("body > .gc-dialog"); if (d) cardTurn(d, open); },
+  onToggle: (open) => {
+    const over = (!!m && !m.over) || world.shown; // opened over a fight or the walk, Settings is the pause
+    paused = open; keys.clear(); fingers.clear();
+    const d = document.querySelector<HTMLElement>("body > .gc-dialog");
+    if (open && d) settingsNote(d, over);
+    if (d) cardTurn(d, open);
+  },
 });
+
+/** The Book's margin note on the Settings card, under its heading, and a thumbprint somewhere new each opening. */
+let settingsOpens = 1; // from 1, so the first opening is one that carries a print (page.ts thumb skips some)
+function settingsNote(dialog: HTMLElement, over: boolean) {
+  const card = dialog.querySelector<HTMLElement>(".gc-card");
+  if (!card) return;
+  let p = card.querySelector<HTMLElement>(":scope > .demand");
+  if (!p) { p = Object.assign(document.createElement("p"), { className: "demand" }); card.querySelector(".gc-head")?.after(p); }
+  p.innerHTML = hand(settingsLineOf({ paused: over, quillMuted: volumeOf(controls.get(), "sfx", "quill") === 0 }), false);
+  thumb(card, settingsOpens++);
+}
 
 // The field chart, under the cog on every screen: a modal over where you are, and the fight waits while it is up.
 const chart = mountFieldChart($("#controls-host"), (open) => { paused = open; keys.clear(); fingers.clear(); });
