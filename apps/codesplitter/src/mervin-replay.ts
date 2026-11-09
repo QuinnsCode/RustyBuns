@@ -7,7 +7,7 @@
 // the page as mervin-replay.js.
 //
 // Pausing a replay holds the replay and touches nothing else. Pausing a live feed is real: the page tells the feed
-// (`PAUSE`, scripts/mervin-watch.ts), and `scripts/mervin-merge.ts --go` waits on it before the next `gh pr merge --auto`.
+// (`PAUSE`, scripts/mervin-watch.ts), and `scripts/mervin-merge.ts --go` waits on it before it merges the next PR.
 
 export type Tier = "certain" | "agree" | "mervin" | "differ" | "card";
 export const TIERS: Tier[] = ["certain", "agree", "mervin", "differ", "card"];
