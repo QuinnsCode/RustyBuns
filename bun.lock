@@ -128,7 +128,7 @@
       "dependencies": {
         "@rustybuns/cli": "^0.1.12",
         "@rustybuns/native": "^0.1.12",
-        "@rustybuns/rig": "workspace:*",
+        "@rustybuns/rig": "^0.1.12",
         "@rustybuns/shell-bun": "^0.1.12",
         "react": "19.2.8",
         "react-dom": "19.2.8",
@@ -422,7 +422,7 @@
         "@effect/platform-bun": "4.0.5",
         "@effect/platform-node": "4.0.5",
         "@rustybuns/cli": "^0.1.12",
-        "@rustybuns/seal": "workspace:*",
+        "@rustybuns/seal": "^0.1.12",
         "@rustybuns/shell-bun": "^0.1.12",
         "@rustybuns/util": "^0.1.12",
         "alchemy": "2.0.0-beta.84",
@@ -444,9 +444,9 @@
       "version": "0.0.1",
       "dependencies": {
         "@rustybuns/game-controls": "^0.1.12",
-        "@rustybuns/models": "workspace:*",
+        "@rustybuns/models": "^0.1.12",
         "@rustybuns/shell-bun": "^0.1.12",
-        "@rustybuns/terrain": "workspace:*",
+        "@rustybuns/terrain": "^0.1.12",
         "@rustybuns/util": "^0.1.12",
         "lucide": "1.55.0",
         "three": "^0.180.0",
@@ -570,8 +570,8 @@
       "version": "0.0.1",
       "dependencies": {
         "@rustybuns/game-controls": "^0.1.12",
-        "@rustybuns/models": "workspace:*",
-        "@rustybuns/rig": "workspace:*",
+        "@rustybuns/models": "^0.1.12",
+        "@rustybuns/rig": "^0.1.12",
         "@rustybuns/util": "^0.1.12",
         "three": "^0.180.0",
       },
@@ -648,9 +648,9 @@
         "@fontsource/gloria-hallelujah": "^5.3.0",
         "@fontsource/lacquer": "^5.3.0",
         "@rustybuns/game-controls": "^0.1.12",
-        "@rustybuns/models": "workspace:*",
+        "@rustybuns/models": "^0.1.12",
         "@rustybuns/shell-bun": "^0.1.12",
-        "@rustybuns/terrain": "workspace:*",
+        "@rustybuns/terrain": "^0.1.12",
         "@rustybuns/ui": "^0.1.12",
         "@rustybuns/util": "^0.1.12",
         "three": "^0.180.0",
@@ -722,7 +722,7 @@
         "@effect/platform-node": "4.0.5",
         "@rustybuns/cli": "^0.1.12",
         "@rustybuns/render": "workspace:*",
-        "@rustybuns/seal": "workspace:*",
+        "@rustybuns/seal": "^0.1.12",
         "@rustybuns/shell-bun": "^0.1.12",
         "@rustybuns/util": "^0.1.12",
         "@types/react": "19",
@@ -825,9 +825,9 @@
       "version": "0.0.1",
       "dependencies": {
         "@rustybuns/game-controls": "^0.1.12",
-        "@rustybuns/models": "workspace:*",
+        "@rustybuns/models": "^0.1.12",
         "@rustybuns/shell-bun": "^0.1.12",
-        "@rustybuns/terrain": "workspace:*",
+        "@rustybuns/terrain": "^0.1.12",
         "@rustybuns/util": "^0.1.12",
         "lucide": "1.55.0",
         "three": "^0.180.0",
@@ -1026,7 +1026,7 @@
       },
       "devDependencies": {
         "@rustybuns/cli": "^0.1.12",
-        "@rustybuns/cms": "workspace:*",
+        "@rustybuns/cms": "^0.1.12",
         "@rustybuns/shell-bun": "^0.1.12",
       },
     },
@@ -1102,7 +1102,7 @@
     },
     "packages/cms": {
       "name": "@rustybuns/cms",
-      "version": "0.0.0",
+      "version": "0.1.12",
     },
     "packages/game-controls": {
       "name": "@rustybuns/game-controls",
@@ -1114,7 +1114,7 @@
     },
     "packages/models": {
       "name": "@rustybuns/models",
-      "version": "0.0.0",
+      "version": "0.1.12",
       "dependencies": {
         "@rustybuns/util": "workspace:*",
         "three": "^0.180.0",
@@ -1145,7 +1145,7 @@
     },
     "packages/rig": {
       "name": "@rustybuns/rig",
-      "version": "0.0.0",
+      "version": "0.1.12",
       "dependencies": {
         "closed-chain-ik": "github:gkjohnson/closed-chain-ik-js#1132da3dc3ac774426e9af503e4915bc04ca413b",
         "three": "^0.180.0",
@@ -1156,7 +1156,7 @@
     },
     "packages/seal": {
       "name": "@rustybuns/seal",
-      "version": "0.0.0",
+      "version": "0.1.12",
     },
     "packages/shell-bun": {
       "name": "@rustybuns/shell-bun",
@@ -1184,7 +1184,7 @@
     },
     "packages/terrain": {
       "name": "@rustybuns/terrain",
-      "version": "0.0.0",
+      "version": "0.1.12",
     },
     "packages/ui": {
       "name": "@rustybuns/ui",

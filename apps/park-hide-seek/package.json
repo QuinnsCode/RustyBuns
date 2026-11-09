@@ -19,9 +19,9 @@
     "@rustybuns/game-controls": "^0.1.12",
     "@fontsource/gloria-hallelujah": "^5.3.0",
     "@fontsource/lacquer": "^5.3.0",
-    "@rustybuns/models": "workspace:*",
+    "@rustybuns/models": "^0.1.12",
     "@rustybuns/shell-bun": "^0.1.12",
-    "@rustybuns/terrain": "workspace:*",
+    "@rustybuns/terrain": "^0.1.12",
     "@rustybuns/ui": "^0.1.12",
     "@rustybuns/util": "^0.1.12",
     "three": "^0.180.0"
