@@ -97,6 +97,12 @@ export class NotAFork extends Schema.TaggedError<NotAFork>()("NotAFork", named) 
 export class NoSyncBase extends Schema.TaggedError<NoSyncBase>()("NoSyncBase", named) {}
 export class CommitsAhead extends Schema.TaggedError<CommitsAhead>()("CommitsAhead", named) {}
 export class GitUnavailable extends Schema.TaggedError<GitUnavailable>()("GitUnavailable", named) {}
+export class TooManyInvites extends Schema.TaggedError<TooManyInvites>()("TooManyInvites", named) {}
+export class NotYourInvite extends Schema.TaggedError<NotYourInvite>()("NotYourInvite", named) {}
+export class NoSuchInvite extends Schema.TaggedError<NoSuchInvite>()("NoSuchInvite", named) {}
+export class AlreadyInCrew extends Schema.TaggedError<AlreadyInCrew>()("AlreadyInCrew", named) {}
+export class InviteUsed extends Schema.TaggedError<InviteUsed>()("InviteUsed", named) {}
+export class InviteExpired extends Schema.TaggedError<InviteExpired>()("InviteExpired", named) {}
 
 type Named = { message: string; status: number; reply: unknown };
 /** One class per tag the server sends: a tag added to ERRORS without one here won't compile. */
@@ -110,6 +116,7 @@ export const NAMED = {
   NoSuchRun, NotTheAgent, PathLocked, RunEnded, NotesFull, NothingWaiting, AlreadyLanding, BatchHeld,
   UpstreamRefused, NotAMirror, NoUpstreamBranch, NoSuchTag, NoSuchFolder, FolderMirror, NotUpstream, PullOnly, PrivateLines, MirrorMain,
   UpstreamClash, UpstreamMoved, TagExists, RepoExists, AlreadyMirror, NotAFork, NoSyncBase, CommitsAhead, GitUnavailable,
+  TooManyInvites, NotYourInvite, NoSuchInvite, AlreadyInCrew, InviteUsed, InviteExpired,
 } satisfies { [K in ErrorTag]: new (a: Named) => { readonly _tag: K } };
 
 // What any call can meet, whatever the operation: they come from before a route answers, or from no answer at all.
