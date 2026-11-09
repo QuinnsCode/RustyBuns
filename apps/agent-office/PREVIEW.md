@@ -8,7 +8,9 @@ ever shares a name with the live stage.
 
 **What is built.** The floor's Durable Object (`OfficeFloor` in `apps/codesplitter/src/office.ts`, slice 1 of MOVE.md's
 build order): `/api/office/<floor>` answers with its queue, desks and roster, takes the office's socket messages at
-`/api/office/<floor>/ws`, and is bound on this stage only, for the signed-in owner only.
+`/api/office/<floor>/ws`, and is bound on this stage only, for the signed-in owner only. The 3D client (Agent Office,
+made by WebDevCody, slice 2) opens at `/office/` on this stage, showing that floor's queue and desks live; this stage's
+build alone carries it. `bun scripts/office.ts --seed` in `apps/codesplitter` shows the same page on your machine.
 
 **Desks run codeSplitter agents** (slice 3). `POST /api/office/<floor>` with `{t: "worker.spawn", repo: "owner/name", path, prompt}`
 seats a worker and starts an agent run on that file as you, through the repo's agents route, so its checks hold (the repo's owner,
@@ -16,7 +18,9 @@ seats a worker and starts an agent run on that file as you, through the repo's a
 it goes, then done or exited, with the branch its batch waits on and the tail of its output. Sending that worker home
 through the same POST (`worker.kill`) stops the run. There is no terminal at the desk (slice 4).
 
-**What is not built yet.** The 3D client served from the Worker (slice 2) and the four gaps in MOVE.md (PTY over WebSocket,
+**What is not built yet.** A hire from the 3D office's own buttons still seats a plain worker, and sending home a
+running one from there is refused: the client doesn't send those through the POST yet ([#4072](https://github.com/QuinnsCode/RustyBuns/issues/4072)).
+The four gaps in MOVE.md (PTY over WebSocket,
 container lifetime, per-floor cost cap, auth mapping) are not in it, so checks 1 to 5 below can't pass until those land.
 They are filed as follow-ups; this stage is where they get tried.
 

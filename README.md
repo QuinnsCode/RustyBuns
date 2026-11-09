@@ -86,7 +86,7 @@ Have an idea in the morning, play it by the afternoon. The things that make the 
 - **Boots with no cloud account.** sqlite stands in for every binding, so an agent can run, test and break the real app on a laptop, for free.
 - **Agents can see and drive it.** It renders in Chrome, and pages hand agents their buttons over WebMCP instead of screenshots ([WEBMCP.md](WEBMCP.md)).
 - **Nothing costs money until you say so.** `plan` prints every billable resource, `deploy` refuses without a matching plan, and `destroy` removes what it made.
-- **Many agents at once.** [Agent Office](apps/agent-office/README.md) gives each agent a desk and a worktree, and [codeSplitter](apps/codesplitter/README.md) lets them change the same repo side by side.
+- **Many agents at once.** [Agent Office](apps/agent-office/README.md) (made by WebDevCody: [project](https://github.com/AgentSystemLabs/agent-office), [GitHub](https://github.com/webdevcody), [YouTube](https://www.youtube.com/@webdevcody), [X](https://x.com/webdevcody)) gives each agent a desk and a worktree, and [codeSplitter](apps/codesplitter/README.md) lets them change the same repo side by side.
 
 The proof is the examples: games, a DAW, a circuit editor, a CRM and the office itself, nearly every commit co-authored by Claude Code. More in [Built for coding agents](#built-for-coding-agents).
 

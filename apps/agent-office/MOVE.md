@@ -99,10 +99,18 @@ the cap, ships before any container is left running.
 | 6 | **Per-floor cost cap** | The floor refuses a hire once this month's container time reaches its cap, and tells you so. | A counter in the floor's object, fed by run start and stop times (the D1 cost-counter pattern from #3102). | None. | $0. **Suggested cap: $5 a month per floor**, which buys about 160 worker-hours on `basic`, plus a 2-hour cap on a single run. Owner's call. |
 | 7 | **Auth mapping** | Sign in with codeSplitter's account instead of the office password. People and workers are told apart by `identity.ts`, and the floorguard rules (people-only, ask-first, overlap) run in the object's handlers. | None. | None. | $0 |
 
-Until slice 7 lands, the preview's `/office` routes accept only the signed-in owner. Before slice 1 starts, check one more
-thing: the upstream office (by WebDevCody) may not allow serving its client from our Worker. The local binary only
-builds it on the owner's machine. If its licence doesn't allow it, slice 2 needs its author's yes first (see the
-credit note in `README.md`).
+Until slice 7 lands, the preview's `/office` routes accept only the signed-in owner. The upstream office (by
+WebDevCody) is MIT, which lets us serve its client from our Worker as long as its notice goes with it: slice 2 ships
+its `LICENSE` at `/office/LICENSE.txt` and a credits page at `/office/credits.html` (checked 2026-11-08). The owner
+means to tell WebDevCody before the preview goes up anyway (MANUAL RUN #4062).
+
+**Slice 2 as built.** `rustybuns deploy` passes the stage to the build (`RUSTYBUNS_STAGE`), and codeSplitter's
+`build.ts` adds the office only for `office-preview` (`src/office-client.ts`): it prepares `apps/agent-office` from
+the pinned release, copies `dist/public` to `dist/client/office/`, and moves the client's paths there (`/assets`,
+`/druids`, `/ws` -> `/api/office/ws?floor=`, `/api/*` -> `/api/office/*`), failing the build if a release moves one.
+Every other stage's build removes it. The floor's welcome carries the rest of what the client draws (one floor, you,
+each board empty), and the socket drops the client messages the floor doesn't keep yet, as upstream does. To see it
+without a deploy: `bun scripts/office.ts --seed` in `apps/codesplitter`.
 
 **Why this order:** slices 1 to 3 give the board, queue and hosted workers with no new kind of resource and no
 always-on container. That covers PREVIEW.md's checks 1, 2 and 5 without a terminal. Slices 4 and 5 are the big new code

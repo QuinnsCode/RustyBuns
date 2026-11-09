@@ -229,6 +229,15 @@
   {
     "name": "Agent Office",
     "line": "A cartoon 3D office where AI helpers sit at desks and write code, as one file for Mac and Linux.",
+    "credit": {
+      "by": "WebDevCody",
+      "links": [
+        ["Agent Office", "https://github.com/AgentSystemLabs/agent-office"],
+        ["GitHub", "https://github.com/webdevcody"],
+        ["YouTube", "https://www.youtube.com/@webdevcody"],
+        ["X", "https://x.com/webdevcody"]
+      ]
+    },
     "app": "agent-office",
     "download": "agent-office",
     "stage": 3,
