@@ -17,7 +17,7 @@
   "scene_yours_title": "Then it's your code",
   "scene_yours_text": "One more hook if you want it, then ship, deploy, release. Every stop on the way was a plain call: CLI, API, MCP or code mode, the same answer each time.",
   "road_title": "The road a change takes",
-  "road_blurb": "Every change, an agent's or a person's, goes down the same road. Each stop is deterministic: same inputs, same answer, no model, no tokens. The dashed ones are where your AI can say yay or nay.",
+  "road_blurb": "Every change, an agent's or a person's, goes down the same road. Each stop is deterministic: same inputs, same answer, no model, no tokens. The dashed ones are where your AI can say yay or nay. Beside the road, <a href=\"/dexter\">Dexter</a>, if a repo switches him on, counts what each agent run spent per tool and proposes cuts to its AGENTS.md for you to approve.",
   "stop_branch_title": "Artifacts",
   "stop_branch_text": "<p>A branch is a real git repo, made in milliseconds. A thousand agents can each have one.</p><p class=\"muted\">On its own, every copy starts drifting from the others the moment it's made.</p>",
   "stop_coordinate_title": "Durable Objects",

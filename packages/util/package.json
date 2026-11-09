@@ -26,6 +26,7 @@
     "./bytes": "./src/bytes.ts",
     "./codemode": "./src/codemode.ts",
     "./commands": "./src/commands.ts",
+    "./dexter": "./src/dexter.ts",
     "./director": "./src/director.ts",
     "./eqosys": "./src/eqosys.ts",
     "./features": "./src/features.ts",
