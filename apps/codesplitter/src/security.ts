@@ -50,8 +50,21 @@ export const SECURITY_HEADERS: Record<string, string> = {
 };
 
 /** The static pages' copy of the headers, in Cloudflare's _headers format, with their inline scripts' hashes. */
-export const headersFile = (scriptHashes: string[] = [], pagesOrigin = "") =>
-  `/*\n${Object.entries({ ...SECURITY_HEADERS, "content-security-policy": csp(scriptHashes, pagesOrigin) }).map(([k, v]) => `  ${k}: ${v}`).join("\n")}\n`;
+export const headersFile = (scriptHashes: string[] = [], pagesOrigin = "", office = false) => {
+  const policy = csp(scriptHashes, pagesOrigin);
+  return `/*\n${Object.entries({ ...SECURITY_HEADERS, "content-security-policy": office ? withOffice(policy) : policy }).map(([k, v]) => `  ${k}: ${v}`).join("\n")}\n`;
+};
+
+/**
+ * A policy with what the 3D office at /office/ needs on top (src/office-client.ts): its texture decoder is WebAssembly
+ * ('wasm-unsafe-eval' allows compiling wasm, not eval), and its models, sounds and textures load through blob: URLs.
+ * Still nothing from another host, inline or framed. Only the office-preview stage, which serves the office, uses it:
+ * one policy for the whole static site there, since _headers can't take a path out of `/*`.
+ */
+export const withOffice = (policy: string) => policy
+  .replace("script-src 'self'", "script-src 'self' 'wasm-unsafe-eval'")
+  .replace("connect-src 'self'", "connect-src 'self' blob: data:")
+  .replace("object-src", "media-src 'self' blob: data:; object-src");
 
 /** `res` with the headers it doesn't set itself (the OAuth consent page has its own, stricter CSP). A socket's 101 is left be. */
 export function secured(res: Response): Response {

@@ -2,6 +2,7 @@
 // the pages: the site, the game, the feature list the home page's strip reads, the API reference and the MCP page. No framework.
 import { mkdir, copyFile, readdir, readFile, writeFile } from "node:fs/promises";
 import { headersFile, inlineScriptHashes } from "./src/security.ts";
+import { officeClientFor } from "./src/office-client.ts";
 import { features } from "./features.ts";
 import { LINK_HEADER, LLMS_TXT, ROBOTS_TXT } from "./src/discover.ts";
 import { buildGitpath } from "./src/gitpath/build.ts";
@@ -116,7 +117,10 @@ for (const page of pages) for (const h of inlineScriptHashes(await readFile(`dis
 // What a cold agent finds at the root (src/discover.ts): llms.txt, robots.txt and a Link header on /.
 await writeFile("dist/client/llms.txt", LLMS_TXT);
 await writeFile("dist/client/robots.txt", ROBOTS_TXT);
-await writeFile("dist/client/_headers", headersFile([...hashes], process.env.PAGES_ORIGIN ? new URL(process.env.PAGES_ORIGIN).origin : "") + `\n/\n  link: ${LINK_HEADER}\n` + "\n/assets/*\n  cache-control: public, max-age=31536000, immutable\n");
+// The 3D office (Agent Office, by WebDevCody) at /office/, on the office-preview stage alone (#3423 slice 2):
+// `rustybuns deploy --stage office-preview` says so in RUSTYBUNS_STAGE. Any other build drops a copy left from one.
+const office = await officeClientFor(process.env.RUSTYBUNS_STAGE);
+await writeFile("dist/client/_headers", headersFile([...hashes], process.env.PAGES_ORIGIN ? new URL(process.env.PAGES_ORIGIN).origin : "", office) + `\n/\n  link: ${LINK_HEADER}\n` + "\n/assets/*\n  cache-control: public, max-age=31536000, immutable\n");
 // Geist, served from here (no Google Fonts call): the stylesheet, both variable fonts and their license.
 await mkdir("dist/client/fonts", { recursive: true });
 for (const f of ["geist.css", "Geist-Variable.woff2", "GeistMono-Variable.woff2", "LICENSE.txt"]) await copyFile(`src/fonts/${f}`, `dist/client/fonts/${f}`);

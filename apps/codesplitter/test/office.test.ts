@@ -91,3 +91,30 @@ test("a hire with a repo and a file puts an agent run at the desk; the board sho
   const doc = await (await call("quinn", `/api/repos/quinn/lab/do/file?path=a.js&branch=${w.run.branch}`)).json() as { lines: { text: string; by: string }[] };
   expect(doc.lines.map((l) => [l.text, l.by])).toEqual([["LET A = 1", "agent-claude"]]);
 });
+
+// The 3D client (#3423 slice 2) makes its own calls, rewritten under /api/office/ by src/office-client.ts.
+test("the 3D client signs in, opens its floor by ?floor= and gets a welcome it can draw, live", async () => {
+  const call = await local({ OFFICE: true, ADMINS: "quinn" });
+  expect(await (await call("quinn", "/api/office/whoami")).json()).toEqual({ me: { account: { name: "quinn", role: "admin" }, admin: true } });
+  expect((await call(null, "/api/office/whoami")).status).toBe(401);
+
+  // The client's socket URL: the floor and the look it picked in the query, as upstream's client sends them.
+  const res = await call("quinn", "/api/office/ws?floor=grove&name=quinn&color=%23e76f51&skin=2&hair=3&style=1", { headers: { upgrade: "websocket" } });
+  expect(res.status).toBe(101);
+  const sock = (res as any).webSocket;
+  const heard: any[] = sock.queue.splice(0).map((d: string) => JSON.parse(d));
+  sock.toBrowser = (d: string) => heard.push(JSON.parse(d));
+  const welcome = heard[0];
+  expect(welcome).toMatchObject({ t: "welcome", floor: "grove", floors: [{ id: "grove", people: 1 }], queue: { tasks: [] }, workers: [] });
+  expect(welcome.peers).toEqual([expect.objectContaining({ id: welcome.you, name: "quinn", color: "#e76f51", look: { skin: 2, hair: 3, style: 1 }, floor: "grove" })]);
+
+  // Its chatter the floor doesn't keep yet is dropped quietly; a ping gets its pong; a task added elsewhere shows up.
+  const said = async (m: unknown) => { sock.onMessage(JSON.stringify(m)); await Bun.sleep(20); };
+  await said({ t: "peer.move", x: 1, z: 2 });
+  await said({ t: "ping", at: 12.5 });
+  expect(heard.slice(1)).toEqual([{ t: "pong", at: 12.5, now: expect.any(Number) }]);
+  await post(call, "quinn", "/api/office/grove", { t: "queue.add", prompt: "Water the ferns" });
+  expect(heard.at(-1)).toMatchObject({ t: "queue", state: { tasks: [{ title: "Water the ferns" }] } });
+  // The client's paths aren't floors.
+  expect((await call("quinn", "/api/office/whoami/ws")).status).toBe(404);
+});

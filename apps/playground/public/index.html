@@ -223,6 +223,8 @@ html[data-sky=system] .skyswitch [data-sky-pick=system],html[data-sky=day] .skys
   .best svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; filter: drop-shadow(0 1px 1px rgba(90,20,0,.45)); }
   @media (prefers-reduced-motion: reduce) { .best > * { animation: none; } }
   .soon { color: var(--mute); font-size: 14px; }
+  .credit { color: var(--mute); font-size: 14px; }
+  .credit a { color: inherit; }
   /* Framework examples: a strip that scrolls sideways, each card rated fresh to stale. */
   .fw { margin-top: 56px; }
   .fw > p a { color: #fff; }
@@ -416,9 +418,17 @@ const gate = (a) => {
   return g;
 };
 
+/** Whose work an app is built on, when it's someone else's: "Made by X: GitHub · YouTube · ...". */
+const creditOf = (a) => {
+  if (!a.credit) return "";
+  const p = el("p", { className: "credit" }, `Made by ${a.credit.by}: `);
+  a.credit.links.forEach(([text, href], i) => { if (i) p.append(" · "); p.append(el("a", { href, rel: "noopener", textContent: text })); });
+  return p;
+};
+
 /** A game or an app: a full-width row, the screenshot on one side and the rest on the other (stacked on a phone). */
 const row = (a, n) => {
-  const body = el("div", { className: "body" }, el("h2", {}, el("i", { textContent: a.name[0] }), a.name), el("p", { textContent: a.line }), el("div", { className: "meta" }, stage(a.stage), best(a, n)), linksOf(a));
+  const body = el("div", { className: "body" }, el("h2", {}, el("i", { textContent: a.name[0] }), a.name), el("p", { textContent: a.line }), creditOf(a), el("div", { className: "meta" }, stage(a.stage), best(a, n)), linksOf(a));
   const card = el("div", { className: a.app || a.image ? "card" : "card bare" }, body);
   if (a.app || a.image) card.prepend(shotOf(a, () => card.classList.add("bare")));
   if (a.play) card.prepend(el("span", { className: "tag", textContent: a.group === "games" ? "PLAY NOW" : "OPEN NOW" }));

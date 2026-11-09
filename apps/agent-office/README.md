@@ -2,6 +2,14 @@
 
 > **What it proves:** someone else's Node server (PTYs, WebSockets, a 3D client) becomes one file for Mac and Linux, with nothing forked. One of the [Rusty Buns](../../README.md#see-it-work) examples; all of them are in [EXAMPLES.md](../../EXAMPLES.md).
 
+> **Made by WebDevCody** ([GitHub](https://github.com/webdevcody) · [YouTube](https://www.youtube.com/@webdevcody) · [X](https://x.com/webdevcody)).
+> We use Agent Office, made by WebDevCody, heavily modified to suit my own use case. My beautiful Frankenstein.
+>
+> 1. **As it was:** [AgentSystemLabs/agent-office](https://github.com/AgentSystemLabs/agent-office), MIT.
+> 2. **Our port:** this folder, its release on Bun as one file, nothing forked, dressed as the Druids grove.
+> 3. **Inside codeSplitter:** the same client served at `/office/` by codeSplitter's Worker on the office-preview
+>    stage, its floor kept in a Durable Object ([MOVE.md](MOVE.md), [#3423](https://github.com/QuinnsCode/RustyBuns/issues/3423)).
+
 [Agent Office](https://github.com/AgentSystemLabs/agent-office) (MIT) is the cartoon 3D office where
 Claude Code workers sit at desks. Some of Rusty Buns was built in it. This example turns it around:
 the office itself, on Bun, as **one file** you can copy to any Mac or Linux box. No Node, no

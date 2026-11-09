@@ -935,11 +935,12 @@ const edgeOn = (c: RustyBunsConfig) => !!c.targets.edge || !c.targets.box;
  * Run the Worker's build command in the app, with the env the stack's Build gets, minus the deploy's logins.
  * sandbox: HOME is .rustybuns/home, empty but for what the build leaves there, with the package caches kept (#1128).
  */
-const buildWorker = (build: string, sandbox: boolean) => Effect.gen(function* () {
+const buildWorker = (build: string, sandbox: boolean, stage?: string) => Effect.gen(function* () {
   // a monorepo app's unbuilt workspace packages first (glue/workspace-build.ts)
   const command = [...workspacePrebuild(process.cwd()), build].join(" && ");
   console.log(`building the worker${sandbox ? " (empty HOME)" : ""}: ${command}`);
-  let env = withLocalBins(buildEnv({ ...readDevVars(), ...process.env }), process.cwd());
+  // RUSTYBUNS_STAGE: which stage this build is for, so an app can ship a stage-only part (codeSplitter's office on office-preview).
+  let env = withLocalBins(buildEnv({ ...readDevVars(), ...process.env, ...(stage ? { RUSTYBUNS_STAGE: stage } : {}) }), process.cwd());
   if (sandbox) {
     const home = join(process.cwd(), ".rustybuns/home");
     mkdirSync(home, { recursive: true });
@@ -1064,7 +1065,7 @@ const alchemy = (sub: string, rawArgs: string[]) => runScoped(Effect.gen(functio
   // stack's Build runs, so build it first or it ships the previous build (#362).
   // dev builds first too: the stack's Build would run it inside alchemy, with the Cloudflare token (#1121).
   const built = (profiled || drifting || sub === "dev") && edgeOn(cfg) && !!cfg.worker?.build;
-  if (built) yield* timed(prof, "build worker", buildWorker(cfg.worker!.build!, sandbox));
+  if (built) yield* timed(prof, "build worker", buildWorker(cfg.worker!.build!, sandbox, stage));
   // Name each map's module and give it app-relative sources, as wrangler does (#799).
   if (built && cfg.worker!.sourceMaps && cfg.worker!.builtMain) {
     const maps = tidySourceMaps(process.cwd(), cfg.worker!.builtMain);

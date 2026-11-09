@@ -24,7 +24,7 @@
 import { arr, check, int, obj, oneOf, opt, str, type Of } from "@rustybuns/util/guard";
 import { Sockets, type RoomCtx, type RoomSocket } from "@rustybuns/util/room";
 import { fail, json, type Env } from "./env.ts";
-import { parseJson, sha256 } from "./util.ts";
+import { isPlainObject, parseJson, sha256 } from "./util.ts";
 import { actingAs } from "./identity.ts";
 
 /** How much of a run's output a desk keeps: its tail. */
@@ -65,6 +65,8 @@ const Msg = obj({
 });
 type Msg = Of<typeof Msg>;
 const RunPost = obj({ workerId: str(32), run: DeskRun });
+/** The messages this floor keeps (apply below); the socket drops the rest of the client's. */
+const FLOOR_TYPES = new Set(["queue.add", "queue.remove", "queue.move", "queue.clear", "queue.limit", "worker.spawn", "worker.kill"]);
 const Hook = obj({ status: opt(oneOf(STATUSES)), activity: opt(str(200, { min: 0 })) });
 
 const hexId = (n: number) => [...crypto.getRandomValues(new Uint8Array(n))].map((b) => b.toString(16).padStart(2, "0")).join("");
@@ -76,6 +78,38 @@ type Ctx = RoomCtx & { storage: { sql: Sql } };
 type Peer = { you: string; by: string };
 
 /** One floor of the office. Each change is written to SQLite before anyone hears about it. */
+/**
+ * The rest of the welcome the 3D client reads (upstream's ws/connection.ts and office/views.ts), for the parts this
+ * floor doesn't have yet: one floor, you the only person on it, and each feature's board empty, as upstream sends a
+ * floor that has none. Slice 1's own fields (floor, workers, queue) go on top. You arrive in the elevator.
+ */
+const NO_USE = { input: 0, output: 0, cacheWrite: 0, cacheRead: 0, cost: 0, calls: 0 };
+export function clientWelcome(you: string, name: string, floor: string, view: Omit<FloorState, "desks">, q: URLSearchParams) {
+  const num = (k: string, n: number) => { const v = Number(q.get(k)); return Number.isInteger(v) && v >= 0 && v < n ? v : 0; };
+  const color = /^#[0-9a-f]{6}$/i.test(q.get("color") ?? "") ? q.get("color")! : "#4f86f7";
+  const peer = {
+    id: you, name, color, look: { skin: num("skin", 8), hair: num("hair", 10), style: num("style", 7) },
+    x: 8.5, y: 0, z: -11.87, rotY: 0, moving: false, voice: false, muted: true, sharing: false, account: true, floor,
+  };
+  const busy = view.workers.filter((w) => w.status === "working").length;
+  return {
+    t: "welcome", you, peers: [peer],
+    floors: [{ id: floor, name: floor, workers: view.workers.length, busy, waiting: 0, people: 1, wing: 0 }],
+    ice: [], chat: [], invites: false, me: { account: { name, role: "admin" }, admin: true },
+    projectsDir: { dir: "", custom: false }, version: "codesplitter", upgrade: { available: false, phase: "idle" },
+    usage: { total: NO_USE, today: NO_USE, day: new Date().toISOString().slice(0, 10), pauseHiring: false },
+    limits: { windows: [], at: 0 }, notify: {}, machine: { cpu: 0, cores: 0, memUsed: 0, memTotal: 0, history: [], workers: 0 },
+    sky: { lat: 40, lon: -120, utcOffset: 0, weather: "clear", intensity: 0 }, theme: { pick: "auto", active: null },
+    map: { pick: "office", custom: [] }, prompts: { custom: {} }, leaveOnMerge: { on: false },
+    project: { name: floor, branch: "main", agentCmd: "claude", agentProviders: ["claude"], defaultProvider: "claude" },
+    issues: { items: [], fetchedAt: 0, loading: false }, pulls: { items: [], fetchedAt: 0, loading: false },
+    decor: [], plan: { wing: 0, labels: {} }, services: { items: [] }, dog: null, ball: {}, cars: [],
+    jail: { prisoners: [], bones: 0 }, jukebox: { on: false, track: "vale", startedAt: 0, elapsed: 0 },
+    whiteboard: { elements: [], people: [] }, meeting: { current: null, past: [] }, cabinet: { player: null, scores: [], frame: null },
+    ...view,
+  };
+}
+
 export class OfficeFloor {
   sql: Sql;
   sockets: Sockets<Peer>;
@@ -216,7 +250,7 @@ export class OfficeFloor {
       if (req.headers.get("upgrade")?.toLowerCase() !== "websocket") return fail("BadInput", "this is the floor's socket: open it as a WebSocket");
       const you = hexId(5), { server, response } = this.sockets.upgrade({ you, by });
       const { desks: _, ...view } = this.state(floor);
-      this.sockets.send(server, { t: "welcome", you, ...view });
+      this.sockets.send(server, clientWelcome(you, by, floor, view, url.searchParams));
       return response;
     }
     if (url.pathname === "/run") {
@@ -233,8 +267,15 @@ export class OfficeFloor {
   }
 
   async webSocketMessage(ws: RoomSocket, raw: string | ArrayBuffer) {
-    const f = this.sockets.frame(ws, raw), m = f && check(Msg, f.value), me = this.sockets.who(ws);
-    if (!m || !me) return;
+    const f = this.sockets.frame(ws, raw), me = this.sockets.who(ws);
+    if (!f || !me) return;
+    // The 3D client also sends what this floor doesn't keep yet (walking, the whiteboard, chat): dropped, as upstream
+    // drops a type it has no handler for. Its ping gets the pong it times the connection with.
+    const t = isPlainObject(f.value) ? f.value.t : undefined;
+    if (t === "ping") return this.sockets.send(ws, { t: "pong", at: Number(isPlainObject(f.value) && f.value.at) || 0, now: Date.now() });
+    if (typeof t !== "string" || !FLOOR_TYPES.has(t)) return;
+    const m = check(Msg, f.value);
+    if (!m) return;
     const r = await this.apply(m, me.by);
     if (r && "error" in r) this.sockets.send(ws, { t: "toast", text: r.error, level: "warn" });
   }
@@ -327,9 +368,19 @@ async function sendHome(stub: Floor, env: Env, self: Self, origin: string, floor
   if (w?.run) await env.DB.prepare("DELETE FROM office_desks WHERE run = ?").bind(w.run.id).run();
 }
 
+/** Names the 3D client's own calls take under /api/office/ (src/office-client.ts), so no floor can be called them. */
+const CLIENT_PATHS = new Set(["ws", "whoami"]);
+
 /** The rest of /api/office/:floor, for the signed-in owner only until auth mapping (slice 7). */
-export async function officeRoutes(req: Request, env: Env, p: string[], user: string | null, owner: boolean, self: Self): Promise<Response | null> {
+export async function officeRoutes(req: Request, env: Env, p: string[], user: string | null, owner: boolean, self: Self, url?: URL): Promise<Response | null> {
   if (p[1] !== "office") return null;
+  // The 3D client (slice 2): who you are, as upstream's /api/whoami answers it, and the floor's socket at /ws?floor=.
+  if (p[2] === "whoami" && !p[3]) {
+    if (!user) return fail("SignInFirst", "sign in first");
+    return json({ me: { account: { name: user, role: owner ? "admin" : "member" }, admin: owner } });
+  }
+  if (p[2] === "ws" && !p[3]) p = ["api", "office", url?.searchParams.get("floor") || "main", "ws"];
+  else if (p[2] && CLIENT_PATHS.has(p[2])) return fail("NoSuchRoute", "no API route there");
   const floor = p[2], rest = p[3];
   if (p[4] || (rest !== undefined && rest !== "ws")) return fail("NoSuchRoute", "no API route there");
   if (!user) return fail("SignInFirst", "sign in first");
@@ -338,9 +389,12 @@ export async function officeRoutes(req: Request, env: Env, p: string[], user: st
   if (stub instanceof Response) return stub;
   const to = `https://office/${rest ?? ""}?floor=${floor}`;
   if (rest === "ws") {
+    // The client's look (color, skin, hair, style) rides along; the floor is the route's.
+    const q = new URLSearchParams(url?.search ?? "");
+    q.set("floor", floor!);
     const h = new Headers(req.headers);
     h.set("x-codesplitter-user", user);
-    return stub.fetch(new Request(to, { headers: h }));
+    return stub.fetch(new Request(`https://office/ws?${q}`, { headers: h }));
   }
   if (req.method === "GET") return stub.fetch(new Request(to));
   if (req.method !== "POST") return fail("NoSuchRoute", "GET the floor, or POST it a message");
