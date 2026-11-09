@@ -27,6 +27,8 @@ export interface QApp {
   maturity?: Maturity;
   /** Also listed in the Featured row at the top of the home. */
   featured?: boolean;
+  /** Listed as coming soon, with no link into it, until the owner says it is ready. It still signs in from its origins. */
+  soon?: boolean;
 }
 
 export const GENRES = ["Action & Adventure", "Sports & Skate", "Party & Music", "Strategy & Sims", "Work & Tools"] as const;
@@ -39,7 +41,7 @@ export const APPS: QApp[] = [
   { id: "git-recon", name: "Git Recon", kind: "game", origins: ["https://git-recon.notryanquinn.workers.dev"], starts: ["play"], shot: true, genre: "Action & Adventure", featured: true },
   { id: "skate-tech-park", name: "Skate Tech Park", kind: "game", origins: ["https://skate-tech-park.notryanquinn.workers.dev"], starts: ["play"], shot: true, genre: "Sports & Skate" },
   { id: "alien-disc-golf", name: "Alien Disc Golf", kind: "game", origins: ["https://alien-disc-golf.notryanquinn.workers.dev"], starts: ["play"], shot: true, genre: "Sports & Skate" },
-  { id: "delayed-reaction", name: "Delayed Reaction", kind: "game", origins: ["https://delayed-reaction.notryanquinn.workers.dev"], starts: ["play"], shot: true, genre: "Party & Music", maturity: "experimental" },
+  { id: "delayed-reaction", name: "Delayed Reaction", kind: "game", origins: ["https://delayed-reaction.notryanquinn.workers.dev"], starts: ["play"], shot: true, genre: "Party & Music", maturity: "experimental", soon: true },
   { id: "two-fronts", name: "Two Fronts", kind: "game", origins: ["https://two-fronts.notryanquinn.workers.dev"], starts: ["play"], shot: true, genre: "Strategy & Sims" },
   { id: "hippo-tycoon", name: "Hippo Tycoon", kind: "game", origins: ["https://hippo-ty32kk4m44sz57g2i6knvzzb7o-production.up.railway.app"], starts: ["play"], shot: true, genre: "Strategy & Sims" },
   { id: "splat-spray", name: "Super Spy Splat Shot", kind: "game", origins: ["https://supersplatspyshot.notryanquinn.workers.dev"], starts: ["play"], shot: true, genre: "Action & Adventure", maturity: "experimental" },
@@ -72,6 +74,9 @@ export const APPS: QApp[] = [
 export const HOME = "eqosys";
 
 export const appOf = (id: unknown) => APPS.find((a) => a.id === id);
+
+/** Where a link into the app goes: its first origin, or null while it has none or is coming soon. */
+export const playOf = (app: QApp) => (app.soon ? null : app.origins[0] ?? null);
 
 /** An app's page running on this machine: http on localhost, 127.0.0.1 or [::1], any port. */
 export const isLoopback = (origin: string) => /^http:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/.test(origin);

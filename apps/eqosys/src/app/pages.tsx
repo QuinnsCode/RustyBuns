@@ -1,5 +1,5 @@
 import { createElement } from "react";
-import { APPS, GENRES, appOf, type QApp } from "../apps.ts";
+import { APPS, GENRES, appOf, playOf, type QApp } from "../apps.ts";
 import type { Me } from "../auth.ts";
 import { NAME, VERSION } from "../env.ts";
 import type { Friend, HubState, Note } from "../qollab/hub.ts";
@@ -287,7 +287,7 @@ function Achievements({ unlocks }: { unlocks: Unlocks }) {
 }
 
 const ctaOf = (app: QApp, c = cardOf(app.id, app.name)) => c.cta || (app.kind === "game" ? "Play it" : "Open it");
-const whatOf = (app: QApp, mine: Member["apps"][number] | undefined) => mine ? `${app.kind === "game" ? "played" : "opened"} ${day(mine.last_at)}` : app.kind === "game" ? "not played yet" : "not opened yet";
+const whatOf = (app: QApp, mine: Member["apps"][number] | undefined) => app.soon ? "coming soon" : mine ? `${app.kind === "game" ? "played" : "opened"} ${day(mine.last_at)}` : app.kind === "game" ? "not played yet" : "not opened yet";
 
 type Used = Member["apps"][number] | undefined;
 
@@ -295,9 +295,9 @@ type Used = Member["apps"][number] | undefined;
 const Shot = ({ app, eager }: { app: QApp; eager?: boolean }) => (
   <span className="shot">{app.shot ? <img src={`/cards/${app.id}.jpg`} alt="" loading={eager ? undefined : "lazy"} draggable={false} /> : <Art id={app.id} />}</span>
 );
-const PlayLink = ({ app, small }: { app: QApp; small?: boolean }) => app.origins[0] ? (small
-  ? <a className="play ghost icon" href={app.origins[0]} title={ctaOf(app)} aria-label={`${ctaOf(app)}: ${cardOf(app.id, app.name).name}`}><Out /></a>
-  : <a className="play" href={app.origins[0]}>{ctaOf(app)} <Out /></a>) : null;
+const PlayLink = ({ app, small }: { app: QApp; small?: boolean }) => { const url = playOf(app); return url ? (small
+  ? <a className="play ghost icon" href={url} title={ctaOf(app)} aria-label={`${ctaOf(app)}: ${cardOf(app.id, app.name).name}`}><Out /></a>
+  : <a className="play" href={url}>{ctaOf(app)} <Out /></a>) : null; };
 
 /** The big one at the top: its screenshot, kicker, name, line, badge and Play. */
 function Feature({ app, mine, unlocks }: { app: QApp; mine: Used; unlocks: Unlocks }) {
@@ -448,7 +448,7 @@ export function SpacesPage({ t0 }: { t0: number }) {
 
 /** The streaming-service page for one app: big picture, the long words, its badge, Play it. */
 export function AppPage({ app, mine, unlocks, t0 }: { app: QApp; mine: Member["apps"][number] | undefined; unlocks: Unlocks; t0: number }) {
-  const c = cardOf(app.id, app.name), t = tally(app.id, unlocks), m = app.maturity ?? "alpha";
+  const c = cardOf(app.id, app.name), t = tally(app.id, unlocks), m = app.maturity ?? "alpha", url = playOf(app);
   return (
     <Glass t0={t0} css={HOME_CSS}>
       <div className="home detail game-page">
@@ -461,7 +461,7 @@ export function AppPage({ app, mine, unlocks, t0 }: { app: QApp; mine: Member["a
           <div className="facts"><Badge m={m} /><span>{m}</span><span>{app.genre}</span><span>{whatOf(app, mine)}</span>{t && <span className="tally"><Trophy />{t[0]}/{t[1]} achievements</span>}</div>
           <p className="blurb">{c.blurb}</p>
           {c.more && <p className="more">{c.more}</p>}
-          <div className="row">{app.origins[0] ? <a className="play" href={app.origins[0]}>{ctaOf(app, c)} <Out /></a> : <span className="mut">Not open yet.</span>}</div>
+          <div className="row">{url ? <a className="play" href={url}>{ctaOf(app, c)} <Out /></a> : <span className="mut">{app.soon ? "Coming soon." : "Not open yet."}</span>}</div>
           </div>
         </section>
       </div>
@@ -654,8 +654,8 @@ export function DeletePage({ me, app, error, step }: { me: Me; app?: string; err
 }
 
 export function Deleted({ app }: { app?: string }) {
-  const a = appOf(app ?? "");
-  return <><h1>Account deleted</h1><p className="mut">Everything eqosys holds about you is gone.</p>{a && <p><a href={a.origins[0]}>Back to {a.name}</a></p>}</>;
+  const a = appOf(app ?? ""), url = a && playOf(a);
+  return <><h1>Account deleted</h1><p className="mut">Everything eqosys holds about you is gone.</p>{a && url && <p><a href={url}>Back to {a.name}</a></p>}</>;
 }
 
 /** The privacy policy every Q app links to (App Store Connect asks for one, and so does guideline 5.1.1(i)). Plain words, and true

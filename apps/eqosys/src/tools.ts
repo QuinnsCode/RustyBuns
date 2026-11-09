@@ -4,7 +4,7 @@
 // A tool is a plain function of (who is asking, checked arguments); the guard is the type. Add one here and every door has it.
 import { arr, bool, Bad, check, int, obj, oneOf, opt, raw, str, type Guard } from "@rustybuns/util/guard";
 import { privateJson as json } from "@rustybuns/util/http";
-import { APPS, GENRES, HOME, MATURITY } from "./apps.ts";
+import { APPS, GENRES, HOME, MATURITY, playOf } from "./apps.ts";
 import { ACHIEVEMENTS, shownFor, TOTAL, unlocksOf } from "./achievements.ts";
 import { hubAsk, Who } from "./qollab/hub.ts";
 import { edge, execute, MAX_BACK, MAX_CALLS as MAX_PROGRAM_CALLS, RUN_MS, type ToolAnswer } from "./codemode.ts";
@@ -67,7 +67,7 @@ export const TOOLS: Tool[] = [
       const mine = new Map((await members(c.conf, c.who.id))[0]?.apps.filter((x) => !own || x.app === own).map((x) => [x.app, x.access]) ?? []);
       const q = a.q?.toLowerCase();
       return { apps: APPS.filter((x) => (!a.genre || x.genre === a.genre) && (!a.maturity || (x.maturity ?? "alpha") === a.maturity) && (!q || x.id.includes(q) || x.name.toLowerCase().includes(q)))
-        .map((x) => ({ id: x.id, name: x.name, kind: x.kind, genre: x.genre, maturity: x.maturity ?? "alpha", featured: !!x.featured, url: x.origins[0] ?? null, mine: mine.get(x.id) ?? null })) };
+        .map((x) => ({ id: x.id, name: x.name, kind: x.kind, genre: x.genre, maturity: x.maturity ?? "alpha", featured: !!x.featured, url: playOf(x), mine: mine.get(x.id) ?? null })) };
     },
   }),
   tool(obj({ app: opt(str(64)) }), {

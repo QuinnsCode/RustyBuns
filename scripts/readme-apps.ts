@@ -4,7 +4,7 @@
 // `<!-- apps -->` markers, with a Play link wherever the playground's `apps.json` has one.
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { arr, obj, opt, str, type Of } from "../packages/util/src/guard.ts";
+import { arr, bool, obj, opt, str, type Of } from "../packages/util/src/guard.ts";
 
 export const DIR = "docs/readme";
 export const DATA = join(DIR, "apps.json");
@@ -17,14 +17,14 @@ export const Groups = arr(Group, 20);
 export type Entry = Of<typeof Entry>;
 export type Groups = Of<typeof Groups>;
 
-const Plays = arr(obj({ app: opt(str(80)), play: opt(str(300)) }), 200);
+const Plays = arr(obj({ app: opt(str(80)), play: opt(str(300)), soon: opt(bool()) }), 200);
 
 export const readGroups = (): Groups => Groups(JSON.parse(readFileSync(DATA, "utf8")));
 
-/** Each app's live page from the playground's list, so a play URL lives in one place. */
-export function plays(): Map<string, string> {
+/** Each app's live page from the playground's list, so a play URL lives in one place; null for one marked coming soon (`soon`). */
+export function plays(): Map<string, string | null> {
   const list = Plays(JSON.parse(readFileSync("apps/playground/public/apps.json", "utf8")));
-  return new Map(list.flatMap((p) => (p.app && p.play ? [[p.app, p.play] as const] : [])));
+  return new Map(list.flatMap((p): [string, string | null][] => (p.app && p.soon ? [[p.app, null]] : p.app && p.play ? [[p.app, p.play]] : [])));
 }
 
 const attr = (s: string) => s.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
@@ -33,21 +33,22 @@ const plain = (s: string) => s.replace(/\[([^\]]+)\]\([^)]*\)/g, "$1").replace(/
 const docOf = (e: Entry) => e.doc ?? `apps/${e.app}/README.md`;
 export const shotOf = (app: string) => join(DIR, `${app}.jpg`);
 
-function cell(e: Entry, play: Map<string, string>, width: number): string {
+function cell(e: Entry, play: Map<string, string | null>, width: number): string {
   const tip = attr(plain(e.line));
   const img = existsSync(shotOf(e.app)) ? `<a href="${docOf(e)}"><img src="${shotOf(e.app)}" width="${width}" alt="${attr(e.name)}" title="${tip}"></a><br>` : "";
   const live = play.get(e.app);
-  return `<td align="center" valign="top">${img}<a href="${docOf(e)}" title="${tip}"><b>${e.name}</b></a>${live ? `<br><sub><a href="${live}">Play</a></sub>` : ""}</td>`;
+  const sub = live ? `<br><sub><a href="${live}">Play</a></sub>` : live === null ? "<br><sub>Coming soon</sub>" : "";
+  return `<td align="center" valign="top">${img}<a href="${docOf(e)}" title="${tip}"><b>${e.name}</b></a>${sub}</td>`;
 }
 
-function grid(apps: Entry[], play: Map<string, string>, cols: number, width: number): string[] {
+function grid(apps: Entry[], play: Map<string, string | null>, cols: number, width: number): string[] {
   const rows: string[] = [];
   for (let i = 0; i < apps.length; i += cols) rows.push(`<tr>${apps.slice(i, i + cols).map((e) => cell(e, play, width)).join("")}</tr>`);
   return ["<table>", ...rows, "</table>"];
 }
 
 /** The gallery as README Markdown: a heading, a line and a grid per group, and the long blurbs folded away. */
-export function render(groups: Groups, play: Map<string, string>): string {
+export function render(groups: Groups, play: Map<string, string | null>): string {
   const out: string[] = [];
   for (const [i, g] of groups.entries()) {
     out.push(`### ${g.title}`, "", g.intro, "");

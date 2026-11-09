@@ -91,7 +91,7 @@
   },
   {
     "name": "Delayed Reaction",
-    "play": "https://delayed-reaction.notryanquinn.workers.dev",
+    "soon": true,
     "line": "A phone-first dub rhythm game: a ring calls a note down a neon tunnel and you answer it a bar later.",
     "app": "delayed-reaction",
     "stage": 1,

@@ -5,7 +5,7 @@
 //
 // QNTBR is the first studio, the super admin's (`house`): it holds every app in APPS that no other studio has claimed.
 import { oneOf, str } from "@rustybuns/util/guard";
-import { APPS, appOf } from "./apps.ts";
+import { APPS, appOf, playOf } from "./apps.ts";
 import type { Env } from "./env.ts";
 import { lastDeploys, type Shipped } from "./deploys.ts";
 
@@ -28,7 +28,7 @@ export interface Studio { id: string; name: string; kind: Kind; role: Role; memb
 
 const shelfApp = (id: string, repo: string | null, shipped: Shipped | null): ShelfApp => {
   const a = appOf(id);
-  return { id, name: a?.name ?? id, play: a?.origins[0] ?? null, make: repo, ship: shipped || a?.origins.length ? "live" : "not deployed", shipped };
+  return { id, name: a?.name ?? id, play: a ? playOf(a) : null, make: repo, ship: shipped || a?.origins.length ? "live" : "not deployed", shipped };
 };
 
 /** The studios a person is in, with their role, who else is in (owners first), and each app on the shelf. */
