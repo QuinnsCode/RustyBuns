@@ -1,7 +1,16 @@
 // The dashed spelling of the game's address, sent on to supersplatspyshot (src/edge/alias.ts).
 // `bun run deploy` ships it after the game.
+// The name once held a whole copy of the game (#3283 to #3463) with its rooms, quick play and sign-ups as Durable
+// Objects. Cloudflare refuses a Worker that drops classes it still has, so v4 deletes them and their data with them
+// (the owner's call, #3462). v1 to v3 are that copy's own history, kept so wrangler sends only what the live copy lacks.
 {
   "name": "super-splat-spy-shot",
   "main": "src/edge/alias.ts",
-  "compatibility_date": "2026-09-01"
+  "compatibility_date": "2026-09-01",
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["World"] },
+    { "tag": "v2", "new_sqlite_classes": ["Matchmaker"] },
+    { "tag": "v3", "new_sqlite_classes": ["Signups"] },
+    { "tag": "v4", "deleted_classes": ["World", "Matchmaker", "Signups"] }
+  ]
 }

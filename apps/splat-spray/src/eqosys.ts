@@ -6,7 +6,7 @@ import { eqosys } from "@rustybuns/util/eqosys";
 export const APP = "splat-spray";
 export const EQOSYS = "https://eqosys.qntbr.com";
 /** The origin eqosys sends players back to. A local page or the desktop window stays a guest. */
-export const SIGN_IN_FROM = ["https://supersplatspyshot.notryanquinn.workers.dev", "https://splat-spray.notryanquinn.workers.dev"];
+export const SIGN_IN_FROM = ["https://supersplatspyshot.notryanquinn.workers.dev"];
 
 /**
  * The spy file's look on every eqosys surface (account chip, report form, achievement toast): smoked glass over the dark
@@ -26,4 +26,9 @@ export const SKIN = {
 };
 
 export type { Login } from "@rustybuns/util/eqosys";
-export const { signIn, finishSignIn, login, fresh, signOut, who, canSignIn, accountChip, reportButton, achieve } = eqosys({ app: APP, url: EQOSYS, from: SIGN_IN_FROM, prefix: "splat-spray", skin: SKIN });
+const account = eqosys({ app: APP, url: EQOSYS, from: SIGN_IN_FROM, prefix: "splat-spray", skin: SKIN });
+export const { signIn, finishSignIn, login, fresh, signOut, who, canSignIn, accountChip, reportButton, achieve } = account;
+
+let partyClient: ReturnType<typeof account.party> | undefined;
+/** The page's one party client: eqosys seats a player once per party, so the lobby keeps one socket. */
+export const party = () => (partyClient ??= account.party());

@@ -189,6 +189,9 @@ is safe on production too. One line a step; the first failure exits 1.
 two friends ready up and start, each claims its own seat in the same war with its start ticket, a third account is told to
 join the party first, and the host's "Chat: Only the host" refuses the friend's message. Two Fronts trusts only the eqosys
 it was built for, so `--url` must be that one (`--game` points at another Two Fronts).
+`bun scripts/live-check-splat-spray.ts --url https://eqosys.qntbr.com` walks Super Spy Splat Shot's party: two friends ready up
+and start, both walk into the game's room named for the party under their account names, and the host's start begins the
+mission for the two of them with no bots (`--game` for another address).
 
 Not yet: an app opening the hub (Park Hide & Seek signs in but doesn't say where it is hiding yet).
 
