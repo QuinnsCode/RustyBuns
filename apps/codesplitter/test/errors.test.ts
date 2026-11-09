@@ -341,3 +341,32 @@ test("a job that isn't yours and the limits' admin routes come back named", asyn
   const reset = await call("ana", "/api/admin/limits/reset", { method: "POST", body: JSON.stringify({ who: "bo" }) });
   expect([reset.status, ((await reset.json()) as { tag?: string }).tag]).toEqual([403, "AdminsOnly"]);
 });
+
+test("a claim on held lines, and the check routes, come back named", async () => {
+  const call = await boot();
+  opened.push(call);
+  const post = (u: string, url: string, body: unknown) => call(u, url, { method: "POST", body: JSON.stringify(body) });
+  for (const u of ["ana", "bo"]) await post(u, "/api/login", { name: u });
+  expect((await post("ana", "/api/repos", { name: "lab" })).status).toBe(201);
+  expect((await post("ana", "/api/repos/ana/lab/files", { path: "a.ts", content: "export const a = 1;" })).status).toBe(201);
+  await post("ana", "/api/repos/ana/lab/collaborators", { name: "bo" });
+  const as = (user: string) => codesplitter({ url: ORIGIN, retries: 0, send: async (r) => call(user, r.url.slice(ORIGIN.length), { method: r.method, headers: r.headers, ...(r.body && { body: await r.text() }) }) });
+  const ana = as("ana"), bo = as("bo"), at = { owner: "ana", repo: "lab" }, file = { ...at, path: "a.ts" };
+  const line = ((await (await call("ana", "/api/repos/ana/lab/do/file?path=a.ts")).json()) as { lines: { id: string }[] }).lines[0]!.id;
+  expect(await tagOf(bo.call("claim_lines", { ...file, body: { lines: [line] } }))).toBe("ok");
+  const run = (await (await post("ana", "/api/repos/ana/lab/checks", { ref: "main", sha: "a".repeat(40), name: "unit", status: "queued" })).json()) as { id: number };
+  expect(await tagOf(ana.call("cancel_check", { ...at, id: run.id }))).toBe("ok");
+
+  const cases: [string, Effect.Effect<unknown, Failure<OpWithErrors>>, string][] = [
+    ["lines someone holds", ana.call("claim_lines", { ...file, body: { lines: [line] } }), "LinesHeld"],
+    ["no lines of the file", ana.call("claim_lines", { ...file, body: { lines: ["nope"] } }), "BadInput"],
+    ["checks on no open branch", ana.call("run_checks", { ...at, body: { ref: "nope" } }), "NoSuchBranch"],
+    ["a check run that isn't there", ana.call("get_check", { ...at, id: 999 }), "NoSuchCheck"],
+    ["cancelling it twice", ana.call("cancel_check", { ...at, id: run.id }), "CheckDone"],
+    ["saying how it went, unclaimed", bo.call("record_check", { ...at, body: { ref: "main", sha: "b".repeat(40), name: "unit", status: "passed" } }), "RunnerOnly"],
+    ["check settings, not the owner", bo.call("set_check_settings", { ...at, body: { where: "here" } }), "OwnerOnly"],
+  ];
+  const got = [];
+  for (const [why, e, want] of cases) got.push([why, await tagOf(e), want]);
+  expect(got.filter(([, tag, want]) => tag !== want)).toEqual([]);
+});

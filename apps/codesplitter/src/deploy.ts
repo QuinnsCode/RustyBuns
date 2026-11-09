@@ -45,7 +45,8 @@
 import { access as artifactAccess, fileDoc, handleFor } from "./archive.ts";
 import { text } from "./lines.ts";
 import { ARM_BOX_WARNING, armBox } from "./needs.ts";
-import { json, readBody, type Env } from "./env.ts";
+import { fail, json, readBody, type Env } from "./env.ts";
+import type { ErrorTag } from "./openapi.ts";
 import { byToken } from "./tokens.ts";
 import { deployKeyRoutes, hostedWhy, keysInfo } from "./deploy-keys.ts";
 import { approve, cutShort, diff, isCleared, review, waitingNote, type Review } from "./deploy-review.ts";
@@ -115,7 +116,8 @@ const hostedStub = (env: Env, owner: string, repo: string) => env.DEPLOY_RUNNER!
 
 /** The CLI's `--allow-delete` and `--force`, for one deploy only: never saved with the settings, never passed on a commit-triggered ship. */
 export interface DeployFlags { allowDelete?: boolean; force?: boolean }
-type Started = { run?: Run; queued?: boolean; error?: string; status?: number; review?: Review; warning?: string };
+/** A start, or why not: `tag` names a refusal (#3940), and one without a tag (a runner's answer that didn't read) goes out untagged with `status`. */
+type Started = { run?: Run; queued?: boolean; error?: string; tag?: ErrorTag; status?: number; review?: Review; warning?: string };
 
 /** A review as the panel gets it, without the handle it walked. */
 const shown = ({ tip, base, commits, more }: Review) => ({ tip, base, commits, more, cleared: isCleared({ tip, base, commits, more }) });
@@ -124,14 +126,14 @@ const shown = ({ tip, base, commits, more }: Review) => ({ tip, base, commits, m
 async function gate(env: Env, owner: string, repo: string, approved?: string, unseen = false): Promise<{ tip: string } | (Started & { error: string })> {
   let r = await review(env, owner, repo);
   if (approved && !isCleared(r)) {
-    if (approved !== r.tip) return { error: "main moved since you read it: read the diff again", status: 409, review: shown(r) };
+    if (approved !== r.tip) return { error: "main moved since you read it: read the diff again", tag: "BranchMoved", review: shown(r) };
     // Approving says the diff was read: when part of it was cut short, that takes saying so.
     const cut = !unseen && r.handle && r.tip ? cutShort(r, await diff(r.handle, r.base, r.tip)) : null;
-    if (cut) return { error: `the diff was cut short (${cut}): read the rest in the repo, then approve with approve_unseen: true`, status: 409, review: shown(r) };
+    if (cut) return { error: `the diff was cut short (${cut}): read the rest in the repo, then approve with approve_unseen: true`, tag: "DiffCutShort", review: shown(r) };
     await approve(env, owner, repo, approved);
     r = await review(env, owner, repo);
   }
-  return isCleared(r) ? { tip: r.tip! } : { error: waitingNote(r), status: 409, review: shown(r) };
+  return isCleared(r) ? { tip: r.tip! } : { error: waitingNote(r), tag: r.tip ? "DeployWaits" : "NoGit", review: shown(r) };
 }
 
 /**
@@ -142,15 +144,17 @@ async function gate(env: Env, owner: string, repo: string, approved?: string, un
 async function start(env: Env, owner: string, repo: string, by: string, trigger: "button" | "commit", approved?: string, flags: DeployFlags = {}, unseen = false, plan?: string): Promise<Started> {
   const runner = runnerFor(env);
   if (!runner) {
-    if (!env.DEPLOY_RUNNER) return { error: "deploys run on the desktop app, with your own logins", status: 400 };
+    if (!env.DEPLOY_RUNNER) return { error: "deploys run on the desktop app, with your own logins", tag: "DesktopOnly" };
     const why = hostedWhy(env, by);
-    if (why) return { error: why, status: 403 };
-    if (!Object.values(await keysInfo(env, owner, repo)).some((k) => k.set)) return { error: "set a deploy key first", status: 400 };
+    if (why) return { error: why, tag: "NoHostedDeploys" };
+    if (!Object.values(await keysInfo(env, owner, repo)).some((k) => k.set)) return { error: "set a deploy key first", tag: "NoDeployKey" };
     // The runner checks again before it unseals the keys; this answers the panel with what's waiting.
     const held = await gate(env, owner, repo, approved, unseen);
     if ("error" in held) return held;
     const res = await hostedStub(env, owner, repo).fetch(new Request("http://deploy/start", { method: "POST", body: JSON.stringify({ owner, repo, by, trigger, ...flags }) }));
     const started: Started = check(StartReply, await res.json().catch(() => null)) ?? { error: "the deploy runner's answer didn't read", status: 502 };
+    // The runner's one refusal is a 409: something of its own is running.
+    if (started.error && started.status === 409) started.tag = "DeployRunning";
     // Flagged now, not after the run has cloned and installed and then refused it.
     const cfg = await fileDoc(env, owner, repo, `${(await settings(env, owner, repo)).dir || "."}/rustybuns.config.ts`.replace(/^\.\//, ""), "upstream").catch(() => null);
     if (started.run && cfg && armBox(text(cfg))) started.warning = ARM_BOX_WARNING;
@@ -158,20 +162,20 @@ async function start(env: Env, owner: string, repo: string, by: string, trigger:
   }
   const key = `${owner}/${repo}`, now = live.get(key);
   if (now && !now.run.done) {
-    if (trigger === "button") return { error: "a deploy is already running", status: 409 };
+    if (trigger === "button") return { error: "a deploy is already running", tag: "DeployRunning" };
     now.again = by;
     return { queued: true };
   }
   const remote = await remoteFor(env, owner, repo);
-  if (!remote) return { error: "this repo has no git remote yet: commit its files first", status: 400 };
+  if (!remote) return { error: "this repo's files aren't committed yet: commit them first", tag: "NoGit" };
   const held = await gate(env, owner, repo, approved, unseen);
   if ("error" in held) return held;
   // Armed by a plan against the stage: only the commit that plan ran on ships.
   if (plan) {
     const p = plans.get(key), stage = (await settings(env, owner, repo)).stage;
-    if (!p || p.id !== plan || !p.done || p.stage !== stage) return { error: `that plan is gone or was for another stage: plan against ${stage} again`, status: 409 };
-    if (p.steps.some((x) => x.status !== "done")) return { error: "that plan didn't pass: fix what its log says, then plan again", status: 409 };
-    if (p.commit !== held.tip) return { error: `main moved to ${held.tip.slice(0, 7)} since the plan ran on ${p.commit?.slice(0, 7) ?? "?"}: plan again`, status: 409 };
+    if (!p || p.id !== plan || !p.done || p.stage !== stage) return { error: `that plan is gone or was for another stage: plan against ${stage} again`, tag: "PlanStale" };
+    if (p.steps.some((x) => x.status !== "done")) return { error: "that plan didn't pass: fix what its log says, then plan again", tag: "PlanStale" };
+    if (p.commit !== held.tip) return { error: `main moved to ${held.tip.slice(0, 7)} since the plan ran on ${p.commit?.slice(0, 7) ?? "?"}: plan again`, tag: "PlanStale" };
   }
   const { run, production, dir } = await begin(env, owner, repo, by, trigger, "desktop");
   const entry: { run: Run; again?: string } = { run };
@@ -222,19 +226,22 @@ export async function deployOnCommit(env: Env, owner: string, repo: string, user
   await start(env, owner, repo, user, "commit").catch(() => {});
 }
 
+/** A refused start or gate, as its reply: named when it has a tag, else (the runner's answer didn't read) its own status. */
+const refusal = (r: Started & { error: string }) => r.tag ? fail(r.tag, r.error, r.review && { review: r.review }) : json({ error: r.error }, r.status ?? 500);
+
 export async function deployRoutes(req: Request, env: Env, p: string[], user: string | null): Promise<Response | null> {
   if (!(p[1] === "repos" && p[2] && p[3] && p[4] === "deploy")) return null;
   if (p[5] === "key" && !p[7]) return deployKeyRoutes(req, env, p, user);
   if (p[5] && !((p[5] === "review" || p[5] === "plan" || p[5] === "destroy") && !p[6])) return null;
   const [owner, repo] = [p[2], p[3]];
   // It ships with this machine's logins and shows the repo's output: the owner's alone.
-  if (!user || user !== owner || user.startsWith("agent-")) return json({ error: "only the repo's owner can deploy it" }, 403);
-  if (!(await repoRow(env, owner, repo, "1"))) return json({ error: "not found" }, 404);
+  if (!user || user !== owner || user.startsWith("agent-")) return fail("OwnerOnly", "only the repo's owner can deploy it");
+  if (!(await repoRow(env, owner, repo, "1"))) return fail("NoSuchRepo", "no such repo");
   const hosted = !runnerFor(env) && !!env.DEPLOY_RUNNER;
 
   if (p[5] === "review") {
     if (req.method !== "GET") return null;
-    if (!hosted && !runnerFor(env)) return json({ error: "deploys run on the desktop app, with your own logins" }, 400);
+    if (!hosted && !runnerFor(env)) return fail("DesktopOnly", "deploys run on the desktop app, with your own logins");
     const r = await review(env, owner, repo);
     return json({ ...shown(r), diff: r.handle && r.tip && !isCleared(r) ? await diff(r.handle, r.base, r.tip) : { files: [], more: false } });
   }
@@ -253,10 +260,10 @@ export async function deployRoutes(req: Request, env: Env, p: string[], user: st
     // Only what's sent changes; each field is checked before it lands in the settings.
     const b = await readBody<"stage" | "dir" | "on_commit" | "production">(req), now = await settings(env, owner, repo);
     const stage = b.stage ?? now.stage;
-    if (typeof stage !== "string" || !STAGE.test(stage)) return json({ error: "stage: lowercase letters, digits and dashes" }, 400);
-    if (stage.startsWith("preview-")) return json({ error: "preview-* stages belong to preview deploys" }, 400);
+    if (typeof stage !== "string" || !STAGE.test(stage)) return fail("BadInput", "stage: lowercase letters, digits and dashes");
+    if (stage.startsWith("preview-")) return fail("BadInput", "preview-* stages belong to preview deploys");
     const s: Settings = { stage, dir: String(b.dir ?? now.dir).trim().replace(/^\/+|\/+$/g, ""), on_commit: !!(b.on_commit ?? now.on_commit), production: !!(b.production ?? now.production) };
-    if (!validDir(s.dir)) return json({ error: "folder: a path inside the repo, like apps/web, without . or .." }, 400);
+    if (!validDir(s.dir)) return fail("BadInput", "folder: a path inside the repo, like apps/web, without . or ..");
     await env.DB.prepare(`INSERT INTO deploy_settings (owner, repo, stage, dir, on_commit, production) VALUES (?, ?, ?, ?, ?, ?)
       ON CONFLICT (owner, repo) DO UPDATE SET stage = excluded.stage, dir = excluded.dir, on_commit = excluded.on_commit, production = excluded.production`)
       .bind(owner, repo, s.stage, s.dir, s.on_commit ? 1 : 0, s.production ? 1 : 0).run();
@@ -265,9 +272,9 @@ export async function deployRoutes(req: Request, env: Env, p: string[], user: st
   if (req.method === "POST") {
     const { approve: sha, approve_unseen, allow_delete, force, plan } = await readBody<"approve" | "approve_unseen" | "allow_delete" | "force" | "plan">(req);
     // An approval is a person reading the diff: a token (a prompt-injected agent may hold one) can't give it.
-    if (sha !== undefined && byToken(req)) return json({ error: "API tokens can't approve a deploy: approve it in the Deploy panel, signed in on the site" }, 403);
+    if (sha !== undefined && byToken(req)) return fail("PersonOnly", "API tokens can't approve a deploy: approve it in the Deploy panel, signed in on the site");
     const r = await start(env, owner, repo, user, "button", typeof sha === "string" ? sha : undefined, { ...(allow_delete === true && { allowDelete: true }), ...(force === true && { force: true }) }, approve_unseen === true, typeof plan === "string" ? plan : undefined);
-    return r.error ? json({ error: r.error, ...(r.review && { review: r.review }) }, r.status ?? (r.error.includes("already") ? 409 : 400)) : json({ run: r.run, ...(r.warning && { warning: r.warning }) }, 202);
+    return r.error ? refusal({ ...r, error: r.error }) : json({ run: r.run, ...(r.warning && { warning: r.warning }) }, 202);
   }
   return null;
 }
@@ -281,20 +288,20 @@ async function stageRoutes(req: Request, env: Env, owner: string, repo: string, 
   const key = `${owner}/${repo}`, runner = runnerFor(env), desktop = !!runner && !runner.workdir;
   if (kind === "plan" && req.method === "GET") return json({ can_run: desktop, run: plans.get(key) ?? null });
   if (req.method !== "POST") return null;
-  if (!runner || !desktop) return json({ error: `${kind === "plan" ? "a plan against the stage" : "tearing a stage down"} runs on the desktop app, beside the stage's state` }, 400);
+  if (!runner || !desktop) return fail("DesktopOnly", `${kind === "plan" ? "a plan against the stage" : "tearing a stage down"} runs on the desktop app, beside the stage's state`);
   const s = await settings(env, owner, repo);
-  if (kind === "plan" ? plans.get(key)?.done === false : live.get(key)?.run.done === false) return json({ error: `a ${kind === "plan" ? "plan" : "deploy"} is already running` }, 409);
+  if (kind === "plan" ? plans.get(key)?.done === false : live.get(key)?.run.done === false) return fail("DeployRunning", `a ${kind === "plan" ? "plan" : "deploy"} is already running`);
   if (kind === "destroy") {
     // The panel asks twice; here the stage has to be named, so a stale panel can't tear down a stage it wasn't showing.
     const { stage } = await readBody<"stage">(req);
-    if (stage !== s.stage) return json({ error: `name the stage to tear down: ${s.stage}` }, 400);
+    if (stage !== s.stage) return fail("BadInput", `name the stage to tear down: ${s.stage}`);
   }
   const remote = await remoteFor(env, owner, repo);
-  if (!remote) return json({ error: "this repo has no git remote yet: commit its files first" }, 400);
+  if (!remote) return fail("NoGit", "this repo's files aren't committed yet: commit them first");
   // Main's code runs here with this machine's logins, as a deploy's does: commits that aren't the owner's own wait for their approval,
   // and the clone is the commit that was checked.
   const held = await gate(env, owner, repo);
-  if ("error" in held) return json({ error: held.error, ...(held.review && { review: held.review }) }, held.status ?? 409);
+  if ("error" in held) return refusal(held);
   const steps: StepKey[] = ["clone", "install", kind];
   const run: Run = { id: crypto.randomUUID().slice(0, 8), at: Date.now(), stage: s.stage, steps: steps.map((key) => ({ key, status: "waiting", out: "" })), done: false };
   if (kind === "plan") plans.set(key, run);
