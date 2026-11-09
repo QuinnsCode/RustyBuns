@@ -22,6 +22,11 @@ export const SIDESTEP = { skirmisher: 0.3, flyer: 0.25, bruiser: 0.2, tank: 0.05
 /** Ticks after that sidestep in which the swing it dodged is the bot's opening: once the whiff is recovering, it comes
  * straight back in (a dash if it's far) and hits before the swinger is up again. */
 export const PUNISH = 60;
+/** Both heavies stepping in on a commit cross the same distance on the same tick, so both swung at once and traded
+ * (#3688 round 4: a third of the locked swings that landed caught a defender pressing on that tick). One that sees the
+ * other closing in on it (`closing` m/s, facing it) holds its swing with `chance` and backs out past the other's heavy
+ * sweep for `back` ticks: that swing locks on air, and its recovery is the opening (PUNISH). */
+export const WAIT = { chance: 0.5, closing: 0.5, back: 20 } as const;
 /** A ranged move painted on the ground under us (sim `warning`, or a lob still in the air): the chance each tick of
  * dashing out of it, by archetype; a tick it doesn't, it walks out (ATTACKS.md step 5). The light ones read it best. */
 export const DODGE = { skirmisher: 0.25, flyer: 0.2, bruiser: 0.15, tank: 0.08 } as const;
@@ -45,7 +50,7 @@ export const WINGS = { land: 0.1, fly: Math.max(TAKEOFF, 0.9) } as const;
 
 export function bot(side: 0 | 1, seed: number): Bot {
   const rnd = mulberry32(seed);
-  let hold: Partial<Input> = {}, holdFor = 0, flip = false, turn = 120, rest = 0, commit = 0, punish = 0, dir = rnd() < 0.5 ? 1 : -1;
+  let hold: Partial<Input> = {}, holdFor = 0, flip = false, turn = 120, rest = 0, commit = 0, punish = 0, back = 0, dir = rnd() < 0.5 ? 1 : -1;
   const orbit = rnd() < 0.5 ? 1 : -1;
   // A bot's jumps are full jumps: it keeps jump held while it rises (a tap would be a short hop).
   return (m) => { const i = think(m), me = m.f[side]; return me.hop && me.prev.up ? { ...i, up: true } : i; };
@@ -236,13 +241,16 @@ export function bot(side: 0 | 1, seed: number): Bot {
         if (commit > 0) commit--;
         else if (rest === 0 && !low && !wind && d < reach + RING + 0.6 && rnd() < COMMIT.chance) commit = COMMIT.ticks;
         const inside = open || commit > 0;
-        const range = inside ? reach - 0.4 : low ? reach + 3.5 : reach + RING;
+        if (back > 0) back--;
+        const range = back > 0 ? sweep(o, me, "heavy").reach + 0.4 : inside ? reach - 0.4 : low ? reach + 3.5 : reach + RING;
         const theta = atan2(-dz, -dx), lead = inside || d > reach + RING + 1.5 ? 0 : 0.3;
         goTo(o.pos.x + cos(theta + dir * lead) * range, o.pos.z + sin(theta + dir * lead) * range);
         // Winded or facing a big wind-up in reach: guard it or back off, don't trade.
         if (low && d < reach + 2 && (wind || o.state === "attack")) { if (!me.exhausted) i.guard = true; i.mx = 0; i.mz = 0; return i; }
         // Commit to a swing only when it's open, or free and we've rested; then circle again.
         if (d < reach + 0.3 && facing && (open || (commit > 0 && !wind && !low))) {
+          const closing = o.state === "free" && -(o.vel.x * dx + o.vel.z * dz) / d > WAIT.closing && -(dx * cos(o.yaw) + dz * sin(o.yaw)) / d > 0.6;
+          if (!open && closing && rnd() < WAIT.chance) { commit = 0; rest = COMMIT.rest * 2; back = WAIT.back; punish = PUNISH; i.mx = -dx / d; i.mz = -dz / d; return i; }
           // Play the type chart: when the target shrugs off its heavy, the launcher may not be.
           if (typeMul(me.moves.launcher.field, o.c.fields) > typeMul(me.moves.heavy.field, o.c.fields) && rnd() < 0.3) i.up = true;
           rest = COMMIT.rest + Math.floor(rnd() * COMMIT.rest); commit = 0;
