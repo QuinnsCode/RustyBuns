@@ -117,8 +117,11 @@ export function listen(ear: Ear, write: (note: string) => boolean, put?: (file: 
   let asking = Promise.resolve();
   const timer = setInterval(() => {
     asking = asking.then(async () => {
+      // Notes first, then files, then the notes go in: a file is kept before the note that names it,
+      // so asking for files after the notes finds every one they name (#3986).
+      const notes = await ear.poll().catch(() => [] as string[]);
       if (put && ear.files) for (const f of await ear.files().catch(() => [] as Given[])) await put(f);
-      for (const n of await ear.poll().catch(() => [] as string[])) (write(n) ? heard : unsaid).push(n);
+      for (const n of notes) (write(n) ? heard : unsaid).push(n);
     });
   }, ear.ms ?? EAR_MS);
   return {
