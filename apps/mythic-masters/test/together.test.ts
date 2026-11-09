@@ -1,8 +1,10 @@
 // One journey through the running app, the way two friends play it (#3663): two pages open the world in one room
 // (the dev server, and scripts/party.ts standing in for the edge). One walks; the other sees it walk, as the beast it
 // leads, at a real frame rate, on the same clock. It closes its tab and the other sees it go; it comes back and the
-// other sees it again. The second lands beside the first, wherever the first has walked to. A contract one takes is the other's too; the server drops and they find each other again. Needs Chrome and a GPU-ish machine: CI's runner draws the open world in software and never
-// answers, so there it is skipped (like terraviz-demo's live test); every dev machine and agent runs it.
+// other sees it again. The second lands beside the first, wherever the first has walked to. A contract one takes is the
+// other's too; the server drops and they find each other again; at the contract's lair both fight the one creature there.
+// CI's runner draws the open world in software at a frame a second, so there the pages play with `?draw=0` (nothing drawn,
+// everything else the same) and the frame-time checks are left to a machine with a GPU (every dev machine and agent).
 // MM_EDGE=workerd runs the same journey against workerd itself (scripts/edge.ts, `wrangler dev`) instead of the stand-in.
 import { expect, setDefaultTimeout, test } from "bun:test";
 import { chromePath, freePort, launchChrome, load, openTab, startVite } from "../../../scripts/chrome.ts";
@@ -10,9 +12,10 @@ import { serveEdge } from "../scripts/edge.ts";
 import { serveParty } from "../scripts/party.ts";
 import { Online } from "../src/net/online.ts";
 
-setDefaultTimeout(240_000);
+setDefaultTimeout(420_000);
+const CI = !!process.env.CI;
 
-test.skipIf(!chromePath() || !!process.env.CI)("two friends walk one world: see each other, the same hour, leave and come back", async () => {
+test.skipIf(!chromePath())("two friends walk one world: see each other, the same hour, leave and come back", async () => {
   const port = await freePort();
   const edge = async (): Promise<{ url: string; stop: () => unknown }> => process.env.MM_EDGE === "workerd" ? serveEdge(port) : serveParty(port);
   let party = await edge();
@@ -25,9 +28,16 @@ test.skipIf(!chromePath() || !!process.env.CI)("two friends walk one world: see 
   const vite = await startVite(new URL("..", import.meta.url).pathname);
   const chrome = await launchChrome();
   try {
-    const open = async (lead: string) => { const t = await openTab(chrome.cdp, { w: 960, h: 600 }, false, true); await load(chrome.cdp, t, `${vite.url}/?world=1&a=${lead}&room=TOGETHER`, 4000); return t; };
+    const open = async (lead: string) => { const t = await openTab(chrome.cdp, { w: 960, h: 600 }, false, true); await load(chrome.cdp, t, `${vite.url}/?world=1&a=${lead}&room=TOGETHER${CI ? "&draw=0&quality=low" : ""}`, 4000); return t; };
     const walk = (steps: number) => `(async () => { const w = mythicMasters.world, s = w.state(); for (let i = 0; i < ${steps}; i++) { w.teleport(s.x + 3 + i * 0.4, s.z - 6); await new Promise((r) => setTimeout(r, 200)); } return w.online(); })()`;
     const look = `(async () => { let n = 0; const t0 = performance.now(); await new Promise((r) => { const f = () => { n++; performance.now() - t0 < 2000 ? requestAnimationFrame(f) : r(); }; requestAnimationFrame(f); }); const w = mythicMasters.world; return { frameMs: 2000 / n, online: w.online(), hour: w.state().day.hour }; })()`;
+    /** Walk to `short` metres from (x, z) at 7.5 m a second (a run is 5; the room believes up to 8), a pose every half
+     *  second, in legs of at most 30 s (a page answers an eval within a minute). */
+    const stride = async (t: { eval: <T>(js: string) => Promise<T> }, x: number, z: number, short: number) => {
+      for (let left = Infinity; left > short + 1;) left = await t.eval<number>(`(async () => { const w = mythicMasters.world, s = w.state(); const dx = ${x} - s.x, dz = ${z} - s.z, d = Math.hypot(dx, dz), n = Math.min(60, Math.ceil((d - ${short}) / 3.75));
+        for (let i = 1; i <= n; i++) { w.teleport(s.x + (dx * i * 3.75) / d, s.z + (dz * i * 3.75) / d); await new Promise((r) => setTimeout(r, 500)); }
+        const e = w.state(); return Math.hypot(${x} - e.x, ${z} - e.z); })()`);
+    };
     type Look = { frameMs: number; online: { status: string; friends: { lead: string; name: string }[] }; hour: number };
 
     // A walks 300 m off along the trail before B comes in: B's Start lands them beside A, not at their own save's spot.
@@ -40,7 +50,7 @@ test.skipIf(!chromePath() || !!process.env.CI)("two friends walk one world: see 
     expect(seen.online.status).toBe("in");
     expect(seen.online.friends.map((f) => f.lead)).toEqual(["hodag"]);
     // 60 fps is 16.7 ms; a loaded dev machine or agent box runs it near 20. Past 50 a friend in view has made it choppy.
-    expect(seen.frameMs).toBeLessThan(50);
+    if (!CI) expect(seen.frameMs).toBeLessThan(50);
     // Each is a figure with the Book on their own humming ground (#3774): B draws A's ground in the colour A's page wears,
     // with A's beast walking behind and a trail of prints where A walked (#3786), and B wears another colour (two in a
     // room never share one, world/hues.ts).
@@ -66,7 +76,7 @@ test.skipIf(!chromePath() || !!process.env.CI)("two friends walk one world: see 
       await until(() => b.eval<Look>(look), (l) => l.online.friends.length === 5);
       const full = await b.eval<Look>(look);
       console.log(`a full party of six: ${full.frameMs.toFixed(1)} ms a frame with five friends and their line-ups drawn`);
-      expect(full.frameMs).toBeLessThan(50);
+      if (!CI) expect(full.frameMs).toBeLessThan(50);
     } finally {
       clearInterval(pace);
       for (const o of bots) o.close();
@@ -110,13 +120,36 @@ test.skipIf(!chromePath() || !!process.env.CI)("two friends walk one world: see 
     await until(() => back.eval<number | null>(stage), (s) => s === 0);
     await Bun.sleep(1000);
     expect(await b.eval<number | null>(stage)).toBeNull();
-    // In legs of 20 s at most (a CDP call gives up at 60), the start kept on the page so the pace holds across them.
-    const run = `(async () => { const w = mythicMasters.world, s = w.state(), r = (window.__run ??= { x: s.x, z: s.z, t0: performance.now() });
-      const dx = 20002 - r.x, dz = 6206 - r.z, d = Math.hypot(dx, dz), end = performance.now() + 20000; let m = 0;
-      while (m < d - 15 && performance.now() < end) { await new Promise((ok) => setTimeout(ok, 250)); m = Math.min(d - 15, (7 * (performance.now() - r.t0)) / 1000); w.teleport(r.x + (dx * m) / d, r.z + (dz * m) / d); }
-      return m >= d - 15; })()`;
-    while (!(await b.eval<boolean>(run)));
+    await stride(b, 20002, 6206, 15);
     await until(() => b.eval<number | null>(stage), (s) => s === 0);
+
+    // One fight at one den, joined together. Both land by the campfire 377 m from the first contract's lair, and each tells
+    // the other it read the last sign, so the Rougarou waits there for both. They walk over at a pace the room believes;
+    // A walks into it, and B hears who is fighting what, and where. B walks in too: the same creature at the same level, in
+    // B's own fight. A's ends (worn down, so it is quick), and B hears how it went.
+    const first = "1.19074.1638", lair = { x: 19426, z: 2391.2 }, fire = { x: 19490, z: 2763 };
+    const ready = (dx: number) => `(async () => { mythicMasters.world.peace(true); mythicMasters.world.teleport(${fire.x + dx}, ${fire.z}); ${settle} mythicMasters.together.hunt("${first}", 3); })()`;
+    await Promise.all([back.eval(ready(12)), b.eval(ready(-12))]);
+    const lastSign = `(() => { const s = mythicMasters.world.state(); return { stage: mythicMasters.journey.state()?.hunts?.["${first}"] ?? null, x: Math.round(s.x), z: Math.round(s.z), r: s.region, room: mythicMasters.together.state()?.status }; })()`;
+    type Sign = { stage: number | null };
+    await Promise.all([until(() => back.eval<Sign>(lastSign), (s) => s.stage === 3), until(() => b.eval<Sign>(lastSign), (s) => s.stage === 3)]);
+    // To 25 m short of the lair, then on with the wild ones awake.
+    await Promise.all([stride(back, lair.x, lair.z, 25), stride(b, lair.x, lair.z, 25)]);
+    type Trip = { kind: string; foe: { id: string; level: number } } | null;
+    const into = `(async () => { const w = mythicMasters.world; w.peace(false); for (let i = 0; i < 10 && !mythicMasters.journey.trip(); i++) { const s = w.state(); w.teleport(s.x + (${lair.x} - s.x) / 2, s.z + (${lair.z} - s.z) / 2); await new Promise((r) => setTimeout(r, 400)); } return mythicMasters.journey.trip(); })()`;
+    const aTrip = await back.eval<Trip>(into);
+    expect(aTrip?.foe).toMatchObject({ id: "rougarou", level: 9, hunt: first });
+    type Fight = { den: string; c: string; won?: boolean };
+    const heard = "mythicMasters.together.state().fights";
+    await until(() => b.eval<Fight[]>(heard), (fs) => fs.some((x) => x.den === `hunt:${first}` && x.c === "rougarou"));
+    const bTrip = await b.eval<Trip>(into);
+    expect(bTrip?.foe).toEqual(aTrip?.foe);
+    // A fight report is believed only once it has lasted 3 s (party.ts FIGHT), by the fight's own clock: 4 s of ticks
+    // (a CI runner's page ticks slower than the wall clock).
+    await until(() => back.eval<number>(`mythicMasters.state()?.tick ?? 0`), (t) => t >= 4 * 60, 90_000);
+    await back.eval(`mythicMasters.journey.wear(0.01, 0)`);
+    const aFight = "(() => { const s = mythicMasters.state(); return s && { tick: s.tick, over: s.over, winner: s.winner, hp: s.fighters.map((f) => f.hp) }; })()";
+    await until(() => Promise.all([b.eval<Fight[]>(heard), back.eval<unknown>(aFight)]), ([fs]) => fs.some((x) => x.c === "rougarou" && x.won === false), 60_000);
     expect([...b.noise, ...back.noise].filter((n) => !/favicon|api\/me|401/.test(n))).toEqual([]);
   } finally {
     chrome.stop(); vite.stop(); await party.stop();

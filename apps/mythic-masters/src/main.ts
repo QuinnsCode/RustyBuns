@@ -80,6 +80,9 @@ const canvas = $<HTMLCanvasElement>("#view");
 // The quality tier (@rustybuns/util/quality: ?quality=low|mid|high, remembered, else guessed from the GPU): the canvas's pixel
 // ratio, antialiasing and shadows, whether the bloom passes run, and how far the open world's plants reach (src/world/flora.ts).
 const tier = pickQuality().quality, QUAL = QUALITY[tier];
+// `?draw=0`: the page plays (the world, its fights, the party's socket) but draws nothing, for a machine whose GL is software
+// (a CI runner draws the open world at a frame a second): the two-page journey runs there this way (test/together.test.ts).
+const DRAW = new URLSearchParams(location.search).get("draw") !== "0";
 setPlantBudget(tier);
 // A logarithmic depth buffer: the open world draws water a few metres under the ground and coasts at 8 km, which a
 // linear buffer with a 0.1 m near plane fights over at that range.
@@ -109,6 +112,7 @@ const composer = tier === "low" || matchMedia("(max-width: 700px), (pointer: coa
 // A wild one's beast compiles its shaders before it swaps in for its capsule (walker3d.ts), for the target the scene is
 // really drawn into (the composer's, when there is one: tone mapping and colour space are part of a program).
 warmWith((o) => {
+  if (!DRAW) return Promise.resolve();
   const was = renderer.getRenderTarget();
   renderer.setRenderTarget(composer ? composer.readBuffer : null);
   const ready = renderer.compileAsync(o, camera, scene);
@@ -160,13 +164,19 @@ const params = new URLSearchParams(location.search);
 // Walking together (#3663): `?room=CODE` (the room an eqosys party started) shares the world with the party; without it
 // there is no socket and the world is yours alone.
 const room = roomCode(location.search);
+/** The friends' fights this page heard of lately, newest last: who walked into which den, and how it went once told. */
+const fights: { who: string; den: string; c: string; lv?: number; won?: boolean; bound?: boolean }[] = [];
 const online = room ? new Online(room, {
   onChange: () => drawTogether(),
   opened: () => world.opened(),
   posed: () => world.pose(), // a den or contract taken mid-frame is checked where you stand now, not a frame ago
-  onDen: (den, who, c) => world.friendMet(den, who, c),
+  onDen: (den, who, c) => { fights.push({ who, den, c }); fights.splice(0, fights.length - 8); world.friendMet(den, who, c); },
   onHunt: (h, s, who) => joinHunt(h, s, who),
-  onFought: (f) => world.note(`${icon("users")} ${esc(f.who || "A friend")} ${f.bound ? "bound" : f.won ? "beat" : "lost to"} ${esc(creature(f.c).name)} (Lv ${f.lv}).`),
+  onFought: (f) => {
+    const at = fights.findLast((x) => x.who === f.who && x.c === f.c && x.won === undefined);
+    if (at) Object.assign(at, { lv: f.lv, won: f.won, bound: f.bound });
+    world.note(`${icon("users")} ${esc(f.who || "A friend")} ${f.bound ? "bound" : f.won ? "beat" : "lost to"} ${esc(creature(f.c).name)} (Lv ${f.lv}).`);
+  },
   onCompany: () => { shareHunts(); online?.seen(world.seen()); },
   onSeen: (s) => world.seenHeard(s),
   onLife: (k, id, h, at) => world.lifeHeard(k === "pick" ? { k, id } : { k, id, h }, at),
@@ -1641,7 +1651,7 @@ function frame(now: number) {
   renderer.toneMappingExposure = world.shown ? 0.62 : 1;
   grade.enabled = !world.shown; // the open world is graded by its own ground; only an arena wears its skin's grade
   renderer.info.reset();
-  if (composer) composer.render(); else renderer.render(scene, camera);
+  if (DRAW) { if (composer) composer.render(); else renderer.render(scene, camera); }
   requestAnimationFrame(frame);
 }
 if (!arena) { const look = ALL_SKINS[skinSel.value] ?? SKINS.stadium!; arena = buildArena(scene, look); setGrade(look); }
@@ -1762,7 +1772,7 @@ Object.assign(window, {
     /** The open world: `enter()`, `state()` (where you are, what you've beaten, what's open and rising), `travel(n)` to an open region n's arena, `places(n?)` the region's tapes, campfires, landmarks and sighting boards (also in `state().places`), `hunts(n?)` its sighting-board contracts (stage, next sign, lair; also `state().hunts`), `fastTravel(id)` to a lit campfire, `enterTown(id)` into a sighting board's town (its door does it too; `state().town` says where you stand inside, the board and the people), `standInside(x, z)` there in the town's own metres and `leaveTown()`, `teleport(x, z)` onto open ground (`state().wilds` says where the wild ones roam, `trails()` where each keeper's stone is), `setHour(h)` for the time of day, `setWeather({ rain, snow, mist })` (or null) to hold the weather, `layer(name, on)` to hide a drawn layer, `beat(n)` as if you won its arena, `reset()`. */
     /** Walking together, for an agent or the two-page journey: the party's view, and a contract told to the room. */
     together: {
-      state: () => online && { room: online.room, status: online.status, where: online.where() },
+      state: () => online && { room: online.room, status: online.status, where: online.where(), fights: fights.map((f) => ({ ...f })) },
       hunt: (h: string, s: number) => online?.hunt(h, s),
       /** As if you had picked patch `id` (a grid cell, `gx,gz`), for the two-page journey. */
       pick: (id: string) => { world.lifeHeard({ k: "pick", id }); online?.life("pick", id); },
