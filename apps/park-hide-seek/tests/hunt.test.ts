@@ -151,6 +151,9 @@ describe("seeing", () => {
   });
 });
 
+/** Stand the camper inside where the search area ends up (clear of Bigfoot), so the closing circle never counts them out. */
+const inFinal = (g: Hunt) => { const c = g.round!.actors.get("c")!, k = g.round!.circle!; c.x = k.x1 + k.r1 * 0.8; c.y = k.y1; };
+
 /**
  * A two-player hunt on one zone. The first ranger is random, so the players
  * are renamed to match: "r" is this round's ranger, "c" the camper.
@@ -229,6 +232,7 @@ describe("the hunt", () => {
     const { g, tick, now } = hunt("el-capitan", "night");
     tick((HUNT.dropSecs + HUNT.hideSecs) * 1000);
     const r = g.round!;
+    inFinal(g);
     tick(HUNT.shrinkTo * 1000);
     const k = circleAt(r.circle!, now());
     // Put the camper just outside the circle, far from the ranger.
@@ -297,7 +301,9 @@ describe("the hunt", () => {
 
   test("a camper who lasts the whole hunt camps out successfully", () => {
     const { g, tick, cid } = hunt();
-    tick((HUNT.dropSecs + HUNT.hideSecs + HUNT.huntSecs) * 1000 + 200);
+    tick((HUNT.dropSecs + HUNT.hideSecs) * 1000);
+    inFinal(g);
+    tick(HUNT.huntSecs * 1000 + 200);
     expect(g.phase).toBe("results");
     expect(g.round!.results!.find((x) => x.id === cid)!.points).toBe(HUNT.huntSecs + HUNT.survivalBonus);
   });
@@ -396,6 +402,7 @@ describe("Bigfoot", () => {
   test("everyone hears him howl, roughly where he is", () => {
     const { g, tick, now } = hunt();
     tick((HUNT.dropSecs + HUNT.hideSecs) * 1000);
+    inFinal(g);
     tick(HUNT.shrinkFrom * 1000 + HUNT.howlEverySecs * 1000 + 100);
     const f = g.round!.bigfoot!;
     const howl = g.view("c", now()).round!.cues.find((q) => q.kind === "howl");

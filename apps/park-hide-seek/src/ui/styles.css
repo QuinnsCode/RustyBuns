@@ -128,7 +128,7 @@ select { font: inherit; padding: 7px 9px; border: 1px solid var(--line); border-
 #sky { opacity: 0.75; font-size: 13px; }
 .clock { font: 700 18px ui-monospace, Menlo, monospace; font-variant-numeric: tabular-nums; }
 .clock.low { color: #ffb4a6; }
-.banner { position: absolute; top: 58px; left: 50%; transform: translateX(-50%); font-weight: 700; font-size: 16px; background: rgba(20, 16, 10, 0.55); padding: 6px 14px; border-radius: 8px; max-width: 80vw; text-align: center; }
+.banner { font-variant-numeric: tabular-nums; position: absolute; top: 58px; left: 50%; transform: translateX(-50%); font-weight: 700; font-size: 16px; background: rgba(20, 16, 10, 0.55); padding: 6px 14px; border-radius: 8px; max-width: 80vw; text-align: center; }
 .banner:empty { display: none; }
 .banner.warn { background: rgba(200, 50, 31, 0.85); }
 .crosshair { position: absolute; left: 50%; top: 50%; width: 6px; height: 6px; margin: -3px; border-radius: 50%; background: rgba(255, 255, 255, 0.7); box-shadow: 0 0 2px #000; }

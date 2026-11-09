@@ -58,6 +58,13 @@ export const HUNT = {
   /** How far a slide down and a full-hold fall carry to rangers. */
   slideReach: 30,
   fallReach: 90,
+  /** Outside the closing circle this long and you're out, as if tagged. */
+  outsideSecs: 5,
+  /**
+   * A ranger's screen draws a camper eased toward the last view, a network trip late, so at a run they're drawn
+   * about 2 m behind where they are. A tag counts against where the camper was this far back too.
+   */
+  tagRewindMs: 400,
 };
 
 /** The search area: a circle that closes in on a point during the hunt. */
@@ -148,6 +155,8 @@ export interface Actor extends Body {
   disguise: Disguise | null;
   /** Up a tree since this server time, or null. */
   climbAt: number | null;
+  /** Outside the closing circle since this server time, or null. */
+  outsideAt: number | null;
   /** The climb key was down in the last report, so a held key doesn't climb again after a fall. */
   climbHeld: boolean;
   /** Server clock of the last accepted move, for the speed check. */
@@ -241,6 +250,8 @@ interface Round {
   lastStep: Map<string, number>;
   /** ranger id -> camper id -> last time seen, so a camper doesn't flicker at the edge of sight. */
   seen: Map<string, Map<string, number>>;
+  /** camper id -> their last HUNT.tagRewindMs of accepted positions, [server time, x, y], for tags. */
+  trail: Map<string, [number, number, number][]>;
 }
 
 const NAME = /^[^\p{C}]{1,24}$/u;
@@ -405,12 +416,12 @@ export class Hunt {
     const actors = new Map<string, Actor>();
     for (const p of online) {
       const role: Role = rangers.includes(p.id) ? "ranger" : "camper";
-      actors.set(p.id, { id: p.id, role, x: z.station.x, y: z.station.y, yaw: z.station.yaw, pitch: 0, stamina: 1, crouch: false, prone: false, climbAt: null, climbHeld: false, run: false, light: this.live || this.tod !== "day", caughtAt: null, caughtBy: null, drop: null, disguise: null, movedAt: now, walkedAt: 0 });
+      actors.set(p.id, { id: p.id, role, x: z.station.x, y: z.station.y, yaw: z.station.yaw, pitch: 0, stamina: 1, crouch: false, prone: false, climbAt: null, outsideAt: null, climbHeld: false, run: false, light: this.live || this.tod !== "day", caughtAt: null, caughtBy: null, drop: null, disguise: null, movedAt: now, walkedAt: 0 });
     }
     this.round = {
       id: ++this.rounds, n, zone, rangers, actors, cues: [], asks: [], radio: new Map(rangers.map((id) => [id, { x: 0, y: 0, cooldownUntil: 0, used: NO_ASKS(), lastAsk: null }])),
       huntStartedAt: 0, circle: null, bigfoot: null, foundBy: null, lastHowl: 0, results: null, sky: this.live ? null : clearSky(this.tod), weather: null,
-      lastCall: new Map(), lastStep: new Map(), seen: new Map(),
+      lastCall: new Map(), lastStep: new Map(), seen: new Map(), trail: new Map(),
     };
     this.phase = "drop";
     this.endsAt = now + HUNT.dropSecs * 1000;
@@ -534,6 +545,7 @@ export class Hunt {
       this.touch();
     } else if (this.phase === "hunt") {
       this.tags(r, now);
+      this.leaving(r, now);
       this.footsteps(r, now);
       this.climbs(r, now);
       this.howl(r, now);
@@ -568,24 +580,52 @@ export class Hunt {
     a.crouch = !!m.crouch || !!a.disguise; a.prone = a.crouch && !!m.prone && !a.disguise; a.run = !!m.run && !a.crouch; a.light = !!m.light && a.role === "ranger";
     a.movedAt = now;
     if (d > 0.05) a.walkedAt = now;
+    if (a.role === "camper" && this.round) {
+      const t = this.round.trail.get(a.id) ?? [];
+      t.push([now, a.x, a.y]);
+      while (t.length && now - t[0][0] > HUNT.tagRewindMs) t.shift();
+      this.round.trail.set(a.id, t);
+    }
     this.touch();
   }
 
   private tags(r: Round, now: number) {
     const z = this.zone();
+    const reaches = (g: Actor, x: number, y: number) => Math.hypot(x - g.x, y - g.y) <= TAG_REACH && Math.abs(z.height(x, y) - z.height(g.x, g.y)) <= 2;
     for (const id of r.rangers) {
       const g = r.actors.get(id)!;
       if (!this.players.find((p) => p.id === id)?.online) continue;
       for (const c of r.actors.values()) {
         if (c.role !== "camper" || c.caughtAt !== null) continue;
-        if (Math.hypot(c.x - g.x, c.y - g.y) > TAG_REACH || Math.abs(z.height(c.x, c.y) - z.height(g.x, g.y)) > 2) continue;
-        c.caughtAt = now;
-        c.caughtBy = id;
-        c.crouch = false; c.prone = false; c.climbAt = null;
-        c.disguise = null;
-        this.cue(r, "caught", c.x, c.y, id, "all", now);
+        // Where they are, or where the ranger's screen may still be drawing them.
+        const was = (r.trail.get(c.id) ?? []).filter(([t]) => now - t <= HUNT.tagRewindMs);
+        if (!reaches(g, c.x, c.y) && !was.some(([, x, y]) => reaches(g, x, y))) continue;
+        this.catch(r, c, id, now);
         this.say(`${who(id)} caught ${who(c.id)} after ${Math.round((now - r.huntStartedAt) / 1000)} s`);
-        this.touch();
+      }
+    }
+  }
+
+  /** Out of the round: tagged by a ranger, or (`by` null) gone outside the search area too long. */
+  private catch(r: Round, c: Actor, by: string | null, now: number) {
+    c.caughtAt = now;
+    c.caughtBy = by;
+    c.crouch = false; c.prone = false; c.climbAt = null; c.outsideAt = null;
+    c.disguise = null;
+    this.cue(r, "caught", c.x, c.y, by ?? c.id, "all", now);
+    this.touch();
+  }
+
+  /** Outside the closing circle: a countdown on the camper's screen, then they're out. Back inside resets it. */
+  private leaving(r: Round, now: number) {
+    for (const c of r.actors.values()) {
+      if (c.role !== "camper" || c.caughtAt !== null) continue;
+      const out = outside(r.circle, now, c.x, c.y);
+      if (!out) { if (c.outsideAt !== null) { c.outsideAt = null; this.touch(); } continue; }
+      if (c.outsideAt === null) { c.outsideAt = now; this.touch(); }
+      else if (now - c.outsideAt >= HUNT.outsideSecs * 1000) {
+        this.catch(r, c, null, now);
+        this.say(`${who(c.id)} left the search area after ${Math.round((now - r.huntStartedAt) / 1000)} s`);
       }
     }
   }
