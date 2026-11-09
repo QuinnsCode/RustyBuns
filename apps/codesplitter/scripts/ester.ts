@@ -17,8 +17,11 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname } from "node:path";
 import type { CheckTime, Stage } from "./mervin-board.ts";
-import { check } from "@rustybuns/util/guard";
-import { PIPELINE_FILE, Pipeline, type Lane } from "../src/pipeline.ts";
+// Types only from the app: CI's plan step (scripts/ci-apps.ts) loads this file for `shard` before anything is installed.
+import type { Lane, Pipeline } from "../src/pipeline.ts";
+
+/** pipeline.ts's PIPELINE_FILE. */
+const PIPELINE_FILE = "codesplitter.pipeline.json";
 
 export type Owner = "main" | "flaky" | "own" | "wait" | "slow" | "blocks";
 export interface Verdict { test: string; owner: Owner; prs: number[]; why: string }
@@ -254,13 +257,6 @@ export function shard(tests: Timed[], n: number, fallback = 100): Timed[][] {
     lightest.total += t.ms || fallback;
   }
   return out.map((x) => x.tests);
-}
-
-/** The repo's pipeline file at `top`, or null when it has none (or one that isn't a pipeline). */
-export function pipelineAt(top: string): Pipeline | null {
-  const file = `${top}/${PIPELINE_FILE}`;
-  if (!existsSync(file)) return null;
-  try { return check(Pipeline, JSON.parse(readFileSync(file, "utf8"))); } catch { return null; }
 }
 
 /** Appends this run's rows to the JSONL `file`, one line per PR stamped with `at`. */
