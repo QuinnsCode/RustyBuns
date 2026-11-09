@@ -67,6 +67,7 @@
     "name": "Druids Curse",
     "line": "The live multiplayer game Rusty Buns was first built for.",
     "play": "https://druids-curse-votv.notryanquinn.workers.dev",
+    "image": "https://druids-curse-votv.notryanquinn.workers.dev/og/default.png",
     "stage": 3,
     "best": ["desktop"],
     "group": "games"

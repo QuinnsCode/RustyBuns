@@ -3,7 +3,7 @@ import { existsSync } from "node:fs";
 
 import { freshness } from "../public/fresh.js";
 
-type Entry = { name: string; line: string; play?: string; app?: string; download?: string; note?: string; soon?: boolean; stage: number; best: string[]; store?: string; group: string };
+type Entry = { name: string; line: string; play?: string; app?: string; download?: string; note?: string; soon?: boolean; stage: number; best: string[]; store?: string; image?: string; group: string };
 const apps: Entry[] = await Bun.file(`${import.meta.dir}/../public/apps.json`).json();
 
 test("every entry with a source link names an app folder that exists", () => {
@@ -11,7 +11,7 @@ test("every entry with a source link names an app folder that exists", () => {
 });
 
 test("play links are https and names are unique", () => {
-  for (const a of apps) if (a.play) expect(new URL(a.play).protocol).toBe("https:");
+  for (const a of apps) for (const u of [a.play, a.image]) if (u) expect(new URL(u).protocol).toBe("https:");
   expect(new Set(apps.map((a) => a.name)).size).toBe(apps.length);
 });
 

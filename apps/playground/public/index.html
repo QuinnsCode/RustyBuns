@@ -399,8 +399,13 @@ const linksOf = (a) => {
   if (!a.play) links.append(el("span", { className: "soon", textContent: a.note ?? (a.download ? "Browser version soon" : "Coming soon") }));
   return links;
 };
-// Screenshots are eqosys's card art (`bun run shots` copies them); an app with none just has no picture.
-const shotOf = (a, gone) => el("img", { className: "shot", src: `shots/${a.app}.jpg`, alt: "", loading: "lazy", onerror() { this.remove(); gone?.(); } });
+// Screenshots are eqosys's card art (`bun run shots` copies them). Without one, the entry's `image` (its site's own og:image, say)
+// stands in; with neither, no picture.
+const shotOf = (a, gone) => {
+  const srcs = [a.app && `shots/${a.app}.jpg`, a.image].filter(Boolean);
+  const img = el("img", { className: "shot", src: srcs.shift(), alt: "", loading: "lazy", onerror() { if (srcs.length) img.src = srcs.shift(); else { img.remove(); gone?.(); } } });
+  return img;
+};
 
 /** A gateway product: thin and bright, picture, name, one line, one button. */
 const gate = (a) => {
@@ -414,8 +419,8 @@ const gate = (a) => {
 /** A game or an app: a full-width row, the screenshot on one side and the rest on the other (stacked on a phone). */
 const row = (a, n) => {
   const body = el("div", { className: "body" }, el("h2", {}, el("i", { textContent: a.name[0] }), a.name), el("p", { textContent: a.line }), el("div", { className: "meta" }, stage(a.stage), best(a, n)), linksOf(a));
-  const card = el("div", { className: a.app ? "card" : "card bare" }, body);
-  if (a.app) card.prepend(shotOf(a, () => card.classList.add("bare")));
+  const card = el("div", { className: a.app || a.image ? "card" : "card bare" }, body);
+  if (a.app || a.image) card.prepend(shotOf(a, () => card.classList.add("bare")));
   if (a.play) card.prepend(el("span", { className: "tag", textContent: a.group === "games" ? "PLAY NOW" : "OPEN NOW" }));
   card.style.setProperty("--n", n);
   card.style.setProperty("--tilt", `${((n * 7) % 5 - 2) * 0.15}deg`);
