@@ -8,13 +8,27 @@
 //   bun scripts/builder-nightly.ts             build them all, write ~/builder/nightly/results.json, exit 1 if any failed
 //   bun scripts/builder-nightly.ts hono-example,fm-daw     only these apps
 //
-// One app failing never stops the rest. Each build gets 15 minutes.
+// One app failing never stops the rest. Each build gets 15 minutes. launchd runs it at 05:00 and 17:00 through
+// scripts/builder-nightly.sh (scripts/mac/dev.rustybuns.builder-nightly.plist, which builder-setup.sh installs), and
+// `bun run builder nightly` on the office Mac prints the last run's failures.
 import { mkdirSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
+import { arr, bool, num, obj, str, type Of } from "../packages/util/src/guard.ts";
 
 type Job = { app: string; runner: string; target: string; prep: string; build: string };
-type Result = { app: string; target: string; ok: boolean; seconds: number; tail: string };
+const Results = obj({ at: str(40), commit: str(40), results: arr(obj({ app: str(200), target: str(200), ok: bool(), seconds: num(0, Infinity), tail: str(Infinity, { min: 0 }) }), 1000) });
+type Results = Of<typeof Results>;
+type Result = Results["results"][number];
+
+/** The last night's failures out of results.json, for `bun run builder nightly`: one line when all built, a tail per failure. */
+export function report(text: string): { text: string; ok: boolean } {
+  let r: Results;
+  try { r = Results(JSON.parse(text)); } catch (e) { return { text: `no readable results.json (${e instanceof Error ? e.message : e}): has the nightly run yet?`, ok: false }; }
+  const failed = r.results.filter((x) => !x.ok);
+  const head = `${r.at.slice(0, 16).replace("T", " ")} at ${r.commit}: ${r.results.length - failed.length} of ${r.results.length} built`;
+  return { ok: !failed.length, text: [head, ...failed.map((f) => `FAIL ${f.app} ${f.target} ${f.seconds}s\n${f.tail.split("\n").map((l) => `     ${l}`).join("\n")}`)].join("\n") };
+}
 
 /** The build jobs this Mac does out of desktop-drop's matrix. */
 export function mine(matrix: unknown, only: string[] = []): Job[] {
@@ -49,7 +63,6 @@ if (import.meta.main) {
   const line = table.split("\n").find((l) => l.startsWith("build="));
   if (!line) throw new Error("ci-apps.ts printed no build matrix");
   const jobs = mine(JSON.parse(line.slice("build=".length)), only);
-  await Bun.$`bun install --frozen-lockfile`.cwd(root).quiet();
   const results: Result[] = [];
   for (const job of jobs) {
     const r = await run(job, root);

@@ -116,6 +116,9 @@ Then on the Mac you work on:
       setup line again, and in SwiftBar's menu tick Preferences > Launch at login. The menu bar then says
       "Bob: 2 running"; its menu lists each slot's worker, command, time running and last output line, and a click
       opens the log. It only reads `~/builder/runs`, which `bun run builder` writes (`scripts/builder-bar.ts`).
+- [ ] The setup line also schedules the nightly desktop builds (a Mac builder only): launchd runs
+      `scripts/builder-nightly.sh` at 05:00 and 17:00 from its own clone in `~/builder/nightly/src`, logging to
+      `~/builder/nightly/log`. From the office Mac, `bun run builder nightly` prints the last run and each app that failed.
 - [ ] Optional, once it works: turn off password logins over SSH, so only your key gets in. On the builder:
       `echo 'PasswordAuthentication no' | sudo tee /etc/ssh/sshd_config.d/keys-only.conf`, then turn Remote Login off and on.
 
