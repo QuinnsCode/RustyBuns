@@ -7,7 +7,7 @@
 import { symmetricDecrypt } from "better-auth/crypto";
 import { accountsOn, isAdmin } from "./identity.ts";
 import { artifactsFor, stubAll } from "./archive.ts";
-import { json, NAME, need, type Env, readBody } from "./env.ts";
+import { fail, json, NAME, need, type Env, readBody } from "./env.ts";
 import { arr, bool, obj, oneOf, opt, str, type Of } from "@rustybuns/util/guard";
 import { readJson } from "@rustybuns/util/http";
 import { importTarball, tooBigToImport } from "./tarball.ts";
@@ -391,13 +391,13 @@ const DIG_BODY = obj({ repo: str(4096, { min: 0, dflt: "" }), name: opt(str(100)
 
 async function digRepo(env: Env, user: string, t: Awaited<ReturnType<typeof githubToken>>, b: Of<typeof DIG_BODY>): Promise<Response> {
   const full = parseRepo(b.repo);
-  if (!full) return json({ error: "give a GitHub repo as owner/name or its URL" }, 400);
+  if (!full) return fail("BadInput", "give a GitHub repo as owner/name or its URL");
   // A folder's URL (or a path) digs up just that folder, at the branch the URL names (#381).
   const tree = parseFolder(b.repo);
   const at = tree ? await branchAndPath(full, tree, t?.token) : null;
   const folder = (b.path ?? at?.path ?? "").split("/").filter((w) => w && w !== "." && w !== "..").join("/");
   const name = b.name || (folder.split("/").at(-1) || full.split("/")[1]!).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
-  if (!NAME.test(name)) return json({ error: "bad repo name" }, 400);
+  if (!NAME.test(name)) return fail("BadInput", "name: lowercase letters and digits, single dashes between");
   const visibility = b.visibility ?? "public";
   const expires = isAdmin(env, user) ? null : Date.now() + DIG_TTL;
   // The housekeeping runs alongside the lookups on GitHub, not before them. The name check skips
@@ -424,7 +424,7 @@ async function digRepo(env: Env, user: string, t: Awaited<ReturnType<typeof gith
     if (meta.status === 404) {
       // The token can't see it, but this machine's git might: logged in to git as the account that was invited.
       const refs = await machineRefs(env, full);
-      if (!refs) return json({ error: hidden }, 404);
+      if (!refs) return fail("NotOnGitHub", hidden);
       info = { full_name: full, default_branch: refs.branch, private: true };
       sha = refs.sha;
       machine = true;
@@ -434,13 +434,13 @@ async function digRepo(env: Env, user: string, t: Awaited<ReturnType<typeof gith
       if (!got) return json({ error: `GitHub sent no repo for ${full}` }, 502);
       info = got;
       // A private repo needs a clone that carries the token, which only local git does.
-      if (info.private && !privateDigs(env)) return json({ error: `${full} is private on GitHub. Cloudflare Artifacts can only import public repos, so dig it up in the desktop app instead` }, 422);
+      if (info.private && !privateDigs(env)) return fail("PrivateOnGitHub", `${full} is private on GitHub. Cloudflare Artifacts can only import public repos, so dig it up in the desktop app instead`);
       sha = (await readJson(head, obj({ sha: str() })))?.sha ?? null;
     }
   } else {
     // No token: ask git, not the API (see gitRefs). Only public repos answer it, unless this machine's git can read it.
     const pub = await gitRefs(full), refs = pub ?? await machineRefs(env, full);
-    if (!refs) return json({ error: hidden }, 404);
+    if (!refs) return fail("NotOnGitHub", hidden);
     info = { full_name: full, default_branch: refs.branch, private: !pub };
     sha = refs.sha;
     machine = !pub;
@@ -448,13 +448,13 @@ async function digRepo(env: Env, user: string, t: Awaited<ReturnType<typeof gith
 
   if (at && at.branch !== info.default_branch) {
     const c = await githubHead(info.full_name, at.branch, t?.token).catch(() => null);
-    if (!c) return json({ error: `GitHub has no ${at.branch} branch on ${info.full_name}` }, 404);
+    if (!c) return fail("NoUpstreamBranch", `GitHub has no ${at.branch} branch on ${info.full_name}`);
     info = { ...info, default_branch: at.branch };
     sha = c.sha;
   }
   const upstream = `github:${info.full_name}${folder ? `/tree/${info.default_branch}/${folder}` : ""}`;
 
-  if (!(await ready)) return json({ error: "you already have a repo with that name" }, 409);
+  if (!(await ready)) return fail("RepoExists", "you already have a repo with that name");
   if (expires) await makeRoom(env, 1);
 
   // Shallow, like the levels; writable, because it's yours now.
@@ -463,7 +463,9 @@ async function digRepo(env: Env, user: string, t: Awaited<ReturnType<typeof gith
     art = await importRepo(env, { repo: info.full_name, branch: info.default_branch, token: machine ? undefined : t?.token, private: info.private && !machine, folder: folder || undefined },
       { name: `${user}--${name}`, opts: { description: `${user}'s fork of ${info.full_name}${folder ? `'s ${folder}` : ""}` } });
   } catch (e) {
-    return json({ error: `couldn't dig up ${info.full_name}: ${String((e as Error).message ?? e)}` }, 502);
+    // What the import said (git's or Artifacts' own words) goes to the log; the person reads a sentence. A 502, untagged: a client retries it.
+    console.warn(`dig: ${info.full_name}: ${String((e as Error).message ?? e)}`);
+    return json({ error: `couldn't dig up ${info.full_name} just now: try again in a minute` }, 502);
   }
   await env.DB.prepare("INSERT INTO repos (owner, name, visibility, created_at, artifact, artifact_remote, branch, upstream, upstream_commit, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
     .bind(user, name, visibility, Date.now(), art.name, art.remote, info.default_branch, upstream, sha, expires).run();
@@ -501,7 +503,7 @@ export async function githubRoutes(req: Request, env: Env, p: string[], user: st
   if (p[2] === "active" && req.method === "POST") {
     if (!user || !accountsOn(env)) return json({ error: "sign in first" }, 401);
     const { id } = await readBody<"id">(req);
-    if (!(await githubAccounts(env, user)).some((a) => a.id === id)) return json({ error: "that GitHub isn't linked to you" }, 404);
+    if (!(await githubAccounts(env, user)).some((a) => a.id === id)) return fail("NotYourGitHub", "that GitHub isn't linked to you");
     await env.DB.prepare("UPDATE users SET github_account = ? WHERE name = ?").bind(id, user).run();
     return json({ id });
   }
@@ -511,7 +513,7 @@ export async function githubRoutes(req: Request, env: Env, p: string[], user: st
   if (p[2] === "agent" && req.method === "POST") {
     if (!user || !accountsOn(env)) return json({ error: "sign in first" }, 401);
     const { id = null } = await readBody<"id">(req);
-    if (id !== null && !(await githubAccounts(env, user)).some((a) => a.id === id)) return json({ error: "that GitHub isn't linked to you" }, 404);
+    if (id !== null && !(await githubAccounts(env, user)).some((a) => a.id === id)) return fail("NotYourGitHub", "that GitHub isn't linked to you");
     await env.DB.prepare("UPDATE users SET agent_github = ? WHERE name = ?").bind(id, user).run();
     return json({ id });
   }
@@ -537,7 +539,7 @@ export async function githubRoutes(req: Request, env: Env, p: string[], user: st
   // GitHub repo for the wrecking room (/play#gh/<owner>/<repo>?mode=wreck), dug on first visit and reused.
   if (p[2] === "wreck" && req.method === "POST") {
     const full = parseRepo(String((await readBody<"repo">(req)).repo ?? ""));
-    if (!full) return json({ error: "give a GitHub repo as owner/name or its URL" }, 400);
+    if (!full) return fail("BadInput", "give a GitHub repo as owner/name or its URL");
     const name = full.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 39).replace(/^-|-$/g, "");
     const room = (r: { owner: string; name: string }) => json({ owner: r.owner, name: r.name });
     const cached = () => repoRow(env, WRECK_OWNER, name, "1", { liveAt: Date.now() });
