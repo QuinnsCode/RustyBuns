@@ -72,6 +72,42 @@ terminals.
 4. Auth: the office password and accounts map to codeSplitter's sign-in; `identity.ts` decides who is a person and
    who is a worker.
 
+## Build order (priced)
+
+The plan round from [#3423](https://github.com/QuinnsCode/RustyBuns/issues/3423) (2026-11-09). Each slice is one PR
+against `main`, tried on the `office-preview` stage, and works without the slices after it. The owner chooses which
+slice comes first.
+
+**Rates used** (Workers Paid, read 2026-11-08; check them before a deploy): Durable Objects get 1M requests and 400k GB-s
+of duration a month included, then $0.15 per million requests and $12.50 per million GB-s. An object bills 128 MB only
+while it is awake; hibernating sockets cost nothing while they sit idle. Static assets cost nothing per request.
+Container rates are the ones in [#3102](https://github.com/QuinnsCode/RustyBuns/issues/3102): memory
+$0.0000025/GiB-s, CPU $0.000020/vCPU-s (busy time only), disk $0.00000007/GB-s, billed only while the container runs.
+
+**Biggest a floor can cost:** one floor's object awake every second of a month is 30 × 86,400 s × 0.125 GB = 324k GB-s,
+which is under the 400k included. So slices 1 and 2 add $0 past the $5 plan for one floor. Each extra floor that is
+always awake costs about $4 a month. Containers are the only part that can run up a real bill, which is why slice 6,
+the cap, ships before any container is left running.
+
+| # | Slice | What a person sees | New resources | Fan-out to count | Price a month |
+|---|---|---|---|---|---|
+| 1 | **Office DO: queue, desks, roster** | `/office/<floor>` on the preview answers with the floor's state. Tasks can be added, reordered and cleared through it, and the roster and desks persist across deploys. | One SQLite-backed DO class (`OfficeFloor`), one object per floor, sockets hibernating (`ctx.acceptWebSocket`). Nothing else: no D1 tables, no queue. | One object per floor. Floor names are checked in the Worker before `idFromName`, so a junk URL makes no object. Each hook post and socket message is one request. | **$0** for one floor, inside the included usage. |
+| 2 | **3D client served from the Worker** | The Druids office opens in a browser from the preview's URL and shows slice 1's queue and desks live. | None. `scripts/rustybunsify.ts`'s `dist/public` gets uploaded as static assets beside `dist/client`. | None. Asset requests are free. | **$0** |
+| 3 | **Desks run codeSplitter agents** (new, no PTY) | Hire puts an `AgentSandbox` run at a desk: it takes the task, edits line by line under its own name (`src/agent-run.ts`, `src/identity.ts`) and the board shows the branch. You watch the run's output, not a terminal. | None new. It uses the `AgentSandbox` container already in `wrangler.jsonc` (`basic`, `max_instances: 2`). | One container per hired worker, at most 2 at once. | Per hour busy: about $0.03 on `basic`. A preview pass with checks 1 to 5 stays under $1 (PREVIEW.md). The model's tokens cost more than the container. |
+| 4 | **PTY over WebSocket** | A desk's terminal in the 3D office is the container's real shell. | A PTY server in `sandbox/server.mjs` (it has none today). The socket runs browser → Worker → container. | One open terminal keeps its container and the floor's object awake. | Container time while a terminal is open (see slice 5). The object's time stays inside the included usage for one floor. |
+| 5 | **Container lifetime** | A worker's session survives a deploy and a sleeping container. | `sleepAfter` on the sandbox class (it sets none today). The worker's clone is pushed to a branch before the container sleeps and pulled back when it wakes. | Same as 3 and 4. | A worker kept alive all day on `basic` costs about $0.01 an hour idle, $0.03 an hour busy. If Claude Code, `bun test` and git don't fit in 1 GiB, `standard-1` costs about $0.04 an hour idle and $0.07 busy. An 8-hour day is $0.30 to $0.60 per worker. |
+| 6 | **Per-floor cost cap** | The floor refuses a hire once this month's container time reaches its cap, and tells you so. | A counter in the floor's object, fed by run start and stop times (the D1 cost-counter pattern from #3102). | None. | $0. **Suggested cap: $5 a month per floor**, which buys about 160 worker-hours on `basic`, plus a 2-hour cap on a single run. Owner's call. |
+| 7 | **Auth mapping** | Sign in with codeSplitter's account instead of the office password. People and workers are told apart by `identity.ts`, and the floorguard rules (people-only, ask-first, overlap) run in the object's handlers. | None. | None. | $0 |
+
+Until slice 7 lands, the preview's `/office` routes accept only the signed-in owner. Before slice 1 starts, check one more
+thing: the upstream office (by WebDevCody) may not allow serving its client from our Worker. The local binary only
+builds it on the owner's machine. If its licence doesn't allow it, slice 2 needs its author's yes first (see the
+credit note in `README.md`).
+
+**Why this order:** slices 1 to 3 give the board, queue and hosted workers with no new kind of resource and no
+always-on container. That covers PREVIEW.md's checks 1, 2 and 5 without a terminal. Slices 4 and 5 are the big new code
+(see the "Gaps" list above), and slice 6 must land before 5 leaves containers running.
+
 ## 3. Cut-over and rollback
 
 **Cut over only when** the preview has run a full merge round (items 1 to 5, on a repeat run) with the old office

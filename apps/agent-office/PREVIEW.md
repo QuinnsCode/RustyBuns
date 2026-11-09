@@ -20,7 +20,7 @@ The owner wants the Druids office running in codeSplitter and kept up until they
 - Deploy and viewing are a MANUAL RUN: they need the owner (secrets via varlock).
 - Price it first (below and `COSTS.md`), smallest resources, destroy only after the owner has seen it.
 
-**Historical:** the owner floated moving codeSplitter to "its own room" on 2026-10-14, during the Cloudflare git competition (now over). It was never settled; the question is in #3423 if it still matters.
+**Historical:** the owner floated moving codeSplitter to "its own room" on 2026-10-14, during the Cloudflare git competition (now over). Settled on 2026-11-09: codeSplitter stays in this repo for now (#3423).
 
 ## Price (put the real figure on the PR before deploying)
 

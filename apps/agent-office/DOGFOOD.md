@@ -17,7 +17,9 @@ the repo it watches has to exist on codeSplitter first.
    The mark means the office *watches* codeSplitter, not that the office runs in it.
 4. **Use it.** Add a task to the 📋 queue in the office page. The dispatch hint asks codeSplitter which open branches already touch those
    files and offers to queue anyway or wait. Workers keep pushing to GitHub as before.
-   The hint runs in the page only: `office-workers hire` from a shell skips it.
+   The page's card asks codeSplitter. `office-workers hire` and the board's queue get the same check in the office's
+   own handlers (#3119, [`live/overlap.ts`](live/overlap.ts)), read from `gh` and git rather than codeSplitter:
+   a clash is refused unless `--anyway` or `--hold` is given.
 5. **Note what breaks.** File each rough edge as an issue, so the next round of fixes comes from using it.
 
 This tests the board, the dispatch hint and the "hung in X" notes. Workers still run in local worktrees and merge through
