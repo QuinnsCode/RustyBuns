@@ -1303,3 +1303,9 @@ body.in-fight > .gc-dialog { opacity: 0.74; }
 .world-hud .toast > .demand .ask { text-decoration: underline 1.5px var(--blood); text-underline-offset: 4px; }
 .world-hud .toast > .demand .sig { display: block; text-align: right; font-size: 18px; color: var(--ink-faded); margin-top: 2px; }
 .world-hud .toast > .demand .sig::before { content: "\2014\00a0"; }
+
+/* Remembered: each scene you've seen to its end, with a small inked play mark in the margin to watch it again */
+.paper .pages.memories li { display: flex; align-items: baseline; gap: 8px; }
+.paper .pages.memories button { flex: none; border: 1px solid var(--ink-line); background: none; border-radius: 50%; width: 26px; height: 26px; padding: 0; display: grid; place-items: center; color: var(--blood); cursor: pointer; align-self: center; }
+.paper .pages.memories button:hover, .paper .pages.memories button:focus-visible { background: rgba(70, 42, 18, 0.1); }
+.paper .pages.memories button svg { width: 12px; height: 12px; }

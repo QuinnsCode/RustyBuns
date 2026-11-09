@@ -19,7 +19,7 @@ import type { FromWorld, RosterEntry } from "../net/wire.ts";
 import { briefing, missionFor, OVERRUN } from "../sim/missions.ts";
 import { CAMPAIGN, chapterOf, nextChapter, opened } from "../sim/campaign.ts";
 import { Director, type Stage } from "../sim/director.ts";
-import { createElement, Lock, LogIn, LogOut, Users } from "lucide";
+import { createElement, Lock, LogIn, LogOut, Play, Users } from "lucide";
 import { achieve, canSignIn, finishSignIn, fresh, login, reportButton, signIn, signOut } from "../eqosys.ts";
 import { KEYS, keyLabel, WEAPONS, type WeaponId } from "../sim/weapons.ts";
 import { isRole, nextRole, ROLE_ORDER, ROLES, type RoleId } from "../sim/roles.ts";
@@ -38,7 +38,8 @@ import { addCommands } from "@rustybuns/util/commands";
 import { mountPalette } from "@rustybuns/util/palette";
 import { drawTally } from "./tally.ts";
 import { mountPortrait } from "./portrait.ts";
-import { Director as Film, mountScenes, playNamed, sceneLink } from "@rustybuns/util/director";
+import { Director as Film, mountScenes, playNamed, sceneLink, type Scene } from "@rustybuns/util/director";
+import { Memories, type Memory } from "@rustybuns/util/memories";
 import { credits, SCENES as FILM, type Setup } from "../sim/credits.ts";
 import { aim, footage, frameOuttake, mountCredits, mountNewsreel, photograph, type Lot } from "./credits.ts";
 
@@ -720,6 +721,28 @@ const film = new Film(0.6);
 const creditsEl = mountCredits(), reelEl = mountNewsreel();
 for (const el of [creditsEl.root, reelEl.root]) el.addEventListener("pointerdown", () => { filmSkip = true; });
 let filmSkip = false, pics = new Map<string, string>(), held: Setup | null = null, lot: Lot | null = null, reel: ReturnType<typeof footage> | null = null;
+/**
+ * The film's scenes you've seen to their end, to watch again from the menu (@rustybuns/util/memories). Only the ones
+ * the climb earns you are kept: the newsreel and the credits roll once you've won the top. A `?scene=` link plays any
+ * of them but keeps none.
+ */
+const memories = new Memories("git-recon:memories");
+const KEPT: Record<string, Memory> = {
+  newsreel: { id: "newsreel", scene: "newsreel", title: "Newsreel" },
+  credits: { id: "credits", scene: "credits", title: "Credits" },
+};
+function drawMemories() {
+  const box = $("memories"), row = box.querySelector(".chips")!;
+  row.replaceChildren(...memories.list().map((m) => {
+    const b = document.createElement("button");
+    b.type = "button", b.title = `Watch the ${m.title.toLowerCase()} again`;
+    b.append(createElement(Play), m.title);
+    b.onclick = () => playFilm(m.scene);
+    return b;
+  }));
+  box.hidden = !memories.list().length;
+}
+drawMemories();
 /** The film set: the level you're in (the last chapter, after a win), or the last chapter's level built for the take. */
 function lotFor(): Lot {
   if (current && !current.net) return (lot = { game: current.game, world: current.world });
@@ -735,7 +758,7 @@ function lotFor(): Lot {
  * Plays one of the film's scenes by name (FILM), over everything; a second `t` holds that frame. Then the menu. The
  * newsreel rolls into the credits, so their outtakes are photographed before it starts.
  */
-function playFilm(name: string, t: number | null = null): boolean {
+function playFilm(name: string, t: number | null = null, keep = false): boolean {
   if (!Object.hasOwn(FILM, name)) return false;
   const set = lotFor();
   if (name === "credits" || name === "newsreel") pics = photograph(set, renderer, camera), resize();
@@ -743,11 +766,15 @@ function playFilm(name: string, t: number | null = null): boolean {
   document.exitPointerLock?.();
   $("menu").hidden = true, $("results").hidden = true, $("hud").hidden = true;
   const ok = playNamed(film, FILM, name, { setup: (id) => (held = frameOuttake(set, id, camera)) }, t);
-  if (ok && name === "newsreel") film.play(credits());
+  // Earned (`keep`), each scene is filed as a memory once it plays to its end.
+  const mark = <S extends Scene>(s: S): S => { const m = keep ? KEPT[s.id] : undefined; return m ? memories.mark(s, m) : s; };
+  if (ok && film.scene) mark(film.scene);
+  if (ok && name === "newsreel") film.play(mark(credits()));
   return ok;
 }
 function filmFrame(dt: number) {
   const f = film.step(dt, filmSkip);
+  if (memories.step(f)) drawMemories();
   filmSkip = false;
   reelEl.draw(f);
   creditsEl.draw(f, pics);
@@ -999,7 +1026,7 @@ function results(game: Game) {
   else if (won && !game.mode && chapterOf(current!.def.id) === CAMPAIGN.length - 1) {
     $("results-body").textContent += " That's the top of the climb.";
     // The end of the campaign: Command's newsreel, then the credits roll, with the outtakes.
-    $("next").hidden = false, $("next").textContent = "Roll the newsreel", $("next").onclick = () => playFilm("newsreel");
+    $("next").hidden = false, $("next").textContent = "Roll the newsreel", $("next").onclick = () => playFilm("newsreel", null, true);
   }
   drawRoles();
   $("results").hidden = false;

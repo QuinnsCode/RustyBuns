@@ -533,6 +533,21 @@ and standoffs, and Git Recon's credits and outtakes, run on it.
 
 </details>
 
+### Cutscenes you can watch again, once you've seen them
+
+A scene the game picks becomes a memory once it plays to its end, and the game lists those to play back.
+
+<details><summary>More</summary>
+
+`@rustybuns/util/memories` keeps the scenes you have seen on the device. The game wraps the ones it wants kept
+(`memories.mark(scene, { id, scene, title, args })`) as it plays them, passes each director frame to `step`, and a
+scene that plays to its end (a skip counts, walking off doesn't) is filed. Playing one back is `playNamed` from the
+game's own scene table, where you stand now. Mythic Masters lists the tapes, arrivals, landmarks, sightings and first
+bindings in the journal's Regions chapter under "Remembered"; Git Recon's menu offers the newsreel and the credits
+once you've rolled them at the top of the climb.
+
+</details>
+
 ### Accessible by default
 
 The docs site works with a screen reader and a keyboard alone, and has reading settings with dyslexia-friendly fonts (Atkinson Hyperlegible, OpenDyslexic), larger text and wider spacing.
