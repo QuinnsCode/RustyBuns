@@ -8,7 +8,7 @@
 // everyone where they were. The Worker (worker.ts) is the only place identity is decided; it vouches X-User-Id and X-User-Name.
 import { refuseSocket, Sockets, type RoomCtx, type RoomSocket } from "@rustybuns/util/room";
 import { denNear, holds, landing } from "../net/dens.ts";
-import { huntNear, keepSeen, NO_SEEN, seenEmpty, step, wildNear, worldClock, FIGHT, MAX_PLAYERS, parseDelta, parseEvent, plausible, WORLD_EPOCH, type Anchor, type Delta, type MetAt, type Player, type Seen, type ServerMsg } from "../net/party.ts";
+import { believeHurt, huntNear, keepSeen, sharedDen, NO_SEEN, seenEmpty, step, wildNear, worldClock, FIGHT, MAX_PLAYERS, parseDelta, parseEvent, plausible, WORLD_EPOCH, type Anchor, type Delta, type MetAt, type Player, type Seen, type ServerMsg } from "../net/party.ts";
 
 /** A pose delta is under 60 bytes and a page sends 5 a second, so 8 a second with a burst of 16 is room to spare. A
  *  newcomer's catch-up (`seen`, up to 30 of each kind) runs to about 4 KB: it fits, and costs a token per 512 bytes. */
@@ -125,8 +125,10 @@ export class Region {
       if (!denNear(ev.den, seat.p) || !holds(ev.den, ev.c, ev.lv)) { if (seat.met || seat.owed) this.sockets.attach(ws, { ...seat, met: null, owed: undefined }); return; }
       // The same den told again (a reconnect, or walking back in) keeps the reports already made there, so a line-up
       // still stops at six.
-      const same = seat.met?.den === ev.den && seat.met.c === ev.c && Date.now() - seat.met.at < FIGHT.withinMs ? seat.met.n : 0;
-      this.sockets.attach(ws, { ...seat, met: { den: ev.den, c: ev.c, lv: ev.lv, at: Date.now() - ev.ago, n: Math.max(same, ev.ago ? ev.n : 0) }, owed: undefined });
+      const again = seat.met?.den === ev.den && seat.met.c === ev.c && Date.now() - seat.met.at < FIGHT.withinMs ? seat.met : null;
+      this.sockets.attach(ws, { ...seat, met: { den: ev.den, c: ev.c, lv: ev.lv, at: Date.now() - ev.ago, n: Math.max(again?.n ?? 0, ev.ago ? ev.n : 0), ...(again?.hurt && { hurt: again.hurt }) }, owed: undefined });
+      // A lair's creature is one creature: what friends there have taken off it already, so it walks in as hurt as it is.
+      if (sharedDen(ev.den)) for (const o of this.seats()) if (o.id !== seat.id && o.met?.den === ev.den && o.met.hurt?.d) this.sockets.send(ws, { t: "hurt", id: o.id, den: ev.den, d: o.met.hurt.d });
       // Told again after a reconnect: quietly. Told again because it was refused while loose: the party never heard it.
       if (!ev.ago || seat.owed === ev.den) this.sockets.broadcast({ t: "den", id: seat.id, den: ev.den, c: ev.c }, ws, others);
       return;
@@ -160,6 +162,16 @@ export class Region {
       if (!seat.met || !plausible(seat.met, ev, now)) return;
       this.sockets.attach(ws, { ...seat, met: { ...seat.met, at: now, n: seat.met.n + 1 } });
       this.sockets.broadcast({ t: "fought", id: seat.id, c: ev.c, lv: ev.lv, won: ev.won, bound: ev.bound }, ws, others);
+      return;
+    }
+    if (ev?.e === "hurt") {
+      // Only at a lair this player walked into, and believed no faster than a whole creature in FIGHT.minS (party.ts).
+      const now = Date.now(), met = seat.met;
+      if (seat.loose || !met || !sharedDen(met.den) || now - met.at > FIGHT.withinMs) return;
+      const hurt = believeHurt(met.hurt, met.at, ev.d, now);
+      if (hurt.d === (met.hurt?.d ?? 0)) return;
+      this.sockets.attach(ws, { ...seat, met: { ...met, hurt } });
+      this.sockets.broadcast({ t: "hurt", id: seat.id, den: met.den!, d: hurt.d }, ws, others);
       return;
     }
     const d = parseDelta(frame.value);

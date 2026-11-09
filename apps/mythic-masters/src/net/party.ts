@@ -113,6 +113,8 @@ export const SIGNS = 3;
  * - `time`: what is the world clock now? (the room answers with `time`, a sample for the page to keep the best of);
  * - `hunt`: took a contract (`s` 0) or read its `s`-th sign, so the party can follow it to the lair;
  * - `fought`: a fight it started at a den ended (`s` seconds of it), for the room to check and tell the party;
+ * - `hurt`: at a contract's lair, how much of the creature's health this player has taken off so far (`d`, in
+ *   thousandths of its full health, over every round of their trip there), so friends fighting it see one health bar;
  * - `life`: it flushed a flock (taking off on heading `h`) or picked a food patch, so the party's birds and bushes match;
  * - `open`: the regions its save has opened (on joining, and when one opens), so a jump is believed only at a landing
  *   spot in one of them (dens.ts `landing`). A claim, but it bounds a lie to what the page says it has. */
@@ -122,6 +124,7 @@ export type Event =
   | { e: "time" }
   | { e: "hunt"; h: string; s: number }
   | { e: "fought"; c: string; lv: number; won: boolean; bound: boolean; s: number }
+  | { e: "hurt"; d: number }
   | { e: "life"; k: "flush" | "pick"; id: string; h: number }
   | { e: "open"; rs: number[] };
 export type Met = Extract<Event, { e: "den" }>;
@@ -131,6 +134,7 @@ const EVENT: Guard<Event> = (v) => {
   if (e === "hunt") return obj({ e: oneOf(["hunt"]), h: str(32, { re: HUNT }), s: int(0, SIGNS) })(v);
   if (e === "fought") return obj({ e: oneOf(["fought"]), c: POSE.l, lv: int(1, 200), won: bool(), bound: bool(), s: int(0, 3600) })(v);
   if (e === "open") return obj({ e: oneOf(["open"]), rs: arr(POSE.r, 64) })(v);
+  if (e === "hurt") return obj({ e: oneOf(["hurt"]), d: int(0, HURT_FULL) })(v);
   if (e === "time") return obj({ e: oneOf(["time"]) })(v);
   if (e === "seen") return obj({ e: oneOf(["seen"]), ...SEEN })(v);
   return obj({ e: oneOf(["den"]), den: str(48, { re: DEN }), c: POSE.l, lv: int(1, 200), ago: int(0, AGO_MS, 0), n: int(0, FIGHT_PER_DEN, 0) })(v);
@@ -141,8 +145,23 @@ export const parseEvent = (raw: unknown): Event | null => check(EVENT, raw);
  *  as the fight says it lasted (less a little for clocks; after a first report, as long ago as that one), within a quarter
  *  of an hour, and the fight lasted 3 s to 2 min (a round is 99 s). A line-up fights a den one beast after another, so a
  *  den gives up to `perDen` reports. Anything else is dropped, never relayed. */
-export const FIGHT = { minS: 3, maxS: 120, slackMs: 2_000, withinMs: 15 * 60_000, perDen: FIGHT_PER_DEN } as const;
-export interface MetAt { den?: string; c: string; lv: number; at: number; n: number }
+const FIGHT_MIN_S = 3;
+export const FIGHT = { minS: FIGHT_MIN_S, maxS: 120, slackMs: 2_000, withinMs: 15 * 60_000, perDen: FIGHT_PER_DEN } as const;
+export interface MetAt { den?: string; c: string; lv: number; at: number; n: number; hurt?: Hurt }
+
+/** A lair's creature is one creature (#4063): every friend fighting it takes off the same health. Each page plays its own
+ *  fight, says how much it has taken off (`hurt`, in thousandths), and takes the friends' share off its own copy. */
+export const HURT_FULL = 1000;
+/** What the room believes of a player's share (`d`), and when they first walked into the lair (`from`): a share grows no
+ *  faster than a whole creature in FIGHT.minS from then (the shortest fight a report may have), and never goes down. */
+export interface Hurt { d: number; from: number }
+/** Only a contract's lair is fought together: a wild den is one player's at a time, a stone or an arena your own. */
+export const sharedDen = (den: string | undefined) => !!den?.startsWith("hunt:");
+/** The share the room believes when `d` is said at `now`, by a player who walked in at `from` (or as `was` says). */
+export function believeHurt(was: Hurt | undefined, from: number, d: number, now: number): Hurt {
+  const t0 = was?.from ?? from, most = Math.max(0, now - t0) * HURT_FULL / (FIGHT_MIN_S * 1000);
+  return { d: Math.round(Math.min(HURT_FULL, Math.max(was?.d ?? 0, Math.min(d, most)))), from: t0 };
+}
 export function plausible(met: MetAt | null | undefined, f: Extract<Event, { e: "fought" }>, now: number): boolean {
   if (!met || met.c !== f.c || met.lv !== f.lv || met.n >= FIGHT.perDen || f.s < FIGHT.minS || f.s > FIGHT.maxS) return false;
   const since = now - met.at;
@@ -220,6 +239,7 @@ export type ServerMsg =
   | { t: "den"; id: string; den: string; c: string }
   | { t: "hunt"; id: string; h: string; s: number }
   | { t: "fought"; id: string; c: string; lv: number; won: boolean; bound: boolean }
+  | { t: "hurt"; id: string; den: string; d: number }
   | { t: "life"; id: string; k: "flush" | "pick"; f: string; h: number }
   | { t: "time"; age: number }
   | { t: "vouch" }
@@ -246,6 +266,7 @@ const SERVER: Guard<ServerMsg> = (v) => {
   if (t === "life") return obj({ t: oneOf(["life"]), id: PID, k: oneOf(["flush", "pick"]), f: str(24, { re: CELL }), h: num(-10, 10, 0) })(v);
   if (t === "hunt") return obj({ t: oneOf(["hunt"]), id: PID, h: str(32, { re: HUNT }), s: int(0, SIGNS) })(v);
   if (t === "fought") return obj({ t: oneOf(["fought"]), id: PID, c: POSE.l, lv: int(1, 200), won: bool(), bound: bool() })(v);
+  if (t === "hurt") return obj({ t: oneOf(["hurt"]), id: PID, den: str(48, { re: DEN }), d: int(0, HURT_FULL) })(v);
   if (t === "hi") return obj({ t: oneOf(["hi"]), id: PID, name: NAME })(v);
   if (t === "bye") return obj({ t: oneOf(["bye"]), id: PID })(v);
   if (t === "vouch") return obj({ t: oneOf(["vouch"]) })(v);
