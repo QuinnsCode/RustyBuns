@@ -23,7 +23,8 @@ const BASE = `
 .eq-chip.in{padding:2px 2px 2px 10px;border:var(--ui-border) solid var(--ui-line);border-radius:var(--ui-radius-sm);background:var(--ui-bg)}
 .eq-who{font-family:var(--ui-font-head);font-weight:700;max-width:12em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .eq-note{flex-basis:100%;margin:0;color:var(--ui-dim);font-size:12px}
-.rb-report{position:fixed;right:12px;bottom:12px;z-index:2147483000;display:grid;justify-items:end;gap:6px}
+.rb-report{position:fixed;right:max(12px,env(safe-area-inset-right));bottom:max(12px,env(safe-area-inset-bottom));z-index:2147483000;display:grid;justify-items:end;gap:6px}
+@media (max-width:600px){.rb-report>.eq-btn{padding:0}.rb-report>.eq-btn>span{display:none}}
 .eq-form{display:grid;gap:8px;width:min(320px,calc(100vw - 24px));padding:14px;border:var(--ui-border) solid var(--ui-line);border-radius:var(--ui-radius);background:var(--ui-bg);box-shadow:var(--ui-shadow)}
 .eq-form[hidden]{display:none}
 .eq-title{margin:0;font:700 17px/1.2 var(--ui-font-head);color:var(--ui-ink)}
