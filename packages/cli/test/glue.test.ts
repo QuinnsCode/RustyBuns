@@ -720,7 +720,8 @@ test("workflow, analytics engine, worker loader, observability, routes: wrangler
   expect(a).toContain(`env: { FLOW: FLOW, AE: AE, LOADER: LOADER },`);
   expect(a).toContain(`  observability: {"enabled":true,"logs":{"enabled":true,"headSamplingRate":0.1,"invocationLogs":true}},`);
   expect(a).toContain(`  domain: {"name":"app.example.com","aliases":["www.example.com"]},`);
-  expect(a).toContain(`  routes: [{"pattern":"example.com/api/*","zoneName":"example.com"}],`);
+  // The custom domain gets its exact route too, so a zone's wildcard route can't take it (#4006).
+  expect(a).toContain(`  routes: [{"pattern":"example.com/api/*","zoneName":"example.com"},{"pattern":"app.example.com/*"}],`);
   const host = desktopEntry(c);
   expect(host).toContain(`  FLOW: local.workflow("FLOW"),`);
   expect(host).toContain(`const { default: worker, Flow, } = await import(`);
