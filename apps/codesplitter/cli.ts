@@ -27,8 +27,8 @@ import { chmodSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { TRIAGE_USAGE, triage } from "@rustybuns/cli/triage";
 import { Effect } from "effect";
 import { codesplitter, type Failure } from "./client.ts";
-import { ERRORS, type ErrorTag } from "./src/openapi.ts";
 import { agentPrompt } from "./src/agent-prompt.ts";
+import { explain } from "./src/failed.ts";
 import { tool, tools } from "./src/mcp.ts";
 import { isPlainObject } from "./src/util.ts";
 import { splittersContext } from "./triage/context.ts";
@@ -90,15 +90,9 @@ export function say(e: Failure<string>, site: string): string {
     case "TokenCantDo": return `${e.message}. Make a token${e.scope ? ` with ${e.scope} scope` : ""} at ${site}/#/me/tokens and run: codesplitter login`;
     case "RateLimited": return `Too many calls for now: try again in ${e.retryAfter} seconds.`;
     case "Transient": return `${site} didn't answer, after a few tries: try again in a minute.`;
-    default: {
-      const tag = "reply" in e && isPlainObject(e.reply) ? e.reply.tag : null;
-      const means = isTag(tag) && ERRORS[tag][1];
-      return means && e.message.length < 40 && !e.message.includes(means) ? `${e.message}: ${means}` : e.message;
-    }
+    default: return explain(e.message, "reply" in e && isPlainObject(e.reply) ? e.reply.tag : null);
   }
 }
-
-const isTag = (t: unknown): t is ErrorTag => typeof t === "string" && Object.hasOwn(ERRORS, t);
 
 async function readStdin() {
   const chunks: Buffer[] = [];

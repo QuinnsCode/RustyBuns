@@ -93,11 +93,15 @@ describe("POST /api/mcp", () => {
     expect(edit.isError).toBe(false);
     const after = JSON.parse((await tool(read, "read_file", { owner: "ryan", repo: "lab", path: "a.ts" })).content[0].text);
     expect(after.lines[1]).toMatchObject({ text: "TWO", by: "ryan" });
-    // The app's own answer comes through: a stale base is a 409, a missing path an error.
+    // A failure is its status, its tag and a sentence to act on, then the reply's fields (the conflicts) to act with.
     const stale = await tool(write, "edit_lines", { owner: "ryan", repo: "lab", path: "a.ts", body: { ops: [{ kind: "set", line: l.id, base: l.rev, text: "x" }] } });
     expect(stale).toMatchObject({ isError: true });
-    expect(stale.content[0].text).toStartWith("409");
-    expect((await tool(read, "read_file", { owner: "ryan", repo: "lab" })).isError).toBe(true);
+    const [head, fields] = stale.content[0].text.split("\n");
+    expect(head).toMatch(/^409 LinesChanged: A line changed since you read it.*read the file again/);
+    expect(JSON.parse(fields)).toMatchObject({ conflicts: [{ index: 0 }] });
+    // A terse sentence gets what its tag means; a missing argument says which.
+    expect((await tool(read, "read_file", { owner: "ryan", repo: "nope", path: "a.ts" })).content[0].text).toBe("404 NoSuchRepo: not found: no such repo, or it's private and you can't see it");
+    expect((await tool(read, "read_file", { owner: "ryan", repo: "lab" })).content[0].text).toBe("path is required");
   });
 });
 
