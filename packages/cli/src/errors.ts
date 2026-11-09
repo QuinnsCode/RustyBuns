@@ -14,6 +14,9 @@ export class ConfigLoadFailed extends Schema.TaggedError<ConfigLoadFailed>()("Co
 /** plan/deploy refused to go ahead (a guard, or no plan on record). Exits 2: nothing ran. */
 export class DeployRefused extends Schema.TaggedError<DeployRefused>()("DeployRefused", { message: Schema.String, exitCode: Schema.optional(Schema.Number) }) {}
 
+/** The `node` on PATH is older than Alchemy supports; checked before the build (#3743). */
+export class NodeTooOld extends Schema.TaggedError<NodeTooOld>()("NodeTooOld", { message: Schema.String }) {}
+
 /** alchemy itself exited non-zero. Its own output is above; this is the one line that says so. */
 export class AlchemyFailed extends Schema.TaggedError<AlchemyFailed>()("AlchemyFailed", { sub: Schema.String, exitCode: Schema.Number }) {
   override get message() { return `alchemy ${this.sub} exited ${this.exitCode} (its output is above)`; }
