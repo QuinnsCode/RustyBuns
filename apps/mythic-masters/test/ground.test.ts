@@ -1,6 +1,8 @@
 import { expect, test } from "bun:test";
 import { GROUND_BIOMES, groundFeel, groundWeights, LAYERS, LAYER_COUNT, type Cover } from "../src/world/ground.ts";
 import { decodeNormals } from "../src/arena.ts";
+import { litter, scatterLitter, type Piece } from "../src/world/litter.ts";
+import { REGIONS, type Biome } from "../src/regions.ts";
 
 const none: Cover = { litter: 0, grass: 0, sand: 0, mud: 0, path: 0, rock: 0, snow: 0 };
 const at = (biome: Parameters<typeof groundWeights>[0], c: Partial<Cover> = {}) => {
@@ -52,4 +54,19 @@ test("a baked normal map decodes to a tangent-space one: level ground points str
   expect(d[2]).toBe(255);
   const nx = 218 / 127.5 - 1, nz = d[6]! / 127.5 - 1;
   expect(Math.hypot(nx, nz)).toBeCloseTo(1, 1);
+});
+
+test("the litter round your feet is the biome's own: leaves in a forest, needles and cones in the pines, stones in the desert, nothing under water", () => {
+  const counts = (biome: Biome, water = -10) => {
+    const f = litter(), g = REGIONS.find((r) => r.biome === biome)!;
+    expect(scatterLitter(f, 0, 0, () => g, () => 2, () => water)).toBe(true);
+    return Object.fromEntries([...f.meshes].map(([p, m]) => [p, m.count])) as Record<Piece, number>;
+  };
+  const rows: [Biome, Piece[], Piece[]][] = [["forest", ["leaf", "twig"], ["needles"]], ["pine-barrens", ["needles", "cone"], ["leaf"]], ["desert", ["pebble"], ["leaf", "needles", "cone"]]];
+  for (const [biome, has, lacks] of rows) {
+    const n = counts(biome);
+    for (const p of has) expect(n[p]).toBeGreaterThan(50);
+    for (const p of lacks) expect(n[p]).toBe(0);
+  }
+  expect(Object.values(counts("forest", 5)).reduce((s, x) => s + x, 0)).toBe(0);
 });

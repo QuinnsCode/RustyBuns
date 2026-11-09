@@ -19,6 +19,7 @@ import { SECTIONS, sections } from "../journey.ts";
 import { arenaOf, COLS, CELL, explore, explored, gateShut, setTravel, travelOf, pace, WADE_DEPTH, type Gait, FOG, FOG_W, isSeen, meet, NIGHT_MEET_R, newSeen, openRegions, opensRoadTo, OWNER, regionAt, riverAt, ROWS, sendHome, spawn, STEP, GROUND_N, surface, waterAt, wildsNear, heightAt, type Wild } from "./world.ts";
 import { FEEL_ATTR, groundFeel, groundLook, groundWeights, loadGround, WEIGHT_ATTRS, LAYER_COUNT, type Cover } from "./ground.ts";
 import { FLORA, flora, grove, scatterFar, scatterFlora, scatterTurf, TREELINE, turfAt as grassCover, TURF } from "./flora.ts";
+import { litter as litterOf, scatterLitter } from "./litter.ts";
 import { lifeView, type LifeEvent } from "./life.ts";
 import { DAWN_HOUR, DAY, daylight, hourAt, weather, wind, type Patch as Forage, type Weather } from "./nature.ts";
 import type { Ambient } from "./ambience.ts";
@@ -311,7 +312,7 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
   const landStats = () => { const by = [0, 0, 0]; for (const t of tiles) if (t.mesh.visible && t.lod >= 0) by[t.lod]!++; return by; };
 
   // --- the ground under your feet, near and mid, and what grows on it --------------------------------------------
-  let floraDirty = true, farDirty = true, turfAt = { x: NaN, z: NaN }, turfBusy = false;
+  let floraDirty = true, farDirty = true, turfAt = { x: NaN, z: NaN }, turfBusy = false, litterAt = { x: NaN, z: NaN }, litterBusy = false;
   /** A per-sample field (lift, a colour channel) read between samples. */
   const between = (f: ArrayLike<number>, x: number, z: number, stride = 1, o = 0) => {
     const fx = clamp(x / STEP, 0, COLS - 1.001), fz = clamp(z / STEP, 0, ROWS - 1.001), c0 = Math.floor(fx), r0 = Math.floor(fz), i = r0 * COLS + c0;
@@ -411,6 +412,7 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
   }
   let peace = false;
   const plants = flora(() => { floraDirty = farDirty = true; });
+  const litter = litterOf();
   /** Open ground whose piece has fully risen, where things may grow: not on a town's lot. */
   const grows = (x: number, z: number) => { const g = regionAt(x, z), open = openRegions(beaten); return g && open.has(g.n) && rise[g.n] === 1 && !onLot(x, z) ? g : undefined; };
   /** Plants only grow on a piece that has fully risen. */
@@ -472,7 +474,7 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
     }
     clouds.instanceMatrix.needsUpdate = true;
   }
-  group.add(land, near.mesh, near.water!, mid.mesh, mid.water!, far.mesh, plants.group, sea, sun, sun.target, hemi, sky, precip, clouds);
+  group.add(land, near.mesh, near.water!, mid.mesh, mid.water!, far.mesh, plants.group, litter.group, sea, sun, sun.target, hemi, sky, precip, clouds);
   let dayOff = 0, L = daylight(0), W = weather(0, "forest"), forced: Weather | null = null;
   const ROOM = 0.35; // main.ts's room environment, which lights everything a little: dimmed with the day here
   /** Seconds into the day: the clock, moved by `setHour`. */
@@ -1277,6 +1279,10 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
       if (!near.dirty && !mid.dirty && !far.dirty && !planting && (turfBusy || tx1 !== turfAt.x || tz1 !== turfAt.z)) {
         turfAt = { x: tx1, z: tz1 };
         turfBusy = !scatterTurf(plants, tx1, tz1, grows, (x, z) => patchY(near, x, z) ?? fineY(x, z), waterLevel, BUILD_MS);
+      } else if (!near.dirty && !mid.dirty && !far.dirty && !planting && (litterBusy || litterAt.x !== turfAt.x || litterAt.z !== turfAt.z)) {
+        // then the litter, on the next frame the grass leaves free
+        litterAt = { ...turfAt };
+        litterBusy = !scatterLitter(litter, turfAt.x, turfAt.z, grows, (x, z) => patchY(near, x, z) ?? fineY(x, z), waterLevel, BUILD_MS);
       }
       const open = openRegions(beaten);
       roam(dt, open);
@@ -1385,7 +1391,7 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
         beaten: [...beaten].sort((a, b) => a - b), open: [...open].sort((a, b) => a - b),
         ground: { loaded: stream.loaded(), tiles: landStats(), patches: { near: near.at, mid: mid.at, far: far.at, dirty: [near.dirty, mid.dirty, far.dirty], lift: +lf(me.x, me.z).toFixed(3), water: +waterLevel(me.x, me.z).toFixed(2), ground: +fineY(me.x, me.z).toFixed(2), drawn: +groundY(me.x, me.z).toFixed(2) } }, section: trekAt.band, wilds: [...roamers.values()].map(({ c }) => ({ id: c.id, level: c.level, x: +c.x.toFixed(1), z: +c.z.toFixed(1) })),
         bearer: bearer && { id: bearer.id, colour: bearer.colour, trail: bearer.stones, gait: bearer.gait }, friends: [...friends].map(([id, o]) => ({ id, colour: o.b.colour, trail: o.b.stones, team: o.team.map((t) => t.c.id) })),
-        plants: plants.spots, far: plants.far, tufts: plants.tufts, motes: life.motes, wading: waterLevel(me.x, me.z) - fineY(me.x, me.z) > WADE_DEPTH, gait, depth: +(waterLevel(me.x, me.z) - fineY(me.x, me.z)).toFixed(2),
+        plants: plants.spots, far: plants.far, tufts: plants.tufts, litter: litter.pieces, motes: life.motes, wading: waterLevel(me.x, me.z) - fineY(me.x, me.z) > WADE_DEPTH, gait, depth: +(waterLevel(me.x, me.z) - fineY(me.x, me.z)).toFixed(2),
         night: tonight && { night: tonight.night, houses: tonight.houses.map((h) => h.id), paths: tonight.paths.length, safe: +safeD.toFixed(1), dread: +dread.toFixed(2), stalker: stalker?.id ?? null, lamps: lamp[0].count, gary: gary && { t: +gary.t.toFixed(1), x: +gary.x.toFixed(1), z: +gary.z.toFixed(1), off: !!gary.to } },
         day: { hour: +L.hour.toFixed(2), dark, shelter: shelter?.id ?? null, wind: +wind(clock).toFixed(2), rain: +W.rain.toFixed(2), snow: +W.snow.toFixed(2), mist: +W.mist.toFixed(2) }, life: life.state(), places: places.state(g.n), hunts: places.hunts(g.n),
         town: inside && { id: inside.t.id, name: inside.t.name, x: +inside.at.x.toFixed(2), z: +inside.at.z.toFixed(2), room: roomAt(inside.at)?.id ?? null, near: inside.near, board: BOARD.read, people: inside.t.people.map((p) => ({ id: p.id, who: p.who, ...p.at })) } };
