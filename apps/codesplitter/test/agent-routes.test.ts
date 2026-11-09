@@ -162,8 +162,9 @@ function gated(call: { env: any }, o: { session?: string } = {}) {
         // As execCommand's listen does: notes, then the files they may name, so a note finds its file there.
         const got = await ear!.poll();
         await give(cwd, await ear!.files?.() ?? []);
-        heard.push(...got);
+        // The folder first: a test waiting on `heard` then reads the files that came with the note.
         if (got.length) files.push(held(cwd));
+        heard.push(...got);
         for (const n of got) ear!.said?.(`ok: ${n}`);
         await Bun.sleep(10);
       }
