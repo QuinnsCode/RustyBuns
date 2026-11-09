@@ -1,7 +1,7 @@
 import { expect, setDefaultTimeout, test } from "bun:test";
 import { POWER_PATCHES } from "../power/patch.ts";
 import { fps, gate, parseMode, pixelRatio, type State } from "../power/policy.ts";
-import { read, unpackPinned } from "./pinned.ts";
+import { read, unpackPinned, pinnedTest } from "./pinned.ts";
 
 // the first run downloads the pinned release into .cache, as rustybunsify.ts does
 setDefaultTimeout(60_000);
@@ -47,7 +47,7 @@ test("the gate keeps 60 of a 120 Hz display's frames, and every frame of a 60 Hz
   expect(count(120, Infinity)).toBe(120);
 });
 
-test("both patch targets are in the pinned release's 3D bundle, once each", async () => {
+pinnedTest("both patch targets are in the pinned release's 3D bundle, once each", async () => {
   const pkg = await unpackPinned();
   const [main] = [...new Bun.Glob("dist/public/assets/main-*.js").scanSync({ cwd: pkg })];
   const js = read(`${pkg}/${main}`);
