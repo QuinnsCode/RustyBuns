@@ -5,7 +5,6 @@ import { AppPage, Deleted, DeletePage, ErrorPage, Home, Privacy, tabOf } from ".
 import { Login } from "./app/Login.tsx";
 import { phaseAt } from "./app/Sky.tsx";
 import { THEME_SCRIPT } from "./app/Theme.tsx";
-import { CAROUSEL_SCRIPT } from "./app/Carousel.tsx";
 import { appOf } from "./apps.ts";
 import { Document } from "./app/Document.tsx";
 import { authOn, isAdmin, meOf, onApple, providers } from "./auth.ts";
@@ -56,11 +55,11 @@ const devMigrate = (db: AppEnv["DB"]) => (migrated ??= (async () => {
     await db.prepare(q).run().catch((err: unknown) => { if (!/duplicate column/i.test(String(err))) throw err; });
 })());
 
-// The sky switch's and the rows' carousel inline scripts are allowed by their hashes, and the commands' module script (app/commands.client.ts,
+// The sky switch's inline script is allowed by its hash, and the commands' module script (app/commands.client.ts,
 // with the palette and the WebMCP tools) by the nonce rwsdk puts on it, so the CSP still lets nothing else run.
 let scriptSrc: Promise<string> | undefined;
 const hashOf = (text: string) => crypto.subtle.digest("SHA-256", new TextEncoder().encode(text)).then((d) => `'sha256-${btoa(String.fromCharCode(...new Uint8Array(d)))}'`);
-const themeHash = () => (scriptSrc ??= Promise.all([THEME_SCRIPT, CAROUSEL_SCRIPT].map(hashOf)).then((h) => h.join(" ")));
+const themeHash = () => (scriptSrc ??= hashOf(THEME_SCRIPT));
 
 const see = (to: string) => new Response(null, { status: 302, headers: { location: to } });
 

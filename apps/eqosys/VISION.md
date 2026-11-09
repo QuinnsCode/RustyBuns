@@ -4,6 +4,34 @@ The owner's picture (2026-11-06): one account that is a game store and a media l
 once. You can come in from the top (play a game, keep your things, then open its code) or from the bottom (write an app, ship
 it, and it shows up on everyone's shelf). An idea engine either way.
 
+## The pitch (2026-11-08, #3972)
+
+- **eqosys:** your home for every Q game: one account with your games, friends, saves and the studio where you make them.
+- **Qollab:** realtime rooms for any app on Cloudflare: rooms, seats, parties, presence and saves in one call.
+
+eqosys is who you are; Qollab is who you are with. eqosys is the account and the home. Qollab is the live part it ships with,
+and a product of its own: built into eqosys for every Q game, and sold alone to other developers once it takes their own
+sign-in (#3978). Qlave stays the voice: a space's voice channels are Qollab's, the audio is Qlave's.
+
+## The words
+
+Pages and pitches use the left column; docs keep the code's names (`Hub`, `Party`, `Space`, the token door) where code is meant.
+
+| Say | Means | Instead of | Whose |
+| --- | --- | --- | --- |
+| Home | The first page after sign-in: what you played last, a shelf a genre, which friends are on. | the dashboard | eqosys |
+| Library | Every game you have played or can play. | apps, access list | eqosys |
+| Saves | Your progress, following you to any device. | cloud-save blobs | eqosys shows them, Qollab keeps them |
+| Achievements | Every game's, in one place. | (kept) | eqosys |
+| Studio | Where you make and ship: its shelf, its people, what is live. | (kept) | eqosys |
+| Play, Keep, Make, Ship | The four doors on every app (below). | (kept) | eqosys |
+| Friends | People you play with, and what each is doing now. | hub, presence | Qollab |
+| Party | A few friends getting ready for one game, behind one room code. | lobby | Qollab |
+| Room | Where a game happens; a party starts into one. | world, match | the game, named by Qollab |
+| Seat | Your place in a room, kept if you drop and come back. | slot, player index | Qollab |
+| Space | A group that lasts between games, with channels. | server, guild | Qollab |
+| Room code | The six letters you read out to a friend. | party code | Qollab |
+
 ## The three layers
 
 | Layer | Holds | Code |

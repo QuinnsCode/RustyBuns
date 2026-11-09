@@ -1,4 +1,4 @@
-# Qollab: eqosys's multiplayer layer
+# Qollab: realtime rooms, built into eqosys
 
 Design note from the spike in [#3046](https://github.com/QuinnsCode/RustyBuns/issues/3046). The build in the list at the bottom has shipped (status below); this note stays as the record of why.
 
@@ -18,10 +18,12 @@ moves the three classes, with their data, out of eqosys's Worker; then eqosys, w
 
 ## What it is
 
-Qollab is not a product beside eqosys. Anyone using it is already signed in to eqosys, so it is eqosys's
-multiplayer layer: the part of the one account that knows who you are playing with. The mental model is a
-store-and-launcher account: one meta account across every Q app, carrying friends, presence, parties,
-chat and cloud saves, with each app plugging in. A game keeps its own rooms, ticks and sync, as fast as it
+Realtime rooms for any app on Cloudflare: rooms, seats, parties, presence and saves in one call. It is two
+things at once (owner, 2026-11-08, #3972). Inside eqosys it is the part of the one account that knows who you are
+playing with: friends, presence, parties, chat and cloud saves across every Q app, each app plugging in. And it is a
+product of its own, somewhere between a self-hostable app platform and a realtime rooms kit, for other developers to
+use without eqosys; that needs their own sign-in at the door, which is #3978 (today every door checks an eqosys token).
+The pitch and the words the pages use are in [VISION.md](VISION.md#the-pitch-2026-11-08-3972). A game keeps its own rooms, ticks and sync, as fast as it
 is today, and reads user things off the account.
 
 ## The split
