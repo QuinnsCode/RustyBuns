@@ -9,6 +9,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
 import { arr, num, obj, str } from "@rustybuns/util/guard";
+import { runBlender } from "@rustybuns/cli/blender";
 import { THEMES } from "./catalog.ts";
 import { credit, hdri, inBatches, model, texture } from "./polyhaven.ts";
 import { occupancy, recipe, structure } from "./recipe.ts";
@@ -47,12 +48,7 @@ const sky = await hdri(r.room.sky);
 
 const job = join(out, "job.json");
 await Bun.write(job, JSON.stringify({ recipe: r, assets, floor, sky, out, preview: args.preview, samples: Number(args.samples), device: args.device }));
-const blender = Bun.spawn(["blender", "-b", "--factory-startup", "-P", join(import.meta.dir, "bake.py"), "--", job], { stdout: "pipe", stderr: "pipe" });
-const stderr = new Response(blender.stderr).text();   // drained alongside, or a full pipe stalls Blender
-for await (const line of blender.stdout.pipeThrough(new TextDecoderStream())) {
-  for (const l of line.split("\n")) if (l.startsWith("[bake") || l.includes("Error")) console.log(l);
-}
-if ((await blender.exited) !== 0) throw new Error(`blender failed:\n${(await stderr).slice(-2000)}`);
+await runBlender({ script: join(import.meta.dir, "bake.py"), args: [job], onLine: (l) => { if (l.startsWith("[bake") || l.includes("Error")) console.log(l); } });
 
 const raw = new Float32Array(await Bun.file(join(out, "splats.bin")).arrayBuffer());
 const ply = packPly(raw);

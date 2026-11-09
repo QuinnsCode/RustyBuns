@@ -19,6 +19,7 @@ import { readdirSync, readFileSync, watch } from "node:fs";
 import { availableParallelism } from "node:os";
 import { join } from "node:path";
 import { arr, num, obj, oneOf, str, type Of } from "@rustybuns/util/guard";
+import { runBlender } from "@rustybuns/cli/blender";
 import { judgePairs, keep, keptDir, OUT } from "./judge-loop.ts";
 
 const APP = join(import.meta.dir, "..");
@@ -49,13 +50,8 @@ function specs() {
   });
 }
 
-/** Runs Blender on flora.py with these arguments; resolves to its output, or throws with its tail. */
-async function blender(args: string[]): Promise<string> {
-  const p = Bun.spawn(["blender", "-b", "--factory-startup", "--python-exit-code", "1", "-P", join(APP, "blender/flora.py"), "--", ...args], { cwd: APP, stdout: "pipe", stderr: "pipe" });
-  const [out, err] = await Promise.all([new Response(p.stdout).text(), new Response(p.stderr).text()]);
-  if ((await p.exited) !== 0) throw new Error(`blender ${args.join(" ")} failed:\n${(out + err).split("\n").slice(-25).join("\n")}`);
-  return out;
-}
+/** Runs Blender on flora.py with these arguments; resolves to its output, or throws with why it failed. */
+const blender = async (args: string[]) => (await runBlender({ script: join(APP, "blender/flora.py"), args, cwd: APP })).out;
 /** The lines worth showing from a build: triangles, size, files written. */
 const report = (out: string) => out.split("\n").filter((l) => /triangles|tall|^-> |^render -> /.test(l)).map((l) => "  " + l.trim()).join("\n");
 

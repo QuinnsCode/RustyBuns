@@ -20,6 +20,7 @@
   },
   "exports": {
     ".": "./src/index.ts",
+    "./blender": "./src/blender.ts",
     "./config": "./src/config.ts",
     "./fit": "./src/glue/fit.ts",
     "./spa-fallback": "./src/spa-fallback.ts",

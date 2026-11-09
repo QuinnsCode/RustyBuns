@@ -6,6 +6,7 @@
 // Headless Blender does the work (scripts/usdz/convert.py); BLENDER_PATH picks a Blender other than the one on PATH.
 import { existsSync, mkdirSync, readdirSync, rmSync } from "node:fs";
 import { writeProceduralGlbs } from "../packages/models/src/catalog.ts";
+import { findBlender, runBlender } from "../packages/cli/src/blender.ts";
 
 if (Bun.argv.slice(2).includes("beasts")) {
   const { exportBeasts } = await import("./usdz/beasts.ts");
@@ -14,8 +15,7 @@ if (Bun.argv.slice(2).includes("beasts")) {
   process.exit(0);
 }
 
-const blender = process.env.BLENDER_PATH ?? Bun.which("blender") ?? "/Applications/Blender.app/Contents/MacOS/Blender";
-if (!existsSync(blender) && !Bun.which(blender)) throw new Error("no Blender: install it or set BLENDER_PATH");
+if (!findBlender()) throw new Error("no Blender: install it or set BLENDER_PATH");
 
 const argv = Bun.argv.slice(2);
 const wantModels = !argv.length || argv.includes("models");
@@ -33,10 +33,8 @@ if (wantModels) {
 
 for (const [app, out, glbs] of batches) {
   if (!glbs.length) continue;
-  const p = Bun.spawn([blender, "-b", "--factory-startup", "--python-exit-code", "1", "-P", "scripts/usdz/convert.py", "--", out, ...glbs], { stdout: "pipe", stderr: "pipe" });
-  const log = (await new Response(p.stdout).text()) + (await new Response(p.stderr).text());
-  if ((await p.exited) !== 0) throw new Error(`blender failed on ${app}:\n${log.split("\n").filter((l) => /Error|Traceback|line \d+/.test(l)).join("\n")}`);
-  const baked = log.split("\n").filter((l) => / baked=[1-9]/.test(l)).length;
+  const r = await runBlender({ script: "scripts/usdz/convert.py", args: [out, ...glbs] });
+  const baked = (r.out + r.err).split("\n").filter((l) => / baked=[1-9]/.test(l)).length;
   console.log(`${app}: ${glbs.length} models -> ${out}/${baked ? ` (${baked} painted with vertex colours, baked to textures)` : ""}`);
 }
 rmSync(scratch, { recursive: true, force: true });

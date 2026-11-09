@@ -1,20 +1,8 @@
 // Open finished models in Blender: an empty scene with each .glb imported.
 
-import { existsSync } from "node:fs";
+import { findBlender } from "@rustybuns/cli/blender";
 
-const CANDIDATES: Record<string, string[]> = {
-  darwin: ["/Applications/Blender.app/Contents/MacOS/Blender"],
-  win32: ["C:\\Program Files\\Blender Foundation\\Blender\\blender.exe"],
-  linux: ["/usr/bin/blender", "/snap/bin/blender"],
-};
-
-/** Blender's executable, or null. BLENDER_PATH wins, then the usual install places, then PATH. */
-export function findBlender(): string | null {
-  const env = process.env.BLENDER_PATH;
-  if (env && existsSync(env)) return env;
-  for (const p of CANDIDATES[process.platform] ?? []) if (existsSync(p)) return p;
-  return Bun.which("blender");
-}
+export { findBlender };
 
 /** Python for --python-expr. Paths go in as JSON strings, which Python reads as string literals. */
 export function importExpr(paths: string[]): string {

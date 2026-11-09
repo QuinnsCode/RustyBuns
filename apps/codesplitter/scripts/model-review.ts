@@ -1,9 +1,10 @@
 // Review a model change by picture: `bun scripts/model-review.ts [base] [head] [out.html]` (defaults origin/main, HEAD).
 // Every .glb the head changed against the base is rendered before and after by headless Blender
-// (scripts/glb-sheet.py, three views) and laid side by side in one HTML file. Needs `blender` on PATH.
+// (scripts/glb-sheet.py, three views) and laid side by side in one HTML file. Needs Blender (or BLENDER_PATH).
 import { mkdtempSync, writeFileSync, readFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { runBlender } from "@rustybuns/cli/blender";
 import { modelPaths, sideBySide, type ModelPair } from "../src/model-review.ts";
 
 const [base = "origin/main", head = "HEAD", out = "model-review.html"] = process.argv.slice(2);
@@ -23,8 +24,8 @@ async function render(ref: string, path: string, name: string): Promise<string |
   if ((await blob.exited) !== 0) return null;   // not there at that ref
   const glb = join(dir, `${name}.glb`), png = join(dir, `${name}.png`);
   writeFileSync(glb, bytes);
-  const r = await sh(["blender", "-b", "--factory-startup", "--python-exit-code", "1", "-P", py, "--", glb, png]);
-  if (r.code !== 0 || !existsSync(png)) throw new Error(`blender failed on ${path}@${ref}:\n${r.err || r.out}`);
+  await runBlender({ script: py, args: [glb, png] });
+  if (!existsSync(png)) throw new Error(`blender wrote no picture of ${path}@${ref}`);
   return `data:image/png;base64,${readFileSync(png).toString("base64")}`;
 }
 
