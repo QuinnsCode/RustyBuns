@@ -129,6 +129,24 @@ export class HasHandle extends Schema.TaggedError<HasHandle>()("HasHandle", name
 export class SignInOff extends Schema.TaggedError<SignInOff>()("SignInOff", named) {}
 export class TooManyTokens extends Schema.TaggedError<TooManyTokens>()("TooManyTokens", named) {}
 export class NoSuchToken extends Schema.TaggedError<NoSuchToken>()("NoSuchToken", named) {}
+export class DesktopOnly extends Schema.TaggedError<DesktopOnly>()("DesktopOnly", named) {}
+export class NoDeployKey extends Schema.TaggedError<NoDeployKey>()("NoDeployKey", named) {}
+export class RunnerOnly extends Schema.TaggedError<RunnerOnly>()("RunnerOnly", named) {}
+export class NoHostedDeploys extends Schema.TaggedError<NoHostedDeploys>()("NoHostedDeploys", named) {}
+export class NoSuchCheck extends Schema.TaggedError<NoSuchCheck>()("NoSuchCheck", named) {}
+export class NotYourClaim extends Schema.TaggedError<NotYourClaim>()("NotYourClaim", named) {}
+export class TakeTurns extends Schema.TaggedError<TakeTurns>()("TakeTurns", named) {}
+export class LinesHeld extends Schema.TaggedError<LinesHeld>()("LinesHeld", named) {}
+export class LinesQueued extends Schema.TaggedError<LinesQueued>()("LinesQueued", named) {}
+export class LeftLine extends Schema.TaggedError<LeftLine>()("LeftLine", named) {}
+export class GitHubRun extends Schema.TaggedError<GitHubRun>()("GitHubRun", named) {}
+export class CheckTaken extends Schema.TaggedError<CheckTaken>()("CheckTaken", named) {}
+export class CheckDone extends Schema.TaggedError<CheckDone>()("CheckDone", named) {}
+export class DeployRunning extends Schema.TaggedError<DeployRunning>()("DeployRunning", named) {}
+export class DiffCutShort extends Schema.TaggedError<DiffCutShort>()("DiffCutShort", named) {}
+export class DeployWaits extends Schema.TaggedError<DeployWaits>()("DeployWaits", named) {}
+export class PlanStale extends Schema.TaggedError<PlanStale>()("PlanStale", named) {}
+export class HistoryTrimmed extends Schema.TaggedError<HistoryTrimmed>()("HistoryTrimmed", named) {}
 
 type Named = { message: string; status: number; reply: unknown };
 /** One class per tag the server sends: a tag added to ERRORS without one here won't compile. */
@@ -149,6 +167,7 @@ export const NAMED = {
   NoSuchJob,
   HandleTaken, HasHandle, SignInOff,
   TooManyTokens, NoSuchToken,
+  DesktopOnly, NoDeployKey, RunnerOnly, NoHostedDeploys, NoSuchCheck, NotYourClaim, TakeTurns, LinesHeld, LinesQueued, LeftLine, GitHubRun, CheckTaken, CheckDone, DeployRunning, DiffCutShort, DeployWaits, PlanStale, HistoryTrimmed,
 } satisfies { [K in ErrorTag]: new (a: Named) => { readonly _tag: K } };
 
 // What any call can meet, whatever the operation: they come from before a route answers, or from no answer at all.

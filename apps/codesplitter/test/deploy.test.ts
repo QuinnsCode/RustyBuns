@@ -157,12 +157,11 @@ test("a token can't approve a deploy, and an approval of a diff cut short needs 
   // A write or admin token holds the owner's name but isn't a person reading the diff.
   const t = (await (await send("ryan", "/api/tokens", { label: "agent", scope: "admin" })).json()) as { token: string };
   const viaToken = await call(null, D, { method: "POST", headers: { authorization: `Bearer ${t.token}` }, body: JSON.stringify({ approve: tip, approve_unseen: true }) });
-  expect(viaToken.status).toBe(403);
+  expect([viaToken.status, ((await viaToken.json()) as any).tag]).toEqual([403, "PersonOnly"]);
 
   // The 300-line file shows 200: approving as if it was read is refused until the body says otherwise.
   const cut = await send("ryan", D, { approve: tip });
-  expect(cut.status).toBe(409);
-  expect(((await cut.json()) as any).error).toContain("cut short");
+  expect([cut.status, ((await cut.json()) as any).tag]).toEqual([409, "DiffCutShort"]);
   expect(ran).toEqual([]);
   expect((await send("ryan", D, { approve: tip, approve_unseen: true })).status).toBe(202);
   expect((await settle(call)).history[0]).toMatchObject({ status: "done", commit_hash: tip });
@@ -362,8 +361,7 @@ test("Ship's journey: plan against the stage shows its deletes, Deploy ships tha
   await send("ryan", "/api/repos/ryan/lab/files", { path: "b.txt", content: "b" });
   await send("ryan", "/api/repos/ryan/lab/do/commit?path=b.txt", { message: "b" });
   const moved = await send("ryan", "/api/repos/ryan/lab/deploy", { plan: plan.id });
-  expect(moved.status).toBe(409);
-  expect((await moved.json()).error).toContain("plan again");
+  expect([moved.status, (await moved.json()).tag]).toEqual([409, "PlanStale"]);
 
   // Tear down: the stage has to be named; a Real one goes with --real.
   expect((await send("ryan", "/api/repos/ryan/lab/deploy/destroy", { stage: "live" })).status).toBe(400);

@@ -75,7 +75,7 @@
 //   POST /api/repos/:o/:r/checks/:id/cancel    stop one of ours that's queued or running (the crew)
 
 import { httpUrl, listOf, parseJson } from "./util.ts";
-import { json, need, readBody, type Env } from "./env.ts";
+import { fail, json, need, readBody, type Env } from "./env.ts";
 import { arr, bool, obj, oneOf, opt, str, type Of } from "@rustybuns/util/guard";
 import { repoRow } from "./repos.ts";
 import { githubToken, parseRepo } from "./github.ts";
@@ -804,7 +804,7 @@ interface Access { read: boolean; write: boolean }
 export async function checkRoutes(req: Request, env: Env, p: string[], url: URL, owner: string, repo: string, user: string | null, a: Access): Promise<Response | null> {
   if (p[4] !== "checks") return null;
   const body = <K extends string = never>() => readBody<K>(req);
-  const crew = () => a.write ? null : json({ error: "no write access" }, 403);
+  const crew = () => a.write ? null : fail("NoWriteAccess", "no write access");
 
   if (!p[5] && req.method === "GET") {
     const ref = url.searchParams.get("ref") || "main";
@@ -817,7 +817,7 @@ export async function checkRoutes(req: Request, env: Env, p: string[], url: URL,
     const b = need(await body(), obj({ ref: str(), sha: str(), name: str(100), runner: opt(oneOf(RUNNERS)), status: opt(oneOf(STATUSES)), url: text }));
     if (b instanceof Response) return b;
     const { status } = b;
-    if (status && status !== "queued" && user !== owner) return json({ error: "only a runner says how a check went: record it queued for one to claim, or report through a CI token" }, 403);
+    if (status && status !== "queued" && user !== owner) return fail("RunnerOnly", "only a runner says how a check went: record it queued for one to claim, or report through a CI token");
     const run = await recordRun(env, { owner, repo, ref: b.ref, sha: b.sha, name: b.name, runner: b.runner ?? "desktop", status, url: b.url, runner_label: `by hand: @${user}` }, user!);
     await env.DB.prepare("UPDATE check_runs SET log = ? WHERE id = ?").bind(HAND(user!), run.id).run();
     return json(await get(env, run.id), 201);
@@ -828,16 +828,16 @@ export async function checkRoutes(req: Request, env: Env, p: string[], url: URL,
     if (b instanceof Response) return b;
     const { ref = "main", on } = b;
     // Running here is always on offer, whatever the setting: local first, GitHub as the backup.
-    if (ref !== "main" && !(await env.DB.prepare("SELECT 1 FROM branches WHERE owner = ? AND repo = ? AND name = ? AND status = 'open'").bind(owner, repo, ref).first())) return json({ error: "no open branch " + ref }, 404);
+    if (ref !== "main" && !(await env.DB.prepare("SELECT 1 FROM branches WHERE owner = ? AND repo = ? AND name = ? AND status = 'open'").bind(owner, repo, ref).first())) return fail("NoSuchBranch", "no open branch " + ref);
     const sha = await headOf(env, owner, repo, ref);
-    if (!sha) return json({ error: "main has no commit yet" }, 409);
+    if (!sha) return fail("NoGit", "main has no commit yet");
     await queueHere(env, owner, repo, ref, sha, user!, "", false, on);
     return json(await refChecks(env, owner, repo, ref), 202);
   }
   if (p[5] === "github" && req.method === "POST") {
     const no = crew(); if (no) return no;
     const { ref } = await body<"ref">();
-    if (ref !== undefined && typeof ref !== "string") return json({ error: "ref: a branch name" }, 400);
+    if (ref !== undefined && typeof ref !== "string") return fail("BadInput", "ref: a branch name");
     const { results } = await env.DB.prepare(`SELECT ref, sha FROM check_watches WHERE owner = ? AND repo = ?${ref ? " AND ref = ?" : ""}`).bind(...[owner, repo, ...(ref ? [ref] : [])]).all<{ ref: string; sha: string }>();
     const out = [];
     for (const w of results) out.push(await importGithub(env, owner, repo, w.ref, w.sha));
@@ -852,7 +852,7 @@ export async function checkRoutes(req: Request, env: Env, p: string[], url: URL,
   }
   if (p[5] === "settings" && req.method === "GET") return json(await checkSettings(env, owner, repo));
   if (p[5] === "settings" && req.method === "PUT") {
-    if (user !== owner) return json({ error: "owner only" }, 403);
+    if (user !== owner) return fail("OwnerOnly", "owner only");
     const raw = await body<"where">();
     const b = need(raw, obj({ where: opt(oneOf(["here", "github", "both"])), required: opt(arr((v) => REQUIRED(typeof v === "string" ? { name: v } : v), 1000)), post_statuses: opt(bool()), pinned: opt(bool()), fresh_main: opt(bool()) }));
     if (b instanceof Response) return b;
@@ -868,7 +868,7 @@ export async function checkRoutes(req: Request, env: Env, p: string[], url: URL,
 
   const id = Number(p[5]);
   const run = Number.isInteger(id) && id > 0 ? await get(env, id) : null;
-  if (!run || run.owner !== owner || run.repo !== repo) return json({ error: "no such check run" }, 404);
+  if (!run || run.owner !== owner || run.repo !== repo) return fail("NoSuchCheck", "no such check run");
   if (!p[6] && req.method === "GET") {
     // On a repo with private lines what a run printed can quote them, so the log and junit are the crew's.
     const hide = !a.write && await logsAreCrews(env, owner, repo);
@@ -879,19 +879,19 @@ export async function checkRoutes(req: Request, env: Env, p: string[], url: URL,
     const b = need(await body(), obj({ status: opt(oneOf(STATUSES)), log: text, append: text, junit: text, runner_label: text, url: text }));
     if (b instanceof Response) return b;
     const { status } = b;
-    if (run.runner === "github") return json({ error: "GitHub's runs come from GitHub" }, 409);
+    if (run.runner === "github") return fail("GitHubRun", "GitHub's runs come from GitHub");
     // Its log too: rewritten by anyone, a run recorded by hand would lose the line that keeps its recorder from claiming it.
     if (user !== owner && run.claimed_by !== user && (b.status && b.status !== run.status || [b.log, b.append, b.junit, b.url].some((v) => v !== undefined)))
-      return json({ error: "only the runner that claimed it says how it went: POST .../checks/claim first" }, 403);
+      return fail("RunnerOnly", "only the runner that claimed it says how it went: POST .../checks/claim first");
     // A runner that went quiet and lost its claim stops: the run is someone else's now.
-    if (b.runner_label && b.runner_label !== run.runner_label && !DONE.has(run.status)) return json({ error: run.runner_label ? `${run.runner_label} has it now` : "it went back in the queue: no word from you in time" }, 409);
+    if (b.runner_label && b.runner_label !== run.runner_label && !DONE.has(run.status)) return fail("CheckTaken", run.runner_label ? `${run.runner_label} has it now` : "it went back in the queue: no word from you in time");
     const after = await updateRun(env, run, { status, log: b.log, append: b.append, junit: b.junit, url: b.url }, user!);
-    return after ? json(after) : json({ error: `it's ${run.status} already` }, 409);
+    return after ? json(after) : fail("CheckDone", `it's ${run.status} already`);
   }
   if (p[6] === "cancel" && req.method === "POST") {
     const no = crew(); if (no) return no;
-    if (run.runner === "github") return json({ error: `cancel it on GitHub${run.url ? `: ${run.url}` : ""}` }, 409);
-    if (DONE.has(run.status)) return json({ error: `it's ${run.status} already` }, 409);
+    if (run.runner === "github") return fail("GitHubRun", `cancel it on GitHub${run.url ? `: ${run.url}` : ""}`);
+    if (DONE.has(run.status)) return fail("CheckDone", `it's ${run.status} already`);
     return json(await updateRun(env, run, { status: "cancelled", append: `\ncancelled by ${user}\n` }, user!));
   }
   return null;
