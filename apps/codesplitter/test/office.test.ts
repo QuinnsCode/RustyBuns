@@ -1,7 +1,10 @@
 // The Agent Office floor (src/office.ts, #3423 slice 1): the owner walks a floor's queue, desks and roster through
 // its socket and its routes, a worker reports in with its hook token, and the floor outlives its object.
 import { expect, test } from "bun:test";
+import { readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { local, post } from "./app-kit.ts";
+import type { Exec } from "../src/agent-run.ts";
 
 test("the owner runs a floor's queue and roster, a worker reports with its token, and it all survives an eviction", async () => {
   const call = await local({ OFFICE: true, ADMINS: "quinn" });
@@ -55,4 +58,36 @@ test("the owner runs a floor's queue and roster, a worker reports with its token
   await said({ t: "queue.clear" });
   const end = await (await call("quinn", "/api/office/main")).json() as any;
   expect([end.workers, end.queue.tasks.length]).toEqual([[], 2]);
+});
+
+test("a hire with a repo and a file puts an agent run at the desk; the board shows its branch and output", async () => {
+  const call = await local({ OFFICE: true, ADMINS: "quinn" });
+  call.env.AGENT_EXEC = (async (cmd, cwd) => {
+    const f = join(cwd, "a.js");
+    writeFileSync(f, readFileSync(f, "utf8").toUpperCase());
+    return { code: 0, out: `${cmd.bin} shouted a.js` };
+  }) satisfies Exec;
+  call.env.AGENT_REVIEW_MS = "60000"; // the batch waits on its branch while the board looks
+  await post(call, "quinn", "/api/login", { name: "quinn" });
+  await post(call, "quinn", "/api/repos", { name: "lab", visibility: "public" });
+  await post(call, "quinn", "/api/repos/quinn/lab/files", { path: "a.js", content: "let a = 1" });
+  const floor = async () => await (await call("quinn", "/api/office/main")).json() as any;
+
+  // A run needs a file and a task, and one the agents route refuses leaves the desk free.
+  const bad = await post(call, "quinn", "/api/office/main", { t: "worker.spawn", deskId: "desk-2", repo: "quinn/lab", path: "a.js", prompt: "shout", provider: "nobody" });
+  expect(bad.status).toBe(400);
+  expect((await floor()).workers).toEqual([]);
+
+  const res = await post(call, "quinn", "/api/office/main", { t: "worker.spawn", deskId: "desk-2", name: "Bolt", repo: "quinn/lab", path: "a.js", prompt: "shout" });
+  expect(res.status).toBe(202);
+  const hire = await res.json() as any;
+  expect(hire.worker).toMatchObject({ name: "Bolt", deskId: "desk-2", status: "working", run: { owner: "quinn", repo: "lab", path: "a.js", agent: "agent-claude", status: "running" } });
+
+  // When the run ends, its desk hears: done, the branch its batch waits on, and what the agent said.
+  let w: any;
+  for (const end = performance.now() + 15_000; performance.now() < end && (w = (await floor()).workers[0]).run.status === "running";) await Bun.sleep(20);
+  expect(w).toMatchObject({ status: "done", run: { status: "done", branch: `agent-run-${hire.worker.run.id}`, output: "claude shouted a.js" } });
+  // It edited on that branch under its own name, so blame shows the agent.
+  const doc = await (await call("quinn", `/api/repos/quinn/lab/do/file?path=a.js&branch=${w.run.branch}`)).json() as { lines: { text: string; by: string }[] };
+  expect(doc.lines.map((l) => [l.text, l.by])).toEqual([["LET A = 1", "agent-claude"]]);
 });
