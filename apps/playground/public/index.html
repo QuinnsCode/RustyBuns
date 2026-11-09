@@ -98,7 +98,7 @@ html[data-sky=system] .skyswitch [data-sky-pick=system],html[data-sky=day] .skys
     --edge: color-mix(in oklab, #d1d9e0 var(--flipp), #3a4460);
     --grain: radial-gradient(rgba(0,0,0,.06) 1px, transparent 1.2px) 0 0 / 5px 5px;
     --acc: #f26b1d; --acc-soft: color-mix(in oklab, #f26b1d 16%, transparent);
-    color: var(--ink); font: 17px/1.45 Brawler, Georgia, serif; max-width: 1040px; margin: 0 auto; padding: 40px 16px 120px;
+    color: var(--ink); font: 17px/1.45 Brawler, Georgia, serif; max-width: 1280px; margin: 0 auto; padding: 40px 16px 120px;
   }
   header { text-align: center; margin: 4vh 0 36px; }
   h1 { margin: 0 0 6px; font-weight: 700; font-size: clamp(34px, 8vw, 76px); line-height: 1; letter-spacing: -.01em;
@@ -107,30 +107,78 @@ html[data-sky=system] .skyswitch [data-sky-pick=system],html[data-sky=day] .skys
   h1 .word span { display: inline-block; animation: hop 2.4s ease-in-out infinite; animation-delay: calc(var(--i) * 70ms); }
   @keyframes hop { 0%, 60%, 100% { transform: none; } 30% { transform: translateY(-.18em) rotate(-4deg); } }
   header p { margin: 0 auto 22px; max-width: 34em; font-size: 19px; color: #fff; padding: 8px 16px; border-radius: 8px; background: rgba(15,22,40,.45); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); text-shadow: 0 1px 6px rgba(0,0,0,.5); }
-  .tools { display: flex; justify-content: center; gap: 10px; flex-wrap: wrap; align-items: center; }
-  /* Buttons are the kit's (.ui-btn from packages/ui). data-look="paper" (default) is the Playground's paper theme on its tokens; "kit" leaves the house look. */
-  main[data-look="paper"] { --ui-bg: var(--paper); --ui-ink: var(--ink); --ui-line: var(--edge); --ui-soft: var(--paper); --ui-accent: var(--acc); --ui-accent-soft: var(--acc-soft);
+  /* The menu, laid out as eqosys's home lays out its own (apps/eqosys/src/app/pages.tsx): a pane over the list on a phone,
+     a column on the left that stays put on a wide window. Paper, grain and orange, as the cards are. */
+  .layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: 20px; align-items: start; }
+  .side { display: grid; gap: 14px; padding: 16px; border: 1px solid var(--edge); border-radius: 10px; background: var(--grain), var(--paper);
+    box-shadow: 0 3px 0 var(--edge), 0 18px 40px -22px rgba(0,0,0,.55); min-width: 0; }
+  .tools { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+  .side > * { min-width: 0; }
+  .tools input { flex: 1; min-width: 0; width: 100%; }
+  .tabs { display: flex; gap: 6px; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+  .tabs::-webkit-scrollbar { display: none; }
+  .tabs a { flex: none; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 7px 12px; border-radius: 6px; border: 1px solid transparent;
+    color: var(--mute); text-decoration: none; font-weight: 700; }
+  .tabs a:hover { color: var(--ink); background: var(--acc-soft); }
+  .tabs a[aria-current] { color: var(--ink); background: var(--acc-soft); border-color: var(--acc); box-shadow: 0 2px 0 #c4500f; }
+  .tabs em { font-style: normal; font-size: 12px; min-width: 22px; text-align: center; padding: 1px 6px; border-radius: 99px; background: var(--acc); color: #fff; }
+  .content { min-width: 0; }
+  [id] { scroll-margin-top: 16px; }
+  @media (min-width: 68rem) {
+    .layout { grid-template-columns: 15rem minmax(0, 1fr); gap: 28px; }
+    .side { position: sticky; top: 16px; }
+    .tools { flex-direction: column; align-items: stretch; }
+    .tools .ui-btn { justify-content: center; }
+    .tabs { flex-direction: column; overflow: visible; }
+  }
+  /* Buttons are the kit's (.ui-btn from packages/ui), worn in the Playground's paper theme on its tokens. */
+  main { --ui-bg: var(--paper); --ui-ink: var(--ink); --ui-line: var(--edge); --ui-soft: var(--paper); --ui-accent: var(--acc); --ui-accent-soft: var(--acc-soft);
     --ui-radius-sm: 6px; --ui-border: 1px; --ui-font: Brawler, Georgia, serif; }
-  main[data-look="paper"] .ui-btn { font-size: 15px; font-weight: 700; background: var(--grain), var(--paper); box-shadow: 0 2px 0 var(--edge);
+  main .ui-btn { font-size: 15px; font-weight: 700; background: var(--grain), var(--paper); box-shadow: 0 2px 0 var(--edge);
     transition: transform .12s, box-shadow .12s, background .12s, border-color .12s; }
-  main[data-look="paper"] .ui-btn:hover { transform: translateY(-2px) rotate(-1.5deg); box-shadow: 0 4px 0 var(--edge); background: var(--grain), linear-gradient(0deg, var(--acc-soft), var(--paper) 85%); }
-  main[data-look="paper"] .ui-btn:active { transform: translateY(1px); box-shadow: 0 0 0 var(--edge); }
+  main .ui-btn:hover { transform: translateY(-2px) rotate(-1.5deg); box-shadow: 0 4px 0 var(--edge); background: var(--grain), linear-gradient(0deg, var(--acc-soft), var(--paper) 85%); }
+  main .ui-btn:active { transform: translateY(1px); box-shadow: 0 0 0 var(--edge); }
   input:focus-visible { outline: 2px solid var(--acc); outline-offset: 2px; }
-  main[data-look="paper"] .ui-btn.primary { background: var(--acc); border-color: #c4500f; color: #fff; box-shadow: 0 2px 0 #c4500f; }
-  main[data-look="paper"] .ui-btn.primary:hover { background: #ff7a2e; box-shadow: 0 4px 0 #c4500f; }
+  main .ui-btn.primary { background: var(--acc); border-color: #c4500f; color: #fff; box-shadow: 0 2px 0 #c4500f; }
+  main .ui-btn.primary:hover { background: #ff7a2e; box-shadow: 0 4px 0 #c4500f; }
   main .ui-btn.play svg { animation: nudge 1.6s ease-in-out infinite; }
   @keyframes nudge { 50% { transform: translateX(3px); } }
   main a.ui-btn { text-decoration: none; }
   main .ui-btn svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
-  input { font: 17px Brawler, Georgia, serif; padding: 10px 14px; border: 1px solid var(--edge); border-radius: 6px; background: var(--paper); color: var(--ink); min-width: 220px; }
-  #grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 18px; }
-  .card { position: relative; border: 1px solid var(--edge); border-radius: 8px; padding: 18px; display: flex; flex-direction: column; gap: 10px;
+  input { font: 17px Brawler, Georgia, serif; padding: 10px 14px; border: 1px solid var(--edge); border-radius: 6px; background: var(--paper); color: var(--ink); }
+  /* The two gateway products: a thin, bright strip of two across the top. */
+  .gateway { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin: 0 0 44px; }
+  .gate { position: relative; display: flex; align-items: center; gap: 14px; min-width: 0; padding: 10px 14px 10px 10px; border: 2px solid var(--acc); border-radius: 10px;
+    background: var(--grain), linear-gradient(90deg, var(--acc-soft), var(--paper) 60%); box-shadow: 0 3px 0 #c4500f, 0 18px 40px -22px rgba(0,0,0,.6);
+    animation: pop .5s cubic-bezier(.3,1.5,.5,1) both; transition: transform .18s cubic-bezier(.3,1.6,.5,1), box-shadow .18s; }
+  .gate:hover { transform: translateY(-3px); box-shadow: 0 6px 0 #c4500f, 0 24px 44px -22px rgba(0,0,0,.6); }
+  .gate .shot { flex: none; width: 104px; aspect-ratio: 16 / 10; object-fit: cover; border-radius: 6px; border: 1px solid var(--edge); }
+  .gate div { flex: 1; min-width: 0; }
+  .gate h2 { margin: 0; font-size: 22px; line-height: 1.1; }
+  .gate p { margin: 2px 0 0; color: var(--mute); font-size: 14px; line-height: 1.3; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  main .gate .ui-btn { flex: none; }
+  /* Then the games and the apps, each a heading over full-width rows. */
+  .group { margin: 0 0 48px; }
+  .group > h2, .fw h2 { margin: 0 0 4px; font-size: 30px; color: #fff; text-shadow: 0 2px 0 var(--acc), 0 4px 18px rgba(0,0,0,.45); }
+  .group > p, .fw > p { margin: 0 0 16px; color: #fff; font-size: 15px; text-shadow: 0 1px 6px rgba(0,0,0,.6); }
+  .rows { display: flex; flex-direction: column; gap: 18px; }
+  .card { position: relative; display: grid; grid-template-columns: minmax(0, 38%) 1fr; border: 1px solid var(--edge); border-radius: 8px;
     background: var(--grain), var(--paper); box-shadow: 0 3px 0 var(--edge), 0 18px 40px -22px rgba(0,0,0,.55);
     transform: rotate(var(--tilt)); transition: transform .18s cubic-bezier(.3,1.6,.5,1), box-shadow .18s;
     animation: pop .5s cubic-bezier(.3,1.5,.5,1) both; animation-delay: calc(var(--n) * 45ms); }
   @keyframes pop { from { opacity: 0; transform: translateY(24px) rotate(0) scale(.9); } }
-  .card:hover { transform: rotate(0) translateY(-6px) scale(1.025); box-shadow: 0 6px 0 var(--acc), 0 28px 50px -22px rgba(0,0,0,.6); }
-  .card .shot { display: block; width: calc(100% + 36px); margin: -18px -18px 4px; aspect-ratio: 16 / 10; object-fit: cover; border-radius: 7px 7px 0 0; border-bottom: 1px solid var(--edge); }
+  .card.bare { grid-template-columns: 1fr; }
+  .card .body { display: flex; flex-direction: column; gap: 10px; padding: 18px 20px; min-width: 0; }
+  .card:hover { transform: rotate(0) translateY(-4px) scale(1.01); box-shadow: 0 6px 0 var(--acc), 0 28px 50px -22px rgba(0,0,0,.6); }
+  .card .shot { display: block; width: 100%; height: 100%; min-height: 100%; aspect-ratio: 16 / 10; object-fit: cover; border-radius: 7px 0 0 7px; border-right: 1px solid var(--edge); }
+  .card h2 { font-size: 28px !important; }
+  @media (max-width: 720px) {
+    .gateway { grid-template-columns: 1fr; }
+    .card { grid-template-columns: 1fr; }
+    .card .shot { height: auto; border-radius: 7px 7px 0 0; border-right: 0; border-bottom: 1px solid var(--edge); }
+    .card h2 { font-size: 24px !important; }
+  }
+  @media (max-width: 420px) { .gate .shot { width: 72px; } }
   .card h2 { margin: 0; font-size: 24px; line-height: 1.1; display: flex; align-items: center; gap: 10px; }
   .card h2 i { flex: none; display: grid; place-items: center; width: 34px; height: 34px; border-radius: 50%; background: var(--acc); color: #fff; font-style: normal; font-size: 18px; box-shadow: inset 0 -3px 0 rgba(0,0,0,.18); }
   .card p { margin: 0; color: var(--mute); flex: 1; }
@@ -161,8 +209,6 @@ html[data-sky=system] .skyswitch [data-sky-pick=system],html[data-sky=day] .skys
   .soon { color: var(--mute); font-size: 14px; }
   /* Framework examples: a strip that scrolls sideways, each card rated fresh to stale. */
   .fw { margin-top: 56px; }
-  .fw h2 { margin: 0 0 4px; font-size: 30px; color: #fff; text-shadow: 0 2px 0 var(--acc), 0 4px 18px rgba(0,0,0,.45); }
-  .fw > p { margin: 0 0 14px; color: #fff; font-size: 15px; text-shadow: 0 1px 6px rgba(0,0,0,.6); }
   .fw > p a { color: #fff; }
   .strip { display: flex; gap: 14px; overflow-x: auto; scroll-snap-type: x mandatory; padding: 12px 4px 18px; margin: 0 -4px; overscroll-behavior-x: contain; }
   .fwc { flex: 0 0 210px; scroll-snap-align: start; border: 1px solid var(--edge); border-radius: 8px; padding: 14px; display: flex; flex-direction: column; gap: 8px;
@@ -172,9 +218,9 @@ html[data-sky=system] .skyswitch [data-sky-pick=system],html[data-sky=day] .skys
   .bun { align-self: flex-start; display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase;
     padding: 4px 9px 3px; border-radius: 99px; color: #fff; background: var(--crust); box-shadow: 0 2px 0 color-mix(in oklab, var(--crust) 70%, #000); }
   .bun[data-r="4"] { --crust: #e8892e; } .bun[data-r="3"] { --crust: #b8742f; } .bun[data-r="2"] { --crust: #8a6a4a; } .bun[data-r="1"] { --crust: #6b6660; }
-  main[data-look="paper"] .fwc .ui-btn { align-self: flex-start; min-height: 36px; padding: 0 12px; font-size: 14px; }
-  .empty { grid-column: 1 / -1; text-align: center; color: #fff; font-size: 22px; text-shadow: 0 2px 12px rgba(0,0,0,.5); }
-  @media (prefers-reduced-motion: reduce) { h1 span, .card, .ui-btn.play svg { animation: none; } .card, .ui-btn { transition: none; } }
+  main .fwc .ui-btn { align-self: flex-start; min-height: 36px; padding: 0 12px; font-size: 14px; }
+  .empty { text-align: center; color: #fff; font-size: 22px; text-shadow: 0 2px 12px rgba(0,0,0,.5); }
+  @media (prefers-reduced-motion: reduce) { h1 span, .card, .gate, .ui-btn.play svg { animation: none; } .card, .gate, .ui-btn { transition: none; } }
 </style>
 </head>
 <body>
@@ -203,25 +249,42 @@ d.addEventListener("dblclick",function(e){if(orb(e))pick(night()?"day":"night")}
 m.addEventListener("change",function(){if(get()==="system")go("system",true)});
 var s=get();if(s)go(s,false)})();</script>
 <!--/sky-js-->
-<main data-look="paper">
+<main>
 <!--sky-switch-->
 <div class="skyswitch" role="group" aria-label="Sky"><button type="button" data-sky-pick="system" title="Match my device" aria-label="Match my device"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="20" height="14" x="2" y="3" rx="2"></rect><path d="M8 21h8"></path><path d="M12 17v4"></path></svg></button><button type="button" data-sky-pick="day" title="Day" aria-label="Day"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2"></path><path d="M12 20v2"></path><path d="m4.93 4.93 1.41 1.41"></path><path d="m17.66 17.66 1.41 1.41"></path><path d="M2 12h2"></path><path d="M20 12h2"></path><path d="m6.34 17.66-1.41 1.41"></path><path d="m19.07 4.93-1.41 1.41"></path></svg></button><button type="button" data-sky-pick="night" title="Night" aria-label="Night"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.985 12.486a9 9 0 1 1-9.473-9.472c.405-.022.617.46.402.803a6 6 0 0 0 8.268 8.268c.344-.215.825-.004.803.401"></path></svg></button></div>
 <!--/sky-switch-->
   <header>
     <h1 id="title" aria-label="Rusty Buns Playground">Rusty Buns Playground</h1>
     <p>Pick a world and jump in. Playable ones open in your browser; the rest are a download away.</p>
+  </header>
+  <div class="layout">
+  <aside class="side" aria-label="Menu">
     <div class="tools">
       <input id="q" type="search" placeholder="Find an app" aria-label="Find an app" autocomplete="off">
       <button class="ui-btn primary play" id="lucky" type="button"></button>
-      <button class="ui-btn" id="look" type="button"></button>
     </div>
-  </header>
-  <div id="grid"></div>
+    <nav class="tabs" id="tabs" aria-label="Playground"></nav>
+  </aside>
+  <div class="content">
+  <section class="gateway" id="gateway" aria-label="Start here"></section>
+  <section class="group" aria-labelledby="games-title">
+    <h2 id="games-title">Games</h2>
+    <p>The eqosys game suite: one account for all of them, friends and parties that carry from game to game.</p>
+    <div class="rows" id="games"></div>
+  </section>
+  <section class="group" aria-labelledby="apps-title">
+    <h2 id="apps-title">Apps</h2>
+    <p>The app suite: tools, studios and desktop apps built the same way.</p>
+    <div class="rows" id="apps"></div>
+  </section>
+  <p class="empty" id="empty" hidden>Nothing here yet. Try another word.</p>
   <section class="fw" aria-labelledby="fw-title">
     <h2 id="fw-title">Frameworks it runs</h2>
     <p>Each one an app on that framework, its code unchanged, rated fresh to stale against the framework's latest release. More in <a href="https://github.com/QuinnsCode/RustyBuns/blob/main/FRAMEWORKS.md">FRAMEWORKS.md</a>.</p>
     <div class="strip" id="strip"></div>
   </section>
+  </div>
+  </div>
 </main>
 <script type="module">
 import { RATINGS, freshness } from "./fresh.js";
@@ -274,7 +337,6 @@ const ICONS = {
   tablet: ["M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z", "M18 12h.01"],
   desktop: ["M4 3h16a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z", "M8 21h8", "M12 17v4"],
   gamepad: ["M6 11h4", "M8 9v4", "M15 12h.01", "M18 10h.01", "M17.32 5H6.68a4 4 0 0 0-3.978 3.59c-.006.052-.01.101-.017.152C2.604 9.416 2 14.456 2 16a3 3 0 0 0 3 3c1 0 1.5-.5 2-1l1.414-1.414A2 2 0 0 1 9.828 16h4.344a2 2 0 0 1 1.414.586L17 18c.5.5 1 1 2 1a3 3 0 0 0 3-3c0-1.545-.604-6.584-.685-7.258-.007-.05-.011-.1-.017-.151A4 4 0 0 0 17.32 5z"],
-  palette: ["M12 22a10 10 0 1 1 10-10c0 3-2 4-4.5 4H15a2 2 0 0 0-1.5 3.3c.6.7.4 2.7-1.5 2.7z", "M7.5 11h.01", "M12 7.5h.01", "M16.5 11h.01"],
   store: ["m2 7 4.41-4.41A2 2 0 0 1 7.83 2h8.34a2 2 0 0 1 1.42.59L22 7", "M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8", "M15 22v-4a2 2 0 0 0-2-2h-2a2 2 0 0 0-2 2v4", "M2 7h20", "M22 7v3a2 2 0 0 1-2 2a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 16 12a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 12 12a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 8 12a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 4 12a2 2 0 0 1-2-2V7"],
   dice: ["M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z", "M8 8h.01", "M16 8h.01", "M12 12h.01", "M8 16h.01", "M16 16h.01"],
 };
@@ -300,54 +362,84 @@ const link = (text, href, kind, cls = "ui-btn") => el("a", { href, className: cl
 
 const apps = await (await fetch("apps.json")).json();
 const fw = await (await fetch("frameworks.json")).json();
-const grid = document.getElementById("grid");
+// Each entry's `group` says where it goes: the gateway strip on top, then the games, then the apps.
+const boxes = { gateway: document.getElementById("gateway"), games: document.getElementById("games"), apps: document.getElementById("apps") };
+const empty = document.getElementById("empty");
 const strip = document.getElementById("strip");
 const q = document.getElementById("q");
 const playable = apps.filter((a) => a.play);
 
-const looks = ["paper", "kit"];
-const main = document.querySelector("main");
-const look = document.getElementById("look");
-const setLook = (l) => {
-  main.dataset.look = l;
-  look.title = look.ariaLabel = `Button look: ${l}. Switch to ${looks[1 - looks.indexOf(l)]}`;
-  try { localStorage.setItem("playground-look", l); } catch {}
-};
-look.append(icon(ICONS.palette));
-look.classList.add("icon");
-let saved = null;
-try { saved = localStorage.getItem("playground-look"); } catch {}
-setLook(looks.includes(saved) ? saved : "paper");
-look.onclick = () => setLook(looks[1 - looks.indexOf(main.dataset.look)]);
 
 const lucky = document.getElementById("lucky");
 lucky.append(icon(ICONS.dice), "Surprise me");
 lucky.hidden = playable.length === 0;
 lucky.onclick = () => { open(playable[Math.floor(Math.random() * playable.length)].play, "_blank", "noopener"); };
 
+const linksOf = (a) => {
+  const links = el("div", { className: "links" });
+  if (a.play) links.append(link(a.group === "games" ? "Play" : "Open", a.play, "play", "ui-btn primary play"));
+  if (a.download) links.append(link("Download", `${REPO}/releases?q=${a.download}&expanded=true`, "download"));
+  if (a.app) links.append(link("Source", `${REPO}/tree/main/apps/${a.app}`, "source"));
+  if (!a.play) links.append(el("span", { className: "soon", textContent: a.note ?? (a.download ? "Browser version soon" : "Coming soon") }));
+  return links;
+};
+// Screenshots are eqosys's card art (`bun run shots` copies them); an app with none just has no picture.
+const shotOf = (a, gone) => el("img", { className: "shot", src: `shots/${a.app}.jpg`, alt: "", loading: "lazy", onerror() { this.remove(); gone?.(); } });
+
+/** A gateway product: thin and bright, picture, name, one line, one button. */
+const gate = (a) => {
+  const g = el("div", { className: "gate" }, el("div", {}, el("h2", { textContent: a.name }), el("p", { textContent: a.line })));
+  if (a.app) g.prepend(shotOf(a));
+  if (a.play) g.append(link(a.app === "eqosys" ? "Sign in" : "Open", a.play, "play", "ui-btn primary play"));
+  return g;
+};
+
+/** A game or an app: a full-width row, the screenshot on one side and the rest on the other (stacked on a phone). */
+const row = (a, n) => {
+  const body = el("div", { className: "body" }, el("h2", {}, el("i", { textContent: a.name[0] }), a.name), el("p", { textContent: a.line }), el("div", { className: "meta" }, stage(a.stage), best(a, n)), linksOf(a));
+  const card = el("div", { className: a.app ? "card" : "card bare" }, body);
+  if (a.app) card.prepend(shotOf(a, () => card.classList.add("bare")));
+  if (a.play) card.prepend(el("span", { className: "tag", textContent: a.group === "games" ? "PLAY NOW" : "OPEN NOW" }));
+  card.style.setProperty("--n", n);
+  card.style.setProperty("--tilt", `${((n * 7) % 5 - 2) * 0.15}deg`);
+  return card;
+};
+
+// The menu's links, one per section, with how many each holds; the one in view is marked as eqosys marks its tab.
+const tabs = document.getElementById("tabs");
+const SECTIONS = [
+  ["gateway", "Start here", (list) => list.filter((a) => a.group === "gateway")],
+  ["games-title", "Games", (list) => list.filter((a) => a.group === "games")],
+  ["apps-title", "Apps", (list) => list.filter((a) => (a.group ?? "apps") === "apps")],
+  ["fw-title", "Frameworks", () => fwShown()],
+];
+let current = "gateway";
+const mark = () => { for (const a of tabs.children) a.toggleAttribute("aria-current", a.dataset.id === current); };
+/** Which link a section on screen lights: the section's own id, or its heading's. */
+const linkOf = (sec) => sec.id || sec.querySelector("h2[id]").id;
+const seen = new IntersectionObserver((hits) => {
+  for (const h of hits) if (h.isIntersecting) current = linkOf(h.target);
+  mark();
+}, { rootMargin: "-20% 0px -70% 0px" });
+const fwShown = () => { const needle = q.value.trim().toLowerCase(); return fw.frameworks.filter((f) => !needle || `${f.name} ${f.pkg}`.toLowerCase().includes(needle)); };
+
 const draw = () => {
   const needle = q.value.trim().toLowerCase();
-  grid.replaceChildren();
   const shown = apps.filter((a) => !needle || `${a.name} ${a.line}`.toLowerCase().includes(needle));
-  shown.forEach((a, n) => {
-    const links = el("div", { className: "links" });
-    if (a.play) links.append(link("Play", a.play, "play", "ui-btn primary play"));
-    if (a.download) links.append(link("Download", `${REPO}/releases?q=${a.download}&expanded=true`, "download"));
-    if (a.app) links.append(link("Source", `${REPO}/tree/main/apps/${a.app}`, "source"));
-    if (!a.play) links.append(el("span", { className: "soon", textContent: a.note ?? (a.download ? "Browser version soon" : "Coming soon") }));
-    const card = el("div", { className: "card" }, el("h2", {}, el("i", { textContent: a.name[0] }), a.name), el("p", { textContent: a.line }), el("div", { className: "meta" }, stage(a.stage), best(a, n)), links);
-    // Screenshots are eqosys's card art (`bun run shots` copies them); an app with none just has no picture.
-    if (a.app) {
-    const shot = el("img", { className: "shot", src: `shots/${a.app}.jpg`, alt: "", loading: "lazy", onerror() { shot.remove(); } });
-    card.prepend(shot);
-    }
-    if (a.play) card.prepend(el("span", { className: "tag", textContent: "PLAY NOW" }));
-    card.style.setProperty("--n", n);
-    card.style.setProperty("--tilt", `${((n * 7) % 5 - 2) * 0.5}deg`);
-    grid.append(card);
-  });
-  if (!shown.length) grid.append(el("p", { className: "empty", textContent: "Nothing here yet. Try another word." }));
-  const fws = fw.frameworks.filter((f) => !needle || `${f.name} ${f.pkg}`.toLowerCase().includes(needle));
+  for (const [g, box] of Object.entries(boxes)) {
+    const mine = shown.filter((a) => (a.group ?? "apps") === g);
+    box.replaceChildren(...mine.map((a, n) => (g === "gateway" ? gate(a) : row(a, n))));
+    (g === "gateway" ? box : box.parentElement).hidden = mine.length === 0;
+  }
+  empty.hidden = shown.length > 0;
+  tabs.replaceChildren(...SECTIONS.map(([id, name, of]) => {
+    const n = of(shown).length;
+    const a = el("a", { href: `#${id}`, hidden: n === 0 }, el("span", { textContent: name }), el("em", { textContent: String(n) }));
+    a.dataset.id = id;
+    return a;
+  }));
+  mark();
+  const fws = fwShown();
   strip.replaceChildren(...fws.map((f) => {
     const r = freshness(f.version, f.latest);
     const why = r === 4 ? `On the latest ${f.pkg}` : `${f.pkg} ${f.version}; latest is ${f.latest}`;
@@ -360,6 +452,7 @@ const draw = () => {
 };
 q.oninput = draw;
 draw();
+for (const sec of [boxes.gateway, boxes.games.parentElement, boxes.apps.parentElement, strip.parentElement]) seen.observe(sec);
 </script>
 </body>
 </html>

@@ -5,7 +5,17 @@
     "play": "https://codesplitter.notryanquinn.workers.dev",
     "app": "codesplitter",
     "stage": 3,
-    "best": ["desktop"]
+    "best": ["desktop"],
+    "group": "gateway"
+  },
+  {
+    "name": "eqosys",
+    "line": "One account for every app here: sign in once, keep your friends, and see who is on.",
+    "play": "https://eqosys.qntbr.com",
+    "app": "eqosys",
+    "stage": 3,
+    "best": ["phone", "tablet", "desktop"],
+    "group": "gateway"
   },
   {
     "name": "git-recon",
@@ -13,7 +23,8 @@
     "play": "https://git-recon.notryanquinn.workers.dev",
     "app": "git-recon",
     "stage": 2,
-    "best": ["desktop", "gamepad"]
+    "best": ["desktop", "gamepad"],
+    "group": "games"
   },
   {
     "name": "Two Fronts",
@@ -21,7 +32,8 @@
     "play": "https://two-fronts.notryanquinn.workers.dev",
     "app": "two-fronts",
     "stage": 2,
-    "best": ["desktop"]
+    "best": ["desktop"],
+    "group": "games"
   },
   {
     "name": "Park Hide & Seek",
@@ -30,7 +42,8 @@
     "app": "park-hide-seek",
     "download": "park-hide-seek-v",
     "stage": 3,
-    "best": ["phone", "tablet", "desktop"]
+    "best": ["phone", "tablet", "desktop"],
+    "group": "games"
   },
   {
     "name": "Skate Tech Park",
@@ -38,7 +51,8 @@
     "play": "https://skatetechpark.notryanquinn.workers.dev",
     "app": "skate-tech-park",
     "stage": 2,
-    "best": ["desktop"]
+    "best": ["desktop"],
+    "group": "games"
   },
   {
     "name": "Alien Disc Golf",
@@ -46,14 +60,16 @@
     "play": "https://alien-disc-golf.notryanquinn.workers.dev",
     "app": "alien-disc-golf",
     "stage": 2,
-    "best": ["desktop", "gamepad"]
+    "best": ["desktop", "gamepad"],
+    "group": "games"
   },
   {
     "name": "Druids Curse",
     "line": "The live multiplayer game Rusty Buns was first built for.",
     "play": "https://druids-curse-votv.notryanquinn.workers.dev",
     "stage": 3,
-    "best": ["desktop"]
+    "best": ["desktop"],
+    "group": "games"
   },
   {
     "name": "Super Spy Splat Shot",
@@ -62,7 +78,8 @@
     "app": "splat-spray",
     "download": "splat-spray-v",
     "stage": 2,
-    "best": ["phone", "desktop"]
+    "best": ["phone", "desktop"],
+    "group": "games"
   },
   {
     "name": "Excalibrawl",
@@ -70,7 +87,8 @@
     "play": "https://excalibrawl.notryanquinn.workers.dev",
     "app": "excalibrawl",
     "stage": 2,
-    "best": ["phone", "tablet", "desktop"]
+    "best": ["phone", "tablet", "desktop"],
+    "group": "games"
   },
   {
     "name": "Hippo Tycoon",
@@ -79,7 +97,8 @@
     "app": "hippo-tycoon",
     "download": "hippo-tycoon-v",
     "stage": 2,
-    "best": ["phone", "tablet", "desktop", "gamepad"]
+    "best": ["phone", "tablet", "desktop", "gamepad"],
+    "group": "games"
   },
   {
     "name": "Mythic Masters",
@@ -87,7 +106,8 @@
     "line": "A 3D arena brawler of 76 folklore beasts where mass and height are real, from a 6 kg jackalope to a tonne of lake monster.",
     "app": "mythic-masters",
     "stage": 1,
-    "best": ["desktop", "gamepad"]
+    "best": ["desktop", "gamepad"],
+    "group": "games"
   },
   {
     "name": "Delayed Reaction",
@@ -95,7 +115,26 @@
     "line": "A phone-first dub rhythm game: a ring calls a note down a neon tunnel and you answer it a bar later.",
     "app": "delayed-reaction",
     "stage": 1,
-    "best": ["phone"]
+    "best": ["phone"],
+    "group": "games"
+  },
+  {
+    "name": "Splat Rooms",
+    "line": "Hunt for objects in photo-real 3D rooms: the room blacks out, and every splat you fire lights the patch it lands on for good.",
+    "play": "https://splat-rooms.notryanquinn.workers.dev",
+    "app": "splat-rooms",
+    "stage": 2,
+    "best": ["desktop"],
+    "group": "games"
+  },
+  {
+    "name": "What Would Fantano Say?",
+    "line": "Drop in a track, pick your best 15 seconds and get a parody review: a score, a verdict and the best and worst bits. Your phone does the listening.",
+    "play": "https://what-would-fantano-say.notryanquinn.workers.dev",
+    "app": "what-would-fantano-say",
+    "stage": 2,
+    "best": ["phone", "desktop"],
+    "group": "games"
   },
   {
     "name": "Auto Rig",
@@ -103,7 +142,8 @@
     "line": "The IK engine: drop in a 3D model, get a skeleton, skin weights and inverse kinematics you can drag around, in Rust and TypeScript.",
     "app": "auto-rig",
     "stage": 2,
-    "best": ["desktop"]
+    "best": ["desktop"],
+    "group": "apps"
   },
   {
     "name": "tscircuit Desktop",
@@ -111,7 +151,8 @@
     "app": "tscircuit-desktop",
     "note": "Parked for now",
     "stage": 2,
-    "best": ["desktop"]
+    "best": ["desktop"],
+    "group": "apps"
   },
   {
     "name": "FM Groovebox",
@@ -120,7 +161,8 @@
     "app": "fm-daw",
     "download": "fm-daw-v",
     "stage": 2,
-    "best": ["desktop"]
+    "best": ["desktop"],
+    "group": "apps"
   },
   {
     "name": "GeoBoxQ",
@@ -128,37 +170,24 @@
     "play": "https://geoboxq-worker-live-ryanquinn-tjhne4lpmumy6kz5.notryanquinn.workers.dev",
     "app": "geoboxq",
     "stage": 3,
-    "best": ["desktop", "tablet"]
-  },
-  {
-    "name": "Splat Rooms",
-    "line": "Hunt for objects in photo-real 3D rooms: the room blacks out, and every splat you fire lights the patch it lands on for good.",
-    "play": "https://splat-rooms.notryanquinn.workers.dev",
-    "app": "splat-rooms",
-    "stage": 2,
-    "best": ["desktop"]
-  },
-  {
-    "name": "What Would Fantano Say?",
-    "line": "Drop in a track, pick your best 15 seconds and get a parody review: a score, a verdict and the best and worst bits. Your phone does the listening.",
-    "play": "https://what-would-fantano-say.notryanquinn.workers.dev",
-    "app": "what-would-fantano-say",
-    "stage": 2,
-    "best": ["phone", "desktop"]
+    "best": ["desktop", "tablet"],
+    "group": "apps"
   },
   {
     "name": "Motion MIDI",
     "line": "One synth written twice, in Rust and in TypeScript, checked sample by sample: press play and race the two engines.",
     "app": "motion-midi",
     "stage": 2,
-    "best": ["desktop"]
+    "best": ["desktop"],
+    "group": "apps"
   },
   {
     "name": "AT Lens",
     "line": "Type a handle and watch the AT Protocol work step by step, from domain to DID to data server, then follow the account live on the firehose.",
     "app": "at-lens",
     "stage": 2,
-    "best": ["desktop", "tablet"]
+    "best": ["desktop", "tablet"],
+    "group": "apps"
   },
   {
     "name": "ShareSplat",
@@ -166,7 +195,8 @@
     "play": "https://sharesplat.notryanquinn.workers.dev",
     "app": "sharesplat",
     "stage": 1,
-    "best": ["phone", "desktop"]
+    "best": ["phone", "desktop"],
+    "group": "apps"
   },
   {
     "name": "qCRM",
@@ -174,15 +204,8 @@
     "play": "https://qcrm.qntbr.com",
     "app": "qcrm",
     "stage": 2,
-    "best": ["desktop", "tablet"]
-  },
-  {
-    "name": "eqosys",
-    "line": "One account for every app here: sign in once, keep your friends, and see who is on.",
-    "play": "https://eqosys.qntbr.com",
-    "app": "eqosys",
-    "stage": 3,
-    "best": ["phone", "tablet", "desktop"]
+    "best": ["desktop", "tablet"],
+    "group": "apps"
   },
   {
     "name": "Splat Desktop",
@@ -190,7 +213,8 @@
     "app": "splat-desktop",
     "note": "Desktop only, from source",
     "stage": 2,
-    "best": ["desktop"]
+    "best": ["desktop"],
+    "group": "apps"
   },
   {
     "name": "Meshy Batch Studio",
@@ -198,7 +222,8 @@
     "app": "meshy-studio",
     "note": "Desktop only, from source",
     "stage": 2,
-    "best": ["desktop"]
+    "best": ["desktop"],
+    "group": "apps"
   },
   {
     "name": "Agent Office",
@@ -206,7 +231,8 @@
     "app": "agent-office",
     "download": "agent-office",
     "stage": 3,
-    "best": ["desktop"]
+    "best": ["desktop"],
+    "group": "apps"
   },
   {
     "name": "Hello World",
@@ -214,6 +240,7 @@
     "play": "https://hello-world.notryanquinn.workers.dev",
     "app": "hello-world",
     "stage": 4,
-    "best": ["phone", "tablet", "desktop"]
+    "best": ["phone", "tablet", "desktop"],
+    "group": "apps"
   }
 ]
