@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { countryAt } from "../src/countries.ts";
 import { decodeCurrents, encodeCurrents, packDods, PADDLE_KMS, startSwim, SWIM_S, swimKm, swimOver, swimStep } from "../src/currents.ts";
 import { currentsResponse } from "../src/edge/worker.ts";
-import { bearing, distanceKm, type LatLon } from "../src/geo.ts";
+import { bearing, DISC_KM, distanceKm, type LatLon } from "../src/geo.ts";
 import { sampleWind } from "../src/grib2.ts";
 
 const pack = decodeCurrents(new Uint8Array(await Bun.file(new URL("../src/currents.bin", import.meta.url)).arrayBuffer()));
@@ -78,18 +78,18 @@ describe("the currents", () => {
 });
 
 describe("a swim", () => {
-  // What SWIM_S, SEA_DRIFT and PADDLE_KMS add up to: idle, the Gulf Stream carries the disc
-  // hundreds of km and a calm sea barely moves it.
+  // What SWIM_S, SEA_DRIFT and PADDLE_KMS add up to, in widths of the disc as drawn (DISC_KM): idle, the
+  // Gulf Stream carries it several of its own widths (well over a thousand km) and a calm sea barely moves it.
   test.each([
-    ["the Gulf Stream", 400, 2000, fastestIn(34, 41, -75, -60)],
-    ["the Kuroshio", 400, 2500, fastestIn(30, 37, 130, 150)],
-    ["the Agulhas", 100, 2500, fastestIn(-42, -30, 15, 35)],
-    ["the South Pacific gyre", 0, 400, { lat: -25, lon: -120 }],
-    ["the Mediterranean", 0, 400, { lat: 35, lon: 18 }],
-  ] as const)("idle in %s drifts between %i and %i km", (_n, lo, hi, from) => {
-    const s = swimAll(from, 0, false);
-    expect(swimKm(s)).toBeGreaterThanOrEqual(lo);
-    expect(swimKm(s)).toBeLessThanOrEqual(hi);
+    ["the Gulf Stream", 4, 24, fastestIn(34, 41, -75, -60)],
+    ["the Kuroshio", 4, 28, fastestIn(30, 37, 130, 150)],
+    ["the Agulhas", 1, 28, fastestIn(-42, -30, 15, 35)],
+    ["the South Pacific gyre", 0, 4, { lat: -25, lon: -120 }],
+    ["the Mediterranean", 0, 4, { lat: 35, lon: 18 }],
+  ] as const)("idle in %s drifts between %i and %i disc widths", (_n, lo, hi, from) => {
+    const widths = swimKm(swimAll(from, 0, false)) / DISC_KM;
+    expect(widths).toBeGreaterThanOrEqual(lo);
+    expect(widths).toBeLessThanOrEqual(hi);
   });
   test("in the open ocean, paddling at the basket gains most of the paddle's reach", () => {
     const from = { lat: -25, lon: -120 }, basket = { lat: -25, lon: -100 };

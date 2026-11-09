@@ -2,13 +2,13 @@
 // daily surface currents (from satellite altimetry). The Worker relays the latest day (/api/currents); a
 // copy in src/currents.bin (`bun run currents`) plays when it can't, and on the desktop.
 // For SWIM_S seconds the player paddles against it; the Gulf Stream or the Agulhas will carry a disc a
-// thousand kilometres back the way it came, the open ocean barely moves it. Landing on a shore ends it.
+// few thousand kilometres back the way it came, the open ocean barely moves it. Landing on a shore ends it.
 //
 // currents.bin: "CUR1", the day as "YYYY-MM-DD", two zero bytes, then u and v (east, north) as int8 in
 // steps of 2 cm/s, 360 x 180 each, north row first from 89.125°, west column first from -179.875°.
 // -128 is land or no data. Speeds are capped at MAX_MS: geostrophic currents blow up near the equator and
 // in narrow straits, where the altimetry can't see the real flow.
-import { bearing, destination, distanceKm, type LatLon } from "./geo.ts";
+import { bearing, destination, DISC_KM, distanceKm, type LatLon } from "./geo.ts";
 import { sampleWind, type WindLevel } from "./grib2.ts";
 
 export interface Currents { level: WindLevel; day: string; live: boolean }
@@ -83,10 +83,12 @@ export function decodeCurrents(bytes: Uint8Array, live = false): Currents {
 
 /** Seconds the swim lasts. */
 export const SWIM_S = 10;
-/** km of drift per second per m/s of current: a 1 m/s stream carries the disc 1,500 km over a swim. */
-export const SEA_DRIFT = 150;
+// Both are counted in disc widths (DISC_KM, how big the disc is drawn), so the swim reads at the scale the
+// throw plays at: a country-sized frisbee in a 1 m/s stream slides two of its own widths a second.
+/** km of drift per second per m/s of current: a 1 m/s stream carries the disc about 5,100 km over a swim. */
+export const SEA_DRIFT = 2 * DISC_KM;
 /** km/s the alien paddles at: beats the open ocean, loses to the big western boundary currents. */
-export const PADDLE_KMS = 60;
+export const PADDLE_KMS = 0.8 * DISC_KM;
 
 export interface Swim {
   pos: LatLon;
