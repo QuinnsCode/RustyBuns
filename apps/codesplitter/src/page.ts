@@ -21,7 +21,7 @@
 // claims and its conflict handling are the page's too, and an agent edits it with the tools it has already.
 
 import { esc } from "./util.ts";
-import { json, readBody, type Env } from "./env.ts";
+import { fail, json, readBody, type Env } from "./env.ts";
 import { docIn, toFile } from "./archive.ts";
 import { FileDoc, FileReply, LogReply } from "./file-do.ts";
 import { readJson } from "@rustybuns/util/http";
@@ -155,30 +155,31 @@ export async function pageRoutes(req: Request, env: Env, p: string[], user?: str
   if (p[1] === "me" && p[2] === "page" && !p[3] && req.method === "PUT") {
     if (!user) return json({ error: "sign in first" }, 401);
     const b = await readBody<"path" | "content">(req), path = pagePath(typeof b.path === "string" ? b.path.split("/") : [""]);
-    if (!path || !TYPES[path.split(".").pop()!.toLowerCase()]) return json({ error: `path: a text file of the page (${Object.keys(TYPES).join(", ")})` }, 400);
-    if (typeof b.content !== "string") return json({ error: "content: the file's whole text" }, 400);
-    if (b.content.length > TEXT_MAX) return json({ error: `content: up to ${TEXT_MAX / 1e6} MB of text` }, 413);
-    if (!(await hasPage(env, user))) return json({ error: "no page repo yet: make a public repo named page" }, 404);
+    if (!path || !TYPES[path.split(".").pop()!.toLowerCase()]) return fail("BadInput", `path: a text file of the page (${Object.keys(TYPES).join(", ")})`);
+    if (typeof b.content !== "string") return fail("BadInput", "content: the file's whole text");
+    if (b.content.length > TEXT_MAX) return fail("TooBig", `content: up to ${TEXT_MAX / 1e6} MB of text`);
+    if (!(await hasPage(env, user))) return fail("NoPageRepo", "no page repo yet: make a public repo named page");
     return json({ path, changed: await setText(env, user, path, b.content) });
   }
   if (p[1] === "me" && p[2] === "page" && p[3] === "assets" && p[4] && !p[5] && req.method === "PUT") {
     if (!user) return json({ error: "sign in first" }, 401);
     const file = assetName(p[4]);
-    if (!file) return json({ error: `name: letters, digits, . _ -, ending in ${Object.keys(ASSET_TYPES).join(", ")}` }, 400);
-    if (!env.LEVEL_CHUNKS) return json({ error: "binary files need R2, which this server has not got" }, 501);
-    if (!(await hasPage(env, user))) return json({ error: "no page repo yet: make a public repo named page" }, 404);
+    if (!file) return fail("BadInput", `name: letters, digits, . _ -, ending in ${Object.keys(ASSET_TYPES).join(", ")}`);
+    if (!env.LEVEL_CHUNKS) return fail("NoAssetStore", "binary files need R2, which this server has not got");
+    if (!(await hasPage(env, user))) return fail("NoPageRepo", "no page repo yet: make a public repo named page");
     // Turn a big body away before reading it, then count what the account already keeps (a rewrite of a file it has is free).
-    if (Number(req.headers.get("content-length")) > ASSET_MAX) return json({ error: `body: the file's bytes, up to ${ASSET_MAX / 1e6} MB` }, 413);
+    if (Number(req.headers.get("content-length")) > ASSET_MAX) return fail("TooBig", `body: the file's bytes, up to ${ASSET_MAX / 1e6} MB`);
     const held = (await env.LEVEL_CHUNKS.list({ prefix: assetKey(user, ""), limit: ASSET_FILES + 1 })).objects;
-    if (held.length >= ASSET_FILES && !held.some((o) => o.key === assetKey(user, file))) return json({ error: `an account keeps up to ${ASSET_FILES} asset files: replace one or delete another` }, 413);
+    if (held.length >= ASSET_FILES && !held.some((o) => o.key === assetKey(user, file))) return fail("AssetsFull", `an account keeps up to ${ASSET_FILES} asset files: replace one or delete another`);
     const bytes = new Uint8Array(await req.arrayBuffer());
-    if (!bytes.length || bytes.length > ASSET_MAX) return json({ error: `body: the file's bytes, up to ${ASSET_MAX / 1e6} MB` }, 413);
+    if (!bytes.length) return fail("BadInput", `body: the file's bytes, up to ${ASSET_MAX / 1e6} MB`);
+    if (bytes.length > ASSET_MAX) return fail("TooBig", `body: the file's bytes, up to ${ASSET_MAX / 1e6} MB`);
     await env.LEVEL_CHUNKS.put(assetKey(user, file), bytes);
     return json({ path: `assets/${file}`, bytes: bytes.length });
   }
   if (p[1] === "users" && p[2] && p[3] === "page" && p[4] === "assets" && p[5] && !p[6] && (req.method === "GET" || req.method === "HEAD")) {
     const file = assetName(p[5]), obj = file && env.LEVEL_CHUNKS && (await hasPage(env, p[2])) ? await env.LEVEL_CHUNKS.get(assetKey(p[2], file)) : null;
-    if (!file || !obj) return json({ error: "no such file" }, 404);
+    if (!file || !obj) return fail("NoSuchFile", "no such file");
     return new Response(req.method === "HEAD" ? null : await obj.arrayBuffer(), { headers: {
       "content-type": ASSET_TYPES[file.split(".").pop()!.toLowerCase()], "content-security-policy": PAGE_CSP, "x-frame-options": "SAMEORIGIN",
       "cache-control": "no-cache", "access-control-allow-origin": "*", "x-content-type-options": "nosniff" } });
@@ -187,15 +188,15 @@ export async function pageRoutes(req: Request, env: Env, p: string[], user?: str
   if (p[1] === "users" && p[2] && p[3] === "page-version" && !p[4] && req.method === "GET") return json({ version: await pageVersion(env, p[2]) });
   if (p[1] !== "users" || !p[2] || p[3] !== "page" || (req.method !== "GET" && req.method !== "HEAD")) return null;
   const name = p[2], path = pagePath(p.slice(4));
-  if (!path) return json({ error: "no such file" }, 404);
+  if (!path) return fail("NoSuchFile", "no such file");
   const ext = path.split(".").pop()!.toLowerCase();
   const type = TYPES[ext];
-  if (!type) return json({ error: `a page is text: ${Object.keys(TYPES).join(", ")}` }, 415);
-  if (!onPagesHost && runsAsApp(req)) return json({ error: "a page's files run only inside its own sandbox" }, 403);
+  if (!type) return fail("NotPageText", `a page is text: ${Object.keys(TYPES).join(", ")}`);
+  if (!onPagesHost && runsAsApp(req)) return fail("PageSandboxOnly", "a page's files run only inside its own sandbox");
   let body = await repoFile(env, name, path);
   // No page repo (or no index in it): the HTML saved on the profile is the index.
   if (body === null && path === "index.html") body = ((await env.DB.prepare("SELECT theme_html FROM users WHERE name = ?").bind(name).first<{ theme_html: string | null }>()))?.theme_html || null;
-  if (body === null) return path === "index.html" ? note(`@${esc(name)} hasn't made a page yet`, 404) : json({ error: "no such file" }, 404);
+  if (body === null) return path === "index.html" ? note(`@${esc(name)} hasn't made a page yet`, 404) : fail("NoSuchFile", "no such file");
   const outside = type === "text/html" && path === "index.html" && OUTSIDE_MEDIA.test(body);
   if (type === "text/html" && path === "index.html") body = withData(body, await visible(env, name));
   if (outside) body += OUTSIDE_NOTICE;
@@ -268,8 +269,8 @@ export const HOUR_MS = 3_600_000;
 
 /** POST /api/me/page/revert {to: "hour" | "default"}: what each page file was changed to, and the ones history could not reach. */
 export async function revertPage(env: Env, owner: string, to: unknown, now = Date.now()) {
-  if (to !== "hour" && to !== "default") return json({ error: 'to: "hour" or "default"' }, 400);
-  if (!(await hasPage(env, owner))) return json({ error: "no page repo yet: make a public repo named page" }, 404);
+  if (to !== "hour" && to !== "default") return fail("BadInput", 'to: "hour" or "default"');
+  if (!(await hasPage(env, owner))) return fail("NoPageRepo", "no page repo yet: make a public repo named page");
   const { results } = await env.DB.prepare("SELECT path FROM files WHERE owner = ? AND repo = ?").bind(owner, PAGE_REPO).all<{ path: string }>();
   const paths = [...new Set([...results.map((r) => r.path), ...(to === "default" ? Object.keys(STARTER) : [])])];
   const changed: string[] = [], unreachable: string[] = [];
