@@ -159,9 +159,9 @@ function gated(call: { env: any }, o: { session?: string } = {}) {
     void gate.then(() => { listening = false; }, () => {});
     void (async () => {
       while (listening) {
-        // Files first, as execCommand's listen puts them: a note that names one finds it there.
-        await give(cwd, await ear!.files?.() ?? []);
+        // As execCommand's listen does: notes, then the files they may name, so a note finds its file there.
         const got = await ear!.poll();
+        await give(cwd, await ear!.files?.() ?? []);
         heard.push(...got);
         if (got.length) files.push(held(cwd));
         for (const n of got) ear!.said?.(`ok: ${n}`);

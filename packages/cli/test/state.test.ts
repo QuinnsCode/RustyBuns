@@ -1,9 +1,9 @@
 import { test, expect } from "bun:test";
-import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { RustyBunsConfig } from "../src/config.ts";
-import { adoptNote, alchemyStage, bootstrapped, deployedIn, linkSharedState, lockState, sharedStateBase, unlinkSharedState } from "../src/state.ts";
+import { adoptNote, alchemyStage, bootstrapped, deployedIn, linkReferencedStates, linkSharedState, lockState, sharedStateBase, unlinkSharedState } from "../src/state.ts";
 
 function repoWithWorktree() {
   const root = realpathSync(mkdtempSync(join(tmpdir(), "rb-state-")));
@@ -114,4 +114,32 @@ test("bootstrap: a new stage of two apps that bind each other leaves out the oth
   const second = bootstrapped(cfg, (app) => deployedIn(eqosys, app, "preview"));
   expect(second.waiting).toEqual([]);
   expect(Object.keys(second.cfg.bindings)).toEqual(["DB", "HUB", "QOLLAB"]);
+});
+
+test("cross-app refs: an app that binds another reads that app's stack, each stage, through a link in its own state", () => {
+  const r = repoWithWorktree();
+  const eqosys = join(r.wt, "apps", "eqosys"), qollab = join(r.wt, "apps", "qollab");
+  mkdirSync(eqosys, { recursive: true });
+  mkdirSync(qollab, { recursive: true });
+  const eqState = join(linkSharedState(eqosys)!, "state");
+  for (const stage of ["preview", "live_me"]) {
+    mkdirSync(join(eqState, "eqosys", stage), { recursive: true });
+    writeFileSync(join(eqState, "eqosys", stage, "Worker.json"), `{"stage":"${stage}"}`);
+  }
+  const qBase = linkSharedState(qollab)!;
+  // Alchemy's local state reads <cwd>/.alchemy/state/<stack>/<stage>/<id>.json.
+  const ref = (stage: string) => join(qollab, ".alchemy", "state", "eqosys", stage, "Worker.json");
+  expect(existsSync(ref("preview"))).toBe(false);
+  expect(linkReferencedStates(qollab, ["eqosys"])).toHaveLength(1);
+  expect(readFileSync(ref("preview"), "utf8")).toBe(`{"stage":"preview"}`);
+  expect(readFileSync(ref("live_me"), "utf8")).toBe(`{"stage":"live_me"}`);
+  // The same relative link the owner made by hand; a second run leaves it.
+  expect(readlinkSync(join(qBase, "state", "eqosys"))).toBe("../../eqosys/state/eqosys");
+  expect(linkReferencedStates(qollab, ["eqosys"])).toEqual([]);
+  // A real stack dir of the same name is never moved or replaced, and an app with no state gets no link.
+  rmSync(join(qBase, "state", "eqosys"));
+  mkdirSync(join(qBase, "state", "eqosys", "dev"), { recursive: true });
+  expect(linkReferencedStates(qollab, ["eqosys", "nobody"])).toEqual([]);
+  expect(lstatSync(join(qBase, "state", "eqosys")).isDirectory()).toBe(true);
+  expect(existsSync(join(qBase, "state", "nobody"))).toBe(false);
 });

@@ -113,6 +113,8 @@ test("stray state: a stage's state still under the app's old name is found", () 
   const dir = stateDir({ "DB.json": { logicalId: "DB", resourceType: "Cloudflare.D1Database" } });
   expect(strayState(dir, "game", "live_me")).toBeNull();
   expect(strayState(dir, "games", "live_me")).toBe("game");
+  // A stack this app refs (linked in by linkReferencedStates) is the other app's, not ours renamed.
+  expect(strayState(dir, "games", "live_me", ["game"])).toBeNull();
   expect(strayState(dir, "games", "pr_1")).toBeNull();
   expect(strayState(join(dir, "nowhere"), "games", "live_me")).toBeNull();
 });

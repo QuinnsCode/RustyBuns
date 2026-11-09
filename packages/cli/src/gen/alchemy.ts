@@ -100,6 +100,9 @@ export function otherApps(bindings: Record<string, Binding>): string[] {
   const apps = Object.values(bindings).flatMap((b) => b.type === "service" ? [b.app] : b.type === "durable_object" ? [b.app, b.transferredFrom] : []);
   return [...new Set(apps.filter((a): a is string => !!a))].sort();
 }
+/** Every app whose stack this config refs: otherApps, plus another app's D1 (`app`). */
+export const referencedApps = (bindings: Record<string, Binding>): string[] =>
+  [...new Set([...otherApps(bindings), ...Object.values(bindings).flatMap((b) => b.type === "d1" && b.app ? [b.app] : [])])].sort();
 /** Another app's Worker reference in the generated stack, and the name it is yielded as inside the Worker's Effect. */
 const appRef = (app: string) => `App_${ident(app)}`;
 const appVar = (app: string) => appRef(app).toLowerCase();
