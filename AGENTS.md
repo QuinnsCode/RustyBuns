@@ -49,6 +49,7 @@ all apps plus `bun test packages` when `packages/` or the lockfile moved). Comma
 
 Dexter (`bun apps/agent-office/ester/dexter.ts`) reads the session transcripts and names the chores agents do by hand;
 these are the tools for the big ones. Each prints a short answer meant for a context window, so use them over the raw command.
+Ask a script `--help` before reading its source: it prints the script's top comment (`help(import.meta.path)` from `scripts/help.ts`; give a new script one).
 
 - `bun run pr <n>`: a PR's checks, waited for, one line per outcome with a failed step's log tail (no `gh pr checks` +
   `sleep` loop, no `gh run view --log-failed | grep`). `--no-wait` for now, `--minutes 5` to cap the wait. Spots a push with no run attached (#2828).

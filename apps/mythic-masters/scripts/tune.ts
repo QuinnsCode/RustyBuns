@@ -23,6 +23,7 @@ import { ROSTER, type Creature } from "../src/roster.ts";
 import { FIELDS, type Field } from "../src/fields.ts";
 import { newMatch, step, type Event } from "../src/sim.ts";
 import { drift, rustRates } from "./sim-rust.ts";
+import { help } from "../../../scripts/help.ts";
 
 export function play(a: Creature, b: Creature, seed: number) {
   const m = newMatch(a, b), bots = [bot(0, seed), bot(1, seed * 7 + 1)] as const;
@@ -118,7 +119,8 @@ export function kits(n: number) {
 }
 
 if (import.meta.main) {
-  const rust = process.argv.includes("--rust"), args = process.argv.slice(2).filter((a) => a !== "--rust");
+  help(import.meta.path);
+  const rust =process.argv.includes("--rust"), args = process.argv.slice(2).filter((a) => a !== "--rust");
   if (args[0] === "--kits") {
     const rows = kits(Number(args[1]) || 4), mid = rows.map((r) => r.perEnergy).sort((a, b) => a - b)[rows.length >> 1]!;
     for (const r of rows) console.log(`${r.field.padEnd(7)} ${r.perEnergy.toFixed(2).padStart(5)} damage/energy (${Math.round((r.perEnergy / mid) * 100)}% of the median)  ${r.perFight.toFixed(1)} bigs a fight  ${r.fights} fights`);

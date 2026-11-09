@@ -14,6 +14,7 @@ import { GRID } from "../src/world/places.ts";
 import { DEN, DEN_CHANCE, DEN_SALT, denHead, hash } from "../src/world/seed.ts";
 import { arenaOf, CELL, poolOf, regionAt, spawn } from "../src/world/world.ts";
 import { WORLD_CYCLE } from "../src/net/party.ts";
+import { help } from "../../../scripts/help.ts";
 
 export const OUT = new URL("../src/net/dens.json", import.meta.url).pathname;
 
@@ -70,6 +71,7 @@ export function denTable() {
 }
 
 if (import.meta.main) {
+  help(import.meta.path);
   const json = JSON.stringify(denTable());
   await Bun.write(OUT, json + "\n");
   console.log(`${OUT}: ${(json.length / 1024).toFixed(1)} KB`);
