@@ -93,7 +93,7 @@ export function render(entries: Entry[], file: string): string[] {
   const w = String(Math.max(0, ...entries.map((e) => e.to))).length;
   return [file, ...entries.map((e) => {
     const range = e.from === e.to ? `${String(e.from).padStart(w)}${" ".repeat(w + 1)}` : `${String(e.from).padStart(w)}-${String(e.to).padEnd(w)}`;
-    return `${range}  ${"  ".repeat(e.depth)}${e.exported && e.kind !== "export" ? "export " : ""}${e.kind} ${e.name}${e.doc ? `  // ${e.doc.slice(0, 100)}` : ""}`;
+    return `${range}  ${"  ".repeat(e.depth)}${e.exported && e.depth === 0 && e.kind !== "export" ? "export " : ""}${e.kind} ${e.name}${e.doc ? `  // ${e.doc.slice(0, 100)}` : ""}`;
   })];
 }
 
