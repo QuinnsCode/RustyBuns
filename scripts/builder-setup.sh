@@ -88,6 +88,21 @@ if [ "$MAC" ]; then
   else
     echo "slot-1 has no scripts/builder-bar.ts yet: run this again once it pulls main"
   fi
+
+  # The desktop builds at 05:00 and 17:00 (#2500), from their own clone so they never take an agent's slot.
+  say "Nightly desktop builds"
+  N="$ROOT/nightly"
+  [ -d "$N/src/.git" ] || git clone -q "$REPO" "$N/src"
+  git -C "$N/src" pull -q --ff-only origin main
+  if [ -f "$N/src/scripts/mac/dev.rustybuns.builder-nightly.plist" ]; then
+    P="$HOME/Library/LaunchAgents/dev.rustybuns.builder-nightly.plist"
+    mkdir -p "$HOME/Library/LaunchAgents"
+    sed "s#/Users/YOU#$HOME#g" "$N/src/scripts/mac/dev.rustybuns.builder-nightly.plist" > "$P"
+    launchctl unload "$P" 2>/dev/null || true
+    launchctl load "$P" && echo "scheduled 05:00 and 17:00; log $N/log, results $N/results.json (bun run builder nightly reads them)"
+  else
+    echo "main has no nightly plist yet: run this again once it does"
+  fi
 fi
 
 say "Last step, on the office Mac"
