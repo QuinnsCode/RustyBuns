@@ -21,7 +21,7 @@ Games, music makers and 3D tools you can run on your own computer. This page cov
 
 That's it. Now pick an app.
 
-**Just want to play?** Hippo Tycoon, Park Hide & Seek, Splat Spray and FM Groovebox also come as a ready-made download: no Bun, no clone. Use the **Download** link under the app, pick the file for your computer, and follow the steps on that page to open it (it's not signed yet, so your Mac or Windows will ask once).
+**Just want to play?** Hippo Tycoon, Park Hide & Seek, Super Spy Splat Shot and FM Groovebox also come as a ready-made download: no Bun, no clone. Use the **Download** link under the app, pick the file for your computer, and follow the steps on that page to open it (it's not signed yet, so your Mac or Windows will ask once).
 
 ## How every app works
 
@@ -36,7 +36,7 @@ That's it. Now pick an app.
 |---|---|---|
 | [Hippo Tycoon](#hippo-tycoon) | Be a greedy hippo and chomp the most oil money | ⭐ Easy |
 | [Park Hide & Seek](#park-hide--seek) | Hide from park rangers in any of the 63 national parks (or be the ranger), and find Bigfoot first | ⭐ Easy |
-| [Splat Spray](#splat-spray) | Find hidden things in a pitch-dark room with a scanner | ⭐ Easy |
+| [Super Spy Splat Shot](#super-spy-splat-shot) | Find hidden things in a pitch-dark room with a scanner | ⭐ Easy |
 | [FM Groovebox](#fm-groovebox-fm-daw) | Make beats and songs with your computer keyboard | ⭐ Easy |
 | [Auto Rig](#auto-rig) | Give a 3D model bones, then pose it like a puppet | ⭐ Easy |
 | [Motion MIDI](#motion-midi) | Press play and race two music engines | ⭐ Easy |
@@ -114,9 +114,9 @@ bun run desktop:dev
 
 [Full guide →](apps/park-hide-seek/README.md)
 
-## Splat Spray
+## Super Spy Splat Shot
 
-**Like I Spy in the dark.** A kid's room with 100 things in it is totally black. Every shot from your scanner lights up a few dots. Find the thing it asks for in the fewest shots.
+**Like I Spy in the dark.** A kid's room with 100 things in it is totally black. Every shot from your scanner lights up a few dots. Find the thing it asks for in the fewest shots. [Play it online](https://supersplatspyshot.notryanquinn.workers.dev): quick play against whoever is on, or With friends through an eqosys party.
 
 **Download:** [splat-spray for Mac, Windows and Linux](https://github.com/QuinnsCode/RustyBuns/releases?q=splat-spray-v&expanded=true), or build it yourself:
 
@@ -495,7 +495,7 @@ Open the address it prints. Everything lives in memory, so it starts empty each 
 | [agent-office](apps/agent-office/README.md) | Someone else's Node server (PTYs, WebSockets, a 3D client) as one binary for macOS and Linux: a native addon swapped for Bun's PTY, assets embedded, nothing forked | Medium (downloads the release) |
 | [splat-desktop](apps/splat-desktop/README.md) | PlayCanvas' SuperSplat editor on a folder of scenes: a plain Vite app, a `desktop.host` for file routes, `headers` for CDN assets | Medium |
 | [splat-rooms](apps/splat-rooms/README.md) | A splat hunting game: a world class, and a `mounts` folder streamed from disk with range requests, never embedded | Small (scenes download separately) |
-| [splat-spray](apps/splat-spray/README.md) | The smallest config: a three.js SPA with no backend, `world: false`, ten lines | Small |
+| [splat-spray](apps/splat-spray/README.md) | A three.js SPA made a desktop app by a short config; online play is a Worker with a World Durable Object | Small |
 | [spa-example](apps/spa-example/README.md) | A test fixture, not an app: a slice of a real RWSDK game that `glue.test.ts` uses to check `init` and the boundary report | None (never built) |
 | [example](apps/example/README.md) | Worker mode: a hand-written Worker with D1, KV and a Durable Object as a binary, plus a probe for the sample Rust crate | Small |
 | [TerraViz](apps/terraviz-demo/README.md) | A demonstration, not ours: The Zyra Project's Pages app (Apache-2.0, led by Eric Hackathorn), cloned and run with its code unchanged by `bun apps/terraviz-demo/run.ts`. It drove `rustybuns pages-functions` and several Pages fixes | Large (its own toolchain) |
