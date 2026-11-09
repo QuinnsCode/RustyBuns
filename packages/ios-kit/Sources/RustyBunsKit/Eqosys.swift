@@ -84,13 +84,16 @@ public struct EqosysClient: Sendable {
         return r
     }
 
-    /// The friends hub's socket for this person (apps/eqosys/src/qollab/hub.ts).
-    public func hubURL(token: String) -> URL {
+    /// The friends hub's socket (apps/eqosys/src/qollab/hub.ts). The token rides in `hubProtocols`, not the URL,
+    /// so it never lands in an access or proxy log.
+    public func hubURL() -> URL {
         var c = URLComponents(url: base.appendingPathComponent("hub"), resolvingAgainstBaseURL: false)!
         c.scheme = base.scheme == "http" ? "ws" : "wss"
-        c.queryItems = [URLQueryItem(name: "token", value: token)]
         return c.url!
     }
+
+    /// The subprotocols the hub socket offers: `eqosys` and the token (SOCKET_PROTOCOL in packages/util/src/eqosys.ts).
+    public func hubProtocols(token: String) -> [String] { ["eqosys", token] }
 
     /// The token endpoint's answer as a session, checking the id_token carries this ask's nonce.
     public func session(from data: Data, ask: Ask?, now: Date = Date()) throws -> EqosysSession {
