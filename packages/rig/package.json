@@ -15,6 +15,7 @@
     "bun": ">=1.4.0"
   },
   "description": "auto-rig's voxel rigger (skeleton and skin weights from any mesh), its wire codec, the GLB bake that feeds it, and the closed-chain IK that poses the result. auto-rig and Mythic Masters share it; the Rust twin stays in apps/auto-rig/native.",
+  "shelf": { "name": "Rigs", "picture": "auto-rig" },
   "main": "./src/index.ts",
   "types": "./src/index.ts",
   "exports": {
