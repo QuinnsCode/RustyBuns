@@ -26,8 +26,8 @@
       },
       {
         "app": "splat-spray",
-        "name": "Splat Spray",
-        "line": "The smallest one: a three.js game with no backend at all, made a desktop app by a ten-line config"
+        "name": "Super Spy Splat Shot",
+        "line": "A spy game in a pitch-dark Gaussian-splat room: a three.js page made a desktop app by a short config, and the same page races friends online on a Worker"
       },
       {
         "app": "skate-tech-park",
