@@ -671,7 +671,7 @@ const OPS: Record<string, Record<string, Op>> = {
     description: "A merge that Mervin says goes through still waits on each hook that's on in `codesplitter.pipeline.json`: after-mervin and before-ester, then after-ester once the required checks are green. " +
       "An ai hook asks a coding agent (the cheapest, where self-healing runs) for YAY or NAY on the diff; an ask hook waits for a person. merge_branch answers 409 with `hook` {at, mode, say, by?, reason?} until each says yay. " +
       "A verdict is kept against the branch's `hash`, so changing the branch asks again; an AI that couldn't answer leaves the card to a person.",
-    ok: obj({ hash: str("the branch as it is"), hooks: arr(obj({ at: str("after-mervin, before-ester or after-ester"), mode: str("ai or ask"), say: str("yay, nay, waiting or unasked"), by: str(), reason: str() })) }) } },
+    ok: obj({ hash: str("the branch as it is"), hooks: arr(obj({ at: str("after-mervin, before-ester or after-ester"), mode: str("ai or ask"), say: str("yay, nay, waiting (for a person), running (an AI review still reading) or unasked"), by: str(), reason: str() })) }) } },
   [`${repo}/branches/{branch}/hooks/{hook}`]: { post: { id: "say_hook", summary: "A person's yay or nay at one of a branch's pipeline hooks", tag: "Branches",
     description: "Signed in on the site, with write access, not the branch's author (the owner excepted); an API token can't say it. A yay at an ai hook overrules the AI's nay. The hook must be on in the repo's pipeline (409 otherwise).",
     body: obj({ say: str("yay or nay"), reason: str() }, ["say"]),

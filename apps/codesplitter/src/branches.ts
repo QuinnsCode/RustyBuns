@@ -57,7 +57,7 @@ import { answerOf, deleteLearning, hashesPaths, learningOn, learningState, pathK
 import { answerRows, fightRows, fightWeights, suggestions, weightOrder } from "./mervin-learn.ts";
 import { boardRoutes } from "./board-routes.ts";
 import { branchOf } from "./repos.ts";
-import { branchDiff, forgetVerdicts, hookGate, hooksOn, keepVerdict, repoPipeline, Said, verdicts } from "./pipeline-hooks.ts";
+import { forgetVerdicts, hookGate, hooksOn, keepVerdict, repoPipeline, Said, verdicts } from "./pipeline-hooks.ts";
 import { HOOKS } from "./pipeline.ts";
 
 /** `resolve` as a merge sends it, {path: {line: pick}}, checked; or what's wrong with it. */
@@ -881,7 +881,7 @@ async function mergeBranch(env: Env, owner: string, repo: string, branch: Branch
   const run = await dryRun(env, owner, repo, branch, rows, resolve, user);
   if ("blocked" in run) return json(run.blocked, 409);
   // The pipeline's hooks (pipeline-hooks.ts): Mervin has said it merges, and the checks are green; each hook that's on says yay first.
-  const hold = await hookGate(env, owner, repo, name, () => branchHash(env, owner, repo, name), () => branchDiff(env, owner, repo, name, todo, user), `/api/repos/${owner}/${repo}`);
+  const hold = await hookGate(env, owner, repo, name, () => branchHash(env, owner, repo, name), user, `/api/repos/${owner}/${repo}`);
   if (hold) return fail("HookHold", hold.error, { hook: hold.hook });
   // The open branches that clash with this one (merge-plan.ts), read before main moves: each takes main in after (#1162).
   const others = (await openBranches(env, owner, repo)).filter((b) => b.name !== name && b.parent !== name);
