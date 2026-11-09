@@ -35,7 +35,7 @@ import { branchEdited } from "./checks.ts";
 import { Tally } from "./limits.ts";
 import { lintMerge } from "./lint.ts";
 import { DocStore } from "./doc-store.ts";
-import { sha256 as sha } from "./util.ts";
+import { isPlainObject, sha256 as sha } from "./util.ts";
 import { apply, empty, MAX_OPS, merge, MERGE_ASK, mergeWords, parseOps, PROTOCOL, replay, text, type Applied, type Doc, type Line, type MergeReply, type Op, type Resolve } from "./lines.ts";
 import type { Live, Rule } from "./policy.ts";
 import { pad10 } from "./util.ts";
@@ -287,7 +287,7 @@ export class FileDurableObject {
       const ops = parseOps(b.ops);
       if (typeof ops === "string") return fail("BadInput", ops);
       const r = await this.edit(by, ops, b.ifRev, b.claim, live);
-      return r.ok ? json({ rev: r.rev, applied: r.applied }) : json(refused(r), 409);
+      return r.ok ? json({ rev: r.rev, applied: r.applied }) : refusal(refused(r), live);
     }
     try {
       if (req.method === "GET" && route === "log") {
@@ -1068,6 +1068,10 @@ const newId = (now: number) => `c${now.toString(36)}${Math.random().toString(36)
 /** What a refused edit answers: its conflicts, and when lines are held, the claims in the way and when to try again. */
 const refused = (r: { rev: number; conflicts: unknown[]; claims?: Claim[]; retryAfter?: number | null; error?: string }) =>
   ({ ...(r.error && { error: r.error }), rev: r.rev, conflicts: r.conflicts, ...(r.claims && { claims: r.claims, retryAfter: r.retryAfter }) });
+
+/** A refused `/ops`, named for a client (#3804): locked, or the lines it named moved or are held, in the conflicts' own words. */
+const refusal = (r: ReturnType<typeof refused>, live?: Live) => live === "locked" ? fail("PathLocked", r.error ?? LOCKED, r)
+  : fail("LinesChanged", r.error ?? `A line changed since you read it, or someone holds it (${[...new Set(r.conflicts.map((c) => isPlainObject(c) && typeof c.reason === "string" ? c.reason : ""))].filter(Boolean).join("; ")}): read the file again${r.retryAfter ? `, or try again in ${r.retryAfter} seconds` : ""}.`, r);
 
 /** A `codesplitter-live=locked` file (lockfiles, by default) changes by regenerating it or by a push, never line by line. */
 const LOCKED = "this file is locked (codesplitter-live=locked): regenerate it or push it, it takes no live edits";

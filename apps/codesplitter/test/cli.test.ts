@@ -41,9 +41,19 @@ describe("bun cli.ts", () => {
     expect((await cli(["edit_lines", "--owner", "ryan", "--repo", "lab", "--path", "a.ts", "--body", "-"], undefined, body)).code).toBe(0);
     const after = JSON.parse((await cli(["read_file", "--owner", "ryan", "--repo", "lab", "--path", "a.ts"])).out);
     expect(after.lines[1]).toMatchObject({ text: "TWO", by: "ryan" });
-    // A stale base is the app's 409, passed on.
+    // A stale base is the app's sentence, not a status, with the reply's fields on stdout.
     const stale = await cli(["edit_lines", "--owner", "ryan", "--repo", "lab", "--path", "a.ts", "--body", body]);
-    expect(stale).toMatchObject({ code: 1, err: expect.stringMatching(/^409/) });
+    expect(stale).toMatchObject({ code: 1, err: expect.stringMatching(/^A line changed since you read it.*read the file again/) });
+    expect(JSON.parse(stale.out)).toMatchObject({ tag: "LinesChanged", conflicts: [{ index: 0 }] });
+  });
+
+  test("a failure says what to do", async () => {
+    const { cli } = await app();
+    const gone = await cli(["read_file", "--owner", "ryan", "--repo", "nope", "--path", "a.ts"]);
+    expect(gone).toMatchObject({ code: 1, err: "not found: no such repo, or it's private and you can't see it" });
+    expect(JSON.parse(gone.out).tag).toBe("NoSuchRepo");
+    const revoked = await cli(["read_file", "--owner", "ryan", "--repo", "lab", "--path", "a.ts"], { CODESPLITTER_URL: "http://site", CODESPLITTER_TOKEN: "cst_nope" });
+    expect(revoked).toMatchObject({ code: 1, err: expect.stringContaining("http://site/#/me/tokens and run: codesplitter login") });
   });
 
   test("the desktop app's launch URL goes as its cookie, beside the token", async () => {
