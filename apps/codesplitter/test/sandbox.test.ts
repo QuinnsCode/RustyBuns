@@ -350,8 +350,7 @@ describe("POST /api/repos/:o/:r/agents with AGENT_SANDBOX bound", () => {
     await post("sam-sample", "/api/repos/sam-sample/mine/files", { path: "a.test.ts", content: 'import { test } from "bun:test";\ntest("x", () => {});' });
     const { id } = (await (await post("sam-sample", "/api/repos/sam-sample/mine/cuts", { path: "a.test.ts", from: 1, to: 2 })).json()) as { id: string };
     const res = await post("sam-sample", `/api/cuts/${id}/run`, {});
-    expect(res.status).toBe(400);
-    expect(((await res.json()) as any).error).toContain("ADMINS");
+    expect([res.status, ((await res.json()) as { tag?: string }).tag]).toEqual([403, "AdminsOnly"]);
     expect(runs).toEqual([]);
   });
 

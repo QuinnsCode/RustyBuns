@@ -20,7 +20,7 @@ import { blobBytesOf, blobOn, createOn, deleteOn, materializeOn, openBranch } fr
 import { fromDisk } from "./agent-run.ts";
 import { branchEdited, startChecks } from "./checks.ts";
 import { deployOnCommit } from "./deploy.ts";
-import { code, json, type ArtifactsRepo, type CommitMeta, type Env, type TreeEntry } from "./env.ts";
+import { code, fail, json, type ArtifactsRepo, type CommitMeta, type Env, type TreeEntry } from "./env.ts";
 import { emit } from "./hooks.ts";
 import { kickMirror, landPushes, mirrorsOn, pushHolds } from "./mirror.ts";
 import { policyClosed } from "./protect.ts";
@@ -126,18 +126,18 @@ export const pickMessage = (kind: PickKind, c: Pick<CommitMeta, "hash" | "messag
 /** POST .../commits/:sha/(revert|pick) {branch?}: the commit undone, or taken again, on main or an open branch. */
 export async function pickRoute(env: Env, owner: string, repo: string, user: string, kind: PickKind, sha: string, body: { branch?: unknown }): Promise<Response> {
   const branch = typeof body.branch === "string" && body.branch && body.branch !== "main" ? body.branch : undefined;
-  if (branch && !(await openBranch(env, owner, repo, branch))) return json({ error: `no open branch ${branch}` }, 404);
-  if (!/^[0-9a-f]{4,64}$/.test(sha)) return json({ error: "a commit hash, please" }, 400);
+  if (branch && !(await openBranch(env, owner, repo, branch))) return fail("NoSuchBranch", `no open branch ${branch}`);
+  if (!/^[0-9a-f]{4,64}$/.test(sha)) return fail("BadInput", "sha: a commit hash");
   let h: Awaited<ReturnType<typeof handleFor>>;
   try { h = await handleFor(env, owner, repo); } catch (e) {
-    if (code(e) === "FORK_IN_PROGRESS" || code(e) === "IMPORT_IN_PROGRESS") return json({ error: "still being dug up" }, 409);
+    if (code(e) === "FORK_IN_PROGRESS" || code(e) === "IMPORT_IN_PROGRESS") return fail("StillCopying", "this repo is still being copied in");
     throw e;
   }
-  if (!h) return json({ error: "this repo has no git" }, 404);
+  if (!h) return fail("NoGit", "this repo has no git yet");
   const got = await commitChanges(h.handle, sha);
-  if (!got) return json({ error: `no commit ${sha} here` }, 404);
+  if (!got) return fail("NoSuchCommit", `no commit ${sha} here`);
   if (!branch) for (const c of got.changes) { const closed = policyClosed(owner, c.path, user); if (closed) return closed; }
-  if (got.more) return json({ error: `it changed more than ${MAX_FILES} files: too many to ${kind === "revert" ? "revert" : "pick"} here` }, 413);
+  if (got.more) return fail("CommitTooBig", `it changed more than ${MAX_FILES} files: too many to ${kind === "revert" ? "revert" : "pick"} here`);
   // A push from outside reaches main's files first, so this merges into what git really has (#773).
   if (!branch && mirrorsOn(env)) await landPushes(env, owner, repo).catch(() => {});
 
@@ -166,8 +166,8 @@ export async function pickRoute(env: Env, owner: string, repo: string, user: str
     "why" in s ? clashes.push(s) : s.do !== "skip" && steps.push(s);
   }
   const what = kind === "revert" ? "revert" : "pick", short = got.commit.hash.slice(0, 7);
-  if (clashes.length) return json({ error: `can't ${what} ${short}: ${clashes.map((c) => `${c.path} (${c.why})`).join(", ")}`, clashes }, 409);
-  if (!steps.length) return json({ error: kind === "revert" ? `${short}'s changes aren't here any more: nothing to undo` : `${branch ?? "main"} has ${short}'s changes already` }, 409);
+  if (clashes.length) return fail("PickClash", `can't ${what} ${short}: ${clashes.map((c) => `${c.path} (${c.why})`).join(", ")}`, { clashes });
+  if (!steps.length) return fail("NothingToPick", kind === "revert" ? `${short}'s changes aren't here any more: nothing to undo` : `${branch ?? "main"} has ${short}'s changes already`);
 
   // For real: line edits by whoever pressed it, each against the rev the dry run read.
   const message = pickMessage(kind, got.commit);
@@ -185,7 +185,7 @@ export async function pickRoute(env: Env, owner: string, repo: string, user: str
     if (s.do === "delete" && s.blob && !branch) continue;
     if (s.do === "edit") {
       const res = await toFile(env, owner, repo, s.path, user, "ops", { method: "POST", body: JSON.stringify({ ops: diffToOps(s.doc.lines, s.next), ifRev: s.doc.rev }) }, "", branch);
-      if (!res.ok) return json({ error: `${s.path} was edited while this ran: try again`, landed: steps.slice(0, steps.indexOf(s)).map((x) => x.path) }, 409);
+      if (!res.ok) return fail("BranchMoved", `${s.path} was edited while this ran: try again`, { landed: steps.slice(0, steps.indexOf(s)).map((x) => x.path) });
     } else if (s.do === "make") {
       if (branch) await createOn(env, owner, repo, branch, s.path, s.next.join("\n"), user);
       else {

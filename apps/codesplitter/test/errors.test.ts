@@ -385,3 +385,28 @@ test("a level not dug up, or not there, comes back named", async () => {
   for (const [why, e, want] of cases) got.push([why, await tagOf(e), want]);
   expect(got.filter(([, tag, want]) => tag !== want)).toEqual([]);
 });
+
+test("tags, picks, cuts, shares and upstream come back named", async () => {
+  const call = await boot();
+  opened.push(call);
+  const post = (u: string, url: string, body: unknown) => call(u, url, { method: "POST", body: JSON.stringify(body) });
+  for (const u of ["ana", "bo"]) await post(u, "/api/login", { name: u });
+  expect((await post("ana", "/api/repos", { name: "lab" })).status).toBe(201);
+  expect((await post("ana", "/api/repos/ana/lab/files", { path: "a.ts", content: "export const a = 1;" })).status).toBe(201);
+  expect((await post("ana", "/api/repos/ana/lab/do/commit?path=a.ts", { message: "first" })).status).toBe(200);
+  const as = (user: string | null) => codesplitter({ url: ORIGIN, retries: 0, send: async (r) => call(user, r.url.slice(ORIGIN.length), { method: r.method, headers: r.headers, ...(r.body && { body: await r.text() }) }) });
+  const ana = as("ana"), bo = as("bo"), anon = as(null), at = { owner: "ana", repo: "lab" };
+  const cases: [string, Effect.Effect<unknown, Failure<OpWithErrors>>, string][] = [
+    ["a tag, not the owner", bo.call("make_tag", { ...at, body: { name: "v1" } }), "OwnerOnly"],
+    ["a tag that isn't there", ana.call("delete_tag", { ...at, name: "nope" }), "NoSuchTag"],
+    ["picking a commit that isn't there", ana.call("cherry_pick", { ...at, sha: "0".repeat(40), body: {} }), "NoSuchCommit"],
+    ["lines past the file's end", ana.call("share_lines", { ...at, body: { path: "a.ts", from: 5, to: 6 } }), "BadInput"],
+    ["sharing, signed out", anon.call("share_lines", { ...at, body: { path: "a.ts", from: 1, to: 1 } }), "SignInFirst"],
+    ["a share that isn't there", anon.call("get_share", { id: "nope" }), "NoSuchShare"],
+    ["a cut that isn't there", anon.call("get_cut", { id: "nope" }), "NoSuchCut"],
+    ["upstream of a repo not dug from GitHub", ana.call("take_upstream", { ...at, body: {} }), "NotAGitHubFork"],
+  ];
+  const got = [];
+  for (const [why, e, want] of cases) got.push([why, await tagOf(e), want]);
+  expect(got.filter(([, tag, want]) => tag !== want)).toEqual([]);
+});

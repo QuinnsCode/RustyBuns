@@ -25,7 +25,7 @@
 import { access as artifactAccess, handleFor, toFile } from "./archive.ts";
 import { settings } from "./deploy.ts";
 import { hostedWhy } from "./deploy-keys.ts";
-import { json, readBody, type Env } from "./env.ts";
+import { fail, json, readBody, type Env } from "./env.ts";
 import { caller, landFix, type Edit } from "./deps.ts";
 import { text, type Doc } from "./lines.ts";
 import { runnerFor, type Run, type Runner } from "./preview.ts";
@@ -170,8 +170,8 @@ async function saveInit(runner: Runner, save: Save, repoDir: string, s: Run["ste
 export async function tryRoutes(req: Request, env: Env, p: string[], user: string | null, self: (r: Request) => Promise<Response>): Promise<Response | null> {
   if (!(p[1] === "repos" && p[2] && p[3] && p[4] === "try" && !p[5])) return null;
   const [owner, repo] = [p[2], p[3]], key = `${owner}/${repo}`;
-  if (user !== owner) return json({ error: "only the repo's owner can try Rusty Buns on it" }, 403);
-  if (!(await repoRow(env, owner, repo, "1"))) return json({ error: "not found" }, 404);
+  if (user !== owner) return fail("OwnerOnly", "only the repo's owner can try Rusty Buns on it");
+  if (!(await repoRow(env, owner, repo, "1"))) return fail("NoSuchRepo", "no such repo");
   const runner = runnerFor(env);
   // On the site the plan runs in the repo's deploy container (deploy-runner.ts), for the admins who can deploy there.
   const stub = !runner && env.DEPLOY_RUNNER ? env.DEPLOY_RUNNER.get(env.DEPLOY_RUNNER.idFromName(key)) : null;
@@ -181,28 +181,28 @@ export async function tryRoutes(req: Request, env: Env, p: string[], user: strin
     return json({ can_run: !!runner || (!!stub && !why), ...(stub && { hosted: true, why }), run });
   }
   if (req.method !== "POST") return null;
-  if (!runner && (!stub || why)) return json({ error: why ?? "trying Rusty Buns runs on the desktop app" }, stub ? 403 : 400);
-  if (runner?.workdir) return json({ error: "trying Rusty Buns runs on the desktop app" }, 400);
-  if (trials.get(key) && !trials.get(key)!.done) return json({ error: "a trial is already running" }, 409);
+  if (!runner && (!stub || why)) return (why ? fail("NoHostedDeploys", why) : fail("DesktopOnly", "trying Rusty Buns runs on the desktop app"));
+  if (runner?.workdir) return fail("DesktopOnly", "trying Rusty Buns runs on the desktop app");
+  if (trials.get(key) && !trials.get(key)!.done) return fail("TryRunning", "a try-out is already running");
   const body = ((await readBody(req).catch(() => null)) ?? {}) as { branch?: unknown; save?: unknown };
   const branch = typeof body.branch === "string" && body.branch ? body.branch : null;
-  if (branch && !(await env.DB.prepare("SELECT 1 FROM branches WHERE owner = ? AND repo = ? AND name = ? AND status = 'open'").bind(owner, repo, branch).first())) return json({ error: `${branch} isn't an open branch` }, 404);
+  if (branch && !(await env.DB.prepare("SELECT 1 FROM branches WHERE owner = ? AND repo = ? AND name = ? AND status = 'open'").bind(owner, repo, branch).first())) return fail("NoSuchBranch", `${branch} isn't an open branch`);
   if (stub) {
-    if (body.save === true) return json({ error: "saving init's work runs on the desktop app" }, 400);
+    if (body.save === true) return fail("DesktopOnly", "saving init's work runs on the desktop app");
     const { dir, stage } = await settings(env, owner, repo);
     const files = branch ? await branchFiles(env, owner, repo, branch, user) : undefined;
     const res = await stub.fetch(new Request("http://deploy/try", { method: "POST", body: JSON.stringify({ owner, repo, by: user, branch, dir, stage, files }) }));
     return json(await res.json(), res.status);
   }
-  if (!runner) return json({ error: "trying Rusty Buns runs on the desktop app" }, 400);
+  if (!runner) return fail("DesktopOnly", "trying Rusty Buns runs on the desktop app");
   const h = await handleFor(env, owner, repo, true);
   const art = h && await artifactAccess(h.handle, h.remote, "read", 3600);
-  if (!art) return json({ error: "this repo has no git remote yet: commit its files first" }, 400);
+  if (!art) return fail("NoGit", "this repo has no git yet: commit its files first");
   const remote = art.remote.replace("://", `://x:${art.token.split("?")[0]}@`);
   const { dir, stage } = await settings(env, owner, repo);
   const files = branch ? await branchFiles(env, owner, repo, branch, user) : undefined;
   const saving = body.save === true;
-  if (saving && branch) return json({ error: "init's work is saved from main: pick main, or merge the branch first" }, 400);
+  if (saving && branch) return fail("BadInput", "init's work is saved from main: pick main, or merge the branch first");
   const id = crypto.randomUUID().slice(0, 8);
   const keys = saving ? [...TRY_STEPS.slice(0, 3), "save" as const, ...TRY_STEPS.slice(3)] : TRY_STEPS;
   const run: Run = { id, at: Date.now(), stage: branch ?? "main", steps: keys.map((key) => ({ key, status: "waiting", out: "" })) as Run["steps"], done: false };

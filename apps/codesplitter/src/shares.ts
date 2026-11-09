@@ -11,7 +11,7 @@
 // in the list, and a sharer let back in gets their link back.
 
 import { fileLines, materialize } from "./archive.ts";
-import { json, type Body, type Env } from "./env.ts";
+import { fail, json, type Body, type Env, unread } from "./env.ts";
 import { repoRow, liveRepo } from "./repos.ts";
 
 /** Whether `who` may read owner/repo now (worker.ts's access). */
@@ -21,7 +21,7 @@ interface ShareRow { id: string; owner: string; repo: string; path: string; ids:
 
 /** GET /api/repos/:o/:r/shares: every share of the repo, newest first, and whether its sharer still holds it open. The owner's to see. */
 export async function listShares(env: Env, owner: string, repo: string, user: string | null, mayRead: MayRead) {
-  if (user !== owner) return json({ error: "owner only" }, 403);
+  if (user !== owner) return fail("OwnerOnly", "only the repo's owner lists its shares");
   const { results } = await env.DB.prepare("SELECT id, path, by, note, created_at FROM shares WHERE owner = ? AND repo = ? ORDER BY created_at DESC LIMIT 500")
     .bind(owner, repo).all<Pick<ShareRow, "id" | "path" | "by" | "note" | "created_at">>();
   const can = new Map<string, boolean>();
@@ -31,15 +31,15 @@ export async function listShares(env: Env, owner: string, repo: string, user: st
 
 /** Who may share from a repo: anyone who can read a public one; only its crew for a private one. */
 export async function createShare(env: Env, owner: string, repo: string, user: string | null, access: { read: boolean; write: boolean }, private_: boolean, body: Body<"path" | "from" | "to" | "note">) {
-  if (!user) return json({ error: "sign in first" }, 401);
-  if (private_ && !access.write) return json({ error: "only the crew can share lines from a private repo" }, 403);
+  if (!user) return fail("SignInFirst", "sign in to share lines");
+  if (private_ && !access.write) return fail("NoWriteAccess", "only the crew can share lines from a private repo");
   const path = String(body?.path ?? "");
   const m = await materialize(env, owner, repo, path);
-  if ("error" in m) return json({ error: m.error }, m.status);
+  if ("error" in m) return unread(m);
   const lines = await fileLines(env, owner, repo, path, "share", false);
   const from = Math.max(1, Math.floor(Number(body.from))), to = Math.min(lines.length, Math.max(from, Math.floor(Number(body.to))));
-  if (!lines[from - 1]) return json({ error: "no such lines" }, 400);
-  if (to - from >= 500) return json({ error: "share at most 500 lines" }, 400);
+  if (!lines[from - 1]) return fail("BadInput", "the file has no such lines");
+  if (to - from >= 500) return fail("BadInput", "share at most 500 lines");
   const id = crypto.randomUUID().replace(/-/g, "").slice(0, 12);
   await env.DB.prepare("INSERT INTO shares (id, owner, repo, path, ids, by, note, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
     .bind(id, owner, repo, path, JSON.stringify(lines.slice(from - 1, to).map((l) => l.id)), user, String(body.note ?? "").slice(0, 280), Date.now()).run();
@@ -49,10 +49,10 @@ export async function createShare(env: Env, owner: string, repo: string, user: s
 export async function shareRoutes(req: Request, env: Env, p: string[], user: string | null, mayRead: MayRead): Promise<Response | null> {
   if (p[1] !== "shares" || !p[2]) return null;
   const s = await env.DB.prepare(`SELECT s.* FROM shares s ${liveRepo("s")} WHERE s.id = ?`).bind(Date.now(), p[2]).first<ShareRow>();
-  const gone = json({ error: "this share was revoked, or never was" }, 404);
+  const gone = fail("NoSuchShare", "this share was revoked, or never was");
   if (!s) return gone;
   if (req.method === "DELETE") {
-    if (user !== s.by && user !== s.owner) return json({ error: "only whoever shared it, or the repo's owner" }, 403);
+    if (user !== s.by && user !== s.owner) return fail("NotYourShare", "only whoever shared it, or the repo's owner, revokes a share");
     await env.DB.prepare("DELETE FROM shares WHERE id = ?").bind(s.id).run();
     return json({ ok: true });
   }

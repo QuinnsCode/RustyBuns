@@ -23,7 +23,7 @@
 import { checkEnv, runDirs, sandboxUser, spawnAs } from "./check-env.ts";
 import { fileDoc, materialize, toFile } from "./archive.ts";
 import { cardFont, renderCard, type CardLine } from "./card.ts";
-import { json, type Body, type Env } from "./env.ts";
+import { fail, json, type Body, type Env, unread } from "./env.ts";
 import { isAdmin } from "./identity.ts";
 import type { Doc, Line } from "./lines.ts";
 import { parseJson, esc } from "./util.ts";
@@ -324,28 +324,28 @@ const doc = (env: Env, owner: string, repo: string, path: string, branch?: strin
 const toDisk = (lines: { text: string }[]) => lines.length ? lines.map((l) => l.text).join("\n") + "\n" : "";
 
 export async function createCut(env: Env, owner: string, repo: string, user: string | null, write: boolean, body: Body<"pieces" | "path" | "from" | "to" | "note">) {
-  if (!user) return json({ error: "sign in first" }, 401);
+  if (!user) return fail("SignInFirst", "sign in to cut lines");
   // A cut is a branch, and its fix merges into the repo: the crew's.
-  if (!write) return json({ error: "only the crew can cut lines: a cut is a branch of the repo" }, 403);
+  if (!write) return fail("NoWriteAccess", "only the crew can cut lines: a cut is a branch of the repo");
   const pieces = (Array.isArray(body?.pieces) ? body.pieces : [body]) as (Body<"path" | "from" | "to"> | null)[];
-  if (!pieces.length || pieces.length > MAX_PIECES) return json({ error: `cut 1 to ${MAX_PIECES} ranges` }, 400);
+  if (!pieces.length || pieces.length > MAX_PIECES) return fail("BadInput", `cut 1 to ${MAX_PIECES} ranges`);
   const byPath = new Map<string, [number, number][]>();
   for (const p of pieces) {
     const path = String(p?.path ?? ""), from = Math.floor(Number(p?.from)), to = Math.floor(Number(p?.to ?? p?.from));
-    if (!path || !(from >= 1) || !(to >= from)) return json({ error: "each piece needs a path and lines from ≤ to" }, 400);
+    if (!path || !(from >= 1) || !(to >= from)) return fail("BadInput", "each piece needs a path and lines from ≤ to");
     byPath.set(path, [...(byPath.get(path) ?? []), [from, to]]);
   }
   const picked: { path: string; doc: Doc; ranges: [number, number][] }[] = [];
   for (const [path, ranges] of byPath) {
     const m = await materialize(env, owner, repo, path);
-    if ("error" in m) return json({ error: `${path}: ${m.error}` }, m.status);
+    if ("error" in m) return unread({ ...m, error: `${path}: ${m.error}` });
     const main = await doc(env, owner, repo, path);
-    if (ranges.some(([a]) => !main.lines[a - 1])) return json({ error: `${path} has no such lines` }, 400);
+    if (ranges.some(([a]) => !main.lines[a - 1])) return fail("BadInput", `${path} has no such lines`);
     picked.push({ path, doc: main, ranges });
   }
   // A file a relative import points at, if the repo has it.
   const files = await follow(picked, async (path) => "error" in (await materialize(env, owner, repo, path)) ? null : doc(env, owner, repo, path));
-  if (files.reduce((n, f) => n + f.doc.lines.length, 0) > MAX_LINES) return json({ error: `cut at most ${MAX_LINES} lines` }, 400);
+  if (files.reduce((n, f) => n + f.doc.lines.length, 0) > MAX_LINES) return fail("BadInput", `cut at most ${MAX_LINES} lines`);
 
   const id = crypto.randomUUID().replace(/-/g, "").slice(0, 10), branch = `cut-${id}`, now = Date.now();
   await env.DB.prepare("INSERT INTO branches (owner, repo, name, by, status, created_at) VALUES (?, ?, ?, ?, 'open', ?)").bind(owner, repo, branch, user, now).run();
@@ -376,7 +376,7 @@ export async function cutRoutes(req: Request, env: Env, p: string[], url: URL, u
   if (p[1] !== "cuts" || !p[2]) return null;
   // Like a shared range, the link is the key: it shows only the cut's lines, even from a private repo.
   const c = await env.DB.prepare(`SELECT c.*, b.status FROM cuts c ${liveRepo("c")} ${branchOf("c")} WHERE c.id = ?`).bind(Date.now(), p[2]).first<CutRow>();
-  if (!c) return json({ error: "no such cut" }, 404);
+  if (!c) return fail("NoSuchCut", "no such cut");
   const run: CutRun | null = c.run ? JSON.parse(c.run) : null;
 
   // GET /api/cuts/:id
@@ -389,9 +389,9 @@ export async function cutRoutes(req: Request, env: Env, p: string[], url: URL, u
   // POST /api/cuts/:id/run
   if (p[3] === "run" && req.method === "POST") {
     // It runs the cut's code: the repo owner's call, like a preview deploy.
-    if (user !== c.owner) return json({ error: "only the repo's owner can run a cut" }, 403);
+    if (user !== c.owner) return fail("OwnerOnly", "only the repo's owner can run a cut");
     const tester = testerFor(env, user);
-    if (!tester) return json({ error: env.AGENT_SANDBOX ? "hosted runs are limited to this site's admins (ADMINS)" : "cuts run on the desktop app, or in the agent sandbox on Cloudflare" }, 400);
+    if (!tester) return (env.AGENT_SANDBOX ? fail("AdminsOnly", "hosted runs are limited to this site's admins") : fail("DesktopOnly", "cuts run on the desktop app, or in the agent sandbox on Cloudflare"));
     const files = await cutFiles(env, c);
     const t = await tester(Object.fromEntries(files.map((f) => [f.path, toDisk(f.lines)]))).catch((e: Error) => ({ code: -1, out: e.message }));
     const r = readRun(t.out, ("report" in t && t.report) || "", files);

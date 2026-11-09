@@ -138,6 +138,23 @@ export class MainMoves extends Schema.TaggedError<MainMoves>()("MainMoves", name
 export class WorktreeExists extends Schema.TaggedError<WorktreeExists>()("WorktreeExists", named) {}
 export class WorktreeFailed extends Schema.TaggedError<WorktreeFailed>()("WorktreeFailed", named) {}
 export class NoArtifacts extends Schema.TaggedError<NoArtifacts>()("NoArtifacts", named) {}
+export class NoSecretsKey extends Schema.TaggedError<NoSecretsKey>()("NoSecretsKey", named) {}
+export class NotYourShare extends Schema.TaggedError<NotYourShare>()("NotYourShare", named) {}
+export class NotAGitHubFork extends Schema.TaggedError<NotAGitHubFork>()("NotAGitHubFork", named) {}
+export class ForkBaseGone extends Schema.TaggedError<ForkBaseGone>()("ForkBaseGone", named) {}
+export class NoSuchCut extends Schema.TaggedError<NoSuchCut>()("NoSuchCut", named) {}
+export class NoSuchShare extends Schema.TaggedError<NoSuchShare>()("NoSuchShare", named) {}
+export class NoSuchProvider extends Schema.TaggedError<NoSuchProvider>()("NoSuchProvider", named) {}
+export class TryRunning extends Schema.TaggedError<TryRunning>()("TryRunning", named) {}
+export class TagRefused extends Schema.TaggedError<TagRefused>()("TagRefused", named) {}
+export class StillCopying extends Schema.TaggedError<StillCopying>()("StillCopying", named) {}
+export class NothingNew extends Schema.TaggedError<NothingNew>()("NothingNew", named) {}
+export class PickClash extends Schema.TaggedError<PickClash>()("PickClash", named) {}
+export class NothingToPick extends Schema.TaggedError<NothingToPick>()("NothingToPick", named) {}
+export class DigestRunning extends Schema.TaggedError<DigestRunning>()("DigestRunning", named) {}
+export class CommitTooBig extends Schema.TaggedError<CommitTooBig>()("CommitTooBig", named) {}
+export class UpstreamTooBig extends Schema.TaggedError<UpstreamTooBig>()("UpstreamTooBig", named) {}
+export class GitHubRateLimit extends Schema.TaggedError<GitHubRateLimit>()("GitHubRateLimit", named) {}
 export class DesktopOnly extends Schema.TaggedError<DesktopOnly>()("DesktopOnly", named) {}
 export class NoDeployKey extends Schema.TaggedError<NoDeployKey>()("NoDeployKey", named) {}
 export class RunnerOnly extends Schema.TaggedError<RunnerOnly>()("RunnerOnly", named) {}
@@ -178,6 +195,7 @@ export const NAMED = {
   TooManyTokens, NoSuchToken,
   DesktopOnly, NoDeployKey, RunnerOnly, NoHostedDeploys, NoSuchCheck, NotYourClaim, TakeTurns, LinesHeld, LinesQueued, LeftLine, GitHubRun, CheckTaken, CheckDone, DeployRunning, DiffCutShort, DeployWaits, PlanStale, HistoryTrimmed,
   NoSuchLevel, LevelNotDug, LevelTooBig, NoArtifacts, NoSuchWorktree, NoSuchCommit, MainMoves, WorktreeExists, WorktreeFailed,
+  NoSecretsKey, NotYourShare, NotAGitHubFork, ForkBaseGone, NoSuchCut, NoSuchShare, NoSuchProvider, TryRunning, TagRefused, StillCopying, NothingNew, PickClash, NothingToPick, DigestRunning, CommitTooBig, UpstreamTooBig, GitHubRateLimit,
 } satisfies { [K in ErrorTag]: new (a: Named) => { readonly _tag: K } };
 
 // What any call can meet, whatever the operation: they come from before a route answers, or from no answer at all.
