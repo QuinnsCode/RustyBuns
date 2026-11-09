@@ -500,6 +500,7 @@ The same things that make it simple for a person make it safe to hand to an agen
 - **Guard rails.** `plan` and `deploy` catch a mistake before a server exists. `protect: true` on a database, bucket, queue, vector index, Durable Object or container (or the Worker) makes `destroy` leave it, and `plan`, `deploy` and `destroy` print a `[KEPT]` / `[REMOVED]` list first. See [Keep a resource through destroy](REFERENCE.md#config).
 - **A host that can't reach your keys.** The dev host starts without your `.env`, auto-install or credential env vars, and `run desktop --sandbox` puts it in a macOS Seatbelt jail, kept out of `~/.ssh`, cloud logins and keychains. `plan`, `deploy` and `dev` keep the Cloudflare token and other deploy logins out of the Worker build too. See [Running code you didn't write](REFERENCE.md#running-code-you-didnt-write).
 - **Rust without risk.** An agent can write the Rust engine and prove it matches the TypeScript one, sample by sample.
+- **CI that explains its waits.** `bun scripts/ci-report.ts` reads a week of `apps` and `typecheck` runs and says where the queue time and job-minutes went, which tests blocked many PRs at once, and what moving suites to a schedule would save.
 
 Nearly every commit in this repo is co-authored by Claude Code, some of them written at desks in [Agent Office](apps/agent-office/README.md), which is itself one of the examples below.
 
