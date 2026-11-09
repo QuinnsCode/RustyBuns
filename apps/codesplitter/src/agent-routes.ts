@@ -48,7 +48,8 @@
 // works on the branch the stopped one left, whose batch waits, held, till it's done; after HANDOFFS
 // of them it's a person's turn. The run says how much it read (`spent`) and, under `handoff`, why it stopped.
 
-import { b64, parseJson } from "./util.ts";
+import { b64, parseJson, sha256 } from "./util.ts";
+import { localGit } from "./mirror.ts";
 import { protectOn } from "./protect.ts";
 import { fail, json, named, need, type Env, readBody } from "./env.ts";
 import { byToken } from "./tokens.ts";
@@ -255,6 +256,12 @@ const locked = (path: string) => `${path} is locked (codesplitter-live=locked): 
 
 /** The harnesses whose CLI is on PATH (all of them when a test swaps the CLI out; a hosted site's are HOSTED_HARNESSES). */
 export const installedHarnesses = (env: Env) => env.AGENT_EXEC ? HARNESSES : env.AGENT_SANDBOX ? HOSTED_HARNESSES : HARNESSES.filter((h) => Bun.which(harnessCommand(h, "").bin));
+
+/**
+ * This codeSplitter on this machine, as a short name: its git folder's hash. A thread's place is the same path every
+ * run (so claude resumes), and two codeSplitters on one machine (tests run side by side) mustn't share one.
+ */
+const instance = async (env: Env) => { const lg = localGit(env); return lg ? (await sha256(lg.path(""))).slice(0, 8) : "here"; };
 
 export async function agentRoutes(req: Request, env: Env, p: string[], url: URL, user: string | null,
   access: (owner: string, repo: string) => Promise<{ read: boolean; write: boolean }>,
@@ -893,7 +900,7 @@ async function execute(env: Env, self: (req: Request) => Promise<Response>, orig
     const prior = found && (local || restore?.id === found.id) ? found : undefined;
     const r = await runAgent(call, {
       user: agent, owner, repo, path, harness, task: row.task, model: row.model ?? undefined,
-      ...(local && { place: `thread-${owner}-${repo}-${home}` }),
+      ...(local && { place: `thread-${await instance(env)}-${owner}-${repo}-${home}` }),
       ...(prior && { resume: { session: prior.id, since: (await transcript(env, owner, repo, home, prior.last)).lines, ...(restore && { kept: restore }) } }),
       // claude hears a note as it works, on this machine (stdin) or in a container (streamed down its /run, #3713).
       mcp, sandbox, lines, claim: `run-${id}`, signal, branch, also,
