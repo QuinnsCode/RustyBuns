@@ -52,7 +52,7 @@ export const STOP_INFO: Record<Stop, { who: string; does: string }> = {
 /** The stop each hook comes after. */
 export const HOOK_AFTER: Record<Hook, Stop> = { "after-mervin": "mervin", "before-ester": "mervin", "after-ester": "ester" };
 
-const Lane = obj({
+export const Lane = obj({
   name: str(60, { re: /^[\w.-]+$/ }),
   cadence: oneOf(CADENCES),
   /** `.gitattributes`-style patterns (at most two `**` each: the regex they compile to stays near-linear); a lane without them covers every file. */

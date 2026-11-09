@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Exec } from "../src/agent-run.ts";
+import { reviewsDone } from "../src/pipeline-hooks.ts";
 import { EXAMPLE_PIPELINE, laneCall, plan, tally, type Change, type Lane, type LaneCall } from "../src/pipeline.ts";
 import { glob } from "../src/util.ts";
 import { local, post } from "./app-kit.ts";
@@ -58,7 +59,7 @@ test("a repo's pipeline file sets its road, and a bad one says which field", asy
   expect(glob("**/**/a").source).toBe(glob("**/a").source);
 });
 
-test("the hooks run at a merge: an AI's nay holds it with the reason, an edit asks again, then a person's yay lands it", async () => {
+test("the hooks run at a merge: an AI's review runs off the request, its nay holds it with the reason, an edit asks again, then a person's yay lands it", async () => {
   const call = await local({ GH_CLI: "off", HEAL: "1" });
   const answers = ["NAY: x(3) drops the null check", "YAY", "YAY"], prompts: string[] = [];
   call.env.AGENT_EXEC = (async (cmd, cwd) => {
@@ -75,6 +76,12 @@ test("the hooks run at a merge: an AI's nay holds it with the reason, an edit as
   await edit("x(3);", 2);
   const merge = async () => { const r = await post(call, "ana", "/api/repos/ana/r/branches/b1/merge", {}); return { status: r.status, body: await r.json() as { error?: string; hook?: { at: string; say: string; reason?: string } } }; };
 
+  // The merge doesn't wait for the agent: the card says it's reading, and the review is asked once.
+  const reading = await merge();
+  expect(reading.status).toBe(409);
+  expect(reading.body.hook).toMatchObject({ at: "before-ester", say: "running" });
+  await reviewsDone();
+  expect(prompts).toHaveLength(1);
   const nay = await merge();
   expect(nay.status).toBe(409);
   expect(nay.body.hook).toMatchObject({ at: "before-ester", say: "nay", reason: "x(3) drops the null check" });
@@ -84,6 +91,8 @@ test("the hooks run at a merge: an AI's nay holds it with the reason, an edit as
   expect(prompts).toHaveLength(1);
 
   expect((await edit("x(4);", 1)).status).toBe(200);
+  expect((await merge()).body.hook?.say).toBe("running");
+  await reviewsDone();
   const waiting = await merge();
   expect(prompts).toHaveLength(2);
   expect(waiting.body.hook).toMatchObject({ at: "after-ester", say: "waiting" });
@@ -97,7 +106,11 @@ test("the hooks run at a merge: an AI's nay holds it with the reason, an edit as
   const again = await (await call("ana", "/api/repos/ana/r/branches/b1/hooks")).json() as { hash: string };
   expect(again.hash).not.toBe(cards.hash);
   expect((await post(call, "ana", "/api/repos/ana/r/branches/b1/hooks/after-ester", { say: "yay", hash: again.hash })).status).toBe(200);
+  // The edit asks the AI hook again too; once it says yay, the merge lands.
+  expect((await merge()).body.hook).toMatchObject({ at: "before-ester", say: "running" });
+  await reviewsDone();
   expect((await merge()).status).toBe(200);
+  expect(prompts).toHaveLength(3);
   expect(await (await call("ana", "/api/repos/ana/r/do/file?path=a.ts")).json()).toMatchObject({ lines: [{ text: "x(5);" }] });
 });
 
@@ -193,8 +206,10 @@ test("the bus's AI pass: a bus with no command seats changes, then one agent run
   const call = await local({ GH_CLI: "off", HEAL: "1" });
   const R = "/api/repos/ana/r";
   const answers = ["YAY", "NAY: docs/c.md links to a page that isn't there"], given: string[] = [];
+  let hold: Promise<void> | null = null;
   call.env.AGENT_EXEC = (async (_cmd, cwd) => {
     given.push(await Bun.file(join(cwd, "VERDICT.md")).text());
+    await hold;
     writeFileSync(join(cwd, "VERDICT.md"), answers[given.length - 1] + "\n");
     return { code: 0, out: "" };
   }) as Exec;
@@ -210,6 +225,7 @@ test("the bus's AI pass: a bus with no command seats changes, then one agent run
   const commit = async (path: string, content: string) => {
     await post(call, "ana", `${R}/files`, { path, content });
     expect((await post(call, "ana", `${R}/do/commit?path=${path}`, { message: `write ${path}` })).status).toBe(200);
+    await reviewsDone();
   };
   /** The docs lane's runs on main, newest first, each with its log. */
   const passes = async () => Promise.all(((await (await call("ana", `${R}/checks?ref=main`)).json()) as { runs: Run[] }).runs.filter((r) => r.name === "docs")
@@ -218,8 +234,15 @@ test("the bus's AI pass: a bus with no command seats changes, then one agent run
   // The first doc takes a seat: no agent, no run.
   await commit("README.md", "hello");
   expect(given).toEqual([]);
-  // The second fills the bus: one agent run reads both changes, and its yay passes the lane's run.
-  await commit("docs/b.md", "bee");
+  // The second fills the bus: the commit answers while the agent still reads, its run saying so.
+  let go = () => {};
+  hold = new Promise((r) => { go = r; });
+  await post(call, "ana", `${R}/files`, { path: "docs/b.md", content: "bee" });
+  expect((await post(call, "ana", `${R}/do/commit?path=docs/b.md`, { message: "write docs/b.md" })).status).toBe(200);
+  expect((await passes()).map((r) => r.status)).toEqual(["running"]);
+  go();
+  await reviewsDone();
+  // One agent run read both changes, and its yay passes the lane's run.
   expect(given.length).toBe(1);
   expect(given[0]).toContain("write README.md");
   expect(given[0]).toContain("+++ b/docs/b.md");

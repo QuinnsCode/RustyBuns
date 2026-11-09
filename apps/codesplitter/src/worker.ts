@@ -4,6 +4,7 @@
 // Cloudflare and in-process under Bun on the desktop.
 
 import { pipelineRoutes } from "./pipeline-routes.ts";
+import { reviewOf, runQueuedReviews } from "./pipeline-hooks.ts";
 import { isPlainObject, parseJson } from "./util.ts";
 import { artifactMoveRoutes } from "./artifact-move.ts";
 import { featureRankRoutes } from "./feature-ranks.ts";
@@ -1070,12 +1071,13 @@ const app = {
     // ARTIFACT_EVENTS: what Artifacts says about its repos; only pushes are heard for now (push-events.ts).
     if (batch.messages.some((m) => artifactsEvent(m.body))) await logPushes(env, batch.messages.flatMap((m) => pushedEvent(m.body) ?? []));
     else if (batch.messages.some((m) => typeof (m.body as DigMessage)?.dig === "string")) await runDigs(batch as Parameters<typeof runDigs>[0], env);
-    else if (batch.messages.some((m) => typeof (m.body as JobMessage)?.job === "number" || typeof (m.body as AgentMessage)?.agent === "number" || typeof (m.body as DigestMessage)?.digest === "string")) {
-      // JOBS: hosted agent runs (agent-routes.ts) and feed digests (feed.ts) beside queued requests.
+    else if (batch.messages.some((m) => typeof (m.body as JobMessage)?.job === "number" || typeof (m.body as AgentMessage)?.agent === "number" || typeof (m.body as DigestMessage)?.digest === "string" || reviewOf(m.body))) {
+      // JOBS: hosted agent runs (agent-routes.ts), the pipeline's AI reviews (pipeline-hooks.ts) and feed digests (feed.ts) beside queued requests.
       const agents = batch.messages.filter((m) => typeof (m.body as AgentMessage)?.agent === "number") as { body: AgentMessage; ack(): void }[];
       const jobs = batch.messages.filter((m) => typeof (m.body as JobMessage)?.job === "number") as { body: JobMessage; ack(): void }[];
       const digests = batch.messages.filter((m) => typeof (m.body as DigestMessage)?.digest === "string") as { body: DigestMessage; ack(): void }[];
-      await Promise.all([runQueuedAgents(agents, env, (r) => app.fetch(r, env)), runJobs({ messages: jobs }, env, (r) => app.fetch(r, env)), runQueuedDigests(digests, env)]);
+      const reviews = batch.messages.filter((m) => reviewOf(m.body));
+      await Promise.all([runQueuedAgents(agents, env, (r) => app.fetch(r, env)), runQueuedReviews(reviews, env), runJobs({ messages: jobs }, env, (r) => app.fetch(r, env)), runQueuedDigests(digests, env)]);
     }
     else await deliverHooks(batch as { messages: readonly { body: HookMessage; ack(): void }[] }, env);
   },

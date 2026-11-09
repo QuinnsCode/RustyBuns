@@ -9,14 +9,15 @@
  *   bus_passes   one verdict per bus, keyed by main's commit it left at: claimed before the agent runs, so a retry
  *                (the same commit's checks again, a release cut on a tip that just sent the bus off) reads it and pays nothing
  *
- * The pass shows as a check run named after the lane on that commit: passed on a yay, failed on a nay with the
+ * The pass shows as a check run named after the lane on that commit: running while the agent reads (off the request,
+ * pipeline-hooks.ts offRequest: the commit doesn't wait minutes for it), then passed on a yay, failed on a nay with the
  * reason, cancelled when no agent could answer (no CLI, healing off, budget spent), which leaves it to a person.
  * Only main moves seats: a branch's checks read the counts and take no seat.
  */
 
 import { handleFor } from "./archive.ts";
 import { diff, type FileDiff } from "./deploy-review.ts";
-import { askAi, VERDICT_FILE } from "./pipeline-hooks.ts";
+import { askAi, offRequest, VERDICT_FILE } from "./pipeline-hooks.ts";
 import type { Lane, LaneCall } from "./pipeline.ts";
 import { glob } from "./util.ts";
 import type { Env } from "./env.ts";
@@ -70,6 +71,7 @@ export async function busRide(env: Env, owner: string, repo: string, sha: string
   }
 }
 
+/** Claims the bus's pass and opens its check run; the agent reads off the request (finishPass). */
 async function busPass(env: Env, owner: string, repo: string, lane: Lane, call: LaneCall, sha: string, by: string) {
   const { results } = await env.DB.prepare("SELECT sha FROM bus_seats WHERE owner = ? AND repo = ? AND lane = ? ORDER BY at, rowid").bind(owner, repo, lane.name).all<{ sha: string }>();
   const seats = results.map((r) => r.sha);
@@ -83,6 +85,18 @@ async function busPass(env: Env, owner: string, repo: string, lane: Lane, call: 
   const { recordRun, updateRun } = await import("./checks.ts");
   const run = await recordRun(env, { owner, repo, ref: "main", sha, name: lane.name, runner: "external", status: "running", runner_label: "ai pass" }, by);
   const head = `lane ${lane.name} (bus): ${call.why}\nAn AI pass over the ${seats.length} change${seats.length === 1 ? "" : "s"} aboard: ${seats.map((s) => s.slice(0, 12)).join(", ")}\n`;
+  await updateRun(env, run, { log: head }, by);
+  await offRequest(env, { review: "bus", owner, repo, lane, seats, sha, run: run.id, by });
+}
+
+/** The bus's pass, off the request: the agent reads every change aboard, and its verdict closes the check run. */
+export async function finishPass(env: Env, m: { owner: string; repo: string; lane: Lane; seats: string[]; sha: string; run: number; by: string }) {
+  const { owner, repo, lane, seats, sha, by } = m;
+  const { get, updateRun } = await import("./checks.ts");
+  const run = await get(env, m.run);
+  // A message delivered twice: the first one's verdict stands, and the second pays nothing.
+  if (run?.status !== "running") return null;
+  const head = run.log;
   const text = await aboardDiff(env, owner, repo, lane, seats, sha).catch(() => null);
   const r = text ? await askAi(env, owner, busPrompt(lane.name, seats.length), text) : { error: "the changes aboard couldn't be read" };
   const v = "error" in r ? { say: "none", by: "ai", reason: `the AI pass couldn't answer: ${r.error}` } : r;

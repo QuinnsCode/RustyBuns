@@ -7315,13 +7315,13 @@ const noChecks = () => `<span class="muted" data-checks-empty title="Press Run: 
 
 /**
  * A branch's pipeline hooks (GET .../branches/:b/hooks, pipeline-hooks.ts), each with its verdict: yay, nay and its reason,
- * waiting on a person, or not asked yet (an ai hook asks at the merge). `say` (a person signed in, with write access, not the
+ * waiting on a person, running (an ai hook's review, asked at the merge, still reading), or not asked yet. `say` (a person signed in, with write access, not the
  * branch's author) adds Yay, and Nay with a reason, which POST .../hooks/:hook.
  */
 function hookRow(branch, h, say = false) {
   if (!h?.hooks.length) return "";
-  const ICON = { yay: "thumbs-up", nay: "thumbs-down", waiting: "hourglass", unasked: "circle-dashed" };
-  const WORD = { yay: "yay", nay: "nay", waiting: "waits for a person", unasked: "not asked yet" };
+  const ICON = { yay: "thumbs-up", nay: "thumbs-down", waiting: "hourglass", running: "loader", unasked: "circle-dashed" };
+  const WORD = { yay: "yay", nay: "nay", waiting: "waits for a person", running: "reading the branch", unasked: "not asked yet" };
   return `<span class="checks" data-hooks="${esc(branch)}" title="the pipeline's hooks: a merge waits for each one's yay">${h.hooks.map((k) => {
     const who = k.by ? (k.by.startsWith("ai") ? ` (${k.by === "ai" ? "the AI" : k.by.slice(3)})` : ` (@${k.by})`) : "";
     const buttons = say && k.say !== "yay" ? ` <button type="button" class="btn icon-only" data-hook-say="yay" data-hook="${esc(k.at)}" data-branch="${esc(branch)}" title="say yay: the merge can go on past ${esc(k.at)}" aria-label="yay at ${esc(k.at)}">${icon("thumbs-up")}</button>`
