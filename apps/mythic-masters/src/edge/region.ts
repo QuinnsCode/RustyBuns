@@ -167,11 +167,11 @@ export class Region {
     if (ev?.e === "hurt") {
       // Only at a lair this player walked into, and believed no faster than a whole creature in FIGHT.minS (party.ts).
       const now = Date.now(), met = seat.met;
-      if (seat.loose || !met || !sharedDen(met.den) || now - met.at > FIGHT.withinMs) return;
+      if (seat.loose || !met?.den || !sharedDen(met.den) || !denNear(met.den, seat.p) || now - met.at > FIGHT.withinMs) return;
       const hurt = believeHurt(met.hurt, met.at, ev.d, now);
       if (hurt.d === (met.hurt?.d ?? 0)) return;
       this.sockets.attach(ws, { ...seat, met: { ...met, hurt } });
-      this.sockets.broadcast({ t: "hurt", id: seat.id, den: met.den!, d: hurt.d }, ws, others);
+      this.sockets.broadcast({ t: "hurt", id: seat.id, den: met.den, d: hurt.d }, ws, others);
       return;
     }
     const d = parseDelta(frame.value);
