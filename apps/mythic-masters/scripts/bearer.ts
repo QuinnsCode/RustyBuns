@@ -7,7 +7,8 @@
 //      parent, longer or shorter; `turn`: a bend added to a bone at rest and in every clip, the slouch), keeping the
 //      feet on the ground, and hands it to blender/bearer.py, which builds the body round it (skin modifier, hair,
 //      flares, the Book in one hand), binds it, and writes public/models/bearer.glb.
-//   3. --render also writes blender/out/bearer.png: the figure in a row of poses from its clips, by a 1.8 m post.
+//   3. --render also writes blender/out/bearer.png: the figure in a row of poses from its clips, by a 1.8 m post,
+//      then its head close up from the front, three-quarter, side and back.
 //
 // The look is all in bearer.json: radii per joint, hair, flares, eyes. Change it, run this, read the PNG.
 import { mkdirSync, readFileSync } from "node:fs";

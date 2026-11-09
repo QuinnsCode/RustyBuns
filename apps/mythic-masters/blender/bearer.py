@@ -5,7 +5,7 @@
 #
 # The body is a skin-modifier frame over the bones (a vertex at each joint, a radius from the sheet's `radii`),
 # smoothed once and bound to the rig by bone heat. Onto it, each weighted to one bone: the head (a stretched ball with
-# a chin and a goatee), a shaggy mop of hair clumps, two glowing eyes, bell-bottom flares on the shins, big sneakers,
+# a chin and a goatee), a mop (a shell hanging in ragged locks, a few clumps, a fringe), two glowing eyes, bell-bottom flares on the shins, big sneakers,
 # and the Book held in the left hand. Three materials: the black body, the Book's cover, and the glow (pages, eyes).
 import bpy, bmesh, json, math, os, random, sys
 from mathutils import Matrix, Vector
@@ -190,10 +190,34 @@ def cone(name, root, direction, length, r0, r1, mat, segs=6):
 chin = centre + forward * H["radius"] * 0.75 + Vector((0, 0, -H["radius"] * H["stretch"][2] * 0.85))
 parts.append(weighted(cone("goatee", chin + forward * 0.01, Vector((0, 0, -1)) + forward * 0.4, H["goatee"], 0.022, 0.004, BODY), "Head"))
 
-# --- the mop: clumps round the crown and back, pointing out and down, a fringe over the brow ---------------------
+# --- the mop: one shell over the crown and back that hangs in ragged locks, a few fat clumps, a fringe ------------
+# Separate spikes read as a hedgehog from the side; a shell keeps one soft outline and the locks break its hem.
 hr = sheet["hair"]
 sx, sz = H["radius"] * H["stretch"][0], H["radius"] * H["stretch"][2]
 right = forward.cross(up)
+M = hr["shell"]
+bm = bmesh.new()
+bmesh.ops.create_uvsphere(bm, u_segments=28, v_segments=18, radius=1.0)
+phase = [rng.uniform(0, 2 * math.pi) for _ in range(3)]
+lift = Vector((0, 0, sz * (1 - M["tall"])))  # a squashed shell sits on the crown, not round the jaw
+for v in bm.verts:
+    d = v.co.copy()
+    f, s, z = d.dot(forward), d.dot(right), d.z
+    a = math.atan2(s, f)
+    # 0 between locks, 1 at a lock's tip; squared so the tips come to points
+    lock = (0.5 + 0.5 * math.sin(a * M["locks"] + phase[0] + 0.8 * math.sin(a * 3 + phase[1]))) ** 2
+    lumps = 1 + M["lumps"] * math.sin(a * 5 + z * 4 + phase[2]) * math.sin(a * 3 - z * 6)
+    p = Vector((d.x * sx, d.y * sx, d.z * sz * M["tall"])) * M["puff"] * lumps + lift
+    if z < 0.25:  # below the brow the mop falls: pushed out a little and dragged down, further at each lock
+        fall = (0.25 - z) / 1.25
+        back = max(0.0, 1 - max(0.0, f) * 1.4)  # less over the cheeks, most at the back
+        p += (d * 0.3 * sx + Vector((0, 0, -1)) * M["hang"] * (0.3 + 0.7 * lock) * back) * fall
+    v.co = centre + p
+face = [f for f in bm.faces if (lambda c: c.dot(forward) > sx * 0.25 and c.z < sz * 0.3)(f.calc_center_median() - centre)
+        or (f.calc_center_median() - centre).z < -sz * 1.1]
+bmesh.ops.delete(bm, geom=face, context="FACES")
+bmesh.ops.subdivide_edges(bm, edges=bm.edges[:], cuts=1, use_grid_fill=True, smooth=1.0)
+parts.append(weighted(obj("mop", bm, BODY), "Head"))
 for k in range(hr["clumps"]):
     a = rng.uniform(0, 2 * math.pi)
     e = rng.uniform(0.15, 1.0)  # up the head: 0 the ears, 1 the crown
@@ -289,7 +313,7 @@ bpy.ops.export_scene.gltf(filepath=out_path, export_format="GLB", use_selection=
                           export_def_bones=False, export_materials="EXPORT", export_normals=True)
 print(f"-> {os.path.relpath(out_path)} ({os.path.getsize(out_path) // 1024} KB)")
 
-# --- the contact sheet: a row of poses by a 1.8 m post -----------------------------------------------------------
+# --- the contact sheet: a row of poses by a 1.8 m post, then the head close up from four sides -----------------
 shot_path = arg("--render")
 if shot_path:
     scene = bpy.context.scene
@@ -321,8 +345,11 @@ if shot_path:
     shots = [("idle", 0.0, 0), ("idle", 0.0, 90), ("walk", 0.25, 55), ("walk", 0.75, 90), ("run", 0.3, 90), ("look", 0.45, 25), ("cast", 0.55, 70)]
     if not arm.animation_data:
         arm.animation_data_create()
+    # then the head close up, front, three-quarter, side and back, where the hair's outline is judged
+    head = [("idle", 0.0, y, True) for y in (0, 40, 90, 180)]
     frames = []
-    for k, (clip, phase, yaw) in enumerate(shots):
+    for k, (clip, phase, yaw, *close) in enumerate(shots + head):
+        cam.data.ortho_scale = 0.9 if close else 2.35
         act = bpy.data.actions[clip]
         arm.animation_data.action = act
         if hasattr(arm.animation_data, "action_slot") and act.slots:
@@ -335,6 +362,12 @@ if shot_path:
         bpy.context.view_layer.update()
         hips = arm.matrix_world @ arm.pose.bones["Hips"].head
         arm.location.x -= hips.x; arm.location.y -= hips.y
+        if close:
+            bpy.context.view_layer.update()
+            h = (arm.matrix_world @ arm.pose.bones["Head"].head + arm.matrix_world @ arm.pose.bones["head_end"].head) / 2
+            cam.location = (h.x, -8, h.z - 0.12)
+        else:
+            cam.location = (0, -8, 1.05)
         scene.render.filepath = os.path.join(os.path.dirname(shot_path), f"bearer-{k}.png")
         bpy.ops.render.render(write_still=True)
         frames.append(scene.render.filepath)
