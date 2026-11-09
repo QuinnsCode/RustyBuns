@@ -153,7 +153,23 @@ html[data-sky=system] .skyswitch [data-sky-pick=system],html[data-sky=day] .skys
     animation: pop .5s cubic-bezier(.3,1.5,.5,1) both; transition: transform .18s cubic-bezier(.3,1.6,.5,1), box-shadow .18s; }
   .gate:hover { transform: translateY(-3px); box-shadow: 0 6px 0 #c4500f, 0 24px 44px -22px rgba(0,0,0,.6); }
   .gate .shot { flex: none; width: 104px; aspect-ratio: 16 / 10; object-fit: cover; border-radius: 6px; border: 1px solid var(--edge); }
-  .gate div { flex: 1; min-width: 0; }
+  .gate > div { flex: 1; min-width: 0; }
+  /* eqosys is the account layer, not a game to screenshot: its card shows a pocket copy of its sky, on the same clock as the big one. */
+  .minisky { position: relative; flex: none; width: 104px; aspect-ratio: 16 / 10; overflow: hidden; border-radius: 6px; border: 1px solid var(--edge);
+    background: linear-gradient(#05070f, #0b1020 55%, #141c33); }
+  .minisky > * { position: absolute; }
+  .minisky .d { inset: 0; background: linear-gradient(#2f6fcf, #6ea9e6 45%, #bfdcf2 85%, #e8f1f7); opacity: var(--day); }
+  .minisky .g { inset: 0; background: radial-gradient(ellipse 90% 60% at calc(50% - cos(var(--th)) * 46%) 88%, #ff9a5c, rgba(255,110,90,.5) 40%, transparent 75%); opacity: var(--glow); }
+  .minisky .s { width: 9px; height: 9px; border-radius: 50%; left: calc(50% - cos(var(--th)) * 46%); top: calc(84% - sin(var(--th)) * 76%); translate: -50% -50%;
+    background: #fff4c9; box-shadow: 0 0 10px 3px rgba(255,214,120,.75); }
+  .minisky .m { width: 7px; height: 7px; border-radius: 50%; left: calc(50% + cos(var(--th)) * 46%); top: calc(84% + sin(var(--th)) * 76%); translate: -50% -50%;
+    background: #e9edf5; box-shadow: 0 0 8px 2px rgba(220,230,255,.45); }
+  .minisky .st { inset: 0; opacity: clamp(0, calc(var(--night) * 1.5 - .5), 1);
+    background: radial-gradient(1px 1px at 18% 22%, #fff, transparent), radial-gradient(1px 1px at 42% 12%, #fff, transparent), radial-gradient(1px 1px at 66% 30%, #fff, transparent),
+      radial-gradient(1px 1px at 84% 16%, #fff, transparent), radial-gradient(1px 1px at 30% 44%, #fff, transparent), radial-gradient(1px 1px at 74% 50%, #fff, transparent); }
+  .minisky .h { left: -10%; right: -10%; bottom: -38%; height: 62%; border-radius: 50% 50% 0 0; background: var(--hill); }
+  .minisky .h + .h { left: 40%; right: -30%; bottom: -44%; background: var(--hill2); }
+  @media (max-width: 420px) { .minisky { width: 72px; } }
   .gate h2 { margin: 0; font-size: 22px; line-height: 1.1; }
   .gate p { margin: 2px 0 0; color: var(--mute); font-size: 14px; line-height: 1.3; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
   main .gate .ui-btn { flex: none; }
@@ -389,7 +405,8 @@ const shotOf = (a, gone) => el("img", { className: "shot", src: `shots/${a.app}.
 /** A gateway product: thin and bright, picture, name, one line, one button. */
 const gate = (a) => {
   const g = el("div", { className: "gate" }, el("div", {}, el("h2", { textContent: a.name }), el("p", { textContent: a.line })));
-  if (a.app) g.prepend(shotOf(a));
+  if (a.app === "eqosys") g.prepend(el("span", { className: "minisky", role: "img", ariaLabel: "eqosys's sky" }, ...["d", "g", "st", "s", "m", "h", "h"].map((c) => el("i", { className: c }))));
+  else if (a.app) g.prepend(shotOf(a));
   if (a.play) g.append(link(a.app === "eqosys" ? "Sign in" : "Open", a.play, "play", "ui-btn primary play"));
   return g;
 };
