@@ -702,11 +702,14 @@ function hud(v: View, z: Zone, now: number) {
   if (flash && Date.now() < flash.until) text = flash.text;
   else if (r.bigfoot?.foundBy) text = r.bigfoot.foundBy === v.me ? "You found Bigfoot!" : `${nameOf(v, r.bigfoot.foundBy)} found Bigfoot!`;
   else if (r.bigfoot && body && v.phase === "hunt") text = "Bigfoot! Get to him!";
-  else if (you?.caughtAt != null) text = `Caught after ${Math.round((you.caughtAt - r.huntStartedAt) / 1000)} s. Spectating: Tab to switch.`;
+  else if (you?.caughtAt != null) text = `${you.caughtBy ? "Caught" : "Left the search area"} after ${Math.round((you.caughtAt - r.huntStartedAt) / 1000)} s. Spectating: Tab to switch.`;
   else if (body && r.circle && v.phase === "hunt" && !ranger) {
     const k = circleAt(r.circle, now);
     const edge = k.r - Math.hypot(body.x - k.x, body.y - k.y);
-    if (outside(r.circle, now, body.x, body.y)) { text = "Outside the search area: the rangers can see you! Get back in."; warn = true; }
+    if (you?.outsideAt != null) {
+      const s = Math.max(0, Math.ceil((HUNT.outsideSecs * 1000 - (now - you.outsideAt)) / 1000));
+      text = `Outside the search area! Get back in or you're out: 0:${String(s).padStart(2, "0")}`; warn = true;
+    } else if (outside(r.circle, now, body.x, body.y)) { text = "Outside the search area: the rangers can see you! Get back in."; warn = true; }
     else if (edge < 15 && closed(r.huntStartedAt, now) < 1) { text = `The search area is closing in: ${Math.round(edge)} m to the edge`; warn = true; }
   }
   const b = $("banner");
