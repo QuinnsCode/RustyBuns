@@ -17,6 +17,7 @@ const Frame: Guard<View> = (v) => { const m = parseServerMsg(v); if (!m) throw n
 function room(code: string, p: Person) {
   const views: View[] = [];
   let bad = "";
+  // @ts-expect-error Bun's WebSocket takes headers; the DOM type does not
   const ws = new WebSocket(`${GAME.replace(/^http/, "ws")}/ws?${new URLSearchParams({ room: code, token: p.token, name: "ignored" })}`, { headers: { origin: GAME } });
   ws.onmessage = (e) => { try { views.push(Frame(JSON.parse(String(e.data)))); } catch { bad = String(e.data).slice(0, 200); } };
   ws.onclose = (e) => { if (e.code !== 1000 && e.code !== 1005) bad ||= `closed ${e.code} ${e.reason}`; };

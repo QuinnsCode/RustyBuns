@@ -93,8 +93,9 @@ async function startChrome(bin: string, wait: number): Promise<Chrome | { exited
 async function* lines(stream: ReadableStream<Uint8Array>) {
   const text = new TextDecoder();
   let rest = "";
-  for await (const chunk of stream) {
-    const parts = (rest + text.decode(chunk, { stream: true })).split("\n");
+  const reader = stream.getReader();
+  for (let r = await reader.read(); !r.done; r = await reader.read()) {
+    const parts = (rest + text.decode(r.value, { stream: true })).split("\n");
     rest = parts.pop()!;
     yield* parts.filter((l) => l.trim());
   }
