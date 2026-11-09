@@ -1,7 +1,7 @@
 import { env } from "cloudflare:workers";
 import { except, render, route } from "rwsdk/router";
 import { defineApp } from "rwsdk/worker";
-import { AppPage, Deleted, DeletePage, ErrorPage, Home, Privacy, tabOf } from "./app/pages.tsx";
+import { AppPage, Deleted, DeletePage, ErrorPage, Home, Privacy, SpacesPage, tabOf } from "./app/pages.tsx";
 import { Login } from "./app/Login.tsx";
 import { phaseAt } from "./app/Sky.tsx";
 import { THEME_SCRIPT } from "./app/Theme.tsx";
@@ -12,6 +12,7 @@ import { askOf, atHome, handle } from "./handle.ts";
 import { edge } from "./codemode.ts";
 import { bridgeCall } from "./tools.ts";
 import { hubAsk } from "./qollab/hub.ts";
+import { sideOf } from "./qollab/side.ts";
 import { link, members } from "./members.ts";
 import { countsOf, unlocksOf } from "./achievements.ts";
 import { newKey } from "@rustybuns/util/token";
@@ -89,20 +90,27 @@ const app = defineApp([
       if (!authOn(conf)) { response.status = 503; return <ErrorPage status={503} />; }
       const me = await meOf(request, conf);
       if (!me) return see("/login");
-      // Everything the page shows, read at once.
-      const [, [mine], hub, unlocks, everyone] = await Promise.all([
+      const tab = tabOf(new URL(request.url).searchParams.get("tab"));
+      // Everything the page shows, read at once. Your spaces and party sit beside the library alone.
+      const [, [mine], hub, unlocks, everyone, , side] = await Promise.all([
         link(conf, me.id, null, regionAt(request)), members(conf, me.id), conf.HUB ? hubAsk(conf.HUB, atHome(me), { op: "state" }) : null,
         unlocksOf(conf, me.id), isAdmin(me, conf) ? members(conf) : null, isAdmin(me, conf) ? house(conf, me.id) : null,
+        tab === "library" ? sideOf(conf, me.id).catch(() => null) : null,
       ]);
       const shown = hub && !("error" in hub) ? hub : null;
-      const tab = tabOf(new URL(request.url).searchParams.get("tab"));
       // The super admin's own visits stay out of the counts; the Visitors tab is theirs alone.
       const [counts, visitors, studios] = await Promise.all([countsOf(conf, shown?.friends.map((f) => f.id) ?? []),
         everyone ? markStaff(conf, request).then(() => tab === "visitors" ? visitorsOf(conf, Number(new URL(request.url).searchParams.get("days")) || 7) : null) : null,
         tab === "studio" ? studiosOf(conf, me.id) : null]);
-      return <Home visitors={visitors} counts={counts} t0={phaseAt(new URL(request.url).searchParams.get("at"))} me={me} mine={mine} hub={shown} everyone={everyone} unlocks={unlocks}
+      return <Home visitors={visitors} counts={counts} t0={phaseAt(new URL(request.url).searchParams.get("at"))} me={me} mine={mine} hub={shown} side={side} everyone={everyone} unlocks={unlocks}
         error={new URL(request.url).searchParams.get("e") ?? undefined} tab={tab} studios={studios}
         scale={everyone && tab === "scale" ? loadOf(new URL(request.url).searchParams) : null} />;
+    }),
+    route("/spaces", async ({ request, response }) => {
+      const conf = e(request);
+      if (!authOn(conf)) { response.status = 503; return <ErrorPage status={503} />; }
+      if (!await meOf(request, conf)) return see("/login");
+      return <SpacesPage t0={phaseAt(new URL(request.url).searchParams.get("at"))} />;
     }),
     route("/app/:id", async ({ request, params, response }) => {
       const conf = e(request);

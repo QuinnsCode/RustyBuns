@@ -93,7 +93,7 @@ export async function qollab(req: Request, conf: Env): Promise<Response | null> 
     const head = { ...cors(req, conf), "access-control-allow-methods": "GET, POST" };
     if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: head });
     if (!conf.SPACE) return json({ error: "no spaces here" }, 503, head);
-    const t = await tokenOf(req, conf, bearerOf(req));
+    const t = await tokenOf(req, conf, bearerOf(req), { home: true });
     if (!t) return json({ error: "send the token /api/exchange gave you" }, 401, head);
     if (req.method === "GET" && pathname === "/q/space") {
       const { results } = await conf.DB.prepare("SELECT s.id, s.name, s.owner, s.invite FROM space_members m JOIN spaces s ON s.id = m.space_id WHERE m.user_id = ? ORDER BY s.name")
@@ -139,7 +139,7 @@ export async function qollab(req: Request, conf: Env): Promise<Response | null> 
   if (spaceAt) {
     if (!conf.SPACE) return json({ error: "no spaces here" }, 503);
     const sock = socketToken(req);
-    const t = await tokenOf(req, conf, sock.token);
+    const t = await tokenOf(req, conf, sock.token, { home: true });
     if (!t) return json({ error: "send the token /api/exchange gave you" }, 401);
     if (req.headers.get("upgrade")?.toLowerCase() !== "websocket") return json({ error: "a websocket" }, 426);
     const origin = req.headers.get("origin");
