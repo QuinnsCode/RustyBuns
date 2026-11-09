@@ -18,7 +18,10 @@ const isGateScript = (p: string) =>
   /^(?:node|bun|tsx|deno\s+run)\s+(?:\S+\/)?[\w.-]*?(?:^|[-_.]|\b)(?:gate|check|assert|verify|lint|test|guard)s?(?:[-_.][\w.-]*)?\.[cm]?[jt]s\b/.test(p);
 
 export function inferWorkerBuild<F extends string | null = string>(scripts: Record<string, string>, fallback: F = "vite build" as F): { build: string | F; from: string } {
-  for (const from of ["release", "deploy", "build:worker", "build"]) {
+  // After those, any other build:<x> script that runs vite build itself ("build:start": "pnpm run
+  // build:packages && vite build"): the app's own steps before vite beat a bare vite build.
+  const own = Object.keys(scripts).filter((k) => /^build[:-]/.test(k) && k !== "build:worker" && /(?:^|&&\s*)(?:\w+=\S+\s+)*(?:\S*\/)?vite\s+build\b/.test(scripts[k]!));
+  for (const from of ["release", "deploy", "build:worker", "build", ...own]) {
     const src = scripts[from];
     if (!src) continue;
     const kept: string[] = [];

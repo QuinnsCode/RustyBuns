@@ -4,6 +4,7 @@
 //
 //   bun run builder <base-ref>                 the suites the branch touched (what apps.yml would run)
 //   bun run builder run <dir> <cmd...>         one command in <dir>, e.g. run apps/skate-tech-park bun test test/ramp.test.ts
+//   bun run builder nightly                    the last nightly desktop build on the builder (builder-nightly.sh) and its failures
 //   bun run builder off | on                   shut or open this Mac's valve; bare `bun run builder` says which, and if Bob answers
 //
 // The valve (~/.rustybuns/valve, per machine) is the water main for heavy work here. Shut, nothing heavy runs on this Mac:
@@ -18,6 +19,7 @@
 // Each run leaves a record on the builder (runs/<slot>.json and .log, then runs/done) for its menu bar: scripts/builder-bar.ts.
 import { homedir, tmpdir } from "node:os";
 import { basename, relative, resolve } from "node:path";
+import { report } from "./builder-nightly.ts";
 
 export type Job = { app: string; test: string; prep: string };
 
@@ -201,8 +203,9 @@ async function setValve(arg: string | undefined): Promise<number> {
 
 export async function main(argv: string[], cwd: string): Promise<number> {
   const host = process.env.BUILDER_HOST;
-  const usage = "usage: bun run builder [on|off]  |  bun run builder <base-ref>  |  bun run builder run <dir> <cmd...>";
+  const usage = "usage: bun run builder [on|off]  |  bun run builder <base-ref>  |  bun run builder run <dir> <cmd...>  |  bun run builder nightly";
   if (!argv.length || argv[0] === "on" || argv[0] === "off") return setValve(argv[0]);
+  if (argv[0] === "nightly") return nightly(host);
   if (argv[0] === "run" && argv.length < 3) { console.error(usage); return 2; }
   const v = await valve();
   if (!host) {
@@ -254,6 +257,22 @@ export async function main(argv: string[], cwd: string): Promise<number> {
     process.off("SIGTERM", giveBack);
     await finish(code);
   }
+}
+
+// `bun run builder nightly`: the last nightly desktop build's failures, read from the builder (or this Mac, when it is one).
+async function nightly(host: string | undefined): Promise<number> {
+  let text = "";
+  if (host) {
+    const b = builder(host);
+    if (!(await reachable(b))) { console.log(`builder ${host} is off`); return 1; }
+    text = (await stream(remote(b, "cat nightly/results.json"), "nightly", true)).out;
+  } else {
+    const f = Bun.file(resolve(homedir(), "builder", "nightly", "results.json"));
+    text = (await f.exists()) ? await f.text() : "";
+  }
+  const r = report(text);
+  console.log(r.text);
+  return r.ok ? 0 : 1;
 }
 
 const top = async () => (await Bun.$`git rev-parse --show-toplevel`.cwd(process.cwd()).text()).trim();
