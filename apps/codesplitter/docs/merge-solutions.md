@@ -1,5 +1,7 @@
 # Merge solutions: let agents crawl the same files
 
+> Snapshot of 2026-10-12 (main 3826cb7): a historical log, not the current rule set; the rules live in src/: `merge()` and its doc comment in [`src/lines.ts`](../src/lines.ts), line pairing (`alike`, `diffToOps`) in [`src/sync.ts`](../src/sync.ts), package.json by key in [`src/manifest.ts`](../src/manifest.ts). The five default replays are still `CASES` in [`scripts/merge-replay.ts`](../scripts/merge-replay.ts).
+
 Agents will keep editing the same files. This doc is about settling those overlaps with rules that
 give the same answer every time, so fewer conflicts get handed to an AI to guess at. It measures
 the two open PRs that clash with main, sorts every git hunk by why it clashed, and tries each
@@ -126,6 +128,8 @@ REFERENCE.md has 52 lines over 300 chars. Its longest is the doctor bullet, a 6 
 ## 3. Deterministic resolvers
 
 Each runs inside `merge()` in `lines.ts`, before anything is called a conflict. Rules apply in order, and the first one that settles a hunk wins.
+
+As of 2026-11-09 every row below is in `src/lines.ts` and `src/sync.ts`, under other names: L2a is `alike` pairing in `diffToOps`, L2b the `STOP` words, L2c the per-block `doubled`, L3 `blend` / `blendLine` / `mergeWords`, Structural `keyed` plus `broken`. The L-names were never code names.
 
 | Level | Rule | Settles | Guard |
 |---|---|---|---|
