@@ -1,6 +1,7 @@
 // eqosys's front door for an app's token: who a token names, a socket's token and its 101, and CORS for an app's own page.
 // Shared by eqosys's own routes (handle.ts) and Qollab's (qollab/routes.ts), so Qollab never reads a session cookie.
-import { appOf, APPS, HOME, isLoopback, type QApp } from "./apps.ts";
+import { HOME, isLoopback, type QApp } from "./apps.ts";
+import { appOf, mayUse, originsOf } from "./listings.ts";
 import { loopbackOn, type Env, type Fetcher } from "./env.ts";
 import { SOCKET_PROTOCOL } from "@rustybuns/util/eqosys";
 import { audOf, jwksOf, TokenChecker, verify } from "@rustybuns/util/token";
@@ -28,10 +29,10 @@ export const HOME_LIFE = 10 * 60;
 /** A token's app and who it names, or null when it isn't one eqosys signed for a known app, or it outlived its account or a sign-out (`standing`). */
 export async function tokenOf(req: Request, conf: Env, token: string | null | undefined, { home = false } = {}) {
   const aud = token ? audOf(token) : undefined;
-  const app = home && aud === HOME ? homeApp(req, conf) : appOf(aud);
+  const app = home && aud === HOME ? homeApp(req, conf) : await appOf(conf, aud);
   const claims = token && app ? await (conf.EQOSYS ? checker(conf.EQOSYS, issuer(req, conf), app.id).check(token)
     : verify(token, await jwksOf(conf), { iss: issuer(req, conf), aud: app.id })) : null;
-  return app && claims && await standing(conf, claims.sub, app.id, claims.iat) ? { app, who: { id: claims.sub, name: claims.name, app: app.id } } : null;
+  return app && claims && await standing(conf, claims.sub, app.id, claims.iat) && await mayUse(conf, app, claims.sub) ? { app, who: { id: claims.sub, name: claims.name, app: app.id } } : null;
 }
 /**
  * In Qollab's own Worker (apps/qollab), which holds no key to check with: eqosys's public keys, read over its EQOSYS binding and kept
@@ -63,11 +64,10 @@ export function echoProtocol(res: Response, offered: boolean): Response {
   return new Response(null, init);
 }
 
-/** CORS for an app's own page calling /api/exchange or /api/hub (a game with no server of its own). */
-const appOrigins = new Set(APPS.flatMap((a) => a.origins));
-export function cors(req: Request, conf: Env): Record<string, string> {
+/** CORS for an app's own page calling /api/exchange or /api/hub (a game with no server of its own): ours, and each studio's game that answers someone. */
+export async function cors(req: Request, conf: Env): Promise<Record<string, string>> {
   const origin = req.headers.get("origin");
-  return origin && (appOrigins.has(origin) || (loopbackOn(conf) && isLoopback(origin)))
+  return origin && ((await originsOf(conf)).has(origin) || (loopbackOn(conf) && isLoopback(origin)))
     ? { "access-control-allow-origin": origin, "access-control-allow-methods": "POST", "access-control-allow-headers": "content-type, authorization", vary: "origin" }
     : {};
 }

@@ -1,5 +1,6 @@
 import { createElement } from "react";
-import { APPS, GENRES, appOf, playOf, type QApp } from "../apps.ts";
+import { APPS, GENRES, ourApp, playOf, type QApp } from "../apps.ts";
+import { isListing } from "../listings.ts";
 import type { Me } from "../auth.ts";
 import { NAME, VERSION } from "../env.ts";
 import type { Friend, HubState, Note } from "../qollab/hub.ts";
@@ -39,9 +40,14 @@ export const MESSAGES: Record<string, string> = {
   studio: "Only a studio's owner or admin adds people, and only an owner makes another owner.",
   owned: "You own three studios already.",
   name: "A studio's name is 1 to 60 characters.",
+  making: "That game is still being made: only its studio can sign in to it until it is listed.",
 };
 
-const nameOf = (id: string) => cardOf(id, appOf(id)?.name ?? id).name;
+const nameOf = (id: string) => cardOf(id, ourApp(id)?.name ?? id).name;
+/** An app's card: ours from cards.json, a studio's game from its own line. */
+const cardFor = (app: QApp) => app.blurb === undefined ? cardOf(app.id, app.name) : { ...cardOf(app.id, app.name), blurb: app.blurb };
+/** "by Acme · " on a studio's game. */
+const byOf = (app: QApp) => isListing(app) ? `by ${app.studio.name} · ` : "";
 
 const day = (t: number) => (t ? new Date(t).toISOString().slice(0, 10) : "not yet");
 
@@ -286,7 +292,7 @@ function Achievements({ unlocks }: { unlocks: Unlocks }) {
   );
 }
 
-const ctaOf = (app: QApp, c = cardOf(app.id, app.name)) => c.cta || (app.kind === "game" ? "Play it" : "Open it");
+const ctaOf = (app: QApp, c = cardFor(app)) => c.cta || (app.kind === "game" ? "Play it" : "Open it");
 const whatOf = (app: QApp, mine: Member["apps"][number] | undefined) => app.soon ? "coming soon" : mine ? `${app.kind === "game" ? "played" : "opened"} ${day(mine.last_at)}` : app.kind === "game" ? "not played yet" : "not opened yet";
 
 type Used = Member["apps"][number] | undefined;
@@ -296,12 +302,12 @@ const Shot = ({ app, eager }: { app: QApp; eager?: boolean }) => (
   <span className="shot">{app.shot ? <img src={`/cards/${app.id}.jpg`} alt="" loading={eager ? undefined : "lazy"} draggable={false} /> : <Art id={app.id} />}</span>
 );
 const PlayLink = ({ app, small }: { app: QApp; small?: boolean }) => { const url = playOf(app); return url ? (small
-  ? <a className="play ghost icon" href={url} title={ctaOf(app)} aria-label={`${ctaOf(app)}: ${cardOf(app.id, app.name).name}`}><Out /></a>
+  ? <a className="play ghost icon" href={url} title={ctaOf(app)} aria-label={`${ctaOf(app)}: ${cardFor(app).name}`}><Out /></a>
   : <a className="play" href={url}>{ctaOf(app)} <Out /></a>) : null; };
 
 /** The big one at the top: its screenshot, kicker, name, line, badge and Play. */
 function Feature({ app, mine, unlocks }: { app: QApp; mine: Used; unlocks: Unlocks }) {
-  const c = cardOf(app.id, app.name), t = tally(app.id, unlocks);
+  const c = cardFor(app), t = tally(app.id, unlocks);
   return (
     <section className="glass feature" aria-label="Featured">
       <Shot app={app} eager />
@@ -318,13 +324,13 @@ function Feature({ app, mine, unlocks }: { app: QApp; mine: Used; unlocks: Unloc
 
 /** One app on a shelf: its screenshot, name, badge and when you last played. The tile opens the app's page. */
 function Tile({ app, mine, unlocks }: { app: QApp; mine: Used; unlocks: Unlocks }) {
-  const c = cardOf(app.id, app.name), t = tally(app.id, unlocks);
+  const c = cardFor(app), t = tally(app.id, unlocks);
   return (
     <div className="glass game">
       <Shot app={app} />
       <span className="cap">
         <span className="name"><b><a className="title" href={`/app/${app.id}`}>{c.name}</a></b><Badge m={app.maturity ?? "alpha"} /></span>
-        <small>{whatOf(app, mine)}{t && <span className="tally"><Trophy />{t[0]}/{t[1]}</span>}</small>
+        <small>{byOf(app)}{whatOf(app, mine)}{t && <span className="tally"><Trophy />{t[0]}/{t[1]}</span>}</small>
       </span>
     </div>
   );
@@ -397,12 +403,12 @@ function SidePanel({ hub, side }: { hub: HubState | null; side: Side | null }) {
 }
 
 /** Home: the featured game you played last up top, the ones you played last, then a shelf a genre (yours first, most recent first), friends beside. */
-function Library({ mine, unlocks, hub, side }: { mine: Member | undefined; unlocks: Unlocks; hub: HubState | null; side: Side | null }) {
+function Library({ apps, mine, unlocks, hub, side }: { apps: QApp[]; mine: Member | undefined; unlocks: Unlocks; hub: HubState | null; side: Side | null }) {
   const used = new Map(mine?.apps.map((a) => [a.app, a]));
   const recent = (a: QApp) => used.get(a.id)?.last_at ?? -1;
   const sorted = (list: QApp[]) => [...list].sort((a, b) => recent(b) - recent(a));
-  const top = sorted(APPS.filter((a) => a.featured))[0] ?? APPS[0]!;
-  const last = sorted(APPS.filter((a) => used.has(a.id) && a.id !== top.id)).slice(0, 4);
+  const top = sorted(apps.filter((a) => a.featured))[0] ?? apps[0]!;
+  const last = sorted(apps.filter((a) => used.has(a.id) && a.id !== top.id)).slice(0, 4);
   return (
     <div className="lib">
       <div>
@@ -411,12 +417,12 @@ function Library({ mine, unlocks, hub, side }: { mine: Member | undefined; unloc
           <section aria-label="Pick up where you left off">
             <h2>Pick up where you left off</h2>
             <div className="recent">{last.map((a) => (
-              <div key={a.id} className="glass"><Shot app={a} /><span className="w"><b><a className="title" href={`/app/${a.id}`}>{cardOf(a.id, a.name).name}</a></b><small>{whatOf(a, used.get(a.id))}</small></span><PlayLink app={a} small /></div>
+              <div key={a.id} className="glass"><Shot app={a} /><span className="w"><b><a className="title" href={`/app/${a.id}`}>{cardFor(a).name}</a></b><small>{whatOf(a, used.get(a.id))}</small></span><PlayLink app={a} small /></div>
             ))}</div>
           </section>
         )}
         {GENRES.map((g) => {
-          const list = sorted(APPS.filter((a) => a.genre === g));
+          const list = sorted(apps.filter((a) => a.genre === g));
           return list.length ? (
             <section key={g} aria-label={g}>
               <h2>{g}<em>{list.length}</em></h2>
@@ -448,7 +454,7 @@ export function SpacesPage({ t0 }: { t0: number }) {
 
 /** The streaming-service page for one app: big picture, the long words, its badge, Play it. */
 export function AppPage({ app, mine, unlocks, t0 }: { app: QApp; mine: Member["apps"][number] | undefined; unlocks: Unlocks; t0: number }) {
-  const c = cardOf(app.id, app.name), t = tally(app.id, unlocks), m = app.maturity ?? "alpha", url = playOf(app);
+  const c = cardFor(app), t = tally(app.id, unlocks), m = app.maturity ?? "alpha", url = playOf(app);
   return (
     <Glass t0={t0} css={HOME_CSS}>
       <div className="home detail game-page">
@@ -547,7 +553,7 @@ function Visitors({ v }: { v: Counts }) {
 export type Tab = (typeof TABS)[number][0];
 export const tabOf = (v: unknown): Tab => TABS.find(([k]) => k === v)?.[0] ?? "library";
 
-export function Home({ me, mine, hub, side, everyone, unlocks, counts, error, t0, tab, visitors, scale, studios }: { side?: Side | null; visitors?: Counts | null; scale?: Load | null; studios?: Studio[] | null; counts: Map<string, number>; me: Me; mine: Member | undefined; hub: HubState | null; everyone: Member[] | null; unlocks: Unlocks; error?: string; t0: number; tab: Tab }) {
+export function Home({ apps = APPS, me, mine, hub, side, everyone, unlocks, counts, error, t0, tab, visitors, scale, studios }: { apps?: QApp[]; side?: Side | null; visitors?: Counts | null; scale?: Load | null; studios?: Studio[] | null; counts: Map<string, number>; me: Me; mine: Member | undefined; hub: HubState | null; everyone: Member[] | null; unlocks: Unlocks; error?: string; t0: number; tab: Tab }) {
     const tabs = TABS.filter(([k]) => !ADMIN_TABS.has(k) || everyone);
   const asked = hub?.incoming.length ?? 0;
   return (
@@ -564,7 +570,7 @@ export function Home({ me, mine, hub, side, everyone, unlocks, counts, error, t0
         </section>
 
         <div className="body">
-        {tab === "library" && <Library mine={mine} unlocks={unlocks} hub={hub} side={side ?? null} />}
+        {tab === "library" && <Library apps={apps} mine={mine} unlocks={unlocks} hub={hub} side={side ?? null} />}
 
         {tab === "achievements" && <><h2>Achievements</h2><Achievements unlocks={unlocks} /></>}
 
@@ -654,7 +660,7 @@ export function DeletePage({ me, app, error, step }: { me: Me; app?: string; err
 }
 
 export function Deleted({ app }: { app?: string }) {
-  const a = appOf(app ?? ""), url = a && playOf(a);
+  const a = ourApp(app ?? ""), url = a && playOf(a);
   return <><h1>Account deleted</h1><p className="mut">Everything eqosys holds about you is gone.</p>{a && url && <p><a href={url}>Back to {a.name}</a></p>}</>;
 }
 

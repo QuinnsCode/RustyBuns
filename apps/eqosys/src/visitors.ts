@@ -13,7 +13,7 @@
 import { bool, check, obj, opt, str } from "@rustybuns/util/guard";
 import { sha256 } from "@rustybuns/util/bytes";
 import { kindOf, type Kind } from "@rustybuns/util/visitors";
-import { appOf, APPS, HOME } from "./apps.ts";
+import { ourApp, APPS, HOME } from "./apps.ts";
 import type { Env } from "./env.ts";
 
 const DAY = 86_400_000, KEEP_DAYS = 30;
@@ -108,7 +108,7 @@ export async function beacon(conf: Env, req: Request): Promise<Response> {
   const body = check(Beacon, parsed);
   const origin = req.headers.get("origin") ?? "";
   if (!body) return new Response(null, { status: 400 });
-  const ours = body.site === HOME ? [new URL(req.url).origin, ...(conf.BETTER_AUTH_URL ? [new URL(conf.BETTER_AUTH_URL).origin] : [])] : appOf(body.site)?.origins ?? [];
+  const ours = body.site === HOME ? [new URL(req.url).origin, ...(conf.BETTER_AUTH_URL ? [new URL(conf.BETTER_AUTH_URL).origin] : [])] : ourApp(body.site)?.origins ?? [];
   if (!ours.includes(origin)) return new Response(null, { status: 403 });
   await count(conf, req, { site: body.site, hits: body.engaged ? 0 : 1, engaged: body.engaged ? 1 : 0, errors: 0, ref: refOf(body.ref, origin) });
   return nothing;
@@ -165,7 +165,7 @@ export async function visitorsOf(conf: Env, days = 7): Promise<Visitors> {
   return {
     generated_at: now, days: span, from,
     totals: { ...split(totals), hits: n(totals?.hits) },
-    sites: sites.map((s) => ({ site: s.site, name: s.site === HOME ? "eqosys" : appOf(s.site)?.name ?? s.site, ...split(s), hits: n(s.hits) })),
+    sites: sites.map((s) => ({ site: s.site, name: s.site === HOME ? "eqosys" : ourApp(s.site)?.name ?? s.site, ...split(s), hits: n(s.hits) })),
     by_day, refs: refs.map((r) => ({ ref: r.ref, real: n(r.real) })),
     recent: recent.map((c) => ({ ...c, hits: n(c.hits), engaged: n(c.engaged), last_at: n(c.last_at) })),
     signups: n(signups),

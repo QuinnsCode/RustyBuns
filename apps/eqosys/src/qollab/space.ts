@@ -13,7 +13,7 @@
 import { bool, check, int, obj, oneOf, opt, str, type Of } from "@rustybuns/util/guard";
 import type { SpaceMsg, SpaceMessage } from "@rustybuns/util/eqosys";
 import { Sockets, type RoomCtx, type RoomSocket } from "@rustybuns/util/room";
-import { appOf } from "../apps.ts";
+import { appOf } from "../listings.ts";
 import { ChatGate, SAY_MAX, type Said } from "./chat.ts";
 import { json, type Env } from "../env.ts";
 import { Present, roomOf, send, ticket, qlaveUrl, type Order } from "./qlave.ts";
@@ -266,7 +266,7 @@ export class Space {
     const name = (await this.members()).find((m) => m.id === id)?.name ?? said?.from.name;
     if (!name) return this.sockets.send(ws, { t: "refused", why: "no such member" });
     for (const sock of this.sockets.open()) if (this.sockets.who(sock)?.owner) this.sockets.send(sock, { t: "reported", by: me.name, id, name });
-    const app = appOf(me.app);
+    const app = await appOf(this.env, me.app);
     if (!app) return;
     // The issue is public: the reported person is named by the same opaque id as the reporter, and their words stay with the owner (the `reported` frame above).
     const filed = await file(this.env, app, me.id, "", { kind: "bug", title: "Space chat report", body: `A space member was reported in chat.\n\nReported: ${await reporterId(id)}` });

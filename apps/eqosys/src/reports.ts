@@ -6,6 +6,7 @@ import { check, int, obj, oneOf, opt, str, type Of } from "@rustybuns/util/guard
 import { readJson } from "@rustybuns/util/http";
 import { sha256, type Env } from "./env.ts";
 import type { QApp } from "./apps.ts";
+import { isListing } from "./listings.ts";
 
 export const REPO = "QuinnsCode/RustyBuns";
 /** Per account: this many in the last hour, this many in the last day. */
@@ -58,6 +59,8 @@ export type Filed = { ok: true; issue: number | null } | { ok: false; status: nu
 
 /** Count this account's reports, refuse past the limits, then reserve a slot and file the issue. */
 export async function file(conf: Env, app: QApp, userId: string, userAgent: string, raw: unknown, now = Date.now()): Promise<Filed> {
+  // A studio's game (listings.ts) never files on this repo: its reports go to its studio in eqosys, which isn't built yet.
+  if (isListing(app)) return { ok: false, status: 503, error: "reports from this game go to its studio, and that isn't switched on yet" };
   if (!conf.GITHUB_REPORT_TOKEN) return { ok: false, status: 503, error: "reports aren't switched on here yet" };
   const r = check(Report, raw);
   if (!r) return { ok: false, status: 400, error: "send { kind: bug | suggestion | error, title (3-120 characters), body (up to 4000) }" };

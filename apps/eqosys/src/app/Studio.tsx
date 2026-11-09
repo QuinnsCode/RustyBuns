@@ -2,6 +2,7 @@
 // shows its four doors: Play (its site), Keep (the person's own unlocks in it, on its eqosys page), Make (its codeSplitter repo,
 // once linked) and Ship (live, with the stage, version and time its last deploy reported). An owner or admin adds people by email here; with no studio yet, the person can make one.
 import { KINDS, ROLES, type Role, type Studio as Shelf } from "../studios.ts";
+import type { State } from "../listings.ts";
 import { btn } from "./Glass.tsx";
 
 type Unlocks = Map<string, Map<string, number>>;
@@ -19,6 +20,7 @@ export const STUDIO_CSS = `
 .home .shelf>div{display:flex;flex-wrap:wrap;align-items:center;gap:.4rem .6rem;padding:.5rem 0;border-top:1px solid var(--rim)}
 .home .shelf>div>b{flex:1 1 10rem;min-width:0;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .home .doors{display:flex;flex-wrap:wrap;align-items:center;gap:.3rem}
+.home .shelf .note{flex:1 1 100%;font-size:.78rem;color:var(--mut)}
 .home .shipped{font-size:.72rem;color:var(--mut);font-variant-numeric:tabular-nums;white-space:nowrap}
 .home .studio form{display:flex;flex-wrap:wrap;gap:.5rem;margin-top:.9rem}.home .studio form input{flex:1 1 12rem;min-width:0}
 `;
@@ -27,6 +29,15 @@ export const STUDIO_CSS = `
 const shippedAt = (t: number) => new Date(t).toISOString().slice(0, 16).replace("T", " ");
 
 const ROLE_WORD: Record<Role, string> = { owner: "owner", admin: "admin", maker: "maker" };
+
+/** Where a studio's own game stands in its review (listings.ts). */
+const STATE_TIP: Record<State, string> = {
+  draft: "Only your studio can sign in to it: send it to review when it's ready",
+  "in review": "Waiting for a review: only your studio can sign in to it yet",
+  listed: "On everyone's shelf",
+  refused: "Sent back: fix it and send it again",
+  pulled: "Out of the Library: players' saves go in 30 days",
+};
 
 /** One app's four doors. */
 function Doors({ a, unlocks }: { a: Shelf["apps"][number]; unlocks: Unlocks }) {
@@ -54,7 +65,10 @@ export function Studios({ studios, unlocks }: { studios: Shelf[]; unlocks: Unloc
             {s.people.map((p) => <span key={p.email} title={p.email}><b>{p.name || p.email}</b><span>{ROLE_WORD[p.role]}</span></span>)}
           </div>
           <div className="shelf" aria-label="Shelf">
-            {s.apps.length === 0 ? <span className="mut">No apps on the shelf yet.</span> : s.apps.map((a) => <div key={a.id}><b>{a.name}</b><Doors a={a} unlocks={unlocks} /></div>)}
+            {s.apps.length === 0 ? <span className="mut">No apps on the shelf yet.</span> : s.apps.map((a) => (
+              <div key={a.id}><b>{a.name}</b>{a.state && <span className={a.state === "listed" ? "pill on" : "pill"} title={a.note ?? STATE_TIP[a.state]}>{a.state}</span>}<Doors a={a} unlocks={unlocks} />
+                {a.note && a.state === "refused" && <span className="note">{a.note}</span>}</div>
+            ))}
           </div>
           {(s.role === "owner" || s.role === "admin") && (
             <form method="post" action="/do/studio-add" aria-label={`Add someone to ${s.name}`}>

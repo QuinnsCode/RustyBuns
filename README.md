@@ -306,6 +306,20 @@ party or space a room) sits under it, is [apps/eqosys/VISION.md](apps/eqosys/VIS
 
 </details>
 
+### The Library takes other studios' games, after a review
+
+A studio puts its own game in eqosys's Library as a draft, sends it to review, and once the super admin lists it, anyone signs in to it.
+
+<details><summary>More</summary>
+
+`APPS` stays ours, in code. A studio's game is a listing in D1 with the same fields (`src/listings.ts`): a draft signs in
+only its own studio's members, so the maker tests the real sign-in from the real site first. `eq_listing_send` puts it in
+the queue, `eq_listing_review` lists it or refuses it with a note, and `eq_listing_pull` takes it down (its tokens stop at
+the door; players' saves go after 30 days). A listed game's tile names its studio. Every check of who may sign in or call
+asks `appOf` there, which reads the listings once a minute per isolate. The design is [apps/eqosys/LIBRARY.md](apps/eqosys/LIBRARY.md).
+
+</details>
+
 ### Real visitors, told from agents and bots, across the Q sites
 
 eqosys's super admin sees who really came to eqosys, the Playground and each app that calls it: people who tapped or scrolled, apart from scripts, headless browsers and crawlers.

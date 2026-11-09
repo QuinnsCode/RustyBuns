@@ -160,7 +160,7 @@ test("already signed in: an app she uses gets her straight back with no page; a 
 
   // Back from "Continue with Google" for qCRM, the mark /do/social left in her browser sends her straight on, once; it
   // doesn't carry to another app. Bo, handed a link with that mark in it, sees the page and isn't linked to qCRM.
-  const ask = askOf((k) => ({ ...crm.form } as Record<string, string>)[k], conf);
+  const ask = await askOf((k) => ({ ...crm.form } as Record<string, string>)[k], conf);
   if (!ask || ask === "bad") throw new Error("ask");
   const marked = `${up.cookie}; ${SOCIAL_COOKIE}=${await socialMark(conf, ask)}`;
   const golf = { ...crm.form, app: "alien-disc-golf", return: "https://alien-disc-golf.notryanquinn.workers.dev/" };

@@ -13,7 +13,8 @@ import { sign, START_S, startAud } from "@rustybuns/util/token";
 import { b64url } from "@rustybuns/util/bytes";
 import { defaultRules, LIVES, may, PartyRules, readyEnough } from "@rustybuns/util/party-rules";
 import { ChatGate, SAY_MAX, type Said } from "./chat.ts";
-import { appOf, HOME } from "../apps.ts";
+import { HOME } from "../apps.ts";
+import { appOf } from "../listings.ts";
 import { json, type Env } from "../env.ts";
 import { hubAsk } from "./hub.ts";
 import { file, reporterId } from "../reports.ts";
@@ -362,7 +363,7 @@ export class Party {
     const name = this.members().find((m) => m.id === id)?.name ?? said?.from.name;
     if (!name) return this.sockets.send(ws, { t: "refused", why: "no such member" });
     for (const sock of this.sockets.open()) if (this.sockets.who(sock)?.id === host) this.sockets.send(sock, { t: "reported", by: me.name, id, name });
-    const app = appOf(await this.ctx.storage.get<string>("app"));
+    const app = await appOf(this.env, await this.ctx.storage.get<string>("app"));
     if (!app) return;
     // The issue is public: the reported person is named by the same opaque id as the reporter, and their words stay with the host (the `reported` frame above).
     const filed = await file(this.env, app, me.id, "", { kind: "bug", title: "Party chat report", body: `A party member was reported in chat.\n\nReported: ${await reporterId(id)}` });

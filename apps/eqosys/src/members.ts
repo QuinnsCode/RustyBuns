@@ -1,6 +1,7 @@
 // The user base across apps: where each person came from, which apps they use, what they may do there,
 // and the one-minute codes that hand a signed-in person to an app.
-import { APPS, appOf, HOME, type QApp } from "./apps.ts";
+import { HOME, type QApp } from "./apps.ts";
+import { appOf, appsOf } from "./listings.ts";
 import { sign, type Handoff } from "@rustybuns/util/token";
 import { hubErase, hubOut } from "./qollab/hub.ts";
 import { partyOf } from "./qollab/party.ts";
@@ -176,7 +177,7 @@ export async function members(conf: Env, userId?: string): Promise<Member[]> {
 
 /** Give or take away one role in one app. False for an unknown app or person. */
 export async function setAccess(conf: Env, email: string, app: string, role: string, on: boolean, by: string, now = Date.now()) {
-  if (!appOf(app)) return false;
+  if (!(await appOf(conf, app))) return false;
   const u = await conf.DB.prepare(`SELECT id FROM "user" WHERE lower(email) = lower(?)`).bind(email.trim()).first<{ id: string }>();
   if (!u) return false;
   await (on
@@ -191,7 +192,7 @@ const eraseToken = (conf: Env, iss: string, user: { id: string; email: string })
 
 /** Tell every app that keeps account data to erase this person, trying each a few times. True when all answered 200. */
 async function eraseInApps(conf: Env, iss: string, user: { id: string; email: string }) {
-  for (const app of APPS) {
+  for (const app of await appsOf(conf)) {
     if (!app.erase) continue;
     let ok = false;
     for (let i = 0; i < 3 && !ok; i++) {
