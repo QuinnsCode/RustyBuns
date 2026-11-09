@@ -3,7 +3,7 @@ import { existsSync } from "node:fs";
 
 import { freshness } from "../public/fresh.js";
 
-type Entry = { name: string; line: string; play?: string; app?: string; download?: string; note?: string; soon?: boolean; stage: number; best: string[]; store?: string };
+type Entry = { name: string; line: string; play?: string; app?: string; download?: string; note?: string; soon?: boolean; stage: number; best: string[]; store?: string; group: string };
 const apps: Entry[] = await Bun.file(`${import.meta.dir}/../public/apps.json`).json();
 
 test("every entry with a source link names an app folder that exists", () => {
@@ -15,8 +15,10 @@ test("play links are https and names are unique", () => {
   expect(new Set(apps.map((a) => a.name)).size).toBe(apps.length);
 });
 
-test("every app says how far along it is and the systems it plays best on", () => {
+test("every app says how far along it is, the systems it plays best on, and its group; codeSplitter and eqosys are the gateway", () => {
+  expect(apps.filter((a) => a.group === "gateway").map((a) => a.app).sort()).toEqual(["codesplitter", "eqosys"]);
   for (const a of apps) {
+    expect(["gateway", "games", "apps"]).toContain(a.group);
     expect([1, 2, 3, 4]).toContain(a.stage);
     expect(a.best.length).toBeGreaterThan(0);
     for (const d of a.best) expect(["phone", "tablet", "desktop", "gamepad"]).toContain(d);
