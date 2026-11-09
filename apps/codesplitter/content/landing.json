@@ -7,7 +7,7 @@
   "breathe_product": "Hosting the code is the easy part: it just makes the move off the old host painless. <b>The scripts and feedback loops are the product.</b>",
   "helpers_title": "Meet your helpers for the agentic era.",
   "mervin": "merges, and settles the clashes git gives up on",
-  "ester": "picks the test lanes and puts a PR's red CI on the board",
+  "ester": "picks the test lanes and sorts each red check on a branch: main's, flaky or its own, and remembers what you told her",
   "dexter": "finds where the tokens go, over in Agent Office",
   "helpers_learn": "No model in any of them. Each answer you give Mervin can become a rule, so he learns your repo and needs you less.",
   "breathe_wasted": "However smart, fast or cheap AI gets, it's <em>wasted</em> on deterministic chores.",

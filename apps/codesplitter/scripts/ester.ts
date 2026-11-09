@@ -19,12 +19,14 @@ import { dirname } from "node:path";
 import type { CheckTime, Stage } from "./mervin-board.ts";
 // Types only from the app: CI's plan step (scripts/ci-apps.ts) loads this file for `shard` before anything is installed.
 import type { Lane, Pipeline } from "../src/pipeline.ts";
+// The sort itself is shared with the app's own check runs (src/ester-checks.ts); it imports nothing, so CI's plan step still loads.
+import { sortRed, type Owner, type Verdict as SortedVerdict } from "../src/ester-sort.ts";
 
 /** pipeline.ts's PIPELINE_FILE. */
 const PIPELINE_FILE = "codesplitter.pipeline.json";
 
-export type Owner = "main" | "flaky" | "own" | "wait" | "slow" | "blocks";
-export interface Verdict { test: string; owner: Owner; prs: number[]; why: string }
+export type { Owner };
+export type Verdict = SortedVerdict<number>;
 
 /** `apps/foo: test name` to the app dir it ran in (`.` for repo-wide checks). */
 const dirOf = (failure: string) => failure.split(": ")[0]!;
@@ -63,16 +65,14 @@ export const onlySlow = (s: Stage, slow: Map<string, number>) => running(s).leng
 export function triage(failed: string[], stages: Stage[], onMain: Set<string>, rerun?: Set<string>, slow = new Map<string, number>()): Verdict[] {
   const written = new Set(stages.flatMap((s) => s.files.filter((f) => f.tier !== "card").map((f) => f.path)));
   return failed.map((test) => {
-    if (onMain.has(test)) return { test, owner: "main", prs: [], why: "fails on main in this sandbox too" };
-    if (rerun && !rerun.has(test)) return { test, owner: "flaky", prs: [], why: "passed on a rerun" };
-    const prs = touching(stages, dirOf(test), written);
-    const red = stages.filter((s) => prs.includes(s.pr) && s.ci === "fail");
-    if (red.length) return { test, owner: "own", prs: red.map((s) => s.pr), why: `PR CI is already red (${red.flatMap((s) => s.failing ?? []).join(", ") || "failing"})` };
-    const waiting = stages.filter((s) => prs.includes(s.pr) && s.ci === "pending");
-    const pending = waiting.filter((s) => !onlySlow(s, slow));
-    if (!pending.length && waiting.length) return { test, owner: "slow", prs: waiting.map((s) => s.pr), why: "PR CI is only waiting on slow checks: merge on the fast ones, the slow one is owed" };
-    if (pending.length) return { test, owner: "wait", prs: pending.map((s) => s.pr), why: "PR CI hasn't finished: hold it, rerun when it has" };
-    return { test, owner: "blocks", prs, why: prs.length ? "only the merged tree breaks it" : "no stage touched this app: check the install or lockfile" };
+    const suspects = touching(stages, dirOf(test), written);
+    const mine = stages.filter((s) => suspects.includes(s.pr));
+    const red = mine.filter((s) => s.ci === "fail"), pending = mine.filter((s) => s.ci === "pending");
+    return sortRed(test, {
+      onMain: onMain.has(test), passedOnRerun: rerun ? !rerun.has(test) : undefined, suspects,
+      red: red.map((s) => s.pr), redWhy: red.flatMap((s) => s.failing ?? []).join(", "),
+      pending: pending.map((s) => s.pr), slowOnly: pending.filter((s) => onlySlow(s, slow)).map((s) => s.pr),
+    });
   });
 }
 

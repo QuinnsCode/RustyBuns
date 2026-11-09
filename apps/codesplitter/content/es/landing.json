@@ -7,7 +7,7 @@
   "breathe_product": "Alojar el código es lo fácil: solo hace que dejar tu antiguo host no duela. <b>Los scripts y los ciclos de feedback son el producto.</b>",
   "helpers_title": "Conoce a tus ayudantes para la era de los agentes.",
   "mervin": "fusiona, y resuelve los conflictos que git deja sin resolver",
-  "ester": "elige los carriles de tests y muestra en el tablero el CI en rojo de cada PR",
+  "ester": "elige los carriles de tests y clasifica cada check en rojo de una rama: de main, inestable o suyo, y recuerda lo que le dijiste",
   "dexter": "encuentra a dónde van los tokens, en Agent Office",
   "helpers_learn": "Ninguno usa un modelo. Cada respuesta que le das a Mervin puede convertirse en una regla, así que aprende tu repo y te necesita menos.",
   "breathe_wasted": "Por muy lista, rápida o barata que se vuelva la IA, se <em>desperdicia</em> en tareas deterministas.",
