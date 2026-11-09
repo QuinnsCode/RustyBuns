@@ -110,9 +110,13 @@ const appVar = (app: string) => appRef(app).toLowerCase();
 /** protect: destroy skips the provider's delete, so the resource and its data stay on the account. */
 const keep = (decl: string) => decl.replace(/^(export const \w+ = )([\s\S]*);$/, "$1($2).pipe(Alchemy.RemovalPolicy.retain());");
 
-/** worker.observability in the upload's shape: logs need invocationLogs, which wrangler defaults to on. */
-function observability(o: NonNullable<NonNullable<RustyBunsConfig["worker"]>["observability"]>) {
-  return { ...o, ...(o.logs ? { logs: { ...o.logs, invocationLogs: o.logs.invocationLogs ?? true } } : {}) };
+/**
+ * worker.observability in the upload's shape: logs need invocationLogs, which wrangler defaults to on.
+ * worker.redactQueryStrings rides along as redactQueryString; alone, it keeps Alchemy's default (logs on).
+ */
+function observability(w: NonNullable<RustyBunsConfig["worker"]>) {
+  const o = w.observability ?? { enabled: true, logs: { enabled: true } };
+  return { ...o, ...(o.logs ? { logs: { ...o.logs, invocationLogs: o.logs.invocationLogs ?? true } } : {}), ...(w.redactQueryStrings ? { redactQueryString: true } : {}) };
 }
 
 /** The Neon resource a hyperdrive binding fronts: its branch, else its project's default branch. */
@@ -282,7 +286,7 @@ export function generateAlchemy(c: RustyBunsConfig): string {
     if (w.cpuMs) wb.push(`  limits: { cpuMs: ${w.cpuMs} },`);
     if (w.placement) wb.push(`  placement: ${JSON.stringify(w.placement)},  // Smart Placement: run near D1 and the Durable Objects`);
     if (w.crons?.length) wb.push(`  crons: ${JSON.stringify(w.crons)},  // Cron Triggers: the Worker exports scheduled()`);
-    if (w.observability) wb.push(`  observability: ${JSON.stringify(observability(w.observability))},`);
+    if (w.observability || w.redactQueryStrings) wb.push(`  observability: ${JSON.stringify(observability(w))},`);
     const domain = c.targets.edge?.domain;
     if (typeof domain === "string") wb.push(`  domain: ${JSON.stringify(domain)},`);
     else if (domain) wb.push(`  domain: ${JSON.stringify({ name: domain[0], ...(domain.length > 1 ? { aliases: domain.slice(1) } : {}) })},`);

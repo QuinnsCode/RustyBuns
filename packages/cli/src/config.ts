@@ -611,8 +611,8 @@ export interface RustyBunsConfig {
     /**
      * Workers Logs keep each request's URL without its query string
      * (`observability.redact_query_string`), so codes and tokens passed in a URL
-     * aren't logged. Alchemy can't set it and each upload resets it, so
-     * `rustybuns deploy` sets it after every deploy (src/redact.ts).
+     * aren't logged. It goes up with the Worker (Alchemy's
+     * `observability.redactQueryString`); without `observability`, logs stay on.
      */
     redactQueryStrings?: boolean;
     /**

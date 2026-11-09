@@ -94,7 +94,6 @@
   "packages/cli/src/glue/webpack-hint.ts": 1,
   "packages/cli/src/index.ts": 2,
   "packages/cli/src/prof.ts": 2,
-  "packages/cli/src/redact.ts": 1,
   "packages/cli/src/state.ts": 1,
   "packages/cli/src/usage-estimate.ts": 2,
   "packages/ops/src/index.ts": 1,
