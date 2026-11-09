@@ -99,15 +99,18 @@ export function readVerdict(run: { code: number; out: string; text: string | nul
   return m[1]!.toLowerCase() === "nay" ? { say: "nay", reason: reason || "no reason given" } : { say: "yay", ...(reason && { reason }) };
 }
 
-/** One AI review of `diff` at `hook`: the verdict, or why it couldn't give one. */
-async function askAi(env: Env, owner: string, hook: Hook, branch: string, diff: string): Promise<{ say: "yay" | "nay"; reason?: string; by: string } | { error: string }> {
+/**
+ * One AI review of `diff`, asked with `prompt` (reviewPrompt, or the bus's pass in pipeline-bus.ts): the verdict, or why it
+ * couldn't give one. The cheapest coding agent installed, and nothing when healing is off or the site's hosted budget is spent.
+ */
+export async function askAi(env: Env, owner: string, prompt: string, diff: string): Promise<{ say: "yay" | "nay"; reason?: string; by: string } | { error: string }> {
   const off = healUnavailable(env, owner), cheap = off ? null : cheapest(installedHarnesses(env));
   if (!cheap) return { error: off ?? "no coding agent's CLI is installed here" };
   const spent = await hostedBudget(env);
   if (spent) return { error: check(obj({ error: str(Infinity) }), await spent.json().catch(() => null))?.error ?? "the site's hosted budget is spent" };
   const box: Sandbox = env.AGENT_SANDBOX ? containerSandbox(env.AGENT_SANDBOX) : localSandbox(env.AGENT_EXEC as Exec | undefined);
   const given = diff.length > MAX_DIFF ? `${diff.slice(0, MAX_DIFF)}\n(the diff goes on: ${diff.length - MAX_DIFF} more characters)\n` : diff;
-  const run = await box(harnessCommand(cheap.harness, reviewPrompt(hook, branch), { model: cheap.model }), { path: VERDICT_FILE, text: given })
+  const run = await box(harnessCommand(cheap.harness, prompt, { model: cheap.model }), { path: VERDICT_FILE, text: given })
     .catch((e) => ({ code: 1, out: String((e as Error)?.message ?? e), text: null }));
   const v = readVerdict(run, cheap.harness);
   return "error" in v ? v : { ...v, by: `ai:${cheap.harness}${cheap.model ? `/${cheap.model}` : ""}` };
@@ -133,7 +136,7 @@ export async function hookGate(env: Env, owner: string, repo: string, branch: st
     let v = kept.get(at);
     if (!v) {
       // An AI that can't answer leaves the card to a person: asking again on every merge spends for nothing.
-      const r = mode === "ai" ? await askAi(env, owner, at, branch, await diff()) : null;
+      const r = mode === "ai" ? await askAi(env, owner, reviewPrompt(at, branch), await diff()) : null;
       v = !r ? { hook: at, hash, say: "waiting", by: "" }
         : "error" in r ? { hook: at, hash, say: "waiting", by: "ai", reason: `the AI review couldn't answer: ${r.error}` }
         : { hook: at, hash, ...r };

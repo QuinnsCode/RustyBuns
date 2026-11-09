@@ -188,3 +188,69 @@ test("a release cut: the button and a version tag each run every often and relea
   expect((await tag("nightly")).release).toBeUndefined();
   expect((await tag("v1.0")).release?.filter((l) => l.go !== "skip").map((l) => l.lane)).toEqual(["stress", "ios", "docs"]);
 });
+
+test("the bus's AI pass: a bus with no command seats changes, then one agent run reads them all, once per bus", async () => {
+  const call = await local({ GH_CLI: "off", HEAL: "1" });
+  const R = "/api/repos/ana/r";
+  const answers = ["YAY", "NAY: docs/c.md links to a page that isn't there"], given: string[] = [];
+  call.env.AGENT_EXEC = (async (_cmd, cwd) => {
+    given.push(await Bun.file(join(cwd, "VERDICT.md")).text());
+    writeFileSync(join(cwd, "VERDICT.md"), answers[given.length - 1] + "\n");
+    return { code: 0, out: "" };
+  }) as Exec;
+  await post(call, "ana", "/api/login", { name: "ana" });
+  await post(call, "ana", "/api/repos", { name: "r" });
+  await call("ana", `${R}/checks/settings`, { method: "PUT", body: JSON.stringify({ where: "here" }) });
+  await post(call, "ana", `${R}/files`, { path: "codesplitter.pipeline.json", content: JSON.stringify({ lanes: [
+    { name: "unit", cadence: "always", paths: ["src/**"], run: "bun test" },
+    { name: "docs", cadence: "bus", seats: 2, paths: ["**/*.md"] },
+  ] }) });
+  await post(call, "ana", `${R}/do/commit?path=codesplitter.pipeline.json`, { message: "pipeline" });
+  type Run = { id: number; name: string; status: string; sha: string; log: string };
+  const commit = async (path: string, content: string) => {
+    await post(call, "ana", `${R}/files`, { path, content });
+    expect((await post(call, "ana", `${R}/do/commit?path=${path}`, { message: `write ${path}` })).status).toBe(200);
+  };
+  /** The docs lane's runs on main, newest first, each with its log. */
+  const passes = async () => Promise.all(((await (await call("ana", `${R}/checks?ref=main`)).json()) as { runs: Run[] }).runs.filter((r) => r.name === "docs")
+    .map(async (r) => (await (await call("ana", `${R}/checks/${r.id}`)).json()) as Run));
+
+  // The first doc takes a seat: no agent, no run.
+  await commit("README.md", "hello");
+  expect(given).toEqual([]);
+  // The second fills the bus: one agent run reads both changes, and its yay passes the lane's run.
+  await commit("docs/b.md", "bee");
+  expect(given.length).toBe(1);
+  expect(given[0]).toContain("write README.md");
+  expect(given[0]).toContain("+++ b/docs/b.md");
+  expect(given[0]).toContain("+ hello");
+  expect(given[0]).not.toContain("codesplitter.pipeline.json");
+  const [yay] = await passes();
+  expect(yay!.status).toBe("passed");
+  expect(yay!.log).toContain("An AI pass over the 2 changes aboard");
+
+  // A retry of the bus that left (the same commit's ride again) reads its verdict and doesn't pay twice.
+  const { busRide } = await import("../src/pipeline-bus.ts");
+  const docs: Lane = { name: "docs", cadence: "bus", seats: 2, paths: ["**/*.md"] };
+  await busRide(call.env, "ana", "r", yay!.sha, [{ lane: docs, call: { lane: "docs", cadence: "bus", go: "depart", why: "full", ai: true } }], "ana");
+  expect(given.length).toBe(1);
+  // A release right after it left finds the bus empty: nothing to read.
+  expect((await post(call, "ana", `${R}/pipeline/release`, {})).status).toBe(202);
+  expect(given.length).toBe(1);
+
+  // The next bus: a nay fails the run with the reason.
+  await commit("docs/c.md", "[see](gone.md)");
+  await commit("docs/d.md", "dee");
+  expect(given.length).toBe(2);
+  expect(given[1]).not.toContain("docs/b.md");
+  const nay = (await passes()).find((r) => r.status === "failed");
+  expect(nay?.log).toContain("said nay: docs/c.md links to a page that isn't there");
+
+  // With no agent to ask (healing off), the bus still leaves; its run says why and is left to a person, at no cost.
+  call.env.HEAL = "off";
+  await commit("docs/e.md", "e");
+  await commit("docs/f.md", "f");
+  expect(given.length).toBe(2);
+  const off = (await passes()).find((r) => r.status === "cancelled");
+  expect(off?.log).toContain("self-healing is off");
+});

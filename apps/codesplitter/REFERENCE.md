@@ -793,6 +793,7 @@ These keep growth to whole lines, which merge as plain inserts (#935):
 | `src/noodles.ts` | the game's noodle monsters: finds a file's type guards and their line ranges |
 | `src/openapi.ts` | `GET /api/openapi.json`, the API for outside agents |
 | `src/patch.ts` | a unified diff and a `git format-patch` mail written in JS, for beams on the hosted site where there's no git to run |
+| `src/pipeline-bus.ts` | the bus's AI pass: a bus lane with no command leaves into one agent run over every change aboard, its verdict kept per bus |
 | `src/pipeline-hooks.ts` | the pipeline's hooks at a merge: an AI's or a person's yay or nay, kept per branch and hook against the branch's hash |
 | `src/pipeline-lanes.ts` | the pipeline's lanes driving the checks: each lane's count kept per repo in D1, and Ester's call on a change's files |
 | `src/pipeline-routes.ts` | the pipeline's routes: a repo's road for one change (GET .../pipeline), and any pipeline's (POST /api/pipeline) |

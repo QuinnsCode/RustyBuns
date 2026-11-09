@@ -658,7 +658,7 @@ const OPS: Record<string, Record<string, Op>> = {
       plan: arr(loose("a stop {kind: \"stop\", at, who, does, lanes?: [{lane, cadence, go: run|skip|board|depart, why, run?, ai?, owed?}]} or a hook {kind: \"hook\", at, mode: ai|ask, does}")),
       counts: loose("{lane: count} after this change lands") }) } },
   [`${repo}/pipeline/release`]: { post: { id: "cut_release", summary: "Cut a release on main: every often and release lane runs and every bus leaves (the crew)", tag: "Checks",
-    description: "Whatever the counts, each often and release lane queues its check on main's tip and each bus departs (one with no command is an AI pass, which queues nothing yet); they all start again at 0. " +
+    description: "Whatever the counts, each often and release lane queues its check on main's tip and each bus departs (one with no command runs its AI pass over the changes aboard: a check run of its name, passed on a yay, failed on a nay with the reason); they all start again at 0. " +
       "The required checks with a command go too. A version tag made here does the same (make_tag). 409 without `codesplitter.pipeline.json` on main or with checks not running here.",
     ok: obj({ sha: str(), lanes: arr(loose("{lane, cadence, go: run|skip|depart, why, run?, ai?}")), checks: loose("main's checks, as `checks` answers") }), status: 202 } },
   [`${repo}/mervin`]: {
