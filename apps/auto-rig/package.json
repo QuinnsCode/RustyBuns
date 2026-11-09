@@ -15,7 +15,7 @@
   "dependencies": {
     "@rustybuns/cli": "^0.1.12",
     "@rustybuns/native": "^0.1.12",
-    "@rustybuns/rig": "workspace:*",
+    "@rustybuns/rig": "^0.1.12",
     "@rustybuns/shell-bun": "^0.1.12",
     "react": "19.2.8",
     "react-dom": "19.2.8",

@@ -1,9 +1,12 @@
 // Run before publishing (npm-publish.yml runs it). bun pm pack rewrites workspace:* from bun.lock, not
 // from each package.json, so a version bump without `bun install` publishes
 // packages that depend on the previous release (0.1.6 shipped that way).
+// `--list` prints the published packages, dependencies first: the order npm-publish.yml packs and
+// publishes them in, and the names scripts/npm-claim.ts claims.
 import { readFileSync } from "node:fs";
 
-const PKGS = ["ports", "ui", "util", "game-controls", "shell-bun", "native", "cli"];
+const PKGS = ["ports", "ui", "util", "game-controls", "models", "terrain", "rig", "seal", "cms", "shell-bun", "native", "cli"];
+if (process.argv.includes("--list")) { console.log(PKGS.join(" ")); process.exit(0); }
 const lock = readFileSync("bun.lock", "utf8");
 const bad: string[] = [];
 const versions = new Set<string>();

@@ -36,7 +36,7 @@
     "@effect/platform-node": "4.0.5",
     "@rustybuns/cli": "^0.1.12",
     "@rustybuns/render": "workspace:*",
-    "@rustybuns/seal": "workspace:*",
+    "@rustybuns/seal": "^0.1.12",
     "@rustybuns/shell-bun": "^0.1.12",
     "@rustybuns/util": "^0.1.12",
     "@types/react": "19",

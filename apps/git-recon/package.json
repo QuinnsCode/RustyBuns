@@ -16,8 +16,8 @@
     "deploy": "vite build && bunx wrangler deploy"
   },
   "dependencies": {
-    "@rustybuns/models": "workspace:*",
-    "@rustybuns/terrain": "workspace:*",
+    "@rustybuns/models": "^0.1.12",
+    "@rustybuns/terrain": "^0.1.12",
     "@rustybuns/game-controls": "^0.1.12",
     "@rustybuns/util": "^0.1.12",
     "@rustybuns/shell-bun": "^0.1.12",

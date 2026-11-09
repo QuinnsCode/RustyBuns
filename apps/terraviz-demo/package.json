@@ -16,7 +16,7 @@
   },
   "devDependencies": {
     "@rustybuns/cli": "^0.1.12",
-    "@rustybuns/cms": "workspace:*",
+    "@rustybuns/cms": "^0.1.12",
     "@rustybuns/shell-bun": "^0.1.12"
   }
 }

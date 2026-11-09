@@ -20,8 +20,8 @@
   },
   "dependencies": {
     "@rustybuns/game-controls": "^0.1.12",
-    "@rustybuns/models": "workspace:*",
-    "@rustybuns/rig": "workspace:*",
+    "@rustybuns/models": "^0.1.12",
+    "@rustybuns/rig": "^0.1.12",
     "@rustybuns/util": "^0.1.12",
     "three": "^0.180.0"
   },

@@ -1,15 +1,41 @@
 {
   "name": "@rustybuns/rig",
-  "private": true,
   "type": "module",
-  "version": "0.0.0",
-  "description": "auto-rig's voxel rigger (skeleton and skin weights from any mesh), its wire codec, the GLB bake that feeds it, and the closed-chain IK that poses the result. auto-rig and Mythic Masters share it; the Rust twin stays in apps/auto-rig/native. Not published.",
+  "version": "0.1.12",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/QuinnsCode/RustyBuns"
+  },
+  "homepage": "https://github.com/QuinnsCode/RustyBuns",
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "bun": ">=1.4.0"
+  },
+  "description": "auto-rig's voxel rigger (skeleton and skin weights from any mesh), its wire codec, the GLB bake that feeds it, and the closed-chain IK that poses the result. auto-rig and Mythic Masters share it; the Rust twin stays in apps/auto-rig/native.",
   "main": "./src/index.ts",
   "types": "./src/index.ts",
-  "exports": { ".": "./src/index.ts", "./ik": "./src/ik.ts", "./model": "./src/model.ts" },
+  "exports": {
+    ".": "./src/index.ts",
+    "./ik": "./src/ik.ts",
+    "./model": "./src/model.ts"
+  },
   "dependencies": {
     "closed-chain-ik": "github:gkjohnson/closed-chain-ik-js#1132da3dc3ac774426e9af503e4915bc04ca413b",
     "three": "^0.180.0"
   },
-  "devDependencies": { "@types/three": "^0.180.0" }
+  "devDependencies": {
+    "@types/three": "^0.180.0"
+  },
+  "files": [
+    "src"
+  ],
+  "keywords": [
+    "rustybuns",
+    "rigging",
+    "ik",
+    "three"
+  ]
 }
