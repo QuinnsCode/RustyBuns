@@ -228,12 +228,19 @@ const HOME_CSS = `
 .home .bars i{display:block;width:100%;min-height:2px;border-radius:4px 4px 0 0;background:var(--acc)}
 .home .axis{display:flex;justify-content:space-between;font-size:.72rem;color:var(--mut);margin-top:.35rem;font-variant-numeric:tabular-nums}
 .home .num{text-align:right;font-variant-numeric:tabular-nums}.home .ua{max-width:16rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:.78rem}
-.home.detail{width:min(100%,64rem)}.home.detail .shot{border-radius:16px}
+.home.detail{width:min(100%,64rem);grid-template-columns:minmax(0,1fr)}.home.detail .shot{border-radius:16px}
 .home .detail .pane,.home.detail .pane{display:grid;gap:1rem}
 .home.detail h1{margin:0;font-size:2.2rem}
 .spaces-page #spaces{min-width:0}.spaces-page .rb-spaces{max-height:none}
 .home.detail .more{white-space:pre-line;line-height:1.6;text-wrap:pretty}.home.detail .facts{display:flex;flex-wrap:wrap;align-items:center;gap:.7rem;color:var(--mut);font-size:.85rem}
 .home.detail .facts span{display:inline-flex;align-items:center;gap:.4rem}
+/* One game's page: stacked on a phone; on a wide window the picture takes most of the width and the words sit beside it,
+   with a margin either side left clear (a streamer's camera or chat sits there). */
+.home.detail.game-page{width:min(100%,120rem)}
+.game-page .words{display:grid;gap:1rem;align-content:center;min-width:0}
+@media(min-width:60rem){.home.detail.game-page{padding-inline:clamp(0rem,6vw - 2rem,8rem)}
+ .game-page .pane{grid-template-columns:minmax(0,1.7fr) minmax(19rem,1fr);gap:1.6rem 2.2rem;align-items:center;padding:1.6rem}
+ .game-page .pane .shot{aspect-ratio:16/9}.game-page .words{padding-right:.6rem}.home.detail.game-page h1{font-size:clamp(2.2rem,1rem + 2vw,3.4rem)}}
 .home .back{display:inline-flex;align-items:center;gap:.4rem;color:var(--ink);text-decoration:none;font-size:.9rem;opacity:.85}
 `;
 
@@ -444,16 +451,18 @@ export function AppPage({ app, mine, unlocks, t0 }: { app: QApp; mine: Member["a
   const c = cardOf(app.id, app.name), t = tally(app.id, unlocks), m = app.maturity ?? "alpha";
   return (
     <Glass t0={t0} css={HOME_CSS}>
-      <div className="home detail">
+      <div className="home detail game-page">
         <a className="back" href="/">&larr; Library</a>
         <section className="pane">
           <span className="shot">{app.shot ? <img src={`/cards/${app.id}.jpg`} alt="" /> : <Art id={app.id} />}</span>
+          <div className="words">
           {c.kicker && <span className="kick">{c.kicker}</span>}
           <h1>{c.name}</h1>
           <div className="facts"><Badge m={m} /><span>{m}</span><span>{app.genre}</span><span>{whatOf(app, mine)}</span>{t && <span className="tally"><Trophy />{t[0]}/{t[1]} achievements</span>}</div>
           <p className="blurb">{c.blurb}</p>
           {c.more && <p className="more">{c.more}</p>}
           <div className="row">{app.origins[0] ? <a className="play" href={app.origins[0]}>{ctaOf(app, c)} <Out /></a> : <span className="mut">Not open yet.</span>}</div>
+          </div>
         </section>
       </div>
     </Glass>
