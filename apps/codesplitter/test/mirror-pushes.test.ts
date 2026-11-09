@@ -236,7 +236,7 @@ describe("mirrors: primary, pull-only, pushes and tags", () => {
     // Made here: main's tip by default, or a commit; a name git won't take, or one that's taken, is turned away.
     expect(await (await post(call, "/api/repos/ana/up/tags", { name: "v2" })).json()).toEqual({ name: "v2", commit: b });
     expect((await post(call, "/api/repos/ana/up/tags", { name: "v2" })).status).toBe(409);
-    expect(await (await post(call, "/api/repos/ana/up/tags", { name: "a b" })).json()).toEqual({ error: "no spaces in a tag name: use - instead" });
+    expect(await (await post(call, "/api/repos/ana/up/tags", { name: "a b" })).json()).toEqual({ error: "no spaces in a tag name: use - instead", tag: "BadInput" });
     expect((await post(call, "/api/repos/ana/up/tags", { name: "rc", commit: b })).status).toBe(201);
     expect((await post(call, "/api/repos/ana/up/tags", { name: "x", commit: "f".repeat(40) })).status).toBe(404);
 
