@@ -8,8 +8,8 @@
 // see one state per app. A lock beside it keeps two of them from running
 // Alchemy against it at once.
 
-import { closeSync, existsSync, lstatSync, mkdirSync, openSync, readFileSync, readdirSync, readlinkSync, renameSync, rmSync, symlinkSync, writeFileSync, writeSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { closeSync, existsSync, lstatSync, mkdirSync, openSync, readFileSync, readdirSync, readlinkSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync, writeSync } from "node:fs";
+import { dirname, join, relative, resolve } from "node:path";
 import { workerName, type RustyBunsConfig } from "./config.ts";
 import { UsageError } from "./errors.ts";
 
@@ -151,6 +151,41 @@ export function deployedIn(projectDir: string, app: string, stage: string): bool
   const base = sharedStateBase(dir);
   return [base && join(base, "state"), join(dir, ".alchemy", "state")]
     .some((s) => !!s && existsSync(join(s, app, stage, "Worker.json")));
+}
+
+/**
+ * Make each app in `apps` (beside `projectDir`, in `apps/<app>`) readable from this app's state, so a
+ * `Worker.ref`/`D1.Database.ref` into its stack resolves: Alchemy's local state only reads
+ * `<cwd>/.alchemy/state/<stack>`, and each app's state is its own dir. Adds a relative symlink
+ * `<our state>/<app>` -> `<their state>/<app>`. A real dir there is left alone (never moved or
+ * replaced), as is a link to somewhere else that still resolves; a dangling one is repointed.
+ * An app with no state yet gets nothing, so the ref still says it isn't deployed. Returns the links it made.
+ */
+export function linkReferencedStates(projectDir: string, apps: string[]): string[] {
+  const made: string[] = [];
+  const ours = join(projectDir, ".alchemy", "state");
+  for (const app of apps) {
+    const dir = resolve(projectDir, "..", app);
+    const base = sharedStateBase(dir);
+    const theirs = [base && join(base, "state", app), join(dir, ".alchemy", "state", app)]
+      .find((s): s is string => !!s && existsSync(s));
+    if (!theirs) continue;
+    mkdirSync(ours, { recursive: true });
+    const real = realpathSync(ours), link = join(real, app), target = realpathSync(theirs);
+    if (target === link) continue;
+    const stat = lstatSync(link, { throwIfNoEntry: false });
+    if (stat && !stat.isSymbolicLink()) continue;
+    if (stat) {
+      if (!existsSync(link)) rmSync(link);
+      else {
+        if (realpathSync(link) !== target) console.log(`${link} points at ${readlinkSync(link)}, not ${app}'s state in ${target}; leaving it`);
+        continue;
+      }
+    }
+    symlinkSync(relative(real, target), link, "dir");
+    made.push(link);
+  }
+  return made;
 }
 
 /**

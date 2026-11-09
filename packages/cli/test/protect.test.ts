@@ -31,6 +31,10 @@ test("the report says KEPT and REMOVED per resource, and nothing for a config wi
   expect(out).toContain("[REMOVED] D1 shop-db");
   expect(protectReport({ bindings: { NAME: { type: "var", value: "x" } } }, "plan")).toBe("");
   expect(protectReport({ bindings: { DB: { type: "d1", databaseName: "db" } } }, "plan")).toContain("nothing is protected");
+  // Another app's D1 is a ref into its stack: this destroy never touches it.
+  const ref = protectReport({ bindings: { DB: { type: "d1", databaseName: "eqosys-db", app: "eqosys" } } }, "plan");
+  expect(ref).toContain("[NOT OURS] D1 eqosys-db: eqosys owns it");
+  expect(ref).not.toContain("[REMOVED]");
 });
 
 test("the plan and deploy report warns that protect counts from the next deploy; destroy's does not", () => {

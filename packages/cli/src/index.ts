@@ -8,7 +8,7 @@ import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseWrangler, parseWranglerToml, wranglerToConfig, wranglerStages, droppedWranglerKeys, embeddingDims } from "./wrangler.ts";
 import { hasPagesFunctions, writePagesWorker, compilesAtStartup, EVAL_AT_STARTUP_DEFAULT_DATE, PAGES_ENTRY } from "./pages-functions.ts";
-import { generateAlchemy } from "./gen/alchemy.ts";
+import { generateAlchemy, referencedApps } from "./gen/alchemy.ts";
 import { generateWrangler } from "./gen/wrangler.ts";
 import { buildDesktop } from "./build.ts";
 import { smoke } from "./smoke.ts";
@@ -49,7 +49,7 @@ import { installCommand, applyOverrides, workspaceRoot, DEPLOY_DEPS } from "./gl
 import { workspacePrebuild } from "./glue/workspace-build.ts";
 import { Profiler } from "./profile.ts";
 import { adoptProblem, adoptQuestion, confirmAdopt, forceFresh, isolationFlags, ISOLATION_ARGS, modeLine } from "./isolation.ts";
-import { adoptNote, alchemyStage, bootstrapped, deployedIn, linkSharedState, lockState, noteChild, transferNote, unlinkSharedState } from "./state.ts";
+import { adoptNote, alchemyStage, bootstrapped, deployedIn, linkReferencedStates, linkSharedState, lockState, noteChild, transferNote, unlinkSharedState } from "./state.ts";
 import { runScoped, spawnScoped, step } from "./lifecycle.ts";
 import { commitsBehindMain, protectedClassDrops, statefulDeletes, strayState } from "./guard.ts";
 import { checkSpend, costReport } from "./costs.ts";
@@ -905,7 +905,7 @@ function guardDeploy(sub: string, cfg: RustyBunsConfig, stage: string, waive: { 
   const behind = cfg.targets.edge?.adopt && !waive.force ? commitsBehindMain(process.cwd()) : null;
   if (behind) problems.push(`HEAD is ${behind} commit${behind === 1 ? "" : "s"} behind origin/main, and this is a live site (targets.edge.adopt): ` +
     `deploying would roll back what main shipped since. Rebase on origin/main first, or pass --force.`);
-  const stray = waive.force ? null : strayState(process.cwd(), cfg.name, stage);
+  const stray = waive.force ? null : strayState(process.cwd(), cfg.name, stage, referencedApps(cfg.bindings ?? {}));
   if (stray) problems.push(`stage ${stage}'s Alchemy state is under the app name "${stray}", not "${cfg.name}": deploying would make every resource again. ` +
     `Move .alchemy/state/${stray} to .alchemy/state/${cfg.name} first, or pass --force.`);
   const deletes = waive.allowDelete ? [] : statefulDeletes(process.cwd(), cfg, stage, readFileSync(".rustybuns/alchemy.run.ts", "utf8"));
@@ -1008,6 +1008,9 @@ const alchemy = (sub: string, rawArgs: string[]) => runScoped(Effect.gen(functio
     const base = linkSharedState(process.cwd());
     if (base) { yield* Effect.acquireRelease(Effect.sync(() => lockState(base, sub)), (release) => Effect.sync(release)); lockBase = base; }
   }
+  // A ref into another app's stack (service, Durable Object, d1 `app`) reads that app's state through a link in ours.
+  const referenced = referencedApps(cfg.bindings ?? {});
+  if (!offline && referenced.length) linkReferencedStates(process.cwd(), referenced);
   // Said first and last, so "is this touching real resources?" never has to be worked out from a plan.
   const mode = modeLine(cfg, { forced: iso.fresh, offline });
   if (profiled || drifting || sub === "destroy") console.log(mode + "\n");
