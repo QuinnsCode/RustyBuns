@@ -108,7 +108,9 @@
           <div class="slip">
           <div class="row">
             <!-- the terms as a sentence the reader completes (#3671 round 111): the choices are words in it, not form fields -->
-            <p class="terms">Let them meet in the <select id="skin" aria-label="Arena"></select>, <label><input type="checkbox" id="watch" /> or sit back and watch two bots</label>.</p>
+            <!-- round 112: the arena is the word itself (the list opens from it), and the bots' clause is struck out
+                 until you ink it in; the select and checkbox stay underneath, unseen, for keys and screen readers -->
+            <p class="terms">Let them meet in the <span class="arena"><b id="arenaWord" aria-hidden="true"></b><select id="skin" aria-label="Arena"></select></span><label class="bots" title="Strike it out to fight yourself; ink it in to watch two bots"><input type="checkbox" id="watch" /><span>, or sit back and watch two bots</span></label>.</p>
             <button id="fight" class="go">Fight</button>
             <button id="cards" title="Every beast's card: its pictures and its stats">Bestiary</button>
             <button id="pickerBack">Back</button>

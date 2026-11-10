@@ -77,8 +77,8 @@
   .fchart header button::before { -webkit-mask-box-image: url("/paper/deckle.png") 48 / 8px round; box-shadow: inset 0 0 0 3px transparent, inset 0 0 0 4.2px rgba(70, 42, 18, 0.62); } /* small buttons, a finer fray */
 }
 .paper .icon { stroke-width: 1.8; }
-.paper .lore { background: rgba(120, 80, 30, 0.09); border-left: 3px solid var(--ink-line); border-radius: 0; font-size: 15px; }
-.paper .lore b, .paper .lore .src { color: var(--ink-faded); }
+:is(.paper, .select.book) .lore { background: rgba(120, 80, 30, 0.09); border-left: 3px solid var(--ink-line); border-radius: 0; font-size: 15px; }
+:is(.paper, .select.book) .lore b, :is(.paper, .select.book) .lore .src { color: var(--ink-faded); }
 .paper .radar .grid { stroke: var(--ink-line); }
 .paper .radar text { fill: var(--ink-faded); font-family: var(--f-book); }
 .paper .radar .n { fill: var(--ink-b); }
@@ -1248,9 +1248,20 @@ body > .gc-dialog .gc-card button.gc-close:hover, .journal #closeJournal:hover, 
 /* the ring's terms as a sentence (#3671 round 111): "Let them meet in the Stadium, or sit back and watch two bots."
  * The arena is a word in the hand on a dotted line; the bots' box sits in the sentence like a scribe's tick-box */
 .select.book .slip .row .terms { flex: 1 1 100%; margin: 0 0 6px; text-align: center; font-family: var(--f-book); font-style: italic; font-size: 18px; line-height: 1.7; color: var(--ink-faded); }
-.select.book .slip .row .terms select { display: inline-block; vertical-align: baseline; width: 7.5em; field-sizing: content; min-width: 3em; max-width: 11em; font-size: 21px; padding: 0 16px 0 2px; }
-.select.book .slip .row .terms label { display: inline; gap: 0; }
-.select.book .slip .row .terms input[type=checkbox] { display: inline-block; vertical-align: -2px; margin: 0 4px 0 2px; }
+/* round 112: no widget left in the sentence. The arena is its name in the hand, underlined in red; the select lies
+ * over it unseen, so a click or a key opens the list from the word. The bots' clause is struck through in ink until
+ * you ink it in (the checkbox under it, unseen); a dashed ring shows where the keyboard is. */
+.select.book .slip .row .terms .arena { position: relative; display: inline-block; white-space: nowrap; }
+.select.book .slip .row .terms .arena b { font-family: var(--f-hand); font-style: normal; font-weight: 400; font-size: 22px; color: var(--ink-b); text-decoration: underline 1.5px rgba(123, 29, 20, 0.55); text-decoration-style: dotted; text-underline-offset: 5px; text-shadow: 0.45px 0.55px 0 currentColor; }
+.select.book .slip .row .terms .arena:hover b { color: var(--blood); text-decoration-style: solid; }
+.select.book .slip .row .terms .arena select { position: absolute; inset: 0; width: 100%; max-width: none; height: 100%; opacity: 0; padding: 0; background: none; cursor: pointer; font-size: 16px; }
+.select.book .slip .row .terms .arena:has(select:focus-visible) { outline: 2px dashed var(--blood); outline-offset: 3px; }
+.select.book .slip .row .terms label.bots { display: inline; gap: 0; cursor: pointer; color: inherit; }
+.select.book .slip .row .terms label.bots input { position: absolute; opacity: 0; width: 1px; height: 1px; margin: 0; pointer-events: none; }
+.select.book .slip .row .terms label.bots span { text-decoration: line-through 1.8px rgba(123, 29, 20, 0.8); text-decoration-skip-ink: none; color: var(--ink-faded); transition: color 0.25s; }
+.select.book .slip .row .terms label.bots:hover span { color: var(--ink-faded); text-decoration-color: var(--blood); }
+.select.book .slip .row .terms label.bots input:checked + span { text-decoration: none; color: var(--ink-b); font-family: var(--f-hand); font-style: normal; font-size: 20px; text-shadow: 0.45px 0.55px 0 currentColor; }
+.select.book .slip .row .terms label.bots:has(input:focus-visible) span { outline: 2px dashed var(--blood); outline-offset: 3px; }
 
 /* --- the Book's first talk: the Book itself opens (the title's spread, its words facing the plate) -----------------
  * After the abduction it lands on your chest; its cedar cover swings open on the spine and it says its first line. */

@@ -261,7 +261,11 @@ function drawLore() {
   if (lore) el.innerHTML = `<p>${esc(lore.legend)}</p><p><b>From</b> ${esc(lore.from)}</p><p><b>Sacred</b> ${esc(lore.sacred)}</p>`
     + `<p class="src"><b>Sources</b> ${lore.sources.map(esc).join(" · ")}</p>`;
 }
-skinSel.addEventListener("change", drawLore);
+// The arena is written into the terms as a word (#3671 round 112): the plain name, the list's numbering left out.
+const arenaName = (id: string) => SKINS[id]?.name ?? REGIONS.find((r) => r.id === id)?.name ?? id;
+const drawArena = () => { $("#arenaWord").textContent = arenaName(skinSel.value); };
+skinSel.addEventListener("change", () => { drawArena(); drawLore(); });
+drawArena();
 drawLore();
 // Each side: the pick's full card, then every fighter as a small tile (a dot per field), narrowed by the field chips.
 let only: Field | null = null;
