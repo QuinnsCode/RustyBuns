@@ -841,7 +841,10 @@ const DUG_R = 26, KEEP_R = 22;   // how far from a held post the lines run, and 
 const HERO_EDGE = 0.006, HERO_EDGE_MAX = 0.12; // per kill, and most, off the damage the hero's side takes
 const SLACK = 0.12;                            // the hero's side, behind: up to this much less damage taken
 const BAND = 0.2;                              // the AI side, behind or ahead: up to this much tougher or softer
-const VS_MARINE_HERO = 0.9, VS_WOOKA_HERO = 1.12;
+// What the human's side takes, by faction. A Wooka human attacking leads a melee horde into dug-in guns, so takes a
+// touch less, like the Marines; holding, the horde's numbers do the work, and 1.12 kept the scripted player
+// about 85% against +45% (at 1.12 attacking too, the Wooka won 7 of 48 attacks to the Marines' 26, #3476).
+const VS_MARINE_HERO = 0.9, VS_WOOKA_HERO = { attacker: 0.93, defender: 1.12 } as const;
 // A human at the controls with the balance help on (a spec turns it off with `assist: false`, for hands-on checks).
 const assisted = (b: Battle) => b.played && b.spec.assist !== false;
 export function settle(b: Battle) {
@@ -851,7 +854,7 @@ export function settle(b: Battle) {
     const lead = clamp(share(me) - share(foe), -1, 1);
     t[me] *= (1 - Math.min(HERO_EDGE_MAX, HERO_EDGE * b.hero.kills)) * (1 + SLACK * Math.min(0, lead));
     t[foe] *= lead > 0 ? 1 - BAND * lead : 1 - BAND * 0.5 * lead;
-    t[me] *= isHorde(b, me) ? VS_WOOKA_HERO : VS_MARINE_HERO;
+    t[me] *= isHorde(b, me) ? VS_WOOKA_HERO[me] : VS_MARINE_HERO;
   }
   b.tough = t;
 }
