@@ -320,9 +320,9 @@ describe("two friends in one region", () => {
     k = keepSeen(k, { ...NO_SEEN, picks: [{ id: cell(39), at: 1 }] }); // told again: one entry, the newest
     const hunt = (i: number) => `${60 + i}.${"9".repeat(6)}.${"9".repeat(6)}`;
     for (let i = 0; i < 10; i++) k = keepSeen(k, { ...NO_SEEN, hunts: [{ h: hunt(i), s: 3, n: "W".repeat(24) }] });
-    k = keepSeen(k, { ...NO_SEEN, hunts: [{ h: hunt(6), s: 0, n: "Late" }] }); // a friend behind on the trail: the sign 3 stays
+    k = keepSeen(k, { ...NO_SEEN, hunts: [{ h: hunt(8), s: 0, n: "Late" }] }); // a friend behind on the trail: the sign 3 stays
     expect([k.picks.length, k.flown.length, k.roost.length, k.busy.length, k.hunts?.length]).toEqual([KEEP.picks, KEEP.flown, KEEP.roost, KEEP.busy, KEEP.hunts]);
-    expect(k.hunts?.[0]).toEqual({ h: hunt(6), s: 3, n: "W".repeat(24) });
+    expect(k.hunts?.[0]).toEqual({ h: hunt(8), s: 3, n: "W".repeat(24) });
     expect(k.picks[0]).toEqual({ id: cell(39), at: 1 });
     expect(k.picks.filter((p) => p.id === cell(39)).length).toBe(1);
     // with the seat's own pose and anchor beside it, well inside a socket attachment's 2 KB
