@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { board, isClimb, next, score, target, type Climb } from "./climbs.ts";
+import { board, isClimb, movedTo, next, score, target, type Climb } from "./climbs.ts";
 
 test("a round's Score line sets the score and target; without one the last x/10 is a guess", () => {
   const rows: [string, string[], number | null, number | null, boolean][] = [
@@ -35,4 +35,13 @@ test("the next round goes to the free climb furthest from its target, idle longe
   expect(next([c(1, 2, { taken: 3409 }), c(2, 3, { stalled: true }), c(3, 9.2), c(4, 6)])?.number).toBe(4);
   expect(next([c(1, 4, { touched: "2026-11-03T00:00:00Z" }), c(2, 4, { touched: "2026-10-30T00:00:00Z" })])?.number).toBe(2);
   expect(next([c(1, 9), c(2, 1, { taken: 1 })])).toBeNull();
+});
+
+test("a climb left open after it moved up is flagged on the board and never handed out", () => {
+  expect(movedTo("Phase done here; the score is carried by #3516 and #3455. Moved up to #3516.")).toBe(3516);
+  expect(movedTo("Score: 4/10 (target 9)\nNext: rivers")).toBeNull();
+  const c = (number: number, score: number, moved: number | null = null): Climb =>
+    ({ number, title: `climb ${number}`, score, scale: 10, target: 9, guessed: false, touched: "2026-11-02T00:00:00Z", taken: null, stalled: false, moved });
+  expect(next([c(2802, 1.5, 3516), c(3516, 4)])?.number).toBe(3516);
+  expect(board([c(2802, 1.5, 3516)])[0]).toContain("(moved up to #3516, close it)");
 });
