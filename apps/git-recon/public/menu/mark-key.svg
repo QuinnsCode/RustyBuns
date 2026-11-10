@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24">
+  <!-- The field manual's stencil: a key cap with a crosshair struck through it. -->
+  <g fill="none" stroke="#fff" stroke-width="2.2"><path d="M4 3h7M13 3h7v7M20 12v9h-7M11 21H4v-7M4 12V3"/></g>
+  <path fill="#fff" d="M11 7h2v4h4v2h-4v4h-2v-4H7v-2h4z"/>
+</svg>
