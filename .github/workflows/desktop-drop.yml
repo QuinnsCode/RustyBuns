@@ -110,6 +110,11 @@ jobs:
         run: ${{ matrix.prep }}
       - if: matrix.test
         run: ${{ matrix.test }}     # a native binary still gets its tests on its own OS
+      # 1.4.3 installs (1.4.4's isolated install panics on Linux, #2506); 1.4.4 builds, since a compiled
+      # binary embeds the Bun that built it and 1.4.3 carries CVE-2026-111497 (#2228)
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with: { bun-version: "1.4.4" }
+      - run: '[ "$(bun --version)" = 1.4.4 ]'
       - run: ${{ matrix.build }}
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
