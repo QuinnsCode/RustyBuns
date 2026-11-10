@@ -68,14 +68,14 @@ export class Region {
     }
   }
 
-  /** The region's wilds as the room keeps them (#3859): picked patches, flushed flocks, roosts and busy dens. Every seat
-   *  carries the same copy on its attachment, so it lasts through hibernation and past whoever told it leaving. */
+  /** The region's wilds as the room keeps them (#3859): picked patches, flushed flocks, roosts, busy dens and the party's
+   *  contracts (#4081). Every seat carries the same copy on its attachment, so it lasts through hibernation and past whoever told it leaving. */
   private wilds(): Seen {
     for (const ws of this.sockets.open()) { const k = this.sockets.who(ws)?.wilds; if (k) return k; }
     return NO_SEEN;
   }
-  private keepWilds(add: Seen) {
-    const k = keepSeen(this.wilds(), add);
+  private keepWilds(add: Seen) { this.setWilds(keepSeen(this.wilds(), add)); }
+  private setWilds(k: Seen) {
     for (const ws of this.sockets.open()) { const s = this.sockets.who(ws); if (s) this.sockets.attach(ws, { ...s, wilds: k }); }
   }
 
@@ -153,6 +153,8 @@ export class Region {
     if (ev?.e === "hunt") {
       if (seat.loose || !huntNear(ev.h, seat.p)) return; // a board nowhere near them: no contract to tell the party about
       this.sockets.broadcast({ t: "hunt", id: seat.id, h: ev.h, s: ev.s }, ws, others);
+      // and kept, so a friend who joins after they left can still follow it to the lair
+      this.keepWilds({ ...NO_SEEN, hunts: [{ h: ev.h, s: ev.s, n: seat.name.slice(0, 24) }] });
       return;
     }
     if (ev?.e === "fought") {
@@ -162,6 +164,9 @@ export class Region {
       if (!seat.met || !plausible(seat.met, ev, now)) return;
       this.sockets.attach(ws, { ...seat, met: { ...seat.met, at: now, n: seat.met.n + 1 } });
       this.sockets.broadcast({ t: "fought", id: seat.id, c: ev.c, lv: ev.lv, won: ev.won, bound: ev.bound }, ws, others);
+      // A lair's creature beaten closes its contract: a friend who joins later isn't sent after it.
+      const k = this.wilds(), den = seat.met.den;
+      if (ev.won && sharedDen(den) && k.hunts?.some((h) => `hunt:${h.h}` === den)) this.setWilds({ ...k, hunts: k.hunts.filter((h) => `hunt:${h.h}` !== den) });
       return;
     }
     if (ev?.e === "hurt") {

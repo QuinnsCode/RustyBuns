@@ -73,12 +73,15 @@ const CELL = /^-?[0-9]{1,6},-?[0-9]{1,6}$/;
 export const AGO_MS = 3 * 60_000;
 /** A line-up fights a den one beast after another: at most this many reports per den (FIGHT.perDen). */
 const FIGHT_PER_DEN = 6;
+/** A contract someone in the party is on, as the room keeps it: the furthest sign anyone read (`s`, 0 for just taken) and
+ *  the name of who read it. Only ever from a `hunt` the room believed (by its board), never from a page's own catch-up. */
+export interface OnHunt { h: string; s: number; n: string }
 /** What a newcomer should know: the patches picked lately and the flocks up (with their world-clock times), the flocks
- *  that have landed somewhere new, and the dens a friend is busy at. */
-export interface Seen { picks: { id: string; at: number }[]; flown: { id: string; at: number; h: number }[]; roost: { id: string; x: number; z: number }[]; busy: string[] }
+ *  that have landed somewhere new, the dens a friend is busy at, and (from the room alone) the contracts the party is on. */
+export interface Seen { picks: { id: string; at: number }[]; flown: { id: string; at: number; h: number }[]; roost: { id: string; x: number; z: number }[]; busy: string[]; hunts?: OnHunt[] }
 /** How much of the region's wilds the room keeps for a late joiner (#3859): the newest of each kind. Small, because it rides
  *  on every seat's socket attachment (about 2 KB each, with the seat's own pose): a full record is under 1.3 KB. */
-export const KEEP = { picks: 12, flown: 8, roost: 6, busy: 6 } as const;
+export const KEEP = { picks: 12, flown: 8, roost: 6, busy: 6, hunts: 4 } as const;
 export const NO_SEEN: Seen = { picks: [], flown: [], roost: [], busy: [] };
 /** The room's record of the region's wilds with `add` folded in: the newest of each kind first, one per patch, flock or den. */
 export function keepSeen(kept: Seen, add: Seen): Seen {
@@ -92,9 +95,20 @@ export function keepSeen(kept: Seen, add: Seen): Seen {
     flown: fold(add.flown, kept.flown, (x) => x.id, KEEP.flown),
     roost: fold(add.roost, kept.roost, (x) => x.id, KEEP.roost),
     busy: fold(add.busy, kept.busy, (x) => x, KEEP.busy),
+    ...((add.hunts?.length || kept.hunts?.length) && { hunts: keepHunts(kept.hunts ?? [], add.hunts ?? []) }),
   };
 }
-export const seenEmpty = (s: Seen) => !s.picks.length && !s.flown.length && !s.roost.length && !s.busy.length;
+/** The contracts kept, newest told first, one per contract at the furthest sign anyone read: a friend behind you on the
+ *  trail reading sign 1 doesn't take a late joiner back from your sign 3. */
+function keepHunts(kept: readonly OnHunt[], add: readonly OnHunt[]): OnHunt[] {
+  let out = [...kept];
+  for (const a of add) {
+    const was = out.find((k) => k.h === a.h);
+    out = [was && was.s > a.s ? was : a, ...out.filter((k) => k.h !== a.h)];
+  }
+  return out.slice(0, KEEP.hunts);
+}
+export const seenEmpty = (s: Seen) => !s.picks.length && !s.flown.length && !s.roost.length && !s.busy.length && !s.hunts?.length;
 const SEEN = {
   picks: arr(obj({ id: str(24, { re: CELL }), at: num(0, 7200) }), 30),
   flown: arr(obj({ id: str(24, { re: CELL }), at: num(0, 7200), h: num(-10, 10, 0) }), 30),
@@ -259,7 +273,7 @@ const NAME = str(24, { min: 0 });
 const PLAYER = obj({ id: PID, name: NAME, p: (v: unknown) => parseDelta(v) ?? {} });
 const SERVER: Guard<ServerMsg> = (v) => {
   const t = typeof v === "object" && v !== null && "t" in v ? v.t : undefined;
-  if (t === "all") return obj({ t: oneOf(["all"]), you: PID, age: int(0, 1e12), players: arr(PLAYER, MAX_PLAYERS), seen: opt(obj(SEEN)) })(v);
+  if (t === "all") return obj({ t: oneOf(["all"]), you: PID, age: int(0, 1e12), players: arr(PLAYER, MAX_PLAYERS), seen: opt(obj({ ...SEEN, hunts: opt(arr(obj({ h: str(32, { re: HUNT }), s: int(0, SIGNS), n: NAME }), KEEP.hunts, { min: 0 })) })) })(v);
   if (t === "den") return obj({ t: oneOf(["den"]), id: PID, den: str(48, { re: DEN }), c: POSE.l })(v);
   if (t === "seen") return obj({ t: oneOf(["seen"]), id: PID, ...SEEN })(v);
   if (t === "time") return obj({ t: oneOf(["time"]), age: int(0, 1e12) })(v);
