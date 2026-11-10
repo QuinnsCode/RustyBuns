@@ -206,7 +206,7 @@ const thrusters = car.userData.thrusters as Thruster[];
 const plate = car.userData.plate as THREE.Group;
 
 let mode: Mode = showroom ? "car" : "skate"; // the board is the game; the roadster is the skin you swap to
-const begin = () => { const p = spawn(level); return start(p.x, p.z, p.yaw, level); };
+const begin = () => { const p = spawn(level); return start(p.x, p.z, p.yaw, level, true); };
 let sim: State = begin();
 let before = poseOf(sim); // where the board was one step ago, so a frame can draw between the two
 const reset = () => {
@@ -337,7 +337,7 @@ mountAgent({
   start: (name) => {
     const p = isSpotName(name) ? spotFor(level, name) : level.spawns.find((s) => s.name === name);
     if (!p) return false;
-    sim = start(p.x, p.z, p.yaw, level); before = poseOf(sim); chase.snap(sim, skins.current); ui.reset();
+    sim = start(p.x, p.z, p.yaw, level, true); before = poseOf(sim); chase.snap(sim, skins.current); ui.reset();
     return true;
   },
   perf: () => perf.read(),

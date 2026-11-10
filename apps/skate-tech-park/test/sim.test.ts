@@ -365,3 +365,17 @@ test("held jets push on the ground only: in the air they add nothing, so Shift i
   expect(fly(true)).toBeCloseTo(fly(false), 5);
   expect(fly(true)).toBeCloseTo(30, 0);
 });
+
+test("at a spawn on a hillside the rider keeps a foot down until the first key, then the hill takes the board again", async () => {
+  const { LEVELS } = await import("../src/levels/index.ts");
+  const dome = (await LEVELS.find((e) => e.id === "half-dome")!.load()) as Level & { spawns: { x: number; z: number; yaw: number }[] };
+  const sp = dome.spawns[0]!; // "dome view": a loose board rolls off it fakie at about 12 km/h
+  const loose = run(start(sp.x, sp.z, sp.yaw, dome), 5, () => ({}), dome);
+  expect(Math.hypot(loose.x - sp.x, loose.z - sp.z)).toBeGreaterThan(2);
+
+  const s = run(start(sp.x, sp.z, sp.yaw, dome, true), 5, () => ({}), dome);
+  expect([s.x, s.z, s.speed]).toEqual([sp.x, sp.z, 0]);
+  run(s, 2, () => ({ throttle: 1 }), dome);
+  expect(s.planted).toBe(false);
+  expect(Math.hypot(s.x - sp.x, s.z - sp.z)).toBeGreaterThan(2);
+});

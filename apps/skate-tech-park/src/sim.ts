@@ -276,10 +276,14 @@ export type State = {
   prevJump: boolean;
   prevFlip: boolean;
   prevFlick: boolean;
+  planted?: boolean; // a foot on the ground at a start: the board stays put, on a slope too, until the rider does anything
 };
 
-export function start(x = 0, z = -20, yaw = 0, level: Level = plaza): State {
+/** A board at rest at (x, z). `planted`: the rider stands with a foot down, as at a spawn, so it doesn't roll off down the
+ *  hill before the first key; the first input lifts it. */
+export function start(x = 0, z = -20, yaw = 0, level: Level = plaza, planted = false): State {
   return {
+    ...(planted ? { planted } : {}),
     t: 0, x, y: level.height(x, z), z, vx: 0, vy: 0, vz: 0, yaw, lip: 0, pitch: 0, roll: 0, speed: 0,
     air: false, airTime: 0, spun: 0, spin: 0, flipT: 0, flipKind: "kickflip", tricks: [], grind: -1, grindTime: 0,
     grindKind: "50-50", grindOff: 0, balance: 0, lean: 0, push: 0, grindAt: 0, grindSide: 1, grindSpun: 0, grab: 0, grabRail: 0, grabTime: 0, grabs: [], grindNose: 0, stall: false, wall: -1, wallN: [0, 1], stance: "regular", switched: false, revert: 0, revertDir: 1,
@@ -497,6 +501,15 @@ function skid(s: State, level: Level) {
 
 /** One fixed step on `level` (the plaza unless told otherwise). Mutates and returns `s`. */
 export function step(s: State, inp: Input, level: Level = plaza): State {
+  const moved = inp.throttle || inp.steer || inp.jump || inp.nollie || inp.boost || inp.flip || inp.flick || inp.fan || inp.manual;
+  if (!s.planted || moved) { s.planted = false; return advance(s, inp, level); }
+  // the foot is down: the step still sets the board to the ground's pitch and roll, but it doesn't roll anywhere
+  const { x, z, yaw } = s;
+  advance(s, inp, level);
+  return Object.assign(s, { x, z, yaw, y: level.height(x, z), vx: 0, vy: 0, vz: 0, speed: 0, spin: 0, air: false });
+}
+
+function advance(s: State, inp: Input, level: Level): State {
   const tune = TUNE;
   const pops = inp.jump || inp.nollie, pressed = pops && !s.prevJump;
   const flipPressed = inp.flip && !s.prevFlip;
