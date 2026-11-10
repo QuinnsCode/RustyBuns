@@ -13,9 +13,13 @@ The book speaks two ways, both in its hand (Fondamento italic, a quill's broad n
 - **A demand** wants something done. It is signed "the Book" (`SIGNATURE` in `src/demand.ts`).
 - **A margin note** remarks on what is on the page. It is unsigned.
 
-**On hold:** #3266 had a late-game secret (the book is a wizard's list of contacts, so every note read twice). It came
-before "there is no wizard", and whether it stays, changes or goes is the owner's call. Until then the phone-book double
-reading below is optional: a line may carry it, but none needs it.
+**The late-game secret (owner, 2026-11-10, #4145).** #3266's secret comes back, reworked for a world with no wizard.
+The magic in this world is what an eldritch being left behind: it passed over the earth, and what it dropped was worked
+into the ground like a herd's muck into a field, so the land came up full of it. Every cryptid and every odd thing in
+the world grows out of that. The Book is the being's own contacts list, and its contacts are the bosses: each region's
+mythic is a name in it. So a margin note can still read twice, once as a grimoire and once as a phone book, and the
+second reading is about the mythics. Hint at it only (rule 5: the Book never explains what the forces are). The owner
+writes the reveal; until then, no line states it.
 
 ## The rules
 
@@ -76,7 +80,7 @@ The demands and receipts in `src/demand.ts` (`demandOf`, `reactionOf`, `deckDema
 ## Twenty margin lines from the first pass
 
 From before "there is no wizard" (#3266): fine as margin notes, and each shows the grimoire reading, then the
-phone-book one that is on hold.
+phone-book one (now about the mythics, see the late-game secret above).
 
 | # | Line | First reading | On a second look |
 |---|---|---|---|
