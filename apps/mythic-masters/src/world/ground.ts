@@ -122,6 +122,17 @@ float gNoise(vec2 p) {
   vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
   return mix(mix(gHash(i), gHash(i + vec2(1, 0)), f.x), mix(gHash(i + vec2(0, 1)), gHash(i + vec2(1, 1)), f.x), f.y);
 }
+// the same noise with its slope: x the value, yz how fast it climbs along x and z (per unit of p)
+vec3 gNoiseD(vec2 p) {
+  vec2 i = floor(p), f = fract(p), u = f * f * (3.0 - 2.0 * f), du = 6.0 * f * (1.0 - f);
+  float a = gHash(i), b = gHash(i + vec2(1, 0)), c = gHash(i + vec2(0, 1)), e = gHash(i + vec2(1, 1)), k = a - b - c + e;
+  return vec3(a + (b - a) * u.x + (c - a) * u.y + k * u.x * u.y, du * vec2(b - a + k * u.y, c - a + k * u.x));
+}
+// the floor's own relief near the camera (mounds a couple of metres across, bumps, lumps): gH its height 0 to 1, gRelief
+// the way it leans the surface; gPud how much standing water lies in its low ground (set in the main block)
+float gH;
+vec2 gRelief;
+float gPud;
 // one layer's detail at a point: the texture at a 2 m tile times the same texture bigger and turned, so the repeat does not show
 // gPick: where (0 to 1) the 2 m tile is swapped for a copy turned and shifted (gUvB), patches a few metres across, so a
 // crack or a ripple never lines up with its neighbour; only the narrow seam between the two reads both
@@ -180,6 +191,26 @@ const GLSL_FRAG_MAIN = `
     float gMat = (1.0 - smoothstep(0.22, 0.37, gMatP)) * gOpen * step(0.02, w[0] + w[1]);
     float gMatI = w[0] >= w[1] ? 0.0 : 1.0;   // which litter, chosen before the weights move
     gWet = clamp(gWet + gHollow * 0.45, 0.0, 1.0);
+    // the floor is not a plane: mounds, bumps and lumps under the litter, by what it is made of (sand and snow lie smooth,
+    // a litter floor heaves over roots and old logs), strongest round your feet and gone by 40 m; the low ground between
+    // shades darker, the tops catch the light. Water stands in the low ground where it is wet: dark, still and shiny
+    float gRelAmt = (w[0] + w[1]) * 1.0 + (w[2] + w[3]) * 0.8 + w[4] * 0.75 + w[5] * 0.3 + w[6] * 0.6 + w[7] * 0.25;
+    float gRel = (1.0 - smoothstep(8.0, 40.0, gDist)) * gRelAmt;
+    float gPudLvl = (gWet - 0.55) * 0.4 * smoothstep(0.1, 0.3, vGk.z) * (1.0 - w[7]) * (1.0 - 0.8 * w[5]) * (1.0 - smoothstep(30.0, 50.0, gDist));
+    gH = 0.5; gRelief = vec2(0.0); gPud = 0.0;
+    float gShore = 0.0;
+    if (gRel > 0.01 || gPudLvl > 0.0) {
+      vec3 gR1 = gNoiseD(vGp.xz * 0.55 + vec2(13.1, 2.7)), gR2 = gNoiseD(turn * vGp.xz * 2.3 + vec2(4.4, 8.1));
+      gH = gR1.x * 0.62 + gR2.x * 0.38;
+      gRelief = -(gR1.yz * 0.8 + (gR2.yz * turn) * 0.7) * gRel;   // the second back from its turned frame to world x and z
+      if (gPudLvl > 0.0) {
+        float gPudH = gH + (gR2.x - 0.5) * 0.1 - 0.3;   // a shore that wanders, not a contour line
+        gPud = smoothstep(gPudLvl - 0.005, gPudLvl - 0.03, gPudH);
+        gShore = smoothstep(gPudLvl + 0.06, gPudLvl - 0.01, gPudH) * (1.0 - gPud);
+        gWet = max(gWet, gShore);
+      }
+    }
+    gRelief *= 1.0 - gPud;
     for (int i = 0; i < 8; i++) w[i] *= 1.0 - gPan - gMat;
     w[3] += gPan * (1.0 - gGravel); w[6] += gPan * gGravel;
     w[0] += gMat * (1.0 - gMatI); w[1] += gMat * gMatI;
@@ -256,6 +287,10 @@ const GLSL_FRAG_MAIN = `
     // damp ground darkens and cools (grass a good deal less), dry ground pales; the trees shade what is under them
     float gDamp = smoothstep(0.35, 1.0, gWet) * (1.0 - 0.6 * w[2]), gDry = 1.0 - smoothstep(0.0, 0.3, gWet);
     gDetail *= mix(vec3(1.0), vec3(0.6, 0.62, 0.66), gDamp) * (1.0 + 0.12 * gDry) * (1.0 - 0.16 * vGk.w);
+    // the relief's shade: the hollows darker, the crowns a touch lighter; a dark damp rim round the water, the water dark
+    gDetail *= mix(1.0, clamp(1.0 + (gH - 0.5) * 1.6, 0.55, 1.18), gRel * (1.0 - gPud));
+    gDetail *= 1.0 - 0.3 * gShore;
+    gDetail = mix(gDetail, gDetail * vec3(0.28, 0.3, 0.27), gPud);
   }
 `;
 
@@ -268,12 +303,20 @@ export function groundLook(mat: THREE.MeshStandardMaterial, tex: GroundTextures,
       .replace("#include <begin_vertex>", "#include <begin_vertex>\nvGw0 = gw0; vGw1 = gw1; vGk = gk; vGp = position; vGn = normal;");
     sh.fragmentShader = sh.fragmentShader.replace("#include <common>", `#include <common>\n${GLSL_FRAG_DECL}`)
       .replace("#include <map_fragment>", `#include <map_fragment>\n${GLSL_FRAG_MAIN}\n  diffuseColor.rgb = mix(diffuseColor.rgb, vec3(dot(diffuseColor.rgb, vec3(0.3, 0.55, 0.15))), gGrey) * gDetail;`)
-      .replace("#include <roughnessmap_fragment>", "#include <roughnessmap_fragment>\n  roughnessFactor *= 1.0 - 0.3 * smoothstep(0.4, 1.0, gWet);")
+      .replace("#include <roughnessmap_fragment>", "#include <roughnessmap_fragment>\n  roughnessFactor = mix(roughnessFactor * (1.0 - 0.45 * smoothstep(0.4, 1.0, gWet)), 0.06, gPud);")
+      // standing water shows the sky at a slant (the room's reflection is too dim to): the hemisphere light's sky, by Fresnel
+      .replace("#include <emissivemap_fragment>", `#include <emissivemap_fragment>
+  #if NUM_HEMI_LIGHTS > 0 && !defined(FLAT_SHADED)
+  if (gPud > 0.01) {
+    float gF = 0.04 + 0.96 * pow(1.0 - clamp(dot(normalize(vViewPosition), normalize(vNormal)), 0.0, 1.0), 5.0);
+    totalEmissiveRadiance += hemisphereLights[0].skyColor * gF * gPud * 0.22;
+  }
+  #endif`)
       .replace("#include <normal_fragment_maps>", `#include <normal_fragment_maps>
   {
     vec3 gT = normalize((viewMatrix * vec4(1.0, 0.0, 0.0, 0.0)).xyz), gB = normalize((viewMatrix * vec4(0.0, 0.0, 1.0, 0.0)).xyz);
     gT = normalize(gT - normal * dot(gT, normal)); gB = normalize(gB - normal * dot(gB, normal));
-    normal = normalize(normal + (gT * gNormal.x + gB * gNormal.y) * ${NORMAL_STRENGTH});
+    normal = normalize(normal + (gT * gNormal.x + gB * gNormal.y) * ${NORMAL_STRENGTH} * (1.0 - gPud) + gT * gRelief.x + gB * gRelief.y);
   }`);
     if (hole) {
       sh.uniforms.uHole = hole.centre;
