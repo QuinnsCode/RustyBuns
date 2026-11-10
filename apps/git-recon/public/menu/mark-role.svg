@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24">
+  <!-- The "Role" bin's stencil: three rank chevrons, each cut at the point by a stencil bridge. -->
+  <g fill="none" stroke="#000" stroke-width="3" stroke-linejoin="miter">
+    <path d="M3 9.5l7.6-5.2M13.4 4.3L21 9.5M3 15l7.6-5.2M13.4 9.8L21 15M3 20.5l7.6-5.2M13.4 15.3L21 20.5"/>
+  </g>
+</svg>

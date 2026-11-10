@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <!-- A requisition slip's carbon: faint ruled lines with the odd smudge, tiled behind the typed fields. -->
+  <g stroke="#3d5a8a" stroke-opacity="0.16" stroke-width="1"><path d="M0 15.5h64M0 31.5h64M0 47.5h64M0 63.5h64"/></g>
+  <g fill="#141414" fill-opacity="0.05"><ellipse cx="12" cy="40" rx="7" ry="2"/><ellipse cx="50" cy="8" rx="4" ry="1.4"/></g>
+</svg>

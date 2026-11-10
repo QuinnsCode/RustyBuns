@@ -353,6 +353,41 @@ html.touch .bl { bottom: 156px; }
 /* The loadout is a parts tray: each row a recessed bin in the table, its label a black stamped tab. */
 .menu .more .look { position: relative; margin: 20px 0 14px; padding: 20px 12px 12px; border-radius: 8px; background: #efede7; box-shadow: inset 0 2px 5px #0003, inset 0 0 0 1px #14141426; }
 .menu .more .look .look-label { position: absolute; top: -10px; left: 12px; padding: 3px 9px 2px; border-radius: 3px; background: var(--br-ink); color: #fff; font-size: 12px; }
+/* Round 7 (#3610): the kit is issued on a classified sheet. Opened, "More" is a ruled frame with the scope's brackets,
+   a typed form number and a CLASSIFIED stamp in the corner; each bin's tab carries a stencilled mark (mark-you.svg,
+   mark-role.svg); the forms under it are typed requisition slips with a perforated top, a slip number and carbon lines
+   (slip.svg). Art: mark-you 0.5 KB, mark-role 0.4 KB, mark-key 0.3 KB, slip 0.4 KB. */
+.menu .more[open] { position: relative; margin: 14px -10px 0; padding: 0 10px 14px;
+  background: url(/menu/grit.svg) 0 0 / 140px, #fdfcf8;
+  outline: 1px solid var(--br-ink); outline-offset: -1px; box-shadow: inset 0 0 0 4px #fdfcf8, inset 0 0 0 5px #14141440; }
+.menu .more[open] > summary { margin: 0 -10px 4px; padding: 10px 14px 8px; border-top: 0; border-bottom: 2px solid var(--br-ink); background: #f3f1ea; }
+.menu .more[open] > summary::after { content: "KIT ISSUE \2022  FORM GR-11"; display: block; margin-top: 6px; font: 700 10px/1.4 var(--mono); letter-spacing: 0.16em; color: var(--br-dim); }
+.menu .more[open]::after { content: "CLASSIFIED"; position: absolute; right: 18px; top: 54px; padding: 2px 8px; pointer-events: none; transform: rotate(8deg);
+  font: 900 15px/1.2 var(--br-stencil); letter-spacing: 0.14em; color: var(--br-hot-ink); border: 3px double var(--br-hot-ink); border-radius: 4px; opacity: 0.85;
+  -webkit-mask: url(/menu/stamp.svg) 0 0 / 160px 54px; mask: url(/menu/stamp.svg) 0 0 / 160px 54px; }
+.menu .more .look .look-label, .results .look .look-label { display: inline-flex; align-items: center; gap: 6px; }
+.menu .more .look:has(#builds) .look-label::before, .menu .more .look:has(#roles) .look-label::before, .results .look .look-label::before {
+  content: ""; width: 14px; height: 14px; flex: none; background: currentColor;
+  -webkit-mask: url(/menu/mark-role.svg) center / contain no-repeat; mask: url(/menu/mark-role.svg) center / contain no-repeat; }
+.menu .more .look:has(#builds) .look-label::before { -webkit-mask-image: url(/menu/mark-you.svg); mask-image: url(/menu/mark-you.svg); }
+.results .look .look-label::before { background: var(--br-hot-ink); }
+/* The requisition slips: any repo, any place, a battle. Typed on carbon, torn off a pad along the perforation, numbered. */
+.menu .more :is(.repo-form, .place, .battle) { counter-increment: slip; position: relative; box-sizing: border-box; min-width: 0; margin: 18px 0 0; padding: 22px 14px 10px;
+  border: 1px solid #14141433; border-top: 0; background: url(/menu/slip.svg) 0 6px / 64px, #fffdf6; box-shadow: 2px 3px 0 #14141414;
+  -webkit-mask: radial-gradient(circle at 5px 0, #0000 2.5px, #000 3px) 0 0 / 10px 100% repeat-x; mask: radial-gradient(circle at 5px 0, #0000 2.5px, #000 3px) 0 0 / 10px 100% repeat-x; }
+.menu .more { counter-reset: slip; }
+.menu .more :is(.repo-form, .place, .battle)::before { content: "REQ \2116  0" counter(slip); position: absolute; top: 7px; right: 12px;
+  font: 700 10px/1 var(--mono); letter-spacing: 0.16em; color: var(--br-hot-ink); }
+.menu .more .place { transform: rotate(-0.4deg); }
+.menu .more .battle { transform: rotate(0.3deg); }
+.menu .more :is(.repo-form, .place, .battle) label { font: 700 11px/1.3 var(--mono); letter-spacing: 0.12em; color: var(--br-dim); }
+.menu .more :is(.repo-form, .place, .battle) input, .menu .more .battle select { background: #0000; font-family: var(--mono); border-bottom: 1.5px dotted var(--br-ink); }
+/* The keys at the bottom are the card stapled inside the cover: typed, framed, its mark on the tab. */
+.menu .more .keys { position: relative; margin-top: 22px; padding: 22px 12px 10px; border: 1.5px solid var(--br-ink); background: #fff; }
+.menu .more .keys::before { content: "KEY CARD"; position: absolute; top: -9px; left: 12px; padding: 3px 9px 2px 26px; border-radius: 3px;
+  font: 800 11px/1 var(--br-stencil); letter-spacing: 0.1em; color: #fff;
+  background: url(/menu/mark-key.svg) 8px 50% / 12px no-repeat, var(--br-ink); }
+.menu .more .keys dt { font-weight: 700; }
 
 /* Missions are dog tags: brushed steel with rolled edges, the name stamped in, a hole punched for the chain. */
 .menu .level {
@@ -453,13 +488,28 @@ html .ui-house .gc-icon:disabled { opacity: 1; color: #8d8f88; background: #f2f0
 html .ui-house .gc-sec-b { font: 13px/1.45 var(--mono); }
 html .ui-house .gc-sec-b :is(dt, label) { font-family: var(--mono); }
 html .ui-house .gc-key { white-space: normal; height: auto; min-height: 40px; padding: 6px 10px; line-height: 1.15; }
+/* Each section is a sheet of the manual: a stamped double frame on carbon, its header a black stencilled tab with the
+   key mark, and the first row clear of it. */
+html .ui-house .gc-sec { border: 1.5px solid #141414; border-radius: 0; box-shadow: inset 0 0 0 3px #fff, inset 0 0 0 4px #14141433;
+  background: url(/menu/slip.svg) 0 4px / 64px, #fffdf6; }
+html .ui-house .gc-sec-h { min-height: 40px; color: #fff; background: #141414; font: 800 14px/1 var(--br-stencil); text-transform: uppercase; letter-spacing: 0.1em; }
+html .ui-house .gc-sec-h:hover { background: #2b2b2b; }
+html .ui-house .gc-sec-b { padding: 12px 12px 12px; }
 
 @media (max-width: 560px) {
   /* Room under the Controls cog; the briefing scrolls under a band of the table that fades it out beneath the cog. */
   .menu { padding: 64px 20px 20px; }
-  .menu::before { content: ""; position: fixed; inset: 0 0 auto 0; height: 64px; z-index: 2; pointer-events: none; background: linear-gradient(var(--br-sheet) 55%, #fbfaf700); }
+  .menu::before { content: ""; position: fixed; inset: 0 0 auto 0; height: 72px; z-index: 2; pointer-events: none; background: linear-gradient(var(--br-sheet) 78%, #fbfaf700); }
   .results { padding: 24px 20px; }
   .menu .card, .results .card { padding: 22px 16px 16px; border-left-width: 6px; }
+  /* The way out sits clear of the bottom corner brackets. */
+  .results .card { padding-bottom: 34px; }
+  /* No room for the stamp beside the bins: it would land on the text. The slips type smaller and wrap inside the slip. */
+  .menu .more[open]::after { display: none; }
+  .menu .more :is(.place, .battle) { grid-template-columns: minmax(0, 1fr); padding: 22px 10px 10px; }
+  .menu .more .repo-form { padding: 22px 10px 10px; }
+  .menu .more :is(.repo-form, .place, .battle) label { letter-spacing: 0.06em; }
+  .menu .more :is(.place, .battle) .row > * { min-width: 0; }
   .menu .card::before, .results .card::before { font-size: 9px; letter-spacing: 0.14em; }
   .menu .card::after { width: 80px; height: 22px; top: -9px; left: -24px; }
   .menu h1 { font-size: 28px; gap: 8px; margin: 10px 0 18px; }
