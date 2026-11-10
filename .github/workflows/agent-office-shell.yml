@@ -51,6 +51,13 @@ jobs:
         with: { workspaces: apps/agent-office/shell }
       - if: steps.v.outputs.ship == 'true'
         run: bun install --frozen-lockfile
+      # 1.4.3 installs (1.4.4's isolated install panics, on macOS runners too, #2506); 1.4.4 compiles, since the
+      # binary embeds the Bun that built it and 1.4.3 carries CVE-2026-111497 (#2228)
+      - if: steps.v.outputs.ship == 'true'
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with: { bun-version: "1.4.4" }
+      - if: steps.v.outputs.ship == 'true'
+        run: '[ "$(bun --version)" = 1.4.4 ]'
       - name: Compile the Bun binary for both Macs
         if: steps.v.outputs.ship == 'true'
         working-directory: apps/agent-office

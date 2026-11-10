@@ -1,7 +1,8 @@
 # Agent Office in a box. Build from the repo root (the build needs the workspace):
 #   docker build -f apps/agent-office/sandbox/Dockerfile -t agent-office-box .
 # or let `bun run office:box up` do it, with the permission set from sandbox/box.json (SANDBOX.md).
-# pinned: bun 1.4.4 panics in `compile` (index out of bounds) while 1.4.3 builds the same tree; the digest keeps a retagged 1.4.3 from changing the build
+# two Buns, by digest: 1.4.4 panics in its isolated `bun install` on Linux (index out of bounds, #2506), so 1.4.3 installs;
+# 1.4.4 compiles, since a compiled binary embeds the Bun that built it (1.4.3 still has CVE-2026-111497, #2228)
 FROM oven/bun:1.4.3@sha256:ec06c3b6cea04192ae6770c434f668ca41d343ad19fa6472216c7b48be39c598 AS src
 WORKDIR /repo
 COPY . .
@@ -15,7 +16,9 @@ WORKDIR /repo
 COPY --from=src /manifests ./
 RUN bun install --frozen-lockfile
 
-FROM deps AS build
+FROM oven/bun:1.4.4@sha256:1d22548f177f4ff38e0c15baa3c2c46c6c2060ba2d1bc573bb4720b407548f1d AS build
+COPY --from=deps /repo /repo
+WORKDIR /repo
 # only the release tarball's download, keyed on release.ts alone (verified again by the build)
 COPY apps/agent-office/scripts/release.ts apps/agent-office/scripts/release.ts
 RUN cd apps/agent-office && bun -e 'import { PINNED, releaseTarball } from "./scripts/release.ts"; await releaseTarball(PINNED.tag, PINNED.sha256, ".cache")'
