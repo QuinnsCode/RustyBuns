@@ -5,6 +5,11 @@ What exists today is in the [README](../README.md); this doc says what changes. 
 (the ore), **warrens** (the Wooka's dens and landing holds), **the Gale** (the storm), **objective points**
 (what wins), **command cards** (bought with energy).
 
+> **Built.** Sections 1 to 8 are in the game now; the README has the rules as they are. Where the code went
+> another way: phases 3 and 4 are called **Armada** and **Invasion** (`src/war/phases.ts`, #3561), and a flank
+> gives the fleet +1 on its best die rather than +1 hull. The trickle in §8 shipped with the sim's numbers, not
+> the starting ones. Of section 10, the Gale's radio lines and the Wooka's evening at home (`content/`) are in; the rest is not built.
+
 ## 1. The turn, made legible
 
 Four turns make a year, a season each: **Thaw, Highsun, Dustfall, Frost**. Turn `T` is year `ceil(T/4)`,
@@ -246,7 +251,7 @@ What the sim should answer (`scripts/sim.ts`, AI against AI, every sector, both 
 
 The sim's verdict is in [INTERPLAY.md](INTERPLAY.md): pods every 20 s at a post the holder still holds, R = 15 a minute a ship,
 T = min(100, 50 × ships), D = 60 s; the cut-off rule is what keeps a fast rush viable, the cap (not the rate) sets how much the
-sky is worth, and today's landing constants can stay. It goes into `BattleSpec.reinforcements` as a rate and a cap.
+sky is worth, and today's landing constants can stay. It is in `BattleSpec.reinforcements` as a rate and a cap (`orbitPods` in `src/battle/contract.ts`).
 
 ## 9. A worked turn: year 2, turn 6, Thunder Marines, short map
 

@@ -98,7 +98,7 @@ It walks every two-parent merge (not only first-parent: a repo that merges only 
 conflicts in "merge main into the branch" commits), keeps the ones git's own merge-tree conflicts on, and
 runs each conflicted file through `shadow()` with the merge commit's copy as the truth.
 
-Measured 2026-10-13 on git/git: 3,718 merges scanned, 400 conflicted in git, 470 conflicted text files (218
+Measured 2026-10-13 on git/git: 3,718 merges scanned, 400 conflicted in git, 467 conflicted text files (218
 more skipped: binary, over 3,000 lines, deleted on a side, symlinks).
 
 | What Mervin did with a file git gave up on | Files | Share |
@@ -193,7 +193,8 @@ bun scripts/mervin-board.ts --score <dir>   # after the real merge round: was th
 
 Mervin's pal. When `--check` goes red, Ester (`scripts/ester.ts`) sorts each failing test by owner: **main** (fails
 on main in the same sandbox, ignore), **flaky** (passed when only the failing runs were rerun once), **own** (an app
-a PR with red CI of its own touches: that PR fixes it first), **wait** (the same, but its CI is still running: hold it) and **blocks** (only the merged tree breaks it; the PRs
+a PR with red CI of its own touches: that PR fixes it first), **wait** (the same, but its CI is still running: hold it), **slow** (the PR waits only on checks that always take 10
+minutes or more: merge on the fast ones, not held) and **blocks** (only the merged tree breaks it; the PRs
 that touched that app are named as suspects). Only `blocks` fails the check, and Ester ends with the PRs to hold back. Her report ends with the times she
 weighs a rerun by: the slowest runs in the sandbox, what the flaky rerun cost, and the slowest CI check GitHub timed
 on each PR.
@@ -271,8 +272,9 @@ too holds the line instead. The ruleset on `main` still decides. After the train
 **How long it takes.** The plan (no `--go`) on a real board of 5 to 6 open PRs took 3.4 to 5.0 s over three runs on 2026-10-14 (laptop, home network), about 0.7 s a PR, almost all of it `gh` reads (one `gh pr view` was 0.9 s, one `gh pr checks` 1.3 s). Nobody has yet timed a 30-PR board or a `--go` round (the concurrent merges, the `mergeable` poll, `gh run rerun --failed`); those touch GitHub for real and wait on the owner (#1771). The run prints `train done in X s` for the merge step, so the first real `--go` gives the number.
 
 The lines
-are stamped so the owner can tail a run. Not done yet: running it inside a codeSplitter sandbox box, and pushing
-alerts as it goes (the stdout lines are the feed for that).
+are stamped so the owner can tail a run. `--live` also appends the run's events to `.mervin/live.ndjson` for the
+watch page (`bun scripts/mervin-watch.ts`, #1731), whose pause button holds the next merge of a `--go` for real.
+Not done yet: running it inside a codeSplitter sandbox box.
 
 ### Mervin speaks up (#1519)
 
@@ -290,8 +292,8 @@ override. The advice is recorded in the round file.
   (C, Rust, Python, Go, shell) a stretch both sides changed where git would have stopped, and Mervin settled, now
   comes back as a `check` (#1389), like the prose fact checks: it never holds the merge, and the writer can settle it
   with a text. Where the repo has a `package.json` with a `test` or `build` script and test merges is on, that script runs on the merged tree first, and a failure comes back as a `lint:tests` conflict (#1401), settled as the branch to land anyway. Repos with no `package.json` run `make` (a Makefile), `cargo build` (Cargo.toml) or `go build ./...` (go.mod) instead, with nothing installed first (#1407); with none of those they are still only flagged. A `.rs` or `.py` file both sides changed also gets, with test merges on, a parse (Python `ast`) and a `cargo check` in its crate on the merged tree, even in a mixed repo; a failure is a `lint:syntax` conflict, settled as the branch to land anyway (#2446). A box without python3 or cargo skips that tool; the hosted sandbox image has python3 but not cargo yet.
-- **Never run on anyone else's history until now.** The 80% goal in this doc is about seeing fights coming; the
-  recall number for it (mervin-score) still needs a corpus that keeps real merges (the `lines` predictor is in).
+- **Recall measured on one small repo.** The 80% goal in this doc is about seeing fights coming; the recall number
+  for it (mervin-score) is only from expressjs/express so far (above), and still needs a bigger corpus that keeps real merges.
 - **Visible now, thinly.** The merge plan line and `GET /api/repos/:o/:r/merge-plan` (`engine`) name him, and the repo page
   and `GET /api/mervin` show the git/git corpus (settled / asked / other text, `src/mervin.ts`). The numbers there are
   this doc's table, not a live per-repo tally, and the merge page does not credit him per file yet.
@@ -300,7 +302,7 @@ override. The advice is recorded in the round file.
 
 Built: the opt-in, the event log, the weekly report and delete-my-data (`src/mervin-learning.ts`;
 `GET|PUT|DELETE /api/repos/:o/:r/mervin`; the Mervin panel on the repo page). Events sit in D1 for now; the R2
-pipeline below, demoting a level and proposing rules are still design. The engine stays deterministic: learning never changes how a merge is computed, it changes what
+pipeline below and demoting a level are still design. The engine stays deterministic: learning never changes how a merge is computed, it changes what
 Mervin notices and how he orders and flags, and it is off until a repo turns it on.
 
 **What is kept.** One small event per merge, with no file contents and no diffs: repo, file extension, resolver
@@ -316,7 +318,7 @@ Mervin (Worker) -> Pipeline (stream + SQL transform) -> R2 Data Catalog (Iceberg
 
 This is the Basin skill's product set: Basin Pipelines to ingest, Basin Catalog for the Iceberg tables in R2,
 Basin SQL to query across them (formerly Pipelines, R2 Data Catalog and R2 SQL). Per-repo hot state (the open-PR
-overlap map) stays in the MervinDO ([mervin-engine.md](mervin-engine.md)); R2 holds the history that is too
+overlap map) would stay in a MervinDO ([mervin-engine.md](mervin-engine.md), not built); R2 holds the history that is too
 wide for it.
 
 **What it is asked.**
@@ -329,7 +331,7 @@ wide for it.
   or proposed as a `.gitattributes` rule for a person to approve.
 
 **Report.** A weekly summary per repo (settled, asked, wrong, top fighting paths, rules proposed), on the repo
-page and `GET /api/mervin`. Self-heal means demoting a level or suggesting a rule; it never rewrites history or
+page and `GET /api/repos/:o/:r/mervin`. Self-heal means demoting a level or suggesting a rule; it never rewrites history or
 merges anything new without the same guards as today.
 
 **Opt-in.** Off by default, per repo, switchable in settings, with delete-my-data. Nothing leaves the account
@@ -340,7 +342,7 @@ in a deploy) is deleted. A merge records one row per file that fought or was set
 answer; `src/mervin-learn.ts` queries those rows. In the merge plan, branches whose files fought more go after calmer ones
 (one place at most, stacks and held branches keep their order), and card answers that repeat come back as `rules` to approve.
 Paths are hashed with the repo's name unless the owner sets `hash_paths: false`; delete-my-data removes every event (no salt
-is kept). Levels are not learned: no event records which level settled a file.
+is kept). Levels are not learned: past `mergiraf`, no event records which level settled a file.
 
 The Pipelines-to-Iceberg design below is where this goes if D1 ever gets too big; it is not built.
 
@@ -474,7 +476,7 @@ it: `waves` and `mergeable` come off the rows, and `get_board` with `pr` says wh
 `get_board` also answers small (#1593): `brief=1` gives about four lines, ids first (`mergeable`, `red`, `waiting` on what, `waves`), and
 `fields=ci,owner` keeps just those row fields. Experiment: do the board check three ways on the same task (raw `gh pr list --json ...`,
 the same narrowed with `jq`/`tail`, and `get_board` with `brief=1`), and compare tokens and turns with Dexter (`bun apps/agent-office/ester/dexter.ts`).
-The unit test prices the three shapes on 30 PRs; the real numbers come from Dexter on live sessions.
+The real numbers come from Dexter on live sessions.
 
 ```sh
 CODESPLITTER_TOKEN=... bun scripts/mervin-live.ts --url https://<codesplitter> --repo owner/name   # --once, --dry
