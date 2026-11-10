@@ -252,31 +252,38 @@ describe("two friends in one region", () => {
     ivy.close(); jo.close();
   });
 
-  test("what a friend picked and flushed outlasts them: one who joins after they left still finds it", async () => {
+  test("what a friend picked, flushed and tracked outlasts them: one who joins after they left still finds it", async () => {
     const ada = join("Ada", "KEEP1"), bo = join("Bo", "KEEP1");
     ada.update(5, 13800, 5600, 0, "hodag", performance.now()); bo.update(5, 13810, 5600, 0, "hodag", performance.now());
     await until(() => ada.status === "in" && bo.status === "in");
     walk(ada, 5, 13800, 4); walk(bo, 5, 13810, 4);
     await until(() => [...ada.ghosts.values()].some((g) => g.pose.r === 5) && [...bo.ghosts.values()].some((g) => g.pose.r === 5));
     ada.life("pick", "197,80"); ada.life("flush", "125,50", 1.5);
-    await until(() => heard.includes("Bo: flush 125,50") && heard.includes("Bo: pick 197,80"));
+    // Ada reads the second sign of the contract on the board beside her; Bo, behind her on the trail, the first after.
+    ada.hunt("5.13900.5600", 2);
+    await until(() => heard.includes("Bo: flush 125,50") && heard.includes("Bo: pick 197,80") && heard.includes("Bo: Ada hunt 5.13900.5600 2"));
+    bo.hunt("5.13900.5600", 1);
+    await Bun.sleep(100);
     ada.close();
     await Bun.sleep(300);
     const cy = join("Cy", "KEEP1");
     cy.update(5, 13820, 5600, 0, "hodag", performance.now());
     await until(() => cy.status === "in", 8000);
     await until(() => heard.some((l) => l.startsWith("Cy: pick 197,80 at")) && heard.some((l) => l.startsWith("Cy: flush 125,50 at")));
+    // and the contract Ada was on, at the furthest sign anyone read, so Cy can follow it to the lair
+    await until(() => heard.includes("Cy: Ada hunt 5.13900.5600 2"));
+    expect(heard).not.toContain("Cy: Bo hunt 5.13900.5600 1");
     cy.close(); bo.close();
   });
 
-  test("a lair's creature is one creature: a friend's blows reach the other, and one who walks in late finds it hurt", async () => {
+  test("a lair's creature is one creature: a friend's blows reach the other, one who walks in late finds it hurt, and beating it closes the contract", async () => {
     // Region 1's first contract: the Rougarou, level 9, at its lair (the two-page journey's lair too).
-    const den = "hunt:1.19074.1638", hurts: string[] = [];
-    const page = (name: string) => new Online("LAIR1", { opened: () => OPENED, base: party.url, guest: { uid: `${name}-uid-0000`, name }, onHurt: (d, _id, n) => hurts.push(`${name}: ${d} ${n}`) });
+    const den = "hunt:1.19074.1638", hurts: string[] = [], told: string[] = [];
+    const page = (name: string) => new Online("LAIR1", { opened: () => OPENED, base: party.url, guest: { uid: `${name}-uid-0000`, name }, onHurt: (d, _id, n) => hurts.push(`${name}: ${d} ${n}`), onHunt: (h, st, who) => told.push(`${name}: ${who} hunt ${h} ${st}`), onFought: (fo) => told.push(`${name}: ${fo.who} fought`) });
     const ada = page("Ada"), bo = page("Bo");
     ada.update(1, 19420, 2395, 0, "hodag", performance.now()); bo.update(1, 19430, 2395, 0, "squonk", performance.now());
     await until(() => ada.status === "in" && bo.status === "in");
-    ada.met(den, "rougarou", 9); bo.met(den, "rougarou", 9);
+    ada.hunt("1.19074.1638", 3); ada.met(den, "rougarou", 9); bo.met(den, "rougarou", 9);
     // Half its health off in the first second can't be (a whole creature takes 3 s at the least): the room believes
     // a third of it, and Bo hears that.
     await Bun.sleep(1000);
@@ -294,7 +301,16 @@ describe("two friends in one region", () => {
     await until(() => cy.status === "in");
     cy.met(den, "rougarou", 9);
     await until(() => hurts.includes(`Cy: ${den} 600`));
-    ada.close(); bo.close(); cy.close();
+    expect(told).toContain("Cy: Ada hunt 1.19074.1638 3");
+    // Ada beats it: the room forgets the contract, so Dee, joining after, isn't sent after a creature that is gone.
+    ada.fought("rougarou", 9, true, false, 3);
+    await until(() => told.includes("Bo: Ada fought"));
+    const dee = page("Dee");
+    dee.update(1, 19425, 2390, 0, "hodag", performance.now());
+    await until(() => dee.status === "in");
+    await Bun.sleep(200);
+    expect(told.filter((h) => h.startsWith("Dee:"))).toEqual([]);
+    ada.close(); bo.close(); cy.close(); dee.close();
   });
 
   test("the room's record of the wilds keeps the newest of each kind, one per patch, and fits on a seat's socket", () => {
@@ -302,7 +318,11 @@ describe("two friends in one region", () => {
     let k = NO_SEEN;
     for (let i = 0; i < 40; i++) k = keepSeen(k, { picks: [{ id: cell(i), at: 7199.5 }], flown: [{ id: cell(i), at: 7199.5, h: -9.99 }], roost: [{ id: cell(i), x: 99_999.9, z: 99_999.9 }], busy: [den(i)] });
     k = keepSeen(k, { ...NO_SEEN, picks: [{ id: cell(39), at: 1 }] }); // told again: one entry, the newest
-    expect([k.picks.length, k.flown.length, k.roost.length, k.busy.length]).toEqual([KEEP.picks, KEEP.flown, KEEP.roost, KEEP.busy]);
+    const hunt = (i: number) => `${60 + i}.${"9".repeat(6)}.${"9".repeat(6)}`;
+    for (let i = 0; i < 10; i++) k = keepSeen(k, { ...NO_SEEN, hunts: [{ h: hunt(i), s: 3, n: "W".repeat(24) }] });
+    k = keepSeen(k, { ...NO_SEEN, hunts: [{ h: hunt(8), s: 0, n: "Late" }] }); // a friend behind on the trail: the sign 3 stays
+    expect([k.picks.length, k.flown.length, k.roost.length, k.busy.length, k.hunts?.length]).toEqual([KEEP.picks, KEEP.flown, KEEP.roost, KEEP.busy, KEEP.hunts]);
+    expect(k.hunts?.[0]).toEqual({ h: hunt(8), s: 3, n: "W".repeat(24) });
     expect(k.picks[0]).toEqual({ id: cell(39), at: 1 });
     expect(k.picks.filter((p) => p.id === cell(39)).length).toBe(1);
     // with the seat's own pose and anchor beside it, well inside a socket attachment's 2 KB

@@ -126,7 +126,12 @@ export class Online {
   }
 
   /** A friend's (or the room's) catch-up on the wilds: each pick and flush with its time on the world clock, then the roosts and busy dens. */
-  private told(m: Seen) { for (const p of m.picks) this.o.onLife?.("pick", p.id, 0, p.at); for (const f of m.flown) this.o.onLife?.("flush", f.id, f.h, f.at); this.o.onSeen?.({ roost: m.roost, busy: m.busy }); }
+  private told(m: Seen) {
+    for (const p of m.picks) this.o.onLife?.("pick", p.id, 0, p.at);
+    for (const f of m.flown) this.o.onLife?.("flush", f.id, f.h, f.at);
+    this.o.onSeen?.({ roost: m.roost, busy: m.busy });
+    for (const h of m.hunts ?? []) this.o.onHunt?.(h.h, h.s, h.n); // on `all` only: what the room kept, told by friends who may have left
+  }
 
   private hear(m: ServerMsg, now: number) {
     if (m.t === "all") {
