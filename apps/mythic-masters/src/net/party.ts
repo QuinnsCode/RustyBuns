@@ -80,8 +80,8 @@ export interface OnHunt { h: string; s: number; n: string }
  *  that have landed somewhere new, the dens a friend is busy at, and (from the room alone) the contracts the party is on. */
 export interface Seen { picks: { id: string; at: number }[]; flown: { id: string; at: number; h: number }[]; roost: { id: string; x: number; z: number }[]; busy: string[]; hunts?: OnHunt[] }
 /** How much of the region's wilds the room keeps for a late joiner (#3859): the newest of each kind. Small, because it rides
- *  on every seat's socket attachment (about 2 KB each, with the seat's own pose): a full record is under 1.3 KB. */
-export const KEEP = { picks: 12, flown: 8, roost: 6, busy: 6, hunts: 4 } as const;
+ *  on every seat's socket attachment (2 KB at most, with the seat's own pose): a full record, contracts too, is about 1.6 KB. */
+export const KEEP = { picks: 12, flown: 8, roost: 6, busy: 6, hunts: 3 } as const;
 export const NO_SEEN: Seen = { picks: [], flown: [], roost: [], busy: [] };
 /** The room's record of the region's wilds with `add` folded in: the newest of each kind first, one per patch, flock or den. */
 export function keepSeen(kept: Seen, add: Seen): Seen {

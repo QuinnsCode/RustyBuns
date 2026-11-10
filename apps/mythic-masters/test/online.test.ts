@@ -278,8 +278,8 @@ describe("two friends in one region", () => {
 
   test("a lair's creature is one creature: a friend's blows reach the other, one who walks in late finds it hurt, and beating it closes the contract", async () => {
     // Region 1's first contract: the Rougarou, level 9, at its lair (the two-page journey's lair too).
-    const den = "hunt:1.19074.1638", hurts: string[] = [];
-    const page = (name: string) => new Online("LAIR1", { opened: () => OPENED, base: party.url, guest: { uid: `${name}-uid-0000`, name }, onHurt: (d, _id, n) => hurts.push(`${name}: ${d} ${n}`), onHunt: (h, st, who) => hurts.push(`${name}: ${who} hunt ${h} ${st}`), onFought: (fo) => hurts.push(`${name}: ${fo.who} fought`) });
+    const den = "hunt:1.19074.1638", hurts: string[] = [], told: string[] = [];
+    const page = (name: string) => new Online("LAIR1", { opened: () => OPENED, base: party.url, guest: { uid: `${name}-uid-0000`, name }, onHurt: (d, _id, n) => hurts.push(`${name}: ${d} ${n}`), onHunt: (h, st, who) => told.push(`${name}: ${who} hunt ${h} ${st}`), onFought: (fo) => told.push(`${name}: ${fo.who} fought`) });
     const ada = page("Ada"), bo = page("Bo");
     ada.update(1, 19420, 2395, 0, "hodag", performance.now()); bo.update(1, 19430, 2395, 0, "squonk", performance.now());
     await until(() => ada.status === "in" && bo.status === "in");
@@ -301,15 +301,15 @@ describe("two friends in one region", () => {
     await until(() => cy.status === "in");
     cy.met(den, "rougarou", 9);
     await until(() => hurts.includes(`Cy: ${den} 600`));
-    expect(hurts).toContain("Cy: Ada hunt 1.19074.1638 3");
+    expect(told).toContain("Cy: Ada hunt 1.19074.1638 3");
     // Ada beats it: the room forgets the contract, so Dee, joining after, isn't sent after a creature that is gone.
     ada.fought("rougarou", 9, true, false, 3);
-    await until(() => hurts.includes("Bo: Ada fought"));
+    await until(() => told.includes("Bo: Ada fought"));
     const dee = page("Dee");
     dee.update(1, 19425, 2390, 0, "hodag", performance.now());
     await until(() => dee.status === "in");
     await Bun.sleep(200);
-    expect(hurts.filter((h) => h.startsWith("Dee:") && h.includes("hunt"))).toEqual([]);
+    expect(told.filter((h) => h.startsWith("Dee:"))).toEqual([]);
     ada.close(); bo.close(); cy.close(); dee.close();
   });
 
