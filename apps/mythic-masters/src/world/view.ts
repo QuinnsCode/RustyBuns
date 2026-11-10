@@ -910,8 +910,9 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
   const map = hud.querySelector<HTMLCanvasElement>("canvas")!, MW = (COLS - 1) / 2, MH = (ROWS - 1) / 2;
   map.width = MW; map.height = MH;
   const ctx = map.getContext("2d"), img = ctx?.createImageData(MW, MH), base = new Uint8ClampedArray(MW * MH * 4);
-  let toastUntil = 0, mapAt = 0, mapStale = false;
-  function toast(html: string) { toastEl.innerHTML = html; toastEl.hidden = false; toastUntil = performance.now() + 3500; }
+  // A toast's 3.5 s run only while the world does: the Book talking over it, a pause or a fight holds it (#4145).
+  let toastUntil = 0, ranAt = 0, mapAt = 0, mapStale = false;
+  function toast(html: string) { toastEl.innerHTML = html; toastEl.hidden = false; toastUntil = (ranAt = performance.now()) + 3500; }
   const places = poiView(group, camera, drawnY, hooks.places, (p) => enterTown(p.id));
 
   // --- towns (towns.ts): a sighting board's door walks you into the town's pocket, its own small scene: the gas station,
@@ -1238,6 +1239,9 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
      *  the camera, a light push walks slowly), dash runs, turnLeft / turnRight turn the camera, `turn` (radians, from a
      *  right stick or a drag) turns it too, and the map action opens the big map. */
     update(dt: number, keys: ReadonlySet<string>, stick: Stick = NO_STICK, turn = 0) {
+      const tick = performance.now();
+      if (toastUntil && tick - ranAt > 250) toastUntil += tick - ranAt;
+      ranAt = tick;
       if (inside) { walkInside(inside, dt, keys, stick, turn); return; }
       const on = (k: string) => keys.has(k);
       yaw += ((on("turnRight") ? 1 : 0) - (on("turnLeft") ? 1 : 0)) * 1.8 * dt + turn;
