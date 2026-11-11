@@ -28,8 +28,11 @@ const Created = obj({ number: int(1, 1e9) });
 const KIND = { bug: "Bug", suggestion: "Suggestion", error: "Error" } as const;
 const LABEL = { bug: "bug", suggestion: "enhancement", error: "bug" } as const;
 
-/** Anyone on the internet writes this text into a public repo: no pings, no auto-linked issue numbers. */
-const tame = (s: string) => s.replace(/@/g, "@​").replace(/(^|\s)#(\d)/g, "$1#​$2");
+/**
+ * Anyone on the internet writes this text into a public repo: no pings, no auto-linked issue numbers (`#12`, `(#12)`,
+ * `a/b#12`), and no github.com link, which GitHub turns into a cross-reference on the issue it names.
+ */
+const tame = (s: string) => s.replace(/@/g, "@\u200b").replace(/#(\d)/g, "#\u200b$1").replace(/github\.com/gi, "github\u200b.com");
 const cell = (s: string) => tame(s).replace(/[|\r\n]+/g, " ");
 const fence = (s: string) => "```\n" + s.replace(/```/g, "'''") + "\n```";
 
@@ -43,7 +46,8 @@ export async function issueOf(app: QApp, r: Report, userId: string, userAgent: s
     "| | |", "|---|---|",
     `| Game | ${app.name} (\`${app.id}\`) |`,
     `| Kind | ${KIND[r.kind]} |`,
-    ...(r.page ? [`| Page | ${cell(r.page)} |`] : []),
+    // The path only: a query or fragment can carry a party or invite code, and this issue is public.
+    ...(r.page ? [`| Page | ${cell(r.page.split(/[?#]/)[0]!)} |`] : []),
     ...(r.build ? [`| Build | ${cell(r.build)} |`] : []),
     ...(userAgent ? [`| Browser | ${cell(userAgent.slice(0, 200))} |`] : []),
     "",

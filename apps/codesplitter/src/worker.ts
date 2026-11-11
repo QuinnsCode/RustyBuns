@@ -645,7 +645,7 @@ async function route(req: Request, env: Env): Promise<Response> {
     // GET /api/repos/:o/:r/git-state  mirror, push, pull, uncommitted files and clashes, in one answer (git-state.ts)
     if (p[4] === "git-state" && req.method === "GET") return json(await gitState(env, owner, repo));
     // GET /api/repos/:o/:r/fit[?dir=apps/web]  how easily Rusty Buns could box it, or one app in it
-    if (p[4] === "fit" && req.method === "GET") return repoFit(env, (r) => app.fetch(r, env), url.origin, owner, repo, user, url.searchParams.get("dir") ?? "");
+    if (p[4] === "fit" && req.method === "GET") return repoFit(env, (r) => app.fetch(r, env), url.origin, owner, repo, user, url.searchParams.get("dir") ?? "", a.write);
     // GET /api/repos/:o/:r/share[?branch=&ttl=]  a git clone line with a read token that lasts ttl seconds (a day by default, a week at most, an hour for crew on a private repo: removing them can't recall it), to hand to someone
     if (p[4] === "share" && !p[5] && req.method === "GET") {
       const branch = url.searchParams.get("branch");
