@@ -22,3 +22,9 @@ const PATHS: Record<string, string> = {
 };
 export const icon = (name: string, title?: string) =>
   `<svg viewBox="0 0 24 24" aria-hidden="${title ? "false" : "true"}"${title ? ` role="img"><title>${title}</title>` : ">"}${PATHS[name] ?? ""}</svg>`;
+
+// A screen's how-to, out of the way (#4235): a small "?" by the panel's heading opens `about(id, ...)` as a native
+// popover; a click outside it or Escape shuts it. No script.
+export const info = (id: string, label: string) =>
+  `<button type="button" class="info" popovertarget="${id}" title="${label}" aria-label="${label}">${icon("help-circle")}</button>`;
+export const about = (id: string, html: string) => `<div id="${id}" class="about" popover>${html}</div>`;
