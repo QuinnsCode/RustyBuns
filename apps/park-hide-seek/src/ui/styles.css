@@ -355,3 +355,16 @@ body:has(#lobby:not([hidden])) .narrator p { display: none; }
 .chip-patch svg { display: block; width: 100%; height: 100%; }
 [data-tod="night"] .lobby-main h3.trail > span { background: repeating-linear-gradient(177deg, rgba(0, 0, 0, 0.12) 0 2px, transparent 2px 7px), #23402a; }
 [data-tod="night"] .lobby-main h3.trail .blaze { fill: #fff2b0; }
+
+/* a screen's how-to, out of the way (index.html): a small ? opens it as a popover; a click outside or Escape shuts it */
+button.info.info.info { display: inline-grid; flex: none; aspect-ratio: 1; min-height: 0; min-width: 0; place-items: center; width: 26px; height: 26px; padding: 0; padding-inline: 0; margin-left: 6px; vertical-align: middle; border-radius: 50%; border: 1.5px solid currentColor; background: none; box-shadow: none; color: var(--muted); font: 700 14px/1 var(--plate); text-shadow: none; cursor: help; }
+button.info.info.info svg { width: 16px; height: 16px; }
+h2 button.info.info.info { width: 20px; height: 20px; margin-left: 4px; } h2 button.info.info.info svg { width: 13px; height: 13px; }
+.about[popover] { max-width: min(34rem, calc(100vw - 32px)); max-height: calc(100dvh - 32px); overflow: auto; padding: 18px 22px; border: 2px solid var(--brown); border-radius: 6px; background: var(--paper); color: var(--ink); font: 14px/1.45 var(--grid); }
+.about[popover]::backdrop { background: rgba(0, 0, 0, 0.35); }
+.about p { margin: 0 0 10px; }
+.about .keys { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; margin: 12px 0 0; }
+.about .keys dt { font: 700 12px/1.6 var(--plate); }
+.about .keys dd { margin: 0; color: var(--muted); }
+.poster-head > button.info.info.info { position: absolute; top: 8px; right: 8px; z-index: 2; margin: 0; color: var(--brown); background: rgba(253, 246, 227, 0.7); }
+[data-tod="night"] .poster-head > button.info.info.info { color: #e3e9f5; background: rgba(13, 20, 38, 0.5); }
