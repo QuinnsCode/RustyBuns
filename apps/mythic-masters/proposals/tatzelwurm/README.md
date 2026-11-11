@@ -18,19 +18,25 @@ whiskers; a thick scaly worm body lying low; only two short clawed front legs; a
 
 ## The candidates
 
-- `tatzelwurm-plate.json`: the old engravings. A long, thick, scaly worm in a low S, a round cat face, and two stubby paws.
-- `tatzelwurm-alpine.json`: the Alpine folk figure. A tufted lynx face with whiskers and a mane, a red curved crest, an olive body and the tail turned up.
-- `tatzelwurm-starter.json`: the starter. The fountain's big cat head (about a third of the beast), a short fat body, chunky paws and the tail coiled up.
+Round 1 tried three cat-faced takes (the plates, an Alpine folk figure, a big-head starter; shots `plate.jpg`,
+`alpine.jpg`, `starter.jpg`). The owner turned them all down and asked for something close to the Haus der Natur
+figure, so round 2 follows that one:
 
-All three rig with 2 of 2 feet at the 6,000-triangle budget.
+- `tatzelwurm-museum.json`: the figure as it stands. An upright neck, a broad blunt head with the jaw dropped open
+  over a row of fangs, a red forked tongue, finned frills, three short red horns, a red crest from the neck round the
+  curled tail, and four sprawled legs with white claws. Rigs 4 of 4 feet.
+- `tatzelwurm-museum2.json`: the same build on the lore's two front legs only. Rigs 2 of 2 feet.
+
+Both are at the 6,000-triangle budget. The open mouth needs no new builder feature: the lower jaw is its own node
+and blob, hung below the snout with a dark gullet between them.
 
 ## How to build
 
 From `apps/mythic-masters`:
 
-    bun proposals/tatzelwurm/make-tatzelwurm.ts        # writes the three sheets
-    blender -b --factory-startup --python-exit-code 1 -t 8 -P blender/beast.py -- proposals/tatzelwurm/tatzelwurm-plate.json --render
-    bun proposals/tatzelwurm/build.ts <close.py> <out dir> [plate|alpine|starter]   # build, check feet, close-up
+    bun proposals/tatzelwurm/make-tatzelwurm.ts        # writes the two sheets
+    blender -b --factory-startup --python-exit-code 1 -t 8 -P blender/beast.py -- proposals/tatzelwurm/tatzelwurm-museum.json --render
+    bun proposals/tatzelwurm/build.ts <close.py> <out dir> [museum|museum2]   # build, check feet, close-up
 
 `close.py` is the close-up render script from the brief on #4172. The GLBs land in `public/models/`; delete them
 before committing. The picked sheet replaces `beasts/tatzelwurm.json` (id back to `tatzelwurm`, its `about` kept),
