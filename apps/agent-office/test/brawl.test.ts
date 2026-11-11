@@ -48,7 +48,7 @@ class FakeFeed extends Feed {
   constructor(ok = true) {
     super("https://site", (async (url: string) =>
       !ok ? new Response("<html>", { status: 404 })
-      : url.endsWith("/api/matches") ? Response.json([{ id: replay.id, prompt: replay.prompt, fighters, shapes: [3, 1] }])
+      : url.endsWith("/api/matches") ? Response.json([{ id: replay.id, prompt: replay.prompt, fighters, turns: replay.turns, startedAt: replay.startedAt, shapes: [3, 1] }])
       : Response.json(replay)) as unknown as typeof fetch);
   }
   override listen(fn: (m: never) => void) {

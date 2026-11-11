@@ -1,9 +1,9 @@
 // The page's one script: the live fight over /api/live, and the replays from /api/matches.
 // Between fights the arena replays the last one and counts down to the hour.
 
-import { isLiveMessage, type LiveMatch } from "../live-wire.ts";
-import type { MatchSummary } from "../archive.ts";
-import type { LogEntry, MatchState } from "../engine/match.ts";
+import { getJson } from "@rustybuns/util/http";
+import { isLiveMessage, Replay, Summaries, type LiveMatch, type ReplayEntry } from "../live-wire.ts";
+import type { LogEntry } from "../engine/match.ts";
 import { scenesAt } from "../engine/match.ts";
 import { sceneSvg } from "../engine/svg.ts";
 
@@ -15,7 +15,7 @@ const clock = (ms: number) => {
   return `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
 };
 
-function said(e: LogEntry | undefined): string {
+function said(e: ReplayEntry | undefined): string {
   if (!e) return "…";
   if (e.error) return `sat out (${e.error})`;
   if (e.pen) return e.pen.done && !e.pen.lines ? "done" : `${e.pen.lines} line${e.pen.lines === 1 ? "" : "s"}${e.pen.skipped ? `, ${e.pen.skipped} skipped` : ""}${e.pen.look ? ", looking" : ""}${e.pen.done ? ", done" : ""}`;
@@ -32,10 +32,10 @@ export function watch(arena: HTMLElement | null, replays: HTMLElement | null): (
   if (!arena || !replays) return () => {};
   let closed = false;
   let match: (LiveMatch & { log: LogEntry[] }) | null = null;
-  let replay: { m: MatchState; turn: number; timer: ReturnType<typeof setInterval> } | null = null;
-  let index: MatchSummary[] = [];
+  let replay: { m: Replay; turn: number; timer: ReturnType<typeof setInterval> } | null = null;
+  let index: Summaries = [];
 
-  const draw = (m: Pick<MatchState, "fighters" | "prompt" | "turns" | "scores" | "winner">, log: LogEntry[], turn: number, label: string) => {
+  const draw = (m: Pick<Replay, "fighters" | "prompt" | "turns" | "scores" | "winner">, log: ReplayEntry[], turn: number, label: string) => {
     const last = (side: number) => [...log].reverse().find((e) => e.side === side && e.turn <= turn);
     // Clef's verdict shows once the replay reaches the end: a trophy on the winner, each side's scores as a tooltip.
     const name = (f: { name: string }, side: number) => {
@@ -62,7 +62,8 @@ export function watch(arena: HTMLElement | null, replays: HTMLElement | null): (
 
   const playReplay = async (id: string, label = "replay") => {
     if (replay) clearInterval(replay.timer);
-    const m = (await (await fetch(`/api/matches/${id}`)).json()) as MatchState;
+    const m = await getJson(`/api/matches/${encodeURIComponent(id)}`, Replay);
+    if (!m) return;
     const r = { m, turn: 0, timer: setInterval(() => {
       if (match) return clearInterval(r.timer);
       r.turn = Math.min(m.turns, r.turn + 1);
@@ -73,7 +74,7 @@ export function watch(arena: HTMLElement | null, replays: HTMLElement | null): (
   };
 
   const loadReplays = async () => {
-    index = (await (await fetch("/api/matches")).json()) as MatchSummary[];
+    index = (await getJson("/api/matches", Summaries)) ?? [];
     replays.innerHTML = index
       .filter((s) => s.shapes.some((n) => n > 0))
       .slice(0, 48)

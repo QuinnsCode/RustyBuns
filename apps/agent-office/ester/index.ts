@@ -4,12 +4,11 @@
 // The runs are the office's (ester/run.ts, /__rb/helpers); this polls them while one is going.
 import { Skull, GitMerge, Scissors, createElement, type IconNode } from "lucide";
 import { hot } from "../reload/hot.ts";
-import type { ContextAlert, ModeEvent } from "./dexter.ts";
 import { helperState } from "../screens/read.ts";
 import type { EsterState } from "./run.ts";
 import { el } from "@rustybuns/util/dom";
 import { check } from "@rustybuns/util/guard";
-import { Problem } from "../live/replies.ts";
+import { ContextReply, Problem } from "../live/replies.ts";
 
 type Name = "ester" | "mervin" | "dexter";
 const WHO: Record<Name, { label: string; icon: IconNode; ask: string; job: string }> = {
@@ -59,8 +58,8 @@ else document.addEventListener("DOMContentLoaded", boot, { once: true });
 function start(m: { box: HTMLElement; row: HTMLElement }) {
   const states: Record<Name, EsterState> = { ester: IDLE, mervin: IDLE, dexter: IDLE };
   let open: Name | undefined, card: HTMLElement | undefined, timer: ReturnType<typeof setTimeout> | undefined;
-  let code: ModeEvent[] = []; // the latest code-mode programs Dexter saw (a line each on his card, and an rb:code-mode event on window)
-  let over: ContextAlert[] = [], live: string[] = []; // Dexter's watch on live sessions: what each carries and has used, and which should hand off (a dot on his badge, the lines on his card)
+  let code: NonNullable<ContextReply["code"]> = []; // the latest code-mode programs Dexter saw (a line each on his card, and an rb:code-mode event on window)
+  let over: ContextReply["over"] = [], live: string[] = []; // Dexter's watch on live sessions: what each carries and has used, and which should hand off (a dot on his badge, the lines on his card)
   const badges = {} as Record<Name, HTMLButtonElement>;
 
   const render = () => {
@@ -94,7 +93,7 @@ function start(m: { box: HTMLElement; row: HTMLElement }) {
         const body: Record<string, unknown> = await res.json();
         for (const n of Object.keys(WHO) as Name[]) if (n in body) states[n] = helperState(body[n]);
       }
-      const ctx = await fetch("/__rb/context", { credentials: "same-origin" }).then((c) => (c.ok ? (c.json() as Promise<{ lines: string[]; over: ContextAlert[]; fresh: ContextAlert[]; code?: ModeEvent[] }>) : null), () => null);
+      const ctx = await fetch("/__rb/context", { credentials: "same-origin" }).then(async (c) => (c.ok ? check(ContextReply, await c.json()) : null), () => null);
       if (ctx) {
         over = ctx.over; live = ctx.lines;
         if (ctx.code?.length) {

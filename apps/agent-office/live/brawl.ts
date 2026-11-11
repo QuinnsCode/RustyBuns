@@ -17,7 +17,9 @@
 
 import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import type { LogEntry, MatchState } from "../../excalibrawl/src/engine/match.ts";
+import { check } from "@rustybuns/util/guard";
+import type { LogEntry } from "../../excalibrawl/src/engine/match.ts";
+import { isLiveMessage, Replay, Summaries, type LiveMessage, type ReplayEntry } from "../../excalibrawl/src/live-wire.ts";
 import { isLinear, type Op, type SkeletonEl } from "../../excalibrawl/src/engine/types.ts";
 
 /** An element on the office whiteboard: Excalidraw's, as loose as the server keeps it. */
@@ -258,30 +260,25 @@ export class Curtain {
 
 // --- the site's side of it ----------------------------------------------------
 
-type Summary = { id: string; prompt: string; fighters: { name: string }[]; shapes: number[] };
-type LiveMsg =
-  | { t: "hello" | "start"; match: (Omit<MatchState, "log" | "nextId">) | null }
-  | { t: "turn"; id: string; turn: number; entries: LogEntry[] }
-  | { t: "end"; id: string };
 
 /** The site: its replays, cached, and its live socket, shared by every floor. */
 export class Feed {
-  private index?: { at: number; list: Summary[] };
-  private matches = new Map<string, MatchState>();
+  private index?: { at: number; list: Summaries };
+  private matches = new Map<string, Replay>();
   private ws?: WebSocket;
-  private listeners = new Set<(m: LiveMsg) => void>();
+  private listeners = new Set<(m: LiveMessage) => void>();
   /** The site answered with replays the last time it was asked. */
   healthy = false;
 
   constructor(private url: string, private fetcher: typeof fetch = fetch) {}
 
-  async list(): Promise<Summary[]> {
+  async list(): Promise<Summaries> {
     if (this.index && Date.now() - this.index.at < 5 * 60_000) return this.index.list;
     try {
       const res = await this.fetcher(`${this.url}/api/matches`);
-      const list = res.ok ? ((await res.json()) as unknown) : null;
-      this.healthy = Array.isArray(list);
-      this.index = { at: Date.now(), list: this.healthy ? (list as Summary[]).filter((s) => s.shapes?.some((n) => n > 0)) : [] };
+      const list = res.ok ? check(Summaries, await res.json()) : null;
+      this.healthy = list !== null;
+      this.index = { at: Date.now(), list: list ? list.filter((s) => s.shapes.some((n) => n > 0)) : [] };
     } catch {
       this.healthy = false;
       this.index = { at: Date.now(), list: [] };
@@ -289,12 +286,13 @@ export class Feed {
     return this.index.list;
   }
 
-  async match(id: string): Promise<MatchState | undefined> {
+  async match(id: string): Promise<Replay | undefined> {
     if (this.matches.has(id)) return this.matches.get(id);
     try {
       const res = await this.fetcher(`${this.url}/api/matches/${encodeURIComponent(id)}`);
       if (!res.ok) return undefined;
-      const m = (await res.json()) as MatchState;
+      const m = check(Replay, await res.json());
+      if (!m) return undefined;
       if (this.matches.size > 20) this.matches.delete(this.matches.keys().next().value!);
       this.matches.set(id, m);
       return m;
@@ -304,7 +302,7 @@ export class Feed {
   }
 
   /** Listen to the live fight; the socket is open only while someone listens. */
-  listen(fn: (m: LiveMsg) => void): () => void {
+  listen(fn: (m: LiveMessage) => void): () => void {
     this.listeners.add(fn);
     this.connect();
     return () => {
@@ -321,12 +319,13 @@ export class Feed {
     const ws = new WebSocket(`${this.url.replace(/^http/, "ws")}/api/live`);
     this.ws = ws;
     ws.onmessage = (ev) => {
-      let msg: LiveMsg;
+      let msg: unknown;
       try {
         msg = JSON.parse(String(ev.data));
       } catch {
         return;
       }
+      if (!isLiveMessage(msg)) return;
       for (const fn of this.listeners) fn(msg);
     };
     ws.onclose = () => {
@@ -341,7 +340,7 @@ export class Feed {
 // --- one floor ------------------------------------------------------------------
 
 /** Rebuild the canvases from a log, up to `turn`. */
-export function scenesAt(fighters: number, log: LogEntry[], turn: number): SkeletonEl[][] {
+export function scenesAt(fighters: number, log: readonly ReplayEntry[], turn: number): SkeletonEl[][] {
   const scenes = Array.from({ length: fighters }, () => new Map<string, SkeletonEl>());
   for (const e of log) {
     if (e.turn > turn) break;
@@ -371,7 +370,7 @@ export class FloorBrawl {
   private phase: Phase | "off" = "off";
   private fight: { started: boolean; endedAt?: number; id?: string; m?: { prompt: string; fighters: { name: string }[]; turns: number; turn: number }; log: LogEntry[] } = { started: false, log: [] };
   private unlisten?: () => void;
-  private slide?: { m: MatchState; turn: number; next: number; i: number };
+  private slide?: { m: Replay; turn: number; next: number; i: number };
   private busy = false;
 
   constructor(private board: Board, private feed: Feed, private now: () => number = Date.now) {
@@ -440,7 +439,7 @@ export class FloorBrawl {
     this.unlisten ??= this.feed.listen((msg) => this.heard(msg));
   }
 
-  private heard(msg: LiveMsg) {
+  private heard(msg: LiveMessage) {
     if (this.phase !== "fight" && this.phase !== "leadup") return;
     if (msg.t === "hello" || msg.t === "start") {
       if (!msg.match) return;

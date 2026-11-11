@@ -24,6 +24,7 @@ import { listSaved, summarizeProfile } from "@rustybuns/shell-bun/profsummary";
 import { historyRuns } from "@rustybuns/shell-bun/history";
 import { officeHistory, officeMem } from "../live/mem.ts";
 import { officeReload } from "../live/reload.ts";
+import type { ContextReply } from "../live/replies.ts";
 import { ContextWatch, Meter, ModeWatch, nameOf, sessionLines } from "../ester/dexter.ts";
 import { createHelpers, HELPERS, isHelper, repoWith, type EsterState } from "../ester/run.ts";
 import { mervinBoard, tallyRows, tallySum } from "../screens/read.ts";
@@ -81,7 +82,7 @@ export function officeTriage(
       ].sort((a, b) => b.at.localeCompare(a.at));
       return { status: 200, body: { snapshots } };
     }
-    if (p === "/__rb/context") return method === "GET" ? { status: 200, body: (() => { const sessions = meter.scan(projects); return { sessions: sessions.map((c) => ({ ...c, name: nameOf(c) })), lines: sessionLines(sessions), ...context.check(sessions), code: modes.check(sessions) }; })() } : only("GET");
+    if (p === "/__rb/context") return method === "GET" ? { status: 200, body: (() => { const sessions = meter.scan(projects); const reply = { sessions: sessions.map((c) => ({ ...c, name: nameOf(c) })), lines: sessionLines(sessions), ...context.check(sessions), code: modes.check(sessions) }; return reply satisfies ContextReply; })() } : only("GET");
     if (p === "/__rb/helpers") return method === "GET" ? { status: 200, body: { ester: helpers.ester.state(), mervin: helpers.mervin.state(), dexter: helpers.dexter.state(), tally: tally() } } : only("GET");
     if (p === "/__rb/line") {
       if (method !== "GET") return only("GET");

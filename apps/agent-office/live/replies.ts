@@ -1,8 +1,16 @@
 // What the office's /__rb routes answer, as guards both the route and its page import. Nothing here touches node:,
 // so a page script can import it; the routes (live/reload.ts, live/floorguard.ts) write `satisfies` the same type.
-import { arr, bool, int, num, obj, opt, rec, str, type Of } from "@rustybuns/util/guard";
+import { arr, bool, int, num, obj, oneOf, opt, rec, str, type Of } from "@rustybuns/util/guard";
 
 const text = str(Infinity, { min: 0 });
+
+/** A session past a context line (ester/dexter.ts `ContextAlert`): the parts the page shows. */
+const Alert = obj({ name: text, level: oneOf(["warn", "handoff"]), message: text });
+/** A session that ran a code-mode program since the last ask (ester/dexter.ts `ModeEvent`). */
+const Mode = obj({ session: text, name: text, code: int(0, 1e9), load: int(0, 1e9), direct: int(0, 1e9), message: text });
+/** GET /__rb/context: Dexter's watch on live sessions, as Ester's page reads it (the route also sends `sessions`). */
+export const ContextReply = obj({ lines: arr(text, 10_000), over: arr(Alert, 10_000), fresh: arr(Alert, 10_000), code: opt(arr(Mode, 10_000)) });
+export type ContextReply = Of<typeof ContextReply>;
 
 /** A refusal from any office route: `{ error }`, read when the status isn't ok. */
 export const Problem = obj({ error: opt(text) });

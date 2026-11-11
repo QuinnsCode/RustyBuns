@@ -1,8 +1,6 @@
 {
   ".github/t3-bun/bun-shims.ts": 2,
   "apps/agent-demo/seed.ts": 1,
-  "apps/agent-office/ester/index.ts": 1,
-  "apps/agent-office/live/brawl.ts": 1,
   "apps/artstewengine/src/auth.ts": 1,
   "apps/borg-postgres/src/suite.ts": 1,
   "apps/borg/src/edge.ts": 1,
@@ -49,7 +47,6 @@
   "apps/codesplitter/src/worker.ts": 1,
   "apps/codesplitter/watchdog/worker.ts": 2,
   "apps/eqosys/src/auth.ts": 1,
-  "apps/excalibrawl/src/app/viewer.ts": 2,
   "apps/excalibrawl/src/arena.ts": 2,
   "apps/geoboxq-shopify/src/worker.ts": 1,
   "apps/geoboxq/src/main.ts": 1,
