@@ -256,6 +256,10 @@ async function prepare(tag: string) {
   // 13b. the issues board's Open column puts issues already handed to a worker last, so new ones are on top (board.ts)
   patchAsk(openNewFirstClient);
 
+  // 13c. the `fable` alias is Fable 5.2 in Claude Code now; v0.1.211 still names it 5.1 until a worker speaks
+  patch("shared/providers.js", "fable: 'Fable 5.1',", "fable: 'Fable 5.2',");
+  patchAsk((js) => js.replace("fable:`Fable 5.1`", "fable:`Fable 5.2`"));
+
   // 14. the Druids Curse skin
   lap("client patches (9-13b)");
   if (skin === "druids") await druids(cache);
