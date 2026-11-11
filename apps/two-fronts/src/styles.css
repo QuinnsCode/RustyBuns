@@ -931,7 +931,7 @@ body .gc-dialog input[type=range] { accent-color: var(--brass); }
 /* The hero plate leads the title and the lobby; the name and the readout sit under it. */
 .crest img.hero { width: 100%; height: auto; max-width: 440px; aspect-ratio: 960 / 300; filter: drop-shadow(0 4px 6px rgb(0 0 0 / 0.7)); }
 .crest.title img.hero { width: 100%; height: auto; }
-.crest:not(.title) img.hero { width: 100%; height: 76px; object-fit: cover; object-position: center 45%; }
+.crest:not(.title) img.hero { width: 100%; height: 76px; object-fit: cover; object-position: center 30%; }
 
 /* Inner cards are sub-plates set into the plate: sunken steel, four small bolts, the readout's scanlines over it. */
 .choices label, .preset, .vote-card, .sectors li, .detail .act, .status {

@@ -270,9 +270,9 @@ async (insigniaSvg, medals) => {
     g.putImageData(img, 0, 0);
     // rust weeping from the bolts: an orange-brown streak that runs down and fades, a darker core in it
     g.filter = "blur(2px)";
-    for (const [bx, by] of [[22, 22], [S - 22, 22], [S * 0.5, 22], [22, S * 0.5], [S - 22, S * 0.5]]) {
+    for (const [bx, by] of [[22, 22], [S - 22, 22], [S * 0.5, 22]]) {
       for (let k = 0; k < 2 + Math.floor(r() * 2); k++) {
-        const x = bx + (r() - 0.5) * 14, len = 50 + r() * 120, w = 6 + r() * 8, sway = (r() - 0.5) * 10;
+        const x = bx + (r() - 0.5) * 14, len = 40 + r() * 80, w = 4 + r() * 5, sway = (r() - 0.5) * 10;
         const gr = g.createLinearGradient(0, by, 0, by + len); gr.addColorStop(0, "rgba(104,56,24,0.4)"); gr.addColorStop(0.5, "rgba(80,46,22,0.2)"); gr.addColorStop(1, "rgba(80,44,20,0)");
         g.fillStyle = gr; g.beginPath(); g.moveTo(x - w, by); g.bezierCurveTo(x - w * 0.7 + sway, by + len * 0.4, x - w * 0.3 - sway, by + len * 0.7, x + sway * 0.5, by + len);
         g.bezierCurveTo(x + w * 0.3 - sway, by + len * 0.7, x + w * 0.7 + sway, by + len * 0.4, x + w, by); g.fill();
@@ -285,7 +285,7 @@ async (insigniaSvg, medals) => {
       const pts = 5 + Math.floor(r() * 4), path = () => { g.beginPath(); for (let k = 0; k < pts; k++) { const a = (k / pts) * Math.PI * 2, rr = rad * (0.5 + r() * 0.8); g[k ? "lineTo" : "moveTo"](x + Math.cos(a) * rr, y + Math.sin(a) * rr * 0.7); } g.closePath(); };
       if (r() < 0.35) { g.save(); g.filter = "blur(1.5px)"; g.beginPath(); g.arc(x, y + 1, rad * 1.5, 0, Math.PI * 2); g.fillStyle = "rgba(118,62,24,0.3)"; g.fill(); g.restore(); }
       path(); g.fillStyle = "rgba(0,0,0,0.5)"; g.save(); g.translate(0, 1); g.fill(); g.restore();
-      path(); g.fillStyle = `rgba(${196 + r() * 30},${204 + r() * 26},${214 + r() * 22},${0.2 + r() * 0.3})`; g.fill();
+      path(); g.fillStyle = `rgba(${120 + r() * 30},${128 + r() * 26},${138 + r() * 22},${0.25 + r() * 0.3})`; g.fill();
     };
     for (let k = 0; k < 150; k++) {
       const side = Math.floor(r() * 4), t = r() < 0.4 ? (r() < 0.5 ? r() * 0.12 : 1 - r() * 0.12) : r(), d = 2 + Math.pow(r(), 2.6) * 16;
