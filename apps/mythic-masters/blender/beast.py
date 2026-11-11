@@ -59,10 +59,15 @@
 #           bone, bone_mat,  each panel's far edge pulled in by `scallop` (0.25) and hung `sag` metres under its fingers,
 #           thick            `bone` (0.02) the finger bones' radius, `thick` (0.015) the membrane's
 #   palette a 6th value is glow strength: the GLB keeps the colour as emissive, strength apart
+#   hide    pattern, size,   the body's material baked into a map finer than the mesh can colour (`bake_hide`): `pattern`
+#           colours, map,    scales (rim and cell colours), fur (root and tip), skin (crease) or spots (spot); `size`
+#           spots            metres a scale, strand or fold; colours sRGB; `map` px (1024); `spots` {size, colour, cover}
+#                            over any pattern. The belly, paint and occlusion tone still multiply over it
 import json
 import math
 import os
 import sys
+import time
 
 import bmesh
 import bpy
@@ -372,7 +377,7 @@ def vertex_ao(o, rays=24, reach=0.16):
     return ao
 
 
-def shade(o, back, soft=(), belly=None, turn=-0.2):
+def shade(o, back, soft=(), belly=None, turn=-0.2, lift=1.0):
     """One colour attribute, `tone`, multiplied into every material's base colour by the game: the baked
     occlusion everywhere, and on the body's material (`back`) the body's own colour, painted per vertex so
     colour borders blend instead of stepping along triangle edges: each `soft` material (a `paint` or
@@ -381,7 +386,8 @@ def shade(o, back, soft=(), belly=None, turn=-0.2):
     triangle or two. `belly` is the underside in a second colour, blended by how far each point's normal turns
     down past `turn` (-1 straight down, 0 sideways): an animal's back darker than its front. Painted after the
     decimator (a colour attribute steers what it keeps, and Hodag's short legs pay). Every material's Base
-    Color reads the attribute so the contact sheet matches."""
+    Color reads the attribute so the contact sheet matches. `lift` (at most) brightens the body's tone for a baked
+    hide (`bake_hide`), as far as its brightest channel can go; returns the lift it used, which the map divides by."""
     mats = [x.name for x in o.data.materials]
     soft = [n for n in soft if n in mats and n != back and len(PALETTE[n]) < 6]
     slot = mats.index(back)
@@ -425,6 +431,7 @@ def shade(o, back, soft=(), belly=None, turn=-0.2):
     col = o.data.color_attributes.new("tone", "FLOAT_COLOR", "POINT")
     rgb = lambda n: [linear(c) for c in PALETTE[n][:3]]
     base, under = rgb(back), rgb(belly) if belly else None
+    tones, flesh = [None] * len(o.data.vertices), []
     for v in o.data.vertices:
         k_ao = AO + (1 - AO) * ao[v.index]
         if v.index not in body:
@@ -454,7 +461,11 @@ def shade(o, back, soft=(), belly=None, turn=-0.2):
             hue = rgb(belly) if belly else [1, 1, 1]
             hl = (0.3 * hue[0] + 0.59 * hue[1] + 0.11 * hue[2]) or 1
             c = [x + (LUM[0] - lum) * h / hl for x, h in zip(c, hue)]
-        col.data[v.index].color = (*[x * k_ao for x in c], 1)
+        tones[v.index] = [x * k_ao for x in c]
+        flesh.append(v.index)
+    lift = max(1.0, min(lift, 1 / max([max(tones[i]) for i in flesh] or [1])))
+    for i in flesh:
+        col.data[i].color = (*[x * lift for x in tones[i]], 1)
     o.data.color_attributes.active_color = col
     # the folded materials are used by no face now
     bpy.context.view_layer.objects.active = o
@@ -462,6 +473,7 @@ def shade(o, back, soft=(), belly=None, turn=-0.2):
         if o.data.materials[i].name in soft:
             o.active_material_index = i
             bpy.ops.object.material_slot_remove()
+    return lift
 
 
 # --- parts laid on the body ----------------------------------------------------------------------------
@@ -1095,7 +1107,230 @@ def canonical(o, step=float(os.environ.get("SNAP_STEP", "1e-3"))):
     me.update()
 
 
-def write_glb(o, path, budget, tone=None):
+# --- a hide: scales, spots, fur or skin baked into a map -----------------------------------------------------
+# A vertex is the smallest thing the tone can colour, so a pattern finer than the mesh lives in an image: the body's
+# faces get their own UVs and procedural nodes (in the body's own space, metres) are baked into a map the body's
+# material multiplies over the tone. The map is a share of the tone's colour, held at 1/lift, and the tone is lifted
+# to match (as far as its brightest channel allows, at most HIDE_LIFT), so a mark lighter than the hide (a scale's
+# rim) still fits in an 8-bit image.
+HIDE_LIFT = 3.0
+
+
+def hide_colour(nt, h, base, lift):
+    """The hide's colour as a multiple of the body's (`base`, sRGB), from nodes in `nt`, over `lift`; returns the socket."""
+    N, L = nt.nodes, nt.links
+    size = h.get("size", 0.05)
+
+    def ratio(c):  # a mark's colour as a multiple of the body's, per channel, in linear light, dimmed to fit the lift
+        r = [linear(x) / max(linear(b), 1e-3) for x, b in zip(c, base)]
+        return [x * min(1.0, lift / max(r)) for x in r]
+
+    def node(kind, **props):
+        n = N.new(kind)
+        for k, v in props.items():
+            setattr(n, k, v)
+        return n
+
+    def value(v):
+        n = node("ShaderNodeValue")
+        n.outputs[0].default_value = v
+        return n.outputs[0]
+
+    def fl(x):
+        return x if not isinstance(x, (int, float)) else value(x)
+
+    def math_(op, a, b=0.0):
+        n = node("ShaderNodeMath", operation=op)
+        for s, x in zip(n.inputs, (a, b)):
+            if isinstance(x, (int, float)):
+                s.default_value = x
+            else:
+                L.new(x, s)
+        return n.outputs[0]
+
+    def ramp(x, lo, hi):  # smoothstep(lo, hi, x)
+        n = node("ShaderNodeMapRange", interpolation_type="SMOOTHSTEP")
+        L.new(x, n.inputs["Value"])
+        n.inputs["From Min"].default_value, n.inputs["From Max"].default_value = lo, hi
+        return n.outputs["Result"]
+
+    def mix(f, a, b):  # colours: a where f is 0, b where 1; a and b are sockets or [r, g, b] multiples
+        n = node("ShaderNodeMix", data_type="RGBA", blend_type="MIX", clamp_result=False)
+        L.new(fl(f), n.inputs["Factor"])
+        for s, c in ((n.inputs[6], a), (n.inputs[7], b)):
+            if isinstance(c, list):
+                s.default_value = (*c, 1)
+            else:
+                L.new(c, s)
+        return n.outputs[2]
+
+    def scaled(col, k):  # a colour socket times a float socket
+        n = node("ShaderNodeMix", data_type="RGBA", blend_type="MULTIPLY", clamp_result=False)
+        n.inputs["Factor"].default_value = 1
+        L.new(col, n.inputs[6])
+        rgb = node("ShaderNodeCombineColor")
+        for i in range(3):
+            L.new(fl(k), rgb.inputs[i])
+        L.new(rgb.outputs[0], n.inputs[7])
+        return n.outputs[2]
+
+    def noise(vec, scale, detail=2.0):
+        n = node("ShaderNodeTexNoise")
+        L.new(vec, n.inputs["Vector"])
+        n.inputs["Scale"].default_value, n.inputs["Detail"].default_value = scale, detail
+        return n
+
+    def voronoi(vec, scale, feature="F1", jitter=1.0):
+        n = node("ShaderNodeTexVoronoi", feature=feature)
+        L.new(vec, n.inputs["Vector"])
+        n.inputs["Scale"].default_value, n.inputs["Randomness"].default_value = scale, jitter
+        return n
+
+    def red(col):
+        n = node("ShaderNodeSeparateColor")
+        L.new(col, n.inputs[0])
+        return n.outputs[0]
+
+    def warped(vec, amount, scale):  # the point nudged by a slow noise, so cells and spots aren't a lattice
+        n = noise(vec, scale)
+        off = node("ShaderNodeVectorMath", operation="SUBTRACT")
+        L.new(n.outputs["Color"], off.inputs[0])
+        off.inputs[1].default_value = (0.5, 0.5, 0.5)
+        k = node("ShaderNodeVectorMath", operation="MULTIPLY_ADD")
+        L.new(off.outputs[0], k.inputs[0])
+        k.inputs[1].default_value = (amount, amount, amount)
+        L.new(vec, k.inputs[2])
+        return k.outputs[0]
+
+    co = node("ShaderNodeTexCoord").outputs["Object"]
+    cols = [ratio(c) for c in h.get("colours", [])]
+    pattern = h["pattern"]
+    one = [1.0, 1.0, 1.0]
+    if pattern == "scales":
+        # cells (`colours[1]`, else the hide), each a little domed and its own shade, a rim (`colours[0]`) and a dark seam
+        rim, mid = (cols + [[1.3, 1.3, 1.1], [1.0, 1.0, 1.0]][len(cols):])[:2]
+        stretch = node("ShaderNodeVectorMath", operation="MULTIPLY")
+        L.new(co, stretch.inputs[0])
+        stretch.inputs[1].default_value = (0.8, 1.0, 1.0)  # a little longer along the body (+x) than around it
+        p = warped(stretch.outputs[0], size * 0.25, 4.0 / size)
+        # cells jittered 0.6 of the way: scales of a size, rounder than a cracked-mud mosaic
+        cell = voronoi(p, 1.0 / size, jitter=0.6)
+        edge = voronoi(p, 1.0 / size, "DISTANCE_TO_EDGE", jitter=0.6).outputs["Distance"]
+        tint = math_("ADD", math_("MULTIPLY", red(cell.outputs["Color"]), 0.3), 0.85)  # each scale 0.85..1.15
+        dome = math_("SUBTRACT", 1.08, math_("MULTIPLY", cell.outputs["Distance"], 0.35))
+        c = scaled(mix(ramp(edge, 0.025, 0.09), rim, mid), math_("MULTIPLY", tint, dome))
+        c = mix(math_("SUBTRACT", 1.0, ramp(edge, 0.0, 0.018)), c, [0.55, 0.55, 0.5])
+    elif pattern == "spots":
+        c = one
+    elif pattern == "fur":
+        # strands along the body (+x), clumped, dark at the roots (`colours[0]`) and light at the tips (`colours[1]`)
+        dark, tip = (cols + [[0.6, 0.6, 0.6], [1.3, 1.3, 1.25]][len(cols):])[:2]
+        s = node("ShaderNodeVectorMath", operation="MULTIPLY")
+        L.new(co, s.inputs[0])
+        s.inputs[1].default_value = (0.2, 1.0, 1.0)
+        strands = noise(s.outputs[0], 1.0 / size, 4.0).outputs["Fac"]
+        clump = noise(co, 0.25 / size, 1.0).outputs["Fac"]
+        f = ramp(math_("ADD", math_("MULTIPLY", strands, 0.7), math_("MULTIPLY", clump, 0.3)), 0.3, 0.7)
+        c = mix(f, dark, tip)
+    elif pattern == "skin":
+        # leathery: folds across the body (`colours[0]` in their creases), a fine pebbling between them
+        crease = cols[0] if cols else [0.55, 0.55, 0.5]
+        s = node("ShaderNodeVectorMath", operation="MULTIPLY")
+        L.new(co, s.inputs[0])
+        s.inputs[1].default_value = (2.5, 0.7, 0.7)  # a fold runs around the body, so it changes fastest along it (+x)
+        n = noise(s.outputs[0], 1.0 / size, 1.0).outputs["Fac"]
+        ridge = math_("ABSOLUTE", math_("SUBTRACT", math_("MULTIPLY", n, 2.0), 1.0))
+        pebble = voronoi(co, 4.0 / size)
+        bump = math_("ADD", 0.94, math_("MULTIPLY", red(pebble.outputs["Color"]), 0.12))
+        c = scaled(mix(ramp(ridge, 0.0, 0.3), crease, one), bump)
+    else:
+        raise SystemExit(f"hide pattern {pattern!r}: scales, spots, fur or skin")
+    # spots over any of them: `spots` {size, colour, cover}; a `pattern: "spots"` hide is spots on plain skin
+    spots = h.get("spots") or ({"size": size, "colour": h["colours"][0]} if pattern == "spots" else None)
+    if spots:
+        ss = spots.get("size", size * 4)
+        p = warped(co, ss * 0.35, 1.5 / ss)
+        cell = voronoi(p, 1.0 / ss)
+        keep = math_("LESS_THAN", red(cell.outputs["Color"]), spots.get("cover", 0.6))
+        rnd = node("ShaderNodeSeparateColor")
+        L.new(cell.outputs["Color"], rnd.inputs[0])
+        rad = math_("ADD", 0.16, math_("MULTIPLY", rnd.outputs[1], 0.16))  # each spot 0.16..0.32 of a cell
+        spot = math_("MULTIPLY", keep, math_("SUBTRACT", 1.0, ramp(math_("SUBTRACT", cell.outputs["Distance"], rad), -0.04, 0.04)))
+        c = mix(spot, c, ratio(spots["colour"]))
+    return scaled(c, 1.0 / lift)
+
+
+def bake_hide(o, h, back, lift):
+    """The body's faces (material `back`) unwrapped and `hide` baked into a map its material multiplies over the tone."""
+    px, t0 = h.get("map", 1024), time.time()
+    mats = [m.name for m in o.data.materials]
+    slot = mats.index(back)
+    bpy.ops.object.select_all(action="DESELECT")
+    o.select_set(True)
+    bpy.context.view_layer.objects.active = o
+    o.data.uv_layers.new(name="hide")
+    for p in o.data.polygons:
+        p.select = p.material_index == slot
+    bpy.ops.object.mode_set(mode="EDIT")
+    bpy.ops.uv.smart_project(angle_limit=math.radians(80), island_margin=4 / px, scale_to_bounds=False)
+    bpy.ops.object.mode_set(mode="OBJECT")
+    # bake from a copy holding only the body's faces, in a material that emits the pattern
+    flesh = o.copy()
+    flesh.data = o.data.copy()
+    bpy.context.collection.objects.link(flesh)
+    bm = bmesh.new()
+    bm.from_mesh(flesh.data)
+    bmesh.ops.delete(bm, geom=[f for f in bm.faces if f.material_index != slot], context="FACES")
+    bm.to_mesh(flesh.data)
+    bm.free()
+    img = bpy.data.images.new(o.name + "-hide", px, px, alpha=False)
+    bake = bpy.data.materials.new("hide-bake")
+    bake.use_nodes = True
+    nt = bake.node_tree
+    nt.nodes.remove(nt.nodes["Principled BSDF"])
+    glow = nt.nodes.new("ShaderNodeEmission")
+    nt.links.new(hide_colour(nt, h, PALETTE[back][:3], lift), glow.inputs["Color"])
+    nt.links.new(glow.outputs[0], nt.nodes["Material Output"].inputs["Surface"])
+    target = nt.nodes.new("ShaderNodeTexImage")
+    target.image = img
+    nt.nodes.active = target
+    flesh.data.materials.clear()
+    flesh.data.materials.append(bake)
+    scene = bpy.context.scene
+    engine = scene.render.engine
+    scene.render.engine = "CYCLES"
+    scene.cycles.device, scene.cycles.samples = "CPU", 1
+    bpy.ops.object.select_all(action="DESELECT")
+    flesh.select_set(True)
+    bpy.context.view_layer.objects.active = flesh
+    bpy.ops.object.bake(type="EMIT", margin=max(2, px // 128), use_clear=True)
+    scene.render.engine = engine
+    img.pack()
+    print(f"hide: {h['pattern']} baked into a {px} px map in {time.time() - t0:.1f} s")
+    bpy.data.objects.remove(flesh)
+    bpy.data.materials.remove(bake)
+    # the body's material: the map times the tone (`shade` wired Base Color to a multiply of the tone already)
+    m = o.data.materials[slot]
+    tex = m.node_tree.nodes.new("ShaderNodeTexImage")
+    tex.image = img
+    mul = next(n for n in m.node_tree.nodes if n.bl_idname == "ShaderNodeMix" and n.blend_type == "MULTIPLY")
+    m.node_tree.links.new(tex.outputs["Color"], mul.inputs[6])
+    # the map's mean colour over the texels the body covers, in the GLB's extras: a skin drawn without the map (the
+    # world's merged walkers, beasts.ts `mergedSkin`) multiplies its tone by this instead, or the lifted tone glares
+    # (an 8-bit map's pixels read back as stored, sRGB, and the game's tone is linear)
+    import numpy as np
+    pix = np.empty(px * px * 4, dtype=np.float32)
+    img.pixels.foreach_get(pix)
+    rgb = pix.reshape(-1, 4)[:, :3]
+    rgb = rgb[rgb.sum(axis=1) > 1e-3]
+    rgb = np.where(rgb <= 0.04045, rgb / 12.92, ((rgb + 0.055) / 1.055) ** 2.4)
+    m["hide_mean"] = [round(float(x), 4) for x in (rgb.mean(axis=0) if len(rgb) else np.ones(3))]
+    o.select_set(True)
+    bpy.context.view_layer.objects.active = o
+    return img
+
+
+def write_glb(o, path, budget, tone=None, hide=None, keep=False):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     bpy.ops.object.select_all(action="DESELECT")
     lod = o.copy()
@@ -1111,12 +1346,18 @@ def write_glb(o, path, budget, tone=None):
     # the low-poly skin shades smooth: normals weighted by face area, as if taken from a smooth proxy
     lod.modifiers.new("normals", "WEIGHTED_NORMAL").weight = 50
     apply_all(lod)
-    shade(lod, *tone)
+    lift = shade(lod, *tone, lift=HIDE_LIFT if hide else 1.0)
+    if hide:
+        bake_hide(lod, hide, tone[0], lift)
+    bpy.ops.object.select_all(action="DESELECT")
     lod.select_set(True)
     bpy.ops.export_scene.gltf(filepath=path, export_format="GLB", use_selection=True, export_apply=True,
                               export_yup=True, export_normals=True, export_materials="EXPORT",
-                              export_vertex_color="ACTIVE")
+                              export_vertex_color="ACTIVE", export_image_format="JPEG", export_jpeg_quality=85,
+                              export_extras=bool(hide))
     print(f"{tris(lod)} triangles -> {os.path.relpath(path)} ({os.path.getsize(path) // 1024} KB)")
+    if keep:
+        return lod
     bpy.data.objects.remove(lod)
 
 
@@ -1174,6 +1415,38 @@ def render(o, path, silhouette=False):
     print(f"render -> {os.path.relpath(path)}")
 
 
+def close(o, path):
+    """The GLB's own mesh up close: the flank and head from the front three-quarter, filling the frame (a hide is
+    judged here; the contact sheet shows the shape)."""
+    scene = bpy.context.scene
+    scene.render.engine = "BLENDER_EEVEE"
+    scene.render.resolution_x, scene.render.resolution_y = 1200, 800
+    scene.view_settings.view_transform = "Standard"
+    if not scene.world:
+        scene.world = bpy.data.worlds.new("world")
+    scene.world.color = (0.62, 0.66, 0.72)
+    for x in scene.objects:
+        if x.type == "MESH":
+            x.hide_render = x is not o
+    if not any(x.type == "LIGHT" for x in scene.objects):
+        sun = bpy.data.objects.new("sun", bpy.data.lights.new("sun", "SUN"))
+        sun.data.energy = 4
+        sun.rotation_euler = (math.radians(50), math.radians(-15), math.radians(-40))
+        scene.collection.objects.link(sun)
+    lo, hi = [o.matrix_world @ Vector(c) for c in (o.bound_box[0], o.bound_box[6])]
+    mid = (lo + hi) / 2
+    cam = bpy.data.objects.new("close", bpy.data.cameras.new("close"))
+    scene.collection.objects.link(cam)
+    scene.camera = cam
+    cam.data.lens = 50
+    d = max(hi - lo) * 1.7
+    cam.location = mid + Vector((0.55, -1.0, 0.35)).normalized() * d
+    cam.rotation_euler = (mid - cam.location).to_track_quat("-Z", "Y").to_euler()
+    scene.render.filepath = path
+    bpy.ops.render.render(write_still=True)
+    print(f"render -> {os.path.relpath(path)}")
+
+
 def main():
     argv = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
     if not argv:
@@ -1188,10 +1461,18 @@ def main():
     print(f"{sheet['id']}: {tris(beast)} triangles, {hi.x - lo.x:.2f} long, {hi.y - lo.y:.2f} wide, {hi.z:.2f} tall")
     soft = [g["material"] for g in sheet.get("paint", [])] + ([sheet["stripes"]["material"]] if sheet.get("stripes") else [])
     tone = (sheet.get("material", "hide"), soft, sheet.get("belly"), sheet.get("belly_turn", -0.2))
-    write_glb(beast, os.path.join(APP, "public", "models", sheet["id"] + ".glb"), sheet.get("budget", 3000), tone)
+    hide, lod = sheet.get("hide"), None
+    lod = write_glb(beast, os.path.join(APP, "public", "models", sheet["id"] + ".glb"), sheet.get("budget", 3000), tone, hide, keep=bool(hide) or "--close" in argv)
+    if lod and not hide:
+        lod.hide_render = True  # kept only for the close-up; the contact sheet draws the full mesh
     if "--render" in argv:
-        shade(beast, *tone)
-        render(beast, os.path.join(HERE, "out", sheet["id"] + ".png"))
+        # a baked hide is drawn on the GLB's own mesh (the map is unwrapped onto it), every other beast on the full one
+        if not hide:
+            shade(beast, *tone)
+        beast.hide_render = bool(hide)
+        render(lod if hide else beast, os.path.join(HERE, "out", sheet["id"] + ".png"))
+    if "--close" in argv:
+        close(lod, os.path.join(HERE, "out", sheet["id"] + ".close.png"))
     if "--silhouette" in argv:
         render(beast, os.path.join(HERE, "out", sheet["id"] + ".silhouette.png"), silhouette=True)
 

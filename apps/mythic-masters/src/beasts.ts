@@ -11,7 +11,7 @@
 import { Tile, type Pip } from "./tiles.ts";
 import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
-import { arr, int, num, obj, str, type Of } from "@rustybuns/util/guard";
+import { arr, check, int, num, obj, str, type Of } from "@rustybuns/util/guard";
 import { getJson } from "@rustybuns/util/http";
 import { clamp01 } from "@rustybuns/util";
 import { rigFromWire, type RigResult } from "@rustybuns/rig";
@@ -142,6 +142,8 @@ const cache = new Map<string, Promise<Beast | null>>();
 const settled = new Set<string>(); // ids whose load finished; a load in flight is never evicted
 const stale = new Set<string>();
 
+/** A baked hide map's mean colour (linear), which beast.py writes into the body material's extras. */
+const HideMean = arr(num(0, 1), 3, { min: 3 });
 /** A beast's skin merged into one geometry (Puppet's `merged`), built once and shared. */
 const MERGED = new WeakMap<Beast, THREE.BufferGeometry>();
 /** Frees a beast's geometry and every texture its materials hold (puppets clone the geometry and materials, not the textures). */
@@ -207,7 +209,8 @@ export function reloadBeast(id: string): Promise<Beast | null> {
  */
 const SHADE_KEY = "beast-shade-v1";
 function stylize(m: THREE.MeshStandardMaterial, top: { value: number }, name: string, fx: FieldLook | null = null, amt: { value: number } = { value: 1 }, surface: Surface = "hide") {
-  const kind = surfaceFor(name, surface), hd = kind ? hideDetail(kind) : null;
+  // a hide baked into a map (beast.py `hide`) already draws its grain; the shader's own on top washed it out
+  const kind = m.map ? null : surfaceFor(name, surface), hd = kind ? hideDetail(kind) : null;
   const hard = /horn|claw|spike|tooth|teeth|beak|talon|tusk|fang|bone/.test(name);
   if (hard) m.roughness = Math.min(m.roughness, 0.32);
   else m.roughness = Math.max(0.78, Math.min(m.roughness, 0.9)); // hide, fur and scale take light softly: no vinyl sheen
@@ -468,7 +471,7 @@ export class Puppet {
   /** Every part of the skin in one SkinnedMesh: each part's material colour (with a little of its glow) baked into a colour
    * attribute, the pupils in black, under one stylized vertex-coloured material. */
   private mergedSkin(model: Model, rig: RigResult, skeleton: THREE.Skeleton, look: FieldLook | null, amt: { value: number }, surface: Surface): THREE.SkinnedMesh {
-    const pieces: THREE.BufferGeometry[] = [], c = new THREE.Color();
+    const pieces: THREE.BufferGeometry[] = [], c = new THREE.Color(), c2 = new THREE.Color();
     /** One part: its own vertex colour (the builder's tone and paint) times its material's colour, plus `glow`. */
     const piece = (g: THREE.BufferGeometry, si: ArrayLike<number>, sw: ArrayLike<number>, color: THREE.Color, glow = new THREE.Color(0, 0, 0)) => {
       const out = new THREE.BufferGeometry(), n = g.getAttribute("position").count, cols = new Float32Array(n * 3), own = g.getAttribute("color");
@@ -488,7 +491,9 @@ export class Puppet {
       const si = rig.skinIndex.slice(part.start * 4, (part.start + part.count) * 4), sw = rig.skinWeight.slice(part.start * 4, (part.start + part.count) * 4);
       const m = (Array.isArray(part.material) ? part.material[0] : part.material) as THREE.MeshStandardMaterial;
       const glow = m.emissiveIntensity > 0 ? m.emissive.clone().multiplyScalar(Math.min(m.emissiveIntensity, 1.2) * 0.6) : undefined;
-      piece(part.geometry, si, sw, c.copy(m.color), glow);
+      // a baked hide (beast.py `hide`) is drawn here without its map: its mean colour, from the GLB's extras, stands in
+      const mean = m.map ? check(HideMean, m.userData.hide_mean) : null;
+      piece(part.geometry, si, sw, mean ? c.copy(m.color).multiply(c2.setRGB(mean[0]!, mean[1]!, mean[2]!)) : c.copy(m.color), glow);
       const pupil = m.name === "eye" ? pupils(part.geometry, si, sw) : null;
       if (pupil) piece(pupil, pupil.getAttribute("skinIndex").array, pupil.getAttribute("skinWeight").array, c.setHex(0x0a0806));
     }

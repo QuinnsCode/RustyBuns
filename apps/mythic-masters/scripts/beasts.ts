@@ -9,6 +9,7 @@
 //   --watch <id>          rebuild on every save of beasts/<id>.json; a running `vite` dev server swaps that beast in the
 //                         ?gallery page without a reload
 //   --silhouette <id>     blender/out/<id>.silhouette.png: the contact sheet in flat black on white
+//   --close               blender/out/<id>.close.png: the GLB's own mesh up close, to judge a baked `hide`
 //   --shots [page] [--as before|now]   each ?gallery page (or one) as a 4 x 4 sheet of close-ups, held still, in blender/out/shots/<label>/
 //   --judge               shoots NOW, shows BEFORE and NOW to a fresh `claude -p` judge, writes its score table to
 //                         blender/out/judge.md for the PR body (take BEFORE first: --shots --as before)
@@ -73,9 +74,9 @@ const SNAP_STEPS = ["1e-3", "5e-4", "2e-3", "2.5e-4", "4e-3", "1e-4"];
 const BLENDER_THREADS = 8;
 
 async function blender(id: string, step: string): Promise<string[]> {
-  const args = [SHEETS.get(id)!, ...(flags.has("--render") ? ["--render"] : []), ...(flags.has("--silhouette") ? ["--silhouette"] : [])];
+  const args = [SHEETS.get(id)!, ...(flags.has("--render") ? ["--render"] : []), ...(flags.has("--silhouette") ? ["--silhouette"] : []), ...(flags.has("--close") ? ["--close"] : [])];
   const { out, err } = await runBlender({ script: "blender/beast.py", args, cwd: APP, env: { SNAP_STEP: step }, threads: BLENDER_THREADS });
-  return (out + err).split("\n").filter((l) => /triangles|render ->/.test(l));
+  return (out + err).split("\n").filter((l) => /triangles|render ->|^hide:/.test(l));
 }
 
 async function rig(id: string, feet: number, expectWings?: number) {
