@@ -184,7 +184,7 @@ export function spacesPanel({ box, space: sp, name, icon, say, join = joinVoice,
       ...channels.map((ch) => tabOf(ch, `#${ch}`)),
       ...voices.map((v) => tabOf(v.id, icon("volume-2"), v.name)));
     const slug = (v: string) => v.toLowerCase().replace(/[^a-z0-9-]+/g, "-");
-    if (owner) tabs.append(line("new-channel", 24, "plus", "Add channel", (v) => sp.channel(slug(v))), line("new-voice-channel", 24, "volume-2", "Add voice channel", (v) => sp.channel(slug(v), true)));
+    if (owner) tabs.append(line("New channel", 24, "plus", "Add channel", (v) => sp.channel(slug(v))), line("Voice room", 24, "volume-2", "Add voice channel", (v) => sp.channel(slug(v), true)));
     const drop = owner && channel !== "general" ? btn("trash-2", `Delete ${voiceName(channel) ?? `#${channel}`}`, () => { sp.drop(channel); channel = "general"; draw(); }, false, "rb-spaces-drop") : "";
     const voice = voices.find((v) => v.id === channel);
     if (voice) return [head, tabs, el("div", { className: "rb-spaces-body" }, drawVoice(voice), who()), drop, noteEl()];

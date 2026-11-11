@@ -78,7 +78,7 @@ test("make a space in the panel, a friend joins by invite, they talk, the owner 
   await until("Ada's line at Bo's end", () => heard.includes("Ada: meet at the bowl"));
 
   // Voice: the owner adds a channel, joins it with a fresh ticket, and the friend sees them in it.
-  await type("new-voice-channel", "lounge");
+  await type("Voice room", "lounge");
   await seen("the lounge tab", (s) => s.voices.join() === "lounge");
   await tab.eval(`[...document.querySelectorAll('#spaces [role=tab]')].find((b) => b.textContent === "lounge").click()`);
   await press("Join lounge");

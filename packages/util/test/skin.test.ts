@@ -17,9 +17,12 @@ const looks = async (query: string, dark = false) => {
   const tab = await openTab(chrome!.cdp, { w: 1024, h: 700 });
   await tab.call("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: dark ? "dark" : "light" }] });
   await load(chrome!.cdp, tab, `http://127.0.0.1:${server.port}/${query}`, 300);
-  const got = await tab.eval<{ surfaces: Record<string, Look>; who: string; noise: number }>(`(() => {
+  const got = await tab.eval<{ surfaces: Record<string, Look>; who: string; fits: { select: boolean; members: boolean } }>(`(() => {
     const look = (sel) => { const s = getComputedStyle(document.querySelector(sel)); return { bg: s.backgroundColor, image: s.backgroundImage, border: s.borderTopColor, radius: s.borderTopLeftRadius, font: s.fontFamily }; };
-    return { surfaces: { chip: look(".eq-chip"), form: look(".rb-report .eq-form"), toast: look(".eq-toast"), lobby: look(".rb-lobby"), spaces: look(".rb-spaces") }, who: getComputedStyle(document.querySelector(".eq-who")).textTransform };
+    return { surfaces: { chip: look(".eq-chip"), form: look(".rb-report .eq-form"), toast: look(".eq-toast"), lobby: look(".rb-lobby"), spaces: look(".rb-spaces") }, who: getComputedStyle(document.querySelector(".eq-who")).textTransform,
+      // A game page's own rules stop at the surfaces: the form's Kind is as wide as its other fields, and the member column's buttons stay inside the panel.
+      fits: { select: document.querySelector(".rb-report select").offsetWidth === document.querySelector(".rb-report input").offsetWidth,
+        members: [...document.querySelectorAll(".rb-spaces-online .eq-btn")].every((b) => b.getBoundingClientRect().right <= document.querySelector(".rb-spaces").getBoundingClientRect().right) } };
   })()`);
   await tab.close();
   return got;
@@ -38,14 +41,16 @@ test.skipIf(!chromePath())("a skin's tokens land on the chip, report form, toast
 
 // #4148: a real game's skin points at its own stylesheet (var(--plate), var(--paper), var(--f-book)); over that stylesheet,
 // its paper or plate and its face reach every surface, under a texture where the game lays one (the colour is in the image).
-test.skipIf(!chromePath())("each game's own paper and face land on the chip, report form, toast, lobby and spaces", async () => {
+test.skipIf(!chromePath())("each game's own paper and face land on the chip, report form, toast, lobby and spaces, and its page rules stay out", async () => {
   const games = [
     ["two-fronts", "rgb(23, 28, 35)", `"Share Tech Mono", ui-monospace, monospace`],
     ["mythic-masters", "rgb(232, 217, 181)", `"IM Fell English", Georgia, "Times New Roman", serif`],
     ["skate-tech-park", "rgb(251, 247, 240)", "system-ui, sans-serif"],
   ] as const;
   for (const [game, paper, face] of games) {
-    for (const [name, l] of Object.entries((await looks(`?game=${game}`)).surfaces)) {
+    const got = await looks(`?game=${game}`);
+    expect({ game, ...got.fits }).toEqual({ game, select: true, members: true });
+    for (const [name, l] of Object.entries(got.surfaces)) {
       expect({ game, name, paper: l.bg === paper || l.image.includes(paper), font: l.font }).toEqual({ game, name, paper: true, font: face });
     }
   }
