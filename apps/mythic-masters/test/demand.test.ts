@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { deckDemandOf, demandOf, reactionOf, settingsLineOf, thumbAt, worldLineOf, type Back, type Outcome } from "../src/demand.ts";
-import { newJourney } from "../src/journey.ts";
+import { deckDemandOf, demandOf, pageLineOf, reactionOf, settingsLineOf, thumbAt, worldLineOf, type Back, type Outcome } from "../src/demand.ts";
+import { bind, clearSection, newJourney, owns, sections, TRAIL_REGIONS } from "../src/journey.ts";
 import { ROSTER } from "../src/roster.ts";
 
 describe("the book's demands", () => {
@@ -78,5 +78,30 @@ describe("the book in the world's toast after a fight", () => {
       [{ ...sec, k: 11, beat: true }, "The Sunk Road, written in. The roads are open. The Jersey Devil is not in my pages yet. Go back for it."],
     ];
     for (const [b, ask] of cases) expect(worldLineOf(b, j)).toEqual({ ask, signed: true });
+  });
+});
+
+describe("the book at the head of each compendium chapter (#4166)", () => {
+  const sunk = () => newJourney(["hodag", "squonk", "jackalope"], 1)!;
+  test("each chapter's line is about what you did there, and none repeats another", () => {
+    const j = sunk();
+    const before = (["lineup", "bestiary", "regions"] as const).map((ch) => pageLineOf(ch, j).ask);
+    expect(before[0]).toStartWith("The Hodag leads.");
+    expect(before[1]).toContain("witch's sheet");
+    expect(before[2]).toStartWith("Not one page written.");
+    // play a little: the squonk is hurt, a beast is bound in the first section, and that section's page is written
+    j.party[1]!.hp = 0.4;
+    const pb = TRAIL_REGIONS[0]!, sec = sections(pb)[0]!, wild = ROSTER.find((c) => !owns(j, c.id))!;
+    bind(j, wild.id, 4, `${sec.name}, ${pb.name}`, 2);
+    clearSection(j, pb.n, 0);
+    expect(pageLineOf("lineup", j)).toEqual({ ask: "The Hodag leads. The Squonk is dripping on my page.", signed: false });
+    expect(pageLineOf("bestiary", j).ask).toBe(`Last in: the ${wild.name}, ${sec.name}. The ink is dry. Next.`);
+    expect(pageLineOf("regions", j).ask).toBe(`${sec.name}, ${pb.name}: the last page you wrote me. Write the next.`);
+    // a lost streak takes over the regions page; a downed lead takes over the line-up
+    j.talk = { heard: [], said: {}, losses: 3 };
+    expect(pageLineOf("regions", j).ask).toStartWith(`3 lost in a row past ${sec.name}.`);
+    j.party[0]!.hp = 0;
+    expect(pageLineOf("lineup", j).ask).toStartWith("The Hodag leads, flat on its back.");
+    for (const ch of ["lineup", "bestiary", "regions"] as const) expect(pageLineOf(ch, j).ask.length).toBeLessThan(95);
   });
 });

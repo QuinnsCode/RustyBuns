@@ -44,7 +44,7 @@ writes the reveal; until then, no line states it.
 
 ## The ledger: lines in use
 
-The demands and receipts in `src/demand.ts` (`demandOf`, `reactionOf`, `deckDemandOf`, `worldLineOf`). Add yours here when it ships.
+The demands and receipts in `src/demand.ts` (`demandOf`, `reactionOf`, `deckDemandOf`, `worldLineOf`, `pageLineOf`). Add yours here when it ships.
 
 | Where | Line | Signed |
 |---|---|---|
@@ -70,6 +70,16 @@ The demands and receipts in `src/demand.ts` (`demandOf`, `reactionOf`, `deckDema
 | World toast: a keeper beaten | The Sunk Road, written in. The next stone is lit. Walk. | yes |
 | World toast: the last keeper | The Sunk Road, written in. The Jersey Devil is at the arena. Bring it. | yes |
 | World toast: the mythic fled | The Sunk Road, written in. The roads are open. The Jersey Devil is not in my pages yet. Go back for it. | yes |
+| Compendium line-up: all well | The Hodag leads. Nobody is dripping. Go and earn the ink. | yes |
+| Compendium line-up: one hurt | The Hodag leads. The Squonk is dripping on my page. | no |
+| Compendium line-up: one down | The Hodag leads. The Squonk is down. A fire, before you walk. | yes |
+| Compendium line-up: the lead down | The Hodag leads, flat on its back. Move it down or wake it. | yes |
+| Compendium bestiary: only starters | Three from the witch's sheet. You have not bound one yourself. Yet. | yes |
+| Compendium bestiary: the last bind | Last in: the Squonk, the Sunk Road. The ink is dry. Next. | yes |
+| Compendium regions: nothing walked | Not one page written. The Pine Barrens are not going to walk themselves. | yes |
+| Compendium regions: the last page | Wharton Forest, Pine Barrens: the last page you wrote me. Write the next. | yes |
+| Compendium regions: a region done | Pine Barrens, the last page. Its mythic's number is in here somewhere. | no |
+| Compendium regions: losing | 3 lost in a row past the Sunk Road. Same country, same mud. Mend them first. | yes |
 | Settings, from the title | Move the keys where you like. The accounts stay where they are. | no |
 | Settings, over a fight or the walk | Rest if you must. The ledger does not pause. | no |
 | Settings, quill sound off | You turned my quill down. I am still writing. | no |

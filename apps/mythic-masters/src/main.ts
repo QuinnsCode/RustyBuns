@@ -44,7 +44,7 @@ import { accountChip, achieve, canSignIn, finishSignIn, fresh, login, reportButt
 import { asCreature, atLevel, bind, downed, heal, hpOf, wound, bindBelow, bindChance, clearSection, cleared, gainXp, INK, loadJourney, moveUp, mythicOf, newJourney, nextUp, call, owns, PICKS, rest, SAVE_KEY, SECTIONS, sections, see, slots, STARTERS, TRAIL_REGIONS, toNext, WITCH_SAYS, type Journey, mend } from "./journey.ts";
 import { LORE } from "./lore.ts";
 import { circleLineOf, handOf, knownOf, PAGE_INK, poolOf, ribbonsOf, summon, type Summoned } from "./grimoire.ts";
-import { deckDemandOf, demandOf, reactionOf, settingsLineOf, SIGNATURE, thumbAt, worldLineOf, type Back, type Outcome } from "./demand.ts";
+import { deckDemandOf, demandOf, pageLineOf, reactionOf, settingsLineOf, SIGNATURE, thumbAt, worldLineOf, type Back, type Outcome } from "./demand.ts";
 import { tierOf } from "./tiers.ts";
 import { book, cardTurn, fly, penSound, pressed, soak, thumb, turnLeaf } from "./page.ts";
 import { emblem, frame as ring, inkUrl, seal, tear } from "./ornaments.ts";
@@ -916,8 +916,11 @@ function drawJournal(edit = true) {
   else if (front !== tab) front = null;
   const verso = body.querySelector(".verso"), bare = !!verso && ![...verso.children].some((e) => (e as HTMLElement).offsetHeight > 0);
   verso?.insertAdjacentHTML("afterbegin", front || bare ? `<div class="opening"><div class="frontis" aria-hidden="true">${emblem(tab)}</div><hr class="flourish" />`
-    + `<p class="witch">Left in the Pine Barrens by the ones who fled: what is written here rests here, and comes when it&rsquo;s called.</p><p class="demand" data-demand></p></div>`
-    : `<div class="opening slim"><p class="demand" data-demand></p></div>`);
+    + `<p class="witch">Left in the Pine Barrens by the ones who fled: what is written here rests here, and comes when it&rsquo;s called.</p><p class="demand" data-page></p></div>`
+    : `<div class="opening slim"><p class="demand" data-page></p></div>`);
+  // each chapter's head is the Book's line on your record there (src/demand.ts pageLineOf), not the title's demand
+  const said = pageLineOf(tab, j);
+  for (const p of body.querySelectorAll("[data-page]")) p.innerHTML = hand(said.ask, said.signed);
   drawDemand();
   soak(body, edit);
 }
