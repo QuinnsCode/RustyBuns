@@ -6,8 +6,8 @@ import { cheese, esc } from "@rustybuns/util";
 import { getJson, readJson } from "@rustybuns/util/http";
 import { UPDATE_TEXT, pv, updateNotice } from "@rustybuns/util/protocol";
 import { LanReply, MatchReply, PROTOCOL, ParksReply, STORE_URL } from "../api.ts";
-import { allAsks, askBlocked, askText, radioGrid, RADIO, type Ask, type Clue } from "../clues.ts";
-import { HATS, HUNT, PANTS, SHIRTS, SKINS, circleAt, closed, disguiseFor, dropOk, outside, randomLook, type BotLevel, type Look, type Mode, type Msg, type View } from "../hunt/game.ts";
+import { allAsks, askBlocked, askText, parseAsk, radioGrid, RADIO, type Ask, type Clue } from "../clues.ts";
+import { HATS, HUNT, PANTS, SHIRTS, SKINS, circleAt, closed, disguiseFor, dropOk, outside, parseLook, randomLook, type BotLevel, type Look, type Mode, type Msg, type View } from "../hunt/game.ts";
 import { step, wrap, type Body } from "../hunt/sim.ts";
 import { PARKS, ZONES, loadZoneData, zoneById, zoneLoaded, zonesFor, type Zone } from "../zones/zone.ts";
 import { REGIONS } from "@rustybuns/terrain";
@@ -50,7 +50,7 @@ let room: string | null = null;
 /** Quick play: when this room starts by itself (the World starts it, see world.ts). */
 let quick: { at: number } | null = null;
 let info: { app?: string; version?: string } | null = null;
-let look: Look = (() => { try { const l = JSON.parse(store.get("look")); if (l && HATS.includes(l.hat)) return l as Look; } catch {} return randomLook(); })();
+let look: Look = (() => { try { return parseLook(JSON.parse(store.get("look"))) ?? randomLook(); } catch { return randomLook(); } })();
 
 /** Your own body, moved locally every frame so it never lags. */
 let body: (Body & { key: string; pitch: number; speed: number }) | null = null;
@@ -420,7 +420,7 @@ document.addEventListener("click", (e) => {
   else if (d.laps) send({ t: "settings", laps: Number(d.laps) });
   else if (d.bot) send({ t: "bot", level: d.bot as BotLevel });
   else if (d.kick) send({ t: "kick", id: d.kick });
-  else if (d.ask) send({ t: "ask", ask: JSON.parse(d.ask) as Ask });
+  else if (d.ask) { const ask = parseAsk(JSON.parse(d.ask)); if (ask) send({ t: "ask", ask }); }
   else if (d.radio) radioFor = d.radio;
   else if (d.action === "start") send({ t: "start" });
   else if (d.action === "lobby") send({ t: "lobby" });

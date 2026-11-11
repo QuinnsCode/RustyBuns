@@ -72,10 +72,13 @@ export const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt
 export const NAME ="qCRM";
 export const VERSION = "0.1.4";
 
+import { obj, str } from "@rustybuns/util/guard";
 /** A JSON response. Private by default: CRM rows never sit in a shared cache. */
 import { privateJson as json } from "@rustybuns/util/http";
 export { json };
 
+/** What every refusal here answers: `{ error }`. */
+export const ErrorReply = obj({ error: str(2000) });
 export const error = (status: number, message: string) => json({ error: message }, status);
 
 // Small helpers every file may use; look here before writing a toHex or a digest again.

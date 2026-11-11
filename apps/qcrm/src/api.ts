@@ -29,6 +29,7 @@ import { scriptRoutes } from "./scripts.ts";
 import { scenarioRoute } from "./scenario.ts";
 import { seedRoutes } from "./seed-data.ts";
 import { engineKey } from "@rustybuns/seal";
+import type { EngineKey } from "./engine.ts";
 import { syncRoutes } from "./sync.ts";
 import { deliver, webhookRoutes } from "./webhooks.ts";
 
@@ -62,7 +63,7 @@ async function route(req: Request, env: Env): Promise<Response> {
   // The sealed engine's key, for the browser to open it: public, the hero wave needs it before sign-in.
   if (p[1] === "engine" && p[2] === "key" && !p[3] && req.method === "GET") {
     const key = await engineKey({ ARTSTEW_URL: env.ARTSTEW_URL, license: env.QCRM_LICENSE, host: env.BETTER_AUTH_URL, version: VERSION });
-    return key ? json({ key }) : error(402, "engine locked: license not paid");
+    return key ? json({ key } satisfies EngineKey) : error(402, "engine locked: license not paid");
   }
   if (p[1] === "mcp" && !p[2]) return mcp(req, env, (r) => handleApi(r, env));
   if (!accountsOn(env)) return accountsOff();

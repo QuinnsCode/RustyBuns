@@ -2,7 +2,8 @@
 // the JSON-string API. Works in the browser (Vite resolves the .wasm URL) and under Bun (tests).
 import init, * as wasm from "./wasm-pkg/qcrm_engine.js";
 import { unseal } from "@rustybuns/seal";
-import { arr, Bad, num, obj, opt, str, type Guard } from "@rustybuns/util/guard";
+import { arr, Bad, num, obj, opt, str, type Guard, type Of } from "@rustybuns/util/guard";
+import { readJson } from "@rustybuns/util/http";
 
 export type Engine = typeof wasm;
 
@@ -12,10 +13,16 @@ let loading: Promise<Engine> | undefined;
  * Sealed builds (VITE_QCRM_SEALED=1) fetch the encrypted wasm and the key the server gets from
  * artstewengine; no payment, no key, no engine. Plain builds (dev, tests) load the wasm as is.
  */
+/** GET /api/engine/key's answer: the key that opens engine.sealed. */
+export const EngineKey = obj({ key: str(4096) });
+export type EngineKey = Of<typeof EngineKey>;
+
 async function sealedSource(): Promise<ArrayBuffer> {
   const res = await fetch("/api/engine/key");
   if (!res.ok) throw new Error("engine locked: license not paid");
-  const { key } = await res.json() as { key: string };
+  const got = await readJson(res, EngineKey);
+  if (!got) throw new Error("engine locked: the key reply was not a key");
+  const { key } = got;
   const sealed = new Uint8Array(await (await fetch("/engine.sealed")).arrayBuffer());
   return (await unseal(sealed, key)).buffer as ArrayBuffer;
 }

@@ -16,8 +16,8 @@ export interface ToolAnswer { status: number; text: string }
 /** What a program came to, shaped as the text `execute` answers with. */
 export interface Ran { text: string; isError: boolean; calls: number }
 
-/** What a program Worker answers from POST /run. */
-const RunReply = obj({ ok: bool(), result: raw, error: opt(str(Infinity, { min: 0 })), log: opt(arr(str(Infinity, { min: 0 }), 10_000, { drop: true })), calls: opt(int(0, 1e9)) });
+/** What a program Worker answers from POST /run (qCRM's script runs answer the same shape). */
+export const RunReply = obj({ ok: bool(), result: raw, error: opt(str(Infinity, { min: 0 })), log: opt(arr(str(Infinity, { min: 0 }), 10_000, { drop: true })), calls: opt(int(0, 1e9)) });
 
 /** Tool names a program calls that no tool answers to, found by reading it, before anything runs. */
 export const unknownTools = (code: string, names: Iterable<string>): string[] => {

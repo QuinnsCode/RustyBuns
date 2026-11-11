@@ -12,7 +12,8 @@ import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { elevation } from "../../../packages/terrain/scripts/terrarium.ts";
 import { project } from "../src/geo.ts";
-import type { Landmark, ParkData } from "../src/parks/types.ts";
+import { arr, num, obj, oneOf, opt, rec, str } from "@rustybuns/util/guard";
+import type { Landmark } from "../src/parks/types.ts";
 import type { ZoneData } from "../src/zones/types.ts";
 
 interface ZoneSpec { id: string; park: string; name: string; blurb: string; lat: number; lon: number; trees: ZoneData["trees"] }
@@ -45,7 +46,7 @@ async function namedFeatures(z: ZoneSpec): Promise<{ name: string; kind: Landmar
   for (let i = 0; i < 5; i++) {
     const r = await fetch("https://overpass-api.de/api/interpreter", { method: "POST", body: new URLSearchParams({ data: q }), headers: { "user-agent": "rustybuns-park-hide-seek/0.1" } });
     if (r.ok) {
-      const j = await r.json() as { elements: { lat: number; lon: number; tags: Record<string, string> }[] };
+      const j = Overpass(await r.json());
       // USGS "unnamed geyser" codes (UNNG-MGB-9) make poor signposts.
       return j.elements.filter((e) => !/^UNNG/.test(e.tags.name)).map((e) => {
         const t = e.tags;
@@ -62,8 +63,14 @@ async function namedFeatures(z: ZoneSpec): Promise<{ name: string; kind: Landmar
   return [];
 }
 
+/** Overpass's answer: named nodes and their tags. */
+const Overpass = obj({ elements: arr(obj({ lat: num(-90, 90), lon: num(-180, 180), tags: rec(str(Infinity, { min: 0 })) }), 100_000) });
+const Mark = obj({ name: str(), kind: oneOf(["peak", "falls", "geyser", "spring", "arch", "cave", "view", "start"]), x: num(-1e4, 1e4), y: num(-1e4, 1e4), ele: opt(num(-500, 9000)) });
+/** The part of a committed park this script reads. */
+const Park = obj({ center: arr(num(-180, 180), 2, { min: 2 }), landmarks: arr(Mark, 10_000), start: Mark });
+
 async function build(z: ZoneSpec): Promise<ZoneData> {
-  const park = (await Bun.file(join(import.meta.dir, `../src/parks/data/${z.park}.json`)).json()) as ParkData;
+  const park = Park(await Bun.file(join(import.meta.dir, `../src/parks/data/${z.park}.json`)).json());
   const mPerDegLat = 111320, mPerDegLon = 111320 * Math.cos((z.lat * Math.PI) / 180);
   const heights = new Int16Array(N * N);
   // Row 0 is the south edge (y grows north), matching the 2D map's convention.

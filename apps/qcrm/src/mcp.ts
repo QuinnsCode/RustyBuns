@@ -9,7 +9,8 @@
 // GET /api/mcp says the same in JSON. Risky tools (openapi.ts) are marked destructive so a
 // client asks a person first; the routes check the caller's role all the same.
 
-import { json, NAME, VERSION, type Env } from "./env.ts";
+import { readJson } from "@rustybuns/util/http";
+import { ErrorReply, json, NAME, VERSION, type Env } from "./env.ts";
 import { tools, toRequest, type Tool } from "./mcp-tools.ts";
 
 const VERSIONS = ["2025-06-18", "2025-03-26", "2024-11-05"];
@@ -54,7 +55,7 @@ export async function mcp(req: Request, env: Env, dispatch: (r: Request) => Prom
   if (msg.id === undefined) return new Response(null, { status: 202 });
 
   const who = await dispatch(new Request(`${origin}/api/me`, { headers: carried }));
-  if (who.status === 401 || who.status === 503) return who.status === 503 ? who : unauthorized(((await who.json().catch(() => ({}))) as { error?: string }).error ?? "bad key", origin);
+  if (who.status === 401 || who.status === 503) return who.status === 503 ? who : unauthorized((await readJson(who, ErrorReply))?.error ?? "bad key", origin);
 
   const { id, method } = msg, params = (msg.params ?? {}) as { protocolVersion?: unknown; name?: unknown; arguments?: unknown };
   switch (method) {
