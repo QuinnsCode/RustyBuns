@@ -1017,3 +1017,9 @@ button.preset { padding-bottom: 18px; }
 /* The title's account chip: under the crest's readout line. */
 .crest .account { display: flex; justify-content: center; margin: 8px auto 0; }
 .spaces-btn[hidden] { display: none; }
+
+/* --- Round 6 (#3613): the Marines lead as figures, and no big plate looks like the next. scripts/plates.ts paints an
+   armoured Marine bust into each of the hero plate's outer bays (in place of the bar graphs) and adds stains.webp (35 KB,
+   broad mottling too big to tile, rust weeping from the corner bolts, paint chipped back along the bevels), stretched over
+   every big plate as its grime. The account chip is a bolted brass tag (SKIN in eqosys.ts). */
+:root { --grime: url("/plates/stains.webp") 0 0 / 100% 100% no-repeat; }
