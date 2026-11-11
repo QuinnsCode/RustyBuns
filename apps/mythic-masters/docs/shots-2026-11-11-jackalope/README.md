@@ -20,7 +20,7 @@ rising between the ears with two or three tines, a big dark eye high on the side
 
 ## What made it better, for the next starter
 
-The generator (`proposals/jackalope/make-jackalope.ts`, in this PR's first commit) has these pieces:
+The generator (`proposals/jackalope/make-jackalope.ts`, commit 790a6dc0, on the PR) has these pieces:
 
 - **One skin from blobs:** the body, haunches, the long hind feet, the legs and the head (a cranium, a muzzle and two
   cheeks) are all ellipsoids merged by `blend: 0.009`. The hind foot is a long flat blob on the hock node, lying on the
