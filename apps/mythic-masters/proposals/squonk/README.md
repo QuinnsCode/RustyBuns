@@ -17,7 +17,7 @@ mournful face with a slack open mouth, weeping, the head carried low, thin legs 
 
 - `squonk-cox.json`: the 1910 plate. Hunched, with nine rolls of loose hide, a skin hood draped by the low face, and thin legs on long toes.
 - `squonk-tryon.json`: the 1939 drawing. Sitting up, pale and warty all over, with pointed ears, a wailing mouth and a knotted brow.
-- `squonk-sculpt.json`: built from a photo of a clay Squonk sculpture the owner shared (not committed, since it is someone's artwork). A barrel body in deep even rolls, one big glossy dark-red eye per side in a fleshy socket, a pink upturned nose, a pout, long drooping ears, freckles, stout legs on wide nailed toes, and no tail.
+- `squonk-sculpt.json`: the body from a photo of a clay Squonk sculpture the owner shared (not committed, since it is someone's artwork). It is a barrel in deep even rolls, on legs of one flesh with it (knees, ankle wrinkles, four nailed toes), under the weeping face the other candidates share, at starter size (the owner asked for that head). Budget 9000.
 - `squonk-starter.json`: a starter. A big weeping head with huge eyes and big tears on a small saggy body, with basset hoods and stubby legs.
 
 ## Building
