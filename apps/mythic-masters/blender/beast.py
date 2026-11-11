@@ -18,7 +18,7 @@
 #   spikes  rows, spread     `rows` per point fanned `spread` degrees around the chain; `sweep` toward its
 #           sweep, tilt      end, `tilt` out to the side (side rows on a shell, a crest off the centreline)
 #   tuft    along, n, len, base, and rows, spread, sweep (1.5), curve (30), flat (0.3), sink (0.8),
-#           material (the body's): flat, curling fur along a chain, swept toward its last node. A tuft or
+#           material (the palette's `tuft`, else the body's): flat, curling fur along a chain, swept toward its last node. A tuft or
 #           spike roots `sink` of the way out to the skin, a blob's where one covers the chain
 #   membrane camber, puff    the middle lifted `camber` metres (up, or outward for a fin) and thickened to
 #                            `puff`, tapering to `thick` at the rim: a cupped wing, a flipper
@@ -41,10 +41,15 @@
 #           height, snout,   `stop` (0.4) how far along the taper starts (a stop, then a muzzle); `flat` (0 round,
 #           stop, flat,      1 a box) squares the section and flattens the crown; `droop` degrees the nose tilts down;
 #           droop, jaw       `jaw` (0) how much deeper the muzzle hangs under the stop (a hound's lip, a horse's chin)
+#           gape, teeth,     `gape` (0) degrees a lower jaw hangs open from a hinge under the stop, the gap lined in
+#           tooth, mouth_mat `mouth_mat` (the palette's `mouth`, else `dark`); `teeth` per side along each lip,
+#                            `tooth` [len, base] in metres, in `tooth_mat` (the palette's `fang`, `tooth`, else `claw`)
 #   limb    along, radii,    a leg or arm lofted over a chain of nodes, tapering to the ankle: `radii` (metres, one per
 #           calf, depth      node) is the half-width at each, `depth` (1) how deep fore to aft in that, `calf` (0) a
 #                            bulge of that share of the radius a third of the way down. Thin the sheet's own leg nodes
-#                            under it, or the skin tube shows through. List the `l_` nodes; `mirror` adds the twin
+#           shoulder, elbow  under it, or the skin tube shows through. List the `l_` nodes; `mirror` adds the twin.
+#                            `shoulder` (0) swells the top by that share of the radius, `elbow` (0) each middle node
+#                            (a knee or elbow), jutting back (-x) more than out
 #   foot    at, form, len,   a paw, hoof, talon or web on a foot node (also a hand: any node), `mirror`ed like the rest.
 #           width, toes,     `form` paw: a pad with `toes` bumps and `claw` cones (0 none); hoof: a wedge, `toes` 2 for a cleft
 #           claw, spread,    hoof (`claw_mat` colours the claws); talon: `toes` (3) curved toes `spread` degrees apart and a hind claw; web: a flat fan between
@@ -608,10 +613,53 @@ def skull(name, at, d, p, mat):
         c = at + d * (length * (t - 0.4)) - up * (length * math.sin(tilt) * max(0.0, t - stop) * 0.9)
         drop = jaw * max(0.0, min(1.0, (t - stop) / (1 - stop))) * (1 - max(0.0, (t - 0.9) * 8)) if jaw else 0.0
         rings.append([section(c, side, up, w0 * fw, h0 * fh, flat, 2 * math.pi * j / seg, drop) for j in range(seg)])
-    return ring_loft(name, rings, mat)
+    head = ring_loft(name, rings, mat)
+    if not p.get("gape"):
+        return head
+    return [head] + gaping_jaw(name, at, d, side, up, p, mat)
 
 
-def limb(name, pts, radii, depth, calf, mat):
+def gaping_jaw(name, at, d, side, up, p, mat):
+    """An open mouth under a skull: a lower jaw hinged under the stop and swung `gape` degrees down, a dark
+    lining filling the wedge between it and the skull's underside, and rows of teeth on both lips."""
+    length, w0, h0, snout, stop = p["len"], p["width"], p["height"], p.get("snout", 0.45), p.get("stop", 0.4)
+    g = math.radians(p["gape"])
+    hinge = at + d * (length * (stop - 0.55)) - up * (h0 * 0.55)
+    reach = length * (1.0 - stop + 0.1)  # hinge to the chin
+    rot = Matrix.Rotation(-g, 3, side)
+    jd, ju = rot @ d, rot @ up
+    out, seg = [], 12
+    # the lower jaw: wide at the hinge, tapering to a rounded chin, flatter than the skull
+    prof = [(0.0, 0.8, 0.5), (0.3, 0.85, 0.45), (0.7, 0.55 + 0.3 * snout, 0.4), (0.92, 0.45 * snout + 0.2, 0.32), (1.0, 0.25, 0.18)]
+    rings = [[section(hinge + jd * (reach * t) - ju * (h0 * fh * 0.4), side, ju, w0 * fw * 0.5, h0 * fh * 0.5, 0.4, 2 * math.pi * j / seg)
+              for j in range(seg)] for t, fw, fh in prof]
+    out.append(ring_loft(f"{name}_jaw", rings, p.get("jaw_mat", mat)))
+    # the lining: rings across the gap, from the skull's palate down to the jaw's tongue line
+    lining = p.get("mouth_mat", "mouth" if "mouth" in PALETTE else ("dark" if "dark" in PALETTE else None))
+    if lining:
+        rings = []
+        for t, fw in ((0.0, 0.6), (0.45, 0.62), (0.8, 0.45), (0.95, 0.3)):
+            top, low = hinge + d * (reach * t) + up * (h0 * 0.12), hinge + jd * (reach * t)
+            mid, half = (top + low) / 2, max((top - low).length / 2, h0 * 0.08)
+            rings.append([section(mid, side, (top - low).normalized(), w0 * fw * 0.5, half, 0.3, 2 * math.pi * j / seg) for j in range(seg)])
+        out.append(ring_loft(f"{name}_mouth", rings, lining))
+    n = p.get("teeth", 0)
+    if n:
+        tl, tb = p.get("tooth", (h0 * 0.25, h0 * 0.07))
+        tooth = p.get("tooth_mat", next((k for k in ("fang", "tooth", "claw") if k in PALETTE), mat))
+        for side_k in (1, -1):
+            for j in range(n):
+                t = 0.25 + 0.65 * j / max(1, n - 1)
+                wf = 0.42 * (1 - 0.45 * t)  # the rows close in toward the chin
+                upper = hinge + d * (reach * t) + up * (h0 * 0.1) + side * (w0 * wf * side_k)
+                lower = hinge + jd * (reach * t) + ju * (h0 * 0.02) + side * (w0 * wf * 0.9 * side_k)
+                big = 1.6 if j == n - 1 else 1.0  # the front pair are fangs
+                out.append(cone(f"{name}_tu{side_k}{j}", upper, -up, tl * big, tb * big, tooth, segments=5))
+                out.append(cone(f"{name}_tl{side_k}{j}", lower, ju, tl * 0.8, tb, tooth, segments=5))
+    return out
+
+
+def limb(name, pts, radii, depth, calf, mat, shoulder=0.0, elbow=0.0):
     """A tapered leg or arm over a chain of points: an elliptical section at each, radius from `radii`, and a
     calf swelling a third of the way down. Subdivided between the points so the taper and calf are smooth.
     The radius eases between nodes (no straight cone), the thigh is narrower across than deep and rounds out
@@ -630,6 +678,7 @@ def limb(name, pts, radii, depth, calf, mat):
     path.append(pts[-1])
     rs.append(radii[-1])
     total = len(path) - 1
+    joints = [(i + 1) * n / total for i in range(1, len(pts) - 2)]  # each middle node of the sheet's chain
     rings, seg = [], 16
     for i, c in enumerate(path):
         t = (path[min(i + 1, total)] - path[max(i - 1, 0)]).normalized()
@@ -638,7 +687,13 @@ def limb(name, pts, radii, depth, calf, mat):
         bump = 1 + calf * math.exp(-((f - 0.35) / 0.18) ** 2)
         across = 0.78 + 0.22 * min(1.0, f / 0.6)  # narrow across at the thigh, round by the ankle
         dome = 1.0 if i >= 2 else (0.55 if i == 0 else 0.85)  # the buried top rings close like a cap
-        rings.append([section(c, side, up, rs[i] * bump * across * dome, rs[i] * bump * depth * dome, 0.0, 2 * math.pi * j / seg) for j in range(seg)])
+        bump += shoulder * math.exp(-((f - 0.14) / 0.1) ** 2)
+        knob = sum(elbow * math.exp(-((f - fj) / 0.07) ** 2) for fj in joints)
+        ring = [section(c, side, up, rs[i] * bump * across * dome, rs[i] * bump * depth * dome, 0.0, 2 * math.pi * j / seg) for j in range(seg)]
+        if knob:
+            # a knee or elbow: the joint's bone shows behind (-x) more than to the sides
+            ring = [q + (q - c) * knob * (0.5 + 0.5 * max(0.0, -(q - c).normalized().x)) for q in ring]
+        rings.append(ring)
     return ring_loft(name, rings, mat)
 
 
@@ -946,7 +1001,7 @@ def parts(sheet, nodes):
                 for j, k, root, up, d in fan(nodes, blobs, p, side, 0.8, 1.5):
                     ln = p["len"] * (1 - 0.15 * ((j + k) % 3) / 2)  # ragged, the same every build
                     out.append(tube(f"{name}_{j}_{k}", root, d, ln, p["base"], 0,
-                                    p.get("material", sheet.get("material", "hide")), curve=p.get("curve", 30),
+                                    p.get("material", "tuft" if "tuft" in PALETTE else sheet.get("material", "hide")), curve=p.get("curve", 30),
                                     bend=-up, flat=p.get("flat", 0.3), segments=5, rings=3))
             elif p["kind"] == "scales":
                 # plates: wide, flat and short, lying toward the chain's end, each over the one behind
@@ -975,11 +1030,12 @@ def parts(sheet, nodes):
                                 profile=[(0, 0.4), (0.3, 1.0), (0.7, 1.0), (1, 0.35)]))
             elif p["kind"] == "skull":
                 at = Vector(node(p["at"])) + Vector(s(p.get("off", (0, 0, 0))))
-                out.append(skull(name, at, s(p.get("dir", (1, 0, 0))), p, p.get("material", sheet.get("material", "hide"))))
+                built = skull(name, at, s(p.get("dir", (1, 0, 0))), p, p.get("material", sheet.get("material", "hide")))
+                out += built if isinstance(built, list) else [built]
             elif p["kind"] == "limb":
                 chain = [mirrored(c) if side < 0 else c for c in p["along"]]
                 out.append(limb(name, [Vector(nodes[c][:3]) for c in chain], p["radii"], p.get("depth", 1), p.get("calf", 0),
-                                p.get("material", sheet.get("material", "hide"))))
+                                p.get("material", sheet.get("material", "hide")), p.get("shoulder", 0), p.get("elbow", 0)))
             elif p["kind"] == "foot":
                 k = mirrored(p["at"]) if side < 0 else p["at"]
                 out += foot_part(name, nodes[k][:3], nodes[k][3], p, side, p.get("material", sheet.get("material", "hide")))
