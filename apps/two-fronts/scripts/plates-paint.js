@@ -122,6 +122,53 @@ async (insigniaSvg, medals) => {
     g.restore();
   }
 
+  // A Thunder Marine from the chest up, in relief: a gunmetal breastplate with a brass collar and a stencilled bolt, the
+  // near pauldron domed and brass-rimmed with a lightning mark struck in it, and the helmet above, visor lit blue. Drawn
+  // in a 220 x 260 box facing +x, fitted into (x, y, w, h); dir -1 mirrors it about x.
+  function bust(g, x, y, w, h, dir) {
+    const s = Math.min(w / 220, h / 260);
+    g.save(); g.translate(x, y + h - 260 * s); g.scale(dir * s, s);
+    const tex = g.createPattern(steel(256, 131, "#2a313a", false), "repeat");
+    // one raised piece: a drop shadow into the plate, a lit gradient, the steel's grain, a dark outline, a lit top edge
+    const piece = (shape, top, low, edge) => {
+      g.save(); g.shadowColor = "rgba(0,0,0,0.85)"; g.shadowBlur = 10; g.shadowOffsetX = 4; g.shadowOffsetY = 5; shape(); g.fillStyle = "#151a20"; g.fill(); g.restore();
+      const lit = g.createLinearGradient(0, top, 0, low); lit.addColorStop(0, "#66717e"); lit.addColorStop(0.4, "#323a44"); lit.addColorStop(1, "#11151a");
+      shape(); g.fillStyle = lit; g.fill();
+      g.save(); shape(); g.clip(); g.globalAlpha = 0.45; g.fillStyle = tex; g.fillRect(-20, top - 20, 280, low - top + 40); g.restore();
+      shape(); g.lineWidth = 2.2; g.strokeStyle = "rgba(0,0,0,0.9)"; g.stroke();
+      if (edge) { edge(); g.lineWidth = 1.6; g.strokeStyle = "rgba(225,232,240,0.42)"; g.stroke(); }
+    };
+    const brass = (y0, y1) => { const b = g.createLinearGradient(0, y0, 0, y1); b.addColorStop(0, "#ffe39a"); b.addColorStop(0.5, "#d8a83f"); b.addColorStop(1, "#7a5414"); return b; };
+    // the breastplate: broad, sloping to the collar, its foot cut off by the bay
+    const chest = () => { g.beginPath(); g.moveTo(40, 260); g.lineTo(46, 178); g.bezierCurveTo(60, 150, 110, 138, 160, 140); g.bezierCurveTo(196, 142, 214, 160, 218, 196); g.lineTo(220, 260); g.closePath(); };
+    piece(chest, 138, 260, () => { g.beginPath(); g.moveTo(48, 176); g.bezierCurveTo(62, 152, 110, 142, 160, 144); g.bezierCurveTo(192, 146, 210, 162, 214, 192); });
+    // its plates: a centre ridge and two ribbed bands, then a brass bolt stencilled on it, worn back
+    g.beginPath(); g.moveTo(150, 146); g.lineTo(146, 260); g.lineWidth = 2; g.strokeStyle = "rgba(0,0,0,0.7)"; g.stroke();
+    g.beginPath(); g.moveTo(153, 148); g.lineTo(149, 260); g.lineWidth = 1; g.strokeStyle = "rgba(220,228,238,0.25)"; g.stroke();
+    for (const by of [214, 238]) { g.beginPath(); g.moveTo(58, by); g.bezierCurveTo(110, by - 8, 170, by - 8, 218, by - 2); g.lineWidth = 2; g.strokeStyle = "rgba(0,0,0,0.6)"; g.stroke(); g.beginPath(); g.moveTo(58, by + 2); g.bezierCurveTo(110, by - 6, 170, by - 6, 218, by); g.lineWidth = 1; g.strokeStyle = "rgba(220,228,238,0.18)"; g.stroke(); }
+    g.save(); g.globalAlpha = 0.8; g.beginPath(); g.moveTo(184, 160); g.lineTo(168, 186); g.lineTo(180, 186); g.lineTo(170, 208); g.lineTo(194, 178); g.lineTo(182, 178); g.lineTo(192, 160); g.closePath(); g.fillStyle = brass(160, 208); g.fill(); g.restore();
+    // a status lamp on the breast, the visor's cold blue
+    g.save(); g.shadowColor = "rgba(120,200,255,0.9)"; g.shadowBlur = 8; g.beginPath(); g.arc(120, 196, 4, 0, Math.PI * 2); g.fillStyle = "#8fd3ff"; g.fill(); g.restore();
+    // the collar: a thick gorget ring, brass along its lip
+    const collar = () => { g.beginPath(); g.moveTo(64, 160); g.bezierCurveTo(80, 132, 140, 124, 176, 136); g.lineTo(178, 152); g.bezierCurveTo(140, 142, 96, 148, 74, 172); g.closePath(); };
+    piece(collar, 124, 172);
+    g.beginPath(); g.moveTo(68, 160); g.bezierCurveTo(84, 136, 140, 128, 176, 140); g.lineWidth = 4; g.strokeStyle = brass(128, 160); g.stroke();
+    // the pauldron: a big dome over the near shoulder, rimmed in brass, with the lightning mark struck in its face
+    const pauldron = () => { g.beginPath(); g.moveTo(0, 222); g.bezierCurveTo(-4, 160, 30, 128, 78, 128); g.bezierCurveTo(118, 128, 140, 156, 138, 196); g.bezierCurveTo(110, 214, 50, 226, 0, 222); g.closePath(); };
+    piece(pauldron, 128, 226, () => { g.beginPath(); g.moveTo(6, 196); g.bezierCurveTo(8, 156, 40, 134, 78, 134); g.bezierCurveTo(108, 134, 128, 152, 132, 178); });
+    g.save(); pauldron(); g.clip(); g.beginPath(); g.moveTo(0, 222); g.bezierCurveTo(50, 226, 110, 214, 138, 196); g.lineWidth = 12; g.strokeStyle = brass(190, 228); g.stroke();
+    g.beginPath(); g.moveTo(0, 214); g.bezierCurveTo(50, 218, 108, 206, 136, 189); g.lineWidth = 1.4; g.strokeStyle = "rgba(0,0,0,0.6)"; g.stroke(); g.restore();
+    for (const [rx, ry] of [[22, 214], [70, 214], [116, 202]]) { g.beginPath(); g.arc(rx, ry, 3, 0, Math.PI * 2); g.fillStyle = "#5c3f0c"; g.fill(); g.beginPath(); g.arc(rx - 0.8, ry - 0.8, 1.6, 0, Math.PI * 2); g.fillStyle = "#ffe7a6"; g.fill(); }
+    const boltMark = () => { g.beginPath(); g.moveTo(80, 142); g.lineTo(56, 178); g.lineTo(72, 178); g.lineTo(58, 204); g.lineTo(94, 166); g.lineTo(78, 166); g.lineTo(92, 142); g.closePath(); };
+    g.save(); g.translate(1.5, 2); boltMark(); g.fillStyle = "rgba(0,0,0,0.7)"; g.fill(); g.restore();
+    boltMark(); g.fillStyle = brass(142, 204); g.fill(); g.lineWidth = 1; g.strokeStyle = "rgba(255,240,200,0.6)"; g.stroke();
+    // the helmet, set down into the collar
+    g.restore();
+    g.save(); g.translate(x, y + h - 260 * s); g.scale(s, s);
+    if (dir > 0) helmet(g, 58, 222, 58, 1); else helmet(g, -58, -222, 58, -1);
+    g.restore();
+  }
+
   function hero(W, H, seed) {
     const [c, g] = canvas(W, H), r = rng(seed), ch = 34;
     const shape = (inset) => { const k = ch - inset * 0.4; g.beginPath(); g.moveTo(inset + k, inset); g.lineTo(W - inset - k, inset); g.lineTo(W - inset, inset + k); g.lineTo(W - inset, H - inset - k); g.lineTo(W - inset - k, H - inset); g.lineTo(inset + k, H - inset); g.lineTo(inset, H - inset - k); g.lineTo(inset, inset + k); g.closePath(); };
@@ -144,15 +191,9 @@ async (insigniaSvg, medals) => {
     }
     // panel seams: two grooves either side of the insignia's seat
     for (const sx of [W * 0.3, W * 0.7]) { g.fillStyle = "rgba(0,0,0,0.55)"; g.fillRect(sx - 1.5, rim + 4, 3, H - 2 * rim - 8); g.fillStyle = "rgba(210,220,232,0.12)"; g.fillRect(sx + 1.5, rim + 4, 1, H - 2 * rim - 8); }
-    // a Marine's helmet in relief on each outer bay, facing the insignia: the armour leads, not just the badge
-    helmet(g, rim + 30, W * 0.3 - 26, H * 0.3 - 22, 1); helmet(g, W - rim - 30, W * 0.7 + 26, H * 0.3 - 22, -1);
-    // readout windows under the slats: cold blue bar graphs, as if the ship's state is live
-    for (const x0 of [rim + 30, W * 0.7 + 26]) {
-      const ww = W * 0.3 - 26 - rim - 30, y0 = H * 0.3 + 6 * 14 + 10, hh = H - rim - 22 - y0;
-      g.fillStyle = "#081018"; g.fillRect(x0, y0, ww, hh); g.strokeStyle = "rgba(0,0,0,0.8)"; g.lineWidth = 2; g.strokeRect(x0, y0, ww, hh);
-      for (let k = 0; k < 14; k++) { const bh = (0.2 + r() * 0.75) * (hh - 10), bx = x0 + 6 + k * ((ww - 12) / 14); g.fillStyle = `rgba(120,200,255,${0.35 + r() * 0.4})`; g.fillRect(bx, y0 + hh - 5 - bh, (ww - 12) / 14 - 3, bh); }
-      for (let y = y0; y < y0 + hh; y += 3) { g.fillStyle = "rgba(0,0,0,0.25)"; g.fillRect(x0, y, ww, 1); }
-    }
+    // an armoured Marine bust in each outer bay, facing the insignia: the armour leads the plate, not just the badge
+    const bayW = W * 0.3 - 26 - rim - 12;
+    bust(g, rim + 12, rim + 6, bayW, H - 2 * rim - 6, 1); bust(g, W - rim - 12, rim + 6, bayW, H - 2 * rim - 6, -1);
     // the insignia's seat: a recessed disc, then the insignia lit and casting a shadow into it
     const cx = W / 2, cy = H / 2, sr = H * 0.4;
     const pit = g.createRadialGradient(cx, cy - sr * 0.2, sr * 0.2, cx, cy, sr); pit.addColorStop(0, "rgba(0,0,0,0.15)"); pit.addColorStop(1, "rgba(0,0,0,0.6)");
@@ -214,6 +255,44 @@ async (insigniaSvg, medals) => {
     const [c, g] = canvas(FW * FRAMES, FH);
     for (let f = 0; f < FRAMES; f++) wear(g, f * FW, 101 + f * 17);
     save("wear", c, 0.6);
+  }
+
+  // --- 4b. stains.webp: laid over each big plate, stretched to its box, so the steel tile under it never reads as a
+  // repeat: broad mottling too big to tile, rust weeping down from the corner bolts, and paint chipped back to bare metal
+  // along the bevels, each chip with a rust halo. Transparent.
+  {
+    const S = 512, [c, g] = canvas(S, S), r = rng(517), n = noise(r, 3), n2 = noise(r, 7), img = g.getImageData(0, 0, S, S);
+    for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+      const v = n(x / S, y / S) * 0.65 + n2(x / S, y / S) * 0.35, i = (y * S + x) * 4;
+      if (v < 0.5) { img.data[i] = 6; img.data[i + 1] = 7; img.data[i + 2] = 9; img.data[i + 3] = Math.round((0.5 - v) * 22) * 10; }
+      else { img.data[i] = 150; img.data[i + 1] = 160; img.data[i + 2] = 172; img.data[i + 3] = Math.round((v - 0.5) * 10) * 5; }
+    }
+    g.putImageData(img, 0, 0);
+    // rust weeping from the bolts: an orange-brown streak that runs down and fades, a darker core in it
+    g.filter = "blur(2px)";
+    for (const [bx, by] of [[22, 22], [S - 22, 22], [S * 0.5, 22]]) {
+      for (let k = 0; k < 2 + Math.floor(r() * 2); k++) {
+        const x = bx + (r() - 0.5) * 14, len = 40 + r() * 80, w = 4 + r() * 5, sway = (r() - 0.5) * 10;
+        const gr = g.createLinearGradient(0, by, 0, by + len); gr.addColorStop(0, "rgba(104,56,24,0.4)"); gr.addColorStop(0.5, "rgba(80,46,22,0.2)"); gr.addColorStop(1, "rgba(80,44,20,0)");
+        g.fillStyle = gr; g.beginPath(); g.moveTo(x - w, by); g.bezierCurveTo(x - w * 0.7 + sway, by + len * 0.4, x - w * 0.3 - sway, by + len * 0.7, x + sway * 0.5, by + len);
+        g.bezierCurveTo(x + w * 0.3 - sway, by + len * 0.7, x + w * 0.7 + sway, by + len * 0.4, x + w, by); g.fill();
+      }
+      g.beginPath(); g.arc(bx, by, 10, 0, Math.PI * 2); g.fillStyle = "rgba(96,52,22,0.3)"; g.fill();
+    }
+    g.filter = "none";
+    // chipped paint along the bevels: ragged flakes of bare steel, thickest in the corners, a rust halo round a few
+    const chip = (x, y, rad) => {
+      const pts = 5 + Math.floor(r() * 4), path = () => { g.beginPath(); for (let k = 0; k < pts; k++) { const a = (k / pts) * Math.PI * 2, rr = rad * (0.5 + r() * 0.8); g[k ? "lineTo" : "moveTo"](x + Math.cos(a) * rr, y + Math.sin(a) * rr * 0.7); } g.closePath(); };
+      if (r() < 0.35) { g.save(); g.filter = "blur(1.5px)"; g.beginPath(); g.arc(x, y + 1, rad * 1.5, 0, Math.PI * 2); g.fillStyle = "rgba(118,62,24,0.3)"; g.fill(); g.restore(); }
+      path(); g.fillStyle = "rgba(0,0,0,0.5)"; g.save(); g.translate(0, 1); g.fill(); g.restore();
+      path(); g.fillStyle = `rgba(${120 + r() * 30},${128 + r() * 26},${138 + r() * 22},${0.25 + r() * 0.3})`; g.fill();
+    };
+    for (let k = 0; k < 150; k++) {
+      const side = Math.floor(r() * 4), t = r() < 0.4 ? (r() < 0.5 ? r() * 0.12 : 1 - r() * 0.12) : r(), d = 2 + Math.pow(r(), 2.6) * 16;
+      const [x, y] = side === 0 ? [t * S, d] : side === 1 ? [S - d, t * S] : side === 2 ? [t * S, S - d] : [d, t * S];
+      chip(x, y, 0.8 + r() * (d < 6 ? 2.6 : 1.4));
+    }
+    save("stains", c, 0.5);
   }
 
   // --- 5. serials.webp: stencilled serials sprayed on the cards and worn back, eight frames stacked. ------------------
