@@ -19,7 +19,7 @@ import { KIND_ICONS, drawMap, drawPlanet, galeOn, mapLegend } from "./ui/map.ts"
 import { STATE_ICONS, STATE_NAMES, placeStates, systemState, type PlaceState } from "./war/states.ts";
 import { heroPlace, sheet } from "./war/sheet.ts";
 import { POINTS, WARS, holdsGoal, isFrost, objective } from "./war/objectives.ts";
-import { icon, tip } from "./ui/icons.ts";
+import { about, icon, info, tip } from "./ui/icons.ts";
 import { PRESETS, PRESET_IDS, deploy, emptyDeployment, loadoutOf, placeLoadout, presetDeployment, room, totals, valueOf, type Loadout, type PresetId } from "./war/fleet.ts";
 import { MODE_INFO, voteScreen, type VoteSeat } from "./ui/vote.ts";
 import { run } from "./battle/sim.ts";
@@ -286,7 +286,7 @@ function render() {
   // The sheet's head and the one big button: what this phase wants, and who the turn waits on.
   const sh = sheet({ c, me, phase, waiting: waiting(), mode: g ? "online" : hotseat() ? "hotseat" : "ai", busy, fleetChosen: !!loadout,
     heroAt: mine.hero ? systemDef(mine.hero.system).name : null, deploys: ds.length, retreats: rs.length });
-  $("sheet-head").innerHTML = `<h2>${sh.live ? `<span class="live-dot" aria-hidden="true"></span>` : icon(sh.icon, 18)}${esc(sh.title)}</h2><p class="sub">${esc(sh.sub)}</p>`;
+  $("sheet-head").innerHTML = `<h2 title="${esc(sh.sub)}">${sh.live ? `<span class="live-dot" aria-hidden="true"></span>` : icon(sh.icon, 18)}${esc(sh.title)}${info("about-sheet", "What to do")}</h2>${about("about-sheet", `<p>${esc(sh.sub)}</p>`)}`;
   const chipEl = $("wait-chip");
   chipEl.className = `chip ${sh.wait}`;
   chipEl.hidden = sh.wait === "none";
@@ -762,15 +762,17 @@ function chooseGame(first = false) {
       <h2>${first ? "Two Fronts<small>Thunderwooka Saga</small>" : "New campaign"}</h2>
       <p class="readout">Fleet command <i></i> Doren approach <i></i> Channel 07</p></header>
     ${first ? "" : `<p class="small">${game.kind === "local" ? "The campaign in this browser will be lost." : "You can come back to the online one from its link."}</p>`}
-    <h3>Choose your side</h3>
-    <div class="sides">${SIDES.map((s, i) => `<label class="side ${s.id}"><input type="radio" name="side" value="${s.id}"${i ? "" : " checked"} />
-      <b>${FACTION_NAMES[s.id]}</b><span class="small">${s.pitch}</span></label>`).join("")}</div>
+    <h3>Choose your side ${info("about-sides", "The sides and the wars")}</h3>
+    ${about("about-sides", `<dl class="keys">${SIDES.map((s) => `<dt>${FACTION_NAMES[s.id]}</dt><dd>${s.pitch}</dd>`).join("")}
+      ${Object.values(GALAXIES).map((g) => `<dt>${g.name}</dt><dd>${esc(g.blurb)}</dd>`).join("")}</dl>
+      <p>The short war is an evening, the full campaign several.</p>`)}
+    <div class="sides">${SIDES.map((s, i) => `<label class="side ${s.id}" title="${esc(s.pitch)}"><input type="radio" name="side" value="${s.id}"${i ? "" : " checked"} />
+      <b>${FACTION_NAMES[s.id]}</b></label>`).join("")}</div>
     <h3>Choose the war</h3>
     <div class="choices">${Object.values(GALAXIES).map((g, i) =>
-      `<label title="${esc(g.blurb)}"><input type="radio" name="galaxy" value="${g.id}"${i ? "" : " checked"} /> ${g.name} <small>${g.systems.length} systems</small></label>`).join("")}</div>
-    <p class="small">The short war is an evening, the full campaign several.</p>
+      `<label title="${esc(g.blurb)}"><input type="radio" name="galaxy" value="${g.id}"${i ? "" : " checked"} /> ${g.name} <small title="${g.systems.length} systems">${icon("orbit", 12)}${g.systems.length}</small></label>`).join("")}</div>
     <div class="choices starts">
-      <button type="button" data-start="ai" class="primary" title="Your side against the AI">${icon("bot", 15)} Against the AI</button>
+      <button type="button" data-start="ai" class="primary" title="Your side against the AI">${icon("bot", 15)} Vs AI</button>
       <button type="button" data-start="hotseat" title="Two players taking turns at this screen">${icon("users", 15)} Hotseat</button>
       <button type="button" data-start="online" title="Two players, a turn at a time, each from their own link">${icon("link", 15)} Online</button>
       ${canSignIn() ? `<button type="button" data-start="friends" title="${login() ? "Open a party your eqosys friends join, then start the war together" : "Sign in with eqosys to play your friends"}">${icon("user-plus", 15)} With friends</button>` : ""}
@@ -940,13 +942,14 @@ function pickFleet() {
   const stepper = (kind: "ships" | "armies", name: string, ico: string, cost: number) => `<span class="stepper" title="${name}: ${cost} each">${icon(ico, 15)}
     <button type="button" class="icon-btn" data-custom="${kind}:-1" aria-label="Fewer ${name}" ${l[kind] ? "" : "disabled"}>${icon("minus", 13)}</button><b>${l[kind]}</b>
     <button type="button" class="icon-btn" data-custom="${kind}:1" aria-label="More ${name}" ${left >= cost ? "" : "disabled"}>${icon("plus", 13)}</button></span>`;
-  showModal(`<h2>Choose your fleet</h2>
-    <ol class="steps"><li><b>Choose</b> a fleet to fight with.</li><li><b>Place</b> it on your worlds. Where you put it is the opening move.</li>
+  showModal(`<h2>Choose your fleet ${info("about-fleet", "How a war goes")}</h2>
+    ${about("about-fleet", `<ol class="steps"><li><b>Choose</b> a fleet to fight with.</li><li><b>Place</b> it on your worlds. Where you put it is the opening move.</li>
       <li><b>Fight</b>: each turn give orders at once with the other side. Moving into enemy space is an attack. Win the sky over a world and you can bombard its garrison; hold the ground to win the war.</li></ol>
+      <dl class="keys">${PRESET_IDS.map((id) => `<dt>${PRESETS[id].name}</dt><dd>${PRESETS[id].blurb}</dd>`).join("")}</dl>`)}
     <div class="presets">${PRESET_IDS.map((id) => {
       const p = PRESETS[id], x = loadoutOf(c, me, id);
       return `<button type="button" class="preset" data-preset="${id}" title="${esc(p.blurb)}"><span class="p-name">${icon(p.icon, 16)}${p.name}</span>
-        <span class="p-mix"><span>${icon("rocket", 13)}${x.ships}</span><span>${icon("users", 13)}${x.armies}</span></span><span class="small">${p.blurb}</span></button>`;
+        <span class="p-mix"><span>${icon("rocket", 13)}${x.ships}</span><span>${icon("users", 13)}${x.armies}</span></span></button>`;
     }).join("")}</div>
     <div class="custom"><b>Your own</b>${stepper("ships", "Ships", "rocket", COST.fleet)}${stepper("armies", "Armies", "users", COST.army)}
       <span class="small" title="What you don't spend goes to the treasury">${icon("coins", 13)} ${left} of ${pool} left</span>

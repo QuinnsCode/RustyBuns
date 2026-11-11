@@ -22,7 +22,7 @@ test.skipIf(!chromePath())("open the game, pick a war from the kit dialog, start
       const started = await tab.eval<{ fleet: string; hidden: boolean }>(`(async () => {
         document.querySelector("[data-start=ai]").click();
         await new Promise((r) => setTimeout(r, 500));
-        const fleet = document.querySelector("#modal-body h2")?.textContent;
+        const fleet = document.querySelector("#modal-body h2")?.textContent?.trim();
         document.querySelector("[data-preset]").click();
         await new Promise((r) => setTimeout(r, 1000));
         return { fleet, hidden: document.getElementById("modal").hidden };
