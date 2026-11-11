@@ -1,110 +1,110 @@
 [
   {
     "title": "Featured: codeSplitter",
-    "intro": "The code host for the agentic era, and the reason a lot of the rest exists. [Try it](https://codesplitter.notryanquinn.workers.dev).",
+    "intro": "The code host for the agentic era. Much of the other work exists because of it. [Try it](https://codesplitter.notryanquinn.workers.dev).",
     "apps": [
       {
         "app": "codesplitter",
         "name": "codeSplitter",
-        "line": "A code host for the agentic era: every file a Durable Object, agents editing line by line, real git on Cloudflare Artifacts, an MCP server, on the edge and as a desktop app from one codebase. [Try it](https://codesplitter.notryanquinn.workers.dev)"
+        "line": "A code host for the agentic era. Each file is a Durable Object, and agents edit line by line. It has real git on Cloudflare Artifacts and an MCP server. One codebase runs on the edge and as a desktop app. [Try it](https://codesplitter.notryanquinn.workers.dev)"
       }
     ]
   },
   {
     "title": "Games",
-    "intro": "The fun ones. Most play in the browser, and every one runs as a desktop app. Most recently worked on first.",
+    "intro": "These are for fun. Most of them play in the browser, and each one runs as a desktop app. The newest work is first.",
     "apps": [
       {
         "app": "mythic-masters",
         "name": "Mythic Masters",
-        "line": "A 3D creature arena brawler where mass, height and stats shape each body, flyers have to come down, and a headless bot-vs-bot tuner keeps 76 folklore beasts, from a 6 kg jackalope to a tonne of lake monster, each winning about half its fights; one arena layout wearing a skin per built region, on a route of 64 folklore regions"
+        "line": "A 3D creature arena brawler where mass, height and stats shape each body, and flyers must come down. A headless bot-vs-bot tuner keeps 76 folklore beasts near a 50% win rate, from a 6 kg jackalope to a one-tonne lake monster. One arena layout has a skin for each built region, on a route of 64."
       },
       {
         "app": "hippo-tycoon",
         "name": "Hippo Tycoon",
-        "line": "One game class runs as a Durable Object on Cloudflare and in-process in the binary: solo, couch, LAN party and online rooms"
+        "line": "One game class runs as a Durable Object on Cloudflare and in-process in the binary: solo, couch, LAN party and online rooms."
       },
       {
         "app": "splat-spray",
         "name": "Super Spy Splat Shot",
-        "line": "A spy game in a pitch-dark Gaussian-splat room: a three.js page made a desktop app by a short config, and the same page races friends online on a Worker"
+        "line": "A spy game in a pitch-dark Gaussian-splat room. A short config makes the three.js page a desktop app, and the same page races friends online on a Worker."
       },
       {
         "app": "skate-tech-park",
         "name": "Skate Tech Park",
-        "line": "Skate a street spot, or take a rocket roadster with ten cold-gas thrusters over the gap: a three.js page on a pure fixed-step sim the tests drive headless"
+        "line": "Skate a street spot, or fly a rocket roadster with ten cold-gas thrusters across the gap. It is a three.js page on a pure fixed-step sim, which the tests run headless."
       },
       {
         "app": "park-hide-seek",
         "name": "Park Hide & Seek",
-        "line": "3D hide and seek on real Yosemite terrain, played by the page, by a LAN host or by the edge; each player is sent only what they can see. [Play it](https://park-hide-seek.notryanquinn.workers.dev)"
+        "line": "3D hide and seek on real Yosemite terrain. The page, a LAN host or the edge can run the game. Each player gets only what they can see. [Play it](https://park-hide-seek.notryanquinn.workers.dev)"
       },
       {
         "app": "alien-disc-golf",
         "name": "Alien Disc Golf",
-        "line": "Disc golf where the course is the planet: nine holes between random countries on a three.js globe, the disc carried by NOAA's real wind right now (the Worker relays the latest GFS grid from NOMADS, the page decodes the GRIB2), a lofted throw riding the jet stream; guess which country you're teeing off from for a stroke back"
+        "line": "Disc golf where the course is the planet: nine holes between random countries on a three.js globe. NOAA's live wind carries the disc, and a high throw rides the jet stream. The Worker relays the latest GFS grid from NOMADS, and the page decodes the GRIB2. Guess the tee's country to get one stroke back."
       },
       {
         "app": "two-fronts",
         "name": "Two Fronts",
-        "line": "Thunder Marines vs the Wooka horde: a turn-based galactic war plus three.js hero battles in orbit and on six worlds, one per kind of sector (redwood forest, desert, ruined city, glowing alien night, beach, deep-space station), built apart and joined by small JSON types (a spec in, a result out); play the AI or hotseat in the page, or a friend online through a Durable Object per campaign"
+        "line": "Thunder Marines against the Wooka horde: a turn-based galactic war with three.js hero battles in orbit and on six worlds. There is one world for each kind of sector: redwood forest, desert, ruined city, glowing alien night, beach and deep-space station. The two parts were built apart and connect through small JSON types (a spec in, a result out). Play the AI or hotseat in the page, or a friend online through a Durable Object for each campaign."
       },
       {
         "app": "git-recon",
         "name": "Git Recon",
-        "line": "A repo as a shooter level: its folders become compounds and its files buildings on real ground (Yosemite, or any lat/long) or a plastic-army kitchen and garden, fought with git commands as weapons, in the page on your own, up to 64 to a battle over the LAN, or online in a Durable Object per room"
+        "line": "A repo as a shooter level. Its folders become compounds and its files become buildings, on real ground (Yosemite, or any lat/long) or in a plastic-army kitchen and garden. Git commands are the weapons. Play alone in the page, with up to 64 players in a LAN battle, or online in a Durable Object for each room."
       },
       {
         "app": "delayed-reaction",
         "name": "Delayed Reaction",
-        "line": "A phone-first rhythm game: you sprint down a rolling neon tunnel, a ring calls a note, you answer it a bar later on one of four thumb pads, and your answers echo back through a dub delay; the sim plays in beats with no page, so a test runs every level"
+        "line": "A phone-first rhythm game. You sprint through a neon tunnel that rolls. A ring calls a note, and you answer one bar later on one of four thumb pads. Your answers echo back through a dub delay. The sim plays in beats with no page, and thus a test runs each level."
       },
       {
         "app": "excalibrawl",
         "name": "Excalibrawl",
-        "line": "An hourly drawing fight: Clef vs Clef Flash picking only a move, shape, colour, grid cell and size from a picture of their halves, or two text models writing a token-cheap drawing language, with Clef as referee, for two cents or less a fight; replays and a live socket in R2 and a Durable Object"
+        "line": "A drawing fight each hour. Clef and Clef Flash select only a move, shape, colour, grid cell and size from a picture of their halves. Or two text models write a drawing language that uses few tokens. Clef is the referee, and a fight costs two cents or less. Replays are in R2, and a Durable Object has the live socket."
       }
     ]
   },
   {
     "title": "One account, one front door",
-    "intro": "What ties the apps together: one sign-in for all of them, and one page that lists them.",
+    "intro": "These connect the apps: one sign-in for all of them, and one page that lists them.",
     "apps": [
       {
         "app": "eqosys",
         "name": "eqosys",
-        "line": "Your home for every Q game: your games, friends, saves and studio on one account. Under it, Better Auth on D1, a PKCE code handoff to each app with a signed token it can check alone, which app each person came from and what they may do in each, and a Durable Object a person for friends, presence and notifications. Also a plain OpenID provider, so a site's own Better Auth or a native app signs in with it"
+        "line": "Your home for each Q game: your games, friends, saves and studio on one account. Below it is Better Auth on D1, with a PKCE code handoff to each app and a signed token that the app can check alone. It knows which app each person came from and what they can do in each. A Durable Object for each person holds friends, presence and notifications. It is also a plain OpenID provider for a site's own Better Auth or a native app."
       },
       {
         "app": "qollab",
         "name": "Qollab",
-        "line": "Realtime rooms for any app on Cloudflare: rooms, seats, parties, presence and saves in one call. Built into eqosys as a Worker of its own, with a Durable Object a player and a room"
+        "line": "Realtime rooms for any app on Cloudflare: rooms, seats, parties, presence and saves in one call. It is built into eqosys as its own Worker, with a Durable Object for each player and each room."
       },
       {
         "app": "playground",
         "name": "Playground",
-        "line": "One page that lists every app with a way to try it: Play, Download or Source. Static assets only, so it bills nothing"
+        "line": "One page that lists each app with a way to try it: Play, Download or Source. It has static assets only, and thus it costs nothing."
       }
     ]
   },
   {
     "title": "My apps",
-    "intro": "Real tools for real work, some under their own license.",
+    "intro": "Real tools for real work. Some have their own license.",
     "apps": [
       {
         "app": "sharesplat",
         "name": "ShareSplat",
-        "line": "Product photos to a 3D spin for a store page: a guided phone shot list (six sides for an AI-guessed mesh, or 72 photos in rings for a real Gaussian splat) and a turntable splat viewer with a paste-in Shopify embed"
+        "line": "Product photos become a 3D spin for a store page. A guided shot list on the phone takes six sides for an AI-guessed mesh, or 72 photos in rings for a real Gaussian splat. A turntable splat viewer has a Shopify embed that you paste in."
       },
       {
         "app": "qcrm",
         "name": "qCRM",
-        "line": "A CRM with MCP built in, a Rust wasm engine in the browser, office sync, signed webhooks and a desktop build; roles for a real place and hashed org ids. QNTBR-licensed."
+        "line": "A CRM with MCP built in, a Rust wasm engine in the browser, office sync, signed webhooks and a desktop build. It has roles for a real place and hashed org ids. QNTBR-licensed."
       },
       {
         "app": "geoboxq",
         "name": "GeoBoxQ",
-        "line": "Shipping box fit checker with a Rust engine that packs boxes inside boxes. Private license."
+        "line": "A fit checker for shipping boxes, with a Rust engine that packs boxes in boxes. Private license."
       },
       {
         "app": "geoboxq-shopify",
@@ -114,38 +114,38 @@
       {
         "app": "artstewengine",
         "name": "artstewengine",
-        "line": "A tiny RWSDK app on D1 with a Better Auth admin page: add who has paid, and qCRM's sealed engine gets its key only for a paid license"
+        "line": "A small RWSDK app on D1 with a Better Auth admin page. Add who has paid, and the sealed engine of qCRM gets its key only for a paid license."
       },
       {
         "app": "what-would-fantano-say",
         "name": "What Would Fantano Say",
-        "line": "A parody music critic as an RWSDK Worker: the phone decodes the song and picks a 15 s clip, and Cloudflare's Clef-omni judges it for about $5 per 100,000 reviews, behind a rate limit, Turnstile, an edge cache and a daily budget"
+        "line": "A parody music critic as an RWSDK Worker. The phone decodes the song and selects a 15 s clip. Cloudflare's Clef-omni judges it for approximately $5 for each 100,000 reviews. It is behind a rate limit, Turnstile, an edge cache and a daily budget."
       },
       {
         "app": "at-lens",
         "name": "AT Lens",
-        "line": "Type a handle and watch the AT Protocol work: domain to DID to data server to typed records, checked both ways, then the account live on the Jetstream firehose; sign in with atproto OAuth to write a record of our own Lexicon and watch it come back; no keys, no bindings"
+        "line": "Type a handle and watch the AT Protocol work: domain to DID to data server to typed records, checked in the two directions. Then see the account live on the Jetstream firehose. Sign in with atproto OAuth to write a record of our own Lexicon and watch it come back. No keys and no bindings."
       },
       {
         "app": "brianfloresblitzing",
         "name": "One Team in 32",
-        "line": "One static page (\"One Team in 32\") served from a Cloudflare Worker as plain assets, no Worker code"
+        "line": "One static page (\"One Team in 32\"), which a Cloudflare Worker serves as plain assets. There is no Worker code."
       }
     ]
   },
   {
     "title": "The workshop",
-    "intro": "Music, 3D and circuits: tools for making things, with a Rust engine beside a TypeScript one where it pays.",
+    "intro": "Music, 3D and circuits: tools to make things. Where it helps, a Rust engine runs with a TypeScript engine.",
     "apps": [
       {
         "app": "fm-daw",
         "name": "FM Groovebox",
-        "line": "One Rust crate as wasm in the audio thread and over FFI on the host, bit-identical to the TypeScript engine"
+        "line": "One Rust crate runs as wasm in the audio thread and through FFI on the host. Its output is bit-identical to the TypeScript engine."
       },
       {
         "app": "splat-rooms",
         "name": "Splat Rooms",
-        "line": "A splat hunting game with a world class and 30 MB scenes streamed from a folder on your disk, never embedded"
+        "line": "A splat hunt game with a world class. Its 30 MB scenes stream from a folder on your disk and are never embedded."
       },
       {
         "app": "auto-rig",
@@ -155,7 +155,7 @@
       {
         "app": "meshy-studio",
         "name": "Meshy Studio",
-        "line": "A folder-based batch tool for Meshy's API (image, multi-image and text to 3D, texture, remesh, rig, animate, concept art): your key stays local, every spend is priced first"
+        "line": "A folder-based batch tool for the Meshy API: image, multi-image and text to 3D, texture, remesh, rig, animate and concept art. Your key stays local, and you see the price before each spend."
       },
       {
         "app": "motion-midi",
@@ -165,7 +165,7 @@
       {
         "app": "splat-desktop",
         "name": "Splat Desktop",
-        "line": "PlayCanvas' SuperSplat editor as a desktop app working on a folder on your disk"
+        "line": "PlayCanvas' SuperSplat editor as a desktop app. It works on a folder on your disk."
       },
       {
         "app": "tscircuit-desktop",
@@ -175,13 +175,13 @@
       {
         "app": "pixel-rag",
         "name": "Pixel RAG",
-        "line": "Drop in your screenshots and find the parts that look alike across all of them. One Rust index shared by every worker, web or desktop."
+        "line": "Add your screenshots and find the parts that look the same in all of them. Each worker, web or desktop, shares one Rust index."
       }
     ]
   },
   {
     "title": "Everything else: frameworks, other people's apps and test fixtures",
-    "intro": "A framework's own sample app, or someone else's app, run with its code unchanged, plus the small apps the tests lean on. A new app lands here first, until it's moved to its section.",
+    "intro": "Sample apps from frameworks and apps from other people, which run with no code changes. Also the small apps that the tests use. A new app goes here first, until someone moves it to its section.",
     "apps": [
       {
         "app": "agent-office",
@@ -191,88 +191,88 @@
       {
         "app": "terraviz-demo",
         "name": "TerraViz",
-        "line": "TerraViz, The Zyra Project's Science On a Sphere globe (Apache-2.0, not ours), cloned and run with its code unchanged, plus Shared Sphere on top: a room on one globe, a teacher's lock so a class follows one pair of hands, NOAA tour scripts kept in step on every screen and read as slides by a small Rust crate"
+        "line": "TerraViz is the Science On a Sphere globe of The Zyra Project (Apache-2.0, not ours). We clone it and run it with no code changes. Shared Sphere adds a room on one globe and a teacher's lock, so that a class follows one pair of hands. NOAA tour scripts stay in step on each screen, and a small Rust crate reads them as slides."
       },
       {
         "app": "nuxt-example",
         "name": "Nuxt",
-        "line": "A Nuxt 4 app on Nitro's `cloudflare-module` preset (one KV binding) as a desktop app with no edits: `init` reads it and the host runs the Worker Nitro built; the same shared HTTP journey checks it"
+        "line": "A Nuxt 4 app on the `cloudflare-module` preset of Nitro (one KV binding), as a desktop app with no edits. `init` reads it, and the host runs the Worker that Nitro built. The same shared HTTP journey checks it."
       },
       {
         "app": "qwik-example",
         "name": "Qwik City",
-        "line": "A Qwik City app on its own `cloudflare-pages` adapter (a `routeLoader$` and a `routeAction$` counting in KV through `platform.env`) as a desktop app with no edits; `init` reads the adapter's `dist/_worker.js` as it is"
+        "line": "A Qwik City app on its own `cloudflare-pages` adapter, as a desktop app with no edits. A `routeLoader$` and a `routeAction$` count in KV through `platform.env`. `init` reads the adapter's `dist/_worker.js` as it is."
       },
       {
         "app": "astro-example",
         "name": "Astro",
-        "line": "An Astro site on `@astrojs/cloudflare` (a server page and an API route counting in KV through `cloudflare:workers`) as a desktop app with no edits, and `init` reads it as it is"
+        "line": "An Astro site on `@astrojs/cloudflare`, as a desktop app with no edits. A server page and an API route count in KV through `cloudflare:workers`. `init` reads it as it is."
       },
       {
         "app": "elysia-example",
         "name": "Elysia",
-        "line": "An Elysia Worker as Elysia's Cloudflare guide writes it (`aot: false`, `cloudflare:workers`) as a desktop app with no edits, and `init` now reads Elysia"
+        "line": "An Elysia Worker as the Cloudflare guide of Elysia writes it (`aot: false`, `cloudflare:workers`), as a desktop app with no edits. `init` now reads Elysia."
       },
       {
         "app": "sveltekit-example",
         "name": "SvelteKit",
-        "line": "A SvelteKit 3 app on the Cloudflare adapter (a `load` from KV, a form action that bumps it) as a desktop app with no edits: the same sample app contract as hono-example, checked by the same shared journey"
+        "line": "A SvelteKit 3 app on the Cloudflare adapter, as a desktop app with no edits. It has a `load` from KV and a form action that increments it. It meets the same sample app contract as hono-example, and the same shared journey checks it."
       },
       {
         "app": "solidstart-example",
         "name": "SolidStart",
-        "line": "A SolidStart 2 app on Nitro's `cloudflare_module` preset (a `\"use server\"` query and an API route counting in KV through `cloudflare:workers`) as a desktop app with no edits, and `rustybuns init` reads it as it is."
+        "line": "A SolidStart 2 app on the `cloudflare_module` preset of Nitro, as a desktop app with no edits. A `\"use server\"` query and an API route count in KV through `cloudflare:workers`. `rustybuns init` reads it as it is."
       },
       {
         "app": "react-router-example",
         "name": "React Router",
-        "line": "React Router 7 on Cloudflare's own template (`workers/app.ts`, the Vite plugin, a loader and an action over KV) as a desktop app with no edits: the second framework on the shared sample-app journey"
+        "line": "React Router 7 on Cloudflare's own template (`workers/app.ts`, the Vite plugin, a loader and an action on KV), as a desktop app with no edits. It is the second framework on the shared sample-app journey."
       },
       {
         "app": "nextjs-example",
         "name": "Next.js",
-        "line": "A Next.js 16 app on `@opennextjs/cloudflare` (one KV binding) as a desktop app with no edits: `init` reads it and the host runs the `worker.js` OpenNext built; the same shared HTTP journey checks it"
+        "line": "A Next.js 16 app on `@opennextjs/cloudflare` (one KV binding), as a desktop app with no edits. `init` reads it, and the host runs the `worker.js` that OpenNext built. The same shared HTTP journey checks it."
       },
       {
         "app": "svelte-spa-example",
         "name": "Svelte SPA",
-        "line": "A client-only Svelte 5 + Vite app (no server) as a desktop app, its counter in a `\"use server\"` action the host runs."
+        "line": "A client-only Svelte 5 + Vite app (no server) as a desktop app. Its counter is in a `\"use server\"` action that the host runs."
       },
       {
         "app": "vue-spa-example",
         "name": "Vue SPA",
-        "line": "A client-only Vue 3 + Vite app (no server) as a desktop app, its counter in a `\"use server\"` action the host runs."
+        "line": "A client-only Vue 3 + Vite app (no server) as a desktop app. Its counter is in a `\"use server\"` action that the host runs."
       },
       {
         "app": "solid-spa-example",
         "name": "Solid SPA",
-        "line": "A client-only Solid + Vite app (no server) as a desktop app, its counter in a `\"use server\"` action the host runs."
+        "line": "A client-only Solid + Vite app (no server) as a desktop app. Its counter is in a `\"use server\"` action that the host runs."
       },
       {
         "app": "hono-example",
         "name": "Hono",
-        "line": "A Hono Worker from Hono's own docs (one KV binding) as a desktop app with no edits: the sample app contract every framework example meets, checked by one shared HTTP journey"
+        "line": "A Hono Worker from Hono's own docs (one KV binding), as a desktop app with no edits. It is the sample app contract that each framework example meets, and one shared HTTP journey checks it."
       },
       {
         "app": "elysia-conduit",
         "name": "Elysia RealWorld",
-        "line": "bedstack's RealWorld backend (Elysia, Drizzle, postgres.js) with no source edits: a desktop binary on PGlite that passes their Postman suite, and the five ways it breaks on Workers",
+        "line": "The RealWorld backend of bedstack (Elysia, Drizzle, postgres.js) with no source edits. It is a desktop binary on PGlite that passes their Postman suite. The doc lists the five ways that it breaks on Workers.",
         "doc": "apps/elysia-conduit/RUSTYBUNS.md"
       },
       {
         "app": "tanstack-start-example",
         "name": "TanStack Start",
-        "line": "TanStack Start on Cloudflare's Vite plugin (server functions, a server route, D1 and KV) as a desktop app, its code unchanged"
+        "line": "TanStack Start on Cloudflare's Vite plugin (server functions, a server route, D1 and KV) as a desktop app with no code changes."
       },
       {
         "app": "hello-world",
         "name": "Hello World",
-        "line": "The first five minutes: a twenty-line page that the welcome tour digs up, lets three agents rewrite at once, then asks why not deploy it"
+        "line": "The first five minutes: a twenty-line page. The welcome tour finds it, lets three agents write it again at the same time, and then asks you to deploy it."
       },
       {
         "app": "agent-demo",
         "name": "Agent Demo",
-        "line": "A small snack-vote Worker seeded into codeSplitter, so several coding agents can build it at once and settle a merge conflict on camera"
+        "line": "A small snack-vote Worker that is seeded into codeSplitter. Some coding agents can build it at the same time and resolve a merge conflict on camera."
       },
       {
         "app": "borg-postgres",
@@ -282,17 +282,17 @@
       {
         "app": "borg",
         "name": "Borg",
-        "line": "Not an app: a small Worker that uses every binding once, so one suite can check the local twins against a real deploy"
+        "line": "Not an app: a small Worker that uses each binding one time. Thus one suite can check the local twins against a real deploy."
       },
       {
         "app": "spa-example",
         "name": "SPA fixture",
-        "line": "Not an app: a slice of a real RWSDK game that the tests use to check `init` reads it right"
+        "line": "Not an app: a part of a real RWSDK game. The tests use it to check that `init` reads it correctly."
       },
       {
         "app": "example",
         "name": "Worker example",
-        "line": "A whole Worker (D1, KV, a Durable Object) as a desktop binary in half a second, plus a Rust FFI probe with a TypeScript fallback"
+        "line": "A full Worker (D1, KV, a Durable Object) as a desktop binary in half a second, and a Rust FFI probe with a TypeScript fallback."
       }
     ]
   }
