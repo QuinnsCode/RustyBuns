@@ -25,7 +25,9 @@
 // written in for every git-only file and what landed for any other conflict,
 // then `bun install` and the touched apps' tests as the tree's own
 // scripts/ci-apps.ts ran them. If anything fails, what landed is tested too,
-// and only the tests that fail on ours and pass there count (`fail`); failing
+// and only the tests that fail on ours and pass there count (`fail`, or `unclear`
+// when the merge commit also changed files git merged cleanly: new work that
+// what landed may need, #4134); failing
 // on both (`same`) is the sandbox or a native build, not the merge.
 // Tests run in a throwaway folder with an empty HOME and none of this shell's
 // env, so nothing reaches a live account. `--jobs` checks that many merges at
@@ -182,9 +184,10 @@ export function testRuns(ciApps: string, paths: string[]): Run[] {
 /**
  * Writes the tree a merge would have committed into `dir`: git's merge of the
  * two sides, `ours` (path to text) over the files git conflicted on, and what
- * landed over any other conflicted file (deleted if it didn't land).
+ * landed over any other conflicted file (deleted if it didn't land). Returns the files git merged cleanly that
+ * landed differently anyway: work the merge commit carried itself (#4134), which this tree doesn't have.
  */
-export function writeMerge(dir: string, main: string, branch: string, landed: string, ours: Map<string, string>) {
+export function writeMerge(dir: string, main: string, branch: string, landed: string, ours: Map<string, string>): string[] {
   const r = Bun.spawnSync(["git", "merge-tree", "--write-tree", "--name-only", "-z", main, branch], { cwd: top() });
   if (r.exitCode !== 0 && r.exitCode !== 1) throw new Error(`git merge-tree: ${r.stderr.toString()}`);
   // -z: the tree, then each conflicted path, then a blank entry before the messages.
@@ -197,6 +200,7 @@ export function writeMerge(dir: string, main: string, branch: string, landed: st
     else { mkdirSync(dirname(join(dir, path)), { recursive: true }); writeFileSync(join(dir, path), t); }
   }
   for (const [path, t] of ours) if (!conflicted.has(path)) writeFileSync(join(dir, path), t);
+  return (git("diff", "--name-only", "--no-renames", tree!, landed) ?? "").split("\n").filter((p) => p && !conflicted.has(p) && !ours.has(p));
 }
 
 /**
@@ -220,12 +224,15 @@ export interface Check {
   /**
    * pass (flaky failures only, too); fail (a test fails twice that passes on what landed); same (failures, but
    * what landed fails them too: the sandbox, a native build); untested (no
-   * tests for these files).
+   * tests for these files); unclear (it would be fail, but the merge commit also wrote code git's clean merge
+   * doesn't have, which what landed may lean on: `carried` names those files).
    */
-  result: "pass" | "fail" | "same" | "untested";
+  result: "pass" | "fail" | "same" | "unclear" | "untested";
   runs: (Run & { ok: boolean })[];
   /** The tests that fail here and pass on what landed, `dir: name`, failing again on one retry. */
   failed?: string[];
+  /** Files git merged cleanly that the merge commit changed anyway (only on unclear). */
+  carried?: string[];
   /** The ones of those that passed when run again here: flaky, not the merge. */
   flaky?: string[];
   /** The end of each failing run's output. */
@@ -308,7 +315,7 @@ export async function check(main: string, branch: string, landed: string, ours: 
   try {
     const env = sandbox(join(tmp, "home"));
     mkdirSync(env.HOME);
-    writeMerge(join(tmp, "ours"), main, branch, landed, ours);
+    const carried = writeMerge(join(tmp, "ours"), main, branch, landed, ours);
     const o = await testTree(join(tmp, "ours"), runs, env);
     if (!o.failed.length) return { result: "pass", runs: o.runs };
     writeTree(join(tmp, "landed"), landed);
@@ -324,8 +331,10 @@ export async function check(main: string, branch: string, landed: string, ours: 
     }
     const { failed, flaky } = settle(suspects, (f) => again.has(f));
     // Only flaky failures: the merge passes. Some fail as landed too: same.
-    const result = failed.length ? "fail" : flaky.length === o.failed.length ? "pass" : "same";
-    return { result, runs: o.runs, failed, ...(flaky.length ? { flaky } : {}), log: o.log };
+    // A failure the landed tree fixed with work of its own isn't the merge's to answer for.
+    const unclear = failed.length > 0 && carried.length > 0;
+    const result = unclear ? "unclear" : failed.length ? "fail" : flaky.length === o.failed.length ? "pass" : "same";
+    return { result, runs: o.runs, failed, ...(unclear ? { carried } : {}), ...(flaky.length ? { flaky } : {}), log: o.log };
   } finally { rmSync(tmp, { recursive: true, force: true }); }
 }
 
@@ -339,7 +348,7 @@ if (import.meta.main) {
     : Bun.spawnSync(["gh", "pr", "list", "--state", "merged", "--limit", arg("limit") ?? "1000", "--json", "number,headRefOid,mergeCommit"]).stdout.toString() || "[]");
   const tally: Record<Verdict | "prs" | "skipped" | "merges" | "files", number> = { agree: 0, both: 0, "git-only": 0, "ours-only": 0, differ: 0, guard: 0, lock: 0, prs: 0, skipped: 0, merges: 0, files: 0 };
   const found: { label: string; path: string; s: Shadow; check?: Check }[] = [];
-  const checks: Record<Check["result"], number> = { pass: 0, fail: 0, same: 0, untested: 0 };
+  const checks: Record<Check["result"], number> = { pass: 0, fail: 0, same: 0, unclear: 0, untested: 0 };
   const pending: { j: Join; gitOnly: (typeof found)[number][] }[] = [];
   for (const pr of prs) {
     if (only && !only.includes(pr.number)) continue;
@@ -375,7 +384,7 @@ if (import.meta.main) {
       const c = await check(j.main, j.branch, j.landed, new Map(gitOnly.map((f) => [f.path, f.s.ours.text!])));
       checks[c.result]++;
       for (const f of gitOnly) f.check = c;
-      console.error(`[${++done}/${pending.length}] ${j.label}: ${c.result}${c.failed?.length ? ` (${c.failed.join("; ")})` : ""}${c.flaky?.length ? ` flaky: ${c.flaky.join("; ")}` : ""}`);
+      console.error(`[${++done}/${pending.length}] ${j.label}: ${c.result}${c.failed?.length ? ` (${c.failed.join("; ")})` : ""}${c.flaky?.length ? ` flaky: ${c.flaky.join("; ")}` : ""}${c.carried?.length ? ` merge commit carried new work in: ${c.carried.join(", ")}` : ""}`);
     }
   }));
   if (process.argv.includes("--json")) console.log(JSON.stringify({ tally, ...checking && { checks }, found }, null, 2));

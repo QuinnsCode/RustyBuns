@@ -94,7 +94,7 @@ describe("shadow --check", () => {
     expect(settle(failed, () => false)).toEqual({ failed: [], flaky: failed });
   });
 
-  test("writes git's merge with ours over its conflicts and what landed over the rest", () => {
+  test("writes git's merge with ours over its conflicts and what landed over the rest, and names what the merge commit carried", () => {
     const repo = mkdtempSync(join(tmpdir(), "shadow-repo-"));
     const out = join(repo, "..", `${repo.split("/").pop()}-out`);
     const sh = (cmd: string) => {
@@ -117,7 +117,8 @@ describe("shadow --check", () => {
       const branch = commit({ "a.ts": "a\nB\nc\n", "b.ts": "branch\n", "c.ts": "1\n2\n3\n4\nfive\n", "m.glb": glb(2) });
       const landed = commit({ "a.ts": "A\nB\nc\n", "b.ts": "both\n", "c.ts": "landed's own\n", "m.glb": glb(3) });
       useRepo(repo);
-      writeMerge(out, main, branch, landed, new Map([["a.ts", "A\nB\nc\n"]]));
+      // c.ts merged clean, but the merge commit rewrote it: new work this tree can't hold, so a failure is unclear.
+      expect(writeMerge(out, main, branch, landed, new Map([["a.ts", "A\nB\nc\n"]]))).toEqual(["c.ts"]);
       expect(readFileSync(join(out, "a.ts"), "utf8")).toBe("A\nB\nc\n");   // ours over git's conflict
       expect(readFileSync(join(out, "b.ts"), "utf8")).toBe("both\n");        // a conflict ours didn't take: what landed
       expect(new Uint8Array(readFileSync(join(out, "m.glb")))).toEqual(glb(3)); // and a binary one byte for byte
