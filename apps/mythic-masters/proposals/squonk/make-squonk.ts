@@ -90,14 +90,14 @@ function face(h: V, k: number, o: { eye?: number; lip?: number; brow?: number } 
  *  loose folds ringing the back between `from` and `to` of the way along it (each a thin ellipsoid a little bigger
  *  than the torso there, so the skin stands in ridges), a sagging apron under the belly, and warts as small round
  *  lumps of the same skin at seeded spots over the back and flanks. */
-function hide(at: string, off: V, r: V, o: { rolls: number; from?: number; to?: number; lift?: number; warts: number; wart?: number; seed?: number; apron?: number }) {
+function hide(at: string, off: V, r: V, o: { rolls: number; from?: number; to?: number; lift?: number; deep?: number; thick?: number; warts: number; wart?: number; seed?: number; apron?: number }) {
   const blobs: Blob[] = [{ at, off, r }];
-  const from = o.from ?? -0.6, to = o.to ?? 0.7;
+  const from = o.from ?? -0.6, to = o.to ?? 0.7, deep = o.deep ?? 1;
   for (let i = 0; i < o.rolls; i++) {
     const u = from + ((to - from) * i) / Math.max(1, o.rolls - 1);
     const s = Math.sqrt(1 - u * u);
     const lift = (o.lift ?? 0.12) * s;
-    blobs.push({ at, off: [f4(off[0] + u * r[0]), f4(off[1] + r[1] * lift), off[2]], r: [f4(r[0] * 0.085), f4(r[1] * s * 1.05), f4(r[2] * s * 1.1)] });
+    blobs.push({ at, off: [f4(off[0] + u * r[0]), f4(off[1] + r[1] * lift), off[2]], r: [f4(r[0] * (o.thick ?? 0.085)), f4(r[1] * s * (1 + 0.05 * deep)), f4(r[2] * s * (1 + 0.1 * deep))] });
   }
   if (o.apron) blobs.push({ at, off: [f4(off[0] - r[0] * 0.05), f4(off[1] - r[1] * 0.55), off[2]], r: [f4(r[0] * 0.75), f4(r[1] * 0.5 * o.apron), f4(r[2] * 0.78)] });
   // warts: a golden-angle spiral over the upper body, seeded so it is the same every build
@@ -187,5 +187,60 @@ const starter = sheet("squonk-starter", "A starter: a big weeping head on a litt
     hood("head", [-0.05, -0.02, 0.13], 0.22, 0.09),
   ], { colours: { skin: [0.7, 0.54, 0.6, 0.9, 0] } });
 
-for (const s of [cox, tryon, starter]) await Bun.write(join(import.meta.dir, `${s.id}.json`), JSON.stringify(s, null, 2) + "\n");
-console.log("wrote squonk-cox, squonk-tryon, squonk-starter");
+/** The sculpted face (the owner's reference, a pale clay Squonk): a round head with a short muzzle, one huge glossy
+ *  dark-red eye on each side bulging out of a thick fleshy socket, a pink upturned bulb of a nose, pouty pink lips
+ *  turned down at the corners, long flat ears drooping past the jaw, and brown freckles over the crown. */
+function sculptFace(h: V, k: number) {
+  const cran = { c: [0, 0.01, 0] as V, r: [0.1, 0.095, 0.092] as V };
+  const muz = { c: [0.07, -0.035, 0] as V, r: [0.065, 0.058, 0.062] as V };
+  const sock = { c: [0.03, 0.02, 0.066] as V, r: [0.056, 0.056, 0.036] as V };
+  const ells = [cran, muz, sock, { c: flipZ(sock.c), r: sock.r }];
+  const on = (p: V, d: V, sink = 0): V => {
+    const s = skin(ells, p, d), n = Math.hypot(...d);
+    return mul([s[0] - (d[0] / n) * sink, s[1] - (d[1] / n) * sink, s[2] - (d[2] / n) * sink], k);
+  };
+  const r = (x: number) => f4(x * k);
+  const nodes: Record<string, N> = { head: [...h, r(0.09)] as N, snout: [...add(h, mul([0.09, -0.035, 0], k)), r(0.05)] as N };
+  const blobs: Blob[] = ells.map((e) => ({ at: "head", off: mul(e.c, k), r: mul(e.r, k) }));
+  const eyeAt = on([0.035, 0.02, 0.04], [0.35, 0.05, 1], 0.026);
+  const noseAt = on([0.09, -0.01, 0], [1, 0.3, 0], 0.016);
+  const lipAt = on([0.08, -0.06, 0], [1, -0.1, 0], 0.006);
+  const freckles: Part[] = [[-0.01, 0.1, 0.03], [0.02, 0.09, 0.045], [-0.04, 0.085, 0.055], [0.01, 0.075, 0.065], [-0.03, 0.1, 0.015], [0.035, 0.07, 0.05]]
+    .map((p) => ({ kind: "eye", at: "head", off: on(p as V, [0, 1, 0.4], 0.0015), r: r(0.003), mirror: true, material: "freckle" }));
+  const parts: Part[] = [
+    { kind: "eye", at: "head", off: eyeAt, r: r(0.046), mirror: true, material: "eye" },
+    // the lower lid, a soft roll of flesh under the eye
+    { kind: "ridge", at: "head", off: add(eyeAt, mul([-0.005, -0.03, -0.012], k)), dir: [1, 0.15, -0.2], len: r(0.06), base: r(0.012), curve: 50, bend: [0, 1, 0], mirror: true },
+    { kind: "eye", at: "head", off: noseAt, r: r(0.03), material: "nose" },
+    { kind: "eye", at: "head", off: add(noseAt, mul([0.018, -0.012, 0.012], k)), r: r(0.007), mirror: true, material: "dark" },
+    // the pout: a thin upper lip and a full lower one pushed forward, both sloping down to the corners
+    { kind: "ridge", at: "head", off: add(lipAt, mul([0, 0.01, 0], k)), dir: [-0.3, -0.3, 1], len: r(0.05), base: r(0.01), curve: 35, bend: [-1, -0.4, 0], mirror: true, material: "pout" },
+    { kind: "ridge", at: "head", off: add(lipAt, mul([0.004, -0.012, 0], k)), dir: [-0.25, -0.22, 1], len: r(0.05), base: r(0.02), curve: 35, bend: [-1, -0.3, 0], mirror: true, material: "pout" },
+    { kind: "ear", at: "head", off: on([-0.04, 0.05, 0.05], [-0.1, 0.6, 1], 0.01), dir: [-0.05, -1, 0.4], len: r(0.22), width: r(0.06), tilt: 12, cup: 12, mirror: true, material: "skin" },
+    ...freckles,
+  ];
+  return { nodes, parts, blobs };
+}
+
+// D: the owner's reference, a sculpted Squonk. A short barrel of a body ringed all over in deep, even rolls from the neck
+// to the rump, carried on stout legs with wide toes and pale nails; the head low and forward, the sculpted face above,
+// no tail to speak of. Pale cream with pink at the nose, lips and toes.
+const dBody: Record<string, N> = {
+  tail_tip: [-0.36, 0.3, 0, 0.02], tail: [-0.3, 0.31, 0, 0.04],
+  hip: [-0.2, 0.32, 0, 0.1], belly: [0, 0.34, 0, 0.13], chest: [0.18, 0.31, 0, 0.12], neck: [0.3, 0.31, 0, 0.09],
+  ...legs([[0.17, 0.36, 0.08, 0.04], [0.19, 0.16, 0.115, 0.035], [0.2, 0.04, 0.125, 0.03]],
+          [[-0.19, 0.36, 0.08, 0.045], [-0.2, 0.16, 0.115, 0.035], [-0.22, 0.04, 0.125, 0.03]]),
+};
+const sculpt = sheet("squonk-sculpt", "The owner's reference, a sculpted Squonk: deep even rolls, one huge red eye a side, a pink pout, long drooping ears.",
+  dBody, sculptFace([0.43, 0.31, 0], 1.4), hide("belly", [0.0, 0.06, 0], [0.31, 0.21, 0.19], { rolls: 9, from: -0.8, to: 0.8, lift: 0.04, deep: 1.25, thick: 0.12, warts: 0 }), [
+    { kind: "limb", along: ["l_shoulder", "l_elbow", "l_ffoot"], radii: [0.065, 0.05, 0.036], depth: 1.05, calf: 0.1, mirror: true },
+    { kind: "limb", along: ["l_hipj", "l_knee", "l_bfoot"], radii: [0.075, 0.055, 0.038], depth: 1.1, calf: 0.15, mirror: true },
+    { kind: "foot", at: "l_ffoot", form: "paw", len: 0.085, width: 0.085, toes: 4, claw: 0.016, claw_mat: "nail", sole: 0.04, mirror: true },
+    { kind: "foot", at: "l_bfoot", form: "paw", len: 0.09, width: 0.085, toes: 4, claw: 0.016, claw_mat: "nail", sole: 0.04, mirror: true },
+  ], { colours: {
+    skin: [0.86, 0.83, 0.74, 0.8, 0], belly: [0.9, 0.84, 0.78, 0.8, 0], eye: [0.42, 0.02, 0.05, 0.1, 0],
+    nose: [0.9, 0.68, 0.66, 0.6, 0], pout: [0.9, 0.77, 0.72, 0.7, 0], nail: [0.96, 0.86, 0.86, 0.4, 0], freckle: [0.55, 0.3, 0.22, 0.8, 0],
+  } });
+
+for (const s of [cox, tryon, starter, sculpt]) await Bun.write(join(import.meta.dir, `${s.id}.json`), JSON.stringify(s, null, 2) + "\n");
+console.log("wrote squonk-cox, squonk-tryon, squonk-starter, squonk-sculpt");
