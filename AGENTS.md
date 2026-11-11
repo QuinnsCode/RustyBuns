@@ -28,6 +28,9 @@ all apps plus `bun test packages` when `packages/` or the lockfile moved). Comma
   names the suites GitHub CI will run and exits 0: push, then `bun run pr <n>`. Setting one up: [MAC_SETUP.md](MAC_SETUP.md#part-4-a-builder-20-min-plus-the-first-installs).
 - No root `bun test`, no whole-app suites, no repo-wide typecheck "to be safe". Push; CI does it.
 - Don't rerun a passing test or loop on a flaky one. Note it; file an issue if real.
+- A fix's or a feature's tests should fail on the old code: `bun scripts/test-bites.ts` runs your changed test files on
+  `origin/main`'s source and names the ones that pass there anyway (exit 1); `--lines` lists the changed lines they
+  never ran. It runs tests, so with the valve shut: `bun run builder run . bun scripts/test-bites.ts --lines`.
 - Before `gh pr create`, commit and run `bun scripts/preflight.ts`: it lists open PRs that change your files and has Mervin merge your branch after them (#3118). A `card` or `clash` (exit 1) needs a person: wait for them to merge and rebase, or ask their worker; `mervin` lines merge, rebase once they land.
 - After pushing, `bun run pr <n>` (below) waits for the checks. On failure, fix that and rerun only its test.
 - A push that gets no `typecheck` or `apps` run within a minute is a GitHub miss, not your code (#2828). An empty
