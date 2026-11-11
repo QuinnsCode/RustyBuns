@@ -10,7 +10,7 @@ import { KINDS, SCENERY_TILE, Scenery, TREES, scatter } from "../src/render/scen
 import { level as loadLevel, sample } from "./parks.ts";
 
 /** How many parts the scenery checks are cut into: one test/scale-<n>.test.ts each. */
-export const PARTS = 2;
+export const PARTS = 6;
 
 /** Registers the scenery checks for part `n` of PARTS: every PARTS-th sampled park. */
 export function sceneryChecks(n: number) {
