@@ -408,3 +408,19 @@ codeSplitter:
 ### Still open
 
 - The edge's call cap for code mode, the token id in the audit log, round 10's remaining hardening notes and the out-of-scope items: #3725, where the next round starts. The iOS kit's socket token: #3726. The deploy and the edge check: MANUAL RUN #3727 (after #3661). MANUAL RUN #2290 stays open.
+
+## Round 13, November 11: three of round 10's hardening notes (#3725)
+
+A hand review of three code-only notes from #3725's list, source only. The deploy checks stay in MANUAL RUN #3727. Not the full skill run.
+
+### Fixed in this round
+
+Each with a test that fails without the fix.
+
+- **A report carried the page's query string into a public issue** (low, eqosys). `sendReport` sent `location.pathname + location.search`, so a party or invite code in the URL landed in the issue's Page row on the public repo. The page now sends the path alone, and eqosys files only the part before any `?` or `#`, whatever an older page sends (`report.test.ts`).
+- **A report's text could still link issues and cross-reference them** (low, eqosys). `tame` broke `#12` only after a space, so `(#12)`, `a/b#12` and a full `github.com/.../issues/12` URL still turned into links, and GitHub put a "mentioned in" on the issue they named. Every `#` before a digit and every `github.com` now gets a zero-width space (`report.test.ts`).
+- **The crew's fit verdict was served to every reader** (low, codeSplitter). `/fit` reads package.json and the vite config as the caller, and kept the verdict per commit for everyone. A crew member reads private lines, so a reader could get an answer built from lines they see blank. The crew's verdict is now kept apart from a reader's (`fit.test.ts`).
+
+### Still open
+
+- In #3725, where the next round starts: the edge call cap for code mode, the token id in the audit log, anonymous read tokens in the log, `adminRoute` and an owner's write token, hub notes with custom-scheme links, `party_seats` rows for refused knocks, a per-address gate on knocks, Better Auth's defaults set explicitly, and `/api/account/delete` on an app's token. The iOS kit's socket token: #3726. The deploy and the edge check: MANUAL RUN #3727. MANUAL RUN #2290 stays open.

@@ -39,7 +39,7 @@ test("a report from a game becomes a labelled, anonymous issue, and an account i
   expect((await send({ kind: "rant", title: "no", body: "x" })).res.status).toBe(400);
   expect(filed.length).toBe(0);
 
-  const ok = await send({ kind: "bug", title: "Seeker walks through the hedge", body: "Ping @someone about #12", page: "/play", detail: "Error: x\n```boom```" });
+  const ok = await send({ kind: "bug", title: "Seeker walks through the hedge", body: "Ping @someone about #12 (#13), a/b#14 and https://github.com/QuinnsCode/RustyBuns/issues/15", page: "/play?party=KX7Q#seat", detail: "Error: x\n```boom```" });
   expect(ok.res.status).toBe(200);
   expect(await ok.res.json()).toEqual({ ok: true, issue: 901 });
   expect(ok.res.headers.get("access-control-allow-origin")).toBe(PARK);
@@ -47,9 +47,12 @@ test("a report from a game becomes a labelled, anonymous issue, and an account i
   expect(auth).toBe("Bearer test-token");
   expect(issue.labels).toEqual(["external", "game:park-hide-seek", "bug"]);
   expect(issue.title).toStartWith("[external][park-hide-seek] Bug: ");
-  // Public repo: no email, no live @mention, no linked issue number.
+  // Public repo: no email, no live @mention, no linked issue number or cross-reference, no party code from the page's query.
   expect(issue.body).not.toContain("ada@example.com");
-  expect(issue.body).not.toMatch(/@(?!​)\w/);
+  expect(issue.body).not.toMatch(/@(?!\u200b)\w/);
+  expect(issue.body).not.toMatch(/#\d|github\.com/i);
+  expect(issue.body).not.toContain("KX7Q");
+  expect(issue.body).toContain("| Page | /play |");
   expect(issue.body).toContain("u_");
 
   // A suggestion gets the enhancement label.

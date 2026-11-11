@@ -16,7 +16,7 @@ const Reply = obj({ issue: opt(int(1, 1e9)), error: opt(str(300)) });
 export async function sendReport(url: string, token: string, r: ReportIn): Promise<Sent> {
   const res = await fetch(`${url.replace(/\/$/, "")}/api/report`, {
     method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
-    body: JSON.stringify({ page: location.pathname + location.search, ...r }),
+    body: JSON.stringify({ page: location.pathname, ...r }), // not the query: it can hold a party or invite code
   }).catch(() => null);
   if (!res) return { ok: false, error: "couldn't reach eqosys: check your connection" };
   const body = await readJson(res, Reply);

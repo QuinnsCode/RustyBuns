@@ -53,7 +53,8 @@ export async function workspaceDirs(globs: string[], list: (dir: string) => Prom
   return [...new Set(dirs)].sort().slice(0, MAX_WORKSPACES);
 }
 
-export async function repoFit(env: Env, self: Self, origin: string, owner: string, repo: string, user: string | null, dir = ""): Promise<Response> {
+/** `crew`: the reader sees private lines, so what this reads (a package.json, a vite config) may hold them. */
+export async function repoFit(env: Env, self: Self, origin: string, owner: string, repo: string, user: string | null, dir = "", crew = false): Promise<Response> {
   dir = dir.replace(/^\/+|\/+$/g, "");
   if (dir.split("/").some((s) => s === ".." || s === ".")) return fail("BadInput", "dir: a folder in the repo");
   const get = (path: string) => { const r = new Request(origin + `/api/repos/${owner}/${repo}` + path); if (user) actingAs.set(r, user); return self(r); };
@@ -88,7 +89,8 @@ export async function repoFit(env: Env, self: Self, origin: string, owner: strin
   if (dir && !t?.entries.length) return fail("NoSuchFolder", `no folder ${dir} in this repo`);
   if (!t) return json({ error: "this repo's files aren't ready yet" }, 202);
   // A repo with no commit yet isn't cached; its files are all still in flight.
-  const key = t.commit && FIT_V + t.commit.hash;
+  // The crew's verdict is kept apart: read through private lines, it isn't for a reader who sees them blank.
+  const key = t.commit && FIT_V + t.commit.hash + (crew ? ":crew" : "");
   if (key) {
     const hit = await env.DB.prepare("SELECT data FROM fit_cache WHERE owner = ? AND repo = ? AND dir = ? AND commit_hash = ?").bind(owner, repo, dir, key).first();
     if (hit) return json(JSON.parse(hit.data as string));

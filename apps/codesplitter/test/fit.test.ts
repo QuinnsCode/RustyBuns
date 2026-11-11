@@ -58,6 +58,21 @@ test("the verdict is kept per commit and read again when main moves", async () =
   expect((await db.prepare("SELECT COUNT(*) AS n FROM fit_cache WHERE owner = 'ryan' AND repo = 'kept'").first()).n).toBe(1);
 });
 
+test("on a repo with private lines, the crew's verdict isn't the one a reader gets", async () => {
+  const pkg = (deps: Record<string, string>) => JSON.stringify({ name: "lab", dependencies: deps, devDependencies: { vite: "6.0.0" } }, null, 2);
+  const call = await repo("lab", "public", { "package.json": pkg({ react: "19.0.0", "@secret/engine": "1.0.0" }) });
+  const send = (url: string, body: unknown) => call("ryan", url, { method: "POST", body: JSON.stringify(body) });
+  expect((await send("/api/repos/ryan/lab/do/commit?path=package.json", { message: "first" })).ok).toBe(true);
+  const line = (await (await call("ryan", "/api/repos/ryan/lab/do/file?path=package.json")).json()).lines.find((l: { text: string }) => l.text.includes("@secret"));
+  expect((await send("/api/repos/ryan/lab/do/private?path=package.json", { lines: [line.id], private: true })).status).toBe(200);
+  const crew = await (await call("ryan", "/api/repos/ryan/lab/fit")).json();
+  const reader = await (await call("ana", "/api/repos/ryan/lab/fit")).json();
+  expect(crew.verdict).toBe("ready");
+  // The reader's package.json has a blank line where the crew's names a private package: read on its own, not the crew's kept answer.
+  expect(reader.verdict).toBe("poor");
+  expect((await call("ryan", "/api/repos/ryan/lab/fit").then((r) => r.json())).verdict).toBe("ready");
+});
+
 test("a monorepo root lists its apps with a verdict each, and ?dir= checks one", async () => {
   const call = await repo("mono", "public", {
     "package.json": JSON.stringify({ name: "mono", private: true, workspaces: ["apps/*", "packages/ui"] }),
