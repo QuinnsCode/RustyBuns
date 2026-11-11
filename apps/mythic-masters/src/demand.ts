@@ -4,7 +4,7 @@
 // different each time it is opened, never explained: someone held this page. No DOM here; main.ts and page.ts draw it.
 import { mulberry32 } from "@rustybuns/util";
 import type { Archetype } from "./creatures.ts";
-import type { Journey } from "./journey.ts";
+import { cleared, hpOf, SECTIONS, sections, TRAIL_REGIONS, WITCH_SHEET, type Journey } from "./journey.ts";
 import { ROSTER, type Creature } from "./roster.ts";
 
 export const SIGNATURE = "the Book";
@@ -101,4 +101,35 @@ export function settingsLineOf(o: { paused: boolean; quillMuted: boolean }): str
   if (o.quillMuted) return "You turned my quill down. I am still writing.";
   if (o.paused) return "Rest if you must. The ledger does not pause.";
   return "Move the keys where you like. The accounts stay where they are.";
+}
+
+/** A compendium chapter the Book writes its own line over (#4166): the line-up, the bestiary, the regions. */
+export type Chapter = "lineup" | "bestiary" | "regions";
+
+/** The book's line at the head of a compendium chapter, about your record there instead of the shared demand: who you
+ * lead with and who is hurt, the last beast you bound and where, the last page you wrote it, or the fights you keep
+ * losing past it. No journey yet, every chapter wants the same thing: three, from the witch. */
+export function pageLineOf(ch: Chapter, j: Journey | null, roster: readonly Creature[] = ROSTER): { ask: string; signed: boolean } {
+  if (!j) return { ask: demandOf(null, roster), signed: true };
+  const name = (id: string) => roster.find((c) => c.id === id)?.name ?? "that one";
+  if (ch === "lineup") {
+    const lead = j.party[0]!, down = j.party.find((m) => hpOf(m) <= 0), hurt = j.party.find((m) => hpOf(m) > 0 && hpOf(m) < 1);
+    if (hpOf(lead) <= 0) return { ask: `The ${name(lead.id)} leads, flat on its back. Move it down or wake it.`, signed: true };
+    if (down) return { ask: `The ${name(lead.id)} leads. The ${name(down.id)} is down. A fire, before you walk.`, signed: true };
+    if (hurt) return { ask: `The ${name(lead.id)} leads. The ${name(hurt.id)} is dripping on my page.`, signed: false };
+    return { ask: `The ${name(lead.id)} leads. Nobody is dripping. Go and earn the ink.`, signed: true };
+  }
+  if (ch === "bestiary") {
+    const last = [...j.party, ...j.journal].filter((m) => m.caught && m.caught.where !== WITCH_SHEET).sort((a, b) => a.caught!.at - b.caught!.at).at(-1);
+    if (!last) return { ask: "Three from the witch's sheet. You have not bound one yourself. Yet.", signed: true };
+    const where = last.caught!.where.split(",")[0];
+    return { ask: `Last in: the ${name(last.id)}${where ? `, ${where}` : ""}. The ink is dry. Next.`, signed: true };
+  }
+  // the last page you wrote it (pages are pushed as sections clear), and the fights you lost since
+  const at = j.pages.at(-1)?.split(":").map(Number), g = at && TRAIL_REGIONS.find((r) => r.n === at[0]);
+  const sec = g && sections(g)[at[1]!], losses = j.talk?.losses ?? 0;
+  if (!g || !sec) return { ask: "Not one page written. The Pine Barrens are not going to walk themselves.", signed: true };
+  if (losses >= 2) return { ask: `${losses} lost in a row past ${sec.name}. Same country, same mud. Mend them first.`, signed: true };
+  if (cleared(j, g.n) >= SECTIONS) return { ask: `${g.name}, the last page. Its mythic's number is in here somewhere.`, signed: false };
+  return { ask: `${sec.name}, ${g.name}: the last page you wrote me. Write the next.`, signed: true };
 }
