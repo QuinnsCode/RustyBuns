@@ -203,7 +203,7 @@ export const TALE: Record<string, string> = {
   troll: "A huge, slow thing of the mountains and the dark under the bridges, turned to stone by the light of day.",
   "yule-cat": "A giant cat that prowls Iceland at Christmas and eats anyone who got no new clothes to wear for it.",
   wolpertinger: "A Bavarian beast of many parts (a hare's body, antlers, wings, fangs), said to be seen only by a pretty young woman on a moonlit night.",
-  tatzelwurm: "A stubby worm of the Alps with a cat's face and two short legs, said to hiss and spring at climbers.",
+  tatzelwurm: "A stubby worm of the Alps with a cat's face and four short legs, said to hiss and spring at climbers.",
   tarasque: "A dragon with a lion's head and six short legs that sank boats on the Rhône until Saint Martha tamed it with a hymn.",
   gevaudan: "A wolf-like beast that killed around a hundred people in the Gévaudan between 1764 and 1767.",
   hydra: "The water serpent of Lerna that grew two heads for every one cut off, until Herakles burned each neck shut.",
