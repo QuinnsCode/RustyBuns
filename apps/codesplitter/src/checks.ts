@@ -74,7 +74,7 @@
 //   PUT  /api/repos/:o/:r/checks/:id {status?, log?, append?, junit?, runner_label?}  a runner reports, and says it's alive (whoever claimed it, or the owner)
 //   POST /api/repos/:o/:r/checks/:id/cancel    stop one of ours that's queued or running (the crew)
 
-import { httpUrl, listOf, parseJson } from "./util.ts";
+import { httpUrl, isPlainObject, listOf, parseJson } from "./util.ts";
 import { fail, json, need, readBody, type Env } from "./env.ts";
 import { arr, bool, int, nul, num, obj, oneOf, opt, str, type Of } from "@rustybuns/util/guard";
 import { repoRow } from "./repos.ts";
@@ -296,18 +296,18 @@ export async function upstreamTaken(env: Env, owner: string, repo: string, ref: 
 
 /** A file's text on `ref` (the branch's copy when it has one, else main's), or null when there's none. */
 export async function readAt(env: Env, owner: string, repo: string, ref: string, path: string) {
-  const { materialize, toFile } = await import("./archive.ts");
+  const { docIn, materialize, toFile } = await import("./archive.ts");
   const own = ref === "main" ? null : await env.DB.prepare("SELECT deleted FROM branch_files WHERE owner = ? AND repo = ? AND branch = ? AND path = ? AND merged = 0").bind(owner, repo, ref, path).first();
   if (own?.deleted) return null;
   if (!own && "error" in await materialize(env, owner, repo, path)) return null;
   const res = await toFile(env, owner, repo, path, "upstream", "file", {}, "", own ? ref : undefined);
-  return res.ok ? ((await res.json()) as { lines: { text: string }[] }).lines.map((l) => l.text).join("\n") : null;
+  return res.ok ? (await docIn(res))?.lines.map((l) => l.text).join("\n") ?? null : null;
 }
 
 /** A check the repo runs, from its codesplitter.ci or package.json. */
 export interface Planned { name: string; command: string; paths?: string[] }
 
-const parse = (t: string | null) => { try { const v = t && JSON.parse(t); return v && typeof v === "object" && !Array.isArray(v) ? v as Record<string, unknown> : null; } catch { return null; } };
+const parse = (t: string | null) => { try { const v = t && JSON.parse(t); return isPlainObject(v) ? v : null; } catch { return null; } };
 const SCRIPTS = ["test", "typecheck"];
 const scriptsOf = (pkg: string | null) => {
   const s = parse(pkg)?.scripts as Record<string, unknown> | undefined;
