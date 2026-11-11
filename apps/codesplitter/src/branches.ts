@@ -67,6 +67,9 @@ export function parseResolve(raw: unknown): Record<string, Resolve> | string {
 const RESOLVES = opt(rec(rec(PICK)));
 interface Access { read: boolean; write: boolean }
 
+/** What `GET .../branches/:b` answers, as far as a runner lays a branch over a clone (scripts/runner.ts): each file, merged or deleted. */
+export const BranchReview = obj({ files: arr(obj({ path: str(Infinity), merged: bool(), deleted: opt(bool()) }), Infinity) });
+
 export async function openBranch(env: Env, owner: string, repo: string, name: string) {
   const b = await env.DB.prepare("SELECT * FROM branches WHERE owner = ? AND repo = ? AND name = ?").bind(owner, repo, name).first<BranchRow>();
   return b?.status === "open" ? b : null;
@@ -1087,6 +1090,9 @@ async function learning(env: Env, owner: string, repo: string, open: string[]) {
  * first, the ones whose required checks passed ahead of the ones they hold. Only files two branches both
  * change are merged in the dry run: a branch on files nobody else touches clashes with nothing.
  */
+/** What `GET .../merge-plan` answers, as far as a reader counts its waves (welcome.ts). */
+export const MergePlanReply = obj({ engine: str(200), waves: arr(arr(raw, Infinity), Infinity) });
+
 export async function mergePlan(env: Env, owner: string, repo: string, user: string) {
   const open = await openBranches(env, owner, repo);
   const held = new Set((await Promise.all(open.map(async (b) => await mergeBlock(env, owner, repo, b.name) ? b.name : null))).filter((n) => n !== null));

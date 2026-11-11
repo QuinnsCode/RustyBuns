@@ -14,6 +14,7 @@ import type { Doc } from "./lines.ts";
 import type { Env } from "./env.ts";
 import { actingAs } from "./identity.ts";
 import { fail, json } from "./env.ts";
+import { arr, obj, str } from "@rustybuns/util/guard";
 
 type Self = (r: Request) => Promise<Response>;
 type Entry = { path: string; type: string };
@@ -54,6 +55,9 @@ export async function workspaceDirs(globs: string[], list: (dir: string) => Prom
 }
 
 /** `crew`: the reader sees private lines, so what this reads (a package.json, a vite config) may hold them. */
+/** What `GET .../fit` answers, as far as a reader shows the verdict and its first reasons (welcome.ts). */
+export const FitReply = obj({ verdict: str(200), reasons: arr(str(Infinity, { min: 0 }), Infinity) });
+
 export async function repoFit(env: Env, self: Self, origin: string, owner: string, repo: string, user: string | null, dir = "", crew = false): Promise<Response> {
   dir = dir.replace(/^\/+|\/+$/g, "");
   if (dir.split("/").some((s) => s === ".." || s === ".")) return fail("BadInput", "dir: a folder in the repo");

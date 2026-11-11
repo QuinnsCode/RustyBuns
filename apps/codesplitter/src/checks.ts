@@ -76,7 +76,7 @@
 
 import { httpUrl, listOf, parseJson } from "./util.ts";
 import { fail, json, need, readBody, type Env } from "./env.ts";
-import { arr, bool, obj, oneOf, opt, str, type Of } from "@rustybuns/util/guard";
+import { arr, bool, int, nul, num, obj, oneOf, opt, str, type Of } from "@rustybuns/util/guard";
 import { repoRow } from "./repos.ts";
 import { githubToken, parseRepo } from "./github.ts";
 import { emit } from "./hooks.ts";
@@ -607,6 +607,10 @@ export const PUSHED = (user: string) => `queued by @${user}'s push\n`;
  * external CI's), of `names` when it only runs some, as `label`. One UPDATE marks it
  * running, so of two runners racing for it only one gets it. null when there's nothing to do.
  */
+/** What `POST .../checks/claim` answers a runner (scripts/runner.ts): the run it now holds. */
+export const ClaimedRun = obj({ id: int(0, Number.MAX_SAFE_INTEGER), ref: str(Infinity), sha: str(200), name: str(Infinity), clone_url: nul(str(Infinity)),
+  command: opt(str(Infinity)), stale_after_s: num(0, Infinity) });
+
 export async function claimRun(env: Env, owner: string, repo: string, label: string, names: string[] = [], now = Date.now(), by: string | null = null, kinds: readonly ("desktop" | "container")[] = ["desktop", "container"]) {
   await requeueStale(env, now, { owner, repo });
   const only = names.length ? ` AND name IN (${names.map(() => "?").join(", ")})` : "";

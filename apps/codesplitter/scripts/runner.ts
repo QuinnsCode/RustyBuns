@@ -27,8 +27,12 @@ import { chmod, mkdir, mkdtemp, rm } from "node:fs/promises";
 import { homedir, hostname, tmpdir } from "node:os";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
-import { arr, check, obj, rec, str } from "@rustybuns/util/guard";
+import { arr, check, int, obj, rec, str, type Of } from "@rustybuns/util/guard";
+import { readJson } from "@rustybuns/util/http";
+import { BranchReview } from "../src/branches.ts";
 import { checkEnv, runDirs, sandboxUser, spawnAs } from "../src/check-env.ts";
+import { ClaimedRun } from "../src/checks.ts";
+import { FileReply } from "../src/file-do.ts";
 
 const { values: o, positionals: [slug] } = parseArgs({ allowPositionals: true, options: {
   label: { type: "string", default: `${process.env.USER ?? "runner"}@${hostname()}` },
@@ -37,9 +41,11 @@ const { values: o, positionals: [slug] } = parseArgs({ allowPositionals: true, o
 } });
 const user = sandboxUser(o.user);
 // No CODESPLITTER_URL: the desktop app, if it's running, from the 0600 file it keeps while it does.
+const Desktop = obj({ url: str(Infinity), token: str(Infinity), pid: int(1, Number.MAX_SAFE_INTEGER) });
 function desktop(): string | undefined {
   try {
-    const d = JSON.parse(readFileSync(join(homedir(), ".codesplitters/desktop.json"), "utf8")) as { url: string; token: string; pid: number };
+    const d = check(Desktop, JSON.parse(readFileSync(join(homedir(), ".codesplitters/desktop.json"), "utf8")));
+    if (!d) return undefined;
     process.kill(d.pid, 0); // throws when the app is gone and left the file behind
     return `${d.url}/?token=${encodeURIComponent(d.token)}`;
   } catch { return undefined; }
@@ -60,7 +66,9 @@ async function overlay(dir: string, ref: string) {
   const get = (path: string) => fetch(`${base}/api/repos/${slug}${path}`, { headers: { authorization: `Bearer ${token}`, ...(launch && { cookie: `rb_token_${u.port}=${launch}` }) } });
   const res = await get(`/branches/${encodeURIComponent(ref)}`);
   if (!res.ok) throw new Error(`reading branch ${ref}: ${res.status}`);
-  const { files } = (await res.json()) as { files: { path: string; merged: boolean; deleted?: boolean }[] };
+  const review = await readJson(res, BranchReview);
+  if (!review) throw new Error(`reading branch ${ref}: not a branch's review`);
+  const { files } = review;
   const mine = files.filter((f) => !f.merged);
   for (const f of mine) {
     const at = join(dir, f.path);
@@ -68,7 +76,9 @@ async function overlay(dir: string, ref: string) {
     if (f.deleted) { await rm(at, { force: true }); continue; }
     const doc = await get(`/do/file?path=${encodeURIComponent(f.path)}&branch=${encodeURIComponent(ref)}`);
     if (!doc.ok) throw new Error(`reading ${f.path} on ${ref}: ${doc.status}`);
-    await Bun.write(at, ((await doc.json()) as { lines: { text: string }[] }).lines.map((l) => l.text).join("\n") + "\n");
+    const file = await readJson(doc, FileReply);
+    if (!file) throw new Error(`reading ${f.path} on ${ref}: not a file's lines`);
+    await Bun.write(at, file.lines.map((l) => l.text).join("\n") + "\n");
   }
   return `main, with ${mine.length} file${mine.length === 1 ? "" : "s"} from branch ${ref} as they are now\n`;
 }
@@ -91,7 +101,7 @@ async function carOverlay(dir: string, ref: string) {
 }
 
 /** One run, start to finish. */
-async function work(job: { id: number; ref: string; sha: string; name: string; clone_url: string | null; command?: string }) {
+async function work(job: Of<typeof ClaimedRun>) {
   const report = (b: object) => api(`/${job.id}`, { runner_label: o.label, ...b }, "PUT");
   // The command is repo code, maybe an agent's: it gets none of this env (our write token, the URL with the desktop's launch token, your logins).
   const base = await mkdtemp(join(user ? "/tmp" : tmpdir(), "cs-runner-")), { repo: dir, home, tmp } = runDirs(base);
@@ -130,7 +140,8 @@ async function work(job: { id: number; ref: string; sha: string; name: string; c
 while (true) {
   const res = await api("/claim", { runner_label: o.label, ...(o.names && { names: o.names.split(",") }) });
   if (res.status === 200) {
-    const job = await res.json();
+    const job = await readJson(res, ClaimedRun);
+    if (!job) { console.error("claim: the site answered something that isn't a run"); if (o.once) break; await Bun.sleep(Number(o.idle) * 1000); continue; }
     console.log(`${o.label}: ${job.name} on ${job.ref} at ${job.sha.slice(0, 7)} (run ${job.id})`);
     await work(job);
     continue;

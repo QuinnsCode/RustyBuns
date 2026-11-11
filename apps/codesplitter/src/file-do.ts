@@ -127,9 +127,11 @@ export const FileReply = obj({ lines: arr(FileLine, Infinity) });
 /** `/file`'s whole doc, for a writer that diffs against it and posts ops (agent-run.ts). */
 export const FileDoc = obj({ rev: int(0, Number.MAX_SAFE_INTEGER), nextId: int(0, Number.MAX_SAFE_INTEGER), lines: arr(FileLine, Infinity) });
 export type FileDoc = Of<typeof FileDoc>;
+/** A claim as `/claims` lists it and a granted `POST /claims` answers it. */
+export const ClaimRow = obj({ id: str(200), who: str(200), bot: bool(), lines: arr(str(200), Infinity), task: opt(str(Infinity, { min: 0 })),
+  until: nul(num(0, Number.MAX_SAFE_INTEGER)), soft: opt(bool()) });
 /** What `/claims` answers, as far as the Worker and an agent run read it (worker.ts drops a held row whose claim is gone). */
-export const ClaimsReply = arr(obj({ id: str(200), who: str(200), bot: bool(), lines: arr(str(200), Infinity), task: opt(str(Infinity, { min: 0 })),
-  until: nul(num(0, Number.MAX_SAFE_INTEGER)), soft: opt(bool()) }), Infinity);
+export const ClaimsReply = arr(ClaimRow, Infinity);
 /** A refused claim, as far as a client reads it: why, whether an update cut it, and how many seconds to wait. */
 export const ClaimRefused = obj({ error: opt(str(Infinity, { min: 0 })), updating: opt(bool()), retryAfter: opt(num(0, Infinity)) });
 /** What `/ops` answers: the rev after and the ops that landed, or (409) what it refused and why. */
