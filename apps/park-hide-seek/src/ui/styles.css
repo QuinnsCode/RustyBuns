@@ -337,3 +337,21 @@ body:has(#lobby:not([hidden])) .narrator p { display: none; }
   background: radial-gradient(ellipse 34% 70% at var(--beam, 20%) 26%, rgba(255, 242, 176, 0.42), rgba(255, 242, 176, 0.1) 55%, transparent 75%);
   animation: beam 6s ease-in-out infinite alternate; }
 @media (prefers-reduced-motion: reduce) { [data-tod="night"] .poster-head::after { animation: none; } }
+
+/* Round 6 (#4226): the lobby's park list as a trail map. Each region is a green routed sign on a post with its own
+   painted blaze and how many parks wait down it; a dotted trail runs on to the panel's edge. Each park plank carries
+   that park's own small patch (poster.ts chipPatchSvg). */
+.lobby-main h3.trail { display: flex; align-items: center; gap: 8px; margin: 16px 0 8px; font: inherit; color: inherit; }
+.lobby-main h3.trail > span { position: relative; padding: 5px 22px 5px 12px; font: 700 15px/1.1 var(--plate); letter-spacing: 0.04em; color: #f3e2b8;
+  background: repeating-linear-gradient(177deg, rgba(0, 0, 0, 0.08) 0 2px, transparent 2px 7px), #2f5233;
+  clip-path: polygon(0 0, calc(100% - 12px) 0, 100% 50%, calc(100% - 12px) 100%, 0 100%); box-shadow: inset 0 -3px 0 rgba(0, 0, 0, 0.25); }
+.lobby-main h3.trail .blaze { flex: none; width: 20px; height: 20px; padding: 3px; background: var(--brown); border-radius: 2px; fill: var(--sun);
+  box-shadow: 0 2px 0 rgba(43, 33, 22, 0.3); }
+.lobby-main h3.trail small { flex: 1; display: flex; align-items: center; gap: 8px; font: 600 12px/1 var(--grid); color: var(--muted); white-space: nowrap; }
+.lobby-main h3.trail small::after { content: ""; flex: 1; border-top: 3px dotted var(--line); }
+.lobby .row-btns .ui-chip:has(> .chip-patch) { flex-direction: row; align-items: center; gap: 6px; padding-left: 4px; }
+.chip-patch { flex: none; display: block; width: 20px; height: 20px; border-radius: 50%; overflow: hidden; border: 2px solid #f3e2b8;
+  box-shadow: 0 0 0 1.5px var(--brown), 0 1px 0 2px rgba(0, 0, 0, 0.25); }
+.chip-patch svg { display: block; width: 100%; height: 100%; }
+[data-tod="night"] .lobby-main h3.trail > span { background: repeating-linear-gradient(177deg, rgba(0, 0, 0, 0.12) 0 2px, transparent 2px 7px), #23402a; }
+[data-tod="night"] .lobby-main h3.trail .blaze { fill: #fff2b0; }

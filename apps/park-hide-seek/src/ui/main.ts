@@ -16,7 +16,7 @@ import { CALLS, SOUND_PIECES, Score, place, setMix, sounds } from "./audio.ts";
 import { REQUESTABLE, type Votes } from "../edge/requests.ts";
 import { mountControls } from "@rustybuns/game-controls";
 import { PARK_THEME, installKit } from "./kit.ts";
-import { type Tod, awardHtml, paintPoster, permitHead, permitLine, stampHtml, todAt } from "./poster.ts";
+import { type Tod, awardHtml, blazeSvg, chipPatchSvg, paintPoster, permitHead, permitLine, stampHtml, todAt } from "./poster.ts";
 import { bind, KEY } from "./bindings.ts";
 import { Controls } from "./controls.ts";
 import { Preview } from "./preview.ts";
@@ -354,9 +354,9 @@ function renderLobby(v: View) {
   // The park picked, if any: "random" roams every park.
   const park = v.zonePick === "random" ? undefined : PARKS.find((p) => p.code === zonesFor(v.zonePick)[0]?.park);
   // Every national park, grouped by region; a park's zones show once it's picked.
-  const parkBtn = (p: (typeof PARKS)[number]) => `<button data-zone="random:${p.code}" aria-pressed="${park === p}" ${dis}>${esc(p.name)}</button>`;
+  const parkBtn = (p: (typeof PARKS)[number]) => `<button data-zone="random:${p.code}" aria-pressed="${park === p}" ${dis}>${chipPatchSvg(p.name)}${esc(p.name)}</button>`;
   const parks = `<div class="row-btns"><button data-zone="random" aria-pressed="${!park}" ${dis}>Any park<small>All ${PARKS.length}</small></button></div>`
-    + REGIONS.map((r) => `<h3>${r}</h3><div class="row-btns">${PARKS.filter((p) => p.region === r).map(parkBtn).join("")}</div>`).join("");
+    + REGIONS.map((r, i) => `<h3 class="trail">${blazeSvg(i)}<span>${r}</span><small>${PARKS.filter((p) => p.region === r).length} parks</small></h3><div class="row-btns">${PARKS.filter((p) => p.region === r).map(parkBtn).join("")}</div>`).join("");
   const zones = park ? [`<button data-zone="random:${park.code}" aria-pressed="${v.zonePick === `random:${park.code}`}" ${dis}>Random drop zone<small>A new ${esc(park.name)} attraction every round</small></button>`,
     ...zonesFor(`random:${park.code}`).map((z) => `<button data-zone="${z.id}" aria-pressed="${v.zonePick === z.id}" ${dis}>${esc(z.name)}<small>${esc(z.blurb)}</small></button>`)].join("") : "";
   const modes: [Mode, string, string][] = [["classic", "Hide and seek", "Crouch in the bushes"], ["props", "Prop hunt", "Campers turn into bushes, boulders and logs"]];
