@@ -5,6 +5,7 @@
 // Targets: current OS by default. Cross-OS is a CI matrix, not one machine.
 
 import { needDocker } from "./containers.ts";
+import { isRecord } from "./state.ts";
 import { $ } from "bun";
 import { mkdir } from "node:fs/promises";
 import { existsSync, statSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
@@ -411,16 +412,17 @@ ${h.box ? `    // Hosting controls are the desktop owner's; on a public box anyo
       // join: true makes up a passphrase, returned once as guests.join. Off loopback a passphrase is the only lock
       // on the world, so it takes at least JOIN_MIN characters there, or the request changes nothing.
       // The body is the client's: every field is unknown until checked, and a non-object body just has none.
-      const b = await req.json().catch(() => null) as { listen?: { hostname?: unknown; port?: unknown }; join?: unknown; max?: unknown; version?: unknown } | null;
-      const made = b?.join === true ? madeUpJoin() : undefined;
-      const join = b?.join === undefined ? guests.join : made ?? (typeof b.join === "string" && b.join.length > 0 ? b.join : undefined);
-      const bindTo = typeof b?.listen?.hostname === "string" ? b.listen.hostname : shell.hostname;
+      const rec = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v);
+      const sent: unknown = await req.json().catch(() => null);
+      const b = rec(sent) ? sent : {}, l = rec(b.listen) ? b.listen : undefined;
+      const made = b.join === true ? madeUpJoin() : undefined;
+      const join = b.join === undefined ? guests.join : made ?? (typeof b.join === "string" && b.join.length > 0 ? b.join : undefined);
+      const bindTo = typeof l?.hostname === "string" ? l.hostname : shell.hostname;
       if (join !== undefined && join.length < JOIN_MIN && !LOOPBACK.test(bindTo))
         return reject(400, "weak_passphrase", { detail: "guests off this machine need a passphrase of at least " + JOIN_MIN + " characters, or send join: true for one", min: JOIN_MIN });
       guests.join = join;
-      if (typeof b?.max === "number" && b.max >= 0) guests.max = b.max;
-      if (b?.version !== undefined) guests.version = typeof b.version === "string" ? b.version : undefined;
-      const l = b?.listen;
+      if (typeof b.max === "number" && b.max >= 0) guests.max = b.max;
+      if (b.version !== undefined) guests.version = typeof b.version === "string" ? b.version : undefined;
       if (l) shell.rebind({ hostname: typeof l.hostname === "string" ? l.hostname : undefined, port: typeof l.port === "number" && Number.isInteger(l.port) ? l.port : undefined });
       return Response.json({ listen: { hostname: shell.hostname, port: shell.port }, guests: { open: guests.join !== undefined, connected: guestCount, max: guests.max, version: guests.version ?? null, ...(made ? { join: made } : {}) } });
     }
@@ -508,7 +510,8 @@ export function builtEntry(c: RustyBunsConfig, cwd = process.cwd()): string | un
   if (!built || existsSync(join(cwd, built))) return built ?? c.worker!.main;
   const fromWrangler = (dir: string) => {
     const w = join(cwd, dir, "wrangler.json");
-    const main = existsSync(w) ? (JSON.parse(readFileSync(w, "utf8")) as { main?: string }).main : undefined;
+    const read: unknown = existsSync(w) ? JSON.parse(readFileSync(w, "utf8")) : undefined;
+    const main = isRecord(read) && typeof read.main === "string" ? read.main : undefined;
     return main && existsSync(join(cwd, dir, main)) ? join(dir, main) : undefined;
   };
   // 1. beside the guess; 2. any environment folder under the build root: the plugin names it after the
@@ -878,7 +881,8 @@ export async function buildDesktop(c: RustyBunsConfig, opts: BuildOpts = {}) {
   }];
   const version = (await Bun.file("package.json").json().catch(() => ({})))?.version ?? "0.0.0";
   const sha = (await $`git rev-parse --short HEAD`.quiet().nothrow().text()).trim() || "nogit";
-  const rustybuns = (await Bun.file(new URL("../package.json", import.meta.url)).json()).version as string;
+  const own: unknown = await Bun.file(new URL("../package.json", import.meta.url)).json();
+  const rustybuns = isRecord(own) && typeof own.version === "string" ? own.version : "0.0.0";
   const defineMap: Record<string, string> = {
     RB_VERSION: JSON.stringify(`${version}+${sha}`),
     // The RustyBuns this was built with, and whether it is a dev host: see launchCheck.
