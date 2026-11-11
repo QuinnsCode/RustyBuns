@@ -256,9 +256,19 @@ async function prepare(tag: string) {
   // 13b. the issues board's Open column puts issues already handed to a worker last, so new ones are on top (board.ts)
   patchAsk(openNewFirstClient);
 
-  // 13c. the `fable` alias is Fable 5.2 in Claude Code now; v0.1.211 still names it 5.1 until a worker speaks
-  patch("shared/providers.js", "fable: 'Fable 5.1',", "fable: 'Fable 5.2',");
-  patchAsk((js) => js.replace("fable:`Fable 5.1`", "fable:`Fable 5.2`"));
+  // 13c. the `fable` alias is Fable 5.2 in Claude Code now (v0.1.211 still names it 5.1), and Fable 5.1 stays
+  // a choice of its own: its full id goes to `claude --model` as it is, like an alias does
+  patch("shared/providers.js", "['fable', 'opus',", "['fable', 'claude-fable-5-1', 'opus',");
+  patch("shared/providers.js", "value === 'fable' ||", "value === 'fable' || value === 'claude-fable-5-1' ||");
+  patch("shared/providers.js", "fable: 'Fable 5.1',", "fable: 'Fable 5.2',\n    'claude-fable-5-1': 'Fable 5.1',");
+  patchAsk((js) => {
+    const out = js
+      .replace("[`fable`,`opus`,", "[`fable`,`claude-fable-5-1`,`opus`,")
+      .replace("e===`fable`||", "e===`fable`||e===`claude-fable-5-1`||")
+      .replace("fable:`Fable 5.1`,", "fable:`Fable 5.2`,\"claude-fable-5-1\":`Fable 5.1`,");
+    if (!out.includes("e===`claude-fable-5-1`") || !out.includes("\"claude-fable-5-1\":`Fable 5.1`")) throw new Error("Agent Office changed: the hire dialog's Claude models moved");
+    return out;
+  });
 
   // 14. the Druids Curse skin
   lap("client patches (9-13b)");
