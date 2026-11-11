@@ -347,7 +347,10 @@ function mergeLines(base: Doc, branch: Doc, main: Doc, given: Resolve, deleter: 
   // And code lint.ts can't read (#1389): where both sides changed lines that touch, git would have stopped, and a settled stretch may not build.
   const checking = kind === "prose" ? factChecks(base, main, branch, mainPos, branchPos, mainHunks, branchHunks) : kind === "code" && !LINTED.test(path) ? touching(mainHunks, branchHunks) : [];
   const picked = checking.flatMap((g) => { const pick = resolve[`check:${regionKey(base, g)}`]; return pick ? [{ ...g, pick }] : []; });
-  const twiceSet = kind === "code" ? reassigned(main, branch, mainPos, branchPos, was, touchingAll(mainHunks, branchHunks)) : [];
+  const twiceSet = kind === "code" ? [
+    ...reassigned(main, branch, mainPos, branchPos, was, touchingAll(mainHunks, branchHunks)),
+    ...staleCopies(main, branch, mainPos, branchPos, was, new Set([...movedOnMain.values(), ...movedOnBranch.values()].map((l) => l.id))),
+  ] : [];
   const regions = withPicked(joined(overlapping([...clashes(mainHunks, branchHunks, kind !== "prose"), ...twiceSet]), base, [main, mainPos, movedOnMain], [branch, branchPos, movedOnBranch]), picked);
   const inRegion = (p: number) => regions.some((g) => covers(g, p));
   // Lines main added that weren't in the file already, and the block each went in: a line that already repeats (a test's setup call) is no sign of doubling.
@@ -943,6 +946,24 @@ function reassigned(main: Doc, branch: Doc, mainPos: Map<string, number>, branch
     const m = sets(main, mainPos, g);
     return [...sets(branch, branchPos, g)].some(([to, l]) => { const o = m.get(to); return o && o.id !== l.id && o.text.trim() !== l.text.trim(); });
   });
+}
+
+/**
+ * A line one side wrote anew as a copy of a base line the other side rewrote (#4138): the copy keeps the old text
+ * (a button label main renamed, copied into the branch's new card), so a line merge lands both versions. Each copy
+ * is a stretch to settle. Short or symbol-only lines (`}`, `</div>`) copy everywhere and say nothing.
+ */
+function staleCopies(main: Doc, branch: Doc, mainPos: Map<string, number>, branchPos: Map<string, number>, was: Map<string, Line>, moved: Set<string>): Region[] {
+  const found: Region[] = [];
+  for (const [d, pos, o] of [[main, mainPos, branch], [branch, branchPos, main]] as const) {
+    const rewritten = new Set(o.lines.flatMap((l) => { const b = was.get(l.id); return b && b.text.trim() !== l.text.trim() ? [b.text.trim()] : []; }));
+    for (const l of d.lines) {
+      const t = l.text.trim();
+      if (was.has(l.id) || moved.has(l.id) || t.length < 20 || !/[A-Za-z]{3}/.test(t) || !rewritten.has(t)) continue;
+      found.push({ lo: pos.get(l.id)!, hi: pos.get(l.id)! });
+    }
+  }
+  return mergedRegions(found);
 }
 
 type Side = [Doc, Map<string, number>, Map<string, Line>];
