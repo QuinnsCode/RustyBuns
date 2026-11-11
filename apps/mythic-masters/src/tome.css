@@ -95,7 +95,6 @@
 .title .imprint-head { font-family: var(--f-title); font-size: 17px; letter-spacing: 0.32em; text-transform: uppercase; color: var(--ink-faded); margin: 0 0 6px; }
 .title .subtitle { font-family: var(--f-book); font-style: italic; font-size: 18px; color: var(--ink-faded); max-width: 30ch; margin: 0; }
 .title .recto > .flourish { margin: 12px auto 4px; }
-.title .recto > .tag { max-width: 34ch; margin: 2px auto 14px; }
 .title .menu { gap: 12px; width: min(380px, 100%); }
 .title .menu button { font-size: 22px; padding: 10px 16px; }
 /* the printer's line at the foot of a title page, small and spaced, over a short rule */
@@ -1182,8 +1181,6 @@ body > .gc-dialog .gc-card .gc-fold button[data-fold=expand]::after { content: "
 .select.book .slip .row label { font-style: italic; color: var(--ink-faded); display: inline-flex; align-items: baseline; gap: 6px; flex: none; width: auto; max-width: 100%; }
 .select.book .slip .row select { width: 13em; max-width: 62vw; min-width: 0; flex: none; font-family: var(--f-hand); font-size: 19px; font-style: normal; color: var(--ink-b); background: none; border: 0; border-bottom: 1.5px dotted rgba(70, 42, 18, 0.5); border-radius: 0; padding: 0 4px; }
 .select.book .slip .row input[type=checkbox] { accent-color: var(--blood); }
-.select.book .slip .keys { margin: 10px 0 0; font-family: var(--f-book); font-style: italic; font-size: 14px; line-height: 1.5; color: var(--ink-faded); text-align: center; }
-.select.book .slip .keys b { font-family: var(--f-hand); font-style: normal; font-weight: 400; font-size: 16px; color: var(--ink-b); }
 /* the folio's way back and its page turns written on the leaf, not grey pills (#3671 round 97): "Bestiary" in the
  * italic hand with its arrow, the page before and after two ink marks, a red underline under the one you point at;
  * the folio number never breaks */
@@ -1242,8 +1239,6 @@ body > .gc-dialog .gc-card button.gc-close:hover, .journal #closeJournal:hover, 
 .paper .demand, .paper .tag, .journal .tome ol.lineup .entry b, .folio .moves b, .select.book .card > b, .select.book .card > .moves i, .paper .who b, .entry figcaption, .drawn p, body > .gc-dialog .gc-card .gc-binds button.gc-key { text-shadow: 0.45px 0.55px 0 currentColor, 0.2px 0.25px 0 currentColor; }
 .journal .tome ol.lineup .marks button { color: var(--ink-b); font-size: 15px; } /* in ink, not faded as if disabled */
 .journal .tome ol.lineup .marks button:disabled { opacity: 0.3; }
-/* the key help in the Book's voice: a line in its red hand over the legend */
-.select.book .slip .keys::before { content: "How the Book would have you fight:"; display: block; margin: 0 0 4px; font-family: var(--f-hand); font-style: normal; font-size: 19px; color: var(--blood); text-shadow: 0.45px 0.55px 0 currentColor; }
 .select.book .ribbon-tile small { font-family: var(--f-book); font-style: italic; font-size: 13px; color: var(--ink-faded); text-transform: none; }
 /* the ring's terms as a sentence (#3671 round 111): "Let them meet in the Stadium, or sit back and watch two bots."
  * The arena is a word in the hand on a dotted line; the bots' box sits in the sentence like a scribe's tick-box */
@@ -1324,3 +1319,13 @@ body.in-fight > .gc-dialog { opacity: 0.74; }
 .paper .pages.memories button { flex: none; border: 1px solid var(--ink-line); background: none; border-radius: 50%; width: 26px; height: 26px; padding: 0; display: grid; place-items: center; color: var(--blood); cursor: pointer; align-self: center; }
 .paper .pages.memories button:hover, .paper .pages.memories button:focus-visible { background: rgba(70, 42, 18, 0.1); }
 .paper .pages.memories button svg { width: 12px; height: 12px; }
+/* a screen's words in a popover (index.html .about): a torn leaf of the Book, still fixed in the middle (.paper is relative) */
+.about[popover] { background: var(--parchment); border: 2px solid #b48b4f; padding: 24px 28px; color: var(--ink-b); font-family: var(--f-book); font-size: 17px; line-height: 1.45; box-shadow: 0 18px 36px rgba(0, 0, 0, 0.6); }
+.about .subtitle { max-width: none; }
+.about .tag { font-family: var(--f-hand); font-size: 19px; color: var(--ink-faded); }
+.about .witch { color: var(--moss); font-style: italic; }
+.about .keys { font-size: 15px; color: var(--ink-b); max-width: none; margin: 0 0 10px; }
+.paper button.info, .select button.info { background: none; border: 1.5px solid currentColor; border-radius: 50%; color: var(--ink-faded); font-size: 16px; }
+.paper button.info::before { display: none; }
+.world-hud .info { background: linear-gradient(135deg, #5a321b, #3a1d0e); border: 2px solid #b48b4f; color: #f1dfb6; }
+.about .keys b { color: var(--blood); font-family: var(--f-hand); font-weight: 400; }

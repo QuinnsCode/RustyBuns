@@ -4,11 +4,11 @@
     "name": "Mythic Masters",
     "subtitle": "A magical book is left to you by aliens fleeing Earth. They leave you with a mission:\nCollect Earth's Cryptids or face humanity being WIPED OUT!",
     "tagline": "Venture an open world based on reality!\nFind each region's cryptids in their natural world habitat equivalent!\nUnlock new regions; Find a region's cryptids & beat regional cryptid leaders.\nTrain up your cryptid army. Challenge stronger & rarer cryptids to Arcade-style Battles.\nDetermine the best Cryptid Collector!",
-    "continue": "Continue with {name} (Lv {level})",
-    "newJourney": "Start New Timeline",
-    "startOver": "Start over? Your compendium is burned. Click again",
-    "duel": "Fight a Friend",
-    "versus": "Versus: 2 Cryptids Enter; Only 1 Leaves",
+    "continue": "Continue · {name} Lv {level}",
+    "newJourney": "New game",
+    "startOver": "Burn the book and start over? Click again",
+    "duel": "Fight a friend",
+    "versus": "Versus",
     "imprint": [
       "Bound in Cedar Bark of Leeds Point"
     ],

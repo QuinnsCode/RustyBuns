@@ -49,21 +49,23 @@
           <div class="page recto">
             <p class="imprint-head" data-copy="title.imprintHead"></p>
             <h1 data-copy="title.name"></h1>
-            <p class="subtitle" data-copy="title.subtitle"></p>
-            <hr class="flourish" />
-            <p class="tag" data-copy="title.tagline"></p>
             <div class="menu">
               <button id="continue" class="go"></button>
               <button id="newGame"></button>
               <button id="duelBtn"></button>
               <button id="versus" data-copy="title.versus"></button>
             </div>
-            <p class="imprint" data-copy="title.imprint"></p>
             <div id="account" class="account"></div>
+            <button class="info" popovertarget="aboutTitle" title="What is this?" aria-label="What is this?"></button>
+            <div id="aboutTitle" class="about" popover>
+              <p class="subtitle" data-copy="title.subtitle"></p>
+              <p class="tag" data-copy="title.tagline"></p>
+              <p class="plate-caption" data-copy="title.plateCaption"></p>
+              <p class="imprint" data-copy="title.imprint"></p>
+            </div>
           </div>
           <div class="page verso">
             <figure class="plate" aria-hidden="true"><div id="titleFrontis" class="frontis"></div><span id="titleRing" class="ring"></span></figure>
-            <p class="plate-caption" data-copy="title.plateCaption"></p>
             <p class="demand" data-demand></p>
           </div>
         </div>
@@ -71,10 +73,12 @@
     </section>
     <section id="starters" class="select starters" hidden aria-label="Choose your first three creatures">
       <div class="sheet paper">
-        <h1 data-copy="starters.heading"></h1>
+        <h1><span data-copy="starters.heading"></span> <button class="info" popovertarget="aboutWitch" title="Who is she?" aria-label="Who is she?"></button></h1>
         <div id="witchFrontis" class="frontis" aria-hidden="true"></div>
-        <p class="witch" data-copy="starters.witch"></p>
-        <p class="tag" data-copy="starters.after"></p>
+        <div id="aboutWitch" class="about" popover>
+          <p class="witch" data-copy="starters.witch"></p>
+          <p class="tag" data-copy="starters.after"></p>
+        </div>
         <p class="demand" data-demand></p>
         <div id="starterCards" class="five"></div>
         <button id="setOut" class="go" disabled></button>
@@ -98,11 +102,10 @@
       <!-- the versus book is an opening of the compendium (#3662 round 76): its name and motto are the left leaf's head,
            the field legend the right's, printed on the leaves, not tooled on a cover above them -->
       <div class="picks">
-        <div><header class="vs-head"><h1 data-copy="versus.name"></h1><div id="versusFrontis" class="frontis" aria-hidden="true"></div><p class="tag" id="bookTag"></p></header>
-          <h2><span id="youEmblem" class="leaf-emblem" aria-hidden="true"></span>You</h2><div id="pickA" class="cards"></div>
-          <!-- how a fight is fought, at the foot of the left leaf (#3671 round 107) -->
-          <div class="slip"><p class="keys" id="fightKeys"></p></div></div>
-        <div><header class="vs-head"><p class="vs-legend">Show only one field</p><div id="fields" class="chips" aria-label="Show only one field"></div></header>
+        <div><header class="vs-head"><h1><span data-copy="versus.name"></span> <button class="info" popovertarget="aboutVersus" title="How to fight" aria-label="How to fight"></button></h1><div id="versusFrontis" class="frontis" aria-hidden="true"></div>
+          <div id="aboutVersus" class="about" popover><p class="tag" id="bookTag"></p><p class="keys" id="fightKeys"></p><p>Pick a field at the top right to see only its beasts.</p></div></header>
+          <h2><span id="youEmblem" class="leaf-emblem" aria-hidden="true"></span>You</h2><div id="pickA" class="cards"></div></div>
+        <div><header class="vs-head"><div id="fields" class="chips" aria-label="Show only one field"></div></header>
           <h2><span id="foeEmblem" class="leaf-emblem" aria-hidden="true"></span>Opponent</h2><div id="pickB" class="cards"></div>
           <!-- the ring's terms written at the foot of the right-hand leaf, under the circle (#3671 rounds 96 and 106), not a form under the book -->
           <div class="slip">
@@ -110,7 +113,7 @@
             <!-- the terms as a sentence the reader completes (#3671 round 111): the choices are words in it, not form fields -->
             <!-- round 112: the arena is the word itself (the list opens from it), and the bots' clause is struck out
                  until you ink it in; the select and checkbox stay underneath, unseen, for keys and screen readers -->
-            <p class="terms">Let them meet in the <span class="arena"><b id="arenaWord" aria-hidden="true"></b><select id="skin" aria-label="Arena"></select></span><label class="bots" title="Strike it out to fight yourself; ink it in to watch two bots"><input type="checkbox" id="watch" /><span>, or sit back and watch two bots</span></label>.</p>
+            <p class="terms"><span class="arena"><b id="arenaWord" aria-hidden="true"></b><select id="skin" aria-label="Arena"></select></span><label class="bots" title="Strike it out to fight yourself; ink it in to watch two bots"><input type="checkbox" id="watch" /><span> · watch bots</span></label></p>
             <button id="fight" class="go">Fight</button>
             <button id="cards" title="Every beast's card: its pictures and its stats">Bestiary</button>
             <button id="pickerBack">Back</button>
@@ -124,7 +127,6 @@
       <header><h1>Bestiary</h1><button id="deckClose" aria-label="Back to the picker" title="Back to the picker"><svg viewBox="0 0 24 24" class="icon" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></header>
       <p id="deckDemand" class="demand"></p>
       <div id="deckCards" class="deck-cards"></div>
-      <p class="keys">Pictures from Wikimedia Commons, each credited on its card; public domain or under the licence linked there.</p>
     </section>
     <!-- the director's stage (src/director.ts): bars, the camcorder's viewfinder, a caption, a name slammed in -->
     <div id="cine" class="cine" hidden>
@@ -153,7 +155,8 @@
       <div class="tag" hidden></div>
       <button id="openJournal" class="book" title="The Eldritch Compendium (Tab)" aria-label="The Eldritch Compendium"></button>
       <canvas class="map" aria-label="The supercontinent: tap to open it big, then tap a region whose arena you won to travel there"></canvas>
-      <p class="keys" id="worldKeys"></p>
+      <button class="info" popovertarget="aboutWorld" title="How it works" aria-label="How it works"></button>
+      <div id="aboutWorld" class="about" popover><p class="keys" id="worldKeys"></p></div>
     </header>
     <script type="module" src="/src/main.ts"></script>
   </body>

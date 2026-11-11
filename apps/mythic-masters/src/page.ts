@@ -23,7 +23,7 @@ const lineOf = (el: Element) => el.outerHTML.replace(/<i class="wet"[\s\S]*?<\/i
  * motion: nothing moves. */
 export function soak(root: Element, edit = false) {
   if (stillPages()) return;
-  const blocks = [...root.querySelectorAll<HTMLElement>(INKS)], lines = blocks.map(lineOf), was = written.get(root);
+  const blocks = [...root.querySelectorAll<HTMLElement>(INKS)].filter((b) => !b.matches("[popover]")), lines = blocks.map(lineOf), was = written.get(root);
   const same = edit && was && was.length === lines.length;
   const wet = blocks.filter((_, k) => !(same && was[k] === lines[k]));
   // a beat between blocks, shorter on a long page so the last line is written inside about two and a half seconds
