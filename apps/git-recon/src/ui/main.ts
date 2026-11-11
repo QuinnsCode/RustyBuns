@@ -21,7 +21,7 @@ import { getJson } from "@rustybuns/util/http";
 import { briefing, missionFor, OVERRUN } from "../sim/missions.ts";
 import { CAMPAIGN, chapterOf, nextChapter, opened } from "../sim/campaign.ts";
 import { Director, type Stage } from "../sim/director.ts";
-import { createElement, Lock, LogIn, LogOut, Play, Users } from "lucide";
+import { CircleHelp, createElement, Lock, LogIn, LogOut, Play, Users } from "lucide";
 import { achieve, canSignIn, finishSignIn, fresh, login, reportButton, signIn, signOut } from "../eqosys.ts";
 import { KEYS, keyLabel, WEAPONS, type WeaponId } from "../sim/weapons.ts";
 import { isRole, nextRole, ROLE_ORDER, ROLES, type RoleId } from "../sim/roles.ts";
@@ -105,10 +105,9 @@ function showCampaign() {
   CAMPAIGN.forEach((ch, i) => {
     const def = levelById(ch.level), locked = i >= open, b = document.createElement("button");
     b.className = "level";
-    b.innerHTML = `<small></small><b></b><span></span><code></code><em></em>`;
+    b.innerHTML = `<small></small><b></b><code></code><em></em>`;
     b.querySelector("small")!.textContent = `${i + 1} · ${ch.height}`;
     b.querySelector("b")!.textContent = `${ch.title}: ${def.name}`;
-    b.querySelector("span")!.textContent = ch.story;
     b.querySelector("em")!.textContent = locked ? `Win ${CAMPAIGN[i - 1]!.title} to open` : briefing(missionFor(def.id));
     b.querySelector("code")!.dataset.level = def.id;
     b.title = `${ch.story} ${def.blurb}`;
@@ -127,6 +126,7 @@ function showRepo() {
   $("repo-reset").hidden = !chosen;
 }
 showCampaign();
+for (const b of document.querySelectorAll("button.info")) b.replaceChildren(createElement(CircleHelp)); // each opens its screen's how-to (a popover)
 
 /* ---------------- any repo ---------------- */
 
@@ -307,7 +307,7 @@ const roomCode = () => Array.from(crypto.getRandomValues(new Uint32Array(6)), (n
 
 /** Online, a battle is a room code: Host makes one, Join takes one (or ?room= from a friend's link). */
 function goOnline() {
-  $("battle-label").textContent = "Battle: many players in one repo, online";
+  $("battle-label").title = "Many players in one repo, online";
   $("battle-host").title = "Open a battle on this level and repo, with a code to send friends";
   $("battle-join").title = "Join a friend's battle by its code";
   const code = $<HTMLInputElement>("battle-addr");
@@ -963,7 +963,8 @@ function hud(game: Game, aimingAt: Block | null) {
   $("prompt").textContent = near ? `F · get in the ${vehicleName(near.kind)}` : ride ? `F · get out${ride.kind === "heli" ? " · Space up · C down · right click rockets" : " · hold Space for thrusters"}` : high ? (you.chute ? "Space · cut away" : "Space · parachute") : "";
   // Kills, and what the next streak brings.
   const next = STREAKS.find((st) => st.kills > game.kills);
-  $("kills").textContent = `${game.kills} kills${next ? ` · ${vehicleName(next.kind)} at ${next.kills}` : ""}`;
+  $("kills").textContent = next ? `${game.kills}/${next.kills} kills` : `${game.kills} kills`;
+  $("kills").title = next ? `A ${vehicleName(next.kind)} at ${next.kills} kills` : "";
   const role = game.role ? ROLES[game.role].name : "", after = game.nextRole ? ROLES[game.nextRole].name : "";
   $("role").textContent = after ? `${role} · next life: ${after}` : role;
   $("role").title = "N picks your role for your next life";
@@ -977,7 +978,7 @@ function hud(game: Game, aimingAt: Block | null) {
   } else {
     $("weapons").innerHTML = you.kit.map((w, i) => {
       const a = you.ammo[w], l = you.loaded[w];
-      return `<li class="${w === you.weapon ? "on" : ""}${a === 0 ? " out" : ""}"><kbd>${KEYS[i] ? keyLabel(KEYS[i]) : ""}</kbd>${row(w)}<span>${l}<small>/${a < 0 ? "∞" : a}</small></span></li>`;
+      return `<li class="${w === you.weapon ? "on" : ""}${a === 0 ? " out" : ""}" title="${WEAPONS[w].cmd}"><kbd>${KEYS[i] ? keyLabel(KEYS[i]) : ""}</kbd>${row(w)}<span>${l}<small>/${a < 0 ? "∞" : a}</small></span></li>`;
     }).join("");
   }
   // The crosshair rings round while a magazine goes in.

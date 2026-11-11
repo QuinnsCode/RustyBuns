@@ -177,7 +177,7 @@ h1::after { content: ""; display: inline-block; width: 12px; height: 12px; borde
   .repo-form { grid-template-columns: 1fr auto auto; }
   .repo-form label { grid-column: 1 / -1; }
   h1 { font-size: 26px; margin: 2px 0 4px; }
-  .lede { display: none; }
+  .card > .lede { display: none; }
   .levels { max-height: 45dvh; }
   .level { padding: 8px 10px; }
   .health, .shield { width: 120px; }
@@ -206,7 +206,10 @@ h1::after { content: ""; display: inline-block; width: 12px; height: 12px; borde
 .waypoint.edge { border-color: var(--line); }
 .waypoint.edge::before { content: ""; position: absolute; left: 50%; top: 50%; width: 0; height: 0; border: 6px solid transparent; border-left: 9px solid var(--accent); border-right: 0; transform: rotate(var(--arrow, 0rad)) translate(44px, -6px); }
 .weapons small { color: var(--muted); }
-.weapons li { grid-template-columns: 2ch 17ch 7ch; }
+/* each gun is its key, its drawing and its ammo; only the one in hand says its command (the rest: a tooltip) */
+.weapons li { grid-template-columns: 2ch 28px auto 7ch; justify-items: start; }
+.weapons li:not(.on) code { display: none; }
+.weapons li:not(.on) { grid-template-columns: 2ch 28px 7ch; }
 .crosshair.reloading { border-color: var(--hair); background: conic-gradient(var(--accent) calc(var(--reload, 0) * 360deg), transparent 0) border-box; -webkit-mask: radial-gradient(circle, transparent 6px, #000 7px); mask: radial-gradient(circle, transparent 6px, #000 7px); }
 .results .look { margin: 12px 0 0; }
 
@@ -630,3 +633,12 @@ body.reeling canvas#view { filter: grayscale(1) sepia(0.18) contrast(1.35) brigh
 .newsreel .announcer:empty { display: none; }
 .newsreel .skip { position: absolute; right: 16px; bottom: 12px; margin: 0; font: 700 10px/1 var(--mono); letter-spacing: 0.18em; text-transform: uppercase; color: #f4f1e8aa; }
 @media (prefers-reduced-motion: reduce) { .newsreel .grain { animation: none; } }
+
+/* a screen's how-to, out of the way (index.html): a small ? opens it as a popover; a click outside or Escape shuts it */
+button.info { display: inline-grid; place-items: center; width: 30px; height: 30px; padding: 0; margin-left: 6px; vertical-align: middle; border-radius: 50%; border: 1.5px solid currentColor; background: none; color: var(--muted); cursor: help; }
+button.info svg { width: 18px; height: 18px; }
+.about[popover] { max-width: min(36rem, calc(100vw - 32px)); max-height: calc(100vh - 32px); overflow: auto; padding: 20px 24px; border: 2px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--fg); font-family: var(--sans); font-size: 14px; text-align: left; }
+.about[popover]::backdrop { background: rgba(0, 0, 0, 0.3); }
+.about .lede { margin: 0 0 12px; }
+.about .keys { margin-top: 12px; }
+.kicker button.info { width: 24px; height: 24px; margin-left: 8px; } .kicker button.info svg { width: 15px; height: 15px; }
