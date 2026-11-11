@@ -32,7 +32,7 @@ const classic = `
 .gc-lab{display:inline-flex;align-items:center;gap:8px}.gc-lab svg{flex:none;opacity:.7}
 .gc-card label.gc-off{opacity:.4;cursor:not-allowed}.gc-card label.gc-off *{cursor:not-allowed}
 .gc-tabs{display:flex;gap:6px}.gc-tab{flex:1;min-height:38px;padding:0 10px;justify-content:center;border:1px solid #fff4;border-radius:8px;background:#222;color:#fff;cursor:pointer;font:inherit}.gc-tab[aria-selected=true],.gc-prof[aria-pressed=true]{border-color:#f90;color:#f90}
-/* Infinite Craft's look: warm paper tiles with a faint grain, thin grey edges, ink-black text, one orange accent. */
+/* The paper-tile look (the tabbed panel): warm paper tiles with a faint grain, thin grey edges, ink-black text, one orange accent. */
 .gc-craft{--gc-paper:#fcfbf8;--gc-ink:#0a0a0a;--gc-dim:#6b6b6b;--gc-rule:#e6e6e6;--gc-edge:#cfcfcf;--gc-acc:#e8590c;--gc-soft:#fff4ec;
 --gc-grain:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .32 0 0 0 0 .28 0 0 0 0 .2 0 0 0 .07 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")}
 .gc-dialog.gc-craft{background:#0a0a0a55;font:14px/1.5 ui-sans-serif,system-ui,sans-serif;color:var(--gc-ink)}
