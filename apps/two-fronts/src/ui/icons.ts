@@ -86,3 +86,9 @@ export const icon = (name: keyof typeof PATHS | string, size = 16) =>
 // A small "i" that opens its text when clicked (wired in main.ts), so the page itself stays bare.
 export const tip = (text: string, warn = false) =>
   `<span class="tip"><button type="button" class="tip-btn${warn ? " warn" : ""}" aria-label="More info" aria-expanded="false">${icon(warn ? "triangle-alert" : "info", 14)}</button><span class="tip-text" hidden>${text}</span></span>`;
+
+// A screen's how-to, out of the way (#4235): a small "?" by its heading opens `about(id, ...)` as a native popover;
+// a click outside it or Escape shuts it. No script.
+export const info = (id: string, label: string) =>
+  `<button type="button" class="info" popovertarget="${id}" title="${label}" aria-label="${label}">${icon("circle-help", 18)}</button>`;
+export const about = (id: string, html: string) => `<div id="${id}" class="about" popover>${html}</div>`;
