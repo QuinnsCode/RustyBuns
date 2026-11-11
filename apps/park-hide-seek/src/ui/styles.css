@@ -291,7 +291,7 @@ body:has(#lobby:not([hidden])) .narrator p { display: none; }
 @media (max-width: 400px) { .stub .long { display: none; } }
 
 /* After dark: darker kraft card stock, the type and rules darkened to match, and the torch beam picks out the plank you chose. */
-:root[data-tod="night"] { --paper: #cdb68d; --paper-2: #b99f73; --field: #e6d7b6; --line: #977d55; --muted: #4a3b27; --lan: #dccaa2; }
+:root[data-tod="night"] { --red: #8f1d0f; --paper: #cdb68d; --paper-2: #b99f73; --field: #e6d7b6; --line: #977d55; --muted: #4a3b27; --lan: #dccaa2; }
 [data-tod="night"] :is(.lobby .ui-chip[aria-pressed="true"], .lobby .ui-btn.primary, .gc-dialog.ui-house .gc-tab[aria-selected="true"]) {
   background: radial-gradient(ellipse 60% 160% at var(--beam, 20%) 40%, rgba(255, 242, 176, 0.42), transparent 70%), var(--plank), var(--wood);
   animation: beam 5s ease-in-out infinite alternate; }
