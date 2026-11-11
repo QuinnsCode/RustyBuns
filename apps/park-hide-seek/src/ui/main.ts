@@ -16,7 +16,7 @@ import { CALLS, SOUND_PIECES, Score, place, setMix, sounds } from "./audio.ts";
 import { REQUESTABLE, type Votes } from "../edge/requests.ts";
 import { mountControls } from "@rustybuns/game-controls";
 import { PARK_THEME, installKit } from "./kit.ts";
-import { type Tod, paintPoster, permitHead, permitLine, stampHtml, todAt } from "./poster.ts";
+import { type Tod, awardHtml, paintPoster, permitHead, permitLine, stampHtml, todAt } from "./poster.ts";
 import { bind, KEY } from "./bindings.ts";
 import { Controls } from "./controls.ts";
 import { Preview } from "./preview.ts";
@@ -462,10 +462,10 @@ function renderResults(v: View) {
     }).join("");
     // The card is a ranger's citation: a permit number for the zone and round, and your outcome stamped across its foot.
     const stamp = !mine ? "Round closed" : mine.bigfoot ? "Found Bigfoot" : mine.role === "ranger" ? "On patrol" : mine.caughtAt === null ? "Camped out" : "Caught";
-    html = `${permitHead(`${v.zone}:${r.n}`)}<h3>Round ${r.n + 1}: ${esc(z.data.name)}</h3><table>${rows}</table><p class="note">Next round in a few seconds…</p>${stampHtml(stamp)}`;
+    html = `${awardHtml(z.data.name, stamp)}${permitHead(`${v.zone}:${r.n}`)}<h3>Round ${r.n + 1}: ${esc(z.data.name)}</h3><table>${rows}</table><p class="note">Next round in a few seconds…</p>${stampHtml(stamp)}`;
   } else if (v.phase === "over") {
     const rank = [...v.players].sort((a, b) => b.score - a.score);
-    html = `${permitHead(`${v.zone}:final`)}<h3>${esc(rank[0]?.name ?? "")} wins!</h3><table>${rank.map((p, i) => `<tr><td>${i + 1}. ${esc(p.name)}${p.id === v.me ? " (you)" : ""}</td><td></td><td>${p.score}</td></tr>`).join("")}</table>
+    html = `${awardHtml(zoneById(v.zone).data.name, "Park closed")}${permitHead(`${v.zone}:final`)}<h3>${esc(rank[0]?.name ?? "")} wins!</h3><table>${rank.map((p, i) => `<tr><td>${i + 1}. ${esc(p.name)}${p.id === v.me ? " (you)" : ""}</td><td></td><td>${p.score}</td></tr>`).join("")}</table>
       <div class="row-btns" style="margin-top:12px">${v.hostId === v.me ? `<button class="primary" data-action="start">Play again</button><button data-action="lobby">Back to the lobby</button>` : "<em>Waiting for the host…</em>"}<button data-action="leave">Leave</button></div>${stampHtml("Park closed")}`;
   }
   if (html !== lastResults) { lastResults = html; $("results-body").innerHTML = html; }

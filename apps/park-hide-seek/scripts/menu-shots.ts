@@ -20,7 +20,7 @@ const SCREENS: Record<string, string> = {
   front: "",
   lobby: `document.getElementById("custom").click(); ${wait}`,
   settings: `document.querySelector(".gc-cog")?.click(); ${wait}`,
-  results: `document.getElementById("menu").hidden = true; const r = document.getElementById("results"); r.hidden = false; const m = await import("/src/ui/poster.ts"); document.getElementById("results-body").innerHTML = m.permitHead("tunnel:1") + ${JSON.stringify(RESULTS)} + m.stampHtml("Camped out");`,
+  results: `document.getElementById("menu").hidden = true; const r = document.getElementById("results"); r.hidden = false; const m = await import("/src/ui/poster.ts"); document.getElementById("results-body").innerHTML = m.awardHtml("Tunnel View", "Camped out", "__TOD__") + m.permitHead("tunnel:1") + ${JSON.stringify(RESULTS)} + m.stampHtml("Camped out");`,
 };
 const SIZES: [string, string[]][] = [["phone", ["--mobile"]], ["tablet", ["--size", "820x1180"]], ["laptop", ["--size", "1280x800"]]];
 
@@ -30,7 +30,7 @@ for (const t of ["day", "night"]) {
       if (t === "night" && size === "tablet") continue;
       const file = `${out}/${screen}-${size}-${t}.jpg`;
       const p = Bun.spawnSync(["bun", "scripts/probe.ts", "park-hide-seek", "/", "--url", url, ...flags, "--settle", "2500",
-        "--js", `${tod(t)} ${js} await new Promise((r) => setTimeout(r, 400)); return "ok";`, "--shot", file], { cwd: root });
+        "--js", `${tod(t)} ${js.replace("__TOD__", t)} await new Promise((r) => setTimeout(r, 400)); return "ok";`, "--shot", file], { cwd: root });
       const said = p.stdout.toString().trim().split("\n").slice(-2).join(" ");
       console.log(`${p.exitCode === 0 ? "shot" : "FAIL"} ${screen}-${size}-${t}${p.exitCode === 0 ? "" : `: ${said}`}`);
     }

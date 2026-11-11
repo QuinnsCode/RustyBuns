@@ -62,6 +62,8 @@ export function posterSvg(tod: Tod, o: { h?: number; seed?: number; strip?: bool
     // The near ridge's second ink, printed a hair off register: a bright sliver along its skyline.
     if (i === 4) ridges.push(`<path d="${near.d}" fill="${P.reg}" transform="translate(2.5 -2)"/>`);
     ridges.push(`<path d="${near.d}" fill="${mix(mix(P.far, P.near, t), P.haze, 0.55 * (1 - t) ** 2)}"/>`);
+    // Round 4: a band of valley mist at the foot of each far ridge, so they melt into the haze instead of stacking.
+    if (i < 3 && !o.strip) ridges.push(`<rect y="${(h * (0.5 + 0.1 * i)).toFixed(1)}" width="${W}" height="${(h * 0.09).toFixed(1)}" fill="url(#mist)" opacity="${(0.7 - 0.15 * i).toFixed(2)}"/>`);
   }
   const trees = Array.from({ length: 14 }, (_, i) => {
     const x = 14 + i * 37 + rnd() * 18;
@@ -77,7 +79,8 @@ export function posterSvg(tod: Tod, o: { h?: number; seed?: number; strip?: bool
     return `<path d="M${x + 4} ${y - 15}L${x + 160} ${y - 64}L${x + 176} ${y - 18}Z" fill="url(#beam)"/>`
       + `<g fill="${P.ink}"><circle cx="${x}" cy="${y - 19}" r="2.6"/><path d="M${x - 5} ${y - 22.5}h10l-2 -2h-6z"/><path d="M${x - 3} ${y - 16}h6l1 9h-2l-1 7h-2l-1 -7h-2z"/><path d="M${x + 2} ${y - 15}l4 1 -0.5 1.5 -4 -1z"/></g>`;
   })() : "";
-  const defs = `<defs><linearGradient id="beam" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#fff2b0" stop-opacity="0.85"/><stop offset="1" stop-color="#fff2b0" stop-opacity="0"/></linearGradient></defs>`;
+  const defs = `<defs><linearGradient id="beam" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#fff2b0" stop-opacity="0.85"/><stop offset="1" stop-color="#fff2b0" stop-opacity="0"/></linearGradient>`
+    + `<linearGradient id="mist" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${P.haze}" stop-opacity="0"/><stop offset="0.55" stop-color="${P.haze}" stop-opacity="0.8"/><stop offset="1" stop-color="${P.haze}" stop-opacity="0"/></linearGradient></defs>`;
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${h}" preserveAspectRatio="xMidYMax slice">${defs}${sky}<g fill="${P.disc}" opacity="0.85">${stars}</g>${disc}${ridges.join("")}${ranger}<g fill="${P.reg}" transform="translate(1.8 -1.4)">${trees}</g><g fill="${P.ink}">${trees}</g>${sign}</svg>`;
 }
 
@@ -125,13 +128,38 @@ export function permitNo(key: string): string {
 
 /** The results card's citation head (a typed line and its permit number) and its rubber stamp. `stamp` is plain text.
  *  The front card wears the same line under another label, numbered for the day. */
-export const permitLine = (key: string, label = "Citation") => `<span>${label}</span><span>Backcountry permit <b>No. ${permitNo(key)}</b></span>`;
+export const permitLine = (key: string, label = "Citation") => `<span>${label}</span><span><i class="long">Backcountry permit </i><b>No. ${permitNo(key)}</b></span>`;
 export const permitHead = (key: string) => `<p class="permit">${permitLine(key)}</p>`;
 export const stampHtml = (stamp: string) => `<span class="stamp">${stamp.replace(/[&<>]/g, "")}</span>`;
 
 /** How tall the panels' strip is drawn in the poster's 520-wide box, for a panel `w` px wide under a 76 px strip: a
  *  wide panel gets a squatter poster so its sun isn't sliced off the top, a narrow one crops the sides and keeps the sky. */
-export const stripH = (w: number) => Math.round(clamp((W * 76) / Math.max(1, w), 64, 100) / 4) * 4;
+export const stripH = (w: number, strip = 76) => Math.round(clamp((W * strip) / Math.max(1, w), 64, 140) / 4) * 4;
+
+/** A seed for a name: the same park always gets the same skyline on its patch. */
+const seedOf = (name: string) => { let h = 2166136261; for (const c of name) h = Math.imul(h ^ c.charCodeAt(0), 16777619) >>> 0; return h % 100000; };
+
+/** Round 4 (#3608). The results card's award: a round embroidered park patch, our own design. Inside, that park's own
+ *  skyline (the poster seeded by its name) under a stitched ring; the park's name runs around the top of the ring and
+ *  the round's outcome around the foot. About 5 KB with the poster inside. `id` keeps its clip and arcs apart. */
+export function patchSvg(t: Tod, park: string, outcome: string, id = "pa"): string {
+  const P = PALETTES[t], wood = "#4b3a26", cream = "#f3e2b8", clean = (x: string) => x.replace(/[&<>"]/g, "").toUpperCase();
+  const name = clean(park), long = name.length > 16;
+  const inner = posterSvg(t, { h: 240, seed: seedOf(park) }).replace("<svg ", `<svg x="26" y="26" width="88" height="88" `);
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 140 140" role="img" aria-label="${name}: ${clean(outcome)}">`
+    + `<defs><clipPath id="${id}-in"><circle cx="70" cy="70" r="44"/></clipPath>`
+    + `<path id="${id}-top" d="M17 70a53 53 0 0 1 106 0"/><path id="${id}-foot" d="M14 70a56 56 0 0 0 112 0"/></defs>`
+    + `<circle cx="70" cy="70" r="68" fill="${wood}"/><circle cx="70" cy="70" r="64" fill="#9a3412"/>`
+    + `<circle cx="70" cy="70" r="61" fill="none" stroke="${cream}" stroke-width="1.3" stroke-dasharray="3 2.4"/>`
+    + `<g clip-path="url(#${id}-in)">${inner}</g><circle cx="70" cy="70" r="45" fill="none" stroke="${wood}" stroke-width="3"/>`
+    + `<circle cx="70" cy="70" r="48" fill="none" stroke="${P.reg === "#b4441c" ? "#e07a1f" : P.reg}" stroke-width="1.2" stroke-dasharray="2 2"/>`
+    + `<g fill="${cream}" style="font-family:var(--plate);font-weight:700" letter-spacing="${long ? 0.6 : 1.6}" font-size="${long ? 9 : 11}">`
+    + `<text text-anchor="middle"><textPath href="#${id}-top" startOffset="50%">${name}</textPath></text>`
+    + `<text text-anchor="middle" font-size="8.5" letter-spacing="1.4" dy="6"><textPath href="#${id}-foot" startOffset="50%">${clean(outcome)}</textPath></text></g>`
+    + `<path d="M8 70l4-3 0 6zM132 70l-4-3 0 6z" fill="${cream}"/></svg>`;
+}
+/** The patch for the results card, sewn on at the strip's foot. */
+export const awardHtml = (park: string, outcome: string, t: Tod = tod) => `<div class="award">${patchSvg(t, park, outcome)}</div>`;
 
 let tod: Tod = "day";
 const strips = new Map<string, string>();
@@ -140,7 +168,7 @@ const stripUrl = (h: number) => {
   if (!strips.has(k)) strips.set(k, posterUrl(tod, { h, seed: 11, strip: true }));
   return strips.get(k)!;
 };
-const paintStrip = (el: HTMLElement) => { if (el.clientWidth) el.style.setProperty("--poster", stripUrl(stripH(el.clientWidth))); };
+const paintStrip = (el: HTMLElement) => { if (el.clientWidth) el.style.setProperty("--poster", stripUrl(stripH(el.clientWidth, Number(el.dataset.strip) || 76))); };
 let sized: ResizeObserver | undefined;
 
 /** Paint the menus for a time of day: the front card's art and insignia, each panel's strip (`--poster`, drawn to that
@@ -152,7 +180,7 @@ export function paintPoster(t: Tod, root: HTMLElement = document.documentElement
   root.style.setProperty("--poster", posterUrl(t, { h: 90, seed: 11, strip: true }));
   root.style.setProperty("--halftone", `url("data:image/svg+xml,${encodeURIComponent(halftoneSvg(t))}")`);
   root.style.setProperty("--insignia", `url("data:image/svg+xml,${encodeURIComponent(insigniaSvg(t))}")`);
-  for (const el of document.querySelectorAll<HTMLElement>("[data-poster]")) el.innerHTML = posterSvg(t, { h: 140, seed: 7 });
+  for (const el of document.querySelectorAll<HTMLElement>("[data-poster]")) el.innerHTML = posterSvg(t, { h: 230, seed: 7 });
   for (const el of document.querySelectorAll<HTMLElement>("[data-insignia]")) el.innerHTML = insigniaSvg(t, { ribbon: true });
   if (typeof ResizeObserver === "function") sized ??= new ResizeObserver((es) => { for (const e of es) if (e.target instanceof HTMLElement) paintStrip(e.target); });
   for (const el of document.querySelectorAll<HTMLElement>(".panel, .gc-card")) { sized?.observe(el); paintStrip(el); }
