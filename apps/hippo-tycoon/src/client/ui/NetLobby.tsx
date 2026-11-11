@@ -24,11 +24,11 @@ export function NetLobby({ frame, driver, info, onExit }: { frame: Frame; driver
       {net?.code && (
         <div style={{ textAlign: "center", marginBottom: 10 }}>
           <div className="code">{net.code}</div>
-          <div className="hint" style={{ margin: 0 }}>Room code: friends pick "Online room" and type it in</div>
+          <div className="hint" style={{ margin: 0 }} title="Friends pick Online and type it in">Room code</div>
         </div>
       )}
       {info}
-      {watching && <p className="hint" style={{ textAlign: "center", margin: "0 0 10px" }}>You are watching: every office is taken. Sit in a bot's seat when one frees up.</p>}
+      {watching && <p className="hint" style={{ textAlign: "center", margin: "0 0 10px" }} title="Every office is taken. Sit in a bot's seat when one frees up.">Watching</p>}
       <div className="seats" style={{ gridTemplateColumns: "repeat(4, 1fr)" }}>
         {frame.seats.map((s, i) => (
           <div key={i} className={"seat" + (s.mine ? " mine" : "")}>
@@ -46,8 +46,8 @@ export function NetLobby({ frame, driver, info, onExit }: { frame: Frame; driver
           <div className="row"><label id="lobby-round">Round</label><Seg<number> labelledBy="lobby-round" value={frame.cfg.secs} options={ROUND_SECS} label={(s) => `${s}s`} onChange={(secs) => driver.command({ t: "cfg", cfg: { secs } })} /></div>
         </>}
         <div className="row">
-          {you >= 0 && <button className="btn" style={{ flex: 1 }} autoFocus aria-pressed={!!frame.seats[you]?.ready} onClick={() => driver.input(you, 0, false, true)}>{frame.seats[you]?.ready ? "Not ready" : "Ready (or bellow: Q)"}</button>}
-          {host ? <button className="btn go" style={{ flex: 1 }} onClick={() => driver.command({ t: "start" })}>Start round</button> : <span className="hint" style={{ flex: 1, margin: 0 }}>The host starts the round.</span>}
+          {you >= 0 && <button className="btn" style={{ flex: 1 }} autoFocus aria-pressed={!!frame.seats[you]?.ready} onClick={() => driver.input(you, 0, false, true)} title="Or bellow: Q">{frame.seats[you]?.ready ? "Not ready" : "Ready"}</button>}
+          {host ? <button className="btn go" style={{ flex: 1 }} onClick={() => driver.command({ t: "start" })}>Start round</button> : <span className="hint" style={{ flex: 1, margin: 0 }}>Host starts</span>}
           <button className="btn" onClick={onExit}>Leave</button>
         </div>
         {net?.ping !== undefined && <p className="hint" style={{ margin: 0 }}>ping {net.ping} ms</p>}

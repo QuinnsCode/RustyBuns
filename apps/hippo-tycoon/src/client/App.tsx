@@ -67,7 +67,7 @@ export function App({ signInNote }: { signInNote?: string } = {}) {
     const lan = screen.lan;
     const info = lan && (
       <div style={{ marginBottom: 12, textAlign: "center" }}>
-        <div className="hint" style={{ margin: "0 0 6px" }}>Friends: Join LAN game, then enter</div>
+        <div className="hint" style={{ margin: "0 0 6px" }}>Friends: Join LAN</div>
         <div className="mono" style={{ fontSize: 20, fontWeight: 700 }}>{(lan.info.lan?.length ? lan.info.lan : ["<this machine's IP>"]).map((ip) => `${ip}:${lan.info.listen.port}`).join("   ")}</div>
         <div className="hint" style={{ margin: "6px 0 0" }}>join code <b className="mono" style={{ color: "var(--gold)", fontSize: 16 }}>{lan.code}</b></div>
       </div>
@@ -82,9 +82,9 @@ export function App({ signInNote }: { signInNote?: string } = {}) {
     : screen.t === "joinOnline" ? <JoinOnline onBack={() => setScreen({ t: "menu" })} onJoin={(room) => playNet(() => onlineSocket(room, name))} />
     : <Menu note={signInNote} settings={settings} onSettings={update} onSolo={() => playLocal(SOLO_CTL)} onCouch={() => setScreen({ t: "couch" })}
         extra={<>
-          {desktop && <button className="btn" onClick={hostLan}>Host a LAN game</button>}
-          {canJoinLan && <button className="btn" onClick={() => setScreen({ t: "joinLan" })}>Join a LAN game</button>}
-          {!desktop && <button className="btn" onClick={() => setScreen({ t: "joinOnline" })}>Online room</button>}
+          {desktop && <button className="btn" onClick={hostLan}>Host LAN</button>}
+          {canJoinLan && <button className="btn" onClick={() => setScreen({ t: "joinLan" })}>Join LAN</button>}
+          {!desktop && <button className="btn" onClick={() => setScreen({ t: "joinOnline" })}>Online</button>}
           {screen.error && <p className="err" role="alert">{screen.error}</p>}
         </>} />;
   return <><Backdrop view={view} />{page}</>;

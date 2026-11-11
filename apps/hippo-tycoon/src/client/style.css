@@ -122,3 +122,15 @@ button.link { border: 0; padding: 0; background: none; color: var(--cyan); text-
 /* The Controls cog (game-controls): top-right, over the menu, the HUD and the couch screens. */
 .cog-host { position: fixed; top: max(8px, env(safe-area-inset-top)); right: max(8px, env(safe-area-inset-right)); z-index: 40; }
 @media (max-width: 700px) { .hud { padding-right: 62px; } }
+
+/* a screen's how-to, out of the way (About in ui/Help.tsx): a ? in the card's corner opens it as a popover */
+.card:has(> button.info) { position: relative; }
+button.info { position: absolute; top: 14px; right: 14px; display: grid; place-items: center; width: 30px; height: 30px; padding: 0; border-radius: 50%; border: 1px solid var(--line); background: var(--glass2); color: var(--dim); cursor: help; }
+button.info:hover { color: var(--text); border-color: rgba(255, 255, 255, 0.22); }
+button.info svg { width: 18px; height: 18px; }
+.title:has(+ button.info) { margin-bottom: 22px; }
+.about[popover] { width: min(440px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); overflow: auto; padding: 18px 20px; color: var(--text); }
+.about[popover]::backdrop { background: rgba(0, 0, 0, 0.35); }
+.about .tag { margin: 0 0 14px; }
+.about .help.card { padding: 0; border: 0; background: none; box-shadow: none; backdrop-filter: none; }
+.about .help > .hint { display: none; }

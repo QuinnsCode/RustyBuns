@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { DIFFICULTIES, SEAT_NAMES, SEATS, type Difficulty } from "../../sim/rules.ts";
 import { CTL_LABEL, type Ctl } from "../input.ts";
+import { About } from "./Help.tsx";
 
 const OPTIONS: Ctl[] = ["bot", "kb1", "kb2", "pad0", "pad1", "pad2", "pad3"];
 
@@ -37,7 +38,9 @@ export function Setup({ onStart, onBack, difficulty }: { onStart: (ctls: Ctl[], 
     <div className="menu">
       <div className="card">
         <h1 className="title" style={{ fontSize: 34 }}>COUCH</h1>
-        <p className="tag">Pick who sits where. Bots take the empty offices.</p>
+        <About id="couch-about">
+          <p className="tag">Pick who sits where. Bots take the empty offices.</p>
+          </About>
         <div className="seats">
           {Array.from({ length: SEATS }, (_, i) => (
             <div key={i} className={"seat" + (seats[i] !== "bot" ? " mine" : "")}>

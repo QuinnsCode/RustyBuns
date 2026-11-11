@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { lanUrl, makeRoomCode } from "../lan.ts";
+import { About } from "./Help.tsx";
 
 export function JoinLan({ onJoin, onBack }: { onJoin: (address: string, code: string) => void; onBack: () => void }) {
   const [address, setAddress] = useState("");
@@ -8,10 +9,12 @@ export function JoinLan({ onJoin, onBack }: { onJoin: (address: string, code: st
   return (
     <div className="menu"><div className="card">
       <h1 className="title" style={{ fontSize: 34 }}>JOIN LAN GAME</h1>
-      <p className="tag">Ask the host for the address and join code on their screen.</p>
+      <About id="lan-about" label="How to join">
+        <p className="tag">Ask the host for the address and join code on their screen.</p>
+        </About>
       <div className="col">
         <input className="text mono" placeholder="192.168.1.20:4000" value={address} onChange={(e) => setAddress(e.target.value)} autoFocus />
-        <input className="text mono" placeholder="join code, like crude-kettle" value={code} onChange={(e) => setCode(e.target.value)} />
+        <input className="text mono" placeholder="join code" title="Like crude-kettle" value={code} onChange={(e) => setCode(e.target.value)} />
         {address && lanUrl(address) === null && <p className="err">Include the port, like 192.168.1.20:4000.</p>}
         <button className="btn go" disabled={!ok} onClick={() => onJoin(address, code.trim())}>Join</button>
         <button className="btn" onClick={onBack}>Back</button>
@@ -27,11 +30,11 @@ export function JoinOnline({ onJoin, onBack }: { onJoin: (room: string) => void;
   return (
     <div className="menu"><div className="card">
       <h1 className="title" style={{ fontSize: 34 }}>ONLINE ROOM</h1>
-      <p className="tag">Share the room code. Empty seats get bots.</p>
+      <About id="online-about" label="How to join"><p className="tag">Share the room code. Empty seats get bots.</p></About>
       <div className="col">
         <input className="text mono" placeholder="ROOM CODE" value={clean} onChange={(e) => setRoom(e.target.value)} autoFocus maxLength={8} />
-        <button className="btn go" disabled={clean.length < 3} onClick={() => onJoin(clean)}>Join room</button>
-        <button className="btn" onClick={() => onJoin(makeRoomCode())}>Make a new room</button>
+        <button className="btn go" disabled={clean.length < 3} onClick={() => onJoin(clean)}>Join</button>
+        <button className="btn" onClick={() => onJoin(makeRoomCode())}>New room</button>
         <button className="btn" onClick={onBack}>Back</button>
       </div>
     </div></div>

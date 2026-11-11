@@ -2,6 +2,7 @@
 // Every drop has a shape (in the pan and here) and a name, not only a colour.
 import { GOLD, NAIL, OIL, SLUDGE, WATER } from "../../sim/rules.ts";
 import type { Ctl } from "../input.ts";
+import { CircleHelp, createElement } from "lucide";
 
 export const DROP_CUES = [
   { kind: OIL, name: "Oil", shape: "round drop", effect: "+$1M" },
@@ -60,5 +61,15 @@ export function ControlHint({ seats, onClose }: { seats: { name: string; ctls: r
       </div>
       <p className="hint" style={{ margin: "8px 0 0" }}><K>H</K> shows or hides this{onClose && <> · <button className="link" onClick={onClose}>hide</button></>}</p>
     </section>
+  );
+}
+
+/** A screen's how-to, out of the way: a small ? beside its heading opens it as a popover; a click outside or Escape shuts it. */
+export function About({ id, label = "How to play", children }: { id: string; label?: string; children: React.ReactNode }) {
+  return (
+    <>
+      <button type="button" className="info" popoverTarget={id} title={label} aria-label={label} ref={(el) => { el?.replaceChildren(createElement(CircleHelp)); }} />
+      <div id={id} className="about card" popover="auto">{children}</div>
+    </>
   );
 }
