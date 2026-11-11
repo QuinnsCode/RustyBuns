@@ -75,7 +75,7 @@ const BASE = `
 .rb-spaces-speakers li.talking{background:var(--ui-accent);color:var(--ui-on-accent)}.rb-spaces-speakers li.muted{opacity:.6}
 .rb-spaces-voice-bar{display:flex;gap:6px}.rb-spaces-join,.rb-spaces-drop{align-self:flex-start}
 .rb-spaces-in-voice{display:inline-flex;margin-left:auto;margin-right:4px}
-@media (max-width:560px){.rb-spaces-body{flex-direction:column}.rb-spaces-online{width:auto;border-left:0;border-top:var(--ui-border) solid var(--ui-line);padding:6px 0 0;display:flex;flex-wrap:wrap;gap:4px 12px}}
+@media (max-width:560px){.rb-spaces-body{flex-direction:column}.rb-spaces-online{width:auto;max-width:none;border-left:0;border-top:var(--ui-border) solid var(--ui-line);padding:6px 0 0;display:flex;flex-wrap:wrap;gap:4px 12px}}
 `;
 
 /**
