@@ -1,5 +1,5 @@
 {
   "icon": "git-pull-request-arrow",
   "title": "Agents that redo their work",
-  "what": "If someone changes a line an agent also changed, it runs again on the new text. A rename changes every use in one batch."
+  "what": "If someone changes a line an agent also changed, it runs again on the new text. A branch that moved a folder takes along the files main added to it."
 }
