@@ -14,7 +14,7 @@ import { addWin, winKey } from "../sim/heads.ts";
 import type { ZoneData } from "@rustybuns/terrain";
 import { BATTLE_SECONDS, CHUTE_MIN, FFA_SCORE, Game, LEAN_REACH, scopeSway, SHIELD_DELAY, stanceOf, TEAM_SCORE, type GameEvent, type Input, type Mode, type Waypoint } from "../sim/game.ts";
 import { Mirror } from "../net/mirror.ts";
-import { cleanZone, levelOf, NEXT_ROUND } from "../net/room.ts";
+import { cleanZone, levelOf, MODES as MODE_IDS, NEXT_ROUND } from "../net/room.ts";
 import { LanReply, type FromWorld, type RosterEntry } from "../net/wire.ts";
 import { arr, check, oneOf, str, type Guard } from "@rustybuns/util/guard";
 import { getJson } from "@rustybuns/util/http";
@@ -356,7 +356,7 @@ const MODES: { id: Mode; name: string; tip: string }[] = [
   { id: "ffa", name: "Free-for-all", tip: `Every player for themselves; first to ${FFA_SCORE} downs` },
   { id: "teams", name: "Teams", tip: `Ours against theirs, with the guards against both; first side to ${TEAM_SCORE} downs` },
 ];
-let mode: Mode = store.get("mode", oneOf(["coop", "ffa", "teams"]), "ffa");
+let mode: Mode = store.get("mode", oneOf(MODE_IDS), "ffa");
 radios($("battle-mode"), MODES, (m) => m.tip, (b, m) => (b.textContent = m.name), (m) => m.id === mode, (m) => (mode = m.id, store.set("mode", m.id)));
 const levelPick = $<HTMLSelectElement>("battle-level");
 for (const l of LEVELS) levelPick.add(new Option(l.name, l.id));

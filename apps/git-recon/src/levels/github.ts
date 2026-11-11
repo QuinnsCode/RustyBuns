@@ -9,6 +9,8 @@
 // (the raw text comes from raw.githubusercontent.com, which doesn't count), and a load is kept for half an hour.
 
 import { folderOf, type RepoFile, type RepoSnapshot } from "../sim/codemap.ts";
+import { REPO } from "../net/room.ts";
+import { arr, check, nul, num, obj, opt, str, type Guard } from "@rustybuns/util/guard";
 import { excerpts, folderLinks, isAgentCommit, isScript, MAX_FILES, SKIP, SOURCE, tally, workspacePackages } from "../sim/intel.ts";
 
 /** Commits whose files are read for churn, scripts read for imports, and bytes a line is taken to be. */
@@ -32,7 +34,7 @@ export function failingChecks(runs: CheckRun[]): string[] {
 
 type Fetch = (url: string) => Promise<Response>;
 
-async function api<T>(get: Fetch, path: string, slug: string): Promise<T> {
+async function api<T>(get: Fetch, path: string, slug: string, guard: Guard<T>): Promise<T> {
   const res = await get(`${API}${path}`);
   if (res.status === 404) throw new LoadError(`${slug} isn't a public repo on GitHub`);
   if ((res.status === 403 || res.status === 429) && res.headers.get("x-ratelimit-remaining") === "0") {
@@ -40,19 +42,29 @@ async function api<T>(get: Fetch, path: string, slug: string): Promise<T> {
     throw new LoadError(`GitHub's hourly limit for this browser is used up${reset ? `; it resets at ${new Date(reset).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}` : ""}`);
   }
   if (!res.ok) throw new LoadError(`GitHub said ${res.status} for ${slug}`);
-  return res.json() as Promise<T>;
+  const body = check(guard, await res.json().catch(() => null));
+  if (!body) throw new LoadError(`GitHub's reply for ${slug} didn't look like a repo's`);
+  return body;
 }
 
-interface Commit { sha: string; commit: { message: string; author?: { name?: string } }; author?: { login?: string } | null; files?: { filename: string }[] }
+// The parts of GitHub's REST replies a load reads.
+const text = str(Infinity, { min: 0 }), many = 200_000;
+const Info = obj({ default_branch: text, full_name: text });
+const Commit = obj({
+  sha: str(100), commit: obj({ message: text, author: opt(obj({ name: opt(text) })) }),
+  author: opt(obj({ login: opt(text) })), files: opt(arr(obj({ filename: text }), many)),
+});
+const Tree = obj({ tree: arr(obj({ path: text, type: text, size: opt(num(0, Number.MAX_SAFE_INTEGER)) }), many) });
+const CheckRuns = obj({ check_runs: arr(obj({ name: text, conclusion: nul(text) }), many) });
 
 export async function loadRepo(slug: string, get: Fetch = (u) => fetch(u)): Promise<RepoSnapshot> {
-  const info = await api<{ default_branch: string; full_name: string }>(get, `/repos/${slug}`, slug);
+  const info = await api(get, `/repos/${slug}`, slug, Info);
   const name = info.full_name || slug;
-  const recent = await api<Commit[]>(get, `/repos/${name}/commits?sha=${encodeURIComponent(info.default_branch)}&per_page=${DETAIL}`, name);
+  const recent = await api(get, `/repos/${name}/commits?sha=${encodeURIComponent(info.default_branch)}&per_page=${DETAIL}`, name, arr(Commit, many));
   const head = recent[0]?.sha;
   if (!head) throw new LoadError(`${name} has no commits`);
 
-  const tree = await api<{ tree: { path: string; type: string; size?: number }[] }>(get, `/repos/${name}/git/trees/${head}?recursive=1`, name);
+  const tree = await api(get, `/repos/${name}/git/trees/${head}?recursive=1`, name, Tree);
   const blobs = tree.tree.filter((t) => t.type === "blob");
   let files: RepoFile[] = blobs
     .filter((t) => SOURCE.test(t.path) && !SKIP.test(t.path) && (t.size ?? 0) > 0)
@@ -76,14 +88,14 @@ export async function loadRepo(slug: string, get: Fetch = (u) => fetch(u)): Prom
   const links = folderLinks(sources, workspacePackages(manifests), folders);
 
   // The latest commits' files: churn, and the agents' share of it.
-  const detail = await Promise.all(recent.map((c) => api<Commit>(get, `/repos/${name}/commits/${c.sha}`, name).catch(() => null)));
+  const detail = await Promise.all(recent.map((c) => api(get, `/repos/${name}/commits/${c.sha}`, name, Commit).catch(() => null)));
   const commits = detail.filter((c) => c !== null).map((c) => ({
     agent: isAgentCommit(c.commit.message, c.author?.login ?? c.commit.author?.name ?? ""),
     paths: (c.files ?? []).map((f) => f.filename),
   }));
   files = tally(files, commits).sort((a, b) => a.path.localeCompare(b.path));
 
-  const checks = await api<{ check_runs: CheckRun[] }>(get, `/repos/${name}/commits/${head}/check-runs?per_page=100`, name)
+  const checks = await api(get, `/repos/${name}/commits/${head}/check-runs?per_page=100`, name, CheckRuns)
     .catch(() => ({ check_runs: [] }));
   const failing = failingChecks(checks.check_runs);
 
@@ -95,7 +107,7 @@ const KEEP_MS = 30 * 60_000;
 export async function loadRepoCached(slug: string): Promise<RepoSnapshot> {
   const key = `git-recon:repo:${slug.toLowerCase()}`;
   try {
-    const kept = JSON.parse(localStorage.getItem(key) ?? "null") as { at: number; repo: RepoSnapshot } | null;
+    const kept = check(obj({ at: num(0, Number.MAX_SAFE_INTEGER), repo: REPO }), JSON.parse(localStorage.getItem(key) ?? "null"));
     if (kept && Date.now() - kept.at < KEEP_MS) return kept.repo;
   } catch {}
   const repo = await loadRepo(slug);

@@ -55,7 +55,6 @@
   "apps/geoboxq/src/main.ts": 1,
   "apps/git-recon/scripts/battle.ts": 2,
   "apps/git-recon/scripts/snapshot.ts": 1,
-  "apps/git-recon/src/levels/github.ts": 2,
   "apps/hippo-tycoon/src/client/lan.ts": 1,
   "apps/meshy-studio/engine/workspace.ts": 1,
   "apps/park-hide-seek/scripts/fetch-zones.ts": 2,
