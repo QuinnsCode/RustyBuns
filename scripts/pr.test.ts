@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { MISS_AFTER, jobOf, missedRun, outcomes, settled, summarize, trimLog, type Pr } from "./pr.ts";
+import { MISS_AFTER, headRuns, jobOf, missedRun, outcomes, settled, summarize, trimLog, type Pr, type Runs } from "./pr.ts";
 
 const now = Date.parse("2026-11-01T10:00:00Z");
 const run = (name: string, conclusion: string | undefined, status = "COMPLETED", workflowName = "apps") =>
@@ -35,6 +35,23 @@ test("a head minutes old with no typecheck or apps run is the GitHub miss, and a
   expect(settled(stale, now)).toBe(true);
   expect(summarize(stale, now)[1]).toContain("#2828");
   expect(settled(pr({ state: "MERGED", statusCheckRollup: [run("typecheck", undefined, "IN_PROGRESS")] }), now)).toBe(true);
+});
+
+test.each<[string, Runs, ReturnType<typeof headRuns>]>([
+  ["queued", [{ workflowName: "apps", status: "queued" }, { workflowName: "typecheck", status: "queued" }], "queued"],
+  ["in progress", [{ workflowName: "apps", status: "in_progress" }, { workflowName: "typecheck", status: "queued" }], "running"],
+  ["none (another workflow only)", [{ workflowName: "cache-sweep", status: "completed", conclusion: "success" }], "none"],
+  ["completed", [{ workflowName: "typecheck", status: "completed", conclusion: "success" }], "done"],
+])("the head's Actions runs read %s", (_, runs, want) => expect(headRuns(runs)).toBe(want));
+
+test("a stale head whose runs are only queued is a wait for a runner, not a miss (#4240)", () => {
+  const stale = pr({ statusCheckRollup: [], commits: [{ committedDate: new Date(now - (MISS_AFTER + 60) * 1000).toISOString() }] });
+  const queued: Runs = [{ workflowName: "apps", status: "queued" }, { workflowName: "typecheck", status: "queued" }];
+  expect(missedRun(stale, now, queued)).toBe(false);
+  expect(settled(stale, now, queued)).toBe(false);
+  const lines = summarize(stale, now, queued).join("\n");
+  expect(lines).toContain("waiting for a runner");
+  expect(lines).not.toContain("force-with-lease");
 });
 
 test("a non-Actions status context reads by its state", () => {
