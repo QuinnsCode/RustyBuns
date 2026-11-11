@@ -58,6 +58,7 @@ export const RUNS: Record<number, Run> = {
   2520: { app: "office", links: [...office(2520), { label: "Phone", path: "/?scenario=writes-ask-pending", phone: true }] },
   2425: { app: "office", links: office(2425) },
   2430: { app: "office", links: office(2430) },
+  4212: { app: "twoFronts", links: [{ label: "Title", path: "/" }, { label: "Title, phone", path: "/", phone: true }, { label: "Short war, Marines (then New campaign for the lobby)", path: "/?war=short&side=marines&vs=ai" }] },
   2735: { app: "twoFronts", links: [{ label: "Short war, Marines", path: "/?war=short" }, { label: "Short war, Wooka", path: "/?war=short&side=wooka" }] },
   2718: { app: "twoFrontsOnline", links: [{ label: "Online war (copy the invite into the phone window)", path: "/?war=short&vs=online" }, { label: "Phone seat", path: "/", phone: true }] },
   2858: { app: "mythic-masters", links: [0, 1, 2].map((n) => ({ label: `Gallery ${n}`, path: `/?gallery=${n}` })) },
