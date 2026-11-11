@@ -10,7 +10,8 @@
 //     {verdict, stack, label, typescript, reasons, issue?, dir?, workspaces?: [{dir, name, verdict, stack, label}]}
 
 import { fit, type Fit } from "@rustybuns/cli/fit";
-import type { Doc } from "./lines.ts";
+import { docIn, TreeReply } from "./archive.ts";
+import { readJson } from "@rustybuns/util/http";
 import type { Env } from "./env.ts";
 import { actingAs } from "./identity.ts";
 import { fail, json } from "./env.ts";
@@ -64,12 +65,12 @@ export async function repoFit(env: Env, self: Self, origin: string, owner: strin
   const get = (path: string) => { const r = new Request(origin + `/api/repos/${owner}/${repo}` + path); if (user) actingAs.set(r, user); return self(r); };
   const tree = async (d: string) => {
     const r = await get(`/tree?path=${encodeURIComponent(d)}`);
-    return r.status === 200 ? ((await r.json()) as { commit: { hash: string } | null; entries: Entry[] }) : null;
+    return r.status === 200 ? readJson(r, TreeReply) : null;
   };
   const list = async (d: string) => (await tree(d))?.entries ?? null;
   const read = async (path: string) => {
     const r = await get(`/do/file?path=${encodeURIComponent(path)}`);
-    return r.ok ? ((await r.json()) as Doc).lines.map((l) => l.text).join("\n") : null;
+    return r.ok ? (await docIn(r))?.lines.map((l) => l.text).join("\n") ?? null : null;
   };
   const join = (d: string, name: string) => d ? `${d}/${name}` : name;
 

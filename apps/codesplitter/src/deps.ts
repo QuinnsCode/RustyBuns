@@ -97,7 +97,7 @@
 import { arr, bool, int, maybe, nul, num, obj, opt, raw, rec, str } from "@rustybuns/util/guard";
 import { readJson } from "@rustybuns/util/http";
 import type { Doc, Op } from "./lines.ts";
-import { access as artifactAccess, docIn, handleFor, toFile, TreeItem } from "./archive.ts";
+import { access as artifactAccess, docIn, handleFor, toFile, TreeReply } from "./archive.ts";
 import { isPlainObject, listOf } from "./util.ts";
 import { actingAs, isAdmin, mail, mailOn } from "./identity.ts";
 import { workspaceDirs, workspaceGlobs } from "./fit.ts";
@@ -989,8 +989,6 @@ const fixerFor = (env: Env, s: Settings, owner: string): Fixer | null =>
 // ---- a run ------------------------------------------------------------------
 
 export type Call = (who: string | null, path: string, init?: RequestInit) => Promise<Response>;
-/** What GET /tree answers (worker.ts), as far as the doctor reads it. */
-const TreeReply = obj({ entries: arr(TreeItem, 100_000) });
 
 /** Every package.json in a repo: the top one, and each workspace's. A note says why there are none. */
 export async function readManifests(call: Call, owner: string, repo: string) {
