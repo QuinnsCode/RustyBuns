@@ -66,7 +66,10 @@
 #   hide    pattern, size,   the body's material baked into a map finer than the mesh can colour (`bake_hide`): `pattern`
 #           colours, map,    scales (rim and cell colours), fur (root and tip), skin (crease) or spots (spot); `size`
 #           spots            metres a scale, strand or fold; colours sRGB; `map` px (1024); `spots` {size, colour, cover}
-#                            over any pattern. The belly, paint and occlusion tone still multiply over it
+#                            over any pattern. The belly, paint and occlusion tone still multiply over it. The same
+#           rough, bump,     pattern's height bakes a tangent-space normal map (`normal_map` px, default `map`; `bump`
+#           normal_map       (1) scales its depth) and its gloss a roughness map at half `map`: `rough` [shiniest,
+#                            dullest] (the pattern's own in ROUGH) sets the range, wet skin about [0.2, 0.45]
 import json
 import math
 import os
@@ -1160,10 +1163,13 @@ def canonical(o, step=float(os.environ.get("SNAP_STEP", "1e-3"))):
 # to match (as far as its brightest channel allows, at most HIDE_LIFT), so a mark lighter than the hide (a scale's
 # rim) still fits in an 8-bit image.
 HIDE_LIFT = 3.0
+# each pattern's roughness at its shiniest and dullest part (the game reads under 0.6 as glazed: its rim light is strong)
+ROUGH = {"scales": (0.62, 0.9), "skin": (0.7, 0.88), "fur": (0.92, 0.97), "spots": (0.8, 0.8)}
 
 
-def hide_colour(nt, h, base, lift):
-    """The hide's colour as a multiple of the body's (`base`, sRGB), from nodes in `nt`, over `lift`; returns the socket."""
+def hide_nodes(nt, h, base, lift):
+    """The hide from nodes in `nt`: its colour as a multiple of the body's (`base`, sRGB) over `lift`, its height (0..1,
+    for the normal map) and its roughness (0..1); returns the three sockets."""
     N, L = nt.nodes, nt.links
     size = h.get("size", 0.05)
 
@@ -1210,6 +1216,9 @@ def hide_colour(nt, h, base, lift):
                 L.new(c, s)
         return n.outputs[2]
 
+    def mix_f(f, a, b):  # floats: a where f is 0, b where 1
+        return math_("ADD", a, math_("MULTIPLY", f, b - a))
+
     def scaled(col, k):  # a colour socket times a float socket
         n = node("ShaderNodeMix", data_type="RGBA", blend_type="MULTIPLY", clamp_result=False)
         n.inputs["Factor"].default_value = 1
@@ -1252,6 +1261,7 @@ def hide_colour(nt, h, base, lift):
     cols = [ratio(c) for c in h.get("colours", [])]
     pattern = h["pattern"]
     one = [1.0, 1.0, 1.0]
+    ht, gl = 0.5, 0.0  # height 0..1 for the normal map, gloss 0..1 (1 the shiniest part) for the roughness map
     if pattern == "scales":
         # cells (`colours[1]`, else the hide), each a little domed and its own shade, a rim (`colours[0]`) and a dark seam
         rim, mid = (cols + [[1.3, 1.3, 1.1], [1.0, 1.0, 1.0]][len(cols):])[:2]
@@ -1265,7 +1275,11 @@ def hide_colour(nt, h, base, lift):
         tint = math_("ADD", math_("MULTIPLY", red(cell.outputs["Color"]), 0.3), 0.85)  # each scale 0.85..1.15
         dome = math_("SUBTRACT", 1.08, math_("MULTIPLY", cell.outputs["Distance"], 0.35))
         c = scaled(mix(ramp(edge, 0.025, 0.09), rim, mid), math_("MULTIPLY", tint, dome))
-        c = mix(math_("SUBTRACT", 1.0, ramp(edge, 0.0, 0.018)), c, [0.55, 0.55, 0.5])
+        seam = math_("SUBTRACT", 1.0, ramp(edge, 0.0, 0.018))
+        c = mix(seam, c, [0.55, 0.55, 0.5])
+        # each scale a dome sunk into its seam; the plate takes a soft sheen, the seam is dull
+        ht = math_("MULTIPLY", ramp(edge, 0.0, 0.07), math_("SUBTRACT", 1.0, math_("MULTIPLY", cell.outputs["Distance"], 0.5)))
+        gl = ramp(edge, 0.0, 0.05)
     elif pattern == "spots":
         c = one
     elif pattern == "fur":
@@ -1278,6 +1292,7 @@ def hide_colour(nt, h, base, lift):
         clump = noise(co, 0.25 / size, 1.0).outputs["Fac"]
         f = ramp(math_("ADD", math_("MULTIPLY", strands, 0.7), math_("MULTIPLY", clump, 0.3)), 0.3, 0.7)
         c = mix(f, dark, tip)
+        ht = f  # strands stand proud of the roots
     elif pattern == "skin":
         # leathery: folds across the body (`colours[0]` in their creases), a fine pebbling between them
         crease = cols[0] if cols else [0.55, 0.55, 0.5]
@@ -1288,7 +1303,10 @@ def hide_colour(nt, h, base, lift):
         ridge = math_("ABSOLUTE", math_("SUBTRACT", math_("MULTIPLY", n, 2.0), 1.0))
         pebble = voronoi(co, 4.0 / size)
         bump = math_("ADD", 0.94, math_("MULTIPLY", red(pebble.outputs["Color"]), 0.12))
-        c = scaled(mix(ramp(ridge, 0.0, 0.3), crease, one), bump)
+        fold = ramp(ridge, 0.0, 0.3)
+        c = scaled(mix(fold, crease, one), bump)
+        ht = math_("ADD", math_("MULTIPLY", fold, 0.8), math_("MULTIPLY", red(pebble.outputs["Color"]), 0.2))
+        gl = fold  # a little greasy on the folds' crowns, dry down in the creases
     else:
         raise SystemExit(f"hide pattern {pattern!r}: scales, spots, fur or skin")
     # spots over any of them: `spots` {size, colour, cover}; a `pattern: "spots"` hide is spots on plain skin
@@ -1303,11 +1321,15 @@ def hide_colour(nt, h, base, lift):
         rad = math_("ADD", 0.16, math_("MULTIPLY", rnd.outputs[1], 0.16))  # each spot 0.16..0.32 of a cell
         spot = math_("MULTIPLY", keep, math_("SUBTRACT", 1.0, ramp(math_("SUBTRACT", cell.outputs["Distance"], rad), -0.04, 0.04)))
         c = mix(spot, c, ratio(spots["colour"]))
-    return scaled(c, 1.0 / lift)
+    # `rough` [shiniest, dullest]: the roughness the gloss runs between (the pattern's own in ROUGH; wet skin [0.2, 0.45])
+    shiny, dull = h.get("rough", ROUGH[pattern])
+    rg = mix_f(fl(gl), dull, shiny)
+    return scaled(c, 1.0 / lift), fl(ht), rg
 
 
 def bake_hide(o, h, back, lift):
-    """The body's faces (material `back`) unwrapped and `hide` baked into a map its material multiplies over the tone."""
+    """The body's faces (material `back`) unwrapped and `hide` baked into a colour map its material multiplies over the
+    tone, a tangent-space normal map and a roughness map."""
     px, t0 = h.get("map", 1024), time.time()
     mats = [m.name for m in o.data.materials]
     slot = mats.index(back)
@@ -1329,19 +1351,6 @@ def bake_hide(o, h, back, lift):
     bmesh.ops.delete(bm, geom=[f for f in bm.faces if f.material_index != slot], context="FACES")
     bm.to_mesh(flesh.data)
     bm.free()
-    img = bpy.data.images.new(o.name + "-hide", px, px, alpha=False)
-    bake = bpy.data.materials.new("hide-bake")
-    bake.use_nodes = True
-    nt = bake.node_tree
-    nt.nodes.remove(nt.nodes["Principled BSDF"])
-    glow = nt.nodes.new("ShaderNodeEmission")
-    nt.links.new(hide_colour(nt, h, PALETTE[back][:3], lift), glow.inputs["Color"])
-    nt.links.new(glow.outputs[0], nt.nodes["Material Output"].inputs["Surface"])
-    target = nt.nodes.new("ShaderNodeTexImage")
-    target.image = img
-    nt.nodes.active = target
-    flesh.data.materials.clear()
-    flesh.data.materials.append(bake)
     scene = bpy.context.scene
     engine = scene.render.engine
     scene.render.engine = "CYCLES"
@@ -1349,18 +1358,62 @@ def bake_hide(o, h, back, lift):
     bpy.ops.object.select_all(action="DESELECT")
     flesh.select_set(True)
     bpy.context.view_layer.objects.active = flesh
-    bpy.ops.object.bake(type="EMIT", margin=max(2, px // 128), use_clear=True)
+    bake = bpy.data.materials.new("hide-bake")
+    bake.use_nodes = True
+    nt = bake.node_tree
+    out, bsdf = nt.nodes["Material Output"], nt.nodes["Principled BSDF"]
+    colour, height, rough = hide_nodes(nt, h, PALETTE[back][:3], lift)
+    # the height as a bump on the flesh's own normals, baked to tangent space against the `hide` UVs
+    bump = nt.nodes.new("ShaderNodeBump")
+    bump.inputs["Distance"].default_value = h.get("size", 0.05) * 0.15 * h.get("bump", 1.0)
+    nt.links.new(height, bump.inputs["Height"])
+    nt.links.new(bump.outputs["Normal"], bsdf.inputs["Normal"])
+    glow = nt.nodes.new("ShaderNodeEmission")
+    flesh.data.materials.clear()
+    flesh.data.materials.append(bake)
+
+    def bake_to(name, size, kind, socket=None):
+        img = bpy.data.images.new(f"{o.name}-{name}", size, size, alpha=False)
+        if kind == "NORMAL" or name == "rough":
+            img.colorspace_settings.name = "Non-Color"
+        target = nt.nodes.new("ShaderNodeTexImage")
+        target.image = img
+        nt.nodes.active = target
+        if socket:
+            nt.links.new(socket, glow.inputs["Color"])
+            nt.links.new(glow.outputs[0], out.inputs["Surface"])
+        else:
+            nt.links.new(bsdf.outputs[0], out.inputs["Surface"])
+        bpy.ops.object.bake(type=kind, normal_space="TANGENT", margin=max(2, size // 128), use_clear=True)
+        img.pack()
+        nt.nodes.remove(target)
+        return img
+
+    # the colour at `map` px, the normal beside it (a scale's dome is as fine as its rim), roughness at half: it changes slowly
+    img = bake_to("hide", px, "EMIT", colour)
+    rmap = bake_to("rough", max(64, px // 2), "EMIT", rough)
+    nmap = bake_to("normal", h.get("normal_map", px), "NORMAL")
     scene.render.engine = engine
-    img.pack()
-    print(f"hide: {h['pattern']} baked into a {px} px map in {time.time() - t0:.1f} s")
+    print(f"hide: {h['pattern']} baked into {px} px colour and normal maps and a {rmap.size[0]} px roughness map in {time.time() - t0:.1f} s")
     bpy.data.objects.remove(flesh)
     bpy.data.materials.remove(bake)
-    # the body's material: the map times the tone (`shade` wired Base Color to a multiply of the tone already)
+    # the body's material: the map times the tone (`shade` wired Base Color to a multiply of the tone already), the
+    # roughness from the map's green channel (glTF's metallicRoughness reads green) and the normal in tangent space
     m = o.data.materials[slot]
-    tex = m.node_tree.nodes.new("ShaderNodeTexImage")
+    N, L = m.node_tree.nodes, m.node_tree.links
+    principled = N["Principled BSDF"]
+    tex = N.new("ShaderNodeTexImage")
     tex.image = img
-    mul = next(n for n in m.node_tree.nodes if n.bl_idname == "ShaderNodeMix" and n.blend_type == "MULTIPLY")
-    m.node_tree.links.new(tex.outputs["Color"], mul.inputs[6])
+    mul = next(n for n in N if n.bl_idname == "ShaderNodeMix" and n.blend_type == "MULTIPLY")
+    L.new(tex.outputs["Color"], mul.inputs[6])
+    rt, sep = N.new("ShaderNodeTexImage"), N.new("ShaderNodeSeparateColor")
+    rt.image = rmap
+    L.new(rt.outputs["Color"], sep.inputs[0])
+    L.new(sep.outputs["Green"], principled.inputs["Roughness"])
+    nt_, nm = N.new("ShaderNodeTexImage"), N.new("ShaderNodeNormalMap")
+    nt_.image, nm.space, nm.uv_map = nmap, "TANGENT", "hide"
+    L.new(nt_.outputs["Color"], nm.inputs["Color"])
+    L.new(nm.outputs["Normal"], principled.inputs["Normal"])
     # the map's mean colour over the texels the body covers, in the GLB's extras: a skin drawn without the map (the
     # world's merged walkers, beasts.ts `mergedSkin`) multiplies its tone by this instead, or the lifted tone glares
     # (an 8-bit map's pixels read back as stored, sRGB, and the game's tone is linear)

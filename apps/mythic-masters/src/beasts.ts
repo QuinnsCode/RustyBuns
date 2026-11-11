@@ -213,6 +213,7 @@ function stylize(m: THREE.MeshStandardMaterial, top: { value: number }, name: st
   const kind = m.map ? null : surfaceFor(name, surface), hd = kind ? hideDetail(kind) : null;
   const hard = /horn|claw|spike|tooth|teeth|beak|talon|tusk|fang|bone/.test(name);
   if (hard) m.roughness = Math.min(m.roughness, 0.32);
+  else if (m.roughnessMap) m.roughness = 1; // a baked hide's roughness map says where it shines (wet skin, a scale's crown)
   else m.roughness = Math.max(0.78, Math.min(m.roughness, 0.9)); // hide, fur and scale take light softly: no vinyl sheen
   m.onBeforeCompile = (sh) => {
     sh.uniforms.uTop = top;
