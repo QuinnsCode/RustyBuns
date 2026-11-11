@@ -2,6 +2,7 @@
 // the JSON-string API. Works in the browser (Vite resolves the .wasm URL) and under Bun (tests).
 import init, * as wasm from "./wasm-pkg/qcrm_engine.js";
 import { unseal } from "@rustybuns/seal";
+import { arr, Bad, num, obj, opt, str, type Guard } from "@rustybuns/util/guard";
 
 export type Engine = typeof wasm;
 
@@ -61,6 +62,14 @@ export interface ActivityRow {
   at?: number | string | null;
   type?: string | null;
 }
+
+// The rows as the API lists them, read for the engine: a row without an id is dropped, other fields it doesn't use are left behind.
+const idOrNum: Guard<string | number> = (v) => { if (typeof v === "string" || typeof v === "number") return v; throw new Bad("an id"); };
+const text = opt(str(Infinity, { min: 0 })), ref = opt(idOrNum), when = opt(idOrNum);
+export const ContactRows: Guard<ContactRow[]> = arr(obj({ id: idOrNum, first_name: text, last_name: text, email: text, phone: text, company_id: ref }), Infinity, { drop: true });
+export const DealRows: Guard<DealRow[]> = arr(obj({ id: idOrNum, name: text, stage: text, amount_cents: opt(num(-Infinity, Infinity)), close_at: when,
+  contact_id: ref, company_id: ref, updated_at: when }), Infinity, { drop: true });
+export const ActivityRows: Guard<ActivityRow[]> = arr(obj({ id: idOrNum, deal_id: ref, contact_id: ref, at: when, type: text }), Infinity, { drop: true });
 
 export interface DupePair { a: string | number; b: string | number; score: number; why: string[] }
 export interface StageTotal { stage: string; weight: number; count: number; amount_cents: number; weighted_cents: number }

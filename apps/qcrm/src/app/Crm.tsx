@@ -480,7 +480,7 @@ function Board({ org, q, rev, canEdit, onOpen, onError }: { org: string; q: stri
   );
 }
 
-const Stage = ({ v }: { v: unknown }) => { const t = typeof v === "string" && v.trim() ? v : "no stage"; return <span className={`stage ${STAGES.includes(t as never) ? t : "none"}`}>{t}</span>; };
+const Stage = ({ v }: { v: unknown }) => { const t = typeof v === "string" && v.trim() ? v : "no stage"; return <span className={`stage ${STAGES.some((s) => s === t) ? t : "none"}`}>{t}</span>; };
 
 const cell = (v: unknown, kind?: string, cur?: string) => {
   if (kind === "stage") return <Stage v={v} />;
@@ -740,9 +740,9 @@ function Engine({ org, can }: { org: string; can: (r: string) => boolean }) {
       const t0 = performance.now();
       let res: EngineOut, rows = 0, t1 = 0;
       const byId = (l: Row[]) => new Map(l.map((r) => [String(r.id), r]));
-      if (kind === "dedupe") { const c = await allRows(org, "contacts"); rows = c.length; t1 = performance.now(); res = { kind, pairs: await eng.dedupe(c as never), people: byId(c) }; }
-      else if (kind === "forecast") { const d = await allRows(org, "deals"); rows = d.length; t1 = performance.now(); res = { kind, f: await eng.forecast(d as never, Date.now()) }; }
-      else { const [d, a] = await Promise.all([allRows(org, "deals"), allRows(org, "activities")]); rows = d.length + a.length; t1 = performance.now(); res = { kind, deals: await eng.stale(d as never, a as never, Date.now(), 30), rows: byId(d), days: 30 }; }
+      if (kind === "dedupe") { const c = await allRows(org, "contacts"); rows = c.length; t1 = performance.now(); res = { kind, pairs: await eng.dedupe(eng.ContactRows(c)), people: byId(c) }; }
+      else if (kind === "forecast") { const d = await allRows(org, "deals"); rows = d.length; t1 = performance.now(); res = { kind, f: await eng.forecast(eng.DealRows(d), Date.now()) }; }
+      else { const [d, a] = await Promise.all([allRows(org, "deals"), allRows(org, "activities")]); rows = d.length + a.length; t1 = performance.now(); res = { kind, deals: await eng.stale(eng.DealRows(d), eng.ActivityRows(a), Date.now(), 30), rows: byId(d), days: 30 }; }
       setOut({ res, rows, load: Math.round(t1 - t0), ms: Math.round(performance.now() - t1) });
     } catch (e) { setMsg((e as Error).message); }
     setBusy("");

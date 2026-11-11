@@ -16,7 +16,9 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { local, type Call } from "../src/local.ts";
-import { STEP } from "../src/fresh.ts";
+import { FreshReply, LimitsReply, STEP } from "../src/fresh.ts";
+import { CommitReply } from "../src/archive.ts";
+import { arr, bool, check as guarded, num, nul, obj, oneOf, opt, raw, str, type Guard } from "@rustybuns/util/guard";
 import { push } from "../src/git.ts";
 import type { Artifacts, ArtifactsRepo, TreeEntry } from "../src/env.ts";
 import { parseAuthToken } from "./release.ts";
@@ -49,36 +51,47 @@ async function authed(url: string, init: RequestInit = {}) {
   return go();
 }
 
-async function api(path: string, init: RequestInit = {}, ok404 = false): Promise<any> {
+/** A value read through its guard, or a throw naming what it was meant to be. */
+const as = <T>(g: Guard<T>, v: unknown, what: string): T => { const x = guarded(g, v); if (x === null) throw new Error(`${what}: not the shape it should be`); return x; };
+// Cloudflare's REST answers, as far as this script reads them.
+const Envelope = obj({ success: bool(), errors: opt(raw), result: raw });
+const RestRepo = obj({ name: str(Infinity), remote: str(Infinity), default_branch: str(Infinity), read_only: opt(bool()), source: opt(str(Infinity, { min: 0 })) });
+// Strict on what this script reads (hash, treeHash, parents); the rest falls back rather than failing a live run.
+const Author = obj({ name: str(Infinity, { min: 0 }), email: str(Infinity, { min: 0 }) });
+const Commit = obj({ hash: str(64), treeHash: str(64), parents: arr(str(64), Infinity), message: str(Infinity, { min: 0, dflt: "" }),
+  author: (v: unknown) => guarded(Author, v) ?? { name: "", email: "" }, authoredAt: num(0, Infinity, 0) });
+const Tree = arr(obj({ name: str(Infinity), mode: str(10), hash: str(64), type: oneOf(["tree", "blob", "symlink", "gitlink", "exec"]) }), Infinity);
+
+async function api(path: string, init: RequestInit = {}, ok404 = false): Promise<unknown> {
   for (let tries = 0; ; tries++) {
     const res = await authed(BASE + path, { ...init, headers: { "content-type": "application/json", ...init.headers } });
     if (ok404 && res.status === 404) return null;
     if (res.status === 409 && tries < 60) { await Bun.sleep(5000); continue; }   // still importing
-    const body = await res.json() as any;
+    const body = as(Envelope, await res.json().catch(() => null), `artifacts ${init.method ?? "GET"} ${path}: ${res.status}`);
     if (!body.success) throw new Error(`artifacts ${init.method ?? "GET"} ${path}: ${res.status} ${JSON.stringify(body.errors)}`);
     return body.result;
   }
 }
 
 const made = new Set<string>();
-const remoteOf = (r: any) => ({ name: r.name, remote: r.remote, defaultBranch: r.default_branch });
+const remoteOf = (v: unknown) => { const r = as(RestRepo, v, "an Artifacts repo"); return { name: r.name, remote: r.remote, defaultBranch: r.default_branch }; };
 
 /** The slice of the binding codeSplitter uses, over the REST API. */
 class CloudRepo implements ArtifactsRepo {
   constructor(readonly name: string) {}
   async info() {
-    const r = await api(`/repos/${this.name}`);
-    return { name: r.name, defaultBranch: r.default_branch, remote: r.remote, readOnly: r.read_only, source: r.source };
+    const r = as(RestRepo, await api(`/repos/${this.name}`), `repo ${this.name}`);
+    return { name: r.name, defaultBranch: r.default_branch, remote: r.remote, readOnly: r.read_only ?? false, source: r.source ?? null };
   }
   async createToken(scope: "read" | "write" = "write", ttl = 3600) {
-    return { plaintext: (await api("/tokens", { method: "POST", body: JSON.stringify({ repo: this.name, scope, ttl: Math.max(ttl, 60) }) })).plaintext };
+    return as(obj({ plaintext: str(Infinity) }), await api("/tokens", { method: "POST", body: JSON.stringify({ repo: this.name, scope, ttl: Math.max(ttl, 60) }) }), "a token");
   }
   async log(o: { ref?: string; limit?: number; offset?: number } = {}) {
     const q = new URLSearchParams(Object.entries(o).filter(([, v]) => v != null).map(([k, v]) => [k, String(v)]));
-    return (await api(`/repos/${this.name}/log?${q}`, {}, true)) ?? [];
+    return as(nul(arr(Commit, Infinity)), await api(`/repos/${this.name}/log?${q}`, {}, true), `log of ${this.name}`) ?? [];
   }
-  readCommit(hash: string) { return api(`/repos/${this.name}/commit/${hash}`, {}, true); }
-  readTree(hash: string) { return api(`/repos/${this.name}/tree/${hash}`, {}, true) as Promise<TreeEntry[] | null>; }
+  async readCommit(hash: string) { return as(nul(Commit), await api(`/repos/${this.name}/commit/${hash}`, {}, true), `commit ${hash}`); }
+  async readTree(hash: string): Promise<TreeEntry[] | null> { return as(nul(Tree), await api(`/repos/${this.name}/tree/${hash}`, {}, true), `tree ${hash}`); }
   async readBlob(hash: string) { return this.raw(`/repos/${this.name}/blob/${hash}`); }
   async readFile(a: { ref: string; path: string }) { return this.raw(`/repos/${this.name}/file?ref=${encodeURIComponent(a.ref)}&path=${encodeURIComponent(a.path)}`); }
   async fork(): Promise<never> { throw new Error("not needed here"); }
@@ -131,7 +144,7 @@ async function boot() {
 }
 
 const post = (call: Call, user: string, path: string, body: unknown = {}) => call(user, path, { method: "POST", body: JSON.stringify(body) });
-const get = async (call: Call, user: string, path: string) => (await call(user, path)).json() as Promise<any>;
+const get = async <T>(call: Call, user: string, path: string, g: Guard<T>) => as(g, await (await call(user, path)).json().catch(() => null), path);
 const sh = (cmd: string[], cwd: string) => {
   const p = Bun.spawnSync(cmd, { cwd, stdout: "pipe", stderr: "pipe" });
   return { code: p.exitCode, out: p.stdout.toString(), err: p.stderr.toString() };
@@ -148,14 +161,15 @@ async function run(call: Call, db: { queries: number }, owner: string, repo: str
   let f = await (async () => {
     const c = calls, q = db.queries, t = Date.now();
     const res = await post(call, owner, `/api/repos/${owner}/${repo}/fresh`);
-    const body = await res.json() as any;
-    if (res.status !== 202) throw new Error(`fresh start: ${res.status} ${JSON.stringify(body)}`);
+    const got: unknown = await res.json().catch(() => null);
+    if (res.status !== 202) throw new Error(`fresh start: ${res.status} ${JSON.stringify(got)}`);
+    const body = as(FreshReply, got, "fresh start");
     steps.push({ state: body.state, calls: calls - c, queries: db.queries - q, ms: Date.now() - t, done: body.done, total: body.total });
     return body;
   })();
   while (f.state === "walking" || f.state === "copying") {
     const c = calls, q = db.queries, t = Date.now();
-    f = await get(call, owner, `/api/repos/${owner}/${repo}/fresh`);
+    f = await get(call, owner, `/api/repos/${owner}/${repo}/fresh`, FreshReply);
     steps.push({ state: f.state, calls: calls - c, queries: db.queries - q, ms: Date.now() - t, done: f.done, total: f.total });
     if (steps.length % 10 === 0) console.log(`  … step ${steps.length}: ${f.state} ${f.done}/${f.total}`);
   }
@@ -166,7 +180,8 @@ async function run(call: Call, db: { queries: number }, owner: string, repo: str
 
 /** The new git: one root commit of the old tip's tree, no staging ref, and a stock clone that fscks. */
 async function verifyMoved(call: Call, owner: string, repo: string, tree: string) {
-  const { git } = await get(call, owner, `/api/repos/${owner}/${repo}/limits`);
+  const { git } = await get(call, owner, `/api/repos/${owner}/${repo}/limits`, LimitsReply);
+  if (!git.artifact) throw new Error(`${owner}/${repo} has no Artifact after its fresh start`);
   const fresh = new CloudRepo(git.artifact);
   const log = await fresh.log({ ref: "main" });
   check(log.length >= 1 && log.at(-1)!.parents.length === 0 && log.at(-1)!.treeHash === tree, `new Artifact ${git.artifact}: a root commit with the old tree ${tree.slice(0, 7)}`);
@@ -193,7 +208,7 @@ async function small() {
     await post(call, owner, "/api/repos", { name: "dig" });
     for (const [path, content] of [["src/a.ts", "export const a = 1"], ["src/deep/b.ts", "export const b = 2"], ["README", "found it"]]) {
       await post(call, owner, `/api/repos/${owner}/dig/files`, { path, content });
-      const r = await (await post(call, owner, `/api/repos/${owner}/dig/do/commit?path=${encodeURIComponent(path)}`, { message: `add ${path}` })).json() as any;
+      const r = as(CommitReply, await (await post(call, owner, `/api/repos/${owner}/dig/do/commit?path=${encodeURIComponent(path)}`, { message: `add ${path}` })).json().catch(() => null), `commit ${path}`);
       if (r.git?.error) throw new Error(`commit ${path}: ${r.git.error}`);
     }
     const old = new CloudRepo(`${owner}--dig`);
