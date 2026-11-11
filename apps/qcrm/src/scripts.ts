@@ -17,6 +17,8 @@
 //   GET    /api/orgs/:org/scripts/:id/runs        (seasonal+)   the last 50
 //   POST   /api/orgs/:org/scripts/examples        (manager+)    install the three examples
 
+import { RunReply } from "@rustybuns/util/codemode";
+import { check } from "@rustybuns/util/guard";
 import { error, json, parseJson, readBody, type Env, type Row } from "./env.ts";
 import type { Ctx } from "./orgs.ts";
 import { rank, type Role } from "./rbac.ts";
@@ -50,7 +52,7 @@ ${body}
 };
 export default {
   async fetch(req, env) {
-    const input = await req.json();
+    const input = await req.json().catch(() => null);
     const log = [];
     try {
       const result = await script({ input, qcrm: client(env), log: (...a) => { log.push(a.map((x) => typeof x === "string" ? x : JSON.stringify(x)).join(" ")); } });
@@ -123,8 +125,9 @@ async function run(env: Env, c: Ctx, script: Row, input: unknown, dispatch: (r: 
     })).getEntrypoint();
     const timeout = new Promise<never>((_, rej) => { timer = setTimeout(() => rej(new Error("timeout")), RUN_MS); });
     const res = await Promise.race([stub.fetch(`${origin}/run`, { method: "POST", body: JSON.stringify(input ?? null), headers: { "content-type": "application/json" } }), timeout]);
-    const out = (await res.json()) as { ok: boolean; result?: unknown; error?: string; log: string[] };
-    log = Array.isArray(out.log) ? out.log : [];
+    const out = check(RunReply, await res.json());
+    if (!out) throw new Error(`the script answered ${res.status} without a result`);
+    log = out.log ?? [];
     if (out.ok) result = out.result;
     else { status = "error"; log.push(`error: ${out.error}`); }
   } catch (e) {

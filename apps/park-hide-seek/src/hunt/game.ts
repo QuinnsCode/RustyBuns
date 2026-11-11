@@ -892,17 +892,21 @@ const num = (v: unknown): v is number => typeof v === "number" && Number.isFinit
 type Wire = { [k in "t" | "name" | "zone" | "tod" | "live" | "laps" | "mode" | "level" | "id" | "x" | "y" | "yaw" | "pitch" | "crouch" | "prone" | "climb" | "run" | "light" | "ask"]?: unknown }
   & { look?: { [k in "shirt" | "pants" | "skin" | "hat" | "pack"]?: unknown } | null };
 
+/** A look, from a guest's message or this page's own storage: colours in range and a known hat, or null. */
+export function parseLook(raw: unknown): Look | null {
+  const { shirt, pants, skin, hat: h, pack } = (raw ?? {}) as { shirt?: unknown; pants?: unknown; skin?: unknown; hat?: unknown; pack?: unknown };
+  const hat = HATS.find((x) => x === h);
+  const ok = num(shirt) && num(pants) && num(skin) && hat
+    && shirt >= 0 && shirt < SHIRTS.length && pants >= 0 && pants < PANTS.length && skin >= 0 && skin < SKINS.length;
+  return ok ? { shirt: shirt | 0, pants: pants | 0, skin: skin | 0, hat, pack: !!pack } : null;
+}
+
 /** A guest's message: every field is unknown until checked here; a non-object has none. */
 export function parseMsg(raw: unknown): Msg | null {
   const m = (raw ?? {}) as Wire;
   switch (m.t) {
     case "name": return typeof m.name === "string" ? { t: "name", name: m.name.slice(0, 24) } : null;
-    case "look": {
-      const { shirt, pants, skin, pack } = m.look ?? {}, hat = HATS.find((h) => h === m.look?.hat);
-      const ok = num(shirt) && num(pants) && num(skin) && hat
-        && shirt >= 0 && shirt < SHIRTS.length && pants >= 0 && pants < PANTS.length && skin >= 0 && skin < SKINS.length;
-      return ok ? { t: "look", look: { shirt: shirt | 0, pants: pants | 0, skin: skin | 0, hat, pack: !!pack } } : null;
-    }
+    case "look": { const look = parseLook(m.look); return look ? { t: "look", look } : null; }
     case "settings": return { t: "settings", zone: typeof m.zone === "string" ? m.zone : undefined, tod: m.tod === "day" || m.tod === "dusk" || m.tod === "night" ? m.tod : undefined, live: typeof m.live === "boolean" ? m.live : undefined, laps: num(m.laps) ? m.laps : undefined, mode: m.mode === "classic" || m.mode === "props" ? m.mode : undefined };
     case "bot": return m.level === "easy" || m.level === "normal" || m.level === "hard" ? { t: "bot", level: m.level } : null;
     case "kick": return typeof m.id === "string" ? { t: "kick", id: m.id } : null;
