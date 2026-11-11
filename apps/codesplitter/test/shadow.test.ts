@@ -56,6 +56,18 @@ describe("shadow mode", () => {
     expect(shadow("rules.test.ts", base, main, base.replace("k.orbit = \"marines\"", "k.sky = 0")).ours.text).toBe(main.replace("k.orbit = \"marines\"", "k.sky = 0"));
   });
 
+  test("a new card that copies a label the other side renamed is a card, not both labels kept (#4138's Full.tsx)", () => {
+    const solo = `      <button onClick={props.onSolo}>Play alone (not saved)</button>\n`;
+    const base = `export function FullCard() {\n  return (\n    <div>\n${solo}    </div>\n  );\n}\n`;
+    const main = base.replace("(not saved)", "(saved here)");
+    const branch = `${base}\nfunction CodeCard() {\n  return (\n    <form>\n${solo}    </form>\n  );\n}\n`;
+    const s = shadow("Full.tsx", base, main, branch);
+    expect(s.ours.clean).toBe(false);
+    expect(s.ours.conflicts.some((c) => c.branch?.includes("function CodeCard"))).toBe(true);
+    // A new card that copies nothing main changed still lands clean.
+    expect(shadow("Full.tsx", base, main, `${base}\nfunction CodeCard() {\n  return <p>This sesh is private, ask for its code</p>;\n}\n`).ours.clean).toBe(true);
+  });
+
   test("both conflict", () => {
     expect(shadow("a.ts", "foo(1)\n", "foo(2)\n", "foo(3)\n").verdict).toBe("both");
   });
