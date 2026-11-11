@@ -17,7 +17,7 @@ import { arc, bearing, compass, destination, distanceKm, windHeading, type LatLo
 import { Globe } from "./globe.ts";
 import { sampleWind } from "./grib2.ts";
 import { accountChip, achieve, finishSignIn, reportButton, THEME } from "./account.ts";
-import { icon } from "./icons.ts";
+import { about, icon, info } from "./icons.ts";
 import { loadWind, type Wind } from "./wind-load.ts";
 
 const MAX_STROKES = 8;
@@ -183,10 +183,10 @@ function renderPanel() {
   if (phase === "loading") {
     panel.innerHTML = `${strip()}<p class="dim scanning"><i></i>Scanning the planet: fetching NOAA's wind grid.</p>`;
   } else if (phase === "guess") {
-    panel.innerHTML = `${strip()}<h2>${icon("help-circle")} Hole ${hole.n}: where are we?</h2>
-      <p>Your scanner shows coastlines and wind, no names. The tee is the glowing cone. Name the country for a stroke back on this hole.</p>
+    panel.innerHTML = `${strip()}<h2>${icon("map-pin")} Hole ${hole.n}: where are we?${info("about-hole", "How to play")}</h2>
+      ${about("about-hole", "<p>Your scanner shows coastlines and wind, no names. The tee is the glowing cone. Name the country for a stroke back on this hole.</p>")}
       <div class="choices">${hole.guesses.map((g) => `<button type="button" data-guess="${esc(g)}">${esc(g)}</button>`).join("")}</div>
-      <div class="actions"><button type="button" id="skip">Skip the guess</button></div>`;
+      <div class="actions"><button type="button" id="skip" title="Skip the guess">Skip</button></div>`;
     panel.querySelectorAll<HTMLButtonElement>("[data-guess]").forEach((b) => b.addEventListener("click", () => guess(b.dataset.guess!)));
     $("#skip").addEventListener("click", () => beginAim());
   } else if (phase === "aim") {
@@ -196,19 +196,19 @@ function renderPanel() {
       ? `<span class="lvl ${on ? "on" : ""}">${name}</span><span class="${on ? "on" : ""}">${w.speed.toFixed(0)} m/s blowing ${compass(w.to)}</span><span class="arrow ${on ? "on" : ""}" style="transform: rotate(${w.to}deg)">${icon("arrow-up")}</span>`
       : `<span class="lvl">${name}</span><span class="dim">no data</span><span></span>`;
     const here = countryAt(lie);
-    panel.innerHTML = `${strip()}<h2>${icon("disc")} Stroke ${strokes + 1}${strokes === 0 ? ` from ${esc(hole.teeCountry)}` : here ? ` from ${esc(here.name)}` : " from the open sea"}</h2>
+    panel.innerHTML = `${strip()}<h2>${icon("disc")} Stroke ${strokes + 1}${strokes === 0 ? ` from ${esc(hole.teeCountry)}` : here ? ` from ${esc(here.name)}` : " from the open sea"}${info("about-aim", "How to throw")}</h2>
+      ${about("about-aim", `<p>${icon("mouse-pointer-click")} Click the planet to aim there in still air. The dashed line is the throw without wind; the wind will bend it.</p><p>The basket is in from ${BASKET_KM} km.</p><p class="keys"><kbd>←</kbd><kbd>→</kbd> aim, <kbd>↑</kbd><kbd>↓</kbd> power, <kbd>L</kbd> loft,${currents ? " <kbd>C</kbd> currents," : ""} <kbd>Space</kbd> throw.</p>`)}
       <div class="board">${rose}<div>
-        <p>Basket <b>${fmt(distanceKm(lie, hole.basket))} km</b> ${compass(toBasket)} (${Math.round(toBasket)}°), in ${esc(hole.basketCountry)}. In from ${BASKET_KM} km.</p>
+        <p>Basket <b>${fmt(distanceKm(lie, hole.basket))} km</b> ${compass(toBasket)} (${Math.round(toBasket)}°), in ${esc(hole.basketCountry)}.</p>
         <div class="wind">${row("Surface", lo, loft === "low")}${row("Jet 250 mb", hi, loft === "high")}</div></div></div>
       <figure class="forecast"><figcaption>Wind along the throw <span>${loft === "high" ? "jet" : "surface"}, m/s · tee → landing</span></figcaption><div id="strip">${stripHtml()}</div></figure>
       <div class="row"><label>${icon("navigation")} Aim</label><input id="heading" type="range" min="0" max="359" step="1" value="${heading}" /><output id="heading-out">${heading}° ${compass(heading)}</output></div>
       <div class="row"><label>${icon("chevrons-up")} Power</label><input id="power" type="range" min="${MIN_POWER}" max="${MAX_POWER}" step="${POWER_STEP}" value="${power}" /><output id="power-out">${fmt(carryKm(power))} km</output></div>
       <div class="row"><label>${icon("wind")} Loft</label>
         <button type="button" id="loft-low" class="${loft === "low" ? "primary" : ""}" title="Hover low, in the surface wind">Low</button>
-        <button type="button" id="loft-high" class="${loft === "high" ? "primary" : ""}" title="Loft into the jet stream: longer hang, far stronger wind">High: jet stream</button>
+        <button type="button" id="loft-high" class="${loft === "high" ? "primary" : ""}" title="Loft into the jet stream: longer hang, far stronger wind">High</button>
         ${currents ? `<button type="button" id="sea-view" class="icon ${seaView ? "primary" : ""}" title="Show the ocean currents a splash would swim in (C)" aria-pressed="${seaView}">${icon("waves")}</button>` : ""}
       </div>
-      <p class="dim">${icon("mouse-pointer-click")} Click the planet to aim there in still air. The dashed line is the throw without wind; the wind will bend it.<span class="keys"> <kbd>←</kbd><kbd>→</kbd> aim, <kbd>↑</kbd><kbd>↓</kbd> power, <kbd>L</kbd> loft,${currents ? " <kbd>C</kbd> currents," : ""} <kbd>Space</kbd> throw.</span></p>
       <div class="actions"><button type="button" id="throw" class="primary">${icon("disc")} Throw</button></div>`;
     const h = $<HTMLInputElement>("#heading"), p = $<HTMLInputElement>("#power");
     h.addEventListener("input", () => { heading = Number(h.value); aimChanged(false); });
@@ -221,13 +221,13 @@ function renderPanel() {
   } else if (phase === "flying") {
     panel.innerHTML = `${strip()}<h2>${icon("wind")} In flight</h2><p class="dim">${loft === "high" ? "Riding the jet stream." : "Riding the surface wind."} Hang time ${hangTime(power, loft).toFixed(1)} s.</p>`;
   } else if (phase === "swim" && swim) {
-    panel.innerHTML = `${strip()}<h2>${icon("waves")} Overboard: paddle!</h2>
-      <p>The disc is in the sea and the current has it. Paddle against it before the clock runs out, or ride it to a shore.</p>
+    panel.innerHTML = `${strip()}<h2>${icon("waves")} Overboard: paddle!${info("about-swim", "How to swim")}</h2>
+      ${about("about-swim", `<p>The disc is in the sea and the current has it. Paddle against it before the clock runs out, or ride it to a shore.</p>
+        <p>Hold the button<span class="keys">, <kbd>Space</kbd> or <kbd>↑</kbd></span> to paddle; tap the planet<span class="keys"> or <kbd>←</kbd><kbd>→</kbd></span> to steer.</p>`)}
       <div class="board">${windRose([{ vane: { speed: ROSE_SCALE.sea / 2, to: 0 }, scale: ROSE_SCALE.sea, kind: "sea", on: true }], swim.heading, bearing(swim.pos, hole.basket))}<div class="wind"><span class="lvl">Current</span><span id="swim-cur" class="on"></span><span id="swim-arrow" class="arrow on">${icon("arrow-up")}</span>
         <span class="lvl">Basket</span><span id="swim-km"></span><span></span>
         <span class="lvl">${icon("timer")}</span><span><span id="swim-clock" class="swim-clock"></span><span class="tip" title="The swim lasts ${SWIM_S} s. A 1 m/s current carries the disc ${fmt(SEA_DRIFT)} km a second; paddling makes ${fmt(PADDLE_KMS)}.">${icon("info")}</span></span><span></span></div></div>
       <div class="row"><label>${icon("navigation")} Paddle</label><input id="heading" type="range" min="0" max="359" step="1" value="${swim.heading}" /><output id="heading-out">${swim.heading}° ${compass(swim.heading)}</output></div>
-      <p class="dim">Hold the button<span class="keys">, <kbd>Space</kbd> or <kbd>↑</kbd></span> to paddle; tap the planet<span class="keys"> or <kbd>←</kbd><kbd>→</kbd></span> to steer.</p>
       <div class="actions"><button type="button" id="paddle" class="primary">${icon("waves")} Hold to paddle</button></div>`;
     const h = $<HTMLInputElement>("#heading"), b = $("#paddle");
     h.addEventListener("input", () => steer(Number(h.value)));

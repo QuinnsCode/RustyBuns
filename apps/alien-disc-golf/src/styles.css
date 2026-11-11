@@ -266,3 +266,11 @@ body:has(.eq-toast) .toast { top: 150px; }
 .swim-clock + .tip { color: var(--dim); cursor: help; margin-left: 8px; }
 #paddle { touch-action: none; user-select: none; }
 #paddle.on { outline: 2px solid var(--teal); }
+
+/* A screen's how-to, out of the way (#4235): a small "?" by the panel's heading opens it as a native popover; a click outside or Escape shuts it. */
+button.info { width: 26px; height: 26px; padding: 0; margin-left: auto; border-radius: 50%; background: none; color: var(--dim); cursor: help; flex: none; }
+button.info:hover, button.info:focus-visible { color: var(--ink); }
+button.info svg { width: 16px; height: 16px; }
+.about[popover] { max-width: min(30rem, calc(100vw - 32px)); max-height: calc(100vh - 32px); overflow: auto; padding: 16px 20px; border: 1px solid var(--line); border-radius: 10px; background: #08121f; color: var(--ink); font-size: 14px; line-height: 1.45; text-align: left; }
+.about[popover]::backdrop { background: rgba(0, 0, 0, 0.4); }
+.about p { margin: 0 0 10px; } .about p:last-child { margin-bottom: 0; }
