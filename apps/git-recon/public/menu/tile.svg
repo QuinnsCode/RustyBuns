@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="48" height="48">
+  <!-- A pressed clay tile's skin: fine pits and a few thumb-smoothed streaks, tiled under a chip. -->
+  <g fill="#141414" fill-opacity=".09">
+    <circle cx="5" cy="7" r=".9"/><circle cx="19" cy="3" r=".6"/><circle cx="33" cy="9" r="1"/><circle cx="44" cy="4" r=".6"/>
+    <circle cx="11" cy="21" r=".7"/><circle cx="27" cy="18" r=".9"/><circle cx="40" cy="24" r=".7"/><circle cx="3" cy="33" r=".6"/>
+    <circle cx="17" cy="37" r="1"/><circle cx="31" cy="31" r=".6"/><circle cx="45" cy="39" r=".9"/><circle cx="9" cy="45" r=".7"/>
+    <circle cx="25" cy="44" r=".6"/><circle cx="37" cy="46" r=".8"/>
+  </g>
+  <g fill="none" stroke="#141414" stroke-opacity=".05" stroke-width="1.2" stroke-linecap="round">
+    <path d="M4 14q10-3 18 1M26 39q9 2 17-3M30 4q6 3 12 1"/>
+  </g>
+</svg>

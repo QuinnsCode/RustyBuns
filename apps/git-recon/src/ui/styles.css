@@ -255,7 +255,7 @@ html.touch .bl { bottom: 156px; }
    tab, clips the soldier on as a photo against a height chart, blacks out a line of the orders, leaves a coffee ring,
    and the scope locks onto the mission you point at. Art in public/menu/: reticle.svg 0.9 KB,
    grit.svg 0.4 KB, insignia.svg 0.7 KB, stamp.svg 0.4 KB, map.svg 1.2 KB, clip.svg 0.5 KB, coffee.svg 0.6 KB,
-   soldier-won/lost.webp 8.2 KB (baked by scripts/menu-art.ts). Scoped to .menu, .results, the Controls panel and the eqosys surfaces (src/eqosys.ts SKIN), so
+   lock.svg 0.4 KB, tile.svg 0.8 KB, soldier-won/lost.webp 8.2 KB (baked by scripts/menu-art.ts). Scoped to .menu, .results, the Controls panel and the eqosys surfaces (src/eqosys.ts SKIN), so
    the HUD keeps codeSplitter's paper. */
 .menu, .results, .credits, .newsreel, html .ui-house, .eq {
   --br-ink: #141414; --br-dim: #4f4d48; --br-rule: #cfccc4; --br-hot: #e8590c; --br-hot-ink: #b8460a; --br-sheet: #fbfaf7;
@@ -388,6 +388,18 @@ html.touch .bl { bottom: 156px; }
   font: 800 11px/1 var(--br-stencil); letter-spacing: 0.1em; color: #fff;
   background: url(/menu/mark-key.svg) 8px 50% / 12px no-repeat, var(--br-ink); }
 .menu .more .keys dt { font-weight: 700; }
+/* Round 8 (#4160): the picks are pressed clay tiles stamped with their word, and the scope locks onto the picked one:
+   orange corner brackets round the build, role, mode and head you've chosen (lock.svg 0.4 KB, tile.svg 0.8 KB). */
+.menu .chips button, .results .chips button {
+  position: relative; border-radius: 5px; padding: 6px 12px 5px;
+  font: 800 12px/1.1 var(--br-stencil); text-transform: uppercase; letter-spacing: 0.09em;
+  background: url(/menu/tile.svg) 0 0 / 48px, linear-gradient(#fff, #f1eee6); box-shadow: inset 0 1px 0 #fff, inset 0 -2px 0 #14141418, 0 3px 0 var(--br-ink); }
+.menu .chips button:hover, .results .chips button:hover { background: url(/menu/tile.svg) 0 0 / 48px, linear-gradient(#fff, #f6f4ee); }
+.menu .chips button[aria-checked="true"], .results .chips button[aria-checked="true"] { color: #fff; background: var(--br-ink); box-shadow: inset 0 2px 3px #000, 0 1px 0 var(--br-ink); transform: translateY(2px); }
+.menu .chips button[aria-checked="true"]::after, .results .chips button[aria-checked="true"]::after, .menu .heads button[aria-checked="true"]::after {
+  content: ""; position: absolute; inset: -6px -6px -4px; pointer-events: none; background: url(/menu/lock.svg) 0 0 / 100% 100% no-repeat; }
+.menu .heads button { position: relative; background: url(/menu/tile.svg) 0 0 / 48px, #fff; }
+.menu .heads button[aria-checked="true"] { outline: 0; box-shadow: 0 1px 0 var(--br-ink); transform: translateY(2px); }
 
 /* Missions are dog tags: brushed steel with rolled edges, the name stamped in, a hole punched for the chain. */
 .menu .level {
@@ -495,6 +507,13 @@ html .ui-house .gc-sec { border: 1.5px solid #141414; border-radius: 0; box-shad
 html .ui-house .gc-sec-h { min-height: 40px; color: #fff; background: #141414; font: 800 14px/1 var(--br-stencil); text-transform: uppercase; letter-spacing: 0.1em; }
 html .ui-house .gc-sec-h:hover { background: #2b2b2b; }
 html .ui-house .gc-sec-b { padding: 12px 12px 12px; }
+/* The profile tabs are the manual's index tabs: cut square at the foot, a clay face, the picked one inked with the
+   orange edge on top and the scope locked on it. */
+html .ui-house .gc-tab { position: relative; border-radius: 8px 8px 2px 2px; background: url(/menu/tile.svg) 0 0 / 48px, linear-gradient(#fff, #f1eee6);
+  font-family: var(--br-stencil); font-weight: 800; letter-spacing: 0.06em; }
+html .ui-house :is(.gc-tab[aria-selected="true"], .gc-tab[aria-pressed="true"]) { background: #141414; border-top: 4px solid #e8590c; box-shadow: 0 1px 0 #141414; transform: translateY(2px); }
+html .ui-house :is(.gc-tab[aria-selected="true"], .gc-tab[aria-pressed="true"])::after { content: ""; position: absolute; inset: -9px -6px -5px; pointer-events: none;
+  background: url(/menu/lock.svg) 0 0 / 100% 100% no-repeat; }
 
 @media (max-width: 560px) {
   /* Room under the Controls cog; the briefing scrolls under a band of the table that fades it out beneath the cog. */
@@ -508,6 +527,9 @@ html .ui-house .gc-sec-b { padding: 12px 12px 12px; }
   .menu .more[open]::after { display: none; }
   .menu .more :is(.place, .battle) { grid-template-columns: minmax(0, 1fr); padding: 22px 10px 10px; }
   .menu .more .repo-form { padding: 22px 10px 10px; }
+  /* The sheet ends clear of the card's bottom brackets; the LAN address gets its own line so its blank isn't cut off. */
+  .menu .more[open] { margin-bottom: 22px; }
+  .menu .more .battle #battle-addr { flex-basis: 100%; }
   .menu .more :is(.repo-form, .place, .battle) label { letter-spacing: 0.06em; }
   .menu .more :is(.place, .battle) .row > * { min-width: 0; }
   .menu .card::before, .results .card::before { font-size: 9px; letter-spacing: 0.14em; }
