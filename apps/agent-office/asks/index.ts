@@ -2,7 +2,8 @@
 // (live/floorguard.ts) until a person answers it here, on the 3D office or /lite. Each one shows as a card with
 // what the agent asked and Allow / Deny, and a clock running down to when it's turned down by itself.
 // Nothing upstream is patched: the cards poll /__rb/asks, and an answer POSTs to /__rb/asks/<id>.
-import type { Ask } from "../live/floorguard.ts";
+import { Asks, type Ask } from "../live/replies.ts";
+import { readJson } from "@rustybuns/util/http";
 import { hot } from "../reload/hot.ts";
 import { el } from "@rustybuns/util/dom";
 
@@ -77,7 +78,8 @@ async function poll() {
     const res = await fetch("/__rb/asks");
     // signed out (sent to /login), or an office without the route: nothing to ask, and no point asking again
     if (res.redirected || res.status === 401 || res.status === 404) return;
-    if (res.ok) show(((await res.json()) as { asks: Ask[] }).asks);
+    const got = await readJson(res, Asks);
+    if (got) show(got.asks);
   } catch {}
   if (!stopped) timer = setTimeout(poll, POLL_MS);
 }
