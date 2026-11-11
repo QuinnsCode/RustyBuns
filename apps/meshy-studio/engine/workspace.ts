@@ -626,7 +626,7 @@ export class Workspace {
   estimateOp(keys: string[], kind: OpKind, params: OpParams[OpKind]) {
     const js = keys.map((k) => this.get(k)).filter((j) => !this.opProblem(j, kind, params));
     const merged = (j: Job) => kind === "retexture" ? { ...params, options: { ...this.preset(j).retexture, ...(params as OpParams["retexture"]).options } } : params;
-    return { count: js.length, credits: js.reduce((n, j) => n + estimateOp(kind, merged(j) as never), 0) };
+    return { count: js.length, credits: js.reduce((n, j) => n + estimateOp(kind, merged(j)), 0) };
   }
 
   /** Retry from the last good step: a failed step, a failed scale (free), or the whole send. */
@@ -908,7 +908,7 @@ export class Workspace {
           body = { rig_task_id: j.rigTaskId, ...(p.fromMotion ? { motion_task_id: prev!.taskId } : {}), ...opBody("animate", p) };
           break;
         }
-        default: body = { ...(await this.modelInput(j, op.kind)), ...opBody(op.kind, op.params as never) };
+        default: body = { ...(await this.modelInput(j, op.kind)), ...opBody<OpKind>(op.kind, op.params) };
       }
       const taskId = await meshy.create(body, OP_KIND[op.kind]);
       Object.assign(op, { state: "running", taskId, meshyStatus: "PENDING", progress: 0 });

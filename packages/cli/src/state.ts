@@ -178,7 +178,7 @@ export function unexportedClasses(projectDir: string, cfg: Pick<RustyBunsConfig,
   return out;
 }
 
-const isRecord = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v);
+export const isRecord = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v);
 
 /**
  * Make each app in `apps` (beside `projectDir`, in `apps/<app>`) readable from this app's state, so a
