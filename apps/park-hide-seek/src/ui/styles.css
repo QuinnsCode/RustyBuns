@@ -312,4 +312,28 @@ body:has(#lobby:not([hidden])) .narrator p { display: none; }
 .lobby-main::after { content: ""; position: sticky; bottom: -16px; display: block; height: 34px; margin: -34px -16px -16px;
   background: linear-gradient(transparent, var(--paper) 85%); pointer-events: none; }
 @media (max-width: 820px) { .lobby-main::after { content: none; } }
-@media (min-width: 700px) { .gc-dialog.ui-house .gc-binds { grid-template-columns: max-content minmax(0, 1fr) auto; } }
+@media (min-width: 700px) { .gc-dialog.ui-house .gc-binds { grid-template-columns: max-content minmax(max-content, 1fr) auto; } }
+
+/* Round 5 (#4220). The Controls card is an equipment-issue form: a typed form number fills the band beside the fold
+   buttons, each action is a typed line with a dotted leader to its key plank, and on a phone the names keep to one line. */
+.gc-dialog.ui-house .gc-fold { align-items: center; padding-bottom: 6px; border-bottom: 1px dashed var(--line); }
+.gc-dialog.ui-house .gc-fold::before { content: "Form PH-10 \00B7  Equipment issue"; margin-right: auto; font: 700 11px/1.2 ui-monospace, "Courier New", monospace;
+  letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }
+.gc-dialog.ui-house .gc-binds > span { display: flex; align-items: baseline; gap: 6px; min-width: 0; font: 700 14px/1.2 var(--plate); color: var(--ink); }
+.gc-dialog.ui-house .gc-binds > span::after { content: ""; flex: 1; min-width: 8px; border-bottom: 2px dotted var(--line); }
+.gc-dialog.ui-house .gc-binds { gap: 8px 6px; }
+@media (max-width: 520px) {
+  .gc-dialog.ui-house .gc-binds { grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr) auto; }
+  .gc-dialog.ui-house .gc-binds > span { font-size: 13px; white-space: nowrap; }
+  .gc-dialog.ui-house .gc-binds > span::after { display: none; }
+  .gc-dialog.ui-house .gc-key { padding-inline: 12px; font-size: 13px; }
+}
+/* After dark the room behind the card goes dark, so the front card doesn't show through at its edges. */
+[data-tod="night"] .gc-dialog.ui-house { background: rgba(4, 6, 12, 0.82); }
+
+/* The torch beam sweeps the front poster's title after dark, not only the Play board. */
+.poster-head { overflow: hidden; }
+[data-tod="night"] .poster-head::after { content: ""; position: absolute; inset: 0; pointer-events: none; mix-blend-mode: screen;
+  background: radial-gradient(ellipse 34% 70% at var(--beam, 20%) 26%, rgba(255, 242, 176, 0.42), rgba(255, 242, 176, 0.1) 55%, transparent 75%);
+  animation: beam 6s ease-in-out infinite alternate; }
+@media (prefers-reduced-motion: reduce) { [data-tod="night"] .poster-head::after { animation: none; } }

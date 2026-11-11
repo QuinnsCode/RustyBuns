@@ -53,17 +53,18 @@ export function posterSvg(tod: Tod, o: { h?: number; seed?: number; strip?: bool
     ? `<circle cx="${discX}" cy="${discY}" r="${discR}" fill="${P.disc}"/><circle cx="${discX + discR * 0.62}" cy="${discY - discR * 0.28}" r="${discR * 0.8}" fill="${P.sky[1]}"/>`
     : `<circle cx="${discX}" cy="${discY}" r="${discR * 1.5}" fill="${mix(P.disc, P.haze, 0.6)}"/><circle cx="${discX}" cy="${discY}" r="${discR}" fill="${P.disc}"/>`;
   const stars = tod === "night" ? Array.from({ length: 26 }, () => `<circle cx="${(rnd() * W).toFixed(0)}" cy="${(rnd() * h * 0.42).toFixed(0)}" r="${(0.5 + rnd() * 0.9).toFixed(1)}"/>`).join("") : "";
-  // Five ridges, far to near: each one darker and lower, the far ones melting into the haze.
+  // Ridges far to near: each one darker and lower, the far ones melting into the haze. A strip prints five; the
+  // full poster (round 5, #4220) prints seven, closer together, with valley mist at the foot of every far one.
   const ridges: string[] = [];
+  const n = o.strip ? 5 : 7;
   let near = ridge(rnd, h, 0, h);
-  for (let i = 0; i < 5; i++) {
-    const t = i / 4;
-    near = ridge(rnd, h * (0.54 + 0.1 * i), h * (0.2 - 0.022 * i), h);
+  for (let i = 0; i < n; i++) {
+    const t = i / (n - 1);
+    near = ridge(rnd, h * (0.54 + 0.4 * t), h * (0.2 - 0.088 * t), h);
     // The near ridge's second ink, printed a hair off register: a bright sliver along its skyline.
-    if (i === 4) ridges.push(`<path d="${near.d}" fill="${P.reg}" transform="translate(2.5 -2)"/>`);
-    ridges.push(`<path d="${near.d}" fill="${mix(mix(P.far, P.near, t), P.haze, 0.55 * (1 - t) ** 2)}"/>`);
-    // Round 4: a band of valley mist at the foot of each far ridge, so they melt into the haze instead of stacking.
-    if (i < 3 && !o.strip) ridges.push(`<rect y="${(h * (0.5 + 0.1 * i)).toFixed(1)}" width="${W}" height="${(h * 0.09).toFixed(1)}" fill="url(#mist)" opacity="${(0.7 - 0.15 * i).toFixed(2)}"/>`);
+    if (i === n - 1) ridges.push(`<path d="${near.d}" fill="${P.reg}" transform="translate(2.5 -2)"/>`);
+    ridges.push(`<path d="${near.d}" fill="${mix(mix(P.far, P.near, t), P.haze, 0.6 * (1 - t) ** 2)}"/>`);
+    if (i < n - 2 && !o.strip) ridges.push(`<rect y="${(h * (0.5 + 0.4 * t)).toFixed(1)}" width="${W}" height="${(h * 0.08).toFixed(1)}" fill="url(#mist)" opacity="${(0.75 - 0.5 * t).toFixed(2)}"/>`);
   }
   const trees = Array.from({ length: 14 }, (_, i) => {
     const x = 14 + i * 37 + rnd() * 18;
