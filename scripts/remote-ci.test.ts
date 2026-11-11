@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { chmodSync, mkdtempSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { menu, readRuns } from "./builder-bar.ts";
-import { battery, main, parseJobs, plan, pool, snapshot, type Valve } from "./remote-ci.ts";
+import { battery, ciJobs, main, parseJobs, passedFile, passes, plan, pool, recordPass, snapshot, TYPECHECK, type Valve } from "./remote-ci.ts";
 
 const AC = "Now drawing from 'AC Power'\n -InternalBattery-0 (id=1)\t100%; charged; 0:00 remaining present: true";
 const DRAIN = (pct: number) => `Now drawing from 'Battery Power'\n -InternalBattery-0 (id=1)\t${pct}%; discharging; 3:10 remaining present: true`;
@@ -26,6 +26,35 @@ test("reads the touched suites and skips apps with no test command", () => {
   const out = `apps=${JSON.stringify({ include: [{ app: "a", test: "bun test", prep: "" }, { app: "b", test: "", prep: "" }] })}\nany=true\n`;
   expect(parseJobs(out).map((j) => j.app)).toEqual(["a"]);
   expect(() => parseJobs("any=false")).toThrow();
+});
+
+// `all` is what both required checks run, so a branch can be proven ready while GitHub is down.
+test("all adds typecheck.yml, the touched root suites and each app's boot check", () => {
+  const apps = { include: [{ app: "a", test: "bun test", prep: "", boot: true }, { app: "b", test: "", prep: "cargo x", boot: true }, { app: "c", test: "bun test", prep: "", boot: false }] };
+  const out = `apps=${JSON.stringify(apps)}\nany=true\npackages=true\nhooks=false\nscripts=true\n`;
+  expect(ciJobs(out).map((j) => [j.label, j.cmd])).toEqual([["a", "bun test"], ["c", "bun test"]]);
+  expect(ciJobs(out, true).map((j) => [j.label, j.cmd])).toEqual([
+    ["typecheck", TYPECHECK], ["packages", "bun test packages"], ["scripts", "bun test ./scripts"],
+    ["a", "bun test && bun ../../scripts/boot.ts"], ["b", "cargo x && bun ../../scripts/boot.ts"], ["c", "bun test"],
+  ]);
+});
+
+test("a pass is written down per commit, and reads as moved once the branch has a newer commit", async () => {
+  const dir = mkdtempSync(`${tmpdir()}/passed-`);
+  process.env.BUILDER_PASSED = `${dir}/passed.jsonl`;
+  try {
+    const git = (...a: string[]) => Bun.$`git ${a}`.cwd(dir).quiet();
+    await git("init", "-q", "-b", "office/x");
+    await git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "one");
+    const sha = (await git("rev-parse", "HEAD")).text().trim();
+    await recordPass({ sha, branch: "office/x", base: "origin/main", at: 1, jobs: ["typecheck"] });
+    await Bun.write(passedFile(), (await Bun.file(passedFile()).text()) + "not json\n");
+    expect((await passes(dir)).map((p) => p.now === p.sha)).toEqual([true]);
+    await git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "two");
+    expect((await passes(dir)).map((p) => [p.branch, p.now === p.sha])).toEqual([["office/x", false]]);
+  } finally {
+    delete process.env.BUILDER_PASSED;
+  }
 });
 
 test("the pool never runs more than the cap and returns the worst code", async () => {

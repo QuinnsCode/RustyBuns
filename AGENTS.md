@@ -20,6 +20,8 @@ all apps plus `bun test packages` when `packages/` or the lockfile moved). Comma
 - Run only the test files you changed: `cd apps/<app> && bun test test/foo.test.ts`. Typecheck just that app if you like.
 - The 64 GB builder Mac runs them faster and off this machine: `bun run builder run apps/<app> bun test test/foo.test.ts`
   sends your working tree as it is (no commit or push needed); `bun run builder origin/main` runs every suite you touched.
+  When GitHub Actions is down, `bun run builder all` runs everything the `typecheck` and `apps` checks run (container
+  images aside) on your committed branch and writes down a pass; `bun run builder passed` lists what is ready to merge.
   The valve (`bun run builder off|on`, bare `bun run builder` says which) is shut by default once `BUILDER_HOST` is set:
   tests and `build:native` go to Bob and wait while he is off (one suite at a time on battery, wait under 20%). Shut, the
   guard hook turns away `bun test`, `bun run build`, `vite build` and `cargo build` here with the `builder run` line to use,

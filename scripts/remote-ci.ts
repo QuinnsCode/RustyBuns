@@ -4,6 +4,9 @@
 //
 //   bun run builder <base-ref>                 the suites the branch touched (what apps.yml would run)
 //   bun run builder run <dir> <cmd...>         one command in <dir>, e.g. run apps/skate-tech-park bun test test/ramp.test.ts
+//   bun run builder all [base-ref]             everything GitHub's typecheck and apps checks run (base default origin/main),
+//                                              with no GitHub; a pass of a committed HEAD is written down as ready to merge
+//   bun run builder passed                     what Bob passed, newest first, and whether each branch moved since
 //   bun run builder nightly                    the last nightly desktop build on the builder (builder-nightly.sh) and its failures
 //   bun run builder off | on                   shut or open this Mac's valve; bare `bun run builder` says which, and if Bob answers
 //
@@ -19,11 +22,12 @@
 // Each run leaves a record on the builder (runs/<slot>.json and .log, then runs/done) for its menu bar: scripts/builder-bar.ts.
 import { homedir, tmpdir } from "node:os";
 import { basename, relative, resolve } from "node:path";
+import { arr, check, num, obj, type Of, str } from "../packages/util/src/guard.ts";
 import { report } from "./builder-nightly.ts";
 
-export type Job = { app: string; test: string; prep: string };
+export type Job = { app: string; test: string; prep: string; boot: boolean };
 
-// The `apps=` line of `ci-apps.ts test`: only apps with a test command run here.
+// The `apps=` line of `ci-apps.ts test`: the apps with a test command or a boot check.
 export function parseJobs(out: string): Job[] {
   const line = out.split("\n").find((l) => l.startsWith("apps="));
   if (!line) throw new Error("no apps= line in ci-apps output");
@@ -32,8 +36,9 @@ export function parseJobs(out: string): Job[] {
   const jobs: Job[] = [];
   for (const j of include) {
     if (typeof j !== "object" || j === null) continue;
-    const { app, test, prep } = j as Record<string, unknown>;
-    if (typeof app === "string" && typeof test === "string" && test && typeof prep === "string") jobs.push({ app, test, prep });
+    const { app, test, prep, boot } = j as Record<string, unknown>;
+    if (typeof app !== "string" || typeof test !== "string" || typeof prep !== "string") continue;
+    if (test || boot === true) jobs.push({ app, test, prep, boot: boot === true });
   }
   return jobs;
 }
@@ -172,10 +177,79 @@ export async function reachable(b: Builder): Promise<boolean> {
   try { return (await p.exited) === 0; } finally { clearTimeout(timer); }
 }
 
-// The suites the branch touched, as apps.yml would run them.
-const touched = async (base: string, cwd: string) =>
-  parseJobs(await Bun.$`bun scripts/ci-apps.ts test ${base}`.cwd(cwd).text())
-    .map((j) => ({ label: j.app, dir: `apps/${j.app}`, cmd: j.prep ? `${j.prep} && ${j.test}` : j.test }));
+// typecheck.yml's steps, one after another, as one job: keep it in step with the workflow.
+export const TYPECHECK = [
+  "bun run typecheck", "bun scripts/conflict-markers.ts", "bun scripts/boundary-audit.ts", "bun scripts/migration-numbers.ts",
+  "bun test ./scripts/conflict-markers.test.ts ./scripts/boundary-audit.test.ts ./scripts/ci-test-count.test.ts ./scripts/trial-github-cache.test.ts ./scripts/trial-flags.test.ts ./scripts/migration-numbers.test.ts",
+  "bun run docs --check", "bun run site --check", "bun scripts/ci-guard.ts",
+].join(" && ");
+
+type RemoteJob = { label: string; dir: string; cmd: string };
+
+/**
+ * The jobs for `ci-apps.ts test`'s output: each touched app's suite, as apps.yml runs it. With `all`, everything both
+ * required checks run: typecheck.yml as one job, apps.yml's packages, hooks and scripts suites when the branch touched
+ * them, and each app's boot check. Not run: apps.yml's container images (Docker for linux/amd64); GitHub still builds those.
+ */
+export function ciJobs(out: string, all = false): RemoteJob[] {
+  const apps = parseJobs(out).flatMap((j) => {
+    const steps = [j.test, all && j.boot ? "bun ../../scripts/boot.ts" : ""].filter(Boolean);
+    return steps.length ? [{ label: j.app, dir: `apps/${j.app}`, cmd: [j.prep, ...steps].filter(Boolean).join(" && ") }] : [];
+  });
+  if (!all) return apps;
+  const flag = (k: string) => out.split("\n").includes(`${k}=true`);
+  return [
+    { label: "typecheck", dir: ".", cmd: TYPECHECK },
+    ...(flag("packages") ? [{ label: "packages", dir: ".", cmd: "bun test packages" }] : []),
+    ...(flag("hooks") ? [{ label: "hooks", dir: ".", cmd: "bun test ./.claude/hooks" }] : []),
+    ...(flag("scripts") ? [{ label: "scripts", dir: ".", cmd: "bun test ./scripts" }] : []),
+    ...apps,
+  ];
+}
+
+// The suites the branch touched, as apps.yml would run them (`all`: everything both checks run).
+const touched = async (base: string, cwd: string, all = false) => ciJobs(await Bun.$`bun scripts/ci-apps.ts test ${base}`.cwd(cwd).text(), all);
+
+// What `all` passed, one JSON line per commit, on this Mac beside the valve: the list to merge from when GitHub is back.
+export const Pass = obj({ sha: str(64, { re: /^[0-9a-f]{40,64}$/ }), branch: str(200), base: str(200), at: num(0, 1e15), jobs: arr(str(200), 500) });
+export type Pass = Of<typeof Pass>;
+export const passedFile = () => process.env.BUILDER_PASSED ?? `${homedir()}/.rustybuns/passed.jsonl`;
+export async function recordPass(p: Pass) {
+  const file = Bun.file(passedFile());
+  await Bun.write(file, ((await file.exists()) ? await file.text() : "") + JSON.stringify(p) + "\n");
+}
+export async function readPasses(): Promise<Pass[]> {
+  const file = Bun.file(passedFile());
+  if (!(await file.exists())) return [];
+  return (await file.text()).split("\n").flatMap((line) => {
+    try { const p = check(Pass, JSON.parse(line)); return p ? [p] : []; } catch { return []; }
+  });
+}
+
+/** The newest pass per branch, newest first, each with what the branch's head is now ("" when the branch is gone). */
+export async function passes(cwd: string): Promise<(Pass & { now: string })[]> {
+  const latest = new Map<string, Pass>();
+  for (const p of await readPasses()) latest.set(p.branch, p);
+  const head = async (b: string) => {
+    for (const ref of [b, `origin/${b}`]) {
+      const r = await Bun.$`git rev-parse --verify --quiet ${ref}^{commit}`.cwd(cwd).quiet().nothrow();
+      if (r.exitCode === 0) return r.text().trim();
+    }
+    return "";
+  };
+  const sorted = [...latest.values()].sort((a, b) => b.at - a.at);
+  return Promise.all(sorted.map(async (p) => ({ ...p, now: await head(p.branch) })));
+}
+
+async function passed(cwd: string): Promise<number> {
+  const list = await passes(cwd);
+  if (!list.length) console.log(`nothing passed yet (${passedFile()})`);
+  for (const p of list) {
+    const state = !p.now ? "branch gone" : p.now === p.sha ? "ready" : "moved since: run it again";
+    console.log(`${p.sha.slice(0, 8)} ${p.branch}: ${state} (${new Date(p.at).toLocaleString()}; ${p.jobs.join(", ")})`);
+  }
+  return 0;
+}
 
 // No builder: one command runs here; every touched suite is GitHub CI's job, so say which and move on.
 async function fallback(argv: string[], cwd: string, why: string): Promise<number> {
@@ -203,9 +277,12 @@ async function setValve(arg: string | undefined): Promise<number> {
 
 export async function main(argv: string[], cwd: string): Promise<number> {
   const host = process.env.BUILDER_HOST;
-  const usage = "usage: bun run builder [on|off]  |  bun run builder <base-ref>  |  bun run builder run <dir> <cmd...>  |  bun run builder nightly";
+  const usage = "usage: bun run builder [on|off]  |  bun run builder <base-ref>  |  bun run builder all [base-ref]  |  bun run builder passed  |  bun run builder run <dir> <cmd...>  |  bun run builder nightly";
   if (!argv.length || argv[0] === "on" || argv[0] === "off") return setValve(argv[0]);
   if (argv[0] === "nightly") return nightly(host);
+  if (argv[0] === "passed") return passed(cwd);
+  const all = argv[0] === "all";
+  if (all) argv = [argv[1] ?? "origin/main"];
   if (argv[0] === "run" && argv.length < 3) { console.error(usage); return 2; }
   const v = await valve();
   if (!host) {
@@ -217,7 +294,7 @@ export async function main(argv: string[], cwd: string): Promise<number> {
   if (argv[0] === "run") {
     jobs = [{ label: argv[1]!, dir: argv[1]!, cmd: argv.slice(2).map(q).join(" ") }];
   } else {
-    jobs = await touched(argv[0]!, cwd);
+    jobs = await touched(argv[0]!, cwd, all);
     if (!jobs.length) { console.log("no suites touched"); return 0; }
   }
 
@@ -245,12 +322,24 @@ export async function main(argv: string[], cwd: string): Promise<number> {
   process.once("SIGTERM", giveBack);
   let code = 1;
   try {
-    const setup = await load(b, slot, await snapshot(cwd), cwd);
+    const sent = await snapshot(cwd);
+    const setup = await load(b, slot, sent, cwd);
     if (setup) return (code = setup);
     console.log(`running ${jobs.map((j) => j.label).join(", ")} on ${host} (${slot}), ${cap} at a time`);
     const t0 = performance.now();
     const worst = await pool(jobs, cap, async (j) => (await stream(remote(b, LOG(slot) + teed(`cd ${q(`${slot}/${j.dir}`)} && ${j.cmd}`)), j.label)).code);
     console.log(`${worst ? "failed" : "passed"} in ${((performance.now() - t0) / 1000).toFixed(1)}s on ${host}`);
+    if (all && !worst) {
+      // Only a committed HEAD is written down: uncommitted changes aren't what the PR would merge.
+      const head = (await Bun.$`git rev-parse HEAD`.cwd(cwd).quiet().text()).trim();
+      if (sent !== head) console.log("not written down as ready: the working tree has uncommitted changes");
+      else {
+        const named = branch && branch !== "HEAD" ? branch
+          : (await Bun.$`git branch -a --points-at HEAD ${"--format=%(refname:short)"}`.cwd(cwd).quiet().nothrow().text()).split("\n").find((r) => r && !r.startsWith("(")) ?? who;
+        await recordPass({ sha: head, branch: named.replace(/^origin\//, ""), base: argv[0]!, at: Date.now(), jobs: jobs.map((j) => j.label) });
+        console.log(`${head.slice(0, 8)} ${named} written down as ready: bun run builder passed`);
+      }
+    }
     return (code = worst);
   } finally {
     process.off("SIGINT", giveBack);
