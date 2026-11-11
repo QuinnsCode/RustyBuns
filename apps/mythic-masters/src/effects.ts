@@ -46,8 +46,11 @@ export const FIELD_LOOK: Record<Field, string> = {
   frost: `
     S += vec3( 0.6, 0.85, 1.0 ) * pow( rim, 2.0 ) * 0.8;
     E += vec3( 0.3, 0.4, 0.55 ) * pow( rim, 3.0 );
-    vec3 id = floor( p * 14.0 ); float h = fxHash( id );
-    E += vec3( 0.9, 0.97, 1.0 ) * step( 0.985, h ) * ( 0.5 + 0.5 * sin( t * 4.0 + h * 60.0 ) ) * 1.6;
+    // a glint is a soft point in its cell: lighting the whole cell drew the flat slice where the cube cuts the hide,
+    // a pale hard-edged triangle in a close-up (#4197); only a cell whose point sits near the surface shows, so more glint
+    vec3 q = p * 14.0; vec3 id = floor( q ); float h = fxHash( id );
+    vec3 at = fract( q ) - 0.5 - 0.3 * ( vec3( fxHash( id + 7.1 ), fxHash( id + 13.7 ), fxHash( id + 29.3 ) ) - 0.5 );
+    E += vec3( 0.9, 0.97, 1.0 ) * step( 0.95, h ) * ( 1.0 - smoothstep( 0.05, 0.25, length( at ) ) ) * ( 0.5 + 0.5 * sin( t * 4.0 + h * 60.0 ) ) * 1.6;
     D *= mix( vec3( 1.0 ), vec3( 0.85, 0.97, 1.15 ), 0.8 );`,
   storm: `
     float flick = step( 0.45, fxHash( vec3( floor( t * 9.0 ), 1.0, 2.0 ) ) );
