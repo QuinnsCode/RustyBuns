@@ -4,6 +4,7 @@
 //   GET /api/lan     { addresses: ["192.168.1.20", ...], port }
 import type { HostContext } from "@rustybuns/shell-bun";
 import { networkInterfaces } from "node:os";
+import type { LanReply } from "../net/wire.ts";
 
 export default {
   async fetch(req: Request, ctx: HostContext): Promise<Response | null> {
@@ -12,6 +13,6 @@ export default {
     for (const list of Object.values(networkInterfaces())) {
       for (const a of list ?? []) if (a.family === "IPv4" && !a.internal) addresses.push(a.address);
     }
-    return Response.json({ addresses, port: ctx.shell.port });
+    return Response.json({ addresses, port: ctx.shell.port } satisfies LanReply);
   },
 };

@@ -13,7 +13,7 @@ import type { GameEvent, Input, Mode, Objective, Pickup, PickupKind, Soldier, Te
 import type { ZoneData } from "@rustybuns/terrain";
 import type { VehicleKind } from "../sim/vehicles.ts";
 import { ORDER, type WeaponId } from "../sim/weapons.ts";
-import { bool, check, int, maybe, num, obj, oneOf, raw } from "@rustybuns/util/guard";
+import { arr, bool, check, int, maybe, num, obj, oneOf, raw, str, type Of } from "@rustybuns/util/guard";
 
 /** Snapshots a second, and players a room holds. */
 export const SNAP_HZ = 20, MAX_PLAYERS = 64;
@@ -411,3 +411,7 @@ export function decodeFromWorld(v: unknown): FromWorld | null {
   if (!w || typeof w.setup !== "object" || !Array.isArray(w.roster) || !Array.isArray(w.files) || typeof w.snap !== "object" || !w.snap) return null;
   return { t: "welcome", me: w.me, setup: w.setup as Setup, roster: w.roster, files: w.files, snap: w.snap as Snap };
 }
+
+/** GET /api/lan on the desktop host (src/host/host.ts): where friends on the same network join a battle this machine hosts. */
+export const LanReply = obj({ addresses: arr(str(64), 64), port: int(1, 65535) });
+export type LanReply = Of<typeof LanReply>;

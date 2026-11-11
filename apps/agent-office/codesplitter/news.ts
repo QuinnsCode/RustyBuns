@@ -2,14 +2,24 @@
 // Each board has a codeSplitter twin: 📌 issues ↔ a check failing on main, 📋 queue ↔ the repo's coding-agent runs,
 // 🔀 PRs ↔ its branches. A board's latest has a stamp; the dot shows while the stamp isn't the one you last saw.
 
+import { arr, nul, num, obj, opt, str, type Of } from "@rustybuns/util/guard";
+
 export const BOARDS = ["issues", "queue", "pulls"] as const;
 export type Board = (typeof BOARDS)[number];
-export interface Latest { stamp: string; text: string }
-export type Summary = Record<Board, Latest | null>;
+const Latest = obj({ stamp: str(Infinity), text: str(Infinity) });
+export const Summary = obj({ issues: nul(Latest), queue: nul(Latest), pulls: nul(Latest) });
+export type Summary = Of<typeof Summary>;
+/** GET /__rb/codesplitter?repo=: where codeSplitter is, and each board's latest (null when it can't say). */
+export const News = obj({ site: str(2000), boards: nul(Summary) });
 
-export interface Branch { name: string; by: string; status: string; created_at: number; merged_by?: string | null; merged_at?: number | null }
-export interface CheckRun { id: number; name: string; status: string; finished_at?: number | null; created_at: number }
-export interface AgentRun { id: number; agent: string; status: string; task: string }
+const at = num(0, Number.MAX_SAFE_INTEGER), name = str(500);
+/** codeSplitter's GET /api/repos/:repo/branches, /checks and /agents, the fields the boards read. */
+export const Branches = arr(obj({ name, by: name, status: name, created_at: at, merged_by: opt(name), merged_at: opt(at) }), 10_000);
+export type Branch = Of<typeof Branches>[number];
+export const Checks = obj({ runs: arr(obj({ id: at, name, status: name, finished_at: opt(at), created_at: at }), 10_000) });
+export type CheckRun = Of<typeof Checks>["runs"][number];
+export const AgentRuns = arr(obj({ id: at, agent: name, status: name, task: str(Infinity) }), 10_000);
+export type AgentRun = Of<typeof AgentRuns>[number];
 
 const newest = <T,>(xs: T[], at: (x: T) => number) => xs.reduce<T | undefined>((a, x) => (!a || at(x) > at(a) ? x : a), undefined);
 

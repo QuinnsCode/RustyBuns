@@ -10,8 +10,9 @@
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
-import { stillBusy, type Held, type Hint, type QueueAdd } from "./hint.ts";
-import { summarize, type AgentRun, type Branch, type CheckRun, type Summary } from "./news.ts";
+import { arr, check, int, obj, opt, str, type Guard } from "@rustybuns/util/guard";
+import { Hint, stillBusy, type Held, type QueueAdd } from "./hint.ts";
+import { AgentRuns, Branches, Checks, summarize, type Summary } from "./news.ts";
 
 export const LIVE = "https://codesplitter.notryanquinn.workers.dev";
 const REPO = /^[\w.-]+\/[\w.-]+$/;
@@ -24,7 +25,7 @@ export interface Site { url: string; token?: string; cookie?: string }
 export function site(env: Record<string, string | undefined> = process.env): Site {
   let conf: { url?: string; token?: string } = {};
   const dir = env.XDG_CONFIG_HOME ?? path.join(env.HOME ?? homedir(), ".config");
-  try { conf = JSON.parse(readFileSync(path.join(dir, "codesplitter", "config.json"), "utf8")); } catch {}
+  try { conf = obj({ url: opt(str(2000)), token: opt(str(500)) })(JSON.parse(readFileSync(path.join(dir, "codesplitter", "config.json"), "utf8"))); } catch {}
   const u = new URL(env.CODESPLITTER_URL ?? conf.url ?? desktop(env.HOME ?? homedir()) ?? LIVE);
   const launch = u.searchParams.get("token");
   u.search = "";
@@ -38,7 +39,7 @@ export function site(env: Record<string, string | undefined> = process.env): Sit
 /** The running desktop app's URL, launch token and all, from the 0600 file it keeps while it runs; else undefined. */
 export function desktop(home: string): string | undefined {
   try {
-    const d = JSON.parse(readFileSync(path.join(home, ".codesplitters/desktop.json"), "utf8")) as { url: string; token: string; pid: number };
+    const d = obj({ url: str(2000), token: str(500), pid: int(1, 2 ** 31) })(JSON.parse(readFileSync(path.join(home, ".codesplitters/desktop.json"), "utf8")));
     process.kill(d.pid, 0); // throws when the app is gone and left the file behind (a crash, kill -9)
     return `${d.url}/?token=${encodeURIComponent(d.token)}`;
   } catch { return undefined; }
@@ -47,13 +48,13 @@ export function desktop(home: string): string | undefined {
 /** The route; null for any other path. */
 export function codesplitterRoute(s: Site = site(), get: typeof fetch = fetch) {
   const cache = new Map<string, { at: number; body: Promise<unknown> }>();
-  const api = async <T,>(p: string): Promise<T | null> => {
+  const api = async <T,>(p: string, guard: Guard<T>): Promise<T | null> => {
     const headers: Record<string, string> = { accept: "application/json" };
     if (s.token) headers.authorization = `Bearer ${s.token}`;
     if (s.cookie) headers.cookie = s.cookie;
     try {
       const r = await get(`${s.url}/api${p}`, { headers, signal: AbortSignal.timeout(8000) });
-      return r.ok ? await r.json() as T : null;
+      return r.ok ? check(guard, await r.json()) : null;
     } catch { return null; }
   };
   // Tasks the hint card's Wait is holding (#1287), per repo, until the branches they wait on have merged. Held here,
@@ -63,15 +64,15 @@ export function codesplitterRoute(s: Site = site(), get: typeof fetch = fetch) {
   const ready = async (repo: string): Promise<Held[]> => {
     const mine = [...held.values()].filter((h) => h.repo === repo);
     if (!mine.length) return [];
-    const branches = await api<{ name: string; status: string }[]>(`/repos/${repo}/branches`);
+    const branches = await api(`/repos/${repo}/branches`, arr(obj({ name: str(500), status: str(500) }), 10_000));
     const gone = Date.now() - HOLD_DAYS * 864e5;
     return mine.filter((h) => h.at > gone && stillBusy(h, branches)?.length === 0);
   };
   const look = async (repo: string): Promise<{ site: string; repo: string; boards: Summary | null }> => {
     const [branches, checks, runs] = await Promise.all([
-      api<Branch[]>(`/repos/${repo}/branches`),
-      api<{ runs: CheckRun[] }>(`/repos/${repo}/checks?ref=main`),
-      api<AgentRun[]>(`/repos/${repo}/agents`), // the owner's only; anyone else sees no runs
+      api(`/repos/${repo}/branches`, Branches),
+      api(`/repos/${repo}/checks?ref=main`, Checks),
+      api(`/repos/${repo}/agents`, AgentRuns), // the owner's only; anyone else sees no runs
     ]);
     const none = !branches && !checks && !runs;
     return { site: s.url, repo, boards: none ? null : summarize(branches, checks?.runs ?? null, runs) };
@@ -116,7 +117,7 @@ export function codesplitterRoute(s: Site = site(), get: typeof fetch = fetch) {
     if (url.pathname.endsWith("/hint")) {
       if (!REPO.test(repo)) return { status: 400, body: { error: "repo is owner/name" } };
       const task = (url.searchParams.get("task") ?? "").slice(0, 4000);
-      return { status: 200, body: await api<Hint>(`/repos/${repo}/dispatch-hint?task=${encodeURIComponent(task)}`) ?? { files: [], busy: [] } };
+      return { status: 200, body: await api(`/repos/${repo}/dispatch-hint?task=${encodeURIComponent(task)}`, Hint) ?? { files: [], busy: [] } };
     }
     if (!repo) return { status: 200, body: { site: s.url, repo: null, boards: null } };
     if (!REPO.test(repo)) return { status: 400, body: { error: "repo is owner/name" } };

@@ -14,8 +14,10 @@ import { addWin, winKey } from "../sim/heads.ts";
 import type { ZoneData } from "@rustybuns/terrain";
 import { BATTLE_SECONDS, CHUTE_MIN, FFA_SCORE, Game, LEAN_REACH, scopeSway, SHIELD_DELAY, stanceOf, TEAM_SCORE, type GameEvent, type Input, type Mode, type Waypoint } from "../sim/game.ts";
 import { Mirror } from "../net/mirror.ts";
-import { levelOf, NEXT_ROUND } from "../net/room.ts";
-import type { FromWorld, RosterEntry } from "../net/wire.ts";
+import { cleanZone, levelOf, NEXT_ROUND } from "../net/room.ts";
+import { LanReply, type FromWorld, type RosterEntry } from "../net/wire.ts";
+import { arr, check, oneOf, str, type Guard } from "@rustybuns/util/guard";
+import { getJson } from "@rustybuns/util/http";
 import { briefing, missionFor, OVERRUN } from "../sim/missions.ts";
 import { CAMPAIGN, chapterOf, nextChapter, opened } from "../sim/campaign.ts";
 import { Director, type Stage } from "../sim/director.ts";
@@ -85,14 +87,14 @@ let chosen: RepoSnapshot | null = null;
 
 /** Kept in the browser; a page that can't keep them just starts over each visit. */
 const store = {
-  get<T>(key: string, fallback: T): T {
-    try { return (JSON.parse(localStorage.getItem(`git-recon:${key}`) ?? "null") as T) ?? fallback; } catch { return fallback; }
+  get<T>(key: string, guard: Guard<T>, fallback: T): T {
+    try { return check(guard, JSON.parse(localStorage.getItem(`git-recon:${key}`) ?? "null")) ?? fallback; } catch { return fallback; }
   },
   set(key: string, value: unknown) {
     try { localStorage.setItem(`git-recon:${key}`, JSON.stringify(value)); } catch {}
   },
 };
-let wins = store.get<string[]>("wins", []);
+let wins = store.get("wins", arr(str(200), 10_000, { drop: true }), []);
 
 // The levels as the campaign's climb (campaign.ts): a chapter opens when the one before it is won.
 const list = $("levels");
@@ -159,7 +161,8 @@ const placeKey = (lat: number, lon: number) => `git-recon:ground:${lat.toFixed(4
 async function groundFor(lat: number, lon: number): Promise<ZoneData> {
   try {
     const hit = localStorage.getItem(placeKey(lat, lon));
-    if (hit) return JSON.parse(hit) as ZoneData;
+    const zone = hit ? cleanZone(JSON.parse(hit)) : null;
+    if (zone) return zone;
   } catch {}
   const zone = await groundAt(lat, lon);
   try {
@@ -353,18 +356,18 @@ const MODES: { id: Mode; name: string; tip: string }[] = [
   { id: "ffa", name: "Free-for-all", tip: `Every player for themselves; first to ${FFA_SCORE} downs` },
   { id: "teams", name: "Teams", tip: `Ours against theirs, with the guards against both; first side to ${TEAM_SCORE} downs` },
 ];
-let mode: Mode = store.get<Mode>("mode", "ffa");
+let mode: Mode = store.get("mode", oneOf(["coop", "ffa", "teams"]), "ffa");
 radios($("battle-mode"), MODES, (m) => m.tip, (b, m) => (b.textContent = m.name), (m) => m.id === mode, (m) => (mode = m.id, store.set("mode", m.id)));
 const levelPick = $<HTMLSelectElement>("battle-level");
 for (const l of LEVELS) levelPick.add(new Option(l.name, l.id));
 // Anywhere: the lat/long in the box above, its ground read here and sent with the setup.
 levelPick.add(new Option("Anywhere (the lat/long above)", "place"));
-levelPick.value = store.get("battle-level", LEVELS[0]!.id);
+levelPick.value = store.get("battle-level", str(), LEVELS[0]!.id);
 levelPick.onchange = () => store.set("battle-level", levelPick.value);
 const nameBox = $<HTMLInputElement>("battle-name");
-nameBox.value = store.get("name", "");
+nameBox.value = store.get("name", str(), "");
 const myName = () => (store.set("name", nameBox.value.trim()), nameBox.value.trim() || "soldier");
-$<HTMLInputElement>("battle-addr").value = store.get("addr", "");
+$<HTMLInputElement>("battle-addr").value = store.get("addr", str(), "");
 
 function battleStatus(text: string, bad = false) {
   $("battle-status").textContent = text;
@@ -398,7 +401,7 @@ function showAccount(note = "") {
   account.setAttribute("aria-label", account.title);
   if (note) battleStatus(note, true);
 }
-account.onclick = () => { if (login()) { signOut(); nameBox.value = store.get("name", ""); showAccount(); } else void signIn(); };
+account.onclick = () => { if (login()) { signOut(); nameBox.value = store.get("name", str(), ""); showAccount(); } else void signIn(); };
 showAccount();
 reportButton();
 // Online, a ?party= link (or coming back from signing in to join one) opens that party's lobby.
@@ -453,7 +456,8 @@ async function host(room?: string) {
       const pass = passphrase();
       const res = await fetch("/__rb/host", { method: "POST", body: JSON.stringify({ listen: { hostname: "0.0.0.0" }, join: pass }) });
       if (!res.ok) throw new Error(`the host said ${res.status}`);
-      const lan = await fetch("/api/lan").then((r) => r.json()) as { addresses: string[]; port: number };
+      const lan = await getJson("/api/lan", LanReply);
+      if (!lan) throw new Error("the host didn't say its LAN address");
       hosting = `${lan.addresses[0] ?? "this machine"}:${lan.port} · ${pass}`;
     }
   } catch (err) {

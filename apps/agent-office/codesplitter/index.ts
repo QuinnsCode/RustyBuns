@@ -7,10 +7,11 @@
 // change the files the task (or its issue) names, a card offers to queue it anyway (from main; Mervin orders the merges) or wait.
 import { CanvasTexture, Group, Matrix4, Mesh, MeshBasicMaterial, PlaneGeometry, Raycaster, SRGBColorSpace, Vector2, type Camera, type Object3D, type Scene } from "three";
 import { issueText, issuesIn } from "../queue/match.ts";
-import { queueAdd, taskText, type Hint, type QueueAdd } from "./hint.ts";
+import { Hint, HoldReady, queueAdd, taskText, type QueueAdd } from "./hint.ts";
 import { faviconWithDot, markCanvas, markSvg } from "./mark.ts";
-import { BOARDS, fresh, type Board, type Summary } from "./news.ts";
+import { BOARDS, fresh, News, type Board, type Summary } from "./news.ts";
 import { el } from "@rustybuns/util/dom";
+import { readJson } from "@rustybuns/util/http";
 
 const KEY = "rb.codesplitter";
 interface Saved { on?: boolean; repo?: string; seen?: Partial<Record<Board, string>> }
@@ -43,10 +44,9 @@ async function poll() {
   if (!s.on) return paint();
   if (s.repo) void release(s.repo);
   try {
-    const r = await fetch(`/__rb/codesplitter?repo=${encodeURIComponent(s.repo ?? "")}`);
-    const body = await r.json() as { site: string; boards: Summary | null };
-    siteUrl = body.site;
-    summary = body.boards;
+    const body = await readJson(await fetch(`/__rb/codesplitter?repo=${encodeURIComponent(s.repo ?? "")}`), News);
+    if (body) siteUrl = body.site;
+    summary = body?.boards ?? null;
   } catch { summary = null; }
   if (summary) {
     const f = fresh(summary, s.seen ?? {});
@@ -204,8 +204,7 @@ async function hold(repo: string, msg: QueueAdd, busy: Hint["busy"]) {
 async function release(repo: string) {
   try {
     const r = await fetch(`/__rb/codesplitter/hold?repo=${encodeURIComponent(repo)}`);
-    if (!r.ok) return;
-    for (const id of (await r.json() as { ready: string[] }).ready) {
+    for (const id of (await readJson(r, HoldReady))?.ready ?? []) {
       const t = await fetch(`/__rb/codesplitter/hold/take?id=${encodeURIComponent(id)}`, { method: "POST" });
       if (t.ok && sock?.readyState === Native.OPEN) Native.prototype.send.call(sock, JSON.stringify(await t.json()));
     }
@@ -219,7 +218,7 @@ async function hinted(repo: string, msg: QueueAdd): Promise<QueueAdd | null> {
   try {
     const task = taskText(msg, msg.issue === undefined ? undefined : issues.get(msg.issue));
     const r = await fetch(`/__rb/codesplitter/hint?repo=${encodeURIComponent(repo)}&task=${encodeURIComponent(task)}`, { signal: AbortSignal.timeout(5000) });
-    if (r.ok) hint = await r.json() as Hint;
+    hint = await readJson(r, Hint);
   } catch {}
   const top = hint?.busy[0];
   if (!top) return msg;
