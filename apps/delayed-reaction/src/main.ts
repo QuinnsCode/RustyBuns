@@ -1,6 +1,7 @@
 // The page: a canvas tunnel you run down, four thumb pads, a HUD, and a menu. The sim
 // (sim.ts) decides everything; this file draws it and turns thumbs and keys into presses.
 import { DEFAULTS, mountControls } from "@rustybuns/game-controls";
+import { CircleHelp, createElement } from "lucide";
 import { Music } from "./audio.ts";
 import { accountChip, achieve, finishSignIn, reportButton } from "./eqosys.ts";
 import { burst, drawTunnel, echoBursts, LANE_X, sway, view, type Burst } from "./hallway.ts";
@@ -43,6 +44,7 @@ function el(id: string) { return document.getElementById(id)!; }
 const fascia = menu.querySelector<HTMLElement>(".fascia")!, tuned = el("tuned"), resultBox = el("result"), tracks = el("tracks");
 fascia.insertAdjacentHTML("afterbegin", [20, 75, 130, 160].map((t, i) => `<i class="screw-at s${i}">${screw(t)}</i>`).join(""));
 el("tuner").innerHTML = tuningScale();
+for (const b of document.querySelectorAll("button.info")) b.replaceChildren(createElement(CircleHelp)); // opens the how-to (a popover)
 // The live meter swings on the menu's beat (frame() below), the knobs point at what you're on.
 el("knobs").innerHTML = knob("Tempo", 1) + knob("Delay", 2) + `<figure class="live">${vuMeter("LIVE")}</figure>`;
 tracks.style.setProperty("--grille", grille);
@@ -124,7 +126,7 @@ async function start(level: number, scene?: Scenario) {
   run = made?.run ?? createRun(chart);
   void achieve("played");
   el("delay-words").textContent = delayWords(chart.delay);
-  hud.judge.textContent = chart.hint ? `Answer on the echo, ${delayWords(chart.delay)}` : `Answer ${delayWords(chart.delay)}, no echo now`;
+  hud.judge.textContent = chart.hint ? `Answer ${delayWords(chart.delay)}` : `${delayWords(chart.delay).replace(/^./, (c) => c.toUpperCase())}, no echo`;
   judgeUntil = performance.now() + 2500;
   music.only = scene?.stem ?? null;
   await music.play(chart, scene?.beat, scene ? setupOf(scene) : null);

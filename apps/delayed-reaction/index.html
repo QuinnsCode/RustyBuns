@@ -27,6 +27,7 @@
     <div class="fascia">
       <header class="station">
         <div class="display">
+          <button class="info" popovertarget="about" title="How to play" aria-label="How to play"></button>
           <h1>Delayed Reaction</h1>
           <div id="result"></div>
           <div class="tuner" id="tuner"></div>
@@ -34,14 +35,16 @@
         </div>
         <div class="knobs" id="knobs"></div>
       </header>
-      <p class="blurb">A neon tunnel. A ring calls a note; you answer <b id="delay-words">a bar later</b>, when the call echoes and the pad lights. Hold the long ones.</p>
       <h2 class="engrave">Presets</h2>
       <div id="levels"></div>
       <h2 class="engrave">Tapes</h2>
       <div id="tracks"></div>
       <div id="account"></div>
-      <p class="hint">Pads at the bottom, or <kbd>D</kbd> <kbd>F</kbd> <kbd>J</kbd> <kbd>K</kbd>. Sound on.</p>
     </div>
+  </div>
+  <div id="about" class="about" popover>
+    <p class="blurb">A neon tunnel. A ring calls a note; you answer <b id="delay-words">a bar later</b>, when the call echoes and the pad lights. Hold the long ones.</p>
+    <p class="hint">Pads at the bottom, or <kbd>D</kbd> <kbd>F</kbd> <kbd>J</kbd> <kbd>K</kbd>. Sound on.</p>
   </div>
   <div id="controls-host"></div>
   <script type="module" src="/src/main.ts"></script>
