@@ -15,12 +15,14 @@
     <main id="menu" class="menu">
       <div class="menu-card">
         <div class="unigrid"><b>National Parks</b><span>All 63 of them</span></div>
-        <div class="ridges" data-poster aria-hidden="true"></div>
+        <div class="poster-head">
+          <div class="ridges" data-poster aria-hidden="true"></div>
+          <div class="poster-type"><h1>Park Hide <span>&amp;</span> Seek</h1><p class="tagline">Hide out in the parks after dark</p></div>
+        </div>
         <div class="stripes" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
         <div class="menu-body">
           <div class="insignia" data-insignia aria-hidden="true"></div>
           <p id="front-permit" class="permit front"><span>Good in all 63 parks</span><span>Backcountry permit</span></p>
-          <h1>Park Hide <span>&amp;</span> Seek</h1>
           <p class="lede">The rangers are out after dark, and they're coming for you. Hide in real national park terrain. Find Bigfoot, or just don't get caught for three minutes.</p>
           <label class="field">Your name <input id="name" maxlength="24" autocomplete="nickname" placeholder="Camper" /></label>
           <p id="who" class="eq eq-chip in" title="Signed in through eqosys" hidden><b id="who-name" class="eq-who"></b><button id="signout" class="eq-btn" type="button">Sign out</button></p>
@@ -49,7 +51,7 @@
           </form>
           <p id="menu-error" class="error" role="alert"></p>
         </div>
-        <p class="credit stub"><span>Camper's stub · A Rusty Buns example</span><span class="stamp" aria-hidden="true">Admit one</span></p>
+        <p class="credit stub"><span>Camper's stub<i class="long"> · A Rusty Buns example</i></span><span class="stamp" aria-hidden="true">Admit one</span></p>
       </div>
     </main>
 
@@ -82,7 +84,7 @@
       <aside id="radio" class="radio"></aside>
     </section>
 
-    <section id="results" class="results" hidden><div class="panel citation" id="results-body"></div></section>
+    <section id="results" class="results" hidden><div class="panel citation" id="results-body" data-strip="120"></div></section>
 
     <script type="module" src="/src/ui/main.ts"></script>
   </body>

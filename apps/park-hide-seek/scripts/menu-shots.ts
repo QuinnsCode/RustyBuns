@@ -20,7 +20,7 @@ const SCREENS: Record<string, string> = {
   front: "",
   lobby: `document.getElementById("custom").click(); ${wait}`,
   settings: `document.querySelector(".gc-cog")?.click(); ${wait}`,
-  results: `document.getElementById("menu").hidden = true; const r = document.getElementById("results"); r.hidden = false; const m = await import("/src/ui/poster.ts"); document.getElementById("results-body").innerHTML = m.permitHead("tunnel:1") + ${JSON.stringify(RESULTS)} + m.stampHtml("Camped out");`,
+  results: `document.getElementById("menu").hidden = true; const r = document.getElementById("results"); r.hidden = false; const m = await import("/src/ui/poster.ts"); document.getElementById("results-body").innerHTML = m.awardHtml("Tunnel View", "Camped out") + m.permitHead("tunnel:1") + ${JSON.stringify(RESULTS)} + m.stampHtml("Camped out");`,
 };
 const SIZES: [string, string[]][] = [["phone", ["--mobile"]], ["tablet", ["--size", "820x1180"]], ["laptop", ["--size", "1280x800"]]];
 
