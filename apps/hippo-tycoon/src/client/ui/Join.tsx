@@ -11,7 +11,8 @@ export function JoinLan({ onJoin, onBack }: { onJoin: (address: string, code: st
       <h1 className="title" style={{ fontSize: 34 }}>JOIN LAN GAME</h1>
       <About id="lan-about" label="How to join">
         <p className="tag">Ask the host for the address and join code on their screen.</p>
-        </About>
+        <p className="hint">Same Wi-Fi or wired network. No TLS: this is for a network you trust. Browser pages must be served over http (the dev server or a desktop build), not https.</p>
+      </About>
       <div className="col">
         <input className="text mono" placeholder="192.168.1.20:4000" value={address} onChange={(e) => setAddress(e.target.value)} autoFocus />
         <input className="text mono" placeholder="join code" title="Like crude-kettle" value={code} onChange={(e) => setCode(e.target.value)} />
@@ -19,7 +20,6 @@ export function JoinLan({ onJoin, onBack }: { onJoin: (address: string, code: st
         <button className="btn go" disabled={!ok} onClick={() => onJoin(address, code.trim())}>Join</button>
         <button className="btn" onClick={onBack}>Back</button>
       </div>
-      <p className="hint">Same Wi-Fi or wired network. No TLS: this is for a network you trust. Browser pages must be served over http (the dev server or a desktop build), not https.</p>
     </div></div>
   );
 }
