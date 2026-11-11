@@ -48,7 +48,7 @@ export function posterSvg(tod: Tod, o: { h?: number; seed?: number; strip?: bool
   const h = o.h ?? 200, P = PALETTES[tod], rnd = mulberry32(o.seed ?? 7);
   const band = h * 0.62 / P.sky.length;
   const sky = P.sky.map((c, i) => `<rect y="${(i * band).toFixed(1)}" width="${W}" height="${(band + 1).toFixed(1)}" fill="${c}"/>`).join("");
-  const discX = tod === "night" ? 112 : 388, discY = h * (tod === "day" ? 0.33 : 0.38), discR = h * (tod === "night" ? 0.11 : 0.13);
+  const discX = tod === "night" ? 112 : 388, discY = h * (tod === "day" ? 0.33 : tod === "night" && !o.strip ? 0.44 : 0.38), discR = h * (tod === "night" ? 0.11 : 0.13);
   const disc = tod === "night"
     ? `<circle cx="${discX}" cy="${discY}" r="${discR}" fill="${P.disc}"/><circle cx="${discX + discR * 0.62}" cy="${discY - discR * 0.28}" r="${discR * 0.8}" fill="${P.sky[1]}"/>`
     : `<circle cx="${discX}" cy="${discY}" r="${discR * 1.5}" fill="${mix(P.disc, P.haze, 0.6)}"/><circle cx="${discX}" cy="${discY}" r="${discR}" fill="${P.disc}"/>`;
@@ -57,11 +57,12 @@ export function posterSvg(tod: Tod, o: { h?: number; seed?: number; strip?: bool
   // full poster (round 5, #4220) prints seven, closer together, with valley mist at the foot of every far one.
   const ridges: string[] = [];
   const n = o.strip ? 5 : 7;
-  let near = ridge(rnd, h, 0, h);
+  let near = ridge(rnd, h, 0, h), high = near;
   for (let i = 0; i < n; i++) {
     const t = i / (n - 1);
     near = ridge(rnd, h * (0.54 + 0.4 * t), h * (0.2 - 0.088 * t), h);
     // The near ridge's second ink, printed a hair off register: a bright sliver along its skyline.
+    if (i === n - 2) high = near;
     if (i === n - 1) ridges.push(`<path d="${near.d}" fill="${P.reg}" transform="translate(2.5 -2)"/>`);
     ridges.push(`<path d="${near.d}" fill="${mix(mix(P.far, P.near, t), P.haze, 0.6 * (1 - t) ** 2)}"/>`);
     if (i < n - 2 && !o.strip) ridges.push(`<rect y="${(h * (0.5 + 0.4 * t)).toFixed(1)}" width="${W}" height="${(h * 0.08).toFixed(1)}" fill="url(#mist)" opacity="${(0.75 - 0.5 * t).toFixed(2)}"/>`);
@@ -76,13 +77,13 @@ export function posterSvg(tod: Tod, o: { h?: number; seed?: number; strip?: bool
   })();
   // After dark: a ranger on the near skyline, and the torch beam sweeping the haze.
   const ranger = tod === "night" ? (() => {
-    const x = 372, y = near.top(x) + 2;
-    return `<path d="M${x + 4} ${y - 15}L${x + 160} ${y - 64}L${x + 176} ${y - 18}Z" fill="url(#beam)"/>`
-      + `<g fill="${P.ink}"><circle cx="${x}" cy="${y - 19}" r="2.6"/><path d="M${x - 5} ${y - 22.5}h10l-2 -2h-6z"/><path d="M${x - 3} ${y - 16}h6l1 9h-2l-1 7h-2l-1 -7h-2z"/><path d="M${x + 2} ${y - 15}l4 1 -0.5 1.5 -4 -1z"/></g>`;
+    const x = o.strip ? 372 : 262, y = (o.strip ? near : high).top(x) + 2, k = o.strip ? 1 : 1.6;
+    return `<g transform="translate(${x} ${y}) scale(${k}) translate(${-x} ${-y})"><path d="M${x + 4} ${y - 15}L${x + 160} ${y - 70}L${x + 172} ${y - 12}Z" fill="url(#beam)"/><path d="M${x + 4} ${y - 15}L${x + 120} ${y - 46}L${x + 124} ${y - 30}Z" fill="#fff6c8" opacity="0.55"/><circle cx="${x + 5}" cy="${y - 14.5}" r="2.4" fill="#fff6c8"/>`
+      + `<g fill="${P.ink}" stroke="${P.disc}" stroke-width="0.7" stroke-opacity="0.8" paint-order="stroke"><circle cx="${x}" cy="${y - 19}" r="2.6"/><path d="M${x - 5} ${y - 22.5}h10l-2 -2h-6z"/><path d="M${x - 3} ${y - 16}h6l1 9h-2l-1 7h-2l-1 -7h-2z"/><path d="M${x + 2} ${y - 15}l4 1 -0.5 1.5 -4 -1z"/></g></g>`;
   })() : "";
   const defs = `<defs><linearGradient id="beam" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#fff2b0" stop-opacity="0.85"/><stop offset="1" stop-color="#fff2b0" stop-opacity="0"/></linearGradient>`
     + `<linearGradient id="mist" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${P.haze}" stop-opacity="0"/><stop offset="0.55" stop-color="${P.haze}" stop-opacity="0.8"/><stop offset="1" stop-color="${P.haze}" stop-opacity="0"/></linearGradient></defs>`;
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${h}" preserveAspectRatio="xMidYMax slice">${defs}${sky}<g fill="${P.disc}" opacity="0.85">${stars}</g>${disc}${ridges.join("")}${ranger}<g fill="${P.reg}" transform="translate(1.8 -1.4)">${trees}</g><g fill="${P.ink}">${trees}</g>${sign}</svg>`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${h}" preserveAspectRatio="xMidYMax slice">${defs}${sky}<g fill="${P.disc}" opacity="0.85">${stars}</g>${disc}${ridges.join("")}${o.strip ? ranger : ""}<g fill="${P.reg}" transform="translate(1.8 -1.4)">${trees}</g><g fill="${P.ink}">${trees}</g>${o.strip ? "" : ranger}${sign}</svg>`;
 }
 
 /** The poster as a CSS `url(...)`, for a background. */
@@ -187,3 +188,25 @@ export function paintPoster(t: Tod, root: HTMLElement = document.documentElement
   for (const el of document.querySelectorAll<HTMLElement>(".panel, .gc-card")) { sized?.observe(el); paintStrip(el); }
   return t;
 }
+
+/** Round 6 (#4226). A park chip's patch: a tiny round badge with that park's own skyline (seeded by its name, like the
+ *  results patch) in three flat ridges under the sun or moon. About 700 bytes, drawn once per park and time of day. */
+const chipPatches = new Map<string, string>();
+export function chipPatchSvg(park: string, t: Tod = tod): string {
+  const k = `${t}:${park}`, hit = chipPatches.get(k);
+  if (hit) return hit;
+  const P = PALETTES[t], rnd = mulberry32(seedOf(park)), h = 520;
+  const sky = P.sky.slice(1).map((c, i) => `<rect y="${i * 110}" width="${W}" height="${i === 2 ? h : 111}" fill="${c}"/>`).join("");
+  const dx = 130 + rnd() * 260, dy = 120 + rnd() * 40;
+  const disc = t === "night" ? `<circle cx="${dx.toFixed(0)}" cy="${dy.toFixed(0)}" r="52" fill="${P.disc}"/><circle cx="${(dx + 32).toFixed(0)}" cy="${(dy - 15).toFixed(0)}" r="42" fill="${P.sky[2]}"/>`
+    : `<circle cx="${dx.toFixed(0)}" cy="${dy.toFixed(0)}" r="60" fill="${P.disc}"/>`;
+  const ridges = [0, 0.5, 1].map((s) => `<path d="${ridge(rnd, h * (0.5 + 0.3 * s), h * (0.36 - 0.1 * s), h).d}" fill="${mix(mix(P.far, P.near, s), t === "night" ? "#7d93b8" : P.haze, 0.55 * (1 - s) ** 2)}"/>`).join("");
+  const svg = `<span class="chip-patch" aria-hidden="true"><svg viewBox="0 0 ${W} ${h}" preserveAspectRatio="xMidYMid slice">${sky}${disc}${ridges}</svg></span>`;
+  chipPatches.set(k, svg);
+  return svg;
+}
+
+/** Round 6 (#4226). A region's trail marker, the blaze painted on a post where trails split: each region gets its own
+ *  shape (diamond, circle, triangle, square, arrow, bar) so the list reads as signposts, not a sheet of planks. */
+const BLAZES = ["M8 1l7 7-7 7-7-7z", "M8 1a7 7 0 1 1 0 14A7 7 0 0 1 8 1z", "M8 1.5l7 12.5H1z", "M2 2h12v12H2z", "M1 4h8V1l6 7-6 7v-3H1z", "M1 5h14v6H1z"];
+export const blazeSvg = (i: number) => `<svg class="blaze" viewBox="0 0 16 16" aria-hidden="true"><path d="${BLAZES[i % BLAZES.length]}"/></svg>`;
