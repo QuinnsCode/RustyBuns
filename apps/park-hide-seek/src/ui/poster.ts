@@ -159,7 +159,7 @@ export function patchSvg(t: Tod, park: string, outcome: string, id = "pa"): stri
     + `<path d="M8 70l4-3 0 6zM132 70l-4-3 0 6z" fill="${cream}"/></svg>`;
 }
 /** The patch for the results card, sewn on at the strip's foot. */
-export const awardHtml = (park: string, outcome: string) => `<div class="award">${patchSvg(tod, park, outcome)}</div>`;
+export const awardHtml = (park: string, outcome: string, t: Tod = tod) => `<div class="award">${patchSvg(t, park, outcome)}</div>`;
 
 let tod: Tod = "day";
 const strips = new Map<string, string>();
