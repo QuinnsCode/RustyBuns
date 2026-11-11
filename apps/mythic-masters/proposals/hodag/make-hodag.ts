@@ -1,6 +1,6 @@
-// Three Hodag directions, each from a reference (README.md here): `bun beasts/proposals/make-hodag.ts`
-// writes beasts/proposals/hodag-{statue,hoax,starter}.json. Build one with
-// `blender -b --factory-startup --python-exit-code 1 -t 8 -P blender/beast.py -- beasts/proposals/hodag-statue.json --render`.
+// Three Hodag directions, each from a reference (README.md here): `bun proposals/hodag/make-hodag.ts`
+// writes proposals/hodag/hodag-{statue,hoax,starter}.json. Build one with
+// `blender -b --factory-startup --python-exit-code 1 -t 8 -P blender/beast.py -- proposals/hodag/hodag-statue.json --render`.
 // The picked one replaces beasts/hodag.json (id back to "hodag"); the others and this script are deleted.
 import { join } from "node:path";
 

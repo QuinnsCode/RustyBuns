@@ -30,12 +30,12 @@ Today's model, from the same camera: [now.jpg](../../docs/shots-2026-11-10-hodag
 ## Build and look
 
 ```sh
-bun beasts/proposals/make-hodag.ts
-blender -b --factory-startup --python-exit-code 1 -t 8 -P blender/beast.py -- beasts/proposals/hodag-statue.json --render
+bun proposals/hodag/make-hodag.ts
+blender -b --factory-startup --python-exit-code 1 -t 8 -P blender/beast.py -- proposals/hodag/hodag-statue.json --render
 ```
 
 The GLB lands in `public/models/hodag-statue.glb` (don't commit it) and the contact sheet in `blender/out/`.
 
 ## Once one is picked
 
-Copy its sheet over `beasts/hodag.json` with `"id": "hodag"`, run `bun run beasts hodag`, and delete this folder.
+Copy its sheet over `beasts/hodag.json` with `"id": "hodag"`, run `bun run beasts hodag`, and delete `proposals/hodag/`.
