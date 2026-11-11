@@ -335,7 +335,7 @@ export async function main(argv: string[], cwd: string): Promise<number> {
       if (sent !== head) console.log("not written down as ready: the working tree has uncommitted changes");
       else {
         const named = branch && branch !== "HEAD" ? branch
-          : (await Bun.$`git branch -a --points-at HEAD --format=%(refname:short)`.cwd(cwd).quiet().nothrow().text()).split("\n").find((r) => r && !r.startsWith("(")) ?? who;
+          : (await Bun.$`git branch -a --points-at HEAD ${"--format=%(refname:short)"}`.cwd(cwd).quiet().nothrow().text()).split("\n").find((r) => r && !r.startsWith("(")) ?? who;
         await recordPass({ sha: head, branch: named.replace(/^origin\//, ""), base: argv[0]!, at: Date.now(), jobs: jobs.map((j) => j.label) });
         console.log(`${head.slice(0, 8)} ${named} written down as ready: bun run builder passed`);
       }
