@@ -1,5 +1,5 @@
 import { describe, expect, setDefaultTimeout, test } from "bun:test";
-import { dedupe, forecast, loadEngine, nameIndex, splitRows, stale, waveFrame } from "../src/engine.ts";
+import { ContactRows, dedupe, forecast, loadEngine, nameIndex, splitRows, stale, waveFrame } from "../src/engine.ts";
 
 setDefaultTimeout(30_000);
 
@@ -24,12 +24,14 @@ describe("wave_frame", () => {
 });
 
 describe("analysis", () => {
-  test("dedupe pairs the same person under two emails at one company", async () => {
-    const pairs = await dedupe([
-      { id: 1, first_name: "Jon", last_name: "Smith", email: "jon.smith@acme.com", company_id: "acme" },
+  test("dedupe pairs the same person under two emails at one company, from rows as the API lists them", async () => {
+    // As the page reads them: extra fields, a null, and a row with no id (dropped, not a crash in the engine).
+    const pairs = await dedupe(ContactRows([
+      { id: 1, first_name: "Jon", last_name: "Smith", email: "jon.smith@acme.com", company_id: "acme", tags: ["vip"] },
       { id: 2, first_name: "Jon", last_name: "Smith", email: "jsmith@acme.com", company_id: "acme" },
       { id: 3, first_name: "Priya", last_name: "Natarajan", email: "priya@globex.io", company_id: "globex", phone: null },
-    ]);
+      { first_name: "Jon", last_name: "Smith", email: "jon@acme.com", company_id: "acme" },
+    ]));
     expect(pairs).toHaveLength(1);
     expect(pairs[0]).toMatchObject({ a: 1, b: 2 });
     expect(pairs[0]!.score).toBeGreaterThanOrEqual(0.5);

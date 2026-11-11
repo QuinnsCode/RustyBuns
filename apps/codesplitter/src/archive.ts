@@ -3,7 +3,7 @@
 // trees, reading files, turning a file into a live Durable Object on first
 // open, and pushing a catalogue as a commit.
 
-import { obj, str, type Of } from "@rustybuns/util/guard";
+import { obj, opt, str, type Of } from "@rustybuns/util/guard";
 import { MAX_TEXT, fromText, isDoc, text, type Doc } from "./lines.ts";
 import { isPlainObject } from "./util.ts";
 import { FileReply, Names, type FileLine } from "./file-do.ts";
@@ -252,6 +252,9 @@ export async function materialize(env: Env, owner: string, repo: string, path: s
  * `deployCommit` is the commit on the remote deploys clone (the crew's, when there is one),
  * when that commit carries this file alone.
  */
+/** What a file's commit answers, as far as a caller reads whether its push landed: `git.error` when it didn't. */
+export const CommitReply = obj({ git: opt(obj({ error: opt(str(Infinity, { min: 0 })) })) });
+
 export function pushCatalogue(env: Env, owner: string, repo: string, path: string, files: { content: string; published: string }, author: string, message: string, note?: string | null) {
   return pushCatalogues(env, owner, repo, { [path]: files }, author, message, note);
 }

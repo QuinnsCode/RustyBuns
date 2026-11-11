@@ -19,6 +19,7 @@ import { copyObjects, GIT_BOT, rawObj, type Obj } from "./git.ts";
 import { digCap } from "./github.ts";
 import { usage } from "./limits.ts";
 import { fail, json, type Env } from "./env.ts";
+import { nul, num, obj, str } from "@rustybuns/util/guard";
 import type { ErrorTag } from "./openapi.ts";
 import { repoRow } from "./repos.ts";
 import type { RepoRef } from "./repos";
@@ -33,6 +34,11 @@ export const STEP = { reads: 150, bytes: 8 * 1024 ** 2 };
 const TREES = 2 ** 50;
 // Cloudflare's wording for a full repo isn't documented; anything that reads like one counts.
 const FULL = /storage|quota|too large|exceed|size limit|limit exceeded|no space/i;
+
+/** What `/fresh` answers about a fresh start under way, as far as a watcher of it reads (scripts/fresh-check.ts). */
+export const FreshReply = obj({ state: str(200), done: num(0, Infinity), total: num(0, Infinity) });
+/** What `/limits` answers, as far as a reader finds the repo's current Artifact. */
+export const LimitsReply = obj({ git: obj({ artifact: nul(str(Infinity)) }) });
 
 type Fresh = { owner: string; repo: string; state: string; artifact: string; remote: string; previous: string; tip: string; tree: string; queue: string | null; stage: string | null; seq: number; done: number; total: number; bytes: number; error: string | null; started_at: number; finished_at: number | null };
 
