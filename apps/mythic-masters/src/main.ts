@@ -769,7 +769,7 @@ function showStarters() {
   drawDemand(); // the Book's first demand, in its own hand, over the three you pick (with no journey yet: all of them, start with three)
   $("#starterCards").innerHTML = STARTERS.map((id) => {
     const c = creature(id), at = chosen.indexOf(id);
-    return `<button class="card starter${at >= 0 ? " on" : ""}" data-id="${id}" aria-pressed="${at >= 0}"><b>${esc(c.name)}${at >= 0 ? `<i class="pick">${at + 1}</i>` : ""}</b><small>${esc(c.archetype)} · ${c.fields.join(" / ")}</small>${radar(c)}<p>${esc(WITCH_SAYS[id])}</p></button>`;
+    return `<button class="card starter${at >= 0 ? " on" : ""}" data-id="${id}" aria-pressed="${at >= 0}" title="${esc(WITCH_SAYS[id])}"><b>${esc(c.name)}${at >= 0 ? `<i class="pick">${at + 1}</i>` : ""}</b><small>${esc(c.archetype)} · ${c.fields.join(" / ")}</small>${radar(c)}</button>`;
   }).join("");
   const go = $("#setOut") as HTMLButtonElement;
   go.disabled = chosen.length !== PICKS;
@@ -1030,6 +1030,7 @@ document.documentElement.style.setProperty("--ink-witch", inkUrl(emblem("witch")
 document.documentElement.style.setProperty("--ink-ring", inkUrl(ring()));
 $("#closeJournal").addEventListener("click", () => openJournal(false));
 $("#openJournal").innerHTML = icon("book-open");
+for (const b of document.querySelectorAll<HTMLElement>("button.info")) b.innerHTML = icon("circle-help"); // each opens its screen's words (a popover)
 $("#openJournal").addEventListener("click", () => openJournal());
 
 // --- binding: the witch's ink, B in a fight ---------------------------------------------------------------------------
@@ -1396,8 +1397,8 @@ function drawMoveCard(where: "fight" | "hunt" | "world") {
 }
 function drawHints() {
   const fight = document.querySelector("#fightKeys"), roam = document.querySelector("#worldKeys");
-  if (fight) fight.innerHTML = `${walk()} move · ${cap("jump")} jump · ${cap("dash")} dash · ${cap("light")} attack · ${cap("heavy")} strong · ${cap("special")} special · ${cap("guard")} guard. Every key, the gamepad's too, is in Settings under Fighting.`;
-  if (roam) roam.innerHTML = `Follow the dashed trail: the keeper on each lit stone opens the next section, wild ones roam between, and the mythic waits at the end. ${cap("map")} opens the map, ${cap("journal")} the compendium; every key is in Settings under Open world.`;
+  if (fight) fight.innerHTML = `${walk()} move · ${cap("jump")} jump · ${cap("dash")} dash · ${cap("light")} attack · ${cap("heavy")} strong · ${cap("special")} special · ${cap("guard")} guard. More keys in Settings.`;
+  if (roam) roam.innerHTML = `Follow the dashed trail. Beat the keeper on each lit stone to open the next part; the mythic waits at the end. ${cap("map")} map · ${cap("journal")} book. More keys in Settings.`;
   if (moveCardFor) drawMoveCard(moveCardFor);
 }
 
