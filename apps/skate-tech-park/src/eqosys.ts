@@ -17,6 +17,7 @@ export type { Login } from "@rustybuns/util/eqosys";
 export const SKIN = { theme: {
   "--ui-bg": "var(--paper)", "--ui-line": "var(--ink)", "--ui-ink": "var(--ink)", "--ui-accent": "var(--hot)", "--ui-shadow": "3px 3px 0 var(--ink)",
   "--ui-soft": "#f3ece1", "--ui-dim": "#6e6e73", "--ui-accent-soft": "#fde9df", "--ui-on-accent": "var(--paper)", "--ui-scrim": "#1b1b1f66",
+  "--ui-font": "system-ui, sans-serif", // the park's own face (styles.css), not the house's rounded one
 } };
 
 export const { signIn, finishSignIn, login, fresh, signOut, who, canSignIn, accountChip, reportButton, party, space, achieve } = eqosys({ app: APP, url: EQOSYS, from: SIGN_IN_FROM, prefix: "stp", skin: SKIN });

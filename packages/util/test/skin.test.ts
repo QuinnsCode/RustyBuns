@@ -1,28 +1,24 @@
 // A game skins every eqosys surface once (`eqosys({ ..., skin })`, src/skin.ts): in a real page, the account chip, the
 // report form, the achievement toast, the party lobby and the spaces panel all wear its tokens and extra rules, and with no skin they wear the house tokens, dark ones on a dark system.
 import { afterAll, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
-import { join } from "node:path";
 import { TOKENS } from "@rustybuns/ui";
 import { chromePath, launchChrome, load, openTab } from "../../../scripts/chrome.ts";
+import { skinServer } from "./skin-server.ts";
 
 setDefaultTimeout(60_000);
 
-const built = await Bun.build({ entrypoints: [join(import.meta.dir, "skin-page.ts")], target: "browser" });
-const script = await built.outputs[0]!.text();
-const server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: (req) => new URL(req.url).pathname === "/page.js"
-  ? new Response(script, { headers: { "content-type": "text/javascript" } })
-  : new Response(`<!doctype html><meta charset="utf-8"><body><script type="module" src="/page.js"></script>`, { headers: { "content-type": "text/html" } }) });
+const server = await skinServer();
 let chrome: Awaited<ReturnType<typeof launchChrome>> | undefined;
 beforeAll(async () => { if (chromePath()) chrome = await launchChrome(); });
 afterAll(() => { chrome?.stop(); server.stop(true); });
 
-type Look = { bg: string; border: string; radius: string; font: string };
+type Look = { bg: string; image: string; border: string; radius: string; font: string };
 const looks = async (query: string, dark = false) => {
   const tab = await openTab(chrome!.cdp, { w: 1024, h: 700 });
   await tab.call("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: dark ? "dark" : "light" }] });
   await load(chrome!.cdp, tab, `http://127.0.0.1:${server.port}/${query}`, 300);
   const got = await tab.eval<{ surfaces: Record<string, Look>; who: string; noise: number }>(`(() => {
-    const look = (sel) => { const s = getComputedStyle(document.querySelector(sel)); return { bg: s.backgroundColor, border: s.borderTopColor, radius: s.borderTopLeftRadius, font: s.fontFamily }; };
+    const look = (sel) => { const s = getComputedStyle(document.querySelector(sel)); return { bg: s.backgroundColor, image: s.backgroundImage, border: s.borderTopColor, radius: s.borderTopLeftRadius, font: s.fontFamily }; };
     return { surfaces: { chip: look(".eq-chip"), form: look(".rb-report .eq-form"), toast: look(".eq-toast"), lobby: look(".rb-lobby"), spaces: look(".rb-spaces") }, who: getComputedStyle(document.querySelector(".eq-who")).textTransform };
   })()`);
   await tab.close();
@@ -31,13 +27,28 @@ const looks = async (query: string, dark = false) => {
 
 test.skipIf(!chromePath())("a skin's tokens land on the chip, report form, toast, lobby and spaces; no skin is the house look, light or dark", async () => {
   const skinned = await looks("");
-  for (const [name, l] of Object.entries(skinned.surfaces)) expect({ name, ...l }).toEqual({ name, bg: "rgb(28, 33, 40)", border: "rgb(156, 122, 42)", radius: "1px", font: "Courier" });
+  for (const [name, l] of Object.entries(skinned.surfaces)) expect({ name, bg: l.bg, border: l.border, radius: l.radius, font: l.font }).toEqual({ name, bg: "rgb(28, 33, 40)", border: "rgb(156, 122, 42)", radius: "1px", font: "Courier" });
   expect(skinned.who).toBe("uppercase");
   const house = await looks("?house");
   for (const [name, l] of Object.entries(house.surfaces)) expect({ name, bg: l.bg, radius: l.radius }).toEqual({ name, bg: "rgb(255, 255, 255)", radius: name === "chip" ? TOKENS["--ui-radius-sm"] : TOKENS["--ui-radius"] });
   // The house look follows a dark system; a game's own skin doesn't.
   for (const [name, l] of Object.entries((await looks("?house", true)).surfaces)) expect({ name, bg: l.bg }).toEqual({ name, bg: "rgb(23, 23, 26)" });
   for (const [name, l] of Object.entries((await looks("", true)).surfaces)) expect({ name, bg: l.bg }).toEqual({ name, bg: "rgb(28, 33, 40)" });
+});
+
+// #4148: a real game's skin points at its own stylesheet (var(--plate), var(--paper), var(--f-book)); over that stylesheet,
+// its paper or plate and its face reach every surface, under a texture where the game lays one (the colour is in the image).
+test.skipIf(!chromePath())("each game's own paper and face land on the chip, report form, toast, lobby and spaces", async () => {
+  const games = [
+    ["two-fronts", "rgb(23, 28, 35)", `"Share Tech Mono", ui-monospace, monospace`],
+    ["mythic-masters", "rgb(232, 217, 181)", `"IM Fell English", Georgia, "Times New Roman", serif`],
+    ["skate-tech-park", "rgb(251, 247, 240)", "system-ui, sans-serif"],
+  ] as const;
+  for (const [game, paper, face] of games) {
+    for (const [name, l] of Object.entries((await looks(`?game=${game}`)).surfaces)) {
+      expect({ game, name, paper: l.bg === paper || l.image.includes(paper), font: l.font }).toEqual({ game, name, paper: true, font: face });
+    }
+  }
 });
 
 // #3600: eqosys's badge is its own mark: the same pixels on the report form and the toast whatever a game's skin does.

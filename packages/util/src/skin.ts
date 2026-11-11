@@ -41,7 +41,11 @@ const BASE = `
 .eq-toast .eq-badge{align-self:flex-start;margin-left:4px}
 @media (prefers-reduced-motion:reduce){.eq-toast{animation:none}}
 .rb-lobby{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:10px 12px;border:var(--ui-border) solid var(--ui-line);border-radius:var(--ui-radius);background:var(--ui-bg);box-shadow:var(--ui-shadow)}
-.rb-lobby[hidden]{display:none}.rb-lobby-who{flex:1 1 200px;min-width:0}
+.rb-lobby[hidden]{display:none}.rb-lobby-who{flex:1 1 200px;min-width:0;line-height:1.7}
+.rb-lobby-code{display:inline-block;padding:0 5px 0 7px;border:var(--ui-border) solid var(--ui-line);border-radius:var(--ui-radius-sm);background:var(--ui-soft);font:700 13px/1.5 var(--ui-font);letter-spacing:.14em}
+.rb-lobby-m{font-weight:700;white-space:nowrap}.rb-lobby-m small{font-size:12px;font-weight:400;color:var(--ui-dim)}
+.rb-lobby-m::before{content:"";display:inline-block;width:8px;height:8px;margin-right:5px;border-radius:50%;box-shadow:inset 0 0 0 1.5px var(--ui-dim);vertical-align:1px}
+.rb-lobby-m.ready::before,.rb-lobby-m.host::before{background:var(--ui-accent);box-shadow:none}.rb-lobby-note{color:var(--ui-dim)}
 .rb-lobby-rules{flex:1 1 100%;display:grid;gap:6px;margin:0;padding:8px 0 0;border-top:var(--ui-border) solid var(--ui-line)}
 .rb-lobby-rules label,.rb-lobby-rules li{display:flex;gap:8px;align-items:center;justify-content:space-between;min-height:32px}
 .rb-lobby-rules ul{list-style:none;margin:0;padding:0}.rb-lobby-rules h3{margin:6px 0 0;font:700 13px/1.2 var(--ui-font-head);color:var(--ui-dim)}
@@ -61,6 +65,7 @@ const BASE = `
 .rb-spaces-body{display:flex;gap:8px;min-height:0;flex:1}
 .rb-spaces-chat{flex:1;min-width:0;display:flex;flex-direction:column;gap:4px}
 .rb-spaces-log{overflow-y:auto;max-height:40dvh;min-height:80px;overflow-wrap:anywhere}.rb-spaces-log li{padding:2px 0}
+.rb-spaces-log b{font-family:var(--ui-font-head);color:var(--ui-accent);margin-right:.25em}
 .rb-spaces-online{width:110px;flex:none;border-left:var(--ui-border) solid var(--ui-line);padding-left:8px;font-size:13px}
 .rb-spaces-online li{justify-content:space-between;overflow:hidden}
 .rb-spaces-older{align-self:center}.rb-spaces-note,.rb-spaces-empty{margin:0;font-size:13px;color:var(--ui-dim)}.rb-spaces-note{color:var(--ui-accent)}

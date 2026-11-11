@@ -114,9 +114,10 @@ export function lobbyPanel({ code, box, party: p, name, link, onStart, say }: Lo
 
   const draw = () => {
     const mine = members.find((m) => m.name === name());
-    const list = members.map((m) => `${m.name}${m.host ? " (host)" : m.ready ? " ready" : ""}`).join(", ") || "joining...";
+    // Reads "Party KRTZ: Ada (host), Grace ready" as text; each member is its own mark, a lit dot once ready (the host always is).
+    const list = members.length ? members.flatMap((m, i) => [...(i ? [", "] : []), el("span", { className: `rb-lobby-m${m.host ? " host" : m.ready ? " ready" : ""}` }, m.name, ...(m.host || m.ready ? [el("small", {}, m.host ? " (host)" : " ready")] : []))]) : ["joining..."];
     box.replaceChildren(
-      el("div", { className: "rb-lobby-who", textContent: `Party ${code}: ${list}${note ? ` - ${note}` : ""}` }),
+      el("div", { className: "rb-lobby-who" }, "Party ", el("b", { className: "rb-lobby-code" }, code), ": ", ...list, ...(note ? [el("span", { className: "rb-lobby-note" }, ` - ${note}`)] : [])),
       mine?.host ? eqButton({ text: "Start", primary: true, onClick: () => p.start() }) : eqButton({ text: mine?.ready ? "Not ready" : "Ready", primary: !mine?.ready, onClick: () => p.ready(!mine?.ready) }),
       // Inviting is the host's alone when the rules say so: then the key is theirs alone, and they can retire it.
       ...(key && rules && may(rules.invite, !!mine?.host) ? [eqButton({ text: "Copy link", onClick: () => void navigator.clipboard?.writeText(withInvite(link(), key)).then(() => say?.("Link copied"), () => {}) })] : []),
