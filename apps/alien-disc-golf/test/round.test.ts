@@ -6,9 +6,9 @@ import { join } from "node:path";
 import { launchChrome, load, openTab, startVite, type Cdp } from "../../../scripts/chrome.ts";
 import { countryAt } from "../src/countries.ts";
 import { BASKET_KM, makeCourse } from "../src/course.ts";
-import { SWIM_S } from "../src/currents.ts";
+import { decodeCurrents, paddleToward, startSwim, SWIM_S, swimOver, swimStep } from "../src/currents.ts";
 import { levelFor, MAX_POWER, MIN_POWER, POWER_STEP, powerFor, simulateThrow, syntheticWind } from "../src/flight.ts";
-import { bearing, destination, distanceKm, type LatLon } from "../src/geo.ts";
+import { bearing, distanceKm, type LatLon } from "../src/geo.ts";
 
 setDefaultTimeout(240_000);
 const SEED = 7, SPEED = 4;
@@ -16,11 +16,18 @@ const SEED = 7, SPEED = 4;
 const SWIM_MS = SWIM_S * 1000 + 10_000;
 const course = makeCourse(SEED);
 const hole1 = course.holes[0]!;
+const currents = decodeCurrents(new Uint8Array(await Bun.file(join(import.meta.dir, "../src/currents.bin")).arrayBuffer())).level;
 
-/** A low throw from hole 1's tee, on the page's synthetic wind, that comes down well out to sea. */
+/** A low throw from hole 1's tee, on the page's synthetic wind, that comes down so far out to sea that paddling at the
+ * basket on the shipped currents swims the whole clock without washing ashore (a disc covers hundreds of km a second). */
 function seaThrow() {
   const wind = levelFor(syntheticWind(), "low");
-  const offshore = (p: LatLon) => [0, 90, 180, 270].every((b) => countryAt(destination(p, b, 250)) === null);
+  const isSea = (p: LatLon) => countryAt(p) === null;
+  const offshore = (p: LatLon) => {
+    const s = startSwim(p, paddleToward(p, hole1.basket));
+    while (!swimOver(s)) swimStep(s, 0.1, currents, true, isSea);
+    return !s.ashore;
+  };
   for (let power = MAX_POWER; power >= MIN_POWER; power -= POWER_STEP)
     for (let heading = 0; heading < 360; heading += 5) {
       const f = simulateThrow({ from: hole1.tee, heading, power, loft: "low" }, wind);
