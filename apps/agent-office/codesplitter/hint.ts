@@ -1,10 +1,13 @@
 // codeSplitter's dispatch hint (#1187), the pure part: which socket message queues a task, and the text codeSplitter
 // guesses its files from. The card is in index.ts.
 
+import { arr, obj, str, type Of } from "@rustybuns/util/guard";
+
 /** The office client's message putting a task on the queue (📋 Add to queue, or an issue dropped on the queue). */
 export interface QueueAdd { t: "queue.add"; prompt: string; title?: string; issue?: number; [k: string]: unknown }
 /** codeSplitter's GET .../dispatch-hint: the task's likely files and the open branches already changing them, most first. */
-export interface Hint { files: string[]; busy: { branch: string; files: string[] }[] }
+export const Hint = obj({ files: arr(str(1000), 1000), busy: arr(obj({ branch: str(500), files: arr(str(1000), 1000) }), 1000) });
+export type Hint = Of<typeof Hint>;
 
 export function queueAdd(data: unknown): QueueAdd | undefined {
   if (typeof data !== "string" || !data.startsWith('{"t":"queue.add"')) return;
@@ -24,6 +27,8 @@ export function taskText(msg: QueueAdd, issue?: string, max = 4000): string {
 
 /** A task the card's Wait is holding on the office server (#1287): the message to send, and the branches it waits on. */
 export interface Held { id: string; msg: QueueAdd; branches: string[]; at: number }
+/** GET /__rb/codesplitter/hold?repo=, the part the page reads: the held tasks whose branches have all merged. */
+export const HoldReady = obj({ ready: arr(str(100), 1000) });
 
 /** Which of the held task's branches are still open, by codeSplitter's branch list. A branch it no longer lists has
  * merged and gone. Null when codeSplitter can't say, so the task keeps waiting. */
