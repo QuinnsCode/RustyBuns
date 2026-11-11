@@ -17,7 +17,7 @@ const PALETTE = {
   mouth: [0.16, 0.04, 0.07, 0.6, 0],
   white: [0.92, 0.9, 0.84, 0.3, 0],
   eye: [0.08, 0.06, 0.1, 0.2, 0],
-  tear: [0.45, 0.78, 1, 0.1, 0, 1.6],
+  tear: [0.62, 0.86, 1, 0.05, 0, 0.6],
   claw: [0.3, 0.24, 0.24, 0.5, 0],
   dark: [0.06, 0.03, 0.04, 0.6, 0],
 };
@@ -78,10 +78,11 @@ function face(h: V, k: number, o: { eye?: number; lip?: number; brow?: number } 
     { kind: "eye", at: "head", off: mouthAt, r: r(0.028 * (o.lip ?? 1)), material: "mouth" },
     { kind: "ridge", at: "head", off: mouthAt, dir: [-0.3, -0.45, 1], len: r(0.095), base: r(0.019), curve: 45, bend: [-1, -0.6, 0], mirror: true, material: "mouth" },
     { kind: "ridge", at: "head", off: add(mouthAt, mul([0.006, -0.028 * (o.lip ?? 1), 0], k)), dir: [-0.3, -0.25, 1], len: r(0.085 * (o.lip ?? 1)), base: r(0.022 * (o.lip ?? 1)), curve: 50, bend: [-1, -0.3, 0], mirror: true, material: "lip" },
-    // the tears: a wet streak from the eye's lower corner down the cheek, a drop at the jowl, one falling under the chin
-    { kind: "ridge", at: "head", off: on([0.045, 0.005 - 0.01 * E, 0.045], [0.65, -0.1, 0.75], 0.006), dir: [0.2, -1, 0.25], len: r(0.12), base: r(0.015), curve: 20, bend: [1, 0, 0.3], mirror: true, material: "tear" },
-    { kind: "eye", at: "head", off: on([0.06, -0.12, 0.07], [0.5, -0.6, 0.6], 0.002), r: r(0.014), mirror: true, material: "tear" },
-    { kind: "eye", at: "head", off: add(on([0.05, -0.12, 0.05], [0.3, -1, 0.3], 0), mul([0, -0.025, 0], k)), r: r(0.011), mirror: true, material: "tear" },
+    // the tears, lying on the face (nothing hangs off it): a wet rim brimming along the lower lid, a bead pooled at its
+    // inner corner, and a trail of small flattened beads sunk into the skin running down the cheek to the jowl
+    { kind: "ridge", at: "head", off: add(eyeAt, mul([0.006, -0.024 * E, -0.004], k)), dir: [0.15, 0.2, 1], len: r(0.05 * E), base: r(0.006 * E), curve: 35, bend: [0, 1, 0], mirror: true, material: "tear" },
+    { kind: "eye", at: "head", off: add(eyeAt, mul([0.02 * E, -0.02 * E, -0.012 * E], k)), r: r(0.009 * E), mirror: true, material: "tear" },
+    ...[0, 1, 2, 3, 4].map((i) => ({ kind: "eye", at: "head", off: on([0.045 + 0.006 * i, -0.01 * E - 0.022 * i, 0.04 + 0.004 * i], [0.6, -0.15, 0.8], 0.006 - 0.0006 * i), r: r(0.0085 - 0.0008 * i), mirror: true, material: "tear" })),
   ];
   return { nodes, parts, blobs };
 }
