@@ -62,6 +62,7 @@ export const RUNS: Record<number, Run> = {
   2718: { app: "twoFrontsOnline", links: [{ label: "Online war (copy the invite into the phone window)", path: "/?war=short&vs=online" }, { label: "Phone seat", path: "/", phone: true }] },
   2858: { app: "mythic-masters", links: [0, 1, 2].map((n) => ({ label: `Gallery ${n}`, path: `/?gallery=${n}` })) },
   2888: { app: "mythic-masters", links: [2, 3].map((n) => ({ label: `Gallery ${n}`, path: `/?gallery=${n}` })) },
+  4196: { app: "mythic-masters", links: [{ label: "Tatzelwurm (gallery 2)", path: "/?gallery=2" }, { label: "Hodag (gallery 0)", path: "/?gallery=0" }, { label: "Tatzelwurm vs Hodag", path: clash("tatzelwurm", "hodag", "stadium") }] },
   2722: { app: "mythic-masters", links: [{ label: "Touch", path: clash("volthune", "scoro", "stadium"), phone: true }, { label: "Gamepad", path: clash("volthune", "scoro", "stadium") }] },
   2964: { app: "mythic-masters", links: [{ label: "Gamepad orbit", path: clash("jersey-devil", "sphinx", "stadium") }] },
   2747: { app: "mythic-masters", links: [{ label: "World, touch", path: "/?world=1", phone: true }, { label: "World, gamepad", path: "/?world=1" }] },

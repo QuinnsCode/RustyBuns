@@ -914,5 +914,26 @@
   ],
   "belly": "belly",
   "belly_turn": -0.3,
-  "blend": 0.025
+  "blend": 0.025,
+  "hide": {
+    "pattern": "skin",
+    "size": 0.12,
+    "colours": [
+      [
+        0.1,
+        0.17,
+        0.16
+      ]
+    ],
+    "spots": {
+      "size": 0.25,
+      "colour": [
+        0.07,
+        0.1,
+        0.09
+      ],
+      "cover": 0.5
+    },
+    "map": 1024
+  }
 }

@@ -1870,5 +1870,31 @@
   ],
   "belly": "belly",
   "belly_turn": -0.3,
-  "blend": 0.02
+  "blend": 0.02,
+  "hide": {
+    "pattern": "scales",
+    "size": 0.035,
+    "colours": [
+      [
+        0.8,
+        0.8,
+        0.3
+      ],
+      [
+        0.4,
+        0.42,
+        0.18
+      ]
+    ],
+    "spots": {
+      "size": 0.1,
+      "colour": [
+        0.88,
+        0.85,
+        0.34
+      ],
+      "cover": 0.5
+    },
+    "map": 1024
+  }
 }
