@@ -17,7 +17,7 @@ const BASE = `
 .eq-btn.primary{background:var(--ui-accent);border-color:var(--ui-accent);color:var(--ui-on-accent)}
 .eq-btn.icon{padding:0}.eq-btn svg{width:18px;height:18px;flex:none}
 .eq-btn:focus-visible,.eq input:focus-visible,.eq select:focus-visible,.eq textarea:focus-visible{outline:3px solid var(--ui-accent);outline-offset:2px}
-.eq input,.eq select,.eq textarea{width:100%;min-height:36px;padding:7px 10px;border:var(--ui-border) solid var(--ui-line);border-radius:var(--ui-radius-sm);background:var(--ui-soft);color:var(--ui-ink);font:inherit}
+.eq input,.eq select,.eq textarea{width:100%;max-width:none;min-height:36px;padding:7px 10px;border:var(--ui-border) solid var(--ui-line);border-radius:var(--ui-radius-sm);background:var(--ui-soft);color:var(--ui-ink);font:inherit}
 .eq textarea{resize:vertical}.eq ::placeholder{color:var(--ui-dim);opacity:1}
 .eq-chip{display:inline-flex;align-items:center;gap:8px}.eq-chip:has(.eq-note){flex-wrap:wrap}.eq-chip .eq-btn{min-height:30px;min-width:30px}
 .eq-chip.in{padding:2px 2px 2px 10px;border:var(--ui-border) solid var(--ui-line);border-radius:var(--ui-radius-sm);background:var(--ui-bg)}
@@ -66,8 +66,8 @@ const BASE = `
 .rb-spaces-chat{flex:1;min-width:0;display:flex;flex-direction:column;gap:4px}
 .rb-spaces-log{overflow-y:auto;max-height:40dvh;min-height:80px;overflow-wrap:anywhere}.rb-spaces-log li{padding:2px 0}
 .rb-spaces-log b{font-family:var(--ui-font-head);color:var(--ui-accent);margin-right:.25em}
-.rb-spaces-online{width:110px;flex:none;border-left:var(--ui-border) solid var(--ui-line);padding-left:8px;font-size:13px}
-.rb-spaces-online li{justify-content:space-between;overflow:hidden}
+.rb-spaces-online{min-width:110px;max-width:45%;flex:none;border-left:var(--ui-border) solid var(--ui-line);padding-left:8px;font-size:13px}
+.rb-spaces-online li{justify-content:space-between;flex-wrap:wrap}
 .rb-spaces-older{align-self:center}.rb-spaces-note,.rb-spaces-empty{margin:0;font-size:13px;color:var(--ui-dim)}.rb-spaces-note{color:var(--ui-accent)}
 .rb-spaces-voice{flex:1;min-width:0;display:flex;flex-direction:column;gap:8px;min-height:80px}
 .rb-spaces-speakers{display:flex;flex-wrap:wrap;gap:6px}
@@ -75,7 +75,7 @@ const BASE = `
 .rb-spaces-speakers li.talking{background:var(--ui-accent);color:var(--ui-on-accent)}.rb-spaces-speakers li.muted{opacity:.6}
 .rb-spaces-voice-bar{display:flex;gap:6px}.rb-spaces-join,.rb-spaces-drop{align-self:flex-start}
 .rb-spaces-in-voice{display:inline-flex;margin-left:auto;margin-right:4px}
-@media (max-width:560px){.rb-spaces-body{flex-direction:column}.rb-spaces-online{width:auto;border-left:0;border-top:var(--ui-border) solid var(--ui-line);padding:6px 0 0;display:flex;flex-wrap:wrap;gap:4px 12px}}
+@media (max-width:560px){.rb-spaces-body{flex-direction:column}.rb-spaces-online{width:auto;max-width:none;border-left:0;border-top:var(--ui-border) solid var(--ui-line);padding:6px 0 0;display:flex;flex-wrap:wrap;gap:4px 12px}}
 `;
 
 /**
