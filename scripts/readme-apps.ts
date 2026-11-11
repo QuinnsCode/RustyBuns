@@ -21,6 +21,13 @@ const Plays = arr(obj({ app: opt(str(80)), play: opt(str(300)), soon: opt(bool()
 
 export const readGroups = (): Groups => Groups(JSON.parse(readFileSync(DATA, "utf8")));
 
+/** Each group's apps in eqosys's order (`ids` is its `APPS`, as its home lists them). An app eqosys doesn't list keeps its place, after the ones it does. */
+export function inOrder(groups: Groups, ids: string[]): Groups {
+  const rank = new Map(ids.map((id, i) => [id, i]));
+  const at = (e: Entry) => rank.get(e.app) ?? ids.length;
+  return groups.map((g) => ({ ...g, apps: [...g.apps].sort((a, b) => at(a) - at(b)) }));
+}
+
 /** Each app's live page from the playground's list, so a play URL lives in one place; null for one marked coming soon (`soon`). */
 export function plays(): Map<string, string | null> {
   const list = Plays(JSON.parse(readFileSync("apps/playground/public/apps.json", "utf8")));
