@@ -1373,12 +1373,14 @@
         -1,
         0.4
       ],
-      "len": 0.3,
-      "width": 0.085,
+      "len": 0.33,
+      "width": 0.095,
       "tilt": 12,
       "cup": 12,
       "mirror": true,
-      "material": "skin"
+      "material": "skin",
+      "thick": 0.5,
+      "fold": 0.3
     }
   ],
   "belly": "belly",

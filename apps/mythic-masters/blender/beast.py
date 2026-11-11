@@ -15,6 +15,9 @@
 #   blob    material, rot    its own material; [x, y, z] degrees of tilt (a shell, a brow)
 #   horn    curve, bend      degrees it bends along its length, toward the `bend` direction (default up)
 #           tip_base, flat   radius at its far end (> base: a club), section squashed to `flat` of its width
+#           web, scallop,    horns in a row with the same `web` name (a fin's ribs) get a skin between each and the next,
+#           web_thick        its free edge pulled in `scallop` (0.3) toward the root, `web_thick` (0.012) thick, in
+#                            `web_mat` (the first rib's material), the settings read off the group's first rib
 #   spikes  rows, spread     `rows` per point fanned `spread` degrees around the chain; `sweep` toward its
 #           sweep, tilt      end, `tilt` out to the side (side rows on a shell, a crest off the centreline)
 #   tuft    along, n, len, base, and rows, spread, sweep (1.5), curve (30), flat (0.3), sink (0.8),
@@ -31,8 +34,9 @@
 #           base, gap,       with `lower`, rising from the lower; `gap` (0.6) is how far the lips sit from the
 #           lower, side      chain's centre in its radius, `side` (0.7) how far out to the side the rows run
 #   ear     at, off, dir,    a flat, cupped leaf from a node: `len` long, `width` wide, `tilt` degrees out to the
-#           len, width,      side, `cup` degrees curled forward (mirror it for the pair)
-#           tilt, cup
+#           len, width,      side, `cup` degrees curled forward (mirror it for the pair); `thick` (0.12) makes it a
+#           tilt, cup,       fleshy flap that deep in its width, rounded, with a lobe at the end, and `fold` (0)
+#           thick, fold      hollows it across, the edges swinging that share of the width forward
 #   ridge   at, off, dir,    a short curved ridge (a brow above an eye, a lip along a muzzle): `len` long, `base`
 #           len, base,       thick, `curve` degrees toward `bend`; lies flat on the skin; its `material` defaults
 #           curve, bend      to the body's
@@ -523,11 +527,12 @@ def arc(at, d, b, length, angle, t):
     return p, d * math.cos(th) + b * math.sin(th), -d * math.sin(th) + b * math.cos(th)
 
 
-def tube(name, at, direction, length, base, tip, mat, curve=0, bend=None, flat=1.0, segments=6, rings=6, profile=None):
+def tube(name, at, direction, length, base, tip, mat, curve=0, bend=None, flat=1.0, segments=6, rings=6, profile=None, fold=0.0):
     """A cone that curves and tapers: from radius `base` at `at` to `tip` at the far end (0 a point, more
     than base a club), bending `curve` degrees toward `bend` along the way, its section squashed to `flat`
     of its width in the bend direction (a tuft or a feather lies flat on what it bends toward). `profile`
-    is instead a list of (how far along, radius in `base`) pairs, a ring at each: a feather's vane."""
+    is instead a list of (how far along, radius in `base`) pairs, a ring at each: a feather's vane. `fold`
+    cups the section across: its edges swing that share of the radius toward `bend` (a fleshy ear's hollow)."""
     d, b = bend_frame(direction, bend)
     angle = math.radians(curve)
     verts, faces = [], []
@@ -542,7 +547,7 @@ def tube(name, at, direction, length, base, tip, mat, curve=0, bend=None, flat=1
         side = tan.cross(nrm)
         for j in range(segments):
             a = 2 * math.pi * j / segments
-            verts.append(tuple(p + side * (r * math.cos(a)) + nrm * (r * flat * math.sin(a))))
+            verts.append(tuple(p + side * (r * math.cos(a)) + nrm * (r * (flat * math.sin(a) + fold * math.cos(a) ** 2))))
     for k in range(rings):
         s0 = k * segments
         if k == rings - 1 and tip <= 0:
@@ -805,6 +810,34 @@ def wing(name, hub, tips, body, p, mat):
     return out
 
 
+def webbing(name, ribs, p, mat):
+    """A fin's skin between consecutive ribs: each rib a list of points from root to tip along its arc, the
+    panel between two following both and its free edge pulled in `scallop` toward the first rib's root."""
+    hub, scal = ribs[0][0], p.get("scallop", 0.3)
+    cols = 5
+    verts, faces = [], []
+    for a, b in zip(ribs, ribs[1:]):
+        base = len(verts)
+        rows = len(a) - 1
+        for r in range(rows + 1):
+            u = r / rows
+            for c in range(cols + 1):
+                v = c / cols
+                q = a[r].lerp(b[r], v)
+                verts.append(tuple(hub + (q - hub) * (1 - scal * math.sin(math.pi * v) * u * u)))
+        stride = cols + 1
+        faces += [(base + r * stride + c, base + r * stride + c + 1, base + (r + 1) * stride + c + 1, base + (r + 1) * stride + c)
+                  for r in range(rows) for c in range(cols)]
+    me = bpy.data.meshes.new(name)
+    me.from_pydata(verts, [], faces)
+    o = obj(name, me, mat)
+    o.modifiers.new("solidify", "SOLIDIFY").thickness = p.get("web_thick", 0.012)
+    apply_all(o)
+    for f in o.data.polygons:
+        f.use_smooth = True
+    return o
+
+
 def scallop(points, start, depth):
     """A wing's trailing edge cut into scallops: between each pair of points from `start` on (around to
     the first), a point pulled in toward the middle by `depth` of the way, the way a bat's wing hangs
@@ -964,6 +997,7 @@ def resolve(nodes, p):
 
 def parts(sheet, nodes):
     out, blobs = [], sheet.get("blobs", [])
+    webs = {}  # (web name, side) -> (first rib's part, [each rib's points root to tip])
     for i, p in enumerate(sheet.get("parts", [])):
         for side in ([1, -1] if p.get("mirror") else [1]):
             s = lambda v: (v[0], v[1], v[2] * side)
@@ -992,6 +1026,9 @@ def parts(sheet, nodes):
                 else:
                     out.append(cone(name, at, d, p["len"], p["base"], p["material"]))
                     b = None
+                if "web" in p:
+                    rib = [arc(at, d, b, p["len"], curve, k / 6)[0] if b is not None else at + d * (p["len"] * k / 6) for k in range(7)]
+                    webs.setdefault((p["web"], side), (p, []))[1].append(rib)
                 # tines branch off the beam: [how far up it (0-1), direction, length], an antler not a spike
                 for j, (t, td, tl) in enumerate(p.get("tines", [])):
                     root = arc(at, d, b, p["len"], curve, t)[0] if b is not None else at + d * (p["len"] * t)
@@ -1032,8 +1069,14 @@ def parts(sheet, nodes):
             elif p["kind"] == "ear":
                 at = Vector(node(p["at"])) + Vector(s(p.get("off", (0, 0, 0))))
                 d = Vector(s(p["dir"])).normalized() + Vector((0, 0, math.tan(math.radians(p.get("tilt", 0))) * side))
-                out.append(tube(name, at, d.normalized(), p["len"], p["width"], 0, p["material"], curve=p.get("cup", 20),
-                                bend=Vector((1, 0, 0)), flat=0.12, segments=6, profile=[(0, 0.55), (0.4, 1.0), (0.75, 0.8), (1, 0.1)]))
+                if "thick" in p or "fold" in p:
+                    # a fleshy flap: a rounded section `thick` of its width deep, cupped across by `fold`, a lobe at the end
+                    out.append(tube(name, at, d.normalized(), p["len"], p["width"], 0, p["material"], curve=p.get("cup", 20),
+                                    bend=Vector((1, 0, 0)), flat=p.get("thick", 0.12), segments=12, fold=p.get("fold", 0),
+                                    profile=[(0, 0.5), (0.2, 0.85), (0.5, 1.0), (0.78, 0.92), (0.93, 0.6), (1, 0.2)]))
+                else:
+                    out.append(tube(name, at, d.normalized(), p["len"], p["width"], 0, p["material"], curve=p.get("cup", 20),
+                                    bend=Vector((1, 0, 0)), flat=0.12, segments=6, profile=[(0, 0.55), (0.4, 1.0), (0.75, 0.8), (1, 0.1)]))
             elif p["kind"] == "ridge":
                 at = Vector(node(p["at"])) + Vector(s(p.get("off", (0, 0, 0))))
                 bend = s(p["bend"]) if "bend" in p else None
@@ -1055,6 +1098,9 @@ def parts(sheet, nodes):
                 out += wing(name, node(p["hub"]), [node(q) for q in p["tips"]], [node(q) for q in p["body"]], p, p["material"])
             else:
                 raise ValueError(f"unknown part kind {p['kind']}")
+    for (web, side), (first, ribs) in webs.items():
+        if len(ribs) > 1:
+            out.append(webbing(f"web_{web}{'r' if side < 0 else ''}", ribs, first, first.get("web_mat", first["material"])))
     return out
 
 
