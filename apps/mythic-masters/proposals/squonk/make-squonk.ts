@@ -187,60 +187,109 @@ const starter = sheet("squonk-starter", "A starter: a big weeping head on a litt
     hood("head", [-0.05, -0.02, 0.13], 0.22, 0.09),
   ], { colours: { skin: [0.7, 0.54, 0.6, 0.9, 0] } });
 
-/** The sculpted face (the owner's reference, a pale clay Squonk): a round head with a short muzzle, one huge glossy
- *  dark-red eye on each side bulging out of a thick fleshy socket, a pink upturned bulb of a nose, pouty pink lips
- *  turned down at the corners, long flat ears drooping past the jaw, and brown freckles over the crown. */
+/** The sculpted face (the owner's reference, a pale clay Squonk), all one flesh: a round head with a short muzzle, a
+ *  ring of thick lid flesh on each side with a huge glossy dark-red eye set down inside it, a heavy brow over it and a
+ *  cheek fold under it, a pink upturned bulb of a nose and a pout (a thin upper lip, a full lower one sagging at the
+ *  corners) made of blobs so the skin runs into them, long flat ears drooping past the jaw, and freckles on the crown.
+ *  The nose and lips are coloured by painting their nodes. */
 function sculptFace(h: V, k: number) {
-  const cran = { c: [0, 0.01, 0] as V, r: [0.1, 0.095, 0.092] as V };
-  const muz = { c: [0.07, -0.035, 0] as V, r: [0.065, 0.058, 0.062] as V };
-  const sock = { c: [0.03, 0.02, 0.066] as V, r: [0.056, 0.056, 0.036] as V };
-  const ells = [cran, muz, sock, { c: flipZ(sock.c), r: sock.r }];
+  const cran = { c: [0, 0.012, 0] as V, r: [0.1, 0.095, 0.094] as V };
+  const muz = { c: [0.068, -0.035, 0] as V, r: [0.062, 0.056, 0.06] as V };
+  const ells = [cran, muz];
   const on = (p: V, d: V, sink = 0): V => {
     const s = skin(ells, p, d), n = Math.hypot(...d);
-    return mul([s[0] - (d[0] / n) * sink, s[1] - (d[1] / n) * sink, s[2] - (d[2] / n) * sink], k);
+    return [s[0] - (d[0] / n) * sink, s[1] - (d[1] / n) * sink, s[2] - (d[2] / n) * sink];
   };
   const r = (x: number) => f4(x * k);
-  const nodes: Record<string, N> = { head: [...h, r(0.09)] as N, snout: [...add(h, mul([0.09, -0.035, 0], k)), r(0.05)] as N };
   const blobs: Blob[] = ells.map((e) => ({ at: "head", off: mul(e.c, k), r: mul(e.r, k) }));
-  const eyeAt = on([0.035, 0.02, 0.04], [0.35, 0.05, 1], 0.026);
-  const noseAt = on([0.09, -0.01, 0], [1, 0.3, 0], 0.016);
-  const lipAt = on([0.08, -0.06, 0], [1, -0.1, 0], 0.006);
-  const freckles: Part[] = [[-0.01, 0.1, 0.03], [0.02, 0.09, 0.045], [-0.04, 0.085, 0.055], [0.01, 0.075, 0.065], [-0.03, 0.1, 0.015], [0.035, 0.07, 0.05]]
-    .map((p) => ({ kind: "eye", at: "head", off: on(p as V, [0, 1, 0.4], 0.0015), r: r(0.003), mirror: true, material: "freckle" }));
+  const both = (off: V, rr: V) => { blobs.push({ at: "head", off: mul(off, k), r: mul(rr, k) }, { at: "head", off: mul(flipZ(off), k), r: mul(rr, k) }); };
+  // the eye: where it sits on the skull, looking out to the side and a little forward, ringed by lid flesh
+  const ER = 0.042;
+  const dir: V = [0.4, 0.08, 1];
+  const n0 = Math.hypot(...dir), nrm: V = [dir[0] / n0, dir[1] / n0, dir[2] / n0];
+  const surf = on([0.035, 0.02, 0.03], nrm, 0);
+  const eye: V = [surf[0] + nrm[0] * ER * 0.05, surf[1] + nrm[1] * ER * 0.05, surf[2] + nrm[2] * ER * 0.05];
+  const u: V = [0, 1, 0], v: V = [nrm[2], 0, -nrm[0]];  // up, and forward across the eye (unit: nrm has no big y)
+  for (let i = 0; i < 16; i++) {
+    const a = (i / 16) * 2 * Math.PI, top = Math.max(0, Math.sin(a));
+    const R = ER * 1.0, w = ER * (0.42 + 0.12 * top);
+    const p: V = [eye[0] + (v[0] * Math.cos(a) + u[0] * Math.sin(a)) * R - nrm[0] * ER * 0.12,
+                  eye[1] + (v[1] * Math.cos(a) + u[1] * Math.sin(a)) * R - nrm[1] * ER * 0.12,
+                  eye[2] + (v[2] * Math.cos(a) + u[2] * Math.sin(a)) * R - nrm[2] * ER * 0.12];
+    both(p, [w, w, w]);
+  }
+  both([eye[0] - 0.01, eye[1] + ER * 1.2, eye[2] - 0.014], [ER * 0.9, ER * 0.32, ER * 0.5]);  // the brow
+  both([eye[0] + 0.01, eye[1] - ER * 1.45, eye[2] - 0.006], [ER * 0.85, ER * 0.3, ER * 0.45]);  // the cheek fold
+  // the nose: an upturned bulb on the end of the muzzle; the pout under it
+  const noseAt = on([0.07, -0.005, 0], [1, 0.35, 0], 0.012);
+  blobs.push({ at: "head", off: mul(noseAt, k), r: mul([0.032, 0.03, 0.034], k) });
+  const lip = on([0.06, -0.062, 0], [1, -0.1, 0], 0.008);
+  blobs.push({ at: "head", off: mul([lip[0], lip[1] + 0.012, 0], k), r: mul([0.016, 0.008, 0.038], k) });  // upper lip
+  blobs.push({ at: "head", off: mul([lip[0] + 0.004, lip[1] - 0.008, 0], k), r: mul([0.02, 0.014, 0.03], k) });  // lower lip
+  both([lip[0] - 0.006, lip[1] - 0.012, 0.028], [0.016, 0.012, 0.018]);  // its corners, sagging
+  const nodes: Record<string, N> = {
+    head: [...h, r(0.09)] as N,
+    snout: [...add(h, mul([0.07, -0.035, 0], k)), r(0.05)] as N,
+    nose: [...add(h, mul(noseAt, k)), r(0.02)] as N,
+    lip: [...add(h, mul([lip[0], lip[1] - 0.004, 0], k)), r(0.015)] as N,
+  };
+  const freckles: Part[] = [[-0.01, 0.1, 0.03], [0.02, 0.095, 0.04], [-0.04, 0.09, 0.05], [0.0, 0.08, 0.062], [-0.03, 0.1, 0.015], [-0.06, 0.07, 0.06]]
+    .map((p) => ({ kind: "eye", at: "head", off: mul(on(p as V, [0, 1, 0.4], 0.0015), k), r: r(0.0032), mirror: true, material: "freckle" }));
   const parts: Part[] = [
-    { kind: "eye", at: "head", off: eyeAt, r: r(0.046), mirror: true, material: "eye" },
-    // the lower lid, a soft roll of flesh under the eye
-    { kind: "ridge", at: "head", off: add(eyeAt, mul([-0.005, -0.03, -0.012], k)), dir: [1, 0.15, -0.2], len: r(0.06), base: r(0.012), curve: 50, bend: [0, 1, 0], mirror: true },
-    { kind: "eye", at: "head", off: noseAt, r: r(0.03), material: "nose" },
-    { kind: "eye", at: "head", off: add(noseAt, mul([0.018, -0.012, 0.012], k)), r: r(0.007), mirror: true, material: "dark" },
-    // the pout: a thin upper lip and a full lower one pushed forward, both sloping down to the corners
-    { kind: "ridge", at: "head", off: add(lipAt, mul([0, 0.01, 0], k)), dir: [-0.3, -0.3, 1], len: r(0.05), base: r(0.01), curve: 35, bend: [-1, -0.4, 0], mirror: true, material: "pout" },
-    { kind: "ridge", at: "head", off: add(lipAt, mul([0.004, -0.012, 0], k)), dir: [-0.25, -0.22, 1], len: r(0.05), base: r(0.02), curve: 35, bend: [-1, -0.3, 0], mirror: true, material: "pout" },
-    { kind: "ear", at: "head", off: on([-0.04, 0.05, 0.05], [-0.1, 0.6, 1], 0.01), dir: [-0.05, -1, 0.4], len: r(0.22), width: r(0.06), tilt: 12, cup: 12, mirror: true, material: "skin" },
+    { kind: "eye", at: "head", off: mul(eye, k), r: r(ER), mirror: true, material: "eye" },
+    { kind: "eye", at: "head", off: mul(add(noseAt, [0.024, -0.008, 0.012]), k), r: r(0.0065), mirror: true, material: "dark" },
+    { kind: "ear", at: "head", off: mul(on([-0.045, 0.05, 0.05], [-0.1, 0.6, 1], 0.01), k), dir: [-0.05, -1, 0.4], len: r(0.22), width: r(0.06), tilt: 12, cup: 12, mirror: true, material: "skin" },
     ...freckles,
   ];
   return { nodes, parts, blobs };
 }
 
+/** A leg of one flesh with the body: a thick thigh, a knee (or elbow) knob, a tapering shin with three wrinkle rings at
+ *  the ankle, a soft foot pad, four fat toes and a pale nail on each. `top`, `mid`, `foot` are the leg's l_ nodes; the
+ *  blobs go on both sides (the r_ twins), the nails mirror. */
+function fleshLeg(body: Record<string, N>, top: string, mid: string, foot: string, s: number) {
+  const blobs: Blob[] = [], nails: Part[] = [];
+  const at = (n: string) => body[n]!;
+  const half = (a: N, b: N): V => [(b[0] - a[0]) / 2, (b[1] - a[1]) / 2, (b[2] - a[2]) / 2];
+  const push = (n: string, off: V, rr: V) => { blobs.push({ at: n, off, r: rr }, { at: "r_" + n.slice(2), off: flipZ(off), r: rr }); };
+  const t = at(top), m = at(mid), f = at(foot);
+  push(top, half(t, m), [0.072 * s, 0.085 * s, 0.066 * s]);
+  push(mid, [0, 0, 0], [0.056 * s, 0.05 * s, 0.054 * s]);
+  push(mid, half(m, f), [0.046 * s, 0.065 * s, 0.044 * s]);
+  for (const [y, w] of [[0.03, 1.06], [0.045, 1.08], [0.06, 1.05]] as const) push(foot, [0, y - f[1] + 0.015, 0], [0.043 * s * w, 0.006, 0.041 * s * w]);
+  push(foot, [0.02, 0.025 - f[1], 0], [0.058 * s, 0.026, 0.05 * s]);
+  for (const z of [-0.033, -0.011, 0.011, 0.033]) {
+    const tz = z * s * (1 + Math.abs(z) * 3);
+    push(foot, [0.07 * s, 0.016 - f[1], tz], [0.032 * s, 0.017, 0.015 * s]);
+    nails.push({ kind: "eye", at: foot, off: [f4(0.1 * s), f4(0.016 - f[1]), f4(tz)], r: f4(0.01 * s), mirror: true, material: "nail" });
+  }
+  return { blobs: blobs.map((b) => ({ ...b, off: b.off.map(f4) as V, r: b.r.map(f4) as V })), nails };
+}
+
 // D: the owner's reference, a sculpted Squonk. A short barrel of a body ringed all over in deep, even rolls from the neck
-// to the rump, carried on stout legs with wide toes and pale nails; the head low and forward, the sculpted face above,
-// no tail to speak of. Pale cream with pink at the nose, lips and toes.
+// to the rump, carried on stout legs of the same flesh with knees, ankle wrinkles and wide nailed toes; the head low and
+// forward, the sculpted face above, no tail to speak of. Pale cream with pink at the nose, lips and toes. At a 9000
+// triangle budget (the others keep 5200) so the rolls and the face come out smooth.
 const dBody: Record<string, N> = {
   tail_tip: [-0.36, 0.3, 0, 0.02], tail: [-0.3, 0.31, 0, 0.04],
   hip: [-0.2, 0.32, 0, 0.1], belly: [0, 0.34, 0, 0.13], chest: [0.18, 0.31, 0, 0.12], neck: [0.3, 0.31, 0, 0.09],
-  ...legs([[0.17, 0.36, 0.08, 0.04], [0.19, 0.16, 0.115, 0.035], [0.2, 0.04, 0.125, 0.03]],
-          [[-0.19, 0.36, 0.08, 0.045], [-0.2, 0.16, 0.115, 0.035], [-0.22, 0.04, 0.125, 0.03]]),
+  ...legs([[0.17, 0.32, 0.09, 0.03], [0.19, 0.16, 0.11, 0.025], [0.2, 0.045, 0.115, 0.022]],
+          [[-0.19, 0.32, 0.09, 0.03], [-0.2, 0.16, 0.11, 0.025], [-0.22, 0.045, 0.115, 0.022]]),
 };
-const sculpt = sheet("squonk-sculpt", "The owner's reference, a sculpted Squonk: deep even rolls, one huge red eye a side, a pink pout, long drooping ears.",
-  dBody, sculptFace([0.43, 0.31, 0], 1.4), hide("belly", [0.0, 0.06, 0], [0.31, 0.21, 0.19], { rolls: 9, from: -0.8, to: 0.8, lift: 0.04, deep: 1.25, thick: 0.12, warts: 0 }), [
-    { kind: "limb", along: ["l_shoulder", "l_elbow", "l_ffoot"], radii: [0.065, 0.05, 0.036], depth: 1.05, calf: 0.1, mirror: true },
-    { kind: "limb", along: ["l_hipj", "l_knee", "l_bfoot"], radii: [0.075, 0.055, 0.038], depth: 1.1, calf: 0.15, mirror: true },
-    { kind: "foot", at: "l_ffoot", form: "paw", len: 0.085, width: 0.085, toes: 4, claw: 0.016, claw_mat: "nail", sole: 0.04, mirror: true },
-    { kind: "foot", at: "l_bfoot", form: "paw", len: 0.09, width: 0.085, toes: 4, claw: 0.016, claw_mat: "nail", sole: 0.04, mirror: true },
-  ], { colours: {
+const dFace = sculptFace([0.43, 0.31, 0], 1.4);
+const fore = fleshLeg(dBody, "l_shoulder", "l_elbow", "l_ffoot", 1), hind = fleshLeg(dBody, "l_hipj", "l_knee", "l_bfoot", 1.08);
+const sculptBase = sheet("squonk-sculpt", "The owner's reference, a sculpted Squonk: deep even rolls, one huge red eye a side, a pink pout, long drooping ears.",
+  dBody, dFace, hide("belly", [0.0, 0.06, 0], [0.31, 0.21, 0.19], { rolls: 10, from: -0.82, to: 0.82, lift: 0.04, deep: 1.3, thick: 0.11, warts: 0 }),
+  [...fore.nails, ...hind.nails], { budget: 9000, blend: 0.008, colours: {
     skin: [0.86, 0.83, 0.74, 0.8, 0], belly: [0.9, 0.84, 0.78, 0.8, 0], eye: [0.42, 0.02, 0.05, 0.1, 0],
-    nose: [0.9, 0.68, 0.66, 0.6, 0], pout: [0.9, 0.77, 0.72, 0.7, 0], nail: [0.96, 0.86, 0.86, 0.4, 0], freckle: [0.55, 0.3, 0.22, 0.8, 0],
+    nose: [0.9, 0.68, 0.66, 0.6, 0], pout: [0.9, 0.74, 0.7, 0.7, 0], nail: [0.96, 0.86, 0.86, 0.4, 0], freckle: [0.55, 0.3, 0.22, 0.8, 0],
   } });
+const sculpt = {
+  ...sculptBase,
+  links: [...sculptBase.links, ["snout", "nose"], ["snout", "lip"]],
+  blobs: [...sculptBase.blobs, ...fore.blobs, ...hind.blobs],
+  paint: [{ nodes: ["nose"], material: "nose" }, { nodes: ["lip"], material: "pout" }],
+};
 
 for (const s of [cox, tryon, starter, sculpt]) await Bun.write(join(import.meta.dir, `${s.id}.json`), JSON.stringify(s, null, 2) + "\n");
 console.log("wrote squonk-cox, squonk-tryon, squonk-starter, squonk-sculpt");
