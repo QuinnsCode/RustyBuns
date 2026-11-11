@@ -8,10 +8,7 @@
 // the workers; only something that starts the office again (office:mama) makes that a restart, not a stop.
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
-
-// `swap` maps each page script that can be swapped in place ("rb-clock") to its current file; `fixed` hashes everything
-// else a page loaded (the skin, shared chunks, rb-reload itself), which only a refresh replaces (reload/hot.ts).
-export interface ReloadState { boot: string; page: string; swap: Record<string, string>; fixed: string; stale: boolean; workers: boolean; canRestart: boolean }
+import type { ReloadState } from "./replies.ts";
 
 const SCRIPT = /^(rb-(?!chunk-|reload-)[a-z]+)-\w+\.js$/;
 

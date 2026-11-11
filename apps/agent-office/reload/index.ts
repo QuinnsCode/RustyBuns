@@ -2,7 +2,9 @@
 // Refresh while you're typing). New server code: says a restart is needed, with a Restart button when office:mama
 // is minding the office, then shows "coming back" until the new office answers, and reloads. The state is the
 // office's (live/reload.ts, /__rb/reload).
-import type { ReloadState } from "../live/reload.ts";
+import { Problem, ReloadState } from "../live/replies.ts";
+import { check } from "@rustybuns/util/guard";
+import { readJson } from "@rustybuns/util/http";
 import type { Hot } from "./hot.ts";
 import { el } from "@rustybuns/util/dom";
 
@@ -36,7 +38,7 @@ function mount() {
     show("Restarting the office, coming back in a moment (workers keep running)…");
     try {
       const res = await fetch("/__rb/reload/restart", { method: "POST", credentials: "same-origin", headers: { "x-rb-triage": "1" } });
-      if (!res.ok) { restarting = false; show(((await res.json().catch(() => ({}))) as { error?: string }).error ?? `The office answered ${res.status}`); }
+      if (!res.ok) { restarting = false; show(check(Problem, await res.json().catch(() => null))?.error ?? `The office answered ${res.status}`); }
     } catch {}
   }
 
@@ -57,7 +59,8 @@ function mount() {
       const res = await fetch("/__rb/reload", { credentials: "same-origin" });
       // signed out (sent to /login), or an office without the route: nothing to watch
       if (res.redirected || res.status === 401 || res.status === 404) return;
-      const now = (await res.json()) as ReloadState;
+      const now = await readJson(res, ReloadState);
+      if (!now) throw new Error("not a reload state");
       misses = 0;
       first ??= now;
       if (now.boot !== first.boot) return location.reload();

@@ -16,6 +16,7 @@
 
 import { allowHost } from "../sandbox/box.ts";
 import { boxDir, cameraOf, logFile, record, type Entry } from "./camera.ts";
+import type { Ask } from "./replies.ts";
 
 // #2498: a worker's GitHub write asks first; the hook port and the router reach these through this one module
 export { writeCheck } from "../askfirst/ask.ts";
@@ -43,9 +44,6 @@ export function peopleOnly(action: string, setting = process.env.AGENT_OFFICE_PE
 /** How long an agent's request waits for a person. The office-workers command's timeouts get this much more. */
 export const ASK_MS = 120_000;
 
-export interface Ask { id: string; floor: string; who: string; what: string; detail: string; size: number; odd: number; at: number; until: number
-  /** Set when "Allow" can also be "always": what the always is for, e.g. "pushes to owner/name" (askfirst/) */
-  always?: string }
 const asks = new Map<string, Ask & { answer: (why: string) => void; grant?: () => void }>();
 
 // C0 controls (bar newline and tab), DEL and C1: what a terminal reads as keystrokes or escapes.

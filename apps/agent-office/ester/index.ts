@@ -8,6 +8,8 @@ import type { ContextAlert, ModeEvent } from "./dexter.ts";
 import { helperState } from "../screens/read.ts";
 import type { EsterState } from "./run.ts";
 import { el } from "@rustybuns/util/dom";
+import { check } from "@rustybuns/util/guard";
+import { Problem } from "../live/replies.ts";
 
 type Name = "ester" | "mervin" | "dexter";
 const WHO: Record<Name, { label: string; icon: IconNode; ask: string; job: string }> = {
@@ -109,8 +111,8 @@ function start(m: { box: HTMLElement; row: HTMLElement }) {
   async function call(n: Name) {
     try {
       const res = await fetch(`/__rb/helpers/${n}`, { method: "POST", credentials: "same-origin", headers: HEADER });
-      if (!res.ok) states[n] = { ...IDLE, phase: "error", error: ((await res.json().catch(() => ({}))) as { error?: string }).error ?? `The office answered ${res.status}` };
-      else states[n] = await res.json();
+      if (!res.ok) states[n] = { ...IDLE, phase: "error", error: check(Problem, await res.json().catch(() => null))?.error ?? `The office answered ${res.status}` };
+      else states[n] = helperState(await res.json());
     } catch (e) { states[n] = { ...IDLE, phase: "error", error: (e as Error).message }; }
     render();
     clearTimeout(timer);

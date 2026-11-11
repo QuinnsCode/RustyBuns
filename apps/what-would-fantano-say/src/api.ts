@@ -4,11 +4,11 @@
 
 import { boxById, pickBoxes } from "./boxes.ts";
 import { turnstileOk, youtubeId, youtubeTitle } from "./guard.ts";
-import { clefRequest, estimate, MODEL, parseClef, type Verdict } from "./judge.ts";
+import { clefRequest, estimate, MODEL, parseClef, Verdict } from "./judge.ts";
 import { MAX_CLIP, parseRequest } from "./review.ts";
 import { cameo, writeReview } from "./write.ts";
 import { sha256 } from "@rustybuns/util/bytes";
-import { privateJson as json } from "@rustybuns/util/http";
+import { privateJson as json, readJson } from "@rustybuns/util/http";
 
 export interface ReviewEnv {
   AI?: { run(model: string, input: unknown): Promise<unknown> };
@@ -27,7 +27,7 @@ export async function handleReview(request: Request, env: ReviewEnv, cache?: Cac
   if (raw.length > MAX_BODY) return json({ error: "too big" }, 413);
 
   let req;
-  try { req = parseRequest(JSON.parse(raw)); } catch (e) { return json({ error: (e as Error).message }, 400); }
+  try { req = parseRequest(JSON.parse(raw)); } catch (e) { return json({ error: e instanceof Error ? e.message : "that's not a review request" }, 400); }
 
   const ip = request.headers.get("cf-connecting-ip") ?? "";
   if (env.REVIEW_LIMIT && !(await env.REVIEW_LIMIT.limit({ key: ip || "anon" })).success) {
@@ -51,7 +51,8 @@ export async function handleReview(request: Request, env: ReviewEnv, cache?: Cac
     const input = clefRequest(req.clip, boxes, req.title, req.hint);
     const key = cache && new Request(`https://review.cache/${await sha256(JSON.stringify(input))}`);
     const hit = key && (await cache!.match(key));
-    if (hit) verdict = (await hit.json()) as Verdict;
+    const kept = hit ? await readJson(hit, Verdict) : null;
+    if (kept) verdict = kept;
     else if (await env.BUDGET!.take(Number(env.DAILY_REVIEWS) || 0)) {
       try {
         verdict = parseClef(await env.AI!.run(MODEL, input), boxes);

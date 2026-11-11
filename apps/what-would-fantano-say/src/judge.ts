@@ -7,20 +7,15 @@
 
 import type { Features } from "./analyze.ts";
 import type { Box } from "./boxes.ts";
+import { bool, num, obj, oneOf, opt, str, type Of } from "@rustybuns/util/guard";
 
 export const MODEL = "@cf/cloudflare/clef-omni";
 
-export interface Verdict {
-  box: string;
-  /** How well made it sounds, 0–1. */
-  craft: number;
-  /** How fresh it sounds, 0–1. */
-  originality: number;
-  /** Someone talking with no music behind it: a podcast, a voice memo, a review of a review. */
-  talking?: boolean;
-  /** Who decided: Clef listening, or an estimate from the numbers alone. */
-  by: "clef" | "estimate";
-}
+/** Which box, how well made (craft, 0–1) and how fresh (originality, 0–1) it sounds; `talking` for someone talking
+ * with no music behind it (a podcast, a voice memo, a review of a review); `by` Clef listening or an estimate from
+ * the numbers alone. The edge cache keeps it as JSON, so a hit comes back through this. */
+export const Verdict = obj({ box: str(100), craft: num(0, 1), originality: num(0, 1), talking: opt(bool()), by: oneOf(["clef", "estimate"]) });
+export type Verdict = Of<typeof Verdict>;
 
 const CRAFT = ["amateur", "rough", "solid", "polished", "exceptional"];
 const ORIGINALITY = ["generic", "familiar", "some ideas", "fresh", "singular"];
