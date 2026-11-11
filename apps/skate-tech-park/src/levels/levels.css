@@ -42,3 +42,11 @@ body.home .hud, body.home .keys, body.home .room, body.home .trick, body.home .c
   .goals { top: 60px; left: 8px; max-width: calc(100vw - 160px); padding: 4px 8px; font-size: 12px; opacity: 0.85; }
   .goals:not(.open) li:not(.next) { display: none; }
 }
+
+/* the pitch, out of the way: a small ? by the title opens it as a popover; a click outside or Escape shuts it */
+.hero h1 { display: flex; align-items: center; gap: 10px; }
+.hero .info { display: grid; place-items: center; width: 30px; height: 30px; padding: 0; border: 1.5px solid currentColor; border-radius: 50%; background: none; color: inherit; opacity: 0.55; cursor: help; }
+.hero .info:hover, .hero .info:focus-visible { opacity: 1; }
+.about[popover] { margin: auto; max-width: min(420px, calc(100vw - 32px)); padding: 20px 24px; border: 0; color: inherit; }
+.about[popover]::backdrop { background: rgba(27, 27, 31, 0.25); }
+.about p { margin: 0; font-size: 15px; line-height: 1.45; }

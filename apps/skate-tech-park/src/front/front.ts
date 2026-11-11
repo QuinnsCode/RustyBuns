@@ -80,7 +80,9 @@ function menuScreen(note: string): HTMLElement {
     b.type = "button";
     b.disabled = soon;
     const text = el("span", "text");
-    text.append(el("strong", "", label), el("small", "", soon ? `${blurb} Coming soon.` : blurb));
+    b.title = blurb; // the blurb is a tooltip: the card says only its name
+    text.append(el("strong", "", label));
+    if (soon) text.append(el("small", "", "Soon"));
     b.append(icon(glyph, 26), text);
     b.addEventListener("click", go);
     return b;
