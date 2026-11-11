@@ -19,7 +19,7 @@ if (!spec) { console.error(`${file} exports no park spec`); process.exit(2); }
 const l = parkLevel(spec, await loadZone(spec.zone), false), bad: string[] = [], ok: string[] = [];
 const say = (good: boolean, line: string) => (good ? ok : bad).push(line);
 
-// Spawns, as levels.test.ts checks them.
+// Spawns, as test/lines.ts checks them.
 for (const sp of l.spawns) {
   const inside = sp.x > l.bounds.minX && sp.x < l.bounds.maxX && sp.z > l.bounds.minZ && sp.z < l.bounds.maxZ, h = l.height(sp.x, sp.z);
   const flat = [[1.5, 0], [-1.5, 0], [0, 1.5], [0, -1.5]].every(([dx, dz]) => Math.abs(l.height(sp.x + dx!, sp.z + dz!) - h) < 0.75);
@@ -28,7 +28,7 @@ for (const sp of l.spawns) {
 say(l.goals.length >= 3 && l.goals.length <= 5, `${l.goals.length} goals (3 to 5)`);
 for (const g of l.goals) if (g.kind === "gap") say(l.gaps.some((x) => x.name === g.name), `gap goal "${g.name}" names a gap`);
 
-// Gaps, driven as levels.test.ts drives them: steer at the launch, jump 3 to 8 m past its centre.
+// Gaps, driven as test/lines.ts drives them: steer at the launch, jump 3 to 8 m past its centre.
 function drive(spawn: string, gapName: string, line: number) {
   const sp = l.spawns.find((p) => p.name === spawn)!, g = l.gaps.find((x) => x.name === gapName)!;
   const s = start(sp.x, sp.z, sp.yaw, l), run = trackRun(l), lv = { ...l, obstacles: l.trees };

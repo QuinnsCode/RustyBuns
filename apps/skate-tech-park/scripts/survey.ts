@@ -56,7 +56,7 @@ for (let z = -R + 50; z < R - 50; z += 10) for (let x = -R + 50; x < R - 50; x +
 }
 discs.sort((a, b) => Math.hypot(a.x, a.z) - Math.hypot(b.x, b.z));
 
-// Gaps: a kicker on the lip of every drop of 5 m or more, ridden from 70 m back the way levels.test.ts rides a gap
+// Gaps: a kicker on the lip of every drop of 5 m or more, ridden from 70 m back the way test/lines.ts rides a gap
 // (steer at the launch, jump 3 to 8 m past its centre) at 24, 27 and 32 m/s.
 const bare = (extra: ParkSpec["sites"]): ParkSpec => ({ id, name: id, blurb: "", zone: id, relief, scatter: false, earthworks: false, sites: extra, spawns: [{ name: "s", x: 0, z: 0, yaw: 0 }], goals: [] });
 type Gap = { at: { x: number; z: number; yaw: number }; run: { x: number; z: number }; land: { x: number; z: number }; rb: number; min: number; flights: number[]; drop: number };
