@@ -130,10 +130,17 @@ kbd { padding: 1px 5px; border: 1px solid rgba(255, 255, 255, 0.3); border-radiu
   .live svg { width: 70px; }
   #menu h1 { font-size: 22px; }
   .tuned { margin-top: 0; }
-  .blurb, .hint { display: none; }
   .readout .big { font-size: 40px; }
   #pads { height: 22vh; }
 }
 
 /* The cog sits top right, above the menu, with the HUD's right edge kept clear of it. */
 #controls-host { position: fixed; top: max(8px, env(safe-area-inset-top)); right: max(12px, env(safe-area-inset-right)); z-index: 5; }
+
+/* the how-to, out of the way (index.html): the ? in the display's corner opens it as a popover; a click outside or Escape shuts it */
+button.info { position: absolute; bottom: 8px; right: 10px; z-index: 1; display: grid; place-items: center; width: 26px; height: 26px; padding: 0; border: 1.5px solid currentColor; border-radius: 50%; background: none; color: var(--label); cursor: help; }
+button.info svg { width: 16px; height: 16px; }
+.about[popover] { --mono: ui-monospace, SFMono-Regular, Menlo, monospace; max-width: min(28rem, calc(100vw - 32px)); padding: 16px 20px; border: 1px solid #e9ecf24d; border-radius: 10px; background: #0d0f14; color: #e9ecf2; display: none; gap: 12px; }
+.about[popover]:popover-open { display: grid; }
+.about[popover]::backdrop { background: rgba(0, 0, 0, 0.5); }
+.about .hint { text-align: left; color: #e9ecf28c; }
