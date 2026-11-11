@@ -16,7 +16,7 @@ import { cleanInput, diffShot, diffSoldier, fly, KEPT, MAX_PLAYERS, packSoldier,
 
 /** Seconds the result stays up before the next round. */
 export const NEXT_ROUND = 10;
-const MODES = ["coop", "ffa", "teams"] as const;
+export const MODES = ["coop", "ffa", "teams"] as const;
 /** Snapshots a player's kept to be acked against: past this many unacked, the next goes whole. */
 const HISTORY = 64;
 
@@ -43,7 +43,8 @@ export function cleanSetup(v: unknown): Setup | null {
 
 const finite = num(-Infinity, Infinity), text = str(Infinity, { min: 0 });
 const LINK = (v: unknown): [string, string, number] => { const [a, b, n] = arr(raw, 3, { min: 3 })(v); return [text(a), text(b), finite(n)]; };
-const REPO = obj({
+/** A repo snapshot, checked: off the wire in a setup, or out of the browser's half-hour cache (levels/github.ts). */
+export const REPO = obj({
   name: text, ref: text,
   files: arr(obj({ path: str(399, { min: 0 }), lines: finite, churn: opt(finite), agent: opt(finite) }), 5000),
   links: opt(arr(LINK, 10_000)), failing: opt(arr(text, 1000)), text: opt(arr(obj({ path: text, lines: arr(text, 10_000) }), 1000)),
