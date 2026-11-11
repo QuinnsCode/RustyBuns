@@ -11,12 +11,13 @@ import { SKIN as twoFronts } from "../../../apps/two-fronts/src/eqosys.ts";
 import { SKIN as mythic } from "../../../apps/mythic-masters/src/account.ts";
 import { SKIN as skate } from "../../../apps/skate-tech-park/src/eqosys.ts";
 
+// The games' modules each wear their skin as they load, so the house look is asked for outright (an empty skin).
 const house = location.search.includes("house");
 const games: Record<string, Skin | undefined> = { "two-fronts": twoFronts, "mythic-masters": mythic, "skate-tech-park": skate };
 const game = games[new URLSearchParams(location.search).get("game") ?? ""];
 localStorage.setItem("t.eqosys", location.origin);
 localStorage.setItem("t.login", JSON.stringify({ name: "Ada", email: "ada@example.com", token: "x" }));
-const client = eqosys({ app: "t", url: location.origin, from: [], prefix: "t", ...(house ? {} : game ? { skin: game } : { skin: { theme: { "--ui-bg": "rgb(28, 33, 40)", "--ui-line": "rgb(156, 122, 42)", "--ui-radius": "1px", "--ui-radius-sm": "1px", "--ui-font": "Courier" }, css: ".eq-who{text-transform:uppercase}" } }) });
+const client = eqosys({ app: "t", url: location.origin, from: [], prefix: "t", ...(house ? { skin: {} } : game ? { skin: game } : { skin: { theme: { "--ui-bg": "rgb(28, 33, 40)", "--ui-line": "rgb(156, 122, 42)", "--ui-radius": "1px", "--ui-radius-sm": "1px", "--ui-font": "Courier" }, css: ".eq-who{text-transform:uppercase}" } }) });
 const column = Object.assign(document.createElement("main"), { style: "position:relative;display:grid;gap:12px;align-content:start;max-width:440px;padding:120px 12px 12px;max-height:100dvh;overflow:auto;box-sizing:border-box" });
 document.body.append(column);
 column.append(client.accountChip(document.createElement("div")));
