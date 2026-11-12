@@ -9,6 +9,10 @@ import { mulberry32 } from "@rustybuns/util";
 /** Seconds for one day and night. */
 export const CYCLE = 360;
 
+/** How often a second the clock moves. Every tick restyles and repaints the whole page (every panel reads the clock), so
+ *  60 a second held a phone near 30 fps; at 4 the sun steps under a pixel and the page scrolls at 60 (scripts/perf-home.ts). */
+export const TICKS = 4;
+
 /** Where in the cycle to start: the server's clock, or `at` (a fraction) when a page asks for a given moment. */
 export const phaseAt = (at: string | null, now = Date.now()) => {
   const f = at === null ? NaN : Number(at);
@@ -33,7 +37,7 @@ const STARS = { far: dots(700, 125, false), mid: dots(260, 125, true), near: dot
 /** The page's style: the clock on the body (so the panel reads it too), then every layer of the sky. */
 export const skyCss = (t0: number) => `
 @property --t{syntax:'\\3c number>';inherits:true;initial-value:0}
-body:has(.sky){--t0:${t0};animation:clock ${CYCLE}s linear infinite;animation-delay:calc(var(--t0) * -1s);
+body:has(.sky){--t0:${t0};animation:clock ${CYCLE}s steps(${CYCLE * TICKS}) infinite;animation-delay:calc(var(--t0) * -1s);
  --th:calc(var(--t) * 1turn);
  --el:sin(var(--th));
  --day:clamp(0,calc(0.42 + var(--el) * 1.9),1);
