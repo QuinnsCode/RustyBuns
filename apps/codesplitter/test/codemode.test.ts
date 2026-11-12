@@ -137,6 +137,13 @@ describe("code mode", () => {
     expect((await run(`return await tools.nope({});`)).out.error).toContain("no tool nope");
     expect((await run(`return await tools["nope"]({});`)).out.error).toContain("404");
     expect((await run(`await fetch("http://example.com/"); return 1;`)).out.error).toMatch(/network|outbound/i);
+    // Nor the machine: its modules, its processes, its files, its variables, or source made at run time.
+    for (const code of [`return typeof (await import("node:http")).request;`, `const fs = await import("node:" + "fs"); return fs.readdirSync("/").length;`,
+      `return String(Bun.spawnSync(["echo", "hi"]).stdout);`, `return globalThis["B" + "un"].file("/etc/hosts").size;`, `return require("fs").readdirSync("/");`,
+      `return (() => 0).constructor("return typeof process.binding")();`, `return eval("1");`]) {
+      expect([code, (await run(code)).isError]).toEqual([code, true]);
+    }
+    expect((await run(`return Object.keys(process.env).length;`)).out.result).toBe(0);
     // The count is out of the program's reach: assigning a `calls` it could see doesn't lift the cap.
     const many = await run(`try { calls = -1e9; } catch {} let n = 0; try { for (;;) { await tools.whoami({}); n++; } } catch (e) { return [n, e.status]; }`);
     expect(many.out.result).toEqual([100, 429]);

@@ -6,9 +6,10 @@
 // With `globalOutbound: null` each call runs in its own Bun Worker (a thread of its own): fetch,
 // WebSocket and EventSource throw, a kill timer ends a run that never returns (a synchronous loop
 // included; `killMs`, 10 s), and the bindings in `env` reach the code as RPC (an object's methods
-// become async calls back to the host; plain values are copied). Bun has no permission model, so
-// this is a seatbelt against a script that loops or phones home, not a wall against one that tries
-// to escape. Without `globalOutbound: null` the code runs in this process with the app's own reach,
+// become async calls back to the host; plain values are copied). Bun has no permission model, so the
+// wall is two layers: the host refuses code that imports anything but its own modules or names what
+// reaches the machine (`walled`), and the thread starts with no environment and without Bun's API,
+// process, eval or the Function constructors (ISOLATE). Without `globalOutbound: null` the code runs in this process with the app's own reach,
 // so load only code the app trusts. `import ... from "cloudflare:workers"` gets the host's shim
 // in-process only; an isolated Worker can't import it.
 
@@ -27,13 +28,27 @@ export interface WorkerCode {
   globalOutbound?: unknown;
 }
 
-/** Runs inside the Worker thread; everything crosses by postMessage, and the host answers `rpc` messages. */
-const ISOLATE = `
-for (const k of ["fetch", "WebSocket", "EventSource"]) {
-  globalThis[k] = function () { throw new Error("network access is blocked: this Worker has no outbound (globalOutbound: null)"); };
+/**
+ * Runs inside the Worker thread; everything crosses by postMessage, and the host answers `rpc` messages.
+ * Before the code loads, the thread gives up what reaches the machine: the network, Bun's own API (what of it
+ * can be removed), process, new Workers, eval and the Function constructors (so no source is made at run time).
+ * What can't be removed (the `Bun` global itself) the code can't name: `walled` turns such modules away first.
+ */
+const ISOLATE = `"use strict";
+const post = postMessage, Req = Request, Res = Response;
+const no = (what) => function () { throw new Error(what === "fetch" || what.endsWith("Socket") || what === "EventSource" ? "network access is blocked: this Worker has no outbound (globalOutbound: null)" : what + " is blocked: this Worker has no outbound (globalOutbound: null)"); };
+for (const k of ["fetch", "WebSocket", "EventSource", "Worker", "SharedWorker", "BroadcastChannel", "require", "module", "Loader"]) {
+  try { Object.defineProperty(globalThis, k, { value: no(k), writable: false, configurable: false }); } catch {}
 }
+for (const k of Object.getOwnPropertyNames(Bun)) { try { Object.defineProperty(Bun, k, { value: undefined, writable: false, configurable: false }); } catch {} }
+Object.defineProperty(globalThis, "process", { value: Object.freeze({ env: Object.freeze({}), argv: Object.freeze([]), platform: "worker", versions: Object.freeze({}) }), writable: false, configurable: false });
+Object.defineProperty(globalThis, "eval", { value: no("eval"), writable: false, configurable: false });
+for (const f of [function () {}, async function () {}, function* () {}, async function* () {}]) {
+  Object.defineProperty(Object.getPrototypeOf(f), "constructor", { value: no("Function"), writable: false, configurable: false });
+}
+Object.defineProperty(globalThis, "Function", { value: no("Function"), writable: false, configurable: false });
 let n = 0; const waiting = new Map();
-const rpc = (key, method, args) => new Promise((res, rej) => { const id = ++n; waiting.set(id, { res, rej }); postMessage({ type: "rpc", id, key, method, args }); });
+const rpc = (key, method, args) => new Promise((res, rej) => { const id = ++n; waiting.set(id, { res, rej }); post({ type: "rpc", id, key, method, args }); });
 onmessage = async ({ data: m }) => {
   if (m.type === "reply") { const w = waiting.get(m.id); waiting.delete(m.id); if (m.error) w.rej(new Error(m.error)); else w.res(m.value); return; }
   try {
@@ -48,11 +63,11 @@ onmessage = async ({ data: m }) => {
     const inst = typeof ep === "function" ? new ep(ctx, bound) : ep;
     if (typeof inst[m.method] !== "function") throw new Error("the entrypoint has no " + m.method + "()");
     let args = m.args;
-    if (m.method === "fetch") args = [new Request(args[0].url, { method: args[0].method, headers: args[0].headers, body: args[0].body })];
+    if (m.method === "fetch") args = [new Req(args[0].url, { method: args[0].method, headers: args[0].headers, body: args[0].body })];
     const out = typeof ep === "function" ? await inst[m.method](...args) : m.method === "fetch" ? await inst.fetch(args[0], bound, ctx) : await inst[m.method](...args);
-    if (out instanceof Response) postMessage({ type: "done", response: { status: out.status, statusText: out.statusText, headers: [...out.headers], body: await out.arrayBuffer() } });
-    else postMessage({ type: "done", value: out });
-  } catch (e) { postMessage({ type: "done", error: String((e && e.message) || e) }); }
+    if (out instanceof Res) post({ type: "done", response: { status: out.status, statusText: out.statusText, headers: [...out.headers], body: await out.arrayBuffer() } });
+    else post({ type: "done", value: out });
+  } catch (e) { post({ type: "done", error: String((e && e.message) || e) }); }
 };
 `;
 
@@ -82,6 +97,27 @@ function shimRuntimeImports() {
   } });
 }
 
+// Names an isolated Worker's code may not use, read in the transpiled source (comments gone, escapes spelled out):
+// the `Bun` global can't be removed from a thread, the global object leads to it, and a module's own `require`
+// and `import()` load the machine's modules. A property of the same name (`x.self`) is fine.
+const UNNAMED = /(?<![.$\w])(Bun|globalThis|self|global|window|require|module|__dirname|__filename)(?![$\w])|(?<![.$\w])import\s*(\(|\.\s*meta)/;
+
+/** Why an isolated Worker's modules can't load, or null: they import only each other and name nothing above. */
+export function walled(modules: WorkerCode["modules"]): string | null {
+  const t = new Bun.Transpiler({ loader: "js" });
+  for (const [name, m] of Object.entries(modules)) {
+    const src = typeof m === "string" ? m : "js" in m ? m.js : "cjs" in m ? m.cjs : null;
+    if (src === null) continue;
+    const out = t.transformSync(src), hit = out.match(UNNAMED);
+    if (hit) return `${name} uses \`${hit[1] ?? `import${hit[2] === "(" ? "()" : ".meta"}`}\`, which an isolated Worker (globalOutbound: null) can't`;
+    for (const i of t.scanImports(src)) {
+      const to = i.path.startsWith("./") || i.path.startsWith("../") ? join(dirname(name), i.path) : null;
+      if (to === null || !(to in modules)) return `${name} imports "${i.path}": an isolated Worker (globalOutbound: null) imports only its own modules`;
+    }
+  }
+  return null;
+}
+
 const ctx = () => ({ waitUntil(p: Promise<unknown>) { void p?.catch?.((e) => console.error("[loader waitUntil]", e)); }, passThroughOnException() {}, props: {} });
 
 /** What get() returns: the edge's WorkerStub. */
@@ -93,6 +129,8 @@ export class LocalWorkerStub {
       shimRuntimeImports();
       if (Object.values(c.modules).some((m) => typeof m === "object" && "py" in m)) throw new Error("Worker Loader: Python modules don't run on the desktop");
       if (!(c.mainModule in c.modules)) throw new Error(`Worker Loader: mainModule "${c.mainModule}" isn't one of the modules`);
+      const why = c.globalOutbound === null ? walled(c.modules) : null;
+      if (why) throw new Error(`Worker Loader: ${why}`);
       // Its own folder per load: a later get() with other code under the same id is a fresh import.
       const root = join(dir, crypto.randomUUID());
       for (const [name, m] of Object.entries(c.modules)) {
@@ -113,7 +151,8 @@ export class LocalWorkerStub {
   private isolated(l: { file: string; env: Record<string, unknown> }, name: string | undefined, method: string, args: unknown[]): Promise<any> {
     return new Promise(async (resolve, reject) => {
       const url = URL.createObjectURL(new Blob([ISOLATE], { type: "text/javascript" }));
-      const w = new Worker(url);
+      // An empty environment: the host's variables (its keys among them) never reach the code.
+      const w = new Worker(url, { env: {} });
       const end = () => { clearTimeout(timer); w.terminate(); URL.revokeObjectURL(url); };
       const timer = setTimeout(() => { end(); reject(new Error("timeout")); }, this.killMs);
       w.onerror = (e) => { end(); reject(new Error(e.message || "the Worker crashed")); };
