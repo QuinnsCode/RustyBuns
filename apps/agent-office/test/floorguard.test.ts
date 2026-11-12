@@ -339,6 +339,29 @@ pinnedTest("every send-home request lands in the local log: an agent's refusal a
   }
 });
 
+pinnedTest("a key from a terminal that lost its attach still reaches the worker, and one for a gone worker says so (#4315)", () => {
+  (globalThis as Record<string, unknown>).str = (v: unknown, max: number) => (typeof v === "string" ? v.slice(0, max) : "");
+  const typed: string[] = [], sent: { t: string; text?: string }[] = [];
+  const workers = {
+    get: (id: string) => (id === "w1" ? { id } : undefined),
+    attach: (id: string) => (id === "w1" ? { data: "screen", cols: 80, rows: 24 } : undefined),
+    write: (_id: string, data: string) => typed.push(data),
+  };
+  const floor = { workers };
+  const ctx = { floors: new Map([["f", floor]]), workerFloor: () => floor, sendTo: (_c: unknown, m: { t: string; text?: string }) => sent.push(m) };
+  const input = workerHandlers["term.input"] as (...a: unknown[]) => void;
+  // the connection came back without the terminal's attach: the arrow key goes through, after a fresh snapshot
+  const c = { peer: { name: "Ryan" }, id: "c1", attached: new Set<string>(), typingAt: new Map() };
+  input(ctx, c, { workerId: "w1", data: "\x1b[B" });
+  input(ctx, c, { workerId: "w1", data: "\r" });
+  expect(typed).toEqual(["\x1b[B", "\r"]);
+  expect(sent.map((m) => m.t)).toEqual(["term.snapshot"]);
+  // a worker the office can't find: typing says so once, not once a key
+  for (const k of "abc") input(ctx, c, { workerId: "gone", data: k });
+  expect(typed).toHaveLength(2);
+  expect(sent.filter((m) => m.t === "toast")).toHaveLength(1);
+});
+
 pinnedTest("an agent's hire on files an open PR or a queued task is changing is refused, then held or hired anyway (#3119)", async () => {
   // a checkout with two files, and a gh on PATH that lists whatever open PRs the test says
   const dir = mkdtempSync(path.join(tmpdir(), "rb-overlap-"));
