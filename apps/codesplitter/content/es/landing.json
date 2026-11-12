@@ -103,7 +103,7 @@
   "hand_cli": "Para el agente que prefiere ejecutar un comando a hablar MCP, y para ti en la terminal.",
   "hand_menus": "Pulsa <kbd>⌘K</kbd> y verás menús que cambian según la página, ya elija el dedo o el modelo.",
   "hand_menus_how": "mano: ⌘K · ojo: la misma lista, como herramientas",
-  "hand_agent_title": "un prompt para que tu propio agente maneje este sitio por ti: con las herramientas WebMCP de la página, MCP o la CLI",
+  "hand_agent_title": "un prompt para que tu propio agente maneje este sitio por ti: con la CLI, MCP o las herramientas WebMCP de la página",
   "hand_agent": "Copiar un prompt para tu agente",
   "desktop_cloud_head": "Primero la nube, que sincroniza hacia ti",
   "desktop_cloud": "El servidor guarda el repo de verdad. Si se cae, se caen tus pushes, tus checks, tus merges y cada agente que los espera.",

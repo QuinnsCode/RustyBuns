@@ -47,7 +47,7 @@ describe("code mode", () => {
     expect(after.map((t) => t.name)).toEqual(["search_tools", "describe_tools", "execute", "call_tool"]);
     expect(before.length).toBeGreaterThan(100);
     console.log(`tools/list: ${before.length} tools ${tokens(before)} tokens, code mode ${after.length} tools ${tokens(after)} tokens`);
-    expect(tokens(after) * 20).toBeLessThan(tokens(before));
+    expect(tokens(after) * 30).toBeLessThan(tokens(before)); // the README and /webmcp say "over 30 times"
   });
 
   test("before and after: one job, tool by tool and as one program, ends with the same file", async () => {
@@ -79,7 +79,7 @@ describe("code mode", () => {
     console.log(`clear ${TODOS} TODOs in a ${LINES}-line file: tool by tool ${toolByTool} tokens, one program ${asProgram} tokens`);
     expect(await lines("after.ts")).toEqual(await lines("before.ts"));
     expect((await lines("after.ts")).filter((l) => l.includes("TODO"))).toEqual([]);
-    expect(asProgram * 10).toBeLessThan(toolByTool);
+    expect(asProgram * 30).toBeLessThan(toolByTool); // the README and /webmcp say "over 30 times"
   });
 
   test("an agent finds a tool by what it does, and asks for just the schemas it needs", async () => {

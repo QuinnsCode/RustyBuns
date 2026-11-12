@@ -21,9 +21,10 @@ rm -f "$tmp"
 chmod +x "$dir/codesplitter"
 "$dir/codesplitter" login --url "$site" </dev/null >/dev/null
 echo "Installed codesplitter in $dir (runs on $rt)."
-case ":$PATH:" in *":$dir:"*) ;; *) echo "Add it to your PATH: export PATH=\\"$dir:\\$PATH\\"" ;; esac
-echo "Next: codesplitter login    (paste a token from your profile page)"
-echo "Then: codesplitter tools"
+cmd=codesplitter
+case ":$PATH:" in *":$dir:"*) ;; *) cmd="$dir/codesplitter"; echo "Add it to your PATH: export PATH=\\"$dir:\\$PATH\\"" ;; esac
+echo "Next: $cmd login    (paste a token from your profile page)"
+echo "Then: $cmd tools"
 `;
   return new Response(sh, { headers: { "content-type": "text/x-shellscript; charset=utf-8", "cache-control": "public, max-age=300" } });
 }
