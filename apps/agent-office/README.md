@@ -95,6 +95,9 @@ out. Keep quick tunnels short.
 
 Tip: add `/lite` to your phone's home screen and it opens like an app.
 
+Want T3 Code's phone app driving Claude on this Mac too? [T3CODE.md](T3CODE.md) maps the options (no box needed) and
+the one port clash with `office:phone`.
+
 ## Jump to the state
 
 `bun run demo --scenario <name>` serves the office's own pages (setup cards, GitHub writes card, ask card, wall screens, Ester) on `http://127.0.0.1:4720` in a chosen state, with a fake GitHub, a temp-folder keychain and a replayed Ester run behind them: no GitHub app, 1Password, Touch ID or LLM, and none of the real office's files are read. It is not in the shipped binary. `bun run demo --list` prints the names. Short links jump straight to a state: `bun run demo setup=github-signin --open`, or add `#setup=github-signin` / `#settings=grants` / `#settings=box` to the page's URL (`box-first-run` is the office in the box with Docker faked: the first-run and whole-log pages, and a host held on Deny / Always / Allow). On the page, the select switches state, `/?scenario=<name>` opens one, and `window.rbDemo` (`go`, `push`, `typeCode`, `state`) does the same for an agent.
