@@ -13,6 +13,15 @@
 //       blender/out/refs/<id>.now.png: front, side, three-quarter and head close-ups of public/models/<id>.glb, through an
 //       orthographic camera (blender/closeups.py). --main also draws git main's GLB to <id>.main.png at the same scale,
 //       so a change in size shows. One Blender at a time.
+//   bun scripts/beast-refs.ts --compare <id> [--out file.html]
+//       One self-contained page (blender/out/refs/<id>.compare.html): the references with their credits, the model
+//       before (git main) and now as close-up strips, and the traits with a tick or a cross each from the last judge
+//       run (blender/out/refs/<id>.judge.json; "not judged" until there is one). Draws the close-ups first. This is the
+//       page the owner picks from.
+//   bun scripts/beast-refs.ts --judge <id>
+//       Draws the close-ups, shows them with the references and traits to a fresh `claude -p` judge (judge-loop.ts
+//       judgeTraits), writes its verdict per trait and a score to blender/out/refs/<id>.judge.json, then the page.
+//       Agent judges score about 2 points above the owner: read the ticks for direction, not the number.
 //
 // The traits are what the model is judged on: fill refs/<id>.json's `traits` from the pictures (silhouette, head, limbs,
 // hide, colours, and the three things a child would draw) before building.
@@ -21,11 +30,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { $ } from "bun";
 import { runBlender } from "@rustybuns/cli/blender";
-import { arr, obj, oneOf, opt, str, type Of } from "@rustybuns/util/guard";
+import { esc } from "@rustybuns/util";
+import { arr, int, obj, oneOf, opt, str, type Of } from "@rustybuns/util/guard";
 import { PICKS } from "../src/art.ts";
 import { help } from "../../../scripts/help.ts";
 import { categoryFiles, fetchFile, findCategory, searchFiles, type Credit, type Hit } from "./commons.ts";
-import { OUT } from "./judge-loop.ts";
+import { judgeTraits, OUT } from "./judge-loop.ts";
 
 const APP = join(import.meta.dir, "..");
 export const REFS = join(APP, "refs");
@@ -134,12 +144,110 @@ export async function closeups(id: string, o: { main?: boolean } = {}): Promise<
   return res;
 }
 
+const TRAIT_KEYS = ["silhouette", "head", "limbs", "hide", "colours"] as const;
+/** One row a judge scores: a trait's key (a TRAITS key, or child1..child3) and what the references show. */
+export const traitRows = (t: Traits) => [...TRAIT_KEYS.map((k) => ({ key: k as string, want: t[k] })), ...t.child.map((c, i) => ({ key: `child${i + 1}`, want: c }))].filter((r) => r.want);
+
+/** A judge's verdict on one model against its references, trait by trait (scripts/beast-refs.ts --judge writes it). */
+export const Judged = obj({
+  id: str(40), at: str(40), score: int(1, 10),
+  traits: arr(obj({ key: str(20), verdict: oneOf(["yes", "partly", "no"] as const), note: str(300, { min: 0, dflt: "" }) }), 20),
+  fix: str(600, { min: 0, dflt: "" }),
+});
+export type Judged = Of<typeof Judged>;
+export const judgedPath = (id: string) => join(refsOut, `${id}.judge.json`);
+
+/** A picture as a data: URL, scaled to at most `width` wide as a JPEG, so the page carries everything it shows. */
+async function inline(file: string, width: number): Promise<string> {
+  const out = join(tmpdir(), `inline-${Date.now()}-${Math.random().toString(36).slice(2)}.jpg`);
+  await $`ffmpeg -loglevel error -y -i ${file} -vf ${`scale='min(${width},iw)':-2`} -q:v 5 ${out}`;
+  const b64 = Buffer.from(await Bun.file(out).arrayBuffer()).toString("base64");
+  rmSync(out, { force: true });
+  return `data:image/jpeg;base64,${b64}`;
+}
+
+const MARK = {
+  yes: `<svg viewBox="0 0 24 24" aria-label="yes"><path d="M20 6 9 17l-5-5"/></svg>`,
+  partly: `<svg viewBox="0 0 24 24" aria-label="partly"><path d="M5 12h14"/></svg>`,
+  no: `<svg viewBox="0 0 24 24" aria-label="no"><path d="M18 6 6 18M6 6l12 12"/></svg>`,
+};
+
+/** Writes the comparison page for the beast; answers its path. */
+export async function compare(id: string, o: { out?: string; draw?: boolean } = {}): Promise<string> {
+  const refs = await readRefs(id);
+  if (!refs) throw new Error(`no refs/${id}.json: run --refs ${id} first`);
+  const strips = o.draw === false ? { now: join(refsOut, `${id}.now.png`), main: join(refsOut, `${id}.main.png`) } : await closeups(id, { main: true });
+  const jf = Bun.file(judgedPath(id));
+  const judged = (await jf.exists()) ? Judged(await jf.json()) : null;
+  const pics = await Promise.all(refs.images.filter((i) => existsSync(join(REFS, id, i.file))).map(async (i) => ({ ...i, url: await inline(join(REFS, id, i.file), 520) })));
+  const strip = async (label: string, f?: string) => f && existsSync(f) ? `<figure class="strip"><figcaption>${label}</figcaption><img src="${await inline(f, 1800)}" alt="${label}: front, side, three-quarter, head"><div class="views">${VIEWS.map((v) => `<span>${v}</span>`).join("")}</div></figure>` : "";
+  const rows = traitRows(refs.traits).map((r) => {
+    const j = judged?.traits.find((t) => t.key === r.key);
+    return `<tr><th>${r.key.startsWith("child") ? "a child draws" : r.key}</th><td>${esc(r.want)}</td><td class="mark ${j?.verdict ?? "none"}">${j ? MARK[j.verdict] : ""}<span>${j ? esc(j.note || j.verdict) : "not judged"}</span></td></tr>`;
+  }).join("\n");
+  const credit = (i: (typeof pics)[number]) => i.from === "owner" ? "the owner's picture" : `<a href="${esc(i.page ?? "")}">${esc(i.artist ?? "Unknown")}</a>, ${esc(i.license ?? "")}`;
+  const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>${esc(refs.name)} references</title>
+<style>
+:root{--bg:#f6f5f2;--fg:#1d1d1b;--mute:#6b6a66;--card:#fff;--line:#dedcd6;--yes:#2f7d4a;--no:#b3412f;--partly:#a87512}
+@media (prefers-color-scheme:dark){:root:not([data-theme=light]){--bg:#171716;--fg:#ecebe7;--mute:#9b9a95;--card:#22221f;--line:#3a3935;--yes:#5cbf7d;--no:#e2735f;--partly:#d9a443}}
+:root[data-theme=dark]{--bg:#171716;--fg:#ecebe7;--mute:#9b9a95;--card:#22221f;--line:#3a3935;--yes:#5cbf7d;--no:#e2735f;--partly:#d9a443}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 system-ui,sans-serif}
+main{max-width:1200px;margin:0 auto;padding:24px 16px 64px}h1{margin:0 0 4px;font-size:28px}h2{margin:32px 0 12px;font-size:18px}
+.sub{color:var(--mute);margin:0}a{color:inherit}
+.refs{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.refs figure{margin:0;background:var(--card);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.refs img{display:block;width:100%;height:220px;object-fit:contain;background:#fff}
+.refs figcaption{padding:8px 10px;font-size:12px;color:var(--mute)}
+.strip{margin:0 0 16px;background:var(--card);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.strip figcaption{padding:8px 12px;font-weight:600}.strip img{display:block;width:100%}
+.views{display:grid;grid-template-columns:repeat(4,1fr);font-size:12px;color:var(--mute);text-align:center;padding:4px 0 8px}
+table{width:100%;border-collapse:collapse;background:var(--card);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+th,td{text-align:left;vertical-align:top;padding:10px 12px;border-top:1px solid var(--line)}th{width:120px;text-transform:capitalize}
+.mark{width:34%}.mark svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:3;stroke-linecap:round;vertical-align:-3px;margin-right:6px}
+.yes{color:var(--yes)}.no{color:var(--no)}.partly{color:var(--partly)}.none{color:var(--mute)}.mark span{color:var(--fg)}.none span{color:var(--mute)}
+.score{font-size:15px;color:var(--mute)}
+@media (max-width:640px){th{width:auto}td,th{display:block;border-top:0}tr{display:block;border-top:1px solid var(--line)}.mark{width:auto}}
+</style></head><body><main>
+<h1>${esc(refs.name)}</h1>
+<p class="sub">${pics.length} references${refs.category ? `, from Commons category ${esc(refs.category)}` : ""}${judged ? ` · judged ${esc(judged.at)}: <b>${judged.score}/10</b> against the references` : ""}</p>
+<h2>References</h2>
+<div class="refs">${pics.map((i) => `<figure><img src="${i.url}" alt="${esc(i.file)}"><figcaption>${credit(i)}</figcaption></figure>`).join("")}</div>
+<h2>The model</h2>
+${await strip("Before (git main)", strips.main)}
+${await strip("Now", strips.now)}
+<h2>Traits</h2>
+<table>${rows || `<tr><td>No traits written yet: fill refs/${esc(id)}.json.</td></tr>`}</table>
+${judged?.fix ? `<h2>What to fix next</h2><p>${esc(judged.fix)}</p>` : ""}
+</main></body></html>`;
+  const out = o.out ?? join(refsOut, `${id}.compare.html`);
+  await Bun.write(out, html);
+  return out;
+}
+
+/** Draws the close-ups (now and main), has a fresh judge score now against the references, and saves the verdict. */
+export async function judge(id: string): Promise<Judged> {
+  const refs = await readRefs(id);
+  if (!refs) throw new Error(`no refs/${id}.json: run --refs ${id} first`);
+  const traits = traitRows(refs.traits);
+  if (!traits.length) throw new Error(`refs/${id}.json has no traits yet: write them from the pictures first`);
+  const pics = refs.images.map((i) => join(REFS, id, i.file)).filter((f) => existsSync(f));
+  if (!pics.length) throw new Error(`no pictures in refs/${id}/: run --refs ${id}`);
+  const { now } = await closeups(id, { main: true });
+  const answer = await judgeTraits({ name: refs.name, refs: pics, model: now, views: VIEWS, traits });
+  if (typeof answer !== "object" || answer === null || Array.isArray(answer)) throw new Error("the judge's answer is not a JSON object");
+  const raw = Judged({ ...answer, id, at: new Date().toISOString().slice(0, 16).replace("T", " ") });
+  const j: Judged = { ...raw, traits: raw.traits.filter((t) => traits.some((r) => r.key === t.key)) };
+  await Bun.write(judgedPath(id), JSON.stringify(j, null, 2) + "\n");
+  return j;
+}
+
 if (import.meta.main) {
   help(import.meta.path);
   const argv = process.argv.slice(2);
   const val = (k: string) => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] : undefined; };
-  const id = val("--refs") ?? val("--closeups");
-  if (!id || id.startsWith("--")) { console.error("usage: bun scripts/beast-refs.ts --refs <id> | --closeups <id> [--main]   (--help for more)"); process.exit(1); }
+  const id = val("--refs") ?? val("--closeups") ?? val("--compare") ?? val("--judge");
+  if (!id || id.startsWith("--")) { console.error("usage: bun scripts/beast-refs.ts --refs <id> | --closeups <id> [--main] | --compare <id> | --judge <id>   (--help for more)"); process.exit(1); }
   if (argv.includes("--refs")) {
     const max = val("--max") === undefined ? undefined : Number(val("--max"));
     if (max !== undefined && !(Number.isInteger(max) && max >= 1 && max <= 12)) { console.error("--max takes 1 to 12"); process.exit(1); }
@@ -152,4 +260,10 @@ if (import.meta.main) {
     const r = await closeups(id, { main: argv.includes("--main") });
     for (const p of Object.values(r)) console.log(p);
   }
+  if (argv.includes("--judge")) {
+    const j = await judge(id);
+    for (const t of j.traits) console.log(`${t.verdict.padEnd(6)} ${t.key.padEnd(10)} ${t.note}`);
+    console.log(`score ${j.score}/10 against the references${j.fix ? `\nfix: ${j.fix}` : ""}`);
+    console.log(await compare(id, { out: val("--out"), draw: false }));
+  } else if (argv.includes("--compare")) console.log(await compare(id, { out: val("--out") }));
 }

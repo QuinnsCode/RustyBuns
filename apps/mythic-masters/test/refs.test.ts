@@ -4,7 +4,7 @@ import { expect, test } from "bun:test";
 import { readdirSync } from "node:fs";
 import { join } from "node:path";
 import { freeLicense } from "../scripts/commons.ts";
-import { Refs } from "../scripts/beast-refs.ts";
+import { Judged, Refs } from "../scripts/beast-refs.ts";
 
 test("only public domain, CC0 and CC BY / BY-SA licences pass", () => {
   const cases: [string, boolean][] = [
@@ -18,4 +18,11 @@ test("every committed refs/<id>.json reads through the guard, and a wrong shape 
   const dir = join(import.meta.dir, "..", "refs");
   for (const f of readdirSync(dir).filter((f) => f.endsWith(".json"))) Refs(require(join(dir, f)));
   expect(() => Refs({ id: "nessie", name: "Nessie", query: "x", images: [{ file: "../etc/passwd", from: "search" }], traits: {} })).toThrow();
+});
+
+test("a judge's answer reads through its guard: a made-up verdict or a score off the scale fails", () => {
+  const ok = { id: "roc", at: "2026-11-11 16:00", score: 3, traits: [{ key: "head", verdict: "partly", note: "beak, no brow" }], fix: "longer wings" };
+  expect(Judged(ok).traits[0]!.verdict).toBe("partly");
+  expect(() => Judged({ ...ok, traits: [{ key: "head", verdict: "maybe" }] })).toThrow();
+  expect(() => Judged({ ...ok, score: 11 })).toThrow();
 });
