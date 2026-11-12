@@ -2,8 +2,9 @@ import { expect, test } from "bun:test";
 import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { ContextWatch, Meter, ModeWatch, choreOf, contextLines, noModes, project, propose, recent, standing, render, tally, trimDiff, trimLine, week, type Report } from "../ester/dexter.ts";
+import { CARRY_ON, ContextWatch, Meter, ModeWatch, StallWatch, choreOf, contextLines, noModes, project, propose, recent, standing, render, tally, trimDiff, trimLine, week, type Report } from "../ester/dexter.ts";
 import { codeByDay } from "../ester/ledger.ts";
+import { carryOn, type StallFloor } from "../triage/server.ts";
 
 const fresh = (): Report => ({ sessions: 1, usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, tools: new Map(), turns: 0, days: new Map(), helpers: { mervin: 0, ester: 0, dexter: 0 }, fights: 0, episodes: 0, modes: noModes(), chores: new Map() });
 const j = (o: unknown) => JSON.stringify(o);
@@ -174,6 +175,64 @@ test("Dexter names a session once as its context, and then everything it has use
   const cli = contextLines(meter.scan(root)).join("\n");
   expect(cli).toMatch(/sprocket-b93a: context 260k, 2\d\.\dM used in all, latest turn 260k/);
   expect(cli).toContain("Hand off:");
+});
+
+test("a turn that hangs, or that a notice ends owing work, is a stall once, and the office tells its worker to carry on (#4306)", () => {
+  const root = mkdtempSync(path.join(tmpdir(), "rb-dexter-stall-")), dir = path.join(root, "-x-RustyBuns");
+  mkdirSync(dir);
+  const t0 = Date.now(), at = (min: number) => new Date(t0 + min * 60_000).toISOString();
+  const cwd = "/x/RustyBuns/.agent-office/worktrees/sprocket-b93a", w = path.join(dir, "s-worker.jsonl"), other = path.join(dir, "s-other.jsonl");
+  const reply = (min: number, mid: string, stop: string, text = "", session = "s-worker", where = cwd) =>
+    j({ type: "assistant", timestamp: at(min), sessionId: session, cwd: where, message: { id: mid, stop_reason: stop, usage: { input_tokens: 1 }, content: text ? [{ type: "text", text }] : [{ type: "tool_use", id: mid, name: "Bash" }] } }) + "\n";
+  const asked = (min: number) => j({ type: "api-request", timestamp: at(min), querySource: "repl_main_thread" }) + "\n";
+  const prompt = (min: number, kind: string) => j({ type: "user", timestamp: at(min), origin: { kind }, message: { content: kind === "human" ? "fix it" : "<task-notification>done</task-notification>" } }) + "\n";
+  const result = (min: number) => j({ type: "user", timestamp: at(min), message: { content: [{ type: "tool_result", tool_use_id: "a", content: "ok" }] } }) + "\n";
+  const meter = new Meter(), watch = new StallWatch();
+  const check = (min: number) => watch.check(meter.scan(root, t0 + min * 60_000), t0 + min * 60_000);
+
+  // the 2026-11-12 shape: a person's turn, a tool, then a request that never gets its reply
+  writeFileSync(w, prompt(0, "human") + asked(0) + reply(1, "a", "tool_use") + result(2) + asked(2));
+  expect(check(11).stalled).toEqual([]); // 9 min: still waiting
+  const hung = check(13);
+  expect(hung.fresh.map((s) => [s.name, s.kind])).toEqual([["sprocket-b93a", "hung"]]);
+  expect(hung.fresh[0]!.message).toBe("sprocket-b93a asked the model 11 min ago and no reply came: the request hung, or the process stopped.");
+  expect(check(20).fresh).toEqual([]); // once
+  expect(check(20).stalled).toHaveLength(1);
+
+  // the reply comes and the turn ends: no stall. A notice opens the next turn and it stops with work owed
+  appendFileSync(w, reply(21, "b", "end_turn", "Fixed and pushed.") + prompt(22, "task-notification") + asked(22) + reply(23, "c", "end_turn", "Noted, the install finished."));
+  expect(check(50).stalled).toEqual([]); // 27 min quiet
+  const quiet = check(54).fresh;
+  expect(quiet.map((s) => s.kind)).toEqual(["quiet"]);
+
+  // the office types into its worker (waking it with the prompt when it stopped); a session no worker runs in is a toast for a person
+  const told: string[] = [], toasts: string[] = [];
+  let running = false;
+  const floor: StallFloor = { id: "f", workers: {
+    list: () => [{ id: "w1", name: "Sprocket", worktree: { path: ".agent-office/worktrees/sprocket-b93a" } }],
+    prompt: (id, text) => (running ? (told.push(`prompt ${id}: ${text}`), undefined) : "Worker is not running"),
+    resume: (id, text) => (told.push(`resume ${id}: ${text}`), undefined),
+  } };
+  carryOn(quiet[0]!, [floor], (_, m) => toasts.push(m));
+  running = true;
+  carryOn(hung.fresh[0]!, [floor], (_, m) => toasts.push(m));
+  expect(told).toEqual([`resume w1: ${CARRY_ON}`, `prompt w1: ${CARRY_ON}`]);
+  expect(toasts[1]).toEndWith("Told Sprocket to carry on.");
+
+  writeFileSync(other, prompt(0, "peer") + reply(1, "d", "end_turn", "ok", "s-other", "/tmp/elsewhere"));
+  const lone = check(54).fresh;
+  expect(lone.map((s) => s.name)).toEqual(["session s-other in /tmp/elsewhere"]);
+  carryOn(lone[0]!, [floor], (f, m) => toasts.push(`${f?.id ?? "every floor"}: ${m}`));
+  expect(toasts.at(-1)).toContain("every floor: session s-other in /tmp/elsewhere ended a turn a background notice opened");
+
+  // a notice turn that reports "N of M done", or one a person's message joined, owes nothing
+  for (const [why, tail] of [
+    ["reported", reply(56, "e", "end_turn", "3 of 3 done, nothing left.")],
+    ["a person joined", j({ type: "attachment", timestamp: at(56), attachment: { type: "queued_command", origin: { kind: "human" } } }) + "\n" + reply(57, "f", "end_turn", "Sure.")],
+  ] as const) {
+    appendFileSync(w, prompt(55, "task-notification") + tail);
+    expect([why, check(100).stalled.filter((s) => s.session === "s-worker")]).toEqual([why, []]);
+  }
 });
 
 test("Dexter counts code mode against tool loads and direct MCP calls, and a new program is an event once", () => {

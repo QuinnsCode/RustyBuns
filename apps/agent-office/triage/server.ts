@@ -6,7 +6,7 @@
 //   GET  /__rb/prof/<id>        a saved profile's summary (?top=N frames)
 //   GET  /__rb/heap             the heap snapshots the office and the pty hosts wrote over their ceiling
 //   GET  /__rb/history          the office's runs, one per start, newest first: memory slope, profiles, ceiling restarts
-//   GET  /__rb/context          Dexter's watch on live sessions' context size: `sessions` with each one's context, total used and latest turn (and `lines` of them, written out); `over` the warn lines now, and `fresh` crossings since the last ask (each once); `code` the sessions that ran a code-mode program since the last ask, with their code-mode, tool-load and direct MCP counts
+//   GET  /__rb/context          Dexter's watch on live sessions' context size: `sessions` with each one's context, total used and latest turn (and `lines` of them, written out); `over` the warn lines now, and `fresh` crossings since the last ask (each once); `code` the sessions that ran a code-mode program since the last ask, with their code-mode, tool-load and direct MCP counts; `stalled` the sessions whose turn hung or went quiet owing work (#4306)
 //   GET  /__rb/helpers          Ester's and Mervin's runs of the board script (ester/run.ts): phase, the tail they printed, PRs to hold,
 //                               and Mervin's running tally of conflicts avoided when one is kept (`tally`)
 //   GET  /__rb/line             the floor's open PRs and the ones merged in the last day (gh), for the gitpath screen (screens/)
@@ -24,7 +24,7 @@ import { listSaved, summarizeProfile } from "@rustybuns/shell-bun/profsummary";
 import { historyRuns } from "@rustybuns/shell-bun/history";
 import { officeHistory, officeMem } from "../live/mem.ts";
 import { officeReload } from "../live/reload.ts";
-import { ContextWatch, Meter, ModeWatch, nameOf, sessionLines } from "../ester/dexter.ts";
+import { CARRY_ON, ContextWatch, Meter, ModeWatch, nameOf, sessionLines, StallWatch, type Context, type Stall } from "../ester/dexter.ts";
 import { createHelpers, HELPERS, isHelper, repoWith, type EsterState } from "../ester/run.ts";
 import { mervinBoard, tallyRows, tallySum } from "../screens/read.ts";
 import { lineOf, type Gh } from "../screens/line.ts";
@@ -61,7 +61,7 @@ export function officeTriage(
     if (rows.length) appendFileSync(tallyFile, rows.map((r) => JSON.stringify(r)).join("\n") + "\n");
   };
   const lines = lineOf(gh);
-  const context = new ContextWatch(), modes = new ModeWatch(), meter = new Meter();
+  const context = new ContextWatch(), modes = new ModeWatch(), meter = new Meter(), stalls = new StallWatch();
   return async (method: string, url: URL, trusted: boolean): Promise<TriageAnswer | null> => {
     const p = url.pathname;
     const only = (m: string) => ({ status: 405, body: { error: `${m} ${p}` } });
@@ -81,7 +81,7 @@ export function officeTriage(
       ].sort((a, b) => b.at.localeCompare(a.at));
       return { status: 200, body: { snapshots } };
     }
-    if (p === "/__rb/context") return method === "GET" ? { status: 200, body: (() => { const sessions = meter.scan(projects); return { sessions: sessions.map((c) => ({ ...c, name: nameOf(c) })), lines: sessionLines(sessions), ...context.check(sessions), code: modes.check(sessions) }; })() } : only("GET");
+    if (p === "/__rb/context") return method === "GET" ? { status: 200, body: (() => { const sessions = meter.scan(projects); return { sessions: sessions.map((c) => ({ ...c, name: nameOf(c) })), lines: sessionLines(sessions), ...context.check(sessions), code: modes.check(sessions), stalled: stalls.check(sessions).stalled.map((x) => x.message) }; })() } : only("GET");
     if (p === "/__rb/helpers") return method === "GET" ? { status: 200, body: { ester: helpers.ester.state(), mervin: helpers.mervin.state(), dexter: helpers.dexter.state(), tally: tally() } } : only("GET");
     if (p === "/__rb/line") {
       if (method !== "GET") return only("GET");
@@ -122,4 +122,42 @@ export function officeTriage(
     }
     return null;
   };
+}
+
+/** What watchStalls needs of a floor's workers (the office's WorkerManager): their rows, and typing a prompt into one, or waking it with one. */
+export interface StallFloor {
+  id: string;
+  workers?: {
+    list(): { id: string; name: string; worktree?: { path?: string }; pr?: unknown }[];
+    prompt(id: string, text: string, by?: string): string | undefined;
+    resume?(id: string, text: string): string | undefined;
+  };
+}
+
+/** The office worker a session is, by its worktree's folder name (.agent-office/worktrees/<name>). */
+export function workerOf(c: Context, floors: Iterable<StallFloor>) {
+  const dir = /\.agent-office\/worktrees\/([^/]+)/.exec(c.cwd)?.[1];
+  if (!dir) return undefined;
+  for (const floor of floors) for (const w of floor.workers?.list() ?? []) if (w.worktree?.path && path.basename(w.worktree.path) === dir) return { floor, w };
+  return undefined;
+}
+
+/** One stall, acted on: a worker is told to carry on (woken with it if it stopped); any other session is named for a person. */
+export function carryOn(s: Stall, floors: Iterable<StallFloor>, toast: (floor: StallFloor | undefined, message: string) => void) {
+  const found = workerOf(s, floors);
+  if (!found?.floor.workers) return toast(undefined, `${s.message} Nothing in the office types into that session: look at it.`);
+  const { floor, w } = found, workers = found.floor.workers;
+  if (s.kind === "quiet" && w.pr) return; // a worker with a PR linked is waiting on it, not owing work (#4306)
+  let err = workers.prompt(w.id, CARRY_ON, "the office");
+  if (err === "Worker is not running" && workers.resume) err = workers.resume(w.id, CARRY_ON);
+  toast(floor, err ? `${s.message} Telling ${w.name} to carry on failed: ${err}` : `${s.message} Told ${w.name} to carry on.`);
+}
+
+/** Every `everyMs`, Dexter's stall watch over the live sessions (#4306): each new stall acted on once (carryOn). The office starts it once. */
+export function watchStalls(floors: () => Iterable<StallFloor>, toast: (floor: StallFloor | undefined, message: string) => void, projects = path.join(homedir(), ".claude/projects"), everyMs = 60_000) {
+  const meter = new Meter(), watch = new StallWatch();
+  const tick = () => { try { for (const s of watch.check(meter.scan(projects)).fresh) carryOn(s, floors(), toast); } catch (e) { console.warn("[rb] stall watch:", (e as Error).message); } };
+  const timer = setInterval(tick, everyMs);
+  timer.unref?.();
+  return () => clearInterval(timer);
 }
