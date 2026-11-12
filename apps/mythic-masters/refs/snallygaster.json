@@ -5,6 +5,10 @@
   "query": "Snallygaster",
   "images": [
     {
+      "file": "owner-1.png",
+      "from": "owner"
+    },
+    {
       "file": "card-bw.jpg",
       "from": "card",
       "page": "https://commons.wikimedia.org/wiki/File:Snallygaster-image.png",
@@ -39,7 +43,7 @@
   ],
   "traits": {
     "silhouette": "A lean, long-bodied dragon-bird: a long S-curved neck, big feathered wings raised high, two bird legs under the body and a long thin whip of a tail curling up at the end. No front legs. Its body can coil like a serpent, clawed feet clutching its prey (or a moonshine barrel).",
-    "head": "A bird head with a hooked, razor-sharp beak (black, or pale with teeth), crests of red frills or grey-and-white quill feathers on the crown, and a mass of long crimson tentacles spilling out of the beak like a beard. Either two eyes, or one large round eye in the middle of the forehead as the old Maryland accounts tell it.",
+    "head": "A bird head with a hooked, razor-sharp beak (black, or pale with teeth), crests of red frills or grey-and-white quill feathers on the crown, and a mass of long crimson tentacles spilling out of the beak like a beard. Either two eyes, or one large round eye in the middle of the forehead as the old Ma",
     "limbs": "Two scaly bird legs with orange talon feet, clenched as if gripping; feathered wings with long separated primaries.",
     "hide": "Smooth green scales on the back, a ribbed, banded ochre underside from throat to tail, a white feather tuft at the chest, feathers on the wings.",
     "colours": "Deep green back and wings, ochre-brown wing primaries and belly bands, white chest tuft, crimson tentacles and frills, black beak, orange feet.",
