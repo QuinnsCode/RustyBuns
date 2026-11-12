@@ -8,7 +8,7 @@ describe("the tome's engravings", () => {
     expect(marginalia(["ember", "tide"]).match(/<svg /g)).toHaveLength(4);
     expect(weights().frame).toBeLessThan(6144);
   });
-  test.each(["lineup", "bestiary", "regions", "title", "witch"] as const)("%s: an svg under 2 KB", (c) => {
+  test.each(["lineup", "bestiary", "regions", "factions", "title", "witch"] as const)("%s: an svg under 2 KB", (c) => {
     const s = emblem(c);
     expect(s.startsWith("<svg ") && s.endsWith("</svg>")).toBe(true);
     expect(s).toContain('aria-hidden="true"');

@@ -68,9 +68,11 @@ import { findTape, lightFire, sight, tapeOf, tapesFound, WITCH_CAMP } from "./wo
 import { regionsCleared, visit, WITCH } from "./witch.ts";
 import { approach as approachFaction, back as backAgain, deed, FACTION, factionsOf, fought as foughtFaction, hail as hailPost, postFought, postsIn, record as questRecord, reply as replyFaction, sectionCleared, waitingAll, type Ctx as FactionCtx, type Foe as FactionFoe, type Manned, type Scene } from "./factions/engine.ts";
 import { postSpot, stageSpot, walkedUp } from "./world/posts.ts";
-import { rivalsView, type Figure } from "./world/rivals-view.ts";
+import { COAT_CSS, rivalsView, type Figure } from "./world/rivals-view.ts";
 import { FACTIONS, type FactionId } from "./factions/model.ts";
 import { bandOf, pressure, reading, trendOf } from "./factions/read.ts";
+import { ledgerOf, type Ledger } from "./factions/ledger.ts";
+import { jumpTo, stepOf } from "./factions/jump.ts";
 import { close as closeHunt, HUNTS, stageOf, take, CLUES } from "./world/hunts.ts";
 import { FORAGE_MEND } from "./world/nature.ts";
 import { Online, roomCode, uid } from "./net/online.ts";
@@ -409,7 +411,9 @@ let worldUp = false; // the world view is built (its hooks can run while it buil
 
 // --- the journey: your line-up, the Eldritch Compendium, how far each trail goes (src/journey.ts) ---------------------
 let journey: Journey | null = (() => { try { return loadJourney(localStorage.getItem(SAVE_KEY)); } catch { return null; } })();
-const saveJourney = () => { try { if (journey) localStorage.setItem(SAVE_KEY, JSON.stringify(journey)); } catch { /* a private window: this session only */ } };
+/** False for a jump link's scratch journey (src/factions/jump.ts): played, never kept over your own. */
+let keepJourney = true;
+const saveJourney = () => { try { if (journey && keepJourney) localStorage.setItem(SAVE_KEY, JSON.stringify(journey)); } catch { /* a private window: this session only */ } };
 if (journey?.factions) { backAgain(journey, Date.now()); saveJourney(); } // the factions notice a long time away (src/factions/engine.ts)
 drawPicker(); // after the journey is loaded: the book's ribbons are its line-up
 
@@ -718,6 +722,21 @@ function sitWithWitch(): boolean {
 }
 witchEl.addEventListener("click", (e) => { if ((e.target as Element).closest("[data-go]")) { sitting = null; drawWitch(); } });
 
+/** A jump link (`?faction=office.3`): a scratch journey at that step, the regions before it won, and you a few steps
+ * from whoever waits there. Nothing of it is saved over your own journey. */
+function jumpToStage(id: string) {
+  const at = stepOf(id), j = jumpTo(id);
+  if (!at || !j) return;
+  keepJourney = false; world.scratch();
+  journey = j;
+  enterWorld();
+  for (let n = 1; n < at.stage.n; n++) world.beat(n);
+  world.travel(at.stage.n);
+  const spot = stageSpot(at.faction, at.stage.n, at.stage.k);
+  if (spot && !world.teleport(spot.x - 9, spot.z)) world.teleport(spot.x, spot.z); // a few steps off, or on them if that is water
+  history.replaceState(null, "", `?world=1&faction=${id}`);
+}
+
 // --- the three factions behind you (src/factions/engine.ts): walk up to one, hear them out, answer, fight their team ------
 /** The step you have walked up to, between its hail and the end of its fight. */
 let facing: Scene | null = null;
@@ -798,7 +817,7 @@ factionEl.addEventListener("click", (e) => {
 // The faction people on the ground (src/world/posts.ts, rivals-view.ts): a quest step's person by the stone of its section,
 // the posts round the stones behind you. Who stands where changes slowly, so it is worked out twice a second; the one
 // you walk up to speaks, once a visit.
-const rivals = rivalsView(scene, (x, z) => world.groundAt(x, z));
+const rivals = rivalsView(scene, (x, z) => world.groundAt(x, z), camera, $("#worldHud"));
 const rivalsReached = new Set<string>();
 let figures: (Figure & { stage?: FactionId; post?: Manned })[] = [], figuresAt = -1e9;
 function stepRivals(now: number) {
@@ -807,12 +826,19 @@ function stepRivals(now: number) {
   if (now - figuresAt > 500) {
     figuresAt = now;
     const ctx = factionCtx();
+    const waits = waitingAll(j, ctx);
+    const who = (f: FactionId, id: string) => FACTION[f].people.find((x) => x.id === id)?.name ?? FACTION[f].short;
     figures = [
-      ...waitingAll(j, ctx).filter((w) => w.stage.n === p.region).flatMap((w) => { const at = stageSpot(w.faction, w.stage.n, w.stage.k); return at ? [{ id: `stage:${w.faction}`, faction: w.faction, quest: true, stage: w.faction, ...at }] : []; }),
-      ...postsIn(j, p.region, ctx).flatMap((post) => { const at = postSpot(post.id); return at ? [{ id: post.id, faction: post.faction, resting: post.resting, post, ...at }] : []; }),
+      ...waits.filter((w) => w.stage.n === p.region).flatMap((w) => { const at = stageSpot(w.faction, w.stage.n, w.stage.k); return at ? [{ id: `stage:${w.faction}`, faction: w.faction, quest: true, stage: w.faction, name: who(w.faction, w.stage.who), sub: `${FACTION[w.faction].short} · ${w.stage.title}`, ...at }] : []; }),
+      ...postsIn(j, p.region, ctx).flatMap((post) => { const at = postSpot(post.id); return at ? [{ id: post.id, faction: post.faction, resting: post.resting, post, name: post.rank.title, sub: FACTION[post.faction].short, ...at }] : []; }),
     ];
+    // the map marks every step waiting behind you, wherever it is, and the posts of the region you are in
+    world.pins([
+      ...waits.flatMap((w) => { const at = stageSpot(w.faction, w.stage.n, w.stage.k); return at ? [{ ...at, colour: COAT_CSS[w.faction], quest: true }] : []; }),
+      ...figures.filter((f) => f.post).map((f) => ({ x: f.x, z: f.z, colour: COAT_CSS[f.faction], dim: f.resting })),
+    ]);
   }
-  rivals.update(figures, now / 1000);
+  rivals.update(figures, now / 1000, p);
   if (sheet || talking || director.beat) return;
   const up = walkedUp(p, figures, rivalsReached)[0];
   if (up?.stage) faceStage(up.stage); else if (up?.post) facePost(up.post);
@@ -920,13 +946,13 @@ $("#starterCards").addEventListener("click", (e) => {
 });
 $("#setOut").addEventListener("click", () => begin(chosen));
 
-type Tab = "lineup" | "bestiary" | "regions";
+type Tab = "lineup" | "bestiary" | "regions" | "factions";
 let tab: Tab = "lineup", picked = -1, journalOpen = false;
 /** The chapter the book's front matter (engraving, vine rule, the inscription) was printed over: only its first
  * opening has it (#3747); a turned page, a folio or a shut book ends it (null), and every page after starts on the
  * Book's demand in one line, so the chapter starts at the top of the leaf. */
 let front: Tab | null | undefined;
-const TABS: [Tab, string, string][] = [["lineup", "users", "Line-up"], ["bestiary", "book-open", "Bestiary"], ["regions", "map", "Regions"]];
+const TABS: [Tab, string, string][] = [["lineup", "users", "Line-up"], ["bestiary", "book-open", "Bestiary"], ["regions", "map", "Regions"], ["factions", "footprints", "Factions"]];
 /** A leaf of the tome swings over on its spine when you change chapter, the whole page you were reading on its front
  * and the next one's facing half on its back: forward from the right, back from the left (a phone's single page
  * turns from its left edge). */
@@ -949,7 +975,7 @@ function drawJournal(edit = true) {
   const j = journey;
   if (!j) return;
   drawDemand();
-  $("#journalTabs").innerHTML = TABS.map(([id, ic, label]) => `<button class="ribbon r-${id}${tab === id ? " on" : ""}" data-tab="${id}" aria-pressed="${tab === id}">${icon(ic)}${label}</button>`).join("");
+  $("#journalTabs").innerHTML = TABS.map(([id, ic, label]) => `<button class="ribbon r-${id}${tab === id ? " on" : ""}" data-tab="${id}" aria-pressed="${tab === id}" title="${label}" aria-label="${label}">${icon(ic)}<span class="rl">${label}</span></button>`).join("");
   $("#runningHead").textContent = TABS.find(([id]) => id === tab)?.[2] ?? ""; // the bookmark takes the chapter's colour
   for (const [c] of TABS) $("#journal").querySelector(".tome")?.classList.toggle(`c-${c}`, c === tab);
   const body = $("#journalBody");
@@ -999,6 +1025,16 @@ function drawJournal(edit = true) {
     body.innerHTML = spread(`<h2>Bound ${owned.size} · seen ${j.seen.length} · of ${ROSTER.length}</h2><p class="dim">What you have not met is a blot on the page. Meet it in the wild and its shape shows through the stain; bind it and the ink holds it. The arrows or a d-pad walk the quill; Enter or A opens a page, Esc or B turns back.</p>${l.map(region).join("")}`,
       r.map(region).join(""));
     markCursor();
+  } else if (tab === "factions") {
+    // the three behind you (src/factions/ledger.ts): where you stand with each, their steps you have done, the next
+    const book = ledgerOf(j);
+    const side = (l: Ledger) => `<h3>${esc(l.name)}<small class="gloss">they call you ${esc(l.calls)}</small></h3><p class="dim">${esc(l.standing)}</p>`
+      + (l.done.length ? `<ol class="pages">${l.done.map((d) => `<li><b>${esc(d.title)}</b> ${esc(d.log)}</li>`).join("")}</ol>` : "")
+      + (l.next ? `<p class="unwritten">Next: ${esc(l.next.title)}, at ${esc(l.next.where)}.</p>` : `<p class="unwritten">Their quest is closed.</p>`);
+    const [l, r] = halves(book, (x) => 2 + x.done.length);
+    body.innerHTML = spread(`<h2>Behind you · ${book.length} of ${FACTIONS.length} met</h2>`
+      + (book.length ? "" : `<p class="dim">Nobody has stepped out of the trees yet. Clear a few sections and look behind you.</p>`) + l.map(side).join(""),
+      r.map(side).join("") + (book.length && book.length < FACTIONS.length ? `<p class="unwalked">${FACTIONS.length - book.length === 1 ? "One more has" : "Two more have"} not shown themselves yet.</p>` : "") + `<i class="vignette rest" aria-hidden="true">${emblem("factions")}</i>`);
   } else {
     const page = (g: (typeof TRAIL_REGIONS)[number]) => {
       const done = cleared(j, g.n), secs = sections(g);
@@ -1916,6 +1952,7 @@ else if (params.get("gallery") !== null) {
   mountPalette();
   showGallery(clamp(Number(params.get("gallery")) || 0, 0, Math.ceil(ROSTER.length / PAGE) - 1));
 }
+else if (params.get("faction") && stepOf(params.get("faction")!)) jumpToStage(params.get("faction")!);
 else if (params.get("world") === "1") { const a = STARTERS.find((s) => s === params.get("a")) ?? STARTERS[0]; if (!journey && params.get("a")) { journey = newJourney([a, ...STARTERS.filter((s) => s !== a)].slice(0, PICKS)); saveJourney(); } enterWorld(); }
 else if (params.get("a") && params.get("b")) start(pickA, pickB, skinSel.value, params.get("watch") === "1");
 else if (params.get("versus") !== null) pages.show($("#select"));

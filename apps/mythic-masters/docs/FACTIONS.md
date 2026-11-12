@@ -154,3 +154,22 @@ that is not its own doing, said once, the next time you walk up to one of its pe
 - The Office's: `office-file`, `office-gary`, `protocol-quiet`, `cache-burned`, `quist-turned`, `office-closed`.
 - The Institute's: `sample-given`, `reagent-taken`, `squonk-lent`, `specimen-freed`, `toby-out`, `institute-closed`.
 - The Lamplighters': `lamp-carried`, `message-run`, `ridge-promise`, `annex-raided`, `bay-held`, `lamplighters-closed`.
+
+## Seeing them
+
+- **On the ground.** Within 40 m each faction person has a name tag, as the wild ones do: who they are, then the
+  faction and the step ("Agent Pell", "The Office · The Wooden One"), or a post's rank. A quest giver's tag has a
+  sparkle, and a resting post says so.
+- **On the map.** The corner map and the big map mark every step waiting behind you with a diamond, and the posts
+  of the region you are in with a dot, in the faction's coat colour; a resting post is dimmed.
+- **In the Compendium.** The Factions chapter lists each faction you have met, in the order you met them: what they
+  call you, where you stand (now, on the whole, and which way it goes), every step you have done with its line, and
+  where the next waits. The Book writes its own line over it.
+
+## Jump links
+
+`?faction=<step>` (`?faction=office.3`, any of the 24 steps) opens the world at that step: a fresh journey with
+every region before it cleared and its mythic bound, its own region cleared up to the step's stone, and the
+faction's earlier steps played through the real engine with the straight reply and a won fight
+(`src/factions/jump.ts`). You stand a few metres from whoever waits there. Nothing of it is saved: your own journey
+and map are there again on the next load. `scripts/manual-runs-lib.ts` carries these links for the manual runs.

@@ -5,6 +5,8 @@ import { approach, aside, back, deed, factionsOf, FACTION, fought, hail, holds, 
 import { FACTIONS, type When } from "../src/factions/model.ts";
 import { bandOf, deal, fresh, lag, pressure, reading, together, trendOf } from "../src/factions/read.ts";
 import { lint } from "../src/factions/ste.ts";
+import { jumpTo } from "../src/factions/jump.ts";
+import { ledgerOf } from "../src/factions/ledger.ts";
 
 const HOUR = 3_600_000, T0 = 1_800_000_000_000;
 const start = () => newJourney(["squonk", "hodag", "jackalope"], T0)!;
@@ -201,5 +203,27 @@ describe("the three factions behind you", () => {
     expect([lag(fast, T0 + 10 * 60_000), postsIn(fast, 1, { now: T0 + 10 * 60_000, n: 1, k: 10 }).map((p) => p.post.k).sort((a, b) => a - b)]).toEqual([2, [0, 6]]);
     expect(lag(fast, T0 + 30 * HOUR)).toBe(0);
     expect(postsIn(fast, 1, { now: T0 + 30 * HOUR, n: 1, k: 10 }).map((p) => p.post.k).sort((a, b) => a - b)).toEqual([0, 6, 9]);
+  });
+
+  test("a jump link lands at its step, and the Compendium's Factions page tells the quest so far", () => {
+    // every step of all three quests opens where it should, the steps before it played through the real engine
+    for (const f of FACTIONS) for (const st of FACTION[f].quest) {
+      const j = jumpTo(st.id, T0)!;
+      expect({ step: st.id, waits: waiting(j, f, { now: T0, n: st.n, k: st.k + 1 })?.id }).toEqual({ step: st.id, waits: st.id });
+    }
+    expect(jumpTo("office.9", T0)).toBeNull();
+    // four of the Office's steps done: the page lists them in order with their lines, and where No Cars waits
+    const j = jumpTo("office.5", T0)!, [office, ...rest] = ledgerOf(j);
+    expect(rest).toEqual([]);
+    expect([office!.name, office!.calls, office!.done.map((d) => d.id), office!.next?.title]).toEqual([FACTION.office.name, "Subject", ["office.1", "office.2", "office.3", "office.4"], "No Cars"]);
+    expect(office!.done[0]!.log).toBe(FACTION.office.quest[0]!.log);
+    expect(office!.next!.where).toContain("Mackinac Island");
+    expect(office!.standing).toMatch(/^(Cold|Cool|Even|Warm|Close) to you now, \w+ on the whole, and (falling|steady|rising)\.$/);
+    // the last step won, the quest is closed; nothing met yet, the page is empty
+    const end = jumpTo("lamplighters.8", T0)!, ctx = at(8, FACTION.lamplighters.quest[7]!.k + 1);
+    const sc = approach(end, "lamplighters", ctx)!, got = reply(end, sc, sc.replies[0]!.id, ctx)!;
+    if (got.team) fought(end, "lamplighters", "lamplighters.8", true, ctx);
+    expect(ledgerOf(end)[0]!.next).toBeNull();
+    expect(ledgerOf(start())).toEqual([]);
   });
 });

@@ -102,6 +102,6 @@ describe("the book at the head of each compendium chapter (#4166)", () => {
     expect(pageLineOf("regions", j).ask).toStartWith(`3 lost in a row past ${sec.name}.`);
     j.party[0]!.hp = 0;
     expect(pageLineOf("lineup", j).ask).toStartWith("The Hodag leads, flat on its back.");
-    for (const ch of ["lineup", "bestiary", "regions"] as const) expect(pageLineOf(ch, j).ask.length).toBeLessThan(95);
+    for (const ch of ["lineup", "bestiary", "regions", "factions"] as const) expect(pageLineOf(ch, j).ask.length).toBeLessThan(95);
   });
 });
