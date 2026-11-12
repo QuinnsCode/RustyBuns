@@ -686,3 +686,23 @@ button.info svg { width: 18px; height: 18px; }
 .about .lede { margin: 0 0 12px; }
 .about .keys { margin-top: 12px; }
 .kicker button.info { width: 24px; height: 24px; margin-left: 8px; } .kicker button.info svg { width: 15px; height: 15px; }
+
+/* Round 11 (#4281): the scope's moment. The soldier's photo on the briefing and both debriefs is seen through the
+   rebase scope (sight.svg 0.7 KB: an orange ring, a broken cross with mil ticks, a dot on the target), the briefing
+   is stamped TOP SECRET across the photo's foot (the CLASSIFIED stamp's worn mask, stamp.svg), and the field manual's
+   heading carries the sight as its insignia. */
+.menu .sight { position: absolute; z-index: 2; top: 26px; right: 16px; width: 96px; height: 126px; pointer-events: none; transform: rotate(3deg);
+  box-sizing: border-box; border: solid #0000; border-width: 5px 5px 16px; background: url(/menu/sight.svg) center / 84% no-repeat; }
+.menu .sight::after { content: "TOP SECRET"; position: absolute; left: -26px; bottom: -30px; padding: 3px 7px 2px; white-space: nowrap; transform: rotate(-11deg);
+  font: 900 13px/1.2 var(--br-stencil); letter-spacing: 0.14em; color: var(--br-hot-ink); border: 3px double var(--br-hot-ink); border-radius: 4px; opacity: 0.88;
+  -webkit-mask: url(/menu/stamp.svg) 0 0 / 150px 50px; mask: url(/menu/stamp.svg) 0 0 / 150px 50px; }
+.results .card::after { background: url(/menu/sight.svg) 50% 42% / 84% no-repeat, url(/menu/soldier-won.webp) 50% 92% / 136% auto no-repeat,
+  repeating-linear-gradient(#0000 0 9px, #14141420 9px 10px), linear-gradient(#ecebe6, #d3d1ca); }
+.results[data-mood="lost"] .card::after { background: url(/menu/sight.svg) 50% 42% / 84% no-repeat, url(/menu/soldier-lost.webp) 50% 92% / 136% auto no-repeat,
+  repeating-linear-gradient(#0000 0 9px, #14141420 9px 10px), linear-gradient(#ecebe6, #d3d1ca); }
+html .ui-house .gc-head h2::before { content: ""; display: inline-block; width: 0.95em; height: 0.95em; margin-right: 0.3em; vertical-align: -0.1em;
+  background: url(/menu/sight.svg) center / contain no-repeat; }
+@media (max-width: 560px) {
+  .menu .sight { top: 22px; right: 8px; width: 62px; height: 82px; border-width: 3px 3px 10px; }
+  .menu .sight::after { left: -18px; bottom: -24px; font-size: 10px; padding: 2px 5px 1px; border-width: 2px; }
+}

@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-50 -50 100 100" width="100" height="100">
+  <!-- The rebase scope laid over the soldier's photo: an orange ring, a broken cross with mil ticks, a dot on the target. -->
+  <g fill="none" stroke="#e8590c" stroke-linecap="square">
+    <circle r="31" stroke-width="1.8"/>
+    <circle r="40" stroke-width=".9" stroke-dasharray="2 3.2" opacity=".8"/>
+    <path d="M-48 0h38M10 0h38M0-48v38M0 10v38" stroke-width="1.6"/>
+    <path d="M-48 0h12M36 0h12M0-48v12M0 36v12" stroke-width="4"/>
+    <path d="M-20-3v6M20-3v6M-3-20h6M-3 20h6M-26-2v4M26-2v4M-2 26h4" stroke-width="1.3"/>
+  </g>
+  <circle r="2" fill="#e8590c"/>
+</svg>
