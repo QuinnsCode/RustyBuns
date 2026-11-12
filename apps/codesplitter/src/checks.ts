@@ -877,9 +877,10 @@ export async function checkRoutes(req: Request, env: Env, p: string[], url: URL,
   const run = Number.isInteger(id) && id > 0 ? await get(env, id) : null;
   if (!run || run.owner !== owner || run.repo !== repo) return fail("NoSuchCheck", "no such check run");
   if (!p[6] && req.method === "GET") {
-    // On a repo with private lines what a run printed can quote them, so the log and junit are the crew's.
+    // On a repo with private lines what a run printed can quote them, so the log and junit are the crew's;
+    // its command too, which comes from the repo's codesplitter.ci or package.json, private lines and all.
     const hide = !a.write && await logsAreCrews(env, owner, repo);
-    return json(hide ? { ...run, log: "", junit: null, hidden: "this repo has private lines: a check's log is for its crew" } : run);
+    return json(hide ? { ...run, command: null, log: "", junit: null, hidden: "this repo has private lines: a check's log is for its crew" } : run);
   }
   if (!p[6] && req.method === "PUT") {
     const no = crew(); if (no) return no;

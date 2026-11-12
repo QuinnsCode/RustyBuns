@@ -57,6 +57,14 @@ test("a repo's pipeline file sets its road, and a bad one says which field", asy
   const stacked = await post(call, null, "/api/pipeline", { pipeline: { lanes: [{ name: "x", cadence: "always", paths: ["**/**/**/a"] }] }, change: { files: ["/".repeat(499) + "b"] } });
   expect(stacked.status).toBe(400);
   expect(glob("**/**/a").source).toBe(glob("**/a").source);
+
+  // A private line in the file (a lane's name, here) keeps the plan made from it to the crew.
+  const file = (await (await call("ana", "/api/repos/ana/r/do/file?path=codesplitter.pipeline.json")).json()) as { lines: { id: string; text: string }[] };
+  const lane = file.lines.find((l) => l.text.includes('"stress"'))!;
+  expect((await post(call, "ana", "/api/repos/ana/r/do/private?path=codesplitter.pipeline.json", { lines: [lane.id], private: true })).status).toBe(200);
+  const hush = "stress";
+  for (const who of [null, "bo"]) expect(await (await call(who, "/api/repos/ana/r/pipeline?files=src/a.ts&release=true")).text()).not.toContain(hush);
+  expect(await (await call("ana", "/api/repos/ana/r/pipeline?files=src/a.ts&release=true")).text()).toContain(hush);
 });
 
 test("the hooks run at a merge: an AI's review runs off the request, its nay holds it with the reason, an edit asks again, then a person's yay lands it", async () => {

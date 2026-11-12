@@ -58,5 +58,8 @@ export async function pipelineRoutes(req: Request, env: Env, p: string[], url: U
   if ("error" in r) return fail("PipelineInvalid", r.error);
   // The file is read with the crew's eyes (private lines' real text), so only the crew gets it echoed back; a reader gets the plan.
   const out = answer(r.pipeline, change, r.source);
-  return json(write ? out : { source: out.source, plan: out.plan, counts: out.counts });
+  if (write) return json(out);
+  // A private line can say a lane's name or what it runs: then the plan, made from them, is the crew's too.
+  if (r.hides) return json({ source: out.source, hidden: `${PIPELINE_FILE} has private lines: its plan is for the crew` });
+  return json({ source: out.source, plan: out.plan, counts: out.counts });
 }

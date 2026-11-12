@@ -196,6 +196,12 @@ export async function charge(env: Env, rule: string, who: string, n = 1): Promis
   return over && "error" in over ? over.error : null;
 }
 
+/** `charge`, answered: the 429 (with retry-after) a request gets when it's over, else null. */
+export async function spend(env: Env, rule: string, who: string, n = 1): Promise<Response | null> {
+  const over = await hit(env, rule, who, false, n);
+  return over && "error" in over ? json({ error: over.error }, 429, { "retry-after": String(over.wait) }) : null;
+}
+
 function slowDown(r: Rule, win: number, max = r.max) {
   const wait = Math.ceil((win + r.window_s * 1000 - Date.now()) / 1000);
   if (r.per === "site") return { error: `The site's ${r.label.toLowerCase()} for the ${every(r.window_s)} are used up (${max}). Try again in ${every(wait)}.`, wait };

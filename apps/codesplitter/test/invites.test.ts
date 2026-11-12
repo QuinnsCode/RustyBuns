@@ -122,6 +122,18 @@ describe("invites", () => {
     expect((await as("/api/session")).status).toBe(401);
   });
 
+  test("a collaborator's hold on lines goes with their seat", async () => {
+    const { call, send } = await app();
+    await send("ryan", "/api/repos/ryan/lab/collaborators", { name: "sam" });
+    const [one] = ((await (await call("ryan", "/api/repos/ryan/lab/do/file?path=a.ts")).json()) as { lines: { id: string; rev: number }[] }).lines;
+    expect((await send("sam", "/api/repos/ryan/lab/do/claims?path=a.ts", { lines: [one!.id], task: "rename" })).status).toBe(200);
+    const edit = () => send("ryan", "/api/repos/ryan/lab/do/ops?path=a.ts", { ops: [{ kind: "set", line: one!.id, base: one!.rev, text: "uno" }] });
+    expect((await edit()).status).toBe(409);
+    expect((await call("ryan", "/api/repos/ryan/lab/collaborators/sam", { method: "DELETE" })).status).toBe(200);
+    expect(await (await call("ryan", "/api/repos/ryan/lab/do/claims?path=a.ts")).json()).toEqual([]);
+    expect((await edit()).status).toBe(200);
+  });
+
   test("a handle invite is that person's alone, and never an agent's", async () => {
     const { call, send, invite } = await app();
     await send("mia", "/api/login", { name: "mia" });

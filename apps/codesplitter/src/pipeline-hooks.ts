@@ -32,14 +32,15 @@ import { parseJson } from "./util.ts";
 import { errorIn, type Env } from "./env.ts";
 import { DEFAULT_PIPELINE, HOOKS, Lane, PIPELINE_FILE, Pipeline, type Hook } from "./pipeline.ts";
 
-/** The repo's pipeline from main, the default without a file, or why the file isn't one. */
-export async function repoPipeline(env: Env, owner: string, repo: string): Promise<{ pipeline: Pipeline; source: string } | { error: string }> {
+/** The repo's pipeline from main, the default without a file, or why the file isn't one. `hides`: the file has private lines. */
+export async function repoPipeline(env: Env, owner: string, repo: string): Promise<{ pipeline: Pipeline; source: string; hides?: true } | { error: string }> {
   const res = await toFile(env, owner, repo, PIPELINE_FILE, owner, "file").catch(() => null);
   const doc = res?.ok ? await docIn(res) : null;
   const body = doc ? text(doc) : "";
   if (!body.trim()) return { pipeline: DEFAULT_PIPELINE, source: "default" };
   const parsed = check(Pipeline, parseJson<unknown>(body, null));
-  return parsed ? { pipeline: parsed, source: PIPELINE_FILE } : { error: `${PIPELINE_FILE} on main isn't a pipeline: see POST /api/pipeline for what it takes` };
+  const hides = doc!.lines.some((l) => "private" in l && l.private === true);
+  return parsed ? { pipeline: parsed, source: PIPELINE_FILE, ...(hides && { hides }) } : { error: `${PIPELINE_FILE} on main isn't a pipeline: see POST /api/pipeline for what it takes` };
 }
 
 export interface Verdict { hook: Hook; hash: string; say: "yay" | "nay" | "waiting" | "running"; by: string; reason?: string }

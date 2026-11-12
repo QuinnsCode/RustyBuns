@@ -78,6 +78,7 @@ describe("github", () => {
   });
 
   test("a signed-out GitHub wreck link digs one shared read-only copy and reuses it", async () => {
+    const { wreckName } = await import("../src/github.ts");
     const call = await local({ GH_CLI: "off" });
     const real = globalThis.fetch;
     globalThis.fetch = (async (u: string) => {
@@ -88,12 +89,50 @@ describe("github", () => {
     call.artifacts.import = (async (params: any) => { imports++; return call.artifacts.create(params.target.name, { setDefaultBranch: "main" }); }) as any;
     try {
       const first = await post(call, null, "/api/github/wreck", { repo: "https://github.com/o/Tiny" });
-      expect([first.status, await first.json()]).toEqual([200, { owner: "github", name: "o-tiny" }]);
+      const room = { owner: "github", name: await wreckName("o/tiny") };
+      expect(room.name).toMatch(/^o-tiny-[0-9a-f]{8}$/);
+      expect([first.status, await first.json()]).toEqual([200, room]);
       const again = await post(call, null, "/api/github/wreck", { repo: "o/tiny" });
-      expect(await again.json()).toEqual({ owner: "github", name: "o-tiny" });
+      expect(await again.json()).toEqual(room);
       expect(imports).toBe(1);
-      expect((await call(null, "/api/game/r/github/o-tiny")).status).toBe(200);
+      // Names that flatten alike are still two copies: a visitor to one never gets the other's code.
+      const long = "a".repeat(39);
+      const names = await Promise.all(["a/b-c", "a-b/c", `${long}/x`, `${long}/y`].map(wreckName));
+      expect(new Set(names).size).toBe(4);
+      expect(names.every((n) => n.length <= 39)).toBe(true);
+      expect((await call(null, `/api/game/r/github/${room.name}`)).status).toBe(200);
+      // Read-only to everyone, even whoever holds the handle: no file goes in, and nothing goes private.
+      expect((await post(call, "github", `/api/repos/github/${room.name}/files`, { path: "x.ts", content: "mine\n" })).status).toBeGreaterThanOrEqual(400);
+      expect((await call("github", `/api/repos/github/${room.name}`, { method: "PUT", body: JSON.stringify({ visibility: "private" }) })).status).toBeGreaterThanOrEqual(400);
+      expect((await call(null, `/api/repos/github/${room.name}/tree`)).status).toBe(200);
       expect((await post(call, null, "/api/github/wreck", { repo: "nope" })).status).toBe(400);
+    } finally { globalThis.fetch = real; }
+  });
+
+  test("the wrecking room spends its budget on copies that came, says when to come back, and never pushes out a person's dig", async () => {
+    const call = await local({ GH_CLI: "off", DIG_CAP: "1" });
+    const real = globalThis.fetch;
+    // Repos named nope-* aren't on GitHub.
+    globalThis.fetch = (async (u: string) => {
+      const path = new URL(u).pathname;
+      if (path.endsWith(".git/info/refs") && !path.includes("/nope-")) return new Response(`${"c".repeat(40)} HEAD\0side-band symref=HEAD:refs/heads/main\n`);
+      return new Response("{}", { status: 404 });
+    }) as any;
+    call.artifacts.import = (async (params: any) => call.artifacts.create(params.target.name, { setDefaultBranch: "main" })) as any;
+    try {
+      await post(call, "ana", "/api/login", { name: "ana" });
+      expect((await post(call, "ana", "/api/github/dig", { repo: "o/mine" })).status).toBe(201);
+      // One signed-out client asking for repos that aren't there spends none of the hour's copies.
+      for (let i = 0; i < 25; i++) expect((await post(call, null, "/api/github/wreck", { repo: `o/nope-${i}` })).status).not.toBe(429);
+      expect((await post(call, null, "/api/github/wreck", { repo: "o/real" })).status).toBe(200);
+      expect((await post(call, null, "/api/github/wreck", { repo: "o/real-two" })).status).toBe(200);
+      // Copies past the cap push out older copies, not ana's own dig.
+      expect((await call("ana", "/api/repos/ana/mine")).status).toBe(200);
+      // Spent, it's a 429 that says when to come back.
+      await call.env.DB.prepare("INSERT INTO limit_rules (name, max, window_s, enabled, on_fail) VALUES ('wreck', 2, 3600, 1, 'reject')").run();
+      const over = await post(call, null, "/api/github/wreck", { repo: "o/real-three" });
+      expect(over.status).toBe(429);
+      expect(Number(over.headers.get("retry-after"))).toBeGreaterThan(0);
     } finally { globalThis.fetch = real; }
   });
 
@@ -788,5 +827,36 @@ describe("shares", () => {
     expect((await post(call, "ana", "/api/repos", { name: "gone" })).status).toBe(201);
     expect(((await (await call("ana", "/api/repos/ana/gone/do/file?path=a.ts")).json()) as any).lines ?? []).toEqual([]);
     expect(((await (await call("ana", "/api/repos/ana/gone/tree")).json()) as any).entries).toEqual([]);
+  });
+
+  test("a deleted repo's agent runs, threads and switches go with it: a remade one of the same name starts with none", async () => {
+    const { REPO_TABLES, KEPT_ON_DELETE } = await import("../src/github.ts");
+    const { sayIn, threadFetch } = await import("../src/thread-do.ts");
+    const call = await local();
+    await post(call, "ana", "/api/repos", { name: "gone", visibility: "private" });
+    await post(call, "ana", "/api/repos/ana/gone/files", { path: "a.ts", content: "one\n" });
+    const { meta } = await call.env.DB.prepare("INSERT INTO agent_runs (owner, repo, path, harness, task, agent, status, started) VALUES ('ana', 'gone', 'a.ts', 'claude', 'the secret plan', 'agent-claude', 'done', 0)").run();
+    const run = Number(meta.last_row_id);
+    await sayIn(call.env, "ana", "gone", run, { who: "ana", kind: "person", text: "the launch date is the 9th" });
+    expect((await call("ana", "/api/repos/ana/gone/protect", { method: "PUT", body: JSON.stringify({ on: true }) })).status).toBe(200);
+    await call.env.DB.prepare("INSERT INTO uncommitted (owner, repo, path, since) VALUES ('ana', 'gone', 'a.ts', 1)").run();
+    expect((await call("ana", "/api/repos/ana/gone?confirm=gone", { method: "DELETE" })).status).toBe(200);
+
+    // Every table with owner and repo columns is cleared, but the audit trail.
+    const q = async (sql: string) => (await call.env.DB.prepare(sql).all()).results as { name: string }[];
+    const cleared = new Set(REPO_TABLES.map((t) => t.split("|")[0]!));
+    for (const { name } of await q("SELECT name FROM sqlite_master WHERE type = 'table'")) {
+      const cols = (await q(`PRAGMA table_info("${name}")`)).map((c) => c.name);
+      if (!cols.includes("owner") || !cols.includes("repo")) continue;
+      expect([name, cleared.has(name) || KEPT_ON_DELETE.includes(name)]).toEqual([name, true]);
+      if (cleared.has(name)) expect([name, await call.env.DB.prepare(`SELECT count(*) AS n FROM ${name} WHERE owner = 'ana' AND repo = 'gone'`).first("n")]).toEqual([name, 0]);
+    }
+    // The thread's messages went too, so a remade repo's new collaborator finds nothing of the old one.
+    expect((await post(call, "ana", "/api/repos", { name: "gone", visibility: "private" })).status).toBe(201);
+    await post(call, "ana", "/api/repos/ana/gone/collaborators", { name: "bo" });
+    expect(await (await threadFetch(call.env, "ana", "gone", run, "/")).text()).not.toContain("launch date");
+    for (const path of ["/api/repos/ana/gone/agents", `/api/repos/ana/gone/agents/${run}/thread`, "/api/repos/ana/gone/threads"])
+      expect(await (await call("bo", path)).text()).not.toMatch(/launch date|secret plan/);
+    expect(((await (await call("ana", "/api/repos/ana/gone/protect")).json()) as any).on).toBe(false);
   });
 });
