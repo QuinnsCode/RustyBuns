@@ -627,7 +627,8 @@ const bookToast = (b: Back) => {
 // --- the Book talks back (src/book.ts): at a beat the journey stops until you answer ------------------------------
 // A beat queues a moment; it opens once no scene is playing and no fight is on, and the fight and the walk wait (like
 // the Controls dialog) until the Book's answer is read. In a party only the host's buttons work; the rest see who it waits on.
-let talking: { m: Moment; said: string | null } | null = null;
+/** `page` counts the lead-in pages already turned (book.ts `lead`): the Book asks once they all are. */
+let talking: { m: Moment; said: string | null; page: number } | null = null;
 /** The party the Book answers to (src/book-party.ts), joined from `?party=CODE`; `talkParty` set by the harness overrides its seat. */
 let readers: ReturnType<typeof bookParty> | null = null, readersCode: string | null = null, talkParty: Seat | null | undefined;
 const talkSeat = () => (talkParty !== undefined ? talkParty : readers?.seat() ?? null);
@@ -647,12 +648,15 @@ function say(beat: Beat, ctx: Ctx = {}): boolean {
 function drawTalk() {
   if (!talking) { talkEl.hidden = true; talkEl.innerHTML = ""; return; }
   const { m: mo, said } = talking, h = talkHold();
-  const buttons = said !== null
+  const lead = said === null ? mo.lead[talking.page] : undefined;
+  const buttons = lead !== undefined ? `<button data-next>${icon("arrow-right")} Go on</button>`
+    : said !== null
     ? `<button class="go" data-go>${icon("arrow-right")} Go on</button>`
     : mo.talk.replies.map((r) => `<button data-r="${esc(r.id)}"${h.canAnswer ? "" : " disabled"}>${esc(r.say)}</button>`).join("");
-  const lines = said !== null ? `<p class="demand">${hand(said, false)}</p>`
+  const lines = lead !== undefined ? `<p class="demand">${hand(lead, false)}</p>`
+    : said !== null ? `<p class="demand">${hand(said, false)}</p>`
     : `${mo.recall ? `<p class="demand recall">${hand(mo.recall, false)}</p>` : ""}<p class="demand">${hand(mo.ask, signedOf(mo.talk))}</p>`;
-  const wait = h.note && said === null ? `<p class="wait">${esc(h.note)}</p>` : "";
+  const wait = h.note && said === null && lead === undefined ? `<p class="wait">${esc(h.note)}</p>` : "";
   // The first time it talks, the Book itself opens, the whole spread, like the title: a plate facing its words.
   const first = mo.talk.beat === "open", again = talkEl.dataset.open === mo.talk.id;
   talkEl.dataset.open = first ? mo.talk.id : "";
@@ -681,6 +685,7 @@ talkEl.addEventListener("click", (e) => {
   const b = (e.target as Element).closest<HTMLButtonElement>("button");
   if (!b || b.disabled) return;
   if (b.dataset.r) replyBook(b.dataset.r);
+  else if (b.dataset.next !== undefined && talking) { talking.page++; drawTalk(); }
   else if (b.dataset.go !== undefined) { talking = null; drawTalk(); }
 });
 // --- the Bog Witch's camp (src/witch.ts): walk up to it or travel there and she has a word for you ---------------
@@ -705,7 +710,7 @@ witchEl.addEventListener("click", (e) => { if ((e.target as Element).closest("[d
 function nextTalk() {
   // the ink tearing free stops the fight itself; everything else waits for the fight to end
   if (talking || !talks.length || director.beat || (m && !m.over && talks[0]!.talk.beat !== "bind-fail")) return;
-  talking = { m: talks.shift()!, said: null }; keys.clear(); drawTalk();
+  talking = { m: talks.shift()!, said: null, page: 0 }; keys.clear(); drawTalk();
   readers?.opened();
 }
 // The title's party row, under the account row: signed in, a button makes a party (or, in one, copies its link) and a
@@ -1880,11 +1885,12 @@ Object.assign(window, {
       clearTo: (n: number, k: number) => { if (!journey) return; for (let i = 0; i <= k; i++) clearSection(journey, n, i); saveJourney(); world.cleared(); },
     },
     /** The Book's talks (src/book.ts): `state()` the open moment (its line, replies, the Book's answer once given) and how many wait,
-     * `say(beat, ctx)` as if that beat happened, `answer(id)` a reply (a guest's page gets the host's this way), `close()` reads past the answer,
+     * `say(beat, ctx)` as if that beat happened, `turn()` the next lead-in page, `answer(id)` a reply (a guest's page gets the host's this way), `close()` reads past the answer,
      * `party({ host, hostName })` (or null) to hold a guest's buttons until the host answers (a real party, `?party=CODE`, sets it itself). */
     book: {
-      state: () => ({ open: talking && { id: talking.m.talk.id, recall: talking.m.recall, ask: talking.m.ask, replies: talking.m.talk.replies.map((r) => ({ id: r.id, say: r.say })), said: talking.said, hold: talkHold() }, queued: talks.length, talk: journey?.talk ?? null }),
+      state: () => ({ open: talking && { id: talking.m.talk.id, recall: talking.m.recall, lead: talking.m.lead, page: talking.page, ask: talking.m.ask, replies: talking.m.talk.replies.map((r) => ({ id: r.id, say: r.say })), said: talking.said, hold: talkHold() }, queued: talks.length, talk: journey?.talk ?? null }),
       say: (beat: Beat, ctx: Ctx = {}) => { say(beat, ctx); nextTalk(); return talking?.m.talk.id ?? null; },
+      turn: () => { if (talking && talking.said === null && talking.page < talking.m.lead.length) { talking.page++; drawTalk(); } return talking?.page ?? 0; },
       answer: (id: string) => replyBook(id, !talkHold().canAnswer),
       close: () => { talking = null; drawTalk(); nextTalk(); },
       party: (p: { host: boolean; hostName: string } | null) => { talkParty = p; drawTalk(); },

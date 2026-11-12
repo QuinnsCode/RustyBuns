@@ -17,7 +17,7 @@ function beat(j: Journey, b: Beat, reply: string, ctx: Ctx = {}) {
 describe("the Book talks back", () => {
   test("a journey: each reply is kept with where it was said, survives a reload, changes play a little, and comes back regions later", () => {
     let j = newJourney(["hodag", "squonk", "jackalope"])!;
-    beat(j, "open", "all", { n: 1 });
+    expect(beat(j, "open", "all", { n: 1 }).m.lead.length).toBeGreaterThan(2); // the first open says what the Book is before it asks
     const bound = beat(j, "bind", "more", { n: 1, item: 4 });
     expect(bound.m.ask).toStartWith("Item 4.");
     expect(bound.got.named).toBe(true); // the first nickname: the Book writes it down next
@@ -61,7 +61,7 @@ describe("the Book talks back", () => {
 
   test("the lines file: a guard turns away a broken talk, and the Book never says the same line twice", () => {
     expect(() => Lines([{ id: "x", beat: "dinner", ask: "?", replies: [] }])).toThrow();
-    const said = LINES.flatMap((t) => [t.ask, ...t.replies.map((r) => r.book), ...(t.recall ?? []).map((r) => r.line)]);
+    const said = LINES.flatMap((t) => [...(t.lead ?? []), t.ask, ...t.replies.map((r) => r.book), ...(t.recall ?? []).map((r) => r.line)]);
     expect(said.length).toBeGreaterThanOrEqual(150);
     expect(new Set(said).size).toBe(said.length);
     // nor two lines that open the same way: the same first five words, placeholders aside, read as one line said twice
