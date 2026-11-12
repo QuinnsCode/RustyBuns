@@ -21,8 +21,9 @@ export const SKIN = {
     "--ui-shadow": "8px 8px 0 #1414141a",
   },
   css: `.eq-form,.eq-toast,.rb-lobby,.rb-spaces{border-left:8px solid var(--br-hot);background:var(--br-brackets),#fff;background-repeat:no-repeat;padding-inline:22px}
-.eq-title,.eq-toast b{text-transform:uppercase;letter-spacing:.06em}.eq-toast small{letter-spacing:.18em}`,
+.eq-title,.eq-toast b{text-transform:uppercase;letter-spacing:.06em}.eq-toast small{letter-spacing:.18em}
+.eq-coach{top:120px;left:12px;right:auto;margin:0;border-left:8px solid var(--br-hot);box-shadow:var(--ui-shadow)}`,
 };
 
 export type { Login } from "@rustybuns/util/eqosys";
-export const { signIn, finishSignIn, login, fresh, signOut, canSignIn, reportButton, achieve, party } = eqosys({ app: APP, url: EQOSYS, from: SIGN_IN_FROM, prefix: "git-recon", skin: SKIN });
+export const { signIn, finishSignIn, login, fresh, signOut, canSignIn, reportButton, achieve, achievements, party } = eqosys({ app: APP, url: EQOSYS, from: SIGN_IN_FROM, prefix: "git-recon", skin: SKIN });

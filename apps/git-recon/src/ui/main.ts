@@ -23,7 +23,8 @@ import { CAMPAIGN, chapterOf, nextChapter, opened } from "../sim/campaign.ts";
 import { Director, type Stage } from "../sim/director.ts";
 import { isSetPiece, rollTake, SET_PIECES, stageTake, type SetPieceId, type Take } from "../sim/rewatch.ts";
 import { CircleHelp, createElement, Lock, LogIn, LogOut, Play, Users } from "lucide";
-import { achieve, canSignIn, finishSignIn, fresh, login, reportButton, signIn, signOut } from "../eqosys.ts";
+import { tutorial } from "@rustybuns/util/tutorial";
+import { achieve, achievements, canSignIn, finishSignIn, fresh, login, reportButton, signIn, signOut } from "../eqosys.ts";
 import { KEYS, keyLabel, WEAPONS, type WeaponId } from "../sim/weapons.ts";
 import { isRole, nextRole, ROLE_ORDER, ROLES, type RoleId } from "../sim/roles.ts";
 import { STREAKS, VEHICLES, vehicleName } from "../sim/vehicles.ts";
@@ -114,7 +115,8 @@ function showCampaign() {
     b.title = `${ch.story} ${def.blurb}`;
     if (locked) b.querySelector("code")!.replaceChildren(createElement(Lock));
     b.disabled = locked;
-    b.onclick = () => start(def);
+    // Boot camp from the menu is where a first-timer starts: the tutorial runs over it.
+    b.onclick = () => { start(def); if (i === 0) coach.start(); };
     list.append(b);
   });
   showRepo();
@@ -269,6 +271,7 @@ function begin(def: LevelDef, repo: RepoSnapshot, game: Game, brief: string, net
   if (net) showLooks(net);
   const you = game.you();
   look.yaw = you.yaw, look.pitch = -0.05, prone = false, shake = 0, cam.ready = false;
+  did.yaw = you.yaw, did.weapon = you.weapon;
   $("menu").hidden = true, $("results").hidden = true, $("hud").hidden = false;
   $("level-name").textContent = def.name;
   $("repo").textContent = `${repo.name}@${repo.ref}`;
@@ -283,6 +286,21 @@ function begin(def: LevelDef, repo: RepoSnapshot, game: Game, brief: string, net
   banner(brief);
   if (!take) lock();
 }
+
+/** The first-time tutorial (@rustybuns/util/tutorial) over Boot camp: look, move, scope, fire and swap, each ticked once
+ *  the player has done it (`did`, from their own input each frame; `yaw` and `weapon` are where the level started). */
+const did = { yaw: 0, weapon: "", look: false, move: false, scope: false, fire: false, swap: false };
+const coach = tutorial({
+  prefix: "git-recon",
+  account: { achieve, achievements },
+  steps: [
+    { title: "Look around", keys: ["Mouse"], say: "Click the field first to take the mouse. On a phone, drag away from the stick.", done: () => did.look },
+    { title: "Move", keys: ["W", "A", "S", "D"], say: "Or the left stick. Space jumps, Shift dive-rolls.", done: () => did.move },
+    { title: "Scope in", keys: ["Right click"], say: "With rebase in hand: again steps in further, a third time out.", done: () => did.scope || !current?.game.you().kit.includes("rebase") },
+    { title: "Fire", keys: ["Click"], say: "At whatever the crosshair is on. R reloads.", done: () => did.fire },
+    { title: "Swap guns", keys: ["Wheel"], say: "Or the number keys: each gun is a git command.", done: () => did.swap },
+  ],
+});
 
 function toMenu() {
   const net = current?.net;
@@ -1148,6 +1166,9 @@ function frame(now: number) {
     aim: { x: aim.point.x, y: aim.point.y, z: aim.point.z },
     weapon: pick,
   };
+  // What the player has done so far, for the tutorial: each flag stays true once it is.
+  did.look ||= Math.abs(look.yaw - did.yaw) > 0.35; did.move ||= !!(input.forward || input.right);
+  did.scope ||= scopeLevel > 0; did.fire ||= firing; did.swap ||= you.weapon !== did.weapon;
   // Automatic guns fire while held; everything else once per click or tap.
   if (!WEAPONS[you.weapon].auto && firing && you.vehicle < 0) fire = touch.fire = false;
   jump = roll = reload = use = shoot = false, pick = undefined;
@@ -1237,10 +1258,10 @@ const playing = () => {
   return current;
 };
 const reconState = () => {
-  if (!current) return { menu: true, role: me.role, wins: wins.length };
+  if (!current) return { menu: true, role: me.role, wins: wins.length, tutorial: coach.state() };
   const { game, def, net } = current, you = game.you();
   return {
-    level: def.id, repo: `${current.repo.name}@${current.repo.ref}`, status: game.status, time: Math.round(game.time), lives: game.lives, battle: net ? game.mode : null,
+    tutorial: coach.state(), level: def.id, repo: `${current.repo.name}@${current.repo.ref}`, status: game.status, time: Math.round(game.time), lives: game.lives, battle: net ? game.mode : null,
     objective: game.objective, scope: scopeLevel, look: { yaw: +look.yaw.toFixed(3), pitch: +look.pitch.toFixed(3) },
     you: { hp: Math.round(you.hp), shield: Math.round(you.shield), alive: you.alive, weapon: you.weapon, loaded: you.loaded[you.weapon], ammo: you.ammo[you.weapon], kit: you.kit,
       pos: { x: +you.x.toFixed(2), y: +you.y.toFixed(2), z: +you.z.toFixed(2) }, vehicle: you.vehicle, prone: you.prone, role: game.role },
