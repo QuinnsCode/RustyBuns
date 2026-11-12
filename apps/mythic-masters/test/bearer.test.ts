@@ -15,8 +15,8 @@ test("the bearer stands, walks off, breaks into a run and stops again, on its ow
   const g = await figure();
   const skinned: THREE.SkinnedMesh[] = [];
   g.scene.traverse((o) => { if (o instanceof THREE.SkinnedMesh) skinned.push(o); });
-  // one skinned body, a draw per material (body, cover, glow), and the clips the game plays it with
-  expect({ meshes: skinned.length, clips: g.animations.map((c) => c.name).sort() }).toEqual({ meshes: 3, clips: ["cast", "idle", "look", "run", "walk"] });
+  // one skinned body, a draw per material (body, cover, glow, sole), and the clips the game plays it with
+  expect({ meshes: skinned.length, clips: g.animations.map((c) => c.name).sort() }).toEqual({ meshes: 4, clips: ["cast", "idle", "look", "run", "walk"] });
 
   const gaits = new Gaits(g.scene, g.animations), seen: string[] = [];
   const go = (speed: number, secs: number) => { for (let t = 0; t < secs; t += 1 / 60) { gaits.update(speed / 60, 1 / 60); if (seen.at(-1) !== gaits.gait) seen.push(gaits.gait); } };

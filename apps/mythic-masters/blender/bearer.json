@@ -31,8 +31,9 @@
                        "crown": { "tufts": 7, "out": 0.13 } } },
   "slump": { "Shoulder": [0.035, 0.02], "Arm": [0.045, 0.035] },
   "flare": { "length": 0.42, "top": 0.055, "hem": 0.1 },
-  "shoe": { "length": 0.3, "width": 0.11, "height": 0.09 },
+  "shoe": { "length": 0.3, "width": 0.115, "height": 0.1, "sole": 0.028, "spring": 0.025 },
   "eyes": { "radius": 0.012, "apart": 0.032 },
+  "hand": { "length": 0.125, "width": 0.085, "thick": 0.034, "curl": 0.025, "thumb": 0.019, "thumb_length": 0.065, "lip": 0.03 },
   "book": { "height": 0.25, "width": 0.18, "thick": 0.05 },
-  "colours": { "body": [0.035, 0.03, 0.05], "glow": [1.0, 0.7, 0.3], "cover": [0.17, 0.08, 0.05] }
+  "colours": { "body": [0.035, 0.03, 0.05], "glow": [1.0, 0.7, 0.3], "cover": [0.17, 0.08, 0.05], "sole": [0.11, 0.1, 0.11] }
 }
