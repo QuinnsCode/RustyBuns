@@ -1747,14 +1747,17 @@ export async function depRoutes(req: Request, env: Env, p: string[], url: URL, u
     const malicious = await hitsFor(env, owner, repo);
     if ("note" in files) return json({ packages: [], score: null, note: files.note, malicious, digs: [] });
     const own = new Set([...files.manifests.values()].map((m) => m.pkg.name).filter(Boolean));
-    const asks = new Map([...files.manifests.values()].flatMap((m) => floors(m.pkg)).filter((x) => !own.has(x.name)).map((x) => [`${x.name}@${x.version}`, x]));
+    // The repo's .npmrc says where its packages live, as on a run: a private one's name never goes to npm or OSV.
+    const rcs = [await homeNpmrc(env), files.top.includes(".npmrc") ? parseNpmrc((await files.read(".npmrc"))?.lines.map((l) => l.text).join("\n") ?? "") : null].filter((x): x is Npmrc => !!x);
+    const onNpm = (name: string) => registryUrl(rcs, name).url.startsWith("https://registry.npmjs.org/");
+    const asks = new Map([...files.manifests.values()].flatMap((m) => floors(m.pkg)).filter((x) => !own.has(x.name) && onNpm(x.name)).map((x) => [`${x.name}@${x.version}`, x]));
     const advisories = (env.DEPS_ADVISORIES as Advisories | undefined) ?? osvAdvisories();
     let note: string | undefined;
     const vulns = await advisories([...asks.values()]).catch((e: Error) => { note = `couldn't check for known vulnerabilities (${e.message})`; return new Map<string, Vuln[]>(); });
     const row = await env.DB.prepare("SELECT last_report FROM dep_watches WHERE owner = ? AND repo = ?").bind(owner, repo).first();
     const last: Report | null = row?.last_report ? JSON.parse(row.last_report as string) : null;
     const digs = last?.digs ?? (await settings(env, owner, repo)).digs.map((d): Dug => ({ ...d, status: "waiting" }));
-    const h = await health(files.manifests, (env.DEPS_REGISTRY as Registry | undefined) ?? npmRegistry, vulns, digs);
+    const h = await health(files.manifests, (env.DEPS_REGISTRY as Registry | undefined) ?? npmrcRegistry(rcs), vulns, digs);
     return json({ ...h, ...(malicious.length && h.score !== null ? { score: 0 } : {}), ...(note ? { note } : {}), malicious, digs });
   }
   if (p[5] === "issues" && req.method === "GET") {

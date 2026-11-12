@@ -441,3 +441,11 @@ A claims audit of codeSplitter, run against the app on its local twins. This sec
 - **A stamp on a private line stays off profiles outside the crew** (low) (`stamps.test.ts`).
 - **A collaborator's claims and places in line go with their seat** (low) (`invites.test.ts`).
 - **A file route without `?path=` is a 400** (low), not an exception out of the Worker (`bodies.test.ts`).
+
+### Enforced, second list
+
+- **Build and deploy files are found in any case, and more of them** (medium). The merge gate's list matches names case-blind (a case-insensitive disk runs `Package.json` and `DOCKERFILE`), and covers package managers' settings and install hooks (`pnpm-workspace.yaml`, `.yarnrc.yml`, `.pnpmfile.cjs`, lifecycle scripts, `scripts/`), `patches/`, `.husky/`, Makefiles, compose overrides and other CI systems' files (`codesplitter-github.test.ts`).
+- **A branch's own broken JSON, YAML or TOML holds its merge** (low to medium). Main's copy parses (or the file is new), so the merged text must too, whatever the branch held; settling it as the branch lands it anyway (`conflicts.test.ts`).
+- **Code mode on the desktop reaches only its tools** (high). An isolated Worker (`globalOutbound: null`) imports only its own modules and can't name `Bun`, the global object, `require` or `import()`; its thread starts with no environment, and without Bun's API, `process`, `eval` or the Function constructors (`codemode.test.ts`).
+- **Tools that make a repo public, change your public page or delete for good are risky** (medium). `create_repo`, `set_city`, `update_me`, `start_try`, `delete_program`, `unfollow` and `unstamp_line` go through `call_tool`, so the person is asked, and a program can't call them (`codemode.test.ts`, `mcp.test.ts`).
+- **Repo health asks each package's own registry** (medium). The health page reads the repo's `.npmrc` as a doctor run does: a package from another registry is asked there, and its name goes to neither npm nor OSV (`deps.test.ts`).
