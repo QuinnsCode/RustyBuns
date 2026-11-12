@@ -22,7 +22,7 @@ export const SKIN = {
     "--ui-toast-bg": "var(--plate)", "--ui-shadow": "var(--bevel), 0 4px 0 #05070a, 0 14px 34px rgb(0 0 0 / 0.6)",
   },
   css: `.eq-form,.eq-toast,.rb-lobby,.rb-spaces{background:var(--bolts),var(--steel);background-color:var(--plate);border:8px solid transparent;border-image:var(--edge) 10 round;background-clip:padding-box;padding-inline:18px}
-.eq-chip.in{padding:2px 3px 2px 18px;background:url("/plates/bolt.webp") left 5px center/9px no-repeat,linear-gradient(180deg,#f6d27a,#d8a83f 48%,#a8781f 52%,#8a6118);border:1px solid #5c3f0c;border-radius:2px;box-shadow:inset 0 1px 0 #fff7dcb3,inset 0 -2px 0 #3c260673,0 2px 0 #05070a,0 3px 6px #000a}
+.eq-chip.in{padding:2px 18px;background:url("/plates/bolt.webp") left 5px center/9px no-repeat,url("/plates/bolt.webp") right 5px center/9px no-repeat,linear-gradient(180deg,#f6d27a,#d8a83f 48%,#a8781f 52%,#8a6118);border:1px solid #5c3f0c;border-radius:2px;box-shadow:inset 0 1px 0 #fff7dcb3,inset 0 -2px 0 #3c260673,0 2px 0 #05070a,0 3px 6px #000a}
 .eq-chip.in .eq-who{color:#24180a;text-shadow:0 1px 0 #fff0c866}
 .eq-chip.in .eq-btn{min-height:26px;min-width:26px}
 .eq-title,.eq-who,.eq-toast b:not(.eq-badge *),.eq-toast small,.eq-btn{font-family:var(--f-stencil);font-weight:400;text-transform:uppercase;letter-spacing:.1em}
