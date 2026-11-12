@@ -119,6 +119,8 @@ describe("github", () => {
       return new Response("{}", { status: 404 });
     }) as any;
     call.artifacts.import = (async (params: any) => call.artifacts.create(params.target.name, { setDefaultBranch: "main" })) as any;
+    // Two new copies an hour, so the budget runs out within the test (rules are read once, then kept a while).
+    await call.env.DB.prepare("INSERT INTO limit_rules (name, max, window_s, enabled, on_fail) VALUES ('wreck', 2, 3600, 1, 'reject')").run();
     try {
       await post(call, "ana", "/api/login", { name: "ana" });
       expect((await post(call, "ana", "/api/github/dig", { repo: "o/mine" })).status).toBe(201);
@@ -129,7 +131,6 @@ describe("github", () => {
       // Copies past the cap push out older copies, not ana's own dig.
       expect((await call("ana", "/api/repos/ana/mine")).status).toBe(200);
       // Spent, it's a 429 that says when to come back.
-      await call.env.DB.prepare("INSERT INTO limit_rules (name, max, window_s, enabled, on_fail) VALUES ('wreck', 2, 3600, 1, 'reject')").run();
       const over = await post(call, null, "/api/github/wreck", { repo: "o/real-three" });
       expect(over.status).toBe(429);
       expect(Number(over.headers.get("retry-after"))).toBeGreaterThan(0);
@@ -839,7 +840,7 @@ describe("shares", () => {
     const run = Number(meta.last_row_id);
     await sayIn(call.env, "ana", "gone", run, { who: "ana", kind: "person", text: "the launch date is the 9th" });
     expect((await call("ana", "/api/repos/ana/gone/protect", { method: "PUT", body: JSON.stringify({ on: true }) })).status).toBe(200);
-    await call.env.DB.prepare("INSERT INTO uncommitted (owner, repo, path, since) VALUES ('ana', 'gone', 'a.ts', 1)").run();
+    await call.env.DB.prepare("INSERT OR REPLACE INTO uncommitted (owner, repo, path, since) VALUES ('ana', 'gone', 'a.ts', 1)").run();
     expect((await call("ana", "/api/repos/ana/gone?confirm=gone", { method: "DELETE" })).status).toBe(200);
 
     // Every table with owner and repo columns is cleared, but the audit trail.
