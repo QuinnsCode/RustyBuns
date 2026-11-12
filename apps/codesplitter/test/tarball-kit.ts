@@ -93,8 +93,8 @@ export function fakeGitHub(sha: string, tgz: string, o: { subs?: Record<string, 
     if (dir && url.pathname === `/repos/o/big/git/trees/${sha}`) {
       const tree = git(dir, "ls-tree", "-r", "-l", "--full-tree", "HEAD").split("\n").map((line) => {
         const [meta, path] = line.split("\t") as [string, string];
-        const [mode, type, , size] = meta.split(/\s+/);
-        return { path, mode, type, size: Number(size) };
+        const [mode, type, sha, size] = meta.split(/\s+/);
+        return { path, mode, type, sha, size: Number(size) };
       });
       for (const [path, commit] of Object.entries(subs)) tree.push({ path, mode: "160000", type: "commit", sha: commit } as any);
       return Response.json({ sha, truncated: false, tree });

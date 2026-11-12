@@ -34,7 +34,8 @@ import { checkEnv, runDirs, sandboxUser, spawnAs } from "./check-env.ts";
 import { checkSettings, claimRun, cloneUrl, get, handToDesktop, headOf, planChecks, readAt, updateRun, type CheckRun } from "./checks.ts";
 import { RUN_BUDGET_MS, readExec } from "./deploy-runner.ts";
 import { gate, hostList, hostOf, REGISTRIES, type GateExports } from "./egress.ts";
-import { json, type Env } from "./env.ts";
+import { json, need, readBody, type Env } from "./env.ts";
+import { obj, rec, str } from "@rustybuns/util/guard";
 import { isAdmin } from "./identity.ts";
 import { charge, SITE } from "./limits.ts";
 import { portFetch, type ContainerApi } from "./sandbox.ts";
@@ -241,6 +242,10 @@ export interface CiRunnerState {
 
 /** How the repo's checks went on the doctor's files: `out`, the end of the one that failed; `note`, why they stopped short. */
 export interface DoctorChecks { id: string; ok: boolean; names: string[]; failed?: string; out?: string; note?: string }
+/** What POST /doctor and POST / are sent (deps.ts, checks.ts). */
+const DoctorBody = obj({ owner: str(), repo: str(), files: rec(str(Infinity, { min: 0 })) });
+const KickBody = obj({ owner: str(), repo: str() });
+
 /** What POST /doctor answers: the result, the run it's waiting on, or why it can't go now. */
 export type DoctorAnswer = { result: DoctorChecks } | { running: { id: string } } | { busy: string };
 interface DoctorJob { id: string; owner: string; repo: string; key: string; tip: string; files: Record<string, string>; plan: { name: string; command?: string }[]; done?: boolean }
@@ -318,11 +323,12 @@ export class CiRunner {
 
   async fetch(req: Request): Promise<Response> {
     if (new URL(req.url).pathname === "/doctor") {
-      const { owner, repo, files } = (await req.json()) as { owner: string; repo: string; files: Record<string, string> };
-      return json(await this.doctor(owner, repo, files));
+      const body = need(await readBody(req), DoctorBody);
+      return body instanceof Response ? body : json(await this.doctor(body.owner, body.repo, body.files));
     }
-    const { owner, repo } = (await req.json()) as RepoRef;
-    await this.ctx.storage.put("repo", { owner, repo });
+    const body = need(await readBody(req), KickBody);
+    if (body instanceof Response) return body;
+    await this.ctx.storage.put("repo", { owner: body.owner, repo: body.repo });
     await this.ctx.storage.setAlarm(Date.now());
     return json({ kicked: true });
   }

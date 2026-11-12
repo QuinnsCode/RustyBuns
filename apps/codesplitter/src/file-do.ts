@@ -127,6 +127,10 @@ export const FileReply = obj({ lines: arr(FileLine, Infinity) });
 /** `/file`'s whole doc, for a writer that diffs against it and posts ops (agent-run.ts). */
 export const FileDoc = obj({ rev: int(0, Number.MAX_SAFE_INTEGER), nextId: int(0, Number.MAX_SAFE_INTEGER), lines: arr(FileLine, Infinity) });
 export type FileDoc = Of<typeof FileDoc>;
+/** What POST /fork is sent: main's doc for a branch's copy, private lines marked (branches.ts, cuts.ts). */
+const ForkBody = obj({ doc: FileDoc });
+/** What POST /scrub is sent: a deleted account's handle and the ghost's (privacy.ts). */
+const ScrubBody = obj({ from: str(200), to: str(200) });
 /** A claim as `/claims` lists it and a granted `POST /claims` answers it. */
 export const ClaimRow = obj({ id: str(200), who: str(200), bot: bool(), lines: arr(str(200), Infinity), task: opt(str(Infinity, { min: 0 })),
   until: nul(num(0, Number.MAX_SAFE_INTEGER)), soft: opt(bool()) });
@@ -385,8 +389,9 @@ export class FileDurableObject {
     }
     if (req.method === "POST" && route === "scrub") {
       // A deleted account's handle, swapped for the ghost's everywhere here (privacy.ts).
-      const { from, to } = (await req.json()) as { from: string; to: string };
-      return json({ changed: await this.ctx.blockConcurrencyWhile(() => this.scrub(from, to)) });
+      const body = need(await readBody(req), ScrubBody);
+      if (body instanceof Response) return body;
+      return json({ changed: await this.ctx.blockConcurrencyWhile(() => this.scrub(body.from, body.to)) });
     }
     if (req.method === "POST" && route === "authors") {
       // The admin's backfill (privacy.ts, #770): every line's author into D1's authors
@@ -399,7 +404,9 @@ export class FileDurableObject {
     if (req.method === "POST" && route === "fork") {
       // A branch's copy starts as main's doc, ids and revs and all, once,
       // and main's private lines are private here too.
-      const { doc } = (await req.json()) as { doc: Doc & { lines: Shown[] } };
+      const body = need(await readBody(req), ForkBody);
+      if (body instanceof Response) return body;
+      const { doc } = body;
       if (!this.base && !this.doc.rev) {
         for (const l of doc.lines) if (l.private) { this.secret.add(l.id); delete l.private; }
         this.base = doc; this.doc = structuredClone(doc);

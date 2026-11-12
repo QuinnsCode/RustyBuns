@@ -54,7 +54,7 @@
 
 import { begin, finish, remoteFor, stateSuffix, type DeployFlags } from "./deploy.ts";
 import { isCleared, review, waitingNote } from "./deploy-review.ts";
-import { deployKeys, keyEnv, keysInfo, keysLabel, resealState, sealState, unsealState, type Provider } from "./deploy-keys.ts";
+import { deployKeys, keyEnv, keysInfo, keysLabel, resealState, sealState, unsealState, type Provider, type ResealReply } from "./deploy-keys.ts";
 import { bool, check, num, obj, oneOf, opt, rec, str, type Of } from "@rustybuns/util/guard";
 import { fail, json, need, type Env } from "./env.ts";
 import { isAdmin } from "./identity.ts";
@@ -249,7 +249,7 @@ export class DeployRunner {
     const path = new URL(req.url).pathname;
     if (path === "/reseal") {
       const body = need(await req.json().catch(() => null), RepoBody);
-      return body instanceof Response ? body : json(await this.reseal(body.owner, body.repo));
+      return body instanceof Response ? body : json(await this.reseal(body.owner, body.repo) satisfies ResealReply);
     }
     if (path === "/try" && req.method === "GET") {
       const job = await this.load();
