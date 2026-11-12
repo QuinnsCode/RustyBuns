@@ -23,6 +23,9 @@ feet. What a child would draw: the shell, the dish on its head, the beak.
 
 ## What made it better
 
+The generator (`proposals/set-b/kappa.ts` with a shared `lib.ts`, and `shot.py` for the ortho views; commit 28495670, on the PR)
+writes the sheet.
+
 - **One skin from blobs** (`blend: 0.012`): the belly, chest, neck, limbs, a blob each for the feet and hands, the round
   head and the carapace and plastron.
 - **The shell's colour is `paint`** over five small nodes inside the carapace blob (`shell`, `shell_top`, `shell_low`,

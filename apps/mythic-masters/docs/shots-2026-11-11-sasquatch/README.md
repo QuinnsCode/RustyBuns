@@ -21,6 +21,9 @@ and belly; bent knees; long flat feet. What a child would draw: a big hairy body
 
 ## What made it better
 
+The generator (`proposals/set-b/sasquatch.ts` with a shared `lib.ts`, and `shot.py` for the ortho views; commit 28495670, on the PR)
+writes the sheet.
+
 - **The body is all blobs** (pelvis, belly, chest, a hump at the neck, deltoids, upper arms, forearms, thighs, knees,
   calves, ankles) merged by `blend: 0.03`, so the fur hide covers the whole beast. `limb` parts would have stayed plain
   fur next to a hide-mapped trunk.
