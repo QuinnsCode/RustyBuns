@@ -371,6 +371,20 @@ describe("over the API", () => {
     return { call, post, file };
   }
 
+  test("a branch whose own JSON doesn't parse doesn't merge it into main until someone settles it as the branch", async () => {
+    const { call, post } = await app();
+    await post("ana", "/api/repos/ana/r/files", { path: "c.json", content: '{\n  "a": 1\n}' });
+    await post("ana", "/api/repos/ana/r/branches", { name: "j" });
+    await post("ana", "/api/repos/ana/r/do/ops?path=c.json&branch=j", { ops: [{ kind: "set", line: "L2", base: 2, text: '  "a": 1,,' }] });
+    const held = await post("ana", "/api/repos/ana/r/branches/j/merge", {});
+    expect(held.status).toBe(409);
+    expect(JSON.stringify(await held.json())).toContain("the branch's copy isn't valid JSON");
+    const main = async () => text(await (await call("ana", "/api/repos/ana/r/do/file?path=c.json")).json() as Doc);
+    expect(await main()).toBe('{\n  "a": 1\n}');
+    expect((await post("ana", "/api/repos/ana/r/branches/j/merge", { resolve: { "c.json": { "lint:json": "branch" } } })).status).toBe(200);
+    expect(await main()).toBe('{\n  "a": 1,,\n}');
+  });
+
   test("the review lists each conflict's picks; a bad pick is a 400, a text lands as the merger's", async () => {
     const { call, post, file } = await app();
     const review = await (await call("ana", "/api/repos/ana/r/branches/b1")).json() as any;
