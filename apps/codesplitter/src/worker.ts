@@ -72,6 +72,7 @@ import {
   evict,
   githubRoutes,
   githubToken,
+  WRECK_OWNER,
 } from "./github.ts";
 import { gameRoutes } from "./game.ts";
 import {
@@ -297,7 +298,8 @@ async function access(env: Env, owner: string, repo: string, user: string | null
   const r = await repoRow(env, owner, repo, "visibility", { liveAt: Date.now() });
   if (!r) return { read: false, write: false, exists: false };
   const collab = user ? await env.DB.prepare("SELECT 1 FROM collaborators WHERE owner = ? AND repo = ? AND name = ?").bind(owner, repo, user).first() : null;
-  const write = user === owner || !!collab;
+  // The wrecking room's copies are shared and read-only: nobody writes to or hides one, whatever their handle.
+  const write = owner !== WRECK_OWNER && (user === owner || !!collab);
   return { read: r.visibility === "public" || write, write, exists: true };
 }
 
@@ -438,7 +440,7 @@ async function route(req: Request, env: Env): Promise<Response> {
   // /api/repos/:o/:r/beams, /api/beams/:id[/patch], /api/me/beams: a branch's stack, cleaned and handed over (beam.ts)
   const beam = await beamRoutes(req, env, p, user, (o, r) => access(env, o, r, user));
   if (beam) return beam;
-  const cut = await cutRoutes(req, env, p, url, user);
+  const cut = await cutRoutes(req, env, p, url, user, async (o, r) => (await access(env, o, r, user)).write);
   if (cut) return cut;
   // GET /api/me/mentions, POST /api/me/mentions/seen: where an agent thread named you (mentions.ts)
   const mentions = await mentionRoutes(req, env, p, user);
@@ -850,6 +852,7 @@ async function route(req: Request, env: Env): Promise<Response> {
     // /api/repos/:o/:r/do/(file|ops|log|at|commit|commits|ws|private|claims|release)?path=...&branch=...  -> the file's DO, or its copy on a branch
     if (p[4] === "do" && DO_ROUTES.has(p[5] ?? "")) {
       const path = url.searchParams.get("path") ?? "", branch = url.searchParams.get("branch") || undefined;
+      if (!path) return fail("BadInput", "?path= names the file");
       if (branch && !(await openBranch(env, owner, repo, branch))) return fail("NoSuchBranch", "no open branch " + branch);
       // A branch catalogues when it merges into main, not before.
       if (branch && p[5] === "commit") return fail("BadInput", "merge the branch, then commit main");

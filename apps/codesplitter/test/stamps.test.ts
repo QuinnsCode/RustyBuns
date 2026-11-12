@@ -68,6 +68,11 @@ describe("stamps", () => {
     await send("ana", "/api/repos/ana/pub/do/private?path=a.ts", { lines: [one!.id], private: true });
     expect((await stamps("ana")).map((s) => s.n)).toEqual([1]);
     expect(await stamps("bo")).toEqual([]);
+    // Nor on the stamper's profile: there it's ana's to see, and nobody else's.
+    const given = async (who: string | null) => ((await (await call(who, "/api/users/ana")).json()) as any).stamps.given.map((s: any) => s.line);
+    expect(await given("ana")).toEqual([one!.id]);
+    expect(await given("bo")).toEqual([]);
+    expect(await given(null)).toEqual([]);
     expect((await send("bo", "/api/repos/ana/pub/stamps", { path: "a.ts", stamp: "+1", lines: [one!.id] })).status).toBe(400);
 
     await call("ana", "/api/repos/ana/pub", { method: "PUT", body: JSON.stringify({ visibility: "private" }) });

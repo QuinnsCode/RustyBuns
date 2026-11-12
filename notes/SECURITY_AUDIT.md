@@ -424,3 +424,20 @@ Each with a test that fails without the fix.
 ### Still open
 
 - In #3725, where the next round starts: the edge call cap for code mode, the token id in the audit log, anonymous read tokens in the log, `adminRoute` and an owner's write token, hub notes with custom-scheme links, `party_seats` rows for refused knocks, a per-address gate on knocks, Better Auth's defaults set explicitly, and `/api/account/delete` on an app's token. The iOS kit's socket token: #3726. The deploy and the edge check: MANUAL RUN #3727. MANUAL RUN #2290 stays open.
+
+## Round 14, November 12: private lines, a deleted repo, and the app's own handles
+
+A claims audit of codeSplitter, run against the app on its local twins. This section lists what this round's PR enforces; each item has a test that fails without it.
+
+### Enforced
+
+- **A cut shows a private line blank outside the crew** (medium). `GET /api/cuts/:id`, its card image and MCP `get_cut` read the cut's files as the caller, as `do/file` does (`cuts.test.ts`).
+- **Text that was private stays private when its line moves** (medium). Privacy is kept by line id, so a file now also carries it by text: a line inserted or set to a private line's text (one still there, one deleted earlier, or one a merged branch held private) is private, and when a batch changes or deletes a private line every line it inserts is private too (Enter on a private line, delete-and-insert, an agent's diff, a merge). It is decided before the edit is sent, logged, indexed or committed (`private-lines.test.ts`).
+- **The repo's own config keeps its private lines** (low to medium). With a private line in `codesplitter.pipeline.json`, `GET …/pipeline` gives a reader outside the crew the source and nothing built from the file; a check run's `command` is the crew's on a repo with private lines, like its log (`pipeline.test.ts`, `checks.test.ts`).
+- **Deleting a repo clears every row keyed by it** (medium). `evict` clears every table with owner and repo columns but the audit trail (`REPO_TABLES` and `KEPT_ON_DELETE` in `github.ts`), plus the repo's scoped tokens and its agent threads' messages, files and session logs. A test reads the schema, so a new table is in one list or the other (`codesplitter-github.test.ts`).
+- **The handles the app owns things under are nobody's** (medium). `github`, `ghost`, `codesplitters` and `anon` can't be claimed or granted, and a session that holds one is signed out. The wrecking room's copies are read-only to everyone (`codesplitter.test.ts`, `codesplitter-github.test.ts`).
+- **Each GitHub repo gets its own wrecking-room copy** (low to medium). A copy's name ends in a hash of the whole `owner/repo`, so names that flatten alike or share 39 characters are two copies (`codesplitter-github.test.ts`).
+- **The wrecking room's budget is spent on copies that come** (low). A dig that fails gives its charge back, the 429 carries `retry-after`, and the shared copies are capped apart from people's own digs (`codesplitter-github.test.ts`).
+- **A stamp on a private line stays off profiles outside the crew** (low) (`stamps.test.ts`).
+- **A collaborator's claims and places in line go with their seat** (low) (`invites.test.ts`).
+- **A file route without `?path=` is a 400** (low), not an exception out of the Worker (`bodies.test.ts`).

@@ -444,6 +444,11 @@ describe("handles", () => {
     expect(await named(grant(ana, { handle: "zed", email: "zed@example.com" }))).toEqual([403, "AdminsOnly"]);
     expect(await named(grant(boss, { handle: "boss-person", email: "x@example.com" }))).toEqual([409, "HandleTaken"]);
     expect(await named(grant(boss, { handle: "agent-codex", email: "y@example.com" }))).toEqual([400, "BadInput"]);
+    // The handles the app owns repos under are nobody's: not by sign-up, not by an admin's grant.
+    const bo = await signup("bo@example.com", "Bo");
+    expect(await free("github")).toMatchObject({ ok: false, why: "taken" });
+    expect(await named(claim(bo, "github"))).toEqual([409, "HandleTaken"]);
+    expect(await named(grant(boss, { handle: "github", email: "bo@example.com" }))).toEqual([409, "HandleTaken"]);
     // A grant goes to a verified email only, since anyone can type one at signup.
     const typed = await signup("zed2@example.com", "Zed");
     const verified = await signup("zed3@example.com", "Zed");

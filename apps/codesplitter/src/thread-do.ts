@@ -16,6 +16,7 @@
 //   GET  /files/<id>                one file's bytes
 //   GET  /session                   {session}: its hosted claude's session log, or null (#3715)
 //   PUT  /session {id, log, cwd}    keeps it, in place of the last
+//   POST /wipe                      its repo was deleted: everything kept goes
 //
 // A page keeps what it has read and asks only for what came after (`after`), so a reconnect or
 // a return to the thread carries just what it missed, and a run's status comes pushed, not polled.
@@ -195,6 +196,13 @@ export class AgentThread {
       await this.ctx.storage.put(runKey(run.id), run);
       this.sockets.broadcast({ t: "run", run });
       return json({ run });
+    }
+    if (url.pathname === "/wipe" && req.method === "POST") {
+      // Its repo was deleted: forget everything, and close the sockets.
+      const all = await this.ctx.storage.list<unknown>({});
+      for (const k of all.keys()) await this.ctx.storage.delete(k);
+      for (const ws of this.ctx.getWebSockets()) try { ws.close(1000, "deleted"); } catch {}
+      return json({ ok: true });
     }
     if (url.pathname === "/last" && req.method === "GET") {
       // What someone said, over the run's own events after it (a question to the crew is followed by "done").

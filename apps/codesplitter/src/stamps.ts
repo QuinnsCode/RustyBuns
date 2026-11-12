@@ -7,7 +7,7 @@
 // Who may stamp: anyone signed in who can read the repo. A private line is the crew's
 // to stamp and see stamped, like its text.
 
-import { fileLines, materialize, toFile, type FileLine } from "./archive.ts";
+import { fileIds, fileLines, materialize, toFile, type FileLine } from "./archive.ts";
 import { fail, json, readBody, unread, type Env } from "./env.ts";
 import { liveRepo } from "./repos.ts";
 
@@ -79,10 +79,20 @@ export async function stampRoutes(req: Request, env: Env, p: string[], url: URL,
  */
 export async function recentStamps(env: Env, viewer: string | null, who: string, side: "by" | "author", limit = 20) {
   const { results } = await env.DB.prepare(`
-    SELECT s.owner, s.repo, s.path, s.line, s.stamp, s.by, s.author, s.created_at
+    SELECT s.owner, s.repo, s.path, s.line, s.stamp, s.by, s.author, s.created_at,
+      (r.owner = ? OR EXISTS (SELECT 1 FROM collaborators c WHERE c.owner = r.owner AND c.repo = r.name AND c.name = ?)) AS crew
     FROM stamps s ${liveRepo("s")}
     WHERE s.${side} = ? AND (r.visibility = 'public' OR r.owner = ?
       OR EXISTS (SELECT 1 FROM collaborators c WHERE c.owner = r.owner AND c.repo = r.name AND c.name = ?))
-    ORDER BY s.created_at DESC, s.rowid DESC LIMIT ?`).bind(Date.now(), who, viewer, viewer, limit).all();
-  return results;
+    ORDER BY s.created_at DESC, s.rowid DESC LIMIT ?`).bind(viewer, viewer, Date.now(), who, viewer, viewer, limit).all<Stamped & { crew: number | null }>();
+  // A stamp on a private line is the crew's, as the line is: outside it, it isn't on anyone's profile either.
+  const hidden = new Map<string, Promise<Set<string>>>();
+  const secret = (r: Stamped) => {
+    const k = `${r.owner}/${r.repo}/${r.path}`;
+    if (!hidden.has(k)) hidden.set(k, fileIds(env, r.owner, r.repo, r.path, "codesplitters", "private").then((ids) => new Set(ids ?? [])));
+    return hidden.get(k)!;
+  };
+  const shown = await Promise.all(results.map(async ({ crew, ...r }) => crew || !(await secret(r)).has(r.line) ? r : null));
+  return shown.filter((r) => r !== null);
 }
+interface Stamped { owner: string; repo: string; path: string; line: string; stamp: string; by: string; author: string; created_at: number }
