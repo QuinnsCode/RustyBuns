@@ -399,5 +399,5 @@
     "material": "gold",
     "below": -0.3
   },
-  "hide": {"pattern": "scales", "size": 0.035, "colours": [[0.45, 1, 0.87], [0.27, 0.61, 0.52]], "map": 1024}
+  "hide": {"pattern": "scales", "size": 0.035, "colours": [[0.45, 1, 0.87], [0.27, 0.61, 0.52]], "map": 512}
 }

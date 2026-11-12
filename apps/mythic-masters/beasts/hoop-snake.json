@@ -202,5 +202,5 @@
     "material": "dark",
     "below": -0.2
   },
-  "hide": {"pattern": "scales", "size": 0.02, "colours": [[0.51, 0.42, 0.21], [0.31, 0.25, 0.13]], "map": 1024}
+  "hide": {"pattern": "scales", "size": 0.02, "colours": [[0.51, 0.42, 0.21], [0.31, 0.25, 0.13]], "map": 512}
 }

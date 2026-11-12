@@ -70,5 +70,5 @@
     {"kind": "teeth", "along": ["ch", "cs"], "n": 4, "len": 0.05, "base": 0.012, "lower": true, "mirror": true, "material": "spike"},
     {"kind": "teeth", "along": ["l_h", "l_s"], "n": 4, "len": 0.045, "base": 0.011, "lower": true, "mirror": true, "material": "spike"}
   ],
-  "hide": {"pattern": "scales", "size": 0.05, "colours": [[0.21, 0.66, 0.36], [0.13, 0.4, 0.22]], "map": 1024}
+  "hide": {"pattern": "scales", "size": 0.05, "colours": [[0.21, 0.66, 0.36], [0.13, 0.4, 0.22]], "map": 512}
 }

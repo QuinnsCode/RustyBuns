@@ -1,10 +1,11 @@
 # Hides: baked beast skins
 
 A sheet's `hide` key gives the beast's body a skin finer than its mesh can colour. `blender/beast.py` (`bake_hide`)
-unwraps the body's faces after decimation, builds the pattern from procedural Blender nodes in the body's own space
+unwraps the body's faces after decimation (one UV island a chain of the stick figure: a leg, the tail, the neck,
+the trunk, each cut once down its underside, so a hide adds few vertices to the GLB and the rig), builds the pattern from procedural Blender nodes in the body's own space
 (metres), and Cycles bakes three maps from it in about a second:
 
-- **colour** (`map` px, 1024): a share of the vertex tone, so the belly, paint and occlusion still work over it
+- **colour** (`map` px, 512): a share of the vertex tone, so the belly, paint and occlusion still work over it
 - **normal** (tangent space, same size): the pattern's height through a Bump node, so scales and plates catch light
 - **roughness** (half size): the pattern's gloss, so wet skin shines and a seam stays dull
 
@@ -33,7 +34,7 @@ surfaces that face up) and `band` (a dorsal stripe down the spine). Sheet-wide, 
 black (otherwise its luminance is floored and lifted toward the belly's hue so it can still be shaded).
 
 Judge in close-ups and the gallery, never the contact sheet or a fight: at fight size (a beast about 80 px tall) no
-grain reads, only tint and big marks. A beast with fine scales wants `map: 1024`; one with only big marks does at 512.
+grain reads, only tint and big marks. A beast with fine scales wants `map: 512` (about 5 mm a texel on a 2.5 m beast); one with only big marks does at 256.
 
 ## Seeing them all
 

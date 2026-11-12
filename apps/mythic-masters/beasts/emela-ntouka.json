@@ -64,5 +64,5 @@
     {"kind": "foot", "at": "l_ffoot", "form": "paw", "len": 0.408, "width": 0.312, "toes": 3, "sole": 0.12, "mirror": true},
     {"kind": "foot", "at": "l_hfoot", "form": "paw", "len": 0.408, "width": 0.312, "toes": 3, "sole": 0.12, "mirror": true}
   ],
-  "hide": {"pattern": "skin", "size": 0.14, "colours": [[0.19, 0.19, 0.2]], "map": 512}
+  "hide": {"pattern": "skin", "size": 0.14, "colours": [[0.19, 0.19, 0.2]], "map": 256}
 }

@@ -525,5 +525,5 @@
     "material": "under",
     "below": -0.3
   },
-  "hide": {"pattern": "skin", "size": 0.08, "colours": [[0.32, 0.26, 0.42]], "map": 512}
+  "hide": {"pattern": "skin", "size": 0.08, "colours": [[0.32, 0.26, 0.42]], "map": 256}
 }

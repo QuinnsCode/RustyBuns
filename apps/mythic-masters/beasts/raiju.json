@@ -312,5 +312,5 @@
     "material": "bolt",
     "below": -0.3
   },
-  "hide": {"pattern": "fur", "size": 0.01, "colours": [[0.21, 0.36, 0.57], [0.47, 0.81, 1]], "map": 512}
+  "hide": {"pattern": "fur", "size": 0.01, "colours": [[0.21, 0.36, 0.57], [0.47, 0.81, 1]], "map": 256}
 }

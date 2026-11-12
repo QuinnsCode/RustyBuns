@@ -39,7 +39,7 @@ def label(text, at):
     bpy.context.collection.objects.link(t)
 
 
-def wear(o, pattern, slot=0):
+def wear(o, pattern, slot=0, segs=None):
     """`o` (a sphere, or a low-poly copy of the sample beast) baked in `pattern`'s example hide, on a material of its
     own in `slot` (bake_hide wires its maps into the material, so two meshes sharing one would show one map)."""
     name = f"swatch-{pattern}-{o.name}"
@@ -49,7 +49,7 @@ def wear(o, pattern, slot=0):
     else:
         o.data.materials.append(B.material(name))
     lift = B.shade(o, name, lift=B.HIDE_LIFT)
-    B.bake_hide(o, EXAMPLES[pattern][1], name, lift)
+    B.bake_hide(o, EXAMPLES[pattern][1], name, lift, segs)
 
 
 def main():
@@ -66,7 +66,8 @@ def main():
         sheet = json.load(f)
     B.PALETTE.update(sheet["palette"])
     B.PALETTE["label"] = (0.1, 0.1, 0.12, 0.9, 0)
-    bod, nodes = B.body(sheet)
+    bod, nodes, links = B.body(sheet)
+    segs = B.chains(sheet, nodes, links)
     beast = B.join([bod, *B.parts(sheet, nodes)], sheet["id"], sheet)
     lo, hi = [Vector(c) for c in (beast.bound_box[0], beast.bound_box[6])]
     k = 2.5 / max(hi.x - lo.x, 1e-3)  # every sample beast drawn 2.5 m long, so the cells line up
@@ -85,7 +86,7 @@ def main():
         wear(ball, p)
         body = B.low_poly(beast, sheet.get("budget", 3000))
         body.name = f"{sheet['id']}-{p}"
-        wear(body, p, slot)
+        wear(body, p, slot, segs)
         body.scale = (k, k, k)
         body.location = (cx + 2 * BALL + 0.1 - lo.x * k, 0, cz - lo.z * k + 0.05)
         label(p, (cx + 2 * BALL + 0.15, -2.0, cz + 1.75))

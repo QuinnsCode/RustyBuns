@@ -65,7 +65,7 @@
 #           thick            `bone` (0.02) the finger bones' radius, `thick` (0.015) the membrane's
 #   palette a 6th value is glow strength: the GLB keeps the colour as emissive, strength apart
 #   hide    pattern, size,   the body's material baked into a map finer than the mesh can colour (`bake_hide`). `size` is
-#           colours, map     metres a scale, strand, fold, feather, plate or patch; colours sRGB; `map` px (1024). Patterns
+#           colours, map     metres a scale, strand, fold, feather, plate or patch; colours sRGB; `map` px (512). Patterns
 #                            and their `colours` (each pattern's example sheet is its row in blender/hides.py EXAMPLES):
 #                              scales   [rim, cell]          Voronoi scales, domed, a dark seam (Tatzelwurm)
 #                              skin     [crease]             leathery folds across the body, pebbled (Hodag)
@@ -217,7 +217,7 @@ def body(sheet):
                 f.use_smooth = True
     if sheet.get("paint") or sheet.get("stripes"):
         paint(o, sheet, nodes, links)
-    return o, nodes
+    return o, nodes, links
 
 
 def skinned(sheet, nodes, links):
@@ -1144,6 +1144,178 @@ def join(objs, name, sheet):
     return o
 
 
+def chains(sheet, nodes, links):
+    """The sheet's stick figure in the mesh's frame (`join`'s scale, offset and turn), cut into chains: the runs of
+    links between the nodes where three or more meet, or an end (a leg, the tail, the neck, the trunk). One
+    (a, b, ra, rb, chain, ref) per link; `ref` is the side each chain's UV seam runs down: its underside, or for a
+    chain that mostly stands up (a leg, a biped's trunk) its inner side, or its back on the midline."""
+    k = sheet.get("scale", 1)
+    k = k if isinstance(k, list) else [k] * 3
+    off = Vector(sheet.get("offset", (0, 0, 0)))
+    turn = Matrix.Rotation(math.pi / 2, 4, "X")
+    at = {n: turn @ (Vector([v * s for v, s in zip(p[:3], k)]) + off) for n, p in nodes.items()}
+    r = {n: p[3] * sum(k) / 3 for n, p in nodes.items()}
+    degree = {}
+    for a, b in links:
+        degree[a], degree[b] = degree.get(a, 0) + 1, degree.get(b, 0) + 1
+    # union the links through every node only two links meet at
+    up = list(range(len(links)))
+
+    def root(i):
+        while up[i] != i:
+            up[i] = up[up[i]]
+            i = up[i]
+        return i
+    by_node = {}
+    for i, (a, b) in enumerate(links):
+        for n in (a, b):
+            by_node.setdefault(n, []).append(i)
+    for n, ls in by_node.items():
+        if degree[n] == 2:
+            up[root(ls[0])] = root(ls[1])
+    ids, refs = {}, {}
+    for i in range(len(links)):
+        ids.setdefault(root(i), len(ids))
+    for c in set(ids.values()):
+        mine = [links[i] for i in range(len(links)) if ids[root(i)] == c]
+        rise = sum(abs((at[b] - at[a]).z) for a, b in mine) / max(1e-6, sum((at[b] - at[a]).length for a, b in mine))
+        y = sum(at[a].y + at[b].y for a, b in mine) / (2 * len(mine))
+        if rise < 0.7:
+            refs[c] = Vector((0, 0, -1))
+        elif abs(y) > 0.02:
+            refs[c] = Vector((0, -math.copysign(1, y), 0))
+        else:
+            refs[c] = Vector((-1, 0, 0))
+    return [(at[a], at[b], r[a], r[b], ids[root(i)], refs[ids[root(i)]]) for i, (a, b) in enumerate(links)]
+
+
+def chain_seams(o, slot, segs):
+    """Seams on the body's faces (material `slot`) for one UV island a chain: each face goes to the chain it lies
+    nearest the surface of, the labels are smoothed so a border doesn't zigzag, and the seams run along the borders
+    and down each chain's `ref` side, where a ring round the chain's axis wraps. Every seam splits its vertices in
+    the GLB, so a chain's cut is one line, not Smart UV Project's many islands (#4264)."""
+    bm = bmesh.new()
+    bm.from_mesh(o.data)
+    bm.faces.ensure_lookup_table()
+    label, angle = {}, {}
+    for f in bm.faces:
+        if f.material_index != slot:
+            continue
+        c = f.calc_center_median()
+        best = None
+        for a, b, ra, rb, chain, ref in segs:
+            ab = b - a
+            t = max(0.0, min(1.0, (c - a).dot(ab) / max(ab.length_squared, 1e-12)))
+            q = a + ab * t
+            d = (c - q).length - (ra + (rb - ra) * t)
+            if best is None or d < best[0]:
+                best = (d, chain, q, ab, ref)
+        _, chain, q, ab, ref = best
+        axis = ab.normalized() if ab.length > 1e-9 else Vector((1, 0, 0))
+        u = c - q
+        u -= axis * u.dot(axis)
+        down = ref - axis * ref.dot(axis)
+        if down.length < 1e-6:
+            down = axis.orthogonal()
+        down.normalize()
+        side = axis.cross(down)
+        label[f.index] = chain
+        # 0 straight up from `ref`, +-pi on it: the cut is where the sign flips with both near pi
+        angle[f.index] = math.atan2(u.dot(side), -u.dot(down))
+    for _ in range(3):  # a face outvoted by its neighbours joins them
+        nxt = dict(label)
+        for f in bm.faces:
+            if f.index not in label:
+                continue
+            votes = {}
+            for e in f.edges:
+                for g in e.link_faces:
+                    if g is not f and g.index in label:
+                        votes[label[g.index]] = votes.get(label[g.index], 0) + 1
+            if votes:
+                top = max(votes, key=lambda k: (votes[k], k == label[f.index]))
+                if top != label[f.index] and votes[top] > votes.get(label[f.index], 0) + 1:
+                    nxt[f.index] = top
+        label = nxt
+    for e in bm.edges:
+        fs = [f.index for f in e.link_faces if f.index in label]
+        e.seam = False
+        if len(fs) != 2:
+            continue
+        f, g = fs
+        e.seam = label[f] != label[g] or (
+            abs(angle[f]) > math.pi / 2 and abs(angle[g]) > math.pi / 2 and (angle[f] > 0) != (angle[g] > 0))
+    bm.to_mesh(o.data)
+    bm.free()
+
+
+def unflat(o, slot):
+    """The faces (material `slot`) of each UV island the unwrap couldn't lay flat: a closed shell no seam or edge opens
+    (a knob, a ball off every chain's axis), or one it squashed into slivers (a thin wing membrane cut along its rim),
+    whose UV edges run far longer than its UV area allows."""
+    bm = bmesh.new()
+    bm.from_mesh(o.data)
+    lay = bm.loops.layers.uv["hide"]
+    seen, out = set(), []
+    for f0 in bm.faces:
+        if f0.material_index != slot or f0.index in seen:
+            continue
+        stack, island, opened = [f0], [], False
+        seen.add(f0.index)
+        while stack:
+            f = stack.pop()
+            island.append(f)
+            for e in f.edges:
+                others = [g for g in e.link_faces if g is not f and g.material_index == slot]
+                if e.seam or not others:
+                    opened = True
+                    continue
+                for g in others:
+                    if g.index not in seen:
+                        seen.add(g.index)
+                        stack.append(g)
+        flat = edge = edge3 = 0.0
+        for f in island:
+            w = [l[lay].uv for l in f.loops]
+            flat += abs(sum(w[i].x * w[i - 1].y - w[i - 1].x * w[i].y for i in range(len(w)))) / 2
+            for l in f.loops:
+                edge += (l.link_loop_next[lay].uv - l[lay].uv).length
+                edge3 += l.edge.calc_length()
+        area = sum(f.calc_area() for f in island)
+        squashed = edge > 1.5 * edge3 * math.sqrt(flat / max(area, 1e-12))
+        if not opened or squashed:
+            out += [f.index for f in island]
+    bm.free()
+    return set(out)
+
+
+def uv_islands(o, slot):
+    """The faces (material `slot`) grouped by UV island: faces that share an edge with the same UVs on both sides."""
+    bm = bmesh.new()
+    bm.from_mesh(o.data)
+    lay = bm.loops.layers.uv["hide"]
+    seen, out = set(), []
+    for f0 in bm.faces:
+        if f0.material_index != slot or f0.index in seen:
+            continue
+        stack, island = [f0], []
+        seen.add(f0.index)
+        while stack:
+            f = stack.pop()
+            island.append(f.index)
+            for l in f.loops:
+                for m in l.edge.link_loops:
+                    g = m.face
+                    if g is f or g.index in seen or g.material_index != slot:
+                        continue
+                    if (l[lay].uv - m.link_loop_next[lay].uv).length < 1e-6 and (l.link_loop_next[lay].uv - m[lay].uv).length < 1e-6:
+                        seen.add(g.index)
+                        stack.append(g)
+        out.append(island)
+    bm.free()
+    return out
+
+
 def tris(o):
     return sum(len(p.vertices) - 2 for p in o.data.polygons)
 
@@ -1454,10 +1626,11 @@ def hide_nodes(nt, h, base, lift):
     return scaled(c, 1.0 / lift), fl(ht), rg
 
 
-def bake_hide(o, h, back, lift):
-    """The body's faces (material `back`) unwrapped and `hide` baked into a colour map its material multiplies over the
-    tone, a tangent-space normal map and a roughness map."""
-    px, t0 = h.get("map", 1024), time.time()
+def bake_hide(o, h, back, lift, segs=None):
+    """The body's faces (material `back`) unwrapped, one island a chain of `segs` (`chains`; without them, a sphere
+    in the swatch, Smart UV Project), and `hide` baked into a colour map its material multiplies over the tone, a
+    tangent-space normal map and a roughness map."""
+    px, t0 = h.get("map", 512), time.time()
     mats = [m.name for m in o.data.materials]
     slot = mats.index(back)
     bpy.ops.object.select_all(action="DESELECT")
@@ -1465,11 +1638,69 @@ def bake_hide(o, h, back, lift):
     bpy.context.view_layer.objects.active = o
     uv = o.data.uv_layers.new(name="hide")
     uv.active = uv.active_render = True  # the map is read and baked through these, whatever UVs the mesh came with
-    for p in o.data.polygons:
-        p.select = p.material_index == slot
-    bpy.ops.object.mode_set(mode="EDIT")
-    bpy.ops.uv.smart_project(angle_limit=math.radians(80), island_margin=4 / px, scale_to_bounds=False)
+    # every face starts on one point: a new layer gives each face its own square, which splits all its vertices (the
+    # other materials' faces stay there) and, on a face the unwrap skips, takes the whole map in the pack
+    for d in uv.data:
+        d.uv = (0.0, 0.0)
+
+    def pick(faces):
+        """Just `faces` selected for the next UV operator, in edit mode. Setting only the faces' flags isn't enough: the
+        vertices an operator left selected select every face round them again, and a pack packs those too (the other
+        materials' faces, each a zero-size island with its own margin: the Gevaudan's hide filled 11% of its map)."""
+        bpy.ops.object.mode_set(mode="EDIT")
+        bpy.ops.mesh.select_mode(type="FACE")
+        bm = bmesh.from_edit_mesh(o.data)
+        bm.faces.ensure_lookup_table()
+        for f in bm.faces:
+            f.select_set(False)
+        for f in bm.faces:
+            if f.index in faces:
+                f.select_set(True)
+        bm.select_flush_mode()
+        bmesh.update_edit_mesh(o.data)
+
+    body = {p.index for p in o.data.polygons if p.material_index == slot}
+    if segs:
+        chain_seams(o, slot, segs)
+        pick(body)
+        bpy.ops.uv.unwrap(method="ANGLE_BASED", fill_holes=True, margin=4 / px)
+        bpy.ops.object.mode_set(mode="OBJECT")
+        left = o.data.uv_layers["hide"].data
+        shut = unflat(o, slot) | {p.index for p in o.data.polygons if p.index in body and all(
+            left[li].uv.length == 0 for li in p.loop_indices)}  # and any face the unwrap left where it started
+        if shut:
+            pick(shut)
+            bpy.ops.uv.smart_project(angle_limit=math.radians(80), island_margin=4 / px, scale_to_bounds=False)
+        # a shell of a few faces (a fur tuft, a knob) can't show a pattern but would take its own island and margin in
+        # the pack (the Gevaudan's tufts made 300 of them): each takes one texel of the hide instead
+        crumbs = {i for isl in uv_islands(o, slot) if len(isl) <= 8 for i in isl}
+        pick(body - crumbs)
+        bpy.ops.uv.average_islands_scale()  # one texel size everywhere, so a scale is as big on a toe as on the back
+        bpy.ops.uv.pack_islands(rotate=True, margin=4 / px)
+        bpy.ops.object.mode_set(mode="OBJECT")
+        if crumbs:
+            data = o.data.uv_layers["hide"].data
+            biggest = max((p for p in o.data.polygons if p.index in body and p.index not in crumbs), key=lambda p: p.area)
+            dot = sum((data[li].uv for li in biggest.loop_indices), Vector((0, 0))) / biggest.loop_total
+            for p in o.data.polygons:
+                if p.index in crumbs:
+                    for li in p.loop_indices:
+                        data[li].uv = dot
+    else:
+        pick(body)
+        bpy.ops.uv.smart_project(angle_limit=math.radians(80), island_margin=4 / px, scale_to_bounds=False)
     bpy.ops.object.mode_set(mode="OBJECT")
+    bm = bmesh.new()
+    bm.from_mesh(o.data)
+    lay = bm.loops.layers.uv["hide"]
+    area = sum(f.calc_area() for f in bm.faces if f.index in body)
+    flat = 0.0
+    for f in bm.faces:
+        if f.index in body:
+            w = [l[lay].uv for l in f.loops]
+            flat += abs(sum(w[i].x * w[i - 1].y - w[i - 1].x * w[i].y for i in range(len(w)))) / 2
+    bm.free()
+    print(f"hide: {o.name.split('.')[0]}'s UVs cover {flat:.0%} of the map, {1000 * math.sqrt(area / max(flat, 1e-9)) / px:.2f} mm a texel")
     # bake from a copy holding only the body's faces, in a material that emits the pattern
     flesh = o.copy()
     flesh.data = o.data.copy()
@@ -1576,12 +1807,12 @@ def low_poly(o, budget):
     return lod
 
 
-def write_glb(o, path, budget, tone=None, hide=None, keep=False):
+def write_glb(o, path, budget, tone=None, hide=None, keep=False, segs=None):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     lod = low_poly(o, budget)
     lift = shade(lod, *tone, lift=HIDE_LIFT if hide else 1.0)
     if hide:
-        bake_hide(lod, hide, tone[0], lift)
+        bake_hide(lod, hide, tone[0], lift, segs)
     bpy.ops.object.select_all(action="DESELECT")
     lod.select_set(True)
     bpy.ops.export_scene.gltf(filepath=path, export_format="GLB", use_selection=True, export_apply=True,
@@ -1688,14 +1919,15 @@ def main():
         sheet = json.load(f)
     PALETTE.update(sheet["palette"])
     bpy.ops.wm.read_factory_settings(use_empty=True)
-    bod, nodes = body(sheet)
+    bod, nodes, links = body(sheet)
     beast = join([bod, *parts(sheet, nodes)], sheet["id"], sheet)
     lo, hi = [Vector(c) for c in (beast.bound_box[0], beast.bound_box[6])]
     print(f"{sheet['id']}: {tris(beast)} triangles, {hi.x - lo.x:.2f} long, {hi.y - lo.y:.2f} wide, {hi.z:.2f} tall")
     soft = [g["material"] for g in sheet.get("paint", [])] + ([sheet["stripes"]["material"]] if sheet.get("stripes") else [])
     tone = (sheet.get("material", "hide"), soft, sheet.get("belly"), sheet.get("belly_turn", -0.2), 0.0 if sheet.get("black") else LUM[0])
     hide, lod = sheet.get("hide"), None
-    lod = write_glb(beast, os.path.join(APP, "public", "models", sheet["id"] + ".glb"), sheet.get("budget", 3000), tone, hide, keep=bool(hide) or "--close" in argv)
+    lod = write_glb(beast, os.path.join(APP, "public", "models", sheet["id"] + ".glb"), sheet.get("budget", 3000), tone, hide,
+                    keep=bool(hide) or "--close" in argv, segs=chains(sheet, nodes, links) if hide else None)
     if lod and not hide:
         lod.hide_render = True  # kept only for the close-up; the contact sheet draws the full mesh
     if "--render" in argv:
