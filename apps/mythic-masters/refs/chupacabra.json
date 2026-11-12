@@ -1,0 +1,68 @@
+{
+  "id": "chupacabra",
+  "name": "Chupacabra",
+  "category": "Chupacabra",
+  "query": "Chupacabra",
+  "skip": [
+    "https://commons.wikimedia.org/wiki/File:James_Randi_and_Chupacabra_Trap.jpg"
+  ],
+  "images": [
+    {
+      "file": "card-color.jpg",
+      "from": "card",
+      "page": "https://commons.wikimedia.org/wiki/File:Chupacabras.svg",
+      "artist": "LeCire / Vectorised by Karta24",
+      "license": "Public domain"
+    },
+    {
+      "file": "card-bw.jpg",
+      "from": "card",
+      "page": "https://commons.wikimedia.org/wiki/File:Chupacabra_padayachee.jpg",
+      "artist": "Alvin Padayachee",
+      "license": "Public domain",
+      "licenseUrl": "https://web.archive.org/web/20230926203737/https://creativecommons.org/licenses/publicdomain/"
+    },
+    {
+      "file": "c3.jpg",
+      "from": "search",
+      "page": "https://commons.wikimedia.org/wiki/File:Chupacabras.JPG",
+      "artist": "LeCire",
+      "license": "Public domain"
+    },
+    {
+      "file": "c4.jpg",
+      "from": "search",
+      "page": "https://commons.wikimedia.org/wiki/File:Coyote_with_mange.jpg",
+      "artist": "Unknown",
+      "license": "Public domain"
+    },
+    {
+      "file": "c5.jpg",
+      "from": "search",
+      "page": "https://commons.wikimedia.org/wiki/File:Chupacadabra.jpeg",
+      "artist": "Mebeingyou",
+      "license": "CC BY-SA 3.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by-sa/3.0"
+    },
+    {
+      "file": "c6.jpg",
+      "from": "search",
+      "page": "https://commons.wikimedia.org/wiki/File:Chupacabra.png",
+      "artist": "Shalom",
+      "license": "CC BY-SA 3.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by-sa/3.0"
+    }
+  ],
+  "traits": {
+    "silhouette": "A small upright biped, child-sized, hunched forward on bent kangaroo-like legs with big haunches; thin arms held up in front of the chest; a row of long quills from the crown down the back.",
+    "head": "A big bald alien-like head, wider at the top, with huge black almond eyes slanting up, a small nose, a small lipless mouth (fangs in some drawings), no ears to speak of.",
+    "limbs": "Thin arms bent at the elbow with long clawed fingers; legs with a thick thigh, a backward hock and long three-toed clawed feet.",
+    "hide": "Scaly grey-green skin flecked and blotched with dark spots, a paler belly.",
+    "colours": "Grey-green to green body, dark green-black blotches, pale green-grey belly, black eyes, pale quills.",
+    "child": [
+      "the huge black eyes",
+      "the spikes down its back",
+      "standing on two legs like a little alien kangaroo"
+    ]
+  }
+}
