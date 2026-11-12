@@ -46,7 +46,10 @@ type Hound = {
   chest: number;                   // chest depth in k
   ruff: number;                    // the mane over the neck and shoulders, in k (0 none)
   shag: number;                    // tuft length all over, in k
-  tail: { len: number; droop: number; bush: number };
+  tail: { len: number; droop: number; bush: number; curl?: number; tip?: boolean; thick?: number }; // curl: the tip lifts that far; tip: fur only at the end
+  long?: number; tall?: number;    // the body stretched fore to aft, and the stance raised or lowered
+  horns?: { len: number; base: number; curve: number; dir: V; bend: V };
+  bands?: { n: number; width: number }; // tabby bands across the back and tail
   palette: Record<string, number[]>;
   hide: Record<string, unknown>;
   stripe?: boolean;                // a dark band down the spine
@@ -56,7 +59,8 @@ type Hound = {
 function hound(o: Hound) {
   const k = o.k, H = o.head * k;
   const r = (x: number) => f4(x * k);
-  const P = (x: number, y: number, z: number, rad: number): N => [r(x), r(y), r(z), r(rad)];
+  const LX = o.long ?? 1, LY = o.tall ?? 1;
+  const P = (x: number, y: number, z: number, rad: number): N => [r(x * LX), r(y * LY), r(z), r(rad)];
   const nodes: Record<string, N> = {
     hip: P(-0.46, 0.86, 0, 0.13),
     belly: P(-0.08, 0.84, 0, 0.13),
@@ -74,8 +78,8 @@ function hound(o: Hound) {
     l_bfoot: P(-0.56, 0.05, 0.15, 0.035),
   };
   const t = o.tail;
-  const tailPts: [number, number][] = [[-0.62, 0.86], [-0.62 - 0.3 * t.len, 0.86 - 0.12 * t.droop], [-0.62 - 0.55 * t.len, 0.86 - 0.36 * t.droop], [-0.62 - 0.72 * t.len, 0.86 - 0.58 * t.droop]];
-  tailPts.forEach(([x, y], i) => { nodes[`tail${i + 1}`] = P(x, y, 0, 0.05 - 0.01 * i); });
+  const tailPts: [number, number][] = [[-0.62, 0.86], [-0.62 - 0.3 * t.len, 0.86 - 0.12 * t.droop], [-0.62 - 0.55 * t.len, 0.86 - 0.36 * t.droop], [-0.62 - 0.72 * t.len, 0.86 - 0.58 * t.droop + (t.curl ?? 0)]];
+  tailPts.forEach(([x, y], i) => { nodes[`tail${i + 1}`] = P(x, y, 0, (0.05 - 0.01 * i) * (t.thick ?? 1)); });
   const links = [
     ["tail4", "tail3"], ["tail3", "tail2"], ["tail2", "tail1"], ["tail1", "hip"], ["hip", "belly"], ["belly", "chest"],
     ["chest", "neck"], ["neck", "head"], ["head", "snout"],
@@ -91,27 +95,27 @@ function hound(o: Hound) {
 
   // a leg bone as one ellipsoid from node a to node b (both sides): `fore` its half-depth fore to aft, `side` its
   // half-width, both in k, running `over` of its length past each end so the joints overlap
-  function bone(a: string, b: string, fore: number, side: number, over: number): Blob[] {
+  function bone(a: string, b: string, fore: number, side: number, over: number, lower = false): Blob[] {
     const A = nodes[a]!, B = nodes[b]!, dx = B[0] - A[0], dy = B[1] - A[1], dz = B[2] - A[2];
     const len = Math.hypot(dx, dy, dz), rot: V = [0, 0, f4((Math.atan2(-dx, dy) * 180) / Math.PI)];
-    const L = o.legs ?? 1, off: V = [f4(dx / 2), f4(dy / 2), f4(dz / 2)], rr: V = [r(fore * L), f4((len / 2) * (1 + over)), r(side * L)];
+    const L = lower ? Math.sqrt(o.legs ?? 1) : o.legs ?? 1, off: V = [f4(dx / 2), f4(dy / 2), f4(dz / 2)], rr: V = [r(fore * L), f4((len / 2) * (1 + over)), r(side * L)];
     return [{ at: a, off, r: rr, rot }, { at: a.replace(/^l_/, "r_"), off: flipZ(off), r: rr, rot }];
   }
   // the body: a deep chest, ribs that tuck up to a narrow waist, a lean haunch, a thick neck under the ruff
   const C = o.chest;
   const blobs: Blob[] = [
-    { at: "chest", off: mul([0.0, -0.05, 0], k), r: mul([0.3, 0.3 * C, 0.24], k) },
-    { at: "belly", off: mul([0.06, 0.0, 0], k), r: mul([0.3, 0.2 * (0.6 + 0.4 * C), 0.18], k) },
-    { at: "hip", off: mul([0.04, 0.0, 0], k), r: mul([0.24, 0.16, 0.16], k) },
+    { at: "chest", off: mul([0.0, -0.05, 0], k), r: mul([0.3 * LX, 0.3 * C, 0.24], k) },
+    { at: "belly", off: mul([0.06, 0.0, 0], k), r: mul([0.32 * LX, 0.2 * (0.6 + 0.4 * C), 0.18], k) },
+    { at: "hip", off: mul([0.04, 0.0, 0], k), r: mul([0.24 * LX, 0.16, 0.16], k) },
     { at: "neck", off: mul([-0.02, 0, 0], k), r: mul([0.19, 0.17, 0.14], k), rot: [0, 0, -40] },
     ...pair("l_shoulder", mul([0.0, 0.04, -0.02], k), mul([0.12, 0.2, 0.08], k)),
     ...bone("l_shoulder", "l_elbow", 0.11, 0.08, 0.15),
     ...bone("l_elbow", "l_wrist", 0.068, 0.06, 0.12),
-    ...bone("l_wrist", "l_ffoot", 0.05, 0.052, 0.3),
+    ...bone("l_wrist", "l_ffoot", 0.05, 0.052, 0.3, true),
     ...pair("l_elbow", mul([-0.03, 0, 0], k), mul([0.06, 0.06, 0.05], k)),
     ...bone("l_hipj", "l_knee", 0.15, 0.09, 0.2),
     ...bone("l_knee", "l_hock", 0.085, 0.062, 0.12),
-    ...bone("l_hock", "l_bfoot", 0.05, 0.05, 0.3),
+    ...bone("l_hock", "l_bfoot", 0.05, 0.05, 0.3, true),
     ...pair("l_hock", mul([-0.02, 0, 0], k), mul([0.045, 0.045, 0.04], k)),
   ];
   if (o.ruff) blobs.push({ at: "neck", off: mul([-0.08, 0.03, 0], k), r: mul([0.22 * o.ruff, 0.24 * o.ruff, 0.19 * o.ruff], k), rot: [0, 0, -30] });
@@ -181,6 +185,11 @@ function hound(o: Hound) {
     parts.push({ kind: "eye", at: "head", off: add(at, mul(eyeDir, 0.02 * H)), r: hr(0.013), mirror: true, material: "pupil" });
     parts.push({ kind: "ridge", at: "head", off: on([0.05, 0.07, 0.05], [0.5, 1, 0.6], 0.01), dir: [0.3, -0.1, -1], len: hr(0.09), base: hr(0.022), curve: 30, bend: [0, 1, 0], mirror: true, material: "fur" });
   }
+  // horns: from the crown behind the brow, curling back and out
+  if (o.horns) {
+    const h = o.horns;
+    parts.push({ kind: "horn", at: "head", off: on([-0.02, 0.07, 0.05], [-0.1, 1, 0.5], 0.015), dir: h.dir, len: hr(h.len), base: hr(h.base), tip_base: 0.002, curve: h.curve, bend: h.bend, mirror: true, material: "horn" });
+  }
   // ears: thick, pricked or laid back
   const e = o.ears;
   parts.push({ kind: "ear", at: "head", off: on([-0.04, 0.06, 0.06], [-0.3, 1, 0.7], 0.02), dir: e.dir, len: hr(e.len), width: hr(e.width), tilt: e.tilt, cup: e.cup, thick: 0.08, fold: e.fold, mirror: true, material: "fur" });
@@ -195,7 +204,8 @@ function hound(o: Hound) {
   const S = o.shag;
   parts.push(
     { kind: "tuft", along: ["head", "neck", "chest", "belly", "hip"], n: 24, len: r(0.13 * S), base: r(0.03 * S), rows: 9, spread: 105, sweep: 1.6, curve: 25, flat: 0.5, material: o.stripe ? "stripe" : "tuft" },
-    { kind: "tuft", along: ["tail1", "tail2", "tail3", "tail4"], n: 14, len: r(0.15 * t.bush), base: r(0.035 * t.bush), rows: 8, spread: 165, sweep: 1.8, curve: 20, flat: 0.5, material: o.stripe ? "stripe" : "tuft" },
+    // a smooth tail (bush 0) has no fur of its own, only the bands
+    ...(t.bush ? [{ kind: "tuft", along: t.tip ? ["tail3", "tail4"] : ["tail1", "tail2", "tail3", "tail4"], n: t.tip ? 6 : 14, len: r(0.15 * t.bush), base: r(0.035 * t.bush), rows: 8, spread: 165, sweep: 1.8, curve: 20, flat: 0.5, material: o.stripe ? "stripe" : "tuft" }] : []),
     { kind: "tuft", along: ["l_shoulder", "l_elbow"], n: 4, len: r(0.1 * S), base: r(0.028 * S), rows: 3, spread: 50, flat: 0.5, mirror: true, material: "tuft" },
     { kind: "tuft", along: ["l_hipj", "l_knee"], n: 4, len: r(0.1 * S), base: r(0.03 * S), rows: 3, spread: 50, flat: 0.5, mirror: true, material: "tuft" },
   );
@@ -207,10 +217,40 @@ function hound(o: Hound) {
     id: o.id, name: o.name, about: o.about, archetype: o.archetype, feet: 4, budget: o.budget, root: "belly", material: "fur",
     belly: "belly", belly_turn: -0.3, blend: 0.012, palette: o.palette, hide: o.hide, nodes, links, blobs, parts,
     ...(paint.length ? { paint } : {}),
+    ...(o.bands ? { stripes: { along: ["tail3", "tail2", "tail1", "hip", "belly", "chest", "neck"], n: o.bands.n, width: o.bands.width, material: "stripe", below: -0.3 } } : {}),
   };
 }
 
 const BEASTS: Record<string, () => unknown> = {
+  // The Appalachian mountain cat, as the school statues and the panther it's built on show it: long and low, slinking, a
+  // small round head on a short muzzle, round ears, a long tail with a lifted tip, dark tabby bands, eyes that glow green.
+  "wampus-cat": () => hound({
+    id: "wampus-cat", name: "Wampus Cat", archetype: "skirmisher", budget: 8000, k: 0.95, head: 1.1, muzzle: 0.55, snout: 1.2, crown: 1.05, gape: 0.5,
+    about: "Appalachian and Cherokee tellings from Tennessee and the Carolinas: a great lean cat of the mountains that slinks low through the laurel at night, its eyes glowing yellow-green out of the dark.",
+    long: 1.15, tall: 0.85, legs: 1.1, ears: { len: 0.12, width: 0.09, dir: [-0.2, 1, 0.45], cup: 35, tilt: 18, fold: 0.35 }, eyes: "two", chest: 0.85, ruff: 0, shag: 0.45,
+    tail: { len: 1.5, droop: 1.15, bush: 0, curl: 0.3, thick: 1.5 }, bands: { n: 10, width: 0.5 },
+    palette: {
+      fur: [0.42, 0.36, 0.28, 0.9, 0], tuft: [0.5, 0.43, 0.33, 0.9, 0], belly: [0.82, 0.74, 0.6, 0.9, 0], stripe: [0.09, 0.08, 0.08, 0.9, 0],
+      eye: [0.75, 1, 0.2, 0.3, 0, 4], pupil: [0.02, 0.03, 0.02, 0.2, 0], mouth: [0.4, 0.08, 0.1, 0.6, 0],
+      nose: [0.45, 0.25, 0.24, 0.5, 0], dark: [0.06, 0.04, 0.04, 0.6, 0], fang: [0.94, 0.92, 0.84, 0.3, 0], claw: [0.85, 0.82, 0.74, 0.4, 0],
+    },
+    hide: { pattern: "fur", size: 0.03, colours: [[0.3, 0.25, 0.2], [0.6, 0.52, 0.4]], map: 1024 },
+  }),
+  // The Ozark Howler of the folk drawings: a bear-sized black cat, stocky and shaggy, curving horns, red eyes, a fanged
+  // gape, a long ropy tail with a tuft at the end. A child draws: a big black furry cat, the horns, the red eyes.
+  "ozark-howler": () => hound({
+    id: "ozark-howler", name: "Ozark Howler", archetype: "bruiser", budget: 9000, k: 1.2, head: 1.25, muzzle: 0.7, snout: 1.35, crown: 0.95, gape: 1,
+    about: "The Ozark hills of Arkansas and Missouri: a bear-sized black cat with shaggy fur, horns on its head and eyes that glow ember-red, known for a howl somewhere between a wolf's and an elk's bugle.",
+    long: 0.95, tall: 0.9, legs: 1.45, ears: { len: 0.09, width: 0.08, dir: [-0.4, 1, 0.6], cup: 30, tilt: 25, fold: 0.3 }, eyes: "two", chest: 1.3, ruff: 1.2, shag: 1.4,
+    tail: { len: 1.25, droop: 1.1, bush: 1.3, curl: 0.15, tip: true },
+    horns: { len: 0.42, base: 0.05, curve: 120, dir: [-0.35, 1, 0.35], bend: [-1, -0.2, 0.4] },
+    palette: {
+      fur: [0.15, 0.12, 0.11, 0.95, 0], tuft: [0.21, 0.17, 0.15, 0.95, 0], belly: [0.2, 0.14, 0.11, 0.95, 0], stripe: [0.1, 0.08, 0.08, 0.95, 0],
+      horn: [0.78, 0.62, 0.36, 0.45, 0], eye: [1, 0.2, 0.05, 0.3, 0, 5], pupil: [1, 0.7, 0.3, 0.2, 0, 6], mouth: [0.45, 0.06, 0.05, 0.6, 0, 0.6],
+      nose: [0.05, 0.04, 0.04, 0.4, 0], dark: [0.05, 0.03, 0.03, 0.6, 0], fang: [0.95, 0.88, 0.6, 0.3, 0], claw: [0.8, 0.75, 0.65, 0.4, 0],
+    },
+    hide: { pattern: "fur", size: 0.06, colours: [[0.08, 0.065, 0.06], [0.19, 0.16, 0.14]], map: 1024 },
+  }),
   // East Anglia's churchyard hound: calf-sized, shaggy and black, one coal of an eye, a snarl of fangs (refs: the
   // 1577 Bungay pamphlet's dog, modern folk paintings). A child draws: black shaggy dog, the burning eye, the teeth.
   "black-shuck": () => hound({
