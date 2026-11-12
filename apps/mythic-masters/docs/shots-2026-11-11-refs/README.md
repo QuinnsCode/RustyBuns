@@ -6,7 +6,7 @@ hand. Now one command does each step (Part of #4249). Run them from `apps/mythic
 
 ```sh
 bun scripts/beast-refs.ts --refs roc             # pictures into refs/roc/, credits and a traits stub into refs/roc.json
-#   now write refs/roc.json's traits from the pictures
+#   now write refs/roc.json's traits from the pictures (or add --draft above for a first pass)
 bun scripts/beast-refs.ts --closeups roc --main  # blender/out/refs/roc.now.png (and .main.png, git main's build)
 bun scripts/beast-refs.ts --judge roc            # a fresh judge, trait by trait -> roc.judge.json, then the page
 bun scripts/beast-refs.ts --compare roc          # blender/out/refs/roc.compare.html, the page the owner picks from
@@ -25,6 +25,8 @@ bun scripts/beast-refs.ts --compare roc          # blender/out/refs/roc.compare.
    The pictures aren't committed. The JSON keeps every credit, and `--refs` fetches them again.
 2. **Traits.** Read the pictures and fill in `traits` in the JSON: silhouette, head, limbs, hide, colours, and the
    three things a child would draw. The judge scores these, so write what the pictures show, not what the model has.
+   `--refs <id> --draft` has a fresh `claude -p` write them from the pictures when they're empty (refs/hodag.json is
+   one). Read the draft against the pictures before building on it.
 3. **Close-ups.** `--closeups` renders front, side, three-quarter and head through an ortho camera, straight
    from the GLB (`blender/closeups.py`, about 20 s, one Blender). With `--main`, git main's build is drawn in the
    same run with the same framing, so a change in size shows. Judge from these, not from the contact sheet.

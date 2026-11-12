@@ -38,6 +38,24 @@ Answer with ONLY a markdown table, one row per changed item: ${o.row}, then one 
   return text;
 }
 
+/** A fresh `claude -p` reads a prompt's images (in `dirs`) and answers one JSON object; answers it parsed, for the caller's guard. */
+async function askJson(prompt: string, files: string[]): Promise<unknown> {
+  const dirs = [...new Set(files.map((f) => f.slice(0, f.lastIndexOf("/"))))].flatMap((d) => ["--add-dir", d]);
+  const p = Bun.spawn(["claude", "-p", prompt, "--no-session-persistence", "--allowedTools", "Read", ...dirs], { cwd: APP, stdout: "pipe", stderr: "pipe" });
+  const text = (await new Response(p.stdout).text()).trim();
+  if ((await p.exited) !== 0 || !text) throw new Error(`the judge did not answer:\n${(await new Response(p.stderr).text()).slice(-400)}`);
+  try { return JSON.parse(text.slice(text.indexOf("{"), text.lastIndexOf("}") + 1)); } catch { throw new Error(`the judge's answer is not JSON:\n${text.slice(0, 400)}`); }
+}
+
+/** A fresh reader drafts a beast's traits from its reference pictures alone (no model shown): a draft for a person to correct. */
+export async function draftTraits(o: { name: string; refs: string[] }): Promise<unknown> {
+  return askJson(`You are an art director for a creature-fighting game. These are reference pictures of the ${o.name}, best first:
+${o.refs.map((f) => `- ${f}`).join("\n")}
+Read every image. Write what a 3D model of it must get right, as the pictures show it (where they disagree, go with the most common reading; skip anything that is only scenery, a sign or a toy).
+Answer with ONLY a JSON object, no prose and no code fence, each value one short sentence:
+{"silhouette": "...", "head": "...", "limbs": "...", "hide": "...", "colours": "...", "child": ["the first thing a child would draw", "the second", "the third"]}`, o.refs);
+}
+
 /**
  * The other mode: a fresh judge scores one model against its references, trait by trait, instead of NOW against BEFORE.
  * `refs` are the reference pictures, `model` the close-up strip, `traits` what the references show, by key. The judge
@@ -54,10 +72,5 @@ For each trait say yes (the model clearly has it), partly, or no, with a note of
 Score the whole model from 1 to 10 for how much it looks like the references (a 10 is mistaken for them; most game models are 2 to 5).
 Answer with ONLY a JSON object, no prose and no code fence:
 {"score": <1-10>, "traits": [{"key": "<key>", "verdict": "yes|partly|no", "note": "..."}], "fix": "<the one change that would help most, one sentence>"}`;
-  const dirs = [...new Set([...o.refs, o.model].map((f) => f.slice(0, f.lastIndexOf("/"))))].flatMap((d) => ["--add-dir", d]);
-  const p = Bun.spawn(["claude", "-p", prompt, "--no-session-persistence", "--allowedTools", "Read", ...dirs], { cwd: APP, stdout: "pipe", stderr: "pipe" });
-  const text = (await new Response(p.stdout).text()).trim();
-  if ((await p.exited) !== 0 || !text) throw new Error(`the judge did not answer:\n${(await new Response(p.stderr).text()).slice(-400)}`);
-  const json = text.slice(text.indexOf("{"), text.lastIndexOf("}") + 1);
-  try { return JSON.parse(json); } catch { throw new Error(`the judge's answer is not JSON:\n${text.slice(0, 400)}`); }
+  return askJson(prompt, [...o.refs, o.model]);
 }

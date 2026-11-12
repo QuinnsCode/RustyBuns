@@ -1,12 +1,13 @@
 // The reference kit: a beast's model is built and judged beside real pictures of it, not from memory (#4249).
 //
-//   bun scripts/beast-refs.ts --refs <id> [--category "Commons category"] [--query "text"] [--skip c4.jpg,c5.jpg] [--max 6]
+//   bun scripts/beast-refs.ts --refs <id> [--category "Commons category"] [--query "text"] [--skip c4.jpg,c5.jpg] [--max 6] [--draft]
 //       Pictures of the beast into refs/<id>/ and their credits plus a traits stub into refs/<id>.json. Ranked: any
 //       picture you drop into refs/<id>/ yourself (an owner's photo; any name but c<n>.jpg or card-*.jpg) first, then
 //       the bestiary card's own Commons picks (src/art.ts), then the beast's Commons category (the one named for it,
 //       or --category) and its art subcategories, then a Commons search for the sheet's name (or --query); both are
 //       kept in the JSON for the next run. Freely licensed only, one per artist, up to --max Commons pictures (default 6).
 //       --skip drops pictures of the last run (a sign or a shop named for it) for good: they go in the JSON's `skip`.
+//       --draft has a fresh `claude -p` write the traits from the pictures when they are still empty: a draft to correct.
 //       A rerun fetches the Commons ones again and keeps the traits you wrote. The pictures are not committed
 //       (refs/.gitignore): the JSON says where each came from, and --refs fetches them again.
 //   bun scripts/beast-refs.ts --closeups <id> [--main]
@@ -35,7 +36,7 @@ import { arr, int, obj, oneOf, opt, str, type Of } from "@rustybuns/util/guard";
 import { PICKS } from "../src/art.ts";
 import { help } from "../../../scripts/help.ts";
 import { categoryFiles, fetchFile, findCategory, searchFiles, type Credit, type Hit } from "./commons.ts";
-import { judgeTraits, OUT } from "./judge-loop.ts";
+import { draftTraits, judgeTraits, OUT } from "./judge-loop.ts";
 
 const APP = join(import.meta.dir, "..");
 export const REFS = join(APP, "refs");
@@ -74,7 +75,7 @@ export async function readRefs(id: string): Promise<Refs | null> {
 }
 
 /** Fetches the beast's references and writes refs/<id>.json; answers it. */
-export async function fetchRefs(id: string, o: { query?: string; category?: string; max?: number; skip?: string[] } = {}): Promise<Refs> {
+export async function fetchRefs(id: string, o: { query?: string; category?: string; max?: number; skip?: string[]; draft?: boolean } = {}): Promise<Refs> {
   const sheet = await sheetOf(id), old = await readRefs(id);
   // --skip c4.jpg names a picture from the last run; it is kept as its Commons page, which is never fetched again
   const skip = new Set([...(old?.skip ?? []), ...(o.skip ?? []).map((f) => old?.images.find((i) => i.file === f)?.page ?? f)]);
@@ -112,6 +113,7 @@ export async function fetchRefs(id: string, o: { query?: string; category?: stri
     n++;
   }
   const refs: Refs = { id, name: sheet.name, ...(category ? { category } : {}), query, ...(skip.size ? { skip: [...skip] } : {}), images, traits: old?.traits ?? blankTraits() };
+  if (o.draft && !traitRows(refs.traits).length) refs.traits = Traits(await draftTraits({ name: sheet.name, refs: images.map((i) => join(dir, i.file)) }));
   await Bun.write(join(REFS, `${id}.json`), JSON.stringify(refs, null, 2) + "\n");
   return refs;
 }
@@ -251,10 +253,10 @@ if (import.meta.main) {
   if (argv.includes("--refs")) {
     const max = val("--max") === undefined ? undefined : Number(val("--max"));
     if (max !== undefined && !(Number.isInteger(max) && max >= 1 && max <= 12)) { console.error("--max takes 1 to 12"); process.exit(1); }
-    const r = await fetchRefs(id, { query: val("--query"), category: val("--category"), max, skip: val("--skip")?.split(",") });
+    const r = await fetchRefs(id, { query: val("--query"), category: val("--category"), max, skip: val("--skip")?.split(","), draft: argv.includes("--draft") });
     for (const i of r.images) console.log(`${i.from.padEnd(6)} refs/${id}/${i.file}${i.license ? `  ${i.license}, ${i.artist}` : ""}`);
     if (r.images.filter((i) => i.from !== "owner").length < 3) console.warn(`fewer than 3 Commons pictures: try --query with another name for it`);
-    console.log(`refs/${id}.json: ${Object.values(r.traits).flat().some((t) => t) ? "traits kept" : "fill in the traits from the pictures"}`);
+    console.log(`refs/${id}.json: ${traitRows(r.traits).length ? "traits written (check them against the pictures)" : "fill in the traits from the pictures, or rerun with --draft"}`);
   }
   if (argv.includes("--closeups")) {
     const r = await closeups(id, { main: argv.includes("--main") });
