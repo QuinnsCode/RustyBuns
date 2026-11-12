@@ -1,103 +1,40 @@
-# Agentic processes: inventory
+# Agentic processes
 
-This is a list of how RustyBuns runs its agents, sorted by what could travel to another repo. Nothing in the repo
-points here yet, and nothing has moved. It is a list to pick from. Once the picks are made, the portable
-pieces get copied in here, with RustyBuns names (Bob, Mervin, codeSplitter, app paths) swapped for placeholders.
+How RustyBuns runs a team of coding agents, written up so another repo can work the same way, with or without
+Claude Code. It's documentation only. Nothing in RustyBuns reads or points at this folder, and the
+live setup (`AGENTS.md`, `.claude/`, `scripts/`, `.github/`) stays where it is.
 
-Legend: **Copy** = works elsewhere as it is. **Generalize** = the idea travels, but names and paths need swapping.
-**Stays** = RustyBuns only.
+## The docs
 
-## 1. The agent rulebook (`AGENTS.md`, `CLAUDE.md`)
-
-`CLAUDE.md` is one line, `@AGENTS.md`, so every harness reads the same file. Sections of [AGENTS.md](../AGENTS.md):
-
-| Section | Verdict | The portable core |
+| File | What it is | Where it goes in a new repo |
 | --- | --- | --- |
-| Tools: CLI first | Copy | Shell CLI over an MCP server, and WebMCP only for what needs the signed-in page |
-| Ephemeral worktrees: already installed | Generalize | The hire step installs deps, so agents don't reinstall |
-| Tests: CI runs the suite | Generalize | Run only the tests you changed, CI runs the rest. No reruns of passing tests. Test journeys, not source text. Delete unreachable cases. The builder Mac part stays. |
-| One call, not a loop | Generalize | Wrap chores (CI wait, issue brief, symbol outline) in one command that returns a short answer |
-| Docs heal themselves | Generalize | A docs script fixes the generated parts and checks links, and CI runs `--check` |
-| Check what comes in | Generalize | Parsed data is `unknown` until a guard narrows it, and an audit allowance that only goes down |
-| Effect: where it fits | Generalize | Use the library at the edges for cleanup, cancellation and retry, never per frame (only for TS+Effect repos) |
-| Cut before you add | Generalize | Grep before writing a helper, pull duplicates up, aim for net-negative PRs. The helper list stays. |
-| codeSplitter is the contest entry | Stays | |
-| Finishing: say what is left | Copy | "N of M done", every leftover becomes an issue, a worker or a question, and done means back on `main` |
-| Manual runs | Copy | Owner-hands work gets its own `MANUAL RUN:` issue with a label, steps and a time |
-| Secrets and pushes | Generalize | Agents never fetch secrets, never push main or tags, never touch shared `.git`. Never name the commercial game an example copies. |
+| [AGENTS.template.md](AGENTS.template.md) | The rulebook with placeholders: tests, chores, docs, checks, finishing, manual runs | Copy to the repo root as `AGENTS.md`, fill it in |
+| [GUARDRAILS.md](GUARDRAILS.md) | Secrets, git, ownership and money rules, plus the three layers that enforce them | Summarize it in `AGENTS.md`, then set up whatever layers your harness and host have |
+| [WORKING_STYLE.md](WORKING_STYLE.md) | How the owner likes agents to report, scope, merge and hand off | Your agent tool's per-person instructions, so it follows you to every repo |
+| [CHORE_TOOLS.md](CHORE_TOOLS.md) | Specs for one-call tools (PR checks, issue brief, outline, preflight and more) | Build the ones you need, and list them in `AGENTS.md` |
+| [PLAYBOOKS.md](PLAYBOOKS.md) | Rebuild a PR, merge waves, parallel workers, hill climbs, manual runs, audit rounds, prompts | Link it from `AGENTS.md` |
+| [CODE_PRINCIPLES.md](CODE_PRINCIPLES.md) | Things are functions, check what comes in, cut before you add, effects at the edges, tests | Link it from `AGENTS.md` |
 
-## 2. Claude Code config (`.claude/`)
+## Starting a new repo
 
-| File | Verdict | Notes |
-| --- | --- | --- |
-| `settings.json` deny-list | Copy | Blocks secret reads, `op`, `gh auth token`, force pushes, pushes to main, env dumps. Drop the RustyBuns paths. |
-| `hooks/guard.ts` (+ test) | Generalize | A PreToolUse guard that catches what the deny-list misses. It imports `scripts/remote-ci.ts` for the builder valve, and that part gets cut. |
-| `skills/rebuild-pr/SKILL.md` | Generalize | Merge main into a PR, resolve so both sides survive, test narrowly, terse report. Swap the codeSplitter `layout` line. |
-| `skills/security-audit/SKILL.md` | Copy | Already agent-neutral |
+1. Copy `AGENTS.template.md` to `AGENTS.md`, and point any harness-specific file (`CLAUDE.md`, `.cursorrules`) at it in one line.
+2. Turn on a branch ruleset for `main`: PRs only, with the checks required (GUARDRAILS.md, layer 3).
+3. Add your harness's deny-list and pre-call hook if it has them (layer 2).
+4. Build the PR-checks and issue-brief tools first. They save the most context.
+5. Create the `manual run` label.
 
-## 3. Chore scripts (`scripts/`, run as `bun run <name>`)
+## Where each piece came from in RustyBuns
 
-| Script | Lines | Verdict | Depends on |
-| --- | --- | --- | --- |
-| `pr.ts` (+ test) | 106 | Copy | `gh`, and the `guard` from `packages/util` (bring it along) |
-| `issue.ts` (+ test) | 68 | Copy | same |
-| `outline.ts` (+ test) | 80 | Copy | `typescript`. `--api` prints a package's exports as one-line signatures |
-| `test-bites.ts` | | Copy | runs your changed tests on `origin/main`'s source and names the ones that pass there anyway |
-| `help.ts` | | Copy | `--help` on any script prints its top comment, so agents ask before reading source |
-| `conflict-markers.ts` (+ test) | 58 | Copy | none |
-| `migration-numbers.ts` (+ test) | 47 | Copy | none (numbered migrations) |
-| `boundary-audit.ts` + `.allow.json` | 106 | Generalize | the allowance file starts fresh |
-| `docs.ts` | 108 | Generalize | the README examples table is RustyBuns' own |
-| `climbs.ts` (+ test) | 130 | Generalize | hill climbs: a score chased one round per worker, baton prompt inside |
-| `manual-runs.ts` + lib + html | 94+ | Generalize | Yes/No walk through `MANUAL RUN:` issues. The `RUNS` table is per app. |
-| `preflight.ts` | 91 | Stays for now | needs Mervin (`apps/codesplitter`) and `packages/util/overlap.ts` |
-| `remote-ci.ts` (builder) | 271 | Stays for now | two-Mac setup. The idea, "tests run off the office machine", is in MAC_SETUP part 4. |
-| `probe.ts` | 87 | Stays | per-game `window` handles. The idea (a `state()` handle beats screenshots) is one line in the rulebook. |
-| `packages/util/src/guard.ts` | | Copy | `obj`/`str`/`num`/`arr`/`opt` runtime guards that the scripts above import |
+Kept so a later change here can be carried over. Links go to `main` on GitHub.
 
-## 4. GitHub side (`.github/`)
+| Source | Became |
+| --- | --- |
+| `AGENTS.md` (Tools, Worktrees, Tests, Docs, Check what comes in, Cut before you add, Finishing, Manual runs) | AGENTS.template.md, CODE_PRINCIPLES.md |
+| `AGENTS.md` (Secrets and pushes), `.claude/settings.json`, `.claude/hooks/guard.ts`, `.github/rulesets/` | GUARDRAILS.md |
+| `scripts/pr.ts`, `issue.ts`, `outline.ts`, `help.ts`, `test-bites.ts`, `preflight.ts`, `conflict-markers.ts`, `migration-numbers.ts`, `boundary-audit.ts`, `docs.ts`, `manual-runs.ts`, `climbs.ts`, `probe.ts` | CHORE_TOOLS.md |
+| `.claude/skills/rebuild-pr`, `.claude/skills/security-audit`, `AGENT_PROMPTS.md`, `notes/WORKER_COLLISIONS.md` | PLAYBOOKS.md |
+| `OPS.md`, `EFFECT.md` | CODE_PRINCIPLES.md |
+| The owner's feedback to agents, gathered across sessions | WORKING_STYLE.md |
 
-| File | Verdict | Notes |
-| --- | --- | --- |
-| `rulesets/main.json`, `tags.json` | Copy | PRs only, required checks, and the reason `gh pr merge --auto` waits for CI |
-| `workflows/typecheck.yml`, `apps.yml` + `scripts/ci-apps.ts` | Generalize | Test only the apps a PR touched, and everything when shared code moves |
-| `CODEOWNERS`, `dependabot.yml` | Generalize | |
-| the rest of `workflows/` | Stays | desktop, t3-bun, terraviz, npm publish |
-
-## 5. Docs that explain the method
-
-| Doc | Verdict | Notes |
-| --- | --- | --- |
-| [OPS.md](../OPS.md) | Copy | "Things are functions": one operation behind HTTP, MCP, WebMCP, CLI and a skill (`packages/ops`) |
-| [EFFECT.md](../EFFECT.md) | Copy (TS+Effect repos) | |
-| [AGENT_PROMPTS.md](../AGENT_PROMPTS.md) | Generalize | The format travels: paste-ready prompts, one job each, with a stopping point and no spend |
-| [notes/WORKER_COLLISIONS.md](../notes/WORKER_COLLISIONS.md) | Generalize | Why parallel workers collide, and the smallest fix |
-| [notes/TOKEN_LEDGER.md](../notes/TOKEN_LEDGER.md) | Generalize | How to measure what agents spend, and its levers |
-| [COSTS.md](../COSTS.md) | Generalize | The "writing apps that stay cheap" section |
-| [notes/SECURITY_AUDIT.md](../notes/SECURITY_AUDIT.md) | Generalize | Numbered audit rounds, with fixes and tests in one PR |
-| `apps/agent-office/` (Dexter, Ester, ledger, MOVE.md) | Stays | The office itself. Dexter, which names hand-done chores from transcripts, could become its own tool later. |
-| README, EXAMPLES, FRAMEWORKS, signing, MAC_SETUP and the rest | Stays | product docs |
-
-## 6. Your working style (memory in `~/.claude/projects/.../memory/`, outside the repo)
-
-About 60 feedback memories, which are the "how I like to work" rules. They are personal, and some name private
-setup, so they would be rewritten as a generic user-level `CLAUDE.md` rather than copied. The ones that travel:
-
-- **Reporting:** progress count + leftovers, merge warnings up front, owner merges green PRs, explain in plain words,
-  flag down when waiting (AskUserQuestion), commands not before AskUserQuestion, show plans before building, keep scope modest
-- **Git and PRs:** never stack PRs, check the PR is open before pushing, done = back on main, git ops confirm no data loss,
-  large PRs + clear loose ends, issue fixes fast, stay on the worker's branch
-- **Safety and spend:** no surprise cloud bills, secrets via a vault, sandbox untrusted repo runs, GitHub writes need
-  permission, close an issue only after sign-off, small commands with no `rm` globs, no python edit scripts
-- **Workers:** discrete tasks for fresh workers, overnight runs never idle, only the owner sends workers home, parallel work through a merge tool
-- **Issues:** repo issues are the board, board lanes, manual-run issues (taste only, agents pre-verify), climbs hop forward,
-  judge scores run high
-- **UI taste:** icons over wrapping words, Lucide icons and no emojis, E2E at every screen size, leave the live demo open, timers on timed runs
-
-Stays: everything that names an app, a person, a Mac, or a third-party project to keep hands off.
-
-## Open questions before the move
-
-1. Copy or move? Copying leaves RustyBuns untouched, as asked. Moving would need this repo to point here.
-2. What shape? Plain folder of markdown + scripts, a template repo, or a Claude Code plugin (skills + hook + settings in one install).
-3. Does the working-style list become a user-level `~/.claude/CLAUDE.md`, so it follows you to every repo with no copy per repo?
+Left out because they only make sense here: the builder Mac and its valve, the merge tool (Mervin) and
+Agent Office, codeSplitter's contest rules, per-app helper lists, and the product docs.
