@@ -39,7 +39,13 @@ const BASE = `
 @keyframes eq-in{from{opacity:0;transform:translateY(-12px)}}
 .eq-head{display:flex;align-items:center;justify-content:space-between;gap:10px}.eq-head .eq-title{flex:1}.eq-head .eq-btn{min-height:30px;min-width:30px}
 .eq-toast .eq-badge{align-self:flex-start;margin-left:4px}
-@media (prefers-reduced-motion:reduce){.eq-toast{animation:none}}
+@media (prefers-reduced-motion:reduce){.eq-toast,.eq-coach{animation:none}}
+.eq-coach{position:fixed;left:0;right:0;margin:0 auto;top:72px;z-index:2147482999;display:grid;gap:4px;width:min(380px,calc(100vw - 32px));padding:10px 14px;border:var(--ui-border) solid var(--ui-line);border-radius:var(--ui-radius);background:var(--ui-toast-bg);color:var(--ui-toast-ink);box-shadow:var(--ui-shadow),inset 3px 0 0 var(--ui-accent);pointer-events:none;animation:eq-in .3s ease-out}
+.eq-coach small{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--ui-accent)}.eq-coach b{font:700 16px/1.25 var(--ui-font-head)}
+.eq-coach p{margin:0;font-size:13px;opacity:.85}.eq-coach kbd{display:inline-block;min-width:1.7em;margin-right:3px;padding:0 5px;border:var(--ui-border) solid var(--ui-line);border-bottom-width:2px;border-radius:5px;background:var(--ui-soft);font:600 12px/1.6 var(--ui-font);text-align:center}
+.eq-coach-dots{position:absolute;right:14px;top:12px;display:flex;gap:4px}.eq-coach-dots i{width:7px;height:7px;border-radius:50%;background:var(--ui-line)}.eq-coach-dots i.on{background:var(--ui-accent)}.eq-coach-dots i.now{background:var(--ui-ink)}
+.eq-coach-done{transition:opacity .4s 1.2s;opacity:0}
+@media (hover:none) and (pointer:coarse){.eq-coach kbd{display:none}}
 .rb-lobby{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:10px 12px;border:var(--ui-border) solid var(--ui-line);border-radius:var(--ui-radius);background:var(--ui-bg);box-shadow:var(--ui-shadow)}
 .rb-lobby[hidden]{display:none}.rb-lobby-who{flex:1 1 100%;min-width:0;line-height:1.7}
 .rb-lobby-code{display:inline-block;padding:0 5px 0 7px;border:var(--ui-border) solid var(--ui-line);border-radius:var(--ui-radius-sm);background:var(--ui-soft);font:700 13px/1.5 var(--ui-font);letter-spacing:.14em}

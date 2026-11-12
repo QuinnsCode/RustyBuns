@@ -26,7 +26,8 @@ export const SKIN = { theme: THEME, css: `
 .eq-form{background:var(--panel-art-solid)}
 .eq-title{color:var(--amber);font-size:14px;text-transform:uppercase;letter-spacing:.08em}
 .eq-who{font-family:var(--mono);font-weight:600;font-size:13px}
-@media (max-width:720px){.eq-toasts{top:96px}}
+.eq-coach{top:auto;bottom:58px;left:12px;right:auto;margin:0;width:min(340px,calc(100vw - 380px))}
+@media (max-width:720px){.eq-toasts{top:96px}.eq-coach{top:112px;bottom:auto;left:0;right:0;margin:0 auto;width:calc(100vw - 24px)}}
 ` };
 
-export const { signIn, finishSignIn, login, signOut, canSignIn, accountChip, reportButton, achieve } = eqosys({ app: APP, url: EQOSYS, from: SIGN_IN_FROM, prefix: "adg", skin: SKIN });
+export const { signIn, finishSignIn, login, signOut, canSignIn, accountChip, reportButton, achieve, achievements } = eqosys({ app: APP, url: EQOSYS, from: SIGN_IN_FROM, prefix: "adg", skin: SKIN });

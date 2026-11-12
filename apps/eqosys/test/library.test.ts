@@ -94,10 +94,10 @@ test("a studio's game: a draft for its studio, reviewed, listed for everyone, th
   expect(inbox.reports).toEqual([expect.objectContaining({ kind: "bug", title: "Ball goes through the green", text: "Third hole, every time.", page: "/play", from: expect.stringMatching(/^u_/) })]);
   expect(JSON.stringify(inbox.reports)).not.toContain("sam@example.com");
 
-  // The shared achievements: played unlocks, alpha doesn't while it is experimental, and its own list is none yet.
+  // The shared achievements: played unlocks, alpha doesn't while it is experimental, its own list is none yet, and tutorial waits for its tutorial.
   const achieve = (id: string) => call("/q/achieve", { json: { id }, bearer: stranger, origin: GAME }).then((r) => r.res.status);
   expect([await achieve("played"), await achieve("alpha"), await achieve("first-basket")]).toEqual([200, 404, 404]);
-  expect((await run("eq_achievements", { app: "rocket-golf" }, { cookie: sam })).result).toMatchObject({ unlocked: 1, total: 1 });
+  expect((await run("eq_achievements", { app: "rocket-golf" }, { cookie: sam })).result).toMatchObject({ unlocked: 1, total: 2 });
 
   // Pulled by its studio: off the shelf, the maker's token stops at the door, and a sign-in for it is refused.
   expect((await run("eq_listing_pull", { id: "rocket-golf" }, { cookie: maya })).result.listing.state).toBe("pulled");

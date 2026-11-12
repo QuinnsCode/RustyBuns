@@ -16,8 +16,9 @@ import { carryKm, hangTime, levelFor, MAX_POWER, MIN_POWER, POWER_STEP, powerFor
 import { arc, bearing, compass, destination, distanceKm, windHeading, type LatLon } from "./geo.ts";
 import { Globe } from "./globe.ts";
 import { sampleWind } from "./grib2.ts";
-import { accountChip, achieve, finishSignIn, reportButton, THEME } from "./account.ts";
+import { accountChip, achieve, achievements, finishSignIn, reportButton, THEME } from "./account.ts";
 import { about, icon, info } from "./icons.ts";
+import { tutorial } from "@rustybuns/util/tutorial";
 import { loadWind, type Wind } from "./wind-load.ts";
 
 const MAX_STROKES = 8;
@@ -81,6 +82,21 @@ let flight: Flight | null = null, flyT = 0, flyDur = 1;
 let currents: Currents | null = null;
 let seaView = false; // aiming with the ocean currents on the globe instead of the wind
 let swim: Swim | null = null, paddling = false, swimFrom = 0; // swimFrom: km to the basket when the disc went in
+let aimFrom = { heading: 0, power: 0 }; // the aim a stroke started with: the tutorial waits for the player to change it
+
+// The first time, hole 1 is the tutorial: guess, turn the aim, set the power, throw and watch the wind take it. Each
+// waits for the player to do it; done once, here or on the eqosys account, and it never shows again.
+const coach = tutorial({
+  prefix: "adg",
+  account: { achieve, achievements },
+  steps: [
+    { title: "Where are we?", say: "Name the country the glowing cone is in for a stroke back, or skip the guess.", done: () => phase !== "guess" && phase !== "loading" },
+    { title: "Turn the aim", keys: ["←", "→"], say: "Or the Aim slider, or click the planet. The dashed line is the throw in still air.", done: () => strokes > 0 || heading !== aimFrom.heading },
+    { title: "Set the power", keys: ["↑", "↓"], say: "Or the Power slider: the km is how far it carries before the wind.", done: () => strokes > 0 || power !== aimFrom.power },
+    { title: "Throw", keys: ["Space"], say: "L lofts it into the jet stream: longer, and blown far harder.", done: () => strokes > 0 },
+    { title: "Watch the wind bend it", say: `Where it lands is your next throw. Get within ${BASKET_KM} km of the basket to hole out.`, done: () => strokes > 0 && phase !== "flying" },
+  ],
+});
 
 globe.setCountries(countries());
 
@@ -150,6 +166,7 @@ function teeOff() {
   splashUp = false;
   drawSplash();
   render();
+  if (holeIx === 0 && strokes === 0) coach.start();
 }
 
 /** The wind source as a HUD chip beside the score: live NOAA in teal, the synthetic stand-in in amber. */
@@ -268,6 +285,7 @@ function guess(name: string) {
 
 function beginAim() {
   phase = "aim";
+  aimFrom = { heading, power };
   globe.lookAt(lie, 1.9);
   render();
 }
@@ -520,7 +538,7 @@ Promise.all([loadWind(params.get("wind")), loadCurrents(currentsUrl, offline ? n
 
 // For an agent's browser or a hands-on check: read the state, aim, throw, guess, swim.
 const golfApi = {
-    state: () => ({ seed, phase, splash: splashUp, hole: hole.n, strokes, lie, basket: hole.basket, heading, power, loft, seaView, wind: wind.label, source: wind.source, currents: currents && { day: currents.day, live: currents.live }, swim: swim && { ...swim, paddling }, scores: [...scores] }),
+    state: () => ({ tutorial: coach.state(), seed, phase, splash: splashUp, hole: hole.n, strokes, lie, basket: hole.basket, heading, power, loft, seaView, wind: wind.label, source: wind.source, currents: currents && { day: currents.day, live: currents.live }, swim: swim && { ...swim, paddling }, scores: [...scores] }),
     aim: (h: number, p: number, l?: Loft) => { heading = h; power = p; if (l) setLoft(l); aimChanged(true); },
     throw: throwDisc,
     guess,
@@ -530,6 +548,8 @@ const golfApi = {
     /** The title splash again (for a screenshot of it), and the Tee off that takes it away. */
     title: () => { splashUp = true; drawSplash(); render(); },
     teeOff,
+    /** Forget the tutorial was done in this browser, so the next Tee off on hole 1 runs it again. */
+    forgetTutorial: coach.forget,
     /** Drop the disc in the sea here and start the swim, as if a throw had landed there. */
     splash: (lat: number, lon: number) => { if (phase !== "aim" || !currents) return; lie = { lat, lon }; beginSwim(); },
     paddle: setPaddling,
