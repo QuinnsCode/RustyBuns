@@ -253,5 +253,6 @@
     "width": 0.4,
     "material": "glow",
     "below": -0.3
-  }
+  },
+  "hide": {"pattern": "skin", "size": 0.06, "colours": [[0.45, 0.51, 0.36]], "map": 512}
 }

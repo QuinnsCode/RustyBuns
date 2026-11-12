@@ -38,3 +38,20 @@ spine). New sheet key: `black: true`, no luminance floor. The Black Shuck before
 ![](black-shuck-before.jpg) ![](black-shuck-black.jpg) (a local check; its sheet belongs to lane 3).
 
 How to add a pattern and the gotchas: [../HIDES.md](../HIDES.md). `bun scripts/beasts.ts --swatch` draws the sheet above.
+
+# Part 3: the rollout
+
+60 sheets outside lanes 3 and 4 get a hide by kind of creature, colours taken from each body's own: reptiles,
+dragons and serpents `scales`; the Tarasque `shell`; water beasts and worms `wet`; leathery and bare ones `skin`;
+bulls, lions and the horse-headed `velvet`; the furred `fur`; the Leshy and the Troll `bark` with moss; the Roc
+`feathers`. The suited and cloth-like ones (Flatwoods Monster, Fresno Nightcrawler) keep their plain material.
+
+Red Dragon, Nessie, Leshy / Roc, Tikbalang, Agropelter, gallery focus:
+
+![](rollout.jpg)
+
+The pale glassy look on Nessie and the Leshy is the gallery's rim light, the same on main (![](nessie-main.jpg)),
+filed as #4265.
+
+Maps: colour and normal at 1024 for scales, feathers, shell and bark, 512 for the rest; roughness at a quarter.
+The roster's models go from 10.6 to 25.2 MB gzipped, mostly UV seams doubling vertices: #4264.

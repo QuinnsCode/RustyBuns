@@ -66,5 +66,6 @@
     {"kind": "eye", "at": "head", "off": [0.07, 0.21, 0.1925], "r": 0.0469, "mirror": true, "material": "eye"},
     {"kind": "teeth", "along": ["head", "snout1", "snout2"], "n": 6, "len": 0.09, "base": 0.022, "lower": true, "mirror": true, "material": "tooth"},
     {"kind": "ridge", "at": "head", "off": [0.1, 0.24, 0.16], "dir": [0.3, 0, 1], "len": 0.14, "base": 0.04, "curve": 25, "mirror": true, "material": "scute"}
-  ]
+  ],
+  "hide": {"pattern": "wet", "size": 0.06, "colours": [[0.25, 0.15, 0.08], [0.55, 0.33, 0.18]], "map": 512, "cover": 0.3}
 }

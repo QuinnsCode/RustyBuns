@@ -439,5 +439,6 @@
     "width": 0.4,
     "material": "mane",
     "below": -0.3
-  }
+  },
+  "hide": {"pattern": "wet", "size": 0.06, "colours": [[0.12, 0.15, 0.25], [0.26, 0.33, 0.55]], "map": 512}
 }

@@ -71,5 +71,6 @@
     {"kind": "eye", "at": "head", "off": [0.05, 0.03, 0.065], "r": 0.02, "mirror": true, "material": "eye"},
     {"kind": "foot", "at": "l_hfoot", "form": "paw", "len": 0.136, "width": 0.104, "toes": 3, "claw": 0.036, "sole": 0.04, "mirror": true},
     {"kind": "foot", "at": "l_ffoot", "form": "paw", "len": 0.119, "width": 0.091, "toes": 3, "claw": 0.032, "sole": 0.035, "mirror": true}
-  ]
+  ],
+  "hide": {"pattern": "fur", "size": 0.01, "colours": [[0.43, 0.25, 0.12], [0.97, 0.57, 0.27]], "map": 512}
 }

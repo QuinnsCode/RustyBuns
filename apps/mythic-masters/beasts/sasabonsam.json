@@ -66,5 +66,6 @@
     {"kind": "horn", "at": "l_hand", "off": [0, 0, 0], "dir": [0.35, -1, 0.35], "len": 0.22, "base": 0.024, "tip_base": 0.01, "curve": 60, "bend": [1, 0.2, 0], "mirror": true, "material": "iron"},
     {"kind": "teeth", "along": ["head", "jaw"], "n": 5, "len": 0.075, "base": 0.02, "lower": true, "mirror": true, "material": "iron"},
     {"kind": "tuft", "along": ["chest", "belly", "hip"], "n": 5, "len": 0.12, "base": 0.05, "rows": 5, "spread": 110, "curve": 40, "material": "fur"}
-  ]
+  ],
+  "hide": {"pattern": "skin", "size": 0.08, "colours": [[0.17, 0.11, 0.08]], "map": 512}
 }

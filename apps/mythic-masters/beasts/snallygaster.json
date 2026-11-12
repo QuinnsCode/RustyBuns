@@ -449,5 +449,6 @@
   ],
   "belly": "belly",
   "belly_turn": -0.3,
-  "branch_smoothing": 1
+  "branch_smoothing": 1,
+  "hide": {"pattern": "scales", "size": 0.04, "colours": [[0.57, 0.69, 0.6], [0.34, 0.41, 0.36]], "map": 1024}
 }

@@ -65,5 +65,6 @@
     {"kind": "horn", "at": "snout", "off": [-0.08, -0.05, 0.06], "dir": [0.1, -1, 0], "len": 0.06, "base": 0.015, "material": "claw", "mirror": true},
     {"kind": "foot", "at": "l_ffoot", "form": "paw", "len": 0.238, "width": 0.182, "toes": 3, "claw": 0.063, "sole": 0.07, "mirror": true},
     {"kind": "foot", "at": "l_hfoot", "form": "paw", "len": 0.272, "width": 0.208, "toes": 3, "claw": 0.072, "sole": 0.08, "mirror": true}
-  ]
+  ],
+  "hide": {"pattern": "scales", "size": 0.05, "colours": [[0.15, 0.63, 0.48], [0.09, 0.38, 0.29]], "map": 1024}
 }
