@@ -20,7 +20,7 @@ async function page(query: string) {
   // Its own browser context, so each case starts with nothing remembered.
   const tab = await openTab(chrome.cdp, { w: 800, h: 600 }, false, true);
   await load(chrome.cdp, tab, `http://127.0.0.1:${server.port}/${query}`, 100);
-  return { run: <T>(js: string) => tab.eval<T>(js), close: tab.close };
+  return { run: (js: string): Promise<unknown> => tab.eval<unknown>(js), close: tab.close };
 }
 
 test("each step waits for the player, then it is done for good in this browser", async () => {
