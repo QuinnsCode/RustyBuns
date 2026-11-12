@@ -148,6 +148,9 @@ describe("code mode", () => {
     const run = async (code: string) => { const r = await tool(write, "execute", { code }); return JSON.parse(r.content[0].text); };
     // An unknown tool is found by reading the program: nothing ran, so the first line never logged.
     expect(await run(`console.log("ran"); return await tools.read_fle({});`)).toEqual({ error: "no tool read_fle for this token: search_tools lists them" });
+    // A field called tools on an answer, or tools.x in a comment or string, is no call.
+    expect((await run(`const d = { tools: [1, 2] }; // tools.later
+      return d.tools.length + " tools.x";`)).result).toBe("2 tools.x");
     const bad = await run(`try { await tools.claim_lines({ ...${JSON.stringify(where)}, path: "before.ts", body: { lines: "a" }, extra: 1 }); } catch (e) { return [e.status, e.message]; }`);
     expect(bad.result[0]).toBe(400);
     expect(bad.result[1]).toContain("body.lines should be array");

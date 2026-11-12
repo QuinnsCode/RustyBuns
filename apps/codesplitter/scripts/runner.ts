@@ -30,7 +30,7 @@ import { parseArgs } from "node:util";
 import { arr, check, int, obj, rec, str, type Of } from "@rustybuns/util/guard";
 import { readJson } from "@rustybuns/util/http";
 import { BranchReview } from "../src/branches.ts";
-import { checkEnv, runDirs, sandboxUser, spawnAs } from "../src/check-env.ts";
+import { UPSTREAM_BRANCHES, checkEnv, runDirs, sandboxUser, spawnAs } from "../src/check-env.ts";
 import { ClaimedRun } from "../src/checks.ts";
 import { FileReply } from "../src/file-do.ts";
 
@@ -116,7 +116,8 @@ async function work(job: Of<typeof ClaimedRun>) {
     const cloned = git("clone", "--quiet", job.clone_url, ".");
     if (cloned.exitCode) throw new Error(`git clone failed: ${String(cloned.stderr).split(job.clone_url).join("<the repo>")}`);
     // A branch that hasn't gone up as a git commit (`<branch>@<time>`): main, with the branch's files laid over it as they are now.
-    if (/^[0-9a-f]{40}$/.test(job.sha)) { if (git("checkout", "--quiet", job.sha).exitCode) throw new Error(`${job.sha} isn't a commit in the repo's git`); }
+    const checkout = () => !git("checkout", "--quiet", job.sha).exitCode;
+    if (/^[0-9a-f]{40}$/.test(job.sha)) { if (!checkout() && (git("fetch", "--quiet", "origin", UPSTREAM_BRANCHES), !checkout())) throw new Error(`${job.sha} isn't a commit in the repo's git`); }
     else if (job.ref.startsWith("train:")) { out = await carOverlay(dir, job.ref); if (user) Bun.spawnSync(["chmod", "-R", "a+rwX", dir]); }
     else if (/@\d+$/.test(job.sha)) { out = await overlay(dir, job.ref); if (user) Bun.spawnSync(["chmod", "-R", "a+rwX", dir]); }
     else throw new Error(`${job.sha} isn't a commit in the repo's git`);

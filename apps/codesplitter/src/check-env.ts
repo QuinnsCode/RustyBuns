@@ -26,6 +26,9 @@ const KEEP = ["PATH", "LANG", "LC_ALL", "LC_CTYPE", "LC_MESSAGES", "TERM", "TZ"]
 export const NO_KEYCHAIN = { GIT_CONFIG_COUNT: "1", GIT_CONFIG_KEY_0: "credential.helper", GIT_CONFIG_VALUE_0: "", GIT_TERMINAL_PROMPT: "0" };
 
 /** The directories a run gets under its own temp dir: the clone, and its own empty HOME and TMPDIR. */
+/** A branch pushed upstream (or opened from there) keeps its commit under these refs (mirror.ts), which a plain clone
+ *  leaves behind: a runner fetches them when the commit it is to check out isn't on a branch. */
+export const UPSTREAM_BRANCHES = "+refs/upstream-branches/*:refs/upstream-branches/*";
 export const runDirs = (base: string) => ({ repo: `${base}/repo`, home: `${base}/home`, tmp: `${base}/tmp` });
 
 /**

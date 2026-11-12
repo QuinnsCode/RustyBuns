@@ -19,10 +19,16 @@ export interface Ran { text: string; isError: boolean; calls: number }
 /** What a program Worker answers from POST /run (qCRM's script runs answer the same shape). */
 export const RunReply = obj({ ok: bool(), result: raw, error: opt(str(Infinity, { min: 0 })), log: opt(arr(str(Infinity, { min: 0 }), 10_000, { drop: true })), calls: opt(int(0, 1e9)) });
 
-/** Tool names a program calls that no tool answers to, found by reading it, before anything runs. */
+/** Strings and comments, which can mention `tools.x` without calling it. Template literals go whole too:
+ *  a call inside one is found when it runs instead. */
+const QUOTED = /"(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'|`(?:[^`\\]|\\.)*`|\/\/[^\n]*|\/\*[\s\S]*?\*\//g;
+
+/** Tool names a program calls that no tool answers to, found by reading it, before anything runs. Only the program's own
+ *  `tools` counts: `d.tools.length` on an answer is a field, not a call. */
 export const unknownTools = (code: string, names: Iterable<string>): string[] => {
   const known = new Set(names);
-  return [...new Set([...code.matchAll(/\btools\.([A-Za-z_]\w*)/g)].map((m) => m[1]!))].filter((n) => !known.has(n));
+  const bare = code.replace(QUOTED, " ");
+  return [...new Set([...bare.matchAll(/(?<![\w$]|\.\s*)tools\s*\.\s*([A-Za-z_$][\w$]*)/g)].map((m) => m[1]!))].filter((n) => !known.has(n));
 };
 
 /** The dynamic Worker's module: the agent's code inside a fetch handler, with `tools` over env.<binding>. */

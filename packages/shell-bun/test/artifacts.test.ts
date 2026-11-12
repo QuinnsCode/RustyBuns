@@ -61,6 +61,22 @@ test("a real git client pushes to and clones from a local Artifacts repo, behind
   await expect(ns.get("starter")).rejects.toThrow("NOT_FOUND");
 });
 
+test("stock git clones a repo with 20 tags (its fetch request comes gzipped)", async () => {
+  const { remote, token } = await ns.create("tagged");
+  const work = join(dir, "w-tagged");
+  await sh(["git", "init", "-q", "-b", "main", work], dir);
+  for (let i = 0; i < 20; i++) {
+    await Bun.write(join(work, "n.txt"), `${i}\n`);
+    await sh(["git", "add", "."], work);
+    await sh([...git, "commit", "-qm", `c${i}`], work);
+    await sh(["git", "tag", `v${i}`], work);
+  }
+  expect((await sh(["git", "push", "-q", "--tags", withToken(remote, token), "main"], work)).ok).toBe(true);
+  const clone = await sh(["git", "clone", "-q", withToken(remote, token), join(dir, "tagged-clone")], dir);
+  expect(clone.ok ? "cloned" : clone.out).toBe("cloned");   // git's own words when it isn't (a keychain helper may grumble either way)
+  expect((await sh(["git", "tag"], join(dir, "tagged-clone"))).out.split("\n").filter(Boolean)).toHaveLength(20);
+});
+
 test("onPush hears each push, with the repo's name", async () => {
   // onPush runs after the push's answer goes, so the push can exit first: wait for it, briefly.
   const heard: string[] = [];

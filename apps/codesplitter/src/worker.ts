@@ -563,6 +563,7 @@ async function route(req: Request, env: Env): Promise<Response> {
     if (region !== undefined && region !== "eu") return fail("BadInput", "region: eu, or leave it out");
     if (region === "eu" && !env.ARTIFACTS_EU) return fail("NoEuStorage", "this codeSplitter has no EU storage");
     const namespace = region ?? null;
+    if (await repoRow(env, user, name, "1")) return fail("RepoExists", "you already have a repo with that name");
     await env.DB.prepare("INSERT INTO repos (owner, name, visibility, created_at, branch, namespace) VALUES (?, ?, ?, ?, 'main', ?)").bind(user, name, visibility, Date.now(), namespace).run();
     const arts = artifactsFor(env, namespace);
     if (arts) {

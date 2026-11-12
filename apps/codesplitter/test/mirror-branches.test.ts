@@ -3,6 +3,7 @@ import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { git, pushBranch, upstreamMessages } from "../src/mirror.ts";
 import type { Exec } from "../src/agent-run.ts";
+import { drained } from "../src/ci-runner.ts";
 import { root, up, sh, post, get, sync, file, editHere, upstreamRewrite, mirrored, upstreamCommit, upLog, commit, pushClash, upShow } from "./mirror-kit.ts";
 
 setDefaultTimeout(30_000);
@@ -299,5 +300,23 @@ describe("mirrors: branches and this copy's own git", () => {
     const merged = await post(call, "/api/repos/ana/up/branches/rename/merge");
     expect(merged.status).toBe(200);
     expect(await get(call, "/api/repos/ana/up/tree?path=lib").then((t: any) => t.entries.map((e: any) => e.name))).toEqual(["a.ts", "b.ts", "d.ts"]);
+  });
+
+  test("a branch pushed upstream is checked as its commit, and the check runs", async () => {
+    const call = await mirrored("checked", { CHECKS_RUNNER: undefined });
+    await call("ana", "/api/repos/ana/up/checks/settings", { method: "PUT", body: JSON.stringify({ where: "here", required: [{ name: "readme", command: "grep -q tidied README" }] }) });
+    expect((await post(call, "/api/repos/ana/up/branches", { name: "tidy" })).status).toBe(201);
+    const line = (await get(call, "/api/repos/ana/up/do/file?path=README&branch=tidy")).lines[1];
+    await post(call, "/api/repos/ana/up/do/ops?path=README&branch=tidy", { ops: [{ kind: "set", line: line.id, base: line.rev, text: "world, tidied" }] });
+    const pushed = await (await post(call, "/api/repos/ana/up/mirror/branches/tidy/push")).json() as any;
+    expect(pushed).toMatchObject({ pushed: true });
+    let runs: any[] = [];
+    for (const end = performance.now() + 25_000; performance.now() < end; await Bun.sleep(50)) {
+      runs = (await get(call, "/api/repos/ana/up/checks?ref=tidy")).runs.filter((r: any) => r.sha === pushed.commit);
+      if (runs.length && runs.every((r: any) => r.status !== "queued" && r.status !== "running")) break;
+    }
+    const log = runs[0] && (await get(call, `/api/repos/ana/up/checks/${runs[0].id}`)).log;
+    expect([runs.map((r: any) => r.status), log]).toEqual([["passed"], expect.stringContaining("$ grep -q tidied README")]);
+    await drained("ana", "up");
   });
 });
