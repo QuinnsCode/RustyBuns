@@ -742,3 +742,37 @@ html .ui-house .gc-head h2::before { content: ""; display: inline-block; width: 
   /* TOP SECRET lands under the photo, clear of its corner. */
   .menu .sight::after { left: -34px; bottom: -34px; transform: rotate(-6deg); }
 }
+
+/* Round 14 (#4327): the field manual is a dossier page that fits the screen. The card still scrolls, but its head is a
+   stamped backplate pinned at the top (kraft paper with grit, the FIELD MANUAL strip, a FORM GR-12 rubber stamp and a
+   double rule) and the close is moved into a footer pinned at the foot (main.ts), so the key list scrolls between
+   them. A fade over the list above the footer and an orange scrollbar show there is more below; the fade lifts when
+   the list reaches its end. No new art: grit.svg and stamp.svg again. */
+html .ui-house .gc-card { --gr-pad: 20px; --gr-plate: url(/menu/grit.svg) 0 0 / 180px, linear-gradient(#f1ead8, #e7dec6);
+  padding: 0 var(--gr-pad); scrollbar-width: thin; scrollbar-color: #e8590c #efece4; }
+html .ui-house .gc-card::before { content: none; }
+html .ui-house .gc-head { position: sticky; top: 0; z-index: 3; margin: 0 calc(-1 * var(--gr-pad)); padding: 32px var(--gr-pad) 14px;
+  background: var(--gr-plate); border-bottom: 4px double #141414; box-shadow: 0 6px 10px -8px #14141466; }
+html .ui-house .gc-head::before { content: "FIELD MANUAL \2022  KEEP ON YOU"; position: absolute; top: 0; left: 50%; transform: translateX(-50%); padding: 5px 10px 4px;
+  font: 700 10px/1 var(--mono); letter-spacing: 0.2em; color: #fff; background: #141414; white-space: nowrap; }
+html .ui-house .gc-head::after { content: "FORM GR-12"; margin-left: auto; padding: 4px 8px 3px; white-space: nowrap; transform: rotate(-5deg);
+  font: 900 13px/1.2 var(--br-stencil); letter-spacing: 0.14em; color: #c2410c; border: 3px double #c2410c; border-radius: 4px; opacity: 0.9;
+  -webkit-mask: url(/menu/stamp.svg) 0 0 / 150px 50px; mask: url(/menu/stamp.svg) 0 0 / 150px 50px; }
+html .ui-house .gr-foot { position: sticky; bottom: 0; z-index: 3; display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  margin: 0 calc(-1 * var(--gr-pad)); padding: 12px var(--gr-pad); background: var(--gr-plate); border-top: 4px double #141414; }
+html .ui-house .gr-foot::before { content: ""; position: absolute; left: 0; right: 0; bottom: calc(100% + 4px); height: 40px; pointer-events: none;
+  background: linear-gradient(#fff0, #fffdf6f2); }
+@supports (animation-timeline: scroll()) {
+  html .ui-house .gr-foot::before { animation: gr-edge linear both; animation-timeline: scroll(nearest block); }
+  @keyframes gr-edge { 92% { opacity: 1; } to { opacity: 0; } }
+}
+html .ui-house .gr-foot::after { content: "RETURN TO FILE GR-04"; order: -1; font: 700 11px/1.2 var(--mono); letter-spacing: 0.14em; color: #4f4d48; }
+html .ui-house .gr-foot .gc-close { display: inline-flex; gap: 8px; width: auto; height: 44px; padding: 3px 16px 0; line-height: 1; color: #fff;
+  font: 800 13px/1 var(--br-stencil); text-transform: uppercase; letter-spacing: 0.1em;
+  background: linear-gradient(#2a2a27, #141414); border: 1.5px solid #141414; border-top: 4px solid #e8590c; }
+html .ui-house .gr-foot .gc-close:hover { background: linear-gradient(#34342f, #1c1c1a); }
+@media (max-width: 560px) {
+  html .ui-house .gc-card { --gr-pad: 14px; padding: 0 var(--gr-pad); }
+  html .ui-house .gc-head h2 { font-size: 26px; }
+  html .ui-house .gr-foot::after { content: "RETURN TO GR-04"; }
+}

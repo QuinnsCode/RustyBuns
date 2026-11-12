@@ -637,6 +637,17 @@ mountControls({
   onChange: (s) => { ctl = s; paint(); },
   onToggle: (open) => { if (open) document.exitPointerLock?.(); },
 });
+// The field manual's way out is pinned in a footer at the foot of the page (styles.css, round 14): the same close
+// button, moved, so the list scrolls between the stamped head and it.
+{
+  const card = document.querySelector(".gc-dialog .gc-card"), close = card?.querySelector(".gc-close");
+  if (card && close) {
+    const foot = Object.assign(document.createElement("div"), { className: "gr-foot" });
+    close.append(Object.assign(document.createElement("span"), { textContent: "Close file" }));
+    foot.append(close);
+    card.append(foot);
+  }
+}
 /** The next (or previous) gun of yours with rounds left. */
 function cycle(dir: 1 | -1) {
   if (!current) return;
