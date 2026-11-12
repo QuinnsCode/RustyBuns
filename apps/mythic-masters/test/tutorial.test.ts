@@ -3,7 +3,7 @@
 import { expect, setDefaultTimeout, test } from "bun:test";
 import { chromePath, launchChrome, load, openTab, startVite } from "../../../scripts/chrome.ts";
 
-setDefaultTimeout(120_000);
+setDefaultTimeout(400_000);
 
 type Coach = { learned: boolean; running: boolean; step: number; of: number; title: string | null };
 
@@ -13,7 +13,7 @@ test.skipIf(!chromePath())("a first fight teaches move, jump, attack, guard and 
     const tab = await openTab(chrome.cdp, { w: 1280, h: 720 }, false, true);
     const go = (path: string) => load(chrome.cdp, tab, new URL(path, vite.url).href, 1500);
     const coach = () => tab.eval<Coach | null>("mythicMasters.state()?.tutorial ?? null");
-    const until = async (what: string, ok: (c: Coach | null) => boolean, ms = 20_000) => {
+    const until = async (what: string, ok: (c: Coach | null) => boolean, ms = 60_000) => {
       const end = Date.now() + ms;
       for (let c = await coach(); !ok(c); c = await coach()) { if (Date.now() > end) throw new Error(`never saw ${what}: ${JSON.stringify(c)}`); await Bun.sleep(100); }
     };
@@ -29,6 +29,8 @@ test.skipIf(!chromePath())("a first fight teaches move, jump, attack, guard and 
     await until("the coach", (c) => !!c?.running);
     expect(await coach()).toMatchObject({ step: 0, of: 5, title: "Move" });
     expect(await tab.eval<string>(`document.querySelector(".eq-coach").textContent`)).toContain("1 of 5");
+    // Hands count once the face-off is over and the fight ticks (a CI runner draws a frame a second or so).
+    for (const end = Date.now() + 120_000; !(await tab.eval<boolean>("(mythicMasters.state()?.tick ?? 0) > 5")); await Bun.sleep(250)) if (Date.now() > end) throw new Error("the fight never ticked");
 
     for (const [action, next] of [["forward", "Jump"], ["jump", "Attack"], ["light", "Guard"], ["guard", "A special"]] as const) {
       await tab.eval(`mythicMasters.hold(${JSON.stringify([action])})`);
