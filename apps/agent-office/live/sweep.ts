@@ -7,6 +7,8 @@
 //     started in a subfolder). Anything that doesn't parse stays. The office runs it on start and after each send-home.
 //  2. Bun's cache, ~/.bun/install/cache, which keeps every version ever downloaded. `pruneBunCache` keeps what any
 //     bun.lock in a live checkout or worktree names and removes other `name@version@@@N` folders. Manual, dry run first.
+//  3. node_modules in worktrees no worker sits at (kept on send-home because git sees work main lacks). The office runs
+//     it after each send-home, with the workers it has; `office:sweep` asks `office-workers list` and skips without it.
 // Plus, for `bun run office:sweep`: the other package caches, through each tool's own command, and a list of worktrees
 // still on disk with what sending each home would lose (sending home is the owner's call, so this never deletes one).
 import { existsSync, realpathSync } from "node:fs";
@@ -101,12 +103,56 @@ export async function sweepScratch(repoDirs: string[], go: boolean, base = scrat
   return { paths, bytes };
 }
 
-/** The office's hook: sweep one floor's repo, and say what it freed in one line ('' when nothing). */
-export async function sweepFloor(dir: string): Promise<string> {
+/** The `node_modules` folders in a worktree: its root's and each workspace's, a few levels down, never inside another. */
+async function modulesIn(tree: string, depth = 3): Promise<string[]> {
+  const out: string[] = [];
+  async function walk(dir: string, left: number) {
+    let entries;
+    try { entries = await readdir(dir, { withFileTypes: true }); } catch { return; }
+    for (const e of entries) {
+      if (!e.isDirectory() || e.name === ".git") continue;
+      if (e.name === "node_modules") out.push(path.join(dir, e.name));
+      else if (left > 0) await walk(path.join(dir, e.name), left - 1);
+    }
+  }
+  await walk(tree, depth);
+  return out;
+}
+
+/**
+ * Removes (`go`) or lists the `node_modules` of `repo`'s worktrees that no worker sits at (`live`: their paths). A worker
+ * sent home with work git can't see on main (a squash-merged branch looks unlanded) keeps its worktree, and the hire step's
+ * `bun install` (#3167) left 3-5 GB in each. The code stays; only what `bun install` puts back goes. Never throws.
+ */
+export async function sweepModules(repo: string, live: string[], go: boolean, now = Date.now()): Promise<Swept> {
+  const seated = new Set(live.map((p) => path.resolve(p)));
+  const trees = ((await treesOf(repo)) ?? []).map((n) => path.join(repo, WORKTREES, n)).filter((t) => !seated.has(t));
+  // a worktree made in the last hour may be a hire still installing, before its worker is on the list
+  const old = await Promise.all(trees.map(async (t) => { try { return now - (await lstat(path.join(t, ".git"))).mtimeMs > 3_600_000; } catch { return false; } }));
+  const paths = (await Promise.all(trees.filter((_, i) => old[i]).map((t) => modulesIn(t)))).flat();
+  const sizes = await duKb(paths);
+  let bytes = 0;
+  for (const p of paths) {
+    if (go) try { await rm(p, { recursive: true, force: true }); } catch { continue; }
+    bytes += (sizes.get(p) ?? 0) * 1024;
+  }
+  return { paths, bytes };
+}
+
+/**
+ * The office's hook: sweep one floor's repo, and say what it freed in one line ('' when nothing). With `live` (the
+ * worktree paths workers sit at), also the `node_modules` of every other worktree.
+ */
+export async function sweepFloor(dir: string, live?: string[]): Promise<string> {
   try {
     // Claude names the folder from the path as the worker was started, which may or may not have its symlinks resolved
     const r = await sweepScratch([...new Set([dir, realpathSync(dir)])], true);
-    return r.paths.length ? `🧹 Swept ${r.paths.length} scratch folder${r.paths.length === 1 ? "" : "s"} of gone worktrees, ${gb(r.bytes)} freed` : "";
+    const m = live ? await sweepModules(dir, live, true) : { paths: [], bytes: 0 };
+    const said = [
+      r.paths.length && `${r.paths.length} scratch folder${r.paths.length === 1 ? "" : "s"} of gone worktrees`,
+      m.paths.length && `node_modules of ${m.paths.length} worktree folder${m.paths.length === 1 ? "" : "s"} nobody sits at`,
+    ].filter(Boolean);
+    return said.length ? `🧹 Swept ${said.join(" and ")}, ${gb(r.bytes + m.bytes)} freed` : "";
   } catch { return ""; }
 }
 

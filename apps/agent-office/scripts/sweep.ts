@@ -2,16 +2,18 @@
 //
 //   bun run office:sweep                         what it would free, GB per item
 //   bun run office:sweep -- --go                 free it
-//   bun run office:sweep -- --only=scratch,bun   just those (scratch, bun, caches, worktrees)
+//   bun run office:sweep -- --only=scratch,bun   just those (scratch, bun, caches, modules, worktrees)
 //   bun run office:sweep -- --repo <dir> --keep <dir>
 //
 // Repos default to every ~/agent-office/<owner>/<repo> with an .agent-office folder. `--keep` adds checkouts whose
 // bun.lock the Bun cache must keep (your own clones elsewhere; a missed one only costs a download, nothing breaks).
+// `modules` deletes node_modules of worktrees no worker sits at (asks `office-workers list`, skips if the office is down).
 // `worktrees` only lists: sending a worker home is the owner's call. ~/Downloads and anything else you made is never read.
 import { existsSync, readdirSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
-import { caches, duKb, gb, listTrees, pruneBunCache, sweepScratch } from "../live/sweep.ts";
+import { arr, check, obj, opt, str } from "@rustybuns/util/guard";
+import { caches, duKb, gb, listTrees, pruneBunCache, sweepModules, sweepScratch } from "../live/sweep.ts";
 
 const args = process.argv.slice(2);
 const go = args.includes("--go");
@@ -29,6 +31,18 @@ function officeRepos(): string[] {
   }
   return out;
 }
+
+/** The worktree paths workers sit at on `repo`'s floor, from the office; undefined when it doesn't answer. */
+async function seatedTrees(repo: string): Promise<string[] | undefined> {
+  try {
+    const proc = Bun.spawn(["office-workers", "list", "--json"], { cwd: repo, stdout: "pipe", stderr: "ignore" });
+    const text = await new Response(proc.stdout).text();
+    if ((await proc.exited) !== 0) return undefined;
+    const got = check(Seated, JSON.parse(text));
+    return got?.workers.flatMap((w) => (w.worktree ? [path.join(repo, w.worktree.path)] : []));
+  } catch { return undefined; }
+}
+const Seated = obj({ workers: arr(obj({ worktree: opt(obj({ path: str(4096) })) }), 1000) });
 
 const repos = many("--repo").length ? many("--repo") : officeRepos();
 const verb = go ? "freed" : "would free";
@@ -58,6 +72,16 @@ if (want("caches")) {
     const after = ((await duKb([c.dir])).get(c.dir) ?? 0) * 1024;
     total += Math.max(0, before - after);
     console.log(`${c.name}: \`${c.clean.join(" ")}\` ${code === 0 ? "" : `exited ${code}, `}freed ${gb(Math.max(0, before - after))}`);
+  }
+}
+
+if (want("modules")) {
+  for (const repo of repos) {
+    const live = await seatedTrees(repo);
+    if (!live) { console.log(`node_modules of empty desks in ${repo.replace(homedir(), "~")}: skipped, \`office-workers list\` didn't answer (is the office up?)`); continue; }
+    const r = await sweepModules(repo, live, go);
+    total += r.bytes;
+    console.log(`node_modules of worktrees nobody sits at in ${repo.replace(homedir(), "~")}: ${r.paths.length} folders, ${verb} ${gb(r.bytes)} (du counts APFS clones in full, so it frees less)`);
   }
 }
 
