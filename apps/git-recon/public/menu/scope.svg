@@ -3,14 +3,14 @@
        with mil dots, a stadia ladder and an orange chevron on the target. The housing round it is CSS. -->
   <g fill="#141414">
     <path d="M-100-1.6h58v3.2h-58zM42-1.6h58v3.2H42zM-1.6 42h3.2v58h-3.2zM-1.6-100h3.2v58h-3.2z" opacity=".78"/>
-    <g opacity=".42">
+    <g opacity=".72">
       <circle cx="-8" r=".8"/><circle cx="-16" r=".8"/><circle cx="-24" r=".8"/><circle cx="-32" r=".8"/>
       <circle cx="8" r=".8"/><circle cx="16" r=".8"/><circle cx="24" r=".8"/><circle cx="32" r=".8"/>
       <circle cy="-8" r=".8"/><circle cy="-16" r=".8"/><circle cy="-24" r=".8"/><circle cy="-32" r=".8"/>
       <circle cy="8" r=".8"/><circle cy="16" r=".8"/><circle cy="24" r=".8"/><circle cy="32" r=".8"/>
     </g>
   </g>
-  <g fill="none" stroke="#141414" stroke-width=".3" opacity=".42">
+  <g fill="none" stroke="#141414" stroke-width=".35" opacity=".7">
     <path d="M-42 0h40M2 0h40M0-42v40M0 2v40"/>
     <path d="M-64 52h16M-64 58h12M-64 64h8M-64 70h4M-64 50v22" stroke-width=".45"/>
     <circle r="88" stroke-dasharray=".6 3.4" stroke-width="1.2"/>
