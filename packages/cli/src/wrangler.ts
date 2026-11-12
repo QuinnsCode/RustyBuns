@@ -27,6 +27,7 @@ export interface WranglerJson {
   send_email?: { name: string; allowed_sender_addresses?: string[] }[];
   ratelimits?: { name: string; namespace_id: string; simple: { limit: number; period: 10 | 60 } }[];
   ai?: { binding: string };
+  browser?: { binding: string };
   hyperdrive?: { binding: string; id?: string; localConnectionString?: string }[];
   queues?: {
     producers?: { binding: string; queue: string }[];
@@ -66,13 +67,13 @@ export function parseWranglerToml(src: string): WranglerJson {
 /** Top-level keys that Rusty Buns reads. Anything else in a wrangler file is not carried into the config. */
 const HANDLED = new Set([
   "$schema", "name", "main", "compatibility_date", "compatibility_flags", "assets",
-  "d1_databases", "kv_namespaces", "r2_buckets", "durable_objects", "migrations", "vars", "triggers", "images", "send_email", "ratelimits", "ai", "queues", "placement", "hyperdrive",
+  "d1_databases", "kv_namespaces", "r2_buckets", "durable_objects", "migrations", "vars", "triggers", "images", "send_email", "ratelimits", "ai", "browser", "queues", "placement", "hyperdrive",
   "workflows", "analytics_engine_datasets", "worker_loaders", "vectorize", "containers", "route", "routes", "observability", "limits",
   "account_id", "workers_dev", "preview_urls", "env", "pages_build_output_dir",
 ]);
 
 /** Keys wrangler doesn't inherit into an `env.<name>` block: the env has only the bindings it declares. */
-const ENV_BINDINGS = ["d1_databases", "kv_namespaces", "r2_buckets", "durable_objects", "vars", "images", "send_email", "ratelimits", "ai",
+const ENV_BINDINGS = ["d1_databases", "kv_namespaces", "r2_buckets", "durable_objects", "vars", "images", "send_email", "ratelimits", "ai", "browser",
   "queues", "hyperdrive", "workflows", "analytics_engine_datasets", "worker_loaders", "vectorize"] as const;
 /** What a stage can say for an env block; any other key it sets differently from the top level is not carried over. */
 const ENV_HANDLED = new Set<string>([...ENV_BINDINGS, "name", "route", "routes", "triggers", "account_id", "workers_dev", "preview_urls"]);
@@ -190,6 +191,7 @@ export function wranglerToConfig(w: WranglerJson, scripts: Record<string, string
   for (const e of w.send_email ?? []) bindings[e.name] = { type: "send_email", ...(e.allowed_sender_addresses ? { allowedSenderAddresses: e.allowed_sender_addresses } : {}) };
   for (const l of w.ratelimits ?? []) bindings[l.name] = { type: "ratelimit", namespaceId: String(l.namespace_id), simple: l.simple };
   if (w.ai?.binding) bindings[w.ai.binding] = { type: "ai" };
+  if (w.browser?.binding) bindings[w.browser.binding] = { type: "browser" };
   // The origin lives in the Hyperdrive config on Cloudflare, not in wrangler: its URL becomes a secret.
   for (const [i, h] of (w.hyperdrive ?? []).entries()) {
     const urlSecret = i === 0 ? "DATABASE_URL" : `${h.binding}_URL`;

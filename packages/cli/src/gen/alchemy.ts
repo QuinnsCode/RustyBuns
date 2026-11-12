@@ -72,6 +72,9 @@ function resource(name: string, b: Binding, adopt: boolean): string | null {
     case "ai":
       // Worker-only: Workers AI has no resource to provision.
       return `export const ${id} = Cloudflare.Workers.AI(${JSON.stringify(name)});`;
+    case "browser":
+      // Worker-only: Browser Run has no resource to provision; Kitesurf is picked per call.
+      return `export const ${id} = Cloudflare.Workers.Browser(${JSON.stringify(name)});`;
     case "durable_object":
       // Async Workers bind a DO exported by `main` with Cloudflare.DurableObject
       // in `env` (src/Cloudflare/Workers/DurableObject.ts, "Async Workers").

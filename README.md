@@ -187,6 +187,7 @@ On the desktop, some bindings are stand-ins:
 - **Analytics Engine.** The points go into `analytics.sqlite`.
 - **The Worker Loader** runs its code in the host's process, which is not a sandbox.
 - **Workers AI** has no local model. `env.AI` answers `@cf/baai/bge-*` embeddings with a small built-in embedder. The embedder puts texts with the same words and word stems near each other, but it does not know meanings. Each other call replies that it runs only on Cloudflare.
+- **Browser Run** (`{ type: "browser" }`, with `browser: "kitesurf"` on a call for the agent browser) has no local browser. `content` and `links` fetch the page with a plain fetch, so no script runs. Screenshots, PDFs and CDP sessions reply that they run only on Cloudflare.
 - **Email sending, rate limits and Containers** are not on the desktop, and the app runs without them.
 - **An outbound `fetch`** with `cf: { cacheTtl }` or `cacheEverything` gets its answer from an in-process cache for that TTL, as with the edge cache.
 

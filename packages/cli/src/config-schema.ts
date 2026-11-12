@@ -48,6 +48,7 @@ const Binding = Schema.Union([
     metadataIndexes: opt(Schema.Record(Str, Schema.Literals(["string", "number", "boolean"]))),
   }),
   Schema.Struct({ type: Schema.Literal("ai") }),
+  Schema.Struct({ type: Schema.Literal("browser") }),
   Schema.Struct({ type: Schema.Literal("container"), className: Str, dockerfile: Str, maxInstances: opt(int(1, 1000)), instanceType: opt(Str), egress: opt(Schema.Struct({ module: Str, hosts: Schema.Array(Str) })), protect: opt(Bool) }),
   Schema.Struct({ type: Schema.Literal("queue"), queueName: Str, protect: opt(Bool), renamedFrom: opt(Str), consumer: opt(Schema.Union([QueueConsumer, Schema.Literal(false)])), producer: opt(Schema.Literal(false)) }),
   Schema.Struct({ type: Schema.Literal("workflow"), className: Str, scriptName: opt(Str) }),

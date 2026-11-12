@@ -27,6 +27,7 @@ export { within, count, metered, usageSnapshot, resetUsage, type UsageSnapshot, 
 export { workflow, LocalWorkflow, LocalWorkflowInstance, durationMs, type WorkflowCtor, type WorkflowEvent, type WorkflowStep, type WorkflowStepConfig, type InstanceStatus } from "./bindings/workflow.ts";
 export { vectorize, LocalVectorize, type VectorizeMetric, type VectorizeVector, type VectorizeMatch, type VectorizeQueryOptions } from "./bindings/vectorize.ts";
 export { ai, LocalAi } from "./bindings/ai.ts";
+export { browser, LocalBrowser } from "./bindings/browser.ts";
 export { analyticsEngine, LocalAnalyticsEngine, type AnalyticsEngineDataPoint } from "./bindings/analytics.ts";
 export { sendEmail, LocalSendEmail, type EmailBuilder } from "./bindings/email.ts";
 export { workerLoader, LocalWorkerLoader, LocalWorkerStub, type WorkerCode } from "./bindings/worker-loader.ts";
@@ -47,6 +48,7 @@ import { durableObject, type DurableObjectCtor } from "./bindings/durable-object
 import { workflow } from "./bindings/workflow.ts";
 import { vectorize, type VectorizeMetric } from "./bindings/vectorize.ts";
 import { ai } from "./bindings/ai.ts";
+import { browser } from "./bindings/browser.ts";
 import { analyticsEngine } from "./bindings/analytics.ts";
 import { workerLoader } from "./bindings/worker-loader.ts";
 import { sendEmail } from "./bindings/email.ts";
@@ -119,6 +121,8 @@ export function localBindings(dataDir: string) {
     vectorize: (indexName: string, opts?: { dimensions?: number; metric?: VectorizeMetric }) => vectorize(`${dataDir}/vectorize.sqlite`, indexName, opts),
     /** Workers AI: bge text embeddings run locally (word and trigram hashing, not meaning); every other call says it runs only on Cloudflare. */
     ai,
+    /** Browser Run: `content` and `links` Quick Actions over a plain fetch (no script runs); the rest say they run only on Cloudflare. */
+    browser,
     /** Analytics Engine: data points land in analytics.sqlite. */
     analyticsEngine: (dataset: string) => analyticsEngine(`${dataDir}/analytics.sqlite`, dataset),
     /** Email Sending: nothing leaves the machine; each message is an .eml file under email/<binding>. */

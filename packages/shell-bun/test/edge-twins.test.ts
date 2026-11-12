@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { LocalVectorize } from "../src/bindings/vectorize.ts";
 import { LocalAnalyticsEngine } from "../src/bindings/analytics.ts";
 import { LocalAi } from "../src/bindings/ai.ts";
+import { LocalBrowser } from "../src/bindings/browser.ts";
 import { LocalWorkerLoader } from "../src/bindings/worker-loader.ts";
 
 test("vectorize: upsert, query by cosine with metadata filters, getByIds, deleteByIds", async () => {
@@ -47,6 +48,19 @@ test("workers ai: embeds bge text locally (shared words are near), everything el
   expect(dot(r.data[0], r.data[1])).toBeGreaterThan(dot(r.data[0], r.data[2]));
   expect((await ai.run("@cf/baai/bge-base-en-v1.5", { text: "x" }) as any).shape).toEqual([1, 768]);
   await expect(ai.run("@cf/meta/llama-3-8b-instruct", { prompt: "hi" })).rejects.toThrow(/AI.*only on Cloudflare/);
+});
+
+test("browser run: content and links fetch the page (kitesurf or not); a screenshot or a wrong engine says why", async () => {
+  const html = `<h1>Docs</h1><a href="/a?x=1&amp;y=2">a</a> <a href='https://other.example/b'>b</a> <a href="/a?x=1&amp;y=2">again</a> <a href="mailto:me@x.y">m</a>`;
+  const server = Bun.serve({ port: 0, fetch: () => new Response(html, { headers: { "content-type": "text/html" } }) });
+  try {
+    const b = new LocalBrowser("BROWSER");
+    const url = server.url.href;
+    expect(await (await b.quickAction("content", { url, browser: "kitesurf" })).json()).toEqual({ success: true, result: html });
+    expect((await (await b.quickAction("links", { url })).json() as any).result).toEqual([new URL("/a?x=1&y=2", url).href, "https://other.example/b"]);
+    await expect(b.quickAction("screenshot", { url, browser: "kitesurf" })).rejects.toThrow(/BROWSER.*only on Cloudflare/);
+    await expect(b.quickAction("content", { url, browser: "chromium" })).rejects.toThrow(/expected "kitesurf"/);
+  } finally { server.stop(true); }
 });
 
 test("worker loader: get() runs getCode once per id; fetch, RPC and a WorkerEntrypoint class", async () => {

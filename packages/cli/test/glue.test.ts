@@ -623,24 +623,27 @@ test("ratelimit: wrangler and alchemy bind it; the desktop host leaves it out; w
     .toEqual({ RL: { type: "ratelimit", namespaceId: "7", simple: { limit: 5, period: 10 } } });
 });
 
-test("vectorize and ai: wrangler and alchemy bind them, with the index's metadata indexes; the desktop host runs their twins", () => {
+test("vectorize, ai and browser: wrangler and alchemy bind them, with the index's metadata indexes; the desktop host runs their twins", () => {
   const c = {
     name: "g", worker: { main: "src/worker.ts", compatibilityDate: "2026-06-01", compatibilityFlags: [] },
-    bindings: { VECTORS: { type: "vectorize", indexName: "g-vectors", dimensions: 384, metadataIndexes: { repo: "string", pub: "boolean" } }, AI: { type: "ai" } },
+    bindings: { VECTORS: { type: "vectorize", indexName: "g-vectors", dimensions: 384, metadataIndexes: { repo: "string", pub: "boolean" } }, AI: { type: "ai" }, BROWSER: { type: "browser" } },
     targets: { edge: { provider: "cloudflare", adopt: true }, desktop: { mode: "worker" } },
   } as any;
   const w = JSON.parse(generateWrangler(c).replace(/^\/\/.*$/gm, ""));
   expect(w.vectorize).toEqual([{ binding: "VECTORS", index_name: "g-vectors" }]);
   expect(w.ai).toEqual({ binding: "AI" });
+  expect(w.browser).toEqual({ binding: "BROWSER" });
   const a = generateAlchemy(c);
   expect(a).toContain(`export const VECTORS = Cloudflare.Vectorize.Index("VECTORS", { name: "g-vectors", dimensions: 384, metric: "cosine" });`);
   expect(a).toContain(`export const AI = Cloudflare.Workers.AI("AI");`);
-  expect(a).toContain(`VECTORS: VECTORS, AI: AI`);
+  expect(a).toContain(`export const BROWSER = Cloudflare.Workers.Browser("BROWSER");`);
+  expect(a).toContain(`VECTORS: VECTORS, AI: AI, BROWSER: BROWSER`);
   expect(a).toContain(`yield* Cloudflare.Vectorize.MetadataIndex("VECTORS_repo", { indexName: (yield* VECTORS).indexName, propertyName: "repo", indexType: "string" });`);
   expect(a).toContain(`propertyName: "pub", indexType: "boolean"`);
   expect(desktopEntry(c)).toContain(`  VECTORS: local.vectorize("g-vectors", {"dimensions":384}),`);
   expect(desktopEntry(c)).toContain(`  AI: local.ai("AI"),`);
-  expect(wranglerToConfig({ name: "g", ai: { binding: "BRAIN" } }).bindings).toEqual({ BRAIN: { type: "ai" } });
+  expect(desktopEntry(c)).toContain(`  BROWSER: local.browser("BROWSER"),`);
+  expect(wranglerToConfig({ name: "g", ai: { binding: "BRAIN" }, browser: { binding: "EYES" } }).bindings).toEqual({ BRAIN: { type: "ai" }, EYES: { type: "browser" } });
 });
 
 test("queue: wrangler and alchemy bind the producer and the consumer; the desktop host runs both; wrangler's carries over", () => {
