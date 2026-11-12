@@ -35,7 +35,7 @@ describe("the book on a result note", () => {
     [{ kind: "bound", item: 4, repeat: false }, "Item 4. Received.", false],
     [{ kind: "bound", item: 4, repeat: true }, "I have one of those.", true],
     [{ kind: "won", foe: "keeper" }, "A keeper is not an item. Item 4:", true],
-    [{ kind: "won", foe: "wild" }, "You beat it and let it walk.", true],
+    [{ kind: "won", foe: "wild" }, "You beat it, then you let it go.", true],
     [{ kind: "down", next: true, deadly: false }, "This one can't fight.", false],
     [{ kind: "down", next: false, deadly: false }, "No creatures left to fight.", false],
     [{ kind: "versus" }, "Practice.", false],

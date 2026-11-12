@@ -1397,6 +1397,7 @@ function finish(m: Match, bound = false) {
   const lost = bound ? "" : `${esc(m.f[m.winner ? 0 : 1]!.c.name)} ${how}.`;
   if (trip && journey) { tripOver(m, bound, lost); return; }
   if (versusOn) { duelOver(m.winner === mine ? "You win" : `${versus.friend() ?? "Your friend"} wins`, `${esc(w.c.name)} wins. ${lost}`); return; }
+  delete $("#result").dataset.verso;
   $("#result").innerHTML = `<div class="note paper"><h2>${esc(w.c.name)} wins</h2>${reaction({ kind: "versus" })}<p>${lost}</p>
     <div class="row"><button class="go" id="again">${icon("rotate-ccw")} Rematch</button><button id="pick">${icon("users")} Pick again</button></div></div>`;
   pages.show($("#result"));
@@ -1420,6 +1421,7 @@ const versus = mountVersus($("#friends"), {
 });
 /** A duel is over (or off): who won, and a rematch, another pick, or home. */
 function duelOver(head: string, line: string) {
+  delete $("#result").dataset.verso;
   $("#result").innerHTML = `<div class="note paper"><h2>${esc(head)}</h2><p>${line}</p>
     <div class="row"><button class="go" id="again">${icon("rotate-ccw")} Rematch</button><button id="pick">${icon("users")} Pick again</button><button id="home">${icon("x")} Leave</button></div></div>`;
   pages.show($("#result"));
@@ -1437,6 +1439,8 @@ function tripOver(m: Match, bound: boolean, how: string) {
   if (won) void achieve("first-win");
   if (bound) void achieve("first-bind");
   const lines: string[] = [], repeat = owns(j, foe.id);
+  // beaten but not bound (and not a sighting closed for good), nothing goes into the Compendium: the page says it got away
+  const loose = won && !bound && !t.foe.hunt && (t.kind === "wild" || t.kind === "mythic");
   let title = "", outcome: Outcome = { kind: "won", foe: t.kind === "rival" ? "wild" : t.kind }, go = `${icon("map")} Back to the world`, again: (() => void) | null = null, back: Back | null = null;
   /** What you notice behind you once a section is cleared: a faction's next step now waits at that stone (src/factions/engine.ts). */
   let behindYou: string[] = [];
@@ -1446,14 +1450,14 @@ function tripOver(m: Match, bound: boolean, how: string) {
     wound(me, m.f[0].hp / m.f[0].b.hp);
     // the section clears first, so a mythic's new line-up slot is there for the mythic itself when it's bound
     if (t.kind === "keeper" || t.kind === "mythic") { clearSection(j, t.region.n, t.k); behindYou = sectionCleared(j, t.region.n, t.k, Date.now()); }
-    title = bound ? `${esc(foe.name)} is bound` : `${esc(creature(me.id).name)} wins`;
+    title = bound ? `${esc(foe.name)} is bound` : loose ? `${esc(foe.name)} got away` : `${esc(creature(me.id).name)} wins`;
     if (bound) { const sec = sections(t.region)[t.k]; lines.push(`The ink holds. ${esc(foe.name)} (Lv ${t.foe.level}) ${bind(j, foe.id, t.foe.level, sec ? `${sec.name}, ${t.region.name}` : t.region.name) === "party" ? "joins your line-up" : "rests in the Eldritch Compendium"}.`); }
     else lines.push(how);
     if (ups) lines.push(`${esc(creature(me.id).name)} grows to level ${me.level}.`);
     if (t.kind === "keeper" || t.kind === "mythic") {
       const sec = sections(t.region)[t.k]!;
       lines.push(`<span class="page">${icon("book-open")}<b>${esc(sec.name)}</b> ${esc(sec.lore)}</span>`);
-      if (t.kind === "mythic") { world.beat(t.region.n); lines.push(`The roads out of ${esc(t.region.name)} are open.${bound ? "" : ` ${esc(foe.name)} fled into the dark: it waits at the arena to be bound.`}${slots(j) > had ? ` Your line-up has room for ${slots(j)} now.` : ""}`); }
+      if (t.kind === "mythic") { world.beat(t.region.n); lines.push(`The roads out of ${esc(t.region.name)} are open.${bound ? "" : ` ${esc(foe.name)} ran into the dark. It waits for you at the arena: go back and bind it.`}${slots(j) > had ? ` Your line-up has room for ${slots(j)} now.` : ""}`); }
       else lines.push(`The bog-light lifts. Section ${t.k + 2} of ${SECTIONS} is open.`);
     }
     // the factions hear of it (src/factions/model.ts HOOKS): a mythic bound or let go, a contract closed, the Book's count
@@ -1461,7 +1465,7 @@ function tripOver(m: Match, bound: boolean, how: string) {
     if (bound && !repeat && boundCount(j) === 8) deed(j, "binds-8");
     if (bound && !repeat && boundCount(j) === 16) deed(j, "binds-16");
     if (t.foe.hunt && closeHunt(j, t.foe.hunt)) { deed(j, "hunt-closed"); lines.push(`The sighting is closed: ${esc(t.foe.title ?? foe.name)} won't trouble ${esc(sections(t.region)[HUNTS.get(t.foe.hunt)?.k ?? 0]!.name)} again.`); }
-    else if (t.kind === "wild" && !bound) lines.push(`It slinks off into the brush. A knocked-out beast can't be bound: wear it under ${Math.round(bindBelow(false) * 100)}%, then press ${esc(bindKey())} before it drops.`);
+    else if (t.kind === "wild" && !bound) lines.push(`It runs off into the trees. You cannot bind a beast that is knocked out. Next time, get its health under ${Math.round(bindBelow(false) * 100)}%. Then press ${esc(bindKey())} before it falls.`);
     if (bound) outcome = { kind: "bound", item: boundCount(j), repeat };
     if (bound) back = { kind: "bound", repeat };
     else if (t.kind === "keeper" || t.kind === "mythic") back = { kind: "cleared", section: sections(t.region)[t.k]!.name, k: t.k, of: SECTIONS, mythic: t.kind === "mythic" ? foe.name : mythicOf(t.region).name, beat: t.kind === "mythic" };
@@ -1506,7 +1510,10 @@ function tripOver(m: Match, bound: boolean, how: string) {
   // the note carries the outcome in art: a bind is sealed in wax, a loss tears its corner away (src/ornaments.ts)
   const torn = outcome.kind === "down" ? tear(j.journal.length + t.region.n * 7 + t.k) : null, mark = outcome.kind === "bound" ? `<i class="seal">${seal()}</i>` : torn ? `<i class="tear">${torn.svg}</i>` : "";
   const plate = outcome.kind === "bound" ? notePlate(foe, false) : outcome.kind === "down" ? notePlate(creature(me.id), true) : "";
-  $("#result").innerHTML = `<div class="note paper o-${outcome.kind}"${torn ? ` style="--tear: ${torn.clip}"` : ""}>${mark}<p class="leaf-head" aria-hidden="true">Eldritch Compendium<span>fol. ${j.journal.length + j.party.length + (j.seen?.length ?? 0) + 1}</span></p>${plate}<h2>${title}</h2>${reaction(outcome)}${lines.map((l) => `<p>${l}</p>`).join("")}<div class="row"><button class="go" id="back">${go}</button>${again ? `<button id="flee">${icon("map")} Run back</button>` : ""}</div></div>`;
+  // no folio on a page that kept nothing, and the facing leaf says why
+  if (loose) $("#result").dataset.verso = "This page stays empty.\nI only keep what you bind.\n\n\u2014\u00a0the Book";
+  else delete $("#result").dataset.verso;
+  $("#result").innerHTML = `<div class="note paper o-${outcome.kind}"${torn ? ` style="--tear: ${torn.clip}"` : ""}>${mark}<p class="leaf-head" aria-hidden="true">${loose ? "Field notes<span></span>" : `Eldritch Compendium<span>fol. ${j.journal.length + j.party.length + (j.seen?.length ?? 0) + 1}</span>`}</p>${plate}<h2>${title}</h2>${reaction(outcome)}${lines.map((l) => `<p>${l}</p>`).join("")}<div class="row"><button class="go" id="back">${go}</button>${again ? `<button id="flee">${icon("map")} Run back</button>` : ""}</div></div>`;
   pages.show($("#result"));
   const home = () => { trip = null; enterWorld(); world.afterFight(won); if (back) world.note(bookToast(back)); for (const line of behindYou) world.note(`${icon("footprints")}${esc(line)}`); };
   $("#back").onclick = again ?? home;

@@ -54,7 +54,7 @@ export function reactionOf(o: Outcome, j: Journey | null): { ask: string; signed
       return { ask: `Item ${o.item}. Received.${RECEIPTS[o.item % RECEIPTS.length]}`, signed: false };
     case "won":
       if (o.foe === "mythic") return { ask: "It ran. I have its smell on this page now. Go back for it.", signed: true };
-      if (o.foe === "wild") return { ask: "You beat it and let it walk. That is not how a ledger works.", signed: true };
+      if (o.foe === "wild") return { ask: "You beat it, then you let it go. Next time, bind it.", signed: true };
       if (o.foe === "keeper") return { ask: `A keeper is not an item. ${demandOf(j)}`, signed: true };
       return { ask: "Noted. Not entered.", signed: false };
     case "down":
