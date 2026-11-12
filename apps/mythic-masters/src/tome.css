@@ -977,6 +977,7 @@ body > .gc-dialog .gc-card button.gc-sec-h svg:last-child { opacity: 0.5; }
     background: url("/paper/gutter.png") calc(100% + 167px) 0 / 320px 384px repeat-y, var(--parchment); -webkit-mask-box-image: url("/paper/deckle.png") 48 / 30px 0 30px 30px round; }
   body > .gc-dialog::before { background: var(--verso-hands, none), url("/paper/gutter.png") calc(100% + 167px) 0 / 320px 384px repeat-y, var(--parchment); content: "Tell me how you hold me,\A and I will learn your hands.\A \A \2014\00a0the Book\A \A \A Red for the hands,\A green for the ear,\A gold for your name."; }
   .result::before { background: var(--verso-rest, none), url("/paper/gutter.png") calc(100% + 167px) 0 / 320px 384px repeat-y, var(--parchment); content: "What is written here rests here,\A and comes when it is called.\A \A \2014\00a0inside the cover"; color: var(--moss); font-family: var(--f-book); font-style: italic; font-size: 19px; text-shadow: none; }
+  .result[data-verso]::before { content: attr(data-verso); } /* a win with nothing bound: the line on the facing leaf says so */
   body > .gc-dialog::after, .result::after { content: ""; grid-column: 1 / 3; grid-row: 1; z-index: -1; margin: -24px -27px -28px; border-radius: 9px 12px 12px 9px; pointer-events: none;
     /* the edges of the leaves under the open ones, inside the boards as on the journal (#3671 round 84): every spread
      * is the one binding */
