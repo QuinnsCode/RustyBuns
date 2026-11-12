@@ -791,7 +791,7 @@ function filmFrame(dt: number) {
   if (!film.beat) { creditsEl.hide(); reelEl.hide(); held = null; reel = null; toMenu(); }
 }
 mountScenes({ list: () => [...Object.keys(FILM), ...Object.keys(SET_PIECES)], play: (name, t) => playFilm(name, t ?? null),
-  state: () => ({ beat: film.beat ?? (current?.take && current.director.beat), take: current?.take ? { id: current.take.id, done: current.take.done } : null, paused: film.paused, line: film.frame.line?.text ?? null, cards: film.frame.cards.map((c) => c.card.text), photos: film.frame.photos.map((p) => ({ id: p.photo.id, drop: +p.drop.toFixed(2), shot: !!pics.get(p.photo.id) })) }) });
+  state: () => ({ beat: film.beat ?? current?.take?.director.beat ?? null, take: current?.take ? { id: current.take.id, done: current.take.done } : null, paused: film.paused, line: film.frame.line?.text ?? null, cards: film.frame.cards.map((c) => c.card.text), photos: film.frame.photos.map((p) => ({ id: p.photo.id, drop: +p.drop.toFixed(2), shot: !!pics.get(p.photo.id) })) }) });
 
 /**
  * Watch a set piece again (src/sim/rewatch.ts): its level built fresh, the beat staged on it and played live under the
