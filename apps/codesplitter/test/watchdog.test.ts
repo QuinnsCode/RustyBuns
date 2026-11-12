@@ -66,6 +66,7 @@ test("a rollback is reported once the app answers, and kept until then", async (
 test("liveVersion picks the version with the most traffic of the newest deployment", () => {
   expect(liveVersion({ result: { deployments: [{ versions: [{ version_id: "a", percentage: 10 }, { version_id: "b", percentage: 90 }] }, { versions: [{ version_id: "c", percentage: 100 }] }] } })).toBe("b");
   expect(() => liveVersion({ result: { deployments: [] } })).toThrow();
+  expect(() => liveVersion({ result: { deployments: [{ versions: [{ version_id: 7, percentage: 100 }] }] } })).toThrow();
 });
 
 test("GET /api/health answers, and the rollback report needs the secret and a real repo", async () => {
