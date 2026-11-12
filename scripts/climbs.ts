@@ -18,6 +18,8 @@
 //   bun run climbs                  the board
 //   bun run climbs --next           the round to hand out (not taken by an open PR, not stalled, under target)
 //   bun run climbs --next --hire    hire a worker for it through office-workers
+//   bun run climbs --next --skip mythic   leave out every climb whose title names it (repeat for more words)
+//   bun run climbs --next --issue 4287    that climb's round, whatever the board would pick
 //   bun run climbs --json
 import { arr, check, num, obj, str } from "../packages/util/src/guard.ts";
 import { tidy, view } from "./issue.ts";
@@ -78,9 +80,12 @@ const STALLED = /^\s*\**stalled\**:/i;
 /** The issue a climb hopped to, from its newest comment's "Moved up to #N", else null. */
 export const movedTo = (comment: string) => { const m = /moved up to #(\d+)/i.exec(comment); return m ? Number(m[1]) : null; };
 
-/** The round to hand out: under target (or unscored), not taken, not stalled; furthest from target, then idle longest. */
-export function next(climbs: Climb[]): Climb | null {
-  const open = climbs.filter((c) => !c.taken && !c.stalled && !c.moved && !(c.score !== null && c.target !== null && c.score >= c.target));
+/** The round to hand out: under target (or unscored), not taken, not stalled, not moved, its title naming none of `skip`;
+ * furthest from target, then idle longest. */
+export function next(climbs: Climb[], skip: string[] = []): Climb | null {
+  const words = skip.map((w) => w.toLowerCase());
+  const open = climbs.filter((c) => !c.taken && !c.stalled && !c.moved && !(c.score !== null && c.target !== null && c.score >= c.target)
+    && !words.some((w) => c.title.toLowerCase().includes(w)));
   const gap = (c: Climb) => (c.score === null || c.target === null ? 1 : 1 - c.score / c.target);
   return open.sort((a, b) => gap(b) - gap(a) || a.touched.localeCompare(b.touched))[0] ?? null;
 }
@@ -122,8 +127,13 @@ if (import.meta.main) {
   help(import.meta.path);
   const all = await climbs(), argv = process.argv;
   if (argv.includes("--next")) {
-    const c = next(all);
-    if (!c) { console.log("No climb to hand out: each is taken by an open PR, stalled, or at its target."); process.exit(0); }
+    const values = (flag: string) => argv.flatMap((a, i) => (a === flag && argv[i + 1] ? [argv[i + 1]] : []));
+    const pick = values("--issue")[0]?.replace(/^#/, "");
+    const c = pick ? all.find((x) => String(x.number) === pick) ?? null : next(all, values("--skip"));
+    if (!c) {
+      console.log(pick ? `#${pick} isn't an open climb (\`bun run climbs\` lists them).` : "No climb to hand out: each is taken by an open PR, stalled, at its target, or skipped.");
+      process.exit(pick ? 1 : 0);
+    }
     console.log(board([c])[0] + "\n\n" + baton(c));
     if (argv.includes("--hire")) {
       const p = Bun.spawn(["office-workers", "hire", "--issue", String(c.number), "--prompt", baton(c)], { stdout: "inherit", stderr: "inherit" });
