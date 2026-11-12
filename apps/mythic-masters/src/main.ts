@@ -41,7 +41,7 @@ import { worldView, type Foe } from "./world/view.ts";
 import { plantBudget, setPlantBudget } from "./world/flora.ts";
 import { pickQuality, QUALITY } from "@rustybuns/util/quality";
 import { accountChip, achieve, canSignIn, finishSignIn, fresh, login, reportButton } from "./account.ts";
-import { asCreature, atLevel, bind, downed, heal, hpOf, wound, bindBelow, bindChance, clearSection, cleared, gainXp, INK, loadJourney, moveUp, mythicOf, newJourney, nextUp, call, owns, PICKS, rest, SAVE_KEY, SECTIONS, sections, see, slots, STARTERS, TRAIL_REGIONS, toNext, WITCH_SAYS, type Journey, mend } from "./journey.ts";
+import { asCreature, atLevel, bind, downed, heal, hpOf, wound, bindBelow, bindChance, clearSection, cleared, gainXp, INK, loadJourney, moveUp, mythicOf, newJourney, nextUp, call, owns, PICKS, rest, SAVE_KEY, SECTIONS, sections, see, slots, STARTERS, TRAIL_REGIONS, toNext, witchSays, type Journey, mend } from "./journey.ts";
 import { LORE } from "./lore.ts";
 import { circleLineOf, handOf, knownOf, PAGE_INK, poolOf, ribbonsOf, summon, type Summoned } from "./grimoire.ts";
 import { deckDemandOf, demandOf, pageLineOf, reactionOf, settingsLineOf, SIGNATURE, thumbAt, worldLineOf, type Back, type Outcome } from "./demand.ts";
@@ -769,7 +769,8 @@ function showStarters() {
   drawDemand(); // the Book's first demand, in its own hand, over the three you pick (with no journey yet: all of them, start with three)
   $("#starterCards").innerHTML = STARTERS.map((id) => {
     const c = creature(id), at = chosen.indexOf(id);
-    return `<button class="card starter${at >= 0 ? " on" : ""}" data-id="${id}" aria-pressed="${at >= 0}" title="${esc(WITCH_SAYS[id])}"><b>${esc(c.name)}${at >= 0 ? `<i class="pick">${at + 1}</i>` : ""}</b><small>${esc(c.archetype)} · ${c.fields.join(" / ")}</small>${radar(c)}</button>`;
+    const said = witchSays(id, journey), took = !!journey && owns(journey, id); // on a second journey, what became of the ones you took is on the card
+    return `<button class="card starter${at >= 0 ? " on" : ""}" data-id="${id}" aria-pressed="${at >= 0}" title="${esc(said)}"><b>${esc(c.name)}${at >= 0 ? `<i class="pick">${at + 1}</i>` : ""}</b><small>${esc(c.archetype)} · ${c.fields.join(" / ")}</small>${radar(c)}${took ? `<p>${esc(said)}</p>` : ""}</button>`;
   }).join("");
   const go = $("#setOut") as HTMLButtonElement;
   go.disabled = chosen.length !== PICKS;

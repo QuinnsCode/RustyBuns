@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { tierOf } from "../src/tiers.ts";
-import { bind, bindChance, call, clearSection, cleared, gainXp, loadJourney, mythicOf, newJourney, nextUp, PARTY_MAX, rest, slots, SECTIONS, sections, STARTERS, TRAIL_REGIONS, WITCH_SHEET } from "../src/journey.ts";
+import { bind, bindChance, call, clearSection, cleared, gainXp, loadJourney, mythicOf, newJourney, nextUp, PARTY_MAX, rest, slots, SECTIONS, sections, STARTERS, TRAIL_REGIONS, WITCH_SHEET, witchSays } from "../src/journey.ts";
 import { REGIONS } from "../src/regions.ts";
 import { ROSTER } from "../src/roster.ts";
 import { bandAt, newTrek, pointAt, trailhead, trailWilds, TRAILS, trek, type TrekEvent } from "../src/world/trail.ts";
@@ -116,5 +116,27 @@ describe("the journey", () => {
       expect(new Set(secs.map((s) => s.name)).size).toBe(SECTIONS);
       expect(secs.every((s) => s.lore.length > 40 && !s.lore.includes("Nothing is written"))).toBe(true);
     }
+  });
+});
+
+describe("the Bog Witch's sheet on a second journey (#4174)", () => {
+  test("she says what became of each starter you took last time, and that you left the others", () => {
+    expect(witchSays("hodag", null)).toStartWith("A hodag pup");
+    const last = newJourney(["squonk", "hodag", "jackalope"], 1)!;
+    last.party[0]!.level = 14;
+    last.party[1]!.hp = 0;
+    last.party[1]!.level = 9;
+    const said = Object.fromEntries(STARTERS.map((id) => [id, witchSays(id, last)]));
+    expect(said).toEqual({
+      squonk: "The Squonk led for you last time. Level 14, and it came back expecting to lead again.",
+      hodag: "The Hodag came back to my door flat out. Level 9. It has not forgiven you.",
+      jackalope: "You took the Jackalope for the walk and nothing else. Still level 5. Still hungry.",
+      agropelter: "You left the Agropelter with me last time. It noticed.",
+      tatzelwurm: "You left the Tatzelwurm with me last time. It noticed.",
+    });
+    // one moved off the line-up into the journal is still one you took
+    last.journal.push(last.party.splice(2, 1)[0]!);
+    expect(witchSays("jackalope", last)).toBe("You took the Jackalope, then shelved it in that book. It came back level 5, sulking.");
+    for (const s of Object.values(said)) expect(s.length).toBeLessThan(95);
   });
 });

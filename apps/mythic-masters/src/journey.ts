@@ -15,8 +15,8 @@ import LANDING from "../content/landing.json";
  * Devil overhead is a real wall. */
 export const STARTERS = ["hodag", "squonk", "agropelter", "jackalope", "tatzelwurm"] as const;
 export const PICKS = 3;
-/** What the witch says over each one (content/landing.json, `bun run cms`). */
-export const WITCH_SAYS: Record<(typeof STARTERS)[number], string> = LANDING.starters;
+/** What the witch says over each one the first time (content/landing.json, `bun run cms`); after that, `witchSays`. */
+const WITCH_SAYS: Record<(typeof STARTERS)[number], string> = LANDING.starters;
 
 /** The line-up: three to start, a slot more for each region's mythic beaten, six at most. */
 export const PARTY_FIRST = 3, PARTY_MAX = 6;
@@ -179,6 +179,24 @@ export const Journey = obj({
 export type Journey = Of<typeof Journey>;
 
 export const SAVE_KEY = "mythic-masters.journey";
+
+/** What the witch says over a starter on her sheet (#4174): her own line the first time; on a journey after that, what
+ * became of the one you took from her last time (it led, it came back flat, you shelved it, you never fought it), or
+ * that you left it with her. `last` is the journey about to burn. */
+export function witchSays(id: (typeof STARTERS)[number], last: Journey | null): string {
+  if (!last) return WITCH_SAYS[id];
+  const name = creature(id).name, was = [...last.party, ...last.journal].find((m) => m.id === id && m.caught?.where === WITCH_SHEET);
+  if (!was) return `You left the ${name} with me last time. It noticed.`;
+  const lvl = was.level, fresh = lvl <= 5;
+  if (last.starter === id) return fresh ? `The ${name} led for you last time and never got past level 5. It wants a second go.`
+    : `The ${name} led for you last time. Level ${lvl}, and it came back expecting to lead again.`;
+  if (last.journal.includes(was)) return `You took the ${name}, then shelved it in that book. It came back level ${lvl}, sulking.`;
+  if (hpOf(was) <= 0) return `The ${name} came back to my door flat out. Level ${lvl}. It has not forgiven you.`;
+  // two that never fought don't get the same line: the second pick is bored, the third only came for the walk
+  if (fresh) return last.party.indexOf(was) === 1 ? `You took the ${name} and never fought it. It came back level 5 and bored.`
+    : `You took the ${name} for the walk and nothing else. Still level 5. Still hungry.`;
+  return `You took the ${name} last time. It came back level ${lvl} and twice as hungry.`;
+}
 
 /** A fresh journey with three different starters (the first leads); null for any other choice. */
 export function newJourney(picks: readonly string[], at = Date.now()): Journey | null {

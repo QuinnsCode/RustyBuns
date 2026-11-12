@@ -80,6 +80,12 @@ The demands and receipts in `src/demand.ts` (`demandOf`, `reactionOf`, `deckDema
 | Compendium regions: the last page | Wharton Forest, Pine Barrens: the last page you wrote me. Write the next. | yes |
 | Compendium regions: a region done | Pine Barrens, the last page. Its mythic's number is in here somewhere. | no |
 | Compendium regions: losing | 3 lost in a row past the Sunk Road. Same country, same mud. Mend them first. | yes |
+| Witch's sheet, a second journey: the lead (her voice, not the Book's: `witchSays` in `src/journey.ts`) | The Squonk led for you last time. Level 14, and it came back expecting to lead again. | no |
+| Witch's sheet: the lead, never fought | The Squonk led for you last time and never got past level 5. It wants a second go. | no |
+| Witch's sheet: one left down | The Hodag came back to my door flat out. Level 9. It has not forgiven you. | no |
+| Witch's sheet: one shelved in the journal | You took the Jackalope, then shelved it in that book. It came back level 5, sulking. | no |
+| Witch's sheet: one taken | You took the Hodag last time. It came back level 12 and twice as hungry. (never fought: "came back level 5 and bored"; a third pick: "for the walk and nothing else. Still level 5. Still hungry.") | no |
+| Witch's sheet: one left behind (tooltip only) | You left the Agropelter with me last time. It noticed. | no |
 | Settings, from the title | Move the keys where you like. The accounts stay where they are. | no |
 | Settings, over a fight or the walk | Rest if you must. The ledger does not pause. | no |
 | Settings, quill sound off | You turned my quill down. I am still writing. | no |
