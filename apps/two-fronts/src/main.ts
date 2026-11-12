@@ -30,7 +30,8 @@ import { SPACE_ORDERS, VEHICLE_KINDS, other, type BattleResult, type BattleSpec,
 import { esc } from "@rustybuns/util";
 import { addCommands } from "@rustybuns/util/commands";
 import { mountPalette } from "@rustybuns/util/palette";
-import { accountChip, achieve, canSignIn, finishSignIn, login, reportButton, signIn } from "./eqosys.ts";
+import { tutorial } from "@rustybuns/util/tutorial";
+import { accountChip, achieve, achievements, canSignIn, finishSignIn, login, reportButton, signIn } from "./eqosys.ts";
 import { joinParty, mountSpaces, openParty, partyIn } from "./friends.ts";
 import { jumpSpec, parseJump, parseOrbit, parseWar, sectorOf, type Jump } from "./jump.ts";
 import { armyOrder, armySources, armyTargets, buildSites, deployMost, deployOrder, deploySources, deployTargets, fleetOrder, matchup, most, shipSources, shipTargets, skyOver, transportsFor, type ArmyCall } from "./war/calls.ts";
@@ -52,6 +53,20 @@ const read = <T>(key: string): T | null => { try { return JSON.parse(localStorag
 const write = (key: string, v: unknown) => { try { localStorage.setItem(key, JSON.stringify(v)); } catch { /* private window */ } };
 
 const firstVisit = read(SAVE) === null;
+/** The first-time tutorial (@rustybuns/util/tutorial), from the title of a first visit: a side, a fleet, a unit placed,
+ *  the fleet readied, then a play called and confirmed. Each flag is set where the player did it and stays set. */
+const did = { side: false, fleet: false, place: false, ready: false, call: false };
+const coach = tutorial({
+  prefix: "tf",
+  account: { achieve, achievements },
+  steps: [
+    { title: "Pick a side", say: "Thunder Marines or the Wooka, then the war, then Vs AI.", done: () => did.side },
+    { title: "Choose your fleet", say: "A preset, or your own mix of ships and armies.", done: () => did.fleet },
+    { title: "Place a unit", say: "Pick one of your worlds on the map, then + on its ships or an army.", done: () => did.place },
+    { title: "Deploy your fleet", say: "Deploy fleet, at the foot of the panel, once it stands where you want it.", done: () => did.ready },
+    { title: "Call a play", say: "Step on to the Armada: where from, where to, how many, then Confirm.", done: () => did.call },
+  ],
+});
 let game: Game = { kind: "local", table: read<{ table: Table }>(SAVE)?.table ?? newTable({ marines: "human", wooka: "ai" }, "short", undefined, true) };
 let c: Campaign = game.table.campaign;
 let me: Faction = c.player;
@@ -743,7 +758,7 @@ function confirmCall(kind: string) {
   const max = callMax(kind, from, to);
   const n = Math.max(1, Math.min(pick.n ?? max, max));
   pick = { ...pick, to: null, n: null };
-  if (ph === 3 || ph === 2 || ph === 4) order(kind === "fleet" ? fleetOrder(from, to, n) : armyOrder(whereOf(from), whereOf(to), n));
+  if (ph === 3 || ph === 2 || ph === 4) did.call = true, order(kind === "fleet" ? fleetOrder(from, to, n) : armyOrder(whereOf(from), whereOf(to), n));
 }
 
 // --- Games ---
@@ -846,6 +861,7 @@ async function startGame(kind: "ai" | "hotseat" | "online",
   galaxy = (document.querySelector<HTMLInputElement>('input[name="galaxy"]:checked')?.value ?? "short") as GalaxyId,
   side = (document.querySelector<HTMLInputElement>('input[name="side"]:checked')?.value ?? "marines") as Faction, seed?: number) {
   const foe = enemy(side);
+  did.side = true;
   turnStart = null; phase = 1; $("modal").classList.remove("fresh");
   const seats: Seats = { marines: "human", wooka: "human", [foe]: kind === "ai" ? "ai" : "human" };
   if (kind !== "online") {
@@ -919,6 +935,7 @@ async function endTurn() {
   if (game.kind !== "local") return;
   const before = me, step = handIn(game.table, me, mine);
   if (!step.ok) return flash(step.error);
+  if (c.setup) did.ready = true;
   useGame({ kind: "local", table: step.table });
   // Hotseat: the screen goes to the next player before they see anything.
   if (hotseat() && !c.winner && seatUp() !== before) return passTo(seatUp());
@@ -962,6 +979,7 @@ function chooseFleet(from: PresetId | Loadout) {
   const preset = typeof from === "string" ? from : null;
   loadout = preset ? loadoutOf(c, me, preset) : from as Loadout;
   mine.deployment = preset ? presetDeployment(c, me, preset) : placeLoadout(c, me, loadout);
+  did.fleet = true;
   hideModal();
   save(); render();
 }
@@ -996,6 +1014,7 @@ function placeUnit(arg: string) {
   const d = (mine.deployment ??= emptyDeployment()), bag = d[kind], placed = totals(d);
   if (by > 0 && (!loadout || placed[kind] >= loadout[kind])) return;
   bag[key] = Math.max(0, (bag[key] ?? 0) + by);
+  did.place = true;
   if (!bag[key]) delete bag[key];
   save(); render();
 }
@@ -1333,7 +1352,7 @@ document.addEventListener("click", (e) => {
 
 // Jump to a state (jump.ts): `?battle=1&world=desert&side=attacker&hero=wooka&assist=off&near=1&end=win` from the
 // address, or the same from a script or an agent: `twoFronts.jump({ world: "station", side: "attacker" })`,
-// `twoFronts.end("win")` to finish the battle on screen, `twoFronts.state()` for what is on screen.
+// `twoFronts.end("win")` to finish the battle on screen, `twoFronts.state()` for what is on screen (and the tutorial, in a battle or not).
 const twoFronts = {
   jump(over: Record<string, string | number | boolean> = {}) {
     const q = new URLSearchParams({ battle: "1", ...Object.fromEntries(Object.entries(over).map(([k, v]) => [k, String(v)])) });
@@ -1349,7 +1368,7 @@ const twoFronts = {
   },
   async state() {
     const b = (await import("./battle/view.ts")).liveBattle();
-    return b && { world: b.spec.sector, side: b.spec.hero, hero: b.spec.factions[b.spec.hero], assist: b.spec.assist !== false, time: Math.round(b.time), tickets: b.tickets, over: !!b.over };
+    return b ? { tutorial: coach.state(), battle: true, world: b.spec.sector, side: b.spec.hero, hero: b.spec.factions[b.spec.hero], assist: b.spec.assist !== false, time: Math.round(b.time), tickets: b.tickets, over: !!b.over } : { tutorial: coach.state(), battle: false };
   },
 };
 Object.assign(window, { twoFronts });
@@ -1400,7 +1419,7 @@ async function boot() {
   if (orbit) return void flyOrbit(orbit);
   const jump = parseJump(location.search);
   if (jump) return void skirmish(jump.side === "attacker", jump.mode, jump);
-  if (firstVisit && !fromHash) return chooseGame(true);
+  if (firstVisit && !fromHash) { coach.start(); return chooseGame(true); }
   if (hotseat() && !c.winner) return passTo(seatUp());
   afterTurn();
 }
