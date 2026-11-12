@@ -67,5 +67,5 @@
     {"kind": "teeth", "along": ["head", "jaw"], "n": 5, "len": 0.075, "base": 0.02, "lower": true, "mirror": true, "material": "iron"},
     {"kind": "tuft", "along": ["chest", "belly", "hip"], "n": 5, "len": 0.12, "base": 0.05, "rows": 5, "spread": 110, "curve": 40, "material": "fur"}
   ],
-  "hide": {"pattern": "skin", "size": 0.08, "colours": [[0.17, 0.11, 0.08]], "map": 512}
+  "hide": {"pattern": "skin", "size": 0.08, "colours": [[0.17, 0.11, 0.08]], "map": 256}
 }

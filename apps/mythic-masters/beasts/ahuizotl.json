@@ -763,5 +763,5 @@
       "material": "webbed"
     }
   ],
-  "hide": {"pattern": "wet", "size": 0.03, "colours": [[0.06, 0.12, 0.2], [0.13, 0.26, 0.44]], "map": 512, "cover": 0.05}
+  "hide": {"pattern": "wet", "size": 0.03, "colours": [[0.06, 0.12, 0.2], [0.13, 0.26, 0.44]], "map": 256, "cover": 0.05}
 }

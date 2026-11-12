@@ -407,5 +407,5 @@
     "material": "dark",
     "below": -0.3
   },
-  "hide": {"pattern": "velvet", "size": 0.08, "colours": [[0.48, 0.26, 0.14]], "map": 512}
+  "hide": {"pattern": "velvet", "size": 0.08, "colours": [[0.48, 0.26, 0.14]], "map": 256}
 }

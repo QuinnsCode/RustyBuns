@@ -740,5 +740,5 @@
     "material": "mane",
     "below": -0.3
   },
-  "hide": {"pattern": "fur", "size": 0.01, "colours": [[0.18, 0.12, 0.08], [0.41, 0.27, 0.19]], "map": 512}
+  "hide": {"pattern": "fur", "size": 0.01, "colours": [[0.18, 0.12, 0.08], [0.41, 0.27, 0.19]], "map": 256}
 }

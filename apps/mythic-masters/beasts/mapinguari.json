@@ -687,5 +687,5 @@
     "material": "moss",
     "below": -0.3
   },
-  "hide": {"pattern": "fur", "size": 0.014, "colours": [[0.19, 0.23, 0.1], [0.43, 0.51, 0.23]], "map": 512}
+  "hide": {"pattern": "fur", "size": 0.014, "colours": [[0.19, 0.23, 0.1], [0.43, 0.51, 0.23]], "map": 256}
 }

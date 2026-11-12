@@ -695,5 +695,5 @@
    "material": "sock"
   }
  ],
-  "hide": {"pattern": "fur", "size": 0.008, "colours": [[0.41, 0.32, 0.22], [0.92, 0.72, 0.5]], "map": 512}
+  "hide": {"pattern": "fur", "size": 0.008, "colours": [[0.41, 0.32, 0.22], [0.92, 0.72, 0.5]], "map": 256}
 }

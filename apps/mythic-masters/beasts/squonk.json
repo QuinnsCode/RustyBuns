@@ -1386,5 +1386,5 @@
   "belly": "belly",
   "belly_turn": -0.35,
   "blend": 0.008,
-  "hide": {"pattern": "skin", "size": 0.08, "colours": [[0.47, 0.46, 0.41]], "map": 512}
+  "hide": {"pattern": "skin", "size": 0.08, "colours": [[0.47, 0.46, 0.41]], "map": 256}
 }
