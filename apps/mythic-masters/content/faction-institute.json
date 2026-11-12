@@ -1,0 +1,688 @@
+{
+  "id": "institute",
+  "name": "The Halloway Institute",
+  "short": "the Institute",
+  "calls": "Carrier",
+  "theory": "The Book is a field instrument. It is a catalogue that sorts specimens by a measure. We do not have that measure yet. We will have it before the grant ends. Then we will not need the Carrier.",
+  "tells": [
+    "A numbered sample bag hangs from every third branch behind you.",
+    "A clipboard lies on the stone. The form on it gives your height.",
+    "Small orange flags mark your last forty footprints. Each flag has a code.",
+    "A cooler hums in the brush. A tired man sleeps against it."
+  ],
+  "people": [
+    { "id": "vale", "name": "Dr. Imogen Vale", "role": "Principal investigator. Exact and cold. Respects a straight answer." },
+    { "id": "toby", "name": "Toby Reyes", "role": "Field technician. Overworked. Talks too much. Has not slept." },
+    { "id": "carrow", "name": "Ms. Carrow", "role": "Grant officer. Counts deliverables. Likes nobody." }
+  ],
+  "ranks": [
+    {
+      "id": "intern", "title": "Intern", "up": 0, "fields": ["grove", "wild"],
+      "hail": [
+        { "text": "Good day, {you}. I am an intern. I must tag one specimen today. Your {lead} is a specimen." },
+        { "text": "The file says that the Book held fewer than 4 kinds at {met}. It holds {count} now. I must measure that.", "when": { "hadUnder": { "binds": 4 } } },
+        { "text": "NOTE: This is my first field test. Form 2-A says that I must not apologize. I am sorry.", "when": { "gap": ["first"] } },
+        { "text": "It is night. The grant does not pay for a lamp. Stand still, {you}. I must find the tag gun.", "when": { "night": true } },
+        { "text": "The Lamplighters gave me soup. Do not tell Dr. Vale. Now I must measure your {lead}.", "when": { "met": ["lamplighters"] } }
+      ],
+      "again": [
+        { "text": "You came back after {gap}. I filled in Form 2-A again. This time I signed it." },
+        { "text": "You were away for {gap}. The grant lost days in that time. I lost one sample bag.", "when": { "gap": ["long"] } },
+        { "text": "You beat the Institute 3 times or more. Dr. Vale calls that a data set. Test me again.", "when": { "won": 3 } }
+      ],
+      "youWin": [
+        { "text": "Result: the specimens of the intern failed. I will write that down. I have a form for it." },
+        { "text": "You won. You were also kind. I do not have a form for that.", "when": { "now": ["warm", "close"] } },
+        { "text": "The Book holds {count} kinds. I hold one tag gun. The result is not a surprise.", "when": { "have": { "binds": 10 } } }
+      ],
+      "youLose": [
+        { "text": "Result: the Carrier lost. Please wait here. I must find the correct sample bag." },
+        { "text": "You lost, and your standing with the Institute falls. Dr. Vale will read both numbers.", "when": { "trend": ["falling"] } },
+        { "text": "You lost two times in one hour. I will log one result. That is a kindness, not a method.", "when": { "gap": ["soon"] } }
+      ]
+    },
+    {
+      "id": "sampler", "title": "Sampler", "up": 1, "fields": ["tide", "venom"],
+      "hail": [
+        { "text": "Stop, {you}. I take samples. One hair from {lead}, one bag, one label. Then you go." },
+        { "text": "You gave a baseline at Blue Hole. I need the second sample. A baseline alone is not a result.", "when": { "flags": ["sample-given"] } },
+        { "text": "You carry Reagent 12. I can smell it on the Book. Hold still. I must sample the page edge.", "when": { "flags": ["reagent-taken"] } },
+        { "text": "You lit 3 fires or more before {met}. I sampled the ash from each campfire. Ash is data.", "when": { "had": { "fires": 3 } } },
+        { "text": "The Office takes a specimen and files it. We take a sample and give the specimen back. Usually.", "when": { "met": ["office"] } },
+        { "text": "The record says that you refuse samples. I brought the long tongs.", "when": { "past": ["cold"] } }
+      ],
+      "again": [
+        { "text": "It is {gap} since the last sample. Samples go stale. Give me a new one." },
+        { "text": "You are back after {gap}. The first bag is still cold. I have a second bag.", "when": { "gap": ["later"] } },
+        { "text": "You lost to the Institute before. I kept that sample. I would like one more.", "when": { "lost": 1 } }
+      ],
+      "youWin": [
+        { "text": "The sample bag is empty. I will label it empty. An empty bag is still a bag." },
+        { "text": "You won. The Office will take my specimens anyway. At least you did not use a form.", "when": { "flags": ["protocol-quiet"] } },
+        { "text": "I lost at night with no lamp. I will ask for a lamp in the next grant.", "when": { "night": true } }
+      ],
+      "youLose": [
+        { "text": "Thank you. One hair, one bag, one label. This is not cruelty. This is a method." },
+        { "text": "I have the sample. NOTE: Your squonk wept on the label. I cannot read the label.", "when": { "owns": ["squonk"] } },
+        { "text": "You lost, but you did not argue. Your standing goes up. That is the protocol.", "when": { "trend": ["rising"] } }
+      ]
+    },
+    {
+      "id": "field-technician", "title": "Field Technician", "up": 2, "fields": ["storm", "iron", "frost"],
+      "hail": [
+        { "text": "{you}. Field test. Step 1. You send {lead}. Step 2. I measure what is left." },
+        { "text": "You were past the 1909 trail before {met}. We tagged each hoofprint there. One of them was yours.", "when": { "before": ["1:10"] } },
+        { "text": "You had fewer than 2 nights out when we met. Now you walk in the dark. Something changed. I will measure it.", "when": { "hadUnder": { "nights": 2 } } },
+        { "text": "The Office met you first. Their file on you costs 40 dollars. We paid. Start the test.", "when": { "first": "office" } },
+        { "text": "Toby Reyes left. I do his work and my work. I have not slept. Send {lead}.", "when": { "flags": ["toby-out"] } },
+        { "text": "WARNING: The Carrier is hostile to measurement. I will measure the hostility first.", "when": { "now": ["cold", "cool"] } },
+        { "text": "There is more than one of you. Form 6 has one line for one Carrier. Wait while I draw more lines.", "when": { "party": true } }
+      ],
+      "again": [
+        { "text": "It is {gap} since the last test. A test that is done one time is an anecdote. Send {lead}." },
+        { "text": "You were away for {gap}. The grant ran down in that time. I must make this test count.", "when": { "gap": ["long"] } },
+        { "text": "You are back after {gap}. The meter is still warm. Good. That saves a step.", "when": { "gap": ["soon"] } }
+      ],
+      "youWin": [
+        { "text": "Test complete. Your line-up is stronger than my specimens. I will not round that number down." },
+        { "text": "You won. The meter read the same thing again. Dr. Vale will not let me say what.", "when": { "flags": ["meter-read"] } },
+        { "text": "You won again. The record says that you help us. I will log this as shared data.", "when": { "past": ["warm", "close"] } }
+      ],
+      "youLose": [
+        { "text": "Test complete. The specimens held. Step 3. You go to a campfire. Step 4. You come back." },
+        { "text": "You cleared 4 regions and lost to a technician. I will check the meter. The meter may be wrong.", "when": { "have": { "regions": 4 } } },
+        { "text": "You lost, and the trend is down. Dr. Vale will want to see you. Bring the Book.", "when": { "trend": ["falling"] } }
+      ]
+    },
+    {
+      "id": "survey-lead", "title": "Survey Lead", "up": 3, "fields": ["spirit", "shadow", "stone"],
+      "hail": [
+        { "text": "{you}. I lead this survey. The Book holds {count} kinds. My survey holds a list of the gaps. Show me your line-up." },
+        { "text": "The Book held 8 kinds or more before {met}. We started late. I do not like that number.", "when": { "had": { "binds": 8 } } },
+        { "text": "Protocol QUIET is in effect. The Office seizes our specimens at night. I field the ones that they missed.", "when": { "done": ["office.5"] } },
+        { "text": "A specimen left the cold room with you. I counted the room. I did not report the count.", "when": { "flags": ["specimen-freed"] } },
+        { "text": "I saw Toby Reyes at a Lamplighter post. He was asleep. I logged it as a rare sighting.", "when": { "met": ["lamplighters"], "flags": ["toby-out"] } },
+        { "text": "You were not past Blue Hole when we met you. We watched you arrive. You looked lost.", "when": { "notBefore": ["1:8"] } },
+        { "text": "The record shows a Carrier who helps. I must still test you. A friend is not a control.", "when": { "past": ["warm", "close"] } }
+      ],
+      "again": [
+        { "text": "It is {gap} since the last survey. A survey repeats. Stand where you stood before." },
+        { "text": "You were away for {gap}. I marked your absence on the map. It is a large blank.", "when": { "gap": ["long"] } },
+        { "text": "You beat us 5 times or more. That is not luck. That is a measure. I want it.", "when": { "won": 5 } }
+      ],
+      "youWin": [
+        { "text": "The survey lost. Write down what you used. No. I will write it down." },
+        { "text": "You won. I am glad that it was you. Do not put that in the report.", "when": { "now": ["close"] } },
+        { "text": "The final report is filed. There is no grant. I still survey. It is a habit now.", "when": { "flags": ["institute-closed"] } }
+      ],
+      "youLose": [
+        { "text": "The survey holds. Your line-up has gaps in the twelve fields. I counted them for you." },
+        { "text": "The Book holds fewer than 8 kinds. That is a thin catalogue. Come back with more.", "when": { "haveUnder": { "binds": 8 } } },
+        { "text": "You lost to the Institute 3 times or more. That is a trend. I do not sample pity.", "when": { "lost": 3 } }
+      ]
+    }
+  ],
+  "posts": [
+    { "n": 1, "k": 3, "rank": "sampler", "line": "Atsion Lake is dammed from the headwaters of the Mullica River. I sample the brown water each hour." },
+    { "n": 1, "k": 6, "rank": "intern", "line": "At harvest the bogs are flooded, and the ripe berries float. The Office logs the berries, and I measure the water." },
+    { "n": 1, "k": 10, "rank": "field-technician", "line": "In one week of January 1909 hundreds of people reported hoofprints over rooftops. I measure roofs." },
+    { "n": 2, "k": 3, "rank": "intern", "line": "Spruce Knob is 4,863 feet high, the highest point in West Virginia. I carried the scale up alone." },
+    { "n": 2, "k": 6, "rank": "sampler", "line": "The New River Gorge Bridge stands 876 feet over the river. I lower the sample bag on a long line." },
+    { "n": 2, "k": 7, "rank": "field-technician", "line": "In September 1952 people here reported a tall figure in a hissing mist. The Office seized the hill, so I sample the mist." },
+    { "n": 3, "k": 1, "rank": "sampler", "line": "This forest covers about 1.5 million acres of northern Wisconsin. The grant pays for sample bags for two acres." },
+    { "n": 3, "k": 5, "rank": "field-technician", "line": "Lake Superior is the largest freshwater lake in the world by surface area. Dr. Vale wants all of it in bags." },
+    { "n": 3, "k": 9, "rank": "survey-lead", "line": "Moosehead Lake is about 40 miles long and wholly inside Maine. The Office holds the north shore, and I survey the south shore." },
+    { "n": 4, "k": 1, "rank": "intern", "line": "The largest known Sitka spruce in the world stands near Lake Quinault. I must measure it, and my tape is too short." },
+    { "n": 4, "k": 5, "rank": "sampler", "line": "Mount Rainier carries more glacier ice than any other peak in the lower 48 states. I sample the ice, and the bag leaks." },
+    { "n": 4, "k": 9, "rank": "survey-lead", "line": "Crater Lake is 1,943 feet deep, the deepest lake in the United States. The Office filed the surface, and I measure the rest." },
+    { "n": 5, "k": 0, "rank": "field-technician", "line": "The Niagara River drops about 50 metres at the falls. My meter dropped with it, and I want it back." },
+    { "n": 5, "k": 9, "rank": "sampler", "line": "In July 1977 Sandra Mansi photographed a hump and a head rising from Lake Champlain. The Office wants the picture, and I want the water." },
+    { "n": 5, "k": 10, "rank": "survey-lead", "line": "The Battle of Valcour Island was on October 11, 1776. The Lamplighters land boats here at night, and I count the boats." },
+    { "n": 6, "k": 5, "rank": "sampler", "line": "The Grand Canyon is 277 miles long and up to a mile deep. I have one sample bag for each mile." },
+    { "n": 6, "k": 7, "rank": "field-technician", "line": "Badwater Basin is 282 feet below sea level, the lowest point in North America. The Office is here too, and they brought no water." },
+    { "n": 6, "k": 9, "rank": "intern", "line": "The Herrick brothers made the first mounted jackalopes in Douglas in the 1930s. The Lamplighters say that I may not tag a live one here." },
+    { "n": 7, "k": 1, "rank": "sampler", "line": "The Atchafalaya Basin is the largest swamp in the United States. Each sample from it is the same colour." },
+    { "n": 7, "k": 2, "rank": "field-technician", "line": "Honey Island Swamp is one of the least-changed river swamps in the country. The Office changed it with tape, and I measure the tape." },
+    { "n": 7, "k": 8, "rank": "survey-lead", "line": "Reports of the skunk ape come from Florida from the 1960s on, and each report gives a smell. The Lamplighters stand upwind of me." },
+    { "n": 8, "k": 2, "rank": "intern", "line": "Missouri has more than six thousand known caves. Ms. Carrow wants a number for the caves that are not known." },
+    { "n": 8, "k": 4, "rank": "sampler", "line": "Visitors to Crater of Diamonds may keep any diamonds that they find. The grant has 2 days left, so I dig." },
+    { "n": 8, "k": 9, "rank": "survey-lead", "line": "In May 1971 the Ford family of Fouke said a tall hairy creature reached through their window. The Office took the window, so I measure the frame." }
+  ],
+  "quest": [
+    {
+      "id": "institute.1", "title": "Baseline", "n": 1, "k": 8, "who": "toby",
+      "hail": [
+        { "text": "Hello. Sorry. I am Toby Reyes, field technician, the Halloway Institute. I am in Blue Hole in waders. Locals call it bottomless. My line is 30 metres, and it is not enough. Dr. Vale wants a baseline from you, {you}." },
+        { "text": "You are {you}. We are the Halloway Institute, and we reached you first. Dr. Vale says that first contact gives clean data. Please do not touch anything. I am Toby. I have not slept.", "when": { "first": "institute" } },
+        { "text": "Dr. Vale bought your file from the Office for 40 dollars. She read your name aloud from it. Then she said {you}, because a name is not a category. I am Toby. Hello.", "when": { "flags": ["office-file"] } },
+        { "text": "Dr. Vale bought your file from the Office. The file says that your name is Gary. Good day, Gary. Form 1-A now says Gary in ink, so it stays Gary.", "when": { "flags": ["office-gary"] } },
+        { "text": "The Book held 6 kinds or more before we reached you. Dr. Vale is not pleased. A baseline comes first, and you started without us. I am Toby. I only carry the scale.", "when": { "had": { "binds": 6 } } },
+        { "text": "You were already past Ong's Hat when we found your trail. I ran after you in waders. Then I came back to Blue Hole, because the equipment is here. Please stand still now.", "when": { "before": ["1:9"] } },
+        { "text": "You closed a contract on the sighting board before we met. So you take work from a board. Good. The Institute also has work, and it has a form.", "when": { "had": { "hunts": 1 } } },
+        { "text": "You carry a lamp from the Lamplighters. Dr. Vale wants its output in lumens, and they will not tell us. Hold it away from the scale, please. I am Toby. Hello.", "when": { "flags": ["lamp-carried"] } },
+        { "text": "You met the Office and the Lamplighters before us. We are third. Dr. Vale says that third is still a position. I have not slept, so I agree.", "when": { "met": ["office", "lamplighters"] } }
+      ],
+      "ask": [
+        { "text": "The grant has 40 days left. Step 1. Put {lead} on the scale. Step 2. I take one hair for sample bag 001. Step 3. You go. Do you allow it?" },
+        { "text": "It is dark, and I cannot read the scale. Put {lead} on it anyway. I will read it by the bog-light. One hair for sample bag 001. Do you allow it?", "when": { "night": true } }
+      ],
+      "replies": [
+        {
+          "id": "allow", "style": "straight", "say": "Fine. One hair, one weigh-in. Be quick about it.", "sway": 1, "sets": ["sample-given"],
+          "answer": [
+            { "text": "Thank you. Weight logged. Hair in sample bag 001. This is not cruelty. This is a method. Dr. Vale will be glad. She will not show it." },
+            { "text": "Thank you, Gary. Sample bag 001 now reads Gary. This is not cruelty. This is a method. Dr. Vale will be glad. She will not show it.", "when": { "flags": ["office-gary"] } }
+          ]
+        },
+        {
+          "id": "pebble", "style": "dry", "say": "Tell you what. Weigh this pebble instead. It's very calm.", "sway": 1, "sets": ["pebble-logged"],
+          "answer": [
+            { "text": "A pebble. I will log it as Specimen HI-000. It is the most patient specimen that we have. Dr. Vale will not laugh. I did." }
+          ]
+        },
+        {
+          "id": "refuse", "style": "hard", "say": "Nobody's weighing anybody. Get out of the pond.", "sway": -1, "fight": true,
+          "answer": [
+            { "text": "Understood. Then Form 1-B applies. A Carrier who refuses a baseline gets a field test. I am sorry. The specimens are not." }
+          ]
+        }
+      ],
+      "fight": {
+        "teams": [
+          { "team": [{ "id": "wampus-cat", "up": 1, "title": "Specimen HI-004" }, { "id": "champ", "up": 2, "title": "Specimen HI-007" }] },
+          { "when": { "had": { "binds": 6 } }, "team": [{ "id": "wampus-cat", "up": 2, "title": "Specimen HI-004" }, { "id": "champ", "up": 3, "title": "Specimen HI-007" }] }
+        ],
+        "youWin": [
+          { "text": "Field test complete. The specimens lost. That is also a baseline. I will write it in the small box." },
+          { "text": "You won. The Book held 6 kinds before we came. Dr. Vale will say that the test was late. She is right.", "when": { "had": { "binds": 6 } } }
+        ],
+        "youLose": [
+          { "text": "Field test complete. You lost. Go to a campfire. Then come back. I will be here. I am always here." },
+          { "text": "You lost, and your friends watched. I will not log the friends. Form 1-B has no box for them.", "when": { "party": true } }
+        ],
+        "swayWin": 1, "swayLose": 0, "setsWin": []
+      },
+      "rematch": [
+        { "text": "You came back. Form 1-B is still open. The specimens are still awake. So am I." },
+        { "text": "You came back after {gap}. I kept Form 1-B open the whole time. The grant paid for that.", "when": { "gap": ["long"] } }
+      ],
+      "log": "Toby Reyes of the Halloway Institute asked for a baseline at Blue Hole."
+    },
+    {
+      "id": "institute.2", "title": "Cold Room", "n": 2, "k": 9, "who": "vale",
+      "hail": [
+        { "text": "{you}. I am Dr. Imogen Vale. These concrete igloos stored explosives in the war. They now store my specimens at 4 degrees. The grant has 33 days left." },
+        { "text": "{you}. I am Dr. Imogen Vale. You gave a baseline at Blue Hole. Sample bag 001 is in igloo 3. I measured it 14 times. Thank you.", "when": { "flags": ["sample-given"] } },
+        { "text": "{you}. I am Dr. Imogen Vale. You gave no baseline at Blue Hole. Sample bag 001 is empty. I keep it in igloo 3 as a record of you.", "when": { "noFlags": ["sample-given"] } },
+        { "text": "{you}. I am Dr. Imogen Vale. You gave my technician a pebble. Specimen HI-000 is in igloo 3. It is stable. I do not find it funny.", "when": { "flags": ["pebble-logged"] } },
+        { "text": "The Office has a listening post at Green Bank. Agent Pell told you to switch the Book off. A catalogue has no switch. He did not measure that. I am Dr. Imogen Vale.", "when": { "done": ["office.2"] } },
+        { "text": "You carried a message for the Lamplighters past the Office cordon. So you are a carrier in two senses. I dislike a word with two senses. I am Dr. Imogen Vale.", "when": { "flags": ["message-run"] } },
+        { "text": "You were away for {gap}. The grant lost those days. I lost them too. Come inside the igloo. It is cold, and that is correct.", "when": { "gap": ["long"] } },
+        { "text": "The record says that you answer my technician with force. Good. Force is a quantity. I can measure a quantity. I am Dr. Imogen Vale.", "when": { "manner": "hard" } }
+      ],
+      "ask": [
+        { "text": "This is Reagent 12. It is our own ink. I offer one bottle for data. Tell me how the Book takes a bind. Do you accept?" },
+        { "text": "The Book holds {count} kinds, and I hold Reagent 12. It is our own ink. I offer one bottle for one account of a bind. Do you accept?", "when": { "have": { "binds": 8 } } }
+      ],
+      "replies": [
+        {
+          "id": "accept", "style": "straight", "say": "Deal. It gets warm, the ink goes dark, and then it's in there.", "sway": 2, "sets": ["reagent-taken"], "ink": 1,
+          "answer": [
+            { "text": "Warm. Dark. Then in. That is three data points, and you gave them in order. Here is Reagent 12. CAUTION: Do not drink it. Toby did." }
+          ]
+        },
+        {
+          "id": "label", "style": "dry", "say": "Is it safe? The label just says 'probably'.", "sway": 0, "sets": ["reagent-taken"], "ink": 1,
+          "answer": [
+            { "text": "The label is accurate. Take the bottle. I do not log jokes. I log that you took it." }
+          ]
+        },
+        {
+          "id": "keep", "style": "hard", "say": "Keep your bottle. The Book's not telling you anything.", "sway": -1, "fight": true,
+          "answer": [
+            { "text": "Then I take the data another way. A fight is an account of a bind, with fewer words. Technician. Open igloo 5." }
+          ]
+        }
+      ],
+      "fight": {
+        "teams": [
+          { "team": [{ "id": "flatwoods-monster", "up": 2, "title": "Specimen HI-012" }, { "id": "snallygaster", "up": 3, "title": "Specimen HI-015" }] },
+          { "when": { "now": ["cold"] }, "team": [{ "id": "flatwoods-monster", "up": 3, "title": "Specimen HI-012" }, { "id": "snallygaster", "up": 3, "title": "Specimen HI-015" }] }
+        ],
+        "youWin": [
+          { "text": "Noted. Your line-up beat two specimens at 4 degrees. I have the data. You may keep your silence." },
+          { "text": "You won, and you were rude about it. Both facts go in the file. Only one of them is useful.", "when": { "manner": "hard" } }
+        ],
+        "youLose": [
+          { "text": "Noted. The specimens held. Go to a campfire and come back. The offer of Reagent 12 stays open." },
+          { "text": "The specimens held. It is night, and the igloos are colder. Come back in daylight, or do not. I will log either result.", "when": { "night": true } }
+        ],
+        "swayWin": 1, "swayLose": 0, "setsWin": []
+      },
+      "rematch": [
+        { "text": "Igloo 5 is open again. The specimens are rested. You are not. That is a fair test." },
+        { "text": "You came back after {gap}. I did not expect that. I will change one line in the file.", "when": { "gap": ["later", "long"] } }
+      ],
+      "log": "Dr. Vale offered Reagent 12 at the McClintic igloos, for data on the Book."
+    },
+    {
+      "id": "institute.3", "title": "Field Guide", "n": 3, "k": 10, "who": "vale",
+      "hail": [
+        { "text": "In 1910 William T. Cox published a field guide to the beasts of the lumber camps. The Institute treats it as a protocol. The grant has 26 days left." },
+        { "text": "The Book holds a squonk. Good. A squonk weeps, and I need a sample of the tears. The Institute treats the 1910 field guide as a protocol. The grant has 26 days left.", "when": { "owns": ["squonk"] } },
+        { "text": "Your first pick from the Bog Witch was a squonk. It wept on her sheet. I have a photograph of the stain. I need a fresh sample.", "when": { "starter": "squonk" } },
+        { "text": "The Book holds no squonk. That is a gap in your catalogue and in mine. I need tears from one. The grant has 26 days left.", "when": { "lacks": ["squonk"] } },
+        { "text": "The Book holds a hidebehind. Nobody sees one, because it is always behind the observer. You are a Carrier with one in front. I want that explained. First, the squonk.", "when": { "owns": ["hidebehind"] } },
+        { "text": "The Lamplighters use the camp tales as a code book, and you kept their tale. I use the 1910 field guide as a protocol. One of us reads it wrong.", "when": { "flags": ["tale-kept"] } },
+        { "text": "You told the Office that their oldest asset is wood. I told them the same thing last year. They sent me Form 9-C. You, they believed.", "when": { "flags": ["asset-one-wood"] } },
+        { "text": "The record says that you give me straight answers. I value that. I will ask a straight question.", "when": { "manner": "straight" } }
+      ],
+      "ask": [
+        { "text": "I need tears from a squonk. Three millilitres. Will you help the Institute get them?" },
+        { "text": "Lend me the squonk for one hour. I take three millilitres of tears. I return the squonk. Will you lend it?", "when": { "owns": ["squonk"] } },
+        { "text": "You hold no squonk, so I cannot ask for a loan. Toby will tell a wild one a sad fact. Will you hold the sample bag?", "when": { "lacks": ["squonk"] } }
+      ],
+      "replies": [
+        {
+          "id": "lend", "style": "straight", "say": "One hour. It comes back the same weight, or we have a problem.", "sway": 2, "sets": ["squonk-lent"],
+          "answer": [
+            { "text": "Agreed. Three millilitres, one bag, one label. The squonk wept before I asked. This is not cruelty. This is a method." },
+            { "text": "Agreed. You hold the bag. Toby told a wild squonk the grant total. It wept at once. Sample taken. I log your help as a loan.", "when": { "lacks": ["squonk"] } }
+          ]
+        },
+        {
+          "id": "onion", "style": "dry", "say": "Have you tried an onion? Or showing it your budget?", "sway": 0,
+          "answer": [
+            { "text": "Toby tried the onion. Toby wept. The squonk did not. The budget is next on the list. I do not log jokes, {you}." }
+          ]
+        },
+        {
+          "id": "no", "style": "hard", "say": "It cries enough already. Leave it alone.", "sway": -1, "fight": true,
+          "answer": [
+            { "text": "Then there is a second method. A squonk weeps when it sees a loss. I will arrange a loss. Yours." }
+          ]
+        }
+      ],
+      "fight": {
+        "teams": [
+          { "team": [{ "id": "teakettler", "up": 2, "title": "Specimen HI-019" }, { "id": "dover-demon", "up": 3, "title": "Specimen HI-021" }] },
+          { "when": { "past": ["cold", "cool"] }, "team": [{ "id": "teakettler", "up": 3, "title": "Specimen HI-019" }, { "id": "dover-demon", "up": 4, "title": "Specimen HI-021" }] }
+        ],
+        "youWin": [
+          { "text": "You won. No loss, no tears, no sample. I will write the second method down as not confirmed." },
+          { "text": "You won, and your squonk wept anyway. It weeps when it wins. I had no bag ready. That is my error.", "when": { "owns": ["squonk"] } }
+        ],
+        "youLose": [
+          { "text": "You lost. NOTE: A squonk within 200 metres wept. Toby has the sample. Thank you for your help." },
+          { "text": "You lost, and no squonk saw it. The test gave no tears. We both lost a morning.", "when": { "lacks": ["squonk"] } }
+        ],
+        "swayWin": 1, "swayLose": 0, "setsWin": []
+      },
+      "rematch": [
+        { "text": "The second method is still not confirmed. I need a second trial. Send {lead}." },
+        { "text": "You came back after {gap}. The grant did not wait. Start the second trial.", "when": { "gap": ["long"] } }
+      ],
+      "log": "Dr. Vale asked for squonk tears at Cox's field guide."
+    },
+    {
+      "id": "institute.4", "title": "Ash Layer", "n": 4, "k": 4, "who": "carrow",
+      "hail": [
+        { "text": "I am Ms. Carrow, grant officer. Mount St. Helens erupted on May 18, 1980, and the ash layer dates each sample here. I date things too. The grant has 19 days left." },
+        { "text": "I am Ms. Carrow, grant officer. The Office has a copy of your tape. I bought a copy of the copy. I counted the creatures on it. You are ahead of this Institute.", "when": { "flags": ["tape-copied"] } },
+        { "text": "I am Ms. Carrow, grant officer. You took one bottle of Reagent 12. It cost 212 dollars. It is line 40 of my ledger. You are now a cost.", "when": { "flags": ["reagent-taken"] } },
+        { "text": "I am Ms. Carrow, grant officer. Your standing with this Institute is poor. I do not mind. I like nobody. It saves time.", "when": { "now": ["cold", "cool"] } },
+        { "text": "I am Ms. Carrow, grant officer. Your standing here falls each time they meet you. The grant also falls. I watch both numbers. Only one of them is my job.", "when": { "trend": ["falling"] } },
+        { "text": "I am Ms. Carrow, grant officer. The Book holds {count} kinds. The grant demands twelve specimens, and Dr. Vale has nine. You hold more than a funded Institute. Explain that to me.", "when": { "have": { "binds": 12 } } },
+        { "text": "I am Ms. Carrow, grant officer. You lent Dr. Vale a squonk. She logged three millilitres of tears. That is a sample, not a specimen. It does not count.", "when": { "flags": ["squonk-lent"] } },
+        { "text": "I am Ms. Carrow, grant officer. The Book held fewer than 6 kinds when this Institute met you. It holds {count} now. Your rate is better than ours. I note the rate.", "when": { "hadUnder": { "binds": 6 } } }
+      ],
+      "ask": [
+        { "text": "The grant demands twelve specimens. Dr. Vale has nine. Show me your line-up, and I will count it. Do you agree?" },
+        { "text": "You hold more than twelve kinds. I want to count your line-up against our nine. Do you agree?", "when": { "have": { "binds": 12 } } }
+      ],
+      "replies": [
+        {
+          "id": "count", "style": "straight", "say": "Go ahead and count. I've got nothing to hide.", "sway": 1, "sets": ["carrow-counted"],
+          "answer": [
+            { "text": "Counted. Your line-up is in order. Our nine are in bags. I will write that you exist, {you}. That is all I write about anybody." }
+          ]
+        },
+        {
+          "id": "ten", "style": "dry", "say": "Count me as number ten. I'm cheaper than a squonk.", "sway": -1, "sets": ["carrow-counted"],
+          "answer": [
+            { "text": "You are not a specimen. I checked. Form 12 has a definition. I counted the line-up while you talked." }
+          ]
+        },
+        {
+          "id": "nocount", "style": "hard", "say": "My line-up's not going on your ledger. Count your own.", "sway": -2, "fight": true,
+          "answer": [
+            { "text": "Then I count them in use. Technician, field three of the nine. A specimen that fights is still a deliverable." }
+          ]
+        }
+      ],
+      "fight": {
+        "teams": [
+          { "team": [{ "id": "splintercat", "up": 3, "title": "Specimen HI-024" }, { "id": "fur-bearing-trout", "up": 3, "title": "Specimen HI-026" }, { "id": "champ", "up": 4, "title": "Specimen HI-027" }] },
+          { "when": { "have": { "binds": 12 } }, "team": [{ "id": "splintercat", "up": 4, "title": "Specimen HI-024" }, { "id": "fur-bearing-trout", "up": 4, "title": "Specimen HI-026" }, { "id": "champ", "up": 5, "title": "Specimen HI-027" }] }
+        ],
+        "youWin": [
+          { "text": "Three specimens down. They still count as three. I counted your line-up in use. I count it as a risk. Good day." },
+          { "text": "You hold more kinds, and you won. I will ask the board why we fund the slower party.", "when": { "have": { "binds": 12 } } }
+        ],
+        "youLose": [
+          { "text": "Your line-up lost to three of our nine. I will put that in the report. It is the first good line in it." },
+          { "text": "You lost, and your standing falls. I do not enjoy it. I do not enjoy anything. Come back and lose less.", "when": { "trend": ["falling"] } }
+        ],
+        "swayWin": 0, "swayLose": 0, "setsWin": ["carrow-counted"]
+      },
+      "rematch": [
+        { "text": "You are back. The three specimens are still deliverables. Fight them again, and I will count again." },
+        { "text": "You were away for {gap}. I charged the wait to the grant. Begin.", "when": { "gap": ["long"] } }
+      ],
+      "log": "Ms. Carrow counted deliverables at Mount St. Helens: twelve needed, nine held."
+    },
+    {
+      "id": "institute.5", "title": "The Long Study", "n": 5, "k": 6, "who": "toby",
+      "hail": [
+        { "text": "{you}. Quiet, please. The study of wolves and moose on Isle Royale began in 1958. Dr. Vale admires it. She has nine days of money. The Office will come for our cold room. I want one specimen out first." },
+        { "text": "{you}. You are late, and so am I. Protocol QUIET began. The Office took the cold room last night. Eight bags, eight specimens, one form. One specimen is left. It is in my lunch cooler.", "when": { "flags": ["protocol-quiet"] } },
+        { "text": "Wren Ashby plans a raid on the Office store. I heard it on a radio that I do not own. If she opens cages, I want one of ours far away first.", "when": { "flags": ["raid-plan"] } },
+        { "text": "You always give me a straight answer, {you}. So I trust you with this. Dr. Vale must not know. The study here began in 1958. Ours has nine days. I want one specimen out.", "when": { "manner": "straight" } },
+        { "text": "You make jokes, and I laugh, and then Dr. Vale looks at me. This is not a joke. Nine days of money are left. I want one specimen out of the cold room.", "when": { "manner": "dry" } },
+        { "text": "It is {gap} since we spoke. I did not sleep in that time. I counted. Listen. The Office will come for the cold room, and I need your help.", "when": { "gap": ["long"] } },
+        { "text": "Ms. Carrow counted nine specimens at Mount St. Helens. If one leaves, she counts eight. I will say that I counted wrong. I have not slept, so she will believe it.", "when": { "flags": ["carrow-counted"] } }
+      ],
+      "ask": [
+        { "text": "Specimen HI-031 is a Loveland Frogman. It likes rain, and it does not like bags. Will you take it out of here?" },
+        { "text": "Specimen HI-031 is the last one. It is in the cooler, under my sandwiches. Will you take it before the Office counts again?", "when": { "flags": ["protocol-quiet"] } }
+      ],
+      "replies": [
+        {
+          "id": "take", "style": "straight", "say": "Hand it over. I'll walk it to the water myself.", "sway": 2, "sets": ["specimen-freed"],
+          "answer": [
+            { "text": "Thank you. Step 1. Carry the cooler. Step 2. Open it at the water. Step 3. Do not tell Dr. Vale. I will log HI-031 as a counting error." },
+            { "text": "Thank you. Eat the sandwiches if you want them. Open the cooler at the water. The Office will count zero, and zero will be correct.", "when": { "flags": ["protocol-quiet"] } }
+          ]
+        },
+        {
+          "id": "form", "style": "dry", "say": "Sure. Is there a form for stealing from your own lab?", "sway": 1, "sets": ["specimen-freed"],
+          "answer": [
+            { "text": "Form 31-B. I ate it. Take the cooler, and open it at the water. You are the best part of my week. My week has nine days." }
+          ]
+        },
+        {
+          "id": "notmine", "style": "hard", "say": "Not my lab, not my problem. Sort it out yourself.", "sway": -1, "fight": true,
+          "answer": [
+            { "text": "Then you are a Carrier in the cold room with no task. The procedure calls that an intruder. Step 1. Sound the alarm. I am the alarm. I am sorry." }
+          ]
+        }
+      ],
+      "fight": {
+        "teams": [
+          { "team": [{ "id": "loveland-frogman", "up": 3, "title": "Specimen HI-031" }, { "id": "dover-demon", "up": 4, "title": "Specimen HI-029" }, { "id": "beast-of-bray-road", "up": 4, "title": "Specimen HI-033" }] },
+          { "when": { "flags": ["protocol-quiet"] }, "team": [{ "id": "loveland-frogman", "up": 4, "title": "Specimen HI-031" }, { "id": "teakettler", "up": 3, "title": "Specimen HI-019" }, { "id": "splintercat", "up": 3, "title": "Specimen HI-024" }] }
+        ],
+        "youWin": [
+          { "text": "The alarm failed. Specimen HI-031 left through the open door. I will log that as your fault. Thank you, {you}." },
+          { "text": "You won. The cooler fell over, and HI-031 is in the lake. The Office will count zero. Zero is now correct.", "when": { "flags": ["protocol-quiet"] } }
+        ],
+        "youLose": [
+          { "text": "The alarm worked. I did not want it to work. Go to a campfire. The door will be unlocked when you come back." },
+          { "text": "The alarm worked, and it is night. Dr. Vale sleeps. I do not. Come back before the Office does.", "when": { "night": true } }
+        ],
+        "swayWin": 1, "swayLose": 0, "setsWin": ["specimen-freed"]
+      },
+      "rematch": [
+        { "text": "The door is unlocked. The alarm is tired. Please win this time. I cannot ask a second Carrier." },
+        { "text": "You were away for {gap}. The grant has fewer days now. HI-031 is still here. Please.", "when": { "gap": ["long"] } }
+      ],
+      "log": "Toby Reyes asked for one specimen out of the cold room on Isle Royale."
+    },
+    {
+      "id": "institute.6", "title": "Field Strength", "n": 6, "k": 4, "who": "vale",
+      "hail": [
+        { "text": "Meteor Crater is about 1.2 kilometres across. An iron meteorite dug it some 50,000 years ago. It is quiet ground for a meter. Mine measures the twelve fields. The grant has 6 days left." },
+        { "text": "The Lamplighters raided the Office store at Roswell. Some of the cages held my specimens. Nobody returned them to me. I have a meter and 6 days. Stand here.", "when": { "flags": ["annex-raided"] } },
+        { "text": "You stood inside Annex 9. The Office keeps cages there and no instruments. They store. They do not measure. Stand here, and I will show you the difference.", "when": { "done": ["office.6"] } },
+        { "text": "You lent me a squonk, and it came back the same weight. I keep my word. I ask for one more loan. Bring the Book to my meter.", "when": { "flags": ["squonk-lent"] } },
+        { "text": "The record shows that you help this Institute. I do not say thank you often. I say it now. Bring the Book to the meter.", "when": { "past": ["warm", "close"] } },
+        { "text": "The cold room count is short by one. Toby says that he counted wrong. Toby does not count wrong. I have 6 days and no time for that question.", "when": { "flags": ["specimen-freed"] } },
+        { "text": "You were away for {gap}. I calibrated the meter each day, and it read zero each day. Then you came into the crater, and it did not.", "when": { "gap": ["long"] } },
+        { "text": "The record shows that you resist this Institute. The meter does not need your consent. It needs the Book within three metres.", "when": { "past": ["cold", "cool"] } }
+      ],
+      "ask": [
+        { "text": "The meter reads each of the twelve fields from 0 to 100. Hold the Book over the plate. Will you do it?" },
+        { "text": "You give straight answers, so I give a straight request. Hold the Book over the plate for ten seconds. Will you do it?", "when": { "manner": "straight" } }
+      ],
+      "replies": [
+        {
+          "id": "hold", "style": "straight", "say": "Ten seconds. Then you tell me what it says.", "sway": 2, "sets": ["meter-read"],
+          "answer": [
+            { "text": "Thank you. The meter reads one thing. I will run it again. NOTE: It reads the same thing. I will not say what it reads. It is not ready to be said." }
+          ]
+        },
+        {
+          "id": "weather", "style": "dry", "say": "Here. What's it say? Partly cloudy? Chance of doom?", "sway": 0, "sets": ["meter-read"],
+          "answer": [
+            { "text": "It reads one thing, every time. It is not weather. I do not log jokes. I did log the reading, and I will not say it." }
+          ]
+        },
+        {
+          "id": "back", "style": "hard", "say": "Keep that thing away from the Book.", "sway": -2, "fight": true,
+          "answer": [
+            { "text": "Then I measure at range. Three specimens, twelve fields, one Carrier. A fight is a reading with more steps." }
+          ]
+        }
+      ],
+      "fight": {
+        "teams": [
+          { "team": [{ "id": "hoop-snake", "up": 4, "title": "Specimen HI-034" }, { "id": "fresno-nightcrawler", "up": 4, "title": "Specimen HI-036" }, { "id": "lizard-man", "up": 5, "title": "Specimen HI-037" }] },
+          { "when": { "past": ["cold", "cool"] }, "team": [{ "id": "hoop-snake", "up": 5, "title": "Specimen HI-034" }, { "id": "fresno-nightcrawler", "up": 5, "title": "Specimen HI-036" }, { "id": "lizard-man", "up": 6, "title": "Specimen HI-037" }] }
+        ],
+        "youWin": [
+          { "text": "You won. The meter ran through the whole fight. It reads the same one thing. I will not say what." },
+          { "text": "You won with Reagent 12 on the page. The meter did not see the reagent. It reads one thing only. I will not say what.", "when": { "flags": ["reagent-taken"] } }
+        ],
+        "youLose": [
+          { "text": "The specimens held. The meter read the Book at three metres. It was enough. Go to a campfire, {you}." },
+          { "text": "You lost, and you still refuse. The trend in your file is down. The reading on my meter is not. Think about that.", "when": { "trend": ["falling"] } }
+        ],
+        "swayWin": 1, "swayLose": 0, "setsWin": ["meter-read"]
+      },
+      "rematch": [
+        { "text": "The meter is on. The specimens are ready. Step 1. You fight. Step 2. I read." },
+        { "text": "You came back after {gap}. The meter knew before I did. Begin.", "when": { "gap": ["later", "long"] } }
+      ],
+      "log": "Dr. Vale read the Book with her meter at Meteor Crater and did not say the result."
+    },
+    {
+      "id": "institute.7", "title": "Grant Review", "n": 7, "k": 6, "who": "toby",
+      "hail": [
+        { "text": "{you}. Lake Okeechobee is about 730 square miles. I must stand in it tonight. Ms. Carrow will cut the grant unless we tag the rougarou. Dr. Vale wrote a plan. I am the lure. The grant has 3 days left." },
+        { "text": "{you}. You know the Lamplighters. They shelter things that we put in bags. I am a thing in a plan now. I am the lure for the rougarou. Would they shelter a technician?", "when": { "met": ["lamplighters"] } },
+        { "text": "{you}. I am the lure in the rougarou plan. I hear that some people put lights on the night paths. I do not know them. I know nobody who is not on the payroll.", "when": { "unmet": ["lamplighters"] } },
+        { "text": "{you}. You took HI-031 out for me at Isle Royale. Nobody found out. Now I ask again, and the specimen is me. I am the lure in the rougarou plan.", "when": { "flags": ["specimen-freed"] } },
+        { "text": "The Office burned a Lamplighter cache at Barataria. You told them where the boats go. I do not judge. I have not slept. Now tell me where I can go. I am the lure in the rougarou plan.", "when": { "flags": ["cache-burned"] } },
+        { "text": "The Book holds a rougarou already. Dr. Vale says that a bind is not a tag. The grant needs our tag on one. So the plan stands, and I am still the lure.", "when": { "owns": ["rougarou"] } },
+        { "text": "You always make me laugh, {you}. Please do not do it now. The plan says that the lure stays still. I am the lure. The rougarou is the rest of the plan.", "when": { "manner": "dry" } },
+        { "text": "It is {gap} since we spoke. I slept one time in that period. I dreamed of forms. Now I am the lure in the rougarou plan.", "when": { "gap": ["long"] } }
+      ],
+      "ask": [
+        { "text": "The rougarou hunts people who break Lent. I gave up sleep for Lent. I slept one time. Dr. Vale wrote that I qualify. What do I do?" },
+        { "text": "It is night, and the plan starts at night. Step 1. The lure enters the water. I am at Step 1. What do I do?", "when": { "night": true } }
+      ],
+      "replies": [
+        {
+          "id": "out", "style": "straight", "say": "You walk. Now. I'll get you past the camp.", "sway": 2, "sets": ["toby-out"],
+          "answer": [
+            { "text": "Yes. I will walk. I leave the waders. I leave the tag gun. I keep one sample bag, for my own things. Thank you, {you}." },
+            { "text": "Yes. I will walk to the Lamplighters, and I will ask for a cot. I leave the waders and the tag gun here. Thank you, {you}.", "when": { "met": ["lamplighters"] } }
+          ]
+        },
+        {
+          "id": "carrow", "style": "dry", "say": "I'll tell Carrow. A lost technician is a line item.", "sway": 1, "sets": ["carrow-told"],
+          "answer": [
+            { "text": "You told Ms. Carrow. She priced me at 61,000 dollars to replace. The plan now uses a decoy made of my waders. It is the kindest thing she ever did." }
+          ]
+        },
+        {
+          "id": "team", "style": "hard", "say": "No lure. I'll go through Vale's team instead.", "sway": 0, "fight": true,
+          "answer": [
+            { "text": "Then Dr. Vale will field the review team. They are the best specimens that we have. Please win. I say that off the record." }
+          ]
+        }
+      ],
+      "fight": {
+        "teams": [
+          { "team": [{ "id": "hoop-snake", "up": 4, "title": "Specimen HI-034" }, { "id": "lizard-man", "up": 4, "title": "Specimen HI-037" }, { "id": "loveland-frogman", "up": 5, "title": "Specimen HI-031" }, { "id": "champ", "up": 6, "title": "Specimen HI-027" }] },
+          { "when": { "flags": ["specimen-freed"] }, "team": [{ "id": "hoop-snake", "up": 4, "title": "Specimen HI-034" }, { "id": "lizard-man", "up": 5, "title": "Specimen HI-037" }, { "id": "champ", "up": 6, "title": "Specimen HI-027" }] }
+        ],
+        "youWin": [
+          { "text": "The review team lost. Dr. Vale has no team to hold the net. The plan is cancelled. I stay on the payroll. I may sleep." },
+          { "text": "The review team lost to a Carrier who holds a rougarou. Ms. Carrow saw it. She wrote one word. I could not read the word.", "when": { "owns": ["rougarou"] } }
+        ],
+        "youLose": [
+          { "text": "The review team held. The plan stands. Step 1 is at dusk. Please come back before dusk." },
+          { "text": "The review team held, and it is night. I am in the water. It is cold. Come back soon.", "when": { "night": true } }
+        ],
+        "swayWin": 1, "swayLose": 0, "setsWin": []
+      },
+      "rematch": [
+        { "text": "The review team is ready. I am still the lure. Please win this time, {you}." },
+        { "text": "You are back after {gap}. Good. The water is at my knees. Begin.", "when": { "gap": ["soon"] } }
+      ],
+      "log": "At Okeechobee the grant review needed a tagged rougarou, and Toby Reyes was the lure."
+    },
+    {
+      "id": "institute.8", "title": "Final Report", "n": 8, "k": 7, "who": "vale",
+      "hail": [
+        { "text": "{you}. The United States records about 1,200 tornadoes a year. This rig chases them. Today it waits for you. The grant has 1 day left. I have one test left." },
+        { "text": "We met you first, at {met}. Sample bag 001 began there. Every other party came after us. I will finish first too. The grant has 1 day left.", "when": { "first": "institute" } },
+        { "text": "You gave a baseline at Blue Hole. I have it here. {lead} weighs more now, and so does the Book. I measured one. I will measure the other.", "when": { "flags": ["sample-given"] } },
+        { "text": "The whole record shows a Carrier who helped. You lent, you held, you answered. I am sorry for the next step. I do not say that often.", "when": { "past": ["warm", "close"] } },
+        { "text": "The whole record shows a Carrier who refused. Each refusal is a data point. I have enough points for a line. The line ends here.", "when": { "past": ["cold"] } },
+        { "text": "You took Reagent 12 at McClintic. I traced each drop since then. The Book took our ink like its own. That is the last gap in my report.", "when": { "flags": ["reagent-taken"] } },
+        { "text": "Toby Reyes left at Okeechobee. You walked him out. I drive the rig, read the meter and hold the net. I do not blame you. I measure the shortage.", "when": { "flags": ["toby-out"] } },
+        { "text": "The Office closed. The Lamplighters closed. Their leftovers came to me in cages and on leads. I gave them codes. We are the last party behind you.", "when": { "done": ["office.8", "lamplighters.8"] } },
+        { "text": "The meter read one thing at Meteor Crater. It reads it now, from the rig, at forty metres. I still will not say what. I will weigh it.", "when": { "flags": ["meter-read"] } },
+        { "text": "You were away for {gap}. The grant had fewer days than that. Ms. Carrow gave one more day. She did not say why.", "when": { "gap": ["long"] } }
+      ],
+      "ask": [
+        { "text": "This is my last test. Put the Book on the scale." },
+        { "text": "You give straight answers. I give one straight instruction. Put the Book on the scale.", "when": { "manner": "straight" } },
+        { "text": "I do not log jokes, and you made many. Make none now. Put the Book on the scale.", "when": { "manner": "dry" } }
+      ],
+      "replies": [
+        {
+          "id": "scale", "style": "straight", "say": "All right. One reading. Then we're done.", "sway": 2,
+          "answer": [
+            { "text": "Thank you. The scale reads a catalogue at rest. A field instrument does nothing at rest. I must weigh it in use. Specimens out." }
+          ]
+        },
+        {
+          "id": "diet", "style": "dry", "say": "Careful. It's been on a diet. Mostly cryptids.", "sway": 0,
+          "answer": [
+            { "text": "I do not log jokes. I log mass. The Book goes on the scale in use, so my specimens come out. Stand clear of the rig." }
+          ]
+        },
+        {
+          "id": "never", "style": "hard", "say": "The Book stays in my hand. Come and get your reading.", "sway": -1,
+          "answer": [
+            { "text": "Then the last test is a field test. Form 40 allows it. Specimens out. This is not cruelty. This is a method." }
+          ]
+        }
+      ],
+      "fight": {
+        "always": true,
+        "teams": [
+          { "team": [{ "id": "snallygaster", "up": 5, "title": "Specimen HI-015" }, { "id": "fresno-nightcrawler", "up": 5, "title": "Specimen HI-036" }, { "id": "ahuizotl", "up": 6, "title": "Specimen HI-043" }, { "id": "chupacabra", "up": 8, "title": "Specimen HI-044" }] },
+          { "when": { "flags": ["toby-out"] }, "team": [{ "id": "fresno-nightcrawler", "up": 5, "title": "Specimen HI-036" }, { "id": "ahuizotl", "up": 6, "title": "Specimen HI-043" }, { "id": "chupacabra", "up": 8, "title": "Specimen HI-044" }] },
+          { "when": { "done": ["office.8", "lamplighters.8"] }, "team": [{ "id": "lizard-man", "up": 6, "title": "Specimen HI-045, was Asset 12" }, { "id": "wampus-cat", "up": 6, "title": "Specimen HI-046, was Biscuit" }, { "id": "ahuizotl", "up": 7, "title": "Specimen HI-043" }, { "id": "chupacabra", "up": 8, "title": "Specimen HI-044" }] },
+          { "when": { "flags": ["toby-out"], "done": ["office.8", "lamplighters.8"] }, "team": [{ "id": "lizard-man", "up": 6, "title": "Specimen HI-045, was Asset 12" }, { "id": "ahuizotl", "up": 7, "title": "Specimen HI-043" }, { "id": "chupacabra", "up": 8, "title": "Specimen HI-044" }] }
+        ],
+        "youWin": [
+          { "text": "Test complete. The specimens failed. The Book did not go on the scale in use. I will file the final report with one empty box. It is the honest box." },
+          { "text": "Test complete. The rig was short by one technician, and I lost. I will write both facts. Tell Toby that his waders are in the truck.", "when": { "flags": ["toby-out"] } },
+          { "text": "Test complete. I lost to the best Carrier in my records. The theory stands. The Book is an instrument. I only lack the measure. Good day, {you}.", "when": { "past": ["warm", "close"] } },
+          { "text": "Test complete. The meter read the same one thing to the end. I will put it in the report. I will not say it aloud.", "when": { "flags": ["meter-read"] } }
+        ],
+        "youLose": [
+          { "text": "The specimens held. The scale is ready. Go to a campfire, {you}. The grant ends at midnight, and I will wait until then." },
+          { "text": "The specimens held. You refused me in each region, and you lost here. I take no pleasure in it. I take a reading.", "when": { "past": ["cold"] } }
+        ],
+        "swayWin": 1, "swayLose": 0, "setsWin": []
+      },
+      "rematch": [
+        { "text": "The grant has hours left. The rig is still here. Put the Book on the scale, or fight for it again." },
+        { "text": "You were away for {gap}. The grant ended in that time. I stayed. The test does not need money. Begin.", "when": { "gap": ["long"] } }
+      ],
+      "log": "On the plains Dr. Vale ran her last test: the Book on the scale."
+    }
+  ],
+  "echoes": {
+    "mythic-bound": [
+      { "text": "The Book took the {mythic}. Our meter jumped when the page closed. We logged the time. Dr. Vale wants your account of it." }
+    ],
+    "mythic-loose": [
+      { "text": "You beat the {mythic} and did not bind it. So it is still in {region}, and it is tired. We sent a sampler. Thank you." }
+    ],
+    "hunt-closed": [
+      { "text": "You closed a contract on the sighting board. We read the board each morning. Your name is on it more than ours." }
+    ],
+    "binds-8": [
+      { "text": "The Book holds 8 kinds now. The Institute holds fewer. Ms. Carrow asked how. We had no answer for her." }
+    ],
+    "binds-16": [
+      { "text": "The Book holds 16 kinds. The catalogue sorts them, and we still cannot name the measure. Dr. Vale did not sleep. Toby says welcome." },
+      { "text": "The Book holds 16 kinds. The catalogue sorts them, and we still cannot name the measure. Dr. Vale did not sleep. Nobody says welcome now.", "when": { "flags": ["toby-out"] } }
+    ],
+    "long-away": [
+      { "text": "You were away for three days or more. The grant counted each day. We counted them too. Welcome back, {you}." }
+    ],
+    "office-file": [
+      { "text": "You signed Form 9-C for the Office. We bought the file for 40 dollars. It has your name and your shoe size. Thank you for both." }
+    ],
+    "office-gary": [
+      { "text": "The Office file says that your name is Gary. We paid 40 dollars for that. Dr. Vale wants a refund. Until then, good day, Gary." }
+    ],
+    "protocol-quiet": [
+      { "text": "WARNING: Protocol QUIET is in effect. The Office now seizes specimens that other parties hold. Our cold rooms have locks. Their forms open locks." },
+      { "text": "WARNING: Protocol QUIET is in effect. The Office took our cold room. HI-031 was not in it. You know why. We do not say why.", "when": { "flags": ["specimen-freed"] } }
+    ],
+    "cache-burned": [
+      { "text": "The Office burned a Lamplighter cache at Barataria. We sampled the ash. Ash is data. It is also a loss, and we logged it as one." }
+    ],
+    "quist-turned": [
+      { "text": "Agent Quist asks questions off the record now. One question came to us. It was about the Book. We answered with a form." }
+    ],
+    "office-closed": [
+      { "text": "The Office closed its file on you. Their assets have numbers and no codes. We made an offer for the cages. Ms. Carrow made a lower one." }
+    ],
+    "lamp-carried": [
+      { "text": "You carry a lamp from the Lamplighters. It is dim on purpose. We measured it from behind a tree. It reads 4 lumens." }
+    ],
+    "message-run": [
+      { "text": "You ran a message for the Lamplighters at Tug Fork. They use lamps and mirrors. We tried to sample the light. The bag was empty." }
+    ],
+    "ridge-promise": [
+      { "text": "You gave the Lamplighters a promise about the ridge. We keep off that ground too. A promise is not data, but Dr. Vale logged it." }
+    ],
+    "annex-raided": [
+      { "text": "The Lamplighters raided Annex 9 at Roswell. Some cages held specimens that the Office took from us. Nobody returned them. We sent the Lamplighters a form. They have no forms." }
+    ],
+    "bay-held": [
+      { "text": "The Lamplighters held the bay at Barataria. Their boats move at night with no manifest. We respect a moving target. We cannot tag one." }
+    ],
+    "lamplighters-closed": [
+      { "text": "The Lamplighters finished with you. Their creatures have first names and no codes. Old Dutch drove past our rig and did not stop." }
+    ]
+  },
+  "rumours": [
+    "Diner cook: Those Halloway folks ordered one coffee and wanted the receipt in triplicate. Then they weighed the coffee.",
+    "Clerk: Skinny fella in waders bought every zip bag we had. Said he hadn't slept since the grant came in. I believe him.",
+    "Night manager: The lady doctor paid for nine nights up front and checked my thermostat with her own thermometer. Twice.",
+    "Diner cook: They don't hurt the critters, far as I can tell. They bag one hair and write a number. Still gives me the creeps.",
+    "Clerk: A woman with a ledger came in asking how many of them there were. Not the monsters. The scientists. She wrote it down.",
+    "Night manager: They say that Book of yours is some kind of instrument. I say a book's a book. But I don't have a grant."
+  ]
+}

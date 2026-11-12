@@ -66,6 +66,9 @@ import { drowner } from "./drown.ts";
 import { ambience } from "./world/ambience.ts";
 import { findTape, lightFire, sight, tapeOf, tapesFound, WITCH_CAMP } from "./world/poi.ts";
 import { regionsCleared, visit, WITCH } from "./witch.ts";
+import { approach as approachFaction, back as backAgain, deed, factionsOf, fought as foughtFaction, hail as hailPost, postFought, postsIn, record as questRecord, reply as replyFaction, sectionCleared, waitingAll, type Ctx as FactionCtx, type Manned, type Scene } from "./factions/engine.ts";
+import { FACTIONS, type FactionId } from "./factions/model.ts";
+import { bandOf, pressure, reading, trendOf } from "./factions/read.ts";
 import { close as closeHunt, HUNTS, stageOf, take, CLUES } from "./world/hunts.ts";
 import { FORAGE_MEND } from "./world/nature.ts";
 import { Online, roomCode, uid } from "./net/online.ts";
@@ -405,6 +408,7 @@ let worldUp = false; // the world view is built (its hooks can run while it buil
 // --- the journey: your line-up, the Eldritch Compendium, how far each trail goes (src/journey.ts) ---------------------
 let journey: Journey | null = (() => { try { return loadJourney(localStorage.getItem(SAVE_KEY)); } catch { return null; } })();
 const saveJourney = () => { try { if (journey) localStorage.setItem(SAVE_KEY, JSON.stringify(journey)); } catch { /* a private window: this session only */ } };
+if (journey?.factions) { backAgain(journey, Date.now()); saveJourney(); } // the factions notice a long time away (src/factions/engine.ts)
 drawPicker(); // after the journey is loaded: the book's ribbons are its line-up
 
 // A fight the world started. `slot` is the line-up member fighting, `out` the ones already down; a keeper guards
@@ -705,6 +709,16 @@ function sitWithWitch(): boolean {
   return true;
 }
 witchEl.addEventListener("click", (e) => { if ((e.target as Element).closest("[data-go]")) { sitting = null; drawWitch(); } });
+
+// --- the three factions behind you (src/factions/engine.ts) -------------------------------------------------------------
+/** The step you have walked up to, between its hail and the end of its fight. */
+let facing: Scene | null = null;
+/** What a faction's moment knows of the world: the time, where you stand on the trail, the hour, how many of you there are. */
+function factionCtx(): FactionCtx {
+  const n = world.pose().region;
+  return { now: Date.now(), n, k: Math.min(SECTIONS - 1, journey ? cleared(journey, n) : 0), night: world.state().day.dark, party: 1 + (online ? friendsNow(online, n, performance.now()).length : 0) };
+}
+const postAt = (id: string): Manned | undefined => (journey ? postsIn(journey, Number(id.split(":")[1]), factionCtx()).find((p) => p.id === id) : undefined);
 
 /** Opens the next queued moment when nothing else has the screen. */
 function nextTalk() {
@@ -1326,12 +1340,14 @@ function tripOver(m: Match, bound: boolean, how: string) {
   if (bound) void achieve("first-bind");
   const lines: string[] = [], repeat = owns(j, foe.id);
   let title = "", outcome: Outcome = { kind: "won", foe: t.kind }, go = `${icon("map")} Back to the world`, again: (() => void) | null = null, back: Back | null = null;
+  /** What you notice behind you once a section is cleared: a faction's next step now waits at that stone (src/factions/engine.ts). */
+  let behindYou: string[] = [];
   if (won) {
     tally(j, false);
     const ups = gainXp(me, t.foe.level), had = slots(j);
     wound(me, m.f[0].hp / m.f[0].b.hp);
     // the section clears first, so a mythic's new line-up slot is there for the mythic itself when it's bound
-    if (t.kind === "keeper" || t.kind === "mythic") clearSection(j, t.region.n, t.k);
+    if (t.kind === "keeper" || t.kind === "mythic") { clearSection(j, t.region.n, t.k); behindYou = sectionCleared(j, t.region.n, t.k, Date.now()); }
     title = bound ? `${esc(foe.name)} is bound` : `${esc(creature(me.id).name)} wins`;
     if (bound) { const sec = sections(t.region)[t.k]; lines.push(`The ink holds. ${esc(foe.name)} (Lv ${t.foe.level}) ${bind(j, foe.id, t.foe.level, sec ? `${sec.name}, ${t.region.name}` : t.region.name) === "party" ? "joins your line-up" : "rests in the Eldritch Compendium"}.`); }
     else lines.push(how);
@@ -1342,7 +1358,11 @@ function tripOver(m: Match, bound: boolean, how: string) {
       if (t.kind === "mythic") { world.beat(t.region.n); lines.push(`The roads out of ${esc(t.region.name)} are open.${bound ? "" : ` ${esc(foe.name)} fled into the dark: it waits at the arena to be bound.`}${slots(j) > had ? ` Your line-up has room for ${slots(j)} now.` : ""}`); }
       else lines.push(`The bog-light lifts. Section ${t.k + 2} of ${SECTIONS} is open.`);
     }
-    if (t.foe.hunt && closeHunt(j, t.foe.hunt)) lines.push(`The sighting is closed: ${esc(t.foe.title ?? foe.name)} won't trouble ${esc(sections(t.region)[HUNTS.get(t.foe.hunt)?.k ?? 0]!.name)} again.`);
+    // the factions hear of it (src/factions/model.ts HOOKS): a mythic bound or let go, a contract closed, the Book's count
+    if (t.kind === "mythic") deed(j, bound ? "mythic-bound" : "mythic-loose");
+    if (bound && !repeat && boundCount(j) === 8) deed(j, "binds-8");
+    if (bound && !repeat && boundCount(j) === 16) deed(j, "binds-16");
+    if (t.foe.hunt && closeHunt(j, t.foe.hunt)) { deed(j, "hunt-closed"); lines.push(`The sighting is closed: ${esc(t.foe.title ?? foe.name)} won't trouble ${esc(sections(t.region)[HUNTS.get(t.foe.hunt)?.k ?? 0]!.name)} again.`); }
     else if (t.kind === "wild" && !bound) lines.push(`It slinks off into the brush. A knocked-out beast can't be bound: wear it under ${Math.round(bindBelow(false) * 100)}%, then press ${esc(bindKey())} before it drops.`);
     if (bound) outcome = { kind: "bound", item: boundCount(j), repeat };
     if (bound) back = { kind: "bound", repeat };
@@ -1379,7 +1399,7 @@ function tripOver(m: Match, bound: boolean, how: string) {
   const plate = outcome.kind === "bound" ? notePlate(foe, false) : outcome.kind === "down" ? notePlate(creature(me.id), true) : "";
   $("#result").innerHTML = `<div class="note paper o-${outcome.kind}"${torn ? ` style="--tear: ${torn.clip}"` : ""}>${mark}<p class="leaf-head" aria-hidden="true">Eldritch Compendium<span>fol. ${j.journal.length + j.party.length + (j.seen?.length ?? 0) + 1}</span></p>${plate}<h2>${title}</h2>${reaction(outcome)}${lines.map((l) => `<p>${l}</p>`).join("")}<div class="row"><button class="go" id="back">${go}</button>${again ? `<button id="flee">${icon("map")} Run back</button>` : ""}</div></div>`;
   pages.show($("#result"));
-  const home = () => { trip = null; enterWorld(); world.afterFight(won); if (back) world.note(bookToast(back)); };
+  const home = () => { trip = null; enterWorld(); world.afterFight(won); if (back) world.note(bookToast(back)); for (const line of behindYou) world.note(`${icon("footprints")}${esc(line)}`); };
   $("#back").onclick = again ?? home;
   const flee = document.querySelector<HTMLElement>("#flee");
   if (flee) flee.onclick = home;
@@ -1894,6 +1914,23 @@ Object.assign(window, {
       answer: (id: string) => replyBook(id, !talkHold().canAnswer),
       close: () => { talking = null; drawTalk(); nextTalk(); },
       party: (p: { host: boolean; hostName: string } | null) => { talkParty = p; drawTalk(); },
+    },
+    /** The three factions behind you (src/factions/engine.ts): `state()` who you met and in what order, the steps done, the flags, each one's
+     * reading (now, past, trend, the pressure that makes) and the steps waiting; `posts(n)` the posts manned in region n; `approach(f)` walks
+     * up to faction f's waiting step (its hail, question and replies), `reply(id)` answers it (what they say, and their team if it starts the
+     * fight), `fought(won)` ends that fight; `hail(postId)` walks up to a post and `postFought(postId, won)` ends its fight. */
+    factions: {
+      state: () => journey && {
+        ...factionsOf(journey), record: questRecord(journey),
+        waiting: waitingAll(journey, factionCtx()).map((w) => ({ faction: w.faction, stage: w.stage.id, title: w.stage.title, n: w.stage.n, k: w.stage.k, who: w.stage.who })),
+        reading: Object.fromEntries(FACTIONS.map((f) => { const r = reading(journey!.factions?.by[f]); return [f, { ...r, band: bandOf(r.now), pastBand: bandOf(r.past), trendBand: trendOf(r.trend), pressure: pressure(r) }]; })),
+      },
+      posts: (n = world.pose().region) => (journey ? postsIn(journey, n, factionCtx()).map((p) => ({ id: p.id, faction: p.faction, k: p.post.k, rank: p.rank.title, resting: p.resting })) : []),
+      approach: (f: FactionId) => { facing = journey ? approachFaction(journey, f, factionCtx()) : null; saveJourney(); return facing; },
+      reply: (id: string) => { const got = journey && facing ? replyFaction(journey, facing, id, factionCtx()) : null; saveJourney(); return got; },
+      fought: (won: boolean) => { const said = journey && facing ? foughtFaction(journey, facing.faction, facing.stage.id, won, factionCtx()) : ""; saveJourney(); return said; },
+      hail: (id: string) => { const p = postAt(id); const got = journey && p ? hailPost(journey, p, factionCtx()) : null; saveJourney(); return got; },
+      postFought: (id: string, won: boolean) => { const p = postAt(id); const said = journey && p ? postFought(journey, p, won, factionCtx()) : ""; saveJourney(); return said; },
     },
     /** The Bog Witch's camp (src/witch.ts): `state()` her camp, what she is saying and the count she last saw, `sit()` as if you
      * walked up to her fire, `close()` reads past her line. `world.fastTravel(witch.state().camp)` once it's lit goes there. */

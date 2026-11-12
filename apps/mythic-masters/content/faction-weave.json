@@ -1,0 +1,67 @@
+{
+  "order": [
+    "office-closed", "institute-closed", "lamplighters-closed",
+    "protocol-quiet", "annex-raided", "cache-burned", "bay-held", "toby-out", "quist-turned", "specimen-freed",
+    "office-file", "office-gary", "sample-given", "reagent-taken", "squonk-lent", "lamp-carried", "message-run", "ridge-promise",
+    "mythic-bound", "mythic-loose", "binds-16", "binds-8", "hunt-closed", "long-away"
+  ],
+  "promises": [
+    { "flag": "ridge-promise", "creature": "sasquatch" }
+  ],
+  "crossings": [
+    { "id": "ridge-broken", "to": "lamplighters", "when": { "flags": ["ridge-promise"], "noFlags": ["ridge-promise-late"], "owns": ["sasquatch"] }, "text": "You made a promise at Redwood Creek. The Book holds the giant now. We counted. The count does not lie.", "sway": -3, "sets": ["ridge-broken"] },
+    { "id": "ridge-kept", "to": "lamplighters", "when": { "flags": ["ridge-promise"], "noFlags": ["ridge-promise-late"], "lacks": ["sasquatch"], "been": ["4:11"] }, "text": "You went up the ridge. You came down with an empty page. The road stays shut. Thank you.", "sway": 2, "sets": ["ridge-kept"] },
+
+    { "id": "quiet-zone-after", "to": "office", "when": { "inOrder": ["office.2", "lamplighters.2"], "flags": ["message-run"] }, "text": "A light signal crossed the Quiet Zone after our stop. The signal used your route. Agent Pell wrote 3 pages about it.", "sway": -1 },
+    { "id": "quiet-zone-before", "to": "lamplighters", "when": { "inOrder": ["lamplighters.2", "office.2"], "flags": ["message-run"] }, "text": "You carried the message first. You met the suits after. The message was home by then. That is the right order.", "sway": 1 },
+
+    { "id": "two-names", "to": "office", "when": { "flags": ["office-gary", "sample-given"] }, "text": "The Institute holds a baseline under a different name. One name is wrong. Both files stay open until one is closed." },
+    { "id": "name-for-sale", "to": "institute", "when": { "flags": ["office-file", "sample-given"] }, "text": "The Office made an offer for your baseline. The offer had your full name on it. We set a price. You are not in the price." },
+    { "id": "lamp-then-file", "to": "lamplighters", "when": { "first": "lamplighters", "flags": ["lamp-carried", "office-file"] }, "text": "You carried our lamp. Then you gave the suits your name. The lamp was with you when you said it.", "sway": -1 },
+    { "id": "bottle-near-lamp", "to": "lamplighters", "when": { "flags": ["reagent-taken", "lamp-carried"] }, "text": "You carry our lamp and their bottle. Put the bottle down before you come near a lamp. The lamp gutters.", "sway": -1 },
+    { "id": "wooden-secret", "to": "institute", "when": { "flags": ["asset-one-wood"], "done": ["institute.3"] }, "text": "The Office paid storage on a wooden hodag for 130 years. You told them. We wanted to tell them. We had a slide." },
+
+    { "id": "common-cause", "to": "institute", "when": { "flags": ["protocol-quiet", "specimen-freed"], "met": ["lamplighters"] }, "text": "The Office seized our cold room. The Lamplighters shelter 1 of our specimens. We did not ask them. We will not ask for it back." },
+    { "id": "common-cause-lamps", "to": "lamplighters", "when": { "flags": ["protocol-quiet", "specimen-freed"] }, "text": "We shelter 1 of the Institute's specimens. Its tag says HI-204. We call it Hank now.", "sway": 1 },
+    { "id": "quist-inside", "to": "lamplighters", "when": { "flags": ["quist-turned", "raid-plan"] }, "text": "Somebody in a grey suit left a map at Lamp 6. The map shows Annex 9. The handwriting is very neat.", "sway": 1 },
+
+    { "id": "annex-loss", "to": "office", "when": { "flags": ["annex-raided"], "undone": ["office.6"] }, "text": "Annex 9 reports a loss of 14 assets. Your description is on the report. We did not write the report. We will.", "sway": -2 },
+    { "id": "annex-rooms", "to": "lamplighters", "when": { "done": ["office.6"], "undone": ["lamplighters.6"] }, "text": "You stood in Annex 9. Draw the rooms. Draw the doors first. A door is the important part of a room.", "sway": 1 },
+
+    { "id": "bay-betrayed", "to": "lamplighters", "when": { "flags": ["cache-burned"], "undone": ["lamplighters.7"] }, "text": "You told the suits where the boats go. 3 boats did not come back. We say their names at every lamp.", "sway": -3 },
+    { "id": "bay-after", "to": "lamplighters", "when": { "inOrder": ["office.7", "lamplighters.7"], "flags": ["cache-burned", "bay-held"] }, "text": "You sent the suits to the bay. Then you held the bay against them. We do not understand you. We are trying.", "sway": 1 },
+    { "id": "bay-empty", "to": "office", "when": { "inOrder": ["lamplighters.7", "office.7"] }, "text": "We filed the Barataria report. The report says the bay was empty. It was empty because of you. That part is not in the report." },
+
+    { "id": "toby-at-the-lamp", "to": "lamplighters", "when": { "flags": ["toby-out"] }, "text": "Message starts. A man named Toby is at Lamp 4. He sleeps now. Do not wake him. Message ends.", "sway": 1 },
+    { "id": "toby-gone", "to": "institute", "when": { "flags": ["toby-out"], "undone": ["institute.8"] }, "text": "NOTE: Technician Reyes did not report for his shift. His waders are here. His badge is here. We tagged the waders." },
+
+    { "id": "in-company-office", "to": "office", "when": { "party": true, "flags": ["office-file"] }, "text": "The file has 1 name. We count more than 1 of you. Each extra person needs a Form 9-C." },
+    { "id": "in-company-institute", "to": "institute", "when": { "party": true }, "text": "CAUTION: The baseline is for 1 carrier. We count more than 1. Stand on the scale in turn." },
+    { "id": "in-company-lamps", "to": "lamplighters", "when": { "party": true }, "text": "You walk with friends now. Good. Nobody walks the night paths alone and likes it." },
+
+    { "id": "old-enemy-softens-office", "to": "office", "when": { "past": ["cold"], "trend": ["rising"] }, "text": "NOTE: Your record is bad. Your last 3 dealings were not. We do not have a form for this." },
+    { "id": "old-enemy-softens-institute", "to": "institute", "when": { "past": ["cold"], "trend": ["rising"] }, "text": "Your long-run mean is poor. Your recent slope is positive. We like a slope." },
+    { "id": "old-enemy-softens-lamps", "to": "lamplighters", "when": { "past": ["cold"], "trend": ["rising"] }, "text": "You did us wrong for a long time. Lately you did not. We watch the lately." },
+    { "id": "old-friend-slips-office", "to": "office", "when": { "past": ["warm", "close"], "trend": ["falling"] }, "text": "Your record is good. Your last 3 dealings are not. Control asks what changed. Answer in writing." },
+    { "id": "old-friend-slips-institute", "to": "institute", "when": { "past": ["warm", "close"], "trend": ["falling"] }, "text": "Your mean is high. Your slope is negative. A good mean hides a bad week. We see the week." },
+    { "id": "old-friend-slips-lamps", "to": "lamplighters", "when": { "past": ["warm", "close"], "trend": ["falling"] }, "text": "You were good to us for a long time. Something changed. Say what changed, or put the lamp down." },
+
+    { "id": "first-office-institute", "to": "institute", "when": { "flags": ["closed-first-office"] }, "text": "The Office closed your file. The Office does not close files. We want the method. Write it down. Use numbered steps." },
+    { "id": "first-office-lamps", "to": "lamplighters", "when": { "flags": ["closed-first-office"] }, "text": "The suits stopped. You stopped them before you stopped anybody else. We put a lamp on for that.", "sway": 1 },
+    { "id": "first-institute-office", "to": "office", "when": { "flags": ["closed-first-institute"] }, "text": "The Institute filed a final report. The report has 3 pages. Page 2 is about you. We seized page 2." },
+    { "id": "first-institute-lamps", "to": "lamplighters", "when": { "flags": ["closed-first-institute"] }, "text": "The cold rooms are dark now. A dark room is not always bad. Message ends.", "sway": 1 },
+    { "id": "first-lamps-office", "to": "office", "when": { "flags": ["closed-first-lamplighters"] }, "text": "The path lights stay on. Nobody says who puts them on. Your name was offered. We declined the offer." },
+    { "id": "first-lamps-institute", "to": "institute", "when": { "flags": ["closed-first-lamplighters"] }, "text": "The Lamplighters gave you a verdict. We do not have a unit for a verdict. We are making one." },
+
+    { "id": "last-office", "to": "office", "when": { "flags": ["closed-last-office"] }, "text": "All 3 files are closed. Control asks for a new file. The subject of the new file is the Book." },
+    { "id": "last-institute", "to": "institute", "when": { "flags": ["closed-last-institute"] }, "text": "The grant is spent. The data is not. We measure the same things again. That is the method." },
+    { "id": "last-lamps", "to": "lamplighters", "when": { "flags": ["closed-last-lamplighters"] }, "text": "The suits are gone. The scales are gone. The lamps stay. Walk on the paths. They are yours too.", "sway": 1 },
+
+    { "id": "hollow-office-first", "to": "office", "when": { "flags": ["office-closed", "institute-closed", "lamplighters-closed", "closed-first-office"], "been": ["8:11"] }, "text": "We arrived at the howler's hollow before the other two. You were there before us. That is not first. Write: second." },
+    { "id": "hollow-office", "to": "office", "when": { "flags": ["office-closed", "institute-closed", "lamplighters-closed"], "noFlags": ["closed-first-office"], "been": ["8:11"] }, "text": "We arrived at the howler's hollow. The Institute was there. The Lamplighters were there. Nobody was first. Write: nobody." },
+    { "id": "hollow-institute-first", "to": "institute", "when": { "flags": ["office-closed", "institute-closed", "lamplighters-closed", "closed-first-institute"], "been": ["8:11"] }, "text": "We reached the howler's hollow before the others. The record says the howler is a hoax. You fought the hoax. We measured the dent." },
+    { "id": "hollow-institute", "to": "institute", "when": { "flags": ["office-closed", "institute-closed", "lamplighters-closed"], "noFlags": ["closed-first-institute"], "been": ["8:11"] }, "text": "We reached the howler's hollow after everybody. The record says hoax. The dent in the ground says different." },
+    { "id": "hollow-lamps-first", "to": "lamplighters", "when": { "flags": ["office-closed", "institute-closed", "lamplighters-closed", "closed-first-lamplighters"], "been": ["8:11"] }, "text": "We stood at the howler's hollow before the suits and the scales. We lit 1 lamp. It was for you.", "sway": 1 },
+    { "id": "hollow-lamps", "to": "lamplighters", "when": { "flags": ["office-closed", "institute-closed", "lamplighters-closed"], "noFlags": ["closed-first-lamplighters"], "been": ["8:11"] }, "text": "All of us stood at the howler's hollow at once. Nobody spoke. Then Old Dutch laughed. Then everybody went home." }
+  ]
+}

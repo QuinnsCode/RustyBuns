@@ -1,0 +1,863 @@
+{
+  "id": "lamplighters",
+  "name": "The Lamplighters",
+  "short": "Lamplighters",
+  "calls": "Bearer",
+  "theory": "The Book is a cage with pages. A cage cannot walk, so it hires a hand. You are the hand. We read the tracks for years and we are sure. Do not ask the cage. A cage says what a cage says.",
+  "tells": [
+    "A dim solar light stands on the path behind you. It was not there this morning.",
+    "A truck idles at the end of the road with its lights off. Somebody inside it counts out loud.",
+    "A radio clicks twice in the trees. A small voice says a call sign and then too much else.",
+    "Someone moved the trail marker one step to the left. It points the right way now."
+  ],
+  "people": [
+    { "id": "wren", "name": "Wren Ashby", "role": "Ex-ranger. Keeps the line of lamps. Slow to trust.", "sign": "Lamp One" },
+    { "id": "dutch", "name": "Old Dutch", "role": "Trucker. Moves what needs to move. Likes a joke.", "sign": "Long Haul" },
+    { "id": "pip", "name": "Pip", "role": "Radio operator, young. Says too much on the air.", "sign": "Sparrow" }
+  ],
+  "ranks": [
+    {
+      "id": "picket",
+      "title": "Picket",
+      "up": 0,
+      "fields": ["grove", "wild"],
+      "hail": [
+        { "text": "Halt, {you}. This lamp is a post. I am the post. State how many the Book holds." },
+        { "text": "The lamp is on, so I am on. Step 1. Stop. Step 2. Show me {lead}.", "when": { "night": true } },
+        { "text": "You carry a lamp from Lamp One. I still check you. A lamp is a promise. It is not a pass.", "when": { "flags": ["lamp-carried"] } },
+        { "text": "You lit fewer than 2 fires before we met you at {met}. Pickets remember a cold trail.", "when": { "hadUnder": { "fires": 2 } } },
+        { "text": "You gave the suits your name. I give you mine after the fight. That is the order now.", "when": { "flags": ["office-file"] } },
+        { "text": "Message starts. The Bearer is at my lamp and the log is not kind. Message ends. Now we begin.", "when": { "past": ["cold", "cool"] } }
+      ],
+      "again": [
+        { "text": "You are back after {gap}. The lamp did not move. I did not move. We go again." },
+        { "text": "{gap} away. I changed the battery twice. Birdie is rested and I am not. Begin.", "when": { "gap": ["long"] } },
+        { "text": "You make jokes at posts. I heard better ones at the diner. Begin.", "when": { "manner": "dry" } },
+        { "text": "You beat 3 of us already. Runners talk. I heard all of it. Begin.", "when": { "won": 3 } }
+      ],
+      "youWin": [
+        { "text": "The post is beaten. I log it. Message starts. The Bearer passed lamp and picket. Message ends." },
+        { "text": "You are better each time. I say that on the air tonight. Lamp One likes a true report.", "when": { "trend": ["rising"] } },
+        { "text": "You won. I still do not wave. Walk on, {you}.", "when": { "now": ["cold", "cool"] } }
+      ],
+      "youLose": [
+        { "text": "The post holds. Go back to the campfire. Rest {lead}. The lamp stays on for you." },
+        { "text": "The post holds. NOTE: The path lights go back to the cabin. Follow them. Do not thank me.", "when": { "night": true } },
+        { "text": "You talk hard and fight soft. Reverse that. Then come back.", "when": { "last": "hard" } }
+      ]
+    },
+    {
+      "id": "runner",
+      "title": "Runner",
+      "up": 1,
+      "fields": ["gale", "storm"],
+      "hail": [
+        { "text": "Runner on the line. I carry words between lamps. I have 2 minutes. Use them on a fight." },
+        { "text": "You ran a message for Sparrow at Tug Fork. So you are a runner too. Runners race. Begin.", "when": { "flags": ["message-run"] } },
+        { "text": "You cleared The Pine Plains before we met you. You walked far with no lamp. Runners respect that.", "when": { "before": ["1:5"] } },
+        { "text": "The suits know you. The white coats know you. Everybody runs after the Bearer. I run faster.", "when": { "met": ["office", "institute"] } },
+        { "text": "You walk with friends. Good. A line is more than one lamp. I still fight one of you.", "when": { "party": true } }
+      ],
+      "again": [
+        { "text": "{gap} since the last run. I ran 40 miles in that time. You walked back here. Begin." },
+        { "text": "You are back in {gap}. I did not catch my breath. That is my problem. Begin.", "when": { "gap": ["soon"] } },
+        { "text": "{gap}. The message I carried about you is old news now. Give me a new one.", "when": { "gap": ["long"] } }
+      ],
+      "youWin": [
+        { "text": "You win. I carry that up the line. Message starts. The Bearer is quick. Message ends." },
+        { "text": "You win, and you joke about it. I leave the joke out of the message.", "when": { "manner": "dry" } },
+        { "text": "You win. The line likes you, {you}. I say so at every lamp tonight.", "when": { "past": ["warm", "close"] } }
+      ],
+      "youLose": [
+        { "text": "I win. I do not have time to enjoy it. Rest {lead} at a campfire." },
+        { "text": "I win. The Book holds {count}. That is a short line-up and it showed. Come back with more.", "when": { "haveUnder": { "binds": 6 } } },
+        { "text": "I win. The reports on you get worse each week. Change that.", "when": { "trend": ["falling"] } }
+      ]
+    },
+    {
+      "id": "lamp-keeper",
+      "title": "Lamp Keeper",
+      "up": 2,
+      "fields": ["ember", "spirit"],
+      "hail": [
+        { "text": "This lamp is mine. I clean the panel each day at noon. Now I check the Bearer." },
+        { "text": "You lit 4 fires before we met you. A fire is a promise. I keep promises for a living.", "when": { "had": { "fires": 4 } } },
+        { "text": "You had 3 nights out before we met you. You walked on our lights each night. You are welcome.", "when": { "had": { "nights": 3 } } },
+        { "text": "CAUTION: You carry Reagent 12. Put the bottle on the ground. I do not fight near it.", "when": { "flags": ["reagent-taken"] } },
+        { "text": "The suits seize what we shelter now. So I check every stranger twice. This is check 1.", "when": { "flags": ["protocol-quiet"] } },
+        { "text": "The lamp is on. The count is good. One Bearer, one Book, {count} inside. Begin.", "when": { "night": true } }
+      ],
+      "again": [
+        { "text": "{gap} since your last check. The lamp ran every night of it. Begin." },
+        { "text": "{gap}. The panel has dust and so do you. I clean the panel first. Then we begin.", "when": { "gap": ["long"] } },
+        { "text": "You gave a straight answer last time. I wrote it on the lamp post. Begin.", "when": { "last": "straight" } }
+      ],
+      "youWin": [
+        { "text": "The check is complete. You pass. A lamp keeper says the count out loud: {count}. Walk on." },
+        { "text": "You pass. You made a promise at Redwood Creek. Keep it the way I keep this lamp.", "when": { "flags": ["ridge-promise"] } },
+        { "text": "You pass, {you}. Take the lit path. I put that one down for people like you.", "when": { "now": ["warm", "close"] } }
+      ],
+      "youLose": [
+        { "text": "The check is complete. You fail. Rest. The lamp is here tomorrow and so am I." },
+        { "text": "You lost to us 2 times now. NOTE: That is not an insult. That is a count.", "when": { "lost": 2 } },
+        { "text": "You fail in the dark. Follow the dim lights to the cabin. Do not follow the bog-light.", "when": { "night": true } }
+      ]
+    },
+    {
+      "id": "night-walker",
+      "title": "Night Walker",
+      "up": 3,
+      "fields": ["shadow", "stone", "frost"],
+      "hail": [
+        { "text": "Night walker. I walk with three tonight. Their names are their own. Show me who walks with you." },
+        { "text": "The Book holds a hidebehind. We count that. It was behind you. Now it is on a page.", "when": { "owns": ["hidebehind"] } },
+        { "text": "You stood with Lamp One at Annex 9. I walk with one from those cages now. Meet Gus.", "when": { "flags": ["annex-raided"] } },
+        { "text": "We met you first, before the suits and the white coats. We know your first steps. Show me the new ones.", "when": { "first": "lamplighters" } },
+        { "text": "The technician Toby walks with us now. He talks more than Sparrow. He says you are honest. Prove it.", "when": { "flags": ["toby-out"] } },
+        { "text": "WARNING: The line is cold on you and it gets colder. I do not hold back tonight.", "when": { "now": ["cold", "cool"], "trend": ["falling"] } }
+      ],
+      "again": [
+        { "text": "{gap}. I walked the whole line in that time. You came back to one lamp. Begin." },
+        { "text": "Back after {gap}. Same night, same walker. Nell remembers you. Begin.", "when": { "gap": ["later"] } },
+        { "text": "You talk hard to me each time. The ones I walk with do not like it. Begin.", "when": { "manner": "hard" } }
+      ],
+      "youWin": [
+        { "text": "You win. I walk on. NOTE: The Book holds {count}. I say the number so somebody does." },
+        { "text": "You win, {you}. Lamp One trusts few people. She trusts you. I see why.", "when": { "past": ["close"] } },
+        { "text": "You win. You also broke a promise on the ridge. I walk on. I do not wave.", "when": { "owns": ["sasquatch"], "flags": ["ridge-promise"] } }
+      ],
+      "youLose": [
+        { "text": "They held. Rest by a campfire. I leave a lamp at the turn for you." },
+        { "text": "You were new to the dark when we met you. You still are. Rest and come back.", "when": { "hadUnder": { "nights": 2 } } },
+        { "text": "They held this time. Your reports get better. Come back in a day.", "when": { "trend": ["rising"] } }
+      ]
+    }
+  ],
+  "posts": [
+    { "n": 1, "k": 1, "rank": "picket", "line": "The Mullica River runs the colour of tea from cedar and iron. Our lamp stands where the water looks like a road." },
+    { "n": 1, "k": 7, "rank": "lamp-keeper", "line": "The tree frog that calls in this cedar swamp lives almost nowhere else. We do not move it. We keep a lamp near it." },
+    { "n": 1, "k": 9, "rank": "runner", "line": "The hat at Ong's Hat never came down from the pine. The Office has a form for it. We have a lamp under it." },
+    { "n": 2, "k": 1, "rank": "picket", "line": "Skyline Drive runs 105 miles along the crest of the Blue Ridge. We keep one lamp for each bad curve." },
+    { "n": 2, "k": 4, "rank": "runner", "line": "The Shay locomotives at Cass haul people up the grade to Bald Knob. A runner rides the last car and carries no radio." },
+    { "n": 2, "k": 10, "rank": "lamp-keeper", "line": "The Silver Bridge fell on December 15, 1967, and 46 people died. The Office files this place. We keep a lamp lit here." },
+    { "n": 3, "k": 3, "rank": "runner", "line": "The Wisconsin River is about 430 miles long and carried the log drive to the mills. It carries our messages now." },
+    { "n": 3, "k": 6, "rank": "night-walker", "line": "Motorboats are barred from most of the Boundary Waters. We move by canoe over a thousand lakes and nobody hears." },
+    { "n": 3, "k": 7, "rank": "lamp-keeper", "line": "James MacGillivray first printed Paul Bunyan in 1906 in the Oscoda Press. The Office files it as a rumour. We file it as code." },
+    { "n": 4, "k": 2, "rank": "picket", "line": "Cape Flattery is the northwesternmost point of the contiguous United States. The line of lamps ends here and turns around." },
+    { "n": 4, "k": 3, "rank": "runner", "line": "Multnomah Falls drops 620 feet. A runner cannot shout over it, so we use a mirror." },
+    { "n": 4, "k": 6, "rank": "night-walker", "line": "A bulldozer crew found enormous footprints here in 1958, and the newspapers named them Bigfoot. The Office makes casts. We rake the road smooth each night." },
+    { "n": 5, "k": 1, "rank": "picket", "line": "Lake Erie is the shallowest Great Lake, about 19 metres deep on average. People named its grey serpent Bessie. We approve of plain names." },
+    { "n": 5, "k": 4, "rank": "lamp-keeper", "line": "Lake Michigan lies wholly inside the United States. So no border post reads our lamps on this shore." },
+    { "n": 5, "k": 10, "rank": "night-walker", "line": "Boats fought at Valcour Island on October 11, 1776. The Institute samples the water here. We move ours past them after dark." },
+    { "n": 6, "k": 3, "rank": "night-walker", "line": "The bats leave Carlsbad Caverns at dusk from May to October. The Office counts the bats. We move under the count." },
+    { "n": 6, "k": 8, "rank": "lamp-keeper", "line": "The Joshua tree is a yucca, not a tree, and grows wild only in the Mojave Desert. Our lamp stands next to one. It is also not a tree." },
+    { "n": 6, "k": 9, "rank": "runner", "line": "The Herrick brothers made the first mounted jackalopes in Douglas in the 1930s. The Institute measures the mounts. We shelter the live ones." },
+    { "n": 7, "k": 3, "rank": "lamp-keeper", "line": "Many Acadians settled here after they were driven out of Nova Scotia in 1755. This country knows what shelter means. Our lamps do well here." },
+    { "n": 7, "k": 5, "rank": "picket", "line": "Marjory Stoneman Douglas called the Everglades a river of grass in her 1947 book. A lamp on a river needs a float." },
+    { "n": 7, "k": 8, "rank": "night-walker", "line": "Reports of the skunk ape come from Florida from the 1960s on. The Institute samples the smell. We walk upwind and keep quiet." },
+    { "n": 8, "k": 0, "rank": "picket", "line": "The Ozarks are an eroded plateau, not true mountains. A lamp on high ground shows for miles, so we keep ours dim." },
+    { "n": 8, "k": 6, "rank": "lamp-keeper", "line": "In 1907 fifteen bison came from the Bronx to the Wichita Mountains. The Office files that as a transfer. We call it a good move." },
+    { "n": 8, "k": 10, "rank": "night-walker", "line": "A 1972 film shot around Texarkana made the Fouke monster famous. We do not like cameras. Yours is the exception, for now." }
+  ],
+  "quest": [
+    {
+      "id": "lamplighters.1",
+      "title": "First Lamp",
+      "n": 1,
+      "k": 2,
+      "who": "wren",
+      "needs": { "have": { "nights": 1 } },
+      "hail": [
+        { "text": "Stop there, {you}. I am Wren Ashby. Call sign Lamp One. That light at your feet is ours. You walked on our lights all night." },
+        { "text": "Nobody reached you before us. Good. Then you hear it from us first. I am Lamp One. The path lights are ours.", "when": { "first": "lamplighters" } },
+        { "text": "You gave the suits your name at Apple Pie Hill. It is in a grey file now. I trust a signed name less.", "when": { "flags": ["office-file"] } },
+        { "text": "You gave the suits the name Gary. Good. They keep a file on the wrong man. I laughed once. I logged it.", "when": { "flags": ["office-gary"] } },
+        { "text": "You lit 4 fires before this talk. We counted from the tower road. A fire is a promise to the dark. You keep those.", "when": { "had": { "fires": 4 } } },
+        { "text": "You lit fewer than 2 fires before this talk. You walked on our lights and gave none back. I note that.", "when": { "hadUnder": { "fires": 2 } } },
+        { "text": "You closed a contract from the sighting board before we met. So the Book already pays its hand. I note that.", "when": { "had": { "hunts": 1 } } },
+        { "text": "You had 3 nights out before I stopped you. Three nights on our lights. Sparrow logged each one, with comments.", "when": { "had": { "nights": 3 } } },
+        { "text": "Keep your torch low, {you}. It is night and the lamps do the work. I am Lamp One. Stand in the light.", "when": { "night": true } },
+        { "text": "The suits found you. The white coats found you. We are third. Third sees the most. I am Lamp One.", "when": { "met": ["office", "institute"] } }
+      ],
+      "ask": [
+        { "text": "The Pinelands reserve is about 1.1 million acres. We light its night paths. The Book holds {count}. I say the number out loud. Why do you carry the Book, {you}?" },
+        { "text": "The Book held 4 kinds before we met. A cage fills fast with a good hand. It holds {count} now. Why do you carry it, {you}?", "when": { "had": { "binds": 4 } } }
+      ],
+      "replies": [
+        {
+          "id": "truth",
+          "style": "straight",
+          "say": "Honestly? It picked me. I'm trying to keep people safe and I don't fully get it yet.",
+          "answer": [
+            { "text": "That is a plain answer. Plain is rare. Take this lamp. A lamp is a promise. Put it where the path turns." },
+            { "text": "A plain answer, from a signed name. Take the lamp anyway. A lamp is a promise. I check on promises.", "when": { "flags": ["office-file"] } }
+          ],
+          "sway": 2,
+          "sets": ["lamp-carried"]
+        },
+        {
+          "id": "gary",
+          "style": "dry",
+          "say": "Gary carries the snacks, I carry the Book. It's a fair split.",
+          "answer": [
+            { "text": "I do not log jokes. Sparrow does, on the air, at length. No lamp today. Walk on our lights and think." },
+            { "text": "Gary again. You use that man like a spare tyre. No lamp today. Walk on our lights and think.", "when": { "flags": ["office-gary"] } }
+          ],
+          "sway": 0
+        },
+        {
+          "id": "mine",
+          "style": "hard",
+          "say": "It's my Book and my business. Move.",
+          "answer": [
+            { "text": "Then we check the hand. Otis walks with me. Otis checks you now." }
+          ],
+          "sway": -2,
+          "fight": true
+        }
+      ],
+      "fight": {
+        "teams": [
+          { "team": [{ "id": "wampus-cat", "up": 1, "title": "Otis" }, { "id": "jackalope", "up": 1, "title": "Mabel" }] },
+          { "when": { "hadUnder": { "binds": 3 } }, "team": [{ "id": "wampus-cat", "up": 1, "title": "Otis" }] }
+        ],
+        "youWin": [
+          { "text": "Otis is down. He is fine. You fight clean, {you}. No lamp for hard words. Ask me again one day." },
+          { "text": "Otis is down in the dark. You did not panic. I log that. Walk on.", "when": { "night": true } }
+        ],
+        "youLose": [
+          { "text": "Otis held. Rest {lead} at a campfire. Then answer the question again, without the tone." },
+          { "text": "Otis held. Follow the lamps to the cabin. They are still yours to walk on.", "when": { "night": true } }
+        ],
+        "swayWin": 1,
+        "swayLose": 0,
+        "setsWin": []
+      },
+      "rematch": [
+        { "text": "You are back. Otis is rested. The question did not change. I did not change." },
+        { "text": "{gap} to think. Otis is rested. Show me that you used the time.", "when": { "gap": ["long"] } }
+      ],
+      "log": "Wren Ashby stopped me at a path light in Wharton Forest and asked why I carry the Book."
+    },
+    {
+      "id": "lamplighters.2",
+      "title": "Dead Drop",
+      "n": 2,
+      "k": 8,
+      "who": "pip",
+      "hail": [
+        { "text": "Sparrow to {you}. I mean hello. No radios near Green Bank, so we use lamps and mirrors. I talk too much without a radio too." },
+        { "text": "You talked to the suits at Green Bank first. Say what you told them. Say it slowly. I write with a pencil.", "when": { "done": ["office.2"] } },
+        { "text": "The suits have a listening post at Green Bank. You did not talk to them yet. Good. Keep it that way today.", "when": { "undone": ["office.2"] } },
+        { "text": "You carry a lamp from Lamp One. She gave out 3 this year. I asked for one. She said to stop asking.", "when": { "flags": ["lamp-carried"] } },
+        { "text": "CAUTION: You carry Reagent 12 from the cold room. I stand over here. The ones we shelter do not like that bottle.", "when": { "flags": ["reagent-taken"] } },
+        { "text": "You were away for {gap}. I held this message the whole time. I told nobody. I told Long Haul. Nobody else.", "when": { "gap": ["long"] } },
+        { "text": "The suits met you first. Lamp One says that is not your fault. She said it twice, so she is not sure.", "when": { "first": "office" } }
+      ],
+      "ask": [
+        { "text": "The Tug Fork is a border. A feud ran along it in the 1880s. The Office has a cordon on it now. I need a message carried past. Will you run it?" },
+        { "text": "One suit on the cordon likes you. Agent Quist. That helps. I still need a message carried past the rest. Will you run it?", "when": { "flags": ["quist-warm"] } }
+      ],
+      "replies": [
+        {
+          "id": "run",
+          "style": "straight",
+          "say": "Give it here. I'll walk it past them.",
+          "answer": [
+            { "text": "Message starts. Lamp 3 is dark. Move Mabel by the river road. Message ends. Do not read it. I just read it to you. Take this ink and go." }
+          ],
+          "sway": 1,
+          "sets": ["message-run"],
+          "fight": true,
+          "ink": 1
+        },
+        {
+          "id": "mirror",
+          "style": "dry",
+          "say": "Can't you just flash it with a mirror? You've got so many mirrors.",
+          "answer": [
+            { "text": "It is cloudy. A mirror needs sun. That is the whole weakness of the system. Please take the paper." }
+          ],
+          "sway": 1,
+          "sets": ["message-run"],
+          "fight": true
+        },
+        {
+          "id": "no",
+          "style": "hard",
+          "say": "I'm not your mailman, kid.",
+          "answer": [
+            { "text": "Understood. Sparrow to Lamp One. The Bearer said no. The Bearer also called me kid. I log the kid part." }
+          ],
+          "sway": -1
+        }
+      ],
+      "fight": {
+        "teams": [
+          { "team": [{ "id": "snallygaster", "up": 2, "title": "Asset 22" }, { "id": "flatwoods-monster", "up": 2, "title": "Asset 23" }] },
+          { "when": { "done": ["office.2"] }, "team": [{ "id": "snallygaster", "up": 3, "title": "Asset 22" }, { "id": "flatwoods-monster", "up": 3, "title": "Asset 23" }] },
+          { "when": { "flags": ["quist-warm"] }, "team": [{ "id": "snallygaster", "up": 1, "title": "Asset 22" }, { "id": "wampus-cat", "up": 1, "title": "Asset 31" }] }
+        ],
+        "youWin": [
+          { "text": "The paper is through. Sparrow to all lamps. The Bearer runs messages. I said it by mirror, so nobody saw. Thank you." },
+          { "text": "The paper is through. The suits knew your face and you still passed. Lamp One has to hear this. I tell her twice.", "when": { "done": ["office.2"] } }
+        ],
+        "youLose": [
+          { "text": "The cordon held. Did they read the paper? Do not answer. Rest {lead}. We try again." },
+          { "text": "The cordon held. At night they use torches and we see them first. Rest. Try again before dawn.", "when": { "night": true } }
+        ],
+        "swayWin": 1,
+        "swayLose": 0,
+        "setsWin": []
+      },
+      "rematch": [
+        { "text": "The cordon is still on the Tug Fork. The paper is still in your pocket. I hope. Go again." },
+        { "text": "{gap} with our message in your pocket. It said Lamp 3 is dark. Lamp 3 is still dark. Go.", "when": { "gap": ["long"] } }
+      ],
+      "log": "Pip asked me to carry a paper message past the Office cordon on the Tug Fork."
+    },
+    {
+      "id": "lamplighters.3",
+      "title": "Tall Tales",
+      "n": 3,
+      "k": 2,
+      "who": "dutch",
+      "hail": [
+        { "text": "Long Haul to {you}. Park it. The camps cut the white pine and told tall tales all winter. Those tales are our code book." },
+        { "text": "The Book holds {count}, and one is a hidebehind. We count it. I say it out loud. One hidebehind, on a page.", "when": { "owns": ["hidebehind"] } },
+        { "text": "The Book holds {count} and no hidebehind. Good count. I like that count. I want to talk about how to keep it.", "when": { "lacks": ["hidebehind"] } },
+        { "text": "You lent the white coats a squonk for its tears. A squonk cries enough on its own time. I am not laughing.", "when": { "flags": ["squonk-lent"] } },
+        { "text": "You told the suits their oldest asset is wood. Pell guarded a carving for years. That is the best tale this winter.", "when": { "flags": ["asset-one-wood"] } },
+        { "text": "You joke with me every time. Good. A trucker with no jokes is only a man in a chair.", "when": { "manner": "dry" } },
+        { "text": "{gap} since we talked. I drove to Duluth and back. The truck missed you. I did not say I did.", "when": { "gap": ["long"] } },
+        { "text": "Sparrow says you ran the paper at Tug Fork. Sparrow says a lot. This one I believe.", "when": { "flags": ["message-run"] } }
+      ],
+      "ask": [
+        { "text": "In our code book, the hidebehind means a friend is behind you. Leave the hidebehind alone, {you}. Will you?" },
+        { "text": "The Book holds one already, so that tale is told. Leave the next one alone. Walk easy with yours. Will you?", "when": { "owns": ["hidebehind"] } },
+        { "text": "It is always behind you. So are we. Beat it if you must. Do not let the Book have it. Will you?", "when": { "lacks": ["hidebehind"] } },
+        { "text": "Here is the punchline, and it is not a joke. Leave the hidebehind alone. Will you?", "when": { "manner": "dry" } },
+        { "text": "You lend out what the Book holds. Do not lend this one to anybody. Leave the hidebehind alone. Will you?", "when": { "flags": ["squonk-lent"] } },
+        { "text": "The suits guard a wooden hodag. We guard a tale. Ours is the real one. Leave the hidebehind alone. Will you?", "when": { "flags": ["asset-one-wood"] } }
+      ],
+      "replies": [
+        {
+          "id": "leave",
+          "style": "straight",
+          "say": "Okay. If I can get past it without the Book taking it, I will.",
+          "answer": [
+            { "text": "Good. That goes in the code book tonight. A new tale. The Bearer who left one alone." },
+            { "text": "Good. One on a page and no more. I count it again next time. Out loud.", "when": { "owns": ["hidebehind"] } }
+          ],
+          "sway": 1,
+          "sets": ["tale-kept"]
+        },
+        {
+          "id": "behind",
+          "style": "dry",
+          "say": "Sure. I'll leave it right where it is. Behind me. With you lot.",
+          "answer": [
+            { "text": "Ha. Log that one, Sparrow. Message starts. The Bearer is funny. Message ends. We have a deal." }
+          ],
+          "sway": 1,
+          "sets": ["tale-kept"]
+        },
+        {
+          "id": "fair-game",
+          "style": "hard",
+          "say": "It's behind me. That makes it mine. Those are the rules.",
+          "answer": [
+            { "text": "Those are the rules of the cage. Fine. Hazel and Earl walk with me. They want a word." }
+          ],
+          "sway": -1,
+          "fight": true
+        }
+      ],
+      "fight": {
+        "teams": [
+          { "team": [{ "id": "teakettler", "up": 2, "title": "Hazel" }, { "id": "splintercat", "up": 2, "title": "Earl" }] },
+          { "when": { "owns": ["hidebehind"] }, "team": [{ "id": "teakettler", "up": 3, "title": "Hazel" }, { "id": "splintercat", "up": 3, "title": "Earl" }] }
+        ],
+        "youWin": [
+          { "text": "Hazel and Earl are down. They are fine. They are loggers at heart. You win the word. Think about the tale anyway." },
+          { "text": "You win. No joke this time. See, I can do it too. Think about the tale.", "when": { "manner": "dry" } }
+        ],
+        "youLose": [
+          { "text": "They held. Rest {lead}. The camps had long winters. I have a long truck. I can wait." },
+          { "text": "They held. Hard talk, soft line-up. Rest and come back with one of the two fixed.", "when": { "last": "hard" } }
+        ],
+        "swayWin": 0,
+        "swayLose": 0,
+        "setsWin": []
+      },
+      "rematch": [
+        { "text": "Hazel and Earl are rested. The coffee is not. Go again." },
+        { "text": "{gap}. Hazel asked about you. Earl did not. Go again.", "when": { "gap": ["long"] } }
+      ],
+      "log": "Old Dutch asked me at the logging camp to leave the hidebehind alone."
+    },
+    {
+      "id": "lamplighters.4",
+      "title": "The Road Shut",
+      "n": 4,
+      "k": 8,
+      "who": "wren",
+      "hail": [
+        { "text": "The road is shut past this stone, {you}. I shut it. The redwoods here are the tallest trees on Earth. People still look at the ground." },
+        { "text": "The Book holds {count}. One is the giant. So I am too late with my request. Then hold it well.", "when": { "owns": ["sasquatch"] } },
+        { "text": "The Book holds {count} and no giant. Good. Then my request is still in time.", "when": { "lacks": ["sasquatch"] } },
+        { "text": "The suits have a copy of your tape. More film brings more people up this road. I shut it harder now.", "when": { "flags": ["tape-copied"] } },
+        { "text": "The grant officer counted your line-up at Mount St. Helens. Everybody counts. We count to keep. She counts to bill.", "when": { "flags": ["carrow-counted"] } },
+        { "text": "The reports on you get worse, {you}. I read each one. I still ask you this in person.", "when": { "trend": ["falling"] } },
+        { "text": "{gap} since we spoke. I shut 2 more roads in that time. This is the one that matters.", "when": { "gap": ["long"] } },
+        { "text": "You still carry my lamp. So I ask you plainly, the way I gave it.", "when": { "flags": ["lamp-carried"] } }
+      ],
+      "ask": [
+        { "text": "One minute of film and some footprints send people up the ridge. We turn them around. Beat the giant if you must. Do not let the Book bind it. Promise?" },
+        { "text": "The Book has one. The request changes. No more from this ridge. Stay on the road and off the footprints. Promise?", "when": { "owns": ["sasquatch"] } },
+        { "text": "The giant on the ridge is ahead of you. Beat it if you must. Do not let the Book bind it. Promise?", "when": { "lacks": ["sasquatch"] } },
+        { "text": "Your tape is in an Office drawer now. So promise me two things. No film of the ridge. No giant in the Book. Promise?", "when": { "flags": ["tape-copied"] } },
+        { "text": "The grant officer needs three more specimens. The ridge has one. She can count. So I ask you first. No giant in the Book. Promise?", "when": { "flags": ["carrow-counted"] } },
+        { "text": "The line trusts you less each week. A promise can change that. Beat the giant if you must. Do not let the Book bind it. Promise?", "when": { "trend": ["falling"] } }
+      ],
+      "replies": [
+        {
+          "id": "promise",
+          "style": "straight",
+          "say": "I promise. If it comes to it, I beat it and walk on. The Book doesn't get it.",
+          "answer": [
+            { "text": "Logged. A lamp is a promise and so is this. I check it later. I always check." },
+            { "text": "Logged. No more from this ridge. Hold the one you have well. I check both.", "when": { "owns": ["sasquatch"] } }
+          ],
+          "sway": 2,
+          "sets": ["ridge-promise"]
+        },
+        {
+          "id": "book-says",
+          "style": "dry",
+          "say": "I'll ask the Book. It usually says no, but it says it politely.",
+          "answer": [
+            { "text": "The cage does not get a vote. You do. I wait for a real answer. I am good at waiting." }
+          ],
+          "sway": -1
+        },
+        {
+          "id": "no-promise",
+          "style": "hard",
+          "say": "I don't make promises about things I haven't met yet.",
+          "answer": [
+            { "text": "That is honest and it is not enough. Then you do not pass on words. Ruth, June and Otis walk with me." }
+          ],
+          "sway": -2,
+          "fight": true
+        }
+      ],
+      "fight": {
+        "teams": [
+          { "team": [{ "id": "splintercat", "up": 3, "title": "Ruth" }, { "id": "fur-bearing-trout", "up": 3, "title": "June" }, { "id": "wampus-cat", "up": 3, "title": "Otis" }] },
+          { "when": { "trend": ["falling"] }, "team": [{ "id": "splintercat", "up": 4, "title": "Ruth" }, { "id": "fur-bearing-trout", "up": 4, "title": "June" }, { "id": "wampus-cat", "up": 4, "title": "Otis" }] }
+        ],
+        "youWin": [
+          { "text": "They are down. You pass. NOTE: The request stands. A fight does not answer it. Your hand does." },
+          { "text": "They are down. You pass. The Book has the one. Do not bring it up this road.", "when": { "owns": ["sasquatch"] } }
+        ],
+        "youLose": [
+          { "text": "They held. The road stays shut. Rest {lead}. Then come back and talk to me." },
+          { "text": "They held. You said no and then you lost. Think about which one to change.", "when": { "last": "hard" } }
+        ],
+        "swayWin": 0,
+        "swayLose": 0,
+        "setsWin": []
+      },
+      "rematch": [
+        { "text": "The road is still shut. Ruth, June and Otis are rested. So is the question." },
+        { "text": "{gap}. Nobody passed in that time. The road is still shut. Go again.", "when": { "gap": ["long"] } }
+      ],
+      "log": "Wren Ashby shut the road at Redwood Creek and asked me for a promise about the giant."
+    },
+    {
+      "id": "lamplighters.5",
+      "title": "Night Boat",
+      "n": 5,
+      "k": 8,
+      "who": "pip",
+      "hail": [
+        { "text": "Sparrow to {you}. Lake Champlain is about 120 miles long. We move them over it after dark. I must not say where. It is the east dock." },
+        { "text": "Message starts. The safe house at the east dock is empty. The suits came first. Protocol QUIET. They took Mabel. Message ends. Sorry. I am not calm.", "when": { "flags": ["protocol-quiet"] } },
+        { "text": "You took a specimen out of the Institute cold room. We shelter it now. It has a name now. It is Clyde. It eats well.", "when": { "flags": ["specimen-freed"] } },
+        { "text": "We have a tip from inside the Office. A suit with a scrapbook. Lamp One says not to say Quist on the air. I said Quist.", "when": { "flags": ["quist-turned"] } },
+        { "text": "{gap} since we last talked. I counted. Lamp One says I count the wrong things.", "when": { "gap": ["long"] } },
+        { "text": "You ran my paper at Tug Fork. So I asked for you by call sign. You do not have one. I can fix that.", "when": { "flags": ["message-run"] } },
+        { "text": "It is dark, so the boat is ready. Do not use your torch on the dock. The lamps show the way to the water.", "when": { "night": true } },
+        { "text": "You make jokes when I talk. I like it. Lamp One says I must not like it on the air.", "when": { "manner": "dry" } }
+      ],
+      "ask": [
+        { "text": "The boat goes tonight with three passengers. They are afraid of the water. Will you ride with them, {you}?" },
+        { "text": "Lamp One plans a raid on Annex 9 to get ours back. First the last three cross tonight. Will you ride with them?", "when": { "flags": ["protocol-quiet"] } }
+      ],
+      "replies": [
+        {
+          "id": "ride",
+          "style": "straight",
+          "say": "I'll ride. Tell me where to sit and what not to touch.",
+          "answer": [
+            { "text": "Sit in the middle. Touch nothing. Lamp One keeps a plan for Annex 9 in a drawer. You are in the drawer now. Forget I said that." },
+            { "text": "Sit in the middle. Touch nothing. The raid plan has your name on it now. Lamp One wrote it herself.", "when": { "flags": ["protocol-quiet"] } }
+          ],
+          "sway": 1,
+          "sets": ["raid-plan"],
+          "fight": true
+        },
+        {
+          "id": "life-jacket",
+          "style": "dry",
+          "say": "Do the passengers get life jackets, or just me?",
+          "answer": [
+            { "text": "One of them is a fish with fur. It does not need one. You get the orange one. Welcome to the plan for Annex 9." }
+          ],
+          "sway": 1,
+          "sets": ["raid-plan"],
+          "fight": true
+        },
+        {
+          "id": "not-smuggler",
+          "style": "hard",
+          "say": "I'm not smuggling anything across a border lake at night.",
+          "answer": [
+            { "text": "It is not smuggling. It is moving. The manual has a different page for each. Sparrow out. I mean, fine." }
+          ],
+          "sway": -1
+        }
+      ],
+      "fight": {
+        "teams": [
+          { "team": [{ "id": "dover-demon", "up": 3, "title": "Amos" }, { "id": "teakettler", "up": 3, "title": "Dot" }, { "id": "fur-bearing-trout", "up": 3, "title": "Pearl" }] },
+          { "when": { "flags": ["protocol-quiet"] }, "team": [{ "id": "loveland-frogman", "up": 4, "title": "Asset 40" }, { "id": "beast-of-bray-road", "up": 4, "title": "Asset 41" }, { "id": "champ", "up": 4, "title": "Asset 44" }] }
+        ],
+        "youWin": [
+          { "text": "The boat is across. The passengers are calm. Sparrow to all lamps. I say nothing. I say almost nothing. The Bearer did it." },
+          { "text": "The Office launch turned back. The boat is across. Three are safe. Lamp One wants you at White Sands. I wrote it on my hand.", "when": { "flags": ["protocol-quiet"] } }
+        ],
+        "youLose": [
+          { "text": "The boat turned back. Nobody is hurt. Pearl is seasick. Rest {lead}. We try again in the next dark hour." },
+          { "text": "The Office launch held the channel. We turned back. They did not get the passengers. Rest. We go again.", "when": { "flags": ["protocol-quiet"] } }
+        ],
+        "swayWin": 1,
+        "swayLose": 0,
+        "setsWin": []
+      },
+      "rematch": [
+        { "text": "The boat is ready again. The lake did not get shorter. Go." },
+        { "text": "{gap} on the dock. The passengers learned your name. Go again.", "when": { "gap": ["long"] } }
+      ],
+      "log": "Pip asked me to ride the night boat over Lake Champlain with three passengers."
+    },
+    {
+      "id": "lamplighters.6",
+      "title": "Annex Raid",
+      "n": 6,
+      "k": 2,
+      "who": "wren",
+      "hail": [
+        { "text": "White Sands is the largest gypsum dune field in the world. White ground shows everything. So we go at night and we go once." },
+        { "text": "You know the plan from the lake. Sparrow told you more than I wrote. Step 1. Cut the cordon. Step 2. Open the cages. Step 3. Leave.", "when": { "flags": ["raid-plan"] } },
+        { "text": "You are not in the plan. You did not ride the boat. I add you in pencil. Do what I say when I say it.", "when": { "noFlags": ["raid-plan"] } },
+        { "text": "You stood inside Annex 9 already. Draw the rooms. Here is a stick. The sand is the paper.", "when": { "done": ["office.6"] } },
+        { "text": "A suit left the side door off the latch. I do not say the name. Sparrow said it already.", "when": { "flags": ["quist-turned"] } },
+        { "text": "The white coats put a meter next to the Book. It read one thing each time. I do not need a meter. It is a cage.", "when": { "flags": ["meter-read"] } },
+        { "text": "The suits took 9 from our safe houses. I know each name. Tonight I say each name at a cage door.", "when": { "flags": ["protocol-quiet"] } },
+        { "text": "I do not trust you much, {you}. The log says why. Tonight I need hands. Yours work.", "when": { "past": ["cold", "cool"] } },
+        { "text": "{gap} since we spoke. The cages were full the whole time. I counted the days for them.", "when": { "gap": ["long"] } }
+      ],
+      "ask": [
+        { "text": "The Book holds {count}. The Annex holds more, in cages with numbers. Which way do you go in, {you}?" },
+        { "text": "You saw the rooms. So you pick the door. Which way do you go in, {you}?", "when": { "done": ["office.6"] } }
+      ],
+      "replies": [
+        {
+          "id": "side",
+          "style": "straight",
+          "say": "Quiet. Side door, low, behind you. I do what you say.",
+          "answer": [
+            { "text": "Correct. Stay on my left. When I say a name, open that cage. Take this ink for the cordon." }
+          ],
+          "sway": 2,
+          "ink": 1
+        },
+        {
+          "id": "knock",
+          "style": "dry",
+          "say": "Have we tried knocking? Agents love a knock. There's probably a form.",
+          "answer": [
+            { "text": "There is a form. It is Form 9-C. We do not fill it in. Stay on my left and stay quiet." }
+          ],
+          "sway": 0
+        },
+        {
+          "id": "front",
+          "style": "hard",
+          "say": "Front door. Loud. Let them see who's doing it.",
+          "answer": [
+            { "text": "WARNING: Loud gets cages moved before we reach them. You go in the front. I go in the side. Do not make me come for you." }
+          ],
+          "sway": -2
+        }
+      ],
+      "fight": {
+        "teams": [
+          { "team": [{ "id": "fresno-nightcrawler", "up": 4, "title": "Asset 51" }, { "id": "lizard-man", "up": 4, "title": "Asset 52" }, { "id": "hoop-snake", "up": 5, "title": "Asset 60" }] },
+          { "when": { "done": ["office.6"] }, "team": [{ "id": "fresno-nightcrawler", "up": 4, "title": "Asset 51" }, { "id": "lizard-man", "up": 4, "title": "Asset 52" }] },
+          { "when": { "flags": ["quist-turned"] }, "team": [{ "id": "fresno-nightcrawler", "up": 3, "title": "Asset 51" }, { "id": "lizard-man", "up": 3, "title": "Asset 52" }, { "id": "hoop-snake", "up": 4, "title": "Asset 60" }] },
+          { "when": { "done": ["office.6"], "flags": ["quist-turned"] }, "team": [{ "id": "fresno-nightcrawler", "up": 3, "title": "Asset 51" }, { "id": "lizard-man", "up": 3, "title": "Asset 52" }] }
+        ],
+        "youWin": [
+          { "text": "The cordon is down. The cages are open. I said each name. Message starts. Annex 9 is empty. The line holds. Message ends." },
+          { "text": "The cordon is down. The plan held, Sparrow and all. The cages are open. Nine names, nine doors. Move.", "when": { "flags": ["raid-plan"] } },
+          { "text": "The cages are open. The suits come back to an empty store. Pell has to write that up. I want a copy.", "when": { "undone": ["office.6"] } }
+        ],
+        "youLose": [
+          { "text": "The cordon held. Fall back to the dunes. White ground shows everything, so keep low. We go again." },
+          { "text": "The front door held. I said so. Fall back. Next time stay on my left.", "when": { "last": "hard" } }
+        ],
+        "swayWin": 2,
+        "swayLose": 0,
+        "setsWin": ["annex-raided"],
+        "always": true
+      },
+      "rematch": [
+        { "text": "The Annex is still full. The cordon is still up. Stay on my left. Go." },
+        { "text": "{gap}. The cages were full for all of it. Go now.", "when": { "gap": ["long"] } }
+      ],
+      "log": "Wren Ashby led a night raid on Annex 9 from the dunes at White Sands."
+    },
+    {
+      "id": "lamplighters.7",
+      "title": "Smugglers' Bay",
+      "n": 7,
+      "k": 4,
+      "who": "dutch",
+      "hail": [
+        { "text": "Long Haul to {you}. Jean Lafitte's smugglers worked these bays in the early 1800s. We work them now. We move better cargo." },
+        { "text": "You told the suits where our boats go. They burned the cache. I do not have a joke for that. Get in the boat.", "when": { "flags": ["cache-burned"] } },
+        { "text": "You are here before the suits. The bay is quiet. I like a quiet bay. Help me keep it that way.", "when": { "undone": ["office.7"] } },
+        { "text": "The technician Toby is on one of my boats. He left the white coats. He talks the whole trip. He is good with a rope.", "when": { "flags": ["toby-out"] } },
+        { "text": "The line runs cold on you, {you}. I read the log on the drive down. Today you get a boat and no coffee.", "when": { "past": ["cold", "cool"] } },
+        { "text": "The suits came in a pirogue. You sent them wrong or you stood in the way. Either one buys you coffee.", "when": { "done": ["office.7"], "noFlags": ["cache-burned"] } },
+        { "text": "The ones from Annex 9 came through here last week. Each has a name now. One has your name. It bites.", "when": { "flags": ["annex-raided"] } },
+        { "text": "Here comes the funny one. Good. The bay needs it today.", "when": { "manner": "dry" } },
+        { "text": "{gap} since we talked. The truck is parked. I drive a boat here. Badly.", "when": { "gap": ["long"] } }
+      ],
+      "ask": [
+        { "text": "A boat of suits is in the channel with their assets. We hold the bay or we lose it. Where do you stand, {you}?" },
+        { "text": "Six of ours are in cages on the Office boat. This is a rescue. You sent them here. Where do you stand?", "when": { "flags": ["cache-burned"] } },
+        { "text": "One scout boat came ahead of the suits. It has three assets and a clipboard. Where do you stand, {you}?", "when": { "undone": ["office.7"] } }
+      ],
+      "replies": [
+        {
+          "id": "bow",
+          "style": "straight",
+          "say": "In the bow, with you. Point me at them.",
+          "answer": [
+            { "text": "Good. The bow it is. Keep {lead} low until I say." },
+            { "text": "Fine. The bow. Fix what you broke. Then we talk.", "when": { "flags": ["cache-burned"] } }
+          ],
+          "sway": 1
+        },
+        {
+          "id": "hat",
+          "style": "dry",
+          "say": "Do I get a hat? Lafitte's people had hats.",
+          "answer": [
+            { "text": "No hat. There is a bucket. You can wear the bucket. Welcome aboard." },
+            { "text": "No hat. No bucket. Not today. Get in.", "when": { "flags": ["cache-burned"] } }
+          ],
+          "sway": 1
+        },
+        {
+          "id": "not-my-fight",
+          "style": "hard",
+          "say": "This is between you and the suits. I'm just walking through.",
+          "answer": [
+            { "text": "Nobody walks through a bay. It is water. The suits are in the channel anyway. Get in or swim." }
+          ],
+          "sway": -1
+        }
+      ],
+      "fight": {
+        "teams": [
+          { "team": [{ "id": "lizard-man", "up": 4, "title": "Asset 70" }, { "id": "hoop-snake", "up": 4, "title": "Asset 71" }, { "id": "loveland-frogman", "up": 5, "title": "Asset 72" }] },
+          { "when": { "flags": ["cache-burned"] }, "team": [{ "id": "lizard-man", "up": 5, "title": "Asset 70" }, { "id": "hoop-snake", "up": 5, "title": "Asset 71" }, { "id": "loveland-frogman", "up": 5, "title": "Asset 72" }, { "id": "ozark-howler", "up": 6, "title": "Asset 80" }] },
+          { "when": { "undone": ["office.7"] }, "team": [{ "id": "lizard-man", "up": 3, "title": "Asset 70" }, { "id": "hoop-snake", "up": 3, "title": "Asset 71" }, { "id": "fresno-nightcrawler", "up": 3, "title": "Asset 75" }] }
+        ],
+        "youWin": [
+          { "text": "The bay is ours. Long Haul to all lamps. Bay held. The Bearer stood in the bow. Out." },
+          { "text": "Six cages are open. Six names are back on the line. You fixed it. I am still sore. Give me a week.", "when": { "flags": ["cache-burned"] } },
+          { "text": "The scout boat is gone. The suits arrive to an empty bay. I left them a bucket.", "when": { "undone": ["office.7"] } },
+          { "text": "Bay held. Toby cheered and fell in. He is fine. He is still talking.", "when": { "flags": ["toby-out"] } }
+        ],
+        "youLose": [
+          { "text": "They hold the channel. Pull back to the cypress. Rest {lead}. We go again on the tide." },
+          { "text": "They still have six of ours. Rest fast, {you}. That is an order.", "when": { "flags": ["cache-burned"] } }
+        ],
+        "swayWin": 2,
+        "swayLose": 0,
+        "setsWin": ["bay-held"],
+        "always": true
+      },
+      "rematch": [
+        { "text": "The suits are still in the channel. The tide is right. Get in the boat." },
+        { "text": "{gap}. The bay waited. Bays are good at that. Get in the boat.", "when": { "gap": ["long"] } },
+        { "text": "Six of ours are still in cages. I counted them each hour. Get in the boat.", "when": { "flags": ["cache-burned"] } }
+      ],
+      "log": "Old Dutch and I held the bay at Barataria against an Office boat."
+    },
+    {
+      "id": "lamplighters.8",
+      "title": "The Long Haul",
+      "n": 8,
+      "k": 5,
+      "who": "wren",
+      "hail": [
+        { "text": "Route 66 was commissioned in 1926. Long Haul parked his truck on it. This is the end of our line, {you}. I walk with four." },
+        { "text": "We met you first, at {met}, at a path light. I gave you a question then. Tonight I give you my answer.", "when": { "first": "lamplighters" } },
+        { "text": "You made a promise at Redwood Creek. The Book holds the giant. The promise is broken. I say it out loud so you hear it.", "when": { "flags": ["ridge-promise"], "owns": ["sasquatch"] } },
+        { "text": "You made a promise at Redwood Creek. The Book holds {count} and no giant. The promise is kept. I checked. I always check.", "when": { "flags": ["ridge-promise"], "lacks": ["sasquatch"] } },
+        { "text": "The Office is closed. The Institute is closed. We are the last ones behind you. Their leftovers walk with me now.", "when": { "done": ["office.8", "institute.8"] } },
+        { "text": "You held the bay with Long Haul. He tells it at every truck stop. I heard it 6 times.", "when": { "flags": ["bay-held"] } },
+        { "text": "You sent the suits to Barataria and the cache burned. You helped after. Both are in the log. I read both.", "when": { "flags": ["cache-burned"] } },
+        { "text": "The log on you is long and mostly good. I did not expect that at Wharton Forest.", "when": { "past": ["warm", "close"] } },
+        { "text": "The log on you is long and mostly bad. I read it twice to be fair.", "when": { "past": ["cold", "cool"] } },
+        { "text": "{gap} since we spoke. I walked the whole line once more. Every lamp was on.", "when": { "gap": ["long"] } },
+        { "text": "You talk hard to me. You did from the start. I respect a steady signal.", "when": { "manner": "hard" } }
+      ],
+      "ask": [
+        { "text": "The Book holds {count}. I say the number one last time. What happens when the cage is full, {you}?" },
+        { "text": "You still carry my lamp. The Book holds {count}. What happens when the cage is full, {you}?", "when": { "flags": ["lamp-carried"] } }
+      ],
+      "replies": [
+        {
+          "id": "dont-know",
+          "style": "straight",
+          "say": "I don't know. But I'm the one carrying it, so I'll be there when it happens.",
+          "answer": [
+            { "text": "That is the first true answer anybody gave me about the Book. Stand ready. My four want to know you too." }
+          ],
+          "sway": 2
+        },
+        {
+          "id": "second-book",
+          "style": "dry",
+          "say": "Then I guess it needs a second volume. Gary's already picked a title.",
+          "answer": [
+            { "text": "I do not log jokes. I logged that one. Stand ready." }
+          ],
+          "sway": 0
+        },
+        {
+          "id": "ask-it",
+          "style": "hard",
+          "say": "Ask the Book yourself. You've followed it long enough.",
+          "answer": [
+            { "text": "I do not talk to a cage. I talk to the hand. The hand has its back up. Stand ready." }
+          ],
+          "sway": -2
+        }
+      ],
+      "fight": {
+        "teams": [
+          { "team": [{ "id": "rougarou", "up": 5, "title": "Silas" }, { "id": "splintercat", "up": 5, "title": "Ruth" }, { "id": "ahuizotl", "up": 6, "title": "Agnes" }, { "id": "wampus-cat", "up": 7, "title": "Otis" }] },
+          { "when": { "done": ["office.8", "institute.8"] }, "team": [{ "id": "rougarou", "up": 6, "title": "Silas" }, { "id": "lizard-man", "up": 6, "title": "Zero" }, { "id": "ahuizotl", "up": 7, "title": "Agnes" }, { "id": "wampus-cat", "up": 8, "title": "Otis" }] },
+          { "when": { "flags": ["ridge-promise"], "owns": ["sasquatch"] }, "team": [{ "id": "rougarou", "up": 6, "title": "Silas" }, { "id": "splintercat", "up": 6, "title": "Ruth" }, { "id": "ahuizotl", "up": 6, "title": "Agnes" }, { "id": "wampus-cat", "up": 8, "title": "Otis" }] }
+        ],
+        "youWin": [
+          { "text": "My four are down. They are fine. Verdict. You carry a cage and you are not a jailer. I do not understand it. I log it." },
+          { "text": "Verdict. The log says you gave more than you took. The line is yours to walk, {you}. Every lamp. Lamp One out.", "when": { "past": ["warm", "close"] } },
+          { "text": "Verdict. The log is even. Half promise, half trouble. The lamps stay on for you. I keep watching.", "when": { "past": ["even"] } },
+          { "text": "Verdict. The log is cold. You beat us and you did not join us. Walk on our lights. Do not ask for one.", "when": { "past": ["cold", "cool"] } },
+          { "text": "Verdict. You kept the ridge promise and the log is good. Here is a second lamp. I never gave two before.", "when": { "flags": ["ridge-promise"], "lacks": ["sasquatch"], "past": ["warm", "close"] } },
+          { "text": "Verdict. You beat us and you broke the ridge promise. The lamps stay on. They are for everybody. That is all you get.", "when": { "flags": ["ridge-promise"], "owns": ["sasquatch"] } }
+        ],
+        "youLose": [
+          { "text": "My four held. That is not the verdict. Rest {lead} at a campfire. Come back and finish it." },
+          { "text": "My four held. The lamps on Route 66 go to a cabin. Follow them. Come back in daylight. I am here.", "when": { "night": true } },
+          { "text": "My four held. I am not surprised. Change my mind.", "when": { "past": ["cold", "cool"] } }
+        ],
+        "swayWin": 2,
+        "swayLose": 0,
+        "setsWin": [],
+        "always": true
+      },
+      "rematch": [
+        { "text": "The truck is still parked. My four are rested. The verdict waits. Stand ready." },
+        { "text": "{gap}. Long Haul kept the engine warm. Stand ready.", "when": { "gap": ["long"] } }
+      ],
+      "log": "Wren Ashby and the four who walk with her met me at Old Dutch's truck on Route 66."
+    }
+  ],
+  "echoes": {
+    "mythic-bound": [
+      { "text": "The Book bound {mythic}. The count went up by one. We heard it at every lamp. I say the number: {count}." },
+      { "text": "The Book bound {mythic}. That is the giant, and you made a promise. I say the number anyway: {count}.", "when": { "flags": ["ridge-promise"], "owns": ["sasquatch"] } }
+    ],
+    "mythic-loose": [
+      { "text": "You beat {mythic} and left it loose. That is the correct procedure. A runner carried the news to nine lamps." }
+    ],
+    "hunt-closed": [
+      { "text": "You closed a contract from a sighting board. The cage pays its hand. We note the payment." }
+    ],
+    "binds-8": [
+      { "text": "The Book holds 8 kinds now. I say it out loud. Eight. Somebody has to hear the number." }
+    ],
+    "binds-16": [
+      { "text": "The Book holds 16 kinds now. Sixteen. Sparrow said it on the air and then said sorry." }
+    ],
+    "long-away": [
+      { "text": "You were gone 3 days or more. The lamps ran each night anyway. A lamp is a promise." },
+      { "text": "You were gone a long time. Sparrow asked about you each night. I asked once.", "when": { "past": ["warm", "close"] } }
+    ],
+    "office-file": [
+      { "text": "You gave the Office your name. It is in a grey drawer now. We use call signs for a reason." }
+    ],
+    "office-gary": [
+      { "text": "The Office has a file on Gary. Gary does not know. Do not tell Gary. This is the best news all month." }
+    ],
+    "protocol-quiet": [
+      { "text": "WARNING: Protocol QUIET is active. The Office seizes what we shelter. Message starts. All lamps dim. Move by night only. Message ends." }
+    ],
+    "cache-burned": [
+      { "text": "The cache at Barataria burned. The Office knew where to go. We know who told them. Long Haul wants a word." }
+    ],
+    "quist-turned": [
+      { "text": "A suit with a scrapbook asked what the Book does with them. That suit leaves doors open now. We do not say the name." }
+    ],
+    "office-closed": [
+      { "text": "The Office is closed. The grey suits went home with two forms each. We put a lamp at their door. It is a good door." }
+    ],
+    "sample-given": [
+      { "text": "You put {lead} on the Institute scale. They have a number for it now. We have a name for it. A name is better." }
+    ],
+    "reagent-taken": [
+      { "text": "CAUTION: You carry Reagent 12. The ones we shelter turn away from that bottle. Keep it shut near our lamps." }
+    ],
+    "squonk-lent": [
+      { "text": "You lent a squonk to the Institute for its tears. Get it back. Then tell it you are sorry. It cries. It always cries." }
+    ],
+    "specimen-freed": [
+      { "text": "You took a specimen out of the cold room before the Office came. We shelter it now. It has a name and a blanket." }
+    ],
+    "toby-out": [
+      { "text": "The technician Toby left the Institute. He is at one of our posts. He labels our lamps. We let him." }
+    ],
+    "institute-closed": [
+      { "text": "The Institute is closed. The grant ran out. Vale kept the notebooks. We shelter the ones she measured." }
+    ]
+  },
+  "rumours": [
+    "Diner cook: Those little solar lights on the trail? Not the county's. I asked. County thought they were ours.",
+    "Clerk: Old fella in a truck buys forty batteries every Tuesday. Pays cash. Tells me a joke. Same joke.",
+    "Night manager: There's a kid on channel 9 who says 'message ends' and then keeps going for ten minutes.",
+    "Diner cook: Ranger lady comes in, orders coffee, counts everybody in the room out loud, leaves. Tips well.",
+    "Clerk: Somebody keeps buying up the tall-tale books. All of them. Says they're for work.",
+    "Night manager: Truck in the back lot had something in it humming. Driver said it was the fridge. The fridge had a name."
+  ]
+}

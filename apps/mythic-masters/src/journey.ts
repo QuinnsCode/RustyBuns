@@ -8,6 +8,7 @@ import { arr, check, int, num, obj, oneOf, opt, rec, str, type Of } from "@rusty
 import { REGIONS, type Region } from "./regions.ts";
 import { ARCHETYPES, creature, ROSTER, type Creature } from "./roster.ts";
 import { HAND } from "./sections.ts";
+import { Factions } from "./factions/model.ts";
 import LANDING from "../content/landing.json";
 
 /** The five commons the Bog Witch offers; you take three. Ember beats grove, tide beats ember, grove beats tide; the
@@ -175,6 +176,9 @@ export const Journey = obj({
     /** Spare drops of ink a reply earned, spent on the next world fight; the kind of beast you asked the Book to want next. */
     ink: opt(int(0, 3)), wants: opt(oneOf(ARCHETYPES)),
   })),
+  /** The three factions behind you (src/factions/model.ts): who you met and in what order, the quest steps done, the
+   * flags, and each one's standing with you. */
+  factions: opt(Factions),
 });
 export type Journey = Of<typeof Journey>;
 
