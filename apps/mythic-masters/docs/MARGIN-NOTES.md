@@ -60,6 +60,11 @@ The demands and receipts in `src/demand.ts` (`demandOf`, `reactionOf`, `deckDema
 | Result: all down | No creatures left to fight. Back to the last stone. | no |
 | Result: a deadly wild one | You lost. Heal up and try again. | no |
 | Result: versus | Practice. I keep no accounts of practice. | no |
+| Versus circle, after a practice win | Your Hodag threw the Squonk out of the ring. Practice. Not entered. | no |
+| Versus circle, after a practice loss | The Squonk put your Hodag down. I keep no accounts of practice. I kept that one. | no |
+| Versus circle, after a duel won | Your Hodag beat your friend's Kelpie. Practice, with a witness. Still not entered. | no |
+| Versus circle, after a duel lost | Your friend's Kelpie outlasted your Hodag on the clock. A friend did that. I will not be writing it down. | no |
+| Versus circle, after watching | The Hodag beat the Squonk. You only watched. Watching fills no ledger. | no |
 | Bestiary folio: a bound one | Item 4. Entered. (within the hour: The ink is still wet.) | no |
 | Bestiary folio: one only seen | Seen. Not entered. Looking is not collecting. | no |
 | Bestiary deck, no journey yet | Item 1: the Jersey Devil, top of this deck. Then the rest, in order. | yes |
@@ -123,6 +128,7 @@ phone-book one (now about the mythics, see the late-game secret above).
 
 ## Where lines live
 
+- The circle before a summon: `circleLineOf` in `src/grimoire.ts`, your last bout or duel there (kept in localStorage).
 - Summon results: `LINES` in `src/grimoire.ts` (arrives, grumpy, misread). Keep their present shape: one sentence the book says, flagged signed when it is a demand.
 - The Settings card's note: `settingsLineOf` in `src/demand.ts`, under the card's heading.
 - The versus tag line (`#bookTag`) and any new page's scrawl: same rules, same list.

@@ -4,6 +4,7 @@
 import { PARTY_FIRST, slots, STARTERS, type Journey } from "./journey.ts";
 import type { Field } from "./fields.ts";
 import type { Creature } from "./roster.ts";
+import { bool, obj, oneOf, str, type Of } from "@rustybuns/util/guard";
 
 /** Ink in the pot for one sitting; each summon spends one, and pressing Fight refills it. */
 export const PAGE_INK = 3;
@@ -49,9 +50,32 @@ export function summon(field: Field | null, roll: () => number, pool: readonly C
   return { id: pick(outcome === "misread" ? pool : of).id, outcome, line, signed };
 }
 
-/** The book's line in the circle on the versus spread: what the last summon brought, else why nothing came. */
-export function circleLineOf(s: Summoned | null, bareLine: boolean, ink: number): { ask: string; signed: boolean } {
+
+/** The last practice bout or duel off the versus screen, as the book remembers it (kept in localStorage by main.ts). */
+export const Bout = obj({
+  kind: oneOf(["practice", "duel", "watched"]),
+  you: str(60), foe: str(60), won: bool(),
+  how: oneOf(["hp", "ring-out", "time", "none"], "none"),
+});
+export type Bout = Of<typeof Bout>;
+
+const HOW: Record<Bout["how"], [verb: string, after: string]> = { hp: ["put", " down"], "ring-out": ["threw", " out of the ring"], time: ["outlasted", " on the clock"], none: ["beat", ""] };
+const TAIL = {
+  practice: ["Practice. Not entered.", "I keep no accounts of practice. I kept that one."],
+  duel: ["Practice, with a witness. Still not entered.", "A friend did that. I will not be writing it down."],
+} as const;
+
+/** The book's line in the circle on the versus spread: what the last summon brought, else why nothing came; before any
+ * summon, what became of your last bout or duel here and the book's view of it (#4276 round 11), else the instruction. */
+export function circleLineOf(s: Summoned | null, bareLine: boolean, ink: number, last: Bout | null = null): { ask: string; signed: boolean } {
   if (s) return { ask: s.line, signed: s.signed };
   if (bareLine) return { ask: bare, signed: true };
-  return { ask: ink > 0 ? blank : dry, signed: false };
+  return { ask: ink <= 0 ? dry : last ? boutLineOf(last) : blank, signed: false };
+}
+function boutLineOf(last: Bout): string {
+  const watched = last.kind === "watched";
+  const mine = `${watched ? "the" : "your"} ${last.you}`, theirs = `${last.kind === "duel" ? "your friend's" : "the"} ${last.foe}`;
+  const [w, l] = last.won ? [mine, theirs] : [theirs, mine], [verb, after] = HOW[last.how];
+  const said = `${w[0]!.toUpperCase()}${w.slice(1)} ${verb} ${l}${after}.`;
+  return `${said} ${last.kind === "watched" ? "You only watched. Watching fills no ledger." : TAIL[last.kind][last.won ? 0 : 1]}`;
 }
