@@ -108,6 +108,9 @@ describe("code mode", () => {
     expect(d.isError).toBe(true);
     expect(d.out.error).toContain("403");
     expect(d.out.error).toContain("call_tool");
+    // Nor one that makes a public repo, or changes what the world sees of you, with nobody asked.
+    for (const code of [`return await tools.create_repo({ body: { name: "out", visibility: "public" } });`, `return await tools.set_city({ body: { public: true } });`, `return await tools.update_me({ body: { bio: "x" } });`])
+      expect((await run(write, code)).out.error).toContain("call_tool");
   });
 
   test("risky tools go through call_tool, which asks the person first, and only those", async () => {
@@ -211,8 +214,10 @@ describe("saved programs", () => {
     expect(missing.isError).toBe(true);
     expect(missing.content[0].text).toContain("no saved program nope");
 
-    const gone = await tool(write, "execute", { code: "await tools.delete_program({ name: 'count-todos' }); return (await tools.list_programs({})).length;" });
-    expect(JSON.parse(gone.content[0].text)).toEqual({ result: 0 });
+    // Deleting one can't be undone: a program can't, call_tool can.
+    expect((await tool(write, "execute", { code: "return await tools.delete_program({ name: 'count-todos' });" })).content[0].text).toContain("call_tool");
+    await tool(write, "call_tool", { name: "delete_program", arguments: { name: "count-todos" } });
+    expect(JSON.parse((await tool(write, "execute", { code: "return (await tools.list_programs({})).length;" })).content[0].text)).toEqual({ result: 0 });
   });
 });
 
