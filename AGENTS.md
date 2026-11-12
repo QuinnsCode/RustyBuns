@@ -147,7 +147,8 @@ A PR that deletes more than it adds is the goal. codeSplitter's own helpers are 
 ## Finishing: say what is left, and leave nothing in your head
 
 The owner closes your worktree when you stop, to keep context small. So before you end a turn, nothing may
-be left only in chat. Every undone item (CI still running, a PR not merged, a hands-on check you can't do, a
+be left only in chat. A background-job notice or any other system event is never a reason to end a turn while a task
+is owed: carry on (`.claude/hooks/carry-on.ts` refuses that stop once). Every undone item (CI still running, a PR not merged, a hands-on check you can't do, a
 stacked base that may merge first) goes one of three ways: a new worker (`office-workers hire`), an issue
 (anything for the owner's hands gets `MANUAL RUN:` and the `manual run` label, see below), or a question to
 the owner right then. A note in a PR body or comment is not a hand-off: a merged PR's open items vanish. Before you
