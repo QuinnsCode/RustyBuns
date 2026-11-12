@@ -22,7 +22,7 @@
     { "id": "wooden-secret", "to": "institute", "when": { "flags": ["asset-one-wood"], "done": ["institute.3"] }, "text": "The Office paid storage on a wooden hodag for 130 years. You told them. We wanted to tell them. We had a slide." },
 
     { "id": "common-cause", "to": "institute", "when": { "flags": ["protocol-quiet", "specimen-freed"], "met": ["lamplighters"] }, "text": "The Office seized our cold room. The Lamplighters shelter 1 of our specimens. We did not ask them. We will not ask for it back." },
-    { "id": "common-cause-lamps", "to": "lamplighters", "when": { "flags": ["protocol-quiet", "specimen-freed"] }, "text": "We shelter 1 of the Institute's specimens. Its tag says HI-204. We call it Hank now.", "sway": 1 },
+    { "id": "common-cause-lamps", "to": "lamplighters", "when": { "flags": ["protocol-quiet", "specimen-freed"] }, "text": "We shelter 1 of the Institute's specimens. Its tag says HI-031. We call it Clyde now.", "sway": 1 },
     { "id": "quist-inside", "to": "lamplighters", "when": { "flags": ["quist-turned", "raid-plan"] }, "text": "Somebody in a grey suit left a map at Lamp 6. The map shows Annex 9. The handwriting is very neat.", "sway": 1 },
 
     { "id": "annex-loss", "to": "office", "when": { "flags": ["annex-raided"], "undone": ["office.6"] }, "text": "Annex 9 reports a loss of 14 assets. Your description is on the report. We did not write the report. We will.", "sway": -2 },

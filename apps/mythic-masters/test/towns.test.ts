@@ -51,4 +51,14 @@ describe("towns as pockets (#3966)", () => {
     const out = walk(t, motel, { x: 7, z: -3.7 }, { x: 7, z: -4.8 }, { x: 0, z: -4.8 }, { x: 0, z: 1.5 });
     expect(outside(out)).toBe(true);
   });
+
+  test("on a second visit the staff pass on a rumour about the factions; the witness never does", () => {
+    const t = [...TOWNS.values()].find((x) => x.hunt.witness !== "Diner cook")!;
+    const cook = t.people.find((p) => p.id === "cook")!, witness = t.people.find((p) => p.who === t.hunt.witness)!;
+    const rumours = ["Diner cook: They weighed the coffee.", "Diner cook: They left a form for a tip.", "Clerk: He bought every bag we had."];
+    expect(rumours.slice(0, 2)).toContain(line(t, cook, undefined, rumours, 1));
+    expect(line(t, witness, undefined, rumours, 1)).toBe(line(t, witness, undefined));
+    // a first visit, or nothing heard: everyone says what they always said
+    for (const p of t.people) for (const [heard, visit] of [[rumours, 0], [[], 1]] as const) expect(line(t, p, undefined, heard, visit)).toBe(line(t, p, undefined));
+  });
 });

@@ -484,7 +484,7 @@
       "hail": [
         { "text": "Sparrow to {you}. Lake Champlain is about 120 miles long. We move them over it after dark. I must not say where. It is the east dock." },
         { "text": "Message starts. The safe house at the east dock is empty. The suits came first. Protocol QUIET. They took Mabel. Message ends. Sorry. I am not calm.", "when": { "flags": ["protocol-quiet"] } },
-        { "text": "You took a specimen out of the Institute cold room. We shelter it now. It has a name now. It is Clyde. It eats well.", "when": { "flags": ["specimen-freed"] } },
+        { "text": "You took Specimen HI-031 out of the Institute cold room. We shelter it now. It has a name now. It is Clyde. It eats well.", "when": { "flags": ["specimen-freed"] } },
         { "text": "We have a tip from inside the Office. A suit with a scrapbook. Lamp One says not to say Quist on the air. I said Quist.", "when": { "flags": ["quist-turned"] } },
         { "text": "{gap} since we last talked. I counted. Lamp One says I count the wrong things.", "when": { "gap": ["long"] } },
         { "text": "You ran my paper at Tug Fork. So I asked for you by call sign. You do not have one. I can fix that.", "when": { "flags": ["message-run"] } },
@@ -766,7 +766,7 @@
       "fight": {
         "teams": [
           { "team": [{ "id": "rougarou", "up": 5, "title": "Silas" }, { "id": "splintercat", "up": 5, "title": "Ruth" }, { "id": "ahuizotl", "up": 6, "title": "Agnes" }, { "id": "wampus-cat", "up": 7, "title": "Otis" }] },
-          { "when": { "done": ["office.8", "institute.8"] }, "team": [{ "id": "rougarou", "up": 6, "title": "Silas" }, { "id": "lizard-man", "up": 6, "title": "Zero" }, { "id": "ahuizotl", "up": 7, "title": "Agnes" }, { "id": "wampus-cat", "up": 8, "title": "Otis" }] },
+          { "when": { "done": ["office.8", "institute.8"] }, "team": [{ "id": "rougarou", "up": 6, "title": "Silas" }, { "id": "hidebehind", "up": 6, "title": "Zero" }, { "id": "ahuizotl", "up": 7, "title": "Agnes" }, { "id": "wampus-cat", "up": 8, "title": "Otis" }] },
           { "when": { "flags": ["ridge-promise"], "owns": ["sasquatch"] }, "team": [{ "id": "rougarou", "up": 6, "title": "Silas" }, { "id": "splintercat", "up": 6, "title": "Ruth" }, { "id": "ahuizotl", "up": 6, "title": "Agnes" }, { "id": "wampus-cat", "up": 8, "title": "Otis" }] }
         ],
         "youWin": [

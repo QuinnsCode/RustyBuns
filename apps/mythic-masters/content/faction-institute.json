@@ -597,7 +597,7 @@
         "teams": [
           { "team": [{ "id": "snallygaster", "up": 5, "title": "Specimen HI-015" }, { "id": "fresno-nightcrawler", "up": 5, "title": "Specimen HI-036" }, { "id": "ahuizotl", "up": 6, "title": "Specimen HI-043" }, { "id": "chupacabra", "up": 8, "title": "Specimen HI-044" }] },
           { "when": { "flags": ["toby-out"] }, "team": [{ "id": "fresno-nightcrawler", "up": 5, "title": "Specimen HI-036" }, { "id": "ahuizotl", "up": 6, "title": "Specimen HI-043" }, { "id": "chupacabra", "up": 8, "title": "Specimen HI-044" }] },
-          { "when": { "done": ["office.8", "lamplighters.8"] }, "team": [{ "id": "lizard-man", "up": 6, "title": "Specimen HI-045, was Asset 12" }, { "id": "wampus-cat", "up": 6, "title": "Specimen HI-046, was Biscuit" }, { "id": "ahuizotl", "up": 7, "title": "Specimen HI-043" }, { "id": "chupacabra", "up": 8, "title": "Specimen HI-044" }] },
+          { "when": { "done": ["office.8", "lamplighters.8"] }, "team": [{ "id": "lizard-man", "up": 6, "title": "Specimen HI-045, was Asset 12" }, { "id": "wampus-cat", "up": 6, "title": "Specimen HI-046, was Otis" }, { "id": "ahuizotl", "up": 7, "title": "Specimen HI-043" }, { "id": "chupacabra", "up": 8, "title": "Specimen HI-044" }] },
           { "when": { "flags": ["toby-out"], "done": ["office.8", "lamplighters.8"] }, "team": [{ "id": "lizard-man", "up": 6, "title": "Specimen HI-045, was Asset 12" }, { "id": "ahuizotl", "up": 7, "title": "Specimen HI-043" }, { "id": "chupacabra", "up": 8, "title": "Specimen HI-044" }] }
         ],
         "youWin": [

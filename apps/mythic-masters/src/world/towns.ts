@@ -70,8 +70,10 @@ export interface Town {
   people: Person[];
 }
 
+/** A small number from a string: the same every time, different from one id to the next. */
+const hash = (s: string) => { let h = 7; for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0; return h; };
 /** Which way a town faces: the same turn poi-view gives every place, from its id. */
-export const yawOf = (id: string) => { let h = 7; for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0; return (h % 628) / 100; };
+export const yawOf = (id: string) => (hash(id) % 628) / 100;
 
 function town(h: Hunt): Town | null {
   const p = poiById(h.id), g = REGIONS[h.n - 1];
@@ -129,14 +131,23 @@ export function beside(t: Town, at: Spot): { board: true } | { person: Person } 
   return best ? { person: best } : null;
 }
 
-/** What someone says to you, by how far along the town's contract is (`stage` as hunts.ts keeps it). */
-export function line(t: Town, p: Person, stage: number | undefined): string {
+/** What someone says to you, by how far along the town's contract is (`stage` as hunts.ts keeps it). The witness only
+ * ever talks about what they saw. The staff also pass on what they have heard: `rumours` are lines that open with who
+ * says them ("Diner cook: ...", "Clerk: ...", "Night manager: ..."), and on every second visit (`visit` is how many
+ * times you had walked into this town before this one, so 1, 3, 5...) a staff member with a rumour of their own says
+ * it in place of their usual line. Which one comes from the town's and the person's ids: the same after a reload,
+ * a different one in the next town. */
+export function line(t: Town, p: Person, stage: number | undefined, rumours: readonly string[] = [], visit = 0): string {
   const h = t.hunt, title = h.title.replace(/^The/, "the");
   if (p.who === h.witness) {
     if (stage === undefined) return `${p.who}: I saw it. ${h.report[1]!.slice(h.witness.length + 2)} It's all on the board.`;
     if (stage < CLUES) return `${p.who}: You're going after ${title}? Follow the signs. I'm not going back out there.`;
     if (stage === CLUES) return `${p.who}: It's out there now, isn't it. Where the signs stop. Don't make me draw you a map.`;
     return `${p.who}: You got it? Then I'm sleeping tonight. First time in a week.`;
+  }
+  if (visit % 2 === 1) {
+    const heard = rumours.filter((r) => r.startsWith(`${p.who}: `));
+    if (heard.length) return heard[hash(`${t.id}:${p.id}`) % heard.length]!;
   }
   if (p.id === "cook") return stage === undefined ? `${p.who}: Coffee's on. If you're here about the sightings, the board's past the end of the counter.` : `${p.who}: Eat something before you go back out. Nobody ever does.`;
   if (p.id === "clerk") return `${p.who}: Gas is gas, the maps are free. Whatever's out by ${t.name}, it doesn't buy jerky.`;
