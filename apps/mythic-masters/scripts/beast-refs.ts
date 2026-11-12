@@ -306,7 +306,7 @@ if (import.meta.main) {
   }
   if (argv.includes("--candidates")) {
     const files = argv.slice(argv.indexOf("--candidates") + 2).filter((a) => a.endsWith(".json"));
-    if (files.length < 2) { console.error("--candidates <id> takes two or more candidate sheets (.json)"); process.exit(1); }
+    if (files.length < 1) { console.error("--candidates <id> takes one or more candidate sheets (.json)"); process.exit(1); }
     console.log(await compare(id, { out: val("--out"), candidates: await candidates(id, files) }));
   } else if (argv.includes("--judge")) {
     const j = await judge(id);

@@ -1,0 +1,67 @@
+{
+  "id": "dover-demon",
+  "name": "Dover Demon",
+  "category": "Helena Bonham Carter",
+  "query": "Dover Demon",
+  "images": [
+    {
+      "file": "card-color.jpg",
+      "from": "card",
+      "page": "https://commons.wikimedia.org/wiki/File:Dover_Demon.png",
+      "artist": "Di",
+      "license": "CC BY-SA 4.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0"
+    },
+    {
+      "file": "c2.jpg",
+      "from": "search",
+      "page": "https://commons.wikimedia.org/wiki/File:Helena_Bonham_Carter.JPG",
+      "artist": "Reginald gray",
+      "license": "Public domain"
+    },
+    {
+      "file": "c3.jpg",
+      "from": "search",
+      "page": "https://commons.wikimedia.org/wiki/File:Vitoria_-_Graffiti_%26_Murals_0158.JPG",
+      "artist": "Zarateman",
+      "license": "CC0",
+      "licenseUrl": "http://creativecommons.org/publicdomain/zero/1.0/deed.en"
+    },
+    {
+      "file": "c4.jpg",
+      "from": "search",
+      "page": "https://commons.wikimedia.org/wiki/File:Graffito_camera_con_vista,_via_del_fiordaliso,_firenze.JPG",
+      "artist": "Sailko",
+      "license": "CC BY 3.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by/3.0"
+    },
+    {
+      "file": "c5.jpg",
+      "from": "search",
+      "page": "https://commons.wikimedia.org/wiki/File:The_Holy_Ghost_in_the_form_of_a_dove_appears_as_a_man_lies_a_Wellcome_L0014527.jpg",
+      "artist": "Unknown",
+      "license": "CC BY 4.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by/4.0"
+    },
+    {
+      "file": "c6.jpg",
+      "from": "search",
+      "page": "https://commons.wikimedia.org/wiki/File:The_Holy_Ghost_in_the_form_of_a_dove_appears_as_a_man_lies_a_Wellcome_V0042079.jpg",
+      "artist": "Unknown",
+      "license": "CC BY 4.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by/4.0"
+    }
+  ],
+  "traits": {
+    "silhouette": "",
+    "head": "",
+    "limbs": "",
+    "hide": "",
+    "colours": "",
+    "child": [
+      "",
+      "",
+      ""
+    ]
+  }
+}

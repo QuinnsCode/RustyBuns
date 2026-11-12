@@ -1,0 +1,68 @@
+{
+  "id": "loveland-frogman",
+  "name": "Loveland Frogman",
+  "category": "Loveland frog",
+  "query": "Loveland Frogman",
+  "images": [
+    {
+      "file": "card-color.jpg",
+      "from": "card",
+      "page": "https://commons.wikimedia.org/wiki/File:Loveland_frog.png",
+      "artist": "Tim Bertelink",
+      "license": "CC BY-SA 4.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0"
+    },
+    {
+      "file": "card-bw.jpg",
+      "from": "card",
+      "page": "https://commons.wikimedia.org/wiki/File:Loveland_Frog.png",
+      "artist": "Captain Jammers",
+      "license": "CC BY-SA 4.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0"
+    },
+    {
+      "file": "c3.jpg",
+      "from": "search",
+      "page": "https://commons.wikimedia.org/wiki/File:Clarence_%22Frogman%22_Henry.jpg",
+      "artist": "Sumori",
+      "license": "CC BY-SA 4.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0"
+    },
+    {
+      "file": "c4.jpg",
+      "from": "search",
+      "page": "https://commons.wikimedia.org/wiki/File:Sarracenia_%27Frogman%27_x_leucophylla_%27Titan%27_(7717506910).jpg",
+      "artist": "Aaron Carlson from Menomonie, WI, USA",
+      "license": "CC BY-SA 2.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by-sa/2.0"
+    },
+    {
+      "file": "c5.jpg",
+      "from": "search",
+      "page": "https://commons.wikimedia.org/wiki/File:Frogman_Insignia.jpg",
+      "artist": "Zauad",
+      "license": "CC BY-SA 3.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by-sa/3.0"
+    },
+    {
+      "file": "c6.jpg",
+      "from": "search",
+      "page": "https://commons.wikimedia.org/wiki/File:Frogman_(7020104163).jpg",
+      "artist": "Thomas Quine",
+      "license": "CC BY 2.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by/2.0"
+    }
+  ],
+  "traits": {
+    "silhouette": "",
+    "head": "",
+    "limbs": "",
+    "hide": "",
+    "colours": "",
+    "child": [
+      "",
+      "",
+      ""
+    ]
+  }
+}

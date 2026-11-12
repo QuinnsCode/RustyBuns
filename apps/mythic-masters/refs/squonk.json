@@ -1,0 +1,58 @@
+{
+  "id": "squonk",
+  "name": "Squonk",
+  "category": "Squonk",
+  "query": "Squonk",
+  "images": [
+    {
+      "file": "card-bw.jpg",
+      "from": "card",
+      "page": "https://commons.wikimedia.org/wiki/File:Squonk.jpg",
+      "artist": "Fearsome Critters, Written by Henry H. Tryon • Illustrated by Margaret R. Tryon",
+      "license": "CC0",
+      "licenseUrl": "http://creativecommons.org/publicdomain/zero/1.0/deed.en"
+    },
+    {
+      "file": "c2.jpg",
+      "from": "search",
+      "page": "https://commons.wikimedia.org/wiki/File:Squonk.png",
+      "artist": "Coert Du Bois and by William T. Cox;",
+      "license": "Public domain"
+    },
+    {
+      "file": "c3.jpg",
+      "from": "search",
+      "page": "https://commons.wikimedia.org/wiki/File:Fearsome_Creatures_of_the_Lumberwoods,_with_a_Few_Desert_and_Mountain_Beasts_(page_36_crop).jpg",
+      "artist": "William T. Cox / George Bishop Sudworth",
+      "license": "Public domain"
+    },
+    {
+      "file": "c4.jpg",
+      "from": "search",
+      "page": "https://commons.wikimedia.org/wiki/File:Squonk_Brouhaha_performers_at_PVDFest_2025.jpg",
+      "artist": "Kenneth C. Zirkel",
+      "license": "CC BY-SA 4.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0"
+    },
+    {
+      "file": "c5.jpg",
+      "from": "search",
+      "page": "https://commons.wikimedia.org/wiki/File:Squonk_performance,_Three_Rivers_Arts_Festival,_2023-06-10,_03.jpg",
+      "artist": "Cbaile19",
+      "license": "CC0",
+      "licenseUrl": "http://creativecommons.org/publicdomain/zero/1.0/deed.en"
+    }
+  ],
+  "traits": {
+    "silhouette": "",
+    "head": "",
+    "limbs": "",
+    "hide": "",
+    "colours": "",
+    "child": [
+      "",
+      "",
+      ""
+    ]
+  }
+}

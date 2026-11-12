@@ -170,8 +170,104 @@ export function sheet(name: string) {
   };
 }
 
+// The owner's redesign (2026-11-12, from a picture they sent, kept private): none of the four fan hoods above. A solid
+// teardrop cowl closing round the head with the face sunk in it, two small close-set red eyes, long insect arms bent
+// out at the elbow with hooked talons hanging past the waist, a lean ribbed bronze chest, and a narrow pleated column
+// of a skirt that glows green at the hem and fades into the mist it hovers in.
+const COWL_NOTE = "the owner's picture: teardrop cowl, small red eyes, insect arms with talons, ribbed chest, skirt fading into green mist";
+export function cowl() {
+  const nodes: Record<string, N> = {
+    hem: [0, 0.4, 0, 0.16],
+    base: [0, 0.95, 0, 0.17],
+    waist: [0.01, 1.42, 0, 0.13],
+    chest: [0.03, 1.78, 0, 0.16],
+    neck: [0.06, 2.04, 0, 0.08],
+    head: [0.1, 2.22, 0, 0.09],
+    hood: [-0.04, 2.5, 0, 0.12],
+    peak: [-0.08, 2.85, 0, 0.04],
+    l_shoulder: [0.02, 1.98, 0.27, 0.06],
+    l_elbow: [0.0, 1.62, 0.56, 0.04],
+    l_wrist: [0.2, 1.2, 0.5, 0.032],
+    l_hand: [0.26, 1.08, 0.46, 0.028],
+  };
+  const links = [...chain(["hem", "base", "waist", "chest", "neck", "head"]), ...chain(["neck", "hood", "peak"]), ...chain(["chest", "l_shoulder", "l_elbow", "l_wrist", "l_hand"])];
+  const blobs: Blob[] = [];
+  const by = (yy: number) => f4(yy - nodes.base![1]);
+
+  // the skirt: a narrow column, barely flaring, with deep straight pleats
+  const hemY = 0.36, waistY = nodes.waist![1], rAt = (yy: number) => 0.37 + (0.24 - 0.37) * ((yy - hemY) / (waistY - hemY));
+  for (let t = 0; t < 6; t++) {
+    const yc = hemY + ((waistY - hemY) * (t + 0.5)) / 6, r = f4(rAt(yc) - 0.03);
+    blobs.push({ at: "base", off: [0, by(yc), 0], r: [r, f4((waistY - hemY) * 0.12), r] });
+  }
+  const tilt = (Math.atan2(0.37 - 0.24, waistY - hemY) * 180) / Math.PI, midY = (hemY + waistY) / 2 + 0.02;
+  for (let i = 0; i < 20; i++) {
+    const a = (i / 20) * Math.PI * 2, s = Math.sin(a), c = Math.cos(a), fr = f4(rAt(midY) - 0.02);
+    blobs.push({ at: "base", off: [f4(fr * c), by(midY), f4(fr * s)], r: [0.035, f4((waistY - hemY) * 0.47), 0.035], rot: [f4(-tilt * s), 0, f4(tilt * c)] });
+  }
+  // a narrow waist, a lean chest with rib bands across its front, shoulders, a thin neck
+  blobs.push(
+    { at: "waist", off: [0, 0.02, 0], r: [0.19, 0.16, 0.22] },
+    { at: "chest", off: [0, 0, 0], r: [0.19, 0.26, 0.27] },
+    { at: "chest", off: [0.02, 0.14, 0], r: [0.17, 0.12, 0.31] },
+    ...[-0.14, -0.06, 0.02, 0.1].map((dy, i): Blob => ({ at: "chest", off: [0.06, dy, 0], r: [0.15, 0.025, 0.26 - i * 0.01 + (dy > 0 ? 0.02 : 0)] })),
+    ...pair("l_shoulder", [0, 0, 0], [0.09, 0.08, 0.08]),
+    { at: "neck", off: [0, 0, 0], r: [0.08, 0.1, 0.08] },
+  );
+  // insect arms: thin segments with knobbed joints, the elbow bent out and up, the forearm reaching down and forward
+  blobs.push(
+    ...bone(nodes, "l_shoulder", "l_elbow", 0.035, 0.035, 0.1),
+    ...bone(nodes, "l_elbow", "l_wrist", 0.03, 0.03, 0.1),
+    ...pair("l_elbow", [0, 0, 0], [0.05, 0.05, 0.05]),
+    ...pair("l_wrist", [0.01, 0, 0], [0.04, 0.035, 0.04]),
+    ...[0.3, 0.6].flatMap((t) => pair("l_elbow", mul([nodes.l_wrist![0] - nodes.l_elbow![0], nodes.l_wrist![1] - nodes.l_elbow![1], nodes.l_wrist![2] - nodes.l_elbow![2]], t), [0.038, 0.03, 0.038])),
+    ...bone(nodes, "l_wrist", "l_hand", 0.03, 0.03, 0.2),
+  );
+  // the cowl: a teardrop shell round the head, widest at the cheeks, narrowing to a point well above the crown
+  const hood: Blob[] = [
+    { at: "hood", off: [0, -0.12, 0], r: [0.26, 0.3, 0.3] },
+    { at: "hood", off: [-0.02, 0.1, 0], r: [0.2, 0.24, 0.22] },
+    { at: "hood", off: [-0.03, 0.27, 0], r: [0.12, 0.17, 0.13] },
+    { at: "peak", off: [0, -0.04, 0], r: [0.05, 0.1, 0.05] },
+  ];
+  // the face: a dark red mask set into the cowl's front, so the cowl's rim stands proud round it
+  const face: Ell[] = [{ c: [0.07, -0.02, 0], r: [0.13, 0.16, 0.16] }];
+  blobs.push(...hood, ...face.map((e) => ({ at: "head", off: e.c, r: e.r }) as Blob));
+  const on = onSkin(face);
+  const parts: Part[] = [];
+  // the cowl's rim round the face: ridges standing on the hood around the mask
+  for (const [a, len] of [[100, 0.16], [140, 0.14], [180, 0.12]] as [number, number][]) {
+    const rad = (a * Math.PI) / 180;
+    parts.push({ kind: "ridge", at: "head", off: [0.13, f4(0.16 * Math.cos(rad) + 0.02), f4(0.17 * Math.sin(rad))], dir: [0, f4(-Math.sin(rad)), f4(Math.cos(rad))], len, base: 0.035, curve: 25, bend: [0, f4(-Math.cos(rad)), f4(-Math.sin(rad))], mirror: true, material: "hood" });
+  }
+  // two small, close-set, glowing red eyes, a slit of a mouth
+  parts.push({ kind: "eye", at: "head", off: on([0.1, 0.02, 0.045], norm([1, 0.05, 0.3]), 0.012), r: 0.03, mirror: true, material: "eye" });
+  parts.push({ kind: "ridge", at: "head", off: on([0.12, -0.09, 0], [1, -0.2, 0], 0.004), dir: [0, 0, 1], len: 0.03, base: 0.006, curve: 10, bend: [-1, 0, 0], mirror: true, material: "dark" });
+  // four long hooked talons hanging from each hand, past the waist
+  parts.push(...[-0.03, -0.01, 0.01, 0.03].map((z): Part => ({ kind: "horn", at: "l_hand", off: [0.01, -0.01, z], dir: [0.5, -1, z * 5], len: 0.3, base: 0.016, tip_base: 0.003, curve: 75, bend: [1, 0.2, 0], mirror: true, material: "claw" })));
+  // wisps of glowing mist curling off the hem
+  for (let i = 0; i < 8; i++) {
+    const a = ((i + 0.5) / 8) * Math.PI * 2;
+    parts.push({ kind: "horn", at: "hem", off: [f4(0.3 * Math.cos(a)), -0.02, f4(0.3 * Math.sin(a))], dir: norm([Math.cos(a), -0.25, Math.sin(a)]), len: 0.16, base: 0.05, tip_base: 0.006, curve: 70, bend: [-Math.sin(a), 0.6, Math.cos(a)], material: "mist" });
+  }
+  return {
+    feet: 0, wings: 0, budget: 8000, root: "chest", material: "suit", blend: 0.022,
+    palette: {
+      suit: [0.2, 0.19, 0.12, 0.45, 0.25], hood: [0.08, 0.08, 0.07, 0.6, 0.1], face: [0.32, 0.05, 0.04, 0.6, 0, 0.35],
+      eye: [1, 0.1, 0.06, 0.2, 0, 6], dark: [0.04, 0.02, 0.02, 0.7, 0], claw: [0.14, 0.13, 0.09, 0.4, 0.2],
+      mist: [0.42, 0.95, 0.45, 0.9, 0, 1.4], skirt: [0.09, 0.1, 0.08, 0.7, 0],
+    },
+    paint: [
+      { nodes: ["head"], material: "face" }, { nodes: ["hood", "peak"], material: "hood" },
+      { nodes: ["base"], material: "skirt" }, { nodes: ["hem"], material: "mist" },
+    ],
+    nodes, links, blobs, parts,
+  };
+}
+
 if (import.meta.main) {
   const [name, out] = process.argv.slice(2);
-  if (!name || !LOOKS[name]) { console.error(`usage: bun proposals/compendium/flatwoods-monster.ts <${VARIANTS.join("|")}> [out.json]`); process.exit(1); }
-  write("flatwoods-monster", { ...(out ? { candidate: LOOKS[name]!.note } : {}), ...sheet(name) }, out);
+  if (name === "cowl") write("flatwoods-monster", { ...(out ? { candidate: COWL_NOTE } : {}), ...cowl() }, out);
+  else if (!name || !LOOKS[name]) { console.error(`usage: bun proposals/compendium/flatwoods-monster.ts <cowl|${VARIANTS.join("|")}> [out.json]`); process.exit(1); }
+  else write("flatwoods-monster", { ...(out ? { candidate: LOOKS[name]!.note } : {}), ...sheet(name) }, out);
 }

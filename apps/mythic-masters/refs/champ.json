@@ -1,0 +1,66 @@
+{
+  "id": "champ",
+  "name": "Champ",
+  "category": "Champ (surname)",
+  "query": "Champ",
+  "images": [
+    {
+      "file": "card-color.jpg",
+      "from": "card",
+      "page": "https://commons.wikimedia.org/wiki/File:Mansi_Photograph_(cropped).jpg",
+      "artist": "Sandra Mansi",
+      "license": "Public domain"
+    },
+    {
+      "file": "card-bw.jpg",
+      "from": "card",
+      "page": "https://commons.wikimedia.org/wiki/File:Artistic_representation_of_Sandra_Mansi%27s_1977_photograph_of_%22Champ%22_lake_monster.jpg",
+      "artist": "BRad06",
+      "license": "CC BY-SA 4.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0"
+    },
+    {
+      "file": "c3.jpg",
+      "from": "search",
+      "page": "https://commons.wikimedia.org/wiki/File:William-Champ-1856.jpg",
+      "artist": "State Library of Tasmania",
+      "license": "Public domain"
+    },
+    {
+      "file": "c4.jpg",
+      "from": "search",
+      "page": "https://commons.wikimedia.org/wiki/File:Champ_sur_Barse_Ti_Ker.jpg",
+      "artist": "Eurasia21eu",
+      "license": "CC BY-SA 3.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by-sa/3.0"
+    },
+    {
+      "file": "c5.jpg",
+      "from": "search",
+      "page": "https://commons.wikimedia.org/wiki/File:Champ_de_Mars_from_the_Eiffel_Tower_-_July_2006_edit.jpg",
+      "artist": "Diliff , edited by Fir0002",
+      "license": "CC BY 2.5",
+      "licenseUrl": "https://creativecommons.org/licenses/by/2.5"
+    },
+    {
+      "file": "c6.jpg",
+      "from": "search",
+      "page": "https://commons.wikimedia.org/wiki/File:Champ-sur-Barse_FR10_mairie_IMG7843.jpg",
+      "artist": "Michel FOUCHER",
+      "license": "CC BY-SA 4.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0"
+    }
+  ],
+  "traits": {
+    "silhouette": "",
+    "head": "",
+    "limbs": "",
+    "hide": "",
+    "colours": "",
+    "child": [
+      "",
+      "",
+      ""
+    ]
+  }
+}

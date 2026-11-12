@@ -1,0 +1,52 @@
+{
+  "id": "snallygaster",
+  "name": "Snallygaster",
+  "category": "Snallygasters",
+  "query": "Snallygaster",
+  "images": [
+    {
+      "file": "card-bw.jpg",
+      "from": "card",
+      "page": "https://commons.wikimedia.org/wiki/File:Snallygaster-image.png",
+      "artist": "Lumberwoods",
+      "license": "CC0",
+      "licenseUrl": "http://creativecommons.org/publicdomain/zero/1.0/deed.en"
+    },
+    {
+      "file": "c2.jpg",
+      "from": "search",
+      "page": "https://commons.wikimedia.org/wiki/File:Snallygaster_Jersey_Barrier.jpg",
+      "artist": "Tripodero",
+      "license": "CC BY-SA 3.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by-sa/3.0"
+    },
+    {
+      "file": "c3.jpg",
+      "from": "search",
+      "page": "https://commons.wikimedia.org/wiki/File:Fearsome_critters_minis_fearsome_wilderness.jpg",
+      "artist": "Dystopiamatt",
+      "license": "CC BY-SA 4.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0"
+    },
+    {
+      "file": "c4.jpg",
+      "from": "search",
+      "page": "https://commons.wikimedia.org/wiki/File:Camp_Regis-Applejack_Cottage.jpg",
+      "artist": "SnallygasterRob",
+      "license": "CC BY-SA 4.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0"
+    }
+  ],
+  "traits": {
+    "silhouette": "",
+    "head": "",
+    "limbs": "",
+    "hide": "",
+    "colours": "",
+    "child": [
+      "",
+      "",
+      ""
+    ]
+  }
+}

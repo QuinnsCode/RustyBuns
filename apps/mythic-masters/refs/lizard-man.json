@@ -1,0 +1,27 @@
+{
+  "id": "lizard-man",
+  "name": "Lizard Man of Scape Ore Swamp",
+  "query": "Lizard Man of Scape Ore Swamp",
+  "images": [
+    {
+      "file": "card-bw.jpg",
+      "from": "card",
+      "page": "https://commons.wikimedia.org/wiki/File:Lizard_Man_of_Scape_ore_Swamp.jpg",
+      "artist": "João Pedro Federal",
+      "license": "CC BY-SA 4.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0"
+    }
+  ],
+  "traits": {
+    "silhouette": "",
+    "head": "",
+    "limbs": "",
+    "hide": "",
+    "colours": "",
+    "child": [
+      "",
+      "",
+      ""
+    ]
+  }
+}
