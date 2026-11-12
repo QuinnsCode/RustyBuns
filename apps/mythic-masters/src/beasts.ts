@@ -84,6 +84,21 @@ export function headAndTail(rig: RigResult, sheet: BeastRig, id?: string): { hea
   return { head, tail };
 }
 
+/** How upright the body stands, 0 (hips half its height up, a four-legged beast) to 1 (hips high, a biped): the rig
+ * root's height over the body's. A body whose head stands over its hips (a winged biped) is measured to its head, not
+ * to wing tips towering over it; wings folded over a back that runs forward (a sphinx's) still count. */
+export function uprightOf(rig: Pick<RigResult, "joints">, sheet: Pick<BeastRig, "tips" | "feet" | "wings" | "height">): number {
+  const J = rig.joints, y = (t: number) => J[t * 3 + 1]!;
+  const body = sheet.tips.filter((t) => !sheet.feet.includes(t) && !sheet.wings.includes(t));
+  let height = sheet.height;
+  if (body.length && sheet.wings.length) {
+    const head = body.reduce((a, b) => (y(b) > y(a) ? b : a));
+    const top = Math.max(...sheet.tips.map(y));
+    if (Math.abs(J[head * 3]! - J[0]!) < y(head) - J[1]! && y(head) < top) height *= y(head) / top;
+  }
+  return clamp01((J[1]! / height - 0.45) / 0.25);
+}
+
 /** Where an attack is in its pose, 0 to 1 each: `wind` is the coil, pulled back by 40% of the wind-up and held there
  * (the body pulls the other way, long enough to read and answer), `k` the strike that snaps out over the last 25%,
  * holds while the move is live, and eases off through the recovery. */
@@ -413,7 +428,7 @@ export class Puppet {
     const isFoot = new Set(sheet.feet);
     for (const t of this.ik.tips) if (!isFoot.has(t)) this.ik.setPinned(t, false);
     this.rest = new THREE.Vector3(...this.ik.worldPosition(0));
-    this.upright = clamp01((this.rest.y / sheet.height - 0.45) / 0.25);
+    this.upright = uprightOf(rig, sheet);
     // the skin hangs in `inner` (the model's own space, scaled to the body), which leans inside `pivot` about the hips
     const s = this.scale;
     inner.scale.setScalar(s);
