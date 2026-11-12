@@ -119,12 +119,15 @@ function Friends({ hub, counts }: { hub: HubState; counts: Map<string, number> }
 // allows: the menu on the left, then your games (one big, the ones you played last, a shelf of screenshot tiles a genre), then
 // which friends are on. Its words come from cards.json (cards.ts); the pictures are the apps' screenshots (public/cards).
 const HOME_CSS = `
-.home{width:min(100%,110rem);margin:0 auto;display:grid;grid-template-columns:minmax(0,1fr);gap:1rem;align-items:start}
+.home{width:min(100%,110rem);margin:0 auto;display:grid;grid-template-columns:minmax(0,1fr);gap:1rem;align-items:start;
+ --tile:color-mix(in oklab,rgba(255,255,255,.9) var(--flipp),rgba(16,20,34,.88))}
+.home a,.home button{-webkit-tap-highlight-color:transparent;touch-action:manipulation}
+.home .menu{display:grid;gap:.6rem;min-width:0}
 .home .top{display:grid;gap:1rem;padding:1.5rem 1.8rem 1.1rem}
 .home .top .brand{margin:0;justify-content:space-between}
 .home .top .brand span{display:flex;align-items:center;gap:.5rem}
+.home .avatar{display:grid;place-items:center;width:2.4rem;height:2.4rem;border-radius:50%;background:var(--acc);color:var(--onacc);font:500 1.05rem Lexend,system-ui,sans-serif;text-transform:uppercase;text-decoration:none}
 .home .top h1{font-size:2.4rem}
-.home .top .sub{margin:-.4rem 0 0;color:var(--mut);font-size:.95rem}
 .home .body{display:grid;gap:1rem;min-width:0}
 .home h2{font-family:Lexend,system-ui,sans-serif;font-weight:600;font-size:.8rem;letter-spacing:.12em;text-transform:uppercase;margin:1rem .4rem 0;color:var(--ink);opacity:.8;
  text-shadow:0 1px 12px color-mix(in oklab,var(--paper) 90%,transparent)}
@@ -135,13 +138,15 @@ const HOME_CSS = `
 .home .badge-m svg{width:.95rem;height:.95rem}.home .badge-m.beta{color:var(--acc)}.home .badge-m.experimental{color:color-mix(in oklab,#d9822b var(--flipp),#ffc27a)}
 .home .glass{position:relative;min-width:0;border-radius:22px;overflow:hidden;color:var(--ink);background:var(--paper);border:1px solid var(--rim);
  backdrop-filter:blur(22px) saturate(1.5);-webkit-backdrop-filter:blur(22px) saturate(1.5);box-shadow:0 18px 40px -26px rgba(0,0,0,.45),inset 0 1px 0 var(--edge)}
+/* Tiles are solid, not blurred glass: thirty blurs over a moving sky is what made a phone stutter. */
+.home .game,.home .recent .glass{backdrop-filter:none;-webkit-backdrop-filter:none;background:var(--tile)}
 .home .shot{position:relative;display:block;width:100%;aspect-ratio:16/9;max-width:100%;overflow:hidden;background:color-mix(in oklab,var(--ink) 6%,transparent)}
 .home .shot img,.home .shot .art{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transition:transform .5s}
 .home .play{position:relative;z-index:2;display:inline-flex;align-items:center;gap:.35rem;flex:none;white-space:nowrap;font-size:.9rem;font-weight:500;color:var(--onacc);
  padding:.5rem 1rem;border-radius:999px;background:var(--acc);text-decoration:none;transition:filter .2s}
 .home .play:hover{filter:brightness(1.08)}.home .play svg{width:.9rem;height:.9rem}
 .home .play.ghost{color:var(--ink);background:var(--field);border:1px solid var(--rim)}
-.home .play.icon{width:2.4rem;height:2.4rem;padding:0;justify-content:center}
+.home .play.icon{width:2.75rem;height:2.75rem;padding:0;justify-content:center}
 .home .kick{font-size:.68rem;font-weight:500;letter-spacing:.14em;text-transform:uppercase;color:var(--acc);min-height:1em}
 .home .title{color:inherit;text-decoration:none}.home .title:after{content:"";position:absolute;inset:0;z-index:1}
 .home .glass:has(.title:focus-visible){outline:2px solid var(--acc);outline-offset:3px}.home .title:focus-visible{outline:none}
@@ -161,18 +166,21 @@ const HOME_CSS = `
 .home .recent span.w{display:grid;min-width:0;flex:1}.home .recent b{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .home .recent small{color:var(--mut);font-size:.78rem;white-space:nowrap}
 /* A shelf: a genre's games as screenshot tiles, as many across as the width holds. */
-.home .shelf{display:grid;grid-template-columns:repeat(auto-fill,minmax(15rem,1fr));gap:1rem}
-.home .game{display:grid;transition:transform .25s,box-shadow .25s,border-color .25s}
+.home .shelf{display:grid;grid-template-columns:repeat(auto-fill,minmax(13rem,1fr));gap:.9rem}
+.home .game{display:grid;transition:transform .18s,box-shadow .18s,border-color .18s}
+.home .game:active,.home .recent .glass:active{transform:scale(.97)}
 .home .game .cap{display:grid;gap:.25rem;padding:.75rem .9rem .85rem}
 .home .game .name{display:flex;align-items:center;justify-content:space-between;gap:.5rem}
 .home .game b{font-family:Lexend,system-ui,sans-serif;font-weight:600;font-size:1.1rem;line-height:1.15;letter-spacing:-.02em;min-width:0}
-.home .game small{display:flex;align-items:center;gap:.5rem;color:var(--mut);font-size:.76rem;font-variant-numeric:tabular-nums}
-.home .game:hover,.home .game:focus-within{transform:translateY(-3px);border-color:color-mix(in oklab,var(--acc) 60%,transparent);box-shadow:0 26px 44px -22px rgba(0,0,0,.55),inset 0 1px 0 var(--edge)}
-.home .game:hover .shot img,.home .game:hover .shot .art{transform:scale(1.04)}
-/* Friends on the right: who is on and where. */
-.home .lib{display:grid;grid-template-columns:minmax(0,1fr);gap:1rem;min-width:0}
-.home .lib>div{display:grid;gap:1rem;min-width:0}
-.home .side{display:grid;gap:.8rem;align-content:start;align-self:start;min-width:0}
+.home .game small{display:flex;flex-wrap:wrap;align-items:center;gap:.3rem .5rem;white-space:nowrap;color:var(--mut);font-size:.76rem;font-variant-numeric:tabular-nums}
+.home .game:focus-within{border-color:color-mix(in oklab,var(--acc) 60%,transparent)}
+@media(hover:hover){.home .game:hover{transform:translateY(-3px);border-color:color-mix(in oklab,var(--acc) 60%,transparent);box-shadow:0 26px 44px -22px rgba(0,0,0,.55),inset 0 1px 0 var(--edge)}
+ .home .game:hover .shot img,.home .game:hover .shot .art{transform:scale(1.04)}}
+/* Your party, friends and spaces: a column on the right when it's wide, a row you swipe under your games when it isn't. */
+.home .lib{display:grid;grid-template-columns:minmax(0,1fr);grid-template-areas:"main" "side" "shelves";gap:1rem;min-width:0}
+.home .lib>.main,.home .lib>.shelves{display:grid;grid-template-columns:minmax(0,1fr);gap:1rem;min-width:0}.home .lib>.main{grid-area:main}.home .lib>.shelves{grid-area:shelves}
+.home .side{grid-area:side;display:grid;grid-auto-flow:column;grid-auto-columns:minmax(15rem,1fr);gap:.8rem;align-items:start;min-width:0;overflow-x:auto;scrollbar-width:none;scroll-snap-type:x mandatory}
+.home .side::-webkit-scrollbar{display:none}.home .side>*{scroll-snap-align:start}
 .home .rail{display:grid;gap:.4rem;padding:1rem 1.1rem;align-content:start;min-width:0}
 .home .rail h2{margin:0 0 .3rem;display:flex;align-items:center;gap:.45rem}.home .rail h2 svg{width:1.05rem;height:1.05rem;flex:none;color:var(--mut)}
 .home .party{border-color:color-mix(in oklab,var(--acc) 55%,transparent)}
@@ -194,16 +202,19 @@ const HOME_CSS = `
 .home .rail li small{color:var(--mut);font-size:.76rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .home .rail>a{font-size:.85rem}
 @media(prefers-reduced-motion:reduce){.home .game,.home .shot img,.home .shot .art{transition:none}}
-.home .tabs{display:flex;gap:.3rem;flex-wrap:wrap}
-.home .tabs a{display:inline-flex;align-items:center;gap:.4rem;padding:.45rem .95rem;border-radius:999px;color:var(--mut);text-decoration:none;font-weight:500;border:1px solid transparent}
-.home .tabs a:hover{color:var(--ink)}
-.home .tabs a[aria-current]{color:var(--ink);background:color-mix(in oklab,var(--acc) 22%,transparent);border-color:color-mix(in oklab,var(--acc) 45%,transparent)}
-.home .tabs em{font-style:normal;font-size:.72rem;padding:.05rem .4rem;border-radius:999px;background:var(--acc);color:var(--onacc)}
+.home .tabs{display:flex;gap:.25rem;flex-wrap:wrap;padding:.35rem;border-radius:18px;background:var(--paper);border:1px solid var(--rim);
+ backdrop-filter:blur(22px) saturate(1.5);-webkit-backdrop-filter:blur(22px) saturate(1.5);box-shadow:inset 0 1px 0 var(--edge)}
+.home .tabs a{position:relative;display:inline-flex;align-items:center;gap:.6rem;min-height:2.75rem;padding:.4rem .9rem;border-radius:13px;color:var(--mut);text-decoration:none;font-weight:500;transition:background .15s,color .15s}
+.home .tabs a svg{width:1.2rem;height:1.2rem;flex:none}
+.home .tabs a:hover{color:var(--ink)}.home .tabs a:active{background:color-mix(in oklab,var(--ink) 8%,transparent)}
+.home .tabs a[aria-current]{color:var(--ink);background:color-mix(in oklab,var(--acc) 20%,transparent)}.home .tabs a[aria-current] svg{color:var(--acc)}
+.home .tabs em{font-style:normal;font-size:.72rem;font-weight:600;min-width:1.2rem;padding:.05rem .35rem;border-radius:999px;background:#e5484d;color:#fff;text-align:center}
 /* Wide: the menu becomes a column on the left that stays put, and the friends a column on the right. */
 @media(min-width:68rem){.home{grid-template-columns:15rem minmax(0,1fr)}
- .home .top{position:sticky;top:1.5rem;padding:1.4rem 1.2rem}.home .top h1{font-size:1.8rem}
- .home .tabs{flex-direction:column}.home .tabs a{justify-content:space-between}}
-@media(min-width:84rem){.home .lib{grid-template-columns:minmax(0,1fr) 17rem}.home .side{position:sticky;top:4.5rem;margin-top:3rem}}
+ .home .menu{position:sticky;top:1.5rem}.home .top{padding:1.4rem 1.2rem}.home .top h1{font-size:1.8rem}
+ .home .tabs{flex-direction:column}.home .tabs em{margin-left:auto}}
+@media(min-width:84rem){.home .lib{grid-template-columns:minmax(0,1fr) 17rem;grid-template-areas:"main side" "shelves side"}
+ .home .side{grid-row:1/span 2;grid-auto-flow:row;grid-auto-columns:auto;align-content:start;align-self:start;overflow:visible;position:sticky;top:4.5rem;margin-top:3rem}}
 @media(max-width:52rem){.home .feature{grid-template-columns:minmax(0,1fr)}.home .feature .shot{aspect-ratio:16/9;min-height:0}.home .feature .cap{padding:1.1rem 1.2rem 1.3rem}.home .feature b{font-size:1.9rem}}
 .home .trophies{display:grid;gap:.6rem}
 .home .trophies header{display:flex;align-items:baseline;gap:.6rem;margin-bottom:.7rem}.home .trophies header b{flex:1;font-family:Lexend,system-ui,sans-serif;font-weight:600}
@@ -224,9 +235,22 @@ const HOME_CSS = `
 .home .list>div{padding:.55rem 0}.home .list>div+div{border-top-color:var(--rim)}
 .home table td,.home table th{border-bottom-color:var(--rim)}.home table th{color:var(--mut)}
 .home a{color:var(--acc)}
-@media(max-width:40rem){.home{padding-top:2.4rem}.home .top{padding:1.3rem 1.2rem 1rem;gap:.8rem}.home .top h1{font-size:1.9rem}.home .top .sub{font-size:.88rem}
- .home .tabs{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;margin:0 -1.2rem;padding:0 1.2rem}.home .tabs::-webkit-scrollbar{display:none}.home .tabs a{flex:none;padding:.4rem .8rem}
- .home .shelf{grid-template-columns:repeat(auto-fill,minmax(10rem,1fr));gap:.7rem}}
+/* A phone: the tabs are a bar along the bottom under your thumb, a big Play, and each shelf a row you swipe. */
+@media(max-width:40rem){.home{padding-top:2.6rem;padding-bottom:calc(5rem + env(safe-area-inset-bottom))}
+ .home .top{padding:1.1rem 1.2rem 1.2rem;gap:.7rem}.home .top h1{font-size:1.75rem}
+ .home .tabs{position:fixed;z-index:6;left:0;right:0;bottom:0;flex-wrap:nowrap;gap:0;overflow-x:auto;scrollbar-width:none;border-radius:0;border-width:1px 0 0;
+  padding:.3rem max(.3rem,env(safe-area-inset-right)) calc(.3rem + env(safe-area-inset-bottom)) max(.3rem,env(safe-area-inset-left))}
+ .home .tabs::-webkit-scrollbar{display:none}
+ .home .tabs a{flex:1 0 3.8rem;flex-direction:column;justify-content:center;gap:.2rem;min-height:3.2rem;padding:.3rem .2rem;font-size:.68rem;letter-spacing:.01em}
+ .home .tabs a svg{width:1.45rem;height:1.45rem}
+ .home .tabs a[aria-current]{background:none}
+ .home .tabs em{position:absolute;top:.15rem;left:calc(50% + .3rem)}
+ .home .feature .play{display:flex;justify-content:center;min-height:3.2rem;font-size:1.1rem}
+ .home .side{grid-auto-columns:85%;margin:0 -1rem;padding:0 1rem;scroll-padding:0 1rem}
+ .home .shelves .shelf{grid-template-columns:none;grid-auto-flow:column;grid-auto-columns:11rem;gap:.7rem;overflow-x:auto;scrollbar-width:none;overscroll-behavior-x:contain;
+  scroll-snap-type:x mandatory;margin:0 -1rem;padding:.1rem 1rem .4rem;scroll-padding:0 1rem}
+ .home .shelves .shelf::-webkit-scrollbar{display:none}.home .shelves .shelf>*{scroll-snap-align:start}
+ .home .game b{font-size:1rem}}
 .home .range{display:flex;gap:.3rem;margin:0 .4rem}.home .range a{padding:.25rem .7rem;border-radius:999px;color:var(--mut);text-decoration:none;font-size:.82rem;border:1px solid var(--rim)}
 .home .range a[aria-current]{color:var(--ink);border-color:color-mix(in oklab,var(--acc) 55%,transparent)}
 .home .tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(8.5rem,1fr));gap:.6rem}
@@ -297,14 +321,21 @@ function Achievements({ apps, unlocks }: { apps: QApp[]; unlocks: Unlocks }) {
   );
 }
 
+/** When, the way a kid would say it: today, yesterday, 3 days ago, or the day of the month. */
+export const ago = (t: number, now = Date.now()) => {
+  const d = Math.floor((now - t) / 86_400_000);
+  return d <= 0 ? "today" : d === 1 ? "yesterday" : d < 7 ? `${d} days ago` : new Date(t).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+};
+
 const ctaOf = (app: QApp, c = cardFor(app)) => c.cta || (app.kind === "game" ? "Play it" : "Open it");
-const whatOf = (app: QApp, mine: Member["apps"][number] | undefined) => app.soon ? "coming soon" : mine ? `${app.kind === "game" ? "played" : "opened"} ${day(mine.last_at)}` : app.kind === "game" ? "not played yet" : "not opened yet";
+/** When you last played it, or nothing when you never have (a shelf of "not played yet" is just noise). */
+const whatOf = (app: QApp, mine: Member["apps"][number] | undefined) => app.soon ? "Coming soon" : mine ? `${app.kind === "game" ? "Played" : "Opened"} ${ago(mine.last_at)}` : null;
 
 type Used = Member["apps"][number] | undefined;
 
 /** An app's screenshot (public/cards/<id>.jpg), or its drawn key art when it has none. */
 const Shot = ({ app, eager }: { app: QApp; eager?: boolean }) => (
-  <span className="shot">{app.shot ? <img src={`/cards/${app.id}.jpg`} alt="" loading={eager ? undefined : "lazy"} draggable={false} /> : <Art id={app.id} />}</span>
+  <span className="shot">{app.shot ? <img src={`/cards/${app.id}.jpg`} alt="" width={640} height={360} loading={eager ? undefined : "lazy"} fetchPriority={eager ? "high" : undefined} decoding="async" draggable={false} /> : <Art id={app.id} />}</span>
 );
 const PlayLink = ({ app, small }: { app: QApp; small?: boolean }) => { const url = playOf(app); return url ? (small
   ? <a className="play ghost icon" href={url} title={ctaOf(app)} aria-label={`${ctaOf(app)}: ${cardFor(app).name}`}><Out /></a>
@@ -320,7 +351,7 @@ function Feature({ app, mine, unlocks }: { app: QApp; mine: Used; unlocks: Unloc
         {c.kicker && <span className="kick">{c.kicker}</span>}
         <b><a className="title" href={`/app/${app.id}`}>{c.name}</a></b>
         <span className="blurb">{c.blurb}</span>
-        <span className="facts"><Badge m={app.maturity ?? "alpha"} /><span>{whatOf(app, mine)}</span>{t && <span className="tally"><Trophy />{t[0]}/{t[1]}</span>}</span>
+        <span className="facts"><Badge m={app.maturity ?? "alpha"} />{whatOf(app, mine) && <span>{whatOf(app, mine)}</span>}{t && <span className="tally"><Trophy />{t[0]}/{t[1]}</span>}</span>
         <span><PlayLink app={app} /></span>
       </span>
     </section>
@@ -335,7 +366,7 @@ function Tile({ app, mine, unlocks }: { app: QApp; mine: Used; unlocks: Unlocks 
       <Shot app={app} />
       <span className="cap">
         <span className="name"><b><a className="title" href={`/app/${app.id}`}>{c.name}</a></b><Badge m={app.maturity ?? "alpha"} /></span>
-        <small>{byOf(app)}{whatOf(app, mine)}{t && <span className="tally"><Trophy />{t[0]}/{t[1]}</span>}</small>
+        {(byOf(app) || whatOf(app, mine) || t) && <small>{byOf(app)}{whatOf(app, mine)}{t && <span className="tally"><Trophy />{t[0]}/{t[1]}</span>}</small>}
       </span>
     </div>
   );
@@ -416,7 +447,7 @@ function Library({ apps, mine, unlocks, hub, side }: { apps: QApp[]; mine: Membe
   const last = sorted(apps.filter((a) => used.has(a.id) && a.id !== top.id)).slice(0, 4);
   return (
     <div className="lib">
-      <div>
+      <div className="main">
         <Feature app={top} mine={used.get(top.id)} unlocks={unlocks} />
         {last.length > 0 && (
           <section aria-label="Pick up where you left off">
@@ -426,6 +457,9 @@ function Library({ apps, mine, unlocks, hub, side }: { apps: QApp[]; mine: Membe
             ))}</div>
           </section>
         )}
+      </div>
+      <SidePanel hub={hub} side={side} />
+      <div className="shelves">
         {GENRES.map((g) => {
           const list = sorted(apps.filter((a) => a.genre === g));
           return list.length ? (
@@ -436,7 +470,6 @@ function Library({ apps, mine, unlocks, hub, side }: { apps: QApp[]; mine: Membe
           ) : null;
         })}
       </div>
-      <SidePanel hub={hub} side={side} />
     </div>
   );
 }
@@ -469,7 +502,7 @@ export function AppPage({ app, mine, unlocks, t0 }: { app: QApp; mine: Member["a
           <div className="words">
           {c.kicker && <span className="kick">{c.kicker}</span>}
           <h1>{c.name}</h1>
-          <div className="facts"><Badge m={m} /><span>{m}</span><span>{app.genre}</span><span>{whatOf(app, mine)}</span>{t && <span className="tally"><Trophy />{t[0]}/{t[1]} achievements</span>}</div>
+          <div className="facts"><Badge m={m} /><span>{m}</span><span>{app.genre}</span><span>{whatOf(app, mine) ?? "New to you"}</span>{t && <span className="tally"><Trophy />{t[0]}/{t[1]} achievements</span>}</div>
           <p className="blurb">{c.blurb}</p>
           {c.more && <p className="more">{c.more}</p>}
           <div className="row">{url ? <a className="play" href={url}>{ctaOf(app, c)} <Out /></a> : <span className="mut">{app.soon ? "Coming soon." : "Not open yet."}</span>}</div>
@@ -480,7 +513,17 @@ export function AppPage({ app, mine, unlocks, t0 }: { app: QApp; mine: Member["a
   );
 }
 
-const TABS = [["library", "Home"], ["achievements", "Achievements"], ["friends", "Friends"], ["studio", "Studio"], ["people", "People"], ["visitors", "Visitors"], ["scale", "Scale"], ["account", "Account"]] as const;
+// lucide: house, trophy, users, building, contact, chart-column, gauge, circle-user.
+const TABS = [
+  ["library", "Home", ["M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8", "M3 10a2 2 0 0 1 .709-1.528l7-6a2 2 0 0 1 2.582 0l7 6A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"]],
+  ["achievements", "Trophies", ["M10 14.66V17a1 1 0 0 1-1 1 2 2 0 0 0-2 2v2", "M14 14.66V17a1 1 0 0 0 1 1 2 2 0 0 1 2 2v2", "M17.916 10H19.5A2.5 2.5 0 0 0 22 7.5V5a1 1 0 0 0-1-1h-3", "M4 22h16", "M6 9a6 6 0 0 0 12 0V3a1 1 0 0 0-1-1H7a1 1 0 0 0-1 1z", "M6.084 10H4.5A2.5 2.5 0 0 1 2 7.5V5a1 1 0 0 1 1-1h3"]],
+  ["friends", "Friends", USERS],
+  ["studio", "Studio", ["M12 10h.01", "M12 14h.01", "M12 6h.01", "M16 10h.01", "M16 14h.01", "M16 6h.01", "M8 10h.01", "M8 14h.01", "M8 6h.01", "M9 22v-3a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v3", "M6 2h12a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z"]],
+  ["people", "People", ["M16 2v2", "M7 21v-2a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v2", "M8 2v2", "M12 7a3 3 0 1 0 0 6 3 3 0 0 0 0-6z", "M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"]],
+  ["visitors", "Visitors", ["M3 3v16a2 2 0 0 0 2 2h16", "M18 17V9", "M13 17V5", "M8 17v-3"]],
+  ["scale", "Scale", ["m12 14 4-4", "M3.34 19a10 10 0 1 1 17.32 0"]],
+  ["account", "Me", ["M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20z", "M12 7a3 3 0 1 0 0 6 3 3 0 0 0 0-6z", "M7 20.662V19a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v1.662"]],
+] as const;
 const ADMIN_TABS = new Set<string>(["people", "visitors", "scale"]);
 
 const KIND: Record<string, string> = { person: "browser", agent: "agent", bot: "bot" };
@@ -564,15 +607,17 @@ export function Home({ apps = APPS, me, mine, hub, side, everyone, unlocks, coun
   return (
     <Glass t0={t0} css={HOME_CSS + SCALE_CSS + STUDIO_CSS}>
       <div className="home">
-        <section className="pane top">
-          <div className="brand"><span><i /><b>{NAME}</b></span><span className="mut">v{VERSION}</span></div>
-          <h1>{greeting(t0)}</h1>
-          <p className="sub">{me.name || me.email} · your games, friends, saves and studio, in one place.</p>
-          {messageOf(error) && <p className="bad" role="alert">{messageOf(error)}</p>}
+        {/* The nav sits outside the glass pane: a blurred parent would pin a phone's fixed tab bar to itself instead of the screen. */}
+        <div className="menu">
+          <section className="pane top">
+            <div className="brand"><span><i /><b>{NAME}</b></span><a className="avatar" href="/?tab=account" title={me.name || me.email} aria-label="Me">{(me.name || me.email).slice(0, 1)}</a></div>
+            <h1>{greeting(t0)}</h1>
+            {messageOf(error) && <p className="bad" role="alert">{messageOf(error)}</p>}
+          </section>
           <nav className="tabs" aria-label="eqosys">
-            {tabs.map(([k, label]) => <a key={k} href={k === "library" ? "/" : `/?tab=${k}`} aria-current={k === tab ? "page" : undefined}>{label}{k === "friends" && asked > 0 && <em>{asked}</em>}</a>)}
+            {tabs.map(([k, label, d]) => <a key={k} href={k === "library" ? "/" : `/?tab=${k}`} aria-current={k === tab ? "page" : undefined}><Icon d={[...d]} /><span>{label}</span>{k === "friends" && asked > 0 && <em aria-label={`${asked} asking`}>{asked}</em>}</a>)}
           </nav>
-        </section>
+        </div>
 
         <div className="body">
         {tab === "library" && <Library apps={apps} mine={mine} unlocks={unlocks} hub={hub} side={side ?? null} />}
@@ -626,6 +671,7 @@ export function Home({ apps = APPS, me, mine, hub, side, everyone, unlocks, coun
             <div className="card me"><i>{(me.name || me.email).slice(0, 1)}</i><div><b>{me.name || me.email}</b><span>{me.email} · came in through {nameOf(mine?.source ?? "eqosys")}</span></div></div>
             <form method="post" action="/do/logout"><button className={btn()} type="submit">Sign out</button></form>
             <p><a href="/api/privacy/export" download>Download my data</a> <span className="mut">· everything eqosys keeps about you, as one file (<a href="/privacy">what and why</a>)</span></p>
+            <p className="mut">{NAME} v{VERSION}</p>
             <details className="card danger">
               <summary>More options</summary>
               <p className="mut">Removing your account takes you out of every Q app. It asks twice more before anything happens.</p>
