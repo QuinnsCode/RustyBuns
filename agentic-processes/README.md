@@ -41,7 +41,9 @@ Legend: **Copy** = works elsewhere as it is. **Generalize** = the idea travels, 
 | --- | --- | --- | --- |
 | `pr.ts` (+ test) | 106 | Copy | `gh`, and the `guard` from `packages/util` (bring it along) |
 | `issue.ts` (+ test) | 68 | Copy | same |
-| `outline.ts` (+ test) | 80 | Copy | `typescript` |
+| `outline.ts` (+ test) | 80 | Copy | `typescript`. `--api` prints a package's exports as one-line signatures |
+| `test-bites.ts` | | Copy | runs your changed tests on `origin/main`'s source and names the ones that pass there anyway |
+| `help.ts` | | Copy | `--help` on any script prints its top comment, so agents ask before reading source |
 | `conflict-markers.ts` (+ test) | 58 | Copy | none |
 | `migration-numbers.ts` (+ test) | 47 | Copy | none (numbered migrations) |
 | `boundary-audit.ts` + `.allow.json` | 106 | Generalize | the allowance file starts fresh |
