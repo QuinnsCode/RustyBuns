@@ -23,7 +23,7 @@ wings; a fan of feathers in one hand. What a child would draw: the red face, the
 
 ## What made it better
 
-The generator (`proposals/set-b/tengu.ts`, on the PR) writes the sheet.
+The generator (`proposals/set-b/tengu.ts`, commit 1930b209, on the PR) writes the sheet.
 
 - **Clothes are `paint`:** the body's material is the robe, and `paint` turns the head, face and hands red, the legs
   into blue trousers, a sash node at the waist dark, and the wing arm black, all on one blended skin.

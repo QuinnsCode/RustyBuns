@@ -20,7 +20,7 @@ What a child would draw: the white shaggy body, the snarl with fangs, the big fe
 
 ## What made it better
 
-The generator (`proposals/set-b/yeti.ts`, made from the Sasquatch's by `mkyeti.ts`, on the PR) writes the sheet.
+The generator (`proposals/set-b/yeti.ts`, made from the Sasquatch's by `mkyeti.ts`, commit 1930b209, on the PR) writes the sheet.
 
 - **The Sasquatch's body, moved:** the chest, neck and head pushed forward and down for a hunch, the shoulders, arms
   and hands bigger, the hands down to the knees.
