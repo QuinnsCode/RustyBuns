@@ -15,8 +15,8 @@ instead of its 0.78 floor. Sheet keys: `rough` [shiniest, dullest], `bump` (dept
 
 | | GLB before | GLB after | normal map | roughness map |
 |---|---|---|---|---|
-| Tatzelwurm | 535 KB | 731 KB | 1024 px, 144 KB | 512 px, 57 KB |
-| Hodag | 464 KB | 619 KB | 1024 px | 512 px |
+| Tatzelwurm | 535 KB | 695 KB | 1024 px, 144 KB | 256 px |
+| Hodag | 464 KB | 590 KB | 1024 px | 256 px |
 
 Bake: under a second a beast for all three. Fight budget (`bun scripts/fight-budget.ts --seconds 15 tatzelwurm hodag`):
 desktop median 16.6 ms either way; phone (4x CPU) median 36.0 ms on main, 42.3 and 34.3 ms over two runs after, so
@@ -27,3 +27,14 @@ within the run-to-run noise (the particle peak moves more than the maps do).
 - The game's rim light still glazes every beast near the silhouette; under 0.6 roughness reads as plastic there,
   so the patterns' ranges (`ROUGH`) stay above it. A truly wet hide wants a softer rim on that material.
 - No tangents are exported: three builds the frame from screen derivatives, close enough on smooth flesh.
+
+# Part 2: patterns, overlays and the swatch
+
+![every pattern on a sphere and on the Tatzelwurm](swatch.jpg)
+
+New patterns: `feathers` (staggered shingles, `lie: "down"` for an upright bird), `bark` (with a `moss` overlay on
+the surfaces that face up), `shell`, `wet`, `velvet`. New overlays: `moss`, `band` (a dorsal stripe down the
+spine). New sheet key: `black: true`, no luminance floor. The Black Shuck before and with `black: true`:
+![](black-shuck-before.jpg) ![](black-shuck-black.jpg) (a local check; its sheet belongs to lane 3).
+
+How to add a pattern and the gotchas: [../HIDES.md](../HIDES.md). `bun scripts/beasts.ts --swatch` draws the sheet above.
