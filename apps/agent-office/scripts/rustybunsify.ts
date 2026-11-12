@@ -65,7 +65,7 @@ let shared: Promise<Map<string, string>> | undefined;
 const stamp = path.join(office, ".rustybuns");
 // what a prepared ./office was built with: one string for the check and the write, so a restart skips the prepare (#3385)
 // a new patch in prepare() needs a new word here, or a restart skips it
-const STAMP = `${tag} ${skin} lucide live clock mem pulls checks triage vale podcast codesplitter connect hosts hooktokens env ticks power board guard asks brawl ester dexter reload external box builder askfirst setup storage install sweep fable52`;
+const STAMP = `${tag} ${skin} lucide live clock mem pulls checks triage vale podcast codesplitter connect hosts hooktokens env ticks power board guard asks brawl ester dexter reload external box builder askfirst setup storage install sweep fable52 modules`;
 if (existsSync(stamp) && readFileSync(stamp, "utf8").trim() === STAMP && !process.argv.includes("--fresh")) {
   console.log(`🥐 Agent Office ${tag} already Rusty Buns-ified in ./office`);
   // the skin is ours and changes far more often than the release, so it's rebuilt every start
@@ -137,10 +137,11 @@ async function prepare(tag: string) {
   patch("workers/manager.js", "notePr: (command, output) => this.prs.noteOwn(w, command, output),",
     "notePr: (command, output) => {\n                this.prs.noteOwn(w, command, output);\n                this.__rbOnGh?.(command);\n            },");
 
-  // 6a. #3325: a worker sent home leaves its Claude scratch folder behind; sweep the ones whose worktree is gone
+  // 6a. #3325: a worker sent home leaves its Claude scratch folder behind; sweep the ones whose worktree is gone, and the
+  // node_modules of every worktree no worker sits at (one kept for work git can't see on main still had 3-5 GB of them)
   prepend("workers/manager.js", "import { sweepFloor as __rbSweep } from '../rb-sweep.js';\n");
   patch("workers/manager.js", "        return this.worktrees.sendHome(w.info, cleanup, landed, landedRepos);\n",
-    "        return this.worktrees.sendHome(w.info, cleanup, landed, landedRepos).finally(() => void __rbSweep(this.trees.dir).then((line) => line && this.events.toast(line, 'info')));\n");
+    "        return this.worktrees.sendHome(w.info, cleanup, landed, landedRepos).finally(() => void __rbSweep(this.trees.dir, [...this.workers.values()].flatMap((x) => x.info.worktree?.path ? [path.join(this.trees.dir, x.info.worktree.path)] : [])).then((line) => line && this.events.toast(line, 'info')));\n");
 
   // 6b. #3167: a fresh worktree gets its `bun install` from the hire step, and the worker starts once it is done
   prepend("workers/manager.js", "import { installWorktree as __rbInstall } from '../rb-install.js';\n");
