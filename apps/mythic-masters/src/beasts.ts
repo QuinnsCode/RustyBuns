@@ -222,7 +222,7 @@ export function reloadBeast(id: string): Promise<Beast | null> {
  * sky fill in shadow against the warm sun, a view-dependent rim, and a value gradient dark at the feet to
  * bright at the head. `top` is the model's height, shared by every material of one beast.
  */
-const SHADE_KEY = "beast-shade-v1";
+const SHADE_KEY = "beast-shade-v2";
 function stylize(m: THREE.MeshStandardMaterial, top: { value: number }, name: string, fx: FieldLook | null = null, amt: { value: number } = { value: 1 }, surface: Surface = "hide") {
   // a hide baked into a map (beast.py `hide`) already draws its grain; the shader's own on top washed it out
   const kind = m.map ? null : surfaceFor(name, surface), hd = kind ? hideDetail(kind) : null;
@@ -243,6 +243,12 @@ function stylize(m: THREE.MeshStandardMaterial, top: { value: number }, name: st
     sh.fragmentShader = "varying float vBeastY;\n" + sh.fragmentShader
       .replace("#include <lights_physical_pars_fragment>", pars)
       .replace("#include <lights_fragment_end>", `#include <lights_fragment_end>
+        // How much edge light this surface takes (the rim below and a field look's sheen, effects.ts), 0 to 1. A slick
+        // hide (low roughness, from its map) already shines at the edge through its own specular, so the rim backs off
+        // rather than stacking on it. And a pale hide has no dark to set a light edge against: a full rim on it glazed the
+        // whole silhouette into glass (#4265).
+        float beastLum = dot( diffuseColor.rgb, vec3( 0.3, 0.59, 0.11 ) );
+        float beastRim = mix( 0.35, 1.0, smoothstep( 0.35, 0.8, roughnessFactor ) ) * ( 1.0 - 0.6 * smoothstep( 0.15, 0.6, beastLum ) );
         {
           vec3 wN = inverseTransformDirection( normal, viewMatrix );
           float sky = wN.y * 0.5 + 0.5;
@@ -250,7 +256,7 @@ function stylize(m: THREE.MeshStandardMaterial, top: { value: number }, name: st
           reflectedLight.directDiffuse *= vec3( 1.04, 1.0, 0.94 ) * grad;
           reflectedLight.indirectDiffuse = reflectedLight.indirectDiffuse * grad + diffuseColor.rgb * mix( vec3( 0.07, 0.07, 0.12 ), vec3( 0.14, 0.15, 0.2 ), sky );
           float rim = 1.0 - saturate( dot( normalize( normal ), normalize( vViewPosition ) ) ); rim = rim * rim * rim;
-          reflectedLight.indirectSpecular += mix( vec3( 0.5, 0.55, 0.7 ), vec3( 1.0, 0.95, 0.85 ), sky ) * rim * ( 0.2 + 0.45 * sky ) * ( 1.0 - dot( diffuseColor.rgb, vec3( 0.3, 0.59, 0.11 ) ) ) * ( 1.0 - 0.5 * metalnessFactor );
+          reflectedLight.indirectSpecular += mix( vec3( 0.5, 0.55, 0.7 ), vec3( 1.0, 0.95, 0.85 ), sky ) * rim * ( 0.2 + 0.45 * sky ) * ( 1.0 - beastLum ) * beastRim * ( 1.0 - 0.5 * metalnessFactor );
         }
         ${fx?.frag ?? ""}`);
     if (hd) sh.fragmentShader = hd.pars + sh.fragmentShader.replace("#include <normal_fragment_maps>", "#include <normal_fragment_maps>\n" + hd.frag);
