@@ -19,6 +19,11 @@
 //       before (git main) and now as close-up strips, and the traits with a tick or a cross each from the last judge
 //       run (blender/out/refs/<id>.judge.json; "not judged" until there is one). Draws the close-ups first. This is the
 //       page the owner picks from.
+//   bun scripts/beast-refs.ts --candidates <id> <a.json> <b.json> ...
+//       Prototypes to pick from: each candidate sheet (an id matching <id>, and an optional `candidate` line saying what
+//       it is) is built in turn through scripts/beasts.ts, its GLB kept in blender/out/refs/<id>.cand/<name>.glb, and the
+//       working tree's sheet, GLB and rig put back after. They and git main are drawn in one Blender run at one scale,
+//       and the page (blender/out/refs/<id>.compare.html) shows a strip per candidate under the references.
 //   bun scripts/beast-refs.ts --judge <id>
 //       Draws the close-ups, shows them with the references and traits to a fresh `claude -p` judge (judge-loop.ts
 //       judgeTraits), writes its verdict per trait and a score to blender/out/refs/<id>.judge.json, then the page.
@@ -28,7 +33,7 @@
 // hide, colours, and the three things a child would draw) before building.
 import { existsSync, mkdirSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { $ } from "bun";
 import { runBlender } from "@rustybuns/cli/blender";
 import { esc } from "@rustybuns/util";
@@ -174,11 +179,46 @@ const MARK = {
   no: `<svg viewBox="0 0 24 24" aria-label="no"><path d="M18 6 6 18M6 6l12 12"/></svg>`,
 };
 
-/** Writes the comparison page for the beast; answers its path. */
-export async function compare(id: string, o: { out?: string; draw?: boolean } = {}): Promise<string> {
+const Candidate = obj({ id: str(40), candidate: opt(str(300)) });
+/** A prototype built for the owner to pick from: its name, what it is, its close-up strip and its rig row. */
+export type Built = { name: string; note: string; glb: string; strip: string; row: string; ok: boolean };
+
+/** Builds each candidate sheet as the beast in turn, keeps its GLB, puts the working tree back, then draws git main and
+ *  every candidate in one Blender run so they share one scale. Answers them in the order given. */
+export async function candidates(id: string, files: string[]): Promise<Built[]> {
+  const models = join(APP, "public", "models"), dir = join(refsOut, `${id}.cand`);
+  const kept = [join(APP, "beasts", `${id}.json`), join(models, `${id}.glb`), join(models, `${id}.rig.json`)];
+  const saved = await Promise.all(kept.map(async (f) => (existsSync(f) ? await Bun.file(f).arrayBuffer() : null)));
+  mkdirSync(dir, { recursive: true });
+  const built: Built[] = [];
+  try {
+    for (const file of files) {
+      const text = await Bun.file(file).text(), c = Candidate(JSON.parse(text));
+      if (c.id !== id) throw new Error(`${file} is a sheet for ${c.id}, not ${id}`);
+      const name = basename(file, ".json"), glb = join(dir, `${name}.glb`);
+      await Bun.write(kept[0]!, text);
+      const p = await $`bun scripts/beasts.ts ${id}`.cwd(APP).quiet().nothrow();
+      const row = (p.stdout.toString() + p.stderr.toString()).split("\n").find((l) => l.includes(" tris ")) ?? "no rig row";
+      await Bun.write(glb, Bun.file(kept[1]!));
+      built.push({ name, note: c.candidate ?? "", glb, strip: join(dir, `${name}.png`), row: row.trim(), ok: p.exitCode === 0 });
+      console.log(`${name.padEnd(12)} ${row.trim()}`);
+    }
+  } finally {
+    await Promise.all(kept.map((f, i) => (saved[i] ? Bun.write(f, saved[i]!) : rmSync(f, { force: true }))));
+  }
+  const before = await mainGlb(id), main = join(refsOut, `${id}.main.png`);
+  try {
+    await runBlender({ script: "blender/closeups.py", args: [...(before ? [before, main] : []), ...built.flatMap((b) => [b.glb, b.strip])], cwd: APP });
+  } finally { if (before) rmSync(before, { force: true }); }
+  for (const out of [main, ...built.map((b) => b.strip)]) for (const v of VIEWS) rmSync(`${out.slice(0, -4)}.${v}.png`, { force: true });
+  return built;
+}
+
+/** Writes the comparison page for the beast; answers its path. With `candidates`, a strip per prototype in place of "Now". */
+export async function compare(id: string, o: { out?: string; draw?: boolean; candidates?: Built[] } = {}): Promise<string> {
   const refs = await readRefs(id);
   if (!refs) throw new Error(`no refs/${id}.json: run --refs ${id} first`);
-  const strips = o.draw === false ? { now: join(refsOut, `${id}.now.png`), main: join(refsOut, `${id}.main.png`) } : await closeups(id, { main: true });
+  const strips = o.draw === false || o.candidates ?{ now: join(refsOut, `${id}.now.png`), main: join(refsOut, `${id}.main.png`) } : await closeups(id, { main: true });
   const jf = Bun.file(judgedPath(id));
   const judged = (await jf.exists()) ? Judged(await jf.json()) : null;
   const pics = await Promise.all(refs.images.filter((i) => existsSync(join(REFS, id, i.file))).map(async (i) => ({ ...i, url: await inline(join(REFS, id, i.file), 520) })));
@@ -217,7 +257,9 @@ th,td{text-align:left;vertical-align:top;padding:10px 12px;border-top:1px solid 
 <div class="refs">${pics.map((i) => `<figure><img src="${i.url}" alt="${esc(i.file)}"><figcaption>${credit(i)}</figcaption></figure>`).join("")}</div>
 <h2>The model</h2>
 ${await strip("Before (git main)", strips.main)}
-${await strip("Now", strips.now)}
+${o.candidates
+  ? (await Promise.all(o.candidates.map((c, i) => strip(`${String.fromCharCode(65 + i)}. ${esc(c.name)}${c.note ? ` · ${esc(c.note)}` : ""}${c.ok ? "" : " (rig check failed)"}`, c.strip)))).join("\n")
+  : await strip("Now", strips.now)}
 <h2>Traits</h2>
 <table>${rows || `<tr><td>No traits written yet: fill refs/${esc(id)}.json.</td></tr>`}</table>
 ${judged?.fix ? `<h2>What to fix next</h2><p>${esc(judged.fix)}</p>` : ""}
@@ -248,7 +290,7 @@ if (import.meta.main) {
   help(import.meta.path);
   const argv = process.argv.slice(2);
   const val = (k: string) => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] : undefined; };
-  const id = val("--refs") ?? val("--closeups") ?? val("--compare") ?? val("--judge");
+  const id = val("--refs") ?? val("--closeups") ?? val("--compare") ?? val("--judge") ?? val("--candidates");
   if (!id || id.startsWith("--")) { console.error("usage: bun scripts/beast-refs.ts --refs <id> | --closeups <id> [--main] | --compare <id> | --judge <id>   (--help for more)"); process.exit(1); }
   if (argv.includes("--refs")) {
     const max = val("--max") === undefined ? undefined : Number(val("--max"));
@@ -262,7 +304,11 @@ if (import.meta.main) {
     const r = await closeups(id, { main: argv.includes("--main") });
     for (const p of Object.values(r)) console.log(p);
   }
-  if (argv.includes("--judge")) {
+  if (argv.includes("--candidates")) {
+    const files = argv.slice(argv.indexOf("--candidates") + 2).filter((a) => a.endsWith(".json"));
+    if (files.length < 2) { console.error("--candidates <id> takes two or more candidate sheets (.json)"); process.exit(1); }
+    console.log(await compare(id, { out: val("--out"), candidates: await candidates(id, files) }));
+  } else if (argv.includes("--judge")) {
     const j = await judge(id);
     for (const t of j.traits) console.log(`${t.verdict.padEnd(6)} ${t.key.padEnd(10)} ${t.note}`);
     console.log(`score ${j.score}/10 against the references${j.fix ? `\nfix: ${j.fix}` : ""}`);
