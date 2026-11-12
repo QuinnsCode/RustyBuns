@@ -518,6 +518,45 @@ html .ui-house :is(.gc-tab[aria-selected="true"], .gc-tab[aria-pressed="true"]) 
 html .ui-house :is(.gc-tab[aria-selected="true"], .gc-tab[aria-pressed="true"])::after { content: ""; position: absolute; inset: -9px -6px -5px; pointer-events: none;
   background: url(/menu/lock.svg) 0 0 / 100% 100% no-repeat; }
 
+/* Round 9 (#4233): one kind of button. Load, Deploy, Host, Join, the keybind keys, the reset and fold icons and the
+   close are the same pressed clay tiles as the picks (tile.svg): Deploy and Host are the inked ones with the orange
+   edge on top, like a picked index tab. Key caps carry scope ticks in their corners, and every key row on the key
+   card and in the manual is marked with a small crosshair, so the rows read as a marked sheet. No new art: CSS
+   gradients over tile.svg. */
+.menu {
+  --br-tile: url(/menu/tile.svg) 0 0 / 48px, linear-gradient(#fff, #f1eee6);
+  --br-tile-edge: inset 0 1px 0 #fff, inset 0 -2px 0 #14141418, 0 3px 0 var(--br-ink);
+}
+html .ui-house { --br-tile: url(/menu/tile.svg) 0 0 / 48px, linear-gradient(#fff, #f1eee6); --br-tile-edge: inset 0 1px 0 #fff, inset 0 -2px 0 #14141418, 0 3px 0 #141414;
+  --br-ticks: linear-gradient(#14141473 0 0) 4px 4px / 6px 1.5px, linear-gradient(#14141473 0 0) 4px 4px / 1.5px 6px,
+    linear-gradient(#14141473 0 0) right 4px top 4px / 6px 1.5px, linear-gradient(#14141473 0 0) right 4px top 4px / 1.5px 6px,
+    linear-gradient(#14141473 0 0) left 4px bottom 4px / 6px 1.5px, linear-gradient(#14141473 0 0) left 4px bottom 4px / 1.5px 6px,
+    linear-gradient(#14141473 0 0) right 4px bottom 4px / 6px 1.5px, linear-gradient(#14141473 0 0) right 4px bottom 4px / 1.5px 6px;
+  --br-cross: radial-gradient(circle, #0000 2px, #c2410c 2.2px 3.2px, #0000 3.6px), linear-gradient(#c2410c 0 0) center / 1.2px 100%, linear-gradient(#c2410c 0 0) center / 100% 1.2px; }
+.menu .more :is(#repo-load, #place-go, #battle-host, #battle-join) {
+  border-radius: 5px; padding: 8px 16px 7px; font: 800 13px/1.1 var(--br-stencil); text-transform: uppercase; letter-spacing: 0.1em;
+  background: var(--br-tile); box-shadow: var(--br-tile-edge); }
+.menu .more :is(#repo-load, #battle-join):hover { background: url(/menu/tile.svg) 0 0 / 48px, linear-gradient(#fff, #f6f4ee); }
+.menu .more :is(#place-go, #battle-host) { color: #fff; background: linear-gradient(#2a2a27, #141414); border-top: 4px solid var(--br-hot); padding-top: 5px; }
+.menu .more :is(#place-go, #battle-host):hover { background: linear-gradient(#34342f, #1c1c1a); }
+html .ui-house .gc-key { border-radius: 5px; font: 700 13px/1.15 var(--mono); background: var(--br-ticks), var(--br-tile); background-repeat: no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, repeat, no-repeat;
+  box-shadow: var(--br-tile-edge); }
+html .ui-house .gc-key.on { color: #fff; background: linear-gradient(#2a2a27, #141414); border-top: 4px solid #e8590c; }
+html .ui-house :is(.gc-icon, .gc-close) { border-radius: 5px; background: var(--br-tile); box-shadow: var(--br-tile-edge); }
+html .ui-house .gc-icon:disabled { background: url(/menu/tile.svg) 0 0 / 48px, #f2f0ea; box-shadow: inset 0 0 0 1px #14141426, 0 2px 0 #14141433; }
+html .ui-house .gc-reset { border-radius: 5px; font: 800 12px/1.1 var(--br-stencil); text-transform: uppercase; letter-spacing: 0.1em; background: var(--br-tile); box-shadow: var(--br-tile-edge); }
+/* The crosshair marks the rows: a key's name in the manual, a line of the key card. */
+html .ui-house :is(.gc-binds > span, .gc-keys dt), .menu .more .keys dt { position: relative; padding-left: 16px; }
+html .ui-house :is(.gc-binds > span, .gc-keys dt)::before, .menu .more .keys dt::before { content: ""; position: absolute; left: 0; top: 50%; width: 10px; height: 10px; margin-top: -5px;
+  background: var(--br-cross); background-repeat: no-repeat; opacity: 0.85; }
+.menu .more .keys { --br-cross: radial-gradient(circle, #0000 2px, #c2410c 2.2px 3.2px, #0000 3.6px), linear-gradient(#c2410c 0 0) center / 1.2px 100%, linear-gradient(#c2410c 0 0) center / 100% 1.2px; }
+.menu .more .keys dt::before { top: 0.55em; }
+html .ui-house .gc-keys dt::before { top: 0.75em; }
+/* The key card's lines are ruled off like a form, each with a dotted leader. */
+.menu .more .keys :is(dt, dd) { padding-bottom: 4px; border-bottom: 1px dotted #14141440; }
+/* A debrief is a clean form: the mug ring stays on the briefing, where it doesn't read as a stray shape. */
+.results .card { background: var(--br-brackets), #fff; background-repeat: no-repeat; }
+
 @media (max-width: 560px) {
   /* Room under the Controls cog; the briefing scrolls under a band of the table that fades it out beneath the cog. */
   .menu { padding: 64px 20px 20px; }
@@ -553,6 +592,11 @@ html .ui-house :is(.gc-tab[aria-selected="true"], .gc-tab[aria-pressed="true"]):
   .results .card .clip { right: 58px; }
   .results h2 { font-size: 26px; margin-right: 72px; white-space: nowrap; padding: 3px 10px; }
   .results .row button { padding: 8px 14px 8px 30px; font-size: 13px; }
+  /* The four roles are two rows of two, so "Releaser" isn't left alone on a line. */
+  .results #results-roles { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  /* The field manual keeps a gutter of table round it on a phone, and its first tab's brackets clear the frame. */
+  html .gc-dialog.ui-house { align-items: center; padding: 14px 12px; }
+  html .ui-house .gc-card { border-bottom: 2px solid #141414; padding-top: 34px; padding-left: 14px; }
 }
 
 /* --- The credits (src/ui/credits.ts, src/sim/credits.ts, #3619): the campaign's end on the briefing table. The file is
