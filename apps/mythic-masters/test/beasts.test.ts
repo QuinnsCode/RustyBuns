@@ -279,8 +279,9 @@ test("a heavy blow flattens the struck body front to back and curls it over the 
   expect(Math.abs(span() - rest)).toBeLessThan(rest * 0.03);
 }, 30_000);
 
-test("an upright flyer flies leaning into it, head well ahead of its hips, not hanging like a lifted biped", async () => {
-  const c = ROSTER.find((x) => x.id === "jersey-devil")!;
+// the Mothman's wing tips tower over its head, which once read it as half upright and halved its lean (#4267)
+test.each(["jersey-devil", "mothman"])("an upright flyer (%s) flies leaning into it, head well ahead of its hips, not hanging like a lifted biped", async (id) => {
+  const c = ROSTER.find((x) => x.id === id)!;
   const lean = async (flying: boolean) => {
     const p = new Puppet(await beast(c.id), body(c), c.archetype);
     const f = newMatch(c, c).f[0];
