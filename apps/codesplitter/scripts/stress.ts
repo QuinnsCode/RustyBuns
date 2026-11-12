@@ -14,6 +14,7 @@
 // Left out on purpose, because in the cloud they cost money: dig, github, agent, hosted, preview, deploy,
 // checks, containers, doctor, fresh, and the Cloudflare email behind mail. They are still counted by the same code.
 import { local } from "../src/local.ts";
+import { FileReply } from "../src/file-do.ts";
 import { sign } from "../src/hooks.ts";
 import { AgentSandbox, type ContainerApi } from "../src/sandbox.ts";
 import { gated } from "../test/fake-gate.ts";
@@ -66,7 +67,7 @@ async function limits(): Promise<Row[]> {
     const hooks = await hammer(call, "hook", 20, (i) => post("p5", "/api/repos/p5/lab/hooks", { url: `https://ci.example/${i}` }));
     rows.push({ ...hooks, ok: hooks.ok + hooks.other, other: 0, pass: hooks.limited === EXTRA && hooks.retryAfter });
     rows.push(await hammer(call, "commit", 60, () => post("p6", "/api/repos/p6/lab/do/commit?path=a.ts", { message: "m" })));
-    const doc = await (await call("p7", "/api/repos/p7/lab/do/file?path=a.ts")).json() as any;
+    const doc = FileReply(await (await call("p7", "/api/repos/p7/lab/do/file?path=a.ts")).json());
     rows.push(await hammer(call, "edit", 300, (i) => post("p7", "/api/repos/p7/lab/do/ops?path=a.ts",
       { ops: [{ kind: "set", line: doc.lines[0].id, text: `v${i}` }] })));
   } finally { call.close(); }
@@ -97,7 +98,7 @@ async function webhooks(): Promise<Storm> {
     // The storm: a branch and a commit per round, no ip stamp (the desktop's door), so only the hooks are on trial.
     const t = performance.now();
     await Promise.all(Array.from({ length: COMMITS }, (_, i) => send("/api/repos/ryan/lab/branches", { name: `s${i}` })));
-    const doc = await (await call("ryan", "/api/repos/ryan/lab/do/file?path=a.ts")).json() as any;
+    const doc = FileReply(await (await call("ryan", "/api/repos/ryan/lab/do/file?path=a.ts")).json());
     let commits = 0;
     for (let i = 0; i < COMMITS / 5; i++) {
       await send("/api/repos/ryan/lab/do/ops?path=a.ts", { ops: [{ kind: "set", line: doc.lines[0].id, text: `v${i}` }] });
