@@ -1332,3 +1332,21 @@ body.in-fight > .gc-dialog { opacity: 0.74; }
 .paper button.info::before { display: none; }
 .world-hud .info { background: linear-gradient(135deg, #5a321b, #3a1d0e); border: 2px solid #b48b4f; color: #f1dfb6; }
 .about .keys b { color: var(--blood); font-family: var(--f-hand); font-weight: 400; }
+/* the actions are words on the page, and the summoning is a seal drawn in ink (#4155 round 113): no glossy wax disc and
+ * no stamped Fight label. The circle's seal is two rings of rubric ink, a pen's ticks between them, its word written
+ * inside; a faint red wash soaks in under the pointer. Fight is the red word with a pen swash under it, then "or" the
+ * Bestiary, "or" Back, in the book's ink */
+.select.book .circle button#summon { width: 138px; height: 138px; padding: 24px; color: var(--blood); font-size: 20px; text-shadow: 0.45px 0.55px 0 currentColor, 0.2px 0.25px 0 currentColor; background: none; box-shadow: none; border: 0; }
+.select.book .circle button#summon::before { content: ""; position: absolute; inset: 0; z-index: -1; pointer-events: none; -webkit-mask-box-image: none; border-radius: 50%; box-shadow: none !important; transition: background-color 0.3s, opacity 0.3s;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 120 120' fill='none' stroke='%237b1d14' stroke-linecap='round'%3E%3Cpath stroke-width='2.4' d='M63 5.5C92 6 115 29 114 60C113 91 90 114 59 114C28 113 6 90 7 58C8 29 31 6.5 58 6.2Q66 6 70 8'/%3E%3Cpath stroke-width='1.1' opacity='.8' d='M60 15.5C85 16 104 35 104 60C104 85 85 104 60 104C35 104 16 85 16 60C16 36 34 16 61 15.7'/%3E%3Cpath stroke-width='1.5' opacity='.85' d='M105.6 66L114 67.1M96.5 88L99.8 90.5M77.6 102.5L79.3 106.4M54 105.6L53 113.8M32 96.5L29.4 100M17.5 77.6L13.6 79.3M14.4 54L6.2 53M23.5 32L20.1 29.4M42.4 17.5L40.7 13.6M66 14.4L67 6.2M88 23.5L90.5 20.1M102.5 42.4L106.4 40.7'/%3E%3C/svg%3E") center / 100% 100% no-repeat, transparent !important; }
+.select.book .circle button#summon:hover:not(:disabled)::before, .select.book .circle button#summon:focus-visible::before { background-color: rgba(123, 29, 20, 0.13) !important; }
+.select.book .circle button#summon:focus-visible { outline: 2px dashed var(--blood); outline-offset: 4px; }
+.select.book .circle button#summon:disabled { color: var(--ink-faded); }
+.select.book .circle button#summon:disabled::before { opacity: 0.35; }
+.select.book .slip .row button#fight { color: var(--blood); font-size: 25px; padding: 0 8px 7px; text-shadow: 0.45px 0.55px 0 currentColor, 0.2px 0.25px 0 currentColor; -webkit-mask-box-image: none; border-radius: 0;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 12' preserveAspectRatio='none' fill='none' stroke='%237b1d14' stroke-linecap='round'%3E%3Cpath stroke-width='2' d='M3 8Q30 3 60 6T97 4'/%3E%3Cpath stroke-width='1' d='M12 10Q45 7 80 9'/%3E%3C/svg%3E") center bottom / 100% 11px no-repeat; }
+.select.book .slip .row button#fight:hover, .select.book .slip .row button#fight:focus-visible { filter: none; color: #5a120b; }
+.select.book .slip .row button#fight:focus-visible { outline: 2px dashed var(--blood); outline-offset: 3px; }
+.select.book .slip .row button:is(#cards, #pickerBack) { color: var(--ink-b); font-family: var(--f-hand); text-shadow: 0.45px 0.55px 0 currentColor; }
+.select.book .slip .row button:is(#cards, #pickerBack)::before { content: "or "; font-family: var(--f-book); font-style: italic; font-size: 16px; color: var(--ink-faded); text-shadow: none; text-decoration: none; display: inline-block; margin-right: 5px; }
+.select.book .slip .row { column-gap: 8px; }
