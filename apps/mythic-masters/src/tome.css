@@ -184,7 +184,7 @@
 :is(.journal, .title) .tome::after { content: ""; position: absolute; top: -8px; right: clamp(10px, 1.75vw - 12px, 16px); width: 24px; /* in the outer margin, clear of the words */ height: min(46%, 380px); z-index: 1; pointer-events: none;
   background: var(--mark, linear-gradient(#8f2418, #6a150d)); background-image: linear-gradient(90deg, rgba(0, 0, 0, 0.28), rgba(255, 255, 255, 0.14) 35%, rgba(0, 0, 0, 0.12) 70%, rgba(0, 0, 0, 0.3)), var(--mark, linear-gradient(#8f2418, #6a150d));
   clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 90%, 0 100%); box-shadow: 3px 4px 6px rgba(20, 10, 4, 0.35); transform-origin: top center; animation: ribbon-sway 7s ease-in-out infinite alternate; }
-.journal .tome.c-lineup::after { --mark: linear-gradient(#8f2418, #6a150d); } .journal .tome.c-bestiary::after { --mark: linear-gradient(#45603a, #2c4024); } .journal .tome.c-regions::after { --mark: linear-gradient(#9a7228, #6b4d16); }
+.journal .tome.c-lineup::after { --mark: linear-gradient(#8f2418, #6a150d); } .journal .tome.c-bestiary::after { --mark: linear-gradient(#45603a, #2c4024); } .journal .tome.c-regions::after { --mark: linear-gradient(#9a7228, #6b4d16); } .journal .tome.c-factions::after { --mark: linear-gradient(#3e4f63, #263241); }
 @keyframes ribbon-sway { from { transform: rotate(-0.8deg); } to { transform: rotate(0.9deg); } }
 @media (prefers-reduced-motion: reduce) { :is(.journal, .title) .tome::after { animation: none; } }
 @media (max-width: 640px) { :is(.journal, .title) .tome::after { width: 14px; right: 3px; height: 140px; } } /* in the margin, clear of the words */
@@ -193,7 +193,7 @@
   clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 80%, 0 100%); transform: translateY(-6px); transition: transform 0.18s ease, padding 0.18s ease; text-shadow: 0 1px 0 rgba(0, 0, 0, 0.4); }
 .paper .ribbon:hover, .paper .ribbon:focus-visible { background: var(--rb); transform: translateY(0); }
 .paper .ribbon.on { transform: translateY(8px); padding-bottom: 26px; }
-.r-lineup { --rb: linear-gradient(#8f2418, #6a150d); } .r-bestiary { --rb: linear-gradient(#45603a, #2c4024); } .r-regions { --rb: linear-gradient(#9a7228, #6b4d16); }
+.r-lineup { --rb: linear-gradient(#8f2418, #6a150d); } .r-bestiary { --rb: linear-gradient(#45603a, #2c4024); } .r-regions { --rb: linear-gradient(#9a7228, #6b4d16); } .r-factions { --rb: linear-gradient(#3e4f63, #263241); }
 .leaf { flex: 1; align-content: start; position: relative; display: grid; grid-template-columns: 1fr; gap: 0 72px; }
 .leaf .page { min-width: 0; overflow-x: clip; }
 .turning { transform-style: preserve-3d; position: fixed; z-index: 30; pointer-events: none; background: var(--parchment); overflow: hidden; backface-visibility: visible; color: var(--ink-b); font-family: var(--f-book);
@@ -388,6 +388,8 @@
   .ribbons { left: 14px; top: -30px; gap: 5px; }
   .paper .ribbon { font-size: 16px; padding: 6px 9px 15px; }
   .paper .ribbon.on { padding-bottom: 22px; }
+  .ribbons .ribbon:not(.on) .rl { display: none; } /* four chapters across a phone: the open one by name, the rest by icon */
+  .paper .ribbon .rl { white-space: nowrap; }
   .entries { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px 8px; }
   .entry figcaption { font-size: 17px; }
 }

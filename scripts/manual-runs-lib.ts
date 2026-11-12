@@ -63,6 +63,8 @@ export const RUNS: Record<number, Run> = {
   2718: { app: "twoFrontsOnline", links: [{ label: "Online war (copy the invite into the phone window)", path: "/?war=short&vs=online" }, { label: "Phone seat", path: "/", phone: true }] },
   2858: { app: "mythic-masters", links: [0, 1, 2].map((n) => ({ label: `Gallery ${n}`, path: `/?gallery=${n}` })) },
   2888: { app: "mythic-masters", links: [2, 3].map((n) => ({ label: `Gallery ${n}`, path: `/?gallery=${n}` })) },
+  4318: { app: "mythic-masters", links: [{ label: "office.4", path: "/?faction=office.4" }, { label: "institute.4", path: "/?faction=institute.4" }, { label: "lamplighters.4", path: "/?faction=lamplighters.4" }, { label: "office.8", path: "/?faction=office.8" }, { label: "institute.8", path: "/?faction=institute.8" }, { label: "lamplighters.8", path: "/?faction=lamplighters.8" }] },
+  4309: { app: "mythic-masters", links: [{ label: "The Office, Form 9-C", path: "/?faction=office.1" }, { label: "The Institute, Baseline", path: "/?faction=institute.1" }, { label: "The Lamplighters, First Lamp", path: "/?faction=lamplighters.1" }] },
   4196: { app: "mythic-masters", links: [{ label: "Tatzelwurm (gallery 2)", path: "/?gallery=2" }, { label: "Hodag (gallery 0)", path: "/?gallery=0" }, { label: "Tatzelwurm vs Hodag", path: clash("tatzelwurm", "hodag", "stadium") }] },
   2722: { app: "mythic-masters", links: [{ label: "Touch", path: clash("volthune", "scoro", "stadium"), phone: true }, { label: "Gamepad", path: clash("volthune", "scoro", "stadium") }] },
   2964: { app: "mythic-masters", links: [{ label: "Gamepad orbit", path: clash("jersey-devil", "sphinx", "stadium") }] },

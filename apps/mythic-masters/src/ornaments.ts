@@ -63,8 +63,17 @@ const CAULDRON = svg(120, 64, [
   `<circle cx="56" cy="14" r="2"/><circle cx="64" cy="9" r="2.6"/><circle cx="58" cy="4" r="1.4"/>`,
 ].join(""));
 
-export type Chapter = "lineup" | "bestiary" | "regions" | "title" | "witch";
-const EMBLEMS: Record<Chapter, string> = { lineup: STONES, bestiary: EYE, regions: ROSE, title: GRIMOIRE, witch: CAULDRON };
+/** The factions: a path lamp on its post, three sets of footprints behind it, one step behind you. */
+const LAMP = svg(120, 64, [
+  `<path d="M60 58v-34"/><path d="M52 58h16" stroke-width="1.3"/>`,
+  `<path d="M52 24h16l-3 -12h-10z"/><path d="M54 12l6 -6l6 6"/>`, hatch(55, 14, 5, 8, 2.2, 0.1),
+  `<path d="M60 24v6" stroke-width="0.7"/>`,
+  `<path d="M14 50l3 -1M22 54l3 -1M30 50l3 -1M38 54l3 -1M82 50l3 -1M90 54l3 -1M98 50l3 -1M106 54l3 -1" stroke-width="1.3" opacity="0.8"/>`,
+  `<path d="M48 18q-6 -4 -12 0M72 18q6 -4 12 0" stroke-width="0.6" opacity="0.6"/>`,
+].join(""));
+
+export type Chapter = "lineup" | "bestiary" | "regions" | "factions" | "title" | "witch";
+const EMBLEMS: Record<Chapter, string> = { lineup: STONES, bestiary: EYE, regions: ROSE, factions: LAMP, title: GRIMOIRE, witch: CAULDRON };
 
 /** The frontispiece of a chapter (or of the title scroll and the Bog Witch's sheet). */
 export const emblem = (c: Chapter): string => EMBLEMS[c];
@@ -190,7 +199,7 @@ export const rumour = (n: number): string =>
 
 /** What each engraving weighs, in bytes, as the PR says it. */
 export const weights = (): Record<Chapter | "frame" | "marginalia", number> =>
-  ({ lineup: STONES.length, bestiary: EYE.length, regions: ROSE.length, title: GRIMOIRE.length, witch: CAULDRON.length, frame: frame().length, marginalia: marginalia(["ember", "tide"]).length });
+  ({ lineup: STONES.length, bestiary: EYE.length, regions: ROSE.length, factions: LAMP.length, title: GRIMOIRE.length, witch: CAULDRON.length, frame: frame().length, marginalia: marginalia(["ember", "tide"]).length });
 
 /** An engraving as a CSS image, inked in the book's faded brown: for a leaf drawn by CSS alone (the facing leaf of
  * the Settings and result spreads, #3671 round 81), where there is no element to hold the svg. */

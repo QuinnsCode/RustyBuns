@@ -125,8 +125,10 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
     const b = atob((localStorage.getItem(SAVE_SEEN) ?? "").replace(/-/g, "+").replace(/_/g, "/"));
     if (b.length === seen.length) seen = Uint8Array.from(b, (ch) => ch.charCodeAt(0));
   } catch { /* nothing seen yet, or nowhere to keep it */ }
-  const save = () => { try { localStorage.setItem(SAVE, JSON.stringify([...beaten])); } catch { /* nowhere to keep it */ } };
-  const saveSeen = () => { try { localStorage.setItem(SAVE_SEEN, b64url(seen)); } catch { /* nowhere to keep it */ } seenDirty = false; };
+  /** False for a scratch run (a jump link): nothing it does is kept. */
+  let keeps = true;
+  const save = () => { if (keeps) try { localStorage.setItem(SAVE, JSON.stringify([...beaten])); } catch { /* nowhere to keep it */ } };
+  const saveSeen = () => { if (keeps) try { localStorage.setItem(SAVE_SEEN, b64url(seen)); } catch { /* nowhere to keep it */ } seenDirty = false; };
 
   // --- the ground: each sample's colour formed and unformed, and how far its piece has risen ------------------
   const N = COLS * ROWS, formed = new Float32Array(N * 3), unformed = new Float32Array(N * 3);
@@ -1025,6 +1027,8 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
       base[o] = rgb.r * 255; base[o + 1] = rgb.g * 255; base[o + 2] = rgb.b * 255; base[o + 3] = 255;
     }
   }
+  /** The faction people's marks on the map (MapPin), set from outside twice a second. */
+  let pins: readonly MapPin[] = [];
   function drawMap() {
     if (!ctx || !img) return;
     const open = openRegions(beaten), d = img.data, fog = [PARCHMENT >> 16, (PARCHMENT >> 8) & 255, PARCHMENT & 255] as const;
@@ -1053,6 +1057,17 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
       ctx.fillStyle = "#0a0806"; ctx.beginPath(); ctx.arc(x, y + 1.5, 1.8, Math.PI, 0); ctx.closePath(); ctx.fill();
     }
     places.marks(ctx, k, open, (x, z) => isSeen(seen, Math.floor(z / FOG) * FOG_W + Math.floor(x / FOG)));
+    // the faction people (src/world/posts.ts): a diamond where a quest step waits, a dot for a post, in their coat's colour
+    ctx.strokeStyle = "#1a1612"; ctx.lineWidth = 0.4;
+    for (const pin of pins) {
+      const x = pin.x * k, y = pin.z * k, r = pin.quest ? 3.2 : 1.8;
+      ctx.fillStyle = pin.colour; ctx.globalAlpha = pin.dim ? 0.5 : 1;
+      ctx.beginPath();
+      if (pin.quest) { ctx.moveTo(x, y - r); ctx.lineTo(x + r * 0.75, y); ctx.lineTo(x, y + r); ctx.lineTo(x - r * 0.75, y); ctx.closePath(); }
+      else ctx.arc(x, y, r, 0, Math.PI * 2);
+      ctx.fill(); ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
     ctx.save(); ctx.translate(me.x * k, me.z * k); ctx.rotate(facing);
     ctx.fillStyle = "#fff"; ctx.strokeStyle = "#1d3a52"; ctx.lineWidth = 1;
     ctx.beginPath(); ctx.moveTo(5, 0); ctx.lineTo(-3, 3.5); ctx.lineTo(-1.5, 0); ctx.lineTo(-3, -3.5); ctx.closePath(); ctx.fill(); ctx.stroke();
@@ -1089,7 +1104,7 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
   const arriveEl = hud.querySelector<HTMLElement>(".arrive")!;
   let arrived = { n: 0, at: -Infinity }, arriveTimer = 0, visited = new Set<number>();
   try { const s: unknown = JSON.parse(localStorage.getItem(SAVE_VISITED) ?? "[]"); if (Array.isArray(s)) visited = new Set(s.filter((n): n is number => typeof n === "number")); } catch { /* none yet */ }
-  const saveVisited = () => { try { localStorage.setItem(SAVE_VISITED, JSON.stringify([...visited])); } catch { /* nowhere to keep it */ } };
+  const saveVisited = () => { if (keeps) try { localStorage.setItem(SAVE_VISITED, JSON.stringify([...visited])); } catch { /* nowhere to keep it */ } };
   function arrive(g: Region) {
     const now = performance.now();
     if (g.n === arrived.n && now - arrived.at < 10_000) return; // stepping back and forth over one border
@@ -1196,6 +1211,8 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
     hue(n: number) { colour = n; if (bearer) bearer.colour = n; },
     /** Draw the friends in this region where they are now (an empty list clears them); call it once a frame after `update`. */
     friends: drawFriends,
+    /** The faction people to mark on the corner map and the big one: a diamond for a quest step, a dot for a post. */
+    pins(list: readonly MapPin[]) { pins = list; },
     /** The room's clock in seconds (src/net/party.ts worldClock), before `update`: the wilds circle their dens, the sun and
      *  the weather turn on it, so a party sees one world. */
     share(t: number) { clock = t; life.share(t); },
@@ -1388,6 +1405,8 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
     groundAt: (x: number, z: number) => { const y = fineY(x, z); return Number.isFinite(y) ? y : drawnY(x, z); },
     /** The land worth a look from where you stand (the highest rise in your eye, @rustybuns/util vista): the director aims its reveals there. */
     vista: () => vista((x, z) => heightAt(w, x, z), { x: me.x, y: Math.max(0, fineY(me.x, me.z)), z: me.z }),
+    /** A scratch run from here on (a jump link): what it opens and walks is not kept. */
+    scratch() { keeps = false; },
     /** Stand at (x, z) at once, for an agent's harness: the stone of a section, beside a roamer. */
     teleport(x: number, z: number) { const g = regionAt(x, z); if (!g || !openRegions(beaten).has(g.n)) return false; dropTown(); me.x = x; me.z = z; me.region = g.n; trekAt.band = bandAt(x, z); trekAt.armed = true; snap = true; look(); drawWhere(); return true; },
     trails: () => [...TRAILS.values()].map((t) => ({ n: t.n, stones: t.stones.map((p) => ({ x: +p.x.toFixed(1), z: +p.z.toFixed(1) })) })),
@@ -1430,5 +1449,7 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
   };
 }
 /** A friend as the world draws them (src/net/party.ts Ghost, placed for this frame). */
+/** A mark on the map: where, in what colour, a quest step's (bigger) or a post's, dimmed while it rests. */
+export interface MapPin { x: number; z: number; colour: string; quest?: boolean; dim?: boolean }
 export interface Friend { id: string; name: string; lead: string; follow: readonly string[]; x: number; z: number; yaw: number; colour: number }
 export type WorldView = ReturnType<typeof worldView>;
