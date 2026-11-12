@@ -33,19 +33,14 @@ export async function cli(argv: string[], o: { url: string; key?: string; org?: 
   const t = list.find((x) => x.name === name);
   if (!t) { io.err(`no tool "${name}": \`bun run cli\` lists them`); return 1; }
 
-  const args: Record<string, unknown> = {}, body: Record<string, unknown> = {};
+  // Path and query flags stay strings; the rest are body fields, which toRequest gathers.
+  const args: Record<string, unknown> = {};
   for (let i = 0; i < rest.length; i++) {
     const flag = rest[i]!;
     if (!flag.startsWith("--")) { io.err(`expected --name value, got "${flag}"`); return 1; }
     const k = flag.slice(2), next = rest[i + 1];
     const v = next === undefined || next.startsWith("--") ? true : (i++, next);
-    if (k === "body") args.body = typeof v === "string" ? value(v) : v;
-    else if (t.pathParams.includes(k) || t.queryParams.includes(k)) args[k] = v;
-    else body[k] = typeof v === "string" ? value(v) : v;
-  }
-  if (Object.keys(body).length) {
-    if (!t.hasBody) { io.err(`${t.name} takes no body: unknown flag --${Object.keys(body)[0]}`); return 1; }
-    args.body = { ...(typeof args.body === "object" && args.body ? args.body : {}), ...body };
+    args[k] = typeof v === "string" && !t.pathParams.includes(k) && !t.queryParams.includes(k) ? value(v) : v;
   }
   const headers: Record<string, string> = o.key ? { authorization: `Bearer ${o.key}` } : {};
   if (t.pathParams.includes("org") && args.org === undefined) {
