@@ -40,7 +40,8 @@ import { body, creature as rosterCreature, learnset, ROSTER, teach, type Creatur
 import { worldView, type Foe } from "./world/view.ts";
 import { plantBudget, setPlantBudget } from "./world/flora.ts";
 import { pickQuality, QUALITY } from "@rustybuns/util/quality";
-import { accountChip, achieve, canSignIn, finishSignIn, fresh, login, reportButton } from "./account.ts";
+import { tutorial } from "@rustybuns/util/tutorial";
+import { accountChip, achieve, achievements, canSignIn, finishSignIn, fresh, login, reportButton } from "./account.ts";
 import { asCreature, atLevel, bind, downed, heal, hpOf, wound, bindBelow, bindChance, clearSection, cleared, gainXp, INK, loadJourney, moveUp, mythicOf, newJourney, nextUp, call, owns, PICKS, rest, SAVE_KEY, SECTIONS, sections, see, slots, STARTERS, TRAIL_REGIONS, toNext, witchSays, type Journey, mend } from "./journey.ts";
 import { LORE } from "./lore.ts";
 import { circleLineOf, handOf, knownOf, PAGE_INK, poolOf, ribbonsOf, summon, type Summoned } from "./grimoire.ts";
@@ -346,7 +347,12 @@ $("#select").addEventListener("click", (e) => {
   if (b.dataset.side === "A") pickA = b.dataset.id!; else pickB = b.dataset.id!;
   drawPicker();
 });
-$("#fight").addEventListener("click", () => { pageInk = PAGE_INK; summoned = null; start(pickA, pickB, skinSel.value, $<HTMLInputElement>("#watch").checked); });
+$("#fight").addEventListener("click", () => {
+  pageInk = PAGE_INK; summoned = null;
+  const watch = $<HTMLInputElement>("#watch").checked;
+  start(pickA, pickB, skinSel.value, watch);
+  if (!watch) coach.start();
+});
 $("#pickerBack").addEventListener("click", () => showTitle());
 
 // The bestiary (src/card.ts): every beast's card, its pictures, its radar with the numbers, its signature.
@@ -540,7 +546,10 @@ const meet = {
   keeper: (g: Region, k: number) => { const s = sections(g)[k]!; setOut(g, "keeper", { id: s.keeper, level: s.level }, k); },
 };
 const world = worldView(scene, camera, {
-  ...meet,
+  // Walking into a fight in your own journey is where the tutorial starts (a jump link's scratch journey never does).
+  arena: (g) => { meet.arena(g); learn(); },
+  wild: (g, foe) => { meet.wild(g, foe); learn(); },
+  keeper: (g, k) => { meet.keeper(g, k); learn(); },
   met: (den, id, level) => online?.met(den, id, level),
   life: (e) => online?.life(e.k, e.id, e.k === "flush" ? e.h : 0),
   cleared: (n) => (journey ? cleared(journey, n) : 0),
@@ -1339,7 +1348,10 @@ function playerInput(): Input {
   const { fx, sx } = push(k, analog);
   const fw = new THREE.Vector3(); camera.getWorldDirection(fw); fw.y = 0; fw.normalize();
   const rt = new THREE.Vector3(-fw.z, 0, fw.x);
-  return { mx: fw.x * fx + rt.x * sx, mz: fw.z * fx + rt.z * sx, ...buttons(k, held ? NO_STICK : padAim) };
+  const b = buttons(k, held ? NO_STICK : padAim);
+  // What the player has done in a fight so far, for the tutorial: each flag stays true once it is.
+  did.move ||= fx !== 0 || sx !== 0; did.jump ||= b.up; did.attack ||= b.light || b.heavy; did.guard ||= b.guard; did.special ||= b.special;
+  return { mx: fw.x * fx + rt.x * sx, mz: fw.z * fx + rt.z * sx, ...b };
 }
 
 // --- drawing ----------------------------------------------------------------------------------------
@@ -1572,6 +1584,23 @@ function tripOver(m: Match, bound: boolean, how: string) {
 // Only the few keys you need to get going show on screen; every key sits in Settings under Moving, Fighting and Open world.
 const cap = (id: string) => `<b>${keymap.get(id).map((c) => esc(keyName(c))).join("</b> / <b>") || "?"}</b>`;
 const walk = () => { const f = (id: string) => keyName(keymap.get(id)[0] ?? ""); return `<b>${esc(["forward", "left", "back", "right"].map(f).join(""))}</b>`; };
+/** The first-time tutorial (@rustybuns/util/tutorial): a first fight's five things to do, each ticked once the player
+ *  has done it (`did`, set from their own input in playerInput). It starts with the first fight you pick or walk into. */
+const did = { move: false, jump: false, attack: false, guard: false, special: false };
+const caps = (...ids: string[]) => ids.map((id) => keyName(keymap.get(id)[0] ?? "")).filter(Boolean);
+const coach = tutorial({
+  prefix: "mm",
+  account: { achieve, achievements },
+  steps: [
+    { title: "Move", keys: caps("forward", "left", "back", "right"), say: "Or the stick. Moves go from the camera: forward is away from you.", done: () => did.move },
+    { title: "Jump", keys: caps("jump"), say: "Tap for a hop, hold to go higher.", done: () => did.jump },
+    { title: "Attack", keys: caps("light"), say: "Or click. A right click is a strong swing that costs stamina.", done: () => did.attack },
+    { title: "Guard", keys: caps("guard"), say: "Hold it as they swing: a guarded hit does a fraction.", done: () => did.guard },
+    { title: "A special", keys: caps("special"), say: "Every beast has its own. It costs energy: land hits, or stand still, to fill it back up.", done: () => did.special },
+  ],
+});
+/** A fight you walked into from your own journey: the tutorial, if this is the first. */
+const learn = () => { if (m && keepJourney) coach.start(); };
 /** The movement card over the fight and the world: shown unless it is switched off in Settings (saved per browser). */
 const MOVE_CARD = `${KEY}.moveCard`;
 let moveCardOn = (() => { try { return localStorage.getItem(MOVE_CARD) !== "off"; } catch { return true; } })();
@@ -1994,7 +2023,7 @@ const view = (f: Fighter) => ({
   id: f.c.id, hp: Math.round(f.hp), launch: Math.round(f.launch), stamina: +f.stamina.toFixed(2), energy: Math.round(f.energy),
   state: f.state, swing: swingPhase(f), flying: f.flying, onGround: f.onGround, invuln: f.invuln, clipped: f.clipped > 0, pos: { x: +f.pos.x.toFixed(2), y: +f.pos.y.toFixed(2), z: +f.pos.z.toFixed(2) },
 });
-const fightState = () => m && { engine: live?.engine, tick: m.tick, over: m.over, winner: m.winner, fighters: m.f.map(view), shapes: m.areas.map((a) => ({ by: a.owner, shape: a.d.shape, move: a.move.name, head: head(a) })), warnings: ([0, 1] as const).map((i) => warning(m!, i)?.d.shape ?? null), ringRadius: ARENA.radius };
+const fightState = () => m && { tutorial: coach.state(), engine: live?.engine, tick: m.tick, over: m.over, winner: m.winner, fighters: m.f.map(view), shapes: m.areas.map((a) => ({ by: a.owner, shape: a.d.shape, move: a.move.name, head: head(a) })), warnings: ([0, 1] as const).map((i) => warning(m!, i)?.d.shape ?? null), ringRadius: ARENA.radius };
 const tripState = () => trip && { ...trip, out: [...trip.out], region: trip.region.n };
 Object.assign(window, {
   mythicMasters: {

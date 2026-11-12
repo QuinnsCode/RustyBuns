@@ -64,6 +64,7 @@ export const ACHIEVEMENTS: Record<string, Achievement[]> = {
   ],
   "mythic-masters": [
     SHARED.played,
+    SHARED.tutorial,
     { id: "first-fight", name: "Into the arena", blurb: "Finish a fight on the trail.", icon: Shield },
     { id: "first-win", name: "Folklore favoured", blurb: "Win a fight.", icon: Trophy },
     { id: "first-bind", name: "Bound", blurb: "Bind a beast.", icon: Link },
