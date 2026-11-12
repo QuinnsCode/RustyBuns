@@ -721,13 +721,15 @@ html .ui-house .gc-head h2::before { content: ""; display: inline-block; width: 
 /* Round 12 (#4285): the hero scope moment. The briefing and the debriefs are seen down the rebase scope: the table is
    the lens, a dark housing closes in round it, and the reticle (scope.svg 1.3 KB: heavy posts in from the rim, a
    hairline cross with mil dots, a stadia ladder, an orange chevron) sits behind the dossier at the scope's full size.
-   The housing is a CSS gradient (no art), with a worn orange lens ring. The dossier stays on top, so nothing on it
+   The housing is a CSS gradient (no art): pale field paper outside an inked double ring with a worn orange inner edge
+   (round 13: the black housing fought the white canvas). The dossier stays on top, so nothing on it
    loses contrast; the play view never shows it. */
 .menu, .results { --scope-r: max(50vmin, 360px); }
 .menu::after, .results::after { content: ""; position: fixed; inset: 0; z-index: -1; pointer-events: none;
   background: url(/menu/scope.svg) center / calc(var(--scope-r) * 2) no-repeat,
-    radial-gradient(circle at center, #0000 0 calc(var(--scope-r) - 26px), #1414141f calc(var(--scope-r) - 10px), #e8590c66 calc(var(--scope-r) - 3px),
-      #141414 calc(var(--scope-r) - 1px), #1d1d1b calc(var(--scope-r) + 26px), #262623 calc(var(--scope-r) + 30px), #121211 calc(var(--scope-r) + 60px));
+    radial-gradient(circle at center, #0000 0 calc(var(--scope-r) - 22px), #14141414 calc(var(--scope-r) - 8px), #e8590c99 calc(var(--scope-r) - 3px),
+      #141414 calc(var(--scope-r) - 2px) calc(var(--scope-r) + 4px), #d9d6cc calc(var(--scope-r) + 5px) calc(var(--scope-r) + 9px),
+      #141414b3 calc(var(--scope-r) + 10px) calc(var(--scope-r) + 11px), #e9e7e0d9 calc(var(--scope-r) + 12px), #dedbd2e6 calc(var(--scope-r) + 220px));
   animation: scope-in 0.7s cubic-bezier(.2, .7, .2, 1) both; }
 @keyframes scope-in { from { transform: scale(1.12); opacity: 0.4; } }
 @media (prefers-reduced-motion: reduce) { .menu::after, .results::after { animation: none; } }
@@ -735,8 +737,8 @@ html .ui-house .gc-head h2::before { content: ""; display: inline-block; width: 
 .results[data-mood="lost"] .card::after { background: url(/menu/sight.svg) 50% 18% / 58% no-repeat, url(/menu/soldier-lost.webp) 50% 92% / 136% auto no-repeat,
   repeating-linear-gradient(#0000 0 9px, #14141420 9px 10px), linear-gradient(#ecebe6, #d3d1ca); }
 @media (max-width: 560px) {
-  /* Under the cog the briefing scrolls beneath the housing's top, not a band of white table. */
-  .menu::before { background: linear-gradient(#121211 78%, #12121100); }
+  /* Under the cog the briefing scrolls beneath the pale housing's top, not a band of white table. */
+  .menu::before { background: linear-gradient(#e4e1d9 78%, #e4e1d900); }
   /* TOP SECRET lands under the photo, clear of its corner. */
   .menu .sight::after { left: -34px; bottom: -34px; transform: rotate(-6deg); }
 }
