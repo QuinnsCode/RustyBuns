@@ -77,6 +77,7 @@ export const ACHIEVEMENTS: Record<string, Achievement[]> = {
   "git-recon": [
     SHARED.played,
     SHARED.alpha,
+    SHARED.tutorial,
     { id: "first-win", name: "Area clear", blurb: "Win a chapter of the campaign.", icon: ShieldCheck },
     { id: "new-head", name: "A new face", blurb: "Unlock a head.", icon: UserRound },
   ],
