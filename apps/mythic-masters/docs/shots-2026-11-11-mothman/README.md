@@ -20,7 +20,7 @@ thorax. What a child would draw: the red eyes, the big wings, the dark body.
 
 ## What made it better
 
-The generator (`proposals/set-b/mothman.ts`, on the PR) writes the sheet.
+The generator (`proposals/set-b/mothman.ts`, commit 886f7431, on the PR) writes the sheet.
 
 - **One skin from blobs** (`blend: 0.02`): a chest with pecs, a shoulder hump the head sinks into, long lean limbs.
 - **Moth wings, not butterfly wings:** two `membrane`s per side, the forewing's leading edge being the rig's wing chain

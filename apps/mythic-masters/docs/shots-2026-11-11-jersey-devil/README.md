@@ -20,7 +20,7 @@ head, the bat wings, the forked tail.
 
 ## What made it better
 
-The generator (`proposals/set-b/jersey-devil.ts`, on the PR) writes the sheet.
+The generator (`proposals/set-b/jersey-devil.ts`, commit 886f7431, on the PR) writes the sheet.
 
 - **The horse head is four blobs** (a cranium, a long muzzle, a soft nose end and a jaw line) on a two-node neck with a
   tilted neck blob, all one skin (`blend: 0.016`) with the body. The old `skull` loft came out boxy.
