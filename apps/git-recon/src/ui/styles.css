@@ -473,13 +473,23 @@ html.touch .bl { bottom: 156px; }
 .results .card .clip { right: 100px; }
 /* The tally is filed on the after-action form, its number typed in the header. */
 .results .tally::before { content: "AFTER-ACTION REPORT \2022  FORM GR-27"; padding: 6px 0 5px; font: 700 10px/1 var(--mono); letter-spacing: 0.18em; color: var(--br-dim); border-bottom: 1px solid var(--br-ink); }
-/* The way out is a pair of dog tags, like the missions; Play again is the orange one. */
-.results .row { flex-wrap: wrap; }
-.results .row button { white-space: nowrap; color: #1b1c19; text-shadow: 0 1px 0 #fff8; border: 0; border-radius: 22px / 50%; padding: 10px 18px 10px 34px;
-  font-family: var(--br-stencil); font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em;
-  background: radial-gradient(circle at 16px 50%, #fff 0 4.5px, #6f726b 4.5px 6px, #0000 6.5px), repeating-linear-gradient(90deg, #ffffff14 0 1px, #0000 1px 3px), linear-gradient(170deg, #eceee9, #b3b7ad 48%, #dcdfd7 56%, #a1a59b);
-  box-shadow: inset 0 0 0 2px #ffffff80, inset 0 0 0 3px #6b6e66, 0 3px 0 #5b5e56, 0 6px 10px #0003; }
-.results .row button.primary { color: #fff; text-shadow: 0 1px 0 #0006; background: radial-gradient(circle at 16px 50%, #fff 0 4.5px, #ffd3b0 4.5px 6px, #0000 6.5px), linear-gradient(170deg, #ff9a5c, var(--br-hot) 50%, #c94a08); box-shadow: inset 0 0 0 2px #ffffff50, inset 0 0 0 3px #9a3407, 0 3px 0 #7d2a05, 0 6px 10px #0003; }
+/* Round 10 (#4261): the way out is the form's disposition line, in the same pressed clay tiles as every other button
+   (the dog tags stay with the missions). The way on (Next, else Play again) is the inked tile with the orange edge,
+   Levels is clay; each carries its lucide mark (rotate-ccw, list, arrow-right) pressed in as a mask. No new files. */
+.results .row { flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 10px; padding-top: 8px; border-top: 1px dashed var(--br-ink); }
+.results .row::before { content: "DISPOSITION \2014  CHECK ONE"; flex-basis: 100%; font: 700 10px/1 var(--mono); letter-spacing: 0.18em; color: var(--br-dim); }
+.results .row button { display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; border-radius: 5px; padding: 9px 16px 8px 12px;
+  font: 800 13px/1.1 var(--br-stencil); text-transform: uppercase; letter-spacing: 0.1em; color: var(--br-ink);
+  background: url(/menu/tile.svg) 0 0 / 48px, linear-gradient(#fff, #f1eee6); box-shadow: inset 0 1px 0 #fff, inset 0 -2px 0 #14141418, 0 3px 0 var(--br-ink); }
+.results .row button:hover { background: url(/menu/tile.svg) 0 0 / 48px, linear-gradient(#fff, #f6f4ee); }
+.results .row button::before { content: ""; width: 16px; height: 16px; flex: none; background: currentColor;
+  -webkit-mask: var(--mark) center / contain no-repeat; mask: var(--mark) center / contain no-repeat; }
+.results .row #again { --mark: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8'/%3E%3Cpath d='M3 3v5h5'/%3E%3C/svg%3E"); }
+.results .row #back { --mark: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 12h.01M3 18h.01M3 6h.01M8 12h13M8 18h13M8 6h13'/%3E%3C/svg%3E"); }
+.results .row #next { --mark: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 12h14M12 5l7 7-7 7'/%3E%3C/svg%3E"); }
+.results .row :is(#next, #next[hidden] + #again) { color: #fff; background: linear-gradient(#2a2a27, #141414); border-top: 4px solid var(--br-hot); padding-top: 5px; }
+.results .row :is(#next, #next[hidden] + #again):hover { background: linear-gradient(#34342f, #1c1c1a); }
+.results .row :is(#next, #next[hidden] + #again)::before { background: var(--br-hot); }
 
 /* The Controls panel is the same dossier: its look comes from packages/ui's tokens, and packages/game-controls'
    classes are styled here the way the menu's are; neither package's CSS is forked. */
@@ -543,7 +553,8 @@ html .ui-house .gc-key { border-radius: 5px; font: 700 13px/1.15 var(--mono); ba
   box-shadow: var(--br-tile-edge); }
 html .ui-house .gc-key.on { color: #fff; background: linear-gradient(#2a2a27, #141414); border-top: 4px solid #e8590c; }
 html .ui-house :is(.gc-icon, .gc-close) { border-radius: 5px; background: var(--br-tile); box-shadow: var(--br-tile-edge); }
-html .ui-house .gc-icon:disabled { background: url(/menu/tile.svg) 0 0 / 48px, #f2f0ea; box-shadow: inset 0 0 0 1px #14141426, 0 2px 0 #14141433; }
+/* A reset with nothing to reset is the same clay tile pressed flat: a light ink edge, its mark in mid grey. */
+html .ui-house .gc-icon:disabled { color: #6f6d66; background: var(--br-tile); border: 1.5px solid #14141466; box-shadow: inset 0 1px 0 #fff, 0 1px 0 #14141466; transform: translateY(2px); }
 html .ui-house .gc-reset { border-radius: 5px; font: 800 12px/1.1 var(--br-stencil); text-transform: uppercase; letter-spacing: 0.1em; background: var(--br-tile); box-shadow: var(--br-tile-edge); }
 /* The crosshair marks the rows: a key's name in the manual, a line of the key card. */
 html .ui-house :is(.gc-binds > span, .gc-keys dt), .menu .more .keys dt { position: relative; padding-left: 16px; }
