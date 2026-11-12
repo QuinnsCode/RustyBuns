@@ -9,12 +9,17 @@
 
 import { GhUser, githubToken } from "./github.ts";
 import { readJson } from "@rustybuns/util/http";
+import { arr, num, obj, opt, str, type Of } from "@rustybuns/util/guard";
 import { fail, json, type Env } from "./env.ts";
 
 const API = "https://api.github.com";
 export const BILLING_PAGE = "https://github.com/settings/billing";
 
-interface Item { product?: string; sku?: string; quantity?: number; unitType?: string; grossAmount?: number; discountAmount?: number; netAmount?: number; repositoryName?: string }
+const n = opt(num(-Infinity, Infinity)), s = opt(str(Infinity));
+const Item = obj({ product: s, sku: s, quantity: n, unitType: s, grossAmount: n, discountAmount: n, netAmount: n, repositoryName: s });
+type Item = Of<typeof Item>;
+/** GitHub's billing usage report: a line that doesn't read is left out. */
+const Usage = obj({ usageItems: opt(arr(Item, Infinity, { drop: true })) });
 interface Sum { minutes: number; gross: number; discount: number; net: number }
 export type Bill =
   | { ok: true; login: string; month: string; total: Sum; repos: ({ repo: string } & Sum)[]; runners: ({ sku: string } & Sum)[] }
@@ -43,7 +48,7 @@ export async function actionsBill(env: Env, user: string, now = new Date()): Pro
     const why = r.status === 403 || r.status === 404 ? "this token can't read billing (it needs the Plan permission, read)" : `GitHub said ${r.status}`;
     return { ok: false, reason: why, link: BILLING_PAGE };
   }
-  const items = (((await r.json()) as { usageItems?: Item[] }).usageItems ?? []).filter((i) => /actions/i.test(i.product ?? ""));
+  const items = ((await readJson(r, Usage))?.usageItems ?? []).filter((i) => /actions/i.test(i.product ?? ""));
   const total = zero(), repos = new Map<string, Sum>(), runners = new Map<string, Sum>();
   for (const i of items) {
     add(total, i);

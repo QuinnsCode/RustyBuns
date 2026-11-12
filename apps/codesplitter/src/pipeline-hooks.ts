@@ -29,7 +29,7 @@ import { hostedBudget, installedHarnesses } from "./agent-routes.ts";
 import { cheapest } from "./conflict-agent.ts";
 import { healUnavailable } from "./heal.ts";
 import { parseJson } from "./util.ts";
-import type { Env } from "./env.ts";
+import { errorIn, type Env } from "./env.ts";
 import { DEFAULT_PIPELINE, HOOKS, Lane, PIPELINE_FILE, Pipeline, type Hook } from "./pipeline.ts";
 
 /** The repo's pipeline from main, the default without a file, or why the file isn't one. */
@@ -111,7 +111,7 @@ export async function askAi(env: Env, owner: string, prompt: string, diff: strin
   const off = healUnavailable(env, owner), cheap = off ? null : cheapest(installedHarnesses(env));
   if (!cheap) return { error: off ?? "no coding agent's CLI is installed here" };
   const spent = await hostedBudget(env);
-  if (spent) return { error: check(obj({ error: str(Infinity) }), await spent.json().catch(() => null))?.error ?? "the site's hosted budget is spent" };
+  if (spent) return { error: await errorIn(spent, "the site's hosted budget is spent") };
   const box: Sandbox = env.AGENT_SANDBOX ? containerSandbox(env.AGENT_SANDBOX) : localSandbox(env.AGENT_EXEC as Exec | undefined);
   const given = diff.length > MAX_DIFF ? `${diff.slice(0, MAX_DIFF)}\n(the diff goes on: ${diff.length - MAX_DIFF} more characters)\n` : diff;
   const run = await box(harnessCommand(cheap.harness, prompt, { model: cheap.model }), { path: VERDICT_FILE, text: given })

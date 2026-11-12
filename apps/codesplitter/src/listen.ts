@@ -24,6 +24,8 @@ import { fromDisk } from "./agent-run.ts";
 import { createOn, deleteOn, materializeOn } from "./branches.ts";
 import { branchNameError, fail, json, readBody, type Env } from "./env.ts";
 import { gh, githubToken, gitTip } from "./github.ts";
+import { arr, int, obj, opt, str, type Of } from "@rustybuns/util/guard";
+import { readJson } from "@rustybuns/util/http";
 import { emit } from "./hooks.ts";
 import type { Doc } from "./lines.ts";
 import { diffToOps, merge3 } from "./sync.ts";
@@ -56,11 +58,13 @@ const status = (f: Fork, error?: string) => {
     tip: f.upstream_tip, behind: f.upstream_behind, heardAt: f.upstream_heard_at, ...(error ? { error } : {}) };
 };
 
-type Compare = { ahead_by: number; files?: { filename: string; status: string; previous_filename?: string }[] };
+/** GitHub's compare reply: how far ahead, and the files it touched. */
+const Compare = obj({ ahead_by: int(0, Infinity), files: opt(arr(obj({ filename: str(Infinity), status: str(100), previous_filename: opt(str(Infinity)) }), Infinity)) });
+type Compare = Of<typeof Compare>;
 /** GitHub's compare of `base`...`head` on `repo`, or why not. */
 async function compare(repo: string, base: string, head: string, token?: string): Promise<Compare | { error: string; status: number }> {
   const res = await gh(`/repos/${repo}/compare/${base}...${head}`, token);
-  if (res.ok) return (await res.json()) as Compare;
+  if (res.ok) return (await readJson(res, Compare)) ?? { error: "GitHub's compare reply didn't read", status: 502 };
   if (res.status === 404) return { error: `GitHub has no ${base.slice(0, 7)} on ${repo} to compare from any more`, status: 404 };
   if (res.status === 403 || res.status === 429) return { error: "GitHub's rate limit is spent; try again later, or sign in with GitHub", status: 429 };
   return { error: `GitHub said ${res.status}`, status: 502 };

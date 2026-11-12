@@ -32,7 +32,7 @@ import { docIn, fileDoc, catalogueBlob, handleFor, listDir, materialize, toFile,
 import { changedLines, isBuildFile } from "./buildfiles.ts";
 import { branchEdited, mergeBlock, refChecks, waiting } from "./checks.ts";
 import { settings as deploySettings } from "./deploy.ts";
-import { branchNameError, fail, json, named, type Env, need, readBody } from "./env.ts";
+import { branchNameError, errorIn, fail, json, named, type Env, need, readBody } from "./env.ts";
 import { arr, Bad, bool, check, maybe, num, obj, oneOf, opt, raw, rec, str } from "@rustybuns/util/guard";
 import { byToken } from "./tokens.ts";
 import { emit } from "./hooks.ts";
@@ -481,7 +481,7 @@ async function askLeftovers(env: Env, owner: string, repo: string, branch: Branc
     const note = who === "ask" ? undefined : conflictNote({ branch: branch.name, path: f.path, line: c.line, rounds: round - 1, last: kept.get(id)?.answer });
     if (who === "escalate") { await noteConflict(env, owner, f.path, { round, who }); notes.set(f.path, `conflict round ${round} on ${branch.name}: a person's turn\n${note}`); continue; }
     const spent = await hostedBudget(env);
-    if (spent) { why = check(obj({ error: str(Infinity) }), await spent.json().catch(() => null))?.error ?? why; continue; }
+    if (spent) { why = await errorIn(spent, why); continue; }
     if (round > rounds) {
       counted = true;
       rounds = Number((await env.DB.prepare("UPDATE branches SET conflict_rounds = conflict_rounds + 1 WHERE owner = ? AND repo = ? AND name = ? RETURNING conflict_rounds").bind(...on).first())?.conflict_rounds ?? round);

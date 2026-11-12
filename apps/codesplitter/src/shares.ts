@@ -12,6 +12,7 @@
 
 import { fileLines, materialize } from "./archive.ts";
 import { fail, json, type Body, type Env, unread } from "./env.ts";
+import { arr, check, str } from "@rustybuns/util/guard";
 import { repoRow, liveRepo } from "./repos.ts";
 
 /** Whether `who` may read owner/repo now (worker.ts's access). */
@@ -60,7 +61,7 @@ export async function shareRoutes(req: Request, env: Env, p: string[], user: str
   const repo = await repoRow(env, s.owner, s.repo, "visibility");
   if (repo?.visibility === "private" && !(await mayRead(s.owner, s.repo, s.by))) return gone;
   // The range is wherever its surviving lines are now, plus anything written between them.
-  const wanted = new Set(JSON.parse(s.ids) as string[]);
+  const wanted = new Set(check(arr(str(Infinity), Infinity), JSON.parse(s.ids)) ?? []);
   // Anyone with the link reads it, so private lines come as placeholders.
   const lines = await fileLines(env, s.owner, s.repo, s.path, "share", false);
   const hit = lines.flatMap((l, i) => (wanted.has(l.id) ? [i] : []));

@@ -24,7 +24,7 @@
 // It counts as one of the branch's attempts.
 
 import { parseJson } from "./util.ts";
-import type { Env } from "./env.ts";
+import { errorIn, type Env } from "./env.ts";
 import type { CheckRun } from "./checks.ts";
 import { adminsOnly, agentsUnavailable, hostedBudget, installedHarnesses, policyFor } from "./agent-routes.ts";
 import { sameFailure, writeNote } from "./budget.ts";
@@ -102,7 +102,7 @@ export async function openFix(env: Env, owner: string, repo: string, branch: str
     task = `${writeNote({ done: [`fix task ${last.id} edited ${[last.path, ...x.edited ?? []].join(", ")}`], broke: ["same failure after it"], dont: ["that fix again; find the real cause"] })}\nTASK: ${task}`;
   }
   const spent = await hostedBudget(env);
-  if (spent) return { skipped: ((await spent.json()) as { error: string }).error };
+  if (spent) return { skipped: await errorIn(spent, "the site's hosted budget is spent") };
   const harness = installedHarnesses(env)[0]!;
   // One statement, so two failures at once open one task, and never more than MAX_ATTEMPTS.
   // Its other files ride in its result, as a run's lines do, for the queue to hand the agent.

@@ -13,6 +13,11 @@
 
 import { createHash } from "node:crypto";
 import { fail, json, type Env } from "./env.ts";
+import { bool, obj, opt } from "@rustybuns/util/guard";
+import { readJson } from "@rustybuns/util/http";
+
+/** Turnstile's siteverify reply: only `success` matters here. */
+const Siteverify = obj({ success: opt(bool()) });
 
 /** Turnstile's script and its iframe come from here. */
 export const TURNSTILE_ORIGIN = "https://challenges.cloudflare.com";
@@ -116,8 +121,8 @@ export async function turnstile(req: Request, env: Env): Promise<Response | null
   if (ip) form.set("remoteip", ip);
   const go = (env.TURNSTILE_FETCH as typeof fetch | undefined) ?? fetch;
   try {
-    const r = (await (await go(`${TURNSTILE_ORIGIN}/turnstile/v0/siteverify`, { method: "POST", body: form })).json()) as { success?: boolean };
-    return r.success ? null : refuse("it didn't pass; try it again");
+    const r = await readJson(await go(`${TURNSTILE_ORIGIN}/turnstile/v0/siteverify`, { method: "POST", body: form }), Siteverify);
+    return r?.success ? null : refuse("it didn't pass; try it again");
   } catch { return refuse("couldn't reach Cloudflare to check it; try again"); }
 }
 
