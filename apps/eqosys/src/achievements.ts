@@ -51,6 +51,7 @@ export const ACHIEVEMENTS: Record<string, Achievement[]> = {
   ],
   "delayed-reaction": [
     SHARED.played,
+    SHARED.tutorial,
     { id: "first-answer", name: "Echo", blurb: "Answer a note a bar later.", icon: Radio },
     { id: "streak-8", name: "In the pocket", blurb: "Answer eight notes in a row.", icon: Flame },
   ],
