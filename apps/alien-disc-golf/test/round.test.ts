@@ -101,18 +101,24 @@ describe("a round of Alien Disc Golf", () => {
     await tab.until("Tee off", `!!document.querySelector("#tee-off")`);
     await tab.page(`document.querySelector("#tee-off").click()`);
     expect(await tab.page<boolean>(`golf.state().splash || !document.querySelector("#splash").hidden`)).toBe(false);
-    // Hole 1: name the tee's country for a stroke back.
+    // The first time, hole 1 is the tutorial: its coach card waits on the guess first.
     await tab.until("the guess", `golf.state().phase === "guess"`);
+    expect(await tab.page("golf.state().tutorial")).toMatchObject({ running: true, step: 0, title: "Where are we?" });
+    expect(await tab.page<string>(`document.querySelector(".eq-coach").textContent`)).toContain("1 of 5");
+    // Hole 1: name the tee's country for a stroke back.
     expect(await tab.page<string[]>(`[...document.querySelectorAll("[data-guess]")].map((b) => b.dataset.guess)`)).toContain(hole1.teeCountry);
     await tab.page(`golf.guess(${JSON.stringify(hole1.teeCountry)})`);
     await tab.until("aiming", `golf.state().phase === "aim"`);
     expect((await tab.state()).source).toBe("synthetic");
+    await tab.until("the coach on the aim", `golf.state().tutorial.title === "Turn the aim"`);
 
     // Into the sea on purpose: the swim starts, the clock runs, paddling moves the disc, and it ends back in aim.
     const sea = seaThrow();
     await tab.page(`golf.aim(${sea.heading}, ${sea.power}, "low")`);
     await tab.page("golf.throw()");
     await tab.until("the swim", `golf.state().phase === "swim"`);
+    // Thrown and landed: the tutorial is done, for good in this browser.
+    await tab.until("the tutorial done", `golf.state().tutorial.learned && !golf.state().tutorial.running`);
     const clock = () => tab.page<number>(`parseFloat(document.querySelector("#swim-clock").textContent)`);
     const first = await tab.state(), clock1 = await clock();
     expect(distanceKm(first.lie, sea.landing)).toBeLessThan(1);
@@ -145,6 +151,13 @@ describe("a round of Alien Disc Golf", () => {
     expect((await tab.state()).scores).toEqual([]);
     expect(tab.errors()).toEqual([]);
     await tab.close();
+
+    // A new round in the same browser tees off with no tutorial.
+    const again = await open(chrome.cdp, `seed=${SEED + 1}&wind=synthetic`);
+    await again.page("golf.teeOff()");
+    expect(await again.page<boolean>("golf.state().tutorial.running")).toBe(false);
+    expect(await again.page<null>("document.querySelector('.eq-coach')")).toBeNull();
+    await again.close();
   });
 
   test("paddling at a shore washes the disc up there before the clock runs out", async () => {
