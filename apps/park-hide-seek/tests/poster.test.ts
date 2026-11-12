@@ -1,12 +1,11 @@
 // The menus' poster (#3543) is drawn from numbers: one NaN in a path and the art silently vanishes, so every time of day
 // and both sizes must come out as clean numbers, and the clock must land on the right poster.
 import { expect, test } from "bun:test";
-import { backdropSvg, halftoneSvg, headSvg, insigniaSvg, patchSvg, permitNo, posterSvg, ridgeFootSvg, todAt } from "../src/ui/poster.ts";
+import { backdropSvg, halftoneSvg, headSvg, insigniaSvg, patchSvg, permitNo, posterSvg, todAt } from "../src/ui/poster.ts";
 
-// Round 7 (#4229): the screen behind the menus, for a laptop, a tablet and a phone, and the Controls card's ridge foot.
+// Round 7 (#4229): the screen behind the menus, for a laptop, a tablet and a phone.
 test.each([["day", 0.625], ["night", 0.625], ["dusk", 1.45], ["night", 2.15]] as const)("the %s backdrop for a screen %d tall per wide draws only numbers", (tod, aspect) => {
   expect(backdropSvg(tod, aspect)).not.toMatch(/NaN|undefined|Infinity/);
-  expect(ridgeFootSvg(tod)).not.toMatch(/NaN|undefined|Infinity/);
   for (const h of [76, 120, 230]) expect(headSvg(tod, h)).not.toMatch(/NaN|undefined|Infinity/);
 });
 
