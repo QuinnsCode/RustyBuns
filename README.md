@@ -357,6 +357,8 @@ The first time you play, a coach card names one thing to do, waits until you do 
 
 `tutorial({ prefix, steps, account })` from `@rustybuns/util/tutorial` takes steps of a title, a line, key caps and a `done()` check the card reads a few times a second. It can't be closed, so everyone does it once. Once is kept in the browser and on the eqosys account as the shared `tutorial` achievement ("Learned the ropes"), so a signed-in player on a new device skips it, and a guest's finish is held until their next sign-in. The card is an eqosys surface, so it wears the game's skin. Alien Disc Golf's hole 1 is the first one: guess the country, turn the aim, set the power, throw, and watch the wind take it.
 
+Skate Tech Park's first ride on a park: push, turn, ollie, a kickflip, then a grind.
+
 </details>
 
 ### GDPR on one account, kept in the person's region

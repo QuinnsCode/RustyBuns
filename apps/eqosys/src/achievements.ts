@@ -46,6 +46,7 @@ export const ACHIEVEMENTS: Record<string, Achievement[]> = {
   "skate-tech-park": [
     SHARED.played,
     SHARED.alpha,
+    SHARED.tutorial,
     { id: "grind", name: "Metal on metal", blurb: "Grind a rail or a ledge.", icon: Spline },
     { id: "landing", name: "Stick it", blurb: "Land after being airborne.", icon: PlaneLanding },
   ],
