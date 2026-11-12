@@ -17,12 +17,17 @@ const looks = async (query: string, dark = false) => {
   const tab = await openTab(chrome!.cdp, { w: 1024, h: 700 });
   await tab.call("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: dark ? "dark" : "light" }] });
   await load(chrome!.cdp, tab, `http://127.0.0.1:${server.port}/${query}`, 300);
-  const got = await tab.eval<{ surfaces: Record<string, Look>; who: string; fits: { select: boolean; members: boolean } }>(`(() => {
+  const got = await tab.eval<{ surfaces: Record<string, Look>; who: string; fits: Record<string, boolean> }>(`(() => {
     const look = (sel) => { const s = getComputedStyle(document.querySelector(sel)); return { bg: s.backgroundColor, image: s.backgroundImage, border: s.borderTopColor, radius: s.borderTopLeftRadius, font: s.fontFamily }; };
     return { surfaces: { chip: look(".eq-chip"), form: look(".rb-report .eq-form"), toast: look(".eq-toast"), lobby: look(".rb-lobby"), spaces: look(".rb-spaces") }, who: getComputedStyle(document.querySelector(".eq-who")).textTransform,
       // A game page's own rules stop at the surfaces: the form's Kind is as wide as its other fields, and the member column's buttons stay inside the panel.
       fits: { select: document.querySelector(".rb-report select").offsetWidth === document.querySelector(".rb-report input").offsetWidth,
-        members: [...document.querySelectorAll(".rb-spaces-online .eq-btn")].every((b) => b.getBoundingClientRect().right <= document.querySelector(".rb-spaces").getBoundingClientRect().right) } };
+        members: [...document.querySelectorAll(".rb-spaces-online .eq-btn")].every((b) => b.getBoundingClientRect().right <= document.querySelector(".rb-spaces").getBoundingClientRect().right),
+        // The chip is a tag the size of its name and button, lifted off the page like the panels, not a bar across the column.
+        chip: (() => { const c = document.querySelector(".eq-chip.in"); return c.offsetWidth < c.parentElement.parentElement.clientWidth / 2 && getComputedStyle(c).boxShadow !== "none"; })(),
+        // The lobby reads "Party KRTZ: Ada (host), Grace ready" on one line, and Start, Copy link and Settings share the row under it.
+        lobby: (() => { const who = document.querySelector(".rb-lobby-who"), rows = new Set([...document.querySelectorAll(".rb-lobby > .eq-btn")].map((b) => { const r = b.getBoundingClientRect(); return Math.round((r.top + r.bottom) / 2); }));
+          return who.getClientRects().length === 1 && who.offsetHeight < 2 * parseFloat(getComputedStyle(who).lineHeight) && rows.size === 1; })() } };
   })()`);
   await tab.close();
   return got;
@@ -41,16 +46,18 @@ test.skipIf(!chromePath())("a skin's tokens land on the chip, report form, toast
 
 // #4148: a real game's skin points at its own stylesheet (var(--plate), var(--paper), var(--f-book)); over that stylesheet,
 // its paper or plate and its face reach every surface, under a texture where the game lays one (the colour is in the image).
+// Two Fronts' chip is the one exception it chose: a brass tag (#4210), so its "paper" there is the brass.
 test.skipIf(!chromePath())("each game's own paper and face land on the chip, report form, toast, lobby and spaces, and its page rules stay out", async () => {
   const games = [
-    ["two-fronts", "rgb(23, 28, 35)", `"Share Tech Mono", ui-monospace, monospace`],
+    ["two-fronts", "rgb(23, 28, 35)", `"Share Tech Mono", ui-monospace, monospace`, "rgb(216, 168, 63)"],
     ["mythic-masters", "rgb(232, 217, 181)", `"IM Fell English", Georgia, "Times New Roman", serif`],
     ["skate-tech-park", "rgb(251, 247, 240)", "system-ui, sans-serif"],
   ] as const;
-  for (const [game, paper, face] of games) {
+  for (const [game, plain, face, chip] of games as readonly (readonly [string, string, string, string?])[]) {
     const got = await looks(`?game=${game}`);
-    expect({ game, ...got.fits }).toEqual({ game, select: true, members: true });
+    expect({ game, ...got.fits }).toEqual({ game, select: true, members: true, chip: true, lobby: true });
     for (const [name, l] of Object.entries(got.surfaces)) {
+      const paper = name === "chip" && chip ? chip : plain;
       expect({ game, name, paper: l.bg === paper || l.image.includes(paper), font: l.font }).toEqual({ game, name, paper: true, font: face });
     }
   }

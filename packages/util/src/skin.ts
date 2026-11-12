@@ -20,7 +20,7 @@ const BASE = `
 .eq input,.eq select,.eq textarea{width:100%;max-width:none;min-height:36px;padding:7px 10px;border:var(--ui-border) solid var(--ui-line);border-radius:var(--ui-radius-sm);background:var(--ui-soft);color:var(--ui-ink);font:inherit}
 .eq textarea{resize:vertical}.eq ::placeholder{color:var(--ui-dim);opacity:1}
 .eq-chip{display:inline-flex;align-items:center;gap:8px}.eq-chip:has(.eq-note){flex-wrap:wrap}.eq-chip .eq-btn{min-height:30px;min-width:30px}
-.eq-chip.in{padding:2px 2px 2px 10px;border:var(--ui-border) solid var(--ui-line);border-radius:var(--ui-radius-sm);background:var(--ui-bg)}
+.eq-chip.in{width:fit-content;max-width:100%;box-shadow:var(--ui-shadow);padding:2px 2px 2px 10px;border:var(--ui-border) solid var(--ui-line);border-radius:var(--ui-radius-sm);background:var(--ui-bg)}
 .eq-who{font-family:var(--ui-font-head);font-weight:700;max-width:12em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .eq-note{flex-basis:100%;margin:0;color:var(--ui-dim);font-size:12px}
 .rb-report{position:fixed;right:max(12px,env(safe-area-inset-right));bottom:max(12px,env(safe-area-inset-bottom));z-index:2147483000;display:grid;justify-items:end;gap:6px}
@@ -41,7 +41,7 @@ const BASE = `
 .eq-toast .eq-badge{align-self:flex-start;margin-left:4px}
 @media (prefers-reduced-motion:reduce){.eq-toast{animation:none}}
 .rb-lobby{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:10px 12px;border:var(--ui-border) solid var(--ui-line);border-radius:var(--ui-radius);background:var(--ui-bg);box-shadow:var(--ui-shadow)}
-.rb-lobby[hidden]{display:none}.rb-lobby-who{flex:1 1 200px;min-width:0;line-height:1.7}
+.rb-lobby[hidden]{display:none}.rb-lobby-who{flex:1 1 100%;min-width:0;line-height:1.7}
 .rb-lobby-code{display:inline-block;padding:0 5px 0 7px;border:var(--ui-border) solid var(--ui-line);border-radius:var(--ui-radius-sm);background:var(--ui-soft);font:700 13px/1.5 var(--ui-font);letter-spacing:.14em}
 .rb-lobby-m{font-weight:700;white-space:nowrap}.rb-lobby-m small{font-size:12px;font-weight:400;color:var(--ui-dim)}
 .rb-lobby-m::before{content:"";display:inline-block;width:8px;height:8px;margin-right:5px;border-radius:50%;box-shadow:inset 0 0 0 1.5px var(--ui-dim);vertical-align:1px}
