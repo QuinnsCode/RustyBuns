@@ -4,9 +4,9 @@ The CRM your agents can use. Contacts, companies, deals and activities for a rea
 with an MCP server built in, a Rust engine for analysis in the browser, office sync, signed webhooks,
 a desktop build, and every row yours to export or delete. One Cloudflare Worker, one D1 database.
 
-Licensed under the QNTBR "This Shit Mine" license ([LICENSE](LICENSE)): read it, run it to evaluate
-it, send fixes; don't copy, resell or host it for others. The rest of this repository stays under its
-own license.
+Licensed under the [PolyForm Noncommercial License 1.0.0](LICENSE): free to use, change and share for any
+noncommercial purpose (hobby, study, research, nonprofits); commercial use needs a license from QNTBR
+(hello@qntbr.com). The rest of this repository stays under its own license.
 
 ## Run it
 

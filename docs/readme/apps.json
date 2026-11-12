@@ -73,7 +73,7 @@
       {
         "app": "eqosys",
         "name": "eqosys",
-        "line": "Your home for each Q game: your games, friends, saves and studio on one account. Below it is Better Auth on D1, with a PKCE code handoff to each app and a signed token that the app can check alone. It knows which app each person came from and what they can do in each. A Durable Object for each person holds friends, presence and notifications. It is also a plain OpenID provider for a site's own Better Auth or a native app. QNTBR-licensed."
+        "line": "Your home for each Q game: your games, friends, saves and studio on one account. Below it is Better Auth on D1, with a PKCE code handoff to each app and a signed token that the app can check alone. It knows which app each person came from and what they can do in each. A Durable Object for each person holds friends, presence and notifications. It is also a plain OpenID provider for a site's own Better Auth or a native app. PolyForm Noncommercial."
       },
       {
         "app": "playground",
@@ -83,7 +83,7 @@
       {
         "app": "qollab",
         "name": "Qollab",
-        "line": "Realtime rooms for any app on Cloudflare: rooms, seats, parties, presence and saves in one call. It is built into eqosys as its own Worker, with a Durable Object for each player and each room. QNTBR-licensed."
+        "line": "Realtime rooms for any app on Cloudflare: rooms, seats, parties, presence and saves in one call. It is built into eqosys as its own Worker, with a Durable Object for each player and each room. PolyForm Noncommercial."
       }
     ]
   },
@@ -104,12 +104,12 @@
       {
         "app": "qcrm",
         "name": "qCRM",
-        "line": "A CRM with MCP built in, a Rust wasm engine in the browser, office sync, signed webhooks and a desktop build. It has roles for a real place and hashed org ids. QNTBR-licensed."
+        "line": "A CRM with MCP built in, a Rust wasm engine in the browser, office sync, signed webhooks and a desktop build. It has roles for a real place and hashed org ids. PolyForm Noncommercial."
       },
       {
         "app": "geoboxq",
         "name": "GeoBoxQ",
-        "line": "A fit checker for shipping boxes, with a Rust engine that packs boxes in boxes. Private license."
+        "line": "A fit checker for shipping boxes, with a Rust engine that packs boxes in boxes. PolyForm Noncommercial."
       },
       {
         "app": "at-lens",

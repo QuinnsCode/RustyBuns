@@ -13,10 +13,11 @@ p.say("two more minutes");
 p.onStart(({ room, seat }) => game.join(room, seat)); // your own world takes it from here
 ```
 
-Licensed under the QNTBR "This Shit Mine" license ([LICENSE](LICENSE)), like [eqosys](../eqosys/LICENSE): read it, run it to
-evaluate it, send fixes; don't copy, resell or host it for others, your own game's players included. The
-client a game talks to it with (`@rustybuns/util/eqosys`, `@rustybuns/util/token`) stays open with the rest of this
-repository. Self-hosting? Build your own rooms on that client, or use the hosted Qollab.
+Licensed under the [PolyForm Noncommercial License 1.0.0](LICENSE): free to use, change and share for any
+noncommercial purpose (hobby, study, research, nonprofits); commercial use needs a license from QNTBR
+(hello@qntbr.com). The client a game talks to it with (`@rustybuns/util/eqosys`,
+`@rustybuns/util/token`) stays Apache-2.0 with the rest of this repository: a commercial game uses the hosted
+Qollab or brings its own rooms.
 
 | | What you get |
 | --- | --- |

@@ -7,8 +7,9 @@ misses). Turn "Box in a box" off to see what a tool that treats every product as
 
 **Live:** https://geoboxq-worker-live-ryanquinn-tjhne4lpmumy6kz5.notryanquinn.workers.dev · on [eqosys](https://eqosys.qntbr.com)
 
-Licensed under the QNTBR "This Shit Mine" license ([LICENSE](LICENSE)): read it, run it to evaluate it,
-send fixes; don't copy, resell or host it for others. The rest of this repository stays under its own license.
+Licensed under the [PolyForm Noncommercial License 1.0.0](LICENSE): free to use, change and share for any
+noncommercial purpose (hobby, study, research, nonprofits); commercial use needs a license from QNTBR
+(hello@qntbr.com). The rest of this repository stays under its own license.
 
 ```sh
 bun install --frozen-lockfile   # at the repo root, once

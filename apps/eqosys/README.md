@@ -7,10 +7,11 @@ library, saves and achievements, and the studio. Qollab is the live part it ship
 spaces), and is its own product too ([QOLLAB.md](QOLLAB.md)). Every Q game gets both. The words the pages use are in
 [VISION.md](VISION.md#the-words).
 
-Licensed under the QNTBR "This Shit Mine" license ([LICENSE](LICENSE)), like [Qollab](../qollab/LICENSE): read it, run it to
-evaluate it, send fixes; don't copy, resell or host it for others, your own game's players included. The
-client a game talks to it with (`@rustybuns/util/eqosys`, `@rustybuns/util/token`) stays open with the rest of this
-repository. Self-hosting? Build your own accounts on that client, or use the hosted eqosys.
+Licensed under the [PolyForm Noncommercial License 1.0.0](LICENSE): free to use, change and share for any
+noncommercial purpose (hobby, study, research, nonprofits); commercial use needs a license from QNTBR
+(hello@qntbr.com). The client a game talks to it with (`@rustybuns/util/eqosys`,
+`@rustybuns/util/token`) stays Apache-2.0 with the rest of this repository: a commercial game uses the hosted
+eqosys or brings its own accounts.
 
 Under the hood: a small RWSDK app on one Worker and one D1 database. Better Auth holds the accounts, and eqosys remembers
 which app each person first came in through, every app they've used since, and what they may do in each.
