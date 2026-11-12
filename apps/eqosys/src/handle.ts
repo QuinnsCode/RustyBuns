@@ -8,7 +8,7 @@
 //   4. the app POSTs /api/exchange { app, code, verifier } and gets back who they are, where they came from and their access,
 //      plus a token signed with the key at /.well-known/jwks.json that its server can pass around and check on its own
 import { HOME, returnTo, type QApp } from "./apps.ts";
-import { appOf, mayUse } from "./listings.ts";
+import { appOf, Draft, mayUse, pull, save, send, type Done } from "./listings.ts";
 import { authFor, authOn, isAdmin, meOf, providers, type Me } from "./auth.ts";
 import { b64url, crossSite, json, loopbackOn, VERSION, type Env } from "./env.ts";
 import { hubAnnounce, hubAsk, type Who } from "./qollab/hub.ts";
@@ -126,7 +126,7 @@ export async function handle(req: Request, conf: Env): Promise<Response | null> 
     if (req.method !== "POST" && req.method !== "GET") return json({ error: "POST { id } or GET, with the token as a bearer" }, 405, head);
     const t = await tokenOf(req, conf, bearerOf(req));
     if (!t) return json({ error: "send the token /api/exchange gave you" }, 401, head);
-    if (req.method === "GET") return json({ achievements: shownFor(t.app.id, (await unlocksOf(conf, t.who.id, t.app.id)).get(t.app.id)) }, 200, head);
+    if (req.method === "GET") return json({ achievements: shownFor(t.app, (await unlocksOf(conf, t.who.id, t.app.id)).get(t.app.id)) }, 200, head);
     const body = check(obj({ id: str(64) }), await req.json().catch(() => null));
     if (!body) return json({ error: "send { id }" }, 400, head);
     const r = await unlock(conf, t.who.id, t.app.id, body.id);
@@ -315,6 +315,20 @@ export async function handle(req: Request, conf: Env): Promise<Response | null> 
     if (!name || !kind) return see("/?tab=studio&e=name");
     const r = await makeStudio(conf, me.id, name, kind);
     return see(r.ok ? "/?tab=studio" : "/?tab=studio&e=owned");
+  }
+  // The Studio tab's form for a studio's own game (Studio.tsx, listings.ts): save it, send it to review, or pull it. The same rules as
+  // eq_listing_save, eq_listing_send and eq_listing_pull. Origins and returns are one URL a line; an empty field is left out.
+  if (act === "listing-save" || act === "listing-send" || act === "listing-pull") {
+    const id = field(form, "id").trim(), text = (k: string) => field(form, k).trim();
+    const urls = (k: string) => { const l = text(k).split(/\s+/).filter(Boolean); return l.length ? l : undefined; };
+    let r: Done;
+    if (act === "listing-save") {
+      const d = check(Draft, { studio: text("studio"), id, name: text("name"), genre: text("genre"), origins: urls("origins") ?? [],
+        ...(urls("returns") ? { returns: urls("returns") } : {}), ...(text("erase") ? { erase: text("erase") } : {}), ...(text("blurb") ? { blurb: text("blurb") } : {}) });
+      if (!d) return see("/?tab=studio&e=game");
+      r = await save(conf, me.id, d);
+    } else r = act === "listing-send" ? await send(conf, me.id, id) : await pull(conf, me.id, false, id);
+    return see(r.ok ? "/?tab=studio" : `/?tab=studio&e=${r.status === 409 ? "gamestep" : "gameowner"}`);
   }
   if (act === "grant" || act === "revoke") {
     if (!isAdmin(me, conf)) return json({ error: "only the super admin grants access" }, 403);

@@ -400,11 +400,12 @@ A studio puts its own game in the eqosys Library as a draft and sends it to revi
 
 `APPS` stays ours, in code. A studio's game is a listing in D1 with the same fields (`src/listings.ts`). A draft signs in only the members of its own studio. Thus the maker tests the real sign-in from the real site first.
 
+- The Studio tab has a form for each game, for the studio's owners and admins: save, send to review, and pull. `eq_listing_save` does the same.
 - `eq_listing_send` puts the game in the queue.
 - `eq_listing_review` lists it, or refuses it with a note.
 - `eq_listing_pull` removes it. Its tokens stop at the door, and the players' saves go after 30 days.
 
-A listed game's tile names its studio. Each check of who can sign in or call asks `appOf`, which reads the listings one time a minute for each isolate. The design is in [apps/eqosys/LIBRARY.md](apps/eqosys/LIBRARY.md).
+A listed game's tile names its studio. The reports from its players stay in eqosys, and its studio reads them on the Studio tab. They do not go to the issues of this repo. The game gets the shared achievements (`played`, and `alpha` or `beta` when its maturity agrees). Each check of who can sign in or call asks `appOf`, which reads the listings one time a minute for each isolate. The design is in [apps/eqosys/LIBRARY.md](apps/eqosys/LIBRARY.md).
 
 </details>
 

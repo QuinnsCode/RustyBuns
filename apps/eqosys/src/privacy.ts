@@ -59,9 +59,9 @@ export const HOLDERS: Holder<Subject>[] = [
     export: ({ conf, me }) => rows(conf, "SELECT app, achievement, at FROM unlocks WHERE user_id = ?", me.id),
   },
   {
-    id: "reports", what: "Which game you sent a report from, when, and the GitHub issue it became (the issue itself names you only by an id)",
+    id: "reports", what: "Which game you sent a report from, when, and the GitHub issue it became (the issue itself names you only by an id); for a game from another studio, what you wrote, which its studio reads under the same id",
     why: "To hold reports to a few a day, and to answer you", basis: "legitimate interest", keep: "a year",
-    export: ({ conf, me }) => rows(conf, "SELECT app, at, issue FROM reports WHERE user_id = ?", me.id),
+    export: ({ conf, me }) => rows(conf, "SELECT app, at, issue, kind, title, body FROM reports WHERE user_id = ?", me.id),
   },
   {
     id: "spaces", what: "Spaces you made or joined, and the messages you sent in them", why: "So your groups and their channels last", basis: "contract",

@@ -5,7 +5,7 @@
 import { arr, bool, Bad, check, int, obj, oneOf, opt, raw, str, type Guard } from "@rustybuns/util/guard";
 import { privateJson as json } from "@rustybuns/util/http";
 import { APPS, GENRES, HOME, MATURITY, playOf } from "./apps.ts";
-import { appsOf, Draft, isListing, listings, pull, review, save, send, type Done } from "./listings.ts";
+import { appOf, appsOf, Draft, isListing, listings, pull, review, save, send, type Done } from "./listings.ts";
 import { ACHIEVEMENTS, shownFor, TOTAL, unlocksOf } from "./achievements.ts";
 import { hubAsk, Who } from "./qollab/hub.ts";
 import { edge, execute, MAX_BACK, MAX_CALLS as MAX_PROGRAM_CALLS, RUN_MS, type ToolAnswer } from "./codemode.ts";
@@ -47,7 +47,7 @@ const done = (r: Done) => { if (!r.ok) throw new Refused(r.error, r.status); ret
 /** A studio's games change from the signed-in page, not from one app's token. */
 const onPage = (c: Ctx) => { if (!c.email) throw new Refused("a studio's games change from the signed-in page, not an app's token", 403); };
 const unlocked =(list: { at: number | null }[]) => list.filter((a) => a.at !== null).length;
-const knownApp = (id: string) => APPS.some((a) => a.id === id) ? id : (() => { throw new Refused(`no app "${id}": ${APPS.map((a) => a.id).join(", ")}`); })();
+const knownApp = async (c: Ctx, id: string) => (await appOf(c.conf, id)) ?? (() => { throw new Refused(`no app "${id}": ${APPS.map((a) => a.id).join(", ")}`); })();
 /** The one app an app's token may read the person's data for (its own), or null on eqosys's page, which reads them all. */
 const tokenApp = (c: Ctx) => c.who.app === HOME ? null : c.who.app;
 /** The app asked about, held to the token's own: another app's saves or unlocks are that app's business, not this one's. */
@@ -81,7 +81,7 @@ export const TOOLS: Tool[] = [
     input: { app: { type: "string", description: "An app id from eq_apps." } },
     run: async (c, a) => {
       const app = ownApp(c, a.app), got = await unlocksOf(c.conf, c.who.id, app);
-      if (app) { const id = knownApp(app); const list = shownFor(id, got.get(id)); return { app: id, unlocked: unlocked(list), total: list.length, achievements: list }; }
+      if (app) { const q = await knownApp(c, app), list = shownFor(q, got.get(q.id)); return { app: q.id, unlocked: unlocked(list), total: list.length, achievements: list }; }
       return { total: TOTAL, games: Object.entries(ACHIEVEMENTS).map(([id, list]) => ({ app: id, unlocked: got.get(id)?.size ?? 0, total: list.length })) };
     },
   }),
