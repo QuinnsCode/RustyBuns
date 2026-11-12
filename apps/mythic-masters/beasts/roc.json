@@ -415,5 +415,6 @@
     "width": 0.4,
     "material": "under",
     "below": -0.3
-  }
+  },
+  "hide": {"pattern": "feathers", "size": 0.1, "colours": [[0.21, 0.23, 0.27], [0.44, 0.48, 0.57]], "map": 1024, "girth": 0.35, "lie": "down"}
 }

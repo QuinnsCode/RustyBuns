@@ -85,5 +85,6 @@
     {"kind": "eye", "at": "head", "off": [0.12, 0.06, 0.11], "r": 0.035, "mirror": true, "material": "eye"},
     {"kind": "foot", "at": "l_ffoot", "form": "paw", "len": 0.272, "width": 0.208, "toes": 3, "claw": 0.072, "sole": 0.08, "mirror": true},
     {"kind": "foot", "at": "l_bfoot", "form": "paw", "len": 0.272, "width": 0.208, "toes": 3, "claw": 0.072, "sole": 0.08, "mirror": true}
-  ]
+  ],
+  "hide": {"pattern": "velvet", "size": 0.1, "colours": [[0.68, 0.48, 0.2]], "map": 512}
 }

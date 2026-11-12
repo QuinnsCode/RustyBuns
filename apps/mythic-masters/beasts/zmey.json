@@ -69,5 +69,6 @@
     {"kind": "foot", "at": "l_bfoot", "form": "talon", "len": 0.238, "width": 0.182, "toes": 3, "claw": 0.098, "spread": 36, "sole": 0.07, "mirror": true},
     {"kind": "teeth", "along": ["ch", "cs"], "n": 4, "len": 0.05, "base": 0.012, "lower": true, "mirror": true, "material": "spike"},
     {"kind": "teeth", "along": ["l_h", "l_s"], "n": 4, "len": 0.045, "base": 0.011, "lower": true, "mirror": true, "material": "spike"}
-  ]
+  ],
+  "hide": {"pattern": "scales", "size": 0.05, "colours": [[0.21, 0.66, 0.36], [0.13, 0.4, 0.22]], "map": 1024}
 }

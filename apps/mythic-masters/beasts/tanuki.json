@@ -409,5 +409,6 @@
     "width": 0.5,
     "material": "mask",
     "below": -0.8
-  }
+  },
+  "hide": {"pattern": "fur", "size": 0.01, "colours": [[0.36, 0.25, 0.16], [0.81, 0.57, 0.35]], "map": 512}
 }

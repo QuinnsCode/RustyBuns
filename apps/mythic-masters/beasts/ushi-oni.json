@@ -491,5 +491,6 @@
     "width": 0.4,
     "material": "mark",
     "below": -0.3
-  }
+  },
+  "hide": {"pattern": "skin", "size": 0.1, "colours": [[0.17, 0.11, 0.21]], "map": 512}
 }

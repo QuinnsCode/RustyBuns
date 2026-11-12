@@ -191,5 +191,6 @@
       "nodes": ["front", "jaw"],
       "material": "under"
     }
-  ]
+  ],
+  "hide": {"pattern": "wet", "size": 0.03, "colours": [[0.47, 0.13, 0.14], [1, 0.29, 0.31]], "map": 512, "cover": 0.3}
 }

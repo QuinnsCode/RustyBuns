@@ -284,5 +284,6 @@
       ]
     }
   ],
-  "branch_smoothing": 1
+  "branch_smoothing": 1,
+  "hide": {"pattern": "skin", "size": 0.05, "colours": [[0.47, 0.36, 0.28]], "map": 512}
 }
