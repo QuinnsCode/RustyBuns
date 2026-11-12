@@ -45,6 +45,28 @@ who clones has the source. To restrict what people may *do* with a game, give
 it its own LICENSE as `apps/qcrm` does, which is a decision for the owner.
 Built desktop releases are separate and stay downloadable.
 
+## Apps under their own license
+
+Rusty Buns (the framework, the CLI, `packages/*` and the example apps) is the
+open part. A few apps are QNTBR's own and carry the PolyForm Noncommercial
+License 1.0.0 in their directory instead: free to use, change and share for
+any noncommercial purpose; commercial use needs a license from QNTBR
+(hello@qntbr.com).
+
+| App | License |
+|---|---|
+| `apps/qcrm` | PolyForm Noncommercial 1.0.0 ([LICENSE](apps/qcrm/LICENSE)) |
+| `apps/eqosys` | PolyForm Noncommercial 1.0.0 ([LICENSE](apps/eqosys/LICENSE)) |
+| `apps/qollab` | PolyForm Noncommercial 1.0.0 ([LICENSE](apps/qollab/LICENSE)) |
+| `apps/geoboxq` | PolyForm Noncommercial 1.0.0 ([LICENSE](apps/geoboxq/LICENSE)) |
+| `apps/geoboxq-shopify` | PolyForm Noncommercial 1.0.0 ([LICENSE](apps/geoboxq-shopify/LICENSE)) |
+
+eqosys (accounts) and Qollab (parties, rooms, presence) are the hosted upgrade
+for a game, not part of the open stack. The client a game talks to them with
+(`@rustybuns/util/eqosys`, `@rustybuns/util/token`) stays Apache-2.0, so a
+game built on Rusty Buns ships open. A hobby game may run eqosys and Qollab itself; a commercial one
+uses the hosted service, buys a license, or brings its own accounts and rooms.
+
 ## Contributions
 
 Contributions are accepted under Apache-2.0, the same terms as the

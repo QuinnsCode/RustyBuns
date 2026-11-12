@@ -13,6 +13,12 @@ p.say("two more minutes");
 p.onStart(({ room, seat }) => game.join(room, seat)); // your own world takes it from here
 ```
 
+Licensed under the [PolyForm Noncommercial License 1.0.0](LICENSE): free to use, change and share for any
+noncommercial purpose (hobby, study, research, nonprofits); commercial use needs a license from QNTBR
+(hello@qntbr.com). The client a game talks to it with (`@rustybuns/util/eqosys`,
+`@rustybuns/util/token`) stays Apache-2.0 with the rest of this repository: a commercial game uses the hosted
+Qollab or brings its own rooms.
+
 | | What you get |
 | --- | --- |
 | **Rooms** | A six-letter code anyone can read out: no vowels, gone after a day. |
