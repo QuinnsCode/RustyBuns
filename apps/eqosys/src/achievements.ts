@@ -57,6 +57,7 @@ export const ACHIEVEMENTS: Record<string, Achievement[]> = {
   "two-fronts": [
     SHARED.played,
     SHARED.alpha,
+    SHARED.tutorial,
     { id: "war-played", name: "The war is over", blurb: "See a war through to its end.", icon: Flag },
     { id: "war-won", name: "Both fronts", blurb: "Win a whole war.", icon: Medal },
   ],
