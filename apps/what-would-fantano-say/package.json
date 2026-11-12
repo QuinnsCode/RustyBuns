@@ -13,9 +13,9 @@
   "dependencies": {
     "@ffmpeg/ffmpeg": "0.12.15",
     "@ffmpeg/util": "0.12.2",
-    "react": "19.2.8",
-    "react-dom": "19.2.8",
-    "react-server-dom-webpack": "19.2.8",
+    "react": "19.2.9",
+    "react-dom": "19.2.9",
+    "react-server-dom-webpack": "19.2.9",
     "rwsdk": "1.7.4"
   },
   "devDependencies": {
