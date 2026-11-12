@@ -267,7 +267,7 @@ export const OP_ERRORS = {
   // worker.ts
   update_me: ["BadInput", "SignInFirst"],
   get_user: ["NoSuchUser"],
-  create_repo: ["BadInput", "NoEuStorage", "SignInFirst"],
+  create_repo: ["BadInput", "NoEuStorage", "SignInFirst", "RepoExists"],
   get_repo: REPO,
   set_repo_visibility: [...REPO, "OwnerOnly", "BadInput"],
   delete_repo: [...REPO, "OwnerOnly", "BadInput"],

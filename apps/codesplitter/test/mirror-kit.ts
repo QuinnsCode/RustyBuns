@@ -41,11 +41,11 @@ export async function upstreamRewrite(files: Record<string, string>, message: st
   await sh(`git add -A && git commit -qm "${message}" && git push -qf ${up} main`, work);
 }
 /** A fresh upstream with a couple of files, and a signed-in desktop with a mirror of it. */
-export async function mirrored(name: string) {
+export async function mirrored(name: string, extra: Record<string, unknown> = {}) {
   up = join(root, `${name}.git`);
   const seed = mkdtempSync(join(root, "seed-"));
   await sh(`git init -q --bare ${up} && git clone -q ${up} . 2>/dev/null; mkdir src && printf 'hello\\nworld\\n' > README && printf 'export const a = 1\\n' > src/a.ts && git add -A && git commit -qm init && git push -q origin main`, seed);
-  const call = await boot();
+  const call = await boot(extra);
   opened.push(call);
   await post(call, "/api/login", { name: "ana" });
   expect((await post(call, "/api/mirrors", { url: `file://${up}`, name: "up" })).status).toBe(201);

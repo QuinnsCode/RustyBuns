@@ -311,6 +311,9 @@ describe("accounts", () => {
     const me = await (await call(null, "/api/me", { headers: { cookie } })).json() as any;
     expect(me.name).toBe("analyst");
     expect((await call(null, "/api/repos", { method: "POST", headers: { cookie }, body: JSON.stringify({ name: "dig" }) })).status).toBe(201);
+    // The same name again is a 409 that says so, not a 500 from the insert.
+    const again = await call(null, "/api/repos", { method: "POST", headers: { cookie }, body: JSON.stringify({ name: "dig" }) });
+    expect([again.status, ((await again.json()) as { tag?: string }).tag]).toEqual([409, "RepoExists"]);
   });
 });
 

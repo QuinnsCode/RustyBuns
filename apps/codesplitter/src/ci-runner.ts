@@ -30,7 +30,7 @@
 //
 // It costs container time: see "Checks in a container" in REFERENCE.md for the price.
 
-import { checkEnv, runDirs, sandboxUser, spawnAs } from "./check-env.ts";
+import { UPSTREAM_BRANCHES, checkEnv, runDirs, sandboxUser, spawnAs } from "./check-env.ts";
 import { checkSettings, claimRun, cloneUrl, get, handToDesktop, headOf, planChecks, readAt, updateRun, type CheckRun } from "./checks.ts";
 import { RUN_BUDGET_MS, readExec } from "./deploy-runner.ts";
 import { gate, hostList, hostOf, REGISTRIES, type GateExports } from "./egress.ts";
@@ -56,6 +56,14 @@ export interface Machine {
   read(path: string): Promise<string | undefined>;
   /** Stop whatever's running: the run lost its claim. */
   stop(): void;
+}
+
+/** Check out a commit of the clone, fetching the mirror's upstream-branch refs first if a branch doesn't hold it. */
+async function checkedOut(m: Machine, sha: string) {
+  const checkout = async () => !(await m.exec(["git", "checkout", "--quiet", sha], () => {}));
+  if (await checkout()) return true;
+  await m.exec(["git", "fetch", "--quiet", "origin", UPSTREAM_BRANCHES], () => {});
+  return checkout();
 }
 
 /** A branch's own files as they are now, null for one it deleted: what goes over main's clone. */
@@ -93,7 +101,7 @@ export async function runJob(env: Env, owner: string, repo: string, job: Job, la
     if (await m.exec(["git", "clone", "--quiet", job.clone_url, "."], (s) => { said += s; }))
       throw new Error(`git clone failed: ${said.split(job.clone_url).join("<the repo>")}`);
     // A branch that hasn't gone up as a git commit (`<branch>@<time>`): main, with the branch's files laid over it as they are now.
-    if (/^[0-9a-f]{40}$/.test(job.sha)) { if (await m.exec(["git", "checkout", "--quiet", job.sha], () => {})) throw new Error(`${job.sha} isn't a commit in the repo's git`); }
+    if (/^[0-9a-f]{40}$/.test(job.sha)) { if (!(await checkedOut(m, job.sha))) throw new Error(`${job.sha} isn't a commit in the repo's git`); }
     else if (job.ref.startsWith("train:")) {
       // A merge-train car (train.ts): main with its branches merged in, in order.
       const car = await (await import("./train.ts")).carTree(env, owner, repo, job.ref);
@@ -297,7 +305,7 @@ export class CiRunner {
       const m = containerMachine(c, `doctor-${job.id}`, deadline, this.budgetMs);
       let said = "";
       if (await m.exec(["git", "clone", "--quiet", url, "."], (s) => { said += s; })) throw new Error(`git clone failed: ${said.split(url).join("<the repo>")}`);
-      if (/^[0-9a-f]{40}$/.test(job.tip) && await m.exec(["git", "checkout", "--quiet", job.tip], () => {})) throw new Error(`${job.tip} isn't a commit in the repo's git`);
+      if (/^[0-9a-f]{40}$/.test(job.tip) && !(await checkedOut(m, job.tip))) throw new Error(`${job.tip} isn't a commit in the repo's git`);
       await m.write(job.files);
       laid = true;
       for (const p of job.plan) {
