@@ -79,6 +79,7 @@ export function summarize(pr: Pr, now = Date.now(), runs: Runs = []): string[] {
   const os = outcomes(pr), byKind = (k: Outcome["outcome"]) => os.filter((o) => o.outcome === k);
   const queued = unattached(pr) ? runs.filter((r) => CI.test(r.workflowName) && r.status !== "completed") : [];
   if (queued.length) out.push(`  queued  ${queued.map((r) => r.workflowName).join(" | ")}  waiting for a runner, not a miss: don't push`);
+  else if (!os.length && pr.mergeStateStatus === "DIRTY") out.push("  no runs: it conflicts with main, and GitHub runs no checks until it merges cleanly. Rebase onto origin/main (only your own commits) and git push --force-with-lease.");
   else if (!os.length) out.push(missedRun(pr, now, runs) ? `  no typecheck or apps run attached ${Math.round(headAge(pr, now) / 60)} min after the push: a GitHub miss (#2828). Rebase onto origin/main and git push --force-with-lease; an empty commit won't help.` : "  no checks yet");
   for (const [kind, label] of [["pass", "pass"], ["skip", "skip"], ["other", "other"], ["pending", "running"]] as const) {
     const xs = byKind(kind);

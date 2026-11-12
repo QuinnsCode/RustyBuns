@@ -52,6 +52,7 @@ test("a stale head whose runs are only queued is a wait for a runner, not a miss
   const lines = summarize(stale, now, queued).join("\n");
   expect(lines).toContain("waiting for a runner");
   expect(lines).not.toContain("force-with-lease");
+  expect(summarize({ ...stale, mergeStateStatus: "DIRTY" }, now)[1]).toContain("conflicts with main");
 });
 
 test("a non-Actions status context reads by its state", () => {
