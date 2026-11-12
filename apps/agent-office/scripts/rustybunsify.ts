@@ -65,7 +65,7 @@ let shared: Promise<Map<string, string>> | undefined;
 const stamp = path.join(office, ".rustybuns");
 // what a prepared ./office was built with: one string for the check and the write, so a restart skips the prepare (#3385)
 // a new patch in prepare() needs a new word here, or a restart skips it
-const STAMP = `${tag} ${skin} lucide live clock mem pulls checks triage vale podcast codesplitter connect hosts hooktokens env ticks power board guard asks brawl ester dexter reload external box builder askfirst setup storage install sweep fable52 modules`;
+const STAMP = `${tag} ${skin} lucide live clock mem pulls checks triage vale podcast codesplitter connect hosts hooktokens env ticks power board guard asks brawl ester dexter reload external box builder askfirst setup storage install sweep fable52 modules reattach`;
 if (existsSync(stamp) && readFileSync(stamp, "utf8").trim() === STAMP && !process.argv.includes("--fresh")) {
   console.log(`🥐 Agent Office ${tag} already Rusty Buns-ified in ./office`);
   // the skin is ours and changes far more often than the release, so it's rebuilt every start
@@ -235,7 +235,7 @@ async function prepare(tag: string) {
   // 12b. the agent-to-agent endpoint stops trusting every worker on the floor (#644, live/floorguard.ts): a forced
   // send_home keeps another worker's uncommitted work, tell_worker says who it's from, AGENT_OFFICE_PEOPLE_ONLY
   writeFileSync(path.join(srv, "hooks/office-workers.js"), floorGuardHooks(readFileSync(path.join(srv, "hooks/office-workers.js"), "utf8")));
-  // a person's send-home click is logged beside an agent's (#2201)
+  // a person's send-home click is logged beside an agent's (#2201), and a key from a terminal that lost its attach attaches it again (#4315)
   writeFileSync(path.join(srv, "ws/handlers/workers.js"), floorGuardClicks(readFileSync(path.join(srv, "ws/handlers/workers.js"), "utf8")));
   // and a Claude worker's GitHub writes ask first (#2498, askfirst/): a second PreToolUse hook in its settings, the grants list's route below
   writeFileSync(path.join(srv, "providers/claude.js"), floorGuardClaude(readFileSync(path.join(srv, "providers/claude.js"), "utf8")));
