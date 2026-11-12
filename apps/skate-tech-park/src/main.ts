@@ -48,7 +48,9 @@ import { bump } from "./net/bump.ts";
 import { MAX_RIDERS } from "./net/room.ts";
 import { Ghosts } from "./render/ghosts.ts";
 import { Lightning, Precip } from "./render/weather.ts";
-import { achieve, fresh, finishSignIn, login, reportButton } from "./eqosys.ts";
+import { achieve, achievements, fresh, finishSignIn, login, reportButton } from "./eqosys.ts";
+import { tutorial } from "@rustybuns/util/tutorial";
+import { learn, realRide, steps as coachSteps, unlearned } from "./coach.ts";
 import { joinParty, openParty, partyCode } from "./net/lobby.ts";
 import { mountSpaces } from "./net/spaces.ts";
 import { mountFront } from "./front/front.ts";
@@ -458,6 +460,18 @@ function tourFrame(now: number) {
 // Esc pauses the ride. Not on the title screen or the home-page tour, where there is no ride to stop.
 const pause = touring || showFront(location.search) ? null : mountPause(reset, () => { location.search = "?front"; });
 
+// The first time a rider rides a park for real (not a jump link, the tour or the showroom), a coach card walks push,
+// turn, ollie, flip and grind (coach.ts). It starts once the opening shot hands the camera over.
+const learned = unlearned();
+const coach = tutorial({ prefix: "stp", account: { achieve, achievements }, steps: coachSteps(learned) });
+const coachHere = realRide(location.search);
+// For an agent's browser or a hands-on check (bun run probe skate-tech-park).
+Object.assign(window, { skateTechPark: {
+  state: () => ({ tutorial: coach.state(), level: levelId, mode, speed: sim.speed, air: sim.air, grind: sim.grind, score: sim.score, sweep: sweep.on }),
+  /** Forget the tutorial was done in this browser, so the next ride runs it again. */
+  forgetTutorial: coach.forget,
+} });
+
 // The pad has no buttons to rebind here: the right stick flicks a trick and the triggers hold a manual (no dead zone; the gesture has its own).
 const gamepad = createPad(createPadBindings([]), 0);
 
@@ -468,13 +482,16 @@ function frame(now: number) {
   then = now;
   if (sweep.on && driver.driving) sweepEnd();
   const inp = sweep.on ? IDLE : input();
+  if (coachHere && !sweep.on && !driver.driving) coach.start(); // a no-op once it runs, or once it was done here
   landVy = 0;
   const gp = gamepad.poll();
   if (gp.connected) { const lt = gamepad.down(); gestures.stick(gp.right.x, gp.right.y); gestures.shoulders(+lt.includes(6), +lt.includes(7)); }
   while (acc >= DT) {
     const was = sim.air, vy = sim.vy;
     before = poseOf(sim);
-    step(sim, { ...inp, ...gestures.take(sim.air), ...driver.next() }, level); // a gesture is one step's press; an agent's move (agent.ts) is held like keys
+    const held = { ...inp, ...gestures.take(sim.air), ...driver.next() };
+    step(sim, held, level); // a gesture is one step's press; an agent's move (agent.ts) is held like keys
+    learn(learned, sim, held);
     if (online && !pve) bump(sim, online.riders);
     ui.update(sim); acc -= DT;
     if (hunter) { runAfter(hunter, sim, level.height, level.bounds, DT); if (hunter.caught) { caughtAt = now; reset(); } }
