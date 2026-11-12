@@ -81,6 +81,11 @@ tell the owner what it cost against the alternative. See [WEBMCP.md](../../WEBMC
    again for a key id it doesn't know), or `verify(token, jwks, { iss, aud })` with a JWKS you hold. `token` is null until
    `EQOSYS_SIGNING_KEY` is set (`bun scripts/keygen.ts` makes one). Park Hide & Seek is the worked example
    (`apps/park-hide-seek/src/ui/eqosys.ts` is the page's side, `src/edge/worker.ts` the Worker's, through `whoIs` from `@rustybuns/util/token`).
+   Staying signed in: send `keep: true` to `/api/exchange` and the answer also has `refresh`, a month-long one-use token that
+   `POST /oauth/token { grant_type: "refresh_token", client_id, refresh_token }` trades for the next token and the next refresh
+   (signing out on the eqosys page ends it). Add `prompt=none` to `/login` to check without a page: a code for someone signed in
+   here who has used your app, else `return?error=login_required&state=…`. The `@rustybuns/util/eqosys` page client does both
+   in `finishSignIn()`: it renews in the background, and quietly checks once per tab when renewing fails.
 
 6. For friends and presence, open `/hub` from your page with the subprotocols `["eqosys", token]` (`SOCKET_PROTOCOL` in
    `@rustybuns/util/eqosys`; every eqosys socket takes its token this way, out of the URL) and say what they're doing with

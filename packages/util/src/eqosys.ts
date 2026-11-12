@@ -1,7 +1,9 @@
 // Signing in through eqosys, from a page: send the player to eqosys's /login with a PKCE challenge, and
 // when they come back with ?code=&state=, trade it for who they are and a token. The login is kept in
-// localStorage; the token is what the app's Worker checks (`TokenChecker` from ./token), so once it has
-// run out the player goes through eqosys again, which is one click when they are still signed in there.
+// localStorage; the token is what the app's Worker checks (`TokenChecker` from ./token). It lasts ten minutes,
+// so the page renews it in the background with a one-use refresh token kept beside it. When that fails (a month
+// unused, or a sign-out on eqosys), the next load checks with eqosys quietly (`prompt=none`): still signed in
+// there, the player comes straight back signed in with no page shown; signed out, they stay a guest.
 // Worked example: apps/park-hide-seek/src/ui/eqosys.ts.
 import { b64url, digest } from "./bytes.ts";
 import { arr, bool, check, int, nul, num, obj, oneOf, opt, str, type Guard, type Of } from "./guard.ts";
@@ -15,14 +17,16 @@ import { PartyRules } from "./party-rules.ts";
 export type { Skin } from "./skin.ts";
 
 /** What the page keeps of a sign-in. */
-export const Login = obj({ name: str(200), email: str(320), token: str(8192) });
+export const Login = obj({ name: str(200), email: str(320), token: str(8192), refresh: opt(str(100)) });
 export type Login = Of<typeof Login>;
 
 /** POST eqosys /api/exchange: who signed in, and the token the Worker checks. `token` is null while eqosys has no signing key. */
 export const ExchangeReply = obj({
   user: obj({ id: str(200), email: str(320), name: str(200) }),
-  app: str(64), source: str(64), access: arr(str(32), 100), token: nul(str(8192)),
+  app: str(64), source: str(64), access: arr(str(32), 100), token: nul(str(8192)), refresh: opt(str(100)),
 });
+/** POST eqosys /oauth/token with a refresh token: the next token and the next refresh token (the one sent is spent). */
+const Renewed = obj({ access_token: str(8192), refresh_token: str(100) });
 export type ExchangeReply = Of<typeof ExchangeReply>;
 
 export interface Returned { login: Login | null; then: string; error?: string }
@@ -62,6 +66,7 @@ export function eqosys({ app, url, from, prefix, skin }: EqosysConfig) {
     take(k: string) { try { const v = sessionStorage.getItem(`${prefix}.eq.${k}`) ?? ""; sessionStorage.removeItem(`${prefix}.eq.${k}`); return v; } catch { return ""; } },
     put(k: string, v: string) { try { sessionStorage.setItem(`${prefix}.eq.${k}`, v); } catch {} },
   };
+  const keep = (l: Login | null) => { kept.put("login", l ? JSON.stringify(l) : ""); if (l) plan(); };
 
   /** Where eqosys is for this page: the live one, or the `<prefix>.eqosys` setting (a local eqosys, `bun run dev` there with loopback returns on). */
   const eqosysUrl = () => (kept.get("eqosys") || url).replace(/\/$/, "");
@@ -72,11 +77,13 @@ export function eqosys({ app, url, from, prefix, skin }: EqosysConfig) {
   const here = () => `${location.origin}${location.pathname}`;
 
   /** Off to eqosys. `then` is what the player was doing ("play"), picked up again when they come back. */
-  async function signIn(then = ""): Promise<void> {
+  async function signIn(then = "", quiet = false): Promise<void> {
     const verifier = b64url(crypto.getRandomValues(new Uint8Array(32)));
     const state = b64url(crypto.getRandomValues(new Uint8Array(12)));
     once.put("verifier", verifier); once.put("state", state); once.put("then", then);
-    const q = new URLSearchParams({ app, return: here(), challenge: b64url(await digest(verifier)), state });
+    // A quiet check leaves on its own, so the page's query (an invite's room code) comes back with it.
+    if (quiet) once.put("quiet", `${location.search}${location.hash}` || "?");
+    const q = new URLSearchParams({ app, return: here(), challenge: b64url(await digest(verifier)), state, ...(quiet ? { prompt: "none" } : {}) });
     location.assign(`${eqosysUrl()}/login?${q}`);
   }
 
@@ -86,18 +93,22 @@ export function eqosys({ app, url, from, prefix, skin }: EqosysConfig) {
    */
   async function finishSignIn(): Promise<Returned | null> {
     const q = new URLSearchParams(location.search);
-    const code = q.get("code"), state = q.get("state");
-    if (code === null || state === null) return null;
-    q.delete("code"); q.delete("state");
-    history.replaceState(null, "", `${location.pathname}${q.size ? "?" + q : ""}${location.hash}`);
+    const code = q.get("code"), state = q.get("state"), refused = q.get("error") === "login_required";
+    if ((code === null && !refused) || state === null) return stale();
+    const quiet = once.take("quiet");
+    q.delete("code"); q.delete("state"); if (refused) q.delete("error");
+    const rest = quiet && quiet !== "?" ? quiet : `${q.size ? "?" + q : ""}${location.hash}`;
+    history.replaceState(null, "", `${location.pathname}${rest}`);
     const verifier = once.take("verifier"), then = once.take("then");
     if (!verifier || state !== once.take("state")) return { login: null, then, error: "That sign-in didn't start here. Try again." };
-    const got = await getJson(`${eqosysUrl()}/api/exchange`, ExchangeReply, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ app, code, verifier }) });
+    // The quiet check found nobody signed in on eqosys: a guest, and the run-out login is let go so the page doesn't ask again.
+    if (refused || code === null) { keep(null); return null; }
+    const got = await getJson(`${eqosysUrl()}/api/exchange`, ExchangeReply, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ app, code, verifier, keep: true }) });
     if (!got) return { login: null, then, error: "eqosys didn't let that sign-in through. Try again." };
     if (!got.token) return { login: null, then, error: "eqosys isn't handing out tokens yet, so you can't sign in here. Play with a name for now." };
     waiting.clear();
-    const login: Login = { name: got.user.name, email: got.user.email, token: got.token };
-    kept.put("login", JSON.stringify(login));
+    const login: Login = { name: got.user.name, email: got.user.email, token: got.token, ...(got.refresh ? { refresh: got.refresh } : {}) };
+    keep(login);
     void sendHeld().then((news) => { for (const u of news) celebrate(u.achievement); });
     return { login, then };
   }
@@ -110,7 +121,56 @@ export function eqosys({ app, url, from, prefix, skin }: EqosysConfig) {
   /** Whether the token still has `forMs` to run: long enough for the server to check it when the request lands. */
   const fresh = (l: Login, forMs = 30_000, now = Date.now()) => (peek(l.token)?.exp ?? 0) * 1000 > now + forMs;
 
-  function signOut() { kept.put("login", ""); }
+  function signOut() {
+    const spent = login()?.refresh;
+    keep(null);
+    if (spent) void fetch(`${eqosysUrl()}/oauth/revoke`, { method: "POST", body: new URLSearchParams({ token: spent }), keepalive: true }).catch(() => {});
+  }
+
+  /** The kept login's token, renewed with its refresh token: "ok" (fresh now, maybe by another tab), "refused" (eqosys said no: spent,
+   * a month old, or a sign-out there), or "down" (eqosys couldn't be reached). One renewal at a time. */
+  let renewing: Promise<"ok" | "refused" | "down"> | null = null;
+  function renew(): Promise<"ok" | "refused" | "down"> {
+    return renewing ??= (async () => {
+      const l = login();
+      if (l && fresh(l, 60_000)) return "ok" as const;
+      if (!l?.refresh) return "refused" as const;
+      const res = await fetch(`${eqosysUrl()}/oauth/token`, { method: "POST", body: new URLSearchParams({ grant_type: "refresh_token", client_id: app, refresh_token: l.refresh }) }).catch(() => null);
+      if (!res || res.status >= 500) return "down" as const;
+      const got = res.ok ? check(Renewed, await res.json().catch(() => null)) : null;
+      if (got) { keep({ ...l, token: got.access_token, refresh: got.refresh_token }); return "ok" as const; }
+      // Another tab may have spent it first and kept the next one.
+      const now = login();
+      if (now && fresh(now, 60_000)) return "ok" as const;
+      if (now?.refresh === l.refresh) keep({ name: l.name, email: l.email, token: l.token });
+      return "refused" as const;
+    })().finally(() => { renewing = null; });
+  }
+
+  /** Renew a minute before the token runs out, and on coming back to a tab whose timer the browser held back. */
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  function plan() {
+    clearTimeout(timer);
+    const l = login(), exp = l?.refresh ? (peek(l.token)?.exp ?? 0) * 1000 : 0;
+    if (!exp) return;
+    timer = setTimeout(() => void renew(), Math.max(0, exp - Date.now() - 60_000));
+    (timer as { unref?: () => void }).unref?.();
+  }
+  if (typeof document !== "undefined") document.addEventListener?.("visibilitychange", () => { if (document.visibilityState === "visible" && login()?.refresh) void renew(); });
+  plan();
+
+  /** Not a return from eqosys: a run-out login is renewed, or else checked quietly with eqosys once per tab (the page leaves for it). */
+  async function stale(): Promise<null> {
+    const l = login();
+    if (!l || fresh(l)) return null;
+    const r = await renew();
+    if (r === "ok" || r === "down" || !canSignIn()) return null;
+    // A login from before refresh tokens never asked eqosys: only leave for it when it answers, so a player never lands on its error page.
+    if (!l.refresh && !await fetch(`${eqosysUrl()}/health`, { mode: "no-cors" }).then(() => true, () => false)) return null;
+    try { if (sessionStorage.getItem(`${prefix}.eq.tried`)) return null; sessionStorage.setItem(`${prefix}.eq.tried`, "1"); } catch { return null; }
+    await signIn("", true);
+    return new Promise<null>(() => {}); // the page is on its way to eqosys and back
+  }
 
   /** Who this page joins a game's room as (`whoIs` / `seatDoor` read it): the eqosys token while it lasts, else `guest` (`guestId`). */
   const who = (guest: string): { token: string } | { uid: string } => { const l = login(); return l && fresh(l) ? { token: l.token } : { uid: guest }; };

@@ -70,21 +70,23 @@ export async function exchange(conf: Env, app: string, code: string, verifier: s
 
 const REFRESH_MS = 30 * 86_400_000;
 
-/** A refresh token for a native app (OpenID's offline_access): a month long, one use, kept as its hash. Each use hands out the next. */
-export async function mintRefresh(conf: Env, userId: string, app: string, now = Date.now()) {
+/** A refresh token for a native app (OpenID's offline_access) or a game's page (`web`): a month long, one use, kept as its hash.
+ * Each use hands out the next. Signing out on the eqosys page ends a page's, not a native app's. */
+export async function mintRefresh(conf: Env, userId: string, app: string, now = Date.now(), web = false) {
   const token = "eqr_" + b64url(crypto.getRandomValues(new Uint8Array(32)));
   await conf.DB.batch([
     conf.DB.prepare("DELETE FROM refresh WHERE expires_at < ?").bind(now),
-    conf.DB.prepare("INSERT INTO refresh (hash, user_id, app, expires_at) VALUES (?, ?, ?, ?)").bind(await sha256(token), userId, app, now + REFRESH_MS),
+    conf.DB.prepare("INSERT INTO refresh (hash, user_id, app, expires_at, web) VALUES (?, ?, ?, ?, ?)").bind(await sha256(token), userId, app, now + REFRESH_MS, web ? 1 : 0),
   ]);
   return token;
 }
 
-/** Spend a refresh token: who it was for, now, or null for one that is spent, late, revoked or another app's. */
-export async function spendRefresh(conf: Env, app: string, token: string, now = Date.now()): Promise<Handoff | null> {
-  const row = await conf.DB.prepare("DELETE FROM refresh WHERE hash = ? RETURNING user_id, app, expires_at")
-    .bind(await sha256(token)).first<{ user_id: string; app: string; expires_at: number }>();
-  return row && row.app === app && row.expires_at >= now ? handoff(conf, row.user_id, app) : null;
+/** Spend a refresh token: who it was for, now, and whether a page held it, or null for one that is spent, late, revoked or another app's. */
+export async function spendRefresh(conf: Env, app: string, token: string, now = Date.now()): Promise<{ who: Handoff; web: boolean } | null> {
+  const row = await conf.DB.prepare("DELETE FROM refresh WHERE hash = ? RETURNING user_id, app, expires_at, web")
+    .bind(await sha256(token)).first<{ user_id: string; app: string; expires_at: number; web: number }>();
+  const who = row && row.app === app && row.expires_at >= now ? await handoff(conf, row.user_id, app) : null;
+  return who && { who, web: row!.web === 1 };
 }
 
 /** Every token eqosys signed for `userId` and `app` ("*" for every app) up to now stops working here (`standing`). */
@@ -120,11 +122,11 @@ export async function revokeRefresh(conf: Env, token: string, now = Date.now()) 
 
 /**
  * Signing out on the eqosys page: every app's token already handed out stops here, and the sockets they opened close, so no game
- * on this or another device stays signed in for its ten minutes. Native apps' refresh tokens stay (each signs out on its own, /oauth/revoke),
- * and so do the person's eqosys sessions in other browsers.
+ * on this or another device stays signed in for its ten minutes, and game pages' refresh tokens go too. Native apps' refresh tokens
+ * stay (each signs out on its own, /oauth/revoke), and so do the person's eqosys sessions in other browsers.
  */
 export async function signOutApps(conf: Env, userId: string, now = Date.now()) {
-  await cut(conf, userId, "*", now).run();
+  await conf.DB.batch([conf.DB.prepare("DELETE FROM refresh WHERE user_id = ? AND web = 1").bind(userId), cut(conf, userId, "*", now)]);
   await closeSockets(conf, userId, "*");
 }
 
