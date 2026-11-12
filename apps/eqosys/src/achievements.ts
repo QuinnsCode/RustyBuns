@@ -69,6 +69,7 @@ export const ACHIEVEMENTS: Record<string, Achievement[]> = {
   "park-hide-seek": [
     SHARED.played,
     SHARED.alpha,
+    SHARED.tutorial,
     { id: "camped-out", name: "Nothing to see", blurb: "Hide until the hunt is over without being caught.", icon: Tent },
     { id: "first-catch", name: "Found you", blurb: "Catch a hider as a ranger.", icon: Search },
     { id: "bigfoot", name: "It's real", blurb: "Find Bigfoot.", secret: true, icon: Footprints },

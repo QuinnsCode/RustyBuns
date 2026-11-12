@@ -22,7 +22,7 @@ import { Controls } from "./controls.ts";
 import { Preview } from "./preview.ts";
 import { fromSearch, roleOf, Scenario, toSearch } from "../scenario.ts";
 import { joinParty, makeParty, partyCode, partyLink } from "./lobby.ts";
-import { achieve, canSignIn, finishSignIn, fresh, login, reportButton, signIn, signOut, type Login } from "./eqosys.ts";
+import { achieve, achievements, canSignIn, finishSignIn, fresh, login, reportButton, signIn, signOut, type Login } from "./eqosys.ts";
 import { LocalSession, NetSession, playerId, tabPlayerId, type Session } from "./session.ts";
 import { World3D } from "./world3d.ts";
 import { ZoneMap } from "./zonemap.ts";
@@ -30,6 +30,7 @@ import "@fontsource/lacquer/latin-400.css";
 import "@fontsource/gloria-hallelujah/latin-400.css";
 import { addCommands } from "@rustybuns/util/commands";
 import { mountPalette } from "@rustybuns/util/palette";
+import { tutorial } from "@rustybuns/util/tutorial";
 // The ranger station's sign is drawn on a canvas: have the lettering ready for it.
 void document.fonts?.load("46px Lacquer");
 installKit();
@@ -51,6 +52,24 @@ let room: string | null = null;
 let quick: { at: number } | null = null;
 let info: { app?: string; version?: string } | null = null;
 let look: Look = (() => { try { return parseLook(JSON.parse(store.get("look"))) ?? randomLook(); } catch { return randomLook(); } })();
+
+// The first time, the first round you camp in is the tutorial: drop in, look round, walk, crouch in a bush, lie low.
+// Play sets you camping for it (`solo`); a jump link or an agent's start never runs it. Each flag is set by the frame
+// loop once you have done the thing, and stays set, so doing two at once moves the card on past both.
+const learnt = { dropped: false, turned: 0, walked: 0, hid: false, hunted: false };
+/** Whether this session may run the tutorial: not one a ?role= link or `parkHideSeek.start` jumped into. */
+let coachable = false;
+const coach = tutorial({
+  prefix: "phs",
+  account: { achieve, achievements },
+  steps: [
+    { title: "Pick where to drop", say: "Click the map: somewhere bushy, well away from the ranger station.", done: () => learnt.dropped },
+    { title: "Look around", say: "Click the park, then move the mouse. On a phone, drag the right side.", done: () => learnt.turned > 1.5 },
+    { title: "Walk", keys: ["W", "A", "S", "D"], say: "Shift runs, but rangers hear it. On a phone, the left stick.", done: () => learnt.walked > 5 },
+    { title: "Crouch in a bush", keys: ["C"], say: "Walk into one and crouch. Hold C to lie flat.", done: () => learnt.hid },
+    { title: "Lie low", say: "The rangers are out. Stay still until the clock runs out: moving rustles the bush.", done: () => learnt.hunted },
+  ],
+});
 
 /** Your own body, moved locally every frame so it never lags. */
 let body: (Body & { key: string; pitch: number; speed: number }) | null = null;
@@ -207,8 +226,9 @@ $<HTMLFormElement>("park-request").onsubmit = async (e) => {
 /** Against AI, here in the page. Quick play skips the lobby: a random zone, the live weather, three AI players. */
 function solo(go: boolean, sc?: Scenario) {
   keepName(); sounds.unlock(); menuError("");
-  const s = new LocalSession(myName(), look, sc && { role: roleOf(sc), bots: sc.bots, level: sc.level, zone: sc.zone, tod: sc.tod });
-  start(s);
+  // The first Play camps, so the round is the tutorial's.
+  const s = new LocalSession(myName(), look, sc ? { role: roleOf(sc), bots: sc.bots, level: sc.level, zone: sc.zone, tod: sc.tod } : coach.learned() ? {} : { role: "camper" });
+  start(s, !sc);
   if (go) s.send({ t: "start" });
 }
 
@@ -242,7 +262,14 @@ const jump = (o: unknown) => {
 };
 const linked = fromSearch(location.search);
 if (linked) queueMicrotask(() => jump(linked));
-Reflect.set(window, "parkHideSeek", { start: jump, state: () => view && { phase: view.phase, role: view.round?.you?.role ?? null, players: view.players.length },
+Reflect.set(window, "parkHideSeek", { start: jump, state: () => view && { phase: view.phase, role: view.round?.you?.role ?? null, players: view.players.length, zone: view.zone,
+    you: body && { x: body.x, y: body.y, yaw: body.yaw, crouch: body.crouch }, tutorial: coach.state() },
+  /** Turn the view by `rad` (clockwise), as dragging the mouse or a finger does. */
+  turn: (rad: number) => { controls.yaw += rad; },
+  /** Drop in at (x, y), in metres from the zone's middle, as clicking the drop map does. */
+  drop: (x: number, y: number) => send({ t: "drop", x, y }),
+  /** Forget the tutorial was done in this browser, so the next Play runs it again. */
+  forgetTutorial: coach.forget,
   poster: (t: Tod) => paintPoster(t) });
 addCommands([{ name: "phs_start", title: "Start a solo round", group: "Play", ask: "hider or seeker", description: "Start a solo room as the hider or the seeker against bots. Returns the link that lands in the same state.",
   inputSchema: { type: "object", properties: { role: { type: "string", enum: ["hider", "seeker"] }, bots: { type: "integer" }, level: { type: "string", enum: ["easy", "normal", "hard"] } } }, execute: (a) => ({ link: jump(a) }) }]);
@@ -307,8 +334,9 @@ $("online").onclick = async () => {
   if (code) openParty(code); else menuError("Couldn't start a party just now. Sign in again, or try in a minute.");
 };
 
-function start(s: Session) {
+function start(s: Session, tutorial = true) {
   session = s;
+  coachable = tutorial;
   view = null;
   body = null;
   s.onView = (v) => {
@@ -341,6 +369,7 @@ async function leave() {
 
 function onPhase(v: View) {
   const you = v.round?.you;
+  if (coachable && you?.role === "camper" && (v.phase === "drop" || v.phase === "hide")) coach.start();
   if (v.phase === "drop") note(you?.role === "ranger" ? "You're a ranger this round. Campers are picking where to drop." : "Pick where to drop in: click the map.", 4000);
   if (v.phase === "hide") { controls.clearPresses(); note(you?.role === "camper" ? (v.mode === "props" ? "Find somewhere to hide! E next to a bush, boulder or log turns you into one." : "Find somewhere to hide! C to crouch in a bush.") : "Counting at the ranger station…", 3500); }
   if (v.phase === "hunt") note(you?.role === "ranger" ? "Go find them! Q to call out, M for the radio." : "Here come the rangers. Stay still, stay quiet.", 3500);
@@ -609,6 +638,10 @@ function frame() {
 
   // Your body: move it here, tell the host where it went.
   const ranger = you?.role === "ranger";
+  if (you?.role === "camper") {
+    if (you.drop || v.phase !== "drop") learnt.dropped = true;
+    if (v.phase === "hunt" || v.phase === "results") learnt.hunted = true;
+  }
   const playing = !!you && you.caughtAt === null && (v.phase === "hunt" || (v.phase === "hide" && !ranger));
   if (playing) {
     const key = `${r.id}:${ranger && v.phase === "hunt" ? "out" : "in"}`;
@@ -633,10 +666,15 @@ function frame() {
       if (you!.disguise || disguiseFor(z, body.x, body.y)) send({ t: "disguise" });
       else note("Get next to a bush, boulder or log first.", 1800);
     }
+    if (!ranger) learnt.turned += Math.abs(controls.yaw - body.yaw);
     body.yaw = controls.yaw; body.pitch = controls.pitch;
     const ox = body.x, oy = body.y;
     step(z, body, you!.role, inp, dt);
     body.speed = Math.hypot(body.x - ox, body.y - oy) / Math.max(dt, 1e-3);
+    if (!ranger) {
+      learnt.walked += Math.hypot(body.x - ox, body.y - oy);
+      if ((body.crouch && z.bushAt(body.x, body.y)) || you!.disguise) learnt.hid = true;
+    }
     if (ranger && lightKey) light = !light;
     if (ranger && callKey && v.phase === "hunt") { send({ t: "call" }); sounds.call(0.8, CALLS[Math.floor(Math.random() * CALLS.length)]); }
     if (t - lastSend > 50) {
