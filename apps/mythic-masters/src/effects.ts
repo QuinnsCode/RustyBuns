@@ -129,7 +129,12 @@ export function fieldLook(fields: readonly Field[]): FieldLook | null {
       float a = uFxAmt * ${k.toFixed(2)};
       D = mix( vec3( 1.0 ), D, a );
       reflectedLight.directDiffuse *= D; reflectedLight.indirectDiffuse *= D;
-      reflectedLight.indirectSpecular += S * a;
+      // The sheen reads as wet hide, not a coat of glass (#4265): a soft knee that tops out at 0.15 (a broad tide or
+      // frost sheen at full strength added a third of white or more and glazed the whole body), half tinted by the
+      // hide's own hue, then beasts.ts stylize's edge gate (less of it on slick and pale hides).
+      vec3 hue = diffuseColor.rgb / max( max( diffuseColor.r, max( diffuseColor.g, diffuseColor.b ) ), 0.05 );
+      vec3 sh = S * a; sh = 0.15 * sh / ( 0.15 + sh ) * mix( vec3( 1.0 ), hue, 0.5 );
+      reflectedLight.indirectSpecular += sh * beastRim;
       totalEmissiveRadiance += E * a;
     }`;
     look = { key, helpers: HELPERS, frag };
