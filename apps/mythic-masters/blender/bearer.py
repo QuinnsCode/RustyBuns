@@ -92,8 +92,11 @@ for s in ("Left", "Right"):
         node(s + b, at(s + b), R[b])
     toe = at(s + "ToeBase") - at(s + "Foot"); toe.z = 0
     node(s + "toe", at(s + "ToeBase") + toe.normalized() * 0.06, R["toe"])
+    # the shoulders roll forward and drop: the skin's joints sit in front of and under the bones, so the back
+    # curves into the arms instead of running a bar across it (the bones still turn the arms as they did)
     for b in ("Shoulder", "Arm", "ForeArm", "Hand"):
-        node(s + b, at(s + b), R[b])
+        f, d = sheet.get("slump", {}).get(b, (0.0, 0.0))
+        node(s + b, at(s + b) + forward * f - up * d, R[b])
     node(s + "hand", at(s + "Hand") + (at(s + "Hand") - at(s + "ForeArm")).normalized() * 0.08, R["hand"])
 chain = ["Hips", "Spine02", "Spine01", "Spine", "neck", "Head"]
 edges += list(zip(chain, chain[1:]))
@@ -212,6 +215,17 @@ for v in bm.verts:
         fall = (0.25 - z) / 1.25
         back = max(0.0, 1 - max(0.0, f) * 1.4)  # less over the cheeks, most at the back
         p += (d * 0.3 * sx + Vector((0, 0, -1)) * M["hang"] * (0.3 + 0.7 * lock) * back) * fall
+    else:  # above it, tufts poke out of the crown and flop back, so the outline is ragged from any side
+        C = M.get("crown")
+        if C:
+            # a band round the crown (none at the very top, where the sphere's meridians bunch into one spike),
+            # each tuft a ridge that twists a little as it climbs
+            band = math.sin(math.pi * min(1.0, (z - 0.25) / 0.65))
+            # narrow (a high power), thinner over the brow so none reads as a horn
+            front = 1 - 0.7 * max(0.0, f)
+            tuft = max(0.0, math.sin(a * C["tufts"] + phase[1] + z * 3)) ** 8 * band * front
+            flop = d * 0.55 - forward * 0.45 + Vector((0, 0, -0.45))
+            p += flop * C["out"] * tuft
     v.co = centre + p
 face = [f for f in bm.faces if (lambda c: c.dot(forward) > sx * 0.25 and c.z < sz * 0.3)(f.calc_center_median() - centre)
         or (f.calc_center_median() - centre).z < -sz * 1.1]
