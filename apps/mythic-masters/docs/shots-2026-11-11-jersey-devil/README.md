@@ -22,14 +22,21 @@ head, the bat wings, the forked tail.
 
 The generator (`proposals/set-b/jersey-devil.ts`, commit 886f7431, on the PR) writes the sheet.
 
-- **The horse head is four blobs** (a cranium, a long muzzle, a soft nose end and a jaw line) on a two-node neck with a
-  tilted neck blob, all one skin (`blend: 0.016`) with the body. The old `skull` loft came out boxy.
+- **The horse head is four blobs** (a cranium, a long muzzle, a soft nose end and a jaw line) on a two-node neck carried
+  upright over the chest, as in the drawings, all one skin (`blend: 0.016`) with the body. The old `skull` loft came out boxy.
 - **Kangaroo legs:** a big tilted thigh blob, a shin raked back to a high hock and a cannon to the hoof, each a blob
   tilted along its bone (`rot`); a small blob at the foot node so the `hoof` part meets the leg instead of floating.
 - **Bat wings** are the `wing` part: four finger bones from the wrist (`l_wwrist`) and a membrane sagging between them
   down to the flank, with a thumb claw on the wrist. The rigger finds both (wings 2/2).
 - **The arrowhead** is three flattened `horn`s at the tail tip: a point and two barbs swept back.
 - A short mane of flat tufts down the neck, red glowing eyes, curved horns, a mouth line and two front teeth.
+
+## Traps
+
+- **Keep the mass in the chest.** The rigger roots the skeleton in the thickest part of the body, and the puppet reads
+  how upright a beast is from that root's height (`upright` in `src/beasts.ts`). With big kangaroo haunches the root
+  sank to 0.43 of the height, the puppet took it for a four-legged beast, and it barely leaned into a flight (the
+  "upright flyer" test in `test/beasts.test.ts` failed). A fuller chest and slimmer haunches put the root back at 0.63.
 
 ## Still open (builder gaps)
 
