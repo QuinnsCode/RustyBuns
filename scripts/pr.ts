@@ -8,7 +8,8 @@
 //   bun run pr 3155 --minutes 5  wait at most 5 min
 //
 // It also spots the GitHub miss from AGENTS.md (#2828): a head pushed minutes ago with no typecheck or apps run
-// attached, which an empty commit won't fix and a rebase + force-with-lease does.
+// attached, which an empty commit won't fix and a rebase + force-with-lease does. A run that is only queued (no runner
+// free yet) isn't in the PR's checks either, so before calling it a miss it asks Actions for runs on the head SHA (#4240).
 import { arr, bool, check, num, obj, oneOf, opt, str, type Of } from "../packages/util/src/guard.ts";
 
 const text = (max: number) => opt(str(max, { min: 0 }));
@@ -36,30 +37,56 @@ export function outcomes(pr: Pr): Outcome[] {
   });
 }
 
-/** True once no check is still running. An open PR with no checks at all is not settled: they may not be attached yet. */
-export const settled = (pr: Pr, now = Date.now()) => pr.state !== "OPEN" || (pr.statusCheckRollup.length > 0 && outcomes(pr).every((o) => o.outcome !== "pending")) || missedRun(pr, now);
+/** `gh run list --commit <sha> --json` with RUN_FIELDS: the head's workflow runs, queued ones included. */
+export const Runs = arr(obj({ workflowName: str(200, { min: 0, dflt: "" }), status: str(40, { min: 0, dflt: "" }), conclusion: text(40) }), 200, { drop: true });
+export type Runs = Of<typeof Runs>;
+export const RUN_FIELDS = "workflowName,status,conclusion";
+const CI = /^(typecheck|apps)$/;
+
+/** Where the head's typecheck and apps runs stand on Actions: none at all, waiting for a runner, running, or done. */
+export function headRuns(runs: Runs): "none" | "queued" | "running" | "done" {
+  const ci = runs.filter((r) => CI.test(r.workflowName));
+  if (!ci.length) return "none";
+  if (ci.some((r) => r.status === "in_progress")) return "running";
+  return ci.some((r) => r.status !== "completed") ? "queued" : "done";
+}
+
+/** True once no check is still running. An open PR with no checks at all is not settled: they may not be attached yet. A run still queued or running on Actions keeps it unsettled. */
+export const settled = (pr: Pr, now = Date.now(), runs: Runs = []) => {
+  if (pr.state !== "OPEN") return true;
+  const stage = headRuns(runs);
+  if (stage === "queued" || stage === "running") return false;
+  return (pr.statusCheckRollup.length > 0 && outcomes(pr).every((o) => o.outcome !== "pending")) || missedRun(pr, now, runs);
+};
 
 /** How long ago the head commit was made, in seconds. */
 const headAge = (pr: Pr, now: number) => { const t = pr.commits.at(-1)?.committedDate; return t ? (now - Date.parse(t)) / 1000 : 0; };
-/** The GitHub miss (#2828): the head is minutes old and neither the typecheck nor the apps workflow attached a run. */
+/** No typecheck or apps check in the PR's rollup. */
+const unattached = (pr: Pr) => !pr.statusCheckRollup.some((c) => CI.test(c.workflowName ?? "") || CI.test(c.name ?? ""));
+/** The GitHub miss (#2828): the head is minutes old, neither the typecheck nor the apps workflow attached a check, and Actions has no run of either on the head SHA (a queued one is a wait, not a miss). */
 export const MISS_AFTER = 120;
-export const missedRun = (pr: Pr, now = Date.now()) =>
-  pr.state === "OPEN" && headAge(pr, now) > MISS_AFTER && !pr.statusCheckRollup.some((c) => /^(typecheck|apps)$/.test(c.workflowName ?? "") || /^(typecheck|apps)$/.test(c.name ?? ""));
+export const missedRun = (pr: Pr, now = Date.now(), runs: Runs = []) =>
+  pr.state === "OPEN" && headAge(pr, now) > MISS_AFTER && unattached(pr) && headRuns(runs) === "none";
+/** Whether to ask Actions for the head's runs: the rollup has no typecheck or apps check yet. */
+export const needRuns = (pr: Pr) => pr.state === "OPEN" && unattached(pr);
 
 const dur = (s?: number) => (s === undefined ? "" : s >= 60 ? ` ${Math.floor(s / 60)}m${s % 60}s` : ` ${s}s`);
 
 /** The summary: a header line, then one line per outcome kind (pass, skip, pending, fail) with the checks on it. */
-export function summarize(pr: Pr, now = Date.now()): string[] {
+export function summarize(pr: Pr, now = Date.now(), runs: Runs = []): string[] {
   const merge = pr.state === "OPEN" ? ` ${pr.mergeStateStatus.toLowerCase()}${pr.isDraft ? " draft" : ""}` : "";
   const out = [`#${pr.number} ${pr.state}${merge} ${pr.baseRefName} <- ${pr.headRefName} ${pr.headRefOid.slice(0, 7)}  ${pr.title}`];
   const os = outcomes(pr), byKind = (k: Outcome["outcome"]) => os.filter((o) => o.outcome === k);
-  if (!os.length) out.push(missedRun(pr, now) ? `  no typecheck or apps run attached ${Math.round(headAge(pr, now) / 60)} min after the push: a GitHub miss (#2828). Rebase onto origin/main and git push --force-with-lease; an empty commit won't help.` : "  no checks yet");
+  const queued = unattached(pr) ? runs.filter((r) => CI.test(r.workflowName) && r.status !== "completed") : [];
+  if (queued.length) out.push(`  queued  ${queued.map((r) => r.workflowName).join(" | ")}  waiting for a runner, not a miss: don't push`);
+  else if (!os.length && pr.mergeStateStatus === "DIRTY") out.push("  no runs: it conflicts with main, and GitHub runs no checks until it merges cleanly. Rebase onto origin/main (only your own commits) and git push --force-with-lease.");
+  else if (!os.length) out.push(missedRun(pr, now, runs) ? `  no typecheck or apps run attached ${Math.round(headAge(pr, now) / 60)} min after the push: a GitHub miss (#2828). Rebase onto origin/main and git push --force-with-lease; an empty commit won't help.` : "  no checks yet");
   for (const [kind, label] of [["pass", "pass"], ["skip", "skip"], ["other", "other"], ["pending", "running"]] as const) {
     const xs = byKind(kind);
     if (xs.length) out.push(`  ${label.padEnd(7)} ${xs.map((o) => o.name + (kind === "pass" ? dur(o.seconds) : "")).join(" | ")}`);
   }
   for (const o of byKind("fail")) out.push(`  FAIL    ${o.name}${dur(o.seconds)}  ${o.url ?? ""}`.trimEnd());
-  if (os.length && missedRun(pr, now)) out.push("  no typecheck or apps run attached (#2828): rebase onto origin/main and git push --force-with-lease.");
+  if (os.length && missedRun(pr, now, runs)) out.push("  no typecheck or apps run attached (#2828): rebase onto origin/main and git push --force-with-lease.");
   return out;
 }
 
@@ -76,6 +103,13 @@ export function trimLog(log: string, keep = 40): string[] {
 }
 
 const sh = async (...cmd: string[]) => { const p = Bun.spawn(cmd, { stdout: "pipe", stderr: "pipe" }); const [out, err] = await Promise.all([new Response(p.stdout).text(), new Response(p.stderr).text()]); return { code: await p.exited, out, err }; };
+
+/** The head SHA's workflow runs on Actions (empty when gh can't say). */
+export async function runsOn(sha: string): Promise<Runs> {
+  const r = await sh("gh", "run", "list", "--commit", sha, "--json", RUN_FIELDS, "-L", "50");
+  if (r.code) return [];
+  try { return check(Runs, JSON.parse(r.out)) ?? []; } catch { return []; }
+}
 
 export async function view(n: number): Promise<Pr> {
   const r = await sh("gh", "pr", "view", String(n), "--json", FIELDS);
@@ -98,9 +132,11 @@ if (import.meta.main) {
   if (!n) { console.error("usage: bun run pr <number> [--no-wait] [--minutes <m>]"); process.exit(2); }
   const wait = !args.includes("--no-wait"), minutes = Number(args[args.indexOf("--minutes") + 1]) || 20, until = Date.now() + minutes * 60_000;
   let pr = await view(n).catch((e: Error) => { console.error(e.message); process.exit(2); });
-  while (wait && !settled(pr) && Date.now() < until) { await Bun.sleep(20_000); pr = await view(n); }
-  console.log(summarize(pr).join("\n"));
+  const look = async () => (needRuns(pr) ? runsOn(pr.headRefOid) : []);
+  let runs = await look();
+  while (wait && !settled(pr, Date.now(), runs) && Date.now() < until) { await Bun.sleep(20_000); pr = await view(n); runs = await look(); }
+  console.log(summarize(pr, Date.now(), runs).join("\n"));
   for (const o of outcomes(pr).filter((o) => o.outcome === "fail")) { const log = await failedLog(o.url); if (log.length) console.log(`--- ${o.name}\n${log.join("\n")}`); }
-  if (wait && !settled(pr)) console.log(`  still running after ${minutes} min`);
+  if (wait && !settled(pr, Date.now(), runs)) console.log(`  still running after ${minutes} min`);
   process.exit(outcomes(pr).some((o) => o.outcome === "fail") ? 1 : 0);
 }
