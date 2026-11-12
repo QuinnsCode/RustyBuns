@@ -25,7 +25,7 @@ chest. What a child draws: a wolf standing up like a man, the glowing red eyes, 
 - **Body:** a barrel chest and heavy shoulders over a lean waist, blob arms and digitigrade legs (thigh, knee knob,
   shin, hock, long foot), a tail grown from the rump. The mass sits high on purpose: the rig's root is at 0.68 of the
   height (the Jersey Devil's lesson), so the puppet reads it as upright.
-- **Head:** the set A wolf head (`proposals/set-a/make.ts`) at 1.55, the jaw hung wide (`gape` 1.4), fangs on both
+- **Head:** the set A wolf head (`proposals/set-a/make.ts`) at 1.55 with the muzzle at 1.05, the jaw hung wide (`gape` 1.4), fangs on both
   lips, a dark gullet, glowing red eyes under brows, tall pointed ears.
 - **Arms** reach forward to long hooked claws; wolf `paw` feet with claws.
 - **Fur:** a `fur` hide, thin strands (base 0.03) down the back, a darker mane over the neck and shoulders, fringes
@@ -34,11 +34,16 @@ chest. What a child draws: a wolf standing up like a man, the glowing red eyes, 
 
 ## Lessons
 
+- **Trap:** the puppet's head is the highest tip plus every tip within 0.35 of the body's size (`headOf` in
+  `src/beasts.ts`). With tall ears on top of a long muzzle, the snout tip fell outside that and was swung as a
+  hanging limb (the upright-limbs test in `test/beasts.test.ts` counts 4, not 3). Shorter ears (`len` 0.17 of the
+  head) and a slightly shorter muzzle (`M` 1.05) bring it back. Check `hangingLimbs` after changing a head, not only the feet.
+- An extra paint chain under the chest (a bib) is a branch the rig can count as a limb too.
 - An `ear`'s `thick` lobe rounds its tip: at 0.08 the ears read as a rabbit's. Leave `thick` off for a pricked wolf ear.
 
 ## Still open (builder gaps)
 
 - The ears still come out round-ended from the front even flat: an `ear` with a pointed tip would fix it.
-- A pale bib `paint`ed on two nodes under the chest barely shows through the `fur` hide.
+- No paler throat and chest yet: a `paint`ed bib barely showed through the `fur` hide, and its chain added a limb, so it is out.
 - The `fur` strands run along +x, across an upright body (the lane 4 gap), so the coat reads mottled, not hanging.
 - In the arena the rim light washes the grey coat pale (#4265).

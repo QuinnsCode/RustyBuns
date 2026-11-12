@@ -22,14 +22,11 @@ const nodes: Record<string, N> = {
   l_elbow: [0.14, 1.28, 0.44, 0.07],
   l_wrist: [0.42, 1.12, 0.42, 0.05],
   l_hand: [0.52, 1.07, 0.4, 0.045],
-  bib1: [0.3, 1.55, 0, 0.09],
-  bib2: [0.24, 1.32, 0, 0.09],
 };
 const links = [
   ...chain(["tail4", "tail3", "tail2", "tail1", "hip", "belly", "chest", "neck", "head", "snout"]),
   ...chain(["hip", "l_hipj", "l_knee", "l_hock", "l_foot"]),
   ...chain(["chest", "l_shoulder", "l_elbow", "l_wrist", "l_hand"]),
-  ...chain(["neck", "bib1", "bib2"]),
 ];
 
 // the body: a deep barrel chest and heavy shoulders over a lean waist, as the Jersey Devil's notes say (mass high keeps
@@ -56,7 +53,7 @@ const blobs: Blob[] = [
 ];
 
 // the head (the set A wolf head, `proposals/set-a/make.ts`), offsets from the head node in head units H
-const H = 1.55, M = 1.15, gape = 1.4;
+const H = 1.55, M = 1.05, gape = 1.4;
 const cran: Ell = { c: [0, 0.01, 0], r: [0.13, 0.11, 0.115] };
 const muz: Ell = { c: [0.15 * M, -0.05, 0], r: [0.15 * M, 0.065 * 1.2, 0.07 * 1.2] };
 const cheek: Ell = { c: [0.05, -0.04, 0.06], r: [0.09, 0.075, 0.065] };
@@ -93,7 +90,7 @@ parts.push({ kind: "eye", at: "head", off: eyeAt, r: hr(0.032), mirror: true, ma
 parts.push({ kind: "eye", at: "head", off: add(eyeAt, mul(eyeDir, 0.022 * H)), r: hr(0.012), mirror: true, material: "pupil" });
 parts.push({ kind: "ridge", at: "head", off: on([0.05, 0.07, 0.05], [0.5, 1, 0.6], 0.01), dir: [0.3, -0.1, -1], len: hr(0.09), base: hr(0.024), curve: 30, bend: [0, 1, 0], mirror: true, material: "fur" });
 // tall pointed ears, thick, pricked
-parts.push({ kind: "ear", at: "head", off: on([-0.04, 0.06, 0.06], [-0.3, 1, 0.7], 0.02), dir: [-0.15, 1, 0.35], len: hr(0.22), width: hr(0.06), tilt: 22, cup: 30, fold: 0.35, mirror: true, material: "fur" });
+parts.push({ kind: "ear", at: "head", off: on([-0.04, 0.06, 0.06], [-0.3, 1, 0.7], 0.02), dir: [-0.15, 1, 0.35], len: hr(0.17), width: hr(0.055), tilt: 22, cup: 30, fold: 0.35, mirror: true, material: "fur" });
 
 // hands: four long hooked claws; feet: wolf paws with claws
 parts.push(
@@ -127,7 +124,5 @@ write("rougarou", {
     claw: [0.16, 0.14, 0.12, 0.4, 0],
   },
   nodes, links, blobs, parts,
-  // a paler throat and chest, as on the museum figure
-  paint: [{ nodes: ["bib1", "bib2"], material: "belly" }],
   hide: { pattern: "fur", size: 0.045, colours: [[0.17, 0.15, 0.13], [0.46, 0.42, 0.37]], map: 1024 },
 }, process.argv[2]);
