@@ -30,8 +30,14 @@ import { fail, json, readBody, type Env } from "./env.ts";
 import { accountsOn, isAdmin } from "./identity.ts";
 import { repoRow } from "./repos.ts";
 import type { RepoRef } from "./repos";
+import { arr, check, int, obj, opt, str, type Of } from "@rustybuns/util/guard";
 
-export interface DeployKey { token: string; account_id?: string }
+/** A provider's key as it's kept, sealed: read back through this when it's opened. */
+export const DeployKey = obj({ token: str(Infinity), account_id: opt(str()) });
+export type DeployKey = Of<typeof DeployKey>;
+/** What a deploy runner's POST /reseal answers (deploy-runner.ts). */
+export const ResealReply = obj({ states: int(0, Number.MAX_SAFE_INTEGER), failed: arr(str(Infinity), Infinity) });
+export type ResealReply = Of<typeof ResealReply>;
 export type Provider = "cloudflare" | "railway" | "hetzner";
 
 /** Each provider: the env its CLI reads in the deploy container, and what its token should be. */
@@ -121,7 +127,7 @@ export async function deployKeys(env: Env, owner: string, repo: string): Promise
     const what = keyWhat(owner, repo, r.provider), { text, stale } = await open(env, what, r.sealed);
     if (stale) await env.DB.prepare("UPDATE deploy_keys SET sealed = ? WHERE owner = ? AND repo = ? AND provider = ? AND sealed = ?")
       .bind(await sealText(env, what, text), owner, repo, r.provider, r.sealed).run();
-    out[r.provider] = { ...(JSON.parse(text) as DeployKey), last4: r.last4 };
+    out[r.provider] = { ...DeployKey(JSON.parse(text)), last4: r.last4 };
   }
   return out;
 }
@@ -197,7 +203,7 @@ export async function resealAll(env: Env) {
     const stub = env.DEPLOY_RUNNER?.get(env.DEPLOY_RUNNER.idFromName(`${r.owner}/${r.repo}`));
     if (!stub) break;
     const res = await stub.fetch(new Request("http://deploy/reseal", { method: "POST", body: JSON.stringify({ owner: r.owner, repo: r.repo }) })).catch(() => null);
-    const d = (await res?.json().catch(() => null)) as { states: number; failed: string[] } | null;
+    const d = check(ResealReply, await res?.json().catch(() => null));
     if (!d) { out.failed.push(`${r.owner}/${r.repo} state`); continue; }
     out.states += d.states;
     out.failed.push(...d.failed.map((f) => `${r.owner}/${r.repo} state${f}`));
