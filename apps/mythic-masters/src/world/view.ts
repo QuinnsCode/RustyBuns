@@ -107,6 +107,8 @@ export interface WorldHooks {
   met?(den: string, id: string, level: number): void;
   /** A flock you flushed or a patch you picked, for the party (src/world/life.ts). */
   life?(e: LifeEvent): void;
+  /** What a town's staff have heard about the factions you have met (src/factions/engine.ts FACTION[f].rumours). */
+  rumours?(): readonly string[];
 }
 
 export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, hooks: WorldHooks) {
@@ -920,10 +922,13 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
   // your line-up waits at the door. Out of the front door, you stand on the street again.
   interface Inside { t: Town; at: { x: number; z: number }; facing: number; y: number; room: ReturnType<typeof buildTown>; you: Bearer; near: string | null }
   let inside: Inside | null = null;
+  /** How many times you have walked into each town, by its id: the staff pass on a rumour every second visit. */
+  const visits = new Map<string, number>();
   /** Walks into town `id` (its board's place id) at the front door. False if there is no such town or you are in one. */
   function enterTown(id: string): boolean {
     const t = TOWNS.get(id);
     if (!t || inside || !group.visible) return false;
+    visits.set(id, (visits.get(id) ?? 0) + 1);
     const room = buildTown(t), y = Math.max(0, groundY(t.door.x, t.door.z));
     room.group.position.set(t.door.x, y, t.door.z); room.group.rotation.y = t.yaw;
     scene.add(room.group);
@@ -974,7 +979,7 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
       s.near = key;
       const p = poiById(t.id);
       if (by && "board" in by && p) { const said = hooks.places?.reach(p, !marked(log, p)); if (said) toast(`${icon("binoculars")}${esc(said)}`); }
-      else if (by && "person" in by) toast(`${icon("message-circle")}${esc(townLine(t, by.person, stageOf(log, t.id)))}`);
+      else if (by && "person" in by) toast(`${icon("message-circle")}${esc(townLine(t, by.person, stageOf(log, t.id), hooks.rumours?.() ?? [], (visits.get(t.id) ?? 1) - 1))}`);
     }
     if (toastUntil && performance.now() > toastUntil) { toastEl.hidden = true; toastUntil = 0; }
     s.you.update(s.at.x, 0, s.at.z, s.facing);

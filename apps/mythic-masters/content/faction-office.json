@@ -1,0 +1,826 @@
+{
+  "id": "office",
+  "name": "The Office of Unlisted Fauna",
+  "short": "the Office",
+  "calls": "Subject",
+  "theory": "The Book is government property. It is a register. It left its shelf without Form 9-C. The Office will log it, seize it and file it. A register does not talk. Reports that this register talks are errors in the report.",
+  "tells": [
+    "A grey sedan sits on the trail behind you. Its engine turns over and does not start.",
+    "Two people in grey suits stand at the last stone. One reads a small card aloud to the other.",
+    "Yellow tape crosses a trail you already walked. It says OFFICE on it, many times.",
+    "A radio in the trees says the word Control. Nobody answers it."
+  ],
+  "people": [
+    { "id": "pell", "name": "Agent Pell", "role": "Senior field agent. Reads every procedure aloud. Does not log jokes." },
+    { "id": "quist", "name": "Agent Quist", "role": "Junior field agent. Keeps a scrapbook. Asks questions off the record." },
+    { "id": "brandt", "name": "Section Chief Brandt", "role": "Section chief. A voice on the radio until the last stop.", "sign": "Control" }
+  ],
+  "ranks": [
+    {
+      "id": "field-agent",
+      "title": "Field Agent",
+      "up": 1,
+      "fields": ["iron", "stone"],
+      "hail": [
+        { "text": "Official stop, {you}. I read the card: I am a field agent of the Office of Unlisted Fauna. Your line-up is unlisted. I will list it." },
+        { "text": "Official stop, {you}. The Book held 5 kinds or more when the Office met you at {met}. I have that sheet here. I add to it now.", "when": { "had": { "binds": 5 } } },
+        { "text": "Official stop, {you}. Your file says you answer hard. I have a hard pencil. Stand still for the count.", "when": { "manner": "hard" } },
+        { "text": "Official stop, {you}. The Institute tagged this trail. A tag is not a log. I log the trail now, and I log you.", "when": { "met": ["institute"] } },
+        { "text": "Official stop, {you}. Your reading with the Office is cold. My orders are short when it is cold. Release your lead.", "when": { "now": ["cold"] } },
+        { "text": "Official stop, {you}. It is night. I read the card by the sedan light. The sedan light works. The sedan does not start.", "when": { "night": true } }
+      ],
+      "again": [
+        { "text": "You came back, {you}. My assets are rested. Form 22 from the last stop is on file." },
+        { "text": "You were away for {gap}. I stood at this post for {gap}. I am not tired. I am consistent.", "when": { "gap": ["long"] } },
+        { "text": "It is only {gap} since the last stop. The form is not dry. Stand in the same place, please.", "when": { "gap": ["soon", "later"] } }
+      ],
+      "youWin": [
+        { "text": "My assets are down. That is a loss. A loss is Form 22. I have a pad of 50." },
+        { "text": "The Office lost to you 5 times or more. The pad of Form 22 is thin now. I will request a new pad.", "when": { "won": 5 } },
+        { "text": "You beat me with company. Form 22 has one line for names. I will write small.", "when": { "party": true } }
+      ],
+      "youLose": [
+        { "text": "My assets held. You are logged as stopped. Wait here for the sedan. NOTE: The sedan does not start. Do not wait." },
+        { "text": "The Office stopped you 3 times or more. I do not smile. This is the face for it.", "when": { "lost": 3 } },
+        { "text": "Your reading falls, and now you lost a stop. I will read both facts to Control.", "when": { "trend": ["falling"] } }
+      ]
+    },
+    {
+      "id": "cordon-officer",
+      "title": "Cordon Officer",
+      "up": 2,
+      "fields": ["stone", "storm"],
+      "hail": [
+        { "text": "Stop at the tape, {you}. This trail is a cordon. You walked it already. We taped it after. That is not late. That is after." },
+        { "text": "Stop at the tape, {you}. You lit fewer than 2 campfires before the Office met you. We had no smoke to follow. Light more fires. That is not an order.", "when": { "hadUnder": { "fires": 2 } } },
+        { "text": "Stop at the tape, {you}. You were not past the Cranberry bogs when we met you. We were close behind you then. Log that in our favour.", "when": { "notBefore": ["1:6"] } },
+        { "text": "Stop at the tape, {you}. You ran a Lamplighter message past a cordon at Green Bank. That cordon was mine. I count in twos now.", "when": { "flags": ["message-run"] } },
+        { "text": "Stop at the tape, {you}. Your file says you make jokes. The tape is not a finish line. Others said it before you.", "when": { "manner": "dry" } },
+        { "text": "Stop at the tape, {you}. Your file is clean for a person with the Book. I still must test the cordon. It is the procedure.", "when": { "past": ["warm", "close"] } }
+      ],
+      "again": [
+        { "text": "You are at the tape again, {you}. I rolled out new tape. The old tape is evidence." },
+        { "text": "You were away for {gap}. The tape faded in that time. I did not.", "when": { "gap": ["long"] } },
+        { "text": "You came back after {gap}. I did not finish my sandwich. Log that as a cost.", "when": { "gap": ["soon"] } }
+      ],
+      "youWin": [
+        { "text": "The cordon is broken. That is Form 22 and Form 23, for the tape. Step over it. Do not cut it." },
+        { "text": "The cordon is broken again. The Lamplighters broke one at Annex 9 too. I begin to doubt the tape.", "when": { "flags": ["annex-raided"] } },
+        { "text": "You broke 3 cordons or more. The Office buys tape by the mile. We will buy more.", "when": { "won": 3 } }
+      ],
+      "youLose": [
+        { "text": "The cordon held. Go back the way you came. You know the way. We followed you on it." },
+        { "text": "The cordon held and your file is cold. I will tape a second line behind you.", "when": { "now": ["cold", "cool"] } },
+        { "text": "The cordon held twice or more. The tape works. I will tell the tape.", "when": { "lost": 2 } }
+      ]
+    },
+    {
+      "id": "records-clerk",
+      "title": "Records Clerk",
+      "up": 0,
+      "fields": ["spirit", "shadow"],
+      "hail": [
+        { "text": "Please stop, {you}. I am a records clerk. I carry your file. It is heavy. A fight is faster than a correction." },
+        { "text": "Please stop, Gary. Your file says Gary. I do not correct a file in the field. I only add to it.", "when": { "flags": ["office-gary"] } },
+        { "text": "Please stop, {you}. You gave your true name at {met}. A true name files easily. Thank you. Now I must test your line-up.", "when": { "flags": ["office-file"] } },
+        { "text": "Please stop, {you}. You held a tape or more when the Office met you. Tapes are records. Records are mine. Show me the line-up first.", "when": { "had": { "tapes": 1 } } },
+        { "text": "Please stop, {you}. Only the Office has a file on you. No other party stopped you yet. Keep it that way. It keeps my index short.", "when": { "unmet": ["institute", "lamplighters"] } },
+        { "text": "Please stop, {you}. Your last answer was plain. Plain answers fit in the box. I will try to fit this fight in a box.", "when": { "last": "straight" } },
+        { "text": "Please stop, {you}. The Institute sold us your baseline. I filed it between Form 9-C and a receipt. Now I check the numbers.", "when": { "flags": ["sample-given"] } }
+      ],
+      "again": [
+        { "text": "You came back, {you}. I opened a new page. The old page is full." },
+        { "text": "You were away for {gap}. I filed {gap} of nothing under your name. Nothing takes a full drawer.", "when": { "gap": ["long"] } },
+        { "text": "Only {gap} since your last entry. The stamp is still wet. Stand clear of the stamp.", "when": { "gap": ["soon", "later"] } }
+      ],
+      "youWin": [
+        { "text": "My assets are down. I will file Form 22 in triplicate. I like triplicate. Do not tell the agents." },
+        { "text": "My assets are down. The Book holds {count} kinds. My register holds fewer. I do not enjoy that sum.", "when": { "have": { "binds": 16 } } },
+        { "text": "My assets are down. You will make a joke now. I have a box for jokes. It is the bin.", "when": { "manner": "dry" } }
+      ],
+      "youLose": [
+        { "text": "My assets held. Your entry is complete. Sign here. You cannot sign yet. I will sign for you as: {you}." },
+        { "text": "My assets held. I will log the loss under Gary. Gary has a poor record now.", "when": { "flags": ["office-gary"] } },
+        { "text": "My assets held, but your reading rises. I log both. The register does not take sides.", "when": { "trend": ["rising"] } }
+      ]
+    },
+    {
+      "id": "night-auditor",
+      "title": "Night Auditor",
+      "up": 3,
+      "fields": ["shadow", "frost"],
+      "hail": [
+        { "text": "Stop, {you}. I am the night auditor. I count what the day shift lost. You are on the list three times." },
+        { "text": "Stop, {you}. It is night. This is my shift. The bog-light on this trail is not Office issue. I audit it also.", "when": { "night": true } },
+        { "text": "Stop, {you}. The Lamplighters put dim lights on this path. I count the lights each night. One is always missing. I count you now.", "when": { "met": ["lamplighters"] } },
+        { "text": "Stop, {you}. You had 2 nights out or more when the Office met you at {met}. You know the dark. So do I. I am paid for it.", "when": { "had": { "nights": 2 } } },
+        { "text": "Stop, {you}. Protocol QUIET is active. I audit what the other two hold. I start with what you hold.", "when": { "done": ["office.5"] } },
+        { "text": "Stop, {you}. Your file is cold from top to bottom. I audited it twice to be sure. It was cold both times.", "when": { "past": ["cold"] } },
+        { "text": "Stop, {you}. You were hard with me the last time. I wrote it in red. Red is for totals.", "when": { "last": "hard" } }
+      ],
+      "again": [
+        { "text": "You are back, {you}. The audit is open. It is always open at night." },
+        { "text": "You were away for {gap}. The sum did not change in that time. You still owe one fight.", "when": { "gap": ["long"] } },
+        { "text": "It is {gap} since the last count. I count twice by procedure. Stand for the second count.", "when": { "gap": ["soon"] } }
+      ],
+      "youWin": [
+        { "text": "My assets are down. The audit shows a loss. That is Form 22, night copy. The night copy is grey." },
+        { "text": "My assets are down in the dark. Nobody saw it. I must still report it. That is the job.", "when": { "night": true } },
+        { "text": "My assets are down. Agent Quist is gone and the losses go up. I see a pattern. I am paid to see it.", "when": { "flags": ["quist-turned"] } }
+      ],
+      "youLose": [
+        { "text": "My assets held. The audit balances. Go to a campfire, {you}. I will count you again tomorrow." },
+        { "text": "The Office holds 4 wins or more against you. That is a healthy column. I underline it.", "when": { "lost": 4 } },
+        { "text": "My assets held. You answer plainly, so I say it plainly. You lost. Rest.", "when": { "manner": "straight" } }
+      ]
+    }
+  ],
+  "posts": [
+    { "n": 1, "k": 0, "rank": "records-clerk", "line": "Batsto made bog iron from the 1760s. The Office logs the iron in the streams as unlisted metal." },
+    { "n": 1, "k": 6, "rank": "field-agent", "line": "At harvest the bogs are flooded and the ripe berries float. The Institute samples the water here, so the Office logs the Institute." },
+    { "n": 1, "k": 9, "rank": "cordon-officer", "line": "Ong's Hat is a ghost town named for a hat in a pine tree. The Lamplighters watch this path, and the hat is still not on any form." },
+    { "n": 2, "k": 0, "rank": "field-agent", "line": "The Shenandoah meets the Potomac at Harpers Ferry. Two rivers need two cordons, and the Office has one roll of tape." },
+    { "n": 2, "k": 7, "rank": "night-auditor", "line": "In September 1952 people here chased a falling light up a hill. The Institute measures the hill, and the Office audits the Institute." },
+    { "n": 2, "k": 10, "rank": "records-clerk", "line": "The Silver Bridge fell on December 15, 1967, and the sightings stopped. The Lamplighters keep a light here, and the Office keeps a quiet record." },
+    { "n": 3, "k": 4, "rank": "field-agent", "line": "Since 1989 people near Elkhorn report a wolf-like thing that walks upright on Bray Road. The Office holds this road until it walks past a form." },
+    { "n": 3, "k": 7, "rank": "records-clerk", "line": "Paul Bunyan was first printed in 1906, in the Oscoda Press. The Lamplighters use the tall tales as a code, and the Office files them as fiction, pending." },
+    { "n": 3, "k": 9, "rank": "cordon-officer", "line": "Moosehead Lake is about 40 miles long, the largest lake wholly inside Maine. The Institute has the north shore, so the Office taped the south shore." },
+    { "n": 4, "k": 0, "rank": "records-clerk", "line": "The Hoh Rain Forest gets about twelve feet of rain in a year. Every form at this post is in a plastic bag." },
+    { "n": 4, "k": 6, "rank": "cordon-officer", "line": "In 1958 a bulldozer crew found enormous footprints at Bluff Creek. The Lamplighters keep people off this trail, and the Office tapes only the road." },
+    { "n": 4, "k": 9, "rank": "night-auditor", "line": "Crater Lake is 1,943 feet deep, the deepest lake in the United States. The Institute lowers a meter into it, and the Office audits the rope." },
+    { "n": 5, "k": 2, "rank": "field-agent", "line": "In March 1972 police officers at Loveland reported a three-foot, frog-faced figure by the road. The Office respects a report from an officer." },
+    { "n": 5, "k": 3, "rank": "night-auditor", "line": "In April 1977 teenagers in Dover reported a big-headed creature with glowing orange eyes on a stone wall. The Office audits the wall each night." },
+    { "n": 5, "k": 9, "rank": "records-clerk", "line": "In July 1977 Sandra Mansi photographed a hump and a head in Lake Champlain. The Institute studies the picture, and the Office has no copy on file." },
+    { "n": 6, "k": 0, "rank": "cordon-officer", "line": "A saguaro may be 75 years old before it grows its first arm. The Office does not tape a saguaro more than once." },
+    { "n": 6, "k": 3, "rank": "night-auditor", "line": "From May to October the bats pour out of Carlsbad Caverns at dusk. The Lamplighters move at the same hour, and the Office counts both." },
+    { "n": 6, "k": 7, "rank": "field-agent", "line": "Badwater Basin is 282 feet below sea level, the lowest point in North America. The Institute left a meter here, and the sedan did not start here." },
+    { "n": 7, "k": 0, "rank": "cordon-officer", "line": "The Lake Pontchartrain Causeway is nearly 24 miles long. The Office cordon covers the first 200 feet." },
+    { "n": 7, "k": 2, "rank": "records-clerk", "line": "Honey Island Swamp is one of the least-changed river swamps in the country. The Institute tags it, and the Office files a change for every tag." },
+    { "n": 7, "k": 9, "rank": "field-agent", "line": "In June 1988 a teenager near Bishopville reported a green, red-eyed lizard man by this swamp. The Office keeps one field agent on the road beside it." },
+    { "n": 8, "k": 3, "rank": "records-clerk", "line": "Congress set aside Hot Springs in 1832, forty years before Yellowstone. The Office admires a file that old." },
+    { "n": 8, "k": 6, "rank": "cordon-officer", "line": "In 1907 the Bronx shipped fifteen bison to the Wichita Mountains. The Lamplighters walk the fence, and the Office form still says fifteen." },
+    { "n": 8, "k": 9, "rank": "night-auditor", "line": "In May 1971 the Ford family of Fouke said a tall hairy creature reached through their window. The Institute works this road by day, and the Office audits it by night." }
+  ],
+  "quest": [
+    {
+      "id": "office.1",
+      "title": "Form 9-C",
+      "n": 1,
+      "k": 4,
+      "who": "pell",
+      "hail": [
+        { "text": "Official stop. I read the card: I am Agent Pell of the Office of Unlisted Fauna. This is Agent Quist. We are not late. The sedan did not start." },
+        { "text": "Official stop. I read the card: I am Agent Pell of the Office of Unlisted Fauna. NOTE: The Office is the first to stop you. Agent Quist, log that we are first.", "when": { "first": "office" } },
+        { "text": "Official stop. I am Agent Pell. Agent Quist read the card on the way up the hill. A person with a lamp spoke to you before us. That person has no form. We have Form 9-C.", "when": { "met": ["lamplighters"] } },
+        { "text": "Official stop. I am Agent Pell of the Office. The Book held 5 kinds or more when we found you. That is 5 unlisted assets. Agent Quist ran out of lines on the form.", "when": { "had": { "binds": 5 } } },
+        { "text": "Official stop. I am Agent Pell of the Office. You lit fewer than 2 campfires before this hill. We found no ash to follow. That is why we are not late.", "when": { "hadUnder": { "fires": 2 } } },
+        { "text": "Official stop. I am Agent Pell of the Office. You passed Blue Hole before we reached this fire tower. We are not late. The sedan did not start for two days.", "when": { "before": ["1:8"] } },
+        { "text": "Official stop. I am Agent Pell of the Office. It is night. Agent Quist holds the flashlight on the card. The card says we are the Office of Unlisted Fauna.", "when": { "night": true } }
+      ],
+      "ask": [
+        { "text": "This is Form 9-C. Step 1. State your name. Step 2. Show the item in your hand. What is your name, {you}?" },
+        { "text": "This is Form 9-C. There is one form for all of you. Step 1. One of you states a name. What is the name, {you}?", "when": { "party": true } }
+      ],
+      "replies": [
+        {
+          "id": "name",
+          "style": "straight",
+          "say": "That's my real name. Write it down. And it's just a book.",
+          "answer": [
+            { "text": "Thank you. Form 9-C is complete. Your file is open, {you}. The item in your hand is logged as: one register, overdue." },
+            { "text": "Thank you. Form 9-C is complete. You gave a name to the Office and none to the person with the lamp. That is the correct order.", "when": { "met": ["lamplighters"] } }
+          ],
+          "sway": 1,
+          "sets": ["office-file"]
+        },
+        {
+          "id": "gary",
+          "style": "dry",
+          "say": "Gary. G-A-R-Y. Put down Gary.",
+          "answer": [
+            { "text": "Gary. The form takes it. I do not like the way you spelled it. Your file is open under Gary. Agent Quist, do not smile on duty." }
+          ],
+          "sway": -1,
+          "sets": ["office-gary"]
+        },
+        {
+          "id": "refuse",
+          "style": "hard",
+          "say": "No name. No book. Get off my trail.",
+          "answer": [
+            { "text": "Refusal is Box 7. Agent Quist, open the crate. Step 1. Release Asset 1. Step 2. Stand behind the sedan." }
+          ],
+          "sway": -2,
+          "fight": true
+        }
+      ],
+      "fight": {
+        "teams": [
+          { "team": [{ "id": "hodag", "up": 1, "title": "Asset 1" }] },
+          { "when": { "had": { "binds": 5 } }, "team": [{ "id": "hodag", "up": 2, "title": "Asset 1" }, { "id": "wampus-cat", "up": 1, "title": "Asset 2" }] }
+        ],
+        "youWin": [
+          { "text": "Asset 1 is down. That is a loss. A loss is Form 22. Agent Quist, start Form 22. We will be behind you, {you}." },
+          { "text": "Asset 1 is down in the dark. Form 22 has no box for the dark. I will write it in the margin.", "when": { "night": true } }
+        ],
+        "youLose": [
+          { "text": "Asset 1 held. Agent Quist, log it. {you}, you can go when the sedan starts. The sedan does not start. You can go." },
+          { "text": "Asset 1 held against all of you. Agent Quist, count them for the form. Use the back of the form.", "when": { "party": true } }
+        ],
+        "swayWin": -1,
+        "swayLose": 1,
+        "setsWin": []
+      },
+      "rematch": [
+        { "text": "You came back, {you}. Asset 1 is in the crate. Form 22 is half complete. Do you want Box 7 again?" },
+        { "text": "You were away for {gap}. Asset 1 rested for {gap}. The sedan also rested. Only one of them works now.", "when": { "gap": ["long"] } }
+      ],
+      "log": "The Office stopped you under the fire tower on Apple Pie Hill and opened a file."
+    },
+    {
+      "id": "office.2",
+      "title": "Quiet Zone",
+      "n": 2,
+      "k": 5,
+      "who": "quist",
+      "hail": [
+        { "text": "Agent Quist, Office listening post, Green Bank. No transmitters are permitted in this zone. Agent Pell orders you to switch off the Book. He reads the order at the sedan. The sedan does not start." },
+        { "text": "Agent Quist, Office listening post. Agent Pell has a report of a light signal near Tug Fork. Lamps and mirrors are not transmitters. No form covers a mirror. He is angry about that.", "when": { "done": ["lamplighters.2"] } },
+        { "text": "Hello, Gary. Your file says Gary. Agent Pell orders Gary to switch off the Book. I do not think you are Gary. I did not write that down.", "when": { "flags": ["office-gary"] } },
+        { "text": "Agent Quist, Office listening post. You carry Reagent 12 from the Institute. Agent Pell wants the bottle for the file. I want to know what colour it is.", "when": { "flags": ["reagent-taken"] } },
+        { "text": "You were away for {gap}, {you}. Agent Pell logged each day. I kept the listening post warm. The dish heard nothing. I heard a wampus-cat.", "when": { "gap": ["long"] } },
+        { "text": "You make jokes, {you}. Agent Pell does not log jokes. I log them in the scrapbook. He orders you to switch off the Book. Please look serious.", "when": { "manner": "dry" } }
+      ],
+      "ask": [
+        { "text": "Agent Pell cannot hear us from the sedan. This is off the record. You saw a mothman at Apple Pie Hill. What did the mothman look like?" }
+      ],
+      "replies": [
+        {
+          "id": "tell",
+          "style": "straight",
+          "say": "Grey. Tall as a man. Red eyes. Mostly it looked sad.",
+          "answer": [
+            { "text": "Thank you. I will draw it tonight. NOTE: This is not in the log. Take this ink. I seized it at Seneca Rocks and did not file it." }
+          ],
+          "sway": 2,
+          "sets": ["quist-warm"],
+          "ink": 1
+        },
+        {
+          "id": "moth",
+          "style": "dry",
+          "say": "Like a moth. But a man. It's sort of in the name.",
+          "answer": [
+            { "text": "That is a joke. I will put it in the scrapbook. Agent Pell must not see the scrapbook." }
+          ],
+          "sway": 1
+        },
+        {
+          "id": "off",
+          "style": "hard",
+          "say": "It doesn't switch off. Neither do I.",
+          "answer": [
+            { "text": "Then I must read the order. Step 1. The Book goes quiet. Step 2. Asset 14 makes it quiet. I am sorry, {you}." }
+          ],
+          "sway": -2,
+          "fight": true
+        }
+      ],
+      "fight": {
+        "teams": [
+          { "team": [{ "id": "flatwoods-monster", "up": 2, "title": "Asset 14" }, { "id": "snallygaster", "up": 2, "title": "Asset 15" }] }
+        ],
+        "youWin": [
+          { "text": "Asset 14 and Asset 15 are down. That is Form 22, two copies. Agent Pell will read both aloud. I will not tell him I enjoyed it." },
+          { "text": "That is your second win against the Office, or more. Form 22 has a box for repeat losses. The box is small.", "when": { "won": 2 } }
+        ],
+        "youLose": [
+          { "text": "Asset 14 held the zone. The Book is quiet for now. I am sorry. The dish can listen to the sky again." },
+          { "text": "Agent Pell says the cordon worked. He says it to the radio. The radio is off in this zone.", "when": { "lost": 2 } }
+        ],
+        "swayWin": 0,
+        "swayLose": 0,
+        "setsWin": []
+      },
+      "rematch": [
+        { "text": "You are back, {you}. Asset 14 is ready. Agent Pell read the order again while you were away." },
+        { "text": "You were away for {gap}. The zone stayed quiet for {gap}. Agent Pell did not.", "when": { "gap": ["long"] } }
+      ],
+      "log": "At Green Bank the Office ordered the Book switched off, and Agent Quist asked about the mothman."
+    },
+    {
+      "id": "office.3",
+      "title": "The Wooden One",
+      "n": 3,
+      "k": 0,
+      "who": "pell",
+      "hail": [
+        { "text": "Stop at the tape, {you}. This crate holds Asset 1, the original. It starred at the 1896 fair in Rhinelander. The Office logged it there. It has not moved since. That is discipline." },
+        { "text": "Stop at the tape, {you}. The Book holds a hodag. This crate holds the first hodag, Asset 1. Do not compare them. Yours moves. Ours has seniority.", "when": { "owns": ["hodag"] } },
+        { "text": "Stop at the tape, {you}. Your file says your first creature was a hodag. The Office started with a hodag in 1896. NOTE: This is not a thing we have in common.", "when": { "starter": "hodag" } },
+        { "text": "Stop at the tape, {you}. The Institute sold the Office your baseline. It cost 40 dollars and one stapler. Your lead weighs more than Asset 1. Asset 1 is very light.", "when": { "flags": ["sample-given"] } },
+        { "text": "Stop at the tape, {you}. You were hard with me the last time. I logged it. I read the log aloud in the sedan. The sedan did not start.", "when": { "last": "hard" } },
+        { "text": "Stop at the tape, Gary. This crate holds Asset 1, logged in 1896. It is older than your file. It is also more honest than your file.", "when": { "flags": ["office-gary"] } },
+        { "text": "You were away for {gap}, {you}. Asset 1 did not move in that time. I did not move. Agent Quist moved twice. I logged it.", "when": { "gap": ["long"] } }
+      ],
+      "ask": [
+        { "text": "NOTE: You fought the field unit at Apple Pie Hill. This is the original. One number covers both. Look through the slot. What do you see, {you}?" }
+      ],
+      "replies": [
+        {
+          "id": "wood",
+          "style": "straight",
+          "say": "That's wood. Carved wood and wire. Somebody made that.",
+          "answer": [
+            { "text": "It is logged as fauna. The log is correct. Wood is a condition, not a category. I will add a NOTE. I will not enjoy it." },
+            { "text": "You hold a live hodag, so you know the difference. That is not evidence. The log says fauna. I will add a NOTE under protest.", "when": { "owns": ["hodag"] } }
+          ],
+          "sway": 1,
+          "sets": ["asset-one-wood"]
+        },
+        {
+          "id": "fed",
+          "style": "dry",
+          "say": "Looks hungry. When did you last feed it?",
+          "answer": [
+            { "text": "The Office last fed Asset 1 in 1896. It did not eat. That is in the log. Do not make jokes near the crate." }
+          ],
+          "sway": -1
+        },
+        {
+          "id": "open",
+          "style": "hard",
+          "say": "Open the crate, or I open it.",
+          "answer": [
+            { "text": "Nobody opens the crate. Step 1. Step back. Step 2. Asset 31 and Asset 32 move you back." }
+          ],
+          "sway": -2,
+          "fight": true
+        }
+      ],
+      "fight": {
+        "teams": [
+          { "team": [{ "id": "teakettler", "up": 2, "title": "Asset 31" }, { "id": "beast-of-bray-road", "up": 3, "title": "Asset 32" }] },
+          { "when": { "flags": ["sample-given"] }, "team": [{ "id": "teakettler", "up": 3, "title": "Asset 31" }, { "id": "snallygaster", "up": 3, "title": "Asset 15" }] }
+        ],
+        "youWin": [
+          { "text": "Asset 31 and Asset 32 are down. The crate fell over in the fight. Asset 1 made a hollow sound. That is Form 22 and one NOTE." },
+          { "text": "The assets are down. We bought your baseline and it did not help. I want the 40 dollars back. The crate made a hollow sound.", "when": { "flags": ["sample-given"] } }
+        ],
+        "youLose": [
+          { "text": "The assets held the tape line. The crate is safe. Asset 1 saw nothing. Asset 1 never sees anything." },
+          { "text": "You lost, {you}. I have no form for your loss. That is your paperwork.", "when": { "lost": 2 } }
+        ],
+        "swayWin": -1,
+        "swayLose": 1,
+        "setsWin": ["asset-one-wood"]
+      },
+      "rematch": [
+        { "text": "You are back at the tape, {you}. The crate is closed. Asset 31 is rested. State your purpose in one sentence." },
+        { "text": "You came back after {gap}. I did not finish Form 22. Wait behind the tape.", "when": { "gap": ["soon"] } }
+      ],
+      "log": "At Rhinelander, Agent Pell guarded a crate that holds the wired wooden hodag of the 1896 fair."
+    },
+    {
+      "id": "office.4",
+      "title": "The Frames",
+      "n": 4,
+      "k": 7,
+      "who": "quist",
+      "hail": [
+        { "text": "Agent Quist, evidence detail. A film left Bluff Creek on October 20, 1967. The Office did not get that film. Agent Pell says we do not make one error twice. He wants your tape." },
+        { "text": "Agent Quist, evidence detail. You gave the Lamplighters a promise about the ridge. NOTE: No Office form covers the ridge. Agent Pell checked twice. We want only your tape.", "when": { "flags": ["ridge-promise"] } },
+        { "text": "Agent Quist, evidence detail. Ms. Carrow counted your line-up at Mount St. Helens. The Institute sold us the count. It was not a round number. Agent Pell wants your tape now.", "when": { "done": ["institute.4"] } },
+        { "text": "Agent Quist, evidence detail. Your file is thick, {you}. Most of it is Form 22. Agent Pell does not say your name now. He says: the tape.", "when": { "past": ["cold", "cool"] } },
+        { "text": "Agent Quist, evidence detail. Your reading with the Office goes up. Agent Pell does not trust a number that goes up. I like it. He still wants your tape.", "when": { "trend": ["rising"] } },
+        { "text": "Hello, {you}. I drew the mothman from your description. It is in the scrapbook, page 9. Agent Pell wants your tape. I only want to watch it.", "when": { "flags": ["quist-warm"] } },
+        { "text": "Hello, Gary. Is Gary on the tape? Agent Pell says the camcorder is evidence. He says the tape shows two people. Our file names one.", "when": { "flags": ["office-gary"] } }
+      ],
+      "ask": [
+        { "text": "Your camcorder is evidence, {you}. Step 1. Eject the tape. Step 2. Give the tape to me. Will you do that?" }
+      ],
+      "replies": [
+        {
+          "id": "copy",
+          "style": "straight",
+          "say": "You can copy it. The original stays with me.",
+          "answer": [
+            { "text": "Agreed. I have a second deck in the sedan. The sedan does not start, but the deck does. NOTE: I will copy the part with Gary too." },
+            { "text": "Agreed. I will make two copies and log one. The other copy is for the scrapbook. Do not tell Agent Pell there are two.", "when": { "flags": ["quist-warm"] } }
+          ],
+          "sway": 2,
+          "sets": ["tape-copied"]
+        },
+        {
+          "id": "thumb",
+          "style": "dry",
+          "say": "Sure. It's forty minutes of Gary's thumb.",
+          "answer": [
+            { "text": "The Office has many hours of thumbs on file. I will tell Agent Pell the tape was blank. He will write a form about a blank tape." }
+          ],
+          "sway": 1
+        },
+        {
+          "id": "mine",
+          "style": "hard",
+          "say": "The tape's mine. Come and take it.",
+          "answer": [
+            { "text": "I do not want to do this. Agent Pell reads the seizure order now. Asset 40, Asset 41 and Asset 44 will take the tape." }
+          ],
+          "sway": -2,
+          "fight": true
+        }
+      ],
+      "fight": {
+        "teams": [
+          { "team": [{ "id": "splintercat", "up": 3, "title": "Asset 40" }, { "id": "fur-bearing-trout", "up": 3, "title": "Asset 41" }, { "id": "champ", "up": 4, "title": "Asset 44" }] },
+          { "when": { "flags": ["quist-warm"] }, "team": [{ "id": "splintercat", "up": 2, "title": "Asset 40" }, { "id": "fur-bearing-trout", "up": 2, "title": "Asset 41" }, { "id": "champ", "up": 3, "title": "Asset 44" }] }
+        ],
+        "youWin": [
+          { "text": "Three assets are down. That is Form 22 in three parts. The tape stays with you. I am not sad about it." },
+          { "text": "That is another loss for the Office. Agent Pell keeps the Form 22 pad in his coat now. The tape stays with you.", "when": { "won": 3 } }
+        ],
+        "youLose": [
+          { "text": "The assets held. Agent Pell says I take the tape when you stand up. Please do not stand up yet." },
+          { "text": "You lost, {you}. I logged it kindly. Agent Pell will not see the word kindly. I wrote it small.", "when": { "flags": ["quist-warm"] } }
+        ],
+        "swayWin": 0,
+        "swayLose": 0,
+        "setsWin": []
+      },
+      "rematch": [
+        { "text": "You are back, {you}. The tape is still in your camcorder. Agent Pell noticed. Asset 40 is ready." },
+        { "text": "You were away for {gap}. Agent Pell read the seizure order each morning. I know it by heart now.", "when": { "gap": ["later", "long"] } }
+      ],
+      "log": "The Office called your camcorder evidence and asked for the tape."
+    },
+    {
+      "id": "office.5",
+      "title": "No Cars",
+      "n": 5,
+      "k": 5,
+      "who": "quist",
+      "hail": [
+        { "text": "Mackinac Island banned cars in 1898. The sedan is on the mainland. It did not start. Agent Pell and I share a tandem. Control started Protocol QUIET on the radio today." },
+        { "text": "Protocol QUIET started today, {you}. The Office now seizes what the Institute holds. You went to Isle Royale before us. Agent Pell says you are always before us. He is not wrong.", "when": { "done": ["institute.5"] } },
+        { "text": "Protocol QUIET started today, {you}. The Office now seizes what the Lamplighters shelter. You were on their night boat at Lake Champlain. Agent Pell has the tandem. A tandem cannot follow a boat.", "when": { "done": ["lamplighters.5"] } },
+        { "text": "Hello, {you}. Agent Pell took the tandem to the dock. I have one minute. Control started Protocol QUIET. The Office now seizes what the other two hold.", "when": { "flags": ["quist-warm"] } },
+        { "text": "Hello, {you}. I watched my copy of your tape 11 times. Control started Protocol QUIET today. The Office now seizes what the other two hold. I have one minute alone.", "when": { "flags": ["tape-copied"] } },
+        { "text": "Hello, {you}. I have a joke about the tandem. I will not tell it. Control started Protocol QUIET today. The Office now seizes what the other two hold.", "when": { "manner": "dry" } },
+        { "text": "You were away for {gap}. In that time Control started Protocol QUIET. The Office now seizes what the other two hold. Agent Pell is at the dock with the tandem.", "when": { "gap": ["long"] } }
+      ],
+      "ask": [
+        { "text": "I have one minute alone, {you}. I ask this for me, not for the file. What does the Book do with them after it binds them?" }
+      ],
+      "replies": [
+        {
+          "id": "honest",
+          "style": "straight",
+          "say": "I don't know. It says 'Mine' and goes quiet. I'd like to know too.",
+          "answer": [
+            { "text": "You do not know, and you said so. The Office has cages and I counted them. I do not want to count them again. Take this ink. I will lose a key at Annex 9." },
+            { "text": "You told me the mothman looked sad. Our assets look the same way. I am finished with cages. Take this ink. I will lose a key at Annex 9.", "when": { "flags": ["quist-warm"] } }
+          ],
+          "sway": 2,
+          "sets": ["quist-turned"],
+          "ink": 1
+        },
+        {
+          "id": "rent",
+          "style": "dry",
+          "say": "Charges them rent, probably. It's that kind of book.",
+          "answer": [
+            { "text": "That is a joke. I asked a real question. I still like the joke. Agent Pell is back in 20 seconds." }
+          ],
+          "sway": 1
+        },
+        {
+          "id": "cages",
+          "style": "hard",
+          "say": "Ask your cages. You're the ones seizing things now.",
+          "answer": [
+            { "text": "That is fair. It is also Box 7. Protocol QUIET has one step for Box 7. Asset 52, Asset 53 and Asset 57 do it." }
+          ],
+          "sway": -2,
+          "fight": true
+        }
+      ],
+      "fight": {
+        "teams": [
+          { "team": [{ "id": "loveland-frogman", "up": 4, "title": "Asset 52" }, { "id": "dover-demon", "up": 4, "title": "Asset 53" }, { "id": "beast-of-bray-road", "up": 5, "title": "Asset 57" }] }
+        ],
+        "youWin": [
+          { "text": "Three assets are down on an island with no cars. I must carry the crates on the tandem. That is Form 22 and a sore back." },
+          { "text": "You won. I will file Form 22 slowly. Agent Pell reads slowly. You have time to leave the island.", "when": { "flags": ["quist-warm"] } }
+        ],
+        "youLose": [
+          { "text": "The assets held. Protocol QUIET continues. I did not want to win this one. Do not log that." },
+          { "text": "You lost, {you}. Agent Pell rang the tandem bell. He says that is the procedure.", "when": { "lost": 2 } }
+        ],
+        "swayWin": 0,
+        "swayLose": 0,
+        "setsWin": []
+      },
+      "rematch": [
+        { "text": "You are back, {you}. Agent Pell is at the dock again. I have one more minute. Asset 52 is ready if you say Box 7." },
+        { "text": "You were away for {gap}. Protocol QUIET ran for {gap}. The lists got longer. I got quieter.", "when": { "gap": ["long"] } }
+      ],
+      "log": "On Mackinac Island Control started Protocol QUIET, and Agent Quist asked what the Book does with them."
+    },
+    {
+      "id": "office.6",
+      "title": "Annex 9",
+      "n": 6,
+      "k": 1,
+      "who": "pell",
+      "hail": [
+        { "text": "This is Annex 9, {you}. It is the Office store at Roswell. The cages are full. Agent Quist counts them now. The Army changed its report here in 1947. The Office never changes a report." },
+        { "text": "This is Annex 9, {you}. The cages are empty. The Lamplighters raided the store before you arrived. I write Form 22 for each cage. There are 61 cages. I am on cage 9.", "when": { "flags": ["annex-raided"] } },
+        { "text": "This is Annex 9, {you}. You took a specimen out of the Institute cold room. The Office listed that specimen for cage 40. Cage 40 is empty. I hold you to account for one cage.", "when": { "flags": ["specimen-freed"] } },
+        { "text": "This is Annex 9, {you}. Agent Quist filed a copy of your tape on shelf 3. It shows you at many stones. It shows the Office at none of them. The camera pointed the wrong way.", "when": { "flags": ["tape-copied"] } },
+        { "text": "This is Annex 9, {you}. A gate key is missing. Agent Quist says he lost it. Agent Quist does not lose things. He keeps a scrapbook with an index.", "when": { "flags": ["quist-turned"] } },
+        { "text": "This is Annex 9, {you}. The cages are empty and a gate key is missing. The Lamplighters did not break one lock. I have a question for Agent Quist. I will read it aloud.", "when": { "flags": ["annex-raided", "quist-turned"] } },
+        { "text": "This is Annex 9, {you}. Your last answer to me was a joke. No jokes are permitted in the store. The sign says so. I wrote the sign.", "when": { "last": "dry" } }
+      ],
+      "ask": [
+        { "text": "Annex 9 is a restricted store. You stand inside it without a form. Step 1. Explain. What do you want here, {you}?" }
+      ],
+      "replies": [
+        {
+          "id": "look",
+          "style": "straight",
+          "say": "I wanted to see where you keep them. Now I have.",
+          "answer": [
+            { "text": "You saw it. Seeing is not a permit. Agent Quist, log one visitor. The cordon will show you out. The procedure for out is a fight." },
+            { "text": "You see 61 empty cages. I see 61 forms. The cordon is still on duty. The procedure for a visitor is the same.", "when": { "flags": ["annex-raided"] } }
+          ],
+          "sway": 1
+        },
+        {
+          "id": "mug",
+          "style": "dry",
+          "say": "Is there a gift shop? I'd take a mug.",
+          "answer": [
+            { "text": "There is no gift shop. There was a mug. It is Asset 200 now. Do not ask why. The cordon will show you out." }
+          ],
+          "sway": -1
+        },
+        {
+          "id": "open",
+          "style": "hard",
+          "say": "Open the cages, Pell. All of them.",
+          "answer": [
+            { "text": "No. Step 1. The cordon moves you out. Step 2. I write Form 22 or I do not. Agent Quist, release the store assets." },
+            { "text": "The cages are open. The Lamplighters opened them. Do not sound pleased. Step 1. The cordon moves you out.", "when": { "flags": ["annex-raided"] } }
+          ],
+          "sway": -2
+        }
+      ],
+      "fight": {
+        "teams": [
+          { "team": [{ "id": "fresno-nightcrawler", "up": 4, "title": "Asset 71" }, { "id": "lizard-man", "up": 5, "title": "Asset 74" }, { "id": "hoop-snake", "up": 4, "title": "Asset 77" }] },
+          { "when": { "flags": ["annex-raided"] }, "team": [{ "id": "lizard-man", "up": 4, "title": "Asset 74" }, { "id": "hoop-snake", "up": 3, "title": "Asset 77" }] }
+        ],
+        "youWin": [
+          { "text": "The store assets are down. That is Form 22, three copies, in a full store. Leave by the east gate. The sedan blocks the west gate. It does not start." },
+          { "text": "The last two assets are down. Annex 9 now holds nothing. I will log the nothing. Leave, {you}. I have 52 forms to write.", "when": { "flags": ["annex-raided"] } }
+        ],
+        "youLose": [
+          { "text": "The store assets held. Annex 9 is secure. Agent Quist, log one visitor, removed. {you}, the gate is behind you." },
+          { "text": "Two assets held an empty store. That is still a win. I will file it under: small.", "when": { "flags": ["annex-raided"] } }
+        ],
+        "swayWin": -1,
+        "swayLose": 1,
+        "setsWin": [],
+        "always": true
+      },
+      "rematch": [
+        { "text": "You are at the gate again, {you}. Annex 9 is still a restricted store. The cordon is still the procedure." },
+        { "text": "You were away for {gap}. I wrote forms for {gap}. The store assets rested. I did not.", "when": { "gap": ["long"] } }
+      ],
+      "log": "You stood inside Annex 9, the Office store at Roswell, and the cordon showed you out."
+    },
+    {
+      "id": "office.7",
+      "title": "Jurisdiction",
+      "n": 7,
+      "k": 4,
+      "who": "pell",
+      "hail": [
+        { "text": "Stop your boat, {you}. This is an Office pirogue. Smugglers worked these bays in the early 1800s. The Lamplighters work them now. Agent Quist rows. We are not late." },
+        { "text": "Stop your boat, {you}. We reached the bay. The bay is empty. You held it for the Lamplighters before we came. Agent Quist, open the log. Write: empty.", "when": { "done": ["lamplighters.7"], "flags": ["bay-held"] } },
+        { "text": "Stop your boat, {you}. You carried a message past our cordon at Green Bank. I found the report last week. You know how the Lamplighters move. Now you tell the Office.", "when": { "flags": ["message-run"] } },
+        { "text": "Stop your boat, {you}. Agent Quist rows in circles today. He says the paddle is defective. The paddle is not defective. The Lamplighter boats get away while he tests it.", "when": { "flags": ["quist-turned"] } },
+        { "text": "Stop your boat, {you}. The Lamplighters emptied Annex 9. Their boats carry Office assets. I counted 61 empty cages. I want 61 assets back.", "when": { "flags": ["annex-raided"] } },
+        { "text": "Stop your boat, {you}. Your file fills one drawer. I rowed here to add to it. The Lamplighter boats are ahead. You are in my channel.", "when": { "past": ["cold"] } },
+        { "text": "Stop your boat, {you}. You answer me like a locked door. I respect a locked door. I also have a form that opens one.", "when": { "manner": "hard" } },
+        { "text": "Stop your boat, {you}. You had 2 nights out or more when we met you at {met}. You know the dark paths. The Lamplighter boats use them. Help the Office.", "when": { "had": { "nights": 2 } } }
+      ],
+      "ask": [
+        { "text": "The Lamplighter boats left this channel. Jurisdiction ends where we lose them. Where do the boats go, {you}?" }
+      ],
+      "replies": [
+        {
+          "id": "tell",
+          "style": "straight",
+          "say": "South, through the cut by the dead cypress. Their cache is there.",
+          "answer": [
+            { "text": "Thank you. Agent Quist, row south. We will seize the boats and burn the cache. I will log your help on Form 30." },
+            { "text": "The bay is empty, but the cache is not. Thank you. We will burn the cache tonight. Form 30 has your name on it now.", "when": { "flags": ["bay-held"] } }
+          ],
+          "sway": 2,
+          "sets": ["cache-burned"]
+        },
+        {
+          "id": "north",
+          "style": "dry",
+          "say": "North. Definitely north. Follow the pelicans.",
+          "answer": [
+            { "text": "North. Agent Quist, row north. NOTE: I see no pelicans. I see a person who smiles. I will log the smile." }
+          ],
+          "sway": -1
+        },
+        {
+          "id": "block",
+          "style": "hard",
+          "say": "Somewhere you can't follow. My boat stays right here.",
+          "answer": [
+            { "text": "You block an Office pirogue in an Office channel. That is Box 7 on water. Agent Quist, open all four crates." },
+            { "text": "You block an Office pirogue. That is Box 7 on water. Agent Quist, open the crates. He says one crate is stuck. It is not stuck.", "when": { "flags": ["quist-turned"] } }
+          ],
+          "sway": -2,
+          "fight": true
+        }
+      ],
+      "fight": {
+        "teams": [
+          { "team": [{ "id": "lizard-man", "up": 5, "title": "Asset 88" }, { "id": "hoop-snake", "up": 5, "title": "Asset 89" }, { "id": "loveland-frogman", "up": 5, "title": "Asset 90" }, { "id": "champ", "up": 6, "title": "Asset 93" }] },
+          { "when": { "flags": ["quist-turned"] }, "team": [{ "id": "lizard-man", "up": 5, "title": "Asset 88" }, { "id": "hoop-snake", "up": 5, "title": "Asset 89" }, { "id": "champ", "up": 6, "title": "Asset 93" }] }
+        ],
+        "youWin": [
+          { "text": "The assets are down and the pirogue takes on water. The Lamplighter boats are gone. That is Form 22, and Form 41 for the boat." },
+          { "text": "The assets are down in an empty bay. I lost a fight for nothing. Form 22 has no box for nothing. I will draw one.", "when": { "flags": ["bay-held"] } }
+        ],
+        "youLose": [
+          { "text": "The assets held the channel. Move your boat, {you}. Agent Quist, row. He rows now. He rows slowly." },
+          { "text": "You lost in my jurisdiction. I measured the jurisdiction this morning. It is exactly this channel.", "when": { "lost": 2 } }
+        ],
+        "swayWin": -1,
+        "swayLose": 1,
+        "setsWin": []
+      },
+      "rematch": [
+        { "text": "Your boat is in my channel again, {you}. The crates are closed and dry. Do you still block the Office?" },
+        { "text": "You were away for {gap}. We sat in this pirogue for {gap}. Agent Quist has a sunburn. I have a form for it.", "when": { "gap": ["long"] } }
+      ],
+      "log": "In Barataria the Office chased Lamplighter boats in a pirogue and asked you where they go."
+    },
+    {
+      "id": "office.8",
+      "title": "Two Forms",
+      "n": 8,
+      "k": 8,
+      "who": "brandt",
+      "hail": [
+        { "text": "I am Section Chief Brandt. On the radio I am Control. This building stands on the Texas-Arkansas line. Each action here needs two forms. I brought both. I brought Asset 0." },
+        { "text": "I am Section Chief Brandt. The Office met you first, at {met}. We were first and we are last. That is not late. That is thorough. I brought two forms and Asset 0.", "when": { "first": "office" } },
+        { "text": "I am Section Chief Brandt. Your file says Gary. Gary is the other one. I corrected the name this morning, on two forms. Agent Pell took it badly. Hello, {you}.", "when": { "flags": ["office-gary"] } },
+        { "text": "I am Section Chief Brandt. I read your file on the drive. You were fair to my agents. That is rare and it is logged. It changes nothing. I brought two forms and Asset 0.", "when": { "past": ["warm", "close"] } },
+        { "text": "I am Section Chief Brandt. Your file came in three boxes. Most of it is Form 22. I read every page. I brought two forms and Asset 0. I did not bring patience.", "when": { "past": ["cold"] } },
+        { "text": "I am Section Chief Brandt. You told Agent Pell that Asset 1 is wood. He filed an objection. I denied it. I knew for years. NOTE: Asset 0 is not wood.", "when": { "flags": ["asset-one-wood"] } },
+        { "text": "I am Section Chief Brandt. Agent Quist resigned by scrapbook. He left it on my desk. Page 9 is a mothman. My team is one short. I brought Asset 0.", "when": { "flags": ["quist-turned"] } },
+        { "text": "I am Section Chief Brandt. The Institute is closed. The Lamplighters are finished with you. The Office is the last one standing. I hold their leftovers on two forms. I brought Asset 0.", "when": { "done": ["institute.8", "lamplighters.8"] } },
+        { "text": "I am Section Chief Brandt. The Book held fewer than 3 kinds when we met you at {met}. It holds {count} now. We watched that number from one step behind.", "when": { "hadUnder": { "binds": 3 } } },
+        { "text": "I am Section Chief Brandt. You sent my agents to the cache at Barataria. That was useful. The Office does not confuse useful with trusted. I brought two forms and Asset 0.", "when": { "flags": ["cache-burned"] } }
+      ],
+      "ask": [
+        { "text": "The Book is a register. It left a government shelf. Form A returns it in Texas. Form B returns it in Arkansas. Will you sign both, {you}?" }
+      ],
+      "replies": [
+        {
+          "id": "no",
+          "style": "straight",
+          "say": "No. It isn't yours. I'm not sure it's anybody's.",
+          "answer": [
+            { "text": "That is an honest answer. It is also wrong. The register is ours. Asset 0 will show you the shelf it left." },
+            { "text": "My agents said you would answer that way. I logged their opinion. Asset 0 decides now. This is not personal. It is two forms.", "when": { "past": ["warm", "close"] } }
+          ],
+          "sway": 1
+        },
+        {
+          "id": "pen",
+          "style": "dry",
+          "say": "Got a pen? Mine only works on cryptids.",
+          "answer": [
+            { "text": "I have two pens. One is for each state. You will not use either pen. Asset 0 signs for you." }
+          ],
+          "sway": 0
+        },
+        {
+          "id": "come",
+          "style": "hard",
+          "say": "Come and take it, Control.",
+          "answer": [
+            { "text": "I planned to. I planned it on two forms. Step 1. Asset 0. There is no Step 2." }
+          ],
+          "sway": -1
+        }
+      ],
+      "fight": {
+        "teams": [
+          { "team": [{ "id": "ahuizotl", "up": 5, "title": "Asset 101" }, { "id": "chupacabra", "up": 5, "title": "Asset 104" }, { "id": "rougarou", "up": 6, "title": "Asset 107" }, { "id": "hidebehind", "up": 8, "title": "Asset 0" }] },
+          { "when": { "flags": ["quist-turned"] }, "team": [{ "id": "chupacabra", "up": 5, "title": "Asset 104" }, { "id": "rougarou", "up": 6, "title": "Asset 107" }, { "id": "hidebehind", "up": 8, "title": "Asset 0" }] },
+          { "when": { "done": ["institute.8", "lamplighters.8"] }, "team": [{ "id": "squonk", "up": 6, "title": "Asset 311" }, { "id": "snallygaster", "up": 6, "title": "Asset 312" }, { "id": "rougarou", "up": 7, "title": "Asset 107" }, { "id": "hidebehind", "up": 8, "title": "Asset 0" }] },
+          { "when": { "done": ["institute.8", "lamplighters.8"], "flags": ["quist-turned"] }, "team": [{ "id": "squonk", "up": 6, "title": "Asset 311" }, { "id": "rougarou", "up": 7, "title": "Asset 107" }, { "id": "hidebehind", "up": 8, "title": "Asset 0" }] }
+        ],
+        "youWin": [
+          { "text": "Asset 0 is down. Nobody saw it fall. It fell behind you. I will sign Form 22 myself, once for each state. The file is closed, {you}. Keep walking." },
+          { "text": "Asset 0 is down. My team was one short and I know why. Agent Quist left a note. He is not sorry. The file is closed, {you}.", "when": { "flags": ["quist-turned"] } },
+          { "text": "Asset 0 is down. The file is closed on two forms. One form still says Gary. I will leave it. Somebody must be Gary.", "when": { "flags": ["office-gary"] } },
+          { "text": "Asset 0 is down. You beat the Office fairly. That is logged in pen. The sedan started this morning. I think it wanted to see this.", "when": { "past": ["warm", "close"] } }
+        ],
+        "youLose": [
+          { "text": "Asset 0 held. You did not see it. Nobody does. Sign Form A and Form B when you can stand." },
+          { "text": "You lost on a state line, {you}. That is two losses. I count both.", "when": { "lost": 2 } }
+        ],
+        "swayWin": 1,
+        "swayLose": 0,
+        "setsWin": [],
+        "always": true
+      },
+      "rematch": [
+        { "text": "You are back in my building, {you}. Stand on either side of the line. Asset 0 is behind you already." },
+        { "text": "You were away for {gap}. I held two forms open for {gap}. The ink did not dry. Office ink does not.", "when": { "gap": ["long"] } },
+        { "text": "The Office beat you 3 times or more. I do not need Form 22 today. I brought it anyway.", "when": { "lost": 3 } }
+      ],
+      "log": "In Texarkana, Section Chief Brandt came in person with two forms and Asset 0."
+    }
+  ],
+  "echoes": {
+    "mythic-bound": [
+      { "text": "The Book holds {mythic} now. The Office noted the date and the hour. We arrived after. We were not late." }
+    ],
+    "mythic-loose": [
+      { "text": "You beat {mythic} and did not bind it. The Office logged that as restraint. Restraint is rare in your file. It has a small box." }
+    ],
+    "hunt-closed": [
+      { "text": "You closed a contract from a sighting board. The Office reads the same boards. We read them one day after you." }
+    ],
+    "binds-8": [
+      { "text": "The Book holds 8 kinds or more. The Office register for {region} holds fewer. Control asked for the reason. I said: the sedan." }
+    ],
+    "binds-16": [
+      { "text": "The Book holds {count} kinds. That is more than one Office store holds. Control used a word that is not in the manual." }
+    ],
+    "long-away": [
+      { "text": "You were away for a long time. The Office waited at the stone behind you. The tape faded. Agent Pell read the card to a squirrel." },
+      { "text": "You were away for a long time, and Protocol QUIET did not wait. The lists are longer now. Your name is on the first page.", "when": { "done": ["office.5"] } }
+    ],
+    "sample-given": [
+      { "text": "You gave the Institute a baseline at Blue Hole. The Institute sold a copy to the Office. Your lead is now a number in two files." }
+    ],
+    "reagent-taken": [
+      { "text": "You carry Reagent 12 from the Institute. It is unlisted ink. The Office wants the bottle. Keep the cap on until we have a form." }
+    ],
+    "squonk-lent": [
+      { "text": "You lent a squonk to the Institute. The Office has no form for a loan. A loan is a seizure that comes back." }
+    ],
+    "specimen-freed": [
+      { "text": "A specimen left the Institute cold room with you. The Office listed it for a cage. The cage is empty. Your file is not." }
+    ],
+    "toby-out": [
+      { "text": "The technician Toby Reyes left the Institute. He talks too much. The Office likes a person who talks too much. We cannot find him." },
+      { "text": "The technician Toby Reyes left the Institute. A report puts him at a Lamplighter post. He talks too much to the wrong people.", "when": { "met": ["lamplighters"] } }
+    ],
+    "institute-closed": [
+      { "text": "The Halloway Institute filed its final report. The Office bought the cabinets. The specimens were gone. The staplers were not." }
+    ],
+    "lamp-carried": [
+      { "text": "You carry a Lamplighter lamp. It is dim. The Office issues a brighter one. Ours needs a form and a battery we do not have." }
+    ],
+    "message-run": [
+      { "text": "A message passed the Green Bank cordon. It moved by hand. The Office checked for transmitters, not for hands. That is corrected now." }
+    ],
+    "ridge-promise": [
+      { "text": "You gave the Lamplighters a promise about the ridge. The Office has no file on the ridge. The Office does not open one." }
+    ],
+    "annex-raided": [
+      { "text": "The Lamplighters raided Annex 9. There are 61 empty cages. Agent Pell writes one Form 22 for each. Do not speak to him about it." },
+      { "text": "The Lamplighters raided Annex 9 and broke no lock. A gate key was missing that week. The Office has one question and one scrapbook.", "when": { "flags": ["quist-turned"] } }
+    ],
+    "bay-held": [
+      { "text": "You held the bay at Barataria for the Lamplighters. The Office pirogue came after. We were not late. The bay was early." }
+    ],
+    "lamplighters-closed": [
+      { "text": "The Lamplighters finished their line with you. Their lights are still on the night paths. The Office does not know who pays for them." }
+    ]
+  },
+  "rumours": [
+    "Diner cook: Two grey suits ordered one coffee and asked for two receipts. Then they sat an hour because their car wouldn't turn over.",
+    "Clerk: They read me a little card that said who they were. Then the tall one read it again, slower, like I'd failed it.",
+    "Night manager: The young one asked if I'd ever seen anything out back. He glued what I said into a scrapbook. Glued it.",
+    "Diner cook: They came in asking about you a full day after you'd gone. Said they weren't late. Nobody had said they were.",
+    "Clerk: They bought every roll of yellow tape I had, and a pad of forms. I didn't know we sold pads of forms.",
+    "Night manager: There's a radio in their sedan that says 'Control' now and then. Sedan's been in my lot three days. Won't start."
+  ]
+}

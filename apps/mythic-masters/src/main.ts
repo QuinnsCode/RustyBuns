@@ -66,6 +66,11 @@ import { drowner } from "./drown.ts";
 import { ambience } from "./world/ambience.ts";
 import { findTape, lightFire, sight, tapeOf, tapesFound, WITCH_CAMP } from "./world/poi.ts";
 import { regionsCleared, visit, WITCH } from "./witch.ts";
+import { approach as approachFaction, back as backAgain, deed, FACTION, factionsOf, fought as foughtFaction, hail as hailPost, postFought, postsIn, record as questRecord, reply as replyFaction, sectionCleared, waitingAll, type Ctx as FactionCtx, type Foe as FactionFoe, type Manned, type Scene } from "./factions/engine.ts";
+import { postSpot, stageSpot, walkedUp } from "./world/posts.ts";
+import { rivalsView, type Figure } from "./world/rivals-view.ts";
+import { FACTIONS, type FactionId } from "./factions/model.ts";
+import { bandOf, pressure, reading, trendOf } from "./factions/read.ts";
 import { close as closeHunt, HUNTS, stageOf, take, CLUES } from "./world/hunts.ts";
 import { FORAGE_MEND } from "./world/nature.ts";
 import { Online, roomCode, uid } from "./net/online.ts";
@@ -405,14 +410,20 @@ let worldUp = false; // the world view is built (its hooks can run while it buil
 // --- the journey: your line-up, the Eldritch Compendium, how far each trail goes (src/journey.ts) ---------------------
 let journey: Journey | null = (() => { try { return loadJourney(localStorage.getItem(SAVE_KEY)); } catch { return null; } })();
 const saveJourney = () => { try { if (journey) localStorage.setItem(SAVE_KEY, JSON.stringify(journey)); } catch { /* a private window: this session only */ } };
+if (journey?.factions) { backAgain(journey, Date.now()); saveJourney(); } // the factions notice a long time away (src/factions/engine.ts)
 drawPicker(); // after the journey is loaded: the book's ribbons are its line-up
 
 // A fight the world started. `slot` is the line-up member fighting, `out` the ones already down; a keeper guards
 // section k of the region's trail, a mythic its arena, a wild one roams; "deadly" is the high-level south's ambush.
 // `known` is how well you knew the foe walking in: never met, met before, or bound (its intro's case file, src/casefile.ts).
-interface Trip { region: Region; kind: "keeper" | "wild" | "mythic" | "deadly"; k: number; foe: Foe; slot: number; out: Set<number>; ink: number; foeHp: number | null; known: "new" | "met" | "known"; friendsHp: number }
+// A "rival" is a faction's team (src/factions/engine.ts): its creatures come at you one after another, and none of them can be bound.
+interface Trip { region: Region; kind: "keeper" | "wild" | "mythic" | "deadly" | "rival"; k: number; foe: Foe; slot: number; out: Set<number>; ink: number; foeHp: number | null; known: "new" | "met" | "known"; friendsHp: number; rival?: Rival }
+/** A faction's fight: a quest step's (`stage`) or a post's, its team, and which of them is up. */
+interface Rival { faction: FactionId; stage?: string; post?: Manned; team: FactionFoe[]; i: number }
 let trip: Trip | null = null;
-const bindable = (t: Trip | null) => !!t && t.kind !== "deadly";
+const bindable = (t: Trip | null) => !!t && t.kind !== "deadly" && t.kind !== "rival";
+/** A faction's creature as the fight names it: what its holder calls it, then what it is ("Asset 14, Wampus Cat"). */
+const rivalFoe = (f: FactionFoe): Foe => ({ id: f.id, level: f.level, title: f.title ? `${f.title}, ${creature(f.id).name}` : undefined });
 
 function start(a: string, b: string, skin: string, watch = false) {
   trip = null; shroudFoe = false; bindNote = ""; crowdView = false; crowdOf(arena)?.play(null);
@@ -483,7 +494,7 @@ function fightTrip() {
   shroudFoe = kind !== "deadly" && tierOf(foe.id) === "unknown" && !owns(journey, foe.id);
   const them = kind === "deadly" ? wildOne(region) : atLevel(creature(foe.id), foe.level, kind === "wild");
   // A sighting board's creature goes by what the witnesses call it, known or not.
-  fight(me, foe.title ? { ...them, name: foe.title } : shroudFoe ? { ...them, name: kind === "wild" ? "Wild ???" : "???" } : them, fightSkin(region, kind));
+  fight(me, foe.title ? { ...them, name: foe.title } : shroudFoe ? { ...them, name: kind === "wild" ? "Wild ???" : "???" } : them, fightSkin(region, kind === "rival" ? "wild" : kind));
   if (m && trip.foeHp !== null) m.f[1].hp = trip.foeHp;
   if (m) m.f[0].hp = m.f[0].b.hp * hpOf(journey.party[trip.slot]!); // health carries between fights; a campfire clears it
   bindNote = "";
@@ -528,6 +539,7 @@ const world = worldView(scene, camera, {
   life: (e) => online?.life(e.k, e.id, e.k === "flush" ? e.h : 0),
   cleared: (n) => (journey ? cleared(journey, n) : 0),
   owns: (id) => !!journey && owns(journey, id),
+  rumours: () => (journey?.factions?.met ?? []).flatMap((f) => FACTION[f].rumours),
   firstNight: () => { if (!journey || journey.nights) return false; journey.nights = 1; saveJourney(); return true; },
   arrived: (g, fresh) => { if (fresh && worldUp && world.shown) director.play(memories.mark(arrival(g.n, world.here(), world.vista()), { id: `arrival:${g.n}`, scene: "arrival", title: `Arriving in ${g.name}`, args: { n: g.n } })); },
   places: {
@@ -705,6 +717,106 @@ function sitWithWitch(): boolean {
   return true;
 }
 witchEl.addEventListener("click", (e) => { if ((e.target as Element).closest("[data-go]")) { sitting = null; drawWitch(); } });
+
+// --- the three factions behind you (src/factions/engine.ts): walk up to one, hear them out, answer, fight their team ------
+/** The step you have walked up to, between its hail and the end of its fight. */
+let facing: Scene | null = null;
+/** The sheet over the world while someone of a faction has the floor: who, what they have said so far, your replies (a
+ * quest step's question), the team waiting when a fight is on offer, and whose fight that is. */
+let sheet: { who: string; said: string[]; replies: Scene["replies"]; team: FactionFoe[] | null; rival: Pick<Rival, "faction" | "stage" | "post">; n: number; k: number } | null = null;
+const factionEl = Object.assign(document.createElement("div"), { id: "factionTalk", className: "booktalk" });
+factionEl.hidden = true;
+document.body.append(factionEl);
+/** What a faction's moment knows of the world: the time, where you stand on the trail, the hour, how many of you there are. */
+function factionCtx(): FactionCtx {
+  const n = world.pose().region;
+  return { now: Date.now(), n, k: Math.min(SECTIONS - 1, journey ? cleared(journey, n) : 0), night: world.ambient().night > 0.5, party: 1 + (online ? friendsNow(online, n, performance.now()).length : 0) };
+}
+const postAt = (id: string): Manned | undefined => (journey ? postsIn(journey, Number(id.split(":")[1]), factionCtx()).find((p) => p.id === id) : undefined);
+function drawSheet() {
+  factionEl.hidden = !sheet;
+  if (!sheet) { factionEl.innerHTML = ""; return; }
+  const buttons = sheet.replies.length ? sheet.replies.map((r) => `<button data-r="${esc(r.id)}">${esc(r.say)}</button>`).join("")
+    : sheet.team?.length ? `<button class="go" data-fight>${icon("shield")} Fight their ${sheet.team.length}</button><button data-go>${icon("map")} Walk on</button>`
+    : `<button class="go" data-go>${icon("arrow-right")} Go on</button>`;
+  factionEl.innerHTML = `<div class="note paper" role="dialog" aria-label="${esc(sheet.who)}"><h2>${esc(sheet.who)}</h2>${sheet.said.map((s) => `<p class="witch">${esc(s)}</p>`).join("")}<div class="replies">${buttons}</div></div>`;
+}
+const spoken = (...said: (string | null)[]) => said.filter((s): s is string => !!s);
+/** Walk up to faction f's waiting step: they meet you (the first time), say their piece and ask. False when nothing of theirs waits. */
+function faceStage(f: FactionId): boolean {
+  if (!journey || sheet) return false;
+  const sc = approachFaction(journey, f, factionCtx());
+  if (!sc) return false;
+  facing = sc; saveJourney(); keys.clear();
+  sheet = { who: `${sc.who.name}, ${FACTION[f].short}`, said: spoken(sc.aside, sc.hail, sc.ask), replies: sc.replies, team: sc.team, rival: { faction: f, stage: sc.stage.id }, n: sc.stage.n, k: sc.stage.k };
+  drawSheet();
+  return true;
+}
+/** Walk up to a post: the line about the place, the rank's hail, and its team unless it is resting. */
+function facePost(p: Manned): boolean {
+  if (!journey || sheet) return false;
+  const h = hailPost(journey, p, factionCtx());
+  saveJourney(); keys.clear();
+  sheet = { who: `${p.rank.title}, ${FACTION[p.faction].short}`, said: spoken(h.aside, h.line, h.hail), replies: [], team: h.team, rival: { faction: p.faction, post: p }, n: p.post.n, k: p.post.k };
+  drawSheet();
+  return true;
+}
+/** Answer the step's question with reply `id`: what they say back, and their team if that starts the fight. */
+function answerSheet(id: string): string | null {
+  if (!journey || !sheet || !facing || !sheet.replies.length) return null;
+  const got = replyFaction(journey, facing, id, factionCtx());
+  if (!got) return null;
+  saveJourney();
+  sheet.said = spoken(got.said, got.ink ? `They hand you ${got.ink === 1 ? "a drop" : `${got.ink} drops`} of ink for your next fight.` : null);
+  sheet.replies = []; sheet.team = got.team;
+  drawSheet();
+  return got.said;
+}
+/** Take the fight on offer: their team, one after another, where their section's fights happen. */
+function fightSheet(): boolean {
+  const s = sheet, region = s && REGIONS[s.n - 1];
+  if (!s?.team?.length || !region || !journey) return false;
+  sheet = null; drawSheet();
+  setOut(region, "rival", rivalFoe(s.team[0]!), s.k);
+  if (trip) trip.rival = { ...s.rival, team: s.team, i: 0 };
+  return !!trip;
+}
+/** A faction's fight is over, won or lost: the engine keeps it, and what they say goes on the result note. */
+function rivalSays(r: Rival, won: boolean): string {
+  if (!journey) return "";
+  const ctx = factionCtx(), said = r.stage ? foughtFaction(journey, r.faction, r.stage, won, ctx) : r.post ? postFought(journey, r.post, won, ctx) : "";
+  return `<b>${esc(FACTION[r.faction].short)}.</b> ${esc(said || "They say nothing.")}`;
+}
+factionEl.addEventListener("click", (e) => {
+  const b = (e.target as Element).closest<HTMLButtonElement>("button");
+  if (!b) return;
+  if (b.dataset.r) answerSheet(b.dataset.r);
+  else if (b.dataset.fight !== undefined) fightSheet();
+  else { sheet = null; drawSheet(); }
+});
+
+// The faction people on the ground (src/world/posts.ts, rivals-view.ts): a quest step's person by the stone of its section,
+// the posts round the stones behind you. Who stands where changes slowly, so it is worked out twice a second; the one
+// you walk up to speaks, once a visit.
+const rivals = rivalsView(scene, (x, z) => world.groundAt(x, z));
+const rivalsReached = new Set<string>();
+let figures: (Figure & { stage?: FactionId; post?: Manned })[] = [], figuresAt = -1e9;
+function stepRivals(now: number) {
+  if (!journey) { rivals.hide(); return; }
+  const p = world.pose(), j = journey;
+  if (now - figuresAt > 500) {
+    figuresAt = now;
+    const ctx = factionCtx();
+    figures = [
+      ...waitingAll(j, ctx).filter((w) => w.stage.n === p.region).flatMap((w) => { const at = stageSpot(w.faction, w.stage.n, w.stage.k); return at ? [{ id: `stage:${w.faction}`, faction: w.faction, quest: true, stage: w.faction, ...at }] : []; }),
+      ...postsIn(j, p.region, ctx).flatMap((post) => { const at = postSpot(post.id); return at ? [{ id: post.id, faction: post.faction, resting: post.resting, post, ...at }] : []; }),
+    ];
+  }
+  rivals.update(figures, now / 1000);
+  if (sheet || talking || director.beat) return;
+  const up = walkedUp(p, figures, rivalsReached)[0];
+  if (up?.stage) faceStage(up.stage); else if (up?.post) facePost(up.post);
+}
 
 /** Opens the next queued moment when nothing else has the screen. */
 function nextTalk() {
@@ -1325,13 +1437,15 @@ function tripOver(m: Match, bound: boolean, how: string) {
   if (won) void achieve("first-win");
   if (bound) void achieve("first-bind");
   const lines: string[] = [], repeat = owns(j, foe.id);
-  let title = "", outcome: Outcome = { kind: "won", foe: t.kind }, go = `${icon("map")} Back to the world`, again: (() => void) | null = null, back: Back | null = null;
+  let title = "", outcome: Outcome = { kind: "won", foe: t.kind === "rival" ? "wild" : t.kind }, go = `${icon("map")} Back to the world`, again: (() => void) | null = null, back: Back | null = null;
+  /** What you notice behind you once a section is cleared: a faction's next step now waits at that stone (src/factions/engine.ts). */
+  let behindYou: string[] = [];
   if (won) {
     tally(j, false);
     const ups = gainXp(me, t.foe.level), had = slots(j);
     wound(me, m.f[0].hp / m.f[0].b.hp);
     // the section clears first, so a mythic's new line-up slot is there for the mythic itself when it's bound
-    if (t.kind === "keeper" || t.kind === "mythic") clearSection(j, t.region.n, t.k);
+    if (t.kind === "keeper" || t.kind === "mythic") { clearSection(j, t.region.n, t.k); behindYou = sectionCleared(j, t.region.n, t.k, Date.now()); }
     title = bound ? `${esc(foe.name)} is bound` : `${esc(creature(me.id).name)} wins`;
     if (bound) { const sec = sections(t.region)[t.k]; lines.push(`The ink holds. ${esc(foe.name)} (Lv ${t.foe.level}) ${bind(j, foe.id, t.foe.level, sec ? `${sec.name}, ${t.region.name}` : t.region.name) === "party" ? "joins your line-up" : "rests in the Eldritch Compendium"}.`); }
     else lines.push(how);
@@ -1342,11 +1456,25 @@ function tripOver(m: Match, bound: boolean, how: string) {
       if (t.kind === "mythic") { world.beat(t.region.n); lines.push(`The roads out of ${esc(t.region.name)} are open.${bound ? "" : ` ${esc(foe.name)} fled into the dark: it waits at the arena to be bound.`}${slots(j) > had ? ` Your line-up has room for ${slots(j)} now.` : ""}`); }
       else lines.push(`The bog-light lifts. Section ${t.k + 2} of ${SECTIONS} is open.`);
     }
-    if (t.foe.hunt && closeHunt(j, t.foe.hunt)) lines.push(`The sighting is closed: ${esc(t.foe.title ?? foe.name)} won't trouble ${esc(sections(t.region)[HUNTS.get(t.foe.hunt)?.k ?? 0]!.name)} again.`);
+    // the factions hear of it (src/factions/model.ts HOOKS): a mythic bound or let go, a contract closed, the Book's count
+    if (t.kind === "mythic") deed(j, bound ? "mythic-bound" : "mythic-loose");
+    if (bound && !repeat && boundCount(j) === 8) deed(j, "binds-8");
+    if (bound && !repeat && boundCount(j) === 16) deed(j, "binds-16");
+    if (t.foe.hunt && closeHunt(j, t.foe.hunt)) { deed(j, "hunt-closed"); lines.push(`The sighting is closed: ${esc(t.foe.title ?? foe.name)} won't trouble ${esc(sections(t.region)[HUNTS.get(t.foe.hunt)?.k ?? 0]!.name)} again.`); }
     else if (t.kind === "wild" && !bound) lines.push(`It slinks off into the brush. A knocked-out beast can't be bound: wear it under ${Math.round(bindBelow(false) * 100)}%, then press ${esc(bindKey())} before it drops.`);
     if (bound) outcome = { kind: "bound", item: boundCount(j), repeat };
     if (bound) back = { kind: "bound", repeat };
     else if (t.kind === "keeper" || t.kind === "mythic") back = { kind: "cleared", section: sections(t.region)[t.k]!.name, k: t.k, of: SECTIONS, mythic: t.kind === "mythic" ? foe.name : mythicOf(t.region).name, beat: t.kind === "mythic" };
+    // a faction's team: the next of them steps in, or, with none left, the fight is theirs to answer for
+    if (t.rival) {
+      const r = t.rival, next = r.team[r.i + 1];
+      title = `${esc(m.f[1].c.name)} is beaten`;
+      if (next) {
+        lines.push(`They send in ${esc(rivalFoe(next).title ?? creature(next.id).name)} (Lv ${next.level}). ${r.team.length - r.i - 1} to go.`);
+        go = `${icon("arrow-left-right")} Fight on`;
+        again = () => { r.i++; t.foe = rivalFoe(next); t.foeHp = null; fightTrip(); };
+      } else lines.push(rivalSays(r, true));
+    }
     if (bound && !repeat) say("bind", { n: t.region.n, item: boundCount(j) });
     const at = { n: t.region.n, regionId: t.region.id, region: t.region.name };
     if (t.kind === "mythic") say("mythic", { ...at, mythic: foe.name, item: boundCount(j) });
@@ -1368,6 +1496,7 @@ function tripOver(m: Match, bound: boolean, how: string) {
       again = () => { t.slot = next; t.foeHp = m.f[1].hp; fightTrip(); };
     } else {
       heal(j); // waking by the last stone mends the line-up, or nobody could fight again
+      if (t.rival) lines.push(rivalSays(t.rival, false));
       lines.push(t.kind === "deadly"
         ? "You lost this fight. Your team is healed, and you are back outside the arena you came from."
         : "None of your creatures can fight now. Your team is healed, and you are back at the last stone you lit.");
@@ -1379,7 +1508,7 @@ function tripOver(m: Match, bound: boolean, how: string) {
   const plate = outcome.kind === "bound" ? notePlate(foe, false) : outcome.kind === "down" ? notePlate(creature(me.id), true) : "";
   $("#result").innerHTML = `<div class="note paper o-${outcome.kind}"${torn ? ` style="--tear: ${torn.clip}"` : ""}>${mark}<p class="leaf-head" aria-hidden="true">Eldritch Compendium<span>fol. ${j.journal.length + j.party.length + (j.seen?.length ?? 0) + 1}</span></p>${plate}<h2>${title}</h2>${reaction(outcome)}${lines.map((l) => `<p>${l}</p>`).join("")}<div class="row"><button class="go" id="back">${go}</button>${again ? `<button id="flee">${icon("map")} Run back</button>` : ""}</div></div>`;
   pages.show($("#result"));
-  const home = () => { trip = null; enterWorld(); world.afterFight(won); if (back) world.note(bookToast(back)); };
+  const home = () => { trip = null; enterWorld(); world.afterFight(won); if (back) world.note(bookToast(back)); for (const line of behindYou) world.note(`${icon("footprints")}${esc(line)}`); };
   $("#back").onclick = again ?? home;
   const flee = document.querySelector<HTMLElement>("#flee");
   if (flee) flee.onclick = home;
@@ -1707,7 +1836,9 @@ function frame(now: number) {
     if (step) versus.link()?.flush(m);
     hud(m);
   }
-  if (world.shown && !paused && !journalOpen && !talking && sitting === null) {
+  if (!world.shown) rivals.hide();
+  if (world.shown && !paused && !journalOpen && !talking && sitting === null && !sheet) {
+    stepRivals(now);
     pollPad();
     const still = director.holding, turn = held || still ? 0 : padAim.sx * 1.8 * dt + lookTurn;
     lookTurn = 0;
@@ -1894,6 +2025,27 @@ Object.assign(window, {
       answer: (id: string) => replyBook(id, !talkHold().canAnswer),
       close: () => { talking = null; drawTalk(); nextTalk(); },
       party: (p: { host: boolean; hostName: string } | null) => { talkParty = p; drawTalk(); },
+    },
+    /** The three factions behind you (src/factions/engine.ts): `state()` who you met and in what order, the steps done, the flags, each one's
+     * reading (now, past, trend, the pressure that makes) and the steps waiting; `posts(n)` the posts manned in region n; `approach(f)` walks
+     * up to faction f's waiting step (its hail, question and replies), `reply(id)` answers it (what they say, and their team if it starts the
+     * fight), `fought(won)` ends that fight; `hail(postId)` walks up to a post and `postFought(postId, won)` ends its fight. */
+    factions: {
+      state: () => journey && {
+        ...factionsOf(journey), record: questRecord(journey),
+        waiting: waitingAll(journey, factionCtx()).map((w) => ({ faction: w.faction, stage: w.stage.id, title: w.stage.title, n: w.stage.n, k: w.stage.k, who: w.stage.who })),
+        reading: Object.fromEntries(FACTIONS.map((f) => { const r = reading(journey!.factions?.by[f]); return [f, { ...r, band: bandOf(r.now), pastBand: bandOf(r.past), trendBand: trendOf(r.trend), pressure: pressure(r) }]; })),
+      },
+      posts: (n = world.pose().region) => (journey ? postsIn(journey, n, factionCtx()).map((p) => ({ id: p.id, faction: p.faction, k: p.post.k, rank: p.rank.title, resting: p.resting })) : []),
+      sheet: () => sheet && { who: sheet.who, said: sheet.said, replies: sheet.replies, team: sheet.team },
+      figures: () => figures.map((f) => ({ id: f.id, faction: f.faction, quest: !!f.quest, resting: !!f.resting, x: +f.x.toFixed(1), z: +f.z.toFixed(1) })),
+      approach: (f: FactionId) => faceStage(f) && sheet,
+      reply: (id: string) => answerSheet(id),
+      fight: () => fightSheet(),
+      close: () => { sheet = null; drawSheet(); },
+      fought: (won: boolean) => { const said = journey && facing ? foughtFaction(journey, facing.faction, facing.stage.id, won, factionCtx()) : ""; saveJourney(); return said; },
+      hail: (id: string) => { const p = postAt(id); return !!p && facePost(p) && sheet; },
+      postFought: (id: string, won: boolean) => { const p = postAt(id); const said = journey && p ? postFought(journey, p, won, factionCtx()) : ""; saveJourney(); return said; },
     },
     /** The Bog Witch's camp (src/witch.ts): `state()` her camp, what she is saying and the count she last saw, `sit()` as if you
      * walked up to her fire, `close()` reads past her line. `world.fastTravel(witch.state().camp)` once it's lit goes there. */
