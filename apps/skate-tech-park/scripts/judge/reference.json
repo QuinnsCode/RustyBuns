@@ -56,7 +56,7 @@
       "unit": "sqrt(L/g)",
       "weight": 14,
       "kind": "measured",
-      "source": "ollie1 f32-41 (9 fr, 0.375 s), ollie2 f52-62 (10 fr, 0.417 s), kickflip f77-85.5 (8.5 fr, 0.354 s); mean 0.382 s = 0.18 m pop. +/-1 frame each. Young riders: adult ollies run higher, hence the wide band.",
+      "source": "ollie1 f32-41 (9 fr, 0.375 s), ollie2 f52-62 (10 fr, 0.417 s), kickflip f77-85.5 (8.5 fr, 0.354 s); mean 0.382 s = 0.18 m pop. +/-1 frame each. Young riders, so the band is wide. Adult check: Bianchini Wood et al. 2020 (Apunts 141:87-91, 6 adult skaters, Vicon) put the board COM peak at 0.24 +/- 0.01 m; read as height over the floor, less the deck at rest (about 0.09 m) that is a 0.15 m rise, in line with these clips, so the target stays.",
       "license": "CC BY-SA 3.0"
     },
     "rollAway": {

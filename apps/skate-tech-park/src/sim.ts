@@ -174,7 +174,7 @@ const PUSH_STEEP = 0.6; // radians: a transition steeper than this can't be push
 export const FLICK_TIME = 0.24 * T;
 /** How long a flick takes: a 360 comes round slower. */
 export const flickTime = (k: Flick) => FLICK_TIME * (flickLong(k) ? 1.4 : 1);
-const OLLIE = 5.6 * T; // m/s up off the tail
+const OLLIE = 5.5 * T; // m/s up off the tail
 const SPIN_EASE = 0.12; // seconds for a spin in the air to build to what the steering asks, or to slow when let go
 /** An ollie's pop, in the board's own time: the back foot snaps the tail down so the nose kicks up
  * `angle` radians in `snap` seconds, then the front foot drags up the grip and levels it out over
