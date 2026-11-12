@@ -7,6 +7,7 @@
 // and keeps trying, backing off to every 8 s; nothing about the trip is kept on the server.
 import { connectSocket, type Link } from "@rustybuns/util/socket";
 import { fresh, login } from "../account.ts";
+import type { FactionId } from "../factions/model.ts";
 import { AGO_MS, bestOffset, sharedDen, type Seen, decodeServer, delta, Ghost, jumped, quantise, SEND_MS, WORLD_CYCLE, type Delta, type Event, type Pose, type ServerMsg } from "./party.ts";
 
 export const roomCode = (search: string) => (new URLSearchParams(search).get("room") ?? "").toUpperCase().match(/^[A-Z0-9]{4,12}$/)?.[0] ?? null;
@@ -44,6 +45,8 @@ export interface OnlineOpts {
   onHunt?: (h: string, s: number, who: string) => void;
   /** A friend's fight ended, and the room believed the report. */
   onFought?: (f: { who: string; c: string; lv: number; won: boolean; bound: boolean }) => void;
+  /** A friend took on faction `f`'s team. */
+  onRival?: (f: FactionId, who: string) => void;
   /** A friend fighting the creature at lair `den` has taken `d` thousandths of its health off it, all told. */
   onHurt?: (den: string, id: string, d: number) => void;
   /** A friend flushed a flock (`h`: its heading) or picked a food patch; `at` is when on the world clock, when it was earlier. */
@@ -149,6 +152,7 @@ export class Online {
     else if (m.t === "seen") this.told(m);
     else if (m.t === "hunt") this.o.onHunt?.(m.h, m.s, this.ghosts.get(m.id)?.name ?? "");
     else if (m.t === "hurt") { this.o.onHurt?.(m.den, m.id, m.d); return; }
+    else if (m.t === "rival") this.o.onRival?.(m.f, this.ghosts.get(m.id)?.name ?? "");
     else if (m.t === "fought") this.o.onFought?.({ who: this.ghosts.get(m.id)?.name ?? "", c: m.c, lv: m.lv, won: m.won, bound: m.bound });
     else if (m.t === "p") {
       let g = this.ghosts.get(m.id);
@@ -261,6 +265,8 @@ export class Online {
   }
   /** We took contract `h` (`s` 0) or read its `s`-th sign: the party can follow. */
   hunt(h: string, s: number) { this.refresh(); if (this.sendPose()) this.link?.send({ e: "hunt", h, s }); } // where we stand first: the room checks the board
+  /** We took on faction `f`'s team: the party hears of it, as of a wild one. */
+  rival(f: FactionId) { this.link?.send({ e: "rival", f }); }
   /** Our fight at the den we last walked into ended after `s` seconds. */
   fought(c: string, lv: number, won: boolean, bound: boolean, s: number) {
     if (this.lastDen) this.lastDen.n++;

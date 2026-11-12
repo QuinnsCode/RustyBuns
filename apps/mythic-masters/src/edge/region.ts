@@ -133,6 +133,7 @@ export class Region {
       if (!ev.ago || seat.owed === ev.den) this.sockets.broadcast({ t: "den", id: seat.id, den: ev.den, c: ev.c }, ws, others);
       return;
     }
+    if (ev?.e === "rival") { if (!seat.loose) this.sockets.broadcast({ t: "rival", id: seat.id, f: ev.f }, ws, others); return; }
     if (ev?.e === "open") { this.sockets.attach(ws, { ...seat, open: [...new Set(ev.rs)] }); return; }
     // The wilds are one world only if nobody can strip them from afar: a patch picked or a flock flushed is told only by
     // someone the room vouches for, standing by it. The page tells its catch-up again on `vouch`, so nothing true is lost.
