@@ -121,16 +121,6 @@ export function backdropSvg(tod: Tod, aspect: number): string {
     + `<g fill="${P.disc}" opacity="0.8">${stars}</g><svg y="${H - ph}" width="${W}" height="${ph}" viewBox="0 0 ${W} ${ph}">${posterInner(tod, { h: ph, seed: 5, disc: false, sky: false, ranger: 395, facing: -1, size: 0.85 })}</svg>${disc}</svg>`;
 }
 
-/** Round 7 (#4229). Low ridges and pines printed faintly along the foot of the Controls card, in the poster's inks. */
-export function ridgeFootSvg(tod: Tod): string {
-  const P = PALETTES[tod], h = 90, rnd = mulberry32(31);
-  const rows = [0, 1, 2].map((i) => ridge(rnd, h * (0.62 + 0.18 * i), h * (0.42 - 0.1 * i), h));
-  const trees = Array.from({ length: 11 }, (_, i) => { const x = 20 + i * 48 + rnd() * 20; return `<path d="${pine(x, rows[2]!.top(x) + 3, 4 + rnd() * 4)}"/>`; }).join("");
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${h}" preserveAspectRatio="xMidYMax slice">`
-    + rows.map((r, i) => `<path d="${r.d}" fill="${i < 2 ? P.far : P.near}" fill-opacity="${[0.16, 0.24, 0.3][i]}"/>`).join("")
-    + `<g fill="${P.near}" fill-opacity="0.38">${trees}</g></svg>`;
-}
-
 /** Round 8 (#4283). A card's head: the travel poster's sunburst, flat rays fanning up from below the card's centre in
  *  two sky inks, with a dark band along its foot. No sun, ridges, sign or ranger: the screen's backdrop is the one scene,
  *  and the card is a print hung in it. `h` is its height in the 520-wide box. About 1.5 KB. */
@@ -252,7 +242,6 @@ export function paintPoster(t: Tod, root: HTMLElement = document.documentElement
   root.style.setProperty("--poster", headUrl(t, 90));
   root.style.setProperty("--halftone", `url("data:image/svg+xml,${encodeURIComponent(halftoneSvg(t))}")`);
   root.style.setProperty("--insignia", `url("data:image/svg+xml,${encodeURIComponent(insigniaSvg(t))}")`);
-  root.style.setProperty("--ridgefoot", `url("data:image/svg+xml,${encodeURIComponent(ridgeFootSvg(t))}")`);
   paintBackdrop();
   if (!backdropSized && typeof window !== "undefined") { backdropSized = true; window.addEventListener("resize", () => requestAnimationFrame(paintBackdrop)); }
   for (const el of document.querySelectorAll<HTMLElement>("[data-poster]")) el.innerHTML = headSvg(t, 230);
