@@ -368,3 +368,25 @@ h2 button.info.info.info { width: 20px; height: 20px; margin-left: 4px; } h2 but
 .about .keys dd { margin: 0; color: var(--muted); }
 .poster-head > button.info.info.info { position: absolute; top: 8px; right: 8px; z-index: 2; margin: 0; color: var(--brown); background: rgba(253, 246, 227, 0.7); }
 [data-tod="night"] .poster-head > button.info.info.info { color: #e3e9f5; background: rgba(13, 20, 38, 0.5); }
+
+/* Round 7 (#4229). The menus' screen is the poster itself: the whole screen behind the front, the lobby and the results is
+   printed sky and ridges (#backdrop, drawn by poster.ts), inside a cream margin and an ink keyline like a print's border,
+   so no card floats over the 3D render and a phone has no empty bands. The letterbox steps aside for it. */
+.backdrop { position: fixed; inset: 0; z-index: 1; display: none; pointer-events: none; background: #f9e6bf center bottom / cover no-repeat;
+  box-shadow: inset 0 0 0 var(--margin, 10px) var(--cream), inset 0 0 0 calc(var(--margin, 10px) + 2px) var(--ink); }
+@media (max-width: 520px) { .backdrop { --margin: 5px; } }
+[data-tod="night"] .backdrop { box-shadow: inset 0 0 0 var(--margin, 10px) #1a140c, inset 0 0 0 calc(var(--margin, 10px) + 2px) #cdb68d; }
+body:has(> #menu:not([hidden]), > #lobby:not([hidden]), > #results:not([hidden])) .backdrop { display: block; }
+body:has(> #menu:not([hidden]), > #lobby:not([hidden]), > #results:not([hidden])) .narrator i { display: none; }
+.menu, .results, .lobby { z-index: 2; }
+.menu, .results { background: none; }
+
+/* Controls is a poster screen too: low ridges and pines printed along the card's foot, still while the list scrolls over them. */
+.gc-dialog.ui-house .gc-card { background: var(--poster) top / 100% 76px no-repeat local, var(--halftone) 0 76px repeat-x local,
+  var(--ridgefoot) bottom / 100% auto no-repeat scroll, var(--grain), var(--paper); padding-bottom: 72px; }
+/* The toggle's name reads as a form line, not a faint note. */
+.gc-dialog.ui-house .gc-card label:has(> input[type=checkbox]) { font: 700 15px/1.25 var(--plate); color: var(--ink); opacity: 1; }
+/* The results' score lines are typed in the slab face beside the trail-sign heads; the how stays handwritten. */
+.results td { font: 600 15px/1.3 var(--plate); color: var(--ink); }
+.results td:nth-child(2) { font: 400 14px/1.3 var(--grid); color: var(--muted); }
+.gc-dialog.ui-house .gc-sec { background: var(--grain), color-mix(in srgb, var(--field) 50%, transparent); }
