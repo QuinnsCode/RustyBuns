@@ -3,7 +3,8 @@ import { party, type PartyMember } from "@rustybuns/util/eqosys";
 import { answer, holdOf, LINES, Lines, lossBeats, momentFor, notesOf, spendInk, tally, type Beat, type Ctx, type Moment } from "../src/book.ts";
 import { bookParty, seatOf } from "../src/book-party.ts";
 import { demandOf } from "../src/demand.ts";
-import { loadJourney, newJourney, type Journey } from "../src/journey.ts";
+import { approach, FACTION, factionsOf, reply as replyFaction, sectionCleared, standingOf, type Ctx as FactionCtx, type Scene } from "../src/factions/engine.ts";
+import { clearSection, loadJourney, newJourney, type Journey } from "../src/journey.ts";
 
 setDefaultTimeout(20_000);
 
@@ -103,17 +104,28 @@ const fake = Bun.serve<{ name: string }>({
 });
 afterAll(() => fake.stop(true));
 
-/** One player's page: its own journey, the moment on screen, and the reply path main.ts's click takes. */
+/** One player's page: its own journey, the moment on screen (the Book's, or a faction's sheet), and the reply path
+ * main.ts's click takes. */
 function page(name: string, patience?: number) {
   const j = newJourney(["hodag", "squonk", "jackalope"])!;
-  let open: Moment | null = null, said: string | null = null;
+  let open: Moment | null = null, said: string | null = null, scene: Scene | null = null, sheet: string | null = null;
   const reply = (id: string) => { said = answer(j, open!, id)!.said; };
+  const ctx = (): FactionCtx => ({ now: Date.now(), n: 1, k: FACTION.office.quest[0]!.k + 1, party: readers.size() });
+  const answerSheet = (id: string) => { sheet = replyFaction(j, scene!, id, ctx())!.said; };
   const readers = bookParty(party({ url: () => `http://127.0.0.1:${fake.port}`, token: () => name }), "KRTZ", {
     name: () => name, id: () => `u_${name}`, open: () => (open && said === null ? open.talk.id : null), answer: reply, changed: () => {},
+    faction: { open: () => (scene && sheet === null ? scene.stage.id : null), answer: answerSheet },
   }, patience);
   const hold = () => holdOf(readers.seat(), readers.freed());
+  const sheetHold = () => holdOf(readers.seat(), readers.faction.freed(), scene?.who.name);
   return {
-    j, readers, hold, said: () => said,
+    j, readers, hold, sheetHold, said: () => said, sheet: () => sheet,
+    /** Walk the first region past the Office's first step and up to whoever waits there. */
+    face() {
+      for (let k = 0; k <= FACTION.office.quest[0]!.k; k++) { clearSection(j, 1, k); sectionCleared(j, 1, k, Date.now()); }
+      scene = approach(j, "office", ctx()); sheet = null; readers.faction.opened(); return scene?.stage.id;
+    },
+    pick(id: string) { if (!scene || !sheetHold().canAnswer) return false; answerSheet(id); readers.faction.answered(scene.stage.id, id); return true; },
     show(b: Beat, ctx: Ctx = {}) { open = momentFor(b, j, ctx); said = null; readers.opened(); return open?.talk.id; },
     click(id: string) { if (!open || !hold().canAnswer) return false; const talk = open.talk.id; reply(id); readers.answered(talk, id); return true; },
   };
@@ -169,4 +181,23 @@ test("in a party the guest's page holds until the host answers, takes the host's
   bo.show("downed", { n: 1, down: "Squonk" });
   expect(bo.hold().canAnswer).toBe(true);
   bo.readers.leave();
+});
+
+test("in a party the host answers a faction's question for everyone: the guest's sheet closes with the same reply and flag", async () => {
+  const ada = page("Ada");
+  await until(() => socks.size === 1);
+  const bo = page("Bo");
+  await until(() => ada.readers.seat()?.host && bo.readers.seat()?.hostName === "Ada");
+
+  expect(bo.face()).toBe("office.1");
+  expect(bo.sheetHold()).toEqual({ canAnswer: false, note: "Agent Pell is waiting on Ada." });
+  expect(bo.pick("refuse")).toBe(false); // a held sheet's buttons do nothing
+  expect(ada.face()).toBe("office.1");
+  expect(ada.pick("gary")).toBe(true);
+  await until(() => bo.sheet());
+  expect(bo.sheet()).toBe(ada.sheet());
+  expect(factionsOf(bo.j).flags).toContain("office-gary"); // the host's reply, kept in the guest's own save
+  // two of them: the Office counted a party when it met each
+  expect([standingOf(ada.j, "office").intro?.party, standingOf(bo.j, "office").intro?.party]).toEqual([2, 2]);
+  ada.readers.leave(); bo.readers.leave();
 });

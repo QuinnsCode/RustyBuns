@@ -184,6 +184,8 @@ const online = room ? new Online(room, {
   posed: () => world.pose(), // a den or contract taken mid-frame is checked where you stand now, not a frame ago
   onDen: (den, who, c) => { fights.push({ who, den, c }); fights.splice(0, fights.length - 8); world.friendMet(den, who, c); },
   onHunt: (h, s, who) => joinHunt(h, s, who),
+  // a faction's team is made from the friend's own save, so there is no den to share: who, and whose team
+  onRival: (f, who) => { fights.push({ who, den: `rival:${f}`, c: "" }); fights.splice(0, fights.length - 8); world.note(`${icon("users")} ${esc(who || "A friend")} is fighting a team of ${esc(FACTION[f].name.replace(/^The /, "the "))}.`); },
   onHurt: (den, id, d) => { let by = lairHurt.get(den); if (!by) lairHurt.set(den, (by = new Map())); by.set(id, Math.max(d, by.get(id) ?? 0)); },
   onFought: (f) => {
     const at = fights.findLast((x) => x.who === f.who && x.c === f.c && x.won === undefined);
@@ -746,19 +748,23 @@ let sheet: { who: string; said: string[]; replies: Scene["replies"]; team: Facti
 const factionEl = Object.assign(document.createElement("div"), { id: "factionTalk", className: "booktalk" });
 factionEl.hidden = true;
 document.body.append(factionEl);
-/** What a faction's moment knows of the world: the time, where you stand on the trail, the hour, how many of you there are. */
+/** What a faction's moment knows of the world: the time, where you stand on the trail, the hour, how many of you there
+ * are (the friends walking this region with you, or the party reading the Book with you, whichever is more). */
 function factionCtx(): FactionCtx {
-  const n = world.pose().region;
-  return { now: Date.now(), n, k: Math.min(SECTIONS - 1, journey ? cleared(journey, n) : 0), night: world.ambient().night > 0.5, party: 1 + (online ? friendsNow(online, n, performance.now()).length : 0) };
+  const n = world.pose().region, walking = 1 + (online ? friendsNow(online, n, performance.now()).length : 0);
+  return { now: Date.now(), n, k: Math.min(SECTIONS - 1, journey ? cleared(journey, n) : 0), night: world.ambient().night > 0.5, party: Math.max(walking, readers?.size() ?? 1) };
 }
+/** In a party the host answers a faction's question for everyone (book-party.ts), as they answer the Book. */
+const sheetHold = () => holdOf(talkSeat(), !!readers?.faction.freed(), facing?.who.name);
 const postAt = (id: string): Manned | undefined => (journey ? postsIn(journey, Number(id.split(":")[1]), factionCtx()).find((p) => p.id === id) : undefined);
 function drawSheet() {
   factionEl.hidden = !sheet;
   if (!sheet) { factionEl.innerHTML = ""; return; }
-  const buttons = sheet.replies.length ? sheet.replies.map((r) => `<button data-r="${esc(r.id)}">${esc(r.say)}</button>`).join("")
+  const h = sheet.replies.length ? sheetHold() : { canAnswer: true, note: null };
+  const buttons = sheet.replies.length ? sheet.replies.map((r) => `<button data-r="${esc(r.id)}"${h.canAnswer ? "" : " disabled"}>${esc(r.say)}</button>`).join("")
     : sheet.team?.length ? `<button class="go" data-fight>${icon("shield")} Fight their ${sheet.team.length}</button><button data-go>${icon("map")} Walk on</button>`
     : `<button class="go" data-go>${icon("arrow-right")} Go on</button>`;
-  factionEl.innerHTML = `<div class="note paper" role="dialog" aria-label="${esc(sheet.who)}"><h2>${esc(sheet.who)}</h2>${sheet.said.map((s) => `<p class="witch">${esc(s)}</p>`).join("")}<div class="replies">${buttons}</div></div>`;
+  factionEl.innerHTML = `<div class="note paper" role="dialog" aria-label="${esc(sheet.who)}"><h2>${esc(sheet.who)}</h2>${sheet.said.map((s) => `<p class="witch">${esc(s)}</p>`).join("")}<div class="replies">${buttons}</div>${h.note ? `<p class="wait">${esc(h.note)}</p>` : ""}</div>`;
 }
 const spoken = (...said: (string | null)[]) => said.filter((s): s is string => !!s);
 /** Walk up to faction f's waiting step: they meet you (the first time), say their piece and ask. False when nothing of theirs waits. */
@@ -769,6 +775,7 @@ function faceStage(f: FactionId): boolean {
   facing = sc; saveJourney(); keys.clear();
   sheet = { who: `${sc.who.name}, ${FACTION[f].short}`, said: spoken(sc.aside, sc.hail, sc.ask), replies: sc.replies, team: sc.team, rival: { faction: f, stage: sc.stage.id }, n: sc.stage.n, k: sc.stage.k };
   drawSheet();
+  if (sc.replies.length) readers?.faction.opened();
   return true;
 }
 /** Walk up to a post: the line about the place, the rank's hail, and its team unless it is resting. */
@@ -780,11 +787,13 @@ function facePost(p: Manned): boolean {
   drawSheet();
   return true;
 }
-/** Answer the step's question with reply `id`: what they say back, and their team if that starts the fight. */
-function answerSheet(id: string): string | null {
-  if (!journey || !sheet || !facing || !sheet.replies.length) return null;
+/** Answer the step's question with reply `id`: what they say back, and their team if that starts the fight. This page's
+ * click (held in a party until the host answers), or the host's answer arriving; the host's own goes out to the party. */
+function answerSheet(id: string, fromHost = false): string | null {
+  if (!journey || !sheet || !facing || !sheet.replies.length || (!fromHost && !sheetHold().canAnswer)) return null;
   const got = replyFaction(journey, facing, id, factionCtx());
   if (!got) return null;
+  if (!fromHost) readers?.faction.answered(facing.stage.id, id);
   saveJourney();
   sheet.said = spoken(got.said, got.ink ? `They hand you ${got.ink === 1 ? "a drop" : `${got.ink} drops`} of ink for your next fight.` : null);
   sheet.replies = []; sheet.team = got.team;
@@ -797,6 +806,7 @@ function fightSheet(): boolean {
   if (!s?.team?.length || !region || !journey) return false;
   sheet = null; drawSheet();
   setOut(region, "rival", rivalFoe(s.team[0]!), s.k);
+  online?.rival(s.rival.faction);
   if (trip) trip.rival = { ...s.rival, team: s.team, i: 0 };
   return !!trip;
 }
@@ -808,7 +818,7 @@ function rivalSays(r: Rival, won: boolean): string {
 }
 factionEl.addEventListener("click", (e) => {
   const b = (e.target as Element).closest<HTMLButtonElement>("button");
-  if (!b) return;
+  if (!b || b.disabled) return;
   if (b.dataset.r) answerSheet(b.dataset.r);
   else if (b.dataset.fight !== undefined) fightSheet();
   else { sheet = null; drawSheet(); }
@@ -880,7 +890,8 @@ function joinReaders(code: string) {
     // eqosys's party knows each member by the id its token carries, so the seat is found by that, not by a name two friends may share
     name: () => login()?.name, id: () => { const l = login(); return l ? peek(l.token)?.sub : undefined; },
     open: () => (talking && talking.said === null ? talking.m.talk.id : null),
-    answer: (r) => void replyBook(r, true), changed: () => { drawTalk(); drawReaders(); },
+    answer: (r) => void replyBook(r, true), changed: () => { drawTalk(); drawSheet(); drawReaders(); },
+    faction: { open: () => (sheet?.replies.length && facing ? facing.stage.id : null), answer: (r) => void answerSheet(r, true) },
   });
 }
 /** The landing's printed words (content/landing.json, `bun run cms`): each `data-copy="section.key"` in index.html; a list is one line each. */

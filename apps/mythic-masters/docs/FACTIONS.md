@@ -166,6 +166,17 @@ that is not its own doing, said once, the next time you walk up to one of its pe
   call you, where you stand (now, on the whole, and which way it goes), every step you have done with its line, and
   where the next waits. The Book writes its own line over it.
 
+## In a party
+
+Everyone plays their own journey, but a party answers a faction as one, the way it answers the Book
+(`src/book-party.ts`). When a step's question is up, only the host's replies work; a guest's sheet says who it waits
+on ("Agent Pell is waiting on Ada.") and closes with the host's reply when it comes, with the same flags and sway in
+the guest's own save. If the host's step is another one, or the host has not answered in half a minute, the guest
+answers for themselves. The party size goes into every moment (`party`, the intro snapshot, the `in-company-*`
+crossings): the friends walking your region with you or the party reading the Book with you, whichever is more. A
+friend who takes on a faction's team is told to the others in the room ("Ada is fighting a team of the Office of
+Unlisted Fauna."), as a wild one is.
+
 ## Jump links
 
 `?faction=<step>` (`?faction=office.3`, any of the 24 steps) opens the world at that step: a fresh journey with

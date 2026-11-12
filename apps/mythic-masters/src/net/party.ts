@@ -7,6 +7,7 @@
 // while you stand still, so a party standing at a campfire costs nothing and lets the room hibernate.
 import { clamp } from "@rustybuns/util";
 import { COLOURS } from "../world/hues.ts";
+import { FACTIONS, type FactionId } from "../factions/model.ts";
 import { arr, Bad, bool, check, int, num, obj, oneOf, opt, str, type Guard } from "@rustybuns/util/guard";
 
 /** Players in one region's room: a hunting party, not a crowd. */
@@ -131,7 +132,9 @@ export const SIGNS = 3;
  *   thousandths of its full health, over every round of their trip there), so friends fighting it see one health bar;
  * - `life`: it flushed a flock (taking off on heading `h`) or picked a food patch, so the party's birds and bushes match;
  * - `open`: the regions its save has opened (on joining, and when one opens), so a jump is believed only at a landing
- *   spot in one of them (dens.ts `landing`). A claim, but it bounds a lie to what the page says it has. */
+ *   spot in one of them (dens.ts `landing`). A claim, but it bounds a lie to what the page says it has;
+ * - `rival`: it took on faction `f`'s team (#4316), so friends know where it is. Only that: a team is made from the
+ *   player's own save, so the room has nothing to check a fight report against, and none goes with it. */
 export type Event =
   | { e: "den"; den: string; c: string; lv: number; ago: number; n: number }
   | { e: "seen" } & Seen
@@ -140,13 +143,15 @@ export type Event =
   | { e: "fought"; c: string; lv: number; won: boolean; bound: boolean; s: number }
   | { e: "hurt"; d: number }
   | { e: "life"; k: "flush" | "pick"; id: string; h: number }
-  | { e: "open"; rs: number[] };
+  | { e: "open"; rs: number[] }
+  | { e: "rival"; f: FactionId };
 export type Met = Extract<Event, { e: "den" }>;
 const EVENT: Guard<Event> = (v) => {
   const e = typeof v === "object" && v !== null && "e" in v ? v.e : undefined;
   if (e === "life") return obj({ e: oneOf(["life"]), k: oneOf(["flush", "pick"]), id: str(24, { re: CELL }), h: num(-10, 10, 0) })(v);
   if (e === "hunt") return obj({ e: oneOf(["hunt"]), h: str(32, { re: HUNT }), s: int(0, SIGNS) })(v);
   if (e === "fought") return obj({ e: oneOf(["fought"]), c: POSE.l, lv: int(1, 200), won: bool(), bound: bool(), s: int(0, 3600) })(v);
+  if (e === "rival") return obj({ e: oneOf(["rival"]), f: oneOf(FACTIONS) })(v);
   if (e === "open") return obj({ e: oneOf(["open"]), rs: arr(POSE.r, 64) })(v);
   if (e === "hurt") return obj({ e: oneOf(["hurt"]), d: int(0, HURT_FULL) })(v);
   if (e === "time") return obj({ e: oneOf(["time"]) })(v);
@@ -254,6 +259,7 @@ export type ServerMsg =
   | { t: "hunt"; id: string; h: string; s: number }
   | { t: "fought"; id: string; c: string; lv: number; won: boolean; bound: boolean }
   | { t: "hurt"; id: string; den: string; d: number }
+  | { t: "rival"; id: string; f: FactionId }
   | { t: "life"; id: string; k: "flush" | "pick"; f: string; h: number }
   | { t: "time"; age: number }
   | { t: "vouch" }
@@ -281,6 +287,7 @@ const SERVER: Guard<ServerMsg> = (v) => {
   if (t === "hunt") return obj({ t: oneOf(["hunt"]), id: PID, h: str(32, { re: HUNT }), s: int(0, SIGNS) })(v);
   if (t === "fought") return obj({ t: oneOf(["fought"]), id: PID, c: POSE.l, lv: int(1, 200), won: bool(), bound: bool() })(v);
   if (t === "hurt") return obj({ t: oneOf(["hurt"]), id: PID, den: str(48, { re: DEN }), d: int(0, HURT_FULL) })(v);
+  if (t === "rival") return obj({ t: oneOf(["rival"]), id: PID, f: oneOf(FACTIONS) })(v);
   if (t === "hi") return obj({ t: oneOf(["hi"]), id: PID, name: NAME })(v);
   if (t === "bye") return obj({ t: oneOf(["bye"]), id: PID })(v);
   if (t === "vouch") return obj({ t: oneOf(["vouch"]) })(v);

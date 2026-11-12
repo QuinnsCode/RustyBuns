@@ -444,6 +444,8 @@ describe("the wire", () => {
     ["a clock question", { e: "time" }, true],
     ["a sign past the lair", { e: "hunt", h: "1.20002.6206", s: 4 }, false],
     ["a fight with no result", { e: "fought", c: "hodag", lv: 7, s: 30 }, false],
+    ["a faction's team taken on", { e: "rival", f: "office" }, true],
+    ["a faction there is none of", { e: "rival", f: "guild" }, false],
   ])("an event: %s", (_, raw, ok) => { expect(parseEvent(raw) !== null).toBe(ok); });
 
   test.each([
