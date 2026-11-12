@@ -1,0 +1,62 @@
+{
+  "id": "roc",
+  "name": "Roc",
+  "category": "Roc",
+  "query": "Roc",
+  "images": [
+    {
+      "file": "card-color.jpg",
+      "from": "card",
+      "page": "https://commons.wikimedia.org/wiki/File:Edward_Julius_Detmold49.jpg",
+      "artist": "Charles Maurice Detmold",
+      "license": "Public domain"
+    },
+    {
+      "file": "card-bw.jpg",
+      "from": "card",
+      "page": "https://commons.wikimedia.org/wiki/File:Roc8954.jpg",
+      "artist": "User Caltrop on en.wikipedia",
+      "license": "Public domain"
+    },
+    {
+      "file": "c3.jpg",
+      "from": "search",
+      "page": "https://commons.wikimedia.org/wiki/File:Bertuch-fabelwesen.JPG",
+      "artist": "Friedrich Justin Bertuch",
+      "license": "Public domain"
+    },
+    {
+      "file": "c4.jpg",
+      "from": "search",
+      "page": "https://commons.wikimedia.org/wiki/File:FraMauro1420Ship.png",
+      "artist": "Unknown",
+      "license": "Public domain"
+    },
+    {
+      "file": "c5.jpg",
+      "from": "search",
+      "page": "https://commons.wikimedia.org/wiki/File:Sinbad_the_Sailor_(5th_Voyage).jpg",
+      "artist": "Gustave Doré",
+      "license": "Public domain"
+    },
+    {
+      "file": "c6.jpg",
+      "from": "search",
+      "page": "https://commons.wikimedia.org/wiki/File:Sindbad-Roc.jpg",
+      "artist": "Virginia Frances Sterrett",
+      "license": "Public domain"
+    }
+  ],
+  "traits": {
+    "silhouette": "an eagle so huge it carries an elephant: broad wings spread wide, wingspan far longer than the body",
+    "head": "an eagle's hooked beak, a fierce brow, a feathered head",
+    "limbs": "two great scaly legs with taloned feet that grip; no arms",
+    "hide": "layered feathers, long fingered primaries at the wing tips",
+    "colours": "brown and tawny to dark, a paler head or breast, yellow beak and feet",
+    "child": [
+      "enormous spread wings",
+      "talons gripping something big",
+      "a hooked beak"
+    ]
+  }
+}

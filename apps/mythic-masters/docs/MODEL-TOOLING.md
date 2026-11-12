@@ -9,6 +9,8 @@ WebMCP tools on the gallery page, and a Blender MCP path for codeSplitter's agen
 
 | Step | Tool | Where | Time |
 |---|---|---|---|
+| References first: 3 to 6 freely licensed pictures (an owner's photo dropped in ranks first, then the card's picks, then the beast's Commons category) and a traits list to judge by | `bun scripts/beast-refs.ts --refs <id>` | `refs/<id>.json` (pictures in `refs/<id>/`, not committed) | under a minute |
+| Close-ups of the GLB (front, side, three-quarter, head; ortho, git main's build at the same framing with `--main`) | `bun scripts/beast-refs.ts --closeups <id> [--main]` (`blender/closeups.py`) | `blender/out/refs/<id>.now.png`, `.main.png` | about 20 s |
 | Write the body as a stick figure: nodes with a radius, links, parts (horns, tufts, scales, teeth, ears, ridges, membranes, feathers), palette | a text editor (the agent edits JSON) | `beasts/<id>.json` | the agent's thinking time |
 | Wrap it in flesh, lay the parts on it, decimate to the budget, write the GLB | headless Blender 5.2 (`blender -b --factory-startup -P blender/beast.py`): skin modifier, subdivision, a light smooth, voxel remesh for `blend`, decimate | `blender/beast.py` -> `public/models/<id>.glb` | a few seconds per beast |
 | Contact sheet (profile, front, three-quarter by a 1 m post) | Blender EEVEE (`--render`) | `blender/out/<id>.png` | a few seconds more |
