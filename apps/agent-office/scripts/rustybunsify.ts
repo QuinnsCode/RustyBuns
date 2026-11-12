@@ -154,9 +154,12 @@ async function prepare(tag: string) {
 
   // 7. the office and each floor's pty host watch their own memory (live/mem.ts), served at /__rb/mem with the
   // office's CPU profiles and heap snapshots (triage/server.ts): signed in, and to workers on the hook port
-  prepend("http/router.js", "import { officeTriage as __rbTriage } from '../rb-triage.js';\nimport { codesplitterRoute as __rbCs } from '../rb-codesplitter.js';\nimport { podcastRoute as __rbPod } from '../rb-podcast.js';\nimport { boxRoute as __rbBox } from '../rb-box.js';\nimport { builderRoute as __rbBuilder } from '../rb-builder.js';\nimport { connectRoute as __rbConnect } from '../rb-connect.js';\n");
+  prepend("http/router.js", "import { officeTriage as __rbTriage, watchStalls as __rbWatchStalls } from '../rb-triage.js';\nimport { codesplitterRoute as __rbCs } from '../rb-codesplitter.js';\nimport { podcastRoute as __rbPod } from '../rb-podcast.js';\nimport { boxRoute as __rbBox } from '../rb-box.js';\nimport { builderRoute as __rbBuilder } from '../rb-builder.js';\nimport { connectRoute as __rbConnect } from '../rb-connect.js';\n");
   patch("http/router.js", "const signedIn = routes.filter((r) => r.auth === 'session');",
-    "const signedIn = routes.filter((r) => r.auth === 'session');\n    const __rbRoutes = __rbTriage(ctx.cfg.dataDir, () => ctx.floors.values());\n    const __rbCsRoute = __rbCs();\n    const __rbPodRoute = __rbPod();\n    const __rbBoxRoute = __rbBox();\n    const __rbBuilderRoute = __rbBuilder();\n    const __rbGrantsRoute = __rbGrants(() => ctx.cfg.dataDir);\n    const __rbConnectRoute = __rbConnect(ctx.cfg.dataDir);");
+    "const signedIn = routes.filter((r) => r.auth === 'session');\n    const __rbRoutes = __rbTriage(ctx.cfg.dataDir, () => ctx.floors.values());\n" +
+    // #4306: a worker whose turn hung, or that a notice stopped owing work, is told to carry on; other sessions are a toast
+    "    if (process.env.AGENT_OFFICE_STALL_WATCH !== 'off')\n        __rbWatchStalls(() => ctx.floors.values(), (f, m) => { for (const fl of f ? [f] : ctx.floors.values()) ctx.toastFloor(fl, m, 'warn'); });\n" +
+    "    const __rbCsRoute = __rbCs();\n    const __rbPodRoute = __rbPod();\n    const __rbBoxRoute = __rbBox();\n    const __rbBuilderRoute = __rbBuilder();\n    const __rbGrantsRoute = __rbGrants(() => ctx.cfg.dataDir);\n    const __rbConnectRoute = __rbConnect(ctx.cfg.dataDir);");
   patch("http/router.js", "            for (const route of signedIn)\n",
     "            const __rb = p.startsWith('/__rb/') && (await __rbCsRoute(req.method, url) ?? await __rbPodRoute(req.method, url) ?? await __rbBoxRoute(req.method, url) ?? await __rbBuilderRoute(req.method, url) ?? await __rbConnectRoute(req.method, url) ?? await __rbRoutes(req.method, url, req.headers['x-rb-triage'] === '1'));\n" +
     "            if (__rb)\n                return send(res, __rb.status, __rb.body);\n            for (const route of signedIn)\n");
