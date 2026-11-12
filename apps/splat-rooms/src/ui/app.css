@@ -6,6 +6,12 @@
   --ink: #e8eef2; --dim: #93a1ad; --accent: #5cd6ef; --accent-ink: #041218; --accent-soft: #0e2a33;
   --red: #d4402c; --cream: #efe4c9; --warn: #f2c48a; --brass: #b08d57; --metal: #2c363e;
   --glow: 0 0 0 1px rgb(92 214 239 / 0.22), 0 0 24px -8px rgb(92 214 239 / 0.6);
+  /* The rustic Cold War layer, kept quiet: oxidised edges, worn rust at the foot of a plate, and a rivet in each corner. */
+  --rust: #9a5a36; --oxide: #2f2b27;
+  --rivet: #7d756a 0 1.2px, #18140f 1.5px 2.5px, transparent 2.9px;
+  --rivets: radial-gradient(circle at 9px 9px, var(--rivet)), radial-gradient(circle at calc(100% - 9px) 9px, var(--rivet)),
+    radial-gradient(circle at 9px calc(100% - 9px), var(--rivet)), radial-gradient(circle at calc(100% - 9px) calc(100% - 9px), var(--rivet));
+  --wear: linear-gradient(0deg, rgb(154 90 54 / 0.07), transparent 28%);
   --silk: "Barlow Condensed", "Arial Narrow", sans-serif;
   --body: "IBM Plex Sans", system-ui, sans-serif;
   --mono: ui-monospace, "SF Mono", Menlo, monospace;
@@ -19,6 +25,11 @@ html, body, #root { height: 100%; margin: 0; background: var(--bg) !important; c
   background: linear-gradient(180deg, rgb(255 255 255 / 0.035), transparent 40%), var(--glass);
   border: 1px solid var(--edge); backdrop-filter: blur(8px);
 }
+
+/* Riveted plates: the consoles, overlay panels and mission cards are bolted on, with a stamped hairline just inside the edge. */
+.console, .panel, .room-card {
+  background: var(--rivets), linear-gradient(180deg, rgb(255 255 255 / 0.035), transparent 40%), var(--wear), var(--glass);
+  outline: 1px solid rgb(239 228 201 / 0.06); outline-offset: -5px; }
 
 /* Brushed metal: the hunt's console bars and the survey's tool strip, a screw at either end. */
 .bezel { padding-left: 24px; padding-right: 24px; border-color: #2f3e4a; box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.07), inset 0 -1px 0 #000, var(--glow);
@@ -115,6 +126,7 @@ h2 { font: 600 1.2rem/1 var(--silk); margin: 0 0 10px; text-transform: uppercase
 .game-intro h2 { font: 600 2.6rem/1 var(--silk); margin: 0 0 10px; }
 .game-intro p { max-width: 54ch; color: var(--dim); }
 
+.hint { font: .8rem var(--mono); letter-spacing: .02em; color: #c3cdd5; }
 .hud-room { margin-left: auto; display: grid; text-align: right; font: .68rem var(--mono); letter-spacing: .08em; color: var(--dim); }
 .hud-room b { font: 600 .98rem/1.1 var(--silk); letter-spacing: .04em; text-transform: uppercase; color: var(--ink); }
 .go, .big, .back { font: 600 1rem var(--silk); letter-spacing: .06em; text-transform: uppercase; cursor: pointer; border-radius: 6px; }
@@ -128,9 +140,13 @@ code { font: .85em var(--mono); border-radius: 3px; padding: 1px 5px; }
 /* --- Menus: the lab's consoles on a faint blueprint grid, a whisper of scanline --- */
 .screen { height: 100%; overflow-y: auto; padding: 28px 24px;
   background:
-    linear-gradient(rgb(92 214 239 / 0.045) 1px, transparent 1px) 0 0 / 100% 32px,
-    linear-gradient(90deg, rgb(92 214 239 / 0.045) 1px, transparent 1px) 0 0 / 32px 100%,
-    radial-gradient(ellipse at 50% 18%, #0f2731 0%, var(--bg) 62%); }
+    radial-gradient(circle at 12px 12px, rgb(125 117 106 / 0.35) 0 1.3px, rgb(0 0 0 / 0.6) 1.6px 2.4px, transparent 2.8px) 0 0 / 64px 192px,
+    linear-gradient(rgb(0 0 0 / 0.55) 1px, rgb(255 255 255 / 0.025) 1px 2px, transparent 2px) 0 0 / 100% 192px,
+    linear-gradient(90deg, rgb(0 0 0 / 0.5) 1px, rgb(255 255 255 / 0.02) 1px 2px, transparent 2px) 0 0 / 320px 100%,
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2'/%3E%3CfeColorMatrix values='0 0 0 0 .6 0 0 0 0 .5 0 0 0 0 .4 0 0 0 .07 0'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23g)'/%3E%3C/svg%3E"),
+    radial-gradient(ellipse at 15% 100%, rgb(154 90 54 / 0.08), transparent 55%),
+    radial-gradient(ellipse at 50% 18%, #0e222a 0%, #080a0c 62%);
+  background-attachment: local; }
 .screen.lab::after { content: ""; position: fixed; inset: 0; pointer-events: none;
   background: repeating-linear-gradient(0deg, rgb(255 255 255 / 0.018) 0 1px, transparent 1px 3px); }
 .menu { display: grid; place-items: center; }
@@ -179,6 +195,7 @@ code { font: .85em var(--mono); border-radius: 3px; padding: 1px 5px; }
 /* The mission board. */
 .screen-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px 18px; max-width: 1100px; margin: 0 auto 16px; }
 .screen-head h1 { margin: 0; }
+.board-band { max-width: 1100px; margin: -6px auto 14px; border-bottom: 1px solid var(--oxide); }
 .rooms-screen > p { max-width: 1100px; margin: 18px auto 0; }
 .room-grid { list-style: none; padding: 0; margin: 0 auto; max-width: 1100px;
   display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); }
@@ -193,10 +210,10 @@ code { font: .85em var(--mono); border-radius: 3px; padding: 1px 5px; }
 .room-foot b { color: var(--accent); }
 .goals { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 3px; }
 .goals li { display: flex; gap: 7px; align-items: center; font-size: .82rem; color: var(--dim); }
-.goals svg rect { fill: none; stroke: var(--edge-hi); }
-.goals svg path { fill: none; stroke: var(--accent); stroke-width: 1.8; stroke-linecap: round; }
+.lamp-bezel { fill: #1a2026; stroke: #59656f; }
+.lamp-glass { fill: #0b1216; }
 .goals li.done { color: var(--ink); }
-.goals li.done svg rect { stroke: var(--accent); }
+.goals li.done .lamp-glass { fill: var(--accent); filter: drop-shadow(0 0 3px var(--accent)); }
 
 /* --- In-game overlays --- */
 .overlay { position: absolute; inset: 0; display: grid; place-items: center; background: rgb(2 5 8 / 0.66); backdrop-filter: blur(3px); }
@@ -216,8 +233,11 @@ code { font: .85em var(--mono); border-radius: 3px; padding: 1px 5px; }
 .stars .on { color: var(--cream); text-shadow: 0 0 10px rgb(239 228 201 / 0.4); }
 .points { margin: 0; font: 600 3rem/1 var(--silk); font-variant-numeric: tabular-nums; text-shadow: 0 0 22px rgb(92 214 239 / 0.35); }
 .badge { margin-left: 10px; vertical-align: middle; padding: 2px 7px; border-radius: 4px; background: var(--red); color: var(--cream); font: 600 .85rem var(--silk); letter-spacing: .06em; text-transform: uppercase; }
-.stamp { justify-self: center; padding: 3px 10px; border: 1.5px solid var(--red); border-radius: 3px; background: rgb(212 64 44 / 0.12);
-  color: var(--cream); font: 700 .74rem var(--mono); letter-spacing: .16em; text-transform: uppercase; transform: rotate(-3deg); }
+.stamp { justify-self: center; padding: 4px 22px; border: 1px solid #000; border-radius: 3px; color: var(--cream);
+  background: radial-gradient(circle at 9px 50%, var(--rivet)), radial-gradient(circle at calc(100% - 9px) 50%, var(--rivet)),
+    repeating-linear-gradient(90deg, rgb(255 255 255 / 0.025) 0 1px, transparent 1px 3px), linear-gradient(180deg, #3a434b, #1c2329);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.12), 0 0 0 1px rgb(212 64 44 / 0.4), 0 0 14px -6px var(--red);
+  font: 700 .74rem var(--mono); letter-spacing: .16em; text-transform: uppercase; text-shadow: 0 -1px 0 #000, 0 1px 0 rgb(255 255 255 / 0.1); }
 
 /* The gadget watch (lab.tsx WatchFace). */
 .w-lug { fill: #39434b; stroke: #151a1f; }
@@ -227,6 +247,7 @@ code { font: .85em var(--mono); border-radius: 3px; padding: 1px 5px; }
 .w-ring { fill: none; stroke: var(--accent); stroke-width: .8; }
 .w-tick { stroke: #6f7f8b; stroke-width: 1; }
 .w-hour { stroke: var(--cream); stroke-width: 2.4; }
+.w-twelve { fill: var(--red); stroke: var(--cream); stroke-width: .8; }
 .w-num { font: 600 15px var(--silk); fill: var(--ink); text-anchor: middle; }
 .w-brand { font: 600 6.5px var(--mono); letter-spacing: 1.4px; fill: var(--dim); text-anchor: middle; }
 .w-sub { fill: #070b0e; stroke: #2a3640; }
@@ -356,3 +377,5 @@ code { font: .85em var(--mono); border-radius: 3px; padding: 1px 5px; }
   .sat { display: none; } /* the rail is short on a phone: the room list starts in view */
 }
 .game-hud.bezel, .game-foot.bezel, .hud.bezel { padding-left: 24px; padding-right: 24px; }
+/* The Room browser's side rails: the same worn steel as the plates, bolted at the corners. */
+.rail { background-image: var(--rivets), var(--wear); }

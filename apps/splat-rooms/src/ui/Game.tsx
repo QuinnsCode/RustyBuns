@@ -196,7 +196,7 @@ export function Game({ sceneId, records, onRecords, onAnotherRoom, onRooms, onQu
           <div className="game-foot bezel">
             <button className="go" onClick={() => fire("shot")} disabled={charge < 1}>Splat (space)</button>
             <button className="mini" onClick={() => fire("spray")} disabled={charge < SPRAY_COST}>Spray ×20 (shift-space, {SPRAY_COST})</button>
-            <span className="dim small">drag to look · {pickMode ? "click the thing you spy" : "shoot to light the room, then switch to pick mode"}</span>
+            <span className="hint">drag to look · {pickMode ? "click the thing you spy" : "shoot to light the room, then switch to pick mode"}</span>
           </div>
         )}
 
