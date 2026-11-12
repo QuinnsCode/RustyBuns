@@ -45,6 +45,25 @@ who clones has the source. To restrict what people may *do* with a game, give
 it its own LICENSE as `apps/qcrm` does, which is a decision for the owner.
 Built desktop releases are separate and stay downloadable.
 
+## Apps under their own license
+
+Rusty Buns (the framework, the CLI, `packages/*` and the example apps) is the
+open part. A few apps are QNTBR's own and carry the QNTBR license in their
+directory instead: read them, run them to evaluate, send fixes; don't copy,
+resell or host them for others.
+
+| App | License |
+|---|---|
+| `apps/qcrm` | QNTBR ([LICENSE](apps/qcrm/LICENSE)) |
+| `apps/eqosys` | QNTBR ([LICENSE](apps/eqosys/LICENSE)) |
+| `apps/qollab` | QNTBR ([LICENSE](apps/qollab/LICENSE)) |
+
+eqosys (accounts) and Qollab (parties, rooms, presence) are the hosted upgrade
+for a game, not part of the open stack. The client a game talks to them with
+(`@rustybuns/util/eqosys`, `@rustybuns/util/token`) stays Apache-2.0, so a
+game built on Rusty Buns ships open and can either use the hosted service or
+bring its own accounts and rooms when it self-hosts.
+
 ## Contributions
 
 Contributions are accepted under Apache-2.0, the same terms as the
