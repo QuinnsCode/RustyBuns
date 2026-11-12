@@ -14,7 +14,7 @@ import { b64url, crossSite, json, loopbackOn, VERSION, type Env } from "./env.ts
 import { hubAnnounce, hubAsk, type Who } from "./qollab/hub.ts";
 import { isQollab, qollab } from "./qollab/routes.ts";
 import { bearerOf, cors, HOME_LIFE, issuer, tokenOf } from "./door.ts";
-import { deleteAccount, exchange, link, mint, setAccess, signOutApps } from "./members.ts";
+import { deleteAccount, exchange, link, mint, mintRefresh, setAccess, signOutApps } from "./members.ts";
 import { oauth } from "./oauth.ts";
 import { appleEvents } from "./apple.ts";
 import { addMember, Kind, makeStudio, Role, STUDIO_NAME } from "./studios.ts";
@@ -24,7 +24,7 @@ import { shownFor, unlock, unlocksOf } from "./achievements.ts";
 import { AGENTS_TEXT, callTool, catalog, type Ctx } from "./tools.ts";
 import { jwksOf, sign } from "@rustybuns/util/token";
 import { json as publicJson } from "@rustybuns/util/http";
-import { check, obj, oneOf, opt, str } from "@rustybuns/util/guard";
+import { bool, check, obj, oneOf, opt, str } from "@rustybuns/util/guard";
 import { dossierHeaders, regionAt, type Region } from "@rustybuns/util/privacy";
 import { exportFor, HOLDERS } from "./privacy.ts";
 import { regionFor, vaultFor } from "./vault.ts";
@@ -35,6 +35,8 @@ export interface Ask {
   app: QApp; back: URL; challenge: string; state: string; /** An OpenID client's, signed into its id_token. */ nonce?: string;
   /** The app asked to show the page even to someone already signed in (OpenID's `prompt=login` or `select_account`), say for "switch account". */
   pick?: true;
+  /** The app asked not to show any page (OpenID's `prompt=none`): a code back for someone who goes straight on, else `error=login_required`. */
+  quiet?: true;
 }
 
 const CHALLENGE = str(128, { min: 43, re: /^[A-Za-z0-9_-]+$/ });
@@ -47,13 +49,14 @@ export async function askOf(get: (k: string) => unknown, conf: Env): Promise<Ask
   const challenge = check(CHALLENGE, get("challenge"));
   if (!app || !back || !challenge) return "bad";
   const nonce = String(get("nonce") ?? "").slice(0, 200);
-  const pick = /\b(login|select_account|consent)\b/.test(String(get("prompt") ?? ""));
-  return { app, back, challenge, state: String(get("state") ?? "").slice(0, 200), ...(nonce ? { nonce } : {}), ...(pick ? { pick: true as const } : {}) };
+  const prompt = String(get("prompt") ?? "");
+  const pick = /\b(login|select_account|consent)\b/.test(prompt), quiet = !pick && /\bnone\b/.test(prompt);
+  return { app, back, challenge, state: String(get("state") ?? "").slice(0, 200), ...(nonce ? { nonce } : {}), ...(pick ? { pick: true as const } : {}), ...(quiet ? { quiet: true as const } : {}) };
 }
 
 /** The ask carried on as query parameters (into a social callback, or back to the login page). */
 export const askQuery = (a: Ask) =>
-  new URLSearchParams({ app: a.app.id, return: a.back.href, challenge: a.challenge, ...(a.state ? { state: a.state } : {}), ...(a.nonce ? { nonce: a.nonce } : {}), ...(a.pick ? { prompt: "select_account" } : {}) }).toString();
+  new URLSearchParams({ app: a.app.id, return: a.back.href, challenge: a.challenge, ...(a.state ? { state: a.state } : {}), ...(a.nonce ? { nonce: a.nonce } : {}), ...(a.pick ? { prompt: "select_account" } : a.quiet ? { prompt: "none" } : {}) }).toString();
 
 /** The mark that says this browser pressed "Continue with…" for this ask: an HMAC of the ask's app and challenge under the
  * auth secret. It rides in a cookie, never the URL, so a link somebody else made can't carry it into another browser. */
@@ -99,7 +102,8 @@ async function onward(conf: Env, region: Region, userId: string, ask: Ask | null
 
 const Signed = obj({ user: obj({ id: str(200) }) });
 const Social = obj({ url: str(4000) });
-const Exchange = obj({ app: str(64), code: str(100), verifier: str(128, { min: 43 }), return: opt(str(2000)) });
+/** `keep`: a game page that renews its token in the background (`@rustybuns/util/eqosys`) also gets a refresh token, marked as a page's. */
+const Exchange = obj({ app: str(64), code: str(100), verifier: str(128, { min: 43 }), return: opt(str(2000)), keep: opt(bool()) });
 
 export async function handle(req: Request, conf: Env): Promise<Response | null> {
   const { pathname } = new URL(req.url);
@@ -116,7 +120,9 @@ export async function handle(req: Request, conf: Env): Promise<Response | null> 
     if (!body) return json({ error: "send { app, code, verifier }" }, 400, await cors(req, conf));
     const traded = await exchange(conf, body.app, body.code, body.verifier, body.return);
     if (!traded) return json({ error: "that code is used, late, for another app, or the verifier is wrong" }, 400, await cors(req, conf));
-    return json({ ...traded.who, token: await sign(conf, issuer(req, conf), traded.who) }, 200, await cors(req, conf));
+    const token = await sign(conf, issuer(req, conf), traded.who);
+    const refresh = token && body.keep ? await mintRefresh(conf, traded.who.user.id, traded.who.app, Date.now(), true) : undefined;
+    return json({ ...traded.who, token, ...(refresh ? { refresh } : {}) }, 200, await cors(req, conf));
   }
 
   // Achievements (achievements.ts): POST /q/achieve { id } unlocks one of the token's app's, GET lists its whole catalog for the person.
@@ -233,6 +239,12 @@ export async function handle(req: Request, conf: Env): Promise<Response | null> 
       const out = await onward(conf, regionAt(req), me.id, ask);
       if (mark) out.headers.append("set-cookie", socialCookie(req, "", 0));
       return out;
+    }
+    // A game checking quietly on load (prompt=none): no page, just back to it as a guest, the way OpenID says.
+    if (ask?.quiet) {
+      ask.back.searchParams.set("error", "login_required");
+      if (ask.state) ask.back.searchParams.set("state", ask.state);
+      return see(ask.back.href);
     }
     return null;
   }

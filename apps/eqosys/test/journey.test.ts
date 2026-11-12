@@ -157,6 +157,12 @@ test("already signed in: an app she uses gets her straight back with no page; a 
   expect(await login(crm.form, up.cookie)).toBeNull();
   expect(await login(again.form, "")).toBeNull();
   expect(await login({ ...again.form, prompt: "select_account" }, up.cookie)).toBeNull();
+  // A game checking quietly on load (prompt=none): a code for her, straight back as a guest when signed out or never used, never a page.
+  expect(codeIn((await login({ ...again.form, prompt: "none" }, up.cookie))!.headers.get("location")!)).toMatch(/^eq_/);
+  for (const [form, cookie] of [[again.form, ""], [crm.form, up.cookie]] as const) {
+    const back = new URL((await login({ ...form, prompt: "none" }, cookie))!.headers.get("location")!);
+    expect([back.origin, back.searchParams.get("error"), back.searchParams.get("state"), back.searchParams.has("code")]).toEqual([new URL(form.return).origin, "login_required", "s1", false]);
+  }
 
   // Back from "Continue with Google" for qCRM, the mark /do/social left in her browser sends her straight on, once; it
   // doesn't carry to another app. Bo, handed a link with that mark in it, sees the page and isn't linked to qCRM.

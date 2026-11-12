@@ -159,9 +159,10 @@ export function release(b: Builder, slot: string, rec?: RunRecord) {
 }
 
 // Send the commit straight to the slot's own repo, then check it out on top of its warm node_modules.
+// The ref is the slot's scratch: one a run left behind (it failed before its checkout) is overwritten, not a reason to refuse.
 export async function load(b: Builder, slot: string, sha: string, cwd: string) {
   const ref = `refs/remote-ci/${slot}`;
-  const push = Bun.spawn(["git", "push", "-q", `${b.host}:${b.dir}/${slot}`, `${sha}:${ref}`], {
+  const push = Bun.spawn(["git", "push", "-q", `${b.host}:${b.dir}/${slot}`, `+${sha}:${ref}`], {
     cwd, stdout: "inherit", stderr: "inherit", env: { ...process.env, GIT_SSH_COMMAND: b.ssh.join(" ") },
   });
   if (await push.exited) return 1;

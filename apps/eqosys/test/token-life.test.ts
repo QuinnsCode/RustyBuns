@@ -51,3 +51,17 @@ test("signing out on the eqosys page ends every app's tokens, not just the page'
   expect((await call("/do/logout", { form: {}, cookie: inAgain.cookie })).to).toBe("/login");
   expect([await save(cy.park), await whoami(cy.qcrm)]).toEqual([401, 401]);
 });
+
+test("a game page keeps a refresh token: it renews without a bounce, stays a page's, and signing out on eqosys ends it but not a native app's", async () => {
+  const a = await asks("park-hide-seek", PARK);
+  const up = await call("/do/signup", { form: { ...a.form, name: "Di", email: "di@example.com", password: PASSWORD } });
+  const got = await (await call("/api/exchange", { json: { app: "park-hide-seek", code: codeIn(up.to), verifier: a.verifier, keep: true } })).res.json() as { refresh: string; user: { id: string } };
+  const renew = (refresh_token: string) => call("/oauth/token", { form: { grant_type: "refresh_token", client_id: "park-hide-seek", refresh_token }, origin: PARK });
+  const next = await (await renew(got.refresh)).res.json() as { access_token: string; refresh_token: string };
+  expect(await save(next.access_token)).toBe(404);
+  expect((await renew(got.refresh)).res.status).toBe(400); // spent
+
+  const native = await mintRefresh(conf, got.user.id, "park-hide-seek");
+  expect((await call("/do/logout", { form: {}, cookie: up.cookie })).to).toBe("/login");
+  expect([(await renew(next.refresh_token)).res.status, (await renew(native)).res.status]).toEqual([400, 200]);
+});
