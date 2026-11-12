@@ -24,6 +24,8 @@ import { checkEnv, runDirs, sandboxUser, spawnAs } from "./check-env.ts";
 import { fileDoc, materialize, toFile } from "./archive.ts";
 import { cardFont, renderCard, type CardLine } from "./card.ts";
 import { fail, json, type Body, type Env, unread } from "./env.ts";
+import { num, obj, opt, str, type Of } from "@rustybuns/util/guard";
+import { readJson } from "@rustybuns/util/http";
 import { isAdmin } from "./identity.ts";
 import type { Doc, Line } from "./lines.ts";
 import { parseJson, esc } from "./util.ts";
@@ -32,7 +34,9 @@ import { liveRepo, branchOf } from "./repos.ts";
 export type Mark = "pass" | "fail";
 export interface CutRun { at: number; code: number; passed: number; failed: number; out: string; marks: Record<string, Record<string, Mark>>; note?: string }
 /** Run `bun test` over these files (path → text) and say how it went. */
-export type Tester = (files: Record<string, string>) => Promise<{ code: number; out: string; report?: string }>;
+/** A test run's outcome: the exit code, what it printed, and its junit report. The sandbox's /test answers it too. */
+const TestRun = obj({ code: num(-Infinity, Infinity), out: str(Infinity), report: opt(str(Infinity)) });
+export type Tester = (files: Record<string, string>) => Promise<Of<typeof TestRun>>;
 /** Where `bun test` writes its JUnit report, beside the cut's files. */
 export const REPORT = ".cut-report.xml";
 
@@ -309,7 +313,9 @@ const localTester = (user = sandboxUser(process.env.CODESPLITTER_CHECKS_USER)): 
 const containerTester = (ns: NonNullable<Env["AGENT_SANDBOX"]>): Tester => async (files) => {
   const res = await ns.get(ns.idFromName(crypto.randomUUID())).fetch(new Request("http://sandbox/test", { method: "POST", body: JSON.stringify({ files }) }));
   if (!res.ok) throw new Error(`sandbox: ${res.status} ${await res.text()}`);
-  return (await res.json()) as { code: number; out: string; report?: string };
+  const run = await readJson(res, TestRun);
+  if (!run) throw new Error("sandbox: its /test reply didn't read");
+  return run;
 };
 
 /** Where a cut's tests can run for `user`: tests stand in; the desktop runs them itself; on Cloudflare, a container for admins (it bills the site). */

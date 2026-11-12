@@ -51,7 +51,7 @@
 import { b64, parseJson, sha256 } from "./util.ts";
 import { localGit } from "./mirror.ts";
 import { protectOn } from "./protect.ts";
-import { fail, json, named, need, type Env, readBody } from "./env.ts";
+import { errorIn, fail, json, named, need, type Env, readBody } from "./env.ts";
 import { byToken } from "./tokens.ts";
 import { charge, every, SITE } from "./limits.ts";
 import { accountsOn, actingAs, isAdmin } from "./identity.ts";
@@ -506,7 +506,7 @@ async function threadRoute(req: Request, env: Env, self: (req: Request) => Promi
   }
   if (last.pending) return json({ message, started: null, why: "its last batch is still waiting: accept or reject it first" });
   const started = await startRun(env, self, origin, user, owner, repo, { path: last.path, harness: last.harness, task: first.task, model: (await getRow(env, last.id))?.model ?? undefined }, thread);
-  if (started.status !== 202) return json({ message, started: null, why: check(obj({ error: str(4000) }), await started.json())?.error ?? `${started.status}` });
+  if (started.status !== 202) return json({ message, started: null, why: await errorIn(started, `${started.status}`) });
   return json({ message, started: await started.json() });
 }
 
