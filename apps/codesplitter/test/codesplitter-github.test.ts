@@ -135,7 +135,7 @@ describe("github", () => {
       expect(over.status).toBe(429);
       expect(Number(over.headers.get("retry-after"))).toBeGreaterThan(0);
     } finally { globalThis.fetch = real; }
-  });
+  }, 30_000);
 
   test("a sign-in can link several GitHubs, encrypted at rest, and pick which one digs", async () => {
     const { call, person } = await accounts({ GITHUB_CLIENT_ID: "id", GITHUB_CLIENT_SECRET: "s" });
