@@ -60,7 +60,7 @@ function start(m: { box: HTMLElement; row: HTMLElement }) {
   const states: Record<Name, EsterState> = { ester: IDLE, mervin: IDLE, dexter: IDLE };
   let open: Name | undefined, card: HTMLElement | undefined, timer: ReturnType<typeof setTimeout> | undefined;
   let code: ModeEvent[] = []; // the latest code-mode programs Dexter saw (a line each on his card, and an rb:code-mode event on window)
-  let over: ContextAlert[] = [], live: string[] = [], stalled: string[] = []; // Dexter's watch on live sessions: what each carries and has used, and which should hand off (a dot on his badge, the lines on his card)
+  let over: ContextAlert[] = [], live: string[] = []; // Dexter's watch on live sessions: what each carries and has used, and which should hand off (a dot on his badge, the lines on his card)
   const badges = {} as Record<Name, HTMLButtonElement>;
 
   const render = () => {
@@ -77,7 +77,7 @@ function start(m: { box: HTMLElement; row: HTMLElement }) {
     card = el("div", { className: "rb-helper-card" },
       el("div", { className: "rb-helper-head" }, el("span", {}, `${who.label}: ${s.phase === "idle" ? who.ask : s.phase}`), el("span", { className: "rb-helper-clock" }, s.startedAt ? clock(s) : "")),
       el("div", { className: "rb-helper-job" }, who.job),
-      el("div", { className: "rb-helper-log" }, held + (open === "dexter" && live.length ? [...stalled, ...live, ...over.map((a) => a.message), ...code.map((e) => e.message)].join("\n") + "\n" : "") + (s.error ? s.error + "\n" : "") + s.lines.slice(-40).join("\n")),
+      el("div", { className: "rb-helper-log" }, held + (open === "dexter" && live.length ? [...live, ...over.map((a) => a.message), ...code.map((e) => e.message)].join("\n") + "\n" : "") + (s.error ? s.error + "\n" : "") + s.lines.slice(-40).join("\n")),
       go);
     m.box.prepend(card);
   };
@@ -94,9 +94,9 @@ function start(m: { box: HTMLElement; row: HTMLElement }) {
         const body: Record<string, unknown> = await res.json();
         for (const n of Object.keys(WHO) as Name[]) if (n in body) states[n] = helperState(body[n]);
       }
-      const ctx = await fetch("/__rb/context", { credentials: "same-origin" }).then((c) => (c.ok ? (c.json() as Promise<{ lines: string[]; over: ContextAlert[]; fresh: ContextAlert[]; code?: ModeEvent[]; stalled?: string[] }>) : null), () => null);
+      const ctx = await fetch("/__rb/context", { credentials: "same-origin" }).then((c) => (c.ok ? (c.json() as Promise<{ lines: string[]; over: ContextAlert[]; fresh: ContextAlert[]; code?: ModeEvent[] }>) : null), () => null);
       if (ctx) {
-        over = ctx.over; live = ctx.lines; stalled = ctx.stalled ?? [];
+        over = ctx.over; live = ctx.lines;
         if (ctx.code?.length) {
           code = [...ctx.code, ...code].slice(0, 5);
           for (const e of ctx.code) window.dispatchEvent(new CustomEvent("rb:code-mode", { detail: e }));
