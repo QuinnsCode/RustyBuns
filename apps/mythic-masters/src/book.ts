@@ -23,12 +23,13 @@ const Reply = obj({
   /** Spare drops of ink it hands you for the next fight. */ ink: opt(int(1, 2)),
   /** The kind of beast its next demand names, while one is left. */ wants: opt(oneOf(ARCHETYPES)),
 });
-/** One thing the Book says at a beat. `from` is the lowest region number it plays in, `region` (a region id) the only region it
+/** One thing the Book says at a beat. `lead` is what it says first, one short page each, turned with Go on before it
+ * asks (the first open uses it to say what the Book is). `from` is the lowest region number it plays in, `region` (a region id) the only region it
  * plays in, ahead of the beat's other talks; `recall` lines come first when you gave that reply ("talkId.replyId") earlier,
  * `{said}` quoting it, `{where}` and `{ago}` saying where and how far back you said it. */
 const Talk = obj({
   id: str(40), beat: oneOf(BEATS), from: opt(int(1, 64)), region: opt(str(64)),
-  ask: str(240), replies: arr(Reply, 3, { min: 2 }),
+  lead: opt(arr(str(160), 10)), ask: str(240), replies: arr(Reply, 3, { min: 2 }),
   recall: opt(arr(obj({ of: str(80), line: str(240) }), 8)),
 });
 export type Talk = Of<typeof Talk>;
@@ -38,8 +39,8 @@ export const LINES: readonly Talk[] = Lines(raw);
 
 /** What a moment fills in: the region it happens in, the ledger count, the mythic, who went down, your name. */
 export interface Ctx { n?: number; regionId?: string; region?: string; item?: number; mythic?: string; down?: string; name?: string }
-/** A beat that found something to say: the talk, and its line with any callback in front, filled in. */
-export interface Moment { talk: Talk; recall: string | null; ask: string; ctx: Ctx }
+/** A beat that found something to say: the talk, its lead-in pages, and its line with any callback in front, filled in. */
+export interface Moment { talk: Talk; recall: string | null; lead: string[]; ask: string; ctx: Ctx }
 
 const talkOf = (j: Journey) => (j.talk ??= { heard: [], said: {} });
 /** The ledger's notes on you, newest last. */
@@ -103,7 +104,7 @@ export function momentFor(beat: Beat, j: Journey, ctx: Ctx = {}, lines: readonly
   const hit = talk.recall?.find((r) => { const [id, reply] = r.of.split("."); return !!id && said[id] === reply; });
   const of = hit?.of.split(".")[0] ?? "";
   const quoted = hit ? lines.find((t) => t.id === of)?.replies.find((r) => r.id === said[of])?.say ?? "" : "";
-  return { talk, recall: hit ? fill(hit.line, j, ctx, quoted, j.talk?.at?.[of]) : null, ask: fill(talk.ask, j, ctx), ctx };
+  return { talk, recall: hit ? fill(hit.line, j, ctx, quoted, j.talk?.at?.[of]) : null, lead: (talk.lead ?? []).map((l) => fill(l, j, ctx)), ask: fill(talk.ask, j, ctx), ctx };
 }
 
 /** You answered: the reply goes in the save (with where you said it, its nickname, its ledger note, its ink and what it
