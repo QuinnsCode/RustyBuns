@@ -2,10 +2,12 @@
 // home page without asking the game), and a game unlocks one with its token, POST /q/achieve { id }. An unlock is kept
 // the first time and never moves. A game can only unlock what its own catalog names, so nobody can invent a title.
 // Add a game's list in a PR, the same way it is added to APPS. Every game's list starts with the same ones (SHARED), so
-// "played" is number one everywhere, and each has its badge: a lucide icon, or a letter in the console font.
+// "played" is number one everywhere, and each has its badge: a lucide icon, or a letter in the console font. A studio's own game
+// (listings.ts) has no list here: it gets the shared ones its maturity can unlock, until its studio can add its own.
 import { Armchair, Bandage, Biohazard, Bird, Briefcase, Coins, Crown, Droplet, Earth, Feather, Flag, Flame, Footprints, Gamepad2, GlassWater, Globe, Hourglass, Landmark, Link, MapPin, Medal, Megaphone, Orbit, PiggyBank, PlaneLanding, Radio, Repeat, ScanEye, Search, Shield, ShieldCheck, Sparkles, Spline, SprayCan, Target, Tent, TrendingUp, Trophy, UserRound, Users, Waves, type IconNode } from "lucide";
-import { APPS } from "./apps.ts";
+import type { QApp } from "./apps.ts";
 import type { Env } from "./env.ts";
+import { appOf, isListing } from "./listings.ts";
 
 export interface Achievement {
   id: string;
@@ -120,7 +122,12 @@ export async function countsOf(conf: Env, ids: string[]): Promise<Map<string, nu
 /** A catalog entry as a person sees it: `at` when they have it, and a secret one's name and line kept back until then. */
 export interface Shown { id: string; name: string; blurb: string; secret: boolean; at: number | null }
 
-export const catalogOf = (app: string) => ACHIEVEMENTS[app] ?? [];
+/** Whether a shared alpha or beta badge can unlock in an app of this maturity (alpha unless said, apps.ts). */
+const opens = (a: Achievement, maturity: QApp["maturity"]) => (a.id !== "alpha" && a.id !== "beta") || (maturity ?? "alpha") === a.id;
+
+/** An app's catalog: ours from ACHIEVEMENTS, a studio's game the shared ones its maturity can unlock. */
+export const catalogOf = (app: string | QApp): Achievement[] =>
+  typeof app !== "string" && isListing(app) ? Object.values(SHARED).filter((a) => opens(a, app.maturity)) : ACHIEVEMENTS[typeof app === "string" ? app : app.id] ?? [];
 
 const show = (a: Achievement, at: number | null): Shown =>
   a.secret && at === null ? { id: a.id, name: "Secret achievement", blurb: "Keep playing.", secret: true, at } : { id: a.id, name: a.name, blurb: a.blurb, secret: !!a.secret, at };
@@ -139,7 +146,7 @@ export async function unlocksOf(conf: Env, userId: string, app?: string) {
 }
 
 /** An app's whole catalog for one person, unlocked first (newest on top), then the rest in catalog order. */
-export function shownFor(app: string, got: Map<string, number> | undefined): Shown[] {
+export function shownFor(app: string | QApp, got: Map<string, number> | undefined): Shown[] {
   const list = catalogOf(app).map((a) => show(a, got?.get(a.id) ?? null));
   return [...list.filter((s) => s.at !== null).sort((a, b) => b.at! - a.at!), ...list.filter((s) => s.at === null)];
 }
@@ -148,9 +155,9 @@ export type Unlocked = { ok: true; achievement: Shown; new: boolean } | { ok: fa
 
 /** Unlock `id` in `app` for a person. Unlocking one they already have is fine: `new` is false and `at` is the first time. */
 export async function unlock(conf: Env, userId: string, app: string, id: unknown, now = Date.now()): Promise<Unlocked> {
-  const a = catalogOf(app).find((x) => x.id === id);
-  if (!a) return { ok: false, status: 404, error: `${app} has no achievement called that` };
-  if ((a.id === "alpha" || a.id === "beta") && (APPS.find((x) => x.id === app)?.maturity ?? "alpha") !== a.id) return { ok: false, status: 409, error: `${app} is not in ${a.id}` };
+  const q = await appOf(conf, app), a = q && catalogOf(q).find((x) => x.id === id);
+  if (!q || !a) return { ok: false, status: 404, error: `${app} has no achievement called that` };
+  if (!opens(a, q.maturity)) return { ok: false, status: 409, error: `${app} is not in ${a.id}` };
   const fresh = await conf.DB.prepare("INSERT INTO unlocks (user_id, app, achievement, at) VALUES (?, ?, ?, ?) ON CONFLICT DO NOTHING RETURNING at")
     .bind(userId, app, a.id, now).first<number>("at");
   const at = fresh ?? (await conf.DB.prepare("SELECT at FROM unlocks WHERE user_id = ? AND app = ? AND achievement = ?").bind(userId, app, a.id).first<number>("at")) ?? now;

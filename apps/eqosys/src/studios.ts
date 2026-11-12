@@ -6,7 +6,8 @@
 // QNTBR is the first studio, the super admin's (`house`): it holds every app in APPS that no other studio has claimed.
 import { oneOf, str } from "@rustybuns/util/guard";
 import { APPS, ourApp, playOf, type QApp } from "./apps.ts";
-import { listings, type Listing, type State } from "./listings.ts";
+import { listings, type Draft, type Listing, type State } from "./listings.ts";
+import { inboxOf, type Received } from "./reports.ts";
 import type { Env } from "./env.ts";
 import { lastDeploys, type Shipped } from "./deploys.ts";
 
@@ -23,17 +24,25 @@ export const OWNED = 3;
 export const HOUSE = { id: "qntbr", name: "QNTBR", kind: "business" as Kind };
 
 /** `ship` is "live" once the app has reported a deploy, or has a site in APPS (an app shipped before reports began); `shipped` is that report.
- * A studio's own game (listings.ts) is live once listed, and says where its review stands, with the reviewer's `note` on a refusal. */
-export interface ShelfApp { id: string; name: string; play: string | null; make: string | null; ship: "live" | "not deployed"; shipped: Shipped | null; state?: State; note?: string }
+ * A studio's own game (listings.ts) is live once listed, and says where its review stands, with the reviewer's `note` on a refusal,
+ * what it was saved with (`draft`, what the Studio tab's form starts from) and its players' newest reports (reports.ts). */
+export interface ShelfApp {
+  id: string; name: string; play: string | null; make: string | null; ship: "live" | "not deployed"; shipped: Shipped | null;
+  state?: State; note?: string; draft?: Draft; reports?: Received[];
+}
 export interface StudioPerson { name: string; email: string; role: Role }
 export interface Studio { id: string; name: string; kind: Kind; role: Role; members: number; people: StudioPerson[]; apps: ShelfApp[] }
 
-const shelfApp = (id: string, repo: string | null, shipped: Shipped | null, theirs: Listing[]): ShelfApp => {
+const shelfApp = async (conf: Env, id: string, repo: string | null, shipped: Shipped | null, theirs: Listing[]): Promise<ShelfApp> => {
   const l = theirs.find((x) => x.id === id), a: QApp | undefined = ourApp(id) ?? l;
   const live = l ? l.state === "listed" : !!(shipped || a?.origins.length);
   return { id, name: a?.name ?? id, play: a && l?.state !== "pulled" && l?.state !== "refused" ? playOf(a) : null, make: repo, ship: live ? "live" : "not deployed", shipped,
-    ...(l ? { state: l.state, ...(l.note ? { note: l.note } : {}) } : {}) };
+    ...(l ? { state: l.state, ...(l.note ? { note: l.note } : {}), draft: draftOf(l), reports: await inboxOf(conf, id) } : {}) };
 };
+
+/** A listing as the fields it was saved with. */
+const draftOf = (l: Listing): Draft => ({ studio: l.studio.id, id: l.id, name: l.name, kind: l.kind, genre: l.genre, origins: l.origins,
+  ...(l.returns ? { returns: l.returns } : {}), ...(l.erase ? { erase: l.erase } : {}), ...(l.blurb ? { blurb: l.blurb } : {}) });
 
 /** The studios a person is in, with their role, who else is in (owners first), and each app on the shelf. */
 export async function studiosOf(conf: Env, userId: string): Promise<Studio[]> {
@@ -49,9 +58,9 @@ export async function studiosOf(conf: Env, userId: string): Promise<Studio[]> {
       ORDER BY CASE m.role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END, u.name`).bind(...ids).all<StudioPerson & { studio_id: string }>(),
   ]);
   const [shipped, theirs] = await Promise.all([lastDeploys(conf, apps.map((a) => a.app)), Promise.all(ids.map((studio) => listings(conf, { studio }))).then((l) => l.flat())]);
-  return mine.map((s) => ({ ...s,
+  return Promise.all(mine.map(async (s) => ({ ...s,
     people: people.filter((p) => p.studio_id === s.id).map(({ name, email, role }) => ({ name, email, role })),
-    apps: apps.filter((a) => a.studio_id === s.id).map((a) => shelfApp(a.app, a.repo, shipped.get(a.app) ?? null, theirs)) }));
+    apps: await Promise.all(apps.filter((a) => a.studio_id === s.id).map((a) => shelfApp(conf, a.app, a.repo, shipped.get(a.app) ?? null, theirs))) })));
 }
 
 export type Made = { ok: true; id: string } | { ok: false; status: number; error: string };

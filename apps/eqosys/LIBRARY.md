@@ -72,7 +72,9 @@ that #4053 puts in every new game. A game made without the template can still be
 
 [#4075](https://github.com/QuinnsCode/RustyBuns/issues/4075) built the listings (`src/listings.ts`, migration `20261109000000_listings.sql`),
 the four tools (`eq_listing_save`, `eq_listing_send`, `eq_listing_review`, `eq_listing_pull`), the shelf and tile, and one
-journey (`test/library.test.ts`). Until the studio's reports inbox exists, a report from a studio's game is refused, so none
-reaches this repo. Still to come: the machine checks ([#4090](https://github.com/QuinnsCode/RustyBuns/issues/4090), after the
-template), and the Studio page's form, reports to the studio and shared achievements
-([#4091](https://github.com/QuinnsCode/RustyBuns/issues/4091)).
+journey (`test/library.test.ts`). [#4091](https://github.com/QuinnsCode/RustyBuns/issues/4091) added the Studio tab's form by the
+Ship door (`/do/listing-save`, `-send`, `-pull`, for owners and admins), the studio's reports inbox (a report from its game is
+kept in the `reports` row with its kind, title and body, migration `20261111000000_studio_reports.sql`, and shown under the game
+on the Studio tab and in `eq_studios`, the newest 20, the reporter as the same opaque id), and the shared achievements (`catalogOf`
+gives a listing the `SHARED` ones its maturity can unlock, and `unlock` reads the maturity through `appOf`). Still to come: the
+machine checks ([#4090](https://github.com/QuinnsCode/RustyBuns/issues/4090), after the template).

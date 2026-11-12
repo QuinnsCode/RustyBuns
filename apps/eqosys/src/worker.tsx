@@ -28,6 +28,8 @@ import privacySql from "../migrations/0008_privacy.sql?raw";
 import visitsSql from "../migrations/0009_visits.sql?raw";
 import studiosSql from "../migrations/20261106000000_studios.sql?raw";
 import deploysSql from "../migrations/20261107000000_deploys.sql?raw";
+import listingsSql from "../migrations/20261109000000_listings.sql?raw";
+import studioReportsSql from "../migrations/20261111000000_studio_reports.sql?raw";
 import { house, studiosOf } from "./studios.ts";
 import { markStaff, tally, visitorsOf } from "./visitors.ts";
 import { loadOf } from "./scale.ts";
@@ -50,7 +52,7 @@ const e = (req?: Request): AppEnv => {
 // One statement at a time, so a column added on an earlier run ("duplicate column") doesn't stop the rest.
 let migrated: Promise<unknown> | undefined;
 const devMigrate = (db: AppEnv["DB"]) => (migrated ??= (async () => {
-  for (const q of [initSql, oauthSql, reportsSql, savesSql, seatsSql, unlocksSql, spacesSql, privacySql, visitsSql, studiosSql, deploysSql].join("\n").split("\n").filter((l) => !l.trimStart().startsWith("--")).join("\n").split(/;\s*\n/)
+  for (const q of [initSql, oauthSql, reportsSql, savesSql, seatsSql, unlocksSql, spacesSql, privacySql, visitsSql, studiosSql, deploysSql, listingsSql, studioReportsSql].join("\n").split("\n").filter((l) => !l.trimStart().startsWith("--")).join("\n").split(/;\s*\n/)
     .map((q) => q.trim().replace(/;$/, "")).filter(Boolean)
     .map((q) => q.replace(/^create (table|index|unique index) /i, "create $1 if not exists ")))
     await db.prepare(q).run().catch((err: unknown) => { if (!/duplicate column/i.test(String(err))) throw err; });

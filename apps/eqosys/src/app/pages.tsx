@@ -9,7 +9,7 @@ import type { Member } from "../members.ts";
 import { Glass, btn, greeting } from "./Glass.tsx";
 import { Art } from "./Art.tsx";
 import { Badge } from "./Badge.tsx";
-import { ACHIEVEMENTS, shownFor, TOTAL, type Achievement } from "../achievements.ts";
+import { ACHIEVEMENTS, catalogOf, shownFor, TOTAL, type Achievement } from "../achievements.ts";
 import { cardOf } from "../cards.ts";
 import { HOLDERS } from "../privacy.ts";
 import type { Visitors as Counts } from "../visitors.ts";
@@ -41,6 +41,9 @@ export const MESSAGES: Record<string, string> = {
   owned: "You own three studios already.",
   name: "A studio's name is 1 to 60 characters.",
   making: "That game is still being made: only its studio can sign in to it until it is listed.",
+  game: "Check the game: an id like rocket-golf, a name, a genre, and at least one https origin with nothing after it.",
+  gamestep: "That id is taken, or the game can't take that step now.",
+  gameowner: "Only a studio's owner or admin changes its games.",
 };
 
 const nameOf = (id: string) => cardOf(id, ourApp(id)?.name ?? id).name;
@@ -260,28 +263,30 @@ const Mark = ({ icon }: { icon: Achievement["icon"] }) => typeof icon === "strin
   ? <svg viewBox="0 0 24 24" aria-hidden="true"><text x="12" y="13" textAnchor="middle" dominantBaseline="central" className="glyph">{icon}</text></svg>
   : icon ? <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{icon.map(([tag, attrs], i) => createElement(tag, { key: i, ...attrs }))}</svg>
   : <Trophy />;
-const iconOf = (app: string, id: string) => ACHIEVEMENTS[app]?.find((a) => a.id === id)?.icon;
+const iconOf = (app: string | QApp, id: string) => catalogOf(app).find((a) => a.id === id)?.icon;
 
 /** [earned, all] for a game with achievements, or null. */
-const tally = (app: string, unlocks: Unlocks): [number, number] | null => {
-  const all = ACHIEVEMENTS[app]?.length ?? 0;
-  return all ? [[...(unlocks.get(app)?.keys() ?? [])].filter((id) => ACHIEVEMENTS[app]!.some((a) => a.id === id)).length, all] : null;
+const tally = (app: QApp, unlocks: Unlocks): [number, number] | null => {
+  const list = catalogOf(app), got = unlocks.get(app.id);
+  return list.length ? [list.filter((a) => got?.has(a.id)).length, list.length] : null;
 };
 
-/** Every game's achievements, the ones the person has lit up and the rest locked (a secret one says nothing until then). */
-function Achievements({ unlocks }: { unlocks: Unlocks }) {
+/** Every game's achievements, the ones the person has lit up and the rest locked (a secret one says nothing until then): ours, then
+ * each listed studio's game they have played. */
+function Achievements({ apps, unlocks }: { apps: QApp[]; unlocks: Unlocks }) {
+  const theirs = apps.filter((a) => isListing(a) && unlocks.has(a.id));
   return (
     <div className="trophies">
-      {Object.keys(ACHIEVEMENTS).map((id) => {
-        const list = shownFor(id, unlocks.get(id)), got = list.filter((a) => a.at !== null).length;
+      {[...Object.keys(ACHIEVEMENTS), ...theirs].map((app) => {
+        const id = typeof app === "string" ? app : app.id, list = shownFor(app, unlocks.get(id)), got = list.filter((a) => a.at !== null).length;
         return (
           <section key={id} className="card">
-            <header><b>{nameOf(id)}</b><span className="mut">{got} of {list.length}</span></header>
+            <header><b>{typeof app === "string" ? nameOf(id) : app.name}</b><span className="mut">{got} of {list.length}</span></header>
             <meter min={0} max={list.length} value={got} />
             <div className="badges">
               {list.map((a) => (
                 <div key={a.id} className={a.at === null ? "badge locked" : "badge"} title={a.at === null ? "Locked" : `Unlocked ${day(a.at)}`}>
-                  {a.at === null && a.secret ? <Lock /> : <Mark icon={iconOf(id, a.id)} />}<b>{a.name}</b><span>{a.blurb}</span>
+                  {a.at === null && a.secret ? <Lock /> : <Mark icon={iconOf(app, a.id)} />}<b>{a.name}</b><span>{a.blurb}</span>
                 </div>
               ))}
             </div>
@@ -307,7 +312,7 @@ const PlayLink = ({ app, small }: { app: QApp; small?: boolean }) => { const url
 
 /** The big one at the top: its screenshot, kicker, name, line, badge and Play. */
 function Feature({ app, mine, unlocks }: { app: QApp; mine: Used; unlocks: Unlocks }) {
-  const c = cardFor(app), t = tally(app.id, unlocks);
+  const c = cardFor(app), t = tally(app, unlocks);
   return (
     <section className="glass feature" aria-label="Featured">
       <Shot app={app} eager />
@@ -324,7 +329,7 @@ function Feature({ app, mine, unlocks }: { app: QApp; mine: Used; unlocks: Unloc
 
 /** One app on a shelf: its screenshot, name, badge and when you last played. The tile opens the app's page. */
 function Tile({ app, mine, unlocks }: { app: QApp; mine: Used; unlocks: Unlocks }) {
-  const c = cardFor(app), t = tally(app.id, unlocks);
+  const c = cardFor(app), t = tally(app, unlocks);
   return (
     <div className="glass game">
       <Shot app={app} />
@@ -454,7 +459,7 @@ export function SpacesPage({ t0 }: { t0: number }) {
 
 /** The streaming-service page for one app: big picture, the long words, its badge, Play it. */
 export function AppPage({ app, mine, unlocks, t0 }: { app: QApp; mine: Member["apps"][number] | undefined; unlocks: Unlocks; t0: number }) {
-  const c = cardFor(app), t = tally(app.id, unlocks), m = app.maturity ?? "alpha", url = playOf(app);
+  const c = cardFor(app), t = tally(app, unlocks), m = app.maturity ?? "alpha", url = playOf(app);
   return (
     <Glass t0={t0} css={HOME_CSS}>
       <div className="home detail game-page">
@@ -572,7 +577,7 @@ export function Home({ apps = APPS, me, mine, hub, side, everyone, unlocks, coun
         <div className="body">
         {tab === "library" && <Library apps={apps} mine={mine} unlocks={unlocks} hub={hub} side={side ?? null} />}
 
-        {tab === "achievements" && <><h2>Achievements</h2><Achievements unlocks={unlocks} /></>}
+        {tab === "achievements" && <><h2>Achievements</h2><Achievements apps={apps} unlocks={unlocks} /></>}
 
         {tab === "friends" && (hub ? <Friends hub={hub} counts={counts} /> : <p className="card mut">{MESSAGES.nohub}</p>)}
 
@@ -702,7 +707,8 @@ export const Privacy = () => (
       private contact for privacy requests here; until then, the ways below are the ones there are.</p>
     <h2>Questions</h2>
     <p>For your data, download and delete above need no one's help. For anything else, use Report in any Q app while signed in: it reaches us
-      tied to your account, so we can find what is yours without you giving any details. Reports become issues on a public GitHub page that name
+      tied to your account, so we can find what is yours without you giving any details. Reports become issues on a public GitHub page (or, from a game
+      another studio made, notes that studio reads) that name
       you only by a short id, so write the question, not your email or anything personal. Please don't open GitHub issues about your own data.</p>
   </>
 );
