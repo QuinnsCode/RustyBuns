@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>WebMCP and code mode</title>
-<meta name="description" content="How codeSplitter's code mode and WebMCP keep an agent's context small: 138 tools listed for 1,054 tokens instead of 30,240, a 20-edit job for 1,220 instead of 36,822, and the guard rails around both.">
+<meta name="description" content="How codeSplitter's code mode and WebMCP keep an agent's context small: listing the MCP tools and a 20-edit job each take over 30 times fewer tokens, and the guard rails around both.">
 <link href="/fonts/geist.css" rel="stylesheet">
 <script src="/vendor/lucide.min.js"></script>
 <style>
@@ -62,23 +62,23 @@
   <p class="lede">Every token an agent spends reading tool schemas, screenshots or a whole file it only needed three lines of is a token it doesn't spend on the feature or on checking its work. codeSplitter gives agents three ways in, each built to hand back as little as the job needs. These are the numbers we can show, and how to get them yourself.</p>
 
   <div class="stats">
-    <div><b>29× less</b><span>to list the MCP tools: 1,054 tokens in code mode against 30,240 for all 138</span></div>
-    <div><b>30× less</b><span>to clear 20 TODOs in a 300-line file: 1,220 tokens as one program against 36,822 tool by tool</span></div>
-    <div><b>35% → 1.2%</b><span>of a typical session's peak context (86k tokens, the median here) taken by the tool list alone</span></div>
+    <div><b>30×+ less</b><span>to list the MCP tools: 1,054 tokens in code mode against 39,022 for all 168 a write token sees (12 November 2026)</span></div>
+    <div><b>30×+ less</b><span>to clear 20 TODOs in a 300-line file: 1,220 tokens as one program against 45,604 tool by tool (12 November 2026)</span></div>
+    <div><b>45% → 1.2%</b><span>of a typical session's peak context (86k tokens, the median here) taken by the tool list alone</span></div>
     <div><b>97.8%</b><span>of 8.27B input tokens across 1,687 sessions this month came from cache</span></div>
   </div>
 
   <h2><i data-lucide="square-code"></i>Code mode: four tools, one program</h2>
-  <p>codeSplitter's MCP server has 138 tools. Listing them all puts every schema in the agent's context before it does anything, and every call hands a whole answer back through the model: a 300-line file comes back with every line, every time. In code mode the server lists four tools instead: <code>search_tools</code> and <code>describe_tools</code> find and explain the rest on demand, <code>execute</code> runs a JavaScript program the agent writes, and <code>call_tool</code> is the door to the risky ones. The file's lines stay in the program; only what it returns comes back.</p>
+  <p>codeSplitter's MCP server has 168 tools for a write token (12 November 2026). Listing them all puts every schema in the agent's context before it does anything, and every call hands a whole answer back through the model: a 300-line file comes back with every line, every time. In code mode the server lists four tools instead: <code>search_tools</code> and <code>describe_tools</code> find and explain the rest on demand, <code>execute</code> runs a JavaScript program the agent writes, and <code>call_tool</code> is the door to the risky ones. The file's lines stay in the program; only what it returns comes back.</p>
   <div class="bars">
     <h3>Listing the tools</h3>
-    <div class="bar"><span>every tool</span><div class="track"><div class="fill" style="width:100%"></div></div><span class="n">30,240</span></div>
-    <div class="bar new"><span>code mode</span><div class="track"><div class="fill" style="width:3.5%"></div></div><span class="n">1,054</span></div>
+    <div class="bar"><span>every tool</span><div class="track"><div class="fill" style="width:100%"></div></div><span class="n">39,022</span></div>
+    <div class="bar new"><span>code mode</span><div class="track"><div class="fill" style="width:2.7%"></div></div><span class="n">1,054</span></div>
   </div>
   <div class="bars">
     <h3>Clearing 20 TODOs in a 300-line file (listing included)</h3>
-    <div class="bar"><span>tool by tool</span><div class="track"><div class="fill" style="width:100%"></div></div><span class="n">36,822</span></div>
-    <div class="bar new"><span>one program</span><div class="track"><div class="fill" style="width:3.3%"></div></div><span class="n">1,220</span></div>
+    <div class="bar"><span>tool by tool</span><div class="track"><div class="fill" style="width:100%"></div></div><span class="n">45,604</span></div>
+    <div class="bar new"><span>one program</span><div class="track"><div class="fill" style="width:2.7%"></div></div><span class="n">1,220</span></div>
   </div>
 <pre>const f = await tools.read_file({ owner, repo, path });
 const todo = f.lines.filter((l) => l.text.includes('TODO'));
@@ -118,7 +118,7 @@ return { edited: todo.length };   // the only thing that enters the agent's cont
   <h2><i data-lucide="shield-check"></i>The tokens we save buy checks, and the checks are built in</h2>
   <p>Context an agent doesn't spend on plumbing goes to reading the diff, running the test and reviewing its own change. And making the agent this capable was only worth it with guard rails it can't talk its way past:</p>
   <ul>
-    <li><b>A program has no network.</b> It runs in a Worker of its own with <code>globalOutbound: null</code>; its only way out is the tools.</li>
+    <li><b>A program has no network.</b> On the hosted site it runs in a Worker of its own with <code>globalOutbound: null</code>; its only way out is the tools. On the desktop the local loader runs it in a Bun Worker where fetch and sockets throw: a seatbelt, not a wall.</li>
     <li><b>It acts as the token that ran it, and never sees the token.</b> A read token's program can read and not write; rate limits apply as usual.</li>
     <li><b>Risky tools aren't callable from a program.</b> Anything that ships code, changes who can get in or see what, or can't be undone goes through <code>call_tool</code>, so the person is asked.</li>
     <li><b>Mistakes fail before anything runs.</b> A program naming a tool that doesn't exist is refused at once, and every call's arguments are checked against its schema.</li>
@@ -127,7 +127,7 @@ return { edited: todo.length };   // the only thing that enters the agent's cont
 
   <h2><i data-lucide="flask-conical"></i>How we measured, and what we haven't</h2>
   <ul>
-    <li><b>Code mode</b>: <code>bun test test/codemode.test.ts</code> in <code>apps/codesplitter</code> prints both comparisons on every run (run on 27 October 2026). It counts tokens as characters ÷ 4, a common rough rate, on the exact JSON that goes over the wire.</li>
+    <li><b>Code mode</b>: <code>bun test test/codemode.test.ts</code> in <code>apps/codesplitter</code> prints both comparisons on every run and fails if either falls under 30 times; the counts above are one run, on 12 November 2026. It counts tokens as characters ÷ 4, a common rough rate, on the exact JSON that goes over the wire.</li>
     <li><b>Sessions and cache</b>: the <a href="https://github.com/QuinnsCode/RustyBuns/blob/main/notes/TOKEN_LEDGER.md">token ledger</a>, every assistant turn's usage from 2 to 27 October 2026, 1,490 commits on main over the same days.</li>
     <li><b>Screenshots</b>: an estimate from the published image-token rate, not a measured run.</li>
   </ul>
