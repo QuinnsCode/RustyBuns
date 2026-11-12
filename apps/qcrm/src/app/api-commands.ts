@@ -67,6 +67,7 @@ export function apiCommands(org: string, role: string): Command[] {
         // The palette hands its line as the first property; a JSON ask means the line is every argument.
         if (via === "palette" && ask.kind === "json") a = Args(JSON.parse(String(Object.values(a)[0] ?? "{}")));
         if (ask.kind === "confirm" && a.confirm !== "yes") throw new Error('not done: confirm with "yes"');
+        if (ask.kind === "confirm") delete a.confirm;
         const req = toRequest(t, { ...a, org }, "", {});
         if (typeof req === "string") throw new Error(req);
         const out = await answer(await fetch(req, { credentials: "same-origin" }));

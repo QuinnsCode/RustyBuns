@@ -61,8 +61,17 @@ export function tools(o: { cookieOnly?: boolean } = {}): Tool[] {
   return out;
 }
 
-/** The HTTP call a tool stands for, or what's missing from its arguments. `origin` may be "" for a same-origin page. */
-export function toRequest(t: Tool, args: Record<string, unknown>, origin: string, headers: Record<string, string>): Request | string {
+/**
+ * The HTTP call a tool stands for, or what's wrong with its arguments. `origin` may be "" for a same-origin page.
+ * Agents often send a row's fields beside `org` rather than under `body` (`{ org, first_name }`): those go into the
+ * body, as the CLI's flags do. A name the tool can't take is refused rather than dropped, which made blank rows.
+ */
+export function toRequest(t: Tool, input: Record<string, unknown>, origin: string, headers: Record<string, string>): Request | string {
+  const args: Record<string, unknown> = {}, loose: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(input)) (k === "body" || t.pathParams.includes(k) || t.queryParams.includes(k) ? args : loose)[k] = v;
+  const stray = Object.keys(loose);
+  if (stray.length && !t.hasBody) return `${t.name} takes no ${stray.join(", ")}: its arguments are ${Object.keys(t.inputSchema.properties).join(", ") || "none"}`;
+  if (stray.length) args.body = { ...(args.body && typeof args.body === "object" ? args.body : {}), ...loose };
   for (const k of t.inputSchema.required ?? []) if (args[k] === undefined || args[k] === "") return `${k} is required`;
   const path = t.path.replace(/\{(\w+)\}/g, (_, k) => encodeURIComponent(String(args[k])));
   const url = new URL(`${origin}/api${path}`, origin || globalThis.location?.origin);
