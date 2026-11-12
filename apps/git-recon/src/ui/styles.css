@@ -251,14 +251,14 @@ html.touch .bl { bottom: 156px; }
 
 
 /* The briefing (#3544, #3575): a sniper's mission briefing laid out on a clean white sandbox, handled in the field.
-   The table is white with a dot grid, grit and the rebase scope's reticle faint behind everything; the card is a
+   The table is white with a dot grid and grit, seen down the rebase scope (round 12); the card is a
    dossier with the scope's corner brackets, an orange edge, an EYES ONLY strip and a strip of tape; headings are
    sprayed through a stencil; buttons are white tiles and chips you pick up; missions are steel dog tags; a result is
    rubber-stamped and tallied, with your clay soldier beside it. Round 6 (#3594) files it all in a manila folder with a
    tab, clips the soldier on as a photo against a height chart, blacks out a line of the orders, leaves a coffee ring,
    and the scope locks onto the mission you point at. Art in public/menu/: reticle.svg 0.9 KB,
    grit.svg 0.4 KB, insignia.svg 0.7 KB, stamp.svg 0.4 KB, map.svg 1.2 KB, clip.svg 0.5 KB, coffee.svg 0.6 KB,
-   lock.svg 0.4 KB, tile.svg 0.8 KB, soldier-won/lost.webp 8.2 KB (baked by scripts/menu-art.ts). Scoped to .menu, .results, the Controls panel and the eqosys surfaces (src/eqosys.ts SKIN), so
+   lock.svg 0.4 KB, tile.svg 0.8 KB, scope.svg 1.3 KB, soldier-won/lost.webp 8.2 KB (baked by scripts/menu-art.ts). Scoped to .menu, .results, the Controls panel and the eqosys surfaces (src/eqosys.ts SKIN), so
    the HUD keeps codeSplitter's paper. */
 .menu, .results, .credits, .newsreel, html .ui-house, .eq {
   --br-ink: #141414; --br-dim: #4f4d48; --br-rule: #cfccc4; --br-hot: #e8590c; --br-hot-ink: #b8460a; --br-sheet: #fbfaf7;
@@ -273,7 +273,7 @@ html.touch .bl { bottom: 156px; }
 }
 .menu, .results {
   color: var(--br-ink);
-  background: url(/menu/grit.svg) 0 0 / 180px, url(/menu/reticle.svg) center / min(150vmin, 1300px) no-repeat fixed,
+  background: url(/menu/grit.svg) 0 0 / 180px,
     radial-gradient(circle, #14141424 1px, #0000 1.5px) 0 0 / 22px 22px, var(--br-sheet);
 }
 .menu .card, .results .card {
@@ -716,4 +716,27 @@ html .ui-house .gc-head h2::before { content: ""; display: inline-block; width: 
 @media (max-width: 560px) {
   .menu .sight { top: 22px; right: 8px; width: 62px; height: 82px; border-width: 3px 3px 10px; }
   .menu .sight::after { left: -18px; bottom: -24px; font-size: 10px; padding: 2px 5px 1px; border-width: 2px; }
+}
+
+/* Round 12 (#4285): the hero scope moment. The briefing and the debriefs are seen down the rebase scope: the table is
+   the lens, a dark housing closes in round it, and the reticle (scope.svg 1.3 KB: heavy posts in from the rim, a
+   hairline cross with mil dots, a stadia ladder, an orange chevron) sits behind the dossier at the scope's full size.
+   The housing is a CSS gradient (no art), with a worn orange lens ring. The dossier stays on top, so nothing on it
+   loses contrast; the play view never shows it. */
+.menu, .results { --scope-r: max(50vmin, 360px); }
+.menu::after, .results::after { content: ""; position: fixed; inset: 0; z-index: -1; pointer-events: none;
+  background: url(/menu/scope.svg) center / calc(var(--scope-r) * 2) no-repeat,
+    radial-gradient(circle at center, #0000 0 calc(var(--scope-r) - 26px), #1414141f calc(var(--scope-r) - 10px), #e8590c66 calc(var(--scope-r) - 3px),
+      #141414 calc(var(--scope-r) - 1px), #1d1d1b calc(var(--scope-r) + 26px), #262623 calc(var(--scope-r) + 30px), #121211 calc(var(--scope-r) + 60px));
+  animation: scope-in 0.7s cubic-bezier(.2, .7, .2, 1) both; }
+@keyframes scope-in { from { transform: scale(1.12); opacity: 0.4; } }
+@media (prefers-reduced-motion: reduce) { .menu::after, .results::after { animation: none; } }
+/* The lost debrief's sight sits on the head, so the kneeling pose shows. */
+.results[data-mood="lost"] .card::after { background: url(/menu/sight.svg) 50% 18% / 58% no-repeat, url(/menu/soldier-lost.webp) 50% 92% / 136% auto no-repeat,
+  repeating-linear-gradient(#0000 0 9px, #14141420 9px 10px), linear-gradient(#ecebe6, #d3d1ca); }
+@media (max-width: 560px) {
+  /* Under the cog the briefing scrolls beneath the housing's top, not a band of white table. */
+  .menu::before { background: linear-gradient(#121211 78%, #12121100); }
+  /* TOP SECRET lands under the photo, clear of its corner. */
+  .menu .sight::after { left: -34px; bottom: -34px; transform: rotate(-6deg); }
 }
