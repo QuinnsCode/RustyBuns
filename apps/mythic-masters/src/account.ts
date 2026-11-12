@@ -25,11 +25,12 @@ export const SKIN = {
   css: `.eq-form,.eq-toast,.eq-chip.in{background:var(--grain),linear-gradient(170deg,var(--paper-hi),var(--paper) 45%,var(--paper-lo))}
 .eq-who{font-family:var(--f-hand);font-size:20px;font-weight:400}.eq-title,.eq-toast b{font-weight:600;font-size:19px}
 .eq-toast span{font-family:var(--f-hand);font-size:17px;opacity:1;color:var(--ink-faded)}.eq-toast small{font-family:var(--f-book);font-style:italic;letter-spacing:.04em;text-transform:none;font-size:13px}
-.eq input,.eq select,.eq textarea{background:var(--paper-hi)}`,
+.eq input,.eq select,.eq textarea{background:var(--paper-hi)}
+.eq-coach{top:104px;background:var(--grain),linear-gradient(170deg,var(--paper-hi),var(--paper) 45%,var(--paper-lo))}.eq-coach b{font-size:19px}.eq-coach p{font-family:var(--f-book)}`,
 };
 
 const account = eqosys({ app: APP, url: EQOSYS, from: SIGN_IN_FROM, prefix: "mm", skin: SKIN });
-export const { signIn, finishSignIn, login, fresh, signOut, canSignIn, accountChip, reportButton, achieve, hub } = account;
+export const { signIn, finishSignIn, login, fresh, signOut, canSignIn, accountChip, reportButton, achieve, achievements, hub } = account;
 let partyClient: ReturnType<typeof account.party> | undefined;
 /** The page's one party client: eqosys seats a player once per party, so the world's lobby and the Book's readers
  *  (both at `?party=`) listen on one socket, or each knocks the other out. */
