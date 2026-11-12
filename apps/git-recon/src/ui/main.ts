@@ -21,6 +21,7 @@ import { getJson } from "@rustybuns/util/http";
 import { briefing, missionFor, OVERRUN } from "../sim/missions.ts";
 import { CAMPAIGN, chapterOf, nextChapter, opened } from "../sim/campaign.ts";
 import { Director, type Stage } from "../sim/director.ts";
+import { isSetPiece, rollTake, SET_PIECES, stageTake, type SetPieceId, type Take } from "../sim/rewatch.ts";
 import { CircleHelp, createElement, Lock, LogIn, LogOut, Play, Users } from "lucide";
 import { achieve, canSignIn, finishSignIn, fresh, login, reportButton, signIn, signOut } from "../eqosys.ts";
 import { KEYS, keyLabel, WEAPONS, type WeaponId } from "../sim/weapons.ts";
@@ -81,7 +82,7 @@ const lock = () => void (touch.on || Promise.resolve(canvas.requestPointerLock?.
 
 /** A battle being played: its socket, the page's mirror of it, and the LAN address and passphrase if this machine hosts it. */
 interface Net { battle: Battle; mirror: Mirror; hosting: string | null; roster: RosterEntry[] }
-let current: { def: LevelDef; repo: RepoSnapshot; game: Game; world: World; director: Director; started: number; net?: Net; ended?: boolean } | null = null;
+let current: { def: LevelDef; repo: RepoSnapshot; game: Game; world: World; director: Director; started: number; net?: Net; ended?: boolean; take?: Take } | null = null;
 /** A repo loaded from GitHub to fight instead of each level's own. */
 let chosen: RepoSnapshot | null = null;
 
@@ -256,14 +257,14 @@ function start(def: LevelDef) {
 }
 
 /** Into a level: the scene, the camera behind you, the HUD. On your own or in a battle (net). */
-function begin(def: LevelDef, repo: RepoSnapshot, game: Game, brief: string, net?: Net) {
-  void achieve("played"); void achieve("alpha");
+function begin(def: LevelDef, repo: RepoSnapshot, game: Game, brief: string, net?: Net, take?: Take) {
+  if (!take) void achieve("played"), void achieve("alpha");
   const world = buildWorld(game.map, { head: me.head, build: me.build }, repo.text, auto.quality);
   suns.splice(0, suns.length, world.sun);
   applyQuality(auto.quality, renderer, suns);
   // The chapter's set pieces, on your own; a battle has none.
-  const director = new Director(game, net ? undefined : CAMPAIGN[chapterOf(def.id)]);
-  current = { def, repo, game, world, director, started: performance.now(), net };
+  const director = take?.director ?? new Director(game, net ? undefined : CAMPAIGN[chapterOf(def.id)]);
+  current = { def, repo, game, world, director, started: performance.now(), net, take };
   undaze();
   if (net) showLooks(net);
   const you = game.you();
@@ -274,13 +275,13 @@ function begin(def: LevelDef, repo: RepoSnapshot, game: Game, brief: string, net
   $("hosting").hidden = !net?.hosting;
   $("hosting").textContent = net?.hosting ? `join: ${net.hosting}` : "";
   $("again").hidden = !!net, $("next").hidden = true;
-  $("clickme").textContent = net ? "Click to aim · Q to leave the battle" : "Click to aim · Esc to let go of the mouse";
+  $("clickme").textContent = take ? "Any key · back to the menu" : net ? "Click to aim · Q to leave the battle" : "Click to aim · Esc to let go of the mouse";
   $("feed").innerHTML = "";
   feed(`checked out ${repo.name}. ${game.map.compounds.length} folders in conflict.`);
   const burning = game.map.compounds.filter((c) => c.burning);
   if (burning.length) feed(`checks failing: ${burning.map((c) => c.folder).join(", ")} on fire`, true);
   banner(brief);
-  lock();
+  if (!take) lock();
 }
 
 function toMenu() {
@@ -560,6 +561,7 @@ let shake = 0;
 window.addEventListener("keydown", (e) => {
   if (film.beat) { filmSkip = true; return; }
   if (!current) return;
+  if (current.take) { if (!e.repeat) toMenu(); return; }
   // A key you moved arrives as the code the game knows the action by.
   const code = e.code === "Escape" ? e.code : bind.canon(e.code);
   keys.add(code);
@@ -763,6 +765,7 @@ function lotFor(): Lot {
  * newsreel rolls into the credits, so their outtakes are photographed before it starts.
  */
 function playFilm(name: string, t: number | null = null, keep = false): boolean {
+  if (isSetPiece(name)) return rewatch(name), true;
   if (!Object.hasOwn(FILM, name)) return false;
   const set = lotFor();
   if (name === "credits" || name === "newsreel") pics = photograph(set, renderer, camera), resize();
@@ -787,8 +790,23 @@ function filmFrame(dt: number) {
   else if (f.scene && f.scene.id !== "credits" && held && lot) aim(camera, held), renderer.render(lot.world.scene, camera);
   if (!film.beat) { creditsEl.hide(); reelEl.hide(); held = null; reel = null; toMenu(); }
 }
-mountScenes({ list: () => Object.keys(FILM), play: (name, t) => playFilm(name, t ?? null),
-  state: () => ({ beat: film.beat, paused: film.paused, line: film.frame.line?.text ?? null, cards: film.frame.cards.map((c) => c.card.text), photos: film.frame.photos.map((p) => ({ id: p.photo.id, drop: +p.drop.toFixed(2), shot: !!pics.get(p.photo.id) })) }) });
+mountScenes({ list: () => [...Object.keys(FILM), ...Object.keys(SET_PIECES)], play: (name, t) => playFilm(name, t ?? null),
+  state: () => ({ beat: film.beat ?? current?.take?.director.beat ?? null, take: current?.take ? { id: current.take.id, done: current.take.done } : null, paused: film.paused, line: film.frame.line?.text ?? null, cards: film.frame.cards.map((c) => c.card.text), photos: film.frame.photos.map((p) => ({ id: p.photo.id, drop: +p.drop.toFixed(2), shot: !!pics.get(p.photo.id) })) }) });
+
+/**
+ * Watch a set piece again (src/sim/rewatch.ts): its level built fresh, the beat staged on it and played live under the
+ * take's own input, then the menu. Any key goes back sooner.
+ */
+function rewatch(id: SetPieceId) {
+  const def = levelById(SET_PIECES[id].level), repo = chosen ?? def.repo;
+  const take = stageTake(id, def, repo, me.role);
+  begin(def, repo, take.game, SET_PIECES[id].title, undefined, take);
+}
+/** A set piece seen to its end in a level, filed to watch again from the menu. */
+function seen(director: Director) {
+  const id = director.finished;
+  if (isSetPiece(id) && memories.remember({ id, scene: id, title: SET_PIECES[id].title })) drawMemories();
+}
 
 /** A set piece's camera (director.ts) over yours, by how much of the view it has. */
 const shotAt = new THREE.Vector3(), shotTo = new THREE.Vector3(), shotQ = new THREE.Quaternion(), shotM = new THREE.Matrix4();
@@ -1076,8 +1094,10 @@ function frame(now: number) {
   last = now;
   if (film.beat) return filmFrame(dt);
   if (!current) return;
-  const { game, world, director, net } = current;
+  const { game, world, director, net, take } = current;
   const you = game.you(), me = game.me;
+  // A set piece watched again: the camera behind you looks where the take has you looking.
+  if (take) look.yaw = you.yaw, look.pitch = -0.05;
   // A finger's drag on the view turns the camera; its taps are the keys' one-shots.
   const turn = touch.look();
   look.yaw += turn.yaw * ctl.touch * ctl.touchX, look.pitch = Math.max(-1.2, Math.min(1.0, look.pitch + turn.pitch * ctl.touch * ctl.touchY * ctl.lookY * (ctl.invertY ? -1 : 1)));
@@ -1139,12 +1159,14 @@ function frame(now: number) {
     events = net.mirror.take();
     if (net.roster !== net.mirror.roster) showLooks(net);
     if (!$("board").hidden) board(game, net);
-  } else {
+  } else if (take) events = rollTake(take, dt);
+  else {
     // A set piece can hold some of your input and slow the game down.
     events = game.step(dt * director.scale, director.steer(input));
     director.step(dt, events);
-    for (const cue of director.cues) sfx("setpieces", FIELD[cue], 1, 0, cue === "ring");
+    seen(director);
   }
+  if (!net) for (const cue of director.cues) sfx("setpieces", FIELD[cue], 1, 0, cue === "ring");
   for (const e of events) {
     sound(game, e);
     world.event(game, e);
@@ -1195,6 +1217,8 @@ function frame(now: number) {
   waypoints(game, director.markers);
   renderer.render(world.scene, camera);
   auto.tick(performance.now());
+  // A set piece watched again goes back to the menu once it has played (the extraction's win is only the take's).
+  if (take?.done) return toMenu();
   // Once per ending: a battle's can arrive between frames, with a snapshot.
   if (game.status !== "playing" && !director.holding && !current.ended) current.ended = true, results(game);
 }

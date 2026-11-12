@@ -112,6 +112,8 @@ export class Director {
   cues: Cue[] = [];
   /** The beat playing, its phase and seconds into it. */
   beat: { id: BeatId; phase: Phase; t: number } | null = null;
+  /** The set piece seen to its end this step (the dropzone is the insertion from up high), for the menu to remember. Null most steps. */
+  finished: BeatId | null = null;
   private readonly game: Game;
   private readonly chapter: Chapter | undefined;
   private waiting: BeatId[];
@@ -199,7 +201,7 @@ export class Director {
 
   /** After the game's step: dt real seconds, and the events it raised. */
   step(dt: number, events: GameEvent[]) {
-    this.cues = [];
+    this.cues = [], this.finished = null;
     const game = this.game, you = game.you();
     if (this.heliT >= 0) this.heliT += dt;
     if (this.boatT >= 0) this.boatT += dt;
@@ -565,7 +567,8 @@ export class Director {
       if (rally && rally.kind === "compound") this.markers.unshift({ ...rally, label: `rally: ${rally.label}` });
       this.say(home ? LINES.choiceHome.replace("{folder}", c?.folder ?? "the next one")
         : c ? LINES.choiceCall.replace("{folder}", c.folder) : LINES.choiceFallBack, 5);
-      b.phase = "choice", b.t = 0;
+      // The strike, the crawl and the wall are done: what you do now is yours.
+      b.phase = "choice", b.t = 0, this.finished = b.id;
     } else {
       this.scale = Math.min(1, this.scale + dt * 2);
       const back = this.markers.find((m) => m.kind === "head"), home = !!back && len(back.x - you.x, back.z - you.z) < HOME;
@@ -794,6 +797,7 @@ export class Director {
 
   /** The beat's over: time back to normal and the camera yours. Cut short, the radio goes quiet too. */
   private end(cut = true) {
+    if (!cut && this.beat) this.finished = this.beat.id === "insertion" && this.high ? "dropzone" : this.beat.id;
     this.beat = null, this.scale = 1, this.markers = [], this.squad = [], this.car = null, this.last = null, this.wonAt = null, this.shells = [], this.target = -1;
     Object.assign(this.stage, { title: null, prompt: null, shot: null, gun: null, ladder: null });
     if (cut) this.line = null;

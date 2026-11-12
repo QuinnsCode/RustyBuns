@@ -694,7 +694,7 @@ A scene that the game selects becomes a memory when it plays to its end. The gam
 `@rustybuns/util/memories` keeps the scenes that you have seen on the device. The game wraps the scenes that it wants to keep (`memories.mark(scene, { id, scene, title, args })`) as it plays them, and it passes each director frame to `step`. A scene that plays to its end is filed. A skip counts, but a scene that you walk away from does not. To play a memory again, the game calls `playNamed` from its own scene table, at the place where you stand now.
 
 - Mythic Masters lists the tapes, arrivals, landmarks, sightings and first bindings in the journal's Regions chapter, under "Remembered".
-- Git Recon's menu offers the newsreel and the credits after you roll them at the top of the climb.
+- Git Recon's menu offers the newsreel and the credits after you roll them at the top of the climb. It also offers each in-level set piece that you have seen to its end: the insertion, the strike, the roadster jump, the hovercraft, the landing craft, the barrage, the extraction and the others. A set piece is live gameplay and has no scene of its own, so `src/sim/rewatch.ts` builds its level again, stages the beat there, and plays it with scripted input (`?scene=jump` plays one by name).
 
 </details>
 
