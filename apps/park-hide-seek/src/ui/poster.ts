@@ -44,12 +44,17 @@ const pine = (x: number, y: number, s: number) =>
   `M${x} ${y - 3.2 * s}l${-1.1 * s} ${1.3 * s}h${2.2 * s}zM${x} ${y - 2.4 * s}l${-1.4 * s} ${1.5 * s}h${2.8 * s}zM${x} ${y - 1.5 * s}l${-1.7 * s} ${1.5 * s}h${3.4 * s}zM${x - 0.25 * s} ${y}h${0.5 * s}v${-0.6 * s}h${-0.5 * s}z`;
 
 /** The poster as SVG markup. `h` is its height in the 520-wide box; `seed` picks the skyline; `strip` drops the trail sign. */
-export function posterSvg(tod: Tod, o: { h?: number; seed?: number; strip?: boolean } = {}): string {
+export function posterSvg(tod: Tod, o: PosterOpts = {}): string {
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${o.h ?? 200}" preserveAspectRatio="xMidYMax slice">${posterInner(tod, o)}</svg>`;
+}
+type PosterOpts = { h?: number; seed?: number; strip?: boolean; disc?: boolean; ranger?: number; facing?: -1 | 1; size?: number };
+
+function posterInner(tod: Tod, o: PosterOpts): string {
   const h = o.h ?? 200, P = PALETTES[tod], rnd = mulberry32(o.seed ?? 7);
   const band = h * 0.62 / P.sky.length;
   const sky = P.sky.map((c, i) => `<rect y="${(i * band).toFixed(1)}" width="${W}" height="${(band + 1).toFixed(1)}" fill="${c}"/>`).join("");
   const discX = tod === "night" ? 112 : 388, discY = h * (tod === "day" ? 0.33 : tod === "night" && !o.strip ? 0.44 : 0.38), discR = h * (tod === "night" ? 0.11 : 0.13);
-  const disc = tod === "night"
+  const disc = o.disc === false ? "" : tod === "night"
     ? `<circle cx="${discX}" cy="${discY}" r="${discR}" fill="${P.disc}"/><circle cx="${discX + discR * 0.62}" cy="${discY - discR * 0.28}" r="${discR * 0.8}" fill="${P.sky[1]}"/>`
     : `<circle cx="${discX}" cy="${discY}" r="${discR * 1.5}" fill="${mix(P.disc, P.haze, 0.6)}"/><circle cx="${discX}" cy="${discY}" r="${discR}" fill="${P.disc}"/>`;
   const stars = tod === "night" ? Array.from({ length: 26 }, () => `<circle cx="${(rnd() * W).toFixed(0)}" cy="${(rnd() * h * 0.42).toFixed(0)}" r="${(0.5 + rnd() * 0.9).toFixed(1)}"/>`).join("") : "";
@@ -77,17 +82,46 @@ export function posterSvg(tod: Tod, o: { h?: number; seed?: number; strip?: bool
   })();
   // After dark: a ranger on the near skyline, and the torch beam sweeping the haze.
   const ranger = tod === "night" ? (() => {
-    const x = o.strip ? 372 : 262, y = (o.strip ? near : high).top(x) + 2, k = o.strip ? 1 : 1.6;
-    return `<g transform="translate(${x} ${y}) scale(${k}) translate(${-x} ${-y})"><path d="M${x + 4} ${y - 15}L${x + 160} ${y - 70}L${x + 172} ${y - 12}Z" fill="url(#beam)"/><path d="M${x + 4} ${y - 15}L${x + 120} ${y - 46}L${x + 124} ${y - 30}Z" fill="#fff6c8" opacity="0.55"/><circle cx="${x + 5}" cy="${y - 14.5}" r="2.4" fill="#fff6c8"/>`
+    // Round 7 (#4229): a strip's ranger stands left of the results patch and half again as tall, so it reads.
+    const x = o.ranger ?? (o.strip ? 318 : 262), y = (o.strip ? near : high).top(x) + 2, k = o.size ?? (o.strip ? 1.45 : 1.6);
+    return `<g transform="translate(${x} ${y}) scale(${k * (o.facing ?? 1)} ${k}) translate(${-x} ${-y})"><path d="M${x + 4} ${y - 15}L${x + 160} ${y - 70}L${x + 172} ${y - 12}Z" fill="url(#beam)"/><path d="M${x + 4} ${y - 15}L${x + 120} ${y - 46}L${x + 124} ${y - 30}Z" fill="#fff6c8" opacity="0.55"/><circle cx="${x + 5}" cy="${y - 14.5}" r="2.4" fill="#fff6c8"/>`
       + `<g fill="${P.ink}" stroke="${P.disc}" stroke-width="0.7" stroke-opacity="0.8" paint-order="stroke"><circle cx="${x}" cy="${y - 19}" r="2.6"/><path d="M${x - 5} ${y - 22.5}h10l-2 -2h-6z"/><path d="M${x - 3} ${y - 16}h6l1 9h-2l-1 7h-2l-1 -7h-2z"/><path d="M${x + 2} ${y - 15}l4 1 -0.5 1.5 -4 -1z"/></g></g>`;
   })() : "";
   const defs = `<defs><linearGradient id="beam" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#fff2b0" stop-opacity="0.85"/><stop offset="1" stop-color="#fff2b0" stop-opacity="0"/></linearGradient>`
     + `<linearGradient id="mist" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${P.haze}" stop-opacity="0"/><stop offset="0.55" stop-color="${P.haze}" stop-opacity="0.8"/><stop offset="1" stop-color="${P.haze}" stop-opacity="0"/></linearGradient></defs>`;
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${h}" preserveAspectRatio="xMidYMax slice">${defs}${sky}<g fill="${P.disc}" opacity="0.85">${stars}</g>${disc}${ridges.join("")}${o.strip ? ranger : ""}<g fill="${P.reg}" transform="translate(1.8 -1.4)">${trees}</g><g fill="${P.ink}">${trees}</g>${o.strip ? "" : ranger}${sign}</svg>`;
+  return `${defs}${sky}<g fill="${P.disc}" opacity="0.85">${stars}</g>${disc}${ridges.join("")}${o.strip ? ranger : ""}<g fill="${P.reg}" transform="translate(1.8 -1.4)">${trees}</g><g fill="${P.ink}">${trees}</g>${o.strip ? "" : ranger}${sign}`;
+}
+
+/** Round 7 (#4229). The whole screen behind the menus as the poster, so a card sits on the print, not on the 3D render:
+ *  a 400-tall poster pinned to the foot, its top sky band carried up to fill a tall screen, and there the sun or moon
+ *  and more stars, clear of the card (on a wide screen, between the lobby's two panels). After dark the ranger stands
+ *  right of centre, turned so the torch sweeps the gap the lobby's panels leave.
+ *  `aspect` is the screen's height over its width. About 5 KB. */
+export function backdropSvg(tod: Tod, aspect: number): string {
+  const P = PALETTES[tod], ph = 400, H = Math.max(ph, Math.round((W * aspect) / 20) * 20), tall = H - ph > 160, rnd = mulberry32(23);
+  const top = tall ? H - ph : 0;
+  const stars = tod === "night" ? Array.from({ length: Math.round(top / 14) }, () => `<circle cx="${(rnd() * W).toFixed(0)}" cy="${(rnd() * top).toFixed(0)}" r="${(0.6 + rnd()).toFixed(1)}"/>`).join("") : "";
+  // Tall: in the sky above the card. Wide: high in the gap between the lobby's panels, clear of the ridges.
+  const r = tall ? 34 : 22, cx = tall ? (tod === "night" ? 120 : 400) : 320, cy = tall ? Math.min(top * 0.45, 90) : 118, cut = tall ? P.sky[0] : P.sky[1];
+  const disc = tod === "night"
+    ? `<circle cx="${cx}" cy="${cy}" r="${r}" fill="${P.disc}"/><circle cx="${cx + r * 0.62}" cy="${cy - r * 0.28}" r="${r * 0.8}" fill="${cut}"/>`
+    : `<circle cx="${cx}" cy="${cy}" r="${r * 1.5}" fill="${mix(P.disc, cut, 0.55)}"/><circle cx="${cx}" cy="${cy}" r="${r}" fill="${P.disc}"/>`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMax slice"><rect width="${W}" height="${H}" fill="${P.sky[0]}"/>`
+    + `<g fill="${P.disc}" opacity="0.8">${stars}</g><svg y="${H - ph}" width="${W}" height="${ph}" viewBox="0 0 ${W} ${ph}">${posterInner(tod, { h: ph, seed: 5, disc: false, ranger: 395, facing: -1, size: 0.85 })}</svg>${disc}</svg>`;
+}
+
+/** Round 7 (#4229). Low ridges and pines printed faintly along the foot of the Controls card, in the poster's inks. */
+export function ridgeFootSvg(tod: Tod): string {
+  const P = PALETTES[tod], h = 90, rnd = mulberry32(31);
+  const rows = [0, 1, 2].map((i) => ridge(rnd, h * (0.62 + 0.18 * i), h * (0.42 - 0.1 * i), h));
+  const trees = Array.from({ length: 11 }, (_, i) => { const x = 20 + i * 48 + rnd() * 20; return `<path d="${pine(x, rows[2]!.top(x) + 3, 4 + rnd() * 4)}"/>`; }).join("");
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${h}" preserveAspectRatio="xMidYMax slice">`
+    + rows.map((r, i) => `<path d="${r.d}" fill="${i < 2 ? P.far : P.near}" fill-opacity="${[0.16, 0.24, 0.3][i]}"/>`).join("")
+    + `<g fill="${P.near}" fill-opacity="0.38">${trees}</g></svg>`;
 }
 
 /** The poster as a CSS `url(...)`, for a background. */
-export const posterUrl = (tod: Tod, o: { h?: number; seed?: number; strip?: boolean } = {}) => `url("data:image/svg+xml,${encodeURIComponent(posterSvg(tod, o))}")`;
+export const posterUrl = (tod: Tod, o: PosterOpts = {}) => `url("data:image/svg+xml,${encodeURIComponent(posterSvg(tod, o))}")`;
 
 /** A screen-print halftone for a card's paper, as SVG markup: rows of dots on a 45-degree screen in the poster's second
  *  ink, big at the top (under the strip) and shrinking to nothing `h` px down. One pattern per row, about 2 KB. */
@@ -172,6 +206,16 @@ const stripUrl = (h: number) => {
 };
 const paintStrip = (el: HTMLElement) => { if (el.clientWidth) el.style.setProperty("--poster", stripUrl(stripH(el.clientWidth, Number(el.dataset.strip) || 76))); };
 let sized: ResizeObserver | undefined;
+let backdropSized = false, backdropKey = "";
+/** The screen-filling poster behind the menus (`#backdrop`), redrawn when the time of day or the screen's shape changes. */
+function paintBackdrop() {
+  const el = document.getElementById("backdrop");
+  if (!el || !innerWidth) return;
+  const aspect = Math.round((innerHeight / innerWidth) * 20) / 20, k = `${tod}:${aspect}`;
+  if (k === backdropKey) return;
+  backdropKey = k;
+  el.style.backgroundImage = `url("data:image/svg+xml,${encodeURIComponent(backdropSvg(tod, aspect))}")`;
+}
 
 /** Paint the menus for a time of day: the front card's art and insignia, each panel's strip (`--poster`, drawn to that
  *  panel's width and redrawn when it changes), the paper's halftone (`--halftone`), the panel heads' badge
@@ -182,6 +226,9 @@ export function paintPoster(t: Tod, root: HTMLElement = document.documentElement
   root.style.setProperty("--poster", posterUrl(t, { h: 90, seed: 11, strip: true }));
   root.style.setProperty("--halftone", `url("data:image/svg+xml,${encodeURIComponent(halftoneSvg(t))}")`);
   root.style.setProperty("--insignia", `url("data:image/svg+xml,${encodeURIComponent(insigniaSvg(t))}")`);
+  root.style.setProperty("--ridgefoot", `url("data:image/svg+xml,${encodeURIComponent(ridgeFootSvg(t))}")`);
+  paintBackdrop();
+  if (!backdropSized && typeof window !== "undefined") { backdropSized = true; window.addEventListener("resize", () => requestAnimationFrame(paintBackdrop)); }
   for (const el of document.querySelectorAll<HTMLElement>("[data-poster]")) el.innerHTML = posterSvg(t, { h: 230, seed: 7 });
   for (const el of document.querySelectorAll<HTMLElement>("[data-insignia]")) el.innerHTML = insigniaSvg(t, { ribbon: true });
   if (typeof ResizeObserver === "function") sized ??= new ResizeObserver((es) => { for (const e of es) if (e.target instanceof HTMLElement) paintStrip(e.target); });
