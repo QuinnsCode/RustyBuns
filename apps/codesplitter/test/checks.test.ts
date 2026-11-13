@@ -195,6 +195,16 @@ test("a branch's turn in the merge plan goes up as codesplitter/merge-order: pen
   expect(github.posted.at(-1)).toEqual({ path: at, body: { state: "success", context: ORDER, description: "its turn in the merge plan" } });
 });
 
+test("a pull-only mirror sends nothing upstream, its checks' statuses and merge order included", async () => {
+  const { call, send, github } = await app();
+  await call.env.DB.prepare("UPDATE repos SET mirror_url = 'https://github.com/QuinnsCode/RustyBuns.git', mirror_pull_only = 1 WHERE owner = 'ryan' AND name = 'lab'").run();
+  await send("ryan", "/api/repos/ryan/lab/checks/settings", { where: "both", post_statuses: true, required: ["test"] }, "PUT");
+  await send("ryan", "/api/repos/ryan/lab/branches", { name: "tidy" });
+  await startChecks(call.env, "ryan", "lab", "tidy", SHA, "ryan");
+  await postOrder(call.env, "ryan", "lab", "tidy", SHA);
+  expect(github.posted).toEqual([]);
+});
+
 test("GitHub's results for a sha sent up come back in beside ours, and ours go out as statuses", async () => {
   const { call, send, github, checks } = await app();
   // A mirror of a GitHub repo (set by hand: a real mirror would fetch from github.com).

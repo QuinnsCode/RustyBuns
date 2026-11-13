@@ -239,7 +239,11 @@ export async function identify(req: Request, env: Env): Promise<string | null> {
 }
 
 async function signedIn(req: Request, env: Env): Promise<string | null> {
-  if (!accountsOn(env)) return aliasOf(req, env);
+  if (!accountsOn(env)) {
+    // A deleted account's handle (and @ghost) is no one, whatever cookie names it.
+    const name = aliasOf(req, env);
+    return name && !isAgentHandle(name) && await retired(env, name) ? null : name;
+  }
   const s = sessionOf(req);
   if (!s) return null;
   let m = seen.get(env.DB);

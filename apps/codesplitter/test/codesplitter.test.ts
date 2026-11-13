@@ -218,6 +218,26 @@ describe("artifacts", () => {
     expect((await call(null, "/api/repos/ana/dig/share?branch=--upload-pack=x")).status).toBe(400);
   });
 
+  test("going private recalls a stranger's clone line and share link; the owner's and the crew's still clone", async () => {
+    const call = await local();
+    await post(call, "ana", "/api/login", { name: "ana" });
+    await post(call, "bo", "/api/login", { name: "bo" });
+    await post(call, "ana", "/api/repos", { name: "dig" });
+    await post(call, "ana", "/api/repos/ana/dig/files", { path: "README", content: "found it" });
+    await post(call, "ana", "/api/repos/ana/dig/do/commit?path=README", { message: "first" });
+    await post(call, "ana", "/api/repos/ana/dig/collaborators", { name: "bo" });
+    const remote = (command: string) => command.split(" ").at(-2)!;
+    const clones = async (command: string) => (await Bun.spawn(["git", "ls-remote", remote(command)], { stdout: "ignore", stderr: "ignore" }).exited) === 0;
+    const shared = (who: string | null) => call(who, "/api/repos/ana/dig/share").then((r) => r.json() as Promise<any>).then((b) => b.command as string);
+    const page = (who: string | null) => call(who, "/api/repos/ana/dig").then((r) => r.json() as Promise<any>).then((b) => b.clone as string);
+    const stranger = [await shared(null), await page(null), await shared("cy"), await page("cy")];
+    const kept = [await shared("ana"), await page("ana"), await shared("bo"), await page("bo")];
+    for (const c of [...stranger, ...kept]) expect(await clones(c)).toBe(true);
+    await call("ana", "/api/repos/ana/dig", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ visibility: "private" }) });
+    for (const c of stranger) expect([c, await clones(c)]).toEqual([c, false]);
+    for (const c of kept) expect([c, await clones(c)]).toEqual([c, true]);
+  });
+
   test("on a private repo a crew member's share link lasts an hour at most, the owner's a week", async () => {
     const call = await local();
     await post(call, "ana", "/api/login", { name: "ana" });

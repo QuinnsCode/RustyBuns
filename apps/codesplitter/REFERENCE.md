@@ -598,7 +598,7 @@ The caveats:
 
 - **Merged code runs at home.** Review is the gate, so read what you merge.
   A check gets none of your logins (#1010, `src/check-env.ts`): the desktop's queue and `scripts/runner.ts` run the clone and the command with only `PATH` and the locale from your environment, an empty `HOME` and `TMPDIR` of their own, and `CI=1`, so no `gh`, `wrangler`, npm or cloud token, and no SSH agent.
-  They still run as you, with your package caches, unless you give them a sandbox user: make a standard macOS user with no logins, allow `$USER ALL=(cs-checks) NOPASSWD: ALL` in `/etc/sudoers.d/cs-checks`, and set `CODESPLITTER_CHECKS_USER=cs-checks` for the desktop (or `--user cs-checks` for a runner); every run then goes through `sudo -n -u cs-checks`, in `/tmp`, with umask 000 so the app can still clean up.
+  They still run as you unless you give them a sandbox user, though on macOS `sandbox-exec` keeps them out of your home (they read only the tools on `PATH` there and write nothing there), and their package caches are their own, in your temp dir. For a user of their own: make a standard macOS user with no logins, allow `$USER ALL=(cs-checks) NOPASSWD: ALL` in `/etc/sudoers.d/cs-checks`, and set `CODESPLITTER_CHECKS_USER=cs-checks` for the desktop (or `--user cs-checks` for a runner); every run then goes through `sudo -n -u cs-checks`, in `/tmp`, with umask 000 so the app can still clean up.
   Turn on the pin (the pin button by "Checks run", or `PUT …/checks/settings {pinned: true}`) and only the required checks with a `command` in the settings run: `codesplitter.ci` and package.json's scripts at the commit are ignored, a run queued without a command from the settings is cancelled at the claim rather than falling back to `bun test`, so a merged edit can't change the job on your machine.
 - **The mirror is two-way unless you say otherwise.** By default it pushes this copy's commits upstream, never forced.
   That's a way out, not a way in.
@@ -662,7 +662,7 @@ There are 53 promises today (`test/trust-promises.ts` reads them). Run on 2026-1
 - An agent's batch waits for a person on its own branch; a rejected batch never lands and its branch goes.
   `test/agent-routes.test.ts`: "a rejected batch never lands, and its branch goes".
 - A check on the desktop or a runner keeps only `PATH` and the locale: no logins, its own `HOME`, and git never asks the keychain.
-  `test/check-env.test.ts`: "a check keeps only PATH and the locale: no logins, its own HOME and TMPDIR, the owner's package caches (#1010)"; `test/check-env.test.ts`: "git under a check's empty HOME never asks the keychain: macOS would pop Keychain Not Found".
+  `test/check-env.test.ts`: "a check keeps only PATH and the locale: no logins, its own HOME and TMPDIR, package caches apart from the owner's (#1010)"; `test/check-env.test.ts`: "git under a check's empty HOME never asks the keychain: macOS would pop Keychain Not Found".
 - The dependency doctor's test clone runs the repo's checks beside it in a container with no secrets, and what fails goes on no branch.
   `test/deploy-hosted-review.test.ts`: "with no tester, the repo's checks run on the same files alongside, in a container with no secrets; the branch waits for both (#1294)"; `test/deploy-hosted-review.test.ts`: "what fails the repo's checks doesn't deploy, and goes on no branch (#1294)".
 
@@ -758,7 +758,7 @@ These keep growth to whole lines, which merge as plain inserts (#935):
 | `src/branches.ts` | branches: forking a file onto one, review, merge |
 | `src/budget.ts` | agent budgets (#1077): what a run reads, when it's cut short, and the caveman-terse note fresh eyes start from |
 | `src/card.ts`, `src/font.ts`, `src/font-geist.ts` | the cut's social card: a PNG drawn with a bitmap of DejaVu Sans Mono, or Geist Mono |
-| `src/check-env.ts` | what a check's command sees: a scrubbed environment, its own empty HOME and TMPDIR, and the sandbox user if one is set |
+| `src/check-env.ts` | what a check's command sees: a scrubbed environment, its own empty HOME, TMPDIR and package caches, and the sandbox user if one is set, else (on macOS) a sandbox profile that keeps it out of the owner's home |
 | `src/checks.ts` | checks: runs, the merge gate, what runs here (per workspace in a monorepo), the claim protocol, GitHub's results |
 | `src/chunks.ts` | levels too big for Artifacts at all: their text files as chunks in R2, read through the cache |
 | `src/ci-runner.ts` | the built-in check runners: the desktop draining its own queue, and the per-repo `CiRunner` that runs each check in a container |
@@ -802,6 +802,7 @@ These keep growth to whole lines, which merge as plain inserts (#935):
 | `src/protect.ts` | protect main (#1426): an owner setting that keeps crew and agents off main. |
 | `src/push-events.ts` | Artifacts push events (#1580): a push that didn't come from codeSplitter goes in the repo's audit log |
 | `src/sandbox.ts` | the container Durable Object hosted agents run in |
+| `src/share-tokens.ts` | read tokens handed to people other than a repo's owner, recalled when the repo goes private |
 | `src/swarm.ts` | digging a big level in parts off the `LEVEL_DIGS` queue, side by side |
 | `src/sync.ts` | an agent's text edit to line ops: a Myers diff that keeps line ids, and a rebase onto the file as it is now |
 | `src/tarball.ts` | past Artifacts' 40 MB import cap: a repo's tip from GitHub's tarball, pushed as one commit |

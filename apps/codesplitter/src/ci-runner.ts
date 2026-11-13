@@ -151,7 +151,7 @@ export async function localMachine(user = sandboxUser(process.env.CODESPLITTER_C
   const base = await mkdtemp(join(user ? "/tmp" : tmpdir(), "cs-checks-")), { repo: dir, home, tmp } = runDirs(base);
   for (const d of [dir, home, tmp]) await mkdir(d);
   if (user) { await chmod(base, 0o755); for (const d of [dir, home, tmp]) await chmod(d, 0o777); }
-  const env = checkEnv(process.env, home, tmp, user);
+  const env = checkEnv(process.env, home, tmp, user), own = process.env.HOME;
   const inside = (p: string) => {
     const at = resolve(dir, p);
     if (!relative(dir, at) || relative(dir, at).startsWith("..")) throw new Error(`${p} is outside the repo`);
@@ -167,7 +167,7 @@ export async function localMachine(user = sandboxUser(process.env.CODESPLITTER_C
   const live = new Set<{ kill(): void }>();
   return {
     async exec(cmd, out) {
-      const as = spawnAs(cmd, env, user);
+      const as = spawnAs(cmd, env, user, own);
       const p = Bun.spawn(as.cmd, { cwd: dir, stdout: "pipe", stderr: "pipe", env: as.env });
       live.add(p);
       const pump = async (s: ReadableStream<Uint8Array>) => { const d = new TextDecoder(); for await (const b of s) out(d.decode(b, { stream: true })); out(d.decode()); };

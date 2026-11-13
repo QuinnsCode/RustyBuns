@@ -297,7 +297,7 @@ const localTester = (user = sandboxUser(process.env.CODESPLITTER_CHECKS_USER)): 
       writeFileSync(at, text);
       if (user) chmodSync(at, 0o666);
     }
-    const as = spawnAs(["bun", "test", "--reporter=junit", `--reporter-outfile=${REPORT}`], env, user);
+    const as = spawnAs(["bun", "test", "--reporter=junit", `--reporter-outfile=${REPORT}`], env, user, process.env.HOME);
     const p = Bun.spawn(as.cmd, { cwd: dir, stdout: "pipe", stderr: "pipe", timeout: 120_000, env: as.env });
     const [o, e] = await Promise.all([new Response(p.stdout).text(), new Response(p.stderr).text()]);
     const code = await p.exited;

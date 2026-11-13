@@ -164,12 +164,22 @@ async function triageCommand(argv: string[], env: Record<string, string | undefi
 
 const strip = (env: Record<string, string | undefined>) => Object.fromEntries(Object.entries(env).filter(([, v]) => v));
 
-// One line from the terminal, or nothing when there isn't one (the install script, a pipe).
-async function askLine(q: string): Promise<string | undefined> {
-  if (!process.stdin.isTTY) return undefined;
+/**
+ * One line from the terminal, or nothing when there isn't one (the install script, a pipe). What's typed or pasted
+ * isn't echoed (it's a token): only the question and, once it's answered, a newline reach the screen.
+ */
+export async function askLine(q: string, input: NodeJS.ReadableStream & { isTTY?: boolean } = process.stdin, output: NodeJS.WritableStream = process.stderr): Promise<string | undefined> {
+  if (!input.isTTY) return undefined;
   const { createInterface } = await import("node:readline/promises");
-  const rl = createInterface({ input: process.stdin, output: process.stderr });
-  try { return (await rl.question(q)).trim() || undefined; } finally { rl.close(); }
+  const { Writable } = await import("node:stream");
+  let quiet = false;
+  const screen = new Writable({ write(chunk, _enc, done) { if (!quiet) output.write(chunk); done(); } });
+  const rl = createInterface({ input, output: screen, terminal: true });
+  try {
+    const answer = rl.question(q);
+    quiet = true;
+    return (await answer).trim() || undefined;
+  } finally { rl.close(); output.write("\n"); }
 }
 
 if (import.meta.main) {

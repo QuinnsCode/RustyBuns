@@ -89,7 +89,8 @@ describe("webhook URLs stay out of the private network", () => {
   test("private, loopback and link-local hosts are refused", async () => {
     const { send } = await app();
     for (const url of ["http://127.0.0.1:8080/x", "http://localhost/x", "http://10.0.0.5/x", "http://192.168.1.10/x", "http://172.16.0.1/x",
-      "http://169.254.169.254/latest/meta-data", "http://[::1]/x", "http://[fe80::1]/x", "http://[fd12::1]/x", "http://[::ffff:127.0.0.1]/x", "http://2130706433/x", "http://box.local/x"])
+      "http://169.254.169.254/latest/meta-data", "http://[::1]/x", "http://[fe80::1]/x", "http://[fd12::1]/x", "http://[::ffff:127.0.0.1]/x", "http://2130706433/x", "http://box.local/x",
+      "http://[fec0::1]/", "http://[::ffff:0:127.0.0.1]/", "http://[2001:db8::1]/"])
       expect([url, (await send("ryan", "/api/repos/ryan/lab/hooks", { url })).status]).toEqual([url, 400]);
     expect((await send("ryan", "/api/repos/ryan/lab/hooks", { url: "https://8.8.8.8/x" })).status).toBe(201);
   });
