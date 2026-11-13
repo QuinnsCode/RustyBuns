@@ -28,7 +28,9 @@
 #                            `puff`, tapering to `thick` at the rim: a cupped wing, a flipper
 #           feathers         {from, to, n, len, base, curve, flat, tip, material}: a row of flat feathers out
 #                            past the rim between two outline points, each a vane rounding off to a blunt
-#                            tip `tip` (0.4) of its width; scallop_depth < 0 points outward
+#                            tip `tip` (0.4) of its width; scallop_depth < 0 points outward; `rake` degrees
+#                            swings each one in the membrane's plane toward `to` (negative: toward `from`),
+#                            so primaries sweep back along the edge instead of standing out like a comb
 #   scales  along, n, len,   overlapping flat plates along a chain, fanned like a tuft (`rows`, `spread`); each
 #           base, overlap    is `len` long and `base` wide and lies `overlap` (0.5) flatter toward the chain's end
 #   teeth   along, n, len,   small cones fanned along a muzzle chain's lip, hanging from the upper lip and,
@@ -943,10 +945,15 @@ def shell(name, points, rim, p, side, mat):
         # pointing out of the membrane in its own plane and rooted a third of its length inside the rim
         ring = [rim[(fs["from"] + i) % len(rim)] for i in range((fs["to"] - fs["from"]) % len(rim) + 1)]
         pts = {str(i): (*q, 0) for i, q in enumerate(ring)}
+        rake = math.radians(fs.get("rake", 0))
         for j, (at, _, e) in enumerate(along(pts, list(pts), fs["n"])):
             q = n.cross(e)
             if q.dot(at - c) < 0:
                 q = -q
+            if rake:
+                # swung in the membrane's plane toward the row's end (`to`; a negative rake toward `from`), so the
+                # feathers sweep back along the edge like a wing's primaries instead of standing out like a comb
+                q = (q * math.cos(rake) + e * math.sin(rake)).normalized()
             ln = fs["len"] * (1 - 0.12 * (j % 3))  # a little ragged, the same every build
             root = at - q * (ln / 3)
             u = max(0.0, min(1.0, (root - c).length / max((at - c).length, 1e-6)))

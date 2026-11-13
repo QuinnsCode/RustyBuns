@@ -1,0 +1,65 @@
+{
+  "id": "jackalope",
+  "name": "Jackalope",
+  "category": "Jackalopes",
+  "query": "Jackalope",
+  "images": [
+    {
+      "file": "card-color.jpg",
+      "from": "card",
+      "page": "https://commons.wikimedia.org/wiki/File:Animalia_Qvadrvpedia_et_Reptilia_(Terra)_Plate_XLVII.jpg",
+      "artist": "Joris Hoefnagel",
+      "license": "Public domain"
+    },
+    {
+      "file": "card-bw.jpg",
+      "from": "card",
+      "page": "https://commons.wikimedia.org/wiki/File:Lepus_cornutus.jpg",
+      "artist": "Robert Bénard",
+      "license": "Public domain"
+    },
+    {
+      "file": "c3.jpg",
+      "from": "search",
+      "page": "https://commons.wikimedia.org/wiki/File:Aden%27s_Jackalope_Kill.jpg",
+      "artist": "Jeff Parker",
+      "license": "CC BY-SA 3.0",
+      "licenseUrl": "http://creativecommons.org/licenses/by-sa/3.0/"
+    },
+    {
+      "file": "c4.jpg",
+      "from": "search",
+      "page": "https://commons.wikimedia.org/wiki/File:Raurakelalm_Rossb%C3%B6ck_01.jpg",
+      "artist": "Joadl",
+      "license": "CC BY-SA 3.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by-sa/3.0"
+    },
+    {
+      "file": "c5.jpg",
+      "from": "search",
+      "page": "https://commons.wikimedia.org/wiki/File:Jackalope_101.jpg",
+      "artist": "SedesGobhani",
+      "license": "Public domain"
+    },
+    {
+      "file": "c6.jpg",
+      "from": "search",
+      "page": "https://commons.wikimedia.org/wiki/File:Jackalopes_and_other_beasts_in_Jagdmuseum_Munich.jpg",
+      "artist": "Pasteurizer",
+      "license": "CC BY-SA 3.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by-sa/3.0"
+    }
+  ],
+  "traits": {
+    "silhouette": "",
+    "head": "",
+    "limbs": "",
+    "hide": "",
+    "colours": "",
+    "child": [
+      "",
+      "",
+      ""
+    ]
+  }
+}

@@ -1,0 +1,43 @@
+{
+  "id": "beast-of-bray-road",
+  "name": "Beast of Bray Road",
+  "query": "Beast of Bray Road",
+  "images": [
+    {
+      "file": "c1.jpg",
+      "from": "search",
+      "page": "https://commons.wikimedia.org/wiki/File:Brays_Clothing_Store,_Great_Malvern_-_geograph.org.uk_-_1018431.jpg",
+      "artist": "Jonathan Billinger",
+      "license": "CC BY-SA 2.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by-sa/2.0"
+    },
+    {
+      "file": "c2.jpg",
+      "from": "search",
+      "page": "https://commons.wikimedia.org/wiki/File:Canadian_Rockies_-_the_bear_at_Lake_Louise.jpg",
+      "artist": "HBarrison",
+      "license": "CC BY-SA 2.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by-sa/2.0"
+    },
+    {
+      "file": "c3.jpg",
+      "from": "search",
+      "page": "https://commons.wikimedia.org/wiki/File:Harvest_moon_(1445109251).jpg",
+      "artist": "joiseyshowaa from Freehold, NJ, USA",
+      "license": "CC BY-SA 2.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by-sa/2.0"
+    }
+  ],
+  "traits": {
+    "silhouette": "",
+    "head": "",
+    "limbs": "",
+    "hide": "",
+    "colours": "",
+    "child": [
+      "",
+      "",
+      ""
+    ]
+  }
+}

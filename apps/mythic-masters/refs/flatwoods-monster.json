@@ -1,0 +1,36 @@
+{
+  "id": "flatwoods-monster",
+  "name": "Flatwoods Monster",
+  "category": "Flatwoods monster",
+  "query": "Braxton County Monster",
+  "images": [
+    {
+      "file": "card-color.jpg",
+      "from": "card",
+      "page": "https://commons.wikimedia.org/wiki/File:Flatwoods_monster.png",
+      "artist": "Tim Bertelink",
+      "license": "CC BY-SA 4.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0"
+    },
+    {
+      "file": "c2.jpg",
+      "from": "search",
+      "page": "https://commons.wikimedia.org/wiki/File:Flatwoods_Visitor_Chair.jpg",
+      "artist": "Don Woods",
+      "license": "CC BY-SA 4.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0"
+    }
+  ],
+  "traits": {
+    "silhouette": "A tall (about 3 m) hovering figure with no legs: a huge pointed hood behind the head, square shoulders, a narrow waist and a long pleated skirt that flares to the hem, floating a little off the ground.",
+    "head": "A small round face set in front of a tall spade- or leaf-shaped hood that rises well above it to a point; two big round glowing eyes (red on the dark figure, yellow on the town chair), a small nose and mouth.",
+    "limbs": "No legs. Thin, spindly arms from the shoulders, bent, ending in long clawed fingers held out from the body.",
+    "hide": "Smooth, like a suit or armour: a hard square chest plate, ribbed rings at the waist, deep vertical pleats down the skirt; the hood has a serrated or rayed edge.",
+    "colours": "Either dark slate grey all over with glowing red eyes, or the 1952 town colours: a red face and hood, a green body and skirt, a pale blue-white collar.",
+    "child": [
+      "the pointed spade hood behind the head",
+      "two big glowing eyes",
+      "a long pleated skirt instead of legs"
+    ]
+  }
+}
