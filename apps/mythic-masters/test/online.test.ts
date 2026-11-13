@@ -252,7 +252,7 @@ describe("two friends in one region", () => {
     ivy.close(); jo.close();
   });
 
-  test("what a friend picked, flushed and tracked outlasts them: one who joins after they left still finds it", async () => {
+  test("what a friend picked, flushed and tracked outlasts them: one who joins after they left still finds it, even after the room stood empty", async () => {
     const ada = join("Ada", "KEEP1"), bo = join("Bo", "KEEP1");
     ada.update(5, 13800, 5600, 0, "hodag", performance.now()); bo.update(5, 13810, 5600, 0, "hodag", performance.now());
     await until(() => ada.status === "in" && bo.status === "in");
@@ -273,7 +273,14 @@ describe("two friends in one region", () => {
     // and the contract Ada was on, at the furthest sign anyone read, so Cy can follow it to the lair
     await until(() => heard.includes("Cy: Ada hunt 5.13900.5600 2"));
     expect(heard).not.toContain("Cy: Bo hunt 5.13900.5600 1");
+    // Everyone goes home and the room stands empty; Di, walking in later, still finds the region as they left it.
     cy.close(); bo.close();
+    await Bun.sleep(300);
+    const di = join("Di", "KEEP1");
+    di.update(5, 13820, 5600, 0, "hodag", performance.now());
+    await until(() => di.status === "in", 8000);
+    await until(() => heard.some((l) => l.startsWith("Di: pick 197,80 at")) && heard.includes("Di: Ada hunt 5.13900.5600 2"));
+    di.close();
   });
 
   test("a lair's creature is one creature: a friend's blows reach the other, one who walks in late finds it hurt, and beating it closes the contract", async () => {
