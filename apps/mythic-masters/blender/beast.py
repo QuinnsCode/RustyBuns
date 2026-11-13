@@ -11,7 +11,11 @@
 #           wings: n         how many wings the rig keeps (scripts/beasts.ts checks it like `feet`)
 #           blend: 0.03      blobs and body rebuilt as one seamless skin from voxels this size
 #           paint            [{nodes: [...], material}]: those nodes' flesh in another material
-#           stripes          {along: [...], n, width: 0.5, material, below: -0.3}: bands across a chain's back
+#           stripes          {along: [...], n, width: 0.5, material, below: -0.3}: bands across a chain's back;
+#                            `side: "under"` bands its underside instead (faces turned down past `below`), each
+#                            face kept when it sits within `reach` (0.05) of the skin a ray from the chain meets,
+#                            so a body of blended blobs bands too; `phase` (0) shifts every band by that share of
+#                            its spacing (bands between ribs)
 #           black: true      the body may be truly black: no luminance floor (LUM[0]), no lift toward the belly's hue
 #   blob    material, rot    its own material; [x, y, z] degrees of tilt (a shell, a brow)
 #   horn    curve, bend      degrees it bends along its length, toward the `bend` direction (default up)
@@ -96,6 +100,7 @@ import time
 import bmesh
 import bpy
 from mathutils import Euler, Matrix, Vector
+from mathutils.bvhtree import BVHTree
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 APP = os.path.join(HERE, "..")
@@ -269,7 +274,10 @@ def paint(o, sheet, nodes, links):
     """Colour by region. `paint`: each listed node's flesh in a material (a face takes the node it's
     nearest; an `l_` name paints its twin too): legs, a muzzle, a horn or shell grown from body nodes.
     `stripes`: bands across a chain's back in a material, `n` of them, each `width` of its spacing,
-    leaving the faces that turn down past `below` (the belly) alone."""
+    leaving the faces that turn down past `below` (the belly) alone. With `side: "under"` it bands only those
+    faces, and a face is on the chain's flesh when it sits within `reach` of where a ray from the chain first
+    meets the skin: a blended body's skin sits well past its node radii, and a leg or neck leaving the chain
+    lies beyond that first crossing."""
     mats = [m.name for m in o.data.materials]
 
     def slot(name):
@@ -290,22 +298,35 @@ def paint(o, sheet, nodes, links):
         line = [Vector(nodes[k][:3]) for k in st["along"]]
         total = sum((y - x).length for x, y in zip(line, line[1:]))
         stripe = slot(st["material"])
+        under, chain = st.get("side") == "under", set(st["along"])
         # cut the flesh square across the chain at every band's edges, so a band ends on a clean line
-        # rather than on whichever faces the subdivision happened to leave there
+        # rather than on whichever faces the subdivision happened to leave there; underneath, only the flesh near
+        # the band (a plane through the whole beast slices the wings and legs too, and a baked hide's unwrap of a
+        # blended skin cut that way collapses to nothing)
         bm = bmesh.new()
         bm.from_mesh(o.data)
+        phase = st.get("phase", 0.0)
         for i in range(st["n"]):
-            for edge in (i, i + st.get("width", 0.5)):
+            for edge in (i + phase, i + phase + st.get("width", 0.5)):
                 at, run = edge * total / st["n"], 0.0
+                if not 0 <= at <= total:
+                    continue
                 for x, y in zip(line, line[1:]):
                     if run + (y - x).length >= at or y is line[-1]:
                         u = (at - run) / max((y - x).length, 1e-9)
-                        geom = bm.verts[:] + bm.edges[:] + bm.faces[:]
-                        bmesh.ops.bisect_plane(bm, geom=geom, plane_co=x.lerp(y, min(u, 1.0)), plane_no=(y - x).normalized())
+                        at_co = x.lerp(y, min(u, 1.0))
+                        if under:
+                            fs = [f for f in bm.faces if (f.calc_center_median() - at_co).length < 0.4]
+                            geom = list({v for f in fs for v in f.verts}) + list({e for f in fs for e in f.edges}) + fs
+                        else:
+                            geom = bm.verts[:] + bm.edges[:] + bm.faces[:]
+                        bmesh.ops.bisect_plane(bm, geom=geom, plane_co=at_co, plane_no=(y - x).normalized())
                         break
                     run += (y - x).length
         bm.to_mesh(o.data)
         bm.free()
+        # the skin as it is now, to find where a ray from the chain first comes out of the flesh
+        skin = BVHTree.FromPolygons([v.co.copy() for v in o.data.vertices], [p.vertices[:] for p in o.data.polygons]) if under else None
     for f in o.data.polygons:
         if f.material_index != 0:
             continue
@@ -321,19 +342,40 @@ def paint(o, sheet, nodes, links):
         k = base(a if t < 0.5 else b)
         if k in owner:
             f.material_index = owner[k]
-        if st and f.normal.y > st.get("below", -0.3):
+        if st and (f.normal.y < st.get("below", -0.3) if under else f.normal.y > st.get("below", -0.3)):
             # how far along the chain this face is (the nearest point on its polyline), and whether it's on
             # the chain's flesh at all rather than a leg or neck leaving it
-            s, run, near = 0.0, 0.0, 1e9
-            for x, y, rx, ry in zip(line, line[1:], radii, radii[1:]):
+            s, run, near, foot, bent = 0.0, 0.0, 1e9, None, False
+            for j, (x, y, rx, ry) in enumerate(zip(line, line[1:], radii, radii[1:])):
                 xy = y - x
-                u = max(0.0, min(1.0, (c - x).dot(xy) / max(xy.length_squared, 1e-9)))
-                d = (c - x.lerp(y, u)).length - (rx + (ry - rx) * u)
+                raw = (c - x).dot(xy) / max(xy.length_squared, 1e-9)
+                u = max(0.0, min(1.0, raw))
+                p = x.lerp(y, u)
+                d = (c - p).length - (rx + (ry - rx) * u)
                 if d < near:
-                    near, s = d, run + xy.length * u
+                    near, s, foot = d, run + xy.length * u, p
+                    bent = (raw < 0 and j > 0) or (raw > 1 and j < len(line) - 2)
                 run += xy.length
-            if near < 0.05 and 0 < s < total and (s / total * st["n"]) % 1 < st.get("width", 0.5):
+            if under:
+                # measured from the skin itself: the face sits within `reach` of the first skin the ray from
+                # the chain's nearest point toward it meets (a leg's face lies past the belly's skin)
+                out = c - foot
+                hit = skin.ray_cast(foot, out.normalized(), out.length + 1.0)[0] if out.length > 1e-6 else None
+                near = out.length - (hit - foot).length if hit is not None else 1e9
+                # out past a bend's outside every face takes the joint's one spot on the chain (a solid block, not
+                # bands), and a thigh blended into the belly is a leg's flesh, not the chain's: neither is banded
+                if bent or not (base(a) in chain and base(b) in chain):
+                    near = 1e9
+            band = (s / total * st["n"] - st.get("phase", 0.0)) % 1 < st.get("width", 0.5)
+            if near < st.get("reach", 0.05) and 0 < s < total and band:
                 f.material_index = stripe
+    if st and under:
+        # an underside band is a few triangles wide once decimated, and the decimator would round its edges away:
+        # the vertices along each band's border go in a `keep` group, which `low_poly` tells it to leave
+        inside, outside = set(), set()
+        for f in o.data.polygons:
+            (inside if f.material_index == stripe else outside).update(f.vertices)
+        o.vertex_groups.new(name="keep").add(sorted(inside & outside), 1.0, "REPLACE")
 
 
 def blobs(o, spec, nodes):
@@ -1805,7 +1847,10 @@ def low_poly(o, budget):
     # mesh in canonical order before and after, so one sheet always builds the same GLB
     canonical(lod)
     if budget and tris(o) > budget:
-        lod.modifiers.new("decimate", "DECIMATE").ratio = budget / tris(o)
+        dec = lod.modifiers.new("decimate", "DECIMATE")
+        dec.ratio = budget / tris(o)
+        if "keep" in lod.vertex_groups:  # an underside band's borders (`paint`): collapse everywhere but there
+            dec.vertex_group, dec.invert_vertex_group = "keep", True
         apply_all(lod)
         canonical(lod)
     # the low-poly skin shades smooth: normals weighted by face area, as if taken from a smooth proxy
@@ -1814,9 +1859,13 @@ def low_poly(o, budget):
     return lod
 
 
-def write_glb(o, path, budget, tone=None, hide=None, keep=False, segs=None):
+def write_glb(o, path, budget, tone=None, hide=None, keep=False, segs=None, hard=None):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     lod = low_poly(o, budget)
+    if hard:
+        # an underside band (`hard`, its material) only a triangle or two wide: its border split, so `shade` paints it
+        # full strength to the edge instead of halving it on every vertex it shares with the flesh beside it
+        split_border(lod, hard)
     lift = shade(lod, *tone, lift=HIDE_LIFT if hide else 1.0)
     if hide:
         bake_hide(lod, hide, tone[0], lift, segs)
@@ -1830,6 +1879,19 @@ def write_glb(o, path, budget, tone=None, hide=None, keep=False, segs=None):
     if keep:
         return lod
     bpy.data.objects.remove(lod)
+
+
+def split_border(o, name):
+    mats = [m.name for m in o.data.materials]
+    if name not in mats:
+        return
+    k = mats.index(name)
+    bm = bmesh.new()
+    bm.from_mesh(o.data)
+    edges = [e for e in bm.edges if len(e.link_faces) == 2 and (e.link_faces[0].material_index == k) != (e.link_faces[1].material_index == k)]
+    bmesh.ops.split_edges(bm, edges=edges)
+    bm.to_mesh(o.data)
+    bm.free()
 
 
 def render(o, path, silhouette=False):
@@ -1934,7 +1996,8 @@ def main():
     tone = (sheet.get("material", "hide"), soft, sheet.get("belly"), sheet.get("belly_turn", -0.2), 0.0 if sheet.get("black") else LUM[0])
     hide, lod = sheet.get("hide"), None
     lod = write_glb(beast, os.path.join(APP, "public", "models", sheet["id"] + ".glb"), sheet.get("budget", 3000), tone, hide,
-                    keep=bool(hide) or "--close" in argv, segs=chains(sheet, nodes, links) if hide else None)
+                    keep=bool(hide) or "--close" in argv, segs=chains(sheet, nodes, links) if hide else None,
+                    hard=sheet["stripes"]["material"] if sheet.get("stripes", {}).get("side") == "under" else None)
     if lod and not hide:
         lod.hide_render = True  # kept only for the close-up; the contact sheet draws the full mesh
     if "--render" in argv:

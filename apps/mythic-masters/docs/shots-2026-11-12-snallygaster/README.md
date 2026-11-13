@@ -36,6 +36,26 @@ A membrane's `feathers` row stood straight out of the wing's edge, square to it,
 back toward `from`. The Snallygaster uses -40, which sweeps the primaries up and out toward the wingtip. It defaults
 to 0, so no other sheet changes until it asks for it.
 
+## Builder change: `stripes` under a blended belly (#4372)
+
+[belly-bands.jpg](belly-bands.jpg): the underside from below, dark bands between the ribs from the legs to the throat.
+
+`stripes` only banded a chain's back, and only faces within 5 cm of the node radii, so on a body of blended blobs
+(the skin sits far past those radii) it painted nothing. `side: "under"` bands the underside instead (faces turned
+down past `below`), and a face counts when it sits within `reach` of the skin a ray from the chain first meets.
+Three more things it needed before the bands showed in the GLB, not just on the full mesh:
+
+- The cuts at each band's edge only slice the flesh near the band. A plane through the whole beast also cut the
+  wings and legs, and the hide's unwrap of that skin collapsed (UVs on 0% of the map, the scales gone).
+- The band borders go in a `keep` vertex group the decimator leaves, and the borders are split on the low-poly mesh,
+  so a band two triangles wide keeps its full colour instead of half of it on every shared vertex.
+- A face out past a bend's outside (under the chest) takes the joint's one spot on the chain and came out as one
+  solid dark block; those faces, and the thighs blended into the belly, aren't banded.
+
+The sheet's ribs are now 12, spaced evenly along the underside (`phase` puts each band halfway between two ribs).
+The darkest band is `band` in the palette. Blender draws a thin light line along a split border; the game smooths
+normals across split copies, so it doesn't show there.
+
 ## The climb
 
 Each round was judged trait by trait against the references by a fresh judge (`bun scripts/beast-refs.ts --judge`).
@@ -61,6 +81,4 @@ Judges run about 2 points above the owner, so the ticks matter more than the num
 
 ## Still open
 
-- The ochre belly has no darker bands between its ribs. `stripes` only paints faces that look up and sit within 5 cm
-  of the chain's radius, so on a blob-built body it paints nothing; ridge parts placed between the ribs didn't show either.
 - The body coils now (#4374), but beside the drawing the judge still reads it as short and the neck as stubby.

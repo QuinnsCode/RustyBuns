@@ -71,15 +71,18 @@ const blobs: Blob[] = [
   { at: "head", off: [0, 0.02, 0], r: [0.14, 0.12, 0.11] },
   { at: "head", off: [0.1, -0.02, 0], r: [0.09, 0.08, 0.085] },
 ];
-// ribs across the throat and belly: thin flat bands under the body, the ochre underside's ridges
-const under: [string, string, number][] = [["neck1", "neck2", 4], ["neck2", "neck3", 3], ["chest", "neck1", 3], ["belly", "chest", 4], ["hip", "belly", 4]];
-for (const [a, b, n] of under) {
-  const A = nodes[a]!, B = nodes[b]!;
-  for (let i = 0; i < n; i++) {
-    const t = (i + 0.5) / n, x = A[0] + (B[0] - A[0]) * t, y = A[1] + (B[1] - A[1]) * t, r = A[3] + (B[3] - A[3]) * t;
-    const ang = (Math.atan2(-(B[0] - A[0]), B[1] - A[1]) * 180) / Math.PI;
-    blobs.push({ at: a, off: [f4(x - A[0] + 0.03), f4(y - A[1] - r * 1.15), 0], r: [0.04, f4(r * 0.5), f4(r * 1.45)], rot: [0, 0, f4(ang + 90)] });
-  }
+// ribs across the throat and belly: thin flat bands under the body, the ochre underside's ridges, spaced evenly along
+// the underside so the darker `stripes` bands (one per rib, shifted half a spacing) land in the grooves between them
+const under = ["hip", "belly", "chest", "neck1", "neck2", "neck3"], RIBS = 12;
+const runs = under.slice(1).map((b, i) => Math.hypot(nodes[b]![0] - nodes[under[i]!]![0], nodes[b]![1] - nodes[under[i]!]![1]));
+const underLength = runs.reduce((a, b) => a + b, 0);
+for (let k = 0; k < RIBS; k++) {
+  let s = ((k + 0.5) / RIBS) * underLength, j = 0;
+  while (s > runs[j]!) s -= runs[j++]!;
+  const a = under[j]!, A = nodes[a]!, B = nodes[under[j + 1]!]!, t = s / runs[j]!;
+  const x = A[0] + (B[0] - A[0]) * t, y = A[1] + (B[1] - A[1]) * t, r = A[3] + (B[3] - A[3]) * t;
+  const ang = (Math.atan2(-(B[0] - A[0]), B[1] - A[1]) * 180) / Math.PI;
+  blobs.push({ at: a, off: [f4(x - A[0] + 0.03), f4(y - A[1] - r * 1.15), 0], r: [0.04, f4(r * 0.5), f4(r * 1.45)], rot: [0, 0, f4(ang + 90)] });
 }
 
 const parts: Part[] = [];
@@ -160,6 +163,7 @@ const sheet = {
   palette: {
     hide: [0.14, 0.36, 0.22, 0.6, 0],
     belly: [0.78, 0.58, 0.26, 0.65, 0],
+    band: [0.24, 0.14, 0.05, 0.7, 0],
     wing: [0.12, 0.33, 0.21, 0.6, 0],
     primary: [0.62, 0.44, 0.2, 0.6, 0],
     covert: [0.16, 0.4, 0.25, 0.6, 0],
@@ -174,6 +178,9 @@ const sheet = {
     leg: [0.9, 0.55, 0.16, 0.55, 0],
     claw: [0.12, 0.1, 0.08, 0.4, 0],
   },
+  // the darker grooves between the ribs: a band centred halfway between each rib and the next (the ribs sit
+  // 3 cm forward of their spot on the chain), measured from the blended skin since it lies far past the node radii
+  stripes: { along: under, n: RIBS, width: 0.6, material: "band", side: "under", below: -0.1, reach: 0.05, phase: f4((1 - 0.6 / 2 + (0.03 * RIBS) / underLength) % 1) },
   paint: [{ nodes: ["l_knee", "r_knee", "l_hock", "r_hock", "l_foot", "r_foot"], material: "leg" }],
   nodes, links, blobs, parts,
   hide: { pattern: "scales", size: 0.022, colours: [[0.1, 0.26, 0.16], [0.18, 0.42, 0.26]], map: 1024 },
