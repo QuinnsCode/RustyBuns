@@ -15,7 +15,7 @@ import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPa
 import { type Bindings, keyName, loadPad, mountControls, volumeOf } from "@rustybuns/game-controls";
 import { ACTIONS, actionOf, keymap, KEY, moveKeys, PRESETS } from "./binds.ts";
 import { clamp, esc } from "@rustybuns/util";
-import { obj, str } from "@rustybuns/util/guard";
+import { check, obj, str } from "@rustybuns/util/guard";
 import { buildArena, crowdOf, floorOf, gradeOf, SKINS, tickArena, type Skin } from "./arena.ts";
 import { forgetBeast, loadBeast, Puppet } from "./beasts.ts";
 import { bot, type Bot } from "./bot.ts";
@@ -44,7 +44,7 @@ import { tutorial } from "@rustybuns/util/tutorial";
 import { accountChip, achieve, achievements, canSignIn, finishSignIn, fresh, login, reportButton } from "./account.ts";
 import { asCreature, atLevel, bind, downed, heal, hpOf, wound, bindBelow, bindChance, clearSection, cleared, gainXp, INK, loadJourney, moveUp, mythicOf, newJourney, nextUp, call, owns, PICKS, rest, SAVE_KEY, SECTIONS, sections, see, slots, STARTERS, TRAIL_REGIONS, toNext, witchSays, type Journey, mend } from "./journey.ts";
 import { LORE } from "./lore.ts";
-import { circleLineOf, handOf, knownOf, PAGE_INK, poolOf, ribbonsOf, summon, type Summoned } from "./grimoire.ts";
+import { Bout, circleLineOf, handOf, knownOf, PAGE_INK, poolOf, ribbonsOf, summon, type Summoned } from "./grimoire.ts";
 import { deckDemandOf, demandOf, pageLineOf, reactionOf, settingsLineOf, SIGNATURE, thumbAt, worldLineOf, type Back, type Outcome } from "./demand.ts";
 import { tierOf } from "./tiers.ts";
 import { book, cardTurn, fly, penSound, pressed, soak, thumb, turnLeaf } from "./page.ts";
@@ -286,6 +286,10 @@ const tile = (c: Creature, side: "A" | "B", on: boolean) => `<button class="tile
 const ADMIN_KEY = "mythic-masters.librarian";
 let librarian = params.get("admin") === "1" || (() => { try { return localStorage.getItem(ADMIN_KEY) === "1"; } catch { return false; } })();
 let pageInk = PAGE_INK, summoned: Summoned | null = null, inking = false, bareLine = false;
+// The last practice bout or duel, so the circle can bring it up next time (circleLineOf, #4276 round 11).
+const BOUT_KEY = "mythic-masters.lastBout";
+let lastBout: Bout | null = (() => { try { return check(Bout, JSON.parse(localStorage.getItem(BOUT_KEY) ?? "null")); } catch { return null; } })();
+function remember(b: Bout) { lastBout = b; try { localStorage.setItem(BOUT_KEY, JSON.stringify(b)); } catch { /* this session only */ } }
 const art = (id: string) => { const p = ART[id], pic = p?.color ?? p?.bw; return pic ? `/${pic.src}` : ""; };
 const pageTile = (c: Creature, on: boolean) => `<button class="tile ribbon-tile${on ? " on" : ""}" data-side="A" data-id="${esc(c.id)}" title="${esc(c.archetype)} · ${c.fields.join(" / ")}">
   <span class="pic" style="background-image:url('${art(c.id)}')"></span><b>${esc(c.name)}</b><small>${c.fields.join(" and ")}</small></button>`; // its fields written under its name (#3671 round 110), not coloured status dots
@@ -313,7 +317,7 @@ function drawPicker() {
   $("#bookTag").textContent = LANDING.versus.bookTag;
   $("#pickA").innerHTML = card(creature(pickA), "A", true)
     + `<h3 class="sub">Your ribbons · ${mine.length} of ${n}</h3><div class="tiles hand">${mine.map((id) => pageTile(creature(id), id === pickA)).join("")}${Array.from({ length: Math.max(0, n - mine.length) }, () => `<span class="tile empty">an empty ribbon</span>`).join("")}</div>`;
-  const said = circleLineOf(summoned, bareLine, pageInk);
+  const said = circleLineOf(summoned, bareLine, pageInk, lastBout);
   const pots = Array.from({ length: PAGE_INK }, (_, i) => `<i class="pot${i < pageInk ? " full" : ""}"></i>`).join("");
   $("#pickB").innerHTML = card(creature(pickB), "B", true)
     + `<h3 class="sub">The circle${only ? ` of ${only}` : ""}</h3><div class="circle"><div class="pots" title="Ink left">${pots}</div>
@@ -1455,13 +1459,15 @@ function finish(m: Match, bound = false) {
   const w = m.f[m.winner!]!, how = ko?.kind === "ko" ? { hp: "was knocked out", "ring-out": "was pushed out of the ring", time: "had less health when time ran out" }[ko.how] : "";
   const lost = bound ? "" : `${esc(m.f[m.winner ? 0 : 1]!.c.name)} ${how}.`;
   if (trip && journey) { tripOver(m, bound, lost); return; }
+  const you = versusOn ? mine : 0;
+  remember({ kind: versusOn ? "duel" : bots[0] ? "watched" : "practice", you: m.f[you]!.c.name, foe: m.f[1 - you]!.c.name, won: m.winner === you, how: ko?.kind === "ko" ? ko.how : "none" });
   if (versusOn) { duelOver(m.winner === mine ? "You win" : `${versus.friend() ?? "Your friend"} wins`, `${esc(w.c.name)} wins. ${lost}`); return; }
   delete $("#result").dataset.verso;
   $("#result").innerHTML = `<div class="note paper"><h2>${esc(w.c.name)} wins</h2>${reaction({ kind: "versus" })}<p>${lost}</p>
     <div class="row"><button class="go" id="again">${icon("rotate-ccw")} Rematch</button><button id="pick">${icon("users")} Pick again</button></div></div>`;
   pages.show($("#result"));
   $("#again").onclick = () => start(m.f[0].c.id, m.f[1].c.id, skinSel.value, !!bots[0]);
-  $("#pick").onclick = () => { $("#hud").hidden = true; pages.show($("#select")); };
+  $("#pick").onclick = () => { $("#hud").hidden = true; drawPicker(); pages.show($("#select")); };
 }
 
 // --- fighting a friend (src/versus.ts): Qollab friends, challenges, and a duel's room --------------------------------
