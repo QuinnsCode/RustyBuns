@@ -1,6 +1,7 @@
 // The source-art board: regions in layers out from the Pine Barrens, each a full-width band of cryptid folders with
 // its boss across the bottom; a folder opens its reference pictures full size with their credits.
-// Run from apps/mythic-masters: bun <this> <layers.json> <out.html>
+// Run from apps/mythic-masters: bun proposals/compendium/board/board.ts <layers.json> <out.html> <models dir>
+// (layers.json from layers.ts; the models dir holds <id>.png and <id>.three-quarter.png from blender/closeups.py, one beast a run)
 import { existsSync, readdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -23,7 +24,7 @@ async function jpeg(file: string, w: number, q: number): Promise<string> {
 type Pic = { thumb: string; full: string; credit: string; page: string; file?: string };
 type Art = { pics: Pic[]; owner: number; fetched: boolean; model?: Pic };
 const cache = new Map<string, Art>();
-const MODELS = join(import.meta.dir, "models");
+const MODELS = process.argv[4] ?? join(import.meta.dir, "models");
 async function model(id: string): Promise<Pic | undefined> {
   const tq = join(MODELS, `${id}.three-quarter.png`), strip = join(MODELS, `${id}.png`);
   if (!existsSync(tq) || !existsSync(strip)) return undefined;
