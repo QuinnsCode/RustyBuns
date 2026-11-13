@@ -6,7 +6,9 @@ import { Renderer } from "../render/index.ts";
 import { Sound } from "../audio.ts";
 import { cuesFor, newCues } from "../cues.ts";
 import { earned, newTally } from "../achievements.ts";
-import { achieve } from "../eqosys.ts";
+import { achieve, achievements } from "../eqosys.ts";
+import { learn, lessons, newLearnt } from "../lessons.ts";
+import { tutorial } from "@rustybuns/util/tutorial";
 import { viewOf, type Settings } from "../settings.ts";
 import { ControlHint } from "./Help.tsx";
 import { Hud } from "./Hud.tsx";
@@ -23,6 +25,19 @@ interface Props {
   /** Extra overlay (the network lobby). */
   lobby?: (frame: Frame) => React.ReactNode;
 }
+
+// The first time, the first round you play is the tutorial: slide, chomp, land a barrel, bellow, see it out. It starts
+// when the chomping does (after the countdown), and the flags it reads are kept for the page, so a second round picks up
+// where the first left off.
+const learnt = newLearnt();
+const coach = tutorial({ prefix: "hippo", account: { achieve, achievements }, steps: lessons(learnt) });
+/** The round on screen, for `hippoTycoon.state()`. */
+let shown: { phase: string; mine: number[]; scores: number[] } | null = null;
+Reflect.set(window, "hippoTycoon", {
+  state: () => ({ round: shown, tutorial: coach.state() }),
+  /** Forget the tutorial was done in this browser, so the next round runs it again. */
+  forgetTutorial: coach.forget,
+});
 
 /** The control hint shows itself for this long after "CHOMP!". */
 const HINT_MS = 6000;
@@ -87,6 +102,9 @@ export function Game({ driver, ctls, settings, onSettings, onExit, lobby }: Prop
       ui.current.phase = f.phase;
       for (const e of f.events) snd.event(e, f.mine);
       for (const id of earned(tally, f)) void achieve(id);
+      learn(learnt, f);
+      if (f.phase === "playing" && lastPhase !== "playing" && f.mine.length) coach.start();
+      shown = { phase: f.phase, mine: f.mine, scores: f.cur.hippos.map((h) => h.score) };
       for (const cue of cuesFor(cues, f.phase, f.cur.countdown)) cue === "fanfare" ? snd.fanfare() : snd.beep(cue === "go");
       if (f.phase === "playing" && lastPhase !== "playing") playingAt = now;
       r.draw(f, now);
@@ -98,7 +116,7 @@ export function Game({ driver, ctls, settings, onSettings, onExit, lobby }: Prop
     };
     raf = requestAnimationFrame(loop);
     return () => {
-      cancelAnimationFrame(raf); controls.detach(); r.dispose(); renderer.current = null; snd.dispose();
+      cancelAnimationFrame(raf); shown = null; controls.detach(); r.dispose(); renderer.current = null; snd.dispose();
       window.removeEventListener("keydown", unlock); window.removeEventListener("pointerdown", unlock); window.removeEventListener("keydown", keys); window.removeEventListener("resize", onResize);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps

@@ -88,6 +88,7 @@ export const ACHIEVEMENTS: Record<string, Achievement[]> = {
   "hippo-tycoon": [
     SHARED.played,
     SHARED.alpha,
+    SHARED.tutorial,
     { id: "first-chomp", name: "First barrel", blurb: "Chomp a drop of oil.", icon: Droplet },
     { id: "gold", name: "Black gold", blurb: "Chomp a gold drop.", icon: Coins },
     { id: "sludge", name: "Bad crude", blurb: "Choke on a gulp of sludge.", icon: Biohazard },
@@ -109,8 +110,14 @@ export const ACHIEVEMENTS: Record<string, Achievement[]> = {
   ],
   "splat-spray": [
     SHARED.played,
+    SHARED.tutorial,
     { id: "first-shot", name: "First coat", blurb: "Take your first shot.", icon: SprayCan },
     { id: "first-find", name: "Eyes on the target", blurb: "Find the target in a real, scanned room.", icon: ScanEye },
+  ],
+  "splat-rooms": [
+    SHARED.played,
+    SHARED.tutorial,
+    { id: "first-find", name: "Objective found", blurb: "Find the objective in a room.", icon: Target },
   ],
 };
 
