@@ -497,13 +497,13 @@ def foliage(spec, g, rng, lo, twigs, trunks, H):
                     card(g, p, d, s, size * (0.7 + 0.6 * rng.random()), size * fs.get("width", 0.5), c, out, fold=0.22, tip_col=tc)
                 elif kind == "tuft":
                     # a bottlebrush of needles round the twig's last stretch: thin triangles raked forward, over a
-                    # dark core so the brush reads dense from any side
+                    # dark knot (`knot`, its radius as a share of `size`; 0 for none) so the brush reads dense from any side
                     n = fs.get("needles", 14) if not lo else max(5, fs.get("needles", 14) // 3)
                     fwd = (tan + UP * fs.get("up", 0.35)).normalized()
                     sp = perp(fwd)
                     brush = size * fs.get("brush", 0.5)
-                    if not lo:
-                        blob(g, at + fwd * brush * 0.4, size * 0.22, mix(c, (0.02, 0.03, 0.02), 0.45), rng, subdiv=1, lump=0.2, squash=1.0, out_from=centre)
+                    if not lo and fs.get("knot", 0.22) > 0:
+                        blob(g, at + fwd * brush * 0.4, size * fs.get("knot", 0.22), mix(c, (0.02, 0.03, 0.02), 0.45), rng, subdiv=1, lump=0.2, squash=1.0, out_from=centre)
                     for j in range(n):
                         a = 2 * math.pi * j / n * 2.618 + rng.random() * 0.5
                         radial = (Matrix.Rotation(a, 3, fwd) @ sp)
