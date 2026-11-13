@@ -189,6 +189,11 @@
         "line": "The first five minutes: a twenty-line page. The welcome tour finds it, lets three agents write it again at the same time, and then asks you to deploy it."
       },
       {
+        "app": "kitesurf-bench",
+        "name": "Kitesurf Bench",
+        "line": "Times Cloudflare's Kitesurf agent browser against Chromium on our own live pages, from inside a Worker. Deploy, press Run, copy the table, destroy."
+      },
+      {
         "app": "agent-office",
         "name": "Agent Office",
         "line": "Someone else's Node server (PTYs, WebSockets, a 3D client) as one binary, nothing forked"

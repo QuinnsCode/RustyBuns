@@ -1,0 +1,17 @@
+{
+  "command": "plan",
+  "at": "2026-11-13T01:08:13.625Z",
+  "bun": "1.4.4",
+  "totalMs": 576.411542,
+  "steps": [
+    {
+      "name": "generate",
+      "ms": 2.371416999999994
+    },
+    {
+      "name": "typecheck stack",
+      "ms": 570.727834,
+      "note": "bun"
+    }
+  ]
+}
