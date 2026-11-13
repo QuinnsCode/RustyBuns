@@ -20,8 +20,8 @@
 //       run (blender/out/refs/<id>.judge.json; "not judged" until there is one). Draws the close-ups first. This is the
 //       page the owner picks from.
 //   bun scripts/beast-refs.ts --candidates <id> <a.json> <b.json> ...
-//       Prototypes to pick from: each candidate sheet (an id matching <id>, and an optional `candidate` line saying what
-//       it is) is built in turn through scripts/beasts.ts, its GLB kept in blender/out/refs/<id>.cand/<name>.glb, and the
+//       Prototypes to pick from: each candidate sheet (an id matching <id>, an optional `candidate` line saying what
+//       it is, and optional `notes`, shown as a list under its strip: how its look ties into its moves) is built in turn through scripts/beasts.ts, its GLB kept in blender/out/refs/<id>.cand/<name>.glb, and the
 //       working tree's sheet, GLB and rig put back after. They and git main are drawn in one Blender run at one scale,
 //       and the page (blender/out/refs/<id>.compare.html) shows a strip per candidate under the references.
 //   bun scripts/beast-refs.ts --judge <id>
@@ -179,9 +179,9 @@ const MARK = {
   no: `<svg viewBox="0 0 24 24" aria-label="no"><path d="M18 6 6 18M6 6l12 12"/></svg>`,
 };
 
-const Candidate = obj({ id: str(40), candidate: opt(str(300)) });
+const Candidate = obj({ id: str(40), candidate: opt(str(300)), notes: opt(arr(str(400), 12)) });
 /** A prototype built for the owner to pick from: its name, what it is, its close-up strip and its rig row. */
-export type Built = { name: string; note: string; glb: string; strip: string; row: string; ok: boolean };
+export type Built = { name: string; note: string; notes: string[]; glb: string; strip: string; row: string; ok: boolean };
 
 /** Builds each candidate sheet as the beast in turn, keeps its GLB, puts the working tree back, then draws git main and
  *  every candidate in one Blender run so they share one scale. Answers them in the order given. */
@@ -200,7 +200,7 @@ export async function candidates(id: string, files: string[]): Promise<Built[]> 
       const p = await $`bun scripts/beasts.ts ${id}`.cwd(APP).quiet().nothrow();
       const row = (p.stdout.toString() + p.stderr.toString()).split("\n").find((l) => l.includes(" tris ")) ?? "no rig row";
       await Bun.write(glb, Bun.file(kept[1]!));
-      built.push({ name, note: c.candidate ?? "", glb, strip: join(dir, `${name}.png`), row: row.trim(), ok: p.exitCode === 0 });
+      built.push({ name, note: c.candidate ?? "", notes: c.notes ?? [], glb, strip: join(dir, `${name}.png`), row: row.trim(), ok: p.exitCode === 0 });
       console.log(`${name.padEnd(12)} ${row.trim()}`);
     }
   } finally {
@@ -249,6 +249,7 @@ th,td{text-align:left;vertical-align:top;padding:10px 12px;border-top:1px solid 
 .mark{width:34%}.mark svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:3;stroke-linecap:round;vertical-align:-3px;margin-right:6px}
 .yes{color:var(--yes)}.no{color:var(--no)}.partly{color:var(--partly)}.none{color:var(--mute)}.mark span{color:var(--fg)}.none span{color:var(--mute)}
 .score{font-size:15px;color:var(--mute)}
+.notes{margin:-8px 0 16px;padding:12px 12px 12px 32px;background:var(--card);border:1px solid var(--line);border-radius:10px}.notes li+li{margin-top:6px}
 @media (max-width:640px){th{width:auto}td,th{display:block;border-top:0}tr{display:block;border-top:1px solid var(--line)}.mark{width:auto}}
 </style></head><body><main>
 <h1>${esc(refs.name)}</h1>
@@ -258,7 +259,8 @@ th,td{text-align:left;vertical-align:top;padding:10px 12px;border-top:1px solid 
 <h2>The model</h2>
 ${await strip("Before (git main)", strips.main)}
 ${o.candidates
-  ? (await Promise.all(o.candidates.map((c, i) => strip(`${String.fromCharCode(65 + i)}. ${esc(c.name)}${c.note ? ` · ${esc(c.note)}` : ""}${c.ok ? "" : " (rig check failed)"}`, c.strip)))).join("\n")
+  ? (await Promise.all(o.candidates.map(async (c, i) => (await strip(`${String.fromCharCode(65 + i)}. ${esc(c.name)}${c.note ? ` · ${esc(c.note)}` : ""}${c.ok ? "" : " (rig check failed)"}`, c.strip))
+      + (c.notes.length ? `<ul class="notes">${c.notes.map((n) => `<li>${esc(n)}</li>`).join("")}</ul>` : "")))).join("\n")
   : await strip("Now", strips.now)}
 <h2>Traits</h2>
 <table>${rows || `<tr><td>No traits written yet: fill refs/${esc(id)}.json.</td></tr>`}</table>
