@@ -62,4 +62,13 @@ test.skipIf(process.platform !== "darwin")("run as the owner, a check reads and 
     await m.dispose();
     rmSync(home, { recursive: true, force: true });
   }
+  // With the real home held off, a check's own tools still work: bun installs and git commits.
+  const real = await localMachine(undefined);
+  try {
+    await real.write({ "package.json": JSON.stringify({ name: "held", version: "1.0.0" }) });
+    expect(await real.exec(["bun", "install"], () => {})).toBe(0);
+    expect(await real.exec(["sh", "-c", "git init -q && git -c user.name=c -c user.email=c@x commit -q --allow-empty -m one"], () => {})).toBe(0);
+  } finally {
+    await real.dispose();
+  }
 });
