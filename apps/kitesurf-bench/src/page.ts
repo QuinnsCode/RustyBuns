@@ -48,6 +48,9 @@ const fmt = (n) => n == null ? "–" : Math.round(n).toLocaleString("en-US");
 const med = (xs) => { const s = xs.filter((x) => x != null).sort((a, b) => a - b); if (!s.length) return null; const m = s.length >> 1; return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
 let results = [];
+const isSide = (x) => !!x && typeof x === "object" && Array.isArray(x.runs) && typeof x.failed === "number";
+const isCell = (x) => !!x && typeof x === "object" && typeof x.site === "string" && typeof x.action === "string" && isSide(x.kitesurf) && isSide(x.chromium);
+const errorOf = (x) => x && typeof x === "object" && typeof x.error === "string" ? x.error : null;
 function row(c) {
   const k = c.kitesurf, ch = c.chromium;
   const ratio = k.medianMs != null && ch.medianMs ? (k.medianMs / ch.medianMs).toFixed(2) + "×" : "–";
@@ -68,13 +71,15 @@ function foot() {
 $("run").onclick = async () => {
   $("run").disabled = true; $("copy").disabled = true; results = []; $("rows").innerHTML = ""; $("foot").innerHTML = "";
   const reps = $("reps").value;
-  const { sites, actions } = await (await fetch("/sites")).json();
+  const list = await fetch("/sites").then((r) => r.json()).catch(() => null);
+  if (!list || !Array.isArray(list.sites) || !Array.isArray(list.actions)) { $("status").textContent = "The bench could not load its page list."; $("run").disabled = false; return; }
+  const { sites, actions } = list;
   const total = sites.length * actions.length; let done = 0; const t0 = Date.now();
   for (let s = 0; s < sites.length; s++) for (const a of actions) {
     $("status").textContent = "Running " + sites[s].name + " / " + a + " (" + (done + 1) + " of " + total + ")";
     const r = await fetch("/cell?site=" + s + "&action=" + a + "&reps=" + reps);
-    const c = await r.json();
-    if (!r.ok) { $("status").textContent = c.error || "The bench stopped: " + r.status; $("run").disabled = false; return; }
+    const c = await r.json().catch(() => null);
+    if (!r.ok || !isCell(c)) { $("status").textContent = errorOf(c) || "The bench stopped: " + r.status; $("run").disabled = false; return; }
     results.push(c); $("rows").insertAdjacentHTML("beforeend", row(c)); foot(); done++;
   }
   $("status").textContent = "Done: " + total + " rows in " + Math.round((Date.now() - t0) / 1000) + " s.";
