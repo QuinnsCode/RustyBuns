@@ -8,13 +8,15 @@ import { clamp, lerp, mulberry32 } from "@rustybuns/util";
 import { REGIONS } from "../regions.ts";
 import { DAWN_HOUR, DAY } from "./nature.ts";
 import { POIS } from "./poi.ts";
-import { arenaOf } from "./world.ts";
+import { WORLD } from "./trail.ts";
+import { arenaOf, dry } from "./world.ts";
 
 export const HOUSES = 8;          // campfires that are safe houses tonight, besides the arena
 export const PATH_HALF = 4;       // metres either side of a path's line that are safe
 export const HOUSE_R = 24;        // a house keeps this much round it safe (a lit fire's light, poi.ts SHELTER_R)
 export const LIGHT_STEP = 12;     // metres between the solar lights down each side of a path
 const PT_STEP = 8;                // metres between a path's points
+const DRY_REACH = 80;             // a point in water steps this far either side, at most, to find dry ground
 export const CATCH_FAR = 10, CATCH_NEAR = 30; // seconds until something catches you, far out and close to safety
 const FAR = 150;                  // this far from safety, it is as quick as it gets
 const DRAIN = 5;                  // seconds back on a path for the stalk to fade from full
@@ -36,11 +38,12 @@ export function safePaths(n: number, night: number): Night {
   fires.sort((a, b) => a.k - b.k);
   const cabins = (POIS.get(n) ?? []).filter((p) => p.kind === "cabin").map(({ id, x, z }) => ({ id, x, z }));
   const houses: House[] = [...(g ? [{ id: `arena:${n}`, ...arenaOf(g) }] : []), ...cabins, ...fires.slice(0, HOUSES).map(({ id, x, z }) => ({ id, x, z }))];
-  // Prim's tree: every house reached by the shortest new path, so a night has houses - 1 paths and no loops.
+  // Prim's tree: every house reached by the cheapest new path, so a night has houses - 1 paths and no loops. A metre of
+  // open water costs WET times a dry one, so the tree walks round a bay rather than across it when land joins the two.
   const paths: Path[] = [], inTree = houses.slice(0, 1), out = houses.slice(1);
   while (out.length) {
     let best = { a: inTree[0]!, i: 0, d: Infinity };
-    for (const a of inTree) out.forEach((b, i) => { const d = Math.hypot(a.x - b.x, a.z - b.z); if (d < best.d) best = { a, i, d }; });
+    for (const a of inTree) out.forEach((b, i) => { const d = cost(a, b); if (d < best.d) best = { a, i, d }; });
     const b = out.splice(best.i, 1)[0]!;
     inTree.push(b);
     paths.push({ from: best.a.id, to: b.id, pts: wind(best.a, b, r()) });
@@ -51,13 +54,35 @@ export function safePaths(n: number, night: number): Night {
   return out2;
 }
 
-/** A path from a to b that wanders a little either side of the straight line, never at its ends. */
+const WET = 6;
+const costs = new Map<string, number>(); // houses don't move, so a pair costs the same every night
+/** What a path from a to b costs: its length, with every metre over the sea or a river WET times dearer. */
+function cost(a: House, b: House): number {
+  const key = a.id < b.id ? `${a.id}|${b.id}` : `${b.id}|${a.id}`, hit = costs.get(key);
+  if (hit !== undefined) return hit;
+  const d = Math.hypot(b.x - a.x, b.z - a.z), steps = Math.max(1, Math.ceil(d / (PT_STEP * 2)));
+  let wet = 0;
+  for (let i = 1; i < steps; i++) if (!dry(WORLD, lerp(a.x, b.x, i / steps), lerp(a.z, b.z, i / steps))) wet++;
+  const c = d * (1 + ((WET - 1) * wet) / steps);
+  costs.set(key, c);
+  return c;
+}
+
+/** A path from a to b that wanders a little either side of the straight line, never at its ends, and steps aside onto dry ground round rivers and the sea's edge. */
 function wind(a: House, b: House, seed: number): [number, number][] {
   const d = Math.hypot(b.x - a.x, b.z - a.z), steps = Math.max(1, Math.ceil(d / PT_STEP)), nx = -(b.z - a.z) / (d || 1), nz = (b.x - a.x) / (d || 1);
   const amp = Math.min(40, d * 0.06), f1 = 1 + Math.floor(seed * 3), ph = seed * 6.283;
   return Array.from({ length: steps + 1 }, (_, i): [number, number] => {
     const u = i / steps, off = amp * Math.sin(Math.PI * u) * Math.sin(f1 * Math.PI * u + ph);
-    return [lerp(a.x, b.x, u) + nx * off, lerp(a.z, b.z, u) + nz * off];
+    const x = lerp(a.x, b.x, u) + nx * off, z = lerp(a.z, b.z, u) + nz * off;
+    if (i === 0 || i === steps || dry(WORLD, x, z)) return [x, z];
+    // In water: the nearest dry spot to either side across the path's line (the side it already wanders to first).
+    const side = off >= 0 ? 1 : -1;
+    for (let k = 4; k <= DRY_REACH; k += 4) for (const sg of [side, -side]) {
+      const px = x + nx * k * sg, pz = z + nz * k * sg;
+      if (dry(WORLD, px, pz)) return [px, pz];
+    }
+    return [x, z]; // nowhere dry near: a ford it is
   });
 }
 

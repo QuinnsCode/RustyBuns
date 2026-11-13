@@ -10,7 +10,7 @@ import type { Gait } from "../src/world/world.ts";
 import { lightFire, POIS, shelterAt, SHELTER_R } from "../src/world/poi.ts";
 import { CATCH_FAR, CATCH_NEAR, HOUSES, lightsNear, nightOf, safePaths, stalk, toSafety } from "../src/world/night.ts";
 import { DAY } from "../src/world/nature.ts";
-import { arenaOf, groundFrom, buildWorld, CELL, cell, COLS, detailAt, explore, explored, heightAt, meet, NIGHT_MEET_R, newSeen, openRegions, opensRoadTo, OWNER, refine, ROWS, spawn, STEP, walk, wildsNear, type WalkEvent, type Walker } from "../src/world/world.ts";
+import { arenaOf, groundFrom, buildWorld, CELL, cell, COLS, detailAt, dry, explore, explored, heightAt, meet, NIGHT_MEET_R, newSeen, openRegions, opensRoadTo, OWNER, refine, ROWS, spawn, STEP, walk, wildsNear, type WalkEvent, type Walker } from "../src/world/world.ts";
 
 /** The world with every region's fine ground in, as it stands once you have walked everywhere. */
 function fullWorld() {
@@ -187,6 +187,13 @@ describe("safe paths at night", () => {
     expect(until(400)).toBeCloseTo(CATCH_FAR, 0);
     expect(until(1)).toBeGreaterThan(CATCH_NEAR - 1);
     expect(stalk(0.5, 1, 0)).toBeLessThan(0.5); // back on a path it fades
+  });
+
+  test("a night path keeps to dry ground: round a river and a bay, not through them", async () => {
+    const { WORLD } = await import("../src/world/trail.ts");
+    const pts = REGIONS.flatMap((g) => [0, 1, 2].flatMap((night) => safePaths(g.n, night).paths.flatMap((p) => p.pts.slice(1, -1))));
+    const wet = pts.filter(([x, z]) => !dry(WORLD, x, z)).length;
+    expect(wet / pts.length).toBeLessThan(0.02); // was 1 in 20; what is left is a house you can only reach across water
   });
 });
 
