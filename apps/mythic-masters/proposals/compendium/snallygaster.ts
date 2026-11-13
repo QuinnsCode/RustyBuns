@@ -120,9 +120,9 @@ for (const [row, y, n, len] of [[0, 0.16, 3, 0.12], [1, 0.08, 4, 0.14], [2, 0.0,
 // big feathered wings: a smaller, cupped green membrane on the arm, and long separate ochre primaries
 // fanned off its tip and trailing edge that carry the wing's outline
 parts.push({
-  kind: "membrane", points: ["l_wroot", "l_welbow", "l_wwrist", "l_wtip", [-0.34, 1.78, 1.1], [-0.48, 1.42, 0.78], [-0.42, 1.12, 0.42], [-0.24, 1.0, 0.18]],
+  kind: "membrane", points: ["l_wroot", "l_welbow", "l_wwrist", "l_wtip", [-0.2, 1.88, 1.2], [-0.22, 1.5, 0.72], [-0.16, 1.2, 0.38], [-0.04, 1.04, 0.16]],
   thick: 0.016, camber: 0.16, puff: 0.03, mirror: true, material: "wing",
-  feathers: { from: 3, to: 6, n: 14, len: 0.62, base: 0.055, flat: 0.1, curve: 14, tip: 0.3, material: "primary" },
+  feathers: { from: 3, to: 7, n: 20, len: 0.7, base: 0.06, flat: 0.1, curve: 14, tip: 0.3, rake: -40, material: "primary" },
 });
 // covert feathers in three overlapping rows over the membrane, each lying back from the leading edge toward the
 // trailing one, so the wing reads as feathered and layered rather than a flat panel
@@ -131,10 +131,10 @@ parts.push({
   const back: V[] = [[-0.24, 1.0, 0.18], [-0.42, 1.12, 0.42], [-0.48, 1.42, 0.78], [-0.34, 1.78, 1.1]];
   const at = (pts: V[], t: number): V => { const s = t * (pts.length - 1), i = Math.min(pts.length - 2, Math.floor(s)), u = s - i; return [0, 1, 2].map((k) => pts[i]![k]! + (pts[i + 1]![k]! - pts[i]![k]!) * u) as V; };
   const root = lead[0]!;
-  for (let row = 0; row < 3; row++) for (let i = 0; i < 8; i++) {
-    const t = 0.08 + (i / 7) * 0.84, P = at(lead, t), Q = at(back, t), w = 0.08 + row * 0.24;
+  for (let row = 0; row < 4; row++) for (let i = 0; i < 9; i++) {
+    const t = 0.06 + (i / 8) * 0.88, P = at(lead, t), Q = at(back, t), w = 0.06 + row * 0.2;
     const p: V = [P[0] + (Q[0] - P[0]) * w, P[1] + (Q[1] - P[1]) * w, P[2] + (Q[2] - P[2]) * w + 0.012];
-    parts.push({ kind: "horn", at: "l_wroot", off: [f4(p[0] - root[0]), f4(p[1] - root[1]), f4(p[2] - root[2])], dir: norm([Q[0] - P[0], Q[1] - P[1], Q[2] - P[2]]), len: f4(0.2 + row * 0.06), base: 0.05, tip_base: 0.014, flat: 0.12, curve: 8, bend: [0, 0, 1], mirror: true, material: row === 2 ? "primary" : "covert" });
+    parts.push({ kind: "horn", at: "l_wroot", off: [f4(p[0] - root[0]), f4(p[1] - root[1]), f4(p[2] - root[2])], dir: norm([Q[0] - P[0], Q[1] - P[1], Q[2] - P[2]]), len: f4(0.22 + row * 0.07), base: 0.06, tip_base: 0.016, flat: 0.12, curve: 8, bend: [0, 0, 1], mirror: true, material: row === 3 ? "primary" : "covert" });
   }
 }
 // orange clenched talons: three toes curled under, a hind claw
