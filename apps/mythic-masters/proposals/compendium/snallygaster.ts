@@ -6,31 +6,33 @@
 // clenched talons, and a long whip tail curling up at the end. Traits are in refs/snallygaster.json.
 import { type Blob, type N, type Part, type V, bone, chain, f4, norm, pair, write } from "../set-a/upright/lib.ts";
 
+// The whole body is one serpent's S, as in the owner's drawing: the head reared back over a throat that bows forward
+// and down to a low chest, the back arching up to the hips, the tail dipping behind them, then sweeping up high and
+// swinging out sideways into a curl over the back. The lowest point of the tail stays well off the ground (the rigger
+// would count it as a foot), and the belly, the rig's root, stays low enough to read as a four-legged body.
 const nodes: Record<string, N> = {
-  tail6: [-1.3, 1.06, -0.12, 0.01],
-  tail5: [-1.44, 1.12, -0.18, 0.012],
-  tail4: [-1.56, 0.88, -0.06, 0.018],
-  tail3: [-1.34, 0.68, 0.16, 0.026],
-  tail2: [-1.0, 0.6, 0.22, 0.04],
-  tail1: [-0.66, 0.66, 0.06, 0.06],
-  hip: [-0.32, 0.72, 0, 0.12],
-  belly: [-0.02, 0.78, 0, 0.13],
-  chest: [0.26, 0.9, 0, 0.13],
-  neck1: [0.47, 1.04, 0, 0.07],
-  neck2: [0.37, 1.3, 0, 0.06],
-  neck3: [0.5, 1.5, 0, 0.055],
-  head: [0.72, 1.56, 0, 0.07],
-  l_hipj: [-0.28, 0.5, 0.14, 0.08],
-  l_knee: [-0.12, 0.32, 0.17, 0.06],
+  tail6: [-1.02, 1.42, 0.06, 0.01],
+  tail5: [-1.2, 1.46, 0.18, 0.012],
+  tail4: [-1.38, 1.22, 0.16, 0.018],
+  tail3: [-1.32, 0.9, 0.02, 0.026],
+  tail2: [-1.02, 0.68, -0.12, 0.04],
+  tail1: [-0.66, 0.74, -0.08, 0.06],
+  hip: [-0.32, 0.84, 0, 0.12],
+  belly: [-0.02, 0.74, 0, 0.13],
+  chest: [0.26, 0.58, 0, 0.13],
+  neck1: [0.52, 0.62, 0, 0.07],
+  neck2: [0.7, 0.86, 0, 0.06],
+  neck3: [0.58, 1.12, 0, 0.055],
+  head: [0.68, 1.3, 0, 0.07],
+  l_hipj: [-0.28, 0.62, 0.14, 0.08],
+  l_knee: [-0.12, 0.34, 0.17, 0.06],
   l_hock: [-0.22, 0.15, 0.16, 0.035],
   l_foot: [-0.15, 0.05, 0.16, 0.03],
-  l_wroot: [0.18, 1.04, 0.12, 0.06],
-  l_welbow: [-0.02, 1.46, 0.55, 0.045],
-  l_wwrist: [0.08, 1.76, 0.95, 0.035],
-  l_wtip: [-0.12, 2.08, 1.36, 0.03],
+  l_wroot: [0.16, 0.84, 0.12, 0.06],
+  l_welbow: [-0.02, 1.3, 0.55, 0.045],
+  l_wwrist: [0.08, 1.6, 0.95, 0.035],
+  l_wtip: [-0.12, 1.92, 1.36, 0.03],
 };
-// low and heavy: everything above the legs sits 0.16 m lower, the legs shorter and stouter under it
-for (const [k, n] of Object.entries(nodes)) if (!/^l_(hipj|knee|hock|foot)$/.test(k)) n[1] = f4(n[1] - 0.16);
 const links = [
   ...chain(["tail6", "tail5", "tail4", "tail3", "tail2", "tail1", "hip", "belly", "chest", "neck1", "neck2", "neck3", "head"]),
   ...chain(["hip", "l_hipj", "l_knee", "l_hock", "l_foot"]),
@@ -49,7 +51,7 @@ function tube(chain: string[], radii: number[]): Blob[] {
   }
   return out;
 }
-// the body: a lean ribbed barrel, an S-neck, a whip tail tapering to a curl
+// the body: a lean ribbed barrel arched over the hips, an S-neck, a whip tail tapering to a curl
 const blobs: Blob[] = [
   { at: "hip", off: [0, 0, 0], r: [0.21, 0.17, 0.17] },
   { at: "belly", off: [0, -0.02, 0], r: [0.27, 0.21, 0.2] },
@@ -121,12 +123,12 @@ for (let i = 0; i < 7; i++) {
   parts.push({ kind: "horn", at: "head", off: [-0.02, 0.08, 0], dir: norm([-0.9, 0.5 + 0.6 * Math.cos(a), 0.5 * Math.sin(a)]), len: 0.2 - Math.abs(i - 3) * 0.02, base: 0.016, tip_base: 0.003, curve: 25, bend: [0, 1, 0], material: "frill", web: "crest", scallop: 0.35, web_thick: 0.01, web_mat: "frill" });
 }
 for (const z of [1, -1]) parts.push({ kind: "horn", at: "head", off: [0.02, 0.0, 0.08 * z], dir: norm([-0.8, 0.3, 0.6 * z]), len: 0.12, base: 0.014, tip_base: 0.002, curve: 20, bend: [0, 1, 0], material: "frill" });
-// a white tuft at the chest
-// a white tuft at the chest: soft feathers in rows, laid flat and pointing down over the breast
+// a white tuft at the chest: soft feathers in rows, laid flat and pointing down over the breast, on the front of the
+// throat's low bow (on the chest itself the bowed neck buries them)
 for (const [row, y, n, len] of [[0, 0.16, 3, 0.12], [1, 0.08, 4, 0.14], [2, 0.0, 5, 0.15], [3, -0.08, 4, 0.13]] as [number, number, number, number][]) {
   for (let i = 0; i < n; i++) {
     const z = (i - (n - 1) / 2) * 0.045;
-    parts.push({ kind: "horn", at: "chest", off: [f4(0.22 - row * 0.01 - Math.abs(z) * 0.5), y, f4(z)], dir: norm([0.35, -1, z * 2.5]), len, base: 0.045, tip_base: 0.008, flat: 0.3, curve: 25, bend: [-1, 0, 0], material: "tuft" });
+    parts.push({ kind: "horn", at: "neck1", off: [f4(0.13 + (y - 0.04) * 0.6 - row * 0.01 - Math.abs(z) * 0.5), f4(y - 0.04), f4(z)], dir: norm([0.35, -1, z * 2.5]), len, base: 0.045, tip_base: 0.008, flat: 0.3, curve: 25, bend: [-1, 0, 0], material: "tuft" });
   }
 }
 // big feathered wings: a smaller, cupped green membrane on the arm, and long separate ochre primaries

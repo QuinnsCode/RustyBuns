@@ -6,6 +6,7 @@ owner's own pictures and the Maryland accounts.
 
 - [before-close.jpg](before-close.jpg): the old model (front, side, three-quarter, head; ortho, from git main)
 - [after-close.jpg](after-close.jpg): the rebuild, at the same scale
+- [coil-close.jpg](coil-close.jpg): the body coiled like the owner's drawing (#4374), at the same scale
 
 ## References
 
@@ -47,6 +48,7 @@ Judges run about 2 points above the owner, so the ticks matter more than the num
 | 4 | 16 cm lower on stouter legs, bigger beak, white bib | 3/10; head passes |
 | 6 | wing made of feathers on raked primaries | 4/10; wings pass |
 | 7 | the coil, a denser beard, bigger teeth | 3/10; beard passes |
+| 8 | the whole body one S (#4374): throat bowed low, back arched over the hips, tail sweeping up into a sideways curl; bib moved onto the throat | 4/10; body still short |
 
 ## Lessons
 
@@ -55,9 +57,10 @@ Judges run about 2 points above the owner, so the ticks matter more than the num
 - Long stilt legs read as a heron, not a dragon, whatever the head does. Lowering the body did more than any head detail.
 - A wing reads as feathered only when the feathers carry its outline; any membrane wider than the arm reads as a slab.
 - `bone()` only turns a blob in the side plane, so a tail that coils sideways is built from overlapping spheres instead.
+- A body bowed low at the chest buries parts placed on the chest: the white bib went under the throat until it moved onto `neck1`.
 
 ## Still open
 
 - The ochre belly has no darker bands between its ribs. `stripes` only paints faces that look up and sit within 5 cm
   of the chain's radius, so on a blob-built body it paints nothing; ridge parts placed between the ribs didn't show either.
-- The owner's drawing coils the whole body like a serpent; this one still stands, with only the neck and tail curving.
+- The body coils now (#4374), but beside the drawing the judge still reads it as short and the neck as stubby.
