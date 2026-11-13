@@ -785,7 +785,11 @@ describe("shares", () => {
   });
 
   test("build and deploy files are told apart from the rest", () => {
-    for (const p of ["package.json", "web/package.json", "bun.lock", "pnpm-lock.yaml", "rustybuns.config.ts", "wrangler.jsonc", ".rustybuns/state.json", "alchemy.run.ts", "Dockerfile", "api/Dockerfile.prod", "build.ts", "vite.config.mjs", ".github/workflows/ci.yml", ".gitlab-ci.yml", "codesplitter.ci", ".gitattributes"]) expect([p, isBuildFile(p)]).toEqual([p, true]);
+    for (const p of ["package.json", "web/package.json", "bun.lock", "pnpm-lock.yaml", "rustybuns.config.ts", "wrangler.jsonc", ".rustybuns/state.json", "alchemy.run.ts", "Dockerfile", "api/Dockerfile.prod", "build.ts", "vite.config.mjs", ".github/workflows/ci.yml", ".gitlab-ci.yml", "codesplitter.ci", ".gitattributes",
+      // Any case (a case-insensitive disk runs them), package managers' settings and hooks, the scripts they run, other CI.
+      "Package.json", "web/PACKAGE.JSON", "DOCKERFILE", ".GitHub/workflows/ci.yml", "pnpm-workspace.yaml", ".yarnrc.yml", ".pnpmfile.cjs",
+      "scripts/postinstall.js", "Makefile", "patches/left-pad+1.0.0.patch", "docker-compose.override.yml", ".drone.yml",
+      "bitbucket-pipelines.yml", ".gitea/workflows/ci.yaml", ".husky/pre-commit", "Bun.lock"]) expect([p, isBuildFile(p)]).toEqual([p, true]);
     for (const p of ["src/build.tsx", "README.md", "src/package.ts", "docs/wrangler.md", "test/vite.config.test.ts"]) expect([p, isBuildFile(p)]).toEqual([p, false]);
   });
 

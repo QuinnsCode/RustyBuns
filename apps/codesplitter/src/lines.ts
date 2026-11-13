@@ -600,8 +600,8 @@ export const MARKER = /^(<{7}|>{7})( |$)/;
  * What a merge won't call clean (#934), as `lint:` conflicts the branch's pick
  * lands anyway: conflict markers it would bring into main (a half-done merge
  * on the branch, like the one #884 committed into features.json), and, once
- * every line is settled (`whole`), a JSON, YAML or TOML file both sides parse
- * that the merged text doesn't. Markers main has already are CI's to catch
+ * every line is settled (`whole`), a JSON, YAML or TOML file main parses (or a
+ * new one) that the merged text doesn't, the branch's own broken copy included. Markers main has already are CI's to catch
  * (scripts/conflict-markers.ts), not every branch's.
  */
 function broken(main: Doc, branch: Doc, ops: Op[], by: string[], path: string, resolve: Resolve, whole: boolean): Conflict[] {
@@ -612,9 +612,13 @@ function broken(main: Doc, branch: Doc, ops: Op[], by: string[], path: string, r
   const marks = merged.lines.flatMap((l, i) => MARKER.test(l.text) && was.get(l.id) !== l.text ? [i + 1] : []);
   if (marks.length && resolve["lint:markers"] !== "branch") out.push({ line: "lint:markers", base: "", main: null, branch: null, lint: `the branch has git's conflict markers in it (line ${marks.join(", ")})` });
   const kind = dataKind(path);
-  if (whole && kind && resolve[`lint:${kind}`] !== "branch" && parseError(kind, text(main)) === null && parseError(kind, text(branch)) === null) {
+  // Main's copy parses (or is new): whatever the branch holds, main mustn't stop parsing. A file that never parsed
+  // (comments in a tsconfig) isn't held for it.
+  const fresh = !text(main).trim();
+  if (whole && kind && resolve[`lint:${kind}`] !== "branch" && (fresh || parseError(kind, text(main)) === null)) {
     const why = parseError(kind, text(merged));
-    if (why !== null) out.push({ line: `lint:${kind}`, base: "", main: null, branch: null, lint: `merged, it isn't valid ${kind.toUpperCase()} (${why})` });
+    const own = why !== null && parseError(kind, text(branch)) !== null;
+    if (why !== null) out.push({ line: `lint:${kind}`, base: "", main: null, branch: null, lint: `${own ? "the branch's copy" : "merged, it"} isn't valid ${kind.toUpperCase()} (${why})` });
   }
   return out;
 }
