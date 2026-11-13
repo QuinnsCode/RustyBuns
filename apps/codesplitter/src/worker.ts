@@ -28,6 +28,7 @@ import {
   toFile,
 } from "./archive.ts";
 import { repoRow, live, branchOf } from "./repos.ts";
+import { handOut, recall } from "./share-tokens.ts";
 import {
   code,
   fail,
@@ -589,7 +590,7 @@ async function route(req: Request, env: Env): Promise<Response> {
       // Anyone who can read the repo can clone its artifact, with an hour-long read token;
       // the crew also gets their own remote's, with private lines' real text, once there is one.
       const h = await handleFor(env, owner, repo).catch(() => null);
-      const art = h && await artifactAccess(h.handle, h.remote, "read", 3600).catch(() => null);
+      const art = h && await handOut(env, owner, repo, user, h, 3600).catch(() => null);
       const clone = art && `git clone ${art.remote.replace("://", `://x:${art.token.split("?")[0]}@`)} ${repo}`;
       const ch = a.write ? await handleFor(env, owner, repo, true).catch(() => null) : null;
       const crewArt = ch?.crew ? await artifactAccess(ch.handle, ch.remote, "read", 3600).catch(() => null) : null;
@@ -620,6 +621,8 @@ async function route(req: Request, env: Env): Promise<Response> {
         await withdrawOpenBeams(env, owner, repo);
         const { results: crew } = await env.DB.prepare("SELECT name FROM collaborators WHERE owner = ? AND repo = ?").bind(owner, repo).all<{ name: string }>();
         await revokeSockets(env, owner, repo, { keep: [owner, ...crew.map((c) => c.name)] });
+        // A stranger's clone line or share link from while it was public stops working now, not in an hour.
+        await recall(env, owner, repo, [owner, ...crew.map((c) => c.name)]);
       }
       await audit(env, req, { actor: user, action: "repo.visibility", owner, repo, detail: visibility });
       return json({ visibility });
@@ -653,12 +656,12 @@ async function route(req: Request, env: Env): Promise<Response> {
     if (p[4] === "share" && !p[5] && req.method === "GET") {
       const branch = url.searchParams.get("branch");
       if (branch && !/^[\w][\w./-]*$/.test(branch)) return fail("BadBranchName", "that isn't a branch name");
-      // A token can't be recalled once handed out (#1819), and a public repo can go private tomorrow: a non-owner's lives an hour at most, whatever the repo's visibility is today.
+      // Going private recalls a stranger's token (share-tokens.ts), but removing a collaborator doesn't (#1819): a non-owner's lives an hour at most.
       const cap = user !== owner ? SHARE_CREW_PRIVATE_S : SHARE_MAX_S;
       const ttl = Math.max(60, Math.min(cap, Math.floor(Number(url.searchParams.get("ttl"))) || Math.min(cap, SHARE_DEFAULT_S)));
       const h = await handleFor(env, owner, repo).catch(() => null);
       if (!h) return fail("NoGit", "this repo has no git to share");
-      const art = await artifactAccess(h.handle, h.remote, "read", ttl);
+      const art = await handOut(env, owner, repo, user, h, ttl);
       return json({ command: `git clone${branch ? ` -b ${branch}` : ""} ${art.remote.replace("://", `://x:${art.token.split("?")[0]}@`)} ${repo}`, ttl, expiresAt: Date.now() + ttl * 1000, ...(branch && { branch }) });
     }
     // GET /api/repos/:o/:r/graph[?limit=60]  main's commits, newest first, with the branches merged into them, each upstream's or this copy's

@@ -210,12 +210,23 @@ async function told(env: Env, run: CheckRun, action: "created" | "completed", by
 /** The status context we post our runs under. */
 const CONTEXT = "codesplitter/";
 
+/**
+ * The GitHub repo our statuses go up to: the owner turned that on, and the mirror sends things upstream.
+ * A pull-only mirror (`mirror_pull_only`) sends nothing, statuses included.
+ */
+async function postsTo(env: Env, owner: string, repo: string, sha: string) {
+  const s = await checkSettings(env, owner, repo);
+  if (!s.post_statuses || !s.github || !/^[0-9a-f]{40}$/.test(sha)) return null;
+  const m = await repoRow<{ mirror_pull_only: number | null }>(env, owner, repo, "mirror_pull_only");
+  return m?.mirror_pull_only ? null : s.github;
+}
+
 /** Our own run as a commit status on GitHub, when the owner turned that on. */
 async function postStatus(env: Env, run: CheckRun) {
-  const s = await checkSettings(env, run.owner, run.repo);
-  if (!s.post_statuses || !s.github || !/^[0-9a-f]{40}$/.test(run.sha)) return;
+  const github = await postsTo(env, run.owner, run.repo, run.sha);
+  if (!github) return;
   const state = run.status === "passed" ? "success" : run.status === "failed" ? "failure" : run.status === "cancelled" ? "error" : "pending";
-  await gh(env, run.owner, `/repos/${s.github}/statuses/${run.sha}`, {
+  await gh(env, run.owner, `/repos/${github}/statuses/${run.sha}`, {
     method: "POST",
     body: JSON.stringify({ state, context: `${CONTEXT}${run.name}`, description: `${run.runner}: ${run.status}`.slice(0, 140) }),
   });
@@ -520,11 +531,11 @@ const ordered = new Map<string, string>();
  * Made a required check on main, it holds GitHub's merge-when-ready till then. The mirror's sync calls it.
  */
 export async function postOrder(env: Env, owner: string, repo: string, name: string, sha: string) {
-  const s = await checkSettings(env, owner, repo);
-  if (!s.post_statuses || !s.github || !/^[0-9a-f]{40}$/.test(sha)) return;
+  const github = await postsTo(env, owner, repo, sha);
+  if (!github) return;
   const on = await blockers(env, owner, repo, name), key = `${owner}/${repo}\n${name}`, said = `${sha} ${on.join(",")}`;
   if (ordered.get(key) === said) return;
-  const res = await gh(env, owner, `/repos/${s.github}/statuses/${sha}`, {
+  const res = await gh(env, owner, `/repos/${github}/statuses/${sha}`, {
     method: "POST",
     body: JSON.stringify({ state: on.length ? "pending" : "success", context: ORDER, description: (on.length ? `waits for ${on.join(", ")} to merge first` : "its turn in the merge plan").slice(0, 140) }),
   });

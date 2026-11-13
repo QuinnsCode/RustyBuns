@@ -74,18 +74,37 @@ export function privateHost(host: string): boolean {
       || (x === 192 && y === 168) || (x === 100 && y >= 64 && y <= 127) || (x === 192 && y === 0 && a[2] === 0) || (x === 198 && (y === 18 || y === 19));
   }
   if (!h.includes(":")) return false;
-  // IPv4-compatible (::7f00:1), NAT64 (64:ff9b::/96) and 6to4 (2002::/16) carry an IPv4 address that may be inward.
-  const tail = (x: string, y: string) => [parseInt(x, 16) >> 8, parseInt(x, 16) & 255, parseInt(y, 16) >> 8, parseInt(y, 16) & 255].join(".");
-  const compat = /^(?:0{1,4})?(?::0{1,4})*::([0-9a-f]{1,4}):([0-9a-f]{1,4})$/.exec(h) ?? /^64:ff9b::([0-9a-f]{1,4}):([0-9a-f]{1,4})$/.exec(h);
-  if (compat) return privateHost(tail(compat[1]!, compat[2]!));
-  const sixToFour = /^2002:([0-9a-f]{1,4}):([0-9a-f]{1,4})(?::|$)/.exec(h);
-  if (sixToFour) return privateHost(tail(sixToFour[1]!, sixToFour[2]!));
-  // IPv6: unspecified, loopback, unique-local (fc00::/7), link-local (fe80::/10), multicast, and IPv4 in IPv6.
-  if (h === "::" || h === "::1" || /^f[cd]/.test(h) || /^fe[89ab]/.test(h) || h.startsWith("ff")) return true;
-  const mapped = /^(?:0*:)*:?(?:ffff:)?(\d+\.\d+\.\d+\.\d+)$/.exec(h)?.[1];
-  if (mapped) return privateHost(mapped);
-  const hex = /^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/.exec(h);
-  return !!hex && privateHost([parseInt(hex[1]!, 16) >> 8, parseInt(hex[1]!, 16) & 255, parseInt(hex[2]!, 16) >> 8, parseInt(hex[2]!, 16) & 255].join("."));
+  const g = v6(h);
+  if (!g) return true; // not an address we can read: not one to send to
+  const tail = (i: number) => privateHost([g[i]! >> 8, g[i]! & 255, g[i + 1]! >> 8, g[i + 1]! & 255].join("."));
+  const zero = (n: number) => g.slice(0, n).every((x) => x === 0);
+  // ::/96 (unspecified, loopback, IPv4-compatible), ::ffff:0:0/96 (mapped), ::ffff:0:0:0/96 (translated) and
+  // 64:ff9b::/96 (NAT64) carry an IPv4 address that may be inward; so does 6to4 (2002::/16).
+  if (zero(6) || (zero(5) && g[5] === 0xffff) || (zero(4) && g[4] === 0xffff && g[5] === 0)) return zero(6) && g[6] === 0 && g[7]! <= 1 ? true : tail(6);
+  if (g[0] === 0x64 && g[1] === 0xff9b) return g[2] === 0 && g.slice(3, 6).every((x) => x === 0) ? tail(6) : true;
+  if (g[0] === 0x2002) return tail(1);
+  // Anything else under ::/8 is reserved; fc00::/7 unique-local, fe80::/10 link-local, fec0::/10 site-local,
+  // ff00::/8 multicast, 2001::/32 Teredo (an IPv4 address inside, obscured) and 2001:db8::/32 documentation.
+  return g[0]! < 0x100 || (g[0]! & 0xfe00) === 0xfc00 || (g[0]! & 0xffc0) === 0xfe80 || (g[0]! & 0xffc0) === 0xfec0 || g[0]! >= 0xff00
+    || (g[0] === 0x2001 && (g[1] === 0 || g[1] === 0xdb8));
+}
+
+/** An IPv6 address as its eight 16-bit groups, a dotted IPv4 tail included; null when it isn't one. */
+function v6(h: string): number[] | null {
+  let s = h.replace(/%.*$/, "");
+  const dotted = /^(.*:)(\d+\.\d+\.\d+\.\d+)$/.exec(s);
+  if (dotted) {
+    const a = v4(dotted[2]!);
+    if (!a || a.some((x) => x > 255)) return null;
+    s = dotted[1] + ((a[0]! << 8) | a[1]!).toString(16) + ":" + ((a[2]! << 8) | a[3]!).toString(16);
+  }
+  const halves = s.split("::");
+  if (halves.length > 2) return null;
+  const part = (x: string) => (x ? x.split(":") : []);
+  const [head, rest] = [part(halves[0]!), halves.length === 2 ? part(halves[1]!) : null];
+  const groups = rest ? [...head, ...Array(8 - head.length - rest.length).fill("0"), ...rest] : head;
+  if (groups.length !== 8 || (rest && head.length + rest.length > 7) || groups.some((x) => !/^[0-9a-f]{1,4}$/.test(x))) return null;
+  return groups.map((x) => parseInt(x, 16));
 }
 
 /** On the desktop: whether `url`'s host resolves to a private address. A name that doesn't resolve isn't, and fails on its own. */
