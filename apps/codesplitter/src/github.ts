@@ -163,7 +163,7 @@ export async function branchAndPath(repo: string, rest: string, token?: string):
 export const REPO_TABLES = ["repos|owner = ? AND name = ?", "collaborators", "files", "repo_search", "branches", "branch_files", "shares", "beams", "stamps", "tracks", "webhooks", "webhook_deliveries",
   "cuts", "deploys", "deploy_settings", "deploy_keys", "deploy_cleared", "dep_watches", "fit_cache", "check_runs", "check_settings", "check_watches", "ci_tokens", "follows", "line_events", "authors", "invites", "worktrees",
   "agent_runs", "presence", "mal_hits", "held", "leftover_answers", "uncommitted", "protect_main", "board_prs", "board_meta", "board_rounds", "rollbacks", "mervin_learning", "mervin_events",
-  "dep_issues", "train_cars", "hook_verdicts", "mentions", "lane_counts", "bus_seats", "bus_passes", "ester_verdicts", "dexter_repos", "dexter_runs", "dexter_days", "dexter_trims",
+  "dep_issues", "train_cars", "hook_verdicts", "mentions", "lane_counts", "bus_seats", "bus_passes", "ester_verdicts", "dexter_repos", "dexter_runs", "dexter_days", "dexter_trims", "handed_tokens",
   "fresh_starts", "fresh_objects", "git_pending"];
 /** Repo-keyed tables a delete keeps: the audit trail, for its owner until the account goes (REFERENCE.md, "Your destruction"). */
 export const KEPT_ON_DELETE = ["audit"];

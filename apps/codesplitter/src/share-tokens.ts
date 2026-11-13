@@ -1,3 +1,4 @@
+// Layout: read tokens handed to people other than a repo's owner, recalled when the repo goes private
 // Read tokens handed to people other than a repo's owner: a share link's, or the clone line on the repo's page.
 // Artifacts can take a token back, so each is kept until it lapses, and going private recalls those held by
 // anyone outside the crew: a stranger's clone line stops working the moment the repo does.
