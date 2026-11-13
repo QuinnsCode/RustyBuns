@@ -7,19 +7,19 @@
 import { type Blob, type N, type Part, type V, bone, chain, f4, norm, pair, write } from "../set-a/upright/lib.ts";
 
 const nodes: Record<string, N> = {
-  tail6: [-1.34, 1.02, 0, 0.01],
-  tail5: [-1.44, 1.18, 0, 0.012],
-  tail4: [-1.58, 0.9, 0, 0.018],
-  tail3: [-1.38, 0.66, 0, 0.026],
-  tail2: [-1.02, 0.6, 0, 0.04],
-  tail1: [-0.66, 0.66, 0, 0.06],
+  tail6: [-1.3, 1.06, -0.12, 0.01],
+  tail5: [-1.44, 1.12, -0.18, 0.012],
+  tail4: [-1.56, 0.88, -0.06, 0.018],
+  tail3: [-1.34, 0.68, 0.16, 0.026],
+  tail2: [-1.0, 0.6, 0.22, 0.04],
+  tail1: [-0.66, 0.66, 0.06, 0.06],
   hip: [-0.32, 0.72, 0, 0.12],
   belly: [-0.02, 0.78, 0, 0.13],
   chest: [0.26, 0.9, 0, 0.13],
-  neck1: [0.42, 1.08, 0, 0.07],
-  neck2: [0.44, 1.32, 0, 0.06],
-  neck3: [0.54, 1.5, 0, 0.055],
-  head: [0.7, 1.58, 0, 0.07],
+  neck1: [0.47, 1.04, 0, 0.07],
+  neck2: [0.37, 1.3, 0, 0.06],
+  neck3: [0.5, 1.5, 0, 0.055],
+  head: [0.72, 1.56, 0, 0.07],
   l_hipj: [-0.28, 0.5, 0.14, 0.08],
   l_knee: [-0.12, 0.32, 0.17, 0.06],
   l_hock: [-0.22, 0.15, 0.16, 0.035],
@@ -37,6 +37,18 @@ const links = [
   ...chain(["chest", "l_wroot", "l_welbow", "l_wwrist", "l_wtip"]),
 ];
 
+/** Overlapping spheres down a chain of nodes, tapering through these radii: a tail that can coil sideways. */
+function tube(chain: string[], radii: number[]): Blob[] {
+  const out: Blob[] = [];
+  for (let i = 0; i < chain.length - 1; i++) {
+    const A = nodes[chain[i]!]!, B = nodes[chain[i + 1]!]!;
+    for (let k = 0; k < 4; k++) {
+      const t = k / 4, r = f4(radii[i]! + (radii[i + 1]! - radii[i]!) * t);
+      out.push({ at: chain[i]!, off: [f4((B[0] - A[0]) * t), f4((B[1] - A[1]) * t), f4((B[2] - A[2]) * t)], r: [r, r, r] });
+    }
+  }
+  return out;
+}
 // the body: a lean ribbed barrel, an S-neck, a whip tail tapering to a curl
 const blobs: Blob[] = [
   { at: "hip", off: [0, 0, 0], r: [0.21, 0.17, 0.17] },
@@ -46,12 +58,7 @@ const blobs: Blob[] = [
   ...bone(nodes, "neck1", "neck2", 0.095, 0.09, 0.15),
   ...bone(nodes, "neck2", "neck3", 0.08, 0.075, 0.15),
   ...bone(nodes, "neck3", "head", 0.06, 0.055, 0.1),
-  ...bone(nodes, "hip", "tail1", 0.12, 0.11, 0.15),
-  ...bone(nodes, "tail1", "tail2", 0.075, 0.07, 0.12),
-  ...bone(nodes, "tail2", "tail3", 0.04, 0.038, 0.12),
-  ...bone(nodes, "tail3", "tail4", 0.028, 0.026, 0.1),
-  ...bone(nodes, "tail4", "tail5", 0.018, 0.017, 0.1),
-  ...bone(nodes, "tail5", "tail6", 0.013, 0.012, 0.1),
+  ...tube(["hip", "tail1", "tail2", "tail3", "tail4", "tail5", "tail6"], [0.13, 0.09, 0.06, 0.042, 0.03, 0.02, 0.014]),
   // thighs, a knee, a long scaly shank: a bird's leg
   ...pair("l_hipj", [0.02, -0.01, 0], [0.15, 0.15, 0.11]),
   ...bone(nodes, "l_hipj", "l_knee", 0.09, 0.075, 0.15),
@@ -85,7 +92,7 @@ parts.push({ kind: "horn", at: "head", off: [0.16, -0.06, 0], dir: [1, -0.35, 0]
 // a row of teeth down each side of the upper bill (the Maryland accounts' toothed, metal-like beak)
 for (let i = 0; i < 5; i++) for (const z of [1, -1]) {
   const t = i / 4, x = 0.19 + 0.15 * t, y = -0.035 - 0.05 * t * t;
-  parts.push({ kind: "horn", at: "head", off: [f4(x), f4(y), f4(0.024 * z * (1 - 0.4 * t))], dir: norm([0.15, -1, 0.2 * z]), len: f4(0.035 - 0.012 * t), base: 0.009, tip_base: 0.001, material: "fang" });
+  parts.push({ kind: "horn", at: "head", off: [f4(x), f4(y), f4(0.024 * z * (1 - 0.4 * t))], dir: norm([0.15, -1, 0.2 * z]), len: f4(0.065 - 0.02 * t), base: 0.016, tip_base: 0.002, material: "fang" });
 }
 // the tentacles: a beard of long crimson tendrils spilling from the gape, curling every way
 const T: [V, V, number, V, number][] = [
@@ -102,7 +109,12 @@ const T: [V, V, number, V, number][] = [
   [[0.12, -0.09, 0.04], [0.3, -1, 0.3], 0.26, [-1, 0, 0.4], 160],
   [[0.12, -0.09, -0.04], [0.3, -1, -0.3], 0.26, [-1, 0, -0.4], 160],
 ];
-for (const [off, d, len, bend, curve] of T) parts.push({ kind: "horn", at: "head", off, dir: norm(d), len, base: 0.022, tip_base: 0.004, curve, bend, material: "tentacle" });
+for (const [off, d, len, bend, curve] of T) parts.push({ kind: "horn", at: "head", off, dir: norm(d), len, base: 0.032, tip_base: 0.006, curve, bend, material: "tentacle" });
+// a second, shorter ring round the gape so the beard reads as a mass, not a few strands
+for (let i = 0; i < 10; i++) {
+  const a = (i / 10) * Math.PI * 2, z = Math.sin(a), y = Math.cos(a);
+  parts.push({ kind: "horn", at: "head", off: [0.15, f4(-0.075 + 0.02 * y), f4(0.05 * z)], dir: norm([0.5, -1 + 0.4 * y, 0.8 * z]), len: f4(0.24 + 0.08 * ((i * 7) % 3)), base: 0.026, tip_base: 0.005, curve: 100 + 25 * (i % 3), bend: [f4(0.6 * y), 0.2, f4(z)], material: "tentacle" });
+}
 // red frills on the crown: a fan of ribs swept back, a web between them, the edge cut into points
 for (let i = 0; i < 7; i++) {
   const a = ((-40 + i * 18) * Math.PI) / 180;
