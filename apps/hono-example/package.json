@@ -11,7 +11,7 @@
     "test": "bun test test"
   },
   "dependencies": {
-    "hono": "4.13.14"
+    "hono": "4.13.16"
   },
   "devDependencies": {
     "@alchemy.run/cloudflare": "2.0.0-beta.84",
