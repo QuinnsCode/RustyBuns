@@ -175,6 +175,13 @@ export function sheet(name: string) {
 // out at the elbow with hooked talons hanging past the waist, a lean ribbed bronze chest, and a narrow pleated column
 // of a skirt that glows green at the hem and fades into the mist it hovers in.
 const COWL_NOTE = "the owner's picture: teardrop cowl, small red eyes, insect arms with talons, ribbed chest, skirt fading into green mist";
+// how the mist it hovers in ties into its moves (spirit and venom; its signature is Hissing Mist in src/creatures.ts),
+// shown under its strip on the candidate page. Proposals for the owner: no move changes in the game yet.
+const COWL_MIST = [
+  "Hissing Mist (its signature, venom breath): the green glow at the hem flares and a poison mist rolls out ahead of it. A foe who stays in the mist is poisoned a little more each second; stepping out stops it getting worse.",
+  "Draining Fog (spirit): it sinks into a grey-green fog that spreads round it. Foes inside slowly lose stamina and it heals by what they lose. While the fog is up, its skirt fades from the hem upward, so you can see it drawing the fog in.",
+  "Hovering in its own mist: with no legs it floats, so a hit slides it back instead of knocking it down. When it has used up its mist the hem glow goes dim: that is the moment it is open.",
+];
 export function cowl() {
   const nodes: Record<string, N> = {
     hem: [0, 0.4, 0, 0.16],
@@ -245,10 +252,12 @@ export function cowl() {
   parts.push({ kind: "ridge", at: "head", off: on([0.12, -0.09, 0], [1, -0.2, 0], 0.004), dir: [0, 0, 1], len: 0.03, base: 0.006, curve: 10, bend: [-1, 0, 0], mirror: true, material: "dark" });
   // four long hooked talons hanging from each hand, past the waist
   parts.push(...[-0.03, -0.01, 0.01, 0.03].map((z): Part => ({ kind: "horn", at: "l_hand", off: [0.01, -0.01, z], dir: [0.5, -1, z * 5], len: 0.3, base: 0.016, tip_base: 0.003, curve: 75, bend: [1, 0.2, 0], mirror: true, material: "claw" })));
-  // wisps of glowing mist curling off the hem
+  // wisps of glowing mist licking up the skirt from the hem. They rise and stay inside a 0.42 m radius: the rig
+  // counts any skeleton tip in a beast's bottom 15% as a foot, and wisps flaring out past about 0.45 m (the old
+  // ones reached 0.5) grow a skeleton branch to the hem's rim, a stray foot
   for (let i = 0; i < 8; i++) {
-    const a = ((i + 0.5) / 8) * Math.PI * 2;
-    parts.push({ kind: "horn", at: "hem", off: [f4(0.3 * Math.cos(a)), -0.02, f4(0.3 * Math.sin(a))], dir: norm([Math.cos(a), -0.25, Math.sin(a)]), len: 0.16, base: 0.05, tip_base: 0.006, curve: 70, bend: [-Math.sin(a), 0.6, Math.cos(a)], material: "mist" });
+    const a = ((i + 0.5) / 8) * Math.PI * 2, c = Math.cos(a), s = Math.sin(a);
+    parts.push({ kind: "horn", at: "hem", off: [f4(0.3 * c), 0, f4(0.3 * s)], dir: norm([0.6 * c, 1, 0.6 * s]), len: 0.12, base: 0.045, tip_base: 0.006, curve: 50, bend: [f4(-s), 0, f4(c)], material: "mist" });
   }
   return {
     feet: 0, wings: 0, budget: 8000, root: "chest", material: "suit", blend: 0.022,
@@ -267,7 +276,7 @@ export function cowl() {
 
 if (import.meta.main) {
   const [name, out] = process.argv.slice(2);
-  if (name === "cowl") write("flatwoods-monster", { ...(out ? { candidate: COWL_NOTE } : {}), ...cowl() }, out);
+  if (name === "cowl") write("flatwoods-monster", { ...(out ? { candidate: COWL_NOTE, notes: COWL_MIST } : {}), ...cowl() }, out);
   else if (!name || !LOOKS[name]) { console.error(`usage: bun proposals/compendium/flatwoods-monster.ts <cowl|${VARIANTS.join("|")}> [out.json]`); process.exit(1); }
   else write("flatwoods-monster", { ...(out ? { candidate: LOOKS[name]!.note } : {}), ...sheet(name) }, out);
 }
