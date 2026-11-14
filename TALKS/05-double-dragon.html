@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Double Dragon</title>
+<meta name="description" content="Talk 5: the twin engine, where the same game rules run in Rust and in TypeScript and stay step for step the same, in plain words.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@700;900&family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&family=JetBrains+Mono:wght@600;700&display=swap">
+<link rel="stylesheet" href="deck.css">
+</head>
+<body>
+
+<section class="slide">
+  <div class="kicker">Talk 5 · Rusty Buns talks</div>
+  <h1>Double Dragon</h1>
+  <p class="lede">The twin engine: the same game rules, written twice, that never disagree.</p>
+  <p class="aside">Two dragons. One brain. Constant arguments, settled by a test every time.</p>
+  <div class="notes">Double Dragon is our inside name for the twin sim. The one deep part is slide 7: why plain sums.</div>
+</section>
+
+<section class="slide">
+  <div class="kicker">The picture first</div>
+  <h2>Two cooks, one recipe</h2>
+  <p class="lede">Two cooks make the same cake in two kitchens. The cakes must be identical, to the crumb.</p>
+  <ul>
+    <li>One cook is very fast. The other is very easy to talk to.</li>
+    <li>You can swap one for the other at any moment, and nobody can taste it.</li>
+    <li>After every cake, a judge compares them. Any crumb out of place, and the kitchen stops.</li>
+  </ul>
+  <p class="aside">The fast cook is Rust. The friendly cook is TypeScript. The judge has no sense of humour.</p>
+</section>
+
+<section class="slide">
+  <div class="kicker">The pair</div>
+  <h2>Two engines that work as one</h2>
+  <div class="cards">
+    <div class="card"><h3>The TypeScript sim</h3><p>The rules of the game, easy to read and change. It is the source of truth.</p><p class="pic"><b>Like:</b> the recipe in the book.</p></div>
+    <div class="card"><h3>The Rust sim</h3><p>The same rules in Rust. It runs on a server, on a laptop, or in the page as WebAssembly.</p><p class="pic"><b>Like:</b> the same recipe, by a faster cook.</p></div>
+  </div>
+  <p class="lede">Same start, same button presses: same game, tick for tick.</p>
+</section>
+
+<section class="slide">
+  <div class="kicker">Why two</div>
+  <h2>What the pair gives you</h2>
+  <ol class="steps">
+    <li><span><b>A replay the server can trust.</b> Any copy can play the game again and get the same result.</span></li>
+    <li><span><b>Thousands of test games.</b> The Rust copy plays robot against robot on every core, to keep the game fair.</span></li>
+    <li><span><b>A safe fallback.</b> If the Rust copy cannot load, the TypeScript copy plays. The player never knows.</span></li>
+  </ol>
+  <p class="aside">Speed is nice. Agreement is the point.</p>
+</section>
+
+<section class="slide">
+  <div class="kicker">Where you can see it</div>
+  <h2>A creature brawler on two engines</h2>
+  <ul>
+    <li>Our creature fighting game plays its fights on the Rust copy, inside the page.</li>
+    <li>Until the Rust copy loads, or if it will not, the fight plays on TypeScript.</li>
+    <li>A robot tuner plays bot against bot in Rust, many fights at once, to keep each beast near even odds.</li>
+  </ul>
+  <p class="aside">Seventy-odd folklore beasts, all within a whisker of a fair fight. The jackalope is still smug about it.</p>
+</section>
+
+<section class="slide">
+  <div class="kicker">The hard part</div>
+  <h2>One tiny difference ruins a whole fight</h2>
+  <p class="lede">Computers round numbers. Two engines can round the last digit differently.</p>
+  <ul>
+    <li>One wrong last digit in tick 1 is a tiny error.</li>
+    <li>By tick 1,000 the tiny error is a different fight.</li>
+    <li>Fast is easy. Identical is hard.</li>
+  </ul>
+  <p class="aside">A butterfly flaps its wings in Rust. A dragon loses in TypeScript.</p>
+</section>
+
+<section class="slide">
+  <div class="kicker">The cute specific</div>
+  <h2>We do the hard maths with plain sums</h2>
+  <p class="lede">Turning, curving and growing numbers usually come from a built-in maths library. Each engine's library can differ in the last digit.</p>
+  <ul>
+    <li>So the game does that maths itself, with only add, subtract, multiply and divide.</li>
+    <li>Plain sums give the same answer in every engine.</li>
+    <li>Both copies use the same hand-made maths, written line for line the same.</li>
+  </ul>
+  <p class="aside">The calculator in your pocket rounds its own way. So we went back to pencil and paper. Very fast pencil.</p>
+  <div class="notes">This is the "cute specific": the built-in sin, cos and friends may differ in the last bit between engines, so the sim uses its own versions made only of basic arithmetic. Do not go further into how they are built.</div>
+</section>
+
+<section class="slide">
+  <div class="kicker">The judge</div>
+  <h2>A test plays both copies, every time</h2>
+  <div class="diagram" role="img" aria-label="The same start and the same inputs go into both engines. Each tick, their results are compared. Same: carry on. Different: stop and say where.">
+    <svg viewBox="0 0 900 280">
+      <defs><marker id="ah" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="d-head" d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <rect class="d-box" x="20" y="100" width="210" height="74" rx="14"/>
+      <text class="d-text" x="125" y="132" text-anchor="middle">Same start</text>
+      <text class="d-small" x="125" y="156" text-anchor="middle">same button presses</text>
+      <rect class="d-box" x="300" y="20" width="250" height="74" rx="14"/>
+      <text class="d-text" x="425" y="62" text-anchor="middle">TypeScript sim</text>
+      <rect class="d-box" x="300" y="180" width="250" height="74" rx="14"/>
+      <text class="d-text" x="425" y="222" text-anchor="middle">Rust sim</text>
+      <rect class="d-hot" x="630" y="100" width="250" height="74" rx="14"/>
+      <text class="d-text" x="755" y="132" text-anchor="middle">Compare each tick</text>
+      <text class="d-small" x="755" y="156" text-anchor="middle">different? stop, say where</text>
+      <path class="d-arrow" marker-end="url(#ah)" d="M232,125 C260,90 270,60 294,58"/>
+      <path class="d-arrow" marker-end="url(#ah)" d="M232,150 C260,185 270,215 294,217"/>
+      <path class="d-arrow" marker-end="url(#ah)" d="M552,58 C590,60 600,100 624,122"/>
+      <path class="d-arrow" marker-end="url(#ah)" d="M552,217 C590,215 600,175 624,152"/>
+    </svg>
+  </div>
+  <p class="aside">A change to the rules goes into both copies in the same change, or the judge says no. The judge does not accept "later".</p>
+</section>
+
+<section class="slide">
+  <div class="kicker">Not only games</div>
+  <h2>The same idea all over Rusty Buns</h2>
+  <ul>
+    <li>A music app makes the same sound in Rust and TypeScript, sample by sample.</li>
+    <li>A rigging tool gives a 3D model the same bones in both.</li>
+    <li>Every Rust part in Rusty Buns comes with a TypeScript twin.</li>
+  </ul>
+  <p class="aside">Double Dragon is the game version of a family habit. The whole family argues the same way.</p>
+</section>
+
+<section class="slide">
+  <div class="kicker">Honest status</div>
+  <h2>Where the twins stand</h2>
+  <div class="cards">
+    <div class="card"><span class="tag live">Live</span><h3 style="margin-top:12px">Fights on Rust in the page</h3><p>With TypeScript as the fallback, checked tick for tick by tests.</p></div>
+    <div class="card"><span class="tag live">Live</span><h3 style="margin-top:12px">The robot tuner</h3><p>Bot against bot on the Rust copy, every core busy.</p></div>
+    <div class="card"><span class="tag live">Live</span><h3 style="margin-top:12px">Team fights</h3><p>Two against one plays the same on both copies.</p></div>
+    <div class="card"><span class="tag plan">Next</span><h3 style="margin-top:12px">Servers replay fights</h3><p>The server plays a fight again to check it.</p></div>
+  </div>
+  <div class="notes">Keep this slide current. Source of truth: apps/mythic-masters/README.md (the Rust sim sections).</div>
+</section>
+
+<section class="slide">
+  <div class="kicker">The end</div>
+  <h1>Two dragons.<br>One answer.</h1>
+  <p class="lede">Write the rules twice. Check them every tick. Let either one play.</p>
+  <p style="margin-top:28px"><a href="index.html">All talks</a> · <a href="04-game-engine.html">Talk 4</a> · <a href="06-eqosys.html">Talk 6: eqosys</a></p>
+</section>
+
+<script src="deck.js"></script>
+</body>
+</html>

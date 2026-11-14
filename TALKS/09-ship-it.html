@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ship It</title>
+<meta name="description" content="Talk 9: how new code reaches people: tests, the builder computer, release rings and who presses deploy, in plain words.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@700;900&family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&family=JetBrains+Mono:wght@600;700&display=swap">
+<link rel="stylesheet" href="deck.css">
+</head>
+<body>
+
+<section class="slide">
+  <div class="kicker">Talk 9 · Rusty Buns talks</div>
+  <h1>Ship It</h1>
+  <p class="lede">Tests, the builder computer, release rings, and the one person who presses deploy.</p>
+  <p class="aside">Many AI helpers write code all day. Exactly one human ships it. The ratio is on purpose.</p>
+  <div class="notes">The thread: lots of change, all day, and the main code never stops. Then the person at the end.</div>
+</section>
+
+<section class="slide">
+  <div class="kicker">The picture first</div>
+  <h2>Tasting the soup before serving the room</h2>
+  <ol class="steps">
+    <li><span><b>The cook tastes a spoonful.</b> Does this one change work?</span></li>
+    <li><span><b>The kitchen tastes the pot.</b> Does everything still work together?</span></li>
+    <li><span><b>One table gets it first.</b> Then more tables. Then the room.</span></li>
+    <li><span><b>The head chef says yes.</b> Only then does it go on the menu.</span></li>
+  </ol>
+  <p class="aside">Nobody has ever been sent home for tasting the soup too often.</p>
+</section>
+
+<section class="slide">
+  <div class="kicker">The spoonful</div>
+  <h2>Every change gets checked on its own</h2>
+  <ul>
+    <li>A change is a pull request: a proposal, waiting for a check.</li>
+    <li>Robots check that the code makes sense, and run the tests of every app it touches.</li>
+    <li>A new feature brings one test that walks it the way a person would.</li>
+    <li>Green, and Mervin merges it into the main code. Red, and it waits for a fix.</li>
+  </ul>
+  <p class="aside">We test what people do every day, not what a cat could do on a keyboard. The cat is out of scope.</p>
+</section>
+
+<section class="slide">
+  <div class="kicker">The second kitchen</div>
+  <h2>Bob runs the tests</h2>
+  <p class="lede">The main computer runs the office: many AI helpers at once. It has no room left for heavy tests.</p>
+  <ul>
+    <li>So a second, bigger computer runs them. We call it Bob.</li>
+    <li>A helper sends its work to Bob as it is. No need to save it anywhere first.</li>
+    <li>Bob also builds the laptop apps, and runs the slow checks overnight.</li>
+    <li>On battery, Bob runs one thing at a time. Low battery, Bob waits.</li>
+  </ul>
+  <p class="aside">Bob does not complain. Bob does not take holidays. Bob does occasionally need to be plugged in.</p>
+</section>
+
+<section class="slide">
+  <div class="kicker">Release rings</div>
+  <h2>A few people first, then more, then everyone</h2>
+  <div class="diagram" role="img" aria-label="Four rings from small to large: each change, every hour, every day, every week. A change moves out one ring only after it stays green in the ring before.">
+    <svg viewBox="0 0 900 260">
+      <defs><marker id="ah" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="d-head" d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <rect class="d-hot" x="10" y="60" width="190" height="110" rx="14"/>
+      <text class="d-text" x="105" y="102" text-anchor="middle">Each change</text>
+      <text class="d-small" x="105" y="128" text-anchor="middle">its own tests</text>
+      <rect class="d-box" x="240" y="60" width="190" height="110" rx="14"/>
+      <text class="d-text" x="335" y="102" text-anchor="middle">Every hour</text>
+      <text class="d-small" x="335" y="128" text-anchor="middle">every app's tests</text>
+      <rect class="d-box" x="470" y="60" width="190" height="110" rx="14"/>
+      <text class="d-text" x="565" y="102" text-anchor="middle">Every day</text>
+      <text class="d-small" x="565" y="128" text-anchor="middle">laptop apps, phones,</text>
+      <text class="d-small" x="565" y="148" text-anchor="middle">test servers</text>
+      <rect class="d-box" x="700" y="60" width="190" height="110" rx="14"/>
+      <text class="d-text" x="795" y="102" text-anchor="middle">Every week</text>
+      <text class="d-small" x="795" y="128" text-anchor="middle">a person tastes it,</text>
+      <text class="d-small" x="795" y="148" text-anchor="middle">then everyone</text>
+      <path class="d-arrow" marker-end="url(#ah)" d="M202,115 L234,115"/>
+      <path class="d-arrow" marker-end="url(#ah)" d="M432,115 L464,115"/>
+      <path class="d-arrow" marker-end="url(#ah)" d="M662,115 L694,115"/>
+      <text class="d-small" x="450" y="220" text-anchor="middle">A change moves out one ring only after it stays green in the ring before.</text>
+    </svg>
+  </div>
+  <p class="aside">Each ring is a taste test with a bigger table. The soup earns its way to the dining room.</p>
+  <div class="notes">This is the "cute specific": the main code never freezes. Safety lives in rings behind it that only move forward, each one a pointer that waits for the ring below to stay green.</div>
+</section>
+
+<section class="slide">
+  <div class="kicker">When a ring goes red</div>
+  <h2>The main code never stops</h2>
+  <ul>
+    <li>A red ring stops moving. Everyone else keeps working.</li>
+    <li>Ester finds which change broke it, and tells the helper who made it.</li>
+    <li>No fix within the hour? Mervin takes that one change back out.</li>
+    <li>Every good build is kept for a while, so going back is a download, not a rebuild.</li>
+  </ul>
+  <p class="aside">No all-hands meeting. No blame. One change out, and back to soup.</p>
+</section>
+
+<section class="slide">
+  <div class="kicker">Who presses deploy</div>
+  <h2>A person. Always.</h2>
+  <ol class="steps">
+    <li><span><b>Helpers write. They do not ship.</b> An AI helper can propose and test. It cannot put code live.</span></li>
+    <li><span><b>The price comes first.</b> Before a deploy, the tool lists every paid piece. No list, no deploy.</span></li>
+    <li><span><b>Secrets stay behind a fingerprint.</b> They unlock only when the owner touches the sensor.</span></li>
+    <li><span><b>Taste is human.</b> "Does this feel right?" is a manual run, for the owner's own eyes.</span></li>
+  </ol>
+  <p class="aside">The robots can do almost everything. The fingerprint stays attached to a person.</p>
+</section>
+
+<section class="slide">
+  <div class="kicker">Manual runs</div>
+  <h2>Checks that need a person's hands</h2>
+  <ul>
+    <li>Some checks need eyes: "Is this fun?", "Does this look right on a phone?".</li>
+    <li>Each one gets its own note on the to-do list, with the steps and the time it takes.</li>
+    <li>The owner works through them in one sitting. Yes closes it. No sends it back.</li>
+    <li>The robots check everything they can first. The person only judges taste.</li>
+  </ul>
+  <p class="aside">The robots do the dishes. The person decides if dinner was good.</p>
+</section>
+
+<section class="slide">
+  <div class="kicker">Honest status</div>
+  <h2>What ships today, and what is being built</h2>
+  <div class="cards">
+    <div class="card"><span class="tag live">Live</span><h3 style="margin-top:12px">Checks on every change</h3><p>Tests per app, then Mervin merges.</p></div>
+    <div class="card"><span class="tag live">Live</span><h3 style="margin-top:12px">Bob, the builder</h3><p>Tests and laptop builds, off the main computer.</p></div>
+    <div class="card"><span class="tag live">Live</span><h3 style="margin-top:12px">A person deploys</h3><p>Price first, fingerprint for secrets.</p></div>
+    <div class="card"><span class="tag oven">In the oven</span><h3 style="margin-top:12px">Release rings</h3><p>Being built one ring at a time: hour, then day, then week.</p></div>
+  </div>
+  <div class="notes">Keep this slide current. Source of truth: notes/RELEASE_RINGS.md (build order) and AGENTS.md (tests and the builder).</div>
+</section>
+
+<section class="slide">
+  <div class="kicker">The end</div>
+  <h1>Taste often.<br>Serve carefully.</h1>
+  <p class="lede">Robots test all day. Rings serve it out slowly. A person signs the last step.</p>
+  <p style="margin-top:28px"><a href="index.html">All talks</a> · <a href="08-sign-in-to-game.html">Talk 8</a> · <a href="00-the-words.html">The words</a></p>
+</section>
+
+<script src="deck.js"></script>
+</body>
+</html>
