@@ -22,7 +22,6 @@ import { css } from "./style.ts";
 import type { View, Viewer } from "./viewer.ts";
 
 const DEFAULT_COLORS = ["#1f2937", "#f5f5f4", "#b91c1c", "#1d4ed8", "#166534", "#d97706", "#7c3aed", "#e7d7b9"];
-const VIEW_ORDER: View[] = ["front", "angle", "side", "back"];
 const LABELS: Record<Model, string> = { cap: "Cap", beanie: "Beanie", bucket: "Bucket" };
 /** Where the widget's own server is: the origin this script came from, unless the page says otherwise (api="..."). */
 const HOME = new URL(import.meta.url).origin;
@@ -50,7 +49,6 @@ export class QView3D extends HTMLElement {
   private viewer: Viewer | null = null;
   private ready: Promise<Viewer> | null = null;
   private colors = DEFAULT_COLORS;
-  private viewIndex = 1;
   private ui = this.build();
 
   get api() { return (this.getAttribute("api") ?? HOME).replace(/\/$/, ""); }
@@ -83,8 +81,8 @@ export class QView3D extends HTMLElement {
     if (name === "colors") { this.colors = parseColors(this.getAttribute("colors")) ?? DEFAULT_COLORS; this.drawSwatches(); }
     if (name === "product" && this.ready) void this.loadProduct();
     if (!this.viewer) return;
-    if (name === "model") { this.viewer.setModel(asModel(this.getAttribute("model"))); this.sync(); }
-    if (name === "color") { this.viewer.setColor(this.getAttribute("color") ?? this.colors[0]!); this.sync(); }
+    if (name === "model" && this.viewer.model !== asModel(this.getAttribute("model"))) { this.viewer.setModel(asModel(this.getAttribute("model"))); this.changed(); }
+    if (name === "color" && this.viewer.color !== (this.getAttribute("color") ?? this.colors[0]!)) { this.viewer.setColor(this.getAttribute("color") ?? this.colors[0]!); this.changed(); }
   }
 
   private boot(): Promise<Viewer> {
@@ -125,7 +123,7 @@ export class QView3D extends HTMLElement {
   }
   removeImage() { this.viewer?.removeImage(); this.sync(); }
   place(p: { u?: number; v?: number; scale?: number; rotation?: number }) { this.viewer?.place(p); this.sync(); }
-  view(v: View) { this.viewer?.view(v); this.viewIndex = VIEW_ORDER.indexOf(v); }
+  view(v: View) { this.viewer?.view(v); }
   async load(d: Design) { (await this.boot()).apply(d); this.sync(); }
 
   /** A PNG of the product as it looks now, with the settings that made it. Fires qview:snapshot. */
@@ -192,10 +190,7 @@ export class QView3D extends HTMLElement {
       b.dataset.model = m;
       return b;
     }));
-    const turnView = iconButton(Rotate3d, "Turn the view", () => {
-      this.viewIndex = (this.viewIndex + 1) % VIEW_ORDER.length;
-      this.viewer?.view(VIEW_ORDER[this.viewIndex]!);
-    });
+    const turnView = iconButton(Rotate3d, "Turn the view", () => this.viewer?.nextView());
     const hint = h("button", { class: "hint glass", part: "hint", onclick: pick }, icon(ImagePlus), "Add your picture");
 
     const scale = h("input", { type: "range", min: "0.05", max: "1", step: "0.01", title: "Size" });
