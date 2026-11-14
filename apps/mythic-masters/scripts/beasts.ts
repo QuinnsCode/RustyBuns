@@ -10,6 +10,8 @@
 //                         ?gallery page without a reload
 //   --silhouette <id>     blender/out/<id>.silhouette.png: the contact sheet in flat black on white
 //   --close               blender/out/<id>.close.png: the GLB's own mesh up close, to judge a baked `hide`
+//   --swatch [pattern ...] [--sample <id>]   blender/out/hides.png: every hide pattern (or those) baked on a sphere and on
+//                         a sample beast (the Tatzelwurm), from the examples in blender/hides.py (docs/HIDES.md)
 //   --shots [page] [--as before|now]   each ?gallery page (or one) as a 4 x 4 sheet of close-ups, held still, in blender/out/shots/<label>/
 //   --judge               shoots NOW, shows BEFORE and NOW to a fresh `claude -p` judge, writes its score table to
 //                         blender/out/judge.md for the PR body (take BEFORE first: --shots --as before)
@@ -55,6 +57,16 @@ if (flags.has("--shots")) {
   for (const f of await shoot(label!, page === undefined ? undefined : [page])) console.log(f);
   process.exit(0);
 }
+// Blender's thread count changes the decimated mesh, so it is pinned (8 is what the committed GLBs were built with)
+// and a Mac with another core count makes the same GLBs. Running several Blenders at once is safe: each uses 8 threads' worth of work.
+const BLENDER_THREADS = 8;
+if (flags.has("--swatch")) {
+  const at = rest.indexOf("--sample"), sample = at >= 0 ? rest[at + 1]! : null;
+  const pats = picked.filter((p) => p !== sample);
+  const { out } = await runBlender({ script: "blender/hides.py", args: [...(sample ? ["--sample", sample] : []), ...pats], cwd: APP, threads: BLENDER_THREADS });
+  for (const l of out.split("\n").filter((l) => /^hide:|render ->/.test(l))) console.log(l);
+  process.exit(0);
+}
 if (flags.has("--silhouette") && picked.length !== 1) { console.error("--silhouette takes one beast id"); process.exit(1); }
 // A sheet's path by id: every one in beasts/, and a pack's (packs/<id>/beasts/) only when named, since a pack's beasts
 // are built when they join the roster.
@@ -69,9 +81,6 @@ if (ids.length === 0) { console.error("no beast sheets matched"); process.exit(1
 // the first step whose rig matches the sheet is kept, so a build is still the same every run.
 const SNAP_STEPS = ["1e-3", "5e-4", "2e-3", "2.5e-4", "4e-3", "1e-4"];
 
-// Blender's thread count changes the decimated mesh, so it is pinned (8 is what the committed GLBs were built with)
-// and a Mac with another core count makes the same GLBs. Running several Blenders at once is safe: each uses 8 threads' worth of work.
-const BLENDER_THREADS = 8;
 
 async function blender(id: string, step: string): Promise<string[]> {
   const args = [SHEETS.get(id)!, ...(flags.has("--render") ? ["--render"] : []), ...(flags.has("--silhouette") ? ["--silhouette"] : []), ...(flags.has("--close") ? ["--close"] : [])];

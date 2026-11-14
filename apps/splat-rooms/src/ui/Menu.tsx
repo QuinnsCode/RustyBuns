@@ -58,6 +58,7 @@ export function RoomSelect({ scenes, records, onPick, onBack }: {
         <h1>Mission board</h1>
         <span className="dim small">Choose a room</span>
       </header>
+      <div className="board-band"><Band label={`MISSION BOARD · ${scenes.length} SITES ON FILE`} /></div>
       <ul className="room-grid">
         {scenes.map((s) => {
           const r = records[s.id];
@@ -83,9 +84,9 @@ export function RoomSelect({ scenes, records, onPick, onBack }: {
   );
 }
 
-/** An objective's box, ticked once it is done. */
+/** An objective's indicator lamp on the console: a dark lens in a steel bezel, lit once it is done. */
 const Tick = ({ done }: { done: boolean }) => (
-  <svg width="13" height="13" viewBox="0 0 13 13" aria-hidden><rect x=".5" y=".5" width="12" height="12" rx="2" />{done && <path d="M3 6.8l2.4 2.4L10 4" />}</svg>
+  <svg width="13" height="13" viewBox="0 0 13 13" role="img" aria-label={done ? "done" : "to do"}><circle cx="6.5" cy="6.5" r="6" className="lamp-bezel" /><circle cx="6.5" cy="6.5" r="3.6" className="lamp-glass" /></svg>
 );
 
 /** The briefcase's foam: each gadget, what it is called in the lab, and the key that works it. */

@@ -573,6 +573,8 @@ export function desktopEntry(c: RustyBunsConfig, host: HostKind = "desktop"): st
       case "vectorize": bind.push(`  ${name}: local.vectorize(${JSON.stringify(b.indexName)}, ${JSON.stringify({ dimensions: b.dimensions, metric: b.metric })}),`); break;
       // No model off the edge: env.AI is there, and each call says it runs only on Cloudflare.
       case "ai": bind.push(`  ${name}: local.ai(${JSON.stringify(name)}),`); break;
+      // No browser off the edge: content and links are a plain fetch, the rest say they run only on Cloudflare.
+      case "browser": bind.push(`  ${name}: local.browser(${JSON.stringify(name)}),`); break;
       case "workflow":
         if (b.scriptName) bind.push(`  // ${name}: Workflow in another script (${b.scriptName}) has no local twin`);
         else { bind.push(`  ${name}: local.workflow(${JSON.stringify(name)}),`); workflows.push({ name, className: b.className }); }

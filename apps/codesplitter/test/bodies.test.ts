@@ -44,6 +44,9 @@ test("wrong-shaped bodies are turned away, not thrown on", async () => {
     const r = await send(url, body, method);
     expect([url, body, r.status >= 400 && r.status < 500]).toEqual([url, body, true]);
   }
+  // A file's routes without the file they're about: a 400 for anyone, signed out too.
+  for (const op of ["file", "log", "at", "commits", "claims"]) for (const who of ["ana", null])
+    expect([op, who, (await call(who, `/api/repos/ana/pub/do/${op}`)).status]).toEqual([op, who, 400]);
 
   // A commit message that isn't text is no message; one that's too long is cut, not stored whole.
   await send("/api/repos/ana/pub/files", JSON.stringify({ path: "b.ts", content: "first" }));

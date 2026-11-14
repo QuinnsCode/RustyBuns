@@ -14,7 +14,7 @@ import { lerp } from "@rustybuns/util";
 import type { Floor } from "./arena.ts";
 import { COLOR, type Field } from "./fields.ts";
 import type { Fx, Slot } from "./moves.ts";
-import { footprint, frames, head, held, HZ, LUNGE, sweep, swingPhase, warning, type Area, type Event, type Fighter, type Match, type V3 } from "./sim.ts";
+import { foeOf, footprint, frames, head, held, HZ, LUNGE, sweep, swingPhase, warning, type Area, type Event, type Fighter, type Match, type V3 } from "./sim.ts";
 
 /** How fast a live shape's front moves (m/s), from where it is now and next frame. */
 function flight(a: Area): V3 {
@@ -164,7 +164,9 @@ export class MoveFx {
   setGround(floor: Floor) { this.ground = floor; }
 
   /** How much fighter `i` should flash white right now, 0 to 1: bright on the tick it's struck, gone eight ticks later. */
-  flashOf(i: 0 | 1, tick: number) { return Math.max(0, 1 - (tick - this.struck[i]!) / 8); }
+  // Fighters past the first two (a team fight, #4401) start unstruck: a missing tick would be NaN, and one NaN pixel
+  // in the bloom pass spreads into a black screen.
+  flashOf(i: number, tick: number) { return Math.max(0, 1 - (tick - (this.struck[i] ?? -99)) / 8); }
 
   /** Read one tick's events, then shed, trail and glow for the tick. */
   events(m: Match, events: Event[]) {
@@ -178,7 +180,7 @@ export class MoveFx {
         for (let i = 0; i < 10; i++) this.spawn("leaf", COLOR[f.c.fields[0]!], at, { x: (this.rnd() - 0.5) * 4, y: 1 + this.rnd() * 2, z: (this.rnd() - 0.5) * 4 }, 0.12, 1.2, { acc: -3, spin: 5, blend: THREE.NormalBlending });
       }
       else if (e.kind === "ko" && e.how !== "time") {
-        const f = m.f[e.who], c = { x: f.pos.x, y: f.pos.y + f.b.height * 0.5, z: f.pos.z }, field = m.f[e.who ? 0 : 1].c.fields[0]!;
+        const f = m.f[e.who], c = { x: f.pos.x, y: f.pos.y + f.b.height * 0.5, z: f.pos.z }, field = m.f[foeOf(m, e.who)]!.c.fields[0]!;
         this.shell(COLOR[field], c, 6, 0.6); this.burst(field, c, 30, 2.4); this.flash(WHITE, c, 4, 0.3);
       }
     }
@@ -593,10 +595,10 @@ export class MoveFx {
         else if (t < fr.startup) glow += 0.15 * (t / fr.startup);
       }
       if (f.exhausted) glow *= 0.4;
-      const dim = Math.max(0, 1 - (m.tick - this.dimmed[i]!) / 90); // a shadow nova's hit puts the aura out for a moment
+      const dim = Math.max(0, 1 - (m.tick - (this.dimmed[i] ?? -99)) / 90); // a shadow nova's hit puts the aura out for a moment
       glow *= 1 - dim * 0.85;
-      this.guard(f, i, m.tick); this.plate(f, i, m.tick); this.arc(f, m.f[i ? 0 : 1]!, i); this.warn(m, i as 0 | 1);
-      const hit = this.flashOf(i as 0 | 1, m.tick);
+      this.guard(f, i, m.tick); this.plate(f, i, m.tick); this.arc(f, m.f[foeOf(m, i)]!, i); this.warn(m, i);
+      const hit = this.flashOf(i, m.tick);
       mat.color.setHex(COLOR[field]).lerp(new THREE.Color(WHITE), hit * 0.8);
       mat.opacity = Math.min(1, glow + hit * 0.5);
       a.visible = true;
@@ -657,7 +659,7 @@ export class MoveFx {
   /** A ranged move's reach, painted on the ground through its wind-up (sim `warning`): a column's or wall's lane, a cone's
    * fan, a nova's circle, a lob's ring where it will land. It fills in as the wind-up runs, so there is a beat to step out;
    * a lob in the air keeps its landing ring until it comes down. */
-  private warn(m: Match, i: 0 | 1) {
+  private warn(m: Match, i: number) {
     const f = m.f[i], lob = m.areas.find((a) => a.owner === i && a.d.shape === "blast" && a.t < a.land);
     const a = warning(m, i) ?? lob;
     let w = this.warns[i];
@@ -689,7 +691,7 @@ export class MoveFx {
   private guard(f: Fighter, i: number, tick: number) {
     let g = this.guards[i];
     if (!g) { g = new THREE.Mesh(GEO.shell, rimMaterial()); this.scene.add(g); this.guards[i] = g; }
-    const flare = Math.max(0, 1 - (tick - this.blocked[i]!) / 8), u = (g.material as THREE.ShaderMaterial).uniforms;
+    const flare = Math.max(0, 1 - (tick - (this.blocked[i] ?? -99)) / 8), u = (g.material as THREE.ShaderMaterial).uniforms;
     g.visible = f.state === "guard" || flare > 0;
     if (!g.visible) return;
     (u.color!.value as THREE.Color).setHex(COLOR[f.c.fields[0]!]).lerp(new THREE.Color(WHITE), flare * 0.8);
@@ -706,7 +708,7 @@ export class MoveFx {
     for (const p of this.plates) p.visible = false;
     for (const a of this.arcs) a.fill.visible = a.rim.visible = false;
     for (const w of this.warns) w.fill.visible = w.rim.visible = false;
-    this.struck[0] = this.struck[1] = this.blocked[0] = this.blocked[1] = this.dimmed[0] = this.dimmed[1] = -99;
+    for (const a of [this.struck, this.blocked, this.dimmed]) { a.length = 2; a.fill(-99); }
   }
 }
 

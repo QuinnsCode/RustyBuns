@@ -66,7 +66,7 @@
 import { existsSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { fileDoc, fileIds, MAX_BYTES, MAX_LINES, materialize, toFile } from "./archive.ts";
+import { CommitReply, fileDoc, fileIds, MAX_BYTES, MAX_LINES, materialize, toFile } from "./archive.ts";
 import { fromDisk } from "./agent-run.ts";
 import { GIT_BOT, GIT_EMAIL_DOMAIN } from "./git.ts";
 import { branchAndPath, githubToken, parseFolder, parseRepo } from "./github.ts";
@@ -74,7 +74,8 @@ import { branchEdited, postOrder, startChecks, upstreamMoved, upstreamTaken } fr
 import { diffToOps, merge3 } from "./sync.ts";
 import { branchNameError, fail, json, NAME, need, type Env, readBody } from "./env.ts";
 import type { ErrorTag } from "./openapi.ts";
-import { arr, bool, obj, oneOf, opt, str, type Of } from "@rustybuns/util/guard";
+import { readJson } from "@rustybuns/util/http";
+import { arr, bool, check, obj, oneOf, opt, str, type Of } from "@rustybuns/util/guard";
 import { repoRow } from "./repos.ts";
 import { MAX_TEXT, type Doc } from "./lines.ts";
 import { depsRef, depsTree, folderPath, graft, sendBranch, sourceRef, split, splitFromRef, workspaceDeps } from "./folder-mirror.ts";
@@ -556,8 +557,8 @@ async function land(env: Env, owner: string, repo: string, p: Plan, tip: string,
   }
   if (!p.clean) return;
   const c = await toFile(env, owner, repo, p.path, by, "commit", { method: "POST", body: JSON.stringify({ message }) });
-  const { published } = (await c.json()) as { published: string };
-  await indexFile(env, owner, repo, p.path, published);
+  const published = (await readJson(c, CommitReply))?.published;
+  if (published !== undefined) await indexFile(env, owner, repo, p.path, published);
 }
 
 /**
@@ -743,7 +744,7 @@ export async function mirrorStatus(env: Env, owner: string, repo: string) {
     // Upstream's side, said plainly (#2954): how far behind and ahead of this copy GitHub is.
     upstream: upstreamLag({ url, state, ahead: ahead ?? 0, behind: behind ?? 0, pullOnly }),
     url: shownUrl(url), branch, state, error: r.mirror_error ?? null,
-    clash: r.mirror_clash ? JSON.parse(r.mirror_clash as string) as string[] : [], downSince: r.mirror_down_since ?? null,
+    clash: check(arr(str(4096), 10_000), r.mirror_clash ? JSON.parse(String(r.mirror_clash)) : []) ?? [], downSince: r.mirror_down_since ?? null,
     syncedAt: r.mirror_synced_at ?? null, nextAt: r.mirror_next_at ?? null, upstreamCommit: r.upstream_commit ?? null,
     ahead: ahead ?? 0, behind: behind ?? 0, identity: gitIdentity(), truth: await truthOf(env, owner),
     // Private lines: whether it has any, and whether the crew's copy (real text) is the one that goes upstream.

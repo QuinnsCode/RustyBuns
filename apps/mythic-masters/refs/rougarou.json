@@ -1,0 +1,70 @@
+{
+  "id": "rougarou",
+  "name": "Rougarou",
+  "category": "Werewolves",
+  "query": "Rougarou",
+  "skip": [
+    "https://commons.wikimedia.org/wiki/File:Cedar_Point_Rougarou_cars_on_first_hall_(2797).jpg",
+    "https://commons.wikimedia.org/wiki/File:Cedar_Point_Rougarou_first_rider_pin_(2877).jpg",
+    "https://commons.wikimedia.org/wiki/File:Rougarou_in_Loop.jpg",
+    "https://commons.wikimedia.org/wiki/File:LOOP.jpg"
+  ],
+  "images": [
+    {
+      "file": "card-color.jpg",
+      "from": "card",
+      "page": "https://commons.wikimedia.org/wiki/File:Rougarou.jpg",
+      "artist": "XxxJohnDoExxxx",
+      "license": "CC BY-SA 4.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0"
+    },
+    {
+      "file": "card-bw.jpg",
+      "from": "card",
+      "page": "https://commons.wikimedia.org/wiki/File:Loup-garou_dessin%C3%A9_par_Henri_Julien.png",
+      "artist": "Henri Julien",
+      "license": "Public domain"
+    },
+    {
+      "file": "c3.jpg",
+      "from": "search",
+      "page": "https://commons.wikimedia.org/wiki/File:Werewolves_of_Ossory.png",
+      "artist": "en:w:Gerald of Wales",
+      "license": "Public domain"
+    },
+    {
+      "file": "c4.jpg",
+      "from": "search",
+      "page": "https://commons.wikimedia.org/wiki/File:The_Howling_logo.png",
+      "artist": "International Film Investors, Wescom Productions",
+      "license": "Public domain"
+    },
+    {
+      "file": "c5.jpg",
+      "from": "search",
+      "page": "https://commons.wikimedia.org/wiki/File:Keene_Cinemas_6_121_Key_Road_Keene_NH_24_December_2024_02.jpg",
+      "artist": "Artaxerxes",
+      "license": "CC BY 4.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by/4.0"
+    },
+    {
+      "file": "c6.jpg",
+      "from": "search",
+      "page": "https://commons.wikimedia.org/wiki/File:Painting_Werewolfhead.jpg",
+      "artist": "Ixitixel",
+      "license": "Public domain"
+    }
+  ],
+  "traits": {
+    "silhouette": "A tall man-shaped wolf standing upright, broad shaggy shoulders and a lean waist, digitigrade wolf legs, a long bushy tail.",
+    "head": "A wolf's head: a long muzzle, a snarling open mouth full of fangs, tall pointed ears, a shaggy mane, glowing red (or yellow) eyes.",
+    "limbs": "Long arms ending in clawed hands held out; legs bent at a backward hock to long clawed wolf feet.",
+    "hide": "Shaggy grey-brown fur, longest on the mane, shoulders and tail.",
+    "colours": "Dark grey-brown fur, a paler grey muzzle and chest, black nose, red eyes, white fangs.",
+    "child": [
+      "a wolf standing up like a man",
+      "glowing red eyes",
+      "the big teeth"
+    ]
+  }
+}

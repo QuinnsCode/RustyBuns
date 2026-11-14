@@ -9,7 +9,8 @@
 // in writes the level's trees and marks it ready. Retried parts redo the same
 // chunk, so a retry or a second assembly changes nothing.
 
-import { CHUNK, chunkKey, dropChunks, fileType, keep, skipped, writeTrees, type ChunkFile } from "./chunks.ts";
+import { arr, bool, check, int, obj, opt, str } from "@rustybuns/util/guard";
+import { CHUNK, ChunkFiles, chunkKey, dropChunks, fileType, keep, skipped, writeTrees, type ChunkFile } from "./chunks.ts";
 import { MAX_BYTES } from "./archive.ts";
 import type { Env, R2Like } from "./env.ts";
 
@@ -30,15 +31,18 @@ const raw = (repo: string, sha: string, path: string) =>
  * them. Null when GitHub's listing is truncated (over 100k entries), for the
  * caller to read the tarball instead. Returns how many parts went out.
  */
+/** GitHub's recursive tree listing, as far as a dig reads it: an entry's type is "blob", "tree" or "commit" (a submodule). */
+const GitTree = obj({ truncated: opt(bool()), tree: opt(arr(obj({ path: str(Infinity), mode: str(10), type: str(20), sha: str(64), size: opt(int(0, Number.MAX_SAFE_INTEGER)) }), Infinity)) });
+
 export async function planSwarm(env: Env & { LEVEL_DIGS: NonNullable<Env["LEVEL_DIGS"]> }, bucket: R2Like,
   p: { slug: string; repo: string; sha: string; message: string; user: string | null; token?: string }): Promise<number | null> {
   const res = await fetch(`https://api.github.com/repos/${p.repo}/git/trees/${p.sha}?recursive=1`, {
     headers: { accept: "application/vnd.github+json", "user-agent": "codesplitter", ...(p.token ? { authorization: `Bearer ${p.token}` } : {}) },
   });
   if (!res.ok) throw new Error(`GitHub said ${res.status} listing ${p.repo}'s tree`);
-  const tree = (await res.json().catch(() => null)) as { truncated?: boolean; tree?: { path: string; mode: string; type: string; sha: string; size?: number }[] } | null;
+  const tree = check(GitTree, await res.json().catch(() => null));
   if (!tree || tree.truncated) return null;
-  if (!Array.isArray(tree.tree)) throw new Error(`GitHub's tree for ${p.repo} had no entries`);
+  if (!tree.tree) throw new Error(`GitHub's tree for ${p.repo} had no entries`);
 
   // Too big to dig is listed and not fetched; a submodule (type "commit") is a gitlink to its commit.
   const unstored: ChunkFile[] = [], parts: DigPart[] = [];
@@ -107,8 +111,8 @@ export async function digPart(env: Env, bucket: R2Like, slug: string, repo: stri
 /** Every part is in: write the level's trees and open it. Safe to run twice. */
 async function assemble(env: Env, slug: string, sha: string) {
   await env.DB.prepare("UPDATE levels SET status = 'assembling' WHERE slug = ? AND commit_hash = ? AND status = 'importing'").bind(slug, sha).run();
-  const { results } = await env.DB.prepare("SELECT files FROM level_parts WHERE slug = ? AND sha = ?").bind(slug, sha).all();
-  await writeTrees(env, slug, sha, results.flatMap((r: any) => JSON.parse(r.files) as ChunkFile[]));
+  const { results } = await env.DB.prepare("SELECT files FROM level_parts WHERE slug = ? AND sha = ?").bind(slug, sha).all<{ files: string }>();
+  await writeTrees(env, slug, sha, results.flatMap((r) => ChunkFiles(JSON.parse(r.files))));
   await env.DB.prepare("UPDATE levels SET status = 'ready', error = NULL WHERE slug = ? AND commit_hash = ?").bind(slug, sha).run();
 }
 

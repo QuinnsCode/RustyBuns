@@ -15,8 +15,7 @@ import type { Rule } from "./policy.ts";
 import { parseAllDocuments } from "yaml";
 import { alike, diffToOps, keptPairs } from "./sync.ts";
 import { isManifest, mergeManifest } from "./manifest.ts";
-import { arr, Bad, bool, check, nul, obj, oneOf, opt, rec, str } from "@rustybuns/util/guard";
-import { isPlainObject } from "./util.ts";
+import { arr, Bad, bool, check, isRecord, nul, obj, oneOf, opt, rec, str } from "@rustybuns/util/guard";
 
 /**
  * The ops protocol's version. A writer that names one (`proto` on an ops request) and meets a file
@@ -172,14 +171,14 @@ export type Kind = "lock" | "keyed" | "prose" | "code";
 const RULES = ["lock", "keyed", "prose", "code", "union"] as const satisfies readonly Rule[];
 
 /** A file Durable Object's doc, checked as far as its frame: a rev and a list of lines (they're handed on whole). */
-export const isDoc = (v: unknown): v is Doc => isPlainObject(v) && Number.isInteger(v.rev) && Array.isArray(v.lines);
+export const isDoc = (v: unknown): v is Doc => isRecord(v) && Number.isInteger(v.rev) && Array.isArray(v.lines);
 const doc = (v: unknown): Doc => { if (!isDoc(v)) throw new Bad("a lines doc"); return v; };
 
 /** What a branch asks main's copy of a file to merge (mergeFile in branches.ts sends it, file-do.ts's "merge" route takes it). */
 export const MERGE_ASK = obj({ base: doc, branch: doc, resolve: opt(rec(PICK)), dry: opt(bool()), deleter: opt(str()), path: opt(str(4096)), writer: opt(str()), rule: opt(oneOf(RULES)) });
 /** What main's copy answers: its rev, the ops it made (or would), and what's left to settle; a refused edit adds an error. */
 export interface MergeReply { rev: number; ops?: Op[]; applied?: Applied[]; conflicts: Conflict[]; checks?: Conflict[]; regenerate?: string[]; solved?: number; error?: string }
-export const isMergeReply = (v: unknown): v is MergeReply => isPlainObject(v) && Number.isInteger(v.rev) && Array.isArray(v.conflicts);
+export const isMergeReply = (v: unknown): v is MergeReply => isRecord(v) && Number.isInteger(v.rev) && Array.isArray(v.conflicts);
 /** A branch merge's 409 (branches.ts): per file, the conflicts left. Agent runs read it to keep main's side (agent-routes.ts). */
 const side = nul(str(Infinity, { min: 0 }));
 export const MERGE_CONFLICTS = obj({ conflicts: opt(arr(obj({ path: str(4096), conflicts: arr(obj({ line: str(), main: side, branch: side }), Infinity) }), Infinity)) });
@@ -361,6 +360,8 @@ function mergeLines(base: Doc, branch: Doc, main: Doc, given: Resolve, deleter: 
   let next = main.nextId, after: string | null = null, solved = 0;
   const dropped = new Set<string>(), replaced = new Map<string, string | null>(), push = (op: Op, who: string) => { ops.push(op); by.push(who); if (op.kind === "delete") dropped.add(op.line); };
   const insert = (t: string, who: string) => { push({ kind: "insert", after, text: t }, who); after = `L${next++}`; };
+  // The branch's line `l` goes in right under main's line `id`, and what comes next reads main from there, as if it were `id`.
+  const beside = (id: string, l: Line) => { after = id; insert(l.text, l.by); at.set(after, at.get(id)!); };
   // A line main also added right here, among its new lines after the anchor.
   // A bare `/**` or `*/` is no sign of the same line: each side's doc comment opens and closes its own (#1267, lines.ts).
   const twin = (t: string) => {
@@ -370,10 +371,14 @@ function mergeLines(base: Doc, branch: Doc, main: Doc, given: Resolve, deleter: 
       const m = main.lines[i]!;
       if (m.text === t && !taken.has(m.id)) { taken.add(m.id); return m.id; }
     }
-    // Both added a `//` comment right here and worded it differently: main's stands, so the lines under it still pair up.
-    const first = main.lines[from];
-    if (kind === "code" && first && !was.has(first.id) && !taken.has(first.id) && /^\s*\/\//.test(t) && /^\s*\/\//.test(first.text)) { taken.add(first.id); return first.id; }
-    return null;
+    // Both added a `//` comment right here and worded it differently: they pair up, so the lines under them still do.
+    // The caller lands the branch's under main's run of new comments (a comment either side wrote is never dropped).
+    const comment = (i: number) => { const l = main.lines[i]; return !!l && !was.has(l.id) && !taken.has(l.id) && /^\s*\/\//.test(l.text); };
+    if (kind !== "code" || !/^\s*\/\//.test(t) || !comment(from)) return null;
+    let last = from;
+    while (comment(last + 1)) last++;
+    for (let i = from; i <= last; i++) taken.add(main.lines[i]!.id);
+    return main.lines[last]!.id;
   };
   // Main's new lines right at this spot go first (it landed first). A line both added was a twin already.
   const movedIn = new Set([...movedOnMain.values()].map((l) => l.id)), fresh = (m: Line) => !was.has(m.id) && !movedIn.has(m.id) && !taken.has(m.id);
@@ -476,13 +481,14 @@ function mergeLines(base: Doc, branch: Doc, main: Doc, given: Resolve, deleter: 
     if (!b) {
       const from = moveOf.get(l.id), m = from && now.get(from);
       // The branch moved a line: it carries main's edit, and a line both moved stays where main put it.
-      if (from && !m && movedOnMain.has(from)) continue;
+      // And a line main deleted that the branch only moved (a move keeps its text, bar indentation) stays deleted.
+      if (from && !m) continue;
       if (from) shift = null;
       if (m && m.text !== was.get(from)!.text) { insert(blendLine(was.get(from)!.text, m.text, l.text, loose(m.text)) ?? m.text, m.by); continue; }
       // Under a line main re-indented, the branch's new lines move with it.
       if (shift && l.text.startsWith(shift.from)) l = { ...l, text: shift.to + l.text.slice(shift.from.length) };
       const same = twin(l.text);
-      if (same) { after = same; continue; }
+      if (same) { after = same; if (now.get(same)!.text !== l.text) beside(same, l); continue; }
       // Main added this very line somewhere else: landing it too would double it.
       // Main's copy stays; settled as the branch (or both) it lands as well, or as a text in its place.
       const twice = resolve[l.id];
@@ -503,8 +509,8 @@ function mergeLines(base: Doc, branch: Doc, main: Doc, given: Resolve, deleter: 
       const pick = m?.text === b.text ? "branch" : resolve[l.id];
       const words = m && !pick ? blendLine(b.text, m.text, l.text, loose(b.text)) : null;
       if (words !== null) { solved++; push({ kind: "set", line: m!.id, base: m!.rev, text: words }, l.by); }
-      // Two `//` comments in code that each reworded the same spot: main's wording stands, nothing to decide.
-      else if (!pick && kind === "code" && m && /^\s*\/\//.test(m.text) && /^\s*\/\//.test(l.text)) solved++;
+      // Two `//` comments in code that each reworded the same spot: both stand, main's first, nothing to decide.
+      else if (!pick && kind === "code" && m && /^\s*\/\//.test(m.text) && /^\s*\/\//.test(l.text)) { solved++; beside(m.id, l); continue; }
       else if (!pick) conflicts.push({ line: l.id, base: b.text, main: m?.text ?? null, branch: l.text });
       else if (pick !== "main") {
         const own = written(pick);
@@ -593,8 +599,8 @@ export const MARKER = /^(<{7}|>{7})( |$)/;
  * What a merge won't call clean (#934), as `lint:` conflicts the branch's pick
  * lands anyway: conflict markers it would bring into main (a half-done merge
  * on the branch, like the one #884 committed into features.json), and, once
- * every line is settled (`whole`), a JSON, YAML or TOML file both sides parse
- * that the merged text doesn't. Markers main has already are CI's to catch
+ * every line is settled (`whole`), a JSON, YAML or TOML file main parses (or a
+ * new one) that the merged text doesn't, the branch's own broken copy included. Markers main has already are CI's to catch
  * (scripts/conflict-markers.ts), not every branch's.
  */
 function broken(main: Doc, branch: Doc, ops: Op[], by: string[], path: string, resolve: Resolve, whole: boolean): Conflict[] {
@@ -605,9 +611,13 @@ function broken(main: Doc, branch: Doc, ops: Op[], by: string[], path: string, r
   const marks = merged.lines.flatMap((l, i) => MARKER.test(l.text) && was.get(l.id) !== l.text ? [i + 1] : []);
   if (marks.length && resolve["lint:markers"] !== "branch") out.push({ line: "lint:markers", base: "", main: null, branch: null, lint: `the branch has git's conflict markers in it (line ${marks.join(", ")})` });
   const kind = dataKind(path);
-  if (whole && kind && resolve[`lint:${kind}`] !== "branch" && parseError(kind, text(main)) === null && parseError(kind, text(branch)) === null) {
+  // Main's copy parses (or is new): whatever the branch holds, main mustn't stop parsing. A file that never parsed
+  // (comments in a tsconfig) isn't held for it.
+  const fresh = !text(main).trim();
+  if (whole && kind && resolve[`lint:${kind}`] !== "branch" && (fresh || parseError(kind, text(main)) === null)) {
     const why = parseError(kind, text(merged));
-    if (why !== null) out.push({ line: `lint:${kind}`, base: "", main: null, branch: null, lint: `merged, it isn't valid ${kind.toUpperCase()} (${why})` });
+    const own = why !== null && parseError(kind, text(branch)) !== null;
+    if (why !== null) out.push({ line: `lint:${kind}`, base: "", main: null, branch: null, lint: `${own ? "the branch's copy" : "merged, it"} isn't valid ${kind.toUpperCase()} (${why})` });
   }
   return out;
 }

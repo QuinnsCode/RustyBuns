@@ -3,7 +3,9 @@ import { readScene, type SceneDetail } from "../actions/scenes.ts";
 import { planRound, type Candidate, type Round } from "../game/round.ts";
 import { record, stars, type Records } from "../game/score.ts";
 import { onControlsToggle } from "./controls.ts";
-import { achieve } from "./eqosys.ts";
+import { achieve, achievements } from "./eqosys.ts";
+import { learn, lessons, newLearnt } from "../game/lessons.ts";
+import { tutorial } from "@rustybuns/util/tutorial";
 import { GameView } from "../game/view.ts";
 import { Band, ChargeCell, Chrono, clearance, operation, ScopeFrame, ScoreGauge, serial, WatchFace } from "./lab.tsx";
 
@@ -14,6 +16,11 @@ const WRONG_COST = 4;
 
 type Phase = "loading" | "hunting" | "paused" | "found" | "failed";
 interface Result { points: number; newBest: boolean; seconds: number; splats: number; wrong: number }
+
+// The first time, the first hunt is the tutorial: splat, spray, pick mode, the find. It starts once the room is up and
+// the clock runs; the flags are kept for the page, so a second hunt picks up where the first left off.
+const learnt = newLearnt();
+const coach = tutorial({ prefix: "splat-rooms", account: { achieve, achievements }, steps: lessons(learnt) });
 
 const newSeed = () => Math.floor(Math.random() * 2 ** 31);
 
@@ -73,7 +80,7 @@ export function Game({ sceneId, records, onRecords, onAnotherRoom, onRooms, onQu
     return () => clearInterval(t);
   }, [phase, startedAt]);
 
-  useEffect(() => { view.current?.setPickMode(pickMode); }, [pickMode]);
+  useEffect(() => { view.current?.setPickMode(pickMode); if (pickMode) learn(learnt, "pick"); }, [pickMode]);
 
   async function start() {
     setPhase("loading");
@@ -90,6 +97,8 @@ export function Game({ sceneId, records, onRecords, onAnotherRoom, onRooms, onQu
       setStartedAt(Date.now()); setElapsed(0);
       setPhase("hunting");
       setStatus(null);
+      void achieve("played");
+      coach.start();
     } catch (e) { setPhase("failed"); setStatus(`Failed: ${(e as Error).message}`); }
   }
 
@@ -109,7 +118,9 @@ export function Game({ sceneId, records, onRecords, onAnotherRoom, onRooms, onQu
   // `window.splatHunt` for probes and shots: what the hunt is doing, and a find that skips the looking.
   useEffect(() => {
     Object.assign(window, { splatHunt: {
-      state: () => ({ phase, target: round?.target.label ?? null, charge, shots, wrong, elapsed }),
+      state: () => ({ phase, target: round?.target.label ?? null, charge, shots, wrong, elapsed, tutorial: coach.state() }),
+      /** Forget the tutorial was done in this browser, so the next hunt runs it again. */
+      forgetTutorial: coach.forget,
       find: () => { if (round) judgeRef.current(round.target); },
       pause,
     } });
@@ -126,6 +137,7 @@ export function Game({ sceneId, records, onRecords, onAnotherRoom, onRooms, onQu
       setElapsed(seconds);
       setPhase("found");
       void achieve("first-find");
+      learn(learnt, "found");
       setPickMode(false);
       view.current?.revealAll(true);
       view.current?.setHighlight(round.target);
@@ -147,6 +159,7 @@ export function Game({ sceneId, records, onRecords, onAnotherRoom, onRooms, onQu
     if (charge < cost) { setMessage("Not enough charge."); return; }
     const res = kind === "spray" ? view.current.spray() : view.current.shoot();
     setCharge((c) => c - cost);
+    learn(learnt, kind);
     setShots((s) => s + (kind === "spray" ? 20 : 1));
     if (!res.hit) setMessage("Into the void: nothing that way.");
     else setMessage(null);
@@ -196,7 +209,7 @@ export function Game({ sceneId, records, onRecords, onAnotherRoom, onRooms, onQu
           <div className="game-foot bezel">
             <button className="go" onClick={() => fire("shot")} disabled={charge < 1}>Splat (space)</button>
             <button className="mini" onClick={() => fire("spray")} disabled={charge < SPRAY_COST}>Spray ×20 (shift-space, {SPRAY_COST})</button>
-            <span className="dim small">drag to look · {pickMode ? "click the thing you spy" : "shoot to light the room, then switch to pick mode"}</span>
+            <span className="hint">drag to look · {pickMode ? "click the thing you spy" : "shoot to light the room, then switch to pick mode"}</span>
           </div>
         )}
 

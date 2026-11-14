@@ -8,26 +8,20 @@
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
+import { check } from "@rustybuns/util/guard";
+import { PodcastsFile, type EpisodesReply, type Episode, type Feed, type FeedsReply } from "./wire.ts";
 
-export interface Feed { id: string; title: string; url: string; order: "oldest" | "newest" }
-export interface Episode { id: string; title: string; url: string; seconds: number; published: number }
+export type { Episode, Feed };
 
 const FRESH_MS = 15 * 60_000;
 const MAX_BYTES = 8_000_000;
 
-const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 
 export function feeds(env: Record<string, string | undefined> = process.env): Feed[] {
   const file = env.AGENT_OFFICE_PODCASTS ?? path.join(env.XDG_CONFIG_HOME ?? path.join(env.HOME ?? homedir(), ".config"), "agent-office", "podcasts.json");
   let conf: unknown;
   try { conf = JSON.parse(readFileSync(file, "utf8")); } catch { return []; }
-  const list = isObject(conf) && Array.isArray(conf.feeds) ? conf.feeds : [];
-  const out: Feed[] = [];
-  for (const f of list) {
-    if (!isObject(f) || typeof f.id !== "string" || typeof f.url !== "string" || !/^[\w-]+$/.test(f.id) || !/^https?:\/\//.test(f.url)) continue;
-    out.push({ id: f.id, title: typeof f.title === "string" ? f.title : f.id, url: f.url, order: f.order === "newest" ? "newest" : "oldest" });
-  }
-  return out;
+  return (check(PodcastsFile, conf)?.feeds ?? []).map((f) => ({ ...f, title: f.title || f.id }));
 }
 
 const unCdata = (s: string) => s.replace(/^\s*<!\[CDATA\[([\s\S]*?)\]\]>\s*$/, "$1").trim();
@@ -84,12 +78,12 @@ export function podcastRoute(list: () => Feed[] = feeds, get: typeof fetch = fet
   };
   return async (method: string, url: URL): Promise<{ status: number; body: unknown } | null> => {
     if (method !== "GET") return null;
-    if (url.pathname === "/__rb/podcast") return { status: 200, body: { feeds: list().map(({ id, title, order }) => ({ id, title, order })) } };
+    if (url.pathname === "/__rb/podcast") return { status: 200, body: { feeds: list().map(({ id, title, order }) => ({ id, title, order })) } satisfies FeedsReply };
     if (url.pathname !== "/__rb/podcast/episodes") return null;
     const f = list().find((x) => x.id === url.searchParams.get("feed"));
     if (!f) return { status: 404, body: { error: "No such feed in your podcasts.json" } };
     const parsed = await load(f);
     if (!parsed) return { status: 502, body: { error: `Couldn't read the feed for ${f.title}` } };
-    return { status: 200, body: { title: f.title, order: f.order, episodes: parsed.episodes } };
+    return { status: 200, body: { title: f.title, order: f.order, episodes: parsed.episodes } satisfies EpisodesReply };
   };
 }

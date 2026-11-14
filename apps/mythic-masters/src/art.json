@@ -879,5 +879,30 @@
       "license": "CC0",
       "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/"
     }
+  },
+  "krampus": {
+    "color": {
+      "src": "art/krampus-color.jpg",
+      "page": "https://commons.wikimedia.org/wiki/File:Krampus_1900s_4.jpg",
+      "artist": "Unknown",
+      "license": "Public domain"
+    }
+  },
+  "gryla": {
+    "bw": {
+      "src": "art/gryla-bw.jpg",
+      "page": "https://commons.wikimedia.org/wiki/File:Gr%C3%BDla-Gr%C3%BDlukv%C3%A6%C3%B0i2022.png",
+      "artist": "Thorsteinn1996",
+      "license": "CC BY-SA 4.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0"
+    }
+  },
+  "kallikantzaros": {
+    "bw": {
+      "src": "art/kallikantzaros-bw.jpg",
+      "page": "https://commons.wikimedia.org/wiki/File:Kallikatzaros.jpg",
+      "artist": "ΟΕΔΒ 1961",
+      "license": "Public domain"
+    }
   }
 }

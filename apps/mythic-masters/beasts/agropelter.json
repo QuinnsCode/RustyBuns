@@ -862,5 +862,6 @@
   ],
   "belly": "belly",
   "belly_turn": -0.3,
-  "blend": 0.02
+  "blend": 0.02,
+  "hide": {"pattern": "fur", "size": 0.01, "colours": [[0.16, 0.13, 0.1], [0.36, 0.28, 0.22]], "map": 256}
 }

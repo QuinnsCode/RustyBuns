@@ -1,0 +1,48 @@
+{
+  "id": "nessie",
+  "at": "2026-11-12 00:04",
+  "score": 3,
+  "traits": [
+    {
+      "key": "silhouette",
+      "verdict": "partly",
+      "note": "Tall neck, two humps and a tapering tail, but the pose is upright and stocky."
+    },
+    {
+      "key": "head",
+      "verdict": "partly",
+      "note": "Head is smallish and snakelike, but has small ears or horns and fangs."
+    },
+    {
+      "key": "limbs",
+      "verdict": "no",
+      "note": "Four stubby legs with box feet, standing clear of the water, not paddle flippers."
+    },
+    {
+      "key": "hide",
+      "verdict": "yes",
+      "note": "Smooth glossy skin with no scales or fur."
+    },
+    {
+      "key": "colours",
+      "verdict": "partly",
+      "note": "Dark green, but too bright and teal, with no lighter belly."
+    },
+    {
+      "key": "child1",
+      "verdict": "yes",
+      "note": "Long neck rises almost straight up like the references."
+    },
+    {
+      "key": "child2",
+      "verdict": "partly",
+      "note": "Two egg-shaped humps in a row, but bulbous and too tall."
+    },
+    {
+      "key": "child3",
+      "verdict": "partly",
+      "note": "Head is small relative to the body, but has big glowing eyes and ear spikes."
+    }
+  ],
+  "fix": "Replace the four box-footed legs with broad flat paddle flippers, and sink the body low so it sits in the water."
+}

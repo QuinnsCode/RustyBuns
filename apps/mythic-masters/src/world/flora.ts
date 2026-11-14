@@ -20,7 +20,7 @@ import { MeshoptDecoder } from "three/examples/jsm/libs/meshopt_decoder.module.j
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import type { Biome, Region } from "../regions.ts";
 import { sceneryKinds } from "@rustybuns/models/scenery";
-import { clamp01 } from "@rustybuns/util";
+import { clamp01, mulberry32 } from "@rustybuns/util";
 import type { World } from "./world.ts";
 import type { Quality } from "@rustybuns/util/quality";
 import { Culled } from "./cull.ts";
@@ -105,9 +105,10 @@ export const FLORA: Record<Biome, { density: number; kinds: Plant[] }> = {
   steppe: B(0.28, ["sage", 0.5, 0.3, 0.8], ["flower", 0.3, 0.2, 0.5], ["rock", 0.2, 0.4, 1.4]),
 };
 /** Per biome: the grass. How much of the ground it covers (0-1), its colour and its height in metres, and `clump` (0-1,
- * default CLUMP) how much it gathers into tussocks with bare ground between instead of an even carpet. */
-export const TURF: Record<Biome, { cover: number; colour: number; height: number; clump?: number }> = {
-  "pine-barrens": { cover: 0.5, colour: 0x9aa060, height: 0.45, clump: 1 }, forest: { cover: 0.55, colour: 0x5f8a3c, height: 0.4 }, rainforest: { cover: 0.6, colour: 0x4d8040, height: 0.5 },
+ * default CLUMP) how much it gathers into tussocks with bare ground between instead of an even carpet. `scrub`: the ground
+ * is low leafy shrubs (huckleberry, low blueberry, scrub oak) in place of grass blades, each tuft a wide knee-high mound. */
+export const TURF: Record<Biome, { cover: number; colour: number; height: number; clump?: number; scrub?: boolean }> = {
+  "pine-barrens": { cover: 0.95, colour: 0x8a8a70, height: 0.6, clump: 0.6, scrub: true }, forest: { cover: 0.55, colour: 0x5f8a3c, height: 0.4 }, rainforest: { cover: 0.6, colour: 0x4d8040, height: 0.5 },
   lake: { cover: 0.7, colour: 0x7a9a48, height: 0.4 }, desert: { cover: 0.12, colour: 0xc0a868, height: 0.3, clump: 1 }, swamp: { cover: 0.75, colour: 0x6a8a3a, height: 0.6 },
   plains: { cover: 0.9, colour: 0x9ab050, height: 0.55 }, highlands: { cover: 0.6, colour: 0x8a9a50, height: 0.3 }, jungle: { cover: 0.5, colour: 0x4f8a3a, height: 0.6 },
   island: { cover: 0.5, colour: 0x8ab058, height: 0.35 }, mountains: { cover: 0.35, colour: 0x8a9460, height: 0.22, clump: 0.7 }, river: { cover: 0.8, colour: 0x80a850, height: 0.5 },
@@ -150,12 +151,13 @@ export interface Flora {
   lo: Map<Kind, THREE.InstancedMesh>;
   /** The far cards, one instanced mesh a tall kind. */
   cards: Map<Kind, THREE.InstancedMesh>;
-  /** The grass round your feet. */
-  turf: THREE.InstancedMesh | null;
+  /** The grass round your feet, then the low scrub that takes its place where a biome's turf is `scrub`: a leafy mound
+   * in the near ring and a cheaper one in the far ring (TURF_MESH picks which). Empty until the scenery set loads. */
+  turf: THREE.InstancedMesh[];
   /** The far forest's next laying, row by row (scatterFar), until it is copied into `cards` at once. */
   farJob: { cx: number; cz: number; gz: number; counts: Map<Kind, number>; mats: Map<Kind, Float32Array>; cols: Map<Kind, Float32Array> } | null;
   /** The grass's next laying, row by row (scatterTurf), until it is copied into `turf` at once. */
-  turfJob: { cx: number; cz: number; ring: number; gz: number; n: number; mats: Float32Array; cols: Float32Array } | null;
+  turfJob: { cx: number; cz: number; ring: number; gz: number; ns: number[]; mats: Float32Array[]; cols: Float32Array[] } | null;
   /** Near plants, far cards and grass tufts planted now. */
   spots: number; far: number; tufts: number;
   /** Near plants and far cards in the camera's view at the last pick: what the GPU is handed (src/world/cull.ts). */
@@ -243,6 +245,34 @@ function tuft(blades: number, width: number, dark: number[], light: number[], le
   }
   return coloured(pos, col);
 }
+/** A low leafy shrub mound, 1 wide and 1 tall on its foot: small oval leaves over a lumpy dome, each turned out from its
+ * middle so the mound shows leaf faces from the side, olive and dull green with red-brown ones mixed in (huckleberry and
+ * scrub oak turn early), dark low and inside, a few bare stems from the foot. */
+function scrub(leaves: number): THREE.BufferGeometry {
+  const pos: number[] = [], col: number[] = [], r = mulberry32(7);
+  const olive = [0.3, 0.34, 0.17], dull = [0.24, 0.3, 0.16], rust = [0.44, 0.22, 0.12], dark = [0.08, 0.08, 0.05], stem = [0.22, 0.14, 0.1];
+  for (let s = 0; s < 6; s++) { // stems
+    const t = (s / 6) * Math.PI * 2 + r(), w = 0.012;
+    tri(pos, col, [-w, 0, 0], [w, 0, 0], [Math.cos(t) * 0.28, 0.75, Math.sin(t) * 0.28], dark, dark, stem);
+  }
+  const big = Math.sqrt(40 / leaves); // fewer leaves, each bigger, so the far mound covers as much
+  for (let l = 0; l < leaves; l++) {
+    const a = r() * Math.PI * 2, e = Math.asin(0.15 + 0.85 * r()), lump = 0.8 + 0.3 * Math.sin(a * 3 + 1.7);
+    const ox = Math.cos(a) * Math.cos(e), oy = Math.sin(e), oz = Math.sin(a) * Math.cos(e), k = (0.75 + 0.25 * r()) * lump;
+    const x = ox * 0.5 * k, y = 0.12 + oy * 0.88 * k, z = oz * 0.5 * k;
+    // the leaf lies across the outward direction: one axis round the dome, one up its side
+    const ux = -Math.sin(a), uz = Math.cos(a), vx = -ox * oy, vy = Math.cos(e) ** 2, vz = -oz * oy, spin = r() * Math.PI;
+    const len = (0.15 + 0.07 * r()) * big, w = len * 0.5, cs = Math.cos(spin), sn = Math.sin(spin);
+    const dx = (ux * cs + vx * sn) * len / 2, dy = (vy * sn) * len / 2, dz = (uz * cs + vz * sn) * len / 2;
+    const px = (-ux * sn + vx * cs) * w / 2, py = (vy * cs) * w / 2, pz = (-uz * sn + vz * cs) * w / 2;
+    const c = r() < 0.28 ? rust : r() < 0.5 ? dull : olive, lit = c.map((v) => v * (0.7 + 0.6 * y)), low = dark.map((v, i) => v + (lit[i]! - v) * 0.55);
+    const base = [x - dx, y - dy, z - dz], tip = [x + dx + ox * 0.03, y + dy + 0.03, z + dz + oz * 0.03], m1 = [x + px, y + py, z + pz], m2 = [x - px, y - py, z - pz];
+    tri(pos, col, base, m1, tip, low, lit, lit); tri(pos, col, base, tip, m2, low, lit, lit);
+  }
+  return coloured(pos, col);
+}
+/** Leaves on a scrub mound in the near grass ring and in the far one (about 2 triangles a leaf). */
+const SCRUB_LEAVES = [30, 7] as const;
 /** A cap on a stem. */
 function mushroom(): THREE.BufferGeometry {
   const stem = new THREE.CylinderGeometry(0.1, 0.13, 0.55, 6), cap = new THREE.SphereGeometry(0.42, 8, 4, 0, Math.PI * 2, 0, Math.PI / 2);
@@ -355,7 +385,7 @@ const made = (): Map<Kind, THREE.BufferGeometry> => new Map<Kind, THREE.BufferGe
 /** The plants' meshes, empty until the scenery set loads (a moment after the world first shows); then `loaded`. */
 export function flora(loaded: () => void): Flora {
   const time = { value: 0 }, gust = { value: 0.3 };
-  const f: Flora = { group: new THREE.Group(), meshes: new Map(), lo: new Map(), cards: new Map(), turf: null, farJob: null, turfJob: null, spots: 0, far: 0, tufts: 0, shown: 0, culled: new Map(), you: new THREE.Vector3(0, -1e6, 0), near: new THREE.Vector3(0, 0, -1), tick(t, w) { time.value = t; gust.value = w; hook(); } };
+  const f: Flora = { group: new THREE.Group(), meshes: new Map(), lo: new Map(), cards: new Map(), turf: [], farJob: null, turfJob: null, spots: 0, far: 0, tufts: 0, shown: 0, culled: new Map(), you: new THREE.Vector3(0, -1e6, 0), near: new THREE.Vector3(0, 0, -1), tick(t, w) { time.value = t; gust.value = w; hook(); } };
   // The pick runs as the scene starts to render, with the camera it renders with, before three uploads the instances.
   let hooked = false;
   const hook = () => {
@@ -388,9 +418,9 @@ export function flora(loaded: () => void): Flora {
         f.cards.set(kind, c); f.group.add(c); f.culled.set(c, new Culled(c));
       }
     }
-    f.turf = new THREE.InstancedMesh(kinds.get("grass")!, plantMaterial(f.you, time, gust, SWAY.grass!, true), TURF_CAP);
-    f.turf.count = 0; f.turf.frustumCulled = false;
-    f.group.add(f.turf);
+    const scrubMat = plantMaterial(f.you, time, gust, 0.03, true);
+    f.turf = [new THREE.InstancedMesh(kinds.get("grass")!, plantMaterial(f.you, time, gust, SWAY.grass!, true), TURF_CAP), new THREE.InstancedMesh(scrub(SCRUB_LEAVES[0]), scrubMat, TURF_CAP), new THREE.InstancedMesh(scrub(SCRUB_LEAVES[1]), scrubMat, TURF_CAP)];
+    for (const m of f.turf) { m.count = 0; m.frustumCulled = false; f.group.add(m); }
     loaded();
   });
   return f;
@@ -537,21 +567,20 @@ export function scatterFar(f: Flora, cx: number, cz: number, inner: number, oute
  * into arrays of its own and answers true once they are copied into the mesh, all at once, so no frame draws half the old
  * grass and half the new; called again for another centre, it starts over there. A phone on low stops at its plants' reach. */
 export function scatterTurf(f: Flora, cx: number, cz: number, regionOf: (x: number, z: number) => Region | undefined, yAt: (x: number, z: number) => number, waterAt: (x: number, z: number) => number = () => 0, budget = Infinity): boolean {
-  const m = f.turf;
-  if (!m) return true;
-  const t0 = performance.now(), cap = m.instanceMatrix.count;
+  const ms = f.turf;
+  if (!ms.length) return true;
+  const t0 = performance.now(), cap = TURF_CAP;
   let j = f.turfJob;
-  if (!j || j.cx !== cx || j.cz !== cz) j = f.turfJob = { cx, cz, ring: 0, gz: NaN, n: 0, mats: j?.mats ?? new Float32Array(m.instanceMatrix.array.length), cols: j?.cols ?? new Float32Array(cap * 3) };
-  let n = j.n;
+  if (!j || j.cx !== cx || j.cz !== cz) j = f.turfJob = { cx, cz, ring: 0, gz: NaN, ns: ms.map(() => 0), mats: j?.mats ?? ms.map(() => new Float32Array(cap * 16)), cols: j?.cols ?? ms.map(() => new Float32Array(cap * 3)) };
+  const ns = j.ns;
   for (; j.ring < TURF_RINGS.length; j.ring++, j.gz = NaN) {
     const { grid, r0, salt, size } = TURF_RINGS[j.ring]!, r1 = Math.min(TURF_RINGS[j.ring]!.r1, Math.max(TURF_R, reachU.value)), fade = j.ring === TURF_RINGS.length - 1 ? r1 - 25 : Infinity;
     const gz0 = Math.floor((cz - r1) / grid), gz1 = Math.floor((cz + r1) / grid);
     if (Number.isNaN(j.gz)) j.gz = gz0;
     for (; j.gz <= gz1; j.gz++) {
-      if ((j.ring > 0 || j.gz > gz0) && performance.now() - t0 > budget) { j.n = n; return false; }
+      if ((j.ring > 0 || j.gz > gz0) && performance.now() - t0 > budget) return false;
       const gz = j.gz;
       for (let gx = Math.floor((cx - r1) / grid); gx <= Math.floor((cx + r1) / grid); gx++) {
-        if (n >= cap) break;
         const x = (gx + hash(gx, gz, salt)) * grid, z = (gz + hash(gx, gz, salt + 1)) * grid, d = Math.hypot(x - cx, z - cz);
         if (d > r1 || d < r0 || (d > fade && hash(gx, gz, salt + 5) < (d - fade) / (r1 - fade))) continue;
         const g = regionOf(x, z);
@@ -560,20 +589,25 @@ export function scatterTurf(f: Flora, cx: number, cz: number, regionOf: (x: numb
         const lump = clumped(turf.clump ?? CLUMP, x, z);
         if (y - waterAt(x, z) < 0.3 || y > TREELINE + 6 || hash(gx, gz, salt + 2) > turfAt(g.biome, x, z) * lump.chance) continue;
         const h = turf.height * (0.7 + 0.6 * hash(gx, gz, salt + 3)) * lump.size * (size > 1 ? 1.25 : 1);
-        o.position.set(x, y - 0.03, z); o.rotation.set(0, hash(gx, gz, salt + 4) * Math.PI, 0); o.scale.set(h * 2.2 * size, h, h * 2.2 * size);
+        const k = turf.scrub ? 1 + Math.min(j.ring, 1) : 0, wide = turf.scrub ? 2.6 : 2.2;
+        if (ns[k]! >= cap) continue;
+        o.position.set(x, y - 0.03, z); o.rotation.set(0, hash(gx, gz, salt + 4) * Math.PI * (k ? 2 : 1), 0); o.scale.set(h * wide * size, h, h * wide * size);
         o.updateMatrix();
-        o.matrix.toArray(j.mats, n * 16);
-        tint(gx, gz, y).multiply(turfC.setHex(turf.colour)).multiplyScalar(2.2).toArray(j.cols, n * 3);
-        n++;
+        const c = tint(gx, gz, y).multiply(turfC.setHex(turf.colour)).multiplyScalar(2.2);
+        o.matrix.toArray(j.mats[k]!, ns[k]! * 16); c.toArray(j.cols[k]!, ns[k]! * 3); ns[k]!++;
       }
     }
   }
-  m.instanceMatrix.array.set(j.mats.subarray(0, n * 16));
-  if (!m.instanceColor) m.setColorAt(0, turfC);
-  m.instanceColor!.array.set(j.cols.subarray(0, n * 3));
-  m.count = f.tufts = n;
-  m.instanceMatrix.needsUpdate = true;
-  m.instanceColor!.needsUpdate = true;
+  ms.forEach((m, k) => {
+    const n = ns[k]!;
+    m.instanceMatrix.array.set(j.mats[k]!.subarray(0, n * 16));
+    if (!m.instanceColor) m.setColorAt(0, turfC);
+    m.instanceColor!.array.set(j.cols[k]!.subarray(0, n * 3));
+    m.count = n;
+    m.instanceMatrix.needsUpdate = true;
+    m.instanceColor!.needsUpdate = true;
+  });
+  f.tufts = ns.reduce((a, n) => a + n, 0);
   f.turfJob = null;
   return true;
 }

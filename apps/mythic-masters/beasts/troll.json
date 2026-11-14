@@ -84,5 +84,6 @@
     {"kind": "limb", "along": ["l_shoulder", "l_elbow", "l_hand", "l_finger"], "radii": [0.15, 0.1, 0.12, 0.1], "calf": 0.2, "mirror": true},
     {"kind": "foot", "at": "l_finger", "form": "paw", "len": 0.28, "width": 0.24, "toes": 4, "claw": 0.08, "sole": 0.07, "mirror": true},
     {"kind": "ridge", "at": "head", "off": [0.17, 0.1, 0.07], "dir": [0.2, 0.2, 1], "len": 0.14, "base": 0.045, "curve": 25, "material": "frost", "mirror": true}
-  ]
+  ],
+  "hide": {"pattern": "bark", "size": 0.14, "colours": [[0.15, 0.16, 0.18], [0.48, 0.54, 0.6]], "map": 512, "grain": "up", "moss": {"colour": [0.36, 0.42, 0.22], "cover": 0.3}}
 }

@@ -6,7 +6,8 @@
 // QNTBR is the first studio, the super admin's (`house`): it holds every app in APPS that no other studio has claimed.
 import { oneOf, str } from "@rustybuns/util/guard";
 import { APPS, ourApp, playOf, type QApp } from "./apps.ts";
-import { listings, type Listing, type State } from "./listings.ts";
+import { listings, type Draft, type Listing, type State } from "./listings.ts";
+import { inboxOf, type Received } from "./reports.ts";
 import type { Env } from "./env.ts";
 import { lastDeploys, type Shipped } from "./deploys.ts";
 
@@ -23,24 +24,34 @@ export const OWNED = 3;
 export const HOUSE = { id: "qntbr", name: "QNTBR", kind: "business" as Kind };
 
 /** `ship` is "live" once the app has reported a deploy, or has a site in APPS (an app shipped before reports began); `shipped` is that report.
- * A studio's own game (listings.ts) is live once listed, and says where its review stands, with the reviewer's `note` on a refusal. */
-export interface ShelfApp { id: string; name: string; play: string | null; make: string | null; ship: "live" | "not deployed"; shipped: Shipped | null; state?: State; note?: string }
+ * A studio's own game (listings.ts) is live once listed, and says where its review stands, with the reviewer's `note` on a refusal,
+ * what it was saved with (`draft`, what the Studio tab's form starts from) and its players' newest reports (reports.ts). */
+export interface ShelfApp {
+  id: string; name: string; play: string | null; make: string | null; ship: "live" | "not deployed"; shipped: Shipped | null;
+  state?: State; note?: string; draft?: Draft; reports?: Received[];
+}
 export interface StudioPerson { name: string; email: string; role: Role }
-export interface Studio { id: string; name: string; kind: Kind; role: Role; members: number; people: StudioPerson[]; apps: ShelfApp[] }
+/** `space` is the id of the studio's own Qollab space (space.ts), once its owner or admin has made it. */
+export interface Studio { id: string; name: string; kind: Kind; role: Role; members: number; space: string | null; people: StudioPerson[]; apps: ShelfApp[] }
 
-const shelfApp = (id: string, repo: string | null, shipped: Shipped | null, theirs: Listing[]): ShelfApp => {
+const shelfApp = async (conf: Env, id: string, repo: string | null, shipped: Shipped | null, theirs: Listing[]): Promise<ShelfApp> => {
   const l = theirs.find((x) => x.id === id), a: QApp | undefined = ourApp(id) ?? l;
   const live = l ? l.state === "listed" : !!(shipped || a?.origins.length);
   return { id, name: a?.name ?? id, play: a && l?.state !== "pulled" && l?.state !== "refused" ? playOf(a) : null, make: repo, ship: live ? "live" : "not deployed", shipped,
-    ...(l ? { state: l.state, ...(l.note ? { note: l.note } : {}) } : {}) };
+    ...(l ? { state: l.state, ...(l.note ? { note: l.note } : {}), draft: draftOf(l), reports: await inboxOf(conf, id) } : {}) };
 };
+
+/** A listing as the fields it was saved with. */
+const draftOf = (l: Listing): Draft => ({ studio: l.studio.id, id: l.id, name: l.name, kind: l.kind, genre: l.genre, origins: l.origins,
+  ...(l.returns ? { returns: l.returns } : {}), ...(l.erase ? { erase: l.erase } : {}), ...(l.blurb ? { blurb: l.blurb } : {}) });
 
 /** The studios a person is in, with their role, who else is in (owners first), and each app on the shelf. */
 export async function studiosOf(conf: Env, userId: string): Promise<Studio[]> {
   const { results: mine } = await conf.DB.prepare(
-    `SELECT s.id, s.name, s.kind, m.role, (SELECT COUNT(*) FROM studio_members c WHERE c.studio_id = s.id) AS members
+    `SELECT s.id, s.name, s.kind, m.role, (SELECT COUNT(*) FROM studio_members c WHERE c.studio_id = s.id) AS members,
+       (SELECT id FROM spaces q WHERE q.studio_id = s.id) AS space
      FROM studio_members m JOIN studios s ON s.id = m.studio_id WHERE m.user_id = ? ORDER BY s.name`,
-  ).bind(userId).all<{ id: string; name: string; kind: Kind; role: Role; members: number }>();
+  ).bind(userId).all<{ id: string; name: string; kind: Kind; role: Role; members: number; space: string | null }>();
   if (!mine.length) return [];
   const ids = mine.map((s) => s.id), marks = ids.map(() => "?").join(", ");
   const [{ results: apps }, { results: people }] = await Promise.all([
@@ -49,9 +60,9 @@ export async function studiosOf(conf: Env, userId: string): Promise<Studio[]> {
       ORDER BY CASE m.role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END, u.name`).bind(...ids).all<StudioPerson & { studio_id: string }>(),
   ]);
   const [shipped, theirs] = await Promise.all([lastDeploys(conf, apps.map((a) => a.app)), Promise.all(ids.map((studio) => listings(conf, { studio }))).then((l) => l.flat())]);
-  return mine.map((s) => ({ ...s,
+  return Promise.all(mine.map(async (s) => ({ ...s,
     people: people.filter((p) => p.studio_id === s.id).map(({ name, email, role }) => ({ name, email, role })),
-    apps: apps.filter((a) => a.studio_id === s.id).map((a) => shelfApp(a.app, a.repo, shipped.get(a.app) ?? null, theirs)) }));
+    apps: await Promise.all(apps.filter((a) => a.studio_id === s.id).map((a) => shelfApp(conf, a.app, a.repo, shipped.get(a.app) ?? null, theirs))) })));
 }
 
 export type Made = { ok: true; id: string } | { ok: false; status: number; error: string };
@@ -68,11 +79,11 @@ export async function makeStudio(conf: Env, owner: string, name: string, kind: K
 }
 
 /** `who`'s role in a studio, or null. */
-export const roleIn = (conf: Env, studio: string, who: string) =>
+export const roleIn = (conf: Pick<Env, "DB">, studio: string, who: string) =>
   conf.DB.prepare("SELECT role FROM studio_members WHERE studio_id = ? AND user_id = ?").bind(studio, who).first<Role>("role");
 
 /** Puts someone in a studio by email (an owner or admin asks; only an owner makes another owner). */
-export async function addMember(conf: Env, studio: string, by: string, email: string, role: Role, now = Date.now()): Promise<Made> {
+export async function addMember(conf: Pick<Env, "DB">, studio: string, by: string, email: string, role: Role, now = Date.now()): Promise<Made> {
   const mine = await roleIn(conf, studio, by);
   if (mine !== "owner" && mine !== "admin") return { ok: false, status: 403, error: "only a studio's owner or admin adds people" };
   if (role === "owner" && mine !== "owner") return { ok: false, status: 403, error: "only an owner makes another owner" };
@@ -81,6 +92,28 @@ export async function addMember(conf: Env, studio: string, by: string, email: st
   await conf.DB.prepare("INSERT INTO studio_members (studio_id, user_id, role, at) VALUES (?, ?, ?, ?) ON CONFLICT (studio_id, user_id) DO UPDATE SET role = excluded.role")
     .bind(studio, u, role, now).run();
   return { ok: true, id: studio };
+}
+
+/**
+ * Takes someone out of a studio: its owner or admin asks, or they leave themselves. Only an owner takes out another owner, and the
+ * last owner stays. Their seat in the studio's space goes with it (space.ts `studioRemove` closes the sockets they have open).
+ */
+export async function removeMember(conf: Pick<Env, "DB">, studio: string, by: string, who: string): Promise<Made> {
+  const [mine, theirs] = await Promise.all([roleIn(conf, studio, by), roleIn(conf, studio, who)]);
+  if (!theirs) return { ok: false, status: 404, error: "they aren't in that studio" };
+  if (by !== who && mine !== "owner" && mine !== "admin") return { ok: false, status: 403, error: "only a studio's owner or admin takes people out" };
+  if (by !== who && theirs === "owner" && mine !== "owner") return { ok: false, status: 403, error: "only an owner takes out another owner" };
+  const out = await conf.DB.prepare(`DELETE FROM studio_members WHERE studio_id = ?1 AND user_id = ?2
+    AND (role <> 'owner' OR EXISTS (SELECT 1 FROM studio_members o WHERE o.studio_id = ?1 AND o.role = 'owner' AND o.user_id <> ?2)) RETURNING user_id`)
+    .bind(studio, who).first<string>("user_id");
+  return out ? { ok: true, id: studio } : { ok: false, status: 409, error: "a studio keeps at least one owner" };
+}
+
+/** Everyone who shares a studio with this person (not them), at most `max`: they see each other online without a friend request (hub.ts). */
+export async function coworkersOf(conf: Pick<Env, "DB">, userId: string, max = 200): Promise<{ id: string; name: string }[]> {
+  const { results } = await conf.DB.prepare(`SELECT DISTINCT u.id, u.name FROM studio_members a JOIN studio_members b ON b.studio_id = a.studio_id
+    JOIN "user" u ON u.id = b.user_id WHERE a.user_id = ?1 AND b.user_id <> ?1 ORDER BY u.name LIMIT ?2`).bind(userId, max).all<{ id: string; name: string }>();
+  return results;
 }
 
 /**
@@ -96,16 +129,19 @@ export async function house(conf: Env, adminId: string, now = Date.now()) {
   if (loose.length) await conf.DB.batch(loose.map((a) => conf.DB.prepare("INSERT INTO studio_apps (app, studio_id, at) VALUES (?, ?, ?) ON CONFLICT DO NOTHING").bind(a.id, HOUSE.id, now)));
 }
 
-/** Deleting an account: a studio it owned alone goes with it (apps freed, members out); in the rest it just leaves. */
-export function studioErase(conf: Env, userId: string) {
-  const alone = `SELECT studio_id FROM studio_members m WHERE m.user_id = ?1 AND m.role = 'owner'
+/** The studios a person (bound as ?1) owns alone: they go with the account. */
+export const SOLE_OWNED = `SELECT studio_id FROM studio_members m WHERE m.user_id = ?1 AND m.role = 'owner'
     AND NOT EXISTS (SELECT 1 FROM studio_members o WHERE o.studio_id = m.studio_id AND o.role = 'owner' AND o.user_id <> ?1)`;
+
+/** Deleting an account: a studio it owned alone goes with it (apps freed, members out, its space with it); in the rest it just leaves. */
+export function studioErase(conf: Env, userId: string) {
   return [
     // Its games are pulled (their saves go in 30 days, listings.ts); the ids stay taken.
-    conf.DB.prepare(`UPDATE listings SET state = 'pulled', at = ?2 WHERE state <> 'pulled' AND studio_id IN (${alone})`).bind(userId, Date.now()),
-    conf.DB.prepare(`DELETE FROM studio_apps WHERE studio_id IN (${alone})`).bind(userId),
-    conf.DB.prepare(`DELETE FROM studios WHERE id IN (${alone})`).bind(userId),
+    conf.DB.prepare(`UPDATE listings SET state = 'pulled', at = ?2 WHERE state <> 'pulled' AND studio_id IN (${SOLE_OWNED})`).bind(userId, Date.now()),
+    conf.DB.prepare(`DELETE FROM studio_apps WHERE studio_id IN (${SOLE_OWNED})`).bind(userId),
+    conf.DB.prepare(`DELETE FROM studios WHERE id IN (${SOLE_OWNED})`).bind(userId),
     conf.DB.prepare(`DELETE FROM studio_members WHERE studio_id NOT IN (SELECT id FROM studios)`),
+    conf.DB.prepare(`DELETE FROM spaces WHERE studio_id IS NOT NULL AND studio_id NOT IN (SELECT id FROM studios)`),
     conf.DB.prepare("DELETE FROM studio_members WHERE user_id = ?").bind(userId),
   ];
 }

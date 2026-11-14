@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sign-in to Game</title>
+<meta name="description" content="Talk 8: how eqosys hands you to Qollab, and Qollab hands you to a game, from the first tap to your seat, in plain words.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@700;900&family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&family=JetBrains+Mono:wght@600;700&display=swap">
+<link rel="stylesheet" href="deck.css">
+</head>
+<body>
+
+<section class="slide">
+  <div class="kicker">Talk 8 · Rusty Buns talks</div>
+  <h1>Sign-in to Party to Game</h1>
+  <p class="lede">From "who are you?" to "you are in seat 2", in three handoffs.</p>
+  <p class="aside">Three handoffs and no dropped batons. We checked. Twice.</p>
+  <div class="notes">This talk joins talks 6 and 7. One journey, start to finish. Go slowly on slide 6, the ticket.</div>
+</section>
+
+<section class="slide">
+  <div class="kicker">The picture first</div>
+  <h2>A night at the theatre</h2>
+  <ol class="steps">
+    <li><span><b>The box office</b> checks who you are and gives you a ticket.</span></li>
+    <li><span><b>The lobby</b> is where you meet your friends and wait together.</span></li>
+    <li><span><b>The usher</b> reads your ticket and walks your group to your seats.</span></li>
+  </ol>
+  <p class="aside">eqosys is the box office. Qollab is the lobby. The game is the show. Nobody has to show ID three times.</p>
+</section>
+
+<section class="slide">
+  <div class="kicker">The whole trip</div>
+  <h2>Three stops</h2>
+  <div class="diagram" role="img" aria-label="Three stops left to right: eqosys checks who you are and gives a ticket; Qollab gathers your party; the game seats everyone in the same room.">
+    <svg viewBox="0 0 900 220">
+      <defs><marker id="ah" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="d-head" d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <rect class="d-hot" x="20" y="40" width="250" height="110" rx="14"/>
+      <text class="d-text" x="145" y="84" text-anchor="middle">1. eqosys</text>
+      <text class="d-small" x="145" y="110" text-anchor="middle">who you are</text>
+      <text class="d-small" x="145" y="132" text-anchor="middle">gives you a ticket</text>
+      <rect class="d-box" x="325" y="40" width="250" height="110" rx="14"/>
+      <text class="d-text" x="450" y="84" text-anchor="middle">2. Qollab</text>
+      <text class="d-small" x="450" y="110" text-anchor="middle">who you are with</text>
+      <text class="d-small" x="450" y="132" text-anchor="middle">a party with a code</text>
+      <rect class="d-box" x="630" y="40" width="250" height="110" rx="14"/>
+      <text class="d-text" x="755" y="84" text-anchor="middle">3. The game</text>
+      <text class="d-small" x="755" y="110" text-anchor="middle">one room for the party</text>
+      <text class="d-small" x="755" y="132" text-anchor="middle">a seat for each</text>
+      <path class="d-arrow" marker-end="url(#ah)" d="M272,95 L319,95"/>
+      <path class="d-arrow" marker-end="url(#ah)" d="M577,95 L624,95"/>
+    </svg>
+  </div>
+</section>
+
+<section class="slide">
+  <div class="kicker">Stop 1 · the box office</div>
+  <h2>The game sends you to sign in, and you come back</h2>
+  <ul>
+    <li>You press "Sign in" in the game.</li>
+    <li>The game sends you to eqosys. You sign in there, never in the game.</li>
+    <li>eqosys sends you back with a short code that works for one minute.</li>
+    <li>The game swaps the code for a ticket. Only the game that asked can swap it.</li>
+  </ul>
+  <p class="aside">The game never sees your password. It cannot lose what it never had.</p>
+  <div class="notes">The "only the game that asked" part is a standard sign-in safety step. Name no standard and no fields.</div>
+</section>
+
+<section class="slide">
+  <div class="kicker">What the ticket says</div>
+  <h2>Who you are, which app, and what you may do</h2>
+  <div class="cards">
+    <div class="card"><h3>Who</h3><p>Your account, not your password.</p></div>
+    <div class="card"><h3>Which app</h3><p>A ticket for one game does not work in another.</p></div>
+    <div class="card"><h3>What you may do</h3><p>Player, tester, maker: what this app lets you do.</p></div>
+    <div class="card"><h3>Until when</h3><p>It runs out soon, and a fresh one comes quietly.</p></div>
+  </div>
+</section>
+
+<section class="slide">
+  <div class="kicker">The cute specific</div>
+  <h2>A ticket anyone can check, and nobody can fake</h2>
+  <p class="lede">eqosys signs every ticket with a secret stamp. It shows everyone the matching stamp checker.</p>
+  <ul>
+    <li>A game room in the cloud checks the stamp itself.</li>
+    <li>It never phones eqosys to ask "is this real?".</li>
+    <li>So eqosys can be busy, or far away, and the game still lets you in.</li>
+  </ul>
+  <p class="aside">Like a hologram on a banknote. The shopkeeper checks it at the till. Nobody calls the bank.</p>
+  <div class="notes">This is the "cute specific": a signed token the game checks on its own, with a public key. Do not name the algorithm or the claims.</div>
+</section>
+
+<section class="slide">
+  <div class="kicker">Stop 2 · the lobby</div>
+  <h2>Your ticket opens the lobby</h2>
+  <ul>
+    <li>With the ticket, the game connects you to your hub. Your friends see you are on.</li>
+    <li>You make a party. You get a six-letter code.</li>
+    <li>Friends join with the code, or with one tap on your name.</li>
+    <li>Everyone picks a seat and presses ready.</li>
+  </ul>
+  <p class="aside">The lobby is where you find out your friend has been "five minutes away" for twenty minutes.</p>
+</section>
+
+<section class="slide">
+  <div class="kicker">Stop 3 · the usher</div>
+  <h2>Start hands everyone the same room</h2>
+  <ul>
+    <li>The host presses start.</li>
+    <li>Qollab tells every player the same thing: this room, your seat.</li>
+    <li>Each player's game joins that room. The room checks each ticket.</li>
+    <li>From here, the game runs the game. Qollab steps out.</li>
+  </ul>
+  <p class="aside">The usher does not stay for the show. Ushers have seen it.</p>
+</section>
+
+<section class="slide">
+  <div class="kicker">When things go wrong</div>
+  <h2>The everyday bumps</h2>
+  <div class="cards">
+    <div class="card"><h3>Not signed in</h3><p>A friend's link takes you to sign-up first, then straight back.</p></div>
+    <div class="card"><h3>Dropped connection</h3><p>You come back to the same party and the same seat.</p></div>
+    <div class="card"><h3>Old code</h3><p>A party code runs out after a day. Make a new one.</p></div>
+  </div>
+  <p class="aside">The test for every step: could your gran do it, on a phone, on a train?</p>
+</section>
+
+<section class="slide">
+  <div class="kicker">Honest status</div>
+  <h2>How far the trip goes today</h2>
+  <div class="cards">
+    <div class="card"><span class="tag live">Live</span><h3 style="margin-top:12px">Box office</h3><p>Sign in and come back with a ticket, in every connected game.</p></div>
+    <div class="card"><span class="tag live">Live</span><h3 style="margin-top:12px">Lobby</h3><p>Hubs, party codes, ready and chat.</p></div>
+    <div class="card"><span class="tag oven">In the oven</span><h3 style="margin-top:12px">Usher in every game</h3><p>Some games take the party start into their room. Others are being joined up.</p></div>
+  </div>
+  <div class="notes">Keep this slide current. Source of truth: apps/eqosys/QOLLAB.md and the games' READMEs for which games take the party start.</div>
+</section>
+
+<section class="slide">
+  <div class="kicker">The end</div>
+  <h1>Box office.<br>Lobby. Seat.</h1>
+  <p class="lede">One sign-in, one code, one tap on start. Then just play.</p>
+  <p style="margin-top:28px"><a href="index.html">All talks</a> · <a href="07-qollab.html">Talk 7</a> · <a href="09-ship-it.html">Talk 9: Ship it</a></p>
+</section>
+
+<script src="deck.js"></script>
+</body>
+</html>

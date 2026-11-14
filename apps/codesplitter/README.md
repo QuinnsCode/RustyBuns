@@ -15,9 +15,9 @@ That's automated development, a software factory, and the floor it runs on shoul
 - **It's still real git.** A commit is a real `git push` to Cloudflare Artifacts.
   `git clone` works, `git pull` works, your tools work.
 - **People and agents use the same API, in the same ways.** The ⌘K palette, a REST API with an OpenAPI spec, personal tokens, OAuth, WebMCP in the browser, and now an **MCP server**.
-  If you can click it, your agent can call it. **Copy a prompt for your agent** on the home page (or `/agent.md`, or `codesplitter prompt`) hands your own agent the CLI, MCP and WebMCP routes (in that order of preference) in one paste, so it can steer the site for you.
+  Almost anything you can click, your agent can call (tokens, sign-in and admin stay with the signed-in page on purpose; [docs/webmcp-audit.md](docs/webmcp-audit.md) lists the gaps). **Copy a prompt for your agent** on the home page (or `/agent.md`, or `codesplitter prompt`) hands your own agent the CLI, MCP and WebMCP routes (in that order of preference) in one paste, so it can steer the site for you.
 - **Then why not just deploy your app as well?** The repo knows how to ship itself: preview deploys, real deploys, a log of every one.
-  Only a person presses the button.
+  Nothing ships that a person hasn't read: the owner presses the button, or the owner's own API token starts a deploy when main holds only code they wrote or already approved. A token can never approve unread code, and crew and agents can't deploy at all.
 
 **Artifacts or are they fiction?** Why artifacts are a future primitive: codeSplitter is where you can git it, get it, share it, agent it, socialize it.
 
@@ -49,7 +49,8 @@ On the desktop, sign in with an alias (any handle you pick); coding agents (clau
 
 ```sh
 claude mcp add --transport http codesplitter https://codesplitter.notryanquinn.workers.dev/api/mcp
-curl -fsSL https://codesplitter.notryanquinn.workers.dev/install.sh | sh && codesplitter login
+curl -fsSL https://codesplitter.notryanquinn.workers.dev/install.sh | sh
+codesplitter login     # the installer prints the full path to use if ~/.local/bin isn't on your PATH
 ```
 
 More: [the desktop app](#the-free-desktop-app-own-your-git-put-it-wherever-you-want), [REFERENCE.md](REFERENCE.md) for every feature and for deploying the site yourself.
@@ -66,7 +67,7 @@ The highest-value things, in order:
    Agents work on branches, and a three-way merge **by line id** settles what git would call a conflict (a moved block that someone else edited, the same line added twice).
    What's left is a card each on the branch's merge page: keep main's, the branch's, both, or write it, with a suggestion when both sides added words at one spot and an Ask button for a coding agent's answer, which is offered only once the merged file parses and the repo's tests for that file pass with it in a throwaway clone, where you turn that on in the dependency doctor's settings. The agent hears why each side changed the file: main's commit messages, and the branch's agent task or, for a branch from upstream, its upstream commit messages.
    Agents settle the same conflicts over MCP, the CLI or WebMCP.
-   The engine doing this is Mervin ([docs/mervin.md](docs/mervin.md); with Ester the tester, [why they exist](docs/mervin-and-ester.md)), your agentic git and merge guy: a deterministic, non-AI merge engine built for the agentic era, so many agents collaborate with minimal friction and merge conflicts dissolve into merge solutions without spending tokens. He keeps [Mergiraf](https://mergiraf.org), a structured merge we love and use, in his toolbelt as a second check on what he hands back, and spends his own effort on what a file merge can't see: the order PRs land in, lines that keep their id across rebases, cards with context, and rules learned from each answer ([how they differ](docs/mervin.md#mergiraf-in-mervins-toolbelt)). (Opt-in learning of your repo's merge patterns, kept in R2 and queried with R2 SQL, is designed, not built.) He is held to real history: on 470 files git itself gave up on across 400 conflicted merges in git/git, it settled 49% to what the person committed, asked on 39%, and settled 13% to other text (`bun scripts/mervin-corpus.ts`).
+   The engine doing this is Mervin ([docs/mervin.md](docs/mervin.md); with Ester the tester, [why they exist](docs/mervin-and-ester.md)), your agentic git and merge guy: a deterministic, non-AI merge engine built for the agentic era, so many agents collaborate with minimal friction and merge conflicts dissolve into merge solutions without spending tokens. He keeps [Mergiraf](https://mergiraf.org), a structured merge we love and use, in his toolbelt as a second opinion on the files he left cards in (it runs in the hosted agent container, or on the desktop with `MERGIRAF=on`; otherwise not at all), and spends his own effort on what a file merge can't see: the order PRs land in, lines that keep their id across rebases, cards with context, and rules learned from each answer ([how they differ](docs/mervin.md#mergiraf-in-mervins-toolbelt)). Opt-in learning of your repo's merge patterns is built and kept in D1 (`GET|PUT|DELETE /api/repos/:o/:r/mervin`); keeping it in R2 and querying it with R2 SQL is designed, not built. He is held to real history: on 467 files git itself gave up on across 400 conflicted merges in git/git, he settled 43% to exactly what the person committed and 6% to the same lines reordered or re-indented, asked on 39%, and settled 13% to other text (`bun scripts/mervin-corpus.ts <a git/git clone>`; the recorded result is in `src/mervin.ts` and `GET /api/mervin`).
    Hot spots get their own rules in `.gitattributes`, as git's merge drivers do: `CHANGELOG.md merge=union` and its rewrites stack instead of conflicting.
    Each path gives an agent a budget too: past it, failing the same way twice or on a third conflict round, it stops and leaves a four-line note (DONE, NEXT, BROKE, DONT), and a fresh agent, a cheaper model or a person picks up from that.
    A branch whose merge meets changed conflicts a third time gets the same: the next answer comes from fresh eyes reading a note of what the last ones tried, or a person.
@@ -77,9 +78,9 @@ The highest-value things, in order:
 2. **Your git keeps going when the other git doesn't.** Make a repo a mirror of GitHub, GitLab or any git URL, or turn a fork you dug up on the desktop into one with a click (its About panel says which of its commits go up first, and asks).
    When upstream goes down, you keep editing, committing, branching and running agents.
    The Upstream panel says it's down and how many commits are waiting, and it catches up by itself once upstream answers.
-   It never force-pushes.
+   A whole-repo mirror never force-pushes; a folder mirror replaces only its own proposal branch, `codesplitter/<name>`, on each send, and never pushes upstream's main.
 3. **Make your code private one line at a time.** Select some lines in a public repo and make them private.
-   Everyone else sees a blank line in the same place: on the page, in blame, in search, in git.
+   Everyone else sees a blank line in the same place: on the page, in blame, in search, in git (a line committed before you made it private stays in the earlier commits of a public clone, so treat a leaked secret as leaked).
    Your crew gets a second git remote with the real text.
    Ship the open-source repo with the secret sauce still secret.
 4. **Share some lines, not the repo.** A live link to just a range, which follows those lines by id as the file changes.
@@ -91,11 +92,11 @@ The highest-value things, in order:
    ```
    It signs in with OAuth.
    Every tool is an operation in the OpenAPI spec, so the MCP server and the API never drift, and the ones that can't be undone (merge, delete, deploy) are marked so your client asks first.
-   The server is in **code mode**: it lists four tools (`search_tools`, `describe_tools`, `execute`, `call_tool`) instead of all 138, and your agent writes one JavaScript program that calls the rest (`await tools.read_file(...)`) and returns only what it needs. Clearing 20 TODOs in a 300-line file took about 1,200 tokens that way against about 36,800 tool by tool, and listing the tools 1,050 against 30,200 (`test/codemode.test.ts` measures both; `/webmcp` shows them). Programs run in a Worker of their own with no network and your token's scope; the risky tools go through `call_tool`, so your client still asks first. Add `?mode=tools` to the URL for the plain list.
+   The server is in **code mode**: it lists four tools (`search_tools`, `describe_tools`, `execute`, `call_tool`) instead of every one (168 for a write token today), and your agent writes one JavaScript program that calls the rest (`await tools.read_file(...)`) and returns only what it needs. Listing the tools costs over 30 times fewer tokens that way, and so does clearing 20 TODOs in a 300-line file (`test/codemode.test.ts` measures both, prints the counts and fails if either falls under 30 times; `/webmcp` shows a dated run). On the hosted site programs run in a Worker of their own with no network (`globalOutbound: null`; the desktop's local loader is a seatbelt, not a wall) and your token's scope; the risky tools go through `call_tool`, so your client still asks first. Add `?mode=tools` to the URL for the plain list.
    Or from your shell, no checkout needed (Bun or Node 18+):
    ```sh
    curl -fsSL https://codesplitter.notryanquinn.workers.dev/install.sh | sh
-   codesplitter login     # paste a token from your profile page
+   codesplitter login     # paste a token from your profile page (not found? the installer printed the full path and the PATH line to add)
    codesplitter tools     # every MCP tool, as a command
    codesplitter triage    # something broke? your coding agent asks what, digs in, drafts the issue
    ```
@@ -125,8 +126,8 @@ That's what a software factory needs: lots of small, disposable, real git repos,
 The catch is that Artifacts only takes writes as a `git push`.
 So codeSplitter builds git's objects and pack itself, in the Worker, with Web Crypto and `CompressionStream` and no git library, and speaks git's smart HTTP protocol.
 Each commit pushes only what changed on top of the parent tree, so editing one line of a big repo costs one blob, a few trees and a commit.
-Repos too big even for Artifacts (Bun, Alchemy) are kept in R2, packed into chunks and dug in parallel off a queue.
-A commit that carries an agent's lines also writes a git note in the same push, under `refs/notes/codesplitter`: the agent, its model, a hash of its prompt, how its run ended and its DONE / NEXT / BROKE / DONT note.
+A repo too big even for Artifacts would be kept in R2, packed into chunks and dug in parallel off a queue; none has needed it yet (Bun and Alchemy fit in Artifacts from the tarball).
+A commit that carries an agent's lines from a run on record also writes a git note in the same push (an agent's lines with no run on record get none today, #4333), under `refs/notes/codesplitter`: the agent, its model, a hash of its prompt, how its run ended and its DONE / NEXT / BROKE / DONT note.
 The why travels with every clone (`git fetch origin refs/notes/codesplitter:refs/notes/codesplitter`, then `git log --notes=codesplitter`) and shows on the vein's commit card.
 
 ## The free desktop app: own your git, put it wherever you want
@@ -138,7 +139,7 @@ When the host is down, so are your pushes, your checks, your merges and every ag
 The desktop app turns that around.
 Your git lives on your machine, in bare repos under `~/.codesplitters`, and syncs **out**: mirrored both ways to GitHub, GitLab or any git remote you can reach.
 When one of them goes down, you keep editing, committing, branching, running checks and merging, and your agents keep working.
-It catches up by itself once upstream answers, and it never force-pushes.
+It catches up by itself once upstream answers, and a whole-repo mirror never force-pushes (a folder mirror replaces only its own proposal branch, `codesplitter/<name>`).
 
 You say where git truth lives, on your profile: codeSplitter, the artifact (this copy's git) or GitHub, or ask each time.
 We don't mind which.
@@ -180,19 +181,19 @@ There's no downloadable build yet; that's one command from source.
 
 - **Meet the trio.** `/mervin`, `/ester` and `/dexter` are a case file each for the three helpers (merges, red checks, token bloat), written like a cloning-lab doctor's psych report.
 - **Dexter, opt in.** A repo's owner switches him on beside Mervin's learning (`PUT /api/repos/:o/:r/dexter`, MCP `set_dexter`). Each agent run the repo hosts then keeps its token use once, at its end: usage, turns, and per tool its calls, result tokens and worst result, read from claude's stream-json by the office Dexter's own `tally` (`@rustybuns/util/dexter`). Never the text. Raw rows last 30 days (the newest 5,000 runs per repo), a daily rollup a year. He proposes trims to `AGENTS.md` and `CLAUDE.md` as a diff; approving one puts it on branch `dexter-trims-<id>` for a person to merge. Off deletes everything he kept (`src/dexter.ts`).
-- **The road a change takes.** `/concepts`, also on the landing page, plays the road every change takes: branch in Artifacts, coordinate in Durable Objects, Mervin merges, Ester runs the test lanes, then it's your code. Each stop is plain code; an AI or a person hooks in after Mervin, before Ester or after Ester with a yay or a nay. Test lanes run `always`, `often` (every Nth change), at a `release` only, or ride a `bus` to one big pass. A repo writes its road in `codesplitter.pipeline.json`, and `GET /api/repos/:o/:r/pipeline` (MCP `get_pipeline`, `POST /api/pipeline` to try one) says what a change does (`src/pipeline.ts`).
+- **The road a change takes.** `/concepts`, also on the landing page, plays the road every change takes: branch in Artifacts, coordinate in Durable Objects, Mervin merges, Ester runs the test lanes, then it's your code. Each stop is plain code; an AI or a person hooks in after Mervin, before Ester or after Ester with a yay or a nay. Test lanes run `always`, `often` (every Nth change), at a `release` only, ride a `bus` to one big pass, or take the `train` (main moving reruns the open branches as one car per merge-plan wave). A repo writes its road in `codesplitter.pipeline.json`, and `GET /api/repos/:o/:r/pipeline` (MCP `get_pipeline`, `POST /api/pipeline` to try one) says what a change does (`src/pipeline.ts`).
 - **We got git problems with agent swarm.** `/git-problems.html` is the one page for both swarm demos below: the rush-hour station animation, and a way into the replay of a real week of this repo.
 - **Git at swarm speed, with dots.** `/swarm.html`, also on the landing page, is a simulation of agents getting their work into main: the old git way's one lane, merge wall and red-check wall, then codeSplitter's layers one at a time (a Durable Object, Mervin's bullet train, Ester's stations). Story mode plays it as scenes; the others are old git, layer by layer, and side by side, with faders for speed, agents, overlap and red checks.
 - **A week of the swarm, replayed.** `/swarm-watch.html` plays the week of October 7 to 14 back: 1,000 of this repo's real PRs, each a made-up agent, and what the open ones were waiting on, minute by minute. The git wall on the night of October 13 has 18 PRs stuck on conflicts at once, and the pane beside it shows the file they piled into. `bun scripts/swarm-week.ts` pulls the week (read only) a night-by-night numbers panel gives the peaks (the averages mislead), and a recorded merge round from this repo's history plays at the git wall (`bun scripts/swarm-round.ts`). `bun scripts/swarm-readme.ts` draws the animated chart below, and `--png` a still of the git wall for viewers that drop SMIL ([docs/swarm-week.png](docs/swarm-week.png)).
 
   ![1,000 PRs in a week, one dot each](docs/swarm-week.svg)
-- **Blame and time travel for free.** The op log replays any file at any rev, so every line knows who wrote it and when.
+- **Blame and time travel for free.** The op log replays any file at any rev back to about 20,000 edits (older is trimmed: a 410), so every line knows who wrote it and when.
 - **gitpath.** Make code beautiful again: a file's commit graph comes down a guitar-neck highway in real 3D (three.js), main in the middle, branches fanning out and rejoining, an orange hot path through the churn. A rail on the right is time itself (oldest at the bottom) and two date boxes crop the history. The faint controller icon turns on a game: a tiny unicyclist, back to you, rides the hot path on left and right taps (or two keys you bind) timed to the beat. The graph is a tree (main is the trunk, each side branch a bark limb with leaves) and git throws things at you: a merge is a car, a merge conflict someone fixed by hand is an angry car that honks past, a commit an agent made (an `office/` branch or a bot) is a robot swarm that buzzes you and eats your speed, plus forks, fallen branches and boulders (big squash merges). The wind follows the history: a quiet month is calm, a busy week is a gale that strips the leaves, and the weather pill in the game bar says which. A commit that names a piece of the stack (D1, R2, Queues, Durable Objects, Containers, Artifacts, rate limiting, static assets, Workers) turns into its 3D model, and a new piece is one registry line and one model. On a repo's page the route icon in the header opens it on that repo, read live from its git (`GET /api/repos/:o/:r/gitpath`), a file at a time. `bun run gitpath`, or feed it any clone with `bun scripts/gitpath-log.ts <clone> <path>`.
 - **Live sync.** Edits go over each file's WebSocket.
   Every open page patches itself in place, and presence shows who else is there, people and agents apart.
   An agent holds the lines it was given while it works, you can hold lines of your own, and you can lift any claim.
   An agent that needs held lines can wait in line for them, granted in turn, and a soft claim just says what someone means to rewrite, keeping nobody off.
-- **Agents have faces, lines take stamps.** An agent's profile (`#/u/agent-claude`) says who runs it, on which harness, the repos it works in, its runs and a 30-day pulse of its line edits.
+- **Agents have faces, lines take stamps.** An agent's profile (`#/u/agent-claude`) says who runs it, on which harness, the repos it works in, its runs and a 30-day pulse of the lines its site-started runs changed (edits it makes over the API or MCP don't count yet, #4334).
   Stamp a line, not a pull request: a reaction that stays on the line by id through edits, shows on its blame and on both people's profiles, whoever wrote it, person or agent.
 - **A code city, not a contributions chart.** Every person's profile has a city: a district per public repo, a building per file, tall where it's long and lit orange where lines landed lately, white stone where people wrote it and black glass where agents did. It is a rainy night on a floating slab: ground floors are lava-lamp walls, coffee shops, libraries and bookstores, and you can jump. Face a building and click, tap its name or press E to flip through its file a page at a time, each line with who wrote it.
 - **Make your avatar.** Click the little round you beside your name on your profile to open the full editor: face, hair, hat, glasses and clothes, with dev-flavoured extras (a rubber duck, a propeller cap, a conference lanyard). It is saved with your profile (`PUT /api/me {avatar}`) and you wear it when you walk the code city.
@@ -227,8 +228,8 @@ There's no downloadable build yet; that's one command from source.
 - **The supply-chain watch.** Every hour it reads the status pages of the platforms agents lean on (Anthropic, OpenAI, GitHub, npm, Cloudflare) and OSV's new malicious-package advisories (`MAL-…`), and checks every repo's dependencies against them, doctor on or off.
   A range that could install a poisoned version shows up in the repo's Dependencies section.
   Optionally, once a day, Claude searches the news for compromised packages too, shown beside them as unverified.
-- **Webhooks for CI/CD.** GitHub-shaped, HMAC-signed, retried on a queue.
-- **Checks, ours and GitHub's, in one panel.** A commit to main or a branch pushed upstream starts check runs here, on GitHub Actions, or both.
+- **Webhooks for CI/CD.** HMAC-signed (`X-CodeSplitter-*` headers) and retried on a queue; `github_compat: true` sends GitHub's event names, headers (`X-GitHub-Event`, `X-Hub-Signature-256`) and fields instead.
+- **Checks, ours and GitHub's, in one panel.** Once a repo's checks are set to run somewhere (`PUT …/checks/settings {where}`; a new repo's are nowhere, a mirror's on GitHub), a commit to main or a branch pushed upstream starts check runs here, on GitHub Actions, or both.
   A mirror pulls the Actions jobs for each sha it sent up back in, beside codeSplitter' own, and can post its own results to GitHub as `codesplitter/<name>` statuses.
   The desktop runs its own queue, so checks just run there.
   Bring your own runners too: they pull work (`POST …/checks/claim`), so one behind a firewall or on a laptop works, and `scripts/runner.ts` is the whole loop to wrap around any build.
@@ -239,14 +240,14 @@ There's no downloadable build yet; that's one command from source.
   GitHub is the backup, not a dependency: running checks here is always on offer, and while GitHub is down the desktop checks here in its place, merges on its own checks passing, and lets GitHub's verdict catch up on main once the mirror syncs.
 - **CI that heals itself.** A required check failing on a branch, or its merge tripping a guard (conflict markers, a JSON file that won't parse), starts a coding agent on that branch with the failing log, and the checks run again on its fix.
   Two tries, one at a time; then the branch waits for a person, the attempts listed beside its checks. On with hosted agents (admins only, on the hosted budget), or on the desktop with `HEAL=1`.
-- **Build changes are flagged.** A branch that touches `package.json`, a lockfile, a Dockerfile, CI or the deploy config shows every changed line, and its merge waits for a person to say they've read them.
+- **Build changes are flagged.** A branch that touches `package.json`, a lockfile, a Dockerfile, CI or the deploy config shows every changed line, and when the repo deploys on commit (`on_commit`) its merge waits for a person to say they've read them; an agent run's batch is always held for a person.
   Agents can be prompt-injected; this is where it gets caught.
 - **A security model you can read, and that the tests hold to.** Your code, your app, your provisioning and your destruction: what each is promised, and the test that proves each promise, in [REFERENCE.md](REFERENCE.md#the-security-model-your-code-your-app-your-provisioning-your-destruction).
   Every delete the API offers is in a table of what goes and what stays.
   A promise whose test is renamed or dropped fails CI, and `bun run smoke` runs every cited test and the stress script with a row per promise.
 - **Accounts and limits.** GitHub, Google or email sign-in.
   Rate limits on everything that costs money, which an admin can set to reject, log, flag or queue. Paid tiers named for gems (Tanzanite 2x, Alexandrite 5x, Painite 10x) multiply a person's caps and stamp their name.
-- **What a stranger can browse.** There is no site-wide list of public repos: no explore page, and `/api/repos`, `/api/explore` and `/api/public` don't exist. A public repo is open to anyone with its link, with no sign-in, and a person's public repos are listed on their profile (`GET /api/users/:name`) and in their code city. Private repos show only to their owner and crew. Without a link or a handle, the imported levels are what there is to look at.
+- **What a stranger can browse.** There is no site-wide list of public repos: no explore page, and `/api/repos`, `/api/explore` and `/api/public` don't exist. A public repo is open to anyone with its link, with no sign-in, and a person's public repos are listed on their profile (`GET /api/users/:name`) and in their code city. Private repos show only to their owner and crew. Without a link or a handle there are the imported levels, and search: a signed-out `GET /api/search?q=` also lists matches in strangers' public repos, from the 50 most recently committed.
 - **Pricing.** Free, and nothing here takes payment. A gem tier is set by an admin by hand (`PUT /api/admin/limits/tier`); there is no checkout.
 - **Limits.** Every rule is a count per caller per window, and the defaults are the table in [`src/limits.ts`](src/limits.ts) (for example 10 new repos a day, 60 commits an hour, 20 hosted agent runs a day, 5 GitHub digs an hour). A repo's owner sees where they stand at `GET /api/repos/:o/:r/limits`, and admins tune the rules at `#/admin/limits`. Going over answers 429 with `retry-after`. Hosted agent and container runs also share a site-wide daily budget, so they can run out for everyone.
 - **Stability.** This is a hackathon-stage project with no uptime promise. Don't keep your only copy of anything here; clone it out, or run the desktop app, where your git lives on your machine.
@@ -272,7 +273,7 @@ Here, fork PRs never mirror: a mirror fetches upstream's own branches, never `re
 Only trusted code runs: your branches and your agents', and main as merged on GitHub, which you reviewed, queued as the mirror takes it.
 Your machine pulls its runs, so it needs no open port.
 A check gets none of your logins: a scrubbed environment and an empty `HOME`, as a sandbox user of its own if you like, and pinning the repo's checks runs only the commands in its settings, so a merge can't change what runs.
-Make the mirror pull-only and codeSplitter never writes to GitHub either: syncs only fetch, and branch and tag pushes are turned away.
+Make the mirror pull-only and its syncs only fetch: branch and tag pushes are turned away. Posting check results to GitHub as commit statuses is a switch of its own, which still works on a pull-only mirror.
 GitHub's free runners keep doing the quick PR checks.
 
 It isn't new in kind: GitLab's CI for external repos, Buildkite's agents and GitOps (Argo CD, Flux) all pull the same way.
@@ -289,19 +290,19 @@ For a local claude run you can also hand the agent your own Blender MCP, off by 
 
 What would take someone else the longest to build:
 
-- **A merge by line identity, not by text.** Lines keep their ids through edits, moves and branches, so a merge knows a moved block is the same block,
+- **A merge by line identity, not by text.** Lines keep their ids through edits and branches. There is no move op (a line is inserted, set or deleted), so a moved line gets a new id, and the merge spots the move by matching the deleted text to the inserted text; so it knows a moved block is the same block,
   even one moved out of an `if` and re-indented, and carries the other side's edits into it (#1223). A clash the move split apart is still one card (#1237). Git guesses that from text.
 - **A git push in a Worker with no git library.** Objects, trees rebuilt only along changed paths, the pack and receive-pack, plus a fresh start that moves a full repo to a new Artifact with the very same tree.
 - **One codebase on the edge and the desktop.** Durable Objects, D1, Artifacts, Queues and Cron all have local twins, so the desktop isn't a port.
   It's the same app.
 - **Private lines in a public repo**, kept blank in git, in search and on the live socket, with a second remote for the crew.
-- **Git that survives an outage**: a two-way mirror that merges without a checkout, stops at a clash or a force-push, and never loses a commit.
+- **Git that survives an outage**: a two-way mirror that merges without a checkout, stops at a clash or a force-push, never force-pushes a whole repo, and never loses a commit.
 - **A safety model for agents that ship.** Agents get branches, containers and their own keys, never deploy keys.
-  Deploy keys are write-only and sealed; only a person deploys.
+  Deploy keys are write-only and sealed; nothing ships that a person hasn't read, and crew and agents can't deploy.
   Hosted agents run in throwaway containers that bill nothing while idle.
-- **An MCP server that costs your agent almost nothing.** Code mode lists four tools instead of 138: listing them costs about 1,050 tokens against 30,200, and clearing 20 TODOs in a file about 1,200 against 36,800 (`test/codemode.test.ts` measures both).
+- **An MCP server that costs your agent almost nothing.** Code mode lists four tools instead of every one: listing them and clearing 20 TODOs in a file each cost over 30 times fewer tokens (`test/codemode.test.ts` measures both and holds that floor).
 - **WebMCP and code mode, measured.** `/webmcp` puts the numbers on one page: what code mode and the page's own WebMCP tools save an agent's context, the guard rails around both, and what we haven't measured yet.
-- **One API, every surface.** The palette, REST, OpenAPI, tokens, OAuth, WebMCP and MCP all come from one list, and a test fails if they drift.
+- **One API, every surface.** REST, MCP, the CLI, `/api/mcp/tools` and the docs all come from one list (`src/openapi.ts`), and a test fails if they drift. The ⌘K palette and the page's WebMCP tools are lists of their own in the page, and tokens, grants and admin are cookie-only by design ([docs/webmcp-audit.md](docs/webmcp-audit.md)).
 
 > **⚠️ Super experimental.** Coding agents run real CLIs that can edit files and run shell commands, and hosted runs spend real API keys.
 > They're off by default on Cloudflare.

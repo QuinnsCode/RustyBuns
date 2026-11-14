@@ -2,26 +2,26 @@
   "title": {
     "imprintHead": "Cryptid Compendium",
     "name": "Mythic Masters",
-    "subtitle": "A magical book is left to you by aliens fleeing Earth. They leave you with a mission:\nCollect Earth's Cryptids or face humanity being WIPED OUT!",
-    "tagline": "Venture an open world based on reality!\nFind each region's cryptids in their natural world habitat equivalent!\nUnlock new regions; Find a region's cryptids & beat regional cryptid leaders.\nTrain up your cryptid army. Challenge stronger & rarer cryptids to Arcade-style Battles.\nDetermine the best Cryptid Collector!",
-    "continue": "Continue with {name} (Lv {level})",
-    "newJourney": "Start New Timeline",
-    "startOver": "Start over? Your compendium is burned. Click again",
-    "duel": "Fight a Friend",
-    "versus": "Versus: 2 Cryptids Enter; Only 1 Leaves",
+    "subtitle": "Grey aliens dropped a magic book on you and ran.\nNow you have one job: catch Earth's cryptids, or the world ends.",
+    "tagline": "Explore a big open world, built from real places.\nFind each region's cryptids where they really live.\nBeat each region's boss to open the next one.\nTrain your team. Take on bigger, rarer cryptids in arcade-style fights.\nBecome the best cryptid collector there is.",
+    "continue": "Continue · {name} Lv {level}",
+    "newJourney": "New game",
+    "startOver": "Burn the book and start over? Click again",
+    "duel": "Fight a friend",
+    "versus": "Versus",
     "imprint": [
       "Bound in Cedar Bark of Leeds Point"
     ],
-    "plateCaption": "The Book, keeper of cryptid knowledge and energy. Use it to Summon forth your Found, Tamed, Leveled Cryptid army."
+    "plateCaption": "The Book. It holds every cryptid you catch. Open it to call them out to fight."
   },
   "starters": {
     "heading": "The Bog Witch",
-    "witch": "\"You came down in the light, you and the loud one. Nobody believes you. I'm not sure I do. And now you've got their book under your arm, have you? Keep it shut in my yard. Five came to my door this year, out of the pines and the north woods, the desert and the high Alps, and they eat me out of house and home. Take three, and go.\"",
-    "after": "She will not touch the Book. It came down with you, it is warm, and it is yours. Her camp is at Leeds Point, if you ever clear anything worth telling her about.",
-    "hodag": "A hodag pup from the north woods. Hot-blooded, stone-backed, slow to turn and slower to fall.",
+    "witch": "\"You fell out of the sky, you and that loud one. Nobody believes you. I'm not sure I do. And now you've got their book, have you? Keep it shut in my yard. Five of these beasts came to my door this year, and they eat all my food. Take three. Then go.\"",
+    "after": "She will not touch the Book. It fell with you, it is warm, and it is yours. Her camp is at Leeds Point. Come back when you have news.",
+    "hodag": "A hodag pup from the north woods. Hot inside, hard as rock outside. Slow to turn, and slower to fall.",
     "squonk": "A squonk. It weeps, it hides, and its tears are a tide that puts out any fire.",
     "agropelter": "An agropelter out of a hollow tree. It throws branches, and it holds a grudge.",
-    "jackalope": "A jackalope. Six kilos of antler and nerve. Faster than anything in these pines.",
+    "jackalope": "A jackalope. Six kilos of antlers and attitude. Faster than anything in these pines.",
     "tatzelwurm": "A tatzelwurm down from the Alps, cat-faced and four-legged. Its bite is poison and its breath is frost.",
     "chooseMore": "Choose {n} more",
     "setOut": "Set out"

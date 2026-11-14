@@ -13,7 +13,8 @@ import { hasTrail, SECTIONS, sections, type Journey } from "../journey.ts";
 import { REGIONS, type Region } from "../regions.ts";
 import { TAPES } from "./tapes.ts";
 import { GRID } from "./places.ts";
-import { ARENA_R, arenaOf, CELL, dry, ownerAt, spawn } from "./world.ts";
+import { ARENA_R, arenaOf, CELL, dry, onIsland, ownerAt, spawn } from "./world.ts";
+import type { Pack } from "../packs.ts";
 import WITCH from "../../content/witch.json";
 import { bandAt, TRAILS, WORLD } from "./trail.ts";
 
@@ -38,6 +39,8 @@ export interface Poi {
   k: number;
   /** A tape's number among its region's tapes. */
   tape?: number;
+  /** A pack's own tape (poi.json), played in place of the region's. */
+  play?: Tape;
 }
 
 /** What a tape plays: lines in the director's voice, "Who: what". */
@@ -91,6 +94,7 @@ function placeholder(g: Region, k: number): Tape {
 
 /** The tape a tape place plays: the region's written one by number, else the placeholder for its section. */
 export function tapeOf(p: Poi): Tape {
+  if (p.play) return p.play;
   const g = REGIONS[p.n - 1]!, hand = g.biome === "pine-barrens" ? PINE : TAPES[g.id] ?? [];
   return hand[p.tape ?? 0] ?? placeholder(g, p.k);
 }
@@ -161,15 +165,35 @@ export const ALL: Poi[] = [...POIS.values()].flat();
 const BY_ID = new Map(ALL.map((p) => [p.id, p]));
 export const poiById = (id: string) => BY_ID.get(id);
 
+// --- a pack's island (src/packs.ts, #4406) ---------------------------------------------------------------------------
+/** The region number an island's places carry. No continent region is 0, so the continent's views never draw them. */
+export const ISLE_N = 0;
+const ISLES = new Map<string, Poi[]>();
+/** A pack's poi.json places on its island's own map (world.ts onIsland). Their ids are the pack's and their order in
+ *  poi.json, and saves keep them: add new places at the end. */
+export function islePlaces(pack: Pick<Pack, "id" | "places">): Poi[] {
+  let out = ISLES.get(pack.id);
+  if (!out) {
+    let tapes = 0;
+    out = pack.places.map((s, i) => ({ id: `${pack.id}.${i}`, n: ISLE_N, kind: s.kind, name: s.name, ...onIsland(s.at), k: 0, ...(s.tape ? { tape: tapes++, play: s.tape } : {}) }));
+    ISLES.set(pack.id, out);
+  }
+  return out;
+}
+/** How near a pack's lair (its cave mouth) you walk before its fight starts. */
+export const LAIR_R = 7;
+/** Where a pack's lair opens on its island: the poi.json place its pack.json `lair` names. */
+export const isleLair = (pack: Pick<Pack, "id" | "places" | "lair">) => islePlaces(pack).find((q) => q.name === pack.lair.place);
+
 // --- walking up to them --------------------------------------------------------------------------------------------
 /**
  * The tapes and fires you have just walked up to: those within REACH that `reached` didn't hold. `reached` is
  * the ones you are standing at, kept by the caller so a fire rests you once per visit, not once per step; a place
- * leaves it when you are more than twice REACH away.
+ * leaves it when you are more than twice REACH away. `near`: the places to look at, by default the region's you stand in.
  */
-export function arrive(me: { x: number; z: number }, reached: Set<string>): Poi[] {
+export function arrive(me: { x: number; z: number }, reached: Set<string>, near: readonly Poi[] = POIS.get(ownerAt(me.x, me.z)) ?? []): Poi[] {
   const out: Poi[] = [];
-  for (const p of POIS.get(ownerAt(me.x, me.z)) ?? []) {
+  for (const p of near) {
     if (p.kind === "landmark") continue;
     const d = far(me, p);
     if (d < REACH && !reached.has(p.id)) { reached.add(p.id); out.push(p); }
@@ -192,10 +216,34 @@ function add(list: string[], id: string) { if (list.includes(id)) return false; 
 /** The tapes found in region n, in the order of the region's tapes. */
 export const tapesFound = (j: Log, n: number): Poi[] => (POIS.get(n) ?? []).filter((p) => p.kind === "tape" && j.found.includes(p.id));
 
+/** The tapes found on a pack's island, in poi.json's order: the journal's page for it. */
+export const isleTapesFound = (j: Log, pack: Pick<Pack, "id" | "places">): Poi[] => islePlaces(pack).filter((p) => p.kind === "tape" && j.found.includes(p.id));
+
 /** Where you land when you travel to a lit fire: a few metres beside it; undefined when it isn't a lit fire. */
 export function fireSpot(j: Log, id: string): { x: number; z: number; n: number } | undefined {
   const p = BY_ID.get(id);
   return p && p.kind === "fire" && j.fires.includes(id) ? { x: p.x + 2, z: p.z, n: p.n } : undefined;
+}
+
+/** A small number from a string: the same every time, different from one id to the next. */
+export const hash = (s: string) => { let h = 7; for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0; return h; };
+/** Which way a place faces, from its id: the turn poi-view gives it, and a town its door (towns.ts). */
+export const yawOf = (id: string) => (hash(id) % 628) / 100;
+
+/** A cabin's walls, metres: CABIN.w along its own x, CABIN.d along its own z (the door's side is +z), CABIN.h high. */
+export const CABIN = { w: 5, d: 4, h: 2.6 };
+const BODY = 0.4; // metres: how close you come to a wall
+/** Inside a cabin's walls (or closer to them than your body allows) at (x, z)? Its door bars from inside, so walls are walls. */
+export function inWalls(x: number, z: number): boolean {
+  for (const p of POIS.get(ownerAt(x, z)) ?? []) {
+    if (p.kind !== "cabin") continue;
+    const dx = x - p.x, dz = z - p.z;
+    if (dx * dx + dz * dz > 16) continue; // the far corner is 3.2 m out, and a body's width past it
+    // Back into the cabin's own frame: poi-view turns it by yawOf about +y.
+    const a = yawOf(p.id), c = Math.cos(a), s = Math.sin(a), lx = dx * c - dz * s, lz = dx * s + dz * c;
+    if (Math.abs(lx) < CABIN.w / 2 + BODY && Math.abs(lz) < CABIN.d / 2 + BODY) return true;
+  }
+  return false;
 }
 
 /** Somewhere the night can't come: a lit fire's light, a cabin, or the ring round a region's arena. */

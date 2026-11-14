@@ -12,12 +12,37 @@
   },
   {
     "title": "Games",
-    "intro": "These are for fun. Most of them play in the browser, and each one runs as a desktop app. The newest work is first.",
+    "intro": "These are for fun. Most of them play in the browser, and each one runs as a desktop app. They are in the same order as in eqosys.",
     "apps": [
       {
-        "app": "mythic-masters",
-        "name": "Mythic Masters",
-        "line": "A 3D creature arena brawler where mass, height and stats shape each body, and flyers must come down. A headless bot-vs-bot tuner keeps 76 folklore beasts near a 50% win rate, from a 6 kg jackalope to a one-tonne lake monster. One arena layout has a skin for each built region, on a route of 64."
+        "app": "park-hide-seek",
+        "name": "Park Hide & Seek",
+        "line": "3D hide and seek on real Yosemite terrain. The page, a LAN host or the edge can run the game. Each player gets only what they can see. [Play it](https://park-hide-seek.notryanquinn.workers.dev)"
+      },
+      {
+        "app": "git-recon",
+        "name": "Git Recon",
+        "line": "A repo as a shooter level. Its folders become compounds and its files become buildings, on real ground (Yosemite, or any lat/long) or in a plastic-army kitchen and garden. Git commands are the weapons. Play alone in the page, with up to 64 players in a LAN battle, or online in a Durable Object for each room."
+      },
+      {
+        "app": "skate-tech-park",
+        "name": "Skate Tech Park",
+        "line": "Skate a street spot, or fly a rocket roadster with ten cold-gas thrusters across the gap. It is a three.js page on a pure fixed-step sim, which the tests run headless."
+      },
+      {
+        "app": "alien-disc-golf",
+        "name": "Alien Disc Golf",
+        "line": "Disc golf where the course is the planet: nine holes between random countries on a three.js globe. NOAA's live wind carries the disc, and a high throw rides the jet stream. The Worker relays the latest GFS grid from NOMADS, and the page decodes the GRIB2. Guess the tee's country to get one stroke back."
+      },
+      {
+        "app": "delayed-reaction",
+        "name": "Delayed Reaction",
+        "line": "A phone-first rhythm game. You sprint through a neon tunnel that rolls. A ring calls a note, and you answer one bar later on one of four thumb pads. Your answers echo back through a dub delay. The sim plays in beats with no page, and thus a test runs each level."
+      },
+      {
+        "app": "two-fronts",
+        "name": "Two Fronts",
+        "line": "Thunder Marines against the Wooka horde: a turn-based galactic war with three.js hero battles in orbit and on six worlds. There is one world for each kind of sector: redwood forest, desert, ruined city, glowing alien night, beach and deep-space station. The two parts were built apart and connect through small JSON types (a spec in, a result out). Play the AI or hotseat in the page, or a friend online through a Durable Object for each campaign."
       },
       {
         "app": "hippo-tycoon",
@@ -30,34 +55,9 @@
         "line": "A spy game in a pitch-dark Gaussian-splat room. A short config makes the three.js page a desktop app, and the same page races friends online on a Worker."
       },
       {
-        "app": "skate-tech-park",
-        "name": "Skate Tech Park",
-        "line": "Skate a street spot, or fly a rocket roadster with ten cold-gas thrusters across the gap. It is a three.js page on a pure fixed-step sim, which the tests run headless."
-      },
-      {
-        "app": "park-hide-seek",
-        "name": "Park Hide & Seek",
-        "line": "3D hide and seek on real Yosemite terrain. The page, a LAN host or the edge can run the game. Each player gets only what they can see. [Play it](https://park-hide-seek.notryanquinn.workers.dev)"
-      },
-      {
-        "app": "alien-disc-golf",
-        "name": "Alien Disc Golf",
-        "line": "Disc golf where the course is the planet: nine holes between random countries on a three.js globe. NOAA's live wind carries the disc, and a high throw rides the jet stream. The Worker relays the latest GFS grid from NOMADS, and the page decodes the GRIB2. Guess the tee's country to get one stroke back."
-      },
-      {
-        "app": "two-fronts",
-        "name": "Two Fronts",
-        "line": "Thunder Marines against the Wooka horde: a turn-based galactic war with three.js hero battles in orbit and on six worlds. There is one world for each kind of sector: redwood forest, desert, ruined city, glowing alien night, beach and deep-space station. The two parts were built apart and connect through small JSON types (a spec in, a result out). Play the AI or hotseat in the page, or a friend online through a Durable Object for each campaign."
-      },
-      {
-        "app": "git-recon",
-        "name": "Git Recon",
-        "line": "A repo as a shooter level. Its folders become compounds and its files become buildings, on real ground (Yosemite, or any lat/long) or in a plastic-army kitchen and garden. Git commands are the weapons. Play alone in the page, with up to 64 players in a LAN battle, or online in a Durable Object for each room."
-      },
-      {
-        "app": "delayed-reaction",
-        "name": "Delayed Reaction",
-        "line": "A phone-first rhythm game. You sprint through a neon tunnel that rolls. A ring calls a note, and you answer one bar later on one of four thumb pads. Your answers echo back through a dub delay. The sim plays in beats with no page, and thus a test runs each level."
+        "app": "mythic-masters",
+        "name": "Mythic Masters",
+        "line": "A 3D creature arena brawler where mass, height and stats shape each body, and flyers must come down. A headless bot-vs-bot tuner keeps 76 folklore beasts near a 50% win rate, from a 6 kg jackalope to a one-tonne lake monster. One arena layout has a skin for each built region, on a route of 64."
       },
       {
         "app": "excalibrawl",
@@ -73,17 +73,17 @@
       {
         "app": "eqosys",
         "name": "eqosys",
-        "line": "Your home for each Q game: your games, friends, saves and studio on one account. Below it is Better Auth on D1, with a PKCE code handoff to each app and a signed token that the app can check alone. It knows which app each person came from and what they can do in each. A Durable Object for each person holds friends, presence and notifications. It is also a plain OpenID provider for a site's own Better Auth or a native app."
-      },
-      {
-        "app": "qollab",
-        "name": "Qollab",
-        "line": "Realtime rooms for any app on Cloudflare: rooms, seats, parties, presence and saves in one call. It is built into eqosys as its own Worker, with a Durable Object for each player and each room."
+        "line": "Your home for each Q game: your games, friends, saves and studio on one account. Below it is Better Auth on D1, with a PKCE code handoff to each app and a signed token that the app can check alone. It knows which app each person came from and what they can do in each. A Durable Object for each person holds friends, presence and notifications. It is also a plain OpenID provider for a site's own Better Auth or a native app. PolyForm Noncommercial."
       },
       {
         "app": "playground",
         "name": "Playground",
         "line": "One page that lists each app with a way to try it: Play, Download or Source. It has static assets only, and thus it costs nothing."
+      },
+      {
+        "app": "qollab",
+        "name": "Qollab",
+        "line": "Realtime rooms for any app on Cloudflare: rooms, seats, parties, presence and saves in one call. It is built into eqosys as its own Worker, with a Durable Object for each player and each room. PolyForm Noncommercial."
       }
     ]
   },
@@ -92,34 +92,24 @@
     "intro": "Real tools for real work. Some have their own license.",
     "apps": [
       {
-        "app": "sharesplat",
-        "name": "ShareSplat",
-        "line": "Product photos become a 3D spin for a store page. A guided shot list on the phone takes six sides for an AI-guessed mesh, or 72 photos in rings for a real Gaussian splat. A turntable splat viewer has a Shopify embed that you paste in."
+        "app": "what-would-fantano-say",
+        "name": "What Would Fantano Say",
+        "line": "A parody music critic as an RWSDK Worker. The phone decodes the song and selects a 15 s clip. Cloudflare's Clef-omni judges it for approximately $5 for each 100,000 reviews. It is behind a rate limit, Turnstile, an edge cache and a daily budget."
+      },
+      {
+        "app": "brianfloresblitzing",
+        "name": "One Team in 32",
+        "line": "One static page (\"One Team in 32\"), which a Cloudflare Worker serves as plain assets. There is no Worker code."
       },
       {
         "app": "qcrm",
         "name": "qCRM",
-        "line": "A CRM with MCP built in, a Rust wasm engine in the browser, office sync, signed webhooks and a desktop build. It has roles for a real place and hashed org ids. QNTBR-licensed."
+        "line": "A CRM with MCP built in, a Rust wasm engine in the browser, office sync, signed webhooks and a desktop build. It has roles for a real place and hashed org ids. PolyForm Noncommercial."
       },
       {
         "app": "geoboxq",
         "name": "GeoBoxQ",
-        "line": "A fit checker for shipping boxes, with a Rust engine that packs boxes in boxes. Private license."
-      },
-      {
-        "app": "geoboxq-shopify",
-        "name": "GeoBoxQ for Shopify",
-        "line": "A small wrapper that turns a Shopify cart into the store's own box."
-      },
-      {
-        "app": "artstewengine",
-        "name": "artstewengine",
-        "line": "A small RWSDK app on D1 with a Better Auth admin page. Add who has paid, and the sealed engine of qCRM gets its key only for a paid license."
-      },
-      {
-        "app": "what-would-fantano-say",
-        "name": "What Would Fantano Say",
-        "line": "A parody music critic as an RWSDK Worker. The phone decodes the song and selects a 15 s clip. Cloudflare's Clef-omni judges it for approximately $5 for each 100,000 reviews. It is behind a rate limit, Turnstile, an edge cache and a daily budget."
+        "line": "A fit checker for shipping boxes, with a Rust engine that packs boxes in boxes. PolyForm Noncommercial."
       },
       {
         "app": "at-lens",
@@ -127,9 +117,29 @@
         "line": "Type a handle and watch the AT Protocol work: domain to DID to data server to typed records, checked in the two directions. Then see the account live on the Jetstream firehose. Sign in with atproto OAuth to write a record of our own Lexicon and watch it come back. No keys and no bindings."
       },
       {
-        "app": "brianfloresblitzing",
-        "name": "One Team in 32",
-        "line": "One static page (\"One Team in 32\"), which a Cloudflare Worker serves as plain assets. There is no Worker code."
+        "app": "sharesplat",
+        "name": "ShareSplat",
+        "line": "Product photos become a 3D spin for a store page. A guided shot list on the phone takes six sides for an AI-guessed mesh, or 72 photos in rings for a real Gaussian splat. A turntable splat viewer has a Shopify embed that you paste in."
+      },
+      {
+        "app": "geoboxq-shopify",
+        "name": "GeoBoxQ for Shopify",
+        "line": "A small wrapper that turns a Shopify cart into the store's own box."
+      },
+      {
+        "app": "qview3d",
+        "name": "QView3D",
+        "line": "A 3D product customiser for a shop page, from one script tag. Shoppers drag a photo over a hat or onto a tee or hoodie's front, back and sleeve, choose its colour and save a snapshot. A shop with another product makes a model of it from photos. Uploads go to R2 on signed links, in one folder for each org. PolyForm Noncommercial."
+      },
+      {
+        "app": "artstewengine",
+        "name": "artstewengine",
+        "line": "A small RWSDK app on D1 with a Better Auth admin page. Add who has paid, and the sealed engine of qCRM gets its key only for a paid license."
+      },
+      {
+        "app": "cron-swanson",
+        "name": "Cron Swanson",
+        "line": "Every alarm, reminder and cron job of every app on one page, in five lanes from async to yearly. A small Bun server ticks each minute, so a job fires within a second of its time."
       }
     ]
   },
@@ -138,14 +148,19 @@
     "intro": "Music, 3D and circuits: tools to make things. Where it helps, a Rust engine runs with a TypeScript engine.",
     "apps": [
       {
+        "app": "splat-rooms",
+        "name": "Splat Rooms",
+        "line": "A splat hunt game with a world class. Its 30 MB scenes stream from a folder on your disk and are never embedded."
+      },
+      {
         "app": "fm-daw",
         "name": "FM Groovebox",
         "line": "One Rust crate runs as wasm in the audio thread and through FFI on the host. Its output is bit-identical to the TypeScript engine."
       },
       {
-        "app": "splat-rooms",
-        "name": "Splat Rooms",
-        "line": "A splat hunt game with a world class. Its 30 MB scenes stream from a folder on your disk and are never embedded."
+        "app": "motion-midi",
+        "name": "Motion MIDI",
+        "line": "One synth in Rust and in TypeScript, checked sample by sample"
       },
       {
         "app": "auto-rig",
@@ -156,11 +171,6 @@
         "app": "meshy-studio",
         "name": "Meshy Studio",
         "line": "A folder-based batch tool for the Meshy API: image, multi-image and text to 3D, texture, remesh, rig, animate and concept art. Your key stays local, and you see the price before each spend."
-      },
-      {
-        "app": "motion-midi",
-        "name": "Motion MIDI",
-        "line": "One synth in Rust and in TypeScript, checked sample by sample"
       },
       {
         "app": "splat-desktop",
@@ -183,6 +193,16 @@
     "title": "Everything else: frameworks, other people's apps and test fixtures",
     "intro": "Sample apps from frameworks and apps from other people, which run with no code changes. Also the small apps that the tests use. A new app goes here first, until someone moves it to its section.",
     "apps": [
+      {
+        "app": "hello-world",
+        "name": "Hello World",
+        "line": "The first five minutes: a twenty-line page. The welcome tour finds it, lets three agents write it again at the same time, and then asks you to deploy it."
+      },
+      {
+        "app": "kitesurf-bench",
+        "name": "Kitesurf Bench",
+        "line": "Times Cloudflare's Kitesurf agent browser against Chromium on our own live pages, from inside a Worker. Deploy, press Run, copy the table, destroy."
+      },
       {
         "app": "agent-office",
         "name": "Agent Office",
@@ -263,11 +283,6 @@
         "app": "tanstack-start-example",
         "name": "TanStack Start",
         "line": "TanStack Start on Cloudflare's Vite plugin (server functions, a server route, D1 and KV) as a desktop app with no code changes."
-      },
-      {
-        "app": "hello-world",
-        "name": "Hello World",
-        "line": "The first five minutes: a twenty-line page. The welcome tour finds it, lets three agents write it again at the same time, and then asks you to deploy it."
       },
       {
         "app": "agent-demo",

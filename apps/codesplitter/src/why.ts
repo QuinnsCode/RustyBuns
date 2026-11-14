@@ -12,7 +12,8 @@ import { readNote, writeNote } from "./budget.ts";
 import type { ArtifactsRepo, Env } from "./env.ts";
 import { NOTES_REF, remoteRefs, setNote } from "./git.ts";
 import { DONE, type CheckRun } from "./checks.ts";
-import { isPlainObject, parseJson, sha256 } from "./util.ts";
+import { parseJson, sha256 } from "./util.ts";
+import { isRecord } from "@rustybuns/util/guard";
 
 interface RunRow { id: number; agent: string; harness: string; model: string | null; task: string; status: string; result: string | null }
 
@@ -30,8 +31,8 @@ export async function commitNote(env: Env, owner: string, repo: string, path: st
   const seen = new Set<string>(), newest = results.filter((r) => !seen.has(r.agent) && !!seen.add(r.agent));
   if (!newest.length) return null;
   const blocks = await Promise.all(newest.map(async (r) => {
-    const res: unknown = parseJson(r.result, null), out = isPlainObject(res) ? res : {};
-    const handoff = isPlainObject(out.handoff) && typeof out.handoff.note === "string" ? out.handoff.note : null;
+    const res: unknown = parseJson(r.result, null), out = isRecord(res) ? res : {};
+    const handoff = isRecord(out.handoff) && typeof out.handoff.note === "string" ? out.handoff.note : null;
     const said = open && out.private !== true ? handoff ?? writeNote(readNote(typeof out.output === "string" ? out.output : "")) : "";
     return [
       `agent: ${r.agent}`,

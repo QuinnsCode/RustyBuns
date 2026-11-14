@@ -32,4 +32,4 @@ The generator (`proposals/squonk/make-squonk.ts`, last in commit d4aa5fd2) has t
   Drops hanging off the jowl or chin read as earrings.
 - **What didn't work:** blending the eye socket from a ring of small blobs worked, but nose and lip colour done by
   `paint` on extra nodes bleeds across the muzzle. The owner preferred the round weeping face anyway.
-- **Still open:** the ears are thin flat `ear` leaves, where the sculpture's are thick and fleshy.
+- **Ears:** the thin flat `ear` leaves are now thick fleshy flaps (`thick`, `fold`; [shots](../shots-2026-11-11-ears/README.md)).

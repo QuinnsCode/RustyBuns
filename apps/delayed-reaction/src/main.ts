@@ -1,8 +1,9 @@
 // The page: a canvas tunnel you run down, four thumb pads, a HUD, and a menu. The sim
 // (sim.ts) decides everything; this file draws it and turns thumbs and keys into presses.
 import { DEFAULTS, mountControls } from "@rustybuns/game-controls";
+import { CircleHelp, createElement } from "lucide";
 import { Music } from "./audio.ts";
-import { accountChip, achieve, finishSignIn, reportButton } from "./eqosys.ts";
+import { accountChip, achieve, achievements, finishSignIn, reportButton } from "./eqosys.ts";
 import { burst, drawTunnel, echoBursts, LANE_X, sway, view, type Burst } from "./hallway.ts";
 import { drawRunner } from "./runner.ts";
 import { backplate, fibre, grille, HI, knob, LANE_COLOURS, LO, needleAt, screw, tear, tuningScale, vuMeter, vuTurn } from "./fascia.ts";
@@ -11,6 +12,7 @@ import { fromSearch, runOf, Scenario, setupOf, toSearch } from "./scenario.ts";
 import { addCommands } from "@rustybuns/util/commands";
 import { check, int, obj, oneOf } from "@rustybuns/util/guard";
 import { mountPalette } from "@rustybuns/util/palette";
+import { tutorial } from "@rustybuns/util/tutorial";
 import { advance, createRun, delayWords, dueLanes, knockback, LEVELS, makeChart, press, runnerX, type Judgement, type Lane, type Run } from "./sim.ts";
 const KEYS: Record<string, Lane> = { KeyD: 0, KeyF: 1, KeyJ: 2, KeyK: 3, ArrowLeft: 0, ArrowDown: 1, ArrowUp: 2, ArrowRight: 3 };
 
@@ -37,12 +39,28 @@ const asked = fromSearch(location.search);
 
 function el(id: string) { return document.getElementById(id)!; }
 
+// The first time, the first preset you pick is the tutorial: hear a call, step into a lane, answer it a bar later, on
+// the beat, and four in a row. Each flag stays true once you did it, across runs, so a lost run picks up where it was.
+const learnt = { heard: false, moved: false, hit: false, perfect: false, streak: false };
+const coach = tutorial({
+  prefix: "delayed-reaction",
+  account: { achieve, achievements },
+  steps: [
+    { title: "Hear the call", say: "A note plays on one of the four lanes. Its door comes round a bar later.", done: () => learnt.heard },
+    { title: "Step into a lane", keys: ["D", "F", "J", "K"], say: "Or the arrows, or the pads. Moving is free.", done: () => learnt.moved },
+    { title: "Answer it a bar later", say: "Stand in the call's lane when its door arrives: its pad lights up.", done: () => learnt.hit },
+    { title: "Right on the beat", say: "Step in exactly on the beat for a Perfect.", done: () => learnt.perfect },
+    { title: "Four in a row", say: "Keep answering: every miss costs a life and the speed.", done: () => learnt.streak },
+  ],
+});
+
 // ---- menu ----
 // The menu is the front of a dub radio (fascia.ts): a station display with a tuning scale, Tempo and Delay knobs, the levels
 // as preset keys with a tape label each, the arranged tracks as tapes over the speaker grille, and the last run on a VU meter.
 const fascia = menu.querySelector<HTMLElement>(".fascia")!, tuned = el("tuned"), resultBox = el("result"), tracks = el("tracks");
 fascia.insertAdjacentHTML("afterbegin", [20, 75, 130, 160].map((t, i) => `<i class="screw-at s${i}">${screw(t)}</i>`).join(""));
 el("tuner").innerHTML = tuningScale();
+for (const b of document.querySelectorAll("button.info")) b.replaceChildren(createElement(CircleHelp)); // opens the how-to (a popover)
 // The live meter swings on the menu's beat (frame() below), the knobs point at what you're on.
 el("knobs").innerHTML = knob("Tempo", 1) + knob("Delay", 2) + `<figure class="live">${vuMeter("LIVE")}</figure>`;
 tracks.style.setProperty("--grille", grille);
@@ -77,7 +95,7 @@ function readout(r: Run) {
 
 function showMenu(result?: Run, note = "") {
   levels.replaceChildren();
-  accountChip(account, { note });
+  accountChip(account, { note, onSignIn: () => {} }); // eqosys beside the menu; the chip redraws itself
   if (result) readout(result); else resultBox.replaceChildren();
   LEVELS.forEach((spec, i) => {
     const b = document.createElement("button");
@@ -123,8 +141,9 @@ async function start(level: number, scene?: Scenario) {
   const chart = made?.chart ?? makeChart(level);
   run = made?.run ?? createRun(chart);
   void achieve("played");
+  if (!scene) coach.start(); // a preset from the menu, never a jump link, a tape or an agent's start
   el("delay-words").textContent = delayWords(chart.delay);
-  hud.judge.textContent = chart.hint ? `Answer on the echo, ${delayWords(chart.delay)}` : `Answer ${delayWords(chart.delay)}, no echo now`;
+  hud.judge.textContent = chart.hint ? `Answer ${delayWords(chart.delay)}` : `${delayWords(chart.delay).replace(/^./, (c) => c.toUpperCase())}, no echo`;
   judgeUntil = performance.now() + 2500;
   music.only = scene?.stem ?? null;
   await music.play(chart, scene?.beat, scene ? setupOf(scene) : null);
@@ -157,6 +176,7 @@ function padDown(lane: Lane) {
   down.add(lane);
   pads[lane]!.classList.add("down");
   if (!run || !music || run.over) return;
+  learnt.moved = true;
   for (const j of press(run, lane, heardBeat())) show(j);
 }
 
@@ -176,7 +196,10 @@ function show(j: Judgement) {
     bursts.push({ ...burst(j.call.lane, music.beat(), j.grade === "perfect" ? 1 : 0.6), x: LANE_X[j.call.lane] });
     passBeat = heardBeat();
     void achieve("first-answer");
-    if (++answered >= 8) void achieve("streak-8");
+    learnt.hit = true;
+    if (j.grade === "perfect") learnt.perfect = true;
+    if (++answered >= 4) learnt.streak = true;
+    if (answered >= 8) void achieve("streak-8");
     say(j.grade === "perfect" ? "Perfect" : j.offset < 0 ? "Early" : j.offset > 0 ? "Late" : "Through");
     buzz(j.grade === "perfect" ? 12 : 6);
   } else if (j.kind === "release") {
@@ -248,6 +271,7 @@ function frame(now: number) {
   const beat = music && run ? heardBeat() : 0;
   if (run && music && !paused) {
     for (const j of advance(run, beat)) show(j);
+    learnt.heard ||= run.chart.calls.some((c) => c.rung);
     hud.score.textContent = String(run.score);
     hud.combo.textContent = run.combo >= 5 ? `${run.combo}x` : "";
     hud.lives.style.width = `${(run.lives / 8) * 100}%`;
@@ -282,6 +306,8 @@ document.addEventListener("touchmove", (e) => { if (!menu.hidden) return; e.prev
 /** A finished run's numbers, for showing the results screen without playing one (shots, agents). */
 const Finished = obj({ level: int(1, LEVELS.length, 1), score: int(0, 1e7, 0), perfects: int(0, 1e5, 0), hits: int(0, 1e5, 0), misses: int(0, 1e5, 0),
   maxCombo: int(0, 1e5, 0), over: oneOf(["won", "lost"], "won"), bar: int(1, 1e4, 1) });
+/** The next door to step into: the first call that has rung and is still waiting, its lane and the beat its wall arrives. */
+const nextDoor = (r: Run) => { const c = r.chart.calls.find((c) => c.rung && c.state === "pending"); return c ? { lane: c.lane, due: c.due, hold: c.hold } : null; };
 const hook = {
   start: (o: unknown) => { const sc = Scenario(o ?? {}); void start(sc.level, sc); return toSearch(sc); },
   result: (o: unknown) => {
@@ -291,15 +317,17 @@ const hook = {
     showMenu(r);
     return f;
   },
-  state: () => run && { level: run.chart.level, beat: Math.round(run.beat * 100) / 100, score: run.score, combo: run.combo, lives: run.lives, speed: run.speed, lane: run.lane, over: run.over },
+  state: () => ({ tutorial: coach.state(), menu: !run, ...(run && { level: run.chart.level, beat: Math.round(run.beat * 100) / 100, score: run.score, combo: run.combo, lives: run.lives, speed: run.speed, lane: run.lane, over: run.over, next: nextDoor(run) }) }),
+  /** Forget the tutorial was done in this browser, so the next preset from the menu runs it again. */
+  forgetTutorial: coach.forget,
 };
 Reflect.set(window, "delayedReaction", hook);
 const props = { level: { type: "integer" }, bpm: { type: "number" }, delay: { type: "integer" }, hint: { type: "number" }, beat: { type: "number" }, speed: { type: "number" }, lane: { type: "integer" }, stem: { type: "string", enum: ["drums", "bass", "synth", "dub"] }, setup: { type: "string", enum: SETUP_NAMES } };
 addCommands([
   { name: "dr_start", title: "Start in a state", group: "Run", description: "Start a run at a level, tempo, delay, beat, speed and lane, optionally hearing one stem (drums, bass, synth, dub) or playing one of the arranged dub tracks (setup). Returns the link that lands in the same state.",
     inputSchema: { type: "object", properties: props }, execute: (a) => ({ link: hook.start(a) }) },
-  { name: "dr_state", title: "Look at the run", group: "Run", description: "Score, combo, lives, speed, lane and beat of the run now.",
-    annotations: { readOnlyHint: true }, execute: () => hook.state() ?? { menu: true } },
+  { name: "dr_state", title: "Look at the run", group: "Run", description: "Score, combo, lives, speed, lane and beat of the run now (menu: true between runs), the next door to step into, and where the first-time tutorial is.",
+    annotations: { readOnlyHint: true }, execute: () => hook.state() },
 ]);
 mountPalette();
 

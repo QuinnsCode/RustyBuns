@@ -152,8 +152,11 @@ test("on a repo with private lines, a check's log is the crew's: a reader sees t
   const run = await (await send("ryan", "/api/repos/ryan/lab/checks", { ref: "main", sha: SHA, name: "test", status: "running" })).json();
   await send("ryan", `/api/repos/ryan/lab/checks/${run.id}`, { status: "failed", append: "expected two\n" }, "PUT");
   expect(await (await call("ryan", `/api/repos/ryan/lab/checks/${run.id}`)).json()).toMatchObject({ status: "failed", log: expect.stringContaining("expected two") });
+  // What it ran came from the repo's own files, private lines and all: the crew's too.
+  await call.env.DB.prepare("UPDATE check_runs SET command = 'TOKEN=hush bun test' WHERE id = ?").bind(run.id).run();
   const seen = await (await call("ana", `/api/repos/ryan/lab/checks/${run.id}`)).json();
-  expect(seen).toMatchObject({ status: "failed", log: "" });
+  expect(seen).toMatchObject({ status: "failed", log: "", command: null });
+  expect(((await (await call("ryan", `/api/repos/ryan/lab/checks/${run.id}`)).json()) as any).command).toBe("TOKEN=hush bun test");
   expect(seen.hidden).toContain("private lines");
 });
 
@@ -190,6 +193,16 @@ test("a branch's turn in the merge plan goes up as codesplitter/merge-order: pen
   await call.env.DB.prepare("UPDATE branches SET status = 'merged' WHERE name = 'early'").run();
   await postOrder(call.env, "ryan", "lab", "late", SHA);
   expect(github.posted.at(-1)).toEqual({ path: at, body: { state: "success", context: ORDER, description: "its turn in the merge plan" } });
+});
+
+test("a pull-only mirror sends nothing upstream, its checks' statuses and merge order included", async () => {
+  const { call, send, github } = await app();
+  await call.env.DB.prepare("UPDATE repos SET mirror_url = 'https://github.com/QuinnsCode/RustyBuns.git', mirror_pull_only = 1 WHERE owner = 'ryan' AND name = 'lab'").run();
+  await send("ryan", "/api/repos/ryan/lab/checks/settings", { where: "both", post_statuses: true, required: ["test"] }, "PUT");
+  await send("ryan", "/api/repos/ryan/lab/branches", { name: "tidy" });
+  await startChecks(call.env, "ryan", "lab", "tidy", SHA, "ryan");
+  await postOrder(call.env, "ryan", "lab", "tidy", SHA);
+  expect(github.posted).toEqual([]);
 });
 
 test("GitHub's results for a sha sent up come back in beside ours, and ours go out as statuses", async () => {

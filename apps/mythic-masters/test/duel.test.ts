@@ -1,15 +1,17 @@
 // Two friends fight (net/duel.ts, edge/duel.ts): two pages join one duel through the real Worker and Duel room
 // (scripts/party.ts standing in for the edge), each picks from its line-up, and each plays the fight on its own sim
 // from nothing but the two players' inputs. Both must see the same fight to the last tick, the same winner, and a
-// rematch must start clean. A third player is turned away, and a page that leaves is seen to go.
+// rematch must start clean. A third player is turned away, and a page that leaves is seen to go. Teamed up (#4400), two
+// pages fight one wild creature, each page playing the wild one's seeded bot, and both see the same end.
 import { afterAll, expect, setDefaultTimeout, test } from "bun:test";
 import { serveParty } from "../scripts/party.ts";
 import { bot } from "../src/bot.ts";
 import { atLevel } from "../src/journey.ts";
-import { creature } from "../src/roster.ts";
+import { creature, ROSTER } from "../src/roster.ts";
 import { DuelLink } from "../src/net/duel-link.ts";
-import { pack, sum, unpack, type Pick } from "../src/net/duel.ts";
+import { pack, sum, unpack, type DuelOut, type Pick, type RoomKind } from "../src/net/duel.ts";
 import { tsSim, type Live } from "../src/sim-wasm.ts";
+import { coopTeams } from "../src/versus.ts";
 
 setDefaultTimeout(60_000);
 const party = serveParty(0);
@@ -21,11 +23,16 @@ const until = async (what: string, ok: () => boolean, ms = 8000) => {
 };
 
 /** One page: its link, and the fight it plays when the room says go, a bot standing in for the player's hands. */
-function page(code: string, uid: string, name: string, pick: Pick) {
-  const p = { live: null as Live | null, stalls: 0, desync: false, go: 0, frame: (n?: number) => { void n; } };
+function page(code: string, uid: string, name: string, pick: Pick, kind: RoomKind = "duel") {
+  const p = { live: null as Live | null, wild: null as ReturnType<typeof bot> | null, stalls: 0, desync: false, go: 0, frame: (n?: number) => { void n; } };
+  const start = (g: Extract<DuelOut, { t: "go" }>) => {
+    if (kind === "duel") return tsSim(atLevel(creature(g.picks[0]!.c), g.picks[0]!.lv), atLevel(creature(g.picks[1]!.c), g.picks[1]!.lv));
+    p.wild = bot(g.picks.length, g.seed); // the wild one fights last in m.f, its hands the same seeded bot on every page
+    return tsSim(...coopTeams(g));
+  };
   const link = new DuelLink(code, {
-    base: party.url, guest: { uid, name },
-    onGo: (g) => { p.go++; p.live = tsSim(atLevel(creature(g.picks[0].c), g.picks[0].lv), atLevel(creature(g.picks[1].c), g.picks[1].lv)); },
+    base: party.url, guest: { uid, name }, kind,
+    onGo: (g) => { p.go++; p.live = start(g); },
     onDesync: () => { p.desync = true; },
   });
   link.pick(pick);
@@ -35,9 +42,9 @@ function page(code: string, uid: string, name: string, pick: Pick) {
     if (!live || !step || live.m.over) return;
     const hands = bot(step.seat, 11 + step.seat);
     for (let k = 0; k < n && !live.m.over; k++) {
-      const both = step.next(() => hands(live.m));
-      if (!both) { p.stalls++; break; }
-      live.step(both);
+      const seats = step.next(() => hands(live.m));
+      if (!seats) { p.stalls++; break; }
+      live.step(p.wild ? [...seats, p.wild(live.m)] : seats);
     }
     link.flush(live.m);
   };
@@ -83,6 +90,41 @@ test("two friends play one fight: same ticks, same winner, a clean rematch; a th
   a.link.close(); c.link.close();
 });
 
+test("two friends team up against a wild one: both pages play it to the same end", async () => {
+  const a = page("COOPTEST1", "a1a1a1a1a1a1a1a1a1a1a1a1", "Alice", { c: "hodag", lv: 20 }, "coop");
+  await until("alice seated", () => a.link.seats?.you === 0);
+  expect(a.link.seats?.names.length).toBe(4); // a co-op room has four chairs, and starts with two
+  const b = page("COOPTEST1", "b2b2b2b2b2b2b2b2b2b2b2b2", "Bob", { c: "jackalope", lv: 20 }, "coop");
+  await until("both told go", () => a.go === 1 && b.go === 1);
+  // Both friends on one side, the same wild one on the other, on both pages.
+  const sides = (l: Live) => l.m.f.map((f) => [f.c.id, f.team]);
+  expect(sides(a.live!).slice(0, 2)).toEqual([["hodag", 0], ["jackalope", 0]]);
+  expect(sides(b.live!)).toEqual(sides(a.live!));
+  expect(a.live!.m.f[2]!.team).toBe(1);
+
+  while (!a.live!.m.over || !b.live!.m.over) { a.frame(8); b.frame(6); await Bun.sleep(8); }
+  const end = (l: Live) => ({ tick: l.m.tick, sum: sum(l.m), winner: l.m.winner, ko: l.m.events.find((e) => e.kind === "ko") });
+  expect(end(b.live!)).toEqual(end(a.live!));
+  // The fight ended on both pages the same way. The wild one's bot is seeded by the room, so about one seed in 400
+  // runs the full 99 seconds and the clock ends it: that is a fair end too, as long as both pages see it (#4467).
+  expect(end(a.live!).ko).toMatchObject({ kind: "ko", how: expect.stringMatching(/^(hp|ring-out|time)$/) });
+  expect(a.desync || b.desync).toBe(false);
+  console.log(`co-op: over at tick ${a.live!.m.tick}, team ${a.live!.m.winner} won, ${JSON.stringify(end(a.live!).ko)}`);
+  a.link.close(); b.link.close();
+});
+
+test("a co-op room's wild one is a fair fight for two: grown to face them, the friends win about half (#4411)", async () => {
+  const { BASE, rateTeams, teamFights } = await import("../scripts/tune.ts");
+  const { outnumbered } = await import("../src/journey.ts");
+  // Every creature as the wild one against one pair of friends, four matches each, on sim.ts.
+  const wins = teamFights(1).map(([a, [w]]) => rateTeams(a.map((i) => atLevel(ROSTER[i]!, BASE)), [outnumbered(atLevel(ROSTER[w!]!, BASE, true), 2)], 4).wins);
+  const mean = wins.reduce((t, x) => t + x, 0) / wins.length;
+  expect(mean).toBeGreaterThan(0.3);
+  expect(mean).toBeLessThan(0.7);
+  // One on one it is the creature itself.
+  expect(outnumbered(ROSTER[0]!, 1)).toBe(ROSTER[0]!);
+});
+
 test("the stick rounds the same way on both pages, and stays inside the circle", () => {
   for (const [mx, mz] of [[0.7071, 0.7071], [1, 0], [-0.33, 0.94], [0, 0]] as const) {
     const i = unpack(pack({ mx, mz, up: true, down: false, light: false, heavy: true, special: false, ultimate: false, guard: false, dash: true, big: false }));
@@ -104,6 +146,7 @@ test("a challenge is a friend's recent note from this game with a duel link on t
     note("di", now - 1000, `${site}/?duel=BCDFGHJK`, "skate-tech-park"), // another game
     note("ed", now - 2000, `${site}/?world=1`), // not a duel
     note("fi", now - 3000, `${site}/?duel=MNPQRSTV`),
+    note("gu", now - 4000, `${site}/?coop=WXZWXZWX`), // teaming up
   ] }, site, now);
-  expect(got).toEqual([{ from: "ANN", code: "BCDFGHJK", at: now - 1000 }, { from: "FI", code: "MNPQRSTV", at: now - 3000 }]);
+  expect(got).toEqual([{ from: "ANN", code: "BCDFGHJK", at: now - 1000 }, { from: "FI", code: "MNPQRSTV", at: now - 3000 }, { from: "GU", code: "WXZWXZWX", at: now - 4000, kind: "coop" }]);
 });

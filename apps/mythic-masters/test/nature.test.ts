@@ -128,15 +128,17 @@ describe("what grows", () => {
   });
 });
 
-test("Pine Barrens grass grows in tussocks with bare sand between; a meadow stays mostly even", () => {
+test("Pine Barrens scrub covers the ground thick with thinner sandy patches; a meadow stays mostly even", () => {
   const spread = (clump: number) => {
     const c: number[] = [];
     for (let x = 0; x < 120; x += 0.9) for (let z = 0; z < 120; z += 1.1) c.push(clumped(clump, x, z).chance);
-    return { bare: c.filter((v) => v < 0.15).length / c.length, thick: c.filter((v) => v >= 1).length / c.length };
+    return { thin: c.filter((v) => v < 0.5).length / c.length, thick: c.filter((v) => v >= 1).length / c.length };
   };
   const pines = spread(TURF["pine-barrens"].clump ?? CLUMP), meadow = spread(TURF.plains.clump ?? CLUMP);
-  expect(pines.bare).toBeGreaterThan(0.2); // real gaps
-  expect(pines.thick).toBeGreaterThan(0.2); // and real patches
-  expect(meadow.bare).toBe(0);
+  expect(TURF["pine-barrens"].scrub).toBe(true); // shrubs, not grass blades
+  expect(pines.thin).toBeGreaterThan(0.15); // sandy patches
+  expect(pines.thin).toBeLessThan(0.35); // but mostly covered
+  expect(pines.thick).toBeGreaterThan(0.3);
+  expect(meadow.thin).toBe(0);
   expect(clumped(0, 3, 7)).toEqual({ chance: 1, size: 1 });
 });

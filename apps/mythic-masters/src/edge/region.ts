@@ -3,12 +3,12 @@
 // it does not simulate: each page walks its own player, fights its own fights and keeps its own save. What it does
 // decide: who may join (six at most), and whether a fight report is believable before the party hears it.
 //
-// Cheap by design. No timer and no storage: a move is fanned out the moment it arrives, and the latest pose of each
-// player rides on their socket's attachment, so the object can hibernate whenever the party stands still and wake with
-// everyone where they were. The Worker (worker.ts) is the only place identity is decided; it vouches X-User-Id and X-User-Name.
+// Cheap by design. No timer, and storage only for the region's wilds (one small write when a patch is picked, a flock
+// flushed or a contract read): a move is fanned out the moment it arrives, and the latest pose of each player rides on
+// their socket's attachment, so the object can hibernate whenever the party stands still and wake with everyone where they were. The Worker (worker.ts) is the only place identity is decided; it vouches X-User-Id and X-User-Name.
 import { refuseSocket, Sockets, type RoomCtx, type RoomSocket } from "@rustybuns/util/room";
 import { denNear, holds, landing } from "../net/dens.ts";
-import { believeHurt, huntNear, keepSeen, sharedDen, NO_SEEN, seenEmpty, step, wildNear, worldClock, FIGHT, MAX_PLAYERS, parseDelta, parseEvent, plausible, WORLD_EPOCH, type Anchor, type Delta, type MetAt, type Player, type Seen, type ServerMsg } from "../net/party.ts";
+import { believeHurt, coopDen, huntNear, keepSeen, sharedDen, COOP_MS, NO_SEEN, seenEmpty, step, wildNear, worldClock, FIGHT, MAX_PLAYERS, parseDelta, parseEvent, plausible, REST_DM, restMs, WORLD_CYCLE, WORLD_EPOCH, type Anchor, type Delta, type MetAt, type Player, type Seen, type ServerMsg } from "../net/party.ts";
 
 /** A pose delta is under 60 bytes and a page sends 5 a second, so 8 a second with a burst of 16 is room to spare. A
  *  newcomer's catch-up (`seen`, up to 30 of each kind) runs to about 4 KB: it fits, and costs a token per 512 bytes. */
@@ -20,7 +20,10 @@ export const DEAD_MS = 90_000;
  *  DEAD_MS out, and only a log line shows the object was rebuilt from its sockets after hibernating. */
 export interface RegionEnv { DEAD_MS?: string; LOG_WAKES?: string }
 /** What this object needs of workerd's hibernation API beyond the sockets (absent on a test's fake: no sweep there). */
-interface Alive { setWebSocketAutoResponse?(pair: unknown): void; getWebSocketAutoResponseTimestamp?(ws: RoomSocket): Date | null }
+interface Alive {
+  setWebSocketAutoResponse?(pair: unknown): void; getWebSocketAutoResponseTimestamp?(ws: RoomSocket): Date | null;
+  storage?: { get<T>(key: string): Promise<T | undefined>; put(key: string, value: unknown): Promise<void> };
+}
 declare const WebSocketRequestResponsePair: (new (req: string, res: string) => unknown) | undefined;
 /** The same player from another tab: the older socket is closed with this. */
 export const CLOSE_REPLACED = 4001;
@@ -31,8 +34,10 @@ export const CLOSE_FULL = 4003;
  *  when (`a`, see `step`), whether that pose is one the room can't vouch for (`loose`: they jumped somewhere travel doesn't take you, and haven't been anywhere it does since),
  *  the last den they walked into (creature and when), which is what a fight report from them is checked against, the
  *  regions their page says it has opened (`open`, none said yet: only the first), the only ones a jump may land in, and
- *  a den walked into while loose (`owed`): when trust comes back the page tells it again, and then the party hears it. */
-interface Seat { id: string; name: string; p: Delta; a?: Anchor; loose?: boolean; met?: MetAt | null; owed?: string; since?: number; open?: number[]; wilds?: Seen }
+ *  a den walked into while loose (`owed`): when trust comes back the page tells it again, and then the party hears it.
+ *  `rest`: where they lay down for the night, in decimetres (#4383); `ahead`: how far the party has slept its clock on, in ms,
+ *  the same on every seat (like `wilds`), so it lasts through hibernation. */
+interface Seat { id: string; name: string; p: Delta; a?: Anchor; loose?: boolean; met?: MetAt | null; owed?: string; since?: number; open?: number[]; wilds?: Seen; rest?: { x: number; z: number }; ahead?: number }
 /** Before a page says what it has opened, a jump lands only in the region every save starts with. */
 const FIRST_OPEN = [1];
 /** A seat whose last socket closed is kept this long (in memory, while the room is awake: no storage), so a page that
@@ -69,7 +74,8 @@ export class Region {
   }
 
   /** The region's wilds as the room keeps them (#3859): picked patches, flushed flocks, roosts, busy dens and the party's
-   *  contracts (#4081). Every seat carries the same copy on its attachment, so it lasts through hibernation and past whoever told it leaving. */
+   *  contracts (#4081). Every seat carries the same copy on its attachment, so it lasts through hibernation and past whoever told it leaving,
+   *  and the room's storage keeps the last copy (#3876), so it outlasts everyone leaving too. */
   private wilds(): Seen {
     for (const ws of this.sockets.open()) { const k = this.sockets.who(ws)?.wilds; if (k) return k; }
     return NO_SEEN;
@@ -77,6 +83,36 @@ export class Region {
   private keepWilds(add: Seen) { this.setWilds(keepSeen(this.wilds(), add)); }
   private setWilds(k: Seen) {
     for (const ws of this.sockets.open()) { const s = this.sockets.who(ws); if (s) this.sockets.attach(ws, { ...s, wilds: k }); }
+    void this.ctx.storage?.put("wilds", k);
+  }
+  /** The wilds an empty room kept: as everyone left them, but with no den busy, since nobody is in one now. */
+  private async stored(): Promise<Seen> {
+    const k = await this.ctx.storage?.get<Seen>("wilds");
+    return k ? { ...k, busy: [] } : NO_SEEN;
+  }
+
+  /** How far the party has slept its clock on (ms), and the clock itself: every room's WORLD_EPOCH clock plus that. */
+  private ahead(): number {
+    for (const ws of this.sockets.open()) { const a = this.sockets.who(ws)?.ahead; if (a !== undefined) return a; }
+    return 0;
+  }
+  private age(now: number) { return now - WORLD_EPOCH + this.ahead(); }
+  /** Each seat of player `id` (every tab) changed by `f`. */
+  private each(f: (s: Seat) => Seat, id?: string) {
+    for (const ws of this.sockets.open()) { const s = this.sockets.who(ws); if (s && (id === undefined || s.id === id)) this.sockets.attach(ws, f(s)); }
+  }
+  /** Player `id` lies down for the night: once everyone in the room has, at night, the clock moves on to dawn for them all. */
+  private rest(id: string) {
+    const now = Date.now(), by = restMs(this.age(now));
+    const at = this.seats().find((s) => s.id === id)?.p;
+    if (!by || at?.x === undefined || at.z === undefined) return; // by day, or nowhere yet: nothing to sleep through
+    this.each((s) => ({ ...s, rest: { x: at.x!, z: at.z! } }), id);
+    const here = this.seats(), n = here.filter((s) => s.rest).length;
+    if (n < here.length) { this.sockets.broadcast({ t: "rest", id, n, of: here.length }); return; }
+    const ahead = (this.ahead() + by) % (WORLD_CYCLE * 1000);
+    this.each(({ rest: _, ...s }) => ({ ...s, ahead }));
+    void this.ctx.storage?.put("ahead", ahead);
+    this.sockets.broadcast({ t: "dawn", age: this.age(now) });
   }
 
   private seats(): Seat[] {
@@ -100,12 +136,13 @@ export class Region {
     this.kept.delete(id);
     // Its untrusted flag, anchor, claim and owed den carry on with it: a new tab must not wipe them, nor a drop and a rejoin
     // (an honest blip keeps its trust; a doubted page can't shed the doubt by reconnecting). Gone longer: a new seat.
-    const wilds = this.wilds();
-    const { server, response } = this.sockets.upgrade({ id, name, p: back?.p ?? {}, since: now, wilds, ...(back && { a: back.a, loose: back.loose, open: back.open, owed: back.owed }) });
+    const wilds = here.length ? this.wilds() : await this.stored();
+    const ahead = here.length ? this.ahead() : (await this.ctx.storage?.get<number>("ahead")) ?? 0;
+    const { server, response } = this.sockets.upgrade({ id, name, p: back?.p ?? {}, since: now, wilds, ahead, ...(back && { a: back.a, loose: back.loose, open: back.open, owed: back.owed }) });
     this.sockets.replace(server, (a) => a.id === id, CLOSE_REPLACED);
     const players: Player[] = here.filter((s) => s.id !== id).map((s) => ({ id: s.id, name: s.name, p: s.p }));
     // what the region's wilds are doing, though whoever picked or flushed them may have left
-    this.sockets.send(server, { t: "all", you: id, age: now - WORLD_EPOCH, players, ...(!seenEmpty(wilds) && { seen: wilds }) });
+    this.sockets.send(server, { t: "all", you: id, age: now - WORLD_EPOCH + ahead, players, ...(!seenEmpty(wilds) && { seen: wilds }) });
     if (!here.some((s) => s.id === id)) this.sockets.broadcast({ t: "hi", id, name }, server);
     return response;
   }
@@ -116,7 +153,8 @@ export class Region {
     const seat = this.sockets.who(ws);
     if (!frame || !seat) return;
     const ev = parseEvent(frame.value), others = (a: Seat) => a.id !== seat.id;
-    if (ev?.e === "time") { this.sockets.send(ws, { t: "time", age: Date.now() - WORLD_EPOCH }); return; }
+    if (ev?.e === "time") { this.sockets.send(ws, { t: "time", age: this.age(Date.now()) }); return; }
+    if (ev?.e === "rest") { this.rest(seat.id); return; }
     if (ev?.e === "den") {
       // Against the last pose the room relayed for them (the page sends it just before the den), and against the world's
       // seed: a den nowhere near them, or one that can't hold that creature at that level, has no fight to report either.
@@ -133,6 +171,14 @@ export class Region {
       if (!ev.ago || seat.owed === ev.den) this.sockets.broadcast({ t: "den", id: seat.id, den: ev.den, c: ev.c }, ws, others);
       return;
     }
+    if (ev?.e === "coop") {
+      // Only at the den the room believed just now, a wild one's or a keeper's, and only to friends in the same region.
+      const met = seat.met;
+      if (seat.loose || !met?.den || !coopDen(met.den) || Date.now() - met.at > COOP_MS) return;
+      this.sockets.broadcast({ t: "coop", id: seat.id, den: met.den, c: met.c, lv: met.lv, code: ev.code }, ws, (a) => a.id !== seat.id && a.p.r === seat.p.r);
+      return;
+    }
+    if (ev?.e === "rival") { if (!seat.loose) this.sockets.broadcast({ t: "rival", id: seat.id, f: ev.f }, ws, others); return; }
     if (ev?.e === "open") { this.sockets.attach(ws, { ...seat, open: [...new Set(ev.rs)] }); return; }
     // The wilds are one world only if nobody can strip them from afar: a patch picked or a flock flushed is told only by
     // someone the room vouches for, standing by it. The page tells its catch-up again on `vouch`, so nothing true is lost.
@@ -146,7 +192,7 @@ export class Region {
     if (ev?.e === "life") {
       if (seat.loose || !wildNear(ev.k, ev.id, seat.p)) return;
       this.sockets.broadcast({ t: "life", id: seat.id, k: ev.k, f: ev.id, h: ev.h }, ws, others);
-      const at = +worldClock(Date.now() - WORLD_EPOCH, 0, 0).toFixed(1);
+      const at = +worldClock(this.age(Date.now()), 0, 0).toFixed(1);
       this.keepWilds({ ...NO_SEEN, ...(ev.k === "pick" ? { picks: [{ id: ev.id, at }] } : { flown: [{ id: ev.id, at, h: ev.h }] }) });
       return;
     }
@@ -190,7 +236,9 @@ export class Region {
     const now = Date.now(), p = { ...seat.p, ...d }, walk = step(seat.a, p, now), open = seat.open ?? FIRST_OPEN;
     const unclaimed = !seat.a && p.x !== undefined && (p.r === undefined || !open.includes(p.r));
     const loose = (!!seat.loose || walk.jumped || unclaimed) && !landing(p, open) && !this.beside(p, seat.id);
-    this.sockets.attach(ws, { ...seat, p, a: walk.a, loose });
+    // walked off from where they lay down: up again
+    const { rest, ...up } = seat, lying = rest && Math.hypot((p.x ?? 0) - rest.x, (p.z ?? 0) - rest.z) <= REST_DM;
+    this.sockets.attach(ws, { ...(lying ? seat : up), p, a: walk.a, loose });
     this.sockets.broadcast({ t: "p", id: seat.id, d }, ws, (a) => a.id !== seat.id);
     if (seat.loose && !loose) this.sockets.send(ws, { t: "vouch" });
     if (!loose) this.vouchBeside(p, seat.id);

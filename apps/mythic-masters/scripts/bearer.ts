@@ -10,7 +10,7 @@
 //   3. --render also writes blender/out/bearer.png: the figure in a row of poses from its clips, by a 1.8 m post,
 //      then its head close up from the front, three-quarter, side and back.
 //
-// The look is all in bearer.json: radii per joint, hair, flares, eyes. Change it, run this, read the PNG.
+// The look is all in bearer.json: radii per joint, hair (the shell, its locks and crown tufts), the shoulder slump, flares, eyes. Change it, run this, read the PNG.
 import { mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import * as THREE from "three";

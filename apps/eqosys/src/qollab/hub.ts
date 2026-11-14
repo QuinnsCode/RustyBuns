@@ -1,9 +1,12 @@
-// One Durable Object per person: their friends, who of them is on and in which app, and their notifications.
+// One Durable Object per person: their friends, who of them is on and in which app, and their notifications. People who share a
+// studio with them (studios.ts) are their coworkers: their hubs trade presence the way friends' do, with no friend request.
 // The user directory stays in D1; a hub only knows the people it has been introduced to.
 //
 // Nobody reaches a hub directly. The Worker checks an app's token (handle.ts) and calls it as
 //   /socket?id=&name=&app=   a page's live socket: the state on connect and after every change, `status` and ops in
 //   /op { who, op }          one op from an app's server or page, answered with the state
+//   /invited, /redeem        the Worker, for someone who opened this person's friend link (handle.ts /add)
+//   /met { who, them }       a party both are in now (party.ts), for its member's "Add friend" on another: the party is the proof
 // and hubs call each other at /peer { from, kind, ... } when something between two people changes.
 //
 // Price: a hub wakes for a socket opening or closing, a frame, an op, or a friend's change, and sleeps between
@@ -12,7 +15,8 @@ import { arr, check, nul, num, obj, oneOf, opt, str, type Of } from "@rustybuns/
 import { Sockets, type RoomCtx, type RoomSocket } from "@rustybuns/util/room";
 import { onSite } from "../apps.ts";
 import { appOf } from "../listings.ts";
-import { json, loopbackOn, sha256, type D1 } from "../env.ts";
+import { b64url, json, loopbackOn, sha256, type D1 } from "../env.ts";
+import { coworkersOf } from "../studios.ts";
 
 export const MAX_FRIENDS = 200, MAX_ASKS = 100, MAX_NOTES = 50, MAX_SOCKETS = 10;
 /** Friend requests by email an hour: plenty for adding friends, too few to walk a list of addresses for accounts. */
@@ -28,7 +32,7 @@ export type Presence = Of<typeof Presence>;
 
 /** What a page or server may ask its own hub. */
 export const Op = obj({
-  op: oneOf(["state", "befriend", "accept", "drop", "notify", "clear", "status"]),
+  op: oneOf(["state", "befriend", "accept", "drop", "notify", "clear", "status", "relink"]),
   id: opt(Id), email: opt(str(320)), text: opt(str(280)), link: opt(str(2000)), doing: opt(str(80, { min: 0 })),
 });
 export type Op = Of<typeof Op>;
@@ -38,7 +42,7 @@ export type Who = Of<typeof Who>;
 const OpCall = obj({ who: Who, op: Op });
 // `to` is whose hub this is for: a hub nobody has opened yet learns who it belongs to from the first message it gets.
 const Peer = obj({
-  from: Person, to: Person, kind: oneOf(["ask", "accept", "drop", "presence", "note"]),
+  from: Person, to: Person, kind: oneOf(["ask", "accept", "drop", "presence", "note", "linked"]),
   presence: opt(arr(Presence, MAX_SOCKETS)), app: opt(str(64)), text: opt(str(280)), link: opt(str(2000)),
 });
 type Peer = Of<typeof Peer>;
@@ -57,8 +61,13 @@ type Out = Asked & { to?: Person };
 const emailId = async (email: string) => `e_${(await sha256(email.trim().toLowerCase())).slice(0, 16)}`;
 const Note = obj({ key: str(64), at: At, kind: oneOf(["ask", "accept", "app"]), from: Person, app: opt(str(64)), text: opt(str(280)), link: opt(str(2000)) });
 export type Note = Of<typeof Note>;
-/** Everything a person's hub knows, the way every page and app gets it. The lists are capped by the hub; the guard only reads them. */
-export const HubState = obj({ me: nul(Person), friends: arr(Friend, 1000), incoming: arr(Asked, 1000), outgoing: arr(Asked, 1000), notes: arr(Note, 1000) });
+/**
+ * Everything a person's hub knows, the way every page and app gets it. The lists are capped by the hub; the guard only reads them.
+ * `link` is their friend link's path after /add/ (`<id>/<key>`): whoever opens it signed in is their friend, no email and no accept.
+ */
+const Coworker = obj({ id: Id, name: Name, presence: arr(Presence, MAX_SOCKETS) });
+export type Coworker = Of<typeof Coworker>;
+export const HubState = obj({ me: nul(Person), friends: arr(Friend, 1000), coworkers: opt(arr(Coworker, MAX_FRIENDS)), incoming: arr(Asked, 1000), outgoing: arr(Asked, 1000), notes: arr(Note, 1000), link: opt(str(300)) });
 export type HubState = Of<typeof HubState>;
 export type HubOut = { t: "state" } & HubState | { t: "error"; error: string };
 const Err = obj({ error: str(500) });
@@ -84,6 +93,34 @@ export const hubErase = (hubs: Hubs, id: string) => hubOf(hubs, id).fetch(new Re
 export const hubAnnounce = (hubs: Hubs, who: Who, text: string) =>
   hubOf(hubs, who.id).fetch(new Request("https://hub/announce", { method: "POST", body: JSON.stringify({ who, text }) })).catch(() => null);
 
+/** A friend link's two halves, from what follows /add/: whose hub, and the key it must still hold. */
+export const linkOf = (path: string): { id: string; key: string } | null => {
+  const m = /^([^/]{1,200})\/([\w-]{8,64})$/.exec(path);
+  try { return m ? { id: decodeURIComponent(m[1]!), key: m[2]! } : null; } catch { return null; }
+};
+const Invited = obj({ name: Name });
+/** Whose friend link this is (their name, for the sign-in page), or null when the key is no longer theirs. */
+export async function hubInvited(hubs: Hubs, l: { id: string; key: string }): Promise<string | null> {
+  const res = await hubOf(hubs, l.id).fetch(new Request("https://hub/invited", { method: "POST", body: JSON.stringify({ key: l.key }) }));
+  return check(Invited, await res.json().catch(() => null))?.name ?? null;
+}
+/** `who` opened the friend link: friends both ways at once. The owner's name, or the error to show. */
+export async function hubRedeem(hubs: Hubs, l: { id: string; key: string }, who: Person): Promise<{ name: string } | { error: string }> {
+  const res = await hubOf(hubs, l.id).fetch(new Request("https://hub/redeem", { method: "POST", body: JSON.stringify({ key: l.key, from: who }) }));
+  const body: unknown = await res.json().catch(() => null);
+  return check(Invited, body) ?? { error: check(Err, body)?.error ?? "the hub didn't answer" };
+}
+
+/**
+ * `who` pressed Add friend on `them` in a party they are both in now (party.ts checks that): an ask by id, or friends at once
+ * when `them` already asked. Pages can't send this; only the party, so nobody befriends a stranger by id.
+ * Null when it went through, else the error to show.
+ */
+export async function hubMet(hubs: Hubs, who: Who, them: Person): Promise<string | null> {
+  const res = await hubOf(hubs, who.id).fetch(new Request("https://hub/met", { method: "POST", body: JSON.stringify({ who, them }) }));
+  return res.ok ? null : check(Err, await res.json().catch(() => null))?.error ?? "the hub didn't answer";
+}
+
 /** A person's hub, by their eqosys user id. */
 export const hubOf = (hubs: Hubs, id: string): Stub => hubs.get(hubs.idFromName(id));
 
@@ -93,6 +130,8 @@ export async function hubAsk(hubs: Hubs, who: Who, op: Op): Promise<HubState | {
   const body: unknown = await res.json().catch(() => null);
   return check(HubState, body) ?? { error: check(Err, body)?.error ?? "the hub didn't answer" };
 }
+
+const mintLink = (): string => b64url(crypto.getRandomValues(new Uint8Array(15)));
 
 /** One tab: the app it is in, and what its page last said they're doing there. */
 type Attach = { app: string; doing: string };
@@ -146,6 +185,25 @@ export class Hub {
       const friends = [...(await this.ctx.storage.list<Friend>({ prefix: "f:" })).values()];
       await Promise.all(friends.map((f) => this.send(f, { from: me, kind: "note", app: a.who.app, text: a.text })));
       return json({ ok: true });
+    }
+    // A friend link (handle.ts /add/<id>/<key>): `invited` names the owner for the sign-in page, `redeem` makes the two friends.
+    // The key is the proof; a wrong or retired one is told nothing, not even whether this hub has an owner.
+    if (url.pathname === "/invited" || url.pathname === "/redeem") {
+      const r = check(obj({ key: str(64, { min: 8 }), from: opt(Person) }), body), me = await this.ctx.storage.get<Person>("me");
+      if (!r || !me || r.key !== await this.ctx.storage.get<string>("link")) return json({ error: "that link is no longer good" }, 404);
+      if (url.pathname === "/redeem") {
+        if (!r.from) return json({ error: "who?" }, 400);
+        const error = await this.linked(me, r.from);
+        if (error) return json({ error }, 400);
+      }
+      return json({ name: me.name });
+    }
+    if (url.pathname === "/met") {
+      const m = check(obj({ who: Who, them: Person }), body);
+      if (!m) return json({ error: "send { who, them }" }, 400);
+      await this.meet(m.who);
+      const error = await this.met(m.who, m.them);
+      return error ? json({ error }, 400) : json({ ok: true });
     }
     if (url.pathname === "/peer") {
       const p = check(Peer, body);
@@ -236,7 +294,37 @@ export class Hub {
         await this.forget([...(await s.list({ prefix: "n:" })).keys()]);
         return done();
       }
+      // A fresh friend link: every one handed out so far stops making friends.
+      case "relink": {
+        await s.put("link", mintLink());
+        return done();
+      }
     }
+  }
+
+  /** Add friend on someone met in a party: the ask the email path makes, by id, or the accept when they asked first. */
+  private async met(who: Who, them: Person): Promise<string | null> {
+    const s = this.ctx.storage;
+    if (them.id === who.id || await s.get(`f:${them.id}`) || await s.get(`out:${them.id}`)) return null;
+    if (await s.get(`in:${them.id}`)) return this.act(who, { op: "accept", id: them.id });
+    if ((await s.list({ prefix: "out:" })).size >= MAX_ASKS) return "too many requests waiting: wait for some answers";
+    await s.put(`out:${them.id}`, { ...them, at: Date.now(), to: them } satisfies Out);
+    await this.send(them, { from: { id: who.id, name: who.name }, kind: "ask" });
+    await this.push();
+    return null;
+  }
+
+  /** Someone opened this person's friend link: friends both ways, with nothing left waiting between them. */
+  private async linked(me: Person, from: Person): Promise<string | null> {
+    const s = this.ctx.storage;
+    if (from.id === me.id || await s.get(`f:${from.id}`)) return null;
+    if ((await s.list({ prefix: "f:" })).size >= MAX_FRIENDS) return `${me.name} has ${MAX_FRIENDS} friends, which is the most`;
+    await this.forget([`in:${from.id}`, `out:${from.id}`, ...(await this.askNotesFrom(from.id))]);
+    await s.put(`f:${from.id}`, { ...from, since: Date.now(), presence: [] } satisfies Friend);
+    await this.note({ kind: "accept", from });
+    await this.send(from, { from: me, kind: "linked", presence: await this.mine() });
+    await this.push();
+    return null;
   }
 
   private async erase() {
@@ -290,9 +378,21 @@ export class Hub {
       case "drop":
         await this.forget([`f:${id}`, `in:${id}`, `out:${id}`, ...(await this.askNotesFrom(id))]);
         break;
+      // This side opened their friend link (`linked` above, on their hub): a friend here too. Full here, they are told to let go.
+      case "linked": {
+        if (friend) return;
+        if ((await s.list({ prefix: "f:" })).size >= MAX_FRIENDS) { await this.send(p.from, { from: me, kind: "drop" }); return; }
+        await this.forget([`in:${id}`, `out:${id}`, ...(await this.askNotesFrom(id))]);
+        await s.put(`f:${id}`, { ...p.from, since: Date.now(), presence: p.presence ?? [] } satisfies Friend);
+        const presence = await this.mine();
+        if (presence.length) await this.send(p.from, { from: me, kind: "presence", presence });
+        break;
+      }
       case "presence":
-        if (!friend) return;
-        await s.put(`f:${id}`, { ...friend, name: p.from.name, presence: p.presence ?? [] } satisfies Friend);
+        if (friend) await s.put(`f:${id}`, { ...friend, name: p.from.name, presence: p.presence ?? [] } satisfies Friend);
+        // A coworker's word is kept under c: while D1 says they still share a studio (state() reads only current coworkers).
+        else if ((await coworkersOf(this.env, me.id)).some((c) => c.id === id)) await s.put(`c:${id}`, { ...p.from, presence: p.presence ?? [] } satisfies Coworker);
+        else return;
         break;
       case "note":
         if (!friend || !p.text) return;
@@ -339,8 +439,9 @@ export class Hub {
     const now = await this.mine(closing);
     if (!me || JSON.stringify(now) === JSON.stringify((await s.get<Presence[]>("presence")) ?? [])) return;
     await s.put("presence", now);
-    const friends = [...(await s.list<Friend>({ prefix: "f:" })).values()];
-    await Promise.all(friends.map((f) => this.send(f, { from: me, kind: "presence", presence: now })));
+    const friends = [...(await s.list<Friend>({ prefix: "f:" })).values()], ids = new Set(friends.map((f) => f.id));
+    const coworkers = (await coworkersOf(this.env, me.id, MAX_FRIENDS)).filter((c) => !ids.has(c.id));
+    await Promise.all([...friends, ...coworkers].map((f) => this.send(f, { from: me, kind: "presence", presence: now })));
   }
 
   private async send(to: Person, p: Omit<Peer, "to">) {
@@ -351,13 +452,21 @@ export class Hub {
   }
 
   async state(): Promise<HubState> {
-    const s = this.ctx.storage;
+    const s = this.ctx.storage, me = await s.get<Person>("me");
+    // The friend link's key is made the first time its owner looks.
+    let key = await s.get<string>("link");
+    if (me && !key) await s.put("link", key = mintLink());
     const vals = async <T,>(prefix: string) => [...(await s.list<T>({ prefix })).values()];
+    const friends = (await vals<Friend>("f:")).sort((a, b) => a.name.localeCompare(b.name)), ids = new Set(friends.map((f) => f.id));
+    // Coworkers come from D1 each time, so someone who left the studio drops out; their presence is what their hub last said.
+    const heard = new Map((await vals<Coworker>("c:")).map((c) => [c.id, c.presence]));
+    const coworkers = me ? (await coworkersOf(this.env, me.id, MAX_FRIENDS)).filter((c) => !ids.has(c.id)).map((c): Coworker => ({ ...c, presence: heard.get(c.id) ?? [] })) : [];
     return {
-      me: (await s.get<Person>("me")) ?? null,
-      friends: (await vals<Friend>("f:")).sort((a, b) => a.name.localeCompare(b.name)),
+      me: me ?? null,
+      friends, ...(coworkers.length ? { coworkers } : {}),
       incoming: await vals<Asked>("in:"), outgoing: (await vals<Out>("out:")).map(({ id, name, at }) => ({ id, name, at })),
       notes: (await vals<Note>("n:")).reverse(),
+      ...(me && key ? { link: `${encodeURIComponent(me.id)}/${key}` } : {}),
     };
   }
 

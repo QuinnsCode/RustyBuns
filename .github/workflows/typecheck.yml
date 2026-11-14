@@ -25,10 +25,13 @@ jobs:
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with: { bun-version: "1.4.3" }
       - run: bun install --frozen-lockfile
+      # --frozen-lockfile lets a package.json pin move without bun.lock (#4370); this doesn't
+      - run: bun scripts/lock-drift.ts
       - run: bun run typecheck
       - run: bun scripts/conflict-markers.ts
       - run: bun scripts/boundary-audit.ts
+      - run: bun scripts/util-api.ts
       - run: bun scripts/migration-numbers.ts
-      - run: bun test ./scripts/conflict-markers.test.ts ./scripts/boundary-audit.test.ts ./scripts/ci-test-count.test.ts ./scripts/trial-github-cache.test.ts ./scripts/trial-flags.test.ts ./scripts/migration-numbers.test.ts
+      - run: bun test ./scripts/lock-drift.test.ts ./scripts/conflict-markers.test.ts ./scripts/boundary-audit.test.ts ./scripts/ci-test-count.test.ts ./scripts/trial-github-cache.test.ts ./scripts/trial-flags.test.ts ./scripts/migration-numbers.test.ts ./scripts/util-api.test.ts
       - run: bun run docs --check
       - run: bun run site --check

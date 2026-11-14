@@ -1,13 +1,19 @@
 // The watchdog's decisions (#1562), kept apart from Cloudflare so a test can drive them. It imports
-// nothing: the watchdog Worker (watchdog/worker.ts) is a separate deploy from the app it watches,
+// nothing of the app's (only the dependency-free guard): the watchdog Worker (watchdog/worker.ts) is a separate deploy from the app it watches,
 // so a crashed app can't take its own rescue down. One tick runs per cron: check the app, learn
 // which version is live, and roll back to the newest version that was healthy once the app has
 // failed `threshold` checks in a row.
 
-/** What a tick keeps between runs. `good` is newest first: versions that passed a check while live. */
-export interface WatchState { fails: number; good: string[]; unreported?: RolledBack[] }
+import { arr, int, num, obj, opt, str, type Of } from "@rustybuns/util/guard";
+
 /** A rollback, to tell the app about once it answers again. */
-export interface RolledBack { from: string; to: string; at: number }
+export const RolledBack = obj({ from: str(200), to: str(200), at: int(0, Number.MAX_SAFE_INTEGER) });
+export type RolledBack = Of<typeof RolledBack>;
+/** What a tick keeps between runs (the watchdog's KV), read back through this. `good` is newest first: versions that passed a check while live. */
+export const WatchState = obj({ fails: int(0, Number.MAX_SAFE_INTEGER), good: arr(str(200), Infinity), unreported: opt(arr(RolledBack, Infinity)) });
+export type WatchState = Of<typeof WatchState>;
+/** The Workers API's deployments list, as far as `liveVersion` reads it. */
+const Deployments = obj({ result: opt(obj({ deployments: opt(arr(obj({ versions: opt(arr(obj({ version_id: str(200), percentage: num(0, 100) }), Infinity)) }), Infinity)) })) });
 
 export interface WatchDeps {
   /** Is the app healthy: 200 from its health route (which reads the database). */
@@ -55,8 +61,8 @@ function clean(s: WatchState): WatchState {
 }
 
 /** The version with all the traffic, from the Workers API's deployments list (newest first). */
-export function liveVersion(body: { result?: { deployments?: { versions?: { version_id: string; percentage: number }[] }[] } }): string {
-  const vs = body.result?.deployments?.[0]?.versions ?? [];
+export function liveVersion(reply: unknown): string {
+  const vs = Deployments(reply).result?.deployments?.[0]?.versions ?? [];
   const top = vs.reduce<(typeof vs)[number] | undefined>((a, v) => (!a || v.percentage > a.percentage ? v : a), undefined);
   if (!top) throw new Error("the Workers API listed no deployment");
   return top.version_id;

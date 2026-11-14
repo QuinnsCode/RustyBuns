@@ -1,0 +1,70 @@
+{
+  "id": "nessie",
+  "name": "Loch Ness Monster",
+  "category": "Loch Ness Monster",
+  "query": "Loch Ness Monster",
+  "skip": [
+    "https://commons.wikimedia.org/wiki/File:Iconshock_Myths.jpg",
+    "https://commons.wikimedia.org/wiki/File:Loch_Ness_Monster_Topiary_on_Street_Hey_Lane_-_geograph.org.uk_-_180305.jpg"
+  ],
+  "images": [
+    {
+      "file": "card-color.jpg",
+      "from": "card",
+      "page": "https://commons.wikimedia.org/wiki/File:Lochneska_poboba_museumofnessie.jpg",
+      "artist": "StaraBlazkova at Czech Wikipedia",
+      "license": "CC BY-SA 3.0",
+      "licenseUrl": "http://creativecommons.org/licenses/by-sa/3.0/"
+    },
+    {
+      "file": "card-bw.jpg",
+      "from": "card",
+      "page": "https://commons.wikimedia.org/wiki/File:Arthur_Grant_loch_ness_sketch.png",
+      "artist": "Unknown",
+      "license": "Public domain"
+    },
+    {
+      "file": "c3.jpg",
+      "from": "search",
+      "page": "https://commons.wikimedia.org/wiki/File:Loch-Ness-Monster.jpg",
+      "artist": "Hugo Heikenwaelder",
+      "license": "CC BY-SA 2.5",
+      "licenseUrl": "https://creativecommons.org/licenses/by-sa/2.5"
+    },
+    {
+      "file": "c4.jpg",
+      "from": "search",
+      "page": "https://commons.wikimedia.org/wiki/File:Loch_Ness_Monster_07.jpg",
+      "artist": "Immanuel Giel",
+      "license": "Public domain"
+    },
+    {
+      "file": "c5.jpg",
+      "from": "search",
+      "page": "https://commons.wikimedia.org/wiki/File:Loch_Ness_Monster.jpg",
+      "artist": "Ad Meskens",
+      "license": "CC BY-SA 3.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by-sa/3.0"
+    },
+    {
+      "file": "c6.jpg",
+      "from": "search",
+      "page": "https://commons.wikimedia.org/wiki/File:Loch_Ness_Monster_-_geograph.org.uk_-_1337893.jpg",
+      "artist": "don cload",
+      "license": "CC BY-SA 2.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by-sa/2.0"
+    }
+  ],
+  "traits": {
+    "silhouette": "a long neck rising straight up from the water like a swan's, one to three humps along the back behind it, a long tapering tail",
+    "head": "small for the body: a horse- or snake-like head, barely wider than the neck, no horns",
+    "limbs": "four broad paddle flippers, not legs with feet; mostly under the water",
+    "hide": "smooth and wet like a seal or whale, no scales or fur",
+    "colours": "dark grey-green to near black, a lighter belly",
+    "child": [
+      "the long upright neck",
+      "humps in a row",
+      "a tiny head"
+    ]
+  }
+}

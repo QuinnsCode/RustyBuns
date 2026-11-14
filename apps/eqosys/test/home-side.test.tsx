@@ -1,7 +1,8 @@
 // The home's side panel and the /spaces page, walked: Ada and Bo share a space and sit in one party (Bo ready). Ada's home
 // shows the party's room code and who is ready, then her space with Bo on in it, desktop to phone, never wider than the
 // window. Its link opens /spaces on that space in the same panel a game mounts, on a token for eqosys's own pages, which
-// no other site and no other Qollab door takes. eqosys runs in-process with its Party and Space objects and serves the pages.
+// no other site and no other Qollab door takes. The page's policy lets its voice socket reach Qlave (a stand-in on a second
+// origin) and nowhere else. eqosys runs in-process with its Party and Space objects and serves the pages.
 import { afterAll, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
 import { join } from "node:path";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -11,6 +12,7 @@ import type { SpacesState } from "@rustybuns/util/spaces";
 import { newKey } from "@rustybuns/util/token";
 import { launchChrome, load, openTab } from "../../../scripts/chrome.ts";
 import { Document } from "../src/app/Document.tsx";
+import { pageCsp, spacesConnect } from "../src/csp.ts";
 import { Home, SpacesPage } from "../src/app/pages.tsx";
 import { handle } from "../src/handle.ts";
 import { Party } from "../src/qollab/party.ts";
@@ -25,6 +27,9 @@ const script = await built.outputs[0]!.text();
 const { conf, call } = await boot({ EQOSYS_SIGNING_KEY: await newKey(), LOOPBACK_RETURNS: "1" });
 conf.PARTY = durableObject(Party as never, conf) as never;
 conf.SPACE = durableObject(Space as never, conf) as never;
+// Qlave, on an origin of its own: it takes the voice socket and nothing more.
+const qlave = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: (req, srv) => (srv.upgrade(req) ? undefined : new Response("no", { status: 400 })), websocket: { message() {} } });
+conf.QLAVE_URL = `http://127.0.0.1:${qlave.port}`;
 
 let ada = { id: "", token: "", cookie: "" };
 const me = () => ({ id: ada.id, email: "ada@example.com", name: "Ada" });
@@ -34,7 +39,8 @@ shell.mount({ fetch: async (req: Request) => {
   const path = new URL(req.url).pathname;
   // The home as the worker renders it (worker.tsx), with the side panel read the way it reads it.
   if (path === "/") return html(<Home counts={new Map()} t0={0} me={me()} mine={undefined} hub={null} everyone={null} unlocks={new Map()} tab="library" side={await sideOf(conf, ada.id)} />);
-  if (path === "/spaces") return html(<SpacesPage t0={0} />);
+  // The worker's /spaces policy, with script-src opened for the test's unbundled page.
+  if (path === "/spaces") { const r = html(<SpacesPage t0={0} />); r.headers.set("Content-Security-Policy", pageCsp("'self' 'unsafe-inline'", spacesConnect(conf))); return r; }
   if (path === "/src/app/commands.client.ts") return new Response(script, { headers: { "content-type": "text/javascript" } });
   if (path.startsWith("/cards/")) return new Response("", { status: 404 });
   return (await handle(req, conf)) ?? new Response("no", { status: 404 });
@@ -43,7 +49,7 @@ const base = `http://127.0.0.1:${shell.port}`;
 
 let chrome: Awaited<ReturnType<typeof launchChrome>>;
 beforeAll(async () => { chrome = await launchChrome(); });
-afterAll(() => { chrome?.stop(); shell.stop(); });
+afterAll(() => { chrome?.stop(); shell.stop(); qlave.stop(); });
 
 async function signUp(name: string) {
   const a = await asks("park-hide-seek", PARK);
@@ -105,6 +111,10 @@ test("the home shows your party and your spaces beside your friends, and a space
   try { await until("game-night open with Bo on", async () => { const s = await state(); return s?.open === "game-night" && [...s.online].sort().join() === "Ada,Bo"; }); }
   catch (e) { throw new Error(`${(e as Error).message}: ${JSON.stringify(await state())} ${tab.noise.join(" | ")}`); }
   expect(await tab.eval<number>("document.documentElement.scrollWidth")).toBe(390);
+  // Voice: a socket to Qlave opens; one to any other origin (localhost is not 127.0.0.1) the policy stops.
+  const reach = (url: string) => tab.eval<string>(`new Promise((ok) => { const w = new WebSocket(${JSON.stringify(url)}); w.onopen = () => { w.close(); ok("open"); }; w.onerror = () => ok("refused"); setTimeout(() => ok("hung"), 5000); })`);
+  expect(await reach(`ws://127.0.0.1:${qlave.port}/__qlave/voice`)).toBe("open");
+  expect(await reach(`ws://localhost:${qlave.port}/__qlave/voice`)).toBe("refused");
   await tab.close();
 
   // That token is eqosys's own: another site can't mint one or open a space with it, and the party and hub doors don't take it.

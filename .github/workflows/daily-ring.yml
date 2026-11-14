@@ -1,0 +1,164 @@
+# The daily ring (notes/RELEASE_RINGS.md step 6, #4493). At 10:17 UTC it picks the newest commit on main with 3 green
+# hourly runs in a row (scripts/rings.ts pick: its own ring/hourly run and the next two) and, if that commit has no
+# ring/daily status yet, runs on it what is too slow for the hour: phone smoke at every screen size (scripts/phone-smoke.ts,
+# four shards joined into one board, uploaded as the phone-smoke artifact) and a vite build of each web app that changed
+# since refs/ring/daily (every one on the first run, or when packages/ or the lockfile moved). Then it writes ring/daily
+# on the pick and, on green, moves refs/ring/daily there (that move waits on MANUAL RUN #4495 and only logs until then).
+# A failure opens (or comments on) one issue labelled ci-daily, with the commits since the last green daily.
+# Bob's native builds (scripts/builder-nightly.ts) run on his own launchd clock and don't gate this ring yet.
+name: daily-ring
+on:
+  schedule:
+    - cron: "17 10 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: daily-ring
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  pick:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      run: ${{ steps.pick.outputs.run }}
+      sha: ${{ steps.pick.outputs.sha }}
+      previews: ${{ steps.previews.outputs.previews }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { fetch-depth: 0 }
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with: { bun-version: "1.4.3" }
+      # A manual run re-runs the pick even when it already has a ring/daily status.
+      - id: pick
+        env: { GH_TOKEN: "${{ github.token }}", MANUAL: "${{ github.event_name == 'workflow_dispatch' }}" }
+        run: |
+          bun scripts/rings.ts pick daily "$GITHUB_SHA" > "$RUNNER_TEMP/pick"
+          cat "$RUNNER_TEMP/pick"
+          sha=$(grep '^sha=' "$RUNNER_TEMP/pick" | cut -d= -f2)
+          run=$(grep '^run=' "$RUNNER_TEMP/pick" | cut -d= -f2)
+          if [ "$MANUAL" = true ] && [ -n "$sha" ]; then run=true; fi
+          { echo "sha=$sha"; echo "run=$run"; } >> "$GITHUB_OUTPUT"
+      - id: previews
+        if: steps.pick.outputs.run == 'true'
+        env: { PICK: "${{ steps.pick.outputs.sha }}" }
+        run: |
+          base=""
+          if git fetch -q origin refs/ring/daily 2>/dev/null; then base=$(git rev-parse FETCH_HEAD); fi
+          bun scripts/rings.ts previews "$base" "$PICK" | tee -a "$GITHUB_OUTPUT"
+
+  phone:
+    needs: pick
+    if: needs.pick.outputs.run == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    name: phone smoke ${{ matrix.shard }}/4
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { ref: "${{ needs.pick.outputs.sha }}" }
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with: { bun-version: "1.4.3" }
+      - run: bun install --frozen-lockfile
+      - run: bun scripts/phone-smoke.ts --shard ${{ matrix.shard }}/4 --out "phone-${{ matrix.shard }}" --fail
+      - if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with: { name: "phone-${{ matrix.shard }}", path: "phone-${{ matrix.shard }}", retention-days: 14 }
+
+  # One board for the four shards, to open from the run page.
+  board:
+    needs: [pick, phone]
+    if: always() && needs.pick.outputs.run == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { ref: "${{ needs.pick.outputs.sha }}" }
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with: { bun-version: "1.4.3" }
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with: { pattern: "phone-*" }
+      - run: bun scripts/phone-smoke.ts --merge phone-* --out dist/phone-smoke
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with: { name: phone-smoke, path: dist/phone-smoke, retention-days: 14 }
+
+  preview:
+    needs: pick
+    if: needs.pick.outputs.run == 'true' && needs.pick.outputs.previews != '[]'
+    strategy:
+      fail-fast: false
+      matrix:
+        app: ${{ fromJSON(needs.pick.outputs.previews) }}
+    name: preview ${{ matrix.app }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: apps/${{ matrix.app }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { ref: "${{ needs.pick.outputs.sha }}" }
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with: { bun-version: "1.4.3" }
+      - run: bun install --frozen-lockfile --filter rustybuns --filter "./apps/${{ matrix.app }}"
+        working-directory: .
+      - run: bun run build
+
+  # The ring's verdict on the pick. contents: write for the ref is the owner's (#4495); until then `move` logs a warning.
+  ring:
+    needs: [pick, phone, preview]
+    if: always() && needs.pick.outputs.run == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      statuses: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      PICK: ${{ needs.pick.outputs.sha }}
+      RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      STATE: ${{ (contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')) && 'failure' || 'success' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with: { bun-version: "1.4.3" }
+      - run: bun scripts/rings.ts status daily "$PICK" "$STATE" "$RUN"
+      - if: env.STATE == 'success'
+        run: bun scripts/rings.ts move daily "$PICK"
+
+  flag:
+    needs: [pick, phone, preview]
+    if: always() && needs.pick.outputs.run == 'true' && (contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with: { bun-version: "1.4.3" }
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PICK: ${{ needs.pick.outputs.sha }}
+          RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          RESULTS: phone smoke ${{ needs.phone.result }}, previews ${{ needs.preview.result }}
+        run: |
+          RANGE=$(bun scripts/rings.ts range daily "$PICK" || echo "Commits since the last green: couldn't read them.")
+          gh label create ci-daily --color B60205 --description "the daily release ring" 2>/dev/null || true
+          open=$(gh issue list --label ci-daily --state open --json number -q '.[0].number')
+          if [ -n "$open" ]; then gh issue comment "$open" --body "Failed again ($RESULTS) on ${PICK:0:7}: $RUN
+
+          $RANGE"
+          else gh issue create --label ci-daily --title "Daily ring is failing" --body "The daily ring failed ($RESULTS) on ${PICK:0:7}: $RUN
+
+          $RANGE
+
+          Triage: open the run (the phone-smoke artifact is the board), read the failing job, and fix or file the cause. refs/ring/daily stays where it was until a pick goes green; main is never held."; fi

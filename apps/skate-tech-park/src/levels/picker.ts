@@ -1,6 +1,6 @@
 // Which level the page rides (`?level=` or the menu), and the level's side of the HUD: the menu, the
 // goal list, the pickups. main.ts asks for the chosen level and calls `ui.update` each frame.
-import { Check, ChevronRight, Circle, createElement, LayoutGrid, Mountain, Play, Snowflake, Sun, TreePine, Waves, Wheat } from "lucide";
+import { Check, ChevronRight, Circle, CircleHelp, createElement, LayoutGrid, Mountain, Play, Snowflake, Sun, TreePine, Waves, Wheat } from "lucide";
 import { Fog, type Scene } from "three";
 import type { Level } from "../level.ts";
 import type { State } from "../sim.ts";
@@ -49,16 +49,25 @@ function homePage() {
   const hero = document.createElement("section");
   hero.className = "panel hero";
   const title = document.createElement("h1"), pitch = document.createElement("p"), now = document.createElement("p"), row = document.createElement("div");
-  title.textContent = "Skate Tech Park";
+  // the pitch waits behind a small ? (a popover: a click outside or Escape shuts it); the park says only its name, its blurb a tooltip
+  const about = Object.assign(document.createElement("div"), { id: "about", className: "about panel" });
+  about.popover = "auto";
   pitch.textContent = "A giant fingerboard on the real hills of Yosemite. One board, one physics: every flip, grind and bail is real, and friends can ride the same park.";
+  about.append(pitch);
+  const info = Object.assign(document.createElement("button"), { type: "button", className: "info", title: "About" });
+  info.setAttribute("aria-label", "About");
+  info.setAttribute("popovertarget", "about");
+  info.append(icon(CircleHelp));
+  title.append("Skate Tech Park", info);
   now.className = "now";
-  now.append("Flying over ", Object.assign(document.createElement("strong"), { textContent: entry.name }), `. ${entry.blurb}`);
+  now.title = entry.blurb;
+  now.append(Object.assign(document.createElement("strong"), { textContent: entry.name }));
   const next = LEVELS.filter((l) => l.id !== "plaza"), after = next[(next.findIndex((l) => l.id === entry.id) + 1) % next.length]!;
   row.className = "row";
   const nextBtn = pill("quiet", ChevronRight, "Next park", () => { location.search = `?${new URLSearchParams({ tour: after.id, ...Object.fromEntries(carry(location.search)) })}`; });
   nextBtn.title = `Next park: ${after.name}`;
   row.append(pill("go", Play, "Ride", () => { location.search = to(entry.id); }), nextBtn);
-  hero.append(title, pitch, now, row);
+  hero.append(title, about, now, row);
 
   const parks = document.createElement("section");
   parks.className = "panel parks";

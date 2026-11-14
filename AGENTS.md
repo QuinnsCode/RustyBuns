@@ -20,6 +20,8 @@ all apps plus `bun test packages` when `packages/` or the lockfile moved). Comma
 - Run only the test files you changed: `cd apps/<app> && bun test test/foo.test.ts`. Typecheck just that app if you like.
 - The 64 GB builder Mac runs them faster and off this machine: `bun run builder run apps/<app> bun test test/foo.test.ts`
   sends your working tree as it is (no commit or push needed); `bun run builder origin/main` runs every suite you touched.
+  When GitHub Actions is down, `bun run builder all` runs everything the `typecheck` and `apps` checks run (container
+  images aside) on your committed branch and writes down a pass; `bun run builder passed` lists what is ready to merge.
   The valve (`bun run builder off|on`, bare `bun run builder` says which) is shut by default once `BUILDER_HOST` is set:
   tests and `build:native` go to Bob and wait while he is off (one suite at a time on battery, wait under 20%). Shut, the
   guard hook turns away `bun test`, `bun run build`, `vite build` and `cargo build` here with the `builder run` line to use,
@@ -28,6 +30,9 @@ all apps plus `bun test packages` when `packages/` or the lockfile moved). Comma
   names the suites GitHub CI will run and exits 0: push, then `bun run pr <n>`. Setting one up: [MAC_SETUP.md](MAC_SETUP.md#part-4-a-builder-20-min-plus-the-first-installs).
 - No root `bun test`, no whole-app suites, no repo-wide typecheck "to be safe". Push; CI does it.
 - Don't rerun a passing test or loop on a flaky one. Note it; file an issue if real.
+- A fix's or a feature's tests should fail on the old code: `bun scripts/test-bites.ts` runs your changed test files on
+  `origin/main`'s source and names the ones that pass there anyway (exit 1); `--lines` lists the changed lines they
+  never ran. It runs tests, so with the valve shut: `bun run builder run . bun scripts/test-bites.ts --lines`.
 - Before `gh pr create`, commit and run `bun scripts/preflight.ts`: it lists open PRs that change your files and has Mervin merge your branch after them (#3118). A `card` or `clash` (exit 1) needs a person: wait for them to merge and rebase, or ask their worker; `mervin` lines merge, rebase once they land.
 - After pushing, `bun run pr <n>` (below) waits for the checks. On failure, fix that and rerun only its test.
 - A push that gets no `typecheck` or `apps` run within a minute is a GitHub miss, not your code (#2828). An empty
@@ -62,6 +67,7 @@ Ask a script `--help` before reading its source: it prints the script's top comm
   A climb is a baton, not a pile: one worker runs one round, and `bun run climbs --next` (`--hire` to hire for it) hands
   the next round to whoever is free, with the baton prompt from `scripts/climbs.ts` (how a round is scored, reported and
   hopped forward). Climbs stay at the top of the issues; other issues, manual runs included, sink unless the owner says otherwise.
+- `bun run rings`: the release rings (notes/RELEASE_RINGS.md), one line each: the commit it sits on and its age, its last red, and how many PRs wait to climb into it. Ester's card shows the same.
 - `bun run phil` (`--hire`): the oldest open Mythic Masters issue nobody holds (no MANUAL RUNs, climbs or owner-waiting ones), with its baton prompt.
 - `bun run outline <file> [name]`: a TS file's symbols with line ranges and the first doc line; with a name, just that symbol's source. Use it instead of paging a file with `sed -n`.
   `bun run outline --api <package or file>` (`packages/util`, `packages/util/src/eqosys.ts`): every export of its entry points as a one-line signature and doc line, no bodies. Read a shared library's API this way before opening it.
@@ -85,12 +91,15 @@ updates its docs in the same PR. Those two files must keep importing nothing els
 
 ## Check what comes in
 
-A parsed body, fetch reply or stored string is `unknown` until something looks at it. Don't
-assert a shape onto it (`as { owner: string }`), and no `any` or `as never`: narrow each field
-(`readBody` and `parseJson` in codeSplitter, `isPlainObject` and `listOf` in its `util.ts`), and
-test the wrong shape. For a whole body or message, write its guard with `@rustybuns/util/guard`
-(`obj`, `str`, `num`, `oneOf`, `arr`, `opt`; `type X = Of<typeof X>`), and in a codeSplitter route
-`need(body, guard)` for the typed value or a 400. CI runs `bun scripts/boundary-audit.ts`, which fails on a new unchecked value
+A parsed body, fetch reply, tool's arguments or stored string is `unknown` until something looks at it. Don't
+assert a shape onto it (`as { owner: string }`, `const x: Foo = await r.json()`), no `any` or `as never`, and no
+`Record<string, unknown>` poked field by field: that is a second, hand-kept copy of a type the other end already has.
+A shape is a guard from `@rustybuns/util/guard` (`obj`, `str`, `num`, `oneOf`, `arr`, `opt`, `or`, `said`), and the
+guard is the type (`type X = Of<typeof X>`). Declare it once where both ends can import it (no Bun or DOM in that file:
+`apps/agent-office/connect/types.ts`, `ester/state.ts`), have the server write `x satisfies Reply`, and read it with
+`getJson(url, Reply)` or `check(Reply, v)`; in a codeSplitter route `need(body, guard)` gives the typed value or a 400.
+Test the wrong shape. `isRecord` is only for walking JSON that has no fixed shape (a linter over authored files, a deep
+merge). CI runs `bun scripts/boundary-audit.ts`, which fails on a new unchecked value or `Record<string, unknown>`,
 and on a file that got better but didn't lower its count in `scripts/boundary-audit.allow.json`
 (`--update` writes it, `--list` shows every one). The allowance only goes down.
 
@@ -120,6 +129,12 @@ A PR that deletes more than it adds is the goal. codeSplitter's own helpers are 
   A JSON reply is `json` (or `privateJson`, which no cache may keep) in `@rustybuns/util/http`; a client's unchecked body is
   `readBody` there, and a body or reply read through a guard is `readJson` / `getJson`. `hex`, `b64url`, `digest` and `sha256`
   are `@rustybuns/util/bytes`. Don't write a local `const json = ...` again.
+- `@rustybuns/util` has three sides and two speeds ([its README](packages/util/README.md)): each module is `shared`
+  (runs anywhere, imports only shared, copies out with `bun scripts/util-api.ts --copy <module> <dir>`), `web` or
+  `server` in `packages/util/api.json`, and the `stable` ones have their exports locked in `packages/util/API.lock`.
+  Adding to a stable module is free (`bun scripts/util-api.ts --update`); changing or removing an export takes
+  `--update --break "why"`, which writes `BREAKING.md` for the release notes. Trying something wild goes in
+  `packages/util/src/lab/` (`@rustybuns/util/lab/<name>`): no side, no lock, and only lab imports lab. CI runs the check.
 - What a route answers is one guard that both the server and the page import (`apps/park-hide-seek/src/api.ts`,
   `CheckoutReply` in skate-tech-park's `shop.ts`): the server writes `json(x satisfies Reply)`, the page reads
   `getJson(url, Reply)`. Never a `Record<string, unknown>` or an `as { ... }` on each side of the wire.
@@ -142,12 +157,14 @@ A PR that deletes more than it adds is the goal. codeSplitter's own helpers are 
 ## Finishing: say what is left, and leave nothing in your head
 
 The owner closes your worktree when you stop, to keep context small. So before you end a turn, nothing may
-be left only in chat. Every undone item (CI still running, a PR not merged, a hands-on check you can't do, a
+be left only in chat. A background-job notice or any other system event is never a reason to end a turn while a task
+is owed: carry on (`.claude/hooks/carry-on.ts` refuses that stop once). Every undone item (CI still running, a PR not merged, a hands-on check you can't do, a
 stacked base that may merge first) goes one of three ways: a new worker (`office-workers hire`), an issue
 (anything for the owner's hands gets `MANUAL RUN:` and the `manual run` label, see below), or a question to
 the owner right then. A note in a PR body or comment is not a hand-off: a merged PR's open items vanish. Before you
 stop, every "not checked" or "follow-up" line in your PR is done, an issue, or a hired worker. Open your last message with "N of M done" and name each leftover with its link, or say
-"4 of 4, nothing left". "PR is open" alone is not a status. Check `gh pr view` and `bun run pr <n> --no-wait` first, and
+"4 of 4, nothing left". The count is agent work only: a filed `MANUAL RUN:` or an issue waiting on the owner's
+decision isn't a leftover, so don't count it; just say it was added (below). "PR is open" alone is not a status. Check `gh pr view` and `bun run pr <n> --no-wait` first, and
 base every PR on `main`. Never stack one on another PR's branch: when the base merges, its branch is deleted
 and every PR on it closes unmerged.
 
@@ -161,7 +178,9 @@ landing, or an issue.
 When something needs the owner to do it (a token, a sign-in, a live run, a hands-on check), it gets its own
 issue: title prefix `MANUAL RUN:` (hands-on checks too, even when nothing is broken), the `manual run`
 label, the steps and a rough time at the top. Never fold it as a line into another open issue (the old #609
-roll-up included): a buried line never gets done. Say in your final message that you filed one, with the link. A PR that touches a manual-run issue
+roll-up included): a buried line never gets done. Say in your final message that you filed one, with the link, outside
+the "N of M" count. Ask the owner to do it right then (AskUserQuestion) only when it takes under a minute or more work
+is blocked on it; otherwise it waits in `bun run manual`. A PR that touches a manual-run issue
 writes "Part of #N" or "Leaves #N open", never a closing word next to its number.
 
 The owner goes through them in one window: `bun run manual` starts each app on a free port, opens the

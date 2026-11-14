@@ -30,11 +30,12 @@
 //
 // It costs container time: see "Checks in a container" in REFERENCE.md for the price.
 
-import { checkEnv, runDirs, sandboxUser, spawnAs } from "./check-env.ts";
+import { UPSTREAM_BRANCHES, checkEnv, runDirs, sandboxUser, spawnAs } from "./check-env.ts";
 import { checkSettings, claimRun, cloneUrl, get, handToDesktop, headOf, planChecks, readAt, updateRun, type CheckRun } from "./checks.ts";
 import { RUN_BUDGET_MS, readExec } from "./deploy-runner.ts";
 import { gate, hostList, hostOf, REGISTRIES, type GateExports } from "./egress.ts";
-import { json, type Env } from "./env.ts";
+import { json, need, readBody, type Env } from "./env.ts";
+import { obj, rec, str } from "@rustybuns/util/guard";
 import { isAdmin } from "./identity.ts";
 import { charge, SITE } from "./limits.ts";
 import { portFetch, type ContainerApi } from "./sandbox.ts";
@@ -55,6 +56,14 @@ export interface Machine {
   read(path: string): Promise<string | undefined>;
   /** Stop whatever's running: the run lost its claim. */
   stop(): void;
+}
+
+/** Check out a commit of the clone, fetching the mirror's upstream-branch refs first if a branch doesn't hold it. */
+async function checkedOut(m: Machine, sha: string) {
+  const checkout = async () => !(await m.exec(["git", "checkout", "--quiet", sha], () => {}));
+  if (await checkout()) return true;
+  await m.exec(["git", "fetch", "--quiet", "origin", UPSTREAM_BRANCHES], () => {});
+  return checkout();
 }
 
 /** A branch's own files as they are now, null for one it deleted: what goes over main's clone. */
@@ -92,7 +101,7 @@ export async function runJob(env: Env, owner: string, repo: string, job: Job, la
     if (await m.exec(["git", "clone", "--quiet", job.clone_url, "."], (s) => { said += s; }))
       throw new Error(`git clone failed: ${said.split(job.clone_url).join("<the repo>")}`);
     // A branch that hasn't gone up as a git commit (`<branch>@<time>`): main, with the branch's files laid over it as they are now.
-    if (/^[0-9a-f]{40}$/.test(job.sha)) { if (await m.exec(["git", "checkout", "--quiet", job.sha], () => {})) throw new Error(`${job.sha} isn't a commit in the repo's git`); }
+    if (/^[0-9a-f]{40}$/.test(job.sha)) { if (!(await checkedOut(m, job.sha))) throw new Error(`${job.sha} isn't a commit in the repo's git`); }
     else if (job.ref.startsWith("train:")) {
       // A merge-train car (train.ts): main with its branches merged in, in order.
       const car = await (await import("./train.ts")).carTree(env, owner, repo, job.ref);
@@ -142,7 +151,7 @@ export async function localMachine(user = sandboxUser(process.env.CODESPLITTER_C
   const base = await mkdtemp(join(user ? "/tmp" : tmpdir(), "cs-checks-")), { repo: dir, home, tmp } = runDirs(base);
   for (const d of [dir, home, tmp]) await mkdir(d);
   if (user) { await chmod(base, 0o755); for (const d of [dir, home, tmp]) await chmod(d, 0o777); }
-  const env = checkEnv(process.env, home, tmp, user);
+  const env = checkEnv(process.env, home, tmp, user), own = process.env.HOME;
   const inside = (p: string) => {
     const at = resolve(dir, p);
     if (!relative(dir, at) || relative(dir, at).startsWith("..")) throw new Error(`${p} is outside the repo`);
@@ -158,7 +167,7 @@ export async function localMachine(user = sandboxUser(process.env.CODESPLITTER_C
   const live = new Set<{ kill(): void }>();
   return {
     async exec(cmd, out) {
-      const as = spawnAs(cmd, env, user);
+      const as = spawnAs(cmd, env, user, own);
       const p = Bun.spawn(as.cmd, { cwd: dir, stdout: "pipe", stderr: "pipe", env: as.env });
       live.add(p);
       const pump = async (s: ReadableStream<Uint8Array>) => { const d = new TextDecoder(); for await (const b of s) out(d.decode(b, { stream: true })); out(d.decode()); };
@@ -241,6 +250,10 @@ export interface CiRunnerState {
 
 /** How the repo's checks went on the doctor's files: `out`, the end of the one that failed; `note`, why they stopped short. */
 export interface DoctorChecks { id: string; ok: boolean; names: string[]; failed?: string; out?: string; note?: string }
+/** What POST /doctor and POST / are sent (deps.ts, checks.ts). */
+const DoctorBody = obj({ owner: str(), repo: str(), files: rec(str(Infinity, { min: 0 })) });
+const KickBody = obj({ owner: str(), repo: str() });
+
 /** What POST /doctor answers: the result, the run it's waiting on, or why it can't go now. */
 export type DoctorAnswer = { result: DoctorChecks } | { running: { id: string } } | { busy: string };
 interface DoctorJob { id: string; owner: string; repo: string; key: string; tip: string; files: Record<string, string>; plan: { name: string; command?: string }[]; done?: boolean }
@@ -292,7 +305,7 @@ export class CiRunner {
       const m = containerMachine(c, `doctor-${job.id}`, deadline, this.budgetMs);
       let said = "";
       if (await m.exec(["git", "clone", "--quiet", url, "."], (s) => { said += s; })) throw new Error(`git clone failed: ${said.split(url).join("<the repo>")}`);
-      if (/^[0-9a-f]{40}$/.test(job.tip) && await m.exec(["git", "checkout", "--quiet", job.tip], () => {})) throw new Error(`${job.tip} isn't a commit in the repo's git`);
+      if (/^[0-9a-f]{40}$/.test(job.tip) && !(await checkedOut(m, job.tip))) throw new Error(`${job.tip} isn't a commit in the repo's git`);
       await m.write(job.files);
       laid = true;
       for (const p of job.plan) {
@@ -318,11 +331,12 @@ export class CiRunner {
 
   async fetch(req: Request): Promise<Response> {
     if (new URL(req.url).pathname === "/doctor") {
-      const { owner, repo, files } = (await req.json()) as { owner: string; repo: string; files: Record<string, string> };
-      return json(await this.doctor(owner, repo, files));
+      const body = need(await readBody(req), DoctorBody);
+      return body instanceof Response ? body : json(await this.doctor(body.owner, body.repo, body.files));
     }
-    const { owner, repo } = (await req.json()) as RepoRef;
-    await this.ctx.storage.put("repo", { owner, repo });
+    const body = need(await readBody(req), KickBody);
+    if (body instanceof Response) return body;
+    await this.ctx.storage.put("repo", { owner: body.owner, repo: body.repo });
     await this.ctx.storage.setAlarm(Date.now());
     return json({ kicked: true });
   }

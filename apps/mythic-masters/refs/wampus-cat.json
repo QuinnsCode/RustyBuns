@@ -1,0 +1,67 @@
+{
+  "id": "wampus-cat",
+  "name": "Wampus Cat",
+  "category": "Wampus cat",
+  "query": "Wampus Cat",
+  "images": [
+    {
+      "file": "card-color.jpg",
+      "from": "card",
+      "page": "https://commons.wikimedia.org/wiki/File:Wampus_cat_20160530_123904_(cropped).jpg",
+      "artist": "U458625",
+      "license": "CC BY-SA 4.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0"
+    },
+    {
+      "file": "card-bw.jpg",
+      "from": "card",
+      "page": "https://commons.wikimedia.org/wiki/File:Wampus_cat.jpg",
+      "artist": "Fearsome Critters, Written by Henry H. Tryon • Illustrated by Margaret R. Tryon",
+      "license": "CC0",
+      "licenseUrl": "http://creativecommons.org/publicdomain/zero/1.0/deed.en"
+    },
+    {
+      "file": "c3.jpg",
+      "from": "search",
+      "page": "https://commons.wikimedia.org/wiki/File:Wampus_Cat_-_panoramio.jpg",
+      "artist": "Todd Dwyer",
+      "license": "CC BY-SA 3.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by-sa/3.0"
+    },
+    {
+      "file": "c4.jpg",
+      "from": "search",
+      "page": "https://commons.wikimedia.org/wiki/File:Julia_Faye_-_Aug_1922_Wampus_Cat.jpg",
+      "artist": "Unknown photographer",
+      "license": "Public domain"
+    },
+    {
+      "file": "c5.jpg",
+      "from": "search",
+      "page": "https://commons.wikimedia.org/wiki/File:COLLECTIE_TROPENMUSEUM_Benedenloop_van_de_rivier_Wampu_TMnr_60046951.jpg",
+      "artist": "niet bekend / unknown (Fotograaf/photographer). Stafhell & Kleingrothe (Fotostudio).",
+      "license": "CC BY-SA 3.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by-sa/3.0"
+    },
+    {
+      "file": "c6.jpg",
+      "from": "search",
+      "page": "https://commons.wikimedia.org/wiki/File:COLLECTIE_TROPENMUSEUM_Benedenloop_van_de_rivier_Wampu_TMnr_60038093.jpg",
+      "artist": "Stafhell & Kleingrothe (Fotostudio). niet bekend / unknown (Fotograaf/photographer).",
+      "license": "CC BY-SA 3.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by-sa/3.0"
+    }
+  ],
+  "traits": {
+    "silhouette": "",
+    "head": "",
+    "limbs": "",
+    "hide": "",
+    "colours": "",
+    "child": [
+      "",
+      "",
+      ""
+    ]
+  }
+}

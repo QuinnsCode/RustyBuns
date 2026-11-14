@@ -5,7 +5,7 @@
 
 import { pipelineRoutes } from "./pipeline-routes.ts";
 import { reviewOf, runQueuedReviews } from "./pipeline-hooks.ts";
-import { isPlainObject, parseJson } from "./util.ts";
+import { parseJson } from "./util.ts";
 import { artifactMoveRoutes } from "./artifact-move.ts";
 import { featureRankRoutes } from "./feature-ranks.ts";
 import { findRoutes } from "./finds.ts";
@@ -28,6 +28,7 @@ import {
   toFile,
 } from "./archive.ts";
 import { repoRow, live, branchOf } from "./repos.ts";
+import { handOut, recall } from "./share-tokens.ts";
 import {
   code,
   fail,
@@ -40,7 +41,7 @@ import {
   type DigMessage,
   type Env,
 } from "./env.ts";
-import { arr, bool, obj, oneOf, opt, str } from "@rustybuns/util/guard";
+import { arr, bool, isRecord, obj, oneOf, opt, str } from "@rustybuns/util/guard";
 import { readJson } from "@rustybuns/util/http";
 import {
   accountsOn,
@@ -72,6 +73,7 @@ import {
   evict,
   githubRoutes,
   githubToken,
+  WRECK_OWNER,
 } from "./github.ts";
 import { gameRoutes } from "./game.ts";
 import {
@@ -297,7 +299,8 @@ async function access(env: Env, owner: string, repo: string, user: string | null
   const r = await repoRow(env, owner, repo, "visibility", { liveAt: Date.now() });
   if (!r) return { read: false, write: false, exists: false };
   const collab = user ? await env.DB.prepare("SELECT 1 FROM collaborators WHERE owner = ? AND repo = ? AND name = ?").bind(owner, repo, user).first() : null;
-  const write = user === owner || !!collab;
+  // The wrecking room's copies are shared and read-only: nobody writes to or hides one, whatever their handle.
+  const write = owner !== WRECK_OWNER && (user === owner || !!collab);
   return { read: r.visibility === "public" || write, write, exists: true };
 }
 
@@ -438,7 +441,7 @@ async function route(req: Request, env: Env): Promise<Response> {
   // /api/repos/:o/:r/beams, /api/beams/:id[/patch], /api/me/beams: a branch's stack, cleaned and handed over (beam.ts)
   const beam = await beamRoutes(req, env, p, user, (o, r) => access(env, o, r, user));
   if (beam) return beam;
-  const cut = await cutRoutes(req, env, p, url, user);
+  const cut = await cutRoutes(req, env, p, url, user, async (o, r) => (await access(env, o, r, user)).write);
   if (cut) return cut;
   // GET /api/me/mentions, POST /api/me/mentions/seen: where an agent thread named you (mentions.ts)
   const mentions = await mentionRoutes(req, env, p, user);
@@ -561,6 +564,7 @@ async function route(req: Request, env: Env): Promise<Response> {
     if (region !== undefined && region !== "eu") return fail("BadInput", "region: eu, or leave it out");
     if (region === "eu" && !env.ARTIFACTS_EU) return fail("NoEuStorage", "this codeSplitter has no EU storage");
     const namespace = region ?? null;
+    if (await repoRow(env, user, name, "1")) return fail("RepoExists", "you already have a repo with that name");
     await env.DB.prepare("INSERT INTO repos (owner, name, visibility, created_at, branch, namespace) VALUES (?, ?, ?, ?, 'main', ?)").bind(user, name, visibility, Date.now(), namespace).run();
     const arts = artifactsFor(env, namespace);
     if (arts) {
@@ -586,7 +590,7 @@ async function route(req: Request, env: Env): Promise<Response> {
       // Anyone who can read the repo can clone its artifact, with an hour-long read token;
       // the crew also gets their own remote's, with private lines' real text, once there is one.
       const h = await handleFor(env, owner, repo).catch(() => null);
-      const art = h && await artifactAccess(h.handle, h.remote, "read", 3600).catch(() => null);
+      const art = h && await handOut(env, owner, repo, user, h, 3600).catch(() => null);
       const clone = art && `git clone ${art.remote.replace("://", `://x:${art.token.split("?")[0]}@`)} ${repo}`;
       const ch = a.write ? await handleFor(env, owner, repo, true).catch(() => null) : null;
       const crewArt = ch?.crew ? await artifactAccess(ch.handle, ch.remote, "read", 3600).catch(() => null) : null;
@@ -617,6 +621,8 @@ async function route(req: Request, env: Env): Promise<Response> {
         await withdrawOpenBeams(env, owner, repo);
         const { results: crew } = await env.DB.prepare("SELECT name FROM collaborators WHERE owner = ? AND repo = ?").bind(owner, repo).all<{ name: string }>();
         await revokeSockets(env, owner, repo, { keep: [owner, ...crew.map((c) => c.name)] });
+        // A stranger's clone line or share link from while it was public stops working now, not in an hour.
+        await recall(env, owner, repo, [owner, ...crew.map((c) => c.name)]);
       }
       await audit(env, req, { actor: user, action: "repo.visibility", owner, repo, detail: visibility });
       return json({ visibility });
@@ -650,12 +656,12 @@ async function route(req: Request, env: Env): Promise<Response> {
     if (p[4] === "share" && !p[5] && req.method === "GET") {
       const branch = url.searchParams.get("branch");
       if (branch && !/^[\w][\w./-]*$/.test(branch)) return fail("BadBranchName", "that isn't a branch name");
-      // A token can't be recalled once handed out (#1819), and a public repo can go private tomorrow: a non-owner's lives an hour at most, whatever the repo's visibility is today.
+      // Going private recalls a stranger's token (share-tokens.ts), but removing a collaborator doesn't (#1819): a non-owner's lives an hour at most.
       const cap = user !== owner ? SHARE_CREW_PRIVATE_S : SHARE_MAX_S;
       const ttl = Math.max(60, Math.min(cap, Math.floor(Number(url.searchParams.get("ttl"))) || Math.min(cap, SHARE_DEFAULT_S)));
       const h = await handleFor(env, owner, repo).catch(() => null);
       if (!h) return fail("NoGit", "this repo has no git to share");
-      const art = await artifactAccess(h.handle, h.remote, "read", ttl);
+      const art = await handOut(env, owner, repo, user, h, ttl);
       return json({ command: `git clone${branch ? ` -b ${branch}` : ""} ${art.remote.replace("://", `://x:${art.token.split("?")[0]}@`)} ${repo}`, ttl, expiresAt: Date.now() + ttl * 1000, ...(branch && { branch }) });
     }
     // GET /api/repos/:o/:r/graph[?limit=60]  main's commits, newest first, with the branches merged into them, each upstream's or this copy's
@@ -850,6 +856,7 @@ async function route(req: Request, env: Env): Promise<Response> {
     // /api/repos/:o/:r/do/(file|ops|log|at|commit|commits|ws|private|claims|release)?path=...&branch=...  -> the file's DO, or its copy on a branch
     if (p[4] === "do" && DO_ROUTES.has(p[5] ?? "")) {
       const path = url.searchParams.get("path") ?? "", branch = url.searchParams.get("branch") || undefined;
+      if (!path) return fail("BadInput", "?path= names the file");
       if (branch && !(await openBranch(env, owner, repo, branch))) return fail("NoSuchBranch", "no open branch " + branch);
       // A branch catalogues when it merges into main, not before.
       if (branch && p[5] === "commit") return fail("BadInput", "merge the branch, then commit main");
@@ -871,7 +878,7 @@ async function route(req: Request, env: Env): Promise<Response> {
       // Hiding lines is the crew's; showing them again (to git and search on the next commit) the owner's.
       const sent = writes ? await req.text() : undefined;
       // The few fields read here; the file's Durable Object checks the whole body.
-      const said = (() => { try { const v: unknown = JSON.parse(sent ?? ""); return isPlainObject(v) ? v : {}; } catch { return {}; } })();
+      const said = (() => { try { const v: unknown = JSON.parse(sent ?? ""); return isRecord(v) ? v : {}; } catch { return {}; } })();
       if (p[5] === "private" && req.method === "POST") {
         const on = said.private;
         if (typeof on !== "boolean") return fail("BadInput", "{lines, private: true|false}, please");
@@ -924,7 +931,7 @@ async function route(req: Request, env: Env): Promise<Response> {
           if (!branch) {
             const hid = await toFile(env, owner, repo, path, user!, "hidden", { method: "POST", body: sent });
             const files: unknown = hid.ok ? await hid.json().catch(() => null) : null;
-            if (isPlainObject(files) && typeof files.content === "string" && typeof files.published === "string")
+            if (isRecord(files) && typeof files.content === "string" && typeof files.published === "string")
               await pushCatalogue(env, owner, repo, path, { content: files.content, published: files.published }, user!, "hide private lines").catch(() => null);
           }
         }

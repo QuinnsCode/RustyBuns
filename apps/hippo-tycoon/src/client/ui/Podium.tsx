@@ -36,7 +36,7 @@ export function Podium({ frame, canAct, finale, onSkip, onRematch, onExit }: Pod
           <button ref={rematch} className="btn go" style={{ flex: 1 }} disabled={!canAct} onClick={onRematch} autoFocus={!finale}>Rematch</button>
           <button ref={menu} className="btn" style={{ flex: 1 }} onClick={onExit}>Menu</button>
         </div>
-        {!canAct && <p className="hint">Waiting for the host to start the next round.</p>}
+        {!canAct && <p className="hint">Waiting for host</p>}
       </section>
     </div>
   );

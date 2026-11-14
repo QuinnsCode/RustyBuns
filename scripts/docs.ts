@@ -3,11 +3,13 @@
 // can't leave the README behind. What it owns:
 //   - the README banner's version ("Alpha, `x.y.z`"), from packages/cli
 //   - the "See it work" gallery (scripts/readme-apps.ts): an entry per apps/* dir in docs/readme/apps.json,
-//     a missing app gets one from its own README's first paragraph, a deleted one loses its entry
+//     a missing app gets one from its own README's first paragraph, a deleted one loses its entry, and each
+//     group is in eqosys's order (APPS in apps/eqosys/src/apps.ts)
 //   - every relative link in the root *.md files must point at a file that exists (reported, not fixed)
 import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { DATA, END, readGroups, render, plays, START } from "./readme-apps.ts";
+import { APPS, HOME } from "../apps/eqosys/src/apps.ts";
+import { DATA, END, inOrder, readGroups, render, plays, START } from "./readme-apps.ts";
 
 const check = process.argv.includes("--check");
 const problems: string[] = [];
@@ -43,6 +45,11 @@ for (const app of apps.filter((a) => !listed.has(a))) {
   groups.at(-1)!.apps.unshift({ app, name: app, line: blurb(app) });
   healed.push(`added apps/${app} to the gallery's last group`);
 }
+// Each group lists its apps the way eqosys does (its APPS), so the README and the eqosys home never disagree on who comes first.
+// eqosys isn't in its own list, so it leads.
+const ordered = inOrder(groups, [HOME, ...APPS.map((a) => a.id)]);
+if (JSON.stringify(ordered) !== JSON.stringify(groups)) healed.push("put the gallery in eqosys's order (apps/eqosys/src/apps.ts)");
+groups.splice(0, groups.length, ...ordered);
 for (const e of groups.flatMap((g) => g.apps))
   if (!existsSync(e.doc ?? `apps/${e.app}/README.md`)) problems.push(`${DATA}: ${e.app} has no ${e.doc ?? "README.md"}`);
 const dataChanged = JSON.stringify(groups) !== dataBefore;

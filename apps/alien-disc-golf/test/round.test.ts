@@ -6,9 +6,9 @@ import { join } from "node:path";
 import { launchChrome, load, openTab, startVite, type Cdp } from "../../../scripts/chrome.ts";
 import { countryAt } from "../src/countries.ts";
 import { BASKET_KM, makeCourse } from "../src/course.ts";
-import { SWIM_S } from "../src/currents.ts";
+import { decodeCurrents, paddleToward, startSwim, SWIM_S, swimOver, swimStep } from "../src/currents.ts";
 import { levelFor, MAX_POWER, MIN_POWER, POWER_STEP, powerFor, simulateThrow, syntheticWind } from "../src/flight.ts";
-import { bearing, destination, distanceKm, type LatLon } from "../src/geo.ts";
+import { bearing, distanceKm, type LatLon } from "../src/geo.ts";
 
 setDefaultTimeout(240_000);
 const SEED = 7, SPEED = 4;
@@ -16,11 +16,18 @@ const SEED = 7, SPEED = 4;
 const SWIM_MS = SWIM_S * 1000 + 10_000;
 const course = makeCourse(SEED);
 const hole1 = course.holes[0]!;
+const currents = decodeCurrents(new Uint8Array(await Bun.file(join(import.meta.dir, "../src/currents.bin")).arrayBuffer())).level;
 
-/** A low throw from hole 1's tee, on the page's synthetic wind, that comes down well out to sea. */
+/** A low throw from hole 1's tee, on the page's synthetic wind, that comes down so far out to sea that paddling at the
+ * basket on the shipped currents swims the whole clock without washing ashore (a disc covers hundreds of km a second). */
 function seaThrow() {
   const wind = levelFor(syntheticWind(), "low");
-  const offshore = (p: LatLon) => [0, 90, 180, 270].every((b) => countryAt(destination(p, b, 250)) === null);
+  const isSea = (p: LatLon) => countryAt(p) === null;
+  const offshore = (p: LatLon) => {
+    const s = startSwim(p, paddleToward(p, hole1.basket));
+    while (!swimOver(s)) swimStep(s, 0.1, currents, true, isSea);
+    return !s.ashore;
+  };
   for (let power = MAX_POWER; power >= MIN_POWER; power -= POWER_STEP)
     for (let heading = 0; heading < 360; heading += 5) {
       const f = simulateThrow({ from: hole1.tee, heading, power, loft: "low" }, wind);
@@ -94,18 +101,24 @@ describe("a round of Alien Disc Golf", () => {
     await tab.until("Tee off", `!!document.querySelector("#tee-off")`);
     await tab.page(`document.querySelector("#tee-off").click()`);
     expect(await tab.page<boolean>(`golf.state().splash || !document.querySelector("#splash").hidden`)).toBe(false);
-    // Hole 1: name the tee's country for a stroke back.
+    // The first time, hole 1 is the tutorial: its coach card waits on the guess first.
     await tab.until("the guess", `golf.state().phase === "guess"`);
+    expect(await tab.page("golf.state().tutorial")).toMatchObject({ running: true, step: 0, title: "Where are we?" });
+    expect(await tab.page<string>(`document.querySelector(".eq-coach").textContent`)).toContain("1 of 5");
+    // Hole 1: name the tee's country for a stroke back.
     expect(await tab.page<string[]>(`[...document.querySelectorAll("[data-guess]")].map((b) => b.dataset.guess)`)).toContain(hole1.teeCountry);
     await tab.page(`golf.guess(${JSON.stringify(hole1.teeCountry)})`);
     await tab.until("aiming", `golf.state().phase === "aim"`);
     expect((await tab.state()).source).toBe("synthetic");
+    await tab.until("the coach on the aim", `golf.state().tutorial.title === "Turn the aim"`);
 
     // Into the sea on purpose: the swim starts, the clock runs, paddling moves the disc, and it ends back in aim.
     const sea = seaThrow();
     await tab.page(`golf.aim(${sea.heading}, ${sea.power}, "low")`);
     await tab.page("golf.throw()");
     await tab.until("the swim", `golf.state().phase === "swim"`);
+    // Thrown and landed: the tutorial is done, for good in this browser.
+    await tab.until("the tutorial done", `golf.state().tutorial.learned && !golf.state().tutorial.running`);
     const clock = () => tab.page<number>(`parseFloat(document.querySelector("#swim-clock").textContent)`);
     const first = await tab.state(), clock1 = await clock();
     expect(distanceKm(first.lie, sea.landing)).toBeLessThan(1);
@@ -138,6 +151,13 @@ describe("a round of Alien Disc Golf", () => {
     expect((await tab.state()).scores).toEqual([]);
     expect(tab.errors()).toEqual([]);
     await tab.close();
+
+    // A new round in the same browser tees off with no tutorial.
+    const again = await open(chrome.cdp, `seed=${SEED + 1}&wind=synthetic`);
+    await again.page("golf.teeOff()");
+    expect(await again.page<boolean>("golf.state().tutorial.running")).toBe(false);
+    expect(await again.page<null>("document.querySelector('.eq-coach')")).toBeNull();
+    await again.close();
   });
 
   test("paddling at a shore washes the disc up there before the clock runs out", async () => {

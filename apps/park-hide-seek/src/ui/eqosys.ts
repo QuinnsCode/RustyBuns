@@ -17,8 +17,10 @@ export const SKIN = {
   css: `.eq-form,.eq-toast,.rb-lobby,.rb-spaces,.eq-chip.in{background:var(--halftone) 0 0 repeat-x,var(--grain),var(--paper)}
 .eq-btn.primary{background:var(--brown);border-color:var(--brown);box-shadow:inset 0 -4px 0 var(--rust)}
 .eq-title,.eq-toast b,.eq-who{font-weight:400;letter-spacing:.02em;color:var(--brown)}
-.eq-chip[hidden]{display:none}#who{margin:0 0 12px}`,
+.eq-chip[hidden]{display:none}#who{margin:0 0 12px}
+.eq-coach{top:auto;bottom:86px;left:16px;right:auto;margin:0;width:min(360px,calc(100vw - 32px))}
+@media (max-width:720px){.eq-coach{bottom:236px;left:0;right:0;margin:0 auto;width:calc(100vw - 24px)}}`,
 };
 
-export type { Login } from "@rustybuns/util/eqosys";
-export const { signIn, finishSignIn, login, fresh, signOut, eqosysUrl, canSignIn, report, reportButton, party, achieve } = eqosys({ app: APP, url: EQOSYS, from: SIGN_IN_FROM, prefix: "phs", skin: SKIN });
+export type { Login, Returned } from "@rustybuns/util/eqosys";
+export const { signIn, signInHere, finishSignIn, login, fresh, signOut, eqosysUrl, canSignIn, report, reportButton, party, hub, achieve, achievements } = eqosys({ app: APP, url: EQOSYS, from: SIGN_IN_FROM, prefix: "phs", skin: SKIN });

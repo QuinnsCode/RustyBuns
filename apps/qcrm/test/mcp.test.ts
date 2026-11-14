@@ -49,6 +49,17 @@ test("tools/list has every operation of the spec; tools/call runs one as the API
 
   const missing = await (await app("", "/api/mcp", { method: "POST", headers: bearer, body: rpc("tools/call", { name: "get_contact", arguments: { org } }) })).json();
   expect(missing.result.isError).toBe(true);
+
+  // Agents often put a row's fields beside org instead of under body: they land, not a blank row. A name nothing takes is an error.
+  const tool = async (name: string, args: unknown) => (await (await app("", "/api/mcp", { method: "POST", headers: bearer, body: rpc("tools/call", { name, arguments: args }) })).json()).result;
+  for (const args of [{ org, first_name: "Flat", email: "flat@example.com" }, { org, body: { first_name: "Flat", email: "flat@example.com" } }]) {
+    const made = await tool("create_contact", args);
+    expect(made.isError).toBe(false);
+    expect(JSON.parse(made.content[0].text)).toMatchObject({ first_name: "Flat", email: "flat@example.com" });
+  }
+  const stray = await tool("list_contacts", { org, first_name: "Flat" });
+  expect(stray.isError).toBe(true);
+  expect(stray.content[0].text).toContain("takes no first_name");
   expect((await app("", "/api/mcp", { method: "POST", headers: bearer, body: rpc("tools/call", { name: "nope" }) })).status).toBe(200);
 });
 

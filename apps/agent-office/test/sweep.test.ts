@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { existsSync, lstatSync, mkdirSync, mkdtempSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { cacheKey, lockVersions, pruneBunCache, slug, sweepScratch, WORKTREES } from "../live/sweep.ts";
+import { cacheKey, lockVersions, pruneBunCache, slug, sweepModules, sweepScratch, WORKTREES } from "../live/sweep.ts";
 
 const tmp = () => mkdtempSync(path.join(tmpdir(), "rb-sweep-"));
 
@@ -32,6 +32,30 @@ test("a sent-home worker's scratch folder goes; live worktrees, their subfolders
   const done = await sweepScratch([repo, other], true, base);
   expect(done.paths).toEqual([path.join(base, names.gone)]);
   for (const [k, n] of Object.entries(names)) expect([k, existsSync(path.join(base, n))]).toEqual([k, k !== "gone"]);
+});
+
+test("node_modules go from worktrees nobody sits at; a seated one, a fresh hire's and the code stay", async () => {
+  const repo = tmp();
+  const tree = (name: string, hoursOld: number) => {
+    const dir = path.join(repo, WORKTREES, name);
+    for (const m of ["node_modules/effect", "apps/game/node_modules/three"]) mkdirSync(path.join(dir, m), { recursive: true });
+    writeFileSync(path.join(dir, "node_modules/effect/index.js"), Buffer.alloc(1 << 20));
+    writeFileSync(path.join(dir, "apps/game/main.ts"), "work");
+    writeFileSync(path.join(dir, ".git"), "gitdir: x");
+    const at = (Date.now() - hoursOld * 3_600_000) / 1000;
+    utimesSync(path.join(dir, ".git"), at, at);
+    return dir;
+  };
+  const seated = tree("gizmo-1", 30), left = tree("nibble-2", 30), hiring = tree("bolt-3", 0.1);
+
+  const dry = await sweepModules(repo, [seated], false);
+  expect(dry.paths.sort()).toEqual([path.join(left, "apps/game/node_modules"), path.join(left, "node_modules")]);
+  expect(dry.bytes).toBeGreaterThanOrEqual(1 << 20);
+  expect(existsSync(path.join(left, "node_modules"))).toBe(true);
+
+  await sweepModules(repo, [seated], true);
+  expect([existsSync(path.join(left, "node_modules")), existsSync(path.join(left, "apps/game/node_modules")), existsSync(path.join(left, "apps/game/main.ts"))]).toEqual([false, false, true]);
+  expect([existsSync(path.join(seated, "node_modules")), existsSync(path.join(hiring, "node_modules"))]).toEqual([true, true]);
 });
 
 test("the bun cache keeps what any bun.lock names and recent downloads, and drops other versions with their links", async () => {

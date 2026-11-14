@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Qollab</title>
+<meta name="description" content="Talk 7: Qollab, the part that connects players: friends online, parties, spaces and chat, in plain words.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@700;900&family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&family=JetBrains+Mono:wght@600;700&display=swap">
+<link rel="stylesheet" href="deck.css">
+</head>
+<body>
+
+<section class="slide">
+  <div class="kicker">Talk 7 · Rusty Buns talks</div>
+  <h1>Qollab</h1>
+  <p class="lede">Friends, parties and spaces: the multiplayer every game ends up building, built once.</p>
+  <p class="aside">Every game studio has written a lobby. Every one of them swore it would be the last.</p>
+  <div class="notes">eqosys is who you are. Qollab is who you are with. Qollab is built into eqosys, and is also its own product.</div>
+</section>
+
+<section class="slide">
+  <div class="kicker">The picture first</div>
+  <h2>The phone lines between houses</h2>
+  <p class="lede">Every house has its own rooms and its own rules. The phone lines join the houses.</p>
+  <ul>
+    <li>Each game is a house. It keeps its own world.</li>
+    <li>Qollab is the lines: who is home, who is calling, who wants to come over.</li>
+    <li>When friends arrive, the house takes over. Qollab steps back.</li>
+  </ul>
+  <p class="aside">The phone company does not care what you cook for dinner. It just makes sure your friends can find the door.</p>
+</section>
+
+<section class="slide">
+  <div class="kicker">Four pieces</div>
+  <h2>Hub, party, space, saves</h2>
+  <div class="cards">
+    <div class="card"><h3>Hub</h3><p>Your own spot. Friends find you there, and see what you are doing now.</p><p class="pic"><b>Like:</b> your front porch light.</p></div>
+    <div class="card"><h3>Party</h3><p>A short-lived room with a six-letter code. Read it out, and friends join.</p><p class="pic"><b>Like:</b> a table at a café.</p></div>
+    <div class="card"><h3>Space</h3><p>A group that stays, with its own chat rooms and voice.</p><p class="pic"><b>Like:</b> a club with a clubhouse.</p></div>
+    <div class="card"><h3>Saves</h3><p>Your saves, kept for you and never read.</p></div>
+  </div>
+</section>
+
+<section class="slide">
+  <div class="kicker">A party</div>
+  <h2>Make, share, ready, go</h2>
+  <ol class="steps">
+    <li><span><b>Make a party.</b> You get a code like KXT7RP.</span></li>
+    <li><span><b>Share it.</b> Say it out loud, or send it.</span></li>
+    <li><span><b>Ready up.</b> Everyone takes a seat and presses ready. Chat while you wait.</span></li>
+    <li><span><b>Go.</b> The host starts. Everyone gets the same game room and their own seat.</span></li>
+  </ol>
+  <p class="aside">The code has no vowels. That is so it never spells a rude word in front of your gran.</p>
+  <div class="notes">The no-vowels rule is the "cute specific" for this talk. Codes also expire after a day.</div>
+</section>
+
+<section class="slide">
+  <div class="kicker">What stays with the game</div>
+  <h2>Qollab gets you in the door. Then it leaves.</h2>
+  <ul>
+    <li>The game loop, the physics and the netcode never go through Qollab.</li>
+    <li>The game's own things, like decks, levels and items, stay in the game.</li>
+    <li>So Qollab never slows a game down, and a game can change engines without asking.</li>
+  </ul>
+  <p class="aside">A good host introduces you, refills your drink and leaves you alone. Qollab has read the etiquette books.</p>
+</section>
+
+<section class="slide">
+  <div class="kicker">How it is built</div>
+  <h2>One small memory for each thing</h2>
+  <div class="diagram" role="img" aria-label="Qollab has one small cloud memory for each player, one for each party and one for each space. Players connect to their own hub; a party and a space connect the players in them.">
+    <svg viewBox="0 0 900 260">
+      <rect class="d-box" x="20" y="30" width="260" height="90" rx="14"/>
+      <text class="d-text" x="150" y="68" text-anchor="middle">One hub per player</text>
+      <text class="d-small" x="150" y="94" text-anchor="middle">friends, who is on, notes</text>
+      <rect class="d-hot" x="320" y="30" width="260" height="90" rx="14"/>
+      <text class="d-text" x="450" y="68" text-anchor="middle">One per party</text>
+      <text class="d-small" x="450" y="94" text-anchor="middle">seats, ready, chat, start</text>
+      <rect class="d-box" x="620" y="30" width="260" height="90" rx="14"/>
+      <text class="d-text" x="750" y="68" text-anchor="middle">One per space</text>
+      <text class="d-small" x="750" y="94" text-anchor="middle">channels, voice, members</text>
+      <text class="d-small" x="450" y="180" text-anchor="middle">Each one is a Durable Object: small, always correct, in the cloud.</text>
+      <text class="d-small" x="450" y="210" text-anchor="middle">A quiet player costs almost nothing. A busy room slows only itself.</text>
+    </svg>
+  </div>
+  <p class="aside">Not one giant switchboard. A lot of tiny ones, each minding its own business.</p>
+  <div class="notes">Say what each piece does, not how they talk to each other.</div>
+</section>
+
+<section class="slide">
+  <div class="kicker">Safe by default</div>
+  <h2>Friends only, unless you say so</h2>
+  <ul>
+    <li>Rooms are for friends by default.</li>
+    <li>Chat has a speed limit, so nobody can flood it.</li>
+    <li>Mute, kick and report are built in, in every game.</li>
+    <li>Delete your account, and it reaches every room you were in.</li>
+  </ul>
+  <p class="aside">Every game gets the same safety rails, so no game forgets them on a Friday afternoon.</p>
+</section>
+
+<section class="slide">
+  <div class="kicker">Two products, one piece</div>
+  <h2>Inside eqosys, and on its own</h2>
+  <ul>
+    <li>Every one of our games gets Qollab with the account. Sign in once, and your friends and party follow you from game to game.</li>
+    <li>Other developers could use Qollab alone, with their own sign-in, in their own cloud account.</li>
+  </ul>
+  <p class="aside">Like the phone network. You can have the phone, or just the lines.</p>
+</section>
+
+<section class="slide">
+  <div class="kicker">Honest status</div>
+  <h2>What connects today</h2>
+  <div class="cards">
+    <div class="card"><span class="tag live">Live</span><h3 style="margin-top:12px">Hubs, parties, spaces</h3><p>Friends online, party codes, spaces with channels.</p></div>
+    <div class="card"><span class="tag live">Live</span><h3 style="margin-top:12px">Voice</h3><p>Voice rooms in spaces and parties.</p></div>
+    <div class="card"><span class="tag oven">In the oven</span><h3 style="margin-top:12px">More games joined up</h3><p>Game by game, the party start hands players into the game room.</p></div>
+    <div class="card"><span class="tag plan">Next</span><h3 style="margin-top:12px">Qollab on its own</h3><p>For other developers, with their own sign-in.</p></div>
+  </div>
+  <div class="notes">Keep this slide current. Source of truth: apps/qollab/README.md and apps/eqosys/QOLLAB.md; selling it alone is issue #3978.</div>
+</section>
+
+<section class="slide">
+  <div class="kicker">The end</div>
+  <h1>The lines,<br>not the house.</h1>
+  <p class="lede">Qollab finds your friends and opens the door. The game does the rest.</p>
+  <p style="margin-top:28px"><a href="index.html">All talks</a> · <a href="06-eqosys.html">Talk 6</a> · <a href="08-sign-in-to-game.html">Talk 8: Sign-in to party to game</a></p>
+</section>
+
+<script src="deck.js"></script>
+</body>
+</html>

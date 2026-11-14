@@ -19,7 +19,7 @@ import { KIND_ICONS, drawMap, drawPlanet, galeOn, mapLegend } from "./ui/map.ts"
 import { STATE_ICONS, STATE_NAMES, placeStates, systemState, type PlaceState } from "./war/states.ts";
 import { heroPlace, sheet } from "./war/sheet.ts";
 import { POINTS, WARS, holdsGoal, isFrost, objective } from "./war/objectives.ts";
-import { icon, tip } from "./ui/icons.ts";
+import { about, icon, info, tip } from "./ui/icons.ts";
 import { PRESETS, PRESET_IDS, deploy, emptyDeployment, loadoutOf, placeLoadout, presetDeployment, room, totals, valueOf, type Loadout, type PresetId } from "./war/fleet.ts";
 import { MODE_INFO, voteScreen, type VoteSeat } from "./ui/vote.ts";
 import { run } from "./battle/sim.ts";
@@ -30,11 +30,14 @@ import { SPACE_ORDERS, VEHICLE_KINDS, other, type BattleResult, type BattleSpec,
 import { esc } from "@rustybuns/util";
 import { addCommands } from "@rustybuns/util/commands";
 import { mountPalette } from "@rustybuns/util/palette";
-import { accountChip, achieve, canSignIn, finishSignIn, login, reportButton, signIn } from "./eqosys.ts";
+import { tutorial } from "@rustybuns/util/tutorial";
+import { accountChip, achieve, achievements, canSignIn, finishSignIn, login, reportButton, signInHere } from "./eqosys.ts";
+import { invitedBy, signInToJoin } from "@rustybuns/util/lobby";
 import { joinParty, mountSpaces, openParty, partyIn } from "./friends.ts";
 import { jumpSpec, parseJump, parseOrbit, parseWar, sectorOf, type Jump } from "./jump.ts";
 import { armyOrder, armySources, armyTargets, buildSites, deployMost, deployOrder, deploySources, deployTargets, fleetOrder, matchup, most, shipSources, shipTargets, skyOver, transportsFor, type ArmyCall } from "./war/calls.ts";
 import { howMany, steps, tile, unit, unitName, vs, type Unit } from "./ui/call.ts";
+import { isRecord } from "@rustybuns/util/guard";
 
 installUi();
 applyTheme(WAR_TABLE, document.documentElement);
@@ -52,6 +55,20 @@ const read = <T>(key: string): T | null => { try { return JSON.parse(localStorag
 const write = (key: string, v: unknown) => { try { localStorage.setItem(key, JSON.stringify(v)); } catch { /* private window */ } };
 
 const firstVisit = read(SAVE) === null;
+/** The first-time tutorial (@rustybuns/util/tutorial), from the title of a first visit: a side, a fleet, a unit placed,
+ *  the fleet readied, then a play called and confirmed. Each flag is set where the player did it and stays set. */
+const did = { side: false, fleet: false, place: false, ready: false, call: false };
+const coach = tutorial({
+  prefix: "tf",
+  account: { achieve, achievements },
+  steps: [
+    { title: "Pick a side", say: "Thunder Marines or the Wooka, then the war, then Vs AI.", done: () => did.side },
+    { title: "Choose your fleet", say: "A preset, or your own mix of ships and armies.", done: () => did.fleet },
+    { title: "Place a unit", say: "Pick one of your worlds on the map, then + on its ships or an army.", done: () => did.place },
+    { title: "Deploy your fleet", say: "Deploy fleet, at the foot of the panel, once it stands where you want it.", done: () => did.ready },
+    { title: "Call a play", say: "Step on to the Armada: where from, where to, how many, then Confirm.", done: () => did.call },
+  ],
+});
 let game: Game = { kind: "local", table: read<{ table: Table }>(SAVE)?.table ?? newTable({ marines: "human", wooka: "ai" }, "short", undefined, true) };
 let c: Campaign = game.table.campaign;
 let me: Faction = c.player;
@@ -286,7 +303,7 @@ function render() {
   // The sheet's head and the one big button: what this phase wants, and who the turn waits on.
   const sh = sheet({ c, me, phase, waiting: waiting(), mode: g ? "online" : hotseat() ? "hotseat" : "ai", busy, fleetChosen: !!loadout,
     heroAt: mine.hero ? systemDef(mine.hero.system).name : null, deploys: ds.length, retreats: rs.length });
-  $("sheet-head").innerHTML = `<h2>${sh.live ? `<span class="live-dot" aria-hidden="true"></span>` : icon(sh.icon, 18)}${esc(sh.title)}</h2><p class="sub">${esc(sh.sub)}</p>`;
+  $("sheet-head").innerHTML = `<h2 title="${esc(sh.sub)}">${sh.live ? `<span class="live-dot" aria-hidden="true"></span>` : icon(sh.icon, 18)}${esc(sh.title)}${info("about-sheet", "What to do")}</h2>${about("about-sheet", `<p>${esc(sh.sub)}</p>`)}`;
   const chipEl = $("wait-chip");
   chipEl.className = `chip ${sh.wait}`;
   chipEl.hidden = sh.wait === "none";
@@ -743,7 +760,7 @@ function confirmCall(kind: string) {
   const max = callMax(kind, from, to);
   const n = Math.max(1, Math.min(pick.n ?? max, max));
   pick = { ...pick, to: null, n: null };
-  if (ph === 3 || ph === 2 || ph === 4) order(kind === "fleet" ? fleetOrder(from, to, n) : armyOrder(whereOf(from), whereOf(to), n));
+  if (ph === 3 || ph === 2 || ph === 4) did.call = true, order(kind === "fleet" ? fleetOrder(from, to, n) : armyOrder(whereOf(from), whereOf(to), n));
 }
 
 // --- Games ---
@@ -762,15 +779,17 @@ function chooseGame(first = false) {
       <h2>${first ? "Two Fronts<small>Thunderwooka Saga</small>" : "New campaign"}</h2>
       <p class="readout">Fleet command <i></i> Doren approach <i></i> Channel 07</p></header>
     ${first ? "" : `<p class="small">${game.kind === "local" ? "The campaign in this browser will be lost." : "You can come back to the online one from its link."}</p>`}
-    <h3>Choose your side</h3>
-    <div class="sides">${SIDES.map((s, i) => `<label class="side ${s.id}"><input type="radio" name="side" value="${s.id}"${i ? "" : " checked"} />
-      <b>${FACTION_NAMES[s.id]}</b><span class="small">${s.pitch}</span></label>`).join("")}</div>
+    <h3>Choose your side ${info("about-sides", "The sides and the wars")}</h3>
+    ${about("about-sides", `<dl class="keys">${SIDES.map((s) => `<dt>${FACTION_NAMES[s.id]}</dt><dd>${s.pitch}</dd>`).join("")}
+      ${Object.values(GALAXIES).map((g) => `<dt>${g.name}</dt><dd>${esc(g.blurb)}</dd>`).join("")}</dl>
+      <p>The short war is an evening, the full campaign several.</p>`)}
+    <div class="sides">${SIDES.map((s, i) => `<label class="side ${s.id}" title="${esc(s.pitch)}"><input type="radio" name="side" value="${s.id}"${i ? "" : " checked"} />
+      <b>${FACTION_NAMES[s.id]}</b></label>`).join("")}</div>
     <h3>Choose the war</h3>
     <div class="choices">${Object.values(GALAXIES).map((g, i) =>
-      `<label title="${esc(g.blurb)}"><input type="radio" name="galaxy" value="${g.id}"${i ? "" : " checked"} /> ${g.name} <small>${g.systems.length} systems</small></label>`).join("")}</div>
-    <p class="small">The short war is an evening, the full campaign several.</p>
+      `<label title="${esc(g.blurb)}"><input type="radio" name="galaxy" value="${g.id}"${i ? "" : " checked"} /> ${g.name} <small title="${g.systems.length} systems">${icon("orbit", 12)}${g.systems.length}</small></label>`).join("")}</div>
     <div class="choices starts">
-      <button type="button" data-start="ai" class="primary" title="Your side against the AI">${icon("bot", 15)} Against the AI</button>
+      <button type="button" data-start="ai" class="primary" title="Your side against the AI">${icon("bot", 15)} Vs AI</button>
       <button type="button" data-start="hotseat" title="Two players taking turns at this screen">${icon("users", 15)} Hotseat</button>
       <button type="button" data-start="online" title="Two players, a turn at a time, each from their own link">${icon("link", 15)} Online</button>
       ${canSignIn() ? `<button type="button" data-start="friends" title="${login() ? "Open a party your eqosys friends join, then start the war together" : "Sign in with eqosys to play your friends"}">${icon("user-plus", 15)} With friends</button>` : ""}
@@ -779,7 +798,7 @@ function chooseGame(first = false) {
     ${first ? "" : `<button type="button" id="close" class="link">Keep playing</button>`}`);
   void showWars();
   // Who you are, on the title as in the panel: your eqosys name with Sign out, or Sign in.
-  $("modal-body").querySelector("header.crest")?.append(accountChip(Object.assign(document.createElement("span"), { className: "account" }), { onSignOut: () => chooseGame(first) }));
+  $("modal-body").querySelector("header.crest")?.append(accountChip(Object.assign(document.createElement("span"), { className: "account" }), { onSignOut: () => chooseGame(first), onSignIn: () => chooseGame(first) }));
 }
 
 /** Signed in, the online wars your eqosys account sits in, from any device: each opens your seat on this one. */
@@ -807,23 +826,27 @@ async function openMine(id: string) {
   }
 }
 
-/** "With friends": signed in, a party for the war picked here; signed out, eqosys's sign-in first. */
+/** "With friends": signed in, a party for the war picked here; signed out, eqosys's sign-in beside the table first. */
 async function withFriends() {
-  if (!login()) return void signIn();
+  if (!login()) return void signInHere().then((r) => { if (r.login) void withFriends(); else if (r.error) flash(r.error); });
   const galaxy = (document.querySelector<HTMLInputElement>('input[name="galaxy"]:checked')?.value ?? "short") as GalaxyId;
   const side = (document.querySelector<HTMLInputElement>('input[name="side"]:checked')?.value ?? "marines") as Faction;
   if (!(await openParty(side, galaxy))) flash("eqosys didn't open a party just now. Sign in again, or try in a minute.");
 }
 
+/** Who sent the party link, read before boot tidies the address. */
+const partyFrom = invitedBy(location.search);
 /** A party link: the lobby (who is in, Ready, the host's Start), then this page's seat in the war it starts. */
 function showParty(p: NonNullable<ReturnType<typeof partyIn>>) {
   const signedIn = !!login();
   showModal(`<h2>${icon("user-plus", 18)} With friends</h2>
     <p>The ${FACTION_NAMES[p.side]} against the ${FACTION_NAMES[enemy(p.side)]}, ${GALAXIES[p.galaxy].name}. Whoever opened the party plays the ${FACTION_NAMES[p.side]}; the first friend in plays the other side.</p>
-    ${signedIn ? `<div id="party-lobby"></div>` : `<p class="small">Sign in with eqosys to join this party.</p><button type="button" id="party-sign-in" class="primary">${icon("log-in", 15)} Sign in</button>`}
+    <div id="party-lobby"></div>
     <button type="button" id="leave-party" class="link">Not now</button>`);
-  // eqosys sends players back to the page without its query, so the party rides along in `then` (boot reads it).
-  if (!signedIn) return void ($("party-sign-in").onclick = () => void signIn(`party${location.search}`));
+  $("leave-party").onclick = () => { history.replaceState(null, "", location.pathname); hideModal(); chooseGame(firstVisit); };
+  // Signed out: "Sign in to join Ada's party", eqosys beside the table, then this lobby. A blocked window goes the long
+  // way round, and eqosys sends players back without the query, so the party rides along in `then` (boot reads it).
+  if (!signedIn) return signInToJoin({ box: $("party-lobby"), code: p.code, host: partyFrom, game: "Two Fronts", account: { canSignIn, signInHere }, joined: () => showParty(p), then: `party${location.search}` });
   const leave = joinParty(p.code, $("party-lobby"), async ({ room, seat, ticket }) => {
     try {
       const got = await claimSeat(room, { seat, side: p.side, galaxy: p.galaxy, ...(ticket && { ticket }) });
@@ -844,6 +867,7 @@ async function startGame(kind: "ai" | "hotseat" | "online",
   galaxy = (document.querySelector<HTMLInputElement>('input[name="galaxy"]:checked')?.value ?? "short") as GalaxyId,
   side = (document.querySelector<HTMLInputElement>('input[name="side"]:checked')?.value ?? "marines") as Faction, seed?: number) {
   const foe = enemy(side);
+  did.side = true;
   turnStart = null; phase = 1; $("modal").classList.remove("fresh");
   const seats: Seats = { marines: "human", wooka: "human", [foe]: kind === "ai" ? "ai" : "human" };
   if (kind !== "online") {
@@ -917,6 +941,7 @@ async function endTurn() {
   if (game.kind !== "local") return;
   const before = me, step = handIn(game.table, me, mine);
   if (!step.ok) return flash(step.error);
+  if (c.setup) did.ready = true;
   useGame({ kind: "local", table: step.table });
   // Hotseat: the screen goes to the next player before they see anything.
   if (hotseat() && !c.winner && seatUp() !== before) return passTo(seatUp());
@@ -940,13 +965,14 @@ function pickFleet() {
   const stepper = (kind: "ships" | "armies", name: string, ico: string, cost: number) => `<span class="stepper" title="${name}: ${cost} each">${icon(ico, 15)}
     <button type="button" class="icon-btn" data-custom="${kind}:-1" aria-label="Fewer ${name}" ${l[kind] ? "" : "disabled"}>${icon("minus", 13)}</button><b>${l[kind]}</b>
     <button type="button" class="icon-btn" data-custom="${kind}:1" aria-label="More ${name}" ${left >= cost ? "" : "disabled"}>${icon("plus", 13)}</button></span>`;
-  showModal(`<h2>Choose your fleet</h2>
-    <ol class="steps"><li><b>Choose</b> a fleet to fight with.</li><li><b>Place</b> it on your worlds. Where you put it is the opening move.</li>
+  showModal(`<h2>Choose your fleet ${info("about-fleet", "How a war goes")}</h2>
+    ${about("about-fleet", `<ol class="steps"><li><b>Choose</b> a fleet to fight with.</li><li><b>Place</b> it on your worlds. Where you put it is the opening move.</li>
       <li><b>Fight</b>: each turn give orders at once with the other side. Moving into enemy space is an attack. Win the sky over a world and you can bombard its garrison; hold the ground to win the war.</li></ol>
+      <dl class="keys">${PRESET_IDS.map((id) => `<dt>${PRESETS[id].name}</dt><dd>${PRESETS[id].blurb}</dd>`).join("")}</dl>`)}
     <div class="presets">${PRESET_IDS.map((id) => {
       const p = PRESETS[id], x = loadoutOf(c, me, id);
       return `<button type="button" class="preset" data-preset="${id}" title="${esc(p.blurb)}"><span class="p-name">${icon(p.icon, 16)}${p.name}</span>
-        <span class="p-mix"><span>${icon("rocket", 13)}${x.ships}</span><span>${icon("users", 13)}${x.armies}</span></span><span class="small">${p.blurb}</span></button>`;
+        <span class="p-mix"><span>${icon("rocket", 13)}${x.ships}</span><span>${icon("users", 13)}${x.armies}</span></span></button>`;
     }).join("")}</div>
     <div class="custom"><b>Your own</b>${stepper("ships", "Ships", "rocket", COST.fleet)}${stepper("armies", "Armies", "users", COST.army)}
       <span class="small" title="What you don't spend goes to the treasury">${icon("coins", 13)} ${left} of ${pool} left</span>
@@ -959,6 +985,7 @@ function chooseFleet(from: PresetId | Loadout) {
   const preset = typeof from === "string" ? from : null;
   loadout = preset ? loadoutOf(c, me, preset) : from as Loadout;
   mine.deployment = preset ? presetDeployment(c, me, preset) : placeLoadout(c, me, loadout);
+  did.fleet = true;
   hideModal();
   save(); render();
 }
@@ -993,6 +1020,7 @@ function placeUnit(arg: string) {
   const d = (mine.deployment ??= emptyDeployment()), bag = d[kind], placed = totals(d);
   if (by > 0 && (!loadout || placed[kind] >= loadout[kind])) return;
   bag[key] = Math.max(0, (bag[key] ?? 0) + by);
+  did.place = true;
   if (!bag[key]) delete bag[key];
   save(); render();
 }
@@ -1279,7 +1307,7 @@ function skirmish(wookaSide: boolean, mode: MatchMode = "conquest", jump?: Jump)
 $("restart").innerHTML = icon("rotate-ccw", 18);
 // Signed in through eqosys, the account's name shows in the panel's header with a way out (the shared chip, in the
 // war room's skin); otherwise a way in. Campaign seats are still secret links: the name is for show.
-$("restart").before(accountChip(Object.assign(document.createElement("span"), { className: "account" }), { onSignOut: () => location.reload() }));
+$("restart").before(accountChip(Object.assign(document.createElement("span"), { className: "account" }), { onSignOut: () => location.reload(), onSignIn: () => { spacesBtn.hidden = false; } }));
 // Signed in, Spaces (your eqosys groups, text and voice) sits beside the name.
 const spacesBtn = Object.assign(document.createElement("button"), { type: "button", className: "icon-btn spaces-btn" });
 $("restart").before(spacesBtn);
@@ -1330,7 +1358,7 @@ document.addEventListener("click", (e) => {
 
 // Jump to a state (jump.ts): `?battle=1&world=desert&side=attacker&hero=wooka&assist=off&near=1&end=win` from the
 // address, or the same from a script or an agent: `twoFronts.jump({ world: "station", side: "attacker" })`,
-// `twoFronts.end("win")` to finish the battle on screen, `twoFronts.state()` for what is on screen.
+// `twoFronts.end("win")` to finish the battle on screen, `twoFronts.state()` for what is on screen (and the tutorial, in a battle or not).
 const twoFronts = {
   jump(over: Record<string, string | number | boolean> = {}) {
     const q = new URLSearchParams({ battle: "1", ...Object.fromEntries(Object.entries(over).map(([k, v]) => [k, String(v)])) });
@@ -1346,14 +1374,14 @@ const twoFronts = {
   },
   async state() {
     const b = (await import("./battle/view.ts")).liveBattle();
-    return b && { world: b.spec.sector, side: b.spec.hero, hero: b.spec.factions[b.spec.hero], assist: b.spec.assist !== false, time: Math.round(b.time), tickets: b.tickets, over: !!b.over };
+    return b ? { tutorial: coach.state(), battle: true, world: b.spec.sector, side: b.spec.hero, hero: b.spec.factions[b.spec.hero], assist: b.spec.assist !== false, time: Math.round(b.time), tickets: b.tickets, over: !!b.over } : { tutorial: coach.state(), battle: false };
   },
 };
 Object.assign(window, { twoFronts });
 
 // The same three as commands: WebMCP tools for an agent, and the Cmd/Ctrl+K palette for a person.
 const flat = (a: unknown): Record<string, string | number | boolean> =>
-  Object.fromEntries(Object.entries(typeof a === "object" && a ? a : {}).filter((e): e is [string, string | number | boolean] => ["string", "number", "boolean"].includes(typeof e[1])));
+  Object.fromEntries(Object.entries(isRecord(a) ? a : {}).filter((e): e is [string, string | number | boolean] => ["string", "number", "boolean"].includes(typeof e[1])));
 addCommands([
   { name: "tf_jump", title: "Jump into a battle", group: "Battle", description: "Drop straight into a ground battle: sector (forest, desert, city, beach, station), side (marines or wooka), assist (false for off), near (seconds the AI has fought), end (win or loss), mode, seed.",
     inputSchema: { type: "object", properties: { sector: { type: "string" }, side: { type: "string" }, assist: { type: "boolean" }, near: { type: "number" }, end: { type: "string" }, mode: { type: "string" }, seed: { type: "number" } } },
@@ -1397,7 +1425,7 @@ async function boot() {
   if (orbit) return void flyOrbit(orbit);
   const jump = parseJump(location.search);
   if (jump) return void skirmish(jump.side === "attacker", jump.mode, jump);
-  if (firstVisit && !fromHash) return chooseGame(true);
+  if (firstVisit && !fromHash) { coach.start(); return chooseGame(true); }
   if (hotseat() && !c.winner) return passTo(seatUp());
   afterTurn();
 }

@@ -55,6 +55,7 @@ C = sheet["colours"]
 BODY = material("bearer", C["body"], rough=1.0)
 COVER = material("cover", C["cover"], rough=0.7)
 GLOW = material("glow", C["glow"], glow=2.0)
+SOLE = material("sole", C["sole"], rough=0.8)
 
 
 def obj(name, bm, mat):
@@ -92,9 +93,12 @@ for s in ("Left", "Right"):
         node(s + b, at(s + b), R[b])
     toe = at(s + "ToeBase") - at(s + "Foot"); toe.z = 0
     node(s + "toe", at(s + "ToeBase") + toe.normalized() * 0.06, R["toe"])
+    # the shoulders roll forward and drop: the skin's joints sit in front of and under the bones, so the back
+    # curves into the arms instead of running a bar across it (the bones still turn the arms as they did)
     for b in ("Shoulder", "Arm", "ForeArm", "Hand"):
-        node(s + b, at(s + b), R[b])
-    node(s + "hand", at(s + "Hand") + (at(s + "Hand") - at(s + "ForeArm")).normalized() * 0.08, R["hand"])
+        f, d = sheet.get("slump", {}).get(b, (0.0, 0.0))
+        node(s + b, at(s + b) + forward * f - up * d, R[b])
+    node(s + "hand", at(s + "Hand") + (at(s + "Hand") - at(s + "ForeArm")).normalized() * 0.03, R["hand"])
 chain = ["Hips", "Spine02", "Spine01", "Spine", "neck", "Head"]
 edges += list(zip(chain, chain[1:]))
 for s in ("Left", "Right"):
@@ -212,6 +216,17 @@ for v in bm.verts:
         fall = (0.25 - z) / 1.25
         back = max(0.0, 1 - max(0.0, f) * 1.4)  # less over the cheeks, most at the back
         p += (d * 0.3 * sx + Vector((0, 0, -1)) * M["hang"] * (0.3 + 0.7 * lock) * back) * fall
+    else:  # above it, tufts poke out of the crown and flop back, so the outline is ragged from any side
+        C = M.get("crown")
+        if C:
+            # a band round the crown (none at the very top, where the sphere's meridians bunch into one spike),
+            # each tuft a ridge that twists a little as it climbs
+            band = math.sin(math.pi * min(1.0, (z - 0.25) / 0.65))
+            # narrow (a high power), thinner over the brow so none reads as a horn
+            front = 1 - 0.7 * max(0.0, f)
+            tuft = max(0.0, math.sin(a * C["tufts"] + phase[1] + z * 3)) ** 8 * band * front
+            flop = d * 0.55 - forward * 0.45 + Vector((0, 0, -0.45))
+            p += flop * C["out"] * tuft
     v.co = centre + p
 face = [f for f in bm.faces if (lambda c: c.dot(forward) > sx * 0.25 and c.z < sz * 0.3)(f.calc_center_median() - centre)
         or (f.calc_center_median() - centre).z < -sz * 1.1]
@@ -251,42 +266,106 @@ for s in ("Left", "Right"):
     down = (ankle - knee).normalized()
     parts.append(weighted(cone(s + "flare", ankle - down * F["length"] * 0.75, down, F["length"], F["top"], F["hem"], BODY, segs=10), s + "Leg"))
     toe = at(s + "ToeBase") - ankle; toe.z = 0; toe.normalize()
-    bm = bmesh.new()
-    bmesh.ops.create_cube(bm, size=1)
-    for v in bm.verts:  # a rounded-off box: toe narrower and lower than the heel
-        t = v.co.y + 0.5
-        v.co.x *= S["width"] * (1 - 0.25 * t)
-        v.co.y *= S["length"]
-        v.co.z = (v.co.z + 0.5) * S["height"] * (1 - 0.35 * t)
-    bmesh.ops.bevel(bm, geom=bm.edges[:], offset=0.02, segments=2, affect="EDGES")
     rot = Matrix((toe.cross(up).normalized() * -1, toe, up)).transposed().to_4x4()
     heel = Vector((ankle.x, ankle.y, 0.0)) + toe * (S["length"] * 0.28)
-    bmesh.ops.transform(bm, matrix=Matrix.Translation(heel) @ rot, verts=bm.verts)
-    shoe = obj(s + "shoe", bm, BODY)
-    # the heel and sole follow the foot, the toe its ball
-    gf, gt = shoe.vertex_groups.new(name=s + "Foot"), shoe.vertex_groups.new(name=s + "ToeBase")
-    ball = at(s + "ToeBase")
-    for v in shoe.data.vertices:
-        w = max(0.0, min(1.0, ((v.co - ball).dot(toe) + 0.04) / 0.08))
-        gf.add([v.index], 1 - w, "REPLACE"); gt.add([v.index], w, "REPLACE")
-    parts.append(shoe)
-
-# --- the Book, held by its spine in the left hand ----------------------------------------------------------------
-B = sheet["book"]
-hand, fore = at("LeftHand"), at("LeftForeArm")
-along = (hand - fore).normalized()
-out = along.cross(forward).normalized()
-if out.dot(hand - at("Spine")) < 0:
-    out = -out
-fwd = out.cross(along).normalized()
-basis = Matrix((out, along, fwd)).transposed().to_4x4()
-mid = hand + along * 0.06 + out * (B["thick"] * 0.5 + 0.02) + fwd * (B["width"] * 0.25)
-for name, dims, mat, nudge in (("cover", (B["thick"], B["height"], B["width"]), COVER, 0.0), ("pages", (B["thick"] * 0.8, B["height"] * 0.92, B["width"] * 0.94), GLOW, 0.006)):
+    sole_h, spring = S["sole"], S["spring"]
+    # a chunky sneaker: a domed upper with a round toe box over a slab of sole a shade lighter, both tipped up at the
+    # toe (the spring a worn sneaker has), so the foot reads as a shoe from the side, not a box
+    bm = bmesh.new()
+    bmesh.ops.create_uvsphere(bm, u_segments=16, v_segments=10, radius=0.5)
+    for v in bm.verts:
+        x, y, z = v.co
+        t = y + 0.5  # 0 the heel, 1 the toe
+        v.co = Vector((x * S["width"] * (1 - 0.18 * t), y * S["length"] * 0.98,
+                       sole_h * 0.7 + max(0.0, z + 0.2) / 0.7 * S["height"] * (1 - 0.4 * t * t) + spring * t ** 3))
+    upper = obj(s + "shoe", bm, BODY)
     bm = bmesh.new()
     bmesh.ops.create_cube(bm, size=1)
-    bmesh.ops.scale(bm, vec=Vector(dims), verts=bm.verts)
-    bmesh.ops.transform(bm, matrix=Matrix.Translation(mid + fwd * nudge) @ basis, verts=bm.verts)
-    parts.append(weighted(obj(name, bm, mat), "LeftHand"))
+    bmesh.ops.subdivide_edges(bm, edges=[e for e in bm.edges if abs((e.verts[0].co - e.verts[1].co).y) > 0.5], cuts=4)
+    for v in bm.verts:
+        t = v.co.y + 0.5
+        v.co = Vector((v.co.x * S["width"] * 1.08 * (1 - 0.18 * t), v.co.y * S["length"] * 1.02, (v.co.z + 0.5) * sole_h + spring * t ** 3))
+    bmesh.ops.bevel(bm, geom=bm.edges[:], offset=0.007, segments=2, affect="EDGES")
+    sole = obj(s + "sole", bm, SOLE)
+    for shoe in (upper, sole):
+        shoe.data.transform(Matrix.Translation(heel) @ rot)
+        # the heel follows the foot, the toe its ball
+        gf, gt = shoe.vertex_groups.new(name=s + "Foot"), shoe.vertex_groups.new(name=s + "ToeBase")
+        ball = at(s + "ToeBase")
+        for v in shoe.data.vertices:
+            w = max(0.0, min(1.0, ((v.co - ball).dot(toe) + 0.04) / 0.08))
+            gf.add([v.index], 1 - w, "REPLACE"); gt.add([v.index], w, "REPLACE")
+        parts.append(shoe)
+
+# --- hands: a mitten (the four fingers as one paddle) and a thumb, on the Hand bone; the Book in the left one ----
+# Each hand's frame: `along` down the hand, `out` its back (away from the body), `fwd` the thumb's side. The left
+# hand pinches the Book's top edge: the paddle flat on its outer cover, the web over the edge, the thumb on the inner
+# cover, so the Book hangs from the grip. The right hangs loose, its fingertips curled in towards the palm.
+K, B = sheet["hand"], sheet["book"]
+
+
+def hand_frame(s):
+    hand = at(s + "Hand")
+    along = (hand - at(s + "ForeArm")).normalized()
+    out = along.cross(forward).normalized()
+    if out.dot(hand - at("Spine")) < 0:
+        out = -out
+    fwd = out.cross(along).normalized()
+    if fwd.dot(forward) < 0:
+        fwd = -fwd
+    return hand, along, out, fwd
+
+
+def pod(name, a, b, r):
+    """A rounded pod from a to b, `r` thick: a thumb."""
+    bm = bmesh.new()
+    bmesh.ops.create_uvsphere(bm, u_segments=10, v_segments=8, radius=1)
+    d = b - a
+    rot = d.normalized().to_track_quat("Z", "Y").to_matrix().to_4x4()
+    for v in bm.verts:
+        v.co = Vector((v.co.x * r * (1 - 0.2 * v.co.z), v.co.y * r * (1 - 0.2 * v.co.z), v.co.z * d.length / 2))
+    bmesh.ops.transform(bm, matrix=Matrix.Translation((a + b) / 2) @ rot, verts=bm.verts)
+    return obj(name, bm, BODY)
+
+
+def paddle(name, wrist, along, out, fwd, o, curl):
+    """The fingers as one paddle down `along` from the wrist, centred `o` metres out, the tip curled `curl` palmwards."""
+    L, W, T = K["length"], K["width"], K["thick"]
+    bm = bmesh.new()
+    bmesh.ops.create_uvsphere(bm, u_segments=12, v_segments=10, radius=0.5)
+    for v in bm.verts:
+        x, y, z = v.co  # x across the knuckles, y down the fingers, z through the hand
+        t = 0.5 - y     # 0 at the wrist, 1 at the fingertips
+        wide = W * (0.8 + 0.2 * math.sin(math.pi * t))  # broader over the knuckles than at the wrist and the tips
+        v.co = wrist + fwd * x * wide + along * (t * L - 0.005 - curl * 0.5 * t * t) + out * (z * T + o - curl * t * t)
+    return obj(name, bm, BODY)
+
+
+for s in ("Left", "Right"):
+    wrist, along, out, fwd = hand_frame(s)
+    held = s == "Left"
+    T, tr = K["thick"], K["thumb"]
+    if held:
+        o = B["thick"] * 0.5 + T * 0.45  # just outside the Book's outer cover
+        thumb_root = wrist + fwd * K["width"] * 0.25 - out * (B["thick"] * 0.5 + tr * 0.7)
+        thumb_dir = along + fwd * 0.2
+    else:
+        o = 0.0
+        thumb_root = wrist + fwd * K["width"] * 0.4 - out * T * 0.3 + along * 0.005
+        thumb_dir = along * 0.8 + fwd * 0.35 - out * 0.35
+    parts.append(weighted(paddle(s + "mitten", wrist, along, out, fwd, o, 0.0 if held else K["curl"]), s + "Hand"))
+    parts.append(weighted(pod(s + "thumb", thumb_root, thumb_root + thumb_dir.normalized() * K["thumb_length"], tr), s + "Hand"))
+    if not held:
+        continue
+    # the Book, its top edge in the grip's web, centred on the wrist between paddle and thumb
+    mid = wrist + along * (B["height"] * 0.5 + K["lip"]) + fwd * (B["width"] * 0.18)
+    basis = Matrix((out, along, fwd)).transposed().to_4x4()
+    for name, dims, mat, nudge in (("cover", (B["thick"], B["height"], B["width"]), COVER, 0.0), ("pages", (B["thick"] * 0.8, B["height"] * 0.92, B["width"] * 0.94), GLOW, 0.006)):
+        bm = bmesh.new()
+        bmesh.ops.create_cube(bm, size=1)
+        bmesh.ops.scale(bm, vec=Vector(dims), verts=bm.verts)
+        bmesh.ops.transform(bm, matrix=Matrix.Translation(mid + fwd * nudge) @ basis, verts=bm.verts)
+        parts.append(weighted(obj(name, bm, mat), "LeftHand"))
 
 # --- one mesh, bound -------------------------------------------------------------------------------------------------
 bpy.ops.object.select_all(action="DESELECT")
@@ -345,11 +424,11 @@ if shot_path:
     shots = [("idle", 0.0, 0), ("idle", 0.0, 90), ("walk", 0.25, 55), ("walk", 0.75, 90), ("run", 0.3, 90), ("look", 0.45, 25), ("cast", 0.55, 70)]
     if not arm.animation_data:
         arm.animation_data_create()
-    # then the head close up, front, three-quarter, side and back, where the hair's outline is judged
-    head = [("idle", 0.0, y, True) for y in (0, 40, 90, 180)]
+    # then close ups: the head (front, back) where the hair's outline is judged, each hand, a sneaker
+    head = [("idle", 0.0, 0, "head"), ("idle", 0.0, 180, "head"), ("idle", 0.0, -90, "LeftHand"), ("idle", 0.0, 90, "LeftHand"), ("idle", 0.0, 90, "RightHand"), ("idle", 0.0, 0, "RightHand"), ("idle", 0.0, -90, "LeftFoot")]
     frames = []
     for k, (clip, phase, yaw, *close) in enumerate(shots + head):
-        cam.data.ortho_scale = 0.9 if close else 2.35
+        cam.data.ortho_scale = (0.9 if close[0] == "head" else 0.6 if close[0].endswith("Foot") else 0.42) if close else 2.35
         act = bpy.data.actions[clip]
         arm.animation_data.action = act
         if hasattr(arm.animation_data, "action_slot") and act.slots:
@@ -364,8 +443,14 @@ if shot_path:
         arm.location.x -= hips.x; arm.location.y -= hips.y
         if close:
             bpy.context.view_layer.update()
-            h = (arm.matrix_world @ arm.pose.bones["Head"].head + arm.matrix_world @ arm.pose.bones["head_end"].head) / 2
-            cam.location = (h.x, -8, h.z - 0.12)
+            bone = lambda n: arm.matrix_world @ arm.pose.bones[n].head
+            if close[0] == "head":
+                h = (bone("Head") + bone("head_end")) / 2 - Vector((0, 0, 0.12))
+            elif close[0].endswith("Hand"):
+                h = bone(close[0]) - Vector((0, 0, 0.09))
+            else:
+                h = bone(close[0][:-4] + "ToeBase") + Vector((0, 0, 0.1))
+            cam.location = (h.x, -8, h.z)
         else:
             cam.location = (0, -8, 1.05)
         scene.render.filepath = os.path.join(os.path.dirname(shot_path), f"bearer-{k}.png")

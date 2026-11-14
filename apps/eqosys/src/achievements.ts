@@ -2,10 +2,12 @@
 // home page without asking the game), and a game unlocks one with its token, POST /q/achieve { id }. An unlock is kept
 // the first time and never moves. A game can only unlock what its own catalog names, so nobody can invent a title.
 // Add a game's list in a PR, the same way it is added to APPS. Every game's list starts with the same ones (SHARED), so
-// "played" is number one everywhere, and each has its badge: a lucide icon, or a letter in the console font.
-import { Armchair, Bandage, Biohazard, Bird, Briefcase, Coins, Crown, Droplet, Earth, Feather, Flag, Flame, Footprints, Gamepad2, GlassWater, Globe, Hourglass, Landmark, Link, MapPin, Medal, Megaphone, Orbit, PiggyBank, PlaneLanding, Radio, Repeat, ScanEye, Search, Shield, ShieldCheck, Sparkles, Spline, SprayCan, Target, Tent, TrendingUp, Trophy, UserRound, Users, Waves, type IconNode } from "lucide";
-import { APPS } from "./apps.ts";
+// "played" is number one everywhere, and each has its badge: a lucide icon, or a letter in the console font. A studio's own game
+// (listings.ts) has no list here: it gets the shared ones its maturity can unlock, until its studio can add its own.
+import { Armchair, Bandage, GraduationCap, Biohazard, Bird, Briefcase, Coins, Crown, Droplet, Earth, Feather, Flag, Flame, Footprints, Gamepad2, GlassWater, Globe, Hourglass, Landmark, Link, MapPin, Medal, Megaphone, Orbit, PiggyBank, PlaneLanding, Radio, Repeat, ScanEye, Search, Shield, ShieldCheck, Sparkles, Spline, SprayCan, Target, Tent, TrendingUp, Trophy, UserRound, Users, Waves, type IconNode } from "lucide";
+import type { QApp } from "./apps.ts";
 import type { Env } from "./env.ts";
+import { appOf, isListing } from "./listings.ts";
 
 export interface Achievement {
   id: string;
@@ -24,12 +26,14 @@ export const SHARED = {
   played: { id: "played", name: "Pressed start", blurb: "Play the game.", icon: Gamepad2 },
   alpha: { id: "alpha", name: "There in alpha", blurb: "Play it while it is still in alpha.", icon: "A" },
   beta: { id: "beta", name: "There in beta", blurb: "Play it while it is in beta.", icon: "B" },
+  tutorial: { id: "tutorial", name: "Learned the ropes", blurb: "Finish the tutorial.", icon: GraduationCap },
 } satisfies Record<string, Achievement>;
 
 export const ACHIEVEMENTS: Record<string, Achievement[]> = {
   "alien-disc-golf": [
     SHARED.played,
     SHARED.alpha,
+    SHARED.tutorial,
     { id: "first-basket", name: "Nothing but chains", blurb: "Put a disc in the basket.", icon: Target },
     { id: "where-are-we", name: "Where are we", blurb: "Name the country a hole tees off in.", icon: MapPin },
     { id: "splash", name: "Splash", blurb: "Land a disc in the sea.", icon: Waves },
@@ -42,22 +46,26 @@ export const ACHIEVEMENTS: Record<string, Achievement[]> = {
   "skate-tech-park": [
     SHARED.played,
     SHARED.alpha,
+    SHARED.tutorial,
     { id: "grind", name: "Metal on metal", blurb: "Grind a rail or a ledge.", icon: Spline },
     { id: "landing", name: "Stick it", blurb: "Land after being airborne.", icon: PlaneLanding },
   ],
   "delayed-reaction": [
     SHARED.played,
+    SHARED.tutorial,
     { id: "first-answer", name: "Echo", blurb: "Answer a note a bar later.", icon: Radio },
     { id: "streak-8", name: "In the pocket", blurb: "Answer eight notes in a row.", icon: Flame },
   ],
   "two-fronts": [
     SHARED.played,
     SHARED.alpha,
+    SHARED.tutorial,
     { id: "war-played", name: "The war is over", blurb: "See a war through to its end.", icon: Flag },
     { id: "war-won", name: "Both fronts", blurb: "Win a whole war.", icon: Medal },
   ],
   "mythic-masters": [
     SHARED.played,
+    SHARED.tutorial,
     { id: "first-fight", name: "Into the arena", blurb: "Finish a fight on the trail.", icon: Shield },
     { id: "first-win", name: "Folklore favoured", blurb: "Win a fight.", icon: Trophy },
     { id: "first-bind", name: "Bound", blurb: "Bind a beast.", icon: Link },
@@ -65,6 +73,7 @@ export const ACHIEVEMENTS: Record<string, Achievement[]> = {
   "park-hide-seek": [
     SHARED.played,
     SHARED.alpha,
+    SHARED.tutorial,
     { id: "camped-out", name: "Nothing to see", blurb: "Hide until the hunt is over without being caught.", icon: Tent },
     { id: "first-catch", name: "Found you", blurb: "Catch a hider as a ranger.", icon: Search },
     { id: "bigfoot", name: "It's real", blurb: "Find Bigfoot.", secret: true, icon: Footprints },
@@ -72,12 +81,14 @@ export const ACHIEVEMENTS: Record<string, Achievement[]> = {
   "git-recon": [
     SHARED.played,
     SHARED.alpha,
+    SHARED.tutorial,
     { id: "first-win", name: "Area clear", blurb: "Win a chapter of the campaign.", icon: ShieldCheck },
     { id: "new-head", name: "A new face", blurb: "Unlock a head.", icon: UserRound },
   ],
   "hippo-tycoon": [
     SHARED.played,
     SHARED.alpha,
+    SHARED.tutorial,
     { id: "first-chomp", name: "First barrel", blurb: "Chomp a drop of oil.", icon: Droplet },
     { id: "gold", name: "Black gold", blurb: "Chomp a gold drop.", icon: Coins },
     { id: "sludge", name: "Bad crude", blurb: "Choke on a gulp of sludge.", icon: Biohazard },
@@ -99,8 +110,14 @@ export const ACHIEVEMENTS: Record<string, Achievement[]> = {
   ],
   "splat-spray": [
     SHARED.played,
+    SHARED.tutorial,
     { id: "first-shot", name: "First coat", blurb: "Take your first shot.", icon: SprayCan },
     { id: "first-find", name: "Eyes on the target", blurb: "Find the target in a real, scanned room.", icon: ScanEye },
+  ],
+  "splat-rooms": [
+    SHARED.played,
+    SHARED.tutorial,
+    { id: "first-find", name: "Objective found", blurb: "Find the objective in a room.", icon: Target },
   ],
 };
 
@@ -120,7 +137,12 @@ export async function countsOf(conf: Env, ids: string[]): Promise<Map<string, nu
 /** A catalog entry as a person sees it: `at` when they have it, and a secret one's name and line kept back until then. */
 export interface Shown { id: string; name: string; blurb: string; secret: boolean; at: number | null }
 
-export const catalogOf = (app: string) => ACHIEVEMENTS[app] ?? [];
+/** Whether a shared alpha or beta badge can unlock in an app of this maturity (alpha unless said, apps.ts). */
+const opens = (a: Achievement, maturity: QApp["maturity"]) => (a.id !== "alpha" && a.id !== "beta") || (maturity ?? "alpha") === a.id;
+
+/** An app's catalog: ours from ACHIEVEMENTS, a studio's game the shared ones its maturity can unlock. */
+export const catalogOf = (app: string | QApp): Achievement[] =>
+  typeof app !== "string" && isListing(app) ? Object.values(SHARED).filter((a) => opens(a, app.maturity)) : ACHIEVEMENTS[typeof app === "string" ? app : app.id] ?? [];
 
 const show = (a: Achievement, at: number | null): Shown =>
   a.secret && at === null ? { id: a.id, name: "Secret achievement", blurb: "Keep playing.", secret: true, at } : { id: a.id, name: a.name, blurb: a.blurb, secret: !!a.secret, at };
@@ -139,7 +161,7 @@ export async function unlocksOf(conf: Env, userId: string, app?: string) {
 }
 
 /** An app's whole catalog for one person, unlocked first (newest on top), then the rest in catalog order. */
-export function shownFor(app: string, got: Map<string, number> | undefined): Shown[] {
+export function shownFor(app: string | QApp, got: Map<string, number> | undefined): Shown[] {
   const list = catalogOf(app).map((a) => show(a, got?.get(a.id) ?? null));
   return [...list.filter((s) => s.at !== null).sort((a, b) => b.at! - a.at!), ...list.filter((s) => s.at === null)];
 }
@@ -148,9 +170,9 @@ export type Unlocked = { ok: true; achievement: Shown; new: boolean } | { ok: fa
 
 /** Unlock `id` in `app` for a person. Unlocking one they already have is fine: `new` is false and `at` is the first time. */
 export async function unlock(conf: Env, userId: string, app: string, id: unknown, now = Date.now()): Promise<Unlocked> {
-  const a = catalogOf(app).find((x) => x.id === id);
-  if (!a) return { ok: false, status: 404, error: `${app} has no achievement called that` };
-  if ((a.id === "alpha" || a.id === "beta") && (APPS.find((x) => x.id === app)?.maturity ?? "alpha") !== a.id) return { ok: false, status: 409, error: `${app} is not in ${a.id}` };
+  const q = await appOf(conf, app), a = q && catalogOf(q).find((x) => x.id === id);
+  if (!q || !a) return { ok: false, status: 404, error: `${app} has no achievement called that` };
+  if (!opens(a, q.maturity)) return { ok: false, status: 409, error: `${app} is not in ${a.id}` };
   const fresh = await conf.DB.prepare("INSERT INTO unlocks (user_id, app, achievement, at) VALUES (?, ?, ?, ?) ON CONFLICT DO NOTHING RETURNING at")
     .bind(userId, app, a.id, now).first<number>("at");
   const at = fresh ?? (await conf.DB.prepare("SELECT at FROM unlocks WHERE user_id = ? AND app = ? AND achievement = ?").bind(userId, app, a.id).first<number>("at")) ?? now;

@@ -16,13 +16,14 @@ import { CALLS, SOUND_PIECES, Score, place, setMix, sounds } from "./audio.ts";
 import { REQUESTABLE, type Votes } from "../edge/requests.ts";
 import { mountControls } from "@rustybuns/game-controls";
 import { PARK_THEME, installKit } from "./kit.ts";
-import { type Tod, paintPoster, permitHead, permitLine, stampHtml, todAt } from "./poster.ts";
+import { type Tod, awardHtml, blazeSvg, chipPatchSvg, paintPoster, permitHead, permitLine, stampHtml, todAt } from "./poster.ts";
 import { bind, KEY } from "./bindings.ts";
 import { Controls } from "./controls.ts";
 import { Preview } from "./preview.ts";
 import { fromSearch, roleOf, Scenario, toSearch } from "../scenario.ts";
 import { joinParty, makeParty, partyCode, partyLink } from "./lobby.ts";
-import { achieve, canSignIn, finishSignIn, fresh, login, reportButton, signIn, signOut, type Login } from "./eqosys.ts";
+import { signInToJoin } from "@rustybuns/util/lobby";
+import { achieve, achievements, canSignIn, finishSignIn, fresh, login, reportButton, signIn, signInHere, signOut, type Login, type Returned } from "./eqosys.ts";
 import { LocalSession, NetSession, playerId, tabPlayerId, type Session } from "./session.ts";
 import { World3D } from "./world3d.ts";
 import { ZoneMap } from "./zonemap.ts";
@@ -30,6 +31,7 @@ import "@fontsource/lacquer/latin-400.css";
 import "@fontsource/gloria-hallelujah/latin-400.css";
 import { addCommands } from "@rustybuns/util/commands";
 import { mountPalette } from "@rustybuns/util/palette";
+import { tutorial } from "@rustybuns/util/tutorial";
 // The ranger station's sign is drawn on a canvas: have the lettering ready for it.
 void document.fonts?.load("46px Lacquer");
 installKit();
@@ -51,6 +53,24 @@ let room: string | null = null;
 let quick: { at: number } | null = null;
 let info: { app?: string; version?: string } | null = null;
 let look: Look = (() => { try { return parseLook(JSON.parse(store.get("look"))) ?? randomLook(); } catch { return randomLook(); } })();
+
+// The first time, the first round you camp in is the tutorial: drop in, look round, walk, crouch in a bush, lie low.
+// Play sets you camping for it (`solo`); a jump link or an agent's start never runs it. Each flag is set by the frame
+// loop once you have done the thing, and stays set, so doing two at once moves the card on past both.
+const learnt = { dropped: false, turned: 0, walked: 0, hid: false, hunted: false };
+/** Whether this session may run the tutorial: not one a ?role= link or `parkHideSeek.start` jumped into. */
+let coachable = false;
+const coach = tutorial({
+  prefix: "phs",
+  account: { achieve, achievements },
+  steps: [
+    { title: "Pick where to drop", say: "Click the map: somewhere bushy, well away from the ranger station.", done: () => learnt.dropped },
+    { title: "Look around", say: "Click the park, then move the mouse. On a phone, drag the right side.", done: () => learnt.turned > 1.5 },
+    { title: "Walk", keys: ["W", "A", "S", "D"], say: "Shift runs, but rangers hear it. On a phone, the left stick.", done: () => learnt.walked > 5 },
+    { title: "Crouch in a bush", keys: ["C"], say: "Walk into one and crouch. Hold C to lie flat.", done: () => learnt.hid },
+    { title: "Lie low", say: "The rangers are out. Stay still until the clock runs out: moving rustles the bush.", done: () => learnt.hunted },
+  ],
+});
 
 /** Your own body, moved locally every frame so it never lags. */
 let body: (Body & { key: string; pitch: number; speed: number }) | null = null;
@@ -132,7 +152,9 @@ function showLogin() {
   $("who-name").textContent = me?.name ?? "";
   $("signin").hidden = !!me || !canSignIn() || info?.app === "park-hide-seek";
 }
-$("signin").onclick = () => { keepName(); void signIn(inParty ? `party:${inParty}` : undefined); };
+/** Sign in through eqosys in a small window beside the game, then carry on with `then` (the page never reloads). */
+const signInBeside = (then = "") => { keepName(); void signInHere(then).then(carryOn); };
+$("signin").onclick = () => signInBeside(inParty ? `party:${inParty}` : "");
 $("signout").onclick = () => { signOut(); me = null; showLogin(); };
 /**
  * Who this tab is, for /api/match, /api/parks and /ws: the eqosys token when signed in, else `uid`. A token
@@ -146,6 +168,11 @@ function identity(then: string, uid: string): Record<string, string> | null {
   return null;
 }
 
+// The ? popover (index.html) carries the rules, which read the hunt's own numbers; the lobby's ? reuses the menu's icon.
+const HELP = document.querySelector("button.info")?.innerHTML ?? "?";
+$("about-rules").textContent = `One ranger a round (two once there are five players); everyone else camps. Campers score a point per second hidden, plus ${HUNT.survivalBonus} for camping out. Rangers score ${HUNT.catchPoints} per catch.`;
+$("about-bigfoot").innerHTML = `<strong>Bigfoot</strong> is hiding where the search area closes in. Whoever reaches him first ends the round and scores ${HUNT.bigfootPoints}. If a camper finds him, every camper still out has camped out. If a ranger does, they haven't. Listen for his howl.`;
+
 /** The party this page was opened for or made (`?party=CODE`), and the way out of it. */
 let inParty: string | null = partyCode(location.search);
 let leaveParty: (() => void) | null = null;
@@ -155,19 +182,29 @@ let leaveParty: (() => void) | null = null;
   const desktop = info?.app === "park-hide-seek";
   for (const el of document.querySelectorAll<HTMLElement>("[data-desktop]")) el.hidden = !desktop;
   for (const el of document.querySelectorAll<HTMLElement>("[data-online]")) el.hidden = desktop;
-  if (!desktop) $("play-note").textContent = "Jump into a game with whoever's on. AI fills the empty spots.";
+  if (!desktop) $("play").title = "Jump into a game with whoever's on. AI fills the empty spots.";
   // Back from eqosys: keep the login, then carry on with what they were doing.
   const back = await finishSignIn();
+  if (!desktop && canSignIn()) reportButton();
+  if (carryOn(back)) return;
+  // A party link signed out: "Sign in to join Ada's party", eqosys beside the game, then the lobby.
+  const code = inParty;
+  if (!desktop && code) { if (me) openParty(code); else signInToJoin({ box: $("party"), code, game: "Park Hide & Seek", account: { canSignIn, signInHere }, joined: () => { me = login(); showLogin(); openParty(code); } }); }
+})();
+
+/** Back from eqosys (the whole page, or its window beside the game): keep the login, then carry on with what they were doing. */
+function carryOn(back: Returned | null): boolean {
   if (back?.error) menuError(back.error);
   if (back?.login) me = back.login;
   showLogin();
-  if (!desktop && canSignIn()) reportButton();
-  if (back?.login && back.then === "play") $("play").click();
-  else if (back?.login && back.then === "party") $("online").click();
-  else if (back?.login && back.then.startsWith("party:")) openParty(back.then.slice(6));
-  else if (back?.login && back.then.startsWith("room:")) goOnline(back.then.slice(5));
-  else if (!desktop && inParty) { if (me) openParty(inParty); else menuError("Sign in through eqosys to join this party."); }
-})();
+  if (!back?.login) return false;
+  if (back.then === "play") $("play").click();
+  else if (back.then === "party") $("online").click();
+  else if (back.then.startsWith("party:")) openParty(back.then.slice(6));
+  else if (back.then.startsWith("room:")) goOnline(back.then.slice(5));
+  else return false;
+  return true;
+}
 
 // ---- request a park ---------------------------------------------------------------
 
@@ -202,8 +239,9 @@ $<HTMLFormElement>("park-request").onsubmit = async (e) => {
 /** Against AI, here in the page. Quick play skips the lobby: a random zone, the live weather, three AI players. */
 function solo(go: boolean, sc?: Scenario) {
   keepName(); sounds.unlock(); menuError("");
-  const s = new LocalSession(myName(), look, sc && { role: roleOf(sc), bots: sc.bots, level: sc.level, zone: sc.zone, tod: sc.tod });
-  start(s);
+  // The first Play camps, so the round is the tutorial's.
+  const s = new LocalSession(myName(), look, sc ? { role: roleOf(sc), bots: sc.bots, level: sc.level, zone: sc.zone, tod: sc.tod } : coach.learned() ? {} : { role: "camper" });
+  start(s, !sc);
   if (go) s.send({ t: "start" });
 }
 
@@ -237,7 +275,14 @@ const jump = (o: unknown) => {
 };
 const linked = fromSearch(location.search);
 if (linked) queueMicrotask(() => jump(linked));
-Reflect.set(window, "parkHideSeek", { start: jump, state: () => view && { phase: view.phase, role: view.round?.you?.role ?? null, players: view.players.length },
+Reflect.set(window, "parkHideSeek", { start: jump, state: () => view && { phase: view.phase, role: view.round?.you?.role ?? null, players: view.players.length, zone: view.zone,
+    you: body && { x: body.x, y: body.y, yaw: body.yaw, crouch: body.crouch }, tutorial: coach.state() },
+  /** Turn the view by `rad` (clockwise), as dragging the mouse or a finger does. */
+  turn: (rad: number) => { controls.yaw += rad; },
+  /** Drop in at (x, y), in metres from the zone's middle, as clicking the drop map does. */
+  drop: (x: number, y: number) => send({ t: "drop", x, y }),
+  /** Forget the tutorial was done in this browser, so the next Play runs it again. */
+  forgetTutorial: coach.forget,
   poster: (t: Tod) => paintPoster(t) });
 addCommands([{ name: "phs_start", title: "Start a solo round", group: "Play", ask: "hider or seeker", description: "Start a solo room as the hider or the seeker against bots. Returns the link that lands in the same state.",
   inputSchema: { type: "object", properties: { role: { type: "string", enum: ["hider", "seeker"] }, bots: { type: "integer" }, level: { type: "string", enum: ["easy", "normal", "hard"] } } }, execute: (a) => ({ link: jump(a) }) }]);
@@ -297,13 +342,14 @@ function openParty(code: string) {
   leaveParty = joinParty(code, $("party"), (r) => { leaveParty = null; goOnline(r, true); }, note);
 }
 $("online").onclick = async () => {
-  if (!me) { if (canSignIn()) { keepName(); void signIn("party"); } else menuError("Playing with friends needs an eqosys account."); return; }
+  if (!me) { if (canSignIn()) signInBeside("party"); else menuError("Playing with friends needs an eqosys account."); return; }
   const code = await makeParty();
   if (code) openParty(code); else menuError("Couldn't start a party just now. Sign in again, or try in a minute.");
 };
 
-function start(s: Session) {
+function start(s: Session, tutorial = true) {
   session = s;
+  coachable = tutorial;
   view = null;
   body = null;
   s.onView = (v) => {
@@ -336,6 +382,7 @@ async function leave() {
 
 function onPhase(v: View) {
   const you = v.round?.you;
+  if (coachable && you?.role === "camper" && (v.phase === "drop" || v.phase === "hide")) coach.start();
   if (v.phase === "drop") note(you?.role === "ranger" ? "You're a ranger this round. Campers are picking where to drop." : "Pick where to drop in: click the map.", 4000);
   if (v.phase === "hide") { controls.clearPresses(); note(you?.role === "camper" ? (v.mode === "props" ? "Find somewhere to hide! E next to a bush, boulder or log turns you into one." : "Find somewhere to hide! C to crouch in a bush.") : "Counting at the ranger station…", 3500); }
   if (v.phase === "hunt") note(you?.role === "ranger" ? "Go find them! Q to call out, M for the radio." : "Here come the rangers. Stay still, stay quiet.", 3500);
@@ -354,24 +401,22 @@ function renderLobby(v: View) {
   // The park picked, if any: "random" roams every park.
   const park = v.zonePick === "random" ? undefined : PARKS.find((p) => p.code === zonesFor(v.zonePick)[0]?.park);
   // Every national park, grouped by region; a park's zones show once it's picked.
-  const parkBtn = (p: (typeof PARKS)[number]) => `<button data-zone="random:${p.code}" aria-pressed="${park === p}" ${dis}>${esc(p.name)}</button>`;
-  const parks = `<div class="row-btns"><button data-zone="random" aria-pressed="${!park}" ${dis}>Any park<small>All ${PARKS.length}</small></button></div>`
-    + REGIONS.map((r) => `<h3>${r}</h3><div class="row-btns">${PARKS.filter((p) => p.region === r).map(parkBtn).join("")}</div>`).join("");
-  const zones = park ? [`<button data-zone="random:${park.code}" aria-pressed="${v.zonePick === `random:${park.code}`}" ${dis}>Random drop zone<small>A new ${esc(park.name)} attraction every round</small></button>`,
-    ...zonesFor(`random:${park.code}`).map((z) => `<button data-zone="${z.id}" aria-pressed="${v.zonePick === z.id}" ${dis}>${esc(z.name)}<small>${esc(z.blurb)}</small></button>`)].join("") : "";
+  const parkBtn = (p: (typeof PARKS)[number]) => `<button data-zone="random:${p.code}" aria-pressed="${park === p}" ${dis}>${chipPatchSvg(p.name)}${esc(p.name)}</button>`;
+  const parks = `<div class="row-btns"><button data-zone="random" aria-pressed="${!park}" ${dis} title="A random drop zone in a random park every round.">Any park<small>All ${PARKS.length}</small></button></div>`
+    + REGIONS.map((r, i) => `<h3 class="trail">${blazeSvg(i)}<span>${r}</span><small>${PARKS.filter((p) => p.region === r).length} parks</small></h3><div class="row-btns">${PARKS.filter((p) => p.region === r).map(parkBtn).join("")}</div>`).join("");
+  const zones = park ? [`<button data-zone="random:${park.code}" aria-pressed="${v.zonePick === `random:${park.code}`}" ${dis} title="A new ${esc(park.name)} attraction every round">Random</button>`,
+    ...zonesFor(`random:${park.code}`).map((z) => `<button data-zone="${z.id}" aria-pressed="${v.zonePick === z.id}" ${dis} title="${esc(z.blurb)}">${esc(z.name)}</button>`)].join("") : "";
   const modes: [Mode, string, string][] = [["classic", "Hide and seek", "Crouch in the bushes"], ["props", "Prop hunt", "Campers turn into bushes, boulders and logs"]];
   const html = `
-    <section><h2>Game</h2><div class="row-btns">${modes.map(([m, label, sub]) => `<button data-mode="${m}" aria-pressed="${v.mode === m}" ${dis}>${label}<small>${sub}</small></button>`).join("")}</div></section>
-    <section><h2>${park ? `${esc(park.name)} National Park` : "National park"}</h2>${parks}${park ? `<div class="zones">${zones}</div>` : `<p class="note">A random drop zone in a random park every round.</p>`}</section>
-    <section><h2>Time of day and weather</h2><div class="row-btns"><button data-live="1" aria-pressed="${v.live}" ${dis}>Live: the park right now<small>Real weather and time of day</small></button>${(["day", "dusk", "night"] as const).map((t) => `<button data-tod="${t}" aria-pressed="${!v.live && v.tod === t}" ${dis}>${t === "day" ? "Day" : t === "dusk" ? "Dusk" : "Night (flashlights)"}</button>`).join("")}</div>${v.live ? `<p class="note">Rain hides footsteps, fog cuts how far anyone sees, wind makes rustles hard to place. If the weather can't be reached, it's ${v.tod}.</p>` : ""}</section>
-    ${host ? `<section><h2>Rounds</h2><div class="row-btns"><button data-laps="1" aria-pressed="${v.laps === 1}">Everyone's a ranger once</button><button data-laps="2" aria-pressed="${v.laps === 2}">Twice</button></div></section>
-    <section><h2>Add an AI player</h2><div class="row-btns"><button data-bot="easy">Easy</button><button data-bot="normal">Normal</button><button data-bot="hard">Hard</button></div></section>` : ""}
+    <section><h2>Game <button class="info" popovertarget="about" title="How to play" aria-label="How to play">${HELP}</button></h2><div class="row-btns">${modes.map(([m, label, sub]) => `<button data-mode="${m}" aria-pressed="${v.mode === m}" ${dis} title="${sub}">${label}</button>`).join("")}</div></section>
+    <section><h2>${park ? `${esc(park.name)} National Park` : "National park"}</h2>${parks}${park ? `<div class="zones">${zones}</div>` : ""}</section>
+    <section><h2>Weather</h2><div class="row-btns"><button data-live="1" aria-pressed="${v.live}" ${dis} title="The park right now: real weather and time of day. Rain hides footsteps, fog cuts how far anyone sees, wind makes rustles hard to place. If the weather can't be reached, it's ${v.tod}.">Live</button>${(["day", "dusk", "night"] as const).map((t) => `<button data-tod="${t}" aria-pressed="${!v.live && v.tod === t}" ${dis}>${t === "day" ? "Day" : t === "dusk" ? "Dusk" : "Night"}</button>`).join("")}</div></section>
+    ${host ? `<section><h2>Rounds</h2><div class="row-btns"><button data-laps="1" aria-pressed="${v.laps === 1}" title="Everyone's a ranger once">Once</button><button data-laps="2" aria-pressed="${v.laps === 2}" title="Everyone's a ranger twice">Twice</button></div></section>
+    <section><h2>Add AI</h2><div class="row-btns"><button data-bot="easy">Easy</button><button data-bot="normal">Normal</button><button data-bot="hard">Hard</button></div></section>` : ""}
     ${room && inParty === room ? `<section><h2>Friends join with</h2><div class="lan">Party code: <code>${room}</code><br>Or send them this link: <code>${esc(partyLink(room))}</code> <button data-action="copy">Copy link</button></div></section>` : ""}
     ${hosting ? `<section><h2>Friends join with</h2><div class="lan">Address: ${hosting.addresses.length ? hosting.addresses.map((a) => `<code>${a}:${hosting!.port}</code>`).join(" or ") : "<em>no network found</em>"}<br>Passphrase: <code>${esc(hosting.pass)}</code></div></section>` : ""}
     <section><h2>Players</h2><ul class="players">${v.players.map((p) => `<li><span class="who">${esc(p.name)}${p.id === v.me ? " (you)" : ""}</span>${p.bot ? `<span class="badge">${p.bot} AI</span>` : ""}${p.id === v.hostId ? `<span class="badge">host</span>` : ""}${host && p.id !== v.me ? `<button data-kick="${esc(p.id)}" title="Remove">✕</button>` : ""}<span class="pts">${p.score}</span></li>`).join("")}</ul></section>
-    <section class="row-btns">${host ? `<button class="primary" data-action="start" ${v.players.filter((p) => p.online).length < 2 ? "disabled" : ""}>Start the hunt</button>` : `<em>Waiting for ${esc(nameOf(v, v.hostId ?? ""))} to start…</em>`}<button data-action="leave">${session?.kind === "host" ? "Stop hosting" : "Leave"}</button></section>
-    <p class="note">One ranger a round (two once there are five players); everyone else camps. Campers score a point per second hidden, plus ${HUNT.survivalBonus} for camping out. Rangers score ${HUNT.catchPoints} per catch.</p>
-    <p class="note"><strong>Bigfoot</strong> is hiding where the search area closes in. Whoever reaches him first ends the round and scores ${HUNT.bigfootPoints}. If a camper finds him, every camper still out has camped out. If a ranger does, they haven't. Listen for his howl.</p>`;
+    <section class="row-btns">${host ? `<button class="primary" data-action="start" ${v.players.filter((p) => p.online).length < 2 ? "disabled" : ""}>Start the hunt</button>` : `<em>Waiting for ${esc(nameOf(v, v.hostId ?? ""))} to start…</em>`}<button data-action="leave">${session?.kind === "host" ? "Stop hosting" : "Leave"}</button></section>`;
   if (html !== lastLobby) { lastLobby = html; $("lobby-main").innerHTML = html; }
 }
 
@@ -380,8 +425,7 @@ function renderQuickLobby(v: View) {
   const left = Math.max(0, Math.ceil((quick!.at - Date.now()) / 1000));
   const people = v.players.filter((p) => !p.bot);
   const html = `
-    <section><h2>Quick play</h2><p class="countdown">${left ? `Starting in ${left} s` : "Starting…"}</p>
-    <p class="note">Anyone who presses Play now joins you. AI fills the empty spots. Random zone, the park's live weather.</p></section>
+    <section><h2>Quick play</h2><p class="countdown" title="Anyone who presses Play now joins you. AI fills the empty spots. Random zone, the park's live weather.">${left ? `Starting in ${left} s` : "Starting…"}</p></section>
     <section><h2>Here so far</h2><ul class="players">${people.map((p) => `<li><span class="who">${esc(p.name)}${p.id === v.me ? " (you)" : ""}</span></li>`).join("")}</ul></section>
     <section class="row-btns"><button data-action="leave">Leave</button></section>`;
   if (html !== lastLobby) { lastLobby = html; $("lobby-main").innerHTML = html; }
@@ -462,10 +506,10 @@ function renderResults(v: View) {
     }).join("");
     // The card is a ranger's citation: a permit number for the zone and round, and your outcome stamped across its foot.
     const stamp = !mine ? "Round closed" : mine.bigfoot ? "Found Bigfoot" : mine.role === "ranger" ? "On patrol" : mine.caughtAt === null ? "Camped out" : "Caught";
-    html = `${permitHead(`${v.zone}:${r.n}`)}<h3>Round ${r.n + 1}: ${esc(z.data.name)}</h3><table>${rows}</table><p class="note">Next round in a few seconds…</p>${stampHtml(stamp)}`;
+    html = `${awardHtml(z.data.name, stamp)}${permitHead(`${v.zone}:${r.n}`)}<h3>Round ${r.n + 1}: ${esc(z.data.name)}</h3><table>${rows}</table><p class="note">Next round in a few seconds…</p>${stampHtml(stamp)}`;
   } else if (v.phase === "over") {
     const rank = [...v.players].sort((a, b) => b.score - a.score);
-    html = `${permitHead(`${v.zone}:final`)}<h3>${esc(rank[0]?.name ?? "")} wins!</h3><table>${rank.map((p, i) => `<tr><td>${i + 1}. ${esc(p.name)}${p.id === v.me ? " (you)" : ""}</td><td></td><td>${p.score}</td></tr>`).join("")}</table>
+    html = `${awardHtml(zoneById(v.zone).data.name, "Park closed")}${permitHead(`${v.zone}:final`)}<h3>${esc(rank[0]?.name ?? "")} wins!</h3><table>${rank.map((p, i) => `<tr><td>${i + 1}. ${esc(p.name)}${p.id === v.me ? " (you)" : ""}</td><td></td><td>${p.score}</td></tr>`).join("")}</table>
       <div class="row-btns" style="margin-top:12px">${v.hostId === v.me ? `<button class="primary" data-action="start">Play again</button><button data-action="lobby">Back to the lobby</button>` : "<em>Waiting for the host…</em>"}<button data-action="leave">Leave</button></div>${stampHtml("Park closed")}`;
   }
   if (html !== lastResults) { lastResults = html; $("results-body").innerHTML = html; }
@@ -607,6 +651,10 @@ function frame() {
 
   // Your body: move it here, tell the host where it went.
   const ranger = you?.role === "ranger";
+  if (you?.role === "camper") {
+    if (you.drop || v.phase !== "drop") learnt.dropped = true;
+    if (v.phase === "hunt" || v.phase === "results") learnt.hunted = true;
+  }
   const playing = !!you && you.caughtAt === null && (v.phase === "hunt" || (v.phase === "hide" && !ranger));
   if (playing) {
     const key = `${r.id}:${ranger && v.phase === "hunt" ? "out" : "in"}`;
@@ -631,10 +679,15 @@ function frame() {
       if (you!.disguise || disguiseFor(z, body.x, body.y)) send({ t: "disguise" });
       else note("Get next to a bush, boulder or log first.", 1800);
     }
+    if (!ranger) learnt.turned += Math.abs(controls.yaw - body.yaw);
     body.yaw = controls.yaw; body.pitch = controls.pitch;
     const ox = body.x, oy = body.y;
     step(z, body, you!.role, inp, dt);
     body.speed = Math.hypot(body.x - ox, body.y - oy) / Math.max(dt, 1e-3);
+    if (!ranger) {
+      learnt.walked += Math.hypot(body.x - ox, body.y - oy);
+      if ((body.crouch && z.bushAt(body.x, body.y)) || you!.disguise) learnt.hid = true;
+    }
     if (ranger && lightKey) light = !light;
     if (ranger && callKey && v.phase === "hunt") { send({ t: "call" }); sounds.call(0.8, CALLS[Math.floor(Math.random() * CALLS.length)]); }
     if (t - lastSend > 50) {
@@ -725,10 +778,10 @@ function hud(v: View, z: Zone, now: number) {
   $("role").textContent = !you ? "Watching" : ranger ? `Park ranger${call}` : you.caughtAt != null ? "Caught" : you.disguise ? `Camper · a ${you.disguise.kind}` : body?.crouch ? (z.bushAt(body.x, body.y) ? "Camper · hidden in a bush" : "Camper · crouching") : "Camper";
   $("stamina").style.width = `${Math.round((body?.stamina ?? 1) * 100)}%`;
   const hints = ranger
-    ? "<kbd>WASD</kbd> move · <kbd>Shift</kbd> run · <kbd>Q</kbd> call out · <kbd>F</kbd> flashlight · <kbd>M</kbd> radio · <kbd>V</kbd> camera · <kbd>N</kbd> music"
+    ? "<kbd>Q</kbd> call · <kbd>F</kbd> light · <kbd>M</kbd> radio"
     : v.mode === "props"
-      ? `<kbd>WASD</kbd> move · <kbd>E</kbd> ${you?.disguise ? "drop the disguise" : "turn into the prop next to you"} · <kbd>Shift</kbd> run · <kbd>M</kbd> map · <kbd>V</kbd> camera · <kbd>N</kbd> music`
-      : "<kbd>WASD</kbd> move · <kbd>Shift</kbd> run · <kbd>C</kbd> crouch (hold: lie flat) · <kbd>X</kbd> hold to climb a tree · <kbd>M</kbd> map · <kbd>V</kbd> camera · <kbd>N</kbd> music";
+      ? `<kbd>E</kbd> ${you?.disguise ? "drop" : "disguise"} · <kbd>M</kbd> map`
+      : "<kbd>C</kbd> crouch · <kbd>X</kbd> climb · <kbd>M</kbd> map";
   if ($("hints").innerHTML !== hints) $("hints").innerHTML = hints;
   $("crosshair").hidden = !body;
   $("clickme").hidden = !body || controls.locked || mapOpen;

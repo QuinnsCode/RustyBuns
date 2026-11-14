@@ -1,0 +1,64 @@
+diff --git a/apps/mythic-masters/blender/flora.py b/apps/mythic-masters/blender/flora.py
+index c696b54e..9adefc7e 100644
+--- a/apps/mythic-masters/blender/flora.py
++++ b/apps/mythic-masters/blender/flora.py
+@@ -567,6 +567,46 @@ def foliage(spec, g, rng, lo, twigs, trunks, H):
+                     brush = size * fs.get("brush", 0.5)
+                     if not lo and fs.get("knot", 0.22) > 0:
+                         blob(g, at + fwd * brush * 0.4, size * fs.get("knot", 0.22), mix(c, (0.02, 0.03, 0.02), 0.45), rng, subdiv=1, lump=0.2, squash=1.0, out_from=centre)
++                    ball = fs.get("lo_ball", fs.get("ball", 0)) if lo else fs.get("ball", 0)
++                    if ball:
++                        # a rounded tuft (`ball`, 0 to 1: how far the needles turn from raked forward to all round): the
++                        # needles burst from the twig's tip in every direction but straight down, over a dark lumpy core
++                        # (`ball_core`, its radius as a share of `size`, a 20-triangle ball; `lo_ball_core` in the far
++                        # model), so a crown reads as dense dark clumps of needles, not fans with sky between
++                        bc = fs.get("lo_ball_core", fs.get("ball_core", 0.3)) if lo else fs.get("ball_core", 0.3)
++                        hub = at + fwd * size * 0.15
++                        if bc > 0:
++                            r = size * bc * (0.85 + 0.3 * rng.random())
++                            cc = mix(c, (0.02, 0.03, 0.02), fs.get("ball_dark", 0.4))
++                            if lo:
++                                # far model: an 8-triangle lumpy diamond, turned at random, its normals out of the crown
++                                turn = Matrix.Rotation(rng.random() * math.tau, 3, UP) @ Matrix.Rotation(rng.random() * 0.8, 3, perp(UP))
++                                sq = fs.get("ball_squash", 0.8)
++                                ax = [turn @ Vector(v) for v in ((1, 0, 0), (-1, 0, 0), (0, 1, 0), (0, -1, 0), (0, 0, 1), (0, 0, -1))]
++                                vs = [g.vert(hub + Vector((v.x, v.y, v.z * sq)) * r * (0.8 + 0.4 * rng.random()), cc, LEAF,
++                                             (v * 0.55 + (hub - centre).normalized() * 0.45).normalized()) for v in ax]
++                                for i0, i1 in ((0, 2), (2, 1), (1, 3), (3, 0)):
++                                    g.face(vs[i0], vs[i1], vs[4])
++                                    g.face(vs[i1], vs[i0], vs[5])
++                            else:
++                                blob(g, hub, r, cc, rng, subdiv=0, lump=0.35, squash=fs.get("ball_squash", 0.8), out_from=centre)
++                        w = size * fs.get("needle_width", 0.035) * (fs.get("lo_width", 2.5) if lo else 1)
++                        tcol = mix(tc, c, fs.get("lo_tip", 0)) if (lo and tc and fs.get("lo_tip")) else (tc or c)
++                        dark = mix(c, (0.05, 0.05, 0.03), 0.3)
++                        for j in range(n):
++                            # spread over a sphere by the golden angle, the lower part folded up toward the side
++                            zz = 1 - 2 * (j + 0.5) / n
++                            rr = math.sqrt(max(0, 1 - zz * zz))
++                            a = j * GOLDEN + rng.random() * 0.3
++                            sph = Vector((rr * math.cos(a), rr * math.sin(a), max(zz, -0.35)))
++                            nd = (fwd * (1 - ball) + sph.normalized() * ball + Vector((rng.random() - 0.5, rng.random() - 0.5, rng.random() - 0.5)) * 0.2).normalized()
++                            base = hub - nd * size * 0.12
++                            tip = base + nd * size * (0.75 + 0.45 * rng.random())
++                            side = perp(nd)
++                            side = (Matrix.Rotation(rng.random() * math.pi, 3, nd) @ side) * w
++                            b0 = g.vert(base, dark, LEAF, out)
++                            g.face(b0, g.vert(tip + side, tcol, LEAF, out), g.vert(tip - side, tcol, LEAF, out))
++                        continue
+                     bundle = fs.get("bundle", 1)
+                     if bundle > 1:
+                         # a 3D bottlebrush (`bundle` needles a fascicle, as a pine's bundles of three): the fascicles sit
+diff --git a/apps/mythic-masters/flora/pitch-pine.json b/apps/mythic-masters/flora/pitch-pine.json
+index 7b71a8df..9d08d19a 100644
+--- a/apps/mythic-masters/flora/pitch-pine.json
++++ b/apps/mythic-masters/flora/pitch-pine.json
+@@ -14,7 +14,7 @@
+   {"count": 5, "start": 0.3, "end": 1.0, "angle": 40, "length": 0.4, "rise": 0.3, "wobble": 0.45, "kink": 0.35, "segments": 3, "radius": 0.5, "sides": 4, "lo": 1.0}
+  ],
+  "foliage": [
+-  {"type": "tuft", "colors": ["#2c4a34", "#34523a", "#3c5a3a"], "tip_colors": ["#506c44", "#5a7448"], "size": 0.075, "per": 3, "start": 0.72, "end": 1.0, "needles": 36, "bundle": 3, "splay": 0.6, "reach": 1.0, "shade": 1, "brush": 1.4, "needle_width": 0.04, "knot": 0, "lo": 0.34, "lo_size": 1.2, "lo_needles": 22, "lo_width": 1.25, "lo_tip": 0.6, "lo_core": 0, "core": 0.12},
++ {"type": "tuft", "colors": ["#2a3c22", "#304426", "#374a28"], "tip_colors": ["#5a6e42", "#647848"], "size": 0.08, "per": 2, "start": 0.72, "end": 1.0, "needles": 40, "ball": 0.8, "ball_core": 0.16, "ball_dark": 0.25, "up": 0.6, "shade": 1, "shade_dark": "#18241a", "shade_light": "#7e925e", "needle_width": 0.04, "knot": 0, "core": 0.12, "lo": 0.34, "lo_size": 1.5, "lo_needles": 13, "lo_width": 1.6, "lo_tip": 0.5, "lo_core": 0, "lo_ball_core": 0.24},
+   {"type": "tuft", "trunk": true, "min_z": 0.18, "colors": ["#2c4a34"], "size": 0.08, "per": 18, "start": 0.15, "end": 0.75, "needles": 14}
+  ],
+  "lo_leaves": true,

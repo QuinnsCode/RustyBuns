@@ -183,3 +183,20 @@ test("start needs: everyone, most, or just the host", () => {
   expect([readyEnough("majority", 3, 1), readyEnough("majority", 3, 2), readyEnough("majority", 0, 0)]).toEqual([false, true, true]);
   expect(readyEnough("host", 5, 0)).toBe(true);
 });
+
+test("a party link is the invitation: someone who isn't the host's friend is refused on the code alone and comes in with the link", async () => {
+  const [adaToken, boToken] = (await Promise.all(["Ada10", "Bo10"].map(signUp))) as [string, string];
+  const ada = player(adaToken), bo = player(boToken);
+  // A friends-only party, as a game makes one by default.
+  const code = ((await (await fetch(`${base}/q/party`, { method: "POST", headers: { authorization: `Bearer ${adaToken}`, "cf-connecting-ip": "203.0.113.10" } })).json()) as { code: string }).code;
+  ada.p.join(code);
+  await until(() => ada.heard.invite);
+  expect(ada.heard.rules?.join).toBe("friends");
+  bo.p.join(code);
+  await until(() => bo.heard.gone);
+  expect(bo.heard.gone).toBe("Only the host's friends can join with the code alone: ask someone in the party for its link.");
+  bo.p.leave();
+  bo.p.join(code, ada.heard.invite);
+  await until(() => ada.names() === "Ada10*,Bo10");
+  ada.p.leave(); bo.p.leave();
+});

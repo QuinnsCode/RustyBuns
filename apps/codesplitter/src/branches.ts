@@ -32,8 +32,8 @@ import { docIn, fileDoc, catalogueBlob, handleFor, listDir, materialize, toFile,
 import { changedLines, isBuildFile } from "./buildfiles.ts";
 import { branchEdited, mergeBlock, refChecks, waiting } from "./checks.ts";
 import { settings as deploySettings } from "./deploy.ts";
-import { branchNameError, fail, json, named, type Env, need, readBody } from "./env.ts";
-import { arr, Bad, bool, check, maybe, num, obj, oneOf, opt, raw, rec, str } from "@rustybuns/util/guard";
+import { branchNameError, errorIn, fail, json, named, type Env, need, readBody } from "./env.ts";
+import { arr, Bad, bool, check, isRecord, maybe, num, obj, oneOf, opt, raw, rec, str } from "@rustybuns/util/guard";
 import { byToken } from "./tokens.ts";
 import { emit } from "./hooks.ts";
 import { diffToOps, keptPairs } from "./sync.ts";
@@ -51,7 +51,7 @@ import { MERVIN } from "./mervin.ts";
 import { noteConflict } from "./usage.ts";
 import { clashIn, settleAll, waves, type Clash, type Side } from "./merge-plan.ts";
 import { busyOn, taskFiles, type Busy } from "@rustybuns/util/overlap";
-import { isPlainObject, listOf, parseJson, sha256 } from "./util.ts";
+import { listOf, parseJson, sha256 } from "./util.ts";
 import { countMerge } from "./stats.ts";
 import { answerOf, deleteLearning, hashesPaths, learningOn, learningState, pathKey, recordEvents, setLearning, type Event as LearnEvent } from "./mervin-learning.ts";
 import { answerRows, fightRows, fightWeights, suggestions, weightOrder } from "./mervin-learn.ts";
@@ -385,7 +385,7 @@ async function cleanMerged(env: Env, owner: string, repo: string, branch: Branch
 async function reasons(env: Env, owner: string, repo: string, branch: BranchRow, path: string, user: string) {
   // Why main changed the file since the branch forked: its commit messages. A branch doesn't commit.
   const log: unknown = await (await toFile(env, owner, repo, path, user, "commits")).json().catch(() => []);
-  const said = (Array.isArray(log) ? log : []).filter(isPlainObject).filter((x) => Number(x.at) >= Number(branch.created_at) && typeof x.message === "string" && x.message !== "commit").map((x) => String(x.message)).slice(0, 10);
+  const said = (Array.isArray(log) ? log : []).filter(isRecord).filter((x) => Number(x.at) >= Number(branch.created_at) && typeof x.message === "string" && x.message !== "commit").map((x) => String(x.message)).slice(0, 10);
   // Why the branch changed it: the task of the agent run that made it (agent-routes.ts runBranch), if one did.
   const run = /^agent-run-(\d+)$/.exec(branch.name);
   const task = run ? (await env.DB.prepare("SELECT task FROM agent_runs WHERE owner = ? AND repo = ? AND id = ?").bind(owner, repo, Number(run[1])).first())?.task : undefined;
@@ -481,7 +481,7 @@ async function askLeftovers(env: Env, owner: string, repo: string, branch: Branc
     const note = who === "ask" ? undefined : conflictNote({ branch: branch.name, path: f.path, line: c.line, rounds: round - 1, last: kept.get(id)?.answer });
     if (who === "escalate") { await noteConflict(env, owner, f.path, { round, who }); notes.set(f.path, `conflict round ${round} on ${branch.name}: a person's turn\n${note}`); continue; }
     const spent = await hostedBudget(env);
-    if (spent) { why = check(obj({ error: str(Infinity) }), await spent.json().catch(() => null))?.error ?? why; continue; }
+    if (spent) { why = await errorIn(spent, why); continue; }
     if (round > rounds) {
       counted = true;
       rounds = Number((await env.DB.prepare("UPDATE branches SET conflict_rounds = conflict_rounds + 1 WHERE owner = ? AND repo = ? AND name = ? RETURNING conflict_rounds").bind(...on).first())?.conflict_rounds ?? round);
@@ -967,7 +967,7 @@ async function land(env: Env, owner: string, repo: string, branch: BranchRow, us
   let out: unknown = await res.clone().json();
   const passed = listOf(out, "conflicts").flatMap((f) => listOf(f, "conflicts").flatMap((c) => {
     const a = c.answer;
-    return typeof f.path === "string" && typeof c.line === "string" && !resolve[f.path]?.[c.line] && isPlainObject(a) && a.ok === true && typeof a.text === "string" ? [{ path: f.path, line: c.line, text: a.text }] : [];
+    return typeof f.path === "string" && typeof c.line === "string" && !resolve[f.path]?.[c.line] && isRecord(a) && a.ok === true && typeof a.text === "string" ? [{ path: f.path, line: c.line, text: a.text }] : [];
   }));
   if (passed.length) {
     for (const p of passed) resolve[p.path] = { ...resolve[p.path], [p.line]: { text: p.text } };
@@ -977,7 +977,7 @@ async function land(env: Env, owner: string, repo: string, branch: BranchRow, us
   }
   // Held for another reason (checks, build files, a stack): as merge_branch says it.
   const files = listOf(out, "conflicts"), f = files[0], c = f && listOf(f, "conflicts")[0];
-  if (!f || !c || typeof f.path !== "string" || !isPlainObject(out)) return res;
+  if (!f || !c || typeof f.path !== "string" || !isRecord(out)) return res;
   const { said, meant, theirs } = await reasons(env, owner, repo, branch, f.path, user);
   const left = files.reduce((n, x) => n + listOf(x, "conflicts").length, 0) - 1;
   return json({
@@ -1290,7 +1290,7 @@ export async function branchRoutes(req: Request, env: Env, p: string[], owner: s
     const out = check(obj({ rev: num(0, Infinity) }), body);
     // The owner leaving a stretch of their agent's batch out is still the batch they read.
     if (res.ok && user === owner) await rehashBatch(env, owner, repo, name);
-    return res.ok ? json({ path: f.path, key: h.key, rev: out?.rev }) : fail("BranchMoved", "the branch changed under you: read the review again", isPlainObject(body) ? body : {});
+    return res.ok ? json({ path: f.path, key: h.key, rev: out?.rev }) : fail("BranchMoved", "the branch changed under you: read the review again", isRecord(body) ? body : {});
   }
 
   // POST /api/repos/:o/:r/branches/:b/conflicts/agent {path, line, harness, model?}

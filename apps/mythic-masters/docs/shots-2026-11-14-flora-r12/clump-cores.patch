@@ -1,0 +1,19 @@
+diff --git a/apps/mythic-masters/flora/pitch-pine.json b/apps/mythic-masters/flora/pitch-pine.json
+index 7b71a8df..43dafb4c 100644
+--- a/apps/mythic-masters/flora/pitch-pine.json
++++ b/apps/mythic-masters/flora/pitch-pine.json
+@@ -10,11 +10,11 @@
+  "trunk": {"radius": 0.4, "lean": 0.04, "wobble": 0.2, "kink": 0.05, "taper": 0.92, "segments": 12, "sides": 15, "rings": 2, "flare": 0.25, "stubs": 5, "stub_from": 0.08, "stub_to": 0.3, "stub_length": 0.045},
+  "bark": {"colors": ["#8a6650", "#6a4c3c"], "pattern": "plates", "plates": 0.2, "furrow": "#1a1410", "dead": "#5a5048"},
+  "levels": [
+-  {"count": 10, "start": 0.4, "end": 0.97, "angle": 74, "length": 0.26, "shape": "ovoid", "droop": 0.1, "rise": 0.3, "wobble": 0.5, "kink": 0.25, "segments": 5, "radius": 0.45, "sides": 6},
+-  {"count": 5, "start": 0.3, "end": 1.0, "angle": 40, "length": 0.4, "rise": 0.3, "wobble": 0.45, "kink": 0.35, "segments": 3, "radius": 0.5, "sides": 4, "lo": 1.0}
++  {"count": 10, "start": 0.55, "end": 0.97, "angle": 74, "length": 0.26, "shape": "ovoid", "droop": 0.1, "rise": 0.3, "wobble": 0.5, "kink": 0.25, "segments": 5, "radius": 0.45, "sides": 6},
++  {"count": 5, "start": 0.3, "end": 1, "angle": 40, "length": 0.4, "rise": 0.3, "wobble": 0.45, "kink": 0.35, "segments": 3, "radius": 0.5, "sides": 4, "lo": 1}
+  ],
+  "foliage": [
+-  {"type": "tuft", "colors": ["#2c4a34", "#34523a", "#3c5a3a"], "tip_colors": ["#506c44", "#5a7448"], "size": 0.075, "per": 3, "start": 0.72, "end": 1.0, "needles": 36, "bundle": 3, "splay": 0.6, "reach": 1.0, "shade": 1, "brush": 1.4, "needle_width": 0.04, "knot": 0, "lo": 0.34, "lo_size": 1.2, "lo_needles": 22, "lo_width": 1.25, "lo_tip": 0.6, "lo_core": 0, "core": 0.12},
++  {"type": "tuft", "colors": ["#2e3a22", "#34402a", "#3a4628"], "tip_colors": ["#56623c", "#5e6a40"], "size": 0.075, "per": 3, "start": 0.72, "end": 1, "needles": 36, "bundle": 3, "splay": 0.8, "reach": 1, "shade": 1, "brush": 0.6, "needle_width": 0.04, "knot": 0, "lo": 0.34, "lo_size": 1.2, "lo_needles": 16, "lo_width": 1.25, "lo_tip": 0.6, "lo_core": 0.6, "core": 0.5, "share": 0.7, "core_at": 0.95, "core_dark": 0.12, "core_squash": 0.8},
+   {"type": "tuft", "trunk": true, "min_z": 0.18, "colors": ["#2c4a34"], "size": 0.08, "per": 18, "start": 0.15, "end": 0.75, "needles": 14}
+  ],
+  "lo_leaves": true,

@@ -20,7 +20,9 @@ const BASE = `
 .eq input,.eq select,.eq textarea{width:100%;max-width:none;min-height:36px;padding:7px 10px;border:var(--ui-border) solid var(--ui-line);border-radius:var(--ui-radius-sm);background:var(--ui-soft);color:var(--ui-ink);font:inherit}
 .eq textarea{resize:vertical}.eq ::placeholder{color:var(--ui-dim);opacity:1}
 .eq-chip{display:inline-flex;align-items:center;gap:8px}.eq-chip:has(.eq-note){flex-wrap:wrap}.eq-chip .eq-btn{min-height:30px;min-width:30px}
-.eq-chip.in{padding:2px 2px 2px 10px;border:var(--ui-border) solid var(--ui-line);border-radius:var(--ui-radius-sm);background:var(--ui-bg)}
+.eq-chip.in{width:fit-content;max-width:100%;box-shadow:var(--ui-shadow);padding:2px 2px 2px 5px;border:var(--ui-border) solid var(--ui-line);border-radius:var(--ui-radius-sm);background:var(--ui-bg)}
+:where(.eq-chip){position:relative}
+.eq-fold{display:inline-flex;flex:none;padding:0;margin:0;border:0;border-radius:5px;background:none;cursor:pointer}.eq-fold:focus-visible{outline:3px solid var(--ui-accent);outline-offset:2px}
 .eq-who{font-family:var(--ui-font-head);font-weight:700;max-width:12em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .eq-note{flex-basis:100%;margin:0;color:var(--ui-dim);font-size:12px}
 .rb-report{position:fixed;right:max(12px,env(safe-area-inset-right));bottom:max(12px,env(safe-area-inset-bottom));z-index:2147483000;display:grid;justify-items:end;gap:6px}
@@ -39,19 +41,30 @@ const BASE = `
 @keyframes eq-in{from{opacity:0;transform:translateY(-12px)}}
 .eq-head{display:flex;align-items:center;justify-content:space-between;gap:10px}.eq-head .eq-title{flex:1}.eq-head .eq-btn{min-height:30px;min-width:30px}
 .eq-toast .eq-badge{align-self:flex-start;margin-left:4px}
-@media (prefers-reduced-motion:reduce){.eq-toast{animation:none}}
-.rb-lobby{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:10px 12px;border:var(--ui-border) solid var(--ui-line);border-radius:var(--ui-radius);background:var(--ui-bg);box-shadow:var(--ui-shadow)}
-.rb-lobby[hidden]{display:none}.rb-lobby-who{flex:1 1 200px;min-width:0;line-height:1.7}
+.eq-btn.done svg{animation:eq-lit .3s cubic-bezier(.3,1.6,.5,1)}
+@keyframes eq-rise{from{opacity:0;transform:translateY(6px)}}@keyframes eq-lit{from{opacity:.3;transform:scale(.3)}}
+@media (prefers-reduced-motion:reduce){.eq-toast,.eq-coach,.rb-lobby,.rb-lobby-m.lit::before,.eq-btn.done svg{animation:none}}
+.eq-coach{position:fixed;left:0;right:0;margin:0 auto;top:72px;z-index:2147482999;display:grid;gap:4px;width:min(380px,calc(100vw - 32px));padding:10px 14px;border:var(--ui-border) solid var(--ui-line);border-radius:var(--ui-radius);background:var(--ui-toast-bg);color:var(--ui-toast-ink);box-shadow:var(--ui-shadow),inset 3px 0 0 var(--ui-accent);pointer-events:none;animation:eq-in .3s ease-out}
+.eq-coach small{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--ui-accent)}.eq-coach b{font:700 16px/1.25 var(--ui-font-head)}
+.eq-coach p{margin:0;font-size:13px;opacity:.85}.eq-coach kbd{display:inline-block;min-width:1.7em;margin-right:3px;padding:0 5px;border:var(--ui-border) solid var(--ui-line);border-bottom-width:2px;border-radius:5px;background:var(--ui-soft);font:600 12px/1.6 var(--ui-font);text-align:center}
+.eq-coach-dots{position:absolute;right:14px;top:12px;display:flex;gap:4px}.eq-coach-dots i{width:7px;height:7px;border-radius:50%;background:var(--ui-line)}.eq-coach-dots i.on{background:var(--ui-accent)}.eq-coach-dots i.now{background:var(--ui-ink)}
+.eq-coach-done{transition:opacity .4s 1.2s;opacity:0}
+@media (hover:none) and (pointer:coarse){.eq-coach kbd{display:none}}
+.rb-lobby{animation:eq-rise .28s cubic-bezier(.2,.7,.2,1);display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:10px 12px;border:var(--ui-border) solid var(--ui-line);border-radius:var(--ui-radius);background:var(--ui-bg);box-shadow:var(--ui-shadow)}
+.rb-lobby[hidden]{display:none}.rb-lobby-who{flex:1 1 100%;min-width:0;line-height:1.7}
 .rb-lobby-code{display:inline-block;padding:0 5px 0 7px;border:var(--ui-border) solid var(--ui-line);border-radius:var(--ui-radius-sm);background:var(--ui-soft);font:700 13px/1.5 var(--ui-font);letter-spacing:.14em}
 .rb-lobby-m{font-weight:700;white-space:nowrap}.rb-lobby-m small{font-size:12px;font-weight:400;color:var(--ui-dim)}
 .rb-lobby-m::before{content:"";display:inline-block;width:8px;height:8px;margin-right:5px;border-radius:50%;box-shadow:inset 0 0 0 1.5px var(--ui-dim);vertical-align:1px}
-.rb-lobby-m.ready::before,.rb-lobby-m.host::before{background:var(--ui-accent);box-shadow:none}.rb-lobby-note{color:var(--ui-dim)}
+.rb-lobby-m.ready::before,.rb-lobby-m.host::before{background:var(--ui-accent);box-shadow:none}.rb-lobby-m.lit::before{animation:eq-lit .34s cubic-bezier(.3,1.6,.5,1)}.rb-lobby-note{color:var(--ui-dim)}
 .rb-lobby-rules{flex:1 1 100%;display:grid;gap:6px;margin:0;padding:8px 0 0;border-top:var(--ui-border) solid var(--ui-line)}
 .rb-lobby-rules label,.rb-lobby-rules li{display:flex;gap:8px;align-items:center;justify-content:space-between;min-height:32px}
 .rb-lobby-rules ul{list-style:none;margin:0;padding:0}.rb-lobby-rules h3{margin:6px 0 0;font:700 13px/1.2 var(--ui-font-head);color:var(--ui-dim)}
 .rb-lobby-rules select,.rb-lobby-rules input[type=number]{max-width:60%;min-height:32px}.rb-lobby-acts{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:4px}
 .rb-lobby-rules label>span:last-child{display:inline-flex;gap:6px;align-items:center;white-space:nowrap}.rb-lobby-rules input[type=checkbox]{width:18px;height:18px;margin:0}
 .rb-lobby .eq-btn.icon{min-width:32px;min-height:32px;padding:0}
+.rb-lobby-voice{flex:1 1 100%;display:flex;flex-wrap:wrap;align-items:center;gap:6px;min-width:0}.rb-lobby-voice ul{display:flex;flex-wrap:wrap;gap:6px;list-style:none;margin:0;padding:0}
+.rb-lobby-voice li{display:flex;gap:4px;align-items:center;padding:3px 8px;border:var(--ui-border) solid var(--ui-line);border-radius:999px}
+.rb-lobby-voice li.talking{background:var(--ui-accent);color:var(--ui-on-accent)}.rb-lobby-voice li.muted{opacity:.6}.rb-lobby-voice p{margin:0;color:var(--ui-dim)}
 .rb-spaces{display:flex;flex-direction:column;gap:8px;padding:10px 12px;border:var(--ui-border) solid var(--ui-line);border-radius:var(--ui-radius);background:var(--ui-bg);box-shadow:var(--ui-shadow)}
 .rb-spaces[hidden]{display:none}
 .rb-spaces h2{margin:0;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font:700 16px/1.2 var(--ui-font-head)}
@@ -128,6 +141,8 @@ export const ICONS = {
   "log-out": svg('<path d="m16 17 5-5-5-5"/><path d="M21 12H9"/><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>'),
   trophy: svg('<path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/>'),
   x: svg('<path d="M18 6 6 18"/><path d="m6 6 12 12"/>'),
+  copy: svg('<rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>'),
+  check: svg('<path d="M20 6 9 17l-5-5"/>'),
   flag: svg('<path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" x2="4" y1="22" y2="15"/>'),
   // The party lobby's Settings (./lobby.ts): the menu, and a member's mute-for-me, make host, take out and block.
   "sliders-horizontal": svg('<line x1="21" x2="14" y1="4" y2="4"/><line x1="10" x2="3" y1="4" y2="4"/><line x1="21" x2="12" y1="12" y2="12"/><line x1="8" x2="3" y1="12" y2="12"/><line x1="21" x2="16" y1="20" y2="20"/><line x1="12" x2="3" y1="20" y2="20"/><line x1="14" x2="14" y1="2" y2="6"/><line x1="8" x2="8" y1="10" y2="14"/><line x1="16" x2="16" y1="18" y2="22"/>'),
@@ -135,12 +150,15 @@ export const ICONS = {
   "volume-2": svg('<path d="M11 4.702a.705.705 0 0 0-1.203-.498L6.413 7.587A1.4 1.4 0 0 1 5.416 8H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2.416a1.4 1.4 0 0 1 .997.413l3.383 3.384A.705.705 0 0 0 11 19.298z"/><path d="M16 9a5 5 0 0 1 0 6"/><path d="M19.364 18.364a9 9 0 0 0 0-12.728"/>'),
   crown: svg('<path d="M11.562 3.266a.5.5 0 0 1 .876 0L15.39 8.87a1 1 0 0 0 1.516.294L21.183 5.5a.5.5 0 0 1 .798.519l-2.834 10.246a1 1 0 0 1-.956.734H5.81a1 1 0 0 1-.957-.734L2.02 6.02a.5.5 0 0 1 .798-.519l4.276 3.664a1 1 0 0 0 1.516-.294z"/><path d="M5 21h14"/>'),
   "user-x": svg('<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="17" x2="22" y1="8" y2="13"/><line x1="22" x2="17" y1="8" y2="13"/>'),
+  "user-plus": svg('<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" x2="19" y1="8" y2="14"/><line x1="22" x2="16" y1="11" y2="11"/>'),
   ban: svg('<circle cx="12" cy="12" r="10"/><path d="m4.9 4.9 14.2 14.2"/>'),
   // The host's New link (the `invite` rule at "host"): links handed out so far stop working.
   "refresh-cw": svg('<path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/>'),
   // Mute for everyone (the `mute` rule), and let them talk again.
   mic: svg('<path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/>'),
   "mic-off": svg('<line x1="2" x2="22" y1="2" y2="22"/><path d="M18.89 13.23A7.12 7.12 0 0 0 19 12v-2"/><path d="M5 10v2a7 7 0 0 0 12 5"/><path d="M15 9.34V5a3 3 0 0 0-5.68-1.33"/><path d="M9 9v3a3 3 0 0 0 5.12 2.12"/><line x1="12" x2="12" y1="19" y2="22"/>'),
+  // The lobby's voice row (#4463): hang up.
+  "phone-off": svg('<path d="M10.1 13.9a14 14 0 0 0 3.732 2.668 1 1 0 0 0 1.213-.303l.355-.465A2 2 0 0 1 17 15h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2 18 18 0 0 1-12.728-5.272"/><path d="M22 2 2 22"/><path d="M4.76 13.582A18 18 0 0 1 2 4a2 2 0 0 1 2-2h3a2 2 0 0 1 2 2v3a2 2 0 0 1-.8 1.6l-.468.351a1 1 0 0 0-.292 1.233 14 14 0 0 0 .244.473"/>'),
 } as const;
 
 /** eqosys's badge tag (see BADGE): the word on black and a slow oil-slick strip, the same in every game. */
@@ -160,4 +178,17 @@ export function eqButton(o: { text: string; icon?: keyof typeof ICONS; show?: bo
   if (!o.icon || o.show) b.append(o.text);
   if (o.onClick) b.addEventListener("click", o.onClick);
   return b;
+}
+
+/**
+ * A button saying it worked: a check and `word` for a moment, then back to what it said. The work is already done; this
+ * only tells. Nothing runs in between but one timer.
+ */
+export function confirmed(b: HTMLButtonElement, word = "Copied", ms = 1400): void {
+  const was = [...b.childNodes], cls = b.className;
+  b.classList.remove("icon");
+  b.classList.add("done");
+  b.innerHTML = ICONS.check;
+  b.append(word);
+  setTimeout(() => { if (b.classList.contains("done")) { b.className = cls; b.replaceChildren(...was); } }, ms);
 }

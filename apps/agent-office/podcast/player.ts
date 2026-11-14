@@ -2,7 +2,8 @@
 // you left off. It plays through the office's own buses like the other tunes, so volume, mute and the jukebox fading
 // with distance all apply. Where your place is kept: this browser (localStorage), one key per feed.
 import { after, start, type Place } from "./queue.ts";
-import type { Episode } from "./feed.ts";
+import { getJson } from "@rustybuns/util/http";
+import { EpisodesReply, FeedsReply, type Episode } from "./wire.ts";
 
 const SAVE_EVERY = 5; // seconds of tune time between saves of where you are
 
@@ -70,14 +71,13 @@ export class Podcast {
 
   private async open() {
     try {
-      const feeds: unknown = await (await fetch("/__rb/podcast")).json();
-      const first = typeof feeds === "object" && feeds !== null && "feeds" in feeds && Array.isArray(feeds.feeds) ? feeds.feeds[0] : null;
-      if (typeof first?.id !== "string") return void console.warn("[podcast] no feeds: add one to ~/.config/agent-office/podcasts.json");
-      const res: unknown = await (await fetch(`/__rb/podcast/episodes?feed=${encodeURIComponent(first.id)}`)).json();
-      if (typeof res !== "object" || res === null || !("episodes" in res) || !Array.isArray(res.episodes)) return;
+      const first = (await getJson("/__rb/podcast", FeedsReply))?.feeds[0];
+      if (!first) return void console.warn("[podcast] no feeds: add one to ~/.config/agent-office/podcasts.json");
+      const res = await getJson(`/__rb/podcast/episodes?feed=${encodeURIComponent(first.id)}`, EpisodesReply);
+      if (!res) return;
       this.feed = first.id;
-      this.order = "order" in res && res.order === "newest" ? "newest" : "oldest";
-      this.episodes = res.episodes.filter((e): e is Episode => typeof e?.url === "string" && typeof e.id === "string");
+      this.order = res.order;
+      this.episodes = res.episodes;
       const at = start(this.episodes, this.order, saved(this.feed));
       if (!at || this.stopped) return;
       this.play(at.ep, at.t);

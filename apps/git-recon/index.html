@@ -14,14 +14,30 @@
     <main id="menu" class="menu">
       <div class="file">
       <div class="card">
-        <canvas id="portrait" class="portrait" aria-hidden="true"></canvas><i class="clip" aria-hidden="true"></i>
-        <p class="kicker">A Rusty Buns example</p>
+        <canvas id="portrait" class="portrait" aria-hidden="true"></canvas><i class="sight" aria-hidden="true"></i><i class="clip" aria-hidden="true"></i>
+        <p class="kicker">A Rusty Buns example <button class="info" popovertarget="about" title="How to play" aria-label="How to play"></button></p>
         <h1>Git Recon</h1>
+        <div id="about" class="about" popover>
         <p class="lede">A codebase on real ground. Climb from the kitchen floor to the heights: win a mission to open the next.</p>
+        <p class="touch-hint">On a touch screen: the left stick moves, drag anywhere else to aim, and the buttons on the right fire, jump, dive-roll, crouch, reload, swap guns and step the rebase scope in and out. Tap the prompt by the crosshair to get in a vehicle or open the parachute.</p>
+        <dl class="keys">
+          <dt>WASD · mouse</dt><dd>move · aim</dd>
+          <dt>Click</dt><dd>fire</dd>
+          <dt>Shift</dt><dd>dive-roll</dd>
+          <dt>Space · C · Z</dt><dd>jump · crouch · prone (Space in the air opens the parachute, and cuts it; a long fall opens it by itself)</dd>
+          <dt>Q · E</dt><dd>lean out left · right while held, to peek round a corner</dd>
+          <dt>1-6 · wheel</dt><dd>your role's guns (git reset --hard joins them if you find one)</dd>
+          <dt>R</dt><dd>reload (a dry magazine reloads by itself)</dd>
+          <dt>N</dt><dd>pick your role for your next life</dd>
+          <dt>F</dt><dd>get in or out of a vehicle: a rocket roadster at 15 kills, an attack helicopter at 25</dd>
+          <dt>Right click</dt><dd>scope (rebase; it sways, less lying down)</dd>
+          <dt>Tab</dt><dd>the scoreboard, in a battle</dd>
+        </dl>
+        </div>
         <p class="orders" aria-hidden="true">Asset <span class="redact">Tidewater</span> goes in at <span class="redact">04:10</span>. Burn after reading.</p>
         <div id="levels" class="levels"></div>
         <div id="memories" class="look memories" hidden><span class="look-label">Watch again</span><div class="chips"></div></div>
-        <details class="more"><summary>More: your soldier, any repo, any place, battles, controls</summary>
+        <details class="more"><summary>More</summary>
         <div class="look">
           <span class="look-label">You</span>
           <div id="builds" class="chips" role="radiogroup" aria-label="Build"></div>
@@ -39,12 +55,12 @@
           <p id="repo-status" class="repo-status" role="status"></p>
         </form>
         <form id="place" class="place" autocomplete="off">
-          <label for="place-at">Or fight anywhere: a latitude, longitude</label>
+          <label for="place-at">Any place</label>
           <div class="row"><input id="place-at" name="at" inputmode="decimal" placeholder="36.0566, -112.1251" spellcheck="false" /><button id="place-go" class="primary" title="Read the ground there and fight on it">Deploy</button></div>
           <p id="place-status" class="place-status" role="status"></p>
         </form>
         <form id="battle" class="battle" autocomplete="off">
-          <label id="battle-label">Battle: many players in one repo, over the LAN</label>
+          <label id="battle-label" title="Many players in one repo, over the LAN">Battle</label>
           <div class="row">
             <input id="battle-name" maxlength="24" placeholder="Your name" spellcheck="false" aria-label="Your name" />
             <button id="battle-account" type="button" hidden></button>
@@ -61,20 +77,6 @@
           <div id="battle-lobby" class="battle-lobby" hidden></div>
           <p id="battle-status" class="battle-status" role="status"></p>
         </form>
-        <p class="touch-hint">On a touch screen: the left stick moves, drag anywhere else to aim, and the buttons on the right fire, jump, dive-roll, crouch, reload, swap guns and step the rebase scope in and out. Tap the prompt by the crosshair to get in a vehicle or open the parachute.</p>
-        <dl class="keys">
-          <dt>WASD · mouse</dt><dd>move · aim</dd>
-          <dt>Click</dt><dd>fire</dd>
-          <dt>Shift</dt><dd>dive-roll</dd>
-          <dt>Space · C · Z</dt><dd>jump · crouch · prone (Space in the air opens the parachute, and cuts it; a long fall opens it by itself)</dd>
-          <dt>Q · E</dt><dd>lean out left · right while held, to peek round a corner</dd>
-          <dt>1-6 · wheel</dt><dd>your role's guns (git reset --hard joins them if you find one)</dd>
-          <dt>R</dt><dd>reload (a dry magazine reloads by itself)</dd>
-          <dt>N</dt><dd>pick your role for your next life</dd>
-          <dt>F</dt><dd>get in or out of a vehicle: a rocket roadster at 15 kills, an attack helicopter at 25</dd>
-          <dt>Right click</dt><dd>scope (rebase; it sways, less lying down)</dd>
-          <dt>Tab</dt><dd>the scoreboard, in a battle</dd>
-        </dl>
         </details>
       </div>
       </div>

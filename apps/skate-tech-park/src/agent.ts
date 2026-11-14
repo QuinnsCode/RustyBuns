@@ -5,8 +5,9 @@
 // They are the page's commands (@rustybuns/util/commands), so a person finds the same ones in the Cmd/Ctrl+K palette.
 import type { Level } from "./level.ts";
 import { DT, grabName, type Input, type State } from "./sim.ts";
-import { type Flick, TRICKS } from "./tricks.ts";
-import { bool, num, obj, raw } from "@rustybuns/util/guard";
+import { TRICKS } from "./tricks.ts";
+import { arr, bool, check, maybe, num, obj, oneOf, raw, str } from "@rustybuns/util/guard";
+import { flick } from "./flick.ts";
 import type { Link } from "./scenario.ts";
 import type { Perf } from "./perf.ts";
 import { addCommands } from "@rustybuns/util/commands";
@@ -41,17 +42,22 @@ export class Driver {
   stop() { for (const q of this.queue.splice(0)) q.done?.(); }
 }
 
-const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
-const isFlick = (v: unknown): v is Flick => typeof v === "string" && v in TRICKS;
 const flag = bool(false), axis = num(-1, 1, 0);
-const HOLD = obj({ seconds: num(DT, MAX_SECONDS, 0.5), push: axis, steer: axis, ollie: flag, nollie: flag, jets: flag, fan: flag, trick: raw, manual: raw });
+const HOLD = obj({ seconds: num(DT, MAX_SECONDS, 0.5), push: axis, steer: axis, ollie: flag, nollie: flag, jets: flag, fan: flag, trick: maybe(flick), manual: maybe(oneOf(["tail", "nose"])) });
+// The other tools' arguments, read the same way: wrong or missing reads as nothing.
+const LineArgs = obj({ moves: arr(raw, 200, { drop: true }) });
+const GoArgs = obj({
+  park: str(100, { min: 0, dflt: "" }), spawn: maybe(str(100)), quality: maybe(oneOf(["low", "mid", "high", "auto"])),
+  controls: maybe(oneOf(["touch", "desktop"])), weak: maybe(num(0, 1000)), fps: maybe(bool()),
+});
+const AtArgs = obj({ at: str(100, { min: 0, dflt: "" }) });
 
 /** A tool's move ({ seconds, push, steer, ollie, ... }) as a hold. Anything unknown or out of range is dropped or clamped. */
 export function holdOf(v: unknown): Hold {
-  const m = HOLD(isRecord(v) ? v : {});
+  const m = check(HOLD, v) ?? HOLD({});
   const input: Partial<Input> = {
     throttle: m.push, steer: m.steer, jump: m.ollie, nollie: m.nollie, boost: m.jets, fan: m.fan,
-    flick: isFlick(m.trick) ? m.trick : null,
+    flick: m.trick ?? null,
     manual: m.manual === "tail" ? 1 : m.manual === "nose" ? -1 : 0,
   };
   return { input, steps: Math.max(1, Math.round(m.seconds / DT)) };
@@ -124,7 +130,7 @@ export function tools(g: Game) {
     { name: "skate_line", title: "Ride a line", palette: false, description: "Code mode: a whole line as a list of moves ridden back to back in one call, e.g. push 3 s, ollie, kickflip, land, grind.",
       inputSchema: { type: "object", properties: { moves: { type: "array", items: { type: "object", properties: MOVE } } }, required: ["moves"] },
       execute: async (a: unknown) => {
-        const moves = isRecord(a) && Array.isArray(a.moves) ? a.moves.slice(0, 200).map(holdOf) : [];
+        const moves = (check(LineArgs, a)?.moves ?? []).map(holdOf);
         let budget = MAX_SECONDS / DT;
         return rideFor(moves.filter((h) => (budget -= h.steps) >= 0));
       } },
@@ -141,21 +147,15 @@ export function tools(g: Game) {
         quality: { type: "string", enum: ["low", "mid", "high", "auto"] }, controls: { type: "string", enum: ["touch", "desktop"] },
         weak: { type: "number", description: "Burn this many ms every frame, like a slow GPU (0 for none)" }, fps: { type: "boolean" } }, required: ["park"] },
       execute: async (a: unknown) => {
-        const m = isRecord(a) ? a : {}, id = typeof m.park === "string" ? m.park : "";
+        const { park: id, fps, ...opts } = check(GoArgs, a) ?? GoArgs({});
         if (!g.parks().some((p) => p.id === id)) return { error: `No park "${id}". skate_parks lists them.` };
-        const q = m.quality, c = m.controls;
-        g.go(id, {
-          ...(typeof m.spawn === "string" ? { spawn: m.spawn } : {}),
-          ...(q === "low" || q === "mid" || q === "high" || q === "auto" ? { quality: q } : {}),
-          ...(c === "touch" || c === "desktop" ? { controls: c } : {}),
-          ...(typeof m.weak === "number" ? { weak: m.weak } : {}), ...(m.fps === true ? { fps: true } : {}),
-        });
+        g.go(id, { ...opts, ...(fps ? { fps: true } : {}) });
         return { going: id };
       } },
     { name: "skate_start", title: "Start somewhere", ask: "a spawn name, or rail, balance or vert", description: "Put the board, stopped, at one of this park's starts: a spawn name or a spot found on it (rail, balance, vert). skate_look lists them.",
       inputSchema: { type: "object", properties: { at: { type: "string" } }, required: ["at"] },
       execute: async (a: unknown) => {
-        const at = isRecord(a) && typeof a.at === "string" ? a.at : "";
+        const { at } = check(AtArgs, a) ?? AtArgs({});
         if (!g.start(at)) return { error: `No start "${at}" here. Starts: ${g.spots.join(", ")}.` };
         g.driver.stop();
         return report(g.state(), g.level);

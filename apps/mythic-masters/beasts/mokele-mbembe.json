@@ -126,5 +126,6 @@
       "claw_mat": "nail",
       "mirror": true
     }
-  ]
+  ],
+  "hide": {"pattern": "skin", "size": 0.16, "colours": [[0.28, 0.18, 0.13]], "map": 256}
 }

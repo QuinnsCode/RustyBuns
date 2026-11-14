@@ -2,6 +2,7 @@
 // state, undo), the world (persists and rebroadcasts) and the bounce. The world
 // may face the internet on the edge, so everything that arrives is sanitized.
 import { arr, Bad, bool, check, int, maybe, num, obj, oneOf, opt, raw, str, type Guard } from "@rustybuns/util/guard";
+import { EQ_LANES, clampEqLane, eqLaneBand, sanitizeEq, type EqDoc } from "./engine/eq.ts";
 import { TRACKS, NPARAMS, BEND_RANGE, LANE_BEND, LANE_STUTTER, clampLane, clampParam } from "./engine/params.ts";
 
 export interface Note { s: number; l: number; m: number; v: number } // start/length in beats, midi, velocity 0..1
@@ -26,8 +27,10 @@ export interface TrackDoc {
 /**
  * space: the reverb and delay send after the engine, 0 dry to 1 drenched (src/engine/space.ts).
  * squash: the multiband up/down compressor on the master, 0 off to 1 over the top (src/engine/squash.ts).
+ * eq: Shape, the master EQ before it: a slot per band, null when empty (src/engine/eq.ts).
+ * eqAuto: its automation, a lane per band and setting (eqLane), only on bands that are there.
  */
-export interface Project { v: 1; bpm: number; swing: number; space: number; squash: number; bars: number; tracks: TrackDoc[] }
+export interface Project { v: 1; bpm: number; swing: number; space: number; squash: number; eq: EqDoc; eqAuto?: Lane[]; bars: number; tracks: TrackDoc[] }
 
 export type Op =
   | { t: "param"; track: number; i: number; v: number }
@@ -35,6 +38,8 @@ export type Op =
   | { t: "auto"; track: number; lanes: Lane[] }
   | { t: "track"; track: number; mute?: boolean; solo?: boolean; name?: string }
   | { t: "global"; bpm?: number; swing?: number; space?: number; squash?: number; bars?: number }
+  | { t: "eq"; bands: EqDoc }
+  | { t: "eqAuto"; lanes: Lane[] }
   | { t: "replace"; project: Project };
 
 export const BEATS_PER_BAR = 4;
@@ -54,17 +59,25 @@ export function sanitizeNotes(x: unknown, beats: number): Note[] {
   return arr(note, MAX_NOTES, { drop: true })(x).sort((a, b) => a.s - b.s || a.m - b.m);
 }
 
-export function sanitizeLanes(x: unknown, beats: number): Lane[] {
+/** Which lanes a list may hold, how each value fits, and how many. */
+interface LaneKind { lane: Guard<number>; fit(i: number, v: number): number; max: number }
+const TRACK_LANES: LaneKind = { lane: (v) => (v === LANE_BEND || v === LANE_STUTTER ? v : int(0, NPARAMS - 1)(v)), fit: clampLane, max: MAX_LANES };
+const EQ_AUTO: LaneKind = { lane: int(0, EQ_LANES - 1), fit: clampEqLane, max: EQ_LANES };
+
+export function sanitizeLanes(x: unknown, beats: number, kind = TRACK_LANES): Lane[] {
   const lane = (v: unknown): Lane => {
-    const { i, pts } = obj({ i: LANE, pts: raw })(v);
+    const { i, pts } = obj({ i: kind.lane, pts: raw })(v);
     const point = (pt: unknown): [number, number] =>
-      Array.isArray(pt) && Number.isFinite(pt[0]) && Number.isFinite(pt[1]) ? [num(0, beats, 0)(pt[0]), clampLane(i, pt[1])] : bad("a point");
+      Array.isArray(pt) && Number.isFinite(pt[0]) && Number.isFinite(pt[1]) ? [num(0, beats, 0)(pt[0]), kind.fit(i, pt[1])] : bad("a point");
     const out = arr(point, MAX_POINTS, { drop: true })(pts).sort((a, b) => a[0] - b[0]);
     return out.length ? { i, pts: out } : bad("no points");
   };
-  return arr(lane, MAX_LANES, { drop: true })(x);
+  return arr(lane, kind.max, { drop: true })(x);
 }
-const LANE = (v: unknown) => (v === LANE_BEND || v === LANE_STUTTER ? v : int(0, NPARAMS - 1)(v));
+/** Shape's lanes, fitted, and only for bands the EQ has (a removed band takes its moves with it). */
+export const sanitizeEqAuto = (x: unknown, beats: number, eq: EqDoc) => sanitizeLanes(x, beats, EQ_AUTO).filter((l) => eq[eqLaneBand(l.i)]);
+/** eqAuto only when there is some, so a project without moves reads the same as before it had the field. */
+const eqAutoOf = (lanes: Lane[]) => (lanes.length ? { eqAuto: lanes } : {});
 
 /**
  * A recorded take into a track's lanes: lane `i` between the take's first and
@@ -112,7 +125,7 @@ export class Take {
 }
 
 const bad = (why: string): never => { throw new Bad(why); };
-const PROJECT = obj({ tracks: arr(raw, TRACKS, { min: 1 }), bars: raw, bpm: num(40, 240, 120), swing: num(0, 0.6, 0), space: num(0, 1, 0), squash: num(0, 1, 0) });
+const PROJECT = obj({ tracks: arr(raw, TRACKS, { min: 1 }), bars: raw, bpm: num(40, 240, 120), swing: num(0, 0.6, 0), space: num(0, 1, 0), squash: num(0, 1, 0), eq: raw, eqAuto: raw });
 
 export function sanitize(x: unknown): Project | null {
   const p = check(PROJECT, x);
@@ -120,7 +133,8 @@ export function sanitize(x: unknown): Project | null {
   const bars = okBars(p.bars) ? p.bars : 2, beats = bars * BEATS_PER_BAR;
   // older projects had fewer tracks: pad with silent synth tracks (gain 0)
   const tracks = [...p.tracks, ...Array.from({ length: TRACKS - p.tracks.length }, () => ({ kind: "synth" }))];
-  return { v: 1, bpm: p.bpm, swing: p.swing, space: p.space, squash: p.squash, bars, tracks: tracks.map((v, ti) => track(v, ti, beats)) };
+  const eq = sanitizeEq(p.eq);
+  return { v: 1, bpm: p.bpm, swing: p.swing, space: p.space, squash: p.squash, eq, ...eqAutoOf(sanitizeEqAuto(p.eqAuto, beats, eq)), bars, tracks: tracks.map((v, ti) => track(v, ti, beats)) };
 }
 
 function track(v: unknown, ti: number, beats: number): TrackDoc {
@@ -139,6 +153,8 @@ const OPS: Guard<Op>[] = [
   obj({ t: tag("auto"), track: TRACK, lanes: (v: unknown) => sanitizeLanes(v, MAX_BARS * BEATS_PER_BAR) }),
   obj({ t: tag("track"), track: TRACK, mute: maybe(bool()), solo: maybe(bool()), name: maybe(str(Infinity, { min: 0 })) }),
   obj({ t: tag("global"), bpm: maybe(real), swing: maybe(real), space: maybe(real), squash: maybe(real), bars: maybe(BARS) }),
+  obj({ t: tag("eq"), bands: sanitizeEq }),
+  obj({ t: tag("eqAuto"), lanes: (v: unknown) => sanitizeLanes(v, MAX_BARS * BEATS_PER_BAR, EQ_AUTO) }),
   obj({ t: tag("replace"), project: PROJ }),
 ];
 export const decodeOp = (v: unknown): Op | null => OPS.reduce<Op | null>((got, g) => got ?? check(g, v), null);
@@ -247,6 +263,14 @@ export function apply(p: Project, op: Op): Project {
       // shrinking the loop drops notes past the new end
       return bars < p.bars ? { ...next, tracks: next.tracks.map((t) => ({ ...t, notes: sanitizeNotes(t.notes, bars * BEATS_PER_BAR) })) } : next;
     }
+    case "eq": {
+      const eq = sanitizeEq(op.bands);
+      const { eqAuto, ...rest } = p;
+      return { ...rest, eq, ...eqAutoOf(sanitizeEqAuto(eqAuto, loopBeats(p), eq)) };
+    }
+    case "eqAuto":
+      const { eqAuto: _, ...rest } = p;
+      return { ...rest, ...eqAutoOf(sanitizeEqAuto(op.lanes, loopBeats(p), p.eq)) };
     case "replace":
       return sanitize(op.project) ?? p;
     default:

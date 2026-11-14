@@ -1,7 +1,8 @@
 import { expect, setDefaultTimeout, test } from "bun:test";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { connections, githubToken, type Deps, type State } from "../connect/github.ts";
+import { connections, githubToken, type Deps } from "../connect/github.ts";
+import { SetupReply } from "../connect/types.ts";
 import { fileSecrets } from "../connect/keychain.ts";
 import { fakeGitHub } from "../demo/fake-github.ts";
 
@@ -12,8 +13,8 @@ test("sign two GitHub accounts in with a code, read-only, then test and revoke o
   const dir = mkdtempSync(`${tmpdir()}/connect-`);
   const deps: Deps = { dir, clientId: "Iv1.test", secrets: fileSecrets(dir), fetch: (u, i) => fetch(u, i), web: gh.base, api: gh.base, wait: () => Bun.sleep(5) };
   const route = connections(deps);
-  const call = async (method: string, q = "") => (await route(method, new URL(`http://office/__rb/connections${q}`)))!.body as State;
-  const until = async (f: (s: State) => boolean) => { for (let i = 0; i < 200; i++) { const s = await call("GET"); if (f(s)) return s; await Bun.sleep(10); } throw new Error("never happened"); };
+  const call = async (method: string, q = "") => SetupReply((await route(method, new URL(`http://office/__rb/connections${q}`)))!.body);
+  const until = async (f: (s: SetupReply) => boolean) => { for (let i = 0; i < 200; i++) { const s = await call("GET"); if (f(s)) return s; await Bun.sleep(10); } throw new Error("never happened"); };
 
   expect(await call("GET")).toEqual({ connections: [], pending: [], ready: true }); // empty state
 
@@ -40,7 +41,7 @@ test("sign two GitHub accounts in with a code, read-only, then test and revoke o
   expect(await deps.secrets.get("octo-home")).toBeNull(); // the token is gone too
 
   // a fresh office (restart) still knows the account, and looks its light up again
-  expect((await (await connections(deps)("GET", new URL("http://office/__rb/connections")))!.body as State).connections[0]?.status).toBe("ok");
+  expect(SetupReply((await connections(deps)("GET", new URL("http://office/__rb/connections")))!.body).connections[0]?.status).toBe("ok");
   gh.stop();
 });
 

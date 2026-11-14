@@ -11,10 +11,18 @@
 #           wings: n         how many wings the rig keeps (scripts/beasts.ts checks it like `feet`)
 #           blend: 0.03      blobs and body rebuilt as one seamless skin from voxels this size
 #           paint            [{nodes: [...], material}]: those nodes' flesh in another material
-#           stripes          {along: [...], n, width: 0.5, material, below: -0.3}: bands across a chain's back
+#           stripes          {along: [...], n, width: 0.5, material, below: -0.3}: bands across a chain's back;
+#                            `side: "under"` bands its underside instead (faces turned down past `below`), each
+#                            face kept when it sits within `reach` (0.05) of the skin a ray from the chain meets,
+#                            so a body of blended blobs bands too; `phase` (0) shifts every band by that share of
+#                            its spacing (bands between ribs)
+#           black: true      the body may be truly black: no luminance floor (LUM[0]), no lift toward the belly's hue
 #   blob    material, rot    its own material; [x, y, z] degrees of tilt (a shell, a brow)
 #   horn    curve, bend      degrees it bends along its length, toward the `bend` direction (default up)
 #           tip_base, flat   radius at its far end (> base: a club), section squashed to `flat` of its width
+#           web, scallop,    horns in a row with the same `web` name (a fin's ribs) get a skin between each and the next,
+#           web_thick        its free edge pulled in `scallop` (0.3) toward the root, `web_thick` (0.012) thick, in
+#                            `web_mat` (the first rib's material), the settings read off the group's first rib
 #   spikes  rows, spread     `rows` per point fanned `spread` degrees around the chain; `sweep` toward its
 #           sweep, tilt      end, `tilt` out to the side (side rows on a shell, a crest off the centreline)
 #   tuft    along, n, len, base, and rows, spread, sweep (1.5), curve (30), flat (0.3), sink (0.8),
@@ -24,15 +32,18 @@
 #                            `puff`, tapering to `thick` at the rim: a cupped wing, a flipper
 #           feathers         {from, to, n, len, base, curve, flat, tip, material}: a row of flat feathers out
 #                            past the rim between two outline points, each a vane rounding off to a blunt
-#                            tip `tip` (0.4) of its width; scallop_depth < 0 points outward
+#                            tip `tip` (0.4) of its width; scallop_depth < 0 points outward; `rake` degrees
+#                            swings each one in the membrane's plane toward `to` (negative: toward `from`),
+#                            so primaries sweep back along the edge instead of standing out like a comb
 #   scales  along, n, len,   overlapping flat plates along a chain, fanned like a tuft (`rows`, `spread`); each
 #           base, overlap    is `len` long and `base` wide and lies `overlap` (0.5) flatter toward the chain's end
 #   teeth   along, n, len,   small cones fanned along a muzzle chain's lip, hanging from the upper lip and,
 #           base, gap,       with `lower`, rising from the lower; `gap` (0.6) is how far the lips sit from the
 #           lower, side      chain's centre in its radius, `side` (0.7) how far out to the side the rows run
 #   ear     at, off, dir,    a flat, cupped leaf from a node: `len` long, `width` wide, `tilt` degrees out to the
-#           len, width,      side, `cup` degrees curled forward (mirror it for the pair)
-#           tilt, cup
+#           len, width,      side, `cup` degrees curled forward (mirror it for the pair); `thick` (0.12) makes it a
+#           tilt, cup,       fleshy flap that deep in its width, rounded, with a lobe at the end, and `fold` (0)
+#           thick, fold      hollows it across, the edges swinging that share of the width forward
 #   ridge   at, off, dir,    a short curved ridge (a brow above an eye, a lip along a muzzle): `len` long, `base`
 #           len, base,       thick, `curve` degrees toward `bend`; lies flat on the skin; its `material` defaults
 #           curve, bend      to the body's
@@ -59,10 +70,27 @@
 #           bone, bone_mat,  each panel's far edge pulled in by `scallop` (0.25) and hung `sag` metres under its fingers,
 #           thick            `bone` (0.02) the finger bones' radius, `thick` (0.015) the membrane's
 #   palette a 6th value is glow strength: the GLB keeps the colour as emissive, strength apart
-#   hide    pattern, size,   the body's material baked into a map finer than the mesh can colour (`bake_hide`): `pattern`
-#           colours, map,    scales (rim and cell colours), fur (root and tip), skin (crease) or spots (spot); `size`
-#           spots            metres a scale, strand or fold; colours sRGB; `map` px (1024); `spots` {size, colour, cover}
-#                            over any pattern. The belly, paint and occlusion tone still multiply over it
+#   hide    pattern, size,   the body's material baked into a map finer than the mesh can colour (`bake_hide`). `size` is
+#           colours, map     metres a scale, strand, fold, feather, plate or patch; colours sRGB; `map` px (512). Patterns
+#                            and their `colours` (each pattern's example sheet is its row in blender/hides.py EXAMPLES):
+#                              scales   [rim, cell]          Voronoi scales, domed, a dark seam (Tatzelwurm)
+#                              skin     [crease]             leathery folds across the body, pebbled (Hodag)
+#                              fur      [root, tip]          clumped strands along the body
+#                              spots    [spot]               spots on plain skin
+#                              feathers [tip band, vane]     staggered rows lying back, a shaft, chevron barbs; `width` (0.6)
+#                                                            a feather's in its length, `girth` (0.3) metres round the body,
+#                                                            `lie` "down" for an upright bird (tips toward the ground)
+#                              bark     [fissure, ridge]     ridges split by fissures, `grain` "along" the body or "up" it
+#                              shell    [rim, middle]        plates split by deep grooves, `rings` (6) growth rings each
+#                              wet      [mottle, wart]       an amphibian's slick mottled skin, warts on `cover` (0.4) of cells
+#                              velvet   [nap]                short pile: patches of nap and a fine grain, `size` a patch
+#           spots, moss,     over any pattern: `spots` {size, colour, cover}; `moss` {colour, cover (0.5), size} in tufts
+#           band             on the surfaces that face up; `band` {colour, width (0.2), soft (0.08)} a dorsal stripe from
+#                            the crown down the spine (width: how far down the flanks, a share of the way round)
+#           rough, bump,     The belly, paint and occlusion tone still multiply over the map. The pattern's height bakes
+#           normal_map       a tangent-space normal map (`normal_map` px, default `map`; `bump` (1) scales its depth) and
+#                            its gloss a roughness map at a quarter of `map`: `rough` [shiniest, dullest] (the pattern's own in
+#                            ROUGH) sets the range, wet skin [0.4, 0.62]. `bun scripts/beasts.ts --swatch` shows them all
 import json
 import math
 import os
@@ -72,6 +100,7 @@ import time
 import bmesh
 import bpy
 from mathutils import Euler, Matrix, Vector
+from mathutils.bvhtree import BVHTree
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 APP = os.path.join(HERE, "..")
@@ -195,7 +224,7 @@ def body(sheet):
                 f.use_smooth = True
     if sheet.get("paint") or sheet.get("stripes"):
         paint(o, sheet, nodes, links)
-    return o, nodes
+    return o, nodes, links
 
 
 def skinned(sheet, nodes, links):
@@ -245,7 +274,10 @@ def paint(o, sheet, nodes, links):
     """Colour by region. `paint`: each listed node's flesh in a material (a face takes the node it's
     nearest; an `l_` name paints its twin too): legs, a muzzle, a horn or shell grown from body nodes.
     `stripes`: bands across a chain's back in a material, `n` of them, each `width` of its spacing,
-    leaving the faces that turn down past `below` (the belly) alone."""
+    leaving the faces that turn down past `below` (the belly) alone. With `side: "under"` it bands only those
+    faces, and a face is on the chain's flesh when it sits within `reach` of where a ray from the chain first
+    meets the skin: a blended body's skin sits well past its node radii, and a leg or neck leaving the chain
+    lies beyond that first crossing."""
     mats = [m.name for m in o.data.materials]
 
     def slot(name):
@@ -266,22 +298,35 @@ def paint(o, sheet, nodes, links):
         line = [Vector(nodes[k][:3]) for k in st["along"]]
         total = sum((y - x).length for x, y in zip(line, line[1:]))
         stripe = slot(st["material"])
+        under, chain = st.get("side") == "under", set(st["along"])
         # cut the flesh square across the chain at every band's edges, so a band ends on a clean line
-        # rather than on whichever faces the subdivision happened to leave there
+        # rather than on whichever faces the subdivision happened to leave there; underneath, only the flesh near
+        # the band (a plane through the whole beast slices the wings and legs too, and a baked hide's unwrap of a
+        # blended skin cut that way collapses to nothing)
         bm = bmesh.new()
         bm.from_mesh(o.data)
+        phase = st.get("phase", 0.0)
         for i in range(st["n"]):
-            for edge in (i, i + st.get("width", 0.5)):
+            for edge in (i + phase, i + phase + st.get("width", 0.5)):
                 at, run = edge * total / st["n"], 0.0
+                if not 0 <= at <= total:
+                    continue
                 for x, y in zip(line, line[1:]):
                     if run + (y - x).length >= at or y is line[-1]:
                         u = (at - run) / max((y - x).length, 1e-9)
-                        geom = bm.verts[:] + bm.edges[:] + bm.faces[:]
-                        bmesh.ops.bisect_plane(bm, geom=geom, plane_co=x.lerp(y, min(u, 1.0)), plane_no=(y - x).normalized())
+                        at_co = x.lerp(y, min(u, 1.0))
+                        if under:
+                            fs = [f for f in bm.faces if (f.calc_center_median() - at_co).length < 0.4]
+                            geom = list({v for f in fs for v in f.verts}) + list({e for f in fs for e in f.edges}) + fs
+                        else:
+                            geom = bm.verts[:] + bm.edges[:] + bm.faces[:]
+                        bmesh.ops.bisect_plane(bm, geom=geom, plane_co=at_co, plane_no=(y - x).normalized())
                         break
                     run += (y - x).length
         bm.to_mesh(o.data)
         bm.free()
+        # the skin as it is now, to find where a ray from the chain first comes out of the flesh
+        skin = BVHTree.FromPolygons([v.co.copy() for v in o.data.vertices], [p.vertices[:] for p in o.data.polygons]) if under else None
     for f in o.data.polygons:
         if f.material_index != 0:
             continue
@@ -297,19 +342,40 @@ def paint(o, sheet, nodes, links):
         k = base(a if t < 0.5 else b)
         if k in owner:
             f.material_index = owner[k]
-        if st and f.normal.y > st.get("below", -0.3):
+        if st and (f.normal.y < st.get("below", -0.3) if under else f.normal.y > st.get("below", -0.3)):
             # how far along the chain this face is (the nearest point on its polyline), and whether it's on
             # the chain's flesh at all rather than a leg or neck leaving it
-            s, run, near = 0.0, 0.0, 1e9
-            for x, y, rx, ry in zip(line, line[1:], radii, radii[1:]):
+            s, run, near, foot, bent = 0.0, 0.0, 1e9, None, False
+            for j, (x, y, rx, ry) in enumerate(zip(line, line[1:], radii, radii[1:])):
                 xy = y - x
-                u = max(0.0, min(1.0, (c - x).dot(xy) / max(xy.length_squared, 1e-9)))
-                d = (c - x.lerp(y, u)).length - (rx + (ry - rx) * u)
+                raw = (c - x).dot(xy) / max(xy.length_squared, 1e-9)
+                u = max(0.0, min(1.0, raw))
+                p = x.lerp(y, u)
+                d = (c - p).length - (rx + (ry - rx) * u)
                 if d < near:
-                    near, s = d, run + xy.length * u
+                    near, s, foot = d, run + xy.length * u, p
+                    bent = (raw < 0 and j > 0) or (raw > 1 and j < len(line) - 2)
                 run += xy.length
-            if near < 0.05 and 0 < s < total and (s / total * st["n"]) % 1 < st.get("width", 0.5):
+            if under:
+                # measured from the skin itself: the face sits within `reach` of the first skin the ray from
+                # the chain's nearest point toward it meets (a leg's face lies past the belly's skin)
+                out = c - foot
+                hit = skin.ray_cast(foot, out.normalized(), out.length + 1.0)[0] if out.length > 1e-6 else None
+                near = out.length - (hit - foot).length if hit is not None else 1e9
+                # out past a bend's outside every face takes the joint's one spot on the chain (a solid block, not
+                # bands), and a thigh blended into the belly is a leg's flesh, not the chain's: neither is banded
+                if bent or not (base(a) in chain and base(b) in chain):
+                    near = 1e9
+            band = (s / total * st["n"] - st.get("phase", 0.0)) % 1 < st.get("width", 0.5)
+            if near < st.get("reach", 0.05) and 0 < s < total and band:
                 f.material_index = stripe
+    if st and under:
+        # an underside band is a few triangles wide once decimated, and the decimator would round its edges away:
+        # the vertices along each band's border go in a `keep` group, which `low_poly` tells it to leave
+        inside, outside = set(), set()
+        for f in o.data.polygons:
+            (inside if f.material_index == stripe else outside).update(f.vertices)
+        o.vertex_groups.new(name="keep").add(sorted(inside & outside), 1.0, "REPLACE")
 
 
 def blobs(o, spec, nodes):
@@ -377,7 +443,7 @@ def vertex_ao(o, rays=24, reach=0.16):
     return ao
 
 
-def shade(o, back, soft=(), belly=None, turn=-0.2, lift=1.0):
+def shade(o, back, soft=(), belly=None, turn=-0.2, floor=LUM[0], lift=1.0):
     """One colour attribute, `tone`, multiplied into every material's base colour by the game: the baked
     occlusion everywhere, and on the body's material (`back`) the body's own colour, painted per vertex so
     colour borders blend instead of stepping along triangle edges: each `soft` material (a `paint` or
@@ -387,7 +453,8 @@ def shade(o, back, soft=(), belly=None, turn=-0.2, lift=1.0):
     down past `turn` (-1 straight down, 0 sideways): an animal's back darker than its front. Painted after the
     decimator (a colour attribute steers what it keeps, and Hodag's short legs pay). Every material's Base
     Color reads the attribute so the contact sheet matches. `lift` (at most) brightens the body's tone for a baked
-    hide (`bake_hide`), as far as its brightest channel can go; returns the lift it used, which the map divides by."""
+    hide (`bake_hide`), as far as its brightest channel can go; returns the lift it used, which the map divides by.
+    `floor` is the darkest the body's luminance may go (a sheet's `black: true` passes 0: a black dog stays black)."""
     mats = [x.name for x in o.data.materials]
     soft = [n for n in soft if n in mats and n != back and len(PALETTE[n]) < 6]
     slot = mats.index(back)
@@ -456,11 +523,11 @@ def shade(o, back, soft=(), belly=None, turn=-0.2, lift=1.0):
         lum = 0.3 * c[0] + 0.59 * c[1] + 0.11 * c[2]
         if lum > LUM[1]:
             c = [x * LUM[1] / lum for x in c]
-        elif lum < LUM[0]:
+        elif lum < floor:
             # lift a near-black hide toward the sheet's lighter colour (the belly's hue), not a flat grey
             hue = rgb(belly) if belly else [1, 1, 1]
             hl = (0.3 * hue[0] + 0.59 * hue[1] + 0.11 * hue[2]) or 1
-            c = [x + (LUM[0] - lum) * h / hl for x, h in zip(c, hue)]
+            c = [x + (floor - lum) * h / hl for x, h in zip(c, hue)]
         tones[v.index] = [x * k_ao for x in c]
         flesh.append(v.index)
     lift = max(1.0, min(lift, 1 / max([max(tones[i]) for i in flesh] or [1])))
@@ -523,11 +590,12 @@ def arc(at, d, b, length, angle, t):
     return p, d * math.cos(th) + b * math.sin(th), -d * math.sin(th) + b * math.cos(th)
 
 
-def tube(name, at, direction, length, base, tip, mat, curve=0, bend=None, flat=1.0, segments=6, rings=6, profile=None):
+def tube(name, at, direction, length, base, tip, mat, curve=0, bend=None, flat=1.0, segments=6, rings=6, profile=None, fold=0.0):
     """A cone that curves and tapers: from radius `base` at `at` to `tip` at the far end (0 a point, more
     than base a club), bending `curve` degrees toward `bend` along the way, its section squashed to `flat`
     of its width in the bend direction (a tuft or a feather lies flat on what it bends toward). `profile`
-    is instead a list of (how far along, radius in `base`) pairs, a ring at each: a feather's vane."""
+    is instead a list of (how far along, radius in `base`) pairs, a ring at each: a feather's vane. `fold`
+    cups the section across: its edges swing that share of the radius toward `bend` (a fleshy ear's hollow)."""
     d, b = bend_frame(direction, bend)
     angle = math.radians(curve)
     verts, faces = [], []
@@ -542,7 +610,7 @@ def tube(name, at, direction, length, base, tip, mat, curve=0, bend=None, flat=1
         side = tan.cross(nrm)
         for j in range(segments):
             a = 2 * math.pi * j / segments
-            verts.append(tuple(p + side * (r * math.cos(a)) + nrm * (r * flat * math.sin(a))))
+            verts.append(tuple(p + side * (r * math.cos(a)) + nrm * (r * (flat * math.sin(a) + fold * math.cos(a) ** 2))))
     for k in range(rings):
         s0 = k * segments
         if k == rings - 1 and tip <= 0:
@@ -805,6 +873,34 @@ def wing(name, hub, tips, body, p, mat):
     return out
 
 
+def webbing(name, ribs, p, mat):
+    """A fin's skin between consecutive ribs: each rib a list of points from root to tip along its arc, the
+    panel between two following both and its free edge pulled in `scallop` toward the first rib's root."""
+    hub, scal = ribs[0][0], p.get("scallop", 0.3)
+    cols = 5
+    verts, faces = [], []
+    for a, b in zip(ribs, ribs[1:]):
+        base = len(verts)
+        rows = len(a) - 1
+        for r in range(rows + 1):
+            u = r / rows
+            for c in range(cols + 1):
+                v = c / cols
+                q = a[r].lerp(b[r], v)
+                verts.append(tuple(hub + (q - hub) * (1 - scal * math.sin(math.pi * v) * u * u)))
+        stride = cols + 1
+        faces += [(base + r * stride + c, base + r * stride + c + 1, base + (r + 1) * stride + c + 1, base + (r + 1) * stride + c)
+                  for r in range(rows) for c in range(cols)]
+    me = bpy.data.meshes.new(name)
+    me.from_pydata(verts, [], faces)
+    o = obj(name, me, mat)
+    o.modifiers.new("solidify", "SOLIDIFY").thickness = p.get("web_thick", 0.012)
+    apply_all(o)
+    for f in o.data.polygons:
+        f.use_smooth = True
+    return o
+
+
 def scallop(points, start, depth):
     """A wing's trailing edge cut into scallops: between each pair of points from `start` on (around to
     the first), a point pulled in toward the middle by `depth` of the way, the way a bat's wing hangs
@@ -891,10 +987,15 @@ def shell(name, points, rim, p, side, mat):
         # pointing out of the membrane in its own plane and rooted a third of its length inside the rim
         ring = [rim[(fs["from"] + i) % len(rim)] for i in range((fs["to"] - fs["from"]) % len(rim) + 1)]
         pts = {str(i): (*q, 0) for i, q in enumerate(ring)}
+        rake = math.radians(fs.get("rake", 0))
         for j, (at, _, e) in enumerate(along(pts, list(pts), fs["n"])):
             q = n.cross(e)
             if q.dot(at - c) < 0:
                 q = -q
+            if rake:
+                # swung in the membrane's plane toward the row's end (`to`; a negative rake toward `from`), so the
+                # feathers sweep back along the edge like a wing's primaries instead of standing out like a comb
+                q = (q * math.cos(rake) + e * math.sin(rake)).normalized()
             ln = fs["len"] * (1 - 0.12 * (j % 3))  # a little ragged, the same every build
             root = at - q * (ln / 3)
             u = max(0.0, min(1.0, (root - c).length / max((at - c).length, 1e-6)))
@@ -964,6 +1065,7 @@ def resolve(nodes, p):
 
 def parts(sheet, nodes):
     out, blobs = [], sheet.get("blobs", [])
+    webs = {}  # (web name, side) -> (first rib's part, [each rib's points root to tip])
     for i, p in enumerate(sheet.get("parts", [])):
         for side in ([1, -1] if p.get("mirror") else [1]):
             s = lambda v: (v[0], v[1], v[2] * side)
@@ -992,6 +1094,9 @@ def parts(sheet, nodes):
                 else:
                     out.append(cone(name, at, d, p["len"], p["base"], p["material"]))
                     b = None
+                if "web" in p:
+                    rib = [arc(at, d, b, p["len"], curve, k / 6)[0] if b is not None else at + d * (p["len"] * k / 6) for k in range(7)]
+                    webs.setdefault((p["web"], side), (p, []))[1].append(rib)
                 # tines branch off the beam: [how far up it (0-1), direction, length], an antler not a spike
                 for j, (t, td, tl) in enumerate(p.get("tines", [])):
                     root = arc(at, d, b, p["len"], curve, t)[0] if b is not None else at + d * (p["len"] * t)
@@ -1032,8 +1137,14 @@ def parts(sheet, nodes):
             elif p["kind"] == "ear":
                 at = Vector(node(p["at"])) + Vector(s(p.get("off", (0, 0, 0))))
                 d = Vector(s(p["dir"])).normalized() + Vector((0, 0, math.tan(math.radians(p.get("tilt", 0))) * side))
-                out.append(tube(name, at, d.normalized(), p["len"], p["width"], 0, p["material"], curve=p.get("cup", 20),
-                                bend=Vector((1, 0, 0)), flat=0.12, segments=6, profile=[(0, 0.55), (0.4, 1.0), (0.75, 0.8), (1, 0.1)]))
+                if "thick" in p or "fold" in p:
+                    # a fleshy flap: a rounded section `thick` of its width deep, cupped across by `fold`, a lobe at the end
+                    out.append(tube(name, at, d.normalized(), p["len"], p["width"], 0, p["material"], curve=p.get("cup", 20),
+                                    bend=Vector((1, 0, 0)), flat=p.get("thick", 0.12), segments=12, fold=p.get("fold", 0),
+                                    profile=[(0, 0.5), (0.2, 0.85), (0.5, 1.0), (0.78, 0.92), (0.93, 0.6), (1, 0.2)]))
+                else:
+                    out.append(tube(name, at, d.normalized(), p["len"], p["width"], 0, p["material"], curve=p.get("cup", 20),
+                                    bend=Vector((1, 0, 0)), flat=0.12, segments=6, profile=[(0, 0.55), (0.4, 1.0), (0.75, 0.8), (1, 0.1)]))
             elif p["kind"] == "ridge":
                 at = Vector(node(p["at"])) + Vector(s(p.get("off", (0, 0, 0))))
                 bend = s(p["bend"]) if "bend" in p else None
@@ -1055,6 +1166,9 @@ def parts(sheet, nodes):
                 out += wing(name, node(p["hub"]), [node(q) for q in p["tips"]], [node(q) for q in p["body"]], p, p["material"])
             else:
                 raise ValueError(f"unknown part kind {p['kind']}")
+    for (web, side), (first, ribs) in webs.items():
+        if len(ribs) > 1:
+            out.append(webbing(f"web_{web}{'r' if side < 0 else ''}", ribs, first, first.get("web_mat", first["material"])))
     return out
 
 
@@ -1077,6 +1191,178 @@ def join(objs, name, sheet):
     o.data.transform(Matrix.Rotation(math.pi / 2, 4, "X"))
     bpy.ops.object.shade_auto_smooth(angle=math.radians(40))
     return o
+
+
+def chains(sheet, nodes, links):
+    """The sheet's stick figure in the mesh's frame (`join`'s scale, offset and turn), cut into chains: the runs of
+    links between the nodes where three or more meet, or an end (a leg, the tail, the neck, the trunk). One
+    (a, b, ra, rb, chain, ref) per link; `ref` is the side each chain's UV seam runs down: its underside, or for a
+    chain that mostly stands up (a leg, a biped's trunk) its inner side, or its back on the midline."""
+    k = sheet.get("scale", 1)
+    k = k if isinstance(k, list) else [k] * 3
+    off = Vector(sheet.get("offset", (0, 0, 0)))
+    turn = Matrix.Rotation(math.pi / 2, 4, "X")
+    at = {n: turn @ (Vector([v * s for v, s in zip(p[:3], k)]) + off) for n, p in nodes.items()}
+    r = {n: p[3] * sum(k) / 3 for n, p in nodes.items()}
+    degree = {}
+    for a, b in links:
+        degree[a], degree[b] = degree.get(a, 0) + 1, degree.get(b, 0) + 1
+    # union the links through every node only two links meet at
+    up = list(range(len(links)))
+
+    def root(i):
+        while up[i] != i:
+            up[i] = up[up[i]]
+            i = up[i]
+        return i
+    by_node = {}
+    for i, (a, b) in enumerate(links):
+        for n in (a, b):
+            by_node.setdefault(n, []).append(i)
+    for n, ls in by_node.items():
+        if degree[n] == 2:
+            up[root(ls[0])] = root(ls[1])
+    ids, refs = {}, {}
+    for i in range(len(links)):
+        ids.setdefault(root(i), len(ids))
+    for c in set(ids.values()):
+        mine = [links[i] for i in range(len(links)) if ids[root(i)] == c]
+        rise = sum(abs((at[b] - at[a]).z) for a, b in mine) / max(1e-6, sum((at[b] - at[a]).length for a, b in mine))
+        y = sum(at[a].y + at[b].y for a, b in mine) / (2 * len(mine))
+        if rise < 0.7:
+            refs[c] = Vector((0, 0, -1))
+        elif abs(y) > 0.02:
+            refs[c] = Vector((0, -math.copysign(1, y), 0))
+        else:
+            refs[c] = Vector((-1, 0, 0))
+    return [(at[a], at[b], r[a], r[b], ids[root(i)], refs[ids[root(i)]]) for i, (a, b) in enumerate(links)]
+
+
+def chain_seams(o, slot, segs):
+    """Seams on the body's faces (material `slot`) for one UV island a chain: each face goes to the chain it lies
+    nearest the surface of, the labels are smoothed so a border doesn't zigzag, and the seams run along the borders
+    and down each chain's `ref` side, where a ring round the chain's axis wraps. Every seam splits its vertices in
+    the GLB, so a chain's cut is one line, not Smart UV Project's many islands (#4264)."""
+    bm = bmesh.new()
+    bm.from_mesh(o.data)
+    bm.faces.ensure_lookup_table()
+    label, angle = {}, {}
+    for f in bm.faces:
+        if f.material_index != slot:
+            continue
+        c = f.calc_center_median()
+        best = None
+        for a, b, ra, rb, chain, ref in segs:
+            ab = b - a
+            t = max(0.0, min(1.0, (c - a).dot(ab) / max(ab.length_squared, 1e-12)))
+            q = a + ab * t
+            d = (c - q).length - (ra + (rb - ra) * t)
+            if best is None or d < best[0]:
+                best = (d, chain, q, ab, ref)
+        _, chain, q, ab, ref = best
+        axis = ab.normalized() if ab.length > 1e-9 else Vector((1, 0, 0))
+        u = c - q
+        u -= axis * u.dot(axis)
+        down = ref - axis * ref.dot(axis)
+        if down.length < 1e-6:
+            down = axis.orthogonal()
+        down.normalize()
+        side = axis.cross(down)
+        label[f.index] = chain
+        # 0 straight up from `ref`, +-pi on it: the cut is where the sign flips with both near pi
+        angle[f.index] = math.atan2(u.dot(side), -u.dot(down))
+    for _ in range(3):  # a face outvoted by its neighbours joins them
+        nxt = dict(label)
+        for f in bm.faces:
+            if f.index not in label:
+                continue
+            votes = {}
+            for e in f.edges:
+                for g in e.link_faces:
+                    if g is not f and g.index in label:
+                        votes[label[g.index]] = votes.get(label[g.index], 0) + 1
+            if votes:
+                top = max(votes, key=lambda k: (votes[k], k == label[f.index]))
+                if top != label[f.index] and votes[top] > votes.get(label[f.index], 0) + 1:
+                    nxt[f.index] = top
+        label = nxt
+    for e in bm.edges:
+        fs = [f.index for f in e.link_faces if f.index in label]
+        e.seam = False
+        if len(fs) != 2:
+            continue
+        f, g = fs
+        e.seam = label[f] != label[g] or (
+            abs(angle[f]) > math.pi / 2 and abs(angle[g]) > math.pi / 2 and (angle[f] > 0) != (angle[g] > 0))
+    bm.to_mesh(o.data)
+    bm.free()
+
+
+def unflat(o, slot):
+    """The faces (material `slot`) of each UV island the unwrap couldn't lay flat: a closed shell no seam or edge opens
+    (a knob, a ball off every chain's axis), or one it squashed into slivers (a thin wing membrane cut along its rim),
+    whose UV edges run far longer than its UV area allows."""
+    bm = bmesh.new()
+    bm.from_mesh(o.data)
+    lay = bm.loops.layers.uv["hide"]
+    seen, out = set(), []
+    for f0 in bm.faces:
+        if f0.material_index != slot or f0.index in seen:
+            continue
+        stack, island, opened = [f0], [], False
+        seen.add(f0.index)
+        while stack:
+            f = stack.pop()
+            island.append(f)
+            for e in f.edges:
+                others = [g for g in e.link_faces if g is not f and g.material_index == slot]
+                if e.seam or not others:
+                    opened = True
+                    continue
+                for g in others:
+                    if g.index not in seen:
+                        seen.add(g.index)
+                        stack.append(g)
+        flat = edge = edge3 = 0.0
+        for f in island:
+            w = [l[lay].uv for l in f.loops]
+            flat += abs(sum(w[i].x * w[i - 1].y - w[i - 1].x * w[i].y for i in range(len(w)))) / 2
+            for l in f.loops:
+                edge += (l.link_loop_next[lay].uv - l[lay].uv).length
+                edge3 += l.edge.calc_length()
+        area = sum(f.calc_area() for f in island)
+        squashed = edge > 1.5 * edge3 * math.sqrt(flat / max(area, 1e-12))
+        if not opened or squashed:
+            out += [f.index for f in island]
+    bm.free()
+    return set(out)
+
+
+def uv_islands(o, slot):
+    """The faces (material `slot`) grouped by UV island: faces that share an edge with the same UVs on both sides."""
+    bm = bmesh.new()
+    bm.from_mesh(o.data)
+    lay = bm.loops.layers.uv["hide"]
+    seen, out = set(), []
+    for f0 in bm.faces:
+        if f0.material_index != slot or f0.index in seen:
+            continue
+        stack, island = [f0], []
+        seen.add(f0.index)
+        while stack:
+            f = stack.pop()
+            island.append(f.index)
+            for l in f.loops:
+                for m in l.edge.link_loops:
+                    g = m.face
+                    if g is f or g.index in seen or g.material_index != slot:
+                        continue
+                    if (l[lay].uv - m.link_loop_next[lay].uv).length < 1e-6 and (l.link_loop_next[lay].uv - m[lay].uv).length < 1e-6:
+                        seen.add(g.index)
+                        stack.append(g)
+        out.append(island)
+    bm.free()
+    return out
 
 
 def tris(o):
@@ -1114,10 +1400,14 @@ def canonical(o, step=float(os.environ.get("SNAP_STEP", "1e-3"))):
 # to match (as far as its brightest channel allows, at most HIDE_LIFT), so a mark lighter than the hide (a scale's
 # rim) still fits in an 8-bit image.
 HIDE_LIFT = 3.0
+# each pattern's roughness at its shiniest and dullest part (the game reads under 0.6 as glazed: its rim light is strong)
+ROUGH = {"scales": (0.62, 0.9), "skin": (0.7, 0.88), "fur": (0.92, 0.97), "spots": (0.8, 0.8), "feathers": (0.6, 0.85),
+         "bark": (0.88, 0.97), "shell": (0.55, 0.85), "wet": (0.4, 0.62), "velvet": (0.95, 0.98)}
 
 
-def hide_colour(nt, h, base, lift):
-    """The hide's colour as a multiple of the body's (`base`, sRGB), from nodes in `nt`, over `lift`; returns the socket."""
+def hide_nodes(nt, h, base, lift):
+    """The hide from nodes in `nt`: its colour as a multiple of the body's (`base`, sRGB) over `lift`, its height (0..1,
+    for the normal map) and its roughness (0..1); returns the three sockets."""
     N, L = nt.nodes, nt.links
     size = h.get("size", 0.05)
 
@@ -1164,6 +1454,9 @@ def hide_colour(nt, h, base, lift):
                 L.new(c, s)
         return n.outputs[2]
 
+    def mix_f(f, a, b):  # floats (numbers or sockets): a where f is 0, b where 1
+        return math_("ADD", a, math_("MULTIPLY", f, math_("SUBTRACT", b, a) if not isinstance(a, float) or not isinstance(b, float) else b - a))
+
     def scaled(col, k):  # a colour socket times a float socket
         n = node("ShaderNodeMix", data_type="RGBA", blend_type="MULTIPLY", clamp_result=False)
         n.inputs["Factor"].default_value = 1
@@ -1186,6 +1479,20 @@ def hide_colour(nt, h, base, lift):
         n.inputs["Scale"].default_value, n.inputs["Randomness"].default_value = scale, jitter
         return n
 
+    def xyz(vec):  # a vector's three components
+        n = node("ShaderNodeSeparateXYZ")
+        L.new(vec, n.inputs[0])
+        return n.outputs
+
+    def vmath(op, a, b):  # two vector sockets (or b a tuple)
+        n = node("ShaderNodeVectorMath", operation=op)
+        L.new(a, n.inputs[0])
+        if isinstance(b, tuple):
+            n.inputs[1].default_value = b
+        else:
+            L.new(b, n.inputs[1])
+        return n
+
     def red(col):
         n = node("ShaderNodeSeparateColor")
         L.new(col, n.inputs[0])
@@ -1206,6 +1513,7 @@ def hide_colour(nt, h, base, lift):
     cols = [ratio(c) for c in h.get("colours", [])]
     pattern = h["pattern"]
     one = [1.0, 1.0, 1.0]
+    ht, gl = 0.5, 0.0  # height 0..1 for the normal map, gloss 0..1 (1 the shiniest part) for the roughness map
     if pattern == "scales":
         # cells (`colours[1]`, else the hide), each a little domed and its own shade, a rim (`colours[0]`) and a dark seam
         rim, mid = (cols + [[1.3, 1.3, 1.1], [1.0, 1.0, 1.0]][len(cols):])[:2]
@@ -1219,7 +1527,11 @@ def hide_colour(nt, h, base, lift):
         tint = math_("ADD", math_("MULTIPLY", red(cell.outputs["Color"]), 0.3), 0.85)  # each scale 0.85..1.15
         dome = math_("SUBTRACT", 1.08, math_("MULTIPLY", cell.outputs["Distance"], 0.35))
         c = scaled(mix(ramp(edge, 0.025, 0.09), rim, mid), math_("MULTIPLY", tint, dome))
-        c = mix(math_("SUBTRACT", 1.0, ramp(edge, 0.0, 0.018)), c, [0.55, 0.55, 0.5])
+        seam = math_("SUBTRACT", 1.0, ramp(edge, 0.0, 0.018))
+        c = mix(seam, c, [0.55, 0.55, 0.5])
+        # each scale a dome sunk into its seam; the plate takes a soft sheen, the seam is dull
+        ht = math_("MULTIPLY", ramp(edge, 0.0, 0.07), math_("SUBTRACT", 1.0, math_("MULTIPLY", cell.outputs["Distance"], 0.5)))
+        gl = ramp(edge, 0.0, 0.05)
     elif pattern == "spots":
         c = one
     elif pattern == "fur":
@@ -1232,6 +1544,7 @@ def hide_colour(nt, h, base, lift):
         clump = noise(co, 0.25 / size, 1.0).outputs["Fac"]
         f = ramp(math_("ADD", math_("MULTIPLY", strands, 0.7), math_("MULTIPLY", clump, 0.3)), 0.3, 0.7)
         c = mix(f, dark, tip)
+        ht = f  # strands stand proud of the roots
     elif pattern == "skin":
         # leathery: folds across the body (`colours[0]` in their creases), a fine pebbling between them
         crease = cols[0] if cols else [0.55, 0.55, 0.5]
@@ -1242,9 +1555,85 @@ def hide_colour(nt, h, base, lift):
         ridge = math_("ABSOLUTE", math_("SUBTRACT", math_("MULTIPLY", n, 2.0), 1.0))
         pebble = voronoi(co, 4.0 / size)
         bump = math_("ADD", 0.94, math_("MULTIPLY", red(pebble.outputs["Color"]), 0.12))
-        c = scaled(mix(ramp(ridge, 0.0, 0.3), crease, one), bump)
+        fold = ramp(ridge, 0.0, 0.3)
+        c = scaled(mix(fold, crease, one), bump)
+        ht = math_("ADD", math_("MULTIPLY", fold, 0.8), math_("MULTIPLY", red(pebble.outputs["Color"]), 0.2))
+        gl = fold  # a little greasy on the folds' crowns, dry down in the creases
+    elif pattern == "feathers":
+        # rows of feathers lying back toward the tail (-x), staggered like shingles: each a vane (`colours[1]`, else the
+        # hide) whose rounded free tip carries a band (`colours[0]`) and shades the root of the one behind it, with a
+        # pale shaft down its middle and barbs in a chevron off it; `size` is a feather's length, `width` (0.6) in that
+        tipc, vane = (cols + [[0.7, 0.7, 0.7], [1.0, 1.0, 1.0]][len(cols):])[:2]
+        p = warped(co, size * 0.08, 1.0 / size)
+        x, y, z = xyz(p)
+        # `lie` "back" (the default): rows along a long body, tips toward the tail; "down": an upright bird's, tips
+        # toward the ground, the arc taken about the vertical
+        along, a, b = (z, x, y) if h.get("lie") == "down" else (x, z, y)
+        u = math_("DIVIDE", along, size)
+        row, fx = math_("FLOOR", u), math_("FRACT", u)  # fx 0 at a feather's free tip .. 1 at its root (headward)
+        # around the body: the arc about its long axis, so rows wrap a neck or a flank alike
+        arc = math_("MULTIPLY", math_("ARCTAN2", a, b), h.get("girth", 0.3))
+        w = math_("ADD", math_("DIVIDE", arc, size * h.get("width", 0.6)), math_("MULTIPLY", row, 0.5))
+        fw = math_("SUBTRACT", math_("FRACT", w), 0.5)  # -0.5..0.5 across a feather
+        free = math_("SUBTRACT", fx, math_("MULTIPLY", math_("MULTIPLY", fw, fw), 1.6))  # < 0: under the tip of the one ahead
+        side = math_("ABSOLUTE", fw)
+        barbs = math_("ADD", 0.5, math_("MULTIPLY", math_("SINE", math_("MULTIPLY", math_("ADD", math_("MULTIPLY", side, 2.5), fx), 6.283 * 6)), 0.5))
+        shaft = math_("SUBTRACT", 1.0, ramp(side, 0.0, 0.035))
+        out = ramp(free, 0.0, 0.03)  # 1 on this feather, 0 where the row ahead's tip lies over it
+        c = mix(ramp(free, 0.12, 0.3), tipc, vane)
+        c = scaled(c, math_("ADD", math_("MULTIPLY", barbs, 0.12), math_("ADD", 0.9, math_("MULTIPLY", shaft, 0.2))))
+        c = mix(out, [0.45, 0.45, 0.45], c)
+        ht = math_("MULTIPLY", out, math_("SUBTRACT", 1.0, math_("MULTIPLY", fx, 0.7)))  # tip proud, root tucked
+        gl = math_("MULTIPLY", out, math_("ADD", 0.5, math_("MULTIPLY", barbs, 0.5)))
+    elif pattern == "bark":
+        # long ridges split by deep narrow fissures (`colours[0]`) running along the body (`grain` "along", the
+        # default) or up it ("up": a tree-like beast standing), with the ridges' faces (`colours[1]`) cracked across
+        fis, face = (cols + [[0.4, 0.38, 0.34], [1.0, 1.0, 1.0]][len(cols):])[:2]
+        g = (0.15, 1.0, 1.0) if h.get("grain", "along") == "along" else (1.0, 1.0, 0.15)
+        p = warped(vmath("MULTIPLY", co, g).outputs[0], size * 0.3, 1.0 / size)
+        n = noise(p, 1.0 / size, 3.0).outputs["Fac"]
+        ridge = math_("ABSOLUTE", math_("SUBTRACT", math_("MULTIPLY", n, 2.0), 1.0))
+        split = ramp(ridge, 0.0, 0.14)
+        cracks = voronoi(vmath("MULTIPLY", co, tuple(1.0 / x for x in g)).outputs[0], 0.25 / size, "DISTANCE_TO_EDGE").outputs["Distance"]
+        face_ = math_("MULTIPLY", split, ramp(cracks, 0.0, 0.04))
+        grit = noise(co, 6.0 / size, 2.0).outputs["Fac"]
+        c = scaled(mix(face_, fis, face), math_("ADD", 0.82, math_("MULTIPLY", grit, 0.36)))
+        ht = math_("MULTIPLY", face_, math_("ADD", 0.75, math_("MULTIPLY", grit, 0.25)))
+    elif pattern == "shell":
+        # plates (a turtle's scutes, an armadillo's bands) split by deep grooves (`colours[0]` at the rims), each
+        # paler toward its middle (`colours[1]`) and lined with growth rings
+        rim, mid = (cols + [[0.7, 0.68, 0.6], [1.15, 1.12, 1.0]][len(cols):])[:2]
+        p = warped(co, size * 0.12, 1.0 / size)
+        edge = voronoi(p, 1.0 / size, "DISTANCE_TO_EDGE", jitter=0.45).outputs["Distance"]
+        groove = ramp(edge, 0.0, 0.04)
+        rings = math_("ADD", 0.5, math_("MULTIPLY", math_("SINE", math_("MULTIPLY", edge, 6.283 * h.get("rings", 6) * 2)), 0.5))
+        c = mix(ramp(edge, 0.04, 0.35), rim, mid)
+        c = scaled(c, math_("ADD", 0.9, math_("MULTIPLY", rings, 0.12)))
+        c = mix(math_("SUBTRACT", 1.0, groove), c, [0.4, 0.38, 0.34])
+        ht = math_("SUBTRACT", math_("MULTIPLY", groove, math_("ADD", 0.6, math_("MULTIPLY", ramp(edge, 0.0, 0.3), 0.4))), math_("MULTIPLY", rings, 0.06))
+        gl = math_("MULTIPLY", groove, math_("ADD", 0.6, math_("MULTIPLY", rings, 0.4)))
+    elif pattern == "wet":
+        # an amphibian's skin: blotchy mottling (`colours[0]`), scattered round warts (`colours[1]`, `cover` of
+        # the cells, 0.4), and a slick shine that dulls a little on each wart
+        mot, wart = (cols + [[0.65, 0.7, 0.55], [1.2, 1.15, 0.95]][len(cols):])[:2]
+        m = ramp(noise(co, 0.3 / size, 3.0).outputs["Fac"], 0.48, 0.6)
+        cell = voronoi(warped(co, size * 0.4, 1.0 / size), 1.0 / size)
+        keep = math_("LESS_THAN", red(cell.outputs["Color"]), h.get("cover", 0.4))
+        dome = math_("MULTIPLY", keep, math_("SUBTRACT", 1.0, ramp(cell.outputs["Distance"], 0.05, 0.3)))
+        c = mix(dome, mix(m, one, mot), wart)
+        slick = noise(co, 2.0 / size, 1.0).outputs["Fac"]
+        ht = math_("ADD", math_("MULTIPLY", dome, 0.85), math_("MULTIPLY", m, 0.15))
+        gl = math_("SUBTRACT", math_("ADD", 0.75, math_("MULTIPLY", slick, 0.25)), math_("MULTIPLY", dome, 0.35))
+    elif pattern == "velvet":
+        # short dense pile, a deer's antler velvet or a seal pup: no strands to see, only the nap's patches
+        # catching the light differently (`colours[0]`, else a little darker) and a fine grain; `size` is the patch
+        nap = cols[0] if cols else [0.86, 0.86, 0.86]
+        patch = ramp(noise(co, 1.0 / size, 2.0).outputs["Fac"], 0.4, 0.65)
+        grain = noise(co, 20.0 / size, 0.0).outputs["Fac"]
+        c = scaled(mix(patch, one, nap), math_("ADD", 0.985, math_("MULTIPLY", grain, 0.03)))
+        ht = math_("ADD", math_("MULTIPLY", grain, 0.15), math_("MULTIPLY", patch, 0.3))
     else:
-        raise SystemExit(f"hide pattern {pattern!r}: scales, spots, fur or skin")
+        raise SystemExit(f"hide pattern {pattern!r}: {', '.join(ROUGH)}")
     # spots over any of them: `spots` {size, colour, cover}; a `pattern: "spots"` hide is spots on plain skin
     spots = h.get("spots") or ({"size": size, "colour": h["colours"][0]} if pattern == "spots" else None)
     if spots:
@@ -1257,23 +1646,110 @@ def hide_colour(nt, h, base, lift):
         rad = math_("ADD", 0.16, math_("MULTIPLY", rnd.outputs[1], 0.16))  # each spot 0.16..0.32 of a cell
         spot = math_("MULTIPLY", keep, math_("SUBTRACT", 1.0, ramp(math_("SUBTRACT", cell.outputs["Distance"], rad), -0.04, 0.04)))
         c = mix(spot, c, ratio(spots["colour"]))
-    return scaled(c, 1.0 / lift)
+    # moss over any of them: `moss` {colour, cover (0.5), size}: tufty patches settled on the surfaces that face up
+    moss = h.get("moss")
+    if moss:
+        ms = moss.get("size", size * 3)
+        up = ramp(xyz(node("ShaderNodeTexCoord").outputs["Normal"])[2], -0.3, 0.7)
+        lump = noise(warped(co, ms * 0.3, 1.0 / ms), 1.0 / ms, 3.0).outputs["Fac"]
+        cover = moss.get("cover", 0.5)
+        on = ramp(math_("ADD", math_("MULTIPLY", lump, 0.7), math_("MULTIPLY", up, 0.6)), 1.25 - cover, 1.35 - cover)
+        fuzz = noise(co, 12.0 / ms, 2.0).outputs["Fac"]
+        c = mix(math_("MULTIPLY", on, math_("SUBTRACT", 1.0, math_("MULTIPLY", fuzz, 0.35))), c, ratio(moss["colour"]))
+        ht = mix_f(on, fl(ht), math_("ADD", 0.55, math_("MULTIPLY", fuzz, 0.45)))
+        gl = math_("MULTIPLY", fl(gl), math_("SUBTRACT", 1.0, on))
+    # a dorsal band over any of them: `band` {colour, width (0.2), soft (0.08)}: the surfaces that face up, from the
+    # crown of the head down the spine to the tail, in `colour`; `width` is how far down the flanks it reaches (a
+    # share of the way round, 0.5 the whole top half), its edge feathered `soft` and a little ragged, like a wolf's saddle
+    band = h.get("band")
+    if band:
+        nz = xyz(node("ShaderNodeTexCoord").outputs["Normal"])[2]
+        rag = math_("MULTIPLY", math_("SUBTRACT", noise(co, 0.5 / size, 2.0).outputs["Fac"], 0.5), 0.25)
+        edge = 1.0 - 2.0 * band.get("width", 0.2)
+        soft = band.get("soft", 0.08)
+        on = ramp(math_("ADD", nz, rag), edge - soft, edge + soft)
+        c = mix(on, c, ratio(band["colour"]))
+    # `rough` [shiniest, dullest]: the roughness the gloss runs between (the pattern's own in ROUGH; wet skin [0.4, 0.62], the slickest the rim light allows)
+    shiny, dull = h.get("rough", ROUGH[pattern])
+    rg = mix_f(fl(gl), dull, shiny)
+    return scaled(c, 1.0 / lift), fl(ht), rg
 
 
-def bake_hide(o, h, back, lift):
-    """The body's faces (material `back`) unwrapped and `hide` baked into a map its material multiplies over the tone."""
-    px, t0 = h.get("map", 1024), time.time()
+def bake_hide(o, h, back, lift, segs=None):
+    """The body's faces (material `back`) unwrapped, one island a chain of `segs` (`chains`; without them, a sphere
+    in the swatch, Smart UV Project), and `hide` baked into a colour map its material multiplies over the tone, a
+    tangent-space normal map and a roughness map."""
+    px, t0 = h.get("map", 512), time.time()
     mats = [m.name for m in o.data.materials]
     slot = mats.index(back)
     bpy.ops.object.select_all(action="DESELECT")
     o.select_set(True)
     bpy.context.view_layer.objects.active = o
-    o.data.uv_layers.new(name="hide")
-    for p in o.data.polygons:
-        p.select = p.material_index == slot
-    bpy.ops.object.mode_set(mode="EDIT")
-    bpy.ops.uv.smart_project(angle_limit=math.radians(80), island_margin=4 / px, scale_to_bounds=False)
+    uv = o.data.uv_layers.new(name="hide")
+    uv.active = uv.active_render = True  # the map is read and baked through these, whatever UVs the mesh came with
+    # every face starts on one point: a new layer gives each face its own square, which splits all its vertices (the
+    # other materials' faces stay there) and, on a face the unwrap skips, takes the whole map in the pack
+    for d in uv.data:
+        d.uv = (0.0, 0.0)
+
+    def pick(faces):
+        """Just `faces` selected for the next UV operator, in edit mode. Setting only the faces' flags isn't enough: the
+        vertices an operator left selected select every face round them again, and a pack packs those too (the other
+        materials' faces, each a zero-size island with its own margin: the Gevaudan's hide filled 11% of its map)."""
+        bpy.ops.object.mode_set(mode="EDIT")
+        bpy.ops.mesh.select_mode(type="FACE")
+        bm = bmesh.from_edit_mesh(o.data)
+        bm.faces.ensure_lookup_table()
+        for f in bm.faces:
+            f.select_set(False)
+        for f in bm.faces:
+            if f.index in faces:
+                f.select_set(True)
+        bm.select_flush_mode()
+        bmesh.update_edit_mesh(o.data)
+
+    body = {p.index for p in o.data.polygons if p.material_index == slot}
+    if segs:
+        chain_seams(o, slot, segs)
+        pick(body)
+        bpy.ops.uv.unwrap(method="ANGLE_BASED", fill_holes=True, margin=4 / px)
+        bpy.ops.object.mode_set(mode="OBJECT")
+        left = o.data.uv_layers["hide"].data
+        shut = unflat(o, slot) | {p.index for p in o.data.polygons if p.index in body and all(
+            left[li].uv.length == 0 for li in p.loop_indices)}  # and any face the unwrap left where it started
+        if shut:
+            pick(shut)
+            bpy.ops.uv.smart_project(angle_limit=math.radians(80), island_margin=4 / px, scale_to_bounds=False)
+        # a shell of a few faces (a fur tuft, a knob) can't show a pattern but would take its own island and margin in
+        # the pack (the Gevaudan's tufts made 300 of them): each takes one texel of the hide instead
+        crumbs = {i for isl in uv_islands(o, slot) if len(isl) <= 8 for i in isl}
+        pick(body - crumbs)
+        bpy.ops.uv.average_islands_scale()  # one texel size everywhere, so a scale is as big on a toe as on the back
+        bpy.ops.uv.pack_islands(rotate=True, margin=4 / px)
+        bpy.ops.object.mode_set(mode="OBJECT")
+        if crumbs:
+            data = o.data.uv_layers["hide"].data
+            biggest = max((p for p in o.data.polygons if p.index in body and p.index not in crumbs), key=lambda p: p.area)
+            dot = sum((data[li].uv for li in biggest.loop_indices), Vector((0, 0))) / biggest.loop_total
+            for p in o.data.polygons:
+                if p.index in crumbs:
+                    for li in p.loop_indices:
+                        data[li].uv = dot
+    else:
+        pick(body)
+        bpy.ops.uv.smart_project(angle_limit=math.radians(80), island_margin=4 / px, scale_to_bounds=False)
     bpy.ops.object.mode_set(mode="OBJECT")
+    bm = bmesh.new()
+    bm.from_mesh(o.data)
+    lay = bm.loops.layers.uv["hide"]
+    area = sum(f.calc_area() for f in bm.faces if f.index in body)
+    flat = 0.0
+    for f in bm.faces:
+        if f.index in body:
+            w = [l[lay].uv for l in f.loops]
+            flat += abs(sum(w[i].x * w[i - 1].y - w[i - 1].x * w[i].y for i in range(len(w)))) / 2
+    bm.free()
+    print(f"hide: {o.name.split('.')[0]}'s UVs cover {flat:.0%} of the map, {1000 * math.sqrt(area / max(flat, 1e-9)) / px:.2f} mm a texel")
     # bake from a copy holding only the body's faces, in a material that emits the pattern
     flesh = o.copy()
     flesh.data = o.data.copy()
@@ -1283,19 +1759,6 @@ def bake_hide(o, h, back, lift):
     bmesh.ops.delete(bm, geom=[f for f in bm.faces if f.material_index != slot], context="FACES")
     bm.to_mesh(flesh.data)
     bm.free()
-    img = bpy.data.images.new(o.name + "-hide", px, px, alpha=False)
-    bake = bpy.data.materials.new("hide-bake")
-    bake.use_nodes = True
-    nt = bake.node_tree
-    nt.nodes.remove(nt.nodes["Principled BSDF"])
-    glow = nt.nodes.new("ShaderNodeEmission")
-    nt.links.new(hide_colour(nt, h, PALETTE[back][:3], lift), glow.inputs["Color"])
-    nt.links.new(glow.outputs[0], nt.nodes["Material Output"].inputs["Surface"])
-    target = nt.nodes.new("ShaderNodeTexImage")
-    target.image = img
-    nt.nodes.active = target
-    flesh.data.materials.clear()
-    flesh.data.materials.append(bake)
     scene = bpy.context.scene
     engine = scene.render.engine
     scene.render.engine = "CYCLES"
@@ -1303,18 +1766,62 @@ def bake_hide(o, h, back, lift):
     bpy.ops.object.select_all(action="DESELECT")
     flesh.select_set(True)
     bpy.context.view_layer.objects.active = flesh
-    bpy.ops.object.bake(type="EMIT", margin=max(2, px // 128), use_clear=True)
+    bake = bpy.data.materials.new("hide-bake")
+    bake.use_nodes = True
+    nt = bake.node_tree
+    out, bsdf = nt.nodes["Material Output"], nt.nodes["Principled BSDF"]
+    colour, height, rough = hide_nodes(nt, h, PALETTE[back][:3], lift)
+    # the height as a bump on the flesh's own normals, baked to tangent space against the `hide` UVs
+    bump = nt.nodes.new("ShaderNodeBump")
+    bump.inputs["Distance"].default_value = h.get("size", 0.05) * 0.15 * h.get("bump", 1.0)
+    nt.links.new(height, bump.inputs["Height"])
+    nt.links.new(bump.outputs["Normal"], bsdf.inputs["Normal"])
+    glow = nt.nodes.new("ShaderNodeEmission")
+    flesh.data.materials.clear()
+    flesh.data.materials.append(bake)
+
+    def bake_to(name, size, kind, socket=None):
+        img = bpy.data.images.new(f"{o.name}-{name}", size, size, alpha=False)
+        if kind == "NORMAL" or name == "rough":
+            img.colorspace_settings.name = "Non-Color"
+        target = nt.nodes.new("ShaderNodeTexImage")
+        target.image = img
+        nt.nodes.active = target
+        if socket:
+            nt.links.new(socket, glow.inputs["Color"])
+            nt.links.new(glow.outputs[0], out.inputs["Surface"])
+        else:
+            nt.links.new(bsdf.outputs[0], out.inputs["Surface"])
+        bpy.ops.object.bake(type=kind, normal_space="TANGENT", margin=max(2, size // 128), use_clear=True)
+        img.pack()
+        nt.nodes.remove(target)
+        return img
+
+    # the colour at `map` px, the normal beside it (a scale's dome is as fine as its rim), roughness at a quarter: it changes slowly
+    img = bake_to("hide", px, "EMIT", colour)
+    rmap = bake_to("rough", max(64, px // 4), "EMIT", rough)
+    nmap = bake_to("normal", h.get("normal_map", px), "NORMAL")
     scene.render.engine = engine
-    img.pack()
-    print(f"hide: {h['pattern']} baked into a {px} px map in {time.time() - t0:.1f} s")
+    print(f"hide: {h['pattern']} baked into {px} px colour and normal maps and a {rmap.size[0]} px roughness map in {time.time() - t0:.1f} s")
     bpy.data.objects.remove(flesh)
     bpy.data.materials.remove(bake)
-    # the body's material: the map times the tone (`shade` wired Base Color to a multiply of the tone already)
+    # the body's material: the map times the tone (`shade` wired Base Color to a multiply of the tone already), the
+    # roughness from the map's green channel (glTF's metallicRoughness reads green) and the normal in tangent space
     m = o.data.materials[slot]
-    tex = m.node_tree.nodes.new("ShaderNodeTexImage")
+    N, L = m.node_tree.nodes, m.node_tree.links
+    principled = N["Principled BSDF"]
+    tex = N.new("ShaderNodeTexImage")
     tex.image = img
-    mul = next(n for n in m.node_tree.nodes if n.bl_idname == "ShaderNodeMix" and n.blend_type == "MULTIPLY")
-    m.node_tree.links.new(tex.outputs["Color"], mul.inputs[6])
+    mul = next(n for n in N if n.bl_idname == "ShaderNodeMix" and n.blend_type == "MULTIPLY")
+    L.new(tex.outputs["Color"], mul.inputs[6])
+    rt, sep = N.new("ShaderNodeTexImage"), N.new("ShaderNodeSeparateColor")
+    rt.image = rmap
+    L.new(rt.outputs["Color"], sep.inputs[0])
+    L.new(sep.outputs["Green"], principled.inputs["Roughness"])
+    nt_, nm = N.new("ShaderNodeTexImage"), N.new("ShaderNodeNormalMap")
+    nt_.image, nm.space, nm.uv_map = nmap, "TANGENT", "hide"
+    L.new(nt_.outputs["Color"], nm.inputs["Color"])
+    L.new(nm.outputs["Normal"], principled.inputs["Normal"])
     # the map's mean colour over the texels the body covers, in the GLB's extras: a skin drawn without the map (the
     # world's merged walkers, beasts.ts `mergedSkin`) multiplies its tone by this instead, or the lifted tone glares
     # (an 8-bit map's pixels read back as stored, sRGB, and the game's tone is linear)
@@ -1330,8 +1837,8 @@ def bake_hide(o, h, back, lift):
     return img
 
 
-def write_glb(o, path, budget, tone=None, hide=None, keep=False):
-    os.makedirs(os.path.dirname(path), exist_ok=True)
+def low_poly(o, budget):
+    """A copy of `o` decimated to `budget` triangles and shaded smooth: the mesh the GLB holds."""
     bpy.ops.object.select_all(action="DESELECT")
     lod = o.copy()
     lod.data = o.data.copy()
@@ -1340,15 +1847,28 @@ def write_glb(o, path, budget, tone=None, hide=None, keep=False):
     # mesh in canonical order before and after, so one sheet always builds the same GLB
     canonical(lod)
     if budget and tris(o) > budget:
-        lod.modifiers.new("decimate", "DECIMATE").ratio = budget / tris(o)
+        dec = lod.modifiers.new("decimate", "DECIMATE")
+        dec.ratio = budget / tris(o)
+        if "keep" in lod.vertex_groups:  # an underside band's borders (`paint`): collapse everywhere but there
+            dec.vertex_group, dec.invert_vertex_group = "keep", True
         apply_all(lod)
         canonical(lod)
     # the low-poly skin shades smooth: normals weighted by face area, as if taken from a smooth proxy
     lod.modifiers.new("normals", "WEIGHTED_NORMAL").weight = 50
     apply_all(lod)
+    return lod
+
+
+def write_glb(o, path, budget, tone=None, hide=None, keep=False, segs=None, hard=None):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    lod = low_poly(o, budget)
+    if hard:
+        # an underside band (`hard`, its material) only a triangle or two wide: its border split, so `shade` paints it
+        # full strength to the edge instead of halving it on every vertex it shares with the flesh beside it
+        split_border(lod, hard)
     lift = shade(lod, *tone, lift=HIDE_LIFT if hide else 1.0)
     if hide:
-        bake_hide(lod, hide, tone[0], lift)
+        bake_hide(lod, hide, tone[0], lift, segs)
     bpy.ops.object.select_all(action="DESELECT")
     lod.select_set(True)
     bpy.ops.export_scene.gltf(filepath=path, export_format="GLB", use_selection=True, export_apply=True,
@@ -1359,6 +1879,19 @@ def write_glb(o, path, budget, tone=None, hide=None, keep=False):
     if keep:
         return lod
     bpy.data.objects.remove(lod)
+
+
+def split_border(o, name):
+    mats = [m.name for m in o.data.materials]
+    if name not in mats:
+        return
+    k = mats.index(name)
+    bm = bmesh.new()
+    bm.from_mesh(o.data)
+    edges = [e for e in bm.edges if len(e.link_faces) == 2 and (e.link_faces[0].material_index == k) != (e.link_faces[1].material_index == k)]
+    bmesh.ops.split_edges(bm, edges=edges)
+    bm.to_mesh(o.data)
+    bm.free()
 
 
 def render(o, path, silhouette=False):
@@ -1455,14 +1988,16 @@ def main():
         sheet = json.load(f)
     PALETTE.update(sheet["palette"])
     bpy.ops.wm.read_factory_settings(use_empty=True)
-    bod, nodes = body(sheet)
+    bod, nodes, links = body(sheet)
     beast = join([bod, *parts(sheet, nodes)], sheet["id"], sheet)
     lo, hi = [Vector(c) for c in (beast.bound_box[0], beast.bound_box[6])]
     print(f"{sheet['id']}: {tris(beast)} triangles, {hi.x - lo.x:.2f} long, {hi.y - lo.y:.2f} wide, {hi.z:.2f} tall")
     soft = [g["material"] for g in sheet.get("paint", [])] + ([sheet["stripes"]["material"]] if sheet.get("stripes") else [])
-    tone = (sheet.get("material", "hide"), soft, sheet.get("belly"), sheet.get("belly_turn", -0.2))
+    tone = (sheet.get("material", "hide"), soft, sheet.get("belly"), sheet.get("belly_turn", -0.2), 0.0 if sheet.get("black") else LUM[0])
     hide, lod = sheet.get("hide"), None
-    lod = write_glb(beast, os.path.join(APP, "public", "models", sheet["id"] + ".glb"), sheet.get("budget", 3000), tone, hide, keep=bool(hide) or "--close" in argv)
+    lod = write_glb(beast, os.path.join(APP, "public", "models", sheet["id"] + ".glb"), sheet.get("budget", 3000), tone, hide,
+                    keep=bool(hide) or "--close" in argv, segs=chains(sheet, nodes, links) if hide else None,
+                    hard=sheet["stripes"]["material"] if sheet.get("stripes", {}).get("side") == "under" else None)
     if lod and not hide:
         lod.hide_render = True  # kept only for the close-up; the contact sheet draws the full mesh
     if "--render" in argv:
@@ -1477,4 +2012,5 @@ def main():
         render(beast, os.path.join(HERE, "out", sheet["id"] + ".silhouette.png"), silhouette=True)
 
 
-main()
+if __name__ == "__main__":  # blender/hides.py imports the builder without building a beast
+    main()

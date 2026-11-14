@@ -1,0 +1,252 @@
+<title>Rusty Buns Talks</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@700;900&family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&family=JetBrains+Mono:wght@600;700&display=swap">
+<style>
+/* deck.css, inlined by build.ts */
+/*DECK_CSS*/
+</style>
+<style>
+/* The player: a playlist of talks beside one stage, and a transport bar like a video player.
+   Wide screens show each slide on a 1280-wide canvas scaled to fit; phones show it at its own width. */
+html, body { height: 100%; scroll-snap-type: none; }
+body { overflow: hidden; }
+.player {
+  height: 100%; display: grid; grid-template-columns: 300px 1fr; grid-template-rows: 1fr auto;
+  grid-template-areas: "list stage" "list bar";
+}
+.list {
+  grid-area: list; border-right: 1px solid var(--line); background: var(--panel); overflow-y: auto;
+  padding-block: 20px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: 16px;
+}
+.brand { font: 900 22px/1.1 var(--display); margin: 0 0 4px; }
+.brand-sub { font-size: 15px; color: var(--quiet); margin: 0 0 18px; }
+.tracks { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.track-btn {
+  width: 100%; display: grid; grid-template-columns: 34px 1fr; gap: 10px; align-items: start; text-align: left;
+  font: inherit; color: var(--ink); background: none; border: 1px solid transparent; border-radius: 10px; padding: 10px; cursor: pointer;
+}
+.track-btn:hover:not(:disabled) { border-color: var(--line); background: var(--bg); }
+.track-btn[aria-current="true"] { border-color: var(--rust); background: var(--rust-soft); }
+.track-btn:disabled { cursor: default; opacity: 0.55; }
+.track-btn .n { font: 900 20px/1.2 var(--display); color: var(--rust); text-align: center; font-variant-numeric: tabular-nums; }
+.track-btn b { display: block; font: 700 15px/1.3 var(--display); }
+.track-btn small { display: block; font-size: 14px; line-height: 1.4; color: var(--quiet); margin-top: 3px; }
+.track-btn .meta { font: 600 11px/1 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--quiet); margin-top: 6px; display: block; }
+
+.stage { grid-area: stage; position: relative; overflow: hidden; background: var(--bg); }
+.canvas { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
+.canvas .slide { min-height: 100%; height: auto; border: 0; scroll-snap-align: none; }
+.canvas .notes { display: none !important; }
+.stage.narrow { overflow-y: auto; }
+.stage.narrow .canvas { position: static; transform: none !important; width: 100% !important; height: auto !important; min-height: 100%; }
+.stage.narrow .slide { padding-top: 32px; padding-bottom: 32px; }
+.stage:fullscreen { background: var(--bg); }
+
+.notes-pane {
+  position: absolute; right: max(16px, env(safe-area-inset-right, 0px)); bottom: 16px; max-width: min(460px, calc(100% - 32px));
+  background: var(--panel); border: 1px dashed var(--quiet); border-radius: 12px; padding: 12px 16px; font-size: 16px; color: var(--ink);
+  box-shadow: 0 8px 28px rgb(0 0 0 / 0.18); z-index: 2;
+}
+.notes-pane h4 { margin: 0 0 6px; font: 700 11px/1 var(--mono); letter-spacing: 0.12em; text-transform: uppercase; color: var(--quiet); }
+.notes-pane p { margin: 0; }
+
+.bar {
+  grid-area: bar; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; border-top: 1px solid var(--line); background: var(--panel);
+  padding-block: 10px calc(10px + env(safe-area-inset-bottom, 0px));
+  padding-left: 16px; padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.ctl {
+  display: inline-grid; place-items: center; width: 40px; height: 40px; border-radius: 10px; border: 1px solid var(--line);
+  background: var(--bg); color: var(--ink); cursor: pointer; padding: 0;
+}
+.ctl:hover { border-color: var(--rust); }
+.ctl.big { width: 48px; height: 48px; border-radius: 50%; background: var(--rust); border-color: var(--rust); color: var(--bg); }
+.ctl[aria-pressed="true"] { color: var(--rust); border-color: var(--rust); }
+.ctl svg { width: 20px; height: 20px; }
+.scrub { flex: 1; min-width: 140px; display: flex; gap: 4px; align-items: center; height: 40px; }
+.scrub button { flex: 1; height: 8px; border-radius: 4px; border: 0; padding: 0; background: var(--line); cursor: pointer; position: relative; overflow: hidden; }
+.scrub button.done { background: var(--rust); }
+.scrub button.now { background: var(--line); }
+.scrub button.now i { position: absolute; inset: 0 auto 0 0; background: var(--rust); width: 0; }
+.scrub button:hover { outline: 2px solid var(--rust-soft); }
+.clock { font: 600 14px/1 var(--mono); color: var(--quiet); font-variant-numeric: tabular-nums; min-width: 12.5ch; text-align: right; }
+.clock[title] { cursor: help; }
+.pace { font: 600 13px var(--mono); color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; height: 40px; padding: 0 8px; }
+
+@media (max-width: 899px) {
+  .player { grid-template-columns: 1fr; grid-template-rows: auto 1fr auto; grid-template-areas: "list" "stage" "bar"; }
+  .list { border-right: 0; border-bottom: 1px solid var(--line); padding-block: 10px; padding-right: max(16px, env(safe-area-inset-right, 0px)); max-height: none; overflow-x: auto; }
+  .brand-sub { display: none; }
+  .brand { font-size: 17px; margin-bottom: 8px; }
+  .tracks { grid-auto-flow: column; grid-auto-columns: minmax(210px, 70%); }
+  .track-btn small { display: none; }
+  .scrub { order: 10; flex-basis: 100%; height: 20px; }
+  .clock { min-width: 0; margin-left: auto; }
+  #full { display: none; }
+}
+</style>
+
+<div class="player">
+  <aside class="list" aria-label="Talks">
+    <p class="brand">Rusty Buns Talks</p>
+    <p class="brand-sub">Plain words first, a little fun second. Space plays, arrows step, N for notes, F for full screen.</p>
+    <ol class="tracks" id="tracks"></ol>
+  </aside>
+  <main class="stage" id="stage" aria-live="polite">
+    <div class="canvas" id="canvas"></div>
+    <div class="notes-pane" id="notes" hidden><h4>Notes</h4><p id="notes-text"></p></div>
+  </main>
+  <div class="bar" role="toolbar" aria-label="Player">
+    <button class="ctl" id="prev" type="button" aria-label="Previous slide" title="Previous slide (Left)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg></button>
+    <button class="ctl big" id="play" type="button" aria-label="Play" title="Play (Space)"><svg viewBox="0 0 24 24" fill="currentColor" id="play-icon"><path d="M7 4.5v15l12-7.5z"/></svg></button>
+    <button class="ctl" id="next" type="button" aria-label="Next slide" title="Next slide (Right)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg></button>
+    <div class="scrub" id="scrub" aria-label="Slides"></div>
+    <span class="clock" id="clock" title="Slide number, and time left on this slide while playing">1 / 1</span>
+    <select class="pace" id="pace" aria-label="Seconds per slide" title="Seconds per slide while playing">
+      <option value="10">10 s</option><option value="20" selected>20 s</option><option value="40">40 s</option><option value="60">60 s</option>
+    </select>
+    <button class="ctl" id="notes-btn" type="button" aria-pressed="false" aria-label="Speaker notes" title="Speaker notes (N)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15.5 3H5a2 2 0 0 0-2 2v14c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2V8.5L15.5 3Z"/><path d="M15 3v6h6"/></svg></button>
+    <button class="ctl" id="full" type="button" aria-label="Full screen" title="Full screen (F)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/></svg></button>
+  </div>
+</div>
+
+<script id="talks-data" type="application/json">/*TALKS_JSON*/</script>
+<script>
+(() => {
+  const TALKS = JSON.parse(document.getElementById("talks-data").textContent);
+  const $ = (id) => document.getElementById(id);
+  const stage = $("stage"), canvas = $("canvas"), scrub = $("scrub"), clock = $("clock");
+  const PLAY = '<path d="M7 4.5v15l12-7.5z"/>', PAUSE = '<rect x="6" y="4.5" width="4" height="15" rx="1"/><rect x="14" y="4.5" width="4" height="15" rx="1"/>';
+  const WIDE = 1280, TALL = 800;
+
+  const ready = TALKS.filter((t) => t.slides.length);
+  let talk = ready[0], at = 0, playing = false, left = 0, timer = 0;
+
+  // the playlist
+  for (const t of TALKS) {
+    const li = document.createElement("li");
+    const b = document.createElement("button");
+    b.type = "button"; b.className = "track-btn"; b.dataset.n = t.n;
+    b.disabled = !t.slides.length;
+    b.innerHTML = `<span class="n">${t.n}</span><span><b></b><small></small><span class="meta">${t.slides.length ? `${t.slides.length} slides` : "planned"}</span></span>`;
+    b.querySelector("b").textContent = t.title;
+    b.querySelector("small").textContent = t.pitch;
+    b.addEventListener("click", () => open(t, 0));
+    li.append(b); $("tracks").append(li);
+  }
+
+  function fit() {
+    const w = stage.clientWidth, h = stage.clientHeight;
+    const narrow = w < 700;
+    stage.classList.toggle("narrow", narrow);
+    if (narrow) return;
+    const scale0 = Math.min(w / WIDE, h / TALL);
+    canvas.style.width = WIDE + "px";
+    canvas.style.height = h / scale0 + "px";
+    const need = Math.max(h / scale0, canvas.firstElementChild?.scrollHeight ?? 0);
+    const scale = Math.min(w / WIDE, h / need);
+    canvas.style.height = h / scale + "px";
+    canvas.style.transform = `translate(${(w - WIDE * scale) / 2}px, 0) scale(${scale})`;
+  }
+
+  function render() {
+    canvas.innerHTML = talk.slides[at].html;
+    stage.scrollTop = 0;
+    // links between talks play in the player
+    for (const a of canvas.querySelectorAll("a[data-talk]")) {
+      a.addEventListener("click", (e) => { e.preventDefault(); if (a.dataset.talk === "list") { document.querySelector('.track-btn[aria-current="true"]')?.focus(); return; } const t =TALKS.find((x) => String(x.n) === a.dataset.talk); if (t?.slides.length) open(t, 0); });
+    }
+    const note = talk.slides[at].notes;
+    $("notes-text").textContent = note || "No notes on this slide.";
+    scrub.innerHTML = "";
+    talk.slides.forEach((_, i) => {
+      const b = document.createElement("button");
+      b.type = "button"; b.setAttribute("aria-label", `Slide ${i + 1}`); b.title = `Slide ${i + 1}`;
+      b.className = i < at ? "done" : i === at ? "now" : "";
+      if (i === at) b.innerHTML = "<i></i>";
+      b.addEventListener("click", () => go(i));
+      scrub.append(b);
+    });
+    for (const b of document.querySelectorAll(".track-btn")) b.setAttribute("aria-current", String(b.dataset.n === String(talk.n)));
+    try { history.replaceState(null, "", `#t${talk.n}-s${at + 1}`); } catch {}
+    requestAnimationFrame(fit);
+    tick();
+  }
+
+  function open(t, i) { talk = t; go(i); }
+  function go(i) {
+    if (i >= talk.slides.length) {
+      const nextTalk = ready[ready.indexOf(talk) + 1];
+      if (nextTalk) { talk = nextTalk; i = 0; } else { setPlaying(false); i = talk.slides.length - 1; }
+    }
+    at = Math.max(0, i);
+    left = pace();
+    render();
+  }
+
+  const pace = () => Number($("pace").value) || 20;
+  const mmss = (s) => { const c = Math.ceil(s); return `${Math.floor(c / 60)}:${String(c % 60).padStart(2, "0")}`; };
+  function tick() {
+    const count = `${String(at + 1).padStart(2, " ")} / ${talk.slides.length}`;
+    clock.textContent = playing ? `${count}  ${mmss(left)}` : count;
+    const bar = scrub.querySelector(".now i");
+    if (bar) bar.style.width = playing ? `${(1 - left / pace()) * 100}%` : "100%";
+  }
+  function setPlaying(on) {
+    playing = on;
+    $("play-icon").innerHTML = on ? PAUSE : PLAY;
+    $("play").setAttribute("aria-label", on ? "Pause" : "Play");
+    $("play").title = on ? "Pause (Space)" : "Play (Space)";
+    clearInterval(timer);
+    if (on) {
+      left = pace();
+      timer = setInterval(() => { left -= 0.25; if (left <= 0) go(at + 1); else tick(); }, 250);
+    }
+    tick();
+  }
+
+  function setNotes(on) {
+    $("notes").hidden = !on;
+    $("notes-btn").setAttribute("aria-pressed", String(on));
+    try { localStorage.setItem("talks:notes", on ? "1" : ""); } catch {}
+  }
+  function full() {
+    if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {});
+    else stage.requestFullscreen?.().catch(() => {});
+  }
+
+  $("prev").addEventListener("click", () => go(at - 1));
+  $("next").addEventListener("click", () => go(at + 1));
+  $("play").addEventListener("click", () => setPlaying(!playing));
+  $("pace").addEventListener("change", () => { left = pace(); tick(); });
+  $("notes-btn").addEventListener("click", () => setNotes($("notes").hidden));
+  $("full").addEventListener("click", full);
+  addEventListener("resize", fit);
+  document.addEventListener("fullscreenchange", () => requestAnimationFrame(fit));
+  addEventListener("keydown", (e) => {
+    if (e.metaKey || e.ctrlKey || e.altKey || e.target.closest?.("select, input, textarea")) return;
+    const k = e.key;
+    if (k === "ArrowRight" || k === "PageDown") go(at + 1);
+    else if (k === "ArrowLeft" || k === "PageUp") go(at - 1);
+    else if (k === " " || k === "k") setPlaying(!playing);
+    else if (k === "Home") go(0);
+    else if (k === "End") go(talk.slides.length - 1);
+    else if (k === "n" || k === "N") setNotes($("notes").hidden);
+    else if (k === "f" || k === "F") full();
+    else return;
+    e.preventDefault();
+  });
+
+  function fromHash() {
+    const m = /^#t(\d+)-s(\d+)$/.exec(location.hash);
+    const t = m && ready.find((x) => String(x.n) === m[1]);
+    if (t) { talk = t; at = Math.min(t.slides.length - 1, Number(m[2]) - 1); left = pace(); render(); return true; }
+    return false;
+  }
+  addEventListener("hashchange", fromHash);
+  try { if (localStorage.getItem("talks:notes")) setNotes(true); } catch {}
+  document.fonts?.ready.then(fit);
+  if (!fromHash()) go(0);
+})();
+</script>

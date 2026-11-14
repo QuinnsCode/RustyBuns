@@ -69,5 +69,6 @@
     {"kind": "foot", "at": "l_foot", "form": "talon", "len": 0.119, "width": 0.091, "toes": 3, "claw": 0.049, "spread": 36, "sole": 0.035, "mirror": true},
     {"kind": "horn", "at": "head", "off": [0.1, -0.06, 0], "dir": [1, -0.32, 0], "len": 0.3, "base": 0.026, "flat": 1.4, "material": "beak"},
     {"kind": "teeth", "along": ["beak1", "beak2"], "n": 5, "len": 0.04, "base": 0.01, "gap": 0.5, "lower": true, "mirror": true, "material": "tooth"}
-  ]
+  ],
+  "hide": {"pattern": "skin", "size": 0.06, "colours": [[0.34, 0.07, 0.05]], "map": 256}
 }

@@ -100,6 +100,14 @@ export type Binding =
    */
   | { type: "ai" }
   /**
+   * Browser Run: `await env.NAME.quickAction("markdown", { url, browser: "kitesurf" })` (screenshot, pdf,
+   * content, links, scrape, json, snapshot), or `env.NAME.fetch` for a CDP session. `browser: "kitesurf"`
+   * is Cloudflare's stateless agent browser (beta, free); leave it out for Chromium. No resource behind it.
+   * On the desktop `content` and `links` are a plain fetch of the page (no script runs); every other
+   * call throws an error that says it runs only on Cloudflare.
+   */
+  | { type: "browser" }
+  /**
    * Cloudflare Containers: a Durable Object class exported by `main` with a
    * container image behind it (the class reaches it through `ctx.container`).
    * Edge only: the desktop has no twin, so the binding is left out there and

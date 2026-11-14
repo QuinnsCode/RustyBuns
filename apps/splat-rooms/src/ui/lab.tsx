@@ -80,7 +80,8 @@ export function WatchFace({ seconds, charge, capacity, size = 220 }: { seconds: 
       <circle r="73" className="w-ring-glow" filter="url(#w-glow)" />
       <circle r="73" className="w-ring" />
       <g>{ticks}</g>
-      {[["12", 0, -44], ["3", 47, 5], ["6", 0, 54], ["9", -47, 5]].map(([t, x, y]) => <text key={t} x={x} y={y} className="w-num">{t}</text>)}
+      <path d="M-6-56H6L0-46Z" className="w-twelve" />
+      {[["3", 47, 5], ["6", 0, 54], ["9", -47, 5]].map(([t, x, y]) => <text key={t} x={x} y={y} className="w-num">{t}</text>)}
       <text y="-24" className="w-brand">SPLAT · CHRONO</text>
       <g transform="translate(0 26)">
         <circle r="14" className="w-sub" />

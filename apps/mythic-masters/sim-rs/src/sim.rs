@@ -138,8 +138,9 @@ pub struct Area {
     pub land: f64,
     pub every: f64,
     pub ramp: f64,
-    pub hits: [f64; 2],
-    pub struck: [bool; 2],
+    /// Per fighter, by index: two to start, like sim.ts's, and grown as a third or later one is caught.
+    pub hits: Vec<f64>,
+    pub struck: Vec<bool>,
 }
 
 #[derive(Clone, Debug)]
@@ -198,6 +199,10 @@ pub struct Fighter<'a> {
     pub fresh: bool,
     pub drop: f64,
     pub marks: Marks,
+    /// Which side of the fight it is on (one on one, its own index), and whether it is out: knocked out or rung out
+    /// while a teammate fights on.
+    pub team: usize,
+    pub down: bool,
 }
 impl Fighter<'_> {
     pub fn mv(&self, s: Slot) -> &Move {
@@ -251,7 +256,8 @@ pub enum Event {
 pub struct Match<'a> {
     pub chart: &'a Chart,
     pub tick: f64,
-    pub f: [Fighter<'a>; 2],
+    /// Every fighter, two or more; `winner` is a team (one on one, the winning fighter's index).
+    pub f: Vec<Fighter<'a>>,
     pub areas: Vec<AreaRef>,
     pub events: Vec<Event>,
     pub winner: Option<usize>,
@@ -282,7 +288,7 @@ const SWING: [f64; 6] = [0.12, 0.5, 0.4, 0.2, 0.35, 0.5];
 const GUARD_COST: f64 = 0.1;
 pub const TAKEOFF: f64 = 0.5;
 
-fn fighter<'a>(c: &'a Creature, side: usize) -> Fighter<'a> {
+fn fighter<'a>(c: &'a Creature, side: usize, z: f64) -> Fighter<'a> {
     let b = c.body;
     Fighter {
         c,
@@ -290,7 +296,7 @@ fn fighter<'a>(c: &'a Creature, side: usize) -> Fighter<'a> {
         pos: V3 {
             x: if side == 1 { 6.0 } else { -6.0 },
             y: 0.0,
-            z: 0.0,
+            z,
         },
         vel: V3::default(),
         yaw: if side == 1 { PI } else { 0.0 },
@@ -321,18 +327,59 @@ fn fighter<'a>(c: &'a Creature, side: usize) -> Fighter<'a> {
         fresh: true,
         drop: 0.0,
         marks: Marks::default(),
+        team: if side == 1 { 1 } else { 0 },
+        down: false,
     }
 }
 pub fn new_match<'a>(chart: &'a Chart, a: &'a Creature, b: &'a Creature) -> Match<'a> {
     Match {
         chart,
         tick: 0.0,
-        f: [fighter(a, 0), fighter(b, 1)],
+        f: vec![fighter(a, 0, 0.0), fighter(b, 1, 0.0)],
         areas: Vec::new(),
         events: Vec::new(),
         winner: None,
         over: false,
     }
+}
+/// Teams of one or more a side (#3929: two friends against a wild one), each side's fighters stood in a row across
+/// the ring (sim.ts newTeamMatch).
+pub fn new_team_match<'a>(chart: &'a Chart, teams: [&[&'a Creature]; 2]) -> Result<Match<'a>, String> {
+    if teams[0].is_empty() || teams[1].is_empty() {
+        return Err("a fight needs someone on each side".into());
+    }
+    let f = teams
+        .iter()
+        .enumerate()
+        .flat_map(|(side, cs)| {
+            cs.iter()
+                .enumerate()
+                .map(move |(k, c)| fighter(c, side, (k as f64 - (cs.len() - 1) as f64 / 2.0) * 3.0))
+        })
+        .collect();
+    Ok(Match {
+        chart,
+        tick: 0.0,
+        f,
+        areas: Vec::new(),
+        events: Vec::new(),
+        winner: None,
+        over: false,
+    })
+}
+/// The index of who `side` fights: the nearest one still in on the other team (one on one, simply the other fighter).
+pub fn foe_of(m: &Match, side: usize) -> usize {
+    let f = &m.f[side];
+    let mut best = if side != 0 { 0 } else { 1 };
+    let mut far = f64::INFINITY;
+    for (k, o) in m.f.iter().enumerate() {
+        let d = if o.team != f.team && !o.down { flat(f.pos, o.pos) } else { f64::INFINITY };
+        if d < far {
+            far = d;
+            best = k;
+        }
+    }
+    best
 }
 
 #[inline]
@@ -474,18 +521,20 @@ const HANG_REGRAB: f64 = 20.0;
 const SPIKE_DOWN: f64 = 0.75;
 const SPIKE_STUN: f64 = 14.0;
 
-/// (this side, the other side), both mutable.
-fn pair<'m, 'a>(fs: &'m mut [Fighter<'a>; 2], side: usize) -> (&'m mut Fighter<'a>, &'m mut Fighter<'a>) {
-    let (a, b) = fs.split_at_mut(1);
-    if side == 0 {
-        (&mut a[0], &mut b[0])
+/// (fighter `side`, fighter `foe`), both mutable.
+fn pair<'m, 'a>(fs: &'m mut [Fighter<'a>], side: usize, foe: usize) -> (&'m mut Fighter<'a>, &'m mut Fighter<'a>) {
+    if side < foe {
+        let (a, b) = fs.split_at_mut(foe);
+        (&mut a[side], &mut b[0])
     } else {
-        (&mut b[0], &mut a[0])
+        let (a, b) = fs.split_at_mut(side);
+        (&mut b[0], &mut a[foe])
     }
 }
 
 fn start(m: &mut Match, side: usize, slot: Slot, i: &Input) {
-    let (f, o) = pair(&mut m.f, side);
+    let foe = foe_of(m, side);
+    let (f, o) = pair(&mut m.f, side, foe);
     let mv = *f.mv(slot);
     let tempo = mv.tempo;
     let pours = matches!(tempo, Tempo::Build { .. }) && slot != Slot::Ultimate;
@@ -678,7 +727,8 @@ fn ledge(m: &mut Match, side: usize, i: &Input, inward: bool) {
 }
 
 fn move_body(m: &mut Match, side: usize, i: &Input) {
-    let (f, o) = pair(&mut m.f, side);
+    let foe = foe_of(m, side);
+    let (f, o) = pair(&mut m.f, side, foe);
     let b = f.b;
     if f.state == State::Ledge {
         f.vel = V3::default();
@@ -911,7 +961,8 @@ fn nudge(f: &mut Fighter, o: &Fighter, i: &Input) {
 }
 
 fn attack_frames(m: &mut Match, side: usize, i: &Input) {
-    let (f, o) = pair(&mut m.f, side);
+    let foe = foe_of(m, side);
+    let (f, o) = pair(&mut m.f, side, foe);
     if f.state != State::Attack || f.act.is_none() {
         return;
     }
@@ -1037,7 +1088,8 @@ fn attack_frames(m: &mut Match, side: usize, i: &Input) {
                 });
             f.act.as_mut().unwrap().hit = true;
             let from = f.pos;
-            hit(m, side, 1 - side, &mv, power, from, at, false);
+            let on = foe_of(m, side);
+            hit(m, side, on, &mv, power, from, at, false);
             let f = &mut m.f[side];
             if dive {
                 f.vel.y = f.b.jump;
@@ -1281,8 +1333,8 @@ fn loose(f: &Fighter, side: usize, mv: &Move, shape: Delivery, target: V3) -> Ar
         land: 0.0,
         every: if lasts != 0.0 { PULSE_EVERY } else { 0.0 },
         ramp: 0.0,
-        hits: [0.0, 0.0],
-        struck: [false, false],
+        hits: vec![0.0, 0.0],
+        struck: vec![false, false],
     };
     match d {
         Delivery::Column { length, speed, .. } => a.life = max(lasts, ((length / speed) * HZ).ceil() + 4.0),
@@ -1345,7 +1397,7 @@ pub fn warning(m: &Match, side: usize) -> Option<Area> {
     if act.mv.delivery.is_touch() || f.t >= frames(&act.mv, act.tired).startup {
         return None;
     }
-    Some(loose(f, side, &act.mv, act.mv.delivery, m.f[1 - side].pos))
+    Some(loose(f, side, &act.mv, act.mv.delivery, m.f[foe_of(m, side)].pos))
 }
 
 /// sim.ts under.
@@ -1427,7 +1479,7 @@ fn where_(a: &Area, t: &Fighter) -> f64 {
 fn strength(a: &Area, on: usize, t: &Fighter) -> f64 {
     let curve = match a.mv.tempo {
         Tempo::Build { from, .. } => PULSE_STREAM * lerp(from, 1.0, a.ramp),
-        Tempo::Fade { to, .. } => lerp(1.0, to, a.t / a.life) * (if a.hits[on] != 0.0 { PULSE_TAIL } else { 1.0 }),
+        Tempo::Fade { to, .. } => lerp(1.0, to, a.t / a.life) * (if a.hits.get(on).is_some_and(|&h| h != 0.0) { PULSE_TAIL } else { 1.0 }),
         _ => 1.0,
     };
     a.power * curve * lerp(1.0, LOW, where_(a, t))
@@ -1445,18 +1497,24 @@ fn areas(m: &mut Match) {
                 }
             }
             if a.every != 0.0 && a.t % a.every == 0.0 {
-                a.struck = [false, false];
+                a.struck.fill(false);
             }
         }
-        for on in 0..2 {
+        for on in 0..m.f.len() {
             let (hit_it, power, repeat, from, at, mv, owner) = {
                 let mut a = rc.borrow_mut();
                 let t = &m.f[on];
-                if a.struck[on] || t.invuln > 0.0 || (on == a.owner && !a.d.is_blast()) {
+                // Your own blast catches you too, but nothing you loose catches a teammate.
+                let mate = if on == a.owner { !a.d.is_blast() } else { t.team == m.f[a.owner].team };
+                if a.struck.get(on).copied().unwrap_or(false) || t.invuln > 0.0 || t.down || mate {
                     continue;
                 }
                 if !covers(&a, t) {
                     continue;
+                }
+                if a.hits.len() <= on {
+                    a.hits.resize(on + 1, 0.0);
+                    a.struck.resize(on + 1, false);
                 }
                 a.struck[on] = true;
                 let power = strength(&a, on, t);
@@ -1495,13 +1553,18 @@ fn areas(m: &mut Match) {
 }
 
 /// One tick. Events from this tick only are in `m.events`.
-pub fn step(m: &mut Match, inputs: [Input; 2]) {
+/// `inputs` by fighter; one that is out (or has none) stands idle.
+pub fn step(m: &mut Match, inputs: &[Input]) {
     m.events.clear();
     if m.over {
         return;
     }
     m.tick += 1.0;
-    for side in 0..2 {
+    let sides = 0..m.f.len();
+    let up: Vec<usize> = sides.clone().filter(|&k| !m.f[k].down).collect();
+    let down: Vec<bool> = m.f.iter().map(|f| f.down).collect();
+    let input = |k: usize| if down[k] { IDLE } else { inputs.get(k).copied().unwrap_or(IDLE) };
+    for &side in &up {
         let f = &mut m.f[side];
         if f.state == State::Stun {
             f.stun -= 1.0;
@@ -1539,34 +1602,39 @@ pub fn step(m: &mut Match, inputs: [Input; 2]) {
         if f.clipped > 0.0 {
             f.clipped -= 1.0;
         }
-        control(m, side, &inputs[side]);
+        control(m, side, &input(side));
     }
-    for side in 0..2 {
-        attack_frames(m, side, &inputs[side]);
+    for &side in &up {
+        attack_frames(m, side, &input(side));
     }
-    for side in 0..2 {
-        move_body(m, side, &inputs[side]);
+    for side in sides.clone() {
+        move_body(m, side, &input(side));
     }
     areas(m);
-    {
-        let [a, b] = &mut m.f;
-        let d = flat(a.pos, b.pos);
-        let min_ = a.b.radius + b.b.radius;
-        if d < min_ && d > 1e-6 && (a.pos.y - b.pos.y).abs() < max(a.b.height, b.b.height) {
-            let push = min_ - d;
-            let wa = b.b.mass / (a.b.mass + b.b.mass);
-            let nx = (b.pos.x - a.pos.x) / d;
-            let nz = (b.pos.z - a.pos.z) / d;
-            a.pos.x -= nx * push * wa;
-            a.pos.z -= nz * push * wa;
-            b.pos.x += nx * push * (1.0 - wa);
-            b.pos.z += nz * push * (1.0 - wa);
+    // Bodies don't overlap, every pair of those still in: the lighter one gets pushed more.
+    for i in 0..up.len() {
+        for j in i + 1..up.len() {
+            let (lo, hi) = m.f.split_at_mut(up[j]);
+            let (a, b) = (&mut lo[up[i]], &mut hi[0]);
+            let d = flat(a.pos, b.pos);
+            let min_ = a.b.radius + b.b.radius;
+            if d < min_ && d > 1e-6 && (a.pos.y - b.pos.y).abs() < max(a.b.height, b.b.height) {
+                let push = min_ - d;
+                let wa = b.b.mass / (a.b.mass + b.b.mass);
+                let nx = (b.pos.x - a.pos.x) / d;
+                let nz = (b.pos.z - a.pos.z) / d;
+                a.pos.x -= nx * push * wa;
+                a.pos.z -= nz * push * wa;
+                b.pos.x += nx * push * (1.0 - wa);
+                b.pos.z += nz * push * (1.0 - wa);
+            }
         }
     }
-    for side in 0..2 {
-        m.f[side].prev = inputs[side];
+    for side in sides {
+        m.f[side].prev = input(side);
     }
-    for side in 0..2 {
+    // One out leaves the fight; the last of a team out ends it.
+    for &side in &up {
         let f = &m.f[side];
         let how = if f.hp <= 0.0 {
             Some(How::Hp)
@@ -1575,21 +1643,29 @@ pub fn step(m: &mut Match, inputs: [Input; 2]) {
         } else {
             None
         };
-        if let Some(how) = how {
-            return end(m, 1 - side, Event::Ko { who: side, how });
+        let Some(how) = how else { continue };
+        let team = f.team;
+        m.f[side].down = true;
+        let e = Event::Ko { who: side, how };
+        if m.f.iter().all(|o| o.team != team || o.down) {
+            return end(m, if team == 1 { 0 } else { 1 }, e);
         }
+        m.events.push(e);
+        let f = &mut m.f[side];
+        f.state = State::Free; // a stream it poured stops with it
+        f.act = None;
+        f.t = 0.0;
     }
     if m.tick >= ROUND_TICKS {
-        let p = m.f[0].hp / m.f[0].b.hp;
-        let q = m.f[1].hp / m.f[1].b.hp;
-        end(
-            m,
-            if p >= q { 0 } else { 1 },
-            Event::Ko {
-                who: if p >= q { 1 } else { 0 },
-                how: How::Time,
-            },
-        );
+        // The team with more of its health left, as a share of full (one on one, each fighter's own share).
+        let share = |t: usize| {
+            let on: Vec<&Fighter> = m.f.iter().filter(|f| f.team == t).collect();
+            on.iter().fold(0.0, |s, f| s + f.hp / f.b.hp) / on.len() as f64
+        };
+        let (p, q) = (share(0), share(1));
+        let lost = if p >= q { 1 } else { 0 };
+        let who = m.f.iter().position(|f| f.team == lost).unwrap_or(lost);
+        end(m, if p >= q { 0 } else { 1 }, Event::Ko { who, how: How::Time });
     }
 }
 fn end(m: &mut Match, winner: usize, e: Event) {

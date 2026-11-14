@@ -29,17 +29,18 @@ import { hostedBudget, installedHarnesses } from "./agent-routes.ts";
 import { cheapest } from "./conflict-agent.ts";
 import { healUnavailable } from "./heal.ts";
 import { parseJson } from "./util.ts";
-import type { Env } from "./env.ts";
+import { errorIn, type Env } from "./env.ts";
 import { DEFAULT_PIPELINE, HOOKS, Lane, PIPELINE_FILE, Pipeline, type Hook } from "./pipeline.ts";
 
-/** The repo's pipeline from main, the default without a file, or why the file isn't one. */
-export async function repoPipeline(env: Env, owner: string, repo: string): Promise<{ pipeline: Pipeline; source: string } | { error: string }> {
+/** The repo's pipeline from main, the default without a file, or why the file isn't one. `hides`: the file has private lines. */
+export async function repoPipeline(env: Env, owner: string, repo: string): Promise<{ pipeline: Pipeline; source: string; hides?: true } | { error: string }> {
   const res = await toFile(env, owner, repo, PIPELINE_FILE, owner, "file").catch(() => null);
   const doc = res?.ok ? await docIn(res) : null;
   const body = doc ? text(doc) : "";
   if (!body.trim()) return { pipeline: DEFAULT_PIPELINE, source: "default" };
   const parsed = check(Pipeline, parseJson<unknown>(body, null));
-  return parsed ? { pipeline: parsed, source: PIPELINE_FILE } : { error: `${PIPELINE_FILE} on main isn't a pipeline: see POST /api/pipeline for what it takes` };
+  const hides = doc!.lines.some((l) => "private" in l && l.private === true);
+  return parsed ? { pipeline: parsed, source: PIPELINE_FILE, ...(hides && { hides }) } : { error: `${PIPELINE_FILE} on main isn't a pipeline: see POST /api/pipeline for what it takes` };
 }
 
 export interface Verdict { hook: Hook; hash: string; say: "yay" | "nay" | "waiting" | "running"; by: string; reason?: string }
@@ -111,7 +112,7 @@ export async function askAi(env: Env, owner: string, prompt: string, diff: strin
   const off = healUnavailable(env, owner), cheap = off ? null : cheapest(installedHarnesses(env));
   if (!cheap) return { error: off ?? "no coding agent's CLI is installed here" };
   const spent = await hostedBudget(env);
-  if (spent) return { error: check(obj({ error: str(Infinity) }), await spent.json().catch(() => null))?.error ?? "the site's hosted budget is spent" };
+  if (spent) return { error: await errorIn(spent, "the site's hosted budget is spent") };
   const box: Sandbox = env.AGENT_SANDBOX ? containerSandbox(env.AGENT_SANDBOX) : localSandbox(env.AGENT_EXEC as Exec | undefined);
   const given = diff.length > MAX_DIFF ? `${diff.slice(0, MAX_DIFF)}\n(the diff goes on: ${diff.length - MAX_DIFF} more characters)\n` : diff;
   const run = await box(harnessCommand(cheap.harness, prompt, { model: cheap.model }), { path: VERDICT_FILE, text: given })

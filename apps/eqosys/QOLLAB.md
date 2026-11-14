@@ -73,6 +73,12 @@ A game that already has a lobby (`park-hide-seek`) deletes it; a game with none 
 for the price of the socket above. The shared client is a small `party()` beside `eqosys()` in
 `@rustybuns/util/eqosys`: `make`, `join(code)`, `ready(bool)`, `start()`, `say(text)`, and an `onStart`.
 
+**Voice in a party** ([#4463](https://github.com/QuinnsCode/RustyBuns/issues/4463)): one Qlave room a party, so the people in it
+can talk before and after "start", a quick meeting by code. `talk()` asks the party for a one-use ticket (the `chat` rule says
+who may talk, in voice as in text) and `inVoice(bool)` tells everyone who is in; `lobbyPanel` has the row (Join voice, who is
+talking, mute yourself, hang up). A party mute is a voice mute, the host's take-out or block drops them from the room, and the
+party ending (its age, the host shortening it, the host's account deleted) ends the room. Details in [QLAVE.md](QLAVE.md#5-voice-in-a-party).
+
 ## Answers to the spike's questions
 
 1. **Friends and presence**: stay in eqosys's `Hub`. Qollab reads; it does not own.
@@ -90,7 +96,7 @@ for the price of the socket above. The shared client is a small `party()` beside
    person's `Hub`, which the party reads on join. No `tokens_valid_after` table.
 6. **Chat safety**: 280 characters a message, `TokenBucket` at 2 a second with a burst of 5 on each socket,
    last 200 messages kept per party and gone with the party, report (a `note` to the host and a row through the game-report path from #3049) and mute per member, and friends-only by default: a party made with `open: false`
-   accepts only the host's friends. Public parties come later, with the report path already in place.
+   accepts, on its code alone, only the host's friends (a party link lets its holder in: "Getting in" below). Public parties come later, with the report path already in place.
 7. **Cloud saves**: `PUT /q/save/<slot>` with the token; body up to 256 KB, opaque. Qollab keeps the last 5
    versions a slot, 20 slots an app, 50 MB a person across apps, and never reads a body. Conflict rule: last
    write wins, but the reply carries the previous version's id and time so a game can offer "keep the cloud
@@ -132,7 +138,31 @@ friends who play different games still share one.
 - **Deletion:** deleting an account deletes the spaces it owns (everyone is closed out) and takes its messages out of the rest.
 - **In a game:** `spacesPanel` in `@rustybuns/util/spaces` (beside the party's `lobbyPanel`) lists your spaces, makes and joins them, and opens one: channel tabs, the messages with "Load older", a text box, who is online, voice channels (join, who is talking, mute yourself, hang up), and the owner's add and delete channel, copy invite, mute and kick. Styleless; the page skins it and hands it its icons. Skate Tech Park opens it from the HUD for a signed-in rider.
 - **On eqosys:** the home lists your spaces beside your friends (how many are on in each, from the space's `/on`), and the party you sit in now (its room code, seats and who is ready, from the party's `/peek`; `src/qollab/side.ts`). Each space opens on `/spaces`, the same `spacesPanel`, on a token for eqosys's own pages (`GET /api/home-token`, ten minutes, asked again while open). Only the spaces' doors take that token, and only from eqosys's own origin.
-- **Not yet:** voice from `/spaces` (the page's CSP keeps it to eqosys's own origin, so Qlave's socket can't open), and Qlave telling eqosys who is in each voice room (QLAVE.md §4).
+- **Voice on `/spaces`:** that page alone adds Qlave's origin to its `connect-src` (`src/csp.ts`), so its voice channels join as a game's do.
+- **Not yet:** Qlave telling eqosys who is in each voice room (QLAVE.md §4).
+
+## Getting in: links, not homework
+
+How a person reaches their friends, from the easiest case to the hardest (owner, 2026-11-13):
+
+- **A party link is the invitation.** Copy link in the lobby carries the party's invite key, and whoever holds the current key
+  comes in: a friend or not, with an account from before today or one made a minute ago. The `join` rule is for someone who has
+  only the six-letter code. Blocked, full and closed-once-started still hold, the host's `invite` rule says who may hand the
+  link out, and a new link retires the old one. Before this a first-timer with the host's link was told to go and be added as a
+  friend on eqosys first.
+- **A friend link makes friends.** Every hub has one (`link` in its state, `/add/<id>/<key>` on eqosys, `friendLink()` on the
+  page's hub client). The person who opens it signs in or makes an account, presses "Be friends", and both hubs hold the other:
+  no email typed, nothing to accept. The press is theirs to make, so a page that sends a browser to somebody's link befriends nobody.
+  A link a game copies names it (`/add/<id>/<key>?app=<id>`, which `friendLink()` adds): once they answer, eqosys sends them on
+  to that game's front door instead of leaving them on the Friends tab (#4437).
+- **Add friend on a party member.** Each member's row in the lobby's Settings has "Add <name> as a friend" (`party.befriend(id)`).
+  The party checks both are in it now and not kept apart, then has the asker's hub ask by id (`/met`, which only a party can
+  call): the other pressing it too, or having pressed first, makes them friends. Nobody befriends a stranger by id from a page.
+- **Signing in beside the game.** `signInHere()` on the `eqosys()` client (and `accountChip` given `onSignIn`) opens eqosys in a
+  small window. The page keeps running and keeps the PKCE verifier; the window comes back with the code, hands it over on a
+  same-origin BroadcastChannel and closes. A blocked window falls back to the whole-page trip. Every game that signs in through eqosys is on it (Mythic Masters first, #4418; the rest in #4419): its account chip signs in beside the game, and a party link opened signed out shows one "Sign in to join Ada's party" step (`signInToJoin` in @rustybuns/util/lobby, named by the link's `from`, which Copy link adds) and then the lobby, whose Copy friend link hands out `hub().friendLink()`.
+- **One account, several ways in.** The Account tab adds GitHub, Google or Apple to the account someone is signed in to, so the
+  phone's Apple sign-in and the laptop's Google one open the same games, friends, saves and achievements.
 
 ## After "start": seats ([#3878](https://github.com/QuinnsCode/RustyBuns/issues/3878))
 

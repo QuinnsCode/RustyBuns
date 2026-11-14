@@ -4,6 +4,7 @@
 // can read the paths off the deck. gesture.ts resolves a drag through whichever profile is in use; flick-profiles.ts
 // holds the library, and a page can be handed its own through `?flick=` (see `pickProfile`).
 import { type Flick, type Stance, TRICKS } from "./tricks.ts";
+import { arr, Bad, check, maybe, num, obj, oneOf, raw, str, type Guard } from "@rustybuns/util/guard";
 
 export type Pop = "ollie" | "nollie";
 /** Where a press lands on the pad's board: its nose end, its tail end, or anywhere else (the middle, or off it). */
@@ -81,42 +82,36 @@ export const scaled = (p: Profile, k: number, name: string, about: string): Prof
 });
 
 // Reading a profile handed in from outside (the address or the browser's storage): every field checked, nothing assumed.
-const isObj = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
-const num = (v: unknown, lo: number, hi: number) => (typeof v === "number" && v >= lo && v <= hi ? v : undefined);
 const isFlick = (v: unknown): v is Flick => typeof v === "string" && Object.hasOwn(TRICKS, v);
-const ZONES = ["nose", "tail", "mid", "any"] as const;
+/** A trick name, as the guards read one. */
+export const flick: Guard<Flick> = (v) => { if (isFlick(v)) return v; throw new Bad("a trick"); };
+const StrokeIn = obj({
+  from: oneOf(["nose", "tail", "mid", "any"]),
+  dir: (v: unknown): number | "tap" => (v === "tap" ? "tap" : num(0, 360)(v)),
+  spread: maybe(num(0, 180)), min: maybe(num(0, 2000)), max: maybe(num(0, 2000)),
+  pop: maybe(oneOf(["ollie", "nollie"])), flick: maybe(flick),
+});
+const ProfileIn = obj({
+  strokes: arr(raw, 200), name: str(40, { dflt: "custom" }), about: str(200, { min: 0, dflt: "" }),
+  side: maybe(oneOf(["left", "right"])), stance: maybe(oneOf(["regular", "goofy"])),
+  minDrag: maybe(num(4, 400)), hold: maybe(num(0.05, 2)), nudge: maybe(num(1, 400)), nose: maybe(num(0, 0.5)), tail: maybe(num(0, 0.5)),
+});
 
+/** A stroke that does something (pops or flicks), or null. */
 function parseStroke(v: unknown): Stroke | null {
-  if (!isObj(v)) return null;
-  const from = ZONES.find((z) => z === v.from);
-  const dir = v.dir === "tap" ? "tap" : num(v.dir, 0, 360);
-  if (!from || dir === undefined) return null;
-  const s: Stroke = { from, dir };
-  const spread = num(v.spread, 0, 180), min = num(v.min, 0, 2000), max = num(v.max, 0, 2000);
-  if (spread !== undefined) s.spread = spread;
-  if (min !== undefined) s.min = min;
-  if (max !== undefined) s.max = max;
-  if (v.pop === "ollie" || v.pop === "nollie") s.pop = v.pop;
-  if (isFlick(v.flick)) s.flick = v.flick;
-  return s.pop || s.flick ? s : null;
+  const s = check(StrokeIn, v);
+  return s && (s.pop || s.flick) ? s : null;
 }
 
 /** A profile from JSON-ish data, filling what it leaves out from `base`. Null if it has no strokes that do anything. */
 export function parseProfile(v: unknown, base: Profile): Profile | null {
-  if (!isObj(v) || !Array.isArray(v.strokes)) return null;
-  const strokes = v.strokes.map(parseStroke).filter((s): s is Stroke => s !== null);
-  if (!strokes.length) return null;
+  const p = check(ProfileIn, v);
+  const strokes = (p?.strokes ?? []).flatMap((s) => parseStroke(s) ?? []);
+  if (!p || !strokes.length) return null;
   return {
-    name: typeof v.name === "string" && v.name ? v.name.slice(0, 40) : "custom",
-    about: typeof v.about === "string" ? v.about.slice(0, 200) : "",
-    side: v.side === "left" ? "left" : v.side === "right" ? "right" : base.side,
-    stance: v.stance === "goofy" ? "goofy" : v.stance === "regular" ? "regular" : base.stance,
-    minDrag: num(v.minDrag, 4, 400) ?? base.minDrag,
-    hold: num(v.hold, 0.05, 2) ?? base.hold,
-    nudge: num(v.nudge, 1, 400) ?? base.nudge,
-    nose: num(v.nose, 0, 0.5) ?? base.nose,
-    tail: num(v.tail, 0, 0.5) ?? base.tail,
-    strokes,
+    name: p.name, about: p.about, side: p.side ?? base.side, stance: p.stance ?? base.stance,
+    minDrag: p.minDrag ?? base.minDrag, hold: p.hold ?? base.hold, nudge: p.nudge ?? base.nudge,
+    nose: p.nose ?? base.nose, tail: p.tail ?? base.tail, strokes,
   };
 }
 

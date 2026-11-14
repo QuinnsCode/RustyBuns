@@ -8,9 +8,9 @@ import { inSeason, NIGHT, tierOf, TIERED, TIER_LEVEL } from "../src/tiers.ts";
 import { holds } from "../src/net/dens.ts";
 import type { Gait } from "../src/world/world.ts";
 import { lightFire, POIS, shelterAt, SHELTER_R } from "../src/world/poi.ts";
-import { CATCH_FAR, CATCH_NEAR, HOUSES, lightsNear, nightOf, safePaths, stalk, toSafety } from "../src/world/night.ts";
+import { BOSS_EVERY, CATCH_FAR, CATCH_NEAR, DARK_LEN, darkSounds, HUSH_R, GAP, HOUSES, LANTERN_OUT, SWEEP, glow, lantern, lightsNear, nightOf, safePaths, stalk, toSafety } from "../src/world/night.ts";
 import { DAY } from "../src/world/nature.ts";
-import { arenaOf, groundFrom, buildWorld, CELL, cell, COLS, detailAt, explore, explored, heightAt, meet, NIGHT_MEET_R, newSeen, openRegions, opensRoadTo, OWNER, refine, ROWS, spawn, STEP, walk, wildsNear, type WalkEvent, type Walker } from "../src/world/world.ts";
+import { arenaOf, groundFrom, buildWorld, CELL, cell, COLS, detailAt, dry, explore, explored, heightAt, meet, NIGHT_MEET_R, newSeen, openRegions, opensRoadTo, OWNER, refine, ROWS, spawn, STEP, walk, wildsNear, type WalkEvent, type Walker } from "../src/world/world.ts";
 
 /** The world with every region's fine ground in, as it stands once you have walked everywhere. */
 function fullWorld() {
@@ -144,10 +144,14 @@ describe("night (#3773)", () => {
   const w = fullWorld();
   test("the night ones roam only after dark, the room believes them, and a lit campfire, a cabin or the arena's ring is shelter", () => {
     const all = openRegions(new Set([1, 2, 3, 4, 5, 6, 7, 8])), june = new Date(2026, 5, 1);
-    const out = (night: boolean) => [1, 2, 3, 5, 6, 7].flatMap((n) => wildsNear(w, centre(n).x, centre(n).z, 0, all, 2500, june, night));
+    const out = (night: boolean) => [1, 2, 3, 4, 5, 6, 7, 8].flatMap((n) => wildsNear(w, centre(n).x, centre(n).z, 0, all, 2500, june, night));
     expect(out(false).filter((c) => NIGHT.has(c.id))).toEqual([]);
     const after = out(true).filter((c) => NIGHT.has(c.id));
     expect(new Set(after.map((c) => c.id)).size).toBeGreaterThanOrEqual(4);
+    // Every region has night ones of its own, not only its neighbours' (#4389).
+    for (const n of [1, 2, 3, 4, 5, 6, 7, 8]) expect([n, [...NIGHT].some((id) => creature(id).region === n)]).toEqual([n, true]);
+    expect(after.some((c) => c.region === 4 && creature(c.id).region === 4)).toBe(true);
+    expect(after.some((c) => c.region === 8 && creature(c.id).region === 8)).toBe(true);
     for (const c of after) expect([c.den, holds(c.den, c.id, c.level)]).toEqual([c.den, true]);
     // Out in the open after dark they come at you from further off.
     const me = { ...spawn(1) }, c = after[0]!;
@@ -187,6 +191,70 @@ describe("safe paths at night", () => {
     expect(until(400)).toBeCloseTo(CATCH_FAR, 0);
     expect(until(1)).toBeGreaterThan(CATCH_NEAR - 1);
     expect(stalk(0.5, 1, 0)).toBeLessThan(0.5); // back on a path it fades
+  });
+
+  test("the dark's sounds: a heartbeat with no fire near, harder off the lights and as it stalks you; the crickets hush as a night one closes in", () => {
+    const far = HUSH_R + 50;
+    // [dark, by a fire, metres from the lights, dread, metres to the nearest night one] -> what you hear
+    const walk: [boolean, boolean, number, number, number][] = [
+      [false, false, 50, 0, 5], // by day: nothing
+      [true, true, 0, 0, far], // at a fire: no heartbeat
+      [true, false, 0, 0, far], // on the lights
+      [true, false, 30, 0, far], // off them
+      [true, false, 30, 0.8, far], // something following
+    ];
+    const heard = walk.map((w) => darkSounds(...w));
+    expect(heard[0]).toEqual({ heart: 0, near: 0 });
+    expect(heard[1]!.heart).toBe(0);
+    expect(heard[2]!.heart).toBeGreaterThan(0);
+    expect(heard[3]!.heart).toBeGreaterThan(heard[2]!.heart);
+    expect(heard[4]!.heart).toBeGreaterThan(heard[3]!.heart);
+    // One of the six closing in: the hush grows with it, even heard from a fire's edge, and the heart races on the path.
+    const near = [far, HUSH_R * 0.75, HUSH_R * 0.25, 2].map((d) => darkSounds(true, false, 0, 0, d));
+    expect(near.map((n) => n.near)).toEqual([...near.map((n) => n.near)].sort((a, b) => a - b));
+    expect(near[0]!.near).toBe(0);
+    expect(near[3]!.near).toBe(1);
+    expect(near[3]!.heart).toBe(1);
+    expect(darkSounds(true, true, 0, 0, 25).near).toBeGreaterThan(0);
+  });
+
+  test("the boss night: the dark rolls down a path, a runner keeps ahead of it and a walker is caught in it", () => {
+    const nights = Array.from({ length: BOSS_EVERY * 2 }, (_, k) => safePaths(1, k));
+    expect(nights.filter((nt) => nt.boss)).toHaveLength(2); // one night in BOSS_EVERY
+    const nt = nights.find((q) => q.boss)!, calm = nights.find((q) => !q.boss)!;
+    const p = nt.paths.reduce((a, b) => (b.at.at(-1)! > a.at.at(-1)! ? b : a)), len = p.at.at(-1)!;
+    expect(len).toBeGreaterThan(200);
+    const where = (s: number): [number, number] => {
+      const i = Math.max(1, p.at.findIndex((a) => a >= s)), u = (s - p.at[i - 1]!) / (p.at[i]! - p.at[i - 1]! || 1);
+      return [p.pts[i - 1]![0] + (p.pts[i]![0] - p.pts[i - 1]![0]) * u, p.pts[i - 1]![1] + (p.pts[i]![1] - p.pts[i - 1]![1]) * u];
+    };
+    // The moment the dark sets off from the path's start, you are 30 m along it: then you walk, or run, for the far house.
+    const loop = len + DARK_LEN + GAP, t0 = ((((-p.phase * loop) % loop) + loop) % loop) / SWEEP;
+    const unsafe = (pace: number) => { let n = 0; for (let t = 0; 30 + pace * t < len - 30; t += 0.25) if (toSafety(nt, ...where(30 + pace * t), t0 + t) > 0) n++; return n; };
+    expect(unsafe(5)).toBe(0); // a run (PACE.run) outpaces it
+    expect(unsafe(1.5)).toBeGreaterThan(8); // a walk doesn't: the path goes out under your feet
+    // Before it comes, the lights just ahead flicker; on any other night they never do.
+    const ahead = Array.from({ length: 40 }, (_, k) => glow(nt, p, 10, t0 + k * 0.05));
+    expect(Math.min(...ahead)).toBeLessThan(1);
+    expect(Math.max(...ahead)).toBe(1);
+    for (const [, , k, at] of lightsNear(calm, ...calm.paths[0]!.pts[0]!, 200)) expect(glow(calm, calm.paths[k]!, at, t0)).toBe(1);
+  });
+
+  test("the first night: Gary's lantern burns while he walks, catches and dies a few times when he's taken, then stays dark", () => {
+    expect(lantern(-1)).toBe(1);
+    const out = Array.from({ length: Math.ceil(LANTERN_OUT * 20) }, (_, k) => lantern(k / 20));
+    expect(out.filter((k) => k === 0).length).toBeGreaterThan(3); // it gutters,
+    expect(out.slice(out.indexOf(0)).some((k) => k > 0.3)).toBe(true); // catches again,
+    expect(lantern(LANTERN_OUT)).toBe(0); // and is out for good
+    expect(lantern(LANTERN_OUT + 5)).toBe(0);
+  });
+
+  test("a night path keeps to dry ground: round a river and a bay, never across the sea to an island's fire", async () => {
+    const { WORLD } = await import("../src/world/trail.ts");
+    const paths = REGIONS.flatMap((g) => [0, 1, 2].flatMap((night) => safePaths(g.n, night).paths.map((p) => p.pts.slice(1, -1))));
+    const wet = paths.map((pts) => pts.filter(([x, z]) => !dry(WORLD, x, z)).length / pts.length);
+    expect(Math.max(...wet)).toBeLessThan(0.15); // a ford over a river, not half a path over the sea (region 3's island house)
+    expect(wet.reduce((s, w, i) => s + w * paths[i]!.length, 0) / paths.flat().length).toBeLessThan(0.002); // was 1 in 20, then 1 in 75
   });
 });
 

@@ -16,7 +16,7 @@ export const greeting = (t0: number) => {
 
 const CSS = `
 body:has(.sky){background:transparent}
-body:has(.sky) main{max-width:none;margin:0;min-height:100dvh;padding:1.5rem 1rem;
+body:has(.sky) main{max-width:none;margin:0;min-height:100dvh;padding:max(1.5rem,env(safe-area-inset-top)) max(1rem,env(safe-area-inset-right)) 1.5rem max(1rem,env(safe-area-inset-left));
  font-family:Lexend,system-ui,sans-serif;font-optical-sizing:auto;
  --ink:color-mix(in oklab,#171a24 var(--flipp),#f1f3f8);--mut:color-mix(in oklab,#646b7a var(--flipp),#9ea6b8);
  --paper:color-mix(in oklab,rgba(255,255,255,.76) var(--flipp),rgba(12,16,28,.62));

@@ -14,13 +14,22 @@ import { importTarball, tooBigToImport } from "./tarball.ts";
 import { git, mirrorsOn, seeGit } from "./mirror.ts";
 import { wipeSearch } from "./search.ts";
 import { repoRow } from "./repos.ts";
-import { hex, listOf } from "./util.ts";
-import { charge, SITE } from "./limits.ts";
+import { hex, inBatches, listOf, sha256 } from "./util.ts";
+import { charge, SITE, spend } from "./limits.ts";
 
 /** A visitor's dig lasts a day; past the cap, the oldest goes first. Admins' digs keep. */
 export const DIG_TTL = 24 * 3600_000;
 /** Who owns the shared read-only copies the wrecking link digs. */
 export const WRECK_OWNER = "github";
+/**
+ * The wrecking room's name for GitHub's `owner/repo`: readable, and a hash of the whole name (GitHub's are case-blind),
+ * so `a/b-c` and `a-b/c`, or two long names that start alike, are two copies and not one.
+ */
+export const wreckName = async (full: string) => {
+  const key = full.toLowerCase();
+  const slug = key.replace(/[^a-z0-9]+/g, "-").slice(0, 30).replace(/^-+|-+$/g, "");
+  return `${slug}-${(await sha256(key)).slice(0, 8)}`;
+};
 export const digCap = (env: Env) => Math.max(1, Number(env.DIG_CAP) || 20);
 
 const API = "https://api.github.com";
@@ -147,6 +156,18 @@ export async function branchAndPath(repo: string, rest: string, token?: string):
   return { branch: words[0]!, path: words.slice(1).join("/") };
 }
 
+/**
+ * Every table keyed by a repo's (owner, repo) that a delete clears. A test reads the schema for tables with both
+ * columns, so a new one is either here or in KEPT_ON_DELETE. `table|where` for one keyed another way.
+ */
+export const REPO_TABLES = ["repos|owner = ? AND name = ?", "collaborators", "files", "repo_search", "branches", "branch_files", "shares", "beams", "stamps", "tracks", "webhooks", "webhook_deliveries",
+  "cuts", "deploys", "deploy_settings", "deploy_keys", "deploy_cleared", "dep_watches", "fit_cache", "check_runs", "check_settings", "check_watches", "ci_tokens", "follows", "line_events", "authors", "invites", "worktrees",
+  "agent_runs", "presence", "mal_hits", "held", "leftover_answers", "uncommitted", "protect_main", "board_prs", "board_meta", "board_rounds", "rollbacks", "mervin_learning", "mervin_events",
+  "dep_issues", "train_cars", "hook_verdicts", "mentions", "lane_counts", "bus_seats", "bus_passes", "ester_verdicts", "dexter_repos", "dexter_runs", "dexter_days", "dexter_trims", "handed_tokens",
+  "fresh_starts", "fresh_objects", "git_pending"];
+/** Repo-keyed tables a delete keeps: the audit trail, for its owner until the account goes (REFERENCE.md, "Your destruction"). */
+export const KEPT_ON_DELETE = ["audit"];
+
 /** Forget a repo: its rows, its files' Durable Objects, and its git. An expired dig goes this way, and so does a repo its owner deletes. */
 export async function evict(env: Env, owner: string, name: string) {
   const r = await repoRow(env, owner, name, "artifact, crew_artifact, old_artifacts, namespace");
@@ -154,14 +175,16 @@ export async function evict(env: Env, owner: string, name: string) {
   await wipeSearch(env, owner, name);
   // Checkouts off its git, on the desktop (worktrees.ts).
   await (await import("./worktrees.ts")).dropWorktrees(env, owner, name).catch(() => {});
-  await env.DB.batch(["repos|owner = ? AND name = ?", "collaborators", "files", "repo_search", "branches", "branch_files", "shares", "beams", "stamps", "tracks", "webhooks", "webhook_deliveries",
-    "cuts", "deploys", "deploy_settings", "deploy_keys", "deploy_cleared", "dep_watches", "fit_cache", "check_runs", "check_settings", "check_watches", "ci_tokens", "follows", "line_events", "authors", "invites", "worktrees"].map((t) => {
-    const [table, where = "owner = ? AND repo = ?"] = t.split("|");
-    return env.DB.prepare(`DELETE FROM ${table} WHERE ${where}`).bind(owner, name);
-  }));
+  // Its agent threads' messages, files and session logs: a thread is named by its first run's id.
+  const { results: runs } = await env.DB.prepare("SELECT id FROM agent_runs WHERE owner = ? AND repo = ?").bind(owner, name).all<{ id: number }>();
+  const { threadFetch } = await import("./thread-do.ts");
+  await inBatches(runs, (r) => threadFetch(env, owner, name, r.id, "/wipe", { method: "POST" }).catch(() => null));
   // Its git, the crew's copy, any it moved off with a fresh start, and one still being copied.
   const fresh = await env.DB.prepare("SELECT artifact, state FROM fresh_starts WHERE owner = ? AND repo = ?").bind(owner, name).first();
-  await env.DB.batch(["fresh_starts", "fresh_objects", "git_pending"].map((t) => env.DB.prepare(`DELETE FROM ${t} WHERE owner = ? AND repo = ?`).bind(owner, name)));
+  await env.DB.batch([...REPO_TABLES.map((t) => {
+    const [table, where = "owner = ? AND repo = ?"] = t.split("|");
+    return env.DB.prepare(`DELETE FROM ${table} WHERE ${where}`).bind(owner, name);
+  }), env.DB.prepare("DELETE FROM api_tokens WHERE repo = ?").bind(`${owner}/${name}`)]);
   const arts = [r?.artifact, r?.crew_artifact, ...JSON.parse((r?.old_artifacts as string) ?? "[]"), fresh && fresh.state !== "done" ? fresh.artifact : null];
   // Deleted from the namespace the repo's git lives in (an EU repo's is ARTIFACTS_EU), the same one every read goes through.
   const store = artifactsFor(env, r?.namespace);
@@ -376,13 +399,16 @@ export async function importRepo(env: Env, src: { repo: string; branch: string; 
   }
 }
 
-/** Drop the expired digs, then, to make room for `more`, the oldest past the cap. */
-async function makeRoom(env: Env, more: number) {
+/**
+ * Drop the expired digs, then, to make room for `more` of `owner`'s, the oldest past the cap. The wrecking room's
+ * shared copies and people's own digs are capped apart, so visitors' copies never push out someone's day-long dig.
+ */
+async function makeRoom(env: Env, more: number, owner: string) {
   const { results } = await env.DB.prepare("SELECT owner, name, expires_at FROM repos WHERE expires_at IS NOT NULL ORDER BY expires_at").all<{ owner: string; name: string; expires_at: number }>();
-  const live = results;
-  const expired = live.filter((r) => r.expires_at <= Date.now()).length;
-  const drop = Math.max(expired, live.length - digCap(env) + more);
-  for (const r of live.slice(0, drop)) await evict(env, r.owner, r.name);
+  const now = Date.now(), wreck = owner === WRECK_OWNER;
+  for (const r of results.filter((r) => r.expires_at <= now)) await evict(env, r.owner, r.name);
+  const pool = results.filter((r) => r.expires_at > now && (r.owner === WRECK_OWNER) === wreck);
+  for (const r of pool.slice(0, Math.max(0, pool.length - digCap(env) + more))) await evict(env, r.owner, r.name);
 }
 
 /** Fork a GitHub repo into one `user` owns: the body of POST /api/github/dig, and of the wrecking link's shared copy. */
@@ -405,7 +431,7 @@ async function digRepo(env: Env, user: string, t: Awaited<ReturnType<typeof gith
   // free is an Artifact under it an orphan to delete: an import cut off halfway stays "being
   // imported" on Cloudflare and would block the name for good (#348).
   const ready = (async () => {
-    await makeRoom(env, 0);
+    await makeRoom(env, 0, user);
     if (await repoRow(env, user, name, "1")) return false;
     await env.ARTIFACTS!.delete?.(`${user}--${name}`).catch(() => false);
     return true;
@@ -455,7 +481,7 @@ async function digRepo(env: Env, user: string, t: Awaited<ReturnType<typeof gith
   const upstream = `github:${info.full_name}${folder ? `/tree/${info.default_branch}/${folder}` : ""}`;
 
   if (!(await ready)) return fail("RepoExists", "you already have a repo with that name");
-  if (expires) await makeRoom(env, 1);
+  if (expires) await makeRoom(env, 1, user);
 
   // Shallow, like the levels; writable, because it's yours now.
   let art;
@@ -540,16 +566,18 @@ export async function githubRoutes(req: Request, env: Env, p: string[], user: st
   if (p[2] === "wreck" && req.method === "POST") {
     const full = parseRepo(String((await readBody<"repo">(req)).repo ?? ""));
     if (!full) return fail("BadInput", "give a GitHub repo as owner/name or its URL");
-    const name = full.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 39).replace(/^-|-$/g, "");
+    const name = await wreckName(full);
     const room = (r: { owner: string; name: string }) => json({ owner: r.owner, name: r.name });
     const cached = () => repoRow(env, WRECK_OWNER, name, "1", { liveAt: Date.now() });
     if (await cached()) return room({ owner: WRECK_OWNER, name });
-    // Only a new copy costs an import, so only that counts against the site's hourly budget.
-    const over = await charge(env, "wreck", SITE);
-    if (over) return fail("BudgetSpent", over);
+    // Only a new copy costs an import, so only that counts against the site's hourly budget, and one that
+    // didn't come (no such repo, GitHub said no) is handed back: bad names never spend it for everyone.
+    const over = await spend(env, "wreck", SITE);
+    if (over) return over;
     const res = await digRepo(env, WRECK_OWNER, null, { repo: full, name, visibility: "public" });
     // A second visitor racing the first finds the copy already there.
     if (res.status === 409 || (await cached())) return room({ owner: WRECK_OWNER, name });
+    if (!res.ok) await charge(env, "wreck", SITE, -1);
     return res.ok ? room({ owner: WRECK_OWNER, name }) : res;
   }
   return null;

@@ -679,5 +679,6 @@
     "width": 0.5,
     "material": "scale",
     "below": -0.1
-  }
+  },
+  "hide": {"pattern": "wet", "size": 0.06, "colours": [[0.12, 0.25, 0.33], [0.26, 0.55, 0.72]], "map": 256, "cover": 0.15}
 }

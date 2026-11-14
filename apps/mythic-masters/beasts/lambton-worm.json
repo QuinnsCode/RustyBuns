@@ -50,5 +50,6 @@
     { "kind": "eye", "at": "n3", "off": [0.0, 0.0, 0.18], "r": 0.025, "mirror": true, "material": "pit" },
     { "kind": "eye", "at": "n3", "off": [-0.08, -0.1, 0.17], "r": 0.025, "mirror": true, "material": "pit" },
     { "kind": "spikes", "along": ["n2", "n3", "head"], "n": 5, "len": 0.12, "base": 0.06, "lean": -0.6, "material": "pit" }
-  ]
+  ],
+  "hide": {"pattern": "wet", "size": 0.04, "colours": [[0.3, 0.33, 0.18], [0.65, 0.72, 0.39]], "map": 256, "cover": 0.25}
 }

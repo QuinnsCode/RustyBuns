@@ -1,0 +1,67 @@
+{
+  "id": "hodag",
+  "name": "Hodag",
+  "category": "Hodags",
+  "query": "Hodag",
+  "images": [
+    {
+      "file": "card-color.jpg",
+      "from": "card",
+      "page": "https://commons.wikimedia.org/wiki/File:Hodag_002.jpg",
+      "artist": "Gourami Watcher",
+      "license": "CC BY-SA 3.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by-sa/3.0"
+    },
+    {
+      "file": "card-bw.jpg",
+      "from": "card",
+      "page": "https://commons.wikimedia.org/wiki/File:The_Hodag.png",
+      "artist": "The Wide World Magazine",
+      "license": "Public domain"
+    },
+    {
+      "file": "c3.jpg",
+      "from": "search",
+      "page": "https://commons.wikimedia.org/wiki/File:Hodag_comic.jpg",
+      "artist": "Unknown",
+      "license": "CC BY-SA 2.5",
+      "licenseUrl": "https://creativecommons.org/licenses/by-sa/2.5"
+    },
+    {
+      "file": "c4.jpg",
+      "from": "search",
+      "page": "https://commons.wikimedia.org/wiki/File:Hodag.jpg",
+      "artist": "JSE",
+      "license": "CC BY-SA 3.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by-sa/3.0"
+    },
+    {
+      "file": "c5.jpg",
+      "from": "search",
+      "page": "https://commons.wikimedia.org/wiki/File:Hodag_commemorative_medallion,_Rhinelander,_Wisconsin,_1932_-_Wisconsin_Historical_Museum_-_DSC03197.JPG",
+      "artist": "Daderot",
+      "license": "CC0",
+      "licenseUrl": "http://creativecommons.org/publicdomain/zero/1.0/deed.en"
+    },
+    {
+      "file": "c6.jpg",
+      "from": "search",
+      "page": "https://commons.wikimedia.org/wiki/File:Hoodoo-Ski-Area-Central-Oregon-Resort-Mascot-Harold-The-Hodag.jpg",
+      "artist": "SkiHoodoo",
+      "license": "CC BY-SA 4.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0"
+    }
+  ],
+  "traits": {
+    "silhouette": "A low, long, stocky four-legged beast with a heavy chest, a thick tail that sweeps up at the tip, and a row of tall curved spikes running from the neck down the back and tail.",
+    "head": "A big, wide, toad-like head with two long curved horns, small pointed ears, glowing red-orange eyes, and a huge grinning mouth showing a row of teeth and two long tusks that point down.",
+    "limbs": "Short, thick, bent legs with big paws, each toe ending in a long curved white claw.",
+    "hide": "Dark, shaggy, rough fur or scaly hide, with white-bone horns, spines, tusks and claws standing out against it.",
+    "colours": "Near-black green body with teal and green highlights, bone-white horns, spikes, claws and tusks, and red-orange eyes.",
+    "child": [
+      "A black, wide-grinning monster with two big horns and big white fangs.",
+      "A row of white spikes down its back and tail.",
+      "A heavy four-legged body with big white claws and glowing red eyes."
+    ]
+  }
+}

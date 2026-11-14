@@ -177,7 +177,7 @@ h1::after { content: ""; display: inline-block; width: 12px; height: 12px; borde
   .repo-form { grid-template-columns: 1fr auto auto; }
   .repo-form label { grid-column: 1 / -1; }
   h1 { font-size: 26px; margin: 2px 0 4px; }
-  .lede { display: none; }
+  .card > .lede { display: none; }
   .levels { max-height: 45dvh; }
   .level { padding: 8px 10px; }
   .health, .shield { width: 120px; }
@@ -206,7 +206,10 @@ h1::after { content: ""; display: inline-block; width: 12px; height: 12px; borde
 .waypoint.edge { border-color: var(--line); }
 .waypoint.edge::before { content: ""; position: absolute; left: 50%; top: 50%; width: 0; height: 0; border: 6px solid transparent; border-left: 9px solid var(--accent); border-right: 0; transform: rotate(var(--arrow, 0rad)) translate(44px, -6px); }
 .weapons small { color: var(--muted); }
-.weapons li { grid-template-columns: 2ch 17ch 7ch; }
+/* each gun is its key, its drawing and its ammo; only the one in hand says its command (the rest: a tooltip) */
+.weapons li { grid-template-columns: 2ch 28px auto 7ch; justify-items: start; }
+.weapons li:not(.on) code { display: none; }
+.weapons li:not(.on) { grid-template-columns: 2ch 28px 7ch; }
 .crosshair.reloading { border-color: var(--hair); background: conic-gradient(var(--accent) calc(var(--reload, 0) * 360deg), transparent 0) border-box; -webkit-mask: radial-gradient(circle, transparent 6px, #000 7px); mask: radial-gradient(circle, transparent 6px, #000 7px); }
 .results .look { margin: 12px 0 0; }
 
@@ -248,14 +251,14 @@ html.touch .bl { bottom: 156px; }
 
 
 /* The briefing (#3544, #3575): a sniper's mission briefing laid out on a clean white sandbox, handled in the field.
-   The table is white with a dot grid, grit and the rebase scope's reticle faint behind everything; the card is a
+   The table is white with a dot grid and grit, seen down the rebase scope (round 12); the card is a
    dossier with the scope's corner brackets, an orange edge, an EYES ONLY strip and a strip of tape; headings are
    sprayed through a stencil; buttons are white tiles and chips you pick up; missions are steel dog tags; a result is
    rubber-stamped and tallied, with your clay soldier beside it. Round 6 (#3594) files it all in a manila folder with a
    tab, clips the soldier on as a photo against a height chart, blacks out a line of the orders, leaves a coffee ring,
    and the scope locks onto the mission you point at. Art in public/menu/: reticle.svg 0.9 KB,
    grit.svg 0.4 KB, insignia.svg 0.7 KB, stamp.svg 0.4 KB, map.svg 1.2 KB, clip.svg 0.5 KB, coffee.svg 0.6 KB,
-   soldier-won/lost.webp 8.2 KB (baked by scripts/menu-art.ts). Scoped to .menu, .results, the Controls panel and the eqosys surfaces (src/eqosys.ts SKIN), so
+   lock.svg 0.4 KB, tile.svg 0.8 KB, scope.svg 1.3 KB, soldier-won/lost.webp 8.2 KB (baked by scripts/menu-art.ts). Scoped to .menu, .results, the Controls panel and the eqosys surfaces (src/eqosys.ts SKIN), so
    the HUD keeps codeSplitter's paper. */
 .menu, .results, .credits, .newsreel, html .ui-house, .eq {
   --br-ink: #141414; --br-dim: #4f4d48; --br-rule: #cfccc4; --br-hot: #e8590c; --br-hot-ink: #b8460a; --br-sheet: #fbfaf7;
@@ -270,7 +273,7 @@ html.touch .bl { bottom: 156px; }
 }
 .menu, .results {
   color: var(--br-ink);
-  background: url(/menu/grit.svg) 0 0 / 180px, url(/menu/reticle.svg) center / min(150vmin, 1300px) no-repeat fixed,
+  background: url(/menu/grit.svg) 0 0 / 180px,
     radial-gradient(circle, #14141424 1px, #0000 1.5px) 0 0 / 22px 22px, var(--br-sheet);
 }
 .menu .card, .results .card {
@@ -388,6 +391,18 @@ html.touch .bl { bottom: 156px; }
   font: 800 11px/1 var(--br-stencil); letter-spacing: 0.1em; color: #fff;
   background: url(/menu/mark-key.svg) 8px 50% / 12px no-repeat, var(--br-ink); }
 .menu .more .keys dt { font-weight: 700; }
+/* Round 8 (#4160): the picks are pressed clay tiles stamped with their word, and the scope locks onto the picked one:
+   orange corner brackets round the build, role, mode and head you've chosen (lock.svg 0.4 KB, tile.svg 0.8 KB). */
+.menu .chips button, .results .chips button {
+  position: relative; border-radius: 5px; padding: 6px 12px 5px;
+  font: 800 12px/1.1 var(--br-stencil); text-transform: uppercase; letter-spacing: 0.09em;
+  background: url(/menu/tile.svg) 0 0 / 48px, linear-gradient(#fff, #f1eee6); box-shadow: inset 0 1px 0 #fff, inset 0 -2px 0 #14141418, 0 3px 0 var(--br-ink); }
+.menu .chips button:hover, .results .chips button:hover { background: url(/menu/tile.svg) 0 0 / 48px, linear-gradient(#fff, #f6f4ee); }
+.menu .chips button[aria-checked="true"], .results .chips button[aria-checked="true"] { color: #fff; background: var(--br-ink); box-shadow: inset 0 2px 3px #000, 0 1px 0 var(--br-ink); transform: translateY(2px); }
+.menu .chips button[aria-checked="true"]::after, .results .chips button[aria-checked="true"]::after, .menu .heads button[aria-checked="true"]::after {
+  content: ""; position: absolute; inset: -6px -6px -4px; pointer-events: none; background: url(/menu/lock.svg) 0 0 / 100% 100% no-repeat; }
+.menu .heads button { position: relative; background: url(/menu/tile.svg) 0 0 / 48px, #fff; }
+.menu .heads button[aria-checked="true"] { outline: 0; box-shadow: 0 1px 0 var(--br-ink); transform: translateY(2px); }
 
 /* Missions are dog tags: brushed steel with rolled edges, the name stamped in, a hole punched for the chain. */
 .menu .level {
@@ -458,13 +473,23 @@ html.touch .bl { bottom: 156px; }
 .results .card .clip { right: 100px; }
 /* The tally is filed on the after-action form, its number typed in the header. */
 .results .tally::before { content: "AFTER-ACTION REPORT \2022  FORM GR-27"; padding: 6px 0 5px; font: 700 10px/1 var(--mono); letter-spacing: 0.18em; color: var(--br-dim); border-bottom: 1px solid var(--br-ink); }
-/* The way out is a pair of dog tags, like the missions; Play again is the orange one. */
-.results .row { flex-wrap: wrap; }
-.results .row button { white-space: nowrap; color: #1b1c19; text-shadow: 0 1px 0 #fff8; border: 0; border-radius: 22px / 50%; padding: 10px 18px 10px 34px;
-  font-family: var(--br-stencil); font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em;
-  background: radial-gradient(circle at 16px 50%, #fff 0 4.5px, #6f726b 4.5px 6px, #0000 6.5px), repeating-linear-gradient(90deg, #ffffff14 0 1px, #0000 1px 3px), linear-gradient(170deg, #eceee9, #b3b7ad 48%, #dcdfd7 56%, #a1a59b);
-  box-shadow: inset 0 0 0 2px #ffffff80, inset 0 0 0 3px #6b6e66, 0 3px 0 #5b5e56, 0 6px 10px #0003; }
-.results .row button.primary { color: #fff; text-shadow: 0 1px 0 #0006; background: radial-gradient(circle at 16px 50%, #fff 0 4.5px, #ffd3b0 4.5px 6px, #0000 6.5px), linear-gradient(170deg, #ff9a5c, var(--br-hot) 50%, #c94a08); box-shadow: inset 0 0 0 2px #ffffff50, inset 0 0 0 3px #9a3407, 0 3px 0 #7d2a05, 0 6px 10px #0003; }
+/* Round 10 (#4261): the way out is the form's disposition line, in the same pressed clay tiles as every other button
+   (the dog tags stay with the missions). The way on (Next, else Play again) is the inked tile with the orange edge,
+   Levels is clay; each carries its lucide mark (rotate-ccw, list, arrow-right) pressed in as a mask. No new files. */
+.results .row { flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 10px; padding-top: 8px; border-top: 1px dashed var(--br-ink); }
+.results .row::before { content: "DISPOSITION \2014  CHECK ONE"; flex-basis: 100%; font: 700 10px/1 var(--mono); letter-spacing: 0.18em; color: var(--br-dim); }
+.results .row button { display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; border-radius: 5px; padding: 9px 16px 8px 12px;
+  font: 800 13px/1.1 var(--br-stencil); text-transform: uppercase; letter-spacing: 0.1em; color: var(--br-ink);
+  background: url(/menu/tile.svg) 0 0 / 48px, linear-gradient(#fff, #f1eee6); box-shadow: inset 0 1px 0 #fff, inset 0 -2px 0 #14141418, 0 3px 0 var(--br-ink); }
+.results .row button:hover { background: url(/menu/tile.svg) 0 0 / 48px, linear-gradient(#fff, #f6f4ee); }
+.results .row button::before { content: ""; width: 16px; height: 16px; flex: none; background: currentColor;
+  -webkit-mask: var(--mark) center / contain no-repeat; mask: var(--mark) center / contain no-repeat; }
+.results .row #again { --mark: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8'/%3E%3Cpath d='M3 3v5h5'/%3E%3C/svg%3E"); }
+.results .row #back { --mark: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 12h.01M3 18h.01M3 6h.01M8 12h13M8 18h13M8 6h13'/%3E%3C/svg%3E"); }
+.results .row #next { --mark: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 12h14M12 5l7 7-7 7'/%3E%3C/svg%3E"); }
+.results .row :is(#next, #next[hidden] + #again) { color: #fff; background: linear-gradient(#2a2a27, #141414); border-top: 4px solid var(--br-hot); padding-top: 5px; }
+.results .row :is(#next, #next[hidden] + #again):hover { background: linear-gradient(#34342f, #1c1c1a); }
+.results .row :is(#next, #next[hidden] + #again)::before { background: var(--br-hot); }
 
 /* The Controls panel is the same dossier: its look comes from packages/ui's tokens, and packages/game-controls'
    classes are styled here the way the menu's are; neither package's CSS is forked. */
@@ -495,6 +520,53 @@ html .ui-house .gc-sec { border: 1.5px solid #141414; border-radius: 0; box-shad
 html .ui-house .gc-sec-h { min-height: 40px; color: #fff; background: #141414; font: 800 14px/1 var(--br-stencil); text-transform: uppercase; letter-spacing: 0.1em; }
 html .ui-house .gc-sec-h:hover { background: #2b2b2b; }
 html .ui-house .gc-sec-b { padding: 12px 12px 12px; }
+/* The profile tabs are the manual's index tabs: cut square at the foot, a clay face, the picked one inked with the
+   orange edge on top and the scope locked on it. */
+html .ui-house .gc-tab { position: relative; border-radius: 8px 8px 2px 2px; background: url(/menu/tile.svg) 0 0 / 48px, linear-gradient(#fff, #f1eee6);
+  font-family: var(--br-stencil); font-weight: 800; letter-spacing: 0.06em; }
+html .ui-house :is(.gc-tab[aria-selected="true"], .gc-tab[aria-pressed="true"]) { background: #141414; border-top: 4px solid #e8590c; box-shadow: 0 1px 0 #141414; transform: translateY(2px); }
+html .ui-house :is(.gc-tab[aria-selected="true"], .gc-tab[aria-pressed="true"])::after { content: ""; position: absolute; inset: -9px -6px -5px; pointer-events: none;
+  background: url(/menu/lock.svg) 0 0 / 100% 100% no-repeat; }
+
+/* Round 9 (#4233): one kind of button. Load, Deploy, Host, Join, the keybind keys, the reset and fold icons and the
+   close are the same pressed clay tiles as the picks (tile.svg): Deploy and Host are the inked ones with the orange
+   edge on top, like a picked index tab. Key caps carry scope ticks in their corners, and every key row on the key
+   card and in the manual is marked with a small crosshair, so the rows read as a marked sheet. No new art: CSS
+   gradients over tile.svg. */
+.menu {
+  --br-tile: url(/menu/tile.svg) 0 0 / 48px, linear-gradient(#fff, #f1eee6);
+  --br-tile-edge: inset 0 1px 0 #fff, inset 0 -2px 0 #14141418, 0 3px 0 var(--br-ink);
+}
+html .ui-house { --br-tile: url(/menu/tile.svg) 0 0 / 48px, linear-gradient(#fff, #f1eee6); --br-tile-edge: inset 0 1px 0 #fff, inset 0 -2px 0 #14141418, 0 3px 0 #141414;
+  --br-ticks: linear-gradient(#14141473 0 0) 4px 4px / 6px 1.5px, linear-gradient(#14141473 0 0) 4px 4px / 1.5px 6px,
+    linear-gradient(#14141473 0 0) right 4px top 4px / 6px 1.5px, linear-gradient(#14141473 0 0) right 4px top 4px / 1.5px 6px,
+    linear-gradient(#14141473 0 0) left 4px bottom 4px / 6px 1.5px, linear-gradient(#14141473 0 0) left 4px bottom 4px / 1.5px 6px,
+    linear-gradient(#14141473 0 0) right 4px bottom 4px / 6px 1.5px, linear-gradient(#14141473 0 0) right 4px bottom 4px / 1.5px 6px;
+  --br-cross: radial-gradient(circle, #0000 2px, #c2410c 2.2px 3.2px, #0000 3.6px), linear-gradient(#c2410c 0 0) center / 1.2px 100%, linear-gradient(#c2410c 0 0) center / 100% 1.2px; }
+.menu .more :is(#repo-load, #place-go, #battle-host, #battle-join) {
+  border-radius: 5px; padding: 8px 16px 7px; font: 800 13px/1.1 var(--br-stencil); text-transform: uppercase; letter-spacing: 0.1em;
+  background: var(--br-tile); box-shadow: var(--br-tile-edge); }
+.menu .more :is(#repo-load, #battle-join):hover { background: url(/menu/tile.svg) 0 0 / 48px, linear-gradient(#fff, #f6f4ee); }
+.menu .more :is(#place-go, #battle-host) { color: #fff; background: linear-gradient(#2a2a27, #141414); border-top: 4px solid var(--br-hot); padding-top: 5px; }
+.menu .more :is(#place-go, #battle-host):hover { background: linear-gradient(#34342f, #1c1c1a); }
+html .ui-house .gc-key { border-radius: 5px; font: 700 13px/1.15 var(--mono); background: var(--br-ticks), var(--br-tile); background-repeat: no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, repeat, no-repeat;
+  box-shadow: var(--br-tile-edge); }
+html .ui-house .gc-key.on { color: #fff; background: linear-gradient(#2a2a27, #141414); border-top: 4px solid #e8590c; }
+html .ui-house :is(.gc-icon, .gc-close) { border-radius: 5px; background: var(--br-tile); box-shadow: var(--br-tile-edge); }
+/* A reset with nothing to reset is the same clay tile pressed flat: a light ink edge, its mark in mid grey. */
+html .ui-house .gc-icon:disabled { color: #6f6d66; background: var(--br-tile); border: 1.5px solid #14141466; box-shadow: inset 0 1px 0 #fff, 0 1px 0 #14141466; transform: translateY(2px); }
+html .ui-house .gc-reset { border-radius: 5px; font: 800 12px/1.1 var(--br-stencil); text-transform: uppercase; letter-spacing: 0.1em; background: var(--br-tile); box-shadow: var(--br-tile-edge); }
+/* The crosshair marks the rows: a key's name in the manual, a line of the key card. */
+html .ui-house :is(.gc-binds > span, .gc-keys dt), .menu .more .keys dt { position: relative; padding-left: 16px; }
+html .ui-house :is(.gc-binds > span, .gc-keys dt)::before, .menu .more .keys dt::before { content: ""; position: absolute; left: 0; top: 50%; width: 10px; height: 10px; margin-top: -5px;
+  background: var(--br-cross); background-repeat: no-repeat; opacity: 0.85; }
+.menu .more .keys { --br-cross: radial-gradient(circle, #0000 2px, #c2410c 2.2px 3.2px, #0000 3.6px), linear-gradient(#c2410c 0 0) center / 1.2px 100%, linear-gradient(#c2410c 0 0) center / 100% 1.2px; }
+.menu .more .keys dt::before { top: 0.55em; }
+html .ui-house .gc-keys dt::before { top: 0.75em; }
+/* The key card's lines are ruled off like a form, each with a dotted leader. */
+.menu .more .keys :is(dt, dd) { padding-bottom: 4px; border-bottom: 1px dotted #14141440; }
+/* A debrief is a clean form: the mug ring stays on the briefing, where it doesn't read as a stray shape. */
+.results .card { background: var(--br-brackets), #fff; background-repeat: no-repeat; }
 
 @media (max-width: 560px) {
   /* Room under the Controls cog; the briefing scrolls under a band of the table that fades it out beneath the cog. */
@@ -508,6 +580,9 @@ html .ui-house .gc-sec-b { padding: 12px 12px 12px; }
   .menu .more[open]::after { display: none; }
   .menu .more :is(.place, .battle) { grid-template-columns: minmax(0, 1fr); padding: 22px 10px 10px; }
   .menu .more .repo-form { padding: 22px 10px 10px; }
+  /* The sheet ends clear of the card's bottom brackets; the LAN address gets its own line so its blank isn't cut off. */
+  .menu .more[open] { margin-bottom: 22px; }
+  .menu .more .battle #battle-addr { flex-basis: 100%; }
   .menu .more :is(.repo-form, .place, .battle) label { letter-spacing: 0.06em; }
   .menu .more :is(.place, .battle) .row > * { min-width: 0; }
   .menu .card::before, .results .card::before { font-size: 9px; letter-spacing: 0.14em; }
@@ -528,6 +603,11 @@ html .ui-house .gc-sec-b { padding: 12px 12px 12px; }
   .results .card .clip { right: 58px; }
   .results h2 { font-size: 26px; margin-right: 72px; white-space: nowrap; padding: 3px 10px; }
   .results .row button { padding: 8px 14px 8px 30px; font-size: 13px; }
+  /* The four roles are two rows of two, so "Releaser" isn't left alone on a line. */
+  .results #results-roles { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  /* The field manual keeps a gutter of table round it on a phone, and its first tab's brackets clear the frame. */
+  html .gc-dialog.ui-house { align-items: center; padding: 14px 12px; }
+  html .ui-house .gc-card { border-bottom: 2px solid #141414; padding-top: 34px; padding-left: 14px; }
 }
 
 /* --- The credits (src/ui/credits.ts, src/sim/credits.ts, #3619): the campaign's end on the briefing table. The file is
@@ -608,3 +688,91 @@ body.reeling canvas#view { filter: grayscale(1) sepia(0.18) contrast(1.35) brigh
 .newsreel .announcer:empty { display: none; }
 .newsreel .skip { position: absolute; right: 16px; bottom: 12px; margin: 0; font: 700 10px/1 var(--mono); letter-spacing: 0.18em; text-transform: uppercase; color: #f4f1e8aa; }
 @media (prefers-reduced-motion: reduce) { .newsreel .grain { animation: none; } }
+
+/* a screen's how-to, out of the way (index.html): a small ? opens it as a popover; a click outside or Escape shuts it */
+button.info { display: inline-grid; place-items: center; width: 30px; height: 30px; padding: 0; margin-left: 6px; vertical-align: middle; border-radius: 50%; border: 1.5px solid currentColor; background: none; color: var(--muted); cursor: help; }
+button.info svg { width: 18px; height: 18px; }
+.about[popover] { max-width: min(36rem, calc(100vw - 32px)); max-height: calc(100vh - 32px); overflow: auto; padding: 20px 24px; border: 2px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--fg); font-family: var(--sans); font-size: 14px; text-align: left; }
+.about[popover]::backdrop { background: rgba(0, 0, 0, 0.3); }
+.about .lede { margin: 0 0 12px; }
+.about .keys { margin-top: 12px; }
+.kicker button.info { width: 24px; height: 24px; margin-left: 8px; } .kicker button.info svg { width: 15px; height: 15px; }
+
+/* Round 11 (#4281): the scope's moment. The soldier's photo on the briefing and both debriefs is seen through the
+   rebase scope (sight.svg 0.7 KB: an orange ring, a broken cross with mil ticks, a dot on the target), the briefing
+   is stamped TOP SECRET across the photo's foot (the CLASSIFIED stamp's worn mask, stamp.svg), and the field manual's
+   heading carries the sight as its insignia. */
+.menu .sight { position: absolute; z-index: 2; top: 26px; right: 16px; width: 96px; height: 126px; pointer-events: none; transform: rotate(3deg);
+  box-sizing: border-box; border: solid #0000; border-width: 5px 5px 16px; background: url(/menu/sight.svg) center / 84% no-repeat; }
+.menu .sight::after { content: "TOP SECRET"; position: absolute; left: -26px; bottom: -30px; padding: 3px 7px 2px; white-space: nowrap; transform: rotate(-11deg);
+  font: 900 13px/1.2 var(--br-stencil); letter-spacing: 0.14em; color: var(--br-hot-ink); border: 3px double var(--br-hot-ink); border-radius: 4px; opacity: 0.88;
+  -webkit-mask: url(/menu/stamp.svg) 0 0 / 150px 50px; mask: url(/menu/stamp.svg) 0 0 / 150px 50px; }
+.results .card::after { background: url(/menu/sight.svg) 50% 42% / 84% no-repeat, url(/menu/soldier-won.webp) 50% 92% / 136% auto no-repeat,
+  repeating-linear-gradient(#0000 0 9px, #14141420 9px 10px), linear-gradient(#ecebe6, #d3d1ca); }
+.results[data-mood="lost"] .card::after { background: url(/menu/sight.svg) 50% 42% / 84% no-repeat, url(/menu/soldier-lost.webp) 50% 92% / 136% auto no-repeat,
+  repeating-linear-gradient(#0000 0 9px, #14141420 9px 10px), linear-gradient(#ecebe6, #d3d1ca); }
+html .ui-house .gc-head h2::before { content: ""; display: inline-block; width: 0.95em; height: 0.95em; margin-right: 0.3em; vertical-align: -0.1em;
+  background: url(/menu/sight.svg) center / contain no-repeat; }
+@media (max-width: 560px) {
+  .menu .sight { top: 22px; right: 8px; width: 62px; height: 82px; border-width: 3px 3px 10px; }
+  .menu .sight::after { left: -18px; bottom: -24px; font-size: 10px; padding: 2px 5px 1px; border-width: 2px; }
+}
+
+/* Round 12 (#4285): the hero scope moment. The briefing and the debriefs are seen down the rebase scope: the table is
+   the lens, a dark housing closes in round it, and the reticle (scope.svg 1.3 KB: heavy posts in from the rim, a
+   hairline cross with mil dots, a stadia ladder, an orange chevron) sits behind the dossier at the scope's full size.
+   The housing is a CSS gradient (no art): pale field paper outside an inked double ring with a worn orange inner edge
+   (round 13: the black housing fought the white canvas). The dossier stays on top, so nothing on it
+   loses contrast; the play view never shows it. */
+.menu, .results { --scope-r: max(50vmin, 360px); }
+.menu::after, .results::after { content: ""; position: fixed; inset: 0; z-index: -1; pointer-events: none;
+  background: url(/menu/scope.svg) center / calc(var(--scope-r) * 2) no-repeat,
+    radial-gradient(circle at center, #0000 0 calc(var(--scope-r) - 22px), #14141414 calc(var(--scope-r) - 8px), #e8590c99 calc(var(--scope-r) - 3px),
+      #141414 calc(var(--scope-r) - 2px) calc(var(--scope-r) + 4px), #d9d6cc calc(var(--scope-r) + 5px) calc(var(--scope-r) + 9px),
+      #141414b3 calc(var(--scope-r) + 10px) calc(var(--scope-r) + 11px), #e9e7e0d9 calc(var(--scope-r) + 12px), #dedbd2e6 calc(var(--scope-r) + 220px));
+  animation: scope-in 0.7s cubic-bezier(.2, .7, .2, 1) both; }
+@keyframes scope-in { from { transform: scale(1.12); opacity: 0.4; } }
+@media (prefers-reduced-motion: reduce) { .menu::after, .results::after { animation: none; } }
+/* The lost debrief's sight sits on the head, so the kneeling pose shows. */
+.results[data-mood="lost"] .card::after { background: url(/menu/sight.svg) 50% 18% / 58% no-repeat, url(/menu/soldier-lost.webp) 50% 92% / 136% auto no-repeat,
+  repeating-linear-gradient(#0000 0 9px, #14141420 9px 10px), linear-gradient(#ecebe6, #d3d1ca); }
+@media (max-width: 560px) {
+  /* Under the cog the briefing scrolls beneath the pale housing's top, not a band of white table. */
+  .menu::before { background: linear-gradient(#e4e1d9 78%, #e4e1d900); }
+  /* TOP SECRET lands under the photo, clear of its corner. */
+  .menu .sight::after { left: -34px; bottom: -34px; transform: rotate(-6deg); }
+}
+
+/* Round 14 (#4327): the field manual is a dossier page that fits the screen. The card still scrolls, but its head is a
+   stamped backplate pinned at the top (kraft paper with grit, the FIELD MANUAL strip, a FORM GR-12 rubber stamp and a
+   double rule) and the close is moved into a footer pinned at the foot (main.ts), so the key list scrolls between
+   them. A fade over the list above the footer and an orange scrollbar show there is more below; the fade lifts when
+   the list reaches its end. No new art: grit.svg and stamp.svg again. */
+html .ui-house .gc-card { --gr-pad: 20px; --gr-plate: url(/menu/grit.svg) 0 0 / 180px, linear-gradient(#f1ead8, #e7dec6);
+  padding: 0 var(--gr-pad); scrollbar-width: thin; scrollbar-color: #e8590c #efece4; }
+html .ui-house .gc-card::before { content: none; }
+html .ui-house .gc-head { position: sticky; top: 0; z-index: 3; margin: 0 calc(-1 * var(--gr-pad)); padding: 32px var(--gr-pad) 14px;
+  background: var(--gr-plate); border-bottom: 4px double #141414; box-shadow: 0 6px 10px -8px #14141466; }
+html .ui-house .gc-head::before { content: "FIELD MANUAL \2022  KEEP ON YOU"; position: absolute; top: 0; left: 50%; transform: translateX(-50%); padding: 5px 10px 4px;
+  font: 700 10px/1 var(--mono); letter-spacing: 0.2em; color: #fff; background: #141414; white-space: nowrap; }
+html .ui-house .gc-head::after { content: "FORM GR-12"; margin-left: auto; padding: 4px 8px 3px; white-space: nowrap; transform: rotate(-5deg);
+  font: 900 13px/1.2 var(--br-stencil); letter-spacing: 0.14em; color: #c2410c; border: 3px double #c2410c; border-radius: 4px; opacity: 0.9;
+  -webkit-mask: url(/menu/stamp.svg) 0 0 / 150px 50px; mask: url(/menu/stamp.svg) 0 0 / 150px 50px; }
+html .ui-house .gr-foot { position: sticky; bottom: 0; z-index: 3; display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  margin: 0 calc(-1 * var(--gr-pad)); padding: 12px var(--gr-pad); background: var(--gr-plate); border-top: 4px double #141414; }
+html .ui-house .gr-foot::before { content: ""; position: absolute; left: 0; right: 0; bottom: calc(100% + 4px); height: 40px; pointer-events: none;
+  background: linear-gradient(#fff0, #fffdf6f2); }
+@supports (animation-timeline: scroll()) {
+  html .ui-house .gr-foot::before { animation: gr-edge linear both; animation-timeline: scroll(nearest block); }
+  @keyframes gr-edge { 92% { opacity: 1; } to { opacity: 0; } }
+}
+html .ui-house .gr-foot::after { content: "RETURN TO FILE GR-04"; order: -1; font: 700 11px/1.2 var(--mono); letter-spacing: 0.14em; color: #4f4d48; }
+html .ui-house .gr-foot .gc-close { display: inline-flex; gap: 8px; width: auto; height: 44px; padding: 3px 16px 0; line-height: 1; color: #fff;
+  font: 800 13px/1 var(--br-stencil); text-transform: uppercase; letter-spacing: 0.1em;
+  background: linear-gradient(#2a2a27, #141414); border: 1.5px solid #141414; border-top: 4px solid #e8590c; }
+html .ui-house .gr-foot .gc-close:hover { background: linear-gradient(#34342f, #1c1c1a); }
+@media (max-width: 560px) {
+  html .ui-house .gc-card { --gr-pad: 14px; padding: 0 var(--gr-pad); }
+  html .ui-house .gc-head h2 { font-size: 26px; }
+  html .ui-house .gr-foot::after { content: "RETURN TO GR-04"; }
+}

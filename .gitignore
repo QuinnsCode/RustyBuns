@@ -2,6 +2,8 @@ node_modules
 dist
 .rustybuns/*
 !.rustybuns/vite.d.ts
+# Each run's step timings (--profile): one machine's numbers, rewritten every run, never committed
+**/.rustybuns/profile/
 native/target
 native/dist
 *.sqlite*

@@ -63,13 +63,13 @@ function clientOf(req: Request, conf: Env, body: { client_id?: string }) {
   return appOf(conf, id);
 }
 
-async function tokens(conf: Env, iss: string, who: Handoff, nonce: string | null, refresh: boolean) {
+async function tokens(conf: Env, iss: string, who: Handoff, nonce: string | null, refresh: boolean, web = false) {
   const access = await sign(conf, iss, who);
   if (!access) return null;
   const id = await sign(conf, iss, who, Date.now(), { email_verified: await emailVerified(conf, who.user.id), ...(nonce ? { nonce } : {}) });
   return {
     access_token: access, id_token: id, token_type: "Bearer", expires_in: TOKEN_S, scope: refresh ? "openid email profile offline_access" : "openid email profile",
-    ...(refresh ? { refresh_token: await mintRefresh(conf, who.user.id, who.app) } : {}),
+    ...(refresh ? { refresh_token: await mintRefresh(conf, who.user.id, who.app, Date.now(), web) } : {}),
   };
 }
 
@@ -118,9 +118,10 @@ export async function oauth(req: Request, conf: Env): Promise<Response | null> {
       return out ? json(out, 200, head) : oops("temporarily_unavailable", "eqosys has no signing key yet", 503, head);
     }
     if (!body.refresh_token) return oops("invalid_request", "send refresh_token", 400, head);
-    const who = await spendRefresh(conf, app.id, body.refresh_token);
-    if (!who) return oops("invalid_grant", "that refresh token is spent, late, revoked or another client's", 400, head);
-    const out = await tokens(conf, iss, who, null, true);
+    // A game page's token (/api/exchange with `keep`) renews here too, and its next one stays a page's.
+    const spent = await spendRefresh(conf, app.id, body.refresh_token);
+    if (!spent) return oops("invalid_grant", "that refresh token is spent, late, revoked or another client's", 400, head);
+    const out = await tokens(conf, iss, spent.who, null, true, spent.web);
     return out ? json(out, 200, head) : oops("temporarily_unavailable", "eqosys has no signing key yet", 503, head);
   }
 

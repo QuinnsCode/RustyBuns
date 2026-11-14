@@ -1,5 +1,6 @@
 import { expect, setDefaultTimeout, test } from "bun:test";
 import { members } from "../src/members.ts";
+import { waysOf } from "../src/auth.ts";
 import { ADMIN, asks, boot, codeIn, ORIGIN, PARK, PASSWORD, QCRM } from "./kit.ts";
 import { Jwks, newKey, verify } from "@rustybuns/util/token";
 import { check } from "@rustybuns/util/guard";
@@ -157,6 +158,12 @@ test("already signed in: an app she uses gets her straight back with no page; a 
   expect(await login(crm.form, up.cookie)).toBeNull();
   expect(await login(again.form, "")).toBeNull();
   expect(await login({ ...again.form, prompt: "select_account" }, up.cookie)).toBeNull();
+  // A game checking quietly on load (prompt=none): a code for her, straight back as a guest when signed out or never used, never a page.
+  expect(codeIn((await login({ ...again.form, prompt: "none" }, up.cookie))!.headers.get("location")!)).toMatch(/^eq_/);
+  for (const [form, cookie] of [[again.form, ""], [crm.form, up.cookie]] as const) {
+    const back = new URL((await login({ ...form, prompt: "none" }, cookie))!.headers.get("location")!);
+    expect([back.origin, back.searchParams.get("error"), back.searchParams.get("state"), back.searchParams.has("code")]).toEqual([new URL(form.return).origin, "login_required", "s1", false]);
+  }
 
   // Back from "Continue with Google" for qCRM, the mark /do/social left in her browser sends her straight on, once; it
   // doesn't carry to another app. Bo, handed a link with that mark in it, sees the page and isn't linked to qCRM.
@@ -173,4 +180,20 @@ test("already signed in: an app she uses gets her straight back with no page; a 
   expect(boId).toBeTruthy();
   expect(await login({ ...crm.form, via: await socialMark(conf, ask) }, bo.cookie)).toBeNull();
   expect(await conf.DB.prepare("SELECT 1 AS n FROM links WHERE user_id = ? AND app = ?").bind(boId, "qcrm").first<number>("n")).toBeNull();
+});
+
+test("ways to sign in: the Account tab's list, a provider added from there goes off to it, and the last way in can't be taken off", async () => {
+  const { conf, call } = await boot({ GITHUB_CLIENT_ID: "gh-id", GITHUB_CLIENT_SECRET: "gh-secret" });
+  const up = await call("/do/signup", { form: { name: "Ada", email: "ada@example.com", password: PASSWORD } });
+  const ways = () => waysOf(new Request(ORIGIN, { headers: { cookie: up.cookie } }), conf);
+  expect((await ways()).map((w) => w.provider)).toEqual(["credential"]);
+
+  // Adding GitHub starts GitHub's own sign-in, coming back to the Account tab; a provider that isn't switched on here doesn't.
+  const off = await call("/do/link", { form: { provider: "github" }, cookie: up.cookie });
+  expect(new URL(off.to).hostname).toBe("github.com");
+  expect((await call("/do/link", { form: { provider: "google" }, cookie: up.cookie })).to).toBe("/?tab=account&e=provider");
+  expect((await call("/do/link", { form: { provider: "github" } })).to).toBe("/login?e=in");
+
+  expect((await call("/do/unlink", { form: { id: (await ways())[0]!.id }, cookie: up.cookie })).to).toBe("/?tab=account&e=last");
+  expect((await ways()).map((w) => w.provider)).toEqual(["credential"]);
 });

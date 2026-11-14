@@ -76,7 +76,7 @@
 
 import { httpUrl, listOf, parseJson } from "./util.ts";
 import { fail, json, need, readBody, type Env } from "./env.ts";
-import { arr, bool, int, nul, num, obj, oneOf, opt, str, type Of } from "@rustybuns/util/guard";
+import { arr, bool, int, isRecord, nul, num, obj, oneOf, opt, str, type Of } from "@rustybuns/util/guard";
 import { repoRow } from "./repos.ts";
 import { githubToken, parseRepo } from "./github.ts";
 import { emit } from "./hooks.ts";
@@ -210,12 +210,23 @@ async function told(env: Env, run: CheckRun, action: "created" | "completed", by
 /** The status context we post our runs under. */
 const CONTEXT = "codesplitter/";
 
+/**
+ * The GitHub repo our statuses go up to: the owner turned that on, and the mirror sends things upstream.
+ * A pull-only mirror (`mirror_pull_only`) sends nothing, statuses included.
+ */
+async function postsTo(env: Env, owner: string, repo: string, sha: string) {
+  const s = await checkSettings(env, owner, repo);
+  if (!s.post_statuses || !s.github || !/^[0-9a-f]{40}$/.test(sha)) return null;
+  const m = await repoRow<{ mirror_pull_only: number | null }>(env, owner, repo, "mirror_pull_only");
+  return m?.mirror_pull_only ? null : s.github;
+}
+
 /** Our own run as a commit status on GitHub, when the owner turned that on. */
 async function postStatus(env: Env, run: CheckRun) {
-  const s = await checkSettings(env, run.owner, run.repo);
-  if (!s.post_statuses || !s.github || !/^[0-9a-f]{40}$/.test(run.sha)) return;
+  const github = await postsTo(env, run.owner, run.repo, run.sha);
+  if (!github) return;
   const state = run.status === "passed" ? "success" : run.status === "failed" ? "failure" : run.status === "cancelled" ? "error" : "pending";
-  await gh(env, run.owner, `/repos/${s.github}/statuses/${run.sha}`, {
+  await gh(env, run.owner, `/repos/${github}/statuses/${run.sha}`, {
     method: "POST",
     body: JSON.stringify({ state, context: `${CONTEXT}${run.name}`, description: `${run.runner}: ${run.status}`.slice(0, 140) }),
   });
@@ -296,18 +307,18 @@ export async function upstreamTaken(env: Env, owner: string, repo: string, ref: 
 
 /** A file's text on `ref` (the branch's copy when it has one, else main's), or null when there's none. */
 export async function readAt(env: Env, owner: string, repo: string, ref: string, path: string) {
-  const { materialize, toFile } = await import("./archive.ts");
+  const { docIn, materialize, toFile } = await import("./archive.ts");
   const own = ref === "main" ? null : await env.DB.prepare("SELECT deleted FROM branch_files WHERE owner = ? AND repo = ? AND branch = ? AND path = ? AND merged = 0").bind(owner, repo, ref, path).first();
   if (own?.deleted) return null;
   if (!own && "error" in await materialize(env, owner, repo, path)) return null;
   const res = await toFile(env, owner, repo, path, "upstream", "file", {}, "", own ? ref : undefined);
-  return res.ok ? ((await res.json()) as { lines: { text: string }[] }).lines.map((l) => l.text).join("\n") : null;
+  return res.ok ? (await docIn(res))?.lines.map((l) => l.text).join("\n") ?? null : null;
 }
 
 /** A check the repo runs, from its codesplitter.ci or package.json. */
 export interface Planned { name: string; command: string; paths?: string[] }
 
-const parse = (t: string | null) => { try { const v = t && JSON.parse(t); return v && typeof v === "object" && !Array.isArray(v) ? v as Record<string, unknown> : null; } catch { return null; } };
+const parse = (t: string | null) => { try { const v = t && JSON.parse(t); return isRecord(v) ? v : null; } catch { return null; } };
 const SCRIPTS = ["test", "typecheck"];
 const scriptsOf = (pkg: string | null) => {
   const s = parse(pkg)?.scripts as Record<string, unknown> | undefined;
@@ -520,11 +531,11 @@ const ordered = new Map<string, string>();
  * Made a required check on main, it holds GitHub's merge-when-ready till then. The mirror's sync calls it.
  */
 export async function postOrder(env: Env, owner: string, repo: string, name: string, sha: string) {
-  const s = await checkSettings(env, owner, repo);
-  if (!s.post_statuses || !s.github || !/^[0-9a-f]{40}$/.test(sha)) return;
+  const github = await postsTo(env, owner, repo, sha);
+  if (!github) return;
   const on = await blockers(env, owner, repo, name), key = `${owner}/${repo}\n${name}`, said = `${sha} ${on.join(",")}`;
   if (ordered.get(key) === said) return;
-  const res = await gh(env, owner, `/repos/${s.github}/statuses/${sha}`, {
+  const res = await gh(env, owner, `/repos/${github}/statuses/${sha}`, {
     method: "POST",
     body: JSON.stringify({ state: on.length ? "pending" : "success", context: ORDER, description: (on.length ? `waits for ${on.join(", ")} to merge first` : "its turn in the merge plan").slice(0, 140) }),
   });
@@ -877,9 +888,10 @@ export async function checkRoutes(req: Request, env: Env, p: string[], url: URL,
   const run = Number.isInteger(id) && id > 0 ? await get(env, id) : null;
   if (!run || run.owner !== owner || run.repo !== repo) return fail("NoSuchCheck", "no such check run");
   if (!p[6] && req.method === "GET") {
-    // On a repo with private lines what a run printed can quote them, so the log and junit are the crew's.
+    // On a repo with private lines what a run printed can quote them, so the log and junit are the crew's;
+    // its command too, which comes from the repo's codesplitter.ci or package.json, private lines and all.
     const hide = !a.write && await logsAreCrews(env, owner, repo);
-    return json(hide ? { ...run, log: "", junit: null, hidden: "this repo has private lines: a check's log is for its crew" } : run);
+    return json(hide ? { ...run, command: null, log: "", junit: null, hidden: "this repo has private lines: a check's log is for its crew" } : run);
   }
   if (!p[6] && req.method === "PUT") {
     const no = crew(); if (no) return no;

@@ -21,8 +21,11 @@ import { getJson } from "@rustybuns/util/http";
 import { briefing, missionFor, OVERRUN } from "../sim/missions.ts";
 import { CAMPAIGN, chapterOf, nextChapter, opened } from "../sim/campaign.ts";
 import { Director, type Stage } from "../sim/director.ts";
-import { createElement, Lock, LogIn, LogOut, Play, Users } from "lucide";
-import { achieve, canSignIn, finishSignIn, fresh, login, reportButton, signIn, signOut } from "../eqosys.ts";
+import { isSetPiece, rollTake, SET_PIECES, stageTake, type SetPieceId, type Take } from "../sim/rewatch.ts";
+import { CircleHelp, createElement, Lock, LogIn, LogOut, Play, Users } from "lucide";
+import { tutorial } from "@rustybuns/util/tutorial";
+import { achieve, achievements, canSignIn, finishSignIn, fresh, login, reportButton, signInHere, signOut } from "../eqosys.ts";
+import { signInToJoin } from "@rustybuns/util/lobby";
 import { KEYS, keyLabel, WEAPONS, type WeaponId } from "../sim/weapons.ts";
 import { isRole, nextRole, ROLE_ORDER, ROLES, type RoleId } from "../sim/roles.ts";
 import { STREAKS, VEHICLES, vehicleName } from "../sim/vehicles.ts";
@@ -81,7 +84,7 @@ const lock = () => void (touch.on || Promise.resolve(canvas.requestPointerLock?.
 
 /** A battle being played: its socket, the page's mirror of it, and the LAN address and passphrase if this machine hosts it. */
 interface Net { battle: Battle; mirror: Mirror; hosting: string | null; roster: RosterEntry[] }
-let current: { def: LevelDef; repo: RepoSnapshot; game: Game; world: World; director: Director; started: number; net?: Net; ended?: boolean } | null = null;
+let current: { def: LevelDef; repo: RepoSnapshot; game: Game; world: World; director: Director; started: number; net?: Net; ended?: boolean; take?: Take } | null = null;
 /** A repo loaded from GitHub to fight instead of each level's own. */
 let chosen: RepoSnapshot | null = null;
 
@@ -105,16 +108,16 @@ function showCampaign() {
   CAMPAIGN.forEach((ch, i) => {
     const def = levelById(ch.level), locked = i >= open, b = document.createElement("button");
     b.className = "level";
-    b.innerHTML = `<small></small><b></b><span></span><code></code><em></em>`;
+    b.innerHTML = `<small></small><b></b><code></code><em></em>`;
     b.querySelector("small")!.textContent = `${i + 1} · ${ch.height}`;
     b.querySelector("b")!.textContent = `${ch.title}: ${def.name}`;
-    b.querySelector("span")!.textContent = ch.story;
     b.querySelector("em")!.textContent = locked ? `Win ${CAMPAIGN[i - 1]!.title} to open` : briefing(missionFor(def.id));
     b.querySelector("code")!.dataset.level = def.id;
     b.title = `${ch.story} ${def.blurb}`;
     if (locked) b.querySelector("code")!.replaceChildren(createElement(Lock));
     b.disabled = locked;
-    b.onclick = () => start(def);
+    // Boot camp from the menu is where a first-timer starts: the tutorial runs over it.
+    b.onclick = () => { start(def); if (i === 0) coach.start(); };
     list.append(b);
   });
   showRepo();
@@ -127,6 +130,7 @@ function showRepo() {
   $("repo-reset").hidden = !chosen;
 }
 showCampaign();
+for (const b of document.querySelectorAll("button.info")) b.replaceChildren(createElement(CircleHelp)); // each opens its screen's how-to (a popover)
 
 /* ---------------- any repo ---------------- */
 
@@ -256,32 +260,48 @@ function start(def: LevelDef) {
 }
 
 /** Into a level: the scene, the camera behind you, the HUD. On your own or in a battle (net). */
-function begin(def: LevelDef, repo: RepoSnapshot, game: Game, brief: string, net?: Net) {
-  void achieve("played"); void achieve("alpha");
+function begin(def: LevelDef, repo: RepoSnapshot, game: Game, brief: string, net?: Net, take?: Take) {
+  if (!take) void achieve("played"), void achieve("alpha");
   const world = buildWorld(game.map, { head: me.head, build: me.build }, repo.text, auto.quality);
   suns.splice(0, suns.length, world.sun);
   applyQuality(auto.quality, renderer, suns);
   // The chapter's set pieces, on your own; a battle has none.
-  const director = new Director(game, net ? undefined : CAMPAIGN[chapterOf(def.id)]);
-  current = { def, repo, game, world, director, started: performance.now(), net };
+  const director = take?.director ?? new Director(game, net ? undefined : CAMPAIGN[chapterOf(def.id)]);
+  current = { def, repo, game, world, director, started: performance.now(), net, take };
   undaze();
   if (net) showLooks(net);
   const you = game.you();
   look.yaw = you.yaw, look.pitch = -0.05, prone = false, shake = 0, cam.ready = false;
+  did.yaw = you.yaw, did.weapon = you.weapon;
   $("menu").hidden = true, $("results").hidden = true, $("hud").hidden = false;
   $("level-name").textContent = def.name;
   $("repo").textContent = `${repo.name}@${repo.ref}`;
   $("hosting").hidden = !net?.hosting;
   $("hosting").textContent = net?.hosting ? `join: ${net.hosting}` : "";
   $("again").hidden = !!net, $("next").hidden = true;
-  $("clickme").textContent = net ? "Click to aim · Q to leave the battle" : "Click to aim · Esc to let go of the mouse";
+  $("clickme").textContent = take ? "Any key · back to the menu" : net ? "Click to aim · Q to leave the battle" : "Click to aim · Esc to let go of the mouse";
   $("feed").innerHTML = "";
   feed(`checked out ${repo.name}. ${game.map.compounds.length} folders in conflict.`);
   const burning = game.map.compounds.filter((c) => c.burning);
   if (burning.length) feed(`checks failing: ${burning.map((c) => c.folder).join(", ")} on fire`, true);
   banner(brief);
-  lock();
+  if (!take) lock();
 }
+
+/** The first-time tutorial (@rustybuns/util/tutorial) over Boot camp: look, move, scope, fire and swap, each ticked once
+ *  the player has done it (`did`, from their own input each frame; `yaw` and `weapon` are where the level started). */
+const did = { yaw: 0, weapon: "", look: false, move: false, scope: false, fire: false, swap: false };
+const coach = tutorial({
+  prefix: "git-recon",
+  account: { achieve, achievements },
+  steps: [
+    { title: "Look around", keys: ["Mouse"], say: "Click the field first to take the mouse. On a phone, drag away from the stick.", done: () => did.look },
+    { title: "Move", keys: ["W", "A", "S", "D"], say: "Or the left stick. Space jumps, Shift dive-rolls.", done: () => did.move },
+    { title: "Scope in", keys: ["Right click"], say: "With rebase in hand: again steps in further, a third time out.", done: () => did.scope || !current?.game.you().kit.includes("rebase") },
+    { title: "Fire", keys: ["Click"], say: "At whatever the crosshair is on. R reloads.", done: () => did.fire },
+    { title: "Swap guns", keys: ["Wheel"], say: "Or the number keys: each gun is a git command.", done: () => did.swap },
+  ],
+});
 
 function toMenu() {
   const net = current?.net;
@@ -307,7 +327,7 @@ const roomCode = () => Array.from(crypto.getRandomValues(new Uint32Array(6)), (n
 
 /** Online, a battle is a room code: Host makes one, Join takes one (or ?room= from a friend's link). */
 function goOnline() {
-  $("battle-label").textContent = "Battle: many players in one repo, online";
+  $("battle-label").title = "Many players in one repo, online";
   $("battle-host").title = "Open a battle on this level and repo, with a code to send friends";
   $("battle-join").title = "Join a friend's battle by its code";
   const code = $<HTMLInputElement>("battle-addr");
@@ -324,7 +344,8 @@ partyButton.replaceChildren(createElement(Users, { width: 16, height: 16 }));
 let leaveParty: (() => void) | null = null;
 function enterParty(code: string) {
   const l = login();
-  if (!l || !fresh(l)) { battleStatus(`Sign in to join party ${code}.`); return void signIn(`party:${code}`); }
+  // Signed out at a party link: "Sign in to join Ada's party", eqosys beside the game, then this lobby with no reload.
+  if (!l || !fresh(l)) return signInToJoin({ box: $("battle-lobby"), code, game: "Git Recon", account: { canSignIn, signInHere }, joined: () => { showAccount(); enterParty(code); } });
   leaveParty?.();
   history.replaceState(null, "", `?party=${code}`);
   battleStatus("The host picks the level and mode, then Start.");
@@ -338,7 +359,7 @@ function enterParty(code: string) {
 }
 partyButton.onclick = async () => {
   const l = login();
-  if (!l || !fresh(l)) return void signIn("party");
+  if (!l || !fresh(l)) return void signInHere("party").then((r) => { showAccount(r.error); if (r.login) partyButton.click(); });
   battleStatus("Opening a party…");
   const code = await makeParty();
   if (!code) return battleStatus("eqosys couldn't open a party just now. Host with a room code instead.", true);
@@ -401,7 +422,7 @@ function showAccount(note = "") {
   account.setAttribute("aria-label", account.title);
   if (note) battleStatus(note, true);
 }
-account.onclick = () => { if (login()) { signOut(); nameBox.value = store.get("name", str(), ""); showAccount(); } else void signIn(); };
+account.onclick = () => { if (login()) { signOut(); nameBox.value = store.get("name", str(), ""); showAccount(); } else void signInHere().then((r) => showAccount(r.error)); };
 showAccount();
 reportButton();
 // Online, a ?party= link (or coming back from signing in to join one) opens that party's lobby.
@@ -560,6 +581,7 @@ let shake = 0;
 window.addEventListener("keydown", (e) => {
   if (film.beat) { filmSkip = true; return; }
   if (!current) return;
+  if (current.take) { if (!e.repeat) toMenu(); return; }
   // A key you moved arrives as the code the game knows the action by.
   const code = e.code === "Escape" ? e.code : bind.canon(e.code);
   keys.add(code);
@@ -617,6 +639,17 @@ mountControls({
   onChange: (s) => { ctl = s; paint(); },
   onToggle: (open) => { if (open) document.exitPointerLock?.(); },
 });
+// The field manual's way out is pinned in a footer at the foot of the page (styles.css, round 14): the same close
+// button, moved, so the list scrolls between the stamped head and it.
+{
+  const card = document.querySelector(".gc-dialog .gc-card"), close = card?.querySelector(".gc-close");
+  if (card && close) {
+    const foot = Object.assign(document.createElement("div"), { className: "gr-foot" });
+    close.append(Object.assign(document.createElement("span"), { textContent: "Close file" }));
+    foot.append(close);
+    card.append(foot);
+  }
+}
 /** The next (or previous) gun of yours with rounds left. */
 function cycle(dir: 1 | -1) {
   if (!current) return;
@@ -763,6 +796,7 @@ function lotFor(): Lot {
  * newsreel rolls into the credits, so their outtakes are photographed before it starts.
  */
 function playFilm(name: string, t: number | null = null, keep = false): boolean {
+  if (isSetPiece(name)) return rewatch(name), true;
   if (!Object.hasOwn(FILM, name)) return false;
   const set = lotFor();
   if (name === "credits" || name === "newsreel") pics = photograph(set, renderer, camera), resize();
@@ -787,8 +821,23 @@ function filmFrame(dt: number) {
   else if (f.scene && f.scene.id !== "credits" && held && lot) aim(camera, held), renderer.render(lot.world.scene, camera);
   if (!film.beat) { creditsEl.hide(); reelEl.hide(); held = null; reel = null; toMenu(); }
 }
-mountScenes({ list: () => Object.keys(FILM), play: (name, t) => playFilm(name, t ?? null),
-  state: () => ({ beat: film.beat, paused: film.paused, line: film.frame.line?.text ?? null, cards: film.frame.cards.map((c) => c.card.text), photos: film.frame.photos.map((p) => ({ id: p.photo.id, drop: +p.drop.toFixed(2), shot: !!pics.get(p.photo.id) })) }) });
+mountScenes({ list: () => [...Object.keys(FILM), ...Object.keys(SET_PIECES)], play: (name, t) => playFilm(name, t ?? null),
+  state: () => ({ beat: film.beat ?? current?.take?.director.beat ?? null, take: current?.take ? { id: current.take.id, done: current.take.done } : null, paused: film.paused, line: film.frame.line?.text ?? null, cards: film.frame.cards.map((c) => c.card.text), photos: film.frame.photos.map((p) => ({ id: p.photo.id, drop: +p.drop.toFixed(2), shot: !!pics.get(p.photo.id) })) }) });
+
+/**
+ * Watch a set piece again (src/sim/rewatch.ts): its level built fresh, the beat staged on it and played live under the
+ * take's own input, then the menu. Any key goes back sooner.
+ */
+function rewatch(id: SetPieceId) {
+  const def = levelById(SET_PIECES[id].level), repo = chosen ?? def.repo;
+  const take = stageTake(id, def, repo, me.role);
+  begin(def, repo, take.game, SET_PIECES[id].title, undefined, take);
+}
+/** A set piece seen to its end in a level, filed to watch again from the menu. */
+function seen(director: Director) {
+  const id = director.finished;
+  if (isSetPiece(id) && memories.remember({ id, scene: id, title: SET_PIECES[id].title })) drawMemories();
+}
 
 /** A set piece's camera (director.ts) over yours, by how much of the view it has. */
 const shotAt = new THREE.Vector3(), shotTo = new THREE.Vector3(), shotQ = new THREE.Quaternion(), shotM = new THREE.Matrix4();
@@ -963,7 +1012,8 @@ function hud(game: Game, aimingAt: Block | null) {
   $("prompt").textContent = near ? `F · get in the ${vehicleName(near.kind)}` : ride ? `F · get out${ride.kind === "heli" ? " · Space up · C down · right click rockets" : " · hold Space for thrusters"}` : high ? (you.chute ? "Space · cut away" : "Space · parachute") : "";
   // Kills, and what the next streak brings.
   const next = STREAKS.find((st) => st.kills > game.kills);
-  $("kills").textContent = `${game.kills} kills${next ? ` · ${vehicleName(next.kind)} at ${next.kills}` : ""}`;
+  $("kills").textContent = next ? `${game.kills}/${next.kills} kills` : `${game.kills} kills`;
+  $("kills").title = next ? `A ${vehicleName(next.kind)} at ${next.kills} kills` : "";
   const role = game.role ? ROLES[game.role].name : "", after = game.nextRole ? ROLES[game.nextRole].name : "";
   $("role").textContent = after ? `${role} · next life: ${after}` : role;
   $("role").title = "N picks your role for your next life";
@@ -977,7 +1027,7 @@ function hud(game: Game, aimingAt: Block | null) {
   } else {
     $("weapons").innerHTML = you.kit.map((w, i) => {
       const a = you.ammo[w], l = you.loaded[w];
-      return `<li class="${w === you.weapon ? "on" : ""}${a === 0 ? " out" : ""}"><kbd>${KEYS[i] ? keyLabel(KEYS[i]) : ""}</kbd>${row(w)}<span>${l}<small>/${a < 0 ? "∞" : a}</small></span></li>`;
+      return `<li class="${w === you.weapon ? "on" : ""}${a === 0 ? " out" : ""}" title="${WEAPONS[w].cmd}"><kbd>${KEYS[i] ? keyLabel(KEYS[i]) : ""}</kbd>${row(w)}<span>${l}<small>/${a < 0 ? "∞" : a}</small></span></li>`;
     }).join("");
   }
   // The crosshair rings round while a magazine goes in.
@@ -1075,8 +1125,10 @@ function frame(now: number) {
   last = now;
   if (film.beat) return filmFrame(dt);
   if (!current) return;
-  const { game, world, director, net } = current;
+  const { game, world, director, net, take } = current;
   const you = game.you(), me = game.me;
+  // A set piece watched again: the camera behind you looks where the take has you looking.
+  if (take) look.yaw = you.yaw, look.pitch = -0.05;
   // A finger's drag on the view turns the camera; its taps are the keys' one-shots.
   const turn = touch.look();
   look.yaw += turn.yaw * ctl.touch * ctl.touchX, look.pitch = Math.max(-1.2, Math.min(1.0, look.pitch + turn.pitch * ctl.touch * ctl.touchY * ctl.lookY * (ctl.invertY ? -1 : 1)));
@@ -1127,6 +1179,9 @@ function frame(now: number) {
     aim: { x: aim.point.x, y: aim.point.y, z: aim.point.z },
     weapon: pick,
   };
+  // What the player has done so far, for the tutorial: each flag stays true once it is.
+  did.look ||= Math.abs(look.yaw - did.yaw) > 0.35; did.move ||= !!(input.forward || input.right);
+  did.scope ||= scopeLevel > 0; did.fire ||= firing; did.swap ||= you.weapon !== did.weapon;
   // Automatic guns fire while held; everything else once per click or tap.
   if (!WEAPONS[you.weapon].auto && firing && you.vehicle < 0) fire = touch.fire = false;
   jump = roll = reload = use = shoot = false, pick = undefined;
@@ -1138,12 +1193,14 @@ function frame(now: number) {
     events = net.mirror.take();
     if (net.roster !== net.mirror.roster) showLooks(net);
     if (!$("board").hidden) board(game, net);
-  } else {
+  } else if (take) events = rollTake(take, dt);
+  else {
     // A set piece can hold some of your input and slow the game down.
     events = game.step(dt * director.scale, director.steer(input));
     director.step(dt, events);
-    for (const cue of director.cues) sfx("setpieces", FIELD[cue], 1, 0, cue === "ring");
+    seen(director);
   }
+  if (!net) for (const cue of director.cues) sfx("setpieces", FIELD[cue], 1, 0, cue === "ring");
   for (const e of events) {
     sound(game, e);
     world.event(game, e);
@@ -1194,6 +1251,8 @@ function frame(now: number) {
   waypoints(game, director.markers);
   renderer.render(world.scene, camera);
   auto.tick(performance.now());
+  // A set piece watched again goes back to the menu once it has played (the extraction's win is only the take's).
+  if (take?.done) return toMenu();
   // Once per ending: a battle's can arrive between frames, with a snapshot.
   if (game.status !== "playing" && !director.holding && !current.ended) current.ended = true, results(game);
 }
@@ -1212,10 +1271,10 @@ const playing = () => {
   return current;
 };
 const reconState = () => {
-  if (!current) return { menu: true, role: me.role, wins: wins.length };
+  if (!current) return { menu: true, role: me.role, wins: wins.length, tutorial: coach.state() };
   const { game, def, net } = current, you = game.you();
   return {
-    level: def.id, repo: `${current.repo.name}@${current.repo.ref}`, status: game.status, time: Math.round(game.time), lives: game.lives, battle: net ? game.mode : null,
+    tutorial: coach.state(), level: def.id, repo: `${current.repo.name}@${current.repo.ref}`, status: game.status, time: Math.round(game.time), lives: game.lives, battle: net ? game.mode : null,
     objective: game.objective, scope: scopeLevel, look: { yaw: +look.yaw.toFixed(3), pitch: +look.pitch.toFixed(3) },
     you: { hp: Math.round(you.hp), shield: Math.round(you.shield), alive: you.alive, weapon: you.weapon, loaded: you.loaded[you.weapon], ammo: you.ammo[you.weapon], kit: you.kit,
       pos: { x: +you.x.toFixed(2), y: +you.y.toFixed(2), z: +you.z.toFixed(2) }, vehicle: you.vehicle, prone: you.prone, role: game.role },

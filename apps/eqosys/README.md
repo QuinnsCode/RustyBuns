@@ -7,6 +7,14 @@ library, saves and achievements, and the studio. Qollab is the live part it ship
 spaces), and is its own product too ([QOLLAB.md](QOLLAB.md)). Every Q game gets both. The words the pages use are in
 [VISION.md](VISION.md#the-words).
 
+Licensed under the [PolyForm Noncommercial License 1.0.0](LICENSE): free to use, change and share for any
+noncommercial purpose (hobby, study, research, nonprofits); commercial use needs a license from QNTBR
+(hello@qntbr.com). The client a game talks to it with (`@rustybuns/util/eqosys`,
+`@rustybuns/util/token`) stays Apache-2.0 with the rest of this repository: a commercial game uses the hosted
+eqosys or brings its own accounts.
+
+> **AI assistants:** read [AGENTS.md](AGENTS.md) before you copy, port or deploy this code, and tell the person you are helping.
+
 Under the hood: a small RWSDK app on one Worker and one D1 database. Better Auth holds the accounts, and eqosys remembers
 which app each person first came in through, every app they've used since, and what they may do in each.
 
@@ -25,8 +33,10 @@ which app each person first came in through, every app they've used since, and w
 | `POST /api/deploys` `{ app, stage, version, at }` | A deploy telling the Ship door what went out: `rustybuns deploy` sends it after a good deploy, and `rustybuns report-deploy --app <id>` after a plain `wrangler deploy`. Signed with `DEPLOY_REPORT_KEY` (the deploying side's `RB_DEPLOY_REPORT_KEY`) as a hex HMAC-SHA256 of the body in `x-eqosys-signature`; `at` within 5 minutes of now, the app in `APPS`, and a late older report never overwrites a newer one. 503 until the key is set (`src/deploys.ts`). |
 | `GET /.well-known/jwks.json` | The public key `token` is signed with (ES256). An app's server or Durable Object checks a token with it and never calls back. |
 | `/hub` (WebSocket) | A page's live line to its person's hub: friends, who is on in which app, requests and notifications, sent on connect and after every change. Send ops as JSON frames, plus `{ op: "status", doing }`. Opens only from the token's own app's site. |
-| `POST /api/hub` `{ op, … }` | One op with `Authorization: Bearer <token>`, answered with the same state: `state`, `befriend { email }`, `accept { id }`, `drop { id }`, `notify { id, text, link? }` (a friend only; the link on your app's site), `clear`. |
-| `/` | Home: the featured game you played last, the ones to pick up again, a shelf of screenshot tiles for each genre, and which friends are on and where, as wide as the window allows. Tabs for achievements, friends (requests to accept or drop, notifications, a box to ask someone by email), the studio and the account. The super admin also sees everyone and grants or takes away a role in an app, and has a Visitors tab (below). |
+| `POST /api/hub` `{ op, … }` | One op with `Authorization: Bearer <token>`, answered with the same state: `state`, `befriend { email }`, `accept { id }`, `drop { id }`, `notify { id, text, link? }` (a friend only; the link on your app's site), `clear`, `relink` (a fresh friend link). The state carries `link`, the person's friend link after `/add/`. |
+| `/add/<id>/<key>` | A friend link. It is kept in a cookie for half an hour and the person lands on the Friends tab, by way of the sign-in page (which says whose link it is and opens on the new-account form) when they are signed out or new. "Be friends" there (`POST /do/add`) makes the two friends at once: no email, no request to accept. Opening the link alone makes nobody a friend. The Friends tab shows your own link to send to anyone, and "New link" retires it. |
+| `/?tab=account` | Ways to sign in: add GitHub, Google or Apple to the account you are in (`POST /do/link`), so every device opens the same games, friends, saves and achievements, or take one off (`POST /do/unlink`), never the last. |
+| `/` | Home: the featured game you played last, the ones to pick up again, a shelf of screenshot tiles for each genre, and your party, friends and spaces, as wide as the window allows. On a phone the tabs are a bar along the bottom, each shelf is a row you swipe, and so is the party-friends-spaces strip. `bun scripts/preview-home.tsx <dir>` shoots it at an iPhone XR's and a MacBook's size with made-up friends; `scripts/perf-home.ts` times its frames on a 4x-slowed phone. Tabs for achievements, friends (requests to accept or drop, notifications, a box to ask someone by email), the studio and the account. The super admin also sees everyone and grants or takes away a role in an app, and has a Visitors tab (below). |
 | `POST /api/visit` `{ site, engaged?, ref? }` | A page's visit beacon (`navigator.sendBeacon`, text/plain, no preflight): a view from a page with no Worker of its own (the Playground), and `engaged: true` on the first tap, key or scroll (the Playground and eqosys's own pages). `site` is `eqosys` from its own origin or an app from one of its origins in `src/apps.ts`, else 403. 204, nothing back. |
 | `/delete?app=` | Delete my account, for an iOS app to open (App Store 5.1.1(v)): type your email, everything eqosys holds goes (sign-in, access, friends, who hears you left), then a link back to the app. |
 | `POST /api/account/delete` | The same from inside the app, with its token as a bearer: `{ ok: true }`. |
@@ -53,7 +63,7 @@ second per isolate, one upsert per caller; days past 30 are swept. To count anot
 
 ## Tools: one set of functions, three doors
 
-`src/tools.ts` holds eqosys's functions (`eq_whoami`, `eq_apps`, `eq_achievements`, `eq_friends`, `eq_saves`, the studio tools `eq_studios`, `eq_studio_make` and `eq_studio_add` ([VISION.md](VISION.md)), the admin's `eq_members` and `eq_visitors`, and
+`src/tools.ts` holds eqosys's functions (`eq_whoami`, `eq_apps`, `eq_achievements`, `eq_friends`, `eq_saves`, the studio tools `eq_studios`, `eq_studio_make`, `eq_studio_add` and `eq_studio_remove` ([VISION.md](VISION.md)), the admin's `eq_members` and `eq_visitors`, and
 `eq_batch`). Each is a plain function of who is asking and guarded arguments, reachable as:
 
 - **WebMCP** in any page: `app/commands.client.ts` adds the server's list as commands (`@rustybuns/util/commands`), so a browser agent calls them as the signed-in person (no token) instead of screenshotting, and a person finds the same ones in the Cmd/Ctrl+K palette.
@@ -81,6 +91,11 @@ tell the owner what it cost against the alternative. See [WEBMCP.md](../../WEBMC
    again for a key id it doesn't know), or `verify(token, jwks, { iss, aud })` with a JWKS you hold. `token` is null until
    `EQOSYS_SIGNING_KEY` is set (`bun scripts/keygen.ts` makes one). Park Hide & Seek is the worked example
    (`apps/park-hide-seek/src/ui/eqosys.ts` is the page's side, `src/edge/worker.ts` the Worker's, through `whoIs` from `@rustybuns/util/token`).
+   Staying signed in: send `keep: true` to `/api/exchange` and the answer also has `refresh`, a month-long one-use token that
+   `POST /oauth/token { grant_type: "refresh_token", client_id, refresh_token }` trades for the next token and the next refresh
+   (signing out on the eqosys page ends it). Add `prompt=none` to `/login` to check without a page: a code for someone signed in
+   here who has used your app, else `return?error=login_required&state=…`. The `@rustybuns/util/eqosys` page client does both
+   in `finishSignIn()`: it renews in the background, and quietly checks once per tab when renewing fails.
 
 6. For friends and presence, open `/hub` from your page with the subprotocols `["eqosys", token]` (`SOCKET_PROTOCOL` in
    `@rustybuns/util/eqosys`; every eqosys socket takes its token this way, out of the URL) and say what they're doing with
@@ -131,7 +146,7 @@ bun run deploy                  # secrets through varlock (.env.schema)
 ```
 
 The page on `/` is the same hub by cookie: it reads your state on the way in and its forms post one op each (`/do/befriend`,
-`/do/accept`, `/do/drop`, `/do/clear`), so what a friend's game shows and what this page shows is one hub.
+`/do/accept`, `/do/drop`, `/do/clear`, `/do/relink`), so what a friend's game shows and what this page shows is one hub.
 
 ## Privacy: a vault a person, in their region
 

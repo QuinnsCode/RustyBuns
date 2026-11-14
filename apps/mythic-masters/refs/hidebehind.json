@@ -1,0 +1,34 @@
+{
+  "id": "hidebehind",
+  "name": "Hidebehind",
+  "query": "Hidebehind",
+  "images": [
+    {
+      "file": "card-bw.jpg",
+      "from": "card",
+      "page": "https://commons.wikimedia.org/wiki/File:Hidebehind.jpg",
+      "artist": "Margaret Ramsay Tryon",
+      "license": "Public domain"
+    },
+    {
+      "file": "c2.jpg",
+      "from": "search",
+      "page": "https://commons.wikimedia.org/wiki/File:Beatiful_mountains_of_ice_leh.jpg",
+      "artist": "Sahil.morankar",
+      "license": "CC BY-SA 4.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0"
+    }
+  ],
+  "traits": {
+    "silhouette": "",
+    "head": "",
+    "limbs": "",
+    "hide": "",
+    "colours": "",
+    "child": [
+      "",
+      "",
+      ""
+    ]
+  }
+}

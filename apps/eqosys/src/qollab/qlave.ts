@@ -63,3 +63,38 @@ export async function rosterIn(req: Request, secret: string | undefined, now = D
   if (!roster || !parts || Math.abs(roster.at - now) > ROSTER_SKEW_MS) return { status: 400 };
   return { ...parts, roster };
 }
+
+/**
+ * A party's voice room: `party:<code>:<8 hex>`. The hex is minted when someone first talks, so a code that comes round
+ * again after its party expired gets a new room, and ending one room by its full name (all one length) reaches no other.
+ */
+export const partyRoom = (code: string) => `party:${code}:${crypto.randomUUID().slice(0, 8)}`;
+
+/** An order waiting for Qlave to answer 200, and how many times it has been tried. */
+type Pending = { order: Order; iss: string; tries: number };
+/** Tries an order gets before it is dropped: 5 s, 10 s, 20 s, 40 s and 80 s apart. */
+export const ORDER_TRIES = 6;
+/** What the outbox needs of a Durable Object's storage. */
+export interface OutboxStorage { get<T>(k: string): Promise<T | undefined>; put(k: string, v: unknown): Promise<void>; delete(k: string): Promise<boolean> }
+
+/**
+ * Orders for Qlave, kept under `outbox` until it answers, and `outboxAt`: when the object's alarm should send them next.
+ * A space and a party both keep one; each sets its own alarm (a party's also wakes when it expires).
+ */
+export async function queue(storage: OutboxStorage, iss: string, orders: Order[]) {
+  if (!orders.length) return;
+  await storage.put("outbox", [...await storage.get<Pending[]>("outbox") ?? [], ...orders.map((order) => ({ order, iss, tries: 0 }))]);
+  await storage.put("outboxAt", Date.now());
+}
+
+/** Send what is waiting. 200 and a refused order (400, 401) are done with; anything else waits longer and goes again. */
+export async function flush(storage: OutboxStorage, conf: Signer & { QLAVE_URL?: string }) {
+  const sent = await storage.get<Pending[]>("outbox") ?? [], left: Pending[] = [];
+  for (const p of sent) if (await send(conf, p.iss, p.order) === "retry" && p.tries + 1 < ORDER_TRIES) left.push({ ...p, tries: p.tries + 1 });
+  // Orders queued while these were out stay, and go at once.
+  const fresh = (await storage.get<Pending[]>("outbox") ?? []).slice(sent.length);
+  await storage.put("outbox", [...left, ...fresh]);
+  if (fresh.length) await storage.put("outboxAt", Date.now());
+  else if (left.length) await storage.put("outboxAt", Date.now() + 5000 * 2 ** (Math.min(...left.map((p) => p.tries)) - 1));
+  else await storage.delete("outboxAt");
+}

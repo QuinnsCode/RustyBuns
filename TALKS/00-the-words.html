@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The Words</title>
+<meta name="description" content="Talk 0: every Rusty Buns word the other talks use, each in one plain sentence with an everyday picture.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@700;900&family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&family=JetBrains+Mono:wght@600;700&display=swap">
+<link rel="stylesheet" href="deck.css">
+</head>
+<body>
+
+<section class="slide">
+  <div class="kicker">Talk 0 · Rusty Buns talks</div>
+  <h1>The Words</h1>
+  <p class="lede">Every word the other talks use. One plain sentence each, and an everyday picture.</p>
+  <p class="aside">Read this once. After that, nobody in the room has to nod along and hope.</p>
+</section>
+
+<section class="slide">
+  <div class="kicker">Five words for everything</div>
+  <h2>The basics</h2>
+  <div class="cards">
+    <div class="card"><h3>App</h3><p>A program you use, like a game or a website.</p></div>
+    <div class="card"><h3>Server</h3><p>A computer far away that apps talk to.</p><p class="pic"><b>Like:</b> the kitchen behind a restaurant.</p></div>
+    <div class="card"><h3>The cloud</h3><p>Servers you rent by the second. Someone else looks after them.</p><p class="pic"><b>Like:</b> a taxi instead of a car.</p></div>
+    <div class="card"><h3>Code</h3><p>The written instructions that make an app.</p><p class="pic"><b>Like:</b> a recipe.</p></div>
+    <div class="card"><h3>AI helper (agent)</h3><p>An AI that reads and writes code when you give it a job.</p><p class="pic"><b>Like:</b> a fast, keen apprentice.</p></div>
+  </div>
+</section>
+
+<section class="slide">
+  <div class="kicker">The engine</div>
+  <h2>Rusty Buns and its parts</h2>
+  <div class="cards">
+    <div class="card"><h3>Rusty Buns</h3><p>Our engine. You write an app once and it runs on a laptop, a server or the cloud.</p><p class="pic"><b>Like:</b> one plug that fits every socket.</p></div>
+    <div class="card"><h3>Bun</h3><p>A fast tool that runs JavaScript and TypeScript. The "Buns" in the name.</p></div>
+    <div class="card"><h3>Rust</h3><p>A strict, fast programming language. The "Rusty" in the name.</p></div>
+    <div class="card"><h3>WebAssembly (wasm)</h3><p>A way to run fast code, like Rust, inside a web page.</p><p class="pic"><b>Like:</b> a race engine in a family car.</p></div>
+    <div class="card"><h3>Example apps</h3><p>The games and tools we built on the engine to prove it works.</p></div>
+    <div class="card"><h3>Twin</h3><p>A TypeScript copy of a Rust part that gives the same answer. If Rust cannot load, the twin takes over.</p><p class="pic"><b>Like:</b> an understudy who knows every line.</p></div>
+  </div>
+  <p class="aside">The name is a pastry pun. We regret nothing.</p>
+</section>
+
+<section class="slide">
+  <div class="kicker">The cloud pieces</div>
+  <h2>Where our apps live</h2>
+  <div class="cards">
+    <div class="card"><h3>Cloudflare</h3><p>The company whose computers run most of our apps, all over the world.</p></div>
+    <div class="card"><h3>Worker</h3><p>A small program on Cloudflare that wakes up when someone visits.</p><p class="pic"><b>Like:</b> a shop light on a motion sensor.</p></div>
+    <div class="card"><h3>Durable Object</h3><p>A tiny always-correct memory in the cloud. One per game room, for example.</p><p class="pic"><b>Like:</b> the referee's notebook.</p></div>
+    <div class="card"><h3>The edge</h3><p>Cloudflare's computers close to each visitor. A Worker runs on the one nearest you.</p><p class="pic"><b>Like:</b> the corner shop, not the warehouse.</p></div>
+    <div class="card"><h3>The box</h3><p>One plain server that holds many small games at once, for cheap.</p><p class="pic"><b>Like:</b> a food hall, not a row of restaurants.</p></div>
+  </div>
+</section>
+
+<section class="slide">
+  <div class="kicker">The factory</div>
+  <h2>Where the code gets made</h2>
+  <div class="cards">
+    <div class="card"><h3>git</h3><p>The usual way to store code and its history.</p><p class="pic"><b>Like:</b> "track changes" for code.</p></div>
+    <div class="card"><h3>codeSplitter</h3><p>Our git home. Every line has a name tag, so many helpers can edit one file at once.</p></div>
+    <div class="card"><h3>Agent Office</h3><p>A 3D office where AI helpers sit at desks. Made by WebDevCody; we run our own version.</p></div>
+    <div class="card"><h3>Worker (in the office)</h3><p>One AI helper at one desk, on one job.</p><p class="pic">Not the same as a Cloudflare Worker. Sorry.</p></div>
+    <div class="card"><h3>Sandbox</h3><p>A sealed room for a program. It touches only what you list.</p></div>
+    <div class="card"><h3>Pull request (PR)</h3><p>A proposed change, waiting for a check before it joins the main code.</p></div>
+  </div>
+</section>
+
+<section class="slide">
+  <div class="kicker">The crew</div>
+  <h2>Helpers with names, but no AI</h2>
+  <div class="cards">
+    <div class="card"><h3>Mervin</h3><p>Joins everyone's changes together using rules. Puts two helpers in order before they clash. Costs no AI money.</p><p class="pic"><b>Like:</b> a very fast, very fair referee.</p></div>
+    <div class="card"><h3>Ester</h3><p>When a test goes red, finds which change did it and tells that helper.</p><p class="pic"><b>Like:</b> a detective who solves it before lunch.</p></div>
+    <div class="card"><h3>Dexter</h3><p>Watches the helpers work, spots the chores they repeat, and asks for a tool to do them.</p><p class="pic"><b>Like:</b> a foreman with a notebook.</p></div>
+    <div class="card"><h3>Bob</h3><p>The big second computer. It runs the tests so the main computer stays free.</p><p class="pic">Bob sometimes naps on battery. Bob is allowed.</p></div>
+  </div>
+  <p class="aside">They are scripts. We gave them names anyway, because "the merge script" never got a thank-you card.</p>
+</section>
+
+<section class="slide">
+  <div class="kicker">How code moves</div>
+  <h2>The factory floor</h2>
+  <div class="cards">
+    <div class="card"><h3>Trunk (main)</h3><p>The one shared copy of the code. Every job starts from it and ends in it.</p><p class="pic"><b>Like:</b> the trunk of a tree.</p></div>
+    <div class="card"><h3>Squash merge</h3><p>A finished job joins the trunk as one single change, however many steps it took.</p><p class="pic"><b>Like:</b> handing in the essay, not every draft.</p></div>
+    <div class="card"><h3>Polymorphic edit</h3><p>One change that lands in many files, in the shape each file needs.</p><p class="pic"><b>Like:</b> changing a family's surname on every form at once.</p></div>
+    <div class="card"><h3>Primitive</h3><p>A small, shared building block that many apps use.</p><p class="pic"><b>Like:</b> a brick.</p></div>
+    <div class="card"><h3>Sweep</h3><p>A round of tests that runs on a clock: every hour, every night, every week.</p><p class="pic"><b>Like:</b> a night watchman's round.</p></div>
+    <div class="card"><h3>Express lane</h3><p>One change the owner sends straight through every sweep, with no waiting.</p><p class="pic"><b>Like:</b> the ambulance lane.</p></div>
+  </div>
+</section>
+
+<section class="slide">
+  <div class="kicker">The players' side</div>
+  <h2>Accounts, friends and rooms</h2>
+  <div class="cards">
+    <div class="card"><h3>eqosys</h3><p>One account for all our apps. Your library, saves and friends live here.</p><p class="pic"><b>Like:</b> a library card that works in every branch.</p></div>
+    <div class="card"><h3>Qollab</h3><p>The part that connects players to each other.</p><p class="pic"><b>Like:</b> the phone lines between houses.</p></div>
+    <div class="card"><h3>Hub</h3><p>Your own spot in Qollab. Friends find you there.</p></div>
+    <div class="card"><h3>Party</h3><p>A short-lived room with a code. Share it, and friends join your game.</p></div>
+    <div class="card"><h3>Space</h3><p>A group that stays, like a club with its own chat.</p></div>
+    <div class="card"><h3>Ticket (token)</h3><p>A signed note from eqosys that says who you are. A game checks it alone.</p><p class="pic"><b>Like:</b> a banknote with a hologram.</p></div>
+  </div>
+</section>
+
+<section class="slide">
+  <div class="kicker">The game engine</div>
+  <h2>How a shared game stays fair</h2>
+  <div class="cards">
+    <div class="card"><h3>Physics</h3><p>The rules for how things move, fall and bump.</p></div>
+    <div class="card"><h3>Sim</h3><p>The game's rules as code, with no pictures. It can play a whole game with no screen.</p></div>
+    <div class="card"><h3>Tick</h3><p>One step of the game. Many per second.</p><p class="pic"><b>Like:</b> one frame of a flip book.</p></div>
+    <div class="card"><h3>Server authoritative</h3><p>The server holds the true game. Your screen shows its best guess between true frames.</p><p class="pic"><b>Like:</b> the referee's call wins.</p></div>
+    <div class="card"><h3>Netcode</h3><p>The code that keeps every player's screen in step over the internet.</p></div>
+    <div class="card"><h3>Interpolation</h3><p>Drawing the smooth in-between moments, so motion does not stutter.</p></div>
+    <div class="card"><h3>Double Dragon</h3><p>Our inside name for the twin engine: the same sim in Rust and in TypeScript, step for step the same. It gets its own talk.</p></div>
+  </div>
+  <p class="aside">Lag is what happens when the referee's whistle arrives late. Most of the clever bits are about hiding the whistle.</p>
+</section>
+
+<section class="slide">
+  <div class="kicker">Shipping</div>
+  <h2>How new code reaches people</h2>
+  <div class="cards">
+    <div class="card"><h3>Test</h3><p>A small program that checks another program still works.</p></div>
+    <div class="card"><h3>CI</h3><p>Robots that run every test on every change.</p><p class="pic"><b>Like:</b> a spell-check that never sleeps.</p></div>
+    <div class="card"><h3>Deploy</h3><p>Putting new code live, where people use it.</p></div>
+    <div class="card"><h3>Release rings</h3><p>New code goes to a few people first, then more, then everyone.</p><p class="pic"><b>Like:</b> tasting the soup before serving the room.</p></div>
+    <div class="card"><h3>Manual run</h3><p>A check that needs the owner's own hands or eyes.</p></div>
+    <div class="card"><h3>Hill climb</h3><p>A score we raise round by round, like "how good does this look, out of 10".</p></div>
+  </div>
+</section>
+
+<section class="slide">
+  <div class="kicker">That's the dictionary</div>
+  <h1>You now speak Bun.</h1>
+  <p class="lede">Every other talk uses only these words. If a talk needs a new one, it comes here first.</p>
+  <p style="margin-top:28px"><a href="index.html">All talks</a> · <a href="01-frankenstein-factory.html">Talk 1: The Frankenstein Code Factory</a></p>
+</section>
+
+<script src="deck.js"></script>
+</body>
+</html>

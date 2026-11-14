@@ -159,9 +159,8 @@ button.card .icon { color: var(--accent); }
 /* The phase's sheet: its one job in a title and a line, then the rows to do it with. */
 .sheet { border-top: 1px solid var(--line); margin-top: 10px; padding-top: 8px; }
 .grip { display: none; width: 40px; height: 4px; border-radius: 2px; background: #3a4560; margin: 0 auto 8px; }
-.sheet-head h2 { margin: 0; font-size: 17px; display: flex; align-items: center; gap: 8px; letter-spacing: 0.02em; }
+.sheet-head h2 { margin: 0 0 8px; font-size: 17px; display: flex; align-items: center; gap: 8px; letter-spacing: 0.02em; }
 .sheet-head h2 .icon { color: var(--gold); }
-.sheet-head .sub { color: var(--dim); font-size: 12px; margin: 2px 0 8px; }
 .rows { list-style: none; margin: 8px 0; padding: 0; display: grid; gap: 6px; }
 .row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 10px; align-items: center; background: #1c2230; border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; }
 .row .dest { font-weight: 700; display: flex; align-items: center; gap: 6px; min-width: 0; }
@@ -198,7 +197,6 @@ button.next.hero { background: linear-gradient(180deg, #ffd27a, #c9962a); color:
 .panel header { display: flex; justify-content: space-between; align-items: center; }
 .panel h1 { font-size: 18px; margin: 0; letter-spacing: 0.04em; }
 .panel h1 small { font-size: 12px; letter-spacing: 0.08em; opacity: 0.75; font-weight: 500; }
-.tagline { margin: 2px 0 0; font-size: 12px; font-style: italic; color: var(--wooka); }
 .reinf { margin: 6px 0 2px; border: 1px solid var(--line); border-radius: 8px; background: #10151d; font-size: 12px; }
 .reinf summary { display: flex; align-items: center; gap: 6px; padding: 6px 8px; cursor: pointer; list-style: none; color: var(--dim); }
 .reinf summary::-webkit-details-marker { display: none; }
@@ -436,6 +434,7 @@ body.in-battle .war-room { display: none; }
 .seat button.link { font-size: 14px; padding: 0; }
 .choices { display: flex; gap: 8px; margin: 12px 0; }
 .choices button { flex: 1; padding: 8px 6px; }
+.choices small { white-space: nowrap; } .choices small .icon { vertical-align: -2px; margin-right: 2px; }
 .wars { flex-wrap: wrap; } .wars button { flex: 1 1 160px; } .wars small { display: block; }
 .seat-link { width: 100%; font: 12px ui-monospace, monospace; color: inherit; background: #10151d; border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; }
 
@@ -700,7 +699,7 @@ button.preset { white-space: normal; display: flex; flex-direction: column; gap:
 /* Type: Bungee for the game's own titles, Grenze Gotisch for the Thunder Marines, Love Ya Like A Sister for the Wooka, Babylonica for troop notes. */
 .panel h1, .panel h2, .panel h3, .ui-dialog h2, .ui-dialog h3, .vote-box h2, .ov-head, button.next, .b-toast { font-family: var(--f-title); font-weight: 400; }
 .marines, .tickets.marines b { font-family: var(--f-marines); }
-.wooka, .tickets.wooka b, .tagline, .flavor { font-family: var(--f-wooka); }
+.wooka, .tickets.wooka b, .flavor { font-family: var(--f-wooka); }
 .b-feed { font-family: var(--f-lore); font-size: 18px; }
 
 /* Touch controls (battle/touch.ts): only mounted on a coarse pointer. */
@@ -1023,3 +1022,11 @@ button.preset { padding-bottom: 18px; }
    broad mottling too big to tile, rust weeping from the corner bolts, paint chipped back along the bevels), stretched over
    every big plate as its grime. The account chip is a bolted brass tag (SKIN in eqosys.ts). */
 :root { --grime: url("/plates/stains.webp") 0 0 / 100% 100% no-repeat; }
+/* A screen's how-to, out of the way (#4235): a small "?" by a heading opens it as a native popover; a click outside or Escape shuts it. */
+button.info { display: inline-grid; place-items: center; width: 28px; height: 28px; padding: 0; margin-left: 6px; vertical-align: middle; border-radius: 50%; border: 1.5px solid currentColor; background: none; color: var(--dim); cursor: help; flex: none; box-shadow: none; }
+button.info:hover, button.info:focus-visible { color: var(--text); }
+.about[popover] { max-width: min(34rem, calc(100vw - 32px)); max-height: calc(100vh - 32px); overflow: auto; padding: 18px 22px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); color: var(--text); font-size: 14px; line-height: 1.45; text-align: left; letter-spacing: normal; text-transform: none; font-family: system-ui, sans-serif; }
+.about[popover]::backdrop { background: rgba(0, 0, 0, 0.4); }
+.about p { margin: 0 0 10px; } .about p:last-child { margin-bottom: 0; }
+.about .keys { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; margin: 0 0 10px; }
+.about .keys dt { font-weight: 700; } .about .keys dd { margin: 0; color: var(--dim); }

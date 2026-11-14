@@ -10,6 +10,8 @@
 // And how each session reaches tools (`modeOf`): code mode (one program through an MCP server's execute, only its answer comes
 // back), loading tool schemas into the context (ToolSearch), or calling MCP tools one by one. The CLI and the card count each,
 // and a session's first code-mode program in a while is an event (`ModeWatch`) the page shows on his card.
+// And whether a session's turn stalled (`StallWatch`, #4306): a request with no reply for 10 min, or a turn a notice opened
+// that ended owing work, quiet 30 min. The office tells a stalled worker to carry on (triage/server.ts `watchStalls`).
 // Run: bun apps/agent-office/ester/dexter.ts
 import { closeSync, existsSync, openSync, readdirSync, readFileSync, readSync, statSync } from "node:fs";
 import { homedir } from "node:os";
@@ -86,27 +88,60 @@ export function modeLines(m: Modes): string[] {
 export const CONTEXT = { warn: 150_000, handoff: 250_000, total: { warn: 10_000_000, handoff: 25_000_000 } } as const;
 const ACTIVE_HOURS = 1;
 
-/** One live session: the context it carries now, what it has used in all, and what its latest turn took (tokens). */
-export interface Context { session: string; cwd: string; tokens: number; total: number; turn: number; modes: Record<Mode, number> }
+/** Where a session's turn stands, from its transcript (#4306): `at` its latest timestamped line, `asked` a request to the model
+ * still waiting for its reply, `ended` the last reply closed the turn, `by` who opened the turn (a person, or a notice or
+ * another system event), `reported` the closing reply says "N of M", `pr` the session has linked a pull request. Times in ms. */
+export interface Pace { at: number; asked?: number; ended: boolean; by: "human" | "system"; reported: boolean; pr: boolean }
+
+/** One live session: the context it carries now, what it has used in all, what its latest turn took (tokens), and where its turn stands. */
+export interface Context { session: string; cwd: string; tokens: number; total: number; turn: number; modes: Record<Mode, number>; pace: Pace }
+
+/** A transcript line, with the fields the pace reads. */
+type Entry = Line & { querySource?: string; isSidechain?: boolean; isMeta?: boolean; origin?: { kind?: string }; attachment?: { type?: string; origin?: { kind?: string } }; message?: Line["message"] & { stop_reason?: string } };
+const REPORTED = /\b\d+ of \d+\b/;
+
+/** Moves a session's pace on by one transcript line. */
+function step(p: Pace, l: Entry, reply: { id?: string; text: string }) {
+  const ts = typeof l.timestamp === "string" ? Date.parse(l.timestamp) : NaN;
+  if (Number.isFinite(ts)) p.at = Math.max(p.at, ts);
+  if (l.isSidechain === true) return;
+  if (l.type === "api-request" && l.querySource === "repl_main_thread" && Number.isFinite(ts)) p.asked = ts;
+  else if (l.type === "pr-link") p.pr = true;
+  else if (l.type === "assistant") {
+    p.asked = undefined;
+    const id = l.message?.id, blocks = Array.isArray(l.message?.content) ? (l.message.content as Block[]) : [];
+    if (id !== reply.id) [reply.id, reply.text] = [id, ""]; // a reply is written a block a line
+    reply.text += blocks.map((b) => (b.type === "text" && typeof b.text === "string" ? b.text : "")).join("");
+    p.ended = l.message?.stop_reason === "end_turn";
+    p.reported = p.ended && REPORTED.test(reply.text);
+  } else if (l.type === "user" && l.isMeta !== true) {
+    const content = l.message?.content;
+    if (Array.isArray(content) && content.every((b: Block) => b?.type === "tool_result")) return;
+    const kind = l.origin?.kind;
+    [p.by, p.ended] = [typeof kind === "string" && kind !== "human" ? "system" : "human", false];
+  } else if (l.type === "attachment" && l.attachment?.type === "queued_command" && l.attachment.origin?.kind === "human") p.by = "human"; // a person's message joined the turn: it is theirs now
+}
 
 /** Reads sessions' transcripts without re-reading them: each scan takes only the lines added since the last one. */
 export class Meter {
-  private files = new Map<string, { pos: number; seen: Set<string>; total: number; modes: Record<Mode, number>; now: Omit<Context, "total" | "modes"> | null }>();
+  private files = new Map<string, { pos: number; seen: Set<string>; total: number; modes: Record<Mode, number>; pace: Pace; reply: { id?: string; text: string }; now: Omit<Context, "total" | "modes" | "pace"> | null }>();
 
   /** Every session touched in the last hour. A reply counts once by message id, in the total and as the latest turn. */
   scan(root: string, now = Date.now()): Context[] {
     return recent(root, ACTIVE_HOURS, now).flatMap((f) => {
       let st = this.files.get(f);
       const size = statSync(f).size;
-      if (!st || size < st.pos) this.files.set(f, (st = { pos: 0, seen: new Set(), total: 0, modes: { code: 0, load: 0, direct: 0 }, now: null })); // a new file, or one that was rewritten
+      if (!st || size < st.pos) this.files.set(f, (st = { pos: 0, seen: new Set(), total: 0, modes: { code: 0, load: 0, direct: 0 }, pace: { at: 0, ended: false, by: "human", reported: false, pr: false }, reply: { text: "" }, now: null })); // a new file, or one that was rewritten
       if (size > st.pos) {
         const buf = Buffer.alloc(size - st.pos), fd = openSync(f, "r");
         try { readSync(fd, buf, 0, buf.length, st.pos); } finally { closeSync(fd); }
         const end = buf.lastIndexOf(10) + 1; // only whole lines: the last one may still be being written
         st.pos += end;
         for (const raw of buf.subarray(0, end).toString("utf8").split("\n")) {
-          let l: Line;
+          let l: Entry;
           try { l = JSON.parse(raw); } catch { continue; }
+          if (typeof l !== "object" || l === null) continue;
+          step(st.pace, l, st.reply);
           const u = l.type === "assistant" ? l.message?.usage : undefined, id = l.message?.id;
           if (l.type === "assistant" && Array.isArray(l.message?.content))
             for (const b of l.message.content as Block[]) { const m = b.type === "tool_use" && b.name ? modeOf(b.name) : null; if (m) st.modes[m]++; }
@@ -117,7 +152,7 @@ export class Meter {
           st.now = { session: l.sessionId ?? path.basename(f, ".jsonl"), cwd: l.cwd ?? "", turn, tokens: (u.input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0) };
         }
       }
-      return st.now ? [{ ...st.now, total: st.total, modes: { ...st.modes } }] : [];
+      return st.now ? [{ ...st.now, total: st.total, modes: { ...st.modes }, pace: { ...st.pace } }] : [];
     });
   }
 }
@@ -157,6 +192,46 @@ export class ContextWatch {
   }
 }
 
+/** How long a turn may sit before the office calls it stalled (ms): `hung` a request with no reply, `quiet` a notice-opened turn that ended owing work. */
+export const STALL = { hung: 10 * 60_000, quiet: 30 * 60_000 } as const;
+export type StallKind = keyof typeof STALL;
+export interface Stall extends Context { name: string; kind: StallKind; minutes: number; message: string }
+
+/** Whether a session's turn has stalled: a request out with no reply and nothing written for STALL.hung (the request hung, or the process
+ * died or was suspended: no Stop hook fires), or a turn a notice opened that ended without "N of M" or a PR, quiet for STALL.quiet. */
+export function stallOf(c: Context, now = Date.now()): StallKind | null {
+  const { pace: p } = c, idle = now - p.at;
+  if (p.asked !== undefined && idle >= STALL.hung) return "hung";
+  if (p.ended && p.by === "system" && !p.reported && !p.pr && idle >= STALL.quiet) return "quiet";
+  return null;
+}
+
+/** What the office types into a stalled worker. */
+export const CARRY_ON = "The office noticed your turn stalled: no reply came, or a background notice ended it with work still owed. Carry on with the task you owe. " +
+  "If the work really is finished, end with \"N of M done\" and the links for anything left.";
+
+/** Remembers each stall it has named, so each fires once; a session that writes again and stalls again fires again. */
+export class StallWatch {
+  private told = new Map<string, string>();
+  /** `stalled`: every session stalled now. `fresh`: the ones that stalled since the last check. */
+  check(sessions: Context[], now = Date.now(), name: (c: Context) => string = nameOf): { stalled: Stall[]; fresh: Stall[] } {
+    const stalled: Stall[] = [], fresh: Stall[] = [];
+    for (const c of sessions) {
+      const kind = stallOf(c, now);
+      if (!kind) { this.told.delete(c.session); continue; }
+      const who = name(c), minutes = Math.floor((now - c.pace.at) / 60_000);
+      const message = kind === "hung"
+        ? `${who} asked the model ${minutes} min ago and no reply came: the request hung, or the process stopped.`
+        : `${who} ended a turn a background notice opened, with work owed, ${minutes} min ago.`;
+      const s = { ...c, name: who, kind, minutes, message };
+      stalled.push(s);
+      const key = `${kind}:${c.pace.at}`;
+      if (this.told.get(c.session) !== key) { fresh.push(s); this.told.set(c.session, key); }
+    }
+    return { stalled, fresh };
+  }
+}
+
 export interface ModeEvent { session: string; name: string; code: number; load: number; direct: number; message: string }
 
 /** Remembers each session's code-mode count, so a new program is an event once. A session seen for the first time with programs already run is one too. */
@@ -180,8 +255,8 @@ export const sessionLines = (sessions: Context[], name: (c: Context) => string =
 /** The CLI's lines: every session active in the last hour with its numbers, then the ones to hand off. */
 export function contextLines(sessions: Context[], name: (c: Context) => string = nameOf): string[] {
   if (!sessions.length) return ["No session was active in the last hour."];
-  const { over } = new ContextWatch().check(sessions, name);
-  return ["Live sessions (context carried, used in all, latest turn):", ...sessionLines(sessions, name).map((l) => `  ${l}`),
+  const { over } = new ContextWatch().check(sessions, name), { stalled } = new StallWatch().check(sessions, Date.now(), name);
+  return [...(stalled.length ? ["Stalled:", ...stalled.map((s) => `  ${s.message}`)] : []), "Live sessions (context carried, used in all, latest turn):", ...sessionLines(sessions, name).map((l) => `  ${l}`),
     ...(over.length ? ["Hand off:", ...over.map((a) => `  ${a.message}`)] : [`None is past ${k(CONTEXT.warn)} of context or ${k(CONTEXT.total.warn)} used in all.`])];
 }
 

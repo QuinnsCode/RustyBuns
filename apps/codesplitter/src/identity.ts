@@ -160,9 +160,17 @@ async function handleFor(env: Env, u: AuthUser) {
   return null;
 }
 
+/**
+ * Handles the app itself owns repos or lines under, so no person may hold one: `github` the wrecking room's copies
+ * (WRECK_OWNER in github.ts), `ghost` a scrubbed account's lines (GHOST in privacy.ts), `codesplitters` and `anon`
+ * what the Worker reads and writes files as.
+ */
+export const APP_HANDLES: readonly string[] = ["github", "ghost", "codesplitters", "anon"];
+
 /** Why `name` can't be someone's new handle, or null when it's free. */
 async function unclaimable(env: Env, name: string) {
   if (!NAME.test(name)) return "lowercase letters and digits, single dashes between";
+  if (APP_HANDLES.includes(name)) return "taken";
   if (name.length <= SHORT) return `at least ${SHORT + 1} characters`;
   if (isAgentHandle(name)) return "agent- handles are for coding agents";
   if (await env.DB.prepare("SELECT 1 FROM users WHERE name = ?").bind(name).first()) return "taken";
@@ -225,7 +233,17 @@ export const changesSession = (method: string, p: string[]) =>
 export async function identify(req: Request, env: Env): Promise<string | null> {
   const inner = actingAs.get(req);
   if (inner !== undefined) return inner;
-  if (!accountsOn(env)) return aliasOf(req, env);
+  const who = await signedIn(req, env);
+  // Nobody signs in as one of the app's own handles (a grant or an alias made before they were reserved).
+  return who && APP_HANDLES.includes(who) ? null : who;
+}
+
+async function signedIn(req: Request, env: Env): Promise<string | null> {
+  if (!accountsOn(env)) {
+    // A deleted account's handle (and @ghost) is no one, whatever cookie names it.
+    const name = aliasOf(req, env);
+    return name && !isAgentHandle(name) && await retired(env, name) ? null : name;
+  }
   const s = sessionOf(req);
   if (!s) return null;
   let m = seen.get(env.DB);
@@ -262,6 +280,7 @@ async function grantRoutes(req: Request, env: Env, p: string[]): Promise<Respons
   const email = String(b.email ?? "").trim().toLowerCase();
   if (typeof b.handle !== "string" || !NAME.test(b.handle)) return fail("BadInput", "handle: lowercase letters and digits, single dashes between");
   if (isAgentHandle(b.handle)) return fail("BadInput", "agent- handles are for coding agents");
+  if (APP_HANDLES.includes(b.handle)) return fail("HandleTaken", `${b.handle} is the app's own`);
   if (!/^[^@\s]+@[^@\s]+$/.test(email)) return fail("BadInput", "give an email");
   if (await env.DB.prepare("SELECT 1 FROM users WHERE name = ?").bind(b.handle).first()) return fail("HandleTaken", `${b.handle} is taken`);
   await env.DB.prepare("INSERT OR REPLACE INTO handle_grants (handle, email) VALUES (?, ?)").bind(b.handle, email).run();

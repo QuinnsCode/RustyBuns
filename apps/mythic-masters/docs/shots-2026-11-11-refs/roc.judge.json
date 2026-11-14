@@ -1,0 +1,48 @@
+{
+  "id": "roc",
+  "at": "2026-11-12 00:04",
+  "score": 3,
+  "traits": [
+    {
+      "key": "silhouette",
+      "verdict": "partly",
+      "note": "Wings spread, but wingspan only about as wide as a stocky, upright body."
+    },
+    {
+      "key": "head",
+      "verdict": "partly",
+      "note": "Hooked yellow beak and white feathered head, but the brow is mild and not fierce."
+    },
+    {
+      "key": "limbs",
+      "verdict": "partly",
+      "note": "Two yellow taloned legs and no arms, but they are thin, upright and grip nothing."
+    },
+    {
+      "key": "hide",
+      "verdict": "no",
+      "note": "Smooth blobby wing slabs, no layered feathers or long fingered primaries."
+    },
+    {
+      "key": "colours",
+      "verdict": "partly",
+      "note": "Pale head and yellow beak and feet fit, but the body is blue-grey, not brown or tawny."
+    },
+    {
+      "key": "child1",
+      "verdict": "partly",
+      "note": "Wings are raised and spread, but short and stubby, not enormous."
+    },
+    {
+      "key": "child2",
+      "verdict": "no",
+      "note": "Feet stand on the ground and hold nothing big."
+    },
+    {
+      "key": "child3",
+      "verdict": "yes",
+      "note": "A clear yellow hooked beak, visible in the head close-up."
+    }
+  ],
+  "fix": "Rebuild the wings as far longer, tawny-brown layered feathered wings with long separated finger primaries, and pose the bird in flight with talons clutching a large object."
+}

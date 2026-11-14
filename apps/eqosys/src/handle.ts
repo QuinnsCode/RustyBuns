@@ -7,24 +7,25 @@
 //   3. eqosys sends them to <return>?code=eq_…&state=…
 //   4. the app POSTs /api/exchange { app, code, verifier } and gets back who they are, where they came from and their access,
 //      plus a token signed with the key at /.well-known/jwks.json that its server can pass around and check on its own
-import { HOME, returnTo, type QApp } from "./apps.ts";
-import { appOf, mayUse } from "./listings.ts";
+import { HOME, playOf, returnTo, type QApp } from "./apps.ts";
+import { appOf, Draft, mayUse, pull, save, send, type Done } from "./listings.ts";
 import { authFor, authOn, isAdmin, meOf, providers, type Me } from "./auth.ts";
 import { b64url, crossSite, json, loopbackOn, VERSION, type Env } from "./env.ts";
-import { hubAnnounce, hubAsk, type Who } from "./qollab/hub.ts";
+import { hubAnnounce, hubAsk, hubInvited, hubRedeem, linkOf, type Who } from "./qollab/hub.ts";
 import { isQollab, qollab } from "./qollab/routes.ts";
+import { makeSpace, SPACE_NAME, studioAdd, studioRemove } from "./qollab/space.ts";
 import { bearerOf, cors, HOME_LIFE, issuer, tokenOf } from "./door.ts";
-import { deleteAccount, exchange, link, mint, setAccess, signOutApps } from "./members.ts";
+import { deleteAccount, exchange, link, mint, mintRefresh, setAccess, signOutApps } from "./members.ts";
 import { oauth } from "./oauth.ts";
 import { appleEvents } from "./apple.ts";
-import { addMember, Kind, makeStudio, Role, STUDIO_NAME } from "./studios.ts";
+import { Kind, makeStudio, Role, STUDIO_NAME } from "./studios.ts";
 import { recordDeploy } from "./deploys.ts";
 import { file } from "./reports.ts";
 import { shownFor, unlock, unlocksOf } from "./achievements.ts";
 import { AGENTS_TEXT, callTool, catalog, type Ctx } from "./tools.ts";
 import { jwksOf, sign } from "@rustybuns/util/token";
 import { json as publicJson } from "@rustybuns/util/http";
-import { check, obj, oneOf, opt, str } from "@rustybuns/util/guard";
+import { bool, check, obj, oneOf, opt, str } from "@rustybuns/util/guard";
 import { dossierHeaders, regionAt, type Region } from "@rustybuns/util/privacy";
 import { exportFor, HOLDERS } from "./privacy.ts";
 import { regionFor, vaultFor } from "./vault.ts";
@@ -35,6 +36,8 @@ export interface Ask {
   app: QApp; back: URL; challenge: string; state: string; /** An OpenID client's, signed into its id_token. */ nonce?: string;
   /** The app asked to show the page even to someone already signed in (OpenID's `prompt=login` or `select_account`), say for "switch account". */
   pick?: true;
+  /** The app asked not to show any page (OpenID's `prompt=none`): a code back for someone who goes straight on, else `error=login_required`. */
+  quiet?: true;
 }
 
 const CHALLENGE = str(128, { min: 43, re: /^[A-Za-z0-9_-]+$/ });
@@ -47,13 +50,14 @@ export async function askOf(get: (k: string) => unknown, conf: Env): Promise<Ask
   const challenge = check(CHALLENGE, get("challenge"));
   if (!app || !back || !challenge) return "bad";
   const nonce = String(get("nonce") ?? "").slice(0, 200);
-  const pick = /\b(login|select_account|consent)\b/.test(String(get("prompt") ?? ""));
-  return { app, back, challenge, state: String(get("state") ?? "").slice(0, 200), ...(nonce ? { nonce } : {}), ...(pick ? { pick: true as const } : {}) };
+  const prompt = String(get("prompt") ?? "");
+  const pick = /\b(login|select_account|consent)\b/.test(prompt), quiet = !pick && /\bnone\b/.test(prompt);
+  return { app, back, challenge, state: String(get("state") ?? "").slice(0, 200), ...(nonce ? { nonce } : {}), ...(pick ? { pick: true as const } : {}), ...(quiet ? { quiet: true as const } : {}) };
 }
 
 /** The ask carried on as query parameters (into a social callback, or back to the login page). */
 export const askQuery = (a: Ask) =>
-  new URLSearchParams({ app: a.app.id, return: a.back.href, challenge: a.challenge, ...(a.state ? { state: a.state } : {}), ...(a.nonce ? { nonce: a.nonce } : {}), ...(a.pick ? { prompt: "select_account" } : {}) }).toString();
+  new URLSearchParams({ app: a.app.id, return: a.back.href, challenge: a.challenge, ...(a.state ? { state: a.state } : {}), ...(a.nonce ? { nonce: a.nonce } : {}), ...(a.pick ? { prompt: "select_account" } : a.quiet ? { prompt: "none" } : {}) }).toString();
 
 /** The mark that says this browser pressed "Continue with…" for this ask: an HMAC of the ask's app and challenge under the
  * auth secret. It rides in a cookie, never the URL, so a link somebody else made can't carry it into another browser. */
@@ -66,8 +70,34 @@ export async function socialMark(conf: Env, a: Ask) {
 export const SOCIAL_COOKIE = "eqosys.social";
 const socialCookie = (req: Request, value: string, age: number) =>
   `${SOCIAL_COOKIE}=${value}; Path=/login; Max-Age=${age}; HttpOnly; SameSite=Lax${new URL(req.url).protocol === "https:" ? "; Secure" : ""}`;
-const socialMarkIn = (req: Request) =>
-  (req.headers.get("cookie") ?? "").split(/;\s*/).find((c) => c.startsWith(`${SOCIAL_COOKIE}=`))?.slice(SOCIAL_COOKIE.length + 1) ?? null;
+const cookieOf = (req: Request, name: string) =>
+  (req.headers.get("cookie") ?? "").split(/;\s*/).find((c) => c.startsWith(`${name}=`))?.slice(name.length + 1) ?? null;
+const socialMarkIn = (req: Request) => cookieOf(req, SOCIAL_COOKIE);
+
+/** The friend link this browser opened (/add/<id>/<key>), kept half an hour while its person signs in or makes an account.
+ * Opening a link only keeps it: being friends takes their own press of "Be friends" on the Friends tab (/do/add), so a
+ * page that sends a browser to somebody's link makes nobody a friend. A link a game copied names it (`?app=<id>`): the
+ * app rides in the cookie after the link (`<id>/<key>/<app>`), and once they answer, /do/add sends them on to its front door. */
+export const ADD_COOKIE = "eqosys.add";
+const addCookie = (req: Request, value: string, age: number) =>
+  `${ADD_COOKIE}=${value}; Path=/; Max-Age=${age}; HttpOnly; SameSite=Lax${new URL(req.url).protocol === "https:" ? "; Secure" : ""}`;
+const APP_ID = /^[a-z0-9][a-z0-9-]{0,63}$/;
+/** The kept friend link's two halves, and the app it names when it names one. */
+const keptLink = (req: Request) => {
+  const raw = cookieOf(req, ADD_COOKIE) ?? "", m = /^(.*)\/([^/]*)$/.exec(raw), app = m && APP_ID.test(m[2]!) && linkOf(m[1]!) ? m[2]! : null;
+  return { link: linkOf(app ? m![1]! : raw), app };
+};
+/** The game a kept friend link names, when it is one this person may play: its name, and its front door. */
+async function gameOf(conf: Env, app: string | null, userId?: string): Promise<{ name: string; url: string } | null> {
+  const a = app ? await appOf(conf, app) : undefined, url = a && playOf(a);
+  return a && url && (!userId || await mayUse(conf, a, userId)) ? { name: a.name, url } : null;
+}
+/** The kept friend link, whose it is, and the game it goes on to: null when there is none or its key is no longer theirs. */
+export async function invitedBy(req: Request, conf: Env): Promise<{ id: string; key: string; name: string; game: string | null } | null> {
+  const { link: l, app } = keptLink(req);
+  const name = l && conf.HUB ? await hubInvited(conf.HUB, l).catch(() => null) : null;
+  return l && name !== null ? { ...l, name, game: (await gameOf(conf, app))?.name ?? null } : null;
+}
 
 /** Whether someone already signed in goes on to the app without seeing the page: they have used it before, or this browser
  * just pressed "Continue with…" for it. A first visit from a link still asks, so nobody is handed to an app they never picked. */
@@ -99,7 +129,8 @@ async function onward(conf: Env, region: Region, userId: string, ask: Ask | null
 
 const Signed = obj({ user: obj({ id: str(200) }) });
 const Social = obj({ url: str(4000) });
-const Exchange = obj({ app: str(64), code: str(100), verifier: str(128, { min: 43 }), return: opt(str(2000)) });
+/** `keep`: a game page that renews its token in the background (`@rustybuns/util/eqosys`) also gets a refresh token, marked as a page's. */
+const Exchange = obj({ app: str(64), code: str(100), verifier: str(128, { min: 43 }), return: opt(str(2000)), keep: opt(bool()) });
 
 export async function handle(req: Request, conf: Env): Promise<Response | null> {
   const { pathname } = new URL(req.url);
@@ -116,7 +147,9 @@ export async function handle(req: Request, conf: Env): Promise<Response | null> 
     if (!body) return json({ error: "send { app, code, verifier }" }, 400, await cors(req, conf));
     const traded = await exchange(conf, body.app, body.code, body.verifier, body.return);
     if (!traded) return json({ error: "that code is used, late, for another app, or the verifier is wrong" }, 400, await cors(req, conf));
-    return json({ ...traded.who, token: await sign(conf, issuer(req, conf), traded.who) }, 200, await cors(req, conf));
+    const token = await sign(conf, issuer(req, conf), traded.who);
+    const refresh = token && body.keep ? await mintRefresh(conf, traded.who.user.id, traded.who.app, Date.now(), true) : undefined;
+    return json({ ...traded.who, token, ...(refresh ? { refresh } : {}) }, 200, await cors(req, conf));
   }
 
   // Achievements (achievements.ts): POST /q/achieve { id } unlocks one of the token's app's, GET lists its whole catalog for the person.
@@ -126,7 +159,7 @@ export async function handle(req: Request, conf: Env): Promise<Response | null> 
     if (req.method !== "POST" && req.method !== "GET") return json({ error: "POST { id } or GET, with the token as a bearer" }, 405, head);
     const t = await tokenOf(req, conf, bearerOf(req));
     if (!t) return json({ error: "send the token /api/exchange gave you" }, 401, head);
-    if (req.method === "GET") return json({ achievements: shownFor(t.app.id, (await unlocksOf(conf, t.who.id, t.app.id)).get(t.app.id)) }, 200, head);
+    if (req.method === "GET") return json({ achievements: shownFor(t.app, (await unlocksOf(conf, t.who.id, t.app.id)).get(t.app.id)) }, 200, head);
     const body = check(obj({ id: str(64) }), await req.json().catch(() => null));
     if (!body) return json({ error: "send { id }" }, 400, head);
     const r = await unlock(conf, t.who.id, t.app.id, body.id);
@@ -221,6 +254,17 @@ export async function handle(req: Request, conf: Env): Promise<Response | null> 
     return json({ ok: db && authOn(conf), db, auth: authOn(conf), tokens: !!(await jwksOf(conf)).keys.length, version: VERSION }, db ? 200 : 503);
   }
 
+  // A friend link: kept in a cookie, then on to the Friends tab, by way of the sign-in page for someone signed out or new.
+  const add = /^\/add\/(.+)$/.exec(pathname);
+  if (add && req.method === "GET") {
+    const l = linkOf(add[1]!.replace(/\/+$/, "")), app = new URL(req.url).searchParams.get("app");
+    const out = see("/?tab=friends");
+    if (l) out.headers.append("set-cookie", addCookie(req, `${encodeURIComponent(l.id)}/${l.key}${app && APP_ID.test(app) ? `/${app}` : ""}`, 1800));
+    return out;
+  }
+  // Home with a friend link waiting (just signed in, or just made the account): the Friends tab shows who it is from.
+  if (pathname === "/" && req.method === "GET" && !new URL(req.url).searchParams.has("tab") && cookieOf(req, ADD_COOKIE)) return see("/?tab=friends");
+
   // An app asking for someone already signed in here who uses it (or just picked it with "Continue with…"): straight back
   // with a code, no page. Anyone else falls through to the sign-in page.
   if (pathname === "/login" && req.method === "GET") {
@@ -233,6 +277,12 @@ export async function handle(req: Request, conf: Env): Promise<Response | null> 
       const out = await onward(conf, regionAt(req), me.id, ask);
       if (mark) out.headers.append("set-cookie", socialCookie(req, "", 0));
       return out;
+    }
+    // A game checking quietly on load (prompt=none): no page, just back to it as a guest, the way OpenID says.
+    if (ask?.quiet) {
+      ask.back.searchParams.set("error", "login_required");
+      if (ask.state) ask.back.searchParams.set("state", ask.state);
+      return see(ask.back.href);
     }
     return null;
   }
@@ -295,11 +345,35 @@ export async function handle(req: Request, conf: Env): Promise<Response | null> 
 
   if (act === "continue") return onward(conf, regionAt(req), me.id, ask);
   // The friends page (pages.tsx): the person's own hub, by cookie rather than a token. A form field left empty is left out.
-  if (act === "befriend" || act === "accept" || act === "drop" || act === "clear") {
+  // The friend link this browser opened: "Be friends" makes the two friends at once, "No thanks" (`no`) forgets the link.
+  // Either way, a link a game copied goes on to that game; a refusal stays on the Friends tab to say why.
+  if (act === "add") {
+    const { link: l, app } = keptLink(req);
+    const r = l && conf.HUB && !field(form, "no") ? await hubRedeem(conf.HUB, l, { id: me.id, name: me.name }) : null;
+    const game = await gameOf(conf, app, me.id);
+    const out = see(r && "error" in r ? `/?tab=friends&e=${/most/.test(r.error) ? "full" : "nolink"}` : game?.url ?? "/?tab=friends");
+    out.headers.append("set-cookie", addCookie(req, "", 0));
+    return out;
+  }
+  if (act === "befriend" || act === "accept" || act === "drop" || act === "clear" || act === "relink") {
     if (!conf.HUB) return see("/?tab=friends&e=nohub");
     const email = field(form, "email").trim(), id = field(form, "id");
     const r = await hubAsk(conf.HUB, atHome(me), { op: act, ...(email ? { email } : {}), ...(id ? { id } : {}) });
     return see("error" in r ? `/?tab=friends&e=${/most|too many/.test(r.error) ? "full" : "hub"}` : "/?tab=friends");
+  }
+  // The Account tab's ways to sign in: add GitHub, Google or Apple to this account (off to the provider and back, signed in
+  // as themselves throughout), or take one off. Better Auth refuses to take off the last one.
+  if (act === "link") {
+    if (await limited()) return see("/?tab=account&e=slow");
+    const provider = check(oneOf(["github", "google", "apple"]), field(form, "provider"));
+    if (!provider || !providers(conf).includes(provider)) return see("/?tab=account&e=provider");
+    const res = await authFor(req, conf).api.linkSocialAccount({ body: { provider, callbackURL: "/?tab=account", errorCallbackURL: "/?tab=account&e=link" }, headers: req.headers, asResponse: true }).catch(() => null);
+    const go = res?.ok ? check(Social, await res.clone().json().catch(() => null)) : null;
+    return go ? see(go.url, res!) : see("/?tab=account&e=provider");
+  }
+  if (act === "unlink") {
+    const res = await authFor(req, conf).api.unlinkAccount({ body: { accountId: field(form, "id") }, headers: req.headers, asResponse: true }).catch(() => null);
+    return see(res?.ok ? "/?tab=account" : "/?tab=account&e=last");
   }
   if (act === "logout") await signOutApps(conf, me.id);
   if (act === "logout") return see(ask ? `/login?${askQuery(ask)}` : "/login", await authFor(req, conf).api.signOut({ headers: req.headers, asResponse: true }));
@@ -307,14 +381,39 @@ export async function handle(req: Request, conf: Env): Promise<Response | null> 
   if (act === "studio-add") {
     const role = check(Role, field(form, "role"));
     if (!role) return see("/?tab=studio&e=studio");
-    const r = await addMember(conf, field(form, "studio"), me.id, field(form, "email"), role);
+    const r = await studioAdd(conf, field(form, "studio"), me.id, field(form, "email"), role);
     return see(r.ok ? "/?tab=studio" : `/?tab=studio&e=${r.status === 404 ? "nobody" : "studio"}`);
+  }
+  if (act === "studio-remove") {
+    const r = await studioRemove(conf, field(form, "studio"), me.id, field(form, "email"));
+    return see(r.ok ? "/?tab=studio" : "/?tab=studio&e=studio");
+  }
+  // The studio's own Qollab space (space.ts): its owner or admin makes it once; its members are the studio's.
+  if (act === "studio-space") {
+    const studio = field(form, "studio"), name = check(SPACE_NAME, field(form, "name").trim());
+    if (!name) return see("/?tab=studio&e=name");
+    const r = await makeSpace(conf, me.id, name, studio);
+    return see(r.ok ? "/spaces" : "/?tab=studio&e=studio");
   }
   if (act === "studio-make") {
     const name = check(STUDIO_NAME, field(form, "name").trim()), kind = check(Kind, field(form, "kind"));
     if (!name || !kind) return see("/?tab=studio&e=name");
     const r = await makeStudio(conf, me.id, name, kind);
     return see(r.ok ? "/?tab=studio" : "/?tab=studio&e=owned");
+  }
+  // The Studio tab's form for a studio's own game (Studio.tsx, listings.ts): save it, send it to review, or pull it. The same rules as
+  // eq_listing_save, eq_listing_send and eq_listing_pull. Origins and returns are one URL a line; an empty field is left out.
+  if (act === "listing-save" || act === "listing-send" || act === "listing-pull") {
+    const id = field(form, "id").trim(), text = (k: string) => field(form, k).trim();
+    const urls = (k: string) => { const l = text(k).split(/\s+/).filter(Boolean); return l.length ? l : undefined; };
+    let r: Done;
+    if (act === "listing-save") {
+      const d = check(Draft, { studio: text("studio"), id, name: text("name"), genre: text("genre"), origins: urls("origins") ?? [],
+        ...(urls("returns") ? { returns: urls("returns") } : {}), ...(text("erase") ? { erase: text("erase") } : {}), ...(text("blurb") ? { blurb: text("blurb") } : {}) });
+      if (!d) return see("/?tab=studio&e=game");
+      r = await save(conf, me.id, d);
+    } else r = act === "listing-send" ? await send(conf, me.id, id) : await pull(conf, me.id, false, id);
+    return see(r.ok ? "/?tab=studio" : `/?tab=studio&e=${r.status === 409 ? "gamestep" : "gameowner"}`);
   }
   if (act === "grant" || act === "revoke") {
     if (!isAdmin(me, conf)) return json({ error: "only the super admin grants access" }, 403);

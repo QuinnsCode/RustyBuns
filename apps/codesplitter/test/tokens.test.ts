@@ -130,9 +130,13 @@ describe("GET /api/openapi.json", () => {
         expect(o.parameters.filter((p: any) => p.in === "path").map((p: any) => p.name)).toEqual([...path.matchAll(/\{(\w+)\}/g)].map((m) => m[1]));
     // Executor's policy keys off these.
     const risky = Object.values(s.paths).flatMap((m: any) => Object.values(m).filter((o: any) => o["x-codesplitter-risky"]).map((o: any) => o.operationId)).sort();
-    expect(risky).toEqual(["accept_agent_batch", "answer_ester", "beam_branch", "cherry_pick", "claim_invite", "commit_file", "create_ci_token", "create_invite", "create_mirror", "decide_dexter_trim", "delete_branch_file", "delete_mervin_learning", "delete_repo", "delete_share", "delete_tag", "deploy", "deploy_destroy", "invite", "land",
-      "make_tag", "merge_branch", "merge_clean_branches", "push_branch_upstream", "push_tag_upstream", "record_check", "reject_agent_batch", "remove_collaborator", "revert_commit", "revoke_ci_token", "revoke_invite", "run_cut", "set_check_settings", "set_dexter", "set_mervin_learning", "set_private_lines",
-      "set_protect_main", "set_repo_visibility", "share_lines", "start_agent", "stop_agents", "sync_mirror", "take_upstream", "turn_into_mirror", "update_check", "withdraw_beam"]);
+    expect(risky).toEqual(["accept_agent_batch", "answer_ester", "beam_branch", "cherry_pick", "claim_invite", "commit_file", "create_ci_token", "create_invite",
+      "create_mirror", "create_repo", "decide_dexter_trim", "delete_branch_file", "delete_mervin_learning", "delete_program", "delete_repo",
+      "delete_share", "delete_tag", "deploy", "deploy_destroy", "invite", "land", "make_tag", "merge_branch", "merge_clean_branches",
+      "push_branch_upstream", "push_tag_upstream", "record_check", "reject_agent_batch", "remove_collaborator", "revert_commit", "revoke_ci_token",
+      "revoke_invite", "run_cut", "set_check_settings", "set_city", "set_dexter", "set_mervin_learning", "set_private_lines", "set_protect_main",
+      "set_repo_visibility", "share_lines", "start_agent", "start_try", "stop_agents", "sync_mirror", "take_upstream", "turn_into_mirror", "unfollow",
+      "unstamp_line", "update_check", "update_me", "withdraw_beam"]);
   });
 
   test("every read in it answers a token", async () => {

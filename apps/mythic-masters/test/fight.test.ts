@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { play } from "../scripts/tune.ts";
 import { creature, type Creature } from "../src/roster.ts";
 import type { Field } from "../src/fields.ts";
-import { BUFFER, CORNERED, COST, footprint, frames, HANG, IDLE, LUNGE, newMatch, ORBIT, RED, step, warning, type Area, type Fighter, type Input } from "../src/sim.ts";
+import { BUFFER, CORNERED, COST, footprint, frames, HANG, IDLE, LUNGE, foeOf, newMatch, newTeamMatch, ORBIT, RED, step, warning, type Area, type Fighter, type Input } from "../src/sim.ts";
 import { bot } from "../src/bot.ts";
 import { ledgeOff } from "../src/beasts.ts";
 import { atLevel } from "../src/journey.ts";
@@ -19,6 +19,32 @@ describe("a match", () => {
     expect(a.winner === 0 || a.winner === 1).toBe(true);
     expect(a.ko?.kind).toBe("ko");
     expect(b).toEqual(a);
+  });
+});
+
+describe("two friends against a wild one (#3929)", () => {
+  test("each bot fights the nearest foe, nobody's hits land on a teammate, and the fight runs till a whole team is out", () => {
+    for (const seed of [1, 2, 3]) {
+      const m = newTeamMatch([[hare, bruiser], [tank]]), bots = m.f.map((_, k) => bot(k, seed + k));
+      const landed = [0, 0, 0], outs: number[] = [];
+      while (!m.over) {
+        step(m, bots.map((b) => b(m)));
+        for (const e of m.events) {
+          if (e.kind === "hit" && e.by !== e.on) { expect(m.f[e.by]!.team).not.toBe(m.f[e.on]!.team); landed[e.by]!++; }
+          if (e.kind === "ko") outs.push(e.who);
+        }
+      }
+      // Both friends got their hits in, and two on one, the friends win with someone still standing.
+      expect([landed[0]! > 0, landed[1]! > 0, m.winner, m.f.some((f) => f.team === 0 && !f.down)]).toEqual([true, true, 0, true]);
+    }
+  });
+  test("one friend knocked out leaves the fight, and the wild one turns on the other", () => {
+    const m = newTeamMatch([[hare, bruiser], [tank]]), bots = m.f.map((_, k) => bot(k, 7 + k));
+    m.f[0].hp = 0;
+    step(m, bots.map((b) => b(m)));
+    expect([m.over, m.events.find((e) => e.kind === "ko"), m.f[0].down, foeOf(m, 2)]).toEqual([false, { kind: "ko", who: 0, how: "hp" }, true, 1]);
+    while (!m.over) step(m, bots.map((b) => b(m)));
+    expect(m.f[0].hp).toBe(0); // out is out: nothing hit it again
   });
 });
 

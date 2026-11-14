@@ -1,0 +1,66 @@
+{
+  "id": "jersey-devil",
+  "name": "Jersey Devil",
+  "category": "Jersey Devil",
+  "query": "Jersey Devil",
+  "images": [
+    {
+      "file": "card-color.jpg",
+      "from": "card",
+      "page": "https://commons.wikimedia.org/wiki/File:Jersey_devil_mini.jpg",
+      "artist": "Dystopiamatt",
+      "license": "CC BY-SA 4.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0"
+    },
+    {
+      "file": "card-bw.jpg",
+      "from": "card",
+      "page": "https://commons.wikimedia.org/wiki/File:Jersey_Devil_Philadelphia_Post_1909.jpg",
+      "artist": "Philadelphia Newspaper",
+      "license": "Public domain"
+    },
+    {
+      "file": "c3.jpg",
+      "from": "search",
+      "page": "https://commons.wikimedia.org/wiki/File:2016-03-10_00902n_camdenchildrens_(28051538846).jpg",
+      "artist": "Laura Blanchard from Philadelphia, USA",
+      "license": "CC BY-SA 2.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by-sa/2.0"
+    },
+    {
+      "file": "c4.jpg",
+      "from": "search",
+      "page": "https://commons.wikimedia.org/wiki/File:Jersey_Devil_(1665080054).jpg",
+      "artist": "Ted Kerwin",
+      "license": "CC BY 2.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by/2.0"
+    },
+    {
+      "file": "c5.jpg",
+      "from": "search",
+      "page": "https://commons.wikimedia.org/wiki/File:Jersey-devil-1-700x306.jpg",
+      "artist": "Various/several",
+      "license": "Public domain"
+    },
+    {
+      "file": "c6.jpg",
+      "from": "search",
+      "page": "https://commons.wikimedia.org/wiki/File:Jersey_Devil_concept.jpg",
+      "artist": "Aviator Airbus",
+      "license": "CC BY-SA 4.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0"
+    }
+  ],
+  "traits": {
+    "silhouette": "",
+    "head": "",
+    "limbs": "",
+    "hide": "",
+    "colours": "",
+    "child": [
+      "",
+      "",
+      ""
+    ]
+  }
+}

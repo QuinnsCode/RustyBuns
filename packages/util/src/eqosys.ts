@@ -1,7 +1,10 @@
 // Signing in through eqosys, from a page: send the player to eqosys's /login with a PKCE challenge, and
 // when they come back with ?code=&state=, trade it for who they are and a token. The login is kept in
-// localStorage; the token is what the app's Worker checks (`TokenChecker` from ./token), so once it has
-// run out the player goes through eqosys again, which is one click when they are still signed in there.
+// localStorage; the token is what the app's Worker checks (`TokenChecker` from ./token). It lasts ten minutes,
+// so the page renews it in the background with a one-use refresh token kept beside it. When that fails (a month
+// unused, or a sign-out on eqosys), the next load checks with eqosys quietly (`prompt=none`): still signed in
+// there, the player comes straight back signed in with no page shown; signed out, they stay a guest.
+// `signInHere` signs in through a small window beside the page, so a game that is running keeps running.
 // Worked example: apps/park-hide-seek/src/ui/eqosys.ts.
 import { b64url, digest } from "./bytes.ts";
 import { arr, bool, check, int, nul, num, obj, oneOf, opt, str, type Guard, type Of } from "./guard.ts";
@@ -9,23 +12,30 @@ import { getJson } from "./http.ts";
 import { connectSocket, type Link } from "./socket.ts";
 import { mountReportButton, sendReport, type ReportIn, type Sent } from "./report.ts";
 import { eqBadge, eqButton, wearSkin, ICONS, type Skin } from "./skin.ts";
+import { EASE, morph, pop } from "./morph.ts";
 import { peek } from "./token.ts";
 import { PartyRules } from "./party-rules.ts";
 
 export type { Skin } from "./skin.ts";
 
 /** What the page keeps of a sign-in. */
-export const Login = obj({ name: str(200), email: str(320), token: str(8192) });
+export const Login = obj({ name: str(200), email: str(320), token: str(8192), refresh: opt(str(100)) });
 export type Login = Of<typeof Login>;
 
 /** POST eqosys /api/exchange: who signed in, and the token the Worker checks. `token` is null while eqosys has no signing key. */
 export const ExchangeReply = obj({
   user: obj({ id: str(200), email: str(320), name: str(200) }),
-  app: str(64), source: str(64), access: arr(str(32), 100), token: nul(str(8192)),
+  app: str(64), source: str(64), access: arr(str(32), 100), token: nul(str(8192)), refresh: opt(str(100)),
 });
+/** POST eqosys /oauth/token with a refresh token: the next token and the next refresh token (the one sent is spent). */
+const Renewed = obj({ access_token: str(8192), refresh_token: str(100) });
 export type ExchangeReply = Of<typeof ExchangeReply>;
 
 export interface Returned { login: Login | null; then: string; error?: string }
+/** What the sign-in window tells the page that opened it: the code eqosys sent it back with. The verifier never leaves the page. */
+const Handed = obj({ code: str(100), state: str(200) });
+/** A sign-in that began in `signInHere`'s window carries this at the front of its state. */
+const WINDOW = "w.";
 
 /** One achievement as eqosys shows it to the player (a secret one is "Secret achievement" until `at` is set). */
 export const Achievement = obj({ id: str(64), name: str(200), blurb: str(400), secret: bool(false), at: nul(int(0, 1e15)) });
@@ -50,7 +60,7 @@ export interface EqosysConfig {
   skin?: Skin;
 }
 
-/** The sign-in client for one app. `signIn`, `finishSignIn`, `login`, `fresh`, `signOut`, `eqosysUrl`, `canSignIn`, `accountChip`, and `achieve` / `achievements`. */
+/** The sign-in client for one app. `signIn`, `signInHere`, `finishSignIn`, `login`, `fresh`, `signOut`, `eqosysUrl`, `canSignIn`, `accountChip`, and `achieve` / `achievements`. */
 export function eqosys({ app, url, from, prefix, skin }: EqosysConfig) {
   if (skin) wearSkin(skin);
   const kept = {
@@ -62,6 +72,7 @@ export function eqosys({ app, url, from, prefix, skin }: EqosysConfig) {
     take(k: string) { try { const v = sessionStorage.getItem(`${prefix}.eq.${k}`) ?? ""; sessionStorage.removeItem(`${prefix}.eq.${k}`); return v; } catch { return ""; } },
     put(k: string, v: string) { try { sessionStorage.setItem(`${prefix}.eq.${k}`, v); } catch {} },
   };
+  const keep = (l: Login | null) => { kept.put("login", l ? JSON.stringify(l) : ""); if (l) plan(); };
 
   /** Where eqosys is for this page: the live one, or the `<prefix>.eqosys` setting (a local eqosys, `bun run dev` there with loopback returns on). */
   const eqosysUrl = () => (kept.get("eqosys") || url).replace(/\/$/, "");
@@ -72,12 +83,51 @@ export function eqosys({ app, url, from, prefix, skin }: EqosysConfig) {
   const here = () => `${location.origin}${location.pathname}`;
 
   /** Off to eqosys. `then` is what the player was doing ("play"), picked up again when they come back. */
-  async function signIn(then = ""): Promise<void> {
+  async function signIn(then = "", quiet = false): Promise<void> {
     const verifier = b64url(crypto.getRandomValues(new Uint8Array(32)));
     const state = b64url(crypto.getRandomValues(new Uint8Array(12)));
     once.put("verifier", verifier); once.put("state", state); once.put("then", then);
-    const q = new URLSearchParams({ app, return: here(), challenge: b64url(await digest(verifier)), state });
+    // A quiet check leaves on its own, so the page's query (an invite's room code) comes back with it.
+    if (quiet) once.put("quiet", `${location.search}${location.hash}` || "?");
+    const q = new URLSearchParams({ app, return: here(), challenge: b64url(await digest(verifier)), state, ...(quiet ? { prompt: "none" } : {}) });
     location.assign(`${eqosysUrl()}/login?${q}`);
+  }
+
+  /** Trade eqosys's code for the login, and keep it. */
+  async function trade(code: string, verifier: string, then: string): Promise<Returned> {
+    const got = await getJson(`${eqosysUrl()}/api/exchange`, ExchangeReply, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ app, code, verifier, keep: true }) });
+    if (!got) return { login: null, then, error: "eqosys didn't let that sign-in through. Try again." };
+    if (!got.token) return { login: null, then, error: "eqosys isn't handing out tokens yet, so you can't sign in here. Play with a name for now." };
+    waiting.clear();
+    const login: Login = { name: got.user.name, email: got.user.email, token: got.token, ...(got.refresh ? { refresh: got.refresh } : {}) };
+    keep(login);
+    void sendHeld().then((news) => { for (const u of news) celebrate(u.achievement); });
+    return { login, then };
+  }
+
+  /**
+   * Sign in without leaving the page: eqosys opens in a small window, and this answers once the player is back (the
+   * login, or null with no error when they closed the window). Call it straight from the click, or the browser blocks
+   * the window; where it is blocked anyway (some in-app browsers), the whole page goes to eqosys as `signIn` does.
+   */
+  function signInHere(then = ""): Promise<Returned> {
+    const win = typeof window === "undefined" ? null : window.open("", "eq-signin", "popup,width=480,height=720");
+    if (!win) { void signIn(then); return new Promise(() => {}); }
+    const verifier = b64url(crypto.getRandomValues(new Uint8Array(32)));
+    const state = WINDOW + b64url(crypto.getRandomValues(new Uint8Array(12)));
+    const news = new BroadcastChannel(`${prefix}.eq.signin`);
+    return new Promise((done) => {
+      let over = false, trading = false;
+      const end = (r: Returned) => { if (over) return; over = true; clearInterval(watch); news.close(); done(r); };
+      // The window closed with no code (a moment's grace: the code is sent just before it closes): they changed their mind.
+      // A page that is cross-origin isolated can't see its window close: there, only the code ends the wait.
+      const watch = setInterval(() => { if (win.closed && !globalThis.crossOriginIsolated) setTimeout(() => { if (!trading) end({ login: null, then }); }, 600); }, 400);
+      news.onmessage = (e) => {
+        const m = check(Handed, e.data);
+        if (m && m.state === state && !trading) { trading = true; void trade(m.code, verifier, then).then(end); }
+      };
+      void digest(verifier).then((d) => { win.location.href = `${eqosysUrl()}/login?${new URLSearchParams({ app, return: here(), challenge: b64url(d), state })}`; });
+    });
   }
 
   /**
@@ -86,20 +136,26 @@ export function eqosys({ app, url, from, prefix, skin }: EqosysConfig) {
    */
   async function finishSignIn(): Promise<Returned | null> {
     const q = new URLSearchParams(location.search);
-    const code = q.get("code"), state = q.get("state");
-    if (code === null || state === null) return null;
-    q.delete("code"); q.delete("state");
-    history.replaceState(null, "", `${location.pathname}${q.size ? "?" + q : ""}${location.hash}`);
+    const code = q.get("code"), state = q.get("state"), refused = q.get("error") === "login_required";
+    if ((code === null && !refused) || state === null) return stale();
+    const quiet = once.take("quiet");
+    q.delete("code"); q.delete("state"); if (refused) q.delete("error");
+    const rest = quiet && quiet !== "?" ? quiet : `${q.size ? "?" + q : ""}${location.hash}`;
+    history.replaceState(null, "", `${location.pathname}${rest}`);
+    // This is `signInHere`'s window: hand the code to the page that opened it and go. That page holds the verifier, so the
+    // code is no use to anyone else listening. A window that can't close itself becomes the game, signed in by then.
+    if (code !== null && state.startsWith(WINDOW)) {
+      const news = new BroadcastChannel(`${prefix}.eq.signin`);
+      news.postMessage({ code, state } satisfies Of<typeof Handed>);
+      setTimeout(() => window.close(), 200);
+      setTimeout(() => location.assign(`${location.pathname}${rest}`), 2000);
+      return new Promise(() => {});
+    }
     const verifier = once.take("verifier"), then = once.take("then");
     if (!verifier || state !== once.take("state")) return { login: null, then, error: "That sign-in didn't start here. Try again." };
-    const got = await getJson(`${eqosysUrl()}/api/exchange`, ExchangeReply, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ app, code, verifier }) });
-    if (!got) return { login: null, then, error: "eqosys didn't let that sign-in through. Try again." };
-    if (!got.token) return { login: null, then, error: "eqosys isn't handing out tokens yet, so you can't sign in here. Play with a name for now." };
-    waiting.clear();
-    const login: Login = { name: got.user.name, email: got.user.email, token: got.token };
-    kept.put("login", JSON.stringify(login));
-    void sendHeld().then((news) => { for (const u of news) celebrate(u.achievement); });
-    return { login, then };
+    // The quiet check found nobody signed in on eqosys: a guest, and the run-out login is let go so the page doesn't ask again.
+    if (refused || code === null) { keep(null); return null; }
+    return trade(code, verifier, then);
   }
 
   /** The login kept from the last sign-in, if any. Its token may have run out: see `fresh`. */
@@ -110,7 +166,56 @@ export function eqosys({ app, url, from, prefix, skin }: EqosysConfig) {
   /** Whether the token still has `forMs` to run: long enough for the server to check it when the request lands. */
   const fresh = (l: Login, forMs = 30_000, now = Date.now()) => (peek(l.token)?.exp ?? 0) * 1000 > now + forMs;
 
-  function signOut() { kept.put("login", ""); }
+  function signOut() {
+    const spent = login()?.refresh;
+    keep(null);
+    if (spent) void fetch(`${eqosysUrl()}/oauth/revoke`, { method: "POST", body: new URLSearchParams({ token: spent }), keepalive: true }).catch(() => {});
+  }
+
+  /** The kept login's token, renewed with its refresh token: "ok" (fresh now, maybe by another tab), "refused" (eqosys said no: spent,
+   * a month old, or a sign-out there), or "down" (eqosys couldn't be reached). One renewal at a time. */
+  let renewing: Promise<"ok" | "refused" | "down"> | null = null;
+  function renew(): Promise<"ok" | "refused" | "down"> {
+    return renewing ??= (async () => {
+      const l = login();
+      if (l && fresh(l, 60_000)) return "ok" as const;
+      if (!l?.refresh) return "refused" as const;
+      const res = await fetch(`${eqosysUrl()}/oauth/token`, { method: "POST", body: new URLSearchParams({ grant_type: "refresh_token", client_id: app, refresh_token: l.refresh }) }).catch(() => null);
+      if (!res || res.status >= 500) return "down" as const;
+      const got = res.ok ? check(Renewed, await res.json().catch(() => null)) : null;
+      if (got) { keep({ ...l, token: got.access_token, refresh: got.refresh_token }); return "ok" as const; }
+      // Another tab may have spent it first and kept the next one.
+      const now = login();
+      if (now && fresh(now, 60_000)) return "ok" as const;
+      if (now?.refresh === l.refresh) keep({ name: l.name, email: l.email, token: l.token });
+      return "refused" as const;
+    })().finally(() => { renewing = null; });
+  }
+
+  /** Renew a minute before the token runs out, and on coming back to a tab whose timer the browser held back. */
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  function plan() {
+    clearTimeout(timer);
+    const l = login(), exp = l?.refresh ? (peek(l.token)?.exp ?? 0) * 1000 : 0;
+    if (!exp) return;
+    timer = setTimeout(() => void renew(), Math.max(0, exp - Date.now() - 60_000));
+    (timer as { unref?: () => void }).unref?.();
+  }
+  if (typeof document !== "undefined") document.addEventListener?.("visibilitychange", () => { if (document.visibilityState === "visible" && login()?.refresh) void renew(); });
+  plan();
+
+  /** Not a return from eqosys: a run-out login is renewed, or else checked quietly with eqosys once per tab (the page leaves for it). */
+  async function stale(): Promise<null> {
+    const l = login();
+    if (!l || fresh(l)) return null;
+    const r = await renew();
+    if (r === "ok" || r === "down" || !canSignIn()) return null;
+    // A login from before refresh tokens never asked eqosys: only leave for it when it answers, so a player never lands on its error page.
+    if (!l.refresh && !await fetch(`${eqosysUrl()}/health`, { mode: "no-cors" }).then(() => true, () => false)) return null;
+    try { if (sessionStorage.getItem(`${prefix}.eq.tried`)) return null; sessionStorage.setItem(`${prefix}.eq.tried`, "1"); } catch { return null; }
+    await signIn("", true);
+    return new Promise<null>(() => {}); // the page is on its way to eqosys and back
+  }
 
   /** Who this page joins a game's room as (`whoIs` / `seatDoor` read it): the eqosys token while it lasts, else `guest` (`guestId`). */
   const who = (guest: string): { token: string } | { uid: string } => { const l = login(); return l && fresh(l) ? { token: l.token } : { uid: guest }; };
@@ -180,26 +285,60 @@ export function eqosys({ app, url, from, prefix, skin }: EqosysConfig) {
   const token = () => { const l = login(); return l && fresh(l, 5_000) ? l.token : null; };
   const partyClient = () => party({ url: eqosysUrl, token });
   const spaceClient = () => space({ url: eqosysUrl, token });
-  const hubClient = () => hub({ url: eqosysUrl, token });
+  const hubClient = () => hub({ url: eqosysUrl, token, app });
 
   /**
-   * The account chip, in `slot`: the eqosys name and a way out, a way in where eqosys can send the player back, or nothing.
-   * `note` is what went wrong coming back from eqosys; `onSignOut` runs after signing out (a page that must reload, say).
+   * The account chip, in `slot`: the eqosys badge, then the eqosys name and a way out, or a way in where eqosys can send the
+   * player back; nothing where it can't. The badge folds the rest away into itself and back (kept for the next page), and
+   * each change folds the parts into place over the new state (./morph.ts). `note` is what went wrong coming back from
+   * eqosys; `onSignOut` runs after signing out (a page that must reload, say).
    */
-  function accountChip(slot: HTMLElement, o: { note?: string; onSignOut?: () => void } = {}): HTMLElement {
+  function accountChip(slot: HTMLElement, o: { note?: string; onSignOut?: () => void; /** Given, "Sign in" opens eqosys beside the page (`signInHere`) and this hears the login; the page never reloads. */ onSignIn?: (login: Login) => void } = {}): HTMLElement {
     wearSkin();
-    const who = login();
-    slot.classList.add("eq", "eq-chip");
-    slot.classList.toggle("in", !!who);
-    slot.replaceChildren();
-    if (who) slot.append(Object.assign(document.createElement("span"), { className: "eq-who", textContent: who.name, title: who.email }), eqButton({ text: "Sign out", icon: "log-out", onClick: () => { signOut(); accountChip(slot, { onSignOut: o.onSignOut }); o.onSignOut?.(); } }));
-    else if (canSignIn()) slot.append(eqButton({ text: "Sign in", icon: "log-in", show: true, onClick: () => void signIn() }));
-    if (o.note) slot.append(Object.assign(document.createElement("small"), { className: "eq-note", textContent: o.note }));
+    // Only a signed-in chip folds: signed out, the badge is just the mark and Sign in always shows beside it.
+    const who = login(), can = !!who || canSignIn(), folded = !!who && chipFolded(), again = { ...o, note: undefined };
+    const part = <E extends HTMLElement>(name: string, e: E) => { e.dataset.part = name; return e; };
+    const parts: HTMLElement[] = [];
+    if (can && !who) parts.push(part("badge", eqBadge()));
+    else if (who) {
+      const fold = part("badge", Object.assign(document.createElement("button"), { type: "button", className: "eq-fold", title: folded ? `${who.name} on eqosys` : "Fold eqosys away" }));
+      fold.setAttribute("aria-label", folded ? "Show eqosys" : "Fold eqosys away");
+      fold.setAttribute("aria-expanded", String(!folded));
+      fold.append(eqBadge());
+      fold.addEventListener("click", () => {
+        const had = document.activeElement === fold;
+        foldChip(!folded);
+        accountChip(slot, again);
+        const b = slot.querySelector<HTMLElement>(".eq-fold");
+        if (b) { if (had) b.focus(); pop(b); }
+      });
+      parts.push(fold);
+    }
+    if (folded) { /* the badge alone */ }
+    else if (who) parts.push(part("who", Object.assign(document.createElement("span"), { className: "eq-who", textContent: who.name, title: who.email })), part("act", eqButton({ text: "Sign out", icon: "log-out", onClick: () => { signOut(); accountChip(slot, again); o.onSignOut?.(); } })));
+    else if (can) parts.push(part("act", eqButton({ text: "Sign in", icon: "log-in", show: true, onClick: () => {
+      const hear = o.onSignIn;
+      if (!hear) return void signIn();
+      void signInHere().then((r) => { accountChip(slot, { ...o, note: r.error }); if (r.login) hear(r.login); });
+    } })));
+    if (o.note) parts.push(part("note", Object.assign(document.createElement("small"), { className: "eq-note", textContent: o.note })));
+    // Sign in turning into Sign out (or back): the arrow turns over as the button settles.
+    const turn = (el: HTMLElement) => el.querySelector("svg")?.animate([{ transform: "rotate(-180deg) scale(.5)", opacity: 0.2 }, { transform: "none", opacity: 1 }], { duration: 320, easing: EASE });
+    morph(slot, () => {
+      slot.classList.add("eq", "eq-chip");
+      slot.classList.toggle("in", !!who);
+      slot.replaceChildren(...parts);
+    }, { home: "badge", swapped: turn });
     return slot;
   }
 
-  return { signIn, finishSignIn, login, fresh, signOut, who, eqosysUrl, canSignIn, accountChip, report, reportButton, party: partyClient, space: spaceClient, hub: hubClient, achieve, achievements, sendHeld, celebrate };
+  return { signIn, signInHere, finishSignIn, login, fresh, signOut, who, eqosysUrl, canSignIn, accountChip, report, reportButton, party: partyClient, space: spaceClient, hub: hubClient, achieve, achievements, sendHeld, celebrate };
 }
+
+/** Whether the account chip is folded into its badge: one choice for every game on this site. */
+const FOLD = "eq.chip.folded";
+const chipFolded = (): boolean => { try { return localStorage.getItem(FOLD) === "1"; } catch { return false; } };
+const foldChip = (on: boolean) => { try { if (on) localStorage.setItem(FOLD, "1"); else localStorage.removeItem(FOLD); } catch { /* private window: this page only */ } };
 
 /**
  * A guest's secret id for a game's rooms, kept under `key`: in localStorage, so the browser comes back as the same
@@ -240,16 +379,17 @@ export function celebrate(a: Achievement, ms = 4200): HTMLElement | null {
  */
 export const SOCKET_PROTOCOL = "eqosys";
 
-/** A member of a party as eqosys's party shows them. */
-export const PartyMember = obj({ id: str(200), name: str(200), ready: bool(false), host: bool(false) });
+/** A member of a party as eqosys's party shows them; `voice` when their page says it is in the party's voice room. */
+export const PartyMember = obj({ id: str(200), name: str(200), ready: bool(false), host: bool(false), voice: opt(bool()) });
 export type PartyMember = Of<typeof PartyMember>;
 /** What a party says: who is in, that the host started (go to `room`, sit in `seat`), or why a request was refused. */
 export const PartyMsg: Guard<
   { t: "members"; members: PartyMember[] } | { t: "start"; room: string; seat: number; ticket?: string } | { t: "refused"; why: string }
   | { t: "say"; from: { id: string; name: string }; text: string; at: number } | { t: "reported"; by: string; id: string; name: string }
-  | { t: "rules"; rules: PartyRules; blocked?: { id: string; name: string }[]; invite?: string }
+  | { t: "rules"; rules: PartyRules; blocked?: { id: string; name: string }[]; invite?: string } | { t: "ticket"; url: string; ticket: string }
 > = (v) => {
-  const t = check(obj({ t: oneOf(["members", "start", "refused", "say", "reported", "rules"]) }), v)?.t;
+  const t = check(obj({ t: oneOf(["members", "start", "refused", "say", "reported", "rules", "ticket"]) }), v)?.t;
+  if (t === "ticket") return { t, ...obj({ url: str(300), ticket: str(4096) })(v) };
   if (t === "rules") { const r = obj({ rules: PartyRules, blocked: opt(arr(obj({ id: str(200), name: str(200) }), 1000)), invite: opt(str(64)) })(v); return { t, rules: r.rules, ...(r.blocked && { blocked: r.blocked }), ...(r.invite && { invite: r.invite }) }; }
   if (t === "members") return { t, members: obj({ members: arr(PartyMember, 1000) })(v).members };
   if (t === "start") { const st = obj({ room: str(64), seat: int(0, 1000), ticket: opt(str(4096)) })(v); return { t, room: st.room, seat: st.seat, ...(st.ticket && { ticket: st.ticket }) }; }
@@ -283,6 +423,7 @@ export function party({ url, token }: PartyConfig) {
   const hide = (id: string, on = true) => { const h = hidden(); if (on) h.add(id); else h.delete(id); try { localStorage.setItem(HIDDEN, JSON.stringify([...h])); } catch { /* private window: for this page only */ } };
   const onStart = ears<{ room: string; seat: number; ticket?: string }>(), onMembers = ears<PartyMember[]>(), onRefused = ears<string>(), onGone = ears<string>();
   const onSay = ears<Extract<PartyMsg, { t: "say" }>>(), onReported = ears<Extract<PartyMsg, { t: "reported" }>>();
+  const onTicket = ears<{ url: string; ticket: string }>();
 
   /** A new party's code, or null when signed out or eqosys refused (too many parties just now, say). */
   async function make(open = false): Promise<string | null> {
@@ -306,11 +447,11 @@ export function party({ url, token }: PartyConfig) {
       protocols: [SOCKET_PROTOCOL, t],
       decode: (v) => check(PartyMsg, v),
       queue: 4,
-      onMessage: (m) => { if (m.t === "members") onMembers.hear(members = m.members); else if (m.t === "start") onStart.hear(m); else if (m.t === "say") { if (!hidden().has(m.from.id)) onSay.hear(m); } else if (m.t === "reported") onReported.hear(m); else if (m.t === "rules") onRules.hear(m); else onRefused.hear(lastWhy = m.why); },
+      onMessage: (m) => { if (m.t === "members") onMembers.hear(members = m.members); else if (m.t === "start") onStart.hear(m); else if (m.t === "say") { if (!hidden().has(m.from.id)) onSay.hear(m); } else if (m.t === "reported") onReported.hear(m); else if (m.t === "rules") onRules.hear(m); else if (m.t === "ticket") onTicket.hear(m); else onRefused.hear(lastWhy = m.why); },
       onClose: (e) => {
         if (e.code === 4000) { onGone.hear("This party is open in another tab."); return; }
         // The door's refusals (party.ts): its own words came just before the close; stop trying.
-        if (e.code === 4403) { onGone.hear(lastWhy || "Only the host's friends can join: ask them to add you on eqosys."); return; }
+        if (e.code === 4403) { onGone.hear(lastWhy || "Only the host's friends can join with the code alone: ask someone in the party for its link."); return; }
         if (e.code === 4405 || e.code === 4407 || e.code === 4408 || e.code === 4410) { onGone.hear(lastWhy || "The party didn't let you in."); return; }
         if (e.code === 4406) { onGone.hear("The host took you out of the party."); return; }
         if (e.code === 4409) { onGone.hear("The host ended the party."); return; }
@@ -328,6 +469,8 @@ export function party({ url, token }: PartyConfig) {
     /** Quiet a member for the whole party (or `false` to let them speak again): the host's, or whoever the `mute` rule says. */
     mute: (id: string, on = true) => void link?.send({ t: "mute", id, on }),
     report: (id: string) => void link?.send({ t: "report", id }),
+    /** Ask member `id` to be friends, the party being where you met: they press it on you too (or already did) and you're friends. */
+    befriend: (id: string) => void link?.send({ t: "friend", id }),
     /** Host only: the party's rules (@rustybuns/util/party-rules), all at once. */
     rules: (rules: PartyRules) => void link?.send({ t: "rules", rules }),
     /** Host only: take a member out (they may come back), block or unblock someone (refused at the door), or hand them the party. */
@@ -336,6 +479,11 @@ export function party({ url, token }: PartyConfig) {
     makeHost: (id: string) => void link?.send({ t: "host", id }),
     /** Host only: a fresh invite key, so every party link handed out so far stops letting people in. */
     relink: () => void link?.send({ t: "relink" }),
+    /** Ask for a one-use ticket into the party's voice room (Qlave, QLAVE.md): `onTicket` hears it, for `join` in ./voice.ts. */
+    talk: () => void link?.send({ t: "talk" }),
+    /** Tell the party this page is in its voice room (or, with `false`, left it), so everyone sees it on the member list. */
+    inVoice: (on = true) => void link?.send({ t: "voice", on }),
+    onTicket: onTicket.add,
     /** Mute someone for yourself only: their chat lines stop reaching this page. Kept in this browser. */
     hide, hidden,
     onRules: onRules.add,
@@ -360,8 +508,9 @@ export type HubFriend = Of<typeof HubFriend>;
 /** A note in the hub: a friend's ask or answer, or what an app told you for them (`app`, with its text and link). */
 export const HubNote = obj({ key: str(64), at: num(0, 1e14), kind: str(16), from: obj({ id: str(200), name: str(200, { min: 0 }) }), app: opt(str(64)), text: opt(str(280)), link: opt(str(2000)) });
 export type HubNote = Of<typeof HubNote>;
-/** What an app reads of the hub: friends and notes (asks are eqosys's own page's business). */
-export const HubView = obj({ friends: arr(HubFriend, 1000), notes: arr(HubNote, 1000) });
+/** What an app reads of the hub: friends, notes, and the person's friend link (asks are eqosys's own page's business). `coworkers` are the
+ * people they share a studio with who aren't friends: online the same way, no friend request needed. */
+export const HubView = obj({ friends: arr(HubFriend, 1000), coworkers: opt(arr(HubFriend, 1000)), notes: arr(HubNote, 1000), link: opt(str(300)) });
 export type HubView = Of<typeof HubView>;
 
 /**
@@ -369,7 +518,7 @@ export type HubView = Of<typeof HubView>;
  * friends and notes, `notify(id, text, link)` to tell one friend something from this app (a link on the app's own
  * site, an invite say), which lands in that friend's notes. Friends are made on eqosys's own page (`friendsPage`).
  */
-export function hub({ url, token }: PartyConfig) {
+export function hub({ url, token, app }: PartyConfig & { app?: string }) {
   async function op(body: Record<string, string>): Promise<{ ok: true; view: HubView | null } | { ok: false; error: string }> {
     const t = token();
     if (!t) return { ok: false, error: "Sign in with eqosys first." };
@@ -384,13 +533,16 @@ export function hub({ url, token }: PartyConfig) {
     state: async (): Promise<HubView | null> => { const r = await op({ op: "state" }); return r.ok ? r.view : null; },
     /** Tell friend `id`: null when sent, else why not. */
     notify: async (id: string, text: string, link?: string): Promise<string | null> => { const r = await op({ op: "notify", id, text, ...(link ? { link } : {}) }); return r.ok ? null : r.error; },
+    /** The person's friend link, to copy or share: whoever opens it and signs in (or makes an account) is their friend. Null signed out.
+     *  It names this app (`?app=`), so once they answer, eqosys sends them on to it. */
+    friendLink: async (): Promise<string | null> => { const r = await op({ op: "state" }); return r.ok && r.view?.link ? `${url()}/add/${r.view.link}${app ? `?${new URLSearchParams({ app })}` : ""}` : null; },
     /** Where on eqosys a person adds friends. */
     friendsPage: () => `${url()}/?tab=friends`,
   };
 }
 
-/** A message in a space's channel: its number there, and who said what when. */
-export const SpaceMessage = obj({ id: int(1, 1e12), from: obj({ id: str(200), name: str(200) }), text: str(280), at: int(0, 1e15) });
+/** A message in a space's channel: its number there, and who said what when. Up to 280 characters, 2000 in a studio's space (the `space` frame's `max`). */
+export const SpaceMessage = obj({ id: int(1, 1e12), from: obj({ id: str(200), name: str(200) }), text: str(2000), at: int(0, 1e15) });
 export type SpaceMessage = Of<typeof SpaceMessage>;
 /** A voice channel: its id (what `talk` and `inVoice` take) and its name. */
 export const SpaceVoice = obj({ id: str(24), name: str(24) });
@@ -403,7 +555,7 @@ export type SpaceMember = Of<typeof SpaceMember>;
  * a report, or (to whoever asked) a one-use ticket into a voice channel on Qlave, for `join` in @rustybuns/util/voice.
  */
 export const SpaceMsg: Guard<
-  | { t: "space"; name: string; channels: string[]; voice: SpaceVoice[]; owner: boolean }
+  | { t: "space"; name: string; channels: string[]; voice: SpaceVoice[]; owner: boolean; max?: number }
   | { t: "online"; members: SpaceMember[] }
   | ({ t: "said"; channel: string } & SpaceMessage)
   | { t: "history"; channel: string; messages: SpaceMessage[]; more: boolean }
@@ -413,7 +565,7 @@ export const SpaceMsg: Guard<
 > = (v) => {
   const t = check(obj({ t: oneOf(["space", "online", "said", "history", "refused", "reported", "ticket"]) }), v)?.t;
   const ch = str(24);
-  if (t === "space") return { t, ...obj({ name: str(60), channels: arr(ch, 100), voice: arr(SpaceVoice, 100), owner: bool() })(v) };
+  if (t === "space") return { t, ...obj({ name: str(60), channels: arr(ch, 100), voice: arr(SpaceVoice, 100), owner: bool(), max: opt(int(1, 100_000)) })(v) };
   if (t === "online") return { t, ...obj({ members: arr(SpaceMember, 1000) })(v) };
   if (t === "ticket") return { t, ...obj({ channel: ch, url: str(300, { re: /^https?:\/\// }), ticket: str(5000) })(v) };
   if (t === "said") return { t, channel: obj({ channel: ch })(v).channel, ...SpaceMessage(v) };
@@ -423,14 +575,16 @@ export const SpaceMsg: Guard<
   throw new Error("not a space message");
 };
 export type SpaceMsg = Of<typeof SpaceMsg>;
-/** A space a person is in, as GET /q/space lists it; `invite` only on the ones they own. */
-export const SpaceRow = obj({ id: str(64), name: str(60), owner: bool(), invite: opt(str(12)) });
+/** A space a person is in, as GET /q/space lists it; `invite` only on the ones they own. `studio` is the studio that owns it: its members
+ * are the studio's, `owner` means they are one of its owners or admins, and it has no invite. */
+export const SpaceRow = obj({ id: str(64), name: str(60), owner: bool(), invite: opt(str(12)), studio: opt(str(64)) });
 export type SpaceRow = Of<typeof SpaceRow>;
 export const SpaceRows = obj({ spaces: arr(SpaceRow, 1000) });
 
 /** What a page hears from an open space. Every one is optional. */
 export interface SpaceHandlers {
-  space?: (s: { name: string; channels: string[]; voice: SpaceVoice[]; owner: boolean }) => void;
+  /** `max`: the longest message this space takes. */
+  space?: (s: { name: string; channels: string[]; voice: SpaceVoice[]; owner: boolean; max?: number }) => void;
   online?: (members: SpaceMember[]) => void;
   said?: (channel: string, m: SpaceMessage) => void;
   history?: (channel: string, messages: SpaceMessage[], more: boolean) => void;
@@ -466,6 +620,11 @@ export function space({ url, token }: PartyConfig) {
     async make(name: string) {
       const init = authed("POST", { name });
       return init ? getJson(`${url()}/q/space`, obj({ id: str(64), invite: str(12) }), init) : null;
+    },
+    /** A studio's own space (its owner or admin asks): one a studio, its members are the studio's, and it has no invite. Its id. */
+    async makeForStudio(studio: string, name: string) {
+      const init = authed("POST", { name, studio });
+      return init ? getJson(`${url()}/q/space`, obj({ id: str(64) }), init) : null;
     },
     /** Join by an invite code: the space's id and name, or null for a wrong code. */
     async join(invite: string) {

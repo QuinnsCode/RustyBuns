@@ -94,11 +94,11 @@
 //   PUT  /api/repos/:o/:r/deps        any of the settings in FIELDS
 //   POST /api/repos/:o/:r/deps/run    check now; {rank} ranks the packages for this run only
 
-import { arr, bool, int, maybe, nul, num, obj, opt, raw, rec, str } from "@rustybuns/util/guard";
+import { arr, bool, int, isRecord, maybe, nul, num, obj, opt, raw, rec, str } from "@rustybuns/util/guard";
 import { readJson } from "@rustybuns/util/http";
 import type { Doc, Op } from "./lines.ts";
-import { access as artifactAccess, docIn, handleFor, toFile, TreeItem } from "./archive.ts";
-import { isPlainObject, listOf } from "./util.ts";
+import { access as artifactAccess, docIn, handleFor, toFile, TreeReply } from "./archive.ts";
+import { listOf } from "./util.ts";
 import { actingAs, isAdmin, mail, mailOn } from "./identity.ts";
 import { workspaceDirs, workspaceGlobs } from "./fit.ts";
 import { diffToOps, merge3 } from "./sync.ts";
@@ -231,7 +231,7 @@ export const osvAdvisories = (get: typeof fetch = fetch): Advisories => async (p
     body: JSON.stringify({ queries: pkgs.map((p) => ({ package: { name: p.name, ecosystem: "npm" }, version: p.version })) }) });
   if (!res.ok) throw new Error(`osv.dev: ${res.status}`);
   const body: unknown = await res.json().catch(() => null);
-  const results = isPlainObject(body) && Array.isArray(body.results) ? body.results : null;
+  const results = isRecord(body) && Array.isArray(body.results) ? body.results : null;
   if (!results) throw new Error("osv.dev: no results");
   const details = new Map<string, Promise<unknown>>();
   const detail = (id: string) => {
@@ -245,9 +245,9 @@ export const osvAdvisories = (get: typeof fetch = fetch): Advisories => async (p
     out.set(`${p.name}@${p.version}`, await Promise.all(ids.map(async (id) => {
       const v = await detail(id);
       // The versions that fix it: every "fixed" event in the npm ranges that name this package.
-      const ours = listOf(v, "affected").filter((a) => isPlainObject(a.package) && a.package.ecosystem === "npm" && a.package.name === p.name);
+      const ours = listOf(v, "affected").filter((a) => isRecord(a.package) && a.package.ecosystem === "npm" && a.package.name === p.name);
       const fixed = strings(ours.flatMap((a) => listOf(a, "ranges").flatMap((r) => listOf(r, "events").map((e) => e.fixed))));
-      return { id, summary: isPlainObject(v) && typeof v.summary === "string" ? v.summary : "", fixed };
+      return { id, summary: isRecord(v) && typeof v.summary === "string" ? v.summary : "", fixed };
     })));
   }));
   return out;
@@ -989,8 +989,6 @@ const fixerFor = (env: Env, s: Settings, owner: string): Fixer | null =>
 // ---- a run ------------------------------------------------------------------
 
 export type Call = (who: string | null, path: string, init?: RequestInit) => Promise<Response>;
-/** What GET /tree answers (worker.ts), as far as the doctor reads it. */
-const TreeReply = obj({ entries: arr(TreeItem, 100_000) });
 
 /** Every package.json in a repo: the top one, and each workspace's. A note says why there are none. */
 export async function readManifests(call: Call, owner: string, repo: string) {
@@ -1749,14 +1747,17 @@ export async function depRoutes(req: Request, env: Env, p: string[], url: URL, u
     const malicious = await hitsFor(env, owner, repo);
     if ("note" in files) return json({ packages: [], score: null, note: files.note, malicious, digs: [] });
     const own = new Set([...files.manifests.values()].map((m) => m.pkg.name).filter(Boolean));
-    const asks = new Map([...files.manifests.values()].flatMap((m) => floors(m.pkg)).filter((x) => !own.has(x.name)).map((x) => [`${x.name}@${x.version}`, x]));
+    // The repo's .npmrc says where its packages live, as on a run: a private one's name never goes to npm or OSV.
+    const rcs = [await homeNpmrc(env), files.top.includes(".npmrc") ? parseNpmrc((await files.read(".npmrc"))?.lines.map((l) => l.text).join("\n") ?? "") : null].filter((x): x is Npmrc => !!x);
+    const onNpm = (name: string) => registryUrl(rcs, name).url.startsWith("https://registry.npmjs.org/");
+    const asks = new Map([...files.manifests.values()].flatMap((m) => floors(m.pkg)).filter((x) => !own.has(x.name) && onNpm(x.name)).map((x) => [`${x.name}@${x.version}`, x]));
     const advisories = (env.DEPS_ADVISORIES as Advisories | undefined) ?? osvAdvisories();
     let note: string | undefined;
     const vulns = await advisories([...asks.values()]).catch((e: Error) => { note = `couldn't check for known vulnerabilities (${e.message})`; return new Map<string, Vuln[]>(); });
     const row = await env.DB.prepare("SELECT last_report FROM dep_watches WHERE owner = ? AND repo = ?").bind(owner, repo).first();
     const last: Report | null = row?.last_report ? JSON.parse(row.last_report as string) : null;
     const digs = last?.digs ?? (await settings(env, owner, repo)).digs.map((d): Dug => ({ ...d, status: "waiting" }));
-    const h = await health(files.manifests, (env.DEPS_REGISTRY as Registry | undefined) ?? npmRegistry, vulns, digs);
+    const h = await health(files.manifests, (env.DEPS_REGISTRY as Registry | undefined) ?? npmrcRegistry(rcs), vulns, digs);
     return json({ ...h, ...(malicious.length && h.score !== null ? { score: 0 } : {}), ...(note ? { note } : {}), malicious, digs });
   }
   if (p[5] === "issues" && req.method === "GET") {

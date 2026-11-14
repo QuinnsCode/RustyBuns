@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { circleLineOf, handOf, knownOf, MISREAD, poolOf, ribbonsOf, summon } from "../src/grimoire.ts";
+import { blank, Bout, circleLineOf, dry, handOf, knownOf, MISREAD, poolOf, ribbonsOf, summon } from "../src/grimoire.ts";
+import { check } from "@rustybuns/util/guard";
 import { newJourney } from "../src/journey.ts";
 import { ROSTER } from "../src/roster.ts";
 
@@ -47,5 +48,19 @@ describe("the book's hand and its circle", () => {
     expect(knownOf(j, other.id, "unknown")).toBe("unknown"); // seen only as a shrouded shape
     expect(poolOf(j, ROSTER, tier, true)).toHaveLength(ROSTER.length); // the Librarian's key
     expect(poolOf(null, ROSTER, tier)).toHaveLength(ROSTER.length);
+  });
+
+  // the circle brings up your last bout before you summon (#4276 round 11)
+  test.each([
+    ["practice won", { kind: "practice", you: "Hodag", foe: "Squonk", won: true, how: "ring-out" }, "Your Hodag threw the Squonk out of the ring. Practice. Not entered."],
+    ["practice lost", { kind: "practice", you: "Hodag", foe: "Squonk", won: false, how: "hp" }, "The Squonk put your Hodag down. I keep no accounts of practice. I kept that one."],
+    ["duel lost", { kind: "duel", you: "Hodag", foe: "Kelpie", won: false, how: "time" }, "Your friend's Kelpie outlasted your Hodag on the clock. A friend did that. I will not be writing it down."],
+    ["watched", { kind: "watched", you: "Hodag", foe: "Squonk", won: true, how: "none" }, "The Hodag beat the Squonk. You only watched. Watching fills no ledger."],
+  ] as const)("the circle remembers: %s", (_n, b, line) => expect(circleLineOf(null, false, 3, b)).toEqual({ ask: line, signed: false }));
+
+  test("no bout yet, a dry pot, or a stored bout in the wrong shape: the plain lines", () => {
+    expect(circleLineOf(null, false, 3).ask).toBe(blank);
+    expect(circleLineOf(null, false, 0, { kind: "practice", you: "Hodag", foe: "Squonk", won: true, how: "hp" }).ask).toBe(dry);
+    expect(check(Bout, { kind: "brawl", you: "Hodag" })).toBeNull();
   });
 });

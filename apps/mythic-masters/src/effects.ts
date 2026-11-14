@@ -46,8 +46,11 @@ export const FIELD_LOOK: Record<Field, string> = {
   frost: `
     S += vec3( 0.6, 0.85, 1.0 ) * pow( rim, 2.0 ) * 0.8;
     E += vec3( 0.3, 0.4, 0.55 ) * pow( rim, 3.0 );
-    vec3 id = floor( p * 14.0 ); float h = fxHash( id );
-    E += vec3( 0.9, 0.97, 1.0 ) * step( 0.985, h ) * ( 0.5 + 0.5 * sin( t * 4.0 + h * 60.0 ) ) * 1.6;
+    // a glint is a soft point in its cell: lighting the whole cell drew the flat slice where the cube cuts the hide,
+    // a pale hard-edged triangle in a close-up (#4197); only a cell whose point sits near the surface shows, so more glint
+    vec3 q = p * 14.0; vec3 id = floor( q ); float h = fxHash( id );
+    vec3 at = fract( q ) - 0.5 - 0.3 * ( vec3( fxHash( id + 7.1 ), fxHash( id + 13.7 ), fxHash( id + 29.3 ) ) - 0.5 );
+    E += vec3( 0.9, 0.97, 1.0 ) * step( 0.95, h ) * ( 1.0 - smoothstep( 0.05, 0.25, length( at ) ) ) * ( 0.5 + 0.5 * sin( t * 4.0 + h * 60.0 ) ) * 1.6;
     D *= mix( vec3( 1.0 ), vec3( 0.85, 0.97, 1.15 ), 0.8 );`,
   storm: `
     float flick = step( 0.45, fxHash( vec3( floor( t * 9.0 ), 1.0, 2.0 ) ) );
@@ -126,7 +129,12 @@ export function fieldLook(fields: readonly Field[]): FieldLook | null {
       float a = uFxAmt * ${k.toFixed(2)};
       D = mix( vec3( 1.0 ), D, a );
       reflectedLight.directDiffuse *= D; reflectedLight.indirectDiffuse *= D;
-      reflectedLight.indirectSpecular += S * a;
+      // The sheen reads as wet hide, not a coat of glass (#4265): a soft knee that tops out at 0.15 (a broad tide or
+      // frost sheen at full strength added a third of white or more and glazed the whole body), half tinted by the
+      // hide's own hue, then beasts.ts stylize's edge gate (less of it on slick and pale hides).
+      vec3 hue = diffuseColor.rgb / max( max( diffuseColor.r, max( diffuseColor.g, diffuseColor.b ) ), 0.05 );
+      vec3 sh = S * a; sh = 0.15 * sh / ( 0.15 + sh ) * mix( vec3( 1.0 ), hue, 0.5 );
+      reflectedLight.indirectSpecular += sh * beastRim;
       totalEmissiveRadiance += E * a;
     }`;
     look = { key, helpers: HELPERS, frag };

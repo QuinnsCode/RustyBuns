@@ -218,6 +218,26 @@ describe("artifacts", () => {
     expect((await call(null, "/api/repos/ana/dig/share?branch=--upload-pack=x")).status).toBe(400);
   });
 
+  test("going private recalls a stranger's clone line and share link; the owner's and the crew's still clone", async () => {
+    const call = await local();
+    await post(call, "ana", "/api/login", { name: "ana" });
+    await post(call, "bo", "/api/login", { name: "bo" });
+    await post(call, "ana", "/api/repos", { name: "dig" });
+    await post(call, "ana", "/api/repos/ana/dig/files", { path: "README", content: "found it" });
+    await post(call, "ana", "/api/repos/ana/dig/do/commit?path=README", { message: "first" });
+    await post(call, "ana", "/api/repos/ana/dig/collaborators", { name: "bo" });
+    const remote = (command: string) => command.split(" ").at(-2)!;
+    const clones = async (command: string) => (await Bun.spawn(["git", "ls-remote", remote(command)], { stdout: "ignore", stderr: "ignore" }).exited) === 0;
+    const shared = (who: string | null) => call(who, "/api/repos/ana/dig/share").then((r) => r.json() as Promise<any>).then((b) => b.command as string);
+    const page = (who: string | null) => call(who, "/api/repos/ana/dig").then((r) => r.json() as Promise<any>).then((b) => b.clone as string);
+    const stranger = [await shared(null), await page(null), await shared("cy"), await page("cy")];
+    const kept = [await shared("ana"), await page("ana"), await shared("bo"), await page("bo")];
+    for (const c of [...stranger, ...kept]) expect(await clones(c)).toBe(true);
+    await call("ana", "/api/repos/ana/dig", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ visibility: "private" }) });
+    for (const c of stranger) expect([c, await clones(c)]).toEqual([c, false]);
+    for (const c of kept) expect([c, await clones(c)]).toEqual([c, true]);
+  });
+
   test("on a private repo a crew member's share link lasts an hour at most, the owner's a week", async () => {
     const call = await local();
     await post(call, "ana", "/api/login", { name: "ana" });
@@ -311,6 +331,9 @@ describe("accounts", () => {
     const me = await (await call(null, "/api/me", { headers: { cookie } })).json() as any;
     expect(me.name).toBe("analyst");
     expect((await call(null, "/api/repos", { method: "POST", headers: { cookie }, body: JSON.stringify({ name: "dig" }) })).status).toBe(201);
+    // The same name again is a 409 that says so, not a 500 from the insert.
+    const again = await call(null, "/api/repos", { method: "POST", headers: { cookie }, body: JSON.stringify({ name: "dig" }) });
+    expect([again.status, ((await again.json()) as { tag?: string }).tag]).toEqual([409, "RepoExists"]);
   });
 });
 
@@ -444,6 +467,11 @@ describe("handles", () => {
     expect(await named(grant(ana, { handle: "zed", email: "zed@example.com" }))).toEqual([403, "AdminsOnly"]);
     expect(await named(grant(boss, { handle: "boss-person", email: "x@example.com" }))).toEqual([409, "HandleTaken"]);
     expect(await named(grant(boss, { handle: "agent-codex", email: "y@example.com" }))).toEqual([400, "BadInput"]);
+    // The handles the app owns repos under are nobody's: not by sign-up, not by an admin's grant.
+    const bo = await signup("bo@example.com", "Bo");
+    expect(await free("github")).toMatchObject({ ok: false, why: "taken" });
+    expect(await named(claim(bo, "github"))).toEqual([409, "HandleTaken"]);
+    expect(await named(grant(boss, { handle: "github", email: "bo@example.com" }))).toEqual([409, "HandleTaken"]);
     // A grant goes to a verified email only, since anyone can type one at signup.
     const typed = await signup("zed2@example.com", "Zed");
     const verified = await signup("zed3@example.com", "Zed");

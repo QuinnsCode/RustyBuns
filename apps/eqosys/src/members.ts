@@ -6,9 +6,9 @@ import { sign, type Handoff } from "@rustybuns/util/token";
 import { hubErase, hubOut } from "./qollab/hub.ts";
 import { partyOf } from "./qollab/party.ts";
 import { send } from "./qollab/qlave.ts";
-import { spaceOf } from "./qollab/space.ts";
+import { SPACES_OF, spaceOf } from "./qollab/space.ts";
 import { vaultFor } from "./vault.ts";
-import { studioErase } from "./studios.ts";
+import { SOLE_OWNED, studioErase } from "./studios.ts";
 import { oauthToken } from "./auth.ts";
 import type { Region } from "@rustybuns/util/privacy";
 import { b64url, digest, sha256, type Env } from "./env.ts";
@@ -70,21 +70,23 @@ export async function exchange(conf: Env, app: string, code: string, verifier: s
 
 const REFRESH_MS = 30 * 86_400_000;
 
-/** A refresh token for a native app (OpenID's offline_access): a month long, one use, kept as its hash. Each use hands out the next. */
-export async function mintRefresh(conf: Env, userId: string, app: string, now = Date.now()) {
+/** A refresh token for a native app (OpenID's offline_access) or a game's page (`web`): a month long, one use, kept as its hash.
+ * Each use hands out the next. Signing out on the eqosys page ends a page's, not a native app's. */
+export async function mintRefresh(conf: Env, userId: string, app: string, now = Date.now(), web = false) {
   const token = "eqr_" + b64url(crypto.getRandomValues(new Uint8Array(32)));
   await conf.DB.batch([
     conf.DB.prepare("DELETE FROM refresh WHERE expires_at < ?").bind(now),
-    conf.DB.prepare("INSERT INTO refresh (hash, user_id, app, expires_at) VALUES (?, ?, ?, ?)").bind(await sha256(token), userId, app, now + REFRESH_MS),
+    conf.DB.prepare("INSERT INTO refresh (hash, user_id, app, expires_at, web) VALUES (?, ?, ?, ?, ?)").bind(await sha256(token), userId, app, now + REFRESH_MS, web ? 1 : 0),
   ]);
   return token;
 }
 
-/** Spend a refresh token: who it was for, now, or null for one that is spent, late, revoked or another app's. */
-export async function spendRefresh(conf: Env, app: string, token: string, now = Date.now()): Promise<Handoff | null> {
-  const row = await conf.DB.prepare("DELETE FROM refresh WHERE hash = ? RETURNING user_id, app, expires_at")
-    .bind(await sha256(token)).first<{ user_id: string; app: string; expires_at: number }>();
-  return row && row.app === app && row.expires_at >= now ? handoff(conf, row.user_id, app) : null;
+/** Spend a refresh token: who it was for, now, and whether a page held it, or null for one that is spent, late, revoked or another app's. */
+export async function spendRefresh(conf: Env, app: string, token: string, now = Date.now()): Promise<{ who: Handoff; web: boolean } | null> {
+  const row = await conf.DB.prepare("DELETE FROM refresh WHERE hash = ? RETURNING user_id, app, expires_at, web")
+    .bind(await sha256(token)).first<{ user_id: string; app: string; expires_at: number; web: number }>();
+  const who = row && row.app === app && row.expires_at >= now ? await handoff(conf, row.user_id, app) : null;
+  return who && { who, web: row!.web === 1 };
 }
 
 /** Every token eqosys signed for `userId` and `app` ("*" for every app) up to now stops working here (`standing`). */
@@ -101,7 +103,7 @@ export async function closeSockets(conf: Env, userId: string, app: string) {
   const q = new URLSearchParams({ id: userId, app });
   const [seats, spaces] = await Promise.all([
     conf.PARTY ? conf.DB.prepare("SELECT code FROM party_seats WHERE user_id = ?").bind(userId).all<{ code: string }>() : null,
-    conf.SPACE ? conf.DB.prepare("SELECT space_id AS id FROM space_members WHERE user_id = ?").bind(userId).all<{ id: string }>() : null,
+    conf.SPACE ? conf.DB.prepare(SPACES_OF).bind(userId).all<{ id: string }>() : null,
   ]);
   await Promise.allSettled([
     ...conf.HUB ? [hubOut(conf.HUB, userId, app)] : [],
@@ -120,11 +122,11 @@ export async function revokeRefresh(conf: Env, token: string, now = Date.now()) 
 
 /**
  * Signing out on the eqosys page: every app's token already handed out stops here, and the sockets they opened close, so no game
- * on this or another device stays signed in for its ten minutes. Native apps' refresh tokens stay (each signs out on its own, /oauth/revoke),
- * and so do the person's eqosys sessions in other browsers.
+ * on this or another device stays signed in for its ten minutes, and game pages' refresh tokens go too. Native apps' refresh tokens
+ * stay (each signs out on its own, /oauth/revoke), and so do the person's eqosys sessions in other browsers.
  */
 export async function signOutApps(conf: Env, userId: string, now = Date.now()) {
-  await cut(conf, userId, "*", now).run();
+  await conf.DB.batch([conf.DB.prepare("DELETE FROM refresh WHERE user_id = ? AND web = 1").bind(userId), cut(conf, userId, "*", now)]);
   await closeSockets(conf, userId, "*");
 }
 
@@ -232,18 +234,18 @@ export async function deleteAccount(conf: Env, userId: string, iss: string) {
   // Every party they sat in forgets them: their sockets close and their ready flag, mute and messages go (and a party they hosted ends).
   const seats = await conf.DB.prepare("SELECT code FROM party_seats WHERE user_id = ?").bind(userId).all<{ code: string }>();
   if (conf.PARTY) for (const s of seats.results) await partyOf(conf.PARTY, s.code).fetch(new Request(`https://party/erase?${new URLSearchParams({ id: userId })}`)).catch(() => null);
-  // Spaces they own are deleted for everyone; in the others their messages go.
-  const owned = (await conf.DB.prepare("SELECT id FROM spaces WHERE owner = ?").bind(userId).all<{ id: string }>()).results.map((r) => r.id);
-  const joined = (await conf.DB.prepare("SELECT space_id AS id FROM space_members WHERE user_id = ?").bind(userId).all<{ id: string }>()).results.map((r) => r.id);
+  // Spaces they own are deleted for everyone (a studio's space only with a studio that goes with them); in the others their messages go.
+  const owned = (await conf.DB.prepare(`SELECT id FROM spaces WHERE (owner = ?1 AND studio_id IS NULL) OR studio_id IN (${SOLE_OWNED})`).bind(userId).all<{ id: string }>()).results.map((r) => r.id);
+  const joined = (await conf.DB.prepare(SPACES_OF).bind(userId).all<{ id: string }>()).results.map((r) => r.id);
   if (conf.SPACE) for (const id of joined) await spaceOf(conf.SPACE, id).fetch(new Request(owned.includes(id) ? `https://space/drop?${new URLSearchParams({ iss })}` : `https://space/erase?${new URLSearchParams({ id: userId, iss })}`)).catch(() => null);
-  // And Qlave drops them from every voice channel (the spaces they owned end theirs on /drop). Three tries, best effort:
-  // a voice room is gone when its last person leaves, so it must not keep an account.
-  if (joined.length) for (let i = 0; i < 3 && await send(conf, iss, { t: "erase", sub: userId }) === "retry"; i++);
+  // And Qlave drops them from every voice room, spaces' and parties' (the spaces they owned end theirs on /drop, the parties
+  // they hosted on /erase). Three tries, best effort: a voice room is gone when its last person leaves, so it must not keep an account.
+  if (joined.length || seats.results.length) for (let i = 0; i < 3 && await send(conf, iss, { t: "erase", sub: userId }) === "retry"; i++);
   await revokeApple(conf, userId);
   const gone = (table: string, col = "user_id") => conf.DB.prepare(`DELETE FROM ${table} WHERE ${col} = ?`).bind(userId);
   await conf.DB.batch([
     ...studioErase(conf, userId),
-    ...owned.map((id) => conf.DB.prepare("DELETE FROM space_members WHERE space_id = ?").bind(id)), gone("spaces", "owner"), gone("space_members"),
+    ...owned.map((id) => conf.DB.prepare("DELETE FROM space_members WHERE space_id = ?").bind(id)), conf.DB.prepare("DELETE FROM spaces WHERE owner = ? AND studio_id IS NULL").bind(userId), gone("space_members"),
     gone("codes"), gone("party_seats"), gone("saves"), gone("unlocks"), gone("refresh"), gone("reports"), gone("access"), gone("links"), gone("members"), gone("token_cuts"),
     gone('"session"', '"userId"'), gone('"account"', '"userId"'),
     conf.DB.prepare(`DELETE FROM "verification" WHERE identifier = ?`).bind(u.email),

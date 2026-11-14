@@ -2,7 +2,7 @@
 // from her own page, and both sides' hubs agree; then a request withdrawn, a decline, and notifications cleared.
 import { expect, setDefaultTimeout, test } from "bun:test";
 import { durableObject } from "@rustybuns/shell-bun";
-import { atHome } from "../src/handle.ts";
+import { atHome, invitedBy } from "../src/handle.ts";
 import { countsOf } from "../src/achievements.ts";
 import { Hub, hubAsk, LOOKUPS_PER_HOUR } from "../src/qollab/hub.ts";
 import { newKey } from "@rustybuns/util/token";
@@ -121,4 +121,52 @@ test("asking by email is twenty an hour, so nobody walks a list of addresses for
   for (let i = 0; i < LOOKUPS_PER_HOUR; i++) await call("/do/befriend", { form: { email: `nobody${i}@example.com` }, cookie: gus.cookie });
   expect((await call("/do/befriend", { form: { email: "one-more@example.com" }, cookie: gus.cookie })).to).toBe("/?tab=friends&e=full");
   expect(await hubAsk(conf.HUB!, atHome(gus.me), { op: "befriend", email: "and-again@example.com" })).toMatchObject({ error: expect.stringContaining("this hour") });
+});
+
+test("a friend link: someone with no account opens it, makes one, says yes, and they are friends; a new link retires the old one", async () => {
+  const hal = await signUp("Hal", "park-hide-seek", PARK);
+  const link = (await page(hal)).link!;
+  const hubOf = async (email: string, name: string) => {
+    const id = (await conf.DB.prepare('SELECT id FROM "user" WHERE email = ?').bind(email).first<string>("id"))!;
+    return page({ cookie: "", token: "", me: { id, email, name } });
+  };
+
+  // Ivy has no account. The link is kept while she makes one, and then she is shown who it is from.
+  const opened = await call(`/add/${link}`);
+  expect(opened.to).toBe("/?tab=friends");
+  const up = await call("/do/signup", { form: { name: "Ivy", email: "ivy@example.com", password: PASSWORD }, cookie: opened.cookie });
+  const ivy = `${up.cookie}; ${opened.cookie}`;
+  expect((await call("/", { cookie: ivy })).to).toBe("/?tab=friends");
+  // Opening the link made nobody a friend: that takes her own yes.
+  expect((await page(hal)).friends).toEqual([]);
+  expect((await call("/do/add", { form: {}, cookie: ivy, origin: "https://evil.example" })).res.status).toBe(403);
+  expect((await call("/do/add", { form: {}, cookie: ivy })).to).toBe("/?tab=friends");
+  expect((await page(hal)).friends.map((f) => f.name)).toEqual(["Ivy"]);
+  expect((await page(hal)).notes[0]).toMatchObject({ kind: "accept", from: { name: "Ivy" } });
+  expect((await hubOf("ivy@example.com", "Ivy")).friends.map((f) => f.name)).toEqual(["Hal"]);
+
+  // Hal makes a new link: the old one makes no more friends, the new one does, and "No thanks" forgets a link.
+  await call("/do/relink", { form: {}, cookie: hal.cookie });
+  const fresh = (await page(hal)).link!;
+  expect(fresh).not.toBe(link);
+  const jo = await signUp("Jo", "qcrm", QCRM);
+  const stale = `${jo.cookie}; ${(await call(`/add/${link}`, { cookie: jo.cookie })).cookie}`;
+  expect((await call("/do/add", { form: {}, cookie: stale })).to).toBe("/?tab=friends&e=nolink");
+  const good = `${jo.cookie}; ${(await call(`/add/${fresh}`, { cookie: jo.cookie })).cookie}`;
+  await call("/do/add", { form: { no: "1" }, cookie: good });
+  expect((await page(hal)).friends.map((f) => f.name)).toEqual(["Ivy"]);
+  await call("/do/add", { form: {}, cookie: good });
+  expect((await page(hal)).friends.map((f) => f.name).sort()).toEqual(["Ivy", "Jo"]);
+
+  // A link a game copied names it: the Friends tab names the game, and Be friends goes on to its front door.
+  const kim = await signUp("Kim", "qcrm", QCRM);
+  const fromGame = `${kim.cookie}; ${(await call(`/add/${fresh}?app=park-hide-seek`, { cookie: kim.cookie })).cookie}`;
+  expect(await invitedBy(new Request("https://x/", { headers: { cookie: fromGame } }), conf)).toMatchObject({ name: "Hal", game: "Park Hide Seek" });
+  expect((await call("/do/add", { form: {}, cookie: fromGame })).to).toBe(PARK);
+  expect((await page(hal)).friends.map((f) => f.name).sort()).toEqual(["Ivy", "Jo", "Kim"]);
+  // An app eqosys doesn't know is left behind: the link still makes friends, and stays on the Friends tab.
+  const lee = await signUp("Lee", "qcrm", QCRM);
+  const unknown = `${lee.cookie}; ${(await call(`/add/${fresh}?app=nowhere`, { cookie: lee.cookie })).cookie}`;
+  expect((await call("/do/add", { form: {}, cookie: unknown })).to).toBe("/?tab=friends");
+  expect((await page(hal)).friends).toHaveLength(4);
 });

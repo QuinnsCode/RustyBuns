@@ -2,7 +2,8 @@ import { describe, expect, test } from "bun:test";
 import { local as boot } from "./app-kit.ts";
 import { existsSync, mkdtempSync, readFileSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { main, run } from "../cli.ts";
+import { PassThrough } from "node:stream";
+import { askLine, main, run } from "../cli.ts";
 import { agentPrompt, agentPromptResponse } from "../src/agent-prompt.ts";
 import { tools } from "../src/mcp.ts";
 
@@ -93,6 +94,17 @@ describe("bun cli.ts", () => {
     // With no terminal to ask (the install script), it keeps the site and any token it had.
     expect((await run(["login", "--url", "http://site"], env, async () => undefined)).code).toBe(0);
     expect(JSON.parse(readFileSync(file, "utf8")).token).toBe(token);
+  });
+
+  test("login asks for the token without echoing it", async () => {
+    const input = Object.assign(new PassThrough(), { isTTY: true }), output = new PassThrough();
+    let shown = "";
+    output.on("data", (b) => { shown += b; });
+    const asked = askLine("paste it here: ", input, output);
+    input.write("cst_secret123\r");
+    expect(await asked).toBe("cst_secret123");
+    expect(shown).toContain("paste it here: ");
+    expect(shown).not.toContain("cst_");
   });
 
   // The owner copied the masked box instead of pressing its copy button, and login saved cst_•••• (#729).

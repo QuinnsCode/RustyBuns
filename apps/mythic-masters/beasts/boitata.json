@@ -361,5 +361,6 @@
       ],
       "material": "core"
     }
-  ]
+  ],
+  "hide": {"pattern": "scales", "size": 0.04, "colours": [[1, 0.86, 0.3], [0.95, 0.42, 0.04]], "map": 512}
 }

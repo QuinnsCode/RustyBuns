@@ -53,11 +53,20 @@ export function floorGuardHooks(js: string) {
   return "import * as __rbGuard from '../rb-floorguard.js';\nimport { commandOf as __rbCommandOf } from '../rb-askfirst.js';\nimport { describeWork as __rbDescribeWork } from '../worktrees.js';\n" + js;
 }
 
-/** server/ws/handlers/workers.js: a person's send-home click lands in the same local log as an agent's request (#2201). */
+/** server/ws/handlers/workers.js: a person's send-home click lands in the same local log as an agent's request (#2201), and a key from a terminal that lost its attach attaches it again (#4315). */
 export function floorGuardClicks(js: string) {
   const rel = "ws/handlers/workers.js";
   js = once(js, rel, "        void done.then(({ note, error }) => {\n",
     "        void done.then(({ note, error }) => {\n            __rbGuard.logHome(who, [info.name], msg.cleanup, 'allowed', error || note);\n");
+  // #4315: upstream drops a key from a connection that isn't attached to that terminal, without a word, so the terminal
+  // still shows the worker but nothing typed reaches it. Attach it again (what opening the terminal sends), then type;
+  // if that can't attach either, say so to the typist, once every few seconds rather than once a key.
+  js = once(js, rel, "        if (c.attached.has(msg.workerId))\n            ctx.workerFloor(msg.workerId)?.workers.write(",
+    "        if (!c.attached.has(msg.workerId))\n            workerHandlers['worker.attach'](ctx, c, msg);\n" +
+    "        if (!c.attached.has(msg.workerId)) {\n            if (Date.now() - (c.__rbDropped ?? 0) > 5000)\n" +
+    "                ctx.sendTo(c, { t: 'toast', text: \"What you typed didn't reach that terminal: the office can't find its worker. Close the terminal and open it again.\", level: 'warn' });\n" +
+    "            c.__rbDropped = Date.now();\n        }\n" +
+    "        else\n            ctx.workerFloor(msg.workerId)?.workers.write(");
   return "import * as __rbGuard from '../../rb-floorguard.js';\n" + js;
 }
 

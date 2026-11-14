@@ -63,6 +63,9 @@ export const RUNS: Record<number, Run> = {
   2718: { app: "twoFrontsOnline", links: [{ label: "Online war (copy the invite into the phone window)", path: "/?war=short&vs=online" }, { label: "Phone seat", path: "/", phone: true }] },
   2858: { app: "mythic-masters", links: [0, 1, 2].map((n) => ({ label: `Gallery ${n}`, path: `/?gallery=${n}` })) },
   2888: { app: "mythic-masters", links: [2, 3].map((n) => ({ label: `Gallery ${n}`, path: `/?gallery=${n}` })) },
+  4414: { app: "mythic-masters", links: [{ label: "Team fight (practice: you, a teammate, a wild one)", path: "/?a=hodag&with=jackalope&b=mothman&skin=stadium" }, { label: "Team fight on the phone", path: "/?a=hodag&with=jackalope&b=mothman&skin=stadium", phone: true }, { label: "Two a side, watched", path: "/?a=hodag&with=jackalope&b=mothman&and=squonk&skin=stadium&watch=1" }] },
+  4318: { app: "mythic-masters", links: [{ label: "office.4", path: "/?faction=office.4" }, { label: "institute.4", path: "/?faction=institute.4" }, { label: "lamplighters.4", path: "/?faction=lamplighters.4" }, { label: "office.8", path: "/?faction=office.8" }, { label: "institute.8", path: "/?faction=institute.8" }, { label: "lamplighters.8", path: "/?faction=lamplighters.8" }] },
+  4309: { app: "mythic-masters", links: [{ label: "The Office, Form 9-C", path: "/?faction=office.1" }, { label: "The Institute, Baseline", path: "/?faction=institute.1" }, { label: "The Lamplighters, First Lamp", path: "/?faction=lamplighters.1" }] },
   4196: { app: "mythic-masters", links: [{ label: "Tatzelwurm (gallery 2)", path: "/?gallery=2" }, { label: "Hodag (gallery 0)", path: "/?gallery=0" }, { label: "Tatzelwurm vs Hodag", path: clash("tatzelwurm", "hodag", "stadium") }] },
   2722: { app: "mythic-masters", links: [{ label: "Touch", path: clash("volthune", "scoro", "stadium"), phone: true }, { label: "Gamepad", path: clash("volthune", "scoro", "stadium") }] },
   2964: { app: "mythic-masters", links: [{ label: "Gamepad orbit", path: clash("jersey-devil", "sphinx", "stadium") }] },
@@ -77,6 +80,7 @@ export const RUNS: Record<number, Run> = {
   2676: { app: "atLens", links: [{ label: "Sign in to write", path: "/" }] },
   2568: { app: "office", links: [...office(2568), { label: "Phone", path: "/?scenario=box-first-run", phone: true }] },
   2636: { app: "fmDaw", links: [{ label: "Wobble Lab, Wobble track", path: "/?song=wobble-lab&track=6" }] },
+  4554: { app: "fmDaw", links: [{ label: "Q Amp, live (speakers down, then Plug in)", path: "/amp.html" }] },
   2666: { app: "atLens", links: [{ label: "Phone", path: "/?q=bsky.app&c=app.bsky.feed.post", phone: true }, { label: "Desktop", path: "/?q=bsky.app&c=app.bsky.feed.post" }] },
 };
 

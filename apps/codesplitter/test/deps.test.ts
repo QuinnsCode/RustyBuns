@@ -151,6 +151,20 @@ test("the health page: each package against latest, how far behind, a score, and
   expect((await call("bob", "/api/repos/ryan/lab/deps/health")).status).toBe(403);
 });
 
+test("the health page asks a package's own registry, from the repo's .npmrc: a private package's name never goes to npm or OSV", async () => {
+  const osv: string[] = [];
+  const { send, call } = await app(undefined, undefined, `{\n  "name": "lab",\n  "dependencies": { "@acme/secret": "^1.0.0", "mitt": "^3.0.0" }\n}`,
+    { advisories: (async (asks: { name: string }[]) => { osv.push(...asks.map((a) => a.name)); return new Map(); }) as Advisories });
+  await send("ryan", "/api/repos/ryan/lab/files", { path: ".npmrc", content: "@acme:registry=https://npm.acme.example/" });
+  delete call.env.DEPS_REGISTRY;
+  const asked: string[] = [], real = globalThis.fetch;
+  globalThis.fetch = (async (u: string | URL | Request) => { asked.push(String(u instanceof Request ? u.url : u)); return new Response("{}", { status: 404 }); }) as typeof fetch;
+  try { expect((await call("ryan", "/api/repos/ryan/lab/deps/health")).status).toBe(200); } finally { globalThis.fetch = real; }
+  expect(asked.filter((u) => u.includes("acme"))).toEqual(["https://npm.acme.example/@acme%2fsecret"]);
+  expect(asked).toContain("https://registry.npmjs.org/mitt");
+  expect(osv).toEqual(["mitt"]);
+});
+
 test("whatsNew: only advisories and branch fixes the owner wasn't told about", () => {
   const report = (exposed: string[], fixes: string[], status: Update["status"] = "untested"): Report => ({
     at: 0, checked: 2, branch: fixes.length ? "deps-x" : undefined,

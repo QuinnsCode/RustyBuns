@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40" preserveAspectRatio="none" width="40" height="40">
+  <!-- The scope locked on a pick: four orange corner brackets with a range tick top and bottom. Stretched over the chip. -->
+  <g fill="none" stroke="#e8590c" stroke-width="2.6" stroke-linecap="square" vector-effect="non-scaling-stroke">
+    <path d="M1 9V1h8M31 1h8v8M39 31v8h-8M9 39H1v-8" vector-effect="non-scaling-stroke"/>
+  </g>
+</svg>

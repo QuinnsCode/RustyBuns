@@ -84,6 +84,21 @@ export function headAndTail(rig: RigResult, sheet: BeastRig, id?: string): { hea
   return { head, tail };
 }
 
+/** How upright the body stands, 0 (hips half its height up, a four-legged beast) to 1 (hips high, a biped): the rig
+ * root's height over the body's. A body whose head stands over its hips (a winged biped) is measured to its head, not
+ * to wing tips towering over it; wings folded over a back that runs forward (a sphinx's) still count. */
+export function uprightOf(rig: Pick<RigResult, "joints">, sheet: Pick<BeastRig, "tips" | "feet" | "wings" | "height">): number {
+  const J = rig.joints, y = (t: number) => J[t * 3 + 1]!;
+  const body = sheet.tips.filter((t) => !sheet.feet.includes(t) && !sheet.wings.includes(t));
+  let height = sheet.height;
+  if (body.length && sheet.wings.length) {
+    const head = body.reduce((a, b) => (y(b) > y(a) ? b : a));
+    const top = Math.max(...sheet.tips.map(y));
+    if (Math.abs(J[head * 3]! - J[0]!) < y(head) - J[1]! && y(head) < top) height *= y(head) / top;
+  }
+  return clamp01((J[1]! / height - 0.45) / 0.25);
+}
+
 /** Where an attack is in its pose, 0 to 1 each: `wind` is the coil, pulled back by 40% of the wind-up and held there
  * (the body pulls the other way, long enough to read and answer), `k` the strike that snaps out over the last 25%,
  * holds while the move is live, and eases off through the recovery. */
@@ -207,12 +222,13 @@ export function reloadBeast(id: string): Promise<Beast | null> {
  * sky fill in shadow against the warm sun, a view-dependent rim, and a value gradient dark at the feet to
  * bright at the head. `top` is the model's height, shared by every material of one beast.
  */
-const SHADE_KEY = "beast-shade-v1";
+const SHADE_KEY = "beast-shade-v2";
 function stylize(m: THREE.MeshStandardMaterial, top: { value: number }, name: string, fx: FieldLook | null = null, amt: { value: number } = { value: 1 }, surface: Surface = "hide") {
   // a hide baked into a map (beast.py `hide`) already draws its grain; the shader's own on top washed it out
   const kind = m.map ? null : surfaceFor(name, surface), hd = kind ? hideDetail(kind) : null;
   const hard = /horn|claw|spike|tooth|teeth|beak|talon|tusk|fang|bone/.test(name);
   if (hard) m.roughness = Math.min(m.roughness, 0.32);
+  else if (m.roughnessMap) m.roughness = 1; // a baked hide's roughness map says where it shines (wet skin, a scale's crown)
   else m.roughness = Math.max(0.78, Math.min(m.roughness, 0.9)); // hide, fur and scale take light softly: no vinyl sheen
   m.onBeforeCompile = (sh) => {
     sh.uniforms.uTop = top;
@@ -227,6 +243,12 @@ function stylize(m: THREE.MeshStandardMaterial, top: { value: number }, name: st
     sh.fragmentShader = "varying float vBeastY;\n" + sh.fragmentShader
       .replace("#include <lights_physical_pars_fragment>", pars)
       .replace("#include <lights_fragment_end>", `#include <lights_fragment_end>
+        // How much edge light this surface takes (the rim below and a field look's sheen, effects.ts), 0 to 1. A slick
+        // hide (low roughness, from its map) already shines at the edge through its own specular, so the rim backs off
+        // rather than stacking on it. And a pale hide has no dark to set a light edge against: a full rim on it glazed the
+        // whole silhouette into glass (#4265).
+        float beastLum = dot( diffuseColor.rgb, vec3( 0.3, 0.59, 0.11 ) );
+        float beastRim = mix( 0.35, 1.0, smoothstep( 0.35, 0.8, roughnessFactor ) ) * ( 1.0 - 0.6 * smoothstep( 0.15, 0.6, beastLum ) );
         {
           vec3 wN = inverseTransformDirection( normal, viewMatrix );
           float sky = wN.y * 0.5 + 0.5;
@@ -234,7 +256,7 @@ function stylize(m: THREE.MeshStandardMaterial, top: { value: number }, name: st
           reflectedLight.directDiffuse *= vec3( 1.04, 1.0, 0.94 ) * grad;
           reflectedLight.indirectDiffuse = reflectedLight.indirectDiffuse * grad + diffuseColor.rgb * mix( vec3( 0.07, 0.07, 0.12 ), vec3( 0.14, 0.15, 0.2 ), sky );
           float rim = 1.0 - saturate( dot( normalize( normal ), normalize( vViewPosition ) ) ); rim = rim * rim * rim;
-          reflectedLight.indirectSpecular += mix( vec3( 0.5, 0.55, 0.7 ), vec3( 1.0, 0.95, 0.85 ), sky ) * rim * ( 0.2 + 0.45 * sky ) * ( 1.0 - dot( diffuseColor.rgb, vec3( 0.3, 0.59, 0.11 ) ) ) * ( 1.0 - 0.5 * metalnessFactor );
+          reflectedLight.indirectSpecular += mix( vec3( 0.5, 0.55, 0.7 ), vec3( 1.0, 0.95, 0.85 ), sky ) * rim * ( 0.2 + 0.45 * sky ) * ( 1.0 - beastLum ) * beastRim * ( 1.0 - 0.5 * metalnessFactor );
         }
         ${fx?.frag ?? ""}`);
     if (hd) sh.fragmentShader = hd.pars + sh.fragmentShader.replace("#include <normal_fragment_maps>", "#include <normal_fragment_maps>\n" + hd.frag);
@@ -412,7 +434,7 @@ export class Puppet {
     const isFoot = new Set(sheet.feet);
     for (const t of this.ik.tips) if (!isFoot.has(t)) this.ik.setPinned(t, false);
     this.rest = new THREE.Vector3(...this.ik.worldPosition(0));
-    this.upright = clamp01((this.rest.y / sheet.height - 0.45) / 0.25);
+    this.upright = uprightOf(rig, sheet);
     // the skin hangs in `inner` (the model's own space, scaled to the body), which leans inside `pivot` about the hips
     const s = this.scale;
     inner.scale.setScalar(s);

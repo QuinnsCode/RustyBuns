@@ -1,10 +1,12 @@
 // Ester, Mervin and Dexter (who reads the session transcripts for where the tokens went), the office's helpers, as three badges in a corner of the page. Click one to call on it: Ester
 // (a skeleton, naturally) runs the board check and sorts what fails by who owns it, Mervin lists the open PRs and how
-// they merge. Her `hold` list shows on his card, since what she says to hold back is what he must not merge.
+// they merge. Her `hold` list shows on his card, since what she says to hold back is what he must not merge. Her card
+// opens with the release rings' lines (`bun run rings`): which commit each ring is on, its last red, the PRs waiting.
 // The runs are the office's (ester/run.ts, /__rb/helpers); this polls them while one is going.
 import { Skull, GitMerge, Scissors, createElement, type IconNode } from "lucide";
 import { hot } from "../reload/hot.ts";
 import { helperState } from "../screens/read.ts";
+import { HelpersReply } from "./state.ts";
 import type { EsterState } from "./run.ts";
 import { el } from "@rustybuns/util/dom";
 import { check } from "@rustybuns/util/guard";
@@ -59,6 +61,7 @@ function start(m: { box: HTMLElement; row: HTMLElement }) {
   const states: Record<Name, EsterState> = { ester: IDLE, mervin: IDLE, dexter: IDLE };
   let open: Name | undefined, card: HTMLElement | undefined, timer: ReturnType<typeof setTimeout> | undefined;
   let code: NonNullable<ContextReply["code"]> = []; // the latest code-mode programs Dexter saw (a line each on his card, and an rb:code-mode event on window)
+  let rings: string[] = []; // the release rings, a line each (scripts/rings.ts), on Ester's card
   let over: ContextReply["over"] = [], live: string[] = []; // Dexter's watch on live sessions: what each carries and has used, and which should hand off (a dot on his badge, the lines on his card)
   const badges = {} as Record<Name, HTMLButtonElement>;
 
@@ -76,7 +79,7 @@ function start(m: { box: HTMLElement; row: HTMLElement }) {
     card = el("div", { className: "rb-helper-card" },
       el("div", { className: "rb-helper-head" }, el("span", {}, `${who.label}: ${s.phase === "idle" ? who.ask : s.phase}`), el("span", { className: "rb-helper-clock" }, s.startedAt ? clock(s) : "")),
       el("div", { className: "rb-helper-job" }, who.job),
-      el("div", { className: "rb-helper-log" }, held + (open === "dexter" && live.length ? [...live, ...over.map((a) => a.message), ...code.map((e) => e.message)].join("\n") + "\n" : "") + (s.error ? s.error + "\n" : "") + s.lines.slice(-40).join("\n")),
+      el("div", { className: "rb-helper-log" }, held + (open === "ester" && rings.length ? rings.join("\n") + "\n\n" : "") + (open === "dexter" && live.length ? [...live, ...over.map((a) => a.message), ...code.map((e) => e.message)].join("\n") + "\n" : "") + (s.error ? s.error + "\n" : "") + s.lines.slice(-40).join("\n")),
       go);
     m.box.prepend(card);
   };
@@ -90,8 +93,8 @@ function start(m: { box: HTMLElement; row: HTMLElement }) {
       if (res.redirected || res.status === 401 || res.status === 404) return;
       if (res.ok) {
         // the reply also carries Mervin's tally (null until one is kept): only the three helpers are states
-        const body: Record<string, unknown> = await res.json();
-        for (const n of Object.keys(WHO) as Name[]) if (n in body) states[n] = helperState(body[n]);
+        const body = check(HelpersReply, await res.json().catch(() => null));
+        if (body) { for (const n of Object.keys(WHO) as Name[]) states[n] = body[n]; rings = body.rings; }
       }
       const ctx = await fetch("/__rb/context", { credentials: "same-origin" }).then(async (c) => (c.ok ? check(ContextReply, await c.json()) : null), () => null);
       if (ctx) {

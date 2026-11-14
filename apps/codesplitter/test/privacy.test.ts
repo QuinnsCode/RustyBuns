@@ -106,6 +106,9 @@ describe("deleting with accounts on (#513)", () => {
     const { call } = await app();
     await call("ryan", "/api/me?confirm=ryan", { method: "DELETE" });
     for (const name of ["ryan", "ghost"]) expect((await call(null, "/api/login", { method: "POST", body: JSON.stringify({ name }) })).status).toBe(409);
+    // A cookie set by hand to the old handle is no one: it can't make a repo, and /api/me has nobody to show.
+    expect((await call("ryan", "/api/repos", { method: "POST", body: JSON.stringify({ name: "back" }) })).status).toBe(401);
+    expect(await call.env.DB.prepare("SELECT 1 FROM repos WHERE owner = 'ryan'").first()).toBeNull();
     expect((await call(null, "/api/login", { method: "POST", body: JSON.stringify({ name: "ryan2" }) })).status).toBe(200);
   });
 

@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { BOARD, DEXTER, createHelpers, holdFrom, repoWith, type Spawn } from "../ester/run.ts";
+import { BOARD, DEXTER, createHelpers, holdFrom, repoWith, ringsOf, type Spawn } from "../ester/run.ts";
 import { officeTriage } from "../triage/server.ts";
 
 const repo = () => {
@@ -108,4 +108,21 @@ test("a stale node_modules that lacks a package is installed once and the helper
   await settle();
   expect(seen.map((s) => s[0]!.replace(/.*\//, ""))).toEqual(["mervin-board.ts", "install", "mervin-board.ts"]);
   expect(mervin.state().phase).toBe("green");
+});
+
+test("the rings' lines: one run however many pages ask, the last good run's lines kept, none without the script", async () => {
+  let finish!: (code: number) => void, runs = 0;
+  const say: string[] = ["hourly  4c1e9a0  1h old  no red  2 waiting"];
+  const rings = ringsOf((_cmd, _cwd, onLine) => (runs++, say.forEach(onLine), new Promise((r) => (finish = r))), "bun", 0);
+  expect(rings(null)).toEqual([]);
+  expect(rings("/r")).toEqual([]);
+  expect(rings("/r")).toEqual([]); // still going: no second run
+  finish(0);
+  await settle();
+  expect(rings("/r")).toEqual(say);
+  say[0] = "gh: not logged in";
+  finish(1);
+  await settle();
+  expect(rings("/r")).toEqual(["hourly  4c1e9a0  1h old  no red  2 waiting"]);
+  expect(runs).toBe(3);
 });

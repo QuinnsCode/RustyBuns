@@ -22,12 +22,14 @@ export const SKIN = {
   },
   css: `.eq-form,.rb-lobby,.rb-spaces{backdrop-filter:blur(10px)}.eq-chip:empty{display:none}
 .eq-title,.eq-toast b,.eq-who,.eq-btn{font-family:var(--title);font-weight:400;letter-spacing:.08em;text-transform:uppercase}.eq-title,.eq-toast b{font-size:1.4rem}
-.eq-toast{border-radius:3px;font-family:var(--type);transform:rotate(-1.2deg)}.eq-toast small{color:var(--stamp)}.eq-toast svg{color:var(--stamp)}`,
+.eq-toast{border-radius:3px;font-family:var(--type);transform:rotate(-1.2deg)}.eq-toast small{color:var(--stamp)}.eq-toast svg{color:var(--stamp)}
+.eq-coach{top:auto;bottom:112px;border-radius:3px;font-family:var(--type)}.eq-coach small{color:var(--stamp)}.eq-coach-dots i.on{background:var(--stamp)}.eq-coach-dots i{background:rgba(0,0,0,.18)}.eq-coach-dots i.now{background:var(--manila-ink)}
+@media (max-width:720px){.eq-coach{bottom:136px}}`,
 };
 
 export type { Login } from "@rustybuns/util/eqosys";
 const account = eqosys({ app: APP, url: EQOSYS, from: SIGN_IN_FROM, prefix: "splat-spray", skin: SKIN });
-export const { signIn, finishSignIn, login, fresh, signOut, who, canSignIn, accountChip, reportButton, achieve } = account;
+export const { signIn, signInHere, finishSignIn, login, fresh, signOut, who, canSignIn, accountChip, reportButton, achieve, achievements, hub } = account;
 
 let partyClient: ReturnType<typeof account.party> | undefined;
 /** The page's one party client: eqosys seats a player once per party, so the lobby keeps one socket. */

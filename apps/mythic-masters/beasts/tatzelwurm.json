@@ -640,7 +640,8 @@
       ],
       "flat": 0.22,
       "mirror": true,
-      "material": "frill"
+      "material": "frill",
+      "web": "frill"
     },
     {
       "kind": "horn",
@@ -665,7 +666,8 @@
       ],
       "flat": 0.22,
       "mirror": true,
-      "material": "frill"
+      "material": "frill",
+      "web": "frill"
     },
     {
       "kind": "horn",
@@ -690,7 +692,8 @@
       ],
       "flat": 0.22,
       "mirror": true,
-      "material": "frill"
+      "material": "frill",
+      "web": "frill"
     },
     {
       "kind": "horn",
@@ -715,7 +718,8 @@
       ],
       "flat": 0.22,
       "mirror": true,
-      "material": "frill"
+      "material": "frill",
+      "web": "frill"
     },
     {
       "kind": "horn",
@@ -740,7 +744,8 @@
       ],
       "flat": 0.22,
       "mirror": true,
-      "material": "frill"
+      "material": "frill",
+      "web": "frill"
     },
     {
       "kind": "horn",
@@ -1895,6 +1900,6 @@
       ],
       "cover": 0.5
     },
-    "map": 1024
+    "map": 512
   }
 }

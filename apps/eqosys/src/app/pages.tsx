@@ -1,7 +1,7 @@
 import { createElement } from "react";
 import { APPS, GENRES, ourApp, playOf, type QApp } from "../apps.ts";
 import { isListing } from "../listings.ts";
-import type { Me } from "../auth.ts";
+import type { Me, Way } from "../auth.ts";
 import { NAME, VERSION } from "../env.ts";
 import type { Friend, HubState, Note } from "../qollab/hub.ts";
 import type { Side } from "../qollab/side.ts";
@@ -9,7 +9,7 @@ import type { Member } from "../members.ts";
 import { Glass, btn, greeting } from "./Glass.tsx";
 import { Art } from "./Art.tsx";
 import { Badge } from "./Badge.tsx";
-import { ACHIEVEMENTS, shownFor, TOTAL, type Achievement } from "../achievements.ts";
+import { ACHIEVEMENTS, catalogOf, shownFor, TOTAL, type Achievement } from "../achievements.ts";
 import { cardOf } from "../cards.ts";
 import { HOLDERS } from "../privacy.ts";
 import type { Visitors as Counts } from "../visitors.ts";
@@ -36,11 +36,17 @@ export const MESSAGES: Record<string, string> = {
   hub: "That didn't go through. Try again.",
   confirm: "That isn't your email. Nothing was deleted.",
   nohub: "Friends are off right now.",
+  link: "That sign-in couldn't be added. It may already belong to another account.",
+  last: "That is your only way to sign in, so it stays.",
+  nolink: "That friend link is no longer good. Ask them for a new one.",
   nobody: "Nobody has signed up with that email yet.",
-  studio: "Only a studio's owner or admin adds people, and only an owner makes another owner.",
+  studio: "Only a studio's owner or admin adds or takes out people, only an owner makes or takes out another owner, and a studio keeps one owner.",
   owned: "You own three studios already.",
   name: "A studio's name is 1 to 60 characters.",
   making: "That game is still being made: only its studio can sign in to it until it is listed.",
+  game: "Check the game: an id like rocket-golf, a name, a genre, and at least one https origin with nothing after it.",
+  gamestep: "That id is taken, or the game can't take that step now.",
+  gameowner: "Only a studio's owner or admin changes its games.",
 };
 
 const nameOf = (id: string) => cardOf(id, ourApp(id)?.name ?? id).name;
@@ -60,7 +66,7 @@ function AppsTable({ m }: { m: Member }) {
 const when = (t: number) => new Date(t).toISOString().slice(0, 16).replace("T", " ");
 
 /** One button that posts an op on the person's own hub (handle.ts). */
-const Act = ({ to, id, label, ghost }: { to: "accept" | "drop" | "clear"; id?: string; label: string; ghost?: boolean }) => (
+const Act = ({ to, id, label, ghost }: { to: "accept" | "drop" | "clear" | "relink"; id?: string; label: string; ghost?: boolean }) => (
   <form method="post" action={`/do/${to}`}>
     {id && <input type="hidden" name="id" value={id} />}
     <button className={btn(!ghost)} type="submit">{label}</button>
@@ -77,18 +83,62 @@ const NoteLine = ({ n }: { n: Note }) => {
   return <span><b>{n.from.name}</b> in {nameOf(n.app ?? "")}: {n.link ? <a href={n.link}>{n.text}</a> : n.text}</span>;
 };
 
+const WAY_NAMES: Record<string, string> = { credential: "Email and password", github: "GitHub", google: "Google", apple: "Apple" };
+/** Ways to sign in: each one on the account (taken off unless it is the last), and a button for each provider not on it yet. */
+function Ways({ ways, social }: { ways: Way[]; social: string[] }) {
+  const more = social.filter((p) => !ways.some((w) => w.provider === p));
+  return (
+    <>
+      <h2>Ways to sign in</h2>
+      <p className="mut">Each one opens this same account: your games, friends, saves and achievements. Add the ones you use on your other devices.</p>
+      <div className="card list">
+        {ways.map((w) => (
+          <div key={w.id}><b>{WAY_NAMES[w.provider] ?? w.provider}</b><span className="grow mut">on your account</span>
+            {ways.length > 1 && <form method="post" action="/do/unlink"><input type="hidden" name="id" value={w.id} /><button className={btn()} type="submit">Take off</button></form>}</div>
+        ))}
+        {more.map((p) => (
+          <div key={p}><b>{WAY_NAMES[p] ?? p}</b><span className="grow mut">not added</span>
+            <form method="post" action="/do/link"><input type="hidden" name="provider" value={p} /><button className={btn(true)} type="submit">Add {WAY_NAMES[p] ?? p}</button></form></div>
+        ))}
+      </div>
+    </>
+  );
+}
+
 /** Friends, who is asking whom, and what friends' apps said: the person's hub (hub.ts), read on the way in. */
-function Friends({ hub, counts }: { hub: HubState; counts: Map<string, number> }) {
+function Friends({ hub, counts, invite, origin }: { hub: HubState; counts: Map<string, number>; invite?: { id: string; name: string; game?: string | null } | null; origin: string }) {
   const nobody = hub.friends.length + hub.incoming.length + hub.outgoing.length === 0;
+  // The friend link this browser opened (handle.ts /add), unless it is their own or a friend's already.
+  const from = invite && invite.id !== hub.me?.id && !hub.friends.some((f) => f.id === invite.id) ? invite : null;
   return (
     <>
       <h2>Friends</h2>
+      {from && (
+        <div className="row card invite">
+          <span className="grow"><b>{from.name}</b> sent you their friend link{from.game ? <> from {from.game}. Either answer takes you on to it.</> : "."}</span>
+          <form method="post" action="/do/add"><button className={btn(true)} type="submit">Be friends with {from.name}</button></form>
+          <form method="post" action="/do/add"><input type="hidden" name="no" value="1" /><button className={btn()} type="submit">No thanks</button></form>
+        </div>
+      )}
+      {!from && invite?.game && (
+        <div className="row card invite">
+          <span className="grow">That friend link is {invite.id === hub.me?.id ? "your own" : <>from <b>{invite.name}</b>, a friend already</>}.</span>
+          <form method="post" action="/do/add"><input type="hidden" name="no" value="1" /><button className={btn(true)} type="submit">On to {invite.game}</button></form>
+        </div>
+      )}
+      {hub.link && (
+        <div className="row card">
+          <label className="grow link"><span className="mut">Your friend link: send it to anyone. They open it, sign in or make an account, and you're friends.</span>
+            <input readOnly value={`${origin}/add/${hub.link}`} aria-label="Your friend link" /></label>
+          <Act to="relink" label="New link" ghost />
+        </div>
+      )}
       <form className="row card" method="post" action="/do/befriend">
-        <input name="email" type="email" placeholder="a friend's email" required />
+        <input name="email" type="email" placeholder="or a friend's email" required />
         <button className={btn(true)} type="submit">Ask to be friends</button>
       </form>
       <div className="card list">
-        {nobody && <div><span className="mut">Nobody yet. Ask someone by their email.</span></div>}
+        {nobody && <div><span className="mut">Nobody yet. Send someone your friend link.</span></div>}
         {hub.incoming.map((p) => (
           <div key={p.id}><b>{p.name}</b><span className="grow mut">wants to be friends</span><Act to="accept" id={p.id} label="Accept" /><Act to="drop" id={p.id} label="No thanks" ghost /></div>
         ))}
@@ -116,12 +166,15 @@ function Friends({ hub, counts }: { hub: HubState; counts: Map<string, number> }
 // allows: the menu on the left, then your games (one big, the ones you played last, a shelf of screenshot tiles a genre), then
 // which friends are on. Its words come from cards.json (cards.ts); the pictures are the apps' screenshots (public/cards).
 const HOME_CSS = `
-.home{width:min(100%,110rem);margin:0 auto;display:grid;grid-template-columns:minmax(0,1fr);gap:1rem;align-items:start}
+.home{width:min(100%,110rem);margin:0 auto;display:grid;grid-template-columns:minmax(0,1fr);gap:1rem;align-items:start;
+ --tile:color-mix(in oklab,rgba(255,255,255,.9) var(--flipp),rgba(16,20,34,.88))}
+.home a,.home button{-webkit-tap-highlight-color:transparent;touch-action:manipulation}
+.home .menu{display:grid;gap:.6rem;min-width:0}
 .home .top{display:grid;gap:1rem;padding:1.5rem 1.8rem 1.1rem}
 .home .top .brand{margin:0;justify-content:space-between}
 .home .top .brand span{display:flex;align-items:center;gap:.5rem}
+.home .avatar{display:grid;place-items:center;width:2.4rem;height:2.4rem;border-radius:50%;background:var(--acc);color:var(--onacc);font:500 1.05rem Lexend,system-ui,sans-serif;text-transform:uppercase;text-decoration:none}
 .home .top h1{font-size:2.4rem}
-.home .top .sub{margin:-.4rem 0 0;color:var(--mut);font-size:.95rem}
 .home .body{display:grid;gap:1rem;min-width:0}
 .home h2{font-family:Lexend,system-ui,sans-serif;font-weight:600;font-size:.8rem;letter-spacing:.12em;text-transform:uppercase;margin:1rem .4rem 0;color:var(--ink);opacity:.8;
  text-shadow:0 1px 12px color-mix(in oklab,var(--paper) 90%,transparent)}
@@ -132,13 +185,15 @@ const HOME_CSS = `
 .home .badge-m svg{width:.95rem;height:.95rem}.home .badge-m.beta{color:var(--acc)}.home .badge-m.experimental{color:color-mix(in oklab,#d9822b var(--flipp),#ffc27a)}
 .home .glass{position:relative;min-width:0;border-radius:22px;overflow:hidden;color:var(--ink);background:var(--paper);border:1px solid var(--rim);
  backdrop-filter:blur(22px) saturate(1.5);-webkit-backdrop-filter:blur(22px) saturate(1.5);box-shadow:0 18px 40px -26px rgba(0,0,0,.45),inset 0 1px 0 var(--edge)}
+/* Tiles are solid, not blurred glass: thirty blurs over a moving sky is what made a phone stutter. */
+.home .game,.home .recent .glass{backdrop-filter:none;-webkit-backdrop-filter:none;background:var(--tile)}
 .home .shot{position:relative;display:block;width:100%;aspect-ratio:16/9;max-width:100%;overflow:hidden;background:color-mix(in oklab,var(--ink) 6%,transparent)}
 .home .shot img,.home .shot .art{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transition:transform .5s}
 .home .play{position:relative;z-index:2;display:inline-flex;align-items:center;gap:.35rem;flex:none;white-space:nowrap;font-size:.9rem;font-weight:500;color:var(--onacc);
  padding:.5rem 1rem;border-radius:999px;background:var(--acc);text-decoration:none;transition:filter .2s}
 .home .play:hover{filter:brightness(1.08)}.home .play svg{width:.9rem;height:.9rem}
 .home .play.ghost{color:var(--ink);background:var(--field);border:1px solid var(--rim)}
-.home .play.icon{width:2.4rem;height:2.4rem;padding:0;justify-content:center}
+.home .play.icon{width:2.75rem;height:2.75rem;padding:0;justify-content:center}
 .home .kick{font-size:.68rem;font-weight:500;letter-spacing:.14em;text-transform:uppercase;color:var(--acc);min-height:1em}
 .home .title{color:inherit;text-decoration:none}.home .title:after{content:"";position:absolute;inset:0;z-index:1}
 .home .glass:has(.title:focus-visible){outline:2px solid var(--acc);outline-offset:3px}.home .title:focus-visible{outline:none}
@@ -158,18 +213,21 @@ const HOME_CSS = `
 .home .recent span.w{display:grid;min-width:0;flex:1}.home .recent b{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .home .recent small{color:var(--mut);font-size:.78rem;white-space:nowrap}
 /* A shelf: a genre's games as screenshot tiles, as many across as the width holds. */
-.home .shelf{display:grid;grid-template-columns:repeat(auto-fill,minmax(15rem,1fr));gap:1rem}
-.home .game{display:grid;transition:transform .25s,box-shadow .25s,border-color .25s}
+.home .shelf{display:grid;grid-template-columns:repeat(auto-fill,minmax(13rem,1fr));gap:.9rem}
+.home .game{display:grid;transition:transform .18s,box-shadow .18s,border-color .18s}
+.home .game:active,.home .recent .glass:active{transform:scale(.97)}
 .home .game .cap{display:grid;gap:.25rem;padding:.75rem .9rem .85rem}
 .home .game .name{display:flex;align-items:center;justify-content:space-between;gap:.5rem}
 .home .game b{font-family:Lexend,system-ui,sans-serif;font-weight:600;font-size:1.1rem;line-height:1.15;letter-spacing:-.02em;min-width:0}
-.home .game small{display:flex;align-items:center;gap:.5rem;color:var(--mut);font-size:.76rem;font-variant-numeric:tabular-nums}
-.home .game:hover,.home .game:focus-within{transform:translateY(-3px);border-color:color-mix(in oklab,var(--acc) 60%,transparent);box-shadow:0 26px 44px -22px rgba(0,0,0,.55),inset 0 1px 0 var(--edge)}
-.home .game:hover .shot img,.home .game:hover .shot .art{transform:scale(1.04)}
-/* Friends on the right: who is on and where. */
-.home .lib{display:grid;grid-template-columns:minmax(0,1fr);gap:1rem;min-width:0}
-.home .lib>div{display:grid;gap:1rem;min-width:0}
-.home .side{display:grid;gap:.8rem;align-content:start;align-self:start;min-width:0}
+.home .game small{display:flex;flex-wrap:wrap;align-items:center;gap:.3rem .5rem;white-space:nowrap;color:var(--mut);font-size:.76rem;font-variant-numeric:tabular-nums}
+.home .game:focus-within{border-color:color-mix(in oklab,var(--acc) 60%,transparent)}
+@media(hover:hover){.home .game:hover{transform:translateY(-3px);border-color:color-mix(in oklab,var(--acc) 60%,transparent);box-shadow:0 26px 44px -22px rgba(0,0,0,.55),inset 0 1px 0 var(--edge)}
+ .home .game:hover .shot img,.home .game:hover .shot .art{transform:scale(1.04)}}
+/* Your party, friends and spaces: a column on the right when it's wide, a row you swipe under your games when it isn't. */
+.home .lib{display:grid;grid-template-columns:minmax(0,1fr);grid-template-areas:"main" "side" "shelves";gap:1rem;min-width:0}
+.home .lib>.main,.home .lib>.shelves{display:grid;grid-template-columns:minmax(0,1fr);gap:1rem;min-width:0}.home .lib>.main{grid-area:main}.home .lib>.shelves{grid-area:shelves}
+.home .side{grid-area:side;display:grid;grid-auto-flow:column;grid-auto-columns:minmax(15rem,1fr);gap:.8rem;align-items:start;min-width:0;overflow-x:auto;scrollbar-width:none;scroll-snap-type:x mandatory}
+.home .side::-webkit-scrollbar{display:none}.home .side>*{scroll-snap-align:start}
 .home .rail{display:grid;gap:.4rem;padding:1rem 1.1rem;align-content:start;min-width:0}
 .home .rail h2{margin:0 0 .3rem;display:flex;align-items:center;gap:.45rem}.home .rail h2 svg{width:1.05rem;height:1.05rem;flex:none;color:var(--mut)}
 .home .party{border-color:color-mix(in oklab,var(--acc) 55%,transparent)}
@@ -191,16 +249,19 @@ const HOME_CSS = `
 .home .rail li small{color:var(--mut);font-size:.76rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .home .rail>a{font-size:.85rem}
 @media(prefers-reduced-motion:reduce){.home .game,.home .shot img,.home .shot .art{transition:none}}
-.home .tabs{display:flex;gap:.3rem;flex-wrap:wrap}
-.home .tabs a{display:inline-flex;align-items:center;gap:.4rem;padding:.45rem .95rem;border-radius:999px;color:var(--mut);text-decoration:none;font-weight:500;border:1px solid transparent}
-.home .tabs a:hover{color:var(--ink)}
-.home .tabs a[aria-current]{color:var(--ink);background:color-mix(in oklab,var(--acc) 22%,transparent);border-color:color-mix(in oklab,var(--acc) 45%,transparent)}
-.home .tabs em{font-style:normal;font-size:.72rem;padding:.05rem .4rem;border-radius:999px;background:var(--acc);color:var(--onacc)}
+.home .tabs{display:flex;gap:.25rem;flex-wrap:wrap;padding:.35rem;border-radius:18px;background:var(--paper);border:1px solid var(--rim);
+ backdrop-filter:blur(22px) saturate(1.5);-webkit-backdrop-filter:blur(22px) saturate(1.5);box-shadow:inset 0 1px 0 var(--edge)}
+.home .tabs a{position:relative;display:inline-flex;align-items:center;gap:.6rem;min-height:2.75rem;padding:.4rem .9rem;border-radius:13px;color:var(--mut);text-decoration:none;font-weight:500;transition:background .15s,color .15s}
+.home .tabs a svg{width:1.2rem;height:1.2rem;flex:none}
+.home .tabs a:hover{color:var(--ink)}.home .tabs a:active{background:color-mix(in oklab,var(--ink) 8%,transparent)}
+.home .tabs a[aria-current]{color:var(--ink);background:color-mix(in oklab,var(--acc) 20%,transparent)}.home .tabs a[aria-current] svg{color:var(--acc)}
+.home .tabs em{font-style:normal;font-size:.72rem;font-weight:600;min-width:1.2rem;padding:.05rem .35rem;border-radius:999px;background:#e5484d;color:#fff;text-align:center}
 /* Wide: the menu becomes a column on the left that stays put, and the friends a column on the right. */
 @media(min-width:68rem){.home{grid-template-columns:15rem minmax(0,1fr)}
- .home .top{position:sticky;top:1.5rem;padding:1.4rem 1.2rem}.home .top h1{font-size:1.8rem}
- .home .tabs{flex-direction:column}.home .tabs a{justify-content:space-between}}
-@media(min-width:84rem){.home .lib{grid-template-columns:minmax(0,1fr) 17rem}.home .side{position:sticky;top:4.5rem;margin-top:3rem}}
+ .home .menu{position:sticky;top:1.5rem}.home .top{padding:1.4rem 1.2rem}.home .top h1{font-size:1.8rem}
+ .home .tabs{flex-direction:column}.home .tabs em{margin-left:auto}}
+@media(min-width:84rem){.home .lib{grid-template-columns:minmax(0,1fr) 17rem;grid-template-areas:"main side" "shelves side"}
+ .home .side{grid-row:1/span 2;grid-auto-flow:row;grid-auto-columns:auto;align-content:start;align-self:start;overflow:visible;position:sticky;top:4.5rem;margin-top:3rem}}
 @media(max-width:52rem){.home .feature{grid-template-columns:minmax(0,1fr)}.home .feature .shot{aspect-ratio:16/9;min-height:0}.home .feature .cap{padding:1.1rem 1.2rem 1.3rem}.home .feature b{font-size:1.9rem}}
 .home .trophies{display:grid;gap:.6rem}
 .home .trophies header{display:flex;align-items:baseline;gap:.6rem;margin-bottom:.7rem}.home .trophies header b{flex:1;font-family:Lexend,system-ui,sans-serif;font-weight:600}
@@ -218,12 +279,26 @@ const HOME_CSS = `
  backdrop-filter:blur(22px) saturate(1.5);-webkit-backdrop-filter:blur(22px) saturate(1.5);box-shadow:0 18px 40px -26px rgba(0,0,0,.45),inset 0 1px 0 var(--edge)}
 .home .card+.card{margin-top:.6rem}
 .home .row input{flex:1;min-width:10rem}
+.home .link{display:grid;gap:.4rem;min-width:min(100%,16rem)}.home .link input{width:100%;font-family:ui-monospace,monospace;font-size:.82rem}
 .home .list>div{padding:.55rem 0}.home .list>div+div{border-top-color:var(--rim)}
 .home table td,.home table th{border-bottom-color:var(--rim)}.home table th{color:var(--mut)}
 .home a{color:var(--acc)}
-@media(max-width:40rem){.home{padding-top:2.4rem}.home .top{padding:1.3rem 1.2rem 1rem;gap:.8rem}.home .top h1{font-size:1.9rem}.home .top .sub{font-size:.88rem}
- .home .tabs{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;margin:0 -1.2rem;padding:0 1.2rem}.home .tabs::-webkit-scrollbar{display:none}.home .tabs a{flex:none;padding:.4rem .8rem}
- .home .shelf{grid-template-columns:repeat(auto-fill,minmax(10rem,1fr));gap:.7rem}}
+/* A phone: the tabs are a bar along the bottom under your thumb, a big Play, and each shelf a row you swipe. */
+@media(max-width:40rem){.home{padding-top:2.6rem;padding-bottom:calc(5rem + env(safe-area-inset-bottom))}
+ .home .top{padding:1.1rem 1.2rem 1.2rem;gap:.7rem}.home .top h1{font-size:1.75rem}
+ .home .tabs{position:fixed;z-index:6;left:0;right:0;bottom:0;flex-wrap:nowrap;gap:0;overflow-x:auto;scrollbar-width:none;border-radius:0;border-width:1px 0 0;
+  padding:.3rem max(.3rem,env(safe-area-inset-right)) calc(.3rem + env(safe-area-inset-bottom)) max(.3rem,env(safe-area-inset-left))}
+ .home .tabs::-webkit-scrollbar{display:none}
+ .home .tabs a{flex:1 0 3.8rem;flex-direction:column;justify-content:center;gap:.2rem;min-height:3.2rem;padding:.3rem .2rem;font-size:.68rem;letter-spacing:.01em}
+ .home .tabs a svg{width:1.45rem;height:1.45rem}
+ .home .tabs a[aria-current]{background:none}
+ .home .tabs em{position:absolute;top:.15rem;left:calc(50% + .3rem)}
+ .home .feature .play{display:flex;justify-content:center;min-height:3.2rem;font-size:1.1rem}
+ .home .side{grid-auto-columns:85%;margin:0 -1rem;padding:0 1rem;scroll-padding:0 1rem}
+ .home .shelves .shelf{grid-template-columns:none;grid-auto-flow:column;grid-auto-columns:11rem;gap:.7rem;overflow-x:auto;scrollbar-width:none;overscroll-behavior-x:contain;
+  scroll-snap-type:x mandatory;margin:0 -1rem;padding:.1rem 1rem .4rem;scroll-padding:0 1rem}
+ .home .shelves .shelf::-webkit-scrollbar{display:none}.home .shelves .shelf>*{scroll-snap-align:start}
+ .home .game b{font-size:1rem}}
 .home .range{display:flex;gap:.3rem;margin:0 .4rem}.home .range a{padding:.25rem .7rem;border-radius:999px;color:var(--mut);text-decoration:none;font-size:.82rem;border:1px solid var(--rim)}
 .home .range a[aria-current]{color:var(--ink);border-color:color-mix(in oklab,var(--acc) 55%,transparent)}
 .home .tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(8.5rem,1fr));gap:.6rem}
@@ -260,28 +335,30 @@ const Mark = ({ icon }: { icon: Achievement["icon"] }) => typeof icon === "strin
   ? <svg viewBox="0 0 24 24" aria-hidden="true"><text x="12" y="13" textAnchor="middle" dominantBaseline="central" className="glyph">{icon}</text></svg>
   : icon ? <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{icon.map(([tag, attrs], i) => createElement(tag, { key: i, ...attrs }))}</svg>
   : <Trophy />;
-const iconOf = (app: string, id: string) => ACHIEVEMENTS[app]?.find((a) => a.id === id)?.icon;
+const iconOf = (app: string | QApp, id: string) => catalogOf(app).find((a) => a.id === id)?.icon;
 
 /** [earned, all] for a game with achievements, or null. */
-const tally = (app: string, unlocks: Unlocks): [number, number] | null => {
-  const all = ACHIEVEMENTS[app]?.length ?? 0;
-  return all ? [[...(unlocks.get(app)?.keys() ?? [])].filter((id) => ACHIEVEMENTS[app]!.some((a) => a.id === id)).length, all] : null;
+const tally = (app: QApp, unlocks: Unlocks): [number, number] | null => {
+  const list = catalogOf(app), got = unlocks.get(app.id);
+  return list.length ? [list.filter((a) => got?.has(a.id)).length, list.length] : null;
 };
 
-/** Every game's achievements, the ones the person has lit up and the rest locked (a secret one says nothing until then). */
-function Achievements({ unlocks }: { unlocks: Unlocks }) {
+/** Every game's achievements, the ones the person has lit up and the rest locked (a secret one says nothing until then): ours, then
+ * each listed studio's game they have played. */
+function Achievements({ apps, unlocks }: { apps: QApp[]; unlocks: Unlocks }) {
+  const theirs = apps.filter((a) => isListing(a) && unlocks.has(a.id));
   return (
     <div className="trophies">
-      {Object.keys(ACHIEVEMENTS).map((id) => {
-        const list = shownFor(id, unlocks.get(id)), got = list.filter((a) => a.at !== null).length;
+      {[...Object.keys(ACHIEVEMENTS), ...theirs].map((app) => {
+        const id = typeof app === "string" ? app : app.id, list = shownFor(app, unlocks.get(id)), got = list.filter((a) => a.at !== null).length;
         return (
           <section key={id} className="card">
-            <header><b>{nameOf(id)}</b><span className="mut">{got} of {list.length}</span></header>
+            <header><b>{typeof app === "string" ? nameOf(id) : app.name}</b><span className="mut">{got} of {list.length}</span></header>
             <meter min={0} max={list.length} value={got} />
             <div className="badges">
               {list.map((a) => (
                 <div key={a.id} className={a.at === null ? "badge locked" : "badge"} title={a.at === null ? "Locked" : `Unlocked ${day(a.at)}`}>
-                  {a.at === null && a.secret ? <Lock /> : <Mark icon={iconOf(id, a.id)} />}<b>{a.name}</b><span>{a.blurb}</span>
+                  {a.at === null && a.secret ? <Lock /> : <Mark icon={iconOf(app, a.id)} />}<b>{a.name}</b><span>{a.blurb}</span>
                 </div>
               ))}
             </div>
@@ -292,14 +369,21 @@ function Achievements({ unlocks }: { unlocks: Unlocks }) {
   );
 }
 
+/** When, the way a kid would say it: today, yesterday, 3 days ago, or the day of the month. */
+export const ago = (t: number, now = Date.now()) => {
+  const d = Math.floor((now - t) / 86_400_000);
+  return d <= 0 ? "today" : d === 1 ? "yesterday" : d < 7 ? `${d} days ago` : new Date(t).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+};
+
 const ctaOf = (app: QApp, c = cardFor(app)) => c.cta || (app.kind === "game" ? "Play it" : "Open it");
-const whatOf = (app: QApp, mine: Member["apps"][number] | undefined) => app.soon ? "coming soon" : mine ? `${app.kind === "game" ? "played" : "opened"} ${day(mine.last_at)}` : app.kind === "game" ? "not played yet" : "not opened yet";
+/** When you last played it, or nothing when you never have (a shelf of "not played yet" is just noise). */
+const whatOf = (app: QApp, mine: Member["apps"][number] | undefined) => app.soon ? "Coming soon" : mine ? `${app.kind === "game" ? "Played" : "Opened"} ${ago(mine.last_at)}` : null;
 
 type Used = Member["apps"][number] | undefined;
 
 /** An app's screenshot (public/cards/<id>.jpg), or its drawn key art when it has none. */
 const Shot = ({ app, eager }: { app: QApp; eager?: boolean }) => (
-  <span className="shot">{app.shot ? <img src={`/cards/${app.id}.jpg`} alt="" loading={eager ? undefined : "lazy"} draggable={false} /> : <Art id={app.id} />}</span>
+  <span className="shot">{app.shot ? <img src={`/cards/${app.id}.jpg`} alt="" width={640} height={360} loading={eager ? undefined : "lazy"} fetchPriority={eager ? "high" : undefined} decoding="async" draggable={false} /> : <Art id={app.id} />}</span>
 );
 const PlayLink = ({ app, small }: { app: QApp; small?: boolean }) => { const url = playOf(app); return url ? (small
   ? <a className="play ghost icon" href={url} title={ctaOf(app)} aria-label={`${ctaOf(app)}: ${cardFor(app).name}`}><Out /></a>
@@ -307,7 +391,7 @@ const PlayLink = ({ app, small }: { app: QApp; small?: boolean }) => { const url
 
 /** The big one at the top: its screenshot, kicker, name, line, badge and Play. */
 function Feature({ app, mine, unlocks }: { app: QApp; mine: Used; unlocks: Unlocks }) {
-  const c = cardFor(app), t = tally(app.id, unlocks);
+  const c = cardFor(app), t = tally(app, unlocks);
   return (
     <section className="glass feature" aria-label="Featured">
       <Shot app={app} eager />
@@ -315,7 +399,7 @@ function Feature({ app, mine, unlocks }: { app: QApp; mine: Used; unlocks: Unloc
         {c.kicker && <span className="kick">{c.kicker}</span>}
         <b><a className="title" href={`/app/${app.id}`}>{c.name}</a></b>
         <span className="blurb">{c.blurb}</span>
-        <span className="facts"><Badge m={app.maturity ?? "alpha"} /><span>{whatOf(app, mine)}</span>{t && <span className="tally"><Trophy />{t[0]}/{t[1]}</span>}</span>
+        <span className="facts"><Badge m={app.maturity ?? "alpha"} />{whatOf(app, mine) && <span>{whatOf(app, mine)}</span>}{t && <span className="tally"><Trophy />{t[0]}/{t[1]}</span>}</span>
         <span><PlayLink app={app} /></span>
       </span>
     </section>
@@ -324,13 +408,13 @@ function Feature({ app, mine, unlocks }: { app: QApp; mine: Used; unlocks: Unloc
 
 /** One app on a shelf: its screenshot, name, badge and when you last played. The tile opens the app's page. */
 function Tile({ app, mine, unlocks }: { app: QApp; mine: Used; unlocks: Unlocks }) {
-  const c = cardFor(app), t = tally(app.id, unlocks);
+  const c = cardFor(app), t = tally(app, unlocks);
   return (
     <div className="glass game">
       <Shot app={app} />
       <span className="cap">
         <span className="name"><b><a className="title" href={`/app/${app.id}`}>{c.name}</a></b><Badge m={app.maturity ?? "alpha"} /></span>
-        <small>{byOf(app)}{whatOf(app, mine)}{t && <span className="tally"><Trophy />{t[0]}/{t[1]}</span>}</small>
+        {(byOf(app) || whatOf(app, mine) || t) && <small>{byOf(app)}{whatOf(app, mine)}{t && <span className="tally"><Trophy />{t[0]}/{t[1]}</span>}</small>}
       </span>
     </div>
   );
@@ -411,7 +495,7 @@ function Library({ apps, mine, unlocks, hub, side }: { apps: QApp[]; mine: Membe
   const last = sorted(apps.filter((a) => used.has(a.id) && a.id !== top.id)).slice(0, 4);
   return (
     <div className="lib">
-      <div>
+      <div className="main">
         <Feature app={top} mine={used.get(top.id)} unlocks={unlocks} />
         {last.length > 0 && (
           <section aria-label="Pick up where you left off">
@@ -421,6 +505,9 @@ function Library({ apps, mine, unlocks, hub, side }: { apps: QApp[]; mine: Membe
             ))}</div>
           </section>
         )}
+      </div>
+      <SidePanel hub={hub} side={side} />
+      <div className="shelves">
         {GENRES.map((g) => {
           const list = sorted(apps.filter((a) => a.genre === g));
           return list.length ? (
@@ -431,7 +518,6 @@ function Library({ apps, mine, unlocks, hub, side }: { apps: QApp[]; mine: Membe
           ) : null;
         })}
       </div>
-      <SidePanel hub={hub} side={side} />
     </div>
   );
 }
@@ -454,7 +540,7 @@ export function SpacesPage({ t0 }: { t0: number }) {
 
 /** The streaming-service page for one app: big picture, the long words, its badge, Play it. */
 export function AppPage({ app, mine, unlocks, t0 }: { app: QApp; mine: Member["apps"][number] | undefined; unlocks: Unlocks; t0: number }) {
-  const c = cardFor(app), t = tally(app.id, unlocks), m = app.maturity ?? "alpha", url = playOf(app);
+  const c = cardFor(app), t = tally(app, unlocks), m = app.maturity ?? "alpha", url = playOf(app);
   return (
     <Glass t0={t0} css={HOME_CSS}>
       <div className="home detail game-page">
@@ -464,7 +550,7 @@ export function AppPage({ app, mine, unlocks, t0 }: { app: QApp; mine: Member["a
           <div className="words">
           {c.kicker && <span className="kick">{c.kicker}</span>}
           <h1>{c.name}</h1>
-          <div className="facts"><Badge m={m} /><span>{m}</span><span>{app.genre}</span><span>{whatOf(app, mine)}</span>{t && <span className="tally"><Trophy />{t[0]}/{t[1]} achievements</span>}</div>
+          <div className="facts"><Badge m={m} /><span>{m}</span><span>{app.genre}</span><span>{whatOf(app, mine) ?? "New to you"}</span>{t && <span className="tally"><Trophy />{t[0]}/{t[1]} achievements</span>}</div>
           <p className="blurb">{c.blurb}</p>
           {c.more && <p className="more">{c.more}</p>}
           <div className="row">{url ? <a className="play" href={url}>{ctaOf(app, c)} <Out /></a> : <span className="mut">{app.soon ? "Coming soon." : "Not open yet."}</span>}</div>
@@ -475,7 +561,17 @@ export function AppPage({ app, mine, unlocks, t0 }: { app: QApp; mine: Member["a
   );
 }
 
-const TABS = [["library", "Home"], ["achievements", "Achievements"], ["friends", "Friends"], ["studio", "Studio"], ["people", "People"], ["visitors", "Visitors"], ["scale", "Scale"], ["account", "Account"]] as const;
+// lucide: house, trophy, users, building, contact, chart-column, gauge, circle-user.
+const TABS = [
+  ["library", "Home", ["M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8", "M3 10a2 2 0 0 1 .709-1.528l7-6a2 2 0 0 1 2.582 0l7 6A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"]],
+  ["achievements", "Trophies", ["M10 14.66V17a1 1 0 0 1-1 1 2 2 0 0 0-2 2v2", "M14 14.66V17a1 1 0 0 0 1 1 2 2 0 0 1 2 2v2", "M17.916 10H19.5A2.5 2.5 0 0 0 22 7.5V5a1 1 0 0 0-1-1h-3", "M4 22h16", "M6 9a6 6 0 0 0 12 0V3a1 1 0 0 0-1-1H7a1 1 0 0 0-1 1z", "M6.084 10H4.5A2.5 2.5 0 0 1 2 7.5V5a1 1 0 0 1 1-1h3"]],
+  ["friends", "Friends", USERS],
+  ["studio", "Studio", ["M12 10h.01", "M12 14h.01", "M12 6h.01", "M16 10h.01", "M16 14h.01", "M16 6h.01", "M8 10h.01", "M8 14h.01", "M8 6h.01", "M9 22v-3a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v3", "M6 2h12a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z"]],
+  ["people", "People", ["M16 2v2", "M7 21v-2a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v2", "M8 2v2", "M12 7a3 3 0 1 0 0 6 3 3 0 0 0 0-6z", "M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"]],
+  ["visitors", "Visitors", ["M3 3v16a2 2 0 0 0 2 2h16", "M18 17V9", "M13 17V5", "M8 17v-3"]],
+  ["scale", "Scale", ["m12 14 4-4", "M3.34 19a10 10 0 1 1 17.32 0"]],
+  ["account", "Me", ["M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20z", "M12 7a3 3 0 1 0 0 6 3 3 0 0 0 0-6z", "M7 20.662V19a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v1.662"]],
+] as const;
 const ADMIN_TABS = new Set<string>(["people", "visitors", "scale"]);
 
 const KIND: Record<string, string> = { person: "browser", agent: "agent", bot: "bot" };
@@ -553,28 +649,30 @@ function Visitors({ v }: { v: Counts }) {
 export type Tab = (typeof TABS)[number][0];
 export const tabOf = (v: unknown): Tab => TABS.find(([k]) => k === v)?.[0] ?? "library";
 
-export function Home({ apps = APPS, me, mine, hub, side, everyone, unlocks, counts, error, t0, tab, visitors, scale, studios }: { apps?: QApp[]; side?: Side | null; visitors?: Counts | null; scale?: Load | null; studios?: Studio[] | null; counts: Map<string, number>; me: Me; mine: Member | undefined; hub: HubState | null; everyone: Member[] | null; unlocks: Unlocks; error?: string; t0: number; tab: Tab }) {
+export function Home({ apps = APPS, me, mine, hub, side, everyone, unlocks, counts, error, t0, tab, visitors, scale, studios, invite, origin = "", ways, social = [] }: { /** The Account tab: how they sign in now, and the providers switched on here. */ ways?: Way[] | null; social?: string[]; invite?: { id: string; name: string; game?: string | null } | null; origin?: string; apps?: QApp[]; side?: Side | null; visitors?: Counts | null; scale?: Load | null; studios?: Studio[] | null; counts: Map<string, number>; me: Me; mine: Member | undefined; hub: HubState | null; everyone: Member[] | null; unlocks: Unlocks; error?: string; t0: number; tab: Tab }) {
     const tabs = TABS.filter(([k]) => !ADMIN_TABS.has(k) || everyone);
   const asked = hub?.incoming.length ?? 0;
   return (
     <Glass t0={t0} css={HOME_CSS + SCALE_CSS + STUDIO_CSS}>
       <div className="home">
-        <section className="pane top">
-          <div className="brand"><span><i /><b>{NAME}</b></span><span className="mut">v{VERSION}</span></div>
-          <h1>{greeting(t0)}</h1>
-          <p className="sub">{me.name || me.email} · your games, friends, saves and studio, in one place.</p>
-          {messageOf(error) && <p className="bad" role="alert">{messageOf(error)}</p>}
+        {/* The nav sits outside the glass pane: a blurred parent would pin a phone's fixed tab bar to itself instead of the screen. */}
+        <div className="menu">
+          <section className="pane top">
+            <div className="brand"><span><i /><b>{NAME}</b></span><a className="avatar" href="/?tab=account" title={me.name || me.email} aria-label="Me">{(me.name || me.email).slice(0, 1)}</a></div>
+            <h1>{greeting(t0)}</h1>
+            {messageOf(error) && <p className="bad" role="alert">{messageOf(error)}</p>}
+          </section>
           <nav className="tabs" aria-label="eqosys">
-            {tabs.map(([k, label]) => <a key={k} href={k === "library" ? "/" : `/?tab=${k}`} aria-current={k === tab ? "page" : undefined}>{label}{k === "friends" && asked > 0 && <em>{asked}</em>}</a>)}
+            {tabs.map(([k, label, d]) => <a key={k} href={k === "library" ? "/" : `/?tab=${k}`} aria-current={k === tab ? "page" : undefined}><Icon d={[...d]} /><span>{label}</span>{k === "friends" && asked > 0 && <em aria-label={`${asked} asking`}>{asked}</em>}</a>)}
           </nav>
-        </section>
+        </div>
 
         <div className="body">
         {tab === "library" && <Library apps={apps} mine={mine} unlocks={unlocks} hub={hub} side={side ?? null} />}
 
-        {tab === "achievements" && <><h2>Achievements</h2><Achievements unlocks={unlocks} /></>}
+        {tab === "achievements" && <><h2>Achievements</h2><Achievements apps={apps} unlocks={unlocks} /></>}
 
-        {tab === "friends" && (hub ? <Friends hub={hub} counts={counts} /> : <p className="card mut">{MESSAGES.nohub}</p>)}
+        {tab === "friends" && (hub ? <Friends hub={hub} counts={counts} invite={invite} origin={origin} /> : <p className="card mut">{MESSAGES.nohub}</p>)}
 
         {tab === "studio" && studios && <Studios studios={studios} unlocks={unlocks} />}
 
@@ -619,8 +717,10 @@ export function Home({ apps = APPS, me, mine, hub, side, everyone, unlocks, coun
           <>
             <h2>Account</h2>
             <div className="card me"><i>{(me.name || me.email).slice(0, 1)}</i><div><b>{me.name || me.email}</b><span>{me.email} · came in through {nameOf(mine?.source ?? "eqosys")}</span></div></div>
+            {ways && <Ways ways={ways} social={social} />}
             <form method="post" action="/do/logout"><button className={btn()} type="submit">Sign out</button></form>
             <p><a href="/api/privacy/export" download>Download my data</a> <span className="mut">· everything eqosys keeps about you, as one file (<a href="/privacy">what and why</a>)</span></p>
+            <p className="mut">{NAME} v{VERSION}</p>
             <details className="card danger">
               <summary>More options</summary>
               <p className="mut">Removing your account takes you out of every Q app. It asks twice more before anything happens.</p>
@@ -702,7 +802,8 @@ export const Privacy = () => (
       private contact for privacy requests here; until then, the ways below are the ones there are.</p>
     <h2>Questions</h2>
     <p>For your data, download and delete above need no one's help. For anything else, use Report in any Q app while signed in: it reaches us
-      tied to your account, so we can find what is yours without you giving any details. Reports become issues on a public GitHub page that name
+      tied to your account, so we can find what is yours without you giving any details. Reports become issues on a public GitHub page (or, from a game
+      another studio made, notes that studio reads) that name
       you only by a short id, so write the question, not your email or anything personal. Please don't open GitHub issues about your own data.</p>
   </>
 );

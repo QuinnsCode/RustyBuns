@@ -16,9 +16,11 @@ import { carryKm, hangTime, levelFor, MAX_POWER, MIN_POWER, POWER_STEP, powerFor
 import { arc, bearing, compass, destination, distanceKm, windHeading, type LatLon } from "./geo.ts";
 import { Globe } from "./globe.ts";
 import { sampleWind } from "./grib2.ts";
-import { accountChip, achieve, finishSignIn, reportButton, THEME } from "./account.ts";
-import { icon } from "./icons.ts";
+import { accountChip, achieve, achievements, finishSignIn, reportButton, THEME } from "./account.ts";
+import { about, icon, info } from "./icons.ts";
+import { tutorial } from "@rustybuns/util/tutorial";
 import { loadWind, type Wind } from "./wind-load.ts";
+import { check, maybe, num, obj, oneOf } from "@rustybuns/util/guard";
 
 const MAX_STROKES = 8;
 // The pad: the left stick aims (left/right turns, up/down power); these buttons are rebindable in the cog.
@@ -46,8 +48,10 @@ const seed = Number(params.get("seed")) || (Math.floor(Math.random() * 1e6) + 1)
 if (!params.get("seed")) { params.set("seed", String(seed)); history.replaceState(null, "", `?${params}`); }
 
 const globe = new Globe($("#globe"));
-accountChip($("#account"));
-void back.then((b) => { if (b) accountChip($("#account"), { note: b.error }); });
+// "Sign in" opens eqosys beside the globe, which keeps turning; the chip redraws itself.
+const beside = () => {};
+accountChip($("#account"), { onSignIn: beside });
+void back.then((b) => { if (b) accountChip($("#account"), { note: b.error, onSignIn: beside }); });
 const panel = $("#panel"), scoreEl = $("#score"), credit = $("#credit"), splash = $("#splash"), windChip = $("#wind-chip");
 // On a phone the panel covers the bottom of the screen: the planet centres in what's left above it.
 // `--dock` is how much of the screen the panel takes from the bottom: the ⌘ and Report buttons stand on top of it on a phone.
@@ -81,6 +85,21 @@ let flight: Flight | null = null, flyT = 0, flyDur = 1;
 let currents: Currents | null = null;
 let seaView = false; // aiming with the ocean currents on the globe instead of the wind
 let swim: Swim | null = null, paddling = false, swimFrom = 0; // swimFrom: km to the basket when the disc went in
+let aimFrom = { heading: 0, power: 0 }; // the aim a stroke started with: the tutorial waits for the player to change it
+
+// The first time, hole 1 is the tutorial: guess, turn the aim, set the power, throw and watch the wind take it. Each
+// waits for the player to do it; done once, here or on the eqosys account, and it never shows again.
+const coach = tutorial({
+  prefix: "adg",
+  account: { achieve, achievements },
+  steps: [
+    { title: "Where are we?", say: "Name the country the glowing cone is in for a stroke back, or skip the guess.", done: () => phase !== "guess" && phase !== "loading" },
+    { title: "Turn the aim", keys: ["←", "→"], say: "Or the Aim slider, or click the planet. The dashed line is the throw in still air.", done: () => strokes > 0 || heading !== aimFrom.heading },
+    { title: "Set the power", keys: ["↑", "↓"], say: "Or the Power slider: the km is how far it carries before the wind.", done: () => strokes > 0 || power !== aimFrom.power },
+    { title: "Throw", keys: ["Space"], say: "L lofts it into the jet stream: longer, and blown far harder.", done: () => strokes > 0 },
+    { title: "Watch the wind bend it", say: `Where it lands is your next throw. Get within ${BASKET_KM} km of the basket to hole out.`, done: () => strokes > 0 && phase !== "flying" },
+  ],
+});
 
 globe.setCountries(countries());
 
@@ -150,6 +169,7 @@ function teeOff() {
   splashUp = false;
   drawSplash();
   render();
+  if (holeIx === 0 && strokes === 0) coach.start();
 }
 
 /** The wind source as a HUD chip beside the score: live NOAA in teal, the synthetic stand-in in amber. */
@@ -183,10 +203,10 @@ function renderPanel() {
   if (phase === "loading") {
     panel.innerHTML = `${strip()}<p class="dim scanning"><i></i>Scanning the planet: fetching NOAA's wind grid.</p>`;
   } else if (phase === "guess") {
-    panel.innerHTML = `${strip()}<h2>${icon("help-circle")} Hole ${hole.n}: where are we?</h2>
-      <p>Your scanner shows coastlines and wind, no names. The tee is the glowing cone. Name the country for a stroke back on this hole.</p>
+    panel.innerHTML = `${strip()}<h2>${icon("map-pin")} Hole ${hole.n}: where are we?${info("about-hole", "How to play")}</h2>
+      ${about("about-hole", "<p>Your scanner shows coastlines and wind, no names. The tee is the glowing cone. Name the country for a stroke back on this hole.</p>")}
       <div class="choices">${hole.guesses.map((g) => `<button type="button" data-guess="${esc(g)}">${esc(g)}</button>`).join("")}</div>
-      <div class="actions"><button type="button" id="skip">Skip the guess</button></div>`;
+      <div class="actions"><button type="button" id="skip" title="Skip the guess">Skip</button></div>`;
     panel.querySelectorAll<HTMLButtonElement>("[data-guess]").forEach((b) => b.addEventListener("click", () => guess(b.dataset.guess!)));
     $("#skip").addEventListener("click", () => beginAim());
   } else if (phase === "aim") {
@@ -196,19 +216,19 @@ function renderPanel() {
       ? `<span class="lvl ${on ? "on" : ""}">${name}</span><span class="${on ? "on" : ""}">${w.speed.toFixed(0)} m/s blowing ${compass(w.to)}</span><span class="arrow ${on ? "on" : ""}" style="transform: rotate(${w.to}deg)">${icon("arrow-up")}</span>`
       : `<span class="lvl">${name}</span><span class="dim">no data</span><span></span>`;
     const here = countryAt(lie);
-    panel.innerHTML = `${strip()}<h2>${icon("disc")} Stroke ${strokes + 1}${strokes === 0 ? ` from ${esc(hole.teeCountry)}` : here ? ` from ${esc(here.name)}` : " from the open sea"}</h2>
+    panel.innerHTML = `${strip()}<h2>${icon("disc")} Stroke ${strokes + 1}${strokes === 0 ? ` from ${esc(hole.teeCountry)}` : here ? ` from ${esc(here.name)}` : " from the open sea"}${info("about-aim", "How to throw")}</h2>
+      ${about("about-aim", `<p>${icon("mouse-pointer-click")} Click the planet to aim there in still air. The dashed line is the throw without wind; the wind will bend it.</p><p>The basket is in from ${BASKET_KM} km.</p><p class="keys"><kbd>←</kbd><kbd>→</kbd> aim, <kbd>↑</kbd><kbd>↓</kbd> power, <kbd>L</kbd> loft,${currents ? " <kbd>C</kbd> currents," : ""} <kbd>Space</kbd> throw.</p>`)}
       <div class="board">${rose}<div>
-        <p>Basket <b>${fmt(distanceKm(lie, hole.basket))} km</b> ${compass(toBasket)} (${Math.round(toBasket)}°), in ${esc(hole.basketCountry)}. In from ${BASKET_KM} km.</p>
+        <p>Basket <b>${fmt(distanceKm(lie, hole.basket))} km</b> ${compass(toBasket)} (${Math.round(toBasket)}°), in ${esc(hole.basketCountry)}.</p>
         <div class="wind">${row("Surface", lo, loft === "low")}${row("Jet 250 mb", hi, loft === "high")}</div></div></div>
       <figure class="forecast"><figcaption>Wind along the throw <span>${loft === "high" ? "jet" : "surface"}, m/s · tee → landing</span></figcaption><div id="strip">${stripHtml()}</div></figure>
       <div class="row"><label>${icon("navigation")} Aim</label><input id="heading" type="range" min="0" max="359" step="1" value="${heading}" /><output id="heading-out">${heading}° ${compass(heading)}</output></div>
       <div class="row"><label>${icon("chevrons-up")} Power</label><input id="power" type="range" min="${MIN_POWER}" max="${MAX_POWER}" step="${POWER_STEP}" value="${power}" /><output id="power-out">${fmt(carryKm(power))} km</output></div>
       <div class="row"><label>${icon("wind")} Loft</label>
         <button type="button" id="loft-low" class="${loft === "low" ? "primary" : ""}" title="Hover low, in the surface wind">Low</button>
-        <button type="button" id="loft-high" class="${loft === "high" ? "primary" : ""}" title="Loft into the jet stream: longer hang, far stronger wind">High: jet stream</button>
+        <button type="button" id="loft-high" class="${loft === "high" ? "primary" : ""}" title="Loft into the jet stream: longer hang, far stronger wind">High</button>
         ${currents ? `<button type="button" id="sea-view" class="icon ${seaView ? "primary" : ""}" title="Show the ocean currents a splash would swim in (C)" aria-pressed="${seaView}">${icon("waves")}</button>` : ""}
       </div>
-      <p class="dim">${icon("mouse-pointer-click")} Click the planet to aim there in still air. The dashed line is the throw without wind; the wind will bend it.<span class="keys"> <kbd>←</kbd><kbd>→</kbd> aim, <kbd>↑</kbd><kbd>↓</kbd> power, <kbd>L</kbd> loft,${currents ? " <kbd>C</kbd> currents," : ""} <kbd>Space</kbd> throw.</span></p>
       <div class="actions"><button type="button" id="throw" class="primary">${icon("disc")} Throw</button></div>`;
     const h = $<HTMLInputElement>("#heading"), p = $<HTMLInputElement>("#power");
     h.addEventListener("input", () => { heading = Number(h.value); aimChanged(false); });
@@ -221,13 +241,13 @@ function renderPanel() {
   } else if (phase === "flying") {
     panel.innerHTML = `${strip()}<h2>${icon("wind")} In flight</h2><p class="dim">${loft === "high" ? "Riding the jet stream." : "Riding the surface wind."} Hang time ${hangTime(power, loft).toFixed(1)} s.</p>`;
   } else if (phase === "swim" && swim) {
-    panel.innerHTML = `${strip()}<h2>${icon("waves")} Overboard: paddle!</h2>
-      <p>The disc is in the sea and the current has it. Paddle against it before the clock runs out, or ride it to a shore.</p>
+    panel.innerHTML = `${strip()}<h2>${icon("waves")} Overboard: paddle!${info("about-swim", "How to swim")}</h2>
+      ${about("about-swim", `<p>The disc is in the sea and the current has it. Paddle against it before the clock runs out, or ride it to a shore.</p>
+        <p>Hold the button<span class="keys">, <kbd>Space</kbd> or <kbd>↑</kbd></span> to paddle; tap the planet<span class="keys"> or <kbd>←</kbd><kbd>→</kbd></span> to steer.</p>`)}
       <div class="board">${windRose([{ vane: { speed: ROSE_SCALE.sea / 2, to: 0 }, scale: ROSE_SCALE.sea, kind: "sea", on: true }], swim.heading, bearing(swim.pos, hole.basket))}<div class="wind"><span class="lvl">Current</span><span id="swim-cur" class="on"></span><span id="swim-arrow" class="arrow on">${icon("arrow-up")}</span>
         <span class="lvl">Basket</span><span id="swim-km"></span><span></span>
         <span class="lvl">${icon("timer")}</span><span><span id="swim-clock" class="swim-clock"></span><span class="tip" title="The swim lasts ${SWIM_S} s. A 1 m/s current carries the disc ${fmt(SEA_DRIFT)} km a second; paddling makes ${fmt(PADDLE_KMS)}.">${icon("info")}</span></span><span></span></div></div>
       <div class="row"><label>${icon("navigation")} Paddle</label><input id="heading" type="range" min="0" max="359" step="1" value="${swim.heading}" /><output id="heading-out">${swim.heading}° ${compass(swim.heading)}</output></div>
-      <p class="dim">Hold the button<span class="keys">, <kbd>Space</kbd> or <kbd>↑</kbd></span> to paddle; tap the planet<span class="keys"> or <kbd>←</kbd><kbd>→</kbd></span> to steer.</p>
       <div class="actions"><button type="button" id="paddle" class="primary">${icon("waves")} Hold to paddle</button></div>`;
     const h = $<HTMLInputElement>("#heading"), b = $("#paddle");
     h.addEventListener("input", () => steer(Number(h.value)));
@@ -268,6 +288,7 @@ function guess(name: string) {
 
 function beginAim() {
   phase = "aim";
+  aimFrom = { heading, power };
   globe.lookAt(lie, 1.9);
   render();
 }
@@ -520,7 +541,7 @@ Promise.all([loadWind(params.get("wind")), loadCurrents(currentsUrl, offline ? n
 
 // For an agent's browser or a hands-on check: read the state, aim, throw, guess, swim.
 const golfApi = {
-    state: () => ({ seed, phase, splash: splashUp, hole: hole.n, strokes, lie, basket: hole.basket, heading, power, loft, seaView, wind: wind.label, source: wind.source, currents: currents && { day: currents.day, live: currents.live }, swim: swim && { ...swim, paddling }, scores: [...scores] }),
+    state: () => ({ tutorial: coach.state(), seed, phase, splash: splashUp, hole: hole.n, strokes, lie, basket: hole.basket, heading, power, loft, seaView, wind: wind.label, source: wind.source, currents: currents && { day: currents.day, live: currents.live }, swim: swim && { ...swim, paddling }, scores: [...scores] }),
     aim: (h: number, p: number, l?: Loft) => { heading = h; power = p; if (l) setLoft(l); aimChanged(true); },
     throw: throwDisc,
     guess,
@@ -530,6 +551,8 @@ const golfApi = {
     /** The title splash again (for a screenshot of it), and the Tee off that takes it away. */
     title: () => { splashUp = true; drawSplash(); render(); },
     teeOff,
+    /** Forget the tutorial was done in this browser, so the next Tee off on hole 1 runs it again. */
+    forgetTutorial: coach.forget,
     /** Drop the disc in the sea here and start the swim, as if a throw had landed there. */
     splash: (lat: number, lon: number) => { if (phase !== "aim" || !currents) return; lie = { lat, lon }; beginSwim(); },
     paddle: setPaddling,
@@ -539,17 +562,18 @@ const golfApi = {
 Object.assign(window, { golf: golfApi });
 
 // The same functions as commands: WebMCP tools for an agent, the Cmd/Ctrl+K palette (and a corner button on a phone) for a person.
-const nums = (a: unknown): Record<string, number> =>
-  Object.fromEntries(Object.entries(typeof a === "object" && a ? a : {}).filter((e): e is [string, number] => typeof e[1] === "number"));
-const LOFTS: readonly Loft[] = ["low", "high"];
+const LOFTS = ["low", "high"] as const satisfies readonly Loft[];
+// The tools' arguments: anything missing or wrong reads as its default.
+const AimArgs = obj({ heading: num(-1e6, 1e6, 0), power: num(-1e6, 1e6, 0.5), loft: maybe(oneOf(LOFTS)) });
+const SplashArgs = obj({ lat: num(-90, 90, 0), lon: num(-180, 180, 0) });
 addCommands([
   { name: "golf_state", title: "Look at the hole", group: "Hole", description: "Phase, hole, strokes, aim (heading, power, loft), wind, swim and scores.", annotations: { readOnlyHint: true }, execute: () => golfApi.state() },
   { name: "golf_aim", title: "Aim the disc", group: "Throw", description: "Heading in degrees, power, and loft (low or high).",
     inputSchema: { type: "object", properties: { heading: { type: "number" }, power: { type: "number" }, loft: { type: "string", enum: [...LOFTS] } }, required: ["heading", "power"] },
-    execute: (a) => { const { heading: h = 0, power: p = 0.5 } = nums(a), l = LOFTS.find((x) => typeof a === "object" && a && Reflect.get(a, "loft") === x); golfApi.aim(h, p, l); return golfApi.state(); } },
+    execute: (a) => { const { heading, power, loft } = check(AimArgs, a) ?? AimArgs({}); golfApi.aim(heading, power, loft); return golfApi.state(); } },
   { name: "golf_throw", title: "Throw the disc", group: "Throw", description: "Throw with the current aim.", execute: () => { golfApi.throw(); } },
   { name: "golf_splash", title: "Splash into the sea", group: "Swim", description: "Drop the disc in the sea at lat, lon and start the swim.",
-    inputSchema: { type: "object", properties: { lat: { type: "number" }, lon: { type: "number" } }, required: ["lat", "lon"] }, execute: (a) => { const { lat = 0, lon = 0 } = nums(a); golfApi.splash(lat, lon); return golfApi.state(); } },
+    inputSchema: { type: "object", properties: { lat: { type: "number" }, lon: { type: "number" } }, required: ["lat", "lon"] }, execute: (a) => { const { lat, lon } = check(SplashArgs, a) ?? SplashArgs({}); golfApi.splash(lat, lon); return golfApi.state(); } },
   { name: "golf_sea_view", title: "Toggle sea view", group: "Swim", description: "Show or hide the sea-current view.", inputSchema: { type: "object", properties: { on: { type: "boolean" } } },
     execute: (a) => { golfApi.seaView(!(typeof a === "object" && a && Reflect.get(a, "on") === false)); } },
 ]);

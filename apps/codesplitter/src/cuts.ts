@@ -24,6 +24,8 @@ import { checkEnv, runDirs, sandboxUser, spawnAs } from "./check-env.ts";
 import { fileDoc, materialize, toFile } from "./archive.ts";
 import { cardFont, renderCard, type CardLine } from "./card.ts";
 import { fail, json, type Body, type Env, unread } from "./env.ts";
+import { num, obj, opt, str, type Of } from "@rustybuns/util/guard";
+import { readJson } from "@rustybuns/util/http";
 import { isAdmin } from "./identity.ts";
 import type { Doc, Line } from "./lines.ts";
 import { parseJson, esc } from "./util.ts";
@@ -32,7 +34,9 @@ import { liveRepo, branchOf } from "./repos.ts";
 export type Mark = "pass" | "fail";
 export interface CutRun { at: number; code: number; passed: number; failed: number; out: string; marks: Record<string, Record<string, Mark>>; note?: string }
 /** Run `bun test` over these files (path → text) and say how it went. */
-export type Tester = (files: Record<string, string>) => Promise<{ code: number; out: string; report?: string }>;
+/** A test run's outcome: the exit code, what it printed, and its junit report. The sandbox's /test answers it too. */
+const TestRun = obj({ code: num(-Infinity, Infinity), out: str(Infinity), report: opt(str(Infinity)) });
+export type Tester = (files: Record<string, string>) => Promise<Of<typeof TestRun>>;
 /** Where `bun test` writes its JUnit report, beside the cut's files. */
 export const REPORT = ".cut-report.xml";
 
@@ -293,7 +297,7 @@ const localTester = (user = sandboxUser(process.env.CODESPLITTER_CHECKS_USER)): 
       writeFileSync(at, text);
       if (user) chmodSync(at, 0o666);
     }
-    const as = spawnAs(["bun", "test", "--reporter=junit", `--reporter-outfile=${REPORT}`], env, user);
+    const as = spawnAs(["bun", "test", "--reporter=junit", `--reporter-outfile=${REPORT}`], env, user, process.env.HOME);
     const p = Bun.spawn(as.cmd, { cwd: dir, stdout: "pipe", stderr: "pipe", timeout: 120_000, env: as.env });
     const [o, e] = await Promise.all([new Response(p.stdout).text(), new Response(p.stderr).text()]);
     const code = await p.exited;
@@ -309,7 +313,9 @@ const localTester = (user = sandboxUser(process.env.CODESPLITTER_CHECKS_USER)): 
 const containerTester = (ns: NonNullable<Env["AGENT_SANDBOX"]>): Tester => async (files) => {
   const res = await ns.get(ns.idFromName(crypto.randomUUID())).fetch(new Request("http://sandbox/test", { method: "POST", body: JSON.stringify({ files }) }));
   if (!res.ok) throw new Error(`sandbox: ${res.status} ${await res.text()}`);
-  return (await res.json()) as { code: number; out: string; report?: string };
+  const run = await readJson(res, TestRun);
+  if (!run) throw new Error("sandbox: its /test reply didn't read");
+  return run;
 };
 
 /** Where a cut's tests can run for `user`: tests stand in; the desktop runs them itself; on Cloudflare, a container for admins (it bills the site). */
@@ -319,8 +325,8 @@ function testerFor(env: Env, user: string | null): Tester | null {
   return typeof Bun !== "undefined" && !env.BETTER_AUTH_SECRET ? localTester() : null;
 }
 
-const doc = (env: Env, owner: string, repo: string, path: string, branch?: string) =>
-  fileDoc(env, owner, repo, path, "cut", "file", branch);
+const doc = (env: Env, owner: string, repo: string, path: string, branch?: string, crew?: boolean) =>
+  fileDoc(env, owner, repo, path, "cut", "file", branch, crew);
 const toDisk = (lines: { text: string }[]) => lines.length ? lines.map((l) => l.text).join("\n") + "\n" : "";
 
 export async function createCut(env: Env, owner: string, repo: string, user: string | null, write: boolean, body: Body<"pieces" | "path" | "from" | "to" | "note">) {
@@ -362,9 +368,9 @@ export async function createCut(env: Env, owner: string, repo: string, user: str
 interface CutRow { id: string; owner: string; repo: string; branch: string; paths: string; by: string; note: string; created_at: number; run: string | null; status: string }
 
 /** The cut's files as they are on its branch, each line with its line number on main now (null: new in the cut, or gone from main). */
-async function cutFiles(env: Env, c: CutRow) {
+async function cutFiles(env: Env, c: CutRow, crew: boolean) {
   return Promise.all(parseJson<string[]>(c.paths, []).map(async (path) => {
-    const [cut, main] = await Promise.all([doc(env, c.owner, c.repo, path, c.branch), doc(env, c.owner, c.repo, path)]);
+    const [cut, main] = await Promise.all([doc(env, c.owner, c.repo, path, c.branch, crew), doc(env, c.owner, c.repo, path, undefined, crew)]);
     const at = new Map(main.lines.map((l, i) => [l.id, i + 1]));
     return { path, lines: cut.lines.map((l) => ({ ...l, n: at.get(l.id) ?? null })) };
   }));
@@ -372,18 +378,20 @@ async function cutFiles(env: Env, c: CutRow) {
 
 const summary = (run: CutRun | null) => !run ? "not run yet" : run.note ?? `${run.passed} passed, ${run.failed} failed`;
 
-export async function cutRoutes(req: Request, env: Env, p: string[], url: URL, user: string | null): Promise<Response | null> {
+export async function cutRoutes(req: Request, env: Env, p: string[], url: URL, user: string | null, write: (owner: string, repo: string) => Promise<boolean>): Promise<Response | null> {
   if (p[1] !== "cuts" || !p[2]) return null;
   // Like a shared range, the link is the key: it shows only the cut's lines, even from a private repo.
   const c = await env.DB.prepare(`SELECT c.*, b.status FROM cuts c ${liveRepo("c")} ${branchOf("c")} WHERE c.id = ?`).bind(Date.now(), p[2]).first<CutRow>();
   if (!c) return fail("NoSuchCut", "no such cut");
   const run: CutRun | null = c.run ? JSON.parse(c.run) : null;
+  // Its private lines are the crew's, as in the file itself: anyone else gets them blank.
+  const crew = () => write(c.owner, c.repo);
 
   // GET /api/cuts/:id
   if (!p[3] && req.method === "GET") {
     const { run: _, ...rest } = c;
     // The output can quote the cut's own code and the machine's paths: the link shows the marks and counts, the owner the text.
-    return json({ ...rest, paths: JSON.parse(c.paths), files: await cutFiles(env, c), run: run && user !== c.owner ? { ...run, out: "" } : run, can_run: user === c.owner && !!testerFor(env, user) });
+    return json({ ...rest, paths: JSON.parse(c.paths), files: await cutFiles(env, c, await crew()), run: run && user !== c.owner ? { ...run, out: "" } : run, can_run: user === c.owner && !!testerFor(env, user) });
   }
 
   // POST /api/cuts/:id/run
@@ -392,7 +400,7 @@ export async function cutRoutes(req: Request, env: Env, p: string[], url: URL, u
     if (user !== c.owner) return fail("OwnerOnly", "only the repo's owner can run a cut");
     const tester = testerFor(env, user);
     if (!tester) return (env.AGENT_SANDBOX ? fail("AdminsOnly", "hosted runs are limited to this site's admins") : fail("DesktopOnly", "cuts run on the desktop app, or in the agent sandbox on Cloudflare"));
-    const files = await cutFiles(env, c);
+    const files = await cutFiles(env, c, await crew());
     const t = await tester(Object.fromEntries(files.map((f) => [f.path, toDisk(f.lines)]))).catch((e: Error) => ({ code: -1, out: e.message }));
     const r = readRun(t.out, ("report" in t && t.report) || "", files);
     const out: CutRun = { at: Date.now(), code: t.code, ...r, out: t.out.slice(-MAX_OUT),
@@ -403,7 +411,7 @@ export async function cutRoutes(req: Request, env: Env, p: string[], url: URL, u
 
   // GET /api/cuts/:id/card.png
   if (p[3] === "card.png" && req.method === "GET") {
-    const files = await cutFiles(env, c);
+    const files = await cutFiles(env, c, await crew());
     const lines: CardLine[] = files.flatMap((f) => [
       ...(files.length > 1 ? [{ n: null, text: `// ${f.path}` }] : []),
       ...f.lines.map((l) => ({ n: l.n, text: l.text, mark: run?.marks[f.path]?.[l.id] })),

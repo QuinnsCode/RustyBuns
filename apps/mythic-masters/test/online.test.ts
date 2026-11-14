@@ -1,9 +1,9 @@
 // Walking the world together (#3663): two players in one party room through the page's own net module, the real Worker and
 // the real Region Durable Object (scripts/party.ts runs them on Bun's sockets), then the wire and the door.
-import { afterAll, describe, expect, setDefaultTimeout, test } from "bun:test";
+import { afterAll, describe, expect, setDefaultTimeout, spyOn, test } from "bun:test";
 import worker from "../src/edge/worker.ts";
-import { bestOffset, COAST_MS, KEEP, keepSeen, MAX_PLAYERS, NO_SEEN, step, Ghost, BEHIND_MS, decodeServer, delta, parseDelta, parseEvent, plausible, quantise, WORLD_CYCLE, worldClock } from "../src/net/party.ts";
-import { DAY } from "../src/world/nature.ts";
+import { bestOffset, COAST_MS, KEEP, keepSeen, MAX_PLAYERS, NO_SEEN, step, Ghost, BEHIND_MS, decodeServer, delta, parseDelta, parseEvent, plausible, quantise, WORLD_CYCLE, WORLD_EPOCH, worldClock } from "../src/net/party.ts";
+import { DAY, hourAt } from "../src/world/nature.ts";
 import { Online } from "../src/net/online.ts";
 import { serveParty } from "../scripts/party.ts";
 import { DEAD_MS, Region } from "../src/edge/region.ts";
@@ -18,7 +18,7 @@ const until = async (ok: () => boolean, ms = 3000) => { const end = Date.now() +
 const heard: string[] = [];
 /** A save far enough along that region 5's trail (where these walks are) is open. */
 const OPENED = [1, 2, 3, 4, 5, 6];
-const join = (name: string, room = "WALK1", base = party.url, more: Pick<NonNullable<ConstructorParameters<typeof Online>[1]>, "onCompany" | "opened" | "posed"> = {}) => new Online(room, {
+const join = (name: string, room = "WALK1", base = party.url, more: Pick<NonNullable<ConstructorParameters<typeof Online>[1]>, "onCompany" | "opened" | "posed" | "onRest" | "onDawn"> = {}) => new Online(room, {
   opened: () => OPENED, ...more, base, guest: { uid: `${name}-uid-0000`, name },
   onDen: (den, who, c) => heard.push(`${name}: ${who} at ${c} ${den}`),
   onHunt: (h, s, who) => heard.push(`${name}: ${who} hunt ${h} ${s}`),
@@ -252,7 +252,7 @@ describe("two friends in one region", () => {
     ivy.close(); jo.close();
   });
 
-  test("what a friend picked, flushed and tracked outlasts them: one who joins after they left still finds it", async () => {
+  test("what a friend picked, flushed and tracked outlasts them: one who joins after they left still finds it, even after the room stood empty", async () => {
     const ada = join("Ada", "KEEP1"), bo = join("Bo", "KEEP1");
     ada.update(5, 13800, 5600, 0, "hodag", performance.now()); bo.update(5, 13810, 5600, 0, "hodag", performance.now());
     await until(() => ada.status === "in" && bo.status === "in");
@@ -273,7 +273,14 @@ describe("two friends in one region", () => {
     // and the contract Ada was on, at the furthest sign anyone read, so Cy can follow it to the lair
     await until(() => heard.includes("Cy: Ada hunt 5.13900.5600 2"));
     expect(heard).not.toContain("Cy: Bo hunt 5.13900.5600 1");
+    // Everyone goes home and the room stands empty; Di, walking in later, still finds the region as they left it.
     cy.close(); bo.close();
+    await Bun.sleep(300);
+    const di = join("Di", "KEEP1");
+    di.update(5, 13820, 5600, 0, "hodag", performance.now());
+    await until(() => di.status === "in", 8000);
+    await until(() => heard.some((l) => l.startsWith("Di: pick 197,80 at")) && heard.includes("Di: Ada hunt 5.13900.5600 2"));
+    di.close();
   });
 
   test("a lair's creature is one creature: a friend's blows reach the other, one who walks in late finds it hurt, and beating it closes the contract", async () => {
@@ -369,6 +376,40 @@ test("a page that drops and rejoins within a few seconds keeps the room's doubt,
   lu.close(); kim.close(); max.close();
 });
 
+test("a party rests till dawn together: the room moves its clock on once everyone lies down, and walking off gets you up (#4383)", async () => {
+  // The room's clock at ten at night: Date.now moved on, so the hour is the same however fast this runs.
+  const real = Date.now.bind(Date), t = (real() - WORLD_EPOCH) / 1000, at22 = ((22 - 8) / 24) * DAY;
+  const shift = ((((at22 - t) % DAY) + DAY) % DAY) * 1000;
+  const now = spyOn(Date, "now").mockImplementation(() => real() + shift);
+  try {
+    const rests: string[] = [];
+    let dawns = 0;
+    const camp = (name: string) => join(name, "NIGHT1", party.url, { onRest: (who, n, of) => rests.push(`${name}: ${who || "me"} ${n}/${of}`), onDawn: () => dawns++ });
+    const ana = camp("Ana"), bo = camp("Bo");
+    // Both at region 5's campfire.
+    ana.update(5, 13422, 5527, 0, "hodag", performance.now());
+    bo.update(5, 13425, 5527, 0, "jersey-devil", performance.now());
+    await until(() => ana.status === "in" && bo.status === "in" && ana.ghosts.size === 1 && bo.ghosts.size === 1 && ana.clock(performance.now()) !== null);
+    ana.update(5, 13423, 5527, 0, "hodag", performance.now()); bo.update(5, 13426, 5527, 0, "jersey-devil", performance.now());
+    await until(() => [...ana.ghosts.values()][0]?.pose.x === 134260 && [...bo.ghosts.values()][0]?.pose.x === 134230);
+    expect(hourAt(ana.clock(performance.now())!)).toBeCloseTo(22, 0);
+    ana.rest();
+    await until(() => rests.includes("Bo: Ana 1/2") && rests.includes("Ana: me 1/2"));
+    // Ana gets up and walks 40 m off: Bo lying down is not the whole party.
+    await Bun.sleep(250); ana.update(5, 13462, 5527, 0, "hodag", performance.now());
+    await until(() => [...bo.ghosts.values()][0]?.pose.x === 134620);
+    bo.rest();
+    await until(() => rests.includes("Ana: Bo 1/2"));
+    expect(dawns).toBe(0);
+    // She walks back and lies down again: everyone is resting, so it is dawn for both, on one clock.
+    await Bun.sleep(250); ana.update(5, 13424, 5527, 0, "hodag", performance.now());
+    ana.rest();
+    await until(() => dawns === 2);
+    for (const o of [ana, bo]) expect(hourAt(o.clock(performance.now())!)).toBeCloseTo(6.5, 0);
+    ana.close(); bo.close();
+  } finally { now.mockRestore(); }
+});
+
 test("a page that vanished without closing is swept once it stops pinging, and its seat is free again", async () => {
   // The hibernation API's last-ping time, by hand: workerd answers "ping" itself and remembers when.
   const socks: RoomSocket[] = [], pinged = new Map<RoomSocket, number>();
@@ -444,6 +485,8 @@ describe("the wire", () => {
     ["a clock question", { e: "time" }, true],
     ["a sign past the lair", { e: "hunt", h: "1.20002.6206", s: 4 }, false],
     ["a fight with no result", { e: "fought", c: "hodag", lv: 7, s: 30 }, false],
+    ["a faction's team taken on", { e: "rival", f: "office" }, true],
+    ["a faction there is none of", { e: "rival", f: "guild" }, false],
   ])("an event: %s", (_, raw, ok) => { expect(parseEvent(raw) !== null).toBe(ok); });
 
   test.each([

@@ -4,7 +4,8 @@
 // Cloudflare keeps the versions, so there's no second copy of the app, only this cron.
 // See watchdog/README.md for deploying it.
 
-import { FRESH, liveVersion, tick, type WatchState } from "../src/watchdog-core.ts";
+import { check } from "@rustybuns/util/guard";
+import { FRESH, liveVersion, tick, WatchState } from "../src/watchdog-core.ts";
 
 interface Kv { get(k: string): Promise<string | null>; put(k: string, v: string): Promise<void> }
 interface Env {
@@ -30,10 +31,10 @@ export default {
   async scheduled(_c: unknown, env: Env) {
     const script = `${API}/accounts/${env.CF_ACCOUNT_ID}/workers/scripts/${env.SCRIPT_NAME}/deployments`;
     const auth = { authorization: `Bearer ${env.CF_API_TOKEN}`, "content-type": "application/json" };
-    const prev = JSON.parse((await env.STATE.get("state")) ?? "null") as WatchState | null;
+    const prev = check(WatchState, JSON.parse((await env.STATE.get("state")) ?? "null"));
     const { state, outcome } = await tick({
       check: async () => (await fetch(`${env.PRIMARY_URL}/api/health`, { signal: AbortSignal.timeout(10_000) }).catch(() => null))?.ok === true,
-      active: async () => liveVersion((await (await fetch(script, { headers: auth })).json()) as Parameters<typeof liveVersion>[0]),
+      active: async () => liveVersion(await (await fetch(script, { headers: auth })).json()),
       rollback: async (version) => {
         const res = await fetch(script, { method: "POST", headers: auth, body: JSON.stringify({ strategy: "percentage", versions: [{ version_id: version, percentage: 100 }], annotations: { "workers/message": "watchdog rollback" } }) });
         if (!res.ok) throw new Error(`rollback: ${res.status} ${await res.text()}`);

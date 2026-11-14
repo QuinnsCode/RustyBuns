@@ -371,6 +371,20 @@ describe("over the API", () => {
     return { call, post, file };
   }
 
+  test("a branch whose own JSON doesn't parse doesn't merge it into main until someone settles it as the branch", async () => {
+    const { call, post } = await app();
+    await post("ana", "/api/repos/ana/r/files", { path: "c.json", content: '{\n  "a": 1\n}' });
+    await post("ana", "/api/repos/ana/r/branches", { name: "j" });
+    await post("ana", "/api/repos/ana/r/do/ops?path=c.json&branch=j", { ops: [{ kind: "set", line: "L2", base: 2, text: '  "a": 1,,' }] });
+    const held = await post("ana", "/api/repos/ana/r/branches/j/merge", {});
+    expect(held.status).toBe(409);
+    expect(JSON.stringify(await held.json())).toContain("the branch's copy isn't valid JSON");
+    const main = async () => text(await (await call("ana", "/api/repos/ana/r/do/file?path=c.json")).json() as Doc);
+    expect(await main()).toBe('{\n  "a": 1\n}');
+    expect((await post("ana", "/api/repos/ana/r/branches/j/merge", { resolve: { "c.json": { "lint:json": "branch" } } })).status).toBe(200);
+    expect(await main()).toBe('{\n  "a": 1,,\n}');
+  });
+
   test("the review lists each conflict's picks; a bad pick is a 400, a text lands as the merger's", async () => {
     const { call, post, file } = await app();
     const review = await (await call("ana", "/api/repos/ana/r/branches/b1")).json() as any;
@@ -472,6 +486,33 @@ describe("over the API", () => {
     expect(only[0]).toEqual(["a.ts"]);
     pass = true;
     expect(await ask()).toMatchObject({ ok: true, tests: "passed" });
+  });
+
+  test("two merges onto one spot drop nothing: both comments land, main's first, and main's delete stays in a block the branch moved", async () => {
+    const { call, post } = await app();
+    const doc = async (path: string, branch = "") => await (await call("ana", `/api/repos/ana/r/do/file?path=${path}${branch && `&branch=${branch}`}`)).json() as Doc;
+    /** Each of `sides` on its own branch off `was`, merged in order (main itself when the name is ""); main's text after. */
+    const land = async (path: string, was: string, sides: [string, string][]) => {
+      await post("ana", "/api/repos/ana/r/files", { path, content: was });
+      for (const [b] of sides) if (b) await post("ana", "/api/repos/ana/r/branches", { name: b });
+      for (const [b, t] of sides) {
+        const q = `path=${path}${b && `&branch=${b}`}`;
+        expect((await post("ana", `/api/repos/ana/r/do/ops?${q}`, { ops: diffToOps((await doc(path, b)).lines, t.split("\n")) })).status).toBe(200);
+      }
+      for (const [b] of sides) if (b) expect((await post("ana", `/api/repos/ana/r/branches/${b}/merge`, {})).status).toBe(200);
+      return text(await doc(path));
+    };
+    const run = "export function run() {\n  start();\n  stop();\n}";
+    const noted = (n: string) => run.replace("  start();", `  start();\n  // ${n}`);
+    expect(await land("c.ts", run, [["c1", noted("start must come first")], ["c2", noted("stop is idempotent")]]))
+      .toBe(run.replace("  start();", "  start();\n  // start must come first\n  // stop is idempotent"));
+    const todo = "export function run() {\n  // TODO: tidy\n  start();\n}";
+    expect(await land("t.ts", todo, [["t1", todo.replace("TODO: tidy", "retries three times")], ["t2", todo.replace("TODO: tidy", "never before init()")]]))
+      .toBe(todo.replace("// TODO: tidy", "// retries three times\n  // never before init()"));
+    // The branch moves a block out of the if; then main deletes one of its lines.
+    const block = "function f() {\n  if (x) {\n    a();\n    b();\n    c();\n  }\n  done();\n}";
+    expect(await land("m.ts", block, [["out", "function f() {\n  if (x) {\n  }\n  done();\n  a();\n  b();\n  c();\n}"], ["", block.replace("    b();\n", "")]]))
+      .toBe("function f() {\n  if (x) {\n  }\n  done();\n  a();\n  c();\n}");
   });
 
   test("merge_clean_branches: branches on different lines all land, one that conflicts stays open", async () => {

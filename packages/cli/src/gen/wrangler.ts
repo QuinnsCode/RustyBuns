@@ -120,6 +120,8 @@ export function generateWrangler(c: RustyBunsConfig, previous: string | null = n
     if (b.type === "vectorize") vectorize.push({ binding: name, index_name: b.indexName });
     // Wrangler takes one AI binding, as an object.
     if (b.type === "ai") w["ai"] = { binding: name };
+    // Wrangler takes one Browser binding, as an object.
+    if (b.type === "browser") w["browser"] = { binding: name };
     if (b.type === "queue") {
       if (b.producer !== false) producers.push({ binding: name, queue: b.queueName });
       const dlq = b.consumer ? b.consumer.deadLetterQueue : undefined;

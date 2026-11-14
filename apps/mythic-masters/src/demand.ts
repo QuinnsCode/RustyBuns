@@ -54,7 +54,7 @@ export function reactionOf(o: Outcome, j: Journey | null): { ask: string; signed
       return { ask: `Item ${o.item}. Received.${RECEIPTS[o.item % RECEIPTS.length]}`, signed: false };
     case "won":
       if (o.foe === "mythic") return { ask: "It ran. I have its smell on this page now. Go back for it.", signed: true };
-      if (o.foe === "wild") return { ask: "You beat it and let it walk. That is not how a ledger works.", signed: true };
+      if (o.foe === "wild") return { ask: "You beat it, then you let it go. Next time, bind it.", signed: true };
       if (o.foe === "keeper") return { ask: `A keeper is not an item. ${demandOf(j)}`, signed: true };
       return { ask: "Noted. Not entered.", signed: false };
     case "down":
@@ -103,8 +103,8 @@ export function settingsLineOf(o: { paused: boolean; quillMuted: boolean }): str
   return "Move the keys where you like. The accounts stay where they are.";
 }
 
-/** A compendium chapter the Book writes its own line over (#4166): the line-up, the bestiary, the regions. */
-export type Chapter = "lineup" | "bestiary" | "regions";
+/** A compendium chapter the Book writes its own line over (#4166): the line-up, the bestiary, the regions, the factions. */
+export type Chapter = "lineup" | "bestiary" | "regions" | "factions";
 
 /** The book's line at the head of a compendium chapter, about your record there instead of the shared demand: who you
  * lead with and who is hurt, the last beast you bound and where, the last page you wrote it, or the fights you keep
@@ -124,6 +124,13 @@ export function pageLineOf(ch: Chapter, j: Journey | null, roster: readonly Crea
     if (!last) return { ask: "Three from the witch's sheet. You have not bound one yourself. Yet.", signed: true };
     const where = last.caught!.where.split(",")[0];
     return { ask: `Last in: the ${name(last.id)}${where ? `, ${where}` : ""}. The ink is dry. Next.`, signed: true };
+  }
+  if (ch === "factions") {
+    // the ones behind you (src/factions/engine.ts): none yet, some, or quests they have closed on you
+    const met = j.factions?.met.length ?? 0, done = j.factions?.done.length ?? 0;
+    if (!met) return { ask: "Nobody follows you yet. Somebody will. They always bring forms.", signed: true };
+    if (!done) return { ask: `${met === 1 ? "One of them has" : `${met} of them have`} found you. They want me. They may ask.`, signed: true };
+    return { ask: `${done} of their little errands done. They still think they know what I am.`, signed: false };
   }
   // the last page you wrote it (pages are pushed as sections clear), and the fights you lost since
   const at = j.pages.at(-1)?.split(":").map(Number), g = at && TRAIL_REGIONS.find((r) => r.n === at[0]);

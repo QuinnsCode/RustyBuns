@@ -26,6 +26,8 @@ export interface Creature {
   edge: number;
   /** A flyer that never tires in the air (creatures.ts `soars`). */
   soars?: boolean;
+  /** Its health is this many times its body's: a wild one facing a team (journey.ts `outnumbered`, #4411). Unset, 1. */
+  hpScale?: number;
 }
 
 /** A creature's signature move, from its legend. */
@@ -130,7 +132,7 @@ export function body(c: Creature): Body {
     stamina: clamp(2.5 + stats.vigor / 40 + (flight ? 1 : 0), 3, 8),
     // A 4 kg hare-with-wings stays up about eight seconds, a 900 kg bird under four: everything that flies comes down.
     lift: flight && !c.soars ? clamp((mass / 60) ** 0.6, 0.5, 2) : 0,
-    hp: 100 + stats.vigor + stats.guard * 0.5,
+    hp: (100 + stats.vigor + stats.guard * 0.5) * (c.hpScale ?? 1),
     armour: clamp((heft - 1) * 0.6, 0, 0.7),
     dashCost: clamp(0.25 * heft, 0.2, 0.6),
     dodge: stats.speed >= 100 ? 8 : 3,

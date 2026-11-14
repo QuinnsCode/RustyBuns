@@ -9,33 +9,35 @@
   </head>
   <body>
     <canvas id="view" aria-label="The park in 3D"></canvas>
+    <div id="backdrop" class="backdrop" aria-hidden="true"></div>
     <div id="controls-host"></div>
     <div id="narrator" class="narrator" aria-hidden="true" hidden><i></i><i></i><p></p></div>
 
     <main id="menu" class="menu">
       <div class="menu-card">
         <div class="unigrid"><b>National Parks</b><span>All 63 of them</span></div>
-        <div class="ridges" data-poster aria-hidden="true"></div>
+        <div class="poster-head">
+          <button class="info" popovertarget="about" title="How to play" aria-label="How to play"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg></button>
+          <div class="ridges" data-poster aria-hidden="true"></div>
+          <div class="poster-type"><h1>Park Hide <span>&amp;</span> Seek</h1><p class="tagline">Hide out in the parks after dark</p></div>
+        </div>
         <div class="stripes" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
         <div class="menu-body">
           <div class="insignia" data-insignia aria-hidden="true"></div>
           <p id="front-permit" class="permit front"><span>Good in all 63 parks</span><span>Backcountry permit</span></p>
-          <h1>Park Hide <span>&amp;</span> Seek</h1>
-          <p class="lede">The rangers are out after dark, and they're coming for you. Hide in real national park terrain. Find Bigfoot, or just don't get caught for three minutes.</p>
           <label class="field">Your name <input id="name" maxlength="24" autocomplete="nickname" placeholder="Camper" /></label>
           <p id="who" class="eq eq-chip in" title="Signed in through eqosys" hidden><b id="who-name" class="eq-who"></b><button id="signout" class="eq-btn" type="button">Sign out</button></p>
-          <button id="play" class="play">Play</button>
-          <p id="play-note" class="note">Straight into a game. AI fills the empty spots.</p>
+          <button id="play" class="play" title="Straight into a game. AI fills the empty spots.">Play</button>
           <div class="more">
-            <button id="custom" class="link">Custom game</button>
-            <button id="signin" class="link" data-online hidden>Sign in through eqosys</button>
-            <button id="online" class="link" data-online hidden>Play with friends</button>
-            <button id="host" class="link" data-desktop>Host a LAN game</button>
-            <button id="show-join" class="link" data-desktop>Join a LAN game</button>
-            <button id="show-parks" class="link" data-online hidden>Request a park survey</button>
+            <button id="custom" class="link" title="Custom game">Custom</button>
+            <button id="signin" class="link" title="Sign in through eqosys" data-online hidden>Sign in</button>
+            <button id="online" class="link" title="Play with friends" data-online hidden>Friends</button>
+            <button id="host" class="link" title="Host a LAN game" data-desktop>Host LAN</button>
+            <button id="show-join" class="link" title="Join a LAN game" data-desktop>Join LAN</button>
+            <button id="show-parks" class="link" title="Request a park survey" data-online hidden>Survey</button>
           </div>
           <form id="park-request" class="join" hidden>
-            <label class="field">Every park has a drop zone. Which should be surveyed next, for signposted landmarks, a park map and more zones? <select id="park-pick"></select></label>
+            <label class="field" title="Every park has a drop zone. Which should be surveyed next, for signposted landmarks, a park map and more zones?">Survey next <select id="park-pick"></select></label>
             <button class="primary" type="submit">Request it</button>
             <p id="park-said" class="note" role="status"></p>
             <h2 style="margin-top:12px">Most requested</h2>
@@ -49,7 +51,7 @@
           </form>
           <p id="menu-error" class="error" role="alert"></p>
         </div>
-        <p class="credit stub"><span>Camper's stub · A Rusty Buns example</span><span class="stamp" aria-hidden="true">Admit one</span></p>
+        <p class="credit stub"><span>Camper's stub<i class="long"> · A Rusty Buns example</i></span><span class="stamp" aria-hidden="true">Admit one</span></p>
       </div>
     </main>
 
@@ -62,6 +64,22 @@
       </div>
     </section>
 
+    <div id="about" class="about" popover>
+      <p class="lede">The rangers are out after dark, and they're coming for you. Hide in real national park terrain. Find Bigfoot, or just don't get caught for three minutes.</p>
+      <p id="about-rules"></p>
+      <p id="about-bigfoot"></p>
+      <dl class="keys">
+        <dt>WASD · Shift</dt><dd>move · run</dd>
+        <dt>C</dt><dd>crouch (hold: lie flat)</dd>
+        <dt>X</dt><dd>hold to climb a tree</dd>
+        <dt>E</dt><dd>prop hunt: turn into the prop next to you, or drop the disguise</dd>
+        <dt>Q · F</dt><dd>ranger: call out · flashlight</dd>
+        <dt>M</dt><dd>map (ranger: radio)</dd>
+        <dt>V · N</dt><dd>camera · music</dd>
+        <dt>Esc</dt><dd>let go of the mouse</dd>
+      </dl>
+    </div>
+
     <div id="hud" class="hud" hidden>
       <div class="topbar"><span id="zone-name"></span><span id="sky"></span><span id="phase"></span><span id="clock" class="clock"></span></div>
       <div id="banner" class="banner" role="status"></div>
@@ -73,7 +91,7 @@
       </div>
       <ul id="feed" class="feed"></ul>
       <ul id="scores" class="scores"></ul>
-      <div id="clickme" class="clickme">Click to look around · Esc to let go of the mouse</div>
+      <div id="clickme" class="clickme" title="Esc to let go of the mouse">Click to look</div>
       <div id="cabin" class="cabin" hidden></div>
     </div>
 
@@ -82,7 +100,7 @@
       <aside id="radio" class="radio"></aside>
     </section>
 
-    <section id="results" class="results" hidden><div class="panel citation" id="results-body"></div></section>
+    <section id="results" class="results" hidden><div class="panel citation" id="results-body" data-strip="120"></div></section>
 
     <script type="module" src="/src/ui/main.ts"></script>
   </body>

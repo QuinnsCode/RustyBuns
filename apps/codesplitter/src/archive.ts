@@ -3,9 +3,8 @@
 // trees, reading files, turning a file into a live Durable Object on first
 // open, and pushing a catalogue as a commit.
 
-import { obj, opt, str, type Of } from "@rustybuns/util/guard";
+import { arr, isRecord, nul, obj, opt, str, type Of } from "@rustybuns/util/guard";
 import { MAX_TEXT, fromText, isDoc, text, type Doc } from "./lines.ts";
-import { isPlainObject } from "./util.ts";
 import { FileReply, Names, type FileLine } from "./file-do.ts";
 import { readJson } from "@rustybuns/util/http";
 import { GIT_BOT, GIT_EMAIL_DOMAIN, push, type Change } from "./git.ts";
@@ -64,7 +63,7 @@ export const docIn = async (res: Response): Promise<Doc | null> => {
 async function lastDoc(env: Env, owner: string, repo: string, path: string, crew = "1"): Promise<Doc | null> {
   const commits: unknown = await (await toFile(env, owner, repo, path, "codesplitters", "commits")).json();
   const last = Array.isArray(commits) ? commits[0] : null;
-  if (!isPlainObject(last) || typeof last.rev !== "number") return null;
+  if (!isRecord(last) || typeof last.rev !== "number") return null;
   return docIn(await toFile(env, owner, repo, path, "codesplitters", "at", { headers: { "x-codesplitter-crew": crew } }, `?rev=${last.rev}`));
 }
 
@@ -192,6 +191,8 @@ export async function readTree(env: Env, handle: ArtifactsRepo, hash: string): P
 /** One row of a tree listing: what GET /api/repos/:o/:r/tree answers in `entries`, and what `listDir` builds. */
 export const TreeItem = obj({ name: str(4096), path: str(4096, { min: 0 }), type: str(16) });
 export type TreeItem = Of<typeof TreeItem>;
+/** What GET /api/repos/:o/:r/tree answers: the tip it read (null on an empty repo) and the folder's entries. */
+export const TreeReply = obj({ commit: nul(obj({ hash: str(100) })), entries: arr(TreeItem, 100_000) });
 
 export async function listDir(env: Env, handle: ArtifactsRepo, ref: string, dir: string) {
   const [tip] = await handle.log({ ref, limit: 1 });
@@ -252,8 +253,8 @@ export async function materialize(env: Env, owner: string, repo: string, path: s
  * `deployCommit` is the commit on the remote deploys clone (the crew's, when there is one),
  * when that commit carries this file alone.
  */
-/** What a file's commit answers, as far as a caller reads whether its push landed: `git.error` when it didn't. */
-export const CommitReply = obj({ git: opt(obj({ error: opt(str(Infinity, { min: 0 })) })) });
+/** What a file's commit answers, as far as callers read it: `git.error` when its push didn't land, and the `published` text (private lines blanked). */
+export const CommitReply = obj({ git: opt(obj({ error: opt(str(Infinity, { min: 0 })) })), published: opt(str(Infinity, { min: 0 })) });
 
 export function pushCatalogue(env: Env, owner: string, repo: string, path: string, files: { content: string; published: string }, author: string, message: string, note?: string | null) {
   return pushCatalogues(env, owner, repo, { [path]: files }, author, message, note);

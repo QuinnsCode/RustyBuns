@@ -64,7 +64,8 @@ let shared: Promise<Map<string, string>> | undefined;
 // (sharedBuild() below; up here because the top-level build runs before the rest of the file is reached)
 const stamp = path.join(office, ".rustybuns");
 // what a prepared ./office was built with: one string for the check and the write, so a restart skips the prepare (#3385)
-const STAMP = `${tag} ${skin} lucide live clock mem pulls checks triage vale podcast codesplitter connect hosts hooktokens env ticks power board guard asks brawl ester dexter reload external box builder askfirst setup storage install sweep`;
+// a new patch in prepare() needs a new word here, or a restart skips it
+const STAMP = `${tag} ${skin} lucide live clock mem pulls checks triage vale podcast codesplitter connect hosts hooktokens env ticks power board guard asks brawl ester dexter reload external box builder askfirst setup storage install sweep fable52 modules reattach`;
 if (existsSync(stamp) && readFileSync(stamp, "utf8").trim() === STAMP && !process.argv.includes("--fresh")) {
   console.log(`🥐 Agent Office ${tag} already Rusty Buns-ified in ./office`);
   // the skin is ours and changes far more often than the release, so it's rebuilt every start
@@ -136,10 +137,11 @@ async function prepare(tag: string) {
   patch("workers/manager.js", "notePr: (command, output) => this.prs.noteOwn(w, command, output),",
     "notePr: (command, output) => {\n                this.prs.noteOwn(w, command, output);\n                this.__rbOnGh?.(command);\n            },");
 
-  // 6a. #3325: a worker sent home leaves its Claude scratch folder behind; sweep the ones whose worktree is gone
+  // 6a. #3325: a worker sent home leaves its Claude scratch folder behind; sweep the ones whose worktree is gone, and the
+  // node_modules of every worktree no worker sits at (one kept for work git can't see on main still had 3-5 GB of them)
   prepend("workers/manager.js", "import { sweepFloor as __rbSweep } from '../rb-sweep.js';\n");
   patch("workers/manager.js", "        return this.worktrees.sendHome(w.info, cleanup, landed, landedRepos);\n",
-    "        return this.worktrees.sendHome(w.info, cleanup, landed, landedRepos).finally(() => void __rbSweep(this.trees.dir).then((line) => line && this.events.toast(line, 'info')));\n");
+    "        return this.worktrees.sendHome(w.info, cleanup, landed, landedRepos).finally(() => void __rbSweep(this.trees.dir, [...this.workers.values()].flatMap((x) => x.info.worktree?.path ? [path.join(this.trees.dir, x.info.worktree.path)] : [])).then((line) => line && this.events.toast(line, 'info')));\n");
 
   // 6b. #3167: a fresh worktree gets its `bun install` from the hire step, and the worker starts once it is done
   prepend("workers/manager.js", "import { installWorktree as __rbInstall } from '../rb-install.js';\n");
@@ -153,9 +155,12 @@ async function prepare(tag: string) {
 
   // 7. the office and each floor's pty host watch their own memory (live/mem.ts), served at /__rb/mem with the
   // office's CPU profiles and heap snapshots (triage/server.ts): signed in, and to workers on the hook port
-  prepend("http/router.js", "import { officeTriage as __rbTriage } from '../rb-triage.js';\nimport { codesplitterRoute as __rbCs } from '../rb-codesplitter.js';\nimport { podcastRoute as __rbPod } from '../rb-podcast.js';\nimport { boxRoute as __rbBox } from '../rb-box.js';\nimport { builderRoute as __rbBuilder } from '../rb-builder.js';\nimport { connectRoute as __rbConnect } from '../rb-connect.js';\n");
+  prepend("http/router.js", "import { officeTriage as __rbTriage, watchStalls as __rbWatchStalls } from '../rb-triage.js';\nimport { codesplitterRoute as __rbCs } from '../rb-codesplitter.js';\nimport { podcastRoute as __rbPod } from '../rb-podcast.js';\nimport { boxRoute as __rbBox } from '../rb-box.js';\nimport { builderRoute as __rbBuilder } from '../rb-builder.js';\nimport { connectRoute as __rbConnect } from '../rb-connect.js';\n");
   patch("http/router.js", "const signedIn = routes.filter((r) => r.auth === 'session');",
-    "const signedIn = routes.filter((r) => r.auth === 'session');\n    const __rbRoutes = __rbTriage(ctx.cfg.dataDir, () => ctx.floors.values());\n    const __rbCsRoute = __rbCs();\n    const __rbPodRoute = __rbPod();\n    const __rbBoxRoute = __rbBox();\n    const __rbBuilderRoute = __rbBuilder();\n    const __rbGrantsRoute = __rbGrants(() => ctx.cfg.dataDir);\n    const __rbConnectRoute = __rbConnect(ctx.cfg.dataDir);");
+    "const signedIn = routes.filter((r) => r.auth === 'session');\n    const __rbRoutes = __rbTriage(ctx.cfg.dataDir, () => ctx.floors.values());\n" +
+    // #4306: a worker whose turn hung, or that a notice stopped owing work, is told to carry on; other sessions are a toast
+    "    if (process.env.AGENT_OFFICE_STALL_WATCH !== 'off')\n        __rbWatchStalls(() => ctx.floors.values(), (f, m) => { for (const fl of f ? [f] : ctx.floors.values()) ctx.toastFloor(fl, m, 'warn'); });\n" +
+    "    const __rbCsRoute = __rbCs();\n    const __rbPodRoute = __rbPod();\n    const __rbBoxRoute = __rbBox();\n    const __rbBuilderRoute = __rbBuilder();\n    const __rbGrantsRoute = __rbGrants(() => ctx.cfg.dataDir);\n    const __rbConnectRoute = __rbConnect(ctx.cfg.dataDir);");
   patch("http/router.js", "            for (const route of signedIn)\n",
     "            const __rb = p.startsWith('/__rb/') && (await __rbCsRoute(req.method, url) ?? await __rbPodRoute(req.method, url) ?? await __rbBoxRoute(req.method, url) ?? await __rbBuilderRoute(req.method, url) ?? await __rbConnectRoute(req.method, url) ?? await __rbRoutes(req.method, url, req.headers['x-rb-triage'] === '1'));\n" +
     "            if (__rb)\n                return send(res, __rb.status, __rb.body);\n            for (const route of signedIn)\n");
@@ -230,7 +235,7 @@ async function prepare(tag: string) {
   // 12b. the agent-to-agent endpoint stops trusting every worker on the floor (#644, live/floorguard.ts): a forced
   // send_home keeps another worker's uncommitted work, tell_worker says who it's from, AGENT_OFFICE_PEOPLE_ONLY
   writeFileSync(path.join(srv, "hooks/office-workers.js"), floorGuardHooks(readFileSync(path.join(srv, "hooks/office-workers.js"), "utf8")));
-  // a person's send-home click is logged beside an agent's (#2201)
+  // a person's send-home click is logged beside an agent's (#2201), and a key from a terminal that lost its attach attaches it again (#4315)
   writeFileSync(path.join(srv, "ws/handlers/workers.js"), floorGuardClicks(readFileSync(path.join(srv, "ws/handlers/workers.js"), "utf8")));
   // and a Claude worker's GitHub writes ask first (#2498, askfirst/): a second PreToolUse hook in its settings, the grants list's route below
   writeFileSync(path.join(srv, "providers/claude.js"), floorGuardClaude(readFileSync(path.join(srv, "providers/claude.js"), "utf8")));
@@ -255,6 +260,20 @@ async function prepare(tag: string) {
 
   // 13b. the issues board's Open column puts issues already handed to a worker last, so new ones are on top (board.ts)
   patchAsk(openNewFirstClient);
+
+  // 13c. the `fable` alias is Fable 5.2 in Claude Code now (v0.1.211 still names it 5.1), and Fable 5.1 stays
+  // a choice of its own: its full id goes to `claude --model` as it is, like an alias does
+  patch("shared/providers.js", "['fable', 'opus',", "['fable', 'claude-fable-5-1', 'opus',");
+  patch("shared/providers.js", "value === 'fable' ||", "value === 'fable' || value === 'claude-fable-5-1' ||");
+  patch("shared/providers.js", "fable: 'Fable 5.1',", "fable: 'Fable 5.2',\n    'claude-fable-5-1': 'Fable 5.1',");
+  patchAsk((js) => {
+    const out = js
+      .replace("[`fable`,`opus`,", "[`fable`,`claude-fable-5-1`,`opus`,")
+      .replace("e===`fable`||", "e===`fable`||e===`claude-fable-5-1`||")
+      .replace("fable:`Fable 5.1`,", "fable:`Fable 5.2`,\"claude-fable-5-1\":`Fable 5.1`,");
+    if (!out.includes("e===`claude-fable-5-1`") || !out.includes("\"claude-fable-5-1\":`Fable 5.1`")) throw new Error("Agent Office changed: the hire dialog's Claude models moved");
+    return out;
+  });
 
   // 14. the Druids Curse skin
   lap("client patches (9-13b)");

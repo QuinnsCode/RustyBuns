@@ -1,5 +1,5 @@
 // The page: draws the sim, turns keys into its input, and keeps the chase camera behind the rider.
-import { Car, createElement, Info, RectangleHorizontal, RotateCcw, Shield, ShieldOff, Users } from "lucide";
+import { Car, CircleHelp, createElement, RectangleHorizontal, RotateCcw, Shield, ShieldOff, Users } from "lucide";
 import * as THREE from "three";
 import { cheese, sweepShot } from "@rustybuns/util";
 import { autoQuality, pickQuality, QUALITY } from "@rustybuns/util/quality";
@@ -48,7 +48,9 @@ import { bump } from "./net/bump.ts";
 import { MAX_RIDERS } from "./net/room.ts";
 import { Ghosts } from "./render/ghosts.ts";
 import { Lightning, Precip } from "./render/weather.ts";
-import { achieve, fresh, finishSignIn, login, reportButton } from "./eqosys.ts";
+import { achieve, achievements, fresh, finishSignIn, login, reportButton } from "./eqosys.ts";
+import { tutorial } from "@rustybuns/util/tutorial";
+import { learn, realRide, steps as coachSteps, unlearned } from "./coach.ts";
 import { joinParty, openParty, partyCode } from "./net/lobby.ts";
 import { mountSpaces } from "./net/spaces.ts";
 import { mountFront } from "./front/front.ts";
@@ -88,7 +90,11 @@ scene.add(sun, sun.target);
 skyMood(air, mood);
 const ui = mountLevelUi(scene);
 reportButton();
-if (showFront(location.search)) void finishSignIn().then((back) => mountFront(back?.error)); // the title and menu cover the page until a mode is chosen
+if (showFront(location.search)) void finishSignIn().then((back) => {
+  // Signed in from a party link the long way round (the browser blocked eqosys's window): back to that party's lobby.
+  const party = back?.login && back.then.startsWith("party:") ? partyCode(`?party=${back.then.slice(6)}`) : null;
+  if (party) location.search = `?level=${levelId}&party=${party}`; else mountFront(back?.error);
+}); // the title and menu cover the page until a mode is chosen
 if (scene.fog instanceof THREE.Fog) { scene.fog.near *= mood.fog[0]; scene.fog.far *= mood.fog[1]; } // rain and mist close the view in
 const precip = new Precip(); // rain, snow, dust or drifting motes round the camera
 precip.begin(mood);
@@ -354,15 +360,10 @@ function swap() {
   mode = mode === "car" ? "skate" : "car"; // a skin: the ride carries on as it was
   hud();
 }
-const ESSENTIALS = () => {
-  const k = (t: string) => Object.assign(document.createElement("kbd"), { textContent: t });
-  const w = (t: string) => document.createTextNode(` ${t} `);
-  return [k(hint("push")), k(hint("brake")), w("push"), k(hint("left")), k(hint("right")), w("steer"), k(hint("ollie")), w("ollie"), k(hint("kickflip")), k(hint("heelflip")), k(hint("shoveit")), w("flips"), k(hint("manual")), k(hint("noseManual")), w("manuals")];
-};
 const help = document.createElement("button");
 help.id = "help";
-help.title = "All the controls";
-help.append(icon(Info));
+help.title = "Controls";
+help.append(icon(CircleHelp));
 const tip = $("tip");
 const tipText = () => {
   tip.innerHTML = "<p><kbd data-a=\"push\"></kbd><kbd data-a=\"brake\"></kbd> push, <kbd data-a=\"left\"></kbd><kbd data-a=\"right\"></kbd> steer, and spin in the air</p><p><kbd data-a=\"ollie\"></kbd> ollie, <kbd data-a=\"nollie\"></kbd> nollie, <kbd data-a=\"kickflip\"></kbd> kickflip, <kbd data-a=\"heelflip\"></kbd> heelflip, <kbd data-a=\"shoveit\"></kbd> shove-it</p><p><kbd data-a=\"varial\"></kbd> varial, <kbd data-a=\"varialHeel\"></kbd> varial heel, <kbd data-a=\"hardflip\"></kbd> hardflip, <kbd data-a=\"inward\"></kbd> inward heel, <kbd data-a=\"tre\"></kbd> tre flip, <kbd data-a=\"laser\"></kbd> laser flip, <kbd data-a=\"fsShoveit\"></kbd> frontside shove-it, <kbd data-a=\"shoveit360\"></kbd> 360 shove-it, <kbd data-a=\"fsShoveit360\"></kbd> frontside 360 shove-it, <kbd data-a=\"hardflip360\"></kbd> 360 hardflip, <kbd data-a=\"nightmare\"></kbd> nightmare flip, <kbd data-a=\"doubleKick\"></kbd> double kickflip, <kbd data-a=\"doubleHeel\"></kbd> double heelflip</p><p>Or drag the mouse or push the right stick: up ollies, across and down flick, diagonals are the compound tricks, a long one down a double turn. On a touch screen the flick pad shows its paths on a board like footprint grip tape; the footprints button picks another of twenty layouts</p><p><kbd data-a=\"boost\"></kbd> rear jets and pump a transition, <kbd data-a=\"fan\"></kbd> suction fan</p><p><kbd data-a=\"manual\"></kbd> hold a manual, <kbd data-a=\"noseManual\"></kbd> a nose manual: <kbd data-a=\"push\"></kbd> and <kbd data-a=\"brake\"></kbd> hold the balance, or hold the mouse still (nudged down for the nose), or use the pad's right and left triggers. Held in the air the same keys grab the tail or the nose, with steer a rail (indy, stalefish, mute, melon); held as the board catches a bar they keep that end high (bluntslide, blunt). Reach the coping slowly to stall on it, pop or brake to drop back in; meet a wall going along it to ride it</p><p><kbd data-a=\"swap\"></kbd> swap board and roadster, <kbd data-a=\"varial\"></kbd> reset</p><p>An agent in the browser can ride it too: WebMCP tools named skate_*</p>";
@@ -374,7 +375,7 @@ function hud() {
   swapBtn.replaceChildren(icon(mode === "car" ? RectangleHorizontal : Car));
   swapBtn.title = mode === "car" ? "Fingerboard (Tab)" : "Roadster (Tab)";
   if (skins.show(mode === "car" ? "roadster" : "fingerboard")) plumes.landed(sim.x, sim.y, sim.z, 4); // the swap pops in a ring of puffs
-  $("keys").replaceChildren(...ESSENTIALS(), help); // the rest sits behind the info button
+  $("keys").replaceChildren(help); // every control sits behind the ? button
   const n = (online?.riders.length ?? 0) + 1;
   if (!partyCode(location.search)) $("room").textContent = !online ? "" : online.status === "in" ? `Room ${online.room}: ${n} of ${MAX_RIDERS}` : online.status === "full" ? `Room ${online.room} is full or offline` : online.status === "off" ? `Room ${online.room} is open in another tab` : `Joining ${online.room}...`;
   togetherBtn.title = online ? "Copy the room link" : "Ride with friends";
@@ -463,6 +464,18 @@ function tourFrame(now: number) {
 // Esc pauses the ride. Not on the title screen or the home-page tour, where there is no ride to stop.
 const pause = touring || showFront(location.search) ? null : mountPause(reset, () => { location.search = "?front"; });
 
+// The first time a rider rides a park for real (not a jump link, the tour or the showroom), a coach card walks push,
+// turn, ollie, flip and grind (coach.ts). It starts once the opening shot hands the camera over.
+const learned = unlearned();
+const coach = tutorial({ prefix: "stp", account: { achieve, achievements }, steps: coachSteps(learned) });
+const coachHere = realRide(location.search);
+// For an agent's browser or a hands-on check (bun run probe skate-tech-park).
+Object.assign(window, { skateTechPark: {
+  state: () => ({ tutorial: coach.state(), level: levelId, mode, speed: sim.speed, air: sim.air, grind: sim.grind, score: sim.score, sweep: sweep.on }),
+  /** Forget the tutorial was done in this browser, so the next ride runs it again. */
+  forgetTutorial: coach.forget,
+} });
+
 // The pad has no buttons to rebind here: the right stick flicks a trick and the triggers hold a manual (no dead zone; the gesture has its own).
 const gamepad = createPad(createPadBindings([]), 0);
 
@@ -473,13 +486,16 @@ function frame(now: number) {
   then = now;
   if (sweep.on && driver.driving) sweepEnd();
   const inp = sweep.on ? IDLE : input();
+  if (coachHere && !sweep.on && !driver.driving) coach.start(); // a no-op once it runs, or once it was done here
   landVy = 0;
   const gp = gamepad.poll();
   if (gp.connected) { const lt = gamepad.down(); gestures.stick(gp.right.x, gp.right.y); gestures.shoulders(+lt.includes(6), +lt.includes(7)); }
   while (acc >= DT) {
     const was = sim.air, vy = sim.vy;
     before = poseOf(sim);
-    step(sim, { ...inp, ...gestures.take(sim.air), ...driver.next() }, level); // a gesture is one step's press; an agent's move (agent.ts) is held like keys
+    const held = { ...inp, ...gestures.take(sim.air), ...driver.next() };
+    step(sim, held, level); // a gesture is one step's press; an agent's move (agent.ts) is held like keys
+    learn(learned, sim, held);
     if (online && !pve) bump(sim, online.riders);
     ui.update(sim); acc -= DT;
     if (hunter) { runAfter(hunter, sim, level.height, level.bounds, DT); if (hunter.caught) { caughtAt = now; reset(); } }

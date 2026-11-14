@@ -30,7 +30,7 @@ import { codesplitter, type Failure } from "./client.ts";
 import { agentPrompt } from "./src/agent-prompt.ts";
 import { explain } from "./src/failed.ts";
 import { tool, tools } from "./src/mcp.ts";
-import { isPlainObject } from "./src/util.ts";
+import { isRecord } from "@rustybuns/util/guard";
 import { splittersContext } from "./triage/context.ts";
 import PLAYBOOK from "./triage/PLAYBOOK.md" with { type: "text" };
 
@@ -90,7 +90,7 @@ export function say(e: Failure<string>, site: string): string {
     case "TokenCantDo": return `${e.message}. Make a token${e.scope ? ` with ${e.scope} scope` : ""} at ${site}/#/me/tokens and run: codesplitter login`;
     case "RateLimited": return `Too many calls for now: try again in ${e.retryAfter} seconds.`;
     case "Transient": return `${site} didn't answer, after a few tries: try again in a minute.`;
-    default: return explain(e.message, "reply" in e && isPlainObject(e.reply) ? e.reply.tag : null);
+    default: return explain(e.message, "reply" in e && isRecord(e.reply) ? e.reply.tag : null);
   }
 }
 
@@ -164,12 +164,22 @@ async function triageCommand(argv: string[], env: Record<string, string | undefi
 
 const strip = (env: Record<string, string | undefined>) => Object.fromEntries(Object.entries(env).filter(([, v]) => v));
 
-// One line from the terminal, or nothing when there isn't one (the install script, a pipe).
-async function askLine(q: string): Promise<string | undefined> {
-  if (!process.stdin.isTTY) return undefined;
+/**
+ * One line from the terminal, or nothing when there isn't one (the install script, a pipe). What's typed or pasted
+ * isn't echoed (it's a token): only the question and, once it's answered, a newline reach the screen.
+ */
+export async function askLine(q: string, input: NodeJS.ReadableStream & { isTTY?: boolean } = process.stdin, output: NodeJS.WritableStream = process.stderr): Promise<string | undefined> {
+  if (!input.isTTY) return undefined;
   const { createInterface } = await import("node:readline/promises");
-  const rl = createInterface({ input: process.stdin, output: process.stderr });
-  try { return (await rl.question(q)).trim() || undefined; } finally { rl.close(); }
+  const { Writable } = await import("node:stream");
+  let quiet = false;
+  const screen = new Writable({ write(chunk, _enc, done) { if (!quiet) output.write(chunk); done(); } });
+  const rl = createInterface({ input, output: screen, terminal: true });
+  try {
+    const answer = rl.question(q);
+    quiet = true;
+    return (await answer).trim() || undefined;
+  } finally { rl.close(); output.write("\n"); }
 }
 
 if (import.meta.main) {

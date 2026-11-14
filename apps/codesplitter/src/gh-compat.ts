@@ -29,7 +29,7 @@
 
 import { DONE, fromCheckRun, fromState, get, logsAreCrews, recordRun, shaped, updateRun, type CheckRun, type Status } from "./checks.ts";
 import { audit } from "./audit.ts";
-import { fail as tagged, json, type Env, readBody } from "./env.ts";
+import { errorIn, fail as tagged, json, type Env, readBody } from "./env.ts";
 import { limit } from "./limits.ts";
 import { DAY, MAX_DAYS } from "./tokens.ts";
 import { httpUrl, b64url, sha256 } from "./util.ts";
@@ -130,7 +130,7 @@ export async function ghCompatRoutes(req: Request, env: Env, p: string[], url: U
   if (!t) return req.headers.get("authorization") ? fail("Bad credentials", 401) : fail("Not Found", 404);
   // Each token counts on its own, so a leaked one can only flood so far before it's revoked.
   const slow = await limit(req, env, "ci", `${owner}/${repo}#${t.id}`, false);
-  if (slow) return fail((await slow.json() as { error: string }).error, 429, { "retry-after": slow.headers.get("retry-after") ?? "60" });
+  if (slow) return fail(await errorIn(slow, "Slow down"), 429, { "retry-after": slow.headers.get("retry-after") ?? "60" });
   const by = `ci:${t.label}`, base = `${url.origin}/api/gh/v3/repos/${owner}/${repo}`;
   const body = () => readBody<"state" | "context" | "target_url" | "description" | "name" | "head_sha" | "status" | "conclusion" | "details_url" | "external_id" | "started_at" | "completed_at" | "output">(req);
 

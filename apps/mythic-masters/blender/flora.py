@@ -355,8 +355,53 @@ def tree(spec, g, rng, lo):
             f *= 1 + flute * max(0, math.cos(lobes * a)) ** 2 * math.exp(-z / 0.1)
         return f
 
+    # plated bark: `bark.plates` sinks every third side of the trunk into a furrow (a share of the radius) and
+    # cracks the plates across here and there; the near trunk gets `trunk.rings` times the rings so the cracks show
+    bk = spec.get("bark", {})
+    plates = bk.get("plates", 0.0)
+    rings = 1 if lo else max(1, int(tr.get("rings", 1)))
+    furrow_col = hexc(bk.get("furrow", "#1e1814"))
+    from mathutils import noise as _noise
+    pseed = Vector(((spec.get("seed", 0) * 13.7) % 99, 41.3, 0))
+
+    def furrow(i, a):
+        k = round(a * sides / (2 * math.pi)) % sides
+        if k % 3 == 2:
+            return 1.0
+        return 0.65 if _noise.noise(Vector((k * 1.7, i / rings * 0.9, 0)) + pseed) > 0.3 else 0.0
+
+    def bole(i, a):
+        f = foot(i / rings, a) if (flare_k or lobes) and len(axes) == 1 else 1
+        return f * (1 - plates * furrow(i, a)) if plates else f
+
+    def bole_paint(n):
+        def paint(u, a, at, off):
+            c = bark(u, a, at, off)
+            return mix(c, furrow_col, 0.85 * furrow(round(u * (n - 1)), a)) if plates else c
+        return paint
+
     for ax in axes:
-        tube(g, ax.pts, ax.radii, sides, bark, flare=foot if (flare_k or lobes) and len(axes) == 1 else None)
+        pts, radii = ax.pts, ax.radii
+        if rings > 1:
+            pts = [pts[j].lerp(pts[j + 1], s / rings) for j in range(len(pts) - 1) for s in range(rings)] + [pts[-1]]
+            radii = [radii[j] + (radii[j + 1] - radii[j]) * s / rings for j in range(len(radii) - 1) for s in range(rings)] + [radii[-1]]
+        tube(g, pts, radii, sides, bole_paint(len(pts)), flare=bole if (flare_k or lobes or plates) else None)
+    # dead branch stubs low on the bole (near model only; their own random stream, so the crown grows the same)
+    st = tr.get("stubs", 0)
+    if st and not lo:
+        srng = random.Random(spec.get("seed", 0) * 31 + 7)
+        dead = hexc(bk.get("dead", "#4a4038"))
+        lo_t, hi_t = tr.get("stub_from", 0.1), tr.get("stub_to", 0.3)
+        for k in range(st):
+            at, tan, rad = axes[0].at(lo_t + (hi_t - lo_t) * srng.random())
+            phi = k * GOLDEN * 2 + srng.random()
+            n1 = perp(tan)
+            radial = n1 * math.cos(phi) + tan.cross(n1) * math.sin(phi)
+            d = (radial + tan * (srng.random() - 0.6) * 0.6).normalized()
+            ln = H * tr.get("stub_length", 0.04) * (0.5 + srng.random())
+            r0 = rad * (0.18 + 0.12 * srng.random())
+            tube(g, [at - d * rad * 0.5, at + d * ln * 0.6, at + d * ln], [r0, r0 * 0.75, r0 * 0.4], 4,
+                 lambda u, a, at, off: dead)
 
     # branch levels
     parents = axes
@@ -472,11 +517,13 @@ def foliage(spec, g, rng, lo, twigs, trunks, H):
             if rng.random() > share:
                 continue
             col = jitter(pick(rng, cols), rng, 0.015, 0.08, 0.14)
-            if fs.get("core"):
+            core = fs.get("lo_core", fs.get("core")) if lo else fs.get("core")
+            if core:
+                # (`lo_core` sizes it in the far model, where an 80-triangle ball a twig is dear; 0 for none)
                 # a dark mass inside the twig's leaves: the crown has a body, not a scatter of cards with sky between
                 at, tan, _ = tw.at(fs.get("core_at", 0.75))
                 o = (at - centre).normalized() if (at - centre).length > 1e-4 else UP
-                blob(g, at + o * size * 0.2, size * fs["core"] * (0.8 + 0.4 * rng.random()), mix(col, (0.02, 0.03, 0.02), fs.get("core_dark", 0.35)), rng,
+                blob(g, at + o * size * 0.2, size * core * (0.8 + 0.4 * rng.random()), mix(col, (0.02, 0.03, 0.02), fs.get("core_dark", 0.35)), rng,
                      subdiv=1, lump=0.4, squash=fs.get("core_squash", 0.7), out_from=centre)
             for k in range(per):
                 t = start + (end - start) * (rng.random() if fs.get("random", True) else (k + 0.5) / per)
@@ -497,22 +544,66 @@ def foliage(spec, g, rng, lo, twigs, trunks, H):
                     card(g, p, d, s, size * (0.7 + 0.6 * rng.random()), size * fs.get("width", 0.5), c, out, fold=0.22, tip_col=tc)
                 elif kind == "tuft":
                     # a bottlebrush of needles round the twig's last stretch: thin triangles raked forward, over a
-                    # dark core so the brush reads dense from any side
-                    n = fs.get("needles", 14) if not lo else max(5, fs.get("needles", 14) // 3)
-                    fwd = (tan + UP * fs.get("up", 0.35)).normalized()
+                    # dark knot (`knot`, its radius as a share of `size`; 0 for none) so the brush reads dense from any side.
+                    # The far model has `lo_needles` needles (a third by default), `lo_width` times as wide (2.5), and
+                    # `lo_tip` blends their tips back toward the base green (0: none)
+                    n = fs.get("needles", 14) if not lo else fs.get("lo_needles", max(5, fs.get("needles", 14) // 3))
+                    # `shade` (0: off) paints value by where the tuft sits in the crown: deep inside and underneath
+                    # its needles go toward `shade_dark`, on top and at the rim their tips go toward `shade_light`,
+                    # so the crown reads as lit masses over a dark core instead of one flat mid green
+                    if fs.get("shade"):
+                        rel = at - centre
+                        rim = min(1, rel.length / (H * fs.get("shade_reach", 0.35)))
+                        up_ = (rel.normalized().z if rel.length > 1e-4 else 0) * 0.5 + 0.5
+                        zf = max(0, min(1, (at.z / H - 0.3) / 0.65))
+                        lit = max(0, min(1, 0.5 * zf + 0.3 * up_ * rim + 0.2 * rim))
+                        dark, light = hexc(fs.get("shade_dark", "#141d0e")), hexc(fs.get("shade_light", "#8f9c3c"))
+                        k = fs["shade"]
+                        c = mix(c, dark, min(1, k * (1 - lit)))
+                        if tc:
+                            tc = mix(mix(tc, dark, k * (1 - lit) * 0.6), light, k * lit * lit)
+                    # the far model can rake its tufts further up (`lo_up`), open them wider (`lo_splay`) and spread
+                    # them along more twig (`lo_brush`), so a distant crown is spiky tufts with sky between, not balls
+                    fwd = (tan + UP * fs.get("lo_up" if lo else "up", fs.get("up", 0.35))).normalized()
                     sp = perp(fwd)
-                    brush = size * fs.get("brush", 0.5)
-                    if not lo:
-                        blob(g, at + fwd * brush * 0.4, size * 0.22, mix(c, (0.02, 0.03, 0.02), 0.45), rng, subdiv=1, lump=0.2, squash=1.0, out_from=centre)
+                    brush = size * fs.get("lo_brush" if lo else "brush", fs.get("brush", 0.5))
+                    splay = fs.get("lo_splay" if lo else "splay", fs.get("splay", 0.7))
+                    if not lo and fs.get("knot", 0.22) > 0:
+                        blob(g, at + fwd * brush * 0.4, size * fs.get("knot", 0.22), mix(c, (0.02, 0.03, 0.02), 0.45), rng, subdiv=1, lump=0.2, squash=1.0, out_from=centre)
+                    bundle = fs.get("bundle", 1)
+                    if bundle > 1:
+                        # a 3D bottlebrush (`bundle` needles a fascicle, as a pine's bundles of three): the fascicles sit
+                        # all round and all along `brush` of twig behind the tip, each raked forward and up by `splay`,
+                        # shorter toward the tip so the brush ends round, and each needle of a bundle rolled a third of a
+                        # turn from the last so the brush has body from every side, not a flat starburst seen end on
+                        nf = max(1, n // bundle)
+                        for j in range(nf):
+                            u = (j + rng.random()) / nf
+                            a = j * GOLDEN + rng.random() * 0.4
+                            radial = Matrix.Rotation(a, 3, fwd) @ sp
+                            base = at - fwd * brush * u
+                            nd = (fwd * fs.get("reach", 0.9) + radial * splay).normalized()
+                            ln = size * (0.55 + 0.45 * min(1, u * 2.5)) * (0.85 + 0.3 * rng.random())
+                            dark = mix(c, (0.05, 0.05, 0.03), 0.3)
+                            tcol = mix(tc, c, fs.get("lo_tip", 0)) if (lo and tc and fs.get("lo_tip")) else (tc or c)
+                            w = size * fs.get("needle_width", 0.035) * (fs.get("lo_width", 2.5) if lo else 1)
+                            for b in range(bundle):
+                                d = (Matrix.Rotation((rng.random() - 0.5) * 0.35, 3, perp(nd)) @ (Matrix.Rotation(b * math.tau / bundle, 3, nd) @ (nd + radial * 0.12))).normalized()
+                                side = (Matrix.Rotation(b * math.pi / bundle, 3, d) @ perp(d)) * w
+                                tip = base + d * ln
+                                b0 = g.vert(base, dark, LEAF, out)
+                                g.face(b0, g.vert(tip + side, tcol, LEAF, out), g.vert(tip - side, tcol, LEAF, out))
+                        continue
                     for j in range(n):
                         a = 2 * math.pi * j / n * 2.618 + rng.random() * 0.5
                         radial = (Matrix.Rotation(a, 3, fwd) @ sp)
                         base = at - fwd * brush * (0.2 + 0.6 * rng.random())
-                        nd = (fwd * fs.get("reach", 0.9) + radial * fs.get("splay", 0.7)).normalized()
+                        nd = (fwd * fs.get("reach", 0.9) + radial * splay).normalized()
                         tip = base + nd * size * (0.75 + 0.5 * rng.random())
-                        side = radial.cross(nd).normalized() * size * fs.get("needle_width", 0.035) * (2.5 if lo else 1)
+                        side = radial.cross(nd).normalized() * size * fs.get("needle_width", 0.035) * (fs.get("lo_width", 2.5) if lo else 1)
                         b0 = g.vert(base, mix(c, (0.05, 0.05, 0.03), 0.3), LEAF, out)
-                        g.face(b0, g.vert(tip + side, tc or c, LEAF, out), g.vert(tip - side, tc or c, LEAF, out))
+                        tcol = mix(tc, c, fs.get("lo_tip", 0)) if (lo and tc and fs.get("lo_tip")) else (tc or c)
+                        g.face(b0, g.vert(tip + side, tcol, LEAF, out), g.vert(tip - side, tcol, LEAF, out))
                 elif kind == "spray":
                     # a flat frond lying along the twig, drooping, feathered both sides
                     d = (tan + DOWN * fs.get("hang", 0.25)).normalized()

@@ -35,7 +35,7 @@ describe("the book on a result note", () => {
     [{ kind: "bound", item: 4, repeat: false }, "Item 4. Received.", false],
     [{ kind: "bound", item: 4, repeat: true }, "I have one of those.", true],
     [{ kind: "won", foe: "keeper" }, "A keeper is not an item. Item 4:", true],
-    [{ kind: "won", foe: "wild" }, "You beat it and let it walk.", true],
+    [{ kind: "won", foe: "wild" }, "You beat it, then you let it go.", true],
     [{ kind: "down", next: true, deadly: false }, "This one can't fight.", false],
     [{ kind: "down", next: false, deadly: false }, "No creatures left to fight.", false],
     [{ kind: "versus" }, "Practice.", false],
@@ -102,6 +102,6 @@ describe("the book at the head of each compendium chapter (#4166)", () => {
     expect(pageLineOf("regions", j).ask).toStartWith(`3 lost in a row past ${sec.name}.`);
     j.party[0]!.hp = 0;
     expect(pageLineOf("lineup", j).ask).toStartWith("The Hodag leads, flat on its back.");
-    for (const ch of ["lineup", "bestiary", "regions"] as const) expect(pageLineOf(ch, j).ask.length).toBeLessThan(95);
+    for (const ch of ["lineup", "bestiary", "regions", "factions"] as const) expect(pageLineOf(ch, j).ask.length).toBeLessThan(95);
   });
 });

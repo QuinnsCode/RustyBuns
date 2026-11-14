@@ -17,6 +17,11 @@ import { fileStub, toFile } from "./archive.ts";
 import { listFollows } from "./follows.ts";
 import { settingsStub } from "./settings.ts";
 import { fail, json, readBody, type Env } from "./env.ts";
+import { int, obj, opt } from "@rustybuns/util/guard";
+import { readJson } from "@rustybuns/util/http";
+
+/** A file's /scrub reply (file-do.ts): how many of its lines it rewrote. */
+const Scrubbed = obj({ changed: opt(int(0, Infinity)) });
 import type { RepoRef } from "./repos";
 
 const all = async (env: Env, sql: string, ...args: unknown[]) => (await env.DB.prepare(sql).bind(...args).all()).results;
@@ -145,7 +150,7 @@ export async function scrubHandle(env: Env, handle: string) {
     const list = await all(env, "SELECT path, NULL AS branch FROM files WHERE owner = ?1 AND repo = ?2 UNION ALL SELECT path, branch FROM branch_files WHERE owner = ?1 AND repo = ?2", owner, repo) as { path: string; branch: string | null }[];
     const changed = await Promise.all(list.map(async (f) => {
       const res = await fileStub(env, owner, repo, f.path, f.branch ?? undefined).fetch(new Request("https://file/scrub", { method: "POST", body: JSON.stringify({ from: handle, to: GHOST }) }));
-      return ((await res.json()) as { changed?: number }).changed ?? 0;
+      return (await readJson(res, Scrubbed))?.changed ?? 0;
     }));
     files += changed.filter(Boolean).length;
   }

@@ -1,10 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import { readdirSync } from "node:fs";
 import { bot } from "../src/bot.ts";
-import { newMemory, remember, viewOf, type HudSkin } from "../src/hud/skin.ts";
+import { crewHtml, newMemory, remember, viewOf, type HudSkin } from "../src/hud/skin.ts";
 import { cells } from "../src/hud/skins/21-stocks.ts";
 import { creature } from "../src/roster.ts";
-import { newMatch, step } from "../src/sim.ts";
+import { foeOf, newMatch, newTeamMatch, step } from "../src/sim.ts";
 
 // Every HUD skin in src/hud/skins/ (the page finds them with import.meta.glob; the test reads the folder).
 const dir = new URL("../src/hud/skins/", import.meta.url);
@@ -26,6 +26,20 @@ describe("fight HUD skins", () => {
     expect(v.hits.length).toBeGreaterThan(0);
     expect(v.hits.every((h) => h.age >= 0 && h.age <= 120)).toBe(true);
     expect(v.clock).toBeLessThan(99);
+  });
+
+  test("a team fight: the skin's two are you and the foe you face, everyone else is in the strip, your team first, the downed marked", () => {
+    const m = newTeamMatch([[creature("jackalope"), creature("hodag")], [creature("squonk"), creature("mothman")]]), mem = newMemory(), bots = m.f.map((_, k) => bot(k, 7 + k));
+    while (!m.over && !m.f.some((f) => f.down) && m.tick < 60 * 99) { step(m, bots.map((b) => b(m))); remember(mem, m); }
+    expect(m.f.some((f) => f.down)).toBe(true);
+    const v = viewOf(m, mem, { ...extras, you: 0 }), meUp = !m.f[0]!.down, me = meUp ? 0 : 1;
+    expect(v.sides.map((s) => s.id)).toEqual([m.f[me]!.c.id, m.f[foeOf(m, me)]!.c.id]);
+    expect(v.crew.map((c) => c.name).sort()).toEqual(m.f.filter((_, k) => k !== me && k !== foeOf(m, me)).map((f) => f.c.name).sort());
+    expect(v.crew.map((c) => c.ours)).toEqual([...v.crew.map((c) => c.ours)].sort((a, b) => Number(b) - Number(a)));
+    for (const c of v.crew) expect(c.down).toBe(m.f.find((f) => f.c.name === c.name)!.down);
+    // One on one: the two fighters in order, no strip.
+    const one = fight(), solo = viewOf(one.m, one.mem, extras);
+    expect([solo.sides.map((s) => s.id), solo.crew, crewHtml(solo)]).toEqual([["jackalope", "hodag"], [], ""]);
   });
 
   test.each(skins)("%s: its id matches its file, its CSS stays scoped, and it draws a fight and a bind", (file, s) => {

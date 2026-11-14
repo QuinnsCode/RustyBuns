@@ -73,14 +73,16 @@ function menuScreen(note: string): HTMLElement {
   head.innerHTML = logoSvg("menu");
   head.append(el("h1", "wordmark", "SKATE TECH PARK"));
   const body = el("div", "choices");
-  screen.append(head, body, accountChip(el("div", "account"), { note, onSignOut: () => location.reload() }));
+  screen.append(head, body, accountChip(el("div", "account"), { note, onSignOut: () => location.reload(), onSignIn: () => {} })); // eqosys beside the title; the chip redraws itself
 
   const card = (label: string, blurb: string, glyph: Parameters<typeof createElement>[0], go: () => void, soon = false) => {
     const b = el("button", "choice");
     b.type = "button";
     b.disabled = soon;
     const text = el("span", "text");
-    text.append(el("strong", "", label), el("small", "", soon ? `${blurb} Coming soon.` : blurb));
+    b.title = blurb; // the blurb is a tooltip: the card says only its name
+    text.append(el("strong", "", label));
+    if (soon) text.append(el("small", "", "Soon"));
     b.append(icon(glyph, 26), text);
     b.addEventListener("click", go);
     return b;

@@ -8,6 +8,7 @@ import { arr, check, int, num, obj, oneOf, opt, rec, str, type Of } from "@rusty
 import { REGIONS, type Region } from "./regions.ts";
 import { ARCHETYPES, creature, ROSTER, type Creature } from "./roster.ts";
 import { HAND } from "./sections.ts";
+import { Factions } from "./factions/model.ts";
 import LANDING from "../content/landing.json";
 
 /** The five commons the Bog Witch offers; you take three. Ember beats grove, tide beats ember, grove beats tide; the
@@ -15,8 +16,8 @@ import LANDING from "../content/landing.json";
  * Devil overhead is a real wall. */
 export const STARTERS = ["hodag", "squonk", "agropelter", "jackalope", "tatzelwurm"] as const;
 export const PICKS = 3;
-/** What the witch says over each one (content/landing.json, `bun run cms`). */
-export const WITCH_SAYS: Record<(typeof STARTERS)[number], string> = LANDING.starters;
+/** What the witch says over each one the first time (content/landing.json, `bun run cms`); after that, `witchSays`. */
+const WITCH_SAYS: Record<(typeof STARTERS)[number], string> = LANDING.starters;
 
 /** The line-up: three to start, a slot more for each region's mythic beaten, six at most. */
 export const PARTY_FIRST = 3, PARTY_MAX = 6;
@@ -102,6 +103,17 @@ export function atLevel(c: Creature, level: number, wild = false): Creature {
 }
 export const asCreature = (m: Member) => atLevel(creature(m.id), m.level);
 
+/** How a lone wild one grows to face a team of 2, 3 or 4 (#4411), from the tuner's 2v1 table
+ * (`bun scripts/tune.ts --teams 20 8 0 2 3.5 2 --rust`, and 3 and 4 friends): at these, the friends win about half
+ * the time (51%, 51%, 57%) in 15-25 s. Levels barely move a team fight (a wild one 15 levels up still loses 98% to two),
+ * and health alone turns knockouts into ring-outs, so most of it is damage. */
+export const OUTNUMBERED: Record<2 | 3 | 4, { hp: number; edge: number }> = { 2: { hp: 2, edge: 3.5 }, 3: { hp: 2, edge: 8 }, 4: { hp: 2, edge: 18 } };
+/** A creature facing `foes` at once: one on one it is `c` itself, unchanged. */
+export function outnumbered(c: Creature, foes: number): Creature {
+  const g = OUTNUMBERED[Math.min(4, foes) as 2 | 3 | 4];
+  return foes < 2 || !g ? c : { ...c, hpScale: (c.hpScale ?? 1) * g.hp, edge: c.edge * g.edge };
+}
+
 /** Health a member carries into a fight, as a fraction of full. */
 export const hpOf = (m: Member) => m.hp ?? 1;
 /** Records what a fight left of `m` (a fraction of full health); at or above full it is whole again. */
@@ -175,10 +187,31 @@ export const Journey = obj({
     /** Spare drops of ink a reply earned, spent on the next world fight; the kind of beast you asked the Book to want next. */
     ink: opt(int(0, 3)), wants: opt(oneOf(ARCHETYPES)),
   })),
+  /** The three factions behind you (src/factions/model.ts): who you met and in what order, the quest steps done, the
+   * flags, and each one's standing with you. */
+  factions: opt(Factions),
 });
 export type Journey = Of<typeof Journey>;
 
 export const SAVE_KEY = "mythic-masters.journey";
+
+/** What the witch says over a starter on her sheet (#4174): her own line the first time; on a journey after that, what
+ * became of the one you took from her last time (it led, it came back flat, you shelved it, you never fought it), or
+ * that you left it with her. `last` is the journey about to burn. */
+export function witchSays(id: (typeof STARTERS)[number], last: Journey | null): string {
+  if (!last) return WITCH_SAYS[id];
+  const name = creature(id).name, was = [...last.party, ...last.journal].find((m) => m.id === id && m.caught?.where === WITCH_SHEET);
+  if (!was) return `You left the ${name} with me last time. It noticed.`;
+  const lvl = was.level, fresh = lvl <= 5;
+  if (last.starter === id) return fresh ? `The ${name} led for you last time and never got past level 5. It wants a second go.`
+    : `The ${name} led for you last time. Level ${lvl}, and it came back expecting to lead again.`;
+  if (last.journal.includes(was)) return `You took the ${name}, then shelved it in that book. It came back level ${lvl}, sulking.`;
+  if (hpOf(was) <= 0) return `The ${name} came back to my door flat out. Level ${lvl}. It has not forgiven you.`;
+  // two that never fought don't get the same line: the second pick is bored, the third only came for the walk
+  if (fresh) return last.party.indexOf(was) === 1 ? `You took the ${name} and never fought it. It came back level 5 and bored.`
+    : `You took the ${name} for the walk and nothing else. Still level 5. Still hungry.`;
+  return `You took the ${name} last time. It came back level ${lvl} and twice as hungry.`;
+}
 
 /** A fresh journey with three different starters (the first leads); null for any other choice. */
 export function newJourney(picks: readonly string[], at = Date.now()): Journey | null {
@@ -243,6 +276,17 @@ export function call(j: Journey, e: number, into = slots(j) - 1): boolean {
 
 /** The line-up slot that fights next when `out` (slots already knocked out this fight) are down; -1 when none is left. */
 export const nextUp = (j: Journey, out: ReadonlySet<number>) => j.party.findIndex((_, i) => !out.has(i));
+
+/** What the night's stalker tears off whoever is up when it has you (#4387), as a fraction of full health. */
+export const MAULED = 0.4;
+/** Caught off the paths at night: it strikes before the fight starts, so the member up starts hurt (a sliver left, never
+ *  knocked out). Which slot it hit; -1 with nobody standing. */
+export function maul(j: Journey): number {
+  const i = nextUp(j, downed(j)), m = j.party[i];
+  if (!m) return -1;
+  wound(m, Math.max(0.05, hpOf(m) - MAULED));
+  return i;
+}
 
 /** Every playable region, for the journal's region pages. */
 export const TRAIL_REGIONS = REGIONS.filter(hasTrail);

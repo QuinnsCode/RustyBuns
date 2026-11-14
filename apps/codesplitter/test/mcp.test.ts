@@ -33,7 +33,9 @@ describe("POST /api/mcp", () => {
     // Line claims, for agents sharing a file (#926).
     for (const name of ["list_claims", "claim_lines", "release_claim"]) expect(ts.find((t) => t.name === name)?.annotations.destructiveHint).toBe(false);
     // What ships code, changes who sees what, or can't be undone says so, so an MCP client asks first (agentic attack audit)
-    for (const name of ["set_protect_main", "set_check_settings", "make_tag", "delete_tag", "share_lines", "beam_branch", "take_upstream", "run_cut", "claim_invite", "delete_branch_file", "start_agent", "record_check", "update_check"])
+    for (const name of ["set_protect_main", "set_check_settings", "make_tag", "delete_tag", "share_lines", "beam_branch", "take_upstream", "run_cut", "claim_invite", "delete_branch_file", "start_agent", "record_check", "update_check",
+      // State a program could change with nobody asked: a public repo, a public city or profile, a runner clone, a deletion.
+      "create_repo", "set_city", "update_me", "start_try", "delete_program", "unfollow", "unstamp_line"])
       expect(ts.find((t) => t.name === name)?.annotations.destructiveHint).toBe(true);
     expect(ts.find((t) => t.name === "edit_lines")!.inputSchema.properties.body.properties.claim).toBeDefined();
   });
@@ -53,9 +55,9 @@ describe("POST /api/mcp", () => {
     // The edge's CSBridge, as worker.ts makes it; under Bun there is no stub unless a test sets one.
     edge.stub = (props) => { const p = csProps(props); return { call: (name: string, json: string) => bridgeCall(p, name, json, bridgeDispatch(p, env)) }; };
     try {
-      const code = "let n = 0; for (let i = 0; i < 11; i++) { try { await tools.create_repo({ body: { name: 'p' + i } }); n++; } catch (e) { return [n, e.status]; } } return [n];";
+      const code = "let n = 0; for (let i = 0; i < 61; i++) { try { await tools.start_branch({ owner: 'ryan', repo: 'lab', body: { name: 'b' + i } }); n++; } catch (e) { return [n, e.status]; } } return [n];";
       const r = await (await raw(write, { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "execute", arguments: { code } } }, { "cf-connecting-ip": "203.0.113.9" })).json() as any;
-      expect(JSON.parse(r.result.content[0].text).result).toEqual([10, 429]);
+      expect(JSON.parse(r.result.content[0].text).result).toEqual([60, 429]);
     } finally { delete edge.stub; }
   });
 

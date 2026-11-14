@@ -3,8 +3,44 @@
   "name": "The Yule Isle",
   "about": "Winter's legends together on one island: the ogress who comes down from the mountain with her sack, the horned one with the birch switch, and the goblins who climb out from under the world for the twelve nights. Through December the Yule Cat walks the whole continent.",
   "season": { "from": [12, 1], "to": [1, 6] },
-  "land": { "cell": [1, -2], "port": 3, "at": [49.4, -57.6], "km": 300 },
-  "tier": "coming-soon",
-  "events": ["yule-cat"],
+  "land": { "cell": [1, -2], "port": 3, "at": [48.7, -56.6], "km": 200 },
+  "tier": "playable",
+  "lair": { "place": "The fell with the cave mouth", "foe": "gryla", "level": 28 },
+  "events": ["yule-cat", "krampus", "gryla", "kallikantzaros"],
+  "fighters": {
+    "krampus": {
+      "name": "Krampus", "region": 37, "archetype": "bruiser", "fields": ["shadow", "iron"], "heightM": 2.0, "massKg": 120,
+      "stats": [80, 100, 70, 55, 70, 90],
+      "sig": { "name": "Into the Basket", "field": "shadow", "ranged": false, "fx": "rampage", "motion": "grab" },
+      "tale": "The horned, shaggy one who walks behind Saint Nicholas on the night of 5 December, rattling his chains, with birch switches for the bad children and a basket on his back for the worst."
+    },
+    "gryla": {
+      "name": "Grýla", "region": 34, "archetype": "tank", "fields": ["frost", "stone"], "heightM": 2.6, "massKg": 320,
+      "stats": [110, 90, 105, 60, 75, 45],
+      "sig": { "name": "The Sack and the Pot", "field": "frost", "ranged": false, "fx": "slam", "motion": "grab" },
+      "tale": "The ogress of the Icelandic mountains, fifteen tails and a hundred bags on each, who comes down at Yule for the children who misbehaved and takes them home to her pot."
+    },
+    "kallikantzaros": {
+      "name": "Kallikantzaros", "region": 41, "archetype": "skirmisher", "fields": ["shadow", "stone"], "heightM": 1.0, "massKg": 25,
+      "stats": [50, 65, 45, 70, 60, 110],
+      "sig": { "name": "Down the Chimney", "field": "shadow", "ranged": false, "fx": "rampage" },
+      "tale": "A goblin that saws all year at the tree holding up the world, then climbs out for the twelve nights of Christmas to ride people and foul the food, until the Epiphany waters drive it back under."
+    }
+  },
+  "board": {
+    "place": "Sighting board at the fish sheds",
+    "witness": "Net mender",
+    "title": "The Ogress at the Fish Sheds",
+    "report": [
+      "Net mender: Something big came down off the fell last night. The drying racks are bare and the dogs won't go out.",
+      "Net mender: My gran says she comes down at Yule with her sack for the children who were bad. Mine are under the bed.",
+      "Gary: I have been very good this year. Mostly. Follow the prints. Calmly. Toward the mountain."
+    ],
+    "signs": [
+      { "at": [0.74, 0.56], "sign": "Bare footprints in the snow, each as long as your arm" },
+      { "at": [0.79, 0.42], "sign": "A drying rack stripped clean, and a torn sack caught on a fence post" },
+      { "at": [0.83, 0.27], "sign": "A black ring of soot melted into the snow, where a great pot stood" }
+    ]
+  },
   "credits": []
 }

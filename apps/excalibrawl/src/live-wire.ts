@@ -1,6 +1,6 @@
 // The live socket (/api/live) between the arena and the page: one type, sent by arena.ts and read by
 // app/viewer.ts. Its own file so the page can import the check without the Durable Object.
-import { arr, bool, Bad, int, nul, num, obj, oneOf, opt, str, type Guard, type Of } from "@rustybuns/util/guard";
+import { arr, bool, Bad, int, isRecord, nul, num, obj, oneOf, opt, str, type Guard, type Of } from "@rustybuns/util/guard";
 import type { MatchSummary } from "./archive.ts";
 import type { LogEntry, MatchState } from "./engine/match.ts";
 import type { Op, SkeletonEl } from "./engine/types.ts";
@@ -15,16 +15,15 @@ export type LiveMessage =
   | { t: "turn"; id: string; turn: number; entries: LogEntry[] }
   | { t: "end"; id: string; summary: MatchSummary };
 
-const isObj = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null;
-const isMatch = (v: unknown) => isObj(v) && typeof v.id === "string" && Array.isArray(v.scenes);
+const isMatch = (v: unknown) => isRecord(v) && typeof v.id === "string" && Array.isArray(v.scenes);
 
 /** The arena's message read on the page. The arena is this build's own, so each kind's envelope is what's checked. */
 export const isLiveMessage = (m: unknown): m is LiveMessage =>
-  isObj(m) && (
+  isRecord(m) && (
     m.t === "hello" ? m.match === null || isMatch(m.match)
     : m.t === "start" ? isMatch(m.match)
     : m.t === "turn" ? typeof m.id === "string" && typeof m.turn === "number" && Array.isArray(m.entries)
-    : m.t === "end" ? typeof m.id === "string" && isObj(m.summary)
+    : m.t === "end" ? typeof m.id === "string" && isRecord(m.summary)
     : false);
 
 // A replay (GET /api/matches/<id>) and the list of them (GET /api/matches), read by this site's viewer and by the

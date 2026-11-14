@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { DIFFICULTIES, SEAT_NAMES, SEATS, type Difficulty } from "../../sim/rules.ts";
 import { CTL_LABEL, type Ctl } from "../input.ts";
+import { About } from "./Help.tsx";
 
 const OPTIONS: Ctl[] = ["bot", "kb1", "kb2", "pad0", "pad1", "pad2", "pad3"];
 
@@ -37,7 +38,10 @@ export function Setup({ onStart, onBack, difficulty }: { onStart: (ctls: Ctl[], 
     <div className="menu">
       <div className="card">
         <h1 className="title" style={{ fontSize: 34 }}>COUCH</h1>
-        <p className="tag">Pick who sits where. Bots take the empty offices.</p>
+        <About id="couch-about">
+          <p className="tag">Pick who sits where. Bots take the empty offices.</p>
+          <p className="hint">Press a button on a gamepad to join with it. Keyboard players share the keyboard: A/D + W + Q, and arrows + ↑ + /.</p>
+        </About>
         <div className="seats">
           {Array.from({ length: SEATS }, (_, i) => (
             <div key={i} className={"seat" + (seats[i] !== "bot" ? " mine" : "")}>
@@ -53,7 +57,6 @@ export function Setup({ onStart, onBack, difficulty }: { onStart: (ctls: Ctl[], 
           <p className="sr-only" aria-live="polite">{seats.map((c, i) => `${SEAT_NAMES[i]}: ${c === "bot" ? `${bots[i]} bot` : CTL_LABEL[c]}`).join(", ")}</p>
           <button className="btn" onClick={onBack}>Back</button>
         </div>
-        <p className="hint">Press a button on a gamepad to join with it. Keyboard players share the keyboard: A/D + W + Q, and arrows + ↑ + /.</p>
       </div>
     </div>
   );

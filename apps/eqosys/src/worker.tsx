@@ -7,8 +7,8 @@ import { phaseAt } from "./app/Sky.tsx";
 import { THEME_SCRIPT } from "./app/Theme.tsx";
 import { appOf, appsOf, mayUse } from "./listings.ts";
 import { Document } from "./app/Document.tsx";
-import { authOn, isAdmin, meOf, onApple, providers } from "./auth.ts";
-import { askOf, atHome, handle } from "./handle.ts";
+import { authOn, isAdmin, meOf, onApple, providers, waysOf } from "./auth.ts";
+import { askOf, atHome, handle, invitedBy } from "./handle.ts";
 import { edge } from "./codemode.ts";
 import { bridgeCall } from "./tools.ts";
 import { hubAsk } from "./qollab/hub.ts";
@@ -28,10 +28,14 @@ import privacySql from "../migrations/0008_privacy.sql?raw";
 import visitsSql from "../migrations/0009_visits.sql?raw";
 import studiosSql from "../migrations/20261106000000_studios.sql?raw";
 import deploysSql from "../migrations/20261107000000_deploys.sql?raw";
+import listingsSql from "../migrations/20261109000000_listings.sql?raw";
+import studioReportsSql from "../migrations/20261111000000_studio_reports.sql?raw";
+import studioSpacesSql from "../migrations/20261113000000_studio_spaces.sql?raw";
 import { house, studiosOf } from "./studios.ts";
 import { markStaff, tally, visitorsOf } from "./visitors.ts";
 import { loadOf } from "./scale.ts";
 import { regionAt } from "@rustybuns/util/privacy";
+import { pageCsp, spacesConnect } from "./csp.ts";
 
 // vite dev gives the Worker the production BETTER_AUTH_URL and no secret: on the dev server the request's own
 // origin is the trusted one, a throwaway secret signs sessions, a throwaway key signs tokens, loopback return
@@ -50,7 +54,7 @@ const e = (req?: Request): AppEnv => {
 // One statement at a time, so a column added on an earlier run ("duplicate column") doesn't stop the rest.
 let migrated: Promise<unknown> | undefined;
 const devMigrate = (db: AppEnv["DB"]) => (migrated ??= (async () => {
-  for (const q of [initSql, oauthSql, reportsSql, savesSql, seatsSql, unlocksSql, spacesSql, privacySql, visitsSql, studiosSql, deploysSql].join("\n").split("\n").filter((l) => !l.trimStart().startsWith("--")).join("\n").split(/;\s*\n/)
+  for (const q of [initSql, oauthSql, reportsSql, savesSql, seatsSql, unlocksSql, spacesSql, privacySql, visitsSql, studiosSql, deploysSql, listingsSql, studioReportsSql, studioSpacesSql].join("\n").split("\n").filter((l) => !l.trimStart().startsWith("--")).join("\n").split(/;\s*\n/)
     .map((q) => q.trim().replace(/;$/, "")).filter(Boolean)
     .map((q) => q.replace(/^create (table|index|unique index) /i, "create $1 if not exists ")))
     await db.prepare(q).run().catch((err: unknown) => { if (!/duplicate column/i.test(String(err))) throw err; });
@@ -65,15 +69,15 @@ const themeHash = () => (scriptSrc ??= hashOf(THEME_SCRIPT));
 const see = (to: string) => new Response(null, { status: 302, headers: { location: to } });
 
 const app = defineApp([
-  async ({ response, rw }) => {
+  async ({ request, response, rw }) => {
     response.headers.set("X-Content-Type-Options", "nosniff");
     // same-origin, not no-referrer: no-referrer makes a browser send Origin: null on our own form posts, which crossSite refuses.
     response.headers.set("Referrer-Policy", "same-origin");
     response.headers.set("X-Frame-Options", "DENY");
     response.headers.set("Cache-Control", "no-store");
     // No form-action: Continue's 303 goes on to the app's own origin, and the social buttons to the provider.
-    // The two Google Fonts hosts are for the sign-in page's type (Login.tsx); nothing else leaves the page.
-    response.headers.set("Content-Security-Policy", `default-src 'none'; img-src 'self'; script-src ${await themeHash()} 'nonce-${rw.nonce}'; connect-src 'self'; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; frame-ancestors 'none'; base-uri 'none'`);
+    // Nothing leaves the page but the sign-in page's fonts, and /spaces' voice (csp.ts).
+    response.headers.set("Content-Security-Policy", pageCsp(`${await themeHash()} 'nonce-${rw.nonce}'`, new URL(request.url).pathname === "/spaces" ? spacesConnect(e(request)) : undefined));
   },
   async ({ request }) => {
     if (import.meta.env.VITE_IS_DEV_SERVER) { await devMigrate(e().DB); devKey ??= await newKey(); }
@@ -97,12 +101,14 @@ const app = defineApp([
         unlocksOf(conf, me.id), isAdmin(me, conf) ? members(conf) : null, isAdmin(me, conf) ? house(conf, me.id) : null,
         tab === "library" ? sideOf(conf, me.id).catch(() => null) : null,
       ]);
+      const invite = tab === "friends" ? await invitedBy(request, conf) : null;
+      const ways = tab === "account" ? await waysOf(request, conf) : null;
       const shown = hub && !("error" in hub) ? hub : null;
       // The super admin's own visits stay out of the counts; the Visitors tab is theirs alone.
       const [counts, visitors, studios, apps] = await Promise.all([countsOf(conf, shown?.friends.map((f) => f.id) ?? []),
         everyone ? markStaff(conf, request).then(() => tab === "visitors" ? visitorsOf(conf, Number(new URL(request.url).searchParams.get("days")) || 7) : null) : null,
         tab === "studio" ? studiosOf(conf, me.id) : null, appsOf(conf)]);
-      return <Home apps={apps} visitors={visitors} counts={counts} t0={phaseAt(new URL(request.url).searchParams.get("at"))} me={me} mine={mine} hub={shown} side={side} everyone={everyone} unlocks={unlocks}
+      return <Home ways={ways} social={providers(conf)} invite={invite} origin={new URL(request.url).origin} apps={apps} visitors={visitors} counts={counts} t0={phaseAt(new URL(request.url).searchParams.get("at"))} me={me} mine={mine} hub={shown} side={side} everyone={everyone} unlocks={unlocks}
         error={new URL(request.url).searchParams.get("e") ?? undefined} tab={tab} studios={studios}
         scale={everyone && tab === "scale" ? loadOf(new URL(request.url).searchParams) : null} />;
     }),
@@ -129,7 +135,9 @@ const app = defineApp([
       const me = await meOf(request, conf);
       if (me && !ask) return see("/");
       const apple = onApple(request.headers.get("user-agent"));
-      return <Login ask={ask === "bad" ? null : ask} me={me} social={providers(conf, apple)} appleTop={apple} error={ask === "bad" ? "app" : q.get("e") ?? undefined} t0={phaseAt(q.get("at"))} />;
+      // Someone who opened a friend link (handle.ts /add) is told whose, and a new person is shown the new-account form first.
+      const friend = ask ? null : (await invitedBy(request, conf))?.name;
+      return <Login friend={friend ?? undefined} ask={ask === "bad" ? null : ask} me={me} social={providers(conf, apple)} appleTop={apple} error={ask === "bad" ? "app" : q.get("e") ?? undefined} t0={phaseAt(q.get("at"))} />;
     }),
     route("/delete", async ({ request, response }) => {
       const conf = e(request);

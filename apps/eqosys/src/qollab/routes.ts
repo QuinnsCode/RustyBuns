@@ -6,12 +6,12 @@ import { json, loopbackOn, type Env } from "../env.ts";
 import { bearerOf, cors, echoProtocol, issuer, socketToken, tokenOf } from "../door.ts";
 import { hubAsk, hubOf, Op } from "./hub.ts";
 import { codeOf, mintCode, PARTY_LIFE, PARTY_LIFE_MAX, partyOf } from "./party.ts";
-import { SPACE_MEMBERS, SPACE_NAME, SPACES_OWNED, spaceOf } from "./space.ts";
+import { makeSpace, seatIn, SPACE_MEMBERS, SPACE_NAME, SPACES_OF, spaceOf } from "./space.ts";
 import { rosterIn } from "./qlave.ts";
 import { get as getSave, MAX_BODY, put as putSave, slotOf } from "./saves.ts";
 import type { SpaceRow } from "@rustybuns/util/eqosys";
 import { RoomMintGate } from "@rustybuns/util/limits";
-import { check, obj, str } from "@rustybuns/util/guard";
+import { check, obj, opt, str } from "@rustybuns/util/guard";
 
 const mints = new RoomMintGate(12, 60_000);
 
@@ -41,7 +41,7 @@ export async function qollab(req: Request, conf: Env): Promise<Response | null> 
     }
     if (req.method !== "POST") return json({ error: "POST an op" }, 405, head);
     const op = check(Op, await req.json().catch(() => null));
-    if (!op) return json({ error: "send { op: state | befriend | accept | drop | notify | clear }" }, 400, head);
+    if (!op) return json({ error: "send { op: state | befriend | accept | drop | notify | clear | relink }" }, 400, head);
     const r = await hubAsk(conf.HUB, who, op);
     return json(r, "error" in r ? 400 : 200, head);
   }
@@ -87,8 +87,9 @@ export async function qollab(req: Request, conf: Env): Promise<Response | null> 
     return echoProtocol(await partyOf(conf.PARTY, code).fetch(new Request(`https://party/socket?${new URLSearchParams({ ...t.who, code, iss: issuer(req, conf), ...(invite && { invite }) })}`, { headers: { upgrade: "websocket" } })), sock.offered);
   }
 
-  // Qollab spaces (space.ts): GET /q/space lists yours, POST { name } makes one, POST /q/space/join { invite } joins one,
-  // and /q/space/<id> is a member's socket (the token as a subprotocol). A space is the person's, not an app's: a token from any Q app opens it.
+  // Qollab spaces (space.ts): GET /q/space lists yours, POST { name } makes one (with { studio }, the studio's own space, its owner or admin asks),
+  // POST /q/space/join { invite } joins one, and /q/space/<id> is a member's socket (the token as a subprotocol). A space is the person's, not an app's:
+  // a token from any Q app opens it. A studio's space has no invite to hand out: its members are the studio's.
   if (pathname === "/q/space" || pathname === "/q/space/join") {
     const head = { ...await cors(req, conf), "access-control-allow-methods": "GET, POST" };
     if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: head });
@@ -96,35 +97,29 @@ export async function qollab(req: Request, conf: Env): Promise<Response | null> 
     const t = await tokenOf(req, conf, bearerOf(req), { home: true });
     if (!t) return json({ error: "send the token /api/exchange gave you" }, 401, head);
     if (req.method === "GET" && pathname === "/q/space") {
-      const { results } = await conf.DB.prepare("SELECT s.id, s.name, s.owner, s.invite FROM space_members m JOIN spaces s ON s.id = m.space_id WHERE m.user_id = ? ORDER BY s.name")
-        .bind(t.who.id).all<{ id: string; name: string; owner: string; invite: string }>();
-      const spaces = results.map((r): SpaceRow => ({ id: r.id, name: r.name, owner: r.owner === t.who.id, ...(r.owner === t.who.id ? { invite: r.invite } : {}) }));
+      const { results } = await conf.DB.prepare(`SELECT s.id, s.name, s.owner, s.invite, s.studio_id AS studio,
+        (SELECT role FROM studio_members sm WHERE sm.studio_id = s.studio_id AND sm.user_id = ?1) AS role FROM spaces s WHERE s.id IN (${SPACES_OF}) ORDER BY s.name`)
+        .bind(t.who.id).all<{ id: string; name: string; owner: string; invite: string; studio: string | null; role: string | null }>();
+      const spaces = results.map((r): SpaceRow => r.studio
+        ? { id: r.id, name: r.name, owner: r.role === "owner" || r.role === "admin", studio: r.studio }
+        : { id: r.id, name: r.name, owner: r.owner === t.who.id, ...(r.owner === t.who.id ? { invite: r.invite } : {}) });
       return json({ spaces }, 200, head);
     }
     if (req.method !== "POST") return json({ error: "GET your spaces or POST one" }, 405, head);
     const now = Date.now();
     if (pathname === "/q/space/join") {
       const invite = codeOf(String(check(obj({ invite: str(12) }), await req.json().catch(() => null))?.invite ?? ""));
-      const s = invite && await conf.DB.prepare("SELECT id, name FROM spaces WHERE invite = ?").bind(invite).first<{ id: string; name: string }>();
+      const s = invite && await conf.DB.prepare("SELECT id, name FROM spaces WHERE invite = ? AND studio_id IS NULL").bind(invite).first<{ id: string; name: string }>();
       if (!s) return json({ error: "no space has that invite" }, 404, head);
       if (((await conf.DB.prepare("SELECT COUNT(*) AS n FROM space_members WHERE space_id = ?").bind(s.id).first<number>("n")) ?? 0) >= SPACE_MEMBERS)
         return json({ error: `that space is full (${SPACE_MEMBERS})` }, 409, head);
       await conf.DB.prepare("INSERT INTO space_members (space_id, user_id, at) VALUES (?, ?, ?) ON CONFLICT DO NOTHING").bind(s.id, t.who.id, now).run();
       return json({ id: s.id, name: s.name }, 200, head);
     }
-    const name = check(obj({ name: SPACE_NAME }), await req.json().catch(() => null))?.name.trim();
-    if (!name) return json({ error: "send { name } (1-60 characters)" }, 400, head);
-    if (((await conf.DB.prepare("SELECT COUNT(*) AS n FROM spaces WHERE owner = ?").bind(t.who.id).first<number>("n")) ?? 0) >= SPACES_OWNED)
-      return json({ error: `you own ${SPACES_OWNED} spaces already` }, 409, head);
-    const id = crypto.randomUUID();
-    for (let i = 0; i < 5; i++) {
-      const invite = mintCode();
-      const made = await conf.DB.prepare("INSERT INTO spaces (id, name, owner, invite, at) VALUES (?, ?, ?, ?, ?) ON CONFLICT DO NOTHING RETURNING id").bind(id, name, t.who.id, invite, now).first<string>("id");
-      if (!made) continue;
-      await conf.DB.prepare("INSERT INTO space_members (space_id, user_id, at) VALUES (?, ?, ?)").bind(id, t.who.id, now).run();
-      return json({ id, invite }, 200, head);
-    }
-    return json({ error: "couldn't mint an invite; try again" }, 503, head);
+    const asked = check(obj({ name: SPACE_NAME, studio: opt(str(64, { min: 1 })) }), await req.json().catch(() => null)), name = asked?.name.trim();
+    if (!asked || !name) return json({ error: "send { name } (1-60 characters)" }, 400, head);
+    const r = await makeSpace(conf, t.who.id, name, asked.studio ?? null);
+    return r.ok ? json({ id: r.id, ...(r.invite ? { invite: r.invite } : {}) }, 200, head) : json({ error: r.error }, r.status, head);
   }
   // Qlave says who is in one voice room (qlave.ts, QLAVE.md §4): signed with QLAVE_ROSTER_SECRET, passed to the room's space.
   if (pathname === "/q/qlave/roster") {
@@ -144,10 +139,9 @@ export async function qollab(req: Request, conf: Env): Promise<Response | null> 
     if (req.headers.get("upgrade")?.toLowerCase() !== "websocket") return json({ error: "a websocket" }, 426);
     const origin = req.headers.get("origin");
     if (origin && !onSite(t.app, origin, loopbackOn(conf))) return json({ error: "not from that app's site" }, 403);
-    const s = await conf.DB.prepare("SELECT s.name, s.owner FROM space_members m JOIN spaces s ON s.id = m.space_id WHERE m.space_id = ? AND m.user_id = ?")
-      .bind(spaceAt[1], t.who.id).first<{ name: string; owner: string }>();
+    const s = await seatIn(conf, spaceAt[1]!, t.who.id);
     if (!s) return json({ error: "not a space you're in" }, 404);
-    const q = new URLSearchParams({ ...t.who, sid: spaceAt[1]!, space: s.name, ...(s.owner === t.who.id ? { owner: "1" } : {}), iss: issuer(req, conf) });
+    const q = new URLSearchParams({ ...t.who, sid: spaceAt[1]!, space: s.name, ...(s.runs ? { owner: "1" } : {}), ...(s.studio ? { studio: s.studio } : {}), iss: issuer(req, conf) });
     return echoProtocol(await spaceOf(conf.SPACE, spaceAt[1]!).fetch(new Request(`https://space/socket?${q}`, { headers: { upgrade: "websocket" } })), sock.offered);
   }
 

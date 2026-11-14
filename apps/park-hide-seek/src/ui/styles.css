@@ -264,3 +264,144 @@ body:has(#lobby:not([hidden])) .narrator p { display: none; }
 .stub::after { right: -8px; }
 .stub .stamp { right: 24px; bottom: auto; top: 50%; translate: 0 -50%; font-size: 12px; padding: 2px 9px 1px; border-width: 3px; }
 @media (max-width: 400px) { .stub > span:first-child { max-width: 58%; } }
+
+/* Round 4 (#3608). Poster scale: the front is a tall poster with the title printed in its sky, over big ridges that
+   melt into valley mist; the results card wears a park patch; after dark every card is darker kraft stock. */
+.poster-head { position: relative; }
+.menu-card .ridges { height: clamp(168px, min(46vw, 22vh), 236px); }
+.poster-type { position: absolute; left: 0; right: 0; top: clamp(12px, 3.4vw, 22px); display: grid; justify-items: center; gap: 6px; padding: 0 14px; text-align: center; }
+.poster-head h1 { margin: 0; white-space: nowrap; font-size: clamp(30px, 8.4vw, 48px); line-height: 1; color: var(--brown); text-shadow: 3px 2px 0 rgba(224, 122, 31, 0.75); }
+.poster-head .tagline { margin: 0;
+  font: 700 clamp(10px, 2.6vw, 12px)/1.2 ui-monospace, "Courier New", monospace; letter-spacing: 0.3em; text-transform: uppercase; color: var(--brown-2); }
+[data-tod="night"] .poster-head h1 { color: #f6e8c6; text-shadow: 3px 2px 0 rgba(63, 95, 146, 0.9); }
+[data-tod="night"] .poster-head .tagline { color: #e3e9f5; text-shadow: 0 1px 0 #0d1426, 0 0 6px #0d1426, 0 0 12px #16223a; }
+[data-tod="dusk"] .poster-head h1 { color: #fbe3b4; text-shadow: 3px 2px 0 rgba(122, 58, 82, 0.9); }
+[data-tod="dusk"] .poster-head .tagline { color: #fbe3b4; }
+
+/* The results card's strip is drawn taller (data-strip="120"), and the park patch is sewn on at its foot. */
+.citation { background: var(--poster) top / 100% 120px no-repeat local, var(--halftone) 0 120px repeat-x local, var(--grain), var(--paper); padding-top: 132px; }
+.citation::before { content: none; }
+.award { position: absolute; top: 12px; right: 18px; width: 116px; height: 116px; transform: rotate(5deg); filter: drop-shadow(0 4px 0 rgba(43, 33, 22, 0.35)); pointer-events: none; }
+.award svg { display: block; width: 100%; height: 100%; }
+@media (max-width: 520px) { .award { width: 100px; height: 100px; top: 14px; right: 12px; } .citation h3 { font-size: 22px; } }
+
+/* A phone's permit line keeps to one row: the long words go, the number stays. The stub keeps to its name. */
+.permit .long, .stub .long { font-style: normal; }
+@media (max-width: 520px) { .permit .long { display: none; } .permit { letter-spacing: 0.1em; } }
+@media (max-width: 400px) { .stub .long { display: none; } }
+
+/* After dark: darker kraft card stock, the type and rules darkened to match, and the torch beam picks out the plank you chose. */
+:root[data-tod="night"] { --red: #8f1d0f; --paper: #cdb68d; --paper-2: #b99f73; --field: #e6d7b6; --line: #977d55; --muted: #4a3b27; --lan: #dccaa2; }
+[data-tod="night"] :is(.lobby .ui-chip[aria-pressed="true"], .lobby .ui-btn.primary, .gc-dialog.ui-house .gc-tab[aria-selected="true"]) {
+  background: radial-gradient(ellipse 60% 160% at var(--beam, 20%) 40%, rgba(255, 242, 176, 0.42), transparent 70%), var(--plank), var(--wood);
+  animation: beam 5s ease-in-out infinite alternate; }
+@media (prefers-reduced-motion: reduce) { [data-tod="night"] :is(.lobby .ui-chip, .lobby .ui-btn, .gc-dialog.ui-house .gc-tab) { animation: none; } }
+
+/* The narrator is a ranger's radio line on a painted board, not a film subtitle. */
+.narrator p { left: 50%; right: auto; translate: -50% 0; width: max-content; max-width: calc(100vw - 32px); padding: 6px 16px 5px; border-radius: 3px;
+  font: 700 clamp(13px, 1.5vw, 16px)/1.3 var(--plate); letter-spacing: 0.02em; color: #f6e8c6; text-shadow: 0 1px 0 rgba(0, 0, 0, 0.4);
+  background: var(--plank), #6b4a2b; box-shadow: inset 0 0 0 2px var(--brown), inset 0 -3px 0 rgba(0, 0, 0, 0.25), 0 4px 14px rgba(0, 0, 0, 0.5); }
+
+/* Controls: the toggle is a permit-form tick box, and a long action name gets the room before it wraps. */
+.gc-dialog.ui-house .gc-card input[type=checkbox] { appearance: none; display: grid; place-items: center; margin: 0; width: 22px; height: 22px;
+  border: 2px solid var(--brown); border-radius: 2px; background: var(--field); box-shadow: 2px 2px 0 rgba(43, 33, 22, 0.25); cursor: pointer; }
+.gc-dialog.ui-house .gc-card input[type=checkbox]:checked::after { content: ""; width: 12px; height: 7px; margin-top: -3px; border: solid var(--rust); border-width: 0 0 3px 3px; rotate: -45deg; }
+.gc-dialog.ui-house .gc-card input[type=checkbox]:focus-visible { outline: 2px solid var(--rust); outline-offset: 2px; }
+
+/* The lobby's park list fades out at its foot when there is more to scroll. */
+.lobby-main::after { content: ""; position: sticky; bottom: -16px; display: block; height: 34px; margin: -34px -16px -16px;
+  background: linear-gradient(transparent, var(--paper) 85%); pointer-events: none; }
+@media (max-width: 820px) { .lobby-main::after { content: none; } }
+@media (min-width: 700px) { .gc-dialog.ui-house .gc-binds { grid-template-columns: max-content minmax(max-content, 1fr) auto; } }
+
+/* Round 5 (#4220). The Controls card is an equipment-issue form: a typed form number fills the band beside the fold
+   buttons, each action is a typed line with a dotted leader to its key plank, and on a phone the names keep to one line. */
+.gc-dialog.ui-house .gc-fold { align-items: center; padding-bottom: 6px; border-bottom: 1px dashed var(--line); }
+.gc-dialog.ui-house .gc-fold::before { content: "Form PH-10 \00B7  Equipment issue"; margin-right: auto; font: 700 11px/1.2 ui-monospace, "Courier New", monospace;
+  letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }
+.gc-dialog.ui-house .gc-binds > span { display: flex; align-items: baseline; gap: 6px; min-width: 0; font: 700 14px/1.2 var(--plate); color: var(--ink); }
+.gc-dialog.ui-house .gc-binds > span::after { content: ""; flex: 1; min-width: 8px; border-bottom: 2px dotted var(--line); }
+.gc-dialog.ui-house .gc-binds { gap: 8px 6px; }
+@media (max-width: 520px) {
+  .gc-dialog.ui-house .gc-binds { grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr) auto; }
+  .gc-dialog.ui-house .gc-binds > span { font-size: 13px; white-space: nowrap; }
+  .gc-dialog.ui-house .gc-binds > span::after { display: none; }
+  .gc-dialog.ui-house .gc-key { padding-inline: 12px; font-size: 13px; }
+}
+/* After dark the room behind the card goes dark, so the front card doesn't show through at its edges. */
+[data-tod="night"] .gc-dialog.ui-house { background: rgba(4, 6, 12, 0.82); }
+
+/* The torch beam sweeps the front poster's title after dark, not only the Play board. */
+.poster-head { overflow: hidden; }
+[data-tod="night"] .poster-head::after { content: ""; position: absolute; inset: 0; pointer-events: none; mix-blend-mode: screen;
+  background: radial-gradient(ellipse 34% 70% at var(--beam, 20%) 26%, rgba(255, 242, 176, 0.42), rgba(255, 242, 176, 0.1) 55%, transparent 75%);
+  animation: beam 6s ease-in-out infinite alternate; }
+@media (prefers-reduced-motion: reduce) { [data-tod="night"] .poster-head::after { animation: none; } }
+
+/* Round 6 (#4226): the lobby's park list as a trail map. Each region is a green routed sign on a post with its own
+   painted blaze and how many parks wait down it; a dotted trail runs on to the panel's edge. Each park plank carries
+   that park's own small patch (poster.ts chipPatchSvg). */
+.lobby-main h3.trail { display: flex; align-items: center; gap: 8px; margin: 16px 0 8px; font: inherit; color: inherit; }
+.lobby-main h3.trail > span { position: relative; padding: 5px 22px 5px 12px; font: 700 15px/1.1 var(--plate); letter-spacing: 0.04em; color: #f3e2b8;
+  background: repeating-linear-gradient(177deg, rgba(0, 0, 0, 0.08) 0 2px, transparent 2px 7px), #2f5233;
+  clip-path: polygon(0 0, calc(100% - 12px) 0, 100% 50%, calc(100% - 12px) 100%, 0 100%); box-shadow: inset 0 -3px 0 rgba(0, 0, 0, 0.25); }
+.lobby-main h3.trail .blaze { flex: none; width: 20px; height: 20px; padding: 3px; background: var(--brown); border-radius: 2px; fill: var(--sun);
+  box-shadow: 0 2px 0 rgba(43, 33, 22, 0.3); }
+.lobby-main h3.trail small { flex: 1; display: flex; align-items: center; gap: 8px; font: 600 12px/1 var(--grid); color: var(--muted); white-space: nowrap; }
+.lobby-main h3.trail small::after { content: ""; flex: 1; border-top: 3px dotted var(--line); }
+.lobby .row-btns .ui-chip:has(> .chip-patch) { flex-direction: row; align-items: center; gap: 6px; padding-left: 4px; }
+.chip-patch { flex: none; display: block; width: 20px; height: 20px; border-radius: 50%; overflow: hidden; border: 2px solid #f3e2b8;
+  box-shadow: 0 0 0 1.5px var(--brown), 0 1px 0 2px rgba(0, 0, 0, 0.25); }
+.chip-patch svg { display: block; width: 100%; height: 100%; }
+[data-tod="night"] .lobby-main h3.trail > span { background: repeating-linear-gradient(177deg, rgba(0, 0, 0, 0.12) 0 2px, transparent 2px 7px), #23402a; }
+[data-tod="night"] .lobby-main h3.trail .blaze { fill: #fff2b0; }
+
+/* a screen's how-to, out of the way (index.html): a small ? opens it as a popover; a click outside or Escape shuts it */
+button.info.info.info { display: inline-grid; flex: none; aspect-ratio: 1; min-height: 0; min-width: 0; place-items: center; width: 26px; height: 26px; padding: 0; padding-inline: 0; margin-left: 6px; vertical-align: middle; border-radius: 50%; border: 1.5px solid currentColor; background: none; box-shadow: none; color: var(--muted); font: 700 14px/1 var(--plate); text-shadow: none; cursor: help; }
+button.info.info.info svg { width: 16px; height: 16px; }
+h2 button.info.info.info { width: 20px; height: 20px; margin-left: 4px; } h2 button.info.info.info svg { width: 13px; height: 13px; }
+.about[popover] { max-width: min(34rem, calc(100vw - 32px)); max-height: calc(100dvh - 32px); overflow: auto; padding: 18px 22px; border: 2px solid var(--brown); border-radius: 6px; background: var(--paper); color: var(--ink); font: 14px/1.45 var(--grid); }
+.about[popover]::backdrop { background: rgba(0, 0, 0, 0.35); }
+.about p { margin: 0 0 10px; }
+.about .keys { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; margin: 12px 0 0; }
+.about .keys dt { font: 700 12px/1.6 var(--plate); }
+.about .keys dd { margin: 0; color: var(--muted); }
+.poster-head > button.info.info.info { position: absolute; top: 8px; right: 8px; z-index: 2; margin: 0; color: var(--brown); background: rgba(253, 246, 227, 0.7); }
+[data-tod="night"] .poster-head > button.info.info.info { color: #e3e9f5; background: rgba(13, 20, 38, 0.5); }
+
+/* Round 7 (#4229). The menus' screen is the poster itself: the whole screen behind the front, the lobby and the results is
+   printed sky and ridges (#backdrop, drawn by poster.ts), inside a cream margin and an ink keyline like a print's border,
+   so no card floats over the 3D render and a phone has no empty bands. The letterbox steps aside for it. */
+.backdrop { position: fixed; inset: 0; z-index: 1; display: none; pointer-events: none; background: #f9e6bf center bottom / cover no-repeat;
+  box-shadow: inset 0 0 0 var(--margin, 10px) var(--cream), inset 0 0 0 calc(var(--margin, 10px) + 2px) var(--ink); }
+@media (max-width: 520px) { .backdrop { --margin: 5px; } }
+[data-tod="night"] .backdrop { box-shadow: inset 0 0 0 var(--margin, 10px) #1a140c, inset 0 0 0 calc(var(--margin, 10px) + 2px) #cdb68d; }
+body:has(> #menu:not([hidden]), > #lobby:not([hidden]), > #results:not([hidden])) .backdrop { display: block; }
+body:has(> #menu:not([hidden]), > #lobby:not([hidden]), > #results:not([hidden])) .narrator i { display: none; }
+.menu, .results, .lobby { z-index: 2; }
+.menu, .results { background: none; }
+
+/* The toggle's name reads as a form line, not a faint note. */
+.gc-dialog.ui-house .gc-card label:has(> input[type=checkbox]) { font: 700 15px/1.25 var(--plate); color: var(--ink); opacity: 1; }
+/* The results' score lines are typed in the slab face beside the trail-sign heads; the how stays handwritten. */
+.results td { font: 600 15px/1.3 var(--plate); color: var(--ink); }
+.results td:nth-child(2) { font: 400 14px/1.3 var(--grid); color: var(--muted); }
+.gc-dialog.ui-house .gc-sec { background: var(--grain), color-mix(in srgb, var(--field) 50%, transparent); }
+
+/* Round 9 (#4302). The world shows around the panels on a phone: the lobby drops below the moon and stops short of the
+   ridges (the camper is a scroll further down), and Controls keeps to the same window. Controls opens on the poster
+   itself, with the front card, lobby and caption put away behind it. The camper waits in the sky's own inks. */
+@media (max-width: 820px) {
+  .lobby { padding-top: 112px; gap: 24dvh; }
+  .lobby-main { max-height: calc(76dvh - 112px); overflow: auto; }
+  .lobby-main::after { content: ""; }
+  .gc-dialog.ui-house.ui-house { place-items: start center; padding: 112px 12px 0; }
+  .gc-dialog.ui-house.ui-house .gc-card { border-bottom: 2px solid var(--brown); }
+  .gc-dialog.ui-house .gc-card { max-height: calc(76dvh - 112px); }
+  .menu-card .ridges { height: 150px; }
+}
+.gc-dialog.ui-house { background: rgba(43, 33, 22, 0.28); }
+[data-tod="night"] .gc-dialog.ui-house { background: rgba(4, 6, 12, 0.18); }
+body:has(> .gc-dialog:not([hidden])) :is(.menu-card, .lobby, .results .panel, .narrator) { visibility: hidden; }
+.preview { background: linear-gradient(#eaa75c, #f6d39a 70%, #f9e6bf); }
+[data-tod="night"] .preview { background: linear-gradient(#0d1426, #24365c 70%, #3f5f92); }

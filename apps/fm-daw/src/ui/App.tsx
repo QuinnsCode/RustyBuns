@@ -16,6 +16,7 @@ import { PatchEditor } from "./PatchEditor.tsx";
 import { Keys } from "./Keys.tsx";
 import { Meter } from "./Meter.tsx";
 import { Bench } from "./Bench.tsx";
+import { Shape } from "./Shape.tsx";
 import { Perform, STUTTERS } from "./Perform.tsx";
 import { loadSound } from "../sounds.ts";
 import { apply, audible, lettingGo, loopBeats, punchLane, Take, BAR_CHOICES, BEATS_PER_BAR, type Live, type Note, type Op, type Project, type TrackDoc } from "../project.ts";
@@ -29,7 +30,7 @@ import { renderProject, loopSeconds } from "../engine/offline.ts";
 import { encodeWav } from "../engine/wav.ts";
 import { saveBounce, reveal } from "../actions/files.ts";
 import type { FromWorklet, ToWorklet } from "../engine/messages.ts";
-import type { RecordedMove } from "../engine/sequencer.ts";
+import { MASTER, type RecordedMove } from "../engine/sequencer.ts";
 import { LANE_BEND, LANE_STUTTER } from "../engine/params.ts";
 import "@fontsource/barlow-condensed/500.css";
 import "@fontsource/barlow-condensed/600.css";
@@ -61,7 +62,7 @@ const COUNT_IN = 4;
 function loadMsg(p: Project): ToWorklet {
   return {
     t: "load", params: p.tracks.flatMap((t) => t.params), notes: p.tracks.map((t) => t.notes), auto: p.tracks.map((t) => t.auto ?? []),
-    bpm: p.bpm, swing: p.swing, loopBeats: loopBeats(p), audible: audible(p), space: p.space, squash: p.squash,
+    bpm: p.bpm, swing: p.swing, loopBeats: loopBeats(p), audible: audible(p), space: p.space, squash: p.squash, eq: p.eq, eqAuto: p.eqAuto ?? [],
   };
 }
 
@@ -72,6 +73,7 @@ function opMsg(op: Op, next: Project): ToWorklet {
     case "notes": return { t: "notes", track: op.track, notes: next.tracks[op.track].notes };
     case "auto": return { t: "auto", track: op.track, lanes: next.tracks[op.track].auto ?? [] };
     case "track": return { t: "audible", mask: audible(next) };
+    case "eq": case "eqAuto": return { t: "eq", bands: next.eq, lanes: next.eqAuto ?? [] };
     case "global":
       if (op.bpm === undefined && op.swing === undefined && op.bars === undefined) {
         if (op.space !== undefined && op.squash === undefined) return { t: "space", amount: next.space };
@@ -104,7 +106,7 @@ export function App() {
   const [held, setHeld] = useState<Set<number>>(() => new Set());
   const [midiDevices, setMidiDevices] = useState<string[]>([]);
   const [netStatus, setNetStatus] = useState<NetStatus>({ state: "connecting", peers: 0 });
-  const [view, setView] = useState<"pattern" | "engines">("pattern");
+  const [view, setView] = useState<"pattern" | "shape" | "engines">("pattern");
   const [page, setPage] = useState(0);
   const [repeat, setRepeatState] = useState(0);
   const [bend, setBendState] = useState(0);
@@ -183,7 +185,8 @@ export function App() {
   function takeMove(m: RecordedMove) { if (!take.current.add(m)) { flushTake(); take.current.add(m); } }
   function flushTake() {
     for (const s of take.current.flush())
-      commit({ t: "auto", track: s.track, lanes: punchLane(proj.current.tracks[s.track].auto ?? [], s.i, s.pts) }, { group: "rec" });
+      if (s.track === MASTER) commit({ t: "eqAuto", lanes: punchLane(proj.current.eqAuto ?? [], s.i, s.pts) }, { group: "rec" });
+      else commit({ t: "auto", track: s.track, lanes: punchLane(proj.current.tracks[s.track].auto ?? [], s.i, s.pts) }, { group: "rec" });
   }
   /** One of your Perform moves: heard now, and kept as automation if you're recording. */
   const move = (track: number, i: number, v: number, was: number) => send({ t: "move", track, i, v, was });
@@ -561,6 +564,7 @@ export function App() {
           <div className="toolbar">
             <div className="seg tabs">
               <button className={view === "pattern" ? "on" : ""} onClick={() => setView("pattern")}>Pattern</button>
+              <button className={view === "shape" ? "on" : ""} onClick={() => setView("shape")} title="Shape: the master EQ (cuts, shelves, bells, notch)">Shape</button>
               <button className={view === "engines" ? "on" : ""} onClick={() => setView("engines")}>Engine race</button>
             </div>
             <label className="field inline"><span className="silk">Grid</span>
@@ -581,6 +585,12 @@ export function App() {
 
           {view === "engines" ? (
             <Bench project={project} wasm={fetchWasm} />
+          ) : view === "shape" ? (
+            <Shape doc={project.eq} sampleRate={audio?.ctx.sampleRate ?? 48000} analyser={audio?.analyser ?? null}
+              onChange={(bands, group) => commit({ t: "eq", bands }, group ? { group } : {})}
+              onListen={(band) => audio?.send({ t: "eqListen", band })}
+              lanes={project.eqAuto ?? []} onLanes={(lanes) => commit({ t: "eqAuto", lanes })}
+              onMove={(i, v, was) => move(MASTER, i, v, was)} />
           ) : t.kind === "drum" ? (<>
             <div className="machine" aria-label="Drum machine">
               <span className="silk">Drum machine</span>

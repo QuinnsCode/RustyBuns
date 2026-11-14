@@ -1,0 +1,67 @@
+{
+  "id": "tatzelwurm",
+  "name": "Tatzelwurm",
+  "category": "Tatzelwurm",
+  "query": "Tatzelwurm",
+  "images": [
+    {
+      "file": "card-bw.jpg",
+      "from": "card",
+      "page": "https://commons.wikimedia.org/wiki/File:Scheuchzer(1723)-vol2-p378a-catheaded-serpent.jpg",
+      "artist": "Johann Jakob Scheuchzer",
+      "license": "Public domain"
+    },
+    {
+      "file": "c2.jpg",
+      "from": "search",
+      "page": "https://commons.wikimedia.org/wiki/File:Tatzelwurm.jpg",
+      "artist": "Abrasax",
+      "license": "CC BY-SA 3.0 de",
+      "licenseUrl": "https://creativecommons.org/licenses/by-sa/3.0/de/deed.en"
+    },
+    {
+      "file": "c3.jpg",
+      "from": "search",
+      "page": "https://commons.wikimedia.org/wiki/File:Salzburg_Haus_der_Natur_-_Europa_Tatzelwurm.jpg",
+      "artist": "Wolfgang Sauber",
+      "license": "CC BY-SA 4.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0"
+    },
+    {
+      "file": "c4.jpg",
+      "from": "search",
+      "page": "https://commons.wikimedia.org/wiki/File:BBI_Verwaltungsgeb%C3%A4ude_Wackersdorf_Geb%C3%A4udedetail.jpg",
+      "artist": "HH58",
+      "license": "CC BY-SA 4.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0"
+    },
+    {
+      "file": "c5.jpg",
+      "from": "search",
+      "page": "https://commons.wikimedia.org/wiki/File:27555-Karlsbad-1939-Weinhaus_zum_Tazzelwurm-Br%C3%BCck_%26_Sohn_Kunstverlag.jpg",
+      "artist": "Brück & Sohn Kunstverlag Meißen",
+      "license": "CC BY-SA 3.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by-sa/3.0"
+    },
+    {
+      "file": "c6.jpg",
+      "from": "search",
+      "page": "https://commons.wikimedia.org/wiki/File:Tatzelwurm_bei_Oberaudorf_(Feuriger_Tatzelwurm_Skulptur_und_Schilder).jpg",
+      "artist": "User:Mattes",
+      "license": "CC BY 2.0 de",
+      "licenseUrl": "https://creativecommons.org/licenses/by/2.0/de/deed.en"
+    }
+  ],
+  "traits": {
+    "silhouette": "",
+    "head": "",
+    "limbs": "",
+    "hide": "",
+    "colours": "",
+    "child": [
+      "",
+      "",
+      ""
+    ]
+  }
+}

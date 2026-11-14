@@ -35,6 +35,8 @@ test("the next round goes to the free climb furthest from its target, idle longe
   expect(next([c(1, 2, { taken: 3409 }), c(2, 3, { stalled: true }), c(3, 9.2), c(4, 6)])?.number).toBe(4);
   expect(next([c(1, 4, { touched: "2026-11-03T00:00:00Z" }), c(2, 4, { touched: "2026-10-30T00:00:00Z" })])?.number).toBe(2);
   expect(next([c(1, 9), c(2, 1, { taken: 1 })])).toBeNull();
+  const sweep = [c(1, 1, { title: "Mythic Masters: beasts" }), c(2, 3, { title: "Git Recon: menus" })];
+  expect(next(sweep, ["mythic"])?.number).toBe(2);
 });
 
 test("a climb left open after it moved up is flagged on the board and never handed out", () => {

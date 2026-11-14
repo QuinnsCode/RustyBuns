@@ -12,6 +12,7 @@
 
 import { MAX_BYTES } from "./archive.ts";
 import { tarFiles } from "./tarball.ts";
+import { arr, Bad, obj, oneOf, str } from "@rustybuns/util/guard";
 import type { ArtifactsRepo, CommitMeta, Env, R2Like, TreeEntry } from "./env.ts";
 
 export const CHUNK = 8 * 2 ** 20;
@@ -23,6 +24,12 @@ const treeKey = (slug: string, sha: string, dir: string) => `r2:${slug}:${sha}:$
 
 /** A file's place in the chunks: `chunk:offset:size`, or `skip:size:binary` for one that isn't stored. */
 export type ChunkFile = [path: string, entry: Omit<TreeEntry, "name">];
+const Entry = obj({ mode: str(10), hash: str(200), type: oneOf(["tree", "blob", "symlink", "gitlink", "exec"]) });
+/** A level part's files as level_parts keeps them (JSON), read back by swarm.ts. */
+export const ChunkFiles = arr((v): ChunkFile => {
+  if (!Array.isArray(v) || v.length !== 2) throw new Bad("a [path, entry] pair");
+  return [str(Infinity)(v[0]), Entry(v[1])];
+}, Infinity);
 
 /** Whether a file is kept, and how its entry says so when it isn't (too big, or binary). */
 export const keep = (data: Uint8Array) => data.length <= MAX_BYTES && !data.includes(0);

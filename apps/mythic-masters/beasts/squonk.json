@@ -1373,15 +1373,18 @@
         -1,
         0.4
       ],
-      "len": 0.3,
-      "width": 0.085,
+      "len": 0.33,
+      "width": 0.095,
       "tilt": 12,
       "cup": 12,
       "mirror": true,
-      "material": "skin"
+      "material": "skin",
+      "thick": 0.5,
+      "fold": 0.3
     }
   ],
   "belly": "belly",
   "belly_turn": -0.35,
-  "blend": 0.008
+  "blend": 0.008,
+  "hide": {"pattern": "skin", "size": 0.08, "colours": [[0.47, 0.46, 0.41]], "map": 256}
 }

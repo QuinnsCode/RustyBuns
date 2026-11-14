@@ -20,7 +20,7 @@ export const GAMES: Record<string, { dir: string; shots: { name: string; path: s
   "mythic-masters": { dir: "mythic-masters", shots: [{ name: "stadium", path: clash("jackalope", "jersey-devil", "stadium"), wait: 6000 }, { name: "volcano", path: clash("jersey-devil", "hodag", "volcano"), wait: 6000 }, { name: "world", path: "/?world=1", wait: 6000 }] },
   "alien-disc-golf": { dir: "alien-disc-golf", shots: [{ name: "round", path: "/?seed=42", wait: 5000 }, { name: "gulf-stream", path: "/?seed=42&swim=36.5,-72", wait: 5000 }, { name: "open-pacific", path: "/?seed=42&swim=-25,-120", wait: 5000 }] },
   "park-hide-seek": { dir: "park-hide-seek", shots: [{ name: "hiding", path: "/", wait: 20000, click: "#play" }] },
-  "hippo-tycoon": { dir: "hippo-tycoon", shots: [{ name: "round", path: "/", wait: 8000, click: "text:Solo (vs 3 bots)" }] },
+  "hippo-tycoon": { dir: "hippo-tycoon", shots: [{ name: "round", path: "/", wait: 8000, click: "text:Solo" }] },
   "splat-spray": { dir: "splat-spray", shots: [{ name: "scan", path: "/", wait: 6000, click: "text:Solo training", hold: 2500 }] },
   "git-recon": { dir: "git-recon", shots: [{ name: "kitchen", path: "/", wait: 9000, click: "#levels > *" }] },
   qcrm: { dir: "qcrm", shots: [{ name: "home", path: "/", wait: 2000 }, { name: "contacts", path: "/app?scenario=populated", wait: 3000 }, { name: "webhooks", path: "/app?scenario=webhooks", wait: 3000 }] },

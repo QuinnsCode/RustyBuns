@@ -195,3 +195,22 @@ test("cut just a test line, and the code it imports comes along to run", async (
   const run = (await (await send("ryan", `/api/cuts/${id}/run`, {})).json()) as any;
   expect([run.code, run.passed, run.failed]).toEqual([0, 1, 0]);
 });
+
+test("a cut of a private line shows it blank to anyone outside the crew, in its JSON and its card", async () => {
+  const call = await boot({ GH_CLI: "off" });
+  const send = (user: string, url: string, body: unknown) => call(user, url, { method: "POST", body: JSON.stringify(body) });
+  await send("ryan", "/api/login", { name: "ryan" });
+  await send("ryan", "/api/repos", { name: "vault", visibility: "public" });
+  await send("ryan", "/api/repos/ryan/vault/files", { path: "src/key.ts", content: 'export const plan = "public";\nexport const key = "sk_live_hush";\n' });
+  const made = (await (await send("ryan", "/api/repos/ryan/vault/cuts", { path: "src/key.ts", from: 1, to: 2 })).json()) as { id: string };
+  const card = async () => Buffer.from(await (await call(null, `/api/cuts/${made.id}/card.png`)).arrayBuffer());
+  const before = await card();
+  const file = (await (await call("ryan", "/api/repos/ryan/vault/do/file?path=src/key.ts")).json()) as any;
+  expect((await send("ryan", "/api/repos/ryan/vault/do/private?path=src/key.ts", { lines: [file.lines[1].id], private: true })).status).toBe(200);
+
+  const texts = async (user: string | null) => ((await (await call(user, `/api/cuts/${made.id}`)).json()) as any).files[0].lines.map((l: any) => l.text);
+  expect(await texts(null)).toEqual(['export const plan = "public";', ""]);
+  expect(await texts("ana")).toEqual(['export const plan = "public";', ""]);
+  expect(await texts("ryan")).toEqual(['export const plan = "public";', 'export const key = "sk_live_hush";']);
+  expect((await card()).equals(before)).toBe(false);
+});

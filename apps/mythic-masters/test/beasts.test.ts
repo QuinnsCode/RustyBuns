@@ -8,11 +8,13 @@ import { BeastRig, headAndTail, Puppet, wingsOf, type Beast } from "../src/beast
 import { body, ROSTER } from "../src/roster.ts";
 import { frames, newMatch, type Fighter } from "../src/sim.ts";
 
-// Every sheet in beasts/ has been built (bun scripts/beasts.ts): a GLB and a rig sidecar whose feet match the
+// Every sheet in beasts/ and in each pack's packs/<id>/beasts/ has been built (bun scripts/beasts.ts): a GLB and a rig sidecar whose feet match the
 // sheet. Blender isn't needed here; the files are checked in.
 const APP = join(import.meta.dir, "..");
 const Expected = obj({ feet: int(0, 8), wings: opt(int(0, 8)) });
-const ids = readdirSync(join(APP, "beasts")).filter((f) => f.endsWith(".json")).map((f) => f.slice(0, -5));
+const sheets = (dir: string) => readdirSync(join(APP, dir)).filter((f) => f.endsWith(".json")).map((f) => [f.slice(0, -5), join(APP, dir, f)] as const);
+const SHEETS = new Map([...sheets("beasts"), ...readdirSync(join(APP, "packs")).flatMap((p) => sheets(`packs/${p}/beasts`))]);
+const ids = [...SHEETS.keys()];
 
 async function beast(id: string): Promise<Beast> {
   const sheet = BeastRig(await Bun.file(join(APP, "public", "models", `${id}.rig.json`)).json());
@@ -23,7 +25,7 @@ async function beast(id: string): Promise<Beast> {
 
 describe("every beast sheet is built and rigged", () => {
   test.each(ids)("%s: a GLB, and a rig whose feet match the sheet", async (id) => {
-    const expected = Expected(await Bun.file(join(APP, "beasts", `${id}.json`)).json());
+    const expected = Expected(await Bun.file(SHEETS.get(id)!).json());
     const b = await beast(id);
     expect(b.model.triangles).toBeGreaterThan(100);
     expect(b.sheet.feet.length).toBe(expected.feet);
@@ -279,8 +281,9 @@ test("a heavy blow flattens the struck body front to back and curls it over the 
   expect(Math.abs(span() - rest)).toBeLessThan(rest * 0.03);
 }, 30_000);
 
-test("an upright flyer flies leaning into it, head well ahead of its hips, not hanging like a lifted biped", async () => {
-  const c = ROSTER.find((x) => x.id === "jersey-devil")!;
+// the Mothman's wing tips tower over its head, which once read it as half upright and halved its lean (#4267)
+test.each(["jersey-devil", "mothman"])("an upright flyer (%s) flies leaning into it, head well ahead of its hips, not hanging like a lifted biped", async (id) => {
+  const c = ROSTER.find((x) => x.id === id)!;
   const lean = async (flying: boolean) => {
     const p = new Puppet(await beast(c.id), body(c), c.archetype);
     const f = newMatch(c, c).f[0];

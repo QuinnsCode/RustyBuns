@@ -14,7 +14,9 @@ import { getJson, readJson } from "@rustybuns/util/http";
 import { joinRoom, menu, panel, racers, secs, tabPlayerId, type Session } from "./online.ts";
 import { MatchReply, SpotSignup } from "./api.ts";
 import { obj, bool } from "@rustybuns/util/guard";
-import { achieve, canSignIn, finishSignIn, login, reportButton, signIn, who } from "./eqosys.ts";
+import { tutorial } from "@rustybuns/util/tutorial";
+import { achieve, achievements, canSignIn, finishSignIn, login, reportButton, signInHere, who } from "./eqosys.ts";
+import { signInToJoin } from "@rustybuns/util/lobby";
 import { joinParty, makeParty, partyCode, partyLink, partyReady, type Arrival } from "./party.ts";
 import { MATCH, type View } from "./match/game.ts";
 import { createElement, Hand, ScanLine } from "lucide";
@@ -50,6 +52,7 @@ const orbit = new THREE.Spherical();
 const polarOf = () => orbit.setFromVector3(camera.position.clone().sub(controls.target)).phi;
 let lastPolar = 0;
 controls.addEventListener("change", () => {
+  if (mode !== "menu" && !flight) learnt.looks++;
   const phi = polarOf();
   if (!flight) {
     const speed = pointerKind === "touch" ? ctl.touch : ctl.lookX;
@@ -110,6 +113,24 @@ function tickTimer() {
   if (session || !target || !startedAt) return;
   setText("timer", secs(performance.now() - startedAt));
 }
+
+// ---------- the tutorial ----------
+
+// The first time, the first room you play from the menu is the tutorial: look round, light it, switch to Pick, pick the
+// target, then the next mission. Each flag is set where the thing happens and stays set, so two at once move it past both.
+// A ?level= link or an online match never starts it.
+const learnt = { looks: 0, picking: false, next: false };
+const coach = tutorial({
+  prefix: "splat-spray",
+  account: { achieve, achievements },
+  steps: [
+    { title: "Look around", say: "Right-drag, or drag with a finger, to turn round the room.", done: () => learnt.looks > 20 },
+    { title: "Light the room", say: "Hold the left button, or Scan on a phone: the paint shows what is there.", done: () => totalShots >= 3 },
+    { title: "Switch to Pick", keys: ["Shift"], say: "Hold Shift, or press Pick, once you think you see it.", done: () => learnt.picking },
+    { title: "Pick the target", say: "Click the thing named at the top. A wrong pick costs shots.", done: () => found.size > 0 },
+    { title: "Next mission", keys: ["Space"], say: "Or press Next mission. Fewest shots wins.", done: () => learnt.next },
+  ],
+});
 
 // ---------- the round ----------
 
@@ -273,6 +294,7 @@ function tryPick(x: number, y: number) {
 }
 
 function advance() {
+  learnt.next = true;
   $("next").hidden = true;
   flyTo(null);
   nextTarget();
@@ -285,6 +307,7 @@ async function goSolo() {
   $("menu").hidden = true;
   mode = "solo";
   nextTarget();
+  coach.start();
 }
 
 function toMenu(message = "") {
@@ -334,7 +357,9 @@ function openParty(code: string) {
 }
 async function withFriends(code = partyCode(location.search)) {
   if (!login()) {
-    if (canSignIn()) void signIn(code ? `party:${code}` : "party"); else menuNote("Playing with friends needs an eqosys account, on the online version.");
+    // eqosys opens beside the game; a blocked window goes the long way round and comes back to `then`.
+    if (canSignIn()) void signInHere(code ? `party:${code}` : "party").then((r) => { if (r.login) void withFriends(code); else if (r.error) menuNote(r.error); });
+    else menuNote("Playing with friends needs an eqosys account, on the online version.");
     return;
   }
   if (code) return openParty(code);
@@ -420,6 +445,7 @@ $("leave").addEventListener("click", () => toMenu());
 /** Scan or pick, shown on the switch, the reticle, the screen edge and the tip line, so it is never in doubt. */
 function setPicking(on: boolean) {
   picking = on;
+  if (on && mode !== "menu") learnt.picking = true;
   if (on) { trigger = null; nudge(false); }
   document.body.classList.toggle("picking", on);
   $("mode-scan").setAttribute("aria-pressed", String(!on));
@@ -644,7 +670,7 @@ void Promise.all([finishSignIn(), scannedRooms()]).then(([back, rooms]) => {
     join: (r, name) => { try { localStorage.setItem("splat-spray.name", name); } catch { /* private window */ } goOnline(r, name); },
     friends: () => void withFriends(),
     solo: goSolo,
-    scanned: (id) => { useScanned(id).catch((e) => { toMenu(e instanceof Error ? e.message : "That room would not load."); }); },
+    scanned: (id) => { useScanned(id).then(() => coach.start(), (e) => { toMenu(e instanceof Error ? e.message : "That room would not load."); }); },
   }, savedName, rooms);
   const want = new URLSearchParams(location.search).get("level");
   if (want && rooms.some((r) => r.id === want)) useScanned(want).catch((e) => toMenu(e instanceof Error ? e.message : ""));
@@ -652,7 +678,12 @@ void Promise.all([finishSignIn(), scannedRooms()]).then(([back, rooms]) => {
   // Back from signing in for a party, or opened from a friend's party link.
   const then = back?.login ? back.then : "";
   if (then === "party" || then.startsWith("party:")) void withFriends(then.slice(6) || null);
-  else if (partyCode(location.search)) { if (login()) void withFriends(); else menuNote("A friend's party: press With friends to sign in through eqosys and join it."); }
+  else {
+    // A friend's party link: signed out, "Sign in to join Ada's party", eqosys beside the game, then the lobby.
+    const code = partyCode(location.search);
+    if (code && login()) void withFriends(code);
+    else if (code) signInToJoin({ box: $("menu-party"), code, game: "Splat Spray", account: { canSignIn, signInHere }, joined: () => void withFriends(code) });
+  }
 });
 
 renderer.setAnimationLoop(() => {
@@ -681,6 +712,11 @@ Object.assign(globalThis, {
     },
     get target() { return target; },
     get found() { return [...found]; },
+  },
+  splatSpray: {
+    state: () => ({ mode, target: target?.name ?? null, shots, found: found.size, picking, tutorial: coach.state() }),
+    /** Forget the tutorial was done in this browser, so the next room from the menu runs it again. */
+    forgetTutorial: coach.forget,
   },
 });
 

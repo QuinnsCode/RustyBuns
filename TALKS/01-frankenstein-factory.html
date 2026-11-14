@@ -1,0 +1,324 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Frankenstein Code Factory</title>
+<meta name="description" content="Talk 1: how a place that stores code learned to run, copy and rebuild itself, in plain words.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@700;900&family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&family=JetBrains+Mono:wght@600;700&display=swap">
+<link rel="stylesheet" href="deck.css">
+</head>
+<body>
+
+<section class="slide">
+  <div class="kicker">Talk 1 · Rusty Buns talks</div>
+  <h1>The Frankenstein Code Factory</h1>
+  <p class="lede">How a place that stores code learned to run itself, copy itself and change itself.</p>
+  <p class="aside">It's alive. It also asks permission before it goes outside.</p>
+  <div class="notes">Open with the picture, not the parts. If someone in the room only remembers one slide, it should be the factory loop (slide 14).</div>
+</section>
+
+<section class="slide">
+  <div class="kicker">The picture first</div>
+  <h2>A bakery that bakes its own ovens</h2>
+  <p class="lede">Most bakeries buy their ovens. This one bakes them.</p>
+  <ul>
+    <li>The recipe book holds the recipes for bread. It also holds the recipe for the oven.</li>
+    <li>The bakers read the book, bake, and sometimes improve the oven recipe.</li>
+    <li>When the new oven is ready, it goes in. The old oven goes out.</li>
+    <li>The head baker tastes everything before it goes in the shop window.</li>
+  </ul>
+  <p class="aside">Do not try this with a real oven. Ours is made of software, so the worst case is a burnt test.</p>
+  <div class="notes">Map it as you go: recipe book = codeSplitter, bakers = AI helpers in Agent Office, the oven = the office itself, head baker = the owner.</div>
+</section>
+
+<section class="slide">
+  <div class="kicker">Meet the body parts</div>
+  <h2>Four pieces, stitched together</h2>
+  <div class="cards">
+    <div class="card"><h3>codeSplitter</h3><p>The place where the code lives. It remembers every line and who wrote it.</p><p class="pic"><b>Like:</b> the recipe book.</p></div>
+    <div class="card"><h3>Agent Office</h3><p>A 3D office where AI helpers sit at desks and do coding jobs.</p><p class="pic"><b>Like:</b> the kitchen and its bakers.</p></div>
+    <div class="card"><h3>The sandbox</h3><p>A sealed room. A program inside can touch only what you list.</p><p class="pic"><b>Like:</b> a kitchen with one door and a guard.</p></div>
+    <div class="card"><h3>Rusty Buns</h3><p>Our engine. It turns an app into one file that runs on a laptop, a server or the cloud.</p><p class="pic"><b>Like:</b> a lunchbox that fits any table.</p></div>
+  </div>
+  <p class="aside">Doctor Frankenstein used spare parts too. We just credit our donors.</p>
+</section>
+
+<section class="slide">
+  <div class="kicker">Part 1 · the recipe book</div>
+  <h2>codeSplitter: every line wears a name tag</h2>
+  <p class="lede">Normal code storage thinks in files. codeSplitter thinks in lines.</p>
+  <ul>
+    <li>Each line gets its own tag: an id, an author and a history.</li>
+    <li>Three helpers can change one file at the same moment. They do not overwrite each other.</li>
+    <li>It is still real git underneath. Normal tools still work.</li>
+    <li>A merge helper called <b>Mervin</b> joins the work together. Mervin uses rules, not AI. So a merge costs no AI money.</li>
+  </ul>
+  <p class="aside">Mervin is not a person. Mervin does have a badge, a track record and strong opinions about tabs.</p>
+  <div class="notes">This is the "cute specific" that is safe to share: line identity as the unit of collaboration. Do not go into how the ids are made or stored.</div>
+</section>
+
+<section class="slide">
+  <div class="kicker">Name tags pay off</div>
+  <h2>Edit by shape, so files move together</h2>
+  <p class="lede">codeSplitter knows the shape of the code, not only its lines. One change lands in every file that needs it, in the form each file needs.</p>
+  <div class="diagram" role="img" aria-label="Three steps in a row: edit by shape, the files move as one group, then test only what that group touches, at the PR and at each ring.">
+    <svg viewBox="0 0 900 190">
+      <defs><marker id="ah-shape" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="d-head" d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <rect class="d-hot" x="10" y="40" width="250" height="110" rx="14"/>
+      <text class="d-text" x="135" y="88" text-anchor="middle">1. Edit by shape</text>
+      <text class="d-small" x="135" y="114" text-anchor="middle">one change, many files</text>
+      <rect class="d-box" x="325" y="40" width="250" height="110" rx="14"/>
+      <text class="d-text" x="450" y="88" text-anchor="middle">2. Files move as a group</text>
+      <text class="d-small" x="450" y="114" text-anchor="middle">we know what changed together</text>
+      <rect class="d-box" x="640" y="40" width="250" height="110" rx="14"/>
+      <text class="d-text" x="765" y="88" text-anchor="middle">3. Test what it touches</text>
+      <text class="d-small" x="765" y="114" text-anchor="middle">at the PR, then at each ring</text>
+      <path class="d-arrow" marker-end="url(#ah-shape)" d="M264,95 L318,95"/>
+      <path class="d-arrow" marker-end="url(#ah-shape)" d="M579,95 L633,95"/>
+    </svg>
+  </div>
+  <p class="aside">Like changing a family's surname. You do not hunt through every letter in the house by hand.</p>
+  <div class="notes">This is the chain: polymorphic edits mean we know which files belong together, and that means we can test the group instead of everything. Say what, not how.</div>
+</section>
+
+<section class="slide">
+  <div class="kicker">The trunk</div>
+  <h2>Branch off main. Squash back. One dot per job.</h2>
+  <div class="diagram" role="img" aria-label="A long line, main, with three short branches. Each branch leaves main, gets checked, and joins main again as one single dot.">
+    <svg viewBox="0 0 900 230">
+      <path class="d-arrow" style="stroke:var(--ink)" d="M20,170 L860,170"/>
+      <path class="d-head" style="fill:var(--ink)" d="M858,162 L876,170 L858,178 z"/>
+      <text class="d-text" x="20" y="208">main</text>
+      <path class="d-arrow" d="M70,170 C70,110 100,80 140,80 L230,80 C270,80 290,120 290,170"/>
+      <circle class="d-box" cx="140" cy="80" r="8"/><circle class="d-box" cx="180" cy="80" r="8"/><circle class="d-box" cx="220" cy="80" r="8"/>
+      <circle class="d-hot" cx="290" cy="170" r="14"/>
+      <path class="d-arrow" d="M330,170 C330,120 350,100 390,100 L460,100 C500,100 520,130 520,170"/>
+      <circle class="d-box" cx="410" cy="100" r="8"/><circle class="d-box" cx="450" cy="100" r="8"/>
+      <circle class="d-hot" cx="520" cy="170" r="14"/>
+      <path class="d-arrow" d="M560,170 C560,100 590,60 640,60 L720,60 C760,60 780,110 780,170"/>
+      <circle class="d-box" cx="650" cy="60" r="8"/><circle class="d-box" cx="690" cy="60" r="8"/><circle class="d-box" cx="730" cy="60" r="8"/>
+      <circle class="d-hot" cx="780" cy="170" r="14"/>
+      <text class="d-small" x="290" y="208" text-anchor="middle">one job</text>
+      <text class="d-small" x="520" y="208" text-anchor="middle">one job</text>
+      <text class="d-small" x="780" y="208" text-anchor="middle">one job</text>
+    </svg>
+  </div>
+  <ul>
+    <li>Every helper starts from the trunk, on its own branch. The PR checks its one feature.</li>
+    <li>It joins main as one squashed change. So each dot on main is a whole job: easy to find, easy to undo.</li>
+  </ul>
+  <p class="aside">A tree with one trunk and no tangled vines. The gardener likes it that way.</p>
+</section>
+
+<section class="slide">
+  <div class="kicker">The crew</div>
+  <h2>No clash, a quick catch, a sharp eye</h2>
+  <div class="cards">
+    <div class="card"><h3>Mervin</h3><p>Sees two helpers heading for the same lines and puts them in order. The clash never happens.</p><p class="pic"><b>Like:</b> an air traffic controller.</p></div>
+    <div class="card"><h3>Ester</h3><p>A test goes red. Ester finds which change did it and tells that helper, often before anyone notices.</p><p class="pic"><b>Like:</b> a detective who solves it before lunch.</p></div>
+    <div class="card"><h3>Dexter</h3><p>Watches the helpers work. Spots the chores they do by hand again and again, and asks for a tool.</p><p class="pic"><b>Like:</b> a foreman with a notebook.</p></div>
+  </div>
+  <p class="aside">Mervin prevents the fight. Ester solves the crime. Dexter writes the memo.</p>
+</section>
+
+<section class="slide">
+  <div class="kicker">Testing in one big repo</div>
+  <h2>We cannot test everything, all the time</h2>
+  <p class="lede">One repo holds dozens of apps. So a change tests what it touches now, and the rest gets tested on a clock, in wider and wider rings.</p>
+  <div class="diagram" role="img" aria-label="Four rings around a centre. The centre is the PR, tested in minutes. Then every hour, then every night, then every week, when the owner says yes and it reaches everyone.">
+    <svg viewBox="0 0 900 300">
+      <circle class="d-box" cx="300" cy="150" r="140"/>
+      <circle class="d-box" cx="300" cy="150" r="104"/>
+      <circle class="d-box" cx="300" cy="150" r="68"/>
+      <circle class="d-hot" cx="300" cy="150" r="32"/>
+      <text class="d-text" x="300" y="156" text-anchor="middle">PR</text>
+      <text class="d-small" x="300" y="106" text-anchor="middle">hour</text>
+      <text class="d-small" x="300" y="70" text-anchor="middle">night</text>
+      <text class="d-small" x="300" y="34" text-anchor="middle">week</text>
+      <text class="d-text" x="490" y="80">The PR: the feature works</text>
+      <text class="d-small" x="490" y="104">minutes, only what it touched</text>
+      <text class="d-text" x="490" y="150">The sweeps: everything else</text>
+      <text class="d-small" x="490" y="174">every hour, every night, every week</text>
+      <text class="d-text" x="490" y="220">The express lane</text>
+      <text class="d-small" x="490" y="244">one change, every sweep right now</text>
+    </svg>
+  </div>
+  <p class="aside">Taste the spoonful now. Taste the whole pot tonight.</p>
+  <div class="notes">Talk 9 has the rings in full. Here the point is the chain: shape edits, then file groups, then smart tests.</div>
+</section>
+
+<section class="slide">
+  <div class="kicker">Part 2 · the borrowed kitchen</div>
+  <h2>Agent Office: a gift, stitched onto our engine</h2>
+  <p class="lede">Agent Office was made by WebDevCody and shared under the MIT license. We did not rewrite it. We wrapped it.</p>
+  <ul>
+    <li>Their office was a Node server. Rusty Buns turns it into one file for Mac and Linux.</li>
+    <li>We changed almost nothing inside it. Our changes sit at the edges, like stitches.</li>
+    <li>Then we gave it a new skin: the forest grove from our game <b>Druids Curse</b>.</li>
+    <li>Each AI helper now walks around as one of the game's monsters: a skeleton, a void wolf, a swamp creature.</li>
+  </ul>
+  <p class="aside">The helpers are working on your code. They are also, technically, haunted.</p>
+  <div class="notes">Credit WebDevCody out loud. The point of "nothing forked" is that we can take their new versions without a fight.</div>
+</section>
+
+<section class="slide">
+  <div class="kicker">Why "Frankenstein"</div>
+  <h2>Someone else's body. Our engine. Our game's faces.</h2>
+  <div class="diagram" role="img" aria-label="Three layers stacked: the borrowed office on top of the Rusty Buns engine, wearing the Druids Curse skin.">
+    <svg viewBox="0 0 900 260">
+      <rect class="d-box" x="40" y="20" width="820" height="60" rx="12"/>
+      <text class="d-text" x="70" y="56">The skin: monsters and forest from Druids Curse</text>
+      <text class="d-small" x="640" y="56">our game's art</text>
+      <rect class="d-hot" x="40" y="100" width="820" height="60" rx="12"/>
+      <text class="d-text" x="70" y="136">The body: Agent Office, as its maker wrote it</text>
+      <text class="d-small" x="640" y="136">borrowed, credited</text>
+      <rect class="d-box" x="40" y="180" width="820" height="60" rx="12"/>
+      <text class="d-text" x="70" y="216">The heart: Rusty Buns, one file that runs anywhere</text>
+      <text class="d-small" x="640" y="216">our engine</text>
+    </svg>
+  </div>
+  <p class="aside">Stitches are visible on purpose. That is how you know where to unpick them.</p>
+</section>
+
+<section class="slide">
+  <div class="kicker">Part 3 · the sealed room</div>
+  <h2>The office runs in a box with one door</h2>
+  <p class="lede">AI helpers type commands. So we keep them in a sealed room.</p>
+  <ul>
+    <li>The box sees only the folders you list. Your other files are not there.</li>
+    <li>It gets only the keys you list. Secrets stay out by default.</li>
+    <li>It can reach only the websites on its list. Any other site makes a card pop up: Allow or Deny.</li>
+    <li>No answer in two minutes means no.</li>
+  </ul>
+  <p class="aside">Think of a toddler in a playpen with a laptop. Very productive toddler. Still a playpen.</p>
+</section>
+
+<section class="slide">
+  <div class="kicker">The trick</div>
+  <h2>The recipe book holds the oven's recipe</h2>
+  <p class="lede">codeSplitter stores the code for many apps. One of those apps is the office. Another is codeSplitter itself.</p>
+  <ul>
+    <li>So the helpers in the office can open the office's own code, and change it.</li>
+    <li>They can also change codeSplitter, the place that holds them.</li>
+    <li>Nothing goes live until a person reads it and presses the button.</li>
+  </ul>
+  <p class="aside">Yes, it is a snake eating its own tail. A careful snake, with code review.</p>
+</section>
+
+<section class="slide">
+  <div class="kicker">The loop</div>
+  <h2>Copy, change, check, swap, repeat</h2>
+  <div class="diagram" role="img" aria-label="A loop of five steps: codeSplitter holds the code, a fresh copy of the office starts in a sandbox, helpers change the code, a person checks it, the new copy replaces the old one, and the loop returns to codeSplitter.">
+    <svg viewBox="0 0 900 420">
+      <defs><marker id="ah" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="d-head" d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <rect class="d-hot" x="330" y="14" width="240" height="74" rx="14"/>
+      <text class="d-text" x="450" y="46" text-anchor="middle">1. codeSplitter</text>
+      <text class="d-small" x="450" y="70" text-anchor="middle">holds all the code</text>
+      <rect class="d-box" x="620" y="140" width="250" height="74" rx="14"/>
+      <text class="d-text" x="745" y="172" text-anchor="middle">2. A fresh copy</text>
+      <text class="d-small" x="745" y="196" text-anchor="middle">starts in a sealed box</text>
+      <rect class="d-box" x="530" y="320" width="250" height="74" rx="14"/>
+      <text class="d-text" x="655" y="352" text-anchor="middle">3. Helpers change it</text>
+      <text class="d-small" x="655" y="376" text-anchor="middle">even their own office</text>
+      <rect class="d-box" x="120" y="320" width="250" height="74" rx="14"/>
+      <text class="d-text" x="245" y="352" text-anchor="middle">4. A person checks</text>
+      <text class="d-small" x="245" y="376" text-anchor="middle">tests run, then a human</text>
+      <rect class="d-box" x="30" y="140" width="250" height="74" rx="14"/>
+      <text class="d-text" x="155" y="172" text-anchor="middle">5. Swap</text>
+      <text class="d-small" x="155" y="196" text-anchor="middle">new copy in, old copy gone</text>
+      <path class="d-arrow" marker-end="url(#ah)" d="M572,60 C680,70 740,100 745,134"/>
+      <path class="d-arrow" marker-end="url(#ah)" d="M745,216 C745,270 720,300 690,316"/>
+      <path class="d-arrow" marker-end="url(#ah)" d="M526,357 L378,357"/>
+      <path class="d-arrow" marker-end="url(#ah)" d="M210,316 C180,290 160,250 156,220"/>
+      <path class="d-arrow" marker-end="url(#ah)" d="M155,136 C160,90 230,60 326,54"/>
+    </svg>
+  </div>
+  <div class="notes">This is the slide. Walk the loop slowly. Stress step 4: the loop has a person in it, always.</div>
+</section>
+
+<section class="slide">
+  <div class="kicker">The factory</div>
+  <h2>Tools that make tools that make things</h2>
+  <p class="lede">Each turn of the loop leaves the shop better stocked. Some turns make apps. Some make the tools that make apps.</p>
+  <div class="diagram" role="img" aria-label="A loop of four steps around the words one repo of primitives: helpers build things, Dexter spots a chore they repeat, it becomes a shared tool, the next helper uses it and builds faster, and the loop goes on.">
+    <svg viewBox="0 0 900 400">
+      <defs><marker id="ah-fac" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="d-head" d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <rect class="d-hot" x="330" y="160" width="240" height="80" rx="40"/>
+      <text class="d-text" x="450" y="196" text-anchor="middle">One repo</text>
+      <text class="d-small" x="450" y="220" text-anchor="middle">of primitives</text>
+      <rect class="d-box" x="330" y="14" width="240" height="74" rx="14"/>
+      <text class="d-text" x="450" y="46" text-anchor="middle">1. Helpers build</text>
+      <text class="d-small" x="450" y="70" text-anchor="middle">apps, fixes, tools</text>
+      <rect class="d-box" x="630" y="163" width="250" height="74" rx="14"/>
+      <text class="d-text" x="755" y="195" text-anchor="middle">2. Dexter spots a repeat</text>
+      <text class="d-small" x="755" y="219" text-anchor="middle">a chore done by hand</text>
+      <rect class="d-box" x="330" y="312" width="240" height="74" rx="14"/>
+      <text class="d-text" x="450" y="344" text-anchor="middle">3. It becomes a tool</text>
+      <text class="d-small" x="450" y="368" text-anchor="middle">a new shared brick</text>
+      <rect class="d-box" x="20" y="163" width="250" height="74" rx="14"/>
+      <text class="d-text" x="145" y="195" text-anchor="middle">4. The next helper uses it</text>
+      <text class="d-small" x="145" y="219" text-anchor="middle">and builds faster</text>
+      <path class="d-arrow" marker-end="url(#ah-fac)" d="M574,52 C680,60 750,100 755,157"/>
+      <path class="d-arrow" marker-end="url(#ah-fac)" d="M755,241 C750,300 680,345 576,349"/>
+      <path class="d-arrow" marker-end="url(#ah-fac)" d="M326,349 C220,345 150,300 145,243"/>
+      <path class="d-arrow" marker-end="url(#ah-fac)" d="M145,159 C150,100 220,60 324,52"/>
+      <path class="d-arrow" style="stroke-dasharray:4 6" d="M450,92 L450,156"/>
+      <path class="d-arrow" style="stroke-dasharray:4 6" d="M450,244 L450,308"/>
+    </svg>
+  </div>
+  <p class="aside">The robot that builds the robot that builds the toaster. We are on toaster number forty.</p>
+  <div class="notes">This is the slide. Mervin keeps the floor clear, Ester catches what breaks, Dexter turns repeated work into tools, and every tool lands in the one repo for the next helper.</div>
+</section>
+
+<section class="slide">
+  <div class="kicker">Big word, small idea</div>
+  <h2>Portable: one office, many homes</h2>
+  <div class="cards">
+    <div class="card"><h3>On your laptop</h3><p>One file. Your code stays on your machine.</p></div>
+    <div class="card"><h3>In a box on a server</h3><p>The same file, sealed in a sandbox, far away.</p></div>
+    <div class="card"><h3>In the cloud</h3><p>The same idea on Cloudflare, with no server to look after.</p></div>
+  </div>
+  <p class="lede">And each copy can be <b>ephemeral</b>: born for one job, then thrown away.</p>
+  <p class="aside">Like sourdough. You keep the starter forever. You eat the loaves.</p>
+</section>
+
+<section class="slide">
+  <div class="kicker">The guard rails</div>
+  <h2>Why this does not end like the movie</h2>
+  <ol class="steps">
+    <li><span><b>A person presses deploy.</b> A helper can write code. It cannot ship it.</span></li>
+    <li><span><b>Unread code never ships.</b> Not even with the owner's own key.</span></li>
+    <li><span><b>Secrets stay behind a fingerprint.</b> They unlock only when the owner touches the sensor.</span></li>
+    <li><span><b>Every helper has a budget.</b> Stuck twice the same way? It stops and leaves a four-line note: done, next, broke, don't.</span></li>
+    <li><span><b>Every copy lives in a sealed box.</b> It sees only what it was given.</span></li>
+  </ol>
+  <p class="aside">The monster is the tools. The doctor is you. The doctor signs every release.</p>
+</section>
+
+<section class="slide">
+  <div class="kicker">Honest status</div>
+  <h2>What is alive, and what is still on the table</h2>
+  <div class="cards">
+    <div class="card"><span class="tag live">Live</span><h3 style="margin-top:12px">codeSplitter</h3><p>Lines with name tags, live edits, Mervin merges.</p></div>
+    <div class="card"><span class="tag live">Live</span><h3 style="margin-top:12px">The office, on our engine, in a box</h3><p>One file, the forest skin, the sealed room with its Allow or Deny card.</p></div>
+    <div class="card"><span class="tag live">Live</span><h3 style="margin-top:12px">The crew</h3><p>Mervin orders the work, Ester names what broke, Dexter turns chores into tools.</p></div>
+    <div class="card"><span class="tag oven">In the oven</span><h3 style="margin-top:12px">Release rings</h3><p>Hourly, nightly and weekly sweeps run. The express lane is next.</p></div>
+    <div class="card"><span class="tag oven">In the oven</span><h3 style="margin-top:12px">The office inside codeSplitter</h3><p>Its floor and desks run on a test stage. Not public yet.</p></div>
+    <div class="card"><span class="tag plan">Next</span><h3 style="margin-top:12px">Helpers in the cloud</h3><p>Each helper in its own throwaway box, no laptop needed.</p></div>
+  </div>
+  <div class="notes">Keep this slide current. Source of truth: apps/agent-office/MOVE.md and issue #3423; rings in notes/RELEASE_RINGS.md, express lane #4586.</div>
+</section>
+
+<section class="slide">
+  <div class="kicker">The end</div>
+  <h1>It's alive.<br>It also asks first.</h1>
+  <p class="lede">A recipe book that holds its own oven. Bakers who can improve the oven. A head baker who tastes every loaf.</p>
+  <p class="aside">Thank you to WebDevCody for the body, to Cloudflare for the ground it stands on, and to the skeletons for working weekends.</p>
+  <p style="margin-top:28px"><a href="index.html">All talks</a> · <a href="00-the-words.html">The words</a></p>
+</section>
+
+<script src="deck.js"></script>
+</body>
+</html>

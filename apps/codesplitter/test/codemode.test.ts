@@ -47,7 +47,7 @@ describe("code mode", () => {
     expect(after.map((t) => t.name)).toEqual(["search_tools", "describe_tools", "execute", "call_tool"]);
     expect(before.length).toBeGreaterThan(100);
     console.log(`tools/list: ${before.length} tools ${tokens(before)} tokens, code mode ${after.length} tools ${tokens(after)} tokens`);
-    expect(tokens(after) * 20).toBeLessThan(tokens(before));
+    expect(tokens(after) * 30).toBeLessThan(tokens(before)); // the README and /webmcp say "over 30 times"
   });
 
   test("before and after: one job, tool by tool and as one program, ends with the same file", async () => {
@@ -79,7 +79,7 @@ describe("code mode", () => {
     console.log(`clear ${TODOS} TODOs in a ${LINES}-line file: tool by tool ${toolByTool} tokens, one program ${asProgram} tokens`);
     expect(await lines("after.ts")).toEqual(await lines("before.ts"));
     expect((await lines("after.ts")).filter((l) => l.includes("TODO"))).toEqual([]);
-    expect(asProgram * 10).toBeLessThan(toolByTool);
+    expect(asProgram * 30).toBeLessThan(toolByTool); // the README and /webmcp say "over 30 times"
   });
 
   test("an agent finds a tool by what it does, and asks for just the schemas it needs", async () => {
@@ -108,6 +108,9 @@ describe("code mode", () => {
     expect(d.isError).toBe(true);
     expect(d.out.error).toContain("403");
     expect(d.out.error).toContain("call_tool");
+    // Nor one that makes a public repo, or changes what the world sees of you, with nobody asked.
+    for (const code of [`return await tools.create_repo({ body: { name: "out", visibility: "public" } });`, `return await tools.set_city({ body: { public: true } });`, `return await tools.update_me({ body: { bio: "x" } });`])
+      expect((await run(write, code)).out.error).toContain("call_tool");
   });
 
   test("risky tools go through call_tool, which asks the person first, and only those", async () => {
@@ -137,6 +140,13 @@ describe("code mode", () => {
     expect((await run(`return await tools.nope({});`)).out.error).toContain("no tool nope");
     expect((await run(`return await tools["nope"]({});`)).out.error).toContain("404");
     expect((await run(`await fetch("http://example.com/"); return 1;`)).out.error).toMatch(/network|outbound/i);
+    // Nor the machine: its modules, its processes, its files, its variables, or source made at run time.
+    for (const code of [`return typeof (await import("node:http")).request;`, `const fs = await import("node:" + "fs"); return fs.readdirSync("/").length;`,
+      `return String(Bun.spawnSync(["echo", "hi"]).stdout);`, `return globalThis["B" + "un"].file("/etc/hosts").size;`, `return require("fs").readdirSync("/");`,
+      `return (() => 0).constructor("return typeof process.binding")();`, `return eval("1");`]) {
+      expect([code, (await run(code)).isError]).toEqual([code, true]);
+    }
+    expect((await run(`return Object.keys(process.env).length;`)).out.result).toBe(0);
     // The count is out of the program's reach: assigning a `calls` it could see doesn't lift the cap.
     const many = await run(`try { calls = -1e9; } catch {} let n = 0; try { for (;;) { await tools.whoami({}); n++; } } catch (e) { return [n, e.status]; }`);
     expect(many.out.result).toEqual([100, 429]);
@@ -148,6 +158,9 @@ describe("code mode", () => {
     const run = async (code: string) => { const r = await tool(write, "execute", { code }); return JSON.parse(r.content[0].text); };
     // An unknown tool is found by reading the program: nothing ran, so the first line never logged.
     expect(await run(`console.log("ran"); return await tools.read_fle({});`)).toEqual({ error: "no tool read_fle for this token: search_tools lists them" });
+    // A field called tools on an answer, or tools.x in a comment or string, is no call.
+    expect((await run(`const d = { tools: [1, 2] }; // tools.later
+      return d.tools.length + " tools.x";`)).result).toBe("2 tools.x");
     const bad = await run(`try { await tools.claim_lines({ ...${JSON.stringify(where)}, path: "before.ts", body: { lines: "a" }, extra: 1 }); } catch (e) { return [e.status, e.message]; }`);
     expect(bad.result[0]).toBe(400);
     expect(bad.result[1]).toContain("body.lines should be array");
@@ -204,8 +217,10 @@ describe("saved programs", () => {
     expect(missing.isError).toBe(true);
     expect(missing.content[0].text).toContain("no saved program nope");
 
-    const gone = await tool(write, "execute", { code: "await tools.delete_program({ name: 'count-todos' }); return (await tools.list_programs({})).length;" });
-    expect(JSON.parse(gone.content[0].text)).toEqual({ result: 0 });
+    // Deleting one can't be undone: a program can't, call_tool can.
+    expect((await tool(write, "execute", { code: "return await tools.delete_program({ name: 'count-todos' });" })).content[0].text).toContain("call_tool");
+    await tool(write, "call_tool", { name: "delete_program", arguments: { name: "count-todos" } });
+    expect(JSON.parse((await tool(write, "execute", { code: "return (await tools.list_programs({})).length;" })).content[0].text)).toEqual({ result: 0 });
   });
 });
 

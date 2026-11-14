@@ -296,6 +296,8 @@ export async function gitHttp(req: Request, namespaces: LocalArtifacts[]): Promi
       GIT_PROJECT_ROOT: ns.dir, GIT_HTTP_EXPORT_ALL: "1",
       PATH_INFO: `/${repo}.git${rest}`, REQUEST_METHOD: req.method, QUERY_STRING: url.search.slice(1),
       CONTENT_TYPE: req.headers.get("content-type") ?? "", CONTENT_LENGTH: String(body?.length ?? 0),
+      // git gzips a fetch request over ~1 KB (a repo with a dozen tags); http-backend inflates it only when told.
+      HTTP_CONTENT_ENCODING: req.headers.get("content-encoding") ?? "",
       // http-backend only takes pushes from an authenticated user; we just checked the token.
       REMOTE_USER: "artifacts", REMOTE_ADDR: "127.0.0.1",
     },

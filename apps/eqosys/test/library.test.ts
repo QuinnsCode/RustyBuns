@@ -1,12 +1,34 @@
 // A studio's game, from draft to everyone's shelf and back off it (listings.ts, LIBRARY.md): its maker signs in from its real site
 // while it is a draft and a stranger can't; a refusal comes back with a note; listed, anyone signs in and sees it with the studio's
-// name on it; pulled, the maker's token stops at the door and the sign-in is refused.
+// name on it; pulled, the maker's token stops at the door and the sign-in is refused. The fix after a refusal goes through the Studio
+// tab's form, a player's report lands with the studio (not on GitHub), and the shared achievements unlock there.
 import { expect, setDefaultTimeout, test } from "bun:test";
 import { newKey } from "@rustybuns/util/token";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { ADMIN, asks, boot, codeIn, PARK, PASSWORD } from "./kit.ts";
+import { Studios } from "../src/app/Studio.tsx";
+import type { Studio } from "../src/studios.ts";
 
 setDefaultTimeout(30_000);
 const GAME = "https://rocket-golf.example";
+
+/** The Studio tab as this person sees it, and what one of its forms posts as it stands: each field's name and value. */
+async function formIn(studios: Studio[], label: string) {
+  const html = renderToStaticMarkup(createElement(Studios, { studios, unlocks: new Map() }));
+  const fields: Record<string, string> = {};
+  let inside = false, text: string | null = null, select: string | null = null;
+  const ENTITY: Record<string, string> = { amp: "&", lt: "<", gt: ">", quot: '"', "#x27": "'", "#39": "'" };
+  const un = (v: string | null) => (v ?? "").replace(/&(amp|lt|gt|quot|#x27|#39);/g, (_, k: string) => ENTITY[k]!);
+  await new HTMLRewriter()
+    .on("form", { element(e) { inside = e.getAttribute("aria-label") === label; } })
+    .on("input", { element(e) { if (inside) fields[e.getAttribute("name")!] = un(e.getAttribute("value")); } })
+    .on("textarea", { element(e) { if (inside) fields[text = e.getAttribute("name")!] = ""; }, text(t) { if (inside && text) fields[text] += un(t.text); } })
+    .on("select", { element(e) { select = inside ? e.getAttribute("name") : null; } })
+    .on("option[selected]", { element(e) { if (select) fields[select] = un(e.getAttribute("value")); } })
+    .transform(new Response(html)).text();
+  return fields;
+}
 
 test("a studio's game: a draft for its studio, reviewed, listed for everyone, then pulled", async () => {
   const { call } = await boot({ EQOSYS_SIGNING_KEY: await newKey() });
@@ -48,13 +70,34 @@ test("a studio's game: a draft for its studio, reviewed, listed for everyone, th
   await run("eq_listing_review", { id: "rocket-golf", verdict: "refuse", note: "Add an erase URL: it keeps scores per account." }, { cookie: boss });
   const studios = (await run("eq_studios", {}, { cookie: maya })).result.studios;
   expect(studios[0].apps).toEqual([expect.objectContaining({ id: "rocket-golf", state: "refused", note: expect.stringContaining("erase URL") })]);
-  await run("eq_listing_save", { ...draft, erase: `${GAME}/erase` }, { cookie: maya });
-  await run("eq_listing_send", { id: "rocket-golf" }, { cookie: maya });
+  // Fixed and sent again from the Studio tab's form: what it shows for the game, with the erase URL filled in.
+  const form = { ...await formIn(studios, "Change Rocket Golf"), erase: `${GAME}/erase` };
+  expect(form).toMatchObject({ studio, id: "rocket-golf", name: "Rocket Golf", genre: "Sports & Skate", origins: GAME, returns: "" });
+  expect((await call("/do/listing-save", { form, cookie: sam })).to).toBe("/?tab=studio&e=gameowner");
+  expect((await call("/do/listing-save", { form: { ...form, origins: "http://rocket-golf.example" }, cookie: maya })).to).toBe("/?tab=studio&e=game");
+  expect((await call("/do/listing-save", { form, cookie: maya })).to).toBe("/?tab=studio");
+  expect((await call("/do/listing-send", { form, cookie: maya })).to).toBe("/?tab=studio");
+  expect((await call("/do/listing-send", { form, cookie: maya })).to).toBe("/?tab=studio&e=gamestep");
   expect((await run("eq_listing_review", { id: "rocket-golf", verdict: "list" }, { cookie: boss })).result.listing.state).toBe("listed");
 
   // Listed: the stranger signs in and finds it on the shelf, with the studio's name on it.
   expect((await signIn("sam@example.com")).token).toBeTruthy();
   expect(await shelf(sam)).toMatchObject({ studio: "Acme" });
+
+  // A player's report goes to the studio, not to this repo's issues (no GitHub token here at all), under an opaque id.
+  const stranger = (await signIn("sam@example.com")).token!;
+  const report = (body: unknown) => call("/api/report", { json: body, bearer: stranger, origin: GAME }).then((r) => r.res.status);
+  expect(await report({ kind: "bug", title: "Ball goes through the green", body: "Third hole, every time.", page: "/play?party=KX7Q" })).toBe(200);
+  expect(await report({ kind: "rant", title: "no", body: "x" })).toBe(400);
+  const theirs = (await run("eq_studios", {}, { cookie: maya })).result.studios, [inbox] = theirs[0].apps;
+  expect(await formIn(theirs, "Change Rocket Golf")).toMatchObject({ erase: `${GAME}/erase` });
+  expect(inbox.reports).toEqual([expect.objectContaining({ kind: "bug", title: "Ball goes through the green", text: "Third hole, every time.", page: "/play", from: expect.stringMatching(/^u_/) })]);
+  expect(JSON.stringify(inbox.reports)).not.toContain("sam@example.com");
+
+  // The shared achievements: played unlocks, alpha doesn't while it is experimental, its own list is none yet, and tutorial waits for its tutorial.
+  const achieve = (id: string) => call("/q/achieve", { json: { id }, bearer: stranger, origin: GAME }).then((r) => r.res.status);
+  expect([await achieve("played"), await achieve("alpha"), await achieve("first-basket")]).toEqual([200, 404, 404]);
+  expect((await run("eq_achievements", { app: "rocket-golf" }, { cookie: sam })).result).toMatchObject({ unlocked: 1, total: 2 });
 
   // Pulled by its studio: off the shelf, the maker's token stops at the door, and a sign-in for it is refused.
   expect((await run("eq_listing_pull", { id: "rocket-golf" }, { cookie: maya })).result.listing.state).toBe("pulled");

@@ -5,21 +5,11 @@
 // repo, one run each at a time, and keeps the tail of what they printed. Pure over `spawn`, so it is tested without installing.
 import { existsSync } from "node:fs";
 import path from "node:path";
+import type { EsterPhase, EsterState } from "./state.ts";
 
+export type { EsterPhase, EsterState };
 export const BOARD = "apps/codesplitter/scripts/mervin-board.ts";
 const KEEP = 200;
-
-export type EsterPhase = "idle" | "running" | "green" | "red" | "error";
-export interface EsterState {
-  phase: EsterPhase;
-  /** The tail of what the check printed. */
-  lines: string[];
-  /** The PRs she says to hold back (`Ester says hold: #1, #2`). */
-  hold: number[];
-  startedAt?: number;
-  endedAt?: number;
-  error?: string;
-}
 
 /** Runs `cmd` in `cwd`, calls `onLine` for each line it prints (stdout and stderr), answers its exit code. */
 export type Spawn = (cmd: string[], cwd: string, onLine: (line: string) => void) => Promise<number>;
@@ -92,6 +82,28 @@ export function createHelper(h: { script: string; cwd: string; args: readonly st
       ).then(() => done?.(mine));
       return null;
     },
+  };
+}
+
+/** The release rings' script (#4490): one line per ring, which Ester's card shows. */
+export const RINGS = "scripts/rings.ts";
+
+/**
+ * The rings' lines for Ester's card: `bun scripts/rings.ts` in the floor's repo, at most once every `everyMs` however
+ * many pages ask. Answers the last good run's lines at once (none until one ends, or when no floor has the script).
+ */
+export function ringsOf(spawn: Spawn = bunSpawn, bun = "bun", everyMs = 5 * 60_000) {
+  let lines: string[] = [], at = -Infinity, going = false;
+  return (repo: string | null): string[] => {
+    if (repo && !going && Date.now() - at >= everyMs) {
+      going = true;
+      at = Date.now();
+      const out: string[] = [];
+      spawn([bun, path.join(repo, RINGS)], repo, (l) => out.push(l))
+        .then((code) => { if (code === 0) lines = out; }, () => {})
+        .finally(() => { going = false; });
+    }
+    return lines;
   };
 }
 

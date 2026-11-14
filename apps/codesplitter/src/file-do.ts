@@ -28,14 +28,14 @@
 // for git and search, so the real text never leaves the app.
 
 import { fail, json, need, readBody, type Env } from "./env.ts";
-import { arr, bool, check, int, nul, num, obj, opt, raw, str, type Of } from "@rustybuns/util/guard";
+import { arr, bool, check, int, isRecord, nul, num, obj, opt, raw, str, type Of } from "@rustybuns/util/guard";
 import { recordEdits, type Recent } from "./line-events.ts";
 import { noteStep } from "./insights.ts";
 import { branchEdited } from "./checks.ts";
 import { Tally } from "./limits.ts";
 import { lintMerge } from "./lint.ts";
 import { DocStore } from "./doc-store.ts";
-import { isPlainObject, sha256 as sha } from "./util.ts";
+import { sha256 as sha } from "./util.ts";
 import { apply, empty, MAX_OPS, merge, MERGE_ASK, mergeWords, parseOps, PROTOCOL, replay, text, type Applied, type Doc, type Line, type MergeReply, type Op, type Resolve } from "./lines.ts";
 import type { Live, Rule } from "./policy.ts";
 import { pad10 } from "./util.ts";
@@ -46,6 +46,11 @@ interface Commit { n: number; sha: string; parent: string | null; rev: number; b
 declare const WebSocketPair: { new (): Record<0 | 1, unknown> };
 
 /** One read of the log takes this many ops at most, so no read holds the whole log in memory. */
+/** Texts of deleted private lines a file remembers, newest kept. */
+const GONE_KEEP = 2000;
+/** A line's text as the private-text match reads it: trimmed, and too short to say anything (`}`, `);`) matches nothing. */
+const key = (t: string) => { const k = t.trim(); return k.length > 2 ? k : ""; };
+
 const OP_PAGE = 1000;
 /** The doc is snapshotted every this many ops, so time travel replays at most this many. */
 export const SNAP_EVERY = 2000;
@@ -127,6 +132,10 @@ export const FileReply = obj({ lines: arr(FileLine, Infinity) });
 /** `/file`'s whole doc, for a writer that diffs against it and posts ops (agent-run.ts). */
 export const FileDoc = obj({ rev: int(0, Number.MAX_SAFE_INTEGER), nextId: int(0, Number.MAX_SAFE_INTEGER), lines: arr(FileLine, Infinity) });
 export type FileDoc = Of<typeof FileDoc>;
+/** What POST /fork is sent: main's doc for a branch's copy, private lines marked (branches.ts, cuts.ts). */
+const ForkBody = obj({ doc: FileDoc });
+/** What POST /scrub is sent: a deleted account's handle and the ghost's (privacy.ts). */
+const ScrubBody = obj({ from: str(200), to: str(200) });
 /** A claim as `/claims` lists it and a granted `POST /claims` answers it. */
 export const ClaimRow = obj({ id: str(200), who: str(200), bot: bool(), lines: arr(str(200), Infinity), task: opt(str(Infinity, { min: 0 })),
   until: nul(num(0, Number.MAX_SAFE_INTEGER)), soft: opt(bool()) });
@@ -152,6 +161,8 @@ export class FileDurableObject {
   doc: Doc = empty();
   base: Doc | null = null;
   secret = new Set<string>();
+  /** What private lines said before they were deleted, so the same text put back (a move by hand, a diff, a merge) is private again. */
+  gone: string[] = [];
   commits = 0;
   queue: Promise<unknown> = Promise.resolve();
   claims = new Map<string, Claim>();
@@ -201,6 +212,7 @@ export class FileDurableObject {
       this.commits = (await ctx.storage.get("commits")) ?? 0;
       this.base = await this.bases.load();
       this.secret = new Set((await ctx.storage.get("private")) ?? []);
+      this.gone = (await ctx.storage.get("private-gone")) ?? [];
       this.where = (await ctx.storage.get("where")) ?? null;
       this.onBranch = (await ctx.storage.get("branch")) ?? null;
       this.snaps = (await ctx.storage.get("snaps")) ?? [];
@@ -308,6 +320,12 @@ export class FileDurableObject {
       const { lines, private: on } = (await req.json().catch(() => ({}))) as { lines?: unknown; private?: unknown };
       if (typeof on !== "boolean" || !isIds(lines)) return fail("BadInput", "{lines: [line id], private: true|false}, please");
       for (const id of lines) on ? this.secret.add(id) : this.secret.delete(id);
+      // Shown again by the owner: its text is public now, so a line that says it later isn't made private for it.
+      if (!on && this.gone.length) {
+        const shown = new Set(this.doc.lines.filter((l) => lines.includes(l.id)).map((l) => key(l.text)));
+        this.gone = this.gone.filter((t) => !shown.has(key(t)));
+        await this.ctx.storage.put("private-gone", this.gone);
+      }
       await this.ctx.storage.put("private", [...this.secret]);
       // Each page fetches the file again, and gets it as its reader may see it.
       this.broadcast({ type: "private", lines, private: on });
@@ -369,6 +387,11 @@ export class FileDurableObject {
         try { ws.close(1008, "access removed"); closed++; } catch {}
         this.presence(ws);
       }
+      // Out of the crew, out of its lines: what they held, and their places in line, go with the seat.
+      if (user !== null) {
+        for (const c of [...this.claims.values()]) if (c.who === user) await this.release(c.id);
+        for (const w of [...this.waits]) if (w.who === user) await this.release(w.id);
+      }
       return json({ closed });
     }
     if (req.method === "POST" && route === "wipe") {
@@ -376,6 +399,7 @@ export class FileDurableObject {
       const all: Map<string, unknown> = await this.ctx.storage.list();
       await Promise.all([...all.keys()].map((k) => this.ctx.storage.delete(k)));
       [this.doc, this.base, this.commits, this.secret, this.where, this.onBranch, this.snaps, this.trimmed, this.authors] = [empty(), null, 0, new Set(), null, null, [], 0, new Set()];
+      this.gone = [];
       this.docs.clear(); this.bases.clear();
       this.claims.clear(); this.claimOf.clear(); this.rests.clear(); this.recent.clear(); this.waits = [];
       for (const answer of this.polls.values()) answer(null);
@@ -385,8 +409,9 @@ export class FileDurableObject {
     }
     if (req.method === "POST" && route === "scrub") {
       // A deleted account's handle, swapped for the ghost's everywhere here (privacy.ts).
-      const { from, to } = (await req.json()) as { from: string; to: string };
-      return json({ changed: await this.ctx.blockConcurrencyWhile(() => this.scrub(from, to)) });
+      const body = need(await readBody(req), ScrubBody);
+      if (body instanceof Response) return body;
+      return json({ changed: await this.ctx.blockConcurrencyWhile(() => this.scrub(body.from, body.to)) });
     }
     if (req.method === "POST" && route === "authors") {
       // The admin's backfill (privacy.ts, #770): every line's author into D1's authors
@@ -399,7 +424,9 @@ export class FileDurableObject {
     if (req.method === "POST" && route === "fork") {
       // A branch's copy starts as main's doc, ids and revs and all, once,
       // and main's private lines are private here too.
-      const { doc } = (await req.json()) as { doc: Doc & { lines: Shown[] } };
+      const body = need(await readBody(req), ForkBody);
+      if (body instanceof Response) return body;
+      const { doc } = body;
       if (!this.base && !this.doc.rev) {
         for (const l of doc.lines) if (l.private) { this.secret.add(l.id); delete l.private; }
         this.base = doc; this.doc = structuredClone(doc);
@@ -421,7 +448,9 @@ export class FileDurableObject {
       // Prose that settled but may say something untrue now goes back as checks for the review (#1254).
       const regen = { ...m.regenerate && { regenerate: m.regenerate }, ...m.checks && { checks: m.checks }, ...m.solved && { solved: m.solved } };
       if (m.conflicts.length || dry || !m.ops.length) return json({ rev: this.doc.rev, ops: m.ops, conflicts: m.conflicts, ...regen } satisfies MergeReply, m.conflicts.length && !dry ? 409 : 200);
-      const r = await this.edit(m.by, m.ops);
+      // The branch's private lines, by text: one it moved or made comes home private.
+      const hidden = branch.lines.flatMap((l) => isRecord(l) && l.private === true ? [l.text] : []);
+      const r = await this.edit(m.by, m.ops, undefined, undefined, undefined, hidden);
       return r.ok ? json({ rev: r.rev, ops: m.ops, applied: r.applied, conflicts: [], ...regen } satisfies MergeReply) : json(refused(r), 409);
     }
     if (req.method === "POST" && route === "commit") {
@@ -461,7 +490,7 @@ export class FileDurableObject {
    * interleave; then persisted, then broadcast as the exact applied ops, so
    * every open page updates in place without refetching.
    */
-  async edit(by: string | string[], ops: Op[], ifRev?: number, claim?: string, live?: Live) {
+  async edit(by: string | string[], ops: Op[], ifRev?: number, claim?: string, live?: Live, hidden: string[] = []) {
     // What stale lines said is read first: from here to the apply, nothing awaits.
     if (typeof by === "string" && ifRev === undefined) ops = this.rebase(ops, await this.startedFrom(ops));
     // The path's policy, on a live edit: a locked file takes none, and on a `line` one an agent claims first.
@@ -474,8 +503,11 @@ export class FileDurableObject {
       const claims = [...new Set(held.map((h) => this.claims.get(h.claim)!))];
       return { ok: false as const, rev: this.doc.rev, conflicts: held, claims, retryAfter: retryAfter(claims) };
     }
+    const secretBefore = this.secretTexts(ops, hidden);
     const r = apply(this.doc, ops, by, Date.now(), ifRev);
     if (!r.ok) return { ok: false as const, rev: this.doc.rev, conflicts: r.conflicts };
+    // Before anyone hears of it or git gets it: text that was private stays private where it lands.
+    await this.keepPrivate(r.applied, secretBefore);
     if (claim && typeof by === "string") await this.renew(by, claim);
     if (this.claims.size) await this.follow(typeof by === "string" ? by : "", r.applied, claim);
     this.noteAuthors(r.applied.map((a) => a.by));
@@ -621,6 +653,42 @@ export class FileDurableObject {
       await Promise.all([...m.keys()].map((k) => this.ctx.storage.delete(k)));
       if (m.size < OP_PAGE) return;
     }
+  }
+
+  /**
+   * What the private lines say, read before a batch lands: every private line's text, what deleted ones said,
+   * the batch's `hidden` texts (a branch's private lines), and whether the batch changes or deletes a private line.
+   */
+  secretTexts(ops: Op[], hidden: string[]) {
+    const texts = new Set([...this.gone, ...hidden].map(key));
+    const deleted: string[] = [];
+    if (this.secret.size) for (const l of this.doc.lines) if (this.secret.has(l.id)) texts.add(key(l.text));
+    let touched = false;
+    for (const op of ops) if (op.kind !== "insert" && this.secret.has(op.line)) {
+      touched = true;
+      if (op.kind === "delete") { const l = this.doc.lines.find((x) => x.id === op.line); if (l) deleted.push(l.text); }
+    }
+    texts.delete("");
+    return { texts, touched, deleted };
+  }
+
+  /**
+   * Privacy is kept by line id, and a move, a split or a diff makes new ids. So a line this batch inserted or
+   * set is private when its text was private, and when the batch changed or deleted a private line every line
+   * it inserted is (Enter on a private line, delete-and-insert): when unsure, the new line is private.
+   */
+  async keepPrivate(applied: Applied[], before: ReturnType<FileDurableObject["secretTexts"]>) {
+    if (!before.texts.size && !before.touched) return;
+    const text = new Map(this.doc.lines.map((l) => [l.id, l.text]));
+    let changed = false;
+    for (const a of applied) {
+      if (a.op.kind === "delete" || this.secret.has(a.line)) continue;
+      const t = text.get(a.line);
+      if (t === undefined) continue;
+      if ((a.op.kind === "insert" && before.touched) || before.texts.has(key(t))) { this.secret.add(a.line); changed = true; }
+    }
+    if (before.deleted.length) { this.gone = [...new Set([...this.gone, ...before.deleted])].slice(-GONE_KEEP); changed = true; }
+    if (changed) await Promise.all([this.ctx.storage.put("private", [...this.secret]), this.ctx.storage.put("private-gone", this.gone)]);
   }
 
   /** The doc as this reader may see it: private lines flagged, and blank unless they're crew. */
@@ -1073,7 +1141,7 @@ const refused = (r: { rev: number; conflicts: unknown[]; claims?: Claim[]; retry
 
 /** A refused `/ops`, named for a client (#3804): locked, or the lines it named moved or are held, in the conflicts' own words. */
 const refusal = (r: ReturnType<typeof refused>, live?: Live) => live === "locked" ? fail("PathLocked", r.error ?? LOCKED, r)
-  : fail("LinesChanged", r.error ?? `A line changed since you read it, or someone holds it (${[...new Set(r.conflicts.map((c) => isPlainObject(c) && typeof c.reason === "string" ? c.reason : ""))].filter(Boolean).join("; ")}): read the file again${r.retryAfter ? `, or try again in ${r.retryAfter} seconds` : ""}.`, r);
+  : fail("LinesChanged", r.error ?? `A line changed since you read it, or someone holds it (${[...new Set(r.conflicts.map((c) => isRecord(c) && typeof c.reason === "string" ? c.reason : ""))].filter(Boolean).join("; ")}): read the file again${r.retryAfter ? `, or try again in ${r.retryAfter} seconds` : ""}.`, r);
 
 /** A `codesplitter-live=locked` file (lockfiles, by default) changes by regenerating it or by a push, never line by line. */
 const LOCKED = "this file is locked (codesplitter-live=locked): regenerate it or push it, it takes no live edits";
