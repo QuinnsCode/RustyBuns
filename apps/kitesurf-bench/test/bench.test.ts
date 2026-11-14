@@ -7,8 +7,9 @@ import { SITES, type Browser } from "../src/bench.ts";
 test("a cell alternates the engines, keeps each one's time and browser ms, and shows a failure", async () => {
   const calls: string[] = [];
   const BROWSER: Browser = {
-    async quickAction(action, { url, browser }) {
+    async quickAction(action, { url, browser, cacheTTL }) {
       calls.push(browser ?? "chromium");
+      expect(cacheTTL).toBe(0); // every turn is a fresh render, not the first one cached
       if (browser === "kitesurf" && action === "screenshot") return new Response("WebGL is not supported", { status: 422 });
       return new Response(JSON.stringify({ success: true, result: url }), { headers: { "x-browser-ms-used": browser ? "40" : "90" } });
     },

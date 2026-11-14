@@ -3,7 +3,7 @@
 
 /** The part of the Browser Run binding the bench calls. */
 export interface Browser {
-  quickAction(action: string, options: { url: string; browser?: "kitesurf" }): Promise<Response>;
+  quickAction(action: string, options: { url: string; browser?: "kitesurf"; cacheTTL?: number }): Promise<Response>;
 }
 
 export const ENGINES = ["kitesurf", "chromium"] as const;
@@ -44,7 +44,8 @@ const browserMs = (r: Response): number | null => {
 async function once(b: Browser, engine: Engine, action: Action, url: string, now: () => number): Promise<Run> {
   const t0 = now();
   try {
-    const r = await b.quickAction(action, engine === "kitesurf" ? { url, browser: "kitesurf" } : { url });
+    // cacheTTL 0: Browser Run keeps a result for 5 s by default, so without it every turn after the first is a cache hit.
+    const r = await b.quickAction(action, engine === "kitesurf" ? { url, browser: "kitesurf", cacheTTL: 0 } : { url, cacheTTL: 0 });
     const body = await r.arrayBuffer();
     const run: Run = { ms: now() - t0, ok: r.ok, status: r.status, bytes: body.byteLength, browserMs: browserMs(r) };
     if (!r.ok) run.error = new TextDecoder().decode(body.slice(0, 300));
