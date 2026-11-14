@@ -11,10 +11,10 @@
  "bark": {"colors": ["#5e4433", "#2a1f18"], "pattern": "plates"},
  "levels": [
   {"count": 15, "start": 0.3, "end": 0.97, "angle": 74, "length": 0.3, "shape": "ovoid", "droop": 0.1, "rise": 0.3, "wobble": 0.5, "kink": 0.15, "segments": 5, "radius": 0.45, "sides": 6},
-  {"count": 5, "start": 0.3, "end": 1.0, "angle": 40, "length": 0.42, "rise": 0.3, "wobble": 0.35, "segments": 3, "radius": 0.5, "sides": 4, "lo": 1.0}
+  {"count": 5, "start": 0.3, "end": 1.0, "angle": 40, "length": 0.4, "rise": 0.3, "wobble": 0.45, "kink": 0.35, "segments": 3, "radius": 0.5, "sides": 4, "lo": 1.0}
  ],
  "foliage": [
-  {"type": "tuft", "colors": ["#36502a", "#3f5a2c", "#4a622c"], "tip_colors": ["#5e7034", "#66763a"], "size": 0.075, "per": 3, "start": 0.72, "end": 1.0, "needles": 36, "shade": 1, "brush": 0.55, "needle_width": 0.05, "knot": 0, "lo": 0.34, "lo_size": 1.2, "lo_needles": 16, "lo_width": 1.5, "lo_tip": 0.6, "lo_core": 0, "core": 0.12},
+  {"type": "tuft", "colors": ["#36502a", "#3f5a2c", "#4a622c"], "tip_colors": ["#5e7034", "#66763a"], "size": 0.075, "per": 3, "start": 0.72, "end": 1.0, "needles": 36, "bundle": 3, "splay": 0.6, "reach": 1.0, "shade": 1, "brush": 1.4, "needle_width": 0.04, "knot": 0, "lo": 0.34, "lo_size": 1.2, "lo_needles": 16, "lo_width": 1.6, "lo_tip": 0.6, "lo_core": 0, "core": 0.12},
   {"type": "tuft", "trunk": true, "min_z": 0.18, "colors": ["#36502a"], "size": 0.055, "per": 9, "start": 0.15, "end": 0.55, "needles": 9}
  ],
  "lo_leaves": true,
