@@ -9,6 +9,8 @@
 //   GET  /r/<key>                             a texture, snapshot, design or sample model, edge-cached for a year (names never change)
 //   POST /api/orgs/<org>/models               an admin starts a sample model from product photos, or files a scan (samples.ts)
 //   GET  /api/orgs/<org>/models/<id>          an admin asks how it's going
+//   GET  /api/orgs/<org>/designs/<id>/print   an admin gets a design's print files laid out, per zone (print.ts)
+//   GET  /api/orgs/<org>/originals/<file>     an admin fetches a shopper's original, the print source
 //   GET  /v1/embed.md, /llms.txt              how to put the widget on a page, for a coding agent (embed.ts)
 //
 // A fresh deploy with an empty bucket still serves the demo org and its three hats (demo.ts), read-only.
@@ -18,6 +20,7 @@ import { Design, Org, Product, SignRequest, zonesOf, type DesignReply, type Sign
 import { BUILT_IN_DEMO, DEMO_ORG, DEMO_PRODUCTS } from "./demo.ts";
 import { embedGuide } from "./embed.ts";
 import { designKey, fileKey, ID, KINDS, orgKey, productKey, servable } from "./layout.ts";
+import { originalRoute, printPlanRoute } from "./print.ts";
 import { isAdmin, sampleRoute, startSampleRoute } from "./samples.ts";
 import { presignUrl, readToken, uploadToken } from "./sign.ts";
 
@@ -95,21 +98,28 @@ export async function handle(req: Request, env: Env): Promise<Response> {
     return new Response(embedGuide(url.origin), { headers: { "content-type": "text/markdown; charset=utf-8", "cache-control": "public, max-age=300", ...cors(null) } });
   }
 
-  const m = url.pathname.match(/^\/api\/orgs\/([^/]+)\/(products|uploads|designs|models)(?:\/([^/]+))?$/);
+  const m = url.pathname.match(/^\/api\/orgs\/([^/]+)\/(products|uploads|designs|models|originals)(?:\/([^/]+))?(\/print)?$/);
   if (!m) return fail("not found", 404, origin);
-  const [, org, what, id] = m;
+  const [, org, what, id, print] = m;
   if (!org || !ID.test(org)) return fail("unknown org", 404, origin);
   const found = await readOrg(env, org);
   if (!found) return fail("unknown org", 404, origin);
   const { settings, builtIn } = found;
 
-  if (what === "products" && req.method === "GET" && id && ID.test(id)) {
+  if (what === "products" && req.method === "GET" && id && ID.test(id) && !print) {
     const o = await env.BUCKET.get(productKey(org, id));
     const p = o ? await readJson(new Response(await o.text()), Product) : builtIn ? (DEMO_PRODUCTS[id] ?? null) : null;
     return p ? json(p, 200, { ...cors(origin), "cache-control": "public, max-age=60" }) : fail("unknown product", 404, origin);
   }
   // An admin key works from anywhere (the admin page is on our own host); everyone else needs a listed page.
   const admin = await isAdmin(req, settings);
+  if (what === "originals" || print) {
+    if (!admin) return fail("an admin key is needed for print files", 401, origin);
+    if (req.method !== "GET" || !id) return fail("not found", 404, origin);
+    if (what === "originals") return originalRoute(env, org, id, cors(origin));
+    if (what === "designs") return printPlanRoute(env, org, id, url.origin, cors(origin));
+    return fail("not found", 404, origin);
+  }
   if (what === "models") {
     if (!admin) return fail("an admin key is needed for samples", 401, origin);
     if (req.method === "POST" && !id) {
