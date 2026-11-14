@@ -295,11 +295,13 @@ export function eqosys({ app, url, from, prefix, skin }: EqosysConfig) {
    */
   function accountChip(slot: HTMLElement, o: { note?: string; onSignOut?: () => void; /** Given, "Sign in" opens eqosys beside the page (`signInHere`) and this hears the login; the page never reloads. */ onSignIn?: (login: Login) => void } = {}): HTMLElement {
     wearSkin();
-    const who = login(), can = !!who || canSignIn(), folded = can && chipFolded(), again = { ...o, note: undefined };
+    // Only a signed-in chip folds: signed out, the badge is just the mark and Sign in always shows beside it.
+    const who = login(), can = !!who || canSignIn(), folded = !!who && chipFolded(), again = { ...o, note: undefined };
     const part = <E extends HTMLElement>(name: string, e: E) => { e.dataset.part = name; return e; };
     const parts: HTMLElement[] = [];
-    if (can) {
-      const fold = part("badge", Object.assign(document.createElement("button"), { type: "button", className: "eq-fold", title: folded ? (who ? `${who.name} on eqosys` : "eqosys: sign in") : "Fold eqosys away" }));
+    if (can && !who) parts.push(part("badge", eqBadge()));
+    else if (who) {
+      const fold = part("badge", Object.assign(document.createElement("button"), { type: "button", className: "eq-fold", title: folded ? `${who.name} on eqosys` : "Fold eqosys away" }));
       fold.setAttribute("aria-label", folded ? "Show eqosys" : "Fold eqosys away");
       fold.setAttribute("aria-expanded", String(!folded));
       fold.append(eqBadge());

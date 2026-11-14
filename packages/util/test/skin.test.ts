@@ -135,13 +135,19 @@ test.skipIf(!chromePath())("the chip folds into its badge and back, a dot lights
       members([{ id: "a", name: "Ada", host: true, ready: true }, { id: "b", name: "Grace", host: false, ready: true }]);
       const lit = [...document.querySelectorAll(".rb-lobby-m.lit")].map((m) => m.firstChild.textContent);
       await wait(450);
-      return { open, folded, settled, back, lit, still: moving(document.querySelector(".rb-lobby")) + moving(chip) };
+      const still = moving(document.querySelector(".rb-lobby")) + moving(chip);
+      // Folded, then signed out: Sign in still shows beside the badge, which is only a mark there.
+      localStorage.setItem("eq.chip.folded", "1");
+      chip.querySelector("[data-part=act]").click();
+      const out = { parts: parts(), folds: !!chip.querySelector(".eq-fold"), word: chip.querySelector("[data-part=act]")?.textContent };
+      localStorage.removeItem("eq.chip.folded");
+      return { open, folded, settled, back, lit, still, out };
     })()`);
     await tab.close();
     return got;
   };
   const moved = await run(false);
-  expect(moved).toMatchObject({ open: "badge who act", folded: { parts: "badge", expanded: "false", frame: true, kept: "1" }, settled: 0, back: { parts: "badge who act", frame: true, kept: null }, lit: ["Grace"], still: 0 });
+  expect(moved).toMatchObject({ open: "badge who act", folded: { parts: "badge", expanded: "false", frame: true, kept: "1" }, settled: 0, back: { parts: "badge who act", frame: true, kept: null }, lit: ["Grace"], still: 0, out: { parts: "badge act", folds: false, word: "Sign in" } });
   expect((moved.folded as { moving: number }).moving).toBeGreaterThan(0);
   const calm = await run(true);
   expect((calm.folded as { moving: number }).moving).toBe(0);

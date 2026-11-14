@@ -331,7 +331,7 @@ A signed-in player presses Report in a game. The report arrives here as an issue
 
 A game adds the corner button with `reportButton()` from its `eqosys()` client (`@rustybuns/util/report`). The button has the game's eqosys skin. `eqosys({ ..., skin: { theme, css } })` takes `--ui-*` tokens (packages/ui) and extra rules one time. The account chip (`accountChip(slot)`), the achievement toast, the report form, the party lobby and the spaces panel all use this skin.
 
-The surfaces move a little, and only with transform and opacity, so nothing waits on the motion. The chip starts with the eqosys badge. Press the badge and the name and Sign out fold into it, then fold back out. Sign in turns into Sign out. A party member's dot pops when they get ready, and Copy link shows a check. With reduced motion turned on, nothing moves.
+The surfaces move a little, and only with transform and opacity, so nothing waits on the motion. The chip starts with the eqosys badge. When you are signed in, press the badge and the name and Sign out fold into it, then fold back out. When you are signed out, the badge is only a mark and Sign in always shows. Sign in turns into Sign out. A party member's dot pops when they get ready, and Copy link shows a check. With reduced motion turned on, nothing moves.
 
 </details>
 
