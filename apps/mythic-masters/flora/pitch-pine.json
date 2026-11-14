@@ -7,8 +7,8 @@
  "height": 13,
  "budget": [12000, 2000],
  "note": "Twisted, open crown; needles in stiff tufts at the twig ends and sprouting straight from the trunk after fire; dark plated bark.",
- "trunk": {"radius": 0.26, "lean": 0.08, "wobble": 0.35, "kink": 0.12, "taper": 0.92, "segments": 12, "sides": 9, "flare": 0.25},
- "bark": {"colors": ["#5e4433", "#2a1f18"], "pattern": "plates"},
+ "trunk": {"radius": 0.26, "lean": 0.11, "wobble": 0.5, "kink": 0.18, "taper": 0.92, "segments": 12, "sides": 15, "rings": 2, "flare": 0.25, "stubs": 5, "stub_from": 0.08, "stub_to": 0.3, "stub_length": 0.045},
+ "bark": {"colors": ["#8a6650", "#6a4c3c"], "pattern": "plates", "plates": 0.2, "furrow": "#1a1410", "dead": "#5a5048"},
  "levels": [
   {"count": 15, "start": 0.3, "end": 0.97, "angle": 74, "length": 0.3, "shape": "ovoid", "droop": 0.1, "rise": 0.3, "wobble": 0.5, "kink": 0.15, "segments": 5, "radius": 0.45, "sides": 6},
   {"count": 5, "start": 0.3, "end": 1.0, "angle": 40, "length": 0.4, "rise": 0.3, "wobble": 0.45, "kink": 0.35, "segments": 3, "radius": 0.5, "sides": 4, "lo": 1.0}

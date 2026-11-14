@@ -355,8 +355,53 @@ def tree(spec, g, rng, lo):
             f *= 1 + flute * max(0, math.cos(lobes * a)) ** 2 * math.exp(-z / 0.1)
         return f
 
+    # plated bark: `bark.plates` sinks every third side of the trunk into a furrow (a share of the radius) and
+    # cracks the plates across here and there; the near trunk gets `trunk.rings` times the rings so the cracks show
+    bk = spec.get("bark", {})
+    plates = bk.get("plates", 0.0)
+    rings = 1 if lo else max(1, int(tr.get("rings", 1)))
+    furrow_col = hexc(bk.get("furrow", "#1e1814"))
+    from mathutils import noise as _noise
+    pseed = Vector(((spec.get("seed", 0) * 13.7) % 99, 41.3, 0))
+
+    def furrow(i, a):
+        k = round(a * sides / (2 * math.pi)) % sides
+        if k % 3 == 2:
+            return 1.0
+        return 0.65 if _noise.noise(Vector((k * 1.7, i / rings * 0.9, 0)) + pseed) > 0.3 else 0.0
+
+    def bole(i, a):
+        f = foot(i / rings, a) if (flare_k or lobes) and len(axes) == 1 else 1
+        return f * (1 - plates * furrow(i, a)) if plates else f
+
+    def bole_paint(n):
+        def paint(u, a, at, off):
+            c = bark(u, a, at, off)
+            return mix(c, furrow_col, 0.85 * furrow(round(u * (n - 1)), a)) if plates else c
+        return paint
+
     for ax in axes:
-        tube(g, ax.pts, ax.radii, sides, bark, flare=foot if (flare_k or lobes) and len(axes) == 1 else None)
+        pts, radii = ax.pts, ax.radii
+        if rings > 1:
+            pts = [pts[j].lerp(pts[j + 1], s / rings) for j in range(len(pts) - 1) for s in range(rings)] + [pts[-1]]
+            radii = [radii[j] + (radii[j + 1] - radii[j]) * s / rings for j in range(len(radii) - 1) for s in range(rings)] + [radii[-1]]
+        tube(g, pts, radii, sides, bole_paint(len(pts)), flare=bole if (flare_k or lobes or plates) else None)
+    # dead branch stubs low on the bole (near model only; their own random stream, so the crown grows the same)
+    st = tr.get("stubs", 0)
+    if st and not lo:
+        srng = random.Random(spec.get("seed", 0) * 31 + 7)
+        dead = hexc(bk.get("dead", "#4a4038"))
+        lo_t, hi_t = tr.get("stub_from", 0.1), tr.get("stub_to", 0.3)
+        for k in range(st):
+            at, tan, rad = axes[0].at(lo_t + (hi_t - lo_t) * srng.random())
+            phi = k * GOLDEN * 2 + srng.random()
+            n1 = perp(tan)
+            radial = n1 * math.cos(phi) + tan.cross(n1) * math.sin(phi)
+            d = (radial + tan * (srng.random() - 0.6) * 0.6).normalized()
+            ln = H * tr.get("stub_length", 0.04) * (0.5 + srng.random())
+            r0 = rad * (0.18 + 0.12 * srng.random())
+            tube(g, [at - d * rad * 0.5, at + d * ln * 0.6, at + d * ln], [r0, r0 * 0.75, r0 * 0.4], 4,
+                 lambda u, a, at, off: dead)
 
     # branch levels
     parents = axes
