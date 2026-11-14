@@ -323,7 +323,7 @@ function chimera() {
     tail: { len: 1, droop: 0, bush: 0 },
     palette: {
       fur: [0.74, 0.52, 0.24, 0.9, 0], tuft: [0.5, 0.24, 0.08, 0.95, 0], mane: [0.6, 0.33, 0.12, 0.95, 0], ruff: [0.34, 0.16, 0.06, 0.95, 0], belly: [0.9, 0.78, 0.56, 0.9, 0], stripe: [0.2, 0.32, 0.12, 0.6, 0],
-      goat: [0.36, 0.27, 0.2, 0.95, 0], horn: [0.28, 0.24, 0.2, 0.5, 0], scale: [0.3, 0.48, 0.2, 0.55, 0],
+      goat: [0.5, 0.42, 0.32, 0.95, 0], goatfur: [0.34, 0.27, 0.2, 0.95, 0], horn: [0.2, 0.17, 0.14, 0.5, 0], scale: [0.3, 0.48, 0.2, 0.55, 0],
       eye: [1, 0.55, 0.08, 0.3, 0, 4], pupil: [0.03, 0.02, 0.02, 0.2, 0], snake_eye: [0.75, 1, 0.2, 0.3, 0, 4], mouth: [0.36, 0.05, 0.04, 0.7, 0, 0.5],
       nose: [0.42, 0.24, 0.2, 0.5, 0], dark: [0.08, 0.05, 0.04, 0.6, 0], fang: [0.95, 0.93, 0.85, 0.3, 0], claw: [0.85, 0.8, 0.7, 0.4, 0],
     },
@@ -334,8 +334,9 @@ function chimera() {
   Object.assign(b.nodes, {
     tail1: P(-0.66, 1.02, 0, 0.06), tail2: P(-0.92, 1.14, 0, 0.055), tail3: P(-1.0, 1.32, 0, 0.05), tail4: P(-0.88, 1.5, 0, 0.045),
     shead: P(-0.7, 1.56, 0, 0.055), ssnout: P(-0.58, 1.53, 0, 0.035),
-    // the goat: a long neck out of the middle of the back, a narrow head, swept-back horns
-    g1: P(-0.12, 0.98, 0, 0.07), g2: P(-0.06, 1.24, 0, 0.06), ghead: P(0.0, 1.42, 0, 0.06), gmuzzle: P(0.14, 1.36, 0, 0.035),
+    // the goat: a thick, long neck out of the middle of the back, a big head, horns swept far back; bold enough to
+    // read from every side, the front too, as clearly as the serpent
+    g1: P(-0.12, 0.98, 0, 0.1), g2: P(-0.06, 1.3, 0, 0.085), ghead: P(0.0, 1.52, 0, 0.08), gmuzzle: P(0.17, 1.45, 0, 0.05),
   });
   b.links.push(["tail4", "shead"], ["shead", "ssnout"], ["belly", "g1"], ["g1", "g2"], ["g2", "ghead"], ["ghead", "gmuzzle"]);
   const s = (x: number) => f4(x * k);
@@ -362,9 +363,9 @@ function chimera() {
     { at: "hip", off: [s(-0.02), s(-0.02), s(0.07)], r: [s(0.12), s(0.11), s(0.06)], rot: [0, 0, 25] },
     { at: "hip", off: [s(-0.02), s(-0.02), s(-0.07)], r: [s(0.12), s(0.11), s(0.06)], rot: [0, 0, 25] },
     { at: "shead", off: [s(0.03), 0, 0], r: [s(0.09), s(0.055), s(0.065)] },
-    { at: "g1", off: [s(0.03), s(0.1), 0], r: [s(0.075), s(0.17), s(0.065)], rot: [0, 0, -15] },
-    { at: "ghead", off: [s(0.02), 0, 0], r: [s(0.08), s(0.065), s(0.055)] },
-    { at: "ghead", off: [s(0.1), s(-0.04), 0], r: [s(0.09), s(0.04), s(0.035)], rot: [0, 0, -25] },
+    { at: "g1", off: [s(0.03), s(0.12), 0], r: [s(0.11), s(0.22), s(0.095)], rot: [0, 0, -15] },
+    { at: "ghead", off: [s(0.02), 0, 0], r: [s(0.11), s(0.085), s(0.075)] },
+    { at: "ghead", off: [s(0.12), s(-0.045), 0], r: [s(0.12), s(0.055), s(0.05)], rot: [0, 0, -25] },
   );
   // the tail and the snake head scaled green, banded darker
   b.paint = [...(b.paint ?? []), { nodes: ["tail2", "tail3", "tail4", "shead", "ssnout"], material: "scale" }];
@@ -375,11 +376,13 @@ function chimera() {
     { kind: "tuft", along: ["neck", "chest"], n: 12, len: s(0.3), base: s(0.09), rows: 18, spread: 175, sweep: 1.6, curve: 40, flat: 0.35, material: "tuft" },
     { kind: "tuft", along: ["head", "neck"], n: 8, len: s(0.22), base: s(0.08), rows: 14, spread: 120, sweep: 1.3, curve: 35, flat: 0.35, sink: 1, material: "mane" },
     // the goat: eyes, a beard, swept-back horns, ears
-    { kind: "eye", at: "ghead", off: [s(0.05), s(0.03), s(0.045)], r: s(0.02), mirror: true, material: "eye" },
-    { kind: "horn", at: "ghead", off: [s(-0.01), s(0.05), s(0.03)], dir: [-0.6, 1, 0.15], len: s(0.3), base: s(0.03), tip_base: 0.002, curve: 70, bend: [-1, -0.3, 0], mirror: true, material: "horn" },
-    { kind: "horn", at: "ghead", off: [s(-0.03), s(0.02), s(0.05)], dir: [-0.4, 0.1, 1], len: s(0.09), base: s(0.025), tip_base: 0.004, flat: 0.4, mirror: true, material: "goat" },
-    { kind: "tuft", along: ["ghead", "gmuzzle"], n: 3, len: s(0.1), base: s(0.025), rows: 1, spread: 20, sweep: 0.2, flat: 0.5, material: "goat" },
-    { kind: "tuft", along: ["g1", "g2", "ghead"], n: 6, len: s(0.07), base: s(0.025), rows: 4, spread: 80, sweep: 1.2, flat: 0.5, material: "goat" },
+    { kind: "eye", at: "ghead", off: [s(0.065), s(0.035), s(0.06)], r: s(0.026), mirror: true, material: "eye" },
+    // the horns: thick at the root, swept back in a long arc past the neck and out to the side
+    { kind: "horn", at: "ghead", off: [s(-0.01), s(0.07), s(0.04)], dir: [-0.4, 1, 0.25], len: s(0.48), base: s(0.048), tip_base: 0.003, curve: 115, bend: [-1, -0.4, 0.15], mirror: true, material: "horn" },
+    { kind: "horn", at: "ghead", off: [s(-0.03), s(0.025), s(0.065)], dir: [-0.4, 0.1, 1], len: s(0.12), base: s(0.032), tip_base: 0.004, flat: 0.4, mirror: true, material: "goat" },
+    // a long beard under the chin, and a shaggy coat of its own down the neck to the lion's back
+    { kind: "tuft", along: ["ghead", "gmuzzle"], n: 4, len: s(0.16), base: s(0.035), rows: 2, spread: 30, sweep: 0.2, flat: 0.5, material: "goatfur" },
+    { kind: "tuft", along: ["g2", "g1"], n: 8, len: s(0.13), base: s(0.04), rows: 8, spread: 150, sweep: 1.3, curve: 35, flat: 0.4, material: "goatfur" },
     // the snake: glowing eyes, fangs bared at the front of its mouth
     { kind: "eye", at: "shead", off: [s(0.06), s(0.03), s(0.045)], r: s(0.018), mirror: true, material: "snake_eye" },
     { kind: "horn", at: "ssnout", off: [s(0.0), s(-0.025), s(0.02)], dir: [0.2, -1, 0], len: s(0.06), base: s(0.012), tip_base: 0.001, curve: 15, bend: [-1, 0, 0], mirror: true, material: "fang" },
