@@ -9,13 +9,14 @@
 //   POST /api/orgs/<org>/models        {name, scan}     a model the shop's iPhone scanned (kind "scan"): a product now (201)
 //
 // Every sample costs Meshy credits, so three things stand in front of one: the admin key (org.json keeps its
-// SHA-256), the org's paid allowance (org.json `samples`), and a ceiling on samples a day across every org
+// SHA-256), the org's allowance (org.json `samples` plus the packs it bought, billing.ts), and a ceiling on samples a day across every org
 // (MESHY_DAILY). Progress lives in R2 next to the model; the admin page's polling drives it, so there is no
 // queue or workflow to keep alive.
 import { b64, hex, sha256 } from "@rustybuns/util/bytes";
 import { int, obj } from "@rustybuns/util/guard";
 import { privateJson, readJson } from "@rustybuns/util/http";
 import { Sample, SampleRequest, type Org, type Product } from "./api.ts";
+import { allowanceOf } from "./billing.ts";
 import { meshyDayKey, productKey, SAMPLE_ID, sampleGlb, sampleKey } from "./layout.ts";
 import { MESHY_BASE, MeshyError, sampleTask, startSample, type MeshyTask } from "./meshy.ts";
 import type { Env } from "./worker.ts";
@@ -30,7 +31,8 @@ export async function isAdmin(req: Request, org: Org): Promise<boolean> {
   return !!m && (org.admins ?? []).includes(await sha256(m[1]!));
 }
 
-async function countSamples(env: Env, org: string): Promise<number> {
+/** Samples the org has started, all told: what counts against its allowance. */
+export async function countSamples(env: Env, org: string): Promise<number> {
   let n = 0, cursor: string | undefined;
   do {
     const page = await env.BUCKET.list({ prefix: `orgs/${org}/models/`, cursor });
@@ -58,8 +60,8 @@ export async function startSampleRoute(req: Request, env: Env, org: string, sett
     if (!key.startsWith(`orgs/${org}/photos/`)) return fail(`${key}: not one of this org's photos`, 400);
     if (!(await env.BUCKET.head(key))) return fail(`${key}: upload it first`, 400);
   }
-  const allowance = settings.samples ?? 0;
-  if ((await countSamples(env, org)) >= allowance) return fail(`this org has used its ${allowance} samples; more need a plan that includes them`, 402);
+  const allowance = await allowanceOf(env, org, settings);
+  if ((await countSamples(env, org)) >= allowance) return fail(`this org has used its ${allowance} samples; buy a pack for more`, 402);
   if (!env.MESHY_API_KEY) return fail("samples are not switched on here (MESHY_API_KEY)", 503);
 
   // The day's ceiling across every org. A read then a write, so two at once can both get the last one: fine for a cap.

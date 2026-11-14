@@ -30,6 +30,9 @@ export default defineConfig({
     // Signs a minute per IP and org, and sample starts a minute per org (src/worker.ts answers 429). Counted at each location, free.
     SIGN_LIMIT: { type: "ratelimit", namespaceId: "8205", simple: { limit: 60, period: 60 } },
     SAMPLE_LIMIT: { type: "ratelimit", namespaceId: "8206", simple: { limit: 5, period: 60 } },
+    // Shops buy packs of samples through Stripe Checkout (src/billing.ts). Without the key, buying answers 501.
+    STRIPE_SECRET_KEY: { type: "secret", op: "op://qview3d/stripe-secret-key/password", optional: true },
+    STRIPE_WEBHOOK_SECRET: { type: "secret", op: "op://qview3d/stripe-webhook-secret/password", optional: true },
   },
   // Secrets resolve at deploy through varlock, behind the owner's Touch ID; op: references need the wheel.
   experimental: { wheel: "human" },

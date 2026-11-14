@@ -153,3 +153,37 @@ export const PrintPlan = obj({
   skipped: arr(obj({ zone: oneOf(ZONES), why: str(200) }), 8),
 });
 export type PrintPlan = Of<typeof PrintPlan>;
+/** A pack of samples a shop can buy (billing.ts PACKS). */
+export const Pack = obj({ id: str(20), samples: int(1, 1000), cents: int(0, 10_000_000) });
+export type Pack = Of<typeof Pack>;
+export const PROVIDERS = ["test", "stripe"] as const;
+
+/** orgs/<org>/receipts/<id>.json: one paid pack. Its id comes from the payment's own id, so a retried webhook writes it once. */
+export const Receipt = obj({
+  id: str(24, { re: /^[0-9a-f]{24}$/ }),
+  pack: str(20),
+  samples: int(1, 1000),
+  cents: int(0, 10_000_000),
+  provider: oneOf(PROVIDERS),
+  /** The payment's id at the provider (a Stripe Checkout session), for a refund or a question. */
+  ref: str(200),
+  at: num(0, 1e15),
+});
+export type Receipt = Of<typeof Receipt>;
+
+/** GET /api/orgs/<org>/billing (an admin): samples paid for and used, what's for sale, and the receipts, newest first. */
+export const Billing = obj({
+  allowance: int(0, 1_000_000),
+  used: int(0, 1_000_000),
+  /** Who takes the money here: none means checkout is switched off. */
+  provider: opt(oneOf(PROVIDERS)),
+  packs: arr(Pack, 10),
+  receipts: arr(Receipt, 500),
+});
+export type Billing = Of<typeof Billing>;
+
+/** POST /api/orgs/<org>/checkout (an admin): buy a pack. */
+export const CheckoutRequest = obj({ pack: str(20) });
+/** Where to send the admin to pay. The test provider pays at once and names the receipt. */
+export const CheckoutReply = obj({ url: str(2000), receipt: opt(str(24)) });
+export type CheckoutReply = Of<typeof CheckoutReply>;

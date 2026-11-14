@@ -4,8 +4,9 @@
 // which four frames are taken here in the browser) are cut to 1600 px JPEGs, uploaded privately with the admin
 // key, and sent to make a model. The page polls until it's ready, then shows it in the widget with its embed tag.
 // Below that, print files: a saved design's original laid out per zone at print resolution, for the fulfiller.
+// Above the form: how many samples are left, and packs to buy more (billing.ts).
 import { getJson, readJson } from "@rustybuns/util/http";
-import { PrintPlan, Sample } from "./api.ts";
+import { Billing, CheckoutReply, PrintPlan, Sample } from "./api.ts";
 import { drawSheet, withDpi } from "./print-sheet.ts";
 import { sha256Of } from "./widget/image.ts";
 import { problem, upload } from "./widget/upload.ts";
@@ -19,6 +20,8 @@ const drop = $<HTMLLabelElement>("drop"), files = $<HTMLInputElement>("files"), 
 const go = $<HTMLButtonElement>("go"), status = $<HTMLDivElement>("status"), bar = $<HTMLDivElement>("bar");
 const clock = $<HTMLSpanElement>("clock"), result = $<HTMLElement>("result"), note = $<HTMLParagraphElement>("note");
 
+const asked = new URLSearchParams(location.search);
+org.value ||= asked.get("org") ?? "";
 if (/^(localhost|127\.0\.0\.1)$/.test(location.hostname)) {
   org.value ||= "demo";
   key.value ||= "demo-admin-key";
@@ -26,6 +29,54 @@ if (/^(localhost|127\.0\.0\.1)$/.test(location.hostname)) {
 }
 
 let photos: Blob[] = [];
+
+const api = () => `${location.origin}/api/orgs/${encodeURIComponent(org.value.trim())}`;
+const auth = () => ({ authorization: `Bearer ${key.value.trim()}` });
+const dollars = (cents: number) => `$${(cents / 100).toFixed(cents % 100 ? 2 : 0)}`;
+
+/** Samples left and the packs on offer, for the org and key in the boxes. Hidden until both are right. */
+async function billing() {
+  const bill = $<HTMLDivElement>("bill");
+  const b = org.value.trim() && key.value.trim() ? await getJson(`${api()}/billing`, Billing, { headers: auth() }).catch(() => null) : null;
+  bill.hidden = !b;
+  if (!b) return;
+  const left = Math.max(0, b.allowance - b.used);
+  $<HTMLElement>("left").textContent = `${left} ${left === 1 ? "sample" : "samples"} left`;
+  $<HTMLElement>("used").textContent = `${b.used} of ${b.allowance} used`;
+  $<HTMLDivElement>("off").hidden = !!b.provider;
+  $<HTMLDivElement>("packs").replaceChildren(...(b.provider ? b.packs : []).map((p) => {
+    const btn = Object.assign(document.createElement("button"), { className: "pack", title: `Buy ${p.samples} samples for ${dollars(p.cents)}` });
+    btn.append(Object.assign(document.createElement("b"), { textContent: `+${p.samples}` }), Object.assign(document.createElement("span"), { textContent: dollars(p.cents) }));
+    btn.onclick = () => void buy(p.id, btn);
+    return btn;
+  }));
+  $<HTMLDetailsElement>("receipts").hidden = !b.receipts.length;
+  $<HTMLUListElement>("rlist").replaceChildren(...b.receipts.map((r) => {
+    const li = document.createElement("li");
+    li.append(Object.assign(document.createElement("span"), { textContent: `${new Date(r.at).toLocaleDateString()}: ${r.samples} samples${r.provider === "test" ? " (test)" : ""}` }), Object.assign(document.createElement("span"), { textContent: dollars(r.cents) }));
+    return li;
+  }));
+}
+
+/** Buy a pack: off to the payment page, or (the test provider) paid already. */
+async function buy(pack: string, btn: HTMLButtonElement) {
+  btn.disabled = true;
+  try {
+    const res = await fetch(`${api()}/checkout`, { method: "POST", headers: { "content-type": "application/json", ...auth() }, body: JSON.stringify({ pack }) });
+    if (!res.ok) throw new Error(await problem(res));
+    const c = await readJson(res, CheckoutReply);
+    if (!c) throw new Error("the server sent something this page can't read");
+    if (c.receipt) { say("Paid: the samples are yours."); await billing(); } else location.assign(c.url);
+  } catch (e) {
+    say(e instanceof Error ? e.message : String(e), true);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+org.onchange = key.onchange = () => void billing();
+if (asked.get("paid")) say("Paid: thank you. Your samples are added as soon as the payment clears.");
+void billing();
 
 /** A picture as a JPEG of at most PHOTO_MAX px on its long side: what Meshy needs, a fraction of a phone photo. */
 async function shrink(src: CanvasImageSource & { width: number; height: number }): Promise<Blob> {
@@ -92,7 +143,7 @@ function tick(from: number) {
 }
 
 go.onclick = async () => {
-  const base = `${location.origin}/api/orgs/${encodeURIComponent(org.value.trim())}`;
+  const base = api();
   const auth = { authorization: `Bearer ${key.value.trim()}` };
   go.disabled = true;
   result.hidden = true;
@@ -125,6 +176,7 @@ go.onclick = async () => {
     say(e instanceof Error ? e.message : String(e), true);
   } finally {
     go.disabled = !photos.length;
+    void billing();
   }
 };
 
