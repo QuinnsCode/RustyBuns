@@ -39,3 +39,10 @@ address keeps the slide number (`#4`). Everything a deck needs is beside it: [de
 
 The older talk, "Trying to Max Out" ([setup/](setup/page.html)), has a 3D scene: `bun TALKS/setup/build.ts` writes
 `dist/talks/setup.html`.
+
+## The player
+
+`bun TALKS/player/build.ts` writes `dist/talks/player.html`: every ready talk in one page, a playlist beside a
+stage, with play (auto-advance at 10 to 60 seconds a slide, with a countdown), step, a slide scrubber, speaker notes
+and full screen. It reads the lineup from [index.html](index.html), so a new talk shows up once the index links it.
+Publish that file to the "Rusty Buns Talks" artifact (https://claude.ai/artifact/GPLBcVKcoktpo49reFrUHe) to update it.
