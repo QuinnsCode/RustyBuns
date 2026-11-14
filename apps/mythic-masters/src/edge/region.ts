@@ -3,9 +3,9 @@
 // it does not simulate: each page walks its own player, fights its own fights and keeps its own save. What it does
 // decide: who may join (six at most), and whether a fight report is believable before the party hears it.
 //
-// Cheap by design. No timer and no storage: a move is fanned out the moment it arrives, and the latest pose of each
-// player rides on their socket's attachment, so the object can hibernate whenever the party stands still and wake with
-// everyone where they were. The Worker (worker.ts) is the only place identity is decided; it vouches X-User-Id and X-User-Name.
+// Cheap by design. No timer, and storage only for the region's wilds (one small write when a patch is picked, a flock
+// flushed or a contract read): a move is fanned out the moment it arrives, and the latest pose of each player rides on
+// their socket's attachment, so the object can hibernate whenever the party stands still and wake with everyone where they were. The Worker (worker.ts) is the only place identity is decided; it vouches X-User-Id and X-User-Name.
 import { refuseSocket, Sockets, type RoomCtx, type RoomSocket } from "@rustybuns/util/room";
 import { denNear, holds, landing } from "../net/dens.ts";
 import { believeHurt, huntNear, keepSeen, sharedDen, NO_SEEN, seenEmpty, step, wildNear, worldClock, FIGHT, MAX_PLAYERS, parseDelta, parseEvent, plausible, WORLD_EPOCH, type Anchor, type Delta, type MetAt, type Player, type Seen, type ServerMsg } from "../net/party.ts";
@@ -20,7 +20,10 @@ export const DEAD_MS = 90_000;
  *  DEAD_MS out, and only a log line shows the object was rebuilt from its sockets after hibernating. */
 export interface RegionEnv { DEAD_MS?: string; LOG_WAKES?: string }
 /** What this object needs of workerd's hibernation API beyond the sockets (absent on a test's fake: no sweep there). */
-interface Alive { setWebSocketAutoResponse?(pair: unknown): void; getWebSocketAutoResponseTimestamp?(ws: RoomSocket): Date | null }
+interface Alive {
+  setWebSocketAutoResponse?(pair: unknown): void; getWebSocketAutoResponseTimestamp?(ws: RoomSocket): Date | null;
+  storage?: { get<T>(key: string): Promise<T | undefined>; put(key: string, value: unknown): Promise<void> };
+}
 declare const WebSocketRequestResponsePair: (new (req: string, res: string) => unknown) | undefined;
 /** The same player from another tab: the older socket is closed with this. */
 export const CLOSE_REPLACED = 4001;
@@ -69,7 +72,8 @@ export class Region {
   }
 
   /** The region's wilds as the room keeps them (#3859): picked patches, flushed flocks, roosts, busy dens and the party's
-   *  contracts (#4081). Every seat carries the same copy on its attachment, so it lasts through hibernation and past whoever told it leaving. */
+   *  contracts (#4081). Every seat carries the same copy on its attachment, so it lasts through hibernation and past whoever told it leaving,
+   *  and the room's storage keeps the last copy (#3876), so it outlasts everyone leaving too. */
   private wilds(): Seen {
     for (const ws of this.sockets.open()) { const k = this.sockets.who(ws)?.wilds; if (k) return k; }
     return NO_SEEN;
@@ -77,6 +81,12 @@ export class Region {
   private keepWilds(add: Seen) { this.setWilds(keepSeen(this.wilds(), add)); }
   private setWilds(k: Seen) {
     for (const ws of this.sockets.open()) { const s = this.sockets.who(ws); if (s) this.sockets.attach(ws, { ...s, wilds: k }); }
+    void this.ctx.storage?.put("wilds", k);
+  }
+  /** The wilds an empty room kept: as everyone left them, but with no den busy, since nobody is in one now. */
+  private async stored(): Promise<Seen> {
+    const k = await this.ctx.storage?.get<Seen>("wilds");
+    return k ? { ...k, busy: [] } : NO_SEEN;
   }
 
   private seats(): Seat[] {
@@ -100,7 +110,7 @@ export class Region {
     this.kept.delete(id);
     // Its untrusted flag, anchor, claim and owed den carry on with it: a new tab must not wipe them, nor a drop and a rejoin
     // (an honest blip keeps its trust; a doubted page can't shed the doubt by reconnecting). Gone longer: a new seat.
-    const wilds = this.wilds();
+    const wilds = here.length ? this.wilds() : await this.stored();
     const { server, response } = this.sockets.upgrade({ id, name, p: back?.p ?? {}, since: now, wilds, ...(back && { a: back.a, loose: back.loose, open: back.open, owed: back.owed }) });
     this.sockets.replace(server, (a) => a.id === id, CLOSE_REPLACED);
     const players: Player[] = here.filter((s) => s.id !== id).map((s) => ({ id: s.id, name: s.name, p: s.p }));

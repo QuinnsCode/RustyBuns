@@ -69,8 +69,11 @@ export function serveParty(port = 0, o: { guests?: boolean } = {}) {
       const name = String(id);
       let r = rooms.get(name);
       if (!r) {
-        const socks: Sock[] = [];
-        r = { name, socks, m: meter(), obj: make({ acceptWebSocket: (ws) => { if (ws instanceof Sock) socks.push(ws); }, getWebSockets: () => socks.filter((s) => s.readyState === 1) }) };
+        const socks: Sock[] = [], kept = new Map<string, unknown>();
+        // Durable Object storage, cloned in and out as workerd serialises it
+        const storage = { get: async <T,>(k: string) => structuredClone(kept.get(k)) as T | undefined, put: async (k: string, v: unknown) => { kept.set(k, structuredClone(v)); } };
+        const ctx = { acceptWebSocket: (ws: RoomSocket) => { if (ws instanceof Sock) socks.push(ws); }, getWebSockets: () => socks.filter((s) => s.readyState === 1), storage };
+        r = { name, socks, m: meter(), obj: make(ctx) };
         rooms.set(name, r);
       }
       const room = r;
