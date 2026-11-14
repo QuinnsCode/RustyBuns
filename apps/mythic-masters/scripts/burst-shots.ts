@@ -10,6 +10,7 @@
 //              time, but one try at random rarely caught it)
 //   --fly      only the winged bipeds held in flight in the gallery, from the side, flying forward at speed: two
 //              frames 0.45 s apart each (a bot fight rarely catches a flyer in the air)
+//   --lock     the fights from the lock camera players fight in (over your shoulder), not the side camera; no close-ups
 //   --hit      the heavies struck in the gallery, side on: one hard blow, frames at rest then 0.05, 0.12, 0.2 and 0.35 s
 //              after it, the same blow every run (a bot fight's hits land at random, on random bodies, at random angles)
 import { mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
@@ -33,11 +34,11 @@ const COMBAT: [string, string, string][] = [
   ["skirmisher", "wampus-cat", "black-shuck"],
   ["flyer", "jersey-devil", "rougarou"],
 ];
-const combat = process.argv.includes("--combat"), fly = process.argv.includes("--fly"), hit = process.argv.includes("--hit");
+const lock = process.argv.includes("--lock"), combat = process.argv.includes("--combat"), fly = process.argv.includes("--fly"), hit = process.argv.includes("--hit");
 const FIGHTS: [string, string, string, Cue[]][] = fly || hit ? [] : combat
   ? COMBAT.map(([s, a, b]) => [s, a, b, ["strike", "locked", "stun"]])
   : ART.map(([s, a, b, k, n]) => [s, a, b, Array<Cue>(n).fill(k)]);
-const CLOSE = hit ? ["sasquatch", "hodag", "yeti", "rougarou"] : fly ? ["jersey-devil", "mothman", "sasabonsam"] : combat ? [] : ["black-shuck", "rougarou", "jersey-devil"];
+const CLOSE = lock ? [] : hit ? ["sasquatch", "hodag", "yeti", "rougarou"] : fly ? ["jersey-devil", "mothman", "sasabonsam"] : combat ? [] : ["black-shuck", "rougarou", "jersey-devil"];
 const GAP = combat ? 200 : 300, HIT_GAP = 100;
 
 const [dir, prefix = "now"] = process.argv.slice(2).filter((a) => !a.startsWith("--"));
@@ -73,7 +74,7 @@ try {
     const tab = await openTab(cdp, { w: 1280, h: 720 });
     try {
       await load(cdp, tab, `${vite.url}?a=${a}&b=${b}&skin=stadium&watch=1`, 2500);
-      await tab.eval(`mythicMasters.camera("side")`);
+      await tab.eval(`mythicMasters.camera(${JSON.stringify(lock ? "lock" : "side")})`);
       await tab.eval(WATCH);
       await Bun.sleep(2500); // intro, first approach
       for (const [n, kind] of cues.entries()) {
