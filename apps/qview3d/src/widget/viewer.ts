@@ -6,13 +6,17 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
-import type { Design, Model } from "../api.ts";
-import { buildHat, type Hat } from "./hats.ts";
-import { clampPlacement, onPicture, paint, zoneSpot, type Placement } from "./print.ts";
+import { TOPS, type Design, type Made, type Model, type TopModel, type ZoneName } from "../api.ts";
+import { buildHat } from "./hats.ts";
+import { buildTop } from "./tops.ts";
+import { clampPlacement, type Placement } from "./print.ts";
+import { GarmentSurface, type Surface, type ZoneInfo } from "./surfaces.ts";
 import { prepare, type Prepared } from "./image.ts";
 import ImageWorker from "./image-worker.ts?worker&inline";
 
 export type View = "front" | "angle" | "side" | "back";
+/** How a top is shown: on the invisible form, or hanging from a hanger (a spike, #4563). */
+export type Display = "form" | "hanger";
 const VIEWS: Record<View, number> = { front: 0, angle: Math.PI / 4, side: Math.PI / 2, back: Math.PI };
 
 export type Layer = { picture: Prepared; at: Placement; texture?: string; original?: string };
@@ -21,7 +25,11 @@ export class Viewer {
   readonly canvas: HTMLCanvasElement;
   model: Model = "cap";
   color = "#1f2937";
-  layer: Layer | null = null;
+  /** The pictures on the product, one a zone. */
+  layers: Layer[] = [];
+  /** The zone the shopper is working on: where a new picture goes, and what the sliders and keys move. */
+  zone: ZoneName = "front";
+  display: Display = "form";
   /** Called after any change the shopper made (drag, colour, model, picture). */
   onChange: () => void = () => {};
 
@@ -29,14 +37,11 @@ export class Viewer {
   private scene = new THREE.Scene();
   private camera = new THREE.PerspectiveCamera(32, 1, 0.05, 50);
   private controls: OrbitControls;
-  private hat!: Hat;
-  private printCanvas = document.createElement("canvas");
-  private printCtx = this.printCanvas.getContext("2d")!;
-  private printTex = new THREE.CanvasTexture(this.printCanvas);
+  private surface!: Surface<unknown>;
   private ray = new THREE.Raycaster();
   private dirty = true;
   private visible = true;
-  private dragging: { pointer: number; du: number; dv: number } | null = null;
+  private dragging: { pointer: number; layer: Layer; at: Placement; from: unknown } | null = null;
   private frame = 0;
   private worker: Worker | null = null;
   private noWorker = false;
@@ -49,7 +54,13 @@ export class Viewer {
     this.renderer.setPixelRatio(Math.min(2, devicePixelRatio));
     this.renderer.toneMapping = THREE.NeutralToneMapping; // made for product viewers: colours stay the colours shoppers picked;
     this.canvas = this.renderer.domElement;
-    this.canvas.style.cssText = "display:block;width:100%;height:100%;touch-action:none;outline:none";
+    this.canvas.style.cssText = "display:block;width:100%;height:100%;touch-action:none";
+    // Dragging has a keyboard way too (WCAG 2.5.7): focus the view, then arrows, + and -, [ and ].
+    this.canvas.tabIndex = 0;
+    this.canvas.setAttribute("role", "application");
+    this.canvas.setAttribute("aria-roledescription", "3D product view");
+    this.canvas.setAttribute("aria-label", "The product in 3D. Drag or Shift and the arrow keys to spin it. With a picture on, drag it, or use the arrow keys to move it, plus and minus to size it, and the square brackets to turn it.");
+    this.canvas.addEventListener("keydown", this.key);
     host.append(this.canvas);
 
     const pmrem = new THREE.PMREMGenerator(this.renderer);
@@ -57,15 +68,13 @@ export class Viewer {
     this.scene.environmentIntensity = 0.55;
     this.renderer.toneMappingExposure = 0.95;
     pmrem.dispose();
+    // The key light rides with the camera (up and to its right), so whichever side the shopper turns to is lit:
+    // a top's back print reads as well as its front (the loop turns the room's reflections the same way).
     const key = new THREE.DirectionalLight(0xffffff, 0.9);
-    key.position.set(2, 4, 3);
-    this.scene.add(key, new THREE.HemisphereLight(0xffffff, 0x9aa3ad, 0.35));
+    key.position.set(1.4, 2.6, 1);
+    this.camera.add(key);
+    this.scene.add(this.camera, new THREE.HemisphereLight(0xffffff, 0x9aa3ad, 0.35));
     this.scene.add(contactShadow());
-
-    this.printCanvas.width = 2048;
-    this.printCanvas.height = 1024;
-    this.printTex.colorSpace = THREE.SRGBColorSpace;
-    this.printTex.anisotropy = Math.min(8, this.renderer.capabilities.getMaxAnisotropy());
 
     // Picking comes before OrbitControls' own listener, so a press on the picture drags it instead of the camera.
     this.canvas.addEventListener("pointerdown", this.down);
@@ -109,41 +118,82 @@ export class Viewer {
     this.frame = requestAnimationFrame(this.loop);
     if (!this.visible) return;
     if (this.controls.update()) this.dirty = true;
+    if (this.surface.tick?.()) this.dirty = true;
     if (!this.dirty) return;
     this.dirty = false;
+    // The room's reflections turn with the camera as the key light does, so no side of the product sits in its shade.
+    this.scene.environmentRotation.y = Math.atan2(this.camera.position.x - this.controls.target.x, this.camera.position.z - this.controls.target.z);
     this.renderer.render(this.scene, this.camera);
   };
 
-  /** Redraw the print canvas and mark the frame dirty. */
+  /** The picture in the zone being worked on, if it has one. */
+  get layer(): Layer | null { return this.layers.find((l) => (l.at.zone ?? "front") === this.zone) ?? null; }
+
+  /** The product's print zones. */
+  get zones(): readonly ZoneInfo[] { return this.surface.zones; }
+
+  /** Redraw the pictures on the surface and mark the frame dirty. */
   private repaint(outline = !!this.dragging) {
-    const pictures = this.layer ? [{ image: this.layer.picture.bitmap, aspect: this.layer.picture.aspect, at: this.layer.at }] : [];
-    paint(this.printCtx, this.hat, this.color, pictures, outline);
-    this.printTex.needsUpdate = true;
+    const pictures = this.layers.map((l) => ({ image: l.picture.bitmap, aspect: l.picture.aspect, at: l.at }));
+    this.surface.draw(this.color, pictures, outline ? this.zone : null);
     this.dirty = true;
   }
 
-  setModel(m: Model) {
-    if (this.hat) {
-      this.scene.remove(this.hat.group);
-      this.hat.group.traverse((o) => {
-        if (o instanceof THREE.Mesh || o instanceof THREE.LineSegments) {
-          o.geometry.dispose();
-          (o.material as THREE.Material).dispose();
-        }
-      });
-    }
+  /** Whether the product keeps its own colours (a shop's own model): no swatches. */
+  get ownColors() { return this.surface.ownColors; }
+
+  private use(next: Surface<unknown>, m: Model) {
+    if (this.surface) { this.scene.remove(this.surface.group); this.surface.dispose(); }
+    this.surface = next;
     this.model = m;
-    this.hat = buildHat(m);
-    this.hat.print.material.map = this.printTex;
-    this.hat.group.position.y = -0.3;
-    this.scene.add(this.hat.group);
-    this.controls.target.copy(this.hat.target).add(this.hat.group.position);
+    next.group.position.y = -0.3;
+    this.scene.add(next.group);
+    this.controls.target.copy(next.target).add(next.group.position);
+    // Pictures keep their zones where the new product has them (a hat's front is a top's front); the rest come off.
+    // One moving between a made product and a shop's model keeps its size and turn and starts in the middle.
+    const has = (z: ZoneName) => next.zones.some((x) => x.name === z);
+    for (const l of this.layers.filter((l) => !has(l.at.zone ?? "front"))) l.picture.bitmap.close();
+    this.layers = this.layers.filter((l) => has(l.at.zone ?? "front"));
+    for (const l of this.layers) {
+      if (m !== "custom" && !l.at.point) continue;
+      const { point, normal, ...rest } = next.start(l.at.zone ?? "front");
+      l.at = m === "custom" ? { ...rest, point, normal, scale: l.at.scale, rotation: l.at.rotation } : { ...rest, scale: l.at.scale, rotation: l.at.rotation };
+    }
+    if (!has(this.zone)) this.zone = next.zones[0]!.name;
     this.setColor(this.color);
+  }
+
+  setModel(m: Made) {
+    const garment = (TOPS as readonly Made[]).includes(m) ? buildTop(m as TopModel, this.display === "hanger") : buildHat(m as Exclude<Made, TopModel>);
+    this.use(new GarmentSurface(garment, Math.min(8, this.renderer.capabilities.getMaxAnisotropy())), m);
+  }
+
+  /** Show a top on its form or on a hanger: it is made again, its pictures kept. */
+  setDisplay(d: Display) {
+    if (d === this.display) return;
+    this.display = d;
+    if (this.model !== "custom") this.setModel(this.model);
+  }
+
+  /** Work on another zone: the camera swings round to it. */
+  setZone(z: ZoneName) {
+    const info = this.zones.find((x) => x.name === z);
+    if (!info) return;
+    this.zone = z;
+    this.view(info.view);
+    this.repaint();
+    this.onChange();
+  }
+
+  /** A shop's own model, from its GLB. */
+  async setCustom(url: string) {
+    const { loadModel } = await import("./model-surface.ts"); // its own chunk: hats-only pages never load it
+    this.use(await loadModel(url), "custom");
   }
 
   setColor(c: string) {
     this.color = c;
-    for (const m of this.hat.dyed) m.material.color.set(c);
+    this.surface.setColor(c);
     this.repaint();
   }
 
@@ -181,22 +231,35 @@ export class Viewer {
     this.view(order[(at + 1) % order.length]!);
   }
 
-  /** Decode, shrink and hash a photo (in a Worker when allowed), then put it on the front of the hat. */
-  async addImage(file: Blob): Promise<Layer> {
+  /** Decode, shrink and hash a photo (in a Worker when allowed), then put it in the middle of `zone` (the one being worked on), in place of any picture there. */
+  async addImage(file: Blob, zone: ZoneName = this.zone): Promise<Layer> {
+    const info = this.zones.find((x) => x.name === zone);
+    if (!info) throw new Error(`This product has no ${zone} to print on`);
     const picture = await this.prepare(file);
+    this.zone = zone;
     this.layer?.picture.bitmap.close();
-    this.layer = { picture, at: { u: 0.5, v: 0.55, scale: 0.7, rotation: 0 } };
+    const layer = { picture, at: this.surface.start(zone) };
+    this.layers = [...this.layers.filter((l) => (l.at.zone ?? "front") !== zone), layer];
     this.repaint();
-    this.view("front");
+    this.view(info.view);
     this.onChange();
-    return this.layer;
+    return layer;
   }
 
+  /** Take the picture off the zone being worked on. */
   removeImage() {
-    this.layer?.picture.bitmap.close();
-    this.layer = null;
+    const l = this.layer;
+    if (!l) return;
+    l.picture.bitmap.close();
+    this.layers = this.layers.filter((x) => x !== l);
     this.repaint();
     this.onChange();
+  }
+
+  /** The picture under a pointer spot, the zone being worked on first. */
+  private under(spot: unknown) {
+    const order = [...this.layers].sort((a, b) => Number((b.at.zone ?? "front") === this.zone) - Number((a.at.zone ?? "front") === this.zone));
+    return order.find((l) => this.surface.onPicture(l.at, l.picture.aspect, spot)) ?? null;
   }
 
   place(p: Partial<Placement>) {
@@ -231,15 +294,22 @@ export class Viewer {
   private pick(e: { clientX: number; clientY: number }) {
     const r = this.canvas.getBoundingClientRect();
     this.ray.setFromCamera(new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1), this.camera);
-    const hit = this.ray.intersectObject(this.hat.print, false)[0];
-    return hit?.uv ? zoneSpot(this.hat.zone, hit.uv) : null;
+    return this.surface.hit(this.ray);
   }
 
   private down = (e: PointerEvent) => {
-    if (!this.layer || this.dragging) return;
+    if (this.dragging) return;
     const spot = this.pick(e);
-    if (!spot || !onPicture(this.hat, this.layer.at, this.layer.picture.aspect, spot)) return;
-    this.dragging = { pointer: e.pointerId, du: this.layer.at.u - spot.u, dv: this.layer.at.v - spot.v };
+    if (!spot) return;
+    const l = this.under(spot);
+    if (!l) {
+      // A press on another zone works on that one from now on (the camera still turns: this press may be a spin).
+      const z = this.surface.zoneAt(spot);
+      if (z && z !== this.zone) { this.zone = z; this.repaint(false); this.onChange(); }
+      return;
+    }
+    if ((l.at.zone ?? "front") !== this.zone) { this.zone = l.at.zone ?? "front"; this.onChange(); }
+    this.dragging = { pointer: e.pointerId, layer: l, at: { ...l.at }, from: spot };
     this.controls.enabled = false;
     try { this.canvas.setPointerCapture(e.pointerId); } catch { /* a pointer that already ended */ }
     this.canvas.style.cursor = "grabbing";
@@ -247,16 +317,16 @@ export class Viewer {
   };
 
   private move = (e: PointerEvent) => {
-    if (!this.layer) return;
+    if (!this.layers.length) return;
     if (!this.dragging) {
       const spot = e.pointerType === "mouse" ? this.pick(e) : null;
-      this.canvas.style.cursor = spot && onPicture(this.hat, this.layer.at, this.layer.picture.aspect, spot) ? "grab" : "";
+      this.canvas.style.cursor = spot && this.under(spot) ? "grab" : "";
       return;
     }
     if (e.pointerId !== this.dragging.pointer) return;
     const spot = this.pick(e);
     if (!spot) return;
-    this.layer.at = clampPlacement({ ...this.layer.at, u: spot.u + this.dragging.du, v: spot.v + this.dragging.dv });
+    this.dragging.layer.at = clampPlacement(this.surface.drag(this.dragging.at, this.dragging.from, spot));
     this.repaint(true);
   };
 
@@ -269,40 +339,66 @@ export class Viewer {
     this.onChange();
   };
 
+  private key = (e: KeyboardEvent) => {
+    const step = ({ ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] } as Record<string, [number, number]>)[e.key];
+    if (step && (e.shiftKey || !this.layer)) {
+      const s = new THREE.Spherical().setFromVector3(this.camera.position.clone().sub(this.controls.target));
+      s.theta -= step[0] * 0.26;
+      s.phi = THREE.MathUtils.clamp(s.phi + step[1] * 0.12, this.controls.minPolarAngle, this.controls.maxPolarAngle);
+      this.camera.position.copy(this.controls.target).add(new THREE.Vector3().setFromSpherical(s));
+      this.dirty = true;
+      e.preventDefault();
+      return;
+    }
+    const l = this.layer;
+    if (!l) return;
+    if (step) l.at = clampPlacement(this.surface.nudge(l.at, step[0], step[1], this.camera));
+    else if (e.key === "+" || e.key === "=") l.at = clampPlacement({ ...l.at, scale: l.at.scale * 1.1 });
+    else if (e.key === "-" || e.key === "_") l.at = clampPlacement({ ...l.at, scale: l.at.scale / 1.1 });
+    else if (e.key === "[" || e.key === "]") l.at = clampPlacement({ ...l.at, rotation: l.at.rotation + (e.key === "]" ? 0.1 : -0.1) });
+    else return;
+    e.preventDefault();
+    this.repaint(false);
+    this.onChange();
+  };
+
   /** The wheel over the picture resizes it (with Shift, turns it); anywhere else it zooms. */
   private wheel = (e: WheelEvent) => {
-    if (!this.layer) return;
+    if (!this.layers.length) return;
     const spot = this.pick(e);
-    if (!spot || !onPicture(this.hat, this.layer.at, this.layer.picture.aspect, spot)) return;
+    const l = spot ? this.under(spot) : null;
+    if (!l) return;
     e.preventDefault();
     e.stopImmediatePropagation();
-    if (e.shiftKey) this.place({ rotation: this.layer.at.rotation + Math.sign(e.deltaY || e.deltaX) * 0.08 });
-    else this.place({ scale: this.layer.at.scale * Math.exp(-e.deltaY * 0.0015) });
+    this.zone = l.at.zone ?? "front";
+    if (e.shiftKey) this.place({ rotation: l.at.rotation + Math.sign(e.deltaY || e.deltaX) * 0.08 });
+    else this.place({ scale: l.at.scale * Math.exp(-e.deltaY * 0.0015) });
   };
 
   /** Everything needed to draw this again. File keys are filled in once the files are saved. */
   design(): Design {
     const s = new THREE.Spherical().setFromVector3(this.camera.position.clone().sub(this.controls.target));
-    const l = this.layer;
     return {
       v: 1, model: this.model, color: this.color,
-      layers: l ? [{ texture: l.texture ?? "", original: l.original, ...l.at }] : [],
+      layers: this.layers.map((l) => ({ texture: l.texture ?? "", original: l.original, ...l.at })),
       camera: { azimuth: s.theta, polar: s.phi, distance: s.radius },
     };
   }
 
-  /** Put the camera, model and colour back as a design had them (its picture comes back through addImage). */
+  /** Put the camera, model and colour back as a design had them (its pictures come back through addImage, zone by zone). A custom model is the element's to load first. */
   apply(d: Design) {
-    if (d.model !== this.model) this.setModel(d.model);
+    if (d.model !== this.model && d.model !== "custom") this.setModel(d.model);
     this.setColor(d.color);
     const s = new THREE.Spherical(d.camera.distance, d.camera.polar, d.camera.azimuth);
     this.camera.position.copy(this.controls.target).add(new THREE.Vector3().setFromSpherical(s));
-    const at = d.layers[0];
-    if (at && this.layer) this.layer.at = clampPlacement(at);
+    for (const at of d.layers) {
+      const l = this.layers.find((x) => (x.at.zone ?? "front") === (at.zone ?? "front"));
+      if (l) l.at = clampPlacement({ ...at, zone: at.zone ?? "front" });
+    }
     this.repaint();
   }
 
-  /** A PNG of the hat as it looks now, at `scale` times the widget's pixels, on a transparent background. */
+  /** A PNG of the product as it looks now, at `scale` times the widget's pixels, on a transparent background. */
   async snapshot(scale = 2): Promise<Blob> {
     const size = this.renderer.getSize(new THREE.Vector2()), ratio = this.renderer.getPixelRatio();
     this.renderer.setPixelRatio(scale);

@@ -8,6 +8,7 @@ import { unb64url } from "@rustybuns/util/bytes";
 import { handle } from "../src/handle.ts";
 import { party, type PartyMember } from "@rustybuns/util/eqosys";
 import { Party, type PartyOut } from "../src/qollab/party.ts";
+import { Hub, hubAsk } from "../src/qollab/hub.ts";
 import { asks, boot, codeIn, ORIGIN, PARK, PASSWORD, QCRM } from "./kit.ts";
 
 setDefaultTimeout(30_000);
@@ -41,7 +42,7 @@ function join(code: string, token: string, origin: string) {
   ws.onmessage = (e) => { const m: PartyOut = JSON.parse(String(e.data)); if (m.t === "members") got.push(m); };
   return { ws, names: () => got.at(-1)?.members.map((m) => m.name).sort() };
 }
-const until = async (f: () => unknown) => { const end = Date.now() + 10_000; while (!f()) { if (Date.now() > end) throw new Error("timed out"); await Bun.sleep(10); } };
+const until = async (f: () => unknown) => { const end = Date.now() + 10_000; while (!(await f())) { if (Date.now() > end) throw new Error("timed out"); await Bun.sleep(10); } };
 const knock = (code: string, token: string, origin: string) => fetch(`http://127.0.0.1:${shell.port}/q/party/${code}?token=${token}`, {
   headers: { upgrade: "websocket", connection: "upgrade", "sec-websocket-key": "dGhlIHNhbXBsZSBub25jZQ==", "sec-websocket-version": "13", origin },
 });
@@ -179,6 +180,34 @@ test("a party has a voice room: a ticket into it, the host's mute and kick reach
 });
 
 // Last: it uses up this address's mints.
+test("two people who met in a party each press Add friend on the other and are friends; someone outside it can't be asked", async () => {
+  conf.HUB = durableObject(Hub as never, conf) as never;
+  const base = `http://127.0.0.1:${shell.port}`;
+  const adaToken = await signUp("Ada6", "park-hide-seek", PARK), boToken = await signUp("Bo6", "park-hide-seek", PARK), cyToken = await signUp("Cy6", "park-hide-seek", PARK);
+  const ada = party({ url: () => base, token: () => adaToken }), bo = party({ url: () => base, token: () => boToken });
+  const seen: Record<string, PartyMember[]> = {}, refused: string[] = [];
+  ada.onMembers((m) => (seen.ada = m)); bo.onMembers((m) => (seen.bo = m)); ada.onRefused((w) => refused.push(w));
+  const code = (await ada.make(true))!;
+  ada.join(code); bo.join(code);
+  await until(() => seen.ada?.length === 2 && seen.bo?.length === 2);
+  const who = (token: string, name: string) => ({ id: peek(token)!.sub, name, app: "park-hide-seek" });
+  const friendsOf = async (token: string, name: string) => { const s = await hubAsk(conf.HUB!, who(token, name), { op: "state" }); return "error" in s ? s.error : s.friends.map((f) => f.name); };
+
+  ada.befriend(peek(cyToken)!.sub);
+  await until(() => refused.length === 1);
+  expect(refused[0]).toBe("They aren't in this party.");
+
+  ada.befriend(peek(boToken)!.sub);
+  await until(async () => (await hubAsk(conf.HUB!, who(boToken, "Bo6"), { op: "state" }).then((s) => "incoming" in s && s.incoming.length)));
+  expect(await friendsOf(adaToken, "Ada6")).toEqual([]);
+  bo.befriend(peek(adaToken)!.sub);
+  await until(async () => (await friendsOf(adaToken, "Ada6")).length === 1);
+  expect(await friendsOf(adaToken, "Ada6")).toEqual(["Bo6"]);
+  expect(await friendsOf(boToken, "Bo6")).toEqual(["Ada6"]);
+  ada.leave(); bo.leave();
+  delete conf.HUB;
+});
+
 test("a made code joins; a wrong code is a 404; the thirteenth mint in a minute is refused", async () => {
   const ada = await signUp("Ada2", "park-hide-seek", PARK);
   expect((await knock("BCDFGH", ada, PARK)).status).toBe(404);

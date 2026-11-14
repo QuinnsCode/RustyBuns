@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The Game Engine</title>
+<meta name="description" content="Talk 4: how a shared game stays fair and smooth over the internet, and the buffer engine that hides the wait, in plain words.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@700;900&family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&family=JetBrains+Mono:wght@600;700&display=swap">
+<link rel="stylesheet" href="deck.css">
+</head>
+<body>
+
+<section class="slide">
+  <div class="kicker">Talk 4 · Rusty Buns talks</div>
+  <h1>The Game Engine</h1>
+  <p class="lede">Physics and netcode: how a shared game stays fair, and how it stays smooth.</p>
+  <p class="aside">Fair is easy. Smooth is easy. Both at once, over the internet, is the whole job.</p>
+  <div class="notes">Two halves: the referee (fair), then the in-betweens (smooth). The buffer engine is the one deep part, at the end.</div>
+</section>
+
+<section class="slide">
+  <div class="kicker">The picture first</div>
+  <h2>A football match on the radio</h2>
+  <p class="lede">You hear the match a little late. The referee on the pitch already made the call.</p>
+  <ul>
+    <li>The referee sees the real match. Their call is final.</li>
+    <li>You hear it half a second later. You still enjoy it.</li>
+    <li>A good commentator fills the gap, so it never sounds like it stops.</li>
+  </ul>
+  <p class="aside">In our games, the server is the referee and your screen is the commentator. The commentator is not allowed to invent goals.</p>
+</section>
+
+<section class="slide">
+  <div class="kicker">Physics</div>
+  <h2>Rules that step, not rules that flow</h2>
+  <ul>
+    <li>The game moves in ticks: many small steps every second.</li>
+    <li>Each tick, everything moves a little, falls a little and bumps a little.</li>
+    <li>The same start and the same inputs give the same game, every time.</li>
+    <li>So a test can play a whole game with no screen at all, and check it.</li>
+  </ul>
+  <p class="aside">A flip book never surprises you. That is a compliment.</p>
+</section>
+
+<section class="slide">
+  <div class="kicker">Fair</div>
+  <h2>The server holds the true game</h2>
+  <div class="cards">
+    <div class="card"><h3>Your screen sends</h3><p>Only what you pressed. Not where you are.</p></div>
+    <div class="card"><h3>The server decides</h3><p>It runs the rules and makes the true frame.</p></div>
+    <div class="card"><h3>Everyone gets</h3><p>The true frame. Some games send each player only what they can see.</p></div>
+  </div>
+  <p class="aside">You cannot tell the referee you scored. You can only kick the ball and hope.</p>
+  <div class="notes">One game room is one Durable Object (talk 0). Say "the referee's notebook" again.</div>
+</section>
+
+<section class="slide">
+  <div class="kicker">The problem</div>
+  <h2>True frames arrive late, and not on time</h2>
+  <p class="lede">The internet is a post office. Most letters come fast. Some come late. A few come together.</p>
+  <ul>
+    <li>Draw each true frame the moment it lands, and the game stutters.</li>
+    <li>Wait for every frame, and the game feels slow.</li>
+  </ul>
+  <p class="aside">Lag is the referee's whistle arriving late. Stutter is three whistles arriving at once.</p>
+</section>
+
+<section class="slide">
+  <div class="kicker">Smooth</div>
+  <h2>Draw the moments in between</h2>
+  <p class="lede">Your screen keeps the last few true frames, and draws smooth moments between them.</p>
+  <ul>
+    <li>It stays a tiny bit behind the newest frame, on purpose.</li>
+    <li>So there is always a next frame to slide toward.</li>
+    <li>When a frame is late, the slide simply takes a little longer.</li>
+  </ul>
+  <p class="aside">The commentator stays one breath behind the match, so they never run out of words.</p>
+</section>
+
+<section class="slide">
+  <div class="kicker">The cute specific</div>
+  <h2>The buffer engine: smoothing twice</h2>
+  <p class="lede">A new engine in Rust, running as WebAssembly. It smooths in two places, not one.</p>
+  <div class="diagram" role="img" aria-label="Three stops left to right: the server makes true frames; the edge near the player fills the gaps ahead of the next true frame; the screen draws smooth moments between frames.">
+    <svg viewBox="0 0 900 230">
+      <defs><marker id="ah" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="d-head" d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <rect class="d-box" x="20" y="40" width="250" height="110" rx="14"/>
+      <text class="d-text" x="145" y="84" text-anchor="middle">The server</text>
+      <text class="d-small" x="145" y="110" text-anchor="middle">makes the true frames</text>
+      <rect class="d-hot" x="325" y="40" width="250" height="110" rx="14"/>
+      <text class="d-text" x="450" y="84" text-anchor="middle">The edge, near you</text>
+      <text class="d-small" x="450" y="110" text-anchor="middle">fills the gap ahead</text>
+      <text class="d-small" x="450" y="132" text-anchor="middle">of the next true frame</text>
+      <rect class="d-hot" x="630" y="40" width="250" height="110" rx="14"/>
+      <text class="d-text" x="755" y="84" text-anchor="middle">Your screen</text>
+      <text class="d-small" x="755" y="110" text-anchor="middle">draws the in-betweens</text>
+      <path class="d-arrow" marker-end="url(#ah)" d="M272,95 L319,95"/>
+      <path class="d-arrow" marker-end="url(#ah)" d="M577,95 L624,95"/>
+      <text class="d-small" x="450" y="200" text-anchor="middle">The true frame always wins. The guesses only fill the wait.</text>
+    </svg>
+  </div>
+  <p class="aside">Two commentators: one at the stadium gate, one in your living room. The referee still has the last word.</p>
+  <div class="notes">This is the one deep part of the talk. Say what it does: a buffer at the edge, close to the player, runs a little ahead of the server's true frames; the screen smooths between what the edge sends. Do not explain how far ahead, how it guesses or how it corrects.</div>
+</section>
+
+<section class="slide">
+  <div class="kicker">Why two places</div>
+  <h2>The long trip and the short trip</h2>
+  <ul>
+    <li>The trip from the server to the edge can be long. The edge covers that wait.</li>
+    <li>The trip from the edge to you is short. Your screen covers that one.</li>
+    <li>When a guess is wrong, the next true frame fixes it gently, not with a jump.</li>
+  </ul>
+  <p class="aside">Like a relay race. Each runner only has to be good at their own stretch.</p>
+</section>
+
+<section class="slide">
+  <div class="kicker">What the games prove</div>
+  <h2>The engine in real games</h2>
+  <div class="cards">
+    <div class="card"><h3>One room, one notebook</h3><p>Each game room lives in its own small cloud memory.</p></div>
+    <div class="card"><h3>Only what you can see</h3><p>In hide and seek, the server never tells you where the hiders are.</p></div>
+    <div class="card"><h3>A world in pieces</h3><p>A big map splits into regions. Each busy region gets its own referee.</p></div>
+    <div class="card"><h3>Headless games</h3><p>Robots play thousands of games with no screen, to test and to balance.</p></div>
+  </div>
+  <p class="aside">A cheater cannot read what the server never sent. That is the cheapest anti-cheat there is.</p>
+</section>
+
+<section class="slide">
+  <div class="kicker">Honest status</div>
+  <h2>What runs, and what is still rising</h2>
+  <div class="cards">
+    <div class="card"><span class="tag live">Live</span><h3 style="margin-top:12px">Server-held games</h3><p>Rooms in the cloud, true frames, only what you can see.</p></div>
+    <div class="card"><span class="tag live">Live</span><h3 style="margin-top:12px">Smooth on the screen</h3><p>In-between frames in the shared games.</p></div>
+    <div class="card"><span class="tag plan">Next</span><h3 style="margin-top:12px">The buffer engine</h3><p>Rust, as WebAssembly, smoothing at the edge and on the screen. Being written.</p></div>
+  </div>
+  <div class="notes">Keep this slide current. Source of truth: the game apps' READMEs for what is live; the buffer engine has no doc in the repo yet, so check with the owner before you give this talk.</div>
+</section>
+
+<section class="slide">
+  <div class="kicker">The end</div>
+  <h1>Fair first.<br>Then smooth.</h1>
+  <p class="lede">The referee decides. The commentators fill the silence. Nobody invents a goal.</p>
+  <p style="margin-top:28px"><a href="index.html">All talks</a> · <a href="03-example-range.html">Talk 3</a> · <a href="05-double-dragon.html">Talk 5: Double Dragon</a></p>
+</section>
+
+<script src="deck.js"></script>
+</body>
+</html>

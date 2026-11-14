@@ -1,7 +1,7 @@
 // One window for the open MANUAL RUN issues: each card starts its app in the jump state the issue needs,
 // and Yes (comment and close) or No (comment, stays open) answers it with the owner's own gh.
 //
-//   bun run manual                 open http://localhost:4790 and go down the queue (y / n on the keyboard)
+//   bun run manual                 open http://localhost:4790 (a free port if that one is taken) and go down the queue (y / n on the keyboard)
 //   bun run manual --dry           print the gh writes instead of running them
 //   --port N, --issues file.json (instead of asking gh), --no-apps (start nothing)
 import { mkdirSync, openSync } from "node:fs";
@@ -14,7 +14,7 @@ import { APPS, Issues, answer, queue, type AppId } from "./manual-runs-lib.ts";
 const args = process.argv.slice(2);
 const value = (k: string) => { const i = args.indexOf(k); return i >= 0 ? args[i + 1] : undefined; };
 const dry = args.includes("--dry"), noApps = args.includes("--no-apps");
-const port = Number(value("--port") ?? 4790);
+const askedPort = value("--port");
 const root = join(import.meta.dir, "..");
 const logs = join(tmpdir(), "rustybuns-manual-runs");
 mkdirSync(logs, { recursive: true });
@@ -59,7 +59,7 @@ const Start = obj({ app: oneOf(Object.keys(APPS) as AppId[]) });
 const answered = new Map<number, boolean>();
 const json = (v: unknown, status = 200) => Response.json(v, { status });
 
-const server = Bun.serve({
+const listen = (port: number) => Bun.serve({
   port,
   async fetch(req) {
     const { pathname } = new URL(req.url);
@@ -89,6 +89,15 @@ const server = Bun.serve({
     return json({ error: "not found" }, 404);
   },
 });
+/** 4790 unless something else (a worker's preview server) already sits there: then any free port, said out loud. */
+const server = (() => {
+  try { return listen(Number(askedPort ?? 4790)); }
+  catch (e) {
+    if (askedPort || !(e instanceof Error) || !("code" in e) || e.code !== "EADDRINUSE") throw e;
+    console.log("Port 4790 is taken (`lsof -nP -iTCP:4790 -sTCP:LISTEN` says by what); using a free one.");
+    return listen(0);
+  }
+})();
 
 console.log(`Manual runs: http://localhost:${server.port}${dry ? " (dry: gh writes are printed, not run)" : ""}\nApp logs in ${logs}. Ctrl+C stops it and every app it started.`);
 if (!args.includes("--no-open") && !value("--issues")) Bun.spawn(["open", `http://localhost:${server.port}`]);

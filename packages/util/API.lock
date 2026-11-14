@@ -1,0 +1,122 @@
+# @rustybuns/util stable API. Written by `bun scripts/util-api.ts --update`; CI fails when the code differs.
+
+## bytes
+const hex = (b: ArrayBuffer | Uint8Array): string =>
+const b64 = (b: Uint8Array): string =>
+const b64url = (b: Uint8Array): string =>
+const digest = async (text: string): Promise<Uint8Array> =>
+const sha256 = async (text: string): Promise<string> =>
+const hmacHex = async (secret: string, body: string): Promise<string> =>
+async function hmacSigned(secret: string, body: string, sig: string): Promise<boolean>
+const unb64url = (s: string): Uint8Array<ArrayBuffer> =>
+
+## guard
+class Bad extends Error
+  constructor(readonly why: string, readonly path: (string | number)[] = [])
+type Guard<T> = (v: unknown) => T
+type Of<G> = G extends Guard<infer T> ? T : never
+const isRecord = (v: unknown): v is Record<string, unknown> =>
+const raw: Guard<unknown>
+const str = (max = 1000, o: { min?: number; re?: RegExp; dflt?: string } = {}): Guard<string> =>
+const num = (lo: number, hi: number, dflt?: number): Guard<number> =>
+const int = (lo: number, hi: number, dflt?: number): Guard<number> =>
+const bool = (dflt?: boolean): Guard<boolean> =>
+const oneOf = <const T extends readonly (string | number)[]>(list: T, dflt?: T[number]): Guard<T[number]> =>
+const arr = <T>(of: Guard<T>, max: number, o: { drop?: boolean; min?: number } = {}): Guard<T[]> =>
+const opt = <T>(g: Guard<T>): Guard<T | undefined> =>
+const or = <T>(g: Guard<T>, d: T): Guard<T> =>
+const said = <T>(g: Guard<T>, why: string): Guard<T> =>
+const maybe = <T>(g: Guard<T>): Guard<T | undefined> =>
+const obj = <S extends Shape>(shape: S): Guard<Flat<Built<S>>> =>
+const rec = <T>(of: Guard<T>, max = Infinity): Guard<Record<string, T>> =>
+const nul = <T>(g: Guard<T>): Guard<T | null> =>
+const check = <T>(g: Guard<T>, v: unknown): T | null =>
+
+## http
+const json = (body: unknown, status = 200, headers: Record<string, string> = {}): Response =>
+const privateJson = (body: unknown, status = 200, headers: Record<string, string> = {}): Response =>
+const parseJson = (text: string | null | undefined): unknown =>
+type Body<K extends string> = { [k in K]?: unknown }
+const readBody = async <K extends string>(req: Request): Promise<Body<K>> =>
+async function readJson<T>(from: Request | Response, guard: Guard<T>): Promise<T | null>
+async function getJson<T>(url: string, guard: Guard<T>, init?: RequestInit): Promise<T | null>
+
+## index
+const clamp = (v: number, lo: number, hi: number) =>
+const clamp01 = (v: number) =>
+const lerp = (a: number, b: number, k: number) =>
+const len = (x: number, y: number) =>
+const len3 = (x: number, y: number, z: number) =>
+const esc = (s: string) =>
+function nextRandom<K extends string>(o: Record<K, number>, key: K): number
+function mulberry32(seed: number)
+function stickAxes(dx: number, dy: number, radius: number, dead = 0.18): { x: number; y: number }
+export * from "./sweep.ts"
+export * from "./reel.ts"
+export * from "./motion.ts"
+
+## limits
+class TokenBucket
+  constructor(public rate: number, public burst: number, now: number)
+  take(now: number, cost = 1): boolean
+class RoomMintGate
+  constructor(private max = 12, private windowMs = 60_000, private maxKeys = 10_000)
+  allow(key: string, room: string, now: number): boolean
+function originAllowed(origin: string | null, url: URL): boolean
+
+## motion
+const smoothstep = (u: number) =>
+const easeOut = (u: number) =>
+const span = (t: number, from: number, to: number, ease = smoothstep) =>
+function inOut(t: number, o: { inAt?: number; inFor?: number; outAt?: number; outFor?: number }): number
+const follow = (v: number, want: number, rate: number, dt: number) =>
+
+## reel
+interface Cam { from: Vec3; at: Vec3; fov?: number; roll?: number }
+type Shot = (u: number) => Cam
+type Into = "cut" | { blend: number } | { whip: number } | { dip: number } | { flash: number }
+interface Take { seconds: number; shot: Shot; /** How it joins the take before (the first take's is ignored). Default: a cut. */ into?: Into; /** 0..1: time ru…
+interface ReelFrame extends SweepShot { fov: number | null; roll: number; /** 0..1 black over the view, and white. */ dip: number; flash: number; /** 0..1: a w…
+interface Reel { seconds: number; at(t: number): ReelFrame }
+function truck(subject: Vec3, vista: Vec3, o: { back?: number; height?: number; travel?: number; side?: number; keep?: number; lens?: number } = {}): Shot
+function orbit(focus: Vec3, o: { radius?: number; height?: number; turns?: number; start?: number; rise?: number; look?: number; lens?: number } = {}): Shot
+function crane(subject: Vec3, vista: Vec3, o: { back?: [from: number, to: number]; height?: [from: number, to: number]; shoulder?: number; lens?: [from: number…
+function dollyZoom(focus: Vec3, o: { toward?: number; near?: number; far?: number; height?: number; lens?: number; look?: number } = {}): Shot
+const still = (cam: Cam): Shot =>
+function reel(takes: readonly Take[], o: { handIn?: number; handBack?: number } = {}): Reel
+function vista(groundAt: (x: number, z: number) => number, at: Vec3, o: { bearings?: number; rings?: readonly number[] } = {}): Vec3 & { bearing: number }
+
+## room
+interface RoomSocket { send(data: string | ArrayBuffer | Uint8Array): void; close(code?: number, reason?: string): void; /** Per-connection state that must out…
+interface RoomCtx { acceptWebSocket(ws: RoomSocket, tags?: string[]): void; getWebSockets(tag?: string): RoomSocket[]; }
+function refuseSocket(message: string, code: number, reason: string): Response
+interface RoomLimits { maxBytes: number; /** Messages a second, and the burst a quiet socket may save. */ rate: number; burst: number; /** Tokens a frame of th…
+interface Frame { value: unknown; bytes: number }
+class Sockets<A, Out = unknown>
+  constructor(private ctx: RoomCtx, private limits?: RoomLimits)
+  upgrade(attach: A, tags?: string[]): { server: RoomSocket; response: Response }
+  attach(ws: RoomSocket, a: A)
+  who(ws: RoomSocket): A | null
+  open(): RoomSocket[]
+  others(ws: RoomSocket, same: (a: A) => boolean): RoomSocket[]
+  replace(ws: RoomSocket, same: (a: A) => boolean, code: number, reason = "replaced")
+  frame(ws: RoomSocket, raw: string | ArrayBuffer, now = Date.now()): Frame | null
+  send(ws: RoomSocket, m: Out)
+  broadcast(m: Out, except?: RoomSocket, to?: (a: A) => boolean)
+
+## socket
+const SEAT_CLOSE
+function seatClosed(code: number): string | null
+interface LinkOpts<In, Out> { /** A text frame's JSON, checked. null drops the frame. */ decode(v: unknown): In | null; /** A binary frame (the socket is opene…
+interface Link<Out> { /** True once sent, false when dropped (not open and the queue is full or absent). */ send(m: Out): boolean; readonly open: boolean; /** …
+function connectSocket<In, Out>(url: string | URL | (() => string | URL), opts: LinkOpts<In, Out>): Link<Out>
+
+## sweep
+interface Vec3 { x: number; y: number; z: number }
+interface SweepShot { from: Vec3; at: Vec3; mix: number }
+interface SweepOpts { /** Metres from the subject at the end of the sweep (it starts half as far again out). */ radius?: number; /** Metres above the subject a…
+function sweepShot(t: number, focus: Vec3, o: SweepOpts = {}): SweepShot
+function spiralShot(t: number, focus: Vec3, o: { from?: [radius: number, height: number]; to?: [radius: number, height: number]; turns?: number; seconds?: numb…
+function loopShot(t: number, focus: Vec3, o: { radius?: number; height?: number; period?: number } = {}): SweepShot
+const CHEESE
+function cheese(kind: keyof typeof CHEESE, n: number): string

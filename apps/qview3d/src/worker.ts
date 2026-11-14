@@ -6,18 +6,35 @@
 //   POST /api/orgs/<org>/uploads              sign one upload (SignRequest -> SignReply); the page's origin must be the org's
 //   PUT  /u/<token>                           the bytes for a Worker-signed upload, checked against the token
 //   POST /api/orgs/<org>/designs              save a design (Design -> DesignReply); its files must be the org's and exist
-//   GET  /r/<key>                             a texture, snapshot or design, edge-cached for a year (the names never change)
+//   GET  /r/<key>                             a texture, snapshot, design or sample model, edge-cached for a year (names never change)
+//   POST /api/orgs/<org>/models               an admin starts a sample model from product photos, or files a scan (samples.ts)
+//   GET  /api/orgs/<org>/models/<id>          an admin asks how it's going
+//   GET  /api/orgs/<org>/designs/<id>/print   an admin gets a design's print files laid out, per zone (print.ts)
+//   GET  /api/orgs/<org>/originals/<file>     an admin fetches a shopper's original, the print source
+//   GET  /v1/embed.md, /llms.txt              how to put the widget on a page, for a coding agent (embed.ts)
+//
+// A fresh deploy with an empty bucket still serves the demo org and its three hats (demo.ts), read-only.
 import { hex } from "@rustybuns/util/bytes";
 import { json, privateJson, readJson } from "@rustybuns/util/http";
-import { Design, Org, Product, SignRequest, type DesignReply, type SignReply } from "./api.ts";
+import { Design, Org, Product, SignRequest, zonesOf, type DesignReply, type SignReply } from "./api.ts";
+import { BUILT_IN_DEMO, DEMO_ORG, DEMO_PRODUCTS } from "./demo.ts";
+import { embedGuide } from "./embed.ts";
 import { designKey, fileKey, ID, KINDS, orgKey, productKey, servable } from "./layout.ts";
+import { originalRoute, printPlanRoute } from "./print.ts";
+import { isAdmin, sampleRoute, startSampleRoute } from "./samples.ts";
 import { presignUrl, readToken, uploadToken } from "./sign.ts";
 
 /** The part of an R2 bucket this Worker uses: the real binding, or shell-bun's twin over a directory. */
 export interface Bucket {
-  get(key: string): Promise<{ body: ReadableStream; httpEtag: string; size: number; text(): Promise<string>; writeHttpMetadata(h: Headers): void } | null>;
+  get(key: string): Promise<{ body: ReadableStream; httpEtag: string; size: number; httpMetadata?: { contentType?: string }; text(): Promise<string>; writeHttpMetadata(h: Headers): void } | null>;
   head(key: string): Promise<{ size: number } | null>;
   put(key: string, value: ArrayBuffer | string, opts?: { httpMetadata?: Record<string, string> }): Promise<unknown>;
+  list(opts: { prefix: string; cursor?: string }): Promise<{ objects: { key: string }[]; truncated: boolean; cursor?: string }>;
+}
+
+/** A Cloudflare rate limit binding: a count per key over its period, at each location. */
+export interface RateLimit {
+  limit(o: { key: string }): Promise<{ success: boolean }>;
 }
 
 export interface Env {
@@ -28,6 +45,14 @@ export interface Env {
   R2_SECRET_ACCESS_KEY?: string;
   /** The bucket's name for presigned URLs; the binding's own name otherwise. */
   R2_BUCKET_NAME?: string;
+  /** Meshy, for samples. Without a key, samples answer 503. MESHY_API_BASE points elsewhere (the stand-in). */
+  MESHY_API_KEY?: string;
+  MESHY_API_BASE?: string;
+  /** Samples a day across every org, the ceiling on the Meshy bill. Default 50. */
+  MESHY_DAILY?: string;
+  /** Signs a minute per IP and org, and sample starts a minute per org. Absent on the local twin: no limit there. */
+  SIGN_LIMIT?: RateLimit;
+  SAMPLE_LIMIT?: RateLimit;
 }
 
 const UPLOAD_TTL_S = 600;
@@ -36,20 +61,27 @@ const IMMUTABLE = "public, max-age=31536000, immutable";
 const cors = (origin: string | null): Record<string, string> => ({
   "access-control-allow-origin": origin ?? "*",
   "access-control-allow-methods": "GET, POST, PUT, OPTIONS",
-  "access-control-allow-headers": "content-type",
+  "access-control-allow-headers": "content-type, authorization",
   "access-control-max-age": "86400",
   vary: "origin",
 });
 const fail = (why: string, status: number, origin: string | null) => privateJson({ error: why }, status, cors(origin));
 
+/** Whether `key` is over `limit` this minute. Without the binding (the local twin) nothing is. */
+const over = async (limit: RateLimit | undefined, key: string) => limit ? !(await limit.limit({ key })).success : false;
+const slowDown = (what: string, origin: string | null) =>
+  privateJson({ error: `too many ${what}: try again in a minute`, retryAfter: 60 }, 429, { ...cors(origin), "retry-after": "60" });
+
 async function sha256(bytes: ArrayBuffer) {
   return hex(await crypto.subtle.digest("SHA-256", bytes));
 }
 
-async function readOrg(env: Env, org: string): Promise<Org | null> {
+/** The org's settings, and whether they are the built-in demo's (no orgs/demo/ in the bucket yet). */
+async function readOrg(env: Env, org: string): Promise<{ settings: Org; builtIn: boolean } | null> {
   const o = await env.BUCKET.get(orgKey(org));
-  if (!o) return null;
-  return readJson(new Response(await o.text()), Org);
+  if (!o) return org === DEMO_ORG ? { settings: BUILT_IN_DEMO, builtIn: true } : null;
+  const settings = await readJson(new Response(await o.text()), Org);
+  return settings && { settings, builtIn: false };
 }
 
 /** Whether a page at `origin` may act for the org: listed exactly, or the org allows any ("*"). */
@@ -62,33 +94,60 @@ export async function handle(req: Request, env: Env): Promise<Response> {
 
   if (url.pathname.startsWith("/r/") && req.method === "GET") return serve(req, env, decodeURIComponent(url.pathname.slice(3)));
   if (url.pathname.startsWith("/u/") && req.method === "PUT") return upload(req, env, url.pathname.slice(3), origin);
+  if ((url.pathname === "/v1/embed.md" || url.pathname === "/llms.txt") && req.method === "GET") {
+    return new Response(embedGuide(url.origin), { headers: { "content-type": "text/markdown; charset=utf-8", "cache-control": "public, max-age=300", ...cors(null) } });
+  }
 
-  const m = url.pathname.match(/^\/api\/orgs\/([^/]+)\/(products|uploads|designs)(?:\/([^/]+))?$/);
+  const m = url.pathname.match(/^\/api\/orgs\/([^/]+)\/(products|uploads|designs|models|originals)(?:\/([^/]+))?(\/print)?$/);
   if (!m) return fail("not found", 404, origin);
-  const [, org, what, id] = m;
+  const [, org, what, id, print] = m;
   if (!org || !ID.test(org)) return fail("unknown org", 404, origin);
-  const settings = await readOrg(env, org);
-  if (!settings) return fail("unknown org", 404, origin);
+  const found = await readOrg(env, org);
+  if (!found) return fail("unknown org", 404, origin);
+  const { settings, builtIn } = found;
 
-  if (what === "products" && req.method === "GET" && id && ID.test(id)) {
+  if (what === "products" && req.method === "GET" && id && ID.test(id) && !print) {
     const o = await env.BUCKET.get(productKey(org, id));
-    const p = o && (await readJson(new Response(await o.text()), Product));
+    const p = o ? await readJson(new Response(await o.text()), Product) : builtIn ? (DEMO_PRODUCTS[id] ?? null) : null;
     return p ? json(p, 200, { ...cors(origin), "cache-control": "public, max-age=60" }) : fail("unknown product", 404, origin);
   }
+  // An admin key works from anywhere (the admin page is on our own host); everyone else needs a listed page.
+  const admin = await isAdmin(req, settings);
+  if (what === "originals" || print) {
+    if (!admin) return fail("an admin key is needed for print files", 401, origin);
+    if (req.method !== "GET" || !id) return fail("not found", 404, origin);
+    if (what === "originals") return originalRoute(env, org, id, cors(origin));
+    if (what === "designs") return printPlanRoute(env, org, id, url.origin, cors(origin));
+    return fail("not found", 404, origin);
+  }
+  if (what === "models") {
+    if (!admin) return fail("an admin key is needed for samples", 401, origin);
+    if (req.method === "POST" && !id) {
+      if (await over(env.SAMPLE_LIMIT, org)) return slowDown("samples started", origin);
+      return startSampleRoute(req, env, org, settings, cors(origin));
+    }
+    if (req.method === "GET" && id) return sampleRoute(env, org, id, cors(origin));
+    return fail("not found", 404, origin);
+  }
   if (req.method !== "POST" || id) return fail("not found", 404, origin);
-  if (!allowed(settings, origin)) return fail("this page may not use this org", 403, origin);
-  if (what === "uploads") return sign(req, env, org, url, origin);
+  if (!admin && !allowed(settings, origin)) return fail("this page may not use this org", 403, origin);
+  if (builtIn) return fail("the public demo keeps no files: download a snapshot instead, or ask hello@qntbr.com for an org of your own", 403, origin);
+  if (what === "uploads") {
+    if (await over(env.SIGN_LIMIT, `${req.headers.get("cf-connecting-ip") ?? "-"}:${org}`)) return slowDown("uploads signed", origin);
+    return sign(req, env, org, url, origin, admin);
+  }
   return saveDesign(req, env, org, url, origin);
 }
 
-async function sign(req: Request, env: Env, org: string, url: URL, origin: string | null): Promise<Response> {
+async function sign(req: Request, env: Env, org: string, url: URL, origin: string | null, admin: boolean): Promise<Response> {
   const r = await readJson(req, SignRequest);
   if (!r) return fail("expected {kind, type, size, sha256}", 400, origin);
+  if ((r.kind === "photo" || r.kind === "scan") && !admin) return fail(`product ${r.kind}s need an admin key`, 401, origin);
   const k = KINDS[r.kind];
   if (!(k.types as readonly string[]).includes(r.type)) return fail(`${r.kind}: ${k.types.join(", ")} only`, 400, origin);
   if (r.size > k.max) return fail(`${r.kind}: up to ${k.max >> 20} MB`, 413, origin);
   const key = fileKey(org, r.kind, r.sha256, r.type);
-  const served = r.kind === "original" ? undefined : `${url.origin}/r/${key}`;
+  const served = r.kind === "original" || r.kind === "photo" ? undefined : `${url.origin}/r/${key}`;
   if (await env.BUCKET.head(key)) return privateJson({ key, exists: true, url: served } satisfies SignReply, 200, cors(origin));
 
   const headers = { "content-type": r.type };
@@ -122,6 +181,11 @@ async function upload(req: Request, env: Env, token: string, origin: string | nu
 async function saveDesign(req: Request, env: Env, org: string, url: URL, origin: string | null): Promise<Response> {
   const d = await readJson(req, Design);
   if (!d) return fail("expected a design (v, model, color, layers, camera)", 400, origin);
+  // One picture a zone, and only zones the product has: a cap has no back to print on.
+  const zones = d.layers.map((l) => l.zone ?? "front");
+  const bad = zones.find((z) => !zonesOf(d.model).includes(z));
+  if (bad) return fail(`a ${d.model} has no ${bad} to print on`, 400, origin);
+  if (new Set(zones).size < zones.length) return fail("one picture a zone", 400, origin);
   const own = `orgs/${org}/`;
   const files = [d.snapshot, ...d.layers.flatMap((l) => [l.texture, l.original])].filter((k): k is string => !!k);
   for (const key of files) {

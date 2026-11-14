@@ -37,6 +37,7 @@ import { joinParty, mountSpaces, openParty, partyIn } from "./friends.ts";
 import { jumpSpec, parseJump, parseOrbit, parseWar, sectorOf, type Jump } from "./jump.ts";
 import { armyOrder, armySources, armyTargets, buildSites, deployMost, deployOrder, deploySources, deployTargets, fleetOrder, matchup, most, shipSources, shipTargets, skyOver, transportsFor, type ArmyCall } from "./war/calls.ts";
 import { howMany, steps, tile, unit, unitName, vs, type Unit } from "./ui/call.ts";
+import { isRecord } from "@rustybuns/util/guard";
 
 installUi();
 applyTheme(WAR_TABLE, document.documentElement);
@@ -1380,7 +1381,7 @@ Object.assign(window, { twoFronts });
 
 // The same three as commands: WebMCP tools for an agent, and the Cmd/Ctrl+K palette for a person.
 const flat = (a: unknown): Record<string, string | number | boolean> =>
-  Object.fromEntries(Object.entries(typeof a === "object" && a ? a : {}).filter((e): e is [string, string | number | boolean] => ["string", "number", "boolean"].includes(typeof e[1])));
+  Object.fromEntries(Object.entries(isRecord(a) ? a : {}).filter((e): e is [string, string | number | boolean] => ["string", "number", "boolean"].includes(typeof e[1])));
 addCommands([
   { name: "tf_jump", title: "Jump into a battle", group: "Battle", description: "Drop straight into a ground battle: sector (forest, desert, city, beach, station), side (marines or wooka), assist (false for off), near (seconds the AI has fought), end (win or loss), mode, seed.",
     inputSchema: { type: "object", properties: { sector: { type: "string" }, side: { type: "string" }, assist: { type: "boolean" }, near: { type: "number" }, end: { type: "string" }, mode: { type: "string" }, seed: { type: "number" } } },

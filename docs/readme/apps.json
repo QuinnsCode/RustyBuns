@@ -129,12 +129,17 @@
       {
         "app": "qview3d",
         "name": "QView3D",
-        "line": "A 3D product customiser for a shop page, from one script tag. Shoppers drag a photo over a hat, choose its colour and save a snapshot. Uploads go to R2 on signed links, in one folder for each org. PolyForm Noncommercial."
+        "line": "A 3D product customiser for a shop page, from one script tag. Shoppers drag a photo over a hat or onto a top's front, back and sleeve (a tee, sweater, hoodie or tank), choose its colour and save a snapshot. A shop with another product makes a model of it from photos. Uploads go to R2 on signed links, in one folder for each org. PolyForm Noncommercial."
       },
       {
         "app": "artstewengine",
         "name": "artstewengine",
         "line": "A small RWSDK app on D1 with a Better Auth admin page. Add who has paid, and the sealed engine of qCRM gets its key only for a paid license."
+      },
+      {
+        "app": "cron-swanson",
+        "name": "Cron Swanson",
+        "line": "Every alarm, reminder and cron job of every app on one page, in five lanes from async to yearly. A small Bun server ticks each minute, so a job fires within a second of its time."
       }
     ]
   },

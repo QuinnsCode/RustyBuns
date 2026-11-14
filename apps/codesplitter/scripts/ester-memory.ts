@@ -22,8 +22,8 @@
 import { createHash } from "node:crypto";
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { isPlainObject } from "../src/util.ts";
 import type { Run } from "./shadow.ts";
+import { isRecord } from "@rustybuns/util/guard";
 
 export type Status = "pass" | "fail" | "skip";
 export type Kind = "fix" | "stale" | "flaky";
@@ -75,7 +75,7 @@ const strs = (v: unknown): v is string[] => Array.isArray(v) && v.every(isStr);
 
 /** One ledger line, each field checked; null for a torn or foreign line. */
 function asLine(v: unknown): Line | null {
-  if (!isPlainObject(v)) return null;
+  if (!isRecord(v)) return null;
   if (v.t === "test" && isStr(v.id) && isStr(v.dir) && isStr(v.file) && isStr(v.name) && typeof v.hot === "boolean") return { t: "test", id: v.id, dir: v.dir, file: v.file, name: v.name, hot: v.hot };
   if (v.t === "run" && isStr(v.at) && isStr(v.label) && isStr(v.dir) && strs(v.pass) && strs(v.fail) && strs(v.skip)) return { t: "run", at: v.at, label: v.label, dir: v.dir, pass: v.pass, fail: v.fail, skip: v.skip };
   if (v.t === "verdict" && isStr(v.at) && isStr(v.id) && (v.kind === "fix" || v.kind === "stale" || v.kind === "flaky")) {

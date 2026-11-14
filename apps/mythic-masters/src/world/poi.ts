@@ -225,6 +225,27 @@ export function fireSpot(j: Log, id: string): { x: number; z: number; n: number 
   return p && p.kind === "fire" && j.fires.includes(id) ? { x: p.x + 2, z: p.z, n: p.n } : undefined;
 }
 
+/** A small number from a string: the same every time, different from one id to the next. */
+export const hash = (s: string) => { let h = 7; for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0; return h; };
+/** Which way a place faces, from its id: the turn poi-view gives it, and a town its door (towns.ts). */
+export const yawOf = (id: string) => (hash(id) % 628) / 100;
+
+/** A cabin's walls, metres: CABIN.w along its own x, CABIN.d along its own z (the door's side is +z), CABIN.h high. */
+export const CABIN = { w: 5, d: 4, h: 2.6 };
+const BODY = 0.4; // metres: how close you come to a wall
+/** Inside a cabin's walls (or closer to them than your body allows) at (x, z)? Its door bars from inside, so walls are walls. */
+export function inWalls(x: number, z: number): boolean {
+  for (const p of POIS.get(ownerAt(x, z)) ?? []) {
+    if (p.kind !== "cabin") continue;
+    const dx = x - p.x, dz = z - p.z;
+    if (dx * dx + dz * dz > 16) continue; // the far corner is 3.2 m out, and a body's width past it
+    // Back into the cabin's own frame: poi-view turns it by yawOf about +y.
+    const a = yawOf(p.id), c = Math.cos(a), s = Math.sin(a), lx = dx * c - dz * s, lz = dx * s + dz * c;
+    if (Math.abs(lx) < CABIN.w / 2 + BODY && Math.abs(lz) < CABIN.d / 2 + BODY) return true;
+  }
+  return false;
+}
+
 /** Somewhere the night can't come: a lit fire's light, a cabin, or the ring round a region's arena. */
 export interface Shelter { id: string; x: number; z: number }
 /** The shelter you stand in, if any: a lit campfire's light, a cabin (lit or not), or the arena's ring (#3779). */

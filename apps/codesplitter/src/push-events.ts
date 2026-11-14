@@ -11,24 +11,25 @@
 import { audit } from "./audit.ts";
 import type { Env } from "./env.ts";
 import { GIT_EMAIL_DOMAIN } from "./git.ts";
-import { isPlainObject, listOf, plural } from "./util.ts";
+import { listOf, plural } from "./util.ts";
+import { isRecord } from "@rustybuns/util/guard";
 
 export const PUSHED = "cf.artifacts.repo.pushed";
 /** How far back the repo's log is read when the event's list was cut short. */
 const LOG_READ = 100;
 
 /** Whether a queue message is one of Artifacts' events (ARTIFACT_EVENTS), pushed or otherwise. */
-export const artifactsEvent = (body: unknown) => isPlainObject(body) && typeof body.type === "string" && body.type.startsWith("cf.artifacts.");
+export const artifactsEvent = (body: unknown) => isRecord(body) && typeof body.type === "string" && body.type.startsWith("cf.artifacts.");
 
 export interface Pushed { repoName: string; ref: string; after: string; total: number; truncated: boolean; emails: string[] }
 
 /** A queue message as a push event, or null when it's something else (another event, another queue's message). */
 export function pushedEvent(body: unknown): Pushed | null {
-  if (!isPlainObject(body) || body.type !== PUSHED || !isPlainObject(body.source) || !isPlainObject(body.payload)) return null;
+  if (!isRecord(body) || body.type !== PUSHED || !isRecord(body.source) || !isRecord(body.payload)) return null;
   const { repoName } = body.source, { ref, after, totalCommitsCount, commitsTruncated } = body.payload;
   if (typeof repoName !== "string" || typeof ref !== "string" || typeof after !== "string") return null;
   const commits = listOf(body.payload, "commits");
-  const emails = commits.map((c) => isPlainObject(c.author) && typeof c.author.email === "string" ? c.author.email : "");
+  const emails = commits.map((c) => isRecord(c.author) && typeof c.author.email === "string" ? c.author.email : "");
   return { repoName, ref, after, total: typeof totalCommitsCount === "number" ? totalCommitsCount : commits.length, truncated: commitsTruncated === true, emails };
 }
 

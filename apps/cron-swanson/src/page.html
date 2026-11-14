@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Cron Swanson</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 24 24%27%3E%3Crect width=%2724%27 height=%2724%27 rx=%276%27 fill=%27%23f0883e%27/%3E%3Ccircle cx=%2712%27 cy=%2713%27 r=%276%27 fill=%27none%27 stroke=%27white%27 stroke-width=%272%27/%3E%3Cpath d=%27M12 10v3l2 1%27 stroke=%27white%27 stroke-width=%272%27 fill=%27none%27 stroke-linecap=%27round%27/%3E%3C/svg%3E" />
+  <link rel="stylesheet" href="./page.css" />
+</head>
+<body>
+  <div class="shell">
+    <aside class="side">
+      <div class="brand">
+        <span class="logo" id="logo"></span>
+        <div><b>Cron Swanson</b><small>bacron engine</small></div>
+      </div>
+      <h3>Apps</h3>
+      <nav id="apps" class="apps"></nav>
+      <h3>Tags</h3>
+      <div id="tags" class="tags"></div>
+    </aside>
+
+    <main class="main">
+      <header class="bar">
+        <label class="search"><span id="search-icon"></span><input id="q" type="search" placeholder="Search names, notes, why" autocomplete="off" /></label>
+        <button id="new" class="primary" type="button"></button>
+      </header>
+      <form id="gate" class="gate" hidden>
+        <span>This Cron Swanson wants its token.</span>
+        <input id="token" type="password" placeholder="CRON_SWANSON_TOKEN" autocomplete="current-password" />
+        <button class="primary" type="submit">Unlock</button>
+      </form>
+      <nav id="flows" class="flows" aria-label="Lanes"></nav>
+      <section id="list" class="list"></section>
+    </main>
+
+    <aside class="feed">
+      <h3>Recent runs</h3>
+      <ol id="runs" class="runs"></ol>
+    </aside>
+  </div>
+
+  <dialog id="editor">
+    <form id="form" method="dialog">
+      <header><h2 id="editor-title">New job</h2><button type="button" class="ghost" id="close" title="Close"></button></header>
+      <div class="grid">
+        <label class="wide">Name<input name="name" required maxlength="120" placeholder="Back up the CRM" /></label>
+        <label>App<input name="app" required maxlength="40" list="app-list" placeholder="qcrm" /><datalist id="app-list"></datalist></label>
+        <label>Time zone<input name="tz" required list="tz-list" /><datalist id="tz-list"></datalist></label>
+      </div>
+
+      <fieldset>
+        <legend>When</legend>
+        <div class="seg" id="kinds"></div>
+        <div class="when" data-kind="once"><label>At<input name="at" type="datetime-local" /></label></div>
+        <div class="when" data-kind="every">
+          <label>Every<input name="every" type="number" min="1" value="15" /></label>
+          <label>Unit<select name="unit"><option value="1">minutes</option><option value="60">hours</option><option value="1440">days</option></select></label>
+        </div>
+        <div class="when" data-kind="daily weekly monthly yearly"><label>Time<input name="time" type="time" value="09:00" /></label></div>
+        <div class="when" data-kind="weekly"><div class="days" id="days"></div></div>
+        <div class="when" data-kind="monthly"><label>Day<select name="mday" id="mday"></select></label></div>
+        <div class="when" data-kind="yearly">
+          <label>Month<select name="month" id="month"></select></label>
+          <label>Day<input name="yday" type="number" min="1" max="31" value="1" /></label>
+        </div>
+        <div class="when" data-kind="cron"><label class="wide">Cron line<input name="expr" placeholder="*/15 9-17 * * 1-5" spellcheck="false" /></label></div>
+        <p class="preview" id="preview"></p>
+      </fieldset>
+
+      <fieldset>
+        <legend>Does</legend>
+        <div class="seg" id="actions"></div>
+        <div class="grid" id="hook">
+          <label class="wide">URL<input name="url" type="url" placeholder="https://qcrm.example.com/api/cron/backup" /></label>
+          <label>Method<select name="method"><option>POST</option><option>GET</option></select></label>
+        </div>
+      </fieldset>
+
+      <div class="grid">
+        <label class="wide">Why<input name="why" maxlength="500" placeholder="Nightly copy in case D1 eats itself" /></label>
+        <label class="wide">Tags<input name="tags" placeholder="backup, billing" /></label>
+        <label class="wide">Note<textarea name="note" rows="3" maxlength="4000"></textarea></label>
+        <label class="check"><input name="enabled" type="checkbox" checked /> Running</label>
+      </div>
+      <p class="error" id="error" role="alert"></p>
+      <footer>
+        <button type="button" class="danger" id="delete">Delete</button>
+        <span class="grow"></span>
+        <button type="button" class="ghost" id="cancel">Cancel</button>
+        <button type="submit" class="primary">Save</button>
+      </footer>
+    </form>
+  </dialog>
+
+  <script type="module" src="./page.ts"></script>
+</body>
+</html>

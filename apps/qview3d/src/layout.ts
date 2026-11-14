@@ -8,6 +8,11 @@
 //   orgs/<org>/textures/<sha>.<ext>      the same picture cut down to texture size: served, cached a year
 //   orgs/<org>/snapshots/<sha>.<ext>     exported renders of a design: served, cached a year
 //   orgs/<org>/designs/<id>.json         a design's settings (model, colour, where the picture sits, camera)
+//   orgs/<org>/photos/<sha>.<ext>        an admin's photos of the shop's own product, sent to make a sample. Never served
+//   orgs/<org>/models/<id>.json          a sample in the making: its Meshy task, progress, then its GLB
+//   orgs/<org>/models/<id>.glb           the sample model itself: served, cached a year
+//   orgs/<org>/scans/<sha>.glb           a sample scanned on the shop's own iPhone (Object Capture, ios/): served, cached a year
+//   meta/meshy/<yyyy-mm-dd>.json         samples started that day, across every org: the ceiling on our Meshy bill
 //
 // Files are named by their own SHA-256, so the same picture uploaded twice is one object, and a served key never
 // changes content: the edge may keep it forever (`immutable`). A design names the files it uses, so nothing needs a
@@ -22,19 +27,30 @@ export const KINDS = {
   original: { max: 20 << 20, types: ["image/png", "image/jpeg", "image/webp"] },
   texture: { max: 4 << 20, types: ["image/webp", "image/png", "image/jpeg"] },
   snapshot: { max: 4 << 20, types: ["image/png", "image/webp"] },
+  /** Admins only: a photo of the shop's own product, for a sample. */
+  photo: { max: 8 << 20, types: ["image/jpeg", "image/png", "image/webp"] },
+  /** Admins only: a finished model of the shop's own product, scanned on its iPhone. It becomes a sample as it is. */
+  scan: { max: 40 << 20, types: ["model/gltf-binary"] },
 } as const;
 export type Kind = keyof typeof KINDS;
 export const KIND_NAMES = Object.keys(KINDS) as Kind[];
 
-const EXT: Record<string, string> = { "image/png": "png", "image/jpeg": "jpg", "image/webp": "webp" };
+const EXT: Record<string, string> = { "image/png": "png", "image/jpeg": "jpg", "image/webp": "webp", "model/gltf-binary": "glb" };
 
 export const orgRoot = (org: string) => `orgs/${org}/`;
 export const orgKey = (org: string) => `orgs/${org}/org.json`;
 export const productKey = (org: string, product: string) => `orgs/${org}/products/${product}.json`;
 export const designKey = (org: string, id: string) => `orgs/${org}/designs/${id}.json`;
+export const sampleKey = (org: string, id: string) => `orgs/${org}/models/${id}.json`;
+export const sampleGlb = (org: string, id: string) => `orgs/${org}/models/${id}.glb`;
+export const meshyDayKey = (d = new Date()) => `meta/meshy/${d.toISOString().slice(0, 10)}.json`;
+/** A sample's id: 24 hex digits, random. */
+export const SAMPLE_ID = /^[0-9a-f]{24}$/;
 export const fileKey = (org: string, kind: Kind, sha: string, type: string) => `orgs/${org}/${kind}s/${sha}.${EXT[type] ?? "bin"}`;
 
-/** Whether `/r/<key>` may hand this key out: textures, snapshots and designs. Originals and org settings stay private. */
+/** Whether `/r/<key>` may hand this key out: textures, snapshots, designs, sample models and scans. Originals, photos and org settings stay private. */
 export const servable = (key: string) =>
+  /^orgs\/[a-z0-9][a-z0-9-]{0,62}\/models\/[0-9a-f]{24}\.glb$/.test(key) ||
+  /^orgs\/[a-z0-9][a-z0-9-]{0,62}\/scans\/[0-9a-f]{64}\.glb$/.test(key) ||
   /^orgs\/[a-z0-9][a-z0-9-]{0,62}\/(textures|snapshots)\/[0-9a-f]{64}\.(webp|png|jpg)$/.test(key) ||
   /^orgs\/[a-z0-9][a-z0-9-]{0,62}\/designs\/[0-9a-f]{24}\.json$/.test(key);

@@ -2,7 +2,7 @@
 // places the plan names, the posts on the plan's grid, teams made only of what is behind you, every flag a line waits
 // on set somewhere, the manual's English, and enough lines that read the small things (before the intro, the gap, the
 // manner, the other two factions, the reading). `bun scripts/factions.ts` prints it; the test holds all three files to it.
-import { Bad } from "@rustybuns/util/guard";
+import { Bad, isRecord } from "@rustybuns/util/guard";
 import { REGIONS } from "../regions.ts";
 import { SECTIONS, sections, STARTERS } from "../journey.ts";
 import { ROSTER } from "../roster.ts";
@@ -81,12 +81,11 @@ export function weaveProblems(raw: unknown): string[] {
   return out;
 }
 
-const isObj = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 /** Every `when` in the raw file with a key the model does not know (the guard would drop it and the line would always apply). */
 function strayKeys(v: unknown, at: string, out: string[]) {
   if (Array.isArray(v)) v.forEach((x, i) => strayKeys(x, `${at}[${i}]`, out));
-  else if (isObj(v)) for (const [k, x] of Object.entries(v)) {
-    if ((k === "when" || k === "needs") && isObj(x)) for (const key of Object.keys(x)) if (!WHEN_KEYS.some((w) => w === key)) out.push(`${at}.${k}: "${key}" is not a condition`);
+  else if (isRecord(v)) for (const [k, x] of Object.entries(v)) {
+    if ((k === "when" || k === "needs") && isRecord(x)) for (const key of Object.keys(x)) if (!WHEN_KEYS.some((w) => w === key)) out.push(`${at}.${k}: "${key}" is not a condition`);
     strayKeys(x, `${at}.${k}`, out);
   }
 }

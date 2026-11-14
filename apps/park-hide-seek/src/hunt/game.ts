@@ -21,6 +21,7 @@ import { NO_ASKS, RADIO, askBlocked, answerText, parseAsk, radioGrid, resolve, t
 import { CLIFF, loadZoneData, readyZone, zoneById, zoneLoaded, zonesFor, type Zone } from "../zones/zone.ts";
 import { MOVE, TAG_REACH, canSee, clearSky, resolve as pushOut, soundJitter, stepReach, type Body, type Role, type Sky, type TimeOfDay } from "./sim.ts";
 import { describe, type Weather } from "../weather.ts";
+import { isRecord } from "@rustybuns/util/guard";
 
 export const HUNT = {
   dropSecs: 15,
@@ -223,9 +224,8 @@ export interface View {
 
 /** What the world sends each page: the hunt as that player sees it. */
 export type ServerMsg = { t: "view"; view: View };
-const isObj = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null;
 /** The world's message read on the page. The world runs this build's own Room, so the envelope is what's checked. */
-export const isServerMsg = (m: unknown): m is ServerMsg => isObj(m) && m.t === "view" && isObj(m.view) && typeof m.view.now === "number";
+export const isServerMsg = (m: unknown): m is ServerMsg => isRecord(m) && m.t === "view" && isRecord(m.view) && typeof m.view.now === "number";
 
 interface Player { id: string; name: string; bot: BotLevel | null; score: number; online: boolean; look: Look }
 interface Round {

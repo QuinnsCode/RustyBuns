@@ -10,19 +10,20 @@
 // adds its own buttons in slot="controls", or turns them all off (controls="none") and drives the element through
 // its methods and events instead:
 //
-//   el.addImage(file) · el.place({u, v, scale, rotation}) · el.model = "beanie" · el.color = "#b91c1c" · el.view("side")
+//   el.addImage(file, zone?) · el.place({u, v, scale, rotation}) · el.model = "hoodie" · el.zone = "back" · el.color = "#b91c1c" · el.view("side")
 //   el.design (the settings) · el.load(design) · el.snapshot() -> {blob, design} · el.save() -> {id, url, design}
 //   events: qview:ready, qview:change, qview:snapshot, qview:saved, qview:error (each with a detail)
 import { createElement, Camera, CloudUpload, Eraser, ImagePlus, Rotate3d, RotateCw, Scaling } from "lucide";
 import { esc } from "@rustybuns/util";
 import { getJson, readJson } from "@rustybuns/util/http";
-import { DesignReply, MODELS, Product, SignReply, type Design, type DesignReply as Saved, type Model, type SignRequest } from "../api.ts";
+import { DesignReply, MODELS, Product, TOPS, ZONES, type Design, type DesignReply as Saved, type Made, type Model, type ZoneName } from "../api.ts";
 import { sha256Of } from "./image.ts";
 import { css } from "./style.ts";
-import type { View, Viewer } from "./viewer.ts";
+import { problem, upload } from "./upload.ts";
+import type { Display, View, Viewer } from "./viewer.ts";
 
 const DEFAULT_COLORS = ["#1f2937", "#f5f5f4", "#b91c1c", "#1d4ed8", "#166534", "#d97706", "#7c3aed", "#e7d7b9"];
-const LABELS: Record<Model, string> = { cap: "Cap", beanie: "Beanie", bucket: "Bucket" };
+const LABELS: Record<Made, string> = { cap: "Cap", beanie: "Beanie", bucket: "Bucket", tee: "Tee", sweater: "Sweater", hoodie: "Hoodie", tank: "Tank", racerback: "Racerback" };
 /** Where the widget's own server is: the origin this script came from, unless the page says otherwise (api="..."). */
 const HOME = new URL(import.meta.url).origin;
 
@@ -44,18 +45,28 @@ const iconButton = (i: Parameters<typeof createElement>[0], title: string, oncli
 };
 
 export class QView3D extends HTMLElement {
-  static observedAttributes = ["model", "color", "colors", "product", "controls"];
+  static observedAttributes = ["model", "color", "colors", "product", "controls", "display"];
   private root = this.attachShadow({ mode: "open" });
   private viewer: Viewer | null = null;
   private ready: Promise<Viewer> | null = null;
   private colors = DEFAULT_COLORS;
+  /** The product's own model (a sample's GLB key), when it has one. */
+  private glb: string | null = null;
+  private firstColor() { return this.colors[0] ?? "#ffffff"; }
   private ui = this.build();
 
   get api() { return (this.getAttribute("api") ?? HOME).replace(/\/$/, ""); }
   get org() { return this.getAttribute("org"); }
   get model(): Model { return this.viewer?.model ?? asModel(this.getAttribute("model")); }
-  set model(m: Model) { this.setAttribute("model", m); }
-  get color() { return this.viewer?.color ?? this.getAttribute("color") ?? this.colors[0]!; }
+  /** One of the hats or tops. A shop's own model comes with its product (product="<sample id>"). */
+  set model(m: Made) { this.setAttribute("model", m); }
+  /** The print zone being worked on: where addImage() puts a picture and what place() moves. A hat has only "front". */
+  get zone(): ZoneName { return this.viewer?.zone ?? "front"; }
+  set zone(z: ZoneName) { this.viewer?.setZone(z); this.sync(); }
+  /** A top on its form ("form"), or a sleeved one on a hanger ("hanger", a spike the default controls don't offer), settling under gravity when it loads or changes colour. */
+  get display(): Display { return this.getAttribute("display") === "hanger" ? "hanger" : "form"; }
+  set display(d: Display) { this.setAttribute("display", d); }
+  get color() { return this.viewer?.color ?? this.getAttribute("color") ?? this.firstColor(); }
   set color(c: string) { this.setAttribute("color", c); }
   /** The current settings: model, colour, the picture's place and files, camera. What snapshot() and save() send. */
   get design(): Design | null { return this.viewer?.design() ?? null; }
@@ -81,8 +92,9 @@ export class QView3D extends HTMLElement {
     if (name === "colors") { this.colors = parseColors(this.getAttribute("colors")) ?? DEFAULT_COLORS; this.drawSwatches(); }
     if (name === "product" && this.ready) void this.loadProduct();
     if (!this.viewer) return;
-    if (name === "model" && this.viewer.model !== asModel(this.getAttribute("model"))) { this.viewer.setModel(asModel(this.getAttribute("model"))); this.changed(); }
-    if (name === "color" && this.viewer.color !== (this.getAttribute("color") ?? this.colors[0]!)) { this.viewer.setColor(this.getAttribute("color") ?? this.colors[0]!); this.changed(); }
+    if (name === "model" && !this.glb && this.viewer.model !== asModel(this.getAttribute("model"))) { this.viewer.setModel(asModel(this.getAttribute("model"))); this.changed(); }
+    if (name === "display" && this.viewer.display !== this.display) { this.viewer.setDisplay(this.display); this.changed(); }
+    if (name === "color" && this.viewer.color !== (this.getAttribute("color") ?? this.firstColor())) { this.viewer.setColor(this.getAttribute("color") ?? this.firstColor()); this.changed(); }
   }
 
   private boot(): Promise<Viewer> {
@@ -90,9 +102,11 @@ export class QView3D extends HTMLElement {
       const { Viewer } = await import("./viewer.ts");
       await this.loadProduct();
       const v = new Viewer(this.ui.gl);
+      v.display = this.display;
       v.onChange = () => this.changed();
-      v.setModel(asModel(this.getAttribute("model")));
-      v.setColor(this.getAttribute("color") ?? this.colors[0]!);
+      if (this.glb) await v.setCustom(this.glbUrl(this.glb));
+      else v.setModel(asModel(this.getAttribute("model")));
+      v.setColor(this.getAttribute("color") ?? this.firstColor());
       this.viewer = v;
       this.ui.loading.remove();
       this.sync();
@@ -109,16 +123,20 @@ export class QView3D extends HTMLElement {
     const p = await getJson(`${this.api}/api/orgs/${encodeURIComponent(org)}/products/${encodeURIComponent(product)}`, Product);
     if (!p) return this.fail(new Error(`No product "${product}" for ${org}`));
     this.colors = p.colors;
-    if (!this.hasAttribute("model")) this.setAttribute("model", p.model);
-    if (!this.hasAttribute("color")) this.setAttribute("color", p.colors[0]!);
+    this.glb = p.model === "custom" && p.glb ? p.glb : null;
+    if (this.glb && this.viewer) { await this.viewer.setCustom(this.glbUrl(this.glb)); this.changed(); }
+    if (p.model !== "custom" && !this.hasAttribute("model")) this.setAttribute("model", p.model);
+    if (!this.hasAttribute("color") && p.colors[0]) this.setAttribute("color", p.colors[0]);
     this.drawSwatches();
   }
 
+  private glbUrl(key: string) { return `${this.api}/r/${key.split("/").map(encodeURIComponent).join("/")}`; }
+
   // ---- the methods a page drives it with -------------------------------------------------------------------
 
-  async addImage(file: Blob) {
+  async addImage(file: Blob, zone?: ZoneName) {
     const v = await this.boot();
-    try { await v.addImage(file); } catch (e) { this.fail(e); throw e; }
+    try { await v.addImage(file, zone && (ZONES as readonly string[]).includes(zone) ? zone : undefined); } catch (e) { this.fail(e); throw e; }
     this.sync();
   }
   removeImage() { this.viewer?.removeImage(); this.sync(); }
@@ -135,20 +153,19 @@ export class QView3D extends HTMLElement {
     return out;
   }
 
-  /** Upload the picture (texture and original), a snapshot, and the settings to the org. Fires qview:saved. */
+  /** Upload the pictures (texture and original of each), a snapshot, and the settings to the org. Fires qview:saved. */
   async save(): Promise<Saved & { design: Design }> {
     const v = await this.boot();
     const org = this.org;
     if (!org) throw this.fail(new Error("save() needs an org attribute"));
     try {
       const base = `${this.api}/api/orgs/${encodeURIComponent(org)}`;
-      const l = v.layer;
-      if (l) {
-        l.texture = await this.put(base, "texture", l.picture.texture.blob, l.picture.texture.sha256);
-        l.original = await this.put(base, "original", l.picture.original.blob, l.picture.original.sha256);
+      for (const l of v.layers) {
+        l.texture = await upload(base, "texture", l.picture.texture.blob, l.picture.texture.sha256);
+        l.original = await upload(base, "original", l.picture.original.blob, l.picture.original.sha256);
       }
       const shot = await v.snapshot(2);
-      const snapshot = await this.put(base, "snapshot", shot, await sha256Of(shot));
+      const snapshot = await upload(base, "snapshot", shot, await sha256Of(shot));
       const design = { ...v.design(), snapshot, product: this.getAttribute("product") ?? undefined };
       const res = await fetch(`${base}/designs`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(design) });
       const saved = res.ok ? await readJson(res, DesignReply) : null;
@@ -159,19 +176,6 @@ export class QView3D extends HTMLElement {
     } catch (e) {
       throw this.fail(e);
     }
-  }
-
-  /** Sign one file and PUT it unless the org already has those exact bytes. Returns its key. */
-  private async put(base: string, kind: SignRequest["kind"], blob: Blob, sha256: string): Promise<string> {
-    const req: SignRequest = { kind, type: blob.type, size: blob.size, sha256 };
-    const res = await fetch(`${base}/uploads`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(req) });
-    const s = res.ok ? await readJson(res, SignReply) : null;
-    if (!s) throw new Error(await problem(res));
-    if (!s.exists && s.put) {
-      const up = await fetch(s.put.url, { method: "PUT", headers: s.put.headers, body: blob });
-      if (!up.ok) throw new Error(await problem(up));
-    }
-    return s.key;
   }
 
   // ---- the default controls -------------------------------------------------------------------------------
@@ -185,25 +189,28 @@ export class QView3D extends HTMLElement {
     file.onchange = () => { const f = file.files?.[0]; if (f) void this.addImage(f).catch(() => {}); file.value = ""; };
     const pick = () => file.click();
 
-    const models = h("div", { class: "models glass", part: "models" }, ...MODELS.map((m) => {
+    const models = h("div", { class: "models panel", part: "models", role: "group", ariaLabel: "Product" }, ...MODELS.map((m) => {
       const b = h("button", { part: "button model", onclick: () => (this.model = m) }, LABELS[m]);
       b.dataset.model = m;
       return b;
     }));
+    // Where the picture goes, on a product with more than one place for it (a top's front, back and sleeve).
+    const zones = h("div", { class: "models zones panel", part: "zones", role: "group", ariaLabel: "Print on", hidden: true });
     const turnView = iconButton(Rotate3d, "Turn the view", () => this.viewer?.nextView());
-    const hint = h("button", { class: "hint glass", part: "hint", onclick: pick }, icon(ImagePlus), "Add your picture");
+    const hint = h("button", { class: "hint panel", part: "hint", onclick: pick }, icon(ImagePlus), "Add your picture");
 
-    const scale = h("input", { type: "range", min: "0.05", max: "1", step: "0.01", title: "Size" });
+    const scale = h("input", { type: "range", min: "0.05", max: "1", step: "0.01", title: "Size", ariaLabel: "Picture size" });
     scale.oninput = () => this.place({ scale: Number(scale.value) });
-    const turn = h("input", { type: "range", min: String(-Math.PI), max: String(Math.PI), step: "0.01", title: "Turn" });
+    const turn = h("input", { type: "range", min: String(-Math.PI), max: String(Math.PI), step: "0.01", title: "Turn", ariaLabel: "Picture turn" });
     turn.oninput = () => this.place({ rotation: Number(turn.value) });
-    const tune = h("div", { class: "tune", hidden: true },
+    const tune = h("div", { class: "tune", hidden: true, role: "group", ariaLabel: "Picture" },
       h("label", { class: "slider", part: "slider", title: "Size" }, icon(Scaling), scale),
       h("label", { class: "slider", part: "slider", title: "Turn" }, icon(RotateCw), turn),
-      iconButton(Eraser, "Remove the picture", () => this.removeImage()),
-      h("span", { class: "sep" }));
+      iconButton(Eraser, "Remove the picture", () => this.removeImage()));
+    // Dividers show only with something on both sides: a shop's own model has no swatches.
+    const sepAdd = h("span", { class: "sep" }), sepTune = h("span", { class: "sep" });
 
-    const swatches = h("div", { class: "swatches" });
+    const swatches = h("div", { class: "swatches", role: "group", ariaLabel: "Colour" });
     const saveBtn = h("button", { class: "primary", part: "button save", title: "Save this design" }, icon(CloudUpload), h("span", {}, "Save"));
     saveBtn.onclick = async () => {
       saveBtn.classList.add("busy");
@@ -220,18 +227,22 @@ export class QView3D extends HTMLElement {
     });
     const slot = h("slot");
     slot.name = "controls";
-    const toolbar = h("div", { class: "toolbar glass", part: "toolbar" },
-      iconButton(ImagePlus, "Add a picture", pick), h("span", { class: "sep" }), tune, swatches, slot);
-    const corner = h("div", { class: "corner glass" }, turnView, shotBtn, saveBtn);
-    const toast = h("div", { class: "toast glass", part: "toast" });
-    const stage = h("div", { class: "stage", part: "stage" }, gl, loading, models, corner, hint, toolbar, h("div", { class: "drop" }, "Drop your picture"), toast, file);
+    const toolbar = h("div", { class: "toolbar panel", part: "toolbar", role: "toolbar", ariaLabel: "Customise" },
+      iconButton(ImagePlus, "Add a picture", pick), sepAdd, tune, sepTune, swatches, slot);
+    const corner = h("div", { class: "corner panel" }, turnView, shotBtn, saveBtn);
+    const toast = h("div", { class: "toast panel", part: "toast", role: "status", ariaLive: "polite" });
+    const keys = h("div", { class: "keys panel", part: "keys", hidden: true });
+    keys.innerHTML = "<kbd>&larr;</kbd><kbd>&rarr;</kbd><kbd>&uarr;</kbd><kbd>&darr;</kbd> move &nbsp; <kbd>+</kbd><kbd>&minus;</kbd> size &nbsp; <kbd>[</kbd><kbd>]</kbd> turn &nbsp; <kbd>Shift</kbd>+arrows spin";
+    gl.addEventListener("focusin", () => (keys.hidden = !this.viewer?.layer));
+    gl.addEventListener("focusout", () => (keys.hidden = true));
+    const stage = h("div", { class: "stage", part: "stage" }, gl, loading, models, zones, corner, hint, keys, toolbar, h("div", { class: "drop" }, "Drop your picture"), toast, file);
     this.root.append(style, stage);
-    return { gl, loading, models, hint, tune, scale, turn, swatches, saveBtn, toast, chrome: [models, corner, hint, toolbar] as HTMLElement[] };
+    return { gl, loading, models, zones, hint, tune, scale, turn, swatches, saveBtn, toast, sepAdd, sepTune, chrome: [models, zones, corner, hint, toolbar] as HTMLElement[] };
   }
 
   private drawSwatches() {
     this.ui.swatches.replaceChildren(...this.colors.map((c) => {
-      const b = h("button", { class: "swatch", part: "swatch", title: c, onclick: () => (this.color = c) });
+      const b = h("button", { class: "swatch", part: "swatch", title: c, ariaLabel: `Colour ${c}`, onclick: () => (this.color = c) });
       b.style.setProperty("--c", c);
       b.dataset.color = c;
       return b;
@@ -242,11 +253,31 @@ export class QView3D extends HTMLElement {
   /** Bring the controls in line with the viewer. */
   private sync() {
     const v = this.viewer, none = this.getAttribute("controls") === "none";
-    for (const b of this.ui.models.querySelectorAll<HTMLButtonElement>("button")) b.setAttribute("aria-pressed", String(b.dataset.model === this.model));
+    // The row offers the product's own kind: a hat swaps for another hat, a top for another top.
+    const kind = (m: string | undefined) => (TOPS as readonly (string | undefined)[]).includes(m);
+    for (const b of this.ui.models.querySelectorAll<HTMLButtonElement>("button")) {
+      b.setAttribute("aria-pressed", String(b.dataset.model === this.model));
+      b.hidden = kind(b.dataset.model) !== kind(this.model);
+    }
     for (const b of this.ui.swatches.querySelectorAll<HTMLButtonElement>("button")) b.setAttribute("aria-pressed", String(b.dataset.color?.toLowerCase() === this.color.toLowerCase()));
     const l = v?.layer;
+    const zones = v?.zones ?? [];
+    if (this.ui.zones.dataset.model !== this.model) {
+      this.ui.zones.dataset.model = this.model;
+      this.ui.zones.replaceChildren(...zones.map((z) => {
+        const b = h("button", { part: "button zone", onclick: () => (this.zone = z.name) }, z.label);
+        b.dataset.zone = z.name;
+        return b;
+      }));
+    }
+    for (const b of this.ui.zones.querySelectorAll<HTMLButtonElement>("button")) b.setAttribute("aria-pressed", String(b.dataset.zone === v?.zone));
+    this.ui.zones.hidden = none || zones.length < 2;
     this.ui.tune.hidden = !l;
-    this.ui.hint.hidden = none || !v || !!l;
+    this.ui.hint.hidden = none || !v || !!v.layers.length;
+    this.ui.models.hidden = none || this.model === "custom";
+    this.ui.swatches.hidden = !this.colors.length;
+    this.ui.sepAdd.hidden = this.ui.tune.hidden && this.ui.swatches.hidden;
+    this.ui.sepTune.hidden = this.ui.tune.hidden || this.ui.swatches.hidden;
     this.ui.saveBtn.hidden = !this.org;
     if (l) { this.ui.scale.value = String(l.at.scale); this.ui.turn.value = String(l.at.rotation); }
   }
@@ -285,16 +316,11 @@ export class QView3D extends HTMLElement {
   }
 }
 
-const asModel = (m: string | null): Model => MODELS.find((x) => x === m) ?? "cap";
+const asModel = (m: string | null): Made => MODELS.find((x) => x === m) ?? "cap";
 const parseColors = (s: string | null) => {
   const list = (s ?? "").split(",").map((c) => c.trim()).filter((c) => /^#[0-9a-f]{6}$/i.test(c));
   return list.length ? list : null;
 };
-async function problem(res: Response) {
-  const body = await res.text().catch(() => "");
-  try { const e: unknown = JSON.parse(body); if (e && typeof e === "object" && "error" in e && typeof e.error === "string") return e.error; } catch { /* not JSON */ }
-  return `${res.status} ${res.statusText}`.trim();
-}
 
 if (!customElements.get("qview-3d")) customElements.define("qview-3d", QView3D);
 

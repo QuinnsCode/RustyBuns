@@ -8,7 +8,8 @@
 //   GET  /__rb/history          the office's runs, one per start, newest first: memory slope, profiles, ceiling restarts
 //   GET  /__rb/context          Dexter's watch on live sessions' context size: `sessions` with each one's context, total used and latest turn (and `lines` of them, written out); `over` the warn lines now, and `fresh` crossings since the last ask (each once); `code` the sessions that ran a code-mode program since the last ask, with their code-mode, tool-load and direct MCP counts; `stalled` the sessions whose turn hung or went quiet owing work (#4306)
 //   GET  /__rb/helpers          Ester's and Mervin's runs of the board script (ester/run.ts): phase, the tail they printed, PRs to hold,
-//                               and Mervin's running tally of conflicts avoided when one is kept (`tally`)
+//                               Mervin's running tally of conflicts avoided when one is kept (`tally`), and the release rings'
+//                               lines from scripts/rings.ts (`rings`, read at most every 5 minutes) for Ester's card
 //   GET  /__rb/line             the floor's open PRs and the ones merged in the last day (gh), for the gitpath screen (screens/)
 //   GET  /__rb/reload           what the page is running and whether the server's code moved on (live/reload.ts)
 //   POST /__rb/reload/restart   restart the office (SIGTERM; the workers keep running) when office:mama is minding it
@@ -25,8 +26,9 @@ import { historyRuns } from "@rustybuns/shell-bun/history";
 import { officeHistory, officeMem } from "../live/mem.ts";
 import { officeReload } from "../live/reload.ts";
 import { CARRY_ON, ContextWatch, Meter, ModeWatch, nameOf, sessionLines, StallWatch, type Context, type Stall } from "../ester/dexter.ts";
-import { createHelpers, HELPERS, isHelper, repoWith, type EsterState } from "../ester/run.ts";
+import { createHelpers, HELPERS, isHelper, repoWith, RINGS, ringsOf, type EsterState } from "../ester/run.ts";
 import { mervinBoard, tallyRows, tallySum } from "../screens/read.ts";
+import type { HelpersReply } from "../ester/state.ts";
 import { lineOf, type Gh } from "../screens/line.ts";
 
 export const TRIAGE_HEADER = "x-rb-triage";
@@ -61,6 +63,7 @@ export function officeTriage(
     if (rows.length) appendFileSync(tallyFile, rows.map((r) => JSON.stringify(r)).join("\n") + "\n");
   };
   const lines = lineOf(gh);
+  const rings = ringsOf();
   const context = new ContextWatch(), modes = new ModeWatch(), meter = new Meter(), stalls = new StallWatch();
   return async (method: string, url: URL, trusted: boolean): Promise<TriageAnswer | null> => {
     const p = url.pathname;
@@ -82,7 +85,7 @@ export function officeTriage(
       return { status: 200, body: { snapshots } };
     }
     if (p === "/__rb/context") return method === "GET" ? { status: 200, body: (() => { const sessions = meter.scan(projects); return { sessions: sessions.map((c) => ({ ...c, name: nameOf(c) })), lines: sessionLines(sessions), ...context.check(sessions), code: modes.check(sessions), stalled: stalls.check(sessions).stalled.map((x) => x.message) }; })() } : only("GET");
-    if (p === "/__rb/helpers") return method === "GET" ? { status: 200, body: { ester: helpers.ester.state(), mervin: helpers.mervin.state(), dexter: helpers.dexter.state(), tally: tally() } } : only("GET");
+    if (p === "/__rb/helpers") return method === "GET" ? { status: 200, body: { ester: helpers.ester.state(), mervin: helpers.mervin.state(), dexter: helpers.dexter.state(), tally: tally(), rings: rings(repoWith(RINGS, [...floors()].map((f) => f.dir))) } satisfies HelpersReply } : only("GET");
     if (p === "/__rb/line") {
       if (method !== "GET") return only("GET");
       const dir = [...floors()][0]?.dir;

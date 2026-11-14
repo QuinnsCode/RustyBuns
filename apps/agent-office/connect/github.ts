@@ -10,7 +10,8 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { secretsFor, type Secrets } from "./keychain.ts";
-import type { Access, Connection, Status } from "./types.ts";
+import { Access, type Pending, type SetupReply, type Status } from "./types.ts";
+import { arr, check, num, obj, opt, str, type Guard } from "@rustybuns/util/guard";
 
 export interface Deps {
   /** The office's data folder (the list of accounts lives here). */
@@ -26,28 +27,22 @@ export interface Deps {
 }
 
 interface Saved { id: string; account: string; access: Access }
-export interface Pending { id: string; userCode: string; uri: string; expiresAt: number }
-export interface State { connections: Connection[]; pending: Pending[]; ready: boolean; error?: string }
+
+// What connections.json holds, and what GitHub answers (https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/authorizing-oauth-apps#device-flow).
+const SavedFile = arr(obj({ account: str(100), access: Access }), 100, { drop: true });
+const GithubUser = obj({ login: str(100) });
+const DeviceCode = obj({ device_code: str(200), user_code: str(40), verification_uri: str(500), expires_in: num(1, 86_400, 900), interval: num(1, 600, 5) });
+const TokenReply = obj({ access_token: opt(str(1000)), error: opt(str(200)), interval: opt(num(1, 600)) });
+const GithubRefusal = obj({ error_description: str(1000) });
 
 const listFile = (dir: string) => path.join(dir, "connections.json");
 
-const str = (o: Record<string, unknown>, k: string) => (typeof o[k] === "string" ? o[k] : undefined);
-const num = (o: Record<string, unknown>, k: string) => (typeof o[k] === "number" ? o[k] : undefined);
-async function object(r: Response): Promise<Record<string, unknown>> {
-  const v: unknown = await r.json().catch(() => null);
-  return typeof v === "object" && v !== null && !Array.isArray(v) ? Object.fromEntries(Object.entries(v)) : {};
-}
+/** A reply read through `g`, or null when there is none or it isn't that shape. */
+const read = async <T>(r: Response | null, g: Guard<T>): Promise<T | null> => (r ? check(g, await r.json().catch(() => null)) : null);
 
 export function loadSaved(dir: string): Saved[] {
   if (!existsSync(listFile(dir))) return [];
-  const v: unknown = JSON.parse(readFileSync(listFile(dir), "utf8"));
-  if (!Array.isArray(v)) return [];
-  return v.flatMap((e: unknown) => {
-    if (typeof e !== "object" || e === null) return [];
-    const o = Object.fromEntries(Object.entries(e));
-    const account = str(o, "account");
-    return account ? [{ id: `github:${account}`, account, access: o.access === "write" ? "write" : "read" } satisfies Saved] : [];
-  });
+  return SavedFile(JSON.parse(readFileSync(listFile(dir), "utf8"))).map((s): Saved => ({ id: `github:${s.account}`, ...s }));
 }
 
 function save(dir: string, list: Saved[]) {
@@ -77,7 +72,7 @@ export function connections(deps: Deps) {
 
   const who = async (token: string): Promise<string | null> => {
     const r = await deps.fetch(`${deps.api}/user`, { headers: { authorization: `Bearer ${token}`, accept: "application/vnd.github+json", "user-agent": "agent-office" } }).catch(() => null);
-    return r?.ok ? str(await object(r), "login") ?? null : null;
+    return r?.ok ? (await read(r, GithubUser))?.login ?? null : null;
   };
 
   const test = async (s: Saved): Promise<Status> => {
@@ -96,8 +91,8 @@ export function connections(deps: Deps) {
     while (Date.now() < p.expiresAt && pending.has(p.id)) {
       await deps.wait(every * 1000);
       const r = await deps.fetch(`${deps.web}/login/oauth/access_token`, form({ client_id: deps.clientId, device_code: deviceCode, grant_type: "urn:ietf:params:oauth:grant-type:device_code" })).catch(() => null);
-      const o = r ? await object(r) : {};
-      const token = str(o, "access_token");
+      const o = await read(r, TokenReply);
+      const token = o?.access_token;
       if (token) {
         const login = await who(token);
         pending.delete(p.id);
@@ -110,8 +105,8 @@ export function connections(deps: Deps) {
         error = undefined;
         return;
       }
-      const e = str(o, "error");
-      if (e === "slow_down") every = num(o, "interval") ?? every + 5;
+      const e = o?.error;
+      if (e === "slow_down") every = o?.interval ?? every + 5;
       else if (e && e !== "authorization_pending") {
         pending.delete(p.id);
         return void (error = e === "access_denied" ? "The sign-in was cancelled on GitHub" : e === "expired_token" ? "The code ran out before it was typed; start again" : `GitHub said ${e}`);
@@ -123,17 +118,17 @@ export function connections(deps: Deps) {
   async function start(): Promise<string | undefined> {
     if (!deps.clientId) return "Sign-in isn't set up: start the office with AGENT_OFFICE_GITHUB_CLIENT_ID (the GitHub app's client ID, #2499)";
     const r = await deps.fetch(`${deps.web}/login/device/code`, form({ client_id: deps.clientId })).catch(() => null);
-    const o = r?.ok ? await object(r) : {};
-    const deviceCode = str(o, "device_code"), userCode = str(o, "user_code"), uri = str(o, "verification_uri");
-    if (!deviceCode || !userCode || !uri) return str(o, "error_description") ?? "GitHub didn't hand out a code; try again in a minute";
-    const p: Pending = { id: `github:pending:${++n}`, userCode, uri, expiresAt: Date.now() + (num(o, "expires_in") ?? 900) * 1000 };
+    const body: unknown = r?.ok ? await r.json().catch(() => null) : null;
+    const d = check(DeviceCode, body);
+    if (!d) return check(GithubRefusal, body)?.error_description ?? "GitHub didn't hand out a code; try again in a minute";
+    const p: Pending = { id: `github:pending:${++n}`, userCode: d.user_code, uri: d.verification_uri, expiresAt: Date.now() + d.expires_in * 1000 };
     pending.set(p.id, p);
     error = undefined;
-    void poll(p, deviceCode, num(o, "interval") ?? 5);
+    void poll(p, d.device_code, d.interval);
   }
 
   // an account's light is looked up the first time it's drawn, then on Test
-  const state = async (): Promise<State> => ({
+  const state = async (): Promise<SetupReply> => ({
     connections: await Promise.all(loadSaved(dir).map(async (s) => ({ id: s.id, kind: "github", account: s.account, access: s.access, status: status.get(s.id) ?? await test(s) }))),
     pending: [...pending.values()],
     ready: deps.clientId !== "",

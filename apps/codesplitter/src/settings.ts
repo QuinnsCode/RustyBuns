@@ -7,7 +7,7 @@
 // Slice 1 holds the light/dark choice. Add a setting by adding it to SETTINGS.
 
 import { fail, json, type Env } from "./env.ts";
-import { isPlainObject } from "./util.ts";
+import { isRecord } from "@rustybuns/util/guard";
 
 /** Each setting and what it accepts. Anything else is refused, so the table can't grow without bound. */
 export const SETTINGS: Record<string, (v: unknown) => boolean> = {
@@ -38,7 +38,7 @@ export class UserSettings {
     if (req.method === "GET") return json(this.all());
     if (req.method === "DELETE") { this.sql.exec("DELETE FROM settings"); return json({ ok: true }); }
     const changes: unknown = await req.json().catch(() => null);
-    if (!isPlainObject(changes)) return fail("BadInput", "send an object of settings");
+    if (!isRecord(changes)) return fail("BadInput", "send an object of settings");
     for (const [k, v] of Object.entries(changes)) {
       if (v === null) this.sql.exec("DELETE FROM settings WHERE key = ?", k);
       else this.sql.exec("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value", k, JSON.stringify(v));
@@ -56,7 +56,7 @@ export async function settingsRoutes(req: Request, env: Env, p: string[], user: 
   if (!user) return fail("SignInFirst", "sign in first");
   if (req.method === "GET") return settingsStub(env, user, req).fetch(new Request("https://settings/", { method: "GET" }));
   const b: unknown = await req.json().catch(() => null);
-  if (!isPlainObject(b)) return fail("BadInput", "send an object of settings");
+  if (!isRecord(b)) return fail("BadInput", "send an object of settings");
   for (const [k, v] of Object.entries(b)) {
     if (!(k in SETTINGS)) return fail("BadInput", `${k}: not a setting (${Object.keys(SETTINGS).join(", ")})`);
     if (v !== null && !SETTINGS[k]!(v)) return fail("BadInput", `${k}: not an accepted value`);

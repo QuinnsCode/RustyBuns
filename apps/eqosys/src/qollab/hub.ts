@@ -6,6 +6,7 @@
 //   /socket?id=&name=&app=   a page's live socket: the state on connect and after every change, `status` and ops in
 //   /op { who, op }          one op from an app's server or page, answered with the state
 //   /invited, /redeem        the Worker, for someone who opened this person's friend link (handle.ts /add)
+//   /met { who, them }       a party both are in now (party.ts), for its member's "Add friend" on another: the party is the proof
 // and hubs call each other at /peer { from, kind, ... } when something between two people changes.
 //
 // Price: a hub wakes for a socket opening or closing, a frame, an op, or a friend's change, and sleeps between
@@ -110,6 +111,16 @@ export async function hubRedeem(hubs: Hubs, l: { id: string; key: string }, who:
   return check(Invited, body) ?? { error: check(Err, body)?.error ?? "the hub didn't answer" };
 }
 
+/**
+ * `who` pressed Add friend on `them` in a party they are both in now (party.ts checks that): an ask by id, or friends at once
+ * when `them` already asked. Pages can't send this; only the party, so nobody befriends a stranger by id.
+ * Null when it went through, else the error to show.
+ */
+export async function hubMet(hubs: Hubs, who: Who, them: Person): Promise<string | null> {
+  const res = await hubOf(hubs, who.id).fetch(new Request("https://hub/met", { method: "POST", body: JSON.stringify({ who, them }) }));
+  return res.ok ? null : check(Err, await res.json().catch(() => null))?.error ?? "the hub didn't answer";
+}
+
 /** A person's hub, by their eqosys user id. */
 export const hubOf = (hubs: Hubs, id: string): Stub => hubs.get(hubs.idFromName(id));
 
@@ -186,6 +197,13 @@ export class Hub {
         if (error) return json({ error }, 400);
       }
       return json({ name: me.name });
+    }
+    if (url.pathname === "/met") {
+      const m = check(obj({ who: Who, them: Person }), body);
+      if (!m) return json({ error: "send { who, them }" }, 400);
+      await this.meet(m.who);
+      const error = await this.met(m.who, m.them);
+      return error ? json({ error }, 400) : json({ ok: true });
     }
     if (url.pathname === "/peer") {
       const p = check(Peer, body);
@@ -282,6 +300,18 @@ export class Hub {
         return done();
       }
     }
+  }
+
+  /** Add friend on someone met in a party: the ask the email path makes, by id, or the accept when they asked first. */
+  private async met(who: Who, them: Person): Promise<string | null> {
+    const s = this.ctx.storage;
+    if (them.id === who.id || await s.get(`f:${them.id}`) || await s.get(`out:${them.id}`)) return null;
+    if (await s.get(`in:${them.id}`)) return this.act(who, { op: "accept", id: them.id });
+    if ((await s.list({ prefix: "out:" })).size >= MAX_ASKS) return "too many requests waiting: wait for some answers";
+    await s.put(`out:${them.id}`, { ...them, at: Date.now(), to: them } satisfies Out);
+    await this.send(them, { from: { id: who.id, name: who.name }, kind: "ask" });
+    await this.push();
+    return null;
   }
 
   /** Someone opened this person's friend link: friends both ways, with nothing left waiting between them. */
