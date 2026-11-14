@@ -20,7 +20,8 @@ const vite = await createServer({
   server: {
     port: Number(process.env.QVIEW_PORT ?? 5190),
     fs: { allow: [app, join(app, "../..")] },
-    proxy: { "/api": target, "/u": target, "/r": target },
+    // The Host header passes through, so links the Worker writes (the guide, saved designs) name this server.
+    proxy: Object.fromEntries(["/api", "/u", "/r", "/v1/embed.md", "/llms.txt"].map((p) => [p, { target, changeOrigin: false }])),
   },
   plugins: [{
     // The URL shops paste, answered from source in dev.

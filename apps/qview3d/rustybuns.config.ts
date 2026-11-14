@@ -18,7 +18,7 @@ export default defineConfig({
   },
   bindings: {
     // orgs/<org>/{org.json, products/, originals/, textures/, snapshots/, designs/}. See src/layout.ts.
-    BUCKET: { type: "r2", bucketName: "qview3d" },
+    BUCKET: { type: "r2", bucketName: "qview3d", protect: true },
     UPLOAD_SECRET: { type: "secret", op: "op://qview3d/upload-secret/password" },
     R2_ACCOUNT_ID: { type: "secret", op: "op://qview3d/r2-account-id/password", optional: true },
     R2_ACCESS_KEY_ID: { type: "secret", op: "op://qview3d/r2-access-key-id/password", optional: true },
@@ -28,7 +28,10 @@ export default defineConfig({
     // The most samples a day across every org: the ceiling on the Meshy bill (src/samples.ts).
     MESHY_DAILY: { type: "var", value: "50" },
   },
+  // Secrets resolve at deploy through varlock, behind the owner's Touch ID; op: references need the wheel.
+  experimental: { wheel: "human" },
   targets: {
-    edge: { provider: "cloudflare" },
+    // qview3d.<subdomain>.workers.dev. `bun run plan` shows what it makes (a Worker and the bucket), `bun run deploy` makes it.
+    edge: { provider: "cloudflare", workerName: "qview3d" },
   },
 });

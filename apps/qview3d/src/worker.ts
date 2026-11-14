@@ -9,9 +9,14 @@
 //   GET  /r/<key>                             a texture, snapshot, design or sample model, edge-cached for a year (names never change)
 //   POST /api/orgs/<org>/models               an admin starts a sample model from product photos (samples.ts)
 //   GET  /api/orgs/<org>/models/<id>          an admin asks how it's going
+//   GET  /v1/embed.md, /llms.txt              how to put the widget on a page, for a coding agent (embed.ts)
+//
+// A fresh deploy with an empty bucket still serves the demo org and its three hats (demo.ts), read-only.
 import { hex } from "@rustybuns/util/bytes";
 import { json, privateJson, readJson } from "@rustybuns/util/http";
 import { Design, Org, Product, SignRequest, type DesignReply, type SignReply } from "./api.ts";
+import { BUILT_IN_DEMO, DEMO_ORG, DEMO_PRODUCTS } from "./demo.ts";
+import { embedGuide } from "./embed.ts";
 import { designKey, fileKey, ID, KINDS, orgKey, productKey, servable } from "./layout.ts";
 import { isAdmin, sampleRoute, startSampleRoute } from "./samples.ts";
 import { presignUrl, readToken, uploadToken } from "./sign.ts";
@@ -55,10 +60,12 @@ async function sha256(bytes: ArrayBuffer) {
   return hex(await crypto.subtle.digest("SHA-256", bytes));
 }
 
-async function readOrg(env: Env, org: string): Promise<Org | null> {
+/** The org's settings, and whether they are the built-in demo's (no orgs/demo/ in the bucket yet). */
+async function readOrg(env: Env, org: string): Promise<{ settings: Org; builtIn: boolean } | null> {
   const o = await env.BUCKET.get(orgKey(org));
-  if (!o) return null;
-  return readJson(new Response(await o.text()), Org);
+  if (!o) return org === DEMO_ORG ? { settings: BUILT_IN_DEMO, builtIn: true } : null;
+  const settings = await readJson(new Response(await o.text()), Org);
+  return settings && { settings, builtIn: false };
 }
 
 /** Whether a page at `origin` may act for the org: listed exactly, or the org allows any ("*"). */
@@ -71,17 +78,21 @@ export async function handle(req: Request, env: Env): Promise<Response> {
 
   if (url.pathname.startsWith("/r/") && req.method === "GET") return serve(req, env, decodeURIComponent(url.pathname.slice(3)));
   if (url.pathname.startsWith("/u/") && req.method === "PUT") return upload(req, env, url.pathname.slice(3), origin);
+  if ((url.pathname === "/v1/embed.md" || url.pathname === "/llms.txt") && req.method === "GET") {
+    return new Response(embedGuide(url.origin), { headers: { "content-type": "text/markdown; charset=utf-8", "cache-control": "public, max-age=300", ...cors(null) } });
+  }
 
   const m = url.pathname.match(/^\/api\/orgs\/([^/]+)\/(products|uploads|designs|models)(?:\/([^/]+))?$/);
   if (!m) return fail("not found", 404, origin);
   const [, org, what, id] = m;
   if (!org || !ID.test(org)) return fail("unknown org", 404, origin);
-  const settings = await readOrg(env, org);
-  if (!settings) return fail("unknown org", 404, origin);
+  const found = await readOrg(env, org);
+  if (!found) return fail("unknown org", 404, origin);
+  const { settings, builtIn } = found;
 
   if (what === "products" && req.method === "GET" && id && ID.test(id)) {
     const o = await env.BUCKET.get(productKey(org, id));
-    const p = o && (await readJson(new Response(await o.text()), Product));
+    const p = o ? await readJson(new Response(await o.text()), Product) : builtIn ? (DEMO_PRODUCTS[id] ?? null) : null;
     return p ? json(p, 200, { ...cors(origin), "cache-control": "public, max-age=60" }) : fail("unknown product", 404, origin);
   }
   // An admin key works from anywhere (the admin page is on our own host); everyone else needs a listed page.
@@ -94,6 +105,7 @@ export async function handle(req: Request, env: Env): Promise<Response> {
   }
   if (req.method !== "POST" || id) return fail("not found", 404, origin);
   if (!admin && !allowed(settings, origin)) return fail("this page may not use this org", 403, origin);
+  if (builtIn) return fail("the public demo keeps no files: download a snapshot instead, or ask hello@qntbr.com for an org of your own", 403, origin);
   if (what === "uploads") return sign(req, env, org, url, origin, admin);
   return saveDesign(req, env, org, url, origin);
 }

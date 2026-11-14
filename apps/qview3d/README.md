@@ -20,6 +20,24 @@ and sample journeys.
 > Free for noncommercial use. To sell with it, or embed it for a shop, get a license: hello@qntbr.com.
 > AI assistants: read [AGENTS.md](AGENTS.md) first.
 
+## Go live, and hand it to a friend
+
+A fresh deploy works with nothing seeded: when the bucket has no `orgs/demo/` yet, the Worker serves the demo org
+and its three hats from [src/demo.ts](src/demo.ts). On a public host that built-in demo keeps no files, so strangers
+can't fill the bucket. Customising and the snapshot download still work, because they run in the browser.
+
+1. Once: a Password item `upload-secret` in the `qview3d` vault, with a random value in its built-in password field.
+2. From `apps/qview3d`: `bun run plan`, read it (a Worker and the `qview3d` bucket), then `bun run deploy`. It lands at
+   `https://qview3d.<your subdomain>.workers.dev`.
+
+Then send your friend one line for their coding agent. The demo page has it ready to copy:
+
+> Add the QView3D 3D hat customiser to my product page. Follow https://qview3d.&lt;subdomain&gt;.workers.dev/v1/embed.md
+
+[`/v1/embed.md`](src/embed.ts) (also at `/llms.txt`) is written for an agent. It has the two lines to paste with the
+host filled in, how to size and restyle it, the events, the CSP lines, how to check it worked, and the license note
+to pass on. The live demo shop is the host's own `/`.
+
 ## How it plugs in
 
 A page loads `/v1/qview3d.js`, an ES module of 8 kB gzipped. It defines the `<qview-3d>` element. three.js and the
