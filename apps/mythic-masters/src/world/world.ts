@@ -474,8 +474,9 @@ export function spawn(n = 1): Walker {
 /** Moves the walker by (dx, dz) metres if the ground there is open, sliding along a closed border. `fence`, when
  * given, closes more ground inside open regions (a trail's sections not reached yet, src/world/trail.ts): true blocks.
  * `solid`, when given, says where a wall stands (a cabin's, poi.ts inWalls): you slide along it with no word said, and
- * a walker already inside one (an old save) may walk out. */
-export function walk(me: Walker, dx: number, dz: number, beaten: ReadonlySet<number>, fence?: (x: number, z: number) => boolean, solid?: (x: number, z: number) => boolean): WalkEvent[] {
+ * a walker already inside one (an old save) may walk out. `dock`, when given, says where you may walk past a region's
+ * ground anyway (a port town's pier out over the sea, ferry.ts): out there your region stays the one you came from. */
+export function walk(me: Walker, dx: number, dz: number, beaten: ReadonlySet<number>, fence?: (x: number, z: number) => boolean, solid?: (x: number, z: number) => boolean, dock?: (x: number, z: number) => boolean): WalkEvent[] {
   const out: WalkEvent[] = [], open = openRegions(beaten);
   open.add(me.region); // where you stand stays walkable, even after the beast that brought you left the line-up
   const walled = solid && !solid(me.x, me.z) ? solid : undefined;
@@ -483,6 +484,7 @@ export function walk(me: Walker, dx: number, dz: number, beaten: ReadonlySet<num
     if (walled?.(x, z)) return false;
     if (x < 0 || z < 0 || x >= GRID.w * CELL || z >= GRID.h * CELL) return false;
     const g = regionAt(x, z);
+    if (!g && dock?.(x, z)) return true;
     if (g && open.has(g.n) && fence?.(x, z)) {
       if (!out.some((e) => e.kind === "blocked")) out.push({ kind: "blocked", region: g, why: "gate" });
       return false;
@@ -494,7 +496,8 @@ export function walk(me: Walker, dx: number, dz: number, beaten: ReadonlySet<num
   const x0 = me.x, z0 = me.z;
   if (can(me.x + dx, me.z)) me.x += dx;
   if (can(me.x, me.z + dz)) me.z += dz;
-  const g = regionAt(me.x, me.z)!;
+  const g = regionAt(me.x, me.z);
+  if (!g) return out; // out on a pier
   if (g.n !== me.region) {
     me.region = g.n; me.wild = 0;
     if (g.tier === "playable") me.home = g.n;

@@ -4,7 +4,7 @@
 // sea and the boat back at its slip. Its places (poi.json) are poi-view.ts's, as the continent's are (view.ts, #4406).
 import * as THREE from "three";
 import { heightAt, type World } from "./world.ts";
-import type { Slip } from "./ferry.ts";
+import { deckY, type Slip } from "./ferry.ts";
 
 const WOOD = 0x6a4e34, HULL = 0x2c3a4a, SAIL = 0xe8e2d0, SNOW = new THREE.Color(0xeef2f6), ROCK = new THREE.Color(0x6e6a66);
 const SAND = new THREE.Color(0xb8ab8a), MOSS = new THREE.Color(0x56664a), SEA = 0x2a4a5e;
@@ -51,14 +51,14 @@ function house(colour: number): THREE.Group {
   return g;
 }
 
-/** The port town on the continent: the pier and its boat, and a row of houses back from the slip. `place` sets them on
+/** The port town on the continent: the pier and its boat, and a row of houses back from the pier's land end. `place` sets them on
  *  the ground as it is drawn now (it rises as the region's fine ground comes in). */
 export function portView(s: Slip) {
-  const group = new THREE.Group(), side = { x: -s.out.z, z: s.out.x };
+  const group = new THREE.Group(), side = { x: -s.out.z, z: s.out.x }, foot = s.dock[0];
   let built: THREE.Group | null = null, at = NaN;
   const houses = [-22, -10, 12, 24].map((d, i) => {
-    const h = house([0x9a5a44, 0xc8bca0, 0x5a7a8a, 0xb89a5a][i]!), back = 34 + (i % 2) * 8;
-    h.userData.at = { x: s.x - s.out.x * back + side.x * d, z: s.z - s.out.z * back + side.z * d };
+    const h = house([0x9a5a44, 0xc8bca0, 0x5a7a8a, 0xb89a5a][i]!), back = 24 + (i % 2) * 8;
+    h.userData.at = { x: foot.x - s.out.x * back + side.x * d, z: foot.z - s.out.z * back + side.z * d };
     h.rotation.y = Math.atan2(s.out.x, s.out.z);
     group.add(h);
     return h;
@@ -73,6 +73,8 @@ export function portView(s: Slip) {
       built = pier(s, y0, 0.9); at = y0;
       group.add(built);
     },
+    /** The top of the pier's deck at (x, z) as it is drawn now; undefined off the pier or before it is placed. */
+    deck: (x: number, z: number) => built ? deckY(s, at, 0.9, x, z) : undefined,
     dispose() { dispose(group); group.removeFromParent(); },
   };
 }
