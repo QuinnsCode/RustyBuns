@@ -8,7 +8,7 @@
 //
 // Pure, so the room, the page (net/duel-link.ts) and the tests run the same rules.
 import { clamp } from "@rustybuns/util";
-import { arr, Bad, bool, check, int, nul, obj, oneOf, str, type Guard } from "@rustybuns/util/guard";
+import { arr, Bad, bool, check, int, nul, obj, oneOf, opt, str, type Guard } from "@rustybuns/util/guard";
 import { IDLE, type Input, type Match } from "../sim.ts";
 
 /** A duel's room code: what `?duel=` carries and the challenge's link names. */
@@ -67,16 +67,20 @@ export function sum(m: Match): number {
 /** Who fights: a line-up member's creature and level (journey.ts `asCreature`), read the same on both pages. */
 export interface Pick { c: string; lv: number }
 const PICK = obj({ c: str(40, { re: /^[a-z0-9-]{1,40}$/ }), lv: int(1, 100) });
+/** A wild den's or a keeper's creature a co-op room fights (#4413): the den as the world names it (`12,34`,
+ *  `keeper:3:1`, party.ts DEN), and who lives there at what level. Seat 0 brings it; the room checks it (dens.ts `holds`). */
+export interface DenFoe { den: string; c: string; lv: number }
+const DEN_FOE = obj({ den: str(48, { re: /^[a-z0-9:.,_-]{1,48}$/ }), c: str(40, { re: /^[a-z0-9-]{1,40}$/ }), lv: int(1, 200) });
 /** A page to the room: who it picks (again, for a rematch), inputs from tick `n` of round `r`, a fight hash, a ping. */
 export type DuelIn =
-  | ({ e: "pick" } & Pick)
+  | ({ e: "pick"; foe?: DenFoe } & Pick)
   | { e: "in"; r: number; n: number; i: Packed[] }
   | { e: "sum"; r: number; n: number; h: number }
   | { e: "echo"; at: number };
-const ROUND = int(1, 1e6), TICK = int(1, 1e6);
+const ROUND = int(1, 1e6), TICK = int(1, 1e6), PICK_C = str(40, { re: /^[a-z0-9-]{1,40}$/ }), PICK_LV = int(1, 100);
 const CLIENT: Guard<DuelIn> = (v) => {
   const e = typeof v === "object" && v !== null && "e" in v ? v.e : undefined;
-  if (e === "pick") { const p = PICK(v); return { e: "pick", c: p.c, lv: p.lv }; }
+  if (e === "pick") { const p = obj({ c: PICK_C, lv: PICK_LV, foe: opt(DEN_FOE) })(v); return { e: "pick", c: p.c, lv: p.lv, ...(p.foe && { foe: p.foe }) }; }
   if (e === "in") return obj({ e: oneOf(["in"]), r: ROUND, n: TICK, i: arr(PACKED, BATCH, { min: 1 }) })(v);
   if (e === "sum") return obj({ e: oneOf(["sum"]), r: ROUND, n: TICK, h: int(0, 2 ** 32 - 1) })(v);
   return obj({ e: oneOf(["echo"]), at: int(0, 1e15) })(v);
@@ -84,11 +88,11 @@ const CLIENT: Guard<DuelIn> = (v) => {
 export const parseDuelIn = (raw: unknown): DuelIn | null => check(CLIENT, raw);
 
 /** The room to a page. `seats`: who is in, one entry a chair (your seat is `you`), and who has picked; `go`: round `r`
- *  starts with one pick a seat, and `seed` for the co-op room's wild one; `in`: seat `s`'s inputs; `from`: the room
+ *  starts with one pick a seat, and `seed` for the co-op room's wild one (or `foe`, the den's creature seat 0 walked into); `in`: seat `s`'s inputs; `from`: the room
  *  missed yours, send again from tick `n`; `desync`: two pages played round `r` differently, so it's off. */
 export type DuelOut =
   | { t: "seats"; you: number; names: (string | null)[]; picked: boolean[] }
-  | { t: "go"; r: number; picks: Pick[]; seed: number }
+  | { t: "go"; r: number; picks: Pick[]; seed: number; foe?: DenFoe }
   | { t: "in"; s: number; r: number; n: number; i: Packed[] }
   | { t: "desync"; r: number; n: number }
   | { t: "from"; r: number; n: number }
@@ -101,7 +105,7 @@ const SERVER: Guard<DuelOut> = (v) => {
     if (s.names.length !== s.picked.length || s.you >= s.names.length) throw new Bad("a name and a pick for every chair, yours among them");
     return s;
   }
-  if (t === "go") return obj({ t: oneOf(["go"]), r: ROUND, picks: arr(PICK, SEATS.coop, { min: 2 }), seed: int(1, 2 ** 31 - 1) })(v);
+  if (t === "go") return obj({ t: oneOf(["go"]), r: ROUND, picks: arr(PICK, SEATS.coop, { min: 2 }), seed: int(1, 2 ** 31 - 1), foe: opt(DEN_FOE) })(v);
   if (t === "in") return obj({ t: oneOf(["in"]), s: SEAT, r: ROUND, n: TICK, i: arr(PACKED, BATCH, { min: 1 }) })(v);
   if (t === "desync") return obj({ t: oneOf(["desync"]), r: ROUND, n: TICK })(v);
   if (t === "from") return obj({ t: oneOf(["from"]), r: ROUND, n: TICK })(v);

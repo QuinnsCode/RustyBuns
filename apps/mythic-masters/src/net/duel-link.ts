@@ -4,7 +4,7 @@ import { connectSocket, type Link } from "@rustybuns/util/socket";
 import { fresh, login } from "../account.ts";
 import { uid } from "./online.ts";
 import type { Match } from "../sim.ts";
-import { decodeDuel, delayFor, Lockstep, SUM_EVERY, sum, type DuelIn, type DuelOut, type Pick, type RoomKind } from "./duel.ts";
+import { decodeDuel, delayFor, Lockstep, SUM_EVERY, sum, type DenFoe, type DuelIn, type DuelOut, type Pick, type RoomKind } from "./duel.ts";
 
 export type DuelStatus = "joining" | "in" | "offline" | "full" | "signin";
 export interface DuelOpts {
@@ -72,14 +72,15 @@ export class DuelLink {
     if (this.step?.r === m.r) { this.step = null; this.o.onDesync?.(); }
   }
 
-  /** Who we fight with next. Said again each second until the room shows it (a busy room may drop one), and after a reconnect. */
-  pick(p: Pick) {
-    this.wanted = p;
-    this.link.send({ e: "pick", ...p });
+  /** Who we fight with next (and, a co-op room's host at a den, what lives there). Said again each second until the room
+   *  shows it (a busy room may drop one), and after a reconnect. */
+  pick(p: Pick, foe?: DenFoe) {
+    this.wanted = { ...p, ...(foe && { foe }) };
+    this.link.send({ e: "pick", ...this.wanted });
     clearInterval(this.asking);
     this.asking = setInterval(() => { if (this.wanted && this.link.open && !this.seats?.picked[this.seats.you]) this.link.send({ e: "pick", ...this.wanted }); }, 1000);
   }
-  private wanted: Pick | null = null;
+  private wanted: (Pick & { foe?: DenFoe }) | null = null;
   private asking: ReturnType<typeof setInterval> | undefined;
 
   /** After a frame's ticks: what we owe the room, and a fight hash on the SUM_EVERY ticks. */
