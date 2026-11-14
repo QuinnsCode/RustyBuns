@@ -90,7 +90,7 @@ test("two friends play one fight: same ticks, same winner, a clean rematch; a th
   a.link.close(); c.link.close();
 });
 
-test("two friends team up against a wild one: both pages play it to the same knockout", async () => {
+test("two friends team up against a wild one: both pages play it to the same end", async () => {
   const a = page("COOPTEST1", "a1a1a1a1a1a1a1a1a1a1a1a1", "Alice", { c: "hodag", lv: 20 }, "coop");
   await until("alice seated", () => a.link.seats?.you === 0);
   expect(a.link.seats?.names.length).toBe(4); // a co-op room has four chairs, and starts with two
@@ -105,7 +105,9 @@ test("two friends team up against a wild one: both pages play it to the same kno
   while (!a.live!.m.over || !b.live!.m.over) { a.frame(8); b.frame(6); await Bun.sleep(8); }
   const end = (l: Live) => ({ tick: l.m.tick, sum: sum(l.m), winner: l.m.winner, ko: l.m.events.find((e) => e.kind === "ko") });
   expect(end(b.live!)).toEqual(end(a.live!));
-  expect(["hp", "ring-out"]).toContain(end(a.live!).ko?.kind === "ko" ? end(a.live!).ko!.how : "none"); // a knockout, not the clock
+  // The fight ended on both pages the same way. The wild one's bot is seeded by the room, so about one seed in 400
+  // runs the full 99 seconds and the clock ends it: that is a fair end too, as long as both pages see it (#4467).
+  expect(end(a.live!).ko).toMatchObject({ kind: "ko", how: expect.stringMatching(/^(hp|ring-out|time)$/) });
   expect(a.desync || b.desync).toBe(false);
   console.log(`co-op: over at tick ${a.live!.m.tick}, team ${a.live!.m.winner} won, ${JSON.stringify(end(a.live!).ko)}`);
   a.link.close(); b.link.close();
