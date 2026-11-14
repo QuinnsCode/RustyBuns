@@ -8,6 +8,7 @@
 import { clamp } from "@rustybuns/util";
 import { COLOURS } from "../world/hues.ts";
 import { FACTIONS, type FactionId } from "../factions/model.ts";
+import { DAWN_HOUR, DAY, hourAt } from "../world/day.ts";
 import { arr, Bad, bool, check, int, num, obj, oneOf, opt, str, type Guard } from "@rustybuns/util/guard";
 
 /** Players in one region's room: a hunting party, not a crowd. */
@@ -140,7 +141,9 @@ export const SIGNS = 3;
  * - `rival`: it took on faction `f`'s team (#4316), so friends know where it is. Only that: a team is made from the
  *   player's own save, so the room has nothing to check a fight report against, and none goes with it;
  * - `coop`: at the wild den or keeper it just walked into, it opened co-op room `code` (net/duel.ts, #4413), so friends
- *   in its region can join the fight. Told only for the den the room believed, a moment ago (COOP_MS). */
+ *   in its region can join the fight. Told only for the den the room believed, a moment ago (COOP_MS);
+ * - `rest`: it lay down at a fire or a cabin for the night (#4383). Once everyone in the room has, at night by the room's
+ *   clock, the room moves its clock on to dawn; walking off (REST_DM) gets up again. */
 export type Event =
   | { e: "den"; den: string; c: string; lv: number; ago: number; n: number }
   | { e: "seen" } & Seen
@@ -151,7 +154,8 @@ export type Event =
   | { e: "life"; k: "flush" | "pick"; id: string; h: number }
   | { e: "open"; rs: number[] }
   | { e: "rival"; f: FactionId }
-  | { e: "coop"; code: string };
+  | { e: "coop"; code: string }
+  | { e: "rest" };
 export type Met = Extract<Event, { e: "den" }>;
 const EVENT: Guard<Event> = (v) => {
   const e = typeof v === "object" && v !== null && "e" in v ? v.e : undefined;
@@ -163,6 +167,7 @@ const EVENT: Guard<Event> = (v) => {
   if (e === "open") return obj({ e: oneOf(["open"]), rs: arr(POSE.r, 64) })(v);
   if (e === "hurt") return obj({ e: oneOf(["hurt"]), d: int(0, HURT_FULL) })(v);
   if (e === "time") return obj({ e: oneOf(["time"]) })(v);
+  if (e === "rest") return obj({ e: oneOf(["rest"]) })(v);
   if (e === "seen") return obj({ e: oneOf(["seen"]), ...SEEN })(v);
   return obj({ e: oneOf(["den"]), den: str(48, { re: DEN }), c: POSE.l, lv: int(1, 200), ago: int(0, AGO_MS, 0), n: int(0, FIGHT_PER_DEN, 0) })(v);
 };
@@ -257,11 +262,24 @@ export const WORLD_EPOCH = Date.UTC(2026, 10, 1);
  *  same tick, and the number stays small enough for the shaders' float32 time (plant sway, ripples) to keep moving smoothly. */
 export const WORLD_CYCLE = 5 * 24 * 60;
 
+/** A friend lying down at a fire gets up again once their pose is this many decimetres from where they lay down (a fire's
+ *  light, poi.ts SHELTER_R). */
+export const REST_DM = 240;
+/** How far the party's room moves its clock on when everyone is resting, in ms: to half past six (as a walk alone sleeps,
+ *  world/view.ts `sleep`), or 0 by day. `age` is the room's clock in ms. Night here is a little wider than the page's
+ *  (from six to six) so a page that just saw the dark is never refused for a clock a few ms apart. */
+export function restMs(age: number): number {
+  const hour = hourAt(age / 1000);
+  if (hour >= 6 && hour < 18) return 0;
+  return Math.round(((((DAWN_HOUR - 1.5 - hour) % 24) + 24) % 24 / 24) * DAY * 1000);
+}
+
 /** Someone else in the room as the room tells it: a one-way id, the name they go by, and what we know of their pose. */
 export interface Player { id: string; name: string; p: Delta }
 /** The room to a page. `all` on joining (with `age`: ms on the world clock, since WORLD_EPOCH by the room's time), then
  * `hi` / `p` / `den` / `hunt` / `fought` / `bye` as people come, move, fight, track and go. `vouch` is to you alone: the room
- * trusts where you stand again after a jump, so tell it again what it dropped meanwhile. */
+ * trusts where you stand again after a jump, so tell it again what it dropped meanwhile. `rest`: `id` lay down for the
+ * night, and `n` of the `of` in the room are resting; `dawn`: they all were, and the clock moved on to `age`. */
 export type ServerMsg =
   | { t: "all"; you: string; age: number; players: Player[]; seen?: Seen }
   | { t: "hi"; id: string; name: string }
@@ -274,6 +292,8 @@ export type ServerMsg =
   | { t: "coop"; id: string; den: string; c: string; lv: number; code: string }
   | { t: "life"; id: string; k: "flush" | "pick"; f: string; h: number }
   | { t: "time"; age: number }
+  | { t: "rest"; id: string; n: number; of: number }
+  | { t: "dawn"; age: number }
   | { t: "vouch" }
   | ({ t: "seen"; id: string } & Seen)
   | { t: "bye"; id: string };
@@ -295,6 +315,8 @@ const SERVER: Guard<ServerMsg> = (v) => {
   if (t === "den") return obj({ t: oneOf(["den"]), id: PID, den: str(48, { re: DEN }), c: POSE.l })(v);
   if (t === "seen") return obj({ t: oneOf(["seen"]), id: PID, ...SEEN })(v);
   if (t === "time") return obj({ t: oneOf(["time"]), age: int(0, 1e12) })(v);
+  if (t === "dawn") return obj({ t: oneOf(["dawn"]), age: int(0, 1e12) })(v);
+  if (t === "rest") return obj({ t: oneOf(["rest"]), id: PID, n: int(1, MAX_PLAYERS), of: int(1, MAX_PLAYERS) })(v);
   if (t === "life") return obj({ t: oneOf(["life"]), id: PID, k: oneOf(["flush", "pick"]), f: str(24, { re: CELL }), h: num(-10, 10, 0) })(v);
   if (t === "hunt") return obj({ t: oneOf(["hunt"]), id: PID, h: str(32, { re: HUNT }), s: int(0, SIGNS) })(v);
   if (t === "fought") return obj({ t: oneOf(["fought"]), id: PID, c: POSE.l, lv: int(1, 200), won: bool(), bound: bool() })(v);

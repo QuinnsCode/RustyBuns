@@ -53,6 +53,10 @@ export interface OnlineOpts {
   onHurt?: (den: string, id: string, d: number) => void;
   /** A friend flushed a flock (`h`: its heading) or picked a food patch; `at` is when on the world clock, when it was earlier. */
   onLife?: (k: "flush" | "pick", id: string, h: number, at?: number) => void;
+  /** Someone in the room lay down for the night (`who` empty: us), and `n` of the `of` here are resting now. */
+  onRest?: (who: string, n: number, of: number) => void;
+  /** Everyone in the room rested: its clock moved on to dawn. */
+  onDawn?: () => void;
   /** What a friend who was here first knew: flocks landed somewhere new, and dens they are busy at. */
   onSeen?: (s: Pick<Seen, "roost" | "busy">) => void;
   /** Someone else is here now (we joined a room with people in it, or someone joined ours), or the room trusts where we
@@ -149,6 +153,8 @@ export class Online {
     }
     else if (m.t === "hi") { this.ghosts.set(m.id, new Ghost(m.id, m.name)); this.sent = null; this.o.onCompany?.(); } // they need all of our pose
     else if (m.t === "vouch") { this.retell(); if (this.ghosts.size) this.o.onCompany?.(); return; } // the den it refused, then the contracts
+    else if (m.t === "dawn") { this.heard = [{ age: m.age, at: now }]; this.o.onDawn?.(); return; } // the old samples are a night behind
+    else if (m.t === "rest") { this.o.onRest?.(m.id === this.you ? "" : this.ghosts.get(m.id)?.name ?? "", m.n, m.of); return; }
     else if (m.t === "time") { this.heard.push({ age: m.age, at: now }); if (this.heard.length > 8) this.heard.shift(); return; }
     else if (m.t === "life") this.o.onLife?.(m.k, m.f, m.h);
     else if (m.t === "seen") this.told(m);
@@ -195,6 +201,9 @@ export class Online {
 
   /** Seconds on the room's clock at `now` (performance.now()), or null when not in a room. */
   clock(now: number): number | null { return this.heard.length ? (((bestOffset(this.heard) + now) / 1000) % WORLD_CYCLE + WORLD_CYCLE) % WORLD_CYCLE : null; }
+
+  /** We lay down at a fire or a cabin for the night (#4383): where we are first, which walking off from gets us up again. */
+  rest() { if (this.sendPose()) this.link?.send({ e: "rest" }); }
 
   /** We walked into the wild one at `den` (creature `c`, level `lv`): tell the party. */
   met(den: string, c: string, lv: number) {

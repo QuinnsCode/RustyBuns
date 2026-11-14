@@ -197,6 +197,8 @@ const online = room ? new Online(room, {
     world.note(`${icon("users")} ${esc(f.who || "A friend")} ${f.bound ? "bound" : f.won ? "beat" : "lost to"} ${esc(creature(f.c).name)} (Lv ${f.lv}).`);
   },
   onCompany: () => { shareHunts(); online?.seen(world.seen()); },
+  onRest: (who, n, of) => { if (who) world.note(`${icon("moon")} ${esc(who)} lies down for the night: ${n} of ${of} resting.`); },
+  onDawn: () => { world.woke(); world.note(`${icon("sunrise")} The whole party rested. Dawn.`); },
   onSeen: (s) => world.seenHeard(s),
   onLife: (k, id, h, at) => world.lifeHeard(k === "pick" ? { k, id } : { k, id, h }, at),
   // Start sends everyone to the room from their own save: walk over to the friend already here, if their region is open to you.
@@ -650,8 +652,10 @@ const world = worldView(scene, camera, {
         }
         return st > CLUES ? `${h.title}: closed.` : st === CLUES ? `${h.title} waits at its lair.` : `${h.title}: ${st} of ${CLUES} signs read.`;
       }
-      // A cabin or a fire at night: alone, you sleep till dawn; a party's night is the room's clock, so it is sat out (#3779).
-      const night = () => online ? (world.state().day.dark ? " The night is shared with your party: sit it out here." : "") : world.sleep() ? " You sleep till dawn." : "";
+      // A cabin or a fire at night: alone, you sleep till dawn; a party lies down, and once all of it has, the room moves
+      // its clock on to dawn for everyone (#4383).
+      const night = () => !online ? (world.sleep() ? " You sleep till dawn." : "")
+        : world.restful() ? (online.rest(), " You lie down for the night. It passes once the whole party rests.") : "";
       if (p.kind === "cabin") {
         const first = sight(journey, p); saveJourney();
         return (first ? "An old cabin. The door bars from inside, and nothing comes in after dark." : "The old cabin.") + night();

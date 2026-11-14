@@ -677,9 +677,12 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
   let clock = 0, nearest: Wild | null = null;
   // After dark (#3773) the night ones come out, and out in the open the wilds come at you from further off. A lit
   // campfire, a cabin or the arena's ring is shelter (poi.ts shelterAt): none comes into it; they circle at its edge,
-  // watching, until the sun is up. Alone, you can sleep there till dawn (`sleep`); a party shares one clock, so it can't.
+  // watching, until the sun is up. Alone, you can sleep there till dawn (`sleep`); a party shares one clock, so it rests
+  // there together and its room moves the clock on (`restful`, `woke`, #4383).
   let dark = false, shelter: Shelter | undefined;
   const EDGE = SHELTER_R + 5;
+  const restful = () => L.night >= 0.15 && !!shelterAt(hooks.places?.log() ?? null, me);
+  const woke = () => { dread = 0; stalker = null; stalkerDen = null; };
   function keepOut(c: Wild): Wild {
     if (!shelter) return c;
     const dx = c.x - shelter.x, dz = c.z - shelter.z, d = Math.hypot(dx, dz);
@@ -1560,12 +1563,16 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
     setWeather(w: Weather | null) { forced = w; },
     /** Puts the camera `back` metres behind you, `up` above the ground, looking `look` metres up from your feet (null: the walking camera). For an agent's ground-level screenshot. */
     eye(e: { back: number; up: number; look: number } | null) { eye = e; snap = true; },
-    /** Sleeps till dawn (half past six) when it is night and you stand in a shelter: true if you slept. The caller keeps it
-     *  to a walk alone, since a party's clock is the room's (#3779). */
+    /** Is it night, and you in a shelter (a lit fire, a cabin): somewhere to sleep? */
+    restful,
+    /** The night is over: nothing stalks you any more. */
+    woke,
+    /** Sleeps till dawn (half past six) when `restful`: true if you slept. The caller keeps it to a walk alone, since a
+     *  party's clock is the room's (#3779): a party rests together and its room moves the clock on (#4383). */
     sleep(): boolean {
-      if (L.night < 0.15 || !shelterAt(hooks.places?.log() ?? null, me)) return false;
+      if (!restful()) return false;
       dayOff += ((((DAWN_HOUR - 1.5 - hourAt(tod())) % 24) + 24) % 24 / 24) * DAY;
-      dread = 0; stalker = null; stalkerDen = null;
+      woke();
       return true;
     },
     /** Sets the hour of the day (0 to 24), for an agent's screenshot of dusk or the fireflies. */
