@@ -276,7 +276,12 @@ async function setValve(arg: string | undefined): Promise<number> {
   return 0;
 }
 
-export async function main(argv: string[], cwd: string): Promise<number> {
+/** What `main` answers when it was given a commit (`at`) and the builder couldn't take it now: nothing ran. */
+export const NOT_RUN = 125;
+
+/** `at`: run that commit (it must be in `cwd`'s repo) instead of the working tree, on the builder only: no builder now
+ *  (unset, off, charging) answers NOT_RUN at once instead of running here or waiting. scripts/ring-red.ts bisects with it. */
+export async function main(argv: string[], cwd: string, at?: string): Promise<number> {
   const host = process.env.BUILDER_HOST;
   const usage = "usage: bun run builder [on|off]  |  bun run builder <base-ref>  |  bun run builder all [base-ref]  |  bun run builder passed  |  bun run builder run <dir> <cmd...>  |  bun run builder nightly";
   if (!argv.length || argv[0] === "on" || argv[0] === "off") return setValve(argv[0]);
@@ -287,6 +292,7 @@ export async function main(argv: string[], cwd: string): Promise<number> {
   if (argv[0] === "run" && argv.length < 3) { console.error(usage); return 2; }
   const v = await valve();
   if (!host) {
+    if (at) { console.error("BUILDER_HOST is not set: a run at a commit needs the builder"); return NOT_RUN; }
     if (v === "off") { console.error(`valve shut but BUILDER_HOST is not set, so nothing runs: \`bun run builder on\` to run here`); return 1; }
     return fallback(argv, cwd, "BUILDER_HOST is not set, so there is no builder (scripts/builder-setup.sh sets one up)");
   }
@@ -312,6 +318,7 @@ export async function main(argv: string[], cwd: string): Promise<number> {
     const p = plan(v, up, got?.batt ?? { onPower: true, pct: 100 }, cap);
     if (p.where === "bob") { slot = got!.slot; cap = p.cap; if (p.why) console.log(p.why); break; }
     if (got) await release(b, got.slot);
+    if (at) { console.error(`the builder can't take a run now (${p.why ?? "off"})`); return NOT_RUN; }
     if (p.where === "here") return fallback(argv, cwd, p.why!);
     if (said !== p.why) console.log((said = p.why!));
     await Bun.sleep(poll);
@@ -323,7 +330,7 @@ export async function main(argv: string[], cwd: string): Promise<number> {
   process.once("SIGTERM", giveBack);
   let code = 1;
   try {
-    const sent = await snapshot(cwd);
+    const sent = at ?? await snapshot(cwd);
     const setup = await load(b, slot, sent, cwd);
     if (setup) return (code = setup);
     console.log(`running ${jobs.map((j) => j.label).join(", ")} on ${host} (${slot}), ${cap} at a time`);
