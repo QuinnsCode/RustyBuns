@@ -41,7 +41,9 @@ export class Viewer {
   private ray = new THREE.Raycaster();
   private dirty = true;
   private visible = true;
-  private dragging: { pointer: number; layer: Layer; at: Placement; from: unknown } | null = null;
+  private dragging: { pointer: number; layer: Layer; at: Placement; from: unknown; xy: Point } | null = null;
+  /** A second finger down while the first holds the picture: the two size and turn it. */
+  private pinch: { pointer: number; xy: Point; at: Placement; span: number; angle: number } | null = null;
   private frame = 0;
   private worker: Worker | null = null;
   private noWorker = false;
@@ -298,7 +300,15 @@ export class Viewer {
   }
 
   private down = (e: PointerEvent) => {
-    if (this.dragging) return;
+    if (this.dragging) {
+      // A second finger while the first holds the picture pinches it, wherever that finger lands (a picture is small on a
+      // phone). Two fingers that didn't start on the picture never get here: OrbitControls zooms the camera as before.
+      if (this.pinch || e.pointerId === this.dragging.pointer || e.pointerType === "mouse") return;
+      const xy: Point = [e.clientX, e.clientY], [span, angle] = between(this.dragging.xy, xy);
+      this.pinch = { pointer: e.pointerId, xy, at: { ...this.dragging.layer.at }, span, angle };
+      try { this.canvas.setPointerCapture(e.pointerId); } catch { /* a pointer that already ended */ }
+      return;
+    }
     const spot = this.pick(e);
     if (!spot) return;
     const l = this.under(spot);
@@ -309,7 +319,7 @@ export class Viewer {
       return;
     }
     if ((l.at.zone ?? "front") !== this.zone) { this.zone = l.at.zone ?? "front"; this.onChange(); }
-    this.dragging = { pointer: e.pointerId, layer: l, at: { ...l.at }, from: spot };
+    this.dragging = { pointer: e.pointerId, layer: l, at: { ...l.at }, from: spot, xy: [e.clientX, e.clientY] };
     this.controls.enabled = false;
     try { this.canvas.setPointerCapture(e.pointerId); } catch { /* a pointer that already ended */ }
     this.canvas.style.cursor = "grabbing";
@@ -323,7 +333,20 @@ export class Viewer {
       this.canvas.style.cursor = spot && this.under(spot) ? "grab" : "";
       return;
     }
-    if (e.pointerId !== this.dragging.pointer) return;
+    const d = this.dragging, p = this.pinch;
+    if (p && (e.pointerId === p.pointer || e.pointerId === d.pointer)) {
+      if (e.pointerId === p.pointer) p.xy = [e.clientX, e.clientY];
+      else d.xy = [e.clientX, e.clientY];
+      const [span, angle] = between(d.xy, p.xy);
+      // The print turns the other way round to the screen's y-down angle (print.ts draws it with rotate(-rotation)).
+      let turn = p.at.rotation - (angle - p.angle);
+      turn = Math.atan2(Math.sin(turn), Math.cos(turn));
+      d.layer.at = clampPlacement({ ...p.at, scale: p.at.scale * (span / Math.max(1, p.span)), rotation: turn });
+      this.repaint(true);
+      return;
+    }
+    if (e.pointerId !== d.pointer) return;
+    d.xy = [e.clientX, e.clientY];
     const spot = this.pick(e);
     if (!spot) return;
     this.dragging.layer.at = clampPlacement(this.surface.drag(this.dragging.at, this.dragging.from, spot));
@@ -331,8 +354,19 @@ export class Viewer {
   };
 
   private up = (e: PointerEvent) => {
-    if (!this.dragging || e.pointerId !== this.dragging.pointer) return;
+    if (!this.dragging) return;
+    if (this.pinch && e.pointerId === this.pinch.pointer) {
+      // The second finger lifts: the first drags on from where the picture is now.
+      this.pinch = null;
+      const spot = this.pick({ clientX: this.dragging.xy[0], clientY: this.dragging.xy[1] });
+      if (spot) Object.assign(this.dragging, { at: { ...this.dragging.layer.at }, from: spot });
+      this.onChange();
+      return;
+    }
+    if (e.pointerId !== this.dragging.pointer) return;
+    if (this.pinch) try { this.canvas.releasePointerCapture(this.pinch.pointer); } catch { /* already gone */ }
     this.dragging = null;
+    this.pinch = null;
     this.controls.enabled = true;
     this.canvas.style.cursor = "";
     this.repaint(false);
@@ -421,6 +455,13 @@ export class Viewer {
     this.renderer.dispose();
     this.canvas.remove();
   }
+}
+
+type Point = [number, number];
+
+/** How far apart two fingers are, and the angle from the first to the second (screen pixels, y down). */
+function between(a: Point, b: Point): [number, number] {
+  return [Math.hypot(b[0] - a[0], b[1] - a[1]), Math.atan2(b[1] - a[1], b[0] - a[0])];
 }
 
 /** A soft round shadow under the hat: a radial gradient on a quad, no shadow maps to render. */
