@@ -411,7 +411,9 @@ A person's eqosys account plays, and a studio's account makes. Each studio has m
 - make it (its codeSplitter repo)
 - ship it (what is live)
 
-The super admin's QNTBR studio is made the first time that they open eqosys, and its shelf has each app in `APPS`. The Studio tab on the eqosys home shows each studio that you are in, your role, its members and the shelf. An owner or admin adds people there by email, and any person can make a studio (`src/app/Studio.tsx`). The tools are `eq_studios`, `eq_studio_make` and `eq_studio_add`.
+The super admin's QNTBR studio is made the first time that they open eqosys, and its shelf has each app in `APPS`. The Studio tab on the eqosys home shows each studio that you are in, your role, its members and the shelf. An owner or admin adds and takes out people there by email, and any person can make a studio (`src/app/Studio.tsx`). The tools are `eq_studios`, `eq_studio_make`, `eq_studio_add` and `eq_studio_remove`.
+
+A studio can have its own Qollab space. Its members are the studio's members: a person who joins the studio is in every channel, and a person who leaves is out at once. The studio's owners and admins run the space (channels, mute and kick), and messages there can be up to 2000 characters (other chat stays at 280). People in the same studio also see each other online in the hub, without a friend request.
 
 Qollab is the Durable Object layer below this: a hub for each player, and a party or space for each room. The plan is in [apps/eqosys/VISION.md](apps/eqosys/VISION.md).
 

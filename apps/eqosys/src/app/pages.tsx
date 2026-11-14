@@ -40,7 +40,7 @@ export const MESSAGES: Record<string, string> = {
   last: "That is your only way to sign in, so it stays.",
   nolink: "That friend link is no longer good. Ask them for a new one.",
   nobody: "Nobody has signed up with that email yet.",
-  studio: "Only a studio's owner or admin adds people, and only an owner makes another owner.",
+  studio: "Only a studio's owner or admin adds or takes out people, only an owner makes or takes out another owner, and a studio keeps one owner.",
   owned: "You own three studios already.",
   name: "A studio's name is 1 to 60 characters.",
   making: "That game is still being made: only its studio can sign in to it until it is listed.",

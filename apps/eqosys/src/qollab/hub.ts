@@ -1,4 +1,5 @@
-// One Durable Object per person: their friends, who of them is on and in which app, and their notifications.
+// One Durable Object per person: their friends, who of them is on and in which app, and their notifications. People who share a
+// studio with them (studios.ts) are their coworkers: their hubs trade presence the way friends' do, with no friend request.
 // The user directory stays in D1; a hub only knows the people it has been introduced to.
 //
 // Nobody reaches a hub directly. The Worker checks an app's token (handle.ts) and calls it as
@@ -14,6 +15,7 @@ import { Sockets, type RoomCtx, type RoomSocket } from "@rustybuns/util/room";
 import { onSite } from "../apps.ts";
 import { appOf } from "../listings.ts";
 import { b64url, json, loopbackOn, sha256, type D1 } from "../env.ts";
+import { coworkersOf } from "../studios.ts";
 
 export const MAX_FRIENDS = 200, MAX_ASKS = 100, MAX_NOTES = 50, MAX_SOCKETS = 10;
 /** Friend requests by email an hour: plenty for adding friends, too few to walk a list of addresses for accounts. */
@@ -62,7 +64,9 @@ export type Note = Of<typeof Note>;
  * Everything a person's hub knows, the way every page and app gets it. The lists are capped by the hub; the guard only reads them.
  * `link` is their friend link's path after /add/ (`<id>/<key>`): whoever opens it signed in is their friend, no email and no accept.
  */
-export const HubState = obj({ me: nul(Person), friends: arr(Friend, 1000), incoming: arr(Asked, 1000), outgoing: arr(Asked, 1000), notes: arr(Note, 1000), link: opt(str(300)) });
+const Coworker = obj({ id: Id, name: Name, presence: arr(Presence, MAX_SOCKETS) });
+export type Coworker = Of<typeof Coworker>;
+export const HubState = obj({ me: nul(Person), friends: arr(Friend, 1000), coworkers: opt(arr(Coworker, MAX_FRIENDS)), incoming: arr(Asked, 1000), outgoing: arr(Asked, 1000), notes: arr(Note, 1000), link: opt(str(300)) });
 export type HubState = Of<typeof HubState>;
 export type HubOut = { t: "state" } & HubState | { t: "error"; error: string };
 const Err = obj({ error: str(500) });
@@ -355,8 +359,10 @@ export class Hub {
         break;
       }
       case "presence":
-        if (!friend) return;
-        await s.put(`f:${id}`, { ...friend, name: p.from.name, presence: p.presence ?? [] } satisfies Friend);
+        if (friend) await s.put(`f:${id}`, { ...friend, name: p.from.name, presence: p.presence ?? [] } satisfies Friend);
+        // A coworker's word is kept under c: while D1 says they still share a studio (state() reads only current coworkers).
+        else if ((await coworkersOf(this.env, me.id)).some((c) => c.id === id)) await s.put(`c:${id}`, { ...p.from, presence: p.presence ?? [] } satisfies Coworker);
+        else return;
         break;
       case "note":
         if (!friend || !p.text) return;
@@ -403,8 +409,9 @@ export class Hub {
     const now = await this.mine(closing);
     if (!me || JSON.stringify(now) === JSON.stringify((await s.get<Presence[]>("presence")) ?? [])) return;
     await s.put("presence", now);
-    const friends = [...(await s.list<Friend>({ prefix: "f:" })).values()];
-    await Promise.all(friends.map((f) => this.send(f, { from: me, kind: "presence", presence: now })));
+    const friends = [...(await s.list<Friend>({ prefix: "f:" })).values()], ids = new Set(friends.map((f) => f.id));
+    const coworkers = (await coworkersOf(this.env, me.id, MAX_FRIENDS)).filter((c) => !ids.has(c.id));
+    await Promise.all([...friends, ...coworkers].map((f) => this.send(f, { from: me, kind: "presence", presence: now })));
   }
 
   private async send(to: Person, p: Omit<Peer, "to">) {
@@ -420,9 +427,13 @@ export class Hub {
     let key = await s.get<string>("link");
     if (me && !key) await s.put("link", key = mintLink());
     const vals = async <T,>(prefix: string) => [...(await s.list<T>({ prefix })).values()];
+    const friends = (await vals<Friend>("f:")).sort((a, b) => a.name.localeCompare(b.name)), ids = new Set(friends.map((f) => f.id));
+    // Coworkers come from D1 each time, so someone who left the studio drops out; their presence is what their hub last said.
+    const heard = new Map((await vals<Coworker>("c:")).map((c) => [c.id, c.presence]));
+    const coworkers = me ? (await coworkersOf(this.env, me.id, MAX_FRIENDS)).filter((c) => !ids.has(c.id)).map((c): Coworker => ({ ...c, presence: heard.get(c.id) ?? [] })) : [];
     return {
       me: me ?? null,
-      friends: (await vals<Friend>("f:")).sort((a, b) => a.name.localeCompare(b.name)),
+      friends, ...(coworkers.length ? { coworkers } : {}),
       incoming: await vals<Asked>("in:"), outgoing: (await vals<Out>("out:")).map(({ id, name, at }) => ({ id, name, at })),
       notes: (await vals<Note>("n:")).reverse(),
       ...(me && key ? { link: `${encodeURIComponent(me.id)}/${key}` } : {}),

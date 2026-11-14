@@ -21,7 +21,7 @@ const hub: HubState = { me: { id: "1", name: "Sam" }, incoming: [{ id: "9", name
 const side: Side = { more: 0, spaces: [{ id: "a", name: "Skate crew", owner: true, on: 2 }, { id: "b", name: "Family", owner: false, on: 0 }],
   party: { code: "KQ7X", app: "park-hide-seek", size: 4, members: [{ id: "1", name: "Sam", ready: true, host: true }, { id: "2", name: "Riley", ready: false, host: false }] } };
 
-const studios: Studio[] = [{ id: "q", name: "Sam's Studio", kind: "business", role: "owner", members: 2,
+const studios: Studio[] = [{ id: "q", name: "Sam's Studio", kind: "business", role: "owner", members: 2, space: null,
   people: [{ name: "Sam", email: "sam@example.com", role: "owner" }, { name: "Riley", email: "riley@example.com", role: "maker" }],
   apps: APPS.slice(0, 4).map((a, i) => ({ id: a.id, name: a.name, play: a.origins[0] ?? null, make: i % 2 ? "qntbr/repo" : null, ship: "live", shipped: null })) }];
 

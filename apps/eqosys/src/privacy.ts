@@ -9,7 +9,7 @@ import { HOME } from "./apps.ts";
 import type { Env } from "./env.ts";
 import { hubAsk } from "./qollab/hub.ts";
 import { get as getSave } from "./qollab/saves.ts";
-import { spaceOf } from "./qollab/space.ts";
+import { SPACES_OF, spaceOf } from "./qollab/space.ts";
 import { vaultFor } from "./vault.ts";
 
 export interface Subject { conf: Env; me: { id: string; name: string } }
@@ -64,11 +64,12 @@ export const HOLDERS: Holder<Subject>[] = [
     export: ({ conf, me }) => rows(conf, "SELECT app, at, issue, kind, title, body FROM reports WHERE user_id = ?", me.id),
   },
   {
-    id: "spaces", what: "Spaces you made or joined, and the messages you sent in them", why: "So your groups and their channels last", basis: "contract",
+    id: "spaces", what: "Spaces you made or joined (your studios' spaces too), and the messages you sent in them", why: "So your groups and their channels last", basis: "contract",
     keep: "the last 10,000 messages of a channel; a space you own until you delete it or your account",
     export: async ({ conf, me }) => {
       const mine = await rows<{ id: string; name: string; owner: string; at: number }>(conf,
-        "SELECT s.id, s.name, s.owner, m.at FROM space_members m JOIN spaces s ON s.id = m.space_id WHERE m.user_id = ?", me.id);
+        `SELECT s.id, s.name, s.owner, COALESCE(m.at, sm.at) AS at FROM spaces s LEFT JOIN space_members m ON m.space_id = s.id AND m.user_id = ?1
+         LEFT JOIN studio_members sm ON sm.studio_id = s.studio_id AND sm.user_id = ?1 WHERE s.id IN (${SPACES_OF})`, me.id);
       return Promise.all(mine.map(async (s) => ({
         id: s.id, name: s.name, owner: s.owner === me.id, joined_at: s.at,
         messages: conf.SPACE ? await spaceOf(conf.SPACE, s.id).fetch(new Request(`https://space/mine?${new URLSearchParams({ id: me.id })}`)).then((r) => r.json(), () => null) : null,

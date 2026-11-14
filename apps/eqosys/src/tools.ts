@@ -13,6 +13,7 @@ import { members } from "./members.ts";
 import { slotsOf } from "./qollab/saves.ts";
 import { visitorsOf } from "./visitors.ts";
 import { addMember, house, Kind, makeStudio, Role, STUDIO_NAME, studiosOf, KINDS, ROLES } from "./studios.ts";
+import { studioRemove } from "./qollab/space.ts";
 import type { Env } from "./env.ts";
 
 /** Who is asking: a signed-in page (a session cookie; `email` and maybe `admin`) or an app's token (just who). */
@@ -143,6 +144,17 @@ export const TOOLS: Tool[] = [
     run: async (c, a) => {
       if (!c.email) throw new Refused("adding people by email is for the signed-in page, not an app's token", 403);
       const r = await addMember(c.conf, a.studio, c.who.id, a.email, a.role);
+      if (!r.ok) throw new Refused(r.error, r.status);
+      return { ok: true };
+    },
+  }),
+  tool(obj({ studio: str(64), email: str(320) }), {
+    name: "eq_studio_remove", title: "Take someone out of a studio", annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+    description: "Signed in on the page only. Take someone out of a studio by their email, or leave it with your own. The studio's owner or admin asks; only an owner takes out another owner, and a studio keeps one owner. They are out of the studio's space at once.",
+    input: { studio: { type: "string" }, email: { type: "string" } }, required: ["studio", "email"],
+    run: async (c, a) => {
+      if (!c.email) throw new Refused("taking people out by email is for the signed-in page, not an app's token", 403);
+      const r = await studioRemove(c.conf, a.studio, c.who.id, a.email);
       if (!r.ok) throw new Refused(r.error, r.status);
       return { ok: true };
     },
