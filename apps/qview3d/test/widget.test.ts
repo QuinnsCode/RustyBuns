@@ -9,7 +9,7 @@ import { build } from "vite";
 import { launchChrome, load, openTab, type Tab } from "../../../scripts/chrome.ts";
 import { Design } from "../src/api.ts";
 import { designKey } from "../src/layout.ts";
-import { putOrg } from "../src/settings.ts";
+import { putOrg, putProduct } from "../src/settings.ts";
 import { local } from "../src/local.ts";
 
 setDefaultTimeout(120_000);
@@ -144,4 +144,21 @@ test("the iframe tells the page round it what the widget does", async () => {
   const res = await fetch(`${app.url}/v1/frame?org=shop&product=crew-tee`);
   expect(res.headers.get("content-security-policy")).toBe("frame-ancestors https://shop.example");
   expect((await fetch(`${app.url}/v1/frame?org=nobody&product=crew-tee`)).status).toBe(404);
+});
+
+// A shop switched the tee's sleeve off and set where a new picture lands (/orgs.html): the widget offers only the
+// front and back, and the picture starts at the shop's spot.
+test("a product's print zones and starting place shape what the shopper gets", async () => {
+  await putProduct(app.bindings, "demo", "front-back-tee", { name: "Front and back tee", model: "tee", colors: ["#f5f5f4"], print: ["front", "back"], place: { u: 0.5, v: 0.7, scale: 0.3, rotation: 0 } });
+  const tab = await openTab(chrome.cdp, { w: 1280, h: 800 });
+  await load(chrome.cdp, tab, `${app.url}/`, 500);
+  await tab.eval(`${HAT}.removeAttribute("model"); ${HAT}.setAttribute("product", "front-back-tee")`);
+  await until("the tee", () => tab.eval<boolean>(`${HAT}.model === "tee" && !!${HAT}.design`));
+  const zones = await until("its zone buttons", () => tab.eval<string>(`[...${HAT}.shadowRoot.querySelectorAll("[data-zone]")].map((b) => b.dataset.zone).join(",")`));
+  expect(zones).toBe("front,back");
+  await tab.eval(`(async () => { const c = new OffscreenCanvas(64, 64); c.getContext("2d").fillRect(0, 0, 64, 64); await ${HAT}.addImage(await c.convertToBlob({ type: "image/png" })); })()`);
+  expect(await layer(tab)).toMatchObject({ u: 0.5, v: 0.7, scale: 0.3 });
+  // A sleeve picture a page asks for anyway is refused, not printed where the shop said no.
+  expect(await tab.eval<string>(`${HAT}.addImage(new Blob(["x"], { type: "image/png" }), "left-sleeve").then(() => "added", (e) => e.message)`)).toContain("left-sleeve");
+  await tab.close();
 });

@@ -77,6 +77,7 @@ Methods: `addImage(file, zone?)`, `removeImage()`, `place({u, v, scale, rotation
 `model = "beanie"`, `zone = "back"` (a top's `"front"`, `"back"` or `"left-sleeve"`: where the next picture goes and what `place()` moves), `color = "#b91c1c"`, `design` (the settings, a layer for each zone's picture), `load(design)`, `snapshot()` resolves to `{blob, design}`,
 and `save()` resolves to `{id, url, design}`; `value` is the saved id (below). Attributes: `name`, `org`, `product`, `model`, `color`, `colors="#111111,#ffffff"`,
 `controls`, `theme`, and `api` (the server, by default the script's own origin).
+A product's `print` (the zones the shop switched on) and `place` (where a new picture lands), set on `/orgs.html`, shape the widget: it offers only those zones, refuses a picture on one switched off, and starts each new picture at `place`.
 Events, which bubble out of the shadow DOM: `qview:ready`, `qview:change`, `qview:snapshot`, `qview:saved` and `qview:error`.
 
 **The default look is codeSplitter's:** ink on white, hairline borders, paper panels, one orange. It is built to

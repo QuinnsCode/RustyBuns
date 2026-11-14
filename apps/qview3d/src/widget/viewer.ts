@@ -131,8 +131,24 @@ export class Viewer {
   /** The picture in the zone being worked on, if it has one. */
   get layer(): Layer | null { return this.layers.find((l) => (l.at.zone ?? "front") === this.zone) ?? null; }
 
-  /** The product's print zones. */
-  get zones(): readonly ZoneInfo[] { return this.surface.zones; }
+  /** The zones the shop switched on (a product's `print`), or null for all of them. */
+  private print: readonly ZoneName[] | null = null;
+  /** Where a new picture lands (a product's `place`), or null for the zone's middle. */
+  startAt: Omit<Placement, "zone"> | null = null;
+  /** The product's print zones: those it has, less any the shop switched off. */
+  get zones(): readonly ZoneInfo[] {
+    const all = this.surface.zones, on = this.print ? all.filter((z) => this.print!.includes(z.name)) : all;
+    return on.length ? on : all;
+  }
+  /** Switch zones on and off: a picture on one switched off comes off, and work moves to one still on. */
+  setPrint(print: readonly ZoneName[] | null) {
+    this.print = print;
+    const on = (z: ZoneName) => this.zones.some((x) => x.name === z);
+    for (const l of this.layers.filter((l) => !on(l.at.zone ?? "front"))) l.picture.bitmap.close();
+    this.layers = this.layers.filter((l) => on(l.at.zone ?? "front"));
+    if (!on(this.zone)) this.zone = this.zones[0]!.name;
+    this.repaint();
+  }
 
   /** Redraw the pictures on the surface and mark the frame dirty. */
   private repaint(outline = !!this.dragging) {
@@ -153,7 +169,7 @@ export class Viewer {
     this.controls.target.copy(next.target).add(next.group.position);
     // Pictures keep their zones where the new product has them (a hat's front is a top's front); the rest come off.
     // One moving between a made product and a shop's model keeps its size and turn and starts in the middle.
-    const has = (z: ZoneName) => next.zones.some((x) => x.name === z);
+    const has = (z: ZoneName) => this.zones.some((x) => x.name === z);
     for (const l of this.layers.filter((l) => !has(l.at.zone ?? "front"))) l.picture.bitmap.close();
     this.layers = this.layers.filter((l) => has(l.at.zone ?? "front"));
     for (const l of this.layers) {
@@ -161,7 +177,7 @@ export class Viewer {
       const { point, normal, ...rest } = next.start(l.at.zone ?? "front");
       l.at = m === "custom" ? { ...rest, point, normal, scale: l.at.scale, rotation: l.at.rotation } : { ...rest, scale: l.at.scale, rotation: l.at.rotation };
     }
-    if (!has(this.zone)) this.zone = next.zones[0]!.name;
+    if (!has(this.zone)) this.zone = this.zones[0]!.name;
     this.setColor(this.color);
   }
 
@@ -240,7 +256,8 @@ export class Viewer {
     const picture = await this.prepare(file);
     this.zone = zone;
     this.layer?.picture.bitmap.close();
-    const layer = { picture, at: this.surface.start(zone) };
+    const start = this.surface.start(zone);
+    const layer = { picture, at: this.startAt && this.model !== "custom" ? clampPlacement({ ...start, ...this.startAt }) : start };
     this.layers = [...this.layers.filter((l) => (l.at.zone ?? "front") !== zone), layer];
     this.repaint();
     this.view(info.view);
@@ -315,7 +332,7 @@ export class Viewer {
     if (!l) {
       // A press on another zone works on that one from now on (the camera still turns: this press may be a spin).
       const z = this.surface.zoneAt(spot);
-      if (z && z !== this.zone) { this.zone = z; this.repaint(false); this.onChange(); }
+      if (z && z !== this.zone && this.zones.some((x) => x.name === z)) { this.zone = z; this.repaint(false); this.onChange(); }
       return;
     }
     if ((l.at.zone ?? "front") !== this.zone) { this.zone = l.at.zone ?? "front"; this.onChange(); }
