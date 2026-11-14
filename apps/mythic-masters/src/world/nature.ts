@@ -19,8 +19,8 @@ function smooth1(t: number, s: number) {
 }
 
 // --- the day --------------------------------------------------------------------------------------------------------
-export const DAY = 24 * 60;    // seconds of real time one game day takes: a region's walk sees a sunset
-export const DAWN_HOUR = 8;    // the walk begins at eight in the morning
+import { hourAt } from "./day.ts";
+export { DAY, DAWN_HOUR, hourAt } from "./day.ts";
 export type RGB = [number, number, number];
 export interface Light {
   /** 0 to 24. */
@@ -40,9 +40,6 @@ const mix = (a: RGB, b: RGB, t: number): RGB => [lerp(a[0], b[0], t), lerp(a[1],
 const SKY_DAY = rgb(0xa8c8e8), SKY_DUSK = rgb(0xe8a070), SKY_NIGHT = rgb(0x0f1a2c);
 const FOG_DAY = rgb(0xc8d8e4), FOG_DUSK = rgb(0xd8a888), FOG_NIGHT = rgb(0x18243a);
 const SUN_DAY = rgb(0xfff2dc), SUN_LOW = rgb(0xffb070), MOON = rgb(0x9fb4d8);
-
-/** The hour of the day `t` seconds into the walk. */
-export const hourAt = (t: number) => (DAWN_HOUR + (24 * t) / DAY) % 24;
 
 /** The sun, the sky and the haze at `t` seconds into the walk (or at `hour`, given). */
 export function daylight(t: number, hour = hourAt(t)): Light {
