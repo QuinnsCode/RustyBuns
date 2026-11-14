@@ -50,6 +50,8 @@ test("previewApps: changed web apps with a vite build, all of them when shared c
   expect(previewApps(["apps/two-fronts/src/a.ts", "apps/auto-rig/x.ts", "apps/hello-world/y.ts", "notes/z.md"], builds, apps)).toEqual(["two-fronts"]);
   expect(previewApps(["packages/util/src/x.ts"], builds, apps)).toEqual(["mythic-masters", "two-fronts"]);
   expect(previewApps("all", builds, apps)).toEqual(["mythic-masters", "two-fronts"]);
+});
+
 // main, newest first, an hour apart: hourly went red on the head and green two commits down; daily took the fourth.
 const now = Date.parse("2026-11-14T12:00:00Z");
 const hour = (h: number) => new Date(now - h * 3600_000).toISOString();
