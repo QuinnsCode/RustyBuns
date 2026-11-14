@@ -8,7 +8,7 @@ import { inSeason, NIGHT, tierOf, TIERED, TIER_LEVEL } from "../src/tiers.ts";
 import { holds } from "../src/net/dens.ts";
 import type { Gait } from "../src/world/world.ts";
 import { lightFire, POIS, shelterAt, SHELTER_R } from "../src/world/poi.ts";
-import { BOSS_EVERY, CATCH_FAR, CATCH_NEAR, DARK_LEN, GAP, HOUSES, LANTERN_OUT, SWEEP, glow, lantern, lightsNear, nightOf, safePaths, stalk, toSafety } from "../src/world/night.ts";
+import { BOSS_EVERY, CATCH_FAR, CATCH_NEAR, DARK_LEN, darkSounds, HUSH_R, GAP, HOUSES, LANTERN_OUT, SWEEP, glow, lantern, lightsNear, nightOf, safePaths, stalk, toSafety } from "../src/world/night.ts";
 import { DAY } from "../src/world/nature.ts";
 import { arenaOf, groundFrom, buildWorld, CELL, cell, COLS, detailAt, dry, explore, explored, heightAt, meet, NIGHT_MEET_R, newSeen, openRegions, opensRoadTo, OWNER, refine, ROWS, spawn, STEP, walk, wildsNear, type WalkEvent, type Walker } from "../src/world/world.ts";
 
@@ -187,6 +187,31 @@ describe("safe paths at night", () => {
     expect(until(400)).toBeCloseTo(CATCH_FAR, 0);
     expect(until(1)).toBeGreaterThan(CATCH_NEAR - 1);
     expect(stalk(0.5, 1, 0)).toBeLessThan(0.5); // back on a path it fades
+  });
+
+  test("the dark's sounds: a heartbeat with no fire near, harder off the lights and as it stalks you; the crickets hush as a night one closes in", () => {
+    const far = HUSH_R + 50;
+    // [dark, by a fire, metres from the lights, dread, metres to the nearest night one] -> what you hear
+    const walk: [boolean, boolean, number, number, number][] = [
+      [false, false, 50, 0, 5], // by day: nothing
+      [true, true, 0, 0, far], // at a fire: no heartbeat
+      [true, false, 0, 0, far], // on the lights
+      [true, false, 30, 0, far], // off them
+      [true, false, 30, 0.8, far], // something following
+    ];
+    const heard = walk.map((w) => darkSounds(...w));
+    expect(heard[0]).toEqual({ heart: 0, near: 0 });
+    expect(heard[1]!.heart).toBe(0);
+    expect(heard[2]!.heart).toBeGreaterThan(0);
+    expect(heard[3]!.heart).toBeGreaterThan(heard[2]!.heart);
+    expect(heard[4]!.heart).toBeGreaterThan(heard[3]!.heart);
+    // One of the six closing in: the hush grows with it, even heard from a fire's edge, and the heart races on the path.
+    const near = [far, HUSH_R * 0.75, HUSH_R * 0.25, 2].map((d) => darkSounds(true, false, 0, 0, d));
+    expect(near.map((n) => n.near)).toEqual([...near.map((n) => n.near)].sort((a, b) => a - b));
+    expect(near[0]!.near).toBe(0);
+    expect(near[3]!.near).toBe(1);
+    expect(near[3]!.heart).toBe(1);
+    expect(darkSounds(true, true, 0, 0, 25).near).toBeGreaterThan(0);
   });
 
   test("the boss night: the dark rolls down a path, a runner keeps ahead of it and a walker is caught in it", () => {

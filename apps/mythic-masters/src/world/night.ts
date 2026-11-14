@@ -157,6 +157,18 @@ export const catchSeconds = (d: number) => lerp(CATCH_NEAR, CATCH_FAR, clamp(d /
 /** The stalk, 0 (nothing) to 1 (caught), after `dt` seconds this far from safety: it builds off the paths and fades on them. */
 export const stalk = (s: number, dt: number, d: number) => clamp(d > 0 ? s + dt / catchSeconds(d) : s - dt / DRAIN, 0, 1);
 
+export const HUSH_R = 40; // one of the six night ones nearer than this and the crickets start to go quiet
+/**
+ * The dark's own sounds (#4388), each 0 to 1. `heart`: your heartbeat after dark with no fire, cabin or ring round you;
+ * soft on the lights, harder off them, pounding as the stalk builds or one of the six comes close. `near`: how close the
+ * nearest night one is (`nightD` metres), 0 past HUSH_R, 1 at your heels; it hushes the crickets even from a fire's edge.
+ */
+export function darkSounds(dark: boolean, sheltered: boolean, safeD: number, dread: number, nightD: number): { heart: number; near: number } {
+  if (!dark) return { heart: 0, near: 0 };
+  const near = clamp((HUSH_R - nightD) / (HUSH_R - 4), 0, 1);
+  return { heart: sheltered ? 0 : Math.max(safeD > 0 ? 0.4 : 0.15, dread, near), near };
+}
+
 /** The solar lights near (x, z): one down each side of every path every LIGHT_STEP metres, within `radius`. */
 export function lightsNear(nt: Night, x: number, z: number, radius: number): Light[] {
   const out: Light[] = [];
