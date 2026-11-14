@@ -10,10 +10,35 @@
     "binding": "ASSETS",
     "directory": "dist/client"
   },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "qview3d-db",
+      "migrations_dir": "migrations"
+    }
+  ],
   "r2_buckets": [
     {
       "binding": "BUCKET",
       "bucket_name": "qview3d"
+    }
+  ],
+  "ratelimits": [
+    {
+      "name": "SIGN_LIMIT",
+      "namespace_id": "8205",
+      "simple": {
+        "limit": 60,
+        "period": 60
+      }
+    },
+    {
+      "name": "SAMPLE_LIMIT",
+      "namespace_id": "8206",
+      "simple": {
+        "limit": 5,
+        "period": 60
+      }
     }
   ],
   "vars": {

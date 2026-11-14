@@ -8,6 +8,7 @@ import { join } from "node:path";
 import { hex, sha256 } from "@rustybuns/util/bytes";
 import { Product, Sample } from "../src/api.ts";
 import { DEMO_ADMIN, local } from "../src/local.ts";
+import { putOrg } from "../src/settings.ts";
 
 setDefaultTimeout(20_000);
 
@@ -16,7 +17,7 @@ let app: Awaited<ReturnType<typeof local>>;
 beforeAll(async () => {
   app = await local({ dir, standInSeconds: 0.3 });
   // An org that hasn't paid for samples.
-  await app.bindings.BUCKET.put("orgs/nopaid/org.json", JSON.stringify({ origins: ["*"], admins: [await sha256(DEMO_ADMIN)], samples: 0 }));
+  await putOrg(app.bindings, "nopaid", { origins: ["*"], admins: [await sha256(DEMO_ADMIN)], samples: 0 });
 });
 afterAll(() => { app.stop(); rmSync(dir, { recursive: true, force: true }); });
 

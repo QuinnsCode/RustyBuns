@@ -1,10 +1,11 @@
-// A fresh deploy, bucket empty, the way a friend first meets it: their agent reads /v1/embed.md, pastes the two
+// A fresh deploy, bucket empty and D1 only migrated, the way a friend first meets it: their agent reads /v1/embed.md, pastes the two
 // lines it names, and the demo product loads. The public demo stores nothing.
 import { afterAll, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Product } from "../src/api.ts";
+import { DEMO_PRODUCTS } from "../src/demo.ts";
 import { local } from "../src/local.ts";
 
 setDefaultTimeout(15_000);
@@ -23,6 +24,8 @@ test("the guide an agent follows names this host, and the demo it names is there
   const res = await fetch(`${app.url}/api/orgs/${product![1]}/products/${product![2]}`, { headers: { origin: "https://friend.example" } });
   expect(Product(await res.json())).toMatchObject({ model: "cap" });
   expect((await fetch(`${app.url}/llms.txt`)).status).toBe(200);
+  // The migrations seeded every demo product, as demo.ts lists them (out of step: `bun scripts/demo-sql.ts`).
+  for (const [id, p] of Object.entries(DEMO_PRODUCTS)) expect(await (await fetch(`${app.url}/api/orgs/demo/products/${id}`)).json()).toEqual(p);
 });
 
 test("the public demo keeps no files, from any page", async () => {

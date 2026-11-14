@@ -2,7 +2,7 @@
 //
 // The QView3D Worker. Static assets (dist/client: /v1/qview3d.js and the demo page) are served before it runs.
 //
-//   GET  /api/orgs/<org>/products/<product>   a product's model and colours
+//   GET  /api/orgs/<org>/products/<product>   a product's settings (model, colours, zones), edge-cached a minute (settings.ts)
 //   POST /api/orgs/<org>/uploads              sign one upload (SignRequest -> SignReply); the page's origin must be the org's
 //   PUT  /u/<token>                           the bytes for a Worker-signed upload, checked against the token
 //   POST /api/orgs/<org>/designs              save a design (Design -> DesignReply); its files must be the org's and exist
@@ -17,13 +17,13 @@
 //   GET  /v1/embed.md, /llms.txt              how to put the widget on a page, for a coding agent (embed.ts)
 //   GET  /api/mine, PUT /api/orgs/<org>, PUT .../products/<id>, POST .../keys   shops set up signed in through eqosys (orgs.ts)
 //
-// A fresh deploy with an empty bucket still serves the demo org and its three hats (demo.ts), read-only.
+// Org and product settings live in D1 (settings.ts); a fresh deploy's migrations seed the demo org (demo.ts), which keeps no files.
 import { hex } from "@rustybuns/util/bytes";
 import { json, privateJson, readJson } from "@rustybuns/util/http";
-import { Design, Org, Product, SignRequest, zonesOf, type DesignReply, type SignReply } from "./api.ts";
-import { BUILT_IN_DEMO, DEMO_ORG, DEMO_PRODUCTS } from "./demo.ts";
+import { Design, Org, printZones, SignRequest, zonesOf, type DesignReply, type SignReply } from "./api.ts";
 import { embedGuide } from "./embed.ts";
-import { designKey, fileKey, ID, KINDS, orgKey, productKey, servable } from "./layout.ts";
+import { designKey, fileKey, ID, KINDS, servable } from "./layout.ts";
+import { cachedProduct, getOrg, getProduct, type SettingsEnv } from "./settings.ts";
 import { originalRoute, printPlanRoute } from "./print.ts";
 import { billingRoute, checkoutRoute, stripeWebhook } from "./billing.ts";
 import { countSamples, isAdmin, sampleRoute, startSampleRoute } from "./samples.ts";
@@ -43,7 +43,7 @@ export interface RateLimit {
   limit(o: { key: string }): Promise<{ success: boolean }>;
 }
 
-export interface Env {
+export interface Env extends SettingsEnv {
   BUCKET: Bucket;
   UPLOAD_SECRET?: string;
   R2_ACCOUNT_ID?: string;
@@ -90,14 +90,6 @@ async function sha256(bytes: ArrayBuffer) {
   return hex(await crypto.subtle.digest("SHA-256", bytes));
 }
 
-/** The org's settings, and whether they are the built-in demo's (no orgs/demo/ in the bucket yet). */
-async function readOrg(env: Env, org: string): Promise<{ settings: Org; builtIn: boolean } | null> {
-  const o = await env.BUCKET.get(orgKey(org));
-  if (!o) return org === DEMO_ORG ? { settings: BUILT_IN_DEMO, builtIn: true } : null;
-  const settings = await readJson(new Response(await o.text()), Org);
-  return settings && { settings, builtIn: false };
-}
-
 /** Whether a page at `origin` may act for the org: listed exactly, or the org allows any ("*"). */
 const allowed = (o: Org, origin: string | null) => o.origins.includes("*") || (origin !== null && o.origins.includes(origin));
 
@@ -121,15 +113,14 @@ export async function handle(req: Request, env: Env): Promise<Response> {
   if (!m) return fail("not found", 404, origin);
   const [, org, what, id, print] = m;
   if (!org || !ID.test(org)) return fail("unknown org", 404, origin);
-  const found = await readOrg(env, org);
-  if (!found) return fail("unknown org", 404, origin);
-  const { settings, builtIn } = found;
-
+  // The widget's read on every shop page load: from the edge cache when it can be, before anything asks D1.
   if (what === "products" && req.method === "GET" && id && ID.test(id) && !print) {
-    const o = await env.BUCKET.get(productKey(org, id));
-    const p = o ? await readJson(new Response(await o.text()), Product) : builtIn ? (DEMO_PRODUCTS[id] ?? null) : null;
-    return p ? json(p, 200, { ...cors(origin), "cache-control": "public, max-age=60" }) : fail("unknown product", 404, origin);
+    const p = await cachedProduct(env, org, id, url.origin);
+    return p ? json(p, 200, { ...cors(origin), "cache-control": "public, max-age=15" }) : fail("unknown product", 404, origin);
   }
+  const settings = await getOrg(env, org);
+  if (!settings) return fail("unknown org", 404, origin);
+  const readOnly = !!settings.readOnly;
   // An admin key, or the shop signed in, works from anywhere (the admin pages are on our own host); everyone else needs a listed page.
   const admin = (await isAdmin(req, settings)) || runsShop(await signedIn(req, env), settings);
   if (what === "originals" || print) {
@@ -152,13 +143,13 @@ export async function handle(req: Request, env: Env): Promise<Response> {
     if (!admin) return fail("an admin key is needed for billing", 401, origin);
     if (id) return fail("not found", 404, origin);
     if (what === "billing" && req.method === "GET") return billingRoute(env, org, settings, await countSamples(env, org), cors(origin));
-    if (builtIn) return fail("the public demo can't buy samples", 403, origin);
+    if (readOnly) return fail("the public demo can't buy samples", 403, origin);
     if (what === "checkout" && req.method === "POST") return checkoutRoute(req, env, org, url, cors(origin));
     return fail("not found", 404, origin);
   }
   if (req.method !== "POST" || id) return fail("not found", 404, origin);
   if (!admin && !allowed(settings, origin)) return fail("this page may not use this org", 403, origin);
-  if (builtIn) return fail("the public demo keeps no files: download a snapshot instead, or ask hello@qntbr.com for an org of your own", 403, origin);
+  if (readOnly) return fail("the public demo keeps no files: download a snapshot instead, or ask hello@qntbr.com for an org of your own", 403, origin);
   if (what === "uploads") {
     if (await over(env.SIGN_LIMIT, `${req.headers.get("cf-connecting-ip") ?? "-"}:${org}`)) return slowDown("uploads signed", origin);
     return sign(req, env, org, url, origin, admin);
@@ -208,10 +199,13 @@ async function upload(req: Request, env: Env, token: string, origin: string | nu
 async function saveDesign(req: Request, env: Env, org: string, url: URL, origin: string | null): Promise<Response> {
   const d = await readJson(req, Design);
   if (!d) return fail("expected a design (v, model, color, layers, camera)", 400, origin);
-  // One picture a zone, and only zones the product has: a cap has no back to print on.
+  // One picture a zone, and only zones the product prints on: a cap has no back, and a shop may switch a zone off.
   const zones = d.layers.map((l) => l.zone ?? "front");
+  const product = d.product ? await getProduct(env, org, d.product) : null;
   const bad = zones.find((z) => !zonesOf(d.model).includes(z));
   if (bad) return fail(`a ${d.model} has no ${bad} to print on`, 400, origin);
+  const off = product && product.model === d.model ? zones.find((z) => !printZones(product).includes(z)) : undefined;
+  if (off) return fail(`${product!.name} doesn't print on its ${off}`, 400, origin);
   if (new Set(zones).size < zones.length) return fail("one picture a zone", 400, origin);
   const own = `orgs/${org}/`;
   const files = [d.snapshot, ...d.layers.flatMap((l) => [l.texture, l.original])].filter((k): k is string => !!k);

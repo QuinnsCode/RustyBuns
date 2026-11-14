@@ -9,8 +9,8 @@
 // The pixels themselves are drawn where there is a canvas: the admin page (print-sheet.ts), one PNG per zone.
 import { privateJson, readJson } from "@rustybuns/util/http";
 import { Design, PRINT_CM, Product, type Model, type PrintPlan, type PrintSheet, type ZoneName } from "./api.ts";
-import { DEMO_PRODUCTS } from "./demo.ts";
-import { designKey, productKey } from "./layout.ts";
+import { designKey } from "./layout.ts";
+import { getProduct } from "./settings.ts";
 import { sheetPx } from "./print-sheet.ts";
 import type { Env } from "./worker.ts";
 
@@ -30,11 +30,7 @@ export async function printPlanRoute(env: Env, org: string, id: string, origin: 
   const o = await env.BUCKET.get(designKey(org, id));
   const d = o ? await readJson(new Response(await o.text()), Design) : null;
   if (!d) return nope("unknown design", 404, headers);
-  let product: Product | null = null;
-  if (d.product) {
-    const p = await env.BUCKET.get(productKey(org, d.product));
-    product = p ? await readJson(new Response(await p.text()), Product) : (DEMO_PRODUCTS[d.product] ?? null);
-  }
+  const product = d.product ? await getProduct(env, org, d.product) : null;
   const sheets: PrintSheet[] = [], skipped: PrintPlan["skipped"] = [];
   for (const l of d.layers) {
     const zone = l.zone ?? "front";

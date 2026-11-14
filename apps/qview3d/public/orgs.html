@@ -53,6 +53,13 @@
     .products b { color: var(--fg); font-weight: 500; }
     .swatches { margin-left: auto; display: flex; gap: 4px; }
     .swatches i { width: 14px; height: 14px; border-radius: 50%; border: 1px solid var(--line); }
+    form > .swatches { margin: 8px 0 0; justify-content: flex-end; }
+    fieldset { margin: 14px 0 0; padding: 4px 12px 12px; border: 1px solid var(--line); border-radius: 8px; }
+    legend { padding: 0 4px; font-size: 13px; font-weight: 500; }
+    .zones { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 6px; }
+    .zone { display: flex; align-items: center; gap: 6px; font-size: 13px; text-transform: capitalize; }
+    .zone input { display: inline; width: auto; margin: 0; }
+    .row.three { grid-template-columns: 1fr 1fr 1fr; }
     .keys { display: flex; align-items: center; gap: 14px; margin-top: 16px; font-size: 13px; }
     #status { min-height: 20px; font-size: 13px; color: var(--muted); }
     #status.bad { color: var(--bad); }

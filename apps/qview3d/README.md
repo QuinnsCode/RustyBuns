@@ -14,7 +14,7 @@ of it the widget can print on. PolyForm Noncommercial.
 
 `bun run dev` runs it here: http://localhost:5190 is a demo shop with the widget on it, and
 http://localhost:5190/admin.html makes samples (the demo org and its admin key are filled in). The Worker runs on
-Bun with R2 in `.data/`, and a stand-in answers for Meshy, so nothing is billed. `/orgs.html` is the shops page; it signs
+Bun with R2 and D1 (sqlite) in `.data/`, and a stand-in answers for Meshy, so nothing is billed. `/orgs.html` is the shops page; it signs
 in through eqosys, so here it needs a local eqosys (`EQOSYS_URL=http://localhost:<port> bun run dev`). `bun test test`
 runs the upload, sample and shop journeys.
 
@@ -24,13 +24,16 @@ runs the upload, sample and shop journeys.
 
 ## Go live, and hand it to a friend
 
-A fresh deploy works with nothing seeded: when the bucket has no `orgs/demo/` yet, the Worker serves the demo org
-and its hats and tops from [src/demo.ts](src/demo.ts). On a public host that built-in demo keeps no files, so strangers
-can't fill the bucket. Customising and the snapshot download still work, because they run in the browser.
+Settings live in D1: each org's sites, samples and studio, and each product's name, model, colours, print zones and
+where a picture lands ([src/settings.ts](src/settings.ts)). Files stay in R2. The deploy runs the D1 migrations, and they
+seed the demo org and its hats and tops from [src/demo.ts](src/demo.ts), so a fresh host works with nothing to do by hand.
+That public demo keeps no files, so strangers can't fill the bucket. Customising and the snapshot download still work, because they run in the browser.
 
 1. Once: a Password item `upload-secret` in the `qview3d` vault, with a random value in its built-in password field.
-2. From `apps/qview3d`: `bun run plan`, read it (a Worker and the `qview3d` bucket), then `bun run deploy`. It lands at
-   `https://qview3d.<your subdomain>.workers.dev`.
+2. From `apps/qview3d`: `bun run plan`, read it (a Worker, the `qview3d` bucket and the `qview3d-db` D1 database),
+   then `bun run deploy`. It lands at `https://qview3d.<your subdomain>.workers.dev`. The widget's product read sits
+   behind the Workers Cache API for a minute, but Cloudflare keeps no cache on `workers.dev`: give it a custom domain
+   and shop pages stop waiting on D1.
 
 Then make your friend's shop. A shop is an eqosys studio, so no keys change hands:
 
@@ -38,9 +41,10 @@ Then make your friend's shop. A shop is an eqosys studio, so no keys change hand
    studio shows "Not set up yet" with its id to copy. They send you that id and their shop's address.
 2. You open `/orgs.html`, signed in as an owner or admin of QNTBR (eqosys's house studio). **Make a shop** takes an
    org id (it goes in the embed tag), their studio id, their sites and how many samples they've paid for.
-3. Your friend reloads the page. They add products (id, name, kind, colours) and copy the embed tag. Their studio's
-   owners and admins can do this; its makers only see it. **New script key** makes an admin key for a script (shown
-   once; org.json keeps its SHA-256), which writes products and makes samples without signing in.
+3. Your friend reloads the page. They add products (id, name, kind, colours, which zones print, where a new picture
+   lands), **Change** any of them, set their own sites, and copy the embed tag. A save shows on their shop's next page
+   load. Their studio's owners and admins can do this; its makers only see it. **New script key** makes an admin key
+   for a script (shown once; the org keeps its SHA-256), which writes products and makes samples without signing in.
 
 The routes are in [src/orgs.ts](src/orgs.ts). eqosys puts the person's studios in QView3D's token (`studios` in
 eqosys's APPS), and the Worker checks it against eqosys's JWKS.
@@ -109,11 +113,11 @@ drawn in the page, since a Worker has no canvas.
 
 ## The bucket
 
-One bucket, with a folder for each org, split by kind. There are no folders by shopper or by date ([src/layout.ts](src/layout.ts)):
+Settings are rows in D1 ([migrations/](migrations)): `orgs` (sites, admin keys, samples, studio, whether it's the
+public demo) and `products` (one JSON row each, checked by the `Product` guard). Files are in one bucket, with a
+folder for each org, split by kind. There are no folders by shopper or by date ([src/layout.ts](src/layout.ts)):
 
 ```
-orgs/<org>/org.json                 which sites may embed and upload (origins), its eqosys studio, set on /orgs.html
-orgs/<org>/products/<id>.json       model, colours on offer
 orgs/<org>/originals/<sha>.<ext>    the shopper's file as uploaded: the print source, never served
 orgs/<org>/textures/<sha>.webp      the same picture at 1024 px: served and edge-cached for a year
 orgs/<org>/snapshots/<sha>.png      exported renders

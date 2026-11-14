@@ -1,16 +1,18 @@
 // Required Notice: Copyright (c) 2026 Ryan Quinn (QNTBR) (https://qntbr.com). PolyForm Noncommercial 1.0.0, see ../LICENSE.
 //
-// The demo org: what anyone can embed to see QView3D working. A fresh deploy serves it from here when the bucket has
-// no orgs/demo/ yet, so a new host shows a live sample with nothing to seed. That built-in demo keeps no files: on a
-// public host anyone may embed it, so signing an upload for it is refused (customising and downloading a snapshot
-// still work, since they run in the browser). On this machine, `local()` writes a full demo org into the twin instead,
-// with an admin key and samples (local.ts).
+// The demo org: what anyone can embed to see QView3D working. A fresh deploy's migrations write it into D1
+// (migrations/0002_demo.sql, made from this file by `bun scripts/demo-sql.ts`), so a new host shows a live sample with
+// nothing to seed by hand. That public demo keeps no files (readOnly): anyone may embed it, so signing an upload for it
+// is refused (customising and downloading a snapshot still work, since they run in the browser). On this machine,
+// `local()` turns it into a full demo org instead, with an admin key and samples (local.ts).
+//
+// Changed a product here? Run `bun scripts/demo-sql.ts`. Once a host has run 0002, a change needs a new migration.
 import type { Org, Product } from "./api.ts";
 
 export const DEMO_ORG = "demo";
 
-/** The built-in demo: any page may embed it; no admins, no samples, no uploads. */
-export const BUILT_IN_DEMO: Org = { origins: ["*"], admins: [], samples: 0 };
+/** The public demo: any page may embed it; no admins, no samples, no uploads. */
+export const DEMO_SETTINGS: Org = { origins: ["*"], admins: [], samples: 0, readOnly: true };
 
 export const DEMO_PRODUCTS: Record<string, Product> = {
   "field-cap": { name: "Field Cap", model: "cap", colors: ["#1f2937", "#f5f5f4", "#b91c1c", "#1d4ed8", "#166534", "#e7d7b9"] },

@@ -9,6 +9,7 @@ import { signStripe } from "@rustybuns/util/stripe";
 import { Billing, CheckoutReply } from "../src/api.ts";
 import { PACKS } from "../src/billing.ts";
 import { DEMO_ADMIN, local } from "../src/local.ts";
+import { putOrg } from "../src/settings.ts";
 
 setDefaultTimeout(20_000);
 
@@ -29,8 +30,8 @@ async function start(env: Parameters<typeof local>[0]["env"] = {}) {
   dirs.push(dir);
   const app = await local({ dir, standInSeconds: 0.3, env });
   apps.push(app);
-  // A shop with no samples left: none in its org.json, none bought.
-  await app.bindings.BUCKET.put("orgs/shop/org.json", JSON.stringify({ origins: ["https://shop.test"], admins: [await sha256(DEMO_ADMIN)], samples: 0 }));
+  // A shop with no samples left: none in its settings, none bought.
+  await putOrg(app.bindings, "shop", { origins: ["https://shop.test"], admins: [await sha256(DEMO_ADMIN)], samples: 0 });
   return app;
 }
 let test1: Awaited<ReturnType<typeof local>>, live: Awaited<ReturnType<typeof local>>, off: Awaited<ReturnType<typeof local>>;

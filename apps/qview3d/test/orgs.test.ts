@@ -1,13 +1,15 @@
 // From nothing to a friend's shop that saves designs, through the running Worker on an empty bucket and a stand-in
 // eqosys that signs tokens the way the real one does (its studios in the token). The owner makes the org for the
-// friend's studio; the friend, signed in, adds a product and a script key; their page embeds it and Save works.
+// friend's studio; the friend, signed in, adds a product and a script key; their page embeds it and Save works; then
+// they change the product on /orgs.html and the widget's cached read shows it at once.
 import { afterAll, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { hex } from "@rustybuns/util/bytes";
 import { jwksOf, newKey, sign, type StudioRole } from "@rustybuns/util/token";
-import { KeyReply, Mine, SignReply } from "../src/api.ts";
+import { KeyReply, Mine, Product, SignReply } from "../src/api.ts";
+import { fieldsOf, productBody } from "../src/product-form.ts";
 import { local } from "../src/local.ts";
 
 setDefaultTimeout(20_000);
@@ -29,7 +31,7 @@ const maker = await tokenFor("max", [{ id: "fern-studio", name: "Fern Hats", rol
 const call = (path: string, method: string, body?: unknown, h: Record<string, string> = {}) =>
   fetch(`${app.url}${path}`, { method, headers: { "content-type": "application/json", ...h }, body: body === undefined ? undefined : JSON.stringify(body) });
 const as = (token: string) => ({ authorization: `Bearer ${token}` });
-const CAP = { name: "Fern cap", model: "cap", colors: ["#2f5d3a", "#f4efe6"] };
+const CAP: Product = { name: "Fern cap", model: "cap", colors: ["#2f5d3a", "#f4efe6"] };
 
 test("the owner makes a friend's org; the friend adds a product and a key; their page saves a design", async () => {
   const before = Mine(await (await call("/api/mine", "GET", undefined, as(fern))).json());
@@ -65,6 +67,36 @@ test("the owner makes a friend's org; the friend adds a product and a key; their
   const design = { v: 1, model: "cap", color: "#2f5d3a", product: "cap", layers: [{ texture: signed.key, u: 0.5, v: 0.5, scale: 0.4, rotation: 0 }], camera: { azimuth: 0, polar: 1.2, distance: 2 } };
   expect((await call("/api/orgs/fern/designs", "POST", design, page)).status).toBe(201);
   expect((await call("/api/orgs/fern/designs", "POST", design, { origin: "https://elsewhere.example" })).status).toBe(403);
+});
+
+test("the friend changes the cap on /orgs.html; the next page load shows it, though the widget's read is cached", async () => {
+  const widget = async () => Product(await (await fetch(`${app.url}/api/orgs/fern/products/cap`, { headers: { origin: "https://fernhats.example" } })).json());
+  expect((await widget()).colors).toEqual(CAP.colors);
+  // The read is cached: a row changed behind the Worker's back isn't seen for a minute.
+  await app.bindings.DB.prepare("UPDATE products SET body = ? WHERE org = 'fern' AND id = 'cap'").bind(JSON.stringify({ ...CAP, colors: ["#000000"] })).run();
+  expect((await widget()).colors).toEqual(CAP.colors);
+
+  // The page: Change fills the editor from /api/mine, the friend types new colours, switches the back off
+  // (a cap has only a front, so that stays), sets where a picture lands, and saves.
+  const row = Mine(await (await call("/api/mine", "GET", undefined, as(fern))).json()).shops[0]!.org!.products.find((p) => p.id === "cap")!;
+  const fields = { ...fieldsOf(row.product), colors: "#2F5D3A, #fc0, #f4efe6", across: "50", up: "60", size: "30" };
+  expect((await call("/api/orgs/fern/products/cap", "PUT", productBody(fields), as(fern))).status).toBe(200);
+  expect(await widget()).toEqual({ ...CAP, colors: ["#2f5d3a", "#ffcc00", "#f4efe6"], place: { u: 0.5, v: 0.6, scale: 0.3, rotation: 0 } });
+
+  // A tee with its sleeve switched off: the page's own check, then the Worker refuses a design on it.
+  const tee = productBody({ ...fieldsOf({ name: "Fern tee", model: "tee", colors: ["#f4efe6"] }), print: ["front", "back"] });
+  expect(tee.print).toEqual(["front", "back"]);
+  expect((await call("/api/orgs/fern/products/tee", "PUT", tee, as(fern))).status).toBe(200);
+  expect(() => productBody({ ...fieldsOf(tee), print: [] })).toThrow("print zone");
+  expect(() => productBody({ ...fieldsOf(tee), colors: "green" })).toThrow();
+  const design = { v: 1, model: "tee", color: "#f4efe6", product: "tee", layers: [], camera: { azimuth: 0, polar: 1.2, distance: 2 } };
+  expect((await call("/api/orgs/fern/designs", "POST", { ...design, layers: [{ texture: "orgs/fern/textures/x.webp", zone: "left-sleeve", u: 0.5, v: 0.5, scale: 0.4, rotation: 0 }] }, { origin: "https://fernhats.example" })).status).toBe(400);
+
+  // Its own sites, from the same page; the owner's allowance stays the owner's.
+  expect((await call("/api/orgs/fern/sites", "PUT", { origins: ["https://fernhats.example", "https://fern.shop"] }, as(fern))).status).toBe(200);
+  expect((await call("/api/orgs/fern/sites", "PUT", { origins: ["https://x.example"] }, as(maker))).status).toBe(403);
+  expect((await call("/api/orgs/fern/sites", "PUT", { origins: ["fern.shop"] }, as(fern))).status).toBe(400);
+  expect(Mine(await (await call("/api/mine", "GET", undefined, as(fern))).json()).shops[0]?.org).toMatchObject({ origins: ["https://fernhats.example", "https://fern.shop"], samples: 1 });
 });
 
 test.each([

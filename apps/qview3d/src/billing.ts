@@ -7,7 +7,7 @@
 //   POST /api/orgs/<org>/checkout   an admin buys a pack: Stripe's hosted page, or the test provider pays at once
 //   POST /api/stripe-webhook        Stripe says a Checkout session was paid: the org gets its receipt
 //
-// A paid pack is a receipt (orgs/<org>/receipts/<id>.json), and an org's allowance is the samples in its org.json
+// A paid pack is a receipt (orgs/<org>/receipts/<id>.json), and an org's allowance is the samples in its settings
 // (set by hand: a trial, a deal) plus every receipt's. Nothing is read, added to and written back, so two payments
 // landing at once can't lose one, and the receipt's id comes from the payment's id, so Stripe retrying a webhook
 // counts it once. Who takes the money: Stripe when STRIPE_SECRET_KEY is set, else the test provider when
@@ -52,7 +52,7 @@ async function receipts(env: Env, org: string): Promise<Receipt[]> {
   return out.sort((a, b) => b.at - a.at);
 }
 
-/** The samples an org may make in all: its org.json's own, plus every pack it paid for. */
+/** The samples an org may make in all: its settings' own, plus every pack it paid for. */
 export async function allowanceOf(env: Env, org: string, settings: Org): Promise<number> {
   return (settings.samples ?? 0) + (await receipts(env, org)).reduce((n, r) => n + r.samples, 0);
 }
