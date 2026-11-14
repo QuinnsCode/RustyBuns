@@ -43,7 +43,7 @@ import { plantBudget, setPlantBudget } from "./world/flora.ts";
 import { pickQuality, QUALITY } from "@rustybuns/util/quality";
 import { tutorial } from "@rustybuns/util/tutorial";
 import { accountChip, achieve, achievements, canSignIn, finishSignIn, fresh, login, reportButton } from "./account.ts";
-import { asCreature, atLevel, bind, downed, heal, hpOf, wound, bindBelow, bindChance, clearSection, cleared, gainXp, INK, loadJourney, moveUp, mythicOf, newJourney, nextUp, call, owns, PICKS, rest, SAVE_KEY, SECTIONS, sections, see, slots, STARTERS, TRAIL_REGIONS, toNext, witchSays, type Journey, mend } from "./journey.ts";
+import { asCreature, atLevel, bind, downed, heal, hpOf, wound, bindBelow, bindChance, clearSection, cleared, gainXp, INK, loadJourney, moveUp, mythicOf, newJourney, nextUp, call, owns, PICKS, rest, SAVE_KEY, SECTIONS, sections, see, slots, STARTERS, TRAIL_REGIONS, toNext, witchSays, type Journey, mend, maul } from "./journey.ts";
 import { LORE } from "./lore.ts";
 import { Bout, circleLineOf, handOf, knownOf, PAGE_INK, poolOf, ribbonsOf, summon, type Summoned } from "./grimoire.ts";
 import { deckDemandOf, demandOf, pageLineOf, reactionOf, settingsLineOf, SIGNATURE, thumbAt, worldLineOf, type Back, type Outcome } from "./demand.ts";
@@ -506,6 +506,7 @@ function setOut(region: Region, kind: Trip["kind"], foe: Foe, k = 0) {
   const spare = spendInk(journey); // a drop the Book handed over at a talk (src/book.ts)
   // A lair walked into afresh: what friends did to it on an earlier trip is gone; the room tells what they have done now.
   if (foe.hunt) lairHurt.delete(`hunt:${foe.hunt}`);
+  if (foe.caught) maul(journey); // the night's stalker strikes before the fight starts (#4387)
   trip = { region, kind, k, foe, slot: nextUp(journey, downed(journey)), out: downed(journey), ink: INK + spare, foeHp: null, known, friendsHp: 0 };
   // A wild one goes to the party from the world (hooks.met); a keeper's stone and the arena's mythic from here.
   if (kind === "keeper" || kind === "mythic") online?.met(kind === "mythic" ? `mythic:${region.n}` : `keeper:${region.n}:${k}`, foe.id, foe.level);
@@ -566,7 +567,7 @@ function fightTrip() {
   fight(me, foe.title ? { ...them, name: foe.title } : shroudFoe ? { ...them, name: kind === "wild" ? "Wild ???" : "???" } : them, foe.at ?? fightSkin(region, kind === "rival" ? "wild" : kind));
   if (m && trip.foeHp !== null) m.f[1].hp = trip.foeHp;
   if (m) m.f[0].hp = m.f[0].b.hp * hpOf(journey.party[trip.slot]!); // health carries between fights; a campfire clears it
-  bindNote = "";
+  bindNote = foe.caught && trip.foeHp === null ? `It had you in the dark: ${me.name} starts hurt.` : "";
   // The director's: a keeper or a mythic gets its intro the first round, and so does a wild one you've never met;
   // the last of the line-up gets a word.
   const f = m?.f[1];

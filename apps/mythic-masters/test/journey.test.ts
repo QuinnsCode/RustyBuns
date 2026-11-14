@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { tierOf } from "../src/tiers.ts";
-import { bind, bindChance, call, clearSection, cleared, gainXp, loadJourney, mythicOf, newJourney, nextUp, PARTY_MAX, rest, slots, SECTIONS, sections, STARTERS, TRAIL_REGIONS, WITCH_SHEET, witchSays } from "../src/journey.ts";
+import { bind, bindChance, call, heal, hpOf, MAULED, maul, wound, clearSection, cleared, gainXp, loadJourney, mythicOf, newJourney, nextUp, PARTY_MAX, rest, slots, SECTIONS, sections, STARTERS, TRAIL_REGIONS, WITCH_SHEET, witchSays } from "../src/journey.ts";
 import { REGIONS } from "../src/regions.ts";
 import { ROSTER } from "../src/roster.ts";
 import { bandAt, newTrek, pointAt, trailhead, trailWilds, TRAILS, trek, type TrekEvent } from "../src/world/trail.ts";
@@ -116,6 +116,20 @@ describe("the journey", () => {
       expect(new Set(secs.map((s) => s.name)).size).toBe(SECTIONS);
       expect(secs.every((s) => s.lore.length > 40 && !s.lore.includes("Nothing is written"))).toBe(true);
     }
+  });
+});
+
+describe("caught at night (#4387)", () => {
+  test("the stalker strikes first: whoever is up goes in hurt, a downed one is passed over, and a campfire mends it", () => {
+    const j = newJourney(["hodag", "squonk", "jackalope"])!;
+    expect(maul(j)).toBe(0);
+    expect(hpOf(j.party[0]!)).toBeCloseTo(1 - MAULED);
+    // the lead went down in that fight; caught again on the way home, the squonk takes it, and a worn one keeps a sliver
+    wound(j.party[0]!, 0); wound(j.party[1]!, 0.2);
+    expect(maul(j)).toBe(1);
+    expect(hpOf(j.party[1]!)).toBeGreaterThan(0);
+    expect(heal(j)).toBe(2);
+    expect(j.party.every((m) => hpOf(m) === 1)).toBe(true);
   });
 });
 
