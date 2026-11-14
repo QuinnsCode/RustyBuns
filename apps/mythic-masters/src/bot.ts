@@ -8,7 +8,7 @@ import { mulberry32 } from "@rustybuns/util";
 import { atan2, cos, hypot, sin } from "./dmath.ts";
 import { typeMul } from "./fields.ts";
 import { reachOf } from "./moves.ts";
-import { ARENA, COST, covers, DIVE, frames, head, held, HZ, IDLE, ORBIT, ROUND_TICKS, sweep, swingPhase, TAKEOFF, under, warning, type Area, type Fighter, type Input, type Match } from "./sim.ts";
+import { ARENA, COST, covers, DIVE, foeOf, frames, head, held, HZ, IDLE, ORBIT, ROUND_TICKS, sweep, swingPhase, TAKEOFF, under, warning, type Area, type Fighter, type Input, type Match } from "./sim.ts";
 
 export type Bot = (m: Match) => Input;
 
@@ -48,14 +48,15 @@ export function wayOut(a: Area, me: Fighter): [number, number] {
  * from TAKEOFF, but a short hop up costs a landing; staying up to the dregs and resting nearly full won the most pairings. */
 export const WINGS = { land: 0.1, fly: Math.max(TAKEOFF, 0.9) } as const;
 
-export function bot(side: 0 | 1, seed: number): Bot {
+/** A bot for fighter `side`: it fights the nearest foe still in (`foeOf`), so it plays a team fight as it plays one on one. */
+export function bot(side: number, seed: number): Bot {
   const rnd = mulberry32(seed);
   let hold: Partial<Input> = {}, holdFor = 0, flip = false, turn = 120, rest = 0, commit = 0, punish = 0, back = 0, dir = rnd() < 0.5 ? 1 : -1;
   const orbit = rnd() < 0.5 ? 1 : -1;
   // A bot's jumps are full jumps: it keeps jump held while it rises (a tap would be a short hop).
   return (m) => { const i = think(m), me = m.f[side]; return me.hop && me.prev.up ? { ...i, up: true } : i; };
   function think(m: Match): Input {
-    const me = m.f[side], o = m.f[side ? 0 : 1];
+    const me = m.f[side]!, o = m.f[foeOf(m, side)]!;
     // Buttons are edges: let go every other tick so the sim sees a press.
     flip = !flip;
     if (holdFor > 0) { holdFor--; return { ...IDLE, ...hold, ...(flip ? {} : { light: false, heavy: false, special: false, ultimate: false, dash: false, up: false }) }; }
@@ -146,7 +147,7 @@ export function bot(side: 0 | 1, seed: number): Bot {
     }
 
     // A ranged move winding up at us paints where it will land (and a lob keeps its ring while it flies): get out of it.
-    const w = warning(m, side ? 0 : 1) ?? m.areas.find((a) => a.owner !== side && a.d.shape === "blast" && a.t < a.land);
+    const w = m.f.flatMap((f, k) => (f.team !== me.team && !f.down ? [warning(m, k)] : [])).find(Boolean) ?? m.areas.find((a) => m.f[a.owner]!.team !== me.team && a.d.shape === "blast" && a.t < a.land);
     if (w && me.onGround && under(w, me)) {
       [i.mx, i.mz] = wayOut(w, me);
       if (!me.exhausted && me.stamina >= me.b.dashCost && rnd() < DODGE[me.c.archetype]) press("dash");

@@ -84,6 +84,8 @@ export interface Fighter {
   /** A grab of the ledge is safe (HANG.safe) only the first time since your feet were last on the ring; `drop`
    * frames after letting go you can't grab it again. */
   fresh: boolean; drop: number;
+  /** Which side of the fight it is on (one on one, its own index), and whether it is out: knocked out or rung out while a teammate fights on. */
+  team: 0 | 1; down: boolean;
   /** Marks a field's hit left (fields.ts MARK): frames left, and damage a tick for a burn or poison. */
   marks: { dot: number; dotPer: number; dotField: Field | null; chill: number; root: number };
 }
@@ -93,15 +95,16 @@ export interface Fighter {
 export type Ranged = Exclude<Delivery, { shape: "touch" }>;
 /** `land` is the frame a blast comes down; `every` frames a lasting shape (a stream or a fade) can hit again (0: once),
  * `hits` counts each side's hits from it, and `ramp` is how far a stream has roared up (0 to 1). */
-export interface Area { owner: 0 | 1; move: Move; d: Ranged; power: number; at: V3; from: V3; dir: V3; t: number; life: number; land: number; every: number; ramp: number; hits: [number, number]; struck: [boolean, boolean] }
+export interface Area { owner: number; move: Move; d: Ranged; power: number; at: V3; from: V3; dir: V3; t: number; life: number; land: number; every: number; ramp: number; hits: number[]; struck: boolean[] }
 export type Event =
-  | { kind: "hit"; by: 0 | 1; on: 0 | 1; move: string; slot: Slot; fx: Fx; field: Field; damage: number; guarded: boolean; rear: boolean; spike: boolean; at: V3 }
-  | { kind: "move"; by: 0 | 1; move: Move; at: V3; yaw: number; target: V3 } // a move goes off (its first live frame)
-  | { kind: "land"; who: 0 | 1; speed: number } // feet back on the ring, at this fall speed
-  | { kind: "clipped"; who: 0 | 1 }
-  | { kind: "ledge"; who: 0 | 1 }
-  | { kind: "ko"; who: 0 | 1; how: "hp" | "ring-out" | "time" };
-export interface Match { tick: number; f: [Fighter, Fighter]; areas: Area[]; events: Event[]; winner: 0 | 1 | null; over: boolean }
+  | { kind: "hit"; by: number; on: number; move: string; slot: Slot; fx: Fx; field: Field; damage: number; guarded: boolean; rear: boolean; spike: boolean; at: V3 }
+  | { kind: "move"; by: number; move: Move; at: V3; yaw: number; target: V3 } // a move goes off (its first live frame)
+  | { kind: "land"; who: number; speed: number } // feet back on the ring, at this fall speed
+  | { kind: "clipped"; who: number }
+  | { kind: "ledge"; who: number }
+  | { kind: "ko"; who: number; how: "hp" | "ring-out" | "time" };
+/** `f` is every fighter, two or more; `winner` is a team (one on one, the winning fighter's index). */
+export interface Match { tick: number; f: [Fighter, Fighter, ...Fighter[]]; areas: Area[]; events: Event[]; winner: 0 | 1 | null; over: boolean }
 
 /** Frame data comes from a move's power: big moves wind up longer and leave you open longer. */
 export function frames(m: Move, tired = false) {
@@ -123,11 +126,11 @@ export const GUARD_COST = 0.1;
 /** Share of full stamina a take-off needs: a flyer that ran its wings down has to stand on the ground and get it back first. */
 export const TAKEOFF = 0.5;
 
-function fighter(c: Creature, side: 0 | 1): Fighter {
+function fighter(c: Creature, side: number, z = 0): Fighter {
   const b = body(c);
   return {
     c, b, moves: Object.fromEntries(c.moves.map((m) => [m.slot, m])) as Record<Slot, Move>,
-    pos: { x: side ? 6 : -6, y: 0, z: 0 }, vel: { x: 0, y: 0, z: 0 }, yaw: side ? Math.PI : 0,
+    pos: { x: side ? 6 : -6, y: 0, z }, team: side ? 1 : 0, down: false, vel: { x: 0, y: 0, z: 0 }, yaw: side ? Math.PI : 0,
     hp: b.hp, launch: 0, stamina: b.stamina, energy: 20,
     state: "free", t: 0, act: null, stun: 0, clipped: 0,
     flying: false, onGround: true, airJumps: 1, rise: true, exhausted: false, prev: IDLE, invuln: 0, ring: 0, buf: null, hop: false,
@@ -136,6 +139,20 @@ function fighter(c: Creature, side: 0 | 1): Fighter {
   };
 }
 export const newMatch = (a: Creature, b: Creature): Match => ({ tick: 0, f: [fighter(a, 0), fighter(b, 1)], areas: [], events: [], winner: null, over: false });
+/** Teams of one or more a side (#3929: two friends against a wild one), each side's fighters stood in a row across the ring. */
+export function newTeamMatch(teams: [Creature[], Creature[]]): Match {
+  const f = teams.flatMap((cs, side) => cs.map((c, k) => fighter(c, side as 0 | 1, (k - (cs.length - 1) / 2) * 3)));
+  if (!teams[0].length || !teams[1].length) throw new Error("a fight needs someone on each side");
+  return { tick: 0, f: f as Match["f"], areas: [], events: [], winner: null, over: false };
+}
+/** The index of who `side` fights: the nearest one still in on the other team (one on one, simply the other fighter). */
+export function foeOf(m: Match, side: number): number {
+  const f = m.f[side]!;
+  let best = side ? 0 : 1, far = Infinity;
+  m.f.forEach((o, k) => { const d = o.team !== f.team && !o.down ? flat(f.pos, o.pos) : Infinity; if (d < far) { far = d; best = k; } });
+  return best;
+}
+const foe = (m: Match, side: number) => m.f[foeOf(m, side)]!;
 
 const fwd = (yaw: number) => ({ x: cos(yaw), z: sin(yaw) });
 const angleTo = (a: V3, b: V3) => atan2(b.z - a.z, b.x - a.x);
@@ -237,7 +254,7 @@ export const HANG = { max: 90, safe: 24, climb: 12, roll: 3.2, rollSafe: 18, reg
 /** A spike: knockback mostly down (this much of it), and the hitstun it leaves is short, so there's a jump left to save it. */
 export const SPIKE = { down: 0.75, stun: 14 } as const;
 
-function start(m: Match, side: 0 | 1, slot: Slot, i: Input) {
+function start(m: Match, side: number, slot: Slot, i: Input) {
   const f = m.f[side];
   const move = f.moves[slot], tempo = move.tempo;
   // A stream pays as it pours and a ranged charge when it lets go; everything else (an ultimate always) pays on the press.
@@ -252,13 +269,13 @@ function start(m: Match, side: 0 | 1, slot: Slot, i: Input) {
   if (!dive && (tempo.kind === "charge" || tempo.kind === "build")) f.act.key = KEY[slot];
   if (move.delivery.shape !== "touch") {
     // Lock-on: the shape goes where the target stands now; a sidestep in the wind-up takes you out of it.
-    const o = m.f[side ? 0 : 1];
+    const o = foe(m, side);
     f.act.aim = { yaw: angleTo(f.pos, o.pos), pitch: clamp(atan2(o.pos.y + o.b.height / 2 - (f.pos.y + f.b.height / 2), Math.max(1, flat(f.pos, o.pos))), -0.9, 0.9) };
   }
   f.flying = f.flying && slot !== "launcher" && !dive;
   if (dive) {
     // Straight at the target and down, live after a short tuck instead of the heavy's full wind-up.
-    const o = m.f[side ? 0 : 1], a = angleTo(f.pos, o.pos), sp = Math.min(f.b.topSpeed * 1.6, flat(f.pos, o.pos) * 3.5);
+    const o = foe(m, side), a = angleTo(f.pos, o.pos), sp = Math.min(f.b.topSpeed * 1.6, flat(f.pos, o.pos) * 3.5);
     f.vel.x = cos(a) * sp; f.vel.z = sin(a) * sp; f.vel.y = -DIVE.fall;
     f.t = Math.max(0, frames(move).startup - DIVE.tuck);
   }
@@ -269,8 +286,8 @@ function start(m: Match, side: 0 | 1, slot: Slot, i: Input) {
   }
 }
 
-function control(m: Match, side: 0 | 1, i: Input) {
-  const f = m.f[side], o = m.f[side ? 0 : 1], b = f.b;
+function control(m: Match, side: number, i: Input) {
+  const f = m.f[side], o = foe(m, side), b = f.b;
   const move = hypot(i.mx, i.mz) > 0.1;
   if (f.state === "ledge") return ledge(m, side, i, move && (i.mx * -f.pos.x + i.mz * -f.pos.z) / (hypot(i.mx, i.mz) * hypot(f.pos.x, f.pos.z) || 1) > 0.5);
   if (f.state === "guard" && !i.guard) f.state = "free";
@@ -309,7 +326,7 @@ function control(m: Match, side: 0 | 1, i: Input) {
 }
 
 /** Hanging on the ledge: up (or pushing in) climbs, dash rolls in, a swing comes up swinging, guard or down lets go. */
-function ledge(m: Match, side: 0 | 1, i: Input, inward: boolean) {
+function ledge(m: Match, side: number, i: Input, inward: boolean) {
   const f = m.f[side], fresh = PRESSES.find((k) => pressed(f, i, k));
   if (fresh) f.buf = { k: fresh, left: BUFFER };
   const r = hypot(f.pos.x, f.pos.z) || 1, onto = (inset: number) => {
@@ -324,8 +341,8 @@ function ledge(m: Match, side: 0 | 1, i: Input, inward: boolean) {
   if (i.guard || i.down || f.t >= HANG.max) { f.state = "free"; f.t = 0; f.drop = HANG.regrab; f.vel.y = -1; }
 }
 
-function moveBody(m: Match, side: 0 | 1, i: Input) {
-  const f = m.f[side], o = m.f[side ? 0 : 1], b = f.b;
+function moveBody(m: Match, side: number, i: Input) {
+  const f = m.f[side], o = foe(m, side), b = f.b;
   if (f.state === "ledge") { f.vel = { x: 0, y: 0, z: 0 }; f.hurt++; return; }
   const canSteer = f.state === "free" || f.state === "attack";
   const slow = (f.exhausted ? 0.6 : 1) * (f.marks.chill ? 0.65 : 1) * (inLake(f.pos) && f.onGround ? (f.c.fields.includes("tide") ? 1.15 : 0.6) : 1);
@@ -429,16 +446,16 @@ function moveBody(m: Match, side: 0 | 1, i: Input) {
 }
 
 /** Holding a charge or a stream: the aim follows the target, turned by the stick's sideways push; a lob's spot moves with its push in or out. */
-function nudge(m: Match, side: 0 | 1, i: Input) {
-  const f = m.f[side], o = m.f[side ? 0 : 1], act = f.act;
+function nudge(m: Match, side: number, i: Input) {
+  const f = m.f[side], o = foe(m, side), act = f.act;
   if (!act?.aim) return;
   const base = angleTo(f.pos, o.pos), ux = cos(base), uz = sin(base);
   act.aim.yaw = turn(act.aim.yaw, base + clamp(i.mx * -uz + i.mz * ux, -1, 1) * AIM.nudge, AIM.track * DT);
   if (act.move.delivery.shape === "blast") act.lead = clamp((act.lead ?? 0) + (i.mx * ux + i.mz * uz) * AIM.lob * DT, -AIM.lob, AIM.lob);
 }
 
-function attackFrames(m: Match, side: 0 | 1, i: Input) {
-  const f = m.f[side], o = m.f[side ? 0 : 1];
+function attackFrames(m: Match, side: number, i: Input) {
+  const f = m.f[side], o = foe(m, side);
   if (f.state !== "attack" || !f.act) return;
   const { move, dive } = f.act, fr = frames(move, f.act.tired), tempo = move.tempo, down = !!f.act.key && i[f.act.key];
   f.t++;
@@ -489,7 +506,7 @@ function attackFrames(m: Match, side: 0 | 1, i: Input) {
       // it lands on the near side of the struck body at chest height, where the sparks fly from, not at its feet
       const at = d < 0.01 ? o.pos : { x: o.pos.x - (dx / d) * o.b.radius, y: o.pos.y + o.b.height * 0.55, z: o.pos.z - (dz / d) * o.b.radius };
       const power = move.power * (tempo.kind === "charge" ? lerp(1, tempo.grow, level(f.act)) : 1);
-      f.act.hit = true; hit(m, side, side ? 0 : 1, move, power, f.pos, at);
+      f.act.hit = true; hit(m, side, foeOf(m, side), move, power, f.pos, at);
       // A dive that lands bounces off the target and recovers in the air; one that misses recovers on the ground.
       if (dive) { f.vel.y = f.b.jump; f.vel.x *= -0.4; f.vel.z *= -0.4; f.onGround = false; f.act.dive = false; }
     }
@@ -499,7 +516,7 @@ function attackFrames(m: Match, side: 0 | 1, i: Input) {
 
 /** `by` lands `move` on `on` (the same side when your own blast catches you); it came from `from`, and struck at `at`.
  * A `repeat` is a stream's pulse or a fade's later hit: it gives no energy and stuns briefly (PULSE). */
-function hit(m: Match, by: 0 | 1, on: 0 | 1, move: Move, power: number, from: V3, at: V3, repeat = false) {
+function hit(m: Match, by: number, on: number, move: Move, power: number, from: V3, at: V3, repeat = false) {
   const a = m.f[by], d = m.f[on], self = by === on;
   const ranged = move.delivery.shape !== "touch";
   const atk = ranged ? a.c.stats.focus : a.c.stats.might, def = ranged ? d.c.stats.will : d.c.stats.guard;
@@ -574,7 +591,7 @@ function grown(d: Ranged, by: number): Ranged {
 
 /** A ranged move going off: its shape, from the mouth along the locked aim (a blast lands on the target's spot, out to
  * its range, pushed by a charge's lead). A charge grows it; a stream lasts while held and a fade for its run. */
-function loose(f: Fighter, side: 0 | 1, move: Move, shape: Ranged, target: V3): Area {
+function loose(f: Fighter, side: number, move: Move, shape: Ranged, target: V3): Area {
   const aim = f.act?.aim ?? { yaw: f.yaw, pitch: 0 }, k = fwd(aim.yaw), tempo = move.tempo;
   const full = f.act ? level(f.act) : 0, d = tempo.kind === "charge" ? grown(shape, lerp(1, tempo.reach, full)) : shape;
   const flatAim = d.shape === "wall" || d.shape === "cone" ? 0 : aim.pitch;
@@ -582,7 +599,7 @@ function loose(f: Fighter, side: 0 | 1, move: Move, shape: Ranged, target: V3): 
   const from = mouth(f, d, k);
   const power = move.power * (move.slot === "ultimate" ? 1.4 : 1) * (tempo.kind === "charge" ? lerp(1, tempo.grow, full) : 1);
   const lasts = tempo.kind === "build" ? tempo.run * HZ + PULSE.min + 1 : tempo.kind === "fade" ? Math.round(tempo.run * HZ) : 0;
-  const base = { owner: side, move, d, power, from, dir, t: 0, land: 0, every: lasts ? PULSE.every : 0, ramp: 0, hits: [0, 0] as [number, number], struck: [false, false] as [boolean, boolean] };
+  const base = { owner: side, move, d, power, from, dir, t: 0, land: 0, every: lasts ? PULSE.every : 0, ramp: 0, hits: [0, 0], struck: [false, false] };
   switch (d.shape) {
     case "column": return { ...base, at: from, life: Math.max(lasts, Math.ceil((d.length / d.speed) * HZ) + 4) };
     case "wall": return { ...base, at: from, life: Math.max(lasts, Math.ceil((d.travel / d.speed) * HZ)) };
@@ -612,10 +629,10 @@ export function head(a: Area): V3 {
 
 /** The shape side `side` is winding up, as it would go off this frame (a charge grown to what it holds so far), or null
  * outside a ranged move's wind-up: what the page draws on the ground so the other side can step out of it (ATTACKS.md step 4). */
-export function warning(m: Match, side: 0 | 1): Area | null {
+export function warning(m: Match, side: number): Area | null {
   const f = m.f[side], act = f.state === "attack" ? f.act : null;
   if (!act || act.move.delivery.shape === "touch" || f.t >= frames(act.move, act.tired).startup) return null;
-  return loose(f, side, act.move, act.move.delivery, m.f[side ? 0 : 1].pos);
+  return loose(f, side, act.move, act.move.delivery, foe(m, side).pos);
 }
 
 /** Shape `a`'s whole reach on the ground as a closed outline of [x, z] points: a column's or a wall's lane out to where
@@ -701,7 +718,7 @@ export function where(a: Area, t: Fighter): number {
 
 /** The power `a` lands on side `on` with now: its tempo's curve (a stream roaring up, a fade dying down, a fade's
  * repeat hits weaker), then where they stand in it. */
-function strength(a: Area, on: 0 | 1, t: Fighter) {
+function strength(a: Area, on: number, t: Fighter) {
   const tempo = a.move.tempo;
   const curve = tempo.kind === "build" ? PULSE.stream * lerp(tempo.from, 1, a.ramp)
     : tempo.kind === "fade" ? lerp(1, tempo.to, a.t / a.life) * (a.hits[on] ? PULSE.tail : 1) : 1;
@@ -714,12 +731,13 @@ function areas(m: Match) {
     if (a.move.tempo.kind === "build" && m.f[a.owner].act?.area !== a) a.life = Math.min(a.life, a.t + 1);
     if (a.every && a.t % a.every === 0) a.struck = [false, false];
     // Your own blast catches you too; your columns, walls, cones and novas never do.
-    for (const on of [0, 1] as const) {
-      const t = m.f[on];
-      if (a.struck[on] || t.invuln > 0 || (on === a.owner && a.d.shape !== "blast")) continue;
+    for (let on = 0; on < m.f.length; on++) {
+      const t = m.f[on]!;
+      // Your own blast catches you too, but nothing you loose catches a teammate.
+      if (a.struck[on] || t.invuln > 0 || t.down || (on === a.owner ? a.d.shape !== "blast" : t.team === m.f[a.owner]!.team)) continue;
       if (covers(a, t)) {
         a.struck[on] = true;
-        const power = strength(a, on, t), repeat = a.hits[on]++ > 0 || a.move.tempo.kind === "build";
+        const power = strength(a, on, t), repeat = (a.hits[on] = (a.hits[on] ?? 0) + 1) > 1 || a.move.tempo.kind === "build";
         hit(m, a.owner, on, a.move, power, a.d.shape === "column" || a.d.shape === "cone" || a.d.shape === "wall" ? m.f[a.owner].pos : a.at, { ...t.pos, y: t.pos.y + t.b.height / 2 }, repeat);
       }
     }
@@ -729,12 +747,13 @@ function areas(m: Match) {
 }
 
 /** One tick. Events from this tick only are in `m.events`. */
-export function step(m: Match, inputs: [Input, Input]) {
+export function step(m: Match, inputs: Input[]) {
   m.events = [];
   if (m.over) return;
   m.tick++;
-  for (const side of [0, 1] as const) {
-    const f = m.f[side];
+  const sides = m.f.map((_, k) => k), up = sides.filter((k) => !m.f[k]!.down), input = (k: number) => (m.f[k]!.down ? IDLE : inputs[k] ?? IDLE);
+  for (const side of up) {
+    const f = m.f[side]!;
     if (f.state === "stun" && --f.stun <= 0) f.state = "free";
     if (f.state === "dash" && ++f.t >= 12) { f.state = "free"; f.t = 0; }
     if (f.state === "ledge") f.t++;
@@ -745,26 +764,36 @@ export function step(m: Match, inputs: [Input, Input]) {
     if (k.chill > 0) k.chill--;
     if (k.root > 0) k.root--;
     if (f.clipped > 0) f.clipped--;
-    control(m, side, inputs[side]);
+    control(m, side, input(side));
   }
-  for (const side of [0, 1] as const) attackFrames(m, side, inputs[side]);
-  for (const side of [0, 1] as const) moveBody(m, side, inputs[side]);
+  for (const side of up) attackFrames(m, side, input(side));
+  for (const side of sides) moveBody(m, side, input(side));
   areas(m);
-  // Bodies don't overlap: the lighter one gets pushed more.
-  const [a, b] = m.f, d = flat(a.pos, b.pos), min = a.b.radius + b.b.radius;
-  if (d < min && d > 1e-6 && Math.abs(a.pos.y - b.pos.y) < Math.max(a.b.height, b.b.height)) {
-    const push = min - d, wa = b.b.mass / (a.b.mass + b.b.mass), nx = (b.pos.x - a.pos.x) / d, nz = (b.pos.z - a.pos.z) / d;
-    a.pos.x -= nx * push * wa; a.pos.z -= nz * push * wa; b.pos.x += nx * push * (1 - wa); b.pos.z += nz * push * (1 - wa);
+  // Bodies don't overlap, every pair of those still in: the lighter one gets pushed more.
+  for (let i = 0; i < up.length; i++) for (let j = i + 1; j < up.length; j++) {
+    const a = m.f[up[i]!]!, b = m.f[up[j]!]!, d = flat(a.pos, b.pos), min = a.b.radius + b.b.radius;
+    if (d < min && d > 1e-6 && Math.abs(a.pos.y - b.pos.y) < Math.max(a.b.height, b.b.height)) {
+      const push = min - d, wa = b.b.mass / (a.b.mass + b.b.mass), nx = (b.pos.x - a.pos.x) / d, nz = (b.pos.z - a.pos.z) / d;
+      a.pos.x -= nx * push * wa; a.pos.z -= nz * push * wa; b.pos.x += nx * push * (1 - wa); b.pos.z += nz * push * (1 - wa);
+    }
   }
-  for (const side of [0, 1] as const) m.f[side].prev = inputs[side];
-  for (const side of [0, 1] as const) {
-    const f = m.f[side];
+  for (const side of sides) m.f[side]!.prev = input(side);
+  // One out leaves the fight; the last of a team out ends it.
+  for (const side of up) {
+    const f = m.f[side]!;
     const how = f.hp <= 0 ? "hp" : f.pos.y < ARENA.fallKo ? "ring-out" : null;
-    if (how) return end(m, side ? 0 : 1, { kind: "ko", who: side, how });
+    if (!how) continue;
+    f.down = true;
+    const e: Event = { kind: "ko", who: side, how };
+    if (m.f.every((o) => o.team !== f.team || o.down)) return end(m, f.team ? 0 : 1, e);
+    m.events.push(e);
+    f.state = "free"; f.act = null; f.t = 0; // a stream it poured stops with it
   }
   if (m.tick >= ROUND_TICKS) {
-    const [p, q] = m.f.map((f) => f.hp / f.b.hp) as [number, number];
-    end(m, p >= q ? 0 : 1, { kind: "ko", who: p >= q ? 1 : 0, how: "time" });
+    // The team with more of its health left, as a share of full (one on one, each fighter's own share).
+    const share = (t: 0 | 1) => { const on = m.f.filter((f) => f.team === t); return on.reduce((s, f) => s + f.hp / f.b.hp, 0) / on.length; };
+    const p = share(0), q = share(1), lost = p >= q ? 1 : 0;
+    end(m, p >= q ? 0 : 1, { kind: "ko", who: m.f.findIndex((f) => f.team === lost), how: "time" });
   }
 }
 function end(m: Match, winner: 0 | 1, e: Event) { m.over = true; m.winner = winner; m.events.push(e); }
