@@ -5,7 +5,7 @@ import { feature } from "topojson-client";
 import type { Topology, GeometryCollection } from "topojson-specification";
 import topology from "world-atlas/countries-110m.json";
 import type { LatLon } from "./geo.ts";
-import { isRecord } from "@rustybuns/util/guard";
+import { arr, check, obj, oneOf, raw } from "@rustybuns/util/guard";
 
 /** A [lon, lat] point as GeoJSON writes it. */
 export type Position = number[];
@@ -20,12 +20,13 @@ export interface Country {
 }
 
 type CountriesTopology = Topology<{ countries: GeometryCollection<{ name: string }> }>;
-/** world-atlas ships the file; this checks it is the TopoJSON topojson-client reads before trusting it. */
-function isCountriesTopology(x: unknown): x is CountriesTopology {
-  if (!isRecord(x) || x.type !== "Topology" || !Array.isArray(x.arcs) || !isRecord(x.objects)) return false;
-  const c = x.objects.countries;
-  return isRecord(c) && c.type === "GeometryCollection" && Array.isArray(c.geometries);
-}
+/** TopoJSON's envelope with a countries collection. The arcs and geometries are topojson-client's to read. */
+const CountriesEnvelope = obj({
+  type: oneOf(["Topology"]), arcs: arr(raw, Infinity),
+  objects: obj({ countries: obj({ type: oneOf(["GeometryCollection"]), geometries: arr(raw, Infinity) }) }),
+});
+/** world-atlas ships the file (a bundled, pinned asset, not a reply): its envelope is checked, then it is trusted. */
+const isCountriesTopology = (x: unknown): x is CountriesTopology => check(CountriesEnvelope, x) !== null;
 
 function build(): Country[] {
   const topo: unknown = topology;

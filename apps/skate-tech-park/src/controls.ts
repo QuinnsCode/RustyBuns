@@ -1,36 +1,27 @@
 // The player's control settings: how the stick and the flick pad feel and look, kept per player in the browser. Plain
 // data and no DOM; the Controls cog (main.ts) edits it, main.ts applies it live.
 import { type Profile, scaled } from "./flick.ts";
-import { isRecord } from "@rustybuns/util/guard";
+import { bool, check, maybe, num, obj, oneOf, type Of } from "@rustybuns/util/guard";
+import { parseJson } from "@rustybuns/util/http";
 
-export type Controls = {
-  invertX: boolean; // steer the other way
-  swap: boolean; // the flick pad on the other half of the screen (left-handed)
-  size: number; // the flick pad's size, 1 as drawn
-  opacity: number; // how solid the touch controls are
-  labels: "always" | "first" | "never"; // trick names on the pad: always, for the first few seconds, or never
-  dead: number; // the stick's dead zone, share of its radius
-};
+/** A number from `lo` to `hi`; anything else (out of range too) is `d`. */
+const within = (lo: number, hi: number, d: number) => (v: unknown) => maybe(num(lo, hi))(v) ?? d;
+/** The saved settings: every field checked, anything missing or wrong falls back to its default. */
+const ControlsSave = obj({
+  invertX: bool(false), // steer the other way
+  swap: bool(false), // the flick pad on the other half of the screen (left-handed)
+  size: within(0.6, 1.5, 1), // the flick pad's size, 1 as drawn
+  opacity: within(0.15, 1, 1), // how solid the touch controls are
+  labels: oneOf(["always", "first", "never"], "first"), // trick names on the pad: always, for the first few seconds, or never
+  dead: within(0.04, 0.45, 0.18), // the stick's dead zone, share of its radius
+});
+export type Controls = Of<typeof ControlsSave>;
 
-export const DEFAULT_CONTROLS: Controls = { invertX: false, swap: false, size: 1, opacity: 1, labels: "first", dead: 0.18 };
+export const DEFAULT_CONTROLS: Controls = ControlsSave({});
 export const CONTROLS_KEY = "skate-controls";
 
-const num = (v: unknown, lo: number, hi: number, d: number) => (typeof v === "number" && v >= lo && v <= hi ? v : d);
-const flag = (v: unknown, d: boolean) => (typeof v === "boolean" ? v : d);
-
-/** Settings from stored JSON: every field checked, anything missing or wrong falls back to its default. */
-export function parseControls(text: string | null): Controls {
-  const d = DEFAULT_CONTROLS;
-  let v: unknown = null;
-  try { v = text ? JSON.parse(text) : null; } catch { /* a damaged save: start over */ }
-  if (!isRecord(v)) return { ...d };
-  return {
-    invertX: flag(v.invertX, d.invertX), swap: flag(v.swap, d.swap),
-    size: num(v.size, 0.6, 1.5, d.size), opacity: num(v.opacity, 0.15, 1, d.opacity),
-    labels: v.labels === "always" || v.labels === "never" || v.labels === "first" ? v.labels : d.labels,
-    dead: num(v.dead, 0.04, 0.45, d.dead),
-  };
-}
+/** Settings from stored JSON; a damaged save starts over. */
+export const parseControls = (text: string | null): Controls => check(ControlsSave, parseJson(text)) ?? { ...DEFAULT_CONTROLS };
 
 export const loadControls = (): Controls => { try { return parseControls(localStorage.getItem(CONTROLS_KEY)); } catch { return { ...DEFAULT_CONTROLS }; } };
 export const saveControls = (c: Controls) => { try { localStorage.setItem(CONTROLS_KEY, JSON.stringify(c)); } catch { /* private window: the settings last this visit */ } };

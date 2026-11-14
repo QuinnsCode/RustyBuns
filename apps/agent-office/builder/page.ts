@@ -1,21 +1,17 @@
 // Settings › You gets a "Build computer" card: whether the builder Mac answers, the one-line setup when it doesn't, and
 // last night's desktop builds (builder/server.ts).
 import { createElement, Hammer } from "lucide";
-import type { Nightly, Status } from "./server.ts";
 import { el } from "@rustybuns/util/dom";
+import { getJson } from "@rustybuns/util/http";
+import { BuilderReply } from "../connect/types.ts";
+import { nightlyLine } from "../setup/model.ts";
 
-type State = { connections: { account: string; status: Status }[]; setup: string; nightly: Nightly | null };
+export { nightlyLine };
 
-export function statusLine(s: State): string {
+export function statusLine(s: Pick<BuilderReply, "connections">): string {
   const c = s.connections[0];
   if (!c || c.status === "unset") return "No build computer yet: BUILDER_HOST is not set";
   return c.status === "ok" ? `${c.account} answers` : `${c.account} does not answer over ssh`;
-}
-
-export function nightlyLine(n: Nightly | null): string {
-  if (!n) return "No nightly results yet";
-  const bad = n.results.filter((r) => !r.ok).map((r) => r.app);
-  return `${new Date(n.at).toLocaleString()}: ${n.results.length - bad.length} of ${n.results.length} built${bad.length ? `, failed: ${bad.join(", ")}` : ""}`;
 }
 
 /** The setup command in a block that wraps on a narrow screen. */
@@ -27,7 +23,7 @@ function setupLine(text: string) {
 
 function section() {
   const root = el("div", { className: "setting rb-builder" });
-  const draw = (s: State) => {
+  const draw = (s: BuilderReply) => {
     const c = s.connections[0];
     const ok = c?.status === "ok";
     root.replaceChildren(
@@ -36,7 +32,8 @@ function section() {
       ...(ok ? [el("p", { className: "setting-note" }, nightlyLine(s.nightly))]
         : [el("p", { className: "setting-note" }, "On the build Mac, run:"), setupLine(s.setup), el("p", { className: "setting-note" }, "then, here: echo 'export BUILDER_HOST=you@Your-Mac.local' >> ~/.zshenv, and restart the office")]));
   };
-  fetch("/__rb/builder").then((r) => r.json()).then((b: State) => draw(b)).catch(() => root.replaceChildren(el("p", { className: "setting-note" }, "The build computer's card did not load")));
+  const failed = () => root.replaceChildren(el("p", { className: "setting-note" }, "The build computer's card did not load"));
+  getJson("/__rb/builder", BuilderReply).then((b) => (b ? draw(b) : failed())).catch(failed);
   return root;
 }
 

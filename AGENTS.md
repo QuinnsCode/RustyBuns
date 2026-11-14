@@ -91,13 +91,15 @@ updates its docs in the same PR. Those two files must keep importing nothing els
 
 ## Check what comes in
 
-A parsed body, fetch reply or stored string is `unknown` until something looks at it. Don't
-assert a shape onto it (`as { owner: string }`), and no `any` or `as never`: narrow each field
-(`isRecord` from `@rustybuns/util/guard` before reading a field, never a local copy or an
-`Object.fromEntries(Object.entries(x))` to dodge a cast; `readBody`, `parseJson` and `listOf` in codeSplitter), and
-test the wrong shape. For a whole body or message, write its guard with `@rustybuns/util/guard`
-(`obj`, `str`, `num`, `oneOf`, `arr`, `opt`; `type X = Of<typeof X>`), and in a codeSplitter route
-`need(body, guard)` for the typed value or a 400. CI runs `bun scripts/boundary-audit.ts`, which fails on a new unchecked value
+A parsed body, fetch reply, tool's arguments or stored string is `unknown` until something looks at it. Don't
+assert a shape onto it (`as { owner: string }`, `const x: Foo = await r.json()`), no `any` or `as never`, and no
+`Record<string, unknown>` poked field by field: that is a second, hand-kept copy of a type the other end already has.
+A shape is a guard from `@rustybuns/util/guard` (`obj`, `str`, `num`, `oneOf`, `arr`, `opt`, `or`, `said`), and the
+guard is the type (`type X = Of<typeof X>`). Declare it once where both ends can import it (no Bun or DOM in that file:
+`apps/agent-office/connect/types.ts`, `ester/state.ts`), have the server write `x satisfies Reply`, and read it with
+`getJson(url, Reply)` or `check(Reply, v)`; in a codeSplitter route `need(body, guard)` gives the typed value or a 400.
+Test the wrong shape. `isRecord` is only for walking JSON that has no fixed shape (a linter over authored files, a deep
+merge). CI runs `bun scripts/boundary-audit.ts`, which fails on a new unchecked value or `Record<string, unknown>`,
 and on a file that got better but didn't lower its count in `scripts/boundary-audit.allow.json`
 (`--update` writes it, `--list` shows every one). The allowance only goes down.
 

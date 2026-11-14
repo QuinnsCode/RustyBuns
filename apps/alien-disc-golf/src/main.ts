@@ -20,7 +20,7 @@ import { accountChip, achieve, achievements, finishSignIn, reportButton, THEME }
 import { about, icon, info } from "./icons.ts";
 import { tutorial } from "@rustybuns/util/tutorial";
 import { loadWind, type Wind } from "./wind-load.ts";
-import { isRecord } from "@rustybuns/util/guard";
+import { check, maybe, num, obj, oneOf } from "@rustybuns/util/guard";
 
 const MAX_STROKES = 8;
 // The pad: the left stick aims (left/right turns, up/down power); these buttons are rebindable in the cog.
@@ -562,17 +562,18 @@ const golfApi = {
 Object.assign(window, { golf: golfApi });
 
 // The same functions as commands: WebMCP tools for an agent, the Cmd/Ctrl+K palette (and a corner button on a phone) for a person.
-const nums = (a: unknown): Record<string, number> =>
-  Object.fromEntries(Object.entries(isRecord(a) ? a : {}).filter((e): e is [string, number] => typeof e[1] === "number"));
-const LOFTS: readonly Loft[] = ["low", "high"];
+const LOFTS = ["low", "high"] as const satisfies readonly Loft[];
+// The tools' arguments: anything missing or wrong reads as its default.
+const AimArgs = obj({ heading: num(-1e6, 1e6, 0), power: num(-1e6, 1e6, 0.5), loft: maybe(oneOf(LOFTS)) });
+const SplashArgs = obj({ lat: num(-90, 90, 0), lon: num(-180, 180, 0) });
 addCommands([
   { name: "golf_state", title: "Look at the hole", group: "Hole", description: "Phase, hole, strokes, aim (heading, power, loft), wind, swim and scores.", annotations: { readOnlyHint: true }, execute: () => golfApi.state() },
   { name: "golf_aim", title: "Aim the disc", group: "Throw", description: "Heading in degrees, power, and loft (low or high).",
     inputSchema: { type: "object", properties: { heading: { type: "number" }, power: { type: "number" }, loft: { type: "string", enum: [...LOFTS] } }, required: ["heading", "power"] },
-    execute: (a) => { const { heading: h = 0, power: p = 0.5 } = nums(a), l = LOFTS.find((x) => typeof a === "object" && a && Reflect.get(a, "loft") === x); golfApi.aim(h, p, l); return golfApi.state(); } },
+    execute: (a) => { const { heading, power, loft } = check(AimArgs, a) ?? AimArgs({}); golfApi.aim(heading, power, loft); return golfApi.state(); } },
   { name: "golf_throw", title: "Throw the disc", group: "Throw", description: "Throw with the current aim.", execute: () => { golfApi.throw(); } },
   { name: "golf_splash", title: "Splash into the sea", group: "Swim", description: "Drop the disc in the sea at lat, lon and start the swim.",
-    inputSchema: { type: "object", properties: { lat: { type: "number" }, lon: { type: "number" } }, required: ["lat", "lon"] }, execute: (a) => { const { lat = 0, lon = 0 } = nums(a); golfApi.splash(lat, lon); return golfApi.state(); } },
+    inputSchema: { type: "object", properties: { lat: { type: "number" }, lon: { type: "number" } }, required: ["lat", "lon"] }, execute: (a) => { const { lat, lon } = check(SplashArgs, a) ?? SplashArgs({}); golfApi.splash(lat, lon); return golfApi.state(); } },
   { name: "golf_sea_view", title: "Toggle sea view", group: "Swim", description: "Show or hide the sea-current view.", inputSchema: { type: "object", properties: { on: { type: "boolean" } } },
     execute: (a) => { golfApi.seaView(!(typeof a === "object" && a && Reflect.get(a, "on") === false)); } },
 ]);

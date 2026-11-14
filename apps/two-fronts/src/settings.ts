@@ -3,7 +3,8 @@
 // The look speeds and invert Y live in the shared Controls cog (@rustybuns/game-controls); this holds what only this game has.
 
 import { DEFAULTS as LOOK_DEFAULTS, type Settings as Look } from "@rustybuns/game-controls";
-import { isRecord } from "@rustybuns/util/guard";
+import { bool, check, maybe, num, obj, str } from "@rustybuns/util/guard";
+import { parseJson } from "@rustybuns/util/http";
 
 export type Action = "forward" | "back" | "left" | "right" | "strike" | "use" | "mute";
 export const ACTIONS: { id: Action; label: string }[] = [
@@ -27,24 +28,20 @@ export const SETTINGS_KEY = "two-fronts-controls";
 /** Keys the game keeps for itself (squad orders, letting go of the mouse). */
 export const RESERVED = ["1", "2", "3", "4", "f", "escape"];
 
-const num = (v: unknown, lo: number, hi: number, d: number) => (typeof v === "number" && v >= lo && v <= hi ? v : d);
-const flag = (v: unknown, d: boolean) => (typeof v === "boolean" ? v : d);
+const key = (d: string) => str(15, { dflt: d });
+const k = DEFAULTS.keys;
+/** The saved settings: anything missing or wrong falls back to its default. */
+const SettingsSave = obj({
+  invertX: bool(DEFAULTS.invertX), fov: (v: unknown) => maybe(num(50, 100))(v) ?? DEFAULTS.fov, fireToggle: bool(DEFAULTS.fireToggle), leftHanded: bool(DEFAULTS.leftHanded),
+  keys: (v: unknown) => check(obj({ forward: key(k.forward), back: key(k.back), left: key(k.left), right: key(k.right), strike: key(k.strike), use: key(k.use), mute: key(k.mute) }), v) ?? { ...k },
+});
 
 /** Settings from stored JSON: every field checked, anything missing, wrong or clashing falls back to its default. */
 export function parseSettings(text: string | null): Settings {
-  const d = DEFAULTS;
-  let v: unknown = null;
-  try { v = text ? JSON.parse(text) : null; } catch { /* a damaged save: start over */ }
-  if (!isRecord(v)) return { ...d, keys: { ...d.keys } };
-  const stored = isRecord(v.keys) ? v.keys : {};
-  const keys = { ...d.keys };
-  for (const a of ACTIONS) { const k = stored[a.id]; if (typeof k === "string" && k.length > 0 && k.length < 16) keys[a.id] = k; }
-  const used = ACTIONS.map((a) => keys[a.id]);
-  if (new Set(used).size !== used.length || used.some((k) => RESERVED.includes(k))) Object.assign(keys, d.keys);
-  return {
-    invertX: flag(v.invertX, d.invertX),
-    fov: num(v.fov, 50, 100, d.fov), fireToggle: flag(v.fireToggle, d.fireToggle), leftHanded: flag(v.leftHanded, d.leftHanded), keys,
-  };
+  const s = check(SettingsSave, parseJson(text)) ?? { ...DEFAULTS, keys: { ...k } };
+  const used = ACTIONS.map((a) => s.keys[a.id]);
+  if (new Set(used).size !== used.length || used.some((u) => RESERVED.includes(u))) s.keys = { ...k };
+  return s satisfies Settings;
 }
 
 const load = (): Settings => { try { return parseSettings(localStorage.getItem(SETTINGS_KEY)); } catch { return parseSettings(null); } };

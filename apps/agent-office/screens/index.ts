@@ -9,10 +9,11 @@
 // Each keeps its slot whether or not the others are on. Clicking Mervin or Ester calls on them, like their badges (ester/).
 // The data: /__rb/helpers (ester/run.ts) every few seconds, /__rb/line every minute.
 import { CanvasTexture, Group, Matrix4, Mesh, MeshBasicMaterial, PlaneGeometry, Raycaster, SRGBColorSpace, Vector2, Vector3, type Camera, type Object3D, type Scene } from "three";
-import type { EsterState } from "../ester/run.ts";
+import { HelpersReply, type EsterState } from "../ester/state.ts";
+import { check } from "@rustybuns/util/guard";
 import { el } from "@rustybuns/util/dom";
 import {
-  SCREENS, STATIONS, avoided, clock, esterStack, fixPrompt, helperState, line, mergedPrs, mervinBoard, openPrs, preventedOf, slots, tallyOf,
+  SCREENS, STATIONS, avoided, clock, esterStack, fixPrompt, line, mergedPrs, mervinBoard, openPrs, preventedOf, slots,
   type MergedPr, type OpenPr, type Screen, type Tally,
 } from "./read.ts";
 
@@ -331,11 +332,8 @@ async function pollHelpers() {
     try {
       const r = await fetch("/__rb/helpers", { credentials: "same-origin" });
       if (r.ok && !r.redirected) {
-        const body: unknown = await r.json();
-        if (typeof body === "object" && body && "ester" in body && "mervin" in body) {
-          helpers = { ester: helperState(body.ester), mervin: helperState(body.mervin) };
-          tally = "tally" in body ? tallyOf(body.tally) : null;
-        }
+        const body = check(HelpersReply, await r.json().catch(() => null));
+        if (body) { helpers = { ester: body.ester, mervin: body.mervin }; tally = body.tally ?? null; }
       }
     } catch {}
     draw();
