@@ -28,6 +28,9 @@
 #   tuft    along, n, len, base, and rows, spread, sweep (1.5), curve (30), flat (0.3), sink (0.8),
 #           material (the palette's `tuft`, else the body's): flat, curling fur along a chain, swept toward its last node. A tuft or
 #           spike roots `sink` of the way out to the skin, a blob's where one covers the chain
+#   lock    as a tuft, plus twist (40), groove (0.15), swing (18), curve (60), flat (0.45): a clump of hair broad and flat
+#           at the root that twists as it curls to a soft round tip, grooved into strands, each a little
+#           longer or shorter and swung aside from the next (a lion's mane)
 #   membrane camber, puff    the middle lifted `camber` metres (up, or outward for a fin) and thickened to
 #                            `puff`, tapering to `thick` at the rim: a cupped wing, a flipper
 #           feathers         {from, to, n, len, base, curve, flat, tip, material}: a row of flat feathers out
@@ -590,12 +593,15 @@ def arc(at, d, b, length, angle, t):
     return p, d * math.cos(th) + b * math.sin(th), -d * math.sin(th) + b * math.cos(th)
 
 
-def tube(name, at, direction, length, base, tip, mat, curve=0, bend=None, flat=1.0, segments=6, rings=6, profile=None, fold=0.0):
+def tube(name, at, direction, length, base, tip, mat, curve=0, bend=None, flat=1.0, segments=6, rings=6, profile=None, fold=0.0,
+         twist=0.0, groove=0.0, smooth=False):
     """A cone that curves and tapers: from radius `base` at `at` to `tip` at the far end (0 a point, more
     than base a club), bending `curve` degrees toward `bend` along the way, its section squashed to `flat`
     of its width in the bend direction (a tuft or a feather lies flat on what it bends toward). `profile`
     is instead a list of (how far along, radius in `base`) pairs, a ring at each: a feather's vane. `fold`
-    cups the section across: its edges swing that share of the radius toward `bend` (a fleshy ear's hollow)."""
+    cups the section across: its edges swing that share of the radius toward `bend` (a fleshy ear's hollow).
+    `twist` turns the section that many degrees from root to tip, `groove` dents it that share in four places
+    round (strands in a lock of hair), and `smooth` shades it smooth instead of faceted."""
     d, b = bend_frame(direction, bend)
     angle = math.radians(curve)
     verts, faces = [], []
@@ -608,9 +614,13 @@ def tube(name, at, direction, length, base, tip, mat, curve=0, bend=None, flat=1
             verts.append(tuple(p))
             break
         side = tan.cross(nrm)
+        if twist:
+            tw = math.radians(twist) * t
+            side, nrm = side * math.cos(tw) + nrm * math.sin(tw), nrm * math.cos(tw) - side * math.sin(tw)
         for j in range(segments):
             a = 2 * math.pi * j / segments
-            verts.append(tuple(p + side * (r * math.cos(a)) + nrm * (r * (flat * math.sin(a) + fold * math.cos(a) ** 2))))
+            rr = r * (1 - groove * (0.5 + 0.5 * math.cos(4 * a))) if groove else r
+            verts.append(tuple(p + side * (rr * math.cos(a)) + nrm * (rr * (flat * math.sin(a) + fold * math.cos(a) ** 2))))
     for k in range(rings):
         s0 = k * segments
         if k == rings - 1 and tip <= 0:
@@ -629,7 +639,15 @@ def tube(name, at, direction, length, base, tip, mat, curve=0, bend=None, flat=1
     bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
     bm.to_mesh(me)
     bm.free()
+    if smooth:
+        for f in me.polygons:
+            f.use_smooth = True
     return obj(name, me, mat)
+
+
+# a lock of hair along its length: (how far along, radius in its base): broad at the root, a little fuller
+# a third of the way out, then rounding off to a soft tip instead of a cone's point
+LOCK = [(0, 1.0), (0.15, 1.05), (0.35, 0.85), (0.55, 0.6), (0.72, 0.4), (0.86, 0.24), (0.95, 0.12), (1.0, 0.0)]
 
 
 def ring_loft(name, rings, mat, closed_ends=True):
@@ -1120,6 +1138,20 @@ def parts(sheet, nodes):
                     out.append(tube(f"{name}_{j}_{k}", root, d, ln, p["base"], 0,
                                     p.get("material", "tuft" if "tuft" in PALETTE else sheet.get("material", "hide")), curve=p.get("curve", 30),
                                     bend=-up, flat=p.get("flat", 0.3), segments=5, rings=3))
+            elif p["kind"] == "lock":
+                # hair in clumps: each lock broad and flat at the root, twisting as it curls back onto the body
+                # to a soft round tip, grooved into strands; its length, curl and swing vary a little lock to
+                # lock (the same every build), so a mane reads as hair and not as a pinecone's rows of plates
+                for j, k, root, up, d in fan(nodes, blobs, p, side, 0.8, 1.5):
+                    h = ((j * 7 + k * 13) % 11) / 10  # 0-1, a fixed scatter
+                    g = ((j * 5 + k * 3) % 7) / 6
+                    sw = math.radians(p.get("swing", 18) * (2 * g - 1))
+                    d = Matrix.Rotation(sw, 3, up) @ d
+                    out.append(tube(f"{name}_{j}_{k}", root, d, p["len"] * (0.8 + 0.4 * h), p["base"], 0,
+                                    p.get("material", "tuft" if "tuft" in PALETTE else sheet.get("material", "hide")),
+                                    curve=p.get("curve", 60) * (0.8 + 0.4 * g), bend=-up, flat=p.get("flat", 0.45),
+                                    segments=8, profile=LOCK, twist=p.get("twist", 40) * (1 if (j + k) % 2 else -1),
+                                    groove=p.get("groove", 0.15), smooth=True))
             elif p["kind"] == "scales":
                 # plates: wide, flat and short, lying toward the chain's end, each over the one behind
                 ov = p.get("overlap", 0.5)
