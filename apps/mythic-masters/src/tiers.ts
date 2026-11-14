@@ -37,7 +37,8 @@ export function inSeason(id: string, date: Date): boolean {
 }
 
 /** The ones only ever met after dark, on a night road or at a lit window: they roam only at night (#3773). */
-export const NIGHT: ReadonlySet<string> = new Set(["jersey-devil", "mothman", "beast-of-bray-road", "dover-demon", "fresno-nightcrawler", "rougarou"]);
+export const NIGHT: ReadonlySet<string> = new Set(["jersey-devil", "mothman", "beast-of-bray-road", "dover-demon", "fresno-nightcrawler", "rougarou",
+  "splintercat", "ozark-howler"]); // regions 4 and 8's own (#4389): the lumberwoods' prowler and the howl after dark
 /** Whether `id` is out at this hour: a night one only after dark, the rest any time. */
 export const awake = (id: string, night: boolean) => night || !NIGHT.has(id);
 
