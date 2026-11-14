@@ -54,6 +54,9 @@ type Hound = {
   hide: Record<string, unknown>;
   stripe?: boolean;                // a dark band down the spine
   bib?: boolean;                   // a pale throat and belly, painted
+  pose?: Record<string, [number, number]>; // nodes moved by (fore, up) in k before the flesh goes on: a crouch, braced legs
+  waist?: number;                  // the belly's depth and width (1: a hound's; less: tucked up under the ribs)
+  paw?: number;                    // paw size (1: a hound's)
 };
 
 function hound(o: Hound) {
@@ -77,6 +80,11 @@ function hound(o: Hound) {
     l_hock: P(-0.6, 0.25, 0.15, 0.035),
     l_bfoot: P(-0.56, 0.05, 0.15, 0.035),
   };
+  for (const [n, [dx, dy]] of Object.entries(o.pose ?? {})) {
+    const p = nodes[n];
+    if (!p) throw new Error(`pose: no node ${n}`);
+    nodes[n] = [f4(p[0] + r(dx)), f4(p[1] + r(dy)), p[2], p[3]];
+  }
   const t = o.tail;
   const tailPts: [number, number][] = [[-0.62, 0.86], [-0.62 - 0.3 * t.len, 0.86 - 0.12 * t.droop], [-0.62 - 0.55 * t.len, 0.86 - 0.36 * t.droop], [-0.62 - 0.72 * t.len, 0.86 - 0.58 * t.droop + (t.curl ?? 0)]];
   tailPts.forEach(([x, y], i) => { nodes[`tail${i + 1}`] = P(x, y, 0, (0.05 - 0.01 * i) * (t.thick ?? 1)); });
@@ -105,7 +113,7 @@ function hound(o: Hound) {
   const C = o.chest;
   const blobs: Blob[] = [
     { at: "chest", off: mul([0.0, -0.05, 0], k), r: mul([0.3 * LX, 0.3 * C, 0.24], k) },
-    { at: "belly", off: mul([0.06, 0.0, 0], k), r: mul([0.32 * LX, 0.2 * (0.6 + 0.4 * C), 0.18], k) },
+    { at: "belly", off: mul([0.06, 0.0, 0], k), r: mul([0.32 * LX, 0.2 * (0.6 + 0.4 * C) * (o.waist ?? 1), 0.18 * (o.waist ?? 1)], k) },
     { at: "hip", off: mul([0.04, 0.0, 0], k), r: mul([0.24 * LX, 0.16, 0.16], k) },
     { at: "neck", off: mul([-0.02, 0, 0], k), r: mul([0.19, 0.17, 0.14], k), rot: [0, 0, -40] },
     ...pair("l_shoulder", mul([0.0, 0.04, -0.02], k), mul([0.12, 0.2, 0.08], k)),
@@ -196,8 +204,8 @@ function hound(o: Hound) {
 
   // legs: lofted with a shoulder and an elbow, and paws with claws
   parts.push(
-    { kind: "foot", at: "l_ffoot", form: "paw", len: r(0.15), width: r(0.11), toes: 4, claw: r(0.03), sole: r(0.05), mirror: true, material: "fur", claw_mat: "claw" },
-    { kind: "foot", at: "l_bfoot", form: "paw", len: r(0.14), width: r(0.1), toes: 4, claw: r(0.028), sole: r(0.05), mirror: true, material: "fur", claw_mat: "claw" },
+    { kind: "foot", at: "l_ffoot", form: "paw", len: r(0.15 * (o.paw ?? 1)), width: r(0.11 * (o.paw ?? 1)), toes: 4, claw: r(0.03 * (o.paw ?? 1)), sole: r(0.05), mirror: true, material: "fur", claw_mat: "claw" },
+    { kind: "foot", at: "l_bfoot", form: "paw", len: r(0.14 * (o.paw ?? 1)), width: r(0.1 * (o.paw ?? 1)), toes: 4, claw: r(0.028 * (o.paw ?? 1)), sole: r(0.05), mirror: true, material: "fur", claw_mat: "claw" },
   );
 
   // fur: shag down the back, a ruff round the neck, feathering behind the legs, a bushy tail
@@ -289,7 +297,14 @@ function chimera() {
   const b = hound({
     id: "chimera", name: "Chimera", archetype: "bruiser", budget: 9000, k, head: 1.35, muzzle: 0.6, snout: 1.35, crown: 0.95, gape: 1.2,
     about: "Lycia in Greek myth, slain by Bellerophon riding Pegasus: a fire-breathing lion in front, a she-goat's head rising from the middle of its back, and a serpent for its tail.",
-    long: 1.05, tall: 0.95, legs: 1.3, ears: { len: 0.06, width: 0.07, dir: [-0.3, 1, 0.6], cup: 35, tilt: 20, fold: 0.3 }, eyes: "two", chest: 1.25, ruff: 1.45, shag: 0.5,
+    long: 1.05, tall: 0.95, legs: 1.15, waist: 0.82, paw: 1.35,
+    // the Arezzo bronze's crouch: the chest dropped low between forelegs braced out in front, the head raised to roar,
+    // the hind legs folded under the haunch ready to spring
+    pose: {
+      chest: [0, -0.1], belly: [0, -0.04], l_shoulder: [0.02, -0.1], neck: [0.02, -0.06], head: [0.03, -0.04], snout: [0.03, -0.04],
+      l_elbow: [0.12, -0.13], l_wrist: [0.24, -0.03], l_ffoot: [0.27, 0],
+      hip: [0, -0.02], l_hipj: [0, -0.02], l_knee: [0.1, -0.1], l_hock: [-0.02, -0.06], l_bfoot: [0.04, 0],
+    }, ears: { len: 0.06, width: 0.07, dir: [-0.3, 1, 0.6], cup: 35, tilt: 20, fold: 0.3 }, eyes: "two", chest: 1.1, ruff: 1.45, shag: 0.5,
     tail: { len: 1, droop: 0, bush: 0 },
     palette: {
       fur: [0.74, 0.52, 0.24, 0.9, 0], tuft: [0.5, 0.24, 0.08, 0.95, 0], belly: [0.9, 0.78, 0.56, 0.9, 0], stripe: [0.2, 0.32, 0.12, 0.6, 0],
@@ -305,7 +320,7 @@ function chimera() {
     tail1: P(-0.66, 0.92, 0, 0.06), tail2: P(-0.92, 1.06, 0, 0.055), tail3: P(-1.0, 1.32, 0, 0.05), tail4: P(-0.88, 1.5, 0, 0.045),
     shead: P(-0.7, 1.56, 0, 0.055), ssnout: P(-0.58, 1.53, 0, 0.035),
     // the goat: a long neck out of the middle of the back, a narrow head, swept-back horns
-    g1: P(-0.12, 1.02, 0, 0.07), g2: P(-0.06, 1.24, 0, 0.06), ghead: P(0.0, 1.42, 0, 0.06), gmuzzle: P(0.14, 1.36, 0, 0.035),
+    g1: P(-0.12, 0.98, 0, 0.07), g2: P(-0.06, 1.24, 0, 0.06), ghead: P(0.0, 1.42, 0, 0.06), gmuzzle: P(0.14, 1.36, 0, 0.035),
   });
   b.links.push(["tail4", "shead"], ["shead", "ssnout"], ["belly", "g1"], ["g1", "g2"], ["g2", "ghead"], ["ghead", "gmuzzle"]);
   const s = (x: number) => f4(x * k);
@@ -320,7 +335,8 @@ function chimera() {
   b.stripes = { along: ["tail1", "tail2", "tail3", "tail4"], n: 6, width: 0.45, material: "stripe", below: -0.3 };
   b.parts.push(
     // the lion's mane rays out round the face as spikes of hair
-    { kind: "tuft", along: ["head", "neck"], n: 12, len: s(0.34), base: s(0.075), rows: 12, spread: 220, sweep: 0.6, curve: 12, flat: 0.4, material: "tuft" },
+    // a full ring of them, the chin and throat too, not only the top and sides
+    { kind: "tuft", along: ["head", "neck"], n: 12, len: s(0.34), base: s(0.075), rows: 18, spread: 170, sweep: 0.6, curve: 12, flat: 0.4, material: "tuft" },
     // the goat: eyes, a beard, swept-back horns, ears
     { kind: "eye", at: "ghead", off: [s(0.05), s(0.03), s(0.045)], r: s(0.02), mirror: true, material: "eye" },
     { kind: "horn", at: "ghead", off: [s(-0.01), s(0.05), s(0.03)], dir: [-0.6, 1, 0.15], len: s(0.3), base: s(0.03), tip_base: 0.002, curve: 70, bend: [-1, -0.3, 0], mirror: true, material: "horn" },
