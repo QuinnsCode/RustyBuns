@@ -1778,6 +1778,9 @@ def bake_hide(o, h, back, lift, segs=None):
         if shut:
             pick(shut)
             bpy.ops.uv.smart_project(angle_limit=math.radians(80), island_margin=4 / px, scale_to_bounds=False)
+            # out of edit mode, so the islands below see Smart UV Project's UVs and not the mesh from before it: read
+            # stale, its tuft islands weren't crumbs and took a margin each (the Lobizon's hide filled 15% of its map)
+            bpy.ops.object.mode_set(mode="OBJECT")
         # a shell of a few faces (a fur tuft, a knob) can't show a pattern but would take its own island and margin in
         # the pack (the Gevaudan's tufts made 300 of them): each takes one texel of the hide instead
         crumbs = {i for isl in uv_islands(o, slot) if len(isl) <= 8 for i in isl}
