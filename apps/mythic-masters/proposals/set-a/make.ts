@@ -54,7 +54,9 @@ type Hound = {
   hide: Record<string, unknown>;
   stripe?: boolean;                // a dark band down the spine
   bib?: boolean;                   // a pale throat and belly, painted
-  pose?: Record<string, [number, number]>; // nodes moved by (fore, up) in k before the flesh goes on: a crouch, braced legs
+  pose?: Record<string, [number, number] | [number, number, number]>; // nodes moved by (fore, up, out) in k before the flesh goes on: a crouch, braced legs
+  nose?: number;                   // nose size (1: a hound's; more: a lion's broad pad)
+  wrinkles?: number;               // snarl wrinkles across the top of the muzzle, in rows (0 none)
   waist?: number;                  // the belly's depth and width (1: a hound's; less: tucked up under the ribs)
   paw?: number;                    // paw size (1: a hound's)
 };
@@ -80,10 +82,10 @@ function hound(o: Hound) {
     l_hock: P(-0.6, 0.25, 0.15, 0.035),
     l_bfoot: P(-0.56, 0.05, 0.15, 0.035),
   };
-  for (const [n, [dx, dy]] of Object.entries(o.pose ?? {})) {
+  for (const [n, [dx, dy, dz = 0]] of Object.entries(o.pose ?? {})) {
     const p = nodes[n];
     if (!p) throw new Error(`pose: no node ${n}`);
-    nodes[n] = [f4(p[0] + r(dx)), f4(p[1] + r(dy)), p[2], p[3]];
+    nodes[n] = [f4(p[0] + r(dx)), f4(p[1] + r(dy)), f4(p[2] + r(dz)), p[3]];
   }
   const t = o.tail;
   const tailPts: [number, number][] = [[-0.62, 0.86], [-0.62 - 0.3 * t.len, 0.86 - 0.12 * t.droop], [-0.62 - 0.55 * t.len, 0.86 - 0.36 * t.droop], [-0.62 - 0.72 * t.len, 0.86 - 0.58 * t.droop + (t.curl ?? 0)]];
@@ -161,11 +163,18 @@ function hound(o: Hound) {
   const tip = 0.3 * M; // the muzzle's front, in head units
   const parts: Part[] = [];
   // the open mouth: a dark gullet between the jaws, glowing faintly
-  if (o.gape > 0) parts.push({ kind: "eye", at: "head", off: mul([0.15 * M, -0.09 - drop / 2, 0], H), r: hr(0.05 + 0.02 * o.gape), material: "mouth" });
+  if (o.gape > 0) parts.push({ kind: "eye", at: "head", off: mul([0.15 * M, -0.09 - drop / 2, 0], H), r: hr(Math.min(0.07, 0.05 + 0.02 * o.gape)), material: "mouth" });
   // nose and nostrils
-  const nose = on([tip - 0.02, -0.03, 0], [1, 0.4, 0], 0.012);
-  parts.push({ kind: "eye", at: "head", off: nose, r: hr(0.032), material: "nose" });
-  parts.push({ kind: "eye", at: "head", off: add(nose, mul([0.012, -0.006, 0.012], H)), r: hr(0.011), mirror: true, material: "dark" });
+  const NZ = o.nose ?? 1;
+  const nose = on([tip - 0.02, -0.03, 0], [1, 0.4, 0], 0.012 * NZ);
+  parts.push({ kind: "eye", at: "head", off: nose, r: hr(0.032 * NZ), material: "nose" });
+  if (NZ > 1) parts.push({ kind: "eye", at: "head", off: add(nose, mul([-0.004, 0.004, 0.022 * NZ], H)), r: hr(0.024 * NZ), mirror: true, material: "nose" });
+  parts.push({ kind: "eye", at: "head", off: add(nose, mul([0.012 * NZ, -0.006, 0.014 * NZ], H)), r: hr(0.011 * NZ), mirror: true, material: "dark" });
+  // a snarl: wrinkles rucked across the top of the muzzle, behind the nose
+  for (let i = 0; i < (o.wrinkles ?? 0); i++) {
+    const x = tip - 0.03 - i * 0.03;
+    parts.push({ kind: "ridge", at: "head", off: on([x, -0.04, 0.02], [0.1, 1, 0.5], 0.006, [muz]), dir: [-0.15, -0.35, 1], len: hr(0.08), base: hr(0.014), curve: 25, bend: [0, -1, 0], mirror: true, material: "dark" });
+  }
   // upper teeth along the muzzle's underside, long canines at the front; the lower row on the jaw
   const n = 4;
   for (let i = 0; i < n; i++) {
@@ -295,22 +304,23 @@ const BEASTS: Record<string, () => unknown> = {
 function chimera() {
   const k = 1.1;
   const b = hound({
-    id: "chimera", name: "Chimera", archetype: "bruiser", budget: 9000, k, head: 1.35, muzzle: 0.6, snout: 1.35, crown: 0.95, gape: 1.2,
+    id: "chimera", name: "Chimera", archetype: "bruiser", budget: 9000, k, head: 1.35, muzzle: 0.68, snout: 1.6, crown: 0.9, gape: 2.0, nose: 1.35, wrinkles: 3,
     about: "Lycia in Greek myth, slain by Bellerophon riding Pegasus: a fire-breathing lion in front, a she-goat's head rising from the middle of its back, and a serpent for its tail.",
     long: 1.05, tall: 0.95, legs: 1.15, waist: 0.82, paw: 1.35,
     // the Arezzo bronze's crouch: the chest dropped low between forelegs braced out in front, the head raised to roar,
     // the hind legs folded under the haunch ready to spring
     pose: {
-      chest: [0, -0.1], belly: [0, -0.04], l_shoulder: [0.02, -0.1], neck: [0.02, -0.06], head: [0.03, -0.04], snout: [0.03, -0.04],
-      l_elbow: [0.12, -0.13], l_wrist: [0.24, -0.03], l_ffoot: [0.27, 0],
-      hip: [0, -0.02], l_hipj: [0, -0.02], l_knee: [0.1, -0.1], l_hock: [-0.02, -0.06], l_bfoot: [0.04, 0],
-    }, ears: { len: 0.06, width: 0.07, dir: [-0.3, 1, 0.6], cup: 35, tilt: 20, fold: 0.3 }, eyes: "two", chest: 1.1, ruff: 1.45, shag: 0.5,
+      // (fore, up, out): the forelegs splay wide and reach well forward, the elbows out like a cat about to spring
+      chest: [0, -0.18], belly: [0, -0.09], l_shoulder: [0.03, -0.17, 0.03], neck: [0.03, -0.12], head: [0.05, -0.08], snout: [0.05, -0.08],
+      l_elbow: [0.18, -0.24, 0.08], l_wrist: [0.36, -0.08, 0.1], l_ffoot: [0.4, 0, 0.1],
+      hip: [0, -0.04], l_hipj: [0, -0.04], l_knee: [0.14, -0.16, 0.02], l_hock: [-0.04, -0.1, 0.02], l_bfoot: [0.06, 0, 0.02],
+    }, ears: { len: 0.06, width: 0.07, dir: [-0.3, 1, 0.6], cup: 35, tilt: 20, fold: 0.3 }, eyes: "two", chest: 1.05, ruff: 1.45, shag: 0.5,
     tail: { len: 1, droop: 0, bush: 0 },
     palette: {
       fur: [0.74, 0.52, 0.24, 0.9, 0], tuft: [0.5, 0.24, 0.08, 0.95, 0], belly: [0.9, 0.78, 0.56, 0.9, 0], stripe: [0.2, 0.32, 0.12, 0.6, 0],
       goat: [0.36, 0.27, 0.2, 0.95, 0], horn: [0.28, 0.24, 0.2, 0.5, 0], scale: [0.3, 0.48, 0.2, 0.55, 0],
-      eye: [1, 0.55, 0.08, 0.3, 0, 4], pupil: [0.03, 0.02, 0.02, 0.2, 0], snake_eye: [0.75, 1, 0.2, 0.3, 0, 4], mouth: [0.6, 0.12, 0.04, 0.6, 0, 1.5],
-      nose: [0.32, 0.18, 0.14, 0.5, 0], dark: [0.08, 0.05, 0.04, 0.6, 0], fang: [0.95, 0.93, 0.85, 0.3, 0], claw: [0.85, 0.8, 0.7, 0.4, 0],
+      eye: [1, 0.55, 0.08, 0.3, 0, 4], pupil: [0.03, 0.02, 0.02, 0.2, 0], snake_eye: [0.75, 1, 0.2, 0.3, 0, 4], mouth: [0.36, 0.05, 0.04, 0.7, 0, 0.5],
+      nose: [0.42, 0.24, 0.2, 0.5, 0], dark: [0.08, 0.05, 0.04, 0.6, 0], fang: [0.95, 0.93, 0.85, 0.3, 0], claw: [0.85, 0.8, 0.7, 0.4, 0],
     },
     hide: { pattern: "fur", size: 0.03, colours: [[0.55, 0.38, 0.17], [0.85, 0.66, 0.36]], map: 1024 },
   }) as { nodes: Record<string, N>; links: string[][]; blobs: Blob[]; parts: Part[]; paint?: { nodes: string[]; material: string }[] } & Record<string, unknown>;
@@ -324,7 +334,26 @@ function chimera() {
   });
   b.links.push(["tail4", "shead"], ["shead", "ssnout"], ["belly", "g1"], ["g1", "g2"], ["g2", "ghead"], ["ghead", "gmuzzle"]);
   const s = (x: number) => f4(x * k);
+  // a lean, starved body: the haunch slimmed to a hard sinewy thigh, ribs standing out along the flank, the spine
+  // a ridge of knuckles down the back
+  const hipBlob = b.blobs.find((x) => x.at === "hip");
+  if (hipBlob) hipBlob.r = [hipBlob.r[0], f4(hipBlob.r[1] * 0.9), f4(hipBlob.r[2] * 0.8)];
+  const at = (n: string) => b.nodes[n]!;
+  const ch = at("chest"), be = at("belly"), hp = at("hip");
+  for (const [i, f] of [0.1, 0.33, 0.56].entries()) {
+    // three ribs per side, curving down and back over the chest wall
+    const x = ch[0] - f * (ch[0] - be[0]);
+    b.blobs.push(...pair("chest", [f4(x - ch[0]), s(0.0 - 0.015 * i), s(0.2 - 0.012 * i)], [s(0.03), s(0.12), s(0.025)]).map((p, j) => ({ ...p, rot: [j ? 8 : -8, 0, 18] as V })));
+  }
+  for (const [i, f] of [0, 0.25, 0.5, 0.75, 1].entries()) {
+    const x = ch[0] + f * (hp[0] - ch[0]), y = ch[1] + f * (hp[1] - ch[1]);
+    const top = (f < 0.5 ? s(0.25) : s(0.14)) * (1 - 0.1 * i);
+    b.blobs.push({ at: "chest", off: [f4(x - ch[0]), f4(y - ch[1] + top), 0], r: [s(0.07), s(0.04), s(0.03)] });
+  }
   b.blobs.push(
+    // the thigh: a hard muscle each side over the folded hind leg
+    { at: "hip", off: [s(-0.02), s(-0.02), s(0.07)], r: [s(0.12), s(0.11), s(0.06)], rot: [0, 0, 25] },
+    { at: "hip", off: [s(-0.02), s(-0.02), s(-0.07)], r: [s(0.12), s(0.11), s(0.06)], rot: [0, 0, 25] },
     { at: "shead", off: [s(0.03), 0, 0], r: [s(0.09), s(0.055), s(0.065)] },
     { at: "g1", off: [s(0.03), s(0.1), 0], r: [s(0.075), s(0.17), s(0.065)], rot: [0, 0, -15] },
     { at: "ghead", off: [s(0.02), 0, 0], r: [s(0.08), s(0.065), s(0.055)] },
