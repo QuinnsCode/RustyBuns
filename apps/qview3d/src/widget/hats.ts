@@ -21,6 +21,9 @@ export type Garment = {
   zones: PrintZone[];
   /** Where the camera looks. */
   target: THREE.Vector3;
+  /** A top on a hanger: one frame of its cloth settling (false once it hangs still), and hanging it again. */
+  tick?: () => boolean;
+  restart?: () => void;
 };
 
 /** A hat's one zone, the front of its crown: as wide as that stretch of lathe is round, as tall as its profile is long. */

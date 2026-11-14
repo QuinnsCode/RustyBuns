@@ -35,6 +35,8 @@ export interface Surface<S> {
   /** The picture moved a step by keyboard: dx, dy are -1, 0 or 1 on screen (right, down). */
   nudge(at: Placement, dx: number, dy: number, camera: THREE.Camera): Placement;
   setColor(c: string): void;
+  /** One frame of anything still moving (a top settling on its hanger); true while it moves. */
+  tick?(): boolean;
   /** Paint the colour and every picture; outline `outline`'s zone while the shopper edits it. */
   draw(color: string, pictures: Picture[], outline: ZoneName | null): void;
   dispose(): void;
@@ -89,7 +91,8 @@ export class GarmentSurface implements Surface<AtlasSpot> {
     return { zone: z.name, u: 0.5, v: z.name === "front" ? 0.55 : 0.5, scale: z.name === "left-sleeve" ? 0.85 : 0.7, rotation: 0 };
   }
   nudge(at: Placement, dx: number, dy: number): Placement { return { ...at, u: at.u + dx * 0.04, v: at.v - dy * 0.04 }; }
-  setColor(c: string) { for (const m of this.garment.dyed) m.material.color.set(c); }
+  setColor(c: string) { for (const m of this.garment.dyed) m.material.color.set(c); this.garment.restart?.(); }
+  tick() { return this.garment.tick?.() ?? false; }
   draw(color: string, pictures: Picture[], outline: ZoneName | null) {
     paint(this.ctx, this.garment.zones, color, pictures, outline);
     this.tex.needsUpdate = true;

@@ -17,5 +17,8 @@ export const DEMO_PRODUCTS: Record<string, Product> = {
   "cuff-beanie": { name: "Cuff Beanie", model: "beanie", colors: ["#d97706", "#1f2937", "#7c3aed", "#f5f5f4"] },
   "bucket-hat": { name: "Bucket Hat", model: "bucket", colors: ["#e7d7b9", "#166534", "#1f2937", "#f5f5f4"] },
   "crew-tee": { name: "Crew Tee", model: "tee", colors: ["#f5f5f4", "#1f2937", "#b91c1c", "#1d4ed8", "#e7d7b9"] },
+  "crew-sweater": { name: "Crew Sweater", model: "sweater", colors: ["#7f1d1d", "#1f2937", "#e7d7b9", "#166534", "#f5f5f4"] },
   "pullover-hoodie": { name: "Pullover Hoodie", model: "hoodie", colors: ["#6b7280", "#1f2937", "#166534", "#7c3aed", "#f5f5f4"] },
+  "classic-tank": { name: "Classic Tank", model: "tank", colors: ["#f5f5f4", "#1f2937", "#1d4ed8", "#b91c1c"] },
+  "racerback-tank": { name: "Racerback Tank", model: "racerback", colors: ["#f5f5f4", "#1f2937", "#be185d", "#0f766e"] },
 };

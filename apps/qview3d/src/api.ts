@@ -7,15 +7,18 @@ import { ID, KIND_NAMES, SHA } from "./layout.ts";
 /** The products made in code: hats, then tops. A shop's own product, made from its photos, is "custom" and names its GLB. */
 export const HATS = ["cap", "beanie", "bucket"] as const;
 export type HatModel = (typeof HATS)[number];
-export const TOPS = ["tee", "hoodie"] as const;
+export const TOPS = ["tee", "sweater", "hoodie", "tank", "racerback"] as const;
 export type TopModel = (typeof TOPS)[number];
+/** The tops with sleeves: they print on a sleeve too, and can hang on a hanger (the tanks can't yet). */
+export const SLEEVED: readonly Model[] = ["tee", "sweater", "hoodie"];
 export const MODELS = [...HATS, ...TOPS] as const;
 export type Made = (typeof MODELS)[number];
 /** The print zones a product can have: a hat's front; a top's front, back and left sleeve. */
 export const ZONES = ["front", "back", "left-sleeve"] as const;
 export type ZoneName = (typeof ZONES)[number];
-/** The zones `model` prints on: a top has all three, a hat and a shop's own model the front. */
-export const zonesOf = (model: Model): readonly ZoneName[] => ((TOPS as readonly string[]).includes(model) ? ZONES : ["front"]);
+/** The zones `model` prints on: a sleeved top has all three, a tank its front and back, a hat and a shop's own model the front. */
+export const zonesOf = (model: Model): readonly ZoneName[] =>
+  SLEEVED.includes(model) ? ZONES : (TOPS as readonly string[]).includes(model) ? ["front", "back"] : ["front"];
 export const ANY_MODEL = [...MODELS, "custom"] as const;
 export type Model = (typeof ANY_MODEL)[number];
 const HEX = /^#[0-9a-f]{6}$/i;
@@ -42,7 +45,10 @@ export const PRINT_CM: Record<Made, Partial<Record<ZoneName, PrintCm>>> = {
   beanie: { front: { w: 10, h: 5 } },
   bucket: { front: { w: 12, h: 5 } },
   tee: { front: { w: 30, h: 40 }, back: { w: 30, h: 40 }, "left-sleeve": { w: 9, h: 9 } },
+  sweater: { front: { w: 30, h: 36 }, back: { w: 30, h: 40 }, "left-sleeve": { w: 8, h: 14 } },
   hoodie: { front: { w: 28, h: 25 }, back: { w: 32, h: 40 }, "left-sleeve": { w: 9, h: 9 } },
+  tank: { front: { w: 28, h: 30 }, back: { w: 28, h: 32 } },
+  racerback: { front: { w: 24, h: 28 }, back: { w: 24, h: 26 } },
 };
 
 /** orgs/<org>/products/<product>.json. */
