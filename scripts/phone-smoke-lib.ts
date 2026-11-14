@@ -2,6 +2,12 @@
 // the triage board. No browser here, so it tests without one (phone-smoke.test.ts); phone-smoke.ts drives Chrome.
 import { esc, plural } from "../apps/codesplitter/src/util.ts";
 
+/** The web apps with a plain `vite` dev page, or a static `public/` (the playground). The daily ring
+ *  (daily-ring.yml) preview-builds the same ones. Others need their own host first:
+ *  codeSplitter's worker, and auto-rig, fm-daw and tscircuit-desktop (a desktop host or a generated `.rustybuns/`). */
+export const WEB_APPS = ["playground", "alien-disc-golf", "delayed-reaction", "eqosys", "excalibrawl", "geoboxq", "git-recon", "hello-world",
+  "hippo-tycoon", "meshy-studio", "mythic-masters", "park-hide-seek", "skate-tech-park", "splat-desktop", "splat-spray", "two-fronts"];
+
 export const PHONES = [
   { name: "iPhone SE", w: 375, h: 667 },
   { name: "iPhone 15", w: 393, h: 852 },

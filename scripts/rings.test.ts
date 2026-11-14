@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { rangeLine, rollbackCandidates, sinceLastGreen, type Tested } from "./rings.ts";
+import { previewApps, rangeLine, rollbackCandidates, sinceLastGreen, soaked, type Tested } from "./rings.ts";
 
 const sha = (c: string) => c.repeat(40);
 const [a, b, c, d] = ["a", "b", "c", "d"].map(sha) as [string, string, string, string];
@@ -30,4 +30,24 @@ test.each<[string, string | undefined, string[]]>([
   ["a SHA that scrolled out of view", "9".repeat(40), []],
 ])("rollbackCandidates: %s", (_, from, want) => {
   expect(rollbackCandidates(line, from)).toEqual(want);
+});
+
+const G = "SUCCESS", R = "FAILURE";
+test.each<[string, Tested[], string | undefined]>([
+  // newest first: the pick is the third green from the top of the newest streak (its own run and two after it)
+  ["four greens: the third one", [{ sha: a, state: G }, { sha: b, state: G }, { sha: c, state: G }, { sha: d, state: G }], c],
+  ["untested squash commits share a run", [{ sha: a, state: G }, { sha: b }, { sha: c, state: G }, { sha: d, state: G }], d],
+  ["a red at the head: soak under it", [{ sha: a, state: R }, { sha: b, state: G }, { sha: c, state: G }, { sha: d, state: G }], d],
+  ["a red breaks the streak", [{ sha: a, state: G }, { sha: b, state: G }, { sha: c, state: R }, { sha: d, state: G }, { sha: e, state: G }, { sha: f, state: G }], f],
+  ["only two greens yet", [{ sha: a, state: G }, { sha: b, state: G }, { sha: c, state: R }], undefined],
+])("soaked: %s", (_, history, want) => {
+  expect(soaked(history, 3)).toBe(want);
+});
+
+test("previewApps: changed web apps with a vite build, all of them when shared code moved", () => {
+  const builds = { "two-fronts": "vite build", "mythic-masters": "bun --bun vite build", "auto-rig": "vite build", "hello-world": "rustybuns build desktop" };
+  const apps = ["two-fronts", "mythic-masters", "hello-world"];
+  expect(previewApps(["apps/two-fronts/src/a.ts", "apps/auto-rig/x.ts", "apps/hello-world/y.ts", "notes/z.md"], builds, apps)).toEqual(["two-fronts"]);
+  expect(previewApps(["packages/util/src/x.ts"], builds, apps)).toEqual(["mythic-masters", "two-fronts"]);
+  expect(previewApps("all", builds, apps)).toEqual(["mythic-masters", "two-fronts"]);
 });

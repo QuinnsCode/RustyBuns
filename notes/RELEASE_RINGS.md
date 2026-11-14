@@ -29,7 +29,7 @@ Saved builds (#4497): each hourly smoke row keeps the binary it built as the Act
 3. `scripts/rings.ts` and `bun run rings`; Ester's card shows the same lines.
 4. Bisect on red (Ester on Bob) and Mervin's 60-minute revert.
 5. Trim `apps.yml`: the all-apps sweep on `packages/` moves to hourly, after 1-4 have run clean for a week.
-6. Daily workflow: pick the soaked commit, `builder-nightly`, phone smoke, previews.
+6. `daily-ring.yml` at 10:17 UTC: `rings.ts pick daily` (3 green hourlies in a row), phone smoke at every size, vite builds of changed web apps (no deploys). Bob's natives gate it once he can report back.
 7. Stable: Monday pick, release notes from squash titles, one `MANUAL RUN:` taste issue, owner pushes the `v` tag.
 
 Open: soak lengths (3 hours / 3 days), whether daily auto-deploys previews, a hotfix lane past soak, and whether

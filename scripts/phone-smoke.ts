@@ -12,12 +12,8 @@
 import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { launchChrome, load, openTab, startVite, type Cdp } from "./chrome.ts";
-import { PHONES, REFERENCE, analyze, appStatus, board, mergeReports, pageAudit, shardOf, type AppResult, type Audit, type PhoneResult, type Report } from "./phone-smoke-lib.ts";
+import { PHONES, REFERENCE, WEB_APPS, analyze, appStatus, board, mergeReports, pageAudit, shardOf, type AppResult, type Audit, type PhoneResult, type Report } from "./phone-smoke-lib.ts";
 
-/** The web apps with a plain `vite` dev page, or a static `public/` (the playground). Others need their own host first:
- *  codeSplitter's worker, and auto-rig, fm-daw and tscircuit-desktop (a desktop host or a generated `.rustybuns/`). */
-export const WEB_APPS = ["playground", "alien-disc-golf", "delayed-reaction", "eqosys", "excalibrawl", "geoboxq", "git-recon", "hello-world",
-  "hippo-tycoon", "meshy-studio", "mythic-masters", "park-hide-seek", "skate-tech-park", "splat-desktop", "splat-spray", "two-fronts"];
 /** Where an app opens for the run, when its root is random: the same course on every screen, so the laptop and the phones show the same buttons. */
 export const PATHS: Record<string, string> = { "alien-disc-golf": "/?seed=42&wind=synthetic" };
 
