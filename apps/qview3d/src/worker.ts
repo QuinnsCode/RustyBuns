@@ -15,6 +15,7 @@
 //   POST /api/orgs/<org>/checkout          an admin buys a pack of samples
 //   POST /api/stripe-webhook               Stripe: a paid checkout becomes a receipt
 //   GET  /v1/embed.md, /llms.txt              how to put the widget on a page, for a coding agent (embed.ts)
+//   GET  /v1/frame?org=&product=              the widget alone, for an <iframe> where a site won't run scripts (frame.ts)
 //   GET  /api/mine, PUT /api/orgs/<org>, PUT .../products/<id>, POST .../keys   shops set up signed in through eqosys (orgs.ts)
 //
 // Org and product settings live in D1 (settings.ts); a fresh deploy's migrations seed the demo org (demo.ts), which keeps no files.
@@ -22,6 +23,7 @@ import { hex } from "@rustybuns/util/bytes";
 import { json, privateJson, readJson } from "@rustybuns/util/http";
 import { Design, Org, printZones, SignRequest, zonesOf, type DesignReply, type SignReply } from "./api.ts";
 import { embedGuide } from "./embed.ts";
+import { framePage } from "./frame.ts";
 import { designKey, fileKey, ID, KINDS, servable } from "./layout.ts";
 import { cachedProduct, getOrg, getProduct, type SettingsEnv } from "./settings.ts";
 import { originalRoute, printPlanRoute } from "./print.ts";
@@ -104,6 +106,11 @@ export async function handle(req: Request, env: Env): Promise<Response> {
     return new Response(embedGuide(url.origin), { headers: { "content-type": "text/markdown; charset=utf-8", "cache-control": "public, max-age=300", ...cors(null) } });
   }
 
+  if (url.pathname === "/v1/frame" && req.method === "GET") {
+    const org = url.searchParams.get("org") ?? "", product = url.searchParams.get("product") ?? "";
+    const settings = ID.test(org) && ID.test(product) ? await getOrg(env, org) : null;
+    return settings ? framePage(org, product, settings) : fail("unknown org or product", 404, origin);
+  }
   if (url.pathname === "/api/stripe-webhook" && req.method === "POST") return stripeWebhook(req, env);
 
   const shops = await orgsRoute(req, env, cors(origin));

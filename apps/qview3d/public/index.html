@@ -6,106 +6,172 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>QView3D demo shop</title>
   <link rel="icon" href="data:," />
-  <meta name="description" content="A make-believe shop page with the QView3D widget embedded: one script, one tag." />
+  <meta name="description" content="A make-believe shop's product page with the QView3D widget in its Add to cart form: one script, one tag." />
   <script type="module" src="/v1/qview3d.js"></script>
   <style>
-    :root { --ink: #15181d; --muted: #6b7280; --line: #e5e7eb; --page: #fafaf9; --accent: #ff5a1f; color-scheme: light; }
+    :root { --ink: #15181d; --muted: #6b7280; --line: #e5e7eb; --page: #fafaf9; --accent: #ff5a1f; --accent-ink: #c2410c; color-scheme: light; }
     * { box-sizing: border-box; }
     body { margin: 0; background: var(--page); color: var(--ink); font: 15px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
-    header { display: flex; align-items: center; justify-content: space-between; padding: 14px 24px; border-bottom: 1px solid var(--line); background: #fff; }
+    header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 24px; border-bottom: 1px solid var(--line); background: #fff; }
     header b { letter-spacing: 0.02em; }
-    header span { color: var(--muted); font-size: 13px; }
-    main { max-width: 1120px; margin: 0 auto; padding: 24px 16px 64px; display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: 32px; }
+    header a { color: var(--ink); text-decoration: none; font-size: 13px; font-weight: 600; border: 1px solid var(--line); border-radius: 999px; padding: 4px 12px; }
+    #shop { max-width: 1120px; margin: 0 auto; padding: 24px 16px 64px; display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: 32px; }
     qview-3d { height: min(72vh, 620px); }
+    /* The page picks the product and Add to cart saves, so the widget's own switcher and Save button stand down. */
+    qview-3d::part(models), qview-3d::part(save) { display: none; }
+    qview-3d::part(zones) { top: 10px; }
     h1 { margin: 0 0 4px; font-size: 28px; letter-spacing: -0.01em; }
-    .price { font-size: 20px; margin: 0 0 16px; }
-    .tabs { display: flex; gap: 6px; margin: 16px 0; flex-wrap: wrap; }
-    .tabs button { all: unset; cursor: pointer; padding: 8px 14px; border-radius: 999px; border: 1px solid var(--line); background: #fff; font-weight: 500; }
-    .tabs button[aria-pressed="true"] { border-color: var(--ink); background: var(--ink); color: #fff; }
+    h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin: 18px 0 8px; }
+    .price { font-size: 20px; margin: 0 0 12px; }
     p { color: var(--muted); margin: 0 0 12px; }
+    .picks { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+    .picks button { all: unset; cursor: pointer; text-align: center; padding: 12px 8px; border-radius: 12px; border: 1px solid var(--line); background: #fff; font-weight: 600; }
+    .picks button small { display: block; font-weight: 400; color: var(--muted); font-size: 12px; }
+    .picks button[aria-pressed="true"] { border-color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); }
+    .tabs { display: flex; gap: 6px; flex-wrap: wrap; }
+    .tabs button { all: unset; cursor: pointer; padding: 6px 12px; border-radius: 999px; border: 1px solid var(--line); background: #fff; font-size: 13px; }
+    .tabs button[aria-pressed="true"] { border-color: var(--ink); background: var(--ink); color: #fff; }
+    button:focus-visible { outline: 2px solid var(--accent-ink); outline-offset: 2px; }
+    .row { display: flex; gap: 12px; align-items: end; flex-wrap: wrap; }
+    label.field { display: grid; gap: 4px; font-size: 13px; font-weight: 600; }
+    select, input[type="number"] { font: inherit; padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; background: #fff; min-width: 88px; }
     .buy { all: unset; cursor: pointer; display: block; text-align: center; padding: 14px; border-radius: 12px; background: var(--ink); color: #fff; font-weight: 600; margin-top: 16px; }
+    .buy[aria-busy="true"] { opacity: 0.7; cursor: progress; }
+    .cart { margin-top: 20px; border: 1px solid var(--line); border-radius: 12px; background: #fff; }
+    .cart h2 { margin: 0; padding: 10px 14px; border-bottom: 1px solid var(--line); background: #fcfbf8; border-radius: 12px 12px 0 0; }
+    .cart ul { list-style: none; margin: 0; padding: 0; }
+    .cart li { padding: 10px 14px; border-top: 1px solid var(--line); font-size: 14px; }
+    .cart li:first-child { border-top: 0; }
+    .cart li a { color: var(--accent-ink); }
+    .cart .empty { color: var(--muted); }
     pre { background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 12px; font-size: 12px; overflow: auto; max-height: 220px; color: var(--ink); }
     code { font-size: 12px; }
+    details { margin-top: 20px; }
+    summary { cursor: pointer; font-size: 13px; font-weight: 600; }
     .share { margin-top: 24px; border: 1px solid var(--line); border-radius: 12px; background: #fff; }
-    .share h2 { font-size: 14px; margin: 0; padding: 12px 14px; border-bottom: 1px solid var(--line); background: #fcfbf8; border-radius: 12px 12px 0 0; }
+    .share h2 { margin: 0; padding: 12px 14px; border-bottom: 1px solid var(--line); background: #fcfbf8; border-radius: 12px 12px 0 0; text-transform: none; letter-spacing: 0; color: var(--ink); font-size: 14px; }
     .share .body { padding: 12px 14px; }
     .share p { font-size: 13px; margin: 0 0 8px; }
     .share pre { max-height: none; white-space: pre-wrap; word-break: break-word; margin: 0 0 8px; background: #fcfbf8; }
     .share button { all: unset; cursor: pointer; font-size: 12px; font-weight: 600; padding: 4px 10px; border: 1px solid var(--line); border-radius: 6px; background: #fff; }
-    .share button:hover { border-color: #e8590c; color: #c2410c; }
-    .share button:focus-visible { outline: 2px solid #c2410c; outline-offset: 2px; }
-    @media (max-width: 820px) { main { grid-template-columns: 1fr; gap: 20px; } qview-3d { height: 62vh; } }
+    .share button:hover { border-color: #e8590c; color: var(--accent-ink); }
+    @media (max-width: 820px) { #shop { grid-template-columns: 1fr; gap: 20px; } qview-3d { height: 62vh; } header { padding: 12px 16px; } }
   </style>
 </head>
 <body>
-  <header><b>FIELD &amp; THREAD</b><span>a demo shop for QView3D</span></header>
-  <main>
-    <qview-3d id="hat" org="demo" product="field-cap"></qview-3d>
+  <header><b>FIELD &amp; THREAD</b><a href="#cart" id="bag">Cart (0)</a></header>
+  <!-- The whole product is one form: the widget is a field in it (name="design"), so Add to cart saves the design
+       and sends its id with the size and quantity, as a hidden input would. -->
+  <form id="shop" action="/" method="get">
+    <qview-3d id="hat" name="design" org="demo" product="field-cap"></qview-3d>
     <section>
       <h1 id="name">Field Cap</h1>
-      <div class="price">$32</div>
-      <p>Put your own picture on it. Drag it around, size it, turn it, pick a colour, and spin it to check every side. On a top, print the front and the back, and the sleeve where it has one.</p>
-      <div class="tabs" id="products">
-        <button data-product="field-cap" aria-pressed="true">Field Cap</button>
-        <button data-product="cuff-beanie">Cuff Beanie</button>
-        <button data-product="bucket-hat">Bucket Hat</button>
-        <button data-product="crew-tee">Crew Tee</button>
-        <button data-product="crew-sweater">Crew Sweater</button>
-        <button data-product="pullover-hoodie">Pullover Hoodie</button>
-        <button data-product="classic-tank">Classic Tank</button>
-        <button data-product="racerback-tank">Racerback Tank</button>
+      <div class="price" id="price">$32</div>
+      <p>Put your own picture on it. Drag it around, size it, turn it, pick a colour, and spin it to check every side. On a shirt or a hoodie, print the front, the back and the sleeve.</p>
+      <div class="picks" id="picks" role="group" aria-label="Product">
+        <button type="button" data-product="field-cap" data-price="32" data-sizes="One size" aria-pressed="true">Hat<small>Field Cap</small></button>
+        <button type="button" data-product="crew-tee" data-price="28" data-sizes="S,M,L,XL" aria-pressed="false">Shirt<small>Crew Tee</small></button>
+        <button type="button" data-product="pullover-hoodie" data-price="54" data-sizes="S,M,L,XL" aria-pressed="false">Hoodie<small>Pullover Hoodie</small></button>
       </div>
-      <div class="tabs">
-        <button id="hanger" aria-pressed="false" title="A spike: a tee, sweater or hoodie hangs from a hanger">On a hanger</button>
+      <h2>More to print on</h2>
+      <div class="tabs" id="more" role="group" aria-label="More products">
+        <button type="button" data-product="cuff-beanie" data-price="24" data-sizes="One size" aria-pressed="false">Cuff Beanie</button>
+        <button type="button" data-product="bucket-hat" data-price="30" data-sizes="S/M,L/XL" aria-pressed="false">Bucket Hat</button>
+        <button type="button" data-product="crew-sweater" data-price="48" data-sizes="S,M,L,XL" aria-pressed="false">Crew Sweater</button>
+        <button type="button" data-product="classic-tank" data-price="22" data-sizes="S,M,L,XL" aria-pressed="false">Classic Tank</button>
+        <button type="button" data-product="racerback-tank" data-price="22" data-sizes="XS,S,M,L" aria-pressed="false">Racerback Tank</button>
+        <button type="button" id="hanger" aria-pressed="false" title="A spike: a tee, sweater or hoodie hangs from a hanger">On a hanger</button>
       </div>
-      <button class="buy" id="buy">Save design and add to cart</button>
-      <p style="margin-top:20px">What the page hears from the widget (<code>qview:*</code> events):</p>
-      <pre id="log">waiting for qview:ready</pre>
+      <input type="hidden" name="product" id="product" value="field-cap" />
+      <h2>Your order</h2>
+      <div class="row">
+        <label class="field">Size <select name="size" id="size"><option>One size</option></select></label>
+        <label class="field">Quantity <input type="number" name="qty" value="1" min="1" max="20" /></label>
+      </div>
+      <button class="buy" id="buy" type="submit">Add to cart</button>
+      <div class="cart" id="cart">
+        <h2>Cart</h2>
+        <ul id="lines"><li class="empty">Nothing yet. Add to cart saves your design and puts its id on the order line.</li></ul>
+      </div>
+      <details>
+        <summary>What the page hears from the widget (<code>qview:*</code> events)</summary>
+        <pre id="log">waiting for qview:ready</pre>
+      </details>
       <div class="share">
         <h2>Put this on your own site</h2>
         <div class="body">
           <p>Tell your coding agent (Claude Code, say):</p>
           <pre id="prompt"></pre>
-          <button data-copy="prompt">Copy</button>
-          <p style="margin-top:12px">Or paste these two lines yourself:</p>
+          <button type="button" data-copy="prompt">Copy</button>
+          <p style="margin-top:12px">Or paste these lines inside your product form yourself:</p>
           <pre id="snippet"></pre>
-          <button data-copy="snippet">Copy</button>
+          <button type="button" data-copy="snippet">Copy</button>
+          <p style="margin-top:12px">A site builder that strips scripts? An iframe instead:</p>
+          <pre id="frame"></pre>
+          <button type="button" data-copy="frame">Copy</button>
         </div>
       </div>
     </section>
-  </main>
+  </form>
   <script type="module">
     const host = location.origin;
-    document.getElementById("prompt").textContent = `Add the QView3D 3D hat customiser to my product page. Follow ${host}/v1/embed.md`;
-    document.getElementById("snippet").textContent = `<script type="module" src="${host}/v1/qview3d.js"><\/script>\n<qview-3d org="demo" product="field-cap"></qview-3d>`;
+    document.getElementById("prompt").textContent = `Add the QView3D 3D customiser to my product page's Add to cart form. Follow ${host}/v1/embed.md`;
+    document.getElementById("snippet").textContent = `<script type="module" src="${host}/v1/qview3d.js"><\/script>\n<qview-3d name="design" org="demo" product="crew-tee"></qview-3d>`;
+    document.getElementById("frame").textContent = `<iframe src="${host}/v1/frame?org=demo&product=crew-tee" style="width:100%;height:560px;border:0" allow="clipboard-write"></iframe>`;
     for (const b of document.querySelectorAll("[data-copy]")) b.addEventListener("click", async () => {
       await navigator.clipboard.writeText(document.getElementById(b.dataset.copy).textContent);
       b.textContent = "Copied";
       setTimeout(() => (b.textContent = "Copy"), 1500);
     });
-    const hat = document.getElementById("hat");
+
+    const hat = document.getElementById("hat"), form = document.getElementById("shop"), buy = document.getElementById("buy");
     const log = document.getElementById("log");
     const show = (type, detail) => { log.textContent = `${type}\n${JSON.stringify(detail, (k, v) => (v instanceof Blob ? `Blob(${v.size} bytes)` : v), 2)}`; };
     for (const t of ["qview:ready", "qview:change", "qview:snapshot", "qview:saved", "qview:error"]) hat.addEventListener(t, (e) => show(t, t === "qview:error" ? { error: e.detail.error.message } : e.detail));
-    document.getElementById("products").addEventListener("click", (e) => {
-      const b = e.target.closest("button");
-      if (!b) return;
-      for (const x of document.querySelectorAll("#products button")) x.setAttribute("aria-pressed", String(x === b));
-      document.getElementById("name").textContent = b.textContent;
+
+    // Pick a product: the widget swaps to it, and the order takes its sizes and price.
+    const products = [...document.querySelectorAll("[data-product]")];
+    const pick = (b) => {
+      for (const x of products) x.setAttribute("aria-pressed", String(x === b));
+      document.getElementById("name").textContent = b.querySelector("small")?.textContent ?? b.textContent;
+      document.getElementById("price").textContent = `$${b.dataset.price}`;
+      document.getElementById("product").value = b.dataset.product;
+      document.getElementById("size").replaceChildren(...b.dataset.sizes.split(",").map((s, i) => new Option(s, s, false, i === Math.min(1, b.dataset.sizes.split(",").length - 1))));
       hat.removeAttribute("model");
       hat.removeAttribute("color");
       hat.setAttribute("product", b.dataset.product);
-    });
+    };
+    for (const b of products) b.addEventListener("click", () => pick(b));
     const hanger = document.getElementById("hanger");
     hanger.addEventListener("click", () => {
       const on = hanger.getAttribute("aria-pressed") !== "true";
       hanger.setAttribute("aria-pressed", String(on));
       hat.display = on ? "hanger" : "form";
     });
-    document.getElementById("buy").addEventListener("click", async () => {
-      const saved = await hat.save().catch(() => null);
-      if (saved) show("added to cart with design", { id: saved.id, url: saved.url });
+
+    // Add to cart. The widget saves the design on the first submit and submits again with its id in the form, so
+    // this handler only sees a form that carries one. A real shop lets the form post to its cart; this one keeps
+    // the line on the page.
+    const lines = [];
+    hat.addEventListener("qview:saved", () => buy.removeAttribute("aria-busy"));
+    hat.addEventListener("qview:error", () => buy.removeAttribute("aria-busy"));
+    form.addEventListener("submit", (e) => {
+      e.preventDefault();
+      buy.removeAttribute("aria-busy");
+      const order = Object.fromEntries(new FormData(form));
+      lines.push(order);
+      window.demoCart = lines;
+      document.getElementById("bag").textContent = `Cart (${lines.length})`;
+      document.getElementById("lines").replaceChildren(...lines.map((l) => {
+        const li = document.createElement("li");
+        li.dataset.design = l.design;
+        const a = Object.assign(document.createElement("a"), { href: l["design-url"], target: "_blank", rel: "noopener", textContent: `design ${String(l.design).slice(0, 8)}` });
+        li.append(`${document.querySelector(`[data-product="${l.product}"]`)?.querySelector("small")?.textContent ?? l.product}, ${l.size}, x${l.qty}: `, a);
+        return li;
+      }));
+      show("added to cart", order);
     });
+    buy.addEventListener("click", () => buy.setAttribute("aria-busy", "true"));
   </script>
 </body>
 </html>

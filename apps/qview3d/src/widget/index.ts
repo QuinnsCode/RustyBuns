@@ -13,6 +13,9 @@
 //   el.addImage(file, zone?) · el.place({u, v, scale, rotation}) · el.model = "hoodie" · el.zone = "back" · el.color = "#b91c1c" · el.view("side")
 //   el.design (the settings) · el.load(design) · el.snapshot() -> {blob, design} · el.save() -> {id, url, design}
 //   events: qview:ready, qview:change, qview:snapshot, qview:saved, qview:error (each with a detail)
+//
+// In a shop's own <form> it is a form field: <qview-3d name="design"> saves the design when the form is submitted and
+// sends its id as `design` and its link as `design-url`, the way a hidden input would (a form-associated element).
 import { createElement, Camera, CloudUpload, Eraser, ImagePlus, Rotate3d, RotateCw, Scaling } from "lucide";
 import { esc } from "@rustybuns/util";
 import { getJson, readJson } from "@rustybuns/util/http";
@@ -46,7 +49,13 @@ const iconButton = (i: Parameters<typeof createElement>[0], title: string, oncli
 
 export class QView3D extends HTMLElement {
   static observedAttributes = ["model", "color", "colors", "product", "controls", "display"];
+  /** A field in its form: it submits the saved design's id under its `name`. */
+  static formAssociated = true;
   private root = this.attachShadow({ mode: "open" });
+  private internals = this.attachInternals();
+  /** The last save, and the settings it saved (camera aside): the form sends it while nothing has changed since. */
+  private saved: { id: string; url: string; key: string } | null = null;
+  private form: HTMLFormElement | null = null;
   private viewer: Viewer | null = null;
   private ready: Promise<Viewer> | null = null;
   private colors = DEFAULT_COLORS;
@@ -70,6 +79,39 @@ export class QView3D extends HTMLElement {
   set color(c: string) { this.setAttribute("color", c); }
   /** The current settings: model, colour, the picture's place and files, camera. What snapshot() and save() send. */
   get design(): Design | null { return this.viewer?.design() ?? null; }
+  /** The form field's name: the design id goes in the form under it, and its link under `<name>-url`. */
+  get name() { return this.getAttribute("name") ?? ""; }
+  set name(n: string) { this.setAttribute("name", n); }
+  /** The saved design's id, while it still matches what the shopper sees ("" before a save, or after a change). */
+  get value() { return this.saved?.id ?? ""; }
+
+  formAssociatedCallback(form: HTMLFormElement | null) {
+    this.form?.removeEventListener("submit", this.submit, true);
+    this.form = form;
+    form?.addEventListener("submit", this.submit, true);
+  }
+  formResetCallback() { this.forget(); }
+
+  /**
+   * A submit first saves the design (pictures, snapshot, settings), then submits again with its id in the form. It
+   * listens in the capture phase, so the page's own submit handlers only ever see the second submit, id and all. A
+   * failed save stops the submit and says why (qview:error), as an invalid field would.
+   */
+  private submit = (e: SubmitEvent) => {
+    if (!this.name || this.value) return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    const form = this.form, submitter = e.submitter instanceof HTMLElement ? e.submitter : null;
+    void this.save().then(() => form?.requestSubmit(submitter as HTMLButtonElement | null), () => {});
+  };
+
+  private remember(id: string, url: string) {
+    this.saved = { id, url, key: keyOf(this.viewer?.design()) };
+    const data = new FormData();
+    if (this.name) { data.set(this.name, id); data.set(`${this.name}-url`, url); }
+    this.internals.setFormValue(data);
+  }
+  private forget() { this.saved = null; this.internals.setFormValue(null); }
 
   connectedCallback() {
     // Load the 3D half when the tag is near the screen, not before: a product page with the widget below the fold
@@ -171,6 +213,7 @@ export class QView3D extends HTMLElement {
       const saved = res.ok ? await readJson(res, DesignReply) : null;
       if (!saved) throw new Error(await problem(res));
       const out = { ...saved, design };
+      this.remember(saved.id, saved.url);
       this.emit("qview:saved", out);
       return out;
     } catch (e) {
@@ -283,6 +326,7 @@ export class QView3D extends HTMLElement {
   }
 
   private changed() {
+    if (this.saved && this.saved.key !== keyOf(this.viewer?.design())) this.forget();
     this.sync();
     this.emit("qview:change", { design: this.viewer!.design() });
   }
@@ -316,6 +360,8 @@ export class QView3D extends HTMLElement {
   }
 }
 
+/** A design's settings without the camera: turning the view doesn't change what gets printed. */
+const keyOf = (d: Design | null | undefined) => (d ? JSON.stringify({ ...d, camera: undefined }) : "");
 const asModel = (m: string | null): Made => MODELS.find((x) => x === m) ?? "cap";
 const parseColors = (s: string | null) => {
   const list = (s ?? "").split(",").map((c) => c.trim()).filter((c) => /^#[0-9a-f]{6}$/i.test(c));

@@ -23,7 +23,7 @@ const vite = await createServer({
     port: Number(process.env.QVIEW_PORT ?? PORTS.qview3d),
     fs: { allow: [app, join(app, "../..")] },
     // The Host header passes through, so links the Worker writes (the guide, saved designs) name this server.
-    proxy: Object.fromEntries(["/api", "/u", "/r", "/v1/embed.md", "/llms.txt"].map((p) => [p, { target, changeOrigin: false }])),
+    proxy: Object.fromEntries(["/api", "/u", "/r", "/v1/embed.md", "/v1/frame", "/llms.txt"].map((p) => [p, { target, changeOrigin: false }])),
   },
   plugins: [{
     // The URL shops paste, answered from source in dev.

@@ -9,6 +9,7 @@ import { build } from "vite";
 import { launchChrome, load, openTab, type Tab } from "../../../scripts/chrome.ts";
 import { Design } from "../src/api.ts";
 import { designKey } from "../src/layout.ts";
+import { putOrg } from "../src/settings.ts";
 import { local } from "../src/local.ts";
 
 setDefaultTimeout(120_000);
@@ -89,4 +90,58 @@ test("a shopper puts a picture on the cap, drags it, nudges it, and saves it", a
   for (const key of [stored!.layers[0]!.texture, stored!.layers[0]!.original, stored!.snapshot]) expect(await app.bindings.BUCKET.head(key!)).not.toBeNull();
   expect(tab.noise).toEqual([]);
   await tab.close();
+});
+
+// The product page as a shop would build it: pick the hat, the shirt and the hoodie in turn, print on every zone,
+// press Add to cart, and the form arrives with the saved design's id (the widget is a field in it, name="design").
+test("the hat, the shirt and the hoodie each go in the cart with their design id", async () => {
+  const tab = await openTab(chrome.cdp, { w: 390, h: 844 }, true);
+  await load(chrome.cdp, tab, `${app.url}/`, 500);
+  await until("the widget ready", () => tab.eval<boolean>(`!!${HAT}.design`));
+  const picks = [
+    { product: "field-cap", model: "cap", zones: ["front"] },
+    { product: "crew-tee", model: "tee", zones: ["front", "back", "left-sleeve"] },
+    { product: "pullover-hoodie", model: "hoodie", zones: ["front", "back", "left-sleeve"] },
+  ];
+  for (const [n, p] of picks.entries()) {
+    await tab.eval(`document.querySelector('[data-product="${p.product}"]').click()`);
+    await until(`the ${p.model}`, () => tab.eval<boolean>(`${HAT}.model === "${p.model}" && !!${HAT}.design`));
+    await tab.eval(`(async () => {
+      const c = new OffscreenCanvas(128, 128), g = c.getContext("2d");
+      g.fillStyle = "#1d4ed8"; g.fillRect(0, 0, 128, 128);
+      for (const z of ${JSON.stringify(p.zones)}) await ${HAT}.addImage(await c.convertToBlob({ type: "image/png" }), z);
+    })()`);
+    await tab.eval(`document.getElementById("buy").click()`);
+    const line = await until(`${p.product} in the cart`, () => tab.eval<Record<string, string> | null>(`window.demoCart?.[${n}] ?? null`));
+    expect(line).toMatchObject({ product: p.product, qty: "1", design: await tab.eval<string>(`${HAT}.value`) });
+    expect(line["design-url"]).toEndWith(`/r/${designKey("demo", line.design!)}`);
+    const stored = Design(JSON.parse((await (await app.bindings.BUCKET.get(designKey("demo", line.design!)))?.text()) ?? "null"));
+    expect(stored).toMatchObject({ model: p.model, product: p.product });
+    expect(stored!.layers.map((l): string => l.zone ?? "front").sort()).toEqual([...p.zones].sort());
+  }
+  expect(tab.noise).toEqual([]);
+  await tab.close();
+});
+
+// A site builder that strips scripts gets the iframe: the shop's page hears the widget's events through
+// postMessage, and asks it for a snapshot the same way.
+test("the iframe tells the page round it what the widget does", async () => {
+  const shop = Bun.serve({ port: 0, fetch: () => new Response(`<!doctype html><body><iframe src="${app.url}/v1/frame?org=demo&product=crew-tee" style="width:600px;height:500px;border:0"></iframe>
+    <script>window.heard = []; addEventListener("message", (e) => { if (e.data?.source === "qview3d") window.heard.push({ type: e.data.type, from: e.origin, detail: e.data.detail }); });</script>`, { headers: { "content-type": "text/html" } }) });
+  try {
+    const tab = await openTab(chrome.cdp, { w: 800, h: 600 });
+    await load(chrome.cdp, tab, `http://127.0.0.1:${shop.port}/`, 500);
+    await until("qview:ready from the frame", () => tab.eval<boolean>(`window.heard.some((m) => m.type === "qview:ready")`));
+    await tab.eval(`document.querySelector("iframe").contentWindow.postMessage({ source: "qview3d", type: "snapshot" }, "*")`);
+    const shot = await until("a snapshot from the frame", () => tab.eval<{ from: string; size: number } | null>(`(() => { const m = window.heard.find((m) => m.type === "qview:snapshot"); return m ? { from: m.from, size: m.detail.blob.size, model: m.detail.design.model } : null; })()`));
+    expect(shot).toMatchObject({ from: new URL(app.url).origin, model: "tee" });
+    expect(shot.size).toBeGreaterThan(1000);
+    await tab.close();
+  } finally { await shop.stop(true); }
+
+  // A shop's own org may only be framed by its own sites.
+  await putOrg(app.bindings, "shop", { origins: ["https://shop.example"], admins: [], samples: 0 });
+  const res = await fetch(`${app.url}/v1/frame?org=shop&product=crew-tee`);
+  expect(res.headers.get("content-security-policy")).toBe("frame-ancestors https://shop.example");
+  expect((await fetch(`${app.url}/v1/frame?org=nobody&product=crew-tee`)).status).toBe(404);
 });

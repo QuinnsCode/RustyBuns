@@ -50,7 +50,9 @@ export type Cut = {
 
 /** The section's squareness: a soft box, as a torso is, not a tube. */
 const N = 3.2;
-const ROWS = 64, COLS = 56;
+const ROWS = 96, COLS = 56;
+/** Row j's share of its column's height: as fine as 64 even rows at the hem, and finer toward the top, where the half closes over the shoulder and its outline would step. */
+const rowAt = (j: number) => 1 - (1 - j / ROWS) ** 1.5;
 
 const halfW = (c: Cut, t: number) =>
   (0.47 + 0.05 * smooth(0.35, 0.85, t)) * c.ease * (1 - c.waist * 0.12 * Math.exp(-(((t - 0.5) / 0.2) ** 2)) + c.waist * 0.05 * (1 - t) ** 3);
@@ -282,8 +284,29 @@ const FRONT: [number, number] = [0, 0.4], BACK: [number, number] = [0.4, 0.8], L
 /** One half's grid: rows climb each column to its own top edge, so a tank's armhole or a neckline is the grid's edge. */
 function halfRows(c: Cut, back: boolean, ths: number[]) {
   const tops = ths.map((th) => topOf(c, back, se(halfW(c, 1), 1, th).x));
-  return Array.from({ length: ROWS + 1 }, (_, j) => ths.map((th, i) => bodyPoint(c, back, th, (j / ROWS) * tops[i]!)));
+  return Array.from({ length: ROWS + 1 }, (_, j) => ths.map((th, i) => bodyPoint(c, back, th, rowAt(j) * tops[i]!)));
 }
+
+/** A sleeve's section: an oval this much flatter one way (e2) than the other. */
+const FLAT = 0.9;
+/** Angles round the sleeve's oval spaced by arc length, and its perimeter at radius 1: a print's u is even centimetres all round. */
+const OVAL = (() => {
+  const n = 720, run = [0];
+  for (let i = 1; i <= n; i++) {
+    const a = ((i - 1) / n - 0.5) * TAU, b = (i / n - 0.5) * TAU;
+    run.push(run[i - 1]! + Math.hypot(Math.cos(b) - Math.cos(a), FLAT * (Math.sin(b) - Math.sin(a))));
+  }
+  const total = run[n]!;
+  const at = (u: number) => {
+    const want = u * total;
+    let k = 0;
+    while (k < n - 1 && run[k + 1]! < want) k++;
+    return ((k + (want - run[k]!) / (run[k + 1]! - run[k]! || 1)) / n - 0.5) * TAU;
+  };
+  return { at, perimeter: total };
+})();
+/** How far down the sleeve (world units) it blends out of the armhole: a print zone keeps below that. */
+const SLEEVE_BLEND = 0.14;
 
 /** A sleeve, `side` +1 for the wearer's left (+x): lofted out of the armhole on the body's side into a tapering, folding tube. */
 function sleeve(c: Cut, side: 1 | -1) {
@@ -310,20 +333,20 @@ function sleeve(c: Cut, side: 1 | -1) {
   const along = 30, round = 40, L = sl.length, zone = c.zones.sleeve;
   const rows: V3[][] = [];
   for (let j = 0; j <= along; j++) {
-    const f = j / along, blend = smooth(0, 0.14, f * L);
+    const f = j / along, blend = smooth(0, SLEEVE_BLEND, f * L);
     const cuffBlouse = sl.cuff ? 0.07 * smooth(0.78, 1, f) : 0;
     const r = lerp(sl.r0, sl.r1, f) * (1 + cuffBlouse);
     const ctr = center.clone().addScaledVector(dir, f * L);
     const row: V3[] = [];
     for (let i = 0; i <= round; i++) {
-      const u = i / round, k = (u - 0.5) * TAU;
+      const u = i / round, k = OVAL.at(u);
       // Folds: wrinkles stacking toward a long sleeve's cuff, a little crease under the arm, unevenness.
       const stack = L > 0.6 ? 0.08 * smooth(0.5, 0.95, f) * Math.sin(TAU * (f * L / 0.075 + u * 1.3 + 0.5 * noise(u * 4, f * 6))) : 0;
       const down = -(e1.y * Math.cos(k) + e2.y * Math.sin(k)) / (Math.hypot(e1.y, e2.y) || 1);
       const pit = 0.035 * smooth(0.5, 1, down) * Math.exp(-(((f - 0.12) / 0.1) ** 2)) * Math.sin(TAU * u * 5);
       const fold = (stack + pit + 0.012 * noise(u * 6 + side, f * 5)) * c.folds * damp(zone, u, 1 - f, 0.2);
       const rr = r * (1 + fold);
-      const tube = ctr.clone().addScaledVector(e1, Math.cos(k) * rr).addScaledVector(e2, Math.sin(k) * rr * 0.9);
+      const tube = ctr.clone().addScaledVector(e1, Math.cos(k) * rr).addScaledVector(e2, Math.sin(k) * rr * FLAT);
       row.push(blend < 1 ? hole(k).lerp(tube, blend) : tube);
     }
     rows.push(row);
@@ -435,7 +458,11 @@ export function buildCut(c: Cut, onHanger = false): Garment {
     zone("front", "Front", "front", FRONT, z.front, (v) => arcAt(c, v), H),
     zone("back", "Back", "back", BACK, z.back, (v) => arcAt(c, v), H),
   ];
-  if (left && z.sleeve) zones.push(zone("left-sleeve", "Sleeve", "angle", LEFT, z.sleeve, (v) => TAU * left.radiusAt(v), c.sleeve!.length));
+  if (left && z.sleeve) {
+    // Clear of where the sleeve blends out of the armhole, so a picture never creases into the shoulder.
+    const rect = { ...z.sleeve, v1: Math.min(z.sleeve.v1, 1 - (SLEEVE_BLEND + 0.03) / c.sleeve!.length) };
+    zones.push(zone("left-sleeve", "Sleeve", "angle", LEFT, rect, (v) => OVAL.perimeter * left.radiusAt(v), c.sleeve!.length));
+  }
   return { group, prints, dyed, zones, target: V(0, H * 0.5 - (c.hem ? c.hem / 2 : 0), 0), ...(settle && { tick: settle.tick, restart: settle.restart }) };
 }
 
@@ -573,7 +600,7 @@ export const CUTS: Record<TopModel, Cut> = {
   tee: {
     height: 1.52, ease: 1.04, waist: 0, slope: 0.15, neck: CREW, nd: 0.11, hem: 0, collar: 0.04, folds: 1, cloth: "jersey",
     sleeve: { angle: 0.6, length: 0.44, r0: 0.2, r1: 0.175, cuff: 0 },
-    zones: { front: { u0: 0.2, u1: 0.8, v0: 0.24, v1: 0.8 }, back: { u0: 0.18, u1: 0.82, v0: 0.22, v1: 0.82 }, sleeve: { u0: 0.3, u1: 0.7, v0: 0.2, v1: 0.85 } },
+    zones: { front: { u0: 0.2, u1: 0.8, v0: 0.24, v1: 0.8 }, back: { u0: 0.18, u1: 0.82, v0: 0.22, v1: 0.82 }, sleeve: { u0: 0.3, u1: 0.7, v0: 0.12, v1: 0.85 } },
   },
   sweater: {
     height: 1.42, ease: 1.08, waist: 0, slope: 0.15, neck: { front: { w: 0.15, dip: 0.09 }, back: { w: 0.15, dip: 0.03 } }, nd: 0.11, hem: 0.11, collar: 0.06, folds: 1.1, cloth: "knit",
