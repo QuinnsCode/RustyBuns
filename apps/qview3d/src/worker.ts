@@ -7,7 +7,7 @@
 //   PUT  /u/<token>                           the bytes for a Worker-signed upload, checked against the token
 //   POST /api/orgs/<org>/designs              save a design (Design -> DesignReply); its files must be the org's and exist
 //   GET  /r/<key>                             a texture, snapshot, design or sample model, edge-cached for a year (names never change)
-//   POST /api/orgs/<org>/models               an admin starts a sample model from product photos (samples.ts)
+//   POST /api/orgs/<org>/models               an admin starts a sample model from product photos, or files a scan (samples.ts)
 //   GET  /api/orgs/<org>/models/<id>          an admin asks how it's going
 //   GET  /v1/embed.md, /llms.txt              how to put the widget on a page, for a coding agent (embed.ts)
 //
@@ -132,7 +132,7 @@ export async function handle(req: Request, env: Env): Promise<Response> {
 async function sign(req: Request, env: Env, org: string, url: URL, origin: string | null, admin: boolean): Promise<Response> {
   const r = await readJson(req, SignRequest);
   if (!r) return fail("expected {kind, type, size, sha256}", 400, origin);
-  if (r.kind === "photo" && !admin) return fail("product photos need an admin key", 401, origin);
+  if ((r.kind === "photo" || r.kind === "scan") && !admin) return fail(`product ${r.kind}s need an admin key`, 401, origin);
   const k = KINDS[r.kind];
   if (!(k.types as readonly string[]).includes(r.type)) return fail(`${r.kind}: ${k.types.join(", ")} only`, 400, origin);
   if (r.size > k.max) return fail(`${r.kind}: up to ${k.max >> 20} MB`, 413, origin);
