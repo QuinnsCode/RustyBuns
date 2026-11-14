@@ -472,11 +472,15 @@ export function spawn(n = 1): Walker {
 }
 
 /** Moves the walker by (dx, dz) metres if the ground there is open, sliding along a closed border. `fence`, when
- * given, closes more ground inside open regions (a trail's sections not reached yet, src/world/trail.ts): true blocks. */
-export function walk(me: Walker, dx: number, dz: number, beaten: ReadonlySet<number>, fence?: (x: number, z: number) => boolean): WalkEvent[] {
+ * given, closes more ground inside open regions (a trail's sections not reached yet, src/world/trail.ts): true blocks.
+ * `solid`, when given, says where a wall stands (a cabin's, poi.ts inWalls): you slide along it with no word said, and
+ * a walker already inside one (an old save) may walk out. */
+export function walk(me: Walker, dx: number, dz: number, beaten: ReadonlySet<number>, fence?: (x: number, z: number) => boolean, solid?: (x: number, z: number) => boolean): WalkEvent[] {
   const out: WalkEvent[] = [], open = openRegions(beaten);
   open.add(me.region); // where you stand stays walkable, even after the beast that brought you left the line-up
+  const walled = solid && !solid(me.x, me.z) ? solid : undefined;
   const can = (x: number, z: number) => {
+    if (walled?.(x, z)) return false;
     if (x < 0 || z < 0 || x >= GRID.w * CELL || z >= GRID.h * CELL) return false;
     const g = regionAt(x, z);
     if (g && open.has(g.n) && fence?.(x, z)) {

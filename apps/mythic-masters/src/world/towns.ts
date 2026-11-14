@@ -8,7 +8,7 @@
 import { sections } from "../journey.ts";
 import { REGIONS } from "../regions.ts";
 import { CLUES, HUNTS, type Hunt, type Spot } from "./hunts.ts";
-import { poiById } from "./poi.ts";
+import { hash, poiById, yawOf } from "./poi.ts";
 
 export const DEEP = 9;       // front wall to back wall
 export const CEILING = 3.2;
@@ -69,11 +69,6 @@ export interface Town {
   hunt: Hunt;
   people: Person[];
 }
-
-/** A small number from a string: the same every time, different from one id to the next. */
-const hash = (s: string) => { let h = 7; for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0; return h; };
-/** Which way a town faces: the same turn poi-view gives every place, from its id. */
-export const yawOf = (id: string) => (hash(id) % 628) / 100;
 
 function town(h: Hunt): Town | null {
   const p = poiById(h.id), g = REGIONS[h.n - 1];
