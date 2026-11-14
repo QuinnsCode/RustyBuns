@@ -153,8 +153,7 @@ For a product the hats don't cover (a tumbler, a tote, a koozie), the shop makes
 (`samples` in org.json plus the packs it bought, counted against its `models/` folder, `402` when spent), and `MESHY_DAILY` (50) samples a
 day across every org (`429`). The Meshy Batch Studio app's price table puts multi-image-to-3D at 5 to 40 credits a
 model; check Meshy's current price before turning the real key on. It's a draft: the model guesses at sides the
-photos didn't show. An iPhone app that scans on the shop's own phone with Apple's
-Object Capture for an accurate model at no compute cost, comes later.
+photos didn't show.
 
 **Shops buy samples in packs** ([src/billing.ts](src/billing.ts)), from the admin page: it shows how many are left
 and a button per pack. A paid pack is a receipt in the org's folder; the allowance is org.json's `samples` (set by
