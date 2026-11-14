@@ -26,12 +26,12 @@ export async function seedDemo(bindings: Env) {
 
 /**
  * `meshy` is a real Meshy (a key and base); left out, the stand-in answers, in `standInSeconds` (8).
- * `seed: false` starts with an empty bucket, the way a fresh deploy does.
+ * `seed: false` starts with an empty bucket, the way a fresh deploy does. `limits` are rate limit bindings (a fake, in the tests).
  */
-export async function local(o: { dir: string; port?: number; secret?: string; meshy?: { key: string; base: string }; standInSeconds?: number; seed?: boolean }) {
+export async function local(o: { dir: string; port?: number; secret?: string; meshy?: { key: string; base: string }; standInSeconds?: number; seed?: boolean; limits?: Pick<Env, "SIGN_LIMIT" | "SAMPLE_LIMIT"> }) {
   const standIn = o.meshy ? null : await standInMeshy({ seconds: o.standInSeconds });
   const meshy = o.meshy ?? standIn!;
-  const bindings: Env = { BUCKET: r2(join(o.dir, "bucket")), UPLOAD_SECRET: o.secret ?? crypto.randomUUID(), MESHY_API_KEY: meshy.key, MESHY_API_BASE: meshy.base };
+  const bindings: Env = { BUCKET: r2(join(o.dir, "bucket")), UPLOAD_SECRET: o.secret ?? crypto.randomUUID(), MESHY_API_KEY: meshy.key, MESHY_API_BASE: meshy.base, ...o.limits };
   if (o.seed !== false) await seedDemo(bindings);
   const server = Bun.serve({
     port: o.port ?? 0,
