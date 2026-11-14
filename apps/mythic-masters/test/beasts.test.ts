@@ -281,7 +281,8 @@ test("a heavy blow flattens the struck body front to back and curls it over the 
   expect(Math.abs(span() - rest)).toBeLessThan(rest * 0.03);
 }, 30_000);
 
-// the Mothman's wing tips tower over its head, which once read it as half upright and halved its lean (#4267)
+// the Mothman's wing tips tower over its head, which once read it as half upright and halved its lean (#4267). The bar sits
+// between the two: flying leans 0.82 rad past standing for the Jersey Devil, 0.85 for the Mothman, 0.60 when it read half upright.
 test.each(["jersey-devil", "mothman"])("an upright flyer (%s) flies leaning into it, head well ahead of its hips, not hanging like a lifted biped", async (id) => {
   const c = ROSTER.find((x) => x.id === id)!;
   const lean = async (flying: boolean) => {
@@ -293,7 +294,7 @@ test.each(["jersey-devil", "mothman"])("an upright flyer (%s) flies leaning into
     const head = p.headWorld()[0]!, hips = p.rootWorld();
     return Math.atan2(head.x - hips.x, head.y - hips.y);   // 0 is straight up, more is tipped forward
   };
-  expect(await lean(true)).toBeGreaterThan((await lean(false)) + 0.5);
+  expect(await lean(true)).toBeGreaterThan((await lean(false)) + 0.72);
 }, 30_000);
 
 test("a glowing part keeps its glow after a hit's flash fades", async () => {
