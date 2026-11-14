@@ -418,7 +418,7 @@ function sphinx() {
     // bent legs (elbows and knees out of the straight), the breast lifted, the neck upright like a man's
     pose: {
       chest: [0, -0.1], belly: [0, -0.14], hip: [0, -0.14], l_shoulder: [0, -0.12, 0.03], l_hipj: [0, -0.15, 0.02],
-      l_elbow: [-0.03, -0.12, 0.04], l_wrist: [0.03, -0.02, 0.03], l_knee: [0.04, -0.12, 0.03], l_hock: [0, -0.04, 0.02],
+      l_elbow: [-0.03, -0.12, 0.04], l_wrist: [0.03, -0.02, 0.03], l_knee: [-0.1, -0.1, 0.03], l_hock: [0, -0.04, 0.02],
       neck: [-0.02, 0.06], head: [-0.06, 0.24], snout: [-0.06, 0.24],
     },
     ears: { len: 0.05, width: 0.05, dir: [0, 1, 1], cup: 0, tilt: 0, fold: 0 }, eyes: "two",
@@ -434,24 +434,21 @@ function sphinx() {
     hide: { pattern: "fur", size: 0.03, colours: [[0.62, 0.46, 0.26], [0.9, 0.76, 0.52]], map: 1024 },
   });
   const s = (x: number) => f4(x * k);
-  // a lion's legs, not stilts: a muscle swelling high on each bone, `t` of the way from a to b, so the leg tapers
-  // from a heavy forearm or gaskin to the paw instead of thin shafts between knobbly joints
-  const muscle = (a: string, c: string, t: number, fore: number, side: number, len: number): Blob[] => {
-    const A = b.nodes[a]!, B = b.nodes[c]!, dx = B[0] - A[0], dy = B[1] - A[1], dz = B[2] - A[2];
-    const off: V = [f4(dx * t), f4(dy * t), f4(dz * t)], r: V = [f4(fore * k), f4(Math.hypot(dx, dy, dz) * len), f4(side * k)];
-    const rot: V = [0, 0, f4((Math.atan2(-dx, dy) * 180) / Math.PI)];
-    return [{ at: a, off, r, rot }, { at: a.replace(/^l_/, "r_"), off: flipZ(off), r, rot }];
-  };
+  // a lion's legs as one smooth lofted limb each, not stacked blobs: the hound's leg bones and joint knobs go
+  // (they read as lumpy, swollen tubes), and a `limb` runs from the shoulder or hip down to the paw, heavy at the
+  // top, swelling at the forearm and gaskin, and tapering to a slim wrist and hock over the big paw
+  const leg = /^[lr]_(shoulder|elbow|wrist|ffoot|hipj|knee|hock|bfoot)$/;
+  b.blobs = b.blobs.filter((x) => !(leg.test(x.at) && (x.rot || /elbow|hock/.test(x.at))));
+  for (const n of ["l_elbow", "l_wrist", "l_knee", "l_hock"]) { const p = b.nodes[n]!; b.nodes[n] = [p[0], p[1], p[2], s(0.025)]; }
   b.blobs.push(
-    ...muscle("l_shoulder", "l_elbow", 0.45, 0.15, 0.11, 0.6),  // the upper arm, under a heavy shoulder
-    ...muscle("l_elbow", "l_wrist", 0.3, 0.1, 0.085, 0.42),     // the forearm, thick under the elbow
-    ...muscle("l_wrist", "l_ffoot", 0.4, 0.07, 0.07, 0.9),      // a broad wrist into the paw
-    ...muscle("l_hipj", "l_knee", 0.45, 0.19, 0.12, 0.62),      // the thigh
-    ...muscle("l_knee", "l_hock", 0.3, 0.115, 0.085, 0.42),     // the gaskin
-    ...muscle("l_hock", "l_bfoot", 0.45, 0.065, 0.065, 0.9),
-    // the lion's bulk: a broad slab of shoulder over each foreleg, a round haunch over each hind leg
-    ...pair("l_shoulder", [s(0.02), s(0.02), s(0.03)], [s(0.17), s(0.24), s(0.12)]),
-    ...pair("l_hipj", [s(0.03), s(0.04), s(0.02)], [s(0.21), s(0.22), s(0.13)]),
+    // the shoulder blade, a flat plate standing up over the foreleg, and a round haunch over the hind leg, both
+    // sunk into the body so they shape it rather than sit on it as lumps
+    ...pair("l_shoulder", [s(0), s(0.07), s(-0.01)], [s(0.13), s(0.2), s(0.07)]),
+    ...pair("l_hipj", [s(0.02), s(0.07), s(-0.01)], [s(0.17), s(0.17), s(0.12)]),
+  );
+  b.parts.push(
+    { kind: "limb", along: ["l_shoulder", "l_elbow", "l_wrist", "l_ffoot"], radii: [s(0.14), s(0.1), s(0.065), s(0.06)], depth: 1.3, calf: 0.22, shoulder: 0.25, elbow: 0.12, skin: true, mirror: true, material: "fur" },
+    { kind: "limb", along: ["l_hipj", "l_knee", "l_hock", "l_bfoot"], radii: [s(0.16), s(0.1), s(0.06), s(0.058)], depth: 1.3, calf: 0.2, shoulder: 0, elbow: 0.08, skin: true, mirror: true, material: "fur" },
   );
   // big paws: the paw's height and its toe pads go by the foot node's radius, so a fat node makes a deep, round paw
   for (const n of ["l_ffoot", "l_bfoot"]) {
