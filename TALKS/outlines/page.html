@@ -1,0 +1,289 @@
+<title>Talk Outlines</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@700;900&family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&family=JetBrains+Mono:wght@600;700&display=swap">
+<style>
+/*DECK_CSS*/
+</style>
+<style>
+/* The review desk: the talks down the side, one talk's points and slides in the middle, a mark and a note per slide.
+   Uses the deck's tokens (flour, crust, rust) so the outline looks like the talk it becomes. */
+:root { --keep: var(--sage); --change: var(--honey); --cut: var(--rust); }
+html, body { height: 100%; scroll-snap-type: none; }
+body { font-size: 17px; line-height: 1.5; overflow: hidden; }
+.desk { height: 100%; display: grid; grid-template-columns: 300px 1fr; }
+.list {
+  border-right: 1px solid var(--line); background: var(--panel); overflow-y: auto;
+  padding-block: 20px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: 16px;
+}
+.brand { font: 900 22px/1.1 var(--display); margin: 0 0 4px; }
+.brand-sub { font-size: 15px; color: var(--quiet); margin: 0 0 18px; }
+.tracks { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.track-btn {
+  width: 100%; display: grid; grid-template-columns: 30px 1fr; gap: 10px; align-items: start; text-align: left;
+  font: inherit; color: var(--ink); background: none; border: 1px solid transparent; border-radius: 10px; padding: 10px; cursor: pointer;
+}
+.track-btn:hover { border-color: var(--line); background: var(--bg); }
+.track-btn[aria-current="true"] { border-color: var(--rust); background: var(--rust-soft); }
+.track-btn .n { font: 900 19px/1.2 var(--display); color: var(--rust); text-align: center; font-variant-numeric: tabular-nums; }
+.track-btn b { display: block; font: 700 14px/1.3 var(--display); }
+.track-btn .meta { display: flex; justify-content: space-between; gap: 8px; font: 600 11px/1 var(--mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--quiet); margin-top: 7px; }
+.mini { height: 4px; background: var(--line); border-radius: 2px; margin-top: 6px; overflow: hidden; display: flex; }
+.mini i { display: block; height: 100%; }
+
+.main { overflow-y: auto; padding-block: 28px 80px; padding-left: max(16px, calc((100% - 980px) / 2)); padding-right: max(16px, env(safe-area-inset-right, 0px), calc((100% - 980px) / 2)); }
+.head h1 { font-size: clamp(30px, 4.6vw, 52px); }
+.promise { font-size: clamp(18px, 2vw, 22px); max-width: 52ch; margin: 14px 0 0; text-wrap: pretty; }
+.status { font: 600 13px/1.4 var(--mono); color: var(--quiet); margin-top: 14px; min-height: 1.4em; }
+.status.warn { color: var(--rust); }
+
+.shape { display: flex; gap: 4px; margin-top: 22px; }
+.shape a { flex: var(--n) 1 0; min-width: 0; text-decoration: none; color: var(--ink); border-top: 6px solid var(--line); padding-top: 6px; font-size: 13px; line-height: 1.25; }
+.shape a:hover { border-top-color: var(--rust); }
+.shape a b { display: block; font: 700 12px/1 var(--mono); color: var(--quiet); margin-bottom: 3px; }
+.shape a span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.shape-line { font: 600 13px/1 var(--mono); color: var(--quiet); margin-top: 10px; }
+
+.next { margin-top: 22px; background: var(--panel); border: 1px dashed var(--quiet); border-radius: 12px; padding: 12px 16px; font-size: 15px; color: var(--quiet); max-width: 72ch; }
+.next b { color: var(--ink); }
+
+.point { margin-top: 44px; scroll-margin-top: 16px; }
+.point-k { font: 600 13px/1 var(--mono); letter-spacing: 0.12em; text-transform: uppercase; color: var(--rust); margin-bottom: 8px; }
+.point h2 { font-size: clamp(22px, 3vw, 32px); }
+.rows { list-style: none; margin: 16px 0 0; padding: 0; display: grid; gap: 10px; }
+.row {
+  display: grid; grid-template-columns: 44px 1fr auto; gap: 6px 14px; align-items: start;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; border-left-width: 6px;
+}
+.row[data-mark="keep"] { border-left-color: var(--keep); }
+.row[data-mark="change"] { border-left-color: var(--change); }
+.row[data-mark="cut"] { border-left-color: var(--cut); }
+.row[data-mark="cut"] .body { opacity: 0.55; }
+.num { font: 900 18px/1.3 var(--display); color: var(--quiet); font-variant-numeric: tabular-nums; }
+.body { min-width: 0; }
+.body h3 { font-size: 17px; margin: 0 0 4px; }
+.say { margin: 0; }
+.show { margin: 6px 0 0; font-size: 15px; color: var(--quiet); }
+.show b { font: 700 11px/1 var(--mono); letter-spacing: 0.1em; text-transform: uppercase; margin-right: 6px; }
+.marks { display: flex; gap: 6px; }
+.mk {
+  font: 700 12px/1 var(--mono); letter-spacing: 0.06em; text-transform: uppercase; min-height: 36px; padding: 0 10px; border-radius: 999px;
+  border: 1px solid var(--line); background: var(--bg); color: var(--quiet); cursor: pointer;
+}
+.mk:hover:not(:disabled) { border-color: var(--ink); color: var(--ink); }
+.mk:disabled { cursor: default; opacity: 0.5; }
+.mk[aria-pressed="true"][data-v="keep"] { background: var(--keep); border-color: var(--keep); color: var(--bg); }
+.mk[aria-pressed="true"][data-v="change"] { background: var(--change); border-color: var(--change); color: var(--bg); }
+.mk[aria-pressed="true"][data-v="cut"] { background: var(--cut); border-color: var(--cut); color: var(--bg); }
+.note { grid-column: 2 / -1; width: 100%; font: 15px/1.4 var(--body); color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; resize: vertical; min-height: 38px; }
+.note::placeholder { color: var(--quiet); }
+.note:disabled { opacity: 0.6; }
+
+@media (max-width: 899px) {
+  body { overflow: auto; }
+  .desk { display: block; height: auto; }
+  .list { border-right: 0; border-bottom: 1px solid var(--line); padding-block: 12px; padding-right: max(16px, env(safe-area-inset-right, 0px)); overflow-x: auto; }
+  .brand-sub { display: none; }
+  .brand { font-size: 17px; margin-bottom: 8px; }
+  .tracks { grid-auto-flow: column; grid-auto-columns: minmax(200px, 64%); }
+  .main { overflow: visible; padding-left: max(16px, env(safe-area-inset-left, 0px)); }
+  .row { grid-template-columns: 34px 1fr; }
+  .marks { grid-column: 1 / -1; }
+  .note { grid-column: 1 / -1; }
+  .shape a span { display: none; }
+}
+</style>
+
+<div class="desk">
+  <aside class="list" aria-label="Talks">
+    <p class="brand">Talk Outlines</p>
+    <p class="brand-sub">Each talk as its main points, each point as its slides. Mark every slide Keep, Change or Cut, and say why in the note.</p>
+    <ol class="tracks" id="tracks"></ol>
+  </aside>
+  <main class="main" id="main"></main>
+</div>
+
+<script id="outlines-data" type="application/json">/*OUTLINES_JSON*/</script>
+<script>
+(() => {
+  const OUTLINES = JSON.parse(document.getElementById("outlines-data").textContent);
+  const MARKS = ["keep", "change", "cut"];
+  const LABEL = { keep: "Keep", change: "Change", cut: "Cut" };
+  const marks = new Map(); // slide id -> { mark, note }
+  let db = null, canWrite = true, reached = false, asked = false;
+  const tracks = document.getElementById("tracks");
+  const main = document.getElementById("main");
+  const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+  const slidesOf = (o) => o.points.flatMap((p) => p.slides);
+
+  function current() {
+    const m = /^#talk-(\d+)$/.exec(location.hash);
+    const n = m ? Number(m[1]) : OUTLINES[0].n;
+    return OUTLINES.find((o) => o.n === n) || OUTLINES[0];
+  }
+
+  function counts(o) {
+    const c = { keep: 0, change: 0, cut: 0, total: 0 };
+    for (const s of slidesOf(o)) { c.total++; const m = marks.get(s.id)?.mark; if (m) c[m]++; }
+    return c;
+  }
+
+  function miniBar(c) {
+    return MARKS.map((m) => `<i style="width:${(100 * c[m]) / c.total}%;background:var(--${m})"></i>`).join("");
+  }
+
+  function renderList() {
+    const now = current();
+    tracks.innerHTML = OUTLINES.map((o) => {
+      const c = counts(o), done = c.keep + c.change + c.cut;
+      const per = o.points.map((p) => p.slides.length);
+      const shape = new Set(per).size === 1 ? `${per.length} x ${per[0]}` : `${per.length} points`;
+      return `<li><button class="track-btn" type="button" data-n="${o.n}" aria-current="${o === now}">
+        <span class="n">${o.n}</span>
+        <span><b>${esc(o.title)}</b>
+          <span class="meta"><span>${shape} = ${c.total}</span><span>${done} / ${c.total}</span></span>
+          <span class="mini">${miniBar(c)}</span></span></button></li>`;
+    }).join("");
+  }
+
+  function renderTalk() {
+    const o = current();
+    const c = counts(o);
+    let k = 0;
+    main.innerHTML = `
+      <header class="head">
+        <div class="kicker">Talk ${o.n} · ${o.points.length} points · ${c.total} slides</div>
+        <h1>${esc(o.title)}</h1>
+        <p class="promise">${esc(o.promise)}</p>
+        <nav class="shape" aria-label="Points">${o.points.map((p, i) =>
+          `<a href="#talk-${o.n}" data-jump="p${i + 1}" style="--n:${p.slides.length}"><b>${i + 1} · ${p.slides.length}</b><span>${esc(p.title)}</span></a>`).join("")}</nav>
+        <div class="shape-line" id="tally">${tally(c)}</div>
+        <div class="status" id="status"></div>
+        <p class="next"><b>Next step:</b> ten drafts of every slide, so you can pick the best one. Mark this outline first, so the drafts start from slides you want.</p>
+      </header>
+      ${o.points.map((p, i) => `
+        <section class="point" id="p${i + 1}">
+          <div class="point-k">Point ${i + 1} of ${o.points.length} · ${p.slides.length} slides</div>
+          <h2>${esc(p.title)}</h2>
+          <ol class="rows">${p.slides.map((s) => { k++; return row(s, k); }).join("")}</ol>
+        </section>`).join("")}`;
+    paintStatus();
+  }
+
+  function tally(c) {
+    return `Keep ${c.keep} · Change ${c.change} · Cut ${c.cut} · Not marked ${c.total - c.keep - c.change - c.cut}`;
+  }
+
+  function row(s, k) {
+    const m = marks.get(s.id) || {};
+    const off = canWrite ? "" : " disabled";
+    return `<li class="row" data-id="${s.id}" data-mark="${m.mark || ""}">
+      <span class="num">${k}</span>
+      <div class="body"><h3>${esc(s.t)}</h3><p class="say">${esc(s.say)}</p><p class="show"><b>Shows</b>${esc(s.show)}</p></div>
+      <div class="marks" role="group" aria-label="Mark slide ${k}">${MARKS.map((v) =>
+        `<button class="mk" type="button" data-v="${v}" aria-pressed="${m.mark === v}"${off}>${LABEL[v]}</button>`).join("")}</div>
+      <textarea class="note" id="note-${s.id}" rows="1" placeholder="Note for this slide (optional)"${off}>${esc(m.note || "")}</textarea>
+    </li>`;
+  }
+
+  // Repaint one row and the tallies without rebuilding the page, so a note being typed keeps its focus.
+  function paintRow(id) {
+    const el = main.querySelector(`.row[data-id="${id}"]`);
+    if (!el) return;
+    const m = marks.get(id) || {};
+    el.dataset.mark = m.mark || "";
+    for (const b of el.querySelectorAll(".mk")) b.setAttribute("aria-pressed", String(m.mark === b.dataset.v));
+    const ta = el.querySelector(".note");
+    if (document.activeElement !== ta && ta.value !== (m.note || "")) ta.value = m.note || "";
+  }
+
+  function paintTotals() {
+    const t = document.getElementById("tally");
+    if (t) t.textContent = tally(counts(current()));
+    renderList();
+  }
+
+  function paintStatus(msg) {
+    const el = document.getElementById("status");
+    if (!el) return;
+    if (msg) { el.textContent = msg; el.className = "status"; return; }
+    if (!asked) { el.textContent = "Loading saved marks..."; el.className = "status"; return; }
+    if (!db) { el.textContent = "Marks are not saved in this view: open the page on claude.ai, signed in, to keep them."; el.className = "status warn"; return; }
+    if (!canWrite) { el.textContent = "Read only: you can see the marks, but not change them."; el.className = "status"; return; }
+    el.textContent = reached ? "Marks save as you go." : "Loading saved marks...";
+    el.className = "status";
+  }
+
+  async function save(id) {
+    if (!db || !canWrite) return;
+    const m = marks.get(id) || {};
+    try {
+      if (!m.mark && !m.note) await db.collection("marks").doc(id).delete();
+      else await db.collection("marks").doc(id).set({ mark: m.mark || "", note: m.note || "", at: new Date().toISOString() });
+      paintStatus("Saved.");
+    } catch (e) {
+      if (e && e.code === "invalid_argument") { canWrite = false; renderTalk(); }
+      else paintStatus("Could not save that mark. Try again in a moment.");
+    }
+  }
+
+  tracks.addEventListener("click", (e) => {
+    const b = e.target.closest(".track-btn");
+    if (!b) return;
+    location.hash = `talk-${b.dataset.n}`;
+  });
+
+  main.addEventListener("click", (e) => {
+    const jump = e.target.closest("[data-jump]");
+    if (jump) { e.preventDefault(); document.getElementById(jump.dataset.jump)?.scrollIntoView({ behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" }); return; }
+    const b = e.target.closest(".mk");
+    if (!b || b.disabled) return;
+    const id = b.closest(".row").dataset.id;
+    const m = { ...(marks.get(id) || {}) };
+    m.mark = m.mark === b.dataset.v ? "" : b.dataset.v;
+    marks.set(id, m);
+    paintRow(id); paintTotals(); save(id);
+  });
+
+  const timers = new Map();
+  main.addEventListener("input", (e) => {
+    const ta = e.target.closest(".note");
+    if (!ta) return;
+    const id = ta.closest(".row").dataset.id;
+    marks.set(id, { ...(marks.get(id) || {}), note: ta.value });
+    clearTimeout(timers.get(id));
+    timers.set(id, setTimeout(() => save(id), 900));
+  });
+
+  window.addEventListener("hashchange", () => { renderList(); renderTalk(); main.scrollTop = 0; window.scrollTo(0, 0); });
+
+  renderList();
+  renderTalk();
+
+  (async () => {
+    const claude = window.claude;
+    if (!claude || !claude.use) { asked = true; paintStatus(); return; }
+    const [store, user] = await Promise.all([claude.use("db"), claude.use("user")]);
+    db = store; asked = true;
+    if (user) { try { const w = await user.can("data.write"); if (w === false) canWrite = false; } catch {} }
+    if (!db) { renderTalk(); return; }
+    renderTalk();
+    const slow = setTimeout(() => paintStatus("Saved marks cannot be reached yet. They will appear when the connection answers."), 10000);
+    db.collection("marks").onSnapshot((snap) => {
+      if (!snap.metadata.fromCache) { clearTimeout(slow); reached = true; }
+      for (const ch of snap.docChanges()) {
+        const id = ch.doc.id;
+        if (ch.type === "removed") marks.delete(id);
+        else {
+          const d = ch.doc.data() || {};
+          const mark = MARKS.includes(d.mark) ? d.mark : "";
+          const note = typeof d.note === "string" ? d.note : "";
+          marks.set(id, { mark, note });
+        }
+        paintRow(id);
+      }
+      paintTotals(); paintStatus();
+    }, () => { clearTimeout(slow); paintStatus("Saved marks cannot be reached. Reload the page to try again."); });
+  })();
+})();
+</script>

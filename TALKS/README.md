@@ -48,3 +48,13 @@ The older talk, "Trying to Max Out" ([setup/](setup/page.html)), has a 3D scene:
 stage, with play (auto-advance at 10 to 60 seconds a slide, with a countdown), step, a slide scrubber, speaker notes
 and full screen. It reads the lineup from [index.html](index.html), so a new talk shows up once the index links it.
 Publish that file to the "Rusty Buns Talks" artifact (https://claude.ai/artifact/GPLBcVKcoktpo49reFrUHe) to update it.
+
+## The outlines
+
+Each talk is being rebuilt from an outline in [outlines/](outlines/): 3 to 10 main points, each spread over a few
+slides, with fewer slides per point as the points go up (3 x 10 down to 10 x 5), 30 to 60 slides a talk. One line per
+slide: `- Title :: what it says :: what it shows`. `bun TALKS/outlines/build.ts` checks that shape and writes
+`dist/talks/outlines.html`, the review page: the owner marks each slide Keep, Change or Cut, with a note. Publish it to
+the "Talk Outlines" artifact (https://claude.ai/artifact/AGoSAL3WF1FMXEFTey79zQ, capabilities `db` and `user`); the marks
+live in its `marks` collection, one document per slide id (`t1-p2-s3`: talk 1, point 2, slide 3), for the next round
+to read. Next round: ten drafts of every kept or changed slide, to pick from.
