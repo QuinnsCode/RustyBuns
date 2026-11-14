@@ -472,11 +472,13 @@ def foliage(spec, g, rng, lo, twigs, trunks, H):
             if rng.random() > share:
                 continue
             col = jitter(pick(rng, cols), rng, 0.015, 0.08, 0.14)
-            if fs.get("core"):
+            core = fs.get("lo_core", fs.get("core")) if lo else fs.get("core")
+            if core:
+                # (`lo_core` sizes it in the far model, where an 80-triangle ball a twig is dear; 0 for none)
                 # a dark mass inside the twig's leaves: the crown has a body, not a scatter of cards with sky between
                 at, tan, _ = tw.at(fs.get("core_at", 0.75))
                 o = (at - centre).normalized() if (at - centre).length > 1e-4 else UP
-                blob(g, at + o * size * 0.2, size * fs["core"] * (0.8 + 0.4 * rng.random()), mix(col, (0.02, 0.03, 0.02), fs.get("core_dark", 0.35)), rng,
+                blob(g, at + o * size * 0.2, size * core * (0.8 + 0.4 * rng.random()), mix(col, (0.02, 0.03, 0.02), fs.get("core_dark", 0.35)), rng,
                      subdiv=1, lump=0.4, squash=fs.get("core_squash", 0.7), out_from=centre)
             for k in range(per):
                 t = start + (end - start) * (rng.random() if fs.get("random", True) else (k + 0.5) / per)
@@ -497,8 +499,10 @@ def foliage(spec, g, rng, lo, twigs, trunks, H):
                     card(g, p, d, s, size * (0.7 + 0.6 * rng.random()), size * fs.get("width", 0.5), c, out, fold=0.22, tip_col=tc)
                 elif kind == "tuft":
                     # a bottlebrush of needles round the twig's last stretch: thin triangles raked forward, over a
-                    # dark knot (`knot`, its radius as a share of `size`; 0 for none) so the brush reads dense from any side
-                    n = fs.get("needles", 14) if not lo else max(5, fs.get("needles", 14) // 3)
+                    # dark knot (`knot`, its radius as a share of `size`; 0 for none) so the brush reads dense from any side.
+                    # The far model has `lo_needles` needles (a third by default), `lo_width` times as wide (2.5), and
+                    # `lo_tip` blends their tips back toward the base green (0: none)
+                    n = fs.get("needles", 14) if not lo else fs.get("lo_needles", max(5, fs.get("needles", 14) // 3))
                     fwd = (tan + UP * fs.get("up", 0.35)).normalized()
                     sp = perp(fwd)
                     brush = size * fs.get("brush", 0.5)
@@ -510,9 +514,10 @@ def foliage(spec, g, rng, lo, twigs, trunks, H):
                         base = at - fwd * brush * (0.2 + 0.6 * rng.random())
                         nd = (fwd * fs.get("reach", 0.9) + radial * fs.get("splay", 0.7)).normalized()
                         tip = base + nd * size * (0.75 + 0.5 * rng.random())
-                        side = radial.cross(nd).normalized() * size * fs.get("needle_width", 0.035) * (2.5 if lo else 1)
+                        side = radial.cross(nd).normalized() * size * fs.get("needle_width", 0.035) * (fs.get("lo_width", 2.5) if lo else 1)
                         b0 = g.vert(base, mix(c, (0.05, 0.05, 0.03), 0.3), LEAF, out)
-                        g.face(b0, g.vert(tip + side, tc or c, LEAF, out), g.vert(tip - side, tc or c, LEAF, out))
+                        tcol = mix(tc, c, fs.get("lo_tip", 0)) if (lo and tc and fs.get("lo_tip")) else (tc or c)
+                        g.face(b0, g.vert(tip + side, tcol, LEAF, out), g.vert(tip - side, tcol, LEAF, out))
                 elif kind == "spray":
                     # a flat frond lying along the twig, drooping, feathered both sides
                     d = (tan + DOWN * fs.get("hang", 0.25)).normalized()
