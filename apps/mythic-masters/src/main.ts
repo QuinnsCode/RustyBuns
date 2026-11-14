@@ -20,8 +20,8 @@ import { buildArena, crowdOf, floorOf, gradeOf, SKINS, tickArena, type Skin } fr
 import { forgetBeast, loadBeast, Puppet } from "./beasts.ts";
 import { bot, type Bot } from "./bot.ts";
 import { temper } from "./opener.ts";
-import { mountVersus } from "./versus.ts";
-import { duelCode, sum } from "./net/duel.ts";
+import { coopTeams, mountVersus } from "./versus.ts";
+import { coopCode, duelCode, sum } from "./net/duel.ts";
 import { buttons, NO_STICK, PAD_ACTIONS, PAD_START, PAD_ZONE, push, readPad, touchStick, TOUCH_BUTTONS, type Stick } from "./controls.ts";
 import { icon } from "./icons.ts";
 import { ART, radar, tradingCard } from "./card.ts";
@@ -81,7 +81,7 @@ import { HURT_FULL } from "./net/party.ts";
 import { COLOURS, css as hueCss, firstColour, wornColour } from "./world/hues.ts";
 import { joinParty, openParty, partyCode } from "./net/lobby.ts";
 import type { Friend } from "./world/view.ts";
-import { ARENA, head, held as holding, HZ, IDLE, swingPhase, warning, type Fighter, type Input, type Match, type V3 } from "./sim.ts";
+import { ARENA, foeOf, head, held as holding, HZ, IDLE, swingPhase, warning, type Fighter, type Input, type Match, type V3 } from "./sim.ts";
 import { tsSim, wasmSim, type Live, type Sim } from "./sim-wasm.ts";
 import simWasm from "./sim.wasm?url";
 
@@ -400,8 +400,9 @@ function wearBeast(f: Fighter, g: THREE.Group, i: number) {
 // same fight either way, tick for tick (test/sim-rust.test.ts). `live` steps it; `m` is the Match everything reads.
 let sim: Sim = tsSim, live: Live | null = null;
 fetch(simWasm).then((r) => r.arrayBuffer()).then(wasmSim).then((s) => { sim = s; }, (e) => console.warn("sim.wasm didn't load; fights stay on sim.ts", e));
-/** A fight against a friend is on (`versus`), and which fighter is you: seat 1 sees the fight from the other side. */
-let versusOn = false, mine: 0 | 1 = 0;
+/** A fight with friends is on (`versus`), and which fighter is you: seat 1 sees the fight from the other side. In a
+ * co-op round (#4400) `wildBot` is the wild one's hands, the same seeded bot on every page. */
+let versusOn = false, mine = 0, wildBot: Bot | null = null;
 let m: Match | null = null, arena: THREE.Group | null = null, models: THREE.Group[] = [], puppets: (Puppet | null)[] = [null, null], bots: (Bot | null)[] = [null, null];
 const moveFx = new MoveFx(scene, Math.random, matchMedia("(max-width: 700px)").matches ? MAX_LIVE_PHONE : MAX_LIVE);
 let hitStop = 0; // seconds the fight holds still after a big hit lands, so the blow reads
@@ -447,15 +448,18 @@ function start(a: string, b: string, skin: string, watch = false) {
   faceUp();
   history.replaceState(null, "", `?${new URLSearchParams({ a, b, skin, ...(watch ? { watch: "1" } : {}) })}`);
 }
-function fight(a: Creature, b: Creature, skin: string, watch = false, vs = false) {
+function fight(a: Creature, b: Creature, skin: string, watch = false, vs = false, teams?: [Creature[], Creature[]]) {
   versusOn = vs; if (!vs) mine = 0;
+  if (!teams) wildBot = null;
   world.hide(); shelf?.dispose(); shelf = null;
   for (const o of [arena, ...models, ...puppets.map((p) => p?.group)]) if (o) scene.remove(o);
   puppets = [null, null]; moveFx.clear();
   const look = ALL_SKINS[skin] ?? SKINS.stadium!;
   arena = buildArena(scene, look); setGrade(look); moveFx.setGround(floorOf(look));
   camera.far = 300; camera.updateProjectionMatrix();
-  try { live = sim(a, b); } catch (e) { console.warn("sim.wasm couldn't start this fight; it plays on sim.ts", e); live = tsSim(a, b); }
+  // A team fight plays on sim.ts (#4400; sim.wasm plays teams too since #4412, a later step).
+  if (teams) live = tsSim(teams[0], teams[1]);
+  else try { live = sim(a, b); } catch (e) { console.warn("sim.wasm couldn't start this fight; it plays on sim.ts", e); live = tsSim(a, b); }
   m = live.m;
   if (!watch) void achieve("played");
   hudMem.now = newMemory();
@@ -1421,7 +1425,7 @@ function draw(m: Match, alpha: number) {
   });
   moveFx.draw(m);
   // Soft lock: behind you, looking past you at them, high enough to see a flyer.
-  const me = m.f[mine], them = m.f[mine ? 0 : 1];
+  const me = m.f[mine]!, them = m.f[foeOf(m, mine)]!;
   const dx = them.pos.x - me.pos.x, dz = them.pos.z - me.pos.z, d = Math.hypot(dx, dz) || 1;
   // side-on far enough back that both bodies and a flyer overhead fit, however close they stand
   const side = 2.6 + Math.max(me.b.height, them.b.height) * 1.15 + d * 0.5 + Math.abs(me.pos.y - them.pos.y) * 0.45;
@@ -1456,12 +1460,14 @@ function ended(m: Match, bound = false) {
 }
 function finish(m: Match, bound = false) {
   const ko = m.events.find((e) => e.kind === "ko");
-  const w = m.f[m.winner!]!, how = ko?.kind === "ko" ? { hp: "was knocked out", "ring-out": "was pushed out of the ring", time: "had less health when time ran out" }[ko.how] : "";
-  const lost = bound ? "" : `${esc(m.f[m.winner ? 0 : 1]!.c.name)} ${how}.`;
+  const w = m.f.find((f) => f.team === m.winner && !f.down) ?? m.f[m.winner!]!, how = ko?.kind === "ko" ? { hp: "was knocked out", "ring-out": "was pushed out of the ring", time: "had less health when time ran out" }[ko.how] : "";
+  const lost = bound ? "" : `${esc(m.f[ko?.kind === "ko" ? ko.who : m.winner ? 0 : 1]!.c.name)} ${how}.`;
   if (trip && journey) { tripOver(m, bound, lost); return; }
   const you = versusOn ? mine : 0;
-  remember({ kind: versusOn ? "duel" : bots[0] ? "watched" : "practice", you: m.f[you]!.c.name, foe: m.f[1 - you]!.c.name, won: m.winner === you, how: ko?.kind === "ko" ? ko.how : "none" });
-  if (versusOn) { duelOver(m.winner === mine ? "You win" : `${versus.friend() ?? "Your friend"} wins`, `${esc(w.c.name)} wins. ${lost}`); return; }
+  const won = m.winner === m.f[you]!.team;
+  remember({ kind: versusOn ? "duel" : bots[0] ? "watched" : "practice", you: m.f[you]!.c.name, foe: m.f[foeOf(m, you)]!.c.name, won, how: ko?.kind === "ko" ? ko.how : "none" });
+  if (versusOn && wildBot) { duelOver(won ? "You win together" : `${w.c.name} wins`, `${esc(w.c.name)} ${won ? "stands" : "wins"}. ${lost}`); return; }
+  if (versusOn) { duelOver(won ? "You win" : `${versus.friend() ?? "Your friend"} wins`, `${esc(w.c.name)} wins. ${lost}`); return; }
   delete $("#result").dataset.verso;
   $("#result").innerHTML = `<div class="note paper"><h2>${esc(w.c.name)} wins</h2>${reaction({ kind: "versus" })}<p>${lost}</p>
     <div class="row"><button class="go" id="again">${icon("rotate-ccw")} Rematch</button><button id="pick">${icon("users")} Pick again</button></div></div>`;
@@ -1475,10 +1481,17 @@ const versus = mountVersus($("#friends"), {
   show: (el) => hideScreens(el),
   title: () => showTitle(),
   lineUp: () => journey?.party ?? null,
-  fight: (go, you, names) => {
+  fight: (go, you, names, kind) => {
     trip = null; shroudFoe = false; bindNote = ""; crowdView = false;
     mine = you; acc = 0; hitStop = 0;
-    const [a, b] = go.picks;
+    if (kind === "coop") {
+      const teams = coopTeams(go), wild = teams[0].length;
+      fight(teams[0][0]!, teams[1][0]!, "stadium", false, true, teams);
+      wildBot = bot(wild, go.seed);
+      faceUp(`${names.join(", ")} vs ${teams[1][0]!.name}`);
+      return;
+    }
+    const [a, b] = go.picks as [typeof go.picks[0], typeof go.picks[0]];
     fight(atLevel(creature(a.c), a.lv), atLevel(creature(b.c), b.lv), "stadium", false, true);
     faceUp(`${names[0]} vs ${names[1]}`);
   },
@@ -1904,7 +1917,8 @@ function frame(now: number) {
     if (hitStop > 0) hitStop -= dt; else acc += dt;
     while (acc >= 1 / HZ && !m.over && hitStop <= 0) {
       const cur = m;
-      const both: [Input, Input] | null = step ? step.next(() => (paused || journalOpen ? IDLE : playerInput())) : [bots[0] ? bots[0](cur) : playerInput(), bots[1] ? bots[1](cur) : IDLE];
+      const seats = step ? step.next(() => (paused || journalOpen ? IDLE : playerInput())) : null;
+      const both: Input[] | null = step ? seats && (wildBot ? [...seats, wildBot(cur)] : seats) : [bots[0] ? bots[0](cur) : playerInput(), bots[1] ? bots[1](cur) : IDLE];
       if (!both) { acc = Math.min(acc, 0.25); break; } // the friend's input isn't in yet: wait a frame, never guess
       live.step(both);
       moveFx.events(cur, cur.events);
@@ -2003,6 +2017,7 @@ else if (params.get("world") === "1") { const a = STARTERS.find((s) => s === par
 else if (params.get("a") && params.get("b")) start(pickA, pickB, skinSel.value, params.get("watch") === "1");
 else if (params.get("versus") !== null) pages.show($("#select"));
 else if (duelCode(location.search)) versus.enter(duelCode(location.search)!);
+else if (coopCode(location.search)) versus.enter(coopCode(location.search)!, "coop");
 else if (params.get("vs") === "1") versus.open();
 else showTitle();
 // ?scene=<name>&t=<seconds> (@rustybuns/util/director): one of the director's scenes over a fight (the a and b of the
