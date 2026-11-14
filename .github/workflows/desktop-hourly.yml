@@ -3,7 +3,8 @@
 # built and started on every Mac and Linux runner (scripts/ci-apps.ts smoke), codeSplitter's whole suite with its slowest
 # tests sorted (scripts/slowest.ts), every other app's suite and the packages' tests. Then scripts/rings.ts writes a
 # ring/hourly status (success or failure) on the SHA it tested and, on green, moves refs/ring/hourly there (that move
-# waits on MANUAL RUN #4495 for its permission and only logs until then).
+# waits on MANUAL RUN #4495 for its permission and only logs until then). Each smoke row saves the binary it built as the
+# artifact ring-<sha>-<app>-<target> for 7 days, so `bun scripts/rings.ts rollback` goes back to a green build in seconds (#4497).
 # A failure opens (or comments on) one issue labelled ci-hourly for triage, with the commits since the last green;
 # a PR is never held for it.
 name: desktop-hourly
@@ -84,6 +85,14 @@ jobs:
         working-directory: .
         timeout-minutes: 6
       - run: ${{ matrix.smoke }}
+      # The saved build (#4497): the binary this row just built and ran, kept by SHA so a rollback downloads it
+      # (`bun scripts/rings.ts rollback`) instead of rebuilding. Only SHAs the ring marks green are ever picked.
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ring-${{ github.sha }}-${{ matrix.app }}-${{ matrix.target }}
+          path: apps/${{ matrix.app }}/dist/${{ matrix.app }}-*
+          if-no-files-found: warn
+          retention-days: 7
 
   suite:
     needs: plan

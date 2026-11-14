@@ -18,6 +18,10 @@ and tells the PR's worker, and Mervin opens a revert of that one commit if no fi
 State: a `ring/<name>` commit status on each SHA, refs moved only by the ring workflows. `bun run rings` prints one
 line per ring.
 
+Saved builds (#4497): each hourly smoke row keeps the binary it built as the Actions artifact
+`ring-<sha>-<app>-<target>` for 7 days (free on a public repo, no tags or releases). `bun scripts/rings.ts rollback
+<ring> <app> <target>` downloads the newest green build older than the ring's current one: a download, not a rebuild.
+
 ## Build order (one PR each, off `main`)
 
 1. `desktop-hourly.yml` skips when `main` hasn't moved, sweeps every app, writes `ring/hourly`, moves the ref on green.
