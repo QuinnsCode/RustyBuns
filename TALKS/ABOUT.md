@@ -38,3 +38,10 @@ MythBusters: curious, hands-on, human, not a product pitch.
    room, including how the game checks the token.
 9. **Ship It.** How code gets from an agent to production: PR tests, the builder Mac, release rings, and the owner
    deploying.
+
+## Slide drafts
+
+Talk 1 slide tables live in the doc's "Talk 1 slides" tab. Ten drafts of each slide, one style per letter (A to J), are in
+[drafts/](drafts/); `drafts/talk1-point1.html` is published as https://claude.ai/artifact/9J1LWKbxnYYewFTxdPc6MM
+(capabilities `db` and `user`), where the owner picks one draft per slide. The picks are in its `picks` collection,
+one document per slide (`t1-s1` to `t1-s6`): `{ style, note }`.
