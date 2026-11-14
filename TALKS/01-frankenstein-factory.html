@@ -16,7 +16,7 @@
   <h1>The Frankenstein Code Factory</h1>
   <p class="lede">How a place that stores code learned to run itself, copy itself and change itself.</p>
   <p class="aside">It's alive. It also asks permission before it goes outside.</p>
-  <div class="notes">Open with the picture, not the parts. If someone in the room only remembers one slide, it should be the loop (slide 9).</div>
+  <div class="notes">Open with the picture, not the parts. If someone in the room only remembers one slide, it should be the factory loop (slide 14).</div>
 </section>
 
 <section class="slide">
@@ -57,6 +57,96 @@
   </ul>
   <p class="aside">Mervin is not a person. Mervin does have a badge, a track record and strong opinions about tabs.</p>
   <div class="notes">This is the "cute specific" that is safe to share: line identity as the unit of collaboration. Do not go into how the ids are made or stored.</div>
+</section>
+
+<section class="slide">
+  <div class="kicker">Name tags pay off</div>
+  <h2>Edit by shape, so files move together</h2>
+  <p class="lede">codeSplitter knows the shape of the code, not only its lines. One change lands in every file that needs it, in the form each file needs.</p>
+  <div class="diagram" role="img" aria-label="Three steps in a row: edit by shape, the files move as one group, then test only what that group touches, at the PR and at each ring.">
+    <svg viewBox="0 0 900 190">
+      <defs><marker id="ah-shape" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="d-head" d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <rect class="d-hot" x="10" y="40" width="250" height="110" rx="14"/>
+      <text class="d-text" x="135" y="88" text-anchor="middle">1. Edit by shape</text>
+      <text class="d-small" x="135" y="114" text-anchor="middle">one change, many files</text>
+      <rect class="d-box" x="325" y="40" width="250" height="110" rx="14"/>
+      <text class="d-text" x="450" y="88" text-anchor="middle">2. Files move as a group</text>
+      <text class="d-small" x="450" y="114" text-anchor="middle">we know what changed together</text>
+      <rect class="d-box" x="640" y="40" width="250" height="110" rx="14"/>
+      <text class="d-text" x="765" y="88" text-anchor="middle">3. Test what it touches</text>
+      <text class="d-small" x="765" y="114" text-anchor="middle">at the PR, then at each ring</text>
+      <path class="d-arrow" marker-end="url(#ah-shape)" d="M264,95 L318,95"/>
+      <path class="d-arrow" marker-end="url(#ah-shape)" d="M579,95 L633,95"/>
+    </svg>
+  </div>
+  <p class="aside">Like changing a family's surname. You do not hunt through every letter in the house by hand.</p>
+  <div class="notes">This is the chain: polymorphic edits mean we know which files belong together, and that means we can test the group instead of everything. Say what, not how.</div>
+</section>
+
+<section class="slide">
+  <div class="kicker">The trunk</div>
+  <h2>Branch off main. Squash back. One dot per job.</h2>
+  <div class="diagram" role="img" aria-label="A long line, main, with three short branches. Each branch leaves main, gets checked, and joins main again as one single dot.">
+    <svg viewBox="0 0 900 230">
+      <path class="d-arrow" style="stroke:var(--ink)" d="M20,170 L860,170"/>
+      <path class="d-head" style="fill:var(--ink)" d="M858,162 L876,170 L858,178 z"/>
+      <text class="d-text" x="20" y="208">main</text>
+      <path class="d-arrow" d="M70,170 C70,110 100,80 140,80 L230,80 C270,80 290,120 290,170"/>
+      <circle class="d-box" cx="140" cy="80" r="8"/><circle class="d-box" cx="180" cy="80" r="8"/><circle class="d-box" cx="220" cy="80" r="8"/>
+      <circle class="d-hot" cx="290" cy="170" r="14"/>
+      <path class="d-arrow" d="M330,170 C330,120 350,100 390,100 L460,100 C500,100 520,130 520,170"/>
+      <circle class="d-box" cx="410" cy="100" r="8"/><circle class="d-box" cx="450" cy="100" r="8"/>
+      <circle class="d-hot" cx="520" cy="170" r="14"/>
+      <path class="d-arrow" d="M560,170 C560,100 590,60 640,60 L720,60 C760,60 780,110 780,170"/>
+      <circle class="d-box" cx="650" cy="60" r="8"/><circle class="d-box" cx="690" cy="60" r="8"/><circle class="d-box" cx="730" cy="60" r="8"/>
+      <circle class="d-hot" cx="780" cy="170" r="14"/>
+      <text class="d-small" x="290" y="208" text-anchor="middle">one job</text>
+      <text class="d-small" x="520" y="208" text-anchor="middle">one job</text>
+      <text class="d-small" x="780" y="208" text-anchor="middle">one job</text>
+    </svg>
+  </div>
+  <ul>
+    <li>Every helper starts from the trunk, on its own branch. The PR checks its one feature.</li>
+    <li>It joins main as one squashed change. So each dot on main is a whole job: easy to find, easy to undo.</li>
+  </ul>
+  <p class="aside">A tree with one trunk and no tangled vines. The gardener likes it that way.</p>
+</section>
+
+<section class="slide">
+  <div class="kicker">The crew</div>
+  <h2>No clash, a quick catch, a sharp eye</h2>
+  <div class="cards">
+    <div class="card"><h3>Mervin</h3><p>Sees two helpers heading for the same lines and puts them in order. The clash never happens.</p><p class="pic"><b>Like:</b> an air traffic controller.</p></div>
+    <div class="card"><h3>Ester</h3><p>A test goes red. Ester finds which change did it and tells that helper, often before anyone notices.</p><p class="pic"><b>Like:</b> a detective who solves it before lunch.</p></div>
+    <div class="card"><h3>Dexter</h3><p>Watches the helpers work. Spots the chores they do by hand again and again, and asks for a tool.</p><p class="pic"><b>Like:</b> a foreman with a notebook.</p></div>
+  </div>
+  <p class="aside">Mervin prevents the fight. Ester solves the crime. Dexter writes the memo.</p>
+</section>
+
+<section class="slide">
+  <div class="kicker">Testing in one big repo</div>
+  <h2>We cannot test everything, all the time</h2>
+  <p class="lede">One repo holds dozens of apps. So a change tests what it touches now, and the rest gets tested on a clock, in wider and wider rings.</p>
+  <div class="diagram" role="img" aria-label="Four rings around a centre. The centre is the PR, tested in minutes. Then every hour, then every night, then every week, when the owner says yes and it reaches everyone.">
+    <svg viewBox="0 0 900 300">
+      <circle class="d-box" cx="300" cy="150" r="140"/>
+      <circle class="d-box" cx="300" cy="150" r="104"/>
+      <circle class="d-box" cx="300" cy="150" r="68"/>
+      <circle class="d-hot" cx="300" cy="150" r="32"/>
+      <text class="d-text" x="300" y="156" text-anchor="middle">PR</text>
+      <text class="d-small" x="300" y="106" text-anchor="middle">hour</text>
+      <text class="d-small" x="300" y="70" text-anchor="middle">night</text>
+      <text class="d-small" x="300" y="34" text-anchor="middle">week</text>
+      <text class="d-text" x="490" y="80">The PR: the feature works</text>
+      <text class="d-small" x="490" y="104">minutes, only what it touched</text>
+      <text class="d-text" x="490" y="150">The sweeps: everything else</text>
+      <text class="d-small" x="490" y="174">every hour, every night, every week</text>
+      <text class="d-text" x="490" y="220">The express lane</text>
+      <text class="d-small" x="490" y="244">one change, every sweep right now</text>
+    </svg>
+  </div>
+  <p class="aside">Taste the spoonful now. Taste the whole pot tonight.</p>
+  <div class="notes">Talk 9 has the rings in full. Here the point is the chain: shape edits, then file groups, then smart tests.</div>
 </section>
 
 <section class="slide">
@@ -149,8 +239,42 @@
 </section>
 
 <section class="slide">
+  <div class="kicker">The factory</div>
+  <h2>Tools that make tools that make things</h2>
+  <p class="lede">Each turn of the loop leaves the shop better stocked. Some turns make apps. Some make the tools that make apps.</p>
+  <div class="diagram" role="img" aria-label="A loop of four steps around the words one repo of primitives: helpers build things, Dexter spots a chore they repeat, it becomes a shared tool, the next helper uses it and builds faster, and the loop goes on.">
+    <svg viewBox="0 0 900 400">
+      <defs><marker id="ah-fac" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="d-head" d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <rect class="d-hot" x="330" y="160" width="240" height="80" rx="40"/>
+      <text class="d-text" x="450" y="196" text-anchor="middle">One repo</text>
+      <text class="d-small" x="450" y="220" text-anchor="middle">of primitives</text>
+      <rect class="d-box" x="330" y="14" width="240" height="74" rx="14"/>
+      <text class="d-text" x="450" y="46" text-anchor="middle">1. Helpers build</text>
+      <text class="d-small" x="450" y="70" text-anchor="middle">apps, fixes, tools</text>
+      <rect class="d-box" x="630" y="163" width="250" height="74" rx="14"/>
+      <text class="d-text" x="755" y="195" text-anchor="middle">2. Dexter spots a repeat</text>
+      <text class="d-small" x="755" y="219" text-anchor="middle">a chore done by hand</text>
+      <rect class="d-box" x="330" y="312" width="240" height="74" rx="14"/>
+      <text class="d-text" x="450" y="344" text-anchor="middle">3. It becomes a tool</text>
+      <text class="d-small" x="450" y="368" text-anchor="middle">a new shared brick</text>
+      <rect class="d-box" x="20" y="163" width="250" height="74" rx="14"/>
+      <text class="d-text" x="145" y="195" text-anchor="middle">4. The next helper uses it</text>
+      <text class="d-small" x="145" y="219" text-anchor="middle">and builds faster</text>
+      <path class="d-arrow" marker-end="url(#ah-fac)" d="M574,52 C680,60 750,100 755,157"/>
+      <path class="d-arrow" marker-end="url(#ah-fac)" d="M755,241 C750,300 680,345 576,349"/>
+      <path class="d-arrow" marker-end="url(#ah-fac)" d="M326,349 C220,345 150,300 145,243"/>
+      <path class="d-arrow" marker-end="url(#ah-fac)" d="M145,159 C150,100 220,60 324,52"/>
+      <path class="d-arrow" style="stroke-dasharray:4 6" d="M450,92 L450,156"/>
+      <path class="d-arrow" style="stroke-dasharray:4 6" d="M450,244 L450,308"/>
+    </svg>
+  </div>
+  <p class="aside">The robot that builds the robot that builds the toaster. We are on toaster number forty.</p>
+  <div class="notes">This is the slide. Mervin keeps the floor clear, Ester catches what breaks, Dexter turns repeated work into tools, and every tool lands in the one repo for the next helper.</div>
+</section>
+
+<section class="slide">
   <div class="kicker">Big word, small idea</div>
-  <h2>"Polymorphic" means one thing, many shapes</h2>
+  <h2>Portable: one office, many homes</h2>
   <div class="cards">
     <div class="card"><h3>On your laptop</h3><p>One file. Your code stays on your machine.</p></div>
     <div class="card"><h3>In a box on a server</h3><p>The same file, sealed in a sandbox, far away.</p></div>
@@ -178,12 +302,13 @@
   <h2>What is alive, and what is still on the table</h2>
   <div class="cards">
     <div class="card"><span class="tag live">Live</span><h3 style="margin-top:12px">codeSplitter</h3><p>Lines with name tags, live edits, Mervin merges.</p></div>
-    <div class="card"><span class="tag live">Live</span><h3 style="margin-top:12px">The office on our engine</h3><p>One file, the forest skin, the monsters at their desks.</p></div>
-    <div class="card"><span class="tag live">Live</span><h3 style="margin-top:12px">The office in a box</h3><p>Sealed room, the Allow or Deny card.</p></div>
+    <div class="card"><span class="tag live">Live</span><h3 style="margin-top:12px">The office, on our engine, in a box</h3><p>One file, the forest skin, the sealed room with its Allow or Deny card.</p></div>
+    <div class="card"><span class="tag live">Live</span><h3 style="margin-top:12px">The crew</h3><p>Mervin orders the work, Ester names what broke, Dexter turns chores into tools.</p></div>
+    <div class="card"><span class="tag oven">In the oven</span><h3 style="margin-top:12px">Release rings</h3><p>Hourly, nightly and weekly sweeps run. The express lane is next.</p></div>
     <div class="card"><span class="tag oven">In the oven</span><h3 style="margin-top:12px">The office inside codeSplitter</h3><p>Its floor and desks run on a test stage. Not public yet.</p></div>
     <div class="card"><span class="tag plan">Next</span><h3 style="margin-top:12px">Helpers in the cloud</h3><p>Each helper in its own throwaway box, no laptop needed.</p></div>
   </div>
-  <div class="notes">Keep this slide current. Source of truth: apps/agent-office/MOVE.md and issue #3423.</div>
+  <div class="notes">Keep this slide current. Source of truth: apps/agent-office/MOVE.md and issue #3423; rings in notes/RELEASE_RINGS.md, express lane #4586.</div>
 </section>
 
 <section class="slide">
