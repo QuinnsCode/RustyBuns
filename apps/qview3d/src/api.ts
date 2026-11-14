@@ -30,16 +30,21 @@ export const EQOSYS = "https://eqosys.qntbr.com";
 /** An eqosys studio's id, as it sits in a key: a UUID, or the house studio's "qntbr". */
 export const STUDIO = /^[A-Za-z0-9-]{1,64}$/;
 
+/** A site that may embed an org: its origin (https://shop.example), or "*" for any page. */
+const ORIGIN = /^(\*|https?:\/\/[^/\s]+)$/;
+
 /**
- * orgs/<org>/org.json: which pages may embed the widget and sign uploads ("*" allows any: the demo org), the
- * SHA-256 of each admin key (scripts use them for samples and product photos), how many samples the org has paid for,
- * and the eqosys studio that runs it: that studio's owners and admins manage it signed in (orgs.ts).
+ * An org's settings (D1 `orgs`, settings.ts): which pages may embed the widget and sign uploads ("*" allows any: the
+ * demo org), the SHA-256 of each admin key (scripts use them for samples and product photos), how many samples the org
+ * has paid for, the eqosys studio that runs it (its owners and admins manage it signed in, orgs.ts), and whether it is
+ * the public demo, which keeps no files.
  */
 export const Org = obj({
   origins: arr(str(200), 50),
   admins: opt(arr(str(64, { re: SHA }), 20)),
   samples: opt(int(0, 10_000)),
   studio: opt(str(64, { re: STUDIO })),
+  readOnly: opt(bool()),
 });
 export type Org = Of<typeof Org>;
 
@@ -60,13 +65,42 @@ export const PRINT_CM: Record<Made, Partial<Record<ZoneName, PrintCm>>> = {
   racerback: { front: { w: 24, h: 28 }, back: { w: 24, h: 26 } },
 };
 
+/** Where a picture sits in its zone: 0..1 across and up, its size against the zone, and its turn. */
+export const Placement = obj({ u: num(0, 1), v: num(0, 1), scale: num(0.05, 1), rotation: num(-Math.PI, Math.PI) });
+export type Placement = Of<typeof Placement>;
+
+/** A product's settings (D1 `products`, settings.ts): everything the widget reads when it loads one. */
+export const Product = obj({
+  name: str(120),
+  model: oneOf(ANY_MODEL),
+  /** A custom model's GLB (orgs/<org>/models/<id>.glb), served from /r/. */
+  glb: opt(str(300)),
+  /** The colours on offer. A custom model keeps its own texture and offers none. */
+  colors: arr(str(7, { re: HEX }), 24),
+  /** Its print zones' real sizes, over the defaults in PRINT_CM. */
+  zones: opt(ZoneSizes),
+  /** The print zones switched on, of those its model has (zonesOf). Unset: all of them. */
+  print: opt(arr(oneOf(ZONES), 3, { min: 1 })),
+  /** Where a new picture lands before the shopper moves it. Unset: the widget's own middle. */
+  place: opt(Placement),
+});
+export type Product = Of<typeof Product>;
+
+/** The zones a product prints on: its model's, less any it switched off. */
+export const printZones = (p: Pick<Product, "model" | "print">): readonly ZoneName[] =>
+  zonesOf(p.model).filter((z) => !p.print || p.print.includes(z));
+
 /** PUT /api/orgs/<org> (QView3D's owner): make the org or change it. Its admin keys stay as they are. */
 export const OrgSetup = obj({
   studio: str(64, { re: STUDIO }),
-  origins: arr(str(200, { re: /^(\*|https?:\/\/[^/\s]+)$/ }), 50),
+  origins: arr(str(200, { re: ORIGIN }), 50),
   samples: int(0, 10_000),
 });
 export type OrgSetup = Of<typeof OrgSetup>;
+
+/** PUT /api/orgs/<org>/sites (the shop's owner or admin): the pages that may embed the widget. */
+export const Sites = obj({ origins: arr(str(200, { re: ORIGIN }), 50, { min: 1 }) });
+export type Sites = Of<typeof Sites>;
 
 /** GET /api/mine: the signed-in person's shops (a studio, and its org once the owner made one), and whether they are QView3D's owner. */
 export const Mine = obj({
@@ -80,28 +114,15 @@ export const Mine = obj({
       origins: arr(str(200), 50),
       samples: int(0, 10_000),
       keys: int(0, 20),
-      products: arr(obj({ id: str(63, { re: ID }), name: str(120), model: oneOf(ANY_MODEL), colors: arr(str(7), 24) }), 200),
+      products: arr(obj({ id: str(63, { re: ID }), product: Product }), 200),
     })),
   }), 20),
 });
 export type Mine = Of<typeof Mine>;
 
-/** POST /api/orgs/<org>/keys: a new admin key for a script, shown this once (org.json keeps its SHA-256). */
+/** POST /api/orgs/<org>/keys: a new admin key for a script, shown this once (the org keeps its SHA-256). */
 export const KeyReply = obj({ key: str(200) });
 export type KeyReply = Of<typeof KeyReply>;
-
-/** orgs/<org>/products/<product>.json. */
-export const Product = obj({
-  name: str(120),
-  model: oneOf(ANY_MODEL),
-  /** A custom model's GLB (orgs/<org>/models/<id>.glb), served from /r/. */
-  glb: opt(str(300)),
-  /** The colours on offer. A custom model keeps its own texture and offers none. */
-  colors: arr(str(7, { re: HEX }), 24),
-  /** Its print zones' real sizes, over the defaults in PRINT_CM. */
-  zones: opt(ZoneSizes),
-});
-export type Product = Of<typeof Product>;
 
 /** POST /api/orgs/<org>/uploads: "I have this file, where do I put it?" */
 export const SignRequest = obj({
@@ -179,7 +200,7 @@ export const PrintSheet = obj({
   cm: PrintCm,
   px: obj({ w: int(1, 20_000), h: int(1, 20_000) }),
   original: str(400),
-  at: obj({ u: num(0, 1), v: num(0, 1), scale: num(0.05, 1), rotation: num(-Math.PI, Math.PI) }),
+  at: Placement,
 });
 export type PrintSheet = Of<typeof PrintSheet>;
 

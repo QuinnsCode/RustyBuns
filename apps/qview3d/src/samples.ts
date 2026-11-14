@@ -8,8 +8,8 @@
 //                                                        into R2 and writes the product, so the widget can load it
 //   POST /api/orgs/<org>/models        {name, scan}     a model the shop's iPhone scanned (kind "scan"): a product now (201)
 //
-// Every sample costs Meshy credits, so three things stand in front of one: the admin key (org.json keeps its
-// SHA-256), the org's allowance (org.json `samples` plus the packs it bought, billing.ts), and a ceiling on samples a day across every org
+// Every sample costs Meshy credits, so three things stand in front of one: the admin key (the org keeps its
+// SHA-256), the org's allowance (its `samples` setting plus the packs it bought, billing.ts), and a ceiling on samples a day across every org
 // (MESHY_DAILY). Progress lives in R2 next to the model; the admin page's polling drives it, so there is no
 // queue or workflow to keep alive.
 import { b64, hex, sha256 } from "@rustybuns/util/bytes";
@@ -17,7 +17,8 @@ import { int, obj } from "@rustybuns/util/guard";
 import { privateJson, readJson } from "@rustybuns/util/http";
 import { Sample, SampleRequest, type Org, type Product } from "./api.ts";
 import { allowanceOf } from "./billing.ts";
-import { meshyDayKey, productKey, SAMPLE_ID, sampleGlb, sampleKey } from "./layout.ts";
+import { meshyDayKey, SAMPLE_ID, sampleGlb, sampleKey } from "./layout.ts";
+import { putProduct } from "./settings.ts";
 import { MESHY_BASE, MeshyError, sampleTask, startSample, type MeshyTask } from "./meshy.ts";
 import type { Env } from "./worker.ts";
 
@@ -103,7 +104,7 @@ async function fileScan(env: Env, org: string, name: string, key: string, h: Rec
   if (!isGlb(new Uint8Array(await new Response(o.body).arrayBuffer()))) return fail("that scan is not a GLB (glTF 2.0 binary)", 400);
   const id = sha.slice(0, 24);
   const product: Product = { name, model: "custom", glb: key, colors: [] };
-  await env.BUCKET.put(productKey(org, id), JSON.stringify(product), { httpMetadata: { contentType: "application/json" } });
+  await putProduct(env, org, id, product);
   const s: Sample = { id, name, status: "ready", progress: 100, task: "scan", photos: [], created: Date.now(), glb: key, product: id };
   return privateJson(s satisfies Sample, 201, h);
 }
@@ -144,7 +145,7 @@ export async function sampleRoute(env: Env, org: string, id: string, h: Record<s
       const glb = sampleGlb(org, id);
       await env.BUCKET.put(glb, bytes, { httpMetadata: { contentType: "model/gltf-binary", cacheControl: IMMUTABLE } });
       const product: Product = { name: s.name, model: "custom", glb, colors: [] };
-      await env.BUCKET.put(productKey(org, id), JSON.stringify(product), { httpMetadata: { contentType: "application/json" } });
+      await putProduct(env, org, id, product);
       Object.assign(s, { status: "ready", progress: 100, glb, product: id });
     }
   } else {

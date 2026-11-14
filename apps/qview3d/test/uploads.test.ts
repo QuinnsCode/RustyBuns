@@ -8,6 +8,7 @@ import { join } from "node:path";
 import { hex } from "@rustybuns/util/bytes";
 import { DEMO_ADMIN, local } from "../src/local.ts";
 import { presignUrl } from "../src/sign.ts";
+import { putOrg } from "../src/settings.ts";
 
 setDefaultTimeout(15_000);
 
@@ -15,7 +16,7 @@ const dir = mkdtempSync(join(tmpdir(), "qview3d-"));
 let app: Awaited<ReturnType<typeof local>>;
 beforeAll(async () => {
   app = await local({ dir });
-  await app.bindings.BUCKET.put("orgs/acme/org.json", JSON.stringify({ origins: ["https://shop.acme.test"] }));
+  await putOrg(app.bindings, "acme", { origins: ["https://shop.acme.test"] });
 });
 afterAll(() => { app.stop(); rmSync(dir, { recursive: true, force: true }); });
 
@@ -82,10 +83,6 @@ describe("saving a design", () => {
     expect(await (await fetch(`${app.url}/api/orgs/demo/products/${product}`)).json()).toMatchObject({ model });
   });
 
-  test("products come from the org's folder", async () => {
-    const res = await fetch(`${app.url}/api/orgs/demo/products/cuff-beanie`);
-    expect(await res.json()).toMatchObject({ model: "beanie" });
-  });
 });
 
 describe("refused", () => {
@@ -117,10 +114,9 @@ describe("refused", () => {
     expect((await fetch(forged, { method: "PUT", headers: put.headers, body: new Uint8Array([1, 2, 3]) })).status).toBe(403);
   });
 
-  test("originals and org settings are not served", async () => {
+  test("originals are not served", async () => {
     const o = await upload("original", "image/png", new Uint8Array([4, 4]));
     expect((await fetch(`${app.url}/r/${o.key}`)).status).toBe(404);
-    expect((await fetch(`${app.url}/r/orgs/demo/org.json`)).status).toBe(404);
   });
 });
 

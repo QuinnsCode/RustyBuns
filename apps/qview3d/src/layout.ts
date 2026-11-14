@@ -1,9 +1,8 @@
 // Required Notice: Copyright (c) 2026 Ryan Quinn (QNTBR) (https://qntbr.com). PolyForm Noncommercial 1.0.0, see ../LICENSE.
 //
-// Where everything lives in the one R2 bucket. Every org gets a folder, split by kind, never by shopper or date:
+// Where every file lives in the one R2 bucket (settings, the org and its products, are in D1: settings.ts). Every org
+// gets a folder, split by kind, never by shopper or date:
 //
-//   orgs/<org>/org.json                  which sites may embed the widget and upload (origins), set at onboarding
-//   orgs/<org>/products/<product>.json   a product: which model, which colours, its print zone
 //   orgs/<org>/originals/<sha>.<ext>     the shopper's file as uploaded: the print source. Never served by /r/
 //   orgs/<org>/textures/<sha>.<ext>      the same picture cut down to texture size: served, cached a year
 //   orgs/<org>/snapshots/<sha>.<ext>     exported renders of a design: served, cached a year
@@ -39,8 +38,6 @@ export const KIND_NAMES = Object.keys(KINDS) as Kind[];
 const EXT: Record<string, string> = { "image/png": "png", "image/jpeg": "jpg", "image/webp": "webp", "model/gltf-binary": "glb" };
 
 export const orgRoot = (org: string) => `orgs/${org}/`;
-export const orgKey = (org: string) => `orgs/${org}/org.json`;
-export const productKey = (org: string, product: string) => `orgs/${org}/products/${product}.json`;
 export const designKey = (org: string, id: string) => `orgs/${org}/designs/${id}.json`;
 export const sampleKey = (org: string, id: string) => `orgs/${org}/models/${id}.json`;
 export const sampleGlb = (org: string, id: string) => `orgs/${org}/models/${id}.glb`;
@@ -50,7 +47,7 @@ export const meshyDayKey = (d = new Date()) => `meta/meshy/${d.toISOString().sli
 export const SAMPLE_ID = /^[0-9a-f]{24}$/;
 export const fileKey = (org: string, kind: Kind, sha: string, type: string) => `orgs/${org}/${kind}s/${sha}.${EXT[type] ?? "bin"}`;
 
-/** Whether `/r/<key>` may hand this key out: textures, snapshots, designs, sample models and scans. Originals, photos and org settings stay private. */
+/** Whether `/r/<key>` may hand this key out: textures, snapshots, designs, sample models and scans. Originals and photos stay private. */
 export const servable = (key: string) =>
   /^orgs\/[a-z0-9][a-z0-9-]{0,62}\/models\/[0-9a-f]{24}\.glb$/.test(key) ||
   /^orgs\/[a-z0-9][a-z0-9-]{0,62}\/scans\/[0-9a-f]{64}\.glb$/.test(key) ||

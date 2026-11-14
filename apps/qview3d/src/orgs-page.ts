@@ -5,7 +5,8 @@
 // a studio from its id, which the friend copies from this same page.
 import { eqosys } from "@rustybuns/util/eqosys";
 import { getJson } from "@rustybuns/util/http";
-import { APP, EQOSYS, KeyReply, Mine, MODELS } from "./api.ts";
+import { APP, EQOSYS, KeyReply, Mine, MODELS, ZONES, zonesOf, type Model, type Sites, type ZoneName } from "./api.ts";
+import { fieldsOf, productBody, type ProductFields } from "./product-form.ts";
 import { problem } from "./widget/upload.ts";
 
 /** Where eqosys sends people back: this page on the live Worker (eqosys APPS `returns`). */
@@ -66,17 +67,66 @@ function ownerCard(reload: () => Promise<void>) {
   return el("section", { class: "card" }, el("div", { class: "head" }, el("h1", { textContent: "Make a shop" }), el("p", { class: "sub", textContent: "For a friend's studio: they copy its id from this page." })), el("div", { class: "body" }, form));
 }
 
+type Row = NonNullable<Mine["shops"][number]["org"]>["products"][number];
+
+/** Add a product, or change one: `edit(row)` fills the form with a saved one. Every field goes through productBody. */
 function productForm(org: string, reload: () => Promise<void>) {
   const id = el("input", { type: "text", placeholder: "trucker-cap", spellcheck: false, required: true, pattern: "[a-z0-9][a-z0-9-]{0,62}" });
   const name = el("input", { type: "text", placeholder: "Trucker cap", required: true, maxLength: 120 });
-  const model = el("select", {}, ...MODELS.map((m) => el("option", { value: m, textContent: m })));
+  const kinds: Model[] = [...MODELS, "custom"];
+  const model = el("select", {}, ...kinds.map((m) => el("option", { value: m, textContent: m === "custom" ? "your own model (a sample)" : m })));
   const colors = el("input", { type: "text", value: "#1f2937, #f4efe6, #b91c1c", spellcheck: false });
-  const form = el("form", {}, el("div", { class: "row" }, field("Product id", id), field("Name", name)), el("div", { class: "row" }, field("Kind", model), field("Colours", colors)),
-    el("button", { class: "go", type: "submit", textContent: "Save the product" }));
+  const kind = (): Model => kinds.find((k) => k === model.value) ?? "cap";
+  const swatches = el("span", { class: "swatches" });
+  const zones = el("div", { class: "zones" });
+  const pct = (placeholder: string) => el("input", { type: "number", min: "0", max: "100", step: "1", placeholder });
+  const across = pct("50"), up = pct("50"), size = pct("40");
+  let keep: ProductFields["keep"];
+  let ticked: ZoneName[] = [...ZONES];
+
+  const drawSwatches = () => swatches.replaceChildren(...colors.value.split(/[\s,]+/).filter(Boolean).map((c) => { const i = el("i", { title: c }); i.style.background = c; return i; }));
+  const drawZones = () => zones.replaceChildren(...zonesOf(kind()).map((z) => {
+    const box = el("input", { type: "checkbox", checked: ticked.includes(z) });
+    box.onchange = () => { ticked = box.checked ? [...ticked, z] : ticked.filter((t) => t !== z); };
+    return el("label", { class: "zone" }, box, ` ${z.replace("-", " ")}`);
+  }));
+  colors.oninput = drawSwatches;
+  model.onchange = () => { ticked = [...ZONES]; drawZones(); };
+  drawSwatches(); drawZones();
+
+  const save = el("button", { class: "go", type: "submit", textContent: "Save the product" });
+  const form = el("form", {},
+    el("div", { class: "row" }, field("Product id", id), field("Name", name)),
+    el("div", { class: "row" }, field("Kind", model), field("Colours, first one shown first", colors)), swatches,
+    el("fieldset", {}, el("legend", { textContent: "Prints on" }), zones),
+    el("fieldset", {}, el("legend", { textContent: "Where a new picture lands, in % (blank: the middle)" }),
+      el("div", { class: "row three" }, field("Across", across), field("Up", up), field("Size", size))),
+    save);
   form.onsubmit = act(async () => {
-    const list = colors.value.split(/[\s,]+/).filter(Boolean);
-    await send(`/api/orgs/${org}/products/${encodeURIComponent(id.value.trim())}`, "PUT", { name: name.value.trim(), model: model.value, colors: list });
+    const fields: ProductFields = { name: name.value, model: kind(), colors: colors.value, print: ticked, across: across.value, up: up.value, size: size.value, keep };
+    await send(`/api/orgs/${org}/products/${encodeURIComponent(id.value.trim())}`, "PUT", productBody(fields));
     say(`Saved ${name.value.trim()}.`);
+    await reload();
+  });
+  const edit = (row: Row) => {
+    const f = fieldsOf(row.product);
+    id.value = row.id; name.value = f.name; model.value = f.model; colors.value = f.colors;
+    across.value = f.across; up.value = f.up; size.value = f.size; keep = f.keep; ticked = f.print;
+    drawSwatches(); drawZones();
+    save.textContent = `Save ${f.name}`;
+    form.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+  return { form, edit };
+}
+
+/** The shop's own sites: the pages that may embed the widget. */
+function sitesForm(org: string, origins: string[], reload: () => Promise<void>) {
+  const sites = el("textarea", { rows: 3, value: origins.join("\n"), required: true });
+  const form = el("form", {}, field("Sites, one a line (https://yourshop.com)", sites), el("button", { class: "go", type: "submit", textContent: "Save the sites" }));
+  form.onsubmit = act(async () => {
+    const list = sites.value.split(/\s+/).filter(Boolean).map((s) => s === "*" ? s : new URL(s).origin);
+    await send(`/api/orgs/${org}/sites`, "PUT", { origins: list } satisfies Sites);
+    say("Saved the sites.");
     await reload();
   });
   return form;
@@ -92,13 +142,23 @@ function shopCard(shop: Mine["shops"][number], reload: () => Promise<void>) {
     return card;
   }
   body.append(el("p", { class: "sub", textContent: `Org ${o.id}. Sites: ${o.origins.join(", ")}. Samples: ${o.samples}. Script keys: ${o.keys}.` }));
-  const list = el("ul", { class: "products" }, ...o.products.map((p) =>
-    el("li", {}, el("b", { textContent: p.name }), ` ${p.model}`, el("span", { class: "swatches" }, ...p.colors.map((c) => { const i = el("i", { title: c }); i.style.background = c; return i; })))));
+  const editor = runs ? productForm(o.id, reload) : null;
+  const list = el("ul", { class: "products" }, ...o.products.map((row) => {
+    const p = row.product;
+    const li = el("li", {}, el("b", { textContent: p.name }), ` ${p.model}`, el("span", { class: "swatches" }, ...p.colors.map((c) => { const i = el("i", { title: c }); i.style.background = c; return i; })));
+    if (editor) {
+      const change = el("button", { class: "copy", type: "button", textContent: "Change" });
+      change.onclick = () => editor.edit(row);
+      li.append(change);
+    }
+    return li;
+  }));
   body.append(o.products.length ? list : el("p", { class: "sub", textContent: "No products yet." }));
   const first = o.products[0]?.id ?? "your-product";
   body.append(copyBox("Paste into your product page", `<script type="module" src="${location.origin}/v1/qview3d.js"></script>\n<qview-3d org="${o.id}" product="${first}"></qview-3d>`));
-  if (!runs) return card;
-  body.append(el("h2", { textContent: "Add or change a product" }), productForm(o.id, reload));
+  if (!editor) return card;
+  body.append(el("h2", { textContent: "Add or change a product" }), editor.form);
+  body.append(el("h2", { textContent: "Your sites" }), sitesForm(o.id, o.origins, reload));
   const key = el("button", { class: "copy", type: "button", textContent: "New script key" });
   const shown = el("div");
   key.onclick = act(async () => {
