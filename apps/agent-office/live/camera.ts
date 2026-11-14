@@ -3,24 +3,30 @@
 // lines older than the retention the person picked (a day, 3 days, a week, a month) go too.
 import { appendFileSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { isRecord } from "@rustybuns/util/guard";
+import { check, maybe, num, obj, oneOf, or, raw, said, str, type Of } from "@rustybuns/util/guard";
+import { parseJson } from "@rustybuns/util/http";
 
 export const KEEP_DAYS = [1, 3, 7, 30] as const;
-export type Camera = { maxMb: number; keepDays: (typeof KEEP_DAYS)[number] };
+/** The log's settings, from a file or the form: anything missing is the default, anything wrong is refused. */
+export const Camera = obj({
+  maxMb: or(said(num(Number.MIN_VALUE, 10_000), "the log's size should be a number of MB above 0"), 10),
+  keepDays: or(said(oneOf(KEEP_DAYS), `keep the log for ${KEEP_DAYS.join(", ")} days`), 3),
+});
+export type Camera = Of<typeof Camera>;
 export const DEFAULT_CAMERA: Camera = { maxMb: 10, keepDays: 3 };
+/** Just the log settings out of a whole permission set. */
+const BoxLog = maybe(obj({ log: raw }));
 
-export type Entry = { at: number; kind: "outbound" | "home"; who: string; what: string; verdict: "allowed" | "denied" | "timed out" | "listed" };
+/** One line of the log. */
+export const Entry = obj({
+  at: num(0, Number.MAX_SAFE_INTEGER), kind: oneOf(["outbound", "home"]), who: str(10_000, { min: 0 }), what: str(10_000, { min: 0 }),
+  verdict: oneOf(["allowed", "denied", "timed out", "listed"]),
+});
+export type Entry = Of<typeof Entry>;
 
 
-/** The log's settings from whatever a file or form holds, each field checked; anything missing is the default. */
-export function parseCamera(raw: unknown): Camera {
-  const r = isRecord(raw) ? raw : {};
-  const maxMb = r.maxMb ?? DEFAULT_CAMERA.maxMb;
-  if (typeof maxMb !== "number" || !(maxMb > 0) || maxMb > 10_000) throw new Error("the log's size should be a number of MB above 0");
-  const keep = KEEP_DAYS.find((d) => d === (r.keepDays ?? DEFAULT_CAMERA.keepDays));
-  if (!keep) throw new Error(`keep the log for ${KEEP_DAYS.join(", ")} days`);
-  return { maxMb, keepDays: keep };
-}
+/** The log's settings from whatever a file or form holds (nothing at all is the defaults). */
+export const parseCamera = (v: unknown): Camera => Camera(v ?? {});
 
 /** The box's folder: its permission set (box.json) and the log live there. */
 export const boxDir = () => process.env.OFFICE_BOX_DIR ?? path.join(process.cwd(), "sandbox");
@@ -30,7 +36,7 @@ export const logFile = (dir: string) => path.join(dir, "outbound.log");
 export function cameraOf(dir: string): Camera {
   try {
     const raw: unknown = JSON.parse(readFileSync(path.join(dir, "box.json"), "utf8"));
-    return parseCamera(isRecord(raw) ? raw.log : undefined);
+    return parseCamera(BoxLog(raw)?.log);
   } catch {
     return DEFAULT_CAMERA;
   }
@@ -64,11 +70,7 @@ export function record(file: string, e: Omit<Entry, "at">, cam: Camera, now = Da
 export function recent(file: string, n: number, cam: Camera, now = Date.now()): Entry[] {
   const oldest = now - cam.keepDays * 86_400_000;
   return lines(file).filter((l) => atOf(l) >= oldest).slice(-n).reverse().flatMap((l) => {
-    try {
-      const e: unknown = JSON.parse(l);
-      return isRecord(e) && typeof e.at === "number" && typeof e.who === "string" && typeof e.what === "string"
-        && (e.kind === "outbound" || e.kind === "home") && (e.verdict === "allowed" || e.verdict === "denied" || e.verdict === "timed out" || e.verdict === "listed")
-        ? [{ at: e.at, kind: e.kind, who: e.who, what: e.what, verdict: e.verdict }] : [];
-    } catch { return []; }
+    const e = check(Entry, parseJson(l));
+    return e ? [e] : [];
   });
 }

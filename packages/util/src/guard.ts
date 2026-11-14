@@ -20,8 +20,8 @@ const fail = (why: string): never => { throw new Bad(why); };
 const range = (lo: number, hi: number) => hi === Infinity ? (lo === -Infinity ? "" : ` from ${lo} up`) : ` from ${lo} to ${hi}`;
 
 /**
- * A plain object (not null, not a list), its fields still `unknown`: the one check to narrow a parsed value before
- * reading a field. Every app imports this one; a guard (`obj`, `rec`) is better when you want the fields typed too.
+ * A plain object (not null, not a list), its fields still `unknown`: for walking JSON with no fixed shape (a linter
+ * over authored files, a deep merge). Data with a shape is an `obj` guard instead, so its type is written once.
  */
 export const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 
@@ -80,6 +80,14 @@ export const arr = <T>(of: Guard<T>, max: number, o: { drop?: boolean; min?: num
 
 /** Left out (undefined or null) is fine and reads as undefined; otherwise through `g`. */
 export const opt = <T>(g: Guard<T>): Guard<T | undefined> => (v) => (v === undefined || v === null ? undefined : g(v));
+
+/** Left out (undefined or null) reads as `d`; anything else goes through `g`, so a wrong value is still refused (a config file). */
+export const or = <T>(g: Guard<T>, d: T): Guard<T> => (v) => (v === undefined || v === null ? d : g(v));
+
+/** `g` in your own words: when it refuses, it says `why` (the field it was in is still named). For a file a person edits. */
+export const said = <T>(g: Guard<T>, why: string): Guard<T> => (v) => {
+  try { return g(v); } catch (e) { throw e instanceof Bad ? new Bad(why) : e; }
+};
 
 /** Through `g`, or undefined when it's wrong: a field a game drops rather than refusing the whole message. */
 export const maybe = <T>(g: Guard<T>): Guard<T | undefined> => (v) => check(g, v) ?? undefined;

@@ -64,7 +64,11 @@ export function findings(text: string): [number, string, string][] {
     const hit = (why: string) => out.push([i + 1, why, raw.trim().slice(0, 140)]);
     if (/\bas never\b/.test(line)) return hit("`as never` turns the check off");
     if (LOCAL_RECORD.test(line)) return hit("a local isRecord: import `isRecord` from @rustybuns/util/guard");
+    if (/Record<string, unknown>/.test(line)) return hit("`Record<string, unknown>`: declare the shape once as a guard both ends import");
     if (!SOURCE.test(line)) return;
+    // `const x: Foo = await y.json()` (or JSON.parse): `any` with a name on it, so nothing was checked.
+    const annotated = /\b(?:const|let)\s+\w+\s*:\s*([^=]+?)\s*=(?!=)/.exec(line);
+    if (annotated && annotated[1]!.trim() !== "unknown" && SOURCE.test(line.slice(annotated.index + annotated[0].length))) return hit(`parsed value annotated as ${annotated[1]!.trim().slice(0, 50)}`);
     if (/: any\b|<any>/.test(line) || /\bas any\b/.test(line.slice(afterParse(line)))) return hit("`any` after a parse");
     const type = asserted(line);
     if (type && !promisesNothing(type)) return hit(`parsed value asserted as ${type.length > 50 ? type.slice(0, 50) + "…" : type}`);

@@ -24,6 +24,8 @@ const bool = (dflt?: boolean): Guard<boolean> =>
 const oneOf = <const T extends readonly (string | number)[]>(list: T, dflt?: T[number]): Guard<T[number]> =>
 const arr = <T>(of: Guard<T>, max: number, o: { drop?: boolean; min?: number } = {}): Guard<T[]> =>
 const opt = <T>(g: Guard<T>): Guard<T | undefined> =>
+const or = <T>(g: Guard<T>, d: T): Guard<T> =>
+const said = <T>(g: Guard<T>, why: string): Guard<T> =>
 const maybe = <T>(g: Guard<T>): Guard<T | undefined> =>
 const obj = <S extends Shape>(shape: S): Guard<Flat<Built<S>>> =>
 const rec = <T>(of: Guard<T>, max = Infinity): Guard<Record<string, T>> =>

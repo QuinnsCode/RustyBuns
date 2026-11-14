@@ -12,19 +12,28 @@ import { homedir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { type Camera, parseCamera } from "../live/camera.ts";
-import { isRecord } from "@rustybuns/util/guard";
+import { arr, Bad, bool, int, num, obj, oneOf, opt, or, raw, said, str, type Of } from "@rustybuns/util/guard";
 
-export type Perms = {
-  port: number;
-  memory?: string; // unset: a fifth of what Docker has
-  cpus?: number;
-  network: "open" | "allowlist" | "offline";
-  allow: string[]; // hosts the box may reach when the network is "allowlist"
-  repos: { path: string; access: "rw" | "ro" }[];
-  env: string[];
-  ask: boolean; // allowlist: a host not on the list waits for a person's Allow / Deny (default), instead of being refused
-  log: Camera; // the local record of those asks: its disk budget and how long to keep it
-};
+const HOST = /^(\*\.)?[a-z0-9-]+(\.[a-z0-9-]+)+$/;
+const host = said((v: unknown) => str(253, { re: HOST })(typeof v === "string" ? v.toLowerCase() : v), "should be a host like registry.npmjs.org or *.example.com");
+
+/** A permission set (sandbox/box.json): checked field by field; anything missing is the tight default, anything wrong is refused. */
+const PermsFile = obj({
+  port: or(said(int(1, 65_535), "isn't a port"), 4600),
+  /** unset: a fifth of what Docker has */
+  memory: opt(said(str(10, { re: /^\d+[mg]$/ }), "should look like 512m or 4g")),
+  cpus: opt(said(num(Number.MIN_VALUE, 1024), "must be a number above 0")),
+  network: or(said(oneOf(["open", "allowlist", "offline"]), 'should be "allowlist", "open" or "offline"'), "allowlist"),
+  /** hosts the box may reach when the network is "allowlist" */
+  allow: opt(arr(host, 500)),
+  repos: or(arr(obj({ path: said(str(4096), "must be text"), access: or(said(oneOf(["rw", "ro"]), 'should be "rw" or "ro"'), "ro") }), 100), []),
+  env: or(arr(said(str(200, { re: /^[A-Za-z_][A-Za-z0-9_]*$/ }), "isn't a variable name"), 200), []),
+  /** allowlist: a host not on the list waits for a person's Allow / Deny (default), instead of being refused */
+  ask: or(said(bool(), "should be true or false"), true),
+  /** the local record of those asks: its disk budget and how long to keep it */
+  log: raw,
+});
+export type Perms = Omit<Of<typeof PermsFile>, "allow" | "log"> & { allow: string[]; log: Camera };
 
 // Open lanes: unless the permission set says otherwise, the box gets a fifth of the CPUs and memory Docker has.
 export const SHARE = 0.2;
@@ -43,41 +52,14 @@ export const NET = `${NAME}-net`;
 export const DEFAULT_ALLOW = ["api.anthropic.com", "claude.ai", "github.com", "api.github.com", "codeload.github.com", "objects.githubusercontent.com", "registry.npmjs.org"];
 const here = path.dirname(fileURLToPath(import.meta.url));
 
-const text = (v: unknown, what: string): string => {
-  if (typeof v !== "string" || !v) throw new Error(`${what} must be text`);
-  return v;
-};
-
 // The permission set is whatever the file says, checked field by field; anything missing falls back to the tight default.
 export function parsePerms(raw: unknown): Perms {
-  if (!isRecord(raw)) throw new Error("the permission set must be a JSON object");
-  const port = raw.port ?? 4600;
-  if (typeof port !== "number" || !Number.isInteger(port) || port < 1 || port > 65535) throw new Error(`port ${String(port)} isn't a port`);
-  const memory = raw.memory;
-  if (memory !== undefined && (typeof memory !== "string" || !/^\d+[mg]$/.test(memory))) throw new Error(`memory ${String(memory)} should look like 512m or 4g`);
-  const cpus = raw.cpus;
-  if (cpus !== undefined && (typeof cpus !== "number" || !(cpus > 0))) throw new Error("cpus must be a number above 0");
-  const network = raw.network ?? "allowlist";
-  if (network !== "open" && network !== "allowlist" && network !== "offline") throw new Error(`network ${String(network)} should be "allowlist", "open" or "offline"`);
-  const allow = (Array.isArray(raw.allow) ? raw.allow : DEFAULT_ALLOW).map((h: unknown, i) => {
-    const host = text(h, `allow[${i}]`).toLowerCase();
-    if (!/^(\*\.)?[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(host)) throw new Error(`allow[${i}] ${host} should be a host like registry.npmjs.org or *.example.com`);
-    return host;
-  });
-  const repos = (Array.isArray(raw.repos) ? raw.repos : []).map((r: unknown, i) => {
-    if (!isRecord(r)) throw new Error(`repos[${i}] must be an object`);
-    const access = r.access ?? "ro";
-    if (access !== "rw" && access !== "ro") throw new Error(`repos[${i}].access should be "rw" or "ro"`);
-    return { path: text(r.path, `repos[${i}].path`), access } as const;
-  });
-  const env = (Array.isArray(raw.env) ? raw.env : []).map((n: unknown, i) => {
-    const name = text(n, `env[${i}]`);
-    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) throw new Error(`env[${i}] ${name} isn't a variable name`);
-    return name;
-  });
-  const ask = raw.ask ?? true;
-  if (typeof ask !== "boolean") throw new Error("ask should be true or false");
-  return { port, memory, cpus, network, allow, repos, env, ask, log: parseCamera(raw.log) };
+  try {
+    const p = PermsFile(raw);
+    return { ...p, allow: p.allow ?? DEFAULT_ALLOW, log: parseCamera(p.log) };
+  } catch (e) {
+    throw e instanceof Bad ? new Error(`the permission set: ${e.message}`) : e;
+  }
 }
 
 const expand = (p: string) => (p === "~" || p.startsWith("~/") ? path.join(homedir(), p.slice(1)) : path.resolve(p));

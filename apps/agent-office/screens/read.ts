@@ -4,8 +4,11 @@
 // line), and the line of open PRs gitpath walks left to right. Where the three screens sit is here too: fixed slots, so
 // turning one off leaves the others where they were.
 
-import type { EsterPhase, EsterState } from "../ester/run.ts";
-import { isRecord } from "@rustybuns/util/guard";
+import { arr, bool, check, int, num, obj, opt, str } from "@rustybuns/util/guard";
+import { parseJson } from "@rustybuns/util/http";
+import { EsterState, Tally } from "../ester/state.ts";
+
+export { EsterState, Tally };
 
 export type Screen = "gitpath" | "mervin" | "ester";
 export const SCREENS: Screen[] = ["gitpath", "mervin", "ester"];
@@ -59,27 +62,24 @@ export function avoided(b: Board, prevented = 0): { avoided: number; total: numb
 
 /** `GET /__rb/codesplitter/hold`'s `prevented`: tasks Mervin held (the dispatch hint's Wait) because open branches already
  * changed their files, so the two never met at merge time. Counted as conflicts avoided. 0 when the answer isn't a count. */
-export function preventedOf(body: unknown): number {
-  return isRecord(body) && typeof body.prevented === "number" && body.prevented > 0 ? Math.floor(body.prevented) : 0;
-}
+const HoldReply = obj({ prevented: num(0, 1e9) });
+export const preventedOf = (body: unknown): number => Math.floor(check(HoldReply, body)?.prevented ?? 0);
 
 /** One row of Mervin's running tally per PR and per clash: a later run of the same PR replaces its row, so reruns don't count twice. */
-export interface TallyRow { key: string; at: number; avoided: number; total: number }
+const TallyRow = obj({ key: str(500), at: num(0, Number.MAX_SAFE_INTEGER, 0), avoided: num(0, 1e9, 0), total: num(0, 1e9, 0) });
+export type TallyRow = ReturnType<typeof TallyRow>;
 export function tallyRows(b: Board, at: number): TallyRow[] {
   return [
     ...b.stages.map((s) => ({ key: `pr:${s.pr}`, at, avoided: s.tiers.mervin, total: s.tiers.mervin + s.tiers.card })),
     ...b.clashes.map((c) => ({ key: `clash:${c.kind}:${c.key}`, at, avoided: c.settled ? 1 : 0, total: 1 })),
   ];
 }
-export interface Tally { prs: number; avoided: number; total: number; since: number }
 /** The tally file's rows summed, the latest row of each key winning. Lines that don't read as a row are skipped. */
 export function tallySum(text: string): Tally | null {
   const last = new Map<string, TallyRow>();
   for (const l of text.split("\n")) {
-    try {
-      const r: unknown = JSON.parse(l);
-      if (isRecord(r) && typeof r.key === "string") last.set(r.key, { key: r.key, at: num(r.at), avoided: num(r.avoided), total: num(r.total) });
-    } catch {}
+    const r = check(TallyRow, parseJson(l));
+    if (r) last.set(r.key, r);
   }
   if (!last.size) return null;
   const rows = [...last.values()];
@@ -143,24 +143,27 @@ export interface MergedPr { number: number; title: string; mergedAt: number }
 export interface Car { pr: number; title: string; url: string; at: number; state: "moving" | "ready" | "stuck" }
 
 const FAILED = ["FAILURE", "TIMED_OUT", "CANCELLED", "ERROR", "ACTION_REQUIRED"];
+// What `gh pr list --json ...` prints (GitHub's GraphQL names); a PR or check that isn't this shape is left out.
+const word = opt(str(100, { min: 0 }));
+const GhCheck = obj({ conclusion: word, state: word, status: word });
+const text = str(10_000, { min: 0, dflt: "" });
+const GhOpen = arr(obj({ number: int(1, 1e9), title: text, url: text, isDraft: bool(false), statusCheckRollup: arr(GhCheck, 1000, { drop: true }) }), 1000, { drop: true });
+const GhMerged = arr(obj({ number: int(1, 1e9), title: text, mergedAt: str(100) }), 1000, { drop: true });
+
 /** `gh pr list --json number,title,url,isDraft,statusCheckRollup` as the line's open PRs. */
 export function openPrs(body: unknown): OpenPr[] {
-  if (!Array.isArray(body)) return [];
-  return body.filter(isRecord).flatMap((p) => {
-    if (typeof p.number !== "number") return [];
-    const checks = Array.isArray(p.statusCheckRollup) ? p.statusCheckRollup.filter(isRecord) : [];
-    const word = (c: Record<string, unknown>) => String(c.conclusion ?? c.state ?? "");
-    const ci = checks.some((c) => FAILED.includes(word(c))) ? "fail" : !checks.length ? "none"
-      : checks.some((c) => (c.status !== undefined && c.status !== "COMPLETED") || word(c) === "PENDING") ? "pending" : "pass";
-    return [{ number: p.number, title: typeof p.title === "string" ? p.title : "", url: typeof p.url === "string" ? p.url : "", draft: p.isDraft === true, ci }];
+  return GhOpen(body).map((p) => {
+    const checks = p.statusCheckRollup, said = (c: (typeof checks)[number]) => c.conclusion ?? c.state ?? "";
+    const ci = checks.some((c) => FAILED.includes(said(c))) ? "fail" : !checks.length ? "none"
+      : checks.some((c) => (c.status !== undefined && c.status !== "COMPLETED") || said(c) === "PENDING") ? "pending" : "pass";
+    return { number: p.number, title: p.title, url: p.url, draft: p.isDraft, ci };
   });
 }
 /** `gh pr list --state merged --json number,title,mergedAt`, newest first. */
 export function mergedPrs(body: unknown): MergedPr[] {
-  if (!Array.isArray(body)) return [];
-  return body.filter(isRecord).flatMap((p) => {
-    const at = typeof p.mergedAt === "string" ? Date.parse(p.mergedAt) : NaN;
-    return typeof p.number === "number" && Number.isFinite(at) ? [{ number: p.number, title: typeof p.title === "string" ? p.title : "", mergedAt: at }] : [];
+  return GhMerged(body).flatMap((p) => {
+    const at = Date.parse(p.mergedAt);
+    return Number.isFinite(at) ? [{ number: p.number, title: p.title, mergedAt: at }] : [];
   }).sort((a, b) => b.mergedAt - a.mergedAt);
 }
 
@@ -185,26 +188,10 @@ export function line(open: OpenPr[], mervin: EsterState, ester: EsterState): Car
 
 // ---- small readers --------------------------------------------------------------------------------------------
 
-const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : 0);
-
-const PHASES: EsterPhase[] = ["idle", "running", "green", "red", "error"];
-const isPhase = (p: unknown): p is EsterPhase => PHASES.some((x) => x === p);
 /** One helper's run from `GET /__rb/helpers` (ester/run.ts), or idle when it doesn't look like one. */
-export function helperState(v: unknown): EsterState {
-  if (!isRecord(v) || !isPhase(v.phase)) return { phase: "idle", lines: [], hold: [] };
-  const n = (x: unknown) => (typeof x === "number" ? x : undefined);
-  return {
-    phase: v.phase,
-    lines: Array.isArray(v.lines) ? v.lines.filter((l): l is string => typeof l === "string") : [],
-    hold: Array.isArray(v.hold) ? v.hold.filter((h): h is number => typeof h === "number") : [],
-    startedAt: n(v.startedAt), endedAt: n(v.endedAt),
-    ...(typeof v.error === "string" && { error: v.error }),
-  };
-}
+export const helperState = EsterState;
 /** Mervin's running tally from `GET /__rb/helpers`, or null while none is kept. */
-export function tallyOf(v: unknown): Tally | null {
-  return isRecord(v) && typeof v.total === "number" ? { prs: num(v.prs), avoided: num(v.avoided), total: num(v.total), since: num(v.since) } : null;
-}
+export const tallyOf = (v: unknown): Tally | null => check(Tally, v);
 
 /** The three slots across `left`..`right` on the wall (board-local x), each `gap` apart: centre and width of each. */
 export function slots(left: number, right: number, gap: number): { x: number; width: number }[] {

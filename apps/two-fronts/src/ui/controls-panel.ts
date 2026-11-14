@@ -2,7 +2,12 @@
 // game has: invert left/right, field of view, click-to-fire, left-handed touch and rebinding. Click a key row, then press the key.
 import { mountControls } from "@rustybuns/game-controls";
 import { ACTIONS, type Action, keyName, onSettings, rebind, resetSettings, setLook, setSettings, settings, type Settings } from "../settings.ts";
-import { isRecord } from "@rustybuns/util/guard";
+import { bool, check, num, obj } from "@rustybuns/util/guard";
+import { parseJson } from "@rustybuns/util/http";
+
+/** The save before the shared cog: one look speed for the mouse, one for touch. */
+const speed = num(-1e6, 1e6, 1);
+const OldSave = obj({ mouse: speed, touch: speed, invertY: bool(false) });
 
 type Flag = "invertX" | "fireToggle" | "leftHanded";
 type Level = "fov";
@@ -11,11 +16,9 @@ type Level = "fov";
 function migrate() {
   try {
     if (localStorage.getItem(KEY) !== null) return;
-    const old: unknown = JSON.parse(localStorage.getItem("two-fronts-controls") ?? "null");
-    if (!isRecord(old)) return;
-    const o = old;
-    const n = (v: unknown) => (typeof v === "number" ? v : 1);
-    localStorage.setItem(KEY, JSON.stringify({ lookX: n(o.mouse), lookY: n(o.mouse), touch: n(o.touch), invertY: o.invertY === true }));
+    const o = check(OldSave, parseJson(localStorage.getItem("two-fronts-controls")));
+    if (!o) return;
+    localStorage.setItem(KEY, JSON.stringify({ lookX: o.mouse, lookY: o.mouse, touch: o.touch, invertY: o.invertY }));
   } catch { /* no storage: the defaults */ }
 }
 const KEY = "two-fronts.controls";
