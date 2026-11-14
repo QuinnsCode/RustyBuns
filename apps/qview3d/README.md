@@ -1,10 +1,11 @@
 # QView3D
 
 A 3D product customiser a shop puts on its own page with one script and one tag. Shoppers add a photo, drag it
-round the front of a hat, size it, turn it, pick a colour and spin the hat. Then they export a snapshot with the
-settings that made it. A Cloudflare Worker and one R2 bucket, with a folder for each org. A spike: hats first
-(cap, beanie, bucket hat), plus **samples**: a shop with a product the hats don't cover uploads photos or a video,
-and Meshy makes a model of it the widget can print on. PolyForm Noncommercial.
+round the front of a hat or over a top's front, back or sleeve, size it, turn it, pick a colour and spin the product.
+Then they export a snapshot with the settings that made it. A Cloudflare Worker and one R2 bucket, with a folder for
+each org. A spike: hats (cap, beanie, bucket hat) and tops (a tee and a hoodie, a picture on each of their three print
+zones), plus **samples**: a shop with a product these don't cover uploads photos or a video, and Meshy makes a model
+of it the widget can print on. PolyForm Noncommercial.
 
 ```html
 <script type="module" src="https://qview3d.example/v1/qview3d.js"></script>
@@ -23,7 +24,7 @@ and sample journeys.
 ## Go live, and hand it to a friend
 
 A fresh deploy works with nothing seeded: when the bucket has no `orgs/demo/` yet, the Worker serves the demo org
-and its three hats from [src/demo.ts](src/demo.ts). On a public host that built-in demo keeps no files, so strangers
+and its hats and tops from [src/demo.ts](src/demo.ts). On a public host that built-in demo keeps no files, so strangers
 can't fill the bucket. Customising and the snapshot download still work, because they run in the browser.
 
 1. Once: a Password item `upload-secret` in the `qview3d` vault, with a random value in its built-in password field.
@@ -54,8 +55,8 @@ hats are in a second, hashed chunk (146 kB gzipped). It loads only when the tag 
 | Its own buttons beside ours | Children with `slot="controls"` go in our toolbar |
 | Only the 3D, its own UI | `controls="none"`, then drive it with the methods and events below |
 
-Methods: `addImage(file)`, `removeImage()`, `place({u, v, scale, rotation})`, `view("front"|"angle"|"side"|"back")`,
-`model = "beanie"`, `color = "#b91c1c"`, `design` (the settings), `load(design)`, `snapshot()` resolves to `{blob, design}`,
+Methods: `addImage(file, zone?)`, `removeImage()`, `place({u, v, scale, rotation})`, `view("front"|"angle"|"side"|"back")`,
+`model = "beanie"`, `zone = "back"` (a top's `"front"`, `"back"` or `"left-sleeve"`: where the next picture goes and what `place()` moves), `color = "#b91c1c"`, `design` (the settings, a layer for each zone's picture), `load(design)`, `snapshot()` resolves to `{blob, design}`,
 and `save()` resolves to `{id, url, design}`. Attributes: `org`, `product`, `model`, `color`, `colors="#111111,#ffffff"`,
 `controls`, `theme`, and `api` (the server, by default the script's own origin).
 Events, which bubble out of the shadow DOM: `qview:ready`, `qview:change`, `qview:snapshot`, `qview:saved` and `qview:error`.

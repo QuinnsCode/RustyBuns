@@ -57,6 +57,8 @@ button.busy svg { animation: spin 0.9s linear infinite; }
 .models button { height: 34px; padding: 0 12px; color: var(--qv-muted); font-weight: 600; }
 .models button:hover { color: var(--qv-fg); background: var(--qv-bg); }
 .models button[aria-pressed="true"] { background: var(--qv-fg); color: var(--qv-on-fg); }
+.zones { top: 58px; }
+.zones button { height: 30px; }
 
 .corner { position: absolute; top: 10px; right: 10px; display: flex; align-items: center; padding: 3px; gap: 2px; }
 
@@ -101,6 +103,10 @@ input[type="range"]::-moz-range-thumb { width: 16px; height: 16px; border-radius
 
 @media (max-width: 520px) {
   .models button { padding: 0 10px; }
+  /* Five products don't fit beside the corner buttons: the products get the top row, scrolling if they must. */
+  .models:not(.zones) { right: 10px; overflow-x: auto; scrollbar-width: none; }
+  .models:not(.zones) button { padding: 0 9px; flex: none; }
+  .corner { top: 58px; }
   input[type="range"] { width: 64px; }
   .primary span { display: none; }
   .primary { width: 40px; height: 40px; padding: 0; }
