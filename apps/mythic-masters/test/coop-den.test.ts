@@ -1,11 +1,12 @@
 // Walking together, a friend joins your fight (#4413): Ada walks up to her region's first keeper with Bo beside her,
 // through the real Worker, Region and Duel rooms (scripts/party.ts standing in for the edge). Bo is asked to join and
 // Cy, in another region, is not; the two of them fight that keeper (not a seeded wild one) to the same end on both
-// pages, and each journey writes it down. A host who lies about the den gets a seeded wild one instead.
+// pages, and each journey writes it down. A host who lies about the den gets a seeded wild one instead. And one of
+// them binds it (#4430): the press rides the lockstep, so both pages roll it on the same tick and agree who bound it.
 import { afterAll, expect, setDefaultTimeout, test } from "bun:test";
 import { serveParty } from "../scripts/party.ts";
 import { bot } from "../src/bot.ts";
-import { recordCoop, type CoopAt } from "../src/coop.ts";
+import { coopBind, recordCoop, type CoopAt } from "../src/coop.ts";
 import { cleared, newJourney, PICKS, STARTERS } from "../src/journey.ts";
 import { DuelLink } from "../src/net/duel-link.ts";
 import { sum, type DenFoe, type DuelOut, type Pick } from "../src/net/duel.ts";
@@ -25,9 +26,11 @@ const until = async (what: string, ok: () => boolean, ms = 8000) => {
 type Ask = { who: string; den: string; c: string; lv: number; code: string };
 const walker = (name: string, asks: Ask[]) => new Online("COOPWALK", { base: party.url, guest: { uid: `${name}-uid-0000`, name }, opened: () => [1, 2, 3, 4, 5, 6], onCoop: (a) => asks.push(a) });
 
-/** One page in the co-op room: the fight it plays when the room says go, a bot for the player's hands. */
-function page(code: string, uid: string, name: string, pick: Pick, foe?: DenFoe) {
-  const p = { live: null as Live | null, wild: null as ReturnType<typeof bot> | null, go: null as Extract<DuelOut, { t: "go" }> | null };
+/** One page in the co-op room: the fight it plays when the room says go, a bot for the player's hands, which press
+ *  bind each tick the wild one is under `bind.under` of its health (as main.ts `coopRoll` reads them). `bind.wear`
+ *  wears the wild one to a fifth at that tick (the page's `wear` hook), on every page alike, so the fight stays one. */
+function page(code: string, uid: string, name: string, pick: Pick, foe?: DenFoe, bind = { under: 0, wear: 0 }) {
+  const p = { live: null as Live | null, wild: null as ReturnType<typeof bot> | null, go: null as Extract<DuelOut, { t: "go" }> | null, bound: null as number | null };
   const link = new DuelLink(code, { base: party.url, guest: { uid, name }, kind: "coop", onGo: (g) => { p.go = g; p.wild = bot(g.picks.length, g.seed); p.live = tsSim(...coopTeams(g)); } });
   link.pick(pick, foe);
   const frame = (n: number) => {
@@ -35,9 +38,13 @@ function page(code: string, uid: string, name: string, pick: Pick, foe?: DenFoe)
     if (!live || !step || live.m.over) return;
     const hands = bot(step.seat, 11 + step.seat);
     for (let k = 0; k < n && !live.m.over; k++) {
-      const seats = step.next(() => hands(live.m));
+      const wild = live.m.f[live.m.f.length - 1]!, frac = () => wild.hp / wild.b.hp;
+      if (live.m.tick === bind.wear) wild.hp = wild.b.hp * 0.2;
+      const seats = step.next(() => ({ ...hands(live.m), bind: frac() < bind.under }));
       if (!seats) break;
       live.step([...seats, p.wild!(live.m)]);
+      const by = live.m.over || !step.binds.length ? null : coopBind(step.binds, frac(), p.go!.seed, live.m.tick);
+      if (by !== null) { p.bound = by; live.m.over = true; live.m.winner = 0; }
     }
     link.flush(live.m);
   };
@@ -96,5 +103,25 @@ test("a host's den the world can't hold is no foe: the room fights a seeded wild
   const b = page("LIARDEN1", "bo-uid-0000", "Bo", { c: "jackalope", lv: 28 });
   await until("both told go", () => !!a.p.go && !!b.p.go);
   expect(b.p.go!.foe).toBeUndefined();
+  a.link.close(); b.link.close();
+});
+
+test("a friend binds the wild one: both pages end on the same tick, the bind in their journey, a line in yours", async () => {
+  const a = page("BINDDEN1", "ada-uid-0000", "Ada", { c: "hodag", lv: 25 }, undefined, { under: 0, wear: 60 });
+  await until("ada seated", () => a.link.seats?.you === 0);
+  const b = page("BINDDEN1", "bo-uid-0000", "Bo", { c: "jackalope", lv: 25 }, undefined, { under: 0.45, wear: 60 });
+  await until("both told go", () => !!a.p.go && !!b.p.go);
+  while (!a.p.live!.m.over || !b.p.live!.m.over) { a.frame(8); b.frame(6); await Bun.sleep(8); }
+  expect([a.p.bound, b.p.bound]).toEqual([1, 1]);
+  expect(a.p.live!.m.tick).toBe(b.p.live!.m.tick);
+  expect(sum(a.p.live!.m)).toBe(sum(b.p.live!.m));
+
+  const wild = a.p.live!.m.f[2]!.c, at: CoopAt = { region: REGIONS[4]!, kind: "wild", k: 0, foe: { id: wild.id, level: 20 }, host: true };
+  const ja = newJourney(STARTERS.slice(0, PICKS))!, jb = newJourney(STARTERS.slice(1, 1 + PICKS))!;
+  const la = recordCoop(ja, ja.party[0]!, at, true, 1, { mine: false, who: "Bo" }), lb = recordCoop(jb, jb.party[0]!, { ...at, host: false }, true, 1, { mine: true, who: "You" });
+  expect([...jb.party, ...jb.journal].map((m) => m.id)).toContain(wild.id);
+  expect([...ja.party, ...ja.journal].map((m) => m.id)).not.toContain(wild.id);
+  expect(la[0]).toContain("Bo bound");
+  expect(lb[0]).toContain("The ink holds");
   a.link.close(); b.link.close();
 });

@@ -15,8 +15,7 @@ import type { Rule } from "./policy.ts";
 import { parseAllDocuments } from "yaml";
 import { alike, diffToOps, keptPairs } from "./sync.ts";
 import { isManifest, mergeManifest } from "./manifest.ts";
-import { arr, Bad, bool, check, nul, obj, oneOf, opt, rec, str } from "@rustybuns/util/guard";
-import { isPlainObject } from "./util.ts";
+import { arr, Bad, bool, check, isRecord, nul, obj, oneOf, opt, rec, str } from "@rustybuns/util/guard";
 
 /**
  * The ops protocol's version. A writer that names one (`proto` on an ops request) and meets a file
@@ -172,14 +171,14 @@ export type Kind = "lock" | "keyed" | "prose" | "code";
 const RULES = ["lock", "keyed", "prose", "code", "union"] as const satisfies readonly Rule[];
 
 /** A file Durable Object's doc, checked as far as its frame: a rev and a list of lines (they're handed on whole). */
-export const isDoc = (v: unknown): v is Doc => isPlainObject(v) && Number.isInteger(v.rev) && Array.isArray(v.lines);
+export const isDoc = (v: unknown): v is Doc => isRecord(v) && Number.isInteger(v.rev) && Array.isArray(v.lines);
 const doc = (v: unknown): Doc => { if (!isDoc(v)) throw new Bad("a lines doc"); return v; };
 
 /** What a branch asks main's copy of a file to merge (mergeFile in branches.ts sends it, file-do.ts's "merge" route takes it). */
 export const MERGE_ASK = obj({ base: doc, branch: doc, resolve: opt(rec(PICK)), dry: opt(bool()), deleter: opt(str()), path: opt(str(4096)), writer: opt(str()), rule: opt(oneOf(RULES)) });
 /** What main's copy answers: its rev, the ops it made (or would), and what's left to settle; a refused edit adds an error. */
 export interface MergeReply { rev: number; ops?: Op[]; applied?: Applied[]; conflicts: Conflict[]; checks?: Conflict[]; regenerate?: string[]; solved?: number; error?: string }
-export const isMergeReply = (v: unknown): v is MergeReply => isPlainObject(v) && Number.isInteger(v.rev) && Array.isArray(v.conflicts);
+export const isMergeReply = (v: unknown): v is MergeReply => isRecord(v) && Number.isInteger(v.rev) && Array.isArray(v.conflicts);
 /** A branch merge's 409 (branches.ts): per file, the conflicts left. Agent runs read it to keep main's side (agent-routes.ts). */
 const side = nul(str(Infinity, { min: 0 }));
 export const MERGE_CONFLICTS = obj({ conflicts: opt(arr(obj({ path: str(4096), conflicts: arr(obj({ line: str(), main: side, branch: side }), Infinity) }), Infinity)) });

@@ -5,21 +5,11 @@
 // repo, one run each at a time, and keeps the tail of what they printed. Pure over `spawn`, so it is tested without installing.
 import { existsSync } from "node:fs";
 import path from "node:path";
+import type { EsterPhase, EsterState } from "./state.ts";
 
+export type { EsterPhase, EsterState };
 export const BOARD = "apps/codesplitter/scripts/mervin-board.ts";
 const KEEP = 200;
-
-export type EsterPhase = "idle" | "running" | "green" | "red" | "error";
-export interface EsterState {
-  phase: EsterPhase;
-  /** The tail of what the check printed. */
-  lines: string[];
-  /** The PRs she says to hold back (`Ester says hold: #1, #2`). */
-  hold: number[];
-  startedAt?: number;
-  endedAt?: number;
-  error?: string;
-}
 
 /** Runs `cmd` in `cwd`, calls `onLine` for each line it prints (stdout and stderr), answers its exit code. */
 export type Spawn = (cmd: string[], cwd: string, onLine: (line: string) => void) => Promise<number>;

@@ -1,10 +1,11 @@
 # QView3D
 
 A 3D product customiser a shop puts on its own page with one script and one tag. Shoppers add a photo, drag it
-round the front of a hat, size it, turn it, pick a colour and spin the hat. Then they export a snapshot with the
-settings that made it. A Cloudflare Worker and one R2 bucket, with a folder for each org. A spike: hats first
-(cap, beanie, bucket hat), plus **samples**: a shop with a product the hats don't cover uploads photos or a video,
-and Meshy makes a model of it the widget can print on. PolyForm Noncommercial.
+round the front of a hat or over a top's front, back or sleeve, size it, turn it, pick a colour and spin the product.
+Then they export a snapshot with the settings that made it. A Cloudflare Worker and one R2 bucket, with a folder for
+each org. A spike: hats (cap, beanie, bucket hat) and tops (a tee, a sweater, a hoodie and two tanks on one body form, a
+picture on each print zone: front, back and, with sleeves, the left sleeve), plus **samples**: a shop with a product these don't cover uploads photos or a video, and Meshy makes a model
+of it the widget can print on. PolyForm Noncommercial.
 
 ```html
 <script type="module" src="https://qview3d.example/v1/qview3d.js"></script>
@@ -23,7 +24,7 @@ and sample journeys.
 ## Go live, and hand it to a friend
 
 A fresh deploy works with nothing seeded: when the bucket has no `orgs/demo/` yet, the Worker serves the demo org
-and its three hats from [src/demo.ts](src/demo.ts). On a public host that built-in demo keeps no files, so strangers
+and its hats and tops from [src/demo.ts](src/demo.ts). On a public host that built-in demo keeps no files, so strangers
 can't fill the bucket. Customising and the snapshot download still work, because they run in the browser.
 
 1. Once: a Password item `upload-secret` in the `qview3d` vault, with a random value in its built-in password field.
@@ -54,8 +55,8 @@ hats are in a second, hashed chunk (146 kB gzipped). It loads only when the tag 
 | Its own buttons beside ours | Children with `slot="controls"` go in our toolbar |
 | Only the 3D, its own UI | `controls="none"`, then drive it with the methods and events below |
 
-Methods: `addImage(file)`, `removeImage()`, `place({u, v, scale, rotation})`, `view("front"|"angle"|"side"|"back")`,
-`model = "beanie"`, `color = "#b91c1c"`, `design` (the settings), `load(design)`, `snapshot()` resolves to `{blob, design}`,
+Methods: `addImage(file, zone?)`, `removeImage()`, `place({u, v, scale, rotation})`, `view("front"|"angle"|"side"|"back")`,
+`model = "beanie"`, `zone = "back"` (a top's `"front"`, `"back"` or `"left-sleeve"`: where the next picture goes and what `place()` moves), `color = "#b91c1c"`, `design` (the settings, a layer for each zone's picture), `load(design)`, `snapshot()` resolves to `{blob, design}`,
 and `save()` resolves to `{id, url, design}`. Attributes: `org`, `product`, `model`, `color`, `colors="#111111,#ffffff"`,
 `controls`, `theme`, and `api` (the server, by default the script's own origin).
 Events, which bubble out of the shadow DOM: `qview:ready`, `qview:change`, `qview:snapshot`, `qview:saved` and `qview:error`.
@@ -78,6 +79,20 @@ page from another origin under that policy.
 A cart takes `save()`'s design id with the order line. The design names its original file, so whoever prints it
 knows what to print and where.
 
+### Print files
+
+Whoever fulfils the order pastes the design id (or its `/r/` link) into **Print files** on `/admin.html`, with the
+org's admin key. It gets one PNG per print zone: the shopper's original at 300 dpi over the zone's real size, on a
+clear background, with the dpi written into the file so print software opens it at its real size. A cap's front
+(12 x 6 cm) is 1417 x 709 px. The sizes are product data: a product's `zones` (`{ "front": { "w": 12, "h": 6 } }`,
+in centimetres) overrides the defaults in `PRINT_CM` (`src/api.ts`). A shop's own model has no default, so its
+product must name them. The picture sits as the widget shows it: centred at u across and v up, `scale` of the
+zone's width, turned, cut at the zone's edge.
+
+`GET /api/orgs/<org>/designs/<id>/print` (admin key) answers the layout as JSON, and
+`GET /api/orgs/<org>/originals/<file>` (admin key) the original, so a script can make them too. The pixels are
+drawn in the page, since a Worker has no canvas.
+
 ## The bucket
 
 One bucket, with a folder for each org, split by kind. There are no folders by shopper or by date ([src/layout.ts](src/layout.ts)):
@@ -92,6 +107,7 @@ orgs/<org>/designs/<id>.json        a design's settings, naming the files above
 orgs/<org>/photos/<sha>.<ext>       an admin's photos of the shop's own product, sent to make a sample: never served
 orgs/<org>/models/<id>.json         a sample in the making (its Meshy task and progress)
 orgs/<org>/models/<id>.glb          the sample model: served and edge-cached for a year
+orgs/<org>/scans/<sha>.glb          a sample scanned on the shop's own iPhone: served and edge-cached for a year
 meta/meshy/<yyyy-mm-dd>.json        samples started that day across every org: the ceiling on the Meshy bill
 ```
 
@@ -139,6 +155,20 @@ model; check Meshy's current price before turning the real key on. It's a draft:
 photos didn't show. Billing shops for samples, and an iPhone app that scans on the shop's own phone with Apple's
 Object Capture for an accurate model at no compute cost, come later.
 
+### A scan from the shop's own iPhone
+
+For an accurate model, at no cost to anyone, the shop scans the product itself. [ios/](ios) is QView3D Scan, a thin
+SwiftUI app for an iPhone or iPad with LiDAR (iOS 17): Apple's Object Capture walks the shop round the product
+and builds a textured model on the phone. The model comes out as USDZ, which holds USDC that the widget's three.js
+can't read, so the app writes it out as a GLB itself (`ScanExport` over ModelIO, then `GLB.write`). It then
+uploads it with the admin key, as kind `scan` (`model/gltf-binary`, up to 40 MB), and sends
+`POST /api/orgs/<org>/models {name, scan}`. That answers `201` with the product, ready now: no Meshy, so no
+allowance or daily ceiling, and nothing to poll. The product is named by the scan's hash, so the same scan sent
+twice is one product.
+
+`brew install xcodegen && cd ios && xcodegen` makes the Xcode project. `cd ios && swift test` (full Xcode)
+tests the GLB writer and the upload request. Xcode builds go to the builder Mac.
+
 ## Where the work runs
 
 - **The photo becomes a texture in the browser**, in a Web Worker ([src/widget/image.ts](src/widget/image.ts)).
@@ -157,9 +187,18 @@ Object Capture for an accurate model at no compute cost, come later.
 
 ## Models
 
-The hats are made in code ([src/widget/hats.ts](src/widget/hats.ts)): no model file to license, fetch or cache, and
-they count toward this folder's license. A shop's own products come from samples (above). Shirts and hoodies would come from Blender (our headless pipeline) or a
-CC0 source, as GLB in `catalog/models/`, with a UV-unwrapped print zone the same as here.
+The hats and the tops are made in code ([src/widget/hats.ts](src/widget/hats.ts), [src/widget/tops.ts](src/widget/tops.ts)):
+no model file to license, fetch or cache, and they count toward this folder's license. A shop's own products come from
+samples (above).
+
+The tops are five cuts of one body form (`CUTS` in tops.ts: a crew tee, a crew sweater in a knit, a fleece hoodie with
+its hood lying back, a pouch pocket and drawcords, a men's tank and a racerback with a shaped waist). The cloth folds
+where it hangs free and only shades a print zone; sleeves grow out of an armhole on the body's side; cuffs, hems and
+collars are rib knit or rolled and stitched; inside faces are drawn a shade darker, so a neckline shows cloth.
+
+**On a hanger** (a spike: `display="hanger"`, the demo shop's "On a hanger" button; the default controls don't offer it): a sleeved top starts laid flat and hangs from a
+hanger by its shoulders, its own mesh run as cloth (position-based, [src/widget/hanger.ts](src/widget/hanger.ts)) for about
+a second when it loads or changes colour, then frozen. Shots before and after: [docs/shots-2026-11-14-range](docs/shots-2026-11-14-range/README.md).
 
 ## Not in the spike
 

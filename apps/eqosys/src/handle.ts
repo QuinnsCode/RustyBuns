@@ -7,7 +7,7 @@
 //   3. eqosys sends them to <return>?code=eq_…&state=…
 //   4. the app POSTs /api/exchange { app, code, verifier } and gets back who they are, where they came from and their access,
 //      plus a token signed with the key at /.well-known/jwks.json that its server can pass around and check on its own
-import { HOME, returnTo, type QApp } from "./apps.ts";
+import { HOME, playOf, returnTo, type QApp } from "./apps.ts";
 import { appOf, Draft, mayUse, pull, save, send, type Done } from "./listings.ts";
 import { authFor, authOn, isAdmin, meOf, providers, type Me } from "./auth.ts";
 import { b64url, crossSite, json, loopbackOn, VERSION, type Env } from "./env.ts";
@@ -76,15 +76,27 @@ const socialMarkIn = (req: Request) => cookieOf(req, SOCIAL_COOKIE);
 
 /** The friend link this browser opened (/add/<id>/<key>), kept half an hour while its person signs in or makes an account.
  * Opening a link only keeps it: being friends takes their own press of "Be friends" on the Friends tab (/do/add), so a
- * page that sends a browser to somebody's link makes nobody a friend. */
+ * page that sends a browser to somebody's link makes nobody a friend. A link a game copied names it (`?app=<id>`): the
+ * app rides in the cookie after the link (`<id>/<key>/<app>`), and once they answer, /do/add sends them on to its front door. */
 export const ADD_COOKIE = "eqosys.add";
 const addCookie = (req: Request, value: string, age: number) =>
   `${ADD_COOKIE}=${value}; Path=/; Max-Age=${age}; HttpOnly; SameSite=Lax${new URL(req.url).protocol === "https:" ? "; Secure" : ""}`;
-/** The kept friend link, and whose it is: null when there is none or its key is no longer theirs. */
-export async function invitedBy(req: Request, conf: Env): Promise<{ id: string; key: string; name: string } | null> {
-  const l = linkOf(cookieOf(req, ADD_COOKIE) ?? "");
+const APP_ID = /^[a-z0-9][a-z0-9-]{0,63}$/;
+/** The kept friend link's two halves, and the app it names when it names one. */
+const keptLink = (req: Request) => {
+  const raw = cookieOf(req, ADD_COOKIE) ?? "", m = /^(.*)\/([^/]*)$/.exec(raw), app = m && APP_ID.test(m[2]!) && linkOf(m[1]!) ? m[2]! : null;
+  return { link: linkOf(app ? m![1]! : raw), app };
+};
+/** The game a kept friend link names, when it is one this person may play: its name, and its front door. */
+async function gameOf(conf: Env, app: string | null, userId?: string): Promise<{ name: string; url: string } | null> {
+  const a = app ? await appOf(conf, app) : undefined, url = a && playOf(a);
+  return a && url && (!userId || await mayUse(conf, a, userId)) ? { name: a.name, url } : null;
+}
+/** The kept friend link, whose it is, and the game it goes on to: null when there is none or its key is no longer theirs. */
+export async function invitedBy(req: Request, conf: Env): Promise<{ id: string; key: string; name: string; game: string | null } | null> {
+  const { link: l, app } = keptLink(req);
   const name = l && conf.HUB ? await hubInvited(conf.HUB, l).catch(() => null) : null;
-  return l && name !== null ? { ...l, name } : null;
+  return l && name !== null ? { ...l, name, game: (await gameOf(conf, app))?.name ?? null } : null;
 }
 
 /** Whether someone already signed in goes on to the app without seeing the page: they have used it before, or this browser
@@ -245,9 +257,9 @@ export async function handle(req: Request, conf: Env): Promise<Response | null> 
   // A friend link: kept in a cookie, then on to the Friends tab, by way of the sign-in page for someone signed out or new.
   const add = /^\/add\/(.+)$/.exec(pathname);
   if (add && req.method === "GET") {
-    const l = linkOf(add[1]!.replace(/\/+$/, ""));
+    const l = linkOf(add[1]!.replace(/\/+$/, "")), app = new URL(req.url).searchParams.get("app");
     const out = see("/?tab=friends");
-    if (l) out.headers.append("set-cookie", addCookie(req, `${encodeURIComponent(l.id)}/${l.key}`, 1800));
+    if (l) out.headers.append("set-cookie", addCookie(req, `${encodeURIComponent(l.id)}/${l.key}${app && APP_ID.test(app) ? `/${app}` : ""}`, 1800));
     return out;
   }
   // Home with a friend link waiting (just signed in, or just made the account): the Friends tab shows who it is from.
@@ -334,10 +346,12 @@ export async function handle(req: Request, conf: Env): Promise<Response | null> 
   if (act === "continue") return onward(conf, regionAt(req), me.id, ask);
   // The friends page (pages.tsx): the person's own hub, by cookie rather than a token. A form field left empty is left out.
   // The friend link this browser opened: "Be friends" makes the two friends at once, "No thanks" (`no`) forgets the link.
+  // Either way, a link a game copied goes on to that game; a refusal stays on the Friends tab to say why.
   if (act === "add") {
-    const l = linkOf(cookieOf(req, ADD_COOKIE) ?? "");
+    const { link: l, app } = keptLink(req);
     const r = l && conf.HUB && !field(form, "no") ? await hubRedeem(conf.HUB, l, { id: me.id, name: me.name }) : null;
-    const out = see(r && "error" in r ? `/?tab=friends&e=${/most/.test(r.error) ? "full" : "nolink"}` : "/?tab=friends");
+    const game = await gameOf(conf, app, me.id);
+    const out = see(r && "error" in r ? `/?tab=friends&e=${/most/.test(r.error) ? "full" : "nolink"}` : game?.url ?? "/?tab=friends");
     out.headers.append("set-cookie", addCookie(req, "", 0));
     return out;
   }

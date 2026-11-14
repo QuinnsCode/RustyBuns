@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The Example Range</title>
+<meta name="description" content="Talk 3: the games and tools built on Rusty Buns, and what each kind proves, in plain words.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@700;900&family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&family=JetBrains+Mono:wght@600;700&display=swap">
+<link rel="stylesheet" href="deck.css">
+</head>
+<body>
+
+<section class="slide">
+  <div class="kicker">Talk 3 · Rusty Buns talks</div>
+  <h1>The Example Range</h1>
+  <p class="lede">About fifty apps, from "hello" to 3D games. What they prove, and why we keep building them.</p>
+  <p class="aside">Some people collect stamps. We collect proofs that the plug fits.</p>
+  <div class="notes">Do not tour every app. Show the families, then one or two faces from each.</div>
+</section>
+
+<section class="slide">
+  <div class="kicker">The picture first</div>
+  <h2>A test kitchen, not a menu</h2>
+  <p class="lede">A test kitchen cooks every dish on every stove, to prove the stoves work.</p>
+  <ul>
+    <li>Each example app is a dish.</li>
+    <li>The laptop, the server and the cloud are the stoves.</li>
+    <li>When a stove breaks, a dish burns, and we see it the same day.</li>
+  </ul>
+  <p class="aside">Nobody orders the "hello world". It is still on the menu. It is the smoke alarm.</p>
+</section>
+
+<section class="slide">
+  <div class="kicker">The families</div>
+  <h2>Five kinds of example</h2>
+  <div class="cards">
+    <div class="card"><h3>Games</h3><p>3D, shared, fast. The hardest test of all.</p></div>
+    <div class="card"><h3>The front door</h3><p>One account and one list of apps, for every app.</p></div>
+    <div class="card"><h3>Real tools</h3><p>Apps people use for work: a CRM, a box packer, shop tools.</p></div>
+    <div class="card"><h3>The workshop</h3><p>Music, 3D and circuits. Heavy work, often with Rust inside.</p></div>
+    <div class="card"><h3>Other people's apps</h3><p>Apps from popular frameworks, run without changes.</p></div>
+  </div>
+  <div class="notes">Source of truth for the list: the README "See it work" section, which a script keeps in step with the apps folder.</div>
+</section>
+
+<section class="slide">
+  <div class="kicker">Games</div>
+  <h2>Games push every part at once</h2>
+  <div class="cards">
+    <div class="card"><h3>Hide and seek</h3><p>In a real national park. Each player gets only what they can see.</p></div>
+    <div class="card"><h3>A creature brawler</h3><p>Folklore beasts with real weight. A robot plays itself thousands of times to keep it fair.</p></div>
+    <div class="card"><h3>Skating</h3><p>A board, a rocket car, and physics the tests can run with no screen.</p></div>
+    <div class="card"><h3>Disc golf on a globe</h3><p>Live wind from the weather service carries the disc.</p></div>
+    <div class="card"><h3>A rhythm runner</h3><p>Made for a phone first. Your answers echo back as music.</p></div>
+    <div class="card"><h3>A toy-soldier battle</h3><p>A code project turned into a battlefield.</p></div>
+  </div>
+  <p class="aside">Every one of these is "for fun". Every one of them has found a real bug in the engine. Fun is a strict boss.</p>
+</section>
+
+<section class="slide">
+  <div class="kicker">What a game proves</div>
+  <h2>One game, four ways to play</h2>
+  <p class="lede">One of our games runs the same rules alone, on one couch, on a home network and online.</p>
+  <ul>
+    <li>Alone: the whole game runs inside the one file.</li>
+    <li>Home network: one laptop holds the game. Friends on the same network join with their own copy.</li>
+    <li>Online: the same rules run in the cloud, one room each.</li>
+  </ul>
+  <p class="aside">Four ways to play, one set of rules, zero arguments about whose copy is right.</p>
+</section>
+
+<section class="slide">
+  <div class="kicker">The workshop</div>
+  <h2>Two engines, one answer</h2>
+  <p class="lede">The workshop apps do heavy work: sound, rigging 3D models, circuit boards.</p>
+  <ul>
+    <li>Many of them run a Rust engine and a TypeScript engine side by side.</li>
+    <li>A music app makes sound in both. The two outputs match exactly, sample by sample.</li>
+    <li>A circuit app gets much faster with Rust. Without Rust, it still works.</li>
+  </ul>
+  <p class="aside">Two cooks, one recipe, and the soup must taste the same to the last grain of salt.</p>
+</section>
+
+<section class="slide">
+  <div class="kicker">Real tools</div>
+  <h2>Not only toys</h2>
+  <div class="cards">
+    <div class="card"><h3>A CRM</h3><p>Customers and jobs, with an AI helper door built in.</p></div>
+    <div class="card"><h3>A box fit checker</h3><p>Will the order fit the box? A Rust engine packs boxes inside boxes.</p></div>
+    <div class="card"><h3>Shop tools</h3><p>3D product views and a 3D spin made from phone photos.</p></div>
+  </div>
+  <p class="aside">Games prove it is fast. Tools prove it is boring in the good way.</p>
+</section>
+
+<section class="slide">
+  <div class="kicker">Other people's apps</div>
+  <h2>The real exam: code we did not write</h2>
+  <ul>
+    <li>We take apps made with popular frameworks and run them with no changes.</li>
+    <li>A robot tries real projects from the internet, in a sealed room, and writes down what breaks.</li>
+    <li>The goal: most real apps start on the first try.</li>
+  </ul>
+  <p class="aside">Our own apps grade on a curve. Strangers' apps do not.</p>
+  <div class="notes">Source of truth: FRAMEWORK_COVERAGE.md. Do not give a number unless the doc gives one that day.</div>
+</section>
+
+<section class="slide">
+  <div class="kicker">Why so many</div>
+  <h2>Every app is a test that never sleeps</h2>
+  <ol class="steps">
+    <li><span><b>A change to the engine</b> runs against the apps it could break.</span></li>
+    <li><span><b>A broken app</b> points at the change that broke it.</span></li>
+    <li><span><b>A new idea</b> becomes a new app, and the app becomes a new test.</span></li>
+  </ol>
+  <p class="aside">Each example is a canary. We have a lot of canaries. They are all fine. Mostly.</p>
+</section>
+
+<section class="slide">
+  <div class="kicker">Honest status</div>
+  <h2>How the range looks today</h2>
+  <div class="cards">
+    <div class="card"><span class="tag live">Live</span><h3 style="margin-top:12px">Games in the browser</h3><p>Most play in a browser and as a laptop app.</p></div>
+    <div class="card"><span class="tag live">Live</span><h3 style="margin-top:12px">The workshop twins</h3><p>Rust and TypeScript, checked against each other.</p></div>
+    <div class="card"><span class="tag oven">In the oven</span><h3 style="margin-top:12px">Strangers' apps</h3><p>More start first try each month. Not all.</p></div>
+    <div class="card"><span class="tag plan">Next</span><h3 style="margin-top:12px">Polish</h3><p>Examples change most days. They are not a product, and no one has checked their safety formally.</p></div>
+  </div>
+  <div class="notes">Keep this slide current. Source of truth: README.md "See it work" and FRAMEWORK_COVERAGE.md.</div>
+</section>
+
+<section class="slide">
+  <div class="kicker">The end</div>
+  <h1>Fifty dishes.<br>Every stove.</h1>
+  <p class="lede">The examples are the proof. When they all cook, the engine works.</p>
+  <p style="margin-top:28px"><a href="index.html">All talks</a> · <a href="02-what-rusty-buns-is.html">Talk 2</a> · <a href="04-game-engine.html">Talk 4: The game engine</a></p>
+</section>
+
+<script src="deck.js"></script>
+</body>
+</html>

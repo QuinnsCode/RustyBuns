@@ -4,6 +4,9 @@
 // upgrade, the room closes a replaced tab and a silent page, "ping" is answered without waking the room, a page that stops pinging is swept, and a room that hibernated wakes
 // with everyone where they were and the den they walked into.
 import { afterAll, describe, expect, setDefaultTimeout, test } from "bun:test";
+import { chmodSync, mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { jwksOf, newKey, sign } from "@rustybuns/util/token";
 import { APP } from "../src/account.ts";
 import { Online } from "../src/net/online.ts";
@@ -130,4 +133,20 @@ describe.skipIf(!wranglerPath() && !process.env.CI)("under workerd", () => {
     await until("each sees the other", () => [...ada.ghosts.values()].some((g) => g.pose.l === "squonk") && [...bo.ghosts.values()].some((g) => g.pose.l === "hodag" && (g.pose.x ?? 0) > 10000));
     expect([...bo.ghosts.values()].map((g) => g.name)).toEqual(["Ada"]);
   });
+});
+
+// workerd sometimes dies on its second start in a CI job (#4341). A wrangler stand-in: the first run crashes with a
+// native trace, later ones come up and wait. One crash gets a retry; a run that says [ERROR] fails straight away.
+test("a wrangler that crashes before it is ready gets one more go; one that reports an error doesn't", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "mm-fake-wrangler-"));
+  const fake = (name: string, firstRun: string) => {
+    const bin = join(dir, name);
+    writeFileSync(bin, `#!/bin/sh\nif [ ! -f "$0.ran" ]; then touch "$0.ran"; ${firstRun}; fi\necho "Ready on http://127.0.0.1"\nexec sleep 60\n`);
+    chmodSync(bin, 0o755);
+    return bin;
+  };
+  const edge = await serveEdge(0, { bin: fake("crashy", 'echo "*** Received signal #11: Segmentation fault" >&2; exit 139') });
+  expect(edge.log()).toContain("Ready on http");
+  await edge.stop();
+  await expect(serveEdge(0, { bin: fake("broken", 'echo "[ERROR] bad config" >&2; exit 1') })).rejects.toThrow("bad config");
 });

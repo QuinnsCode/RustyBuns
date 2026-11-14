@@ -6,13 +6,15 @@ import * as THREE from "three";
 import { DecalGeometry } from "three/examples/jsm/geometries/DecalGeometry.js";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import type { Picture, Placement } from "./print.ts";
-import { disposeTree, type Surface } from "./surfaces.ts";
+import { disposeTree, type Surface, type ZoneInfo } from "./surfaces.ts";
 
 type SurfacePoint = { point: THREE.Vector3; normal: THREE.Vector3 };
 const vec = (a: number[] | undefined, d: THREE.Vector3) => (a && a.length === 3 ? new THREE.Vector3(a[0], a[1], a[2]) : d.clone());
 
 export class ModelSurface implements Surface<SurfacePoint> {
   readonly ownColors = true;
+  /** One picture, anywhere on it (marking zones on a shop's model is #4540). */
+  readonly zones: readonly ZoneInfo[] = [{ name: "front", label: "Front", view: "front" }];
   readonly group = new THREE.Group();
   readonly target: THREE.Vector3;
   private meshes: THREE.Mesh[] = [];
@@ -44,6 +46,7 @@ export class ModelSurface implements Surface<SurfacePoint> {
     if (!h?.face) return null;
     return { point: h.point.clone(), normal: h.face.normal.clone().transformDirection(h.object.matrixWorld) };
   }
+  zoneAt() { return "front" as const; }
   onPicture(at: Placement, _aspect: number, spot: SurfacePoint) {
     return !!at.point && this.world(at).point.distanceTo(spot.point) < this.width(at) * 0.6 + 0.05;
   }
@@ -56,7 +59,7 @@ export class ModelSurface implements Surface<SurfacePoint> {
     const from = this.group.localToWorld(this.target.clone()).setZ(10);
     this.ray.set(from, new THREE.Vector3(0, 0, -1));
     const h = this.hit(this.ray);
-    const at: Placement = { u: 0.5, v: 0.5, scale: 0.45, rotation: 0 };
+    const at: Placement = { zone: "front", u: 0.5, v: 0.5, scale: 0.45, rotation: 0 };
     return h ? this.drag(at, h, h) : { ...at, point: this.target.toArray(), normal: [0, 0, 1] };
   }
   nudge(at: Placement, dx: number, dy: number, camera: THREE.Camera): Placement {
@@ -67,7 +70,8 @@ export class ModelSurface implements Surface<SurfacePoint> {
   }
   setColor() { /* a shop's model keeps its own texture */ }
 
-  draw(_color: string, picture: Picture | null, outline: boolean) {
+  draw(_color: string, pictures: Picture[], outline: string | null) {
+    const picture = pictures[0];
     if (this.decal) { this.group.remove(this.decal); this.decal.geometry.dispose(); }
     if (!picture?.at.point) { this.decal = null; return; }
     const { point, normal } = this.world(picture.at);
@@ -94,7 +98,7 @@ export class ModelSurface implements Surface<SurfacePoint> {
     }
     const mat = this.decal?.material ?? new THREE.MeshStandardMaterial({ transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4, roughness: 0.8 });
     mat.map = this.art.tex;
-    mat.opacity = outline ? 0.85 : 1;
+    mat.opacity = outline !== null ? 0.85 : 1;
     mat.needsUpdate = true;
     this.decal = new THREE.Mesh(geo, mat);
     this.group.add(this.decal);

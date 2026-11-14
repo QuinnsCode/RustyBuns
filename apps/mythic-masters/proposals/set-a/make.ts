@@ -371,10 +371,10 @@ function chimera() {
   b.paint = [...(b.paint ?? []), { nodes: ["tail2", "tail3", "tail4", "shead", "ssnout"], material: "scale" }];
   b.stripes = { along: ["tail1", "tail2", "tail3", "tail4"], n: 6, width: 0.45, material: "stripe", below: -0.3 };
   b.parts.push(
-    // the lion's mane: a shaggy mass in layers that flows back over the neck and shoulders, behind the face, not
-    // a ring of shards round it: long dark locks underneath, a lighter, shorter layer over them framing the face
-    { kind: "tuft", along: ["neck", "chest"], n: 12, len: s(0.3), base: s(0.09), rows: 18, spread: 175, sweep: 1.6, curve: 40, flat: 0.35, material: "tuft" },
-    { kind: "tuft", along: ["head", "neck"], n: 8, len: s(0.22), base: s(0.08), rows: 14, spread: 120, sweep: 1.3, curve: 35, flat: 0.35, sink: 1, material: "mane" },
+    // the lion's mane: a few big locks, thick and round in section (flat near 1), that curl back from the face
+    // over the neck and stop at the shoulders; long dark ones underneath, shorter, lighter ones framing the face
+    { kind: "tuft", along: ["head", "neck"], n: 6, len: s(0.3), base: s(0.1), rows: 11, spread: 175, sweep: 1.5, curve: 75, flat: 0.6, material: "tuft" },
+    { kind: "tuft", along: ["head", "neck"], n: 4, len: s(0.22), base: s(0.085), rows: 10, spread: 125, sweep: 1.3, curve: 60, flat: 0.6, sink: 1, material: "mane" },
     // the goat: eyes, a beard, swept-back horns, ears
     { kind: "eye", at: "ghead", off: [s(0.065), s(0.035), s(0.06)], r: s(0.026), mirror: true, material: "eye" },
     // the horns: thick at the root, swept back in a long arc past the neck and out to the side
@@ -387,6 +387,8 @@ function chimera() {
     { kind: "eye", at: "shead", off: [s(0.06), s(0.03), s(0.045)], r: s(0.018), mirror: true, material: "snake_eye" },
     { kind: "horn", at: "ssnout", off: [s(0.0), s(-0.025), s(0.02)], dir: [0.2, -1, 0], len: s(0.06), base: s(0.012), tip_base: 0.001, curve: 15, bend: [-1, 0, 0], mirror: true, material: "fang" },
   );
+  // the hound's own ruff (rows of small flat tufts down to the chest) goes: the locks above are the mane
+  b.parts = b.parts.filter((p) => !(p.kind === "tuft" && (p.along as string[]).join() === "neck,chest"));
   // the skin under the mane dark, so the locks read as one mass and not as shards on a yellow neck
   b.paint.push({ nodes: ["neck"], material: "ruff" });
   // the goat's neck and head in its own dark coat

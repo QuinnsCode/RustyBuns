@@ -80,6 +80,7 @@ export const RUNS: Record<number, Run> = {
   2676: { app: "atLens", links: [{ label: "Sign in to write", path: "/" }] },
   2568: { app: "office", links: [...office(2568), { label: "Phone", path: "/?scenario=box-first-run", phone: true }] },
   2636: { app: "fmDaw", links: [{ label: "Wobble Lab, Wobble track", path: "/?song=wobble-lab&track=6" }] },
+  4554: { app: "fmDaw", links: [{ label: "Q Amp, live (speakers down, then Plug in)", path: "/amp.html" }] },
   2666: { app: "atLens", links: [{ label: "Phone", path: "/?q=bsky.app&c=app.bsky.feed.post", phone: true }, { label: "Desktop", path: "/?q=bsky.app&c=app.bsky.feed.post" }] },
 };
 

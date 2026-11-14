@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>What Rusty Buns Is</title>
+<meta name="description" content="Talk 2: write an app once, and run it on a laptop, a server or the cloud, in plain words.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@700;900&family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&family=JetBrains+Mono:wght@600;700&display=swap">
+<link rel="stylesheet" href="deck.css">
+</head>
+<body>
+
+<section class="slide">
+  <div class="kicker">Talk 2 · Rusty Buns talks</div>
+  <h1>What Rusty Buns Is</h1>
+  <p class="lede">Write an app once. Run it on a laptop, a server or the cloud.</p>
+  <p class="aside">Not rusty. Not buns. We explain the name on slide 10, and you will still not forgive us.</p>
+  <div class="notes">One idea for the whole talk: one app, three places, no rewrite. Every slide comes back to the plug picture.</div>
+</section>
+
+<section class="slide">
+  <div class="kicker">The picture first</div>
+  <h2>One plug that fits every socket</h2>
+  <p class="lede">You travel with one lamp. Every country has a different socket.</p>
+  <ul>
+    <li>Most people buy a new lamp in each country.</li>
+    <li>Some people carry a bag of adapters, and lose one every trip.</li>
+    <li>Rusty Buns is a plug that changes shape to fit the wall. The lamp stays the same.</li>
+  </ul>
+  <p class="aside">The lamp is your app. The wall is wherever it has to run. The plug is our problem, not yours.</p>
+</section>
+
+<section class="slide">
+  <div class="kicker">The three sockets</div>
+  <h2>Where one app can run</h2>
+  <div class="cards">
+    <div class="card"><h3>On a laptop</h3><p>One file you double-click. The app opens in your browser. Your data stays on your machine.</p><p class="pic"><b>Like:</b> cooking at home.</p></div>
+    <div class="card"><h3>On a server</h3><p>The same file on one rented computer. Cheap, and you can hold many small apps there.</p><p class="pic"><b>Like:</b> a stall in the food hall.</p></div>
+    <div class="card"><h3>In the cloud</h3><p>On Cloudflare, close to every visitor. Nobody looks after a server.</p><p class="pic"><b>Like:</b> a chain with a shop on every corner.</p></div>
+  </div>
+  <div class="notes">The middle card is "the box" from talk 0. Say the word once.</div>
+</section>
+
+<section class="slide">
+  <div class="kicker">Why this is hard</div>
+  <h2>Each socket speaks a different language</h2>
+  <p class="lede">A laptop keeps data in a file. The cloud keeps it in a database far away. A server is somewhere between.</p>
+  <ul>
+    <li>Usually you write the app once for each place.</li>
+    <li>Then you fix each bug three times.</li>
+    <li>Then the three copies slowly stop agreeing.</li>
+  </ul>
+  <p class="aside">Three copies of one app is not a backup plan. It is a hobby.</p>
+</section>
+
+<section class="slide">
+  <div class="kicker">The trick</div>
+  <h2>Five parts, and a twin for each one</h2>
+  <p class="lede">Almost every app with a server needs the same five parts.</p>
+  <div class="cards">
+    <div class="card"><h3>The front door</h3><p>Requests come in. Answers go out.</p></div>
+    <div class="card"><h3>Live messages</h3><p>Fast talk, both ways, like a game or a chat.</p></div>
+    <div class="card"><h3>Storage</h3><p>Data you keep.</p></div>
+    <div class="card"><h3>Memory</h3><p>Fast data a restart throws away.</p></div>
+    <div class="card"><h3>Who you are</h3><p>Sign-in.</p></div>
+  </div>
+  <p class="aside">Cloudflare gave each part a simple shape. We gave each shape a twin that runs on your laptop. Same shape, different socket.</p>
+  <div class="notes">This is the "cute specific" for the talk: you write against the cloud's five shapes, and each shape has a local twin. Do not list the products or how the twins are made.</div>
+</section>
+
+<section class="slide">
+  <div class="kicker">One list, three places</div>
+  <h2>You write one short list. The tool does the rest.</h2>
+  <div class="diagram" role="img" aria-label="One settings list at the top. Arrows go down to three places: a laptop file, a Cloudflare Worker and a server.">
+    <svg viewBox="0 0 900 300">
+      <defs><marker id="ah" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="d-head" d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <rect class="d-hot" x="300" y="16" width="300" height="74" rx="14"/>
+      <text class="d-text" x="450" y="48" text-anchor="middle">Your app + one settings list</text>
+      <text class="d-small" x="450" y="72" text-anchor="middle">what it needs, said once</text>
+      <rect class="d-box" x="20" y="200" width="250" height="80" rx="14"/>
+      <text class="d-text" x="145" y="234" text-anchor="middle">Laptop</text>
+      <text class="d-small" x="145" y="258" text-anchor="middle">one file to double-click</text>
+      <rect class="d-box" x="325" y="200" width="250" height="80" rx="14"/>
+      <text class="d-text" x="450" y="234" text-anchor="middle">The cloud</text>
+      <text class="d-small" x="450" y="258" text-anchor="middle">a Worker on Cloudflare</text>
+      <rect class="d-box" x="630" y="200" width="250" height="80" rx="14"/>
+      <text class="d-text" x="755" y="234" text-anchor="middle">Server</text>
+      <text class="d-small" x="755" y="258" text-anchor="middle">the same file in the box</text>
+      <path class="d-arrow" marker-end="url(#ah)" d="M380,92 C300,140 180,160 150,194"/>
+      <path class="d-arrow" marker-end="url(#ah)" d="M450,92 L450,194"/>
+      <path class="d-arrow" marker-end="url(#ah)" d="M520,92 C600,140 720,160 750,194"/>
+    </svg>
+  </div>
+  <p class="aside">Your app has no Rusty Buns code in it. If you leave, you delete one list and walk away. We would be sad, quietly.</p>
+</section>
+
+<section class="slide">
+  <div class="kicker">Rust when you need it</div>
+  <h2>TypeScript everywhere. Rust only for the heavy lifting.</h2>
+  <ul>
+    <li>Almost all of the app is TypeScript: the page, the server and the settings.</li>
+    <li>Some jobs are too slow for it: sound, physics, shapes, big puzzles.</li>
+    <li>You write only that part in Rust. It runs on a laptop, on a server, or inside the page as WebAssembly.</li>
+    <li>Every Rust part has a TypeScript twin that gives the same answer. If Rust cannot load, the twin takes over.</li>
+  </ul>
+  <p class="aside">The race engine is optional. The family car still gets you to the shops.</p>
+</section>
+
+<section class="slide">
+  <div class="kicker">Safe for people, safe for AI helpers</div>
+  <h2>Small, and nothing costs money by surprise</h2>
+  <ol class="steps">
+    <li><span><b>It runs with no cloud account.</b> A helper can start, test and break the real app on a laptop, for free.</span></li>
+    <li><span><b>It shows the price first.</b> Before anything goes to the cloud, it lists every paid piece.</span></li>
+    <li><span><b>It cleans up.</b> One command removes everything it made.</span></li>
+    <li><span><b>The app is a normal web page.</b> AI helpers can see it and press its buttons.</span></li>
+  </ol>
+  <p class="aside">Think of an idea at breakfast. Play it after lunch. Get the bill never, unless you said yes.</p>
+</section>
+
+<section class="slide">
+  <div class="kicker">What it is not</div>
+  <h2>It sits on top. It does not replace.</h2>
+  <ul>
+    <li>It is not a new way to write web pages. Keep the tools you like.</li>
+    <li>It works on top of the popular web frameworks. So we call it a framework for frameworks.</li>
+    <li>It does not make phone apps. A phone app should feel like the phone. The phone app can still talk to the same cloud.</li>
+  </ul>
+  <p class="aside">A meta metaframework. Say it three times fast and a consultant appears.</p>
+</section>
+
+<section class="slide">
+  <div class="kicker">The name</div>
+  <h2>Why "Rusty Buns"</h2>
+  <p class="lede"><b>Rust</b> for the fast parts. <b>Bun</b> for everything else. You need neither to use it.</p>
+  <p>It started with grass. A game needed faster grass, so a fast engine went behind a web page. Then the same code ran in the cloud and on a server, and the grass became a framework.</p>
+  <p class="aside">Most frameworks start with a big plan. Ours started with a lawn.</p>
+</section>
+
+<section class="slide">
+  <div class="kicker">Honest status</div>
+  <h2>What works, and what is still rising</h2>
+  <div class="cards">
+    <div class="card"><span class="tag live">Live</span><h3 style="margin-top:12px">Laptop, cloud, server</h3><p>One list, three places. Every example app proves it every day.</p></div>
+    <div class="card"><span class="tag live">Live</span><h3 style="margin-top:12px">Rust with a twin</h3><p>Rust parts in several apps, each with its TypeScript twin.</p></div>
+    <div class="card"><span class="tag oven">In the oven</span><h3 style="margin-top:12px">Other people's apps</h3><p>Popular frameworks run unchanged more and more often. Not all of them yet.</p></div>
+    <div class="card"><span class="tag plan">Next</span><h3 style="margin-top:12px">Out of alpha</h3><p>It is alpha. It changes most days.</p></div>
+  </div>
+  <div class="notes">Keep this slide current. Source of truth: README.md (Features) and FRAMEWORK_COVERAGE.md.</div>
+</section>
+
+<section class="slide">
+  <div class="kicker">The end</div>
+  <h1>One lamp.<br>Every socket.</h1>
+  <p class="lede">Write the app once. Let the plug worry about the wall.</p>
+  <p style="margin-top:28px"><a href="index.html">All talks</a> · <a href="00-the-words.html">The words</a> · <a href="03-example-range.html">Talk 3: The example range</a></p>
+</section>
+
+<script src="deck.js"></script>
+</body>
+</html>

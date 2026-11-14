@@ -3,9 +3,8 @@
 // trees, reading files, turning a file into a live Durable Object on first
 // open, and pushing a catalogue as a commit.
 
-import { arr, nul, obj, opt, str, type Of } from "@rustybuns/util/guard";
+import { arr, isRecord, nul, obj, opt, str, type Of } from "@rustybuns/util/guard";
 import { MAX_TEXT, fromText, isDoc, text, type Doc } from "./lines.ts";
-import { isPlainObject } from "./util.ts";
 import { FileReply, Names, type FileLine } from "./file-do.ts";
 import { readJson } from "@rustybuns/util/http";
 import { GIT_BOT, GIT_EMAIL_DOMAIN, push, type Change } from "./git.ts";
@@ -64,7 +63,7 @@ export const docIn = async (res: Response): Promise<Doc | null> => {
 async function lastDoc(env: Env, owner: string, repo: string, path: string, crew = "1"): Promise<Doc | null> {
   const commits: unknown = await (await toFile(env, owner, repo, path, "codesplitters", "commits")).json();
   const last = Array.isArray(commits) ? commits[0] : null;
-  if (!isPlainObject(last) || typeof last.rev !== "number") return null;
+  if (!isRecord(last) || typeof last.rev !== "number") return null;
   return docIn(await toFile(env, owner, repo, path, "codesplitters", "at", { headers: { "x-codesplitter-crew": crew } }, `?rev=${last.rev}`));
 }
 

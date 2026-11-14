@@ -6,7 +6,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { hex } from "@rustybuns/util/bytes";
-import { local } from "../src/local.ts";
+import { DEMO_ADMIN, local } from "../src/local.ts";
 import { presignUrl } from "../src/sign.ts";
 
 setDefaultTimeout(15_000);
@@ -60,6 +60,28 @@ describe("saving a design", () => {
     expect(await (await fetch(url)).json()).toEqual(design);
   });
 
+  const SLEEVES = ["front", "back", "left-sleeve"] as const, NO_SLEEVES = ["front", "back"] as const;
+  test.each([
+    ["crew-tee", "tee", SLEEVES],
+    ["crew-sweater", "sweater", SLEEVES],
+    ["pullover-hoodie", "hoodie", SLEEVES],
+    ["classic-tank", "tank", NO_SLEEVES],
+    ["racerback-tank", "racerback", NO_SLEEVES],
+  ] as const)("the demo's %s keeps a picture on each of its zones", async (product, model, zones) => {
+    const pics = await Promise.all(zones.map((_, i) => upload("texture", "image/webp", new Uint8Array([i + 1, model.length]))));
+    const shot = await upload("snapshot", "image/png", new Uint8Array([4, model.length]));
+    const at = { u: 0.5, v: 0.5, scale: 0.7, rotation: 0 };
+    const design = {
+      v: 1, model, color: "#6b7280", product, snapshot: shot.key,
+      layers: zones.map((zone, i) => ({ texture: pics[i]!.key, zone, ...at })),
+      camera: { azimuth: 0.8, polar: 1.2, distance: 5.6 },
+    };
+    const saved = await post("/api/orgs/demo/designs", design);
+    expect(saved.status).toBe(201);
+    expect(await (await fetch(((await saved.json()) as { url: string }).url)).json()).toEqual(design);
+    expect(await (await fetch(`${app.url}/api/orgs/demo/products/${product}`)).json()).toMatchObject({ model });
+  });
+
   test("products come from the org's folder", async () => {
     const res = await fetch(`${app.url}/api/orgs/demo/products/cuff-beanie`);
     expect(await res.json()).toMatchObject({ model: "beanie" });
@@ -74,6 +96,9 @@ describe("refused", () => {
     ["a texture over 4 MB", "/api/orgs/demo/uploads", { kind: "texture", type: "image/webp", size: 5 << 20, sha256: "a".repeat(64) }, 413],
     ["a body that isn't a sign request", "/api/orgs/demo/uploads", { kind: "texture" }, 400],
     ["a design using another org's file", "/api/orgs/demo/designs", { v: 1, model: "cap", color: "#000000", layers: [{ texture: `orgs/acme/textures/${"b".repeat(64)}.webp`, u: 0.5, v: 0.5, scale: 0.5, rotation: 0 }], camera: { azimuth: 0, polar: 1, distance: 5 } }, 400],
+    ["a back print on a cap", "/api/orgs/demo/designs", { v: 1, model: "cap", color: "#000000", layers: [{ texture: "orgs/demo/textures/x.webp", zone: "back", u: 0.5, v: 0.5, scale: 0.5, rotation: 0 }], camera: { azimuth: 0, polar: 1, distance: 5 } }, 400],
+    ["a sleeve picture on a tank", "/api/orgs/demo/designs", { v: 1, model: "tank", color: "#000000", layers: [{ texture: "orgs/demo/textures/x.webp", zone: "left-sleeve", u: 0.5, v: 0.5, scale: 0.5, rotation: 0 }], camera: { azimuth: 0, polar: 1, distance: 5 } }, 400],
+    ["two pictures on a tee's front", "/api/orgs/demo/designs", { v: 1, model: "tee", color: "#000000", layers: [0, 1].map(() => ({ texture: "orgs/demo/textures/x.webp", zone: "front", u: 0.5, v: 0.5, scale: 0.5, rotation: 0 })), camera: { azimuth: 0, polar: 1, distance: 5 } }, 400],
     ["a design whose files were never uploaded", "/api/orgs/demo/designs", { v: 1, model: "cap", color: "#000000", layers: [{ texture: `orgs/demo/textures/${"c".repeat(64)}.webp`, u: 0.5, v: 0.5, scale: 0.5, rotation: 0 }], camera: { azimuth: 0, polar: 1, distance: 5 } }, 400],
   ])("%s", async (_, path, body, status) => {
     expect((await post(path, body)).status).toBe(status);
@@ -97,6 +122,40 @@ describe("refused", () => {
     expect((await fetch(`${app.url}/r/${o.key}`)).status).toBe(404);
     expect((await fetch(`${app.url}/r/orgs/demo/org.json`)).status).toBe(404);
   });
+});
+
+test("a page hammering the signer, or an admin starting samples, is told to slow down", async () => {
+  // A fake of Cloudflare's rate limit binding: two a key, then no.
+  const fake = () => {
+    const seen = new Map<string, number>();
+    return { keys: seen, limit: async ({ key }: { key: string }) => { seen.set(key, (seen.get(key) ?? 0) + 1); return { success: seen.get(key)! <= 2 }; } };
+  };
+  const limits = { SIGN_LIMIT: fake(), SAMPLE_LIMIT: fake() };
+  const limitedDir = mkdtempSync(join(tmpdir(), "qview3d-limits-"));
+  const limited = await local({ dir: limitedDir, limits, standInSeconds: 0.3 });
+  try {
+    const sign = (ip: string) => fetch(`${limited.url}/api/orgs/demo/uploads`, {
+      method: "POST", headers: { "content-type": "application/json", origin: "https://anywhere.test", "cf-connecting-ip": ip },
+      body: JSON.stringify({ kind: "texture", type: "image/webp", size: 5, sha256: "a".repeat(64) }),
+    });
+    expect([(await sign("1.1.1.1")).status, (await sign("1.1.1.1")).status]).toEqual([200, 200]);
+    const slow = await sign("1.1.1.1");
+    expect(slow.status).toBe(429);
+    expect(slow.headers.get("retry-after")).toBe("60");
+    expect(await slow.json()).toMatchObject({ retryAfter: 60 });
+    expect((await sign("2.2.2.2")).status).toBe(200); // another visitor has their own allowance
+    expect([...limits.SIGN_LIMIT.keys.keys()]).toEqual(["1.1.1.1:demo", "2.2.2.2:demo"]);
+
+    const start = () => fetch(`${limited.url}/api/orgs/demo/models`, {
+      method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${DEMO_ADMIN}` }, body: "{}",
+    });
+    expect([(await start()).status, (await start()).status]).toEqual([400, 400]); // not photos, but they count
+    expect((await start()).status).toBe(429);
+    expect([...limits.SAMPLE_LIMIT.keys.keys()]).toEqual(["demo"]);
+  } finally {
+    limited.stop();
+    rmSync(limitedDir, { recursive: true, force: true });
+  }
 });
 
 test("S3 presigned URLs match AWS's published example", async () => {

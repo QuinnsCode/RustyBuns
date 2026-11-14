@@ -4,7 +4,7 @@
 
 import { parseJson } from "@rustybuns/util/http";
 import { ERRORS, type ErrorTag } from "./openapi.ts";
-import { isPlainObject } from "./util.ts";
+import { isRecord } from "@rustybuns/util/guard";
 
 const isTag = (t: unknown): t is ErrorTag => typeof t === "string" && Object.hasOwn(ERRORS, t);
 
@@ -20,7 +20,7 @@ export function explain(message: string, tag: unknown): string {
  */
 export function failed(status: number, text: string): string {
   const body = parseJson(text);
-  if (!isPlainObject(body)) return status === 400 && text && !text.startsWith("{") ? text : `${status}: ${text}`;
+  if (!isRecord(body)) return status === 400 && text && !text.startsWith("{") ? text : `${status}: ${text}`;
   const { error, tag, ...rest } = body;
   const said = typeof error === "string" ? explain(error, tag) : typeof body.message === "string" ? explain(body.message, tag) : null;
   if (said === null) return `${status}: ${text}`;

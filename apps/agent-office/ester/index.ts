@@ -6,7 +6,7 @@
 import { Skull, GitMerge, Scissors, createElement, type IconNode } from "lucide";
 import { hot } from "../reload/hot.ts";
 import type { ContextAlert, ModeEvent } from "./dexter.ts";
-import { helperState } from "../screens/read.ts";
+import { HelpersReply } from "./state.ts";
 import type { EsterState } from "./run.ts";
 import { el } from "@rustybuns/util/dom";
 import { check } from "@rustybuns/util/guard";
@@ -93,9 +93,8 @@ function start(m: { box: HTMLElement; row: HTMLElement }) {
       if (res.redirected || res.status === 401 || res.status === 404) return;
       if (res.ok) {
         // the reply also carries Mervin's tally (null until one is kept): only the three helpers are states
-        const body: Record<string, unknown> = await res.json();
-        for (const n of Object.keys(WHO) as Name[]) if (n in body) states[n] = helperState(body[n]);
-        if (Array.isArray(body.rings)) rings = body.rings.filter((l): l is string => typeof l === "string");
+        const body = check(HelpersReply, await res.json().catch(() => null));
+        if (body) { for (const n of Object.keys(WHO) as Name[]) states[n] = body[n]; rings = body.rings; }
       }
       const ctx = await fetch("/__rb/context", { credentials: "same-origin" }).then((c) => (c.ok ? (c.json() as Promise<{ lines: string[]; over: ContextAlert[]; fresh: ContextAlert[]; code?: ModeEvent[] }>) : null), () => null);
       if (ctx) {

@@ -1,17 +1,16 @@
 // The places of src/world/poi.ts drawn on the open ground, and on the corner map. Each kind is one instanced mesh
 // (a handful of draw calls for every place in the world), and only those near you are laid out each frame.
 // A tape is a stump with a tape on it; a fire is logs, and a flame once lit; a landmark is a tall mast and cap; a sighting
-// board hangs in a town, a gas station, a diner and a motel in a row (town-view.ts), whose door walks you in (towns.ts), or on an island at a fish shed; a cabin is log walls under a pitched roof, one mesh; and the next sign of a contract you took is a pale wisp over the spot (hunts.ts).
+// board hangs in a town, a gas station, a diner and a motel in a row (town-view.ts), whose door walks you in (towns.ts), or on an island at a fish shed; a cabin is log walls under a pitched roof with a plank door and a lamp-lit window beside it (walls you can't walk through: poi.ts inWalls); and the next sign of a contract you took is a pale wisp over the spot (hunts.ts).
 // worldView (view.ts) owns the camera, the toast and the map; this asks it for none of them, it is handed what it needs.
 import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { esc } from "@rustybuns/util";
 import { icon } from "../icons.ts";
 import { ownerAt } from "./world.ts";
-import { ALL, arrive, marked, POIS, SEE_R, type Log, type Poi } from "./poi.ts";
+import { ALL, arrive, CABIN, marked, POIS, SEE_R, yawOf, type Log, type Poi } from "./poi.ts";
 import { huntsIn, nextClues, track, type Hunt } from "./hunts.ts";
 import { townFronts } from "./town-view.ts";
-import { yawOf } from "./towns.ts";
 
 export interface PlaceHooks {
   /** What the journey remembers, or null while there is none. */
@@ -33,7 +32,7 @@ const CONTINENT: PlaceSet = { all: ALL, near: (me) => POIS.get(ownerAt(me.x, me.
 
 const DRAW_R = 1800; // metres: places farther than this aren't laid out
 const WISP = 0xe8f4ff;
-const SHED = 0x7a3b30, CORK = 0xc89b5e, LOGS = 0x9a6a44, FLAME = 0xff9a2e, EMBER = 0x4a3a30, STUMP = 0x6b4a2b, TAPE = 0xf2e27a, MAST = 0xc9c2b4, CAP = 0xd0442e;
+const DOOR = 0x4e3220, LAMP = 0xffc766, SHED = 0x7a3b30, CORK = 0xc89b5e, LOGS = 0x9a6a44, FLAME = 0xff9a2e, EMBER = 0x4a3a30, STUMP = 0x6b4a2b, TAPE = 0xf2e27a, MAST = 0xc9c2b4, CAP = 0xd0442e;
 /** `door`: walked up to a town's front door (a sighting board's place); the world walks you in. */
 export function poiView(group: THREE.Group, camera: THREE.Camera, groundY: (x: number, z: number) => number, hooks: PlaceHooks | undefined, door?: (p: Poi) => void, set = CONTINENT) {
   const cap = set.all.length || 1;
@@ -53,13 +52,17 @@ export function poiView(group: THREE.Group, camera: THREE.Camera, groundY: (x: n
   });
   const wisps = mesh(new THREE.OctahedronGeometry(0.7), WISP, true);
   // A cabin: 5 by 4 m of walls, 2.6 m high, and a four-sided roof over them, merged so it is one draw call for them all.
-  const roof = new THREE.ConeGeometry(4.2, 2.2, 4).rotateY(Math.PI / 4).scale(1, 1, 0.82).translate(0, 3.7, 0);
-  const cabins = mesh(mergeGeometries([new THREE.BoxGeometry(5, 2.6, 4).translate(0, 1.3, 0), roof]) ?? new THREE.BoxGeometry(5, 2.6, 4), LOGS);
+  // On its +z face a plank door, and beside it a window with a lamp behind it: unlit by the sun, so it glows after dark.
+  const { w, d, h } = CABIN, face = d / 2 + 0.04;
+  const roof = new THREE.ConeGeometry(4.2, 2.2, 4).rotateY(Math.PI / 4).scale(1, 1, 0.82).translate(0, h + 1.1, 0);
+  const cabins = mesh(mergeGeometries([new THREE.BoxGeometry(w, h, d).translate(0, h / 2, 0), roof]) ?? new THREE.BoxGeometry(w, h, d), LOGS);
+  const doors = mesh(new THREE.BoxGeometry(0.95, 1.95, 0.08).translate(0.9, 0.975, face), DOOR);
+  const panes = mesh(new THREE.PlaneGeometry(0.9, 0.7).translate(-1.2, 1.45, face + 0.01), LAMP, true);
   // A board with no town to walk into (an island's): a fish shed, 6 by 4 m under a pitched roof, and the board on two posts before it.
   const shedRoof = new THREE.ConeGeometry(4.6, 1.8, 4).rotateY(Math.PI / 4).scale(1.15, 1, 0.75).translate(0, 3.3, 0);
   const sheds = mesh(mergeGeometries([new THREE.BoxGeometry(6, 2.4, 4).translate(0, 1.2, 0), shedRoof]) ?? new THREE.BoxGeometry(6, 2.4, 4), SHED);
   const corks = mesh(mergeGeometries([new THREE.BoxGeometry(1.8, 1.2, 0.12).translate(0, 1.7, 3.2), new THREE.BoxGeometry(0.12, 2.3, 0.12).translate(-0.8, 1.15, 3.2), new THREE.BoxGeometry(0.12, 2.3, 0.12).translate(0.8, 1.15, 3.2)]) ?? new THREE.BoxGeometry(1.8, 1.2, 0.12), CORK);
-  const all = [stumps, tapes, logs, flames, masts, caps, wisps, cabins, sheds, corks, ...fronts];
+  const all = [stumps, tapes, logs, flames, masts, caps, wisps, cabins, doors, panes, sheds, corks, ...fronts];
   const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), up = new THREE.Vector3(0, 1, 0), one = new THREE.Vector3(1, 1, 1), at = new THREE.Vector3(), sc = new THREE.Vector3();
   const put = (im: THREE.InstancedMesh, x: number, y: number, z: number, yaw = 0, sx = 1, sy = 1) => {
     q.setFromAxisAngle(up, yaw);
@@ -84,7 +87,7 @@ export function poiView(group: THREE.Group, camera: THREE.Camera, groundY: (x: n
           if (on) put(flames, p.x, y + 1.0, p.z, 0, 1 + Math.sin(clock * 9 + yaw) * 0.12, 0.9 + Math.sin(clock * 7 + yaw * 2) * 0.25);
         } else if (p.kind === "board" && !door) { put(sheds, p.x, y, p.z, yaw); put(corks, p.x, y, p.z, yaw); }
         else if (p.kind === "board") { for (const f of fronts) put(f, p.x, y - 0.15, p.z, yaw); }
-        else if (p.kind === "cabin") put(cabins, p.x, y, p.z, yaw);
+        else if (p.kind === "cabin") { put(cabins, p.x, y, p.z, yaw); put(doors, p.x, y, p.z, yaw); put(panes, p.x, y, p.z, yaw); }
         else { put(masts, p.x, y + 13, p.z, yaw); put(caps, p.x, y + 27.7, p.z, yaw); }
       }
       // The next sign of each contract you took here: a wisp bobbing over the spot, seen from a way off.

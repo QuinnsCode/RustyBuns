@@ -34,7 +34,7 @@ test("the allowlist names the model, GitHub and the registry, and the proxy gets
   expect(joined(dockerArgs(parsePerms({ network: "open" }), host))).toContain("-p 127.0.0.1:4600:4600");
   expect(edit(perms, { allow: { host: "Pkg.Example.com", on: true } }, () => true).allow).toContain("pkg.example.com");
   expect(edit(perms, { allow: { host: "github.com", on: false } }, () => true).allow).not.toContain("github.com");
-  expect(() => parsePerms({ allow: ["not a host"] })).toThrow("allow[0]");
+  expect(() => parsePerms({ allow: ["not a host"] })).toThrow("allow.0: should be a host");
 });
 
 test("the proxy tunnels HTTPS to listed hosts and refuses the rest", () => {
@@ -58,9 +58,9 @@ test("a bad permission set says which field", () => {
   expect(() => parsePerms({ port: "nope" })).toThrow("isn't a port");
   expect(() => parsePerms({ memory: "lots" })).toThrow("512m or 4g");
   expect(() => parsePerms({ network: "lan" })).toThrow('"allowlist", "open" or "offline"');
-  expect(() => parsePerms({ repos: [{ path: "/a", access: "all" }] })).toThrow("repos[0].access");
+  expect(() => parsePerms({ repos: [{ path: "/a", access: "all" }] })).toThrow("repos.0.access");
   expect(() => parsePerms({ env: ["BAD NAME"] })).toThrow("variable name");
-  expect(() => parsePerms([])).toThrow("JSON object");
+  expect(() => parsePerms([])).toThrow("the permission set: an object");
   expect(() => dockerArgs(parsePerms({ repos: [{ path: "/a/app" }, { path: "/b/app" }] }), host)).toThrow("both called app");
 });
 

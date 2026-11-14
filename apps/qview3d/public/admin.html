@@ -64,6 +64,16 @@
     .copy:hover { border-color: var(--accent); color: var(--accent-ink); }
     .copy:focus-visible { outline: 2px solid var(--accent-ink); outline-offset: 2px; }
     .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+    .print { grid-column: 1 / -1; }
+    .print .line { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: end; }
+    .print button.go { width: auto; padding: 0 18px; margin-top: 0; }
+    .sheets { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; margin-top: 14px; }
+    .sheets:empty { display: none; }
+    .sheet { border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+    .sheet img { display: block; width: 100%; aspect-ratio: 4 / 3; object-fit: contain; background: repeating-conic-gradient(#f1f1f1 0 25%, #fff 0 50%) 0 0 / 16px 16px; border-bottom: 1px solid var(--line); }
+    .sheet div { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 8px 10px; font-size: 12px; color: var(--muted); }
+    .sheet b { color: var(--fg); font-weight: 600; }
+    #printStatus.bad { color: var(--bad); }
     @media (max-width: 860px) { main { grid-template-columns: 1fr; } .empty { min-height: 180px; } }
     @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
   </style>
@@ -104,6 +114,20 @@
         </div>
       </div>
       <div class="empty" id="empty">Your sample shows up here, ready to put a picture on.</div>
+    </section>
+    <section class="card print" aria-labelledby="printTitle">
+      <div class="head">
+        <h1 id="printTitle">Print files</h1>
+        <p class="sub">For whoever fulfils an order: the shopper's original picture placed at 300 dpi over each print zone's real size, one PNG with a clear background per zone. Uses the org and admin key above.</p>
+      </div>
+      <div class="body">
+        <div class="line">
+          <div><label class="field" for="design">Design id or link</label><input id="design" type="text" autocomplete="off" spellcheck="false" placeholder="3f9c0e1a2b4d5e6f7a8b9c0d" title="The saved design's 24-character id, or its /r/ link" /></div>
+          <button class="go" id="printGo">Make print files</button>
+        </div>
+        <div class="status"><div id="printStatus" role="status" aria-live="polite"></div></div>
+        <div class="sheets" id="sheets" aria-label="Print files"></div>
+      </div>
     </section>
   </main>
 </body>

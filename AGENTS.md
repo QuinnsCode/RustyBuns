@@ -91,12 +91,15 @@ updates its docs in the same PR. Those two files must keep importing nothing els
 
 ## Check what comes in
 
-A parsed body, fetch reply or stored string is `unknown` until something looks at it. Don't
-assert a shape onto it (`as { owner: string }`), and no `any` or `as never`: narrow each field
-(`readBody` and `parseJson` in codeSplitter, `isPlainObject` and `listOf` in its `util.ts`), and
-test the wrong shape. For a whole body or message, write its guard with `@rustybuns/util/guard`
-(`obj`, `str`, `num`, `oneOf`, `arr`, `opt`; `type X = Of<typeof X>`), and in a codeSplitter route
-`need(body, guard)` for the typed value or a 400. CI runs `bun scripts/boundary-audit.ts`, which fails on a new unchecked value
+A parsed body, fetch reply, tool's arguments or stored string is `unknown` until something looks at it. Don't
+assert a shape onto it (`as { owner: string }`, `const x: Foo = await r.json()`), no `any` or `as never`, and no
+`Record<string, unknown>` poked field by field: that is a second, hand-kept copy of a type the other end already has.
+A shape is a guard from `@rustybuns/util/guard` (`obj`, `str`, `num`, `oneOf`, `arr`, `opt`, `or`, `said`), and the
+guard is the type (`type X = Of<typeof X>`). Declare it once where both ends can import it (no Bun or DOM in that file:
+`apps/agent-office/connect/types.ts`, `ester/state.ts`), have the server write `x satisfies Reply`, and read it with
+`getJson(url, Reply)` or `check(Reply, v)`; in a codeSplitter route `need(body, guard)` gives the typed value or a 400.
+Test the wrong shape. `isRecord` is only for walking JSON that has no fixed shape (a linter over authored files, a deep
+merge). CI runs `bun scripts/boundary-audit.ts`, which fails on a new unchecked value or `Record<string, unknown>`,
 and on a file that got better but didn't lower its count in `scripts/boundary-audit.allow.json`
 (`--update` writes it, `--list` shows every one). The allowance only goes down.
 
@@ -126,6 +129,12 @@ A PR that deletes more than it adds is the goal. codeSplitter's own helpers are 
   A JSON reply is `json` (or `privateJson`, which no cache may keep) in `@rustybuns/util/http`; a client's unchecked body is
   `readBody` there, and a body or reply read through a guard is `readJson` / `getJson`. `hex`, `b64url`, `digest` and `sha256`
   are `@rustybuns/util/bytes`. Don't write a local `const json = ...` again.
+- `@rustybuns/util` has three sides and two speeds ([its README](packages/util/README.md)): each module is `shared`
+  (runs anywhere, imports only shared, copies out with `bun scripts/util-api.ts --copy <module> <dir>`), `web` or
+  `server` in `packages/util/api.json`, and the `stable` ones have their exports locked in `packages/util/API.lock`.
+  Adding to a stable module is free (`bun scripts/util-api.ts --update`); changing or removing an export takes
+  `--update --break "why"`, which writes `BREAKING.md` for the release notes. Trying something wild goes in
+  `packages/util/src/lab/` (`@rustybuns/util/lab/<name>`): no side, no lock, and only lab imports lab. CI runs the check.
 - What a route answers is one guard that both the server and the page import (`apps/park-hide-seek/src/api.ts`,
   `CheckoutReply` in skate-tech-park's `shop.ts`): the server writes `json(x satisfies Reply)`, the page reads
   `getJson(url, Reply)`. Never a `Record<string, unknown>` or an `as { ... }` on each side of the wire.
@@ -154,7 +163,8 @@ stacked base that may merge first) goes one of three ways: a new worker (`office
 (anything for the owner's hands gets `MANUAL RUN:` and the `manual run` label, see below), or a question to
 the owner right then. A note in a PR body or comment is not a hand-off: a merged PR's open items vanish. Before you
 stop, every "not checked" or "follow-up" line in your PR is done, an issue, or a hired worker. Open your last message with "N of M done" and name each leftover with its link, or say
-"4 of 4, nothing left". "PR is open" alone is not a status. Check `gh pr view` and `bun run pr <n> --no-wait` first, and
+"4 of 4, nothing left". The count is agent work only: a filed `MANUAL RUN:` or an issue waiting on the owner's
+decision isn't a leftover, so don't count it; just say it was added (below). "PR is open" alone is not a status. Check `gh pr view` and `bun run pr <n> --no-wait` first, and
 base every PR on `main`. Never stack one on another PR's branch: when the base merges, its branch is deleted
 and every PR on it closes unmerged.
 
@@ -168,7 +178,9 @@ landing, or an issue.
 When something needs the owner to do it (a token, a sign-in, a live run, a hands-on check), it gets its own
 issue: title prefix `MANUAL RUN:` (hands-on checks too, even when nothing is broken), the `manual run`
 label, the steps and a rough time at the top. Never fold it as a line into another open issue (the old #609
-roll-up included): a buried line never gets done. Say in your final message that you filed one, with the link. A PR that touches a manual-run issue
+roll-up included): a buried line never gets done. Say in your final message that you filed one, with the link, outside
+the "N of M" count. Ask the owner to do it right then (AskUserQuestion) only when it takes under a minute or more work
+is blocked on it; otherwise it waits in `bun run manual`. A PR that touches a manual-run issue
 writes "Part of #N" or "Leaves #N open", never a closing word next to its number.
 
 The owner goes through them in one window: `bun run manual` starts each app on a free port, opens the

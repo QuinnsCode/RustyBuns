@@ -219,6 +219,14 @@
         "effect": "4.0.5",
       },
     },
+    "apps/cron-swanson": {
+      "name": "cron-swanson",
+      "version": "0.1.0",
+      "dependencies": {
+        "@rustybuns/util": "^0.1.12",
+        "lucide": "1.55.0",
+      },
+    },
     "apps/delayed-reaction": {
       "name": "delayed-reaction",
       "version": "0.0.1",
@@ -2860,6 +2868,8 @@
     "crc-32": ["crc-32@1.2.2", "", { "bin": { "crc32": "bin/crc32.njs" } }, "sha512-ROmzCKrTnOwybPcJApAA6WBWij23HVfGVNKqqrZpuyZOHqK2CwHSvpGuyt/UNNvaIjEd8X5IFGp4Mh+Ie1IHJQ=="],
 
     "crc32-stream": ["crc32-stream@6.0.0", "", { "dependencies": { "crc-32": "^1.2.0", "readable-stream": "^4.0.0" } }, "sha512-piICUB6ei4IlTv1+653yq5+KoqfBYmj9bw6LqXoOneTMDXk5nM1qt12mFW1caG3LlJXEKW1Bp0WggEmIfQB34g=="],
+
+    "cron-swanson": ["cron-swanson@workspace:apps/cron-swanson"],
 
     "croner": ["croner@10.0.1", "", {}, "sha512-ixNtAJndqh173VQ4KodSdJEI6nuioBWI0V1ITNKhZZsO0pEMoDxz539T4FTTbSZ/xIOSuDnzxLVRqBVSvPNE2g=="],
 

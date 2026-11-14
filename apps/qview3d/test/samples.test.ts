@@ -24,12 +24,12 @@ const admin = { authorization: `Bearer ${DEMO_ADMIN}` };
 const post = (path: string, body: unknown, headers: Record<string, string> = admin) =>
   fetch(`${app.url}${path}`, { method: "POST", headers: { "content-type": "application/json", ...headers }, body: JSON.stringify(body) });
 
-async function photo(org: string, bytes: Uint8Array<ArrayBuffer>) {
+async function photo(org: string, bytes: Uint8Array<ArrayBuffer>, kind = "photo", type = "image/jpeg") {
   const sha = hex(await crypto.subtle.digest("SHA-256", bytes));
-  const res = await post(`/api/orgs/${org}/uploads`, { kind: "photo", type: "image/jpeg", size: bytes.length, sha256: sha });
+  const res = await post(`/api/orgs/${org}/uploads`, { kind, type, size: bytes.length, sha256: sha });
   expect(res.status).toBe(200);
   const s = (await res.json()) as { key: string; url?: string; put: { url: string; headers: Record<string, string> } };
-  expect(s.url).toBeUndefined(); // product photos are never served
+  if (kind === "photo") expect(s.url).toBeUndefined(); // product photos are never served
   expect((await fetch(s.put.url, { method: "PUT", headers: s.put.headers, body: bytes })).status).toBe(201);
   return s.key;
 }
@@ -55,7 +55,39 @@ test("photos in, a sample model out, and the widget's product names it", async (
   expect(glb.headers.get("cache-control")).toContain("immutable");
 });
 
+/** The smallest GLB: the header and one JSON chunk, what the iPhone app writes around its mesh. */
+function glb(): Uint8Array<ArrayBuffer> {
+  const json = new TextEncoder().encode(JSON.stringify({ asset: { version: "2.0" } }).padEnd(28, " "));
+  const out = new Uint8Array(12 + 8 + json.length);
+  const v = new DataView(out.buffer);
+  v.setUint32(0, 0x46546c67, true); v.setUint32(4, 2, true); v.setUint32(8, out.length, true);
+  v.setUint32(12, json.length, true); v.setUint32(16, 0x4e4f534a, true);
+  out.set(json, 20);
+  return out;
+}
+
+test("a scan from the shop's iPhone is a product at once, with no Meshy call and no sample used", async () => {
+  const before = app.standIn!.started.length;
+  const scan = await photo("nopaid", glb(), "scan", "model/gltf-binary");
+  const res = await post("/api/orgs/nopaid/models", { name: "Camp mug", scan });
+  expect(res.status).toBe(201);
+  const s = Sample(await res.json());
+  expect(s).toMatchObject({ status: "ready", glb: scan, product: s.id });
+  expect(app.standIn!.started.length).toBe(before);
+  const product = Product(await (await fetch(`${app.url}/api/orgs/nopaid/products/${s.product}`)).json());
+  expect(product).toMatchObject({ name: "Camp mug", model: "custom", glb: scan });
+  expect(new TextDecoder().decode((await (await fetch(`${app.url}/r/${product.glb}`)).arrayBuffer()).slice(0, 4))).toBe("glTF");
+});
+
+test("a scan that isn't a GLB is turned away", async () => {
+  const scan = await photo("demo", new Uint8Array([1, 2, 3, 4]), "scan", "model/gltf-binary");
+  expect((await post("/api/orgs/demo/models", { name: "x", scan })).status).toBe(400);
+});
+
 test.each([
+  ["uploading a scan without the key", "/api/orgs/demo/uploads", { kind: "scan", type: "model/gltf-binary", size: 3, sha256: "a".repeat(64) }, {}, 401],
+  ["another org's scan", "/api/orgs/demo/models", { name: "x", scan: `orgs/nopaid/scans/${"a".repeat(64)}.glb` }, admin, 400],
+  ["photos and a scan at once", "/api/orgs/demo/models", { name: "x", photos: ["orgs/demo/photos/a.jpg"], scan: `orgs/demo/scans/${"a".repeat(64)}.glb` }, admin, 400],
   ["starting one without the admin key", "/api/orgs/demo/models", { name: "x", photos: ["orgs/demo/photos/a.jpg"] }, {}, 401],
   ["starting one with a wrong key", "/api/orgs/demo/models", { name: "x", photos: ["orgs/demo/photos/a.jpg"] }, { authorization: "Bearer not-the-key" }, 401],
   ["uploading a product photo without the key", "/api/orgs/demo/uploads", { kind: "photo", type: "image/jpeg", size: 3, sha256: "a".repeat(64) }, {}, 401],

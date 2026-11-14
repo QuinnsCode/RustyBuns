@@ -11,7 +11,7 @@ import * as THREE from "three";
 import { findTape, ISLE_N, isleLair, islePlaces, isleTapesFound, lightFire, MIN_GAP, tapeOf, type Log } from "../src/world/poi.ts";
 import { poiView, type PoiView } from "../src/world/poi-view.ts";
 import { CLUES, isleHunts, stageOf, take } from "../src/world/hunts.ts";
-import { atSlip, isleGround, isleSlip, portSlip } from "../src/world/ferry.ts";
+import { atSlip, isleGround, isleSlip, onDock, portSlip } from "../src/world/ferry.ts";
 import { WORLD } from "../src/world/trail.ts";
 import { buildIsland, CELL, dry, heightAt, islandFrom, onIsland, poolOf, regionAt, spawn, walk } from "../src/world/world.ts";
 
@@ -120,14 +120,15 @@ describe("packs", () => {
   });
 
   test.each(PACKS.filter((p) => p.tier !== "coming-soon").map((p) => [p.id, p] as const))("%s: the boat from the port town to the landing fire and back", async (_, p) => {
-    // On the continent: the pier's end is on the port region's own ground and walk() takes you from the town to it; the boat is out on the sea.
+    // On the continent: you board by the boat, out on the sea past the port region's ground, and walk() takes you there from the town along the pier.
     const port = portSlip(WORLD, p), me = { ...spawn(p.land.port), x: port.land.x, z: port.land.z };
-    expect([regionAt(port.x, port.z)?.n, regionAt(port.boat.x, port.boat.z)?.n, heightAt(WORLD, port.boat.x, port.boat.z) < 0]).toEqual([p.land.port, undefined, true]);
+    expect([regionAt(port.land.x, port.land.z)?.n, regionAt(port.x, port.z)?.n, Math.hypot(port.x - port.boat.x, port.z - port.boat.z) < 10, heightAt(WORLD, port.boat.x, port.boat.z) < 0]).toEqual([p.land.port, undefined, true, true]);
     const towards = (s: { x: number; z: number }, at: { x: number; z: number }, step: (dx: number, dz: number) => void) => {
       for (let k = 0; k < 2000 && !atSlip(s, at.x, at.z); k++) { const d = Math.hypot(s.x - at.x, s.z - at.z); step(((s.x - at.x) / d) * 1.5, ((s.z - at.z) / d) * 1.5); }
       return atSlip(s, at.x, at.z);
     };
-    expect(towards(port, me, (dx, dz) => walk(me, dx, dz, new Set()))).toBe(true);
+    expect(towards(port, me, (dx, dz) => walk(me, dx, dz, new Set(), undefined, undefined, (x, z) => onDock(port, x, z)))).toBe(true);
+    expect(me.region).toBe(p.land.port);
     // On the island: off the boat by the first fire, on dry ground, and back to its slip over the island's ground and the dock.
     const bytes = new Uint8Array(await Bun.file(join(import.meta.dir, "..", "public", "packs", p.id, "ground.bin")).arrayBuffer());
     const w = buildIsland(islandFrom(bytes)!), s = isleSlip(w, p), at = { ...s.land };

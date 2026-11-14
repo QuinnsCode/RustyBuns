@@ -30,7 +30,9 @@ Put the script once in the page's <head> (or before </body>), and the element wh
 - \`org="demo"\` is the public demo: it works on any page, right now. It keeps no files, so Save is refused there;
   customising and the snapshot download work. A real shop gets its own org (ask hello@qntbr.com), then sets
   \`org\` to it and \`product\` to one of its products.
-- Demo products: \`field-cap\` (a six-panel cap), \`cuff-beanie\`, \`bucket-hat\`.
+- Demo products: \`field-cap\` (a six-panel cap), \`cuff-beanie\`, \`bucket-hat\`, \`crew-tee\`, \`crew-sweater\`, \`pullover-hoodie\`, \`classic-tank\` and \`racerback-tank\`
+  (a top prints on its front and back, and a sleeved one on its left sleeve: \`el.zone = "back"\` or
+  \`el.addImage(file, "left-sleeve")\`; \`display="hanger"\` hangs a sleeved top on a hanger).
 - In React, Vue, Svelte and the like, it is a plain custom element: render \`<qview-3d>\` as you would any tag. In
   React 19 pass attributes as written; in older React set them with a ref. In TypeScript JSX you may need to declare
   the tag in \`JSX.IntrinsicElements\`.

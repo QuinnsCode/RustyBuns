@@ -285,7 +285,7 @@ export function eqosys({ app, url, from, prefix, skin }: EqosysConfig) {
   const token = () => { const l = login(); return l && fresh(l, 5_000) ? l.token : null; };
   const partyClient = () => party({ url: eqosysUrl, token });
   const spaceClient = () => space({ url: eqosysUrl, token });
-  const hubClient = () => hub({ url: eqosysUrl, token });
+  const hubClient = () => hub({ url: eqosysUrl, token, app });
 
   /**
    * The account chip, in `slot`: the eqosys badge, then the eqosys name and a way out, or a way in where eqosys can send the
@@ -469,6 +469,8 @@ export function party({ url, token }: PartyConfig) {
     /** Quiet a member for the whole party (or `false` to let them speak again): the host's, or whoever the `mute` rule says. */
     mute: (id: string, on = true) => void link?.send({ t: "mute", id, on }),
     report: (id: string) => void link?.send({ t: "report", id }),
+    /** Ask member `id` to be friends, the party being where you met: they press it on you too (or already did) and you're friends. */
+    befriend: (id: string) => void link?.send({ t: "friend", id }),
     /** Host only: the party's rules (@rustybuns/util/party-rules), all at once. */
     rules: (rules: PartyRules) => void link?.send({ t: "rules", rules }),
     /** Host only: take a member out (they may come back), block or unblock someone (refused at the door), or hand them the party. */
@@ -516,7 +518,7 @@ export type HubView = Of<typeof HubView>;
  * friends and notes, `notify(id, text, link)` to tell one friend something from this app (a link on the app's own
  * site, an invite say), which lands in that friend's notes. Friends are made on eqosys's own page (`friendsPage`).
  */
-export function hub({ url, token }: PartyConfig) {
+export function hub({ url, token, app }: PartyConfig & { app?: string }) {
   async function op(body: Record<string, string>): Promise<{ ok: true; view: HubView | null } | { ok: false; error: string }> {
     const t = token();
     if (!t) return { ok: false, error: "Sign in with eqosys first." };
@@ -531,8 +533,9 @@ export function hub({ url, token }: PartyConfig) {
     state: async (): Promise<HubView | null> => { const r = await op({ op: "state" }); return r.ok ? r.view : null; },
     /** Tell friend `id`: null when sent, else why not. */
     notify: async (id: string, text: string, link?: string): Promise<string | null> => { const r = await op({ op: "notify", id, text, ...(link ? { link } : {}) }); return r.ok ? null : r.error; },
-    /** The person's friend link, to copy or share: whoever opens it and signs in (or makes an account) is their friend. Null signed out. */
-    friendLink: async (): Promise<string | null> => { const r = await op({ op: "state" }); return r.ok && r.view?.link ? `${url()}/add/${r.view.link}` : null; },
+    /** The person's friend link, to copy or share: whoever opens it and signs in (or makes an account) is their friend. Null signed out.
+     *  It names this app (`?app=`), so once they answer, eqosys sends them on to it. */
+    friendLink: async (): Promise<string | null> => { const r = await op({ op: "state" }); return r.ok && r.view?.link ? `${url()}/add/${r.view.link}${app ? `?${new URLSearchParams({ app })}` : ""}` : null; },
     /** Where on eqosys a person adds friends. */
     friendsPage: () => `${url()}/?tab=friends`,
   };

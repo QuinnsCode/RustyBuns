@@ -12,7 +12,7 @@ import { standInMeshy } from "./local-meshy.ts";
 import { DEMO_PRODUCTS } from "./demo.ts";
 import { handle, type Env } from "./worker.ts";
 
-const STATIC = resolve(import.meta.dir, "../dist/client");
+const BUILT = resolve(import.meta.dir, "../dist/client");
 
 /** The demo org's admin key, on this machine only: it makes samples on the stand-in Meshy. */
 export const DEMO_ADMIN = "demo-admin-key";
@@ -26,12 +26,14 @@ export async function seedDemo(bindings: Env) {
 
 /**
  * `meshy` is a real Meshy (a key and base); left out, the stand-in answers, in `standInSeconds` (8).
- * `seed: false` starts with an empty bucket, the way a fresh deploy does.
+ * `seed: false` starts with an empty bucket, the way a fresh deploy does. `limits` are rate limit bindings (a fake, in the tests).
+ * `assets` serves a widget built elsewhere (a test's own build) in place of dist/client.
  */
-export async function local(o: { dir: string; port?: number; secret?: string; meshy?: { key: string; base: string }; standInSeconds?: number; seed?: boolean }) {
+export async function local(o: { dir: string; port?: number; secret?: string; meshy?: { key: string; base: string }; standInSeconds?: number; seed?: boolean; limits?: Pick<Env, "SIGN_LIMIT" | "SAMPLE_LIMIT">; assets?: string }) {
+  const STATIC = o.assets ? resolve(o.assets) : BUILT;
   const standIn = o.meshy ? null : await standInMeshy({ seconds: o.standInSeconds });
   const meshy = o.meshy ?? standIn!;
-  const bindings: Env = { BUCKET: r2(join(o.dir, "bucket")), UPLOAD_SECRET: o.secret ?? crypto.randomUUID(), MESHY_API_KEY: meshy.key, MESHY_API_BASE: meshy.base };
+  const bindings: Env = { BUCKET: r2(join(o.dir, "bucket")), UPLOAD_SECRET: o.secret ?? crypto.randomUUID(), MESHY_API_KEY: meshy.key, MESHY_API_BASE: meshy.base, ...o.limits };
   if (o.seed !== false) await seedDemo(bindings);
   const server = Bun.serve({
     port: o.port ?? 0,
