@@ -78,12 +78,13 @@ test("the first Play is the tutorial: drop, look, walk, crouch in a bush, lie lo
   await tab.until("the coach on walking", `parkHideSeek.state().tutorial.title === "Walk"`);
 
   // W into the bush, then C. A frame moves you at most 0.1 s worth, and CI's software-drawn Chrome runs a few frames a
-  // second, so the 9 m walk gets 30 s there (it takes about 3 on a Mac).
+  // second, so the 9 m walk gets 30 s there (it takes about 3 on a Mac). Keep walking till the coach has moved on too:
+  // it checks a few times a second, and a big bush's edge can come before the 5 m the Walk card wants (#4454). The far
+  // side of the bush is further than that, so you are still in it when the card turns.
   const inBush = `(async () => { const { zoneById } = await import("/src/zones/zone.ts"); const s = parkHideSeek.state(); return !!s.you && !!zoneById(s.zone).bushAt(s.you.x, s.you.y); })()`;
   await tab.key("keyDown", "KeyW");
-  await tab.until("in the bush", inBush, 30_000);
+  await tab.until("in the bush, with the coach on crouching", `(await ${inBush}) && parkHideSeek.state().tutorial.title === "Crouch in a bush"`, 30_000);
   await tab.key("keyUp", "KeyW");
-  expect((await tab.state()).tutorial.title).toBe("Crouch in a bush");
   await tab.key("keyDown", "KeyC");
   await tab.key("keyUp", "KeyC");
   await tab.until("the coach on lying low", `parkHideSeek.state().tutorial.title === "Lie low"`, 5_000);
