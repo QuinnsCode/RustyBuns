@@ -311,13 +311,16 @@ function chimera() {
     // the hind legs folded under the haunch ready to spring
     pose: {
       // (fore, up, out): the forelegs splay wide and reach well forward, the elbows out like a cat about to spring
-      chest: [0, -0.18], belly: [0, -0.09], l_shoulder: [0.03, -0.17, 0.03], neck: [0.03, -0.12], head: [0.05, -0.08], snout: [0.05, -0.08],
-      l_elbow: [0.18, -0.24, 0.08], l_wrist: [0.36, -0.08, 0.1], l_ffoot: [0.4, 0, 0.1],
-      hip: [0, -0.04], l_hipj: [0, -0.04], l_knee: [0.14, -0.16, 0.02], l_hock: [-0.04, -0.1, 0.02], l_bfoot: [0.06, 0, 0.02],
-    }, ears: { len: 0.06, width: 0.07, dir: [-0.3, 1, 0.6], cup: 35, tilt: 20, fold: 0.3 }, eyes: "two", chest: 1.05, ruff: 1.45, shag: 0.5,
+      // the spine tips up from the low chest to a raised rump, and each leg bends at a real angle: the upper arm
+      // runs back and down to an elbow tucked behind the shoulder, the forearm forward to a paw planted far out
+      // in front; the thigh runs forward to a knee under the belly, the shank back to a high hock
+      chest: [0, -0.18], belly: [0, -0.05], l_shoulder: [0.03, -0.17, 0.03], neck: [0.07, -0.12], head: [0.11, -0.07], snout: [0.11, -0.07],
+      l_elbow: [-0.07, -0.13, 0.1], l_wrist: [0.3, -0.1, 0.1], l_ffoot: [0.37, 0, 0.1],
+      hip: [0, 0.1], l_hipj: [0, 0.09], l_knee: [0.16, -0.1, 0.02], l_hock: [-0.08, -0.05, 0.02], l_bfoot: [0.02, 0, 0.02],
+    }, ears: { len: 0.06, width: 0.07, dir: [-0.3, 1, 0.6], cup: 35, tilt: 20, fold: 0.3 }, eyes: "two", chest: 1.05, ruff: 1.7, shag: 0.5,
     tail: { len: 1, droop: 0, bush: 0 },
     palette: {
-      fur: [0.74, 0.52, 0.24, 0.9, 0], tuft: [0.5, 0.24, 0.08, 0.95, 0], belly: [0.9, 0.78, 0.56, 0.9, 0], stripe: [0.2, 0.32, 0.12, 0.6, 0],
+      fur: [0.74, 0.52, 0.24, 0.9, 0], tuft: [0.5, 0.24, 0.08, 0.95, 0], mane: [0.6, 0.33, 0.12, 0.95, 0], ruff: [0.34, 0.16, 0.06, 0.95, 0], belly: [0.9, 0.78, 0.56, 0.9, 0], stripe: [0.2, 0.32, 0.12, 0.6, 0],
       goat: [0.36, 0.27, 0.2, 0.95, 0], horn: [0.28, 0.24, 0.2, 0.5, 0], scale: [0.3, 0.48, 0.2, 0.55, 0],
       eye: [1, 0.55, 0.08, 0.3, 0, 4], pupil: [0.03, 0.02, 0.02, 0.2, 0], snake_eye: [0.75, 1, 0.2, 0.3, 0, 4], mouth: [0.36, 0.05, 0.04, 0.7, 0, 0.5],
       nose: [0.42, 0.24, 0.2, 0.5, 0], dark: [0.08, 0.05, 0.04, 0.6, 0], fang: [0.95, 0.93, 0.85, 0.3, 0], claw: [0.85, 0.8, 0.7, 0.4, 0],
@@ -327,7 +330,7 @@ function chimera() {
   const P = (x: number, y: number, z: number, rad: number): N => [f4(x * k), f4(y * k), f4(z * k), f4(rad * k)];
   // the serpent: the tail rises off the rump, arches over and ends in a head turned forward to strike
   Object.assign(b.nodes, {
-    tail1: P(-0.66, 0.92, 0, 0.06), tail2: P(-0.92, 1.06, 0, 0.055), tail3: P(-1.0, 1.32, 0, 0.05), tail4: P(-0.88, 1.5, 0, 0.045),
+    tail1: P(-0.66, 1.02, 0, 0.06), tail2: P(-0.92, 1.14, 0, 0.055), tail3: P(-1.0, 1.32, 0, 0.05), tail4: P(-0.88, 1.5, 0, 0.045),
     shead: P(-0.7, 1.56, 0, 0.055), ssnout: P(-0.58, 1.53, 0, 0.035),
     // the goat: a long neck out of the middle of the back, a narrow head, swept-back horns
     g1: P(-0.12, 0.98, 0, 0.07), g2: P(-0.06, 1.24, 0, 0.06), ghead: P(0.0, 1.42, 0, 0.06), gmuzzle: P(0.14, 1.36, 0, 0.035),
@@ -363,9 +366,10 @@ function chimera() {
   b.paint = [...(b.paint ?? []), { nodes: ["tail2", "tail3", "tail4", "shead", "ssnout"], material: "scale" }];
   b.stripes = { along: ["tail1", "tail2", "tail3", "tail4"], n: 6, width: 0.45, material: "stripe", below: -0.3 };
   b.parts.push(
-    // the lion's mane rays out round the face as spikes of hair
-    // a full ring of them, the chin and throat too, not only the top and sides
-    { kind: "tuft", along: ["head", "neck"], n: 12, len: s(0.34), base: s(0.075), rows: 18, spread: 170, sweep: 0.6, curve: 12, flat: 0.4, material: "tuft" },
+    // the lion's mane: a shaggy mass in layers that flows back over the neck and shoulders, behind the face, not
+    // a ring of shards round it: long dark locks underneath, a lighter, shorter layer over them framing the face
+    { kind: "tuft", along: ["neck", "chest"], n: 12, len: s(0.3), base: s(0.09), rows: 18, spread: 175, sweep: 1.6, curve: 40, flat: 0.35, material: "tuft" },
+    { kind: "tuft", along: ["head", "neck"], n: 8, len: s(0.22), base: s(0.08), rows: 18, spread: 170, sweep: 1.3, curve: 35, flat: 0.35, sink: 1, material: "mane" },
     // the goat: eyes, a beard, swept-back horns, ears
     { kind: "eye", at: "ghead", off: [s(0.05), s(0.03), s(0.045)], r: s(0.02), mirror: true, material: "eye" },
     { kind: "horn", at: "ghead", off: [s(-0.01), s(0.05), s(0.03)], dir: [-0.6, 1, 0.15], len: s(0.3), base: s(0.03), tip_base: 0.002, curve: 70, bend: [-1, -0.3, 0], mirror: true, material: "horn" },
@@ -376,6 +380,8 @@ function chimera() {
     { kind: "eye", at: "shead", off: [s(0.06), s(0.03), s(0.045)], r: s(0.018), mirror: true, material: "snake_eye" },
     { kind: "horn", at: "ssnout", off: [s(0.0), s(-0.025), s(0.02)], dir: [0.2, -1, 0], len: s(0.06), base: s(0.012), tip_base: 0.001, curve: 15, bend: [-1, 0, 0], mirror: true, material: "fang" },
   );
+  // the skin under the mane dark, so the locks read as one mass and not as shards on a yellow neck
+  b.paint.push({ nodes: ["neck"], material: "ruff" });
   // the goat's neck and head in its own dark coat
   b.paint.push({ nodes: ["g1", "g2", "ghead", "gmuzzle"], material: "goat" });
   return b;
