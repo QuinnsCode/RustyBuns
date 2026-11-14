@@ -127,7 +127,8 @@ A PR that deletes more than it adds is the goal. codeSplitter's own helpers are 
   `WebSocketPair`, upgrade, attachment and fan-out are `Sockets` in `@rustybuns/util/room` (no `declare const WebSocketPair`, no `ws: any`);
   a page's socket (queue until open, decode every frame, retry after a close) is `connectSocket` in `@rustybuns/util/socket`.
   A JSON reply is `json` (or `privateJson`, which no cache may keep) in `@rustybuns/util/http`; a client's unchecked body is
-  `readBody` there, and a body or reply read through a guard is `readJson` / `getJson`. `hex`, `b64url`, `digest` and `sha256`
+  `readBody` there, and a body or reply read through a guard is `readJson` / `getJson`. A local server's default port
+  is a row in `PORTS` (`@rustybuns/util/ports`), one number per service; `portArg` reads `--port 4790` or `--port manual`. `hex`, `b64url`, `digest` and `sha256`
   are `@rustybuns/util/bytes`. Don't write a local `const json = ...` again.
 - `@rustybuns/util` has three sides and two speeds ([its README](packages/util/README.md)): each module is `shared`
   (runs anywhere, imports only shared, copies out with `bun scripts/util-api.ts --copy <module> <dir>`), `web` or

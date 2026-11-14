@@ -8,7 +8,7 @@
 //   bun apps/terraviz-demo/run.ts --fresh    clone TerraViz's latest again
 //   bun apps/terraviz-demo/run.ts --shared   the same, plus Shared Sphere (sphere/): everyone on one globe
 //   bun apps/terraviz-demo/run.ts --shared --binary   build the one-file Shared Sphere desktop app and print where it is
-//   bun apps/terraviz-demo/run.ts --port 4710         a fixed port (and RB_TOKEN a fixed launch token), for a test or a second window
+//   bun apps/terraviz-demo/run.ts --port 4730         a fixed port (and RB_TOKEN a fixed launch token), for a test or a second window
 //   bun apps/terraviz-demo/run.ts --down     tear it all down: the clone, its data, its sandbox and logs
 // With --shared, a link can land in a state: add ?dataset=<id>&lon=&lat=&zoom=&bearing=&pitch=&lead=1&tour=<name> to the
 // page's address, or call window.sphere.jump({ dataset, lon, lat, zoom, lead, tour }) from the console or an agent's browser.

@@ -4,7 +4,7 @@
 // one uses: claim a block of lines, rewrite it line by line, hand the lines back. Open the file in a browser
 // and the edits stream in over the file's WebSocket as they land.
 //
-//   bun scripts/live-demo.ts [--port 4747] [--rounds 3] [--pace 700] [--wait 20]
+//   bun scripts/live-demo.ts [--port 4749] [--rounds 3] [--pace 700] [--wait 20]
 //
 // What you see in the file view: a claimed block gets its holder's colour down the edge, and a shimmer sweeps
 // across it while the agent works (.ln.claim.bot); a rewritten line cross-fades (.ln.xfade), a new one grows in
@@ -12,9 +12,10 @@
 import { serve } from "@rustybuns/shell-bun";
 import worker from "../src/worker.ts";
 import { local } from "../src/local.ts";
+import { PORTS } from "@rustybuns/util/ports";
 
 const arg = (n: string, d: number) => { const i = process.argv.indexOf(`--${n}`); return i > 0 ? Number(process.argv[i + 1]) : d; };
-const PORT = arg("port", 4747), ROUNDS = arg("rounds", 3), PACE = arg("pace", 700), WAIT = arg("wait", 20);
+const PORT = arg("port", PORTS.liveDemo), ROUNDS = arg("rounds", 3), PACE = arg("pace", 700), WAIT = arg("wait", 20);
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const FILE = "src/server.ts";
 

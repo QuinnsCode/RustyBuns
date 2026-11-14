@@ -5,8 +5,9 @@
 //   bun run battle      then   bun run dev, and Host (or Join with no address) in each tab
 import { durableObject, serve } from "@rustybuns/shell-bun";
 import World from "../src/net/world.ts";
+import { PORTS } from "@rustybuns/util/ports";
 
-const PORT = Number(process.env.BATTLE_PORT ?? 4180);
+const PORT = Number(process.env.BATTLE_PORT ?? PORTS.battle);
 const env: any = {};
 env.WORLD = durableObject(World as never, env);
 const shell = serve<any>({ hostname: "127.0.0.1", port: PORT });

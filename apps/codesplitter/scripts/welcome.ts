@@ -17,6 +17,7 @@ import { MergePlanReply } from "../src/branches.ts";
 import { ClaimRow, FileReply } from "../src/file-do.ts";
 import { FitReply } from "../src/fit.ts";
 import { local } from "../src/local.ts";
+import { PORTS } from "@rustybuns/util/ports";
 
 const FILE = "src/greeting.ts";
 const APP = join(import.meta.dir, "../../hello-world");
@@ -137,7 +138,7 @@ export async function tour(call: Awaited<ReturnType<typeof local>>, t: Tour) {
 
 if (import.meta.main) {
   const arg = (n: string, d: number) => { const i = process.argv.indexOf(`--${n}`); return i > 0 ? Number(process.argv[i + 1]) : d; };
-  const PORT = arg("port", 4747), WAIT = arg("wait", 20);
+  const PORT = arg("port", PORTS.welcome), WAIT = arg("wait", 20);
   const call = await local({ GH_CLI: "off" });
   const box = process.argv.includes("--box");
   if (!process.argv.includes("--no-serve")) {

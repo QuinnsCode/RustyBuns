@@ -19,6 +19,7 @@ import { readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { check, obj, str } from "@rustybuns/util/guard";
 import { give, type Exec } from "../src/agent-run.ts";
+import { portArg } from "@rustybuns/util/ports";
 
 export const OWNER = "demo", REPO = "team", CREW = "florence", FILE = "src/greet.ts";
 const SOURCE = `// Says hello to whoever opens the repo.\nexport function greet(name: string) {\n  return "hello " + name;\n}\n`;
@@ -162,7 +163,7 @@ ${copied ? "Copied. Paste it to Florence as one message." : "Send Florence every
   const { serve } = await import("@rustybuns/shell-bun");
   const { default: worker } = await import("../src/worker.ts");
   const { local } = await import("../src/local.ts");
-  const PORT = Number(flag("port") ?? 4748), REAL = process.argv.includes("--real");
+  const PORT = portArg(flag("port"), "threadDemo"), REAL = process.argv.includes("--real");
   if (REAL && !Bun.which("claude")) { console.error("--real needs the claude CLI on your PATH, signed in (claude login)"); process.exit(1); }
   const call = await local({ GH_CLI: "off", ...(!REAL && { AGENT_EXEC: scriptedAgent(FILE) }) });
   if (!(await Bun.file("dist/client/index.html").exists())) await Bun.$`bun run build.ts`.quiet();

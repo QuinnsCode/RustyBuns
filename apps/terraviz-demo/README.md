@@ -46,7 +46,7 @@ Up and down, in one line each:
 |---|---|
 | `bun apps/terraviz-demo/run.ts --shared` | the demo to show: TerraViz plus Shared Sphere (below) |
 | `bun apps/terraviz-demo/run.ts --shared --binary` | the one-file desktop app, built from the same config, with its path printed. Keep it on this machine: handing it out redistributes TerraViz (see License) |
-| `bun apps/terraviz-demo/run.ts --port 4710` | a fixed port; `RB_TOKEN=...` a fixed launch token, so a second window or a test knows the link |
+| `bun apps/terraviz-demo/run.ts --port 4730` | a fixed port; `RB_TOKEN=...` a fixed launch token, so a second window or a test knows the link |
 | `bun apps/terraviz-demo/run.ts --fresh` | clone TerraViz's latest again (a newer commit may need a fix on our side) |
 | `bun apps/terraviz-demo/run.ts --down` | tear it all down: clone, data, sandbox profiles and logs. Nothing else on the machine changed |
 

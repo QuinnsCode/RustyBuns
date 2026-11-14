@@ -9,6 +9,7 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileS
 import { join, resolve } from "node:path";
 import { FEED, PAUSE, costOf } from "../src/mervin-replay.ts";
 import { deploySteps, readGraphs } from "../src/deploy-map.ts";
+import { portArg } from "@rustybuns/util/ports";
 
 /** The feed from event `from` on, and whether the pause file is there. */
 export function feed(dir: string, from: number) {
@@ -39,7 +40,7 @@ if (import.meta.main) {
   const built = await Bun.build({ entrypoints: [join(import.meta.dir, "../src/mervin-replay.ts")], target: "browser", format: "esm" });
   const js = await built.outputs[0]!.text();
   const server = Bun.serve({
-    port: Number(arg("port") ?? 4177),
+    port: portArg(arg("port"), "mervinWatch"),
     async fetch(req) {
       const u = new URL(req.url);
       if (u.pathname === "/feed") return Response.json(feed(dir, Number(u.searchParams.get("from") ?? 0)));
