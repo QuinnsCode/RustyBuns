@@ -3,7 +3,7 @@
 // The Worker on Bun, for `bun run dev` and the tests: R2 is shell-bun's twin over a directory, D1 its sqlite twin in
 // the same directory (the migrations run at boot, as a deploy runs them), the Cache API a map in memory, and the built
 // widget (dist/client) is served first, the way Cloudflare serves static assets before the Worker.
-import { existsSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { sha256 } from "@rustybuns/util/bytes";
 import { applyD1Migrations, d1, r2 } from "@rustybuns/shell-bun";
@@ -49,6 +49,7 @@ export async function local(o: { dir: string; port?: number; secret?: string; me
   const STATIC = o.assets ? resolve(o.assets) : BUILT;
   const standIn = o.meshy ? null : await standInMeshy({ seconds: o.standInSeconds });
   const meshy = o.meshy ?? standIn!;
+  mkdirSync(o.dir, { recursive: true }); // sqlite makes its file, not the folder: a fresh checkout has no .data/ yet
   const db = d1(join(o.dir, "settings.sqlite"));
   await applyD1Migrations(db, resolve(import.meta.dir, "../migrations"));
   const bindings: Env = { BUCKET: r2(join(o.dir, "bucket")), DB: db, SETTINGS_CACHE: memoryCache(), UPLOAD_SECRET: o.secret ?? crypto.randomUUID(), MESHY_API_KEY: meshy.key, MESHY_API_BASE: meshy.base, BILLING_TEST: "1", ...o.limits, ...(o.eqosys ? { EQOSYS_URL: o.eqosys } : {}), ...o.env };
