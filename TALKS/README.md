@@ -27,7 +27,7 @@ address keeps the slide number (`#4`). Everything a deck needs is beside it: [de
 |---|---|---|
 | 0 | [The Words](00-the-words.html) | ready |
 | 1 | [The Frankenstein Code Factory](01-frankenstein-factory.html) | ready |
-| 2 | What Rusty Buns is | planned |
+| 2 | What Rusty Buns is: the stitched stack (TypeScript, Vite, Bun, Rust, Alchemy, Effect) | planned |
 | 3 | The example range | planned |
 | 4 | The game engine: physics and netcode (with the buffer engine) | planned |
 | 5 | Double Dragon, the twin engine | planned |

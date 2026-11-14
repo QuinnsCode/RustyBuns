@@ -55,6 +55,8 @@ h3 { font: 700 19px/1.25 var(--display); margin: 0 0 8px; }
 /* cards */
 .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; margin-top: 30px; }
 .cards > * { min-width: 0; }
+/* six cards sit as three by two, never four and a lonely two */
+@media (min-width: 760px) { .cards:has(> :nth-child(5)) { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 .card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 20px 22px; }
 .card p { margin: 0; font-size: 18px; }
 .card .pic { margin-top: 10px; font-size: 16px; color: var(--quiet); }
