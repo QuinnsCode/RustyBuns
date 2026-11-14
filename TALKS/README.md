@@ -27,15 +27,17 @@ address keeps the slide number (`#4`). Everything a deck needs is beside it: [de
 |---|---|---|
 | 0 | [The Words](00-the-words.html) | ready |
 | 1 | [The Frankenstein Code Factory](01-frankenstein-factory.html) | ready |
-| 2 | What Rusty Buns is | planned |
-| 3 | The example range | planned |
-| 4 | The game engine: physics and netcode (with the buffer engine) | planned |
-| 5 | Double Dragon, the twin engine | planned |
-| 6 | eqosys | planned |
-| 7 | Qollab | planned |
-| 8 | Sign-in to party to game | planned |
-| 9 | The phone setup | planned |
-| 10 | Ship it: deploys and tests | planned |
+| 2 | [What Rusty Buns is](02-what-rusty-buns-is.html) | ready |
+| 3 | [The example range](03-example-range.html) | ready |
+| 4 | [The game engine: physics and netcode (with the buffer engine)](04-game-engine.html) | ready |
+| 5 | [Double Dragon, the twin engine](05-double-dragon.html) | ready |
+| 6 | [eqosys](06-eqosys.html) | ready |
+| 7 | [Qollab](07-qollab.html) | ready |
+| 8 | [Sign-in to party to game](08-sign-in-to-game.html) | ready |
+| 9 | [Ship it: deploys and tests](09-ship-it.html) | ready |
+
+Talks are for things we are happy to say in public. Personal setup (the phone, the owner's own machines) stays out of
+the lineup.
 
 The older talk, "Trying to Max Out" ([setup/](setup/page.html)), has a 3D scene: `bun TALKS/setup/build.ts` writes
 `dist/talks/setup.html`.
