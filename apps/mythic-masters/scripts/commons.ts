@@ -11,7 +11,8 @@ const UA = "MythicMastersArt/0.1 (https://github.com/QuinnsCode/RustyBuns)";
 const API = "https://commons.wikimedia.org/w/api.php?action=query&format=json&prop=imageinfo&iiprop=url|extmetadata|mime|size"
   + "&iiextmetadatafilter=Artist|LicenseShortName|LicenseUrl";
 
-const meta = opt(obj({ value: str(5000, { min: 0 }) }));
+// a long credit (an artist with a whole biography in it) is cut, not refused: `plain` keeps 200 characters anyway
+const meta = opt(obj({ value: str(5000, { min: 0, dflt: "" }) }));
 const Info = obj({
   thumburl: str(1000), descriptionurl: str(1000), mime: opt(str(100)), width: opt(int(0, 1e6)), height: opt(int(0, 1e6)),
   extmetadata: obj({ Artist: meta, LicenseShortName: meta, LicenseUrl: meta }),

@@ -1,0 +1,55 @@
+{
+  "id": "sphinx",
+  "name": "Sphinx",
+  "category": "Sphinx",
+  "query": "Sphinx",
+  "images": [
+    {
+      "file": "card-color.jpg",
+      "from": "card",
+      "page": "https://commons.wikimedia.org/wiki/File:028MAD_Sphinx.jpg",
+      "artist": "Unknown",
+      "license": "CC BY-SA 3.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by-sa/3.0"
+    },
+    {
+      "file": "c2.jpg",
+      "from": "search",
+      "page": "https://commons.wikimedia.org/wiki/File:Album_de_voyages_en_%C3%89gypte,_Gr%C3%A8ce,_Turquie,_Alg%C3%A9rie_et_Russie_-_btv1b84515044_(20_of_63).jpg",
+      "artist": "Fiorillo, L. (18..-18..). Photographe Sebah, Pascal (1823-1886). Photographe Béchard, Émile (1844-18..?). Photographe Zangaki. Photographe Neurdein frères (Photographes). Photographe",
+      "license": "Public domain"
+    },
+    {
+      "file": "c4.jpg",
+      "from": "search",
+      "page": "https://commons.wikimedia.org/wiki/File:Visiting_The_MET_MUSEUM_(91).jpg",
+      "artist": "Ferfive",
+      "license": "CC BY 4.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by/4.0"
+    },
+    {
+      "file": "c5.jpg",
+      "from": "search",
+      "page": "https://commons.wikimedia.org/wiki/File:Sphinx_Townley_British_Museum.jpg",
+      "artist": "Unknown",
+      "license": "CC BY-SA 4.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0"
+    }
+  ],
+  "traits": {
+    "silhouette": "a lion standing or crouched, long and level, with a human head held high on an upright neck; in the Greek ones, great wings rising tall off the shoulders and curling forward at the tips",
+    "head": "a calm human face (straight nose, full closed lips, almond eyes lined in kohl) framed by the striped royal head-cloth: a cap over the crown, wide flaps behind the cheeks, two lappets down the breast, a cobra on the brow, a plaited beard",
+    "limbs": "a lion's legs, heavy forepaws with big toes, muscled haunches; a long tail with a tuft",
+    "hide": "smooth stone or a short tawny lion coat; the head-cloth striped in bands",
+    "colours": "sandstone and tawny gold for the body, the head-cloth in blue and gold bands, the wings pale with feather rows",
+    "child": [
+      "a lion with a person's head",
+      "the striped head-cloth",
+      "big feathered wings"
+    ]
+  },
+  "skip": [
+    "c3.jpg",
+    "c6.jpg"
+  ]
+}

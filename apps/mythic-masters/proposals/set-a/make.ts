@@ -61,7 +61,10 @@ type Hound = {
   paw?: number;                    // paw size (1: a hound's)
 };
 
-function hound(o: Hound) {
+/** A built hound sheet: the fields a beast built on it (the Chimera, the Sphinx) adds to, and the rest as written. */
+type Sheet = { nodes: Record<string, N>; links: string[][]; blobs: Blob[]; parts: Part[]; paint?: { nodes: string[]; material: string }[]; stripes?: unknown } & Record<string, unknown>;
+
+function hound(o: Hound): Sheet {
   const k = o.k, H = o.head * k;
   const r = (x: number) => f4(x * k);
   const LX = o.long ?? 1, LY = o.tall ?? 1;
@@ -328,7 +331,7 @@ function chimera() {
       nose: [0.42, 0.24, 0.2, 0.5, 0], dark: [0.08, 0.05, 0.04, 0.6, 0], fang: [0.95, 0.93, 0.85, 0.3, 0], claw: [0.85, 0.8, 0.7, 0.4, 0],
     },
     hide: { pattern: "fur", size: 0.03, colours: [[0.55, 0.38, 0.17], [0.85, 0.66, 0.36]], map: 1024 },
-  }) as { nodes: Record<string, N>; links: string[][]; blobs: Blob[]; parts: Part[]; paint?: { nodes: string[]; material: string }[] } & Record<string, unknown>;
+  });
   const P = (x: number, y: number, z: number, rad: number): N => [f4(x * k), f4(y * k), f4(z * k), f4(rad * k)];
   // the serpent: the tail rises off the rump, arches over and ends in a head turned forward to strike
   Object.assign(b.nodes, {
@@ -396,6 +399,115 @@ function chimera() {
   return b;
 }
 BEASTS.chimera = chimera;
+
+// The Sphinx as the Naxian column, the Townley marble and the Met's and Giza's granite show it: a lion's body standing
+// proud, a calm human face under the striped royal head-cloth (its flaps wide behind the cheeks, two lappets down
+// the breast, a cobra on the brow, the plaited beard), and great feathered wings rising off the shoulders that
+// curl forward at the tips. A child draws: the lion, the face in the striped head-cloth, the wings.
+function sphinx() {
+  const k = 1.2;
+  const b = hound({
+    id: "sphinx", name: "Sphinx", archetype: "tank", budget: 9000, k, head: 1, muzzle: 0.6, gape: 0,
+    about: "Egypt and Greece: a guardian with a lion's body and a human head, in Egypt crowned with the striped royal head-cloth, in Greek tales winged and setting riddles at the road to Thebes. Here a great lion of sandstone with folded wings.",
+    long: 1.05, tall: 1, legs: 1.3, waist: 0.85, paw: 2.2, chest: 1.15, ruff: 0, shag: 0.3,
+    // standing proud: the breast lifted, the neck upright like a man's under the head-cloth
+    pose: { chest: [0, 0.04], l_shoulder: [0, 0.03], neck: [-0.02, 0.18], head: [-0.06, 0.36], snout: [-0.06, 0.36] },
+    ears: { len: 0.05, width: 0.05, dir: [0, 1, 1], cup: 0, tilt: 0, fold: 0 }, eyes: "two",
+    tail: { len: 1.15, droop: 0.7, bush: 1.2, curl: 0.35, tip: true },
+    bib: true,
+    palette: {
+      fur: [0.8, 0.63, 0.38, 0.85, 0], tuft: [0.58, 0.4, 0.2, 0.9, 0], belly: [0.92, 0.82, 0.62, 0.85, 0], stripe: [0.5, 0.36, 0.2, 0.9, 0],
+      face: [0.76, 0.55, 0.36, 0.7, 0], lip: [0.55, 0.28, 0.2, 0.6, 0], kohl: [0.05, 0.04, 0.06, 0.4, 0],
+      cloth: [0.1, 0.22, 0.58, 0.55, 0], gold: [0.95, 0.74, 0.28, 0.35, 0.7], feather: [0.9, 0.78, 0.52, 0.75, 0], primary: [0.7, 0.54, 0.32, 0.75, 0],
+      eye: [0.95, 0.93, 0.86, 0.3, 0], pupil: [0.05, 0.04, 0.05, 0.2, 0], mouth: [0.3, 0.08, 0.06, 0.6, 0],
+      nose: [0.42, 0.3, 0.22, 0.5, 0], dark: [0.1, 0.07, 0.05, 0.6, 0], fang: [0.95, 0.92, 0.84, 0.3, 0], claw: [0.3, 0.24, 0.18, 0.4, 0],
+    },
+    hide: { pattern: "fur", size: 0.03, colours: [[0.62, 0.46, 0.26], [0.9, 0.76, 0.52]], map: 1024 },
+  });
+  // the hound's head goes (its cranium, muzzle, cheeks, jaw and every face part): a man's head is built in its place
+  b.blobs = b.blobs.filter((x) => x.at !== "head");
+  b.parts = b.parts.filter((p) => p.at !== "head" && !(p.kind === "tuft" && (p.along as string[])[0] === "head"));
+  b.parts.push({ kind: "tuft", along: ["chest", "belly", "hip"], n: 16, len: f4(0.04 * k), base: f4(0.02 * k), rows: 7, spread: 100, sweep: 1.6, curve: 20, flat: 0.5, material: "tuft" });
+  const s = (x: number) => f4(x * k);
+  // the head bigger than a man's on a lion this size, so the face reads at fight size
+  const h = (x: number) => f4(x * k * 1.4);
+  const hd = b.nodes.head!, H: V = [hd[0], hd[1], hd[2]];
+  b.nodes.head = [hd[0], hd[1], hd[2], s(0.06)];
+  b.nodes.snout = [f4(hd[0] + s(0.06)), f4(hd[1] - s(0.09)), 0, s(0.04)];
+  // the head, in metres from the head node: a cranium, a face narrowing to the jaw, a chin, a straight nose, a brow
+  const cran: Ell = { c: [h(-0.01), h(0.03), 0], r: [h(0.13), h(0.14), h(0.115)] };
+  const face: Ell = { c: [h(0.045), h(-0.06), 0], r: [h(0.09), h(0.1), h(0.088)] };
+  const chin: Ell = { c: [h(0.085), h(-0.135), 0], r: [h(0.045), h(0.04), h(0.048)] };
+  const ells = [cran, face, chin];
+  for (const e of ells) b.blobs.push({ at: "head", off: e.c, r: e.r });
+  // the neck a column under the head, the throat in front
+  b.blobs.push({ at: "neck", off: [h(-0.01), h(0.12), 0], r: [h(0.1), h(0.2), h(0.095)], rot: [0, 0, -12] });
+  const on = (p: V, d: V, sink = 0): V => { const q = skin(ells, p, d), n = norm(d); return [f4(q[0] - n[0] * sink), f4(q[1] - n[1] * sink), f4(q[2] - n[2] * sink)]; };
+  const nose = on([h(0.06), h(-0.04), 0], [1, 0, 0], h(0.01));
+  b.blobs.push(
+    { at: "head", off: add(nose, [h(0.012), h(-0.005), 0]), r: [h(0.028), h(0.05), h(0.02)], rot: [0, 0, -14] },
+    { at: "head", off: on([h(0.06), h(0.045), 0], [1, 0.1, 0], h(0.02)), r: [h(0.03), h(0.022), h(0.085)] },
+    // cheekbones
+    ...pair("head", on([h(0.05), h(-0.03), h(0.05)], [0.8, 0, 0.6], h(0.025)), [h(0.035), h(0.03), h(0.03)]),
+  );
+  b.paint = [...(b.paint ?? []), { nodes: ["head", "snout"], material: "face" }];
+  b.parts.push(
+    // almond eyes under the brow, lined in kohl that runs back toward the temple
+    { kind: "eye", at: "head", off: on([h(0.06), h(0.015), h(0.04)], [1, 0, 0.45], h(0.012)), r: [h(0.012), h(0.011), h(0.022)], rot: [0, -18, 0], mirror: true, material: "eye" },
+    { kind: "eye", at: "head", off: on([h(0.06), h(0.015), h(0.038)], [1, 0, 0.42], h(0.004)), r: h(0.008), mirror: true, material: "pupil" },
+    { kind: "ridge", at: "head", off: on([h(0.06), h(0.03), h(0.03)], [1, 0.1, 0.4], h(0.004)), dir: [-0.35, 0.05, 1], len: h(0.07), base: h(0.007), curve: 15, bend: [0, 1, 0], mirror: true, material: "kohl" },
+    { kind: "ridge", at: "head", off: on([h(0.06), h(0.052), h(0.03)], [1, 0.4, 0.35], h(0.004)), dir: [-0.3, 0, 1], len: h(0.07), base: h(0.008), curve: 20, bend: [0, 1, 0], mirror: true, material: "kohl" },
+    // full lips, closed
+    { kind: "ridge", at: "head", off: on([h(0.06), h(-0.088), 0.0001], [1, 0, 0], h(0.006)), dir: [0, 0, 1], len: h(0.05), base: h(0.012), curve: 30, bend: [-1, 0, 0], mirror: true, material: "lip" },
+    { kind: "ridge", at: "head", off: on([h(0.06), h(-0.105), 0.0001], [1, -0.1, 0], h(0.006)), dir: [0, 0, 1], len: h(0.042), base: h(0.012), curve: 25, bend: [-1, 0, 0], mirror: true, material: "lip" },
+    // the plaited beard: a long block hung from the chin, banded gold
+    { kind: "horn", at: "head", off: on([h(0.05), h(-0.15), 0], [0.5, -1, 0], h(0.01)), dir: [0.12, -1, 0], len: h(0.13), base: h(0.022), tip_base: h(0.028), flat: 0.65, material: "cloth" },
+  );
+  // the head-cloth: a cap over the crown and the back of the head, flaps spreading wide behind the cheeks and
+  // lappets falling down the breast, all in blue cut by gold bands; a cobra rearing from the brow
+  b.blobs.push({ at: "head", off: [h(-0.03), h(0.06), 0], r: [h(0.14), h(0.135), h(0.13)] });
+  Object.assign(b.nodes, {
+    nm: [f4(H[0] - h(0.04)), f4(H[1] + h(0.06)), 0, h(0.05)],
+    l_flap: [f4(H[0] - h(0.03)), f4(H[1] - h(0.08)), h(0.16), h(0.05)],
+    l_lap: [f4(H[0] + h(0.0)), f4(H[1] - h(0.3)), h(0.11), h(0.035)],
+  });
+  b.links.push(["head", "nm"], ["nm", "l_flap"], ["l_flap", "l_lap"]);
+  b.blobs.push(
+    // a flap: a wide flat wedge behind each cheek, sloping out and down from the temple to the shoulder
+    ...pair("l_flap", [h(-0.03), h(0.0), h(-0.02)], [h(0.08), h(0.15), h(0.03)]).map((x, j) => ({ ...x, rot: [j ? 12 : -12, 0, 0] as V })),
+    ...pair("l_lap", [h(0.0), h(0.06), 0], [h(0.04), h(0.11), h(0.03)]),
+  );
+  b.paint.push({ nodes: ["nm", "l_flap", "l_lap"], material: "cloth" });
+  // the brow band and the cobra
+  b.parts.push(
+    { kind: "horn", at: "head", off: on([h(0.04), h(0.1), 0], [1, 0.6, 0], h(0.005)), dir: [0.3, 1, 0], len: h(0.07), base: h(0.014), tip_base: h(0.016), curve: 50, bend: [1, 0, 0], material: "gold" },
+  );
+  // the wings: an arm from each shoulder blade rising high and back, curling forward at the tip, a cupped cream
+  // membrane, coverts in rows and long blue-tipped primaries along the trailing edge
+  Object.assign(b.nodes, {
+    l_wroot: P(0.26, 1.02, 0.15, 0.05), l_welbow: P(0.02, 1.38, 0.34, 0.04), l_wwrist: P(-0.08, 1.82, 0.4, 0.032), l_wtip: P(0.12, 2.16, 0.32, 0.026),
+  });
+  function P(x: number, y: number, z: number, r: number): N { return [s(x), s(y), s(z), s(r)]; }
+  b.links.push(["chest", "l_wroot"], ["l_wroot", "l_welbow"], ["l_welbow", "l_wwrist"], ["l_wwrist", "l_wtip"]);
+  b.paint.push({ nodes: ["l_wroot", "l_welbow", "l_wwrist", "l_wtip"], material: "feather" });
+  const back: V[] = [[-0.28, 1.95, 0.36], [-0.5, 1.55, 0.3], [-0.38, 1.18, 0.22], [-0.06, 1.0, 0.16]].map((v) => mul(v as V, k));
+  b.parts.push({
+    kind: "membrane", points: ["l_wroot", "l_welbow", "l_wwrist", "l_wtip", ...back], thick: 0.016, camber: s(0.1), puff: 0.03, mirror: true, material: "feather",
+    feathers: { from: 3, to: 6, n: 16, len: s(0.42), base: s(0.055), flat: 0.1, curve: 10, tip: 0.35, rake: -35, material: "primary" },
+  });
+  {
+    const lead = ["l_wroot", "l_welbow", "l_wwrist", "l_wtip"].map((n) => [b.nodes[n]![0], b.nodes[n]![1], b.nodes[n]![2]] as V);
+    const at = (pts: V[], t: number): V => { const q = t * (pts.length - 1), i = Math.min(pts.length - 2, Math.floor(q)), u = q - i; return [0, 1, 2].map((j) => pts[i]![j]! + (pts[i + 1]![j]! - pts[i]![j]!) * u) as V; };
+    const trail = [...back].reverse(), root = lead[0]!;
+    for (let row = 0; row < 0; row++) for (let i = 0; i < 7; i++) {
+      const t = 0.08 + (i / 6) * 0.84, A = at(lead, t), Bp = at(trail, t), w = 0.04 + row * 0.3;
+      const p: V = [A[0] + (Bp[0] - A[0]) * w, A[1] + (Bp[1] - A[1]) * w, A[2] + (Bp[2] - A[2]) * w + 0.006];
+      b.parts.push({ kind: "horn", at: "l_wroot", off: [f4(p[0] - root[0]), f4(p[1] - root[1]), f4(p[2] - root[2])], dir: norm([Bp[0] - A[0], Bp[1] - A[1], Bp[2] - A[2]]), len: s(0.2 + row * 0.06), base: s(0.075), tip_base: s(0.035), flat: 0.06, curve: 8, bend: [0, 0, 1], mirror: true, material: "feather" });
+    }
+  }
+  return { ...b, wings: 2 };
+}
+BEASTS.sphinx = sphinx;
 
 const ids = process.argv.slice(2).length ? process.argv.slice(2) : Object.keys(BEASTS);
 for (const id of ids) {
