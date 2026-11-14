@@ -1050,7 +1050,8 @@
       "cup": 30,
       "fold": 0.35,
       "mirror": true,
-      "material": "fur"
+      "material": "fur",
+      "point": 0.45
     },
     {
       "kind": "horn",
