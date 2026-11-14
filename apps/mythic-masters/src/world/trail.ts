@@ -124,9 +124,9 @@ export function trailhead(n: number, done: number): Pt | undefined {
  * One step along the journey: world.ts's walk, with the trail's gates shut past the next uncleared section
  * (`cleared(n)` says how many of region n's are done). Adds "section" when you cross into another band and
  * "keeper" when you reach the stone of the next section to clear. A trail's arena (its mythic) only answers once the
- * eleven before it are cleared; you can't reach it sooner anyway.
+ * eleven before it are cleared; you can't reach it sooner anyway. `solid`: where walls stand (walk's).
  */
-export function trek(me: Walker, t: Trek, dx: number, dz: number, beaten: ReadonlySet<number>, cleared: (n: number) => number): TrekEvent[] {
+export function trek(me: Walker, t: Trek, dx: number, dz: number, beaten: ReadonlySet<number>, cleared: (n: number) => number, solid?: (x: number, z: number) => boolean): TrekEvent[] {
   const fence = (x: number, z: number) => {
     const g = regionAt(x, z);
     if (!g || !TRAILS.has(g.n) || cleared(g.n) >= SECTIONS) return false;
@@ -134,7 +134,7 @@ export function trek(me: Walker, t: Trek, dx: number, dz: number, beaten: Readon
     // Coming in from another region you land in whatever band borders it; from there only back and to the next.
     return here !== 0 && to > Math.max(here, cleared(g.n) + 1);
   };
-  const out: TrekEvent[] = walk(me, dx, dz, beaten, fence).filter((e) => e.kind !== "arena" || cleared(e.region.n) >= SECTIONS - 1);
+  const out: TrekEvent[] = walk(me, dx, dz, beaten, fence, solid).filter((e) => e.kind !== "arena" || cleared(e.region.n) >= SECTIONS - 1);
   const g = regionAt(me.x, me.z), tr = g && TRAILS.get(g.n);
   if (!g || !tr) { t.band = 0; return out; }
   const b = bandAt(me.x, me.z);

@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { Director, found } from "../src/director.ts";
-import { hasTrail, loadJourney, newJourney, sections } from "../src/journey.ts";
+import { hasTrail, loadJourney, SECTIONS, newJourney, sections } from "../src/journey.ts";
 import { REGIONS } from "../src/regions.ts";
-import { arrive, findTape, lightFire, MIN_GAP, POIS, SQUARE, tapeOf, tapesFound, fireSpot, type Poi } from "../src/world/poi.ts";
+import { arrive, CABIN, findTape, inWalls, lightFire, MIN_GAP, POIS, REACH, shelterAt, SQUARE, tapeOf, tapesFound, fireSpot, yawOf, type Poi } from "../src/world/poi.ts";
 import { bandAt, newTrek, TRAILS, trek, trailhead, WORLD } from "../src/world/trail.ts";
 import { CELL, heightAt, ownerAt, spawn, type Walker } from "../src/world/world.ts";
 import { GRID } from "../src/world/places.ts";
@@ -86,6 +86,28 @@ describe("walking to a tape and a fire", () => {
 
     expect(loadJourney(JSON.stringify(j))).toEqual(j);
     expect(loadJourney(JSON.stringify({ ...j, found: undefined, fires: undefined, sights: undefined }))?.fires).toEqual([]); // an older save
+  });
+});
+
+describe("a cabin", () => {
+  test("you walk up to its door and stop at the wall, in its shelter; one who woke inside walks out", () => {
+    const cabin = [...POIS.values()].flat().find((p) => p.kind === "cabin")!, a = yawOf(cabin.id);
+    // Ten metres out from the door's side (the cabin's own +z), every section of the trail open.
+    const me: Walker = { ...spawn(cabin.n), x: cabin.x + 10 * Math.sin(a), z: cabin.z + 10 * Math.cos(a) }, t = newTrek(me), reached = new Set<string>();
+    const step = (dx: number, dz: number) => trek(me, t, dx, dz, new Set(), () => SECTIONS, inWalls);
+    for (let i = 0; i < 60; i++) { step(-0.3 * Math.sin(a), -0.3 * Math.cos(a)); arrive(me, reached); }
+    const d = Math.hypot(me.x - cabin.x, me.z - cabin.z);
+    expect(d).toBeGreaterThan(CABIN.d / 2);  // the wall held
+    expect(d).toBeLessThan(REACH);           // close enough to knock
+    expect(reached.has(cabin.id)).toBe(true);
+    expect(shelterAt(newJourney(["hodag", "squonk", "jackalope"])!, me)?.id).toBe(cabin.id);
+
+    // Standing in the middle (an old save): you can walk out, and not back in.
+    Object.assign(me, { x: cabin.x, z: cabin.z });
+    for (let i = 0; i < 20; i++) step(0.5 * Math.sin(a), 0.5 * Math.cos(a));
+    expect(inWalls(me.x, me.z)).toBe(false);
+    for (let i = 0; i < 20; i++) step(-0.5 * Math.sin(a), -0.5 * Math.cos(a));
+    expect(inWalls(me.x, me.z)).toBe(false);
   });
 });
 

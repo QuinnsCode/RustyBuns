@@ -23,7 +23,7 @@ import { litter as litterOf, scatterLitter } from "./litter.ts";
 import { lifeView, type LifeEvent } from "./life.ts";
 import { DAWN_HOUR, DAY, daylight, hourAt, weather, wind, type Patch as Forage, type Weather } from "./nature.ts";
 import type { Ambient } from "./ambience.ts";
-import { fireSpot, ISLE_N, isleLair, islePlaces, LAIR_R, marked, poiById, shelterAt, SHELTER_R, type Poi, type Shelter } from "./poi.ts";
+import { fireSpot, inWalls, ISLE_N, isleLair, islePlaces, LAIR_R, marked, poiById, shelterAt, SHELTER_R, type Poi, type Shelter } from "./poi.ts";
 import { darkSounds, glow as lampGlow, lantern, LANTERN_OUT, lightsNear, nightOf, safePaths, stalk, toSafety, type Light, type Night } from "./night.ts";
 import { HUNTS, isleHunts, stageOf, waiting } from "./hunts.ts";
 import { beside, BOARD, DEEP, DOORSTEP, line as townLine, onLot, outside, roomAt, step as townStep, toLocal, toWorld, TOWNS, type Town } from "./towns.ts";
@@ -1464,7 +1464,7 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
         }
         gait = p.gait; speed = p.v * Math.min(1, Math.hypot(mx, mz));
         const v = p.v * dt;
-        for (const e of trek(me, trekAt, mx * v, mz * v, beaten, hooks.cleared)) say(e);
+        for (const e of trek(me, trekAt, mx * v, mz * v, beaten, hooks.cleared, inWalls)) say(e);
         look();
         const last = crumbs[0];
         if (!last || Math.hypot(last.x - me.x, last.z - me.z) > 0.8) { crumbs.unshift({ x: me.x, z: me.z, yaw: facing }); crumbs.length = Math.min(crumbs.length, 40); }
