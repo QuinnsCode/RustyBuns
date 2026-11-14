@@ -79,6 +79,20 @@ page from another origin under that policy.
 A cart takes `save()`'s design id with the order line. The design names its original file, so whoever prints it
 knows what to print and where.
 
+### Print files
+
+Whoever fulfils the order pastes the design id (or its `/r/` link) into **Print files** on `/admin.html`, with the
+org's admin key. It gets one PNG per print zone: the shopper's original at 300 dpi over the zone's real size, on a
+clear background, with the dpi written into the file so print software opens it at its real size. A cap's front
+(12 x 6 cm) is 1417 x 709 px. The sizes are product data: a product's `zones` (`{ "front": { "w": 12, "h": 6 } }`,
+in centimetres) overrides the defaults in `PRINT_CM` (`src/api.ts`). A shop's own model has no default, so its
+product must name them. The picture sits as the widget shows it: centred at u across and v up, `scale` of the
+zone's width, turned, cut at the zone's edge.
+
+`GET /api/orgs/<org>/designs/<id>/print` (admin key) answers the layout as JSON, and
+`GET /api/orgs/<org>/originals/<file>` (admin key) the original, so a script can make them too. The pixels are
+drawn in the page, since a Worker has no canvas.
+
 ## The bucket
 
 One bucket, with a folder for each org, split by kind. There are no folders by shopper or by date ([src/layout.ts](src/layout.ts)):

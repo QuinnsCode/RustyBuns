@@ -31,6 +31,20 @@ export const Org = obj({
 });
 export type Org = Of<typeof Org>;
 
+/** A print zone's real size on the product, in centimetres: what a print file is laid out over. */
+export const PrintCm = obj({ w: num(1, 100), h: num(1, 100) });
+export type PrintCm = Of<typeof PrintCm>;
+const ZoneSizes = obj({ front: opt(PrintCm), back: opt(PrintCm), "left-sleeve": opt(PrintCm) });
+
+/** Each made product's zones in centimetres, when its product names none. A shop's own model has no default: its product names them. */
+export const PRINT_CM: Record<Made, Partial<Record<ZoneName, PrintCm>>> = {
+  cap: { front: { w: 12, h: 6 } },
+  beanie: { front: { w: 10, h: 5 } },
+  bucket: { front: { w: 12, h: 5 } },
+  tee: { front: { w: 30, h: 40 }, back: { w: 30, h: 40 }, "left-sleeve": { w: 9, h: 9 } },
+  hoodie: { front: { w: 28, h: 25 }, back: { w: 32, h: 40 }, "left-sleeve": { w: 9, h: 9 } },
+};
+
 /** orgs/<org>/products/<product>.json. */
 export const Product = obj({
   name: str(120),
@@ -39,6 +53,8 @@ export const Product = obj({
   glb: opt(str(300)),
   /** The colours on offer. A custom model keeps its own texture and offers none. */
   colors: arr(str(7, { re: HEX }), 24),
+  /** Its print zones' real sizes, over the defaults in PRINT_CM. */
+  zones: opt(ZoneSizes),
 });
 export type Product = Of<typeof Product>;
 
@@ -108,3 +124,23 @@ export const Sample = obj({
   error: opt(str(500)),
 });
 export type Sample = Of<typeof Sample>;
+
+/** One zone's print file: the shopper's original (an admin fetches it), laid at `dpi` over the zone's real size. */
+export const PrintSheet = obj({
+  zone: oneOf(ZONES),
+  cm: PrintCm,
+  px: obj({ w: int(1, 20_000), h: int(1, 20_000) }),
+  original: str(400),
+  at: obj({ u: num(0, 1), v: num(0, 1), scale: num(0.05, 1), rotation: num(-Math.PI, Math.PI) }),
+});
+export type PrintSheet = Of<typeof PrintSheet>;
+
+/** GET /api/orgs/<org>/designs/<id>/print (an admin): a print file per zone, and the zones that can't have one, with why. */
+export const PrintPlan = obj({
+  design: str(24),
+  model: oneOf(ANY_MODEL),
+  dpi: int(72, 1200),
+  sheets: arr(PrintSheet, 8),
+  skipped: arr(obj({ zone: oneOf(ZONES), why: str(200) }), 8),
+});
+export type PrintPlan = Of<typeof PrintPlan>;

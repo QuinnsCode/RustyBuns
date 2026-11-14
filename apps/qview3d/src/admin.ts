@@ -3,8 +3,10 @@
 // The admin page (public/admin.html): a shop makes a sample of its own product. Photos (or a short video, from
 // which four frames are taken here in the browser) are cut to 1600 px JPEGs, uploaded privately with the admin
 // key, and sent to make a model. The page polls until it's ready, then shows it in the widget with its embed tag.
+// Below that, print files: a saved design's original laid out per zone at print resolution, for the fulfiller.
 import { getJson, readJson } from "@rustybuns/util/http";
-import { Sample } from "./api.ts";
+import { PrintPlan, Sample } from "./api.ts";
+import { drawSheet, withDpi } from "./print-sheet.ts";
 import { sha256Of } from "./widget/image.ts";
 import { problem, upload } from "./widget/upload.ts";
 import "./widget/index.ts";
@@ -137,3 +139,58 @@ function show(o: string, product: string) {
   result.hidden = false;
   $<HTMLDivElement>("empty").hidden = true;
 }
+
+const design = $<HTMLInputElement>("design"), printGo = $<HTMLButtonElement>("printGo");
+const printStatus = $<HTMLDivElement>("printStatus"), sheets = $<HTMLDivElement>("sheets");
+
+function sayPrint(text: string, bad = false) {
+  printStatus.textContent = text;
+  printStatus.classList.toggle("bad", bad);
+}
+
+/** A saved design's print files: ask for the plan, fetch each original with the admin key, draw it, offer the PNG. */
+async function printFiles() {
+  const id = design.value.trim().split("/").pop()?.replace(/\.json$/, "") ?? "";
+  const base = `${location.origin}/api/orgs/${encodeURIComponent(org.value.trim())}`;
+  const auth = { authorization: `Bearer ${key.value.trim()}` };
+  printGo.disabled = true;
+  sheets.replaceChildren();
+  try {
+    sayPrint("Reading the design...");
+    const res = await fetch(`${base}/designs/${encodeURIComponent(id)}/print`, { headers: auth });
+    if (!res.ok) throw new Error(await problem(res));
+    const plan = await readJson(res, PrintPlan);
+    if (!plan) throw new Error("the server sent something this page can't read");
+    for (const s of plan.sheets) {
+      sayPrint(`Drawing the ${s.zone} at ${s.px.w} x ${s.px.h} px...`);
+      const got = await fetch(s.original, { headers: auth });
+      if (!got.ok) throw new Error(`${s.zone}: ${await problem(got)}`);
+      const image = await createImageBitmap(await got.blob());
+      const canvas = new OffscreenCanvas(s.px.w, s.px.h);
+      drawSheet(canvas.getContext("2d")!, s, image, image.width / image.height);
+      image.close();
+      const png = withDpi(new Uint8Array(await (await canvas.convertToBlob({ type: "image/png" })).arrayBuffer()), plan.dpi);
+      const href = URL.createObjectURL(new Blob([png as Uint8Array<ArrayBuffer>], { type: "image/png" }));
+      const card = document.createElement("figure");
+      card.className = "sheet";
+      card.style.margin = "0";
+      const name = `design-${plan.design}-${s.zone}.png`;
+      const link = Object.assign(document.createElement("a"), { href, download: name, textContent: "Download", className: "copy" });
+      const label = document.createElement("span");
+      label.append(Object.assign(document.createElement("b"), { textContent: s.zone }), ` ${s.cm.w} x ${s.cm.h} cm`);
+      const row = document.createElement("div");
+      row.append(label, link);
+      card.append(Object.assign(document.createElement("img"), { src: href, alt: `${s.zone} print file` }), row);
+      sheets.append(card);
+    }
+    const left = plan.skipped.map((s) => `${s.zone}: ${s.why}`).join("; ");
+    if (!plan.sheets.length) throw new Error(left || "this design has no pictures to print");
+    sayPrint(`${plan.sheets.length} print ${plan.sheets.length === 1 ? "file" : "files"} at ${plan.dpi} dpi.${left ? ` Not printable: ${left}.` : ""}`);
+  } catch (e) {
+    sayPrint(e instanceof Error ? e.message : String(e), true);
+  } finally {
+    printGo.disabled = false;
+  }
+}
+printGo.onclick = () => void printFiles();
+design.onkeydown = (e) => { if (e.key === "Enter") void printFiles(); };
