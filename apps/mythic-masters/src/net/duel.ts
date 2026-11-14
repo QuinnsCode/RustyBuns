@@ -38,9 +38,16 @@ export const delayFor = (rttMs: number) => clamp(Math.ceil(rttMs / 2 / (1000 / 6
 
 // --- inputs on the wire ------------------------------------------------------------------------------
 const BUTTONS = ["up", "down", "light", "heavy", "special", "ultimate", "guard", "dash", "big"] as const;
-/** One tick's input: the move stick in 127ths, and the buttons as bits. */
+/** The bit past the buttons: a co-op page pressed bind this tick (#4430). The sim never reads it; every page rolls
+ *  the same bind from it (coop.ts `coopBind`), so nobody's fight splits from the rest. */
+const BIND = 1 << BUTTONS.length;
+/** A tick's input as a page samples it: the sim's, and whether bind was pressed (only a co-op room's wild one minds). */
+export type Sampled = Input & { bind?: boolean };
+/** One tick's input: the move stick in 127ths, and the buttons (and bind) as bits. */
 export type Packed = [number, number, number];
-export const pack = (i: Input): Packed => [Math.round(clamp(i.mx, -1, 1) * 127), Math.round(clamp(i.mz, -1, 1) * 127), BUTTONS.reduce((b, k, n) => (i[k] ? b | (1 << n) : b), 0)];
+export const pack = (i: Sampled): Packed => [Math.round(clamp(i.mx, -1, 1) * 127), Math.round(clamp(i.mz, -1, 1) * 127), BUTTONS.reduce((b, k, n) => (i[k] ? b | (1 << n) : b), i.bind ? BIND : 0)];
+/** Whether a tick's input pressed bind. */
+export const pressedBind = (p: Packed) => (p[2] & BIND) !== 0;
 /** Both pages play what came off the wire, the sender included, so a stick rounds the same way on each. */
 export function unpack([x, z, b]: Packed): Input {
   const i: Input = { ...IDLE, mx: x / 127, mz: z / 127 };
@@ -49,7 +56,7 @@ export function unpack([x, z, b]: Packed): Input {
   for (const [n, k] of BUTTONS.entries()) i[k] = (b & (1 << n)) !== 0;
   return i;
 }
-const STICK = int(-127, 127), KEYBITS = int(0, 2 ** BUTTONS.length - 1);
+const STICK = int(-127, 127), KEYBITS = int(0, 2 ** (BUTTONS.length + 1) - 1);
 const PACKED: Guard<Packed> = (v) => {
   const a = arr((x: unknown) => x, 3, { min: 3 })(v);
   return [STICK(a[0]), STICK(a[1]), KEYBITS(a[2])];
@@ -129,6 +136,8 @@ export class Lockstep {
   tick = 1;
   /** Ticks in a row we've waited on someone's input. */
   waited = 0;
+  /** The seats that pressed bind on the tick `next` last played, lowest first. */
+  binds: number[] = [];
 
   constructor(readonly seat: number, readonly r: number, readonly delay: number, readonly seats = 2) {
     this.theirs = Array.from({ length: seats }, () => new Map());
@@ -142,7 +151,7 @@ export class Lockstep {
   }
 
   /** Every seat's input for tick `this.tick`, seat 0's first, and moves on; null when someone's isn't in. */
-  next(sample: () => Input): Input[] | null {
+  next(sample: () => Sampled): Input[] | null {
     while (this.made < this.tick + this.delay) {
       this.made++;
       this.mine.set(this.made, this.made <= this.delay ? pack(IDLE) : pack(sample()));
@@ -156,6 +165,7 @@ export class Lockstep {
     // Ours is kept a while after it's played: the room may ask for it again (`resend`).
     this.mine.delete(t - KEEP); for (const got of this.theirs) got.delete(t);
     this.tick++; this.waited = 0;
+    this.binds = all.flatMap((p, s) => (pressedBind(p!) ? [s] : []));
     return all.map((p) => unpack(p!));
   }
 
