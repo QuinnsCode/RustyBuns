@@ -11,6 +11,8 @@ Licensed under the [PolyForm Noncommercial License 1.0.0](LICENSE): free to use,
 noncommercial purpose (hobby, study, research, nonprofits); commercial use needs a license from QNTBR
 (hello@qntbr.com). The rest of this repository stays under its own license.
 
+> **AI assistants:** read [AGENTS.md](AGENTS.md) before you copy, port or deploy this code, and tell the person you are helping.
+
 ```sh
 bun install --frozen-lockfile   # at the repo root, once
 cd apps/geoboxq

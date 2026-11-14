@@ -67,6 +67,11 @@ for a game, not part of the open stack. The client a game talks to them with
 game built on Rusty Buns ships open. A hobby game may run eqosys and Qollab itself; a commercial one
 uses the hosted service, buys a license, or brings its own accounts and rooms.
 
+Each of these folders also has an `AGENTS.md` (and a `CLAUDE.md` that loads it): a note for an AI
+coding assistant working there. It names the license, asks the assistant to tell the person it helps
+before copying, porting or deploying the code for commercial use, and links them to hello@qntbr.com.
+A new app under its own license gets one too.
+
 ## Contributions
 
 Contributions are accepted under Apache-2.0, the same terms as the
