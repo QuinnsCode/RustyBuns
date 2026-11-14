@@ -34,6 +34,10 @@ Saved builds (#4497): each hourly smoke row keeps the binary it built as the Act
 2. Owner: let the ring workflows write `refs/ring/*` only (ruleset + `contents: write`).
 3. `scripts/rings.ts` and `bun run rings`; Ester's card shows the same lines.
 4. Bisect on red (Ester on Bob) and Mervin's 60-minute revert.
+   Built: `scripts/ring-red.ts` (#4491), every 10 minutes on the office Mac (`scripts/mac/dev.rustybuns.ring-red.plist`).
+   It checks the red SHA fails on Bob too (no blame for a flake or Linux-only red), bisects, tells the PR's worker, and
+   marks the blame in a ci-hourly issue comment; 60 minutes on, still red and no commit naming the PR, it opens
+   `ring-revert-<sha7>`. Bob runs a commit, not a working tree, through `main(argv, cwd, at)` in `scripts/remote-ci.ts`.
 5. Trim `apps.yml`: the all-apps sweep on `packages/` moves to hourly, after 1-4 have run clean for a week.
 6. `daily-ring.yml` at 10:17 UTC: `rings.ts pick daily` (3 green hourlies in a row), phone smoke at every size, vite builds of changed web apps (no deploys). Bob's natives gate it once he can report back.
 7. Stable: Monday pick, release notes from squash titles, one `MANUAL RUN:` taste issue, owner pushes the `v` tag.

@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Runs scripts/mac/ring-red.sh on the office Mac every 10 minutes (#4491): bisect a red hourly ring on Bob, revert after
+     60 minutes. Load it with: sed "s#/Users/YOU#$HOME#g" scripts/mac/dev.rustybuns.ring-red.plist >
+     ~/Library/LaunchAgents/dev.rustybuns.ring-red.plist && launchctl load ~/Library/LaunchAgents/dev.rustybuns.ring-red.plist
+     It runs the copy of ring-red.sh in its own clone (~/.rustybuns/ring-red/src), so it follows main. Log: ~/.rustybuns/ring-red/log. -->
+<plist version="1.0"><dict>
+  <key>Label</key><string>dev.rustybuns.ring-red</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>-c</string>
+    <string>s=/Users/YOU/.rustybuns/ring-red/src/scripts/mac/ring-red.sh; [ -f "$s" ] || git clone -q https://github.com/QuinnsCode/RustyBuns /Users/YOU/.rustybuns/ring-red/src; exec /bin/bash "$s"</string>
+  </array>
+  <key>StartInterval</key><integer>600</integer>
+</dict></plist>
