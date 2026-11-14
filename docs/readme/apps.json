@@ -135,6 +135,11 @@
         "app": "artstewengine",
         "name": "artstewengine",
         "line": "A small RWSDK app on D1 with a Better Auth admin page. Add who has paid, and the sealed engine of qCRM gets its key only for a paid license."
+      },
+      {
+        "app": "cron-swanson",
+        "name": "Cron Swanson",
+        "line": "Every alarm, reminder and cron job of every app on one page, in five lanes from async to yearly. A small Bun server ticks each minute, so a job fires within a second of its time."
       }
     ]
   },
