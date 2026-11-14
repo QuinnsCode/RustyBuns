@@ -25,6 +25,7 @@ const vite = await createServer({
     configureServer(s) {
       s.middlewares.use((req, _res, next) => {
         if (req.url?.startsWith("/v1/qview3d.js")) req.url = `/@fs${join(app, "src/widget/index.ts")}`;
+        if (req.url?.startsWith("/v1/admin.js")) req.url = `/@fs${join(app, "src/admin.ts")}`;
         next();
       });
     },
@@ -32,4 +33,4 @@ const vite = await createServer({
 });
 await vite.listen();
 const url = vite.resolvedUrls?.local[0] ?? `http://localhost:${vite.config.server.port}/`;
-console.log(`QView3D demo shop: ${url}  (widget: ${url}v1/qview3d.js, API: ${target})`);
+console.log(`QView3D demo shop: ${url}  samples: ${url}admin.html  (widget: ${url}v1/qview3d.js, API: ${target})`);

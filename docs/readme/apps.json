@@ -129,7 +129,7 @@
       {
         "app": "qview3d",
         "name": "QView3D",
-        "line": "A 3D product customiser for a shop page, from one script tag. Shoppers drag a photo over a hat, choose its colour and save a snapshot. Uploads go to R2 on signed links, in one folder for each org. PolyForm Noncommercial."
+        "line": "A 3D product customiser for a shop page, from one script tag. Shoppers drag a photo over a hat, choose its colour and save a snapshot. A shop with another product makes a model of it from photos. Uploads go to R2 on signed links, in one folder for each org. PolyForm Noncommercial."
       },
       {
         "app": "artstewengine",

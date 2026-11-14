@@ -4,19 +4,32 @@
 import { arr, bool, int, num, obj, oneOf, opt, str, type Of } from "@rustybuns/util/guard";
 import { ID, KIND_NAMES, SHA } from "./layout.ts";
 
+/** The hats made in code. A shop's own product, made from its photos, is "custom" and names its GLB. */
 export const MODELS = ["cap", "beanie", "bucket"] as const;
-export type Model = (typeof MODELS)[number];
+export type Hat = (typeof MODELS)[number];
+export const ANY_MODEL = [...MODELS, "custom"] as const;
+export type Model = (typeof ANY_MODEL)[number];
 const HEX = /^#[0-9a-f]{6}$/i;
 
-/** orgs/<org>/org.json: which pages may embed the widget and sign uploads. "*" allows any (the demo org). */
-export const Org = obj({ origins: arr(str(200), 50) });
+/**
+ * orgs/<org>/org.json: which pages may embed the widget and sign uploads ("*" allows any: the demo org), the
+ * SHA-256 of each admin key (they make samples and upload product photos), and how many samples the org has paid for.
+ */
+export const Org = obj({
+  origins: arr(str(200), 50),
+  admins: opt(arr(str(64, { re: SHA }), 20)),
+  samples: opt(int(0, 10_000)),
+});
 export type Org = Of<typeof Org>;
 
 /** orgs/<org>/products/<product>.json. */
 export const Product = obj({
   name: str(120),
-  model: oneOf(MODELS),
-  colors: arr(str(7, { re: HEX }), 24, { min: 1 }),
+  model: oneOf(ANY_MODEL),
+  /** A custom model's GLB (orgs/<org>/models/<id>.glb), served from /r/. */
+  glb: opt(str(300)),
+  /** The colours on offer. A custom model keeps its own texture and offers none. */
+  colors: arr(str(7, { re: HEX }), 24),
 });
 export type Product = Of<typeof Product>;
 
@@ -46,13 +59,16 @@ export const Layer = obj({
   v: num(0, 1),
   scale: num(0.05, 1),
   rotation: num(-Math.PI, Math.PI),
+  /** On a custom model: the spot on its surface and the surface's facing there, in the model's own space. */
+  point: opt(arr(num(-10, 10), 3, { min: 3 })),
+  normal: opt(arr(num(-1, 1), 3, { min: 3 })),
 });
 export type Layer = Of<typeof Layer>;
 
 /** A design: everything needed to draw it again. What the widget's `design` is and what a snapshot is exported with. */
 export const Design = obj({
   v: oneOf([1] as const),
-  model: oneOf(MODELS),
+  model: oneOf(ANY_MODEL),
   color: str(7, { re: HEX }),
   layers: arr(Layer, 8),
   camera: obj({ azimuth: num(-10, 10), polar: num(0, Math.PI), distance: num(0.1, 10) }),
@@ -63,3 +79,22 @@ export type Design = Of<typeof Design>;
 
 export const DesignReply = obj({ id: str(24), url: str(400) });
 export type DesignReply = Of<typeof DesignReply>;
+
+/** POST /api/orgs/<org>/models (an admin): make a sample model from 1 to 4 product photos already uploaded. */
+export const SampleRequest = obj({ name: str(120), photos: arr(str(300), 4, { min: 1 }) });
+export type SampleRequest = Of<typeof SampleRequest>;
+
+/** A sample's progress, from POST and GET /api/orgs/<org>/models/<id>. Ready: `product` is its product id. */
+export const Sample = obj({
+  id: str(24),
+  name: str(120),
+  status: oneOf(["generating", "ready", "failed"] as const),
+  progress: num(0, 100),
+  task: str(200),
+  photos: arr(str(300), 4),
+  created: num(0, 1e15),
+  glb: opt(str(300)),
+  product: opt(str(63)),
+  error: opt(str(500)),
+});
+export type Sample = Of<typeof Sample>;

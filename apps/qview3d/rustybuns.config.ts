@@ -6,6 +6,7 @@ import { defineConfig } from "@rustybuns/cli/config";
 //
 // Secrets (see .env.schema): UPLOAD_SECRET signs the short-lived upload URLs. The four R2_* values are optional:
 // with them set, uploads go straight to R2 on an S3 presigned PUT instead of through the Worker (src/sign.ts).
+// MESHY_API_KEY (optional) turns on samples: a shop's own product made from its photos (src/samples.ts).
 export default defineConfig({
   name: "qview3d",
   worker: {
@@ -22,6 +23,10 @@ export default defineConfig({
     R2_ACCOUNT_ID: { type: "secret", op: "op://qview3d/r2-account-id/password", optional: true },
     R2_ACCESS_KEY_ID: { type: "secret", op: "op://qview3d/r2-access-key-id/password", optional: true },
     R2_SECRET_ACCESS_KEY: { type: "secret", op: "op://qview3d/r2-secret-access-key/password", optional: true },
+    // Samples (a shop's own product from its photos) go to Meshy's multi-image-to-3D on this key. Without it they answer 503.
+    MESHY_API_KEY: { type: "secret", op: "op://qview3d/meshy-api-key/password", optional: true },
+    // The most samples a day across every org: the ceiling on the Meshy bill (src/samples.ts).
+    MESHY_DAILY: { type: "var", value: "50" },
   },
   targets: {
     edge: { provider: "cloudflare" },

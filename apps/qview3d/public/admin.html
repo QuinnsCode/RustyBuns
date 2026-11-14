@@ -1,0 +1,110 @@
+<!doctype html>
+<!-- Required Notice: Copyright (c) 2026 Ryan Quinn (QNTBR) (https://qntbr.com). PolyForm Noncommercial 1.0.0, see LICENSE. -->
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>QView3D samples</title>
+  <meta name="description" content="Make a 3D sample of your own product from photos or a short video, then put it in the QView3D widget." />
+  <link rel="icon" href="data:," />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap" />
+  <script type="module" src="/v1/admin.js"></script>
+  <style>
+    /* codeSplitter's look: ink on white, hairline borders, paper panels, one orange (the deeper one carries text and fills, for contrast). */
+    :root { --bg: #fff; --fg: #0a0a0a; --muted: #6b6b6b; --line: #e6e6e6; --paper: #fcfbf8; --accent: #e8590c; --accent-ink: #c2410c; --accent-soft: #fff4ec; --bad: #b42318;
+      --sans: "Geist", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; --mono: "Geist Mono", ui-monospace, monospace; color-scheme: light; }
+    * { box-sizing: border-box; }
+    [hidden] { display: none !important; }
+    body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.55 var(--sans); }
+    a { color: var(--accent-ink); }
+    header { display: flex; align-items: center; gap: 10px; height: 56px; padding: 0 24px; border-bottom: 1px solid var(--line); }
+    header b { font-weight: 600; letter-spacing: -0.01em; }
+    header .crumb { color: var(--muted); }
+    header .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
+    main { max-width: 1120px; margin: 0 auto; padding: 28px 16px 64px; display: grid; grid-template-columns: minmax(0, 400px) minmax(0, 1fr); gap: 24px; align-items: start; }
+    .card { border: 1px solid var(--line); border-radius: 8px; background: var(--bg); }
+    .card > .head { padding: 14px 16px; border-bottom: 1px solid var(--line); background: var(--paper); border-radius: 8px 8px 0 0; }
+    .card > .body { padding: 16px; }
+    h1 { font-size: 15px; font-weight: 600; margin: 0; }
+    .sub { margin: 2px 0 0; color: var(--muted); font-size: 13px; }
+    label.field { display: block; font-size: 13px; font-weight: 500; margin: 14px 0 6px; }
+    label.field:first-child { margin-top: 0; }
+    input[type="text"], input[type="password"] { width: 100%; height: 36px; padding: 0 10px; border: 1px solid var(--line); border-radius: 6px; font: inherit; background: var(--bg); color: var(--fg); }
+    input[type="text"]:hover, input[type="password"]:hover { border-color: #cfcfcf; }
+    :focus-visible { outline: 2px solid var(--accent-ink); outline-offset: 2px; }
+    input:focus-visible { outline-offset: 0; border-color: var(--accent-ink); }
+    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .row label.field { margin-top: 0; }
+    .drop { display: grid; place-items: center; text-align: center; margin-top: 14px; min-height: 120px; padding: 16px; border: 1px dashed #cfcfcf; border-radius: 8px; background: var(--paper); cursor: pointer; color: var(--muted); transition: border-color 0.12s, background 0.12s; }
+    .drop:hover, .drop.over { border-color: var(--accent); background: var(--accent-soft); }
+    .drop:focus-within { outline: 2px solid var(--accent-ink); outline-offset: 2px; }
+    .drop b { display: block; color: var(--fg); font-weight: 600; }
+    .drop.has { min-height: 0; }
+    .thumbs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 10px; }
+    .thumbs:empty { display: none; }
+    .thumbs img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 6px; border: 1px solid var(--line); }
+    button.go { all: unset; box-sizing: border-box; display: flex; align-items: center; justify-content: center; width: 100%; height: 40px; margin-top: 16px; border-radius: 6px; background: var(--accent-ink); color: #fff; font-weight: 600; cursor: pointer; transition: background 0.12s; }
+    button.go:hover { background: var(--accent); }
+    button.go:focus-visible { outline: 2px solid var(--accent-ink); outline-offset: 2px; }
+    button.go[disabled] { background: #e9e7e3; color: #8a8a8a; cursor: not-allowed; }
+    .cost { font-size: 12px; color: var(--muted); margin-top: 8px; }
+    .progress { height: 4px; border-radius: 4px; background: var(--line); margin-top: 16px; overflow: hidden; }
+    .progress div { height: 100%; width: 0; background: var(--accent); transition: width 0.6s; }
+    .status { display: flex; justify-content: space-between; gap: 12px; margin-top: 8px; font-size: 13px; color: var(--muted); min-height: 20px; }
+    #status.bad { color: var(--bad); }
+    .clock { font: 500 12px var(--mono); font-variant-numeric: tabular-nums; min-width: 3.4em; text-align: right; color: var(--fg); }
+    .note { font-size: 12px; background: var(--accent-soft); border: 1px solid #fed7aa; color: #9a3412; border-radius: 6px; padding: 8px 10px; margin-top: 14px; }
+    .empty { display: grid; place-items: center; min-height: 440px; color: var(--muted); text-align: center; border: 1px dashed var(--line); border-radius: 8px; background: var(--paper); padding: 24px; }
+    qview-3d { height: min(64vh, 560px); }
+    .tagbox { margin-top: 12px; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+    .tagbox .bar { display: flex; justify-content: space-between; align-items: center; padding: 6px 8px 6px 12px; background: var(--paper); border-bottom: 1px solid var(--line); font-size: 12px; color: var(--muted); }
+    pre { margin: 0; padding: 12px; font: 12.5px/1.5 var(--mono); background: var(--bg); white-space: pre-wrap; word-break: break-all; }
+    .copy { all: unset; cursor: pointer; font: 500 12px var(--sans); padding: 4px 10px; border: 1px solid var(--line); border-radius: 5px; background: var(--bg); color: var(--fg); }
+    .copy:hover { border-color: var(--accent); color: var(--accent-ink); }
+    .copy:focus-visible { outline: 2px solid var(--accent-ink); outline-offset: 2px; }
+    .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+    @media (max-width: 860px) { main { grid-template-columns: 1fr; } .empty { min-height: 180px; } }
+    @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+  </style>
+</head>
+<body>
+  <header><span class="dot" aria-hidden="true"></span><b>QView3D</b><span class="crumb">/ samples</span></header>
+  <main>
+    <section class="card" aria-labelledby="title">
+      <div class="head">
+        <h1 id="title">Make a sample</h1>
+        <p class="sub">For a product our hats don't cover: 1 to 4 photos on a plain background, or a slow video all the way round it.</p>
+      </div>
+      <div class="body">
+        <div class="row">
+          <div><label class="field" for="org">Org</label><input id="org" type="text" autocomplete="off" spellcheck="false" /></div>
+          <div><label class="field" for="key">Admin key</label><input id="key" type="password" autocomplete="off" /></div>
+        </div>
+        <label class="field" for="name">Product name</label>
+        <input id="name" type="text" placeholder="Trail tumbler" />
+        <label class="drop" id="drop">
+          <input id="files" class="sr" type="file" accept="image/*,video/*" multiple />
+          <span><b>Drop photos or a video</b>or choose files. Up to 4 photos; from a video we take 4 frames.</span>
+        </label>
+        <div class="thumbs" id="thumbs" aria-label="Pictures to send"></div>
+        <button class="go" id="go" disabled>Make the sample</button>
+        <div class="cost">Uses one of your org's samples. It's a draft: the model fills in sides the photos didn't show.</div>
+        <div class="progress" aria-hidden="true"><div id="bar"></div></div>
+        <div class="status"><div id="status" role="status" aria-live="polite"></div><span class="clock" id="clock" title="Time since the sample started"></span></div>
+        <div class="note" id="note" hidden>On this machine the demo org is filled in, and a stand-in answers instead of Meshy: it returns a tumbler after about 8 seconds, whatever the photos show.</div>
+      </div>
+    </section>
+    <section aria-label="Your sample">
+      <div id="result" hidden>
+        <div id="preview"></div>
+        <div class="tagbox">
+          <div class="bar"><span>Paste into your product page</span><button class="copy" id="copy">Copy</button></div>
+          <pre id="tag"></pre>
+        </div>
+      </div>
+      <div class="empty" id="empty">Your sample shows up here, ready to put a picture on.</div>
+    </section>
+  </main>
+</body>
+</html>

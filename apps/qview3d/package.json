@@ -17,6 +17,7 @@
   },
   "devDependencies": {
     "@rustybuns/cli": "^0.1.12",
+    "@rustybuns/models": "^0.1.12",
     "@rustybuns/shell-bun": "^0.1.12",
     "@types/three": "^0.180.0",
     "vite": "^6.2.6"
