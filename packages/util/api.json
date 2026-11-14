@@ -3,7 +3,7 @@
   "stable": ["index", "sweep", "reel", "motion", "guard", "bytes", "http", "limits", "room", "socket"],
   "shared": [
     "index", "guard", "bytes", "http", "socket", "token",
-    "sweep", "reel", "motion", "avatar", "dexter", "features", "overlap", "party-rules", "train", "visitors", "wasm-shared"
+    "sweep", "reel", "motion", "avatar", "dexter", "features", "overlap", "party-rules", "ports", "train", "visitors", "wasm-shared"
   ],
   "web": [
     "dom", "keys", "commands", "palette", "director", "memories", "morph", "skin", "eqosys", "lobby", "spaces",
