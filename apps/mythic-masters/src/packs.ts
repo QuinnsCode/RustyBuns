@@ -8,7 +8,8 @@
 //   lore.json      each legend's tale, sources and what of it is sacred, plus the beings held sacred
 //   director.json  the narrator's lines: on the boat over, on landing, and leaving
 // Its land is an island: a 3 x 2 corner off the grid's coast, reached by boat from a port region and loaded as its
-// own map. A pack works from the old legend only: never a film's name, characters, look or studio.
+// own map: public/packs/<id>/ground.bin, written by `bun scripts/fetch-world.ts <id>` and built by buildIsland in
+// src/world/world.ts. A pack works from the old legend only: never a film's name, characters, look or studio.
 // Adding a pack is its folder and one line in PACKS below; test/packs.test.ts checks it.
 import { arr, Bad, int, num, obj, oneOf, opt, rec, str, type Guard, type Of } from "@rustybuns/util/guard";
 import { CRITTERS, type Critter, type Pocket } from "./pockets.ts";
