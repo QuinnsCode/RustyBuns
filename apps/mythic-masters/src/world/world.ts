@@ -4,7 +4,7 @@
 import { clamp, lerp } from "@rustybuns/util";
 import { int, obj, rec, str } from "@rustybuns/util/guard";
 import { ROWS as CREATURES } from "../creatures.ts";
-import { roamingEvents } from "../packs.ts";
+import { LAND, roamingEvents } from "../packs.ts";
 import { REGIONS, type Biome, type Region } from "../regions.ts";
 import { awake, inSeason, ROAM_WEIGHT, tierOf, TIER_LEVEL } from "../tiers.ts";
 import { GRID, PLACES } from "./places.ts";
@@ -177,6 +177,39 @@ export function buildWorld(raw: unknown): World {
   for (const g of REGIONS) setPad(w, g);
   return w;
 }
+
+// --- a pack's island: its own map, off the continent (src/packs.ts) ------------------------------------------------
+/** Samples across and down a pack's island: LAND's 3 × 2 cells at the continent's spacing (public/packs/<id>/ground.bin). */
+export const ISLAND_COLS = LAND[0] * (GROUND_N - 1) + 1, ISLAND_ROWS = LAND[1] * (GROUND_N - 1) + 1;
+/** The island's coast, in parts of the map's half-width: a rounded square (a superellipse) roughened by noise. Past
+ * it the land sinks to the sea floor over SHORE, so it is an island whatever the real place around it is. */
+const COAST = 0.95, SHORE = 0.04;
+
+/** An island's ground from the bytes of its file; undefined when it is not a whole ISLAND_COLS × ISLAND_ROWS. */
+export function islandFrom(bytes: Uint8Array): Int16Array | undefined {
+  if (bytes.byteLength !== ISLAND_COLS * ISLAND_ROWS * 2) return undefined;
+  return new Int16Array(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength));
+}
+
+/**
+ * A pack's island as a World of its own, from its fetched ground (`islandFrom`): the same heights, detail, rivers
+ * and water as the continent (heightAt, dry, depthAt work on it), its north-west corner at (0, 0). Its real ground
+ * sinks under the sea past COAST, so it is an island with a shore all round and open water at the map's edge.
+ */
+export function buildIsland(fine: Int16Array): World {
+  const cols = ISLAND_COLS, rows = ISLAND_ROWS, width = (cols - 1) * STEP, depth = (rows - 1) * STEP, n = cols * rows;
+  const y = new Float32Array(n), rough = new Float32Array(n).fill(ROUGH.island);
+  for (let i = 0; i < n; i++) {
+    const x = (i % cols) * STEP, z = Math.floor(i / cols) * STEP, u = 2 * x / width - 1, v = 2 * z / depth - 1;
+    const r = Math.sqrt(Math.sqrt(u ** 4 + v ** 4)) + 0.02 * noise(x / 900, z / 900, 91), t = clamp((COAST - r) / SHORE + 0.5, 0, 1);
+    const sea = toGame(SEA_FLOOR), land = toGame(Math.max(SEA_FLOOR, fine[i]!));
+    y[i] = lerp(sea, land, t * t * (3 - 2 * t));
+  }
+  return { cols, rows, y, rough, pads: new Map(), width, depth, src: new Map(), coarse: new Map(), raw: y, edge: new Float32Array(n).fill(SEAM) };
+}
+
+/** Where a pack's place at [u, v] across its island stands on the island's map, metres. */
+export const onIsland = (at: readonly [number, number]) => ({ x: at[0] * (ISLAND_COLS - 1) * STEP, z: at[1] * (ISLAND_ROWS - 1) * STEP });
 
 /** Sample i's game height from the ground its region is built from now. */
 function rawAt(w: World, i: number) {

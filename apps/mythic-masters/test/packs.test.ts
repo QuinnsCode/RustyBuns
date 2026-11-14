@@ -8,7 +8,7 @@ import { ARCHETYPES, ROSTER } from "../src/roster.ts";
 import { inSeason, tierOf } from "../src/tiers.ts";
 import { PLACES } from "../src/world/places.ts";
 import { MIN_GAP } from "../src/world/poi.ts";
-import { CELL, poolOf } from "../src/world/world.ts";
+import { buildIsland, CELL, dry, islandFrom, onIsland, poolOf } from "../src/world/world.ts";
 
 // Every pack in packs/ loads and holds to the rules in src/packs.ts: its beasts are new, from a legend with sources,
 // never a being held sacred; its island sits off the coast by its port; its event creatures are in season with it.
@@ -57,6 +57,27 @@ describe("packs", () => {
     const w = LAND[0] * CELL, h = LAND[1] * CELL;
     for (const [i, a] of p.places.entries()) for (const b of p.places.slice(i + 1))
       expect([a.name, b.name, Math.hypot((a.at[0] - b.at[0]) * w, (a.at[1] - b.at[1]) * h) >= MIN_GAP]).toEqual([a.name, b.name, true]);
+  });
+
+  test.each(PACKS.map((p) => [p.id, p] as const))("%s: off the boat at its first fire, you walk dry ground to every tape", async (_, p) => {
+    const bytes = new Uint8Array(await Bun.file(join(import.meta.dir, "..", "public", "packs", p.id, "ground.bin")).arrayBuffer());
+    const w = buildIsland(islandFrom(bytes)!), S = 50, cols = Math.floor(w.width / S), rows = Math.floor(w.depth / S);
+    const at = (uv: readonly [number, number]) => { const { x, z } = onIsland(uv); return Math.round(z / S) * cols + Math.round(x / S); };
+    // Flood out from the landing fire over dry ground, 50 m a step: every tape and fire it reaches, you can walk back from.
+    const fire = p.places.find((s) => s.kind === "fire")!, seen = new Uint8Array(cols * rows), queue = [at(fire.at)];
+    expect(dry(w, onIsland(fire.at).x, onIsland(fire.at).z)).toBe(true);
+    seen[queue[0]!] = 1;
+    for (let k = 0; k < queue.length; k++) {
+      const i = queue[k]!, c = i % cols, r = Math.floor(i / cols);
+      for (const [dc, dr] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+        const cc = c + dc, rr = r + dr, j = rr * cols + cc;
+        if (cc < 0 || rr < 0 || cc >= cols || rr >= rows || seen[j] || !dry(w, cc * S, rr * S)) continue;
+        seen[j] = 1; queue.push(j);
+      }
+    }
+    for (const s of p.places.filter((s) => s.kind === "tape" || s.kind === "fire")) expect([s.name, seen[at(s.at)]]).toEqual([s.name, 1]);
+    // And it is an island: the map's edge is open sea all round.
+    for (let c = 0; c < cols; c++) expect([c, seen[c], seen[(rows - 1) * cols + c]]).toEqual([c, 0, 0]);
   });
 
   test("in its season a pack's event creatures roam the whole continent, and out of it they don't", () => {
