@@ -281,6 +281,62 @@ const BEASTS: Record<string, () => unknown> = {
   }),
 };
 
+// The Chimera as the Arezzo bronze, the Apulian plate and the old engravings show it: a lean lion crouched to spring,
+// a mane that rays round a roaring face, a she-goat's neck and horned head rising from the middle of its back, and a
+// scaled serpent for a tail that arches up over the rump to bite. A child draws: the lion, the goat on its back, the snake.
+function chimera() {
+  const k = 1.1;
+  const b = hound({
+    id: "chimera", name: "Chimera", archetype: "bruiser", budget: 9000, k, head: 1.35, muzzle: 0.6, snout: 1.35, crown: 0.95, gape: 1.2,
+    about: "Lycia in Greek myth, slain by Bellerophon riding Pegasus: a fire-breathing lion in front, a she-goat's head rising from the middle of its back, and a serpent for its tail.",
+    long: 1.05, tall: 0.95, legs: 1.3, ears: { len: 0.06, width: 0.07, dir: [-0.3, 1, 0.6], cup: 35, tilt: 20, fold: 0.3 }, eyes: "two", chest: 1.25, ruff: 1.45, shag: 0.5,
+    tail: { len: 1, droop: 0, bush: 0 },
+    palette: {
+      fur: [0.74, 0.52, 0.24, 0.9, 0], tuft: [0.5, 0.24, 0.08, 0.95, 0], belly: [0.9, 0.78, 0.56, 0.9, 0], stripe: [0.2, 0.32, 0.12, 0.6, 0],
+      goat: [0.36, 0.27, 0.2, 0.95, 0], horn: [0.28, 0.24, 0.2, 0.5, 0], scale: [0.3, 0.48, 0.2, 0.55, 0],
+      eye: [1, 0.55, 0.08, 0.3, 0, 4], pupil: [0.03, 0.02, 0.02, 0.2, 0], snake_eye: [0.75, 1, 0.2, 0.3, 0, 4], mouth: [0.6, 0.12, 0.04, 0.6, 0, 1.5],
+      nose: [0.32, 0.18, 0.14, 0.5, 0], dark: [0.08, 0.05, 0.04, 0.6, 0], fang: [0.95, 0.93, 0.85, 0.3, 0], claw: [0.85, 0.8, 0.7, 0.4, 0],
+    },
+    hide: { pattern: "fur", size: 0.03, colours: [[0.55, 0.38, 0.17], [0.85, 0.66, 0.36]], map: 1024 },
+  }) as { nodes: Record<string, N>; links: string[][]; blobs: Blob[]; parts: Part[]; paint?: { nodes: string[]; material: string }[] } & Record<string, unknown>;
+  const P = (x: number, y: number, z: number, rad: number): N => [f4(x * k), f4(y * k), f4(z * k), f4(rad * k)];
+  // the serpent: the tail rises off the rump, arches over and ends in a head turned forward to strike
+  Object.assign(b.nodes, {
+    tail1: P(-0.66, 0.92, 0, 0.06), tail2: P(-0.92, 1.06, 0, 0.055), tail3: P(-1.0, 1.32, 0, 0.05), tail4: P(-0.88, 1.5, 0, 0.045),
+    shead: P(-0.7, 1.56, 0, 0.055), ssnout: P(-0.58, 1.53, 0, 0.035),
+    // the goat: a long neck out of the middle of the back, a narrow head, swept-back horns
+    g1: P(-0.12, 1.02, 0, 0.07), g2: P(-0.06, 1.24, 0, 0.06), ghead: P(0.0, 1.42, 0, 0.06), gmuzzle: P(0.14, 1.36, 0, 0.035),
+  });
+  b.links.push(["tail4", "shead"], ["shead", "ssnout"], ["belly", "g1"], ["g1", "g2"], ["g2", "ghead"], ["ghead", "gmuzzle"]);
+  const s = (x: number) => f4(x * k);
+  b.blobs.push(
+    { at: "shead", off: [s(0.03), 0, 0], r: [s(0.09), s(0.055), s(0.065)] },
+    { at: "g1", off: [s(0.03), s(0.1), 0], r: [s(0.075), s(0.17), s(0.065)], rot: [0, 0, -15] },
+    { at: "ghead", off: [s(0.02), 0, 0], r: [s(0.08), s(0.065), s(0.055)] },
+    { at: "ghead", off: [s(0.1), s(-0.04), 0], r: [s(0.09), s(0.04), s(0.035)], rot: [0, 0, -25] },
+  );
+  // the tail and the snake head scaled green, banded darker
+  b.paint = [...(b.paint ?? []), { nodes: ["tail2", "tail3", "tail4", "shead", "ssnout"], material: "scale" }];
+  b.stripes = { along: ["tail1", "tail2", "tail3", "tail4"], n: 6, width: 0.45, material: "stripe", below: -0.3 };
+  b.parts.push(
+    // the lion's mane rays out round the face as spikes of hair
+    { kind: "tuft", along: ["head", "neck"], n: 12, len: s(0.34), base: s(0.075), rows: 12, spread: 220, sweep: 0.6, curve: 12, flat: 0.4, material: "tuft" },
+    // the goat: eyes, a beard, swept-back horns, ears
+    { kind: "eye", at: "ghead", off: [s(0.05), s(0.03), s(0.045)], r: s(0.02), mirror: true, material: "eye" },
+    { kind: "horn", at: "ghead", off: [s(-0.01), s(0.05), s(0.03)], dir: [-0.6, 1, 0.15], len: s(0.3), base: s(0.03), tip_base: 0.002, curve: 70, bend: [-1, -0.3, 0], mirror: true, material: "horn" },
+    { kind: "horn", at: "ghead", off: [s(-0.03), s(0.02), s(0.05)], dir: [-0.4, 0.1, 1], len: s(0.09), base: s(0.025), tip_base: 0.004, flat: 0.4, mirror: true, material: "goat" },
+    { kind: "tuft", along: ["ghead", "gmuzzle"], n: 3, len: s(0.1), base: s(0.025), rows: 1, spread: 20, sweep: 0.2, flat: 0.5, material: "goat" },
+    { kind: "tuft", along: ["g1", "g2", "ghead"], n: 6, len: s(0.07), base: s(0.025), rows: 4, spread: 80, sweep: 1.2, flat: 0.5, material: "goat" },
+    // the snake: glowing eyes, fangs bared at the front of its mouth
+    { kind: "eye", at: "shead", off: [s(0.06), s(0.03), s(0.045)], r: s(0.018), mirror: true, material: "snake_eye" },
+    { kind: "horn", at: "ssnout", off: [s(0.0), s(-0.025), s(0.02)], dir: [0.2, -1, 0], len: s(0.06), base: s(0.012), tip_base: 0.001, curve: 15, bend: [-1, 0, 0], mirror: true, material: "fang" },
+  );
+  // the goat's neck and head in its own dark coat
+  b.paint.push({ nodes: ["g1", "g2", "ghead", "gmuzzle"], material: "goat" });
+  return b;
+}
+BEASTS.chimera = chimera;
+
 const ids = process.argv.slice(2).length ? process.argv.slice(2) : Object.keys(BEASTS);
 for (const id of ids) {
   const make = BEASTS[id];

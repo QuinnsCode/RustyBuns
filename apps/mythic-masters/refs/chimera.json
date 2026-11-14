@@ -1,0 +1,69 @@
+{
+  "id": "chimera",
+  "name": "Chimera",
+  "category": "Chimera of Arezzo",
+  "query": "Chimera",
+  "skip": [
+    "https://commons.wikimedia.org/wiki/File:Germany_N%C3%B6rdlingen_St-Georg_Fanciful_creature_on_choir_pew.jpg",
+    "https://commons.wikimedia.org/wiki/File:Pegasus_reel_Louvre_Bj1887.jpg",
+    "https://commons.wikimedia.org/wiki/File:Dunker_Tell_1798.jpg"
+  ],
+  "images": [
+    {
+      "file": "card-color.jpg",
+      "from": "card",
+      "page": "https://commons.wikimedia.org/wiki/File:Chimera_Apulia_Louvre_K362.jpg",
+      "artist": "Lampas Group",
+      "license": "Public domain"
+    },
+    {
+      "file": "c2.jpg",
+      "from": "search",
+      "page": "https://commons.wikimedia.org/wiki/File:Chimaira,_Nordisk_familjebok.png",
+      "artist": "Nordisk familjebok",
+      "license": "Public domain"
+    },
+    {
+      "file": "c3.jpg",
+      "from": "search",
+      "page": "https://commons.wikimedia.org/wiki/File:Museo_archeologico_di_Firenze,_La_chimera_d%27arezzo_02.JPG",
+      "artist": "sailko",
+      "license": "CC BY 2.5",
+      "licenseUrl": "https://creativecommons.org/licenses/by/2.5"
+    },
+    {
+      "file": "c4.jpg",
+      "from": "search",
+      "page": "https://commons.wikimedia.org/wiki/File:Chimera_di_Arezzo.jpg",
+      "artist": "Lucarelli",
+      "license": "Public domain"
+    },
+    {
+      "file": "c5.jpg",
+      "from": "search",
+      "page": "https://commons.wikimedia.org/wiki/File:Trattato_generale_di_archeologia192.png",
+      "artist": "Iginio Gentile, Serafino Ricci",
+      "license": "Public domain"
+    },
+    {
+      "file": "c6.jpg",
+      "from": "search",
+      "page": "https://commons.wikimedia.org/wiki/File:Chimera_d%27arezzo-full_side_on_black.png",
+      "artist": "Sowlos",
+      "license": "CC BY-SA 3.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by-sa/3.0"
+    }
+  ],
+  "traits": {
+    "silhouette": "a lean lion crouched to spring, forelegs braced forward and chest low, a long serpent tail arching up over the back, and a goat neck and head rising from the middle of the spine",
+    "head": "a lion head with a wide-open roaring mouth and fangs, a heavy brow, round ears, framed by a big spiky mane that rays out round the face; the goat head on the back has a narrow muzzle, a little beard and long horns swept back",
+    "limbs": "four lion legs, lean and sinewy, big round paws with claws; the forelegs set wide and forward",
+    "hide": "short tawny lion coat, a ridge of bristles down the spine, ribs showing on the flank, a darker shaggy mane; the tail is a scaled snake ending in a snake head that turns to bite",
+    "colours": "tawny gold body, a darker red-brown mane, a dark brown goat, a green-scaled serpent tail with a pale belly",
+    "child": [
+      "a lion with a big mane",
+      "a goat head sticking out of its back",
+      "a snake for a tail"
+    ]
+  }
+}
