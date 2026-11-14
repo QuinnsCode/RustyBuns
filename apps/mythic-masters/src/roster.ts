@@ -3,7 +3,7 @@
 // signature; it can be taught its fields' neighbours' moves too. In versus everyone knows their whole kit,
 // so the fighters are balanced picks; a harness (`teach`) can put any creature in any state it could learn.
 import { clamp } from "@rustybuns/util";
-import { num, rec } from "@rustybuns/util/guard";
+import { num, obj, oneOf, rec, str } from "@rustybuns/util/guard";
 import { AKA, ROWS, type Archetype, type Row } from "./creatures.ts";
 import { KIN, type Field } from "./fields.ts";
 import { DELIVERY, fieldMove, MOVES, SLOTS, tempoOf, type Move, type Slot } from "./moves.ts";
@@ -12,6 +12,10 @@ import balance from "./balance.json";
 export { SLOTS, type Move, type Slot } from "./moves.ts";
 export type { Archetype } from "./creatures.ts";
 export const ARCHETYPES = ["skirmisher", "flyer", "tank", "bruiser"] as const satisfies readonly Archetype[];
+/** Who a beast sheet (beasts/<id>.json) is: the fields every sheet carries, read by the build (scripts/beasts.ts) and kept
+ *  by a generator that rewrites a sheet's body (proposals/set-a/upright/lib.ts). */
+export const SHEET_WHO = { id: str(40, { re: /^[a-z0-9-]+$/ }), name: str(40), about: str(1000), archetype: oneOf(ARCHETYPES) };
+export const SheetWho = obj(SHEET_WHO);
 
 export interface Stats { vigor: number; might: number; guard: number; focus: number; will: number; speed: number }
 export interface Creature {

@@ -15,7 +15,7 @@ async function fetchPic(file: string, base: string): Promise<Pic> {
 }
 
 mkdirSync(OUT, { recursive: true });
-const saved: Art = existsSync(JSON_PATH) && !all ? Art(await Bun.file(JSON_PATH).json()) : {};
+const saved = Art(existsSync(JSON_PATH) && !all ? await Bun.file(JSON_PATH).json() : {});
 // Keep only what is still picked: a side dropped from PICKS leaves art.json and its file goes.
 const art: Art = {};
 for (const [id, sides] of Object.entries(saved)) for (const side of ["bw", "color"] as const) {

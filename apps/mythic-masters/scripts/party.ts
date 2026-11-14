@@ -53,8 +53,7 @@ interface Room { name: string; obj: Hosted; socks: Sock[]; m: Meter }
 /** The pair the next upgrade makes, taken by the adapter right after the Region returns its 101. */
 let made: Sock[] = [];
 let meterFor: Meter | null = null;
-const g: Record<string, unknown> = globalThis;
-g.WebSocketPair = class { 0: Sock; 1: Sock; constructor() { this[0] = new Sock(); this[1] = new Sock(meterFor); made = [this[0], this[1]]; } };
+Object.assign(globalThis, { WebSocketPair: class { 0: Sock; 1: Sock; constructor() { this[0] = new Sock(); this[1] = new Sock(meterFor); made = [this[0], this[1]]; } } });
 
 /** `guests: false` is the live door: every join needs an eqosys token. */
 export function serveParty(port = 0, o: { guests?: boolean } = {}) {

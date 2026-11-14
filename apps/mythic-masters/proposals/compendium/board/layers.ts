@@ -6,6 +6,7 @@ import { REGIONS } from "../../../src/regions.ts";
 import { neighbours } from "../../../src/world/world.ts";
 import { ROWS } from "../../../src/creatures.ts";
 import { STARTERS, sections } from "../../../src/journey.ts";
+import type { Layer } from "./shape.ts";
 
 // the cryptids already rebuilt from references (#4172, #4249, and the compendium pass)
 const DONE = new Set("jersey-devil mothman wampus-cat agropelter hodag squonk sasquatch chupacabra jackalope rougarou ozark-howler black-shuck tatzelwurm gevaudan kappa tengu yeti snallygaster".split(" "));
@@ -14,7 +15,7 @@ while (q.length) {
   const n = q.shift()!, g = REGIONS.find((r) => r.n === n)!;
   for (const o of neighbours(g)) if (o.tier !== "coming-soon" && !layer.has(o.n)) { layer.set(o.n, layer.get(n)! + 1); q.push(o.n); }
 }
-const out = REGIONS.filter((g) => layer.has(g.n)).map((g) => {
+const out = REGIONS.filter((g) => layer.has(g.n)).map((g): Layer => {
   const s = sections(g);
   return {
     n: g.n, name: g.name, tier: g.tier, layer: layer.get(g.n)!, next: neighbours(g).filter((o) => layer.has(o.n)).map((o) => o.n),

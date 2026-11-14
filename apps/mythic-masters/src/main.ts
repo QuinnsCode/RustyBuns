@@ -297,7 +297,7 @@ let librarian = params.get("admin") === "1" || (() => { try { return localStorag
 let pageInk = PAGE_INK, summoned: Summoned | null = null, inking = false, bareLine = false;
 // The last practice bout or duel, so the circle can bring it up next time (circleLineOf, #4276 round 11).
 const BOUT_KEY = "mythic-masters.lastBout";
-let lastBout: Bout | null = (() => { try { return check(Bout, JSON.parse(localStorage.getItem(BOUT_KEY) ?? "null")); } catch { return null; } })();
+let lastBout = (() => { try { return check(Bout, JSON.parse(localStorage.getItem(BOUT_KEY) ?? "null")); } catch { return null; } })();
 function remember(b: Bout) { lastBout = b; try { localStorage.setItem(BOUT_KEY, JSON.stringify(b)); } catch { /* this session only */ } }
 const art = (id: string) => { const p = ART[id], pic = p?.color ?? p?.bw; return pic ? `/${pic.src}` : ""; };
 const pageTile = (c: Creature, on: boolean) => `<button class="tile ribbon-tile${on ? " on" : ""}" data-side="A" data-id="${esc(c.id)}" title="${esc(c.archetype)} · ${c.fields.join(" / ")}">
