@@ -9,7 +9,13 @@ export const dbToGain = (db: number) => (db <= -60 ? 0 : Math.pow(10, db / 20));
 export class AudioOut {
   readonly ctx: AudioContext;
   readonly node: AudioWorkletNode;
-  private constructor(ctx: AudioContext, node: AudioWorkletNode) { this.ctx = ctx; this.node = node; }
+  /** What leaves the speakers, for Shape's spectrum. */
+  readonly analyser: AnalyserNode;
+  private constructor(ctx: AudioContext, node: AudioWorkletNode) {
+    this.ctx = ctx; this.node = node;
+    this.analyser = new AnalyserNode(ctx, { fftSize: 8192, smoothingTimeConstant: 0.8 });
+    node.connect(this.analyser);
+  }
 
   static async start(onMessage: (m: FromWorklet) => void): Promise<AudioOut> {
     const ctx = new AudioContext({ latencyHint: "interactive" });

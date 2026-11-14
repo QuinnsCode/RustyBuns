@@ -276,3 +276,25 @@ h2 { font: 600 1.2rem/1.1 var(--silk); margin: 0; }
 @media (max-width: 760px) {
   .chat, .chat.wide { right: 16px; left: 16px; width: auto; }
 }
+
+/* Shape: the master EQ */
+.shape { display: grid; gap: 8px; padding: 10px 12px 12px; background: var(--panel); border: 1px solid var(--edge); border-radius: 6px; min-width: 0; }
+.shape-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; }
+.shape-bar .check { padding: 0; }
+.shape-hint { font-size: .78rem; }
+.shape-plot { position: relative; min-width: 0; background: var(--bg); border: 1px solid var(--edge); border-radius: 4px; overflow: hidden; }
+.shape-plot canvas { display: block; cursor: crosshair; touch-action: none; outline: none; }
+.shape-plot canvas:focus-visible { box-shadow: inset 0 0 0 2px var(--warn); }
+.shape-readout { position: absolute; top: 6px; right: 8px; font: 500 .75rem var(--mono); color: var(--dim); pointer-events: none; }
+.shape-empty { position: absolute; inset: 0 0 auto; top: 30%; display: grid; place-items: center; font: 600 1rem var(--silk); letter-spacing: .04em; pointer-events: none; }
+.shape-band { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; padding: 8px 10px; border-left: 3px solid var(--track); background: var(--raised); border-radius: 4px; }
+.shape-band .check { padding: 0; }
+.shape-band input[type="number"] { width: 72px; padding: 4px 6px; background: var(--panel); border: 1px solid var(--edge); border-radius: 4px; font: 500 .9rem var(--mono); }
+.shape-band input:disabled { opacity: .4; }
+.shape-kinds button { padding: 4px 8px; display: grid; place-items: center; }
+.shape-num { display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; background: var(--track); color: #111; font: 700 .8rem var(--silk); }
+.shape-dots { display: flex; flex-wrap: wrap; gap: 6px; }
+.shape-dots:empty { display: none; }
+.shape-dots button { display: inline-flex; align-items: center; gap: 6px; padding: 3px 8px 3px 4px; border: 1px solid var(--edge); border-radius: 12px; background: var(--raised); font: 500 .75rem var(--mono); }
+.shape-dots button.on { border-color: var(--track); box-shadow: 0 0 0 1px var(--track); }
+@media (max-width: 640px) { .shape-hint { display: none; } }
