@@ -1,10 +1,9 @@
 // The boat to a pack's island drawn (ferry.ts, #4405): the port town's pier, boat and houses on the continent, and the
 // island itself, its own small scene shown while you are on it (view.ts swaps it in for the continent, as a town's rooms).
 // The island is a pack's World (world.ts buildIsland): its whole ground in one coarse mesh, a fine patch round you, the
-// sea, its fires lit and its other places marked, and the boat back at its slip.
+// sea and the boat back at its slip. Its places (poi.json) are poi-view.ts's, as the continent's are (view.ts, #4406).
 import * as THREE from "three";
-import type { Pack } from "../packs.ts";
-import { heightAt, onIsland, type World } from "./world.ts";
+import { heightAt, type World } from "./world.ts";
 import type { Slip } from "./ferry.ts";
 
 const WOOD = 0x6a4e34, HULL = 0x2c3a4a, SAIL = 0xe8e2d0, SNOW = new THREE.Color(0xeef2f6), ROCK = new THREE.Color(0x6e6a66);
@@ -100,20 +99,8 @@ function groundGeometry(w: World, x0: number, z0: number, nx: number, nz: number
   return g;
 }
 
-/** A campfire: a ring of logs, a flame and its light. */
-function fire(): THREE.Group {
-  const g = new THREE.Group(), wood = mat(0x4a3424);
-  for (let k = 0; k < 5; k++) { const l = box(0.25, 0.25, 1.4, wood); l.rotation.set(0.4, (k / 5) * Math.PI * 2, 0); l.position.y = 0.3; g.add(l); }
-  const flame = new THREE.Mesh(new THREE.ConeGeometry(0.45, 1.3, 7), new THREE.MeshBasicMaterial({ color: 0xffa040 }));
-  flame.position.y = 0.8;
-  const light = new THREE.PointLight(0xffa860, 14, 24, 1.6);
-  light.position.y = 1.6;
-  g.add(flame, light);
-  return g;
-}
-
 /** The island drawn from its World: call `tick(x, z)` each frame with where you stand, so the fine patch follows you. */
-export function isleView(w: World, pack: Pack, s: Slip) {
+export function isleView(w: World, s: Slip) {
   const group = new THREE.Group(), ground = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95 });
   const far = new THREE.Mesh(groundGeometry(w, 0, 0, Math.floor(w.width / FAR_STEP) + 1, Math.floor(w.depth / FAR_STEP) + 1, FAR_STEP), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, polygonOffset: true, polygonOffsetFactor: 2, polygonOffsetUnits: 2 }));
   far.position.y = -0.4;
@@ -121,13 +108,6 @@ export function isleView(w: World, pack: Pack, s: Slip) {
   sea.rotation.x = -Math.PI / 2; sea.position.set(w.width / 2, 0, w.depth / 2);
   let near: THREE.Mesh | null = null, nearAt = { x: NaN, z: NaN };
   group.add(far, sea, pier(s, Math.max(0.6, heightAt(w, s.dock[0].x, s.dock[0].z) + 0.4), 0.9));
-  for (const p of pack.places) {
-    const { x, z } = onIsland(p.at), y = heightAt(w, x, z);
-    const o = p.kind === "fire" ? fire() : p.kind === "cabin" ? house(0x7a5a3a) : box(0.3, 2.2, 0.3, mat(WOOD));
-    if (p.kind !== "fire" && p.kind !== "cabin") o.position.y = 1.1;
-    const holder = new THREE.Group(); holder.add(o); holder.position.set(x, y, z); holder.name = p.name;
-    group.add(holder);
-  }
   return {
     group,
     tick(x: number, z: number) {

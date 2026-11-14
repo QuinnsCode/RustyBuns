@@ -13,7 +13,8 @@ import { hasTrail, SECTIONS, sections, type Journey } from "../journey.ts";
 import { REGIONS, type Region } from "../regions.ts";
 import { TAPES } from "./tapes.ts";
 import { GRID } from "./places.ts";
-import { ARENA_R, arenaOf, CELL, dry, ownerAt, spawn } from "./world.ts";
+import { ARENA_R, arenaOf, CELL, dry, onIsland, ownerAt, spawn } from "./world.ts";
+import type { Pack } from "../packs.ts";
 import WITCH from "../../content/witch.json";
 import { bandAt, TRAILS, WORLD } from "./trail.ts";
 
@@ -38,6 +39,8 @@ export interface Poi {
   k: number;
   /** A tape's number among its region's tapes. */
   tape?: number;
+  /** A pack's own tape (poi.json), played in place of the region's. */
+  play?: Tape;
 }
 
 /** What a tape plays: lines in the director's voice, "Who: what". */
@@ -91,6 +94,7 @@ function placeholder(g: Region, k: number): Tape {
 
 /** The tape a tape place plays: the region's written one by number, else the placeholder for its section. */
 export function tapeOf(p: Poi): Tape {
+  if (p.play) return p.play;
   const g = REGIONS[p.n - 1]!, hand = g.biome === "pine-barrens" ? PINE : TAPES[g.id] ?? [];
   return hand[p.tape ?? 0] ?? placeholder(g, p.k);
 }
@@ -161,15 +165,31 @@ export const ALL: Poi[] = [...POIS.values()].flat();
 const BY_ID = new Map(ALL.map((p) => [p.id, p]));
 export const poiById = (id: string) => BY_ID.get(id);
 
+// --- a pack's island (src/packs.ts, #4406) ---------------------------------------------------------------------------
+/** The region number an island's places carry. No continent region is 0, so the continent's views never draw them. */
+export const ISLE_N = 0;
+const ISLES = new Map<string, Poi[]>();
+/** A pack's poi.json places on its island's own map (world.ts onIsland). Their ids are the pack's and their order in
+ *  poi.json, and saves keep them: add new places at the end. */
+export function islePlaces(pack: Pick<Pack, "id" | "places">): Poi[] {
+  let out = ISLES.get(pack.id);
+  if (!out) {
+    let tapes = 0;
+    out = pack.places.map((s, i) => ({ id: `${pack.id}.${i}`, n: ISLE_N, kind: s.kind, name: s.name, ...onIsland(s.at), k: 0, ...(s.tape ? { tape: tapes++, play: s.tape } : {}) }));
+    ISLES.set(pack.id, out);
+  }
+  return out;
+}
+
 // --- walking up to them --------------------------------------------------------------------------------------------
 /**
  * The tapes and fires you have just walked up to: those within REACH that `reached` didn't hold. `reached` is
  * the ones you are standing at, kept by the caller so a fire rests you once per visit, not once per step; a place
- * leaves it when you are more than twice REACH away.
+ * leaves it when you are more than twice REACH away. `near`: the places to look at, by default the region's you stand in.
  */
-export function arrive(me: { x: number; z: number }, reached: Set<string>): Poi[] {
+export function arrive(me: { x: number; z: number }, reached: Set<string>, near: readonly Poi[] = POIS.get(ownerAt(me.x, me.z)) ?? []): Poi[] {
   const out: Poi[] = [];
-  for (const p of POIS.get(ownerAt(me.x, me.z)) ?? []) {
+  for (const p of near) {
     if (p.kind === "landmark") continue;
     const d = far(me, p);
     if (d < REACH && !reached.has(p.id)) { reached.add(p.id); out.push(p); }
@@ -191,6 +211,9 @@ function add(list: string[], id: string) { if (list.includes(id)) return false; 
 
 /** The tapes found in region n, in the order of the region's tapes. */
 export const tapesFound = (j: Log, n: number): Poi[] => (POIS.get(n) ?? []).filter((p) => p.kind === "tape" && j.found.includes(p.id));
+
+/** The tapes found on a pack's island, in poi.json's order: the journal's page for it. */
+export const isleTapesFound = (j: Log, pack: Pick<Pack, "id" | "places">): Poi[] => islePlaces(pack).filter((p) => p.kind === "tape" && j.found.includes(p.id));
 
 /** Where you land when you travel to a lit fire: a few metres beside it; undefined when it isn't a lit fire. */
 export function fireSpot(j: Log, id: string): { x: number; z: number; n: number } | undefined {

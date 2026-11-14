@@ -7,7 +7,9 @@ import { REGIONS, sacredIds } from "../src/regions.ts";
 import { ARCHETYPES, ROSTER } from "../src/roster.ts";
 import { inSeason, tierOf } from "../src/tiers.ts";
 import { PLACES } from "../src/world/places.ts";
-import { MIN_GAP } from "../src/world/poi.ts";
+import * as THREE from "three";
+import { findTape, ISLE_N, islePlaces, isleTapesFound, lightFire, MIN_GAP, tapeOf, type Log } from "../src/world/poi.ts";
+import { poiView } from "../src/world/poi-view.ts";
 import { atSlip, isleGround, isleSlip, portSlip } from "../src/world/ferry.ts";
 import { WORLD } from "../src/world/trail.ts";
 import { buildIsland, CELL, dry, heightAt, islandFrom, onIsland, poolOf, regionAt, spawn, walk } from "../src/world/world.ts";
@@ -96,6 +98,45 @@ describe("packs", () => {
     const w = buildIsland(islandFrom(bytes)!), s = isleSlip(w, p), at = { ...s.land };
     expect([Math.hypot(at.x - s.fire.x, at.z - s.fire.z) < 10, dry(w, at.x, at.z), heightAt(w, s.boat.x, s.boat.z) < 0]).toEqual([true, true, true]);
     expect(towards(s, at, (dx, dz) => { if (isleGround(w, s, at.x + dx, at.z + dz)) { at.x += dx; at.z += dz; } })).toBe(true);
+  });
+
+  test.each(PACKS.filter((p) => p.tier !== "coming-soon").map((p) => [p.id, p] as const))("%s: off the boat, you walk to a tape, it plays, and the journal keeps it", async (_, p) => {
+    const bytes = new Uint8Array(await Bun.file(join(import.meta.dir, "..", "public", "packs", p.id, "ground.bin")).arrayBuffer());
+    const w = buildIsland(islandFrom(bytes)!), s = isleSlip(w, p), at = { ...s.land }, all = islePlaces(p), j: Log = { found: [], fires: [], sights: [] };
+    // The island's places as view.ts draws them, with the hooks main.ts gives it: a tape found once, a fire lit.
+    const played: string[] = [];
+    const view = poiView(new THREE.Group(), new THREE.PerspectiveCamera(), (x, z) => heightAt(w, x, z), {
+      log: () => j,
+      reach: (q) => { if (q.kind === "tape" && findTape(j, q)) { played.push(tapeOf(q).title); return `Found a tape: ${tapeOf(q).title}`; } if (q.kind === "fire") lightFire(j, q); },
+      sight: () => {},
+    }, undefined, { all, near: () => all, region: () => ISLE_N });
+    // Walk 50 m squares of dry ground from where the boat puts you to the first tape, a step at a time, as the keys do.
+    const tape = all.find((q) => q.kind === "tape")!, S = 50, cols = Math.floor(w.width / S), rows = Math.floor(w.depth / S);
+    const cell = (q: { x: number; z: number }) => Math.round(q.z / S) * cols + Math.round(q.x / S), from = new Int32Array(cols * rows).fill(-1);
+    const queue = [cell(at)];
+    from[queue[0]!] = queue[0]!;
+    for (let k = 0; k < queue.length && from[cell(tape)] < 0; k++) {
+      const i = queue[k]!, c = i % cols, r = Math.floor(i / cols);
+      for (const [dc, dr] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+        const n = (r + dr) * cols + c + dc;
+        if (c + dc < 0 || r + dr < 0 || c + dc >= cols || r + dr >= rows || from[n]! >= 0 || !dry(w, (c + dc) * S, (r + dr) * S)) continue;
+        from[n] = i; queue.push(n);
+      }
+    }
+    const route: { x: number; z: number }[] = [{ x: tape.x, z: tape.z }];
+    for (let i = from[cell(tape)]!; i !== cell(at); i = from[i]!) route.unshift({ x: (i % cols) * S, z: Math.floor(i / cols) * S });
+    const toasts: string[] = [];
+    for (const goal of route) for (let k = 0; k < 200 && Math.hypot(goal.x - at.x, goal.z - at.z) > 1; k++) {
+      const d = Math.hypot(goal.x - at.x, goal.z - at.z), x = at.x + ((goal.x - at.x) / d) * Math.min(1, d), z = at.z + ((goal.z - at.z) / d) * Math.min(1, d);
+      if (isleGround(w, s, x, z)) { at.x = x; at.z = z; }
+      toasts.push(...view.update(1 / 60, at, new Set([ISLE_N])));
+    }
+    const title = p.places.find((q) => q.kind === "tape")!.tape!.title;
+    expect([Math.hypot(tape.x - at.x, tape.z - at.z) < 1, played, toasts.filter((t) => t.includes("Found a tape")).length]).toEqual([true, [title], 1]);
+    // The journal's page for the island has it, and walking past again doesn't play it twice.
+    expect(isleTapesFound(j, p).map((q) => tapeOf(q).title)).toEqual([title]);
+    for (let k = 0; k < 20; k++) view.update(1 / 60, { x: at.x + k, z: at.z }, new Set([ISLE_N]));
+    expect(played).toEqual([title]);
   });
 
   test("in its season a pack's event creatures roam the whole continent, and out of it they don't", () => {

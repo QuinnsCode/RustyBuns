@@ -23,7 +23,7 @@ import { litter as litterOf, scatterLitter } from "./litter.ts";
 import { lifeView, type LifeEvent } from "./life.ts";
 import { DAWN_HOUR, DAY, daylight, hourAt, weather, wind, type Patch as Forage, type Weather } from "./nature.ts";
 import type { Ambient } from "./ambience.ts";
-import { fireSpot, marked, poiById, shelterAt, SHELTER_R, type Poi, type Shelter } from "./poi.ts";
+import { fireSpot, ISLE_N, islePlaces, marked, poiById, shelterAt, SHELTER_R, type Poi, type Shelter } from "./poi.ts";
 import { lightsNear, nightOf, safePaths, stalk, toSafety, type Night } from "./night.ts";
 import { HUNTS, stageOf, waiting } from "./hunts.ts";
 import { beside, BOARD, DEEP, DOORSTEP, line as townLine, onLot, outside, roomAt, step as townStep, toLocal, toWorld, TOWNS, type Town } from "./towns.ts";
@@ -1011,7 +1011,8 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
   // you back to the port town. Your line-up waits on the pier.
   const ports = PACKS.filter((p) => p.tier !== "coming-soon").map((p) => { const slip = portSlip(w, p), view = portView(slip); group.add(view.group); return { p, slip, view }; });
   type Port = (typeof ports)[number];
-  interface Isle { port: Port; w: World; slip: ReturnType<typeof isleSlip>; view: ReturnType<typeof isleView>; at: { x: number; z: number }; you: Bearer; armed: boolean }
+  interface Isle { port: Port; w: World; slip: ReturnType<typeof isleSlip>; view: ReturnType<typeof isleView>; places: ReturnType<typeof poiView>; at: { x: number; z: number }; you: Bearer; armed: boolean }
+  const ISLE_OPEN: ReadonlySet<number> = new Set([ISLE_N]);
   let isle: Isle | null = null, sailing = false, portArmed = true;
   const charts = new Map<string, Promise<World | undefined>>();
   /** The pack's island World, its ground fetched once (public/packs/<id>/ground.bin); undefined if it didn't come in. */
@@ -1042,9 +1043,11 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
   }
   /** Off the boat on the island, by its first fire, looking at it. */
   function landIsle(port: Port, iw: World) {
-    const slip = isleSlip(iw, port.p), view = isleView(iw, port.p, slip);
+    const slip = isleSlip(iw, port.p), view = isleView(iw, slip), all = islePlaces(port.p);
+    // Its places walk up as the continent's do: a tape plays and goes in the journal, a fire rests you (hooks.places).
+    const places = poiView(view.group, camera, (x, z) => heightAt(iw, x, z), hooks.places, undefined, { all, near: () => all, region: () => ISLE_N });
     scene.add(view.group);
-    isle = { port, w: iw, slip, view, at: { ...slip.land }, you: new Bearer(bearer?.id ?? NO_ID, view.group, (x, z) => heightAt(iw, x, z), colour), armed: true };
+    isle = { port, w: iw, slip, view, places, at: { ...slip.land }, you: new Bearer(bearer?.id ?? NO_ID, view.group, (x, z) => heightAt(iw, x, z), colour), armed: true };
     group.visible = false;
     scene.background = new THREE.Color(0xc4ccd6); scene.fog = new THREE.Fog(0xc4ccd6, 300, 5000);
     yaw = Math.atan2(-slip.out.x, slip.out.z); facing = Math.atan2(-slip.out.z, -slip.out.x); snap = true;
@@ -1084,6 +1087,7 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
     clock += dt;
     if (toastUntil && performance.now() > toastUntil) { toastEl.hidden = true; toastUntil = 0; }
     s.view.tick(s.at.x, s.at.z);
+    for (const t of s.places.update(dt, s.at, ISLE_OPEN, sailing)) toast(t);
     const y = isleY(s, s.at.x, s.at.z);
     s.you.update(s.at.x, y, s.at.z, facing);
     camV = snap ? speed : lerp(camV, speed, clamp(dt * CAM_EASE, 0, 1));
@@ -1564,7 +1568,7 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
         day: { hour: +L.hour.toFixed(2), dark, shelter: shelter?.id ?? null, wind: +wind(clock).toFixed(2), rain: +W.rain.toFixed(2), snow: +W.snow.toFixed(2), mist: +W.mist.toFixed(2) }, life: life.state(), places: places.state(g.n), hunts: places.hunts(g.n),
         town: inside && { id: inside.t.id, name: inside.t.name, x: +inside.at.x.toFixed(2), z: +inside.at.z.toFixed(2), room: roomAt(inside.at)?.id ?? null, near: inside.near, board: BOARD.read, people: inside.t.people.map((p) => ({ id: p.id, who: p.who, ...p.at })) },
         sailing, ports: ports.map((p) => ({ id: p.p.id, x: p.slip.x, z: p.slip.z, d: +Math.hypot(me.x - p.slip.x, me.z - p.slip.z).toFixed(1) })),
-        isle: isle && { id: isle.port.p.id, x: +isle.at.x.toFixed(1), z: +isle.at.z.toFixed(1), y: +isleY(isle, isle.at.x, isle.at.z).toFixed(2), slip: { x: +isle.slip.x.toFixed(1), z: +isle.slip.z.toFixed(1) }, fire: isle.slip.fire, toSlip: +Math.hypot(isle.at.x - isle.slip.x, isle.at.z - isle.slip.z).toFixed(1) } };
+        isle: isle && { id: isle.port.p.id, x: +isle.at.x.toFixed(1), z: +isle.at.z.toFixed(1), y: +isleY(isle, isle.at.x, isle.at.z).toFixed(2), slip: { x: +isle.slip.x.toFixed(1), z: +isle.slip.z.toFixed(1) }, fire: isle.slip.fire, toSlip: +Math.hypot(isle.at.x - isle.slip.x, isle.at.z - isle.slip.z).toFixed(1), places: islePlaces(isle.port.p).map((p) => ({ id: p.id, kind: p.kind, name: p.name, x: +p.x.toFixed(1), z: +p.z.toFixed(1), done: marked(hooks.places?.log() ?? null, p) })) } };
     },
   };
 }

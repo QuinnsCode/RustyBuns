@@ -102,10 +102,10 @@ export function nextClues(j: Log | null, n: number): { hunt: Hunt; i: number; at
   return huntsIn(n).flatMap((h) => { const s = stageOf(j, h.id); return s !== undefined && s < CLUES ? [{ hunt: h, i: s, ...h.clues[s]! }] : []; });
 }
 
-/** Reads the next sign of any contract you stand at. The ones read now come back. */
-export function track(j: Log, me: Spot): { hunt: Hunt; sign: string; last: boolean }[] {
+/** Reads the next sign of any contract you stand at (in region `n`, by default the one under you). The ones read now come back. */
+export function track(j: Log, me: Spot, n = ownerAt(me.x, me.z)): { hunt: Hunt; sign: string; last: boolean }[] {
   const out: { hunt: Hunt; sign: string; last: boolean }[] = [];
-  for (const c of nextClues(j, ownerAt(me.x, me.z))) {
+  for (const c of nextClues(j, n)) {
     if (Math.hypot(c.at.x - me.x, c.at.z - me.z) > CLUE_R) continue;
     j.hunts = { ...j.hunts, [c.hunt.id]: c.i + 1 };
     out.push({ hunt: c.hunt, sign: c.sign, last: c.i + 1 === CLUES });

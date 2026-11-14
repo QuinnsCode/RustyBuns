@@ -65,7 +65,8 @@ import { budgetQuality } from "@rustybuns/util/quality";
 import { identified, intro, type Subject } from "./casefile.ts";
 import { drowner } from "./drown.ts";
 import { ambience } from "./world/ambience.ts";
-import { findTape, lightFire, sight, tapeOf, tapesFound, WITCH_CAMP } from "./world/poi.ts";
+import { findTape, isleTapesFound, lightFire, sight, tapeOf, tapesFound, WITCH_CAMP, type Poi } from "./world/poi.ts";
+import { PACKS } from "./packs.ts";
 import { regionsCleared, visit, WITCH } from "./witch.ts";
 import { approach as approachFaction, back as backAgain, deed, FACTION, factionsOf, fought as foughtFaction, hail as hailPost, postFought, postsIn, record as questRecord, reply as replyFaction, sectionCleared, waitingAll, type Ctx as FactionCtx, type Foe as FactionFoe, type Manned, type Scene } from "./factions/engine.ts";
 import { postSpot, stageSpot, walkedUp } from "./world/posts.ts";
@@ -1068,6 +1069,10 @@ function drawJournal(edit = true) {
       + (book.length ? "" : `<p class="dim">Nobody has stepped out of the trees yet. Clear a few sections and look behind you.</p>`) + l.map(side).join(""),
       r.map(side).join("") + (book.length && book.length < FACTIONS.length ? `<p class="unwalked">${FACTIONS.length - book.length === 1 ? "One more has" : "Two more have"} not shown themselves yet.</p>` : "") + `<i class="vignette rest" aria-hidden="true">${emblem("factions")}</i>`);
   } else {
+    const reel = (p: Poi) => { const t = tapeOf(p); return `<li><b>${esc(t.title)}</b> ${esc(t.lines.join(" "))}</li>`; };
+    // a pack's island (src/packs.ts): its tapes found there, under its name, once you've found one
+    const isles = PACKS.map((pk) => ({ pk, reels: isleTapesFound(j, pk) })).filter((i) => i.reels.length)
+      .map(({ pk, reels }) => `<h3>${esc(pk.name)}</h3><p class="dim">Found tapes · ${reels.length}</p><ol class="pages">${reels.map(reel).join("")}</ol>`).join("");
     const page = (g: (typeof TRAIL_REGIONS)[number]) => {
       const done = cleared(j, g.n), secs = sections(g);
       const reels = tapesFound(j, g.n);
@@ -1078,7 +1083,7 @@ function drawJournal(edit = true) {
       return `<h3>${g.n}. ${esc(g.name)} · ${done} of ${SECTIONS}</h3><ol class="pages">${secs.map((sec) =>
         j.pages.includes(`${g.n}:${sec.k}`) ? `<li><b>${esc(sec.name)}</b> ${esc(sec.lore)}</li>` : sec.k === done ? `<li class="dim">${esc(sec.name)}</li>` : "").join("")}`
         + `${blank ? `<li class="unwritten">and ${blank} ${blank === 1 ? "page" : "pages"} still unwritten</li>` : ""}</ol>`
-        + (reels.length ? `<p class="dim">Found tapes · ${reels.length}</p><ol class="pages">${reels.map((p) => { const t = tapeOf(p); return `<li><b>${esc(t.title)}</b> ${esc(t.lines.join(" "))}</li>`; }).join("")}</ol>` : "")
+        + (reels.length ? `<p class="dim">Found tapes · ${reels.length}</p><ol class="pages">${reels.map(reel).join("")}</ol>` : "")
         + (lore ? `<div class="lore"><p>${esc(lore.legend)}</p><p><b>From</b> ${esc(lore.from)}</p></div>` : "");
     };
     const walked = (g: (typeof TRAIL_REGIONS)[number]) => !!(cleared(j, g.n) || tapesFound(j, g.n).length || j.pages.some((p) => p.startsWith(`${g.n}:`)));
@@ -1093,7 +1098,7 @@ function drawJournal(edit = true) {
     const kept = memories.list();
     const recalled = kept.length ? `<h3>Remembered · ${kept.length}</h3><ol class="pages memories">${kept.map((mm) => `<li><button data-recall="${esc(mm.id)}" title="Watch it again" aria-label="Watch ${esc(mm.title)} again">${icon("play")}</button><b>${esc(mm.title)}</b>${mm.sub ? ` <span class="dim">${esc(mm.sub)}</span>` : ""}</li>`).join("")}</ol>` : "";
     body.innerHTML = spread(chart().replace('class="chart"', 'class="chart one-page"') + still.replace('class="unwalked"', 'class="unwalked one-page"') + recalled + l.map(page).join(""),
-      chart().replace('class="chart"', 'class="chart two-leaves"') + still.replace('class="unwalked"', 'class="unwalked two-leaves"') + r.map(page).join(""));
+      chart().replace('class="chart"', 'class="chart two-leaves"') + still.replace('class="unwalked"', 'class="unwalked two-leaves"') + r.map(page).join("") + isles);
   }
   // the book's first opening prints the chapter's engraving, the vine rule and the inscription over what the Book
   // wants; every page after opens on that demand alone, one line, and the chapter takes the rest of the leaf (a leaf
