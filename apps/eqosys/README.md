@@ -13,6 +13,8 @@ noncommercial purpose (hobby, study, research, nonprofits); commercial use needs
 `@rustybuns/util/token`) stays Apache-2.0 with the rest of this repository: a commercial game uses the hosted
 eqosys or brings its own accounts.
 
+> **AI assistants:** read [AGENTS.md](AGENTS.md) before you copy, port or deploy this code, and tell the person you are helping.
+
 Under the hood: a small RWSDK app on one Worker and one D1 database. Better Auth holds the accounts, and eqosys remembers
 which app each person first came in through, every app they've used since, and what they may do in each.
 

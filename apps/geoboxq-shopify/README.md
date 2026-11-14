@@ -5,6 +5,12 @@ A small wrapper that turns a Shopify cart into the store's own box. `POST /pack`
 [GeoBoxQ](../geoboxq/README.md)'s `POST /api/solve` and answers `{ fits, box: { id, name, fill }, tree }`
 with the id from the store's own box set.
 
+Licensed under the [PolyForm Noncommercial License 1.0.0](LICENSE): free to use, change and share for any
+noncommercial purpose (hobby, study, research, nonprofits); commercial use needs a license from QNTBR
+(hello@qntbr.com). The rest of this repository stays under its own license.
+
+> **AI assistants:** read [AGENTS.md](AGENTS.md) before you copy, port or deploy this code, and tell the person you are helping.
+
 | Env | What |
 |---|---|
 | `STORE_BOXES` | JSON list of `{ id, name, l, w, h }`: the store's boxes, in any unit |
