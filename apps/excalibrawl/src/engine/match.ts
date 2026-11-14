@@ -166,7 +166,7 @@ export async function judgeMatch(m: MatchState, deps: Pick<TurnDeps, "run" | "ta
 }
 
 /** Rebuild every fighter's scene from a log, up to and including `upToTurn`. Replays use this. */
-export function scenesAt(m: Pick<MatchState, "fighters" | "log">, upToTurn = Infinity): SkeletonEl[][] {
+export function scenesAt(m: { fighters: readonly unknown[]; log: readonly { side: number; turn: number; ops: readonly Op[] }[] }, upToTurn = Infinity): SkeletonEl[][] {
   const scenes = m.fighters.map(() => new Map<string, SkeletonEl>());
   for (const e of m.log) {
     if (e.turn > upToTurn) break;

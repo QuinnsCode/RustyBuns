@@ -25,6 +25,7 @@ import { listSaved, summarizeProfile } from "@rustybuns/shell-bun/profsummary";
 import { historyRuns } from "@rustybuns/shell-bun/history";
 import { officeHistory, officeMem } from "../live/mem.ts";
 import { officeReload } from "../live/reload.ts";
+import type { ContextReply } from "../live/replies.ts";
 import { CARRY_ON, ContextWatch, Meter, ModeWatch, nameOf, sessionLines, StallWatch, type Context, type Stall } from "../ester/dexter.ts";
 import { createHelpers, HELPERS, isHelper, repoWith, RINGS, ringsOf, type EsterState } from "../ester/run.ts";
 import { mervinBoard, tallyRows, tallySum } from "../screens/read.ts";
@@ -84,7 +85,7 @@ export function officeTriage(
       ].sort((a, b) => b.at.localeCompare(a.at));
       return { status: 200, body: { snapshots } };
     }
-    if (p === "/__rb/context") return method === "GET" ? { status: 200, body: (() => { const sessions = meter.scan(projects); return { sessions: sessions.map((c) => ({ ...c, name: nameOf(c) })), lines: sessionLines(sessions), ...context.check(sessions), code: modes.check(sessions), stalled: stalls.check(sessions).stalled.map((x) => x.message) }; })() } : only("GET");
+    if (p === "/__rb/context") return method === "GET" ? { status: 200, body: (() => { const sessions = meter.scan(projects); const reply = { sessions: sessions.map((c) => ({ ...c, name: nameOf(c) })), lines: sessionLines(sessions), ...context.check(sessions), code: modes.check(sessions), stalled: stalls.check(sessions).stalled.map((x) => x.message) }; return reply satisfies ContextReply; })() } : only("GET");
     if (p === "/__rb/helpers") return method === "GET" ? { status: 200, body: { ester: helpers.ester.state(), mervin: helpers.mervin.state(), dexter: helpers.dexter.state(), tally: tally(), rings: rings(repoWith(RINGS, [...floors()].map((f) => f.dir))) } satisfies HelpersReply } : only("GET");
     if (p === "/__rb/line") {
       if (method !== "GET") return only("GET");
