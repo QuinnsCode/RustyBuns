@@ -522,6 +522,30 @@ def foliage(spec, g, rng, lo, twigs, trunks, H):
                     brush = size * fs.get("brush", 0.5)
                     if not lo and fs.get("knot", 0.22) > 0:
                         blob(g, at + fwd * brush * 0.4, size * fs.get("knot", 0.22), mix(c, (0.02, 0.03, 0.02), 0.45), rng, subdiv=1, lump=0.2, squash=1.0, out_from=centre)
+                    bundle = fs.get("bundle", 1)
+                    if bundle > 1:
+                        # a 3D bottlebrush (`bundle` needles a fascicle, as a pine's bundles of three): the fascicles sit
+                        # all round and all along `brush` of twig behind the tip, each raked forward and up by `splay`,
+                        # shorter toward the tip so the brush ends round, and each needle of a bundle rolled a third of a
+                        # turn from the last so the brush has body from every side, not a flat starburst seen end on
+                        nf = max(1, n // bundle)
+                        for j in range(nf):
+                            u = (j + rng.random()) / nf
+                            a = j * GOLDEN + rng.random() * 0.4
+                            radial = Matrix.Rotation(a, 3, fwd) @ sp
+                            base = at - fwd * brush * u
+                            nd = (fwd * fs.get("reach", 0.9) + radial * fs.get("splay", 0.7)).normalized()
+                            ln = size * (0.55 + 0.45 * min(1, u * 2.5)) * (0.85 + 0.3 * rng.random())
+                            dark = mix(c, (0.05, 0.05, 0.03), 0.3)
+                            tcol = mix(tc, c, fs.get("lo_tip", 0)) if (lo and tc and fs.get("lo_tip")) else (tc or c)
+                            w = size * fs.get("needle_width", 0.035) * (fs.get("lo_width", 2.5) if lo else 1)
+                            for b in range(bundle):
+                                d = (Matrix.Rotation((rng.random() - 0.5) * 0.35, 3, perp(nd)) @ (Matrix.Rotation(b * math.tau / bundle, 3, nd) @ (nd + radial * 0.12))).normalized()
+                                side = (Matrix.Rotation(b * math.pi / bundle, 3, d) @ perp(d)) * w
+                                tip = base + d * ln
+                                b0 = g.vert(base, dark, LEAF, out)
+                                g.face(b0, g.vert(tip + side, tcol, LEAF, out), g.vert(tip - side, tcol, LEAF, out))
+                        continue
                     for j in range(n):
                         a = 2 * math.pi * j / n * 2.618 + rng.random() * 0.5
                         radial = (Matrix.Rotation(a, 3, fwd) @ sp)
