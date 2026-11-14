@@ -58,6 +58,7 @@ const Reply = obj({
     repository: obj({
       object: nul(obj({
         history: opt(obj({
+          pageInfo: obj({ hasNextPage: bool(), endCursor: nul(str(200)) }),
           nodes: arr(obj({
             oid: str(64),
             status: nul(obj({ contexts: arr(obj({ context: str(200), state: str(20) }), 200) })),
@@ -68,15 +69,22 @@ const Reply = obj({
   }),
 });
 
-/** The last `n` commits on <sha>'s first-parent line, newest first, with their ring/<ring> state, in one GraphQL call. */
-async function history(repo: string, ring: string, sha: string, n = 100): Promise<Tested[]> {
+/** The last `n` commits on <sha>'s first-parent line, newest first, with their ring/<ring> state, 100 per GraphQL call. */
+export async function history(repo: string, ring: string, sha: string, n = 100): Promise<Tested[]> {
   const [owner, name] = repo.split("/");
-  const q = `query($o:String!,$n:String!,$s:GitObjectID!,$k:Int!){repository(owner:$o,name:$n){object(oid:$s){... on Commit{history(first:$k){nodes{oid status{contexts{context state}}}}}}}}`;
-  const out = await Bun.$`gh api graphql -f query=${q} -f o=${owner!} -f n=${name!} -f s=${sha} -F k=${n}`.quiet().text();
-  const reply = Reply(JSON.parse(out));
-  return (reply.data.repository.object?.history?.nodes ?? []).map((c) => ({
-    sha: c.oid, state: c.status?.contexts.find((x) => x.context === `ring/${ring}`)?.state,
-  }));
+  const q = `query($o:String!,$n:String!,$s:GitObjectID!,$k:Int!,$c:String){repository(owner:$o,name:$n){object(oid:$s){... on Commit{history(first:$k,after:$c){pageInfo{hasNextPage endCursor} nodes{oid status{contexts{context state}}}}}}}}`;
+  const out: Tested[] = [];
+  let cursor: string | null = null;
+  while (out.length < n) {
+    const k = Math.min(100, n - out.length);
+    const after: string[] = cursor ? ["-f", `c=${cursor}`] : [];
+    const text: string = await Bun.$`gh api graphql -f query=${q} -f o=${owner!} -f n=${name!} -f s=${sha} -F k=${k} ${after}`.quiet().text();
+    const page = Reply(JSON.parse(text)).data.repository.object?.history;
+    for (const c of page?.nodes ?? []) out.push({ sha: c.oid, state: c.status?.contexts.find((x) => x.context === `ring/${ring}`)?.state });
+    if (!page?.pageInfo.hasNextPage || !page.pageInfo.endCursor) break;
+    cursor = page.pageInfo.endCursor;
+  }
+  return out;
 }
 
 const Artifacts = obj({
