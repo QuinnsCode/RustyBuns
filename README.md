@@ -333,6 +333,16 @@ A game adds the corner button with `reportButton()` from its `eqosys()` client (
 
 </details>
 
+### A friend gets in with one link, account or not
+
+Send a party link or your friend link to someone who has never signed up, and they are in your lobby or on your friends list a minute later.
+
+<details><summary>More</summary>
+
+A party link carries the party's invite key, and whoever holds it comes in, whether or not they are the host's friend yet; the six-letter code alone still follows the host's "who can join by code" rule, and a new link retires the old one. Every person also has a friend link ([eqosys](apps/eqosys/README.md), `/add/<id>/<key>`, or `friendLink()` on a game's hub client): the person who opens it signs in or makes an account, presses "Be friends", and both sides are friends with no email typed and nothing to accept. A game signs a player in beside itself with `signInHere()` on the `eqosys()` client (`@rustybuns/util/eqosys`), which opens eqosys in a small window and hears the login back while the game keeps running, and falls back to the whole-page trip where a window is blocked. On eqosys's Account tab a person adds GitHub, Google or Apple to the account they are in, so every device opens the same games, friends, saves and achievements. The design is in [QOLLAB.md](apps/eqosys/QOLLAB.md#getting-in-links-not-homework).
+
+</details>
+
 ### Achievements on one account across every game
 
 A game unlocks an achievement with one call. The player's eqosys page shows each game's achievements, earned and locked.

@@ -20,10 +20,10 @@ import { hubAsk } from "./hub.ts";
 import { file, reporterId } from "../reports.ts";
 
 /** What a non-friend hears on a closed party's door. */
-const FRIENDS_ONLY = "Only the host's friends can join: ask them to add you on eqosys.";
+const FRIENDS_ONLY = "Only the host's friends can join with the code alone: ask someone in the party for its link.";
 /** The door's other refusals, each with its close code, so the page can say why and stop trying. */
 const DOOR = {
-  friendsOfMembers: { code: 4403, why: "Only friends of someone in the party can join: ask them to add you on eqosys." },
+  friendsOfMembers: { code: 4403, why: "Only friends of someone in the party can join with the code alone: ask one of them for its link." },
   blocked: { code: 4405, why: "The host has blocked you from this party." },
   late: { code: 4408, why: "This party has started and isn't taking late joiners." },
   full: { code: 4407, why: "This party is full." },
@@ -246,8 +246,11 @@ export class Party {
     if (rules.block === "out" && (await this.ctx.storage.get<Member[]>("blocked") ?? []).some((b) => b.id === who.id)) return DOOR.blocked;
     if (!here && members.length >= rules.size) return DOOR.full;
     if (!rules.late && await this.ctx.storage.get<boolean>("started") && !(await this.ctx.storage.get<string[]>("startedWith") ?? []).includes(who.id)) return DOOR.late;
-    if (rules.invite === "host" && !here && who.invite !== await this.inviteKey() && !(await this.ctx.storage.get<string[]>("admitted") ?? []).includes(who.id)) return DOOR.uninvited;
-    if (rules.join === "anyone" || await this.friendOf(host, await this.ctx.storage.get<string>("hostName") ?? "", app, who.id)) return null;
+    // A party link is an invitation: whoever holds its key comes in, a friend or not, with or without an account before today,
+    // and (remembered in `admitted`) comes back without it. `join` is for someone who only has the code.
+    const invited = here || who.invite === await this.inviteKey() || (await this.ctx.storage.get<string[]>("admitted") ?? []).includes(who.id);
+    if (rules.invite === "host" && !invited) return DOOR.uninvited;
+    if (invited || rules.join === "anyone" || await this.friendOf(host, await this.ctx.storage.get<string>("hostName") ?? "", app, who.id)) return null;
     if (rules.join === "friends" || rules.invite === "host") return { code: 4403, why: FRIENDS_ONLY };
     for (const m of members) if (m.id !== host && await this.friendOf(m.id, m.name, app, who.id)) return null;
     return DOOR.friendsOfMembers;

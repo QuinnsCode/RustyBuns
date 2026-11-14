@@ -11,7 +11,7 @@ import { HOME, returnTo, type QApp } from "./apps.ts";
 import { appOf, Draft, mayUse, pull, save, send, type Done } from "./listings.ts";
 import { authFor, authOn, isAdmin, meOf, providers, type Me } from "./auth.ts";
 import { b64url, crossSite, json, loopbackOn, VERSION, type Env } from "./env.ts";
-import { hubAnnounce, hubAsk, type Who } from "./qollab/hub.ts";
+import { hubAnnounce, hubAsk, hubInvited, hubRedeem, linkOf, type Who } from "./qollab/hub.ts";
 import { isQollab, qollab } from "./qollab/routes.ts";
 import { bearerOf, cors, HOME_LIFE, issuer, tokenOf } from "./door.ts";
 import { deleteAccount, exchange, link, mint, mintRefresh, setAccess, signOutApps } from "./members.ts";
@@ -69,8 +69,22 @@ export async function socialMark(conf: Env, a: Ask) {
 export const SOCIAL_COOKIE = "eqosys.social";
 const socialCookie = (req: Request, value: string, age: number) =>
   `${SOCIAL_COOKIE}=${value}; Path=/login; Max-Age=${age}; HttpOnly; SameSite=Lax${new URL(req.url).protocol === "https:" ? "; Secure" : ""}`;
-const socialMarkIn = (req: Request) =>
-  (req.headers.get("cookie") ?? "").split(/;\s*/).find((c) => c.startsWith(`${SOCIAL_COOKIE}=`))?.slice(SOCIAL_COOKIE.length + 1) ?? null;
+const cookieOf = (req: Request, name: string) =>
+  (req.headers.get("cookie") ?? "").split(/;\s*/).find((c) => c.startsWith(`${name}=`))?.slice(name.length + 1) ?? null;
+const socialMarkIn = (req: Request) => cookieOf(req, SOCIAL_COOKIE);
+
+/** The friend link this browser opened (/add/<id>/<key>), kept half an hour while its person signs in or makes an account.
+ * Opening a link only keeps it: being friends takes their own press of "Be friends" on the Friends tab (/do/add), so a
+ * page that sends a browser to somebody's link makes nobody a friend. */
+export const ADD_COOKIE = "eqosys.add";
+const addCookie = (req: Request, value: string, age: number) =>
+  `${ADD_COOKIE}=${value}; Path=/; Max-Age=${age}; HttpOnly; SameSite=Lax${new URL(req.url).protocol === "https:" ? "; Secure" : ""}`;
+/** The kept friend link, and whose it is: null when there is none or its key is no longer theirs. */
+export async function invitedBy(req: Request, conf: Env): Promise<{ id: string; key: string; name: string } | null> {
+  const l = linkOf(cookieOf(req, ADD_COOKIE) ?? "");
+  const name = l && conf.HUB ? await hubInvited(conf.HUB, l).catch(() => null) : null;
+  return l && name !== null ? { ...l, name } : null;
+}
 
 /** Whether someone already signed in goes on to the app without seeing the page: they have used it before, or this browser
  * just pressed "Continue with…" for it. A first visit from a link still asks, so nobody is handed to an app they never picked. */
@@ -227,6 +241,17 @@ export async function handle(req: Request, conf: Env): Promise<Response | null> 
     return json({ ok: db && authOn(conf), db, auth: authOn(conf), tokens: !!(await jwksOf(conf)).keys.length, version: VERSION }, db ? 200 : 503);
   }
 
+  // A friend link: kept in a cookie, then on to the Friends tab, by way of the sign-in page for someone signed out or new.
+  const add = /^\/add\/(.+)$/.exec(pathname);
+  if (add && req.method === "GET") {
+    const l = linkOf(add[1]!.replace(/\/+$/, ""));
+    const out = see("/?tab=friends");
+    if (l) out.headers.append("set-cookie", addCookie(req, `${encodeURIComponent(l.id)}/${l.key}`, 1800));
+    return out;
+  }
+  // Home with a friend link waiting (just signed in, or just made the account): the Friends tab shows who it is from.
+  if (pathname === "/" && req.method === "GET" && !new URL(req.url).searchParams.has("tab") && cookieOf(req, ADD_COOKIE)) return see("/?tab=friends");
+
   // An app asking for someone already signed in here who uses it (or just picked it with "Continue with…"): straight back
   // with a code, no page. Anyone else falls through to the sign-in page.
   if (pathname === "/login" && req.method === "GET") {
@@ -307,11 +332,33 @@ export async function handle(req: Request, conf: Env): Promise<Response | null> 
 
   if (act === "continue") return onward(conf, regionAt(req), me.id, ask);
   // The friends page (pages.tsx): the person's own hub, by cookie rather than a token. A form field left empty is left out.
-  if (act === "befriend" || act === "accept" || act === "drop" || act === "clear") {
+  // The friend link this browser opened: "Be friends" makes the two friends at once, "No thanks" (`no`) forgets the link.
+  if (act === "add") {
+    const l = linkOf(cookieOf(req, ADD_COOKIE) ?? "");
+    const r = l && conf.HUB && !field(form, "no") ? await hubRedeem(conf.HUB, l, { id: me.id, name: me.name }) : null;
+    const out = see(r && "error" in r ? `/?tab=friends&e=${/most/.test(r.error) ? "full" : "nolink"}` : "/?tab=friends");
+    out.headers.append("set-cookie", addCookie(req, "", 0));
+    return out;
+  }
+  if (act === "befriend" || act === "accept" || act === "drop" || act === "clear" || act === "relink") {
     if (!conf.HUB) return see("/?tab=friends&e=nohub");
     const email = field(form, "email").trim(), id = field(form, "id");
     const r = await hubAsk(conf.HUB, atHome(me), { op: act, ...(email ? { email } : {}), ...(id ? { id } : {}) });
     return see("error" in r ? `/?tab=friends&e=${/most|too many/.test(r.error) ? "full" : "hub"}` : "/?tab=friends");
+  }
+  // The Account tab's ways to sign in: add GitHub, Google or Apple to this account (off to the provider and back, signed in
+  // as themselves throughout), or take one off. Better Auth refuses to take off the last one.
+  if (act === "link") {
+    if (await limited()) return see("/?tab=account&e=slow");
+    const provider = check(oneOf(["github", "google", "apple"]), field(form, "provider"));
+    if (!provider || !providers(conf).includes(provider)) return see("/?tab=account&e=provider");
+    const res = await authFor(req, conf).api.linkSocialAccount({ body: { provider, callbackURL: "/?tab=account", errorCallbackURL: "/?tab=account&e=link" }, headers: req.headers, asResponse: true }).catch(() => null);
+    const go = res?.ok ? check(Social, await res.clone().json().catch(() => null)) : null;
+    return go ? see(go.url, res!) : see("/?tab=account&e=provider");
+  }
+  if (act === "unlink") {
+    const res = await authFor(req, conf).api.unlinkAccount({ body: { accountId: field(form, "id") }, headers: req.headers, asResponse: true }).catch(() => null);
+    return see(res?.ok ? "/?tab=account" : "/?tab=account&e=last");
   }
   if (act === "logout") await signOutApps(conf, me.id);
   if (act === "logout") return see(ask ? `/login?${askQuery(ask)}` : "/login", await authFor(req, conf).api.signOut({ headers: req.headers, asResponse: true }));

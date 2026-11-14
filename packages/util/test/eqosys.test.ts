@@ -84,3 +84,38 @@ test("renewal refused: one quiet check with eqosys keeps the invite's query, and
   expect(address).toBe("https://game.example/play?room=A");
   expect(eq.login()).toBeNull();
 });
+
+test("sign in without leaving the page: eqosys opens in a window, which hands the code back and closes", async () => {
+  const eq = client();
+  const win = { closed: false, location: { href: "" } };
+  let closed = false;
+  g.window = { open: () => win, close: () => { closed = true; } };
+  const signedIn = eq.signInHere("play");
+  while (!win.location.href) await Bun.sleep(5);
+  expect(went).toBe(""); // the page itself went nowhere
+  const state = new URL(win.location.href).searchParams.get("state")!;
+
+  // The window comes back from eqosys on the game's own address; another page listening without the verifier gets nothing from it.
+  address = `https://game.example/play?code=eq_2&state=${state}`; g.location = loc();
+  void client().finishSignIn();
+  expect(await signedIn).toMatchObject({ then: "play", login: { name: "Ada" } });
+  expect(exchanged).toMatchObject({ code: "eq_2" });
+  expect(eq.login()?.name).toBe("Ada");
+  await Bun.sleep(250);
+  expect(closed).toBe(true);
+  delete g.window;
+});
+
+test("the sign-in window closed with nothing done is no login and no error; a blocked window sends the whole page", async () => {
+  const eq = client();
+  const win = { closed: false, location: { href: "" } };
+  g.window = { open: () => win };
+  const waiting = eq.signInHere();
+  win.closed = true;
+  expect(await waiting).toEqual({ login: null, then: "" });
+  g.window = { open: () => null };
+  void eq.signInHere("play");
+  while (!went) await Bun.sleep(5);
+  expect(new URL(went).pathname).toBe("/login");
+  delete g.window;
+});

@@ -4,6 +4,7 @@
 // so the page renews it in the background with a one-use refresh token kept beside it. When that fails (a month
 // unused, or a sign-out on eqosys), the next load checks with eqosys quietly (`prompt=none`): still signed in
 // there, the player comes straight back signed in with no page shown; signed out, they stay a guest.
+// `signInHere` signs in through a small window beside the page, so a game that is running keeps running.
 // Worked example: apps/park-hide-seek/src/ui/eqosys.ts.
 import { b64url, digest } from "./bytes.ts";
 import { arr, bool, check, int, nul, num, obj, oneOf, opt, str, type Guard, type Of } from "./guard.ts";
@@ -30,6 +31,10 @@ const Renewed = obj({ access_token: str(8192), refresh_token: str(100) });
 export type ExchangeReply = Of<typeof ExchangeReply>;
 
 export interface Returned { login: Login | null; then: string; error?: string }
+/** What the sign-in window tells the page that opened it: the code eqosys sent it back with. The verifier never leaves the page. */
+const Handed = obj({ code: str(100), state: str(200) });
+/** A sign-in that began in `signInHere`'s window carries this at the front of its state. */
+const WINDOW = "w.";
 
 /** One achievement as eqosys shows it to the player (a secret one is "Secret achievement" until `at` is set). */
 export const Achievement = obj({ id: str(64), name: str(200), blurb: str(400), secret: bool(false), at: nul(int(0, 1e15)) });
@@ -54,7 +59,7 @@ export interface EqosysConfig {
   skin?: Skin;
 }
 
-/** The sign-in client for one app. `signIn`, `finishSignIn`, `login`, `fresh`, `signOut`, `eqosysUrl`, `canSignIn`, `accountChip`, and `achieve` / `achievements`. */
+/** The sign-in client for one app. `signIn`, `signInHere`, `finishSignIn`, `login`, `fresh`, `signOut`, `eqosysUrl`, `canSignIn`, `accountChip`, and `achieve` / `achievements`. */
 export function eqosys({ app, url, from, prefix, skin }: EqosysConfig) {
   if (skin) wearSkin(skin);
   const kept = {
@@ -87,6 +92,43 @@ export function eqosys({ app, url, from, prefix, skin }: EqosysConfig) {
     location.assign(`${eqosysUrl()}/login?${q}`);
   }
 
+  /** Trade eqosys's code for the login, and keep it. */
+  async function trade(code: string, verifier: string, then: string): Promise<Returned> {
+    const got = await getJson(`${eqosysUrl()}/api/exchange`, ExchangeReply, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ app, code, verifier, keep: true }) });
+    if (!got) return { login: null, then, error: "eqosys didn't let that sign-in through. Try again." };
+    if (!got.token) return { login: null, then, error: "eqosys isn't handing out tokens yet, so you can't sign in here. Play with a name for now." };
+    waiting.clear();
+    const login: Login = { name: got.user.name, email: got.user.email, token: got.token, ...(got.refresh ? { refresh: got.refresh } : {}) };
+    keep(login);
+    void sendHeld().then((news) => { for (const u of news) celebrate(u.achievement); });
+    return { login, then };
+  }
+
+  /**
+   * Sign in without leaving the page: eqosys opens in a small window, and this answers once the player is back (the
+   * login, or null with no error when they closed the window). Call it straight from the click, or the browser blocks
+   * the window; where it is blocked anyway (some in-app browsers), the whole page goes to eqosys as `signIn` does.
+   */
+  function signInHere(then = ""): Promise<Returned> {
+    const win = typeof window === "undefined" ? null : window.open("", "eq-signin", "popup,width=480,height=720");
+    if (!win) { void signIn(then); return new Promise(() => {}); }
+    const verifier = b64url(crypto.getRandomValues(new Uint8Array(32)));
+    const state = WINDOW + b64url(crypto.getRandomValues(new Uint8Array(12)));
+    const news = new BroadcastChannel(`${prefix}.eq.signin`);
+    return new Promise((done) => {
+      let over = false, trading = false;
+      const end = (r: Returned) => { if (over) return; over = true; clearInterval(watch); news.close(); done(r); };
+      // The window closed with no code (a moment's grace: the code is sent just before it closes): they changed their mind.
+      // A page that is cross-origin isolated can't see its window close: there, only the code ends the wait.
+      const watch = setInterval(() => { if (win.closed && !globalThis.crossOriginIsolated) setTimeout(() => { if (!trading) end({ login: null, then }); }, 600); }, 400);
+      news.onmessage = (e) => {
+        const m = check(Handed, e.data);
+        if (m && m.state === state && !trading) { trading = true; void trade(m.code, verifier, then).then(end); }
+      };
+      void digest(verifier).then((d) => { win.location.href = `${eqosysUrl()}/login?${new URLSearchParams({ app, return: here(), challenge: b64url(d), state })}`; });
+    });
+  }
+
   /**
    * Back from eqosys with ?code=&state=: trade the code in and keep the login. Answers what to carry on with, or
    * null when this wasn't a return. The query is taken off the address either way, so a reload doesn't retry it.
@@ -99,18 +141,20 @@ export function eqosys({ app, url, from, prefix, skin }: EqosysConfig) {
     q.delete("code"); q.delete("state"); if (refused) q.delete("error");
     const rest = quiet && quiet !== "?" ? quiet : `${q.size ? "?" + q : ""}${location.hash}`;
     history.replaceState(null, "", `${location.pathname}${rest}`);
+    // This is `signInHere`'s window: hand the code to the page that opened it and go. That page holds the verifier, so the
+    // code is no use to anyone else listening. A window that can't close itself becomes the game, signed in by then.
+    if (code !== null && state.startsWith(WINDOW)) {
+      const news = new BroadcastChannel(`${prefix}.eq.signin`);
+      news.postMessage({ code, state } satisfies Of<typeof Handed>);
+      setTimeout(() => window.close(), 200);
+      setTimeout(() => location.assign(`${location.pathname}${rest}`), 2000);
+      return new Promise(() => {});
+    }
     const verifier = once.take("verifier"), then = once.take("then");
     if (!verifier || state !== once.take("state")) return { login: null, then, error: "That sign-in didn't start here. Try again." };
     // The quiet check found nobody signed in on eqosys: a guest, and the run-out login is let go so the page doesn't ask again.
     if (refused || code === null) { keep(null); return null; }
-    const got = await getJson(`${eqosysUrl()}/api/exchange`, ExchangeReply, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ app, code, verifier, keep: true }) });
-    if (!got) return { login: null, then, error: "eqosys didn't let that sign-in through. Try again." };
-    if (!got.token) return { login: null, then, error: "eqosys isn't handing out tokens yet, so you can't sign in here. Play with a name for now." };
-    waiting.clear();
-    const login: Login = { name: got.user.name, email: got.user.email, token: got.token, ...(got.refresh ? { refresh: got.refresh } : {}) };
-    keep(login);
-    void sendHeld().then((news) => { for (const u of news) celebrate(u.achievement); });
-    return { login, then };
+    return trade(code, verifier, then);
   }
 
   /** The login kept from the last sign-in, if any. Its token may have run out: see `fresh`. */
@@ -246,19 +290,23 @@ export function eqosys({ app, url, from, prefix, skin }: EqosysConfig) {
    * The account chip, in `slot`: the eqosys name and a way out, a way in where eqosys can send the player back, or nothing.
    * `note` is what went wrong coming back from eqosys; `onSignOut` runs after signing out (a page that must reload, say).
    */
-  function accountChip(slot: HTMLElement, o: { note?: string; onSignOut?: () => void } = {}): HTMLElement {
+  function accountChip(slot: HTMLElement, o: { note?: string; onSignOut?: () => void; /** Given, "Sign in" opens eqosys beside the page (`signInHere`) and this hears the login; the page never reloads. */ onSignIn?: (login: Login) => void } = {}): HTMLElement {
     wearSkin();
     const who = login();
     slot.classList.add("eq", "eq-chip");
     slot.classList.toggle("in", !!who);
     slot.replaceChildren();
-    if (who) slot.append(Object.assign(document.createElement("span"), { className: "eq-who", textContent: who.name, title: who.email }), eqButton({ text: "Sign out", icon: "log-out", onClick: () => { signOut(); accountChip(slot, { onSignOut: o.onSignOut }); o.onSignOut?.(); } }));
-    else if (canSignIn()) slot.append(eqButton({ text: "Sign in", icon: "log-in", show: true, onClick: () => void signIn() }));
+    if (who) slot.append(Object.assign(document.createElement("span"), { className: "eq-who", textContent: who.name, title: who.email }), eqButton({ text: "Sign out", icon: "log-out", onClick: () => { signOut(); accountChip(slot, { onSignOut: o.onSignOut, onSignIn: o.onSignIn }); o.onSignOut?.(); } }));
+    else if (canSignIn()) slot.append(eqButton({ text: "Sign in", icon: "log-in", show: true, onClick: () => {
+      const hear = o.onSignIn;
+      if (!hear) return void signIn();
+      void signInHere().then((r) => { accountChip(slot, { ...o, note: r.error }); if (r.login) hear(r.login); });
+    } }));
     if (o.note) slot.append(Object.assign(document.createElement("small"), { className: "eq-note", textContent: o.note }));
     return slot;
   }
 
-  return { signIn, finishSignIn, login, fresh, signOut, who, eqosysUrl, canSignIn, accountChip, report, reportButton, party: partyClient, space: spaceClient, hub: hubClient, achieve, achievements, sendHeld, celebrate };
+  return { signIn, signInHere, finishSignIn, login, fresh, signOut, who, eqosysUrl, canSignIn, accountChip, report, reportButton, party: partyClient, space: spaceClient, hub: hubClient, achieve, achievements, sendHeld, celebrate };
 }
 
 /**
@@ -370,7 +418,7 @@ export function party({ url, token }: PartyConfig) {
       onClose: (e) => {
         if (e.code === 4000) { onGone.hear("This party is open in another tab."); return; }
         // The door's refusals (party.ts): its own words came just before the close; stop trying.
-        if (e.code === 4403) { onGone.hear(lastWhy || "Only the host's friends can join: ask them to add you on eqosys."); return; }
+        if (e.code === 4403) { onGone.hear(lastWhy || "Only the host's friends can join with the code alone: ask someone in the party for its link."); return; }
         if (e.code === 4405 || e.code === 4407 || e.code === 4408 || e.code === 4410) { onGone.hear(lastWhy || "The party didn't let you in."); return; }
         if (e.code === 4406) { onGone.hear("The host took you out of the party."); return; }
         if (e.code === 4409) { onGone.hear("The host ended the party."); return; }
@@ -420,8 +468,8 @@ export type HubFriend = Of<typeof HubFriend>;
 /** A note in the hub: a friend's ask or answer, or what an app told you for them (`app`, with its text and link). */
 export const HubNote = obj({ key: str(64), at: num(0, 1e14), kind: str(16), from: obj({ id: str(200), name: str(200, { min: 0 }) }), app: opt(str(64)), text: opt(str(280)), link: opt(str(2000)) });
 export type HubNote = Of<typeof HubNote>;
-/** What an app reads of the hub: friends and notes (asks are eqosys's own page's business). */
-export const HubView = obj({ friends: arr(HubFriend, 1000), notes: arr(HubNote, 1000) });
+/** What an app reads of the hub: friends, notes, and the person's friend link (asks are eqosys's own page's business). */
+export const HubView = obj({ friends: arr(HubFriend, 1000), notes: arr(HubNote, 1000), link: opt(str(300)) });
 export type HubView = Of<typeof HubView>;
 
 /**
@@ -444,6 +492,8 @@ export function hub({ url, token }: PartyConfig) {
     state: async (): Promise<HubView | null> => { const r = await op({ op: "state" }); return r.ok ? r.view : null; },
     /** Tell friend `id`: null when sent, else why not. */
     notify: async (id: string, text: string, link?: string): Promise<string | null> => { const r = await op({ op: "notify", id, text, ...(link ? { link } : {}) }); return r.ok ? null : r.error; },
+    /** The person's friend link, to copy or share: whoever opens it and signs in (or makes an account) is their friend. Null signed out. */
+    friendLink: async (): Promise<string | null> => { const r = await op({ op: "state" }); return r.ok && r.view?.link ? `${url()}/add/${r.view.link}` : null; },
     /** Where on eqosys a person adds friends. */
     friendsPage: () => `${url()}/?tab=friends`,
   };

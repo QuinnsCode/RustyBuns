@@ -82,7 +82,7 @@ test.skipIf(!chromePath() || !!process.env.CI)("a party's lobby: Walk together, 
   await until(() => lobby(ada), (l) => l.includes("Bo"));
   // Cy, who isn't Ada's friend, opens the same link: the lobby says why they can't join, not that the code is wrong.
   const cy = await player(cy0, `?world=1&party=${code}&a=hodag`);
-  await until(() => lobby(cy), (l) => l.includes("Only the host's friends can join: ask them to add you on eqosys."));
+  await until(() => lobby(cy), (l) => l.includes("Only the host's friends can join with the code alone: ask someone in the party for its link."));
   expect(await lobby(ada)).not.toContain("Cy");
   expect(await press(bo, "Ready")).toBe(true);
   await until(() => lobby(ada), (l) => l.includes("Bo ready"));

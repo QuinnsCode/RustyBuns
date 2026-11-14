@@ -16,7 +16,8 @@ export const LIVES = [1, 3, 6, 12, 24, 72, 168] as const;
 
 /** One party's rules. Each field is one control in the lobby's Settings. */
 export const PartyRules = obj({
-  /** Who may come in: the host's eqosys friends, a friend of anyone already in, or anyone on the app with the code. */
+  /** Who may come in with the code alone: the host's eqosys friends, a friend of anyone already in, or anyone on the app.
+   *  A party link (the code and the invite key) lets its holder in whatever this says: the link is the invitation. */
   join: oneOf(JOINS),
   /** Whether someone may still join once the host has started (they are handed the same room). */
   late: bool(),
@@ -47,14 +48,14 @@ export const defaultRules = (open = false): PartyRules => ({
 
 /** The rules as people read them in Settings: one label and the words for each choice. */
 export const RULE_TEXT = {
-  join: { label: "Who can join", friends: "The host's friends", "friends-of-members": "Friends of anyone in the party", anyone: "Anyone with the code" },
+  join: { label: "Who can join by code", friends: "The host's friends", "friends-of-members": "Friends of anyone in the party", anyone: "Anyone with the code" },
   late: { label: "Late joiners", on: "Let in after the start", off: "Closed once started" },
   size: { label: "Party size" },
   ready: { label: "Start needs", everyone: "Everyone ready", majority: "Most ready", host: "Just the host" },
   chat: { label: "Chat", everyone: "Everyone talks", host: "Only the host", off: "Off" },
   mute: { label: "Mute for all", host: "The host", everyone: "Anyone in", nobody: "Nobody" },
   report: { label: "Who can report", everyone: "Anyone in", host: "The host", nobody: "Nobody" },
-  invite: { label: "Who can invite", everyone: "Anyone in", host: "The host" },
+  invite: { label: "Who can hand out the link", everyone: "Anyone in", host: "The host" },
   hours: { label: "Party lasts", 1: "1 hour", 3: "3 hours", 6: "6 hours", 12: "12 hours", 24: "A day", 72: "3 days", 168: "A week" },
   block: { label: "Blocked people", out: "Kept out", hidden: "Let in, hidden" },
 } as const;

@@ -1,5 +1,6 @@
 import { expect, setDefaultTimeout, test } from "bun:test";
 import { members } from "../src/members.ts";
+import { waysOf } from "../src/auth.ts";
 import { ADMIN, asks, boot, codeIn, ORIGIN, PARK, PASSWORD, QCRM } from "./kit.ts";
 import { Jwks, newKey, verify } from "@rustybuns/util/token";
 import { check } from "@rustybuns/util/guard";
@@ -179,4 +180,20 @@ test("already signed in: an app she uses gets her straight back with no page; a 
   expect(boId).toBeTruthy();
   expect(await login({ ...crm.form, via: await socialMark(conf, ask) }, bo.cookie)).toBeNull();
   expect(await conf.DB.prepare("SELECT 1 AS n FROM links WHERE user_id = ? AND app = ?").bind(boId, "qcrm").first<number>("n")).toBeNull();
+});
+
+test("ways to sign in: the Account tab's list, a provider added from there goes off to it, and the last way in can't be taken off", async () => {
+  const { conf, call } = await boot({ GITHUB_CLIENT_ID: "gh-id", GITHUB_CLIENT_SECRET: "gh-secret" });
+  const up = await call("/do/signup", { form: { name: "Ada", email: "ada@example.com", password: PASSWORD } });
+  const ways = () => waysOf(new Request(ORIGIN, { headers: { cookie: up.cookie } }), conf);
+  expect((await ways()).map((w) => w.provider)).toEqual(["credential"]);
+
+  // Adding GitHub starts GitHub's own sign-in, coming back to the Account tab; a provider that isn't switched on here doesn't.
+  const off = await call("/do/link", { form: { provider: "github" }, cookie: up.cookie });
+  expect(new URL(off.to).hostname).toBe("github.com");
+  expect((await call("/do/link", { form: { provider: "google" }, cookie: up.cookie })).to).toBe("/?tab=account&e=provider");
+  expect((await call("/do/link", { form: { provider: "github" } })).to).toBe("/login?e=in");
+
+  expect((await call("/do/unlink", { form: { id: (await ways())[0]!.id }, cookie: up.cookie })).to).toBe("/?tab=account&e=last");
+  expect((await ways()).map((w) => w.provider)).toEqual(["credential"]);
 });
