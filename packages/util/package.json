@@ -42,6 +42,7 @@
     "./overlap": "./src/overlap.ts",
     "./party-rules": "./src/party-rules.ts",
     "./palette": "./src/palette.ts",
+    "./ports": "./src/ports.ts",
     "./privacy": "./src/privacy.ts",
     "./protocol": "./src/protocol.ts",
     "./report": "./src/report.ts",

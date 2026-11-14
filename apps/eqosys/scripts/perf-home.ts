@@ -1,8 +1,9 @@
 // How smooth the home is on a slow phone: an iPhone XR's size, the CPU slowed 4x, frames timed while it sits and while it scrolls.
-// `bun scripts/perf-home.ts` (the preview server in preview-home.tsx must be up: `PORT=4790 bun scripts/preview-home.tsx --serve`).
+// `bun scripts/perf-home.ts` (the preview server in preview-home.tsx must be up: `bun scripts/preview-home.tsx --serve`, on PORTS.eqosysPreview).
 import { launchChrome, load, openTab } from "../../../scripts/chrome.ts";
+import { PORTS } from "@rustybuns/util/ports";
 
-const url = process.env.URL ?? "http://127.0.0.1:4790/";
+const url = process.env.URL ?? `http://127.0.0.1:${PORTS.eqosysPreview}/`;
 const chrome = await launchChrome();
 for (const [name, w, h, mobile, slow] of [["xr", 414, 896, true, 4], ["mbp", 1512, 945, false, 1]] as const) {
   const tab = await openTab(chrome.cdp, { w, h }, mobile);

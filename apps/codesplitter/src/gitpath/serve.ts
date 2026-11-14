@@ -6,10 +6,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { buildGitpath } from "./build.ts";
 import { buildLucide } from "../lucide-subset.ts";
+import { PORTS } from "@rustybuns/util/ports";
 
 const app = join(import.meta.dir, "../..");
 const i = process.argv.indexOf("--port");
-const port = i > 0 ? Number(process.argv[i + 1]) : 4783;
+const port = i > 0 ? Number(process.argv[i + 1]) : PORTS.gitpath;
 const out = mkdtempSync(join(tmpdir(), "gitpath-"));
 
 const lucide = join(out, "lucide.min.js");

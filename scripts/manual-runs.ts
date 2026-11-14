@@ -10,11 +10,12 @@ import { join } from "node:path";
 import type { Subprocess } from "bun";
 import { bool, int, obj, oneOf, str } from "../packages/util/src/guard.ts";
 import { APPS, Issues, answer, queue, type AppId } from "./manual-runs-lib.ts";
+import { portArg } from "../packages/util/src/ports.ts";
 
 const args = process.argv.slice(2);
 const value = (k: string) => { const i = args.indexOf(k); return i >= 0 ? args[i + 1] : undefined; };
 const dry = args.includes("--dry"), noApps = args.includes("--no-apps");
-const askedPort = value("--port");
+const askedPort = value("--port"), port = portArg(askedPort, "manual");
 const root = join(import.meta.dir, "..");
 const logs = join(tmpdir(), "rustybuns-manual-runs");
 mkdirSync(logs, { recursive: true });
@@ -89,12 +90,12 @@ const listen = (port: number) => Bun.serve({
     return json({ error: "not found" }, 404);
   },
 });
-/** 4790 unless something else (a worker's preview server) already sits there: then any free port, said out loud. */
+/** PORTS.manual unless something else (a worker's preview server) already sits there: then any free port, said out loud. */
 const server = (() => {
-  try { return listen(Number(askedPort ?? 4790)); }
+  try { return listen(port); }
   catch (e) {
     if (askedPort || !(e instanceof Error) || !("code" in e) || e.code !== "EADDRINUSE") throw e;
-    console.log("Port 4790 is taken (`lsof -nP -iTCP:4790 -sTCP:LISTEN` says by what); using a free one.");
+    console.log(`Port ${port} is taken (\`lsof -nP -iTCP:${port} -sTCP:LISTEN\` says by what); using a free one.`);
     return listen(0);
   }
 })();

@@ -11,6 +11,7 @@ import type { HubState } from "../src/qollab/hub.ts";
 import type { Side } from "../src/qollab/side.ts";
 import { APPS } from "../src/apps.ts";
 import type { Studio } from "../src/studios.ts";
+import { PORTS } from "@rustybuns/util/ports";
 
 const me: Me = { id: "1", email: "sam@example.com", name: "Sam" };
 const day = 86_400_000, now = Date.now();
@@ -30,7 +31,7 @@ const page = (url: URL) => "<!doctype html>" + renderToStaticMarkup(<Document>{u
   : <Home counts={new Map()} t0={Number(url.searchParams.get("t") ?? 90)} me={me} mine={mine} hub={hub} side={side} everyone={null}
     unlocks={new Map([["git-recon", new Map([["first-run", 1]])]])} tab={tabOf(url.searchParams.get("tab"))} studios={studios} />}</Document>);
 
-const srv = Bun.serve({ port: Number(process.env.PORT ?? 0), fetch: async (r) => {
+const srv = Bun.serve({ port: Number(process.env.PORT ?? (process.argv.includes("--serve") ? PORTS.eqosysPreview : 0)), fetch: async (r) => {
   const url = new URL(r.url), file = Bun.file(join(import.meta.dir, "../public", url.pathname));
   if (url.pathname === "/" || url.pathname === "/login") return new Response(page(url), { headers: { "content-type": "text/html" } });
   return (await file.exists()) ? new Response(file) : new Response("", { status: 404 });

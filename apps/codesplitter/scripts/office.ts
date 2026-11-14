@@ -13,10 +13,11 @@ import { help } from "../../../scripts/help.ts";
 import { local } from "../src/local.ts";
 import { OFFICE_STAGE } from "../src/office-client.ts";
 import worker from "../src/worker.ts";
+import { portArg } from "@rustybuns/util/ports";
 
 help(import.meta.path);
 const arg = (k: string) => { const i = process.argv.indexOf(k); return i > 0 ? process.argv[i + 1] : undefined; };
-const PORT = Number(arg("--port") ?? 4791), OWNER = "quinn";
+const PORT = portArg(arg("--port"), "codesplitterOffice"), OWNER = "quinn";
 const app = path.dirname(import.meta.dir);
 
 // The build as the office-preview stage runs it: the site, the office at /office/ and its headers.

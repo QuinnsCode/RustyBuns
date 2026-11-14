@@ -1,6 +1,7 @@
 // The thing in front: sends each request to the first healthy host, in order (Cloudflare, Railway, then AWS only
 // when both are down). Health is `GET /api/health`, remembered for a few seconds so a dead host costs one probe.
 // Runs anywhere `fetch` does; keep it off the host it guards (`bun src/front.ts`, HOSTS=url,url,url).
+import { PORTS } from "@rustybuns/util/ports";
 const TTL = 10_000;
 const PROBE = 2_000;
 
@@ -35,6 +36,6 @@ export function front(hosts: string[], now = Date.now) {
 if (import.meta.main) {
   const hosts = (process.env.HOSTS ?? "").split(",").map((h) => h.trim()).filter(Boolean);
   if (!hosts.length) throw new Error("HOSTS is empty: comma-separate the Cloudflare, Railway and AWS URLs, in that order");
-  const server = Bun.serve({ port: Number(process.env.PORT ?? 8788), fetch: front(hosts) });
+  const server = Bun.serve({ port: Number(process.env.PORT ?? PORTS.geoboxqFront), fetch: front(hosts) });
   console.log(`GeoBoxQ front on http://localhost:${server.port} -> ${hosts.join(", ")}`);
 }

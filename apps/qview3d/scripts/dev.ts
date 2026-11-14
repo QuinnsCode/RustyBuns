@@ -8,6 +8,7 @@ import { join } from "node:path";
 import { createServer } from "vite";
 import { local } from "../src/local.ts";
 import { MESHY_BASE } from "../src/meshy.ts";
+import { PORTS } from "@rustybuns/util/ports";
 
 const app = join(import.meta.dir, "..");
 const key = process.env.MESHY_API_KEY;
@@ -18,7 +19,7 @@ const vite = await createServer({
   root: join(app, "public"),
   publicDir: false,
   server: {
-    port: Number(process.env.QVIEW_PORT ?? 5190),
+    port: Number(process.env.QVIEW_PORT ?? PORTS.qview3d),
     fs: { allow: [app, join(app, "../..")] },
     // The Host header passes through, so links the Worker writes (the guide, saved designs) name this server.
     proxy: Object.fromEntries(["/api", "/u", "/r", "/v1/embed.md", "/llms.txt"].map((p) => [p, { target, changeOrigin: false }])),

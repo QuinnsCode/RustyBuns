@@ -3,6 +3,7 @@
 // ARTSTEW_URL, GEOBOXQ_LICENSE and GEOBOXQ_URL from the environment.
 import { join, normalize, resolve } from "node:path";
 import { handle, type Env } from "./worker.ts";
+import { PORTS } from "@rustybuns/util/ports";
 
 const root = resolve(import.meta.dir, "../dist/client");
 
@@ -16,7 +17,7 @@ const ASSETS: NonNullable<Env["ASSETS"]> = {
   },
 };
 
-export function serve(port = Number(process.env.PORT ?? 8787), env: Partial<Env> = process.env as Partial<Env>) {
+export function serve(port = Number(process.env.PORT ?? PORTS.geoboxq), env: Partial<Env> = process.env as Partial<Env>) {
   return Bun.serve({ port, fetch: (req) => handle(req, { ...env, ASSETS }).catch(() => Response.json({ error: "server error" }, { status: 500 })) });
 }
 

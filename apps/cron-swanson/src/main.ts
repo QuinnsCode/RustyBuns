@@ -8,6 +8,7 @@ import page from "./page.html";
 import { api } from "./server.ts";
 import { Store } from "./store.ts";
 import { startTicker } from "./ticker.ts";
+import { PORTS } from "@rustybuns/util/ports";
 
 const file = process.env.CRON_SWANSON_DB ?? "data/cron-swanson.sqlite";
 if (file !== ":memory:") mkdirSync(dirname(file), { recursive: true });
@@ -15,7 +16,7 @@ const store = new Store(file);
 const token = process.env.CRON_SWANSON_TOKEN || undefined;
 
 const server = Bun.serve({
-  port: Number(process.env.PORT ?? 8790),
+  port: Number(process.env.PORT ?? PORTS.cronSwanson),
   routes: { "/": page },
   fetch: api(store, { token }),
   development: process.env.NODE_ENV !== "production",
