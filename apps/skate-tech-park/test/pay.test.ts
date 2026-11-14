@@ -2,6 +2,7 @@
 import { expect, test } from "bun:test";
 import { Purchases, handlePay, type PayEnv } from "../src/edge/pay.ts";
 import { priceOf } from "../src/shop.ts";
+import { signStripe } from "@rustybuns/util/stripe";
 
 const SECRET = "whsec_test", UID = "player-abcdef12";
 
@@ -20,11 +21,7 @@ function env(): PayEnv & { stores: Map<string, Map<string, unknown>> } {
     },
   };
 }
-async function sign(body: string, t = Math.floor(Date.now() / 1000)) {
-  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(SECRET), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
-  const mac = Array.from(new Uint8Array(await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(`${t}.${body}`))), (b) => b.toString(16).padStart(2, "0")).join("");
-  return `t=${t},v1=${mac}`;
-}
+const sign = (body: string, t = Date.now()) => signStripe(body, SECRET, t);
 const call = async (e: PayEnv, path: string, init?: RequestInit) => (await handlePay(new Request("https://x" + path, init), e, new URL("https://x" + path)))!;
 const paid = (item: string, status = "paid") => JSON.stringify({ type: "checkout.session.completed", data: { object: { payment_status: status, client_reference_id: UID, metadata: { item } } } });
 const owned = async (e: PayEnv) => ((await (await call(e, `/api/owned?uid=${UID}`)).json()) as { owned: string[] }).owned;
@@ -35,7 +32,7 @@ test("a signed paid webhook unlocks the item; unsigned, stale, unpaid or unprice
   const good = paid("trucks:gold");
   expect(await hook(good, null)).toBe(400);
   expect(await hook(good, await sign(good + " "))).toBe(400);
-  expect(await hook(good, await sign(good, Math.floor(Date.now() / 1000) - 3600))).toBe(400);
+  expect(await hook(good, await sign(good, Date.now() - 3_600_000))).toBe(400);
   expect(await owned(e)).toEqual([]);
   expect(await hook(paid("trucks:gold", "unpaid"), await sign(paid("trucks:gold", "unpaid")))).toBe(200);
   expect(await hook(paid("deck:sunset"), await sign(paid("deck:sunset")))).toBe(200); // free: nothing to record

@@ -12,6 +12,7 @@
 //   orgs/<org>/models/<id>.json          a sample in the making: its Meshy task, progress, then its GLB
 //   orgs/<org>/models/<id>.glb           the sample model itself: served, cached a year
 //   orgs/<org>/scans/<sha>.glb           a sample scanned on the shop's own iPhone (Object Capture, ios/): served, cached a year
+//   orgs/<org>/receipts/<id>.json        a paid pack of samples (billing.ts): never served
 //   meta/meshy/<yyyy-mm-dd>.json         samples started that day, across every org: the ceiling on our Meshy bill
 //
 // Files are named by their own SHA-256, so the same picture uploaded twice is one object, and a served key never
@@ -43,6 +44,7 @@ export const productKey = (org: string, product: string) => `orgs/${org}/product
 export const designKey = (org: string, id: string) => `orgs/${org}/designs/${id}.json`;
 export const sampleKey = (org: string, id: string) => `orgs/${org}/models/${id}.json`;
 export const sampleGlb = (org: string, id: string) => `orgs/${org}/models/${id}.glb`;
+export const receiptKey = (org: string, id: string) => `orgs/${org}/receipts/${id}.json`;
 export const meshyDayKey = (d = new Date()) => `meta/meshy/${d.toISOString().slice(0, 10)}.json`;
 /** A sample's id: 24 hex digits, random. */
 export const SAMPLE_ID = /^[0-9a-f]{24}$/;

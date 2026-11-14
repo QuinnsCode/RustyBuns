@@ -1,9 +1,9 @@
 // Real payments for the priced finishes, through Stripe Checkout (hosted page, so no card data touches us).
 // The price comes from the CATALOG here, never from the page. A purchase is recorded only from Stripe's signed
 // webhook, into a `Purchases` Durable Object per player id, so editing the browser's storage unlocks nothing.
-import { hex } from "@rustybuns/util/bytes";
 import { arr, check, obj, opt, str } from "@rustybuns/util/guard";
 import { json, parseJson, readJson } from "@rustybuns/util/http";
+import { verifyStripe } from "@rustybuns/util/stripe";
 import { UID } from "@rustybuns/util/token";
 import { CATALOG, type Part } from "../parts.ts";
 import { CheckoutReply, OwnedReply, priceOf } from "../shop.ts";
@@ -27,16 +27,6 @@ export function pricedItem(s: string): { part: Part; id: string; name: string; c
   const choice = (CATALOG[part as Part] as readonly { id: string; name: string }[] | undefined)?.find((c) => c.id === id);
   const cents = choice ? priceOf({ part: part as Part, id }) : 0;
   return choice && cents > 0 ? { part: part as Part, id, name: choice.name, cents } : null;
-}
-
-/** Stripe's `Stripe-Signature: t=...,v1=...` check: HMAC-SHA256 of `t.body`, within five minutes. */
-export async function verifyStripe(body: string, header: string | null, secret: string, now = Date.now()): Promise<boolean> {
-  const parts = Object.fromEntries((header ?? "").split(",").map((p) => p.split("=") as [string, string]));
-  const t = Number(parts.t);
-  if (!parts.v1 || !Number.isFinite(t) || Math.abs(now / 1000 - t) > 300) return false;
-  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
-  const want = hex(await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(`${t}.${body}`)));
-  return want.length === parts.v1.length && want.split("").reduce((d, c, i) => d | (c.charCodeAt(0) ^ parts.v1.charCodeAt(i)), 0) === 0;
 }
 
 const wallet = (env: PayEnv, uid: string) => env.PURCHASES.get(env.PURCHASES.idFromName(uid));

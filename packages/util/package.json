@@ -50,6 +50,7 @@
     "./seats": "./src/seats.ts",
     "./skin": "./src/skin.ts",
     "./socket": "./src/socket.ts",
+    "./stripe": "./src/stripe.ts",
     "./token": "./src/token.ts",
     "./train": "./src/train.ts",
     "./tutorial": "./src/tutorial.ts",

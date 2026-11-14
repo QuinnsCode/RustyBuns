@@ -11,6 +11,9 @@
 //   GET  /api/orgs/<org>/models/<id>          an admin asks how it's going
 //   GET  /api/orgs/<org>/designs/<id>/print   an admin gets a design's print files laid out, per zone (print.ts)
 //   GET  /api/orgs/<org>/originals/<file>     an admin fetches a shopper's original, the print source
+//   GET  /api/orgs/<org>/billing           an admin: samples paid for and used, packs, receipts (billing.ts)
+//   POST /api/orgs/<org>/checkout          an admin buys a pack of samples
+//   POST /api/stripe-webhook               Stripe: a paid checkout becomes a receipt
 //   GET  /v1/embed.md, /llms.txt              how to put the widget on a page, for a coding agent (embed.ts)
 //
 // A fresh deploy with an empty bucket still serves the demo org and its three hats (demo.ts), read-only.
@@ -21,7 +24,8 @@ import { BUILT_IN_DEMO, DEMO_ORG, DEMO_PRODUCTS } from "./demo.ts";
 import { embedGuide } from "./embed.ts";
 import { designKey, fileKey, ID, KINDS, orgKey, productKey, servable } from "./layout.ts";
 import { originalRoute, printPlanRoute } from "./print.ts";
-import { isAdmin, sampleRoute, startSampleRoute } from "./samples.ts";
+import { billingRoute, checkoutRoute, stripeWebhook } from "./billing.ts";
+import { countSamples, isAdmin, sampleRoute, startSampleRoute } from "./samples.ts";
 import { presignUrl, readToken, uploadToken } from "./sign.ts";
 
 /** The part of an R2 bucket this Worker uses: the real binding, or shell-bun's twin over a directory. */
@@ -53,6 +57,12 @@ export interface Env {
   /** Signs a minute per IP and org, and sample starts a minute per org. Absent on the local twin: no limit there. */
   SIGN_LIMIT?: RateLimit;
   SAMPLE_LIMIT?: RateLimit;
+  /** Stripe takes the money for packs of samples (billing.ts). STRIPE_API_BASE points elsewhere (tests). */
+  STRIPE_SECRET_KEY?: string;
+  STRIPE_WEBHOOK_SECRET?: string;
+  STRIPE_API_BASE?: string;
+  /** "1": packs are paid at once, nothing charged. Local dev and tests only; Stripe wins when both are set. */
+  BILLING_TEST?: string;
 }
 
 const UPLOAD_TTL_S = 600;
@@ -98,7 +108,9 @@ export async function handle(req: Request, env: Env): Promise<Response> {
     return new Response(embedGuide(url.origin), { headers: { "content-type": "text/markdown; charset=utf-8", "cache-control": "public, max-age=300", ...cors(null) } });
   }
 
-  const m = url.pathname.match(/^\/api\/orgs\/([^/]+)\/(products|uploads|designs|models|originals)(?:\/([^/]+))?(\/print)?$/);
+  if (url.pathname === "/api/stripe-webhook" && req.method === "POST") return stripeWebhook(req, env);
+
+  const m = url.pathname.match(/^\/api\/orgs\/([^/]+)\/(products|uploads|designs|models|originals|billing|checkout)(?:\/([^/]+))?(\/print)?$/);
   if (!m) return fail("not found", 404, origin);
   const [, org, what, id, print] = m;
   if (!org || !ID.test(org)) return fail("unknown org", 404, origin);
@@ -127,6 +139,14 @@ export async function handle(req: Request, env: Env): Promise<Response> {
       return startSampleRoute(req, env, org, settings, cors(origin));
     }
     if (req.method === "GET" && id) return sampleRoute(env, org, id, cors(origin));
+    return fail("not found", 404, origin);
+  }
+  if (what === "billing" || what === "checkout") {
+    if (!admin) return fail("an admin key is needed for billing", 401, origin);
+    if (id) return fail("not found", 404, origin);
+    if (what === "billing" && req.method === "GET") return billingRoute(env, org, settings, await countSamples(env, org), cors(origin));
+    if (builtIn) return fail("the public demo can't buy samples", 403, origin);
+    if (what === "checkout" && req.method === "POST") return checkoutRoute(req, env, org, url, cors(origin));
     return fail("not found", 404, origin);
   }
   if (req.method !== "POST" || id) return fail("not found", 404, origin);

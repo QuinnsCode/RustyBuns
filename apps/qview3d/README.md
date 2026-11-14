@@ -108,6 +108,7 @@ orgs/<org>/photos/<sha>.<ext>       an admin's photos of the shop's own product,
 orgs/<org>/models/<id>.json         a sample in the making (its Meshy task and progress)
 orgs/<org>/models/<id>.glb          the sample model: served and edge-cached for a year
 orgs/<org>/scans/<sha>.glb          a sample scanned on the shop's own iPhone: served and edge-cached for a year
+orgs/<org>/receipts/<id>.json       a pack of samples the shop paid for: never served
 meta/meshy/<yyyy-mm-dd>.json        samples started that day across every org: the ceiling on the Meshy bill
 ```
 
@@ -149,11 +150,22 @@ For a product the hats don't cover (a tumbler, a tote, a koozie), the shop makes
    way the hats work, can't work here.
 
 **Every sample costs Meshy credits**, so three checks stand before one: the admin key, the org's paid allowance
-(`samples` in org.json, counted against its `models/` folder, `402` when spent), and `MESHY_DAILY` (50) samples a
+(`samples` in org.json plus the packs it bought, counted against its `models/` folder, `402` when spent), and `MESHY_DAILY` (50) samples a
 day across every org (`429`). The Meshy Batch Studio app's price table puts multi-image-to-3D at 5 to 40 credits a
 model; check Meshy's current price before turning the real key on. It's a draft: the model guesses at sides the
-photos didn't show. Billing shops for samples, and an iPhone app that scans on the shop's own phone with Apple's
-Object Capture for an accurate model at no compute cost, come later.
+photos didn't show. An iPhone app that scans on the shop's own phone with Apple's
+Object Capture for an accurate model at no compute cost, comes later.
+
+**Shops buy samples in packs** ([src/billing.ts](src/billing.ts)), from the admin page: it shows how many are left
+and a button per pack. A paid pack is a receipt in the org's folder; the allowance is org.json's `samples` (set by
+hand: a trial, a deal) plus every receipt's, so nothing is read, added to and written back, and Stripe retrying a
+webhook still counts once (the receipt is named by the payment). The packs and prices in `PACKS` are placeholders
+until #4515 says what a sample costs in Meshy credits. Who takes the money:
+
+- **Stripe Checkout** when `STRIPE_SECRET_KEY` is set: the admin goes to Stripe's page, and Stripe's signed
+  `checkout.session.completed` webhook (`POST /api/stripe-webhook`, `STRIPE_WEBHOOK_SECRET`) writes the receipt.
+- **The test provider** in `bun run dev` and the tests: the pack is paid at once and nothing is charged.
+- **Neither** on a deploy without the Stripe key: buying answers `501` and the page says to ask us.
 
 ### A scan from the shop's own iPhone
 
@@ -194,5 +206,5 @@ CC0 source, as GLB in `catalog/models/`, with a UV-unwrapped print zone the same
 ## Not in the spike
 
 Print zones on a shop's own model (the picture goes anywhere on it now). More than one picture. Text. Pinch-to-size
-on touch (sliders do it now). An org admin to write org.json and issue keys (it is written by hand), and billing for
-samples. A rate limit on signing. A check of the rendered widget in CI.
+on touch (sliders do it now). An org admin to write org.json and issue keys (it is written by hand). Real sample
+prices (#4515). A rate limit on signing. A check of the rendered widget in CI.

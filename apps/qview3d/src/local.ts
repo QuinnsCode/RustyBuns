@@ -28,12 +28,13 @@ export async function seedDemo(bindings: Env) {
  * `meshy` is a real Meshy (a key and base); left out, the stand-in answers, in `standInSeconds` (8).
  * `seed: false` starts with an empty bucket, the way a fresh deploy does. `limits` are rate limit bindings (a fake, in the tests).
  * `assets` serves a widget built elsewhere (a test's own build) in place of dist/client.
+ * Packs of samples are paid by the test provider (nothing charged) unless `env` says otherwise (`STRIPE_*`).
  */
-export async function local(o: { dir: string; port?: number; secret?: string; meshy?: { key: string; base: string }; standInSeconds?: number; seed?: boolean; limits?: Pick<Env, "SIGN_LIMIT" | "SAMPLE_LIMIT">; assets?: string }) {
+export async function local(o: { dir: string; port?: number; secret?: string; meshy?: { key: string; base: string }; standInSeconds?: number; seed?: boolean; limits?: Pick<Env, "SIGN_LIMIT" | "SAMPLE_LIMIT">; assets?: string; env?: Partial<Env> }) {
   const STATIC = o.assets ? resolve(o.assets) : BUILT;
   const standIn = o.meshy ? null : await standInMeshy({ seconds: o.standInSeconds });
   const meshy = o.meshy ?? standIn!;
-  const bindings: Env = { BUCKET: r2(join(o.dir, "bucket")), UPLOAD_SECRET: o.secret ?? crypto.randomUUID(), MESHY_API_KEY: meshy.key, MESHY_API_BASE: meshy.base, ...o.limits };
+  const bindings: Env = { BUCKET: r2(join(o.dir, "bucket")), UPLOAD_SECRET: o.secret ?? crypto.randomUUID(), MESHY_API_KEY: meshy.key, MESHY_API_BASE: meshy.base, BILLING_TEST: "1", ...o.limits, ...o.env };
   if (o.seed !== false) await seedDemo(bindings);
   const server = Bun.serve({
     port: o.port ?? 0,

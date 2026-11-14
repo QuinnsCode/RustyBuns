@@ -9,5 +9,5 @@
     "dom", "keys", "commands", "palette", "director", "memories", "morph", "skin", "eqosys", "lobby", "spaces",
     "voice", "qlave-call", "quality", "report", "tutorial"
   ],
-  "server": ["room", "seats", "matchmaker", "limits", "protocol", "privacy", "codemode"]
+  "server": ["room", "seats", "matchmaker", "limits", "protocol", "privacy", "codemode", "stripe"]
 }
