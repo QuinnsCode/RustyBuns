@@ -153,6 +153,11 @@ How a person reaches their friends, from the easiest case to the hardest (owner,
 - **A friend link makes friends.** Every hub has one (`link` in its state, `/add/<id>/<key>` on eqosys, `friendLink()` on the
   page's hub client). The person who opens it signs in or makes an account, presses "Be friends", and both hubs hold the other:
   no email typed, nothing to accept. The press is theirs to make, so a page that sends a browser to somebody's link befriends nobody.
+  A link a game copies names it (`/add/<id>/<key>?app=<id>`, which `friendLink()` adds): once they answer, eqosys sends them on
+  to that game's front door instead of leaving them on the Friends tab (#4437).
+- **Add friend on a party member.** Each member's row in the lobby's Settings has "Add <name> as a friend" (`party.befriend(id)`).
+  The party checks both are in it now and not kept apart, then has the asker's hub ask by id (`/met`, which only a party can
+  call): the other pressing it too, or having pressed first, makes them friends. Nobody befriends a stranger by id from a page.
 - **Signing in beside the game.** `signInHere()` on the `eqosys()` client (and `accountChip` given `onSignIn`) opens eqosys in a
   small window. The page keeps running and keeps the PKCE verifier; the window comes back with the code, hands it over on a
   same-origin BroadcastChannel and closes. A blocked window falls back to the whole-page trip. Every game that signs in through eqosys is on it (Mythic Masters first, #4418; the rest in #4419): its account chip signs in beside the game, and a party link opened signed out shows one "Sign in to join Ada's party" step (`signInToJoin` in @rustybuns/util/lobby, named by the link's `from`, which Copy link adds) and then the lobby, whose Copy friend link hands out `hub().friendLink()`.
