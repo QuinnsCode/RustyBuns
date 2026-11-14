@@ -115,6 +115,19 @@ export function glow(nt: Night, p: Path, s: number, t: number): number {
   return 1;
 }
 
+export const LANTERN_OUT = 1.4; // seconds Gary's lantern sputters before it is dark
+
+/**
+ * Gary's lantern on the first night, 0 out to 1 lit, `s` seconds after it began to go out (below 0: it hasn't, he's still
+ * walking). It catches and dies a few times, each catch dimmer, and is dark for good after LANTERN_OUT.
+ */
+export function lantern(s: number): number {
+  if (s < 0) return 1;
+  if (s >= LANTERN_OUT) return 0;
+  const u = s / LANTERN_OUT;
+  return Math.sin(s * 31) * Math.sin(s * 11.7) > u * 0.8 - 0.2 ? 1 - u : 0;
+}
+
 /** Metres from (x, z) to the nearest safe ground at `t`: a lit path's line or a house's ring; 0 when you're on it. */
 export function toSafety(nt: Night, x: number, z: number, t = 0): number {
   let best = Infinity;

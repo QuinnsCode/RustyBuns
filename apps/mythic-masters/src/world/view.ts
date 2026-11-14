@@ -24,7 +24,7 @@ import { lifeView, type LifeEvent } from "./life.ts";
 import { DAWN_HOUR, DAY, daylight, hourAt, weather, wind, type Patch as Forage, type Weather } from "./nature.ts";
 import type { Ambient } from "./ambience.ts";
 import { fireSpot, ISLE_N, isleLair, islePlaces, LAIR_R, marked, poiById, shelterAt, SHELTER_R, type Poi, type Shelter } from "./poi.ts";
-import { glow as lampGlow, lightsNear, nightOf, safePaths, stalk, toSafety, type Light, type Night } from "./night.ts";
+import { glow as lampGlow, lantern, LANTERN_OUT, lightsNear, nightOf, safePaths, stalk, toSafety, type Light, type Night } from "./night.ts";
 import { HUNTS, isleHunts, stageOf, waiting } from "./hunts.ts";
 import { beside, BOARD, DEEP, DOORSTEP, line as townLine, onLot, outside, roomAt, step as townStep, toLocal, toWorld, TOWNS, type Town } from "./towns.ts";
 import { buildTown } from "./town-view.ts";
@@ -745,20 +745,44 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
     [11, "Gary: Hang on. Is that a {it}? I've never got a proper look at one."],
     [16, "Gary: Two minutes. Stay on the lights. I'll be right back."],
   ];
-  let gary: { b: Bearer; t: number; x: number; z: number; said: number; to?: { x: number; z: number }; it: string } | null = null;
+  /** `out`: seconds since his lantern began to go out (lantern() in night.ts), once he's taken. */
+  let gary: { b: Bearer; t: number; x: number; z: number; said: number; to?: { x: number; z: number }; it: string; out?: number } | null = null;
+  // His lantern, held up at his chest: a warm bead and a glow round it, unfogged and drawn through the brush (light gets
+  // through), so you watch it bob off into the dark.
+  const halo = document.createElement("canvas"); halo.width = halo.height = 64;
+  const hx = halo.getContext("2d"), hg = hx?.createRadialGradient(32, 32, 0, 32, 32, 32);
+  if (hx && hg) { hg.addColorStop(0, "rgba(255,214,150,1)"); hg.addColorStop(0.25, "rgba(255,170,80,0.55)"); hg.addColorStop(1, "rgba(255,140,40,0)"); hx.fillStyle = hg; hx.fillRect(0, 0, 64, 64); }
+  const garyLamp = new THREE.Group(), lampBead = new THREE.MeshBasicMaterial({ color: 0xffc56e, fog: false }),
+    lampHalo = new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(halo), fog: false, transparent: true, opacity: 0.6, blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false });
+  const glowSprite = new THREE.Sprite(lampHalo); glowSprite.scale.setScalar(1.2);
+  garyLamp.add(new THREE.Mesh(new THREE.SphereGeometry(0.09, 8, 6), lampBead), glowSprite);
+  garyLamp.visible = false;
+  group.add(garyLamp);
+  let shrieks = 0; // how many times something has shrieked in the dark (ambience.ts plays each new one)
   function walkGary(dt: number, open: ReadonlySet<number>) {
+    garyLamp.visible = !!gary;
     if (!gary) return;
     const g = gary;
     g.t += dt;
+    if (g.out !== undefined) {
+      // Taken: the lantern sputters where it fell, then the dark has him.
+      g.out += dt;
+      const k = lantern(g.out);
+      lampBead.color.setHex(0xffc56e).multiplyScalar(k); lampHalo.opacity = 0.6 * k;
+      if (g.out >= LANTERN_OUT) { g.b.dispose(); gary = null; garyLamp.visible = false; lampBead.color.setHex(0xffc56e); lampHalo.opacity = 0.6; }
+      return;
+    }
     while (g.said < GARY.length && g.t >= GARY[g.said]![0]) toast(`${icon("message-circle")} ${esc(GARY[g.said++]![1].replace("{it}", g.it))}`);
     if (g.t >= 17 && !g.to) { const c = stalkerNear(open), a = c ? Math.atan2(c.z - g.z, c.x - g.x) : facing + Math.PI / 2; g.to = { x: g.x + Math.cos(a) * 90, z: g.z + Math.sin(a) * 90 }; }
     // Beside you until he sees it; then off into the dark at a jog.
     const tx = g.to ? g.to.x : me.x + Math.cos(facing + Math.PI / 2) * 3, tz = g.to ? g.to.z : me.z + Math.sin(facing + Math.PI / 2) * 3;
     const dx = tx - g.x, dz = tz - g.z, d = Math.hypot(dx, dz), step = Math.min(d, dt * (g.to ? 3.5 : 7));
     if (d > 0.05) { g.x += (dx / d) * step; g.z += (dz / d) * step; }
-    g.b.update(g.x, standY(g.x, g.z), g.z, d > 0.05 ? Math.atan2(dz, dx) : facing);
+    const head = d > 0.05 ? Math.atan2(dz, dx) : facing;
+    g.b.update(g.x, standY(g.x, g.z), g.z, head);
+    garyLamp.position.set(g.x - Math.sin(head) * 0.35, standY(g.x, g.z) + HEIGHT * 0.62 + Math.abs(Math.sin(g.t * 5)) * 0.04, g.z + Math.cos(head) * 0.35);
     if (g.to && (Math.hypot(g.x - me.x, g.z - me.z) > 55 || g.t > 40)) {
-      g.b.dispose(); gary = null;
+      g.out = 0; shrieks++;
       toast(`${icon("triangle-alert")} A shriek out in the dark. Gary's lantern goes out. Run: back to the lights.`);
       if (safeD > 0) dread = Math.max(dread, 0.5);
     }
@@ -1589,7 +1613,7 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
     /** While on, walking into a wild one starts no fight (they still roam): for a measured walk, scripts/walk-budget.ts. */
     peace(on: boolean) { peace = on; },
     /** What is round you, for the soundscape (src/world/ambience.ts). */
-    ambient: (): Ambient => ({ wind: wind(clock), rain: W.rain + W.snow * 0.2, night: L.night, birds: life.birds, flush: life.flushed, water: clamp(riverAt(me.x, me.z) * 2.5, 0, 1) }),
+    ambient: (): Ambient => ({ wind: wind(clock), rain: W.rain + W.snow * 0.2, night: L.night, birds: life.birds, flush: life.flushed, shrieks, water: clamp(riverAt(me.x, me.z) * 2.5, 0, 1) }),
     state: () => {
       const g = regionN(me.region), open = openRegions(beaten);
       return { region: g.n, name: g.name, tier: g.tier, x: +me.x.toFixed(1), z: +me.z.toFixed(1), explored: +explored(seen, g.n).toFixed(3),
@@ -1598,7 +1622,7 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
         ground: { loaded: stream.loaded(), tiles: landStats(), patches: { near: near.at, mid: mid.at, far: far.at, dirty: [near.dirty, mid.dirty, far.dirty], lift: +lf(me.x, me.z).toFixed(3), water: +waterLevel(me.x, me.z).toFixed(2), ground: +fineY(me.x, me.z).toFixed(2), drawn: +groundY(me.x, me.z).toFixed(2) } }, section: trekAt.band, wilds: [...roamers.values()].map(({ c }) => ({ id: c.id, level: c.level, x: +c.x.toFixed(1), z: +c.z.toFixed(1) })),
         bearer: bearer && { id: bearer.id, colour: bearer.colour, trail: bearer.stones, gait: bearer.gait }, friends: [...friends].map(([id, o]) => ({ id, colour: o.b.colour, trail: o.b.stones, team: o.team.map((t) => t.c.id) })),
         plants: plants.spots, far: plants.far, tufts: plants.tufts, litter: litter.pieces, motes: life.motes, wading: waterLevel(me.x, me.z) - fineY(me.x, me.z) > WADE_DEPTH, gait, depth: +(waterLevel(me.x, me.z) - fineY(me.x, me.z)).toFixed(2),
-        night: tonight && { night: tonight.night, houses: tonight.houses.map((h) => h.id), paths: tonight.paths.length, boss: tonight.boss, safe: +safeD.toFixed(1), dread: +dread.toFixed(2), stalker: stalker?.id ?? null, lamps: lamp[0].count, gary: gary && { t: +gary.t.toFixed(1), x: +gary.x.toFixed(1), z: +gary.z.toFixed(1), off: !!gary.to } },
+        night: tonight && { night: tonight.night, houses: tonight.houses.map((h) => h.id), paths: tonight.paths.length, boss: tonight.boss, safe: +safeD.toFixed(1), dread: +dread.toFixed(2), stalker: stalker?.id ?? null, lamps: lamp[0].count, gary: gary && { t: +gary.t.toFixed(1), x: +gary.x.toFixed(1), z: +gary.z.toFixed(1), off: !!gary.to, lantern: +lantern(gary.out ?? -1).toFixed(2) } },
         day: { hour: +L.hour.toFixed(2), dark, shelter: shelter?.id ?? null, wind: +wind(clock).toFixed(2), rain: +W.rain.toFixed(2), snow: +W.snow.toFixed(2), mist: +W.mist.toFixed(2) }, life: life.state(), places: places.state(g.n), hunts: places.hunts(g.n),
         town: inside && { id: inside.t.id, name: inside.t.name, x: +inside.at.x.toFixed(2), z: +inside.at.z.toFixed(2), room: roomAt(inside.at)?.id ?? null, near: inside.near, board: BOARD.read, people: inside.t.people.map((p) => ({ id: p.id, who: p.who, ...p.at })) },
         sailing, ports: ports.map((p) => ({ id: p.p.id, x: p.slip.x, z: p.slip.z, d: +Math.hypot(me.x - p.slip.x, me.z - p.slip.z).toFixed(1) })),

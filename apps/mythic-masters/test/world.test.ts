@@ -8,7 +8,7 @@ import { inSeason, NIGHT, tierOf, TIERED, TIER_LEVEL } from "../src/tiers.ts";
 import { holds } from "../src/net/dens.ts";
 import type { Gait } from "../src/world/world.ts";
 import { lightFire, POIS, shelterAt, SHELTER_R } from "../src/world/poi.ts";
-import { BOSS_EVERY, CATCH_FAR, CATCH_NEAR, DARK_LEN, GAP, HOUSES, SWEEP, glow, lightsNear, nightOf, safePaths, stalk, toSafety } from "../src/world/night.ts";
+import { BOSS_EVERY, CATCH_FAR, CATCH_NEAR, DARK_LEN, GAP, HOUSES, LANTERN_OUT, SWEEP, glow, lantern, lightsNear, nightOf, safePaths, stalk, toSafety } from "../src/world/night.ts";
 import { DAY } from "../src/world/nature.ts";
 import { arenaOf, groundFrom, buildWorld, CELL, cell, COLS, detailAt, dry, explore, explored, heightAt, meet, NIGHT_MEET_R, newSeen, openRegions, opensRoadTo, OWNER, refine, ROWS, spawn, STEP, walk, wildsNear, type WalkEvent, type Walker } from "../src/world/world.ts";
 
@@ -209,6 +209,15 @@ describe("safe paths at night", () => {
     expect(Math.min(...ahead)).toBeLessThan(1);
     expect(Math.max(...ahead)).toBe(1);
     for (const [, , k, at] of lightsNear(calm, ...calm.paths[0]!.pts[0]!, 200)) expect(glow(calm, calm.paths[k]!, at, t0)).toBe(1);
+  });
+
+  test("the first night: Gary's lantern burns while he walks, catches and dies a few times when he's taken, then stays dark", () => {
+    expect(lantern(-1)).toBe(1);
+    const out = Array.from({ length: Math.ceil(LANTERN_OUT * 20) }, (_, k) => lantern(k / 20));
+    expect(out.filter((k) => k === 0).length).toBeGreaterThan(3); // it gutters,
+    expect(out.slice(out.indexOf(0)).some((k) => k > 0.3)).toBe(true); // catches again,
+    expect(lantern(LANTERN_OUT)).toBe(0); // and is out for good
+    expect(lantern(LANTERN_OUT + 5)).toBe(0);
   });
 
   test("a night path keeps to dry ground: round a river and a bay, not through them", async () => {
