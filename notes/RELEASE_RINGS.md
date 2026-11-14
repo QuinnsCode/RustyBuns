@@ -31,6 +31,7 @@ Saved builds (#4497): each hourly smoke row keeps the binary it built as the Act
 5. Trim `apps.yml`: the all-apps sweep on `packages/` moves to hourly, after 1-4 have run clean for a week.
 6. Daily workflow: pick the soaked commit, `builder-nightly`, phone smoke, previews.
 7. Stable: Monday pick, release notes from squash titles, one `MANUAL RUN:` taste issue, owner pushes the `v` tag.
+   Built: `stable.yml` runs `scripts/stable.ts` (#4494); it picks nothing until the daily ring writes `ring/daily`.
 
 Open: soak lengths (3 hours / 3 days), whether daily auto-deploys previews, a hotfix lane past soak, and whether
 "Ringo" (moves pointers, writes notes) is its own helper or a job inside Ester.
