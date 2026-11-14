@@ -20,7 +20,9 @@ const BASE = `
 .eq input,.eq select,.eq textarea{width:100%;max-width:none;min-height:36px;padding:7px 10px;border:var(--ui-border) solid var(--ui-line);border-radius:var(--ui-radius-sm);background:var(--ui-soft);color:var(--ui-ink);font:inherit}
 .eq textarea{resize:vertical}.eq ::placeholder{color:var(--ui-dim);opacity:1}
 .eq-chip{display:inline-flex;align-items:center;gap:8px}.eq-chip:has(.eq-note){flex-wrap:wrap}.eq-chip .eq-btn{min-height:30px;min-width:30px}
-.eq-chip.in{width:fit-content;max-width:100%;box-shadow:var(--ui-shadow);padding:2px 2px 2px 10px;border:var(--ui-border) solid var(--ui-line);border-radius:var(--ui-radius-sm);background:var(--ui-bg)}
+.eq-chip.in{width:fit-content;max-width:100%;box-shadow:var(--ui-shadow);padding:2px 2px 2px 5px;border:var(--ui-border) solid var(--ui-line);border-radius:var(--ui-radius-sm);background:var(--ui-bg)}
+:where(.eq-chip){position:relative}
+.eq-fold{display:inline-flex;flex:none;padding:0;margin:0;border:0;border-radius:5px;background:none;cursor:pointer}.eq-fold:focus-visible{outline:3px solid var(--ui-accent);outline-offset:2px}
 .eq-who{font-family:var(--ui-font-head);font-weight:700;max-width:12em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .eq-note{flex-basis:100%;margin:0;color:var(--ui-dim);font-size:12px}
 .rb-report{position:fixed;right:max(12px,env(safe-area-inset-right));bottom:max(12px,env(safe-area-inset-bottom));z-index:2147483000;display:grid;justify-items:end;gap:6px}
@@ -39,19 +41,21 @@ const BASE = `
 @keyframes eq-in{from{opacity:0;transform:translateY(-12px)}}
 .eq-head{display:flex;align-items:center;justify-content:space-between;gap:10px}.eq-head .eq-title{flex:1}.eq-head .eq-btn{min-height:30px;min-width:30px}
 .eq-toast .eq-badge{align-self:flex-start;margin-left:4px}
-@media (prefers-reduced-motion:reduce){.eq-toast,.eq-coach{animation:none}}
+.eq-btn.done svg{animation:eq-lit .3s cubic-bezier(.3,1.6,.5,1)}
+@keyframes eq-rise{from{opacity:0;transform:translateY(6px)}}@keyframes eq-lit{from{opacity:.3;transform:scale(.3)}}
+@media (prefers-reduced-motion:reduce){.eq-toast,.eq-coach,.rb-lobby,.rb-lobby-m.lit::before,.eq-btn.done svg{animation:none}}
 .eq-coach{position:fixed;left:0;right:0;margin:0 auto;top:72px;z-index:2147482999;display:grid;gap:4px;width:min(380px,calc(100vw - 32px));padding:10px 14px;border:var(--ui-border) solid var(--ui-line);border-radius:var(--ui-radius);background:var(--ui-toast-bg);color:var(--ui-toast-ink);box-shadow:var(--ui-shadow),inset 3px 0 0 var(--ui-accent);pointer-events:none;animation:eq-in .3s ease-out}
 .eq-coach small{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--ui-accent)}.eq-coach b{font:700 16px/1.25 var(--ui-font-head)}
 .eq-coach p{margin:0;font-size:13px;opacity:.85}.eq-coach kbd{display:inline-block;min-width:1.7em;margin-right:3px;padding:0 5px;border:var(--ui-border) solid var(--ui-line);border-bottom-width:2px;border-radius:5px;background:var(--ui-soft);font:600 12px/1.6 var(--ui-font);text-align:center}
 .eq-coach-dots{position:absolute;right:14px;top:12px;display:flex;gap:4px}.eq-coach-dots i{width:7px;height:7px;border-radius:50%;background:var(--ui-line)}.eq-coach-dots i.on{background:var(--ui-accent)}.eq-coach-dots i.now{background:var(--ui-ink)}
 .eq-coach-done{transition:opacity .4s 1.2s;opacity:0}
 @media (hover:none) and (pointer:coarse){.eq-coach kbd{display:none}}
-.rb-lobby{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:10px 12px;border:var(--ui-border) solid var(--ui-line);border-radius:var(--ui-radius);background:var(--ui-bg);box-shadow:var(--ui-shadow)}
+.rb-lobby{animation:eq-rise .28s cubic-bezier(.2,.7,.2,1);display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:10px 12px;border:var(--ui-border) solid var(--ui-line);border-radius:var(--ui-radius);background:var(--ui-bg);box-shadow:var(--ui-shadow)}
 .rb-lobby[hidden]{display:none}.rb-lobby-who{flex:1 1 100%;min-width:0;line-height:1.7}
 .rb-lobby-code{display:inline-block;padding:0 5px 0 7px;border:var(--ui-border) solid var(--ui-line);border-radius:var(--ui-radius-sm);background:var(--ui-soft);font:700 13px/1.5 var(--ui-font);letter-spacing:.14em}
 .rb-lobby-m{font-weight:700;white-space:nowrap}.rb-lobby-m small{font-size:12px;font-weight:400;color:var(--ui-dim)}
 .rb-lobby-m::before{content:"";display:inline-block;width:8px;height:8px;margin-right:5px;border-radius:50%;box-shadow:inset 0 0 0 1.5px var(--ui-dim);vertical-align:1px}
-.rb-lobby-m.ready::before,.rb-lobby-m.host::before{background:var(--ui-accent);box-shadow:none}.rb-lobby-note{color:var(--ui-dim)}
+.rb-lobby-m.ready::before,.rb-lobby-m.host::before{background:var(--ui-accent);box-shadow:none}.rb-lobby-m.lit::before{animation:eq-lit .34s cubic-bezier(.3,1.6,.5,1)}.rb-lobby-note{color:var(--ui-dim)}
 .rb-lobby-rules{flex:1 1 100%;display:grid;gap:6px;margin:0;padding:8px 0 0;border-top:var(--ui-border) solid var(--ui-line)}
 .rb-lobby-rules label,.rb-lobby-rules li{display:flex;gap:8px;align-items:center;justify-content:space-between;min-height:32px}
 .rb-lobby-rules ul{list-style:none;margin:0;padding:0}.rb-lobby-rules h3{margin:6px 0 0;font:700 13px/1.2 var(--ui-font-head);color:var(--ui-dim)}
@@ -135,6 +139,7 @@ export const ICONS = {
   trophy: svg('<path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/>'),
   x: svg('<path d="M18 6 6 18"/><path d="m6 6 12 12"/>'),
   copy: svg('<rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>'),
+  check: svg('<path d="M20 6 9 17l-5-5"/>'),
   flag: svg('<path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" x2="4" y1="22" y2="15"/>'),
   // The party lobby's Settings (./lobby.ts): the menu, and a member's mute-for-me, make host, take out and block.
   "sliders-horizontal": svg('<line x1="21" x2="14" y1="4" y2="4"/><line x1="10" x2="3" y1="4" y2="4"/><line x1="21" x2="12" y1="12" y2="12"/><line x1="8" x2="3" y1="12" y2="12"/><line x1="21" x2="16" y1="20" y2="20"/><line x1="12" x2="3" y1="20" y2="20"/><line x1="14" x2="14" y1="2" y2="6"/><line x1="8" x2="8" y1="10" y2="14"/><line x1="16" x2="16" y1="18" y2="22"/>'),
@@ -167,4 +172,17 @@ export function eqButton(o: { text: string; icon?: keyof typeof ICONS; show?: bo
   if (!o.icon || o.show) b.append(o.text);
   if (o.onClick) b.addEventListener("click", o.onClick);
   return b;
+}
+
+/**
+ * A button saying it worked: a check and `word` for a moment, then back to what it said. The work is already done; this
+ * only tells. Nothing runs in between but one timer.
+ */
+export function confirmed(b: HTMLButtonElement, word = "Copied", ms = 1400): void {
+  const was = [...b.childNodes], cls = b.className;
+  b.classList.remove("icon");
+  b.classList.add("done");
+  b.innerHTML = ICONS.check;
+  b.append(word);
+  setTimeout(() => { if (b.classList.contains("done")) { b.className = cls; b.replaceChildren(...was); } }, ms);
 }

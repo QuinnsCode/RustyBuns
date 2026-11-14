@@ -9,7 +9,7 @@
 // What happens on start is the page's own. The box wears the page's eqosys skin (./skin.ts); where it sits is the page's.
 import type { PartyMember, hub, party } from "./eqosys.ts";
 import { BLOCKS, CHAT, INVITE, JOINS, LIVES, may, MUTE, READY, REPORT, RULE_TEXT, type PartyRules } from "./party-rules.ts";
-import { eqButton, wearSkin } from "./skin.ts";
+import { confirmed, eqButton, wearSkin } from "./skin.ts";
 import { el } from "./dom.ts";
 
 export interface LobbyPanel {
@@ -96,11 +96,14 @@ export function signInToJoin({ box, code, game, account, joined, host = typeof l
  * clipboard says no).
  */
 export function friendLinkButton(h: ReturnType<typeof hub>, say: (note: string) => void): HTMLButtonElement {
-  return eqButton({ text: "Copy friend link", icon: "copy", show: true, onClick: async () => {
+  const b = eqButton({ text: "Copy friend link", icon: "copy", show: true, onClick: async () => {
     const got = await h.friendLink();
     if (!got) return say("eqosys didn't hand out your friend link just now. Try again.");
-    say(await navigator.clipboard?.writeText(got).then(() => "Friend link copied: whoever opens it and presses Be friends is your friend", () => `Your friend link: ${got}`) ?? `Your friend link: ${got}`);
+    const copied = await navigator.clipboard?.writeText(got).then(() => true, () => false);
+    if (copied) confirmed(b);
+    say(copied ? "Friend link copied: whoever opens it and presses Be friends is your friend" : `Your friend link: ${got}`);
   } });
+  return b;
 }
 
 /** Join the party and keep `box` showing it. Returns a function that leaves and hides the box. */
@@ -108,6 +111,8 @@ export function lobbyPanel({ code, box, party: p, name, link, onStart, say, hub:
   let members: PartyMember[] = [], note = "", rules: PartyRules | null = null, blocked: { id: string; name: string }[] = [], open = false;
   /** The key Copy link carries: eqosys hands it to members the `invite` rule lets invite, and to nobody else. */
   let key = "";
+  /** Who was ready (or host) at the last draw, so a dot that just lit pops once and no other draw replays it. */
+  let lit: Set<string> | null = null;
   /** Who this page quieted for the whole party, so the button reads right (the party says no more than a refusal). */
   const quiet = new Set<string>();
   wearSkin();
@@ -172,12 +177,15 @@ export function lobbyPanel({ code, box, party: p, name, link, onStart, say, hub:
   const draw = () => {
     const mine = members.find((m) => m.name === name());
     // Reads "Party KRTZ: Ada (host), Grace ready" as text; each member is its own mark, a lit dot once ready (the host always is).
-    const list = members.length ? members.flatMap((m, i) => [...(i ? [", "] : []), el("span", { className: `rb-lobby-m${m.host ? " host" : m.ready ? " ready" : ""}` }, m.name, ...(m.host || m.ready ? [el("small", {}, m.host ? " (host)" : " ready")] : []))]) : ["joining..."];
+    const on = new Set(members.filter((m) => m.host || m.ready).map((m) => m.id)), was = lit;
+    lit = members.length ? on : null;
+    const list = members.length ? members.flatMap((m, i) => [...(i ? [", "] : []), el("span", { className: `rb-lobby-m${m.host ? " host" : m.ready ? " ready" : ""}${was && on.has(m.id) && !was.has(m.id) ? " lit" : ""}` }, m.name, ...(m.host || m.ready ? [el("small", {}, m.host ? " (host)" : " ready")] : []))]) : ["joining..."];
+    const copy = eqButton({ text: "Copy link", onClick: () => void navigator.clipboard?.writeText(withInvite(link(), key, name())).then(() => { confirmed(copy); say?.("Link copied"); }, () => {}) });
     box.replaceChildren(
       el("div", { className: "rb-lobby-who" }, "Party ", el("b", { className: "rb-lobby-code" }, code), ": ", ...list, ...(note ? [el("span", { className: "rb-lobby-note" }, ` - ${note}`)] : [])),
       mine?.host ? eqButton({ text: "Start", primary: true, onClick: () => p.start() }) : eqButton({ text: mine?.ready ? "Not ready" : "Ready", primary: !mine?.ready, onClick: () => p.ready(!mine?.ready) }),
       // Inviting is the host's alone when the rules say so: then the key is theirs alone, and they can retire it.
-      ...(key && rules && may(rules.invite, !!mine?.host) ? [eqButton({ text: "Copy link", onClick: () => void navigator.clipboard?.writeText(withInvite(link(), key, name())).then(() => say?.("Link copied"), () => {}) })] : []),
+      ...(key && rules && may(rules.invite, !!mine?.host) ? [copy] : []),
       ...(mine?.host && rules?.invite === "host" ? [eqButton({ text: "New link: the ones handed out stop working", icon: "refresh-cw", onClick: () => { p.relink(); note = "New link made: copy it again"; draw(); } })] : []),
       ...(h ? [friendLinkButton(h, (n) => { note = n; draw(); })] : []),
       eqButton({ text: open ? "Close settings" : "Settings", icon: "sliders-horizontal", onClick: () => { open = !open; draw(); } }),

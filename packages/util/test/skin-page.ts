@@ -53,3 +53,6 @@ const space = {
   history: noop, close: noop, say: noop, leave: noop, inVoice: noop, talk: noop, drop: noop, channel: noop, mute: noop, kick: noop, report: noop, make: noop,
 } as unknown as Parameters<typeof spacesPanel>[0]["space"];
 spacesPanel({ box: column.appendChild(document.createElement("div")), space, name: () => "Ada", icon, start: "s1" });
+
+// For skin.test.ts: a member's change, as the party would send it.
+Object.assign(window, { members: members.fire });

@@ -69,8 +69,8 @@ test.skipIf(!chromePath())("the eqosys badge looks the same in Two Fronts, Mythi
     const tab = await openTab(chrome!.cdp, { w: 1024, h: 700 });
     await tab.call("Emulation.setEmulatedMedia", { features: [{ name: "prefers-reduced-motion", value: "reduce" }] });
     await load(chrome!.cdp, tab, `http://127.0.0.1:${server.port}/${query}`, 300);
-    const got = await tab.eval<unknown[]>(`[".rb-report .eq-badge", ".eq-toast .eq-badge"].map((sel) => {
-      const look = (el, keys) => { const s = getComputedStyle(el), r = el.getBoundingClientRect(); return [Math.round(r.width), Math.round(r.height), ...keys.map((k) => s[k])]; };
+    const got = await tab.eval<unknown[]>(`[".rb-report .eq-badge", ".eq-toast .eq-badge", ".eq-chip .eq-badge"].map((sel) => {
+      const look = (el, keys) => { const s = getComputedStyle(el); return [el.offsetWidth, el.offsetHeight, ...keys.map((k) => s[k])]; };
       const b = document.querySelector(sel);
       return [look(b, ["borderRadius", "boxShadow", "opacity"]), look(b.querySelector("b"), ["backgroundImage", "color", "fontFamily", "fontSize", "fontWeight", "letterSpacing", "textTransform"]), look(b.querySelector("i"), ["filter"])];
     })`);
@@ -78,7 +78,8 @@ test.skipIf(!chromePath())("the eqosys badge looks the same in Two Fronts, Mythi
     return got;
   };
   const house = await badges("?house");
-  expect(house[0]).toEqual(house[1]);
+  expect(house[1]).toEqual(house[0]);
+  expect(house[2]).toEqual(house[0]);
   for (const game of ["two-fronts", "mythic-masters", "skate-tech-park"]) expect({ game, badge: await badges(`?game=${game}`) }).toEqual({ game, badge: house });
 });
 
@@ -110,4 +111,44 @@ test.skipIf(!chromePath())("the Report button is a small flag at phone width, wo
   expect(phone.closed).toBe(true);
   const desk = await corner(1024, 700);
   expect(desk.button[2]! - desk.button[0]!).toBeGreaterThan(60);
+});
+
+// The chip folds into its badge and back, the parts gliding over a state that already changed; a lobby member's dot pops
+// once as they turn ready. All of it is done moving a moment later, and under reduced motion nothing moves at all.
+test.skipIf(!chromePath())("the chip folds into its badge and back, a dot lights as someone turns ready, and nothing keeps moving", async () => {
+  const run = async (reduce: boolean) => {
+    const tab = await openTab(chrome!.cdp, { w: 390, h: 844 }, true);
+    await tab.call("Emulation.setEmulatedMedia", { features: [{ name: "prefers-reduced-motion", value: reduce ? "reduce" : "no-preference" }] });
+    await load(chrome!.cdp, tab, `http://127.0.0.1:${server.port}/?game=skate-tech-park&closed`, 300);
+    const got = await tab.eval<Record<string, unknown>>(`(async () => {
+      const chip = document.querySelector(".eq-chip"), parts = () => [...chip.querySelectorAll("[data-part]")].map((p) => p.dataset.part).join(" ");
+      const moving = (el) => el.getAnimations({ subtree: true }).filter((a) => a.playState === "running" && a.effect.getTiming().iterations !== Infinity).length;
+      const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+      const open = parts();
+      chip.querySelector(".eq-fold").click();
+      const folded = { parts: parts(), expanded: chip.querySelector(".eq-fold").getAttribute("aria-expanded"), frame: chip.classList.contains("in"), kept: localStorage.getItem("eq.chip.folded"), moving: moving(chip) };
+      await wait(450);
+      const settled = moving(chip) + chip.querySelectorAll(":scope > :not([data-part])").length;
+      chip.querySelector(".eq-fold").click();
+      const back = { parts: parts(), frame: chip.classList.contains("in"), kept: localStorage.getItem("eq.chip.folded") };
+      members([{ id: "a", name: "Ada", host: true, ready: true }, { id: "b", name: "Grace", host: false, ready: false }]);
+      members([{ id: "a", name: "Ada", host: true, ready: true }, { id: "b", name: "Grace", host: false, ready: true }]);
+      const lit = [...document.querySelectorAll(".rb-lobby-m.lit")].map((m) => m.firstChild.textContent);
+      await wait(450);
+      const still = moving(document.querySelector(".rb-lobby")) + moving(chip);
+      // Folded, then signed out: Sign in still shows beside the badge, which is only a mark there.
+      localStorage.setItem("eq.chip.folded", "1");
+      chip.querySelector("[data-part=act]").click();
+      const out = { parts: parts(), folds: !!chip.querySelector(".eq-fold"), word: chip.querySelector("[data-part=act]")?.textContent };
+      localStorage.removeItem("eq.chip.folded");
+      return { open, folded, settled, back, lit, still, out };
+    })()`);
+    await tab.close();
+    return got;
+  };
+  const moved = await run(false);
+  expect(moved).toMatchObject({ open: "badge who act", folded: { parts: "badge", expanded: "false", frame: true, kept: "1" }, settled: 0, back: { parts: "badge who act", frame: true, kept: null }, lit: ["Grace"], still: 0, out: { parts: "badge act", folds: false, word: "Sign in" } });
+  expect((moved.folded as { moving: number }).moving).toBeGreaterThan(0);
+  const calm = await run(true);
+  expect((calm.folded as { moving: number }).moving).toBe(0);
 });

@@ -12,6 +12,7 @@ import { getJson } from "./http.ts";
 import { connectSocket, type Link } from "./socket.ts";
 import { mountReportButton, sendReport, type ReportIn, type Sent } from "./report.ts";
 import { eqBadge, eqButton, wearSkin, ICONS, type Skin } from "./skin.ts";
+import { EASE, morph, pop } from "./morph.ts";
 import { peek } from "./token.ts";
 import { PartyRules } from "./party-rules.ts";
 
@@ -287,27 +288,57 @@ export function eqosys({ app, url, from, prefix, skin }: EqosysConfig) {
   const hubClient = () => hub({ url: eqosysUrl, token });
 
   /**
-   * The account chip, in `slot`: the eqosys name and a way out, a way in where eqosys can send the player back, or nothing.
-   * `note` is what went wrong coming back from eqosys; `onSignOut` runs after signing out (a page that must reload, say).
+   * The account chip, in `slot`: the eqosys badge, then the eqosys name and a way out, or a way in where eqosys can send the
+   * player back; nothing where it can't. The badge folds the rest away into itself and back (kept for the next page), and
+   * each change folds the parts into place over the new state (./morph.ts). `note` is what went wrong coming back from
+   * eqosys; `onSignOut` runs after signing out (a page that must reload, say).
    */
   function accountChip(slot: HTMLElement, o: { note?: string; onSignOut?: () => void; /** Given, "Sign in" opens eqosys beside the page (`signInHere`) and this hears the login; the page never reloads. */ onSignIn?: (login: Login) => void } = {}): HTMLElement {
     wearSkin();
-    const who = login();
-    slot.classList.add("eq", "eq-chip");
-    slot.classList.toggle("in", !!who);
-    slot.replaceChildren();
-    if (who) slot.append(Object.assign(document.createElement("span"), { className: "eq-who", textContent: who.name, title: who.email }), eqButton({ text: "Sign out", icon: "log-out", onClick: () => { signOut(); accountChip(slot, { onSignOut: o.onSignOut, onSignIn: o.onSignIn }); o.onSignOut?.(); } }));
-    else if (canSignIn()) slot.append(eqButton({ text: "Sign in", icon: "log-in", show: true, onClick: () => {
+    // Only a signed-in chip folds: signed out, the badge is just the mark and Sign in always shows beside it.
+    const who = login(), can = !!who || canSignIn(), folded = !!who && chipFolded(), again = { ...o, note: undefined };
+    const part = <E extends HTMLElement>(name: string, e: E) => { e.dataset.part = name; return e; };
+    const parts: HTMLElement[] = [];
+    if (can && !who) parts.push(part("badge", eqBadge()));
+    else if (who) {
+      const fold = part("badge", Object.assign(document.createElement("button"), { type: "button", className: "eq-fold", title: folded ? `${who.name} on eqosys` : "Fold eqosys away" }));
+      fold.setAttribute("aria-label", folded ? "Show eqosys" : "Fold eqosys away");
+      fold.setAttribute("aria-expanded", String(!folded));
+      fold.append(eqBadge());
+      fold.addEventListener("click", () => {
+        const had = document.activeElement === fold;
+        foldChip(!folded);
+        accountChip(slot, again);
+        const b = slot.querySelector<HTMLElement>(".eq-fold");
+        if (b) { if (had) b.focus(); pop(b); }
+      });
+      parts.push(fold);
+    }
+    if (folded) { /* the badge alone */ }
+    else if (who) parts.push(part("who", Object.assign(document.createElement("span"), { className: "eq-who", textContent: who.name, title: who.email })), part("act", eqButton({ text: "Sign out", icon: "log-out", onClick: () => { signOut(); accountChip(slot, again); o.onSignOut?.(); } })));
+    else if (can) parts.push(part("act", eqButton({ text: "Sign in", icon: "log-in", show: true, onClick: () => {
       const hear = o.onSignIn;
       if (!hear) return void signIn();
       void signInHere().then((r) => { accountChip(slot, { ...o, note: r.error }); if (r.login) hear(r.login); });
-    } }));
-    if (o.note) slot.append(Object.assign(document.createElement("small"), { className: "eq-note", textContent: o.note }));
+    } })));
+    if (o.note) parts.push(part("note", Object.assign(document.createElement("small"), { className: "eq-note", textContent: o.note })));
+    // Sign in turning into Sign out (or back): the arrow turns over as the button settles.
+    const turn = (el: HTMLElement) => el.querySelector("svg")?.animate([{ transform: "rotate(-180deg) scale(.5)", opacity: 0.2 }, { transform: "none", opacity: 1 }], { duration: 320, easing: EASE });
+    morph(slot, () => {
+      slot.classList.add("eq", "eq-chip");
+      slot.classList.toggle("in", !!who);
+      slot.replaceChildren(...parts);
+    }, { home: "badge", swapped: turn });
     return slot;
   }
 
   return { signIn, signInHere, finishSignIn, login, fresh, signOut, who, eqosysUrl, canSignIn, accountChip, report, reportButton, party: partyClient, space: spaceClient, hub: hubClient, achieve, achievements, sendHeld, celebrate };
 }
+
+/** Whether the account chip is folded into its badge: one choice for every game on this site. */
+const FOLD = "eq.chip.folded";
+const chipFolded = (): boolean => { try { return localStorage.getItem(FOLD) === "1"; } catch { return false; } };
+const foldChip = (on: boolean) => { try { if (on) localStorage.setItem(FOLD, "1"); else localStorage.removeItem(FOLD); } catch { /* private window: this page only */ } };
 
 /**
  * A guest's secret id for a game's rooms, kept under `key`: in localStorage, so the browser comes back as the same
