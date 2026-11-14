@@ -31,7 +31,8 @@ import { esc } from "@rustybuns/util";
 import { addCommands } from "@rustybuns/util/commands";
 import { mountPalette } from "@rustybuns/util/palette";
 import { tutorial } from "@rustybuns/util/tutorial";
-import { accountChip, achieve, achievements, canSignIn, finishSignIn, login, reportButton, signIn } from "./eqosys.ts";
+import { accountChip, achieve, achievements, canSignIn, finishSignIn, login, reportButton, signInHere } from "./eqosys.ts";
+import { invitedBy, signInToJoin } from "@rustybuns/util/lobby";
 import { joinParty, mountSpaces, openParty, partyIn } from "./friends.ts";
 import { jumpSpec, parseJump, parseOrbit, parseWar, sectorOf, type Jump } from "./jump.ts";
 import { armyOrder, armySources, armyTargets, buildSites, deployMost, deployOrder, deploySources, deployTargets, fleetOrder, matchup, most, shipSources, shipTargets, skyOver, transportsFor, type ArmyCall } from "./war/calls.ts";
@@ -796,7 +797,7 @@ function chooseGame(first = false) {
     ${first ? "" : `<button type="button" id="close" class="link">Keep playing</button>`}`);
   void showWars();
   // Who you are, on the title as in the panel: your eqosys name with Sign out, or Sign in.
-  $("modal-body").querySelector("header.crest")?.append(accountChip(Object.assign(document.createElement("span"), { className: "account" }), { onSignOut: () => chooseGame(first) }));
+  $("modal-body").querySelector("header.crest")?.append(accountChip(Object.assign(document.createElement("span"), { className: "account" }), { onSignOut: () => chooseGame(first), onSignIn: () => chooseGame(first) }));
 }
 
 /** Signed in, the online wars your eqosys account sits in, from any device: each opens your seat on this one. */
@@ -824,23 +825,27 @@ async function openMine(id: string) {
   }
 }
 
-/** "With friends": signed in, a party for the war picked here; signed out, eqosys's sign-in first. */
+/** "With friends": signed in, a party for the war picked here; signed out, eqosys's sign-in beside the table first. */
 async function withFriends() {
-  if (!login()) return void signIn();
+  if (!login()) return void signInHere().then((r) => { if (r.login) void withFriends(); else if (r.error) flash(r.error); });
   const galaxy = (document.querySelector<HTMLInputElement>('input[name="galaxy"]:checked')?.value ?? "short") as GalaxyId;
   const side = (document.querySelector<HTMLInputElement>('input[name="side"]:checked')?.value ?? "marines") as Faction;
   if (!(await openParty(side, galaxy))) flash("eqosys didn't open a party just now. Sign in again, or try in a minute.");
 }
 
+/** Who sent the party link, read before boot tidies the address. */
+const partyFrom = invitedBy(location.search);
 /** A party link: the lobby (who is in, Ready, the host's Start), then this page's seat in the war it starts. */
 function showParty(p: NonNullable<ReturnType<typeof partyIn>>) {
   const signedIn = !!login();
   showModal(`<h2>${icon("user-plus", 18)} With friends</h2>
     <p>The ${FACTION_NAMES[p.side]} against the ${FACTION_NAMES[enemy(p.side)]}, ${GALAXIES[p.galaxy].name}. Whoever opened the party plays the ${FACTION_NAMES[p.side]}; the first friend in plays the other side.</p>
-    ${signedIn ? `<div id="party-lobby"></div>` : `<p class="small">Sign in with eqosys to join this party.</p><button type="button" id="party-sign-in" class="primary">${icon("log-in", 15)} Sign in</button>`}
+    <div id="party-lobby"></div>
     <button type="button" id="leave-party" class="link">Not now</button>`);
-  // eqosys sends players back to the page without its query, so the party rides along in `then` (boot reads it).
-  if (!signedIn) return void ($("party-sign-in").onclick = () => void signIn(`party${location.search}`));
+  $("leave-party").onclick = () => { history.replaceState(null, "", location.pathname); hideModal(); chooseGame(firstVisit); };
+  // Signed out: "Sign in to join Ada's party", eqosys beside the table, then this lobby. A blocked window goes the long
+  // way round, and eqosys sends players back without the query, so the party rides along in `then` (boot reads it).
+  if (!signedIn) return signInToJoin({ box: $("party-lobby"), code: p.code, host: partyFrom, game: "Two Fronts", account: { canSignIn, signInHere }, joined: () => showParty(p), then: `party${location.search}` });
   const leave = joinParty(p.code, $("party-lobby"), async ({ room, seat, ticket }) => {
     try {
       const got = await claimSeat(room, { seat, side: p.side, galaxy: p.galaxy, ...(ticket && { ticket }) });
@@ -1301,7 +1306,7 @@ function skirmish(wookaSide: boolean, mode: MatchMode = "conquest", jump?: Jump)
 $("restart").innerHTML = icon("rotate-ccw", 18);
 // Signed in through eqosys, the account's name shows in the panel's header with a way out (the shared chip, in the
 // war room's skin); otherwise a way in. Campaign seats are still secret links: the name is for show.
-$("restart").before(accountChip(Object.assign(document.createElement("span"), { className: "account" }), { onSignOut: () => location.reload() }));
+$("restart").before(accountChip(Object.assign(document.createElement("span"), { className: "account" }), { onSignOut: () => location.reload(), onSignIn: () => { spacesBtn.hidden = false; } }));
 // Signed in, Spaces (your eqosys groups, text and voice) sits beside the name.
 const spacesBtn = Object.assign(document.createElement("button"), { type: "button", className: "icon-btn spaces-btn" });
 $("restart").before(spacesBtn);

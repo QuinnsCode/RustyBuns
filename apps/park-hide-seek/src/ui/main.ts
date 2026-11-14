@@ -22,7 +22,8 @@ import { Controls } from "./controls.ts";
 import { Preview } from "./preview.ts";
 import { fromSearch, roleOf, Scenario, toSearch } from "../scenario.ts";
 import { joinParty, makeParty, partyCode, partyLink } from "./lobby.ts";
-import { achieve, achievements, canSignIn, finishSignIn, fresh, login, reportButton, signIn, signOut, type Login } from "./eqosys.ts";
+import { signInToJoin } from "@rustybuns/util/lobby";
+import { achieve, achievements, canSignIn, finishSignIn, fresh, login, reportButton, signIn, signInHere, signOut, type Login, type Returned } from "./eqosys.ts";
 import { LocalSession, NetSession, playerId, tabPlayerId, type Session } from "./session.ts";
 import { World3D } from "./world3d.ts";
 import { ZoneMap } from "./zonemap.ts";
@@ -151,7 +152,9 @@ function showLogin() {
   $("who-name").textContent = me?.name ?? "";
   $("signin").hidden = !!me || !canSignIn() || info?.app === "park-hide-seek";
 }
-$("signin").onclick = () => { keepName(); void signIn(inParty ? `party:${inParty}` : undefined); };
+/** Sign in through eqosys in a small window beside the game, then carry on with `then` (the page never reloads). */
+const signInBeside = (then = "") => { keepName(); void signInHere(then).then(carryOn); };
+$("signin").onclick = () => signInBeside(inParty ? `party:${inParty}` : "");
 $("signout").onclick = () => { signOut(); me = null; showLogin(); };
 /**
  * Who this tab is, for /api/match, /api/parks and /ws: the eqosys token when signed in, else `uid`. A token
@@ -182,16 +185,26 @@ let leaveParty: (() => void) | null = null;
   if (!desktop) $("play").title = "Jump into a game with whoever's on. AI fills the empty spots.";
   // Back from eqosys: keep the login, then carry on with what they were doing.
   const back = await finishSignIn();
+  if (!desktop && canSignIn()) reportButton();
+  if (carryOn(back)) return;
+  // A party link signed out: "Sign in to join Ada's party", eqosys beside the game, then the lobby.
+  const code = inParty;
+  if (!desktop && code) { if (me) openParty(code); else signInToJoin({ box: $("party"), code, game: "Park Hide & Seek", account: { canSignIn, signInHere }, joined: () => { me = login(); showLogin(); openParty(code); } }); }
+})();
+
+/** Back from eqosys (the whole page, or its window beside the game): keep the login, then carry on with what they were doing. */
+function carryOn(back: Returned | null): boolean {
   if (back?.error) menuError(back.error);
   if (back?.login) me = back.login;
   showLogin();
-  if (!desktop && canSignIn()) reportButton();
-  if (back?.login && back.then === "play") $("play").click();
-  else if (back?.login && back.then === "party") $("online").click();
-  else if (back?.login && back.then.startsWith("party:")) openParty(back.then.slice(6));
-  else if (back?.login && back.then.startsWith("room:")) goOnline(back.then.slice(5));
-  else if (!desktop && inParty) { if (me) openParty(inParty); else menuError("Sign in through eqosys to join this party."); }
-})();
+  if (!back?.login) return false;
+  if (back.then === "play") $("play").click();
+  else if (back.then === "party") $("online").click();
+  else if (back.then.startsWith("party:")) openParty(back.then.slice(6));
+  else if (back.then.startsWith("room:")) goOnline(back.then.slice(5));
+  else return false;
+  return true;
+}
 
 // ---- request a park ---------------------------------------------------------------
 
@@ -329,7 +342,7 @@ function openParty(code: string) {
   leaveParty = joinParty(code, $("party"), (r) => { leaveParty = null; goOnline(r, true); }, note);
 }
 $("online").onclick = async () => {
-  if (!me) { if (canSignIn()) { keepName(); void signIn("party"); } else menuError("Playing with friends needs an eqosys account."); return; }
+  if (!me) { if (canSignIn()) signInBeside("party"); else menuError("Playing with friends needs an eqosys account."); return; }
   const code = await makeParty();
   if (code) openParty(code); else menuError("Couldn't start a party just now. Sign in again, or try in a minute.");
 };

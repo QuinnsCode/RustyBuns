@@ -95,7 +95,7 @@ function readout(r: Run) {
 
 function showMenu(result?: Run, note = "") {
   levels.replaceChildren();
-  accountChip(account, { note });
+  accountChip(account, { note, onSignIn: () => {} }); // eqosys beside the menu; the chip redraws itself
   if (result) readout(result); else resultBox.replaceChildren();
   LEVELS.forEach((spec, i) => {
     const b = document.createElement("button");

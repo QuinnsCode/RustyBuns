@@ -148,7 +148,7 @@ How a person reaches their friends, from the easiest case to the hardest (owner,
   no email typed, nothing to accept. The press is theirs to make, so a page that sends a browser to somebody's link befriends nobody.
 - **Signing in beside the game.** `signInHere()` on the `eqosys()` client (and `accountChip` given `onSignIn`) opens eqosys in a
   small window. The page keeps running and keeps the PKCE verifier; the window comes back with the code, hands it over on a
-  same-origin BroadcastChannel and closes. A blocked window falls back to the whole-page trip. Games move to it one at a time: Mythic Masters first (#4418), whose party link signed out shows one "Sign in to join Ada's party" step and then the lobby.
+  same-origin BroadcastChannel and closes. A blocked window falls back to the whole-page trip. Every game that signs in through eqosys is on it (Mythic Masters first, #4418; the rest in #4419): its account chip signs in beside the game, and a party link opened signed out shows one "Sign in to join Ada's party" step (`signInToJoin` in @rustybuns/util/lobby, named by the link's `from`, which Copy link adds) and then the lobby, whose Copy friend link hands out `hub().friendLink()`.
 - **One account, several ways in.** The Account tab adds GitHub, Google or Apple to the account someone is signed in to, so the
   phone's Apple sign-in and the laptop's Google one open the same games, friends, saves and achievements.
 

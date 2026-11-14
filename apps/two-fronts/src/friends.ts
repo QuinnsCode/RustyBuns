@@ -10,7 +10,7 @@ import { spacesPanel, type SpaceIcon } from "@rustybuns/util/spaces";
 import type { Faction } from "./battle/contract.ts";
 import { FACTIONS } from "./war/rules.ts";
 import { GALAXIES, type GalaxyId } from "./war/galaxy.ts";
-import { fresh, login, party, space } from "./eqosys.ts";
+import { fresh, hub, login, party, space } from "./eqosys.ts";
 
 /** A party link's code and the war its host picked; null when the address isn't one. */
 export function partyIn(search: string): { code: string; side: Faction; galaxy: GalaxyId } | null {
@@ -32,7 +32,7 @@ export async function openParty(side: Faction, galaxy: GalaxyId): Promise<boolea
 
 /** Join the party and keep `box` showing it; the host's Start hands each page its room and seat. Returns leave. */
 export const joinParty = (code: string, box: HTMLElement, onStart: (s: { room: string; seat: number; ticket?: string }) => void) =>
-  lobbyPanel({ code, box, party: party(), name: () => login()?.name, link: () => location.href, onStart });
+  lobbyPanel({ code, box, party: party(), hub: hub(), name: () => login()?.name, link: () => location.href, onStart });
 
 const ICONS: Record<SpaceIcon, Parameters<typeof createElement>[0]> = {
   "arrow-left": ArrowLeft, "arrow-up": ArrowUp, plus: Plus, "log-in": LogIn, send: Send, copy: Copy, hash: Hash,

@@ -29,7 +29,7 @@ export const SKIN = {
 
 export type { Login } from "@rustybuns/util/eqosys";
 const account = eqosys({ app: APP, url: EQOSYS, from: SIGN_IN_FROM, prefix: "splat-spray", skin: SKIN });
-export const { signIn, finishSignIn, login, fresh, signOut, who, canSignIn, accountChip, reportButton, achieve, achievements } = account;
+export const { signIn, signInHere, finishSignIn, login, fresh, signOut, who, canSignIn, accountChip, reportButton, achieve, achievements, hub } = account;
 
 let partyClient: ReturnType<typeof account.party> | undefined;
 /** The page's one party client: eqosys seats a player once per party, so the lobby keeps one socket. */

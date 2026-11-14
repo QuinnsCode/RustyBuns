@@ -15,7 +15,8 @@ import { joinRoom, menu, panel, racers, secs, tabPlayerId, type Session } from "
 import { MatchReply, SpotSignup } from "./api.ts";
 import { obj, bool } from "@rustybuns/util/guard";
 import { tutorial } from "@rustybuns/util/tutorial";
-import { achieve, achievements, canSignIn, finishSignIn, login, reportButton, signIn, who } from "./eqosys.ts";
+import { achieve, achievements, canSignIn, finishSignIn, login, reportButton, signInHere, who } from "./eqosys.ts";
+import { signInToJoin } from "@rustybuns/util/lobby";
 import { joinParty, makeParty, partyCode, partyLink, partyReady, type Arrival } from "./party.ts";
 import { MATCH, type View } from "./match/game.ts";
 import { createElement, Hand, ScanLine } from "lucide";
@@ -356,7 +357,9 @@ function openParty(code: string) {
 }
 async function withFriends(code = partyCode(location.search)) {
   if (!login()) {
-    if (canSignIn()) void signIn(code ? `party:${code}` : "party"); else menuNote("Playing with friends needs an eqosys account, on the online version.");
+    // eqosys opens beside the game; a blocked window goes the long way round and comes back to `then`.
+    if (canSignIn()) void signInHere(code ? `party:${code}` : "party").then((r) => { if (r.login) void withFriends(code); else if (r.error) menuNote(r.error); });
+    else menuNote("Playing with friends needs an eqosys account, on the online version.");
     return;
   }
   if (code) return openParty(code);
@@ -675,7 +678,12 @@ void Promise.all([finishSignIn(), scannedRooms()]).then(([back, rooms]) => {
   // Back from signing in for a party, or opened from a friend's party link.
   const then = back?.login ? back.then : "";
   if (then === "party" || then.startsWith("party:")) void withFriends(then.slice(6) || null);
-  else if (partyCode(location.search)) { if (login()) void withFriends(); else menuNote("A friend's party: press With friends to sign in through eqosys and join it."); }
+  else {
+    // A friend's party link: signed out, "Sign in to join Ada's party", eqosys beside the game, then the lobby.
+    const code = partyCode(location.search);
+    if (code && login()) void withFriends(code);
+    else if (code) signInToJoin({ box: $("menu-party"), code, game: "Splat Spray", account: { canSignIn, signInHere }, joined: () => void withFriends(code) });
+  }
 });
 
 renderer.setAnimationLoop(() => {

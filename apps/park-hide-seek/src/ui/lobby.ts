@@ -3,7 +3,7 @@
 // What stays ours is the hunt's own lobby after that: the zone, mode and weather the host picks.
 import { lobbyPanel } from "@rustybuns/util/lobby";
 import { ROOM } from "../api.ts";
-import { login, party } from "./eqosys.ts";
+import { hub, login, party } from "./eqosys.ts";
 
 /** A party code in the page's address, or null. Qollab's codes are six letters, which is a valid room. */
 export const partyCode = (search: string) => {
@@ -20,5 +20,5 @@ export const makeParty = () => party().make();
 
 /** Show the party in `box` (members, Ready or Start, copy link) and call `go(room)` when the host starts. */
 export const joinParty = (code: string, box: HTMLElement, go: (room: string) => void, say: (note: string) => void) =>
-  lobbyPanel({ code, box, party: party(), name: () => login()?.name, link: () => partyLink(code), say,
+  lobbyPanel({ code, box, party: party(), hub: hub(), name: () => login()?.name, link: () => partyLink(code), say,
     onStart: (s) => { box.hidden = true; setTimeout(() => go(s.room), arriveIn(s.seat)); } });

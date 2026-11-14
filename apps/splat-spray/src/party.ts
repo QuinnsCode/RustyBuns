@@ -6,7 +6,7 @@
 import { lobbyPanel } from "@rustybuns/util/lobby";
 import { ROOM } from "./api.ts";
 import type { View } from "./match/game.ts";
-import { login, party } from "./eqosys.ts";
+import { hub, login, party } from "./eqosys.ts";
 
 /** A party code in the page's address, or null. Qollab's codes are six letters, which is a valid room. */
 export const partyCode = (search: string) => {
@@ -29,7 +29,7 @@ export function joinParty(code: string, box: HTMLElement, go: (a: Arrival) => vo
   const p = party();
   let count = 1;
   p.onMembers((m) => { count = Math.max(1, m.length); });
-  return lobbyPanel({ code, box, party: p, name: () => login()?.name, link: () => partyLink(code), say,
+  return lobbyPanel({ code, box, party: p, hub: hub(), name: () => login()?.name, link: () => partyLink(code), say,
     onStart: (s) => { box.hidden = true; go({ room: s.room, host: s.seat === 0, expect: count }); } });
 }
 

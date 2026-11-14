@@ -24,7 +24,8 @@ import { Director, type Stage } from "../sim/director.ts";
 import { isSetPiece, rollTake, SET_PIECES, stageTake, type SetPieceId, type Take } from "../sim/rewatch.ts";
 import { CircleHelp, createElement, Lock, LogIn, LogOut, Play, Users } from "lucide";
 import { tutorial } from "@rustybuns/util/tutorial";
-import { achieve, achievements, canSignIn, finishSignIn, fresh, login, reportButton, signIn, signOut } from "../eqosys.ts";
+import { achieve, achievements, canSignIn, finishSignIn, fresh, login, reportButton, signInHere, signOut } from "../eqosys.ts";
+import { signInToJoin } from "@rustybuns/util/lobby";
 import { KEYS, keyLabel, WEAPONS, type WeaponId } from "../sim/weapons.ts";
 import { isRole, nextRole, ROLE_ORDER, ROLES, type RoleId } from "../sim/roles.ts";
 import { STREAKS, VEHICLES, vehicleName } from "../sim/vehicles.ts";
@@ -343,7 +344,8 @@ partyButton.replaceChildren(createElement(Users, { width: 16, height: 16 }));
 let leaveParty: (() => void) | null = null;
 function enterParty(code: string) {
   const l = login();
-  if (!l || !fresh(l)) { battleStatus(`Sign in to join party ${code}.`); return void signIn(`party:${code}`); }
+  // Signed out at a party link: "Sign in to join Ada's party", eqosys beside the game, then this lobby with no reload.
+  if (!l || !fresh(l)) return signInToJoin({ box: $("battle-lobby"), code, game: "Git Recon", account: { canSignIn, signInHere }, joined: () => { showAccount(); enterParty(code); } });
   leaveParty?.();
   history.replaceState(null, "", `?party=${code}`);
   battleStatus("The host picks the level and mode, then Start.");
@@ -357,7 +359,7 @@ function enterParty(code: string) {
 }
 partyButton.onclick = async () => {
   const l = login();
-  if (!l || !fresh(l)) return void signIn("party");
+  if (!l || !fresh(l)) return void signInHere("party").then((r) => { showAccount(r.error); if (r.login) partyButton.click(); });
   battleStatus("Opening a party…");
   const code = await makeParty();
   if (!code) return battleStatus("eqosys couldn't open a party just now. Host with a room code instead.", true);
@@ -420,7 +422,7 @@ function showAccount(note = "") {
   account.setAttribute("aria-label", account.title);
   if (note) battleStatus(note, true);
 }
-account.onclick = () => { if (login()) { signOut(); nameBox.value = store.get("name", str(), ""); showAccount(); } else void signIn(); };
+account.onclick = () => { if (login()) { signOut(); nameBox.value = store.get("name", str(), ""); showAccount(); } else void signInHere().then((r) => showAccount(r.error)); };
 showAccount();
 reportButton();
 // Online, a ?party= link (or coming back from signing in to join one) opens that party's lobby.

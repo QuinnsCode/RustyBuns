@@ -4,8 +4,10 @@
 // host's make host, take out and block.
 // A party link carries the party's invite key (`?invite=`), which the door checks when only the host invites (#3908): Copy link
 // adds the key eqosys gave this member, and joining hands on the key the page was opened with, whatever else the game keeps in its address.
+// Copy link also signs the link with the member's name (`?from=`), so whoever opens it signed out reads "Sign in to join
+// Ada's party" (`signInToJoin`): one step, eqosys in a small window beside the game, then the lobby (#4418, #4419).
 // What happens on start is the page's own. The box wears the page's eqosys skin (./skin.ts); where it sits is the page's.
-import type { PartyMember, party } from "./eqosys.ts";
+import type { PartyMember, hub, party } from "./eqosys.ts";
 import { BLOCKS, CHAT, INVITE, JOINS, LIVES, may, MUTE, READY, REPORT, RULE_TEXT, type PartyRules } from "./party-rules.ts";
 import { eqButton, wearSkin } from "./skin.ts";
 import { el } from "./dom.ts";
@@ -22,6 +24,8 @@ export interface LobbyPanel {
   onStart: (s: { room: string; seat: number; ticket?: string }) => void;
   /** Told when something worth a note happened (the link was copied). */
   say?: (note: string) => void;
+  /** Given, the panel also has Copy friend link (`friendLinkButton`): two people who met through a party can stay friends. */
+  hub?: ReturnType<typeof hub>;
 }
 
 /** Where a party link's key waits while the page goes to sign in and back, which can drop it from the address. */
@@ -39,15 +43,68 @@ if (typeof location !== "undefined") {
   if (party && key) keep(party, key);
 }
 
-/** `link` with this party's invite key on it (or none: a link from a member who may not invite carries none). */
-const withInvite = (link: string, key: string): string => {
+/** `link` with this party's invite key on it (or none: a link from a member who may not invite carries none), signed with `from`. */
+const withInvite = (link: string, key: string, from?: string): string => {
   const u = new URL(link, typeof location === "undefined" ? "http://x" : location.href);
   if (key) u.searchParams.set("invite", key); else u.searchParams.delete("invite");
+  if (from) u.searchParams.set("from", from); else u.searchParams.delete("from");
   return u.toString();
 };
 
+/** Who sent a party link (its `from`, which Copy link adds): a name to show as text, at most 40 characters, or null. */
+export const invitedBy = (search: string): string | null =>
+  (new URLSearchParams(search).get("from") ?? "").replace(/[\p{Cc}\p{Cf}]/gu, "").trim().slice(0, 40) || null;
+
+export interface JoinStep {
+  box: HTMLElement;
+  code: string;
+  /** The game's name, for "Signing in opens once <game> is online" where eqosys can't send anyone back. */
+  game: string;
+  /** The game's eqosys client (or the two parts of it this needs). */
+  account: { canSignIn: () => boolean; signInHere: (then?: string) => Promise<{ login: unknown; error?: string }> };
+  /** Runs once the login is back; the page never reloads. */
+  joined: () => void;
+  /** Who sent the link; read from the page's address when not given. */
+  host?: string | null;
+  /** What a blocked window's whole-page trip comes back to (`finishSignIn`'s `then`): `party:<code>` unless given. */
+  then?: string;
+}
+
+/**
+ * Signed out at a party link: one step in `box`, "Sign in to join <host>'s party". The button opens eqosys beside the game
+ * (`signInHere`, straight from the click so the browser lets the window open); `joined` runs once the login is back. Where
+ * the browser blocks the window anyway, the whole page goes and comes back to `then`; the invite key waits in sessionStorage.
+ */
+export function signInToJoin({ box, code, game, account, joined, host = typeof location === "undefined" ? null : invitedBy(location.search), then = `party:${code}` }: JoinStep) {
+  wearSkin();
+  box.classList.add("eq", "rb-lobby");
+  box.hidden = false;
+  const whose = host ? `${host}'s party` : `party ${code}`;
+  const draw = (note = "") => box.replaceChildren(
+    el("div", { className: "rb-lobby-who" }, account.canSignIn() ? `Sign in to join ${whose}` : `You're invited to ${whose}. Signing in opens once ${game} is online.`),
+    ...(account.canSignIn() ? [eqButton({ text: "Sign in", icon: "log-in", show: true, primary: true, onClick: () => {
+      void account.signInHere(then).then((r) => { if (r.login) joined(); else draw(r.error ?? ""); });
+    } })] : []),
+    ...(note ? [el("span", { className: "rb-lobby-note" }, ` - ${note}`)] : []),
+  );
+  draw();
+}
+
+/**
+ * Copy friend link: the signed-in person's friend link from their hub (`hub().friendLink()`) onto the clipboard. Whoever
+ * opens it and presses Be friends is their friend, account or not. `say` hears how it went (the link itself, when the
+ * clipboard says no).
+ */
+export function friendLinkButton(h: ReturnType<typeof hub>, say: (note: string) => void): HTMLButtonElement {
+  return eqButton({ text: "Copy friend link", icon: "copy", show: true, onClick: async () => {
+    const got = await h.friendLink();
+    if (!got) return say("eqosys didn't hand out your friend link just now. Try again.");
+    say(await navigator.clipboard?.writeText(got).then(() => "Friend link copied: whoever opens it and presses Be friends is your friend", () => `Your friend link: ${got}`) ?? `Your friend link: ${got}`);
+  } });
+}
+
 /** Join the party and keep `box` showing it. Returns a function that leaves and hides the box. */
-export function lobbyPanel({ code, box, party: p, name, link, onStart, say }: LobbyPanel) {
+export function lobbyPanel({ code, box, party: p, name, link, onStart, say, hub: h }: LobbyPanel) {
   let members: PartyMember[] = [], note = "", rules: PartyRules | null = null, blocked: { id: string; name: string }[] = [], open = false;
   /** The key Copy link carries: eqosys hands it to members the `invite` rule lets invite, and to nobody else. */
   let key = "";
@@ -120,8 +177,9 @@ export function lobbyPanel({ code, box, party: p, name, link, onStart, say }: Lo
       el("div", { className: "rb-lobby-who" }, "Party ", el("b", { className: "rb-lobby-code" }, code), ": ", ...list, ...(note ? [el("span", { className: "rb-lobby-note" }, ` - ${note}`)] : [])),
       mine?.host ? eqButton({ text: "Start", primary: true, onClick: () => p.start() }) : eqButton({ text: mine?.ready ? "Not ready" : "Ready", primary: !mine?.ready, onClick: () => p.ready(!mine?.ready) }),
       // Inviting is the host's alone when the rules say so: then the key is theirs alone, and they can retire it.
-      ...(key && rules && may(rules.invite, !!mine?.host) ? [eqButton({ text: "Copy link", onClick: () => void navigator.clipboard?.writeText(withInvite(link(), key)).then(() => say?.("Link copied"), () => {}) })] : []),
+      ...(key && rules && may(rules.invite, !!mine?.host) ? [eqButton({ text: "Copy link", onClick: () => void navigator.clipboard?.writeText(withInvite(link(), key, name())).then(() => say?.("Link copied"), () => {}) })] : []),
       ...(mine?.host && rules?.invite === "host" ? [eqButton({ text: "New link: the ones handed out stop working", icon: "refresh-cw", onClick: () => { p.relink(); note = "New link made: copy it again"; draw(); } })] : []),
+      ...(h ? [friendLinkButton(h, (n) => { note = n; draw(); })] : []),
       eqButton({ text: open ? "Close settings" : "Settings", icon: "sliders-horizontal", onClick: () => { open = !open; draw(); } }),
       ...(open ? [settings(mine)] : []),
     );

@@ -8,9 +8,10 @@ export function Account() {
   useEffect(() => {
     const el = slot.current;
     if (!el) return;
-    accountChip(el);
+    const beside = () => {}; // "Sign in" opens eqosys beside the page, which never reloads; the chip redraws itself
+    accountChip(el, { onSignIn: beside });
     // Back from eqosys with ?code=&state=: trade it in and show the name, or what went wrong.
-    void finishSignIn().then((back) => { if (back) accountChip(el, { note: back.error }); });
+    void finishSignIn().then((back) => { if (back) accountChip(el, { note: back.error, onSignIn: beside }); });
   }, []);
   return <div ref={slot} />;
 }

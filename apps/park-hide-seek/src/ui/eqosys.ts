@@ -22,5 +22,5 @@ export const SKIN = {
 @media (max-width:720px){.eq-coach{bottom:236px;left:0;right:0;margin:0 auto;width:calc(100vw - 24px)}}`,
 };
 
-export type { Login } from "@rustybuns/util/eqosys";
-export const { signIn, finishSignIn, login, fresh, signOut, eqosysUrl, canSignIn, report, reportButton, party, achieve, achievements } = eqosys({ app: APP, url: EQOSYS, from: SIGN_IN_FROM, prefix: "phs", skin: SKIN });
+export type { Login, Returned } from "@rustybuns/util/eqosys";
+export const { signIn, signInHere, finishSignIn, login, fresh, signOut, eqosysUrl, canSignIn, report, reportButton, party, hub, achieve, achievements } = eqosys({ app: APP, url: EQOSYS, from: SIGN_IN_FROM, prefix: "phs", skin: SKIN });

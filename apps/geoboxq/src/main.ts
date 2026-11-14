@@ -54,9 +54,11 @@ app.innerHTML = `
   <section id="baxter"></section>
   <section id="answer" aria-live="polite"></section>`;
 const $ = (id: string) => document.getElementById(id)!;
-accountChip($("account"));
+// "Sign in" opens eqosys beside the page, which never reloads; the chip redraws itself.
+const beside = () => {};
+accountChip($("account"), { onSignIn: beside });
 reportButton();
-void finishSignIn().then((back) => { if (back) accountChip($("account"), { note: back.error }); }); // back from eqosys with ?code=&state=
+void finishSignIn().then((back) => { if (back) accountChip($("account"), { note: back.error, onSignIn: beside }); }); // back from eqosys with ?code=&state=
 
 const field = (r: Row, k: "l" | "w" | "h", label: string) =>
   `<input type="number" min="0" step="any" inputmode="decimal" data-k="${k}" value="${r[k] || ""}" aria-label="${label}" placeholder="${label[0]}">`;
