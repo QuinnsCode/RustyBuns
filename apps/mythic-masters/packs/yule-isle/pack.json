@@ -27,5 +27,20 @@
       "tale": "A goblin that saws all year at the tree holding up the world, then climbs out for the twelve nights of Christmas to ride people and foul the food, until the Epiphany waters drive it back under."
     }
   },
+  "board": {
+    "place": "Sighting board at the fish sheds",
+    "witness": "Net mender",
+    "title": "The Ogress at the Fish Sheds",
+    "report": [
+      "Net mender: Something big came down off the fell last night. The drying racks are bare and the dogs won't go out.",
+      "Net mender: My gran says she comes down at Yule with her sack for the children who were bad. Mine are under the bed.",
+      "Gary: I have been very good this year. Mostly. Follow the prints. Calmly. Toward the mountain."
+    ],
+    "signs": [
+      { "at": [0.74, 0.56], "sign": "Bare footprints in the snow, each as long as your arm" },
+      { "at": [0.79, 0.42], "sign": "A drying rack stripped clean, and a torn sack caught on a fence post" },
+      { "at": [0.83, 0.27], "sign": "A black ring of soot melted into the snow, where a great pot stood" }
+    ]
+  },
   "credits": []
 }

@@ -9,7 +9,8 @@ import { inSeason, tierOf } from "../src/tiers.ts";
 import { PLACES } from "../src/world/places.ts";
 import * as THREE from "three";
 import { findTape, ISLE_N, isleLair, islePlaces, isleTapesFound, lightFire, MIN_GAP, tapeOf, type Log } from "../src/world/poi.ts";
-import { poiView } from "../src/world/poi-view.ts";
+import { poiView, type PoiView } from "../src/world/poi-view.ts";
+import { CLUES, isleHunts, stageOf, take } from "../src/world/hunts.ts";
 import { atSlip, isleGround, isleSlip, portSlip } from "../src/world/ferry.ts";
 import { WORLD } from "../src/world/trail.ts";
 import { buildIsland, CELL, dry, heightAt, islandFrom, onIsland, poolOf, regionAt, spawn, walk } from "../src/world/world.ts";
@@ -19,6 +20,33 @@ import { buildIsland, CELL, dry, heightAt, islandFrom, onIsland, poolOf, regionA
 const DIR = join(import.meta.dir, "..", "packs");
 const Sheet = obj({ id: str(40, { re: /^[a-z0-9-]+$/ }), name: str(40), about: str(600, { min: 40 }), archetype: oneOf(ARCHETYPES), feet: int(0, 8) });
 const slug = (s: string) => s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+const island = async (p: { id: string }) => buildIsland(islandFrom(new Uint8Array(await Bun.file(join(import.meta.dir, "..", "public", "packs", p.id, "ground.bin")).arrayBuffer()))!);
+type At = { x: number; z: number };
+/** Walks `at` to `goal` as the keys do, a metre a frame, over 50 m squares of dry ground (a flood from where you stand),
+ *  ticking the island's places each frame; their toasts come back. */
+function walkTo(w: ReturnType<typeof buildIsland>, s: ReturnType<typeof isleSlip>, view: PoiView, at: At, goal: At): string[] {
+  const S = 50, cols = Math.floor(w.width / S), rows = Math.floor(w.depth / S);
+  const cell = (q: At) => Math.round(q.z / S) * cols + Math.round(q.x / S), from = new Int32Array(cols * rows).fill(-1);
+  const queue = [cell(at)];
+  from[queue[0]!] = queue[0]!;
+  for (let k = 0; k < queue.length && from[cell(goal)]! < 0; k++) {
+    const i = queue[k]!, c = i % cols, r = Math.floor(i / cols);
+    for (const [dc, dr] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+      const n = (r + dr) * cols + c + dc;
+      if (c + dc < 0 || r + dr < 0 || c + dc >= cols || r + dr >= rows || from[n]! >= 0 || !dry(w, (c + dc) * S, (r + dr) * S)) continue;
+      from[n] = i; queue.push(n);
+    }
+  }
+  const route: At[] = [{ x: goal.x, z: goal.z }];
+  for (let i = from[cell(goal)]!; i !== cell(at); i = from[i]!) route.unshift({ x: (i % cols) * S, z: Math.floor(i / cols) * S });
+  const toasts: string[] = [];
+  for (const g of route) for (let k = 0; k < 200 && Math.hypot(g.x - at.x, g.z - at.z) > 1; k++) {
+    const d = Math.hypot(g.x - at.x, g.z - at.z), x = at.x + ((g.x - at.x) / d) * Math.min(1, d), z = at.z + ((g.z - at.z) / d) * Math.min(1, d);
+    if (isleGround(w, s, x, z)) { at.x = x; at.z = z; }
+    toasts.push(...view.update(1 / 60, at, new Set([ISLE_N])));
+  }
+  return toasts;
+}
 const cells = (c: readonly [number, number]) => Array.from({ length: LAND[0] * LAND[1] }, (_, i) => [c[0] + (i % LAND[0]), c[1] + Math.floor(i / LAND[0])] as const);
 
 describe("packs", () => {
@@ -108,8 +136,7 @@ describe("packs", () => {
   });
 
   test.each(PACKS.filter((p) => p.tier !== "coming-soon").map((p) => [p.id, p] as const))("%s: off the boat, you walk to a tape, it plays, and the journal keeps it", async (_, p) => {
-    const bytes = new Uint8Array(await Bun.file(join(import.meta.dir, "..", "public", "packs", p.id, "ground.bin")).arrayBuffer());
-    const w = buildIsland(islandFrom(bytes)!), s = isleSlip(w, p), at = { ...s.land }, all = islePlaces(p), j: Log = { found: [], fires: [], sights: [] };
+    const w = await island(p), s = isleSlip(w, p), at = { ...s.land }, all = islePlaces(p), j: Log = { found: [], fires: [], sights: [] };
     // The island's places as view.ts draws them, with the hooks main.ts gives it: a tape found once, a fire lit.
     const played: string[] = [];
     const view = poiView(new THREE.Group(), new THREE.PerspectiveCamera(), (x, z) => heightAt(w, x, z), {
@@ -117,33 +144,31 @@ describe("packs", () => {
       reach: (q) => { if (q.kind === "tape" && findTape(j, q)) { played.push(tapeOf(q).title); return `Found a tape: ${tapeOf(q).title}`; } if (q.kind === "fire") lightFire(j, q); },
       sight: () => {},
     }, undefined, { all, near: () => all, region: () => ISLE_N });
-    // Walk 50 m squares of dry ground from where the boat puts you to the first tape, a step at a time, as the keys do.
-    const tape = all.find((q) => q.kind === "tape")!, S = 50, cols = Math.floor(w.width / S), rows = Math.floor(w.depth / S);
-    const cell = (q: { x: number; z: number }) => Math.round(q.z / S) * cols + Math.round(q.x / S), from = new Int32Array(cols * rows).fill(-1);
-    const queue = [cell(at)];
-    from[queue[0]!] = queue[0]!;
-    for (let k = 0; k < queue.length && from[cell(tape)] < 0; k++) {
-      const i = queue[k]!, c = i % cols, r = Math.floor(i / cols);
-      for (const [dc, dr] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
-        const n = (r + dr) * cols + c + dc;
-        if (c + dc < 0 || r + dr < 0 || c + dc >= cols || r + dr >= rows || from[n]! >= 0 || !dry(w, (c + dc) * S, (r + dr) * S)) continue;
-        from[n] = i; queue.push(n);
-      }
-    }
-    const route: { x: number; z: number }[] = [{ x: tape.x, z: tape.z }];
-    for (let i = from[cell(tape)]!; i !== cell(at); i = from[i]!) route.unshift({ x: (i % cols) * S, z: Math.floor(i / cols) * S });
-    const toasts: string[] = [];
-    for (const goal of route) for (let k = 0; k < 200 && Math.hypot(goal.x - at.x, goal.z - at.z) > 1; k++) {
-      const d = Math.hypot(goal.x - at.x, goal.z - at.z), x = at.x + ((goal.x - at.x) / d) * Math.min(1, d), z = at.z + ((goal.z - at.z) / d) * Math.min(1, d);
-      if (isleGround(w, s, x, z)) { at.x = x; at.z = z; }
-      toasts.push(...view.update(1 / 60, at, new Set([ISLE_N])));
-    }
+    // Walk dry ground from where the boat puts you to the first tape.
+    const tape = all.find((q) => q.kind === "tape")!, toasts = walkTo(w, s, view, at, tape);
     const title = p.places.find((q) => q.kind === "tape")!.tape!.title;
     expect([Math.hypot(tape.x - at.x, tape.z - at.z) < 1, played, toasts.filter((t) => t.includes("Found a tape")).length]).toEqual([true, [title], 1]);
     // The journal's page for the island has it, and walking past again doesn't play it twice.
     expect(isleTapesFound(j, p).map((q) => tapeOf(q).title)).toEqual([title]);
     for (let k = 0; k < 20; k++) view.update(1 / 60, { x: at.x + k, z: at.z }, new Set([ISLE_N]));
     expect(played).toEqual([title]);
+  });
+
+  test.each(PACKS.filter((p) => p.board).map((p) => [p.id, p] as const))("%s: read the sighting board, follow its signs, and its creature waits in the lair", async (_, p) => {
+    const w = await island(p), s = isleSlip(w, p), at = { ...s.land }, all = islePlaces(p), j: Log = { found: [], fires: [], sights: [] };
+    // main.ts's hook: the board's first visit takes its contract.
+    const view = poiView(new THREE.Group(), new THREE.PerspectiveCamera(), (x, z) => heightAt(w, x, z), {
+      log: () => j, reach: (q) => { if (q.kind === "board" && take(j, q.id)) return "taken"; }, sight: () => {},
+    }, undefined, { all, near: () => all, region: () => ISLE_N, hunts: isleHunts(p) });
+    const [h] = isleHunts(p), board = all.find((q) => q.kind === "board")!;
+    expect([h?.id, h?.creature, h?.lair]).toEqual([board.id, p.lair.foe, { x: isleLair(p)!.x, z: isleLair(p)!.z }]);
+    walkTo(w, s, view, at, board);
+    expect(stageOf(j, h!.id)).toBe(0);
+    // Each sign read in turn, the last saying its creature is close; then it waits at the lair (the lair fight closes it).
+    const signOf = (t: string) => h!.clues.findIndex((c) => t.includes(c.sign));
+    const read = h!.clues.flatMap((c) => walkTo(w, s, view, at, c.at).filter((t) => signOf(t) >= 0));
+    expect(read.map(signOf)).toEqual([0, 1, 2]);
+    expect([read[2]!.includes(`${h!.title} is close`), stageOf(j, h!.id)]).toEqual([true, CLUES]);
   });
 
   test("in its season a pack's event creatures roam the whole continent, and out of it they don't", () => {

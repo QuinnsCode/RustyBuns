@@ -1,7 +1,7 @@
 // The places of src/world/poi.ts drawn on the open ground, and on the corner map. Each kind is one instanced mesh
 // (a handful of draw calls for every place in the world), and only those near you are laid out each frame.
 // A tape is a stump with a tape on it; a fire is logs, and a flame once lit; a landmark is a tall mast and cap; a sighting
-// board hangs in a town, a gas station, a diner and a motel in a row (town-view.ts), whose door walks you in (towns.ts); a cabin is log walls under a pitched roof, one mesh; and the next sign of a contract you took is a pale wisp over the spot (hunts.ts).
+// board hangs in a town, a gas station, a diner and a motel in a row (town-view.ts), whose door walks you in (towns.ts), or on an island at a fish shed; a cabin is log walls under a pitched roof, one mesh; and the next sign of a contract you took is a pale wisp over the spot (hunts.ts).
 // worldView (view.ts) owns the camera, the toast and the map; this asks it for none of them, it is handed what it needs.
 import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
@@ -27,13 +27,13 @@ export interface PlaceHooks {
 }
 
 /** The places a view draws: `all` of them, those `near` where you stand (walked up to, landmarks seen), and the
- *  region whose contracts' signs show there. The continent's by default; a pack's island has its own (view.ts). */
-export interface PlaceSet { all: readonly Poi[]; near(me: { x: number; z: number }): readonly Poi[]; region(me: { x: number; z: number }): number }
+ *  region whose contracts' signs show there (or those `hunts`). The continent's by default; a pack's island has its own (view.ts). */
+export interface PlaceSet { all: readonly Poi[]; near(me: { x: number; z: number }): readonly Poi[]; region(me: { x: number; z: number }): number; hunts?: readonly Hunt[] }
 const CONTINENT: PlaceSet = { all: ALL, near: (me) => POIS.get(ownerAt(me.x, me.z)) ?? [], region: (me) => ownerAt(me.x, me.z) };
 
 const DRAW_R = 1800; // metres: places farther than this aren't laid out
 const WISP = 0xe8f4ff;
-const LOGS = 0x9a6a44, FLAME = 0xff9a2e, EMBER = 0x4a3a30, STUMP = 0x6b4a2b, TAPE = 0xf2e27a, MAST = 0xc9c2b4, CAP = 0xd0442e;
+const SHED = 0x7a3b30, CORK = 0xc89b5e, LOGS = 0x9a6a44, FLAME = 0xff9a2e, EMBER = 0x4a3a30, STUMP = 0x6b4a2b, TAPE = 0xf2e27a, MAST = 0xc9c2b4, CAP = 0xd0442e;
 /** `door`: walked up to a town's front door (a sighting board's place); the world walks you in. */
 export function poiView(group: THREE.Group, camera: THREE.Camera, groundY: (x: number, z: number) => number, hooks: PlaceHooks | undefined, door?: (p: Poi) => void, set = CONTINENT) {
   const cap = set.all.length || 1;
@@ -55,7 +55,11 @@ export function poiView(group: THREE.Group, camera: THREE.Camera, groundY: (x: n
   // A cabin: 5 by 4 m of walls, 2.6 m high, and a four-sided roof over them, merged so it is one draw call for them all.
   const roof = new THREE.ConeGeometry(4.2, 2.2, 4).rotateY(Math.PI / 4).scale(1, 1, 0.82).translate(0, 3.7, 0);
   const cabins = mesh(mergeGeometries([new THREE.BoxGeometry(5, 2.6, 4).translate(0, 1.3, 0), roof]) ?? new THREE.BoxGeometry(5, 2.6, 4), LOGS);
-  const all = [stumps, tapes, logs, flames, masts, caps, wisps, cabins, ...fronts];
+  // A board with no town to walk into (an island's): a fish shed, 6 by 4 m under a pitched roof, and the board on two posts before it.
+  const shedRoof = new THREE.ConeGeometry(4.6, 1.8, 4).rotateY(Math.PI / 4).scale(1.15, 1, 0.75).translate(0, 3.3, 0);
+  const sheds = mesh(mergeGeometries([new THREE.BoxGeometry(6, 2.4, 4).translate(0, 1.2, 0), shedRoof]) ?? new THREE.BoxGeometry(6, 2.4, 4), SHED);
+  const corks = mesh(mergeGeometries([new THREE.BoxGeometry(1.8, 1.2, 0.12).translate(0, 1.7, 3.2), new THREE.BoxGeometry(0.12, 2.3, 0.12).translate(-0.8, 1.15, 3.2), new THREE.BoxGeometry(0.12, 2.3, 0.12).translate(0.8, 1.15, 3.2)]) ?? new THREE.BoxGeometry(1.8, 1.2, 0.12), CORK);
+  const all = [stumps, tapes, logs, flames, masts, caps, wisps, cabins, sheds, corks, ...fronts];
   const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), up = new THREE.Vector3(0, 1, 0), one = new THREE.Vector3(1, 1, 1), at = new THREE.Vector3(), sc = new THREE.Vector3();
   const put = (im: THREE.InstancedMesh, x: number, y: number, z: number, yaw = 0, sx = 1, sy = 1) => {
     q.setFromAxisAngle(up, yaw);
@@ -78,12 +82,13 @@ export function poiView(group: THREE.Group, camera: THREE.Camera, groundY: (x: n
         else if (p.kind === "fire") {
           put(logs, p.x, y + 0.2, p.z, yaw); put(logs, p.x, y + 0.2, p.z, yaw + 1.9);
           if (on) put(flames, p.x, y + 1.0, p.z, 0, 1 + Math.sin(clock * 9 + yaw) * 0.12, 0.9 + Math.sin(clock * 7 + yaw * 2) * 0.25);
-        } else if (p.kind === "board") { for (const f of fronts) put(f, p.x, y - 0.15, p.z, yaw); }
+        } else if (p.kind === "board" && !door) { put(sheds, p.x, y, p.z, yaw); put(corks, p.x, y, p.z, yaw); }
+        else if (p.kind === "board") { for (const f of fronts) put(f, p.x, y - 0.15, p.z, yaw); }
         else if (p.kind === "cabin") put(cabins, p.x, y, p.z, yaw);
         else { put(masts, p.x, y + 13, p.z, yaw); put(caps, p.x, y + 27.7, p.z, yaw); }
       }
       // The next sign of each contract you took here: a wisp bobbing over the spot, seen from a way off.
-      for (const c of nextClues(j, set.region(me))) {
+      for (const c of nextClues(j, set.region(me), set.hunts)) {
         const y = Math.max(0, groundY(c.at.x, c.at.z)), s = 1 + Math.sin(clock * 3 + c.i) * 0.15;
         put(wisps, c.at.x, y + 2.2 + Math.sin(clock * 1.7 + c.i) * 0.3, c.at.z, clock * 0.8, s, s * 1.6);
       }
@@ -96,7 +101,7 @@ export function poiView(group: THREE.Group, camera: THREE.Camera, groundY: (x: n
         if (line) out.push(`${icon(p.kind === "tape" ? "clapperboard" : p.kind === "cabin" ? "house" : "flame")}${esc(line)}`);
       }
       // Standing at a contract's next sign.
-      for (const t of track(j, me, set.region(me))) {
+      for (const t of track(j, me, set.region(me), set.hunts)) {
         hooks?.sign?.(t.hunt, t.sign, t.last);
         out.push(`${icon("footprints")}${esc(t.sign)}.${t.last ? ` ${esc(t.hunt.title)} is close.` : ""}`);
       }
