@@ -56,7 +56,7 @@ import { bookParty, type Seat } from "./book-party.ts";
 import { peek } from "@rustybuns/util/token";
 import { party } from "./account.ts";
 import { choosing, dress as dressHud, ring as hudRing, SKINS as HUD_SKINS, skinNow, stepSkin, useSkin } from "./hud/index.ts";
-import { newMemory, remember as rememberHud, viewOf } from "./hud/skin.ts";
+import { crewHtml, newMemory, pairOf, remember as rememberHud, viewOf } from "./hud/skin.ts";
 import { FX_AMOUNT } from "./effects.ts";
 import { darken, warmWith } from "./world/walker3d.ts";
 import { abduction, arrival, Director, faceoff, found, freeze, lookout, SCENES, trail, type Stage, type VsCard, type Where } from "./director.ts";
@@ -451,15 +451,20 @@ const bindable = (t: Trip | null) => !!t && t.kind !== "deadly" && t.kind !== "r
 /** A faction's creature as the fight names it: what its holder calls it, then what it is ("Asset 14, Wampus Cat"). */
 const rivalFoe = (f: FactionFoe): Foe => ({ id: f.id, level: f.level, title: f.title ? `${f.title}, ${creature(f.id).name}` : undefined });
 
-function start(a: string, b: string, skin: string, watch = false) {
+/** A practice fight: `a` (you, unless `watch`) against `b`. With `mates` (`?with=`) or `foes` (`?and=`) it's a team
+ * fight, every fighter but you a bot, the way a co-op round against a wild one plays (#4401). */
+function start(a: string, b: string, skin: string, watch = false, mates: string[] = [], foes: string[] = []) {
   trip = null; shroudFoe = false; bindNote = ""; crowdView = false; crowdOf(arena)?.play(null);
-  fight(creature(a), creature(b), skin, watch);
+  const teams: [Creature[], Creature[]] | undefined = mates.length || foes.length ? [[creature(a), ...mates.map(creature)], [creature(b), ...foes.map(creature)]] : undefined;
+  fight(creature(a), creature(b), skin, watch, false, teams);
   faceUp();
-  history.replaceState(null, "", `?${new URLSearchParams({ a, b, skin, ...(watch ? { watch: "1" } : {}) })}`);
+  history.replaceState(null, "", `?${new URLSearchParams({ a, b, ...(mates.length ? { with: mates.join(",") } : {}), ...(foes.length ? { and: foes.join(",") } : {}), skin, ...(watch ? { watch: "1" } : {}) })}`);
 }
+/** `?with=` and `?and=`: the teammates and extra foes a practice link names, at most three each (four a side). */
+const matesOf = (v: string | null) => (v ?? "").split(",").filter(Boolean).slice(0, 3).map((id) => creature(id).id);
 function fight(a: Creature, b: Creature, skin: string, watch = false, vs = false, teams?: [Creature[], Creature[]]) {
   versusOn = vs; if (!vs) mine = 0;
-  if (!teams) wildBot = null;
+  if (!teams || !vs) wildBot = null;
   world.hide(); shelf?.dispose(); shelf = null;
   for (const o of [arena, ...models, ...puppets.map((p) => p?.group)]) if (o) scene.remove(o);
   puppets = [null, null]; moveFx.clear();
@@ -475,7 +480,9 @@ function fight(a: Creature, b: Creature, skin: string, watch = false, vs = false
   hudMem.now = newMemory();
   models = m.f.map((f, i) => { const g = creatureModel(f.c); scene.add(g); wearBeast(f, g, i); return g; });
   const seed = Math.floor(Math.random() * 1e6) + 1;
-  bots = versusOn ? [null, null] : [watch ? temper(bot(0, seed), 0, seed) : null, temper(bot(1, seed + 1), 1, seed + 1)];
+  // One on one, each bot is tempered with an opening (src/opener.ts, two fighters only); in a team fight they fight plain.
+  const hands = (k: number) => (teams ? bot(k, seed + k) : temper(bot(k, seed + k), k ? 1 : 0, seed + k));
+  bots = versusOn ? [null, null] : m.f.map((_, k) => (k || watch ? hands(k) : null));
   pages.show(null); $("#hud").hidden = false;
 }
 
@@ -573,8 +580,9 @@ function fightTrip() {
 /** Every fight's start: the two cards meet at the middle while the camera spirals down onto the pair. */
 function faceUp(round = "") {
   if (!m) return;
-  const [p, q] = m.f, card = (i: 0 | 1): VsCard => {
-    const c = m!.f[i].c, hidden = i === 1 && shroudFoe, tier = hidden ? "unknown" : tierOf(plain(c.id));
+  // You and the one you face: one on one, the two fighters; in a team fight, the first foe you lock on (hud/skin.ts pairOf).
+  const pair = pairOf(m, mine), [p, q] = [m.f[pair[0]]!, m.f[pair[1]]!], card = (k: 0 | 1): VsCard => {
+    const c = (k ? q : p).c, hidden = k === 1 && shroudFoe, tier = hidden ? "unknown" : tierOf(plain(c.id));
     return { name: c.name, sub: [round, hidden ? "" : tier[0]!.toUpperCase() + tier.slice(1)].filter(Boolean).join(" · "), art: hidden ? null : artOf(c.id), tier };
   };
   director.play(faceoff(card(0), card(1), { x: (p.pos.x + q.pos.x) / 2, y: 0, z: (p.pos.z + q.pos.z) / 2 }, m.tick + (trip?.k ?? 0)));
@@ -1444,10 +1452,12 @@ function hud(m: Match) {
   dressHud(root);
   root.style.setProperty("--hud-in", director.stage.hud.toFixed(3));
   const party = trip && journey ? { size: journey.party.length, down: [...trip.out], up: trip.slot } : null;
-  root.innerHTML = skinNow().render(viewOf(m, hudMem.now, {
-    party: [party, null], bots: [!!bots[0], !!bots[1]], art: artOf, tier: (id) => tierOf(plain(id)),
-    bind: bindView(m),
-  }));
+  // A bot plays a fighter when this page runs one for it, or it is a co-op round's wild one (the last fighter).
+  const view = viewOf(m, hudMem.now, {
+    party: [party, null], bots: m.f.map((_, k) => !!bots[k] || (!!wildBot && k === m.f.length - 1)), art: artOf, tier: (id) => tierOf(plain(id)),
+    bind: bindView(m), you: mine,
+  });
+  root.innerHTML = skinNow().render(view) + crewHtml(view);
   root.classList.toggle("bind-ready", !!trip && bindable(trip) && trip.ink > 0 && bindChance(m.f[1].hp / m.f[1].b.hp, trip.kind === "mythic") > 0);
   if (choosing) chooser();
 }
@@ -1480,11 +1490,11 @@ function draw(m: Match, alpha: number) {
     for (const w of g.children) if (w.name === "wing") w.rotation.x = f.flying ? Math.sin(m.tick / 4) * 0.5 : 0.9 * Math.sign(w.position.z);
     // A hit flashes white for a few ticks and fades; holding the flash through the stun hid the creature's colours.
     // Peaks well short of white: a full flash washed the hide out to a plaster cast. Invulnerability is a flicker.
-    const struck = moveFx.flashOf(i as 0 | 1, m.tick) * 0.28; // bloom spreads it, so it stays low
+    const struck = moveFx.flashOf(i, m.tick) * 0.28; // bloom spreads it, so it stays low
     const flash = Math.max(struck, holding(f) > 0 ? 0.3 : f.invuln ? (m.tick % 8 < 4 ? (f.state === "ledge" ? 0.2 : 0.12) : 0) : 0); // brighter in the lip's shadow
     const p = puppets[i];
     // a blow lands as a hot pulse in the hide, not a white wash: white on a grey hide reads as the texture failing
-    if (p) { p.update(f, alpha, m.tick, m.f[i ? 0 : 1].pos); p.flash(holding(f) > 0 ? 0xffee88 : struck > 0.01 ? 0xff6a30 : 0xffe8d0, flash); return; }
+    if (p) { p.update(f, alpha, m.tick, m.f[foeOf(m, i)]!.pos); p.flash(holding(f) > 0 ? 0xffee88 : struck > 0.01 ? 0xff6a30 : 0xffe8d0, flash); return; }
     const torso = g.children[0] as THREE.Mesh, mat = torso.material as THREE.MeshStandardMaterial;
     mat.emissive.setHex(holding(f) > 0 ? 0xffee88 : 0xffffff); mat.emissiveIntensity = flash;
   });
@@ -1538,7 +1548,8 @@ function finish(m: Match, bound = false) {
   $("#result").innerHTML = `<div class="note paper"><h2>${esc(w.c.name)} wins</h2>${reaction({ kind: "versus" })}<p>${lost}</p>
     <div class="row"><button class="go" id="again">${icon("rotate-ccw")} Rematch</button><button id="pick">${icon("users")} Pick again</button></div></div>`;
   pages.show($("#result"));
-  $("#again").onclick = () => start(m.f[0].c.id, m.f[1].c.id, skinSel.value, !!bots[0]);
+  const them = m.f.filter((f) => f.team === 1).map((f) => f.c.id), mates = m.f.filter((f, k) => k > 0 && f.team === 0).map((f) => f.c.id);
+  $("#again").onclick = () => start(m.f[0].c.id, them[0]!, skinSel.value, !!bots[0], mates, them.slice(1));
   $("#pick").onclick = () => { $("#hud").hidden = true; drawPicker(); pages.show($("#select")); };
 }
 
@@ -2008,7 +2019,7 @@ function frame(now: number) {
     while (acc >= 1 / HZ && !m.over && hitStop <= 0) {
       const cur = m;
       const seats = step ? step.next(() => (paused || journalOpen ? IDLE : playerInput())) : null;
-      const both: Input[] | null = step ? seats && (wildBot ? [...seats, wildBot(cur)] : seats) : [bots[0] ? bots[0](cur) : playerInput(), bots[1] ? bots[1](cur) : IDLE];
+      const both: Input[] | null = step ? seats && (wildBot ? [...seats, wildBot(cur)] : seats) : cur.f.map((_, k) => { const b = bots[k]; return b ? b(cur) : k === 0 ? playerInput() : IDLE; });
       if (!both) { acc = Math.min(acc, 0.25); break; } // the friend's input isn't in yet: wait a frame, never guess
       live.step(both);
       moveFx.events(cur, cur.events);
@@ -2104,7 +2115,7 @@ else if (params.get("gallery") !== null) {
 }
 else if (params.get("faction") && stepOf(params.get("faction")!)) jumpToStage(params.get("faction")!);
 else if (params.get("world") === "1") { const a = STARTERS.find((s) => s === params.get("a")) ?? STARTERS[0]; if (!journey && params.get("a")) { journey = newJourney([a, ...STARTERS.filter((s) => s !== a)].slice(0, PICKS)); saveJourney(); } enterWorld(); }
-else if (params.get("a") && params.get("b")) start(pickA, pickB, skinSel.value, params.get("watch") === "1");
+else if (params.get("a") && params.get("b")) start(pickA, pickB, skinSel.value, params.get("watch") === "1", matesOf(params.get("with")), matesOf(params.get("and")));
 else if (params.get("versus") !== null) pages.show($("#select"));
 else if (duelCode(location.search)) versus.enter(duelCode(location.search)!);
 else if (coopCode(location.search)) versus.enter(coopCode(location.search)!, "coop");
