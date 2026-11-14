@@ -1,6 +1,7 @@
 // The Rust engine compiled to WebAssembly, behind the same FmEngine interface
 // as TsEngine. Runs inside the AudioWorklet (live) and on the main thread (bench).
 import type { FmEngine } from "./engine.ts";
+import { sendEq, type EqBand, type EqDoc, type EqStage } from "./eq.ts";
 
 interface Exports {
   memory: WebAssembly.Memory;
@@ -19,6 +20,11 @@ interface Exports {
   fm_click(e: number, accent: number): void;
   fm_render(e: number, out: number, send: number, frames: number): void;
   fm_meter(e: number, out: number): void;
+  fm_eq_new(sr: number): number;
+  fm_eq_free(q: number): void;
+  fm_eq_set(q: number, band: number, kind: number, freq: number, gain: number, width: number, slope: number, on: number): void;
+  fm_eq_reset(q: number): void;
+  fm_eq_process(q: number, buf: number, frames: number): void;
   fm_alloc(len: number): number;
   fm_dealloc(p: number, len: number): void;
 }
@@ -69,4 +75,28 @@ export class WasmEngine implements FmEngine {
     out.set(new Float32Array(this.x.memory.buffer, this.met, 4));
   }
   free() { this.x.fm_dealloc(this.buf, CHUNK * 2); this.x.fm_dealloc(this.snd, CHUNK * 2); this.x.fm_dealloc(this.met, 4); this.x.fm_free(this.h); }
+}
+
+/** Shape, the master EQ, in Rust: the same instance as the engine, so one wasm file holds both. */
+export class WasmEq implements EqStage {
+  private readonly h: number;
+  private readonly buf: number;
+  private readonly last: EqBand[] = [];
+  constructor(private readonly x: Exports, sampleRate: number) {
+    this.h = x.fm_eq_new(sampleRate);
+    if (!this.h) throw new Error("rust EQ rejected the sample rate");
+    this.buf = x.fm_alloc(CHUNK * 2);
+  }
+  set(doc: EqDoc) { sendEq(doc, this.last, (i, k, f, g, q, sl, on) => this.x.fm_eq_set(this.h, i, k, f, g, q, sl, on ? 1 : 0)); }
+  reset() { this.x.fm_eq_reset(this.h); }
+  process(io: Float32Array, frames: number) {
+    const n = Math.min(frames, io.length >> 1);
+    for (let at = 0; at < n; at += CHUNK) {
+      const k = Math.min(CHUNK, n - at);
+      new Float32Array(this.x.memory.buffer, this.buf, k * 2).set(io.subarray(at * 2, (at + k) * 2));
+      this.x.fm_eq_process(this.h, this.buf, k);
+      io.set(new Float32Array(this.x.memory.buffer, this.buf, k * 2), at * 2);
+    }
+  }
+  free() { this.x.fm_dealloc(this.buf, CHUNK * 2); this.x.fm_eq_free(this.h); }
 }

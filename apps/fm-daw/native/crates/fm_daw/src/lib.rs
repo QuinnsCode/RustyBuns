@@ -11,6 +11,10 @@
 //! linear memory.
 //!
 //! `fm_render` is the hot path: no allocation, no locks.
+//!
+//! `eq` is Shape, the master EQ, with its own `fm_eq_*` surface.
+
+pub mod eq;
 
 use std::f64::consts::PI;
 
@@ -773,6 +777,35 @@ pub unsafe extern "C" fn fm_meter(e: *mut Engine, out: *mut f32) {
     if out.is_null() { return; }
     let buf = std::slice::from_raw_parts_mut(out, 4);
     with!(e, e.meter(buf))
+}
+
+// ---- Shape, the master EQ (src/eq.rs) ----
+
+#[no_mangle]
+pub extern "C" fn fm_eq_new(sample_rate: f64) -> *mut eq::Eq {
+    if !(sample_rate >= 8000.0 && sample_rate <= 384000.0) { return std::ptr::null_mut(); }
+    Box::into_raw(Box::new(eq::Eq::new(sample_rate)))
+}
+
+/// # Safety
+/// `q` must come from `fm_eq_new` and not be used after this call.
+#[no_mangle]
+pub unsafe extern "C" fn fm_eq_free(q: *mut eq::Eq) { if !q.is_null() { drop(Box::from_raw(q)); } }
+
+#[no_mangle]
+pub extern "C" fn fm_eq_set(q: *mut eq::Eq, band: u32, kind: u32, freq: f64, gain: f64, width: f64, slope: f64, on: u32) {
+    with!(q, q.set_band(band as usize, kind, freq, gain, width, slope, on != 0))
+}
+#[no_mangle]
+pub extern "C" fn fm_eq_reset(q: *mut eq::Eq) { with!(q, q.reset()) }
+
+/// # Safety
+/// `buf` must point to at least `frames * 2` f32s.
+#[no_mangle]
+pub unsafe extern "C" fn fm_eq_process(q: *mut eq::Eq, buf: *mut f32, frames: u32) {
+    if buf.is_null() { return; }
+    let b = std::slice::from_raw_parts_mut(buf, frames as usize * 2);
+    with!(q, q.process(b, frames as usize))
 }
 
 /// Buffers in wasm linear memory for the worklet. Unused on the host.

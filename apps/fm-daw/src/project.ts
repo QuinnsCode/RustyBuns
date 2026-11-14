@@ -2,6 +2,7 @@
 // state, undo), the world (persists and rebroadcasts) and the bounce. The world
 // may face the internet on the edge, so everything that arrives is sanitized.
 import { arr, Bad, bool, check, int, maybe, num, obj, oneOf, opt, raw, str, type Guard } from "@rustybuns/util/guard";
+import { sanitizeEq, type EqDoc } from "./engine/eq.ts";
 import { TRACKS, NPARAMS, BEND_RANGE, LANE_BEND, LANE_STUTTER, clampLane, clampParam } from "./engine/params.ts";
 
 export interface Note { s: number; l: number; m: number; v: number } // start/length in beats, midi, velocity 0..1
@@ -26,8 +27,9 @@ export interface TrackDoc {
 /**
  * space: the reverb and delay send after the engine, 0 dry to 1 drenched (src/engine/space.ts).
  * squash: the multiband up/down compressor on the master, 0 off to 1 over the top (src/engine/squash.ts).
+ * eq: Shape, the master EQ before it: a slot per band, null when empty (src/engine/eq.ts).
  */
-export interface Project { v: 1; bpm: number; swing: number; space: number; squash: number; bars: number; tracks: TrackDoc[] }
+export interface Project { v: 1; bpm: number; swing: number; space: number; squash: number; eq: EqDoc; bars: number; tracks: TrackDoc[] }
 
 export type Op =
   | { t: "param"; track: number; i: number; v: number }
@@ -35,6 +37,7 @@ export type Op =
   | { t: "auto"; track: number; lanes: Lane[] }
   | { t: "track"; track: number; mute?: boolean; solo?: boolean; name?: string }
   | { t: "global"; bpm?: number; swing?: number; space?: number; squash?: number; bars?: number }
+  | { t: "eq"; bands: EqDoc }
   | { t: "replace"; project: Project };
 
 export const BEATS_PER_BAR = 4;
@@ -112,7 +115,7 @@ export class Take {
 }
 
 const bad = (why: string): never => { throw new Bad(why); };
-const PROJECT = obj({ tracks: arr(raw, TRACKS, { min: 1 }), bars: raw, bpm: num(40, 240, 120), swing: num(0, 0.6, 0), space: num(0, 1, 0), squash: num(0, 1, 0) });
+const PROJECT = obj({ tracks: arr(raw, TRACKS, { min: 1 }), bars: raw, bpm: num(40, 240, 120), swing: num(0, 0.6, 0), space: num(0, 1, 0), squash: num(0, 1, 0), eq: raw });
 
 export function sanitize(x: unknown): Project | null {
   const p = check(PROJECT, x);
@@ -120,7 +123,7 @@ export function sanitize(x: unknown): Project | null {
   const bars = okBars(p.bars) ? p.bars : 2, beats = bars * BEATS_PER_BAR;
   // older projects had fewer tracks: pad with silent synth tracks (gain 0)
   const tracks = [...p.tracks, ...Array.from({ length: TRACKS - p.tracks.length }, () => ({ kind: "synth" }))];
-  return { v: 1, bpm: p.bpm, swing: p.swing, space: p.space, squash: p.squash, bars, tracks: tracks.map((v, ti) => track(v, ti, beats)) };
+  return { v: 1, bpm: p.bpm, swing: p.swing, space: p.space, squash: p.squash, eq: sanitizeEq(p.eq), bars, tracks: tracks.map((v, ti) => track(v, ti, beats)) };
 }
 
 function track(v: unknown, ti: number, beats: number): TrackDoc {
@@ -139,6 +142,7 @@ const OPS: Guard<Op>[] = [
   obj({ t: tag("auto"), track: TRACK, lanes: (v: unknown) => sanitizeLanes(v, MAX_BARS * BEATS_PER_BAR) }),
   obj({ t: tag("track"), track: TRACK, mute: maybe(bool()), solo: maybe(bool()), name: maybe(str(Infinity, { min: 0 })) }),
   obj({ t: tag("global"), bpm: maybe(real), swing: maybe(real), space: maybe(real), squash: maybe(real), bars: maybe(BARS) }),
+  obj({ t: tag("eq"), bands: sanitizeEq }),
   obj({ t: tag("replace"), project: PROJ }),
 ];
 export const decodeOp = (v: unknown): Op | null => OPS.reduce<Op | null>((got, g) => got ?? check(g, v), null);
@@ -247,6 +251,8 @@ export function apply(p: Project, op: Op): Project {
       // shrinking the loop drops notes past the new end
       return bars < p.bars ? { ...next, tracks: next.tracks.map((t) => ({ ...t, notes: sanitizeNotes(t.notes, bars * BEATS_PER_BAR) })) } : next;
     }
+    case "eq":
+      return { ...p, eq: sanitizeEq(op.bands) };
     case "replace":
       return sanitize(op.project) ?? p;
     default:

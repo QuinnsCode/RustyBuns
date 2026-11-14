@@ -1,6 +1,7 @@
 // The default kit and a demo groove. Every sound is the same 4-op FM voice;
 // drums lean on the pitch envelope and noise, synths on the algorithm.
 import { NPARAMS, OPS, P, clampParam } from "./engine/params.ts";
+import { flatEq } from "./engine/eq.ts";
 import type { Note, Project, TrackDoc } from "./project.ts";
 
 export type OpSpec = [ratio: number, level: number, attack: number, decay: number, sustain: number, release: number];
@@ -147,7 +148,7 @@ export function demoProject(): Project {
   const tracks: TrackDoc[] = KIT.map((k, i) => ({
     ...k, params: k.params.slice(), notes: notes[i].sort((a, b) => a.s - b.s || a.m - b.m), mute: false, solo: false,
   }));
-  return { v: 1, bpm: 118, swing: 0.12, space: 0.15, squash: 0, bars, tracks };
+  return { v: 1, bpm: 118, swing: 0.12, space: 0.15, squash: 0, eq: flatEq(), bars, tracks };
 }
 
 /** Random but tame: levels and feedback capped, envelopes short-ish, gain kept. */

@@ -3,6 +3,7 @@ import type { FmEngine } from "./engine.ts";
 import { renderPattern } from "./sequencer.ts";
 import { Space } from "./space.ts";
 import { Squash } from "./squash.ts";
+import { TsEq } from "./eq.ts";
 import { audible, loopBeats, type Project } from "../project.ts";
 
 export function renderProject(engine: FmEngine, p: Project, sampleRate: number, seconds: number, masterGain: number): Float32Array {
@@ -12,6 +13,10 @@ export function renderProject(engine: FmEngine, p: Project, sampleRate: number, 
     seq.bpm = p.bpm; seq.setSwing(p.swing); seq.setLoopBeats(loopBeats(p)); seq.setAudible(audible(p));
     engine.setMaster(masterGain);
   }, send);
+  const eq = new TsEq(sampleRate);
+  eq.set(p.eq);
+  eq.reset();
+  eq.process(out, out.length >> 1);
   const squash = new Squash(sampleRate);
   squash.setAmount(p.squash);
   squash.process(out, out.length >> 1);

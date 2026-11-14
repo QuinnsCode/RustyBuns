@@ -2,7 +2,8 @@
 // sequencer that drives it. The page talks to it only through messages; the
 // worklet keeps a mirror of every param so it can swap engines mid-groove.
 import { TsEngine, type FmEngine } from "./engine.ts";
-import { WasmEngine, instantiateFm } from "./wasm.ts";
+import { WasmEngine, WasmEq, instantiateFm } from "./wasm.ts";
+import { TsEq, flatEq, type EqDoc, type EqStage } from "./eq.ts";
 import { Sequencer } from "./sequencer.ts";
 import { Space } from "./space.ts";
 import { Squash } from "./squash.ts";
@@ -25,6 +26,8 @@ class FmProcessor extends AudioWorkletProcessor {
   private seq = new Sequencer(this.engine, sampleRate);
   private space = new Space(sampleRate);
   private squash = new Squash(sampleRate);
+  private eqDoc: EqDoc = flatEq();
+  private eq: EqStage = new TsEq(sampleRate);
   private buf = new Float32Array(256);
   private send = new Float32Array(256);
   private meter = new Float32Array(4);
@@ -49,6 +52,7 @@ class FmProcessor extends AudioWorkletProcessor {
         this.setAudible(m.audible);
         this.space.setTempo(m.bpm); this.space.setAmount(m.space);
         this.squash.setAmount(m.squash);
+        this.eqDoc = m.eq; this.eq.set(m.eq);
         break;
       case "param":
         this.params[m.track * NPARAMS + m.i] = m.v;
@@ -60,6 +64,7 @@ class FmProcessor extends AudioWorkletProcessor {
       case "tempo": s.bpm = m.bpm; s.setSwing(m.swing); s.setLoopBeats(m.loopBeats); this.space.setTempo(m.bpm); break;
       case "space": this.space.setAmount(m.amount); break;
       case "squash": this.squash.setAmount(m.amount); break;
+      case "eq": this.eqDoc = m.bands; this.eq.set(m.bands); break;
       case "master": this.master = m.gain; this.engine.setMaster(m.gain); break;
       case "play": s.play(m.countIn); break;
       case "stop": s.stop(); this.engine.allOff(); break;
@@ -68,7 +73,7 @@ class FmProcessor extends AudioWorkletProcessor {
       case "latency": s.latency = m.seconds; break;
       case "on": s.liveOn(m.track, m.midi, m.vel, m.rec ?? true); break;
       case "off": s.liveOff(m.track, m.midi); break;
-      case "panic": s.stop(); s.setRepeat(0); this.engine.panic(); this.space.reset(); this.squash.reset(); break;
+      case "panic": s.stop(); s.setRepeat(0); this.engine.panic(); this.space.reset(); this.squash.reset(); this.eq.reset(); break;
       case "bend": if (m.track >= 0 && m.track < TRACKS) { this.bend[m.track] = m.semis; this.engine.setBend(m.track, m.semis); } break;
       case "repeat": s.setRepeat(m.beats); break;
       case "move": s.move(m.track, m.i, m.v, m.was); break;
@@ -83,9 +88,11 @@ class FmProcessor extends AudioWorkletProcessor {
 
   private async swap(m: Extract<ToWorklet, { t: "engine" }>) {
     try {
-      const next: FmEngine = m.kind === "rust" && m.bytes
-        ? new WasmEngine(await instantiateFm(m.bytes), sampleRate)
-        : new TsEngine(sampleRate);
+      // the engine and Shape come from the same wasm instance, or are both TypeScript
+      const x = m.kind === "rust" && m.bytes ? await instantiateFm(m.bytes) : null;
+      const next: FmEngine = x ? new WasmEngine(x, sampleRate) : new TsEngine(sampleRate);
+      const eq: EqStage = x ? new WasmEq(x, sampleRate) : new TsEq(sampleRate);
+      eq.set(this.eqDoc);
       for (let i = 0; i < this.params.length; i++) next.setParam((i / NPARAMS) | 0, i % NPARAMS, this.params[i]);
       for (let t = 0; t < TRACKS; t++) { next.setMute(t, this.muted[t]); next.setBend(t, this.bend[t]); }
       next.setMaster(this.master);
@@ -96,6 +103,9 @@ class FmProcessor extends AudioWorkletProcessor {
       this.kind = m.kind;
       old.panic();
       old.free?.();
+      const oldEq = this.eq;
+      this.eq = eq;
+      oldEq.free?.();
       this.port.postMessage({ t: "engine", kind: this.kind });
     } catch (e) {
       this.port.postMessage({ t: "engine", kind: this.kind, error: String((e as Error)?.message ?? e) });
@@ -109,6 +119,7 @@ class FmProcessor extends AudioWorkletProcessor {
     if (this.buf.length < frames * 2) { this.buf = new Float32Array(frames * 2); this.send = new Float32Array(frames * 2); }
     try {
       this.seq.process(this.buf, frames, this.send);
+      this.eq.process(this.buf, frames);
       this.squash.process(this.buf, frames);
       this.space.process(this.buf, this.send, frames);
     } catch (e) {
