@@ -499,8 +499,9 @@ export type HubFriend = Of<typeof HubFriend>;
 /** A note in the hub: a friend's ask or answer, or what an app told you for them (`app`, with its text and link). */
 export const HubNote = obj({ key: str(64), at: num(0, 1e14), kind: str(16), from: obj({ id: str(200), name: str(200, { min: 0 }) }), app: opt(str(64)), text: opt(str(280)), link: opt(str(2000)) });
 export type HubNote = Of<typeof HubNote>;
-/** What an app reads of the hub: friends, notes, and the person's friend link (asks are eqosys's own page's business). */
-export const HubView = obj({ friends: arr(HubFriend, 1000), notes: arr(HubNote, 1000), link: opt(str(300)) });
+/** What an app reads of the hub: friends, notes, and the person's friend link (asks are eqosys's own page's business). `coworkers` are the
+ * people they share a studio with who aren't friends: online the same way, no friend request needed. */
+export const HubView = obj({ friends: arr(HubFriend, 1000), coworkers: opt(arr(HubFriend, 1000)), notes: arr(HubNote, 1000), link: opt(str(300)) });
 export type HubView = Of<typeof HubView>;
 
 /**
@@ -530,8 +531,8 @@ export function hub({ url, token }: PartyConfig) {
   };
 }
 
-/** A message in a space's channel: its number there, and who said what when. */
-export const SpaceMessage = obj({ id: int(1, 1e12), from: obj({ id: str(200), name: str(200) }), text: str(280), at: int(0, 1e15) });
+/** A message in a space's channel: its number there, and who said what when. Up to 280 characters, 2000 in a studio's space (the `space` frame's `max`). */
+export const SpaceMessage = obj({ id: int(1, 1e12), from: obj({ id: str(200), name: str(200) }), text: str(2000), at: int(0, 1e15) });
 export type SpaceMessage = Of<typeof SpaceMessage>;
 /** A voice channel: its id (what `talk` and `inVoice` take) and its name. */
 export const SpaceVoice = obj({ id: str(24), name: str(24) });
@@ -544,7 +545,7 @@ export type SpaceMember = Of<typeof SpaceMember>;
  * a report, or (to whoever asked) a one-use ticket into a voice channel on Qlave, for `join` in @rustybuns/util/voice.
  */
 export const SpaceMsg: Guard<
-  | { t: "space"; name: string; channels: string[]; voice: SpaceVoice[]; owner: boolean }
+  | { t: "space"; name: string; channels: string[]; voice: SpaceVoice[]; owner: boolean; max?: number }
   | { t: "online"; members: SpaceMember[] }
   | ({ t: "said"; channel: string } & SpaceMessage)
   | { t: "history"; channel: string; messages: SpaceMessage[]; more: boolean }
@@ -554,7 +555,7 @@ export const SpaceMsg: Guard<
 > = (v) => {
   const t = check(obj({ t: oneOf(["space", "online", "said", "history", "refused", "reported", "ticket"]) }), v)?.t;
   const ch = str(24);
-  if (t === "space") return { t, ...obj({ name: str(60), channels: arr(ch, 100), voice: arr(SpaceVoice, 100), owner: bool() })(v) };
+  if (t === "space") return { t, ...obj({ name: str(60), channels: arr(ch, 100), voice: arr(SpaceVoice, 100), owner: bool(), max: opt(int(1, 100_000)) })(v) };
   if (t === "online") return { t, ...obj({ members: arr(SpaceMember, 1000) })(v) };
   if (t === "ticket") return { t, ...obj({ channel: ch, url: str(300, { re: /^https?:\/\// }), ticket: str(5000) })(v) };
   if (t === "said") return { t, channel: obj({ channel: ch })(v).channel, ...SpaceMessage(v) };
@@ -564,14 +565,16 @@ export const SpaceMsg: Guard<
   throw new Error("not a space message");
 };
 export type SpaceMsg = Of<typeof SpaceMsg>;
-/** A space a person is in, as GET /q/space lists it; `invite` only on the ones they own. */
-export const SpaceRow = obj({ id: str(64), name: str(60), owner: bool(), invite: opt(str(12)) });
+/** A space a person is in, as GET /q/space lists it; `invite` only on the ones they own. `studio` is the studio that owns it: its members
+ * are the studio's, `owner` means they are one of its owners or admins, and it has no invite. */
+export const SpaceRow = obj({ id: str(64), name: str(60), owner: bool(), invite: opt(str(12)), studio: opt(str(64)) });
 export type SpaceRow = Of<typeof SpaceRow>;
 export const SpaceRows = obj({ spaces: arr(SpaceRow, 1000) });
 
 /** What a page hears from an open space. Every one is optional. */
 export interface SpaceHandlers {
-  space?: (s: { name: string; channels: string[]; voice: SpaceVoice[]; owner: boolean }) => void;
+  /** `max`: the longest message this space takes. */
+  space?: (s: { name: string; channels: string[]; voice: SpaceVoice[]; owner: boolean; max?: number }) => void;
   online?: (members: SpaceMember[]) => void;
   said?: (channel: string, m: SpaceMessage) => void;
   history?: (channel: string, messages: SpaceMessage[], more: boolean) => void;
@@ -607,6 +610,11 @@ export function space({ url, token }: PartyConfig) {
     async make(name: string) {
       const init = authed("POST", { name });
       return init ? getJson(`${url()}/q/space`, obj({ id: str(64), invite: str(12) }), init) : null;
+    },
+    /** A studio's own space (its owner or admin asks): one a studio, its members are the studio's, and it has no invite. Its id. */
+    async makeForStudio(studio: string, name: string) {
+      const init = authed("POST", { name, studio });
+      return init ? getJson(`${url()}/q/space`, obj({ id: str(64) }), init) : null;
     },
     /** Join by an invite code: the space's id and name, or null for a wrong code. */
     async join(invite: string) {

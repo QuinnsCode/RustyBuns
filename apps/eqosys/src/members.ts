@@ -6,9 +6,9 @@ import { sign, type Handoff } from "@rustybuns/util/token";
 import { hubErase, hubOut } from "./qollab/hub.ts";
 import { partyOf } from "./qollab/party.ts";
 import { send } from "./qollab/qlave.ts";
-import { spaceOf } from "./qollab/space.ts";
+import { SPACES_OF, spaceOf } from "./qollab/space.ts";
 import { vaultFor } from "./vault.ts";
-import { studioErase } from "./studios.ts";
+import { SOLE_OWNED, studioErase } from "./studios.ts";
 import { oauthToken } from "./auth.ts";
 import type { Region } from "@rustybuns/util/privacy";
 import { b64url, digest, sha256, type Env } from "./env.ts";
@@ -103,7 +103,7 @@ export async function closeSockets(conf: Env, userId: string, app: string) {
   const q = new URLSearchParams({ id: userId, app });
   const [seats, spaces] = await Promise.all([
     conf.PARTY ? conf.DB.prepare("SELECT code FROM party_seats WHERE user_id = ?").bind(userId).all<{ code: string }>() : null,
-    conf.SPACE ? conf.DB.prepare("SELECT space_id AS id FROM space_members WHERE user_id = ?").bind(userId).all<{ id: string }>() : null,
+    conf.SPACE ? conf.DB.prepare(SPACES_OF).bind(userId).all<{ id: string }>() : null,
   ]);
   await Promise.allSettled([
     ...conf.HUB ? [hubOut(conf.HUB, userId, app)] : [],
@@ -234,9 +234,9 @@ export async function deleteAccount(conf: Env, userId: string, iss: string) {
   // Every party they sat in forgets them: their sockets close and their ready flag, mute and messages go (and a party they hosted ends).
   const seats = await conf.DB.prepare("SELECT code FROM party_seats WHERE user_id = ?").bind(userId).all<{ code: string }>();
   if (conf.PARTY) for (const s of seats.results) await partyOf(conf.PARTY, s.code).fetch(new Request(`https://party/erase?${new URLSearchParams({ id: userId })}`)).catch(() => null);
-  // Spaces they own are deleted for everyone; in the others their messages go.
-  const owned = (await conf.DB.prepare("SELECT id FROM spaces WHERE owner = ?").bind(userId).all<{ id: string }>()).results.map((r) => r.id);
-  const joined = (await conf.DB.prepare("SELECT space_id AS id FROM space_members WHERE user_id = ?").bind(userId).all<{ id: string }>()).results.map((r) => r.id);
+  // Spaces they own are deleted for everyone (a studio's space only with a studio that goes with them); in the others their messages go.
+  const owned = (await conf.DB.prepare(`SELECT id FROM spaces WHERE (owner = ?1 AND studio_id IS NULL) OR studio_id IN (${SOLE_OWNED})`).bind(userId).all<{ id: string }>()).results.map((r) => r.id);
+  const joined = (await conf.DB.prepare(SPACES_OF).bind(userId).all<{ id: string }>()).results.map((r) => r.id);
   if (conf.SPACE) for (const id of joined) await spaceOf(conf.SPACE, id).fetch(new Request(owned.includes(id) ? `https://space/drop?${new URLSearchParams({ iss })}` : `https://space/erase?${new URLSearchParams({ id: userId, iss })}`)).catch(() => null);
   // And Qlave drops them from every voice channel (the spaces they owned end theirs on /drop). Three tries, best effort:
   // a voice room is gone when its last person leaves, so it must not keep an account.
@@ -245,7 +245,7 @@ export async function deleteAccount(conf: Env, userId: string, iss: string) {
   const gone = (table: string, col = "user_id") => conf.DB.prepare(`DELETE FROM ${table} WHERE ${col} = ?`).bind(userId);
   await conf.DB.batch([
     ...studioErase(conf, userId),
-    ...owned.map((id) => conf.DB.prepare("DELETE FROM space_members WHERE space_id = ?").bind(id)), gone("spaces", "owner"), gone("space_members"),
+    ...owned.map((id) => conf.DB.prepare("DELETE FROM space_members WHERE space_id = ?").bind(id)), conf.DB.prepare("DELETE FROM spaces WHERE owner = ? AND studio_id IS NULL").bind(userId), gone("space_members"),
     gone("codes"), gone("party_seats"), gone("saves"), gone("unlocks"), gone("refresh"), gone("reports"), gone("access"), gone("links"), gone("members"), gone("token_cuts"),
     gone('"session"', '"userId"'), gone('"account"', '"userId"'),
     conf.DB.prepare(`DELETE FROM "verification" WHERE identifier = ?`).bind(u.email),

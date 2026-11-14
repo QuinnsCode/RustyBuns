@@ -32,7 +32,14 @@ export const STUDIO_CSS = `
 .home .inbox{display:grid;gap:.4rem;margin-top:.4rem}.home .inbox>div{display:grid;gap:.15rem;padding:.4rem .6rem;border-radius:10px;border:1px solid var(--rim);min-width:0}
 .home .inbox b{font-weight:500;overflow-wrap:anywhere}.home .inbox p{margin:0;font-size:.82rem;white-space:pre-wrap;overflow-wrap:anywhere}
 .home .inbox small{font-size:.72rem;color:var(--mut)}
+.home .studio .people form{display:inline-flex;margin:0;align-self:center}
+.home .people button{display:inline-grid;place-items:center;width:1.4rem;height:1.4rem;padding:0;border:0;border-radius:999px;background:none;color:var(--mut);cursor:pointer}
+.home .people button:hover{color:var(--ink);background:color-mix(in oklab,var(--rim) 60%,transparent)}.home .people button svg{width:.9rem;height:.9rem}
 `;
+
+// Lucide's user-minus (ISC).
+const UserMinus = () => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+  <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M22 11h-6" /></svg>;
 
 /** When a deploy went out, in UTC: "2026-11-06 14:02". */
 const shippedAt = (t: number) => new Date(t).toISOString().slice(0, 16).replace("T", " ");
@@ -112,7 +119,11 @@ export function Studios({ studios, unlocks }: { studios: Shelf[]; unlocks: Unloc
         <section key={s.id} className="card studio" aria-label={s.name}>
           <header><b>{s.name}</b><span className="pill">{s.kind}</span><span className="pill on">you: {ROLE_WORD[s.role]}</span></header>
           <div className="people" aria-label="Members">
-            {s.people.map((p) => <span key={p.email} title={p.email}><b>{p.name || p.email}</b><span>{ROLE_WORD[p.role]}</span></span>)}
+            {s.people.map((p) => <span key={p.email} title={p.email}><b>{p.name || p.email}</b><span>{ROLE_WORD[p.role]}</span>
+              {runs(s) && (p.role !== "owner" || s.role === "owner") && (
+                <form method="post" action="/do/studio-remove"><input type="hidden" name="studio" value={s.id} /><input type="hidden" name="email" value={p.email} />
+                  <button type="submit" title={`Take ${p.name || p.email} out`} aria-label={`Take ${p.name || p.email} out of ${s.name}`}><UserMinus /></button></form>
+              )}</span>)}
           </div>
           <div className="shelf" aria-label="Shelf">
             {s.apps.length === 0 ? <span className="mut">No apps on the shelf yet.</span> : s.apps.map((a) => (
@@ -123,6 +134,13 @@ export function Studios({ studios, unlocks }: { studios: Shelf[]; unlocks: Unloc
             ))}
           </div>
           {runs(s) && <details className="add"><summary className="pill">Add a game</summary><GameForm studio={s.id} /></details>}
+          {s.space ? <p><a className="pill" href="/spaces">The studio's space</a></p> : runs(s) && (
+            <form method="post" action="/do/studio-space" aria-label={`Make ${s.name}'s space`}>
+              <input type="hidden" name="studio" value={s.id} />
+              <input name="name" defaultValue={s.name} maxLength={60} required aria-label="The space's name" />
+              <button className={btn()} type="submit">Make its space</button>
+            </form>
+          )}
           {runs(s) && (
             <form method="post" action="/do/studio-add" aria-label={`Add someone to ${s.name}`}>
               <input type="hidden" name="studio" value={s.id} />

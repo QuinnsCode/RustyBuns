@@ -62,7 +62,7 @@ review: [LIBRARY.md](LIBRARY.md).
 
 ## Reach it
 
-`eq_studios`, `eq_studio_make` and `eq_studio_add` in `src/tools.ts`: the Cmd/Ctrl+K palette and WebMCP on eqosys's pages,
+`eq_studios`, `eq_studio_make`, `eq_studio_add` and `eq_studio_remove` in `src/tools.ts`: the Cmd/Ctrl+K palette and WebMCP on eqosys's pages,
 `POST /api/tools/<name>`, and `bun apps/eqosys/scripts/eq.ts`. A Studio tab on the home page is
 [#3817](https://github.com/QuinnsCode/RustyBuns/issues/3817); deploying it is
 [#3820](https://github.com/QuinnsCode/RustyBuns/issues/3820).

@@ -13,6 +13,7 @@ import { authFor, authOn, isAdmin, meOf, providers, type Me } from "./auth.ts";
 import { b64url, crossSite, json, loopbackOn, VERSION, type Env } from "./env.ts";
 import { hubAnnounce, hubAsk, hubInvited, hubRedeem, linkOf, type Who } from "./qollab/hub.ts";
 import { isQollab, qollab } from "./qollab/routes.ts";
+import { makeSpace, SPACE_NAME, studioRemove } from "./qollab/space.ts";
 import { bearerOf, cors, HOME_LIFE, issuer, tokenOf } from "./door.ts";
 import { deleteAccount, exchange, link, mint, mintRefresh, setAccess, signOutApps } from "./members.ts";
 import { oauth } from "./oauth.ts";
@@ -368,6 +369,17 @@ export async function handle(req: Request, conf: Env): Promise<Response | null> 
     if (!role) return see("/?tab=studio&e=studio");
     const r = await addMember(conf, field(form, "studio"), me.id, field(form, "email"), role);
     return see(r.ok ? "/?tab=studio" : `/?tab=studio&e=${r.status === 404 ? "nobody" : "studio"}`);
+  }
+  if (act === "studio-remove") {
+    const r = await studioRemove(conf, field(form, "studio"), me.id, field(form, "email"));
+    return see(r.ok ? "/?tab=studio" : "/?tab=studio&e=studio");
+  }
+  // The studio's own Qollab space (space.ts): its owner or admin makes it once; its members are the studio's.
+  if (act === "studio-space") {
+    const studio = field(form, "studio"), name = check(SPACE_NAME, field(form, "name").trim());
+    if (!name) return see("/?tab=studio&e=name");
+    const r = await makeSpace(conf, me.id, name, studio);
+    return see(r.ok ? "/spaces" : "/?tab=studio&e=studio");
   }
   if (act === "studio-make") {
     const name = check(STUDIO_NAME, field(form, "name").trim()), kind = check(Kind, field(form, "kind"));
