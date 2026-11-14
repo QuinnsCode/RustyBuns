@@ -15,7 +15,7 @@ import { arr, int, num, obj } from "@rustybuns/util/guard";
 import { bot } from "../src/bot.ts";
 import { ROSTER } from "../src/roster.ts";
 import { hashMatch, rosterJson as rosterOf, tsSim, wasmSim } from "../src/sim-wasm.ts";
-import { newMatch, step } from "../src/sim.ts";
+import { newMatch, newTeamMatch, step } from "../src/sim.ts";
 
 const CRATE = join(import.meta.dir, "../sim-rs");
 export const BIN = join(CRATE, "target/release/mythic-sim");
@@ -25,6 +25,8 @@ export const WASM = join(import.meta.dir, "../src/sim.wasm");
 const rosterJson = () => rosterOf(ROSTER);
 
 export type Pair = [number, number];
+/** A fight in a trace: a pair one on one, or a team a side as roster indices (#3929: two against one). */
+export type Fight = Pair | [number[], number[]];
 /** One fight's answer from a trace: who won, how long it ran, and the state hash before it and after every tick. */
 export const Trace = obj({ winner: int(0, 1), ticks: int(0, 1e6), hashes: arr(int(0, 2 ** 32 - 1), 1e6) });
 export type Trace = ReturnType<typeof Trace>;
@@ -32,7 +34,7 @@ const Traces = arr(Trace, 1e6);
 /** A pairing's rate, as tune.ts `rate` gives it: [wins, ring-outs, time-outs, seconds a fight]. */
 const Rates = arr(arr(num(0, 1e6), 4, { min: 4 }), 1e6);
 
-type Command = { cmd: "rates"; pairs: Pair[]; n: number; threads?: number } | { cmd: "trace"; pairs: Pair[]; seeds: number[]; threads?: number };
+type Command = { cmd: "rates"; pairs: Pair[]; n: number; threads?: number } | { cmd: "trace"; pairs: Fight[]; seeds: number[]; threads?: number };
 
 /** The native binary: the command on stdin, the answer on stdout. */
 export async function native(c: Command): Promise<unknown> {
@@ -63,16 +65,26 @@ export async function wasm(c: Command): Promise<unknown> {
 export const rustRates = async (pairs: Pair[], n: number) =>
   Rates(await native({ cmd: "rates", pairs, n })).map(([wins, ringOuts, time, seconds]) => ({ wins: wins!, ringOuts: ringOuts!, time: time!, seconds: seconds! }));
 
-export const nativeTrace = async (pairs: Pair[], seeds: number[]) => Traces(await native({ cmd: "trace", pairs, seeds }));
-export const wasmTrace = async (pairs: Pair[], seeds: number[]) => Traces(await wasm({ cmd: "trace", pairs, seeds }));
-
-/** tune.ts `play` on the TS sim, hashing the state before the first tick and after every one. */
-export function tsTrace(pairs: Pair[], seeds: number[]): Trace[] {
+export const nativeTrace = async (pairs: Fight[], seeds: number[]) => Traces(await native({ cmd: "trace", pairs, seeds }));
+export const wasmTrace = async (pairs: Fight[], seeds: number[]) => Traces(await wasm({ cmd: "trace", pairs, seeds }));
+/** tune.ts `play` on the TS sim, hashing the state before the first tick and after every one. A bot a fighter: the
+ * first seeded `seed`, fighter k `seed * 7 + k` (lib.rs play_teams). */
+export function tsTrace(pairs: Fight[], seeds: number[]): Trace[] {
   return pairs.flatMap(([i, j]) => seeds.map((seed) => {
-    const m = newMatch(ROSTER[i]!, ROSTER[j]!), bots = [bot(0, seed), bot(1, seed * 7 + 1)] as const, hashes = [hashMatch(m)];
-    while (!m.over) { step(m, [bots[0](m), bots[1](m)]); hashes.push(hashMatch(m)); }
+    const m = typeof i === "number" && typeof j === "number" ? newMatch(ROSTER[i]!, ROSTER[j]!) : newTeamMatch([[i].flat().map((k) => ROSTER[k]!), [j].flat().map((k) => ROSTER[k]!)]);
+    const bots = m.f.map((_, k) => bot(k, k ? seed * 7 + k : seed)), hashes = [hashMatch(m)];
+    while (!m.over) { step(m, bots.map((b) => b(m))); hashes.push(hashMatch(m)); }
     return { winner: m.winner!, ticks: m.tick, hashes };
   }));
+}
+/** Two friends against a wild one, spread over the roster like samplePairs: three different creatures a fight. */
+export function sampleTeams(count: number): [number[], number[]][] {
+  const len = ROSTER.length, out: [number[], number[]][] = [];
+  for (let k = 0; out.length < count; k++) {
+    const a = (k * 11 + 2) % len, b = (k * 5 + 9) % len, c = (k * 17 + 3) % len;
+    if (a !== b && b !== c && a !== c) out.push([[a, b], [c]]);
+  }
+  return out;
 }
 
 /** Where two traces of the same fights first part: fight k at tick t, or null when every hash matches. */

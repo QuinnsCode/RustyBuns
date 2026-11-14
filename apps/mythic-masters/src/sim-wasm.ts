@@ -8,7 +8,7 @@
 // and how a fighter the page changed (health carried between fights, a fighter put on the ledge) goes back in.
 import { FIELDS, STRONG, type Field } from "./fields.ts";
 import { body, SLOTS, type Creature, type Move, type Slot } from "./roster.ts";
-import { newMatch, step, type Area, type Event, type Fighter, type Input, type Match, type Ranged, type State } from "./sim.ts";
+import { IDLE, newMatch, newTeamMatch, step, type Area, type Event, type Fighter, type Input, type Match, type Ranged, type State } from "./sim.ts";
 
 const KEYS = ["up", "down", "light", "heavy", "special", "ultimate", "guard", "dash", "big"] as const;
 const STATES: readonly State[] = ["free", "attack", "stun", "guard", "dash", "ledge"];
@@ -26,7 +26,7 @@ export function walkFighter(m: Match, f: Fighter, n: Sink) {
   n(f.buf ? key(f.buf.k) : -1); n(f.buf ? f.buf.left : 0);
   flag(f.hop);
   n(f.ring); n(f.spin); n(f.orbit); n(f.bearing); n(f.red); n(f.hurt);
-  flag(f.fresh); n(f.drop);
+  flag(f.fresh); n(f.drop); n(f.team); flag(f.down);
   const k = f.marks;
   n(k.dot); n(k.dotPer); n(k.dotField ? FIELDS.indexOf(k.dotField) : -1); n(k.chill); n(k.root);
   const p = f.prev;
@@ -48,8 +48,10 @@ export function walk(m: Match, n: Sink) {
   n(m.areas.length);
   for (const a of m.areas) {
     n(a.owner); n(slot(a.move.slot));
-    for (const x of [a.power, a.at.x, a.at.y, a.at.z, a.from.x, a.from.y, a.from.z, a.dir.x, a.dir.y, a.dir.z, a.t, a.life, a.land, a.every, a.ramp, a.hits[0], a.hits[1]]) n(x);
-    flag(a.struck[0]); flag(a.struck[1]);
+    for (const x of [a.power, a.at.x, a.at.y, a.at.z, a.from.x, a.from.y, a.from.z, a.dir.x, a.dir.y, a.dir.z, a.t, a.life, a.land, a.every, a.ramp]) n(x);
+    // One per fighter: a slot nobody was caught in yet reads 0 (the list starts two long and grows).
+    m.f.forEach((_, k) => n(a.hits[k] ?? 0));
+    m.f.forEach((_, k) => flag(!!a.struck[k]));
     const d = a.d;
     n(SHAPES.indexOf(d.shape));
     if (d.shape === "column") { n(d.length); n(d.width); n(d.speed); }
@@ -83,7 +85,7 @@ export function hashMatch(m: Match): number {
 }
 
 /** Where each fighter's numbers start and end in a state list, as `readInto` found them. */
-export type Spans = [[number, number], [number, number]];
+export type Spans = [number, number][];
 
 /** state.rs's numbers into `m`, in place: the fighters keep their creature, body and moves (and their identity), and
  * a shape or an event names its move by slot, which is looked up on its fighter. */
@@ -93,7 +95,7 @@ export function readInto(m: Match, s: ArrayLike<number>): Spans {
   const into = (p: { x: number; y: number; z: number }) => { p.x = n(); p.y = n(); p.z = n(); };
   m.tick = n(); m.over = flag();
   const w = n();
-  m.winner = w < 0 ? null : (w as 0 | 1);
+  m.winner = w < 0 ? null : w ? 1 : 0;
   const spans: [number, number][] = [], held: (number | null)[] = [];
   for (const f of m.f) {
     const from = at;
@@ -105,7 +107,7 @@ export function readInto(m: Match, s: ArrayLike<number>): Spans {
     f.buf = bk < 0 ? null : { k: KEYS[bk] as NonNullable<Fighter["buf"]>["k"], left };
     f.hop = flag();
     f.ring = n(); f.spin = n(); f.orbit = n(); f.bearing = n(); f.red = n(); f.hurt = n();
-    f.fresh = flag(); f.drop = n();
+    f.fresh = flag(); f.drop = n(); f.team = n() ? 1 : 0; f.down = flag();
     const k = f.marks;
     k.dot = n(); k.dotPer = n();
     const df = n();
@@ -128,9 +130,9 @@ export function readInto(m: Match, s: ArrayLike<number>): Spans {
   }
   const areas: Area[] = [];
   for (let c = n(); c > 0; c--) {
-    const owner = n() as 0 | 1, move = m.f[owner].moves[SLOTS[n()]!];
+    const owner = n(), move = m.f[owner]!.moves[SLOTS[n()]!];
     const power = n(), aAt = v3(), from = v3(), dir = v3(), t = n(), life = n(), land = n(), every = n(), ramp = n();
-    const hits: [number, number] = [n(), n()], struck: [boolean, boolean] = [flag(), flag()];
+    const hits = m.f.map(() => n()), struck = m.f.map(() => flag());
     const shape = SHAPES[n()]!;
     const d = (shape === "column" ? { shape, length: n(), width: n(), speed: n() }
       : shape === "wall" ? { shape, width: n(), depth: n(), travel: n(), speed: n() }
@@ -145,19 +147,19 @@ export function readInto(m: Match, s: ArrayLike<number>): Spans {
   for (let c = n(); c > 0; c--) {
     const kind = n();
     if (kind === 0) {
-      const by = n() as 0 | 1, on = n() as 0 | 1, move = m.f[by].moves[SLOTS[n()]!], field = FIELDS[n()] as Field;
+      const by = n(), on = n(), move = m.f[by]!.moves[SLOTS[n()]!], field = FIELDS[n()] as Field;
       events.push({ kind: "hit", by, on, move: move.name, slot: move.slot, fx: move.fx, field, damage: n(), guarded: flag(), rear: flag(), spike: flag(), at: v3() });
     } else if (kind === 1) {
-      const by = n() as 0 | 1, move = m.f[by].moves[SLOTS[n()]!];
+      const by = n(), move = m.f[by]!.moves[SLOTS[n()]!];
       events.push({ kind: "move", by, move, at: v3(), yaw: n(), target: v3() });
-    } else if (kind === 2) events.push({ kind: "land", who: n() as 0 | 1, speed: n() });
-    else if (kind === 3) events.push({ kind: "clipped", who: n() as 0 | 1 });
-    else if (kind === 4) events.push({ kind: "ledge", who: n() as 0 | 1 });
-    else events.push({ kind: "ko", who: n() as 0 | 1, how: HOW[n()]! });
+    } else if (kind === 2) events.push({ kind: "land", who: n(), speed: n() });
+    else if (kind === 3) events.push({ kind: "clipped", who: n() });
+    else if (kind === 4) events.push({ kind: "ledge", who: n() });
+    else events.push({ kind: "ko", who: n(), how: HOW[n()]! });
   }
   m.events = events;
   if (at !== s.length) throw new Error(`sim.wasm state: read ${at} of ${s.length} numbers`);
-  return spans as Spans;
+  return spans;
 }
 /** A stream its fighter still holds after it left the live shapes: nothing reads it but the hash, which only asks that it is one. */
 const stub = (move: Move): Area => ({
@@ -177,13 +179,17 @@ export function creatureJson(c: Creature) {
 /** The field chart and these creatures, as sim-rs's `roster`. */
 export const rosterJson = (cs: readonly Creature[]) => ({ strong: FIELDS.map((f) => STRONG[f].map((g) => FIELDS.indexOf(g))), creatures: cs.map(creatureJson) });
 
-/** A fight the page plays a tick at a time: `m` is what it reads (and may write a fighter of), `step` one tick. */
-export interface Live { m: Match; step(inputs: [Input, Input]): void; readonly engine: "ts" | "wasm" }
-export type Sim = (a: Creature, b: Creature) => Live;
+/** A fight the page plays a tick at a time: `m` is what it reads (and may write a fighter of), `step` one tick with
+ * an input a fighter. */
+export interface Live { m: Match; step(inputs: Input[]): void; readonly engine: "ts" | "wasm" }
+/** A fight between one creature a side, or a team a side (#3929: two friends against a wild one). */
+export type Sim = (a: Creature | Creature[], b: Creature | Creature[]) => Live;
+const teams = (a: Creature | Creature[], b: Creature | Creature[]): [Creature[], Creature[]] => [Array.isArray(a) ? a : [a], Array.isArray(b) ? b : [b]];
+const matchOf = (a: Creature | Creature[], b: Creature | Creature[]) => (Array.isArray(a) || Array.isArray(b) ? newTeamMatch(teams(a, b)) : newMatch(a, b));
 
 /** The fight on sim.ts. */
 export const tsSim: Sim = (a, b) => {
-  const m = newMatch(a, b);
+  const m = matchOf(a, b);
   return { m, engine: "ts", step: (inputs) => step(m, inputs) };
 };
 
@@ -211,10 +217,11 @@ export async function wasmSim(bytes: BufferSource): Promise<Sim> {
   const state = () => new Float64Array(memory.buffer, liveState(), liveStateLen());
   let current = 0;
   return (a, b) => {
-    const cmd = new TextEncoder().encode(JSON.stringify({ roster: rosterJson([a, b]) })), at = alloc(cmd.length);
+    const [left, right] = teams(a, b);
+    const cmd = new TextEncoder().encode(JSON.stringify({ roster: rosterJson([...left, ...right]), left: left.length })), at = alloc(cmd.length);
     new Uint8Array(memory.buffer, at, cmd.length).set(cmd);
     if (!liveNew(at, cmd.length)) throw new Error(`sim.wasm: ${error()}`);
-    const me = ++current, m = newMatch(a, b);
+    const me = ++current, m = matchOf(a, b);
     let spans = readInto(m, state()), last = state().slice();
     const mine: number[] = [];
     return {
@@ -225,13 +232,13 @@ export async function wasmSim(bytes: BufferSource): Promise<Sim> {
         m.f.forEach((f, side) => {
           mine.length = 0;
           walkFighter(m, f, (v) => mine.push(v));
-          const [from, to] = spans[side];
+          const [from, to] = spans[side]!;
           if (mine.length === to - from && mine.every((v, k) => Object.is(v, last[from + k]))) return;
           io().set(mine);
           if (!liveLoad(side, mine.length)) throw new Error(`sim.wasm: ${error()}`);
         });
         const view = io();
-        inputInto(view, 0, inputs[0]); inputInto(view, INPUT_LEN, inputs[1]);
+        m.f.forEach((_, k) => inputInto(view, k * INPUT_LEN, inputs[k] ?? IDLE));
         liveStep();
         last = state().slice();
         spans = readInto(m, last);

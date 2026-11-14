@@ -86,13 +86,17 @@ pub fn walk(m: &Match, h: &mut impl Sink) {
         h.num(a.owner as f64);
         h.num(a.mv.slot as u32 as f64);
         for x in [
-            a.power, a.at.x, a.at.y, a.at.z, a.from.x, a.from.y, a.from.z, a.dir.x, a.dir.y, a.dir.z, a.t, a.life, a.land, a.every, a.ramp, a.hits[0],
-            a.hits[1],
+            a.power, a.at.x, a.at.y, a.at.z, a.from.x, a.from.y, a.from.z, a.dir.x, a.dir.y, a.dir.z, a.t, a.life, a.land, a.every, a.ramp,
         ] {
             h.num(x);
         }
-        h.flag(a.struck[0]);
-        h.flag(a.struck[1]);
+        // One per fighter: a slot nobody was caught in yet reads 0 (sim.ts's list starts two long, like this one).
+        for k in 0..m.f.len() {
+            h.num(a.hits.get(k).copied().unwrap_or(0.0));
+        }
+        for k in 0..m.f.len() {
+            h.flag(a.struck.get(k).copied().unwrap_or(false));
+        }
         h.num(a.d.index() as f64);
         match a.d {
             Delivery::Column { length, width, speed } => [length, width, speed].into_iter().for_each(|x| h.num(x)),
@@ -164,7 +168,7 @@ pub fn walk(m: &Match, h: &mut impl Sink) {
     }
 }
 
-/// One fighter: body and gauges, state, the press buffer, footwork, marks, last tick's input, and the move in hand
+/// One fighter: body and gauges, state, the press buffer, footwork, its team and whether it is out, marks, last tick's input, and the move in hand
 /// (-1, or its slot and the rest; `area` is an index into the live shapes, -1 for one no longer in them, -2 for none).
 pub fn walk_fighter(m: &Match, f: &Fighter, h: &mut impl Sink) {
     for x in [f.pos.x, f.pos.y, f.pos.z, f.vel.x, f.vel.y, f.vel.z, f.yaw, f.hp, f.launch, f.stamina, f.energy] {
@@ -188,6 +192,8 @@ pub fn walk_fighter(m: &Match, f: &Fighter, h: &mut impl Sink) {
     }
     h.flag(f.fresh);
     h.num(f.drop);
+    h.num(f.team as f64);
+    h.flag(f.down);
     let k = &f.marks;
     h.num(k.dot);
     h.num(k.dot_per);
@@ -273,6 +279,8 @@ pub fn load_fighter(m: &mut Match, side: usize, s: &[f64]) -> Result<(), String>
     let hop = r.flag()?;
     let (ring, spin, orbit, bearing, red, hurt) = (r.num()?, r.num()?, r.num()?, r.num()?, r.num()?, r.num()?);
     let (fresh, drop) = (r.flag()?, r.num()?);
+    let team = r.index(2, "team")?.ok_or("fighter: team")?;
+    let down = r.flag()?;
     let (dot, dot_per) = (r.num()?, r.num()?);
     let dot_field = r.index(FIELDS, "mark field")?.map(|x| x as u8);
     let (chill, root) = (r.num()?, r.num()?);
@@ -332,6 +340,7 @@ pub fn load_fighter(m: &mut Match, side: usize, s: &[f64]) -> Result<(), String>
     (f.flying, f.on_ground, f.air_jumps, f.rise, f.exhausted, f.invuln) = (flying, on_ground, air_jumps, rise, exhausted, invuln);
     f.buf = buf_key.map(|k| (KEYS[k], buf_left));
     f.hop = hop;
+    (f.team, f.down) = (team, down);
     (f.ring, f.spin, f.orbit, f.bearing, f.red, f.hurt, f.fresh, f.drop) = (ring, spin, orbit, bearing, red, hurt, fresh, drop);
     f.marks = Marks {
         dot,

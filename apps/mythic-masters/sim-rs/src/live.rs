@@ -1,7 +1,7 @@
-//! One fight the page plays tick by tick (#3657): `Live::new` from two creatures, `step` with both inputs, and
+//! One fight the page plays tick by tick (#3657): `Live::new` from its creatures and teams, `step` with every input, and
 //! `state`, the flat view (state.rs) src/sim-wasm.ts reads into the Match the page, puppets, effects and bots see.
-use crate::data::Roster;
-use crate::sim::{new_match, step, Input, Match};
+use crate::data::{Creature, Roster};
+use crate::sim::{new_team_match, step, Input, Match};
 use crate::state::{self, KEYS};
 use std::mem::ManuallyDrop;
 
@@ -29,15 +29,24 @@ pub struct Live {
 }
 
 impl Live {
-    /// A fight between the roster's first two creatures (the page sends just those two).
-    pub fn new(roster: Roster) -> Result<Live, String> {
-        if roster.creatures.len() != 2 {
-            return Err("a live match is two creatures".into());
+    /// A fight between the roster's creatures (the page sends just those in it): `left` of them on the first team,
+    /// the rest on the second (one on one, the first against the second).
+    pub fn new(roster: Roster, left: usize) -> Result<Live, String> {
+        if left == 0 || left >= roster.creatures.len() {
+            return Err("a live match needs someone on each side".into());
         }
         let roster = Box::into_raw(Box::new(roster));
         // SAFETY: the box is freed only in Drop, after the match that borrows it.
         let r: &'static Roster = unsafe { &*roster };
-        let m = new_match(&r.chart, &r.creatures[0], &r.creatures[1]);
+        let cs: Vec<&Creature> = r.creatures.iter().collect();
+        let m = match new_team_match(&r.chart, [&cs[..left], &cs[left..]]) {
+            Ok(m) => m,
+            Err(e) => {
+                // SAFETY: nothing borrows the roster yet.
+                drop(unsafe { Box::from_raw(roster) });
+                return Err(e);
+            }
+        };
         let mut live = Live {
             m: ManuallyDrop::new(m),
             roster,
@@ -49,14 +58,20 @@ impl Live {
     fn refresh(&mut self) {
         state::flat(&self.m, &mut self.state);
     }
-    /// One tick, each side's input as INPUT_LEN numbers.
+    /// One tick, each fighter's input as INPUT_LEN numbers, in order.
     pub fn step(&mut self, inputs: &[f64]) {
-        step(&mut self.m, [input_of(&inputs[..INPUT_LEN]), input_of(&inputs[INPUT_LEN..2 * INPUT_LEN])]);
+        let all: Vec<Input> = (0..self.m.f.len())
+            .map(|k| inputs.get(k * INPUT_LEN..(k + 1) * INPUT_LEN).map_or(Input::default(), input_of))
+            .collect();
+        step(&mut self.m, &all);
         self.refresh();
     }
     /// Fighter `side` takes these numbers (state.rs `walk_fighter`'s layout): what the page wrote into its Match.
     pub fn load(&mut self, side: usize, s: &[f64]) -> Result<(), String> {
-        state::load_fighter(&mut self.m, side.min(1), s)?;
+        if side >= self.m.f.len() {
+            return Err(format!("no fighter {side}"));
+        }
+        state::load_fighter(&mut self.m, side, s)?;
         self.refresh();
         Ok(())
     }
