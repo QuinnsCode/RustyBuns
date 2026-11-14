@@ -1,8 +1,10 @@
 // The apps CI knows about: how each one tests, and how it builds desktop binaries.
 // apps.yml and desktop-drop.yml both read this, so adding an app is one entry here.
 //
-//   bun scripts/ci-apps.ts test <base-ref>     apps a PR touched (all of them if packages/ moved),
-//                                              whether .claude/ moved (the guard hook tests)
+//   bun scripts/ci-apps.ts test <base-ref>     apps a PR touched (all of them if the CI pipeline itself changed;
+//                                              packages/ or the lockfile moving runs bun test packages, and
+//                                              every app waits for the hourly ring), whether .claude/ moved
+//                                              (the guard hook tests). With the root commit as base: every app.
 //   bun scripts/ci-apps.ts smoke               every app's desktop smoke, one job per Mac and Linux target,
 //                                              plus a job per bootOn target: desktop-hourly.yml, not PRs
 //   bun scripts/ci-apps.ts drop <all|a,b,c>    the build matrix for desktop-drop.yml
@@ -120,8 +122,8 @@ async function shardedTests(app: string, test: string, n: number): Promise<strin
 
 const [cmd, arg = "", base = ""] = import.meta.main ? process.argv.slice(2) : [];
 
-// A change here can break any app: shared packages, the lockfile, this workflow. Prose can't, so a README or
-// skill under packages/ runs that package's tests (`packages` below) but not every app's.
+// Code every app leans on: shared packages, the lockfile, this workflow. Prose isn't, so a README or skill under
+// packages/ runs only the packages' tests (`packages` below), not the hooks and scripts tests a code change brings.
 export const sharedCode = (f: string) => /^(packages\/|bun\.lock$|\.github\/workflows\/apps\.yml$)/.test(f) && !/\.md$/i.test(f);
 const out = (k: string, v: unknown) => console.log(`${k}=${JSON.stringify(v)}`);
 const changedFiles = async (base: string) => (await Bun.$`git diff --name-only ${base}...HEAD`.text()).split("\n").filter(Boolean);
@@ -173,10 +175,12 @@ if (cmd === "drop") {
 } else if (cmd === "test") {
   if (!arg) throw new Error("test needs a base ref");
   const changed = await changedFiles(arg);
-  // A change to the shared code, the lockfile or the root package.json's dependencies can break any app.
+  // A change to the pipeline (this file's machinery, apps.yml) runs every app here. Shared code, the lockfile or the root
+  // package.json's dependencies can break any app too, but that sweep is the hourly ring's (desktop-hourly.yml, release
+  // rings step 5, #4492): the PR runs the packages' own tests and the apps it touched.
   const rows = changed.includes("scripts/ci-apps.ts") ? await rowChanges(arg) : new Set<string>();
-  const shared = rows === "all" || changed.some(sharedCode)
-    || (changed.includes("package.json") && await rootDepsChanged(arg));
+  const shared = rows === "all" || changed.includes(".github/workflows/apps.yml");
+  const deps = changed.some(sharedCode) || (changed.includes("package.json") && await rootDepsChanged(arg));
   const touched = new Set([...changed.map((f) => f.match(/^apps\/([^/]+)\//)?.[1]).filter(Boolean), ...(rows === "all" ? [] : rows)]);
   const names = Object.keys(APPS).filter((n) => (APPS[n]!.test || APPS[n]!.boot) && (shared || touched.has(n) || !!APPS[n]!.with?.some((w) => touched.has(w))));
   const include = (await Promise.all(names.map(async (app) => {
@@ -187,14 +191,14 @@ if (cmd === "drop") {
   }))).flat();
   out("apps", { include });
   out("any", names.length > 0);
-  out("packages", changed.some((f) => f.startsWith("packages/")));
+  out("packages", deps || changed.some((f) => f.startsWith("packages/")));
   // The shared skin test (packages/util/test/skin.test.ts) reads three games' skins and stylesheets (its skin-server.ts
   // GAMES), so a game PR that changes one runs it too: #4210 turned it red on main from an app-only PR.
   out("skins", changed.some((f) => /^apps\/(two-fronts|mythic-masters|skate-tech-park)\/src\/(eqosys|account)\.ts$|^apps\/(two-fronts|skate-tech-park)\/src\/styles\.css$|^apps\/mythic-masters\/src\/tome\.css$/.test(f)));
   // bun test skips dot directories, so the agent guard hook's tests (.claude/hooks) get their own job.
-  out("hooks", shared || changed.some((f) => f.startsWith(".claude/")));
+  out("hooks", shared || deps || changed.some((f) => f.startsWith(".claude/")));
   // The root scripts' own tests (preflight, pr, docs, ...): no app row covers them.
-  out("scripts", shared || changed.some((f) => f.startsWith("scripts/")));
+  out("scripts", shared || deps || changed.some((f) => f.startsWith("scripts/")));
 } else if (cmd === "smoke") {
   const smokes = Object.keys(APPS).filter((n) => APPS[n]!.smoke)
     .flatMap((app) => RUNNERS.filter((r) => !r.target.startsWith("windows")).map((r) => ({ app, ...r, smoke: APPS[app]!.smoke })))
