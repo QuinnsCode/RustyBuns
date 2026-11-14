@@ -47,8 +47,10 @@ const seed = Number(params.get("seed")) || (Math.floor(Math.random() * 1e6) + 1)
 if (!params.get("seed")) { params.set("seed", String(seed)); history.replaceState(null, "", `?${params}`); }
 
 const globe = new Globe($("#globe"));
-accountChip($("#account"));
-void back.then((b) => { if (b) accountChip($("#account"), { note: b.error }); });
+// "Sign in" opens eqosys beside the globe, which keeps turning; the chip redraws itself.
+const beside = () => {};
+accountChip($("#account"), { onSignIn: beside });
+void back.then((b) => { if (b) accountChip($("#account"), { note: b.error, onSignIn: beside }); });
 const panel = $("#panel"), scoreEl = $("#score"), credit = $("#credit"), splash = $("#splash"), windChip = $("#wind-chip");
 // On a phone the panel covers the bottom of the screen: the planet centres in what's left above it.
 // `--dock` is how much of the screen the panel takes from the bottom: the ⌘ and Report buttons stand on top of it on a phone.

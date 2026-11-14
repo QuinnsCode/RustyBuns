@@ -150,6 +150,6 @@ export function menu(on: { join(room: string, name: string): void; friends(): vo
     return b;
   }));
   row.hidden = !rooms.length;
-  accountChip($("menu-account"), { onSignOut: () => location.reload() });
+  accountChip($("menu-account"), { onSignOut: () => location.reload(), onSignIn: () => {} }); // eqosys beside the menu; the chip redraws itself
   box.hidden = false;
 }

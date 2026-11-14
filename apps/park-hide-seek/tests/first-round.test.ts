@@ -77,10 +77,11 @@ test("the first Play is the tutorial: drop, look, walk, crouch in a bush, lie lo
   await tab.page("parkHideSeek.turn(Math.PI)");
   await tab.until("the coach on walking", `parkHideSeek.state().tutorial.title === "Walk"`);
 
-  // W into the bush, then C.
+  // W into the bush, then C. A frame moves you at most 0.1 s worth, and CI's software-drawn Chrome runs a few frames a
+  // second, so the 9 m walk gets 30 s there (it takes about 3 on a Mac).
   const inBush = `(async () => { const { zoneById } = await import("/src/zones/zone.ts"); const s = parkHideSeek.state(); return !!s.you && !!zoneById(s.zone).bushAt(s.you.x, s.you.y); })()`;
   await tab.key("keyDown", "KeyW");
-  await tab.until("in the bush", inBush, 10_000);
+  await tab.until("in the bush", inBush, 30_000);
   await tab.key("keyUp", "KeyW");
   expect((await tab.state()).tutorial.title).toBe("Crouch in a bush");
   await tab.key("keyDown", "KeyC");

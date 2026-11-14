@@ -90,7 +90,11 @@ scene.add(sun, sun.target);
 skyMood(air, mood);
 const ui = mountLevelUi(scene);
 reportButton();
-if (showFront(location.search)) void finishSignIn().then((back) => mountFront(back?.error)); // the title and menu cover the page until a mode is chosen
+if (showFront(location.search)) void finishSignIn().then((back) => {
+  // Signed in from a party link the long way round (the browser blocked eqosys's window): back to that party's lobby.
+  const party = back?.login && back.then.startsWith("party:") ? partyCode(`?party=${back.then.slice(6)}`) : null;
+  if (party) location.search = `?level=${levelId}&party=${party}`; else mountFront(back?.error);
+}); // the title and menu cover the page until a mode is chosen
 if (scene.fog instanceof THREE.Fog) { scene.fog.near *= mood.fog[0]; scene.fog.far *= mood.fog[1]; } // rain and mist close the view in
 const precip = new Precip(); // rain, snow, dust or drifting motes round the camera
 precip.begin(mood);

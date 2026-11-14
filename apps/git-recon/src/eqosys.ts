@@ -26,4 +26,4 @@ export const SKIN = {
 };
 
 export type { Login } from "@rustybuns/util/eqosys";
-export const { signIn, finishSignIn, login, fresh, signOut, canSignIn, reportButton, achieve, achievements, party } = eqosys({ app: APP, url: EQOSYS, from: SIGN_IN_FROM, prefix: "git-recon", skin: SKIN });
+export const { signIn, signInHere, finishSignIn, login, fresh, signOut, canSignIn, reportButton, achieve, achievements, party, hub } = eqosys({ app: APP, url: EQOSYS, from: SIGN_IN_FROM, prefix: "git-recon", skin: SKIN });
