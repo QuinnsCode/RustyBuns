@@ -12,6 +12,7 @@ import { homedir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { type Camera, parseCamera } from "../live/camera.ts";
+import { isRecord } from "@rustybuns/util/guard";
 
 export type Perms = {
   port: number;
@@ -42,7 +43,6 @@ export const NET = `${NAME}-net`;
 export const DEFAULT_ALLOW = ["api.anthropic.com", "claude.ai", "github.com", "api.github.com", "codeload.github.com", "objects.githubusercontent.com", "registry.npmjs.org"];
 const here = path.dirname(fileURLToPath(import.meta.url));
 
-const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 const text = (v: unknown, what: string): string => {
   if (typeof v !== "string" || !v) throw new Error(`${what} must be text`);
   return v;
@@ -50,7 +50,7 @@ const text = (v: unknown, what: string): string => {
 
 // The permission set is whatever the file says, checked field by field; anything missing falls back to the tight default.
 export function parsePerms(raw: unknown): Perms {
-  if (!isObject(raw)) throw new Error("the permission set must be a JSON object");
+  if (!isRecord(raw)) throw new Error("the permission set must be a JSON object");
   const port = raw.port ?? 4600;
   if (typeof port !== "number" || !Number.isInteger(port) || port < 1 || port > 65535) throw new Error(`port ${String(port)} isn't a port`);
   const memory = raw.memory;
@@ -65,7 +65,7 @@ export function parsePerms(raw: unknown): Perms {
     return host;
   });
   const repos = (Array.isArray(raw.repos) ? raw.repos : []).map((r: unknown, i) => {
-    if (!isObject(r)) throw new Error(`repos[${i}] must be an object`);
+    if (!isRecord(r)) throw new Error(`repos[${i}] must be an object`);
     const access = r.access ?? "ro";
     if (access !== "rw" && access !== "ro") throw new Error(`repos[${i}].access should be "rw" or "ro"`);
     return { path: text(r.path, `repos[${i}].path`), access } as const;

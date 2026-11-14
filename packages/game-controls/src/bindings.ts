@@ -2,6 +2,7 @@
 // `KeyboardEvent.code` each) and keeps reading those default codes; `canon` turns the key that was really pressed into
 // the default code of the action it is bound to, so the game's own checks never change.
 
+import { isRecord } from "@rustybuns/util/guard";
 export interface Action {
   id: string;
   label: string;
@@ -33,7 +34,7 @@ export function keyName(code: string): string {
 
 /** Whatever was stored (unknown) down to bindings for known actions with no key twice; anything off is dropped. */
 export function parseBindings(raw: unknown, actions: Action[]): Bindings {
-  const o: Record<string, unknown> = typeof raw === "object" && raw !== null && !Array.isArray(raw) ? Object.fromEntries(Object.entries(raw)) : {};
+  const o: Record<string, unknown> = isRecord(raw) ? raw : {};
   const out: Bindings = {};
   const taken = new Set<string>();
   for (const a of actions) {

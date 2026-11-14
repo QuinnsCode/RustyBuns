@@ -15,7 +15,7 @@
 import { Effect, Schedule, Schema } from "effect";
 import { ERRORS, OP_ERRORS, TOKEN_CANT_DO, type ErrorTag, type OpWithErrors } from "./src/openapi.ts";
 import { tool, toRequest } from "./src/mcp.ts";
-import { isPlainObject } from "./src/util.ts";
+import { isRecord } from "@rustybuns/util/guard";
 
 // A named failure's fields: the server's sentence, its status, and the whole reply (conflicts, files, hash), unchecked.
 const named = { message: Schema.String, status: Schema.Number, reply: Schema.Unknown };
@@ -259,7 +259,7 @@ const declares = (id: string, tag: string): tag is ErrorTag => id in OP_ERRORS &
 
 /** A failed reply, as operation `id`'s error. Plain, so a test can hand it any reply. */
 export function failure<Id extends string>(id: Id, status: number, reply: unknown, retryAfter?: string | null, authenticate?: string | null): Failure<Id> {
-  const body = isPlainObject(reply) ? reply : {};
+  const body = isRecord(reply) ? reply : {};
   const message = typeof body.error === "string" ? body.error : typeof body.message === "string" ? body.message : `${id} didn't go through, and the server didn't say why`;
   if (typeof body.tag === "string" && declares(id, body.tag)) return new NAMED[body.tag]({ message, status, reply }) as Failure<Id>;
   if (status === 401) return new Unauthorized({ message });

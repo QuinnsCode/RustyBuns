@@ -6,7 +6,7 @@
 import type { Level } from "./level.ts";
 import { DT, grabName, type Input, type State } from "./sim.ts";
 import { type Flick, TRICKS } from "./tricks.ts";
-import { bool, num, obj, raw } from "@rustybuns/util/guard";
+import { bool, isRecord, num, obj, raw } from "@rustybuns/util/guard";
 import type { Link } from "./scenario.ts";
 import type { Perf } from "./perf.ts";
 import { addCommands } from "@rustybuns/util/commands";
@@ -41,7 +41,6 @@ export class Driver {
   stop() { for (const q of this.queue.splice(0)) q.done?.(); }
 }
 
-const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 const isFlick = (v: unknown): v is Flick => typeof v === "string" && v in TRICKS;
 const flag = bool(false), axis = num(-1, 1, 0);
 const HOLD = obj({ seconds: num(DT, MAX_SECONDS, 0.5), push: axis, steer: axis, ollie: flag, nollie: flag, jets: flag, fan: flag, trick: raw, manual: raw });

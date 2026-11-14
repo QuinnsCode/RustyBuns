@@ -32,5 +32,8 @@
     "cms",
     "i18n",
     "games"
-  ]
+  ],
+  "dependencies": {
+    "@rustybuns/util": "workspace:*"
+  }
 }

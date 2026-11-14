@@ -74,9 +74,9 @@
 //   PUT  /api/repos/:o/:r/checks/:id {status?, log?, append?, junit?, runner_label?}  a runner reports, and says it's alive (whoever claimed it, or the owner)
 //   POST /api/repos/:o/:r/checks/:id/cancel    stop one of ours that's queued or running (the crew)
 
-import { httpUrl, isPlainObject, listOf, parseJson } from "./util.ts";
+import { httpUrl, listOf, parseJson } from "./util.ts";
 import { fail, json, need, readBody, type Env } from "./env.ts";
-import { arr, bool, int, nul, num, obj, oneOf, opt, str, type Of } from "@rustybuns/util/guard";
+import { arr, bool, int, isRecord, nul, num, obj, oneOf, opt, str, type Of } from "@rustybuns/util/guard";
 import { repoRow } from "./repos.ts";
 import { githubToken, parseRepo } from "./github.ts";
 import { emit } from "./hooks.ts";
@@ -318,7 +318,7 @@ export async function readAt(env: Env, owner: string, repo: string, ref: string,
 /** A check the repo runs, from its codesplitter.ci or package.json. */
 export interface Planned { name: string; command: string; paths?: string[] }
 
-const parse = (t: string | null) => { try { const v = t && JSON.parse(t); return isPlainObject(v) ? v : null; } catch { return null; } };
+const parse = (t: string | null) => { try { const v = t && JSON.parse(t); return isRecord(v) ? v : null; } catch { return null; } };
 const SCRIPTS = ["test", "typecheck"];
 const scriptsOf = (pkg: string | null) => {
   const s = parse(pkg)?.scripts as Record<string, unknown> | undefined;

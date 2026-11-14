@@ -94,11 +94,11 @@
 //   PUT  /api/repos/:o/:r/deps        any of the settings in FIELDS
 //   POST /api/repos/:o/:r/deps/run    check now; {rank} ranks the packages for this run only
 
-import { arr, bool, int, maybe, nul, num, obj, opt, raw, rec, str } from "@rustybuns/util/guard";
+import { arr, bool, int, isRecord, maybe, nul, num, obj, opt, raw, rec, str } from "@rustybuns/util/guard";
 import { readJson } from "@rustybuns/util/http";
 import type { Doc, Op } from "./lines.ts";
 import { access as artifactAccess, docIn, handleFor, toFile, TreeReply } from "./archive.ts";
-import { isPlainObject, listOf } from "./util.ts";
+import { listOf } from "./util.ts";
 import { actingAs, isAdmin, mail, mailOn } from "./identity.ts";
 import { workspaceDirs, workspaceGlobs } from "./fit.ts";
 import { diffToOps, merge3 } from "./sync.ts";
@@ -231,7 +231,7 @@ export const osvAdvisories = (get: typeof fetch = fetch): Advisories => async (p
     body: JSON.stringify({ queries: pkgs.map((p) => ({ package: { name: p.name, ecosystem: "npm" }, version: p.version })) }) });
   if (!res.ok) throw new Error(`osv.dev: ${res.status}`);
   const body: unknown = await res.json().catch(() => null);
-  const results = isPlainObject(body) && Array.isArray(body.results) ? body.results : null;
+  const results = isRecord(body) && Array.isArray(body.results) ? body.results : null;
   if (!results) throw new Error("osv.dev: no results");
   const details = new Map<string, Promise<unknown>>();
   const detail = (id: string) => {
@@ -245,9 +245,9 @@ export const osvAdvisories = (get: typeof fetch = fetch): Advisories => async (p
     out.set(`${p.name}@${p.version}`, await Promise.all(ids.map(async (id) => {
       const v = await detail(id);
       // The versions that fix it: every "fixed" event in the npm ranges that name this package.
-      const ours = listOf(v, "affected").filter((a) => isPlainObject(a.package) && a.package.ecosystem === "npm" && a.package.name === p.name);
+      const ours = listOf(v, "affected").filter((a) => isRecord(a.package) && a.package.ecosystem === "npm" && a.package.name === p.name);
       const fixed = strings(ours.flatMap((a) => listOf(a, "ranges").flatMap((r) => listOf(r, "events").map((e) => e.fixed))));
-      return { id, summary: isPlainObject(v) && typeof v.summary === "string" ? v.summary : "", fixed };
+      return { id, summary: isRecord(v) && typeof v.summary === "string" ? v.summary : "", fixed };
     })));
   }));
   return out;

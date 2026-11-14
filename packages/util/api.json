@@ -1,0 +1,13 @@
+{
+  "$comment": "Where each module of @rustybuns/util runs, and which ones promise not to break. Checked by `bun scripts/util-api.ts`; see packages/util/README.md.",
+  "stable": ["index", "sweep", "reel", "motion", "guard", "bytes", "http", "limits", "room", "socket"],
+  "shared": [
+    "index", "guard", "bytes", "http", "socket", "token",
+    "sweep", "reel", "motion", "avatar", "dexter", "features", "overlap", "party-rules", "train", "visitors", "wasm-shared"
+  ],
+  "web": [
+    "dom", "keys", "commands", "palette", "director", "memories", "morph", "skin", "eqosys", "lobby", "spaces",
+    "voice", "qlave-call", "quality", "report", "tutorial"
+  ],
+  "server": ["room", "seats", "matchmaker", "limits", "protocol", "privacy", "codemode"]
+}

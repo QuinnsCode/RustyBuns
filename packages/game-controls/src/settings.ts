@@ -1,4 +1,5 @@
 import { EXTRAS } from "./schema.ts";
+import { isRecord } from "@rustybuns/util/guard";
 // The numbers every game's Controls panel holds. Pure, so a test can reach it without a page.
 export interface Settings {
   /** Mouse (or stick) look speed left/right, 1 as shipped. */
@@ -53,7 +54,7 @@ const clampTo = (k: NumKey, n: number) => Math.min(RANGES[k].max, Math.max(RANGE
 
 /** Optional rows from a save: known ids only, a number clamped into its range, a flag as a flag; anything else is dropped. */
 function parseMore(raw: unknown): Settings["more"] {
-  const o: Record<string, unknown> = typeof raw === "object" && raw !== null && !Array.isArray(raw) ? Object.fromEntries(Object.entries(raw)) : {};
+  const o: Record<string, unknown> = isRecord(raw) ? raw : {};
   const out: Settings["more"] = {};
   for (const [id, x] of Object.entries(EXTRAS)) {
     const v = o[id];
@@ -65,7 +66,7 @@ function parseMore(raw: unknown): Settings["more"] {
 
 /** Whatever was stored (unknown: a hand-edited or older save) down to valid settings; a bad field falls back to its default. */
 export function parseSettings(raw: unknown): Settings {
-  const o: Record<string, unknown> = typeof raw === "object" && raw !== null && !Array.isArray(raw) ? Object.fromEntries(Object.entries(raw)) : {};
+  const o: Record<string, unknown> = isRecord(raw) ? raw : {};
   const num = (k: NumKey) => { const v = o[k]; return typeof v === "number" && Number.isFinite(v) ? clampTo(k, v) : DEFAULTS[k]; };
   const flag = (k: "invertY" | "musicOn" | "sfxOn") => { const v = o[k]; return typeof v === "boolean" ? v : DEFAULTS[k]; };
   return {

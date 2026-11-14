@@ -20,6 +20,7 @@ import { accountChip, achieve, achievements, finishSignIn, reportButton, THEME }
 import { about, icon, info } from "./icons.ts";
 import { tutorial } from "@rustybuns/util/tutorial";
 import { loadWind, type Wind } from "./wind-load.ts";
+import { isRecord } from "@rustybuns/util/guard";
 
 const MAX_STROKES = 8;
 // The pad: the left stick aims (left/right turns, up/down power); these buttons are rebindable in the cog.
@@ -562,7 +563,7 @@ Object.assign(window, { golf: golfApi });
 
 // The same functions as commands: WebMCP tools for an agent, the Cmd/Ctrl+K palette (and a corner button on a phone) for a person.
 const nums = (a: unknown): Record<string, number> =>
-  Object.fromEntries(Object.entries(typeof a === "object" && a ? a : {}).filter((e): e is [string, number] => typeof e[1] === "number"));
+  Object.fromEntries(Object.entries(isRecord(a) ? a : {}).filter((e): e is [string, number] => typeof e[1] === "number"));
 const LOFTS: readonly Loft[] = ["low", "high"];
 addCommands([
   { name: "golf_state", title: "Look at the hole", group: "Hole", description: "Phase, hole, strokes, aim (heading, power, loft), wind, swim and scores.", annotations: { readOnlyHint: true }, execute: () => golfApi.state() },

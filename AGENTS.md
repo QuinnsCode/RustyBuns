@@ -93,7 +93,8 @@ updates its docs in the same PR. Those two files must keep importing nothing els
 
 A parsed body, fetch reply or stored string is `unknown` until something looks at it. Don't
 assert a shape onto it (`as { owner: string }`), and no `any` or `as never`: narrow each field
-(`readBody` and `parseJson` in codeSplitter, `isPlainObject` and `listOf` in its `util.ts`), and
+(`isRecord` from `@rustybuns/util/guard` before reading a field, never a local copy or an
+`Object.fromEntries(Object.entries(x))` to dodge a cast; `readBody`, `parseJson` and `listOf` in codeSplitter), and
 test the wrong shape. For a whole body or message, write its guard with `@rustybuns/util/guard`
 (`obj`, `str`, `num`, `oneOf`, `arr`, `opt`; `type X = Of<typeof X>`), and in a codeSplitter route
 `need(body, guard)` for the typed value or a 400. CI runs `bun scripts/boundary-audit.ts`, which fails on a new unchecked value
@@ -126,6 +127,12 @@ A PR that deletes more than it adds is the goal. codeSplitter's own helpers are 
   A JSON reply is `json` (or `privateJson`, which no cache may keep) in `@rustybuns/util/http`; a client's unchecked body is
   `readBody` there, and a body or reply read through a guard is `readJson` / `getJson`. `hex`, `b64url`, `digest` and `sha256`
   are `@rustybuns/util/bytes`. Don't write a local `const json = ...` again.
+- `@rustybuns/util` has three sides and two speeds ([its README](packages/util/README.md)): each module is `shared`
+  (runs anywhere, imports only shared, copies out with `bun scripts/util-api.ts --copy <module> <dir>`), `web` or
+  `server` in `packages/util/api.json`, and the `stable` ones have their exports locked in `packages/util/API.lock`.
+  Adding to a stable module is free (`bun scripts/util-api.ts --update`); changing or removing an export takes
+  `--update --break "why"`, which writes `BREAKING.md` for the release notes. Trying something wild goes in
+  `packages/util/src/lab/` (`@rustybuns/util/lab/<name>`): no side, no lock, and only lab imports lab. CI runs the check.
 - What a route answers is one guard that both the server and the page import (`apps/park-hide-seek/src/api.ts`,
   `CheckoutReply` in skate-tech-park's `shop.ts`): the server writes `json(x satisfies Reply)`, the page reads
   `getJson(url, Reply)`. Never a `Record<string, unknown>` or an `as { ... }` on each side of the wire.

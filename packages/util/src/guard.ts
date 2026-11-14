@@ -19,6 +19,12 @@ export type Of<G> = G extends Guard<infer T> ? T : never;
 const fail = (why: string): never => { throw new Bad(why); };
 const range = (lo: number, hi: number) => hi === Infinity ? (lo === -Infinity ? "" : ` from ${lo} up`) : ` from ${lo} to ${hi}`;
 
+/**
+ * A plain object (not null, not a list), its fields still `unknown`: the one check to narrow a parsed value before
+ * reading a field. Every app imports this one; a guard (`obj`, `rec`) is better when you want the fields typed too.
+ */
+export const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
+
 /** Anything, as `unknown`: a field passed on for something further in to check. */
 export const raw: Guard<unknown> = (v) => v;
 
@@ -90,7 +96,7 @@ type Flat<T> = { [K in keyof T]: T[K] };
 
 /** An object with these fields, each through its guard; other fields are dropped. A field `opt` lets go missing is optional. */
 export const obj = <S extends Shape>(shape: S): Guard<Flat<Built<S>>> => (v) => {
-  const o = typeof v === "object" && v !== null && !Array.isArray(v) ? (v as Record<string, unknown>) : fail("an object");
+  const o = isRecord(v) ? v : fail("an object");
   const out: Record<string, unknown> = {};
   for (const k in shape) {
     const x = at(k, shape[k]!, o[k]);
@@ -101,7 +107,7 @@ export const obj = <S extends Shape>(shape: S): Guard<Flat<Built<S>>> => (v) => 
 
 /** A map of up to `max` keys to values each through `of`, as `{ [key]: T }`. */
 export const rec = <T>(of: Guard<T>, max = Infinity): Guard<Record<string, T>> => (v) => {
-  const o = typeof v === "object" && v !== null && !Array.isArray(v) ? (v as Record<string, unknown>) : fail("an object");
+  const o = isRecord(v) ? v : fail("an object");
   const keys = Object.keys(o);
   if (keys.length > max) fail(`up to ${max} keys`);
   return Object.fromEntries(keys.map((k) => [k, at(k, of, o[k])]));

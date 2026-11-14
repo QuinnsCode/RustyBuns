@@ -28,14 +28,14 @@
 // for git and search, so the real text never leaves the app.
 
 import { fail, json, need, readBody, type Env } from "./env.ts";
-import { arr, bool, check, int, nul, num, obj, opt, raw, str, type Of } from "@rustybuns/util/guard";
+import { arr, bool, check, int, isRecord, nul, num, obj, opt, raw, str, type Of } from "@rustybuns/util/guard";
 import { recordEdits, type Recent } from "./line-events.ts";
 import { noteStep } from "./insights.ts";
 import { branchEdited } from "./checks.ts";
 import { Tally } from "./limits.ts";
 import { lintMerge } from "./lint.ts";
 import { DocStore } from "./doc-store.ts";
-import { isPlainObject, sha256 as sha } from "./util.ts";
+import { sha256 as sha } from "./util.ts";
 import { apply, empty, MAX_OPS, merge, MERGE_ASK, mergeWords, parseOps, PROTOCOL, replay, text, type Applied, type Doc, type Line, type MergeReply, type Op, type Resolve } from "./lines.ts";
 import type { Live, Rule } from "./policy.ts";
 import { pad10 } from "./util.ts";
@@ -449,7 +449,7 @@ export class FileDurableObject {
       const regen = { ...m.regenerate && { regenerate: m.regenerate }, ...m.checks && { checks: m.checks }, ...m.solved && { solved: m.solved } };
       if (m.conflicts.length || dry || !m.ops.length) return json({ rev: this.doc.rev, ops: m.ops, conflicts: m.conflicts, ...regen } satisfies MergeReply, m.conflicts.length && !dry ? 409 : 200);
       // The branch's private lines, by text: one it moved or made comes home private.
-      const hidden = branch.lines.flatMap((l) => isPlainObject(l) && l.private === true ? [l.text] : []);
+      const hidden = branch.lines.flatMap((l) => isRecord(l) && l.private === true ? [l.text] : []);
       const r = await this.edit(m.by, m.ops, undefined, undefined, undefined, hidden);
       return r.ok ? json({ rev: r.rev, ops: m.ops, applied: r.applied, conflicts: [], ...regen } satisfies MergeReply) : json(refused(r), 409);
     }
@@ -1141,7 +1141,7 @@ const refused = (r: { rev: number; conflicts: unknown[]; claims?: Claim[]; retry
 
 /** A refused `/ops`, named for a client (#3804): locked, or the lines it named moved or are held, in the conflicts' own words. */
 const refusal = (r: ReturnType<typeof refused>, live?: Live) => live === "locked" ? fail("PathLocked", r.error ?? LOCKED, r)
-  : fail("LinesChanged", r.error ?? `A line changed since you read it, or someone holds it (${[...new Set(r.conflicts.map((c) => isPlainObject(c) && typeof c.reason === "string" ? c.reason : ""))].filter(Boolean).join("; ")}): read the file again${r.retryAfter ? `, or try again in ${r.retryAfter} seconds` : ""}.`, r);
+  : fail("LinesChanged", r.error ?? `A line changed since you read it, or someone holds it (${[...new Set(r.conflicts.map((c) => isRecord(c) && typeof c.reason === "string" ? c.reason : ""))].filter(Boolean).join("; ")}): read the file again${r.retryAfter ? `, or try again in ${r.retryAfter} seconds` : ""}.`, r);
 
 /** A `codesplitter-live=locked` file (lockfiles, by default) changes by regenerating it or by a push, never line by line. */
 const LOCKED = "this file is locked (codesplitter-live=locked): regenerate it or push it, it takes no live edits";

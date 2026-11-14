@@ -10,6 +10,7 @@
 //   bun run outline --api packages/util
 import ts from "typescript";
 import { join, relative } from "node:path";
+import { isRecord } from "../packages/util/src/guard.ts";
 
 /** `sig` is the declaration cut to one line without its body: what a caller needs to call it. */
 export type Entry = { kind: string; name: string; from: number; to: number; doc: string; exported: boolean; depth: number; sig: string };
@@ -118,7 +119,6 @@ export function apiLines(entries: Entry[]): string[] {
   return lines;
 }
 
-const isRecord = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v);
 
 /** A package's TS entry points from package.json `exports` (or `main`), as [subpath, file]; a file is its own entry. */
 export async function entryPoints(target: string): Promise<[string, string][]> {

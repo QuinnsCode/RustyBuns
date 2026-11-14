@@ -1,4 +1,5 @@
 {
+  ".claude/hooks/carry-on.ts": 1,
   ".github/t3-bun/bun-shims.ts": 2,
   "apps/agent-demo/seed.ts": 1,
   "apps/agent-office/ester/index.ts": 1,
@@ -59,7 +60,7 @@
   "packages/cli/src/glue/webpack-hint.ts": 1,
   "packages/cli/src/index.ts": 2,
   "packages/cli/src/prof.ts": 2,
-  "packages/cli/src/state.ts": 1,
+  "packages/cli/src/state.ts": 2,
   "packages/cli/src/usage-estimate.ts": 2,
   "packages/ops/src/index.ts": 1,
   "packages/seal/src/index.ts": 1,

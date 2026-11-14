@@ -1,5 +1,6 @@
 // The setup page's data half: what /__rb/connections and /__rb/builder send (checked, not assumed), and the words and
 // lights each card shows. No DOM here, so the page's logic is testable without a browser.
+import { isRecord } from "@rustybuns/util/guard";
 export type Status = "ok" | "down" | "unset" | "pending";
 export type Connection = { id: string; kind: string; account: string; status: Status; access: "read" | "write" };
 export type Pending = { id: string; userCode: string; uri: string; expiresAt: number };
@@ -7,10 +8,9 @@ export type Setup = { connections: Connection[]; pending: Pending[]; ready: bool
 export type Builder = { connections: Connection[]; setup: string; nightly: { at: string; results: { app: string; ok: boolean }[] } | null };
 
 const STATUS: Status[] = ["ok", "down", "unset", "pending"];
-const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null;
 
 function connection(v: unknown): Connection | null {
-  if (!isObject(v) || typeof v.id !== "string" || typeof v.kind !== "string" || typeof v.account !== "string") return null;
+  if (!isRecord(v) || typeof v.id !== "string" || typeof v.kind !== "string" || typeof v.account !== "string") return null;
   const status = STATUS.find((s) => s === v.status);
   return status ? { id: v.id, kind: v.kind, account: v.account, status, access: v.access === "write" ? "write" : "read" } : null;
 }
@@ -18,18 +18,18 @@ function connection(v: unknown): Connection | null {
 const connectionsOf = (v: unknown) => (Array.isArray(v) ? v : []).flatMap((c) => connection(c) ?? []);
 
 export function parseSetup(v: unknown): Setup {
-  if (!isObject(v)) return { connections: [], pending: [], ready: false, error: "The office sent something unexpected" };
+  if (!isRecord(v)) return { connections: [], pending: [], ready: false, error: "The office sent something unexpected" };
   const pending = (Array.isArray(v.pending) ? v.pending : []).flatMap((p): Pending[] =>
-    isObject(p) && typeof p.id === "string" && typeof p.userCode === "string" && typeof p.uri === "string" && typeof p.expiresAt === "number"
+    isRecord(p) && typeof p.id === "string" && typeof p.userCode === "string" && typeof p.uri === "string" && typeof p.expiresAt === "number"
       ? [{ id: p.id, userCode: p.userCode, uri: p.uri, expiresAt: p.expiresAt }] : []);
   return { connections: connectionsOf(v.connections), pending, ready: v.ready === true, ...(typeof v.error === "string" ? { error: v.error } : {}) };
 }
 
 export function parseBuilder(v: unknown): Builder | null {
-  if (!isObject(v) || typeof v.setup !== "string") return null;
+  if (!isRecord(v) || typeof v.setup !== "string") return null;
   const n = v.nightly;
-  const nightly = isObject(n) && typeof n.at === "string" && Array.isArray(n.results)
-    ? { at: n.at, results: n.results.flatMap((r) => (isObject(r) && typeof r.app === "string" && typeof r.ok === "boolean" ? [{ app: r.app, ok: r.ok }] : [])) } : null;
+  const nightly = isRecord(n) && typeof n.at === "string" && Array.isArray(n.results)
+    ? { at: n.at, results: n.results.flatMap((r) => (isRecord(r) && typeof r.app === "string" && typeof r.ok === "boolean" ? [{ app: r.app, ok: r.ok }] : [])) } : null;
   return { connections: connectionsOf(v.connections), setup: v.setup, nightly };
 }
 
@@ -63,7 +63,7 @@ export const WALKTHROUGH = [
 async function json(url: string, method: string): Promise<unknown> {
   const r = await fetch(url, { method });
   const body: unknown = await r.json().catch(() => null);
-  if (!r.ok) throw new Error(isObject(body) && typeof body.error === "string" ? body.error : `The office answered ${r.status}`);
+  if (!r.ok) throw new Error(isRecord(body) && typeof body.error === "string" ? body.error : `The office answered ${r.status}`);
   return body;
 }
 

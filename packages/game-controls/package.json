@@ -23,7 +23,8 @@
   },
   "dependencies": {
     "lucide": "1.55.0",
-    "@rustybuns/ui": "workspace:*"
+    "@rustybuns/ui": "workspace:*",
+    "@rustybuns/util": "workspace:*"
   },
   "files": [
     "src"

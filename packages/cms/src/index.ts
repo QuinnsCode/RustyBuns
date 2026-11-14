@@ -6,13 +6,13 @@
 import { mkdir, readdir, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { isLocale, progressOf, translationOf } from "./locale.ts";
+import { isRecord } from "@rustybuns/util/guard";
 
 export { isLocale, localize, pickLocale, progressOf, translationOf } from "./locale.ts";
 
 type Path = (string | number)[];
 export interface Field { path: Path; list: boolean; number?: boolean; text: string }
 
-const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 const isStrings = (v: unknown): v is string[] => Array.isArray(v) && v.every((x) => typeof x === "string");
 const isRecords = (v: unknown): v is Record<string, unknown>[] => Array.isArray(v) && v.length > 0 && v.every(isRecord);
 

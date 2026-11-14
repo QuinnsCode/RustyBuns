@@ -1191,12 +1191,16 @@
     "packages/cms": {
       "name": "@rustybuns/cms",
       "version": "0.1.12",
+      "dependencies": {
+        "@rustybuns/util": "workspace:*",
+      },
     },
     "packages/game-controls": {
       "name": "@rustybuns/game-controls",
       "version": "0.1.12",
       "dependencies": {
         "@rustybuns/ui": "workspace:*",
+        "@rustybuns/util": "workspace:*",
         "lucide": "1.55.0",
       },
     },
