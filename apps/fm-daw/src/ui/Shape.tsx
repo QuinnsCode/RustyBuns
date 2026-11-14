@@ -3,15 +3,17 @@
 // high cut at the top, a bell in between), drag a dot to move it (up and down
 // is gain on a bell or shelf, resonance on a cut: higher is a harder corner), roll the
 // wheel over it for Q, double-click it (or Delete) to take it out. Hold a dot
-// still for a moment to hear only its range (it follows a drag) until you let go. The strip
+// still for a moment to hear only its range (it follows a drag) until you let go.
+// Drag or roll a dot while recording and the move is kept as automation. The strip
 // under the curve sets the selected band exactly. What's drawn is the filters'
 // real digital response (src/engine/eq.ts `response`), phase included.
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  EQ_BANDS, EQ_LIMITS, EQ_SLOPES, bandResponse, hasGain, hasReso, isCut, listenOf, response, flatEq,
+  EQ_BANDS, EQ_LIMITS, EQ_SLOPES, bandResponse, eqLane, eqLaneName, hasGain, hasReso, isCut, listenOf, response, flatEq,
   type EqBand, type EqDoc, type EqKind, type EqListen,
 } from "../engine/eq.ts";
 import { TRACK_COLORS } from "./colors.ts";
+import type { Lane } from "../project.ts";
 
 /** dB at the top and bottom of the curve. */
 const RANGE = 24;
@@ -56,8 +58,12 @@ const resoDrag = (b: EqBand) => isCut(b.kind) && hasReso(b.slope);
 /** Where a band's dot sits: at its gain on bells and shelves, at its resonance on cuts, on the 0 dB line otherwise. */
 const dotDb = (b: EqBand) => (hasGain(b.kind) ? b.g : resoDrag(b) ? clamp(resoDb(b.q), -RANGE, RANGE) : 0);
 
-export function Shape(props: { doc: EqDoc; sampleRate: number; analyser: AnalyserNode | null; onChange(doc: EqDoc, group?: string): void; onListen?(band: EqListen | null): void }) {
-  const { doc, sampleRate: sr, analyser, onChange, onListen } = props;
+export function Shape(props: { doc: EqDoc; sampleRate: number; analyser: AnalyserNode | null; onChange(doc: EqDoc, group?: string): void; onListen?(band: EqListen | null): void;
+  /** Shape's automation, and the list with a lane taken out. */
+  lanes?: Lane[]; onLanes?(lanes: Lane[]): void;
+  /** A hand move on a dot (lane, new value, old value): kept as automation while recording. */
+  onMove?(lane: number, v: number, was: number): void }) {
+  const { doc, sampleRate: sr, analyser, onChange, onListen, lanes = [], onLanes } = props;
   const wrap = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
   const [size, setSize] = useState({ w: 800, h: 300 });
@@ -68,8 +74,15 @@ export function Shape(props: { doc: EqDoc; sampleRate: number; analyser: Analyse
   const [listening, setListening] = useState<number | null>(null);
   const hold = useRef(0);
   const stopListening = () => { clearTimeout(hold.current); hold.current = 0; setListening(null); };
-  const live = useRef({ doc, sel, onChange, listening });
-  live.current = { doc, sel, onChange, listening };
+  const live = useRef({ doc, sel, onChange, listening, onMove: props.onMove });
+  live.current = { doc, sel, onChange, listening, onMove: props.onMove };
+  /** Patch a band by hand: every setting that moved also goes out as a move. */
+  const perform = (slot: number, p: Partial<Pick<EqBand, "f" | "g" | "q">>, group: string) => {
+    const b = live.current.doc[slot];
+    if (!b) return;
+    for (const k of ["f", "g", "q"] as const) if (p[k] !== undefined && p[k] !== b[k]) live.current.onMove?.(eqLane(slot, k), p[k], b[k]);
+    patch(slot, p, group);
+  };
   const band = sel !== null ? doc[sel] : null;
 
   const put = (slot: number, b: EqBand | null, group?: string) => {
@@ -239,7 +252,7 @@ export function Shape(props: { doc: EqDoc; sampleRate: number; analyser: Analyse
       if (slot === null || !b) return;
       e.preventDefault();
       setSel(slot);
-      patch(slot, { q: clamp(b.q * Math.exp(-e.deltaY * 0.0015), EQ_LIMITS.q[0], EQ_LIMITS.q[1]) }, `eq:${slot}:q`);
+      perform(slot, { q: clamp(b.q * Math.exp(-e.deltaY * 0.0015), EQ_LIMITS.q[0], EQ_LIMITS.q[1]) }, `eq:${slot}:q`);
     };
     cv.addEventListener("wheel", onWheel, { passive: false });
     return () => cv.removeEventListener("wheel", onWheel);
@@ -270,7 +283,7 @@ export function Shape(props: { doc: EqDoc; sampleRate: number; analyser: Analyse
     const db = dbOfY(y + d.dy, size.h);
     const g = hasGain(b.kind) ? Math.round(clamp(db, EQ_LIMITS.g[0], EQ_LIMITS.g[1]) * 10) / 10 : b.g;
     const q = resoDrag(b) ? Math.round(qOfResoDb(db) * 100) / 100 : b.q;
-    patch(d.slot, { f, g, q }, `eq:${d.slot}:drag`);
+    perform(d.slot, { f, g, q }, `eq:${d.slot}:drag`);
   };
   const onUp = () => { drag.current = null; stopListening(); };
   const onDouble = (e: React.MouseEvent<HTMLCanvasElement>) => {
@@ -291,7 +304,7 @@ export function Shape(props: { doc: EqDoc; sampleRate: number; analyser: Analyse
     <section className="shape" aria-label="Shape: the master EQ">
       <div className="shape-bar">
         <span className="silk">Shape · master EQ</span>
-        <span className="dim shape-hint">Double-click to add · drag to move (up on a cut is a harder corner) · hold still to listen · wheel for Q · Alt-click to bypass · double-click a dot to remove</span>
+        <span className="dim shape-hint">Double-click to add or remove · drag to move · hold to listen · wheel for Q · Alt-click to bypass · record to automate</span>
         <span className="spacer" />
         <label className="check" title="Draw the phase the bands add (dashed, -180 to +180 degrees). Steep cuts turn it most"><input type="checkbox" checked={phase} onChange={(e) => setPhase(e.currentTarget.checked)} /> Phase</label>
         <span className="dim">{used}/{EQ_BANDS}</span>
@@ -332,6 +345,16 @@ export function Shape(props: { doc: EqDoc; sampleRate: number; analyser: Analyse
           <label className="check"><input type="checkbox" checked={band.on} onChange={(e) => patch(sel, { on: e.currentTarget.checked })} /> On</label>
           <button className="ghost" onClick={() => { put(sel, null); setSel(null); }}>Remove</button>
         </div>
+      )}
+      {lanes.length > 0 && (
+        <ul className="learn-map" aria-label="Automation on Shape">
+          {lanes.map((l) => (
+            <li key={l.i}>Moves: {eqLaneName(l.i)}
+              <button className="ghost" onClick={() => onLanes?.(lanes.filter((x) => x.i !== l.i))} title={`Clear the ${eqLaneName(l.i)} automation (undo brings it back)`}
+                aria-label={`Clear ${eqLaneName(l.i)} automation`}>×</button>
+            </li>
+          ))}
+        </ul>
       )}
       <div className="shape-dots" aria-label="Bands">
         {doc.map((b, i) => b && (

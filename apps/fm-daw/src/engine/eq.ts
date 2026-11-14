@@ -36,6 +36,31 @@ export function sanitizeEq(x: unknown): EqDoc {
   return flatEq().map((_, i) => { const v = got[i]; return typeof v === "object" && v ? BAND(v) : null; });
 }
 
+// ---- automation: a lane per band and setting, on the master ----
+
+/** Automated settings per band, in lane order: lane i is band i / 3's Hz, dB or Q. */
+export const EQ_PARAMS = ["f", "g", "q"] as const;
+export const EQ_LANES = EQ_BANDS * EQ_PARAMS.length;
+export const eqLane = (band: number, param: (typeof EQ_PARAMS)[number]) => band * EQ_PARAMS.length + EQ_PARAMS.indexOf(param);
+/** Which slot a lane moves. */
+export const eqLaneBand = (i: number) => Math.floor(i / EQ_PARAMS.length);
+/** A lane's value fitted to its setting's range. */
+export function clampEqLane(i: number, v: number) {
+  const [lo, hi] = EQ_LIMITS[EQ_PARAMS[i % EQ_PARAMS.length]];
+  return Number.isFinite(v) ? Math.min(Math.max(v, lo), hi) : lo;
+}
+export const eqLaneName = (i: number) => `${eqLaneBand(i) + 1} ${["Hz", "gain", "Q"][i % EQ_PARAMS.length]}`;
+/** The doc with lane i at v: the same doc when nothing changes, or the slot is empty. */
+export function withEqLane(doc: EqDoc, i: number, v: number): EqDoc {
+  const slot = eqLaneBand(i), b = i >= 0 && i < EQ_LANES ? doc[slot] : null;
+  if (!b) return doc;
+  const k = EQ_PARAMS[i % EQ_PARAMS.length], x = clampEqLane(i, v);
+  if (b[k] === x) return doc;
+  const next = doc.slice();
+  next[slot] = { ...b, [k]: x };
+  return next;
+}
+
 /** What a held dot plays alone: a band pass at this Hz and Q. */
 export interface EqListen { f: number; q: number }
 /**

@@ -3,7 +3,11 @@
 // note) when the wasm isn't built.
 import { test, expect } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
-import { TsEq, flatEq, listenOf, response, type EqBand, type EqDoc } from "../src/engine/eq.ts";
+import { TsEq, eqLane, flatEq, listenOf, response, type EqBand, type EqDoc } from "../src/engine/eq.ts";
+import { TsEngine } from "../src/engine/engine.ts";
+import { renderProject } from "../src/engine/offline.ts";
+import { MASTER, Sequencer } from "../src/engine/sequencer.ts";
+import { Take, loopBeats, punchLane } from "../src/project.ts";
 import { WasmEq, instantiateFm } from "../src/engine/wasm.ts";
 import { CEILING } from "../src/engine/params.ts";
 import { apply, decodeOp, sanitize } from "../src/project.ts";
@@ -140,4 +144,26 @@ test("the EQ is saved with the project, sent as an op, and a bad shape off the w
   expect(junk.length).toBe(8);
   expect(junk[0]).toEqual({ kind: "bell", f: 20000, g: 0, q: Math.SQRT1_2, slope: 9, on: true });
   expect(junk.slice(1)).toEqual(Array(7).fill(null));
+});
+
+test("automate a band: a move recorded on the master plays back in the bounce, and taking the band out takes its moves", () => {
+  // the record path: a gain move on band 1 while recording becomes a lane on the master
+  const p0 = { ...demoProject(), space: 0, eq: doc(band({ f: 1000, g: 0, q: 0.2 })) }, L = loopBeats(p0);
+  const seq = new Sequencer(new TsEngine(SR), SR), take = new Take();
+  seq.onMove = (m) => take.add(m);
+  seq.recording = true; seq.play();
+  seq.move(MASTER, eqLane(0, "g"), -30, 0);
+  const [moved] = take.flush();
+  expect(moved).toMatchObject({ track: MASTER, i: eqLane(0, "g") });
+  // the hand held -30 for the first half of the loop, then let it back up
+  const lane = punchLane([], moved.i, [[0, -30], [L / 2, -30], [L / 2, 0]]);
+  const p = apply(p0, decodeOp(JSON.parse(JSON.stringify({ t: "eqAuto", lanes: lane })))!);
+  expect(p.eqAuto).toEqual(lane);
+  const secs = (L * 60) / p.bpm, half = Math.round((secs / 2) * SR);
+  const auto = renderProject(new TsEngine(SR), p, SR, secs, 1), plain = renderProject(new TsEngine(SR), p0, SR, secs, 1);
+  const db = (a: Float32Array, from: number, to: number) => { let e = 0; for (let i = from * 2; i < to * 2; i++) e += a[i] * a[i]; return 10 * Math.log10(e + 1e-12); };
+  expect(db(auto, 0, half) - db(plain, 0, half)).toBeLessThan(-6);                   // ducked while the lane says -30
+  expect(Math.abs(db(auto, half + SR / 10, 2 * half) - db(plain, half + SR / 10, 2 * half))).toBeLessThan(1); // back once it lets go
+  // a removed band takes its lane with it, so the next band in that slot starts clean
+  expect(apply(p, { t: "eq", bands: flatEq() }).eqAuto).toBeUndefined();
 });

@@ -3,12 +3,13 @@
 // worklet keeps a mirror of every param so it can swap engines mid-groove.
 import { TsEngine, type FmEngine } from "./engine.ts";
 import { WasmEngine, WasmEq, instantiateFm } from "./wasm.ts";
-import { TsEq, flatEq, type EqDoc, type EqStage } from "./eq.ts";
+import { TsEq, flatEq, withEqLane, type EqDoc, type EqStage } from "./eq.ts";
 import { Sequencer } from "./sequencer.ts";
 import { Space } from "./space.ts";
 import { Squash } from "./squash.ts";
 import { TRACKS, NPARAMS } from "./params.ts";
 import type { ToWorklet } from "./messages.ts";
+import type { Lane } from "../project.ts";
 
 declare const sampleRate: number;
 declare class AudioWorkletProcessor { readonly port: MessagePort }
@@ -26,7 +27,9 @@ class FmProcessor extends AudioWorkletProcessor {
   private seq = new Sequencer(this.engine, sampleRate);
   private space = new Space(sampleRate);
   private squash = new Squash(sampleRate);
+  /** The EQ as saved, and as it plays right now (with its automation on). */
   private eqDoc: EqDoc = flatEq();
+  private eqPlayed: EqDoc = this.eqDoc;
   private eq: EqStage = new TsEq(sampleRate);
   private buf = new Float32Array(256);
   private send = new Float32Array(256);
@@ -38,6 +41,7 @@ class FmProcessor extends AudioWorkletProcessor {
     this.engine.setMaster(0);
     this.seq.onRecord = (r) => this.port.postMessage({ t: "rec", ...r });
     this.seq.onMove = (r) => this.port.postMessage({ t: "move", ...r });
+    this.seq.onEq = (i, v) => { const d = withEqLane(this.eqPlayed, i, v); if (d !== this.eqPlayed) { this.eqPlayed = d; this.eq.set(d); } };
     this.port.onmessage = (e: MessageEvent<ToWorklet>) => { void this.handle(e.data); };
   }
 
@@ -52,7 +56,7 @@ class FmProcessor extends AudioWorkletProcessor {
         this.setAudible(m.audible);
         this.space.setTempo(m.bpm); this.space.setAmount(m.space);
         this.squash.setAmount(m.squash);
-        this.eqDoc = m.eq; this.eq.set(m.eq);
+        this.setEq(m.eq, m.eqAuto);
         break;
       case "param":
         this.params[m.track * NPARAMS + m.i] = m.v;
@@ -64,7 +68,7 @@ class FmProcessor extends AudioWorkletProcessor {
       case "tempo": s.bpm = m.bpm; s.setSwing(m.swing); s.setLoopBeats(m.loopBeats); this.space.setTempo(m.bpm); break;
       case "space": this.space.setAmount(m.amount); break;
       case "squash": this.squash.setAmount(m.amount); break;
-      case "eq": this.eqDoc = m.bands; this.eq.set(m.bands); break;
+      case "eq": this.setEq(m.bands, m.lanes); break;
       case "eqListen": this.eq.listen(m.band); break;
       case "master": this.master = m.gain; this.engine.setMaster(m.gain); break;
       case "play": s.play(m.countIn); break;
@@ -87,13 +91,20 @@ class FmProcessor extends AudioWorkletProcessor {
     this.seq.setAudible(mask);
   }
 
+  /** A new EQ or new lanes: play it as saved until the lanes move it on the next tick. */
+  private setEq(doc: EqDoc, lanes: Lane[]) {
+    this.eqDoc = this.eqPlayed = doc;
+    this.eq.set(doc);
+    this.seq.setEqAuto(lanes);
+  }
+
   private async swap(m: Extract<ToWorklet, { t: "engine" }>) {
     try {
       // the engine and Shape come from the same wasm instance, or are both TypeScript
       const x = m.kind === "rust" && m.bytes ? await instantiateFm(m.bytes) : null;
       const next: FmEngine = x ? new WasmEngine(x, sampleRate) : new TsEngine(sampleRate);
       const eq: EqStage = x ? new WasmEq(x, sampleRate) : new TsEq(sampleRate);
-      eq.set(this.eqDoc);
+      eq.set(this.eqPlayed);
       for (let i = 0; i < this.params.length; i++) next.setParam((i / NPARAMS) | 0, i % NPARAMS, this.params[i]);
       for (let t = 0; t < TRACKS; t++) { next.setMute(t, this.muted[t]); next.setBend(t, this.bend[t]); }
       next.setMaster(this.master);
