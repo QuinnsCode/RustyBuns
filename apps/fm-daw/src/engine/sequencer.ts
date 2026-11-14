@@ -15,6 +15,8 @@ const MAX_HELD = 256;
 export const LIVE_ID = 2_000_000;
 
 export interface RecordedNote { track: number; note: Note }
+/** The "track" a move on the master (Shape's dots) is recorded on: past the last real track. */
+export const MASTER = TRACKS;
 /** A performance move while recording: lane `i` went from `was` to `v` at beat `b`. */
 export interface RecordedMove { track: number; i: number; b: number; v: number; was: number }
 
@@ -51,7 +53,10 @@ export class Sequencer {
   private notes: Note[][] = Array.from({ length: TRACKS }, () => []);
   private warped: Float64Array[] = Array.from({ length: TRACKS }, () => new Float64Array(0));
   private audible = new Uint8Array(TRACKS).fill(1);
-  private lanes: { i: number; b: Float64Array; v: Float64Array; last: number }[][] = Array.from({ length: TRACKS }, () => []);
+  private lanes: AutoLane[][] = Array.from({ length: TRACKS }, () => []);
+  /** Shape's lanes: each change goes to onEq, which the worklet and the bounce turn into the EQ they play. */
+  private eqLanes: AutoLane[] = [];
+  onEq: ((i: number, v: number) => void) | null = null;
   /** Lanes a player is moving while recording (track * 1024 + i): they don't play over the hand until the loop comes round. */
   private touched = new Set<number>();
   // sounding sequenced notes: track, id, frames left
@@ -81,16 +86,18 @@ export class Sequencer {
   /** Automation for a track (already sanitized: sorted, clamped). */
   setAuto(track: number, lanes: Lane[]) {
     if (track < 0 || track >= TRACKS) return;
-    this.lanes[track] = lanes.map((l) => ({ i: l.i, b: Float64Array.from(l.pts, (p) => p[0]), v: Float64Array.from(l.pts, (p) => p[1]), last: NaN }));
+    this.lanes[track] = lanes.map(autoLane);
   }
+  /** Shape's automation (sanitized); every lane is sent again on the next tick. */
+  setEqAuto(lanes: Lane[]) { this.eqLanes = lanes.map(autoLane); }
   /** Forget what automation last sent (after an engine swap), so it's sent again. */
-  resendAuto() { for (const ls of this.lanes) for (const l of ls) l.last = NaN; }
+  resendAuto() { for (const ls of [...this.lanes, this.eqLanes]) for (const l of ls) l.last = NaN; }
   /**
    * A move on the Perform panel (bend, stutter, the pad's params), already
    * heard: while recording, it goes out to become automation on `track`.
    */
   move(track: number, i: number, v: number, was: number) {
-    if (!this.recording || !this.playing || track < 0 || track >= TRACKS) return;
+    if (!this.recording || !this.playing || track < 0 || track > MASTER) return;
     this.touched.add(track * 1024 + i);
     this.onMove?.({ track, i, b: this.pos, v, was });
   }
@@ -228,6 +235,13 @@ export class Sequencer {
         else this.engine.setParam(t, l.i, v);
       }
     }
+    for (const l of this.eqLanes) {
+      if (this.touched.size && this.touched.has(MASTER * 1024 + l.i)) continue;
+      const v = laneAt(l.b, l.v, b0);
+      if (v === l.last) continue;
+      l.last = v;
+      this.onEq?.(l.i, v);
+    }
     if (this.metronome || this.recording) {
       const beat = Math.ceil(b0);
       if (beat < b1) this.engine.click((beat % L) % 4 === 0);
@@ -274,6 +288,9 @@ function firstAtOrAfter(a: Float64Array, x: number): number {
 }
 
 /** A lane's value at beat `b`: straight lines between points, held past the ends. */
+interface AutoLane { i: number; b: Float64Array; v: Float64Array; last: number }
+const autoLane = (l: Lane): AutoLane => ({ i: l.i, b: Float64Array.from(l.pts, (p) => p[0]), v: Float64Array.from(l.pts, (p) => p[1]), last: NaN });
+
 export function laneAt(bs: Float64Array, vs: Float64Array, b: number): number {
   const n = bs.length;
   if (n === 0) return NaN;
@@ -294,6 +311,8 @@ export function renderPattern(
   setup: (seq: Sequencer) => void,
   /** Filled with the Space send bus when given (same length as the result). */
   send?: Float32Array,
+  /** Runs on each block once it's rendered, before the next: Shape, so its automation lands in time. */
+  post?: (block: Float32Array, frames: number) => void,
 ): Float32Array {
   const seq = new Sequencer(engine, sampleRate);
   setup(seq);
@@ -304,6 +323,7 @@ export function renderPattern(
   for (let at = 0; at < frames; at += BLOCK) {
     const n = Math.min(BLOCK, frames - at);
     seq.process(out.subarray(at * 2, (at + n) * 2), n, send?.subarray(at * 2, (at + n) * 2));
+    post?.(out.subarray(at * 2, (at + n) * 2), n);
   }
   return out;
 }
