@@ -1,6 +1,9 @@
 // Phone smoke, the pure half: the phones, what the in-page audit returns, how it turns into findings, and
 // the triage board. No browser here, so it tests without one (phone-smoke.test.ts); phone-smoke.ts drives Chrome.
-import { esc, plural } from "../apps/codesplitter/src/util.ts";
+// Relative imports of files that import nothing: rings.ts loads this in the ring workflows, which run before any `bun install`.
+import { esc } from "../packages/util/src/index.ts";
+
+const plural = (n: number, one: string) => `${n} ${n === 1 ? one : one + "s"}`;
 
 /** The web apps with a plain `vite` dev page, or a static `public/` (the playground). The daily ring
  *  (daily-ring.yml) preview-builds the same ones. Others need their own host first:
