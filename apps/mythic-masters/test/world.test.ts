@@ -220,11 +220,12 @@ describe("safe paths at night", () => {
     expect(lantern(LANTERN_OUT + 5)).toBe(0);
   });
 
-  test("a night path keeps to dry ground: round a river and a bay, not through them", async () => {
+  test("a night path keeps to dry ground: round a river and a bay, never across the sea to an island's fire", async () => {
     const { WORLD } = await import("../src/world/trail.ts");
-    const pts = REGIONS.flatMap((g) => [0, 1, 2].flatMap((night) => safePaths(g.n, night).paths.flatMap((p) => p.pts.slice(1, -1))));
-    const wet = pts.filter(([x, z]) => !dry(WORLD, x, z)).length;
-    expect(wet / pts.length).toBeLessThan(0.02); // was 1 in 20; what is left is a house you can only reach across water
+    const paths = REGIONS.flatMap((g) => [0, 1, 2].flatMap((night) => safePaths(g.n, night).paths.map((p) => p.pts.slice(1, -1))));
+    const wet = paths.map((pts) => pts.filter(([x, z]) => !dry(WORLD, x, z)).length / pts.length);
+    expect(Math.max(...wet)).toBeLessThan(0.15); // a ford over a river, not half a path over the sea (region 3's island house)
+    expect(wet.reduce((s, w, i) => s + w * paths[i]!.length, 0) / paths.flat().length).toBeLessThan(0.002); // was 1 in 20, then 1 in 75
   });
 });
 
