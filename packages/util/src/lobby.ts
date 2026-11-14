@@ -6,11 +6,15 @@
 // adds the key eqosys gave this member, and joining hands on the key the page was opened with, whatever else the game keeps in its address.
 // Copy link also signs the link with the member's name (`?from=`), so whoever opens it signed out reads "Sign in to join
 // Ada's party" (`signInToJoin`): one step, eqosys in a small window beside the game, then the lobby (#4418, #4419).
+// Voice (#4463): Join voice takes a one-use Qlave ticket from the party (./voice.ts), then lists who is in the room and who
+// is talking, with mute yourself and hang up; before joining, it names who the party says is in voice.
 // What happens on start is the page's own. The box wears the page's eqosys skin (./skin.ts); where it sits is the page's.
 import type { PartyMember, hub, party } from "./eqosys.ts";
 import { BLOCKS, CHAT, INVITE, JOINS, LIVES, may, MUTE, READY, REPORT, RULE_TEXT, type PartyRules } from "./party-rules.ts";
 import { confirmed, eqButton, wearSkin } from "./skin.ts";
 import { el } from "./dom.ts";
+import { join as joinVoice, type Speaker } from "./voice.ts";
+import type { VoiceCall } from "./spaces.ts";
 
 export interface LobbyPanel {
   code: string;
@@ -26,6 +30,8 @@ export interface LobbyPanel {
   say?: (note: string) => void;
   /** Given, the panel also has Copy friend link (`friendLinkButton`): two people who met through a party can stay friends. */
   hub?: ReturnType<typeof hub>;
+  /** How the voice room is joined: Qlave's client by default; a harness passes one with a fake microphone. */
+  join?: (url: string, ticket: string) => Promise<VoiceCall>;
 }
 
 /** Where a party link's key waits while the page goes to sign in and back, which can drop it from the address. */
@@ -107,7 +113,7 @@ export function friendLinkButton(h: ReturnType<typeof hub>, say: (note: string) 
 }
 
 /** Join the party and keep `box` showing it. Returns a function that leaves and hides the box. */
-export function lobbyPanel({ code, box, party: p, name, link, onStart, say, hub: h }: LobbyPanel) {
+export function lobbyPanel({ code, box, party: p, name, link, onStart, say, hub: h, join = joinVoice }: LobbyPanel) {
   let members: PartyMember[] = [], note = "", rules: PartyRules | null = null, blocked: { id: string; name: string }[] = [], open = false;
   /** The key Copy link carries: eqosys hands it to members the `invite` rule lets invite, and to nobody else. */
   let key = "";
@@ -115,6 +121,26 @@ export function lobbyPanel({ code, box, party: p, name, link, onStart, say, hub:
   let lit: Set<string> | null = null;
   /** Who this page quieted for the whole party, so the button reads right (the party says no more than a refusal). */
   const quiet = new Set<string>();
+  /** Voice: asked for a ticket (or in), the room's handle once Qlave let us in, who is in it, our own mute. */
+  let talking = false, call: VoiceCall | null = null, speakers: Speaker[] = [], selfMuted = false;
+  const hangUp = () => {
+    if (call) { call.leave(); p.inVoice(false); }
+    talking = false; call = null; speakers = [];
+  };
+  /** Before joining, who the party says is in voice and Join voice; joining, a word; in, who is talking, mute yourself and hang up. */
+  const voiceRow = (): HTMLElement => {
+    if (!talking) {
+      const there = members.filter((m) => m.voice).map((m) => m.name);
+      return el("div", { className: "rb-lobby-voice" },
+        el("p", { textContent: there.length ? `In voice: ${there.join(", ")}` : "Nobody is in voice yet." }),
+        eqButton({ text: "Join voice", icon: "volume-2", show: true, onClick: () => { talking = true; note = ""; p.talk(); draw(); } }));
+    }
+    if (!call) return el("div", { className: "rb-lobby-voice" }, el("p", { role: "status", textContent: "Joining voice..." }));
+    return el("div", { className: "rb-lobby-voice" },
+      el("ul", { ariaLabel: "In voice" }, ...speakers.map((s) => el("li", { className: [s.talking ? "talking" : "", s.muted ? "muted" : ""].filter(Boolean).join(" ") }, s.name))),
+      eqButton({ text: selfMuted ? "Unmute yourself" : "Mute yourself", icon: selfMuted ? "mic" : "mic-off", onClick: () => { selfMuted = !selfMuted; call?.muteSelf(selfMuted); draw(); } }),
+      eqButton({ text: "Leave voice", icon: "phone-off", onClick: () => { hangUp(); draw(); } }));
+  };
   wearSkin();
   box.classList.add("eq", "rb-lobby");
 
@@ -189,16 +215,38 @@ export function lobbyPanel({ code, box, party: p, name, link, onStart, say, hub:
       ...(mine?.host && rules?.invite === "host" ? [eqButton({ text: "New link: the ones handed out stop working", icon: "refresh-cw", onClick: () => { p.relink(); note = "New link made: copy it again"; draw(); } })] : []),
       ...(h ? [friendLinkButton(h, (n) => { note = n; draw(); })] : []),
       eqButton({ text: open ? "Close settings" : "Settings", icon: "sliders-horizontal", onClick: () => { open = !open; draw(); } }),
+      voiceRow(),
       ...(open ? [settings(mine)] : []),
     );
   };
   p.onMembers((m) => { members = m; note = ""; draw(); });
   p.onRules((m) => { rules = m.rules; key = m.invite ?? ""; if (m.blocked) blocked = m.blocked; draw(); });
-  p.onRefused((why) => { note = why; draw(); });
-  p.onGone((why) => { note = why; members = []; draw(); });
+  // A refusal while waiting for a ticket is the answer to it (talking is off, voice isn't set up): back to Join voice.
+  p.onRefused((why) => { note = why; if (talking && !call) talking = false; draw(); });
+  p.onGone((why) => { note = why; members = []; hangUp(); draw(); });
+  p.onTicket(async ({ url, ticket }) => {
+    if (!talking || call) return;
+    try {
+      const v = await join(url, ticket);
+      if (!talking) { v.leave(); return; }
+      call = v; selfMuted = false;
+      v.onSpeakers((list) => { speakers = list; draw(); });
+      v.onGone((why) => {
+        call = null; talking = false; speakers = [];
+        p.inVoice(false);
+        note = why === "kicked" ? "You were taken out of voice." : why === "ended" ? "The party's voice room ended." : "Voice lost its connection.";
+        draw();
+      });
+      p.inVoice(true);
+    } catch (e) {
+      talking = false;
+      note = e instanceof Error && /Permission|NotAllowed/i.test(`${e.name} ${e.message}`) ? "Voice needs the microphone." : "Couldn't join voice. Try again in a minute.";
+    }
+    draw();
+  });
   p.onStart(onStart);
   p.join(code, keyIn(location.search, code) ?? kept(code));
   box.hidden = false;
   draw();
-  return () => { p.leave(); box.hidden = true; };
+  return () => { hangUp(); p.leave(); box.hidden = true; };
 }

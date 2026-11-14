@@ -73,6 +73,12 @@ A game that already has a lobby (`park-hide-seek`) deletes it; a game with none 
 for the price of the socket above. The shared client is a small `party()` beside `eqosys()` in
 `@rustybuns/util/eqosys`: `make`, `join(code)`, `ready(bool)`, `start()`, `say(text)`, and an `onStart`.
 
+**Voice in a party** ([#4463](https://github.com/QuinnsCode/RustyBuns/issues/4463)): one Qlave room a party, so the people in it
+can talk before and after "start", a quick meeting by code. `talk()` asks the party for a one-use ticket (the `chat` rule says
+who may talk, in voice as in text) and `inVoice(bool)` tells everyone who is in; `lobbyPanel` has the row (Join voice, who is
+talking, mute yourself, hang up). A party mute is a voice mute, the host's take-out or block drops them from the room, and the
+party ending (its age, the host shortening it, the host's account deleted) ends the room. Details in [QLAVE.md](QLAVE.md#5-voice-in-a-party).
+
 ## Answers to the spike's questions
 
 1. **Friends and presence**: stay in eqosys's `Hub`. Qollab reads; it does not own.

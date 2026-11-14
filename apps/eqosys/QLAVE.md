@@ -81,3 +81,19 @@ clave PR; eqosys's side is `rosterIn` in `src/qlave.ts` and `roster` in `src/spa
 - Once Qlave has spoken for a channel, its roster wins over the page's word, so a crashed tab drops out. A channel it
   hasn't spoken for goes by what each page reports. Someone in a roster with no space socket open still isn't listed:
   the online list is who has the space open.
+
+## 5. Voice in a party
+
+A party ([QOLLAB.md](QOLLAB.md#how-a-game-joins)) has one voice room, `party:<code>:<8 hex>`. The hex is minted when someone
+first talks, so a code that comes round again after its party expired gets a new room, and `end` by the full name reaches
+no other. Everything else is a space's flow with the `Party` DO in place of the `Space` DO:
+
+- The page sends `{ t: "talk" }` over the party socket and gets `{ t: "ticket", url, ticket }` back, a ticket like §1's
+  with the party's room. The party's `chat` rule decides who may: off, nobody; "host", the host alone.
+- A party mute (the `mute` rule says who may) is sent as `mute` for the room, and a muted member's mute goes before their ticket.
+- The host's take-out or block (when blocked people are kept out) is sent as `kick`.
+- The party ending sends `end` with the room's name: its alarm at the party's expiry, the host shortening the party past its
+  age, or the host's account deleted. Any account delete that sat in a party sends `erase`.
+- Orders go through the same outbox and retries as a space's (`queue` and `flush` in `src/qollab/qlave.ts`).
+- Who is in voice is each page's word (`{ t: "voice", on }`), shown on the member list. Qlave's roster (§4) is for spaces'
+  rooms only for now: it answers `400` for a party's room.

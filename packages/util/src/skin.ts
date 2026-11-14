@@ -62,6 +62,9 @@ const BASE = `
 .rb-lobby-rules select,.rb-lobby-rules input[type=number]{max-width:60%;min-height:32px}.rb-lobby-acts{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:4px}
 .rb-lobby-rules label>span:last-child{display:inline-flex;gap:6px;align-items:center;white-space:nowrap}.rb-lobby-rules input[type=checkbox]{width:18px;height:18px;margin:0}
 .rb-lobby .eq-btn.icon{min-width:32px;min-height:32px;padding:0}
+.rb-lobby-voice{flex:1 1 100%;display:flex;flex-wrap:wrap;align-items:center;gap:6px;min-width:0}.rb-lobby-voice ul{display:flex;flex-wrap:wrap;gap:6px;list-style:none;margin:0;padding:0}
+.rb-lobby-voice li{display:flex;gap:4px;align-items:center;padding:3px 8px;border:var(--ui-border) solid var(--ui-line);border-radius:999px}
+.rb-lobby-voice li.talking{background:var(--ui-accent);color:var(--ui-on-accent)}.rb-lobby-voice li.muted{opacity:.6}.rb-lobby-voice p{margin:0;color:var(--ui-dim)}
 .rb-spaces{display:flex;flex-direction:column;gap:8px;padding:10px 12px;border:var(--ui-border) solid var(--ui-line);border-radius:var(--ui-radius);background:var(--ui-bg);box-shadow:var(--ui-shadow)}
 .rb-spaces[hidden]{display:none}
 .rb-spaces h2{margin:0;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font:700 16px/1.2 var(--ui-font-head)}
@@ -153,6 +156,8 @@ export const ICONS = {
   // Mute for everyone (the `mute` rule), and let them talk again.
   mic: svg('<path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/>'),
   "mic-off": svg('<line x1="2" x2="22" y1="2" y2="22"/><path d="M18.89 13.23A7.12 7.12 0 0 0 19 12v-2"/><path d="M5 10v2a7 7 0 0 0 12 5"/><path d="M15 9.34V5a3 3 0 0 0-5.68-1.33"/><path d="M9 9v3a3 3 0 0 0 5.12 2.12"/><line x1="12" x2="12" y1="19" y2="22"/>'),
+  // The lobby's voice row (#4463): hang up.
+  "phone-off": svg('<path d="M10.1 13.9a14 14 0 0 0 3.732 2.668 1 1 0 0 0 1.213-.303l.355-.465A2 2 0 0 1 17 15h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2 18 18 0 0 1-12.728-5.272"/><path d="M22 2 2 22"/><path d="M4.76 13.582A18 18 0 0 1 2 4a2 2 0 0 1 2-2h3a2 2 0 0 1 2 2v3a2 2 0 0 1-.8 1.6l-.468.351a1 1 0 0 0-.292 1.233 14 14 0 0 0 .244.473"/>'),
 } as const;
 
 /** eqosys's badge tag (see BADGE): the word on black and a slow oil-slick strip, the same in every game. */

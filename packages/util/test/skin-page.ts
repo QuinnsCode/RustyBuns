@@ -29,9 +29,16 @@ const noop = () => {};
 const on = <T,>() => { let f: (v: T) => void = noop; return { set: (g: (v: T) => void) => { f = g; }, fire: (v: T) => f(v) }; };
 const members = on<PartyMember[]>();
 const rules = on<{ rules: PartyRules; invite?: string }>();
-const party = { join: noop, leave: noop, ready: noop, start: noop, rules: noop, hide: noop, mute: noop, report: noop, makeHost: noop, kick: noop, block: noop, relink: noop,
+// Voice: Join voice asks for a ticket, and the party hands one straight back; the "call" lists who is talking.
+const ticket = on<{ url: string; ticket: string }>(), voiceSaid: string[] = [];
+const party = { talk: () => ticket.fire({ url: "https://qlave.test", ticket: "t" }), inVoice: (on: boolean) => voiceSaid.push(on ? "in" : "out"), onTicket: ticket.set, join: noop, leave: noop, ready: noop, start: noop, rules: noop, hide: noop, mute: noop, report: noop, makeHost: noop, kick: noop, block: noop, relink: noop,
   hidden: () => new Set<string>(), onMembers: members.set, onRules: rules.set, onRefused: noop, onGone: noop, onStart: noop } as unknown as Parameters<typeof lobbyPanel>[0]["party"];
-lobbyPanel({ code: "KRTZ", box: column.appendChild(document.createElement("div")), party, name: () => "Ada", link: () => location.href, onStart: noop });
+const call = { selfMuted: false, left: false };
+const joinVoice = async () => ({
+  onSpeakers: (f: (l: { sub: string; name: string; talking: boolean; muted: boolean; self: boolean }[]) => void) => f([{ sub: "a", name: "Ada", talking: false, muted: false, self: true }, { sub: "b", name: "Grace", talking: true, muted: false, self: false }]),
+  onGone: noop, muteSelf: (on: boolean) => { call.selfMuted = on; }, leave: () => { call.left = true; },
+}) as unknown as Awaited<ReturnType<NonNullable<Parameters<typeof lobbyPanel>[0]["join"]>>>;
+lobbyPanel({ code: "KRTZ", box: column.appendChild(document.createElement("div")), party, name: () => "Ada", link: () => location.href, onStart: noop, join: joinVoice });
 rules.fire({ rules: defaultRules(), invite: "k" });
 members.fire([{ id: "a", name: "Ada", host: true, ready: true }, { id: "b", name: "Grace", host: false, ready: true }]);
 
@@ -55,4 +62,4 @@ const space = {
 spacesPanel({ box: column.appendChild(document.createElement("div")), space, name: () => "Ada", icon, start: "s1" });
 
 // For skin.test.ts: a member's change, as the party would send it.
-Object.assign(window, { members: members.fire });
+Object.assign(window, { members: members.fire, call, voiceSaid });

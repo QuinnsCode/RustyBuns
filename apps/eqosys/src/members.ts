@@ -238,9 +238,9 @@ export async function deleteAccount(conf: Env, userId: string, iss: string) {
   const owned = (await conf.DB.prepare(`SELECT id FROM spaces WHERE (owner = ?1 AND studio_id IS NULL) OR studio_id IN (${SOLE_OWNED})`).bind(userId).all<{ id: string }>()).results.map((r) => r.id);
   const joined = (await conf.DB.prepare(SPACES_OF).bind(userId).all<{ id: string }>()).results.map((r) => r.id);
   if (conf.SPACE) for (const id of joined) await spaceOf(conf.SPACE, id).fetch(new Request(owned.includes(id) ? `https://space/drop?${new URLSearchParams({ iss })}` : `https://space/erase?${new URLSearchParams({ id: userId, iss })}`)).catch(() => null);
-  // And Qlave drops them from every voice channel (the spaces they owned end theirs on /drop). Three tries, best effort:
-  // a voice room is gone when its last person leaves, so it must not keep an account.
-  if (joined.length) for (let i = 0; i < 3 && await send(conf, iss, { t: "erase", sub: userId }) === "retry"; i++);
+  // And Qlave drops them from every voice room, spaces' and parties' (the spaces they owned end theirs on /drop, the parties
+  // they hosted on /erase). Three tries, best effort: a voice room is gone when its last person leaves, so it must not keep an account.
+  if (joined.length || seats.results.length) for (let i = 0; i < 3 && await send(conf, iss, { t: "erase", sub: userId }) === "retry"; i++);
   await revokeApple(conf, userId);
   const gone = (table: string, col = "user_id") => conf.DB.prepare(`DELETE FROM ${table} WHERE ${col} = ?`).bind(userId);
   await conf.DB.batch([

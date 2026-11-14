@@ -152,3 +152,23 @@ test.skipIf(!chromePath())("the chip folds into its badge and back, a dot lights
   const calm = await run(true);
   expect((calm.folded as { moving: number }).moving).toBe(0);
 });
+
+test.skipIf(!chromePath())("the lobby's voice row: join, see who is talking, mute yourself, hang up", async () => {
+  const tab = await openTab(chrome!.cdp, { w: 390, h: 844 }, true);
+  await load(chrome!.cdp, tab, `http://127.0.0.1:${server.port}/?closed`, 300);
+  const got = await tab.eval<Record<string, unknown>>(`(async () => {
+    const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+    const row = () => document.querySelector(".rb-lobby-voice"), btn = (label) => row().querySelector(\`[aria-label="\${label}"]\`);
+    members([{ id: "a", name: "Ada", host: true, ready: true }, { id: "b", name: "Grace", host: false, ready: true, voice: true }]);
+    const before = row().querySelector("p").textContent;
+    btn("Join voice").click();
+    await wait(50);
+    const speakers = [...row().querySelectorAll("li")].map((li) => li.textContent + (li.classList.contains("talking") ? " (talking)" : ""));
+    btn("Mute yourself").click();
+    const muted = call.selfMuted && !!btn("Unmute yourself");
+    btn("Leave voice").click();
+    return { before, speakers, muted, left: call.left, said: voiceSaid.join(), after: !!btn("Join voice") };
+  })()`);
+  await tab.close();
+  expect(got).toEqual({ before: "In voice: Grace", speakers: ["Ada", "Grace (talking)"], muted: true, left: true, said: "in,out", after: true });
+});

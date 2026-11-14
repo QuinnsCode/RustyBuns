@@ -7,6 +7,10 @@
 // The host's rules (@rustybuns/util/party-rules, #3881) decide who gets in, how many, whether late, what start needs and
 // who may talk, mute, report and invite (with "the host", a link carries a key the door checks, #3908), and how long the party lives; the host also kicks, blocks (their list: refused at
 // the door, or let in hidden from the host by the `block` rule) and hands the party to someone else.
+// Voice (#4463, QLAVE.md): a member asks for a one-use Qlave ticket over the socket (`talk`), into one room a party
+// (`party:<code>:<8 hex>`, kept under `voice` once someone first talks). A party mute and the host's kick or block reach
+// Qlave as orders through the same outbox a space keeps; the party ending (its age, the host shortening it, the host's
+// account deleted) ends the room. Who is in voice is each page's word (`{ t: "voice", on }`), shown on the member list.
 import { arr, check, bool, nul, num, obj, oneOf, opt, str, type Of } from "@rustybuns/util/guard";
 import { refuseSocket, Sockets, type RoomCtx, type RoomSocket } from "@rustybuns/util/room";
 import { sign, START_S, startAud } from "@rustybuns/util/token";
@@ -18,6 +22,7 @@ import { appOf } from "../listings.ts";
 import { json, type Env } from "../env.ts";
 import { hubAsk } from "./hub.ts";
 import { file, reporterId } from "../reports.ts";
+import { flush, partyRoom, qlaveUrl, queue, send, ticket, type Order, type OutboxStorage } from "./qlave.ts";
 
 /** What a non-friend hears on a closed party's door. */
 const FRIENDS_ONLY = "Only the host's friends can join with the code alone: ask someone in the party for its link.";
@@ -39,14 +44,16 @@ export const CHAT_KEPT = 200;
 
 const Member = obj({ id: str(200, { min: 1 }), name: str(200) });
 export type Member = Of<typeof Member>;
-/** A member as the party shows them: ready, and the host marked. */
-export type Seen = Member & { ready: boolean; host: boolean };
+/** A member's socket: who, and whether their page says it is in the party's voice room. */
+type Sock = Member & { voice?: boolean };
+/** A member as the party shows them: ready, the host marked, and in voice when they are. */
+export type Seen = Sock & { ready: boolean; host: boolean };
 /** What `/peek` answers: the party someone is in right now (its room code, game, seats and who is ready), or null. */
 export const PartyPeek = obj({ party: nul(obj({ code: str(12), app: str(64), size: num(1, 1000), members: arr(obj({ id: str(200, { min: 1 }), name: str(200), ready: bool(), host: bool() }), 1000) })) });
 export type PartyPeek = Of<typeof PartyPeek>;
 /** What a member sends: ready up or stand down, and (the host only) start. */
 const PartyIn = obj({
-  t: oneOf(["ready", "start", "say", "mute", "report", "rules", "kick", "block", "host", "relink"]), ready: opt(bool()),
+  t: oneOf(["ready", "start", "say", "mute", "report", "rules", "kick", "block", "host", "relink", "talk", "voice"]), ready: opt(bool()),
   text: opt(str(SAY_MAX)), id: opt(str(200, { min: 1 })), on: opt(bool()), rules: opt(PartyRules),
 });
 const Who = obj({ id: str(200, { min: 1 }), name: str(200), app: str(64, { min: 1 }), code: opt(str(12)), iss: opt(str(200)), invite: opt(str(64)) });
@@ -62,9 +69,11 @@ export type PartyOut =
   /** A chat message, from the live party or the last of its history. */
   | ({ t: "say" } & Said)
   /** To the host: someone reported a member. */
-  | { t: "reported"; by: string; id: string; name: string };
+  | { t: "reported"; by: string; id: string; name: string }
+  /** To the asker alone: a one-use ticket into the party's voice room on Qlave at `url`. */
+  | { t: "ticket"; url: string; ticket: string };
 
-interface PartyCtx extends RoomCtx { storage: { get<T>(k: string): Promise<T | undefined>; put(k: string, v: unknown): Promise<void> } }
+interface PartyCtx extends RoomCtx { storage: OutboxStorage & { setAlarm(at: number): Promise<void> } }
 interface Stub { fetch(req: Request): Promise<Response> }
 /** The PARTY binding: one party per room code. */
 export interface Parties { idFromName(name: string): unknown; get(id: unknown): Stub }
@@ -87,12 +96,12 @@ const mintKey = (): string => b64url(crypto.getRandomValues(new Uint8Array(12)))
 export const codeOf = (raw: string): string | null => /^[A-Za-z0-9]{4,12}$/.test(raw) ? raw.toUpperCase() : null;
 
 export class Party {
-  private sockets: Sockets<Member, PartyOut>;
+  private sockets: Sockets<Sock, PartyOut>;
 
   private chat = new ChatGate();
 
   constructor(private ctx: PartyCtx, private env: Env) {
-    this.sockets = new Sockets<Member, PartyOut>(ctx, { maxBytes: 2000, rate: 5, burst: 10 });
+    this.sockets = new Sockets<Sock, PartyOut>(ctx, { maxBytes: 2000, rate: 5, burst: 10 });
   }
 
   async fetch(req: Request): Promise<Response> {
@@ -104,6 +113,8 @@ export class Party {
       const held = await this.ctx.storage.get<number>("expires");
       if (held && held > now) return json({ error: "taken" }, 409);
       if (!who) return json({ error: "bad" }, 400);
+      // The expired party this code held had a voice room its alarm didn't end: end it now.
+      await this.endVoice();
       await this.ctx.storage.put("app", who.app);
       await this.ctx.storage.put("host", who.id);
       await this.ctx.storage.put("hostName", who.name);
@@ -161,6 +172,12 @@ export class Party {
     if (msg.t === "say") return this.say(ws, me, msg.text ?? "");
     if (msg.t === "mute") return this.mute(ws, me, msg.id ?? "", msg.on ?? true);
     if (msg.t === "report") return this.report(ws, me, msg.id ?? "");
+    if (msg.t === "talk") return this.talk(ws, me);
+    if (msg.t === "voice") {
+      // The page joined (or left) the voice room on Qlave: everyone sees it on the member list.
+      this.sockets.attach(ws, { id: me.id, name: me.name, ...(msg.on ? { voice: true } : {}) });
+      return this.announce(await this.ctx.storage.get<string>("app") ?? "");
+    }
     if (msg.t === "rules" || msg.t === "kick" || msg.t === "block" || msg.t === "host" || msg.t === "relink") return this.hostDoes(ws, me, msg);
     const ready = new Set(await this.ctx.storage.get<string[]>("ready") ?? []);
     if (msg.t === "ready") {
@@ -281,8 +298,9 @@ export class Party {
       await this.ctx.storage.put("expires", expires);
       if (expires <= Date.now()) {
         for (const sock of this.sockets.open()) try { sock.close(CLOSE_ENDED, "the host ended the party"); } catch { /* closing */ }
-        return;
+        return this.endVoice();
       }
+      await this.schedule();
       if (msg.rules.block === "out") await this.shutOut();
       await this.announce(app);
       return tell();
@@ -290,7 +308,11 @@ export class Party {
     const id = msg.id ?? "";
     if (!id || id === me.id) return this.sockets.send(ws, { t: "refused", why: "pick someone else" });
     const them = this.members().find((m) => m.id === id);
-    const out = (reason: string) => { for (const sock of this.sockets.open()) if (this.sockets.who(sock)?.id === id) try { sock.close(CLOSE_KICKED, reason); } catch { /* closing */ } };
+    const out = (reason: string) => {
+      for (const sock of this.sockets.open()) if (this.sockets.who(sock)?.id === id) try { sock.close(CLOSE_KICKED, reason); } catch { /* closing */ }
+      // Out of the voice room too: they need a fresh ticket, and the door decides whether they get back in.
+      return this.toVoice((room) => [{ t: "kick", room, sub: id }]);
+    };
     if (msg.t === "host") {
       if (!them) return this.sockets.send(ws, { t: "refused", why: "they aren't in the party" });
       await this.ctx.storage.put("host", them.id);
@@ -300,14 +322,14 @@ export class Party {
       await this.announce(app);
       return tell();
     }
-    if (msg.t === "kick") { out("taken out by the host"); return; }
+    if (msg.t === "kick") return out("taken out by the host");
     // block: on the host's list (names kept so the host can find them again) and out now; off lets them back.
     const blocked = (await this.ctx.storage.get<Member[]>("blocked") ?? []).filter((b) => b.id !== id);
     const name = them?.name ?? [...(await this.ctx.storage.get<Said[]>("chat") ?? [])].reverse().find((m) => m.from.id === id)?.from.name ?? "someone";
     if (msg.on ?? true) blocked.push({ id, name });
     await this.ctx.storage.put("blocked", blocked);
     // Kept out: out now. Let in hidden: they stay, and the host and they drop off each other's list.
-    if ((msg.on ?? true) && (await this.rules()).block === "out") out("blocked by the host");
+    if ((msg.on ?? true) && (await this.rules()).block === "out") await out("blocked by the host");
     else await this.announce(app);
     this.sockets.send(ws, await this.rulesFor(me.id));
   }
@@ -336,6 +358,7 @@ export class Party {
       await this.ctx.storage.put("expires", 0);
       for (const ws of this.sockets.open()) try { ws.close(4001, "the host's account was deleted"); } catch { /* closing */ }
       await this.ctx.storage.put("chat", []);
+      await this.endVoice();
       return json({ ok: true });
     }
     for (const ws of this.sockets.open()) if (this.sockets.who(ws)?.id === id) try { ws.close(4001, "account deleted"); } catch { /* closing */ }
@@ -354,6 +377,70 @@ export class Party {
     const muted = new Set(await this.ctx.storage.get<string[]>("muted") ?? []);
     if (on && id !== me.id) muted.add(id); else muted.delete(id);
     await this.ctx.storage.put("muted", [...muted]);
+    // A party mute is a voice mute too.
+    await this.toVoice((room) => [{ t: "mute", room, sub: id, on: muted.has(id) }]);
+  }
+
+  /** The party's voice room, minted the first time someone talks; null before that. */
+  private async voiceRoom(make = false): Promise<string | null> {
+    const room = await this.ctx.storage.get<string>("voice");
+    if (room || !make) return room ?? null;
+    const fresh = partyRoom(await this.ctx.storage.get<string>("code") ?? "");
+    await this.ctx.storage.put("voice", fresh);
+    await this.schedule();
+    return fresh;
+  }
+
+  private async iss(): Promise<string> {
+    return await this.ctx.storage.get<string>("iss") ?? (this.env.BETTER_AUTH_URL ? new URL(this.env.BETTER_AUTH_URL).origin : "https://eqosys.qntbr.com");
+  }
+
+  /**
+   * A ticket into the party's voice room, to the asker only. The `chat` rule says who may talk, in voice as in text. A
+   * muted member's mute reaches Qlave before they do, so their first word is already silent; if Qlave can't take it now, no ticket.
+   */
+  private async talk(ws: RoomSocket, me: Member) {
+    const chat = (await this.rules()).chat;
+    if (chat === "off" || (chat === "host" && me.id !== await this.ctx.storage.get<string>("host")))
+      return this.sockets.send(ws, { t: "refused", why: chat === "off" ? "talking is off in this party" : "only the host talks in this party" });
+    const iss = await this.iss(), room = (await this.voiceRoom(true))!;
+    if ((await this.ctx.storage.get<string[]>("muted") ?? []).includes(me.id) && await send(this.env, iss, { t: "mute", room, sub: me.id, on: true }) !== "done")
+      return this.sockets.send(ws, { t: "refused", why: "Voice is busy. Try again in a minute." });
+    const t = await ticket(this.env, iss, me, room);
+    if (!t) return this.sockets.send(ws, { t: "refused", why: "voice isn't set up here" });
+    this.sockets.send(ws, { t: "ticket", url: qlaveUrl(this.env), ticket: t });
+  }
+
+  /** Orders about the voice room, when there is one. */
+  private async toVoice(orders: (room: string) => Order[]) {
+    const room = await this.voiceRoom();
+    if (!room) return;
+    await queue(this.ctx.storage, await this.iss(), orders(room));
+    await this.schedule();
+  }
+
+  /** The party is over: its voice room ends on Qlave and is forgotten here. */
+  private async endVoice() {
+    const room = await this.voiceRoom();
+    if (!room) return;
+    await queue(this.ctx.storage, await this.iss(), [{ t: "end", prefix: room }]);
+    await this.ctx.storage.delete("voice");
+    await this.schedule();
+  }
+
+  /** One alarm for both: orders waiting for Qlave, and a voice room's party running out of time. */
+  private async schedule() {
+    const at = [await this.ctx.storage.get<number>("outboxAt"), await this.voiceRoom() ? await this.ctx.storage.get<number>("expires") : undefined];
+    const next = at.filter((n): n is number => typeof n === "number");
+    if (next.length) await this.ctx.storage.setAlarm(Math.max(Date.now(), Math.min(...next)));
+  }
+
+  async alarm() {
+    const expires = await this.ctx.storage.get<number>("expires") ?? 0;
+    // Out of time: the code stops letting people in (fetch), and the voice room ends.
+    if (expires <= Date.now()) await this.endVoice();
+    await flush(this.ctx.storage, this.env);
+    await this.schedule();
   }
 
   /** A report on a member: the host hears of it, and a row goes through the game-report path (reports.ts). */

@@ -379,16 +379,17 @@ export function celebrate(a: Achievement, ms = 4200): HTMLElement | null {
  */
 export const SOCKET_PROTOCOL = "eqosys";
 
-/** A member of a party as eqosys's party shows them. */
-export const PartyMember = obj({ id: str(200), name: str(200), ready: bool(false), host: bool(false) });
+/** A member of a party as eqosys's party shows them; `voice` when their page says it is in the party's voice room. */
+export const PartyMember = obj({ id: str(200), name: str(200), ready: bool(false), host: bool(false), voice: opt(bool()) });
 export type PartyMember = Of<typeof PartyMember>;
 /** What a party says: who is in, that the host started (go to `room`, sit in `seat`), or why a request was refused. */
 export const PartyMsg: Guard<
   { t: "members"; members: PartyMember[] } | { t: "start"; room: string; seat: number; ticket?: string } | { t: "refused"; why: string }
   | { t: "say"; from: { id: string; name: string }; text: string; at: number } | { t: "reported"; by: string; id: string; name: string }
-  | { t: "rules"; rules: PartyRules; blocked?: { id: string; name: string }[]; invite?: string }
+  | { t: "rules"; rules: PartyRules; blocked?: { id: string; name: string }[]; invite?: string } | { t: "ticket"; url: string; ticket: string }
 > = (v) => {
-  const t = check(obj({ t: oneOf(["members", "start", "refused", "say", "reported", "rules"]) }), v)?.t;
+  const t = check(obj({ t: oneOf(["members", "start", "refused", "say", "reported", "rules", "ticket"]) }), v)?.t;
+  if (t === "ticket") return { t, ...obj({ url: str(300), ticket: str(4096) })(v) };
   if (t === "rules") { const r = obj({ rules: PartyRules, blocked: opt(arr(obj({ id: str(200), name: str(200) }), 1000)), invite: opt(str(64)) })(v); return { t, rules: r.rules, ...(r.blocked && { blocked: r.blocked }), ...(r.invite && { invite: r.invite }) }; }
   if (t === "members") return { t, members: obj({ members: arr(PartyMember, 1000) })(v).members };
   if (t === "start") { const st = obj({ room: str(64), seat: int(0, 1000), ticket: opt(str(4096)) })(v); return { t, room: st.room, seat: st.seat, ...(st.ticket && { ticket: st.ticket }) }; }
@@ -422,6 +423,7 @@ export function party({ url, token }: PartyConfig) {
   const hide = (id: string, on = true) => { const h = hidden(); if (on) h.add(id); else h.delete(id); try { localStorage.setItem(HIDDEN, JSON.stringify([...h])); } catch { /* private window: for this page only */ } };
   const onStart = ears<{ room: string; seat: number; ticket?: string }>(), onMembers = ears<PartyMember[]>(), onRefused = ears<string>(), onGone = ears<string>();
   const onSay = ears<Extract<PartyMsg, { t: "say" }>>(), onReported = ears<Extract<PartyMsg, { t: "reported" }>>();
+  const onTicket = ears<{ url: string; ticket: string }>();
 
   /** A new party's code, or null when signed out or eqosys refused (too many parties just now, say). */
   async function make(open = false): Promise<string | null> {
@@ -445,7 +447,7 @@ export function party({ url, token }: PartyConfig) {
       protocols: [SOCKET_PROTOCOL, t],
       decode: (v) => check(PartyMsg, v),
       queue: 4,
-      onMessage: (m) => { if (m.t === "members") onMembers.hear(members = m.members); else if (m.t === "start") onStart.hear(m); else if (m.t === "say") { if (!hidden().has(m.from.id)) onSay.hear(m); } else if (m.t === "reported") onReported.hear(m); else if (m.t === "rules") onRules.hear(m); else onRefused.hear(lastWhy = m.why); },
+      onMessage: (m) => { if (m.t === "members") onMembers.hear(members = m.members); else if (m.t === "start") onStart.hear(m); else if (m.t === "say") { if (!hidden().has(m.from.id)) onSay.hear(m); } else if (m.t === "reported") onReported.hear(m); else if (m.t === "rules") onRules.hear(m); else if (m.t === "ticket") onTicket.hear(m); else onRefused.hear(lastWhy = m.why); },
       onClose: (e) => {
         if (e.code === 4000) { onGone.hear("This party is open in another tab."); return; }
         // The door's refusals (party.ts): its own words came just before the close; stop trying.
@@ -475,6 +477,11 @@ export function party({ url, token }: PartyConfig) {
     makeHost: (id: string) => void link?.send({ t: "host", id }),
     /** Host only: a fresh invite key, so every party link handed out so far stops letting people in. */
     relink: () => void link?.send({ t: "relink" }),
+    /** Ask for a one-use ticket into the party's voice room (Qlave, QLAVE.md): `onTicket` hears it, for `join` in ./voice.ts. */
+    talk: () => void link?.send({ t: "talk" }),
+    /** Tell the party this page is in its voice room (or, with `false`, left it), so everyone sees it on the member list. */
+    inVoice: (on = true) => void link?.send({ t: "voice", on }),
+    onTicket: onTicket.add,
     /** Mute someone for yourself only: their chat lines stop reaching this page. Kept in this browser. */
     hide, hidden,
     onRules: onRules.add,
