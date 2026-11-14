@@ -37,17 +37,17 @@ const until = async (f: () => unknown) => { const end = Date.now() + 10_000; whi
 function member(token: string) {
   const c = space({ url: () => base, token: () => token });
   const heard: string[] = [], refused: string[] = [];
-  let channels: string[] = [], max = 0, gone = "";
+  let channels: string[] = [], max = 0, gone = "", runs = false;
   const open = (id: string) => c.open(id, {
-    space: (s) => { channels = s.channels; max = s.max ?? 0; },
+    space: (s) => { channels = s.channels; max = s.max ?? 0; runs = s.owner; },
     said: (_, m) => heard.push(m.text),
     refused: (w) => refused.push(w),
     gone: (w) => (gone = w),
   });
-  return { c, open, heard, refused, channels: () => channels, max: () => max, gone: () => gone };
+  return { c, open, heard, refused, channels: () => channels, max: () => max, gone: () => gone, runs: () => runs };
 }
 
-test("a studio's space: the studio's members are in, its admins run it, long messages, coworker presence, out with the studio", async () => {
+test("a studio's space: the studio's members are in, its admins run it, a new role at once, long messages, coworker presence, out with the studio", async () => {
   const ada = await signUp("Ada"), bo = await signUp("Bo"), cy = await signUp("Cy");
   const studio = (await run("eq_studio_make", { name: "Acme", kind: "team" }, { token: ada.token })).body.result!.id!;
   for (const [email, role] of [["bo@example.com", "maker"], ["cy@example.com", "admin"]] as const)
@@ -76,6 +76,14 @@ test("a studio's space: the studio's members are in, its admins run it, long mes
   await until(() => b.refused.length === 2);
   c.c.kick(ada.id);
   await until(() => c.refused.includes("only an owner takes out another owner"));
+
+  // Ada makes Cy a maker: Cy's open page reconnects by itself and comes back without an admin's powers.
+  expect(c.runs()).toBe(true);
+  expect((await run("eq_studio_add", { studio, email: "cy@example.com", role: "maker" }, { cookie: ada.cookie })).status).toBe(200);
+  await until(() => !c.runs());
+  c.c.channel("cy-only");
+  await until(() => c.refused.includes("only the space's owner can do that"));
+  expect(c.gone()).toBe("");
 
   // Coworkers see each other online with no friend request: Bo has the game open, and Cy's hub says so.
   const tab = new WebSocket(`ws://127.0.0.1:${shell.port}/hub`, { headers: { origin: PARK }, protocols: ["eqosys", bo.token] } as never);

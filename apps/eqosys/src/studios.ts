@@ -83,7 +83,7 @@ export const roleIn = (conf: Pick<Env, "DB">, studio: string, who: string) =>
   conf.DB.prepare("SELECT role FROM studio_members WHERE studio_id = ? AND user_id = ?").bind(studio, who).first<Role>("role");
 
 /** Puts someone in a studio by email (an owner or admin asks; only an owner makes another owner). */
-export async function addMember(conf: Env, studio: string, by: string, email: string, role: Role, now = Date.now()): Promise<Made> {
+export async function addMember(conf: Pick<Env, "DB">, studio: string, by: string, email: string, role: Role, now = Date.now()): Promise<Made> {
   const mine = await roleIn(conf, studio, by);
   if (mine !== "owner" && mine !== "admin") return { ok: false, status: 403, error: "only a studio's owner or admin adds people" };
   if (role === "owner" && mine !== "owner") return { ok: false, status: 403, error: "only an owner makes another owner" };

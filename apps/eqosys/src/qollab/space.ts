@@ -6,6 +6,7 @@
 //                                           owner that they run it, studio the studio that owns it, if one does)
 //   /erase?id=                              their account was deleted: their sockets close and their messages go
 //   /gone?id=                               they left the studio that owns it: their sockets close
+//   /role?id=                               their role in the studio changed: their sockets close and the page reconnects
 //   /drop                                   the space was deleted: every socket closes and everything here goes
 //   /roster { channel, in, at }             Qlave says who is in a voice channel (handle.ts checked its signature)
 // Messages are kept in pages of PAGE under `p:<channel>:<page>`, the last KEEP_PAGES pages a channel, numbered from 1.
@@ -17,7 +18,7 @@ import type { SpaceMsg, SpaceMessage } from "@rustybuns/util/eqosys";
 import { Sockets, type RoomCtx, type RoomSocket } from "@rustybuns/util/room";
 import { appOf } from "../listings.ts";
 import { ChatGate, SAY_MAX, STUDIO_SAY_MAX, type Said } from "./chat.ts";
-import { removeMember, roleIn, type Made } from "../studios.ts";
+import { addMember, removeMember, roleIn, type Made, type Role } from "../studios.ts";
 import { json, type Env } from "../env.ts";
 import { flush, Present, queue, roomOf, send, ticket, qlaveUrl, type Order } from "./qlave.ts";
 import { file, reporterId } from "../reports.ts";
@@ -111,6 +112,23 @@ export async function studioRemove(conf: Pick<Env, "DB" | "SPACE">, studio: stri
   return r;
 }
 
+/**
+ * Puts someone in a studio by email or changes their role (the Studio tab, eq_studio_add), by studios.ts addMember's rules. Whether
+ * they run the studio's space is read when their socket opens, so a changed role closes the sockets they have open there with a
+ * code the page reconnects on (ROLE_CHANGED): they come back with the new powers, not the old ones.
+ */
+export async function studioAdd(conf: Pick<Env, "DB" | "SPACE">, studio: string, by: string, email: string, role: Role): Promise<Made> {
+  const before = await conf.DB.prepare(`SELECT u.id, m.role FROM "user" u JOIN studio_members m ON m.user_id = u.id AND m.studio_id = ? WHERE lower(u.email) = lower(?)`)
+    .bind(studio, email.trim()).first<{ id: string; role: Role }>();
+  const r = await addMember(conf, studio, by, email, role);
+  const sid = r.ok && before && before.role !== role && conf.SPACE && await conf.DB.prepare("SELECT id FROM spaces WHERE studio_id = ?").bind(studio).first<string>("id");
+  if (sid && before) await spaceOf(conf.SPACE!, sid).fetch(new Request(`https://space/role?${new URLSearchParams({ id: before.id })}`)).catch(() => null);
+  return r;
+}
+
+/** The close a changed studio role sends: under 4000, so the page's socket (eqosys.ts `space`) opens again instead of giving up. */
+export const ROLE_CHANGED = 3001;
+
 const pageKey = (channel: string, page: number) => `p:${channel}:${String(page).padStart(8, "0")}`;
 
 export class Space {
@@ -135,6 +153,8 @@ export class Space {
     }
     // Out of the studio that owns this space (studioLeft): their sockets close and Qlave drops them from its voice channels.
     if (url.pathname === "/gone") { await this.out(url.searchParams.get("id") ?? "", "removed from the studio"); return json({ ok: true }); }
+    // Their role in the studio changed (studioAdd): their sockets close, and the page's reconnect reads the new role at the door.
+    if (url.pathname === "/role") { const id = url.searchParams.get("id"); if (id) this.close((m) => m.id === id, ROLE_CHANGED, "your role in the studio changed"); return json({ ok: true }); }
     if (url.pathname === "/mine") return this.mine(url.searchParams.get("id") ?? "");
     // How many people are in it now (two tabs are one), for the eqosys home's list of your spaces.
     if (url.pathname === "/on") return json({ on: (await this.members()).length });
