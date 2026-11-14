@@ -1,18 +1,24 @@
-// Fighting a friend: two pages, one fight. The sim is deterministic (sim.ts and its Rust twin agree tick for tick), so
-// nothing but the two players' inputs crosses the wire, and each page plays the same fight from them: lockstep with an
-// input delay. Your input for tick n is sampled DELAY ticks early and sent at once, so by the time either page plays
-// tick n both inputs are usually in; when the friend's isn't, that page waits a frame instead of guessing. The room
-// (edge/duel.ts) seats the two, holds their picks until both are in, and relays the inputs. Every SUM_EVERY ticks each
-// page sends a hash of the fight; if the two ever disagree, the room says so and the fight is called off.
+// Fighting with friends: two to four pages, one fight. A duel is two friends against each other; a co-op room (#4400)
+// is two to four of them on one team against a wild one, a seeded bot every page runs. The sim is deterministic, so
+// nothing but the players' inputs crosses the wire, and each page plays the same fight from them: lockstep with an
+// input delay. Your input for tick n is sampled DELAY ticks early and sent at once, so by the time any page plays
+// tick n every seat's input is usually in; when one isn't, that page waits a frame instead of guessing. The room
+// (edge/duel.ts) seats them, holds their picks until all are in, and relays each seat's inputs to the rest. Every
+// SUM_EVERY ticks each page sends a hash of the fight; if two ever disagree, the room says so and the fight is off.
 //
 // Pure, so the room, the page (net/duel-link.ts) and the tests run the same rules.
 import { clamp } from "@rustybuns/util";
-import { arr, bool, check, int, nul, obj, oneOf, str, type Guard } from "@rustybuns/util/guard";
+import { arr, Bad, bool, check, int, nul, obj, oneOf, str, type Guard } from "@rustybuns/util/guard";
 import { IDLE, type Input, type Match } from "../sim.ts";
 
 /** A duel's room code: what `?duel=` carries and the challenge's link names. */
 export const DUEL_CODE = /^[A-Z0-9]{6,12}$/;
 export const duelCode = (search: string) => (new URLSearchParams(search).get("duel") ?? "").toUpperCase().match(DUEL_CODE)?.[0] ?? null;
+/** A co-op room's code: what `?coop=` carries. */
+export const coopCode = (search: string) => (new URLSearchParams(search).get("coop") ?? "").toUpperCase().match(DUEL_CODE)?.[0] ?? null;
+/** Chairs in a room: a duel seats two, a co-op room up to four (and starts with two or more). */
+export const SEATS = { duel: 2, coop: 4 } as const;
+export type RoomKind = keyof typeof SEATS;
 const LETTERS = "BCDFGHJKLMNPQRSTVWXZ23456789";
 /** A fresh room code for a challenge. */
 export const mintDuel = () => Array.from(crypto.getRandomValues(new Uint8Array(8)), (b) => LETTERS[b % LETTERS.length]).join("");
@@ -77,24 +83,26 @@ const CLIENT: Guard<DuelIn> = (v) => {
 };
 export const parseDuelIn = (raw: unknown): DuelIn | null => check(CLIENT, raw);
 
-/** The room to a page. `seats`: who is in (your seat is `you`) and who has picked; `go`: round `r` starts with these two;
- *  `in`: the other's inputs; `from`: the room missed yours, send again from tick `n`; `desync`: the two pages played round `r` differently, so it's off. */
+/** The room to a page. `seats`: who is in, one entry a chair (your seat is `you`), and who has picked; `go`: round `r`
+ *  starts with one pick a seat, and `seed` for the co-op room's wild one; `in`: seat `s`'s inputs; `from`: the room
+ *  missed yours, send again from tick `n`; `desync`: two pages played round `r` differently, so it's off. */
 export type DuelOut =
-  | { t: "seats"; you: 0 | 1; names: [string | null, string | null]; picked: [boolean, boolean] }
-  | { t: "go"; r: number; picks: [Pick, Pick] }
-  | { t: "in"; r: number; n: number; i: Packed[] }
+  | { t: "seats"; you: number; names: (string | null)[]; picked: boolean[] }
+  | { t: "go"; r: number; picks: Pick[]; seed: number }
+  | { t: "in"; s: number; r: number; n: number; i: Packed[] }
   | { t: "desync"; r: number; n: number }
   | { t: "from"; r: number; n: number }
   | { t: "echo"; at: number };
-const NAME = nul(str(40, { min: 0 }));
+const NAME = nul(str(40, { min: 0 })), SEAT = int(0, SEATS.coop - 1);
 const SERVER: Guard<DuelOut> = (v) => {
   const t = typeof v === "object" && v !== null && "t" in v ? v.t : undefined;
   if (t === "seats") {
-    const s = obj({ t: oneOf(["seats"]), you: oneOf([0, 1]), names: arr(NAME, 2, { min: 2 }), picked: arr(bool(), 2, { min: 2 }) })(v);
-    return { t: "seats", you: s.you, names: [s.names[0]!, s.names[1]!], picked: [s.picked[0]!, s.picked[1]!] };
+    const s = obj({ t: oneOf(["seats"]), you: SEAT, names: arr(NAME, SEATS.coop, { min: 2 }), picked: arr(bool(), SEATS.coop, { min: 2 }) })(v);
+    if (s.names.length !== s.picked.length || s.you >= s.names.length) throw new Bad("a name and a pick for every chair, yours among them");
+    return s;
   }
-  if (t === "go") { const g = obj({ t: oneOf(["go"]), r: ROUND, picks: arr(PICK, 2, { min: 2 }) })(v); return { t: "go", r: g.r, picks: [g.picks[0]!, g.picks[1]!] }; }
-  if (t === "in") return obj({ t: oneOf(["in"]), r: ROUND, n: TICK, i: arr(PACKED, BATCH, { min: 1 }) })(v);
+  if (t === "go") return obj({ t: oneOf(["go"]), r: ROUND, picks: arr(PICK, SEATS.coop, { min: 2 }), seed: int(1, 2 ** 31 - 1) })(v);
+  if (t === "in") return obj({ t: oneOf(["in"]), s: SEAT, r: ROUND, n: TICK, i: arr(PACKED, BATCH, { min: 1 }) })(v);
   if (t === "desync") return obj({ t: oneOf(["desync"]), r: ROUND, n: TICK })(v);
   if (t === "from") return obj({ t: oneOf(["from"]), r: ROUND, n: TICK })(v);
   return obj({ t: oneOf(["echo"]), at: int(0, 1e15) })(v);
@@ -103,41 +111,48 @@ export const decodeDuel = (raw: unknown): DuelOut | null => check(SERVER, raw);
 
 // --- lockstep ----------------------------------------------------------------------------------------
 /**
- * One round's inputs, both sides. The page asks `next(sample)` once per tick it wants to play: it makes our input for
- * DELAY ticks ahead (the first DELAY are idle on both pages), and answers both inputs for the next tick, or null while
- * the friend's hasn't come. `outbox` is what to send, a batch at a time.
+ * One round's inputs, every seat's. The page asks `next(sample)` once per tick it wants to play: it makes our input for
+ * DELAY ticks ahead (the first DELAY are idle on every page), and answers every seat's input for the next tick, seat 0
+ * first, or null while someone's hasn't come. `outbox` is what to send, a batch at a time.
  */
 export class Lockstep {
   private mine = new Map<number, Packed>();
-  private theirs = new Map<number, Packed>();
+  /** The others' inputs by seat, then by tick. */
+  private theirs: Map<number, Packed>[];
   private made = 0;
   private sent = 0;
   /** The next tick to play. */
   tick = 1;
-  /** Ticks in a row we've waited on the friend's input. */
+  /** Ticks in a row we've waited on someone's input. */
   waited = 0;
 
-  constructor(readonly seat: 0 | 1, readonly r: number, readonly delay: number) {}
+  constructor(readonly seat: number, readonly r: number, readonly delay: number, readonly seats = 2) {
+    this.theirs = Array.from({ length: seats }, () => new Map());
+  }
 
-  /** Inputs off the wire from the friend for ticks `n`, `n+1`, ... */
-  hear(n: number, i: readonly Packed[]) { i.forEach((p, k) => { if (n + k >= this.tick) this.theirs.set(n + k, p); }); }
+  /** Inputs off the wire from seat `s` for ticks `n`, `n+1`, ... */
+  hear(n: number, i: readonly Packed[], s = this.seat ? 0 : 1) {
+    const got = this.theirs[s];
+    if (!got || s === this.seat) return;
+    i.forEach((p, k) => { if (n + k >= this.tick) got.set(n + k, p); });
+  }
 
-  /** Both inputs for tick `this.tick`, seat 0's first, and moves on; null when the friend's isn't in. */
-  next(sample: () => Input): [Input, Input] | null {
+  /** Every seat's input for tick `this.tick`, seat 0's first, and moves on; null when someone's isn't in. */
+  next(sample: () => Input): Input[] | null {
     while (this.made < this.tick + this.delay) {
       this.made++;
       this.mine.set(this.made, this.made <= this.delay ? pack(IDLE) : pack(sample()));
     }
-    const t = this.tick, a = this.mine.get(t), b = this.theirs.get(t);
-    if (!a || !b) {
+    const t = this.tick, all = this.theirs.map((got, s) => (s === this.seat ? this.mine.get(t) : got.get(t)));
+    if (all.some((p) => !p)) {
       // Waiting a while: send our last input again, so a room that dropped some of ours sees the gap and says `from`.
       if (++this.waited % NUDGE === 0 && this.sent === this.made) this.sent = this.made - 1;
       return null;
     }
     // Ours is kept a while after it's played: the room may ask for it again (`resend`).
-    this.mine.delete(t - KEEP); this.theirs.delete(t); this.tick++; this.waited = 0;
-    const me = unpack(a), them = unpack(b);
-    return this.seat === 0 ? [me, them] : [them, me];
+    this.mine.delete(t - KEEP); for (const got of this.theirs) got.delete(t);
+    this.tick++; this.waited = 0;
+    return all.map((p) => unpack(p!));
   }
 
   /** The room missed some of ours (a batch over its rate): send again from tick `n`. */
