@@ -13,7 +13,9 @@
 //! `fm_render` is the hot path: no allocation, no locks.
 //!
 //! `eq` is Shape, the master EQ, with its own `fm_eq_*` surface.
+//! `circuit` is the circuit amp (src/circuit/mna.ts and rig.ts), with `fm_amp_*`.
 
+pub mod circuit;
 pub mod eq;
 
 use std::f64::consts::PI;
@@ -806,6 +808,89 @@ pub unsafe extern "C" fn fm_eq_process(q: *mut eq::Eq, buf: *mut f32, frames: u3
     if buf.is_null() { return; }
     let b = std::slice::from_raw_parts_mut(buf, frames as usize * 2);
     with!(q, q.process(b, frames as usize))
+}
+
+// ---- The circuit amp (src/circuit.rs) ----
+
+/// # Safety
+/// `p` must point to `len` f64s, or be null.
+unsafe fn desc<'a>(p: *const f64, len: u32) -> &'a [f64] {
+    if p.is_null() { &[] } else { std::slice::from_raw_parts(p, len as usize) }
+}
+
+#[no_mangle]
+pub extern "C" fn fm_amp_new(sample_rate: f64, oversample: u32, input_volts: f64, power: f64, cab: u32, noise: f64) -> *mut circuit::Rig {
+    if !(sample_rate >= 8000.0 && sample_rate <= 384000.0) || !(1..=16).contains(&oversample) { return std::ptr::null_mut(); }
+    Box::into_raw(Box::new(circuit::Rig::new(sample_rate, oversample as usize, input_volts, power, cab != 0, noise)))
+}
+
+/// # Safety
+/// `r` must come from `fm_amp_new` and not be used after this call.
+#[no_mangle]
+pub unsafe extern "C" fn fm_amp_free(r: *mut circuit::Rig) { if !r.is_null() { drop(Box::from_raw(r)); } }
+
+/// Appends a link: its index, or -1 for a malformed or singular netlist.
+/// # Safety
+/// `net` must point to `len` f64s.
+#[no_mangle]
+pub unsafe extern "C" fn fm_amp_push(r: *mut circuit::Rig, net: *const f64, len: u32, gain: f64) -> i32 {
+    let d = desc(net, len);
+    match r.as_mut() { Some(r) => r.push(d, gain).map_or(-1, |i| i as i32), None => -1 }
+}
+
+/// # Safety
+/// `net` must point to `len` f64s.
+#[no_mangle]
+pub unsafe extern "C" fn fm_amp_set_link(r: *mut circuit::Rig, i: u32, net: *const f64, len: u32) -> u32 {
+    let d = desc(net, len);
+    match r.as_mut() { Some(r) => r.set_link(i as usize, d) as u32, None => 0 }
+}
+
+#[no_mangle]
+pub extern "C" fn fm_amp_set_gain(r: *mut circuit::Rig, i: u32, gain: f64) { with!(r, r.set_gain(i as usize, gain)) }
+#[no_mangle]
+pub extern "C" fn fm_amp_set_power(r: *mut circuit::Rig, power: f64) { with!(r, r.set_power(power)) }
+#[no_mangle]
+pub extern "C" fn fm_amp_set_noise(r: *mut circuit::Rig, noise: f64) { with!(r, r.set_noise(noise)) }
+
+/// Mono, in place: `frames` samples in (full scale ±1), volts at the speaker out.
+/// # Safety
+/// `buf` must point to at least `frames` f32s.
+#[no_mangle]
+pub unsafe extern "C" fn fm_amp_process(r: *mut circuit::Rig, buf: *mut f32, frames: u32) {
+    if buf.is_null() { return; }
+    let b = std::slice::from_raw_parts_mut(buf, frames as usize);
+    with!(r, r.process(b))
+}
+
+/// Each link's biggest swing since the last call (then cleared), one f32 per link.
+/// # Safety
+/// `out` must point to at least as many f32s as the rig has links.
+#[no_mangle]
+pub unsafe extern "C" fn fm_amp_levels(r: *mut circuit::Rig, out: *mut f32) {
+    if out.is_null() { return; }
+    if let Some(r) = r.as_mut() { let o = std::slice::from_raw_parts_mut(out, r.links()); r.levels(o); }
+}
+
+#[no_mangle]
+pub extern "C" fn fm_amp_misses(r: *mut circuit::Rig) -> f64 { unsafe { r.as_ref() }.map_or(0.0, |r| r.misses() as f64) }
+#[no_mangle]
+pub extern "C" fn fm_amp_iterations(r: *mut circuit::Rig) -> f64 { unsafe { r.as_ref() }.map_or(0.0, |r| r.iterations_per_step()) }
+
+/// f64 buffers in wasm linear memory (a netlist on its way in). Unused on the host.
+#[no_mangle]
+pub extern "C" fn fm_alloc_f64(len: u32) -> *mut f64 {
+    let mut v = vec![0f64; len as usize].into_boxed_slice();
+    let p = v.as_mut_ptr();
+    std::mem::forget(v);
+    p
+}
+
+/// # Safety
+/// `p`/`len` must come from one `fm_alloc_f64` call.
+#[no_mangle]
+pub unsafe extern "C" fn fm_dealloc_f64(p: *mut f64, len: u32) {
+    if !p.is_null() { drop(Box::from_raw(std::ptr::slice_from_raw_parts_mut(p, len as usize))); }
 }
 
 /// Buffers in wasm linear memory for the worklet. Unused on the host.

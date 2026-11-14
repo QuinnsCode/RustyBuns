@@ -3,7 +3,7 @@
 import type { FmEngine } from "./engine.ts";
 import { sendEq, sendListen, type EqBand, type EqDoc, type EqListen, type EqStage } from "./eq.ts";
 
-interface Exports {
+export interface Exports {
   memory: WebAssembly.Memory;
   fm_new(sr: number): number;
   fm_free(e: number): void;
@@ -25,6 +25,19 @@ interface Exports {
   fm_eq_set(q: number, band: number, kind: number, freq: number, gain: number, width: number, slope: number, on: number): void;
   fm_eq_reset(q: number): void;
   fm_eq_process(q: number, buf: number, frames: number): void;
+  fm_amp_new(sr: number, oversample: number, inputVolts: number, power: number, cab: number, noise: number): number;
+  fm_amp_free(r: number): void;
+  fm_amp_push(r: number, net: number, len: number, gain: number): number;
+  fm_amp_set_link(r: number, i: number, net: number, len: number): number;
+  fm_amp_set_gain(r: number, i: number, gain: number): void;
+  fm_amp_set_power(r: number, power: number): void;
+  fm_amp_set_noise(r: number, noise: number): void;
+  fm_amp_process(r: number, buf: number, frames: number): void;
+  fm_amp_levels(r: number, out: number): void;
+  fm_amp_misses(r: number): number;
+  fm_amp_iterations(r: number): number;
+  fm_alloc_f64(len: number): number;
+  fm_dealloc_f64(p: number, len: number): void;
   fm_alloc(len: number): number;
   fm_dealloc(p: number, len: number): void;
 }
