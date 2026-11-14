@@ -5,6 +5,7 @@
   "season": { "from": [12, 1], "to": [1, 6] },
   "land": { "cell": [1, -2], "port": 3, "at": [48.7, -56.6], "km": 200 },
   "tier": "playable",
+  "lair": { "place": "The fell with the cave mouth", "foe": "yule-cat", "level": 26 },
   "events": ["yule-cat"],
   "credits": []
 }

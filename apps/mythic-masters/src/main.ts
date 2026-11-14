@@ -65,8 +65,8 @@ import { budgetQuality } from "@rustybuns/util/quality";
 import { identified, intro, type Subject } from "./casefile.ts";
 import { drowner } from "./drown.ts";
 import { ambience } from "./world/ambience.ts";
-import { findTape, isleTapesFound, lightFire, sight, tapeOf, tapesFound, WITCH_CAMP, type Poi } from "./world/poi.ts";
-import { PACKS } from "./packs.ts";
+import { findTape, ISLE_N, isleTapesFound, lightFire, sight, tapeOf, tapesFound, WITCH_CAMP, type Poi } from "./world/poi.ts";
+import { lairLook, PACKS, type Pack } from "./packs.ts";
 import { regionsCleared, visit, WITCH } from "./witch.ts";
 import { approach as approachFaction, back as backAgain, deed, FACTION, factionsOf, fought as foughtFaction, hail as hailPost, postFought, postsIn, record as questRecord, reply as replyFaction, sectionCleared, waitingAll, type Ctx as FactionCtx, type Foe as FactionFoe, type Manned, type Scene } from "./factions/engine.ts";
 import { postSpot, stageSpot, walkedUp } from "./world/posts.ts";
@@ -404,6 +404,8 @@ fetch(simWasm).then((r) => r.arrayBuffer()).then(wasmSim).then((s) => { sim = s;
 /** A fight with friends is on (`versus`), and which fighter is you: seat 1 sees the fight from the other side. In a
  * co-op round (#4400) `wildBot` is the wild one's hands, the same seeded bot on every page. */
 let versusOn = false, mine = 0, wildBot: Bot | null = null;
+/** The arena look the fight is in (an ALL_SKINS key), for state(). */
+let arenaLook = "stadium";
 let m: Match | null = null, arena: THREE.Group | null = null, models: THREE.Group[] = [], puppets: (Puppet | null)[] = [null, null], bots: (Bot | null)[] = [null, null];
 const moveFx = new MoveFx(scene, Math.random, matchMedia("(max-width: 700px)").matches ? MAX_LIVE_PHONE : MAX_LIVE);
 let hitStop = 0; // seconds the fight holds still after a big hit lands, so the blow reads
@@ -456,6 +458,7 @@ function fight(a: Creature, b: Creature, skin: string, watch = false, vs = false
   for (const o of [arena, ...models, ...puppets.map((p) => p?.group)]) if (o) scene.remove(o);
   puppets = [null, null]; moveFx.clear();
   const look = ALL_SKINS[skin] ?? SKINS.stadium!;
+  arenaLook = ALL_SKINS[skin] ? skin : "stadium";
   arena = buildArena(scene, look); setGrade(look); moveFx.setGround(floorOf(look));
   camera.far = 300; camera.updateProjectionMatrix();
   // A team fight plays on sim.ts (#4400; sim.wasm plays teams too since #4412, a later step).
@@ -515,7 +518,7 @@ function fightTrip() {
   shroudFoe = kind !== "deadly" && tierOf(foe.id) === "unknown" && !owns(journey, foe.id);
   const them = kind === "deadly" ? wildOne(region) : atLevel(creature(foe.id), foe.level, kind === "wild");
   // A sighting board's creature goes by what the witnesses call it, known or not.
-  fight(me, foe.title ? { ...them, name: foe.title } : shroudFoe ? { ...them, name: kind === "wild" ? "Wild ???" : "???" } : them, fightSkin(region, kind === "rival" ? "wild" : kind));
+  fight(me, foe.title ? { ...them, name: foe.title } : shroudFoe ? { ...them, name: kind === "wild" ? "Wild ???" : "???" } : them, foe.at ?? fightSkin(region, kind === "rival" ? "wild" : kind));
   if (m && trip.foeHp !== null) m.f[1].hp = trip.foeHp;
   if (m) m.f[0].hp = m.f[0].b.hp * hpOf(journey.party[trip.slot]!); // health carries between fights; a campfire clears it
   bindNote = "";
@@ -553,7 +556,12 @@ const meet = {
   arena: (g: Region) => { const boss = g.tier === "playable" ? mythicOf(g) : champion(g); setOut(g, "mythic", { id: boss.id, level: sections(g)[SECTIONS - 1]!.level }, SECTIONS - 1); },
   wild: (g: Region, foe?: Foe) => setOut(g, foe ? "wild" : "deadly", foe ?? { id: champion(g).id, level: 30 }),
   keeper: (g: Region, k: number) => { const s = sections(g)[k]!; setOut(g, "keeper", { id: s.keeper, level: s.level }, k); },
+  /** Pack p's lair on its island: who pack.json says waits there, met as a wild one (the island has no trail to clear),
+   *  in the pocket's look. */
+  lair: (p: Pack) => setOut(isleRegion(p), "wild", { id: p.lair.foe, level: p.lair.level, at: lairLook(p) }),
 };
+/** A pack's island as a fight's region: its name on the intro and the bind, region number ISLE_N, no trail. */
+const isleRegion = (p: Pack): Region => ({ n: ISLE_N, id: p.id, name: p.name, block: p.name, tier: p.tier, biome: "tundra", folklore: [] });
 // The boat to a pack's island (world/ferry.ts): its lines play as a tape where you stand, and the view swaps once they end
 // (or are skipped, or cut). `started` because a scene can wait behind one already playing.
 let boat: { s: ReturnType<typeof found>; then: () => void; started: boolean } | null = null;
@@ -567,6 +575,7 @@ const world = worldView(scene, camera, {
   arena: (g) => { meet.arena(g); learn(); },
   wild: (g, foe) => { meet.wild(g, foe); learn(); },
   keeper: (g, k) => { meet.keeper(g, k); learn(); },
+  lair: (p) => { meet.lair(p); learn(); },
   met: (den, id, level) => online?.met(den, id, level),
   life: (e) => online?.life(e.k, e.id, e.k === "flush" ? e.h : 0),
   cleared: (n) => (journey ? cleared(journey, n) : 0),
@@ -2058,7 +2067,7 @@ const view = (f: Fighter) => ({
   id: f.c.id, hp: Math.round(f.hp), launch: Math.round(f.launch), stamina: +f.stamina.toFixed(2), energy: Math.round(f.energy),
   state: f.state, swing: swingPhase(f), flying: f.flying, onGround: f.onGround, invuln: f.invuln, clipped: f.clipped > 0, pos: { x: +f.pos.x.toFixed(2), y: +f.pos.y.toFixed(2), z: +f.pos.z.toFixed(2) },
 });
-const fightState = () => m && { tutorial: coach.state(), engine: live?.engine, tick: m.tick, over: m.over, winner: m.winner, fighters: m.f.map(view), shapes: m.areas.map((a) => ({ by: a.owner, shape: a.d.shape, move: a.move.name, head: head(a) })), warnings: ([0, 1] as const).map((i) => warning(m!, i)?.d.shape ?? null), ringRadius: ARENA.radius };
+const fightState = () => m && { tutorial: coach.state(), engine: live?.engine, arena: arenaLook, tick: m.tick, over: m.over, winner: m.winner, fighters: m.f.map(view), shapes: m.areas.map((a) => ({ by: a.owner, shape: a.d.shape, move: a.move.name, head: head(a) })), warnings: ([0, 1] as const).map((i) => warning(m!, i)?.d.shape ?? null), ringRadius: ARENA.radius };
 const tripState = () => trip && { ...trip, out: [...trip.out], region: trip.region.n };
 Object.assign(window, {
   mythicMasters: {

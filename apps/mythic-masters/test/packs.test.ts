@@ -8,7 +8,7 @@ import { ARCHETYPES, ROSTER } from "../src/roster.ts";
 import { inSeason, tierOf } from "../src/tiers.ts";
 import { PLACES } from "../src/world/places.ts";
 import * as THREE from "three";
-import { findTape, ISLE_N, islePlaces, isleTapesFound, lightFire, MIN_GAP, tapeOf, type Log } from "../src/world/poi.ts";
+import { findTape, ISLE_N, isleLair, islePlaces, isleTapesFound, lightFire, MIN_GAP, tapeOf, type Log } from "../src/world/poi.ts";
 import { poiView } from "../src/world/poi-view.ts";
 import { atSlip, isleGround, isleSlip, portSlip } from "../src/world/ferry.ts";
 import { WORLD } from "../src/world/trail.ts";
@@ -57,6 +57,9 @@ describe("packs", () => {
     expect(Math.min(...mine.map(([x, z]) => Math.max(Math.abs(x - port[0]), Math.abs(z - port[1]))))).toBe(1);
     // A place to land and rest, every tape with something on it, and room between them on the island's own map.
     expect(p.places.some((s) => s.kind === "fire")).toBe(true);
+    // Its lair opens at one of those places, on dry ground, and whoever waits in it is a fighter in the roster.
+    const den = isleLair(p);
+    expect([den?.name, ROSTER.some((c) => c.id === p.lair.foe)]).toEqual([p.lair.place, true]);
     for (const s of p.places) expect([s.name, s.kind === "tape"]).toEqual([s.name, s.tape !== undefined]);
     const w = LAND[0] * CELL, h = LAND[1] * CELL;
     for (const [i, a] of p.places.entries()) for (const b of p.places.slice(i + 1))

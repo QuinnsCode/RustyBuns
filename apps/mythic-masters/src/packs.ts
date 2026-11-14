@@ -12,8 +12,9 @@
 // src/world/world.ts. A pack works from the old legend only: never a film's name, characters, look or studio.
 // Adding a pack is its folder and one line in PACKS below; test/packs.test.ts checks it.
 import { arr, Bad, int, num, obj, oneOf, opt, rec, str, type Guard, type Of } from "@rustybuns/util/guard";
-import { CRITTERS, type Critter, type Pocket } from "./pockets.ts";
-import { TIERS } from "./regions.ts";
+import { SKINS } from "./arena.ts";
+import { CRITTERS, POCKETS, type Critter, type Pocket } from "./pockets.ts";
+import { ALL_SKINS, REGIONS, TIERS } from "./regions.ts";
 import type { PoiKind, Tape } from "./world/poi.ts";
 
 import yuleIsle from "../packs/yule-isle/pack.json";
@@ -43,6 +44,9 @@ export const PackJson = obj({
    * region its boat sails from; `at` and `km` the real place its ground is read from, as in places.ts. */
   land: obj({ cell: Pair, port: int(1, 64), at: Pair, km: num(20, 2000) }),
   tier: oneOf(TIERS),
+  /** Its lair: the poi.json place it opens at, and who waits in it (a roster id) at what level. It fights in the
+   *  pocket's look (lairLook). */
+  lair: obj({ place: str(80), foe: id, level: int(1, 100) }),
   events: arr(id, 12),
   credits: arr(Credit, 50),
 });
@@ -88,6 +92,15 @@ export function loadPack(files: { pack: unknown; pocket: unknown; poi: unknown; 
 export const PACKS: Pack[] = [
   loadPack({ pack: yuleIsle, pocket: yuleIslePocket, poi: yuleIslePoi, lore: yuleIsleLore, director: yuleIsleDirector }),
 ];
+
+/** A pack's lair look, `<id>-lair`: its pocket walled round its port region's arena, put in POCKETS and ALL_SKINS as
+ *  the continent's lairs are, so a fight there plays in the pocket's walls, lights, fog and critters. */
+export const lairLook = (p: Pick<PackJson, "id">) => `${p.id}-lair`;
+for (const p of PACKS) {
+  const base = ALL_SKINS[REGIONS[p.land.port - 1]!.id] ?? SKINS.stadium!;
+  POCKETS[lairLook(p)] = p.pocket;
+  ALL_SKINS[lairLook(p)] = { ...base, name: p.pocket.name, pocket: lairLook(p) };
+}
 
 /** Whether `date` falls in the pack's season (inclusive; it may wrap the new year). */
 export function packInSeason(p: Pick<PackJson, "season">, date: Date): boolean {
