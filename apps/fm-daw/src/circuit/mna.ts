@@ -82,6 +82,37 @@ function solve(A: Float64Array, b: Float64Array, n: number, m: number): boolean 
 }
 
 /**
+ * A netlist as numbers for the Rust solver (native/crates/fm_daw/src/circuit.rs):
+ * `[nodes, input, output, parts]`, then 8 per part, `[kind, n0, n1, n2, n3, v0, v1, flag]`,
+ * ground −1. Nodes are numbered in the order `Circuit` numbers them, defaults filled in.
+ */
+export function encodeNetlist(net: Netlist): Float64Array {
+  const nodes = new Map<string, number>();
+  const node = (name: string): number => {
+    if (GROUND.has(name)) return -1;
+    let i = nodes.get(name);
+    if (i === undefined) { i = nodes.size; nodes.set(name, i); }
+    return i;
+  };
+  const rows: number[][] = [];
+  let opamps = 0;
+  for (const p of net.parts) {
+    if (p.kind === "R") rows.push([0, node(p.a), node(p.b), 0, 0, p.ohms, 0, p.noisy ? 1 : 0]);
+    else if (p.kind === "C") rows.push([1, node(p.a), node(p.b), 0, 0, p.farads, 0, 0]);
+    else if (p.kind === "V") rows.push([2, node(p.a), node(p.b), 0, 0, p.volts, 0, 0]);
+    else if (p.kind === "D") rows.push([3, node(p.a), node(p.k), 0, 0, p.is ?? 2.52e-9, p.n ?? 1.752, 0]);
+    else if (p.kind === "Opamp") rows.push([4, node(p.plus), node(p.minus), node(p.out), node(`~${opamps++}`), p.rail ?? 4, 0, 0]);
+    else rows.push([5, node(p.p), node(p.g), node(p.k), 0, 0, 0, 0]);
+  }
+  const at = (name: string) => {
+    const i = nodes.get(name);
+    if (i === undefined) throw new Error(`node "${name}" isn't on any part`);
+    return i;
+  };
+  return Float64Array.from([nodes.size, at(net.input), at(net.output), rows.length, ...rows.flat()]);
+}
+
+/**
  * A netlist compiled for one sample rate. `settle()` once, then `step(vin)`
  * per sample for the output node's voltage. Ground is the extra index `n`:
  * stamps that land on it go to a row and column nothing reads, so no part

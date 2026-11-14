@@ -2,7 +2,7 @@
 
 **The question:** can FM DAW model guitar pedals and tube amps as real circuits (resistors, capacitors, diodes, op-amps, tubes), drawn as boards in tscircuit, and play a guitar through them?
 
-**The answer: yes.** The solver here runs a full four-tube amp 2.3 to 3.1 times faster than real time in plain TypeScript, a pedal 5 to 6 times, and a board drawn in tscircuit plays sample for sample like the same circuit written by hand. **Q Amp** (`/amp.html`) plays it live, with a guitar or a built-in riff. What's missing is an amp insert on an FM DAW track, a real power amp and speaker cabinet, a 3D stage, and the Rust port. Those steps are listed under [Next](#next).
+**The answer: yes.** The solver here runs a full four-tube amp 2.3 to 3.1 times faster than real time in plain TypeScript, a pedal 5 to 6 times, and a board drawn in tscircuit plays sample for sample like the same circuit written by hand. **Q Amp** (`/amp.html`) plays it live, with a guitar or a built-in riff. The solver and the rig are also ported to Rust (in the engine's wasm), and play the same output. What's missing is an amp insert on an FM DAW track, a real power amp and speaker cabinet, and a 3D stage. Those steps are listed under [Next](#next).
 
 Play it live, speakers down: in `apps/fm-daw`, `bunx rustybuns boundary` once (it writes the Vite plugin the dev server needs), then `bun run dev` and open `/amp.html`. Or render WAVs (every file normalized to −1 dBFS):
 
@@ -34,10 +34,11 @@ One amp on a stage, live in the browser. The head and the cabinet are clear acry
 | `src/circuit/amps.ts` | The Q amps and pedals, their knobs, and `buildRig` (an amp, a pedal and the knobs into a rig). `RIGS` is each at its own settings. |
 | `src/circuit/riff.ts` | The dry guitar riff (Karplus-Strong plucks, seeded). |
 | `src/amp/` | Q Amp: `live.ts` (settings into a rig, rebuilding only what changed; the limiter), `worklet.ts` (the audio thread), `screens.ts`, `main.ts`, `amp.css`. |
+| `native/crates/fm_daw/src/circuit.rs` | The solver and the rig in Rust, step for step, with an `fm_amp_*` C surface in the engine's wasm. `src/circuit/wasm.ts` (`WasmRig`) drives it with the same knobs as `Rig`; `encodeNetlist` in `mna.ts` hands it a netlist as numbers. |
 | `src/circuit/tscircuit.ts` | Reads a tscircuit board's JSON and makes a netlist of it. |
 | `circuits/hard-clip.tsx` | The hard-clip pedal drawn as a tscircuit board. `test/fixtures/hard-clip.circuit.json` is what tscircuit rendered from it. |
 | `scripts/amp.ts` | Plucks a guitar riff (Karplus-Strong), runs it through every rig, writes WAVs, prints the speed. |
-| `test/circuit.test.ts` | The tscircuit board plays like the hand-written circuit; the solver hits textbook numbers; no rig blows up on a hot input. |
+| `test/circuit.test.ts` | The tscircuit board plays like the hand-written circuit; the solver hits textbook numbers; no rig blows up on a hot input; the Rust port plays every rig like the TypeScript one while the knobs turn. |
 | `test/amp.test.ts` | Working Q Amp's panel while the riff plays: only what moved is rebuilt, nothing passes −1 dBFS, no Newton misses. |
 
 ## How it works
@@ -80,7 +81,17 @@ On the 64 GB builder Mac, one thread, 4× oversampled, `bun scripts/amp.ts` (sec
 | lead, triple (4 stages) | 2.4, 2.3 |
 | overdrive into lead | 1.7 |
 
-One amp fits in an audio thread with room to spare; a pedalboard plus amp is tight. Two ways to get more: Q Amp's Eco runs everything at 2× instead of 4× (half the work; tubes clip softly, so they alias less), and the Rust port below (Rust is usually several times faster than JavaScript at this kind of math; not measured here).
+One amp fits in an audio thread with room to spare; a pedalboard plus amp is tight. Q Amp's Eco runs everything at 2× instead of 4× (half the work; tubes clip softly, so they alias less).
+
+**The Rust port, measured** (`bun run bench`, the builder Mac on battery, the riff through each rig; Rust as wasm, the way an AudioWorklet runs it):
+
+| Rig | Rust (wasm) | TypeScript |
+|---|---|---|
+| hard-clip, overdrive | 5.5, 6.2 | 4.6, 5.2 |
+| brit | 2.6 | 2.7 |
+| lead, triple | 2.0, 2.0 | 2.1, 2.1 |
+
+So no faster: the time goes to `exp` and `log` in the tube model, which Bun's JIT runs in native code and wasm runs in software. The port is still worth having (it runs where the engine runs, and over FFI in the desktop app), and the parity test is how the next speedup gets checked: the pedals come out bit for bit, the tube amps within one f32 step (the two sides' `exp` and `tanh` differ in the last bit).
 
 ## tscircuit
 
@@ -98,7 +109,7 @@ In order, each one usable on its own:
 
 1. **An Amp insert on an FM DAW track** ([#4555](https://github.com/QuinnsCode/RustyBuns/issues/4555)): Q Amp's live chain (`src/amp/live.ts`) after a track's voices, knobs as track params saved with the project.
 2. **Q Amp on a 3D stage** ([#4570](https://github.com/QuinnsCode/RustyBuns/issues/4570)): the clear amp, cabinet and pedalboard in three.js, 2.5D or 3D, with the screens behind as stage LED walls.
-3. **Rust port** into `native/crates/fm_daw`, beside the EQ, with the same bit-for-bit parity test against the TypeScript solver.
+3. **A faster Rust solver** ([#4599](https://github.com/QuinnsCode/RustyBuns/issues/4599)): the port is in and matches; it needs a cheaper tube model (a table or a polynomial for the `exp`/`log`) before it beats the JIT.
 4. **A real power amp:** push-pull output tubes, the output transformer, and supply sag (the amp compressing when you dig in). Today it is a `tanh`.
 5. **A real cabinet:** convolve a speaker impulse response instead of the EQ curve.
 6. **More parts:** transistors (Ebers-Moll) for transistor fuzzes (Q Fuzz is an op-amp fuzz today) and boosts, JFETs, potentiometers as live knobs.
