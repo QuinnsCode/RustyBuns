@@ -23,7 +23,7 @@ import { litter as litterOf, scatterLitter } from "./litter.ts";
 import { lifeView, type LifeEvent } from "./life.ts";
 import { DAWN_HOUR, DAY, daylight, hourAt, weather, wind, type Patch as Forage, type Weather } from "./nature.ts";
 import type { Ambient } from "./ambience.ts";
-import { fireSpot, ISLE_N, islePlaces, marked, poiById, shelterAt, SHELTER_R, type Poi, type Shelter } from "./poi.ts";
+import { fireSpot, ISLE_N, isleLair, islePlaces, LAIR_R, marked, poiById, shelterAt, SHELTER_R, type Poi, type Shelter } from "./poi.ts";
 import { lightsNear, nightOf, safePaths, stalk, toSafety, type Night } from "./night.ts";
 import { HUNTS, stageOf, waiting } from "./hunts.ts";
 import { beside, BOARD, DEEP, DOORSTEP, line as townLine, onLot, outside, roomAt, step as townStep, toLocal, toWorld, TOWNS, type Town } from "./towns.ts";
@@ -36,7 +36,7 @@ import { BAND, bandAt, WORLD, newTrek, onTrailDen, trailhead, trailWilds, TRAILS
 import { buildIsland, islandFrom, type World } from "./world.ts";
 import { atSlip, isleGround, isleSlip, onDock, portSlip, REARM_R } from "./ferry.ts";
 import { isleView, portView } from "./isle-view.ts";
-import { PACKS, type Pack } from "../packs.ts";
+import { lairLook, PACKS, type Pack } from "../packs.ts";
 
 const SAVE = "mythic-masters.world.beaten", SAVE_SEEN = "mythic-masters.world.seen", SAVE_VISITED = "mythic-masters.world.visited";
 // The ground near you is drawn again, twice over: a near patch FINE metres a vertex with every octave of the fine
@@ -85,7 +85,7 @@ export const boundOf = (g: Region, owns: (id: string) => boolean) => { const fol
 const ease = (t: number) => t * t * (3 - 2 * t);
 
 /** Who you fight; `hunt` is the sighting-board contract (src/world/hunts.ts) it closes, `title` what the witnesses call it. */
-export interface Foe { id: string; level: number; hunt?: string; title?: string }
+export interface Foe { id: string; level: number; hunt?: string; title?: string; /** The arena look it fights in, if not its region's (a pack's lair). */ at?: string }
 export interface WorldHooks {
   /** Dusk on a journey's first night (night.ts): true once, so Gary walks it with you. */
   firstNight?(): boolean;
@@ -116,6 +116,8 @@ export interface WorldHooks {
   /** The boat to pack p's island: the director's `crossing` or `leaving` lines as it sails (`then` swaps the view once
    *  they're done), or its `arrival` lines once you are off it. Without this hook the boat sails at once. */
   ferry?(p: Pack, lines: "crossing" | "arrival" | "leaving", then?: () => void): void;
+  /** Walked into the mouth of pack p's lair on its island (pack.json `lair`): its fight, in the pocket's look. */
+  lair?(p: Pack): void;
 }
 
 export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, hooks: WorldHooks) {
@@ -1011,7 +1013,7 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
   // you back to the port town. Your line-up waits on the pier.
   const ports = PACKS.filter((p) => p.tier !== "coming-soon").map((p) => { const slip = portSlip(w, p), view = portView(slip); group.add(view.group); return { p, slip, view }; });
   type Port = (typeof ports)[number];
-  interface Isle { port: Port; w: World; slip: ReturnType<typeof isleSlip>; view: ReturnType<typeof isleView>; places: ReturnType<typeof poiView>; at: { x: number; z: number }; you: Bearer; armed: boolean }
+  interface Isle { port: Port; w: World; slip: ReturnType<typeof isleSlip>; view: ReturnType<typeof isleView>; places: ReturnType<typeof poiView>; at: { x: number; z: number }; you: Bearer; armed: boolean; lair?: { x: number; z: number; armed: boolean } }
   const ISLE_OPEN: ReadonlySet<number> = new Set([ISLE_N]);
   let isle: Isle | null = null, sailing = false, portArmed = true;
   const charts = new Map<string, Promise<World | undefined>>();
@@ -1046,13 +1048,23 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
     const slip = isleSlip(iw, port.p), view = isleView(iw, slip), all = islePlaces(port.p);
     // Its places walk up as the continent's do: a tape plays and goes in the journal, a fire rests you (hooks.places).
     const places = poiView(view.group, camera, (x, z) => heightAt(iw, x, z), hooks.places, undefined, { all, near: () => all, region: () => ISLE_N });
+    // Its lair: the pocket's cave mouth on its place, open toward the slip; walk into it and its fight starts (hooks.lair).
+    const den = isleLair(port.p), pocket = POCKETS[lairLook(port.p)];
+    if (den && pocket) {
+      const mouth = caveMouth(pocket, Math.atan2(slip.z - den.z, slip.x - den.x));
+      mouth.position.set(den.x, heightAt(iw, den.x, den.z), den.z); view.group.add(mouth);
+    }
     scene.add(view.group);
-    isle = { port, w: iw, slip, view, places, at: { ...slip.land }, you: new Bearer(bearer?.id ?? NO_ID, view.group, (x, z) => heightAt(iw, x, z), colour), armed: true };
-    group.visible = false;
-    scene.background = new THREE.Color(0xc4ccd6); scene.fog = new THREE.Fog(0xc4ccd6, 300, 5000);
-    yaw = Math.atan2(-slip.out.x, slip.out.z); facing = Math.atan2(-slip.out.z, -slip.out.x); snap = true;
-    where.innerHTML = `<b>${esc(port.p.name)}</b><small>${icon("waves")}The boat back waits at the slip</small>`; map.hidden = true;
+    isle = { port, w: iw, slip, view, places, at: { ...slip.land }, you: new Bearer(bearer?.id ?? NO_ID, view.group, (x, z) => heightAt(iw, x, z), colour), armed: true, lair: den && { x: den.x, z: den.z, armed: true } };
+    yaw = Math.atan2(-slip.out.x, slip.out.z); facing = Math.atan2(-slip.out.z, -slip.out.x);
+    onIsle(isle);
     toast(`${icon("waves")} ${esc(port.p.name)}`);
+  }
+  /** The island shown in the continent's place, in its own sky: on landing, and back from its lair's fight. */
+  function onIsle(s: Isle) {
+    group.visible = false; s.view.group.visible = true; snap = true;
+    scene.background = new THREE.Color(0xc4ccd6); scene.fog = new THREE.Fog(0xc4ccd6, 300, 5000);
+    where.innerHTML = `<b>${esc(s.port.p.name)}</b><small>${icon("waves")}The boat back waits at the slip</small>`; map.hidden = true;
   }
   /** Back off the boat on the port town's pier, facing inland. */
   function leaveIsle() {
@@ -1084,6 +1096,10 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
     }
     if (atSlip(s.slip, s.at.x, s.at.z)) { if (s.armed) { s.armed = false; sail(s.port, "back"); } }
     else if (Math.hypot(s.at.x - s.slip.x, s.at.z - s.slip.z) > REARM_R) s.armed = true;
+    // The lair takes you in once per visit: back from its fight you stand in its mouth, and walk off before it does again.
+    const den = s.lair, toDen = den ? Math.hypot(s.at.x - den.x, s.at.z - den.z) : Infinity;
+    if (den && toDen < LAIR_R && den.armed && !sailing) { den.armed = false; hooks.lair?.(s.port.p); return; }
+    if (den && toDen > REARM_R) den.armed = true;
     clock += dt;
     if (toastUntil && performance.now() > toastUntil) { toastEl.hidden = true; toastUntil = 0; }
     s.view.tick(s.at.x, s.at.z);
@@ -1363,8 +1379,10 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
       group.visible = true; hud.hidden = false; snap = true;
       // The first time in, everything is already where it stands; after that, a piece that opened rises.
       refresh(shownOnce); shownOnce = true; look(); drawWhere(); arrive(regionN(me.region));
+      if (isle) onIsle(isle); // back from the island's lair: still on the island
     },
-    hide() { dropTown(); leaveIsle(); group.visible = false; hud.hidden = true; scene.environmentIntensity = ROOM; },
+    // A fight keeps you on the island (its view put away until show); the boat, travel or a reset take you off it.
+    hide() { dropTown(); if (isle) isle.view.group.visible = false; group.visible = false; hud.hidden = true; scene.environmentIntensity = ROOM; },
     get shown() { return group.visible || inside !== null || isle !== null; },
     /** Walks into town `id` (a sighting board's place id) as its door does; false if you are in one already. */
     enterTown,

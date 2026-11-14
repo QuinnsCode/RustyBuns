@@ -180,6 +180,10 @@ export function islePlaces(pack: Pick<Pack, "id" | "places">): Poi[] {
   }
   return out;
 }
+/** How near a pack's lair (its cave mouth) you walk before its fight starts. */
+export const LAIR_R = 7;
+/** Where a pack's lair opens on its island: the poi.json place its pack.json `lair` names. */
+export const isleLair = (pack: Pick<Pack, "id" | "places" | "lair">) => islePlaces(pack).find((q) => q.name === pack.lair.place);
 
 // --- walking up to them --------------------------------------------------------------------------------------------
 /**
