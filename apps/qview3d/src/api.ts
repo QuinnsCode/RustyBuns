@@ -90,8 +90,11 @@ export type Design = Of<typeof Design>;
 export const DesignReply = obj({ id: str(24), url: str(400) });
 export type DesignReply = Of<typeof DesignReply>;
 
-/** POST /api/orgs/<org>/models (an admin): make a sample model from 1 to 4 product photos already uploaded. */
-export const SampleRequest = obj({ name: str(120), photos: arr(str(300), 4, { min: 1 }) });
+/**
+ * POST /api/orgs/<org>/models (an admin): make a sample model from 1 to 4 product photos already uploaded (Meshy),
+ * or from a scan already uploaded (the shop's iPhone made the model itself). One or the other.
+ */
+export const SampleRequest = obj({ name: str(120), photos: opt(arr(str(300), 4, { min: 1 })), scan: opt(str(300)) });
 export type SampleRequest = Of<typeof SampleRequest>;
 
 /** A sample's progress, from POST and GET /api/orgs/<org>/models/<id>. Ready: `product` is its product id. */

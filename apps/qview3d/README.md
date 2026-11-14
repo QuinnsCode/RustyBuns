@@ -93,6 +93,7 @@ orgs/<org>/designs/<id>.json        a design's settings, naming the files above
 orgs/<org>/photos/<sha>.<ext>       an admin's photos of the shop's own product, sent to make a sample: never served
 orgs/<org>/models/<id>.json         a sample in the making (its Meshy task and progress)
 orgs/<org>/models/<id>.glb          the sample model: served and edge-cached for a year
+orgs/<org>/scans/<sha>.glb          a sample scanned on the shop's own iPhone: served and edge-cached for a year
 meta/meshy/<yyyy-mm-dd>.json        samples started that day across every org: the ceiling on the Meshy bill
 ```
 
@@ -137,8 +138,21 @@ For a product the hats don't cover (a tumbler, a tote, a koozie), the shop makes
 (`samples` in org.json, counted against its `models/` folder, `402` when spent), and `MESHY_DAILY` (50) samples a
 day across every org (`429`). The Meshy Batch Studio app's price table puts multi-image-to-3D at 5 to 40 credits a
 model; check Meshy's current price before turning the real key on. It's a draft: the model guesses at sides the
-photos didn't show. Billing shops for samples, and an iPhone app that scans on the shop's own phone with Apple's
-Object Capture for an accurate model at no compute cost, come later.
+photos didn't show. Billing shops for samples comes later.
+
+### A scan from the shop's own iPhone
+
+For an accurate model, at no cost to anyone, the shop scans the product itself. [ios/](ios) is QView3D Scan, a thin
+SwiftUI app for an iPhone or iPad with LiDAR (iOS 17): Apple's Object Capture walks the shop round the product
+and builds a textured model on the phone. The model comes out as USDZ, which holds USDC that the widget's three.js
+can't read, so the app writes it out as a GLB itself (`ScanExport` over ModelIO, then `GLB.write`). It then
+uploads it with the admin key, as kind `scan` (`model/gltf-binary`, up to 40 MB), and sends
+`POST /api/orgs/<org>/models {name, scan}`. That answers `201` with the product, ready now: no Meshy, so no
+allowance or daily ceiling, and nothing to poll. The product is named by the scan's hash, so the same scan sent
+twice is one product.
+
+`brew install xcodegen && cd ios && xcodegen` makes the Xcode project. `cd ios && swift test` (full Xcode)
+tests the GLB writer and the upload request. Xcode builds go to the builder Mac.
 
 ## Where the work runs
 

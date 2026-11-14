@@ -6,6 +6,7 @@
 //   POST /api/orgs/<org>/models        {name, photos}   start one (202): Meshy's multi-image-to-3D, a minute or two
 //   GET  /api/orgs/<org>/models/<id>                     its progress; the poll that sees Meshy finish copies the GLB
 //                                                        into R2 and writes the product, so the widget can load it
+//   POST /api/orgs/<org>/models        {name, scan}     a model the shop's iPhone scanned (kind "scan"): a product now (201)
 //
 // Every sample costs Meshy credits, so three things stand in front of one: the admin key (org.json keeps its
 // SHA-256), the org's paid allowance (org.json `samples`), and a ceiling on samples a day across every org
@@ -50,8 +51,10 @@ const writeSample = (env: Env, org: string, s: Sample) =>
 export async function startSampleRoute(req: Request, env: Env, org: string, settings: Org, h: Record<string, string>): Promise<Response> {
   const fail = (why: string, status: number) => privateJson({ error: why }, status, h);
   const body = await readJson(req, SampleRequest);
-  if (!body) return fail("expected {name, photos: [1 to 4 photo keys]}", 400);
-  for (const key of body.photos) {
+  if (!body || !body.photos === !body.scan) return fail("expected {name, photos: [1 to 4 photo keys]} or {name, scan: a scan's key}", 400);
+  if (body.scan) return fileScan(env, org, body.name, body.scan, h);
+  const photos = body.photos ?? [];
+  for (const key of photos) {
     if (!key.startsWith(`orgs/${org}/photos/`)) return fail(`${key}: not one of this org's photos`, 400);
     if (!(await env.BUCKET.head(key))) return fail(`${key}: upload it first`, 400);
   }
@@ -67,7 +70,7 @@ export async function startSampleRoute(req: Request, env: Env, org: string, sett
   await env.BUCKET.put(dayKey, JSON.stringify({ n: used + 1 }));
 
   const images: string[] = [];
-  for (const key of body.photos) {
+  for (const key of photos) {
     const o = await env.BUCKET.get(key);
     if (!o) return fail(`${key}: upload it first`, 400);
     const type = o.httpMetadata?.contentType ?? "image/jpeg";
@@ -79,9 +82,35 @@ export async function startSampleRoute(req: Request, env: Env, org: string, sett
   } catch (e) {
     return fail(e instanceof MeshyError ? e.message : "could not start the sample", 502);
   }
-  const s: Sample = { id: hex(crypto.getRandomValues(new Uint8Array(12))), name: body.name, status: "generating", progress: 0, task, photos: body.photos, created: Date.now() };
+  const s: Sample = { id: hex(crypto.getRandomValues(new Uint8Array(12))), name: body.name, status: "generating", progress: 0, task, photos, created: Date.now() };
   await writeSample(env, org, s);
   return privateJson(s satisfies Sample, 202, h);
+}
+
+/**
+ * A scan: the shop's iPhone made the model (Apple's Object Capture, `ios/`) and uploaded it as kind "scan". It is
+ * a GLB already, so it becomes a product at once: no Meshy, so no allowance or daily ceiling, and nothing to poll.
+ * The product is named by the scan's own hash, so filing the same scan twice is one product.
+ */
+async function fileScan(env: Env, org: string, name: string, key: string, h: Record<string, string>): Promise<Response> {
+  const fail = (why: string, status: number) => privateJson({ error: why }, status, h);
+  const [, owner, sha] = key.match(/^orgs\/([a-z0-9-]+)\/scans\/([0-9a-f]{64})\.glb$/) ?? [];
+  if (!sha || owner !== org) return fail(`${key}: not one of this org's scans`, 400);
+  const o = await env.BUCKET.get(key);
+  if (!o) return fail(`${key}: upload it first`, 400);
+  if (!isGlb(new Uint8Array(await new Response(o.body).arrayBuffer()))) return fail("that scan is not a GLB (glTF 2.0 binary)", 400);
+  const id = sha.slice(0, 24);
+  const product: Product = { name, model: "custom", glb: key, colors: [] };
+  await env.BUCKET.put(productKey(org, id), JSON.stringify(product), { httpMetadata: { contentType: "application/json" } });
+  const s: Sample = { id, name, status: "ready", progress: 100, task: "scan", photos: [], created: Date.now(), glb: key, product: id };
+  return privateJson(s satisfies Sample, 201, h);
+}
+
+/** A glTF 2.0 binary: the "glTF" magic, version 2, and a header length that is the file's own. */
+export function isGlb(b: Uint8Array): boolean {
+  if (b.byteLength < 20) return false;
+  const v = new DataView(b.buffer, b.byteOffset, b.byteLength);
+  return v.getUint32(0, true) === 0x46546c67 && v.getUint32(4, true) === 2 && v.getUint32(8, true) === b.byteLength;
 }
 
 /** GET: how a sample is doing. The poll that sees Meshy finish brings the model home. */

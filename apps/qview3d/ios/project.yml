@@ -1,0 +1,37 @@
+# XcodeGen spec: `brew install xcodegen && cd apps/qview3d/ios && xcodegen && open QViewScan.xcodeproj`
+# Required Notice: Copyright (c) 2026 Ryan Quinn (QNTBR) (https://qntbr.com). PolyForm Noncommercial 1.0.0, see ../LICENSE.
+name: QViewScan
+options:
+  bundleIdPrefix: com.quinnscode
+packages:
+  QViewKit:
+    path: .
+targets:
+  QViewScan:
+    type: application
+    platform: iOS
+    deploymentTarget: "17.0"   # Object Capture on a phone
+    sources:
+      - App
+    dependencies:
+      - package: QViewKit
+    settings:
+      base:
+        TARGETED_DEVICE_FAMILY: "1,2"
+        PRODUCT_BUNDLE_IDENTIFIER: com.quinnscode.qviewscan
+        # Signing team: `DEVELOPMENT_TEAM=ABCDE12345 xcodegen` (Apple Developer > Membership > Team ID).
+        DEVELOPMENT_TEAM: ${DEVELOPMENT_TEAM}
+        CODE_SIGN_STYLE: Automatic
+        MARKETING_VERSION: "0.1.0"
+        CURRENT_PROJECT_VERSION: "1"
+    info:
+      path: App/Info.plist
+      properties:
+        CFBundleDisplayName: QView3D Scan
+        UILaunchScreen: {}
+        # LiDAR is checked when the scan starts (ObjectCaptureSession.isSupported): there is no capability key for it.
+        UIRequiredDeviceCapabilities: [arm64]
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+        UIRequiresFullScreen: true   # the capture screen is portrait only
+        NSCameraUsageDescription: The camera photographs your product from every side to make its 3D model.
+        ITSAppUsesNonExemptEncryption: false
