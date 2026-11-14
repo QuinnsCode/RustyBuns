@@ -4,7 +4,8 @@
 import { expect, setDefaultTimeout, test } from "bun:test";
 import { Circuit, type Netlist } from "../src/circuit/mna.ts";
 import { triodeStage } from "../src/circuit/circuits.ts";
-import { RIGS, runRig } from "../src/circuit/rig.ts";
+import { RIGS } from "../src/circuit/amps.ts";
+import { runRig } from "../src/circuit/rig.ts";
 import { boardToNetlist } from "../src/circuit/tscircuit.ts";
 import board from "./fixtures/hard-clip.circuit.json";
 

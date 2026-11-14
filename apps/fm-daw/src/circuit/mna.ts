@@ -17,7 +17,8 @@
 
 /** One part. Node names are free text; "gnd" (or "GND", "0") is ground. */
 export type Part =
-  | { kind: "R"; a: string; b: string; ohms: number }
+  /** A resistor. With `noisy`, it hisses: its thermal (Johnson) noise, scaled by the circuit's `noise`. */
+  | { kind: "R"; a: string; b: string; ohms: number; noisy?: boolean }
   | { kind: "C"; a: string; b: string; farads: number }
   /** A DC supply, + at `a`. */
   | { kind: "V"; a: string; b: string; volts: number }
@@ -100,6 +101,21 @@ export class Circuit {
   private inRow: number;
   private supplies: { row: number; volts: number }[] = [];
   private caps: { a: number; b: number; g: number; v: number; i: number; ieq: number }[] = [];
+  private hiss: { a: number; b: number; sigma: number }[] = [];
+  /**
+   * How loud the noisy resistors hiss: 0 is silent, 1 is a perfect resistor's thermal
+   * noise, and more is an old carbon one (their excess noise runs tens of dB above thermal).
+   */
+  noise = 0;
+  private seed = 0x9e3779b9;
+  /** A standard normal draw (Box-Muller on a xorshift stream, so a test hears the same hiss each run). */
+  private gauss(): number {
+    let s = this.seed;
+    s ^= s << 13; s ^= s >>> 17; s ^= s << 5; const u1 = ((s >>> 0) + 1) / 4294967297;
+    s ^= s << 13; s ^= s >>> 17; s ^= s << 5; const u2 = (s >>> 0) / 4294967296;
+    this.seed = s;
+    return Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
+  }
   // Ports: node pairs (pa, pb) whose voltage the nonlinear parts read, less `poff`.
   private pa: number[] = [];
   private pb: number[] = [];
@@ -168,6 +184,8 @@ export class Circuit {
       if (p.kind === "R") {
         const a = g(node(p.a)), b = g(node(p.b));
         conductance(tr, a, b, 1 / p.ohms); conductance(dc, a, b, 1 / p.ohms);
+        // Johnson noise as a current beside the resistor: sqrt(4kT/R · bandwidth), bandwidth = half the rate.
+        if (p.noisy) this.hiss.push({ a, b, sigma: Math.sqrt(((4 * 1.380649e-23 * 300) / p.ohms) * (sampleRate / 2)) });
       } else if (p.kind === "C") {
         const a = g(node(p.a)), b = g(node(p.b)), gc = (2 * p.farads) / T;
         conductance(tr, a, b, gc); // open at DC: the dc matrix leaves it out
@@ -328,6 +346,11 @@ export class Circuit {
       c.ieq = c.g * c.v + c.i;
       if (c.a < n) this.addCol(c.a, c.ieq);
       if (c.b < n) this.addCol(c.b, -c.ieq);
+    }
+    if (this.noise > 0) for (const r of this.hiss) {
+      const i = r.sigma * this.noise * this.gauss();
+      if (r.a < n) this.addCol(r.a, i);
+      if (r.b < n) this.addCol(r.b, -i);
     }
     x.set(z);
     if (K > 0) {
