@@ -34,6 +34,7 @@ import { house, studiosOf } from "./studios.ts";
 import { markStaff, tally, visitorsOf } from "./visitors.ts";
 import { loadOf } from "./scale.ts";
 import { regionAt } from "@rustybuns/util/privacy";
+import { pageCsp, spacesConnect } from "./csp.ts";
 
 // vite dev gives the Worker the production BETTER_AUTH_URL and no secret: on the dev server the request's own
 // origin is the trusted one, a throwaway secret signs sessions, a throwaway key signs tokens, loopback return
@@ -67,15 +68,15 @@ const themeHash = () => (scriptSrc ??= hashOf(THEME_SCRIPT));
 const see = (to: string) => new Response(null, { status: 302, headers: { location: to } });
 
 const app = defineApp([
-  async ({ response, rw }) => {
+  async ({ request, response, rw }) => {
     response.headers.set("X-Content-Type-Options", "nosniff");
     // same-origin, not no-referrer: no-referrer makes a browser send Origin: null on our own form posts, which crossSite refuses.
     response.headers.set("Referrer-Policy", "same-origin");
     response.headers.set("X-Frame-Options", "DENY");
     response.headers.set("Cache-Control", "no-store");
     // No form-action: Continue's 303 goes on to the app's own origin, and the social buttons to the provider.
-    // The two Google Fonts hosts are for the sign-in page's type (Login.tsx); nothing else leaves the page.
-    response.headers.set("Content-Security-Policy", `default-src 'none'; img-src 'self'; script-src ${await themeHash()} 'nonce-${rw.nonce}'; connect-src 'self'; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; frame-ancestors 'none'; base-uri 'none'`);
+    // Nothing leaves the page but the sign-in page's fonts, and /spaces' voice (csp.ts).
+    response.headers.set("Content-Security-Policy", pageCsp(`${await themeHash()} 'nonce-${rw.nonce}'`, new URL(request.url).pathname === "/spaces" ? spacesConnect(e(request)) : undefined));
   },
   async ({ request }) => {
     if (import.meta.env.VITE_IS_DEV_SERVER) { await devMigrate(e().DB); devKey ??= await newKey(); }
