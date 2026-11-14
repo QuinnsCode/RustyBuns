@@ -91,16 +91,26 @@ export function paint(ctx: CanvasRenderingContext2D, zones: readonly PrintZone[]
     const z = zoneOf(zones, pic.at);
     const [zx, zy, zw, zh] = rect(z);
     const { w, h } = pictureSize(z, pic.at, pic.aspect);
-    const pxU = zw / z.width(pic.at.v), pxV = zh / z.height; // pixels per world unit, across and up
-    ctx.save();
-    ctx.beginPath();
-    ctx.rect(zx, zy, zw, zh);
-    ctx.clip();
-    ctx.translate(zx + pic.at.u * zw, zy + (1 - pic.at.v) * zh);
-    ctx.scale(pxU, pxV);
-    ctx.rotate(-pic.at.rotation);
-    ctx.drawImage(pic.image, -w / 2, -h / 2, w, h);
-    ctx.restore();
+    const pxV = zh / z.height; // pixels per world unit up
+    // The cloth's width changes with height (a sleeve tapers, a body has a waist), so a zone's u means fewer
+    // centimetres where it is narrow. Drawn in thin bands, each at its own height's pixels per unit across, the
+    // picture keeps its shape on the fabric instead of rounding off toward the narrow end.
+    const reach = (Math.hypot(w, h) / 2) * pxV, cy = zy + (1 - pic.at.v) * zh;
+    const top = Math.max(zy, Math.floor(cy - reach)), bottom = Math.min(zy + zh, Math.ceil(cy + reach));
+    const bands = Math.max(1, Math.ceil((bottom - top) / 3));
+    for (let b = 0; b < bands; b++) {
+      const y0 = top + ((bottom - top) * b) / bands, y1 = top + ((bottom - top) * (b + 1)) / bands;
+      const v = 1 - ((y0 + y1) / 2 - zy) / zh;
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(zx, Math.floor(y0), zw, Math.ceil(y1) - Math.floor(y0));
+      ctx.clip();
+      ctx.translate(zx + pic.at.u * zw, cy);
+      ctx.scale(zw / z.width(v), pxV);
+      ctx.rotate(-pic.at.rotation);
+      ctx.drawImage(pic.image, -w / 2, -h / 2, w, h);
+      ctx.restore();
+    }
   }
   const z = outline === null ? null : zones.find((x) => x.name === outline) ?? zones[0];
   if (z) {

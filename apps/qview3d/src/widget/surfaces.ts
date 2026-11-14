@@ -88,7 +88,9 @@ export class GarmentSurface implements Surface<AtlasSpot> {
   }
   start(zone: ZoneName): Placement {
     const z = zoneOf(this.garment.zones, { zone, u: 0, v: 0, scale: 1, rotation: 0 });
-    return { zone: z.name, u: 0.5, v: z.name === "front" ? 0.55 : 0.5, scale: z.name === "left-sleeve" ? 0.85 : 0.7, rotation: 0 };
+    // A new picture fits the zone both ways (a short sleeve's zone is wider round than it is long).
+    const fit = (0.85 * z.height) / z.width(0.5);
+    return { zone: z.name, u: 0.5, v: z.name === "front" ? 0.55 : 0.5, scale: Math.min(z.name === "left-sleeve" ? 0.85 : 0.7, fit), rotation: 0 };
   }
   nudge(at: Placement, dx: number, dy: number): Placement { return { ...at, u: at.u + dx * 0.04, v: at.v - dy * 0.04 }; }
   setColor(c: string) { for (const m of this.garment.dyed) m.material.color.set(c); this.garment.restart?.(); }

@@ -75,8 +75,9 @@ hats are in a second, hashed chunk (146 kB gzipped). It loads only when the tag 
 
 Methods: `addImage(file, zone?)`, `removeImage()`, `place({u, v, scale, rotation})`, `view("front"|"angle"|"side"|"back")`,
 `model = "beanie"`, `zone = "back"` (a top's `"front"`, `"back"` or `"left-sleeve"`: where the next picture goes and what `place()` moves), `color = "#b91c1c"`, `design` (the settings, a layer for each zone's picture), `load(design)`, `snapshot()` resolves to `{blob, design}`,
-and `save()` resolves to `{id, url, design}`. Attributes: `org`, `product`, `model`, `color`, `colors="#111111,#ffffff"`,
+and `save()` resolves to `{id, url, design}`; `value` is the saved id (below). Attributes: `name`, `org`, `product`, `model`, `color`, `colors="#111111,#ffffff"`,
 `controls`, `theme`, and `api` (the server, by default the script's own origin).
+A product's `print` (the zones the shop switched on) and `place` (where a new picture lands), set on `/orgs.html`, shape the widget: it offers only those zones, refuses a picture on one switched off, and starts each new picture at `place`.
 Events, which bubble out of the shadow DOM: `qview:ready`, `qview:change`, `qview:snapshot`, `qview:saved` and `qview:error`.
 
 **The default look is codeSplitter's:** ink on white, hairline borders, paper panels, one orange. It is built to
@@ -94,8 +95,25 @@ A shop with a Content-Security-Policy adds the widget's origin to `script-src` a
 `worker-src` (without it, photos are prepared in the page instead). This was checked with the built widget on a
 page from another origin under that policy.
 
-A cart takes `save()`'s design id with the order line. The design names its original file, so whoever prints it
-knows what to print and where.
+### In the Add to cart form
+
+`<qview-3d name="design">` inside a `<form>` is a form field (a form-associated custom element). On submit it saves
+the design (pictures, snapshot, settings), then submits the form again with `design` (the id) and `design-url` (its
+`/r/` link), as hidden inputs would. The page's own submit handlers only see that second submit. A change after a
+save clears the id (`el.value` is `""` again), so the next submit saves anew; a failed save stops the submit. The demo
+shop (`public/index.html`) is built this way: pick the hat, the shirt or the hoodie, a size and a quantity, and Add to
+cart puts a line with the design's id on the page. The design names its original file, so whoever prints it knows what
+to print and where. Without a form, `save()` gives the same id.
+
+### Script tag first, an iframe when the host won't run scripts
+
+The script tag is the main way: `/v1/qview3d.js` is served by the Worker from the edge, with versioned paths and
+hashed chunks cached for a year, so there's no CDN like jsDelivr in between (the code is PolyForm Noncommercial, not
+an npm package for anyone to mirror). For a site builder that strips a pasted `<script>` but keeps an `<iframe>`,
+`GET /v1/frame?org=<org>&product=<product>` ([src/frame.ts](src/frame.ts)) is the widget alone on a bare page. Its
+`frame-ancestors` names only the org's sites, and it posts each `qview:*` event to its parent (`{ source: "qview3d",
+type, detail }`) only when the parent's origin is one of them; the parent asks for `save` or `snapshot` the same way.
+Both are in [`/v1/embed.md`](src/embed.ts).
 
 ### Print files
 
@@ -233,4 +251,4 @@ a second when it loads or changes colour, then frozen. Shots before and after: [
 
 Print zones on a shop's own model (the picture goes anywhere on it now). More than one picture. Text. Pinch-to-size
 on touch (sliders do it now). Real sample
-prices (#4515). A rate limit on signing. A check of the rendered widget in CI.
+prices (#4515). A rate limit on signing.
