@@ -21,7 +21,8 @@ import { forgetBeast, loadBeast, Puppet } from "./beasts.ts";
 import { bot, type Bot } from "./bot.ts";
 import { temper } from "./opener.ts";
 import { coopTeams, mountVersus } from "./versus.ts";
-import { coopCode, duelCode, sum } from "./net/duel.ts";
+import { coopCode, duelCode, mintDuel, sum } from "./net/duel.ts";
+import { recordCoop, type CoopAt } from "./coop.ts";
 import { buttons, NO_STICK, PAD_ACTIONS, PAD_START, PAD_ZONE, push, readPad, touchStick, TOUCH_BUTTONS, type Stick } from "./controls.ts";
 import { icon } from "./icons.ts";
 import { ART, radar, tradingCard } from "./card.ts";
@@ -78,7 +79,7 @@ import { jumpTo, stepOf } from "./factions/jump.ts";
 import { close as closeHunt, HUNTS, stageOf, take, CLUES } from "./world/hunts.ts";
 import { FORAGE_MEND } from "./world/nature.ts";
 import { Online, roomCode, uid } from "./net/online.ts";
-import { HURT_FULL } from "./net/party.ts";
+import { COOP_MS, HURT_FULL } from "./net/party.ts";
 import { COLOURS, css as hueCss, firstColour, wornColour } from "./world/hues.ts";
 import { joinParty, openParty, partyCode } from "./net/lobby.ts";
 import type { Friend } from "./world/view.ts";
@@ -187,6 +188,7 @@ const online = room ? new Online(room, {
   onDen: (den, who, c) => { fights.push({ who, den, c }); fights.splice(0, fights.length - 8); world.friendMet(den, who, c); },
   onHunt: (h, s, who) => joinHunt(h, s, who),
   // a faction's team is made from the friend's own save, so there is no den to share: who, and whose team
+  onCoop: (c) => askCoop(c),
   onRival: (f, who) => { fights.push({ who, den: `rival:${f}`, c: "" }); fights.splice(0, fights.length - 8); world.note(`${icon("users")} ${esc(who || "A friend")} is fighting a team of ${esc(FACTION[f].name.replace(/^The /, "the "))}.`); },
   onHurt: (den, id, d) => { let by = lairHurt.get(den); if (!by) lairHurt.set(den, (by = new Map())); by.set(id, Math.max(d, by.get(id) ?? 0)); },
   onFought: (f) => {
@@ -493,7 +495,37 @@ function setOut(region: Region, kind: Trip["kind"], foe: Foe, k = 0) {
   if (kind === "keeper" || kind === "mythic") online?.met(kind === "mythic" ? `mythic:${region.n}` : `keeper:${region.n}:${k}`, foe.id, foe.level);
   if (kind !== "deadly") see(journey, foe.id);
   if (kind !== "deadly" || spare) saveJourney();
+  // Walking together, a friend in this region can join (#4413): you wait for them in a co-op room, or fight alone.
+  const code = (kind === "wild" || kind === "keeper") && !foe.hunt && keepJourney && online ? mintDuel() : null, den = code ? online!.coop(code) : null;
+  if (code && den) {
+    coopAt = { region, kind: kind === "keeper" ? "keeper" : "wild", k, foe, host: true };
+    world.hide();
+    versus.enter(code, "coop", { foe: den, host: true, alone: () => { coopAt = null; fightTrip(); } });
+    return;
+  }
   fightTrip();
+}
+/** A den's co-op fight with friends, from walking in (or joining) until its result is written (src/coop.ts). */
+let coopAt: CoopAt | null = null;
+/** "Join the fight": a friend in this region walked into a den or a keeper and is waiting in a co-op room. */
+const coopAsk = Object.assign(document.createElement("aside"), { className: "coop-ask", hidden: true, role: "status" });
+document.body.append(coopAsk);
+let coopAskTimer: ReturnType<typeof setTimeout> | undefined;
+function askCoop(c: { who: string; den: string; c: string; lv: number; code: string }) {
+  if (!journey || !keepJourney || !world.shown || trip || versusOn || coopAt) return; // busy with a fight of your own
+  const keeper = /^keeper:(\d+):(\d+)$/.exec(c.den), named = tierOf(c.c) !== "unknown" || owns(journey, c.c), name = named ? creature(c.c).name : "something nameless";
+  coopAsk.innerHTML = `<p>${icon("users")} <b>${esc(c.who || "A friend")}</b> walked into ${keeper ? `the keeper, ${esc(name)}` : `a wild ${esc(name)}`} (Lv ${c.lv}).</p><button class="go">${icon("swords")} Join the fight</button>`;
+  coopAsk.hidden = false;
+  clearTimeout(coopAskTimer);
+  coopAskTimer = setTimeout(() => { coopAsk.hidden = true; }, 2 * COOP_MS);
+  coopAsk.querySelector("button")!.onclick = () => {
+    coopAsk.hidden = true;
+    const n = keeper ? +keeper[1]! : world.pose().region, region = REGIONS[n - 1];
+    if (!journey || !region || trip || versusOn) return;
+    coopAt = { region, kind: keeper ? "keeper" : "wild", k: keeper ? +keeper[2]! : 0, foe: { id: c.c, level: c.lv }, host: false };
+    world.hide();
+    versus.enter(c.code, "coop", { foe: { den: c.den, c: c.c, lv: c.lv }, host: false, alone: () => { coopAt = null; enterWorld(); } });
+  };
 }
 /** At a contract's lair with friends: their blows come off this page's copy of the creature (the room's word for how much,
  *  never more than it believes), and ours go to them. Every frame of a lair trip; a message only when a share grew. */
@@ -1479,6 +1511,7 @@ function finish(m: Match, bound = false) {
   const you = versusOn ? mine : 0;
   const won = m.winner === m.f[you]!.team;
   remember({ kind: versusOn ? "duel" : bots[0] ? "watched" : "practice", you: m.f[you]!.c.name, foe: m.f[foeOf(m, you)]!.c.name, won, how: ko?.kind === "ko" ? ko.how : "none" });
+  if (versusOn && wildBot && coopAt) { coopOver(m, won, w.c.name); return; }
   if (versusOn && wildBot) { duelOver(won ? "You win together" : `${w.c.name} wins`, `${esc(w.c.name)} ${won ? "stands" : "wins"}. ${lost}`); return; }
   if (versusOn) { duelOver(won ? "You win" : `${versus.friend() ?? "Your friend"} wins`, `${esc(w.c.name)} wins. ${lost}`); return; }
   delete $("#result").dataset.verso;
@@ -1499,7 +1532,8 @@ const versus = mountVersus($("#friends"), {
     mine = you; acc = 0; hitStop = 0;
     if (kind === "coop") {
       const teams = coopTeams(go), wild = teams[0].length;
-      fight(teams[0][0]!, teams[1][0]!, "stadium", false, true, teams);
+      if (!go.foe) coopAt = null; // the room didn't believe the den: a seeded wild one, nobody's journey to write
+      fight(teams[0][0]!, teams[1][0]!, coopAt ? fightSkin(coopAt.region, coopAt.kind) : "stadium", false, true, teams);
       wildBot = bot(wild, go.seed);
       faceUp(`${names.join(", ")} vs ${teams[1][0]!.name}`);
       return;
@@ -1508,8 +1542,30 @@ const versus = mountVersus($("#friends"), {
     fight(atLevel(creature(a.c), a.lv), atLevel(creature(b.c), b.lv), "stadium", false, true);
     faceUp(`${names[0]} vs ${names[1]}`);
   },
-  broken: (why) => { if (versusOn && m && !m.over) { m.over = true; duelOver("No contest", esc(why)); } },
+  broken: (why) => {
+    if (!versusOn || !m || m.over) return;
+    m.over = true;
+    if (!coopAt) { duelOver("No contest", esc(why)); return; }
+    // A den's fight called off: nothing to write, and the walk goes on.
+    coopAt = null; delete $("#result").dataset.verso;
+    $("#result").innerHTML = `<div class="note paper"><h2>No contest</h2><p>${esc(why)}</p><div class="row"><button class="go" id="back">${icon("map")} Back to the world</button></div></div>`;
+    pages.show($("#result"));
+    $("#back").onclick = () => { versus.drop(); trip = null; enterWorld(); };
+  },
 });
+/** A den's co-op fight is over (#4413): this page writes what it gave back into its own journey, and the walk goes on. */
+function coopOver(m: Match, won: boolean, winner: string) {
+  const at = coopAt!, j = journey, i = versus.picked(), me = j && i !== null ? j.party[i] : undefined;
+  coopAt = null;
+  if (at.host) online?.fought(at.foe.id, at.foe.level, won, false, m.tick / HZ); // the room checks it against the den we walked into
+  const lines = j && me ? recordCoop(j, me, at, won, m.f[mine]!.hp / m.f[mine]!.b.hp) : [];
+  saveJourney();
+  delete $("#result").dataset.verso;
+  $("#result").innerHTML = `<div class="note paper o-${won ? "won" : "down"}"><h2>${won ? "You win together" : `${esc(winner)} wins`}</h2>${lines.map((l) => `<p>${esc(l)}</p>`).join("")}
+    <div class="row"><button class="go" id="back">${icon("map")} Back to the world</button></div></div>`;
+  pages.show($("#result"));
+  $("#back").onclick = () => { versus.drop(); trip = null; enterWorld(); world.afterFight(won); };
+}
 /** A duel is over (or off): who won, and a rematch, another pick, or home. */
 function duelOver(head: string, line: string) {
   delete $("#result").dataset.verso;

@@ -70,6 +70,10 @@ const DEN = /^[a-z0-9:.,_-]{1,48}$/;
 const HUNT = /^[0-9.]{1,32}$/;
 /** A flock's or a food patch's grid cell (src/world/nature.ts ids). */
 const CELL = /^-?[0-9]{1,6},-?[0-9]{1,6}$/;
+/** A co-op room's code (net/duel.ts DUEL_CODE). */
+const COOP = str(12, { re: /^[A-Z0-9]{6,12}$/ });
+/** A co-op room is offered only this soon after walking into its den: the one who walked in is waiting in it. */
+export const COOP_MS = 10_000;
 /** A den told again after a reconnect is at most this old: a fight of up to 2 min and a minute to get back. */
 export const AGO_MS = 3 * 60_000;
 /** A line-up fights a den one beast after another: at most this many reports per den (FIGHT.perDen). */
@@ -134,7 +138,9 @@ export const SIGNS = 3;
  * - `open`: the regions its save has opened (on joining, and when one opens), so a jump is believed only at a landing
  *   spot in one of them (dens.ts `landing`). A claim, but it bounds a lie to what the page says it has;
  * - `rival`: it took on faction `f`'s team (#4316), so friends know where it is. Only that: a team is made from the
- *   player's own save, so the room has nothing to check a fight report against, and none goes with it. */
+ *   player's own save, so the room has nothing to check a fight report against, and none goes with it;
+ * - `coop`: at the wild den or keeper it just walked into, it opened co-op room `code` (net/duel.ts, #4413), so friends
+ *   in its region can join the fight. Told only for the den the room believed, a moment ago (COOP_MS). */
 export type Event =
   | { e: "den"; den: string; c: string; lv: number; ago: number; n: number }
   | { e: "seen" } & Seen
@@ -144,7 +150,8 @@ export type Event =
   | { e: "hurt"; d: number }
   | { e: "life"; k: "flush" | "pick"; id: string; h: number }
   | { e: "open"; rs: number[] }
-  | { e: "rival"; f: FactionId };
+  | { e: "rival"; f: FactionId }
+  | { e: "coop"; code: string };
 export type Met = Extract<Event, { e: "den" }>;
 const EVENT: Guard<Event> = (v) => {
   const e = typeof v === "object" && v !== null && "e" in v ? v.e : undefined;
@@ -152,6 +159,7 @@ const EVENT: Guard<Event> = (v) => {
   if (e === "hunt") return obj({ e: oneOf(["hunt"]), h: str(32, { re: HUNT }), s: int(0, SIGNS) })(v);
   if (e === "fought") return obj({ e: oneOf(["fought"]), c: POSE.l, lv: int(1, 200), won: bool(), bound: bool(), s: int(0, 3600) })(v);
   if (e === "rival") return obj({ e: oneOf(["rival"]), f: oneOf(FACTIONS) })(v);
+  if (e === "coop") return obj({ e: oneOf(["coop"]), code: COOP })(v);
   if (e === "open") return obj({ e: oneOf(["open"]), rs: arr(POSE.r, 64) })(v);
   if (e === "hurt") return obj({ e: oneOf(["hurt"]), d: int(0, HURT_FULL) })(v);
   if (e === "time") return obj({ e: oneOf(["time"]) })(v);
@@ -174,6 +182,9 @@ export const HURT_FULL = 1000;
 /** What the room believes of a player's share (`d`), and when they first walked into the lair (`from`): a share grows no
  *  faster than a whole creature in FIGHT.minS from then (the shortest fight a report may have), and never goes down. */
 export interface Hurt { d: number; from: number }
+/** A den a friend can join a co-op fight at (#4413): a wild one's own den or a keeper's stone. A lair is shared another
+ *  way (`sharedDen`), and the arena's mythic and a trail den stay one player's. */
+export const coopDen = (den: string) => CELL.test(den) || /^keeper:\d+:\d+$/.test(den);
 /** Only a contract's lair is fought together: a wild den is one player's at a time, a stone or an arena your own. */
 export const sharedDen = (den: string | undefined) => !!den?.startsWith("hunt:");
 /** The share the room believes when `d` is said at `now`, by a player who walked in at `from` (or as `was` says). */
@@ -260,6 +271,7 @@ export type ServerMsg =
   | { t: "fought"; id: string; c: string; lv: number; won: boolean; bound: boolean }
   | { t: "hurt"; id: string; den: string; d: number }
   | { t: "rival"; id: string; f: FactionId }
+  | { t: "coop"; id: string; den: string; c: string; lv: number; code: string }
   | { t: "life"; id: string; k: "flush" | "pick"; f: string; h: number }
   | { t: "time"; age: number }
   | { t: "vouch" }
@@ -288,6 +300,7 @@ const SERVER: Guard<ServerMsg> = (v) => {
   if (t === "fought") return obj({ t: oneOf(["fought"]), id: PID, c: POSE.l, lv: int(1, 200), won: bool(), bound: bool() })(v);
   if (t === "hurt") return obj({ t: oneOf(["hurt"]), id: PID, den: str(48, { re: DEN }), d: int(0, HURT_FULL) })(v);
   if (t === "rival") return obj({ t: oneOf(["rival"]), id: PID, f: oneOf(FACTIONS) })(v);
+  if (t === "coop") return obj({ t: oneOf(["coop"]), id: PID, den: str(48, { re: DEN }), c: POSE.l, lv: int(1, 200), code: COOP })(v);
   if (t === "hi") return obj({ t: oneOf(["hi"]), id: PID, name: NAME })(v);
   if (t === "bye") return obj({ t: oneOf(["bye"]), id: PID })(v);
   if (t === "vouch") return obj({ t: oneOf(["vouch"]) })(v);

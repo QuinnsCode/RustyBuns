@@ -8,7 +8,7 @@
 import { connectSocket, type Link } from "@rustybuns/util/socket";
 import { fresh, login } from "../account.ts";
 import type { FactionId } from "../factions/model.ts";
-import { AGO_MS, bestOffset, sharedDen, type Seen, decodeServer, delta, Ghost, jumped, quantise, SEND_MS, WORLD_CYCLE, type Delta, type Event, type Pose, type ServerMsg } from "./party.ts";
+import { AGO_MS, bestOffset, coopDen, sharedDen, type Seen, decodeServer, delta, Ghost, jumped, quantise, SEND_MS, WORLD_CYCLE, type Delta, type Event, type Pose, type ServerMsg } from "./party.ts";
 
 export const roomCode = (search: string) => (new URLSearchParams(search).get("room") ?? "").toUpperCase().match(/^[A-Z0-9]{4,12}$/)?.[0] ?? null;
 
@@ -45,6 +45,8 @@ export interface OnlineOpts {
   onHunt?: (h: string, s: number, who: string) => void;
   /** A friend's fight ended, and the room believed the report. */
   onFought?: (f: { who: string; c: string; lv: number; won: boolean; bound: boolean }) => void;
+  /** A friend in our region walked into den `den` (creature `c` at level `lv`) and opened co-op room `code` to fight it together. */
+  onCoop?: (f: { who: string; den: string; c: string; lv: number; code: string }) => void;
   /** A friend took on faction `f`'s team. */
   onRival?: (f: FactionId, who: string) => void;
   /** A friend fighting the creature at lair `den` has taken `d` thousandths of its health off it, all told. */
@@ -152,6 +154,7 @@ export class Online {
     else if (m.t === "seen") this.told(m);
     else if (m.t === "hunt") this.o.onHunt?.(m.h, m.s, this.ghosts.get(m.id)?.name ?? "");
     else if (m.t === "hurt") { this.o.onHurt?.(m.den, m.id, m.d); return; }
+    else if (m.t === "coop") this.o.onCoop?.({ who: this.ghosts.get(m.id)?.name ?? "", den: m.den, c: m.c, lv: m.lv, code: m.code });
     else if (m.t === "rival") this.o.onRival?.(m.f, this.ghosts.get(m.id)?.name ?? "");
     else if (m.t === "fought") this.o.onFought?.({ who: this.ghosts.get(m.id)?.name ?? "", c: m.c, lv: m.lv, won: m.won, bound: m.bound });
     else if (m.t === "p") {
@@ -199,6 +202,13 @@ export class Online {
     this.refresh();
     // Where we stand first (alone in a region we may not have said for a while): the room checks the den against it.
     if (this.sendPose()) this.link?.send({ e: "den", den, c, lv, ago: 0, n: 0 });
+  }
+  /** At the den we just walked into, we opened co-op room `code`: the friends in our region are asked to join. The den
+   *  (as the room checked it) for the room's foe, or null when there is none to share or nobody to share it with. */
+  coop(code: string): { den: string; c: string; lv: number } | null {
+    const d = this.lastDen;
+    if (!d || !coopDen(d.den) || !this.nearby() || !this.link?.send({ e: "coop", code })) return null;
+    return { den: d.den, c: d.c, lv: d.lv };
   }
   /** Tell the room the regions we have opened, when that changed since it last heard. */
   private claim() {
@@ -257,7 +267,7 @@ export class Online {
       this.link?.send({ e: "seen", picks: s.picks.slice(-30), flown: s.flown.slice(-30), roost: s.roost.slice(-30), busy: s.busy.slice(-12) });
   }
   /** Is a friend in the region we stand in? */
-  private nearby() { return [...this.ghosts.values()].some((g) => g.pose.r !== undefined && g.pose.r === this.here?.r); }
+  nearby() { return [...this.ghosts.values()].some((g) => g.pose.r !== undefined && g.pose.r === this.here?.r); }
   /** We flushed a flock or picked a patch: only worth telling while a friend is in our region. */
   life(k: "flush" | "pick", id: string, h = 0) {
     if (!this.nearby()) return;
