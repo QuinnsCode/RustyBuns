@@ -43,10 +43,13 @@
 #   teeth   along, n, len,   small cones fanned along a muzzle chain's lip, hanging from the upper lip and,
 #           base, gap,       with `lower`, rising from the lower; `gap` (0.6) is how far the lips sit from the
 #           lower, side      chain's centre in its radius, `side` (0.7) how far out to the side the rows run
+#   eye     at, off, r, rot  a ball; `r` as [x, y, z] squashes it to those radii and `rot` [x, y, z] degrees turns it
+#                            (mirrored for the pair): a slanted almond eye
 #   ear     at, off, dir,    a flat, cupped leaf from a node: `len` long, `width` wide, `tilt` degrees out to the
 #           len, width,      side, `cup` degrees curled forward (mirror it for the pair); `thick` (0.12) makes it a
 #           tilt, cup,       fleshy flap that deep in its width, rounded, with a lobe at the end, and `fold` (0)
-#           thick, fold      hollows it across, the edges swinging that share of the width forward
+#           thick, fold,     hollows it across, the edges swinging that share of the width forward; `point` (0)
+#           point            narrows its last that share of the length straight in to a point (a wolf's ear)
 #   ridge   at, off, dir,    a short curved ridge (a brow above an eye, a lip along a muzzle): `len` long, `base`
 #           len, base,       thick, `curve` degrees toward `bend`; lies flat on the skin; its `material` defaults
 #           curve, bend      to the body's
@@ -560,9 +563,16 @@ def cone(name, at, direction, length, base, mat, segments=6):
     return o
 
 
-def ball(name, at, r, mat):
+def ball(name, at, r, mat, rot=None):
+    """A sphere of radius `r`, or with `r` as [x, y, z] an egg squashed to those radii (an almond eye), turned
+    by `rot` (x, y, z degrees)."""
     bm = bmesh.new()
-    bmesh.ops.create_uvsphere(bm, u_segments=10, v_segments=7, radius=r)
+    squash = isinstance(r, (list, tuple))
+    bmesh.ops.create_uvsphere(bm, u_segments=12 if squash else 10, v_segments=7, radius=1 if squash else r)
+    if squash:
+        bmesh.ops.scale(bm, vec=Vector(r), verts=bm.verts)
+    if rot:
+        bmesh.ops.rotate(bm, cent=Vector(), verts=bm.verts, matrix=Euler([math.radians(a) for a in rot]).to_matrix())
     me = bpy.data.meshes.new(name)
     bm.to_mesh(me)
     bm.free()
@@ -1077,6 +1087,19 @@ def fan(nodes, blobs, p, side, sink, sweep):
             yield j, k, at + up * (surface(nodes, blobs, at, r, up) * p.get("sink", sink)), up, d
 
 
+def pointed(profile, share):
+    """A leaf's (how far along, radius) profile narrowed to a point over its last `share` of the length: kept as
+    it is up to there, then straight in to nothing at the tip (a wolf's, cat's or fox's ear, not a rabbit's)."""
+    if share <= 0:
+        return profile
+    t0 = 1 - min(share, 0.95)
+    keep = [(t, r) for t, r in profile if t < t0]
+    k = next(i for i, (t, _) in enumerate(profile) if t >= t0)
+    (ta, ra), (tb, rb) = profile[k - 1], profile[k]
+    r0 = ra + (rb - ra) * (t0 - ta) / (tb - ta)
+    return keep + [(t0 + (1 - t0) * u / 3, r0 * (1 - u / 3)) for u in range(3)] + [(1, 0)]
+
+
 def resolve(nodes, p):
     return Vector(nodes[p][:3]) if isinstance(p, str) else Vector(p)
 
@@ -1121,7 +1144,9 @@ def parts(sheet, nodes):
                     out.append(cone(f"{name}_t{j}", root, s(td), tl, p["base"] * (1 - t) * 0.9, p["material"]))
             elif p["kind"] == "eye":
                 at = Vector(node(p["at"])) + Vector(s(p["off"]))
-                out.append(ball(name, at, p["r"], p["material"]))
+                # a mirrored eye's turn is mirrored too: about x and y the other way, about z the same
+                rot = (p["rot"][0] * side, p["rot"][1] * side, p["rot"][2]) if "rot" in p else None
+                out.append(ball(name, at, p["r"], p["material"], rot))
             elif p["kind"] == "membrane":
                 rim = pts = [node(q) for q in p["points"]]
                 if "scallop" in p:
@@ -1173,10 +1198,11 @@ def parts(sheet, nodes):
                     # a fleshy flap: a rounded section `thick` of its width deep, cupped across by `fold`, a lobe at the end
                     out.append(tube(name, at, d.normalized(), p["len"], p["width"], 0, p["material"], curve=p.get("cup", 20),
                                     bend=Vector((1, 0, 0)), flat=p.get("thick", 0.12), segments=12, fold=p.get("fold", 0),
-                                    profile=[(0, 0.5), (0.2, 0.85), (0.5, 1.0), (0.78, 0.92), (0.93, 0.6), (1, 0.2)]))
+                                    profile=pointed([(0, 0.5), (0.2, 0.85), (0.5, 1.0), (0.78, 0.92), (0.93, 0.6), (1, 0.2)], p.get("point", 0))))
                 else:
                     out.append(tube(name, at, d.normalized(), p["len"], p["width"], 0, p["material"], curve=p.get("cup", 20),
-                                    bend=Vector((1, 0, 0)), flat=0.12, segments=6, profile=[(0, 0.55), (0.4, 1.0), (0.75, 0.8), (1, 0.1)]))
+                                    bend=Vector((1, 0, 0)), flat=0.12, segments=6,
+                                    profile=pointed([(0, 0.55), (0.4, 1.0), (0.75, 0.8), (1, 0.1)], p.get("point", 0))))
             elif p["kind"] == "ridge":
                 at = Vector(node(p["at"])) + Vector(s(p.get("off", (0, 0, 0))))
                 bend = s(p["bend"]) if "bend" in p else None
