@@ -562,9 +562,12 @@ def foliage(spec, g, rng, lo, twigs, trunks, H):
                         c = mix(c, dark, min(1, k * (1 - lit)))
                         if tc:
                             tc = mix(mix(tc, dark, k * (1 - lit) * 0.6), light, k * lit * lit)
-                    fwd = (tan + UP * fs.get("up", 0.35)).normalized()
+                    # the far model can rake its tufts further up (`lo_up`), open them wider (`lo_splay`) and spread
+                    # them along more twig (`lo_brush`), so a distant crown is spiky tufts with sky between, not balls
+                    fwd = (tan + UP * fs.get("lo_up" if lo else "up", fs.get("up", 0.35))).normalized()
                     sp = perp(fwd)
-                    brush = size * fs.get("brush", 0.5)
+                    brush = size * fs.get("lo_brush" if lo else "brush", fs.get("brush", 0.5))
+                    splay = fs.get("lo_splay" if lo else "splay", fs.get("splay", 0.7))
                     if not lo and fs.get("knot", 0.22) > 0:
                         blob(g, at + fwd * brush * 0.4, size * fs.get("knot", 0.22), mix(c, (0.02, 0.03, 0.02), 0.45), rng, subdiv=1, lump=0.2, squash=1.0, out_from=centre)
                     bundle = fs.get("bundle", 1)
@@ -579,7 +582,7 @@ def foliage(spec, g, rng, lo, twigs, trunks, H):
                             a = j * GOLDEN + rng.random() * 0.4
                             radial = Matrix.Rotation(a, 3, fwd) @ sp
                             base = at - fwd * brush * u
-                            nd = (fwd * fs.get("reach", 0.9) + radial * fs.get("splay", 0.7)).normalized()
+                            nd = (fwd * fs.get("reach", 0.9) + radial * splay).normalized()
                             ln = size * (0.55 + 0.45 * min(1, u * 2.5)) * (0.85 + 0.3 * rng.random())
                             dark = mix(c, (0.05, 0.05, 0.03), 0.3)
                             tcol = mix(tc, c, fs.get("lo_tip", 0)) if (lo and tc and fs.get("lo_tip")) else (tc or c)
@@ -595,7 +598,7 @@ def foliage(spec, g, rng, lo, twigs, trunks, H):
                         a = 2 * math.pi * j / n * 2.618 + rng.random() * 0.5
                         radial = (Matrix.Rotation(a, 3, fwd) @ sp)
                         base = at - fwd * brush * (0.2 + 0.6 * rng.random())
-                        nd = (fwd * fs.get("reach", 0.9) + radial * fs.get("splay", 0.7)).normalized()
+                        nd = (fwd * fs.get("reach", 0.9) + radial * splay).normalized()
                         tip = base + nd * size * (0.75 + 0.5 * rng.random())
                         side = radial.cross(nd).normalized() * size * fs.get("needle_width", 0.035) * (fs.get("lo_width", 2.5) if lo else 1)
                         b0 = g.vert(base, mix(c, (0.05, 0.05, 0.03), 0.3), LEAF, out)
