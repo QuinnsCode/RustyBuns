@@ -8,7 +8,7 @@ import { inSeason, NIGHT, tierOf, TIERED, TIER_LEVEL } from "../src/tiers.ts";
 import { holds } from "../src/net/dens.ts";
 import type { Gait } from "../src/world/world.ts";
 import { lightFire, POIS, shelterAt, SHELTER_R } from "../src/world/poi.ts";
-import { CATCH_FAR, CATCH_NEAR, HOUSES, lightsNear, nightOf, safePaths, stalk, toSafety } from "../src/world/night.ts";
+import { BOSS_EVERY, CATCH_FAR, CATCH_NEAR, DARK_LEN, GAP, HOUSES, SWEEP, glow, lightsNear, nightOf, safePaths, stalk, toSafety } from "../src/world/night.ts";
 import { DAY } from "../src/world/nature.ts";
 import { arenaOf, groundFrom, buildWorld, CELL, cell, COLS, detailAt, dry, explore, explored, heightAt, meet, NIGHT_MEET_R, newSeen, openRegions, opensRoadTo, OWNER, refine, ROWS, spawn, STEP, walk, wildsNear, type WalkEvent, type Walker } from "../src/world/world.ts";
 
@@ -187,6 +187,28 @@ describe("safe paths at night", () => {
     expect(until(400)).toBeCloseTo(CATCH_FAR, 0);
     expect(until(1)).toBeGreaterThan(CATCH_NEAR - 1);
     expect(stalk(0.5, 1, 0)).toBeLessThan(0.5); // back on a path it fades
+  });
+
+  test("the boss night: the dark rolls down a path, a runner keeps ahead of it and a walker is caught in it", () => {
+    const nights = Array.from({ length: BOSS_EVERY * 2 }, (_, k) => safePaths(1, k));
+    expect(nights.filter((nt) => nt.boss)).toHaveLength(2); // one night in BOSS_EVERY
+    const nt = nights.find((q) => q.boss)!, calm = nights.find((q) => !q.boss)!;
+    const p = nt.paths.reduce((a, b) => (b.at.at(-1)! > a.at.at(-1)! ? b : a)), len = p.at.at(-1)!;
+    expect(len).toBeGreaterThan(200);
+    const where = (s: number): [number, number] => {
+      const i = Math.max(1, p.at.findIndex((a) => a >= s)), u = (s - p.at[i - 1]!) / (p.at[i]! - p.at[i - 1]! || 1);
+      return [p.pts[i - 1]![0] + (p.pts[i]![0] - p.pts[i - 1]![0]) * u, p.pts[i - 1]![1] + (p.pts[i]![1] - p.pts[i - 1]![1]) * u];
+    };
+    // The moment the dark sets off from the path's start, you are 30 m along it: then you walk, or run, for the far house.
+    const loop = len + DARK_LEN + GAP, t0 = ((((-p.phase * loop) % loop) + loop) % loop) / SWEEP;
+    const unsafe = (pace: number) => { let n = 0; for (let t = 0; 30 + pace * t < len - 30; t += 0.25) if (toSafety(nt, ...where(30 + pace * t), t0 + t) > 0) n++; return n; };
+    expect(unsafe(5)).toBe(0); // a run (PACE.run) outpaces it
+    expect(unsafe(1.5)).toBeGreaterThan(8); // a walk doesn't: the path goes out under your feet
+    // Before it comes, the lights just ahead flicker; on any other night they never do.
+    const ahead = Array.from({ length: 40 }, (_, k) => glow(nt, p, 10, t0 + k * 0.05));
+    expect(Math.min(...ahead)).toBeLessThan(1);
+    expect(Math.max(...ahead)).toBe(1);
+    for (const [, , k, at] of lightsNear(calm, ...calm.paths[0]!.pts[0]!, 200)) expect(glow(calm, calm.paths[k]!, at, t0)).toBe(1);
   });
 
   test("a night path keeps to dry ground: round a river and a bay, not through them", async () => {
