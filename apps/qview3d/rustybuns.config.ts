@@ -27,6 +27,9 @@ export default defineConfig({
     MESHY_API_KEY: { type: "secret", op: "op://qview3d/meshy-api-key/password", optional: true },
     // The most samples a day across every org: the ceiling on the Meshy bill (src/samples.ts).
     MESHY_DAILY: { type: "var", value: "50" },
+    // Signs a minute per IP and org, and sample starts a minute per org (src/worker.ts answers 429). Counted at each location, free.
+    SIGN_LIMIT: { type: "ratelimit", namespaceId: "8205", simple: { limit: 60, period: 60 } },
+    SAMPLE_LIMIT: { type: "ratelimit", namespaceId: "8206", simple: { limit: 5, period: 60 } },
   },
   // Secrets resolve at deploy through varlock, behind the owner's Touch ID; op: references need the wheel.
   experimental: { wheel: "human" },

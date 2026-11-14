@@ -29,6 +29,11 @@ export interface Bucket {
   list(opts: { prefix: string; cursor?: string }): Promise<{ objects: { key: string }[]; truncated: boolean; cursor?: string }>;
 }
 
+/** A Cloudflare rate limit binding: a count per key over its period, at each location. */
+export interface RateLimit {
+  limit(o: { key: string }): Promise<{ success: boolean }>;
+}
+
 export interface Env {
   BUCKET: Bucket;
   UPLOAD_SECRET?: string;
@@ -42,6 +47,9 @@ export interface Env {
   MESHY_API_BASE?: string;
   /** Samples a day across every org, the ceiling on the Meshy bill. Default 50. */
   MESHY_DAILY?: string;
+  /** Signs a minute per IP and org, and sample starts a minute per org. Absent on the local twin: no limit there. */
+  SIGN_LIMIT?: RateLimit;
+  SAMPLE_LIMIT?: RateLimit;
 }
 
 const UPLOAD_TTL_S = 600;
@@ -55,6 +63,11 @@ const cors = (origin: string | null): Record<string, string> => ({
   vary: "origin",
 });
 const fail = (why: string, status: number, origin: string | null) => privateJson({ error: why }, status, cors(origin));
+
+/** Whether `key` is over `limit` this minute. Without the binding (the local twin) nothing is. */
+const over = async (limit: RateLimit | undefined, key: string) => limit ? !(await limit.limit({ key })).success : false;
+const slowDown = (what: string, origin: string | null) =>
+  privateJson({ error: `too many ${what}: try again in a minute`, retryAfter: 60 }, 429, { ...cors(origin), "retry-after": "60" });
 
 async function sha256(bytes: ArrayBuffer) {
   return hex(await crypto.subtle.digest("SHA-256", bytes));
@@ -99,14 +112,20 @@ export async function handle(req: Request, env: Env): Promise<Response> {
   const admin = await isAdmin(req, settings);
   if (what === "models") {
     if (!admin) return fail("an admin key is needed for samples", 401, origin);
-    if (req.method === "POST" && !id) return startSampleRoute(req, env, org, settings, cors(origin));
+    if (req.method === "POST" && !id) {
+      if (await over(env.SAMPLE_LIMIT, org)) return slowDown("samples started", origin);
+      return startSampleRoute(req, env, org, settings, cors(origin));
+    }
     if (req.method === "GET" && id) return sampleRoute(env, org, id, cors(origin));
     return fail("not found", 404, origin);
   }
   if (req.method !== "POST" || id) return fail("not found", 404, origin);
   if (!admin && !allowed(settings, origin)) return fail("this page may not use this org", 403, origin);
   if (builtIn) return fail("the public demo keeps no files: download a snapshot instead, or ask hello@qntbr.com for an org of your own", 403, origin);
-  if (what === "uploads") return sign(req, env, org, url, origin, admin);
+  if (what === "uploads") {
+    if (await over(env.SIGN_LIMIT, `${req.headers.get("cf-connecting-ip") ?? "-"}:${org}`)) return slowDown("uploads signed", origin);
+    return sign(req, env, org, url, origin, admin);
+  }
   return saveDesign(req, env, org, url, origin);
 }
 
