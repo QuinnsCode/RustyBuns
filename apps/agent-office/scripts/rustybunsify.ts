@@ -263,9 +263,9 @@ async function prepare(tag: string) {
 
   // 13c. the `fable` alias is Fable 5.2 in Claude Code now (v0.1.211 still names it 5.1), and Fable 5.1 stays
   // a choice of its own: its full id goes to `claude --model` as it is, like an alias does
-  patch("shared/providers.js", "['fable', 'opus',", "['fable', 'claude-fable-5-1', 'opus',");
-  patch("shared/providers.js", "value === 'fable' ||", "value === 'fable' || value === 'claude-fable-5-1' ||");
-  patch("shared/providers.js", "fable: 'Fable 5.1',", "fable: 'Fable 5.2',\n    'claude-fable-5-1': 'Fable 5.1',");
+  patch("../shared/providers.js", "['fable', 'opus',", "['fable', 'claude-fable-5-1', 'opus',");
+  patch("../shared/providers.js", "value === 'fable' ||", "value === 'fable' || value === 'claude-fable-5-1' ||");
+  patch("../shared/providers.js", "fable: 'Fable 5.1',", "fable: 'Fable 5.2',\n    'claude-fable-5-1': 'Fable 5.1',");
   patchAsk((js) => {
     const out = js
       .replace("[`fable`,`opus`,", "[`fable`,`claude-fable-5-1`,`opus`,")
