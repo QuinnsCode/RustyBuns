@@ -172,6 +172,15 @@ export class Viewer {
     step();
   }
 
+  /** Swing to the named side after the one the camera is nearest now, so a shopper who orbited still moves on. */
+  nextView() {
+    const az = new THREE.Spherical().setFromVector3(this.camera.position.clone().sub(this.controls.target)).theta;
+    const order = Object.keys(VIEWS) as View[];
+    const gap = (a: number, b: number) => Math.abs(Math.atan2(Math.sin(a - b), Math.cos(a - b)));
+    const at = order.reduce((best, v, i) => (gap(VIEWS[v], az) < gap(VIEWS[order[best]!], az) ? i : best), 0);
+    this.view(order[(at + 1) % order.length]!);
+  }
+
   /** Decode, shrink and hash a photo (in a Worker when allowed), then put it on the front of the hat. */
   async addImage(file: Blob): Promise<Layer> {
     const picture = await this.prepare(file);
