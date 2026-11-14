@@ -113,16 +113,40 @@ test("two friends team up against a wild one: both pages play it to the same end
   a.link.close(); b.link.close();
 });
 
-test("a co-op room's wild one is a fair fight for two: grown to face them, the friends win about half (#4411)", async () => {
+test("a co-op room's wild one is a fair fight for two or four: grown to face them, the friends win about half (#4411, #4441)", async () => {
   const { BASE, rateTeams, teamFights } = await import("../scripts/tune.ts");
   const { outnumbered } = await import("../src/journey.ts");
-  // Every creature as the wild one against one pair of friends, four matches each, on sim.ts.
-  const wins = teamFights(1).map(([a, [w]]) => rateTeams(a.map((i) => atLevel(ROSTER[i]!, BASE)), [outnumbered(atLevel(ROSTER[w!]!, BASE, true), 2)], 4).wins);
-  const mean = wins.reduce((t, x) => t + x, 0) / wins.length;
-  expect(mean).toBeGreaterThan(0.3);
-  expect(mean).toBeLessThan(0.7);
+  for (const friends of [2, 4]) {
+    // Every creature as the wild one against one team of friends, four matches each, on sim.ts.
+    const wins = teamFights(1, friends).map(([a, [w]]) => rateTeams(a.map((i) => atLevel(ROSTER[i]!, BASE)), [outnumbered(atLevel(ROSTER[w!]!, BASE, true), friends)], 4).wins);
+    const mean = wins.reduce((t, x) => t + x, 0) / wins.length;
+    expect([friends, mean > 0.3 && mean < 0.7]).toEqual([friends, true]);
+  }
   // One on one it is the creature itself.
   expect(outnumbered(ROSTER[0]!, 1)).toBe(ROSTER[0]!);
+});
+
+test("four friends against a wild one: it isn't stun-locked, and a hit of its takes about one health bar, not three (#4441)", async () => {
+  const { BASE, teamFights } = await import("../scripts/tune.ts");
+  const { outnumbered } = await import("../src/journey.ts");
+  const { newTeamMatch, step } = await import("../src/sim.ts");
+  let stunned = 0, ticks = 0;
+  const shares: number[] = [];
+  for (const [a, [w]] of teamFights(1, 4).filter((_, k) => k % 4 === 0)) {
+    const m = newTeamMatch([a.map((i) => atLevel(ROSTER[i]!, BASE)), [outnumbered(atLevel(ROSTER[w!]!, BASE, true), 4)]]);
+    const bots = m.f.map((_, k) => bot(k, k ? 7 + k : 1)), wild = m.f.length - 1;
+    while (!m.over) {
+      step(m, bots.map((b) => b(m)));
+      ticks++;
+      if (m.f[wild]!.state === "stun") stunned++;
+      for (const e of m.events) if (e.kind === "hit" && e.by === wild && !e.guarded) shares.push(e.damage / m.f[e.on]!.b.hp);
+    }
+  }
+  const median = shares.sort((x, y) => x - y)[shares.length >> 1]!;
+  console.log(`four friends: wild one stunned ${(100 * stunned / ticks).toFixed(0)}% of the fight, its median clean hit takes ${(100 * median).toFixed(0)}% of a friend's health`);
+  // Before the pile-on, four friends needed it at 18x damage: each clean hit took about three of their health bars.
+  expect(stunned / ticks).toBeLessThan(0.25);
+  expect(median).toBeLessThan(1.5);
 });
 
 test("the stick rounds the same way on both pages, and stays inside the circle", () => {

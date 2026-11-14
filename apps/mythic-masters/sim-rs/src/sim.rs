@@ -443,6 +443,16 @@ const ENERGY_STILL: f64 = 2.0;
 const CORNERED_PER: f64 = 3.0;
 const CORNERED_CAP: f64 = 0.5;
 const CORNERED_EVEN: f64 = 0.95;
+const PILE_ON_PER: f64 = 2.0;
+fn piled(m: &Match, on: usize) -> f64 {
+    let team = m.f[on].team;
+    let n = m.f.iter().filter(|o| o.team != team && !o.down).count();
+    if n < 2 {
+        1.0
+    } else {
+        1.0 / (1.0 + PILE_ON_PER * (n - 1) as f64)
+    }
+}
 fn cornered(a: &Fighter, d: &Fighter) -> f64 {
     if a.c.stat_total() < d.c.stat_total() * CORNERED_EVEN {
         return 1.0;
@@ -1127,6 +1137,7 @@ fn hit(m: &mut Match, by: usize, on: usize, mv: &Move, power: f64, from: V3, at:
         )
     };
     let chart = m.chart;
+    let pile = piled(m, on);
     let d = &mut m.f[on];
     let def = if ranged { d.c.will() } else { d.c.guard() };
     let facing_away = wrap(angle_to(d.pos, from) - d.yaw).abs();
@@ -1209,7 +1220,8 @@ fn hit(m: &mut Match, by: usize, on: usize, mv: &Move, power: f64, from: V3, at:
         * (1.0 + d.launch / 80.0)
         * pow(70.0 / (d.b.mass + 10.0), 0.4)
         * (1.0 - d.b.armour * 0.4)
-        * (if mv.field == TIDE { 1.2 } else { 1.0 });
+        * (if mv.field == TIDE { 1.2 } else { 1.0 })
+        * pile;
     let ang = if flat(from, d.pos) > 0.05 { angle_to(from, d.pos) } else { a_yaw };
     let h = (1.0 - up * up).sqrt();
     d.vel.x = cos(ang) * kb * h;
@@ -1219,7 +1231,7 @@ fn hit(m: &mut Match, by: usize, on: usize, mv: &Move, power: f64, from: V3, at:
         d.on_ground = false;
     }
     d.state = State::Stun;
-    d.stun = round(10.0 + power / 6.0 + d.launch / 12.0 + (if rear { 4.0 } else { 0.0 }) + (if mv.field == STORM { 6.0 } else { 0.0 }));
+    d.stun = round((10.0 + power / 6.0 + d.launch / 12.0 + (if rear { 4.0 } else { 0.0 }) + (if mv.field == STORM { 6.0 } else { 0.0 })) * pile);
     d.act = None;
     d.t = 0.0;
     if spike {

@@ -204,6 +204,15 @@ export const ENERGY = { dealt: 6, taken: 5, still: 2 } as const;
  * fight between bots every time; now the one behind can still turn it. It evens out picks, not levels: every pick spends the same stat budget
  * (roster BUDGET), and one with under `even` of the other's total (a few levels down, journey atLevel) doesn't rally. */
 export const CORNERED = { per: 3, cap: 0.5, even: 0.95 } as const;
+/** Pile-on (#4441): a fighter facing more than one foe still in shrugs off part of each blow, so a team can't keep a lone
+ * wild one stunned and launched by numbers alone. Knockback and hit-stun are cut to 1 / (1 + `per` × each foe past the
+ * first). One on one it is 1: the duel is untouched. */
+export const PILE_ON = { per: 2 } as const;
+function piled(m: Match, d: Fighter) {
+  let n = 0;
+  for (const o of m.f) if (o.team !== d.team && !o.down) n++;
+  return n < 2 ? 1 : 1 / (1 + PILE_ON.per * (n - 1));
+}
 const statTotal = (c: Creature) => c.stats.vigor + c.stats.might + c.stats.guard + c.stats.focus + c.stats.will + c.stats.speed;
 function cornered(a: Fighter, d: Fighter) {
   if (statTotal(a.c) < statTotal(d.c) * CORNERED.even) return 1;
@@ -546,11 +555,11 @@ function hit(m: Match, by: number, on: number, move: Move, power: number, from: 
   // Super armour: a heavy body winding up a big move takes a light hit without flinching (dread gets through).
   if (!rear && move.field !== "shadow" && d.state === "attack" && d.act && d.act.move.power >= 60 && power < 70 && d.b.armour > 0.3) return;
   const up = spike ? -SPIKE.down : Math.min(0.95, (move.slot === "launcher" ? 0.9 : move.slot === "heavy" || move.slot === "ultimate" ? 0.45 : 0.25) + (move.field === "gale" ? 0.15 : 0));
-  const kb = (2.5 + power * 0.05) * (1 + d.launch / 80) * pow(70 / (d.b.mass + 10), 0.4) * (1 - d.b.armour * 0.4) * (move.field === "tide" ? 1.2 : 1);
+  const kb = (2.5 + power * 0.05) * (1 + d.launch / 80) * pow(70 / (d.b.mass + 10), 0.4) * (1 - d.b.armour * 0.4) * (move.field === "tide" ? 1.2 : 1) * piled(m, d);
   const ang = flat(from, d.pos) > 0.05 ? angleTo(from, d.pos) : a.yaw, h = Math.sqrt(1 - up * up);
   d.vel.x = cos(ang) * kb * h; d.vel.z = sin(ang) * kb * h; d.vel.y = kb * up;
   if (d.vel.y > 0) d.onGround = false;
-  d.state = "stun"; d.stun = Math.round(10 + power / 6 + d.launch / 12 + (rear ? 4 : 0) + (move.field === "storm" ? 6 : 0)); d.act = null; d.t = 0;
+  d.state = "stun"; d.stun = Math.round((10 + power / 6 + d.launch / 12 + (rear ? 4 : 0) + (move.field === "storm" ? 6 : 0)) * piled(m, d)); d.act = null; d.t = 0;
   if (spike) d.stun = Math.min(d.stun, SPIKE.stun);
   if (repeat) d.stun = Math.min(d.stun, PULSE.stun);
   if (d.flying && power >= 70) { d.flying = false; d.clipped = 3 * HZ; m.events.push({ kind: "clipped", who: on }); }
