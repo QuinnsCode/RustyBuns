@@ -10,8 +10,11 @@ import { mulberry32 } from "@rustybuns/util";
 export const CYCLE = 360;
 
 /** How often a second the clock moves. Every tick restyles and repaints the whole page (every panel reads the clock), so
- *  60 a second held a phone near 30 fps; at 4 the sun steps under a pixel and the page scrolls at 60 (scripts/perf-home.ts). */
+ *  60 a second held a phone near 30 fps; at 4 the page scrolls at 60 (scripts/perf-home.ts). A step moves the sun and moon a
+ *  few pixels on a wide screen, so each glides to its new place over one tick (`GLIDE`): a transition on `translate` alone,
+ *  which the compositor runs without restyling anything else. */
 export const TICKS = 4;
+const GLIDE = `transition:translate ${1 / TICKS}s linear`;
 
 /** Where in the cycle to start: the server's clock, or `at` (a fraction) when a page asks for a given moment. */
 export const phaseAt = (at: string | null, now = Date.now()) => {
@@ -74,12 +77,12 @@ body:has(.sky){--t0:${t0};animation:clock ${CYCLE}s steps(${CYCLE * TICKS}) infi
  background:linear-gradient(90deg,transparent,rgba(255,255,255,.9));animation:shoot 53s linear infinite;animation-delay:-50s}
 .sky .meteor+.meteor{top:30vh;left:55vw;width:11vw;animation-duration:79s;animation-delay:-23s;transform:rotate(38deg)}
 @keyframes shoot{0%,100%{translate:0 0;opacity:0}.4%{opacity:var(--night)}2.4%{translate:30vw 16vh;opacity:0}}
-.sky .sun{left:0;top:0;width:9vmin;height:9vmin;border-radius:50%;translate:var(--sx) var(--sy);margin:-4.5vmin 0 0 -4.5vmin;
+.sky .sun{left:0;top:0;width:9vmin;height:9vmin;border-radius:50%;translate:var(--sx) var(--sy);${GLIDE};margin:-4.5vmin 0 0 -4.5vmin;
  --sunc:color-mix(in oklab,#fff6dc,#ff9a4a calc(var(--glow) * 75%));
  background:radial-gradient(circle,#fffdf5 0 30%,var(--sunc) 52%,color-mix(in oklab,var(--sunc) 55%,transparent) 100%);
  box-shadow:0 0 5vmin 2vmin color-mix(in oklab,var(--sunc) 55%,transparent),0 0 24vmin 10vmin color-mix(in oklab,var(--sunc) 22%,transparent);
  opacity:clamp(0,calc(.6 + var(--el) * 8),1)}
-.sky .moon{left:0;top:0;width:6vmin;height:6vmin;border-radius:50%;translate:var(--mx) var(--my);margin:-3vmin 0 0 -3vmin;
+.sky .moon{left:0;top:0;width:6vmin;height:6vmin;border-radius:50%;translate:var(--mx) var(--my);${GLIDE};margin:-3vmin 0 0 -3vmin;
  background:radial-gradient(circle at 36% 38%,rgba(0,0,0,.14) 0 7%,transparent 8%),radial-gradient(circle at 62% 62%,rgba(0,0,0,.12) 0 10%,transparent 11%),
  radial-gradient(circle at 30% 68%,rgba(0,0,0,.1) 0 5%,transparent 6%),radial-gradient(circle at 65% 30%,rgba(0,0,0,.08) 0 4%,transparent 5%),
  radial-gradient(circle at 40% 40%,#f4f6fb,#d9deea);
