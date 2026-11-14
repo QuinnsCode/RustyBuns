@@ -371,10 +371,10 @@ function chimera() {
   b.paint = [...(b.paint ?? []), { nodes: ["tail2", "tail3", "tail4", "shead", "ssnout"], material: "scale" }];
   b.stripes = { along: ["tail1", "tail2", "tail3", "tail4"], n: 6, width: 0.45, material: "stripe", below: -0.3 };
   b.parts.push(
-    // the lion's mane: a few big locks, thick and round in section (flat near 1), that curl back from the face
-    // over the neck and stop at the shoulders; long dark ones underneath, shorter, lighter ones framing the face
-    { kind: "tuft", along: ["head", "neck"], n: 6, len: s(0.3), base: s(0.1), rows: 11, spread: 175, sweep: 1.5, curve: 75, flat: 0.6, material: "tuft" },
-    { kind: "tuft", along: ["head", "neck"], n: 4, len: s(0.22), base: s(0.085), rows: 10, spread: 125, sweep: 1.3, curve: 60, flat: 0.6, sink: 1, material: "mane" },
+    // the lion's mane: a few big locks of hair (`lock`: broad at the root, twisting to a soft tip) that curl back
+    // from the face over the neck and stop at the shoulders; long dark ones underneath, shorter, lighter ones framing the face
+    { kind: "lock", along: ["head", "neck"], n: 10, len: s(0.26), base: s(0.055), rows: 17, spread: 175, swing: 12, sweep: 1.5, curve: 100, flat: 0.35, groove: 0.25, material: "tuft" },
+    { kind: "lock", along: ["head", "neck"], n: 7, len: s(0.2), base: s(0.048), rows: 14, spread: 125, sweep: 1.3, curve: 65, flat: 0.35, groove: 0.25, sink: 1, material: "mane" },
     // the goat: eyes, a beard, swept-back horns, ears
     { kind: "eye", at: "ghead", off: [s(0.065), s(0.035), s(0.06)], r: s(0.026), mirror: true, material: "eye" },
     // the horns: thick at the root, swept back in a long arc past the neck and out to the side
