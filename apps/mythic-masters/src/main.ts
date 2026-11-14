@@ -22,7 +22,7 @@ import { bot, type Bot } from "./bot.ts";
 import { temper } from "./opener.ts";
 import { coopTeams, mountVersus } from "./versus.ts";
 import { coopCode, duelCode, mintDuel, sum } from "./net/duel.ts";
-import { recordCoop, type CoopAt } from "./coop.ts";
+import { coopBind, recordCoop, type CoopAt } from "./coop.ts";
 import { buttons, NO_STICK, PAD_ACTIONS, PAD_START, PAD_ZONE, push, readPad, touchStick, TOUCH_BUTTONS, type Stick } from "./controls.ts";
 import { icon } from "./icons.ts";
 import { ART, radar, tradingCard } from "./card.ts";
@@ -524,6 +524,15 @@ function setOut(region: Region, kind: Trip["kind"], foe: Foe, k = 0) {
 }
 /** A den's co-op fight with friends, from walking in (or joining) until its result is written (src/coop.ts). */
 let coopAt: CoopAt | null = null;
+/** Binding in a co-op fight (#4430): this page's ink, a press waiting for the next input sampled, the room's seed the
+ *  dice roll from, the seats' names, and the seat that bound it once someone has. */
+const coop = { ink: 0, press: false, seed: 1, names: [] as string[], bound: null as number | null };
+/** In a den's co-op fight now. */
+const inCoop = () => versusOn && !!coopAt;
+/** The one a bind is aimed at: a world fight's foe, or a co-op round's wild one (the last fighter). */
+const bindFoe = (m: Match) => (inCoop() ? m.f[m.f.length - 1]! : m.f[1]);
+/** Ink left to bind with in the fight on now, or null when it is no fight you can bind in. */
+const inkNow = () => (inCoop() ? coop.ink : trip && bindable(trip) ? trip.ink : null);
 /** "Join the fight": a friend in this region walked into a den or a keeper and is waiting in a co-op room. */
 const coopAsk = Object.assign(document.createElement("aside"), { className: "coop-ask", hidden: true, role: "status" });
 document.body.append(coopAsk);
@@ -1304,6 +1313,7 @@ $("#openJournal").addEventListener("click", () => openJournal());
 // --- binding: the witch's ink, B in a fight ---------------------------------------------------------------------------
 let bindNote = "";
 function tryBind() {
+  if (inCoop()) { coopTry(); return; }
   if (!m || m.over || !trip || !journey || !bindable(trip) || trip.ink <= 0) return;
   const mythic = trip.kind === "mythic", f = m.f[1], chance = bindChance(f.hp / f.b.hp, mythic);
   if (chance <= 0) { bindNote = `Too strong to bind yet: wear it under ${Math.round(bindBelow(mythic) * 100)}%.`; return; }
@@ -1312,6 +1322,23 @@ function tryBind() {
   bindNote = trip.ink ? `It tore free. ${trip.ink} ink left.` : "It tore free, and the ink is spent.";
   director.gag(trip.ink ? "inkMissed" : "inkSpent");
   say("bind-fail", { n: trip.region.n, regionId: trip.region.id });
+}
+/** A bind pressed in a co-op fight: the ink is spent here, and the press rides the next input out, so every page rolls
+ *  it on the same tick (`coopRoll`). */
+function coopTry() {
+  if (!m || m.over || coop.ink <= 0 || coop.press) return;
+  const f = bindFoe(m);
+  if (bindChance(f.hp / f.b.hp, false) <= 0) { bindNote = `Too strong to bind yet: wear it under ${Math.round(bindBelow(false) * 100)}%.`; return; }
+  coop.ink--; coop.press = true; bindNote = "";
+}
+/** The tick just played had binds pressed (`pressed`, seats): the same dice on every page say whose ink held. */
+function coopRoll(cur: Match, pressed: readonly number[]) {
+  if (cur.over || !pressed.length) return;
+  const f = bindFoe(cur), by = coopBind(pressed, f.hp / f.b.hp, coop.seed, cur.tick);
+  if (by !== null) { coop.bound = by; cur.over = true; cur.winner = 0; return; }
+  if (!pressed.includes(mine)) return;
+  bindNote = coop.ink ? `It tore free. ${coop.ink} ink left.` : "It tore free, and the ink is spent.";
+  director.gag(coop.ink ? "inkMissed" : "inkSpent");
 }
 
 window.addEventListener("keydown", (e: KeyboardEvent) => {
@@ -1455,10 +1482,11 @@ const artOf = (id: string) => { const p = ART[plain(id)]; const pic = p?.color ?
 const bindKey = () => keymap.get("bind").map(keyName).join(" / ") || "?";
 /** The bind prompt: what to do while the foe is too strong, a call to act once the ink can hold. A knockout can't be bound. */
 function bindView(m: Match) {
-  if (!trip || !bindable(trip)) return null;
-  const mythic = trip.kind === "mythic", chance = bindChance(m.f[1].hp / m.f[1].b.hp, mythic);
-  const note = bindNote || (!trip.ink ? "" : chance > 0 ? "Bind it now, before it drops" : `Wear it under ${Math.round(bindBelow(mythic) * 100)}%, then bind`);
-  return { chance, ink: trip.ink, key: bindKey(), note };
+  const ink = inkNow();
+  if (ink === null) return null;
+  const mythic = trip?.kind === "mythic", f = bindFoe(m), chance = bindChance(f.hp / f.b.hp, mythic);
+  const note = bindNote || (!ink ? "" : chance > 0 ? "Bind it now, before it drops" : `Wear it under ${Math.round(bindBelow(mythic) * 100)}%, then bind`);
+  return { chance, ink, key: bindKey(), note };
 }
 function hud(m: Match) {
   const root = $("#hud");
@@ -1471,7 +1499,7 @@ function hud(m: Match) {
     bind: bindView(m), you: mine,
   });
   root.innerHTML = skinNow().render(view) + crewHtml(view);
-  root.classList.toggle("bind-ready", !!trip && bindable(trip) && trip.ink > 0 && bindChance(m.f[1].hp / m.f[1].b.hp, trip.kind === "mythic") > 0);
+  root.classList.toggle("bind-ready", (inkNow() ?? 0) > 0 && bindChance(bindFoe(m).hp / bindFoe(m).b.hp, trip?.kind === "mythic") > 0);
   if (choosing) chooser();
 }
 /** ?hud=: a chip in the bottom left that names the skin and steps through them. */
@@ -1579,6 +1607,7 @@ const versus = mountVersus($("#friends"), {
       if (!go.foe) coopAt = null; // the room didn't believe the den: a seeded wild one, nobody's journey to write
       fight(teams[0][0]!, teams[1][0]!, coopAt ? fightSkin(coopAt.region, coopAt.kind) : "stadium", false, true, teams);
       wildBot = bot(wild, go.seed);
+      Object.assign(coop, { ink: INK, press: false, seed: go.seed, names, bound: null });
       faceUp(`${names.join(", ")} vs ${teams[1][0]!.name}`);
       return;
     }
@@ -1599,14 +1628,17 @@ const versus = mountVersus($("#friends"), {
 });
 /** A den's co-op fight is over (#4413): this page writes what it gave back into its own journey, and the walk goes on. */
 function coopOver(m: Match, won: boolean, winner: string) {
-  const at = coopAt!, j = journey, i = versus.picked(), me = j && i !== null ? j.party[i] : undefined;
-  coopAt = null;
-  if (at.host) online?.fought(at.foe.id, at.foe.level, won, false, m.tick / HZ); // the room checks it against the den we walked into
-  const lines = j && me ? recordCoop(j, me, at, won, m.f[mine]!.hp / m.f[mine]!.b.hp) : [];
+  const at = coopAt!, j = journey, i = versus.picked(), me = j && i !== null ? j.party[i] : undefined, by = coop.bound;
+  coopAt = null; coop.bound = null;
+  const bound = by === null ? undefined : { mine: by === mine, who: coop.names[by] || "Your friend" };
+  if (at.host) online?.fought(at.foe.id, at.foe.level, won, !!bound, m.tick / HZ); // the room checks it against the den we walked into
+  if (bound?.mine) void achieve("first-bind");
+  const lines = j && me ? recordCoop(j, me, at, won, m.f[mine]!.hp / m.f[mine]!.b.hp, bound) : [];
   saveJourney();
   delete $("#result").dataset.verso;
-  $("#result").innerHTML = `<div class="note paper o-${won ? "won" : "down"}"><h2>${won ? "You win together" : `${esc(winner)} wins`}</h2>${lines.map((l) => `<p>${esc(l)}</p>`).join("")}
-    <div class="row"><button class="go" id="back">${icon("map")} Back to the world</button></div></div>`;
+  const head = bound ? `${esc(creature(at.foe.id).name)} is bound` : won ? "You win together" : `${esc(winner)} wins`;
+  $("#result").innerHTML = `<div class="note paper o-${bound?.mine ? "bound" : won ? "won" : "down"}"><h2>${head}</h2>${lines.map((l) => `<p>${esc(l)}</p>`).join("")}
+    <div class="row"><button class="go" id="back">${icon("map")} Back to the world</button></div>${bound?.mine ? `<i class="seal">${seal()}</i>` : ""}</div>`;
   pages.show($("#result"));
   $("#back").onclick = () => { versus.drop(); trip = null; enterWorld(); world.afterFight(won); };
 }
@@ -2012,11 +2044,11 @@ function frame(now: number) {
   const moving = world.shown || (!!m && !m.over && !bots[0]);
   document.body.classList.toggle("in-fight", !!m && !m.over && !world.shown);
   touchEl.hidden = !(touchy && moving);
-  const where = world.shown ? "world" : bindable(trip) ? "hunt" : "fight";
+  const where = world.shown ? "world" : inkNow() !== null ? "hunt" : "fight";
   if (moveCardFor !== where) drawMoveCard(where);
   moveCard.hidden = !moveCardOn || touchy || !moving || paused || journalOpen || !!talking || !cineEl.hidden;
   touchEl.classList.toggle("world", world.shown);
-  touchEl.classList.toggle("bindable", bindable(trip));
+  touchEl.classList.toggle("bindable", inkNow() !== null);
   touchEl.classList.toggle("ult-ready", !!m && m.f[mine].energy >= 100);
   if (padKeys.length && director.skippable) poke = true;
   memories.step(director.step(dt, poke)); poke = false;
@@ -2031,10 +2063,11 @@ function frame(now: number) {
     if (hitStop > 0) hitStop -= dt; else acc += dt;
     while (acc >= 1 / HZ && !m.over && hitStop <= 0) {
       const cur = m;
-      const seats = step ? step.next(() => (paused || journalOpen ? IDLE : playerInput())) : null;
+      const seats = step ? step.next(() => { if (paused || journalOpen) return IDLE; const bind = coop.press; coop.press = false; return { ...playerInput(), bind }; }) : null;
       const both: Input[] | null = step ? seats && (wildBot ? [...seats, wildBot(cur)] : seats) : cur.f.map((_, k) => { const b = bots[k]; return b ? b(cur) : k === 0 ? playerInput() : IDLE; });
       if (!both) { acc = Math.min(acc, 0.25); break; } // the friend's input isn't in yet: wait a frame, never guess
       live.step(both);
+      if (step && coopAt) coopRoll(cur, step.binds);
       moveFx.events(cur, cur.events);
       rememberHud(hudMem.now, cur);
       for (const e of cur.events) if (e.kind === "hit" && !e.guarded) {
