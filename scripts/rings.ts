@@ -1,5 +1,5 @@
 // Release rings (notes/RELEASE_RINGS.md, #4486): each ring is a `ring/<name>` commit status on the SHAs it tested
-// and a ref `refs/ring/<name>` that moves forward to the newest green one. desktop-hourly.yml calls this.
+// and a ref `refs/ring/<name>` that moves forward to the newest green one. desktop-hourly.yml and daily-ring.yml call it.
 //
 //   bun scripts/rings.ts gate <ring> <sha>                   prints run=true|false: false when <sha> already has a
 //                                                            ring/<ring> status (main hasn't moved since the last run)
@@ -11,6 +11,13 @@
 //   bun scripts/rings.ts rollback <ring> <app> <target> [--from <sha>]
 //                                                            downloads the saved build of the green before the ring's
 //                                                            current one (or before --from) into apps/<app>/dist/ring-<sha7>/
+//   bun scripts/rings.ts pick daily <sha>                    prints sha=<pick> and run=true|false: the newest commit at
+//                                                            or under <sha> with 3 green hourlies in a row (its own and
+//                                                            the next two); run=false when none has soaked yet or the
+//                                                            pick already has a ring/daily status
+//   bun scripts/rings.ts previews <base> <sha>               prints previews=<json list>: the web apps phone smoke opens
+//                                                            whose vite build changed between the two (every one when <base> is empty or
+//                                                            packages/ or the lockfile moved)
 //
 // Saved builds (#4497): each desktop-hourly smoke row uploads the binary it built and ran as the Actions artifact
 // ring-<sha>-<app>-<target>, kept 7 days (the daily soak and then some). Only a SHA whose ring status is green counts,
@@ -19,6 +26,7 @@
 // Needs GH_TOKEN and GITHUB_REPOSITORY (owner/name), as in a workflow; rollback falls back to gh's own login and repo.
 import { arr, bool, nul, num, obj, opt, str } from "../packages/util/src/guard.ts";
 import { help } from "./help.ts";
+import { WEB_APPS } from "./phone-smoke-lib.ts";
 
 /** A commit on main, newest first, with its ring status (undefined when the ring never ran it). */
 export type Tested = { sha: string; state?: string };
@@ -51,6 +59,31 @@ export function rangeLine(repo: string, history: Tested[]): string {
   if (!shas.length) return `${head.slice(0, 7)} was green last time.`;
   return `Since the last green (${green.slice(0, 7)}): ${shas.length} commit${shas.length === 1 ? "" : "s"}, `
     + `https://github.com/${repo}/compare/${green}...${head}`;
+}
+
+/** What each ring soaks on before it picks a commit: the ring under it and how many green runs in a row. */
+export const SOAK: Record<string, { on: string; runs: number }> = { daily: { on: "hourly", runs: 3 } };
+
+/** The newest commit with `runs` green runs in a row: its own and the next newer tested ones. Untested commits are skipped
+ *  (the hourly only runs when main moved, so a squash commit can share a run with the ones above it); a red or pending
+ *  run breaks the streak. Undefined when nothing in view has soaked that long. */
+export function soaked(history: Tested[], runs: number): string | undefined {
+  let streak = 0;
+  for (const c of history) {
+    if (!c.state) continue;
+    streak = /^success$/i.test(c.state) ? streak + 1 : 0;
+    if (streak === runs) return c.sha;
+  }
+  return undefined;
+}
+
+/** The apps to preview-build: the web apps phone smoke opens (`apps`) whose folder changed and whose `build` is a vite
+ *  build. Every one of them when there is no base yet or shared code moved. */
+export function previewApps(changed: string[] | "all", builds: Record<string, string>, apps: readonly string[] = WEB_APPS): string[] {
+  const vite = apps.filter((a) => /\bvite build\b/.test(builds[a] ?? "")).sort();
+  if (changed === "all" || changed.some((f) => f.startsWith("packages/") || f === "bun.lock" || f === "package.json")) return vite;
+  const touched = new Set(changed.map((f) => /^apps\/([^/]+)\//.exec(f)?.[1]).filter(Boolean));
+  return vite.filter((a) => touched.has(a));
 }
 
 const Reply = obj({
@@ -140,8 +173,23 @@ if (import.meta.main) {
   }
   const [cmd, ring = "", sha = "", ...rest] = process.argv.slice(2);
   const repo = process.env.GITHUB_REPOSITORY ?? "";
+  if (cmd === "previews") {
+    // previews <base> <sha>: base may be empty (no refs/ring/daily yet). Local git only, no GitHub calls.
+    const isSha = (x: string) => /^[0-9a-f]{40}$/.test(x);
+    if ((ring && !isSha(ring)) || !isSha(sha)) { console.error("usage: bun scripts/rings.ts previews <base sha or \"\"> <sha>"); process.exit(2); }
+    const changed = ring ? (await Bun.$`git diff --name-only ${ring} ${sha}`.text()).split("\n").filter(Boolean) : "all" as const;
+    const builds: Record<string, string> = {};
+    for (const dir of await Array.fromAsync(new Bun.Glob("apps/*/package.json").scan())) {
+      const pkg: unknown = await Bun.file(dir).json();
+      const scripts = typeof pkg === "object" && pkg !== null && "scripts" in pkg ? pkg.scripts : undefined;
+      const build = typeof scripts === "object" && scripts !== null && "build" in scripts ? scripts.build : undefined;
+      if (typeof build === "string") builds[dir.split("/")[1]!] = build;
+    }
+    console.log(`previews=${JSON.stringify(previewApps(changed, builds))}`);
+    process.exit(0);
+  }
   if (!cmd || !/^[a-z]+$/.test(ring) || !/^[0-9a-f]{40}$/.test(sha) || !/^[\w.-]+\/[\w.-]+$/.test(repo)) {
-    console.error("usage: bun scripts/rings.ts gate|status|move|range <ring> <40-char sha> [...] (with GITHUB_REPOSITORY set); --help");
+    console.error("usage: bun scripts/rings.ts gate|status|move|range|pick <ring> <40-char sha> [...] (with GITHUB_REPOSITORY set); --help");
     process.exit(2);
   }
   if (cmd === "gate") {
@@ -163,6 +211,16 @@ if (import.meta.main) {
       const why = (r.stdout.toString() + r.stderr.toString()).trim().split("\n").slice(-1)[0];
       console.log(`::warning::refs/${ref} not moved to ${sha.slice(0, 7)} (${why}). The workflow can't write refs yet: MANUAL RUN #4495.`);
     } else console.log(`refs/${ref} -> ${sha.slice(0, 7)}`);
+  } else if (cmd === "pick") {
+    const soak = SOAK[ring];
+    if (!soak) throw new Error(`ring ${ring} doesn't pick: it has no soak (${Object.keys(SOAK).join(", ")} do)`);
+    const pick = soaked(await history(repo, soak.on, sha), soak.runs);
+    const [done] = pick ? await history(repo, ring, pick, 1) : [];
+    console.log(`sha=${pick ?? ""}`);
+    console.log(`run=${!!pick && !done?.state}`);
+    if (!pick) console.error(`no commit under ${sha.slice(0, 7)} has ${soak.runs} green ${soak.on} runs in a row yet`);
+    else if (done?.state) console.error(`${pick.slice(0, 7)} already has ring/${ring} ${done.state.toLowerCase()}: nothing new has soaked`);
+    else console.error(`picked ${pick.slice(0, 7)}: ${soak.runs} green ${soak.on} runs in a row`);
   } else if (cmd === "range") {
     console.log(rangeLine(repo, await history(repo, ring, sha)));
   } else {
