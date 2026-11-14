@@ -52,3 +52,10 @@ export function lineAt(now: number) {
 }
 
 export const TALLY = { prs: 14, avoided: 41, total: 52, since: Date.parse("2026-10-01T00:00:00Z") };
+
+/** What `bun run rings` prints, for Ester's card on the stage. */
+export const RINGS = [
+  "hourly  4c1e9a0  1h old  red 5h ago b77d2f1  3 waiting",
+  "daily   e02a51c  9h old  no red  6 waiting",
+  "stable  not run yet",
+];

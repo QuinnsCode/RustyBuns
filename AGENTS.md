@@ -67,6 +67,7 @@ Ask a script `--help` before reading its source: it prints the script's top comm
   A climb is a baton, not a pile: one worker runs one round, and `bun run climbs --next` (`--hire` to hire for it) hands
   the next round to whoever is free, with the baton prompt from `scripts/climbs.ts` (how a round is scored, reported and
   hopped forward). Climbs stay at the top of the issues; other issues, manual runs included, sink unless the owner says otherwise.
+- `bun run rings`: the release rings (notes/RELEASE_RINGS.md), one line each: the commit it sits on and its age, its last red, and how many PRs wait to climb into it. Ester's card shows the same.
 - `bun run phil` (`--hire`): the oldest open Mythic Masters issue nobody holds (no MANUAL RUNs, climbs or owner-waiting ones), with its baton prompt.
 - `bun run outline <file> [name]`: a TS file's symbols with line ranges and the first doc line; with a name, just that symbol's source. Use it instead of paging a file with `sed -n`.
   `bun run outline --api <package or file>` (`packages/util`, `packages/util/src/eqosys.ts`): every export of its entry points as a one-line signature and doc line, no bodies. Read a shared library's API this way before opening it.

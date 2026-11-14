@@ -18,6 +18,7 @@
     "manual": "bun scripts/manual-runs.ts",
     "pr": "bun scripts/pr.ts",
     "issue": "bun scripts/issue.ts",
+    "rings": "bun scripts/rings.ts",
     "climbs": "bun scripts/climbs.ts",
     "phil": "bun scripts/phil.ts",
     "probe": "bun scripts/probe.ts",

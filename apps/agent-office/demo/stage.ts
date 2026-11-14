@@ -15,7 +15,7 @@ import { cameraOf, logFile, record } from "../live/camera.ts";
 import { asksRoute, answerAsk, outboundRoute, pendingAsks } from "../live/floorguard.ts";
 import { boxRoute } from "../sandbox/server.ts";
 import { fakeGitHub } from "./fake-github.ts";
-import { RUN_SECONDS, TALLY, helperAt, lineAt, type Timeline } from "./runs.ts";
+import { RINGS, RUN_SECONDS, TALLY, helperAt, lineAt, type Timeline } from "./runs.ts";
 import { SCENARIOS, isScenario, names, type DemoWorker } from "./scenarios.ts";
 
 const here = import.meta.dir;
@@ -176,7 +176,7 @@ export async function startStage({ scenario, port = 0 }: { scenario: string; por
       if (p === "/__rb/helpers" && m === "GET") {
         finish(w, "ester", now); finish(w, "mervin", now);
         const h = (who: "ester" | "mervin") => helperAt(who, w.helpers[who], sc.esterEnds, !!sc.each, now);
-        return json({ ester: h("ester"), mervin: h("mervin"), dexter: { phase: "idle", lines: [], hold: [] }, tally: sc.keep ? TALLY : null });
+        return json({ ester: h("ester"), mervin: h("mervin"), dexter: { phase: "idle", lines: [], hold: [] }, tally: sc.keep ? TALLY : null, rings: RINGS });
       }
       const call = p.match(/^\/__rb\/helpers\/(ester|mervin)$/);
       if (call && m === "POST") {
