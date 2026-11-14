@@ -41,7 +41,7 @@ export async function qollab(req: Request, conf: Env): Promise<Response | null> 
     }
     if (req.method !== "POST") return json({ error: "POST an op" }, 405, head);
     const op = check(Op, await req.json().catch(() => null));
-    if (!op) return json({ error: "send { op: state | befriend | accept | drop | notify | clear }" }, 400, head);
+    if (!op) return json({ error: "send { op: state | befriend | accept | drop | notify | clear | relink }" }, 400, head);
     const r = await hubAsk(conf.HUB, who, op);
     return json(r, "error" in r ? 400 : 200, head);
   }

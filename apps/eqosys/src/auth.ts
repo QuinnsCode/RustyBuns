@@ -45,7 +45,9 @@ const make = (conf: Env, origin: string) => betterAuth({
   emailAndPassword: { enabled: true, minPasswordLength: 10 },
   // GitHub's, Google's and Apple's tokens are kept encrypted with BETTER_AUTH_SECRET (AES-GCM): a copy of the database alone opens nothing.
   // A token kept before this stays readable and is replaced, encrypted, at that person's next sign-in.
-  account: { encryptOAuthTokens: true },
+  // One account, several ways in: someone signed in adds GitHub, Google or Apple from the Account tab (/do/link), whatever
+  // email that provider knows them by, since they proved both. A sign-in never merges two accounts by itself.
+  account: { encryptOAuthTokens: true, accountLinking: { enabled: true, allowDifferentEmails: true } },
   // Its own cookie name: the QNTBR site's session cookie is set on all of .qntbr.com under Better Auth's default one,
   // and would ride along to eqosys.qntbr.com beside ours.
   advanced: { cookiePrefix: "eqosys" },
@@ -70,6 +72,14 @@ export async function meOf(req: Request, conf: Env): Promise<Me | null> {
   if (!authOn(conf) || !/eqosys\.session_token=/.test(req.headers.get("cookie") ?? "")) return null;
   const s = await authFor(req, conf).api.getSession({ headers: req.headers });
   return s ? { id: s.user.id, email: s.user.email, name: s.user.name } : null;
+}
+
+/** One way this person signs in: its row (what /do/unlink takes) and "credential" (email and password), "github", "google" or "apple". */
+export interface Way { id: string; provider: string }
+/** The ways the signed-in person can sign in, for the Account tab. */
+export async function waysOf(req: Request, conf: Env): Promise<Way[]> {
+  const rows = await authFor(req, conf).api.listUserAccounts({ headers: req.headers }).catch(() => []);
+  return rows.map((r) => ({ id: r.id, provider: r.providerId }));
 }
 
 /** A provider token as Better Auth keeps it, readable: encrypted ones are hex (encryptOAuthTokens), older ones plain. Null when it won't open. */

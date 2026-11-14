@@ -7,8 +7,8 @@ import { phaseAt } from "./app/Sky.tsx";
 import { THEME_SCRIPT } from "./app/Theme.tsx";
 import { appOf, appsOf, mayUse } from "./listings.ts";
 import { Document } from "./app/Document.tsx";
-import { authOn, isAdmin, meOf, onApple, providers } from "./auth.ts";
-import { askOf, atHome, handle } from "./handle.ts";
+import { authOn, isAdmin, meOf, onApple, providers, waysOf } from "./auth.ts";
+import { askOf, atHome, handle, invitedBy } from "./handle.ts";
 import { edge } from "./codemode.ts";
 import { bridgeCall } from "./tools.ts";
 import { hubAsk } from "./qollab/hub.ts";
@@ -99,12 +99,14 @@ const app = defineApp([
         unlocksOf(conf, me.id), isAdmin(me, conf) ? members(conf) : null, isAdmin(me, conf) ? house(conf, me.id) : null,
         tab === "library" ? sideOf(conf, me.id).catch(() => null) : null,
       ]);
+      const invite = tab === "friends" ? await invitedBy(request, conf) : null;
+      const ways = tab === "account" ? await waysOf(request, conf) : null;
       const shown = hub && !("error" in hub) ? hub : null;
       // The super admin's own visits stay out of the counts; the Visitors tab is theirs alone.
       const [counts, visitors, studios, apps] = await Promise.all([countsOf(conf, shown?.friends.map((f) => f.id) ?? []),
         everyone ? markStaff(conf, request).then(() => tab === "visitors" ? visitorsOf(conf, Number(new URL(request.url).searchParams.get("days")) || 7) : null) : null,
         tab === "studio" ? studiosOf(conf, me.id) : null, appsOf(conf)]);
-      return <Home apps={apps} visitors={visitors} counts={counts} t0={phaseAt(new URL(request.url).searchParams.get("at"))} me={me} mine={mine} hub={shown} side={side} everyone={everyone} unlocks={unlocks}
+      return <Home ways={ways} social={providers(conf)} invite={invite} origin={new URL(request.url).origin} apps={apps} visitors={visitors} counts={counts} t0={phaseAt(new URL(request.url).searchParams.get("at"))} me={me} mine={mine} hub={shown} side={side} everyone={everyone} unlocks={unlocks}
         error={new URL(request.url).searchParams.get("e") ?? undefined} tab={tab} studios={studios}
         scale={everyone && tab === "scale" ? loadOf(new URL(request.url).searchParams) : null} />;
     }),
@@ -131,7 +133,9 @@ const app = defineApp([
       const me = await meOf(request, conf);
       if (me && !ask) return see("/");
       const apple = onApple(request.headers.get("user-agent"));
-      return <Login ask={ask === "bad" ? null : ask} me={me} social={providers(conf, apple)} appleTop={apple} error={ask === "bad" ? "app" : q.get("e") ?? undefined} t0={phaseAt(q.get("at"))} />;
+      // Someone who opened a friend link (handle.ts /add) is told whose, and a new person is shown the new-account form first.
+      const friend = ask ? null : (await invitedBy(request, conf))?.name;
+      return <Login friend={friend ?? undefined} ask={ask === "bad" ? null : ask} me={me} social={providers(conf, apple)} appleTop={apple} error={ask === "bad" ? "app" : q.get("e") ?? undefined} t0={phaseAt(q.get("at"))} />;
     }),
     route("/delete", async ({ request, response }) => {
       const conf = e(request);

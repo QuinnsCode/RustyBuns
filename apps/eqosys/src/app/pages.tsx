@@ -1,7 +1,7 @@
 import { createElement } from "react";
 import { APPS, GENRES, ourApp, playOf, type QApp } from "../apps.ts";
 import { isListing } from "../listings.ts";
-import type { Me } from "../auth.ts";
+import type { Me, Way } from "../auth.ts";
 import { NAME, VERSION } from "../env.ts";
 import type { Friend, HubState, Note } from "../qollab/hub.ts";
 import type { Side } from "../qollab/side.ts";
@@ -36,6 +36,9 @@ export const MESSAGES: Record<string, string> = {
   hub: "That didn't go through. Try again.",
   confirm: "That isn't your email. Nothing was deleted.",
   nohub: "Friends are off right now.",
+  link: "That sign-in couldn't be added. It may already belong to another account.",
+  last: "That is your only way to sign in, so it stays.",
+  nolink: "That friend link is no longer good. Ask them for a new one.",
   nobody: "Nobody has signed up with that email yet.",
   studio: "Only a studio's owner or admin adds people, and only an owner makes another owner.",
   owned: "You own three studios already.",
@@ -63,7 +66,7 @@ function AppsTable({ m }: { m: Member }) {
 const when = (t: number) => new Date(t).toISOString().slice(0, 16).replace("T", " ");
 
 /** One button that posts an op on the person's own hub (handle.ts). */
-const Act = ({ to, id, label, ghost }: { to: "accept" | "drop" | "clear"; id?: string; label: string; ghost?: boolean }) => (
+const Act = ({ to, id, label, ghost }: { to: "accept" | "drop" | "clear" | "relink"; id?: string; label: string; ghost?: boolean }) => (
   <form method="post" action={`/do/${to}`}>
     {id && <input type="hidden" name="id" value={id} />}
     <button className={btn(!ghost)} type="submit">{label}</button>
@@ -80,18 +83,56 @@ const NoteLine = ({ n }: { n: Note }) => {
   return <span><b>{n.from.name}</b> in {nameOf(n.app ?? "")}: {n.link ? <a href={n.link}>{n.text}</a> : n.text}</span>;
 };
 
+const WAY_NAMES: Record<string, string> = { credential: "Email and password", github: "GitHub", google: "Google", apple: "Apple" };
+/** Ways to sign in: each one on the account (taken off unless it is the last), and a button for each provider not on it yet. */
+function Ways({ ways, social }: { ways: Way[]; social: string[] }) {
+  const more = social.filter((p) => !ways.some((w) => w.provider === p));
+  return (
+    <>
+      <h2>Ways to sign in</h2>
+      <p className="mut">Each one opens this same account: your games, friends, saves and achievements. Add the ones you use on your other devices.</p>
+      <div className="card list">
+        {ways.map((w) => (
+          <div key={w.id}><b>{WAY_NAMES[w.provider] ?? w.provider}</b><span className="grow mut">on your account</span>
+            {ways.length > 1 && <form method="post" action="/do/unlink"><input type="hidden" name="id" value={w.id} /><button className={btn()} type="submit">Take off</button></form>}</div>
+        ))}
+        {more.map((p) => (
+          <div key={p}><b>{WAY_NAMES[p] ?? p}</b><span className="grow mut">not added</span>
+            <form method="post" action="/do/link"><input type="hidden" name="provider" value={p} /><button className={btn(true)} type="submit">Add {WAY_NAMES[p] ?? p}</button></form></div>
+        ))}
+      </div>
+    </>
+  );
+}
+
 /** Friends, who is asking whom, and what friends' apps said: the person's hub (hub.ts), read on the way in. */
-function Friends({ hub, counts }: { hub: HubState; counts: Map<string, number> }) {
+function Friends({ hub, counts, invite, origin }: { hub: HubState; counts: Map<string, number>; invite?: { id: string; name: string } | null; origin: string }) {
   const nobody = hub.friends.length + hub.incoming.length + hub.outgoing.length === 0;
+  // The friend link this browser opened (handle.ts /add), unless it is their own or a friend's already.
+  const from = invite && invite.id !== hub.me?.id && !hub.friends.some((f) => f.id === invite.id) ? invite : null;
   return (
     <>
       <h2>Friends</h2>
+      {from && (
+        <div className="row card invite">
+          <span className="grow"><b>{from.name}</b> sent you their friend link.</span>
+          <form method="post" action="/do/add"><button className={btn(true)} type="submit">Be friends with {from.name}</button></form>
+          <form method="post" action="/do/add"><input type="hidden" name="no" value="1" /><button className={btn()} type="submit">No thanks</button></form>
+        </div>
+      )}
+      {hub.link && (
+        <div className="row card">
+          <label className="grow link"><span className="mut">Your friend link: send it to anyone. They open it, sign in or make an account, and you're friends.</span>
+            <input readOnly value={`${origin}/add/${hub.link}`} aria-label="Your friend link" /></label>
+          <Act to="relink" label="New link" ghost />
+        </div>
+      )}
       <form className="row card" method="post" action="/do/befriend">
-        <input name="email" type="email" placeholder="a friend's email" required />
+        <input name="email" type="email" placeholder="or a friend's email" required />
         <button className={btn(true)} type="submit">Ask to be friends</button>
       </form>
       <div className="card list">
-        {nobody && <div><span className="mut">Nobody yet. Ask someone by their email.</span></div>}
+        {nobody && <div><span className="mut">Nobody yet. Send someone your friend link.</span></div>}
         {hub.incoming.map((p) => (
           <div key={p.id}><b>{p.name}</b><span className="grow mut">wants to be friends</span><Act to="accept" id={p.id} label="Accept" /><Act to="drop" id={p.id} label="No thanks" ghost /></div>
         ))}
@@ -232,6 +273,7 @@ const HOME_CSS = `
  backdrop-filter:blur(22px) saturate(1.5);-webkit-backdrop-filter:blur(22px) saturate(1.5);box-shadow:0 18px 40px -26px rgba(0,0,0,.45),inset 0 1px 0 var(--edge)}
 .home .card+.card{margin-top:.6rem}
 .home .row input{flex:1;min-width:10rem}
+.home .link{display:grid;gap:.4rem;min-width:min(100%,16rem)}.home .link input{width:100%;font-family:ui-monospace,monospace;font-size:.82rem}
 .home .list>div{padding:.55rem 0}.home .list>div+div{border-top-color:var(--rim)}
 .home table td,.home table th{border-bottom-color:var(--rim)}.home table th{color:var(--mut)}
 .home a{color:var(--acc)}
@@ -601,7 +643,7 @@ function Visitors({ v }: { v: Counts }) {
 export type Tab = (typeof TABS)[number][0];
 export const tabOf = (v: unknown): Tab => TABS.find(([k]) => k === v)?.[0] ?? "library";
 
-export function Home({ apps = APPS, me, mine, hub, side, everyone, unlocks, counts, error, t0, tab, visitors, scale, studios }: { apps?: QApp[]; side?: Side | null; visitors?: Counts | null; scale?: Load | null; studios?: Studio[] | null; counts: Map<string, number>; me: Me; mine: Member | undefined; hub: HubState | null; everyone: Member[] | null; unlocks: Unlocks; error?: string; t0: number; tab: Tab }) {
+export function Home({ apps = APPS, me, mine, hub, side, everyone, unlocks, counts, error, t0, tab, visitors, scale, studios, invite, origin = "", ways, social = [] }: { /** The Account tab: how they sign in now, and the providers switched on here. */ ways?: Way[] | null; social?: string[]; invite?: { id: string; name: string } | null; origin?: string; apps?: QApp[]; side?: Side | null; visitors?: Counts | null; scale?: Load | null; studios?: Studio[] | null; counts: Map<string, number>; me: Me; mine: Member | undefined; hub: HubState | null; everyone: Member[] | null; unlocks: Unlocks; error?: string; t0: number; tab: Tab }) {
     const tabs = TABS.filter(([k]) => !ADMIN_TABS.has(k) || everyone);
   const asked = hub?.incoming.length ?? 0;
   return (
@@ -624,7 +666,7 @@ export function Home({ apps = APPS, me, mine, hub, side, everyone, unlocks, coun
 
         {tab === "achievements" && <><h2>Achievements</h2><Achievements apps={apps} unlocks={unlocks} /></>}
 
-        {tab === "friends" && (hub ? <Friends hub={hub} counts={counts} /> : <p className="card mut">{MESSAGES.nohub}</p>)}
+        {tab === "friends" && (hub ? <Friends hub={hub} counts={counts} invite={invite} origin={origin} /> : <p className="card mut">{MESSAGES.nohub}</p>)}
 
         {tab === "studio" && studios && <Studios studios={studios} unlocks={unlocks} />}
 
@@ -669,6 +711,7 @@ export function Home({ apps = APPS, me, mine, hub, side, everyone, unlocks, coun
           <>
             <h2>Account</h2>
             <div className="card me"><i>{(me.name || me.email).slice(0, 1)}</i><div><b>{me.name || me.email}</b><span>{me.email} · came in through {nameOf(mine?.source ?? "eqosys")}</span></div></div>
+            {ways && <Ways ways={ways} social={social} />}
             <form method="post" action="/do/logout"><button className={btn()} type="submit">Sign out</button></form>
             <p><a href="/api/privacy/export" download>Download my data</a> <span className="mut">· everything eqosys keeps about you, as one file (<a href="/privacy">what and why</a>)</span></p>
             <p className="mut">{NAME} v{VERSION}</p>
