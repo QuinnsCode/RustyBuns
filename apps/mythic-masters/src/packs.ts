@@ -1,7 +1,8 @@
 // Packs: one more land every season a monster legend is in the air (docs/WORLD-EXPANSION.md, part 5). A pack is
 // data, no code, in packs/<id>/:
 //   pack.json      name, season (from/to, [month, day]), its land's place on the grid and its port, its tier, the
-//                  event creatures that roam the whole continent in its season, and credits for anything it ships
+//                  event creatures that roam the whole continent in its season, its beasts as fighters (`fighters`,
+//                  a roster row each, joined to the roster by pack-fighters.ts), and credits for anything it ships
 //   beasts/*.json  3-6 sheets in the beasts/ format (`bun scripts/beasts.ts` builds them)
 //   pocket.json    the pack's lair, a Pocket as in pockets.ts
 //   poi.json       its places: fires, tapes, landmarks, boards and cabins, each at [u, v] across its land (0-1)
@@ -10,10 +11,11 @@
 // Its land is an island: a 3 x 2 corner off the grid's coast, reached by boat from a port region and loaded as its
 // own map: public/packs/<id>/ground.bin, written by `bun scripts/fetch-world.ts <id>` and built by buildIsland in
 // src/world/world.ts. A pack works from the old legend only: never a film's name, characters, look or studio.
-// Adding a pack is its folder and one line in PACKS below; test/packs.test.ts checks it.
+// Adding a pack is its folder, one line in PACKS below and one in pack-fighters.ts; test/packs.test.ts checks it.
 import { arr, Bad, int, num, obj, oneOf, opt, rec, str, type Guard, type Of } from "@rustybuns/util/guard";
 import { SKINS } from "./arena.ts";
 import { CRITTERS, POCKETS, type Critter, type Pocket } from "./pockets.ts";
+import { Fighters } from "./pack-fighters.ts";
 import { ALL_SKINS, REGIONS, TIERS } from "./regions.ts";
 import type { PoiKind, Tape } from "./world/poi.ts";
 
@@ -48,6 +50,7 @@ export const PackJson = obj({
    *  pocket's look (lairLook). */
   lair: obj({ place: str(80), foe: id, level: int(1, 100) }),
   events: arr(id, 12),
+  fighters: Fighters,
   credits: arr(Credit, 50),
 });
 export type PackJson = Of<typeof PackJson>;
