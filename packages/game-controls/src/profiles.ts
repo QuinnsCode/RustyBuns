@@ -2,14 +2,13 @@
 // Pure, so a test reaches it without a page. Changes always land in the active slot; picking an empty slot starts
 // it as a copy of what you have, so a new personality is "this, but different".
 import { type Settings, parseSettings } from "./settings.ts";
-import { isRecord } from "@rustybuns/util/guard";
 
 export const SLOTS = 4;
 
 export interface Profile { settings: Settings; keys: Record<string, string[]>; pad: Record<string, number> }
 export interface Book { active: number; slots: (Profile | null)[] }
 
-const plain = (v: unknown): Record<string, unknown> => (isRecord(v) ? v : {});
+const plain = (v: unknown): Record<string, unknown> => (typeof v === "object" && v !== null && !Array.isArray(v) ? Object.fromEntries(Object.entries(v)) : {});
 
 function parseProfile(raw: unknown): Profile | null {
   if (raw === null || typeof raw !== "object") return null;

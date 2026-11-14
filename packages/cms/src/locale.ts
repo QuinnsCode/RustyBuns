@@ -2,10 +2,9 @@
 // `content/<lang>/<same name>.json` with the same shape (`content/es/landing.json`). Nothing in a translation can
 // change the shape: `localize` walks the source and only takes a translated string or list where the source has
 // one, so a line nobody has translated yet (missing, or left blank) reads in the source language. Numbers always
-// come from the source. Imports only the guard (which imports nothing), so a build script or a page can use it.
+// come from the source. Imports nothing, so a build script or a page can use it.
 
-import { isRecord } from "@rustybuns/util/guard";
-
+const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 const isStrings = (v: unknown): v is string[] => Array.isArray(v) && v.every((x) => typeof x === "string");
 
 function overlay(source: unknown, tr: unknown, keepBlank: boolean): unknown {

@@ -412,8 +412,9 @@ ${h.box ? `    // Hosting controls are the desktop owner's; on a public box anyo
       // join: true makes up a passphrase, returned once as guests.join. Off loopback a passphrase is the only lock
       // on the world, so it takes at least JOIN_MIN characters there, or the request changes nothing.
       // The body is the client's: every field is unknown until checked, and a non-object body just has none.
+      const rec = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v);
       const sent: unknown = await req.json().catch(() => null);
-      const b = isRecord(sent) ? sent : {}, l = isRecord(b.listen) ? b.listen : undefined;
+      const b = rec(sent) ? sent : {}, l = rec(b.listen) ? b.listen : undefined;
       const made = b.join === true ? madeUpJoin() : undefined;
       const join = b.join === undefined ? guests.join : made ?? (typeof b.join === "string" && b.join.length > 0 ? b.join : undefined);
       const bindTo = typeof l?.hostname === "string" ? l.hostname : shell.hostname;

@@ -2,7 +2,6 @@
 // button actions with the standard-layout button each ships on, calls `poll` once a frame, and reads sticks and
 // held/pressed actions off the result. Sticks have a radial dead zone; buttons rebind in the Controls dialog.
 
-import { isRecord } from "@rustybuns/util/guard";
 export interface PadAction {
   id: string;
   label: string;
@@ -28,7 +27,7 @@ export function deadZone(x: number, y: number, zone = 0.15): { x: number; y: num
 
 /** Whatever was stored (unknown) down to bindings for known actions with no button twice; anything off is dropped. */
 export function parsePadBindings(raw: unknown, actions: PadAction[]): PadBindings {
-  const o: Record<string, unknown> = isRecord(raw) ? raw : {};
+  const o: Record<string, unknown> = typeof raw === "object" && raw !== null && !Array.isArray(raw) ? Object.fromEntries(Object.entries(raw)) : {};
   const out: PadBindings = {};
   for (const a of actions) {
     const v = o[a.id];
