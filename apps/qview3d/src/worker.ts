@@ -14,7 +14,7 @@
 // A fresh deploy with an empty bucket still serves the demo org and its three hats (demo.ts), read-only.
 import { hex } from "@rustybuns/util/bytes";
 import { json, privateJson, readJson } from "@rustybuns/util/http";
-import { Design, Org, Product, SignRequest, type DesignReply, type SignReply } from "./api.ts";
+import { Design, Org, Product, SignRequest, zonesOf, type DesignReply, type SignReply } from "./api.ts";
 import { BUILT_IN_DEMO, DEMO_ORG, DEMO_PRODUCTS } from "./demo.ts";
 import { embedGuide } from "./embed.ts";
 import { designKey, fileKey, ID, KINDS, orgKey, productKey, servable } from "./layout.ts";
@@ -152,6 +152,11 @@ async function upload(req: Request, env: Env, token: string, origin: string | nu
 async function saveDesign(req: Request, env: Env, org: string, url: URL, origin: string | null): Promise<Response> {
   const d = await readJson(req, Design);
   if (!d) return fail("expected a design (v, model, color, layers, camera)", 400, origin);
+  // One picture a zone, and only zones the product has: a cap has no back to print on.
+  const zones = d.layers.map((l) => l.zone ?? "front");
+  const bad = zones.find((z) => !zonesOf(d.model).includes(z));
+  if (bad) return fail(`a ${d.model} has no ${bad} to print on`, 400, origin);
+  if (new Set(zones).size < zones.length) return fail("one picture a zone", 400, origin);
   const own = `orgs/${org}/`;
   const files = [d.snapshot, ...d.layers.flatMap((l) => [l.texture, l.original])].filter((k): k is string => !!k);
   for (const key of files) {

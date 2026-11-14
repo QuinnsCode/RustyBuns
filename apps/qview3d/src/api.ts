@@ -4,9 +4,18 @@
 import { arr, bool, int, num, obj, oneOf, opt, str, type Of } from "@rustybuns/util/guard";
 import { ID, KIND_NAMES, SHA } from "./layout.ts";
 
-/** The hats made in code. A shop's own product, made from its photos, is "custom" and names its GLB. */
-export const MODELS = ["cap", "beanie", "bucket"] as const;
-export type Hat = (typeof MODELS)[number];
+/** The products made in code: hats, then tops. A shop's own product, made from its photos, is "custom" and names its GLB. */
+export const HATS = ["cap", "beanie", "bucket"] as const;
+export type HatModel = (typeof HATS)[number];
+export const TOPS = ["tee", "hoodie"] as const;
+export type TopModel = (typeof TOPS)[number];
+export const MODELS = [...HATS, ...TOPS] as const;
+export type Made = (typeof MODELS)[number];
+/** The print zones a product can have: a hat's front; a top's front, back and left sleeve. */
+export const ZONES = ["front", "back", "left-sleeve"] as const;
+export type ZoneName = (typeof ZONES)[number];
+/** The zones `model` prints on: a top has all three, a hat and a shop's own model the front. */
+export const zonesOf = (model: Model): readonly ZoneName[] => ((TOPS as readonly string[]).includes(model) ? ZONES : ["front"]);
 export const ANY_MODEL = [...MODELS, "custom"] as const;
 export type Model = (typeof ANY_MODEL)[number];
 const HEX = /^#[0-9a-f]{6}$/i;
@@ -51,10 +60,11 @@ export const SignReply = obj({
 });
 export type SignReply = Of<typeof SignReply>;
 
-/** One picture on the product: its files, and where it sits in the print zone (0..1 across and up). */
+/** One picture on the product: its files, its print zone (the front when unnamed), and where it sits in it (0..1 across and up). */
 export const Layer = obj({
   texture: str(300),
   original: opt(str(300)),
+  zone: opt(oneOf(ZONES)),
   u: num(0, 1),
   v: num(0, 1),
   scale: num(0.05, 1),

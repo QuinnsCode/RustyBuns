@@ -60,6 +60,21 @@ describe("saving a design", () => {
     expect(await (await fetch(url)).json()).toEqual(design);
   });
 
+  test("a hoodie keeps a picture on its front, its back and its sleeve", async () => {
+    const pics = await Promise.all([[1], [2], [3]].map((b) => upload("texture", "image/webp", new Uint8Array(b))));
+    const shot = await upload("snapshot", "image/png", new Uint8Array([4, 4]));
+    const at = { u: 0.5, v: 0.5, scale: 0.7, rotation: 0 };
+    const design = {
+      v: 1, model: "hoodie", color: "#6b7280", product: "pullover-hoodie", snapshot: shot.key,
+      layers: (["front", "back", "left-sleeve"] as const).map((zone, i) => ({ texture: pics[i]!.key, zone, ...at })),
+      camera: { azimuth: 0.8, polar: 1.2, distance: 5.6 },
+    };
+    const saved = await post("/api/orgs/demo/designs", design);
+    expect(saved.status).toBe(201);
+    expect(await (await fetch(((await saved.json()) as { url: string }).url)).json()).toEqual(design);
+    expect(await (await fetch(`${app.url}/api/orgs/demo/products/pullover-hoodie`)).json()).toMatchObject({ model: "hoodie" });
+  });
+
   test("products come from the org's folder", async () => {
     const res = await fetch(`${app.url}/api/orgs/demo/products/cuff-beanie`);
     expect(await res.json()).toMatchObject({ model: "beanie" });
@@ -74,6 +89,8 @@ describe("refused", () => {
     ["a texture over 4 MB", "/api/orgs/demo/uploads", { kind: "texture", type: "image/webp", size: 5 << 20, sha256: "a".repeat(64) }, 413],
     ["a body that isn't a sign request", "/api/orgs/demo/uploads", { kind: "texture" }, 400],
     ["a design using another org's file", "/api/orgs/demo/designs", { v: 1, model: "cap", color: "#000000", layers: [{ texture: `orgs/acme/textures/${"b".repeat(64)}.webp`, u: 0.5, v: 0.5, scale: 0.5, rotation: 0 }], camera: { azimuth: 0, polar: 1, distance: 5 } }, 400],
+    ["a back print on a cap", "/api/orgs/demo/designs", { v: 1, model: "cap", color: "#000000", layers: [{ texture: "orgs/demo/textures/x.webp", zone: "back", u: 0.5, v: 0.5, scale: 0.5, rotation: 0 }], camera: { azimuth: 0, polar: 1, distance: 5 } }, 400],
+    ["two pictures on a tee's front", "/api/orgs/demo/designs", { v: 1, model: "tee", color: "#000000", layers: [0, 1].map(() => ({ texture: "orgs/demo/textures/x.webp", zone: "front", u: 0.5, v: 0.5, scale: 0.5, rotation: 0 })), camera: { azimuth: 0, polar: 1, distance: 5 } }, 400],
     ["a design whose files were never uploaded", "/api/orgs/demo/designs", { v: 1, model: "cap", color: "#000000", layers: [{ texture: `orgs/demo/textures/${"c".repeat(64)}.webp`, u: 0.5, v: 0.5, scale: 0.5, rotation: 0 }], camera: { azimuth: 0, polar: 1, distance: 5 } }, 400],
   ])("%s", async (_, path, body, status) => {
     expect((await post(path, body)).status).toBe(status);

@@ -5,25 +5,30 @@
 // A lathe's UVs are the print map: u goes once round the hat (0.5 is the front, facing +z), v climbs the profile
 // by arc length, so a picture placed in UV space sits on the fabric without stretching up the crown.
 import * as THREE from "three";
-import type { Model } from "../api.ts";
+import type { HatModel } from "../api.ts";
+import type { PrintZone, Zone } from "./print.ts";
 
-/** Where a picture may go on the print mesh, in its UVs. */
-export type Zone = { u0: number; u1: number; v0: number; v1: number };
+type Fabric = THREE.Mesh<THREE.BufferGeometry, THREE.MeshStandardMaterial>;
 
-export type Hat = {
+/** A product made in code: a hat or a top. */
+export type Garment = {
   group: THREE.Group;
-  /** The mesh the picture is printed on; its material's map is the print canvas. */
-  print: THREE.Mesh<THREE.BufferGeometry, THREE.MeshStandardMaterial>;
-  /** Meshes that take the hat's colour (the print mesh takes it through its canvas). */
-  dyed: THREE.Mesh<THREE.BufferGeometry, THREE.MeshStandardMaterial>[];
-  zone: Zone;
-  /** The print mesh's radius at height v (0..1 up its profile), to keep a picture square on the fabric. */
-  radiusAt: (v: number) => number;
-  /** Length of the print mesh's profile, bottom to top. */
-  profileLength: number;
+  /** The meshes a picture is printed on; their material's map is the one print canvas, each in its own UV rect. */
+  prints: Fabric[];
+  /** Meshes that take the product's colour (the print meshes take it through their canvas). */
+  dyed: Fabric[];
+  /** Where pictures may go, the first one where a new picture starts. */
+  zones: PrintZone[];
   /** Where the camera looks. */
   target: THREE.Vector3;
 };
+
+/** A hat's one zone, the front of its crown: as wide as that stretch of lathe is round, as tall as its profile is long. */
+const front = (zone: Zone, radiusAt: (v: number) => number, profileLength: number): PrintZone[] => [{
+  ...zone, name: "front", label: "Front", view: "front",
+  width: (v) => (zone.u1 - zone.u0) * Math.PI * 2 * radiusAt(zone.v0 + v * (zone.v1 - zone.v0)),
+  height: (zone.v1 - zone.v0) * profileLength,
+}];
 
 type P = [r: number, y: number];
 
@@ -47,7 +52,7 @@ const curveLength = (v: THREE.Vector2[]) => v.slice(1).reduce((s, p, i) => s + p
 /** A lathe whose u = 0.5 faces +z (the front). */
 const lathe = (profile: THREE.Vector2[], segments = 96) => new THREE.LatheGeometry(profile, segments, -Math.PI, Math.PI * 2);
 
-const fabric = (color = "#ffffff") => new THREE.MeshStandardMaterial({ color, roughness: 0.92, metalness: 0, side: THREE.DoubleSide });
+export const fabric = (color = "#ffffff") => new THREE.MeshStandardMaterial({ color, roughness: 0.92, metalness: 0, side: THREE.DoubleSide });
 
 function crownFrom(profile: THREE.Vector2[]) {
   const print = new THREE.Mesh(lathe(profile), fabric());
@@ -69,7 +74,7 @@ function seams(profile: THREE.Vector2[], count: number): THREE.LineSegments {
 }
 
 /** A six-panel cap: a soft dome, a curved visor and a button on top. */
-function cap(): Hat {
+function cap(): Garment {
   const dome: P[] = [];
   for (let i = 0; i <= 24; i++) {
     const a = (i / 24) * (Math.PI / 2);
@@ -102,11 +107,11 @@ function cap(): Hat {
 
   const group = new THREE.Group();
   group.add(print, visor, button, seams(profile, 6));
-  return { group, print, dyed: [visor, button], zone: { u0: 0.4, u1: 0.6, v0: 0.06, v1: 0.62 }, radiusAt, profileLength, target: new THREE.Vector3(0, 0.4, 0.15) };
+  return { group, prints: [print], dyed: [visor, button], zones: front({ u0: 0.4, u1: 0.6, v0: 0.06, v1: 0.62 }, radiusAt, profileLength), target: new THREE.Vector3(0, 0.4, 0.15) };
 }
 
 /** A cuffed beanie with a pom: the picture goes on the cuff, where a patch would be stitched. */
-function beanie(): Hat {
+function beanie(): Garment {
   const dome: P[] = [[0.93, 0.36]];
   for (let i = 1; i <= 24; i++) {
     const a = (i / 24) * (Math.PI / 2);
@@ -119,18 +124,18 @@ function beanie(): Hat {
   pom.position.y = 1.32;
   const group = new THREE.Group();
   group.add(body, print, pom);
-  return { group, print, dyed: [body, pom], zone: { u0: 0.42, u1: 0.58, v0: 0.12, v1: 0.85 }, radiusAt, profileLength, target: new THREE.Vector3(0, 0.55, 0) };
+  return { group, prints: [print], dyed: [body, pom], zones: front({ u0: 0.42, u1: 0.58, v0: 0.12, v1: 0.85 }, radiusAt, profileLength), target: new THREE.Vector3(0, 0.55, 0) };
 }
 
 /** A bucket hat: a tapered crown with a flat top and an all-round sloping brim. */
-function bucket(): Hat {
+function bucket(): Garment {
   const profile = resample([[0.92, 0], [0.86, 0.45], [0.8, 0.72], [0.74, 0.76], [0.4, 0.78], [0, 0.78]], 48);
   const { print, radiusAt, profileLength } = crownFrom(profile);
   const brim = new THREE.Mesh(lathe(resample([[0.92, 0.01], [1.2, -0.12], [1.45, -0.27]], 12)), fabric());
   const group = new THREE.Group();
   group.add(print, brim, seams(profile.slice(0, 30), 4));
   const side = profile.findIndex((p) => p.y > 0.7) / (profile.length - 1);
-  return { group, print, dyed: [brim], zone: { u0: 0.4, u1: 0.6, v0: 0.04, v1: side }, radiusAt, profileLength, target: new THREE.Vector3(0, 0.3, 0) };
+  return { group, prints: [print], dyed: [brim], zones: front({ u0: 0.4, u1: 0.6, v0: 0.04, v1: side }, radiusAt, profileLength), target: new THREE.Vector3(0, 0.3, 0) };
 }
 
-export const buildHat = (m: Model): Hat => (m === "beanie" ? beanie() : m === "bucket" ? bucket() : cap());
+export const buildHat = (m: HatModel): Garment => (m === "beanie" ? beanie() : m === "bucket" ? bucket() : cap());
