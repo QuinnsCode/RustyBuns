@@ -306,7 +306,7 @@ function chimera() {
   const b = hound({
     id: "chimera", name: "Chimera", archetype: "bruiser", budget: 9000, k, head: 1.35, muzzle: 0.68, snout: 1.6, crown: 0.9, gape: 2.0, nose: 1.35, wrinkles: 3,
     about: "Lycia in Greek myth, slain by Bellerophon riding Pegasus: a fire-breathing lion in front, a she-goat's head rising from the middle of its back, and a serpent for its tail.",
-    long: 1.05, tall: 0.95, legs: 1.15, waist: 0.82, paw: 1.35,
+    long: 1.05, tall: 0.95, legs: 1.15, waist: 0.82, paw: 1.5,
     // the Arezzo bronze's crouch: the chest dropped low between forelegs braced out in front, the head raised to roar,
     // the hind legs folded under the haunch ready to spring
     pose: {
@@ -316,7 +316,9 @@ function chimera() {
       // in front; the thigh runs forward to a knee under the belly, the shank back to a high hock
       chest: [0, -0.18], belly: [0, -0.05], l_shoulder: [0.03, -0.17, 0.03], neck: [0.07, -0.12], head: [0.11, -0.07], snout: [0.11, -0.07],
       l_elbow: [-0.07, -0.13, 0.1], l_wrist: [0.3, -0.1, 0.1], l_ffoot: [0.37, 0, 0.1],
-      hip: [0, 0.1], l_hipj: [0, 0.09], l_knee: [0.16, -0.1, 0.02], l_hock: [-0.08, -0.05, 0.02], l_bfoot: [0.02, 0, 0.02],
+      hip: [0, 0.1], l_hipj: [0, 0.09], // a lion's hind leg, short and thick: the thigh down and forward to the knee, the shank back to a high hock,
+      // and a short foot bone standing nearly upright under it
+      l_knee: [0.1, -0.05, 0.02], l_hock: [-0.07, 0.08, 0.02], l_bfoot: [-0.04, 0, 0.02],
     }, ears: { len: 0.06, width: 0.07, dir: [-0.3, 1, 0.6], cup: 35, tilt: 20, fold: 0.3 }, eyes: "two", chest: 1.05, ruff: 1.7, shag: 0.5,
     tail: { len: 1, droop: 0, bush: 0 },
     palette: {
@@ -339,6 +341,8 @@ function chimera() {
   const s = (x: number) => f4(x * k);
   // a lean, starved body: the haunch slimmed to a hard sinewy thigh, ribs standing out along the flank, the spine
   // a ridge of knuckles down the back
+  // the hind leg's bones thicker, a lion's heavy thigh and shank, not a hound's
+  for (const x of b.blobs) if (/^[lr]_(hipj|knee)$/.test(x.at)) x.r = [f4(x.r[0] * 1.15), x.r[1], f4(x.r[2] * 1.15)];
   const hipBlob = b.blobs.find((x) => x.at === "hip");
   if (hipBlob) hipBlob.r = [hipBlob.r[0], f4(hipBlob.r[1] * 0.9), f4(hipBlob.r[2] * 0.8)];
   const at = (n: string) => b.nodes[n]!;
@@ -369,7 +373,7 @@ function chimera() {
     // the lion's mane: a shaggy mass in layers that flows back over the neck and shoulders, behind the face, not
     // a ring of shards round it: long dark locks underneath, a lighter, shorter layer over them framing the face
     { kind: "tuft", along: ["neck", "chest"], n: 12, len: s(0.3), base: s(0.09), rows: 18, spread: 175, sweep: 1.6, curve: 40, flat: 0.35, material: "tuft" },
-    { kind: "tuft", along: ["head", "neck"], n: 8, len: s(0.22), base: s(0.08), rows: 18, spread: 170, sweep: 1.3, curve: 35, flat: 0.35, sink: 1, material: "mane" },
+    { kind: "tuft", along: ["head", "neck"], n: 8, len: s(0.22), base: s(0.08), rows: 14, spread: 120, sweep: 1.3, curve: 35, flat: 0.35, sink: 1, material: "mane" },
     // the goat: eyes, a beard, swept-back horns, ears
     { kind: "eye", at: "ghead", off: [s(0.05), s(0.03), s(0.045)], r: s(0.02), mirror: true, material: "eye" },
     { kind: "horn", at: "ghead", off: [s(-0.01), s(0.05), s(0.03)], dir: [-0.6, 1, 0.15], len: s(0.3), base: s(0.03), tip_base: 0.002, curve: 70, bend: [-1, -0.3, 0], mirror: true, material: "horn" },
