@@ -13,12 +13,12 @@ import { authFor, authOn, isAdmin, meOf, providers, type Me } from "./auth.ts";
 import { b64url, crossSite, json, loopbackOn, VERSION, type Env } from "./env.ts";
 import { hubAnnounce, hubAsk, hubInvited, hubRedeem, linkOf, type Who } from "./qollab/hub.ts";
 import { isQollab, qollab } from "./qollab/routes.ts";
-import { makeSpace, SPACE_NAME, studioRemove } from "./qollab/space.ts";
+import { makeSpace, SPACE_NAME, studioAdd, studioRemove } from "./qollab/space.ts";
 import { bearerOf, cors, HOME_LIFE, issuer, tokenOf } from "./door.ts";
 import { deleteAccount, exchange, link, mint, mintRefresh, setAccess, signOutApps } from "./members.ts";
 import { oauth } from "./oauth.ts";
 import { appleEvents } from "./apple.ts";
-import { addMember, Kind, makeStudio, Role, STUDIO_NAME } from "./studios.ts";
+import { Kind, makeStudio, Role, STUDIO_NAME } from "./studios.ts";
 import { recordDeploy } from "./deploys.ts";
 import { file } from "./reports.ts";
 import { shownFor, unlock, unlocksOf } from "./achievements.ts";
@@ -367,7 +367,7 @@ export async function handle(req: Request, conf: Env): Promise<Response | null> 
   if (act === "studio-add") {
     const role = check(Role, field(form, "role"));
     if (!role) return see("/?tab=studio&e=studio");
-    const r = await addMember(conf, field(form, "studio"), me.id, field(form, "email"), role);
+    const r = await studioAdd(conf, field(form, "studio"), me.id, field(form, "email"), role);
     return see(r.ok ? "/?tab=studio" : `/?tab=studio&e=${r.status === 404 ? "nobody" : "studio"}`);
   }
   if (act === "studio-remove") {
