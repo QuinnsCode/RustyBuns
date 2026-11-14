@@ -1,7 +1,8 @@
 // The party lobby panel, shared by every page that plays through a Qollab party (apps/eqosys/src/qollab/party.ts): who is in and
 // who is ready, a Ready button (Start for the host), Copy link, and Settings: every party rule (./party-rules.ts) in one menu,
 // the host's to change and everyone's to read, with each member's mute-for-me, mute-for-all and report as the rules allow, and the
-// host's make host, take out and block.
+// host's make host, take out and block. Add friend on a member asks them through the party (being in it together is the proof
+// you met): once both pressed it, you're friends (#4437).
 // A party link carries the party's invite key (`?invite=`), which the door checks when only the host invites (#3908): Copy link
 // adds the key eqosys gave this member, and joining hands on the key the page was opened with, whatever else the game keeps in its address.
 // Copy link also signs the link with the member's name (`?from=`), so whoever opens it signed out reads "Sign in to join
@@ -28,7 +29,7 @@ export interface LobbyPanel {
   onStart: (s: { room: string; seat: number; ticket?: string }) => void;
   /** Told when something worth a note happened (the link was copied). */
   say?: (note: string) => void;
-  /** Given, the panel also has Copy friend link (`friendLinkButton`): two people who met through a party can stay friends. */
+  /** Given, the panel also has Copy friend link (`friendLinkButton`), and Add friend leaves out members who are friends already. */
   hub?: ReturnType<typeof hub>;
   /** How the voice room is joined: Qlave's client by default; a harness passes one with a fake microphone. */
   join?: (url: string, ticket: string) => Promise<VoiceCall>;
@@ -121,6 +122,17 @@ export function lobbyPanel({ code, box, party: p, name, link, onStart, say, hub:
   let lit: Set<string> | null = null;
   /** Who this page quieted for the whole party, so the button reads right (the party says no more than a refusal). */
   const quiet = new Set<string>();
+  /** Friends already (from the hub, when given), and who this page asked: neither gets an Add friend button. */
+  let friends = new Set<string>();
+  const asked = new Set<string>();
+  const loadFriends = async () => { const v = await h?.state(); if (v) { friends = new Set(v.friends.map((f) => f.id)); draw(); } };
+  const befriend = (m: PartyMember) => {
+    p.befriend(m.id); asked.add(m.id);
+    note = `Asked ${m.name} to be friends: once they press Add friend on you too, you're friends`;
+    draw();
+    // They may have asked first, which makes friends at once: the hub says so a moment later.
+    setTimeout(() => void loadFriends().then(() => { if (friends.has(m.id)) { note = `You and ${m.name} are friends`; draw(); } }), 1500);
+  };
   /** Voice: asked for a ticket (or in), the room's handle once Qlave let us in, who is in it, our own mute. */
   let talking = false, call: VoiceCall | null = null, speakers: Speaker[] = [], selfMuted = false;
   const hangUp = () => {
@@ -171,6 +183,7 @@ export function lobbyPanel({ code, box, party: p, name, link, onStart, say, hub:
   const member = (m: PartyMember, me: PartyMember | undefined): HTMLElement => {
     const acts = el("span", { className: "rb-lobby-acts" });
     if (m.id !== me?.id) {
+      if (!friends.has(m.id) && !asked.has(m.id)) acts.append(eqButton({ text: `Add ${m.name} as a friend`, icon: "user-plus", onClick: () => befriend(m) }));
       const hid = p.hidden().has(m.id);
       acts.append(eqButton({ text: hid ? `Unmute ${m.name} for you` : `Mute ${m.name} for you`, icon: hid ? "volume-2" : "volume-x", onClick: () => { p.hide(m.id, !hid); draw(); } }));
       const q = quiet.has(m.id), host = !!me?.host;
@@ -248,5 +261,6 @@ export function lobbyPanel({ code, box, party: p, name, link, onStart, say, hub:
   p.join(code, keyIn(location.search, code) ?? kept(code));
   box.hidden = false;
   draw();
+  void loadFriends();
   return () => { hangUp(); p.leave(); box.hidden = true; };
 }

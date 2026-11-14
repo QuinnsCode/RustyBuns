@@ -20,7 +20,7 @@ import { ChatGate, SAY_MAX, type Said } from "./chat.ts";
 import { HOME } from "../apps.ts";
 import { appOf } from "../listings.ts";
 import { json, type Env } from "../env.ts";
-import { hubAsk } from "./hub.ts";
+import { hubAsk, hubMet } from "./hub.ts";
 import { file, reporterId } from "../reports.ts";
 import { flush, partyRoom, qlaveUrl, queue, send, ticket, type Order, type OutboxStorage } from "./qlave.ts";
 
@@ -51,9 +51,9 @@ export type Seen = Sock & { ready: boolean; host: boolean };
 /** What `/peek` answers: the party someone is in right now (its room code, game, seats and who is ready), or null. */
 export const PartyPeek = obj({ party: nul(obj({ code: str(12), app: str(64), size: num(1, 1000), members: arr(obj({ id: str(200, { min: 1 }), name: str(200), ready: bool(), host: bool() }), 1000) })) });
 export type PartyPeek = Of<typeof PartyPeek>;
-/** What a member sends: ready up or stand down, and (the host only) start. */
+/** What a member sends: ready up or stand down, and (the host only) start. `friend` is Add friend on another member. */
 const PartyIn = obj({
-  t: oneOf(["ready", "start", "say", "mute", "report", "rules", "kick", "block", "host", "relink", "talk", "voice"]), ready: opt(bool()),
+  t: oneOf(["ready", "start", "say", "mute", "report", "rules", "kick", "block", "host", "relink", "talk", "voice", "friend"]), ready: opt(bool()),
   text: opt(str(SAY_MAX)), id: opt(str(200, { min: 1 })), on: opt(bool()), rules: opt(PartyRules),
 });
 const Who = obj({ id: str(200, { min: 1 }), name: str(200), app: str(64, { min: 1 }), code: opt(str(12)), iss: opt(str(200)), invite: opt(str(64)) });
@@ -173,6 +173,7 @@ export class Party {
     if (msg.t === "mute") return this.mute(ws, me, msg.id ?? "", msg.on ?? true);
     if (msg.t === "report") return this.report(ws, me, msg.id ?? "");
     if (msg.t === "talk") return this.talk(ws, me);
+    if (msg.t === "friend") return this.befriend(ws, me, msg.id ?? "");
     if (msg.t === "voice") {
       // The page joined (or left) the voice room on Qlave: everyone sees it on the member list.
       this.sockets.attach(ws, { id: me.id, name: me.name, ...(msg.on ? { voice: true } : {}) });
@@ -207,6 +208,16 @@ export class Party {
     const ready = new Set(await this.ctx.storage.get<string[]>("ready") ?? []), host = await this.ctx.storage.get<string>("host"), apart = await this.apart();
     const members = this.members().filter((m) => !apart(id, m.id)).map((m): Seen => ({ ...m, ready: ready.has(m.id), host: m.id === host }));
     return { party: { code: await this.ctx.storage.get<string>("code") ?? "", app, size: (await this.rules()).size, members } };
+  }
+
+  /** Add friend on another member: the asker's hub asks them (or makes them friends, when they asked first). Being in this
+   *  party together right now is the proof they met, so only someone here now, and not kept apart from the asker, can be asked. */
+  private async befriend(ws: RoomSocket, me: Member, id: string) {
+    const them = this.members().find((m) => m.id === id && m.id !== me.id);
+    if (!them || (await this.apart())(me.id, id)) return this.sockets.send(ws, { t: "refused", why: "They aren't in this party." });
+    if (!this.env.HUB) return this.sockets.send(ws, { t: "refused", why: "Friends aren't set up here." });
+    const error = await hubMet(this.env.HUB, { id: me.id, name: me.name, app: await this.ctx.storage.get<string>("app") ?? HOME }, { id: them.id, name: them.name }).catch(() => "the hub didn't answer");
+    if (error) this.sockets.send(ws, { t: "refused", why: error });
   }
 
   /** The party's rules: what the host set, over how a party made before rules (or before a rule) behaves. */

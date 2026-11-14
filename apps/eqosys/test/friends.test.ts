@@ -2,7 +2,7 @@
 // from her own page, and both sides' hubs agree; then a request withdrawn, a decline, and notifications cleared.
 import { expect, setDefaultTimeout, test } from "bun:test";
 import { durableObject } from "@rustybuns/shell-bun";
-import { atHome } from "../src/handle.ts";
+import { atHome, invitedBy } from "../src/handle.ts";
 import { countsOf } from "../src/achievements.ts";
 import { Hub, hubAsk, LOOKUPS_PER_HOUR } from "../src/qollab/hub.ts";
 import { newKey } from "@rustybuns/util/token";
@@ -157,4 +157,16 @@ test("a friend link: someone with no account opens it, makes one, says yes, and 
   expect((await page(hal)).friends.map((f) => f.name)).toEqual(["Ivy"]);
   await call("/do/add", { form: {}, cookie: good });
   expect((await page(hal)).friends.map((f) => f.name).sort()).toEqual(["Ivy", "Jo"]);
+
+  // A link a game copied names it: the Friends tab names the game, and Be friends goes on to its front door.
+  const kim = await signUp("Kim", "qcrm", QCRM);
+  const fromGame = `${kim.cookie}; ${(await call(`/add/${fresh}?app=park-hide-seek`, { cookie: kim.cookie })).cookie}`;
+  expect(await invitedBy(new Request("https://x/", { headers: { cookie: fromGame } }), conf)).toMatchObject({ name: "Hal", game: "Park Hide Seek" });
+  expect((await call("/do/add", { form: {}, cookie: fromGame })).to).toBe(PARK);
+  expect((await page(hal)).friends.map((f) => f.name).sort()).toEqual(["Ivy", "Jo", "Kim"]);
+  // An app eqosys doesn't know is left behind: the link still makes friends, and stays on the Friends tab.
+  const lee = await signUp("Lee", "qcrm", QCRM);
+  const unknown = `${lee.cookie}; ${(await call(`/add/${fresh}?app=nowhere`, { cookie: lee.cookie })).cookie}`;
+  expect((await call("/do/add", { form: {}, cookie: unknown })).to).toBe("/?tab=friends");
+  expect((await page(hal)).friends).toHaveLength(4);
 });

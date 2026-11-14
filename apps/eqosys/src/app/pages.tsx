@@ -106,7 +106,7 @@ function Ways({ ways, social }: { ways: Way[]; social: string[] }) {
 }
 
 /** Friends, who is asking whom, and what friends' apps said: the person's hub (hub.ts), read on the way in. */
-function Friends({ hub, counts, invite, origin }: { hub: HubState; counts: Map<string, number>; invite?: { id: string; name: string } | null; origin: string }) {
+function Friends({ hub, counts, invite, origin }: { hub: HubState; counts: Map<string, number>; invite?: { id: string; name: string; game?: string | null } | null; origin: string }) {
   const nobody = hub.friends.length + hub.incoming.length + hub.outgoing.length === 0;
   // The friend link this browser opened (handle.ts /add), unless it is their own or a friend's already.
   const from = invite && invite.id !== hub.me?.id && !hub.friends.some((f) => f.id === invite.id) ? invite : null;
@@ -115,9 +115,15 @@ function Friends({ hub, counts, invite, origin }: { hub: HubState; counts: Map<s
       <h2>Friends</h2>
       {from && (
         <div className="row card invite">
-          <span className="grow"><b>{from.name}</b> sent you their friend link.</span>
+          <span className="grow"><b>{from.name}</b> sent you their friend link{from.game ? <> from {from.game}. Either answer takes you on to it.</> : "."}</span>
           <form method="post" action="/do/add"><button className={btn(true)} type="submit">Be friends with {from.name}</button></form>
           <form method="post" action="/do/add"><input type="hidden" name="no" value="1" /><button className={btn()} type="submit">No thanks</button></form>
+        </div>
+      )}
+      {!from && invite?.game && (
+        <div className="row card invite">
+          <span className="grow">That friend link is {invite.id === hub.me?.id ? "your own" : <>from <b>{invite.name}</b>, a friend already</>}.</span>
+          <form method="post" action="/do/add"><input type="hidden" name="no" value="1" /><button className={btn(true)} type="submit">On to {invite.game}</button></form>
         </div>
       )}
       {hub.link && (
@@ -643,7 +649,7 @@ function Visitors({ v }: { v: Counts }) {
 export type Tab = (typeof TABS)[number][0];
 export const tabOf = (v: unknown): Tab => TABS.find(([k]) => k === v)?.[0] ?? "library";
 
-export function Home({ apps = APPS, me, mine, hub, side, everyone, unlocks, counts, error, t0, tab, visitors, scale, studios, invite, origin = "", ways, social = [] }: { /** The Account tab: how they sign in now, and the providers switched on here. */ ways?: Way[] | null; social?: string[]; invite?: { id: string; name: string } | null; origin?: string; apps?: QApp[]; side?: Side | null; visitors?: Counts | null; scale?: Load | null; studios?: Studio[] | null; counts: Map<string, number>; me: Me; mine: Member | undefined; hub: HubState | null; everyone: Member[] | null; unlocks: Unlocks; error?: string; t0: number; tab: Tab }) {
+export function Home({ apps = APPS, me, mine, hub, side, everyone, unlocks, counts, error, t0, tab, visitors, scale, studios, invite, origin = "", ways, social = [] }: { /** The Account tab: how they sign in now, and the providers switched on here. */ ways?: Way[] | null; social?: string[]; invite?: { id: string; name: string; game?: string | null } | null; origin?: string; apps?: QApp[]; side?: Side | null; visitors?: Counts | null; scale?: Load | null; studios?: Studio[] | null; counts: Map<string, number>; me: Me; mine: Member | undefined; hub: HubState | null; everyone: Member[] | null; unlocks: Unlocks; error?: string; t0: number; tab: Tab }) {
     const tabs = TABS.filter(([k]) => !ADMIN_TABS.has(k) || everyone);
   const asked = hub?.incoming.length ?? 0;
   return (
