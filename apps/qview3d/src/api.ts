@@ -45,7 +45,10 @@ export const PRINT_CM: Record<Made, Partial<Record<ZoneName, PrintCm>>> = {
   beanie: { front: { w: 10, h: 5 } },
   bucket: { front: { w: 12, h: 5 } },
   tee: { front: { w: 30, h: 40 }, back: { w: 30, h: 40 }, "left-sleeve": { w: 9, h: 9 } },
+  sweater: { front: { w: 30, h: 36 }, back: { w: 30, h: 40 }, "left-sleeve": { w: 8, h: 14 } },
   hoodie: { front: { w: 28, h: 25 }, back: { w: 32, h: 40 }, "left-sleeve": { w: 9, h: 9 } },
+  tank: { front: { w: 28, h: 30 }, back: { w: 28, h: 32 } },
+  racerback: { front: { w: 24, h: 28 }, back: { w: 24, h: 26 } },
 };
 
 /** orgs/<org>/products/<product>.json. */
