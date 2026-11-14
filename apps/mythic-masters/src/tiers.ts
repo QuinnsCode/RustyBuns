@@ -3,6 +3,7 @@
 // creatures roam only in their season. An unknown is a shrouded shape whose name and level you don't learn
 // until you've won it: for legends still being made, or a preview of an event to come.
 // Any id not listed is common, so a new critter needs no line here.
+import { PACK_SEASON } from "./pack-fighters.ts";
 
 export const TIERS = ["common", "uncommon", "rare", "legendary", "mythic", "event", "unknown"] as const;
 export type Tier = (typeof TIERS)[number];
@@ -12,7 +13,7 @@ const BY_TIER: Record<Exclude<Tier, "common">, string[]> = {
   rare: ["mothman", "jersey-devil", "black-shuck", "rougarou", "ozark-howler", "cadejo", "lobizon", "kelpie", "dokkaebi", "tengu", "tikbalang", "bunyip", "ropen", "kongamato", "gevaudan", "nue", "troll", "camahueto", "emela-ntouka", "sasabonsam", "ushi-oni"],
   legendary: ["sasquatch", "champ", "nessie", "yeti", "grootslang", "lambton-worm", "mapinguari", "leshy", "minotaur", "chimera", "manticore", "sphinx", "oni", "imugi", "tarasque", "zmey", "mokele-mbembe"],
   mythic: ["red-dragon", "hydra", "roc", "qilin", "kyubi"],
-  event: ["yule-cat", "nian"],
+  event: ["yule-cat", "nian", ...Object.keys(PACK_SEASON)],
   unknown: ["hidebehind", "olgoi-khorkhoi"],
 };
 const TIER = new Map<string, Tier>(Object.entries(BY_TIER).flatMap(([t, ids]) => ids.map((id) => [id, t as Tier])));
@@ -25,6 +26,7 @@ export const tierOf = (id: string): Tier => TIER.get(id) ?? "common";
 const SEASON: Record<string, [[number, number], [number, number]]> = {
   "yule-cat": [[12, 1], [1, 6]],   // the Yule nights
   nian: [[1, 20], [2, 20]],        // around the lunar new year
+  ...PACK_SEASON,                  // a pack's beasts, in its season
 };
 /** Whether `id` may roam on `date`: always, unless it's an event creature out of season. */
 export function inSeason(id: string, date: Date): boolean {

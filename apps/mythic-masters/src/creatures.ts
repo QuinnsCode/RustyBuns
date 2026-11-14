@@ -1,4 +1,4 @@
-// The 76 fighters, each a beast from a legend (public domain; the old tellings, not a modern version of one).
+// The 76 fighters, and each pack's (pack-fighters.ts), each a beast from a legend (public domain; the old tellings, not a modern version of one).
 // Size and stats follow the story: the Jackalope is a 6 kg hare, the Loch Ness Monster a tonne of lake.
 // Beings held sacred today are setting, never fighters (regions.ts lists them; a test checks none is here).
 //
@@ -8,6 +8,7 @@
 // `soars` is the freak of the air that never has to land (the Mothman paced cars down the highway all night).
 import type { Field } from "./fields.ts";
 import type { Fx, Motion, Slot } from "./moves.ts";
+import { PACK_AKA, PACK_ROWS, PACK_TALE } from "./pack-fighters.ts";
 
 export type Archetype = "skirmisher" | "flyer" | "tank" | "bruiser";
 type Stats6 = [vigor: number, might: number, guard: number, focus: number, will: number, speed: number];
@@ -106,12 +107,14 @@ export const ROWS: Row[] = [
   { id: "lizard-man", name: "Lizard Man of Scape Ore Swamp", region: 7, archetype: "bruiser", fields: ["tide", "wild"], heightM: 2.0, massKg: 150, stats: [75, 85, 65, 50, 55, 70], sig: sig("Car-Roof Leap", "wild", false, "rampage") },
   { id: "hoop-snake", name: "Hoop Snake", region: 8, archetype: "skirmisher", fields: ["venom", "wild"], heightM: 0.8, massKg: 8, stats: [45, 70, 40, 70, 55, 100], sig: sig("Rolling Hoop", "venom", false, "rampage", { motion: "roll" }) },
   { id: "drop-bear", name: "Drop Bear", region: 61, archetype: "skirmisher", fields: ["wild", "shadow"], heightM: 1.0, massKg: 35, stats: [50, 80, 50, 45, 45, 95], sig: sig("Eucalyptus Drop", "wild", false, "rampage") },
+  ...PACK_ROWS, // the packs' beasts, from each packs/<id>/pack.json `fighters` block
 ];
 
 /** The other names a legend gives a beast, as its page in the bestiary lists them under the name. Only names the
  * old tellings use (a hoaxer's Latin, a loggers' joke species, the word in the language it comes from); a beast
  * with one name has no row. */
 export const AKA: Record<string, string[]> = {
+  ...PACK_AKA,
   "jersey-devil": ["the Leeds Devil"],
   hodag: ["Bovinus spiritualis"],
   squonk: ["Lacrimacorpus dissolvens"],
@@ -166,6 +169,7 @@ export const AKA: Record<string, string[]> = {
 /** The beast's own line, at the top of its folio's Background before its region's tale (#3604 round 18): what its
  * legend says it is or does, in one sentence, from the old tellings. */
 export const TALE: Record<string, string> = {
+  ...PACK_TALE,
   "jersey-devil": "Born the thirteenth child of Mother Leeds in 1735, it changed into a winged, hoofed thing and flew up the chimney into the pines.",
   mothman: "A grey man-sized shape with wings and glowing red eyes, seen around Point Pleasant in 1966 and 1967; it kept pace with cars on the highway.",
   "wampus-cat": "A woman who spied on a sacred ceremony in a cougar's skin, cursed to stay half cat and walk the Appalachian woods at night.",

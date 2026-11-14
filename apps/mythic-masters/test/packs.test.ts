@@ -24,7 +24,8 @@ const cells = (c: readonly [number, number]) => Array.from({ length: LAND[0] * L
 describe("packs", () => {
   test("every folder in packs/ is a loaded pack, and no two share an id or a beast", async () => {
     expect(PACKS.map((p) => p.id).sort()).toEqual(readdirSync(DIR).sort());
-    const seen = new Set(ROSTER.map((c) => c.id));
+    const packed = new Set(PACKS.flatMap((p) => Object.keys(p.fighters)));
+    const seen = new Set(ROSTER.map((c) => c.id).filter((id) => !packed.has(id)));
     for (const p of PACKS) for (const f of readdirSync(join(DIR, p.id, "beasts"))) {
       const id = f.replace(/\.json$/, "");
       expect([p.id, id, seen.has(id)]).toEqual([p.id, id, false]);
@@ -39,6 +40,9 @@ describe("packs", () => {
     const ids = await Promise.all(files.map(async (f) => {
       const sheet = Sheet(await Bun.file(join(DIR, p.id, "beasts", f)).json());
       expect(`${sheet.id}.json`).toBe(f);
+      // Each beast fights as its sheet is built: one roster row from the pack, the same shape, an event of its season.
+      const c = ROSTER.find((r) => r.id === sheet.id);
+      expect([sheet.id, c?.name, c?.archetype, tierOf(sheet.id), p.events.includes(sheet.id)]).toEqual([sheet.id, sheet.name, sheet.archetype, "event", true]);
       return sheet.id;
     }));
     expect(Object.keys(p.lore.legends).sort()).toEqual([...ids].sort());
@@ -149,7 +153,8 @@ describe("packs", () => {
       const first = new Date(2026, p.season.from[0] - 1, p.season.from[1]);
       expect([id, tierOf(id), inSeason(id, first), packInSeason(p, first)]).toEqual([id, "event", true, true]);
     }
-    expect(roamingEvents(dec).has("yule-cat")).toBe(true);
+    expect([...roamingEvents(dec)].sort()).toEqual(["gryla", "kallikantzaros", "krampus", "yule-cat"]);
+    expect(yule.lair.foe).toBe("gryla"); // her kitchen is hers now the Yule Isle's beasts fight
     expect(roamingEvents(jul).size).toBe(0);
     // The Yule Cat is Iceland's (34), far from the Pine Barrens: there only in December.
     expect(poolOf(1, dec)).toContain("yule-cat");
