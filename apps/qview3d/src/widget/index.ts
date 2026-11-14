@@ -16,14 +16,14 @@
 import { createElement, Camera, CloudUpload, Eraser, ImagePlus, Rotate3d, RotateCw, Scaling } from "lucide";
 import { esc } from "@rustybuns/util";
 import { getJson, readJson } from "@rustybuns/util/http";
-import { DesignReply, MODELS, Product, ZONES, type Design, type DesignReply as Saved, type Made, type Model, type ZoneName } from "../api.ts";
+import { DesignReply, MODELS, Product, TOPS, ZONES, type Design, type DesignReply as Saved, type Made, type Model, type ZoneName } from "../api.ts";
 import { sha256Of } from "./image.ts";
 import { css } from "./style.ts";
 import { problem, upload } from "./upload.ts";
-import type { View, Viewer } from "./viewer.ts";
+import type { Display, View, Viewer } from "./viewer.ts";
 
 const DEFAULT_COLORS = ["#1f2937", "#f5f5f4", "#b91c1c", "#1d4ed8", "#166534", "#d97706", "#7c3aed", "#e7d7b9"];
-const LABELS: Record<Made, string> = { cap: "Cap", beanie: "Beanie", bucket: "Bucket", tee: "Tee", hoodie: "Hoodie" };
+const LABELS: Record<Made, string> = { cap: "Cap", beanie: "Beanie", bucket: "Bucket", tee: "Tee", sweater: "Sweater", hoodie: "Hoodie", tank: "Tank", racerback: "Racerback" };
 /** Where the widget's own server is: the origin this script came from, unless the page says otherwise (api="..."). */
 const HOME = new URL(import.meta.url).origin;
 
@@ -45,7 +45,7 @@ const iconButton = (i: Parameters<typeof createElement>[0], title: string, oncli
 };
 
 export class QView3D extends HTMLElement {
-  static observedAttributes = ["model", "color", "colors", "product", "controls"];
+  static observedAttributes = ["model", "color", "colors", "product", "controls", "display"];
   private root = this.attachShadow({ mode: "open" });
   private viewer: Viewer | null = null;
   private ready: Promise<Viewer> | null = null;
@@ -63,6 +63,9 @@ export class QView3D extends HTMLElement {
   /** The print zone being worked on: where addImage() puts a picture and what place() moves. A hat has only "front". */
   get zone(): ZoneName { return this.viewer?.zone ?? "front"; }
   set zone(z: ZoneName) { this.viewer?.setZone(z); this.sync(); }
+  /** A top on its form ("form"), or a sleeved one on a hanger ("hanger", a spike the default controls don't offer), settling under gravity when it loads or changes colour. */
+  get display(): Display { return this.getAttribute("display") === "hanger" ? "hanger" : "form"; }
+  set display(d: Display) { this.setAttribute("display", d); }
   get color() { return this.viewer?.color ?? this.getAttribute("color") ?? this.firstColor(); }
   set color(c: string) { this.setAttribute("color", c); }
   /** The current settings: model, colour, the picture's place and files, camera. What snapshot() and save() send. */
@@ -90,6 +93,7 @@ export class QView3D extends HTMLElement {
     if (name === "product" && this.ready) void this.loadProduct();
     if (!this.viewer) return;
     if (name === "model" && !this.glb && this.viewer.model !== asModel(this.getAttribute("model"))) { this.viewer.setModel(asModel(this.getAttribute("model"))); this.changed(); }
+    if (name === "display" && this.viewer.display !== this.display) { this.viewer.setDisplay(this.display); this.changed(); }
     if (name === "color" && this.viewer.color !== (this.getAttribute("color") ?? this.firstColor())) { this.viewer.setColor(this.getAttribute("color") ?? this.firstColor()); this.changed(); }
   }
 
@@ -98,6 +102,7 @@ export class QView3D extends HTMLElement {
       const { Viewer } = await import("./viewer.ts");
       await this.loadProduct();
       const v = new Viewer(this.ui.gl);
+      v.display = this.display;
       v.onChange = () => this.changed();
       if (this.glb) await v.setCustom(this.glbUrl(this.glb));
       else v.setModel(asModel(this.getAttribute("model")));
@@ -248,7 +253,12 @@ export class QView3D extends HTMLElement {
   /** Bring the controls in line with the viewer. */
   private sync() {
     const v = this.viewer, none = this.getAttribute("controls") === "none";
-    for (const b of this.ui.models.querySelectorAll<HTMLButtonElement>("button")) b.setAttribute("aria-pressed", String(b.dataset.model === this.model));
+    // The row offers the product's own kind: a hat swaps for another hat, a top for another top.
+    const kind = (m: string | undefined) => (TOPS as readonly (string | undefined)[]).includes(m);
+    for (const b of this.ui.models.querySelectorAll<HTMLButtonElement>("button")) {
+      b.setAttribute("aria-pressed", String(b.dataset.model === this.model));
+      b.hidden = kind(b.dataset.model) !== kind(this.model);
+    }
     for (const b of this.ui.swatches.querySelectorAll<HTMLButtonElement>("button")) b.setAttribute("aria-pressed", String(b.dataset.color?.toLowerCase() === this.color.toLowerCase()));
     const l = v?.layer;
     const zones = v?.zones ?? [];

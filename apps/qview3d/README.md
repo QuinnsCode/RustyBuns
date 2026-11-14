@@ -3,8 +3,8 @@
 A 3D product customiser a shop puts on its own page with one script and one tag. Shoppers add a photo, drag it
 round the front of a hat or over a top's front, back or sleeve, size it, turn it, pick a colour and spin the product.
 Then they export a snapshot with the settings that made it. A Cloudflare Worker and one R2 bucket, with a folder for
-each org. A spike: hats (cap, beanie, bucket hat) and tops (a tee and a hoodie, a picture on each of their three print
-zones), plus **samples**: a shop with a product these don't cover uploads photos or a video, and Meshy makes a model
+each org. A spike: hats (cap, beanie, bucket hat) and tops (a tee, a sweater, a hoodie and two tanks on one body form, a
+picture on each print zone: front, back and, with sleeves, the left sleeve), plus **samples**: a shop with a product these don't cover uploads photos or a video, and Meshy makes a model
 of it the widget can print on. PolyForm Noncommercial.
 
 ```html
@@ -187,9 +187,18 @@ tests the GLB writer and the upload request. Xcode builds go to the builder Mac.
 
 ## Models
 
-The hats are made in code ([src/widget/hats.ts](src/widget/hats.ts)): no model file to license, fetch or cache, and
-they count toward this folder's license. A shop's own products come from samples (above). Shirts and hoodies would come from Blender (our headless pipeline) or a
-CC0 source, as GLB in `catalog/models/`, with a UV-unwrapped print zone the same as here.
+The hats and the tops are made in code ([src/widget/hats.ts](src/widget/hats.ts), [src/widget/tops.ts](src/widget/tops.ts)):
+no model file to license, fetch or cache, and they count toward this folder's license. A shop's own products come from
+samples (above).
+
+The tops are five cuts of one body form (`CUTS` in tops.ts: a crew tee, a crew sweater in a knit, a fleece hoodie with
+its hood lying back, a pouch pocket and drawcords, a men's tank and a racerback with a shaped waist). The cloth folds
+where it hangs free and only shades a print zone; sleeves grow out of an armhole on the body's side; cuffs, hems and
+collars are rib knit or rolled and stitched; inside faces are drawn a shade darker, so a neckline shows cloth.
+
+**On a hanger** (a spike: `display="hanger"`, the demo shop's "On a hanger" button; the default controls don't offer it): a sleeved top starts laid flat and hangs from a
+hanger by its shoulders, its own mesh run as cloth (position-based, [src/widget/hanger.ts](src/widget/hanger.ts)) for about
+a second when it loads or changes colour, then frozen. Shots before and after: [docs/shots-2026-11-14-range](docs/shots-2026-11-14-range/README.md).
 
 ## Not in the spike
 

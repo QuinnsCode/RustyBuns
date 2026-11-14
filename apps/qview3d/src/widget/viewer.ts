@@ -15,6 +15,8 @@ import { prepare, type Prepared } from "./image.ts";
 import ImageWorker from "./image-worker.ts?worker&inline";
 
 export type View = "front" | "angle" | "side" | "back";
+/** How a top is shown: on the invisible form, or hanging from a hanger (a spike, #4563). */
+export type Display = "form" | "hanger";
 const VIEWS: Record<View, number> = { front: 0, angle: Math.PI / 4, side: Math.PI / 2, back: Math.PI };
 
 export type Layer = { picture: Prepared; at: Placement; texture?: string; original?: string };
@@ -27,6 +29,7 @@ export class Viewer {
   layers: Layer[] = [];
   /** The zone the shopper is working on: where a new picture goes, and what the sliders and keys move. */
   zone: ZoneName = "front";
+  display: Display = "form";
   /** Called after any change the shopper made (drag, colour, model, picture). */
   onChange: () => void = () => {};
 
@@ -115,6 +118,7 @@ export class Viewer {
     this.frame = requestAnimationFrame(this.loop);
     if (!this.visible) return;
     if (this.controls.update()) this.dirty = true;
+    if (this.surface.tick?.()) this.dirty = true;
     if (!this.dirty) return;
     this.dirty = false;
     // The room's reflections turn with the camera as the key light does, so no side of the product sits in its shade.
@@ -160,8 +164,15 @@ export class Viewer {
   }
 
   setModel(m: Made) {
-    const garment = (TOPS as readonly Made[]).includes(m) ? buildTop(m as TopModel) : buildHat(m as Exclude<Made, TopModel>);
+    const garment = (TOPS as readonly Made[]).includes(m) ? buildTop(m as TopModel, this.display === "hanger") : buildHat(m as Exclude<Made, TopModel>);
     this.use(new GarmentSurface(garment, Math.min(8, this.renderer.capabilities.getMaxAnisotropy())), m);
+  }
+
+  /** Show a top on its form or on a hanger: it is made again, its pictures kept. */
+  setDisplay(d: Display) {
+    if (d === this.display) return;
+    this.display = d;
+    if (this.model !== "custom") this.setModel(this.model);
   }
 
   /** Work on another zone: the camera swings round to it. */
