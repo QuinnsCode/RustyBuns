@@ -23,6 +23,8 @@ export interface EdgeOpts {
   eqosys?: string;
   /** How long a seat may go without a ping before the room closes it (the Region's DEAD_MS, 90 s live). */
   deadMs?: number;
+  /** The wrangler to run (the pinned one by default). */
+  bin?: string;
 }
 
 export interface Edge {
@@ -32,11 +34,21 @@ export interface Edge {
   stop: () => Promise<void>;
 }
 
-/** Start `wrangler dev` on `port` (a free one by default) and resolve once it is ready to take sockets. */
+/** Start `wrangler dev` on `port` (a free one by default) and resolve once it is ready to take sockets. workerd now and
+ * then crashes on a second start in the same CI job (#4341): a process that dies before "Ready on" without an [ERROR]
+ * gets one more go on a fresh port; a config error, a refused module or a hang fails straight away. */
 export async function serveEdge(port = 0, o: EdgeOpts = {}): Promise<Edge> {
-  const bin = wranglerPath();
+  const bin = o.bin ?? wranglerPath();
   if (!bin) throw new Error("no wrangler: run bun install");
-  port ||= await freePort();
+  const first = await startOnce(bin, port || await freePort(), o);
+  if ("edge" in first) return first.edge;
+  if (!first.crashed) throw new Error(`wrangler dev didn't start:\n${first.out.slice(-2000)}`);
+  const again = await startOnce(bin, port || await freePort(), o);
+  if ("edge" in again) return again.edge;
+  throw new Error(`wrangler dev didn't start (twice; the first crashed):\n${again.out.slice(-2000)}`);
+}
+
+async function startOnce(bin: string, port: number, o: EdgeOpts): Promise<{ edge: Edge } | { out: string; crashed: boolean }> {
   mkdirSync(join(APP, "dist", "ui"), { recursive: true });
   const state = mkdtempSync(join(tmpdir(), "mm-edge-"));
   const vars: Record<string, string> = { LOG_WAKES: "1" };
@@ -52,10 +64,11 @@ export async function serveEdge(port = 0, o: EdgeOpts = {}): Promise<Edge> {
   const stop = async () => { proc.kill(); await proc.exited; rmSync(state, { recursive: true, force: true }); };
   const end = Date.now() + 60_000;
   while (!/Ready on http/.test(out)) {
-    if (proc.exitCode !== null || Date.now() > end || /\[ERROR\]/.test(out)) { await stop(); throw new Error(`wrangler dev didn't start:\n${out.slice(-2000)}`); }
+    const crashed = proc.exitCode !== null && !/\[ERROR\]/.test(out);
+    if (proc.exitCode !== null || Date.now() > end || /\[ERROR\]/.test(out)) { await stop(); return { out, crashed }; }
     await Bun.sleep(100);
   }
-  return { url: `ws://127.0.0.1:${port}`, log: () => out, stop };
+  return { edge: { url: `ws://127.0.0.1:${port}`, log: () => out, stop } };
 }
 
 if (import.meta.main) {
