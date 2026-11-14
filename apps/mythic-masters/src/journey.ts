@@ -103,6 +103,17 @@ export function atLevel(c: Creature, level: number, wild = false): Creature {
 }
 export const asCreature = (m: Member) => atLevel(creature(m.id), m.level);
 
+/** How a lone wild one grows to face a team of 2, 3 or 4 (#4411), from the tuner's 2v1 table
+ * (`bun scripts/tune.ts --teams 20 8 0 2 3.5 2 --rust`, and 3 and 4 friends): at these, the friends win about half
+ * the time (51%, 51%, 57%) in 15-25 s. Levels barely move a team fight (a wild one 15 levels up still loses 98% to two),
+ * and health alone turns knockouts into ring-outs, so most of it is damage. */
+export const OUTNUMBERED: Record<2 | 3 | 4, { hp: number; edge: number }> = { 2: { hp: 2, edge: 3.5 }, 3: { hp: 2, edge: 8 }, 4: { hp: 2, edge: 18 } };
+/** A creature facing `foes` at once: one on one it is `c` itself, unchanged. */
+export function outnumbered(c: Creature, foes: number): Creature {
+  const g = OUTNUMBERED[Math.min(4, foes) as 2 | 3 | 4];
+  return foes < 2 || !g ? c : { ...c, hpScale: (c.hpScale ?? 1) * g.hp, edge: c.edge * g.edge };
+}
+
 /** Health a member carries into a fight, as a fraction of full. */
 export const hpOf = (m: Member) => m.hp ?? 1;
 /** Records what a fight left of `m` (a fraction of full health); at or above full it is whole again. */

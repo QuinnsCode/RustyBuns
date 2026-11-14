@@ -13,24 +13,24 @@ import { icon } from "./icons.ts";
 import type { Member } from "./journey.ts";
 import { DuelLink, type DuelOpts } from "./net/duel-link.ts";
 import { coopCode, duelCode, mintDuel, type DenFoe, type DuelOut, type Pick, type RoomKind } from "./net/duel.ts";
-import { atLevel } from "./journey.ts";
+import { atLevel, outnumbered } from "./journey.ts";
 import { creature, ROSTER, type Creature } from "./roster.ts";
 import { tierOf } from "./tiers.ts";
 
 type Go = Extract<DuelOut, { t: "go" }>;
 /** What a co-op room can meet: the everyday wild ones, never a legend or an event creature. */
 const WILDS = ROSTER.filter((c) => tierOf(c.id) === "common" || tierOf(c.id) === "uncommon").map((c) => c.id);
-/** The wild one a co-op round fights, the same on every page: chosen by the room's seed, a few levels past the
- *  strongest pick for every friend past the first, so two or four of you still have a fight on your hands. */
+/** The wild one a co-op round fights, the same on every page: chosen by the room's seed, at the strongest pick's level.
+ *  `coopTeams` then grows it to face the team (journey.ts `outnumbered`), so two or four of you still have a fight. */
 export function wildOf(go: { picks: Pick[]; seed: number; foe?: DenFoe }): Pick {
   if (go.foe) return { c: go.foe.c, lv: go.foe.lv }; // the den's own creature, as the world put it there
   const c = WILDS[Math.floor(mulberry32(go.seed)() * WILDS.length)]!;
-  return { c, lv: Math.min(100, Math.max(...go.picks.map((p) => p.lv)) + 3 * (go.picks.length - 1)) };
+  return { c, lv: Math.max(...go.picks.map((p) => p.lv)) }; // as strong as the strongest pick; `outnumbered` does the rest
 }
 /** A co-op round's two sides: the friends in seat order, then the wild one (a keeper is no wild one). */
 export function coopTeams(go: { picks: Pick[]; seed: number; foe?: DenFoe }): [Creature[], Creature[]] {
   const w = wildOf(go);
-  return [go.picks.map((p) => atLevel(creature(p.c), p.lv)), [atLevel(creature(w.c), w.lv, !go.foe?.den.startsWith("keeper:"))]];
+  return [go.picks.map((p) => atLevel(creature(p.c), p.lv)), [outnumbered(atLevel(creature(w.c), w.lv, !go.foe?.den.startsWith("keeper:")), go.picks.length)]];
 }
 
 /** A challenge older than this is stale: the friend has long stopped waiting. */

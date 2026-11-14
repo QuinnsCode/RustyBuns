@@ -13,6 +13,12 @@
 //   --rust                         (with any of the above but --kits) play the fights on the Rust copy of the sim
 //                                  (sim-rs/, scripts/sim-rust.ts builds it), bit for bit the same answers. It checks
 //                                  first that the build still plays sim.ts's fights tick for tick, and stops if not.
+//   bun scripts/tune.ts --teams 10 8 0,3 1,2 1,1.5   the 2v1 table (#4411): every creature as a wild one against 8 pairs
+//                                  of friends, 10 matches each, the wild one grown by every mix of 0 or 3 levels past the
+//                                  friends (level 10), 1x or 2x the health and 1x or 1.5x the damage: how often two friends
+//                                  win and how long it takes, with one friend alone against the same wild one beside it.
+//                                  A 7th number fields that many friends (2 to 4). The growth a co-op room gives its wild
+//                                  one (journey.ts `outnumbered`) is the row to hold near even.
 //   bun scripts/tune.ts --kits 4   each field's big move (moves.ts KIT): damage it lands per energy spent, from bot fights
 //                                  of every creature carrying it against every fifth one; the bigs should sit about level
 import { join } from "node:path";
@@ -21,8 +27,9 @@ import { arr, num, obj } from "@rustybuns/util/guard";
 import { bot } from "../src/bot.ts";
 import { ROSTER, type Creature } from "../src/roster.ts";
 import { FIELDS, type Field } from "../src/fields.ts";
-import { newMatch, step, type Event } from "../src/sim.ts";
-import { drift, rustRates } from "./sim-rust.ts";
+import { atLevel } from "../src/journey.ts";
+import { newMatch, newTeamMatch, step, type Event } from "../src/sim.ts";
+import { drift, rustRates, type Fight } from "./sim-rust.ts";
 import { help } from "../../../scripts/help.ts";
 
 export function play(a: Creature, b: Creature, seed: number) {
@@ -45,6 +52,48 @@ export function rate(a: Creature, b: Creature, n: number) {
   return { wins: wins / n, ringOuts: ringOuts / n, time: time / n, seconds: ticks / n / 60 };
 }
 
+/** `play` for a team a side (#4411): a bot a fighter, the first seeded `seed` and fighter k `seed * 7 + k`, as sim-rs's
+ * play_teams. One on one it is `play`, seed for seed. */
+export function playTeams(a: Creature[], b: Creature[], seed: number) {
+  const m = newTeamMatch([a, b]), bots = m.f.map((_, k) => bot(k, k ? seed * 7 + k : seed));
+  let ko: Event | undefined;
+  while (!m.over) { step(m, bots.map((x) => x(m))); ko ??= m.events.find((e) => e.kind === "ko"); }
+  return { winner: m.winner!, ticks: m.tick, ko };
+}
+/** `rate` for a team a side: the wins are the first team's, sides swapped every other match. */
+export function rateTeams(a: Creature[], b: Creature[], n: number) {
+  let wins = 0, ringOuts = 0, time = 0, ticks = 0;
+  for (let s = 1; s <= n; s++) {
+    const flip = s % 2 === 0, r = flip ? playTeams(b, a, s) : playTeams(a, b, s);
+    if (r.winner === (flip ? 1 : 0)) wins++;
+    if (r.ko?.kind === "ko" && r.ko.how === "ring-out") ringOuts++;
+    if (r.ko?.kind === "ko" && r.ko.how === "time") time++;
+    ticks += r.ticks;
+  }
+  return { wins: wins / n, ringOuts: ringOuts / n, time: time / n, seconds: ticks / n / 60 };
+}
+
+/** The level the 2v1 table's friends fight at: atLevel's own scale is 1 here, so a friend is its roster self. */
+export const BASE = 10;
+/** How the 2v1 table grows the lone side: `up` levels past the friends, `hp` times the health, `edge` times the damage. */
+export interface Grow { up: number; hp: number; edge: number }
+const lone = (c: Creature, g: Grow): Creature => { const w = atLevel(c, BASE + g.up, true); return g.hp === 1 && g.edge === 1 ? w : { ...w, hpScale: g.hp, edge: w.edge * g.edge }; };
+/** A team fight's two sides from ROSTER indices: the friends at BASE, the lone side grown by `g`, as a wild one. */
+export const teamSides = (t: [number[], number[]], g: Grow): [Creature[], Creature[]] =>
+  [t[0].map((i) => atLevel(ROSTER[i]!, BASE)), t[1].map((i) => lone(ROSTER[i]!, g))];
+/** Every creature as the wild one, against `per` teams of `friends` spread over the roster (never itself, never a team twice). */
+export function teamFights(per: number, friends = 2): [number[], number[]][] {
+  const len = ROSTER.length, steps = [11, 23, 31, 37];
+  return ROSTER.flatMap((_, w) => {
+    const out: [number[], number[]][] = [], seen = new Set<string>();
+    for (let k = 0; out.length < per && k < per * 8; k++) {
+      const team = steps.slice(0, friends).map((st, q) => (w + 1 + q * 4 + k * st) % len), key = [...team].sort((x, y) => x - y).join();
+      if (!team.includes(w) && new Set(team).size === friends && !seen.has(key)) { seen.add(key); out.push([team, [w]]); }
+    }
+    return out;
+  });
+}
+
 /** Below this the underdog of a pairing is locked out: it almost never wins, whatever its overall rate. */
 export const LOCK = 0.2;
 
@@ -58,20 +107,36 @@ export const allPairs = () => ROSTER.flatMap((_, i) => ROSTER.slice(i + 1).map((
  * (scripts/tune-worker.ts; each takes a batch, posts it back, and takes the next), or with `rust` on the Rust sim. */
 export async function rates(pairs: [number, number][], n: number, { threads = navigator.hardwareConcurrency, rust = false } = {}): Promise<Rate[]> {
   if (rust) { await checked(); return rustRates(pairs, n); }
-  const out: Rate[] = new Array(pairs.length), size = Math.max(1, Math.min(32, Math.ceil(pairs.length / threads / 4)));
+  return fanOut(pairs, threads, (batch) => ({ pairs: batch, n }));
+}
+
+/** `rateTeams` for each team fight (ROSTER indices, `teamSides` grown by `grow`): over the Bun workers, or with `rust` on
+ * the Rust sim, its roster the friends at BASE then the grown wild ones. */
+export async function teamRates(fights: [number[], number[]][], n: number, { threads = navigator.hardwareConcurrency, rust = false, grow = { up: 0, hp: 1, edge: 1 } as Grow } = {}): Promise<Rate[]> {
+  if (rust) {
+    await checked();
+    const len = ROSTER.length, cs = [...ROSTER.map((c) => atLevel(c, BASE)), ...ROSTER.map((c) => lone(c, grow))];
+    return rustRates(fights.map(([a, b]): Fight => [a, b.map((i) => i + len)]), n, cs);
+  }
+  return fanOut(fights, threads, (batch) => ({ pairs: [], teams: batch, grow, n }));
+}
+
+/** Items in batches over `threads` Bun workers (scripts/tune-worker.ts), each batch's rates back in order. */
+async function fanOut<T>(items: T[], threads: number, message: (batch: T[]) => object): Promise<Rate[]> {
+  const out: Rate[] = new Array(items.length), size = Math.max(1, Math.min(32, Math.ceil(items.length / threads / 4)));
   const edges = ROSTER.map((c) => c.edge);
   let next = 0;
   const work = async () => {
     const w = new Worker(new URL("./tune-worker.ts", import.meta.url));
     try {
-      while (next < pairs.length) {
-        const from = next, batch = pairs.slice(from, (next += size));
-        const got = await new Promise<unknown>((ok, fail) => { w.onmessage = (e) => ok(e.data); w.onerror = (e) => fail(e); w.postMessage({ edges, pairs: batch, n }); });
+      while (next < items.length) {
+        const from = next, batch = items.slice(from, (next += size));
+        const got = await new Promise<unknown>((ok, fail) => { w.onmessage = (e) => ok(e.data); w.onerror = (e) => fail(e); w.postMessage({ edges, ...message(batch) }); });
         Rates(got).forEach((r, k) => { out[from + k] = r; });
       }
     } finally { w.terminate(); }
   };
-  await Promise.all(Array.from({ length: Math.max(1, Math.min(threads, pairs.length)) }, work));
+  await Promise.all(Array.from({ length: Math.max(1, Math.min(threads, items.length)) }, work));
   return out;
 }
 
@@ -137,6 +202,22 @@ if (import.meta.main) {
     }
     await Bun.write(join(import.meta.dir, "../src/balance.json"), JSON.stringify(Object.fromEntries(ROSTER.map((c) => [c.id, c.edge])), null, 1) + "\n");
     console.log("wrote src/balance.json");
+    process.exit(0);
+  }
+  if (args[0] === "--teams") {
+    const n = Number(args[1]) || 10, per = Number(args[2]) || 8, list = (a: string | undefined, d: string) => (a ?? d).split(",").map(Number);
+    const grows = list(args[3], "0").flatMap((up) => list(args[4], "1").flatMap((hp) => list(args[5], "1").map((edge): Grow => ({ up, hp, edge }))));
+    const friends = Number(args[6]) || 2, fights = teamFights(per, friends), solo = fights.map(([a, b]): [number[], number[]] => [[a[0]!], b]);
+    const median = (xs: number[]) => [...xs].sort((a, b) => a - b)[xs.length >> 1]!;
+    console.log(`${ROSTER.length} wild ones x ${per} teams of ${friends} friends (level ${BASE}), ${n} matches each${rust ? ", on the Rust sim" : ""}`);
+    for (const grow of grows) {
+      const [two, one] = await Promise.all([teamRates(fights, n, { rust, grow }), teamRates(solo, n, { rust, grow })]);
+      // Per wild one: how often two friends beat it, and how often one of them alone does.
+      const byWild = ROSTER.map((_, w) => { const ks = fights.flatMap(([, b], k) => (b[0] === w ? [k] : [])); return { w, two: ks.reduce((t, k) => t + two[k]!.wins, 0) / ks.length, one: ks.reduce((t, k) => t + one[k]!.wins, 0) / ks.length }; });
+      const walk = byWild.filter((r) => r.two >= 1 - LOCK).length, secs = (rs: Rate[]) => rs.reduce((t, r) => t + r.seconds, 0) / rs.length;
+      const outs = (rs: Rate[]) => rs.reduce((t, r) => t + r.ringOuts, 0) / rs.length;
+      console.log(`wild +${String(grow.up).padStart(2)} lv, ${grow.hp}x hp, ${grow.edge}x dmg: ${friends} friends win ${pct(median(byWild.map((r) => r.two)))} (median wild one), ~${secs(two).toFixed(0)} s, ring-outs ${pct(outs(two))}; one alone ${pct(median(byWild.map((r) => r.one)))}, ~${secs(one).toFixed(0)} s; walkovers (friends win ${pct(1 - LOCK).trim()}+) ${walk} of ${ROSTER.length}`);
+    }
     process.exit(0);
   }
   if (args[0] === "--each") {
