@@ -2,7 +2,7 @@
 // seeded saguaros, barrels, prickly pear and shrubs the games grow. Dusk light, one instanced mesh per plant
 // kind, and it stops drawing while it's off screen. Reduced motion gets one still frame.
 import * as THREE from "three";
-import { barrel, pear, roadster, saguaro, shrub } from "../../../packages/models/src/index.ts";
+import { barrel, pear, roadster, saguaro, shrub } from "../../packages/models/src/index.ts";
 
 const canvas = document.querySelector<HTMLCanvasElement>("#stage");
 if (canvas) start(canvas);
