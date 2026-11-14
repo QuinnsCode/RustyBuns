@@ -15,7 +15,7 @@ after pulling when the lockfile moved, or if `node_modules` is missing (`Cannot 
 ## Tests: CI runs the suite
 
 CI runs `bun run typecheck` repo-wide (`typecheck.yml`) and the tests of each app a PR touched (`apps.yml`;
-all apps plus `bun test packages` when `packages/` or the lockfile moved). Commands: `scripts/ci-apps.ts`.
+`bun test packages` when `packages/` or the lockfile moved; every app's suite runs hourly on `main`, `desktop-hourly.yml`). Commands: `scripts/ci-apps.ts`.
 
 - Run only the test files you changed: `cd apps/<app> && bun test test/foo.test.ts`. Typecheck just that app if you like.
 - The 64 GB builder Mac runs them faster and off this machine: `bun run builder run apps/<app> bun test test/foo.test.ts`
