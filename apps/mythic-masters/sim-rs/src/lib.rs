@@ -5,7 +5,8 @@
 //! (the `run` and `live_*` exports below) with the same answers.
 //!
 //! In and out is one JSON command (scripts/sim-rust.ts writes it from the TS roster, so the TS stays the source
-//! of truth): `{ roster, cmd: "rates" | "trace", pairs: [[i, j]], n?, seeds?, threads? }`.
+//! of truth): `{ roster, cmd: "rates" | "trace", pairs: [[i, j]], n?, seeds?, threads? }`. A trace's fight can also be
+//! a team fight, `[[i, j], [k]]`: two against one (#3929).
 // dmath's constants are fdlibm's, digit for digit the same literals as src/dmath.ts, and the sim indexes both sides by number.
 #![allow(clippy::approx_constant, clippy::excessive_precision, clippy::needless_range_loop)]
 
@@ -19,7 +20,7 @@ pub mod state;
 
 use bot::Bot;
 use data::{Chart, Creature, Roster};
-use sim::{new_match, step, Event, How};
+use sim::{new_team_match, step, Event, How};
 
 pub struct Played {
     pub winner: usize,
@@ -31,16 +32,21 @@ pub struct Played {
 /// scripts/tune.ts play: two bots, seeded `seed` and `seed * 7 + 1`, until someone wins. With `trace`, the state
 /// hash after every tick (and before the first).
 pub fn play(chart: &Chart, a: &Creature, b: &Creature, seed: f64, trace: bool) -> Played {
-    let mut m = new_match(chart, a, b);
-    let mut bots = [Bot::new(0, seed), Bot::new(1, seed * 7.0 + 1.0)];
+    play_teams(chart, [&[a], &[b]], seed, trace)
+}
+
+/// `play` for teams: a bot a fighter, the first seeded `seed` and fighter k `seed * 7 + k` (scripts/sim-rust.ts tsTrace).
+pub fn play_teams(chart: &Chart, teams: [&[&Creature]; 2], seed: f64, trace: bool) -> Played {
+    let mut m = new_team_match(chart, teams).expect("someone on each side");
+    let mut bots: Vec<Bot> = (0..m.f.len()).map(|k| Bot::new(k, if k == 0 { seed } else { seed * 7.0 + k as f64 })).collect();
     let mut how = None;
     let mut hashes = Vec::new();
     if trace {
         hashes.push(state::hash_match(&m));
     }
     while !m.over {
-        let inputs = [bots[0].act(&m), bots[1].act(&m)];
-        step(&mut m, inputs);
+        let inputs: Vec<_> = bots.iter_mut().map(|b| b.act(&m)).collect();
+        step(&mut m, &inputs);
         if how.is_none() {
             how = m.events.iter().find_map(|e| if let Event::Ko { how, .. } = e { Some(*how) } else { None });
         }
@@ -107,17 +113,45 @@ fn fan<T: Sync, R: Send + Default + Clone>(items: &[T], threads: usize, f: impl 
     items.iter().map(f).collect()
 }
 
-fn pairs_of(v: &json::Json, roster: &Roster) -> Result<Vec<(usize, usize)>, String> {
+/// Each fight in `pairs`: `[i, j]` one on one, or `[[i, ...], [j, ...]]` a team a side, as roster indices.
+fn fights_of(v: &json::Json, roster: &Roster) -> Result<Vec<[Vec<usize>; 2]>, String> {
+    let bad = || "pairs: [i, j] or [[i, ...], [j, ...]] roster indices".to_string();
+    let ok = |x: f64| x >= 0.0 && x.fract() == 0.0 && (x as usize) < roster.creatures.len();
+    let side = |s: &json::Json| -> Result<Vec<usize>, String> {
+        let s = match s.nums() {
+            Ok(xs) => xs,
+            Err(_) => return Err(bad()),
+        };
+        if !s.is_empty() && s.iter().all(|&x| ok(x)) {
+            Ok(s.iter().map(|&x| x as usize).collect())
+        } else {
+            Err(bad())
+        }
+    };
     v.get("pairs")?
         .arr()?
         .iter()
         .map(|p| {
-            let p = p.nums()?;
-            let ok = |x: f64| x >= 0.0 && x.fract() == 0.0 && (x as usize) < roster.creatures.len();
-            if p.len() == 2 && ok(p[0]) && ok(p[1]) {
-                Ok((p[0] as usize, p[1] as usize))
+            let p = p.arr()?;
+            if p.len() != 2 {
+                return Err(bad());
+            }
+            match (p[0].num(), p[1].num()) {
+                (Ok(i), Ok(j)) if ok(i) && ok(j) => Ok([vec![i as usize], vec![j as usize]]),
+                (Ok(_), _) | (_, Ok(_)) => Err(bad()),
+                _ => Ok([side(&p[0])?, side(&p[1])?]),
+            }
+        })
+        .collect()
+}
+fn pairs_of(v: &json::Json, roster: &Roster) -> Result<Vec<(usize, usize)>, String> {
+    fights_of(v, roster)?
+        .into_iter()
+        .map(|[a, b]| {
+            if a.len() == 1 && b.len() == 1 {
+                Ok((a[0], b[0]))
             } else {
-                Err("pairs: [i, j] roster indices".to_string())
+                Err("rates: one on one pairs only".to_string())
             }
         })
         .collect()
@@ -127,12 +161,12 @@ fn pairs_of(v: &json::Json, roster: &Roster) -> Result<Vec<(usize, usize)>, Stri
 pub fn run(input: &str, default_threads: usize) -> Result<String, String> {
     let v = json::parse(input)?;
     let roster = data::roster_of(v.get("roster")?).map_err(|e| format!("roster: {e}"))?;
-    let pairs = pairs_of(&v, &roster)?;
     let threads = v.opt("threads").map(|t| t.num()).transpose()?.map_or(default_threads, |t| t.max(1.0) as usize);
     let (chart, cs) = (&roster.chart, &roster.creatures);
     let mut out = String::new();
     match v.get("cmd")?.str()? {
         "rates" => {
+            let pairs = pairs_of(&v, &roster)?;
             let n = v.field("n")?.max(1.0) as usize;
             let got = fan(&pairs, threads, |&(i, j)| rate(chart, &cs[i], &cs[j], n));
             out.push('[');
@@ -153,9 +187,12 @@ pub fn run(input: &str, default_threads: usize) -> Result<String, String> {
         }
         "trace" => {
             let seeds = v.get("seeds")?.nums()?;
-            let fights: Vec<(usize, usize, f64)> = pairs.iter().flat_map(|&(i, j)| seeds.iter().map(move |&s| (i, j, s))).collect();
-            let got = fan(&fights, threads, |&(i, j, s)| {
-                let p = play(chart, &cs[i], &cs[j], s, true);
+            let teams = fights_of(&v, &roster)?;
+            let fights: Vec<(&[Vec<usize>; 2], f64)> = teams.iter().flat_map(|t| seeds.iter().map(move |&s| (t, s))).collect();
+            let got = fan(&fights, threads, |&(t, s)| {
+                let side = |k: usize| t[k].iter().map(|&i| &cs[i]).collect::<Vec<_>>();
+                let (a, b) = (side(0), side(1));
+                let p = play_teams(chart, [&a, &b], s, true);
                 (p.winner, p.ticks, p.hashes)
             });
             out.push('[');
@@ -213,9 +250,10 @@ mod wasm {
         OUT.with(|o| o.borrow().len())
     }
 
-    // The page's fight (src/sim-wasm.ts), one at a time: `live_new` with `{ roster }` of just the two creatures (as
-    // `alloc` + `run` take a command; 0 and the error in `out_len` bytes at `out_ptr`, or 1), then each tick both
-    // inputs into `live_io` (2 x live::INPUT_LEN numbers) and `live_step`, and the state is `live_state_len` numbers
+    // The page's fight (src/sim-wasm.ts), one at a time: `live_new` with `{ roster, left? }` of just the creatures in it,
+    // the first `left` (default 1) on one team and the rest on the other (as `alloc` + `run` take a command; 0 and the
+    // error in `out_len` bytes at `out_ptr`, or 1), then each tick every fighter's input into `live_io` (live::INPUT_LEN
+    // numbers each) and `live_step`, and the state is `live_state_len` numbers
     // at `live_state`. A fighter the page changed goes back in the same way: its numbers into `live_io`, `live_load`.
     thread_local! {
         static LIVE: RefCell<Option<crate::live::Live>> = const { RefCell::new(None) };
@@ -237,8 +275,10 @@ mod wasm {
         let made = std::str::from_utf8(&input)
             .map_err(|e| e.to_string())
             .and_then(crate::json::parse)
-            .and_then(|v| crate::data::roster_of(v.get("roster")?))
-            .and_then(crate::live::Live::new);
+            .and_then(|v| {
+                let left = v.opt("left").map(|x| x.num()).transpose()?.map_or(1, |x| x.max(0.0) as usize);
+                crate::live::Live::new(crate::data::roster_of(v.get("roster")?)?, left)
+            });
         LIVE.with(|l| *l.borrow_mut() = None); // the last fight's match and roster go first
         match made {
             Ok(live) => {

@@ -3,8 +3,8 @@
 use crate::data::{Archetype, Slot};
 use crate::dmath::{atan2, cos, hypot, max, min, or1, sin};
 use crate::sim::{
-    covers, frames, head, held, sweep, swing_phase, under, warning, Area, Fighter, Input, Key, Match, Phase, State, ARENA_RADIUS, COST, DIVE_REACH, DIVE_TUCK, HZ, IDLE, ORBIT_FREE, ROUND_TICKS,
-    TAKEOFF,
+    covers, foe_of, frames, head, held, sweep, swing_phase, under, warning, Area, Fighter, Input, Key, Match, Phase, State, ARENA_RADIUS, COST, DIVE_REACH,
+    DIVE_TUCK, HZ, IDLE, ORBIT_FREE, ROUND_TICKS, TAKEOFF,
 };
 
 const RING: f64 = 0.8;
@@ -131,7 +131,7 @@ impl Bot {
     fn think(&mut self, m: &Match) -> Input {
         let side = self.side;
         let me = &m.f[side];
-        let o = &m.f[1 - side];
+        let o = &m.f[foe_of(m, side)];
         self.flip = !self.flip;
         if self.hold_for > 0.0 {
             self.hold_for -= 1.0;
@@ -315,13 +315,18 @@ impl Bot {
             }
         }
 
-        let w = warning(m, 1 - side).or_else(|| {
-            m.areas.iter().find(|a| {
-                let a = a.borrow();
-                a.owner != side && a.d.is_blast() && a.t < a.land
-            })
-            .map(|a| a.borrow().clone())
-        });
+        let w = (0..m.f.len())
+            .filter(|&k| m.f[k].team != me.team && !m.f[k].down)
+            .find_map(|k| warning(m, k))
+            .or_else(|| {
+                m.areas
+                    .iter()
+                    .find(|a| {
+                        let a = a.borrow();
+                        m.f[a.owner].team != me.team && a.d.is_blast() && a.t < a.land
+                    })
+                    .map(|a| a.borrow().clone())
+            });
         if let Some(w) = w.as_ref() {
             if me.on_ground && under(w, me) {
                 let (ox, oz) = way_out(w, me);
@@ -335,7 +340,7 @@ impl Bot {
         }
 
         if threat && !me.exhausted && c.bot.rnd.float() < (if me.b.mass < 30.0 { 0.08 } else { 0.03 }) {
-            let k = if side == 1 { -1.0 } else { 1.0 };
+            let k = if side != 0 { -1.0 } else { 1.0 };
             c.i.mx = -dz / d * k;
             c.i.mz = dx / d * k;
             c.press(me, Key::Dash);
