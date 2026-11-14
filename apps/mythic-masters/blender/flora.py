@@ -503,6 +503,20 @@ def foliage(spec, g, rng, lo, twigs, trunks, H):
                     # The far model has `lo_needles` needles (a third by default), `lo_width` times as wide (2.5), and
                     # `lo_tip` blends their tips back toward the base green (0: none)
                     n = fs.get("needles", 14) if not lo else fs.get("lo_needles", max(5, fs.get("needles", 14) // 3))
+                    # `shade` (0: off) paints value by where the tuft sits in the crown: deep inside and underneath
+                    # its needles go toward `shade_dark`, on top and at the rim their tips go toward `shade_light`,
+                    # so the crown reads as lit masses over a dark core instead of one flat mid green
+                    if fs.get("shade"):
+                        rel = at - centre
+                        rim = min(1, rel.length / (H * fs.get("shade_reach", 0.35)))
+                        up_ = (rel.normalized().z if rel.length > 1e-4 else 0) * 0.5 + 0.5
+                        zf = max(0, min(1, (at.z / H - 0.3) / 0.65))
+                        lit = max(0, min(1, 0.5 * zf + 0.3 * up_ * rim + 0.2 * rim))
+                        dark, light = hexc(fs.get("shade_dark", "#141d0e")), hexc(fs.get("shade_light", "#8f9c3c"))
+                        k = fs["shade"]
+                        c = mix(c, dark, min(1, k * (1 - lit)))
+                        if tc:
+                            tc = mix(mix(tc, dark, k * (1 - lit) * 0.6), light, k * lit * lit)
                     fwd = (tan + UP * fs.get("up", 0.35)).normalized()
                     sp = perp(fwd)
                     brush = size * fs.get("brush", 0.5)
