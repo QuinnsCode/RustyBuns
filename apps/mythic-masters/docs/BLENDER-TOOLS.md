@@ -6,7 +6,8 @@ again. [MODEL-TOOLING.md](MODEL-TOOLING.md) has the beast pipeline's history and
 tools and the rules.
 
 Blender 5.2 LTS is at `/opt/homebrew/bin/blender` on the office Mac and is on `PATH`. The builder Mac (Bob)
-has it too ([MAC_SETUP.md](../../../MAC_SETUP.md)). Every script starts it through `runBlender` in
+has it too ([MAC_SETUP.md](../../../MAC_SETUP.md)). The beast build runs on 5.2.0 only: 5.2.1 writes other GLB bytes from the same
+sheets (#4129), so `beasts.ts` stops on another version and says what to install. Every script starts it through `runBlender` in
 `@rustybuns/cli/blender` (`-b --factory-startup --python-exit-code 1`, a failure throws its Traceback lines);
 `BLENDER_PATH` picks another Blender. Write a new tool on it, not on `Bun.spawn`.
 

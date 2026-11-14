@@ -9,6 +9,7 @@ import { runBlender } from "../src/blender.ts";
 const dir = mkdtempSync(join(tmpdir(), "fake-blender-"));
 const fake = join(dir, "blender");
 writeFileSync(fake, `#!/bin/sh
+case "$*" in *--version*) echo "Blender 5.2.0 LTS"; echo "	build hash: abc"; exit 0;; esac
 echo "Blender 5.2 (hash abc)"
 echo "args: $*"
 echo "step=$SNAP_STEP"
@@ -41,4 +42,13 @@ test("a Python error throws with its traceback, not Blender's chatter", async ()
   expect(msg).toContain("line 12");
   expect(msg).toContain("KeyError: 'horn'");
   expect(msg).not.toContain("Read prefs");
+});
+
+test("a build pinned to a Blender version runs on that one and stops on any other, naming both", async () => {
+  const { out } = await runBlender({ script: "blender/beast.py", args: ["beasts/squonk.json"], threads: 8, version: "5.2.0" });
+  expect(out).toContain("-t 8 -P blender/beast.py");
+  const e = await runBlender({ script: "blender/beast.py", args: ["beasts/squonk.json"], version: "5.2.1" }).catch((x: unknown) => x);
+  expect(e).toBeInstanceOf(Error);
+  expect(String(e)).toContain("needs Blender 5.2.1");
+  expect(String(e)).toContain("is 5.2.0");
 });
