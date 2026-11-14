@@ -80,7 +80,7 @@ import { FORAGE_MEND } from "./world/nature.ts";
 import { Online, roomCode, uid } from "./net/online.ts";
 import { HURT_FULL } from "./net/party.ts";
 import { COLOURS, css as hueCss, firstColour, wornColour } from "./world/hues.ts";
-import { joinParty, openParty, partyCode } from "./net/lobby.ts";
+import { invitedBy, joinParty, openParty, partyCode, signInToJoin } from "./net/lobby.ts";
 import type { Friend } from "./world/view.ts";
 import { ARENA, foeOf, head, held as holding, HZ, IDLE, swingPhase, warning, type Fighter, type Input, type Match, type V3 } from "./sim.ts";
 import { tsSim, wasmSim, type Live, type Sim } from "./sim-wasm.ts";
@@ -222,12 +222,16 @@ function joinHunt(h: string, s: number, who: string) {
 }
 // `?party=CODE`: an eqosys party's lobby over the world; the host's Start sends everyone to `?world=1&room=ROOM`.
 const partyId = room ? null : partyCode(location.search);
-let lobbyOpen = false;
+/** Who sent the party link, read before the world puts its own address up. */
+const partyFrom = invitedBy(location.search);
+let lobbyOpen = false, askedIn = false;
 /** The world HUD's party chip: the room and who is here (or why nobody is); with no room, "Walk together" for a signed-in player. */
 function drawTogether() {
   const el = document.querySelector<HTMLElement>("#worldHud .together"), box = document.querySelector<HTMLElement>("#worldHud .lobby");
   if (!el || !box) return;
-  if (partyId && !lobbyOpen) { lobbyOpen = true; box.hidden = false; joinParty(partyId, box); }
+  if (partyId && !lobbyOpen && login()) { lobbyOpen = true; box.hidden = false; joinParty(partyId, box); }
+  // Signed out at the link: "Sign in to join Ada's party" first, then this again with the login (heardLogin).
+  else if (partyId && !lobbyOpen && !askedIn) { askedIn = true; signInToJoin(box, partyId, partyFrom, heardLogin); }
   if (!online) {
     const l = login(), can = !partyId && !!l && fresh(l);
     el.hidden = !can;
@@ -650,7 +654,14 @@ function enterWorld() {
 let startingOver = false, signInNote = "";
 /** The title's sign-in row: the eqosys name once signed in. */
 function drawAccount() {
-  accountChip($("#account"), { note: signInNote });
+  accountChip($("#account"), { note: signInNote, onSignIn: heardLogin });
+}
+/** A login came back from eqosys's window beside the game: everything that reads it, again, and no reload. */
+function heardLogin() {
+  signInNote = "";
+  drawAccount(); drawReaders();
+  if (world.shown) drawTogether();
+  if (askedParty && !readersCode) joinReaders(askedParty);
 }
 /** The book's standing demand, in its own hand on the title scroll and the compendium (src/demand.ts). */
 function drawDemand() {
@@ -1717,7 +1728,7 @@ function accountPane(pane: HTMLElement) {
       : can ? "Sign in through eqosys to carry your name across the Q games."
         : "Signing in opens once Mythic Masters is online. Until then you play under a local name, and your save stays in this browser.";
     pane.replaceChildren(Object.assign(document.createElement("p"), { textContent: say }));
-    if (who || can) pane.append(accountChip(document.createElement("div"), { note: signInNote, onSignOut: () => { draw(); drawAccount(); } }));
+    if (who || can) pane.append(accountChip(document.createElement("div"), { note: signInNote, onSignOut: () => { draw(); drawAccount(); }, onSignIn: () => { draw(); heardLogin(); } }));
     huePicker(pane);
   };
   draw();
@@ -2048,6 +2059,9 @@ const askedParty = (params.get("party") ?? "").toUpperCase().match(/^[A-Z0-9]{4,
 void signedIn.then((back) => {
   if (back) { signInNote = back.error ?? ""; drawAccount(); }
   if (back?.login && back.then === "versus") versus.open(); // signed in from Fight a Friend: back to the friends list
+  // Signed in from a party link the long way round (the window was blocked): back to that party's lobby; its invite key waited.
+  const backTo = back?.login && back.then.startsWith("party:") ? partyCode(`?party=${back.then.slice(6)}`) : null;
+  if (backTo && backTo !== partyId) { location.search = `?world=1&party=${backTo}`; return; }
   if (askedParty && login()) joinReaders(askedParty);
   else if (askedParty) { signInNote = "Sign in to read the Book with this party."; drawAccount(); }
   drawReaders();
