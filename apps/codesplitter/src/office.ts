@@ -21,10 +21,10 @@
 //   (the object's own POST /run {workerId, run}: a desk's run, from the Worker only)
 // Until auth mapping (slice 7), everything but the hook takes the signed-in owner only.
 
-import { arr, check, int, obj, oneOf, opt, str, type Of } from "@rustybuns/util/guard";
+import { arr, check, int, isRecord, obj, oneOf, opt, str, type Of } from "@rustybuns/util/guard";
 import { Sockets, type RoomCtx, type RoomSocket } from "@rustybuns/util/room";
 import { fail, json, type Env } from "./env.ts";
-import { isPlainObject, parseJson, sha256 } from "./util.ts";
+import { parseJson, sha256 } from "./util.ts";
 import { actingAs } from "./identity.ts";
 
 /** How much of a run's output a desk keeps: its tail. */
@@ -271,8 +271,8 @@ export class OfficeFloor {
     if (!f || !me) return;
     // The 3D client also sends what this floor doesn't keep yet (walking, the whiteboard, chat): dropped, as upstream
     // drops a type it has no handler for. Its ping gets the pong it times the connection with.
-    const t = isPlainObject(f.value) ? f.value.t : undefined;
-    if (t === "ping") return this.sockets.send(ws, { t: "pong", at: Number(isPlainObject(f.value) && f.value.at) || 0, now: Date.now() });
+    const t = isRecord(f.value) ? f.value.t : undefined;
+    if (t === "ping") return this.sockets.send(ws, { t: "pong", at: Number(isRecord(f.value) && f.value.at) || 0, now: Date.now() });
     if (typeof t !== "string" || !FLOOR_TYPES.has(t)) return;
     const m = check(Msg, f.value);
     if (!m) return;

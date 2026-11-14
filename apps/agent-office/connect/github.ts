@@ -11,6 +11,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { secretsFor, type Secrets } from "./keychain.ts";
 import type { Access, Connection, Status } from "./types.ts";
+import { isRecord } from "@rustybuns/util/guard";
 
 export interface Deps {
   /** The office's data folder (the list of accounts lives here). */
@@ -35,7 +36,7 @@ const str = (o: Record<string, unknown>, k: string) => (typeof o[k] === "string"
 const num = (o: Record<string, unknown>, k: string) => (typeof o[k] === "number" ? o[k] : undefined);
 async function object(r: Response): Promise<Record<string, unknown>> {
   const v: unknown = await r.json().catch(() => null);
-  return typeof v === "object" && v !== null && !Array.isArray(v) ? Object.fromEntries(Object.entries(v)) : {};
+  return isRecord(v) ? v : {};
 }
 
 export function loadSaved(dir: string): Saved[] {
@@ -43,8 +44,8 @@ export function loadSaved(dir: string): Saved[] {
   const v: unknown = JSON.parse(readFileSync(listFile(dir), "utf8"));
   if (!Array.isArray(v)) return [];
   return v.flatMap((e: unknown) => {
-    if (typeof e !== "object" || e === null) return [];
-    const o = Object.fromEntries(Object.entries(e));
+    if (!isRecord(e)) return [];
+    const o = e;
     const account = str(o, "account");
     return account ? [{ id: `github:${account}`, account, access: o.access === "write" ? "write" : "read" } satisfies Saved] : [];
   });

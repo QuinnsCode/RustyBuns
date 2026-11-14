@@ -53,6 +53,9 @@ function promisesNothing(type: string): boolean {
   return members.length > 0 && members.every((m) => /^[\w"-]+\?: unknown$/.test(m));
 }
 
+// A hand-rolled `(v: unknown): v is Record<string, unknown>` (or `{ [k: string]: unknown }`): the guard has the one copy.
+const LOCAL_RECORD = /\(\s*(\w+)\s*:\s*unknown\s*\)\s*:\s*\1 is (Record<string, unknown>|\{ \[\w+: string\]: unknown \})(?!\[)/;
+
 /** Findings in one file's text: [line number, why, the line]. */
 export function findings(text: string): [number, string, string][] {
   const out: [number, string, string][] = [];
@@ -60,6 +63,7 @@ export function findings(text: string): [number, string, string][] {
     const line = raw.replace(/\/\/.*$/, "");
     const hit = (why: string) => out.push([i + 1, why, raw.trim().slice(0, 140)]);
     if (/\bas never\b/.test(line)) return hit("`as never` turns the check off");
+    if (LOCAL_RECORD.test(line)) return hit("a local isRecord: import `isRecord` from @rustybuns/util/guard");
     if (!SOURCE.test(line)) return;
     if (/: any\b|<any>/.test(line) || /\bas any\b/.test(line.slice(afterParse(line)))) return hit("`any` after a parse");
     const type = asserted(line);
@@ -73,7 +77,7 @@ export function findings(text: string): [number, string, string][] {
 const SKIP = /(^|\/)(tests?|node_modules|dist)\/|\.test\.tsx?$|\.d\.ts$/;
 
 function scan(): Map<string, [number, string, string][]> {
-  const files = Bun.spawnSync(["git", "ls-files", "*.ts", "*.tsx"]).stdout.toString().split("\n").filter((f) => f && !SKIP.test(f) && f !== "scripts/boundary-audit.ts");
+  const files = Bun.spawnSync(["git", "ls-files", "*.ts", "*.tsx"]).stdout.toString().split("\n").filter((f) => f && !SKIP.test(f) && f !== "scripts/boundary-audit.ts" && f !== "packages/util/src/guard.ts");
   const all = new Map<string, [number, string, string][]>();
   for (const f of files) {
     let found: [number, string, string][];

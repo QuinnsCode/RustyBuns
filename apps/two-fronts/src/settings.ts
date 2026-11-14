@@ -3,6 +3,7 @@
 // The look speeds and invert Y live in the shared Controls cog (@rustybuns/game-controls); this holds what only this game has.
 
 import { DEFAULTS as LOOK_DEFAULTS, type Settings as Look } from "@rustybuns/game-controls";
+import { isRecord } from "@rustybuns/util/guard";
 
 export type Action = "forward" | "back" | "left" | "right" | "strike" | "use" | "mute";
 export const ACTIONS: { id: Action; label: string }[] = [
@@ -26,7 +27,6 @@ export const SETTINGS_KEY = "two-fronts-controls";
 /** Keys the game keeps for itself (squad orders, letting go of the mouse). */
 export const RESERVED = ["1", "2", "3", "4", "f", "escape"];
 
-const isObj = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 const num = (v: unknown, lo: number, hi: number, d: number) => (typeof v === "number" && v >= lo && v <= hi ? v : d);
 const flag = (v: unknown, d: boolean) => (typeof v === "boolean" ? v : d);
 
@@ -35,8 +35,8 @@ export function parseSettings(text: string | null): Settings {
   const d = DEFAULTS;
   let v: unknown = null;
   try { v = text ? JSON.parse(text) : null; } catch { /* a damaged save: start over */ }
-  if (!isObj(v)) return { ...d, keys: { ...d.keys } };
-  const stored = isObj(v.keys) ? v.keys : {};
+  if (!isRecord(v)) return { ...d, keys: { ...d.keys } };
+  const stored = isRecord(v.keys) ? v.keys : {};
   const keys = { ...d.keys };
   for (const a of ACTIONS) { const k = stored[a.id]; if (typeof k === "string" && k.length > 0 && k.length < 16) keys[a.id] = k; }
   const used = ACTIONS.map((a) => keys[a.id]);

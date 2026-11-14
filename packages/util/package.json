@@ -55,7 +55,8 @@
     "./tutorial": "./src/tutorial.ts",
     "./visitors": "./src/visitors.ts",
     "./voice": "./src/voice.ts",
-    "./wasm-shared": "./src/wasm-shared.ts"
+    "./wasm-shared": "./src/wasm-shared.ts",
+    "./lab/*": "./src/lab/*.ts"
   },
   "files": [
     "src"

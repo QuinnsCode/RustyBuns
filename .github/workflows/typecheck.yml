@@ -30,7 +30,8 @@ jobs:
       - run: bun run typecheck
       - run: bun scripts/conflict-markers.ts
       - run: bun scripts/boundary-audit.ts
+      - run: bun scripts/util-api.ts
       - run: bun scripts/migration-numbers.ts
-      - run: bun test ./scripts/lock-drift.test.ts ./scripts/conflict-markers.test.ts ./scripts/boundary-audit.test.ts ./scripts/ci-test-count.test.ts ./scripts/trial-github-cache.test.ts ./scripts/trial-flags.test.ts ./scripts/migration-numbers.test.ts
+      - run: bun test ./scripts/lock-drift.test.ts ./scripts/conflict-markers.test.ts ./scripts/boundary-audit.test.ts ./scripts/ci-test-count.test.ts ./scripts/trial-github-cache.test.ts ./scripts/trial-flags.test.ts ./scripts/migration-numbers.test.ts ./scripts/util-api.test.ts
       - run: bun run docs --check
       - run: bun run site --check

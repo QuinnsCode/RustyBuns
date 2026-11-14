@@ -30,7 +30,7 @@ import { codesplitter, type Failure } from "./client.ts";
 import { agentPrompt } from "./src/agent-prompt.ts";
 import { explain } from "./src/failed.ts";
 import { tool, tools } from "./src/mcp.ts";
-import { isPlainObject } from "./src/util.ts";
+import { isRecord } from "@rustybuns/util/guard";
 import { splittersContext } from "./triage/context.ts";
 import PLAYBOOK from "./triage/PLAYBOOK.md" with { type: "text" };
 
@@ -90,7 +90,7 @@ export function say(e: Failure<string>, site: string): string {
     case "TokenCantDo": return `${e.message}. Make a token${e.scope ? ` with ${e.scope} scope` : ""} at ${site}/#/me/tokens and run: codesplitter login`;
     case "RateLimited": return `Too many calls for now: try again in ${e.retryAfter} seconds.`;
     case "Transient": return `${site} didn't answer, after a few tries: try again in a minute.`;
-    default: return explain(e.message, "reply" in e && isPlainObject(e.reply) ? e.reply.tag : null);
+    default: return explain(e.message, "reply" in e && isRecord(e.reply) ? e.reply.tag : null);
   }
 }
 

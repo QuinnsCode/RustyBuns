@@ -2,6 +2,7 @@
 // The byte helpers are the shared ones from @rustybuns/util/bytes (which imports nothing); the rest imports nothing.
 // Look here before writing a toHex, a digest, an esc or a plural again.
 
+import { isRecord } from "@rustybuns/util/guard";
 export { b64, b64url, digest, hex, hmacHex, sha256 } from "@rustybuns/util/bytes";
 
 /** `s` safe inside HTML text and attribute values. */
@@ -9,11 +10,10 @@ export const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt
 /** "1 line", "3 lines"; pass `many` for an irregular plural. */
 export const plural = (n: number, one: string, many = one + "s") => `${n} ${n === 1 ? one : many}`;
 /** `v` is a JSON object: not null, not an array. What a parsed body must be before its keys are read. */
-export const isPlainObject = (v: unknown): v is { [k: string]: unknown } => typeof v === "object" && v !== null && !Array.isArray(v);
 /** The objects in `v[key]` when `v` is a JSON object holding a list: what a third-party reply gives, or nothing. */
 export const listOf = (v: unknown, key: string): { [k: string]: unknown }[] => {
-  const list = isPlainObject(v) ? v[key] : null;
-  return Array.isArray(list) ? list.filter(isPlainObject) : [];
+  const list = isRecord(v) ? v[key] : null;
+  return Array.isArray(list) ? list.filter(isRecord) : [];
 };
 /** A number padded so keys sort in numeric order as text. */
 export const pad10 = (n: number) => String(n).padStart(10, "0");

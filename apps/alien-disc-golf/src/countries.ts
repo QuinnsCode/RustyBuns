@@ -5,6 +5,7 @@ import { feature } from "topojson-client";
 import type { Topology, GeometryCollection } from "topojson-specification";
 import topology from "world-atlas/countries-110m.json";
 import type { LatLon } from "./geo.ts";
+import { isRecord } from "@rustybuns/util/guard";
 
 /** A [lon, lat] point as GeoJSON writes it. */
 export type Position = number[];
@@ -19,12 +20,11 @@ export interface Country {
 }
 
 type CountriesTopology = Topology<{ countries: GeometryCollection<{ name: string }> }>;
-const isObj = (x: unknown): x is Record<string, unknown> => typeof x === "object" && x !== null;
 /** world-atlas ships the file; this checks it is the TopoJSON topojson-client reads before trusting it. */
 function isCountriesTopology(x: unknown): x is CountriesTopology {
-  if (!isObj(x) || x.type !== "Topology" || !Array.isArray(x.arcs) || !isObj(x.objects)) return false;
+  if (!isRecord(x) || x.type !== "Topology" || !Array.isArray(x.arcs) || !isRecord(x.objects)) return false;
   const c = x.objects.countries;
-  return isObj(c) && c.type === "GeometryCollection" && Array.isArray(c.geometries);
+  return isRecord(c) && c.type === "GeometryCollection" && Array.isArray(c.geometries);
 }
 
 function build(): Country[] {

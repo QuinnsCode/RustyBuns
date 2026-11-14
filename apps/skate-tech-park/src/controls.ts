@@ -1,6 +1,7 @@
 // The player's control settings: how the stick and the flick pad feel and look, kept per player in the browser. Plain
 // data and no DOM; the Controls cog (main.ts) edits it, main.ts applies it live.
 import { type Profile, scaled } from "./flick.ts";
+import { isRecord } from "@rustybuns/util/guard";
 
 export type Controls = {
   invertX: boolean; // steer the other way
@@ -14,7 +15,6 @@ export type Controls = {
 export const DEFAULT_CONTROLS: Controls = { invertX: false, swap: false, size: 1, opacity: 1, labels: "first", dead: 0.18 };
 export const CONTROLS_KEY = "skate-controls";
 
-const isObj = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 const num = (v: unknown, lo: number, hi: number, d: number) => (typeof v === "number" && v >= lo && v <= hi ? v : d);
 const flag = (v: unknown, d: boolean) => (typeof v === "boolean" ? v : d);
 
@@ -23,7 +23,7 @@ export function parseControls(text: string | null): Controls {
   const d = DEFAULT_CONTROLS;
   let v: unknown = null;
   try { v = text ? JSON.parse(text) : null; } catch { /* a damaged save: start over */ }
-  if (!isObj(v)) return { ...d };
+  if (!isRecord(v)) return { ...d };
   return {
     invertX: flag(v.invertX, d.invertX), swap: flag(v.swap, d.swap),
     size: num(v.size, 0.6, 1.5, d.size), opacity: num(v.opacity, 0.15, 1, d.opacity),

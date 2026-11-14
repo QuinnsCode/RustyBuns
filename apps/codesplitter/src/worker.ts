@@ -5,7 +5,7 @@
 
 import { pipelineRoutes } from "./pipeline-routes.ts";
 import { reviewOf, runQueuedReviews } from "./pipeline-hooks.ts";
-import { isPlainObject, parseJson } from "./util.ts";
+import { parseJson } from "./util.ts";
 import { artifactMoveRoutes } from "./artifact-move.ts";
 import { featureRankRoutes } from "./feature-ranks.ts";
 import { findRoutes } from "./finds.ts";
@@ -41,7 +41,7 @@ import {
   type DigMessage,
   type Env,
 } from "./env.ts";
-import { arr, bool, obj, oneOf, opt, str } from "@rustybuns/util/guard";
+import { arr, bool, isRecord, obj, oneOf, opt, str } from "@rustybuns/util/guard";
 import { readJson } from "@rustybuns/util/http";
 import {
   accountsOn,
@@ -878,7 +878,7 @@ async function route(req: Request, env: Env): Promise<Response> {
       // Hiding lines is the crew's; showing them again (to git and search on the next commit) the owner's.
       const sent = writes ? await req.text() : undefined;
       // The few fields read here; the file's Durable Object checks the whole body.
-      const said = (() => { try { const v: unknown = JSON.parse(sent ?? ""); return isPlainObject(v) ? v : {}; } catch { return {}; } })();
+      const said = (() => { try { const v: unknown = JSON.parse(sent ?? ""); return isRecord(v) ? v : {}; } catch { return {}; } })();
       if (p[5] === "private" && req.method === "POST") {
         const on = said.private;
         if (typeof on !== "boolean") return fail("BadInput", "{lines, private: true|false}, please");
@@ -931,7 +931,7 @@ async function route(req: Request, env: Env): Promise<Response> {
           if (!branch) {
             const hid = await toFile(env, owner, repo, path, user!, "hidden", { method: "POST", body: sent });
             const files: unknown = hid.ok ? await hid.json().catch(() => null) : null;
-            if (isPlainObject(files) && typeof files.content === "string" && typeof files.published === "string")
+            if (isRecord(files) && typeof files.content === "string" && typeof files.published === "string")
               await pushCatalogue(env, owner, repo, path, { content: files.content, published: files.published }, user!, "hide private lines").catch(() => null);
           }
         }

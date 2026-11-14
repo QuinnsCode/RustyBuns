@@ -2,6 +2,7 @@
 // game has: invert left/right, field of view, click-to-fire, left-handed touch and rebinding. Click a key row, then press the key.
 import { mountControls } from "@rustybuns/game-controls";
 import { ACTIONS, type Action, keyName, onSettings, rebind, resetSettings, setLook, setSettings, settings, type Settings } from "../settings.ts";
+import { isRecord } from "@rustybuns/util/guard";
 
 type Flag = "invertX" | "fireToggle" | "leftHanded";
 type Level = "fov";
@@ -11,8 +12,8 @@ function migrate() {
   try {
     if (localStorage.getItem(KEY) !== null) return;
     const old: unknown = JSON.parse(localStorage.getItem("two-fronts-controls") ?? "null");
-    if (typeof old !== "object" || old === null) return;
-    const o = Object.fromEntries(Object.entries(old));
+    if (!isRecord(old)) return;
+    const o = old;
     const n = (v: unknown) => (typeof v === "number" ? v : 1);
     localStorage.setItem(KEY, JSON.stringify({ lookX: n(o.mouse), lookY: n(o.mouse), touch: n(o.touch), invertY: o.invertY === true }));
   } catch { /* no storage: the defaults */ }

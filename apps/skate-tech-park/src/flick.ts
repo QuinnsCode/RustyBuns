@@ -4,6 +4,7 @@
 // can read the paths off the deck. gesture.ts resolves a drag through whichever profile is in use; flick-profiles.ts
 // holds the library, and a page can be handed its own through `?flick=` (see `pickProfile`).
 import { type Flick, type Stance, TRICKS } from "./tricks.ts";
+import { isRecord } from "@rustybuns/util/guard";
 
 export type Pop = "ollie" | "nollie";
 /** Where a press lands on the pad's board: its nose end, its tail end, or anywhere else (the middle, or off it). */
@@ -81,13 +82,12 @@ export const scaled = (p: Profile, k: number, name: string, about: string): Prof
 });
 
 // Reading a profile handed in from outside (the address or the browser's storage): every field checked, nothing assumed.
-const isObj = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 const num = (v: unknown, lo: number, hi: number) => (typeof v === "number" && v >= lo && v <= hi ? v : undefined);
 const isFlick = (v: unknown): v is Flick => typeof v === "string" && Object.hasOwn(TRICKS, v);
 const ZONES = ["nose", "tail", "mid", "any"] as const;
 
 function parseStroke(v: unknown): Stroke | null {
-  if (!isObj(v)) return null;
+  if (!isRecord(v)) return null;
   const from = ZONES.find((z) => z === v.from);
   const dir = v.dir === "tap" ? "tap" : num(v.dir, 0, 360);
   if (!from || dir === undefined) return null;
@@ -103,7 +103,7 @@ function parseStroke(v: unknown): Stroke | null {
 
 /** A profile from JSON-ish data, filling what it leaves out from `base`. Null if it has no strokes that do anything. */
 export function parseProfile(v: unknown, base: Profile): Profile | null {
-  if (!isObj(v) || !Array.isArray(v.strokes)) return null;
+  if (!isRecord(v) || !Array.isArray(v.strokes)) return null;
   const strokes = v.strokes.map(parseStroke).filter((s): s is Stroke => s !== null);
   if (!strokes.length) return null;
   return {

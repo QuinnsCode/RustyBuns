@@ -5,6 +5,7 @@
 // turning one off leaves the others where they were.
 
 import type { EsterPhase, EsterState } from "../ester/run.ts";
+import { isRecord } from "@rustybuns/util/guard";
 
 export type Screen = "gitpath" | "mervin" | "ester";
 export const SCREENS: Screen[] = ["gitpath", "mervin", "ester"];
@@ -59,7 +60,7 @@ export function avoided(b: Board, prevented = 0): { avoided: number; total: numb
 /** `GET /__rb/codesplitter/hold`'s `prevented`: tasks Mervin held (the dispatch hint's Wait) because open branches already
  * changed their files, so the two never met at merge time. Counted as conflicts avoided. 0 when the answer isn't a count. */
 export function preventedOf(body: unknown): number {
-  return isObject(body) && typeof body.prevented === "number" && body.prevented > 0 ? Math.floor(body.prevented) : 0;
+  return isRecord(body) && typeof body.prevented === "number" && body.prevented > 0 ? Math.floor(body.prevented) : 0;
 }
 
 /** One row of Mervin's running tally per PR and per clash: a later run of the same PR replaces its row, so reruns don't count twice. */
@@ -77,7 +78,7 @@ export function tallySum(text: string): Tally | null {
   for (const l of text.split("\n")) {
     try {
       const r: unknown = JSON.parse(l);
-      if (isObject(r) && typeof r.key === "string") last.set(r.key, { key: r.key, at: num(r.at), avoided: num(r.avoided), total: num(r.total) });
+      if (isRecord(r) && typeof r.key === "string") last.set(r.key, { key: r.key, at: num(r.at), avoided: num(r.avoided), total: num(r.total) });
     } catch {}
   }
   if (!last.size) return null;
@@ -145,9 +146,9 @@ const FAILED = ["FAILURE", "TIMED_OUT", "CANCELLED", "ERROR", "ACTION_REQUIRED"]
 /** `gh pr list --json number,title,url,isDraft,statusCheckRollup` as the line's open PRs. */
 export function openPrs(body: unknown): OpenPr[] {
   if (!Array.isArray(body)) return [];
-  return body.filter(isObject).flatMap((p) => {
+  return body.filter(isRecord).flatMap((p) => {
     if (typeof p.number !== "number") return [];
-    const checks = Array.isArray(p.statusCheckRollup) ? p.statusCheckRollup.filter(isObject) : [];
+    const checks = Array.isArray(p.statusCheckRollup) ? p.statusCheckRollup.filter(isRecord) : [];
     const word = (c: Record<string, unknown>) => String(c.conclusion ?? c.state ?? "");
     const ci = checks.some((c) => FAILED.includes(word(c))) ? "fail" : !checks.length ? "none"
       : checks.some((c) => (c.status !== undefined && c.status !== "COMPLETED") || word(c) === "PENDING") ? "pending" : "pass";
@@ -157,7 +158,7 @@ export function openPrs(body: unknown): OpenPr[] {
 /** `gh pr list --state merged --json number,title,mergedAt`, newest first. */
 export function mergedPrs(body: unknown): MergedPr[] {
   if (!Array.isArray(body)) return [];
-  return body.filter(isObject).flatMap((p) => {
+  return body.filter(isRecord).flatMap((p) => {
     const at = typeof p.mergedAt === "string" ? Date.parse(p.mergedAt) : NaN;
     return typeof p.number === "number" && Number.isFinite(at) ? [{ number: p.number, title: typeof p.title === "string" ? p.title : "", mergedAt: at }] : [];
   }).sort((a, b) => b.mergedAt - a.mergedAt);
@@ -184,14 +185,13 @@ export function line(open: OpenPr[], mervin: EsterState, ester: EsterState): Car
 
 // ---- small readers --------------------------------------------------------------------------------------------
 
-const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : 0);
 
 const PHASES: EsterPhase[] = ["idle", "running", "green", "red", "error"];
 const isPhase = (p: unknown): p is EsterPhase => PHASES.some((x) => x === p);
 /** One helper's run from `GET /__rb/helpers` (ester/run.ts), or idle when it doesn't look like one. */
 export function helperState(v: unknown): EsterState {
-  if (!isObject(v) || !isPhase(v.phase)) return { phase: "idle", lines: [], hold: [] };
+  if (!isRecord(v) || !isPhase(v.phase)) return { phase: "idle", lines: [], hold: [] };
   const n = (x: unknown) => (typeof x === "number" ? x : undefined);
   return {
     phase: v.phase,
@@ -203,7 +203,7 @@ export function helperState(v: unknown): EsterState {
 }
 /** Mervin's running tally from `GET /__rb/helpers`, or null while none is kept. */
 export function tallyOf(v: unknown): Tally | null {
-  return isObject(v) && typeof v.total === "number" ? { prs: num(v.prs), avoided: num(v.avoided), total: num(v.total), since: num(v.since) } : null;
+  return isRecord(v) && typeof v.total === "number" ? { prs: num(v.prs), avoided: num(v.avoided), total: num(v.total), since: num(v.since) } : null;
 }
 
 /** The three slots across `left`..`right` on the wall (board-local x), each `gap` apart: centre and width of each. */

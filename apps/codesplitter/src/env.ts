@@ -1,6 +1,6 @@
 // The Worker's bindings, and the slice of Cloudflare's Artifacts types we use
 // (copied from @cloudflare/workers-types so the app needs no extra package).
-import { Bad, check, obj, str, type Guard } from "@rustybuns/util/guard";
+import { Bad, check, isRecord, obj, str, type Guard } from "@rustybuns/util/guard";
 
 export interface TreeEntry { name: string; mode: string; hash: string; type: "tree" | "blob" | "symlink" | "gitlink" | "exec" }
 export interface CommitMeta { hash: string; treeHash: string; message: string; parents: string[]; author: { name: string; email: string }; authoredAt: number }
@@ -217,7 +217,6 @@ export interface Env {
 import { json, readBody, type Body } from "@rustybuns/util/http";
 export { json, readBody, type Body };
 import { ERRORS, type ErrorTag } from "./openapi.ts";
-import { isPlainObject } from "./util.ts";
 
 /** A named failure (#3804): `error` the sentence a person reads, `tag` what a client matches on. The status is the tag's (openapi.ts ERRORS). */
 export const fail = (tag: ErrorTag, error: string, extra?: Record<string, unknown>) => json({ ...extra, error, tag }, ERRORS[tag][0]);
@@ -230,7 +229,7 @@ export async function errorIn(res: Response, dflt: string | null) { return check
 /** Another module's failure reply, named: its body kept, the tag added. */
 export async function named(res: Response, tag: ErrorTag): Promise<Response> {
   const b: unknown = await res.json().catch(() => null);
-  return fail(tag, check(ErrorReply, b)?.error ?? ERRORS[tag][1], isPlainObject(b) ? b : {});
+  return fail(tag, check(ErrorReply, b)?.error ?? ERRORS[tag][1], isRecord(b) ? b : {});
 }
 
 /** A file read's failure (archive.ts readText, materialize), named by its status (a 5xx stays untagged: a client retries it). */

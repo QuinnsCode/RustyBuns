@@ -3,6 +3,7 @@
 // lines older than the retention the person picked (a day, 3 days, a week, a month) go too.
 import { appendFileSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import { isRecord } from "@rustybuns/util/guard";
 
 export const KEEP_DAYS = [1, 3, 7, 30] as const;
 export type Camera = { maxMb: number; keepDays: (typeof KEEP_DAYS)[number] };
@@ -10,11 +11,10 @@ export const DEFAULT_CAMERA: Camera = { maxMb: 10, keepDays: 3 };
 
 export type Entry = { at: number; kind: "outbound" | "home"; who: string; what: string; verdict: "allowed" | "denied" | "timed out" | "listed" };
 
-const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 
 /** The log's settings from whatever a file or form holds, each field checked; anything missing is the default. */
 export function parseCamera(raw: unknown): Camera {
-  const r = isObject(raw) ? raw : {};
+  const r = isRecord(raw) ? raw : {};
   const maxMb = r.maxMb ?? DEFAULT_CAMERA.maxMb;
   if (typeof maxMb !== "number" || !(maxMb > 0) || maxMb > 10_000) throw new Error("the log's size should be a number of MB above 0");
   const keep = KEEP_DAYS.find((d) => d === (r.keepDays ?? DEFAULT_CAMERA.keepDays));
@@ -30,7 +30,7 @@ export const logFile = (dir: string) => path.join(dir, "outbound.log");
 export function cameraOf(dir: string): Camera {
   try {
     const raw: unknown = JSON.parse(readFileSync(path.join(dir, "box.json"), "utf8"));
-    return parseCamera(isObject(raw) ? raw.log : undefined);
+    return parseCamera(isRecord(raw) ? raw.log : undefined);
   } catch {
     return DEFAULT_CAMERA;
   }
@@ -66,7 +66,7 @@ export function recent(file: string, n: number, cam: Camera, now = Date.now()): 
   return lines(file).filter((l) => atOf(l) >= oldest).slice(-n).reverse().flatMap((l) => {
     try {
       const e: unknown = JSON.parse(l);
-      return isObject(e) && typeof e.at === "number" && typeof e.who === "string" && typeof e.what === "string"
+      return isRecord(e) && typeof e.at === "number" && typeof e.who === "string" && typeof e.what === "string"
         && (e.kind === "outbound" || e.kind === "home") && (e.verdict === "allowed" || e.verdict === "denied" || e.verdict === "timed out" || e.verdict === "listed")
         ? [{ at: e.at, kind: e.kind, who: e.who, what: e.what, verdict: e.verdict }] : [];
     } catch { return []; }

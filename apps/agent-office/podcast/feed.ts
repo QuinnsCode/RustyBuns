@@ -8,6 +8,7 @@
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
+import { isRecord } from "@rustybuns/util/guard";
 
 export interface Feed { id: string; title: string; url: string; order: "oldest" | "newest" }
 export interface Episode { id: string; title: string; url: string; seconds: number; published: number }
@@ -15,16 +16,15 @@ export interface Episode { id: string; title: string; url: string; seconds: numb
 const FRESH_MS = 15 * 60_000;
 const MAX_BYTES = 8_000_000;
 
-const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 
 export function feeds(env: Record<string, string | undefined> = process.env): Feed[] {
   const file = env.AGENT_OFFICE_PODCASTS ?? path.join(env.XDG_CONFIG_HOME ?? path.join(env.HOME ?? homedir(), ".config"), "agent-office", "podcasts.json");
   let conf: unknown;
   try { conf = JSON.parse(readFileSync(file, "utf8")); } catch { return []; }
-  const list = isObject(conf) && Array.isArray(conf.feeds) ? conf.feeds : [];
+  const list = isRecord(conf) && Array.isArray(conf.feeds) ? conf.feeds : [];
   const out: Feed[] = [];
   for (const f of list) {
-    if (!isObject(f) || typeof f.id !== "string" || typeof f.url !== "string" || !/^[\w-]+$/.test(f.id) || !/^https?:\/\//.test(f.url)) continue;
+    if (!isRecord(f) || typeof f.id !== "string" || typeof f.url !== "string" || !/^[\w-]+$/.test(f.id) || !/^https?:\/\//.test(f.url)) continue;
     out.push({ id: f.id, title: typeof f.title === "string" ? f.title : f.id, url: f.url, order: f.order === "newest" ? "newest" : "oldest" });
   }
   return out;
