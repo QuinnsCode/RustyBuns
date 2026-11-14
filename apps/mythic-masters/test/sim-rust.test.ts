@@ -2,7 +2,7 @@ import { describe, expect, setDefaultTimeout, test } from "bun:test";
 import { existsSync } from "node:fs";
 import * as d from "../src/dmath.ts";
 import { BIN, nativeTrace, rustRates, samplePairs, sampleTeams, tsTrace, WASM, wasmTrace } from "../scripts/sim-rust.ts";
-import { allPairs, rates } from "../scripts/tune.ts";
+import { allPairs, rates, teamFights, teamRates } from "../scripts/tune.ts";
 import { bot } from "../src/bot.ts";
 import { ROSTER } from "../src/roster.ts";
 import { hashMatch, tsSim, wasmSim } from "../src/sim-wasm.ts";
@@ -84,5 +84,11 @@ describe.skipIf(!existsSync(BIN))("the Rust sim (sim-rs/)", () => {
   test("gives the whole roster's table the same rates as the TS tuner", async () => {
     const pairs = allPairs();
     expect(await rustRates(pairs, 2)).toEqual(await rates(pairs, 2));
+  });
+
+  test("gives the 2v1 table the same rates as the TS tuner, the wild one grown past the friends (#4411)", async () => {
+    const fights = teamFights(2);
+    const grow = { up: 3, hp: 1.8, edge: 1.3 };
+    expect(await teamRates(fights, 2, { rust: true, grow })).toEqual(await teamRates(fights, 2, { grow }));
   });
 });

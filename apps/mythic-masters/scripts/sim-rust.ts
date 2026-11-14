@@ -9,11 +9,11 @@
 //
 // A fight's state is hashed after every tick, the same way on both sides (`hashMatch`, sim-rs/src/state.rs), so a
 // change to sim.ts or bot.ts that the Rust doesn't have shows up as the first tick where the hashes part.
-import { existsSync } from "node:fs";
+import { existsSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { arr, int, num, obj } from "@rustybuns/util/guard";
 import { bot } from "../src/bot.ts";
-import { ROSTER } from "../src/roster.ts";
+import { ROSTER, type Creature } from "../src/roster.ts";
 import { hashMatch, rosterJson as rosterOf, tsSim, wasmSim } from "../src/sim-wasm.ts";
 import { newMatch, newTeamMatch, step } from "../src/sim.ts";
 
@@ -34,15 +34,24 @@ const Traces = arr(Trace, 1e6);
 /** A pairing's rate, as tune.ts `rate` gives it: [wins, ring-outs, time-outs, seconds a fight]. */
 const Rates = arr(arr(num(0, 1e6), 4, { min: 4 }), 1e6);
 
-type Command = { cmd: "rates"; pairs: Pair[]; n: number; threads?: number } | { cmd: "trace"; pairs: Fight[]; seeds: number[]; threads?: number };
+type Command = { cmd: "rates"; pairs: Fight[]; n: number; threads?: number } | { cmd: "trace"; pairs: Fight[]; seeds: number[]; threads?: number };
 
-/** The native binary: the command on stdin, the answer on stdout. */
-export async function native(c: Command): Promise<unknown> {
+/** The native binary: the command on stdin, the answer on stdout. `cs` is the roster its indices name (ROSTER by default). */
+export async function native(c: Command, cs: readonly Creature[] = ROSTER): Promise<unknown> {
   if (!existsSync(BIN)) throw new Error(`no ${BIN}: build it with \`bun scripts/sim-rust.ts\``);
-  const p = Bun.spawn([BIN], { stdin: new TextEncoder().encode(JSON.stringify({ roster: rosterJson(), ...c })), stdout: "pipe", stderr: "pipe" });
+  await (fresh ??= rebuildIfStale());
+  const p = Bun.spawn([BIN], { stdin: new TextEncoder().encode(JSON.stringify({ roster: rosterOf(cs), ...c })), stdout: "pipe", stderr: "pipe" });
   const [out, err, code] = await Promise.all([new Response(p.stdout).text(), new Response(p.stderr).text(), p.exited]);
   if (code !== 0) throw new Error(`mythic-sim exited ${code}: ${err.trim()}`);
   return JSON.parse(out);
+}
+
+let fresh: Promise<void> | undefined;
+/** A binary older than its sources is a stale build (a builder slot keeps target/ while sim-rs/ moves on, #4402): build it
+ * again, once a run, before trusting it. A fresh one costs a stat a file. */
+async function rebuildIfStale() {
+  const src = join(CRATE, "src"), newest = Math.max(statSync(join(CRATE, "Cargo.toml")).mtimeMs, ...readdirSync(src).map((f) => statSync(join(src, f)).mtimeMs));
+  if (newest > statSync(BIN).mtimeMs) await cargo();
 }
 
 /** The wasm module, one call: the command goes into its memory, the answer comes back out (lib.rs `run`). */
@@ -61,9 +70,9 @@ export async function wasm(c: Command): Promise<unknown> {
   return got;
 }
 
-/** tune.ts `rate` for each pairing, on the native binary over every core. */
-export const rustRates = async (pairs: Pair[], n: number) =>
-  Rates(await native({ cmd: "rates", pairs, n })).map(([wins, ringOuts, time, seconds]) => ({ wins: wins!, ringOuts: ringOuts!, time: time!, seconds: seconds! }));
+/** tune.ts `rate` for each pairing (or `rateTeams` for each team fight, `cs` the roster it indexes), on the native binary over every core. */
+export const rustRates = async (pairs: Fight[], n: number, cs: readonly Creature[] = ROSTER) =>
+  Rates(await native({ cmd: "rates", pairs, n }, cs)).map(([wins, ringOuts, time, seconds]) => ({ wins: wins!, ringOuts: ringOuts!, time: time!, seconds: seconds! }));
 
 export const nativeTrace = async (pairs: Fight[], seeds: number[]) => Traces(await native({ cmd: "trace", pairs, seeds }));
 export const wasmTrace = async (pairs: Fight[], seeds: number[]) => Traces(await wasm({ cmd: "trace", pairs, seeds }));

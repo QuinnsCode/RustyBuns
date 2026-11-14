@@ -7,7 +7,7 @@ import { afterAll, expect, setDefaultTimeout, test } from "bun:test";
 import { serveParty } from "../scripts/party.ts";
 import { bot } from "../src/bot.ts";
 import { atLevel } from "../src/journey.ts";
-import { creature } from "../src/roster.ts";
+import { creature, ROSTER } from "../src/roster.ts";
 import { DuelLink } from "../src/net/duel-link.ts";
 import { pack, sum, unpack, type DuelOut, type Pick, type RoomKind } from "../src/net/duel.ts";
 import { tsSim, type Live } from "../src/sim-wasm.ts";
@@ -109,6 +109,18 @@ test("two friends team up against a wild one: both pages play it to the same kno
   expect(a.desync || b.desync).toBe(false);
   console.log(`co-op: over at tick ${a.live!.m.tick}, team ${a.live!.m.winner} won, ${JSON.stringify(end(a.live!).ko)}`);
   a.link.close(); b.link.close();
+});
+
+test("a co-op room's wild one is a fair fight for two: grown to face them, the friends win about half (#4411)", async () => {
+  const { BASE, rateTeams, teamFights } = await import("../scripts/tune.ts");
+  const { outnumbered } = await import("../src/journey.ts");
+  // Every creature as the wild one against one pair of friends, four matches each, on sim.ts.
+  const wins = teamFights(1).map(([a, [w]]) => rateTeams(a.map((i) => atLevel(ROSTER[i]!, BASE)), [outnumbered(atLevel(ROSTER[w!]!, BASE, true), 2)], 4).wins);
+  const mean = wins.reduce((t, x) => t + x, 0) / wins.length;
+  expect(mean).toBeGreaterThan(0.3);
+  expect(mean).toBeLessThan(0.7);
+  // One on one it is the creature itself.
+  expect(outnumbered(ROSTER[0]!, 1)).toBe(ROSTER[0]!);
 });
 
 test("the stick rounds the same way on both pages, and stays inside the circle", () => {

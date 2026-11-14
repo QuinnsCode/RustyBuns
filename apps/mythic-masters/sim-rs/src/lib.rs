@@ -5,8 +5,8 @@
 //! (the `run` and `live_*` exports below) with the same answers.
 //!
 //! In and out is one JSON command (scripts/sim-rust.ts writes it from the TS roster, so the TS stays the source
-//! of truth): `{ roster, cmd: "rates" | "trace", pairs: [[i, j]], n?, seeds?, threads? }`. A trace's fight can also be
-//! a team fight, `[[i, j], [k]]`: two against one (#3929).
+//! of truth): `{ roster, cmd: "rates" | "trace", pairs: [[i, j]], n?, seeds?, threads? }`. A fight in either can also be
+//! a team fight, `[[i, j], [k]]`: two against one (#3929, the tuner's 2v1 table #4411).
 // dmath's constants are fdlibm's, digit for digit the same literals as src/dmath.ts, and the sim indexes both sides by number.
 #![allow(clippy::approx_constant, clippy::excessive_precision, clippy::needless_range_loop)]
 
@@ -64,13 +64,18 @@ pub fn play_teams(chart: &Chart, teams: [&[&Creature]; 2], seed: f64, trace: boo
 
 /// scripts/tune.ts rate: `n` seeds, sides swapped every other one. (wins, ring-outs, time-outs, seconds a fight)
 pub fn rate(chart: &Chart, a: &Creature, b: &Creature, n: usize) -> [f64; 4] {
+    rate_teams(chart, [&[a], &[b]], n)
+}
+
+/// scripts/tune.ts rateTeams: `rate` for a team a side, the wins the first team's.
+pub fn rate_teams(chart: &Chart, teams: [&[&Creature]; 2], n: usize) -> [f64; 4] {
     let (mut wins, mut ring_outs, mut time, mut ticks) = (0.0, 0.0, 0.0, 0.0);
     for s in 1..=n {
         let flip = s % 2 == 0;
         let r = if flip {
-            play(chart, b, a, s as f64, false)
+            play_teams(chart, [teams[1], teams[0]], s as f64, false)
         } else {
-            play(chart, a, b, s as f64, false)
+            play_teams(chart, teams, s as f64, false)
         };
         if r.winner == (if flip { 1 } else { 0 }) {
             wins += 1.0;
@@ -144,18 +149,6 @@ fn fights_of(v: &json::Json, roster: &Roster) -> Result<Vec<[Vec<usize>; 2]>, St
         })
         .collect()
 }
-fn pairs_of(v: &json::Json, roster: &Roster) -> Result<Vec<(usize, usize)>, String> {
-    fights_of(v, roster)?
-        .into_iter()
-        .map(|[a, b]| {
-            if a.len() == 1 && b.len() == 1 {
-                Ok((a[0], b[0]))
-            } else {
-                Err("rates: one on one pairs only".to_string())
-            }
-        })
-        .collect()
-}
 
 /// One command, as JSON in and JSON out (see the crate docs).
 pub fn run(input: &str, default_threads: usize) -> Result<String, String> {
@@ -166,9 +159,13 @@ pub fn run(input: &str, default_threads: usize) -> Result<String, String> {
     let mut out = String::new();
     match v.get("cmd")?.str()? {
         "rates" => {
-            let pairs = pairs_of(&v, &roster)?;
+            let fights = fights_of(&v, &roster)?;
             let n = v.field("n")?.max(1.0) as usize;
-            let got = fan(&pairs, threads, |&(i, j)| rate(chart, &cs[i], &cs[j], n));
+            let got = fan(&fights, threads, |t| {
+                let side = |k: usize| t[k].iter().map(|&i| &cs[i]).collect::<Vec<_>>();
+                let (a, b) = (side(0), side(1));
+                rate_teams(chart, [&a, &b], n)
+            });
             out.push('[');
             for (k, r) in got.iter().enumerate() {
                 if k > 0 {
