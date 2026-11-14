@@ -421,13 +421,29 @@ function sphinx() {
     bib: true,
     palette: {
       fur: [0.8, 0.63, 0.38, 0.85, 0], tuft: [0.58, 0.4, 0.2, 0.9, 0], belly: [0.92, 0.82, 0.62, 0.85, 0], stripe: [0.5, 0.36, 0.2, 0.9, 0],
-      face: [0.76, 0.55, 0.36, 0.7, 0], lip: [0.55, 0.28, 0.2, 0.6, 0], kohl: [0.05, 0.04, 0.06, 0.4, 0],
+      face: [0.88, 0.7, 0.48, 0.6, 0], lip: [0.55, 0.28, 0.2, 0.6, 0], kohl: [0.05, 0.04, 0.06, 0.4, 0],
       cloth: [0.1, 0.22, 0.58, 0.55, 0], gold: [0.95, 0.74, 0.28, 0.35, 0.7], feather: [0.9, 0.78, 0.52, 0.75, 0], primary: [0.7, 0.54, 0.32, 0.75, 0],
       eye: [0.95, 0.93, 0.86, 0.3, 0], pupil: [0.05, 0.04, 0.05, 0.2, 0], mouth: [0.3, 0.08, 0.06, 0.6, 0],
       nose: [0.42, 0.3, 0.22, 0.5, 0], dark: [0.1, 0.07, 0.05, 0.6, 0], fang: [0.95, 0.92, 0.84, 0.3, 0], claw: [0.3, 0.24, 0.18, 0.4, 0],
     },
     hide: { pattern: "fur", size: 0.03, colours: [[0.62, 0.46, 0.26], [0.9, 0.76, 0.52]], map: 1024 },
   });
+  // a lion's legs, not stilts: a muscle swelling high on each bone, `t` of the way from a to b, so the leg tapers
+  // from a heavy forearm or gaskin to the paw instead of thin shafts between knobbly joints
+  const muscle = (a: string, c: string, t: number, fore: number, side: number, len: number): Blob[] => {
+    const A = b.nodes[a]!, B = b.nodes[c]!, dx = B[0] - A[0], dy = B[1] - A[1], dz = B[2] - A[2];
+    const off: V = [f4(dx * t), f4(dy * t), f4(dz * t)], r: V = [f4(fore * k), f4(Math.hypot(dx, dy, dz) * len), f4(side * k)];
+    const rot: V = [0, 0, f4((Math.atan2(-dx, dy) * 180) / Math.PI)];
+    return [{ at: a, off, r, rot }, { at: a.replace(/^l_/, "r_"), off: flipZ(off), r, rot }];
+  };
+  b.blobs.push(
+    ...muscle("l_shoulder", "l_elbow", 0.45, 0.15, 0.11, 0.6),  // the upper arm, under a heavy shoulder
+    ...muscle("l_elbow", "l_wrist", 0.3, 0.1, 0.085, 0.42),     // the forearm, thick under the elbow
+    ...muscle("l_wrist", "l_ffoot", 0.4, 0.07, 0.07, 0.9),      // a broad wrist into the paw
+    ...muscle("l_hipj", "l_knee", 0.45, 0.19, 0.12, 0.62),      // the thigh
+    ...muscle("l_knee", "l_hock", 0.3, 0.115, 0.085, 0.42),     // the gaskin
+    ...muscle("l_hock", "l_bfoot", 0.45, 0.065, 0.065, 0.9),
+  );
   // the hound's head goes (its cranium, muzzle, cheeks, jaw and every face part): a man's head is built in its place
   b.blobs = b.blobs.filter((x) => x.at !== "head");
   b.parts = b.parts.filter((p) => p.at !== "head" && !(p.kind === "tuft" && (p.along as string[])[0] === "head"));
@@ -467,22 +483,43 @@ function sphinx() {
     // the plaited beard: a long block hung from the chin, banded gold
     { kind: "horn", at: "head", off: on([h(0.05), h(-0.15), 0], [0.5, -1, 0], h(0.01)), dir: [0.12, -1, 0], len: h(0.13), base: h(0.022), tip_base: h(0.028), flat: 0.65, material: "cloth" },
   );
-  // the head-cloth: a cap over the crown and the back of the head, flaps spreading wide behind the cheeks and
-  // lappets falling down the breast, all in blue cut by gold bands; a cobra rearing from the brow
-  b.blobs.push({ at: "head", off: [h(-0.03), h(0.06), 0], r: [h(0.14), h(0.135), h(0.13)] });
-  Object.assign(b.nodes, {
-    nm: [f4(H[0] - h(0.04)), f4(H[1] + h(0.06)), 0, h(0.05)],
-    l_flap: [f4(H[0] - h(0.03)), f4(H[1] - h(0.08)), h(0.16), h(0.05)],
-    l_lap: [f4(H[0] + h(0.0)), f4(H[1] - h(0.3)), h(0.11), h(0.035)],
+  // the head-cloth, pleated in blue and gold: a cap over the crown, flaps spreading wide behind the cheeks and
+  // lappets falling down the breast, a gold band across the brow and a cobra rearing from it. Each stripe is a
+  // flat ribbon (a `horn` squashed toward the head), its own part: blended flesh would take the fur hide.
+  const rad = (d: number) => (d * Math.PI) / 180;
+  const ribbon = (off: V, dir: V, bend: V, len: number, w: number, curve: number, gold: boolean, extra: Part = {}): Part => ({
+    kind: "horn", at: "head", off: off.map(f4) as V, dir: norm(dir).map(f4) as V, bend: norm(bend).map(f4) as V, len: f4(len),
+    base: f4(w), tip_base: f4(w), flat: 0.22, curve: f4(curve), material: gold ? "gold" : "cloth", ...extra,
   });
-  b.links.push(["head", "nm"], ["nm", "l_flap"], ["l_flap", "l_lap"]);
-  b.blobs.push(
-    // a flap: a wide flat wedge behind each cheek, sloping out and down from the temple to the shoulder
-    ...pair("l_flap", [h(-0.03), h(0.0), h(-0.02)], [h(0.08), h(0.15), h(0.03)]).map((x, j) => ({ ...x, rot: [j ? 12 : -12, 0, 0] as V })),
-    ...pair("l_lap", [h(0.0), h(0.06), 0], [h(0.04), h(0.11), h(0.03)]),
-  );
-  b.paint.push({ nodes: ["nm", "l_flap", "l_lap"], material: "cloth" });
-  // the brow band and the cobra
+  // the cap: meridians from the brow over the crown to the nape, on a sphere round the cranium, alternating colours
+  const C: V = [h(-0.02), h(0.02), 0], R = h(0.15), end = 205;
+  for (let i = 0; i <= 12; i++) {
+    const phi = -78 + i * 13, gold = i % 2 === 1, r = R + (gold ? h(0.004) : 0);
+    const a0 = rad(36 + 22 * Math.abs(phi) / 78), f = rad(phi);
+    const n: V = [Math.cos(a0), Math.sin(a0) * Math.cos(f), Math.sin(a0) * Math.sin(f)];
+    const p: V = [C[0] + r * n[0], C[1] + r * n[1], C[2] + r * n[2]];
+    const d: V = [-Math.sin(a0), Math.cos(a0) * Math.cos(f), Math.cos(a0) * Math.sin(f)];
+    b.parts.push(ribbon(p, d, [-n[0], -n[1], -n[2]], r * (rad(end) - a0), h(gold ? 0.014 : 0.024), end - (a0 * 180) / Math.PI, gold));
+  }
+  // a flap behind each cheek: level bands stacked from the temple to the shoulder, each longer and further out
+  for (let i = 0; i < 10; i++) {
+    const t = i / 9, gold = i % 2 === 1;
+    b.parts.push(ribbon([h(0.035 - 0.015 * t), h(0.03 - 0.3 * t), h(0.13 + 0.085 * t + (gold ? 0.004 : 0))], [-1, -0.05, -0.25], [0.25, 0, 1],
+      h(0.11 + 0.07 * t), h(0.024), 0, gold, { mirror: true }));
+  }
+  // the lappets: short bands across, hung in front of the shoulders down the breast
+  for (let i = 0; i < 7; i++) {
+    const t = i / 6, gold = i % 2 === 1;
+    b.parts.push(ribbon([h(0.05 + 0.04 * t + (gold ? 0.004 : 0)), h(-0.28 - 0.22 * t), h(0.155 - 0.03 * t)], [-0.1, 0, -1], [1, 0, 0],
+      h(0.065), h(0.019), 0, gold, { mirror: true }));
+  }
+  // the brow band: a gold arc across the forehead at the cap's front edge, temple to temple
+  {
+    const a = rad(40), rr = (R + h(0.008)) * Math.sin(a), cx = C[0] + (R + h(0.008)) * Math.cos(a), f = rad(-82);
+    b.parts.push(ribbon([cx, C[1] + rr * Math.cos(f), rr * Math.sin(f)], [0, -Math.sin(f), Math.cos(f)], [-0.4, -Math.cos(f), -Math.sin(f)],
+      rr * rad(164), h(0.016), 164, true, { flat: 0.4 }));
+  }
+  // the cobra
   b.parts.push(
     { kind: "horn", at: "head", off: on([h(0.04), h(0.1), 0], [1, 0.6, 0], h(0.005)), dir: [0.3, 1, 0], len: h(0.07), base: h(0.014), tip_base: h(0.016), curve: 50, bend: [1, 0, 0], material: "gold" },
   );
