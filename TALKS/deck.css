@@ -1,0 +1,115 @@
+/* The talks' shared look: a warm bakery at night, big type, one idea per slide.
+   Each talk is a stack of <section class="slide">. deck.js adds the keys, the counter and the notes. */
+:root {
+  --bg: #fbf4ea;        /* flour */
+  --panel: #fffaf3;
+  --ink: #2a1d14;       /* dark crust */
+  --quiet: #6e5a4a;
+  --line: #e6d6c2;
+  --rust: #c4521f;      /* the one accent */
+  --rust-soft: #f6dccb;
+  --sage: #4f7a4a;      /* "live" */
+  --honey: #a8740f;     /* "in the oven" */
+  --display: "Unbounded", "Arial Black", system-ui, sans-serif;
+  --body: "Atkinson Hyperlegible", "Segoe UI", system-ui, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, Menlo, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #1d1611; --panel: #271e17; --ink: #f4e7d6; --quiet: #bba48e; --line: #3d3027;
+    --rust: #f0814b; --rust-soft: #44281a; --sage: #8fc386; --honey: #e6b14a; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #1d1611; --panel: #271e17; --ink: #f4e7d6; --quiet: #bba48e; --line: #3d3027;
+  --rust: #f0814b; --rust-soft: #44281a; --sage: #8fc386; --honey: #e6b14a; color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; scroll-snap-type: y proximity; }
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 21px/1.55 var(--body); }
+a { color: var(--rust); }
+:focus-visible { outline: 3px solid var(--rust); outline-offset: 3px; }
+
+/* one slide = one screen */
+.slide {
+  min-height: 100svh; scroll-snap-align: start; display: flex; flex-direction: column; justify-content: center;
+  padding: 56px max(16px, env(safe-area-inset-right, 0px), calc((100% - 1040px) / 2)) 72px
+    max(16px, env(safe-area-inset-left, 0px), calc((100% - 1040px) / 2));
+  border-bottom: 1px solid var(--line);
+}
+.kicker { font: 600 14px/1 var(--mono); letter-spacing: 0.14em; text-transform: uppercase; color: var(--rust); margin-bottom: 14px; }
+h1 { font: 900 clamp(34px, 6.4vw, 76px)/1.02 var(--display); letter-spacing: -0.02em; margin: 0; text-wrap: balance; }
+h2 { font: 700 clamp(28px, 4.4vw, 50px)/1.08 var(--display); letter-spacing: -0.01em; margin: 0; text-wrap: balance; }
+h3 { font: 700 19px/1.25 var(--display); margin: 0 0 8px; }
+.lede { font-size: clamp(21px, 2.4vw, 27px); max-width: 40ch; margin-top: 22px; text-wrap: pretty; }
+.slide p, .slide li { max-width: 60ch; }
+.slide ul { padding-left: 1.1em; }
+.slide li + li { margin-top: 8px; }
+
+/* the whimsy: one human line, set apart so the plain text stays plain */
+.aside { margin-top: 28px; font-style: italic; color: var(--quiet); border-left: 4px solid var(--rust-soft); padding-left: 16px; max-width: 56ch; }
+
+/* cards */
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; margin-top: 30px; }
+.cards > * { min-width: 0; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 20px 22px; }
+.card p { margin: 0; font-size: 18px; }
+.card .pic { margin-top: 10px; font-size: 16px; color: var(--quiet); }
+.card .pic b { color: var(--ink); font-weight: 700; }
+
+/* status tags */
+.tag { display: inline-block; font: 700 12px/1 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; padding: 6px 9px; border-radius: 999px; border: 1px solid currentColor; }
+.tag.live { color: var(--sage); }
+.tag.oven { color: var(--honey); }
+.tag.plan { color: var(--quiet); }
+
+/* diagrams are inline SVG drawn with these classes, so both themes work */
+.diagram { margin-top: 28px; }
+.diagram svg { width: 100%; height: auto; display: block; }
+.d-box { fill: var(--panel); stroke: var(--line); stroke-width: 2; }
+.d-hot { fill: var(--rust-soft); stroke: var(--rust); stroke-width: 2; }
+.d-text { fill: var(--ink); font: 700 17px var(--body); }
+.d-small { fill: var(--quiet); font: 15px var(--body); }
+.d-arrow { stroke: var(--rust); stroke-width: 3; fill: none; }
+.d-head { fill: var(--rust); }
+
+/* big numbered steps */
+.steps { list-style: none; padding: 0; margin: 30px 0 0; counter-reset: s; display: grid; gap: 14px; }
+.steps li { counter-increment: s; display: grid; grid-template-columns: 52px 1fr; gap: 14px; align-items: start; max-width: 70ch; }
+.steps li::before { content: counter(s); font: 900 22px/52px var(--display); text-align: center; background: var(--rust); color: var(--bg); border-radius: 50%; width: 52px; height: 52px; }
+.steps li + li { margin-top: 0; }
+
+/* speaker notes: hidden until N */
+.notes { display: none; margin-top: 28px; font-size: 17px; background: var(--panel); border: 1px dashed var(--quiet); border-radius: 10px; padding: 14px 18px; color: var(--quiet); }
+.notes::before { content: "Notes"; display: block; font: 700 12px/1 var(--mono); letter-spacing: 0.12em; text-transform: uppercase; margin-bottom: 8px; }
+body.show-notes .notes { display: block; }
+
+/* the bar along the bottom */
+.deckbar {
+  position: fixed; left: 0; right: 0; bottom: 0; display: flex; align-items: center; gap: 12px;
+  padding: 8px max(16px, env(safe-area-inset-right, 0px)) calc(8px + env(safe-area-inset-bottom, 0px));
+  background: color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter: blur(6px); border-top: 1px solid var(--line);
+  font: 14px var(--mono); color: var(--quiet); z-index: 5;
+}
+.deckbar .track { flex: 1; height: 4px; background: var(--line); border-radius: 2px; overflow: hidden; }
+.deckbar .fill { height: 100%; width: 0; background: var(--rust); transition: width 0.2s; }
+.deckbar a { color: var(--quiet); text-decoration: none; }
+.deckbar button { font: inherit; color: inherit; background: none; border: 1px solid var(--line); border-radius: 6px; padding: 4px 10px; cursor: pointer; min-height: 32px; }
+.deckbar button[aria-pressed="true"] { color: var(--rust); border-color: var(--rust); }
+
+@media (max-width: 640px) {
+  body { font-size: 19px; }
+  .slide { padding-top: 40px; padding-bottom: 84px; }
+  .deckbar .hint { display: none; }
+  /* a diagram keeps readable text and scrolls sideways inside its own box */
+  .diagram { overflow-x: auto; }
+  .diagram svg { min-width: 620px; }
+}
+@media print {
+  .deckbar { display: none; }
+  .slide { min-height: auto; page-break-after: always; border: 0; }
+  .notes { display: block; }
+}

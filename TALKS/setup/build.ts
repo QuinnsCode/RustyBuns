@@ -1,11 +1,11 @@
-// `bun notes/talks/setup/build.ts`: bundles scene.ts (three.js and the real models from packages/models) into
+// `bun TALKS/setup/build.ts`: bundles scene.ts (three.js and the real models from packages/models) into
 // page.html and writes one self-contained dist/talks/setup.html, ready to open or publish as an artifact.
 import { mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 
 const here = import.meta.dir;
-const models = join(here, "../../../packages/models/src");
-const out = join(here, "../../../dist/talks/setup.html");
+const models = join(here, "../../packages/models/src");
+const out = join(here, "../../dist/talks/setup.html");
 
 // three lives in packages/models' own node_modules, so resolve it from there.
 const fromModels: Bun.BunPlugin = {
