@@ -277,5 +277,16 @@ export function call(j: Journey, e: number, into = slots(j) - 1): boolean {
 /** The line-up slot that fights next when `out` (slots already knocked out this fight) are down; -1 when none is left. */
 export const nextUp = (j: Journey, out: ReadonlySet<number>) => j.party.findIndex((_, i) => !out.has(i));
 
+/** What the night's stalker tears off whoever is up when it has you (#4387), as a fraction of full health. */
+export const MAULED = 0.4;
+/** Caught off the paths at night: it strikes before the fight starts, so the member up starts hurt (a sliver left, never
+ *  knocked out). Which slot it hit; -1 with nobody standing. */
+export function maul(j: Journey): number {
+  const i = nextUp(j, downed(j)), m = j.party[i];
+  if (!m) return -1;
+  wound(m, Math.max(0.05, hpOf(m) - MAULED));
+  return i;
+}
+
 /** Every playable region, for the journal's region pages. */
 export const TRAIL_REGIONS = REGIONS.filter(hasTrail);

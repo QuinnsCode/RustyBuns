@@ -85,7 +85,7 @@ export const boundOf = (g: Region, owns: (id: string) => boolean) => { const fol
 const ease = (t: number) => t * t * (3 - 2 * t);
 
 /** Who you fight; `hunt` is the sighting-board contract (src/world/hunts.ts) it closes, `title` what the witnesses call it. */
-export interface Foe { id: string; level: number; hunt?: string; title?: string; /** The arena look it fights in, if not its region's (a pack's lair). */ at?: string }
+export interface Foe { id: string; level: number; hunt?: string; title?: string; /** The night's stalker had you (#4387): it strikes first. */ caught?: boolean; /** The arena look it fights in, if not its region's (a pack's lair). */ at?: string }
 export interface WorldHooks {
   /** Dusk on a journey's first night (night.ts): true once, so Gary walks it with you. */
   firstNight?(): boolean;
@@ -1515,7 +1515,7 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
         calm.set(met.den, performance.now() + CALM_MS);
         hooks.met?.(met.den, met.id, met.level);
         const hunt = met.den.startsWith("hunt:") ? HUNTS.get(met.den.slice(5)) : undefined;
-        hooks.wild(regionN(met.region), { id: met.id, level: met.level, ...(hunt ? { hunt: hunt.id, title: hunt.title } : {}) });
+        hooks.wild(regionN(met.region), { id: met.id, level: met.level, ...(hunt ? { hunt: hunt.id, title: hunt.title } : {}), ...(met === caught ? { caught: true } : {}) });
       }
       if (toastUntil && performance.now() > toastUntil) { toastEl.hidden = true; toastUntil = 0; }
       const y = Math.max(fineY(me.x, me.z), -0.6);
