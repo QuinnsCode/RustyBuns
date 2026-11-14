@@ -6,7 +6,7 @@
 // main.ts's, on inputs from net/duel-link.ts.
 import { esc, mulberry32 } from "@rustybuns/util";
 import type { HubView } from "@rustybuns/util/eqosys";
-import { APP, canSignIn, fresh, hub, login, signIn } from "./account.ts";
+import { APP, canSignIn, fresh, hub, login, signInHere } from "./account.ts";
 import { icon } from "./icons.ts";
 import type { Member } from "./journey.ts";
 import { DuelLink, type DuelOpts } from "./net/duel-link.ts";
@@ -80,7 +80,8 @@ export function mountVersus(el: HTMLElement, host: VersusHost) {
     if (!signedIn()) {
       sheet(`<p class="tag">Sign in with eqosys and your friends are here: challenge one, and you both go straight into the arena with what you've caught.</p>
         ${canSignIn() ? `<div class="row"><button class="go" id="vsSignIn">${icon("log-in")} Sign in</button></div>` : ""}`);
-      el.querySelector("#vsSignIn")?.addEventListener("click", () => void signIn("versus"));
+      // eqosys opens beside the game and the friends list fills in when the login is back; a blocked window goes the long way round.
+      el.querySelector("#vsSignIn")?.addEventListener("click", () => void signInHere("versus").then((r) => { if (r.login) open(); else if (r.error) { note = r.error; drawFriends(); } }));
       return;
     }
     if (!host.lineUp()?.length) { sheet(`<p class="tag">You fight with what you've caught: start a journey and bind a few first.</p>`); return; }
@@ -91,9 +92,15 @@ export function mountVersus(el: HTMLElement, host: VersusHost) {
     sheet(`<div class="row"><button class="go" id="vsCoop">${icon("swords")} Team up vs the wilds</button></div>
       ${asks.length ? `<h2>Challenges</h2><ul class="vs-list">${asks.map((c) => `<li><b>${esc(c.from)}</b><small>${c.kind ? "wants to team up" : "challenged you"}</small><button class="go" data-accept="${c.code}" data-kind="${c.kind ?? "duel"}">${icon("play")} Accept</button></li>`).join("")}</ul>` : ""}
       <h2>Friends</h2>${friends.length ? `<ul class="vs-list">${friends.map((f) => `<li><b>${esc(f.name || "A friend")}</b><small>${inGame(f) ? "in Mythic Masters" : ""}</small><button data-challenge="${esc(f.id)}">${icon("zap")} Challenge</button><button data-challenge="${esc(f.id)}" data-kind="coop" title="Team up vs the wilds" aria-label="Team up vs the wilds">${icon("swords")}</button></li>`).join("")}</ul>` : `<p class="tag">No friends yet.</p>`}
+      <div class="row"><button id="vsFriendLink" title="Whoever opens it and presses Be friends is your friend, account or not">${icon("copy")} Copy friend link</button></div>
       <p class="tag"><a href="${esc(hub().friendsPage())}" target="_blank" rel="noopener">${icon("link")} Add friends on eqosys</a></p>${note ? `<p class="note">${esc(note)}</p>` : ""}`);
     el.querySelectorAll<HTMLElement>("[data-accept]").forEach((b) => b.addEventListener("click", () => enter(b.dataset.accept!, b.dataset.kind === "coop" ? "coop" : "duel")));
     el.querySelector("#vsCoop")!.addEventListener("click", () => enter(mintDuel(), "coop"));
+    el.querySelector("#vsFriendLink")!.addEventListener("click", async () => {
+      const got = await hub().friendLink();
+      note = !got ? "eqosys didn't hand out your friend link just now. Try again." : await navigator.clipboard?.writeText(got).then(() => "Friend link copied: send it to anyone, and once they press Be friends they're on this list.", () => `Your friend link: ${got}`) ?? `Your friend link: ${got}`;
+      drawFriends();
+    });
     el.querySelectorAll<HTMLButtonElement>("[data-challenge]").forEach((b) => b.addEventListener("click", async () => {
       b.disabled = true;
       const code = mintDuel(), name = view?.friends.find((f) => f.id === b.dataset.challenge)?.name ?? "your friend", k: RoomKind = b.dataset.kind === "coop" ? "coop" : "duel";
