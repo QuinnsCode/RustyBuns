@@ -1,7 +1,11 @@
-# The desktop binaries and the long suite, on the hour instead of on every PR: each app's binary built and
-# started on every Mac and Linux runner (scripts/ci-apps.ts smoke), and codeSplitter's whole suite with its slowest
-# tests sorted (scripts/slowest.ts), so a test turning into a hang shows before it eats the budget.
-# A failure opens (or comments on) one issue labelled ci-hourly for triage; a PR is never held for it.
+# The hourly ring (notes/RELEASE_RINGS.md, #4486), on the hour instead of on every PR, and only when main moved since the
+# last run (a SHA that already has a ring/hourly status is skipped; a manual run always runs). It runs each app's binary
+# built and started on every Mac and Linux runner (scripts/ci-apps.ts smoke), codeSplitter's whole suite with its slowest
+# tests sorted (scripts/slowest.ts), every other app's suite and the packages' tests. Then scripts/rings.ts writes a
+# ring/hourly status (success or failure) on the SHA it tested and, on green, moves refs/ring/hourly there (that move
+# waits on MANUAL RUN #4495 for its permission and only logs until then).
+# A failure opens (or comments on) one issue labelled ci-hourly for triage, with the commits since the last green;
+# a PR is never held for it.
 name: desktop-hourly
 on:
   schedule:
@@ -20,14 +24,30 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
+      run: ${{ steps.gate.outputs.run }}
       smoke: ${{ steps.p.outputs.smoke }}
       smokes: ${{ steps.p.outputs.smokes }}
+      apps: ${{ steps.a.outputs.apps }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { fetch-depth: 0 }
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with: { bun-version: "1.4.3" }
+      - id: gate
+        env: { GH_TOKEN: "${{ github.token }}", MANUAL: "${{ github.event_name == 'workflow_dispatch' }}" }
+        run: |
+          if [ "$MANUAL" = true ]; then echo run=true >> "$GITHUB_OUTPUT"
+          else bun scripts/rings.ts gate hourly "$GITHUB_SHA" >> "$GITHUB_OUTPUT"; fi
       - id: p
+        if: steps.gate.outputs.run == 'true'
         run: bun scripts/ci-apps.ts smoke >> "$GITHUB_OUTPUT"
+      # Every app's suite: the same matrix apps.yml's manual run gets (a diff from the root commit touches every app),
+      # without codeSplitter's rows, which the suite job below runs whole.
+      - id: a
+        if: steps.gate.outputs.run == 'true'
+        run: |
+          bun scripts/ci-apps.ts test "$(git rev-list --max-parents=0 HEAD)" > "$RUNNER_TEMP/apps"
+          echo "apps=$(grep '^apps=' "$RUNNER_TEMP/apps" | cut -d= -f2- | jq -c '{include: [.include[] | select(.app != "codesplitter")]}')" >> "$GITHUB_OUTPUT"
 
   smoke:
     needs: plan
@@ -66,6 +86,8 @@ jobs:
       - run: ${{ matrix.smoke }}
 
   suite:
+    needs: plan
+    if: needs.plan.outputs.run == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -79,24 +101,98 @@ jobs:
         run: |
           { echo "### Slowest codeSplitter tests"; bun scripts/slowest.ts "$RUNNER_TEMP/junit.xml"; } | tee -a "$GITHUB_STEP_SUMMARY"
 
+  # Each app's suite, as apps.yml runs it on a PR (same steps, same matrix rows from scripts/ci-apps.ts).
+  apps:
+    needs: plan
+    if: needs.plan.outputs.run == 'true'
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.apps) }}
+    name: test ${{ matrix.app }}${{ matrix.shard && format(' {0}', matrix.shard) || '' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: apps/${{ matrix.app }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with: { bun-version: "1.4.3" }
+      - if: matrix.prep
+        uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master; the toolchain is the input below
+        with: { toolchain: stable, targets: wasm32-unknown-unknown }
+      - if: matrix.prep
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with: { workspaces: "${{ matrix.cargo }}" }
+      - run: bun install --frozen-lockfile --filter rustybuns --filter "./apps/${{ matrix.app }}"
+        working-directory: .
+      - if: matrix.prep
+        run: ${{ matrix.prep }}
+      - if: matrix.test
+        run: bun ../../scripts/ci-test-count.ts "${{ matrix.test }}"
+      - if: matrix.boot
+        run: bun ../../scripts/boot.ts
+
+  packages:
+    needs: plan
+    if: needs.plan.outputs.run == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with: { bun-version: "1.4.3" }
+      - run: bun install --frozen-lockfile
+      - run: bun scripts/ci-test-count.ts "bun test packages"
+
+  # The ring's verdict on the SHA every job above checked out. contents: write for the ref is the owner's (#4495);
+  # until then `move` logs a warning and the run stays green.
+  ring:
+    needs: [plan, smoke, suite, apps, packages]
+    if: always() && needs.plan.outputs.run == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      statuses: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      STATE: ${{ (contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')) && 'failure' || 'success' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with: { bun-version: "1.4.3" }
+      - run: bun scripts/rings.ts status hourly "$GITHUB_SHA" "$STATE" "$RUN"
+      - if: env.STATE == 'success'
+        run: bun scripts/rings.ts move hourly "$GITHUB_SHA"
+
   flag:
-    needs: [smoke, suite]
-    if: always() && (contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled'))
+    needs: [plan, smoke, suite, apps, packages]
+    if: always() && needs.plan.outputs.run == 'true' && (contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled'))
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
       contents: read
       issues: write
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with: { bun-version: "1.4.3" }
       - env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-          RESULTS: smoke ${{ needs.smoke.result }}, suite ${{ needs.suite.result }}
+          RESULTS: smoke ${{ needs.smoke.result }}, suite ${{ needs.suite.result }}, apps ${{ needs.apps.result }}, packages ${{ needs.packages.result }}
         run: |
+          RANGE=$(bun scripts/rings.ts range hourly "$GITHUB_SHA" || echo "Commits since the last green: couldn't read them.")
           gh label create ci-hourly --color B60205 --description "the hourly desktop and suite run" 2>/dev/null || true
           open=$(gh issue list --label ci-hourly --state open --json number -q '.[0].number')
-          if [ -n "$open" ]; then gh issue comment "$open" --body "Failed again ($RESULTS): $RUN"
-          else gh issue create --label ci-hourly --title "Hourly desktop/suite run is failing" --body "The hourly run failed ($RESULTS): $RUN
+          if [ -n "$open" ]; then gh issue comment "$open" --body "Failed again ($RESULTS) on ${GITHUB_SHA:0:7}: $RUN
+
+          $RANGE"
+          else gh issue create --label ci-hourly --title "Hourly desktop/suite run is failing" --body "The hourly run failed ($RESULTS) on ${GITHUB_SHA:0:7}: $RUN
+
+          $RANGE
 
           Triage: open the run, read the failing job, and fix or file the cause. This issue gets a comment each hour it keeps failing."; fi
