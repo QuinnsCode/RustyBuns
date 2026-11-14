@@ -144,10 +144,14 @@ describe("night (#3773)", () => {
   const w = fullWorld();
   test("the night ones roam only after dark, the room believes them, and a lit campfire, a cabin or the arena's ring is shelter", () => {
     const all = openRegions(new Set([1, 2, 3, 4, 5, 6, 7, 8])), june = new Date(2026, 5, 1);
-    const out = (night: boolean) => [1, 2, 3, 5, 6, 7].flatMap((n) => wildsNear(w, centre(n).x, centre(n).z, 0, all, 2500, june, night));
+    const out = (night: boolean) => [1, 2, 3, 4, 5, 6, 7, 8].flatMap((n) => wildsNear(w, centre(n).x, centre(n).z, 0, all, 2500, june, night));
     expect(out(false).filter((c) => NIGHT.has(c.id))).toEqual([]);
     const after = out(true).filter((c) => NIGHT.has(c.id));
     expect(new Set(after.map((c) => c.id)).size).toBeGreaterThanOrEqual(4);
+    // Every region has night ones of its own, not only its neighbours' (#4389).
+    for (const n of [1, 2, 3, 4, 5, 6, 7, 8]) expect([n, [...NIGHT].some((id) => creature(id).region === n)]).toEqual([n, true]);
+    expect(after.some((c) => c.region === 4 && creature(c.id).region === 4)).toBe(true);
+    expect(after.some((c) => c.region === 8 && creature(c.id).region === 8)).toBe(true);
     for (const c of after) expect([c.den, holds(c.den, c.id, c.level)]).toEqual([c.den, true]);
     // Out in the open after dark they come at you from further off.
     const me = { ...spawn(1) }, c = after[0]!;
