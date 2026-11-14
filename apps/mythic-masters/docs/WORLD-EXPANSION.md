@@ -207,7 +207,7 @@ Each item is one PR, and each is useful on its own.
    `src/packs.ts` reads each `packs/<id>/` through a guard, and `test/packs.test.ts` checks its lore, licences,
    sacred marks, the island's place by its port and its places' spacing. The first pack is `packs/yule-isle/` (Krampus,
    Grýla and the kallikantzaros, a lair, ten places and the narrator's lines), and through its season (1 December to
-   6 January) the Yule Cat roams every playable region. Still to come: the island as a map reached by boat (#3992), and
+   6 January) the Yule Cat roams every playable region. The island is a map of its own reached by boat from a port town in the Great North Woods (#4405, `src/world/ferry.ts`); still to come:
    its three beasts as fighters (#3993).
 
 Distant tree cards and the shrouded teasers are follow-ups once those land.

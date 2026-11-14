@@ -549,7 +549,15 @@ const meet = {
   wild: (g: Region, foe?: Foe) => setOut(g, foe ? "wild" : "deadly", foe ?? { id: champion(g).id, level: 30 }),
   keeper: (g: Region, k: number) => { const s = sections(g)[k]!; setOut(g, "keeper", { id: s.keeper, level: s.level }, k); },
 };
+// The boat to a pack's island (world/ferry.ts): its lines play as a tape where you stand, and the view swaps once they end
+// (or are skipped, or cut). `started` because a scene can wait behind one already playing.
+let boat: { s: ReturnType<typeof found>; then: () => void; started: boolean } | null = null;
 const world = worldView(scene, camera, {
+  ferry: (p, lines, then) => {
+    const s = found(p.name, p.director[lines], world.here(), lines === "arrival" ? 1 : 0, lines === "crossing" ? "THE CROSSING" : lines === "arrival" ? "LANDED" : "LEAVING");
+    if (!director.play(s)) { then?.(); return; }
+    if (then) boat = { s, then, started: false };
+  },
   // Walking into a fight in your own journey is where the tutorial starts (a jump link's scratch journey never does).
   arena: (g) => { meet.arena(g); learn(); },
   wild: (g, foe) => { meet.wild(g, foe); learn(); },
@@ -1894,6 +1902,7 @@ function frame(now: number) {
   touchEl.classList.toggle("ult-ready", !!m && m.f[mine].energy >= 100);
   if (padKeys.length && director.skippable) poke = true;
   memories.step(director.step(dt, poke)); poke = false;
+  if (boat) { if (director.scene === boat.s) boat.started = true; else if (boat.started || !director.beat) { const b = boat; boat = null; b.then(); } }
   if (pending && !director.holding) { const p = pending; pending = null; finish(p.m, p.bound); }
   nextTalk();
   const step = versusOn ? versus.link()?.step ?? null : null;
@@ -2069,7 +2078,7 @@ Object.assign(window, {
     /** The quality tier drawn at `now` (low, mid or high), each step the frame budget took to get there (`?quality=` sets where it starts), and the plant budget that tier set. */
     quality: () => ({ now: tiers.quality, steps: tiers.steps, plants: plantBudget() }),
     hud: (id?: string) => { if (id !== undefined && !useSkin(String(id))) return null; if (id !== undefined && m) hud(m); return { now: skinNow().id, skins: HUD_SKINS.map((s) => ({ id: s.id, name: s.name, idea: s.idea })) }; },
-    /** The open world: `enter()`, `state()` (where you are, what you've beaten, what's open and rising), `travel(n)` to an open region n's arena, `places(n?)` the region's tapes, campfires, landmarks and sighting boards (also in `state().places`), `hunts(n?)` its sighting-board contracts (stage, next sign, lair; also `state().hunts`), `fastTravel(id)` to a lit campfire, `enterTown(id)` into a sighting board's town (its door does it too; `state().town` says where you stand inside, the board and the people), `standInside(x, z)` there in the town's own metres and `leaveTown()`, `teleport(x, z)` onto open ground (`state().wilds` says where the wild ones roam, `trails()` where each keeper's stone is), `setHour(h)` for the time of day, `setWeather({ rain, snow, mist })` (or null) to hold the weather, `layer(name, on)` to hide a drawn layer, `beat(n)` as if you won its arena, `reset()`. */
+    /** The open world: `enter()`, `state()` (where you are, what you've beaten, what's open and rising), `travel(n)` to an open region n's arena, `places(n?)` the region's tapes, campfires, landmarks and sighting boards (also in `state().places`), `hunts(n?)` its sighting-board contracts (stage, next sign, lair; also `state().hunts`), `fastTravel(id)` to a lit campfire, `enterTown(id)` into a sighting board's town (its door does it too; `state().town` says where you stand inside, the board and the people), `standInside(x, z)` there in the town's own metres and `leaveTown()`, `ferry()` takes the boat to the Yule Isle or back (`state().isle` on the island: where you stand, its slip and landing fire; `state().ports` the piers) and `standIsle(x, z)` on it, `teleport(x, z)` onto open ground (`state().wilds` says where the wild ones roam, `trails()` where each keeper's stone is), `setHour(h)` for the time of day, `setWeather({ rain, snow, mist })` (or null) to hold the weather, `layer(name, on)` to hide a drawn layer, `beat(n)` as if you won its arena, `reset()`. */
     /** Walking together, for an agent or the two-page journey: the party's view, and a contract told to the room. */
     together: {
       state: () => online && { room: online.room, status: online.status, where: online.where(), fights: fights.map((f) => ({ ...f })), lair: trip?.foe.hunt && m ? { den: `hunt:${trip.foe.hunt}`, hp: m.f[1].hp / m.f[1].b.hp, friends: Object.fromEntries(lairHurt.get(`hunt:${trip.foe.hunt}`) ?? []) } : null },
@@ -2078,7 +2087,7 @@ Object.assign(window, {
       pick: (id: string) => { world.lifeHeard({ k: "pick", id }); online?.life("pick", id); },
       seen: () => world.seen(),
     },
-    world: { enter: enterWorld, state: world.state, friends: world.friends, online: () => online && { room: online.room, status: online.status, clock: online.clock(performance.now()), sentBytes: online.sentBytes, friends: friendsNow(online, world.pose().region, performance.now()) }, travel: world.travel, beat: world.beat, teleport: world.teleport, eye: world.eye, setHour: world.setHour, peace: world.peace, setWeather: world.setWeather, layer: world.layer, reset: world.reset, trails: world.trails, places: world.places, hunts: world.hunts, fastTravel: world.fastTravel, enterTown: world.enterTown, standInside: world.standInside, leaveTown: world.leaveTown },
+    world: { enter: enterWorld, state: world.state, friends: world.friends, online: () => online && { room: online.room, status: online.status, clock: online.clock(performance.now()), sentBytes: online.sentBytes, friends: friendsNow(online, world.pose().region, performance.now()) }, travel: world.travel, beat: world.beat, teleport: world.teleport, eye: world.eye, setHour: world.setHour, peace: world.peace, setWeather: world.setWeather, layer: world.layer, reset: world.reset, trails: world.trails, places: world.places, hunts: world.hunts, fastTravel: world.fastTravel, enterTown: world.enterTown, standInside: world.standInside, leaveTown: world.leaveTown, ferry: world.ferry, standIsle: world.standIsle },
     /** The journey: `state()` (line-up, journal, sections cleared, pages), `begin([a, b, c])` a fresh one with three starters, `bind()` tries the ink
      * in a world fight, `journal(open)`, `trip()` what the current world fight is. */
     journey: {
