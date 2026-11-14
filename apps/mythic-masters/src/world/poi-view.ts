@@ -26,12 +26,17 @@ export interface PlaceHooks {
   sign?(h: Hunt, sign: string, last: boolean): void;
 }
 
+/** The places a view draws: `all` of them, those `near` where you stand (walked up to, landmarks seen), and the
+ *  region whose contracts' signs show there. The continent's by default; a pack's island has its own (view.ts). */
+export interface PlaceSet { all: readonly Poi[]; near(me: { x: number; z: number }): readonly Poi[]; region(me: { x: number; z: number }): number }
+const CONTINENT: PlaceSet = { all: ALL, near: (me) => POIS.get(ownerAt(me.x, me.z)) ?? [], region: (me) => ownerAt(me.x, me.z) };
+
 const DRAW_R = 1800; // metres: places farther than this aren't laid out
 const WISP = 0xe8f4ff;
 const LOGS = 0x9a6a44, FLAME = 0xff9a2e, EMBER = 0x4a3a30, STUMP = 0x6b4a2b, TAPE = 0xf2e27a, MAST = 0xc9c2b4, CAP = 0xd0442e;
 /** `door`: walked up to a town's front door (a sighting board's place); the world walks you in. */
-export function poiView(group: THREE.Group, camera: THREE.Camera, groundY: (x: number, z: number) => number, hooks: PlaceHooks | undefined, door?: (p: Poi) => void) {
-  const cap = ALL.length || 1;
+export function poiView(group: THREE.Group, camera: THREE.Camera, groundY: (x: number, z: number) => number, hooks: PlaceHooks | undefined, door?: (p: Poi) => void, set = CONTINENT) {
+  const cap = set.all.length || 1;
   const mesh = (g: THREE.BufferGeometry, color: number, basic = false) => {
     const m = new THREE.InstancedMesh(g, basic ? new THREE.MeshBasicMaterial({ color }) : new THREE.MeshLambertMaterial({ color }), cap);
     m.count = 0; m.frustumCulled = false; group.add(m);
@@ -66,7 +71,7 @@ export function poiView(group: THREE.Group, camera: THREE.Camera, groundY: (x: n
       clock += dt;
       const j = log(), out: string[] = [];
       for (const im of all) im.count = 0;
-      for (const p of ALL) {
+      for (const p of set.all) {
         if (!open.has(p.n) || Math.hypot(p.x - me.x, p.z - me.z) > DRAW_R) continue;
         const y = Math.max(0, groundY(p.x, p.z)), yaw = yawOf(p.id), on = marked(j, p);
         if (p.kind === "tape") { put(stumps, p.x, y + 0.45, p.z, yaw); if (!on) put(tapes, p.x, y + 1.0 + Math.sin(clock * 2 + yaw) * 0.08, p.z, yaw + clock * 0.6); }
@@ -78,25 +83,25 @@ export function poiView(group: THREE.Group, camera: THREE.Camera, groundY: (x: n
         else { put(masts, p.x, y + 13, p.z, yaw); put(caps, p.x, y + 27.7, p.z, yaw); }
       }
       // The next sign of each contract you took here: a wisp bobbing over the spot, seen from a way off.
-      for (const c of nextClues(j, ownerAt(me.x, me.z))) {
+      for (const c of nextClues(j, set.region(me))) {
         const y = Math.max(0, groundY(c.at.x, c.at.z)), s = 1 + Math.sin(clock * 3 + c.i) * 0.15;
         put(wisps, c.at.x, y + 2.2 + Math.sin(clock * 1.7 + c.i) * 0.3, c.at.z, clock * 0.8, s, s * 1.6);
       }
       for (const im of all) im.instanceMatrix.needsUpdate = true;
       if (!j || still) return out;
       // Walking up to a tape or a fire.
-      for (const p of arrive(me, reached)) {
+      for (const p of arrive(me, reached, set.near(me))) {
         if (p.kind === "board" && door) { door(p); continue; }
         const first = !marked(j, p), line = hooks?.reach(p, first);
         if (line) out.push(`${icon(p.kind === "tape" ? "clapperboard" : p.kind === "cabin" ? "house" : "flame")}${esc(line)}`);
       }
       // Standing at a contract's next sign.
-      for (const t of track(j, me)) {
+      for (const t of track(j, me, set.region(me))) {
         hooks?.sign?.(t.hunt, t.sign, t.last);
         out.push(`${icon("footprints")}${esc(t.sign)}.${t.last ? ` ${esc(t.hunt.title)} is close.` : ""}`);
       }
       // A landmark on screen, near enough to read, is found.
-      for (const p of POIS.get(ownerAt(me.x, me.z)) ?? []) {
+      for (const p of set.near(me)) {
         if (p.kind !== "landmark" || marked(j, p) || Math.hypot(p.x - me.x, p.z - me.z) > SEE_R) continue;
         // In front of the camera and inside the screen, with a margin.
         const v = at.set(p.x, groundY(p.x, p.z) + 14, p.z).applyMatrix4(camera.matrixWorldInverse), ahead = v.z < 0;
