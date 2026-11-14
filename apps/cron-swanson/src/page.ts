@@ -3,10 +3,12 @@
 // engine the server ticks with, so what it shows is what will happen.
 import { esc } from "@rustybuns/util";
 import { Bad } from "@rustybuns/util/guard";
+import { b64url } from "@rustybuns/util/bytes";
 import { readJson } from "@rustybuns/util/http";
+import { connectSocket, type Link } from "@rustybuns/util/socket";
 import { createElement, AlarmClock, Bell, Check, Pause, Pencil, Play, Plus, Search, Webhook, X, CircleAlert, type IconNode } from "lucide";
 import { FLOWS, describe, flow, upcoming, type Cadence, type Flow } from "./bacron.ts";
-import { Job, JobInput, JobsReply, Refusal, type Run } from "./api.ts";
+import { Job, JobInput, JobsReply, Live, Refusal, type Run } from "./api.ts";
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const icon = (node: IconNode, size = 16) => createElement(node, { width: size, height: size, "stroke-width": 2, "aria-hidden": "true" }).outerHTML;
@@ -162,6 +164,7 @@ $<HTMLFormElement>("gate").addEventListener("submit", (e) => {
   token = $<HTMLInputElement>("token").value.trim();
   try { localStorage.setItem(TOKEN_KEY, token); } catch { /* kept for this visit only */ }
   void load();
+  goLive();
 });
 
 // ---- editor ----
@@ -195,6 +198,7 @@ function setAction(a: "remind" | "webhook") {
   act = a;
   for (const b of $("actions").querySelectorAll<HTMLElement>("button")) b.classList.toggle("on", b.dataset.action === a);
   $("hook").hidden = a !== "webhook";
+  $("ping-row").hidden = a !== "remind";
 }
 
 /** The form's cadence, as the engine takes it (unchecked: the guard says what's wrong). */
@@ -215,7 +219,7 @@ function input(): unknown {
   return {
     app: field("app").value.trim(), name: field("name").value.trim(), why: field("why").value.trim(), note: field<HTMLTextAreaElement>("note").value,
     tags: field("tags").value.split(",").map((t) => t.trim()).filter(Boolean), cadence: cadence(), tz: field("tz").value.trim(),
-    action: act === "webhook" ? { kind: "webhook", url: field("url").value.trim(), method: field<HTMLSelectElement>("method").value } : { kind: "remind" },
+    action: act === "webhook" ? { kind: "webhook", url: field("url").value.trim(), method: field<HTMLSelectElement>("method").value } : { kind: "remind", ping: field("ping").checked },
     enabled: field("enabled").checked,
   };
 }
@@ -261,6 +265,7 @@ function openEditor(j: Job | null) {
     if (c.kind === "yearly") { field<HTMLSelectElement>("month").value = String(c.month); field("yday").value = String(c.day); }
     if (c.kind === "cron") field("expr").value = c.expr;
     if (j.action.kind === "webhook") { field("url").value = j.action.url; field<HTMLSelectElement>("method").value = j.action.method; }
+    else field("ping").checked = j.action.ping;
   } else {
     const d = new Date(serverNow() + 3_600_000);
     field("at").value = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:00`;
@@ -293,6 +298,20 @@ form.addEventListener("submit", async (e) => {
 
 void load();
 setInterval(tickClocks, 1000);
-// Just after each minute the ticker fires; fetch then so new runs and countdowns show without waiting.
-const refresh = () => setTimeout(() => { void load(); refresh(); }, 60_000 - (serverNow() % 60_000) + 2_000);
+
+// The live socket: every page open on any device fetches again the moment a job or run changes on the server.
+let live: Link<never> | null = null;
+function goLive() {
+  live?.close();
+  live = connectSocket<Live, never>(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/api/live`, {
+    decode: (v) => { try { return Live(v); } catch { return null; } },
+    onMessage: () => void load(),
+    onOpen: (tries) => { if (tries) void load(); },
+    onClose: ({ tries }) => Math.min(30_000, 1_000 * 2 ** Math.min(tries, 5)),
+    protocols: ["cron-swanson", ...(token ? [`bearer.${b64url(new TextEncoder().encode(token))}`] : [])],
+  });
+}
+goLive();
+// While the socket is down, fetch just after each minute the ticker fires so new runs still show.
+const refresh = () => setTimeout(() => { if (!live?.open) void load(); refresh(); }, 60_000 - (serverNow() % 60_000) + 2_000);
 refresh();

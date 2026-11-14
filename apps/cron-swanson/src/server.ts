@@ -1,15 +1,33 @@
-// The API: list, make, change, pause, run and delete jobs. With CRON_SWANSON_TOKEN set, every route but
-// /api/health wants `Authorization: Bearer <token>`; unset, it's open (a laptop, a test).
+// The API: list, make, change, pause, run and delete jobs, and /api/live, a WebSocket that tells every open page
+// (the laptop's, the phone's) the moment a job or run changed. With CRON_SWANSON_TOKEN set, every route but
+// /api/health wants `Authorization: Bearer <token>` (a socket offers it as a `bearer.<b64url>` subprotocol, since a
+// browser can't set headers on one and a URL ends up in access logs); unset, it's open (a laptop, a test).
 import { Bad, type Guard } from "@rustybuns/util/guard";
+import { unb64url } from "@rustybuns/util/bytes";
 import { parseJson, privateJson } from "@rustybuns/util/http";
 import { next } from "./bacron.ts";
-import { JobInput, type Job, type JobsReply } from "./api.ts";
+import { JobInput, type Job, type JobsReply, type Live } from "./api.ts";
 import { fire, deliver, type Deliver } from "./ticker.ts";
 import type { Store } from "./store.ts";
 
 const MAX_BODY = 64 * 1024;
+const LIVE = "live";
+/** The subprotocol /api/live answers with; a page offers it beside its `bearer.<b64url token>`. */
+export const PROTOCOL = "cron-swanson";
+/** Changes that land together (a tick books and logs several jobs) go out as one message. */
+const SETTLE_LIVE_MS = 50;
 
 export interface Options { token?: string; send?: Deliver; now?: () => number }
+
+/** The token a request carries: its Authorization header, or for a socket its `bearer.` subprotocol. */
+function tokenOf(req: Request): string {
+  const header = req.headers.get("authorization");
+  if (header) return header.replace(/^Bearer /, "");
+  const offer = (req.headers.get("sec-websocket-protocol") ?? "").split(",").map((p) => p.trim()).find((p) => p.startsWith("bearer."));
+  if (!offer) return "";
+  try { return new TextDecoder().decode(unb64url(offer.slice(7))); } catch { return ""; }
+}
+
 
 const refuse = (error: string, status: number) => privateJson({ error }, status);
 
@@ -38,7 +56,8 @@ export function api(store: Store, o: Options = {}): (req: Request) => Promise<Re
     const url = new URL(req.url), path = url.pathname;
     if (path === "/api/health") return privateJson({ ok: true, now: now() });
     if (!path.startsWith("/api/")) return refuse("not found", 404);
-    if (o.token && !sameToken(req.headers.get("authorization")?.replace(/^Bearer /, "") ?? "", o.token)) return refuse("token needed", 401);
+    if (o.token && !sameToken(tokenOf(req), o.token)) return refuse("token needed", 401);
+    if (path === "/api/live") return refuse("a WebSocket only", 426);
 
     if (path === "/api/jobs" && req.method === "GET") {
       const last = store.lastRuns();
@@ -79,4 +98,31 @@ export function api(store: Store, o: Options = {}): (req: Request) => Promise<Re
     }
     return refuse("not found", 404);
   };
+}
+
+export interface ServeOptions extends Options { port?: number; routes?: Bun.Serve.Routes<undefined, string>; development?: boolean }
+
+/** The API on a Bun server, with every store write sent to the pages on /api/live (coalesced, one message per burst). */
+export function serve(store: Store, o: ServeOptions = {}) {
+  const handle = api(store, o), now = o.now ?? Date.now;
+  let pending: ReturnType<typeof setTimeout> | undefined;
+  const server = Bun.serve({
+    port: o.port ?? 0,
+    routes: o.routes ?? {},
+    fetch: (req, srv) => {
+      // A page's live socket, once its token checks out; anything else (a refused token too) is the API's.
+      const live = new URL(req.url).pathname === "/api/live" && (!o.token || sameToken(tokenOf(req), o.token));
+      if (live && srv.upgrade(req, { data: undefined, headers: { "sec-websocket-protocol": PROTOCOL } })) return undefined;
+      return handle(req);
+    },
+    websocket: { open: (ws) => { ws.subscribe(LIVE); }, message: () => {} },
+    development: o.development ?? false,
+  });
+  store.onChange = () => {
+    pending ??= setTimeout(() => {
+      pending = undefined;
+      server.publish(LIVE, JSON.stringify({ kind: "changed", at: now() } satisfies Live));
+    }, SETTLE_LIVE_MS);
+  };
+  return server;
 }

@@ -3,7 +3,8 @@
 import { Bad, arr, bool, int, nul, num, obj, oneOf, str, type Guard, type Of } from "@rustybuns/util/guard";
 import { Cadence, Zone } from "./bacron.ts";
 
-const Remind = obj({ kind: oneOf(["remind"]) });
+// A reminder also pings the phone (ntfy, when the server has a topic) unless `ping` is false.
+const Remind = obj({ kind: oneOf(["remind"]), ping: bool(true) });
 const Webhook = obj({ kind: oneOf(["webhook"]), url: str(2000, { re: /^https?:\/\/\S+$/ }), method: oneOf(["POST", "GET"], "POST") });
 /** What a job does when it fires: shows up as a reminder in the feed, or calls a URL (and still shows up). */
 export type Action = Of<typeof Remind> | Of<typeof Webhook>;
@@ -56,6 +57,10 @@ export type Run = Of<typeof Run>;
 /** GET /api/jobs: every job with its last run, the latest runs across all of them, and the server's clock. */
 export const JobsReply = obj({ jobs: arr(obj({ job: Job, last: nul(Run) }), 10_000), runs: arr(Run, 1000), now: TIME });
 export type JobsReply = Of<typeof JobsReply>;
+
+/** What /api/live sends each open page when a job or run changed: fetch /api/jobs again. */
+export const Live = obj({ kind: oneOf(["changed"]), at: TIME });
+export type Live = Of<typeof Live>;
 
 /** What a refused request says. */
 export const Refusal = obj({ error: str(500) });

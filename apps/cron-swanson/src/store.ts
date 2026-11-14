@@ -13,6 +13,8 @@ const toRun = (r: RunRow): Run =>
 
 export class Store {
   readonly db: Database;
+  /** Called after every write (a job made, changed or deleted, a run logged): the server tells open pages. */
+  onChange: () => void = () => {};
 
   constructor(path = ":memory:") {
     this.db = new Database(path, { create: true, strict: true });
@@ -40,11 +42,14 @@ export class Store {
   put(job: Job): void {
     this.db.query("INSERT OR REPLACE INTO jobs (id, body, next_at, enabled) VALUES (?, ?, ?, ?)")
       .run(job.id, JSON.stringify(job), job.nextAt, job.enabled ? 1 : 0);
+    this.onChange();
   }
 
   remove(id: string): boolean {
     this.db.query("DELETE FROM runs WHERE job_id = ?").run(id);
-    return this.db.query("DELETE FROM jobs WHERE id = ?").run(id).changes > 0;
+    const gone = this.db.query("DELETE FROM jobs WHERE id = ?").run(id).changes > 0;
+    this.onChange();
+    return gone;
   }
 
   /** Enabled jobs whose next run is at or before `now`. */
@@ -57,6 +62,7 @@ export class Store {
     const { lastInsertRowid } = this.db.query("INSERT INTO runs (job_id, scheduled_at, fired_at, manual, status, code, ms, error) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
       .run(run.jobId, run.scheduledAt, run.firedAt, run.manual ? 1 : 0, run.status, run.code, run.ms, run.error);
     this.db.query("DELETE FROM runs WHERE job_id = ?1 AND id NOT IN (SELECT id FROM runs WHERE job_id = ?1 ORDER BY id DESC LIMIT ?2)").run(run.jobId, KEEP_RUNS);
+    this.onChange();
     return { ...run, id: Number(lastInsertRowid) };
   }
 
