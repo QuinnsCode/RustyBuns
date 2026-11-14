@@ -1,0 +1,9 @@
+// For `wrangler dev` and `bun run deploy` until rustybuns deploys it; keep it in step with rustybuns.config.ts.
+// Static assets (the widget script and the demo page) are served before the Worker runs.
+{
+  "name": "qview3d",
+  "main": "src/worker.ts",
+  "compatibility_date": "2026-09-01",
+  "assets": { "directory": "dist/client" },
+  "r2_buckets": [{ "binding": "BUCKET", "bucket_name": "qview3d" }]
+}

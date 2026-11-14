@@ -60,6 +60,7 @@ any noncommercial purpose; commercial use needs a license from QNTBR
 | `apps/qollab` | PolyForm Noncommercial 1.0.0 ([LICENSE](apps/qollab/LICENSE)) |
 | `apps/geoboxq` | PolyForm Noncommercial 1.0.0 ([LICENSE](apps/geoboxq/LICENSE)) |
 | `apps/geoboxq-shopify` | PolyForm Noncommercial 1.0.0 ([LICENSE](apps/geoboxq-shopify/LICENSE)) |
+| `apps/qview3d` | PolyForm Noncommercial 1.0.0 ([LICENSE](apps/qview3d/LICENSE)) |
 
 eqosys (accounts) and Qollab (parties, rooms, presence) are the hosted upgrade
 for a game, not part of the open stack. The client a game talks to them with
