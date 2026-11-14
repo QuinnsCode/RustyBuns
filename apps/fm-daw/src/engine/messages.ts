@@ -1,7 +1,7 @@
 // The page <-> AudioWorklet protocol.
 import type { Lane, Note } from "../project.ts";
 import type { RecordedMove } from "./sequencer.ts";
-import type { EqDoc } from "./eq.ts";
+import type { EqDoc, EqListen } from "./eq.ts";
 
 export type ToWorklet =
   | { t: "load"; params: number[]; notes: Note[][]; auto: Lane[][]; bpm: number; swing: number; loopBeats: number; audible: boolean[]; space: number; squash: number; eq: EqDoc }
@@ -14,6 +14,8 @@ export type ToWorklet =
   | { t: "squash"; amount: number }
   /** Shape, the master EQ: every slot at once (it is small). */
   | { t: "eq"; bands: EqDoc }
+  /** A held dot: hear only this range until null. Not saved, not bounced. */
+  | { t: "eqListen"; band: EqListen | null }
   | { t: "master"; gain: number }
   | { t: "play"; countIn: number }
   | { t: "stop" }
