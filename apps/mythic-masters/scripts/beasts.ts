@@ -17,8 +17,8 @@
 //                         blender/out/judge.md for the PR body (take BEFORE first: --shots --as before)
 //
 // Blenders run --jobs at a time (default: one per core). All 76 at once took about 350 MB each, more than a
-// 16 GB Mac has. Each keeps Blender's default thread count: `-t` changes the decimated mesh, so a GLB is only
-// the same build to build on the same thread count (one per core), and a Mac with more cores writes other GLBs.
+// 16 GB Mac has. Each runs on 8 threads and on Blender 5.2.0 only (BLENDER_THREADS, BLENDER_VERSION below), so any
+// Mac writes the committed GLBs byte for byte; another Blender stops with what to install.
 import { readdirSync, watch } from "node:fs";
 import { runBlender } from "@rustybuns/cli/blender";
 import { availableParallelism } from "node:os";
@@ -59,7 +59,8 @@ if (flags.has("--shots")) {
 }
 // Blender's thread count changes the decimated mesh, so it is pinned (8 is what the committed GLBs were built with)
 // and a Mac with another core count makes the same GLBs. Running several Blenders at once is safe: each uses 8 threads' worth of work.
-const BLENDER_THREADS = 8;
+// The version is pinned too: 5.2.1 writes other GLBs from the same sheets (#4129). Moving it means rebuilding every beast.
+const BLENDER_THREADS = 8, BLENDER_VERSION = "5.2.0";
 if (flags.has("--swatch")) {
   const at = rest.indexOf("--sample"), sample = at >= 0 ? rest[at + 1]! : null;
   const pats = picked.filter((p) => p !== sample);
@@ -84,7 +85,7 @@ const SNAP_STEPS = ["1e-3", "5e-4", "2e-3", "2.5e-4", "4e-3", "1e-4"];
 
 async function blender(id: string, step: string): Promise<string[]> {
   const args = [SHEETS.get(id)!, ...(flags.has("--render") ? ["--render"] : []), ...(flags.has("--silhouette") ? ["--silhouette"] : []), ...(flags.has("--close") ? ["--close"] : [])];
-  const { out, err } = await runBlender({ script: "blender/beast.py", args, cwd: APP, env: { SNAP_STEP: step }, threads: BLENDER_THREADS });
+  const { out, err } = await runBlender({ script: "blender/beast.py", args, cwd: APP, env: { SNAP_STEP: step }, threads: BLENDER_THREADS, version: BLENDER_VERSION });
   return (out + err).split("\n").filter((l) => /triangles|render ->|^hide:/.test(l));
 }
 
