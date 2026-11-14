@@ -33,6 +33,10 @@ import { poiView, type PlaceHooks } from "./poi-view.ts";
 import { cellAt, cellsApart, createStream, type Box } from "./stream.ts";
 import { GRID } from "./places.ts";
 import { BAND, bandAt, WORLD, newTrek, onTrailDen, trailhead, trailWilds, TRAILS, trek, type Trail, type TrekEvent } from "./trail.ts";
+import { buildIsland, islandFrom, type World } from "./world.ts";
+import { atSlip, isleGround, isleSlip, onDock, portSlip, REARM_R } from "./ferry.ts";
+import { isleView, portView } from "./isle-view.ts";
+import { PACKS, type Pack } from "../packs.ts";
 
 const SAVE = "mythic-masters.world.beaten", SAVE_SEEN = "mythic-masters.world.seen", SAVE_VISITED = "mythic-masters.world.visited";
 // The ground near you is drawn again, twice over: a near patch FINE metres a vertex with every octave of the fine
@@ -109,6 +113,9 @@ export interface WorldHooks {
   life?(e: LifeEvent): void;
   /** What a town's staff have heard about the factions you have met (src/factions/engine.ts FACTION[f].rumours). */
   rumours?(): readonly string[];
+  /** The boat to pack p's island: the director's `crossing` or `leaving` lines as it sails (`then` swaps the view once
+   *  they're done), or its `arrival` lines once you are off it. Without this hook the boat sails at once. */
+  ferry?(p: Pack, lines: "crossing" | "arrival" | "leaving", then?: () => void): void;
 }
 
 export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, hooks: WorldHooks) {
@@ -948,6 +955,10 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
     if (!s) return;
     inside = null;
     scene.remove(s.room.group); s.you.dispose(); s.room.dispose();
+    outdoors();
+  }
+  /** The open world shown again, in its own sky. */
+  function outdoors() {
     scene.background = new THREE.Color(0xa8c8e8); scene.fog = new THREE.Fog(0xa8c8e8, 700, 9000);
     scene.environmentIntensity = ROOM;
     group.visible = true; snap = true;
@@ -994,11 +1005,112 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
     camera.lookAt(followLook.set(here.x, s.y + (eye?.look ?? 1.3), here.z));
     camera.updateMatrixWorld();
   }
+  // --- the boat to a pack's island (ferry.ts, isle-view.ts, #4405): a port town with a pier in the pack's port region.
+  // Walk to the pier and the boat takes you over (hooks.ferry plays the director's lines first): the continent is put
+  // away and the island shown in its place, as a town's rooms are, and you land by its first fire. Its own slip takes
+  // you back to the port town. Your line-up waits on the pier.
+  const ports = PACKS.filter((p) => p.tier !== "coming-soon").map((p) => { const slip = portSlip(w, p), view = portView(slip); group.add(view.group); return { p, slip, view }; });
+  type Port = (typeof ports)[number];
+  interface Isle { port: Port; w: World; slip: ReturnType<typeof isleSlip>; view: ReturnType<typeof isleView>; at: { x: number; z: number }; you: Bearer; armed: boolean }
+  let isle: Isle | null = null, sailing = false, portArmed = true;
+  const charts = new Map<string, Promise<World | undefined>>();
+  /** The pack's island World, its ground fetched once (public/packs/<id>/ground.bin); undefined if it didn't come in. */
+  function chart(p: Pack) {
+    let c = charts.get(p.id);
+    if (!c) {
+      c = fetch(`/packs/${p.id}/ground.bin`).then(async (r) => { const h = r.ok ? islandFrom(new Uint8Array(await r.arrayBuffer())) : undefined; return h && buildIsland(h); }).catch(() => undefined);
+      charts.set(p.id, c);
+    }
+    return c;
+  }
+  /** Boards the boat at `port`'s pier ("out") or back from its island ("back"). False if a boat is already under way,
+   *  or you aren't on that side of the water. */
+  function sail(port: Port, leg: "out" | "back"): boolean {
+    if (sailing || inside || (leg === "out") !== !isle) return false;
+    sailing = true;
+    const ground = leg === "out" ? chart(port.p) : null;
+    const go = async () => {
+      if (leg === "back") { leaveIsle(); sailing = false; return; }
+      const iw = await ground;
+      sailing = false;
+      if (!iw) { charts.delete(port.p.id); toast(`${icon("waves")} The boat isn't sailing: the island's chart didn't come in.`); return; }
+      landIsle(port, iw);
+      hooks.ferry?.(port.p, "arrival");
+    };
+    if (hooks.ferry) hooks.ferry(port.p, leg === "out" ? "crossing" : "leaving", () => void go()); else void go();
+    return true;
+  }
+  /** Off the boat on the island, by its first fire, looking at it. */
+  function landIsle(port: Port, iw: World) {
+    const slip = isleSlip(iw, port.p), view = isleView(iw, port.p, slip);
+    scene.add(view.group);
+    isle = { port, w: iw, slip, view, at: { ...slip.land }, you: new Bearer(bearer?.id ?? NO_ID, view.group, (x, z) => heightAt(iw, x, z), colour), armed: true };
+    group.visible = false;
+    scene.background = new THREE.Color(0xc4ccd6); scene.fog = new THREE.Fog(0xc4ccd6, 300, 5000);
+    yaw = Math.atan2(-slip.out.x, slip.out.z); facing = Math.atan2(-slip.out.z, -slip.out.x); snap = true;
+    where.innerHTML = `<b>${esc(port.p.name)}</b><small>${icon("waves")}The boat back waits at the slip</small>`; map.hidden = true;
+    toast(`${icon("waves")} ${esc(port.p.name)}`);
+  }
+  /** Back off the boat on the port town's pier, facing inland. */
+  function leaveIsle() {
+    const s = isle;
+    if (!s) return;
+    isle = null;
+    s.you.dispose(); s.view.dispose(); map.hidden = false;
+    outdoors();
+    const { land, out } = s.port.slip, g = regionAt(land.x, land.z)!;
+    me.x = land.x; me.z = land.z; me.region = g.n; trekAt.band = bandAt(land.x, land.z); trekAt.armed = true; portArmed = false;
+    yaw = Math.atan2(-out.x, out.z); facing = Math.atan2(-out.z, -out.x);
+    look(); drawWhere(); drawMap();
+  }
+  /** The ground you stand on on the island: its own, or the dock's deck over the water. */
+  const isleY = (s: Isle, x: number, z: number) => Math.max(heightAt(s.w, x, z), onDock(s.slip, x, z) ? 1.05 : -0.6);
+  /** One frame on the island: the same keys walk you over it, the sea and the steep shore stop you, and the boat at its
+   *  slip takes you back once you've walked off it and come again. */
+  function walkIsle(s: Isle, dt: number, keys: ReadonlySet<string>, stick: Stick, turn: number) {
+    const on = (k: string) => keys.has(k);
+    yaw += ((on("turnRight") ? 1 : 0) - (on("turnLeft") ? 1 : 0)) * 1.8 * dt + turn;
+    const { fx, sx } = sailing ? { fx: 0, sx: 0 } : push(keys, stick), mx = Math.sin(yaw) * fx + Math.cos(yaw) * sx, mz = -Math.cos(yaw) * fx + Math.sin(yaw) * sx;
+    speed = 0;
+    if (mx || mz) {
+      const v = (on("dash") ? PACE.run : PACE.walk) * Math.min(1, Math.hypot(mx, mz));
+      speed = v; facing = Math.atan2(mz, mx);
+      const step = v * Math.min(dt, 0.1), x = s.at.x + mx * step, z = s.at.z + mz * step;
+      if (isleGround(s.w, s.slip, x, s.at.z)) s.at.x = x;
+      if (isleGround(s.w, s.slip, s.at.x, z)) s.at.z = z;
+    }
+    if (atSlip(s.slip, s.at.x, s.at.z)) { if (s.armed) { s.armed = false; sail(s.port, "back"); } }
+    else if (Math.hypot(s.at.x - s.slip.x, s.at.z - s.slip.z) > REARM_R) s.armed = true;
+    clock += dt;
+    if (toastUntil && performance.now() > toastUntil) { toastEl.hidden = true; toastUntil = 0; }
+    s.view.tick(s.at.x, s.at.z);
+    const y = isleY(s, s.at.x, s.at.z);
+    s.you.update(s.at.x, y, s.at.z, facing);
+    camV = snap ? speed : lerp(camV, speed, clamp(dt * CAM_EASE, 0, 1));
+    const at = camAt(camV), e = eye ?? at, cam = new THREE.Vector3(s.at.x - Math.sin(yaw) * e.back, y + e.up, s.at.z + Math.cos(yaw) * e.back);
+    cam.y = Math.max(cam.y, heightAt(s.w, cam.x, cam.z) + 1.2);
+    follow.lerp(cam, snap ? 1 : clamp(dt * 5, 0, 1)); snap = false;
+    camera.position.copy(follow);
+    camera.lookAt(followLook.set(s.at.x, y + e.look, s.at.z));
+    camera.updateMatrixWorld();
+  }
+  /** Each frame on the continent: the port towns near you set on the ground, and a pier you walk onto boards its boat. */
+  function nearPorts() {
+    let by: Port | undefined;
+    for (const p of ports) {
+      const d = Math.hypot(me.x - p.slip.x, me.z - p.slip.z);
+      if (d < 1500) p.view.place(groundY);
+      if (d < REARM_R) by = p;
+    }
+    if (!by) portArmed = true;
+    else if (portArmed && atSlip(by.slip, me.x, me.z)) { portArmed = false; sail(by, "out"); }
+  }
+
   /** Travel to a lit campfire (from the big map, or an agent): you stand beside it and it doesn't rest you again until you walk off. */
   function fastTravel(id: string) {
     const j = hooks.places?.log(), p = j && poiById(id), spot = j && fireSpot(j, id);
     if (!p || !spot || !openRegions(beaten).has(spot.n)) return false;
-    dropTown();
+    dropTown(); leaveIsle();
     me.x = spot.x; me.z = spot.z; me.region = spot.n; trekAt.band = bandAt(spot.x, spot.z); trekAt.armed = true; snap = true;
     places.stand(p); look(); drawWhere(); drawMap();
     const line = hooks.places?.travelled?.(p);
@@ -1138,7 +1250,7 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
     bearer ??= new Bearer(NO_ID, group, standY, colour);
   }
   function look() { if (explore(seen, me.x, me.z)) { seenDirty = true; drawWhere(); } }
-  function travel(n: number) { if (!openRegions(beaten).has(n)) return; dropTown(); Object.assign(me, spawn(n)); onTrail(); snap = true; look(); drawWhere(); drawMap(); arrive(regionN(n)); }
+  function travel(n: number) { if (!openRegions(beaten).has(n)) return; dropTown(); leaveIsle(); Object.assign(me, spawn(n)); onTrail(); snap = true; look(); drawWhere(); drawMap(); arrive(regionN(n)); }
 
   // Friends walking the same region (#3663, src/net/online.ts): each one a figure with the Book like you, told apart by
   // the colour and figure of the ground humming under them, their line-up behind and their name over them.
@@ -1248,8 +1360,8 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
       // The first time in, everything is already where it stands; after that, a piece that opened rises.
       refresh(shownOnce); shownOnce = true; look(); drawWhere(); arrive(regionN(me.region));
     },
-    hide() { dropTown(); group.visible = false; hud.hidden = true; scene.environmentIntensity = ROOM; },
-    get shown() { return group.visible || inside !== null; },
+    hide() { dropTown(); leaveIsle(); group.visible = false; hud.hidden = true; scene.environmentIntensity = ROOM; },
+    get shown() { return group.visible || inside !== null || isle !== null; },
     /** Walks into town `id` (a sighting board's place id) as its door does; false if you are in one already. */
     enterTown,
     /** Out of the town's front door onto the street. */
@@ -1264,13 +1376,14 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
       const tick = performance.now();
       if (toastUntil && tick - ranAt > 250) toastUntil += tick - ranAt;
       ranAt = tick;
+      if (isle) { walkIsle(isle, dt, keys, stick, turn); return; }
       if (inside) { walkInside(inside, dt, keys, stick, turn); return; }
       const on = (k: string) => keys.has(k);
       yaw += ((on("turnRight") ? 1 : 0) - (on("turnLeft") ? 1 : 0)) * 1.8 * dt + turn;
       const { fx: fx0, sx: sx0 } = push(keys, stick);
       // Any move skips the shot of a rising piece; you don't walk blind while it plays.
       if (shot && (fx0 || sx0) && shot.t < shot.end - EASE_CAM) shot.t = shot.end - EASE_CAM;
-      const fx = shot ? 0 : fx0, sx = shot ? 0 : sx0;
+      const fx = shot || sailing ? 0 : fx0, sx = shot || sailing ? 0 : sx0;
       speed = 0;
       // yaw 0 looks north (-z).
       const mx = Math.sin(yaw) * fx + Math.cos(yaw) * sx, mz = -Math.cos(yaw) * fx + Math.sin(yaw) * sx;
@@ -1376,7 +1489,7 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
         camera.lookAt(followLook);
       }
       camera.updateMatrixWorld();
-      drawRoad(); drawTag();
+      drawRoad(); drawTag(); nearPorts();
       for (const t of places.update(dt, me, open, shot !== null)) toast(t);
       if (performance.now() > mapAt) { mapAt = performance.now() + 250; if (mapStale) { paintMap(); mapStale = false; } drawMap(); if (seenDirty) saveSeen(); }
     },
@@ -1400,15 +1513,20 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
     /** Region n's sighting-board contracts (default: where you are): each one's board, creature, stage, next sign and lair. */
     hunts: (n = me.region) => places.hunts(n),
     /** Where you stand, on the ground. */
-    here: () => { if (inside) { const p = toWorld(inside.t, inside.at); return { x: p.x, y: inside.y, z: p.z }; } const y = fineY(me.x, me.z); return { x: me.x, y: Number.isFinite(y) ? y : drawnY(me.x, me.z), z: me.z }; },
+    here: () => { if (isle) { const s = isle; return { x: s.at.x, y: isleY(s, s.at.x, s.at.z), z: s.at.z }; } if (inside) { const p = toWorld(inside.t, inside.at); return { x: p.x, y: inside.y, z: p.z }; } const y = fineY(me.x, me.z); return { x: me.x, y: Number.isFinite(y) ? y : drawnY(me.x, me.z), z: me.z }; },
     /** The ground's height at (x, z), the drawn one where it is near. */
-    groundAt: (x: number, z: number) => { const y = fineY(x, z); return Number.isFinite(y) ? y : drawnY(x, z); },
+    groundAt: (x: number, z: number) => { if (isle) return heightAt(isle.w, x, z); const y = fineY(x, z); return Number.isFinite(y) ? y : drawnY(x, z); },
     /** The land worth a look from where you stand (the highest rise in your eye, @rustybuns/util vista): the director aims its reveals there. */
-    vista: () => vista((x, z) => heightAt(w, x, z), { x: me.x, y: Math.max(0, fineY(me.x, me.z)), z: me.z }),
+    vista: () => isle ? vista((x, z) => heightAt(isle!.w, x, z), { ...isle.at, y: Math.max(0, heightAt(isle.w, isle.at.x, isle.at.z)) }) : vista((x, z) => heightAt(w, x, z), { x: me.x, y: Math.max(0, fineY(me.x, me.z)), z: me.z }),
     /** A scratch run from here on (a jump link): what it opens and walks is not kept. */
     scratch() { keeps = false; },
+    /** Takes the boat now, wherever you stand, for an agent's harness: out to the first open pack's island, or back
+     *  from the one you are on. False if no boat sails (no pack is open) or one is already under way. */
+    ferry() { const port = isle?.port ?? ports[0]; return !!port && sail(port, isle ? "back" : "out"); },
+    /** Stand at (x, z) on the island you are on, for an agent's harness: false off it, or in the sea. */
+    standIsle(x: number, z: number) { if (!isle || !isleGround(isle.w, isle.slip, x, z)) return false; isle.at = { x, z }; snap = true; return true; },
     /** Stand at (x, z) at once, for an agent's harness: the stone of a section, beside a roamer. */
-    teleport(x: number, z: number) { const g = regionAt(x, z); if (!g || !openRegions(beaten).has(g.n)) return false; dropTown(); me.x = x; me.z = z; me.region = g.n; trekAt.band = bandAt(x, z); trekAt.armed = true; snap = true; look(); drawWhere(); return true; },
+    teleport(x: number, z: number) { const g = regionAt(x, z); if (!g || !openRegions(beaten).has(g.n)) return false; dropTown(); leaveIsle(); me.x = x; me.z = z; me.region = g.n; trekAt.band = bandAt(x, z); trekAt.armed = true; snap = true; look(); drawWhere(); return true; },
     trails: () => [...TRAILS.values()].map((t) => ({ n: t.n, stones: t.stones.map((p) => ({ x: +p.x.toFixed(1), z: +p.z.toFixed(1) })) })),
     reset() { beaten.clear(); save(); seen = newSeen(); saveSeen(); visited.clear(); saveVisited(); arrived.n = 0; toReveal = []; shot = null; calm.clear(); life.reset(); dayOff = 0; travel(1); refresh(); },
     /** Shows or hides one drawn layer, for an agent telling them apart: "near", "mid", "far" (the ground patches), "nearWater", "midWater", "land", "plants", "precip", "clouds", "sky". */
@@ -1444,7 +1562,9 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
         plants: plants.spots, far: plants.far, tufts: plants.tufts, litter: litter.pieces, motes: life.motes, wading: waterLevel(me.x, me.z) - fineY(me.x, me.z) > WADE_DEPTH, gait, depth: +(waterLevel(me.x, me.z) - fineY(me.x, me.z)).toFixed(2),
         night: tonight && { night: tonight.night, houses: tonight.houses.map((h) => h.id), paths: tonight.paths.length, safe: +safeD.toFixed(1), dread: +dread.toFixed(2), stalker: stalker?.id ?? null, lamps: lamp[0].count, gary: gary && { t: +gary.t.toFixed(1), x: +gary.x.toFixed(1), z: +gary.z.toFixed(1), off: !!gary.to } },
         day: { hour: +L.hour.toFixed(2), dark, shelter: shelter?.id ?? null, wind: +wind(clock).toFixed(2), rain: +W.rain.toFixed(2), snow: +W.snow.toFixed(2), mist: +W.mist.toFixed(2) }, life: life.state(), places: places.state(g.n), hunts: places.hunts(g.n),
-        town: inside && { id: inside.t.id, name: inside.t.name, x: +inside.at.x.toFixed(2), z: +inside.at.z.toFixed(2), room: roomAt(inside.at)?.id ?? null, near: inside.near, board: BOARD.read, people: inside.t.people.map((p) => ({ id: p.id, who: p.who, ...p.at })) } };
+        town: inside && { id: inside.t.id, name: inside.t.name, x: +inside.at.x.toFixed(2), z: +inside.at.z.toFixed(2), room: roomAt(inside.at)?.id ?? null, near: inside.near, board: BOARD.read, people: inside.t.people.map((p) => ({ id: p.id, who: p.who, ...p.at })) },
+        sailing, ports: ports.map((p) => ({ id: p.p.id, x: p.slip.x, z: p.slip.z, d: +Math.hypot(me.x - p.slip.x, me.z - p.slip.z).toFixed(1) })),
+        isle: isle && { id: isle.port.p.id, x: +isle.at.x.toFixed(1), z: +isle.at.z.toFixed(1), y: +isleY(isle, isle.at.x, isle.at.z).toFixed(2), slip: { x: +isle.slip.x.toFixed(1), z: +isle.slip.z.toFixed(1) }, fire: isle.slip.fire, toSlip: +Math.hypot(isle.at.x - isle.slip.x, isle.at.z - isle.slip.z).toFixed(1) } };
     },
   };
 }

@@ -8,7 +8,9 @@ import { ARCHETYPES, ROSTER } from "../src/roster.ts";
 import { inSeason, tierOf } from "../src/tiers.ts";
 import { PLACES } from "../src/world/places.ts";
 import { MIN_GAP } from "../src/world/poi.ts";
-import { buildIsland, CELL, dry, islandFrom, onIsland, poolOf } from "../src/world/world.ts";
+import { atSlip, isleGround, isleSlip, portSlip } from "../src/world/ferry.ts";
+import { WORLD } from "../src/world/trail.ts";
+import { buildIsland, CELL, dry, heightAt, islandFrom, onIsland, poolOf, regionAt, spawn, walk } from "../src/world/world.ts";
 
 // Every pack in packs/ loads and holds to the rules in src/packs.ts: its beasts are new, from a legend with sources,
 // never a being held sacred; its island sits off the coast by its port; its event creatures are in season with it.
@@ -78,6 +80,22 @@ describe("packs", () => {
     for (const s of p.places.filter((s) => s.kind === "tape" || s.kind === "fire")) expect([s.name, seen[at(s.at)]]).toEqual([s.name, 1]);
     // And it is an island: the map's edge is open sea all round.
     for (let c = 0; c < cols; c++) expect([c, seen[c], seen[(rows - 1) * cols + c]]).toEqual([c, 0, 0]);
+  });
+
+  test.each(PACKS.filter((p) => p.tier !== "coming-soon").map((p) => [p.id, p] as const))("%s: the boat from the port town to the landing fire and back", async (_, p) => {
+    // On the continent: the pier's end is on the port region's own ground and walk() takes you from the town to it; the boat is out on the sea.
+    const port = portSlip(WORLD, p), me = { ...spawn(p.land.port), x: port.land.x, z: port.land.z };
+    expect([regionAt(port.x, port.z)?.n, regionAt(port.boat.x, port.boat.z)?.n, heightAt(WORLD, port.boat.x, port.boat.z) < 0]).toEqual([p.land.port, undefined, true]);
+    const towards = (s: { x: number; z: number }, at: { x: number; z: number }, step: (dx: number, dz: number) => void) => {
+      for (let k = 0; k < 2000 && !atSlip(s, at.x, at.z); k++) { const d = Math.hypot(s.x - at.x, s.z - at.z); step(((s.x - at.x) / d) * 1.5, ((s.z - at.z) / d) * 1.5); }
+      return atSlip(s, at.x, at.z);
+    };
+    expect(towards(port, me, (dx, dz) => walk(me, dx, dz, new Set()))).toBe(true);
+    // On the island: off the boat by the first fire, on dry ground, and back to its slip over the island's ground and the dock.
+    const bytes = new Uint8Array(await Bun.file(join(import.meta.dir, "..", "public", "packs", p.id, "ground.bin")).arrayBuffer());
+    const w = buildIsland(islandFrom(bytes)!), s = isleSlip(w, p), at = { ...s.land };
+    expect([Math.hypot(at.x - s.fire.x, at.z - s.fire.z) < 10, dry(w, at.x, at.z), heightAt(w, s.boat.x, s.boat.z) < 0]).toEqual([true, true, true]);
+    expect(towards(s, at, (dx, dz) => { if (isleGround(w, s, at.x + dx, at.z + dz)) { at.x += dx; at.z += dz; } })).toBe(true);
   });
 
   test("in its season a pack's event creatures roam the whole continent, and out of it they don't", () => {
