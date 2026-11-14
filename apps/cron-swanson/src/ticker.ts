@@ -14,7 +14,7 @@ export type Deliver = (job: Job, scheduledAt: number, firedAt: number) => Promis
 
 /** Calls the job's URL (or does nothing for a reminder) and says how it went. */
 export const deliver: Deliver = async (job, scheduledAt, firedAt) => {
-  if (job.action.kind === "remind") return { status: "reminded", code: null, ms: null, error: "" };
+  if (job.action.kind !== "webhook") return { status: "reminded", code: null, ms: null, error: "" };
   const started = performance.now();
   const { url, method } = job.action;
   try {
@@ -39,11 +39,11 @@ export async function fire(store: Store, job: Job, scheduledAt: number, firedAt:
   return store.addRun({ jobId: job.id, scheduledAt, firedAt, manual, ...out });
 }
 
-/** One minute's work: every due job booked forward, then fired. Resolves when every delivery has. */
+/** One minute's work: every due job booked forward, then fired (unless something else runs it). Resolves when every delivery has. */
 export function tick(store: Store, now: number, send: Deliver = deliver): Promise<Run[]> {
   const due = store.due(now);
   for (const job of due) store.put({ ...job, nextAt: next(job.cadence, now, job.tz, job.anchor) });
-  return Promise.all(due.map((job) => fire(store, job, job.nextAt!, now, send)));
+  return Promise.all(due.filter((job) => job.action.kind !== "elsewhere").map((job) => fire(store, job, job.nextAt!, now, send)));
 }
 
 /** Ticks now (to catch up) and then on every minute until stopped. */

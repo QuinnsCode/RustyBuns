@@ -1,9 +1,9 @@
-// The API: list, make, change, pause, run and delete jobs. With CRON_SWANSON_TOKEN set, every route but
+// The API: list, make, change, pause, run and delete jobs, and match an app's jobs to its own list. With CRON_SWANSON_TOKEN set, every route but
 // /api/health wants `Authorization: Bearer <token>`; unset, it's open (a laptop, a test).
 import { Bad, type Guard } from "@rustybuns/util/guard";
 import { parseJson, privateJson } from "@rustybuns/util/http";
 import { next } from "./bacron.ts";
-import { JobInput, type Job, type JobsReply } from "./api.ts";
+import { AppJobs, AppName, Declared, JobInput, type Job, type JobsReply, type SyncReply } from "./api.ts";
 import { fire, deliver, type Deliver } from "./ticker.ts";
 import type { Store } from "./store.ts";
 
@@ -32,6 +32,37 @@ async function body<T>(req: Request, guard: Guard<T>): Promise<T | Response> {
 /** A job's next run from `now`, or none while it's paused. */
 const plan = (job: Job, now: number): Job => ({ ...job, nextAt: job.enabled ? next(job.cadence, now, job.tz, job.anchor) : null });
 
+const APP = /^\/api\/apps\/([^/]{1,120})\/jobs$/;
+
+const same = (a: Declared, b: Declared) => JSON.stringify(Declared(a)) === JSON.stringify(Declared(b));
+
+/**
+ * Makes the app's listed jobs match `list`: a new key is added, a changed one updated (a new cadence restarts its
+ * "every" count; a pause made on the page stays), a key that's gone is deleted with its runs. Hand-made jobs stay.
+ */
+export function sync(store: Store, app: string, list: Declared[], t: number): SyncReply {
+  const reply: SyncReply = { added: [], changed: [], removed: [], same: 0 };
+  const had = new Map(store.jobs().filter((j) => j.app === app && j.key).map((j) => [j.key, j]));
+  for (const d of list) {
+    const old = had.get(d.key);
+    had.delete(d.key);
+    if (!old) {
+      store.put(plan({ ...d, app, enabled: true, id: crypto.randomUUID(), createdAt: t, updatedAt: t, anchor: t, nextAt: null }, t));
+      reply.added.push(d.name);
+    } else if (same(old, d)) reply.same++;
+    else {
+      const anchor = JSON.stringify(old.cadence) === JSON.stringify(d.cadence) ? old.anchor : t;
+      store.put(plan({ ...old, ...d, anchor, updatedAt: t }, t));
+      reply.changed.push(d.name);
+    }
+  }
+  for (const gone of had.values()) {
+    store.remove(gone.id);
+    reply.removed.push(gone.name);
+  }
+  return reply;
+}
+
 export function api(store: Store, o: Options = {}): (req: Request) => Promise<Response> {
   const now = o.now ?? Date.now, send = o.send ?? deliver;
   return async (req) => {
@@ -49,9 +80,19 @@ export function api(store: Store, o: Options = {}): (req: Request) => Promise<Re
       const input = await body(req, JobInput);
       if (input instanceof Response) return input;
       const t = now();
-      const job = plan({ ...input, id: crypto.randomUUID(), createdAt: t, updatedAt: t, anchor: t, nextAt: null }, t);
+      const job = plan({ ...input, id: crypto.randomUUID(), key: "", createdAt: t, updatedAt: t, anchor: t, nextAt: null }, t);
       store.put(job);
       return privateJson(job, 201);
+    }
+
+    const own = APP.exec(path);
+    if (own && req.method === "PUT") {
+      let app = "";
+      try { app = AppName(decodeURIComponent(own[1]!)); } catch { return refuse("app: a name up to 40 characters", 400); }
+      const input = await body(req, AppJobs);
+      if (input instanceof Response) return input;
+      if (new Set(input.jobs.map((d) => d.key)).size < input.jobs.length) return refuse("jobs: each key once", 400);
+      return privateJson(sync(store, app, input.jobs, now()));
     }
 
     const m = /^\/api\/jobs\/([\w-]{1,40})(\/run|\/runs)?$/.exec(path);
@@ -59,6 +100,7 @@ export function api(store: Store, o: Options = {}): (req: Request) => Promise<Re
     if (!m || !job) return refuse("no such job", 404);
     if (m[2] === "/runs" && req.method === "GET") return privateJson({ runs: store.runs(Math.min(200, Number(url.searchParams.get("limit")) || 50), job.id) });
     if (m[2] === "/run" && req.method === "POST") {
+      if (job.action.kind === "elsewhere") return refuse(`${job.action.by} runs this one, not Cron Swanson`, 409);
       const t = now();
       return privateJson(await fire(store, job, t, t, send, true));
     }

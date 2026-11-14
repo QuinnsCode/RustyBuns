@@ -4,7 +4,7 @@
 import { esc } from "@rustybuns/util";
 import { Bad } from "@rustybuns/util/guard";
 import { readJson } from "@rustybuns/util/http";
-import { createElement, AlarmClock, Bell, Check, Pause, Pencil, Play, Plus, Search, Webhook, X, CircleAlert, type IconNode } from "lucide";
+import { createElement, AlarmClock, Bell, Check, Cloud, Pause, Pencil, Play, Plus, Search, Webhook, X, CircleAlert, type IconNode } from "lucide";
 import { FLOWS, describe, flow, upcoming, type Cadence, type Flow } from "./bacron.ts";
 import { Job, JobInput, JobsReply, Refusal, type Run } from "./api.ts";
 
@@ -104,12 +104,19 @@ function render() {
   tickClocks();
 }
 
+function kindIcon(j: Job): string {
+  const a = j.action;
+  if (a.kind === "webhook") return `<span class="kind" title="Calls ${esc(a.url)}">${icon(Webhook, 14)}</span>`;
+  if (a.kind === "elsewhere") return `<span class="kind" title="Run by ${esc(a.by)}; listed here so it sits in its lane">${icon(Cloud, 14)}</span>`;
+  return `<span class="kind" title="Reminder">${icon(Bell, 14)}</span>`;
+}
+
 function jobRow({ job: j, last }: Row): string {
   const lane = flow(j.cadence);
   return `<li class="job ${j.enabled ? "" : "paused"}" data-id="${esc(j.id)}">
     <i class="dot lane-${lane}" title="${LANE_LABEL[lane]}"></i>
     <div class="body">
-      <div class="top"><b>${esc(j.name)}</b><span class="cad">${esc(describe(j.cadence))}</span>${j.action.kind === "webhook" ? `<span class="kind" title="Calls ${esc(j.action.url)}">${icon(Webhook, 14)}</span>` : `<span class="kind" title="Reminder">${icon(Bell, 14)}</span>`}</div>
+      <div class="top"><b>${esc(j.name)}</b><span class="cad">${esc(describe(j.cadence))}</span>${kindIcon(j)}</div>
       <div class="sub">${j.tags.map((t) => `<span class="tag">#${esc(t)}</span>`).join("")}${j.why ? `<span class="why">${esc(j.why)}</span>` : ""}</div>
     </div>
     <div class="when">
@@ -117,7 +124,7 @@ function jobRow({ job: j, last }: Row): string {
       ${last ? `<small class="last run-${last.status}" title="${esc(last.error || clock(last.firedAt))}">${icon(STATUS_ICON[last.status], 12)} ${drift(last)}</small>` : `<small class="quiet">never run</small>`}
     </div>
     <div class="acts">
-      <button type="button" class="ghost" data-act="run" title="Run now">${icon(Play)}</button>
+      ${j.action.kind === "elsewhere" ? "" : `<button type="button" class="ghost" data-act="run" title="Run now">${icon(Play)}</button>`}
       <button type="button" class="ghost" data-act="toggle" title="${j.enabled ? "Pause" : "Resume"}">${icon(j.enabled ? Pause : AlarmClock)}</button>
       <button type="button" class="ghost" data-act="edit" title="Edit">${icon(Pencil)}</button>
     </div>
@@ -215,7 +222,7 @@ function input(): unknown {
   return {
     app: field("app").value.trim(), name: field("name").value.trim(), why: field("why").value.trim(), note: field<HTMLTextAreaElement>("note").value,
     tags: field("tags").value.split(",").map((t) => t.trim()).filter(Boolean), cadence: cadence(), tz: field("tz").value.trim(),
-    action: act === "webhook" ? { kind: "webhook", url: field("url").value.trim(), method: field<HTMLSelectElement>("method").value } : { kind: "remind" },
+    action: editing?.action.kind === "elsewhere" ? editing.action : act === "webhook" ? { kind: "webhook", url: field("url").value.trim(), method: field<HTMLSelectElement>("method").value } : { kind: "remind" },
     enabled: field("enabled").checked,
   };
 }
@@ -265,7 +272,11 @@ function openEditor(j: Job | null) {
     const d = new Date(serverNow() + 3_600_000);
     field("at").value = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:00`;
   }
-  setAction(j?.action.kind ?? "remind");
+  // A job something else runs (a Cloudflare cron) keeps that: no reminder-or-URL choice to make.
+  const elsewhere = j?.action.kind === "elsewhere";
+  $("actions").hidden = elsewhere;
+  setAction(!j || j.action.kind === "elsewhere" ? "remind" : j.action.kind);
+  if (elsewhere) $("hook").hidden = true;
   setKind(j?.cadence.kind ?? (state.lane === "all" || state.lane === "async" ? "daily" : state.lane));
   dialog.showModal();
 }
