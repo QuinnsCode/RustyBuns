@@ -47,6 +47,7 @@ export const APPS: Record<string, App> = {
   "elysia-conduit":    { test: "bun test ./test", drop: false },   // ./: "test" alone is a name filter and would run their src/ unit tests, which need their .env
   "example":           { boot: true, drop: false },
   "fm-daw":            { test: "bun test test", prep: "bun run build:native", perOs: true, check: true, boot: true },
+  "cron-swanson":      { test: "bun test test", drop: false },
   "codesplitter":     { test: "bun test --parallel test", shards: 3, boot: true },
   "delayed-reaction":  { test: "bun test test", drop: false },
   "git-recon":         { test: "bun test", drop: false },
