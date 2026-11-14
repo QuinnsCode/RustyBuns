@@ -153,7 +153,8 @@ stacked base that may merge first) goes one of three ways: a new worker (`office
 (anything for the owner's hands gets `MANUAL RUN:` and the `manual run` label, see below), or a question to
 the owner right then. A note in a PR body or comment is not a hand-off: a merged PR's open items vanish. Before you
 stop, every "not checked" or "follow-up" line in your PR is done, an issue, or a hired worker. Open your last message with "N of M done" and name each leftover with its link, or say
-"4 of 4, nothing left". "PR is open" alone is not a status. Check `gh pr view` and `bun run pr <n> --no-wait` first, and
+"4 of 4, nothing left". The count is agent work only: a filed `MANUAL RUN:` or an issue waiting on the owner's
+decision isn't a leftover, so don't count it; just say it was added (below). "PR is open" alone is not a status. Check `gh pr view` and `bun run pr <n> --no-wait` first, and
 base every PR on `main`. Never stack one on another PR's branch: when the base merges, its branch is deleted
 and every PR on it closes unmerged.
 
@@ -167,7 +168,9 @@ landing, or an issue.
 When something needs the owner to do it (a token, a sign-in, a live run, a hands-on check), it gets its own
 issue: title prefix `MANUAL RUN:` (hands-on checks too, even when nothing is broken), the `manual run`
 label, the steps and a rough time at the top. Never fold it as a line into another open issue (the old #609
-roll-up included): a buried line never gets done. Say in your final message that you filed one, with the link. A PR that touches a manual-run issue
+roll-up included): a buried line never gets done. Say in your final message that you filed one, with the link, outside
+the "N of M" count. Ask the owner to do it right then (AskUserQuestion) only when it takes under a minute or more work
+is blocked on it; otherwise it waits in `bun run manual`. A PR that touches a manual-run issue
 writes "Part of #N" or "Leaves #N open", never a closing word next to its number.
 
 The owner goes through them in one window: `bun run manual` starts each app on a free port, opens the
