@@ -4,14 +4,18 @@
 // the print mesh's whole UV square, so moving a picture is a redraw of one canvas, never new geometry.
 import type { Zone } from "./hats.ts";
 
-/** Where one picture sits: its centre in the zone (0..1 across, 0..1 up), its width as a share of the zone, its turn. */
-export type Placement = { u: number; v: number; scale: number; rotation: number };
+/**
+ * Where one picture sits: its centre in the zone (0..1 across, 0..1 up), its width as a share of the zone, its turn.
+ * On a shop's own model, `point` and `normal` (in the model's space) say where instead, and u, v go unused.
+ */
+export type Placement = { u: number; v: number; scale: number; rotation: number; point?: number[]; normal?: number[] };
 
 /** The print mesh's measures a placement needs to keep the picture square on the fabric. */
 export type Surface = { zone: Zone; radiusAt: (v: number) => number; profileLength: number };
 
 const clamp = (x: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, x));
 export const clampPlacement = (p: Placement): Placement => ({
+  ...p,
   u: clamp(p.u, 0, 1), v: clamp(p.v, 0, 1), scale: clamp(p.scale, 0.05, 1), rotation: clamp(p.rotation, -Math.PI, Math.PI),
 });
 

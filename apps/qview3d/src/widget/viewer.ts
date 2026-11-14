@@ -6,9 +6,10 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
-import type { Design, Model } from "../api.ts";
-import { buildHat, type Hat } from "./hats.ts";
-import { clampPlacement, onPicture, paint, zoneSpot, type Placement } from "./print.ts";
+import type { Design, Hat, Model } from "../api.ts";
+import { buildHat } from "./hats.ts";
+import { clampPlacement, type Placement } from "./print.ts";
+import { HatSurface, type Surface } from "./surfaces.ts";
 import { prepare, type Prepared } from "./image.ts";
 import ImageWorker from "./image-worker.ts?worker&inline";
 
@@ -29,14 +30,11 @@ export class Viewer {
   private scene = new THREE.Scene();
   private camera = new THREE.PerspectiveCamera(32, 1, 0.05, 50);
   private controls: OrbitControls;
-  private hat!: Hat;
-  private printCanvas = document.createElement("canvas");
-  private printCtx = this.printCanvas.getContext("2d")!;
-  private printTex = new THREE.CanvasTexture(this.printCanvas);
+  private surface!: Surface<unknown>;
   private ray = new THREE.Raycaster();
   private dirty = true;
   private visible = true;
-  private dragging: { pointer: number; du: number; dv: number } | null = null;
+  private dragging: { pointer: number; at: Placement; from: unknown } | null = null;
   private frame = 0;
   private worker: Worker | null = null;
   private noWorker = false;
@@ -49,7 +47,13 @@ export class Viewer {
     this.renderer.setPixelRatio(Math.min(2, devicePixelRatio));
     this.renderer.toneMapping = THREE.NeutralToneMapping; // made for product viewers: colours stay the colours shoppers picked;
     this.canvas = this.renderer.domElement;
-    this.canvas.style.cssText = "display:block;width:100%;height:100%;touch-action:none;outline:none";
+    this.canvas.style.cssText = "display:block;width:100%;height:100%;touch-action:none";
+    // Dragging has a keyboard way too (WCAG 2.5.7): focus the view, then arrows, + and -, [ and ].
+    this.canvas.tabIndex = 0;
+    this.canvas.setAttribute("role", "application");
+    this.canvas.setAttribute("aria-roledescription", "3D product view");
+    this.canvas.setAttribute("aria-label", "The product in 3D. Drag or Shift and the arrow keys to spin it. With a picture on, drag it, or use the arrow keys to move it, plus and minus to size it, and the square brackets to turn it.");
+    this.canvas.addEventListener("keydown", this.key);
     host.append(this.canvas);
 
     const pmrem = new THREE.PMREMGenerator(this.renderer);
@@ -61,11 +65,6 @@ export class Viewer {
     key.position.set(2, 4, 3);
     this.scene.add(key, new THREE.HemisphereLight(0xffffff, 0x9aa3ad, 0.35));
     this.scene.add(contactShadow());
-
-    this.printCanvas.width = 2048;
-    this.printCanvas.height = 1024;
-    this.printTex.colorSpace = THREE.SRGBColorSpace;
-    this.printTex.anisotropy = Math.min(8, this.renderer.capabilities.getMaxAnisotropy());
 
     // Picking comes before OrbitControls' own listener, so a press on the picture drags it instead of the camera.
     this.canvas.addEventListener("pointerdown", this.down);
@@ -114,36 +113,44 @@ export class Viewer {
     this.renderer.render(this.scene, this.camera);
   };
 
-  /** Redraw the print canvas and mark the frame dirty. */
+  /** Redraw the picture on the surface and mark the frame dirty. */
   private repaint(outline = !!this.dragging) {
-    const pictures = this.layer ? [{ image: this.layer.picture.bitmap, aspect: this.layer.picture.aspect, at: this.layer.at }] : [];
-    paint(this.printCtx, this.hat, this.color, pictures, outline);
-    this.printTex.needsUpdate = true;
+    const l = this.layer;
+    this.surface.draw(this.color, l ? { image: l.picture.bitmap, aspect: l.picture.aspect, at: l.at } : null, outline);
     this.dirty = true;
   }
 
-  setModel(m: Model) {
-    if (this.hat) {
-      this.scene.remove(this.hat.group);
-      this.hat.group.traverse((o) => {
-        if (o instanceof THREE.Mesh || o instanceof THREE.LineSegments) {
-          o.geometry.dispose();
-          (o.material as THREE.Material).dispose();
-        }
-      });
-    }
+  /** Whether the product keeps its own colours (a shop's own model): no swatches. */
+  get ownColors() { return this.surface.ownColors; }
+
+  private use(next: Surface<unknown>, m: Model) {
+    if (this.surface) { this.scene.remove(this.surface.group); this.surface.dispose(); }
+    this.surface = next;
     this.model = m;
-    this.hat = buildHat(m);
-    this.hat.print.material.map = this.printTex;
-    this.hat.group.position.y = -0.3;
-    this.scene.add(this.hat.group);
-    this.controls.target.copy(this.hat.target).add(this.hat.group.position);
+    next.group.position.y = -0.3;
+    this.scene.add(next.group);
+    this.controls.target.copy(next.target).add(next.group.position);
+    // A picture moving between a hat and a shop's model keeps its size and turn and starts at the front.
+    if (this.layer && (m === "custom" || this.layer.at.point)) {
+      const { point, normal, ...rest } = next.start();
+      this.layer.at = m === "custom" ? { ...rest, point, normal, scale: this.layer.at.scale, rotation: this.layer.at.rotation } : { ...rest, scale: this.layer.at.scale, rotation: this.layer.at.rotation };
+    }
     this.setColor(this.color);
+  }
+
+  setModel(m: Hat) {
+    this.use(new HatSurface(buildHat(m), Math.min(8, this.renderer.capabilities.getMaxAnisotropy())), m);
+  }
+
+  /** A shop's own model, from its GLB. */
+  async setCustom(url: string) {
+    const { loadModel } = await import("./model-surface.ts"); // its own chunk: hats-only pages never load it
+    this.use(await loadModel(url), "custom");
   }
 
   setColor(c: string) {
     this.color = c;
-    for (const m of this.hat.dyed) m.material.color.set(c);
+    this.surface.setColor(c);
     this.repaint();
   }
 
@@ -185,7 +192,7 @@ export class Viewer {
   async addImage(file: Blob): Promise<Layer> {
     const picture = await this.prepare(file);
     this.layer?.picture.bitmap.close();
-    this.layer = { picture, at: { u: 0.5, v: 0.55, scale: 0.7, rotation: 0 } };
+    this.layer = { picture, at: this.surface.start() };
     this.repaint();
     this.view("front");
     this.onChange();
@@ -231,15 +238,14 @@ export class Viewer {
   private pick(e: { clientX: number; clientY: number }) {
     const r = this.canvas.getBoundingClientRect();
     this.ray.setFromCamera(new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1), this.camera);
-    const hit = this.ray.intersectObject(this.hat.print, false)[0];
-    return hit?.uv ? zoneSpot(this.hat.zone, hit.uv) : null;
+    return this.surface.hit(this.ray);
   }
 
   private down = (e: PointerEvent) => {
     if (!this.layer || this.dragging) return;
     const spot = this.pick(e);
-    if (!spot || !onPicture(this.hat, this.layer.at, this.layer.picture.aspect, spot)) return;
-    this.dragging = { pointer: e.pointerId, du: this.layer.at.u - spot.u, dv: this.layer.at.v - spot.v };
+    if (!spot || !this.surface.onPicture(this.layer.at, this.layer.picture.aspect, spot)) return;
+    this.dragging = { pointer: e.pointerId, at: { ...this.layer.at }, from: spot };
     this.controls.enabled = false;
     try { this.canvas.setPointerCapture(e.pointerId); } catch { /* a pointer that already ended */ }
     this.canvas.style.cursor = "grabbing";
@@ -250,13 +256,13 @@ export class Viewer {
     if (!this.layer) return;
     if (!this.dragging) {
       const spot = e.pointerType === "mouse" ? this.pick(e) : null;
-      this.canvas.style.cursor = spot && onPicture(this.hat, this.layer.at, this.layer.picture.aspect, spot) ? "grab" : "";
+      this.canvas.style.cursor = spot && this.surface.onPicture(this.layer.at, this.layer.picture.aspect, spot) ? "grab" : "";
       return;
     }
     if (e.pointerId !== this.dragging.pointer) return;
     const spot = this.pick(e);
     if (!spot) return;
-    this.layer.at = clampPlacement({ ...this.layer.at, u: spot.u + this.dragging.du, v: spot.v + this.dragging.dv });
+    this.layer.at = clampPlacement(this.surface.drag(this.dragging.at, this.dragging.from, spot));
     this.repaint(true);
   };
 
@@ -269,11 +275,34 @@ export class Viewer {
     this.onChange();
   };
 
+  private key = (e: KeyboardEvent) => {
+    const step = ({ ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] } as Record<string, [number, number]>)[e.key];
+    if (step && (e.shiftKey || !this.layer)) {
+      const s = new THREE.Spherical().setFromVector3(this.camera.position.clone().sub(this.controls.target));
+      s.theta -= step[0] * 0.26;
+      s.phi = THREE.MathUtils.clamp(s.phi + step[1] * 0.12, this.controls.minPolarAngle, this.controls.maxPolarAngle);
+      this.camera.position.copy(this.controls.target).add(new THREE.Vector3().setFromSpherical(s));
+      this.dirty = true;
+      e.preventDefault();
+      return;
+    }
+    const l = this.layer;
+    if (!l) return;
+    if (step) l.at = clampPlacement(this.surface.nudge(l.at, step[0], step[1], this.camera));
+    else if (e.key === "+" || e.key === "=") l.at = clampPlacement({ ...l.at, scale: l.at.scale * 1.1 });
+    else if (e.key === "-" || e.key === "_") l.at = clampPlacement({ ...l.at, scale: l.at.scale / 1.1 });
+    else if (e.key === "[" || e.key === "]") l.at = clampPlacement({ ...l.at, rotation: l.at.rotation + (e.key === "]" ? 0.1 : -0.1) });
+    else return;
+    e.preventDefault();
+    this.repaint(false);
+    this.onChange();
+  };
+
   /** The wheel over the picture resizes it (with Shift, turns it); anywhere else it zooms. */
   private wheel = (e: WheelEvent) => {
     if (!this.layer) return;
     const spot = this.pick(e);
-    if (!spot || !onPicture(this.hat, this.layer.at, this.layer.picture.aspect, spot)) return;
+    if (!spot || !this.surface.onPicture(this.layer.at, this.layer.picture.aspect, spot)) return;
     e.preventDefault();
     e.stopImmediatePropagation();
     if (e.shiftKey) this.place({ rotation: this.layer.at.rotation + Math.sign(e.deltaY || e.deltaX) * 0.08 });
@@ -291,9 +320,9 @@ export class Viewer {
     };
   }
 
-  /** Put the camera, model and colour back as a design had them (its picture comes back through addImage). */
+  /** Put the camera, model and colour back as a design had them (its picture comes back through addImage). A custom model is the element's to load first. */
   apply(d: Design) {
-    if (d.model !== this.model) this.setModel(d.model);
+    if (d.model !== this.model && d.model !== "custom") this.setModel(d.model);
     this.setColor(d.color);
     const s = new THREE.Spherical(d.camera.distance, d.camera.polar, d.camera.azimuth);
     this.camera.position.copy(this.controls.target).add(new THREE.Vector3().setFromSpherical(s));
