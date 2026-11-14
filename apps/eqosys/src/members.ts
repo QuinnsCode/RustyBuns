@@ -1,8 +1,8 @@
 // The user base across apps: where each person came from, which apps they use, what they may do there,
 // and the one-minute codes that hand a signed-in person to an app.
-import { HOME, type QApp } from "./apps.ts";
+import { HOME, ourApp, type QApp } from "./apps.ts";
 import { appOf, appsOf } from "./listings.ts";
-import { sign, type Handoff } from "@rustybuns/util/token";
+import { sign, STUDIOS_MAX, type Handoff, type StudioRole } from "@rustybuns/util/token";
 import { hubErase, hubOut } from "./qollab/hub.ts";
 import { partyOf } from "./qollab/party.ts";
 import { send } from "./qollab/qlave.ts";
@@ -152,7 +152,13 @@ async function handoff(conf: Env, userId: string, app: string): Promise<Handoff 
     conf.DB.prepare("SELECT role FROM access WHERE user_id = ? AND app = ? ORDER BY role").bind(userId, app).all<{ role: string }>(),
   ]);
   if (!u) return null;
-  return { user: { id: u.id, email: u.email, name: u.name }, app, source: u.source ?? HOME, access: roles.results.map((r) => r.role) };
+  const who: Handoff = { user: { id: u.id, email: u.email, name: u.name }, app, source: u.source ?? HOME, access: roles.results.map((r) => r.role) };
+  // An app that runs per studio learns which studios the person is in, owners' and admins' first, so a cut drops a maker seat.
+  if (ourApp(app)?.studios) {
+    who.studios = (await conf.DB.prepare(`SELECT s.id, s.name, m.role FROM studio_members m JOIN studios s ON s.id = m.studio_id WHERE m.user_id = ?
+      ORDER BY CASE m.role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END, s.name LIMIT ?`).bind(userId, STUDIOS_MAX).all<StudioRole>()).results;
+  }
+  return who;
 }
 
 /** Everyone, or the one person `userId`, with their apps and access. */

@@ -14,8 +14,9 @@ of it the widget can print on. PolyForm Noncommercial.
 
 `bun run dev` runs it here: http://localhost:5190 is a demo shop with the widget on it, and
 http://localhost:5190/admin.html makes samples (the demo org and its admin key are filled in). The Worker runs on
-Bun with R2 in `.data/`, and a stand-in answers for Meshy, so nothing is billed. `bun test test` runs the upload
-and sample journeys.
+Bun with R2 in `.data/`, and a stand-in answers for Meshy, so nothing is billed. `/orgs.html` is the shops page; it signs
+in through eqosys, so here it needs a local eqosys (`EQOSYS_URL=http://localhost:<port> bun run dev`). `bun test test`
+runs the upload, sample and shop journeys.
 
 > **License.** This folder is under the [PolyForm Noncommercial License 1.0.0](LICENSE), not the repo's Apache-2.0.
 > Free for noncommercial use. To sell with it, or embed it for a shop, get a license: hello@qntbr.com.
@@ -30,6 +31,19 @@ can't fill the bucket. Customising and the snapshot download still work, because
 1. Once: a Password item `upload-secret` in the `qview3d` vault, with a random value in its built-in password field.
 2. From `apps/qview3d`: `bun run plan`, read it (a Worker and the `qview3d` bucket), then `bun run deploy`. It lands at
    `https://qview3d.<your subdomain>.workers.dev`.
+
+Then make your friend's shop. A shop is an eqosys studio, so no keys change hands:
+
+1. Your friend signs in to eqosys, makes a studio (Studio tab), then opens `/orgs.html` here and signs in. Their
+   studio shows "Not set up yet" with its id to copy. They send you that id and their shop's address.
+2. You open `/orgs.html`, signed in as an owner or admin of QNTBR (eqosys's house studio). **Make a shop** takes an
+   org id (it goes in the embed tag), their studio id, their sites and how many samples they've paid for.
+3. Your friend reloads the page. They add products (id, name, kind, colours) and copy the embed tag. Their studio's
+   owners and admins can do this; its makers only see it. **New script key** makes an admin key for a script (shown
+   once; org.json keeps its SHA-256), which writes products and makes samples without signing in.
+
+The routes are in [src/orgs.ts](src/orgs.ts). eqosys puts the person's studios in QView3D's token (`studios` in
+eqosys's APPS), and the Worker checks it against eqosys's JWKS.
 
 Then send your friend one line for their coding agent. The demo page has it ready to copy:
 
@@ -98,7 +112,7 @@ drawn in the page, since a Worker has no canvas.
 One bucket, with a folder for each org, split by kind. There are no folders by shopper or by date ([src/layout.ts](src/layout.ts)):
 
 ```
-orgs/<org>/org.json                 which sites may embed and upload (origins), set at onboarding
+orgs/<org>/org.json                 which sites may embed and upload (origins), its eqosys studio, set on /orgs.html
 orgs/<org>/products/<id>.json       model, colours on offer
 orgs/<org>/originals/<sha>.<ext>    the shopper's file as uploaded: the print source, never served
 orgs/<org>/textures/<sha>.webp      the same picture at 1024 px: served and edge-cached for a year
@@ -214,5 +228,5 @@ a second when it loads or changes colour, then frozen. Shots before and after: [
 ## Not in the spike
 
 Print zones on a shop's own model (the picture goes anywhere on it now). More than one picture. Text. Pinch-to-size
-on touch (sliders do it now). An org admin to write org.json and issue keys (it is written by hand). Real sample
+on touch (sliders do it now). Real sample
 prices (#4515). A rate limit on signing. A check of the rendered widget in CI.

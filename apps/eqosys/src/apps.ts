@@ -31,6 +31,8 @@ export interface QApp {
   blurb?: string;
   /** Listed as coming soon, with no link into it, until the owner says it is ready. It still signs in from its origins. */
   soon?: boolean;
+  /** The app runs per studio (QView3D: a studio is a shop), so its tokens name the person's studios and their role in each. */
+  studios?: boolean;
 }
 
 export const GENRES = ["Action & Adventure", "Sports & Skate", "Party & Music", "Strategy & Sims", "Work & Tools"] as const;
@@ -66,6 +68,8 @@ export const APPS: QApp[] = [
   { id: "at-lens", name: "AT Lens", kind: "suite", origins: [], starts: ["member"], shot: true, genre: "Work & Tools", maturity: "experimental" },
   { id: "auto-rig", name: "Auto Rig", kind: "suite", origins: ["https://auto-rig.notryanquinn.workers.dev"], starts: ["member"], shot: true, genre: "Work & Tools" },
   { id: "meshy-studio", name: "Meshy Batch Studio", kind: "suite", origins: [], starts: ["member"], shot: true, genre: "Work & Tools", maturity: "experimental" },
+  // A studio is a shop there: its owners and admins set up the shop's sites and products on /orgs.html.
+  { id: "qview3d", name: "QView3D", kind: "suite", origins: ["https://qview3d.notryanquinn.workers.dev"], returns: ["https://qview3d.notryanquinn.workers.dev/orgs.html"], starts: ["member"], genre: "Work & Tools", maturity: "experimental", studios: true },
   { id: "sharesplat", name: "ShareSplat", kind: "suite", origins: ["https://sharesplat.notryanquinn.workers.dev"], starts: ["member"], genre: "Work & Tools", maturity: "experimental" },
   { id: "splat-desktop", name: "Splat Desktop", kind: "suite", origins: [], starts: ["member"], genre: "Work & Tools", maturity: "experimental" },
   // Parked until tscircuit updates its own dependencies (its README).

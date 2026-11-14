@@ -2,11 +2,13 @@
 // their own studio and is added to QNTBR from the Studio tab, roles hold, and deleting an account takes the studio it owned alone with it.
 // Then a deploy tells eqosys what went out (the CLI's own reporter, packages/cli/src/report-deploy.ts), and the Ship door shows it.
 import { expect, setDefaultTimeout, test } from "bun:test";
-import { newKey } from "@rustybuns/util/token";
+import { newKey, peek } from "@rustybuns/util/token";
 import { APPS } from "../src/apps.ts";
 import { reportDeploy } from "../../../packages/cli/src/report-deploy.ts";
 import { handle } from "../src/handle.ts";
 import { asks, boot, codeIn, PARK, PASSWORD } from "./kit.ts";
+
+const QVIEW = "https://qview3d.notryanquinn.workers.dev";
 
 setDefaultTimeout(30_000);
 const KEY = "test-deploy-report-key";
@@ -83,4 +85,16 @@ test("a deploy reports what went out, and the Ship door shows its stage, version
   // An app with no site yet is live once it ships.
   await report({ app: "at-lens", version: "0.2.0" });
   expect(await ship("at-lens")).toMatchObject({ ship: "live", shipped: { version: "0.2.0" } });
+});
+
+test("an app that runs per studio (QView3D) gets the person's studios in its token; a game doesn't", async () => {
+  const cy = await signUp("Cy");
+  expect((await run("eq_studio_make", { name: "Cy Hats", kind: "business" }, { token: cy.token })).status).toBe(200);
+  expect(peek(cy.token)?.studios).toBeUndefined();
+
+  const a = await asks("qview3d", QVIEW);
+  const form = { ...a.form, return: `${QVIEW}/orgs.html` };
+  const back = await call("/do/signin", { form: { ...form, email: "cy@example.com", password: PASSWORD } });
+  const got = await (await call("/api/exchange", { json: { app: "qview3d", code: codeIn(back.to), verifier: a.verifier } })).res.json() as { token: string };
+  expect(peek(got.token)?.studios).toEqual([{ id: expect.any(String), name: "Cy Hats", role: "owner" }]);
 });

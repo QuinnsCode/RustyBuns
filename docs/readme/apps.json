@@ -117,6 +117,16 @@
         "line": "Type a handle and watch the AT Protocol work: domain to DID to data server to typed records, checked in the two directions. Then see the account live on the Jetstream firehose. Sign in with atproto OAuth to write a record of our own Lexicon and watch it come back. No keys and no bindings."
       },
       {
+        "app": "qview3d",
+        "name": "QView3D",
+        "line": "A 3D product customiser for a shop page, from one script tag. Shoppers drag a photo over a hat or onto a tee or hoodie's front, back and sleeve, choose its colour and save a snapshot. A shop with another product makes a model of it from photos. Uploads go to R2 on signed links, in one folder for each org. PolyForm Noncommercial."
+      },
+      {
+        "app": "qview3d",
+        "name": "QView3D",
+        "line": "A 3D product customiser for a shop page, from one script tag. Shoppers drag a photo over a hat or onto a top's front, back and sleeve (a tee, sweater, hoodie or tank), choose its colour and save a snapshot. A shop with another product makes a model of it from photos. Uploads go to R2 on signed links, in one folder for each org. PolyForm Noncommercial."
+      },
+      {
         "app": "sharesplat",
         "name": "ShareSplat",
         "line": "Product photos become a 3D spin for a store page. A guided shot list on the phone takes six sides for an AI-guessed mesh, or 72 photos in rings for a real Gaussian splat. A turntable splat viewer has a Shopify embed that you paste in."
@@ -125,11 +135,6 @@
         "app": "geoboxq-shopify",
         "name": "GeoBoxQ for Shopify",
         "line": "A small wrapper that turns a Shopify cart into the store's own box."
-      },
-      {
-        "app": "qview3d",
-        "name": "QView3D",
-        "line": "A 3D product customiser for a shop page, from one script tag. Shoppers drag a photo over a hat or onto a top's front, back and sleeve (a tee, sweater, hoodie or tank), choose its colour and save a snapshot. A shop with another product makes a model of it from photos. Uploads go to R2 on signed links, in one folder for each org. PolyForm Noncommercial."
       },
       {
         "app": "artstewengine",

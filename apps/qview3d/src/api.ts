@@ -23,14 +23,23 @@ export const ANY_MODEL = [...MODELS, "custom"] as const;
 export type Model = (typeof ANY_MODEL)[number];
 const HEX = /^#[0-9a-f]{6}$/i;
 
+/** This app's id in eqosys's APPS, and the eqosys it trusts unless EQOSYS_URL says otherwise. */
+export const APP = "qview3d";
+export const EQOSYS = "https://eqosys.qntbr.com";
+
+/** An eqosys studio's id, as it sits in a key: a UUID, or the house studio's "qntbr". */
+export const STUDIO = /^[A-Za-z0-9-]{1,64}$/;
+
 /**
  * orgs/<org>/org.json: which pages may embed the widget and sign uploads ("*" allows any: the demo org), the
- * SHA-256 of each admin key (they make samples and upload product photos), and how many samples the org has paid for.
+ * SHA-256 of each admin key (scripts use them for samples and product photos), how many samples the org has paid for,
+ * and the eqosys studio that runs it: that studio's owners and admins manage it signed in (orgs.ts).
  */
 export const Org = obj({
   origins: arr(str(200), 50),
   admins: opt(arr(str(64, { re: SHA }), 20)),
   samples: opt(int(0, 10_000)),
+  studio: opt(str(64, { re: STUDIO })),
 });
 export type Org = Of<typeof Org>;
 
@@ -50,6 +59,36 @@ export const PRINT_CM: Record<Made, Partial<Record<ZoneName, PrintCm>>> = {
   tank: { front: { w: 28, h: 30 }, back: { w: 28, h: 32 } },
   racerback: { front: { w: 24, h: 28 }, back: { w: 24, h: 26 } },
 };
+
+/** PUT /api/orgs/<org> (QView3D's owner): make the org or change it. Its admin keys stay as they are. */
+export const OrgSetup = obj({
+  studio: str(64, { re: STUDIO }),
+  origins: arr(str(200, { re: /^(\*|https?:\/\/[^/\s]+)$/ }), 50),
+  samples: int(0, 10_000),
+});
+export type OrgSetup = Of<typeof OrgSetup>;
+
+/** GET /api/mine: the signed-in person's shops (a studio, and its org once the owner made one), and whether they are QView3D's owner. */
+export const Mine = obj({
+  owner: bool(),
+  shops: arr(obj({
+    studio: str(64),
+    name: str(60),
+    role: oneOf(["owner", "admin", "maker"] as const),
+    org: opt(obj({
+      id: str(63, { re: ID }),
+      origins: arr(str(200), 50),
+      samples: int(0, 10_000),
+      keys: int(0, 20),
+      products: arr(obj({ id: str(63, { re: ID }), name: str(120), model: oneOf(ANY_MODEL), colors: arr(str(7), 24) }), 200),
+    })),
+  }), 20),
+});
+export type Mine = Of<typeof Mine>;
+
+/** POST /api/orgs/<org>/keys: a new admin key for a script, shown this once (org.json keeps its SHA-256). */
+export const KeyReply = obj({ key: str(200) });
+export type KeyReply = Of<typeof KeyReply>;
 
 /** orgs/<org>/products/<product>.json. */
 export const Product = obj({
