@@ -1,12 +1,13 @@
 // Shape, the master EQ's face: one big curve over the live spectrum, a dot per
 // band. Double-click empty space for a band (a low cut at the bottom end, a
-// high cut at the top, a bell in between), drag a dot to move it, roll the
+// high cut at the top, a bell in between), drag a dot to move it (up and down
+// is gain on a bell or shelf, resonance on a cut: higher is a harder corner), roll the
 // wheel over it for Q, double-click it (or Delete) to take it out. The strip
 // under the curve sets the selected band exactly. What's drawn is the filters'
 // real digital response (src/engine/eq.ts `response`), phase included.
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  EQ_BANDS, EQ_LIMITS, EQ_SLOPES, bandResponse, hasGain, isCut, response, flatEq,
+  EQ_BANDS, EQ_LIMITS, EQ_SLOPES, bandResponse, hasGain, hasReso, isCut, response, flatEq,
   type EqBand, type EqDoc, type EqKind,
 } from "../engine/eq.ts";
 import { TRACK_COLORS } from "./colors.ts";
@@ -19,13 +20,13 @@ const GRID_F = [50, 100, 200, 500, 1000, 2000, 5000, 10000];
 const HIT = 11;
 
 export const KIND_INFO: Record<EqKind, { label: string; tip: string; path: string }> = {
-  lowCut: { label: "Low cut", tip: "Low cut: everything under the corner goes, steeper with the slope. Q above 0.71 adds a bump at the corner", path: "M2 13 C5 4 8 4 12 4 L23 4" },
+  lowCut: { label: "Low cut", tip: "Low cut: everything under the corner goes, steeper with the slope. Drag the dot up for a resonant bump at the corner (12 dB/oct and up)", path: "M2 13 C5 4 8 4 12 4 L23 4" },
   lowShelf: { label: "Low shelf", tip: "Low shelf: lifts or lowers everything under it", path: "M1 4 C8 4 10 4 12 7 C14 10 16 10 23 10" },
   bell: { label: "Bell", tip: "Bell: a bump up or a dip down around one frequency. Q is how narrow", path: "M1 10 C8 10 9 2 12 2 C15 2 16 10 23 10" },
   notch: { label: "Notch", tip: "Notch: a keyhole that takes a range clean out. Low Q sweeps out a wide range, high Q one ringing tone", path: "M1 4 L9 4 C11 4 11.5 13 12 13 C12.5 13 13 4 15 4 L23 4" },
   bandPass: { label: "Band pass", tip: "Band pass: only this range gets through. Sweep it to find a ring, then notch it", path: "M1 13 C8 13 9 3 12 3 C15 3 16 13 23 13" },
   highShelf: { label: "High shelf", tip: "High shelf: lifts or lowers everything over it", path: "M1 10 C8 10 10 10 12 7 C14 4 16 4 23 4" },
-  highCut: { label: "High cut", tip: "High cut: everything over the corner goes, steeper with the slope. Q above 0.71 adds a bump at the corner", path: "M1 4 L12 4 C16 4 19 4 22 13" },
+  highCut: { label: "High cut", tip: "High cut: everything over the corner goes, steeper with the slope. Drag the dot up for a resonant bump at the corner (12 dB/oct and up)", path: "M1 4 L12 4 C16 4 19 4 22 13" },
 };
 const KIND_ORDER: EqKind[] = ["lowCut", "lowShelf", "bell", "notch", "bandPass", "highShelf", "highCut"];
 
@@ -43,8 +44,13 @@ export function newBand(f: number, db: number): EqBand {
   return { kind: "bell", f, g: Math.round(clamp(db, -RANGE, RANGE) * 10) / 10, q: 1, slope: 12, on: true };
 }
 
-/** Where a band's dot sits: at its gain for bells and shelves, on the 0 dB line otherwise. */
-const dotDb = (b: EqBand) => (hasGain(b.kind) ? b.g : 0);
+/** A cut's resonance as a height: 0 dB is flat Butterworth (Q 0.71), each 6 dB up doubles Q. */
+export const resoDb = (q: number) => 20 * Math.log10(q / Math.SQRT1_2);
+export const qOfResoDb = (db: number) => clamp(Math.SQRT1_2 * Math.pow(10, db / 20), EQ_LIMITS.q[0], EQ_LIMITS.q[1]);
+/** Whether up and down on this band's dot moves its resonance. */
+const resoDrag = (b: EqBand) => isCut(b.kind) && hasReso(b.slope);
+/** Where a band's dot sits: at its gain on bells and shelves, at its resonance on cuts, on the 0 dB line otherwise. */
+const dotDb = (b: EqBand) => (hasGain(b.kind) ? b.g : resoDrag(b) ? clamp(resoDb(b.q), -RANGE, RANGE) : 0);
 
 export function Shape(props: { doc: EqDoc; sampleRate: number; analyser: AnalyserNode | null; onChange(doc: EqDoc, group?: string): void }) {
   const { doc, sampleRate: sr, analyser, onChange } = props;
@@ -237,8 +243,10 @@ export function Shape(props: { doc: EqDoc; sampleRate: number; analyser: Analyse
     const b = live.current.doc[d.slot];
     if (!b) return;
     const f = Math.round(fOfX(x + d.dx, size.w));
-    const g = hasGain(b.kind) ? Math.round(clamp(dbOfY(y + d.dy, size.h), EQ_LIMITS.g[0], EQ_LIMITS.g[1]) * 10) / 10 : b.g;
-    patch(d.slot, { f, g }, `eq:${d.slot}:drag`);
+    const db = dbOfY(y + d.dy, size.h);
+    const g = hasGain(b.kind) ? Math.round(clamp(db, EQ_LIMITS.g[0], EQ_LIMITS.g[1]) * 10) / 10 : b.g;
+    const q = resoDrag(b) ? Math.round(qOfResoDb(db) * 100) / 100 : b.q;
+    patch(d.slot, { f, g, q }, `eq:${d.slot}:drag`);
   };
   const onUp = () => { drag.current = null; };
   const onDouble = (e: React.MouseEvent<HTMLCanvasElement>) => {
@@ -259,7 +267,7 @@ export function Shape(props: { doc: EqDoc; sampleRate: number; analyser: Analyse
     <section className="shape" aria-label="Shape: the master EQ">
       <div className="shape-bar">
         <span className="silk">Shape · master EQ</span>
-        <span className="dim shape-hint">Double-click to add · drag to move · wheel for Q · Alt-click to bypass · double-click a dot to remove</span>
+        <span className="dim shape-hint">Double-click to add · drag to move (up on a cut is a harder corner) · wheel for Q · Alt-click to bypass · double-click a dot to remove</span>
         <span className="spacer" />
         <label className="check" title="Draw the phase the bands add (dashed, -180 to +180 degrees). Steep cuts turn it most"><input type="checkbox" checked={phase} onChange={(e) => setPhase(e.currentTarget.checked)} /> Phase</label>
         <span className="dim">{used}/{EQ_BANDS}</span>
@@ -286,7 +294,8 @@ export function Shape(props: { doc: EqDoc; sampleRate: number; analyser: Analyse
           </div>
           <Num label="Freq" unit="Hz" value={Math.round(band.f)} min={EQ_LIMITS.f[0]} max={EQ_LIMITS.f[1]} step={1} onValue={(f) => patch(sel, { f }, `eq:${sel}:f`)} />
           <Num label="Gain" unit="dB" value={band.g} min={EQ_LIMITS.g[0]} max={EQ_LIMITS.g[1]} step={0.5} disabled={!hasGain(band.kind)} onValue={(g) => patch(sel, { g }, `eq:${sel}:g`)} />
-          <Num label={isCut(band.kind) ? "Reso" : "Q"} unit="" value={Math.round(band.q * 100) / 100} min={EQ_LIMITS.q[0]} max={EQ_LIMITS.q[1]} step={0.05} onValue={(q) => patch(sel, { q }, `eq:${sel}:q`)} />
+          <Num label={isCut(band.kind) ? "Reso" : "Q"} unit="" value={Math.round(band.q * 100) / 100} min={EQ_LIMITS.q[0]} max={EQ_LIMITS.q[1]} step={0.05}
+            disabled={isCut(band.kind) && !hasReso(band.slope)} onValue={(q) => patch(sel, { q }, `eq:${sel}:q`)} />
           {isCut(band.kind) && (
             <label className="field inline"><span className="silk">Slope</span>
               <select value={band.slope} onChange={(e) => patch(sel, { slope: Number(e.currentTarget.value) })}>

@@ -14,6 +14,11 @@
 //   sections with the Butterworth Q of each (plus a one-pole when N is odd), so
 //   the passband stays flat. Q above 0.707 lifts only the sharpest section,
 //   which puts a resonant bump at the corner without a dent before it.
+// - 3 and 9 dB/oct are half orders: no finite filter falls at exactly 3 dB/oct,
+//   so a chain of seven first-order shelves, poles and zeros interleaved a
+//   factor of 3 apart, stands in for sqrt(s / (s + F)). It stays within 0.06 dB
+//   of the real thing for eight octaves past the corner. 9 is that chain plus a
+//   one-pole. Both put -3 dB at the corner, like every other slope.
 // - Every frequency is prewarped (tan), so a corner lands where it's drawn.
 //   Near Nyquist a bell narrows (the bilinear transform's cramping); the page
 //   draws the real digital response, so what you see is what you hear.
@@ -29,6 +34,14 @@ use std::f64::consts::PI;
 pub const BANDS: usize = 8;
 /// Most second-order sections in one band: a 96 dB/oct cut.
 const SECS: usize = 8;
+/// Most first-order sections: the half-order chain and a one-pole (9 dB/oct).
+const FOS: usize = 8;
+const HALF_N: usize = 7;
+/// The chain's top pole, as a fraction of F (fitted to sqrt(s / (s + F))), and each shelf's floor, 1/sqrt(3).
+const HALF_A: f64 = 0.77;
+const HALF_G: f64 = 0.5773502691896258;
+/// F for -3 dB at the corner, per half order: sqrt(2^(1/m) - 1) for m = 1/2 and 3/2 (times the corner on a low cut, divided into it on a high cut).
+const HALF_F: [f64; 2] = [1.7320508075688772, 0.7664209365408798];
 pub const BELL: u32 = 0;
 pub const LOW_SHELF: u32 = 1;
 pub const HIGH_SHELF: u32 = 2;
@@ -44,9 +57,14 @@ const BUTTERWORTH_Q: f64 = std::f64::consts::FRAC_1_SQRT_2;
 #[derive(Clone, Copy, Default)]
 struct Sec { a1: f64, a2: f64, a3: f64, m0: f64, m1: f64, m2: f64 }
 
+/// A first-order TPT section: G = g / (1 + g), out = lp * low + hp * high.
+#[derive(Clone, Copy, Default)]
+struct Fo { g: f64, lp: f64, hp: f64 }
+
 #[derive(Clone, Copy, Default)]
 struct Band {
     kind: u32,
+    /// Cuts: the slope in half orders (3 dB/oct each). Others: 0.
     order: usize,
     on: bool,
     // targets and the gliding values: log2 Hz, dB, ln Q, crossfade 0..1
@@ -55,11 +73,11 @@ struct Band {
     mix: f64,
     secs: [Sec; SECS],
     nsec: usize,
-    /// One-pole TPT coefficient G = g / (1 + g) for odd-order cuts, 0 when unused.
-    pole: f64,
-    // state per channel: [ic1, ic2] per section, and the one-pole's
+    fos: [Fo; FOS],
+    nfo: usize,
+    // state per channel: [ic1, ic2] per section, and one per first-order section
     s: [[[f64; 2]; SECS]; 2],
-    p: [f64; 2],
+    p: [[f64; FOS]; 2],
 }
 
 pub struct Eq {
@@ -73,8 +91,13 @@ pub struct Eq {
 
 fn clampf(v: f64, lo: f64, hi: f64, dflt: f64) -> f64 { if v.is_finite() { v.max(lo).min(hi) } else { dflt } }
 
-/// Butterworth order from a slope in dB/oct: 6 per order, 1..16.
-pub fn order_of(slope: f64) -> usize { clampf((slope / 6.0).round(), 1.0, 16.0, 2.0) as usize }
+/// A cut's slope in half orders (3 dB/oct each), 1..32. Only 3 and 9 dB/oct are half orders; 15 and up round to whole ones.
+pub fn order_of(slope: f64) -> usize {
+    let h = clampf((slope / 3.0).round(), 1.0, 32.0, 4.0) as usize;
+    if h % 2 == 1 && h > 3 { h + 1 } else { h }
+}
+
+fn fo(g: f64, lp: f64, hp: f64) -> Fo { Fo { g: g / (1.0 + g), lp, hp } }
 
 fn sec(g: f64, k: f64, m0: f64, m1: f64, m2: f64) -> Sec {
     let a1 = 1.0 / (1.0 + g * (g + k));
@@ -89,7 +112,7 @@ impl Band {
         let w = ((PI * fc) / sr).tan();
         let q = self.q_now.exp();
         let a = (10.0f64).powf(self.g_now / 40.0);
-        self.pole = 0.0;
+        self.nfo = 0;
         self.nsec = 1;
         match self.kind {
             LOW_SHELF => { let g = w / a.sqrt(); let k = 1.0 / q; self.secs[0] = sec(g, k, 1.0, k * (a - 1.0), a * a - 1.0); }
@@ -97,18 +120,35 @@ impl Band {
             NOTCH => { let k = 1.0 / q; self.secs[0] = sec(w, k, 1.0, -k, 0.0); }
             BAND_PASS => { let k = 1.0 / q; self.secs[0] = sec(w, k, 0.0, k, 0.0); }
             LOW_CUT | HIGH_CUT => {
-                let n = self.order;
                 let low = self.kind == LOW_CUT;
-                self.nsec = n / 2;
-                for i in 0..self.nsec {
-                    let theta = ((2 * i + 1) as f64 * PI) / (2 * n) as f64;
-                    let mut qs = 1.0 / (2.0 * theta.cos());
-                    // the last section is the sharpest: it carries the resonance
-                    if i + 1 == self.nsec { qs *= q / BUTTERWORTH_Q; }
-                    let k = 1.0 / qs;
-                    self.secs[i] = if low { sec(w, k, 1.0, -k, -1.0) } else { sec(w, k, 0.0, 0.0, 1.0) };
+                let (pl, ph) = if low { (0.0, 1.0) } else { (1.0, 0.0) };
+                let h = self.order;
+                if h % 2 == 0 {
+                    let n = h / 2;
+                    self.nsec = n / 2;
+                    for i in 0..self.nsec {
+                        let theta = ((2 * i + 1) as f64 * PI) / (2 * n) as f64;
+                        let mut qs = 1.0 / (2.0 * theta.cos());
+                        // the last section is the sharpest: it carries the resonance
+                        if i + 1 == self.nsec { qs *= q / BUTTERWORTH_Q; }
+                        let k = 1.0 / qs;
+                        self.secs[i] = if low { sec(w, k, 1.0, -k, -1.0) } else { sec(w, k, 0.0, 0.0, 1.0) };
+                    }
+                    if n % 2 == 1 { self.fos[0] = fo(w, pl, ph); self.nfo = 1; }
+                } else {
+                    // a half order: the shelf chain at F, plus a one-pole there for 9 dB/oct.
+                    // A high cut is the low cut mirrored about F: poles at F^2 / p, each shelf lp + g hp.
+                    self.nsec = 0;
+                    let wf = if low { w * HALF_F[h / 2] } else { w / HALF_F[h / 2] };
+                    if h == 3 { self.fos[0] = fo(wf, pl, ph); self.nfo = 1; }
+                    let mut p = HALF_A * wf;
+                    for _ in 0..HALF_N {
+                        let i = self.nfo;
+                        self.fos[i] = if low { fo(p, HALF_G, 1.0) } else { fo((wf * wf) / p, 1.0, HALF_G) };
+                        self.nfo += 1;
+                        p /= 3.0;
+                    }
                 }
-                if n % 2 == 1 { self.pole = w / (1.0 + w); }
             }
             _ => { let k = 1.0 / (q * a); self.secs[0] = sec(w, k, 1.0, k * (a * a - 1.0), 0.0); }
         }
@@ -117,11 +157,13 @@ impl Band {
     #[inline]
     fn run(&mut self, ch: usize, x: f64) -> f64 {
         let mut y = x;
-        if self.pole > 0.0 {
-            let v = (y - self.p[ch]) * self.pole;
-            let lp = v + self.p[ch];
-            self.p[ch] = lp + v;
-            y = if self.kind == LOW_CUT { y - lp } else { lp };
+        for i in 0..self.nfo {
+            let c = &self.fos[i];
+            let s = &mut self.p[ch][i];
+            let v = (y - *s) * c.g;
+            let lp = v + *s;
+            *s = lp + v;
+            y = c.lp * lp + c.hp * (y - lp);
         }
         for i in 0..self.nsec {
             let c = &self.secs[i];
@@ -136,7 +178,7 @@ impl Band {
         x + (y - x) * self.mix
     }
 
-    fn clear(&mut self) { self.s = [[[0.0; 2]; SECS]; 2]; self.p = [0.0; 2]; }
+    fn clear(&mut self) { self.s = [[[0.0; 2]; SECS]; 2]; self.p = [[0.0; FOS]; 2]; }
 }
 
 impl Eq {
@@ -157,7 +199,7 @@ impl Eq {
         let sr = self.sr;
         let b = &mut self.bands[i];
         let kind = if kind <= BAND_PASS { kind } else { BELL };
-        let order = if kind == LOW_CUT || kind == HIGH_CUT { order_of(slope) } else { 2 };
+        let order = if kind == LOW_CUT || kind == HIGH_CUT { order_of(slope) } else { 0 };
         let was_off = !b.on && b.mix == 0.0;
         if kind != b.kind || order != b.order { b.clear(); }
         b.kind = kind;
@@ -249,6 +291,12 @@ mod tests {
             (LOW_CUT, 100.0, 0.0, 0.707, 24.0, 100.0, -3.0),
             (HIGH_CUT, 2000.0, 0.0, 0.707, 48.0, 2000.0, -3.0),
         ];
+        let cases: Vec<_> = cases.into_iter().chain([
+            (LOW_CUT, 1000.0, 0.0, 0.707, 3.0, 1000.0, -3.0),
+            (LOW_CUT, 1000.0, 0.0, 0.707, 3.0, 125.0, -11.4),
+            (HIGH_CUT, 1000.0, 0.0, 0.707, 9.0, 1000.0, -3.0),
+            (HIGH_CUT, 500.0, 0.0, 0.707, 9.0, 4000.0, -24.1),
+        ]).collect();
         for (kind, f, g, q, slope, at, want) in cases {
             let mut eq = Eq::new(48000.0);
             eq.set_band(0, kind, f, g, q, slope, true);

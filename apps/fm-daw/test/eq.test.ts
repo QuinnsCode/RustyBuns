@@ -8,7 +8,7 @@ import { WasmEq, instantiateFm } from "../src/engine/wasm.ts";
 import { CEILING } from "../src/engine/params.ts";
 import { apply, decodeOp, sanitize } from "../src/project.ts";
 import { demoProject } from "../src/presets.ts";
-import { newBand } from "../src/ui/Shape.tsx";
+import { newBand, qOfResoDb } from "../src/ui/Shape.tsx";
 
 const SR = 48000;
 const band = (b: Partial<EqBand>): EqBand => ({ kind: "bell", f: 1000, g: 0, q: 0.707, slope: 12, on: true, ...b });
@@ -52,6 +52,19 @@ test("the everyday chain: low cut, low shelf, bell bump and dip, notch, high she
   expect(heard[5]).toBeLessThan(-40); // the ring notched out
 });
 
+test("gentle and steep cuts: 3, 6, 9, 12 and 24 dB/oct fall that much per octave, -3 dB at the corner, and dragging a cut up rings its corner", () => {
+  const at = (b: EqBand, f: number) => { const s = sine(f, 0.05); return gainDb(s, run(doc(b), s)); };
+  for (const slope of [3, 6, 9, 12, 24]) {
+    const lo = band({ kind: "lowCut", f: 2000, slope }), hi = band({ kind: "highCut", f: 125, slope });
+    // three and four octaves past the corner, where every slope is on its asymptote (and far from Nyquist, which steepens a high cut)
+    const fallLo = at(lo, 250) - at(lo, 125), fallHi = at(hi, 1000) - at(hi, 2000);
+    expect({ slope, corner: Math.round(at(lo, 2000)), lo: Math.round(fallLo), hi: Math.round(fallHi) }).toEqual({ slope, corner: -3, lo: slope, hi: slope });
+  }
+  // up on the dot is a higher Q: a resonant peak at the corner instead of -3 dB
+  const flat = band({ kind: "lowCut", f: 500, slope: 24 }), rung = band({ kind: "lowCut", f: 500, slope: 24, q: qOfResoDb(12) });
+  expect(at(rung, 500)).toBeGreaterThan(at(flat, 500) + 9);
+});
+
 test("flat passes the mix untouched; a +30 dB bell stays under the ceiling", () => {
   const s = sine(220, 0.6);
   expect(run(flatEq(), s)).toEqual(s);
@@ -64,14 +77,14 @@ test("rust (wasm) matches ts sample for sample while bands move", async () => {
   if (!existsSync(f)) { console.log("  (skipped: wasm not built; run `bun run build:native`)"); return; }
   const rust = new WasmEq(await instantiateFm(readFileSync(f)), SR), ts = new TsEq(SR);
   let seed = 1;
-  const noise = new Float32Array(SR * 2).map(() => ((seed = (seed * 16807) % 2147483647) / 2147483647 - 0.5) * 0.5);
-  const a = noise.slice(), b = noise.slice();
-  const steps: EqDoc[] = [
+  const quarter = SR / 2, steps: EqDoc[] = [
     doc(band({ kind: "lowCut", f: 80, slope: 18, q: 2 }), band({ f: 900, g: 9, q: 3 }), band({ kind: "highShelf", f: 5000, g: -6 })),
     doc(band({ kind: "lowCut", f: 300, slope: 48 }), band({ f: 2000, g: -12, q: 0.5 }), null, band({ kind: "notch", f: 3000, q: 8 })),
     doc(null, band({ f: 2000, g: -12, q: 0.5, on: false }), null, band({ kind: "bandPass", f: 1200, q: 1.5 }), band({ kind: "highCut", f: 7000, slope: 96 })),
+    doc(band({ kind: "lowCut", f: 200, slope: 3 }), null, null, null, band({ kind: "highCut", f: 3000, slope: 9 })),
   ];
-  const quarter = SR / 2;
+  const noise = new Float32Array(steps.length * quarter * 2).map(() => ((seed = (seed * 16807) % 2147483647) / 2147483647 - 0.5) * 0.5);
+  const a = noise.slice(), b = noise.slice();
   steps.forEach((d, k) => {
     rust.set(d); ts.set(d);
     rust.process(a.subarray(k * quarter * 2), quarter);
@@ -96,8 +109,8 @@ test("the EQ is saved with the project, sent as an op, and a bad shape off the w
   expect(sanitize(JSON.parse(JSON.stringify(next)))!.eq).toEqual(d);
   // an older project has no EQ; junk becomes flat or fitted, never a crash
   expect(sanitize({ ...next, eq: undefined })!.eq).toEqual(flatEq());
-  const junk = sanitize({ ...next, eq: [{ kind: "laser", f: 1e9, g: "loud" }, 7, null, ...Array(20).fill(null)] })!.eq;
+  const junk = sanitize({ ...next, eq: [{ kind: "laser", f: 1e9, g: "loud", slope: 10 }, 7, null, ...Array(20).fill(null)] })!.eq;
   expect(junk.length).toBe(8);
-  expect(junk[0]).toEqual({ kind: "bell", f: 20000, g: 0, q: Math.SQRT1_2, slope: 12, on: true });
+  expect(junk[0]).toEqual({ kind: "bell", f: 20000, g: 0, q: Math.SQRT1_2, slope: 9, on: true });
   expect(junk.slice(1)).toEqual(Array(7).fill(null));
 });

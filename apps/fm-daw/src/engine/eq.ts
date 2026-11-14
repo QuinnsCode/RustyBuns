@@ -12,8 +12,10 @@ import { CEILING } from "./params.ts";
 export const EQ_BANDS = 8;
 export const EQ_KINDS = ["bell", "lowShelf", "highShelf", "lowCut", "highCut", "notch", "bandPass"] as const;
 export type EqKind = (typeof EQ_KINDS)[number];
-/** Cut slopes, dB per octave: 6 per Butterworth order. */
-export const EQ_SLOPES = [6, 12, 18, 24, 36, 48, 72, 96] as const;
+/** Cut slopes, dB per octave: 6 per Butterworth order, and the half orders 3 and 9. */
+export const EQ_SLOPES = [3, 6, 9, 12, 18, 24, 36, 48, 72, 96] as const;
+/** The listed slope nearest to any number. */
+export const snapSlope = (v: number) => EQ_SLOPES.reduce((a, b) => (Math.abs(b - v) < Math.abs(a - v) ? b : a), 12 as number);
 export const EQ_LIMITS = { f: [20, 20000], g: [-30, 30], q: [0.1, 18] } as const;
 /** kind, Hz, dB (bells and shelves), Q (width, or resonance on cuts and shelves), dB/oct (cuts), on. */
 export interface EqBand { kind: EqKind; f: number; g: number; q: number; slope: number; on: boolean }
@@ -26,7 +28,7 @@ export const isCut = (k: EqKind) => k === "lowCut" || k === "highCut";
 
 const BAND: Guard<EqBand> = obj({
   kind: oneOf(EQ_KINDS, "bell"), f: num(...EQ_LIMITS.f, 1000), g: num(...EQ_LIMITS.g, 0), q: num(...EQ_LIMITS.q, Math.SQRT1_2),
-  slope: num(6, 96, 12), on: bool(true),
+  slope: (v: unknown) => snapSlope(num(3, 96, 12)(v)), on: bool(true),
 });
 /** Anything to EQ_BANDS slots: a band each, or null. Old projects have none: flat. */
 export function sanitizeEq(x: unknown): EqDoc {
@@ -60,11 +62,19 @@ export function sendEq(doc: EqDoc, last: EqBand[], setBand: (i: number, kind: nu
 
 const BELL = 0, LOW_SHELF = 1, HIGH_SHELF = 2, LOW_CUT = 3, HIGH_CUT = 4, NOTCH = 5, BAND_PASS = 6;
 const SECS = 8;
+const FOS = 8;
+const HALF_N = 7;
+const HALF_A = 0.77;
+const HALF_G = 0.5773502691896258;
+const HALF_F = [1.7320508075688772, 0.7664209365408798];
 const BLOCK = 16;
 const GLIDE_S = 0.02;
 const BW_Q = Math.SQRT1_2;
 const clampf = (v: number, lo: number, hi: number, d: number) => (Number.isFinite(v) ? Math.min(Math.max(v, lo), hi) : d);
-export const orderOf = (slope: number) => clampf(Math.round(slope / 6), 1, 16, 2);
+/** A cut's slope in half orders (3 dB/oct each), 1..32. Only 3 and 9 dB/oct are half orders. */
+export const orderOf = (slope: number) => { const h = clampf(Math.round(slope / 3), 1, 32, 4); return h % 2 === 1 && h > 3 ? h + 1 : h; };
+/** Whether a cut at this slope has a second-order section to carry resonance (12 dB/oct and up). */
+export const hasReso = (slope: number) => orderOf(slope) >= 4;
 
 class Band {
   kind = BELL; order = 0; on = false;
@@ -72,10 +82,18 @@ class Band {
   /** per section: a1 a2 a3 m0 m1 m2 */
   readonly c = new Float64Array(SECS * 6);
   nsec = 0;
-  pole = 0;
+  /** per first-order section: G lp hp */
+  readonly fo = new Float64Array(FOS * 3);
+  nfo = 0;
   /** per channel, per section: ic1 ic2 */
   readonly s = new Float64Array(2 * SECS * 2);
-  readonly p = new Float64Array(2);
+  readonly p = new Float64Array(2 * FOS);
+
+  private first(g: number, lp: number, hp: number) {
+    const o = this.nfo * 3;
+    this.fo[o] = g / (1 + g); this.fo[o + 1] = lp; this.fo[o + 2] = hp;
+    this.nfo++;
+  }
 
   private sec(i: number, g: number, k: number, m0: number, m1: number, m2: number) {
     const a1 = 1 / (1 + g * (g + k)), a2 = g * a1, o = i * 6;
@@ -87,7 +105,7 @@ class Band {
     const w = Math.tan((Math.PI * fc) / sr);
     const q = Math.exp(this.qNow);
     const a = Math.pow(10, this.gNow / 40);
-    this.pole = 0;
+    this.nfo = 0;
     this.nsec = 1;
     switch (this.kind) {
       case LOW_SHELF: { const g = w / Math.sqrt(a), k = 1 / q; this.sec(0, g, k, 1, k * (a - 1), a * a - 1); break; }
@@ -95,16 +113,28 @@ class Band {
       case NOTCH: { const k = 1 / q; this.sec(0, w, k, 1, -k, 0); break; }
       case BAND_PASS: { const k = 1 / q; this.sec(0, w, k, 0, k, 0); break; }
       case LOW_CUT: case HIGH_CUT: {
-        const n = this.order, low = this.kind === LOW_CUT;
-        this.nsec = n >> 1;
-        for (let i = 0; i < this.nsec; i++) {
-          const theta = ((2 * i + 1) * Math.PI) / (2 * n);
-          let qs = 1 / (2 * Math.cos(theta));
-          if (i + 1 === this.nsec) qs *= q / BW_Q;
-          const k = 1 / qs;
-          if (low) this.sec(i, w, k, 1, -k, -1); else this.sec(i, w, k, 0, 0, 1);
+        const low = this.kind === LOW_CUT, pl = low ? 0 : 1, ph = low ? 1 : 0, h = this.order;
+        if (h % 2 === 0) {
+          const n = h >> 1;
+          this.nsec = n >> 1;
+          for (let i = 0; i < this.nsec; i++) {
+            const theta = ((2 * i + 1) * Math.PI) / (2 * n);
+            let qs = 1 / (2 * Math.cos(theta));
+            if (i + 1 === this.nsec) qs *= q / BW_Q;
+            const k = 1 / qs;
+            if (low) this.sec(i, w, k, 1, -k, -1); else this.sec(i, w, k, 0, 0, 1);
+          }
+          if (n % 2 === 1) this.first(w, pl, ph);
+        } else {
+          this.nsec = 0;
+          const wf = low ? w * HALF_F[h >> 1] : w / HALF_F[h >> 1];
+          if (h === 3) this.first(wf, pl, ph);
+          let p = HALF_A * wf;
+          for (let i = 0; i < HALF_N; i++) {
+            if (low) this.first(p, HALF_G, 1); else this.first((wf * wf) / p, 1, HALF_G);
+            p /= 3;
+          }
         }
-        if (n % 2 === 1) this.pole = w / (1 + w);
         break;
       }
       default: { const k = 1 / (q * a); this.sec(0, w, k, 1, k * (a * a - 1), 0); }
@@ -113,11 +143,13 @@ class Band {
 
   run(ch: number, x: number): number {
     let y = x;
-    if (this.pole > 0) {
-      const v = (y - this.p[ch]) * this.pole;
-      const lp = v + this.p[ch];
-      this.p[ch] = lp + v;
-      y = this.kind === LOW_CUT ? y - lp : lp;
+    const fo = this.fo, p = this.p;
+    for (let i = 0; i < this.nfo; i++) {
+      const o = i * 3, j = ch * FOS + i;
+      const v = (y - p[j]) * fo[o];
+      const lp = v + p[j];
+      p[j] = lp + v;
+      y = fo[o + 1] * lp + fo[o + 2] * (y - lp);
     }
     const c = this.c, s = this.s;
     for (let i = 0; i < this.nsec; i++) {
@@ -154,7 +186,7 @@ export class TsEq implements EqStage {
     if (i < 0 || i >= EQ_BANDS) return;
     const b = this.bands[i];
     const k = kind >= 0 && kind <= BAND_PASS ? kind : BELL;
-    const order = k === LOW_CUT || k === HIGH_CUT ? orderOf(slope) : 2;
+    const order = k === LOW_CUT || k === HIGH_CUT ? orderOf(slope) : 0;
     const wasOff = !b.on && b.mix === 0;
     if (k !== b.kind || order !== b.order) b.clear();
     b.kind = k; b.order = order; b.on = on;
@@ -218,13 +250,14 @@ export class TsEq implements EqStage {
  * One band's exact digital response at each frequency: level in dB and phase in
  * degrees (-180..180). Each trapezoidal SVF section is
  *   H = m0 + (m1 s + m2) / (s^2 + k s + 1),  s = j tan(pi f / sr) / g,
- * and the one-pole of an odd-order cut is 1 / (1 + s) (or s / (1 + s) for a low cut),
+ * and each first-order section (an odd-order cut's one-pole, the half-order shelves) is
+ * lp / (1 + s) + hp s / (1 + s),
  * so this is what process() does, cramping near Nyquist included.
  */
 export function bandResponse(b: EqBand, sr: number, freqs: ArrayLike<number>, db: Float64Array, deg: Float64Array) {
   const band = new Band();
   band.kind = EQ_KINDS.indexOf(b.kind);
-  band.order = isCut(b.kind) ? orderOf(b.slope) : 2;
+  band.order = isCut(b.kind) ? orderOf(b.slope) : 0;
   band.fNow = Math.log2(clampf(b.f, 20, 20000, 1000));
   band.gNow = clampf(b.g, -30, 30, 0);
   band.qNow = Math.log(clampf(b.q, 0.1, 18, BW_Q));
@@ -244,10 +277,11 @@ export function bandResponse(b: EqBand, sr: number, freqs: ArrayLike<number>, db
       const den = dr * dr + di * di;
       mul(c[o + 3] + (nr * dr + ni * di) / den, (ni * dr - nr * di) / den);
     }
-    if (band.pole > 0) {
-      const g = band.pole / (1 - band.pole), w = t / g, den = 1 + w * w;
-      // 1/(1+jw) = (1 - jw)/den; jw/(1+jw) = (w^2 + jw)/den
-      if (band.kind === LOW_CUT) mul((w * w) / den, w / den); else mul(1 / den, -w / den);
+    for (let k = 0; k < band.nfo; k++) {
+      const G = band.fo[k * 3], cl = band.fo[k * 3 + 1], ch = band.fo[k * 3 + 2];
+      const w = t / (G / (1 - G)), den = 1 + w * w;
+      // lp = 1/(1+jw) = (1 - jw)/den, hp = jw/(1+jw) = (w^2 + jw)/den
+      mul((cl + ch * w * w) / den, (ch * w - cl * w) / den);
     }
     db[i] = 10 * Math.log10(Math.max(re * re + im * im, 1e-30));
     deg[i] = (Math.atan2(im, re) * 180) / Math.PI;
