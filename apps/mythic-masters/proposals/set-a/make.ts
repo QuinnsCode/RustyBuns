@@ -421,7 +421,7 @@ function sphinx() {
     bib: true,
     palette: {
       fur: [0.8, 0.63, 0.38, 0.85, 0], tuft: [0.58, 0.4, 0.2, 0.9, 0], belly: [0.92, 0.82, 0.62, 0.85, 0], stripe: [0.5, 0.36, 0.2, 0.9, 0],
-      face: [0.88, 0.7, 0.48, 0.6, 0], lip: [0.55, 0.28, 0.2, 0.6, 0], kohl: [0.05, 0.04, 0.06, 0.4, 0],
+      face: [0.86, 0.68, 0.48, 0.55, 0, 0], lip: [0.55, 0.28, 0.2, 0.6, 0], kohl: [0.05, 0.04, 0.06, 0.4, 0],
       cloth: [0.1, 0.22, 0.58, 0.55, 0], gold: [0.95, 0.74, 0.28, 0.35, 0.7], feather: [0.9, 0.78, 0.52, 0.75, 0], primary: [0.7, 0.54, 0.32, 0.75, 0],
       eye: [0.95, 0.93, 0.86, 0.3, 0], pupil: [0.05, 0.04, 0.05, 0.2, 0], mouth: [0.3, 0.08, 0.06, 0.6, 0],
       nose: [0.42, 0.3, 0.22, 0.5, 0], dark: [0.1, 0.07, 0.05, 0.6, 0], fang: [0.95, 0.92, 0.84, 0.3, 0], claw: [0.3, 0.24, 0.18, 0.4, 0],
@@ -473,13 +473,13 @@ function sphinx() {
   b.paint = [...(b.paint ?? []), { nodes: ["head", "snout"], material: "face" }];
   b.parts.push(
     // almond eyes under the brow, lined in kohl that runs back toward the temple
-    { kind: "eye", at: "head", off: on([h(0.06), h(0.015), h(0.04)], [1, 0, 0.45], h(0.012)), r: [h(0.012), h(0.011), h(0.022)], rot: [0, -18, 0], mirror: true, material: "eye" },
-    { kind: "eye", at: "head", off: on([h(0.06), h(0.015), h(0.038)], [1, 0, 0.42], h(0.004)), r: h(0.008), mirror: true, material: "pupil" },
-    { kind: "ridge", at: "head", off: on([h(0.06), h(0.03), h(0.03)], [1, 0.1, 0.4], h(0.004)), dir: [-0.35, 0.05, 1], len: h(0.07), base: h(0.007), curve: 15, bend: [0, 1, 0], mirror: true, material: "kohl" },
-    { kind: "ridge", at: "head", off: on([h(0.06), h(0.052), h(0.03)], [1, 0.4, 0.35], h(0.004)), dir: [-0.3, 0, 1], len: h(0.07), base: h(0.008), curve: 20, bend: [0, 1, 0], mirror: true, material: "kohl" },
+    { kind: "eye", at: "head", off: on([h(0.06), h(0.015), h(0.04)], [1, 0, 0.45], h(0.014)), r: [h(0.016), h(0.014), h(0.03)], rot: [0, -18, 0], mirror: true, material: "eye" },
+    { kind: "eye", at: "head", off: on([h(0.06), h(0.015), h(0.038)], [1, 0, 0.42], h(0.003)), r: h(0.011), mirror: true, material: "pupil" },
+    { kind: "ridge", at: "head", off: on([h(0.06), h(0.032), h(0.03)], [1, 0.1, 0.4], h(0.004)), dir: [-0.35, 0.05, 1], len: h(0.085), base: h(0.009), curve: 15, bend: [0, 1, 0], mirror: true, material: "kohl" },
+    { kind: "ridge", at: "head", off: on([h(0.06), h(0.055), h(0.03)], [1, 0.4, 0.35], h(0.004)), dir: [-0.3, 0, 1], len: h(0.08), base: h(0.011), curve: 20, bend: [0, 1, 0], mirror: true, material: "kohl" },
     // full lips, closed
-    { kind: "ridge", at: "head", off: on([h(0.06), h(-0.088), 0.0001], [1, 0, 0], h(0.006)), dir: [0, 0, 1], len: h(0.05), base: h(0.012), curve: 30, bend: [-1, 0, 0], mirror: true, material: "lip" },
-    { kind: "ridge", at: "head", off: on([h(0.06), h(-0.105), 0.0001], [1, -0.1, 0], h(0.006)), dir: [0, 0, 1], len: h(0.042), base: h(0.012), curve: 25, bend: [-1, 0, 0], mirror: true, material: "lip" },
+    { kind: "ridge", at: "head", off: on([h(0.06), h(-0.088), 0.0001], [1, 0, 0], h(0.006)), dir: [0, 0, 1], len: h(0.055), base: h(0.015), curve: 30, bend: [-1, 0, 0], mirror: true, material: "lip" },
+    { kind: "ridge", at: "head", off: on([h(0.06), h(-0.105), 0.0001], [1, -0.1, 0], h(0.006)), dir: [0, 0, 1], len: h(0.046), base: h(0.015), curve: 25, bend: [-1, 0, 0], mirror: true, material: "lip" },
     // the plaited beard: a long block hung from the chin, banded gold
     { kind: "horn", at: "head", off: on([h(0.05), h(-0.15), 0], [0.5, -1, 0], h(0.01)), dir: [0.12, -1, 0], len: h(0.13), base: h(0.022), tip_base: h(0.028), flat: 0.65, material: "cloth" },
   );
