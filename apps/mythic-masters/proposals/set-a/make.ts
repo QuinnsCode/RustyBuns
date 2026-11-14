@@ -413,9 +413,14 @@ function sphinx() {
   const b = hound({
     id: "sphinx", name: "Sphinx", archetype: "tank", budget: 9000, k, head: 1, muzzle: 0.6, gape: 0,
     about: "Egypt and Greece: a guardian with a lion's body and a human head, in Egypt crowned with the striped royal head-cloth, in Greek tales winged and setting riddles at the road to Thebes. Here a great lion of sandstone with folded wings.",
-    long: 1.05, tall: 1, legs: 1.3, waist: 0.85, paw: 2.2, chest: 1.15, ruff: 0, shag: 0.3,
-    // standing proud: the breast lifted, the neck upright like a man's under the head-cloth
-    pose: { chest: [0, 0.04], l_shoulder: [0, 0.03], neck: [-0.02, 0.18], head: [-0.06, 0.36], snout: [-0.06, 0.36] },
+    long: 1.05, tall: 1, legs: 1.75, waist: 0.95, paw: 2, chest: 1.2, ruff: 0, shag: 0.3,
+    // low and heavy, crouched like the couchant statues but up on its feet to fight: the body sunk between short,
+    // bent legs (elbows and knees out of the straight), the breast lifted, the neck upright like a man's
+    pose: {
+      chest: [0, -0.1], belly: [0, -0.14], hip: [0, -0.14], l_shoulder: [0, -0.12, 0.03], l_hipj: [0, -0.15, 0.02],
+      l_elbow: [-0.03, -0.12, 0.04], l_wrist: [0.03, -0.02, 0.03], l_knee: [0.04, -0.12, 0.03], l_hock: [0, -0.04, 0.02],
+      neck: [-0.02, 0.06], head: [-0.06, 0.24], snout: [-0.06, 0.24],
+    },
     ears: { len: 0.05, width: 0.05, dir: [0, 1, 1], cup: 0, tilt: 0, fold: 0 }, eyes: "two",
     tail: { len: 1.15, droop: 0.7, bush: 1.2, curl: 0.35, tip: true },
     bib: true,
@@ -428,6 +433,7 @@ function sphinx() {
     },
     hide: { pattern: "fur", size: 0.03, colours: [[0.62, 0.46, 0.26], [0.9, 0.76, 0.52]], map: 1024 },
   });
+  const s = (x: number) => f4(x * k);
   // a lion's legs, not stilts: a muscle swelling high on each bone, `t` of the way from a to b, so the leg tapers
   // from a heavy forearm or gaskin to the paw instead of thin shafts between knobbly joints
   const muscle = (a: string, c: string, t: number, fore: number, side: number, len: number): Blob[] => {
@@ -443,12 +449,20 @@ function sphinx() {
     ...muscle("l_hipj", "l_knee", 0.45, 0.19, 0.12, 0.62),      // the thigh
     ...muscle("l_knee", "l_hock", 0.3, 0.115, 0.085, 0.42),     // the gaskin
     ...muscle("l_hock", "l_bfoot", 0.45, 0.065, 0.065, 0.9),
+    // the lion's bulk: a broad slab of shoulder over each foreleg, a round haunch over each hind leg
+    ...pair("l_shoulder", [s(0.02), s(0.02), s(0.03)], [s(0.17), s(0.24), s(0.12)]),
+    ...pair("l_hipj", [s(0.03), s(0.04), s(0.02)], [s(0.21), s(0.22), s(0.13)]),
   );
+  // big paws: the paw's height and its toe pads go by the foot node's radius, so a fat node makes a deep, round paw
+  for (const n of ["l_ffoot", "l_bfoot"]) {
+    const p = b.nodes[n]!, y = f4(p[1] + s(0.03));
+    b.nodes[n] = [p[0], y, p[2], s(0.07)];
+    for (const q of b.parts) if (q.kind === "foot" && q.at === n) q.sole = y; // the paw's floor stays on the ground
+  }
   // the hound's head goes (its cranium, muzzle, cheeks, jaw and every face part): a man's head is built in its place
   b.blobs = b.blobs.filter((x) => x.at !== "head");
   b.parts = b.parts.filter((p) => p.at !== "head" && !(p.kind === "tuft" && (p.along as string[])[0] === "head"));
   b.parts.push({ kind: "tuft", along: ["chest", "belly", "hip"], n: 16, len: f4(0.04 * k), base: f4(0.02 * k), rows: 7, spread: 100, sweep: 1.6, curve: 20, flat: 0.5, material: "tuft" });
-  const s = (x: number) => f4(x * k);
   // the head bigger than a man's on a lion this size, so the face reads at fight size
   const h = (x: number) => f4(x * k * 1.4);
   const hd = b.nodes.head!, H: V = [hd[0], hd[1], hd[2]];
@@ -526,12 +540,12 @@ function sphinx() {
   // the wings: an arm from each shoulder blade rising high and back, curling forward at the tip, a cupped cream
   // membrane, coverts in rows and long blue-tipped primaries along the trailing edge
   Object.assign(b.nodes, {
-    l_wroot: P(0.26, 1.02, 0.15, 0.05), l_welbow: P(0.02, 1.38, 0.34, 0.04), l_wwrist: P(-0.08, 1.82, 0.4, 0.032), l_wtip: P(0.12, 2.16, 0.32, 0.026),
+    l_wroot: P(0.26, 0.9, 0.17, 0.05), l_welbow: P(0.02, 1.26, 0.36, 0.04), l_wwrist: P(-0.08, 1.7, 0.42, 0.032), l_wtip: P(0.12, 2.04, 0.34, 0.026),
   });
   function P(x: number, y: number, z: number, r: number): N { return [s(x), s(y), s(z), s(r)]; }
   b.links.push(["chest", "l_wroot"], ["l_wroot", "l_welbow"], ["l_welbow", "l_wwrist"], ["l_wwrist", "l_wtip"]);
   b.paint.push({ nodes: ["l_wroot", "l_welbow", "l_wwrist", "l_wtip"], material: "feather" });
-  const back: V[] = [[-0.28, 1.95, 0.36], [-0.5, 1.55, 0.3], [-0.38, 1.18, 0.22], [-0.06, 1.0, 0.16]].map((v) => mul(v as V, k));
+  const back: V[] = [[-0.28, 1.83, 0.38], [-0.5, 1.43, 0.32], [-0.38, 1.06, 0.24], [-0.06, 0.88, 0.18]].map((v) => mul(v as V, k));
   b.parts.push({
     kind: "membrane", points: ["l_wroot", "l_welbow", "l_wwrist", "l_wtip", ...back], thick: 0.016, camber: s(0.1), puff: 0.03, mirror: true, material: "feather",
     feathers: { from: 3, to: 6, n: 16, len: s(0.42), base: s(0.055), flat: 0.1, curve: 10, tip: 0.35, rake: -35, material: "primary" },
