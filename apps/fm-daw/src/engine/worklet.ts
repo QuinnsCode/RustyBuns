@@ -65,6 +65,7 @@ class FmProcessor extends AudioWorkletProcessor {
       case "space": this.space.setAmount(m.amount); break;
       case "squash": this.squash.setAmount(m.amount); break;
       case "eq": this.eqDoc = m.bands; this.eq.set(m.bands); break;
+      case "eqListen": this.eq.listen(m.band); break;
       case "master": this.master = m.gain; this.engine.setMaster(m.gain); break;
       case "play": s.play(m.countIn); break;
       case "stop": s.stop(); this.engine.allOff(); break;

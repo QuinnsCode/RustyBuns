@@ -20,8 +20,13 @@
 //   of the real thing for eight octaves past the corner. 9 is that chain plus a
 //   one-pole. Both put -3 dB at the corner, like every other slope.
 // - Every frequency is prewarped (tan), so a corner lands where it's drawn.
-//   Near Nyquist a bell narrows (the bilinear transform's cramping); the page
+//   Bells go further: the bilinear transform squeezes a high bell narrow (a
+//   15 kHz bell at 48 kHz), so a bell's biquad is matched to its analog shape
+//   (Vicanek, "Matched Second Order Digital Filters", 2016) and mapped back
+//   onto the SVF. Shelves and cuts still cramp a little near Nyquist; the page
 //   draws the real digital response, so what you see is what you hear.
+// - Listening to a band: one more slot after the bands (index BANDS) is a band
+//   pass the page turns on while a dot is held, to hear only that range.
 //
 // The TypeScript twin is src/engine/eq.ts, the same arithmetic in the same
 // order. Parameters glide over ~20 ms; turning a band on or off crossfades it.
@@ -82,7 +87,8 @@ struct Band {
 
 pub struct Eq {
     sr: f64,
-    bands: [Band; BANDS],
+    /// The bands, then the listen band.
+    bands: [Band; BANDS + 1],
     glide: f64,
     lim_env: f64,
     lim_rel: f64,
@@ -103,6 +109,37 @@ fn sec(g: f64, k: f64, m0: f64, m1: f64, m2: f64) -> Sec {
     let a1 = 1.0 / (1.0 + g * (g + k));
     let a2 = g * a1;
     Sec { a1, a2, a3: g * a2, m0, m1, m2 }
+}
+
+/// A bell matched to its analog shape up to Nyquist (Vicanek 2016): poles by impulse
+/// invariance, zeros fitted so the level is right at DC, the centre and Nyquist, then the
+/// biquad mapped back onto the SVF so it still glides. w0 = 2 pi fc / sr, k = 1 / (Q sqrt(G)), G linear gain.
+fn bell(w0: f64, k: f64, gl: f64) -> Sec {
+    let z = k / 2.0;
+    let e = (-z * w0).exp();
+    let a1 = if z <= 1.0 { -2.0 * e * ((1.0 - z * z).sqrt() * w0).cos() } else { -2.0 * e * ((z * z - 1.0).sqrt() * w0).cosh() };
+    let a2 = e * e;
+    let (d0, d2) = (1.0 + a1 + a2, 1.0 - a1 + a2);
+    let (big_a0, big_a1, big_a2) = (d0 * d0, d2 * d2, -4.0 * a2);
+    let sn = (w0 / 2.0).sin();
+    let p1 = sn * sn;
+    let p0 = 1.0 - p1;
+    let p2 = 4.0 * p0 * p1;
+    let r1 = (big_a0 * p0 + big_a1 * p1 + big_a2 * p2) * gl * gl;
+    let r2 = (-big_a0 + big_a1 + 4.0 * (p0 - p1) * big_a2) * gl * gl;
+    let big_b0 = big_a0;
+    let big_b2 = (r1 - r2 * p1 - big_b0) / (4.0 * p1 * p1);
+    let big_b1 = r2 + big_b0 + 4.0 * (p1 - p0) * big_b2;
+    let (s0, s1) = (big_b0.sqrt(), big_b1.max(0.0).sqrt());
+    let w = 0.5 * (s0 + s1);
+    let b0 = 0.5 * (w + (w * w + big_b2).max(0.0).sqrt());
+    let b1 = 0.5 * (s0 - s1);
+    let b2 = -big_b2 / (4.0 * b0);
+    // H(z) to the SVF's m0 + (m1 s + m2) / (s^2 + k s + 1) through z = (1 + g s) / (1 - g s)
+    let g = (d0 / d2).sqrt();
+    let kk = (2.0 * (1.0 - a2)) / (d2 * g);
+    let (n2, n1, n0) = ((b0 - b1 + b2) / d2, (2.0 * (b0 - b2)) / d2, (b0 + b1 + b2) / d2);
+    sec(g, kk, n2, n1 / g - n2 * kk, n0 / (g * g) - n2)
 }
 
 impl Band {
@@ -150,7 +187,7 @@ impl Band {
                     }
                 }
             }
-            _ => { let k = 1.0 / (q * a); self.secs[0] = sec(w, k, 1.0, k * (a * a - 1.0), 0.0); }
+            _ => { self.secs[0] = bell((2.0 * PI * fc) / sr, 1.0 / (q * a), a * a); }
         }
     }
 
@@ -185,7 +222,7 @@ impl Eq {
     pub fn new(sr: f64) -> Eq {
         Eq {
             sr,
-            bands: [Band::default(); BANDS],
+            bands: [Band::default(); BANDS + 1],
             glide: 1.0 - (-(BLOCK as f64) / (GLIDE_S * sr)).exp(),
             lim_env: 0.0,
             lim_rel: (-1.0 / (0.1 * sr)).exp(),
@@ -193,9 +230,9 @@ impl Eq {
         }
     }
 
-    /// One band's settings: kind (BELL..BAND_PASS), Hz, dB, Q, cut slope in dB/oct, on.
+    /// One band's settings: kind (BELL..BAND_PASS), Hz, dB, Q, cut slope in dB/oct, on. Slot BANDS is the listen band.
     pub fn set_band(&mut self, i: usize, kind: u32, freq: f64, gain: f64, q: f64, slope: f64, on: bool) {
-        if i >= BANDS { return; }
+        if i > BANDS { return; }
         let sr = self.sr;
         let b = &mut self.bands[i];
         let kind = if kind <= BAND_PASS { kind } else { BELL };
@@ -279,6 +316,19 @@ mod tests {
         // RMS over the second half (the glide and ring-in are done), against the sine's own RMS
         let ms = buf[48000..].iter().map(|x| (*x as f64) * (*x as f64)).sum::<f64>() / 48000.0;
         10.0 * (ms / (amp * amp / 2.0)).log10()
+    }
+
+    #[test]
+    fn a_high_bell_keeps_its_width_and_the_listen_band_plays_only_its_range() {
+        // +12 dB at 15 kHz, Q 2: at 10 kHz the analog bell is +3.5 dB; the bilinear one was squeezed to +1.6
+        let mut eq = Eq::new(48000.0);
+        eq.set_band(0, BELL, 15000.0, 12.0, 2.0, 0.0, true);
+        assert!((gain_at(&mut eq, 15000.0) - 12.0).abs() < 0.3);
+        assert!(gain_at(&mut eq, 10000.0) > 3.0);
+        let mut eq = Eq::new(48000.0);
+        eq.set_band(BANDS, BAND_PASS, 1000.0, 0.0, 4.0, 12.0, true);
+        assert!(gain_at(&mut eq, 1000.0).abs() < 0.3);
+        assert!(gain_at(&mut eq, 100.0) < -25.0);
     }
 
     #[test]

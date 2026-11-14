@@ -2,13 +2,14 @@
 // band. Double-click empty space for a band (a low cut at the bottom end, a
 // high cut at the top, a bell in between), drag a dot to move it (up and down
 // is gain on a bell or shelf, resonance on a cut: higher is a harder corner), roll the
-// wheel over it for Q, double-click it (or Delete) to take it out. The strip
+// wheel over it for Q, double-click it (or Delete) to take it out. Hold a dot
+// still for a moment to hear only its range (it follows a drag) until you let go. The strip
 // under the curve sets the selected band exactly. What's drawn is the filters'
 // real digital response (src/engine/eq.ts `response`), phase included.
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  EQ_BANDS, EQ_LIMITS, EQ_SLOPES, bandResponse, hasGain, hasReso, isCut, response, flatEq,
-  type EqBand, type EqDoc, type EqKind,
+  EQ_BANDS, EQ_LIMITS, EQ_SLOPES, bandResponse, hasGain, hasReso, isCut, listenOf, response, flatEq,
+  type EqBand, type EqDoc, type EqKind, type EqListen,
 } from "../engine/eq.ts";
 import { TRACK_COLORS } from "./colors.ts";
 
@@ -17,6 +18,9 @@ const RANGE = 24;
 const F_LO = 20, F_HI = 20000;
 const SPEC_TOP = -12, SPEC_BOTTOM = -96; // dBFS the spectrum fills between
 const GRID_F = [50, 100, 200, 500, 1000, 2000, 5000, 10000];
+/** How long a dot is held still before it plays alone, and how far it may wander first. */
+const HOLD_MS = 350;
+const HOLD_PX = 4;
 const HIT = 11;
 
 export const KIND_INFO: Record<EqKind, { label: string; tip: string; path: string }> = {
@@ -52,17 +56,20 @@ const resoDrag = (b: EqBand) => isCut(b.kind) && hasReso(b.slope);
 /** Where a band's dot sits: at its gain on bells and shelves, at its resonance on cuts, on the 0 dB line otherwise. */
 const dotDb = (b: EqBand) => (hasGain(b.kind) ? b.g : resoDrag(b) ? clamp(resoDb(b.q), -RANGE, RANGE) : 0);
 
-export function Shape(props: { doc: EqDoc; sampleRate: number; analyser: AnalyserNode | null; onChange(doc: EqDoc, group?: string): void }) {
-  const { doc, sampleRate: sr, analyser, onChange } = props;
+export function Shape(props: { doc: EqDoc; sampleRate: number; analyser: AnalyserNode | null; onChange(doc: EqDoc, group?: string): void; onListen?(band: EqListen | null): void }) {
+  const { doc, sampleRate: sr, analyser, onChange, onListen } = props;
   const wrap = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
   const [size, setSize] = useState({ w: 800, h: 300 });
   const [sel, setSel] = useState<number | null>(() => { const i = doc.findIndex(Boolean); return i < 0 ? null : i; });
   const [phase, setPhase] = useState(false);
   const [hover, setHover] = useState<{ x: number; y: number } | null>(null);
-  const drag = useRef<{ slot: number; dx: number; dy: number } | null>(null);
-  const live = useRef({ doc, sel, onChange });
-  live.current = { doc, sel, onChange };
+  const drag = useRef<{ slot: number; dx: number; dy: number; x: number; y: number } | null>(null);
+  const [listening, setListening] = useState<number | null>(null);
+  const hold = useRef(0);
+  const stopListening = () => { clearTimeout(hold.current); hold.current = 0; setListening(null); };
+  const live = useRef({ doc, sel, onChange, listening });
+  live.current = { doc, sel, onChange, listening };
   const band = sel !== null ? doc[sel] : null;
 
   const put = (slot: number, b: EqBand | null, group?: string) => {
@@ -79,6 +86,18 @@ export function Shape(props: { doc: EqDoc; sampleRate: number; analyser: Analyse
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
+
+  // a held dot plays alone, following its drag; nothing is sent while nobody listens
+  const listenRef = useRef({ onListen, sent: false });
+  listenRef.current.onListen = onListen;
+  const heard = listening !== null ? doc[listening] : null;
+  const heardKey = heard ? `${heard.kind}:${heard.f}:${heard.q}` : "";
+  useEffect(() => {
+    const l = listenRef.current;
+    if (heard) { l.onListen?.(listenOf(heard)); l.sent = true; }
+    else if (l.sent) { l.onListen?.(null); l.sent = false; }
+  }, [heardKey]);
+  useEffect(() => () => { clearTimeout(hold.current); const l = listenRef.current; if (l.sent) l.onListen?.(null); }, []);
 
   // the curves: one point per pixel column
   const curves = useMemo(() => {
@@ -181,6 +200,7 @@ export function Shape(props: { doc: EqDoc; sampleRate: number; analyser: Analyse
       live.current.doc.forEach((b, i) => {
         if (!b) return;
         const x = xOfF(b.f, w), y = yOfDb(dotDb(b), h), col = TRACK_COLORS[i % TRACK_COLORS.length];
+        if (i === live.current.listening) { ctx.beginPath(); ctx.arc(x, y, 14, 0, Math.PI * 2); ctx.strokeStyle = col; ctx.lineWidth = 2; ctx.setLineDash([3, 3]); ctx.stroke(); ctx.setLineDash([]); }
         ctx.beginPath(); ctx.arc(x, y, i === s ? 9 : 7.5, 0, Math.PI * 2);
         ctx.fillStyle = b.on ? col : "transparent"; ctx.fill();
         ctx.lineWidth = i === s ? 2.5 : 1.5; ctx.strokeStyle = b.on ? ink : col; ctx.stroke();
@@ -192,7 +212,7 @@ export function Shape(props: { doc: EqDoc; sampleRate: number; analyser: Analyse
     };
     draw();
     return () => cancelAnimationFrame(raf);
-  }, [size, curves, phase, analyser, sel]);
+  }, [size, curves, phase, analyser, sel, listening]);
 
   const at = (e: { clientX: number; clientY: number }) => {
     const r = canvas.current!.getBoundingClientRect();
@@ -233,13 +253,17 @@ export function Shape(props: { doc: EqDoc; sampleRate: number; analyser: Analyse
     setSel(i);
     if (e.altKey) { patch(i, { on: !b.on }); return; }
     e.currentTarget.setPointerCapture(e.pointerId);
-    drag.current = { slot: i, dx: xOfF(b.f, size.w) - x, dy: yOfDb(dotDb(b), size.h) - y };
+    drag.current = { slot: i, dx: xOfF(b.f, size.w) - x, dy: yOfDb(dotDb(b), size.h) - y, x, y };
+    clearTimeout(hold.current);
+    hold.current = window.setTimeout(() => { hold.current = 0; if (drag.current?.slot === i) setListening(i); }, HOLD_MS);
   };
   const onMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
     const { x, y } = at(e);
     setHover({ x, y });
     const d = drag.current;
     if (!d || !(e.buttons & 1)) return;
+    // moved off before the hold landed: a drag, not a listen
+    if (hold.current && Math.hypot(x - d.x, y - d.y) > HOLD_PX) { clearTimeout(hold.current); hold.current = 0; }
     const b = live.current.doc[d.slot];
     if (!b) return;
     const f = Math.round(fOfX(x + d.dx, size.w));
@@ -248,7 +272,7 @@ export function Shape(props: { doc: EqDoc; sampleRate: number; analyser: Analyse
     const q = resoDrag(b) ? Math.round(qOfResoDb(db) * 100) / 100 : b.q;
     patch(d.slot, { f, g, q }, `eq:${d.slot}:drag`);
   };
-  const onUp = () => { drag.current = null; };
+  const onUp = () => { drag.current = null; stopListening(); };
   const onDouble = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const { x, y } = at(e);
     const i = hit(x, y);
@@ -267,7 +291,7 @@ export function Shape(props: { doc: EqDoc; sampleRate: number; analyser: Analyse
     <section className="shape" aria-label="Shape: the master EQ">
       <div className="shape-bar">
         <span className="silk">Shape · master EQ</span>
-        <span className="dim shape-hint">Double-click to add · drag to move (up on a cut is a harder corner) · wheel for Q · Alt-click to bypass · double-click a dot to remove</span>
+        <span className="dim shape-hint">Double-click to add · drag to move (up on a cut is a harder corner) · hold still to listen · wheel for Q · Alt-click to bypass · double-click a dot to remove</span>
         <span className="spacer" />
         <label className="check" title="Draw the phase the bands add (dashed, -180 to +180 degrees). Steep cuts turn it most"><input type="checkbox" checked={phase} onChange={(e) => setPhase(e.currentTarget.checked)} /> Phase</label>
         <span className="dim">{used}/{EQ_BANDS}</span>
@@ -276,8 +300,9 @@ export function Shape(props: { doc: EqDoc; sampleRate: number; analyser: Analyse
       <div className="shape-plot" ref={wrap}>
         <canvas ref={canvas} tabIndex={0} style={{ width: size.w, height: size.h }}
           className={drag.current ? "dragging" : ""}
-          onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerLeave={() => setHover(null)}
+          onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp} onPointerLeave={() => setHover(null)}
           onDoubleClick={onDouble} onKeyDown={onKey} aria-label="EQ curve: double-click to add a band" />
+        {heard && listening !== null && <span className="shape-listen">Listening to {listening + 1}: {fmtHz(heard.f)}</span>}
         {hover && <span className="shape-readout">{fmtHz(fOfX(hover.x, size.w))} · {(() => { const d = dbOfY(hover.y, size.h); return `${d > 0 ? "+" : ""}${d.toFixed(1)} dB`; })()}</span>}
         {!used && <span className="shape-empty dim">Flat. Double-click the curve to add a band.</span>}
       </div>

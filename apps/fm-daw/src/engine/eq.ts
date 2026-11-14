@@ -36,9 +36,19 @@ export function sanitizeEq(x: unknown): EqDoc {
   return flatEq().map((_, i) => { const v = got[i]; return typeof v === "object" && v ? BAND(v) : null; });
 }
 
+/** What a held dot plays alone: a band pass at this Hz and Q. */
+export interface EqListen { f: number; q: number }
+/**
+ * The range a band works on, to hear by itself: its own width on a bell, notch or band
+ * pass; on a cut or shelf (whose Q is a corner's shape, not a width) about an octave and a half around the corner.
+ */
+export const listenOf = (b: EqBand): EqListen => ({ f: b.f, q: b.kind === "bell" || b.kind === "notch" || b.kind === "bandPass" ? Math.max(b.q, 0.5) : 1 });
+
 /** The audio side: TsEq here, WasmEq (src/engine/wasm.ts) for the Rust half. */
 export interface EqStage {
   set(doc: EqDoc): void;
+  /** Play only this range after the bands (a held dot), or null for the whole mix again. Monitoring only: the bounce never listens. */
+  listen(b: EqListen | null): void;
   process(buf: Float32Array, frames: number): void;
   reset(): void;
   free?(): void;
@@ -56,6 +66,15 @@ export function sendEq(doc: EqDoc, last: EqBand[], setBand: (i: number, kind: nu
     if (!s) continue;
     setBand(i, EQ_KINDS.indexOf(s.kind), s.f, s.g, s.q, s.slope, !!b && b.on);
   }
+}
+
+/**
+ * The listen band is one more slot after the bands (index EQ_BANDS), a band pass that
+ * crossfades in and out like any band; letting go keeps its last Hz and Q so it fades out in place.
+ */
+export function sendListen(b: EqListen | null, last: { at: EqListen | null }, setBand: (i: number, kind: number, f: number, g: number, q: number, slope: number, on: boolean) => void) {
+  if (b) last.at = b;
+  if (last.at) setBand(EQ_BANDS, EQ_KINDS.indexOf("bandPass"), last.at.f, 0, last.at.q, 12, !!b);
 }
 
 // ---- the filters: line for line with eq.rs ----
@@ -100,6 +119,30 @@ class Band {
     this.c[o] = a1; this.c[o + 1] = a2; this.c[o + 2] = g * a2; this.c[o + 3] = m0; this.c[o + 4] = m1; this.c[o + 5] = m2;
   }
 
+  /**
+   * A bell matched to its analog shape up to Nyquist (Vicanek, "Matched Second Order
+   * Digital Filters", 2016): poles by impulse invariance, zeros fitted so the level is
+   * right at DC, the centre and Nyquist. The biquad is mapped back onto the SVF, so it
+   * still glides cleanly. w0 = 2 pi fc / sr, k = 1 / (Q sqrt(G)), G the linear gain.
+   */
+  private bell(w0: number, k: number, gl: number) {
+    const z = k / 2, e = Math.exp(-z * w0);
+    const a1 = z <= 1 ? -2 * e * Math.cos(Math.sqrt(1 - z * z) * w0) : -2 * e * Math.cosh(Math.sqrt(z * z - 1) * w0);
+    const a2 = e * e;
+    const d0 = 1 + a1 + a2, d2 = 1 - a1 + a2;
+    const A0 = d0 * d0, A1 = d2 * d2, A2 = -4 * a2;
+    const sn = Math.sin(w0 / 2), p1 = sn * sn, p0 = 1 - p1, p2 = 4 * p0 * p1;
+    const r1 = (A0 * p0 + A1 * p1 + A2 * p2) * gl * gl;
+    const r2 = (-A0 + A1 + 4 * (p0 - p1) * A2) * gl * gl;
+    const B0 = A0, B2 = (r1 - r2 * p1 - B0) / (4 * p1 * p1), B1 = r2 + B0 + 4 * (p1 - p0) * B2;
+    const s0 = Math.sqrt(B0), s1 = Math.sqrt(Math.max(B1, 0)), W = 0.5 * (s0 + s1);
+    const b0 = 0.5 * (W + Math.sqrt(Math.max(W * W + B2, 0))), b1 = 0.5 * (s0 - s1), b2 = -B2 / (4 * b0);
+    // H(z) to the SVF's m0 + (m1 s + m2) / (s^2 + k s + 1) through z = (1 + g s) / (1 - g s)
+    const g = Math.sqrt(d0 / d2), kk = (2 * (1 - a2)) / (d2 * g);
+    const n2 = (b0 - b1 + b2) / d2, n1 = (2 * (b0 - b2)) / d2, n0 = (b0 + b1 + b2) / d2;
+    this.sec(0, g, kk, n2, n1 / g - n2 * kk, n0 / (g * g) - n2);
+  }
+
   design(sr: number) {
     const fc = Math.min(Math.pow(2, this.fNow), 0.49 * sr);
     const w = Math.tan((Math.PI * fc) / sr);
@@ -137,7 +180,7 @@ class Band {
         }
         break;
       }
-      default: { const k = 1 / (q * a); this.sec(0, w, k, 1, k * (a * a - 1), 0); }
+      default: this.bell((2 * Math.PI * fc) / sr, 1 / (q * a), a * a);
     }
   }
 
@@ -168,8 +211,10 @@ class Band {
 }
 
 export class TsEq implements EqStage {
-  private readonly bands = Array.from({ length: EQ_BANDS }, () => new Band());
+  /** the bands, then the listen band */
+  private readonly bands = Array.from({ length: EQ_BANDS + 1 }, () => new Band());
   private readonly last: EqBand[] = [];
+  private readonly heard = { at: null as EqListen | null };
   private readonly glide: number;
   private readonly limRel: number;
   private limEnv = 0;
@@ -181,9 +226,10 @@ export class TsEq implements EqStage {
   }
 
   set(doc: EqDoc) { sendEq(doc, this.last, (i, k, f, g, q, sl, on) => this.setBand(i, k, f, g, q, sl, on)); }
+  listen(b: EqListen | null) { sendListen(b, this.heard, (i, k, f, g, q, sl, on) => this.setBand(i, k, f, g, q, sl, on)); }
 
   setBand(i: number, kind: number, freq: number, gain: number, q: number, slope: number, on: boolean) {
-    if (i < 0 || i >= EQ_BANDS) return;
+    if (i < 0 || i > EQ_BANDS) return;
     const b = this.bands[i];
     const k = kind >= 0 && kind <= BAND_PASS ? kind : BELL;
     const order = k === LOW_CUT || k === HIGH_CUT ? orderOf(slope) : 0;

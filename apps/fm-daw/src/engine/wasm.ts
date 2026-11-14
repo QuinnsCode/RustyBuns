@@ -1,7 +1,7 @@
 // The Rust engine compiled to WebAssembly, behind the same FmEngine interface
 // as TsEngine. Runs inside the AudioWorklet (live) and on the main thread (bench).
 import type { FmEngine } from "./engine.ts";
-import { sendEq, type EqBand, type EqDoc, type EqStage } from "./eq.ts";
+import { sendEq, sendListen, type EqBand, type EqDoc, type EqListen, type EqStage } from "./eq.ts";
 
 interface Exports {
   memory: WebAssembly.Memory;
@@ -82,12 +82,14 @@ export class WasmEq implements EqStage {
   private readonly h: number;
   private readonly buf: number;
   private readonly last: EqBand[] = [];
+  private readonly heard = { at: null as EqListen | null };
   constructor(private readonly x: Exports, sampleRate: number) {
     this.h = x.fm_eq_new(sampleRate);
     if (!this.h) throw new Error("rust EQ rejected the sample rate");
     this.buf = x.fm_alloc(CHUNK * 2);
   }
   set(doc: EqDoc) { sendEq(doc, this.last, (i, k, f, g, q, sl, on) => this.x.fm_eq_set(this.h, i, k, f, g, q, sl, on ? 1 : 0)); }
+  listen(b: EqListen | null) { sendListen(b, this.heard, (i, k, f, g, q, sl, on) => this.x.fm_eq_set(this.h, i, k, f, g, q, sl, on ? 1 : 0)); }
   reset() { this.x.fm_eq_reset(this.h); }
   process(io: Float32Array, frames: number) {
     const n = Math.min(frames, io.length >> 1);

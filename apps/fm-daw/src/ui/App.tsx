@@ -586,7 +586,8 @@ export function App() {
             <Bench project={project} wasm={fetchWasm} />
           ) : view === "shape" ? (
             <Shape doc={project.eq} sampleRate={audio?.ctx.sampleRate ?? 48000} analyser={audio?.analyser ?? null}
-              onChange={(bands, group) => commit({ t: "eq", bands }, group ? { group } : {})} />
+              onChange={(bands, group) => commit({ t: "eq", bands }, group ? { group } : {})}
+              onListen={(band) => audio?.send({ t: "eqListen", band })} />
           ) : t.kind === "drum" ? (<>
             <div className="machine" aria-label="Drum machine">
               <span className="silk">Drum machine</span>

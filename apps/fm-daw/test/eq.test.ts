@@ -3,7 +3,7 @@
 // note) when the wasm isn't built.
 import { test, expect } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
-import { TsEq, flatEq, response, type EqBand, type EqDoc } from "../src/engine/eq.ts";
+import { TsEq, flatEq, listenOf, response, type EqBand, type EqDoc } from "../src/engine/eq.ts";
 import { WasmEq, instantiateFm } from "../src/engine/wasm.ts";
 import { CEILING } from "../src/engine/params.ts";
 import { apply, decodeOp, sanitize } from "../src/project.ts";
@@ -65,6 +65,30 @@ test("gentle and steep cuts: 3, 6, 9, 12 and 24 dB/oct fall that much per octave
   expect(at(rung, 500)).toBeGreaterThan(at(flat, 500) + 9);
 });
 
+test("a bell up near Nyquist keeps its analog width: 15 kHz +12 dB, Q 2, heard where drawn", () => {
+  const b = band({ f: 15000, g: 12, q: 2 }), a = 10 ** (12 / 40), k = 1 / (2 * a);
+  const analog = (f: number) => { const w = f / 15000, r = 1 - w * w; return 10 * Math.log10((r * r + (k * a * a * w) ** 2) / (r * r + (k * w) ** 2)); };
+  for (const f of [3750, 10000, 15000, 20000]) {
+    const s = sine(f, 0.05), heard = gainDb(s, run(doc(b), s));
+    expect(heard).toBeCloseTo(response(doc(b), SR, [f]).db[0], 1);
+    expect(Math.abs(heard - analog(f))).toBeLessThan(0.5); // the bilinear bell was 1.9 dB short at 10 kHz
+  }
+});
+
+test("hold a dot: only its range plays, after the EQ, and letting go brings the whole mix back", () => {
+  const eq = new TsEq(SR), bell = band({ f: 2000, g: 6, q: 4 });
+  eq.set(doc(bell));
+  const level = (hz: number) => { const s = sine(hz, 0.05), out = s.slice(); eq.reset(); eq.process(out, out.length >> 1); return gainDb(s, out); };
+  const open = level(2000);
+  eq.listen(listenOf(bell));
+  expect(level(2000)).toBeCloseTo(open, 0); // the bump itself, boost included
+  expect(level(200)).toBeLessThan(-25);    // the rest of the mix is gone
+  eq.listen(null);
+  expect(level(200)).toBeCloseTo(0, 0);
+  // a cut has no width of its own: listen around its corner
+  expect(listenOf(band({ kind: "lowCut", f: 80, q: 4 }))).toEqual({ f: 80, q: 1 });
+});
+
 test("flat passes the mix untouched; a +30 dB bell stays under the ceiling", () => {
   const s = sine(220, 0.6);
   expect(run(flatEq(), s)).toEqual(s);
@@ -72,7 +96,7 @@ test("flat passes the mix untouched; a +30 dB bell stays under the ceiling", () 
   expect(loud.reduce((m, x) => Math.max(m, Math.abs(x)), 0)).toBeLessThanOrEqual(CEILING);
 });
 
-test("rust (wasm) matches ts sample for sample while bands move", async () => {
+test("rust (wasm) matches ts sample for sample while bands move and a dot is held", async () => {
   const f = new URL("../public/fm_daw.wasm", import.meta.url);
   if (!existsSync(f)) { console.log("  (skipped: wasm not built; run `bun run build:native`)"); return; }
   const rust = new WasmEq(await instantiateFm(readFileSync(f)), SR), ts = new TsEq(SR);
@@ -87,6 +111,9 @@ test("rust (wasm) matches ts sample for sample while bands move", async () => {
   const a = noise.slice(), b = noise.slice();
   steps.forEach((d, k) => {
     rust.set(d); ts.set(d);
+    // a dot held over the third step, let go on the fourth
+    const held = k === 2 ? { f: 1500, q: 2 } : null;
+    if (k >= 2) { rust.listen(held); ts.listen(held); }
     rust.process(a.subarray(k * quarter * 2), quarter);
     ts.process(b.subarray(k * quarter * 2), quarter);
   });
