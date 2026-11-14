@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { previewApps, rangeLine, rollbackCandidates, sinceLastGreen, soaked, type Tested } from "./rings.ts";
+import { previewApps, rangeLine, ringLines, rollbackCandidates, sinceLastGreen, soaked, type Commit, type Tested } from "./rings.ts";
 
 const sha = (c: string) => c.repeat(40);
 const [a, b, c, d] = ["a", "b", "c", "d"].map(sha) as [string, string, string, string];
@@ -50,4 +50,29 @@ test("previewApps: changed web apps with a vite build, all of them when shared c
   expect(previewApps(["apps/two-fronts/src/a.ts", "apps/auto-rig/x.ts", "apps/hello-world/y.ts", "notes/z.md"], builds, apps)).toEqual(["two-fronts"]);
   expect(previewApps(["packages/util/src/x.ts"], builds, apps)).toEqual(["mythic-masters", "two-fronts"]);
   expect(previewApps("all", builds, apps)).toEqual(["mythic-masters", "two-fronts"]);
+// main, newest first, an hour apart: hourly went red on the head and green two commits down; daily took the fourth.
+const now = Date.parse("2026-11-14T12:00:00Z");
+const hour = (h: number) => new Date(now - h * 3600_000).toISOString();
+const main: Commit[] = [a, b, c, d, e, f].map((s, i) => ({ sha: s, date: hour(i + 1), rings: {} }));
+main[0]!.rings.hourly = { state: "FAILURE", at: hour(0.5) };
+main[2]!.rings.hourly = { state: "SUCCESS", at: hour(2.5) };
+main[3]!.rings.daily = { state: "SUCCESS", at: hour(3.5) };
+test.each<[string, Record<string, string>, string[]]>([
+  ["no refs yet: each ring sits at its newest green", {}, [
+    "hourly  ccccccc   3h old (no ref)  red 30m ago aaaaaaa  2 waiting",
+    "daily   ddddddd   4h old (no ref)  no red  1 waiting",
+    "stable  not run yet",
+  ]],
+  ["the refs win over the newest green", { hourly: c, daily: f }, [
+    "hourly  ccccccc   3h old  red 30m ago aaaaaaa  2 waiting",
+    "daily   fffffff   6h old  no red  3 waiting",
+    "stable  not run yet",
+  ]],
+  ["a ref older than the commits in view", { hourly: "9".repeat(40) }, [
+    "hourly  9999999  older than main's last 6, red 30m ago aaaaaaa",
+    "daily   ddddddd   4h old (no ref)  no red  ? waiting",
+    "stable  not run yet",
+  ]],
+])("ringLines: %s", (_, refs, want) => {
+  expect(ringLines(main, refs, now)).toEqual(want);
 });

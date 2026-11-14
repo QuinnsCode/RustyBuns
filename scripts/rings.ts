@@ -1,6 +1,9 @@
 // Release rings (notes/RELEASE_RINGS.md, #4486): each ring is a `ring/<name>` commit status on the SHAs it tested
 // and a ref `refs/ring/<name>` that moves forward to the newest green one. desktop-hourly.yml and daily-ring.yml call it.
 //
+//   bun run rings                                            one line per ring: its commit and age ("no ref" while it
+//                                                            sits at its newest green, #4495), its last red, and the
+//                                                            PRs waiting to climb into it. Ester's card shows the same.
 //   bun scripts/rings.ts gate <ring> <sha>                   prints run=true|false: false when <sha> already has a
 //                                                            ring/<ring> status (main hasn't moved since the last run)
 //   bun scripts/rings.ts status <ring> <sha> <state> <url>   writes the ring/<ring> status (success or failure) on <sha>
@@ -31,9 +34,47 @@ import { WEB_APPS } from "./phone-smoke-lib.ts";
 /** A commit on main, newest first, with its ring status (undefined when the ring never ran it). */
 export type Tested = { sha: string; state?: string };
 
+/** The rings, lowest first: each one climbs from the one below it (hourly from `main`). */
+export const RINGS = ["hourly", "daily", "stable"] as const;
+
+/** A commit on main, newest first: when it was committed and each ring's status on it, with when that was written. */
+export type Commit = { sha: string; date: string; rings: Record<string, { state: string; at: string }> };
+
+const green = (state?: string) => state === "SUCCESS" || state === "success";
+const red = (state?: string) => state === "FAILURE" || state === "failure" || state === "ERROR" || state === "error";
+
+/** "40m", "5h", "3d": how long before `now` `iso` was. */
+export function ago(iso: string, now: number): string {
+  const m = Math.max(0, Math.round((now - Date.parse(iso)) / 60_000));
+  return m < 60 ? `${m}m` : m < 48 * 60 ? `${Math.round(m / 60)}h` : `${Math.round(m / 1440)}d`;
+}
+
+/**
+ * One line per ring. Its commit is `refs/ring/<name>`, or the newest green while the ref can't move yet (MANUAL RUN
+ * #4495). The PRs waiting are the squash commits the ring below has and this one doesn't (for hourly, all of main's).
+ */
+export function ringLines(commits: Commit[], refs: Record<string, string>, now: number): string[] {
+  const width = Math.max(...RINGS.map((r) => r.length));
+  let below: number | undefined = 0; // where the ring below sits in `commits`; main is the head
+  return RINGS.map((ring) => {
+    const name = ring.padEnd(width);
+    const ref = refs[ring], greenAt = commits.findIndex((c) => green(c.rings[ring]?.state));
+    const at = ref ? commits.findIndex((c) => c.sha === ref) : greenAt;
+    const lastRed = commits.find((c) => red(c.rings[ring]?.state));
+    const redText = lastRed ? `red ${ago(lastRed.rings[ring]!.at, now)} ago ${lastRed.sha.slice(0, 7)}` : "no red";
+    const sha = ref ?? (at >= 0 ? commits[at]!.sha : undefined);
+    const prev = below;
+    below = at >= 0 ? at : undefined;
+    if (!sha) return `${name}  not run yet${lastRed ? `, ${redText}` : ""}`;
+    if (at < 0) return `${name}  ${sha.slice(0, 7)}  older than main's last ${commits.length}, ${redText}`;
+    const waiting = prev === undefined ? "?" : String(Math.max(0, at - prev));
+    return `${name}  ${sha.slice(0, 7)}  ${ago(commits[at]!.date, now).padStart(3)} old${ref ? "" : " (no ref)"}  ${redText}  ${waiting} waiting`;
+  });
+}
+
 /** The commits since the last green one, newest first, and that green SHA; `green` is undefined when none was in view. */
 export function sinceLastGreen(history: Tested[]): { green?: string; shas: string[] } {
-  const at = history.findIndex((c) => c.state === "SUCCESS" || c.state === "success");
+  const at = history.findIndex((c) => green(c.state));
   return at < 0 ? { shas: history.map((c) => c.sha) } : { green: history[at]!.sha, shas: history.slice(0, at).map((c) => c.sha) };
 }
 
@@ -45,7 +86,7 @@ export const savedName = (sha: string, app: string, target: string) => `ring-${s
  * (the ref hasn't moved yet, MANUAL RUN #4495) the newest green is taken as current.
  */
 export function rollbackCandidates(history: Tested[], from?: string): string[] {
-  const greens = history.filter((c) => c.state === "SUCCESS" || c.state === "success").map((c) => c.sha);
+  const greens = history.filter((c) => green(c.state)).map((c) => c.sha);
   if (!from) return greens.slice(1);
   const at = history.findIndex((c) => c.sha === from);
   return at < 0 ? [] : history.slice(at + 1).filter((c) => greens.includes(c.sha)).map((c) => c.sha);
@@ -120,6 +161,37 @@ export async function history(repo: string, ring: string, sha: string, n = 100):
   return out;
 }
 
+const Board = obj({
+  data: obj({
+    repository: obj({
+      object: nul(obj({
+        history: opt(obj({
+          nodes: arr(obj({
+            oid: str(64),
+            committedDate: str(40),
+            status: nul(obj({ contexts: arr(obj({ context: str(200), state: str(20), createdAt: str(40) }), 200) })),
+          }), 100),
+        })),
+      })),
+      refs: opt(nul(obj({ nodes: arr(obj({ name: str(100), target: obj({ oid: str(64) }) }), 20) }))),
+    }),
+  }),
+});
+
+/** For `bun run rings`: main's last 100 commits, newest first, with every ring's status on them, and the ring refs, in one GraphQL call. */
+async function board(repo: string): Promise<{ commits: Commit[]; refs: Record<string, string> }> {
+  const [owner, name] = repo.split("/");
+  const q = `query($o:String!,$n:String!){repository(owner:$o,name:$n){object(expression:"main"){... on Commit{history(first:100){nodes{oid committedDate status{contexts{context state createdAt}}}}}} refs(refPrefix:"refs/ring/",first:20){nodes{name target{oid}}}}}`;
+  const reply = Board(JSON.parse(await Bun.$`gh api graphql -f query=${q} -f o=${owner!} -f n=${name!}`.quiet().text())).data.repository;
+  return {
+    commits: (reply.object?.history?.nodes ?? []).map((c) => ({
+      sha: c.oid, date: c.committedDate,
+      rings: Object.fromEntries((c.status?.contexts ?? []).filter((x) => x.context.startsWith("ring/")).map((x) => [x.context.slice(5), { state: x.state, at: x.createdAt }])),
+    })),
+    refs: Object.fromEntries((reply.refs?.nodes ?? []).map((r) => [r.name, r.target.oid])),
+  };
+}
+
 const Artifacts = obj({
   artifacts: arr(obj({ name: str(300), expired: bool(), workflow_run: nul(obj({ id: num(1, Number.MAX_SAFE_INTEGER) })) }), 100),
 });
@@ -159,6 +231,12 @@ async function rollback(repo: string, ring: string, app: string, target: string,
 
 if (import.meta.main) {
   help(import.meta.path);
+  if (!process.argv[2]) {
+    const repo = process.env.GITHUB_REPOSITORY ?? (await Bun.$`gh repo view --json nameWithOwner -q .nameWithOwner`.quiet().text()).trim();
+    const { commits: line, refs } = await board(repo);
+    console.log(ringLines(line, refs, Date.now()).join("\n"));
+    process.exit(0);
+  }
   if (process.argv[2] === "rollback") {
     const [ring = "", app = "", target = ""] = process.argv.slice(3);
     const at = process.argv.indexOf("--from");
