@@ -4,6 +4,7 @@
 // .rustybuns/vite.ts is written by `bunx rustybuns build desktop` (not `generate`):
 // run `bun run desktop:dev` once before `bun run dev`.
 import { defineConfig } from "vite";
+import { resolve } from "node:path";
 import { rustybuns } from "./.rustybuns/vite";
 
 const isolation = { "Cross-Origin-Opener-Policy": "same-origin", "Cross-Origin-Embedder-Policy": "require-corp" };
@@ -12,5 +13,6 @@ export default defineConfig({
   esbuild: { jsx: "automatic" },
   server: { headers: isolation },
   preview: { headers: isolation },
-  build: { target: "esnext", sourcemap: true },
+  // Two pages: the DAW, and Q Amp (amp.html, the circuit amp live).
+  build: { target: "esnext", sourcemap: true, rollupOptions: { input: { main: resolve(__dirname, "index.html"), amp: resolve(__dirname, "amp.html") } } },
 });

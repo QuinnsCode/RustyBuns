@@ -2,14 +2,27 @@
 
 **The question:** can FM DAW model guitar pedals and tube amps as real circuits (resistors, capacitors, diodes, op-amps, tubes), drawn as boards in tscircuit, and play a guitar through them?
 
-**The answer: yes.** The solver here runs a full four-tube amp 2.3 to 3.1 times faster than real time in plain TypeScript, a pedal 5 to 6 times, and a board drawn in tscircuit plays sample for sample like the same circuit written by hand. What's missing is the live path (guitar in, sound out, while you play), a real power amp and speaker cabinet, and the Rust port. Those steps are listed under [Next](#next).
+**The answer: yes.** The solver here runs a full four-tube amp 2.3 to 3.1 times faster than real time in plain TypeScript, a pedal 5 to 6 times, and a board drawn in tscircuit plays sample for sample like the same circuit written by hand. **Q Amp** (`/amp.html`) plays it live, with a guitar or a built-in riff. What's missing is an amp insert on an FM DAW track, a real power amp and speaker cabinet, a 3D stage, and the Rust port. Those steps are listed under [Next](#next).
 
-Hear it, speakers down (every file is normalized to −1 dBFS):
+Play it live, speakers down: in `apps/fm-daw`, `bunx rustybuns boundary` once (it writes the Vite plugin the dev server needs), then `bun run dev` and open `/amp.html`. Or render WAVs (every file normalized to −1 dBFS):
 
 ```
 cd apps/fm-daw
 bun scripts/amp.ts --play     # a dry guitar riff, then every pedal and amp below
 ```
+
+## Q Amp
+
+One amp on a stage, live in the browser. The head and the cabinet are clear acrylic, so you see the tubes: each preamp tube glows with how hard its stage is swinging, the power tubes and the speaker cones with the output.
+
+- **Amps:** Q Brit 3, Q Lead 50, Q Triple, with Gain, Bass, Middle, Treble, Master and Noise. Each amp keeps its own knob settings. Gain, Master and Noise cost nothing to turn; a tone knob rebuilds the tone stack's circuit (one matrix inversion) between two audio blocks.
+- **Noise:** the first tube's grid stopper and plate resistor hiss, as real resistors do (Johnson noise, `noisy` on a resistor in a netlist). 0 is silent, 1 is a perfect resistor, 10 is 1000× that (+60 dB, a worn carbon resistor and then some). The hiss goes in at the front, so every stage after it amplifies and soft-clips it with the guitar: fizz on the notes, a wash in the gaps. On Q Lead 50 with nothing playing, 3 is about −55 dBFS, 5 −40, 7 −28 and 10 −20.
+- **Pedals on the floor:** Q Drive, Q Fuzz and Q Dist, each with a Drive knob and a footswitch. One is on at a time (the chain has one pedal slot). Q Fuzz is an op-amp at up to ×2000 into soft diodes, then hard ones, and its 1M input resistor hisses (with the amp's Noise), so the fuzz clips its own hiss.
+- **Input:** the riff on a loop, or your guitar through any audio input (echo cancellation, noise suppression and auto gain are off). **Bypass** sends the dry input straight through, to compare.
+- **Screens:** one wide or two half-width, each in one of four modes. **Spectrum**: bars from 40 Hz to 25 kHz, or the top of the sample rate (24 kHz at 48 kHz), with peak caps. **Analog**: the same range as a phosphor trace that leaves a trail. **Scope**: the wave itself, held still on a rising zero crossing, 4 ms a division. **Focus**: three zoomed bands, low mids (150 Hz to 1 kHz), mids (1 to 2.5 kHz) and highs (5 kHz up), each with its loudest frequency read out.
+- **Load meter:** how much of the audio thread's time the amp uses. Click it for **Eco** (2× oversampling, half the work); it switches to Eco by itself after a second above 90%.
+- Speaker safety: the page starts silent behind a "speakers down" card, the output starts at −12 dB, and a limiter holds everything under −1 dBFS.
+- Agents ask instead of screenshotting: `qamp.state()` on `window` (`bun run probe fm-daw /amp.html`). Headless Chrome won't start audio without a real click, so a probe sees the page but not the sound.
 
 ## What's here
 
@@ -17,11 +30,15 @@ bun scripts/amp.ts --play     # a dry guitar riff, then every pedal and amp belo
 |---|---|
 | `src/circuit/mna.ts` | The circuit solver. Give it parts and the nodes they connect to; it gives back the output voltage, one sample at a time. |
 | `src/circuit/circuits.ts` | The circuits: a hard-clip distortion, a mid-hump overdrive, a 12AX7 gain stage, and the bass/mid/treble tone stack most guitar amps share. |
-| `src/circuit/rig.ts` | Circuits in a row, run at 4× the sample rate so clipping doesn't alias into fizz, then a stand-in power stage and a cabinet EQ. Five voicings in `RIGS`. |
+| `src/circuit/rig.ts` | Circuits in a row, run at 4× the sample rate so clipping doesn't alias into fizz, then a stand-in power stage and a cabinet EQ. `Rig` streams a block at a time with live knobs; `runRig` does a whole buffer. |
+| `src/circuit/amps.ts` | The Q amps and pedals, their knobs, and `buildRig` (an amp, a pedal and the knobs into a rig). `RIGS` is each at its own settings. |
+| `src/circuit/riff.ts` | The dry guitar riff (Karplus-Strong plucks, seeded). |
+| `src/amp/` | Q Amp: `live.ts` (settings into a rig, rebuilding only what changed; the limiter), `worklet.ts` (the audio thread), `screens.ts`, `main.ts`, `amp.css`. |
 | `src/circuit/tscircuit.ts` | Reads a tscircuit board's JSON and makes a netlist of it. |
 | `circuits/hard-clip.tsx` | The hard-clip pedal drawn as a tscircuit board. `test/fixtures/hard-clip.circuit.json` is what tscircuit rendered from it. |
 | `scripts/amp.ts` | Plucks a guitar riff (Karplus-Strong), runs it through every rig, writes WAVs, prints the speed. |
 | `test/circuit.test.ts` | The tscircuit board plays like the hand-written circuit; the solver hits textbook numbers; no rig blows up on a hot input. |
+| `test/amp.test.ts` | Working Q Amp's panel while the riff plays: only what moved is rebuilt, nothing passes −1 dBFS, no Newton misses. |
 
 ## How it works
 
@@ -39,17 +56,18 @@ The models are published and checked:
 
 ## The voicings
 
-All five are built from the same parts. Their values are starting points to tune by ear, not copies of any product.
+All of them are built from the same parts (`src/circuit/amps.ts`; the amps are named as on Q Amp). Their values are starting points to tune by ear, not copies of any product.
 
 | Rig | What it is |
 |---|---|
 | `hard-clip` | Op-amp gain of ×101, then two silicon diodes to ground that cut the tops flat. Classic distortion pedal. |
+| `fuzz` (Q Fuzz, on the page) | Up to ×2000, soft diodes in the feedback, then hard diodes to ground; a noisy input resistor. |
 | `overdrive` | The diodes in the op-amp's feedback loop round the wave off instead, and only frequencies above ~720 Hz get the gain: the mids push, the lows stay clean. |
-| `brit` | Three tube stages, the middle one biased cold, then the tone stack. British crunch to lead. |
-| `us-high-gain` | Four stages with small coupling caps (tight lows) and two cold clippers. Saturated high gain. |
-| `scooped` | Big bypass caps early (fat), a scooped tone stack. Modern and loose. |
+| `brit` (Q Brit 3) | Three tube stages, the middle one biased cold, then the tone stack. British crunch to lead. |
+| `lead` (Q Lead 50) | Four stages with small coupling caps (tight lows) and two cold clippers. Saturated high gain. |
+| `triple` (Q Triple) | Big bypass caps early (fat), a scooped tone stack. Modern and loose. |
 
-`scripts/amp.ts` also renders `boosted-us-high-gain` (the overdrive at zero drive in front of the amp, which tightens it, as metal players do) and `hard-clip-tscircuit` (the pedal read from the tscircuit board).
+`scripts/amp.ts` also renders `boosted-lead` (the overdrive at zero drive in front of the amp, which tightens it, as metal players do) and `hard-clip-tscircuit` (the pedal read from the tscircuit board).
 
 ## Speed
 
@@ -59,10 +77,10 @@ On the 64 GB builder Mac, one thread, 4× oversampled, `bun scripts/amp.ts` (sec
 |---|---|
 | hard-clip, overdrive | 5.4, 5.8 |
 | brit (3 stages) | 3.1 |
-| us-high-gain, scooped (4 stages) | 2.4, 2.3 |
-| overdrive into us-high-gain | 1.7 |
+| lead, triple (4 stages) | 2.4, 2.3 |
+| overdrive into lead | 1.7 |
 
-One amp fits in an audio thread with room to spare; a pedalboard plus amp is tight. Two ways to get more, both untried: run the tubes at 2× instead of 4× (tubes clip softly, so they alias less), and the Rust port below (Rust is usually several times faster than JavaScript at this kind of math; not measured here).
+One amp fits in an audio thread with room to spare; a pedalboard plus amp is tight. Two ways to get more: Q Amp's Eco runs everything at 2× instead of 4× (half the work; tubes clip softly, so they alias less), and the Rust port below (Rust is usually several times faster than JavaScript at this kind of math; not measured here).
 
 ## tscircuit
 
@@ -78,10 +96,11 @@ Kit sellers' build documents (layouts, photos, text) are their work, so none of 
 
 In order, each one usable on its own:
 
-1. **Live in FM DAW.** An Amp insert on a track: the rig in the AudioWorklet, guitar in through `getUserMedia` (echo cancellation and auto gain off), knobs as track params. Changing a knob changes resistor values, so the linear table is inverted again (microseconds for an 8×8).
-2. **Rust port** into `native/crates/fm_daw`, beside the EQ, with the same bit-for-bit parity test against the TypeScript solver.
-3. **A real power amp:** push-pull output tubes, the output transformer, and supply sag (the amp compressing when you dig in). Today it is a `tanh`.
-4. **A real cabinet:** convolve a speaker impulse response instead of the EQ curve.
-5. **More parts:** transistors (Ebers-Moll) for fuzzes and boosts, JFETs, potentiometers as live knobs.
-6. **Voicing by ear** against reference recordings the owner picks.
-7. **A plugin build** (VST3 and CLAP through nih-plug) if it should also run in other DAWs.
+1. **An Amp insert on an FM DAW track** ([#4555](https://github.com/QuinnsCode/RustyBuns/issues/4555)): Q Amp's live chain (`src/amp/live.ts`) after a track's voices, knobs as track params saved with the project.
+2. **Q Amp on a 3D stage** ([#4570](https://github.com/QuinnsCode/RustyBuns/issues/4570)): the clear amp, cabinet and pedalboard in three.js, 2.5D or 3D, with the screens behind as stage LED walls.
+3. **Rust port** into `native/crates/fm_daw`, beside the EQ, with the same bit-for-bit parity test against the TypeScript solver.
+4. **A real power amp:** push-pull output tubes, the output transformer, and supply sag (the amp compressing when you dig in). Today it is a `tanh`.
+5. **A real cabinet:** convolve a speaker impulse response instead of the EQ curve.
+6. **More parts:** transistors (Ebers-Moll) for transistor fuzzes (Q Fuzz is an op-amp fuzz today) and boosts, JFETs, potentiometers as live knobs.
+7. **Voicing by ear** against reference recordings the owner picks.
+8. **A plugin build** (VST3 and CLAP through nih-plug) if it should also run in other DAWs.

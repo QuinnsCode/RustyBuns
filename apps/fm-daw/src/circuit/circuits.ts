@@ -4,7 +4,7 @@
 // 9 V battery and a 4.5 V bias divider: the same circuit, minus the bias parts.
 import type { Netlist, Part } from "./mna.ts";
 
-const R = (a: string, b: string, ohms: number): Part => ({ kind: "R", a, b, ohms });
+const R = (a: string, b: string, ohms: number, noisy = false): Part => ({ kind: "R", a, b, ohms, noisy });
 const C = (a: string, b: string, farads: number): Part => ({ kind: "C", a, b, farads });
 const D = (a: string, k: string): Part => ({ kind: "D", a, k });
 
@@ -44,6 +44,26 @@ export function overdrive(drive = 0.5): Netlist {
   };
 }
 
+/**
+ * Fuzz: an op-amp at up to ×2000, its feedback diodes rounding the wave off,
+ * then two diodes to ground squaring what's left. Its 1M input resistor hisses,
+ * and that hiss gets the same ×2000 and the same clipping as the guitar: the
+ * fizz around the notes and the wash when you stop. `drive` 0 to 1.
+ */
+export function fuzz(drive = 0.7): Netlist {
+  return {
+    input: "IN", output: "OUT",
+    parts: [
+      C("IN", "inp", 100e-9), R("inp", "gnd", 1e6, true),
+      { kind: "Opamp", plus: "inp", minus: "inn", out: "opout" },
+      R("inn", "leg", 1e3), C("leg", "gnd", 10e-6),
+      R("opout", "inn", 20e3 + drive ** 2 * 2e6), C("opout", "inn", 22e-12), D("opout", "inn"), D("inn", "opout"),
+      R("opout", "clip", 2.2e3), D("clip", "gnd"), D("gnd", "clip"),
+      R("clip", "OUT", 4.7e3), C("OUT", "gnd", 15e-9),
+    ],
+  };
+}
+
 /** One 12AX7 gain stage: coupling cap and grid leak, grid stopper, plate load, cathode resistor (and bypass cap). */
 export interface StageSpec {
   /** Cathode resistor: bigger is colder, cleaner and more asymmetric when it clips. */
@@ -54,14 +74,16 @@ export interface StageSpec {
   cc?: number;
   rp?: number;
   bplus?: number;
+  /** Its grid stopper and plate load hiss (the first stage: everything after amplifies it). */
+  noisy?: boolean;
 }
 
 export function triodeStage(s: StageSpec): Netlist {
   const parts: Part[] = [
-    C("IN", "a", s.cc ?? 22e-9), R("a", "gnd", 1e6), R("a", "g", 68e3),
+    C("IN", "a", s.cc ?? 22e-9), R("a", "gnd", 1e6), R("a", "g", 68e3, s.noisy),
     { kind: "Triode", p: "OUT", g: "g", k: "k" },
     R("k", "gnd", s.rk),
-    { kind: "V", a: "bplus", b: "gnd", volts: s.bplus ?? 300 }, R("bplus", "OUT", s.rp ?? 100e3),
+    { kind: "V", a: "bplus", b: "gnd", volts: s.bplus ?? 300 }, R("bplus", "OUT", s.rp ?? 100e3, s.noisy),
   ];
   if (s.ck > 0) parts.push(C("k", "gnd", s.ck));
   return { input: "IN", output: "OUT", parts };
