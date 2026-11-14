@@ -1,0 +1,24 @@
+{
+  "name": "qview3d",
+  "private": true,
+  "type": "module",
+  "version": "0.0.1",
+  "license": "SEE LICENSE IN LICENSE",
+  "scripts": {
+    "dev": "bun scripts/dev.ts",
+    "build": "vite build",
+    "test": "bun test test",
+    "deploy": "vite build && bunx wrangler deploy"
+  },
+  "dependencies": {
+    "@rustybuns/util": "^0.1.12",
+    "lucide": "1.55.0",
+    "three": "^0.180.0"
+  },
+  "devDependencies": {
+    "@rustybuns/cli": "^0.1.12",
+    "@rustybuns/shell-bun": "^0.1.12",
+    "@types/three": "^0.180.0",
+    "vite": "^6.2.6"
+  }
+}

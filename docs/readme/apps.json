@@ -127,6 +127,11 @@
         "line": "A small wrapper that turns a Shopify cart into the store's own box."
       },
       {
+        "app": "qview3d",
+        "name": "QView3D",
+        "line": "A 3D product customiser for a shop page, from one script tag. Shoppers drag a photo over a hat, choose its colour and save a snapshot. Uploads go to R2 on signed links, in one folder for each org. PolyForm Noncommercial."
+      },
+      {
         "app": "artstewengine",
         "name": "artstewengine",
         "line": "A small RWSDK app on D1 with a Better Auth admin page. Add who has paid, and the sealed engine of qCRM gets its key only for a paid license."

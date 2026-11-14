@@ -1,0 +1,29 @@
+import { defineConfig } from "@rustybuns/cli/config";
+
+// QView3D: one Worker and one R2 bucket. The Worker serves the widget script (static assets), signs uploads,
+// takes them into R2, and serves textures and snapshots back with year-long immutable caching, since every
+// served key is named by its own SHA-256. Every org's objects sit under orgs/<org>/ (src/layout.ts).
+//
+// Secrets (see .env.schema): UPLOAD_SECRET signs the short-lived upload URLs. The four R2_* values are optional:
+// with them set, uploads go straight to R2 on an S3 presigned PUT instead of through the Worker (src/sign.ts).
+export default defineConfig({
+  name: "qview3d",
+  worker: {
+    main: "src/worker.ts",
+    assets: "dist/client",
+    compatibilityDate: "2026-09-01",
+    compatibilityFlags: [],
+    build: "bun run build",
+  },
+  bindings: {
+    // orgs/<org>/{org.json, products/, originals/, textures/, snapshots/, designs/}. See src/layout.ts.
+    BUCKET: { type: "r2", bucketName: "qview3d" },
+    UPLOAD_SECRET: { type: "secret", op: "op://qview3d/upload-secret/password" },
+    R2_ACCOUNT_ID: { type: "secret", op: "op://qview3d/r2-account-id/password", optional: true },
+    R2_ACCESS_KEY_ID: { type: "secret", op: "op://qview3d/r2-access-key-id/password", optional: true },
+    R2_SECRET_ACCESS_KEY: { type: "secret", op: "op://qview3d/r2-secret-access-key/password", optional: true },
+  },
+  targets: {
+    edge: { provider: "cloudflare" },
+  },
+});
