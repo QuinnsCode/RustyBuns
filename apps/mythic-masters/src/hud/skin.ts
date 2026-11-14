@@ -26,7 +26,7 @@ export interface HudSide {
   massKg: number; heightM: number;
 }
 export interface Party { size: number; down: number[]; up: number }
-export interface HudHit { by: 0 | 1; damage: number; guarded: boolean; rear: boolean; field: Field; move: string; slot: string; age: number }
+export interface HudHit { by: number; damage: number; guarded: boolean; rear: boolean; field: Field; move: string; slot: string; age: number }
 export interface HudView {
   tick: number;
   /** Seconds left on the round clock. */
