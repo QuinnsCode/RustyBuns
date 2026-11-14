@@ -170,5 +170,12 @@
     "blurb": "Shoot a product with your phone and put a 3D spin on its store page.",
     "cta": "Open",
     "more": "A guided shot list tells you where to stand next.\nDrop in a finished splat and it turns on a studio-white turntable you can embed."
+  },
+  "qview3d": {
+    "name": "QView3D",
+    "kicker": "3D Product Customiser",
+    "blurb": "Let shoppers put their own picture on your hats and tops in 3D, right on your product page.",
+    "cta": "Open",
+    "more": "Your studio is your shop: set its sites and products in one page.\nOne tag on your page shows the product, and Save keeps each design."
   }
 }

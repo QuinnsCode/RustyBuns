@@ -1,7 +1,7 @@
 import { defineConfig } from "vite";
 
 // The widget as one ES module at a fixed URL (/v1/qview3d.js, what shops paste) plus hashed chunks beside it
-// (three.js and the hats, loaded on first view, cacheable forever), and /v1/admin.js for the samples page.
+// (three.js and the hats, loaded on first view, cacheable forever), /v1/admin.js for the samples page and /v1/orgs.js for the shops page.
 // public/ is the demo shop page and the admin page.
 // An app build rather than lib mode, which leaves ES output unminified; base "./" makes the chunk URLs relative
 // to the script, so the widget loads its chunks from its own origin on any shop's page.
@@ -13,7 +13,7 @@ export default defineConfig({
     target: "es2022",
     modulePreload: false,
     rollupOptions: {
-      input: { qview3d: "src/widget/index.ts", admin: "src/admin.ts" },
+      input: { qview3d: "src/widget/index.ts", admin: "src/admin.ts", orgs: "src/orgs-page.ts" },
       preserveEntrySignatures: "strict",
       output: {
         entryFileNames: (c) => `v1/${c.name}.js`,

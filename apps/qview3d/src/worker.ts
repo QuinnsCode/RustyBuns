@@ -15,6 +15,7 @@
 //   POST /api/orgs/<org>/checkout          an admin buys a pack of samples
 //   POST /api/stripe-webhook               Stripe: a paid checkout becomes a receipt
 //   GET  /v1/embed.md, /llms.txt              how to put the widget on a page, for a coding agent (embed.ts)
+//   GET  /api/mine, PUT /api/orgs/<org>, PUT .../products/<id>, POST .../keys   shops set up signed in through eqosys (orgs.ts)
 //
 // A fresh deploy with an empty bucket still serves the demo org and its three hats (demo.ts), read-only.
 import { hex } from "@rustybuns/util/bytes";
@@ -26,6 +27,7 @@ import { designKey, fileKey, ID, KINDS, orgKey, productKey, servable } from "./l
 import { originalRoute, printPlanRoute } from "./print.ts";
 import { billingRoute, checkoutRoute, stripeWebhook } from "./billing.ts";
 import { countSamples, isAdmin, sampleRoute, startSampleRoute } from "./samples.ts";
+import { orgsRoute, runsShop, signedIn } from "./orgs.ts";
 import { presignUrl, readToken, uploadToken } from "./sign.ts";
 
 /** The part of an R2 bucket this Worker uses: the real binding, or shell-bun's twin over a directory. */
@@ -63,6 +65,8 @@ export interface Env {
   STRIPE_API_BASE?: string;
   /** "1": packs are paid at once, nothing charged. Local dev and tests only; Stripe wins when both are set. */
   BILLING_TEST?: string;
+  /** The eqosys whose tokens sign people in (orgs.ts); https://eqosys.qntbr.com unless set. */
+  EQOSYS_URL?: string;
 }
 
 const UPLOAD_TTL_S = 600;
@@ -110,6 +114,9 @@ export async function handle(req: Request, env: Env): Promise<Response> {
 
   if (url.pathname === "/api/stripe-webhook" && req.method === "POST") return stripeWebhook(req, env);
 
+  const shops = await orgsRoute(req, env, cors(origin));
+  if (shops) return shops;
+
   const m = url.pathname.match(/^\/api\/orgs\/([^/]+)\/(products|uploads|designs|models|originals|billing|checkout)(?:\/([^/]+))?(\/print)?$/);
   if (!m) return fail("not found", 404, origin);
   const [, org, what, id, print] = m;
@@ -123,8 +130,8 @@ export async function handle(req: Request, env: Env): Promise<Response> {
     const p = o ? await readJson(new Response(await o.text()), Product) : builtIn ? (DEMO_PRODUCTS[id] ?? null) : null;
     return p ? json(p, 200, { ...cors(origin), "cache-control": "public, max-age=60" }) : fail("unknown product", 404, origin);
   }
-  // An admin key works from anywhere (the admin page is on our own host); everyone else needs a listed page.
-  const admin = await isAdmin(req, settings);
+  // An admin key, or the shop signed in, works from anywhere (the admin pages are on our own host); everyone else needs a listed page.
+  const admin = (await isAdmin(req, settings)) || runsShop(await signedIn(req, env), settings);
   if (what === "originals" || print) {
     if (!admin) return fail("an admin key is needed for print files", 401, origin);
     if (req.method !== "GET" || !id) return fail("not found", 404, origin);

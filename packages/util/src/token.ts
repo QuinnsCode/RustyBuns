@@ -4,17 +4,24 @@
 // eqosys signs with `sign` and serves `jwksOf`; an app verifies with `TokenChecker`, and its test signs its
 // own with `newKey` and `sign` instead of reaching into eqosys.
 import { b64url, digest, unb64url } from "./bytes.ts";
-import { arr, check, int, num, obj, oneOf, str, type Of } from "./guard.ts";
+import { arr, check, int, num, obj, oneOf, opt, str, type Of } from "./guard.ts";
+
+/** The most studios a token names: a token travels in a query, so it stays a few KB (TOKEN). */
+export const STUDIOS_MAX = 8;
 
 /**
  * What a token says: who, for which app, from where they first came, what they may do, and until when (seconds since the epoch).
  * `email` is empty only on eqosys's own tickets and orders to Qlave (apps/eqosys/src/qollab/qlave.ts), which don't need it.
+ * `studios` only on a token for an app that runs per studio (eqosys's APPS `studios`, QView3D's shops): the person's studios and role in each.
  */
 export const Claims = obj({
   iss: str(200), aud: str(64), sub: str(200), email: str(320, { min: 0 }), name: str(200), source: str(64),
   access: arr(str(32), 100), iat: num(0, 1e11), exp: num(0, 1e11),
+  studios: opt(arr(obj({ id: str(64), name: str(60), role: oneOf(["owner", "admin", "maker"]) }), STUDIOS_MAX)),
 });
 export type Claims = Of<typeof Claims>;
+/** One studio a token names, with the person's role in it. */
+export type StudioRole = NonNullable<Claims["studios"]>[number];
 
 const Coord = str(64, { min: 43, re: /^[A-Za-z0-9_-]+$/ });
 export const PublicJwk = obj({ kty: oneOf(["EC"]), crv: oneOf(["P-256"]), x: Coord, y: Coord, kid: str(64), alg: oneOf(["ES256"]), use: oneOf(["sig"]) });
@@ -41,6 +48,8 @@ export interface Handoff {
   /** The app they first came in through, or "eqosys". */
   source: string;
   access: string[];
+  /** For an app that runs per studio: the person's studios (at most STUDIOS_MAX) and their role in each. */
+  studios?: StudioRole[];
 }
 
 const PrivateJwk = obj({ kty: oneOf(["EC"]), crv: oneOf(["P-256"]), x: Coord, y: Coord, d: Coord });
@@ -118,7 +127,7 @@ export async function sign(conf: Signer, iss: string, who: Handoff, now = Date.n
   const k = await keyOf(conf);
   if (!k) return null;
   const iat = Math.floor(now / 1000);
-  const claims: Claims & IdExtras = { iss, aud: who.app, sub: who.user.id, email: who.user.email, name: who.user.name, source: who.source, access: who.access, iat, exp: iat + life, ...extras };
+  const claims: Claims & IdExtras = { iss, aud: who.app, sub: who.user.id, email: who.user.email, name: who.user.name, source: who.source, access: who.access, iat, exp: iat + life, ...(who.studios ? { studios: who.studios } : {}), ...extras };
   const head = `${part({ alg: "ES256", typ: "JWT", kid: k.kid })}.${part(claims)}`;
   return `${head}.${b64url(new Uint8Array(await crypto.subtle.sign(SIGN, k.priv, text.encode(head))))}`;
 }
