@@ -66,7 +66,8 @@
 #                            bulge of that share of the radius a third of the way down. Thin the sheet's own leg nodes
 #           shoulder, elbow  under it, or the skin tube shows through. List the `l_` nodes; `mirror` adds the twin.
 #                            `shoulder` (0) swells the top by that share of the radius, `elbow` (0) each middle node
-#                            (a knee or elbow), jutting back (-x) more than out
+#                            (a knee or elbow), jutting back (-x) more than out. `skin` (false) builds it into the
+#                            body before `blend`, so the remesh makes body and leg one smooth skin, no seam
 #   foot    at, form, len,   a paw, hoof, talon or web on a foot node (also a hand: any node), `mirror`ed like the rest.
 #           width, toes,     `form` paw: a pad with `toes` bumps and `claw` cones (0 none); hoof: a wedge, `toes` 2 for a cleft
 #           claw, spread,    hoof (`claw_mat` colours the claws); talon: `toes` (3) curved toes `spread` degrees apart and a hind claw; web: a flat fan between
@@ -216,8 +217,9 @@ def body(sheet):
                 split.append((a, b))
         links = split
     o = skinned(sheet, nodes, links)
-    if sheet.get("blobs"):
-        o = blobs(o, sheet["blobs"], nodes)
+    skin_limbs = [p for p in sheet.get("parts", []) if p["kind"] == "limb" and p.get("skin")]
+    if sheet.get("blobs") or skin_limbs:
+        o = blobs(o, sheet.get("blobs", []), nodes, skin_limbs)
         if sheet.get("blend"):
             # one skin over the body and its blobs, no seam: rebuilt from voxels `blend` metres across, then
             # smoothed (every blob takes the body's material)
@@ -384,11 +386,16 @@ def paint(o, sheet, nodes, links):
         o.vertex_groups.new(name="keep").add(sorted(inside & outside), 1.0, "REPLACE")
 
 
-def blobs(o, spec, nodes):
+def blobs(o, spec, nodes, limbs=()):
     """Round flesh over the skin: an ellipsoid at a node (radii x, y, z) for a body too short and fat for
     the skin modifier, which boxes the hull where four limbs meet. The rigger fills the volume, so the
-    overlap needs no union."""
+    overlap needs no union. A `limb` part with `skin` joins here too, so `blend` remeshes it into the body."""
     out = [o]
+    for i, p in enumerate(limbs):
+        for side in ([1, -1] if p.get("mirror") else [1]):
+            chain = [mirrored(c) if side < 0 else c for c in p["along"]]
+            out.append(limb(f"skinlimb{i}_{side}", [Vector(nodes[c][:3]) for c in chain], p["radii"], p.get("depth", 1),
+                            p.get("calf", 0), o.data.materials[0].name, p.get("shoulder", 0), p.get("elbow", 0)))
     for i, b in enumerate(spec):
         bm = bmesh.new()
         bmesh.ops.create_uvsphere(bm, u_segments=24, v_segments=16, radius=1)
@@ -1213,6 +1220,8 @@ def parts(sheet, nodes):
                 at = Vector(node(p["at"])) + Vector(s(p.get("off", (0, 0, 0))))
                 built = skull(name, at, s(p.get("dir", (1, 0, 0))), p, p.get("material", sheet.get("material", "hide")))
                 out += built if isinstance(built, list) else [built]
+            elif p["kind"] == "limb" and p.get("skin"):
+                pass  # built into the body's skin (`blobs`)
             elif p["kind"] == "limb":
                 chain = [mirrored(c) if side < 0 else c for c in p["along"]]
                 out.append(limb(name, [Vector(nodes[c][:3]) for c in chain], p["radii"], p.get("depth", 1), p.get("calf", 0),
