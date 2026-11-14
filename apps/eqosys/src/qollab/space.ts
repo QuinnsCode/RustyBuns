@@ -16,7 +16,7 @@ import { Sockets, type RoomCtx, type RoomSocket } from "@rustybuns/util/room";
 import { appOf } from "../listings.ts";
 import { ChatGate, SAY_MAX, type Said } from "./chat.ts";
 import { json, type Env } from "../env.ts";
-import { Present, roomOf, send, ticket, qlaveUrl, type Order } from "./qlave.ts";
+import { flush, Present, queue, roomOf, send, ticket, qlaveUrl, type Order } from "./qlave.ts";
 import { file, reporterId } from "../reports.ts";
 import { mintCode } from "./party.ts";
 
@@ -35,10 +35,6 @@ type Voice = { id: string; name: string };
 /** Who Qlave last said is in a voice channel, and when it said so (its clock). Kept under `roster:<channel id>`. */
 type Roster = { in: Of<typeof Present>; at: number };
 const RosterIn = obj({ channel: str(16, { min: 1 }), in: Present, at: int(0, 1e15) });
-/** An order waiting for Qlave to answer 200, and how many times it has been tried. */
-type Pending = { order: Order; iss: string; tries: number };
-/** Tries an order gets before it is dropped: 5 s, 10 s, 20 s, 40 s and 80 s apart. */
-export const ORDER_TRIES = 6;
 
 const SpaceIn = obj({
   t: oneOf(["say", "history", "channel", "drop", "talk", "voice", "mute", "kick", "report", "leave"]),
@@ -202,20 +198,15 @@ export class Space {
   /** Orders for Qlave, kept until it answers: the alarm sends them. */
   private async enqueue(orders: Order[]) {
     if (!orders.length) return;
-    const iss = await this.iss();
-    await this.ctx.storage.put("outbox", [...await this.ctx.storage.get<Pending[]>("outbox") ?? [], ...orders.map((order) => ({ order, iss, tries: 0 }))]);
+    await queue(this.ctx.storage, await this.iss(), orders);
     await this.ctx.storage.setAlarm(Date.now());
   }
 
-  /** Send what is waiting. 200 and a refused order (400, 401) are done with; anything else waits longer and goes again. */
+  /** Send what is waiting (qlave.ts `flush`), and wake again when something is left to retry. */
   async alarm() {
-    const sent = await this.ctx.storage.get<Pending[]>("outbox") ?? [], left: Pending[] = [];
-    for (const p of sent) if (await send(this.env, p.iss, p.order) === "retry" && p.tries + 1 < ORDER_TRIES) left.push({ ...p, tries: p.tries + 1 });
-    // Orders queued while these were out stay, and go at once.
-    const fresh = (await this.ctx.storage.get<Pending[]>("outbox") ?? []).slice(sent.length);
-    await this.ctx.storage.put("outbox", [...left, ...fresh]);
-    if (fresh.length) await this.ctx.storage.setAlarm(Date.now());
-    else if (left.length) await this.ctx.storage.setAlarm(Date.now() + 5000 * 2 ** (Math.min(...left.map((p) => p.tries)) - 1));
+    await flush(this.ctx.storage, this.env);
+    const next = await this.ctx.storage.get<number>("outboxAt");
+    if (next) await this.ctx.storage.setAlarm(next);
   }
 
   private async say(channel: string, said: Said) {
@@ -294,7 +285,7 @@ export class Space {
   /** The space is gone: everyone is out, nothing is kept but the order that ends its voice rooms. */
   private async drop(): Promise<Response> {
     this.close(() => true, 4004, "the space was deleted");
-    const sid = await this.sid(), iss = await this.iss(), outbox = await this.ctx.storage.get<Pending[]>("outbox") ?? [];
+    const sid = await this.sid(), iss = await this.iss(), outbox = await this.ctx.storage.get<unknown[]>("outbox") ?? [];
     for (const k of (await this.ctx.storage.list({})).keys()) await this.ctx.storage.delete(k);
     await this.ctx.storage.put("iss", iss);
     await this.ctx.storage.put("outbox", outbox);

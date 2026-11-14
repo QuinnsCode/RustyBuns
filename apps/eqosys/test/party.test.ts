@@ -1,11 +1,14 @@
 // Two players of one app join the same party code and each sees the other; a token for another app is refused.
+// Voice: a member takes a one-use Qlave ticket into the party's room, the host's mute and kick reach a fake Qlave as
+// orders, and the host's account going ends the room.
 import { afterAll, expect, setDefaultTimeout, test } from "bun:test";
 import { durableObject, serve } from "@rustybuns/shell-bun";
-import { checkerFor, newKey, peek, startTicket } from "@rustybuns/util/token";
+import { checkerFor, jwksOf, newKey, peek, startTicket, verify } from "@rustybuns/util/token";
+import { unb64url } from "@rustybuns/util/bytes";
 import { handle } from "../src/handle.ts";
 import { party, type PartyMember } from "@rustybuns/util/eqosys";
 import { Party, type PartyOut } from "../src/qollab/party.ts";
-import { asks, boot, codeIn, PARK, PASSWORD, QCRM } from "./kit.ts";
+import { asks, boot, codeIn, ORIGIN, PARK, PASSWORD, QCRM } from "./kit.ts";
 
 setDefaultTimeout(30_000);
 
@@ -13,7 +16,16 @@ const { conf, call } = await boot({ EQOSYS_SIGNING_KEY: await newKey() });
 conf.PARTY = durableObject(Party as never, conf) as never;
 const shell = serve<unknown>({ hostname: "127.0.0.1", port: 0 });
 shell.mount({ fetch: async (req: Request) => (await handle(req, conf)) ?? new Response("no", { status: 404 }) } as never, {});
-afterAll(() => shell.stop());
+// Qlave, as far as eqosys can tell: POST /eqosys with an admin token from eqosys's key, else 401.
+const orders: unknown[] = [];
+const qlave = Bun.serve({ hostname: "127.0.0.1", port: 0, async fetch(req) {
+  const token = req.headers.get("authorization")?.replace(/^Bearer /, "") ?? "";
+  if (!await verify(token, await jwksOf(conf), { iss: ORIGIN, aud: "qlave-admin" })) return new Response("Unauthorized", { status: 401 });
+  orders.push(await req.json());
+  return Response.json({ ok: true });
+} });
+conf.QLAVE_URL = `http://127.0.0.1:${qlave.port}`;
+afterAll(() => { shell.stop(); qlave.stop(true); });
 
 async function signUp(name: string, app: string, origin: string) {
   const a = await asks(app, origin);
@@ -118,6 +130,52 @@ test("deleting an account takes the person out of every party they sat in; delet
   expect(await seats()).toBe(0);
   expect((await knock(code, await signUp("Cy4", "park-hide-seek", PARK), PARK)).status).toBe(404);
   a.ws.close(); b.ws.close();
+});
+
+test("a party has a voice room: a ticket into it, the host's mute and kick reach Qlave, and the host going ends it", async () => {
+  const base = `http://127.0.0.1:${shell.port}`;
+  const adaToken = await signUp("Ada5", "park-hide-seek", PARK), boToken = await signUp("Bo5", "park-hide-seek", PARK);
+  const ada = party({ url: () => base, token: () => adaToken }), bo = party({ url: () => base, token: () => boToken });
+  const seen: Record<string, PartyMember[]> = {}, tickets: { url: string; ticket: string }[] = [];
+  ada.onMembers((m) => (seen.ada = m)); bo.onMembers((m) => (seen.bo = m));
+  bo.onTicket((t) => tickets.push(t));
+  const code = (await ada.make(true))!;
+  ada.join(code); bo.join(code);
+  await until(() => seen.ada?.length === 2);
+  orders.length = 0; // the accounts deleted above were erased on Qlave too
+
+  // A ticket: eqosys's key, for Qlave, this person and the party's room, one use, a minute.
+  bo.talk();
+  await until(() => tickets.length === 1);
+  const t = tickets[0]!, boId = peek(boToken)!.sub;
+  expect(t.url).toBe(conf.QLAVE_URL!);
+  const claims = await verify(t.ticket, await jwksOf(conf), { iss: ORIGIN, aud: "qlave" });
+  expect(claims && { sub: claims.sub, life: claims.exp - claims.iat }).toEqual({ sub: boId, life: 60 });
+  const { room } = JSON.parse(new TextDecoder().decode(unb64url(t.ticket.split(".")[1]!))) as { room: string };
+  expect(room).toMatch(new RegExp(`^party:${code}:[0-9a-f]{8}$`));
+
+  // Bo's page says it joined: Ada sees Bo in voice.
+  bo.inVoice(true);
+  await until(() => seen.ada!.find((m) => m.name === "Bo5")?.voice === true);
+
+  // The host's mute is a voice mute, and a muted member's next ticket comes after their mute is in the room.
+  ada.mute(boId);
+  await until(() => orders.length === 1);
+  expect(orders.shift()).toEqual({ t: "mute", room, sub: boId, on: true });
+  bo.talk();
+  await until(() => tickets.length === 2);
+  expect(orders.shift()).toEqual({ t: "mute", room, sub: boId, on: true });
+
+  // Taken out of the party is out of the room.
+  ada.kick(boId);
+  await until(() => orders.length === 1);
+  expect(orders.shift()).toEqual({ t: "kick", room, sub: boId });
+
+  // The host's account deleted: the party ends, and so does its room.
+  await call("/api/account/delete", { json: {}, bearer: adaToken, origin: PARK });
+  await until(() => orders.some((o) => (o as { t: string }).t === "end"));
+  expect(orders).toContainEqual({ t: "end", prefix: room });
+  ada.leave(); bo.leave();
 });
 
 // Last: it uses up this address's mints.
