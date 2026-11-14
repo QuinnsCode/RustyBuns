@@ -7,7 +7,7 @@ import { $ } from "bun";
 import { Art } from "../src/art.ts";
 
 const ROOT = join(import.meta.dir, ".."), SRC = join(ROOT, "art-src"), JSON_PATH = join(ROOT, "src/art.json");
-const art: Art = existsSync(JSON_PATH) ? Art(await Bun.file(JSON_PATH).json()) : {};
+const art = Art(existsSync(JSON_PATH) ? await Bun.file(JSON_PATH).json() : {});
 for (const file of readdirSync(SRC).filter((f) => f.endsWith(".svg")).sort()) {
   const id = file.slice(0, -4);
   const png = await $`rsvg-convert -w 480 ${join(SRC, file)}`.arrayBuffer();

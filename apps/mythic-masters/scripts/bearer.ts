@@ -36,6 +36,10 @@ const Sheet = obj({
 /** The sheet's names say a side-less bone ("Leg") for both sides: each key as the node names it covers. */
 const sides = (k: string) => (/^(UpLeg|Leg|Foot|ToeBase|Shoulder|Arm|ForeArm|Hand)$/.test(k) ? [`Left${k}`, `Right${k}`] : [k]);
 
+/** A glTF animation as written: each channel drives one joint's translation or rotation through a sampler. */
+interface Sampler { input: number; output: number; interpolation: string }
+interface Channel { sampler: number; target: { node: number; path: "translation" | "rotation" } }
+interface Animation { name: string; channels: Channel[]; samplers: Sampler[] }
 interface Edits { scale: Map<string, THREE.Vector3>; turn: Map<string, THREE.Quaternion>; clips?: Record<string, string> }
 
 /** The rig in `src` written again: every joint node, the clips asked for (all, renamed by `clips`), a bone's
@@ -81,11 +85,11 @@ function rewrite(src: Uint8Array, edits: Edits) {
   });
   const ibmAt = w.floats(ibm, "MAT4");
 
-  const animations: Record<string, unknown>[] = [];
+  const animations: Animation[] = [];
   for (const a of json.animations ?? []) {
     const role = edits.clips ? Object.entries(edits.clips).find(([, n]) => n === a.name)?.[0] : a.name;
     if (!role) continue;
-    const channels: Record<string, unknown>[] = [], samplers: Record<string, unknown>[] = [], inputs = new Map<number, number>();
+    const channels: Channel[] = [], samplers: Sampler[] = [], inputs = new Map<number, number>();
     for (const c of a.channels) {
       const node = c.target.node, s = a.samplers[c.sampler]!;
       if (node === undefined || !joints.has(node)) continue;

@@ -3,10 +3,10 @@
 // docs/shots-2026-11-11-<id>/README.md. The head, body and legs are ellipsoid blobs merged by `blend` into one skin;
 // every face part is placed on that skin with a ray-cast (`skin()`), as the Squonk and Jackalope were.
 import { join } from "node:path";
+import type { Part } from "./upright/lib.ts";
 
 type V = [number, number, number];
 type N = [number, number, number, number];
-type Part = Record<string, unknown>;
 type Blob = { at: string; off: V; r: V; rot?: V };
 type Ell = { c: V; r: V };
 
@@ -51,7 +51,7 @@ type Hound = {
   horns?: { len: number; base: number; curve: number; dir: V; bend: V };
   bands?: { n: number; width: number }; // tabby bands across the back and tail
   palette: Record<string, number[]>;
-  hide: Record<string, unknown>;
+  hide: { pattern: string; size: number; colours: number[][]; map: number };
   stripe?: boolean;                // a dark band down the spine
   bib?: boolean;                   // a pale throat and belly, painted
   pose?: Record<string, [number, number] | [number, number, number]>; // nodes moved by (fore, up, out) in k before the flesh goes on: a crouch, braced legs
@@ -62,7 +62,11 @@ type Hound = {
 };
 
 /** A built hound sheet: the fields a beast built on it (the Chimera, the Sphinx) adds to, and the rest as written. */
-type Sheet = { nodes: Record<string, N>; links: string[][]; blobs: Blob[]; parts: Part[]; paint?: { nodes: string[]; material: string }[]; stripes?: unknown } & Record<string, unknown>;
+type Sheet = {
+  id: string; name: string; about: string; archetype: string; feet: number; budget: number; root: string; material: string; belly: string; belly_turn: number; blend: number;
+  palette: Hound["palette"]; hide: Hound["hide"]; nodes: Record<string, N>; links: string[][]; blobs: Blob[]; parts: Part[];
+  paint?: { nodes: string[]; material: string }[]; stripes?: { along: string[]; n: number; width: number; material: string; below: number };
+};
 
 function hound(o: Hound): Sheet {
   const k = o.k, H = o.head * k;
@@ -391,7 +395,7 @@ function chimera() {
     { kind: "horn", at: "ssnout", off: [s(0.0), s(-0.025), s(0.02)], dir: [0.2, -1, 0], len: s(0.06), base: s(0.012), tip_base: 0.001, curve: 15, bend: [-1, 0, 0], mirror: true, material: "fang" },
   );
   // the hound's own ruff (rows of small flat tufts down to the chest) goes: the locks above are the mane
-  b.parts = b.parts.filter((p) => !(p.kind === "tuft" && (p.along as string[]).join() === "neck,chest"));
+  b.parts = b.parts.filter((p) => !(p.kind === "tuft" && p.along?.join() === "neck,chest"));
   // the skin under the mane dark, so the locks read as one mass and not as shards on a yellow neck
   b.paint.push({ nodes: ["neck"], material: "ruff" });
   // the goat's neck and head in its own dark coat

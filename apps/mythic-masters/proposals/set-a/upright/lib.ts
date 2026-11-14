@@ -2,10 +2,14 @@
 // set B's lib in #4257): vector helpers, the ray-cast `skin()` that puts a face part on the
 // blobs' surface, mirrored blob pairs, and a writer that keeps the old sheet's id, name, about and archetype.
 import { readFileSync, writeFileSync } from "node:fs";
+import { SheetWho } from "../../../src/roster.ts";
 
 export type V = [number, number, number];
 export type N = [number, number, number, number];
-export type Part = Record<string, unknown>;
+/** A part on a sheet as the Blender build reads it: its kind, the node it sits on (`at`, offset by `off`) or the bones it
+ *  runs along, its material, and the kind's own sizes (a horn's `len` and `curve`, an ear's `cup`, a tuft's `rows`). */
+export type Part = { kind: string; material: string; at?: string; off?: V; along?: string[]; mirror?: boolean; points?: (string | V)[]; feathers?: { [size: string]: number | string } }
+  & { [size: string]: string | number | boolean | number[] | (string | V)[] | { [size: string]: number | string } | undefined };
 export type Blob = { at: string; off: V; r: V; rot?: V };
 export type Ell = { c: V; r: V };
 
@@ -49,10 +53,9 @@ export const along = (nodes: Record<string, N>, a: string, b: string, t = 0.5): 
 export const chain = (names: string[]) => names.slice(1).map((n, i) => [names[i]!, n]);
 
 /** Write beasts/<id>.json from the old one's identity plus these fields (or to `out` for a candidate). */
-export function write(id: string, fields: Record<string, unknown>, out?: string) {
+export function write(id: string, fields: object, out?: string) {
   const path = `${APP}/beasts/${id}.json`;
-  const old = JSON.parse(readFileSync(path, "utf8"));
-  const sheet = { id: old.id, name: old.name, about: old.about, archetype: old.archetype, ...fields };
+  const sheet = { ...SheetWho(JSON.parse(readFileSync(path, "utf8"))), ...fields };
   writeFileSync(out ?? path, JSON.stringify(sheet, null, 2) + "\n");
   console.log(`wrote ${out ?? path}`);
 }

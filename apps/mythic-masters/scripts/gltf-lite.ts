@@ -43,12 +43,15 @@ export function readGlb(bytes: Uint8Array) {
 }
 
 type Kind = "SCALAR" | "VEC3" | "VEC4" | "MAT4";
+/** A glTF accessor and buffer view as written: one tightly packed view per accessor, all in buffer 0. */
+interface Accessor { bufferView: number; componentType: number; count: number; type: Kind; min?: number[]; max?: number[] }
+interface View { buffer: 0; byteOffset: number; byteLength: number; target?: number }
 /** A GLB being written: add accessors (each its own tightly packed view), then `glb()` for the file. */
 export class GlbWriter {
   private readonly chunks: Uint8Array[] = [];
   private length = 0;
-  readonly accessors: Record<string, unknown>[] = [];
-  readonly views: Record<string, unknown>[] = [];
+  readonly accessors: Accessor[] = [];
+  readonly views: View[] = [];
 
   private push(data: Uint8Array, target?: number) {
     const pad = (4 - (this.length % 4)) % 4;
@@ -62,7 +65,7 @@ export class GlbWriter {
   floats(data: Float32Array, type: Kind, bounds = false) {
     const n = SIZE[type]!, count = data.length / n;
     const view = this.push(new Uint8Array(data.buffer, data.byteOffset, data.byteLength));
-    const a: Record<string, unknown> = { bufferView: view, componentType: 5126, count, type };
+    const a: Accessor = { bufferView: view, componentType: 5126, count, type };
     if (bounds) {
       const lo = Array<number>(n).fill(Infinity), hi = Array<number>(n).fill(-Infinity);
       for (let k = 0; k < count; k++) for (let c = 0; c < n; c++) { lo[c] = Math.min(lo[c]!, data[k * n + c]!); hi[c] = Math.max(hi[c]!, data[k * n + c]!); }
@@ -80,7 +83,7 @@ export class GlbWriter {
   }
 
   /** The GLB, with `parts` (nodes, skins, meshes, animations, scenes...) laid over the accessors written. */
-  glb(parts: Record<string, unknown>) {
+  glb(parts: object) {
     const bin = new Uint8Array(Math.ceil(this.length / 4) * 4);
     let at = 0;
     for (const c of this.chunks) { bin.set(c, at); at += c.byteLength; }

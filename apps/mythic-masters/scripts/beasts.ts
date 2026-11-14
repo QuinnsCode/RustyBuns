@@ -23,16 +23,16 @@ import { readdirSync, watch } from "node:fs";
 import { runBlender } from "@rustybuns/cli/blender";
 import { availableParallelism } from "node:os";
 import { join } from "node:path";
-import { int, num, obj, oneOf, opt, str } from "@rustybuns/util/guard";
+import { int, num, obj, opt } from "@rustybuns/util/guard";
 import { analyze, rigToWire } from "@rustybuns/rig";
 import { loadGlb } from "@rustybuns/rig/model";
 import { feetOf, wingsOf, type BeastRig } from "../src/beasts.ts";
-import { ARCHETYPES } from "../src/roster.ts";
+import { SHEET_WHO } from "../src/roster.ts";
 import { judge, OUT, shoot } from "./beast-loop.ts";
 import { help } from "../../../scripts/help.ts";
 
 const APP = join(import.meta.dir, "..");
-const Sheet = obj({ id: str(40, { re: /^[a-z0-9-]+$/ }), name: str(40), archetype: oneOf(ARCHETYPES), feet: int(0, 8), wings: opt(int(0, 8)), budget: num(100, 20000, 3000) });
+const Sheet = obj({ ...SHEET_WHO, feet: int(0, 8), wings: opt(int(0, 8)), budget: num(100, 20000, 3000) });
 
 help(import.meta.path);
 const argv = process.argv.slice(2);

@@ -6,12 +6,12 @@ import { existsSync, readdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { $ } from "bun";
+import { Refs } from "../../../scripts/beast-refs.ts";
+import { Layers, type Layer } from "./shape.ts";
 
-type B = { id: string; name: string; starter: boolean; rebuilt: boolean };
-type G = { n: number; name: string; tier: string; layer: number; next: number[]; boss: string | null; beasts: B[] };
-type Img = { file: string; from?: string; page?: string; artist?: string; license?: string };
+type B = Layer["beasts"][number];
 const [src, out] = process.argv.slice(2) as [string, string];
-const regions: G[] = await Bun.file(src).json();
+const regions = Layers(await Bun.file(src).json());
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
 
 async function jpeg(file: string, w: number, q: number): Promise<string> {
@@ -35,7 +35,7 @@ async function art(id: string): Promise<Art> {
   const json = `refs/${id}.json`, dir = `refs/${id}`;
   let a: Art = { pics: [], owner: 0, fetched: false, model: await model(id) };
   if (existsSync(json)) {
-    const meta: { images: Img[] } = await Bun.file(json).json();
+    const meta = Refs(await Bun.file(json).json());
     const files = existsSync(dir) ? readdirSync(dir).filter((f) => /\.(jpe?g|png|webp)$/i.test(f)).sort() : [];
     const isOwner = (f: string) => !/^(c\d+|card-(bw|color))\.jpg$/.test(f);
     const order = [...files.filter(isOwner), ...files.filter((f) => !isOwner(f))];
@@ -111,7 +111,7 @@ for (const L of [...new Set(regions.map((g) => g.layer))].sort((a, b) => a - b))
   }
   sections.push(`<div class="layer"><h2>${LAYER[L] ?? `Layer ${L}`}<small>${WINS[L] ?? ""}</small></h2>${bands.join("")}</div>`);
 }
-const starterRows: B[] = STARTERS.map((id) => all.find((b) => b.id === id) ?? { id, name: id[0]!.toUpperCase() + id.slice(1), starter: true, rebuilt: true });
+const starterRows: B[] = STARTERS.map((id) => all.find((b) => b.id === id) ?? { id, name: id[0]!.toUpperCase() + id.slice(1), starter: true, rebuilt: true, refs: false, pics: 0 });
 const starters = (await Promise.all(starterRows.map(folder))).join("");
 const fetched = all.filter((b) => cache.get(b.id)?.fetched).length;
 

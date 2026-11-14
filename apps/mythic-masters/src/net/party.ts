@@ -41,10 +41,7 @@ const KEYS = ["r", "x", "z", "y", "l", "f", "m", "c"] as const;
 /** A delta off the wire, or null when it isn't one (an unknown field, a number off the map, an empty message). */
 export function parseDelta(raw: unknown): Delta | null {
   const d = check(DELTA, raw);
-  if (!d) return null;
-  const out: Delta = {};
-  for (const k of KEYS) if (d[k] !== undefined) (out as Record<string, unknown>)[k] = d[k];
-  return Object.keys(out).length ? out : null;
+  return d && Object.keys(d).length ? d : null;
 }
 
 /** A pose once every field has arrived, else null (a player is drawn only once we know where and as what). */
@@ -57,11 +54,12 @@ export function quantise(region: number, x: number, z: number, yaw: number, lead
 }
 export const metres = (p: Pose) => ({ x: p.x / 10, z: p.z / 10, yaw: (p.y / 256) * 2 * Math.PI });
 
+const put = <K extends keyof Pose>(d: Delta, k: K, v: Pose[K]) => { d[k] = v; };
 /** What changed from `was` to `now`, or null when nothing did. */
 export function delta(was: Pose | null, now: Pose): Delta | null {
   if (!was) return { ...now };
   const d: Delta = {};
-  for (const k of KEYS) if (was[k] !== now[k]) (d as Record<string, unknown>)[k] = now[k];
+  for (const k of KEYS) if (was[k] !== now[k]) put(d, k, now[k]);
   return Object.keys(d).length ? d : null;
 }
 
