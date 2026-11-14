@@ -138,7 +138,8 @@ For a product the hats don't cover (a tumbler, a tote, a koozie), the shop makes
 (`samples` in org.json, counted against its `models/` folder, `402` when spent), and `MESHY_DAILY` (50) samples a
 day across every org (`429`). The Meshy Batch Studio app's price table puts multi-image-to-3D at 5 to 40 credits a
 model; check Meshy's current price before turning the real key on. It's a draft: the model guesses at sides the
-photos didn't show. Billing shops for samples comes later.
+photos didn't show. Billing shops for samples, and an iPhone app that scans on the shop's own phone with Apple's
+Object Capture for an accurate model at no compute cost, come later.
 
 ### A scan from the shop's own iPhone
 
