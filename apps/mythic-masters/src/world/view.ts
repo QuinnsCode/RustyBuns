@@ -25,7 +25,7 @@ import { DAWN_HOUR, DAY, daylight, hourAt, weather, wind, type Patch as Forage, 
 import type { Ambient } from "./ambience.ts";
 import { fireSpot, ISLE_N, isleLair, islePlaces, LAIR_R, marked, poiById, shelterAt, SHELTER_R, type Poi, type Shelter } from "./poi.ts";
 import { lightsNear, nightOf, safePaths, stalk, toSafety, type Night } from "./night.ts";
-import { HUNTS, stageOf, waiting } from "./hunts.ts";
+import { HUNTS, isleHunts, stageOf, waiting } from "./hunts.ts";
 import { beside, BOARD, DEEP, DOORSTEP, line as townLine, onLot, outside, roomAt, step as townStep, toLocal, toWorld, TOWNS, type Town } from "./towns.ts";
 import { buildTown } from "./town-view.ts";
 import { caveMouth, lairOf, POCKETS } from "../pockets.ts";
@@ -1046,8 +1046,9 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
   /** Off the boat on the island, by its first fire, looking at it. */
   function landIsle(port: Port, iw: World) {
     const slip = isleSlip(iw, port.p), view = isleView(iw, slip), all = islePlaces(port.p);
-    // Its places walk up as the continent's do: a tape plays and goes in the journal, a fire rests you (hooks.places).
-    const places = poiView(view.group, camera, (x, z) => heightAt(iw, x, z), hooks.places, undefined, { all, near: () => all, region: () => ISLE_N });
+    // Its places walk up as the continent's do: a tape plays and goes in the journal, a fire rests you, its board gives
+    // its contract, whose signs lead to the lair (hooks.places).
+    const places = poiView(view.group, camera, (x, z) => heightAt(iw, x, z), hooks.places, undefined, { all, near: () => all, region: () => ISLE_N, hunts: isleHunts(port.p) });
     // Its lair: the pocket's cave mouth on its place, open toward the slip; walk into it and its fight starts (hooks.lair).
     const den = isleLair(port.p), pocket = POCKETS[lairLook(port.p)];
     if (den && pocket) {

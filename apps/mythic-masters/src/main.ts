@@ -76,7 +76,7 @@ import { FACTIONS, type FactionId } from "./factions/model.ts";
 import { bandOf, pressure, reading, trendOf } from "./factions/read.ts";
 import { ledgerOf, type Ledger } from "./factions/ledger.ts";
 import { jumpTo, stepOf } from "./factions/jump.ts";
-import { close as closeHunt, HUNTS, stageOf, take, CLUES } from "./world/hunts.ts";
+import { close as closeHunt, HUNTS, huntOf, isleHunts, stageOf, take, CLUES } from "./world/hunts.ts";
 import { FORAGE_MEND } from "./world/nature.ts";
 import { Online, roomCode, uid } from "./net/online.ts";
 import { COOP_MS, HURT_FULL } from "./net/party.ts";
@@ -602,7 +602,11 @@ const meet = {
   keeper: (g: Region, k: number) => { const s = sections(g)[k]!; setOut(g, "keeper", { id: s.keeper, level: s.level }, k); },
   /** Pack p's lair on its island: who pack.json says waits there, met as a wild one (the island has no trail to clear),
    *  in the pocket's look. */
-  lair: (p: Pack) => setOut(isleRegion(p), "wild", { id: p.lair.foe, level: p.lair.level, at: lairLook(p) }),
+  lair: (p: Pack) => {
+    // Its board's contract, every sign read: the one in the lair is the one on the board, and beating or binding it closes it.
+    const h = isleHunts(p).find((c) => !!journey && stageOf(journey, c.id) === CLUES);
+    setOut(isleRegion(p), "wild", { id: p.lair.foe, level: p.lair.level, at: lairLook(p), ...(h && { hunt: h.id, title: h.title }) });
+  },
 };
 /** A pack's island as a fight's region: its name on the intro and the bind, region number ISLE_N, no trail. */
 const isleRegion = (p: Pack): Region => ({ n: ISLE_N, id: p.id, name: p.name, block: p.name, tier: p.tier, biome: "tundra", folklore: [] });
@@ -641,7 +645,7 @@ const world = worldView(scene, camera, {
       }
       // A sighting board: the first visit takes its contract and plays the report; after that, where it stands.
       if (p.kind === "board") {
-        const h = HUNTS.get(p.id), st = stageOf(journey, p.id);
+        const h = huntOf(p.id), st = stageOf(journey, p.id);
         if (!h) return;
         if (st === undefined) {
           take(journey, p.id); saveJourney(); online?.hunt(p.id, 0);
@@ -658,7 +662,11 @@ const world = worldView(scene, camera, {
       }
       const fresh = lightFire(journey, p), mended = heal(journey); saveJourney();
       if (p.id === WITCH_CAMP) sitWithWitch();
-      else if (fresh) { const n = world.state().region; say("campfire", { n, regionId: REGIONS[n - 1]?.id }); }
+      else if (fresh) {
+        // An island's fire is the island's (its pack id is the Book's region), not the port region the boat left from.
+        const { region: n, isle } = world.state(), pk = isle && PACKS.find((q) => q.id === isle.id);
+        say("campfire", pk ? { n, regionId: pk.id, region: pk.name } : { n, regionId: REGIONS[n - 1]?.id });
+      }
       const rested = mended ? ` ${mended} mended.` : "";
       return (fresh ? "Campfire lit. You rest, and the journey is saved." : "You rest by the fire. Saved.") + rested + night();
     },
@@ -1642,7 +1650,7 @@ function tripOver(m: Match, bound: boolean, how: string) {
     if (t.kind === "mythic") deed(j, bound ? "mythic-bound" : "mythic-loose");
     if (bound && !repeat && boundCount(j) === 8) deed(j, "binds-8");
     if (bound && !repeat && boundCount(j) === 16) deed(j, "binds-16");
-    if (t.foe.hunt && closeHunt(j, t.foe.hunt)) { deed(j, "hunt-closed"); lines.push(`The sighting is closed: ${esc(t.foe.title ?? foe.name)} won't trouble ${esc(sections(t.region)[HUNTS.get(t.foe.hunt)?.k ?? 0]!.name)} again.`); }
+    if (t.foe.hunt && closeHunt(j, t.foe.hunt)) { deed(j, "hunt-closed"); lines.push(`The sighting is closed: ${esc(t.foe.title ?? foe.name)} won't trouble ${esc(HUNTS.has(t.foe.hunt) ? sections(t.region)[HUNTS.get(t.foe.hunt)!.k]!.name : t.region.name)} again.`); }
     else if (t.kind === "wild" && !bound) lines.push(`It runs off into the trees. You cannot bind a beast that is knocked out. Next time, get its health under ${Math.round(bindBelow(false) * 100)}%. Then press ${esc(bindKey())} before it falls.`);
     if (bound) outcome = { kind: "bound", item: boundCount(j), repeat };
     if (bound) back = { kind: "bound", repeat };

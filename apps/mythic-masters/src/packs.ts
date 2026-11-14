@@ -34,6 +34,9 @@ const triple = <T>(g: Guard<T>): Guard<[T, T, T]> => (v) => { const [a, b, c] = 
 /** [month, day]: day is checked against 31 only, so 30 February passes and simply never comes. */
 const MonthDay = (v: unknown): [number, number] => { const [m, d] = pair(int(1, 31))(v); if (m > 12) throw new Bad("a month from 1 to 12"); return [m, d]; };
 const Pair = pair(num(-1e6, 1e6)), Triple = triple(num(-1e3, 1e3));
+/** A line in the director's voice: "Who: what". */
+const Line = str(300, { re: /^[A-Z][A-Za-z .'-]{0,24}: \S/ });
+const UV = pair(num(0, 1));
 
 /** Licences we can ship: the ones the bestiary cards take (test/cards.test.ts). */
 export const OPEN_LICENCE = /^(Public domain|CC0|No restrictions|KOGL Type 1|CC BY(-SA)? [1-4]\.\d)$/;
@@ -49,6 +52,9 @@ export const PackJson = obj({
   /** Its lair: the poi.json place it opens at, and who waits in it (a roster id) at what level. It fights in the
    *  pocket's look (lairLook). */
   lair: obj({ place: str(80), foe: id, level: int(1, 100) }),
+  /** Its sighting board's contract (world/hunts.ts isleHunt): the poi.json board it is pinned to, who saw it, what they
+   *  call it, the report, and three signs across the island that lead from the board to the lair. */
+  board: opt(obj({ place: str(80), witness: str(24), title: str(80), report: arr(Line, 6, { min: 1 }), signs: arr(obj({ at: UV, sign: str(160) }), 3, { min: 3 }) })),
   events: arr(id, 12),
   fighters: Fighters,
   credits: arr(Credit, 50),
@@ -70,10 +76,7 @@ export const PocketJson: Guard<Pocket> = obj({
   critters: arr(obj({ kind: oneOf(critters), n: int(1, 200) }), 8),
 });
 
-/** A line in the director's voice: "Who: what". */
-const Line = str(300, { re: /^[A-Z][A-Za-z .'-]{0,24}: \S/ });
 const KINDS = ["tape", "fire", "landmark", "board", "cabin"] as const satisfies readonly PoiKind[];
-const UV = pair(num(0, 1));
 export const PoiJson = arr(obj({ kind: oneOf(KINDS), name: str(80), at: UV, tape: opt(obj({ title: str(80), lines: arr(Line, 12, { min: 1 }) })) }), 60, { min: 1 });
 export const DirectorJson = obj({ crossing: arr(Line, 20, { min: 1 }), arrival: arr(Line, 20, { min: 1 }), leaving: arr(Line, 20, { min: 1 }) });
 

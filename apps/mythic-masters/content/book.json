@@ -220,6 +220,24 @@
     ]
   },
   {
+    "id": "fire-yule",
+    "beat": "campfire",
+    "region": "yule-isle",
+    "ask": "An island fire. Keep it lit all night, the shop lady said. Did you get anything new to wear this year?",
+    "replies": [
+      {
+        "id": "new",
+        "say": "New socks.",
+        "book": "Good. Wear them where the windows can see you. Something here checks."
+      },
+      {
+        "id": "old",
+        "say": "Nothing new.",
+        "book": "Then sit close to the fire and close to me. I am leather. Leather counts, I think."
+      }
+    ]
+  },
+  {
     "id": "end-1",
     "beat": "trail-end",
     "ask": "The end of the trail. {mythic} is ahead, and it has heard about you. Not from me. Mostly.",
