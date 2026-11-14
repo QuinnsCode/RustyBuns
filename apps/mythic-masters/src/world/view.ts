@@ -24,7 +24,7 @@ import { lifeView, type LifeEvent } from "./life.ts";
 import { DAWN_HOUR, DAY, daylight, hourAt, weather, wind, type Patch as Forage, type Weather } from "./nature.ts";
 import type { Ambient } from "./ambience.ts";
 import { fireSpot, ISLE_N, isleLair, islePlaces, LAIR_R, marked, poiById, shelterAt, SHELTER_R, type Poi, type Shelter } from "./poi.ts";
-import { glow as lampGlow, lantern, LANTERN_OUT, lightsNear, nightOf, safePaths, stalk, toSafety, type Light, type Night } from "./night.ts";
+import { darkSounds, glow as lampGlow, lantern, LANTERN_OUT, lightsNear, nightOf, safePaths, stalk, toSafety, type Light, type Night } from "./night.ts";
 import { HUNTS, isleHunts, stageOf, waiting } from "./hunts.ts";
 import { beside, BOARD, DEEP, DOORSTEP, line as townLine, onLot, outside, roomAt, step as townStep, toLocal, toWorld, TOWNS, type Town } from "./towns.ts";
 import { buildTown } from "./town-view.ts";
@@ -786,6 +786,13 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
       toast(`${icon("triangle-alert")} A shriek out in the dark. Gary's lantern goes out. Run: back to the lights.`);
       if (safeD > 0) dread = Math.max(dread, 0.5);
     }
+  }
+
+  /** The dark's sounds (night.ts darkSounds): how near the nearest of the six night ones roams. */
+  function darkNow() {
+    let d = Infinity;
+    for (const { c } of roamers.values()) if (NIGHT.has(c.id)) d = Math.min(d, Math.hypot(c.x - me.x, c.z - me.z));
+    return darkSounds(dark, !!shelter, safeD, dread, d);
   }
 
   const shelterLine = (h: Shelter) => h.id.startsWith("arena:") ? `${icon("shield")} The arena's ring keeps them off. They wait outside it.`
@@ -1613,7 +1620,7 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
     /** While on, walking into a wild one starts no fight (they still roam): for a measured walk, scripts/walk-budget.ts. */
     peace(on: boolean) { peace = on; },
     /** What is round you, for the soundscape (src/world/ambience.ts). */
-    ambient: (): Ambient => ({ wind: wind(clock), rain: W.rain + W.snow * 0.2, night: L.night, birds: life.birds, flush: life.flushed, shrieks, water: clamp(riverAt(me.x, me.z) * 2.5, 0, 1) }),
+    ambient: (): Ambient => ({ wind: wind(clock), rain: W.rain + W.snow * 0.2, night: L.night, birds: life.birds, flush: life.flushed, shrieks, water: clamp(riverAt(me.x, me.z) * 2.5, 0, 1), ...darkNow() }),
     state: () => {
       const g = regionN(me.region), open = openRegions(beaten);
       return { region: g.n, name: g.name, tier: g.tier, x: +me.x.toFixed(1), z: +me.z.toFixed(1), explored: +explored(seen, g.n).toFixed(3),
@@ -1622,7 +1629,7 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
         ground: { loaded: stream.loaded(), tiles: landStats(), patches: { near: near.at, mid: mid.at, far: far.at, dirty: [near.dirty, mid.dirty, far.dirty], lift: +lf(me.x, me.z).toFixed(3), water: +waterLevel(me.x, me.z).toFixed(2), ground: +fineY(me.x, me.z).toFixed(2), drawn: +groundY(me.x, me.z).toFixed(2) } }, section: trekAt.band, wilds: [...roamers.values()].map(({ c }) => ({ id: c.id, level: c.level, x: +c.x.toFixed(1), z: +c.z.toFixed(1) })),
         bearer: bearer && { id: bearer.id, colour: bearer.colour, trail: bearer.stones, gait: bearer.gait }, friends: [...friends].map(([id, o]) => ({ id, colour: o.b.colour, trail: o.b.stones, team: o.team.map((t) => t.c.id) })),
         plants: plants.spots, far: plants.far, tufts: plants.tufts, litter: litter.pieces, motes: life.motes, wading: waterLevel(me.x, me.z) - fineY(me.x, me.z) > WADE_DEPTH, gait, depth: +(waterLevel(me.x, me.z) - fineY(me.x, me.z)).toFixed(2),
-        night: tonight && { night: tonight.night, houses: tonight.houses.map((h) => h.id), paths: tonight.paths.length, boss: tonight.boss, safe: +safeD.toFixed(1), dread: +dread.toFixed(2), stalker: stalker?.id ?? null, lamps: lamp[0].count, gary: gary && { t: +gary.t.toFixed(1), x: +gary.x.toFixed(1), z: +gary.z.toFixed(1), off: !!gary.to, lantern: +lantern(gary.out ?? -1).toFixed(2) } },
+        night: tonight && { night: tonight.night, houses: tonight.houses.map((h) => h.id), paths: tonight.paths.length, boss: tonight.boss, safe: +safeD.toFixed(1), dread: +dread.toFixed(2), stalker: stalker?.id ?? null, lamps: lamp[0].count, sounds: darkNow(), gary: gary && { t: +gary.t.toFixed(1), x: +gary.x.toFixed(1), z: +gary.z.toFixed(1), off: !!gary.to, lantern: +lantern(gary.out ?? -1).toFixed(2) } },
         day: { hour: +L.hour.toFixed(2), dark, shelter: shelter?.id ?? null, wind: +wind(clock).toFixed(2), rain: +W.rain.toFixed(2), snow: +W.snow.toFixed(2), mist: +W.mist.toFixed(2) }, life: life.state(), places: places.state(g.n), hunts: places.hunts(g.n),
         town: inside && { id: inside.t.id, name: inside.t.name, x: +inside.at.x.toFixed(2), z: +inside.at.z.toFixed(2), room: roomAt(inside.at)?.id ?? null, near: inside.near, board: BOARD.read, people: inside.t.people.map((p) => ({ id: p.id, who: p.who, ...p.at })) },
         sailing, ports: ports.map((p) => ({ id: p.p.id, x: p.slip.x, z: p.slip.z, d: +Math.hypot(me.x - p.slip.x, me.z - p.slip.z).toFixed(1) })),
