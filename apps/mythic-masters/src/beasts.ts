@@ -351,6 +351,9 @@ export class Puppet {
   /** A blow's squash along the body (front to back), slower and bigger than the jolt: -1 flattened, rebounding past 0. */
   private blow = 0;
   private blowV = 0;
+  /** The whiplash: the head and chest thrown back off a blow, fast (it peaks on the next frame or two), before the slower curl folds the body over it. */
+  private snap = 0;
+  private snapV = 0;
   private prevStun = 0;
   private stagger = 0;   // a big hit's shove back: 1 on a heavy blow, easing off while the body rocks away from it
   /** The knockback: a blow throws the body back off the striker (metres along `kbDir`) and it skids back to where the sim has it. */
@@ -627,7 +630,7 @@ export class Puppet {
       pitch -= Math.sin(tick * 0.32) * (0.05 + 0.05 * this.upright);
     }
     // contact: a fresh hit (stun jumps up) squashes the body along the blow, then it springs back past rest
-    if (f.stun > this.prevStun + 1) { this.joltV = -9; this.blowV = -(3 + 5 * Math.min(1, (f.stun - this.prevStun) / 22)); }
+    if (f.stun > this.prevStun + 1) { this.joltV = -9; this.blowV = -(3 + 5 * Math.min(1, (f.stun - this.prevStun) / 22)); this.snapV = 14 + 16 * Math.min(1, (f.stun - this.prevStun) / 22); }
     if (f.stun > this.prevStun + 8) this.stagger = Math.min(1, (f.stun - this.prevStun) / 22);
     if (f.stun > this.prevStun + 1 && look) {
       const dx = f.pos.x - look.x, dz = f.pos.z - look.z, d = Math.hypot(dx, dz) || 1;
@@ -645,6 +648,8 @@ export class Puppet {
     const bdt = Math.min(dt, 1 / 30);
     this.blowV += (-70 * this.blow - 2 * 0.3 * Math.sqrt(70) * this.blowV) * bdt;
     this.blow = Math.max(-0.8, this.blow + this.blowV * bdt);
+    this.snapV += (-160 * this.snap - 2 * 0.5 * Math.sqrt(160) * this.snapV) * bdt;
+    this.snap = Math.min(1, this.snap + this.snapV * bdt);
     // anticipation: the wind-up squats and widens, the strike stretches tall and thin
     const sq = (wind * (1 - mk) * (0.05 + wt * 0.06) - mk * (0.04 + wt * 0.03)) * A.amp - this.jolt * 0.16;
     this.sec.step(dt);
@@ -665,7 +670,7 @@ export class Puppet {
     this.leanV += (lk * (pitch - this.lean) - ld * this.leanV) * ldt;
     this.lean += this.leanV * ldt;
     // a roll is one full tumble forward on top of the lean
-    this.pivot.rotation.set(roll, twist, this.lean - curl * 0.32 - (off?.kind === "roll" ? offE * Math.PI * 2 : 0));
+    this.pivot.rotation.set(roll, twist, this.lean - curl * 0.32 + this.snap * 0.22 - (off?.kind === "roll" ? offE * Math.PI * 2 : 0));
     g.position.set(f.pos.x, f.pos.y, f.pos.z);
     // a real meet: the sim lands a melee blow up to a metre short of the other body, so the striker's whole body slides
     // the rest of the way on the strike and holds there while the move is live (the contact stop below then jars it),
@@ -816,8 +821,8 @@ export class Puppet {
       this.tmp.set(look.x, look.y, look.z).applyMatrix4(this.inv).sub(this.head[0]!.rest);
       if (this.tmp.x > 0) this.look.set(0, Math.max(-1, Math.min(1, this.tmp.y / (this.tmp.length() || 1))), Math.max(-1, Math.min(1, this.tmp.z / (this.tmp.length() || 1)))).multiplyScalar(0.08 * h);
     }
-    this.look.x += (past * 0.3 + lunge * 0.12 + jab * 0.1 + rear * 0.04 - back * 0.08 - stunK * 0.06 + curl * 0.16) * h;
-    this.look.y -= curl * 0.12 * h;
+    this.look.x += (past * 0.3 + lunge * 0.12 + jab * 0.1 + rear * 0.04 - back * 0.08 - stunK * 0.06 + curl * 0.06 - this.snap * 0.3) * h;
+    this.look.y += (this.snap * 0.14 - curl * 0.12) * h;
     this.look.y += (rear * 0.08 - lunge * 0.04 + (upward && !grounded ? k * 0.1 : 0) + stunK * 0.08 - (f.state === "guard" ? 0.06 : 0)) * h;
     if (pose?.fx === "breath" && pose.k > 0) this.look.z += Math.sin(tick * 0.45) * 0.1 * pose.k * h;
     if (pose?.fx === "beam" && pose.k > 0) this.look.z += Math.sin(tick * 2.1) * 0.012 * h;
