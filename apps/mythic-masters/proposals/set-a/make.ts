@@ -418,7 +418,7 @@ function sphinx() {
     // bent legs (elbows and knees out of the straight), the breast lifted, the neck upright like a man's
     pose: {
       chest: [0, -0.1], belly: [0, -0.14], hip: [0, -0.14], l_shoulder: [0, -0.12, 0.03], l_hipj: [0, -0.15, 0.02],
-      l_elbow: [-0.03, -0.12, 0.04], l_wrist: [0.03, -0.02, 0.03], l_knee: [-0.1, -0.1, 0.03], l_hock: [0, -0.04, 0.02],
+      l_elbow: [-0.03, -0.12, 0.04], l_wrist: [0.03, -0.02, 0.03], l_knee: [-0.06, -0.08, 0.03], l_hock: [-0.05, 0.04, 0.02], l_bfoot: [0.05, 0, 0],
       neck: [-0.02, 0.06], head: [-0.06, 0.24], snout: [-0.06, 0.24],
     },
     ears: { len: 0.05, width: 0.05, dir: [0, 1, 1], cup: 0, tilt: 0, fold: 0 }, eyes: "two",
@@ -439,22 +439,28 @@ function sphinx() {
   // top, swelling at the forearm and gaskin, and tapering to a slim wrist and hock over the big paw
   const leg = /^[lr]_(shoulder|elbow|wrist|ffoot|hipj|knee|hock|bfoot)$/;
   b.blobs = b.blobs.filter((x) => !(leg.test(x.at) && (x.rot || /elbow|hock/.test(x.at))));
+  // a lion's hind leg: the thigh down and forward to the knee, the gaskin back at about 45 degrees to a high hock,
+  // then the cannon nearly upright to the paw (no zig-zag back out under the body)
+  b.nodes.l_knee = [s(-0.42), s(0.44), b.nodes.l_knee![2], 0];
+  b.nodes.l_hock = [s(-0.59), s(0.25), b.nodes.l_hock![2], 0];
   for (const n of ["l_elbow", "l_wrist", "l_knee", "l_hock"]) { const p = b.nodes[n]!; b.nodes[n] = [p[0], p[1], p[2], s(0.025)]; }
   b.blobs.push(
     // the shoulder blade, a flat plate standing up over the foreleg, and a round haunch over the hind leg, both
     // sunk into the body so they shape it rather than sit on it as lumps
     ...pair("l_shoulder", [s(0), s(0.07), s(-0.01)], [s(0.13), s(0.2), s(0.07)]),
-    ...pair("l_hipj", [s(0.02), s(0.07), s(-0.01)], [s(0.17), s(0.17), s(0.12)]),
+    ...pair("l_hipj", [s(0.0), s(0.02), s(-0.005)], [s(0.19), s(0.21), s(0.13)]),
   );
   b.parts.push(
     { kind: "limb", along: ["l_shoulder", "l_elbow", "l_wrist", "l_ffoot"], radii: [s(0.14), s(0.1), s(0.065), s(0.06)], depth: 1.3, calf: 0.22, shoulder: 0.25, elbow: 0.12, skin: true, mirror: true, material: "fur" },
-    { kind: "limb", along: ["l_hipj", "l_knee", "l_hock", "l_bfoot"], radii: [s(0.16), s(0.1), s(0.06), s(0.058)], depth: 1.3, calf: 0.2, shoulder: 0, elbow: 0.08, skin: true, mirror: true, material: "fur" },
+    { kind: "limb", along: ["l_hipj", "l_knee", "l_hock", "l_bfoot"], radii: [s(0.17), s(0.14), s(0.06), s(0.05)], depth: 1.15, calf: 0.3, calf_at: 0.6, shoulder: 0, elbow: 0, skin: true, mirror: true, material: "fur" },
   );
-  // big paws: the paw's height and its toe pads go by the foot node's radius, so a fat node makes a deep, round paw
+  // big paws: the paw's height and its toe pads go by `r` (the foot node's radius unless set), so a big `r` makes a
+  // deep, round paw. The hind node stays slim: a fat one swells the skin from the hock down into a block. Fore and
+  // hind paws are one size, so the hind legs don't end in paddles beside the forepaws
   for (const n of ["l_ffoot", "l_bfoot"]) {
-    const p = b.nodes[n]!, y = f4(p[1] + s(0.03));
-    b.nodes[n] = [p[0], y, p[2], s(0.07)];
-    for (const q of b.parts) if (q.kind === "foot" && q.at === n) q.sole = y; // the paw's floor stays on the ground
+    const p = b.nodes[n]!, y = f4(p[1] + s(0.03)), hind = n === "l_bfoot";
+    b.nodes[n] = [p[0], y, p[2], s(hind ? 0.035 : 0.07)];
+    for (const q of b.parts) if (q.kind === "foot" && q.at === n) Object.assign(q, { sole: y, r: s(0.08), tall: 1.8 }); // the floor stays on the ground
   }
   // the hound's head goes (its cranium, muzzle, cheeks, jaw and every face part): a man's head is built in its place
   b.blobs = b.blobs.filter((x) => x.at !== "head");
