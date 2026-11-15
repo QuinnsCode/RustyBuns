@@ -360,6 +360,7 @@ export class MoveFx {
     this.flash(e.rear ? 0xff5040 : WHITE, at, big * (e.rear ? 1.5 : 1), 0.12);
     this.flash(color, at, big * 1.3, 0.14, 0.4); // a big hit's glow was a blob that hid both bodies (#4046 round 5)
     const n = Math.min(26, 6 + damage), sp = 1 + damage / 40;
+    this.star(e.rear ? 0xff5040 : WHITE, color, at, damage);
     // sparks fly out of the wound along the blow, hot white streaks plus a puff of grit off the floor
     const ox = at.x - d.pos.x, oz = at.z - d.pos.z, ol = Math.hypot(ox, oz) || 1;
     for (let i = 0; i < Math.min(10, 3 + Math.round(damage / 6)); i++) {
@@ -473,6 +474,17 @@ export class MoveFx {
       this.v.set(this.rnd() - 0.5, this.rnd() * 0.8, this.rnd() - 0.5).normalize().multiplyScalar((2 + this.rnd() * 4) * speed);
       const shape = GRAIN[field].shape;
       this.spawn(shape, COLOR[field], at, this.v, 0.06 + this.rnd() * 0.08 * speed, 0.35 + this.rnd() * 0.25, { spin: shape === "dot" ? 0 : 6, acc: shape === "chunk" || shape === "shard" ? -9 : 0 });
+    }
+  }
+  /** The contact star: a hot core and crossed spikes of light pinned where the blow met the body, bigger and longer for a
+   * harder blow. It outlives the hit stop, so a frame 0.1 s after the blow still shows where it landed (#4652 round 20). */
+  private star(core: number, color: number, at: V3, damage: number) {
+    const k = Math.min(1, damage / 30), len = 0.7 + k * 1.1, life = 0.22 + k * 0.16;
+    this.flash(core, at, 0.5 + k * 0.6, life, 0.85).grow *= 0.4;
+    for (let i = 0; i < 4; i++) {
+      this.v.set(this.rnd() - 0.5, this.rnd() - 0.5, this.rnd() - 0.5).normalize();
+      const p = this.spawn("streak", i % 2 ? color : core, at, { x: 0, y: 0, z: 0 }, 0.05 + k * 0.04, life, { alpha: 1 });
+      p.vel.set(0, 0, 0); this.aim(p, this.v, len * (0.7 + this.rnd() * 0.5));
     }
   }
   /** Grey-brown grit kicked up low off the ground. */
