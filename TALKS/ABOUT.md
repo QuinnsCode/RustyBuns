@@ -42,6 +42,7 @@ MythBusters: curious, hands-on, human, not a product pitch.
 ## Slide drafts
 
 Talk 1 slide tables live in the doc's "Talk 1 slides" tab. The style is locked: J, black and orange (the owner's pick).
-`drafts/talk1-point1.html` shows ten content options per slide in that style, published as
-https://claude.ai/artifact/9J1LWKbxnYYewFTxdPc6MM (capabilities `db` and `user`). The owner's pick per slide is in its
-`content` collection, one document per slide (`t1-s1` to `t1-s6`): `{ option, note }`.
+`drafts/talk1.html` shows ten content options for each of talk 1's 42 slides in that style, one tab per point (`#p3`
+opens point 3), published as https://claude.ai/artifact/9J1LWKbxnYYewFTxdPc6MM (capabilities `db` and `user`). Option 1
+is always the doc's wording. The owner's pick per slide is in its `content` collection, one document per slide (`t1-s1`
+to `t1-s42`): `{ option, note }`.
