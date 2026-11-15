@@ -353,6 +353,10 @@ export class Puppet {
   private blowV = 0;
   private prevStun = 0;
   private stagger = 0;   // a big hit's shove back: 1 on a heavy blow, easing off while the body rocks away from it
+  /** The knockback: a blow throws the body back off the striker (metres along `kbDir`) and it skids back to where the sim has it. */
+  private kb = 0;
+  private kbV = 0;
+  private readonly kbDir = new THREE.Vector3();
   private lean = 0;
   private leanV = 0;
   /** The strike's follow-through: a spring chasing the strike's extent that overshoots it as it snaps out. */
@@ -555,7 +559,7 @@ export class Puppet {
    * looks at `look` (the other fighter, in the world) and the state poses the body: an attack coils and snaps
    * by its look and the archetype's style, a hit throws it back, a guard and a charge crouch, a dash leans in,
    * flight banks, and a landing squashes. */
-  update(f: Fighter, dt: number, tick: number, look?: { x: number; y: number; z: number }) {
+  update(f: Fighter, dt: number, tick: number, look?: { x: number; y: number; z: number }, foeRadius?: number) {
     FX_TIME.value = performance.now() / 1000;
     const g = this.group, h = this.beast.sheet.height, s = this.scale, A = this.style;
     const grounded = f.onGround && !f.flying;
@@ -625,6 +629,13 @@ export class Puppet {
     // contact: a fresh hit (stun jumps up) squashes the body along the blow, then it springs back past rest
     if (f.stun > this.prevStun + 1) { this.joltV = -9; this.blowV = -(3 + 5 * Math.min(1, (f.stun - this.prevStun) / 22)); }
     if (f.stun > this.prevStun + 8) this.stagger = Math.min(1, (f.stun - this.prevStun) / 22);
+    if (f.stun > this.prevStun + 1 && look) {
+      const dx = f.pos.x - look.x, dz = f.pos.z - look.z, d = Math.hypot(dx, dz) || 1;
+      this.kbDir.set(dx / d, 0, dz / d); this.kbV = 3 + 5 * Math.min(1, (f.stun - this.prevStun) / 22);
+    }
+    const kk = 55, bkdt = Math.min(dt, 1 / 30);
+    this.kbV += (-kk * this.kb - 2 * 0.75 * Math.sqrt(kk) * this.kbV) * bkdt;
+    this.kb = Math.max(0, this.kb + this.kbV * bkdt);
     this.stagger *= Math.exp(-2.5 * dt); // eases off over about 0.4 s, long enough to see the shove
     this.prevStun = f.stun;
     this.joltV += (-120 * this.jolt - 11 * this.joltV) * dt;
@@ -660,9 +671,12 @@ export class Puppet {
     // the rest of the way on the strike and holds there while the move is live (the contact stop below then jars it),
     // and slides back through the recovery. A whiff from further off stays where it is.
     if (look && pose && pose.k > 0 && f.act?.move.delivery.shape === "touch") {
-      const dx = look.x - f.pos.x, dz = look.z - f.pos.z, d = Math.hypot(dx, dz), gap = d - this.radius - this.front * s;
+      // up to the other body's edge, not into it (it stopped at the striker's own radius from the other's centre, so a
+      // wide target swallowed the strike: #4645)
+      const dx = look.x - f.pos.x, dz = look.z - f.pos.z, d = Math.hypot(dx, dz), gap = d - (foeRadius ?? this.radius) - this.front * s;
       if (d > 0.01 && gap > 0 && gap < 1.5) g.position.add(this.tmp.set(dx / d, 0, dz / d).multiplyScalar(gap * pose.k));
     }
+    if (this.kb > 0.001) g.position.addScaledVector(this.kbDir, this.kb);
     if (off) g.position.lerpVectors(this.hang, g.position, offE).y += Math.sin(offE * Math.PI) * 0.25 * f.b.height;
     // the pool stays on the floor and fades as the body rises; gone past the ring's edge, where there's no floor
     const floor = this.ground ?? 0, up = f.pos.y - floor;

@@ -1526,11 +1526,12 @@ function draw(m: Match, alpha: number) {
     for (const w of g.children) if (w.name === "wing") w.rotation.x = f.flying ? Math.sin(m.tick / 4) * 0.5 : 0.9 * Math.sign(w.position.z);
     // A hit flashes white for a few ticks and fades; holding the flash through the stun hid the creature's colours.
     // Peaks well short of white: a full flash washed the hide out to a plaster cast. Invulnerability is a flicker.
-    const struck = moveFx.flashOf(i, m.tick) * 0.28; // bloom spreads it, so it stays low
+    // A faint, quick pulse: the hit reads at the contact point (fx.ts), not as the whole body turning one colour (#4645).
+    const struck = moveFx.flashOf(i, m.tick) ** 2 * 0.1;
     const flash = Math.max(struck, holding(f) > 0 ? 0.3 : f.invuln ? (m.tick % 8 < 4 ? (f.state === "ledge" ? 0.2 : 0.12) : 0) : 0); // brighter in the lip's shadow
     const p = puppets[i];
     // a blow lands as a hot pulse in the hide, not a white wash: white on a grey hide reads as the texture failing
-    if (p) { p.update(f, alpha, m.tick, m.f[foeOf(m, i)]!.pos); p.flash(holding(f) > 0 ? 0xffee88 : struck > 0.01 ? 0xff6a30 : 0xffe8d0, flash); return; }
+    if (p) { const foe = m.f[foeOf(m, i)]!; p.update(f, alpha, m.tick, foe.pos, foe.b.radius); p.flash(holding(f) > 0 ? 0xffee88 : struck > 0.01 ? 0xff6a30 : 0xffe8d0, flash); return; }
     const torso = g.children[0] as THREE.Mesh, mat = torso.material as THREE.MeshStandardMaterial;
     mat.emissive.setHex(holding(f) > 0 ? 0xffee88 : 0xffffff); mat.emissiveIntensity = flash;
   });
@@ -2075,7 +2076,8 @@ function frame(now: number) {
           const o = cur.f[e.by], t = cur.f[e.on], dx = t.pos.x - o.pos.x, dz = t.pos.z - o.pos.z, l = Math.hypot(dx, dz) || 1, push = Math.min(0.45, e.damage / 120);
           shove = { x: (dx / l) * push, z: (dz / l) * push };
         }
-        if (e.damage >= 12) { hitStop = Math.min(0.11, 0.03 + e.damage / 400); acc = 0; } // the sim waits; nothing it decides changes
+        // every clean blow holds the fight a beat, a heavy one longer; the sim waits, nothing it decides changes
+        hitStop = Math.max(hitStop, Math.min(0.13, 0.04 + e.damage / 300)); acc = 0;
       }
       acc -= 1 / HZ;
       if (cur.over) ended(cur);
