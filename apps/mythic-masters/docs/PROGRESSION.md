@@ -1,12 +1,13 @@
 # Story progression: what opens what
 
-How a player gets from the Bog Witch's camp to the far south, as the game plays today (15 Nov 2026). Every rule here
+How a player gets from waking in the pines to the far south, as the game plays today (15 Nov 2026). Every rule here
 is read from the code; the source is named on each one. The illustrated version of this page, with boss cards for
 every region, is the field-guide artifact linked from the PR that added this file.
 
 ## The rules
 
-- **Start.** The Bog Witch offers five starters (hodag, squonk, agropelter, jackalope, tatzelwurm); you take three.
+- **Start.** Tape 1 (the saucer), then the Book opens, says the job and offers the five it caught long ago (hodag,
+  squonk, agropelter, jackalope, tatzelwurm); you take three.
   Only the Pine Barrens is open. (`STARTERS`, `newJourney` in `src/journey.ts`; `reach` in `src/world/world.ts`)
 - **A trail per region.** Each playable region (1-8) is 12 sections in rings round its arena. A keeper stands on each
   section's stone: beat or bind it and the next ring opens. Section 12 is the region's mythic, in its lair.
@@ -48,8 +49,7 @@ Suggested order, lowest level first as far as the roads allow: **1, 2, 3, 5, 4, 
   a team fight. The Lamplighters' first step waits for your first night. (`content/faction-*.json`, `docs/FACTIONS.md`)
 - **The Yule Isle**, 1 Dec to 6 Jan: a boat from the port town in the Great North Woods. Its lair holds Grýla
   (level 28); Krampus, Grýla and the kallikantzaros can be bound there. (`packs/yule-isle`)
-- **Between fights**: the Bog Witch's camp at Leeds Point (her lines soften with each region cleared, `src/witch.ts`),
-  campfires (heal and fast travel), the safe paths at night (`src/world/night.ts`), and the Book's demands
+- **Between fights**: campfires (heal and fast travel), the safe paths at night (`src/world/night.ts`), and the Book's demands
   (`src/demand.ts`).
 
 ## Design notes: what the data shows

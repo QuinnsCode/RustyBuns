@@ -1,4 +1,4 @@
-// The witch's five shadow-boxing on their cards (src/spar.ts): the drills run on the fight's own sim, so a quick
+// The Book's five shadow-boxing on their cards (src/spar.ts): the drills run on the fight's own sim, so a quick
 // beast covers more floor than a heavy one, and no drill ever drops a beast off the ring (a fallen one is an empty window).
 import { expect, test } from "bun:test";
 import { STARTERS } from "../src/journey.ts";

@@ -87,7 +87,7 @@ describe("the book at the head of each compendium chapter (#4166)", () => {
     const j = sunk();
     const before = (["lineup", "bestiary", "regions"] as const).map((ch) => pageLineOf(ch, j).ask);
     expect(before[0]).toStartWith("The Hodag leads.");
-    expect(before[1]).toContain("witch's sheet");
+    expect(before[1]).toContain("my own five");
     expect(before[2]).toStartWith("Not one page written.");
     // play a little: the squonk is hurt, a beast is bound in the first section, and that section's page is written
     j.party[1]!.hp = 0.4;

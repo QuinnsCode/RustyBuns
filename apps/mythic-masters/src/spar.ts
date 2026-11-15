@@ -1,8 +1,8 @@
-// The Bog Witch's five, shadow-boxing on their cards (#4670): each beast in a window on its card, alone, running
+// The Book's five, shadow-boxing on their cards (#4670): each beast in a window on its card, alone, running
 // drills on the fight's own sim (sim.ts), so its pace, its reach and how long a blow takes are the ones it fights
 // with. A drill for each stat, in turn, with a line saying what that stat does; pointing at a stat's word on the
 // radar jumps to its drill. One see-through canvas over the page draws all five (a scissor a card), never five
-// WebGL views, and only while the witch's sheet is up.
+// WebGL views, and only while the Book's page is up.
 import * as THREE from "three";
 import { loadBeast, Puppet } from "./beasts.ts";
 import { FX_AMOUNT } from "./effects.ts";
@@ -122,7 +122,7 @@ export function sparring(roster: readonly Creature[], windows: (id: string) => H
     renderer.setScissorTest(false); renderer.clear(); renderer.setScissorTest(true);
     // one framing for all five, by the tallest, so a small one looks small next to a big one
     const tall = Math.max(...slots.map((s) => s.height), 1);
-    // a dialog or the witch's own words over the sheet: the beasts stay under it
+    // a dialog or the Book's own words over the page: the beasts stay under it
     const covered = !!document.querySelector(":popover-open, dialog[open]");
     for (const s of slots) {
       const el = covered ? null : s.el(), r = el?.getBoundingClientRect();

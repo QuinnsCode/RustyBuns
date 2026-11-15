@@ -1,4 +1,4 @@
-// One page of the tome, shared by every menu screen: the title, the Bog Witch's sheet, the journal, the versus
+// One page of the tome, shared by every menu screen: the title, the Book's five, the journal, the versus
 // picker and its bestiary, a fight's result and the Settings card. Changing screen turns a leaf over: the page you
 // were on swings away on its spine and the next one is under it. The journal's chapters turn through the same leaf.
 // With reduced motion the screens just swap.

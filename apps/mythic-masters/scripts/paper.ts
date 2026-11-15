@@ -59,7 +59,7 @@ export function vellum(size: number, seed: number): Uint8Array {
 // Three small sheets the journal's spread is built from (src/tome.css): the deckle is a mask the page is cut with,
 // nine-sliced so its four edges repeat round any size of page; the gutter is the crease's light and shadow baked
 // from a model of two leaves curving into the spine, with the binding thread showing in it; the bark is the boards
-// the book is bound in ("a book bound in cedar bark", the Bog Witch's sheet), seen round the edge of the leaves.
+// the book is bound in ("a book bound in cedar bark", the Book's five), seen round the edge of the leaves.
 
 /** The deckle sizes: a `size` square nine-sliced at `border`, so each edge's middle is `size - 2 * border` long and
  * repeats (`round`) along the page; the corners are their own. */

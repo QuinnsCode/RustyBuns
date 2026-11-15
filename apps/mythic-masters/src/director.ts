@@ -191,14 +191,14 @@ const lift = (t: number, from: number) => {
 /**
  * Tape 1, though nobody is filming yet: you come to strapped in a chair in the saucer, the greys panic and put you
  * back under; you come to again flat on your back in the pines (the camera on the ground, looking up at two shapes
- * leaning over you), they tell you how much trouble the planet is in, get called home and go up the beam. `at` is
- * where you lie.
+ * leaning over you), they tell you how much trouble the planet is in, get called home and go up the beam, and you
+ * wake alone with the Book on your chest. `at` is where you lie.
  */
 export function abduction(at: Vec3): Scene {
-  // You lie a few steps from your line-up's lead (it stands at `at`), the lens a hand off the ground looking up and
-  // away from it, past the shapes at the sky; then you sit up and there it is.
+  // You lie a few steps from where you will stand (`at`), the lens a hand off the ground looking up past the shapes
+  // at the sky; then you sit up and look down at your chest, where the Book lies. Nobody else is there.
   const ground = { x: at.x - 2.6, y: at.y + 0.35, z: at.z - 2.6 }, up = { x: ground.x - 1, y: at.y + 12, z: ground.z - 2.5 };
-  const sat = { x: ground.x, y: at.y + 1.1, z: ground.z }, ahead = { x: at.x, y: at.y + 1.2, z: at.z };
+  const sat = { x: ground.x, y: at.y + 1.1, z: ground.z }, ahead = { x: ground.x + 0.5, y: at.y + 0.3, z: ground.z + 0.5 };
   const hover = { x: ground.x - 4, y: at.y + HOVER, z: ground.z - 9 }, gone = { x: at.x - 40, y: at.y + 260, z: at.z + 30 };
   const saucerAt = (t: number) => t < 35.8 ? { ...hover, y: hover.y + Math.sin(t * 1.3) * 0.6 } : mix(hover, gone, smooth((t - 35.8) / 1.4));
   // Everything below runs on the script's clock; `clock` stretches it where a line needs reading time.

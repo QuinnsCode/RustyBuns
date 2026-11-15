@@ -13,7 +13,7 @@ const out = resolve(dir);
 mkdirSync(out, { recursive: true });
 const vite = await startVite(resolve(import.meta.dir, ".."));
 const { cdp, stop } = await launchChrome();
-const QUIET = "(() => { const m = mythicMasters; for (const f of [() => m.book.close(), () => m.witch.close(), () => m.director.cut()]) try { f(); } catch {} })()";
+const QUIET = "(() => { const m = mythicMasters; for (const f of [() => m.book.close(), () => m.director.cut()]) try { f(); } catch {} })()";
 interface Seen {
   x: number; z: number; shot: boolean; places: { kind: string; x: number; z: number }[];
   day: { hour: number; dark: boolean; shelter: string | null };

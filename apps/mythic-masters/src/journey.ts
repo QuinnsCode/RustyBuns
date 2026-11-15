@@ -1,4 +1,4 @@
-// The journey: the creature-collecting game around the fights. The Bog Witch offers five starters and you take three; each
+// The journey: the creature-collecting game around the fights. The Book holds five starters and you take three; each
 // playable region is twelve sections on a trail to its mythic (the Jersey Devil at Leeds Point first), wild cryptids
 // roam each section, and the ones you bind go into your line-up or, past that, the Eldritch Journal. The line-up holds
 // three to start and gains a slot for every region's mythic you beat, up to six.
@@ -11,13 +11,13 @@ import { HAND } from "./sections.ts";
 import { Factions } from "./factions/model.ts";
 import LANDING from "../content/landing.json";
 
-/** The five commons the Bog Witch offers; you take three. Ember beats grove, tide beats ember, grove beats tide; the
+/** The five commons the Book caught long ago and offers you; you take three. Ember beats grove, tide beats ember, grove beats tide; the
  * jackalope is the quick odd one out and the tatzelwurm the cold, venomous one. None of them flies, so the Jersey
  * Devil overhead is a real wall. */
 export const STARTERS = ["hodag", "squonk", "agropelter", "jackalope", "tatzelwurm"] as const;
 export const PICKS = 3;
-/** What the witch says over each one the first time (content/landing.json, `bun run cms`); after that, `witchSays`. */
-const WITCH_SAYS: Record<(typeof STARTERS)[number], string> = LANDING.starters;
+/** What the Book says over each one the first time (content/landing.json, `bun run cms`); after that, `bookSays`. */
+const BOOK_SAYS: Record<(typeof STARTERS)[number], string> = LANDING.starters;
 
 /** The line-up: three to start, a slot more for each region's mythic beaten, six at most. */
 export const PARTY_FIRST = 3, PARTY_MAX = 6;
@@ -78,8 +78,10 @@ export const hasTrail = (g: Region) => g.tier === "playable";
  * A save from before the book kept dates has none. */
 export const Caught = obj({ at: num(0, 1e14), where: str(120), level: int(1, 100) });
 export type Caught = Of<typeof Caught>;
-/** Where the starters come from. */
-export const WITCH_SHEET = "the Bog Witch's sheet, Pine Barrens";
+/** Where the starters come from: the Book's own page. */
+export const BOOK_PAGE = "the Book's own page, Pine Barrens";
+/** What a save from before the Book gave out its own five wrote there instead. */
+const OLD_PAGE = "the Bog Witch's sheet, Pine Barrens";
 
 export const Member = obj({
   id: str(64), level: int(1, 100), xp: int(0, 10_000_000),
@@ -145,7 +147,7 @@ export function gainXp(m: Member, foeLevel: number): number {
   return up;
 }
 
-// --- binding: the witch's ink -----------------------------------------------------------------------------------
+// --- binding: the Book's ink -----------------------------------------------------------------------------------
 export const INK = 3; // tries per fight
 /** Health (as a fraction of full) below which a creature can be bound: a wild one when worn down, a mythic when nearly out. */
 export const bindBelow = (mythic: boolean) => (mythic ? 0.3 : 0.45);
@@ -174,8 +176,6 @@ export const Journey = obj({
   sights: arr(str(40), 2000, { drop: true }),
   /** Sighting-board contracts (src/world/hunts.ts, by board id): 0 taken, 1-3 signs read, 4 closed. */
   hunts: opt(rec(int(0, 4), 500)),
-  /** How many regions you had cleared when you last sat at the Bog Witch's camp (src/witch.ts); missing until the first visit. */
-  witch: opt(int(0, 64)),
   /** Nights begun on this journey (src/world/night.ts); missing until the first, which Gary walks with you. */
   nights: opt(int(0, 1_000_000)),
   /** The Book's talks (src/book.ts): which it has had, the reply you gave to each, and what it calls you now. */
@@ -196,18 +196,18 @@ export type Journey = Of<typeof Journey>;
 
 export const SAVE_KEY = "mythic-masters.journey";
 
-/** What the witch says over a starter on her sheet (#4174): her own line the first time; on a journey after that, what
- * became of the one you took from her last time (it led, it came back flat, you shelved it, you never fought it), or
- * that you left it with her. `last` is the journey about to burn. */
-export function witchSays(id: (typeof STARTERS)[number], last: Journey | null): string {
-  if (!last) return WITCH_SAYS[id];
-  const name = creature(id).name, was = [...last.party, ...last.journal].find((m) => m.id === id && m.caught?.where === WITCH_SHEET);
-  if (!was) return `You left the ${name} with me last time. It noticed.`;
+/** What the Book says over a starter on its page (#4174): its own line the first time; on a journey after that, what
+ * became of the one you took last time (it led, it came back flat, you shelved it, you never fought it), or that you
+ * left it in the Book. `last` is the journey about to burn. */
+export function bookSays(id: (typeof STARTERS)[number], last: Journey | null): string {
+  if (!last) return BOOK_SAYS[id];
+  const name = creature(id).name, was = [...last.party, ...last.journal].find((m) => m.id === id && m.caught?.where === BOOK_PAGE);
+  if (!was) return `You left the ${name} in me last time. It noticed.`;
   const lvl = was.level, fresh = lvl <= 5;
   if (last.starter === id) return fresh ? `The ${name} led for you last time and never got past level 5. It wants a second go.`
     : `The ${name} led for you last time. Level ${lvl}, and it came back expecting to lead again.`;
-  if (last.journal.includes(was)) return `You took the ${name}, then shelved it in that book. It came back level ${lvl}, sulking.`;
-  if (hpOf(was) <= 0) return `The ${name} came back to my door flat out. Level ${lvl}. It has not forgiven you.`;
+  if (last.journal.includes(was)) return `You took the ${name}, then shelved it on my back pages. It came back level ${lvl}, sulking.`;
+  if (hpOf(was) <= 0) return `The ${name} came back to me flat out. Level ${lvl}. It has not forgiven you.`;
   // two that never fought don't get the same line: the second pick is bored, the third only came for the walk
   if (fresh) return last.party.indexOf(was) === 1 ? `You took the ${name} and never fought it. It came back level 5 and bored.`
     : `You took the ${name} for the walk and nothing else. Still level 5. Still hungry.`;
@@ -218,12 +218,16 @@ export function witchSays(id: (typeof STARTERS)[number], last: Journey | null): 
 export function newJourney(picks: readonly string[], at = Date.now()): Journey | null {
   const ids = [...new Set(picks)];
   if (ids.length !== PICKS || !ids.every((id) => STARTERS.some((s) => s === id))) return null;
-  return { v: 1, starter: ids[0]!, party: ids.map((id) => ({ id, level: 5, xp: 0, caught: { at, where: WITCH_SHEET, level: 5 } })), journal: [], seen: [...ids], cleared: {}, pages: [], found: [], fires: [], sights: [] };
+  return { v: 1, starter: ids[0]!, party: ids.map((id) => ({ id, level: 5, xp: 0, caught: { at, where: BOOK_PAGE, level: 5 } })), journal: [], seen: [...ids], cleared: {}, pages: [], found: [], fires: [], sights: [] };
 }
 /** A stored journey, or null when it's missing or not one (a broken save starts a new game, it doesn't crash this one). */
 export function loadJourney(text: string | null): Journey | null {
   if (!text) return null;
-  try { return check(Journey, JSON.parse(text)); } catch { return null; }
+  let j: Journey | null;
+  try { j = check(Journey, JSON.parse(text)); } catch { return null; }
+  // the five used to come from someone else's sheet: they were always the Book's
+  for (const m of j ? [...j.party, ...j.journal] : []) if (m.caught?.where === OLD_PAGE) m.caught.where = BOOK_PAGE;
+  return j;
 }
 
 export const cleared = (j: Journey, n: number) => j.cleared[n] ?? 0;

@@ -1313,7 +1313,7 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
     if (e.kind === "arena") hooks.arena(e.region);
     if (e.kind === "wild") hooks.wild(e.region);
   }
-  function wear(c: Creature) {
+  function wear(c: Creature | null) {
     lead = c;
     bearer ??= new Bearer(NO_ID, group, standY, colour);
   }
@@ -1414,10 +1414,10 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
     },
     /** A line from the party (src/net/online.ts), in the world's toast. */
     note: (html: string) => toast(html),
-    /** Walk as the line-up's lead, the rest of it following. */
+    /** Walk as the line-up's lead, the rest of it following; an empty line-up is you alone (a new game's Tape 1). */
     show(party: Creature[]) {
       setTravel(party);
-      wear(party[0]!);
+      wear(party[0] ?? null);
       for (const f of followers) f.dispose();
       // your line-up poses every frame (it is right under the camera), with half the IK iterations (#3709's flame graph)
       followers = party.map((p) => { const w = new Walker3d(creature(p.id), group); w.lod(1, 3); return w; });

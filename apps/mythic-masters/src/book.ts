@@ -42,7 +42,9 @@ export interface Ctx { n?: number; regionId?: string; region?: string; item?: nu
 /** A beat that found something to say: the talk, its lead-in pages, and its line with any callback in front, filled in. */
 export interface Moment { talk: Talk; recall: string | null; lead: string[]; ask: string; ctx: Ctx }
 
-const talkOf = (j: Journey) => (j.talk ??= { heard: [], said: {} });
+/** Whom the Book talks to: a journey, or a new game's opening before there is one (its talk moves into the journey in main.ts begin()). */
+export type Reader = Pick<Journey, "talk">;
+const talkOf = (j: Reader) => (j.talk ??= { heard: [], said: {} });
 /** The ledger's notes on you, newest last. */
 export const notesOf = (j: Journey | null) => j?.talk?.notes ?? [];
 /** A fight ended: lost ones in a row so far (a win resets it). */
@@ -82,7 +84,7 @@ export function agoOf(at: number | undefined, now: number | undefined): string {
 }
 
 /** Fills `{key}`; a capital `{Key}` capitalises what goes in. `at` is the region the recalled reply was given in. */
-function fill(text: string, j: Journey, ctx: Ctx, said = "", at?: number) {
+function fill(text: string, j: Reader, ctx: Ctx, said = "", at?: number) {
   const vars: Record<string, string> = {
     name: ctx.name ?? "you", nick: j.talk?.nick ?? ctx.name ?? "You", item: String(ctx.item ?? 1),
     region: ctx.region ?? "these pines", mythic: ctx.mythic ?? "The mythic", down: ctx.down ?? "One of yours", said,
@@ -95,7 +97,7 @@ function fill(text: string, j: Journey, ctx: Ctx, said = "", at?: number) {
 }
 
 /** The next thing the Book has to say at `beat`, or null when it has said all it has for it (or nothing for this region). */
-export function momentFor(beat: Beat, j: Journey, ctx: Ctx = {}, lines: readonly Talk[] = LINES): Moment | null {
+export function momentFor(beat: Beat, j: Reader, ctx: Ctx = {}, lines: readonly Talk[] = LINES): Moment | null {
   const heard = j.talk?.heard ?? [];
   const open = lines.filter((t) => t.beat === beat && !heard.includes(t.id) && (t.from ?? 1) <= (ctx.n ?? 1) && (!t.region || t.region === ctx.regionId));
   const talk = open.find((t) => t.region) ?? open[0];
@@ -109,7 +111,7 @@ export function momentFor(beat: Beat, j: Journey, ctx: Ctx = {}, lines: readonly
 
 /** You answered: the reply goes in the save (with where you said it, its nickname, its ledger note, its ink and what it
  * asks the Book to want), and the Book's answer comes back. `named` says this reply gave you your first nickname. */
-export function answer(j: Journey, m: Moment, replyId: string): { said: string; named: boolean } | null {
+export function answer(j: Reader, m: Moment, replyId: string): { said: string; named: boolean } | null {
   const r = m.talk.replies.find((x) => x.id === replyId);
   if (!r) return null;
   const t = talkOf(j);

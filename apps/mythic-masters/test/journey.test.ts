@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { tierOf } from "../src/tiers.ts";
-import { bind, bindChance, call, heal, hpOf, MAULED, maul, wound, clearSection, cleared, gainXp, loadJourney, mythicOf, newJourney, nextUp, PARTY_MAX, rest, slots, SECTIONS, sections, STARTERS, TRAIL_REGIONS, WITCH_SHEET, witchSays } from "../src/journey.ts";
+import { bind, bindChance, call, heal, hpOf, MAULED, maul, wound, clearSection, cleared, gainXp, loadJourney, mythicOf, newJourney, nextUp, PARTY_MAX, rest, slots, SECTIONS, sections, STARTERS, TRAIL_REGIONS, BOOK_PAGE, bookSays } from "../src/journey.ts";
 import { REGIONS } from "../src/regions.ts";
 import { ROSTER } from "../src/roster.ts";
 import { bandAt, newTrek, pointAt, trailhead, trailWilds, TRAILS, trek, type TrekEvent } from "../src/world/trail.ts";
@@ -21,11 +21,11 @@ function hike(n: number, to: number, done: () => number, from = 0) {
 }
 
 describe("the journey", () => {
-  test("you take three of the Bog Witch's five commons, all at level 5; the Pine Barrens' twelve end at the Jersey Devil", () => {
+  test("you take three of the Book's five commons, all at level 5; the Pine Barrens' twelve end at the Jersey Devil", () => {
     expect(STARTERS.every((id) => tierOf(id) === "common")).toBe(true);
     const j = newJourney(["squonk", "tatzelwurm", "hodag"], 1000)!;
     expect(j.starter).toBe("squonk");
-    expect(j.party).toEqual(["squonk", "tatzelwurm", "hodag"].map((id) => ({ id, level: 5, xp: 0, caught: { at: 1000, where: WITCH_SHEET, level: 5 } })));
+    expect(j.party).toEqual(["squonk", "tatzelwurm", "hodag"].map((id) => ({ id, level: 5, xp: 0, caught: { at: 1000, where: BOOK_PAGE, level: 5 } })));
     // a bind writes where and when the ink held, at the level it was then; the save keeps it, an old save does without
     expect(bind(j, "mothman", 9, "Point Pleasant, Appalachian hollows", 2000)).toBe("journal");
     expect(j.journal[0]).toEqual({ id: "mothman", level: 9, xp: 0, caught: { at: 2000, where: "Point Pleasant, Appalachian hollows", level: 9 } });
@@ -133,24 +133,26 @@ describe("caught at night (#4387)", () => {
   });
 });
 
-describe("the Bog Witch's sheet on a second journey (#4174)", () => {
-  test("she says what became of each starter you took last time, and that you left the others", () => {
-    expect(witchSays("hodag", null)).toStartWith("A hodag pup");
-    const last = newJourney(["squonk", "hodag", "jackalope"], 1)!;
+describe("the Book's five on a second journey (#4174)", () => {
+  test("it says what became of each starter you took last time, and that you left the others", () => {
+    expect(bookSays("hodag", null)).toStartWith("A hodag pup");
+    // a save from before the Book gave out its own five wrote the starters down as the old sheet's: they still count
+    const old = JSON.stringify(newJourney(["squonk", "hodag", "jackalope"], 1)).replaceAll(BOOK_PAGE, "the Bog Witch's sheet, Pine Barrens");
+    const last = loadJourney(old)!;
     last.party[0]!.level = 14;
     last.party[1]!.hp = 0;
     last.party[1]!.level = 9;
-    const said = Object.fromEntries(STARTERS.map((id) => [id, witchSays(id, last)]));
+    const said = Object.fromEntries(STARTERS.map((id) => [id, bookSays(id, last)]));
     expect(said).toEqual({
       squonk: "The Squonk led for you last time. Level 14, and it came back expecting to lead again.",
-      hodag: "The Hodag came back to my door flat out. Level 9. It has not forgiven you.",
+      hodag: "The Hodag came back to me flat out. Level 9. It has not forgiven you.",
       jackalope: "You took the Jackalope for the walk and nothing else. Still level 5. Still hungry.",
-      agropelter: "You left the Agropelter with me last time. It noticed.",
-      tatzelwurm: "You left the Tatzelwurm with me last time. It noticed.",
+      agropelter: "You left the Agropelter in me last time. It noticed.",
+      tatzelwurm: "You left the Tatzelwurm in me last time. It noticed.",
     });
     // one moved off the line-up into the journal is still one you took
     last.journal.push(last.party.splice(2, 1)[0]!);
-    expect(witchSays("jackalope", last)).toBe("You took the Jackalope, then shelved it in that book. It came back level 5, sulking.");
+    expect(bookSays("jackalope", last)).toBe("You took the Jackalope, then shelved it on my back pages. It came back level 5, sulking.");
     for (const s of Object.values(said)) expect(s.length).toBeLessThan(95);
   });
 });
