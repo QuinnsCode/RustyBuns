@@ -48,6 +48,7 @@ import { LORE } from "./lore.ts";
 import { Bout, circleLineOf, handOf, knownOf, PAGE_INK, poolOf, ribbonsOf, summon, type Summoned } from "./grimoire.ts";
 import { deckDemandOf, demandOf, pageLineOf, reactionOf, settingsLineOf, SIGNATURE, thumbAt, worldLineOf, type Back, type Outcome } from "./demand.ts";
 import { tierOf } from "./tiers.ts";
+import { menuDir, menuStep } from "./menu-nav.ts";
 import { book, cardTurn, fly, penSound, pressed, soak, thumb, turnLeaf } from "./page.ts";
 import { emblem, frame as ring, inkUrl, seal, tear } from "./ornaments.ts";
 import { quill } from "./quill.ts";
@@ -709,6 +710,11 @@ const world = worldView(scene, camera, {
   },
 });
 worldUp = true;
+/** The menu page open now (the title, the witch's sheet, a result note, the versus book), when no fight, walk, scene or compendium has the keys. */
+function menuPage(): HTMLElement | null {
+  if ((m && !m.over) || world.shown || journalOpen || director.skippable) return null;
+  return pages.open();
+}
 /** Close the fight and the cut-scene, and turn to `page` (or close the book on the scene). */
 function hideScreens(page: HTMLElement | null = null) { director.cut(); pending = null; $("#hud").hidden = true; pages.show(page); }
 function enterWorld() {
@@ -1062,7 +1068,9 @@ $("#starterCards").addEventListener("click", (e) => {
   if (!id) return;
   const at = chosen.indexOf(id);
   if (at >= 0) chosen.splice(at, 1); else if (chosen.length < PICKS) chosen.push(id);
+  const keyed = (e as MouseEvent).detail === 0; // Enter, Space or a pad's A, not a click: the focus stays on the card
   showStarters();
+  if (keyed) $("#starterCards").querySelector<HTMLElement>(`.starter[data-id="${CSS.escape(id)}"]`)?.focus();
 });
 $("#setOut").addEventListener("click", () => begin(chosen));
 
@@ -1348,6 +1356,8 @@ window.addEventListener("keydown", (e: KeyboardEvent) => {
   const id = actionOf(e.code); // the key pressed, as the action it is bound to
   if (id === "journal" && (world.shown || journalOpen)) { e.preventDefault(); openJournal(); return; }
   if (journalOpen && !e.repeat && !(e.target instanceof HTMLInputElement) && journalKey(e)) { e.preventDefault(); return; }
+  const page = menuPage(), dir = page && !(e.target instanceof HTMLInputElement) ? menuDir(e.code) : null;
+  if (page && dir) { e.preventDefault(); menuStep(page, dir); return; } // a menu: the arrows walk its buttons, Enter or Space presses one
   if (id === "bind" && m && !m.over && !e.repeat) tryBind();
   keys.add(e.code);
   if (m && !m.over && id && id !== "journal") e.preventDefault(); // Space, the arrows, ; and ' don't scroll or search the page
@@ -1457,6 +1467,19 @@ function padEdges() {
     for (const i of down) { const c = PAD_NAV[i]; if (c) now.add(c); }
     if (Math.abs(left.y) > 0.6) now.add(left.y < 0 ? "up" : "down"); else if (Math.abs(left.x) > 0.6) now.add(left.x < 0 ? "left" : "right");
     for (const c of now) if (c !== "start" && c !== "bind" && !padHeld.has(c)) journalNav(c as Dir | "ok" | "back" | "prev" | "next");
+  }
+  const page = paused ? null : menuPage();
+  if (page) {
+    // a menu: the d-pad or the left stick walks its buttons, A presses the one with the focus
+    const { left } = pad.poll();
+    for (const i of down) { const c = PAD_NAV[i]; if (c === "up" || c === "down" || c === "left" || c === "right" || c === "ok") now.add(`menu-${c}`); }
+    if (Math.abs(left.y) > 0.6) now.add(left.y < 0 ? "menu-up" : "menu-down"); else if (Math.abs(left.x) > 0.6) now.add(left.x < 0 ? "menu-left" : "menu-right");
+    for (const c of now) {
+      if (!c.startsWith("menu-") || padHeld.has(c)) continue;
+      const cmd = c.slice(5);
+      if (cmd === "ok") { const at = document.activeElement; if (at instanceof HTMLElement && page.contains(at)) at.click(); else menuStep(page, "down"); }
+      else menuStep(page, cmd as Dir);
+    }
   }
   padHeld = now;
 }

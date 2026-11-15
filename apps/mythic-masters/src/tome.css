@@ -1359,3 +1359,18 @@ body.in-fight > .gc-dialog { opacity: 0.74; }
 .select.book .slip .row button:is(#cards, #pickerBack) { color: var(--ink-b); font-family: var(--f-hand); text-shadow: 0.45px 0.55px 0 currentColor; }
 .select.book .slip .row button:is(#cards, #pickerBack)::before { content: "or "; font-family: var(--f-book); font-style: italic; font-size: 16px; color: var(--ink-faded); text-shadow: none; text-decoration: none; display: inline-block; margin-right: 5px; }
 .select.book .slip .row { column-gap: 8px; }
+
+/* --- the witch's sheet fills the screen, and Set out is the one big thing to press (#4671) ---------------------- */
+.starters { padding: 16px; display: flex; }
+.starters .sheet { flex: 1; width: 100%; min-height: calc(100dvh - 32px); margin: 0 auto; display: flex; flex-direction: column; }
+.starters .sheet > .five { flex: 1; align-content: center; margin: 12px auto; width: 100%; }
+.starters .card.starter .radar { max-width: 230px; }
+.paper #setOut { display: flex; align-items: center; justify-content: center; gap: 0.4em; align-self: center; margin: 12px auto 0; min-width: min(460px, 100%); padding: 18px 48px; font-size: clamp(24px, 2.6vw, 34px); font-family: var(--f-hand); }
+.paper #setOut svg { width: 1.1em; height: 1.1em; }
+/* a menu walked with the arrows or a pad: the button with the focus is ringed in ink, plain to see */
+.paper button:focus-visible, .title .menu button:focus-visible { outline: 3px solid var(--blood); outline-offset: 4px; }
+.paper .card.starter:focus-visible { transform: none; z-index: 4; }
+/* on a phone the five scroll, and Set out stays under your thumb */
+@media (max-width: 899px) {
+  .paper #setOut { position: sticky; bottom: 12px; z-index: 5; width: 100%; }
+}
