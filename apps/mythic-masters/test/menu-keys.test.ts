@@ -34,7 +34,7 @@ test.skipIf(!chromePath())("a new game from the title to the world on the arrows
     await press("ArrowDown");
     expect(await focused()).toBe("newGame");
     await press("Enter");
-    await until("Tape 1", () => tab.eval<boolean>(`mythicMasters.director.state().beat === "abduction"`));
+    await until("Tape 1", () => tab.eval<boolean>(`mythicMasters.director.state().beat?.id === "abduction"`));
     expect(await tab.eval<boolean>("mythicMasters.journey.state() === null")).toBe(true);
     await Bun.sleep(500);
     await press("Enter");

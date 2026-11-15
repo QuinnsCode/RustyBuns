@@ -717,12 +717,16 @@ function menuPage(): HTMLElement | null {
 }
 /** Close the fight and the cut-scene, and turn to `page` (or close the book on the scene). */
 function hideScreens(page: HTMLElement | null = null) { director.cut(); pending = null; $("#hud").hidden = true; pages.show(page); }
-function enterWorld() {
-  if (!journey) { showStarters(); return; }
+/** The fight's stage (the arena, its beasts) and the screens put away, for the world. */
+function clearStage() {
   for (const o of [arena, ...models, ...puppets.map((p) => p?.group)]) if (o) scene.remove(o);
   arena = null; models = []; puppets = [null, null]; m = null; trip = null;
   moveFx.clear();
   hideScreens();
+}
+function enterWorld() {
+  if (!journey) { showStarters(); return; }
+  clearStage();
   world.show(journey.party.map(asCreature));
   drawTogether();
   history.replaceState(null, "", room ? `?world=1&room=${room}` : partyId ? `?world=1&party=${partyId}` : "?world=1");
@@ -1025,7 +1029,7 @@ function startOpening() {
   burnt = journey; journey = null; opening = {}; chosen.length = 0;
   try { localStorage.removeItem(SAVE_KEY); } catch { /* a private window */ }
   talks.length = 0; talking = null; drawTalk();
-  world.reset(); hideScreens(); world.show([]); // the pines, and nobody in them but you
+  world.reset(); clearStage(); world.show([]); // the pines, and nobody in them but you
   director.play(memories.mark(abduction(world.here()), { id: "abduction", scene: "abduction", title: "Tape 1: the saucer", sub: "Nobody will believe this" }));
   say("open", { n: 1, regionId: REGIONS[0]?.id }); // opens once the tape ends or is skipped
 }
