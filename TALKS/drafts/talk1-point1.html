@@ -1,11 +1,10 @@
 <title>Talk 1 Slide Picks</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@700;900&family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&family=JetBrains+Mono:wght@500;700&family=Caveat:wght@600;700&family=Archivo+Black&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@700;900&family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&family=JetBrains+Mono:wght@500;700&display=swap">
 <style>
-/* Ten drafts of each slide in talk 1, point 1. Each draft is one of ten visual styles (A to J), the same style
-   across every slide, so a column of picks also shows which style could carry the whole deck.
-   Page chrome uses the talks' bakery tokens; each slide draft carries its own fixed palette. */
+/* Talk 1, point 1: ten content options per slide, all in the locked style (J: black, white and orange).
+   Page chrome uses the talks' bakery tokens; the slides keep their own fixed black palette. */
 :root {
   --bg: #fbf4ea; --panel: #fffaf3; --ink: #2a1d14; --quiet: #6e5a4a; --line: #e6d6c2; --rust: #c4521f; --rust-soft: #f6dccb; --sage: #4f7a4a;
   --display: "Unbounded", "Arial Black", system-ui, sans-serif;
@@ -21,11 +20,9 @@ body { background: var(--bg); color: var(--ink); font: 17px/1.5 var(--body); }
 .page { max-width: 1240px; margin: 0 auto; padding-block: 28px 80px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
 .kick { font: 700 13px/1 var(--mono); letter-spacing: 0.12em; text-transform: uppercase; color: var(--rust); }
 h1 { font: 900 clamp(26px, 4vw, 44px)/1.1 var(--display); margin: 10px 0 0; text-wrap: balance; }
-.intro { max-width: 70ch; margin: 12px 0 0; color: var(--quiet); }
+.intro { max-width: 72ch; margin: 12px 0 0; color: var(--quiet); }
+.lock { display: inline-flex; align-items: center; gap: 8px; margin-top: 14px; font: 700 12px/1 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; padding: 8px 12px; border-radius: 999px; background: #0b0b0c; color: #ff7a1a; }
 .status { font: 600 13px/1.4 var(--mono); color: var(--quiet); margin-top: 10px; min-height: 1.4em; }
-.tally { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 14px; }
-.tally span { font: 700 12px/1 var(--mono); padding: 7px 10px; border: 1px solid var(--line); border-radius: 999px; color: var(--quiet); }
-.tally span.on { border-color: var(--rust); color: var(--rust); }
 section.slide-set { margin-top: 44px; }
 .set-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 14px; }
 .set-head h2 { font: 700 clamp(20px, 2.6vw, 28px)/1.2 var(--display); margin: 0; }
@@ -33,7 +30,7 @@ section.slide-set { margin-top: 44px; }
 .says { margin: 6px 0 0; max-width: 80ch; color: var(--quiet); }
 .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px; margin-top: 16px; }
 .card { min-width: 0; display: grid; gap: 6px; }
-.thumb { position: relative; aspect-ratio: 16 / 9; container-type: inline-size; border-radius: 10px; overflow: hidden; border: 2px solid var(--line); cursor: pointer; padding: 0; background: none; width: 100%; display: block; }
+.thumb { position: relative; aspect-ratio: 16 / 9; container-type: inline-size; border-radius: 10px; overflow: hidden; border: 2px solid var(--line); cursor: pointer; padding: 0; background: #0b0b0c; width: 100%; display: block; }
 .thumb:hover { border-color: var(--quiet); }
 .card.is-pick .thumb { border-color: var(--rust); box-shadow: 0 0 0 3px var(--rust-soft); }
 .card-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; font: 600 12px/1.2 var(--mono); color: var(--quiet); }
@@ -44,8 +41,7 @@ section.slide-set { margin-top: 44px; }
 .note::placeholder { color: var(--quiet); }
 :focus-visible { outline: 3px solid var(--rust); outline-offset: 2px; }
 
-/* the large view */
-.big { position: fixed; inset: 0; z-index: 10; background: rgb(0 0 0 / 0.78); display: grid; place-items: center; padding: max(16px, env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-right, 0px)) max(16px, env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px)); }
+.big { position: fixed; inset: 0; z-index: 10; background: rgb(0 0 0 / 0.82); display: grid; place-items: center; padding: max(16px, env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-right, 0px)) max(16px, env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px)); }
 .big[hidden] { display: none; }
 .big-inner { width: min(100%, calc((100vh - 120px) * 16 / 9)); display: grid; gap: 10px; }
 .big .thumb { cursor: default; border: 0; border-radius: 6px; }
@@ -54,103 +50,28 @@ section.slide-set { margin-top: 44px; }
 .big-bar button { font: 700 12px/1 var(--mono); text-transform: uppercase; min-height: 36px; padding: 0 12px; border-radius: 999px; border: 1px solid #fff6; background: transparent; color: #fff; cursor: pointer; }
 .big-bar button.pick-big { background: #f0814b; border-color: #f0814b; color: #1d1611; }
 
-/* ---------- slide drafts: everything below is sized in cqw so a draft looks the same at any width ---------- */
-.s { position: absolute; inset: 0; overflow: hidden; text-align: left; }
-.s svg { display: block; }
-.s .ic { width: 100%; height: 100%; }
-
-/* A · bakery card (the talks' current look) */
-.sA { background: #fbf4ea; color: #2a1d14; padding: 6cqw 7cqw; display: grid; grid-template-columns: 1.15fr 1fr; gap: 3cqw; align-items: center; font-family: var(--body); }
-.sA .k { font: 700 1.3cqw/1 var(--mono); letter-spacing: 0.14em; text-transform: uppercase; color: #c4521f; }
-.sA h3 { font: 900 4.4cqw/1.05 var(--display); margin: 1.4cqw 0 0; letter-spacing: -0.02em; }
-.sA p { font-size: 1.9cqw; line-height: 1.4; margin: 1.6cqw 0 0; }
-.sA .as { font-style: italic; color: #6e5a4a; border-left: 0.5cqw solid #f6dccb; padding-left: 1.2cqw; font-size: 1.6cqw; }
-.sA .v { color: #2a1d14; --ac: #c4521f; --fill: #fffaf3; }
-
-/* B · poster: one line, huge */
-.sB { background: #fff; color: #111; padding: 5cqw 6cqw; display: flex; flex-direction: column; justify-content: center; }
-.sB h3 { font: 400 6.4cqw/0.98 "Archivo Black", "Arial Black", sans-serif; margin: 0; letter-spacing: -0.02em; text-transform: uppercase; }
-.sB p { font: 400 2cqw/1.35 var(--body); margin: 2.4cqw 0 0; max-width: 60%; }
-.sB .bar { width: 12cqw; height: 1.2cqw; background: #e8461e; margin-bottom: 2.4cqw; }
-.sB .v { position: absolute; right: 4cqw; bottom: 4cqw; width: 26cqw; color: #111; --ac: #e8461e; --fill: #fff; }
-
-/* C · chalkboard */
-.sC { background: radial-gradient(circle at 30% 20%, #35553f, #233a2b); color: #f3f1e7; padding: 5cqw 6cqw; font-family: "Caveat", cursive; }
-.sC .k { font-size: 2.6cqw; color: #f6d77a; }
-.sC h3 { font: 700 6cqw/1 "Caveat", cursive; margin: 0.6cqw 0 0; }
-.sC p { font-size: 3cqw; line-height: 1.15; margin: 1.6cqw 0 0; max-width: 58%; }
-.sC .v { position: absolute; right: 4cqw; top: 50%; transform: translateY(-38%); width: 34cqw; color: #f3f1e7; --ac: #f6d77a; --fill: transparent; }
-.sC .frame { position: absolute; inset: 1.4cqw; border: 1.2cqw solid #8a5a33; border-radius: 1cqw; pointer-events: none; }
-
-/* D · lab notebook: question, experiment, result */
-.sD { background-color: #fdfdf8; background-image: linear-gradient(#dfe9f3 1px, transparent 1px), linear-gradient(90deg, #dfe9f3 1px, transparent 1px); background-size: 3cqw 3cqw; color: #1f2a37; padding: 4.5cqw 6cqw 4cqw 9cqw; font-family: var(--body); }
-.sD::before { content: ""; position: absolute; left: 6.6cqw; top: 0; bottom: 0; width: 0.25cqw; background: #e7837c; }
-.sD .k { font: 700 1.4cqw/1 var(--mono); letter-spacing: 0.12em; text-transform: uppercase; color: #2563a8; }
-.sD h3 { font: 700 4cqw/1.1 var(--display); margin: 1.2cqw 0 0; max-width: 62%; }
-.sD p { font-size: 1.9cqw; margin: 1.4cqw 0 0; max-width: 58%; }
-.sD .lab { margin-top: 2cqw; display: grid; gap: 0.8cqw; max-width: 58%; font-size: 1.6cqw; }
-.sD .lab b { font: 700 1.2cqw/1 var(--mono); letter-spacing: 0.1em; text-transform: uppercase; color: #2563a8; margin-right: 1cqw; }
-.sD .v { position: absolute; right: 4.5cqw; top: 50%; transform: translateY(-50%); width: 30cqw; color: #1f2a37; --ac: #2563a8; --fill: #fdfdf8; }
-
-/* E · blueprint */
-.sE { background-color: #1d4f91; background-image: linear-gradient(#ffffff1a 1px, transparent 1px), linear-gradient(90deg, #ffffff1a 1px, transparent 1px); background-size: 4cqw 4cqw; color: #eaf2ff; padding: 5cqw 6cqw; font-family: var(--mono); }
-.sE .k { font: 500 1.4cqw/1 var(--mono); letter-spacing: 0.2em; text-transform: uppercase; opacity: 0.8; }
-.sE h3 { font: 700 3.8cqw/1.15 var(--mono); margin: 1.2cqw 0 0; max-width: 55%; text-transform: uppercase; }
-.sE p { font-size: 1.7cqw; line-height: 1.45; margin: 1.6cqw 0 0; max-width: 50%; opacity: 0.9; }
-.sE .v { position: absolute; right: 4cqw; top: 50%; transform: translateY(-50%); width: 38cqw; color: #eaf2ff; --ac: #ffd166; --fill: transparent; }
-.sE .stamp { position: absolute; right: 3cqw; bottom: 3cqw; border: 0.2cqw solid #eaf2ff99; padding: 0.8cqw 1.2cqw; font-size: 1.1cqw; letter-spacing: 0.1em; text-transform: uppercase; opacity: 0.8; }
-
-/* F · terminal */
-.sF { background: #0f1115; color: #d7dde8; padding: 4cqw 5cqw; font-family: var(--mono); }
-.sF .dots { display: flex; gap: 0.9cqw; margin-bottom: 3cqw; }
-.sF .dots i { width: 1.3cqw; height: 1.3cqw; border-radius: 50%; background: #3a3f4b; }
-.sF .dots i:first-child { background: #ff5f56; } .sF .dots i:nth-child(2) { background: #ffbd2e; } .sF .dots i:nth-child(3) { background: #27c93f; }
-.sF .ln { font-size: 2.1cqw; line-height: 1.6; white-space: pre-wrap; }
-.sF .p { color: #7ee787; } .sF .c { color: #8b949e; } .sF .h { color: #ffa657; font-weight: 700; font-size: 3.6cqw; line-height: 1.2; display: block; margin: 0.6cqw 0 1.2cqw; }
-.sF .cur { display: inline-block; width: 1.2cqw; height: 2.2cqw; background: #d7dde8; vertical-align: -0.3cqw; }
-
-/* G · diagram first: the picture fills the slide, words at the edge */
-.sG { background: #f4f1ec; color: #22201c; font-family: var(--body); }
-.sG .v { position: absolute; left: 50%; top: 46%; transform: translate(-50%, -50%); width: 62cqw; color: #22201c; --ac: #c4521f; --fill: #fff; }
-.sG .cap { position: absolute; left: 5cqw; right: 5cqw; bottom: 3.6cqw; display: flex; justify-content: space-between; align-items: end; gap: 3cqw; }
-.sG h3 { font: 700 2.6cqw/1.15 var(--display); margin: 0; max-width: 60%; }
-.sG p { font-size: 1.5cqw; margin: 0; max-width: 34%; text-align: right; color: #5c564d; }
-
-/* H · split: words on a colour field, picture on white */
-.sH { display: grid; grid-template-columns: 1fr 1fr; font-family: var(--body); }
-.sH .l { background: #c4521f; color: #fff8f0; padding: 5cqw 4cqw 5cqw 5.5cqw; display: flex; flex-direction: column; justify-content: center; }
-.sH .k { font: 700 1.3cqw/1 var(--mono); letter-spacing: 0.14em; text-transform: uppercase; opacity: 0.85; }
-.sH h3 { font: 900 3.9cqw/1.05 var(--display); margin: 1.4cqw 0 0; }
-.sH p { font-size: 1.8cqw; line-height: 1.4; margin: 1.6cqw 0 0; }
-.sH .r { background: #fffaf3; display: grid; place-items: center; padding: 4cqw; }
-.sH .v { width: 100%; color: #2a1d14; --ac: #c4521f; --fill: #fffaf3; }
-
-/* I · comic panel */
-.sI { background: #ffe14d; padding: 2.4cqw; font-family: "Caveat", cursive; }
-.sI .panel { position: absolute; inset: 2.4cqw; background: #fff; border: 0.6cqw solid #111; border-radius: 0.6cqw; overflow: hidden; }
-.sI .bubble { position: absolute; left: 4cqw; top: 3.6cqw; max-width: 52%; background: #fff; border: 0.45cqw solid #111; border-radius: 3cqw; padding: 2cqw 2.6cqw; }
-.sI .bubble::after { content: ""; position: absolute; left: 6cqw; bottom: -2.6cqw; border: 1.3cqw solid transparent; border-top: 1.6cqw solid #111; }
-.sI h3 { font: 700 4.4cqw/1 "Caveat", cursive; margin: 0; color: #111; }
-.sI .capb { position: absolute; left: 0; bottom: 0; right: 0; background: #111; color: #ffe14d; font: 700 1.9cqw/1.3 var(--body); padding: 1.4cqw 3cqw; }
-.sI .v { position: absolute; right: 4cqw; top: 6cqw; width: 34cqw; color: #111; --ac: #e8461e; --fill: #fff; }
-
-/* J · black, white and orange */
-.sJ { background: #0b0b0c; color: #f5f5f4; padding: 5.5cqw 6cqw; font-family: var(--body); }
-.sJ .k { font: 700 1.3cqw/1 var(--mono); letter-spacing: 0.16em; text-transform: uppercase; color: #ff7a1a; }
-.sJ h3 { font: 900 4.6cqw/1.04 var(--display); margin: 1.4cqw 0 0; max-width: 64%; letter-spacing: -0.02em; }
-.sJ h3 em { font-style: normal; color: #ff7a1a; }
-.sJ p { font-size: 1.8cqw; line-height: 1.45; margin: 1.8cqw 0 0; max-width: 52%; color: #b8b8b4; }
-.sJ .v { position: absolute; right: 4.5cqw; bottom: 5cqw; width: 30cqw; color: #f5f5f4; --ac: #ff7a1a; --fill: #0b0b0c; }
-
+/* ---------- the locked style, J: black, white and orange. Sized in cqw so a slide looks the same at any width ---------- */
+.s { position: absolute; inset: 0; overflow: hidden; text-align: left; background: #0b0b0c; color: #f5f5f4; font-family: var(--body); padding: 5.5cqw 6cqw; }
+.s .k { font: 700 1.3cqw/1 var(--mono); letter-spacing: 0.16em; text-transform: uppercase; color: #ff7a1a; }
+.s h3 { font: 900 4.6cqw/1.06 var(--display); margin: 1.4cqw 0 0; max-width: 60%; letter-spacing: -0.02em; text-wrap: balance; }
+.s h3 em { font-style: normal; color: #ff7a1a; }
+.s p { font-size: 1.9cqw; line-height: 1.45; margin: 1.8cqw 0 0; max-width: 50%; color: #b8b8b4; }
+.s .v { position: absolute; right: 4.5cqw; top: 50%; transform: translateY(-46%); width: 36cqw; color: #f5f5f4; --ac: #ff7a1a; --fill: #0b0b0c; }
+.s .v svg { width: 100%; height: auto; display: block; }
+.s.big-type h3 { font-size: 8.4cqw; max-width: 92%; margin-top: 7cqw; }
+.s.big-type p { max-width: 70%; font-size: 2.4cqw; }
+.s.wide h3 { max-width: 88%; }
+.s.wide p { max-width: 70%; }
+.s.wide .v { top: auto; bottom: 4cqw; transform: none; width: 46cqw; }
+@media (max-width: 520px) { .grid { grid-template-columns: 1fr 1fr; gap: 10px; } }
 @media (prefers-reduced-motion: no-preference) { .thumb { transition: border-color 0.15s, box-shadow 0.15s; } }
-@media (max-width: 520px) { .grid { grid-template-columns: 1fr 1fr; gap: 10px; } .card-row .view { display: none; } }
 </style>
 
 <div class="page">
   <div class="kick">Talk 1 · Point 1: What runs where? · slides 1 to 6</div>
-  <h1>Pick one draft per slide</h1>
-  <p class="intro">Each slide is drawn ten ways. Each letter is one style, the same on every slide, so if one letter keeps winning it could be the look for the whole talk. Tap a draft to see it large, press Pick to choose it, and add a note if you want it changed.</p>
-  <div class="tally" id="tally" aria-label="Picks per style"></div>
+  <h1>Pick the words and picture for each slide</h1>
+  <p class="intro">The look is locked. Each slide has ten content options: different headlines, lines and pictures for the same slide. Tap one to see it large, press Pick, and leave a note to mix options ("headline from 3, picture from 7").</p>
+  <div class="lock">Style locked: J, black and orange</div>
   <div class="status" id="status">Loading saved picks...</div>
   <div id="sets"></div>
 </div>
@@ -158,8 +79,8 @@ section.slide-set { margin-top: 44px; }
   <div class="big-inner">
     <div class="thumb" id="big-thumb"></div>
     <div class="big-bar"><span id="big-label"></span>
-      <button type="button" id="big-prev" aria-label="Previous draft">Prev</button>
-      <button type="button" id="big-next" aria-label="Next draft">Next</button>
+      <button type="button" id="big-prev" aria-label="Previous option">Prev</button>
+      <button type="button" id="big-next" aria-label="Next option">Next</button>
       <button type="button" id="big-pick">Pick</button>
       <button type="button" id="big-close">Close</button>
     </div>
@@ -173,90 +94,163 @@ section.slide-set { margin-top: 44px; }
     cloud: '<path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/>',
     server: '<rect width="20" height="8" x="2" y="2" rx="2"/><rect width="20" height="8" x="2" y="14" rx="2"/><line x1="6" x2="6.01" y1="6" y2="6"/><line x1="6" x2="6.01" y1="18" y2="18"/>',
     monitor: '<rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/>',
-    globe: '<circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/>',
     file: '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/>',
     code: '<polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/>',
+    wifiOff: '<path d="M12 20h.01"/><path d="M8.5 16.429a5 5 0 0 1 7 0"/><path d="M5 12.859a10 10 0 0 1 5.17-2.69"/><path d="M19 12.859a10 10 0 0 0-2.007-1.523"/><path d="M2 8.82a15 15 0 0 1 4.177-2.643"/><path d="M22 8.82a15 15 0 0 0-11.288-3.764"/><path d="m2 2 20 20"/>',
+    check: '<path d="M20 6 9 17l-5-5"/>',
   };
-  const icon = (n, x, y, s) => `<svg x="${x}" y="${y}" width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${I[n]}</svg>`;
-  const T = (x, y, t, size = 15, w = 700, anchor = "middle") => `<text x="${x}" y="${y}" text-anchor="${anchor}" font-size="${size}" font-weight="${w}" fill="currentColor" font-family="inherit">${t}</text>`;
-  const svg = (inner) => `<svg class="ic" viewBox="0 0 400 260" fill="none" stroke="currentColor" stroke-width="2.5">${inner}</svg>`;
+  const ic = (n, x, y, s, extra = "") => `<svg x="${x}" y="${y}" width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" ${extra}>${I[n]}</svg>`;
+  const T = (x, y, t, size = 15, w = 700, anchor = "middle", fill = "currentColor") => `<text x="${x}" y="${y}" text-anchor="${anchor}" font-size="${size}" font-weight="${w}" fill="${fill}" stroke="none" font-family="Atkinson Hyperlegible, sans-serif">${t}</text>`;
+  const svg = (inner, h = 260) => `<svg viewBox="0 0 400 ${h}" fill="none" stroke="currentColor" stroke-width="2.5">${inner}</svg>`;
+  const PLACE = { cloud: ["cloud", "Cloudflare"], server: ["server", "Server"], desktop: ["monitor", "Desktop app"] };
 
-  // One picture per slide, shared by every style, coloured by each style's currentColor and --ac.
+  // Pictures. Each takes options, so one option can change a label or the highlighted place.
   const VIS = {
-    three: svg(`
-      <rect x="160" y="96" width="80" height="68" rx="14" fill="var(--fill)" stroke="var(--ac)" stroke-width="3.5"/>
-      ${icon("code", 182, 110, 36)}${T(200, 186, "one app", 14)}
-      <path d="M200 96 L200 50 M160 140 L90 196 M240 140 L310 196" stroke="var(--ac)" stroke-dasharray="6 6"/>
-      ${icon("cloud", 172, 0, 56)}
-      ${icon("monitor", 40, 178, 56)}${T(68, 250, "desktop", 14)}
-      ${icon("server", 282, 178, 56)}${T(310, 250, "server", 14)}
-      ${T(240, 34, "cloud", 14, 700, "start")}`),
-    question: svg(`
-      ${T(200, 180, "?", 170, 900)}
-      ${icon("cloud", 40, 30, 46)}${icon("server", 320, 40, 42)}${icon("monitor", 330, 180, 44)}
-      <path d="M90 60 Q130 80 150 110 M318 70 Q280 90 260 110 M326 196 Q290 190 262 170" stroke="var(--ac)" stroke-dasharray="5 6"/>`),
-    desktop: svg(`
-      <rect x="70" y="30" width="260" height="164" rx="14" fill="var(--fill)"/>
-      <line x1="150" y1="236" x2="250" y2="236"/><line x1="200" y1="194" x2="200" y2="236"/>
-      ${icon("file", 110, 74, 64)}${T(142, 160, "app", 14)}
-      <path d="M190 106 L250 106" stroke="var(--ac)" stroke-width="4" stroke-linecap="round"/><path d="M238 94 L252 106 L238 118" stroke="var(--ac)" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
-      <rect x="262" y="66" width="52" height="80" rx="6" stroke="var(--ac)" fill="var(--fill)"/><line x1="262" y1="80" x2="314" y2="80" stroke="var(--ac)"/>
-      ${T(200, 184, "double-click, it opens", 13, 400)}`),
-    server: svg(`
-      <rect x="120" y="20" width="160" height="220" rx="12" fill="var(--fill)"/>
-      ${[0, 1, 2, 3, 4].map((i) => `<rect x="138" y="${38 + i * 40}" width="124" height="28" rx="6" stroke="var(--ac)"/><circle cx="152" cy="${52 + i * 40}" r="4" fill="var(--ac)" stroke="none"/>${T(214, 57 + i * 40, "app " + (i + 1), 12, 600)}`).join("")}
-      ${T(60, 140, "one", 16)}${T(60, 160, "computer", 16)}${T(340, 140, "many", 16)}${T(340, 160, "small apps", 16)}`),
-    globe: svg(`
-      <circle cx="200" cy="130" r="104" fill="var(--fill)"/>
-      <ellipse cx="200" cy="130" rx="46" ry="104"/><line x1="96" y1="130" x2="304" y2="130"/>
-      <path d="M112 80 Q200 100 288 80 M112 180 Q200 160 288 180"/>
-      ${[[150, 70], [252, 92], [126, 140], [214, 150], [276, 176], [176, 204], [236, 54], [160, 118]].map(([x, y]) => `<circle cx="${x}" cy="${y}" r="7" fill="var(--ac)" stroke="none"/>`).join("")}
-      ${T(200, 254, "region: Earth", 15)}`),
-    windows: svg(`
-      ${[16, 144, 272].map((x) => `
-        <rect x="${x}" y="50" width="112" height="150" rx="10" fill="var(--fill)"/>
-        <line x1="${x}" y1="70" x2="${x + 112}" y2="70"/><circle cx="${x + 12}" cy="60" r="3"/><circle cx="${x + 24}" cy="60" r="3"/>
-        <rect x="${x + 16}" y="86" width="80" height="44" rx="6" stroke="var(--ac)"/><line x1="${x + 16}" y1="146" x2="${x + 96}" y2="146"/><line x1="${x + 16}" y1="162" x2="${x + 72}" y2="162"/>`).join("")}
-      ${icon("cloud", 54, 210, 34)}${icon("server", 184, 212, 32)}${icon("monitor", 310, 210, 34)}
-      ${T(200, 36, "same app, three addresses", 14, 600)}`),
+    three: () => svg(`
+      <rect x="156" y="92" width="88" height="74" rx="14" fill="var(--fill)" stroke="var(--ac)" stroke-width="3.5"/>
+      ${ic("code", 180, 106, 40)}${T(200, 188, "one app", 14)}
+      <path d="M200 92 L200 62 M156 142 L100 186 M244 142 L300 186" stroke="var(--ac)" stroke-dasharray="6 6"/>
+      ${ic("cloud", 172, 2, 56)}${ic("monitor", 46, 182, 56)}${ic("server", 298, 182, 56)}
+      ${T(74, 256, "desktop", 14)}${T(326, 256, "server", 14)}${T(244, 36, "cloud", 14, 700, "start")}`),
+    venn: (o = {}) => svg(`
+      <circle cx="150" cy="104" r="84" stroke="var(--ac)"/><circle cx="250" cy="104" r="84"/><circle cx="200" cy="184" r="84"/>
+      ${T(112, 76, "desktop", 15)}${T(290, 76, "server", 15)}${T(200, 250, "Cloudflare", 15)}
+      ${T(200, 138, o.mid || "your app", 15, 900, "middle", "var(--ac)")}`, 280),
+    windows: () => svg(`
+      ${[["cloud", 16], ["server", 144], ["desktop", 272]].map(([p, x]) => `
+        <rect x="${x}" y="40" width="112" height="150" rx="10" fill="var(--fill)"/>
+        <line x1="${x}" y1="60" x2="${x + 112}" y2="60"/><circle cx="${x + 12}" cy="50" r="3"/><circle cx="${x + 24}" cy="50" r="3"/>
+        <rect x="${x + 16}" y="76" width="80" height="44" rx="6" stroke="var(--ac)"/><line x1="${x + 16}" y1="136" x2="${x + 96}" y2="136"/><line x1="${x + 16}" y1="152" x2="${x + 72}" y2="152"/>
+        ${T(x + 56, 222, PLACE[p][1], 14)}`).join("")}`, 240),
+    list3: (o = {}) => svg(`
+      ${["cloud", "server", "desktop"].map((p, i) => `
+        <rect x="10" y="${12 + i * 82}" width="380" height="66" rx="12" fill="var(--fill)"/>
+        ${ic(PLACE[p][0], 30, 25 + i * 82, 40)}${T(90, 54 + i * 82, PLACE[p][1], 20, 700, "start")}
+        ${o.checks ? ic("check", 340, 27 + i * 82, 36, 'stroke="var(--ac)" stroke-width="2.6"') : T(372, 54 + i * 82, "same code", 14, 400, "end")}`).join("")}`, 260),
+    trio: (o = {}) => svg(`
+      ${["desktop", "server", "cloud"].map((p, i) => {
+        const x = 70 + i * 130, on = p === o.hi;
+        return `<circle cx="${x}" cy="110" r="${on ? 58 : 46}" ${on ? 'fill="var(--ac)" stroke="var(--ac)"' : 'fill="var(--fill)"'}/>
+          ${ic(PLACE[p][0], x - (on ? 26 : 20), 110 - (on ? 26 : 20), on ? 52 : 40, on ? 'stroke="#0b0b0c"' : "")}
+          ${T(x, 206, PLACE[p][1], on ? 17 : 14, on ? 900 : 600)}`; }).join("")}
+      ${o.hi ? T(200, 248, `place ${["desktop", "server", "cloud"].indexOf(o.hi) + 1} of 3`, 13, 600, "middle", "var(--ac)") : ""}`),
+    question: () => svg(`
+      ${T(200, 196, "?", 200, 900, "middle", "var(--ac)")}
+      ${ic("cloud", 34, 26, 52)}${ic("server", 320, 36, 48)}${ic("monitor", 326, 178, 50)}`),
+    drift: () => svg(`
+      <circle cx="40" cy="130" r="8" fill="var(--ac)" stroke="none"/>
+      <path d="M40 130 C160 130 220 40 370 30"/><path d="M40 130 C160 130 240 130 370 130"/><path d="M40 130 C160 130 220 220 370 230"/>
+      ${T(374, 22, "copy 1", 13, 600, "end")}${T(374, 122, "copy 2", 13, 600, "end")}${T(374, 252, "copy 3", 13, 600, "end")}
+      ${T(40, 160, "one idea", 13, 600)}`),
+    steps: (o = {}) => svg(`
+      ${(o.steps || ["one", "two", "three"]).map((s, i) => `
+        <rect x="${8 + i * 132}" y="70" width="120" height="120" rx="14" fill="var(--fill)" ${i === 2 ? 'stroke="var(--ac)" stroke-width="3.5"' : ""}/>
+        ${T(68 + i * 132, 124, String(i + 1), 40, 900, "middle", "var(--ac)")}${T(68 + i * 132, 164, s, 15)}`).join("")}`),
+    desktop: () => svg(`
+      <rect x="60" y="20" width="280" height="176" rx="14" fill="var(--fill)"/>
+      <line x1="150" y1="240" x2="250" y2="240"/><line x1="200" y1="196" x2="200" y2="240"/>
+      ${ic("file", 96, 66, 72)}${T(132, 162, "one file", 14)}
+      <path d="M188 102 L246 102" stroke="var(--ac)" stroke-width="4" stroke-linecap="round"/><path d="M234 90 L248 102 L234 114" stroke="var(--ac)" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+      <rect x="258" y="58" width="58" height="88" rx="6" stroke="var(--ac)" fill="var(--fill)"/><line x1="258" y1="74" x2="316" y2="74" stroke="var(--ac)"/>`),
+    offline: () => svg(`
+      <rect x="60" y="20" width="280" height="176" rx="14" fill="var(--fill)"/>
+      <line x1="150" y1="240" x2="250" y2="240"/><line x1="200" y1="196" x2="200" y2="240"/>
+      ${ic("wifiOff", 160, 52, 80, 'stroke="var(--ac)"')}${T(200, 168, "still works", 16)}`),
+    server: (o = {}) => svg(`
+      <rect x="110" y="14" width="180" height="232" rx="12" fill="var(--fill)"/>
+      ${Array.from({ length: o.count || 5 }, (_, i) => {
+        const n = o.count || 5, hgt = (200 - (n - 1) * 8) / n, y = 30 + i * (hgt + 8);
+        return `<rect x="128" y="${y}" width="144" height="${hgt}" rx="6" stroke="var(--ac)"/><circle cx="142" cy="${y + hgt / 2}" r="4" fill="var(--ac)" stroke="none"/>${hgt > 18 ? T(212, y + hgt / 2 + 5, "app " + (i + 1), 12, 600) : ""}`; }).join("")}
+      ${o.labels === false ? "" : `${T(54, 126, "one", 16)}${T(54, 146, "computer", 16)}${T(346, 126, "many", 16)}${T(346, 146, "small apps", 16)}`}`),
+    globe: (o = {}) => svg(`
+      <circle cx="200" cy="124" r="104" fill="var(--fill)"/>
+      <ellipse cx="200" cy="124" rx="46" ry="104"/><line x1="96" y1="124" x2="304" y2="124"/>
+      <path d="M112 74 Q200 94 288 74 M112 174 Q200 154 288 174"/>
+      ${[[150, 64], [252, 86], [126, 134], [214, 144], [276, 170], [176, 198], [236, 48], [160, 112], [290, 120], [118, 96]].map(([x, y]) => `<circle cx="${x}" cy="${y}" r="7" fill="var(--ac)" stroke="none"/>`).join("")}
+      ${T(200, 252, o.label === undefined ? "region: Earth" : o.label, 15)}`),
   };
 
-  // The six slides, in the owner's words from the Talk 1 slides tab.
+  // The six slides and their ten content options each. *word* marks the orange words. v = picture, vo = its options, l = layout.
   const SLIDES = [
-    { id: "t1-s1", n: 1, k: "Talk 1", t: "Rusty Buns: From Concept to Keyword to Dreams", say: "Write your app code once. Run it on Cloudflare, a server, or as a desktop app.", v: "three",
-      term: ["one codebase", "target cloud     ok", "target server    ok", "target desktop   ok"] },
-    { id: "t1-s2", n: 2, k: "The question", t: "Can one app really run in three very different places without a rewrite?", say: "Same code. No second version.", v: "question",
-      term: ["can one app run in three places?", "without a rewrite?"] },
-    { id: "t1-s3", n: 3, k: "Place 1", t: "Desktop app", say: "One file. Double-click it and the app opens in your browser. Can be an offline desktop app.", exp: "Start the desktop app from one file, on stage.", v: "desktop",
-      term: ["one file", "double-click", "app opens, works offline"] },
-    { id: "t1-s4", n: 4, k: "Place 2", t: "Server app", say: "The same app on one rented computer. One server can hold many small apps.", exp: "The same app on a cheap server. Open its address.", v: "server",
-      term: ["same app, one rented computer", "one server, many small apps"] },
-    { id: "t1-s5", n: 5, k: "Place 3", t: "Cloudflare (worker) app", say: "The same app spread over Cloudflare's edge network, close to every visitor. No server to look after.", aside: "Region: Earth, as they would say.", exp: "The same app on its Cloudflare address.", v: "globe",
-      term: ["same app, Cloudflare's edge", "close to every visitor", "region: Earth"] },
-    { id: "t1-s6", n: 6, k: "Result", t: "Three addresses, one codebase.", say: "Now: why is that hard?", v: "windows",
-      term: ["cloud    ok", "server   ok", "desktop  ok", "why is that hard?"] },
+    { id: "t1-s1", n: 1, name: "Title", brief: "Rusty Buns: From Concept to Keyword to Dreams. Write your app code once. Run it on Cloudflare, server, desktop app.", opts: [
+      { tag: "As written", k: "Talk 1", h: "Rusty Buns: From Concept to Keyword to *Dreams*", p: "Write your app code once. Run it on Cloudflare, a server, or as a desktop app.", v: "three" },
+      { tag: "Three beats", k: "Rusty Buns", h: "One app. Three places. *Zero rewrites.*", p: "From concept to keyword to dreams.", v: "three" },
+      { tag: "The list", k: "Talk 1 · Rusty Buns", h: "Write it *once.*", p: "Run it on Cloudflare. Run it on a server. Run it as a desktop app.", v: "list3" },
+      { tag: "Name only", k: "Talk 1", h: "Rusty *Buns*", p: "From concept to keyword to dreams.", l: "big-type" },
+      { tag: "Question open", k: "Talk 1 · Rusty Buns", h: "Where does your app *live?*", p: "Today: on Cloudflare, on a server and on your desktop. Same code.", v: "three" },
+      { tag: "Three names", k: "Rusty Buns", h: "Cloudflare. Server. *Desktop.*", p: "One codebase for all three.", v: "trio" },
+      { tag: "Venn", k: "Talk 1", h: "From concept to keyword to *dreams*", p: "The words, the places, and the one app that runs in all of them.", v: "venn" },
+      { tag: "Promise a demo", k: "Talk 1 · Rusty Buns", h: "The same app, three times, *live*", p: "By slide 6 it will be running on stage in all three places.", v: "windows" },
+      { tag: "Blunt", k: "Rusty Buns", h: "Stop rewriting your *app*", p: "One codebase runs on Cloudflare, a server or a desktop.", v: "three" },
+      { tag: "Your choice", k: "Talk 1 · Rusty Buns", h: "Write once, run where you *need it*", p: "Cloudflare, a server, a desktop app. Pick one, or all three.", v: "venn" },
+    ] },
+    { id: "t1-s2", n: 2, name: "The question", brief: "Can one app really run in three very different places without a rewrite?", opts: [
+      { tag: "As written", k: "The question", h: "Can one app really run in three very different places without a *rewrite?*", v: "question", l: "wide" },
+      { tag: "Short", k: "The question", h: "Can one app run *everywhere?*", p: "Without a rewrite. Without a second version.", v: "question" },
+      { tag: "Doubt", k: "The question", h: "Three places. One app. No rewrite. *Really?*", v: "question" },
+      { tag: "Hypothesis", k: "Hypothesis", h: "One codebase can run on Cloudflare, a server and a *desktop.*", p: "Let's test it.", v: "venn" },
+      { tag: "The usual way", k: "The question", h: "Usually you write the app three *times.*", p: "Can we write it once instead?", v: "drift" },
+      { tag: "How different", k: "The question", h: "How different can three places *be?*", p: "Cloudflare, a server, a desktop app. Very different. Let's find out.", v: "venn" },
+      { tag: "The cost", k: "The question", h: "What does a rewrite *cost?*", p: "Three copies, three sets of bugs, three apps that drift apart.", v: "drift" },
+      { tag: "Myth", k: "The myth", h: "You have to pick one place for your *app.*", p: "Let's bust it.", v: "trio" },
+      { tag: "Worlds", k: "The question", h: "Same code. Different *worlds.*", p: "Can one app cope with all three?", v: "venn" },
+      { tag: "Old promise", k: "The question", h: "Write once, run *anywhere?*", p: "People have promised that before. Let's check.", v: "question" },
+    ] },
+    { id: "t1-s3", n: 3, name: "Place 1: desktop app", brief: "One file. Double-click it and the app opens in your browser. Can be an offline desktop app. On stage: start the desktop app from one file.", opts: [
+      { tag: "As written", k: "Place 1", h: "Desktop *app*", p: "One file. Double-click it and the app opens in your browser. Can be an offline desktop app.", v: "desktop" },
+      { tag: "Action", k: "Place 1 · desktop", h: "One file. *Double-click.*", p: "The app opens. No install, no internet needed.", v: "desktop" },
+      { tag: "Offline", k: "Place 1 · desktop", h: "No internet? Still *works.*", p: "The desktop app runs offline, from one file.", v: "offline" },
+      { tag: "Your machine", k: "Place 1", h: "On your own *computer*", p: "One file, no server. Your data stays on your machine.", v: "desktop" },
+      { tag: "Experiment", k: "Experiment 1", h: "Start it from one *file*", p: "On stage, now. Count the steps.", v: "steps", vo: { steps: ["copy file", "double-click", "it's open"] } },
+      { tag: "Three words", k: "Place 1 · desktop", h: "Download. Double-click. *Done.*", p: "The whole app is one file.", v: "steps", vo: { steps: ["download", "double-click", "done"] } },
+      { tag: "Small", k: "Place 1", h: "The smallest home: one *file*", p: "Everything the app needs, packed into one file you can copy.", v: "desktop" },
+      { tag: "Comes to you", k: "Place 1 · desktop", h: "The app comes to *you*", p: "No server to rent. It runs on the computer in front of you.", v: "desktop" },
+      { tag: "1 of 3", k: "Place 1 of 3", h: "Desktop *app*", p: "One file. Opens in your browser. Works offline.", v: "trio", vo: { hi: "desktop" } },
+      { tag: "Plain", k: "Place 1", h: "Your app, as a desktop *app*", p: "One file you double-click. It works offline too.", v: "offline" },
+    ] },
+    { id: "t1-s4", n: 4, name: "Place 2: server app", brief: "The same app on one rented computer. One server can hold many small apps. On stage: the same app on a cheap server, open its address.", opts: [
+      { tag: "As written", k: "Place 2", h: "Server *app*", p: "The same app on one rented computer. One server can hold many small apps.", v: "server" },
+      { tag: "Rented", k: "Place 2 · server", h: "One rented *computer*", p: "The same app, on a server you pay for by the month.", v: "server", vo: { count: 1, labels: false } },
+      { tag: "Many apps", k: "Place 2 · server", h: "One server, many small *apps*", p: "One cheap box can hold a lot of small apps at once.", v: "server", vo: { count: 8, labels: false } },
+      { tag: "Experiment", k: "Experiment 2", h: "Put it on a cheap *server*", p: "On stage: the same app goes up. Open its address.", v: "steps", vo: { steps: ["same app", "cheap server", "open it"] } },
+      { tag: "Nothing changes", k: "Place 2", h: "Same app. Rented *computer.*", p: "Nothing in the code changes.", v: "server" },
+      { tag: "2 of 3", k: "Place 2 of 3", h: "Server *app*", p: "One rented computer, many small apps.", v: "trio", vo: { hi: "server" } },
+      { tag: "Control", k: "Place 2 · server", h: "When you want your own *box*", p: "A server is a computer you rent. You decide what runs on it.", v: "server", vo: { count: 3 } },
+      { tag: "Question", k: "Place 2", h: "How many apps fit on one *server?*", p: "More than you'd think, when each one is small.", v: "server", vo: { count: 10, labels: false } },
+      { tag: "Always on", k: "Place 2 · server", h: "Always *on*", p: "A server keeps running between visitors.", v: "server" },
+      { tag: "Plain", k: "Place 2", h: "Your app, on a computer you *control*", p: "The same code as the desktop app.", v: "server" },
+    ] },
+    { id: "t1-s5", n: 5, name: "Place 3: Cloudflare (worker) app", brief: "The same app spread over Cloudflare's edge network, close to every visitor. No server to look after. Region: Earth, as they would say. On stage: the same app on its Cloudflare address.", opts: [
+      { tag: "As written", k: "Place 3", h: "Cloudflare (worker) *app*", p: "The same app spread over Cloudflare's edge network, close to every visitor. No server to look after.", v: "globe" },
+      { tag: "Region: Earth", k: "Place 3 · Cloudflare", h: "Region: *Earth*", p: "The same app runs on Cloudflare's edge, close to every visitor.", v: "globe", vo: { label: "" } },
+      { tag: "No server", k: "Place 3 · Cloudflare", h: "No server to look *after*", p: "Cloudflare runs the app in many cities at once.", v: "globe" },
+      { tag: "Experiment", k: "Experiment 3", h: "Deploy it to *Cloudflare*", p: "On stage: the same app goes out. Open its address.", v: "steps", vo: { steps: ["same app", "deploy", "open it"] } },
+      { tag: "Near you", k: "Place 3 · Cloudflare", h: "Close to every *visitor*", p: "A visitor in Tokyo and a visitor in Ohio both get a copy nearby.", v: "globe" },
+      { tag: "3 of 3", k: "Place 3 of 3", h: "Cloudflare *app*", p: "Spread over the edge network. No server to look after.", v: "trio", vo: { hi: "cloud" } },
+      { tag: "Pick Earth", k: "Place 3 · Cloudflare", h: "Pick a region? Pick *Earth.*", p: "Cloudflare runs your worker everywhere it has computers.", v: "globe", vo: { label: "" } },
+      { tag: "Wakes up", k: "Place 3 · worker", h: "The app wakes up near *you*", p: "A worker starts when someone visits, in a city close to them.", v: "globe" },
+      { tag: "Worldwide", k: "Place 3", h: "Same app, *worldwide*", p: "Nothing in the code changes from the server version.", v: "globe" },
+      { tag: "The joke", k: "Place 3 · Cloudflare (worker) app", h: "Region: Earth, as they would *say*", p: "Spread over Cloudflare's edge network. No server to look after.", v: "globe", vo: { label: "" } },
+    ] },
+    { id: "t1-s6", n: 6, name: "Result", brief: "Three addresses, one codebase. Now: why is that hard? Three browser windows side by side, same app in each.", opts: [
+      { tag: "As written", k: "Result", h: "Three addresses, one *codebase.*", p: "Now: why is that hard?", v: "windows" },
+      { tag: "It works", k: "Result", h: "It works. *All three.*", p: "Desktop, server, Cloudflare. Same code.", v: "windows" },
+      { tag: "Next question", k: "Result", h: "One app, three *places*", p: "Next question: why is that hard?", v: "windows" },
+      { tag: "Myth busted", k: "Result", h: "Myth: *busted*", p: "One app ran in three very different places, with no rewrite.", v: "windows" },
+      { tag: "Checklist", k: "Result", h: "Experiment *complete*", p: "Desktop: ok. Server: ok. Cloudflare: ok.", v: "list3", vo: { checks: true } },
+      { tag: "Under the hood", k: "Result", h: "Same app. Same code. Three *addresses.*", p: "Now let's look under the hood.", v: "windows" },
+      { tag: "Why hard", k: "Result", h: "So why is this *hard?*", p: "Because a server, a worker and a desktop agree on very little. Next: the words.", v: "venn", vo: { mid: "?" } },
+      { tag: "Zero", k: "Result", h: "Zero *rewrites*", p: "Three places, one codebase. Now the hard part: why it works.", v: "windows" },
+      { tag: "Into the words", k: "Result", h: "One codebase, three *homes*", p: "How? It starts with the words: server, worker, storage, memory.", v: "venn" },
+      { tag: "Big", k: "Result", h: "Three places. One *app.*", p: "Next: why that is harder than it looks.", l: "big-type" },
+    ] },
   ];
 
   const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
-  const v = (s) => `<div class="v">${VIS[s.v]}</div>`;
-  const line = (s) => esc(s.say) + (s.aside ? ` ${esc(s.aside)}` : "");
+  const mark = (s) => esc(s).replace(/\*([^*]+)\*/g, "<em>$1</em>");
+  const draw = (o) => `<div class="s ${o.l || ""}"><div class="k">${esc(o.k)}</div><h3>${mark(o.h)}</h3>${o.p ? `<p>${esc(o.p)}</p>` : ""}${o.v ? `<div class="v">${VIS[o.v](o.vo || {})}</div>` : ""}</div>`;
 
-  const STYLES = [
-    { key: "A", name: "Bakery card", draw: (s) => `<div class="s sA"><div><div class="k">${esc(s.k)}</div><h3>${esc(s.t)}</h3><p>${esc(s.say)}</p>${s.aside ? `<p class="as">${esc(s.aside)}</p>` : ""}</div>${v(s)}</div>` },
-    { key: "B", name: "Poster", draw: (s) => `<div class="s sB"><div class="bar"></div><h3>${esc(s.t)}</h3><p>${line(s)}</p>${v(s)}</div>` },
-    { key: "C", name: "Chalkboard", draw: (s) => `<div class="s sC"><div class="k">${esc(s.k)}</div><h3>${esc(s.t)}</h3><p>${line(s)}</p>${v(s)}<div class="frame"></div></div>` },
-    { key: "D", name: "Lab notebook", draw: (s) => `<div class="s sD"><div class="k">Lab notebook · ${esc(s.k)}</div><h3>${esc(s.t)}</h3><div class="lab"><div><b>Says</b>${line(s)}</div>${s.exp ? `<div><b>Experiment</b>${esc(s.exp)}</div>` : ""}</div>${v(s)}</div>` },
-    { key: "E", name: "Blueprint", draw: (s) => `<div class="s sE"><div class="k">${esc(s.k)}</div><h3>${esc(s.t)}</h3><p>${line(s)}</p>${v(s)}<div class="stamp">Rusty Buns · sheet ${s.n}</div></div>` },
-    { key: "F", name: "Terminal", draw: (s) => `<div class="s sF"><div class="dots"><i></i><i></i><i></i></div><div class="ln"><span class="c"># ${esc(s.k)}</span>\n<span class="h">${esc(s.t)}</span>${s.term.map((l) => `<span class="p">&gt;</span> ${esc(l)}`).join("\n")}\n<span class="p">&gt;</span> <span class="cur"></span></div></div>` },
-    { key: "G", name: "Diagram first", draw: (s) => `<div class="s sG">${v(s)}<div class="cap"><h3>${esc(s.t)}</h3><p>${line(s)}</p></div></div>` },
-    { key: "H", name: "Split", draw: (s) => `<div class="s sH"><div class="l"><div class="k">${esc(s.k)}</div><h3>${esc(s.t)}</h3><p>${line(s)}</p></div><div class="r">${v(s)}</div></div>` },
-    { key: "I", name: "Comic panel", draw: (s) => `<div class="s sI"><div class="panel"><div class="bubble"><h3>${esc(s.t)}</h3></div>${v(s)}<div class="capb">${line(s)}</div></div></div>` },
-    { key: "J", name: "Black and orange", draw: (s) => {
-      const words = esc(s.t).split(" "); const last = words.pop();
-      return `<div class="s sJ"><div class="k">${esc(s.k)}</div><h3>${words.join(" ")} <em>${last}</em></h3><p>${line(s)}</p>${v(s)}</div>`; } },
-  ];
-
-  const picks = new Map(); // slide id -> { style, note }
+  const picks = new Map(); // slide id -> { option, note }
   let db = null, asked = false, reached = false, canWrite = true;
   const sets = document.getElementById("sets");
 
@@ -264,58 +258,46 @@ section.slide-set { margin-top: 44px; }
     sets.innerHTML = SLIDES.map((s) => {
       const p = picks.get(s.id) || {};
       return `<section class="slide-set" data-id="${s.id}">
-        <div class="set-head"><h2>Slide ${s.n} · ${esc(s.t)}</h2><span class="picked">${p.style ? `Picked: ${p.style}` : ""}</span></div>
-        <p class="says">${line(s)}${s.exp ? ` <i>On stage: ${esc(s.exp)}</i>` : ""}</p>
-        <div class="grid">${STYLES.map((st) => `
-          <div class="card${p.style === st.key ? " is-pick" : ""}" data-style="${st.key}">
-            <button class="thumb" type="button" aria-label="Slide ${s.n}, draft ${st.key}, ${st.name}: view large">${st.draw(s)}</button>
-            <div class="card-row"><span>${st.key} · ${st.name}</span><button class="pick" type="button"${canWrite ? "" : " disabled"}>${p.style === st.key ? "Picked" : "Pick"}</button></div>
+        <div class="set-head"><h2>Slide ${s.n} · ${esc(s.name)}</h2><span class="picked">${p.option ? `Picked: option ${p.option}` : ""}</span></div>
+        <p class="says">Your slide: ${esc(s.brief)}</p>
+        <div class="grid">${s.opts.map((o, i) => `
+          <div class="card${p.option === i + 1 ? " is-pick" : ""}" data-opt="${i + 1}">
+            <button class="thumb" type="button" aria-label="Slide ${s.n}, option ${i + 1}, ${esc(o.tag)}: view large">${draw(o)}</button>
+            <div class="card-row"><span>${i + 1} · ${esc(o.tag)}</span><button class="pick" type="button"${canWrite ? "" : " disabled"}>${p.option === i + 1 ? "Picked" : "Pick"}</button></div>
           </div>`).join("")}</div>
-        <textarea class="note" id="note-${s.id}" rows="1" placeholder="Note on slide ${s.n} (optional): what to change in the pick"${canWrite ? "" : " disabled"}>${esc(p.note || "")}</textarea>
+        <textarea class="note" id="note-${s.id}" rows="1" placeholder="Note on slide ${s.n} (optional): mix options, or say what to change"${canWrite ? "" : " disabled"}>${esc(p.note || "")}</textarea>
       </section>`;
     }).join("");
-    paintTally();
   }
 
   function paintSet(id) {
     const el = sets.querySelector(`.slide-set[data-id="${id}"]`);
     if (!el) return;
     const p = picks.get(id) || {};
-    el.querySelector(".picked").textContent = p.style ? `Picked: ${p.style}` : "";
+    el.querySelector(".picked").textContent = p.option ? `Picked: option ${p.option}` : "";
     for (const c of el.querySelectorAll(".card")) {
-      const on = c.dataset.style === p.style;
+      const on = Number(c.dataset.opt) === p.option;
       c.classList.toggle("is-pick", on);
       c.querySelector(".pick").textContent = on ? "Picked" : "Pick";
     }
     const ta = el.querySelector(".note");
     if (document.activeElement !== ta && ta.value !== (p.note || "")) ta.value = p.note || "";
-    paintTally();
   }
 
-  function paintTally() {
-    const n = {};
-    for (const p of picks.values()) if (p.style) n[p.style] = (n[p.style] || 0) + 1;
-    document.getElementById("tally").innerHTML = STYLES.map((st) => `<span class="${n[st.key] ? "on" : ""}">${st.key} ${st.name}: ${n[st.key] || 0}</span>`).join("");
-  }
-
-  function status(msg, warn) {
-    const el = document.getElementById("status");
-    el.textContent = msg; el.style.color = warn ? "var(--rust)" : "";
-  }
-
+  function status(msg, warn) { const el = document.getElementById("status"); el.textContent = msg; el.style.color = warn ? "var(--rust)" : ""; }
   function defaultStatus() {
     if (!asked) return status("Loading saved picks...");
     if (!db) return status("Picks are not saved in this view. Open the page on claude.ai, signed in, to keep them.", true);
     if (!canWrite) return status("Read only: you can see the picks, but not change them.");
-    status(reached ? `${[...picks.values()].filter((p) => p.style).length} of ${SLIDES.length} slides picked. Picks save as you go.` : "Loading saved picks...");
+    status(reached ? `${[...picks.values()].filter((p) => p.option).length} of ${SLIDES.length} slides picked. Picks save as you go.` : "Loading saved picks...");
   }
 
   async function save(id) {
     if (!db || !canWrite) return;
     const p = picks.get(id) || {};
     try {
-      if (!p.style && !p.note) await db.collection("picks").doc(id).delete();
-      else await db.collection("picks").doc(id).set({ style: p.style || "", note: p.note || "", at: new Date().toISOString() });
+      if (!p.option && !p.note) await db.collection("content").doc(id).delete();
+      else await db.collection("content").doc(id).set({ option: p.option || 0, note: p.note || "", style: "J", at: new Date().toISOString() });
       defaultStatus();
     } catch (e) {
       if (e && e.code === "invalid_argument") { canWrite = false; render(); defaultStatus(); }
@@ -323,46 +305,44 @@ section.slide-set { margin-top: 44px; }
     }
   }
 
-  function setPick(id, style) {
+  function setPick(id, option) {
     const p = { ...(picks.get(id) || {}) };
-    p.style = p.style === style ? "" : style;
+    p.option = p.option === option ? 0 : option;
     picks.set(id, p);
     paintSet(id); save(id);
   }
 
-  // Large view
   const big = document.getElementById("big");
-  let at = null; // { si, ti }
-  function openBig(si, ti) {
-    at = { si, ti };
-    const s = SLIDES[si], st = STYLES[ti];
-    document.getElementById("big-thumb").innerHTML = st.draw(s);
-    document.getElementById("big-label").textContent = `Slide ${s.n} · draft ${st.key}, ${st.name}`;
-    const picked = (picks.get(s.id) || {}).style === st.key;
+  let at = null;
+  function openBig(si, oi) {
+    at = { si, oi };
+    const s = SLIDES[si], o = s.opts[oi];
+    document.getElementById("big-thumb").innerHTML = draw(o);
+    document.getElementById("big-label").textContent = `Slide ${s.n} · option ${oi + 1}, ${o.tag}`;
+    const picked = (picks.get(s.id) || {}).option === oi + 1;
     const b = document.getElementById("big-pick");
     b.textContent = picked ? "Picked" : "Pick"; b.classList.toggle("pick-big", picked); b.disabled = !canWrite;
     big.hidden = false;
     document.getElementById("big-close").focus();
   }
-  function step(d) { if (at) openBig(at.si, (at.ti + d + STYLES.length) % STYLES.length); }
+  const close = () => { big.hidden = true; at = null; };
+  function step(d) { if (at) { const n = SLIDES[at.si].opts.length; openBig(at.si, (at.oi + d + n) % n); } }
   document.getElementById("big-prev").onclick = () => step(-1);
   document.getElementById("big-next").onclick = () => step(1);
-  document.getElementById("big-close").onclick = () => { big.hidden = true; at = null; };
-  document.getElementById("big-pick").onclick = () => { if (at) { setPick(SLIDES[at.si].id, STYLES[at.ti].key); openBig(at.si, at.ti); } };
-  big.addEventListener("click", (e) => { if (e.target === big) { big.hidden = true; at = null; } });
+  document.getElementById("big-close").onclick = close;
+  document.getElementById("big-pick").onclick = () => { if (at) { setPick(SLIDES[at.si].id, at.oi + 1); openBig(at.si, at.oi); } };
+  big.addEventListener("click", (e) => { if (e.target === big) close(); });
   document.addEventListener("keydown", (e) => {
     if (big.hidden) return;
-    if (e.key === "Escape") { big.hidden = true; at = null; }
-    else if (e.key === "ArrowRight") step(1);
-    else if (e.key === "ArrowLeft") step(-1);
+    if (e.key === "Escape") close(); else if (e.key === "ArrowRight") step(1); else if (e.key === "ArrowLeft") step(-1);
   });
 
   sets.addEventListener("click", (e) => {
     const set = e.target.closest(".slide-set"), card = e.target.closest(".card");
     if (!set || !card) return;
-    const si = SLIDES.findIndex((s) => s.id === set.dataset.id), ti = STYLES.findIndex((st) => st.key === card.dataset.style);
-    if (e.target.closest(".pick")) { if (canWrite) setPick(set.dataset.id, card.dataset.style); }
-    else if (e.target.closest(".thumb")) openBig(si, ti);
+    const si = SLIDES.findIndex((s) => s.id === set.dataset.id), opt = Number(card.dataset.opt);
+    if (e.target.closest(".pick")) { if (canWrite) setPick(set.dataset.id, opt); }
+    else if (e.target.closest(".thumb")) openBig(si, opt - 1);
   });
 
   const timers = new Map();
@@ -387,14 +367,15 @@ section.slide-set { margin-top: 44px; }
     if (!canWrite) render();
     defaultStatus();
     const slow = setTimeout(() => status("Saved picks cannot be reached yet. They will appear when the connection answers.", true), 10000);
-    db.collection("picks").onSnapshot((snap) => {
+    db.collection("content").onSnapshot((snap) => {
       if (!snap.metadata.fromCache) { clearTimeout(slow); reached = true; }
       for (const ch of snap.docChanges()) {
         const id = ch.doc.id;
         if (ch.type === "removed") picks.delete(id);
         else {
           const d = ch.doc.data() || {};
-          picks.set(id, { style: STYLES.some((st) => st.key === d.style) ? d.style : "", note: typeof d.note === "string" ? d.note : "" });
+          const n = typeof d.option === "number" && d.option >= 1 && d.option <= 10 ? d.option : 0;
+          picks.set(id, { option: n, note: typeof d.note === "string" ? d.note : "" });
         }
         paintSet(id);
       }
