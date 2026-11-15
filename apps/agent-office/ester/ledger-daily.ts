@@ -78,34 +78,59 @@ export const weekStart = (date: string) => shift(date, -((new Date(`${date}T12:0
 export function planWeeks(history: Row[], budget: Budget) {
   const by = new Map<string, Row[]>();
   for (const r of history) { const s = weekStart(r.date); by.set(s, [...(by.get(s) ?? []), r]); }
-  const sum = (rows: Row[], k: "units" | "prs" | "codeAdded" | "opus" | "sonnet" | "fable") => Math.round(rows.reduce((a, r) => a + r[k], 0));
+  const sum = (rows: Row[], k: "units" | "prs" | "codeAdded" | "codeRemoved" | "opus" | "sonnet" | "fable") => Math.round(rows.reduce((a, r) => a + r[k], 0));
   let perPct = 0;
   return [...by].sort(([a], [b]) => a.localeCompare(b)).map(([start, rows], i, all) => {
     const ends = shift(start, 7), read = budget.find((b) => b.ends === ends), units = sum(rows, "units");
     const running = i === all.length - 1 && !read;
     const pct = read ? read.pct : running && perPct ? Math.round(units / perPct) : null;
     if (read?.pct) perPct = units / read.pct;
-    return { start, ends, days: rows.length, units, prs: sum(rows, "prs"), code: sum(rows, "codeAdded"), opus: sum(rows, "opus"), sonnet: sum(rows, "sonnet"), fable: sum(rows, "fable"),
+    return { start, ends, days: rows.length, units, prs: sum(rows, "prs"), code: sum(rows, "codeAdded"), cut: sum(rows, "codeRemoved"), opus: sum(rows, "opus"), sonnet: sum(rows, "sonnet"), fable: sum(rows, "fable"),
       pct, approx: read?.approx ?? false, estimated: running && pct !== null, running };
   });
 }
 
-/** The plan-week report: this plan week's days (at least the last 8, so a Thursday isn't a page of one bar) and every week. */
-export function reportPage(template: string, generated: string, history: Row[], budget: Budget): string {
+/** The repo's issues as `gh issue list --json createdAt,closedAt` gives them (closedAt null while open). */
+export const Issues = arr(obj({ createdAt: str(40), closedAt: opt(str(40)) }), 50000, { drop: true });
+export type Issues = Of<typeof Issues>;
+
+/** The ledger day a moment belongs to: days start at DAY_STARTS, local time. */
+const dayOf = (iso: string) => {
+  const t = new Date(new Date(iso).getTime() - DAY_STARTS * 3600e3);
+  return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, "0")}-${String(t.getDate()).padStart(2, "0")}`;
+};
+
+/** Issues opened and closed on each of `dates`, and how many stood open at the end of it: scope against work done. */
+export function issueDays(issues: Issues, dates: string[]) {
+  const opened = new Map<string, number>(), closed = new Map<string, number>();
+  for (const i of issues) {
+    const o = dayOf(i.createdAt); opened.set(o, (opened.get(o) ?? 0) + 1);
+    if (i.closedAt) { const c = dayOf(i.closedAt); closed.set(c, (closed.get(c) ?? 0) + 1); }
+  }
+  return dates.map((date) => ({
+    date, opened: opened.get(date) ?? 0, closed: closed.get(date) ?? 0,
+    open: issues.filter((i) => dayOf(i.createdAt) <= date && (!i.closedAt || dayOf(i.closedAt) > date)).length,
+  }));
+}
+
+/** The plan-week report: this plan week's days (at least the last 8, so a Thursday isn't a page of one bar), every week,
+ *  and issues opened against closed over the last 30 days. */
+export function reportPage(template: string, generated: string, history: Row[], budget: Budget, issues: Issues = []): string {
   const start = history.length ? weekStart(history.at(-1)!.date) : "";
   const days = history.filter((r, i) => r.date >= start || i >= history.length - 8);
-  return fill(template, { generated, start, days, weeks: planWeeks(history, budget) });
+  return fill(template, { generated, start, days, weeks: planWeeks(history, budget), issues: issueDays(issues, history.slice(-30).map((r) => r.date)) });
 }
 
 const read = <T>(name: string, g: (v: unknown) => T, none: T): T => { const f = path.join(out, name); return existsSync(f) ? g(JSON.parse(readFileSync(f, "utf8"))) : none; };
 const readHistory = () => read("history.json", History, []);
 const readBudget = () => read("budget.json", Budget, []);
+const readIssues = () => read("issues.json", Issues, []);
 
 /** week.html and report.html from what is on disk: the last run's header, the history and the budget entries. */
 function page(ledger: Of<typeof Ledger>, history: Row[]) {
   const budget = readBudget(), template = (name: string) => readFileSync(path.join(import.meta.dir, name), "utf8");
   writeFileSync(path.join(out, "week.html"), weekPage(template("ledger-week.html"), ledger, history, budget));
-  writeFileSync(path.join(out, "report.html"), reportPage(template("ledger-report.html"), ledger.generated, history, budget));
+  writeFileSync(path.join(out, "report.html"), reportPage(template("ledger-report.html"), ledger.generated, history, budget, readIssues()));
 }
 
 function build() {
@@ -118,6 +143,8 @@ function build() {
   writeFileSync(path.join(out, "ledger.json"), text);
   writeFileSync(path.join(out, "daily.json"), JSON.stringify(ledger.rows));
   writeFileSync(path.join(out, "size.json"), JSON.stringify(ledger.size));
+  const gh = Bun.spawnSync(["gh", "issue", "list", "--state", "all", "--limit", "50000", "--json", "createdAt,closedAt"], { cwd: repo, stderr: "inherit" });
+  if (gh.exitCode === 0) writeFileSync(path.join(out, "issues.json"), gh.stdout.toString()); // offline, the last run's issues stand
   const history = mergeHistory(readHistory(), ledger.rows);
   writeFileSync(path.join(out, "history.json"), JSON.stringify(history));
   page(ledger, history);

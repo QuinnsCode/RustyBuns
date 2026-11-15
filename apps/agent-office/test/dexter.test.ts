@@ -309,6 +309,18 @@ test("the daily report shows this plan week from its Thursday reset, the running
   expect(D).toHaveProperty("days.length", 8);
 });
 
+test("issues opened and closed land on 10am-to-10am days, with how many stood open at each day's end", async () => {
+  const { issueDays } = await import("../ester/ledger-daily.ts");
+  const at = (d: number, h: number) => new Date(2026, 10, d, h).toISOString();
+  // One opened 9am Nov 13 (still the 12th) and closed on the 13th; one opened the 13th and still open.
+  const issues = [{ createdAt: at(13, 9), closedAt: at(13, 15) }, { createdAt: at(13, 11), closedAt: undefined }];
+  expect(issueDays(issues, ["2026-11-12", "2026-11-13", "2026-11-14"])).toEqual([
+    { date: "2026-11-12", opened: 1, closed: 0, open: 1 },
+    { date: "2026-11-13", opened: 1, closed: 1, open: 1 },
+    { date: "2026-11-14", opened: 0, closed: 0, open: 1 },
+  ]);
+});
+
 test("the plan's weekly usage is entered by the morning it reset, a second entry replacing the first, and models split the spend", async () => {
   const { setBudget } = await import("../ester/ledger-daily.ts");
   const { familyOf } = await import("../ester/dexter.ts");
