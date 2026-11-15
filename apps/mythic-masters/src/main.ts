@@ -1926,11 +1926,27 @@ function stageSaucer(s: Stage["saucer"]) {
   saucer.beamMat.opacity = 0.14 * s.beam; // bloom spreads it
   saucer.beam.visible = s.beam > 0.01;
 }
-/** Through your own eyes (the abduction): the lids, the blur, the saucer's room, and the greys leaning in. */
-function stagePov(el: HTMLElement, p: Stage["pov"]) {
+/** A grey, head to foot (viewBox 0 0 100 240): the egg of a head, almond eyes, a thin neck, a pot belly, long arms and legs. */
+const GREY = `<g class="body"><g class="leg"><path class="limb" d="M43 150 L39 194 L41 231 l-11 4"/><path class="limb" d="M57 150 L61 194 L59 231 l11 4"/></g>`
+  + `<g class="arm l"><path class="limb" d="M35 95 L23 131 L26 166"/><path class="limb thin" d="M26 166 l-5 11 M26 166 l0 13 M26 166 l5 11"/></g>`
+  + `<g class="arm r"><path class="limb" d="M65 95 L77 131 L74 166"/><path class="limb thin" d="M74 166 l-5 11 M74 166 l0 13 M74 166 l5 11"/></g>`
+  + `<path class="skin" d="M33 92 Q50 84 67 92 Q71 122 63 150 Q50 157 37 150 Q29 122 33 92Z"/><rect class="skin" x="46" y="76" width="8" height="14"/>`
+  + `<g class="head"><path class="skin" d="M50 2 C80 2 86 30 79 50 C74 68 61 80 50 80 C39 80 26 68 21 50 C14 30 20 2 50 2Z"/>`
+  + `<ellipse class="eye" cx="35" cy="47" rx="11" ry="6.5" transform="rotate(24 35 47)"/><ellipse class="eye" cx="65" cy="47" rx="11" ry="6.5" transform="rotate(-24 65 47)"/></g></g>`;
+for (const g of document.querySelectorAll("#cine .pov .grey")) g.innerHTML = GREY;
+const saucerOn = new THREE.Vector3();
+/** Through your own eyes (the abduction): the lids, the blur, the saucer's room, the greys, and the beam that takes them. */
+function stagePov(el: HTMLElement, p: Stage["pov"], s: Stage["saucer"], says: Stage["seat"]) {
   el.hidden = !p;
   if (!p) return;
   el.dataset.where = p.where;
+  el.dataset.says = says; // whoever is talking nods along
+  // Where the saucer is on screen: the beam comes down from there, and the greys go up into it.
+  if (s && saucerOn.set(s.x, s.y, s.z).project(camera).z < 1) {
+    el.style.setProperty("--sx", `${clamp((saucerOn.x * 0.5 + 0.5) * 100, 10, 90).toFixed(1)}%`);
+    el.style.setProperty("--sy", `${clamp((0.5 - saucerOn.y * 0.5) * 100, 5, 70).toFixed(1)}%`);
+  }
+  el.style.setProperty("--beam", (s?.beam ?? 0).toFixed(3));
   el.style.setProperty("--lids", p.lids.toFixed(3));
   el.style.setProperty("--blur", `${p.blur.toFixed(2)}px`);
   el.style.setProperty("--greys", p.figures.toFixed(3));
@@ -1957,11 +1973,12 @@ function cinema(st: Stage) {
   cine.classList.toggle("frozen", st.freeze > 0.5);
   cine.classList.toggle("hold", director.holding);
   cine.classList.toggle("taped", st.tape > 0.5);
-  stagePov(cine.querySelector<HTMLElement>(".pov")!, st.pov);
+  stagePov(cine.querySelector<HTMLElement>(".pov")!, st.pov, st.saucer, st.seat);
   cine.querySelector<HTMLElement>(".label")!.textContent = st.label;
   cine.querySelector<HTMLElement>(".timecode")!.textContent = st.timecode;
   const cap = cine.querySelector<HTMLElement>(".caption")!, said = st.caption ? `${st.caption.who}|${st.caption.text}` : "";
   cap.hidden = !st.caption;
+  cap.dataset.seat = st.seat;
   // A drowned-out line: the noise blurred, and under it the reminder that you don't know what that is yet.
   const drowned = !!st.caption && st.muffle > 0.05 && st.caption.who === "???";
   cap.classList.toggle("muffled", drowned);

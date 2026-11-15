@@ -29,6 +29,13 @@ describe("the director", () => {
     });
   });
 
+  test("in the abduction each line sits by whoever says it: the grey, the other grey, the saucer up top, and you in the usual place", () => {
+    const d = new Director(), seats = new Map<string, string>();
+    d.play(abduction(at));
+    for (let i = 0; i < introClock().seconds * 30; i++) { d.step(1 / 30); if (d.stage.caption) seats.set(d.stage.caption.who, d.stage.seat); }
+    expect(Object.fromEntries(seats)).toEqual({ Grey: "grey", "Other grey": "other", "Saucer radio": "saucer", "Voice from the saucer": "saucer", Narrator: "", You: "", Book: "" });
+  });
+
   test("a new journey: you come to twice, the greys go up the beam, a standoff waits its turn, then a freeze frame", () => {
     const d = new Director();
     d.play(abduction(at));
