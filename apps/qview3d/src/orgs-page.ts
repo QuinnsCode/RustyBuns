@@ -2,11 +2,11 @@
 //
 // The shops page (public/orgs.html): sign in with eqosys and see your studios. A studio's owner or admin sets up its
 // products, copies the embed tag and makes a key for a script; QView3D's owner (the house studio) makes the org for
-// a studio from its id, which the friend copies from this same page.
+// a studio from its id, which the friend copies from this same page, or hands someone a sandbox link (sandboxes.ts).
 import { eqosys } from "@rustybuns/util/eqosys";
 import { getJson } from "@rustybuns/util/http";
-import { APP, EQOSYS, KeyReply, Mine, MODELS, ZONES, zonesOf, type Model, type Sites, type ZoneName } from "./api.ts";
-import { fieldsOf, productBody, type ProductFields } from "./product-form.ts";
+import { APP, EQOSYS, KeyReply, Mine, SandboxReply, type SandboxRequest, type Sites } from "./api.ts";
+import { act as acting, copyBox as copying, el, embedTag, field, productForm as editor } from "./shop-ui.ts";
 import { problem } from "./widget/upload.ts";
 
 /** Where eqosys sends people back: this page on the live Worker (eqosys APPS `returns`). */
@@ -17,14 +17,6 @@ const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as 
 const status = $<HTMLDivElement>("status"), shopsEl = $<HTMLDivElement>("shops"), who = $<HTMLSpanElement>("who");
 const signin = $<HTMLButtonElement>("signin"), signout = $<HTMLButtonElement>("signout"), out = $<HTMLElement>("signed-out");
 
-function el<K extends keyof HTMLElementTagNameMap>(tag: K, props: Partial<HTMLElementTagNameMap[K]> & { class?: string } = {}, ...kids: (Node | string)[]) {
-  const e = document.createElement(tag);
-  const { class: cls, ...rest } = props;
-  Object.assign(e, rest);
-  if (cls) e.className = cls;
-  e.append(...kids);
-  return e;
-}
 const say = (text: string, bad = false) => { status.textContent = text; status.classList.toggle("bad", bad); };
 const token = () => { const l = eq.login(); return l && eq.fresh(l, 5_000) ? l.token : null; };
 
@@ -35,18 +27,33 @@ async function send(path: string, method: string, body: unknown): Promise<Respon
   if (!res.ok) throw new Error(await problem(res));
   return res;
 }
-const act = (f: () => Promise<unknown>) => async (e?: Event) => {
-  e?.preventDefault();
-  try { await f(); } catch (err) { say(err instanceof Error ? err.message : String(err), true); }
-};
+const act = (f: () => Promise<unknown>) => acting(say, f);
+const copyBox = (title: string, text: string) => copying(title, text, say);
+const productForm = (org: string, reload: () => Promise<void>) => editor(org, send, say, reload);
 
-function field(label: string, input: HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement) {
-  return el("label", { class: "field" }, label, input);
-}
-function copyBox(title: string, text: string) {
-  const copy = el("button", { class: "copy", type: "button", textContent: "Copy" });
-  copy.onclick = () => void navigator.clipboard.writeText(text).then(() => say("Copied."));
-  return el("div", { class: "tagbox" }, el("div", { class: "bar" }, el("span", {}, title), copy), el("pre", { textContent: text }));
+/**
+ * The owner's hand-off: a sandbox for someone to try QView3D with their own product, as one link to send. They need
+ * no account; the link opens /try.html with the org and its key, and lasts the days asked for.
+ */
+function sandboxCard() {
+  const who = el("input", { type: "text", placeholder: "Fern Hats", maxLength: 60 });
+  const samples = el("input", { type: "number", min: "0", max: "5", value: "1" });
+  const days = el("input", { type: "number", min: "1", max: "90", value: "14" });
+  const made = el("div");
+  const form = el("form", {}, field("Who it's for (goes in the org id)", who),
+    el("div", { class: "row" }, field("Samples of their own product (Meshy credits)", samples), field("Days it lasts", days)),
+    el("button", { class: "go", type: "submit", textContent: "Make the sandbox link" }));
+  form.onsubmit = act(async () => {
+    const asked: SandboxRequest = { ...(who.value.trim() ? { for: who.value.trim() } : {}), samples: Number(samples.value) || 0, days: Number(days.value) || 14 };
+    const got = SandboxReply(await (await send("/api/sandboxes", "POST", asked)).json());
+    const until = new Date(got.expires).toLocaleDateString(undefined, { month: "long", day: "numeric" });
+    made.replaceChildren(
+      copyBox("The message to send (the link is shown once)", `Here's a sandbox to try QView3D, the 3D product customiser, with your own product. No sign-up: open the link, set up your product, and copy it onto your page as a tag, an iframe, or a line for your coding agent. It lasts until ${until}.\n\n${got.link}`),
+      el("p", { class: "sub", textContent: `Org ${got.org}. To make it a real shop later, use that org id in Make a shop below: it keeps their products.` }));
+    say(`Sandbox ${got.org} is ready.`);
+    form.reset();
+  });
+  return el("section", { class: "card" }, el("div", { class: "head" }, el("h1", { textContent: "Hand off a sandbox" }), el("p", { class: "sub", textContent: "A test shop for someone to try with their own product. One link, no sign-in." })), el("div", { class: "body" }, form, made));
 }
 
 /** The owner's form: an org for a studio, or new sites and allowance for one already made. */
@@ -65,58 +72,6 @@ function ownerCard(reload: () => Promise<void>) {
     await reload();
   });
   return el("section", { class: "card" }, el("div", { class: "head" }, el("h1", { textContent: "Make a shop" }), el("p", { class: "sub", textContent: "For a friend's studio: they copy its id from this page." })), el("div", { class: "body" }, form));
-}
-
-type Row = NonNullable<Mine["shops"][number]["org"]>["products"][number];
-
-/** Add a product, or change one: `edit(row)` fills the form with a saved one. Every field goes through productBody. */
-function productForm(org: string, reload: () => Promise<void>) {
-  const id = el("input", { type: "text", placeholder: "trucker-cap", spellcheck: false, required: true, pattern: "[a-z0-9][a-z0-9-]{0,62}" });
-  const name = el("input", { type: "text", placeholder: "Trucker cap", required: true, maxLength: 120 });
-  const kinds: Model[] = [...MODELS, "custom"];
-  const model = el("select", {}, ...kinds.map((m) => el("option", { value: m, textContent: m === "custom" ? "your own model (a sample)" : m })));
-  const colors = el("input", { type: "text", value: "#1f2937, #f4efe6, #b91c1c", spellcheck: false });
-  const kind = (): Model => kinds.find((k) => k === model.value) ?? "cap";
-  const swatches = el("span", { class: "swatches" });
-  const zones = el("div", { class: "zones" });
-  const pct = (placeholder: string) => el("input", { type: "number", min: "0", max: "100", step: "1", placeholder });
-  const across = pct("50"), up = pct("50"), size = pct("40");
-  let keep: ProductFields["keep"];
-  let ticked: ZoneName[] = [...ZONES];
-
-  const drawSwatches = () => swatches.replaceChildren(...colors.value.split(/[\s,]+/).filter(Boolean).map((c) => { const i = el("i", { title: c }); i.style.background = c; return i; }));
-  const drawZones = () => zones.replaceChildren(...zonesOf(kind()).map((z) => {
-    const box = el("input", { type: "checkbox", checked: ticked.includes(z) });
-    box.onchange = () => { ticked = box.checked ? [...ticked, z] : ticked.filter((t) => t !== z); };
-    return el("label", { class: "zone" }, box, ` ${z.replace("-", " ")}`);
-  }));
-  colors.oninput = drawSwatches;
-  model.onchange = () => { ticked = [...ZONES]; drawZones(); };
-  drawSwatches(); drawZones();
-
-  const save = el("button", { class: "go", type: "submit", textContent: "Save the product" });
-  const form = el("form", {},
-    el("div", { class: "row" }, field("Product id", id), field("Name", name)),
-    el("div", { class: "row" }, field("Kind", model), field("Colours, first one shown first", colors)), swatches,
-    el("fieldset", {}, el("legend", { textContent: "Prints on" }), zones),
-    el("fieldset", {}, el("legend", { textContent: "Where a new picture lands, in % (blank: the middle)" }),
-      el("div", { class: "row three" }, field("Across", across), field("Up", up), field("Size", size))),
-    save);
-  form.onsubmit = act(async () => {
-    const fields: ProductFields = { name: name.value, model: kind(), colors: colors.value, print: ticked, across: across.value, up: up.value, size: size.value, keep };
-    await send(`/api/orgs/${org}/products/${encodeURIComponent(id.value.trim())}`, "PUT", productBody(fields));
-    say(`Saved ${name.value.trim()}.`);
-    await reload();
-  });
-  const edit = (row: Row) => {
-    const f = fieldsOf(row.product);
-    id.value = row.id; name.value = f.name; model.value = f.model; colors.value = f.colors;
-    across.value = f.across; up.value = f.up; size.value = f.size; keep = f.keep; ticked = f.print;
-    drawSwatches(); drawZones();
-    save.textContent = `Save ${f.name}`;
-    form.scrollIntoView({ behavior: "smooth", block: "start" });
-  };
-  return { form, edit };
 }
 
 /** The shop's own sites: the pages that may embed the widget. */
@@ -155,7 +110,7 @@ function shopCard(shop: Mine["shops"][number], reload: () => Promise<void>) {
   }));
   body.append(o.products.length ? list : el("p", { class: "sub", textContent: "No products yet." }));
   const first = o.products[0]?.id ?? "your-product";
-  body.append(copyBox("Paste into your product page", `<script type="module" src="${location.origin}/v1/qview3d.js"></script>\n<qview-3d org="${o.id}" product="${first}"></qview-3d>`));
+  body.append(copyBox("Paste into your product page", embedTag(location.origin, o.id, first)));
   if (!editor) return card;
   body.append(el("h2", { textContent: "Add or change a product" }), editor.form);
   body.append(el("h2", { textContent: "Your sites" }), sitesForm(o.id, o.origins, reload));
@@ -179,7 +134,7 @@ async function load() {
   if (!t) { shopsEl.replaceChildren(); return; }
   const mine = await getJson("/api/mine", Mine, { headers: { authorization: `Bearer ${t}` } });
   if (!mine) return say("Couldn't read your shops. Sign in again.", true);
-  shopsEl.replaceChildren(...(mine.owner ? [ownerCard(load)] : []), ...mine.shops.map((s) => shopCard(s, load)));
+  shopsEl.replaceChildren(...(mine.owner ? [sandboxCard(), ownerCard(load)] : []), ...mine.shops.map((s) => shopCard(s, load)));
   if (!mine.shops.length) say("Your eqosys account isn't in a studio yet. Make one on eqosys (Studio tab), then come back.");
 }
 

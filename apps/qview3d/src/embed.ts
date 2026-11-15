@@ -2,9 +2,16 @@
 //
 // GET /v1/embed.md (and /llms.txt): how to put QView3D on a page, written for a coding agent. Someone tells their
 // Claude "add the 3D customiser from <host>/v1/embed.md to my product page" and it has everything: the two lines
-// with this host filled in, what to change, how to check it worked, and the license.
+// with this host filled in, what to change, how to check it worked, and the license. `?org=&product=` (a sandbox's page
+// links it so) fills in that org and product in place of the demo's.
 
-export function embedGuide(origin: string): string {
+/** The guide, its tags naming `pick`'s org and product (the public demo's when unset). */
+export function embedGuide(origin: string, pick?: { org: string; product: string }): string {
+  const org = pick?.org ?? "demo", cap = pick?.product ?? "field-cap", tee = pick?.product ?? "crew-tee";
+  const theirs = pick ? `
+- \`org="${org}"\` is the person's own test shop (a sandbox QNTBR handed them), and \`product="${tee}"\` the product
+  they set up in it. Any page may embed it, Save works, and it ends on the date its sandbox page shows. Use these
+  two values; the demo products below are only for comparison.` : "";
   return `# QView3D: add a 3D product customiser to a page
 
 You are a coding agent adding QView3D to someone's site. Shoppers see a 3D hat, shirt or hoodie, add their own picture,
@@ -29,9 +36,9 @@ Put the script once in the page's <head> (or before </body>), and the element wh
 
 \`\`\`html
 <script type="module" src="${origin}/v1/qview3d.js"></script>
-<qview-3d org="demo" product="field-cap"></qview-3d>
+<qview-3d org="${org}" product="${cap}"></qview-3d>
 \`\`\`
-
+${theirs}
 - \`org="demo"\` is the public demo: it works on any page, right now. It keeps no files, so Save is refused there;
   customising and the snapshot download work. A real shop gets its own org (ask hello@qntbr.com), then sets
   \`org\` to it and \`product\` to one of its products.
@@ -73,8 +80,8 @@ submits the form again with two fields added, as hidden inputs would be:
 
 \`\`\`html
 <form action="/cart/add" method="post">
-  <qview-3d name="design" org="demo" product="crew-tee"></qview-3d>
-  <input type="hidden" name="product" value="crew-tee" />
+  <qview-3d name="design" org="${org}" product="${tee}"></qview-3d>
+  <input type="hidden" name="product" value="${tee}" />
   <select name="size"><option>S</option><option selected>M</option><option>L</option></select>
   <button type="submit">Add to cart</button>
 </form>
@@ -118,7 +125,7 @@ turn it. Don't add handlers that swallow those keys on the element.
 Some site builders keep an \`<iframe>\` but strip a pasted \`<script>\`. Then paste this instead of section 1:
 
 \`\`\`html
-<iframe src="${origin}/v1/frame?org=demo&product=crew-tee" title="Customise it in 3D"
+<iframe src="${origin}/v1/frame?org=${org}&product=${tee}" title="Customise it in 3D"
   style="width:100%;height:560px;border:0" allow="clipboard-write"></iframe>
 \`\`\`
 

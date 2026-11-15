@@ -45,6 +45,8 @@ export const Org = obj({
   samples: opt(int(0, 10_000)),
   studio: opt(str(64, { re: STUDIO })),
   readOnly: opt(bool()),
+  /** A sandbox (sandboxes.ts) ends then, in ms since 1970: after it the org reads as unknown. Unset: it never does. */
+  expires: opt(num(0, 1e15)),
 });
 export type Org = Of<typeof Org>;
 
@@ -102,6 +104,17 @@ export type OrgSetup = Of<typeof OrgSetup>;
 export const Sites = obj({ origins: arr(str(200, { re: ORIGIN }), 50, { min: 1 }) });
 export type Sites = Of<typeof Sites>;
 
+/** An org as its shop sees it: GET /api/orgs/<org> (its admin key, or the shop signed in), and each org in GET /api/mine. */
+export const Shop = obj({
+  id: str(63, { re: ID }),
+  origins: arr(str(200), 50),
+  samples: int(0, 10_000),
+  keys: int(0, 20),
+  expires: opt(num(0, 1e15)),
+  products: arr(obj({ id: str(63, { re: ID }), product: Product }), 200),
+});
+export type Shop = Of<typeof Shop>;
+
 /** GET /api/mine: the signed-in person's shops (a studio, and its org once the owner made one), and whether they are QView3D's owner. */
 export const Mine = obj({
   owner: bool(),
@@ -109,16 +122,20 @@ export const Mine = obj({
     studio: str(64),
     name: str(60),
     role: oneOf(["owner", "admin", "maker"] as const),
-    org: opt(obj({
-      id: str(63, { re: ID }),
-      origins: arr(str(200), 50),
-      samples: int(0, 10_000),
-      keys: int(0, 20),
-      products: arr(obj({ id: str(63, { re: ID }), product: Product }), 200),
-    })),
+    org: opt(Shop),
   }), 20),
 });
 export type Mine = Of<typeof Mine>;
+
+/**
+ * POST /api/sandboxes (QView3D's owner): a test shop to hand someone. `for` names it (it goes in the org id), `samples`
+ * is how many of their own products Meshy may make (each costs credits), `days` how long it lasts.
+ */
+export const SandboxRequest = obj({ for: opt(str(60)), samples: opt(int(0, 5)), days: opt(int(1, 90)) });
+export type SandboxRequest = Of<typeof SandboxRequest>;
+/** The new sandbox: its org, its admin key (shown this once) and the link that carries both, to send. */
+export const SandboxReply = obj({ org: str(63, { re: ID }), key: str(200), link: str(400), expires: num(0, 1e15) });
+export type SandboxReply = Of<typeof SandboxReply>;
 
 /** POST /api/orgs/<org>/keys: a new admin key for a script, shown this once (the org keeps its SHA-256). */
 export const KeyReply = obj({ key: str(200) });

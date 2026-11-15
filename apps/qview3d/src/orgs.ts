@@ -9,11 +9,12 @@
 //   PUT  /api/orgs/<org>/sites              the shop's owner or admin changes the pages that may embed it (Sites)
 //   PUT  /api/orgs/<org>/products/<id>      the shop's owner or admin, or an admin key, writes a product (Product)
 //   POST /api/orgs/<org>/keys               the shop's owner or admin gets an admin key for a script, shown once
+//   (a sandbox, a test shop handed out with one link and no sign-in, is sandboxes.ts)
 import { b64url, sha256 } from "@rustybuns/util/bytes";
 import { privateJson, readJson } from "@rustybuns/util/http";
 import { checkerFor, type Claims } from "@rustybuns/util/token";
 import { ID } from "./layout.ts";
-import { APP, EQOSYS, Org, OrgSetup, Product, Sites, zonesOf, type KeyReply, type Mine } from "./api.ts";
+import { APP, EQOSYS, Org, OrgSetup, Product, Sites, zonesOf, type KeyReply, type Mine, type Shop } from "./api.ts";
 import { getOrg, listProducts, orgOfStudio, putOrg, putProduct } from "./settings.ts";
 import type { Env } from "./worker.ts";
 
@@ -34,6 +35,10 @@ export const isOwner = (c: Claims | null) => runs(c, HOUSE);
 /** Whether `c` may manage `org`: its studio's owner or admin, or QView3D's owner. */
 export const runsShop = (c: Claims | null, org: Org) => isOwner(c) || runs(c, org.studio);
 
+/** An org as its shop sees it (GET /api/orgs/<org> in sandboxes.ts, and each org in /api/mine). */
+export const shopOf = async (env: Env, id: string, o: Org): Promise<Shop> =>
+  ({ id, origins: o.origins, samples: o.samples ?? 0, keys: o.admins?.length ?? 0, ...(o.expires ? { expires: o.expires } : {}), products: await listProducts(env, id) });
+
 /** The routes above, or null when the request is none of them. */
 export async function orgsRoute(req: Request, env: Env, h: Record<string, string>): Promise<Response | null> {
   const url = new URL(req.url);
@@ -46,9 +51,7 @@ export async function orgsRoute(req: Request, env: Env, h: Record<string, string
     for (const s of c.studios ?? []) {
       const id = await orgOfStudio(env, s.id);
       const settings = id ? await getOrg(env, id) : null;
-      const org = id && settings
-        ? { id, origins: settings.origins, samples: settings.samples ?? 0, keys: settings.admins?.length ?? 0, products: await listProducts(env, id) }
-        : undefined;
+      const org = id && settings ? await shopOf(env, id, settings) : undefined;
       shops.push({ studio: s.id, name: s.name, role: s.role, ...(org ? { org } : {}) });
     }
     return privateJson({ owner: isOwner(c), shops } satisfies Mine, 200, h);
@@ -68,7 +71,8 @@ export async function orgsRoute(req: Request, env: Env, h: Record<string, string
     const body = await readJson(req, OrgSetup);
     if (!body) return fail("expected {studio, origins: [https://...], samples}", 400);
     const was = await getOrg(env, org);
-    const settings: Org = { ...was, origins: body.origins, samples: body.samples, studio: body.studio };
+    // A sandbox made a shop keeps its products and keys, and no longer ends.
+    const settings: Org = { ...was, origins: body.origins, samples: body.samples, studio: body.studio, expires: undefined };
     await putOrg(env, org, settings);
     return privateJson(settings, was ? 200 : 201, h);
   }

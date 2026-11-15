@@ -22,6 +22,8 @@ const clock = $<HTMLSpanElement>("clock"), result = $<HTMLElement>("result"), no
 
 const asked = new URLSearchParams(location.search);
 org.value ||= asked.get("org") ?? "";
+// A sandbox page links here with its key in the fragment, which never reaches a server.
+key.value ||= new URLSearchParams(location.hash.slice(1)).get("key") ?? "";
 if (/^(localhost|127\.0\.0\.1)$/.test(location.hostname)) {
   org.value ||= "demo";
   key.value ||= "demo-admin-key";
