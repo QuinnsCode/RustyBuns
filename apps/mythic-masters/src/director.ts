@@ -50,6 +50,8 @@ export interface Stage {
   freeze: number;
   /** Who is talking, and what they say. */
   caption: { who: string; text: string } | null;
+  /** Where the caption sits while you look through your own eyes: by the grey who says it, or up top for the saucer. */
+  seat: Seat;
   /** A name slammed across the screen. */
   title: { text: string; sub: string } | null;
   /** The tape's label, and the timecode running under it. */
@@ -88,9 +90,14 @@ export interface Pov {
   blur: number;
   /** 0..1: the shapes leaning over you. */
   figures: number;
-  /** 0..1: how far up the beam they have gone. */
+  /** 0..1: how far up the beam they have gone (the other grey goes first, the page staggers them). */
   up: number;
 }
+
+/** Where a line sits in the abduction: by the first grey (left), by the other grey (right), under the saucer (up top), or "" (the usual place). */
+export type Seat = "grey" | "other" | "saucer" | "";
+/** The seat of whoever is talking, from the name before a line's colon in content/intro.json. */
+export const seat = (who: string): Seat => /saucer/i.test(who) ? "saucer" : /^other grey/i.test(who) ? "other" : /^grey/i.test(who) ? "grey" : "";
 
 /** A fighter's card in a faceoff. */
 export interface VsCard { name: string; sub: string; art: string | null; tier: string }
@@ -199,9 +206,9 @@ export function abduction(at: Vec3): Scene {
   const pov = (t: number): Pov | null => t < PINES
       ? { where: "ship", lids: t < 9.6 ? lift(t, 1) : 1 - smooth((t - 9.6) / 2.4), blur: t < 9.6 ? 9 - 4 * smooth((t - 1) / 3) : 5 + 14 * smooth((t - 9.6) / 2.2), figures: 1, up: 0 }
       : t < 37 ? { where: "pines", lids: lift(t, PINES + 0.4), blur: t < 30 ? 14 - 10 * smooth((t - PINES - 0.4) / 4) : 4 * (1 - smooth((t - 30) / 3)),
-        figures: smooth((t - PINES - 1.2) / 1.6) * (1 - smooth((t - 34.6) / 0.9)), up: smooth((t - 33.4) / 2) }
+        figures: smooth((t - PINES - 1.2) / 1.6) * (1 - smooth((t - 35.3) / 0.4)), up: smooth((t - 32.2) / 3.4) }
       : null;
-  const saucer = (t: number) => t < PINES ? null : ({ ...saucerAt(t), beam: t < 31.8 ? 0 : t < 35.4 ? smooth((t - 31.8) / 0.6) : 1 - smooth((t - 35.4) / 0.5) });
+  const saucer = (t: number) => t < PINES ? null : ({ ...saucerAt(t), beam: t < 31.8 ? 0 : t < 35.6 ? smooth((t - 31.8) / 0.6) : 1 - smooth((t - 35.6) / 0.4) });
   const shot = (t: number) => t < PINES ? null : {
     from: mix(ground, sat, smooth((t - 36.2) / 1.6)), at: mix(t < 35.8 ? up : saucerAt(t), ahead, smooth((t - 36.4) / 1.6)), mix: 1 - smooth((t - 39.6) / 1.2),
   };
@@ -294,7 +301,7 @@ export function faceoff(a: VsCard, b: VsCard, at: Vec3, k = 0): Scene {
 
 // --- the director ------------------------------------------------------------------------------------------------
 
-const QUIET: Stage = { bars: 0, tape: 0, freeze: 0, caption: null, title: null, label: "", timecode: "", shot: null, saucer: null, pov: null, file: null, muffle: 0, versus: null, hud: 1,
+const QUIET: Stage = { bars: 0, tape: 0, freeze: 0, caption: null, seat: "", title: null, label: "", timecode: "", shot: null, saucer: null, pov: null, file: null, muffle: 0, versus: null, hud: 1,
   dip: 0, flash: 0, whip: 0, speed: 0, slow: 1 };
 
 /** A hand on the camera: a slow wander, the same for the same clock. */
@@ -357,7 +364,7 @@ export class Director extends Base<Scene> {
     const tc = Math.floor(f.clock * 30), ff = tc % 30, ss = Math.floor(tc / 30) % 60, mm = Math.floor(tc / 1800) % 60;
     this.stage = {
       bars, tape, freeze: frozen, title, shot, saucer: s?.saucer?.(t) ?? null, pov: s?.pov?.(t) ?? null, file: s?.file?.(t) ?? null, muffle: (typeof s?.muffle === "function" ? s.muffle(t) : s?.muffle ?? 0) * out,
-      caption: f.line, versus: s?.versus?.(t) ?? null, hud: smooth(hud),
+      caption: f.line, seat: s?.pov && f.line ? seat(f.line.who) : "", versus: s?.versus?.(t) ?? null, hud: smooth(hud),
       dip: f.look.dip, flash: f.look.flash, whip: f.look.whip, speed: f.look.speed * out, slow: s ? slow : 1,
       label: this.label, timecode: `${String(mm).padStart(2, "0")}:${String(ss).padStart(2, "0")}:${String(ff).padStart(2, "0")}`,
     };
