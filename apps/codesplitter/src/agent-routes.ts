@@ -73,7 +73,7 @@ import { cheapest } from "./conflict-agent.ts";
 import { branchHash, dispatchHint, HunksReply } from "./branches.ts";
 import type { Busy } from "@rustybuns/util/overlap";
 import { MERVIN } from "./mervin.ts";
-import { readStats } from "./stats.ts";
+import { readSaved, readStats } from "./stats.ts";
 import { deskHeard } from "./office.ts";
 import { engineLines, type Engine } from "./heal.ts";
 import { isBuildFile } from "./buildfiles.ts";
@@ -275,6 +275,10 @@ export async function agentRoutes(req: Request, env: Env, p: string[], url: URL,
   self: (req: Request) => Promise<Response>): Promise<Response | null> {
   if (p[1] === "mervin" && !p[2] && req.method === "GET") return json(MERVIN);
   if (p[1] === "stats" && !p[2] && req.method === "GET") return json(await readStats(env), 200, { "cache-control": "public, max-age=30" });
+  if (p[1] === "stats" && p[2] === "saved" && !p[3] && req.method === "GET") {
+    const days = Math.min(Math.max(Number(url.searchParams.get("days")) || 30, 1), 60);
+    return json({ saved: await readSaved(env, Date.now() - days * 864e5) }, 200, { "cache-control": "public, max-age=300" });
+  }
   if (p[1] === "agents" && !p[2]) {
     const why = agentsUnavailable(env);
     return json({ available: !why, why, harnesses: why ? [] : installedHarnesses(env), all: HARNESSES, admins_only: adminsOnly(env, user) });

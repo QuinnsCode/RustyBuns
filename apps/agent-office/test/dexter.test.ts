@@ -293,6 +293,58 @@ test("each morning's run grows the history, and the weekly page carries all of i
   expect(page.match(/<\/script>/g)).toHaveLength(1);
 });
 
+test("the daily report shows this plan week from its Thursday reset, the running week's usage estimated from the last one read", async () => {
+  const { reportPage, Row } = await import("../ester/ledger-daily.ts");
+  const zero = Row({ date: "2026-01-01", sessions: 0, turns: 0, units: 0, input: 0, output: 0, cacheRead: 0, cacheWrite: 0, fights: 0, episodes: 0, ciReads: 0, testOutput: 0, oversize: 0, mervin: 0, ester: 0, dexter: 0, prs: 0, added: 0, removed: 0, codeAdded: 0, codeRemoved: 0 });
+  // Thu Nov 5 to Sun Nov 15: last week (reset Nov 5) read 76% at 76M units, so 1% is 1M; this week (reset Nov 12) has 4 days of 10M.
+  const dates = ["05", "06", "07", "08", "09", "10", "11", "12", "13", "14", "15"].map((d) => `2026-11-${d}`);
+  const history = dates.map((date) => ({ ...zero, date, units: date >= "2026-11-12" ? 10e6 : 76e6 / 7, opus: 1 }));
+  const page = reportPage(readFileSync(path.join(import.meta.dir, "../ester/ledger-report.html"), "utf8"), "2026-11-15T22:00:00Z", history, [{ ends: "2026-11-12", pct: 76 }]);
+  const D: unknown = JSON.parse(/const D=(.*);\n/.exec(page)![1]!);
+  expect(D).toMatchObject({
+    start: "2026-11-12",
+    weeks: [{ start: "2026-11-05", days: 7, pct: 76, estimated: false }, { start: "2026-11-12", ends: "2026-11-19", days: 4, pct: 40, estimated: true, running: true }],
+  });
+  // Four days into the week still charts the last eight, so a Thursday morning isn't a page of one bar.
+  expect(D).toHaveProperty("days.length", 8);
+});
+
+test("conflicts Mervin saved, from codeSplitter and this Mac's log, land on their day once each, priced as fought by hand", async () => {
+  const { savedDays, conflictCost, Row } = await import("../ester/ledger-daily.ts");
+  const { noteSaved, readSaved } = await import("../../../scripts/conflicts-saved.ts");
+  const log = path.join(mkdtempSync(path.join(tmpdir(), "saved-")), "conflicts-saved.jsonl");
+  // preflight run twice on one branch settles the same file: one conflict saved, not two. A hold is its own.
+  noteSaved("preflight", "preflight b1 a.ts", 1, log);
+  noteSaved("preflight", "preflight b1 a.ts", 1, log);
+  noteSaved("hold", "hold h1", 1, log);
+  const local = readSaved(log);
+  expect(local.map((r) => r.kind)).toEqual(["preflight", "hold"]);
+  const today = new Date(Date.now() - 10 * 3600e3); // the log's rows were written now, on today's 10am-to-10am day
+  const date = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+  // codeSplitter's hourly rows: two DO saves at 11am on the 14th, one before 10am (still the 13th), and a branch merge.
+  const hour = (d: number, h: number) => new Date(2026, 10, d, h).getTime();
+  const remote = [{ hour: hour(14, 11), kind: "do-save", n: 2 }, { hour: hour(14, 9), kind: "do-save", n: 1 }, { hour: hour(14, 15), kind: "branch-merge", n: 3 }];
+  expect(savedDays(remote, local, ["2026-11-13", "2026-11-14", date])).toEqual([
+    { date: "2026-11-13", "do-save": 1, "branch-merge": 0, preflight: 0, hold: 0 },
+    { date: "2026-11-14", "do-save": 2, "branch-merge": 3, preflight: 0, hold: 0 },
+    { date, "do-save": 0, "branch-merge": 0, preflight: 1, hold: 1 },
+  ]);
+  const zero = Row({ date: "2026-01-01", sessions: 0, turns: 0, units: 0, input: 0, output: 0, cacheRead: 0, cacheWrite: 0, fights: 0, episodes: 0, ciReads: 0, testOutput: 0, oversize: 0, mervin: 0, ester: 0, dexter: 0, prs: 0, added: 0, removed: 0, codeAdded: 0, codeRemoved: 0 });
+  expect(conflictCost([{ ...zero, fights: 300e3, episodes: 2 }, { ...zero, fights: 100e3, episodes: 2 }])).toBe(100e3);
+});
+
+test("issues opened and closed land on 10am-to-10am days, with how many stood open at each day's end", async () => {
+  const { issueDays } = await import("../ester/ledger-daily.ts");
+  const at = (d: number, h: number) => new Date(2026, 10, d, h).toISOString();
+  // One opened 9am Nov 13 (still the 12th) and closed on the 13th; one opened the 13th and still open.
+  const issues = [{ createdAt: at(13, 9), closedAt: at(13, 15) }, { createdAt: at(13, 11), closedAt: undefined }];
+  expect(issueDays(issues, ["2026-11-12", "2026-11-13", "2026-11-14"])).toEqual([
+    { date: "2026-11-12", opened: 1, closed: 0, open: 1 },
+    { date: "2026-11-13", opened: 1, closed: 1, open: 1 },
+    { date: "2026-11-14", opened: 0, closed: 0, open: 1 },
+  ]);
+});
+
 test("the plan's weekly usage is entered by the morning it reset, a second entry replacing the first, and models split the spend", async () => {
   const { setBudget } = await import("../ester/ledger-daily.ts");
   const { familyOf } = await import("../ester/dexter.ts");

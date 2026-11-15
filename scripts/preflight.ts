@@ -14,6 +14,7 @@
 import { arr, int, obj, str, type Of } from "../packages/util/src/guard.ts";
 import { GENERATED } from "../packages/util/src/overlap.ts";
 import { type Board, type Clash, type FileRow, run } from "../apps/codesplitter/scripts/mervin-board.ts";
+import { noteSaved } from "./conflicts-saved.ts";
 
 /** One row of `gh pr list --json number,title,headRefName,headRefOid,files`. */
 export const OpenPr = obj({
@@ -69,6 +70,8 @@ if (import.meta.main) {
   const { clash, generated } = overlaps(mine, prs, branch);
   const others = clash.map((o) => prs.find((p) => p.number === o.pr)!);
   const v = others.length ? verdict(run(undefined, run$(["git", "rev-parse", base]).trim(), [...others, { number: ME, title: "this branch", headRefOid: head, headRefName: branch }]).board) : undefined;
+  // Each file Mervin settles for this branch is a conflict nobody fights: counted once per branch and file.
+  for (const f of v?.settles ?? []) noteSaved("preflight", `preflight ${branch} ${f.path}`);
   if (args.includes("--json")) console.log(JSON.stringify({ clash, generated, ...(v && { mervin: v }) }, null, 2));
   else {
     for (const o of clash) console.log(`#${o.pr} ${o.title}\n  also changes: ${o.files.slice(0, 8).join(", ")}${o.files.length > 8 ? ` (+${o.files.length - 8})` : ""}`);
