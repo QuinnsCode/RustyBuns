@@ -36,9 +36,10 @@ const relink = (html: string) =>
 for (const t of lineup) {
   if (!t.file) continue;
   const page = await Bun.file(join(talks, t.file)).text();
-  for (const m of page.matchAll(/<section class="slide">([\s\S]*?)<\/section>/g)) {
-    const notes = /<div class="notes">([\s\S]*?)<\/div>/.exec(m[1]);
-    t.slides.push({ html: `<section class="slide">${relink(m[1])}</section>`, notes: notes ? text(notes[1]) : "" });
+  // A slide's own class rides along (talk 1's style J slides are `slide j`).
+  for (const m of page.matchAll(/<section class="(slide(?: [\w-]+)*)">([\s\S]*?)<\/section>/g)) {
+    const notes = /<div class="notes">([\s\S]*?)<\/div>/.exec(m[2]);
+    t.slides.push({ html: `<section class="${m[1]}">${relink(m[2])}</section>`, notes: notes ? text(notes[1]) : "" });
   }
 }
 

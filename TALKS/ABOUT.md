@@ -47,7 +47,12 @@ opens point 3), published as https://claude.ai/artifact/9J1LWKbxnYYewFTxdPc6MM (
 is always the doc's wording; slides rebuilt from the owner's notes (marked `rebuilt`) had the doc rows rewritten to match,
 so option 1 is the note made into a slide. The owner's pick per slide is in its `content` collection, one document per
 slide (`t1-s1` to `t1-s42`): `{ option, note }`. "Play the talk" runs every slide in order as picked (option 1 where
-nothing is picked yet), so the page is also the draft deck.
+nothing is picked yet).
+
+All 42 are picked. `drafts/talk1-picks.json` copies the collection, and `bun TALKS/drafts/build-talk1.ts` turns it into
+the deck [concept-to-dreams.html](concept-to-dreams.html): each picked option drawn in style J (its rules are in
+`deck.css` too, so the player shows it), the slide's brief as speaker notes. After a new round of picks, update the JSON
+and rebuild.
 
 The notes so far reframe points 2 to 4 around primitives: the worker is written once and runs as a real worker on
 Cloudflare or as a function on a server (hybrid: scale to zero, then route to your own servers past a crossover); memory

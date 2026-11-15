@@ -75,6 +75,7 @@ section.slide-set { margin-top: 40px; }
 .s.long h3 { font-size: 3.5cqw; line-height: 1.12; }
 .s.big-type h3 { font-size: 8.4cqw; max-width: 92%; margin-top: 7cqw; }
 .s.big-type p { max-width: 70%; font-size: 2.4cqw; }
+.s p.sm, .s.big-type p.sm { font-size: 1.35cqw; margin-top: 1.4cqw; color: #8a8a86; max-width: 70%; }
 .s.wide h3 { max-width: 88%; }
 .s.wide p { max-width: 70%; }
 .s.wide .v { top: auto; bottom: 4cqw; transform: none; width: 46cqw; }
@@ -390,6 +391,21 @@ section.slide-set { margin-top: 40px; }
       <rect x="0" y="0" width="360" height="224" rx="12" fill="var(--fill)"/><line x1="0" y1="34" x2="360" y2="34"/>
       <circle cx="18" cy="17" r="4"/><circle cx="34" cy="17" r="4"/><circle cx="50" cy="17" r="4"/>${T(196, 23, "diff of the app code", 13, 600, "middle", DIM)}
       ${T(180, 130, o.q ? "?" : "0", 80, 900, "middle", "var(--ac)")}${T(180, 172, "lines changed", 18, 700)}${T(180, 204, "+0   -0", 14, 600, "middle", DIM)}</g>`, 260),
+
+    // Rebuilt: local to edge to cloud to bare metal, one app at every stop.
+    stops: (o = {}) => svg(`<line x1="50" y1="104" x2="350" y2="104" stroke="var(--ac)" stroke-dasharray="6 6"/>
+      ${[["monitor", "local", "your laptop"], ["zap", "edge", "Cloudflare"], ["cloud", "cloud", "a rented server"], ["server", "bare metal", "your own box"]].map(([n, t, sub], i) => {
+        const x = 50 + i * 100, on = o.all || o.hi === i;
+        return `<circle cx="${x}" cy="104" r="36" ${on ? 'fill="var(--ac)" stroke="var(--ac)"' : 'fill="var(--fill)"'}/>${ic(n, x - 20, 84, 40, on ? 'stroke="#0b0b0c"' : "")}
+          ${T(x, 168, t, 15, 900)}${T(x, 188, sub, 11, 600, "middle", DIM)}`; }).join("")}
+      ${T(200, 240, "same app at every stop", 13, 600, "middle", "var(--ac)")}`),
+    // Rebuilt: the letters the name could have been.
+    letters: (o = {}) => svg(`${[["V", "Vite"], ["R", "Rust"], ["T", "TypeScript"], ["B", "Bun"], ["A", "Alchemy"], ["E", "Effect"], ["EV", "EV"]].map(([l, name], i) => {
+        const x = 15 + i * 54, keep = o.brat && "BRAT".includes(l) && l.length === 1;
+        return `<rect x="${x}" y="24" width="46" height="46" rx="8" ${keep ? 'fill="var(--ac)" stroke="var(--ac)"' : 'fill="var(--fill)"'} ${o.brat && !keep ? 'opacity="0.4"' : ""}/>
+          ${T(x + 23, 55, l, l.length > 1 ? 16 : 22, 900, "middle", keep ? "#0b0b0c" : "currentColor")}${T(x + 23, i % 2 ? 104 : 90, name, 10, 600, "middle", DIM)}`; }).join("")}
+      ${o.brat ? ["B", "R", "A", "T"].map((l, i) => `<rect x="${62 + i * 72}" y="130" width="60" height="60" rx="10" fill="var(--ac)" stroke="var(--ac)"/>${T(92 + i * 72, 172, l, 30, 900, "middle", "#0b0b0c")}`).join("") + T(200, 236, "bad marketing in SF?", 14, 600, "middle", DIM)
+        : T(200, 176, "= Rusty Buns", 30, 900, "middle", "var(--ac)") + T(200, 222, "you need neither", 14, 600, "middle", DIM)}`),
 
     // Point 6: opt-in Rust
     progress: (o = {}) => svg(`${T(200, 78, "heavy job, in TypeScript", 15, 700)}
@@ -792,29 +808,29 @@ section.slide-set { margin-top: 40px; }
         { tag: "SQLite", k: "Stand-ins", h: "Most of them are *SQLite*", p: "Outside Cloudflare, D1, KV, R2 and Durable Object storage run on SQLite.", v: "pairs" },
         { tag: "Big", k: "Stand-ins", h: "Every gap gets a *stand-in*", l: "big-type" },
       ] },
-      { id: "t1-s29", n: 29, name: "Experiment", brief: "Run the same app with no cloud account at all, then deploy it. Nothing in the app changes. On stage: desktop app run, then deploy, then a diff of the app code: empty.", opts: [
-        { tag: "As written", k: "Where the three disagree", h: "*Experiment*", p: "Run the same app with no cloud account at all, then deploy it. Nothing in the app changes.", v: "steps", vo: { steps: ["run", "deploy", "diff"] } },
-        { tag: "No account", k: "Experiment 7", h: "No cloud account. *At all.*", p: "Run the app. Then deploy it. Then compare the code.", v: "steps", vo: { steps: ["run", "deploy", "diff"] } },
-        { tag: "Hypothesis", k: "Hypothesis", h: "Nothing in the app *changes*", p: "Run it locally, deploy it, and diff the code.", v: "diff" },
-        { tag: "Diff", k: "Experiment 7", h: "Run, deploy, *diff*", p: "How many lines of app code change? Guess.", v: "steps", vo: { steps: ["run", "deploy", "diff"] } },
-        { tag: "Offline first", k: "Experiment 7", h: "Start with no *internet*", p: "The app runs as a desktop app with no cloud account. Then we deploy it.", v: "offline" },
-        { tag: "Guess", k: "Experiment 7", h: "How many lines will *change?*", p: "Run locally, then deploy to Cloudflare.", v: "diff", vo: { q: true } },
-        { tag: "Live", k: "Experiment 7", h: "Local to Cloudflare, *live*", p: "Same app, no edits in between.", v: "steps", vo: { steps: ["run", "deploy", "diff"] } },
-        { tag: "Plain", k: "Experiment 7", h: "Run it here. Then ship it *there.*", p: "And check what changed.", v: "steps", vo: { steps: ["run here", "ship", "check"] } },
-        { tag: "Control", k: "Experiment 7", h: "Control: local. Test: *deployed.*", p: "Same app code in both.", v: "steps", vo: { steps: ["local", "deployed", "compare"] } },
-        { tag: "Big", k: "Experiment 7", h: "No cloud account. *Then deploy.*", l: "big-type" },
+      { id: "t1-s29", n: 29, name: "Experiment", rebuilt: true, brief: "Run the same app local, then on the edge, then in the cloud, then on bare metal. Nothing in the app changes. On stage: the desktop app run, then a deploy to each stop, then a diff of the app code: empty.", opts: [
+        { tag: "From your note", k: "Experiment 7", h: "Local to edge to cloud to *bare metal*", p: "Same app, no edits in between. Live.", v: "stops" },
+        { tag: "Four stops", k: "Experiment 7", h: "Four stops, one *app*", p: "Your laptop, Cloudflare's edge, a rented server, your own box.", v: "stops" },
+        { tag: "Your earlier pick", k: "Experiment 7", h: "Local to Cloudflare, *live*", p: "Same app, no edits in between.", v: "steps", vo: { steps: ["run", "deploy", "diff"] } },
+        { tag: "Hypothesis", k: "Hypothesis", h: "Nothing in the app *changes*", p: "Local, edge, cloud, bare metal. Then we diff the code.", v: "stops" },
+        { tag: "Guess", k: "Experiment 7", h: "How many lines will *change?*", p: "From the laptop all the way to bare metal.", v: "diff", vo: { q: true } },
+        { tag: "No account", k: "Experiment 7", h: "Start with no cloud account. *At all.*", p: "Then the edge, then the cloud, then bare metal.", v: "stops", vo: { hi: 0 } },
+        { tag: "Steps", k: "Experiment 7", h: "Run, deploy, *diff*", p: "At every stop from local to bare metal.", v: "steps", vo: { steps: ["run", "deploy", "diff"] } },
+        { tag: "Plain", k: "Experiment 7", h: "Run it here. Then *everywhere.*", p: "Local, edge, cloud, bare metal.", v: "stops" },
+        { tag: "Control", k: "Experiment 7", h: "Control: local. Test: *everywhere else.*", p: "Same app code at each stop.", v: "stops", vo: { hi: 0 } },
+        { tag: "Big", k: "Experiment 7", h: "Local. Edge. Cloud. *Bare metal.*", p: "Same app.", l: "big-type" },
       ] },
-      { id: "t1-s30", n: 30, name: "Result", brief: "The app does not know where it is. One short list says what it needs; Rusty Buns sets up each place. On screen: the empty diff, big.", opts: [
-        { tag: "As written", k: "Result", h: "The app does not know where it *is.*", p: "One short list says what it needs; Rusty Buns sets up each place.", v: "diff" },
-        { tag: "Zero", k: "Result", h: "0 lines *changed*", p: "One short list says what the app needs. Rusty Buns sets up each place.", v: "diff" },
-        { tag: "Empty", k: "Result", h: "The diff is *empty*", p: "The app doesn't know if it's local or on Cloudflare.", v: "diff" },
+      { id: "t1-s30", n: 30, name: "Result", rebuilt: true, brief: "Write the app logic once; deploy manywhere. The app does not know where it is. One short list says what it needs; Rusty Buns sets up each place. On screen: the empty diff, big.", opts: [
+        { tag: "From your note", k: "Result", h: "Write the app logic once. *Deploy manywhere.*", p: "0 lines changed from local to bare metal.", v: "diff" },
+        { tag: "Manywhere", k: "Result", h: "Deploy *manywhere*", p: "The app logic is written once. Rusty Buns sets up each place.", v: "diff" },
+        { tag: "Zero", k: "Result", h: "0 lines *changed*", p: "Write the logic once. Deploy it manywhere.", v: "diff" },
         { tag: "Short list", k: "Result", h: "One short *list*", p: "The app says what it needs. Rusty Buns sets up each place.", v: "diff" },
-        { tag: "Results", k: "Experiment 7 · results", h: "Nothing *changed*", p: "Same app, local and deployed.", v: "diff" },
-        { tag: "Myth busted", k: "Result", h: "Each place needs its own code? *Busted.*", p: "0 lines changed between local and Cloudflare.", v: "diff" },
-        { tag: "No idea", k: "Result", h: "Where am I? The app has no *idea.*", p: "And it doesn't need one.", v: "diff" },
-        { tag: "Recap", k: "Result", h: "Five parts, three places, one *list*", p: "Rusty Buns sets up each place from it.", v: "five" },
+        { tag: "Every stop", k: "Result", h: "Every stop, same *code*", p: "Local, edge, cloud, bare metal. Written once.", v: "stops", vo: { all: true } },
+        { tag: "No idea", k: "Result", h: "Where am I? The app has no *idea.*", p: "Write the logic once, deploy manywhere.", v: "diff" },
+        { tag: "Myth busted", k: "Result", h: "Each place needs its own code? *Busted.*", p: "0 lines changed between local and bare metal.", v: "diff" },
+        { tag: "Logic", k: "Result", h: "Your logic, *once*", p: "The deploys go anywhere. The logic doesn't move.", v: "diff" },
         { tag: "Plain", k: "Result", h: "The app stays the *same*", p: "Rusty Buns does the setup in each place.", v: "diff" },
-        { tag: "Big", k: "Result", h: "0 lines *changed*", p: "The app does not know where it is.", l: "big-type" },
+        { tag: "Big", k: "Result", h: "Write once. *Deploy manywhere.*", p: "The app does not know where it is.", l: "big-type" },
       ] },
     ] },
 
@@ -867,17 +883,17 @@ section.slide-set { margin-top: 40px; }
         { tag: "Never alone", k: "Fallback", h: "Rust never runs *alone*", p: "There's always a TypeScript version ready.", v: "twin" },
         { tag: "Big", k: "Fallback", h: "Same *answer*", p: "Rust or TypeScript.", l: "big-type" },
       ] },
-      { id: "t1-s35", n: 35, name: "Experiment", brief: "Run the app with Rust on and time it. Turn Rust off mid-run. The app keeps going on TypeScript. On stage: a speed readout, then a toggle; the app does not stop.", opts: [
-        { tag: "As written", k: "Opt-in Rust", h: "*Experiment*", p: "Run the app with Rust on and time it. Turn Rust off mid-run. The app keeps going on TypeScript.", v: "toggle" },
-        { tag: "Switch", k: "Experiment 8", h: "Flip the switch *mid-run*", p: "Rust on, then off. Does the app stop?", v: "toggle" },
-        { tag: "Hypothesis", k: "Hypothesis", h: "The app keeps *going*", p: "Turn Rust off while it runs. Watch.", v: "toggle" },
-        { tag: "Steps", k: "Experiment 8", h: "Time it. Then pull *Rust.*", p: "The app should keep going on TypeScript.", v: "steps", vo: { steps: ["Rust on", "time it", "Rust off"] } },
-        { tag: "Live", k: "Experiment 8", h: "Turning off Rust, *live*", p: "While the app is running.", v: "toggle" },
-        { tag: "Guess", k: "Experiment 8", h: "What happens when Rust *disappears?*", p: "Guess first. Then we flip the switch.", v: "toggle" },
-        { tag: "Speed", k: "Experiment 8", h: "How much faster is *Rust?*", p: "Time it on. Then turn it off and keep going.", v: "toggle" },
-        { tag: "Plain", k: "Experiment 8", h: "Rust off, *mid-run*", p: "The app keeps going on TypeScript.", v: "toggle" },
-        { tag: "One switch", k: "Experiment 8", h: "One switch, one *change*", p: "Same app, Rust on and Rust off.", v: "toggle" },
-        { tag: "Big", k: "Experiment 8", h: "Flip the *switch*", l: "big-type" },
+      { id: "t1-s35", n: 35, name: "Experiment", rebuilt: true, brief: "You own the switch: when you want or need Rust, and when TypeScript is enough. It is your code. On stage: run with Rust on and time it, turn Rust off mid-run; the app keeps going on TypeScript.", opts: [
+        { tag: "From your note", k: "Experiment 8", h: "You own the *switch*", p: "When you want Rust, and when TypeScript is enough, is your call. It's your code.", v: "toggle" },
+        { tag: "Your call", k: "Experiment 8", h: "Rust or TypeScript? *Your call.*", p: "Flip the switch when you want to, or when you need to.", v: "toggle" },
+        { tag: "Mid-run", k: "Experiment 8", h: "Flip the switch *mid-run*", p: "Your switch, your code. The app keeps going on TypeScript.", v: "toggle" },
+        { tag: "Hypothesis", k: "Hypothesis", h: "The app keeps *going*", p: "You turn Rust off while it runs. Watch.", v: "toggle" },
+        { tag: "When", k: "Experiment 8", h: "When you want. When you *need.*", p: "You decide when a part runs in Rust.", v: "toggle" },
+        { tag: "Steps", k: "Experiment 8", h: "Time it. Then pull *Rust.*", p: "Your switch. The app keeps going on TypeScript.", v: "steps", vo: { steps: ["Rust on", "time it", "Rust off"] } },
+        { tag: "Your code", k: "Experiment 8", h: "It's your *code*", p: "Rust is a switch you own, not a rewrite we force on you.", v: "toggle" },
+        { tag: "Live", k: "Experiment 8", h: "Your switch, *live*", p: "Rust on, time it, Rust off. The app doesn't stop.", v: "toggle" },
+        { tag: "Plain", k: "Experiment 8", h: "You choose when to use *Rust*", p: "The rest stays TypeScript.", v: "toggle" },
+        { tag: "Big", k: "Experiment 8", h: "Your *switch.*", p: "Your code.", l: "big-type" },
       ] },
       { id: "t1-s36", n: 36, name: "Result", brief: "Rust when you want speed. TypeScript when Rust cannot load. The user never sees a crash. On screen: two speed readouts, both green.", opts: [
         { tag: "As written", k: "Result", h: "Rust when you want *speed.*", p: "TypeScript when Rust cannot load. The user never sees a crash.", v: "gauges" },
@@ -906,17 +922,17 @@ section.slide-set { margin-top: 40px; }
         { tag: "What for", k: "The question", h: "What's it *for?*", p: "Once one app runs anywhere.", v: "diff", vo: { small: true } },
         { tag: "Big", k: "The question", h: "What will you *build?*", l: "big-type" },
       ] },
-      { id: "t1-s38", n: 38, name: "The stack", brief: "Rusty Buns is the framework, or \"the stack\" as we said two years ago, before AI agents. On screen: the layers: your app, Rusty Buns, the three places.", opts: [
-        { tag: "As written", k: "From concept to dreams", h: "The *stack*", p: "Rusty Buns is the framework, or \"the stack\" as we said two years ago, before AI agents.", v: "layers" },
-        { tag: "Two years", k: "The stack", h: "We used to call it *the stack*", p: "Two years ago, before AI agents. Now it's Rusty Buns, the framework.", v: "layers" },
-        { tag: "Layers", k: "The stack", h: "Three *layers*", p: "Your app. Rusty Buns. The three places.", v: "layers" },
-        { tag: "Middle", k: "The stack", h: "Rusty Buns sits in the *middle*", p: "Between your app and the three places it runs.", v: "layers" },
-        { tag: "Before agents", k: "The stack", h: "Before AI agents, it was just *the stack*", p: "Now it's a framework: Rusty Buns.", v: "layers" },
-        { tag: "Keyword", k: "Keyword: framework", h: "*Framework:* the layer your app sits on", p: "Rusty Buns. We used to call it the stack.", v: "layers" },
-        { tag: "Plain", k: "The stack", h: "Your app on top. Rusty Buns *underneath.*", p: "The three places below that.", v: "layers" },
-        { tag: "Bun", k: "The stack", h: "A *bun* in the middle", p: "Your app on top, the three places below.", v: "layers" },
-        { tag: "Name", k: "The stack", h: "Rusty *Buns*", p: "The framework, or the stack, as we called it two years ago.", v: "layers" },
-        { tag: "Big", k: "The stack", h: "The *stack*", p: "As we said two years ago, before AI agents.", l: "big-type" },
+      { id: "t1-s38", n: 38, name: "The stack", rebuilt: true, brief: "I call it Rusty Buns, but you need neither. It sounded better than Vite, Rust, TypeScript, Bun, Alchemy, EffectTS, EV. Rearranged, the letters spell BRAT, and that is bad marketing in SF, right? On screen: letter tiles rearranging into BRAT.", opts: [
+        { tag: "From your note", k: "The stack", h: "Rusty Buns. You need *neither.*", p: "It sounded better than Vite, Rust, TypeScript, Bun, Alchemy, EffectTS, EV.", v: "letters" },
+        { tag: "BRAT", k: "The stack", h: "Or we could call it *BRAT*", p: "Bad marketing in SF, right?", v: "letters", vo: { brat: true } },
+        { tag: "Neither", k: "The stack", h: "No Rust needed. No *buns* either.", p: "It just sounded better than a row of letters.", v: "letters" },
+        { tag: "The letters", k: "The stack", h: "Vite, Rust, TypeScript, Bun, Alchemy, Effect, *EV*", p: "Rusty Buns sounded better.", v: "letters", l: "long" },
+        { tag: "Rearranged", k: "The stack", h: "Rearrange the *letters*", p: "You get BRAT. We went with Rusty Buns.", v: "letters", vo: { brat: true } },
+        { tag: "Two years", k: "The stack", h: "We used to call it *the stack*", p: "Two years ago, before AI agents. Rusty Buns sounded better.", v: "layers" },
+        { tag: "Layers", k: "The stack", h: "Three *layers*", p: "Your app. Rusty Buns. The places it runs.", v: "layers" },
+        { tag: "Name", k: "The stack", h: "Why *Rusty Buns?*", p: "Because BRAT is bad marketing in SF.", v: "letters", vo: { brat: true } },
+        { tag: "Keyword", k: "Keyword: framework", h: "*Framework:* the layer your app sits on", p: "We call it Rusty Buns. You need neither Rust nor buns.", v: "layers" },
+        { tag: "Big", k: "The stack", h: "You need *neither.*", p: "Rust or buns.", l: "big-type" },
       ] },
       { id: "t1-s39", n: 39, name: "What it has built so far", brief: "Games, a DAW, a git host, an account system: all on the same stack. On screen: a grid of app screenshots.", opts: [
         { tag: "As written", k: "From concept to dreams", h: "What it has built so *far*", p: "Games, a DAW, a git host, an account system: all on the same stack.", v: "apps" },
@@ -964,7 +980,7 @@ section.slide-set { margin-top: 40px; }
         { tag: "Factory", k: "Up next", h: "The *factory*", p: "Where the stack builds its own pieces.", v: "next" },
         { tag: "Plain", k: "Next", h: "Next: the Frankenstein Code *Factory*", v: "next" },
         { tag: "Experiment", k: "Next experiment", h: "Let the stack build *itself*", p: "Talk 2: the Frankenstein Code Factory.", v: "next" },
-        { tag: "Big", k: "Talk 2", h: "Frankenstein Code *Factory*", p: "Talk 2.", l: "big-type" },
+        { tag: "Big", k: "Talk 2", h: "Frankenstein Code *Factory*", p: "Talk 2.", sm: "My ADD ADE: Agentic Degenerate Development, Agentic Development Environment, for the agentic era.", l: "big-type" },
       ] },
     ] },
   ];
@@ -972,7 +988,7 @@ section.slide-set { margin-top: 40px; }
 
   const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
   const mark = (s) => esc(s).replace(/\*([^*]+)\*/g, "<em>$1</em>");
-  const draw = (o) => `<div class="s ${o.l || ""}"><div class="k">${esc(o.k)}</div><h3>${mark(o.h)}</h3>${o.p ? `<p>${esc(o.p)}</p>` : ""}${o.v ? `<div class="v">${VIS[o.v](o.vo || {})}</div>` : ""}</div>`;
+  const draw = (o) => `<div class="s ${o.l || ""}"><div class="k">${esc(o.k)}</div><h3>${mark(o.h)}</h3>${o.p ? `<p>${esc(o.p)}</p>` : ""}${o.sm ? `<p class="sm">${esc(o.sm)}</p>` : ""}${o.v ? `<div class="v">${VIS[o.v](o.vo || {})}</div>` : ""}</div>`;
 
   const picks = new Map(); // slide id -> { option, note }
   let db = null, asked = false, reached = false, canWrite = true, chose = false;

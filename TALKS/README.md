@@ -35,6 +35,7 @@ address keeps the slide number (`#4`). Everything a deck needs is beside it: [de
 | 7 | [Qollab](07-qollab.html) | ready |
 | 8 | [Sign-in to party to game](08-sign-in-to-game.html) | ready |
 | 9 | [Ship it: deploys and tests](09-ship-it.html) | ready |
+| 10 | [From Concept to Keyword to Dreams](concept-to-dreams.html) | ready: talk 1 in [ABOUT.md](ABOUT.md)'s order, built by `bun TALKS/drafts/build-talk1.ts` from the owner's picks |
 
 Talks are for things we are happy to say in public. Personal setup (the phone, the owner's own machines) stays out of
 the lineup.
