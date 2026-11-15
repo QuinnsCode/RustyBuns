@@ -18,7 +18,7 @@ describe("the book's demands", () => {
   test("with every beast bound it goes quiet", () => {
     const j = newJourney(["hodag", "squonk", "jackalope"])!;
     j.journal = ROSTER.filter((c) => !j.party.some((m) => m.id === c.id)).map((c) => ({ ...j.party[0]!, id: c.id }));
-    expect(demandOf(j)).toBe(`Item ${ROSTER.length + 1}: nothing. For now.`);
+    expect(demandOf(j)).toBe(`Item ${ROSTER.length + 1}: nothing. Every cryptid is in my pages. For now.`);
   });
 
   test("the thumbprint lands on the page, somewhere new each time", () => {

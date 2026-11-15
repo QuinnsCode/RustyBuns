@@ -370,7 +370,7 @@ body:has(#hud[hidden]) .hud-chooser { display: none; }
 .booktalk .replies button { text-align: left; }
 .booktalk .wait { margin: 12px 0 0; font-style: italic; opacity: 0.75; }
 .paper .demand .ledger { display: block; margin-top: 6px; font-size: 17px; color: var(--ink-faded); text-decoration: none; }
-.paper .demand .ledger::before { content: "On you: "; }
+.paper .demand .ledger::before { content: "My notes on you: "; }
 /* Your ground's colour (Settings, Account): 64 swatches, 8 across; a friend's is crossed out, yours ringed. Over the tome's
    own .paper button look (tome.css), hover included. */
 .gc-dialog .gc-acct > p { font-family: var(--f-book); font-weight: 400; font-size: 17px; color: var(--ink-faded); }

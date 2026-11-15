@@ -81,7 +81,8 @@ export const emblem = (c: Chapter): string => EMBLEMS[c];
 /** A thorn-and-vine ring to frame a bound beast's plate: a ring with thorns leaning one way, a pair of leaves at
  * each quarter, a berry between. Laid over the plate at the same size, so it scales with it. */
 export function frame(): string {
-  const parts: string[] = [`<circle cx="50" cy="50" r="46" stroke-width="0.9"/><circle cx="50" cy="50" r="43.5" stroke-width="0.5" opacity="0.6"/>`];
+  // two layers, the briar and its buds, so the title page can turn them against each other (tome.css `spin`)
+  const parts: string[] = [`<circle cx="50" cy="50" r="46" stroke-width="0.9"/><circle cx="50" cy="50" r="43.5" stroke-width="0.5" opacity="0.6"/>`], buds: string[] = [];
   for (let i = 0; i < 28; i++) {
     // thorns as a briar grows them: mostly leaning with the stem, every third against it, never two the same length
     const a = (i / 28) * Math.PI * 2, x = 50 + Math.cos(a) * 46, y = 50 + Math.sin(a) * 46, t = a + (i % 3 === 1 ? -1.25 : 1.05), len = 2.4 + ((i * 7) % 5) * 0.45;
@@ -89,11 +90,11 @@ export function frame(): string {
   }
   for (let q = 0; q < 4; q++) {
     const a = (q / 4) * Math.PI * 2 + Math.PI / 4, x = 50 + Math.cos(a) * 46, y = 50 + Math.sin(a) * 46, d = (a * 180) / Math.PI;
-    parts.push(`<g transform="translate(${x.toFixed(1)} ${y.toFixed(1)}) rotate(${d.toFixed(0)})"><path d="M0 0q5 -5 9 -1q-4 4 -9 1zM0 0q5 5 9 1q-4 -4 -9 -1z" stroke-width="0.8"/><path d="M2 -1l5 -2M2 1l5 2" stroke-width="0.5" opacity="0.7"/></g>`);
+    buds.push(`<g transform="translate(${x.toFixed(1)} ${y.toFixed(1)}) rotate(${d.toFixed(0)})"><path d="M0 0q5 -5 9 -1q-4 4 -9 1zM0 0q5 5 9 1q-4 -4 -9 -1z" stroke-width="0.8"/><path d="M2 -1l5 -2M2 1l5 2" stroke-width="0.5" opacity="0.7"/></g>`);
     const b = a + Math.PI / 4, bx = 50 + Math.cos(b) * 46, by = 50 + Math.sin(b) * 46;
-    parts.push(`<circle cx="${bx.toFixed(1)}" cy="${by.toFixed(1)}" r="1.6" fill="#7b1d14" stroke="none"/>`);
+    buds.push(`<circle cx="${bx.toFixed(1)}" cy="${by.toFixed(1)}" r="1.6" fill="#7b1d14" stroke="none"/>`);
   }
-  return `<svg viewBox="0 0 100 100" class="engraving frame" aria-hidden="true" fill="none" stroke="currentColor" stroke-linecap="round">${parts.join("")}</svg>`;
+  return `<svg viewBox="0 0 100 100" class="engraving frame" aria-hidden="true" fill="none" stroke="currentColor" stroke-linecap="round"><g class="briar">${parts.join("")}</g><g class="buds">${buds.join("")}</g></svg>`;
 }
 
 /** Small marginal figures, one per field, as a medieval scribe doodled beasts and hands down the margin: a flame,
