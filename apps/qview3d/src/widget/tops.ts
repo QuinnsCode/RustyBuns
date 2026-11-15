@@ -134,7 +134,9 @@ function bodyPoint(c: Cut, back: boolean, th: number, y: number): V3 {
   const s = smooth(top - 0.28, top, y) * closes(c, back, xTop);
   z = lerp(z, neckZ(c, back, xTop), s);
   const gx = Math.sign(x) * Math.abs(x / w) ** (N - 1) / w, gz = Math.abs(z / d) ** (N - 1) / d, gl = Math.hypot(gx, gz) || 1;
-  const f = bodyFold(c, back, th / Math.PI + 0.5, t);
+  // Folds fade out as the half closes, so front and back meet edge to edge along the shoulder seam (each half's own
+  // fold noise there left the seam a zigzag in the outline).
+  const f = bodyFold(c, back, th / Math.PI + 0.5, t) * (1 - smooth(top - 0.2, top - 0.02, y));
   x += (gx / gl) * f;
   z += (gz / gl) * f;
   return back ? V(-x, y, -z) : V(x, y, z);
@@ -155,12 +157,28 @@ function columns(c: Cut) {
   });
 }
 
-/** The half section's width round the cloth at height t: what a print zone there spans. */
-function arcAt(c: Cut, t: number) {
-  const w = halfW(c, t), d = halfD(c, t);
-  let len = 0, prev = se(w, d, -Math.PI / 2);
-  for (let i = 1; i <= 64; i++) { const p = se(w, d, -Math.PI / 2 + (i / 64) * Math.PI); len += Math.hypot(p.x - prev.x, p.z - prev.z); prev = p; }
-  return len;
+/**
+ * A half's u by arc length round its level section at each height: `u(i, y)` for column i, and `width(t)` the whole
+ * section's length, which is what a print zone there spans. Measured level, not along a grid row: a tank's rows
+ * climb toward its armholes, and u along them stretched a picture across its middle and squeezed it at the sides.
+ */
+function sections(c: Cut, back: boolean, ths: number[]) {
+  const K = 160, SUB = 4;
+  const levels = Array.from({ length: K + 1 }, (_, k) => {
+    const y = (k / K) * c.height, run = [0];
+    let prev = bodyPoint(c, back, ths[0]!, y);
+    for (let i = 1; i <= COLS; i++) {
+      let len = run[i - 1]!;
+      for (let s = 1; s <= SUB; s++) { const p = bodyPoint(c, back, lerp(ths[i - 1]!, ths[i]!, s / SUB), y); len += p.distanceTo(prev); prev = p; }
+      run.push(len);
+    }
+    return run;
+  });
+  const at = (y: number, f: (run: number[]) => number) => {
+    const q = clamp01(y / c.height) * K, k = Math.min(K - 1, Math.floor(q));
+    return lerp(f(levels[k]!), f(levels[k + 1]!), q - k);
+  };
+  return { u: (i: number, y: number) => at(y, (run) => run[i]! / run[COLS]!), width: (t: number) => at(t * c.height, (run) => run[COLS]!) };
 }
 
 // ---- building meshes -----------------------------------------------------------------------------------------
@@ -382,13 +400,13 @@ export function buildCut(c: Cut, onHanger = false): Garment {
 
   // The two halves, each with its own inside.
   const fr = halfRows(c, false, ths), br = halfRows(c, true, ths);
-  const fGeo = gridGeo(fr, (_i, j, across, run) => [FRONT[0] + (run / across) * (FRONT[1] - FRONT[0]), fr[j]![0]!.y / c.height]);
-  const bGeo = gridGeo(br, (_i, j, across, run) => [BACK[0] + (run / across) * (BACK[1] - BACK[0]), br[j]![0]!.y / c.height]);
-  // A row's v is its height, point by point (rows climb each column to its own top).
-  for (const [g, rows] of [[fGeo, fr], [bGeo, br]] as const) {
-    const uv = g.getAttribute("uv") as THREE.BufferAttribute;
-    rows.forEach((row, j) => row.forEach((p, i) => uv.setY(j * (COLS + 1) + i, p.y / c.height)));
-  }
+  // Point by point (rows climb each column to its own top): u by arc length round the level section there, v its height.
+  const fs = sections(c, false, ths), bs = sections(c, true, ths);
+  const uvOf = (rows: V3[][], s: typeof fs, strip: [number, number]) => (i: number, j: number): [number, number] => {
+    const p = rows[j]![i]!;
+    return [strip[0] + s.u(i, p.y) * (strip[1] - strip[0]), p.y / c.height];
+  };
+  const fGeo = gridGeo(fr, uvOf(fr, fs, FRONT)), bGeo = gridGeo(br, uvOf(br, bs, BACK));
   const parts = [fGeo, bGeo];
   let left: ReturnType<typeof sleeve> | null = null;
   if (c.sleeve) {
@@ -451,12 +469,12 @@ export function buildCut(c: Cut, onHanger = false): Garment {
     if (c.hood) hood(c, ring, m, add, group);
   }
   if (c.hood) pocket(c, m, add, group);
-  const settle = onHanger ? hangIt(c, group, prints) : null;
+  const settle = onHanger ? hangIt(c, group, prints, fs.width) : null;
 
   const z = c.zones, H = c.height;
   const zones = [
-    zone("front", "Front", "front", FRONT, z.front, (v) => arcAt(c, v), H),
-    zone("back", "Back", "back", BACK, z.back, (v) => arcAt(c, v), H),
+    zone("front", "Front", "front", FRONT, z.front, fs.width, H),
+    zone("back", "Back", "back", BACK, z.back, bs.width, H),
   ];
   if (left && z.sleeve) {
     // Clear of where the sleeve blends out of the armhole, so a picture never creases into the shoulder.
@@ -467,7 +485,7 @@ export function buildCut(c: Cut, onHanger = false): Garment {
 }
 
 /** On a hanger: the front, back and sleeves become cloth, pinned along the shoulders (a tank by its straps). */
-function hangIt(c: Cut, group: THREE.Group, prints: Fabric[]) {
+function hangIt(c: Cut, group: THREE.Group, prints: Fabric[], width: (t: number) => number) {
   const a = halfW(c, 1);
   const pin = (back: boolean) => (_i: number, p: V3) => {
     const x = back ? -p.x : p.x;
@@ -484,7 +502,7 @@ function hangIt(c: Cut, group: THREE.Group, prints: Fabric[]) {
     }
     return (i: number) => out[i]!;
   };
-  const spread = arcAt(c, 0.8) / 2 - halfW(c, 0.8);
+  const spread = width(0.8) / 2 - halfW(c, 0.8);
   const flatSleeve = (_i: number, p: V3) => V(p.x + Math.sign(p.x) * spread, p.y, p.z * 0.08);
   const parts: ClothPart[] = prints.map((mesh, k) => ({
     mesh, side: k === 0 ? 1 : k === 1 ? -1 : 0, pinned: k < 2 ? pin(k === 1) : () => false,
