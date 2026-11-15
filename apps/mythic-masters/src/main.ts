@@ -1539,14 +1539,11 @@ function draw(m: Match, alpha: number) {
   const me = m.f[mine]!, them = m.f[foeOf(m, mine)]!;
   const dx = them.pos.x - me.pos.x, dz = them.pos.z - me.pos.z, d = Math.hypot(dx, dz) || 1;
   // side-on far enough back that both bodies and a flyer overhead fit, however close they stand
-  const tall = Math.max(me.b.height, them.b.height), over = Math.max(0, them.pos.y - me.pos.y);
+  const tall = Math.max(me.b.height, them.b.height);
   const side = 2.2 + tall * 1.05 + d * 0.45 + Math.abs(me.pos.y - them.pos.y) * 0.45;
-  // Close over your shoulder, sized to the bodies and the gap: the fighters fill the frame, not the grass. Pulls back as
-  // they part (or a flyer climbs) so the other never leaves the view.
-  const back = 1.4 + me.b.radius * 1.2 + tall * 0.55 + d * 0.4 + over * 0.3, lift = 0.5 + tall * 0.42 + over * 0.5;
   const want = camMode === "side"
     ? new THREE.Vector3((me.pos.x + them.pos.x) / 2 - (dz / d) * side, (me.pos.y + them.pos.y) / 2 + 1.4, (me.pos.z + them.pos.z) / 2 + (dx / d) * side) // you on the left, as the bars are
-    : new THREE.Vector3().copy(lockCamera(me.pos, them.pos, back, lift, me.b.radius, them.b.radius));
+    : new THREE.Vector3().copy(lockCamera(me.pos, them.pos, me.b, them.b));
   camera.position.lerp(want, clamp(alpha * 6, 0, 1));
   // a hit shakes the camera, hardest on the tick it lands
   shake *= Math.exp(-9 * alpha);

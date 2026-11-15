@@ -1,6 +1,8 @@
 // Where the lock camera (the one players fight in) stands: over your shoulder, never straight behind.
 import type { V3 } from "./sim.ts";
 
+type Body = { radius: number; height: number };
+
 /** The least swing off the line to them, to the fighter's right. */
 const SWING = 0.5;
 /** The most: past this the shot turns side-on and the controls stop feeling like "forward is at them". */
@@ -16,7 +18,12 @@ export function lockGap(cam: { x: number; z: number }, me: V3, them: V3, rMe: nu
 
 /** Swung off the line to them by the least angle that keeps your own body clear of theirs on screen, so the near
  * fighter never covers the target, rising when even the widest swing can't. Bodies are wider than their hurtbox (arms, tails, fur), so each radius is padded. */
-export function lockCamera(me: V3, them: V3, back: number, lift: number, rMe: number, rThem: number) {
+export function lockCamera(me: V3, them: V3, mine: Body, theirs: Body) {
+  const rMe = mine.radius, rThem = theirs.radius, tall = Math.max(mine.height, theirs.height);
+  const d = Math.hypot(them.x - me.x, them.z - me.z), over = Math.max(0, them.y - me.y);
+  // Close over your shoulder, sized to the bodies and the gap: the fighters fill the frame, not the grass. Pulls back as
+  // they part (or a flyer climbs) so the other never leaves the view.
+  const back = 1.4 + rMe * 1.2 + tall * 0.55 + d * 0.4 + over * 0.3, lift = 0.5 + tall * 0.42 + over * 0.5;
   const line = Math.atan2(them.z - me.z, them.x - me.x) + Math.PI;
   const at = (s: number) => ({ x: me.x + Math.cos(line + s) * back, z: me.z + Math.sin(line + s) * back });
   let s = SWING;
