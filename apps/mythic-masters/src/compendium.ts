@@ -244,3 +244,49 @@ export function regionChart(regions: readonly { n: number; done: number; walked:
   return `<figure class="chart" aria-label="A chart of the trail"><svg viewBox="0 0 230 112" role="img"><path d="${COAST}" class="coast"/><path d="${COAST}" class="coast-hatch"/>${fog}${TERRAIN}`
     + `<path d="${route}" class="route"/>${marks}<text x="205" y="88" text-anchor="middle" class="motto">here be</text><text x="205" y="95" text-anchor="middle" class="motto">what the Book wants</text></svg></figure>`;
 }
+
+// --- the new capture, facing the bind note ------------------------------------------------------------------------
+/** What a stat is for, in a word, for the capture page. */
+const STAT_SAYS: Record<keyof Stats, string> = { vigor: "health", might: "hit power", guard: "toughness", focus: "special power", will: "special toughness", speed: "speed" };
+/** A creature you have now, to set the new one against: its name and its stats at its level. */
+export interface Rival { name: string; level: number; stats: Stats }
+export interface CaptureOpts {
+  /** Where the bind put it, and the line-up's size after (`used` of `slots`). */
+  went: "party" | "journal"; used: number; slots: number; max: number;
+  /** What it can carry you over (world.ts `travelOf`). */
+  travel: readonly ("flier" | "swimmer")[];
+  /** The line-up it is set against (not itself), and which one is chosen. */
+  vs: readonly Rival[]; at: number;
+  tier: string;
+}
+/** Each stat of `mine` against `theirs`, and how many of the six it beats. */
+export function compare(mine: Stats, theirs: Stats): { rows: { stat: keyof Stats; mine: number; theirs: number; diff: number }[]; better: number } {
+  const rows = AXES.map((stat) => ({ stat, mine: mine[stat], theirs: theirs[stat], diff: mine[stat] - theirs[stat] }));
+  return { rows, better: rows.filter((r) => r.diff > 0).length };
+}
+const signed = (d: number) => (d > 0 ? `<b class="up">${icon("arrow-up")}${d}</b>` : d < 0 ? `<b class="down">${icon("arrow-down")}${-d}</b>` : `<b class="same">=</b>`);
+
+/** The page facing a bind's note: the new creature's basics, its stats set against one of your line-up like new gear
+ * against what you wear, its moves, and where it went (the line-up's limit). Chips with `data-vs` pick who to compare. */
+export function captureSheet(c: Creature, level: number, o: CaptureOpts): string {
+  const now = atLevel(c, level).stats, them = o.vs[o.at];
+  const kinds = c.fields.map((f) => `<span class="kind">${dot(f)}${esc(f)}</span>`).join("") + `<span class="kind">${esc(c.archetype)}</span><span class="kind">${esc(o.tier)}</span>`;
+  const carry = o.travel.map((t) => `<p class="carry">${icon(t === "flier" ? "feather" : "waves")}${t === "flier" ? "Flier: it can fly you over gorges and mountain passes." : "Swimmer: it can carry you across wide water."}</p>`).join("");
+  let stats = `<table class="cmp"><tbody>${AXES.map((a) => `<tr><th>${a}<small>${STAT_SAYS[a]}</small></th><td class="mono">${now[a]}</td></tr>`).join("")}</tbody></table>`, verdict = "";
+  if (them) {
+    const { rows, better } = compare(now, them.stats), sum = (k: "mine" | "theirs") => rows.reduce((n, r) => n + r[k], 0);
+    stats = `<table class="cmp"><thead><tr><th></th><th>${esc(c.name)}</th><th>${esc(them.name)}</th><th></th></tr></thead><tbody>`
+      + rows.map((r) => `<tr><th>${r.stat}<small>${STAT_SAYS[r.stat]}</small></th><td class="mono">${r.mine}</td><td class="mono">${r.theirs}</td><td>${signed(r.diff)}</td></tr>`).join("")
+      + `<tr class="total"><th>total</th><td class="mono">${sum("mine")}</td><td class="mono">${sum("theirs")}</td><td>${signed(sum("mine") - sum("theirs"))}</td></tr></tbody></table>`;
+    verdict = `<p class="verdict">Better than your ${esc(them.name)} (level ${them.level}) in ${better} of 6 stats.</p>`;
+  }
+  const pick = o.vs.length > 1 ? `<p class="vs">Compare with ${o.vs.map((r, i) => `<button class="chip" data-vs="${i}" aria-pressed="${i === o.at}">${esc(r.name)}</button>`).join("")}</p>` : "";
+  const room = o.went === "party"
+    ? `It is in your line-up: ${o.used} of ${o.slots} places used.`
+    : `Your line-up is full (${o.slots} of ${o.slots}), so it is in the Compendium. Press Tab to swap it in.`;
+  const grow = o.slots < o.max ? ` Beat a region boss for one more place (${o.max} at most).` : "";
+  return `<p class="leaf-head" aria-hidden="true">New capture<span>level ${level}</span></p>
+    <h2>${esc(c.name)}</h2><p class="kinds">${kinds}</p>${carry}<p class="room">${icon("users")}<span>${room}${grow}</span></p>
+    <h3>Stats</h3>${pick}${stats}${verdict}
+    <h3>Moves</h3><ol class="moves">${c.moves.map((mv) => `<li>${dot(mv.field)}<b>${esc(mv.name)}</b><small>${mv.slot}</small></li>`).join("")}</ol>`;
+}

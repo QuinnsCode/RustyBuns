@@ -27,7 +27,7 @@ import { buttons, NO_STICK, PAD_ACTIONS, PAD_START, PAD_ZONE, push, readPad, tou
 import { icon } from "./icons.ts";
 import { ART, radar, tradingCard } from "./card.ts";
 import { moveLine, shapeSvg } from "./moveline.ts";
-import { entry, folio, halves, neighbour, notePlate, ordinal, regionChart, spread, stepTo, type Dir, type Known } from "./compendium.ts";
+import { captureSheet, entry, folio, halves, neighbour, notePlate, ordinal, regionChart, spread, stepTo, type Dir, type Known } from "./compendium.ts";
 import { FIELDS, hex, type Field } from "./fields.ts";
 import { mountFieldChart } from "./fieldchart.ts";
 import { MAX_LIVE, MAX_LIVE_PHONE, MoveFx, shakeOf } from "./fx.ts";
@@ -39,11 +39,12 @@ import { creatureModel } from "./model.ts";
 import { ALL_SKINS, fightSkin, REGIONS, type Region } from "./regions.ts";
 import { body, creature as rosterCreature, learnset, ROSTER, teach, type Creature } from "./roster.ts";
 import { worldView, type Foe } from "./world/view.ts";
+import { travelOf } from "./world/world.ts";
 import { plantBudget, setPlantBudget } from "./world/flora.ts";
 import { pickQuality, QUALITY } from "@rustybuns/util/quality";
 import { tutorial } from "@rustybuns/util/tutorial";
 import { accountChip, achieve, achievements, canSignIn, finishSignIn, fresh, login, reportButton } from "./account.ts";
-import { asCreature, atLevel, bind, downed, heal, hpOf, wound, bindBelow, bindChance, clearSection, cleared, gainXp, INK, loadJourney, moveUp, mythicOf, newJourney, nextUp, call, owns, PICKS, rest, SAVE_KEY, SECTIONS, sections, see, slots, STARTERS, TRAIL_REGIONS, toNext, witchSays, type Journey, mend, maul } from "./journey.ts";
+import { asCreature, atLevel, bind, boundLine, PARTY_MAX, downed, heal, hpOf, wound, bindBelow, bindChance, clearSection, cleared, gainXp, INK, loadJourney, moveUp, mythicOf, newJourney, nextUp, call, owns, PICKS, rest, SAVE_KEY, SECTIONS, sections, see, slots, STARTERS, TRAIL_REGIONS, toNext, witchSays, type Journey, mend, maul } from "./journey.ts";
 import { LORE } from "./lore.ts";
 import { Bout, circleLineOf, handOf, knownOf, PAGE_INK, poolOf, ribbonsOf, summon, type Summoned } from "./grimoire.ts";
 import { deckDemandOf, demandOf, pageLineOf, reactionOf, settingsLineOf, SIGNATURE, thumbAt, worldLineOf, type Back, type Outcome } from "./demand.ts";
@@ -796,7 +797,7 @@ function drawTalk() {
   talkEl.classList.toggle("first-open", first);
   talkEl.innerHTML = first
     ? `<div class="title" role="dialog" aria-label="The Book"><div class="tome paper opening-spread${again ? " again" : ""}"><i class="boards" aria-hidden="true"></i><i class="cover" aria-hidden="true"></i><div class="leaf">`
-      + `<div class="page recto"><p class="imprint-head">The Eldritch Compendium</p>${lines}<hr class="flourish" /><div class="menu replies">${buttons}</div>${wait}</div>`
+      + `<div class="page recto"><p class="imprint-head">The Compendium</p>${lines}<hr class="flourish" /><div class="menu replies">${buttons}</div>${wait}</div>`
       + `<div class="page verso"><figure class="plate" aria-hidden="true"><div class="frontis">${emblem("title")}</div><span class="ring">${ring()}</span></figure><p class="plate-caption">It fell on your chest. It is warm.</p></div></div></div></div>`
     : `<div class="note paper" role="dialog" aria-label="The Book">${lines}<div class="replies">${buttons}</div>${wait}</div>`;
   talkEl.hidden = false;
@@ -1674,6 +1675,20 @@ function duelOver(head: string, line: string) {
   $("#home").onclick = () => { $("#hud").hidden = true; versus.leave(); };
 }
 
+/** The page facing a bind's note (compendium.ts `captureSheet`): the new creature against your line-up, the lead
+ * first; a chip picks who it is set against. */
+function captured(foe: Creature, level: number, went: "party" | "journal") {
+  const j = journey!, mine = went === "party" ? j.party.slice(0, -1) : j.party;
+  const vs = mine.map((m) => ({ name: creature(m.id).name, level: m.level, stats: asCreature(m).stats }));
+  const sheet = Object.assign(document.createElement("div"), { className: "note paper capture-sheet" });
+  const draw = (at: number) => {
+    sheet.innerHTML = captureSheet(foe, level, { went, used: j.party.length, slots: slots(j), max: PARTY_MAX, travel: travelOf(foe), vs, at, tier: tierOf(foe.id) });
+    sheet.querySelectorAll<HTMLElement>("[data-vs]").forEach((b) => { b.onclick = () => draw(Number(b.dataset.vs)); });
+  };
+  draw(0);
+  $("#result").append(sheet);
+}
+
 /** A world fight ended: XP, a bound creature into the line-up or the journal, a section cleared and its page written,
  * a region's roads opened; or, lost, the next of the line-up steps in, until none is left. */
 function tripOver(m: Match, bound: boolean, how: string) {
@@ -1688,6 +1703,8 @@ function tripOver(m: Match, bound: boolean, how: string) {
   let title = "", outcome: Outcome = { kind: "won", foe: t.kind === "rival" ? "wild" : t.kind }, go = `${icon("map")} Back to the world`, again: (() => void) | null = null, back: Back | null = null;
   /** What you notice behind you once a section is cleared: a faction's next step now waits at that stone (src/factions/engine.ts). */
   let behindYou: string[] = [];
+  /** Where a bind put the new creature: the line-up or the Compendium. */
+  let went: "party" | "journal" | null = null;
   if (won) {
     tally(j, false);
     const ups = gainXp(me, t.foe.level), had = slots(j);
@@ -1695,7 +1712,7 @@ function tripOver(m: Match, bound: boolean, how: string) {
     // the section clears first, so a mythic's new line-up slot is there for the mythic itself when it's bound
     if (t.kind === "keeper" || t.kind === "mythic") { clearSection(j, t.region.n, t.k); behindYou = sectionCleared(j, t.region.n, t.k, Date.now()); }
     title = bound ? `${esc(foe.name)} is bound` : loose ? `${esc(foe.name)} got away` : `${esc(creature(me.id).name)} wins`;
-    if (bound) { const sec = sections(t.region)[t.k]; lines.push(`The ink holds. ${esc(foe.name)} (Lv ${t.foe.level}) ${bind(j, foe.id, t.foe.level, sec ? `${sec.name}, ${t.region.name}` : t.region.name) === "party" ? "joins your line-up" : "rests in the Eldritch Compendium"}.`); }
+    if (bound) { const sec = sections(t.region)[t.k]; went = bind(j, foe.id, t.foe.level, sec ? `${sec.name}, ${t.region.name}` : t.region.name); lines.push(boundLine(esc(foe.name), t.foe.level, went)); }
     else lines.push(how);
     if (ups) lines.push(`${esc(creature(me.id).name)} grows to level ${me.level}.`);
     if (t.kind === "keeper" || t.kind === "mythic") {
@@ -1757,7 +1774,9 @@ function tripOver(m: Match, bound: boolean, how: string) {
   // no folio on a page that kept nothing, and the facing leaf says why
   if (loose) $("#result").dataset.verso = "This page stays empty.\nI only keep what you bind.\n\n\u2014\u00a0the Book";
   else delete $("#result").dataset.verso;
-  $("#result").innerHTML = `<div class="note paper o-${outcome.kind}"${torn ? ` style="--tear: ${torn.clip}"` : ""}>${mark}<p class="leaf-head" aria-hidden="true">${loose ? "Field notes<span></span>" : `Eldritch Compendium<span>fol. ${j.journal.length + j.party.length + (j.seen?.length ?? 0) + 1}</span>`}</p>${plate}<h2>${title}</h2>${reaction(outcome)}${lines.map((l) => `<p>${l}</p>`).join("")}<div class="row"><button class="go" id="back">${go}</button>${again ? `<button id="flee">${icon("map")} Run back</button>` : ""}</div></div>`;
+  $("#result").innerHTML = `<div class="note paper o-${outcome.kind}"${torn ? ` style="--tear: ${torn.clip}"` : ""}>${mark}<p class="leaf-head" aria-hidden="true">${loose ? "Field notes<span></span>" : "The Compendium<span></span>"}</p>${plate}<h2>${title}</h2>${reaction(outcome)}${lines.map((l) => `<p>${l}</p>`).join("")}<div class="row"><button class="go" id="back">${go}</button>${again ? `<button id="flee">${icon("map")} Run back</button>` : ""}</div></div>`;
+  $("#result").classList.toggle("capture", !!went);
+  if (went) captured(foe, t.foe.level, went);
   pages.show($("#result"));
   const home = () => { trip = null; enterWorld(); world.afterFight(won); if (back) world.note(bookToast(back)); for (const line of behindYou) world.note(`${icon("footprints")}${esc(line)}`); };
   $("#back").onclick = again ?? home;
