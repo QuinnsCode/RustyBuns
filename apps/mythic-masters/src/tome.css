@@ -1421,3 +1421,11 @@ body.in-fight > .gc-dialog { opacity: 0.74; }
   .result .capture-sheet :is(.kinds, .carry, .verdict, .room, .cmp) { font-size: calc(15 * var(--u)); }
   .result .capture-sheet :is(.vs, ol.moves) { font-size: calc(14 * var(--u)); }
 } }
+
+/* --- each of the witch's five in a window on its card, shadow-boxing (src/spar.ts, #4670) ------------------------ */
+.spar-layer { position: fixed; inset: 0; width: 100vw; height: 100vh; pointer-events: none; z-index: 40; }
+.spar-layer[hidden] { display: none; }
+.starters .card.starter .spar-win { display: block; width: 100%; aspect-ratio: 16 / 9; margin: 6px 0 2px; border: 1px solid var(--ink-line); border-radius: 2px; background: radial-gradient(ellipse at 50% 80%, rgba(255, 249, 232, 0.55), rgba(196, 170, 128, 0.35)); }
+.starters .card.starter .spar-says { display: block; min-height: 2.7em; font-size: 14px; line-height: 1.3; color: var(--ink-b); font-style: italic; }
+.starters .radar text[data-stat] { cursor: help; pointer-events: all; }
+.starters .radar text[data-stat]:hover { fill: var(--blood); }
