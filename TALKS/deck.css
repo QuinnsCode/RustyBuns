@@ -113,3 +113,24 @@ body.show-notes .notes { display: block; }
   .slide { min-height: auto; page-break-after: always; border: 0; }
   .notes { display: block; }
 }
+
+/* Style J (talk 1, 01-concept-to-dreams.html): black, white and orange 16:9 slides sized in cqw, drawn by
+   drafts/talk1.html. These rules are that page's, with .jf in front; change both together. */
+.slide.j { background: #0b0b0c; align-items: center; padding-top: 24px; padding-bottom: 56px; }
+.slide.j .jf { position: relative; width: min(100%, calc((100svh - 120px) * 16 / 9)); aspect-ratio: 16 / 9; container-type: inline-size; }
+.slide.j .notes { width: min(100%, calc((100svh - 120px) * 16 / 9)); max-width: none; }
+.jf .s { position: absolute; inset: 0; overflow: hidden; text-align: left; background: #0b0b0c; color: #f5f5f4; font-family: var(--body); padding: 5.5cqw 6cqw; }
+.jf .s .k { font: 700 1.3cqw/1 var(--mono); letter-spacing: 0.16em; text-transform: uppercase; color: #ff7a1a; }
+.jf .s h3 { font: 900 4.6cqw/1.06 var(--display); margin: 1.4cqw 0 0; max-width: 60%; letter-spacing: -0.02em; text-wrap: balance; }
+.jf .s h3 em { font-style: normal; color: #ff7a1a; }
+.jf .s p { font-size: 1.9cqw; line-height: 1.45; margin: 1.8cqw 0 0; max-width: 50%; color: #b8b8b4; }
+.jf .s .v { position: absolute; right: 4.5cqw; top: 50%; transform: translateY(-46%); width: 36cqw; color: #f5f5f4; --ac: #ff7a1a; --fill: #0b0b0c; }
+.jf .s .v svg { width: 100%; height: auto; display: block; }
+.jf .s .v .halo text { paint-order: stroke; stroke: #0b0b0c; stroke-width: 4px; stroke-linejoin: round; }
+.jf .s.long h3 { font-size: 3.5cqw; line-height: 1.12; }
+.jf .s.big-type h3 { font-size: 8.4cqw; max-width: 92%; margin-top: 7cqw; }
+.jf .s.big-type p { max-width: 70%; font-size: 2.4cqw; }
+.jf .s p.sm, .jf .s.big-type p.sm { font-size: 1.35cqw; margin-top: 1.4cqw; color: #8a8a86; max-width: 70%; }
+.jf .s.wide h3 { max-width: 88%; }
+.jf .s.wide p { max-width: 70%; }
+.jf .s.wide .v { top: auto; bottom: 4cqw; transform: none; width: 46cqw; }
