@@ -10,23 +10,23 @@ import { ROSTER, type Creature } from "./roster.ts";
 export const SIGNATURE = "the Book";
 
 const LOOKS: Record<Archetype, string> = {
-  skirmisher: "the quick one", flyer: "the one with wings", tank: "the heavy one", bruiser: "the one that hits back",
+  skirmisher: "something quick", flyer: "something with wings", tank: "something very heavy", bruiser: "something that hits back",
 };
 
 /** The book's next demand: item n is the next beast it wants bound, n counting the ones it already has. A beast you
  * have met it names; one you have not it only describes. With no journey it wants everything, and with all of
  * them bound it is quiet, for now. A reply can turn it to one kind of beast. */
 export function demandOf(j: Journey | null, roster: readonly Creature[] = ROSTER): string {
-  if (!j) return "Item 1: all of them. Start with three.";
+  if (!j) return "Item 1: every cryptid on earth. Start with three. I'll wait. I'm very good at waiting.";
   const owned = new Set([...j.party, ...j.journal].map((m) => m.id)), item = owned.size + 1;
   // a reply can ask it to want one kind (book.ts `wants`): it does, while one of that kind is left
   const all = roster.filter((c) => !owned.has(c.id)), want = j.talk?.wants;
   const left = want && all.some((c) => c.archetype === want) ? all.filter((c) => c.archetype === want) : all;
   const met = left.find((c) => j.seen.includes(c.id));
-  if (met) return `Item ${item}: the ${met.name}. You saw it. You let it go. Bring it.`;
+  if (met) return `Item ${item}: the ${met.name}. You met it and let it leave. Rude. Bring it.`;
   const next = [...left].sort((a, b) => a.region - b.region)[0];
-  if (!next) return `Item ${item}: nothing. For now.`;
-  return `Item ${item}: ${LOOKS[next.archetype]}, ${next.fields[0]} in its blood. Bring it.`;
+  if (!next) return `Item ${item}: nothing. Every cryptid is in my pages. For now.`;
+  return `Item ${item}: ${LOOKS[next.archetype]}, ${next.fields[0]} type. Name unknown. Your problem. Bring it.`;
 }
 
 /** Where the thumbprint lands on the page opened for the `n`th time: near an edge (where a hand would hold it),

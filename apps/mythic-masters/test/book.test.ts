@@ -44,7 +44,7 @@ describe("the Book talks back", () => {
     const promised = LINES.find((t) => t.id === "open")!.replies.find((r) => r.id === "all")!.say;
     expect(second.recall).toBe(`On the first page you said, and I quote, "${promised}" Item 7 says otherwise.`);
     answer(j, second, "next");
-    expect(demandOf(j)).toStartWith("Item 4: the one with wings,");
+    expect(demandOf(j)).toStartWith("Item 4: something with wings,");
     // the lake's own mythic answers what you said at the first one, ahead of the generic talks, counting the regions truly
     const lake = momentFor("mythic", j, { n: 5, regionId: "great-lakes-and-lake-champlain", mythic: "Champ" })!;
     expect(lake.talk.id).toBe("mythic-champ");
