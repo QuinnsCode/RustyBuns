@@ -443,6 +443,9 @@ function sphinx() {
   // then the cannon nearly upright to the paw (no zig-zag back out under the body)
   b.nodes.l_knee = [s(-0.42), s(0.44), b.nodes.l_knee![2], 0];
   b.nodes.l_hock = [s(-0.59), s(0.25), b.nodes.l_hock![2], 0];
+  // the foreleg isn't a post: the forearm leans forward from the elbow to a wrist set behind the paw, and the
+  // pastern slants forward and down from it into the mitten, as a lion's does
+  b.nodes.l_wrist = [s(0.275), s(0.17), b.nodes.l_wrist![2], 0];
   for (const n of ["l_elbow", "l_wrist", "l_knee", "l_hock"]) { const p = b.nodes[n]!; b.nodes[n] = [p[0], p[1], p[2], s(0.025)]; }
   b.blobs.push(
     // the shoulder blade, a flat plate standing up over the foreleg, and a round haunch over the hind leg, both
@@ -460,7 +463,9 @@ function sphinx() {
   for (const n of ["l_ffoot", "l_bfoot"]) {
     const p = b.nodes[n]!, y = f4(p[1] + s(0.03)), hind = n === "l_bfoot";
     b.nodes[n] = [p[0], y, p[2], s(hind ? 0.035 : 0.07)];
-    for (const q of b.parts) if (q.kind === "foot" && q.at === n) Object.assign(q, { sole: y, r: s(0.08), tall: 1.8 }); // the floor stays on the ground
+    // a mitten: one rounded dome with four toe pads and a heel pad, about 1.3 times the leg's width, built into the
+    // skin so it blends up into the leg and takes the fur hide (the toes and claws stay their own parts, or they melt)
+    for (const q of b.parts) if (q.kind === "foot" && q.at === n) Object.assign(q, { form: "mitten", skin: true, sole: y, r: s(0.08), tall: 1.5, len: s(0.24), width: s(0.2), claw: s(0.03) }); // the floor stays on the ground
   }
   // the hound's head goes (its cranium, muzzle, cheeks, jaw and every face part): a man's head is built in its place
   b.blobs = b.blobs.filter((x) => x.at !== "head");

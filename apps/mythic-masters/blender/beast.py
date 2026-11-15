@@ -220,8 +220,9 @@ def body(sheet):
         links = split
     o = skinned(sheet, nodes, links)
     skin_limbs = [p for p in sheet.get("parts", []) if p["kind"] == "limb" and p.get("skin")]
-    if sheet.get("blobs") or skin_limbs:
-        o = blobs(o, sheet.get("blobs", []), nodes, skin_limbs)
+    skin_feet = [p for p in sheet.get("parts", []) if p["kind"] == "foot" and p.get("skin") and p.get("form") == "mitten"]
+    if sheet.get("blobs") or skin_limbs or skin_feet:
+        o = blobs(o, sheet.get("blobs", []), nodes, skin_limbs, skin_feet)
         if sheet.get("blend"):
             # one skin over the body and its blobs, no seam: rebuilt from voxels `blend` metres across, then
             # smoothed (every blob takes the body's material)
@@ -388,7 +389,7 @@ def paint(o, sheet, nodes, links):
         o.vertex_groups.new(name="keep").add(sorted(inside & outside), 1.0, "REPLACE")
 
 
-def blobs(o, spec, nodes, limbs=()):
+def blobs(o, spec, nodes, limbs=(), feet=()):
     """Round flesh over the skin: an ellipsoid at a node (radii x, y, z) for a body too short and fat for
     the skin modifier, which boxes the hull where four limbs meet. The rigger fills the volume, so the
     overlap needs no union. A `limb` part with `skin` joins here too, so `blend` remeshes it into the body."""
@@ -398,6 +399,10 @@ def blobs(o, spec, nodes, limbs=()):
             chain = [mirrored(c) if side < 0 else c for c in p["along"]]
             out.append(limb(f"skinlimb{i}_{side}", [Vector(nodes[c][:3]) for c in chain], p["radii"], p.get("depth", 1),
                             p.get("calf", 0), o.data.materials[0].name, p.get("shoulder", 0), p.get("elbow", 0), p.get("calf_at", 0.35)))
+    for i, p in enumerate(feet):
+        for side in ([1, -1] if p.get("mirror") else [1]):
+            k = mirrored(p["at"]) if side < 0 else p["at"]
+            out += foot_part(f"skinfoot{i}_{side}", nodes[k][:3], p.get("r", nodes[k][3]), p, side, o.data.materials[0].name, "flesh")
     for i, b in enumerate(spec):
         bm = bmesh.new()
         bmesh.ops.create_uvsphere(bm, u_segments=24, v_segments=16, radius=1)
@@ -819,9 +824,10 @@ def limb(name, pts, radii, depth, calf, mat, shoulder=0.0, elbow=0.0, calf_at=0.
     return ring_loft(name, rings, mat)
 
 
-def foot_part(name, at, r, p, side, mat):
-    """A paw, hoof, talon or web at a node. All lie on the floor `sole` metres under the node's centre
-    (default its radius) and run forward, +x."""
+def foot_part(name, at, r, p, side, mat, only=None):
+    """A paw, mitten, hoof, talon or web at a node. All lie on the floor `sole` metres under the node's centre
+    (default its radius) and run forward, +x. A `mitten` with `skin` joins its dome and heel to the body before `blend`: `only`
+    "flesh" builds that part, "claws" the rest."""
     base = Vector(at)
     floor = base.y - p.get("sole", r)
     ln, wd = p["len"], p["width"]
@@ -850,6 +856,25 @@ def foot_part(name, at, r, p, side, mat):
                 out.append(ball(f"{name}_t{j}", tip, r * 0.42, mat))
                 if p.get("claw"):
                     out.append(cone(f"{name}_c{j}", tip + Vector((r * 0.2, 0, 0)), (1, -0.35, 0), p["claw"], r * 0.18, claw_mat))
+    elif form == "mitten":
+        # a big cat's paw: one rounded dome, highest over the wrist, with the toes as a row of fat pads curled
+        # forward around its front edge and a heel pad bulging out behind and under, so it reads as a soft mitten
+        # (not a plank) and, with `skin`, blends up into the leg
+        top = r * 1.1 * p.get("tall", 1)
+        rings, seg = [], 12
+        for t, fw, fh in ((0.0, 0.55, 0.55), (0.15, 0.9, 0.9), (0.4, 1.0, 1.0), (0.7, 0.98, 0.78), (0.9, 0.8, 0.5), (1.0, 0.45, 0.3)):
+            c = Vector((base.x - ln * 0.35 + ln * 0.8 * t, floor + top * 0.5 * fh + r * 0.05, base.z))
+            rings.append([section(c, Vector((0, 0, 1)), Vector((0, 1, 0)), wd * 0.5 * fw, top * 0.5 * fh, 0.0, 2 * math.pi * j / seg) for j in range(seg)])
+        flesh = [ring_loft(f"{name}_dome", rings, mat)]
+        n = p.get("toes", 4)
+        for j in range(n):
+            u = 0 if n == 1 else 2 * j / (n - 1) - 1
+            tip = Vector((base.x + ln * (0.47 - 0.12 * u * u), floor + r * 0.42, base.z + u * wd * 0.37 * side))
+            out.append(ball(f"{name}_t{j}", tip, [ln * 0.16, r * 0.42, wd * 0.14], mat))  # its own part: blended, the toes melt into the dome
+            if p.get("claw"):
+                out.append(cone(f"{name}_c{j}", tip + Vector((ln * 0.14, -r * 0.1, 0)), (1, -0.6, 0), p["claw"], r * 0.15, claw_mat))
+        flesh.append(ball(f"{name}_heel", Vector((base.x - ln * 0.25, floor + r * 0.4, base.z)), [ln * 0.2, r * 0.4, wd * 0.3], mat))
+        return flesh + out if not only else (flesh if only == "flesh" else out)
     elif form == "talon":
         n, spread = p.get("toes", 3), p.get("spread", 40)
         for j in range(n):
@@ -1235,7 +1260,8 @@ def parts(sheet, nodes):
                                 p.get("material", sheet.get("material", "hide")), p.get("shoulder", 0), p.get("elbow", 0), p.get("calf_at", 0.35)))
             elif p["kind"] == "foot":
                 k = mirrored(p["at"]) if side < 0 else p["at"]
-                out += foot_part(name, nodes[k][:3], p.get("r", nodes[k][3]), p, side, p.get("material", sheet.get("material", "hide")))
+                skin = p.get("skin") and p.get("form") == "mitten"  # the flesh went into the body's skin (`blobs`)
+                out += foot_part(name, nodes[k][:3], p.get("r", nodes[k][3]), p, side, p.get("material", sheet.get("material", "hide")), "claws" if skin else None)
             elif p["kind"] == "wing":
                 out += wing(name, node(p["hub"]), [node(q) for q in p["tips"]], [node(q) for q in p["body"]], p, p["material"])
             else:
