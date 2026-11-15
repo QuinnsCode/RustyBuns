@@ -206,8 +206,8 @@
       0.03
     ],
     "l_wrist": [
-      0.3888,
-      0.18,
+      0.33,
+      0.204,
       0.21,
       0.03
     ],
@@ -661,32 +661,34 @@
     {
       "kind": "foot",
       "at": "l_ffoot",
-      "form": "paw",
-      "len": 0.36,
-      "width": 0.264,
+      "form": "mitten",
+      "len": 0.288,
+      "width": 0.24,
       "toes": 4,
-      "claw": 0.072,
+      "claw": 0.036,
       "sole": 0.096,
       "mirror": true,
       "material": "fur",
       "claw_mat": "claw",
+      "skin": true,
       "r": 0.096,
-      "tall": 1.8
+      "tall": 1.5
     },
     {
       "kind": "foot",
       "at": "l_bfoot",
-      "form": "paw",
-      "len": 0.336,
+      "form": "mitten",
+      "len": 0.288,
       "width": 0.24,
       "toes": 4,
-      "claw": 0.0672,
+      "claw": 0.036,
       "sole": 0.096,
       "mirror": true,
       "material": "fur",
       "claw_mat": "claw",
+      "skin": true,
       "r": 0.096,
-      "tall": 1.8
+      "tall": 1.5
     },
     {
       "kind": "tuft",
