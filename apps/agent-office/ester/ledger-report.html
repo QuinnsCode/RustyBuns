@@ -119,6 +119,14 @@ tr.reset td{border-top:2px dashed var(--reset)}
     </div>
   </section>
 
+  <section class="card">
+    <div class="head"><h2>Conflicts Mervin saved</h2><small id="savedsum"></small></div>
+    <p>Everything that, one PR at a time, would have been a merge conflict an agent fought by hand: line edits word-merged on save, stretches settled on a branch merge, files preflight settles, and tasks the office held so two branches never clashed.</p>
+    <div class="legend"><span><i style="background:var(--c-mervin)"></i>Saves (DO)</span><span><i style="background:var(--c-dexter)"></i>Branch merges</span><span><i style="background:var(--c-ester)"></i>Preflight</span><span><i style="background:var(--m-fable)"></i>Office holds</span><span><i class="dash"></i>Plan reset</span></div>
+    <div id="saved"></div>
+    <p class="note" id="savednote"></p>
+  </section>
+
   <section class="card" style="padding:0;border:0;background:none">
     <h2>Plan weeks</h2>
     <div class="tw"><table id="weeks"></table></div>
@@ -132,7 +140,7 @@ tr.reset td{border-top:2px dashed var(--reset)}
   </section>
 </main>
 <script>
-const D=/*LEDGER*/{"generated":"","start":"","days":[],"weeks":[],"issues":[]};
+const D=/*LEDGER*/{"generated":"","start":"","days":[],"weeks":[],"issues":[],"saved":[],"conflictCost":0};
 const $=id=>document.getElementById(id);
 const fmt=n=>{const a=Math.abs(n);return a>=1e9?(n/1e9).toFixed(2)+"B":a>=1e6?(n/1e6).toFixed(a>=1e8?0:1)+"M":a>=1e3?(n/1e3).toFixed(a>=1e5?0:1)+"k":String(Math.round(n))};
 const comma=n=>Math.round(n).toLocaleString("en-US");
@@ -143,6 +151,8 @@ const gen=new Date(D.generated||Date.now()),into=Math.max(0,Math.min(7,(gen-new 
 const isWeek=D.issues.filter(r=>r.date>=D.start),opened=sum(isWeek,"opened"),closed=sum(isWeek,"closed"),openNow=D.issues.at(-1)?.open??0;
 const pct=cur.pct??0,rate=into>0.2?pct/into:0,land=Math.round(pct+rate*left),need=left>0?Math.max(0,100-pct)/left:0;
 const units=sum(week,"units"),prs=sum(week,"prs"),add=sum(week,"codeAdded"),cut=sum(week,"codeRemoved");
+const KINDS=[{k:"do-save",c:"--c-mervin",n:"Saves (DO)"},{k:"branch-merge",c:"--c-dexter",n:"Branch merges"},{k:"preflight",c:"--c-ester",n:"Preflight"},{k:"hold",c:"--m-fable",n:"Office holds"}];
+const savedOf=r=>KINDS.reduce((a,s)=>a+(r[s.k]??0),0),savedWeek=sum(D.saved.filter(r=>r.date>=D.start).map(r=>({n:savedOf(r)})),"n"),savedUnits=savedWeek*D.conflictCost;
 
 $("eyebrow").textContent=`${day(cur.start).wd} ${day(cur.start).md} to ${day(cur.ends).wd} ${day(cur.ends).md} · ${into.toFixed(1)} of 7 days in · refreshed ${gen.toLocaleString("en-US",{weekday:"short",month:"short",day:"numeric",hour:"numeric",minute:"2-digit"})}`;
 $("lede").textContent=`Tokens used, PRs merged, scope added and closed, this plan week so far. Refreshed every morning at 10.`;
@@ -153,6 +163,7 @@ $("kpis").innerHTML=[
  ["",comma(prs),"PRs merged",`${comma(into>0.2?prs/into:prs)} a day`],
  ["",`<span class="add">+${fmt(add)}</span> <span class="cut">−${fmt(cut)}</span>`,"Code lines","added, removed"],
  ["",`${opened} / ${closed}`,"Issues opened / closed",closed>=opened?"closing faster than opening":"scope growing"],
+ ["",comma(savedWeek),"Conflicts saved",D.conflictCost?`≈ ${fmt(savedUnits)} units not spent`:"by Mervin"],
  ["",comma(openNow),"Open issues",`${openNow-(D.issues.find(r=>r.date>=D.start)?.open??openNow)>=0?"+":""}${openNow-(D.issues.find(r=>r.date>=D.start)?.open??openNow)} this week`],
 ].map(([c,b,s,i])=>`<div class="kpi ${c}"><b>${b}</b><span>${s}</span><i>${i}</i></div>`).join("");
 
@@ -185,6 +196,10 @@ bars("models",days,[{k:"opus",c:"--m-opus",n:"Opus"},{k:"sonnet",c:"--m-sonnet",
 bars("prs",days,[{k:"prs",c:"--c-prs",n:"PRs"}],{fmtY:v=>comma(v)});
 bars("loc",days,[{k:"codeAdded",c:"--c-add",n:"added"}],{down:[{k:"codeRemoved",c:"--c-cut",n:"removed"}],fmtY:v=>fmt(v)});
 bars("helpers",days,[{k:"mervin",c:"--c-mervin",n:"Mervin"},{k:"dexter",c:"--c-dexter",n:"Dexter"},{k:"ester",c:"--c-ester",n:"Ester"}]);
+{const rows=days.map(r=>({date:r.date,...(D.saved.find(s=>s.date===r.date)??{})})).map(r=>({...r,...Object.fromEntries(KINDS.map(s=>[s.k,r[s.k]??0]))}));
+ bars("saved",rows,KINDS,{fmtY:v=>comma(v)});
+ $("savedsum").textContent=`${comma(savedWeek)} this week`;
+ $("savednote").textContent=`Priced at ${fmt(D.conflictCost)} units each: what one conflict fought by hand cost on average over the last 30 days (agents' conflict spend over their conflicts). This week that is about ${fmt(savedUnits)} units${cur.pct&&units?`, about ${(savedUnits/(units/cur.pct)).toFixed(1)}% of the plan week`:""}. A DO save is a single line, cheaper than a whole file's fight, so this runs high on saves. Saves and branch merges count from codeSplitter's deploy of the counter; preflight and holds from this Mac's log.`;}
 $("prsum").textContent=`${comma(prs)} this week`;
 $("locsum").textContent=`+${comma(add)} −${comma(cut)} this week`;
 

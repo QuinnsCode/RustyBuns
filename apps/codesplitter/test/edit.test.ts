@@ -50,12 +50,16 @@ describe("edit: claim, apply, release in one call", () => {
     expect(await claims(call)).toEqual([]);
   });
 
-  test("a stale set is rebased word by word through edit", async () => {
+  test("a stale set is rebased word by word through edit, and counted as a conflict saved", async () => {
     const call = await setup("const total = add(a, b)\nnext");
     await post(call, "ryan", "ops", { ops: [set("L1", "const sum = add(a, b)")] });
     const res = await post(call, "agent-x", "edit", { ops: [set("L1", "const total = add(a, c)")] });
     expect(res.status).toBe(200);
     expect(text(await doc(call))).toBe("const sum = add(a, c)\nnext");
+    // Counted off the save's path: it reaches the stats once the counter flushes.
+    await Bun.sleep(1300);
+    const saved = await (await call("ryan", "/api/stats/saved?days=1")).json();
+    expect(saved).toMatchObject({ saved: [{ kind: "do-save", n: 1 }] });
   });
 
   test.each([

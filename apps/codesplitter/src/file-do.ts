@@ -33,6 +33,7 @@ import { recordEdits, type Recent } from "./line-events.ts";
 import { noteStep } from "./insights.ts";
 import { branchEdited } from "./checks.ts";
 import { Tally } from "./limits.ts";
+import { ConflictSavedCounter } from "./stats.ts";
 import { lintMerge } from "./lint.ts";
 import { DocStore } from "./doc-store.ts";
 import { sha256 as sha } from "./util.ts";
@@ -192,6 +193,8 @@ export class FileDurableObject {
   logging: Promise<unknown> = Promise.resolve();
   /** Its sockets' edits, counted against the edit limit without waiting on D1. */
   edits: Tally;
+  /** Stale line edits word-merged on save, counted as conflicts saved without waiting on D1. */
+  saved: ConflictSavedCounter;
   /** Where the doc and the base sit in storage, in chunks, so an edit writes only what it touched. */
   docs: DocStore;
   bases: DocStore;
@@ -205,6 +208,7 @@ export class FileDurableObject {
 
   constructor(private ctx: any, private env: Env) {
     this.edits = new Tally(env, "edit");
+    this.saved = new ConflictSavedCounter(env);
     this.docs = new DocStore(ctx.storage, "doc");
     this.bases = new DocStore(ctx.storage, "base");
     ctx.blockConcurrencyWhile(async () => {
@@ -492,7 +496,13 @@ export class FileDurableObject {
    */
   async edit(by: string | string[], ops: Op[], ifRev?: number, claim?: string, live?: Live, hidden: string[] = []) {
     // What stale lines said is read first: from here to the apply, nothing awaits.
-    if (typeof by === "string" && ifRev === undefined) ops = this.rebase(ops, await this.startedFrom(ops));
+    // Each line edit word-merged onto a newer one is a conflict saved (one PR at a time, someone fought it): counted once it lands.
+    let rebased = 0;
+    if (typeof by === "string" && ifRev === undefined) {
+      const sent = ops;
+      ops = this.rebase(ops, await this.startedFrom(ops));
+      rebased = ops.filter((op, i) => op !== sent[i]).length;
+    }
     // The path's policy, on a live edit: a locked file takes none, and on a `line` one an agent claims first.
     const barred = typeof by === "string" ? this.barred(by, ops, live, claim) : null;
     if (barred) return { ok: false as const, rev: this.doc.rev, ...barred };
@@ -516,6 +526,7 @@ export class FileDurableObject {
     const msg = (crew: boolean) => JSON.stringify({ type: "ops", rev: this.doc.rev, applied: this.hide(r.applied, crew) });
     const [toCrew, toOthers] = [msg(true), msg(false)];
     for (const ws of this.ctx.getWebSockets()) try { ws.send(ws.deserializeAttachment?.()?.write ? toCrew : toOthers); } catch {}
+    this.saved.add("do-save", rebased);
     // Into the feed, after the edit has landed and gone out: an edit never waits on it, and a failed write loses an event, not the edit.
     if (this.where) {
       const [owner, repo, path] = this.where;

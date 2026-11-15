@@ -12,6 +12,7 @@ import { homedir } from "node:os";
 import path from "node:path";
 import { arr, bool, num, obj, opt, str, type Of } from "@rustybuns/util/guard";
 import { help } from "../../../scripts/help.ts";
+import { readSaved as readLocalSaved } from "../../../scripts/conflicts-saved.ts";
 
 const DAY_STARTS = 10;
 const WEEK = "https://claude.ai/artifact/FBNXoT3SnfvJvL8kyZPDo3"; // RustyBuns weekly ledger: last 8 days, or any recorded week, with overlays
@@ -113,27 +114,51 @@ export function issueDays(issues: Issues, dates: string[]) {
   }));
 }
 
+/** codeSplitter's count of conflicts Mervin saved (GET /api/stats/saved): per hour and kind. */
+export const RemoteSaved = obj({ saved: arr(obj({ hour: num(0, 1e14), kind: str(40), n: num(0, 1e9) }), 5000, { drop: true }) });
+export const SAVED_KINDS = ["do-save", "branch-merge", "preflight", "hold"] as const;
+
+/** Conflicts saved per ledger day and kind, from codeSplitter's hourly rows and this Mac's log (scripts/conflicts-saved.ts). */
+export function savedDays(remote: { hour: number; kind: string; n: number }[], local: { at: number; kind: string; n: number }[], dates: string[]): ({ date: string } & Record<(typeof SAVED_KINDS)[number], number>)[] {
+  const by = new Map<string, number>();
+  for (const r of [...remote.map((r) => ({ at: r.hour, kind: r.kind, n: r.n })), ...local]) {
+    const k = `${dayOf(new Date(r.at).toISOString())} ${r.kind}`;
+    by.set(k, (by.get(k) ?? 0) + r.n);
+  }
+  const n = (date: string, kind: string) => by.get(`${date} ${kind}`) ?? 0;
+  return dates.map((date) => ({ date, "do-save": n(date, "do-save"), "branch-merge": n(date, "branch-merge"), preflight: n(date, "preflight"), hold: n(date, "hold") }));
+}
+
+/** What one conflict fought by hand costs, in units: the history's conflict spend over its conflicts. */
+export const conflictCost = (history: Row[]) => {
+  const episodes = history.reduce((a, r) => a + r.episodes, 0);
+  return episodes ? Math.round(history.reduce((a, r) => a + r.fights, 0) / episodes) : 0;
+};
+
 /** The plan-week report: this plan week's days (at least the last 8, so a Thursday isn't a page of one bar), every week,
- *  and issues opened against closed over the last 30 days. */
-export function reportPage(template: string, generated: string, history: Row[], budget: Budget, issues: Issues = []): string {
+ *  issues opened against closed over the last 30 days, and the conflicts Mervin saved, priced as fought by hand. */
+export function reportPage(template: string, generated: string, history: Row[], budget: Budget, issues: Issues = [], saved: ReturnType<typeof savedDays> = []): string {
   const start = history.length ? weekStart(history.at(-1)!.date) : "";
   const days = history.filter((r, i) => r.date >= start || i >= history.length - 8);
-  return fill(template, { generated, start, days, weeks: planWeeks(history, budget), issues: issueDays(issues, history.slice(-30).map((r) => r.date)) });
+  return fill(template, { generated, start, days, weeks: planWeeks(history, budget), issues: issueDays(issues, history.slice(-30).map((r) => r.date)), saved, conflictCost: conflictCost(history.slice(-30)) });
 }
 
 const read = <T>(name: string, g: (v: unknown) => T, none: T): T => { const f = path.join(out, name); return existsSync(f) ? g(JSON.parse(readFileSync(f, "utf8"))) : none; };
 const readHistory = () => read("history.json", History, []);
 const readBudget = () => read("budget.json", Budget, []);
 const readIssues = () => read("issues.json", Issues, []);
+const readRemoteSaved = () => read("saved.json", RemoteSaved, { saved: [] }).saved;
+const CODESPLITTER = process.env.CODESPLITTER_URL ?? "https://codesplitter.notryanquinn.workers.dev";
 
 /** week.html and report.html from what is on disk: the last run's header, the history and the budget entries. */
 function page(ledger: Of<typeof Ledger>, history: Row[]) {
   const budget = readBudget(), template = (name: string) => readFileSync(path.join(import.meta.dir, name), "utf8");
   writeFileSync(path.join(out, "week.html"), weekPage(template("ledger-week.html"), ledger, history, budget));
-  writeFileSync(path.join(out, "report.html"), reportPage(template("ledger-report.html"), ledger.generated, history, budget, readIssues()));
+  writeFileSync(path.join(out, "report.html"), reportPage(template("ledger-report.html"), ledger.generated, history, budget, readIssues(),
+    savedDays(readRemoteSaved(), readLocalSaved(), history.slice(-30).map((r) => r.date))));
 }
 
-function build() {
+async function build() {
   mkdirSync(out, { recursive: true });
   Bun.spawnSync(["git", "fetch", "-q", "origin", "main"], { cwd: repo });
   const run = Bun.spawnSync(["bun", "apps/agent-office/ester/ledger.ts", "32", "--day-starts", String(DAY_STARTS)], { cwd: repo, stderr: "inherit" });
@@ -145,6 +170,9 @@ function build() {
   writeFileSync(path.join(out, "size.json"), JSON.stringify(ledger.size));
   const gh = Bun.spawnSync(["gh", "issue", "list", "--state", "all", "--limit", "50000", "--json", "createdAt,closedAt"], { cwd: repo, stderr: "inherit" });
   if (gh.exitCode === 0) writeFileSync(path.join(out, "issues.json"), gh.stdout.toString()); // offline, the last run's issues stand
+  // codeSplitter's conflicts saved (DO saves, branch merges); before its deploy the route is a 404 and the last copy stands.
+  const saved = await fetch(`${CODESPLITTER}/api/stats/saved?days=32`, { signal: AbortSignal.timeout(15000) }).then((r) => (r.ok ? r.text() : null)).catch(() => null);
+  if (saved) writeFileSync(path.join(out, "saved.json"), JSON.stringify(RemoteSaved(JSON.parse(saved))));
   const history = mergeHistory(readHistory(), ledger.rows);
   writeFileSync(path.join(out, "history.json"), JSON.stringify(history));
   page(ledger, history);
@@ -201,5 +229,5 @@ if (import.meta.main) {
     page(Ledger(JSON.parse(readFileSync(path.join(out, "ledger.json"), "utf8"))), readHistory());
     console.log(`budget: ${list.map((b) => `${b.ends} ${b.pct}%${b.approx ? "~" : ""}`).join(", ")}`);
     if (!a.includes("--no-publish")) publish();
-  } else { build(); if (!a.includes("--no-publish")) publish(); }
+  } else { await build(); if (!a.includes("--no-publish")) publish(); }
 }

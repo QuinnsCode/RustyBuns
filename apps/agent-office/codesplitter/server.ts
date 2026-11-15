@@ -12,6 +12,7 @@ import { homedir } from "node:os";
 import path from "node:path";
 import { arr, check, int, obj, opt, str, type Guard } from "@rustybuns/util/guard";
 import { Hint, stillBusy, type Held, type QueueAdd } from "./hint.ts";
+import { noteSaved } from "../../../scripts/conflicts-saved.ts";
 import { AgentRuns, Branches, Checks, summarize, type Summary } from "./news.ts";
 
 export const LIVE = "https://codesplitter.notryanquinn.workers.dev";
@@ -105,6 +106,7 @@ export function codesplitterRoute(s: Site = site(), get: typeof fetch = fetch) {
     const h = { id: crypto.randomUUID(), repo, msg, branches, at: Date.now() };
     held.set(h.id, h);
     prevented.set(repo, (prevented.get(repo) ?? 0) + 1);
+    noteSaved("hold", `hold ${h.id}`); // and on disk, so the daily ledger counts it after a restart
     return { status: 201, body: { id: h.id } };
   };
   return async (method: string, url: URL): Promise<{ status: number; body: unknown } | null> => {
