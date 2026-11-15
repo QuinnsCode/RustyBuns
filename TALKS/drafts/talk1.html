@@ -21,6 +21,10 @@ body { background: var(--bg); color: var(--ink); font: 17px/1.5 var(--body); }
 .kick { font: 700 13px/1 var(--mono); letter-spacing: 0.12em; text-transform: uppercase; color: var(--rust); }
 h1 { font: 900 clamp(26px, 4vw, 44px)/1.1 var(--display); margin: 10px 0 0; text-wrap: balance; }
 .intro { max-width: 72ch; margin: 12px 0 0; color: var(--quiet); }
+.actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 14px; }
+.actions .lock { margin-top: 0; }
+.play { min-height: 40px; padding: 0 16px; border-radius: 999px; border: 0; background: var(--rust); color: var(--bg); font: 700 13px/1 var(--mono); letter-spacing: 0.06em; text-transform: uppercase; cursor: pointer; }
+.set-head .rebuilt { font: 700 12px/1 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--rust); }
 .lock { display: inline-flex; align-items: center; gap: 8px; margin-top: 14px; font: 700 12px/1 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; padding: 8px 12px; border-radius: 999px; background: #0b0b0c; color: #ff7a1a; }
 .status { font: 600 13px/1.4 var(--mono); color: var(--quiet); margin-top: 10px; min-height: 1.4em; }
 .tabs { position: sticky; top: 0; z-index: 5; display: flex; gap: 8px; overflow-x: auto; margin: 22px 0 0; padding: 10px 0; background: var(--bg); border-bottom: 1px solid var(--line); scrollbar-width: thin; }
@@ -67,6 +71,7 @@ section.slide-set { margin-top: 40px; }
 .s p { font-size: 1.9cqw; line-height: 1.45; margin: 1.8cqw 0 0; max-width: 50%; color: #b8b8b4; }
 .s .v { position: absolute; right: 4.5cqw; top: 50%; transform: translateY(-46%); width: 36cqw; color: #f5f5f4; --ac: #ff7a1a; --fill: #0b0b0c; }
 .s .v svg { width: 100%; height: auto; display: block; }
+.s .v .halo text { paint-order: stroke; stroke: #0b0b0c; stroke-width: 4px; stroke-linejoin: round; }
 .s.long h3 { font-size: 3.5cqw; line-height: 1.12; }
 .s.big-type h3 { font-size: 8.4cqw; max-width: 92%; margin-top: 7cqw; }
 .s.big-type p { max-width: 70%; font-size: 2.4cqw; }
@@ -80,8 +85,8 @@ section.slide-set { margin-top: 40px; }
 <div class="page">
   <div class="kick">Talk 1 · 42 slides in seven points</div>
   <h1>Pick the words and picture for each slide</h1>
-  <p class="intro">The look is locked. Each slide has ten content options: different headlines, lines and pictures for the same slide. Option 1 is always your wording from the doc. Tap one to see it large, press Pick, and leave a note to mix options ("headline from 3, picture from 7").</p>
-  <div class="lock">Style locked: J, black and orange</div>
+  <p class="intro">The look is locked. Each slide has ten content options: different headlines, lines and pictures for the same slide. Option 1 is your wording from the doc; on a slide marked "Rebuilt from your note", option 1 is your note made into a slide. Tap one to see it large, press Pick, and leave a note to mix options ("headline from 3, picture from 7").</p>
+  <div class="actions"><span class="lock">Style locked: J, black and orange</span><button type="button" class="play" id="play">Play the talk</button></div>
   <div class="status" id="status">Loading saved picks...</div>
   <div class="tabs" id="tabs" role="tablist" aria-label="Points of talk 1"></div>
   <div id="sets"></div>
@@ -237,6 +242,64 @@ section.slide-set { margin-top: 40px; }
       return `<rect x="${x}" y="20" width="170" height="196" rx="14" fill="var(--fill)" ${i ? 'stroke="var(--ac)"' : ""}/>${ic(i ? "zap" : "server", x + 18, 34, 30, i ? 'stroke="var(--ac)"' : "")}${T(x + 58, 56, p, 16, 700, "start")}
         ${T(x + 85, 146, o.n || "1,000", 44, 900, "middle", "var(--ac)")}${T(x + 85, 184, "requests answered", 12, 600)}`; }).join("")}
       ${T(200, 248, "live counter", 13, 600, "middle", DIM)}`),
+    // One worker, three homes: a real worker on Cloudflare, a function on a server or in the desktop app.
+    anywhere: (o = {}) => svg(`
+      <rect x="10" y="94" width="130" height="72" rx="14" fill="var(--fill)" stroke="var(--ac)" stroke-width="3.5"/>${ic("code", 22, 112, 36, 'stroke="var(--ac)"')}${L(98, 130, "your|worker", 14, 900)}
+      ${[["cloud", "Cloudflare", "a real worker"], ["server", "a server", "a function"], ["desktop", "desktop app", "a function"]].map(([p, name, sub], i) => {
+        const y = 12 + i * 84, on = !o.hi || o.hi === p || (o.hi === "both" && p !== "desktop");
+        return `<path d="M140 130 C190 130 190 ${y + 32} 236 ${y + 32}" stroke="var(--ac)" stroke-dasharray="6 6" ${on ? "" : 'opacity="0.3"'}/>
+          <g ${on ? "" : 'opacity="0.4"'}><rect x="236" y="${y}" width="156" height="64" rx="12" fill="var(--fill)" ${o.hi === p ? 'stroke="var(--ac)" stroke-width="3"' : ""}/>
+          ${ic(PLACE[p][0], 248, y + 18, 28)}${T(286, y + 29, name, 14, 700, "start")}${T(286, y + 47, sub, 12, 600, "start", DIM)}</g>`; }).join("")}`),
+    crossover: () => svg(`<line x1="40" y1="16" x2="40" y2="222" stroke-width="2"/><line x1="40" y1="222" x2="384" y2="222" stroke-width="2"/>
+      ${T(48, 20, "cost", 12, 600, "start", DIM)}${T(384, 244, "requests a second", 12, 600, "end", DIM)}
+      <path d="M40 222 L370 42" stroke="var(--ac)" stroke-width="4" stroke-linecap="round"/>${T(334, 40, "Cloudflare", 13, 700, "end", "var(--ac)")}
+      <path d="M40 120 L370 120" stroke-width="4" stroke-linecap="round"/>${T(370, 108, "your servers", 13, 700, "end")}
+      <circle cx="227" cy="120" r="9" fill="var(--ac)" stroke="none"/>${T(227, 150, "crossover", 13, 900)}
+      ${T(150, 212, "scale to zero", 12, 600, "middle", DIM)}${T(318, 168, "route to", 12, 600, "middle", DIM)}${T(318, 184, "your boxes", 12, 600, "middle", DIM)}`),
+    ladder: () => svg(`${[["1", 0], ["1,000", 3], ["10,000", 4], ["100K", 5], ["1M", 6], ["10M", 7]].map(([t, v], i) => { const x = 18 + i * 64, h = 14 + v * 22, live = i < 2;
+        return `<rect x="${x}" y="${214 - h}" width="48" height="${h}" rx="6" ${live ? 'fill="var(--ac)" stroke="var(--ac)"' : 'fill="var(--fill)" stroke="var(--ac)" stroke-dasharray="5 5"'}/>${T(x + 24, 236, t, 13, 700)}`; }).join("")}
+      ${T(18, 24, "live", 13, 700, "start", "var(--ac)")}${T(390, 24, "in theory", 13, 700, "end", DIM)}${T(200, 256, "requests sent", 12, 600, "middle", DIM)}`),
+    // Three circles: languages, primitives, deployments (or the three places, pulled tight).
+    venn3: (o = {}) => { const t = o.tight, r = t ? 92 : 84;
+      const A = t ? [180, 122] : [150, 104], B = t ? [220, 122] : [250, 104], C = t ? [200, 158] : [200, 184];
+      const names = o.places ? ["desktop", "server", "Cloudflare"] : ["languages", "primitives", "deployments"];
+      const subs = o.places ? ["", "", ""] : ["TypeScript|Rust", "workers · storage|memory · rooms", "Cloudflare · server|desktop app"];
+      const at = t ? [[52, 40], [348, 40], [200, 274]] : [[110, 62], [290, 62], [200, 226]];
+      return svg(`
+      ${o.hi ? `<circle cx="${B[0]}" cy="${B[1]}" r="${r}" fill="var(--ac)" opacity="0.18" stroke="none"/>` : ""}
+      <circle cx="${A[0]}" cy="${A[1]}" r="${r}" stroke="var(--ac)"/><circle cx="${B[0]}" cy="${B[1]}" r="${r}"/><circle cx="${C[0]}" cy="${C[1]}" r="${r}"/>
+      ${o.you ? [[150, 150], [252, 152], [200, 78]].map(([x, y]) => `<circle cx="${x}" cy="${y}" r="6" fill="${DIM}" stroke="none"/>`).join("") + `<circle cx="318" cy="10" r="5" fill="${DIM}" stroke="none"/>${T(328, 14, "other people", 11, 700, "start", DIM)}` : ""}
+      ${o.me ? `<circle cx="200" cy="162" r="7" fill="var(--ac)" stroke="none"/>` : ""}
+      <g class="halo">${names.map((n, i) => T(at[i][0], at[i][1], n, 15)).join("")}
+      ${o.places ? "" : L(108, 92, subs[0], 11, 600, DIM) + L(286, 92, subs[1], 11, 600, DIM) + L(200, 248, subs[2], 11, 600, DIM)}
+      ${T(200, t ? 146 : 138, o.places ? "your app" : "Rusty Buns", 15, 900, "middle", "var(--ac)")}
+      ${o.me ? T(212, 167, "me", 12, 900, "start", "var(--ac)") : ""}</g>`, 290); },
+    converge: () => svg(`${[[70, 26, "start"], [200, 14, "+ workers"], [330, 5, "+ storage, memory"]].map(([cx, s, t], i) => `
+        <circle cx="${cx - s}" cy="${104 - s * 0.6}" r="30" stroke="var(--ac)"/><circle cx="${cx + s}" cy="${104 - s * 0.6}" r="30"/><circle cx="${cx}" cy="${104 + s * 0.8}" r="30"/>
+        ${T(cx, 196, t, 12, 700)}${i < 2 ? `<path d="M${cx + 52} 104 L${cx + 76} 104 M${cx + 68} 96 L${cx + 77} 104 L${cx + 68} 112" stroke-linecap="round" stroke-linejoin="round" stroke="${DIM}"/>` : ""}`).join("")}
+      ${T(200, 244, "goal: write once, use everywhere", 14, 900, "middle", "var(--ac)")}`),
+
+    // Point 3, rebuilt: memory is the fast store you load data into; storage sits behind one small wrapper.
+    cache: (o = {}) => svg(`
+      <rect x="8" y="88" width="104" height="84" rx="14" fill="var(--fill)"/>${ic("code", 40, 100, 40)}${T(60, 160, "your app", 13)}
+      <path d="M112 130 L148 130" stroke="var(--ac)" stroke-width="4"/>${T(130, 70, "fast reads", 12, 700, "middle", "var(--ac)")}
+      <rect x="148" y="78" width="120" height="104" rx="14" fill="var(--fill)" stroke="var(--ac)" stroke-width="3.5"/>
+      ${o.empty ? T(208, 128, "empty", 16, 900, "middle", DIM) : ic("zap", 186, 92, 44, 'stroke="var(--ac)"')}${T(208, 160, "memory", 15, 900)}${T(208, 202, "fast · volatile", 12, 600, "middle", DIM)}
+      <rect x="300" y="88" width="92" height="84" rx="14" fill="var(--fill)"/>${ic("database", 326, 98, 40)}${T(346, 160, "storage", 13)}
+      <path d="M300 130 L270 130" stroke-dasharray="5 5"/><path d="M280 122 L270 130 L280 138" stroke-linejoin="round"/>${T(300, 214, "load in", 12, 700)}`),
+    fast3: () => svg(`${T(200, 22, "memory: one primitive", 14, 700, "middle", "var(--ac)")}
+      ${[["cpu", "data in the process"], ["zap", "a KV cache"], ["server", "Redis"]].map(([n, t], i) => { const y = 36 + i * 72;
+        return `<rect x="10" y="${y}" width="380" height="60" rx="12" fill="var(--fill)" ${i === 0 ? 'stroke="var(--ac)"' : ""}/>${ic(n, 26, y + 13, 34)}${T(76, y + 36, t, 17, 700, "start")}${T(374, y + 36, "fast · volatile", 12, 600, "end", DIM)}`; }).join("")}`),
+    wrap: () => svg(`
+      <rect x="8" y="98" width="96" height="64" rx="12" fill="var(--fill)"/>${L(56, 130, "your|logic", 14, 700)}
+      <path d="M104 130 L130 130" stroke-width="3"/>
+      <rect x="130" y="54" width="170" height="152" rx="16" fill="var(--fill)" stroke="var(--ac)" stroke-width="3.5"/>${T(215, 84, "the wrapper", 14, 900, "middle", "var(--ac)")}
+      <rect x="150" y="102" width="130" height="80" rx="10" stroke-dasharray="5 5"/>${L(215, 142, "your database|call", 13, 700)}
+      <path d="M300 130 L326 130" stroke-width="3"/>${ic("database", 332, 104, 52)}
+      ${T(215, 240, "small, plain, and yours", 13, 600, "middle", DIM)}`),
+    split: () => svg(`<rect x="12" y="34" width="180" height="170" rx="16" fill="var(--ac)" stroke="var(--ac)"/>${T(102, 112, "the primitive", 18, 900, "middle", "#0b0b0c")}${T(102, 140, "Rusty Buns", 14, 700, "middle", "#0b0b0c")}
+      <rect x="208" y="34" width="180" height="170" rx="16" fill="var(--fill)"/>${T(298, 112, "the how", 18, 900)}${T(298, 140, "your code", 14, 700)}
+      ${T(200, 240, "you own your code", 14, 600, "middle", DIM)}`),
 
     // Point 3: storage vs memory
     plug: () => svg(`
@@ -282,6 +345,29 @@ section.slide-set { margin-top: 40px; }
       : svg(`${Array.from({ length: o.n || 10 }, (_, i) => { const t = (i / (o.n || 10)) * Math.PI * 2 - Math.PI / 2, x = (200 + Math.cos(t) * 160).toFixed(1), y = (125 + Math.sin(t) * 100).toFixed(1);
           return `<line x1="200" y1="125" x2="${x}" y2="${y}" stroke-width="1.6"/><circle cx="${x}" cy="${y}" r="8" fill="var(--fill)"/>`; }).join("")}
         <rect x="150" y="96" width="100" height="58" rx="12" fill="var(--ac)" stroke="var(--ac)"/>${L(200, 125, "one|program", 13, 900, "#0b0b0c")}`, 250),
+    // Rebuilt: state flows downhill from the server; messages go up, and the server decides.
+    downhill: () => { const xs = [40, 112, 184, 256, 328];
+      return svg(`<path d="M8 238 L200 70 L392 238 Z" fill="var(--ac)" fill-opacity="0.08" stroke="none"/>
+      ${xs.map((x) => `<path d="M200 74 Q${(200 + x + 18) / 2} 100 ${x + 18} 168" stroke="var(--ac)" stroke-width="3.5" stroke-linecap="round"/>${phone(x, 172, 36, 62)}`).join("")}
+      <rect x="164" y="14" width="72" height="58" rx="10" fill="var(--fill)" stroke="var(--ac)" stroke-width="3"/>${ic("server", 184, 22, 32, 'stroke="var(--ac)"')}${T(200, 66, "server", 12, 900, "middle", "var(--ac)")}
+      <path d="M368 166 C384 90 310 40 242 42" stroke-dasharray="4 6" stroke-width="2.5"/><path d="M252 34 L240 42 L252 50" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
+      ${T(96, 66, "state flows down", 13, 700, "middle", "var(--ac)")}${T(318, 24, "messages go up", 12, 600, "middle", DIM)}
+      ${T(200, 256, "the server decides", 12, 600, "middle", DIM)}`); },
+    theatre: () => svg(`<rect x="50" y="10" width="300" height="96" rx="8" fill="var(--fill)" stroke="var(--ac)" stroke-width="3.5"/>${L(200, 58, "the server's|state", 16, 900, "var(--ac)")}
+      ${[0, 1].map((r) => Array.from({ length: 7 - r }, (_, i) => { const x = 62 + r * 23 + i * 46, y = 150 + r * 44, me = r === 0 && i === 5;
+        return `<circle cx="${x}" cy="${y}" r="13" fill="var(--fill)" ${me ? 'stroke="var(--ac)"' : ""}/><path d="M${x - 20} ${y + 30} Q${x} ${y + 12} ${x + 20} ${y + 30}" ${me ? 'stroke="var(--ac)"' : ""}/>`; }).join("")).join("")}
+      <path d="M292 134 L292 114" stroke="var(--ac)" stroke-dasharray="4 4" stroke-width="2.5"/><path d="M285 120 L292 112 L299 120" stroke="var(--ac)" stroke-width="2.5" stroke-linejoin="round"/>
+      ${T(200, 252, "everyone watches one picture", 13, 600, "middle", DIM)}`),
+    // Rebuilt: a Durable Object as a mini computer (Sunil Pai's framing).
+    mini: (o = {}) => svg(`<rect x="70" y="8" width="260" height="226" rx="18" fill="var(--fill)" stroke="var(--ac)" stroke-width="3.5"/>${ic("cpu", 88, 20, 30, 'stroke="var(--ac)"')}${T(128, 41, "a mini computer", 15, 900, "start", "var(--ac)")}
+      ${["fetch", "HTTP server", "sockets", "storage", "input gate", "output gate"].map((t, i) => { const x = 88 + (i % 2) * 116, y = 62 + Math.floor(i / 2) * 56, on = o.hi === "gates" && i > 3;
+        return `<rect x="${x}" y="${y}" width="108" height="44" rx="8" ${on ? 'fill="var(--ac)" stroke="var(--ac)"' : ""}/>${T(x + 54, y + 27, t, 13, 700, "middle", on ? "#0b0b0c" : "currentColor")}`; }).join("")}
+      ${T(200, 256, "one Durable Object", 13, 600, "middle", DIM)}`),
+    tune: (o = {}) => svg(`${[[34, 14], [34, 98], [34, 182], [334, 14], [334, 98], [334, 182]].map(([x, y]) => { const cy = y + 28, left = x < 200;
+        return `<line x1="${left ? x + 32 : x}" y1="${cy}" x2="${left ? 155 : 245}" y2="${(120 + (cy - 120) * 0.3).toFixed(1)}" stroke-width="1.8"/>${phone(x, y, 32, 56)}
+          ${o.own ? `<rect x="${left ? x + 42 : x - 28}" y="${y + 2}" width="18" height="18" rx="4" stroke="var(--ac)" stroke-width="2"/>` : ""}`; }).join("")}
+      <rect x="155" y="92" width="90" height="56" rx="12" fill="var(--ac)" stroke="var(--ac)"/>${L(200, 120, "the room's|computer", 12, 900, "#0b0b0c")}
+      ${T(200, 254, o.own ? "one we share, one near each of us" : "everyone tunes into one", 13, 600, "middle", DIM)}`),
     qr: () => { const bits = "101101001110100101011011010010111010110100110101101001011101001011010110110100101101";
       const cells = []; for (let r = 0; r < 9; r++) for (let c = 0; c < 9; c++) {
         const corner = (r < 3 && c < 3) || (r < 3 && c > 5) || (r > 5 && c < 3);
@@ -445,53 +531,53 @@ section.slide-set { margin-top: 40px; }
         { tag: "Plain", k: "The question", h: "Two words people *mix up*", p: "Server. Worker. Here is what each one means.", v: "pair" },
         { tag: "Quiz", k: "Quick quiz", h: "Which one is running right *now?*", p: "Server or worker. Hands up.", v: "pair", vo: { q: true } },
       ] },
-      { id: "t1-s8", n: 8, name: "A server", brief: "A computer that stays on and waits for requests. It keeps running between visitors. On screen: a server with a light that is always on.", opts: [
-        { tag: "As written", k: "Server vs worker", h: "A *server*", p: "A computer that stays on and waits for requests. It keeps running between visitors.", v: "bulb" },
-        { tag: "Always on", k: "Server", h: "Always *on*", p: "A server stays running, even when nobody is visiting.", v: "bulb" },
-        { tag: "Waiting", k: "Server", h: "It sits and *waits*", p: "A server is a computer that stays on and listens for the next request.", v: "pulses", vo: { kind: "server" } },
-        { tag: "Shop", k: "Server", h: "A shop with the lights *on*", p: "Open all day, whether anyone walks in or not.", v: "bulb", vo: { label: "open all day" } },
-        { tag: "Between visits", k: "Server", h: "It keeps running between *visitors*", p: "So it can hold things in memory from one visit to the next.", v: "pulses", vo: { kind: "server" } },
-        { tag: "Rented", k: "Server", h: "One computer, always *running*", p: "You rent it by the month. It runs until you turn it off.", v: "server", vo: { count: 1, labels: false } },
-        { tag: "3 a.m.", k: "Server · 24 hours", h: "Running at 3 a.m. with nobody *there*", p: "That is the point, and the cost.", v: "pulses", vo: { kind: "server" } },
-        { tag: "Plain", k: "Server", h: "A server is a computer that stays *on*", p: "It waits for requests and answers them.", v: "bulb" },
-        { tag: "Keyword", k: "Keyword: server", h: "*Server:* a computer that stays on", p: "and waits for requests, between every visitor.", v: "bulb" },
-        { tag: "Never off", k: "Server", h: "The light that never goes *off*", p: "A server keeps running whether one person visits or none.", v: "bulb" },
+      { id: "t1-s8", n: 8, name: "A server can be the worker", rebuilt: true, brief: "You write the worker once. On Cloudflare it is a real worker. On a server or in a desktop app, the server runs it as a function. On screen: one worker, three homes.", opts: [
+        { tag: "From your note", k: "Server vs worker", h: "Write the *worker.* Run it anywhere.", p: "On Cloudflare it is a real worker. On a server or a desktop app, the server runs it as a function.", v: "anywhere" },
+        { tag: "Homes", k: "Server vs worker", h: "One worker, three *homes*", p: "A real worker on Cloudflare, or a function on your own server or desktop app.", v: "anywhere" },
+        { tag: "Not versus", k: "Server vs worker", h: "Server *and* worker", p: "A server can act as the worker. You write the worker, and it runs on either.", v: "anywhere", vo: { hi: "server" } },
+        { tag: "Keyword", k: "Keyword: worker", h: "*Worker:* the part you write once", p: "A real Cloudflare worker, or a function on a server.", v: "anywhere" },
+        { tag: "Plain", k: "Server vs worker", h: "A server can run your *worker*", p: "As a plain function. Same code, no Cloudflare needed.", v: "anywhere", vo: { hi: "server" } },
+        { tag: "Desktop", k: "Server vs worker", h: "The desktop app runs the worker *too*", p: "It is a small server, and it calls the worker like a function.", v: "anywhere", vo: { hi: "desktop" } },
+        { tag: "Doesn't know", k: "Server vs worker", h: "The worker doesn't know where it *is*", p: "Cloudflare, a server or a desktop app. It answers each request the same way.", v: "anywhere" },
+        { tag: "Choose later", k: "Server vs worker", h: "So why choose *one?*", p: "Write the worker once. Pick the home later, or use more than one.", v: "anywhere" },
+        { tag: "Always on", k: "Server", h: "A server stays on. Your worker lives *inside it.*", p: "The server waits for requests, and runs the worker as a function when one comes.", v: "pulses", vo: { kind: "server" } },
+        { tag: "Your earlier pick", k: "Server", h: "It sits and *waits*", p: "A server is a computer that stays on and listens for the next request.", v: "pulses", vo: { kind: "server" } },
       ] },
-      { id: "t1-s9", n: 9, name: "A worker", brief: "A small program on Cloudflare that starts for each request, answers, and stops. On screen: a light that switches on only when someone walks past.", opts: [
-        { tag: "As written", k: "Server vs worker", h: "A *worker*", p: "A small program on Cloudflare that starts for each request, answers, and stops.", v: "bulb", vo: { walker: true, label: "on when someone passes" } },
-        { tag: "Motion light", k: "Worker", h: "A light that turns on when you walk *past*", p: "A worker starts for each request, answers, and stops.", v: "bulb", vo: { walker: true, label: "on when someone passes" } },
-        { tag: "Three verbs", k: "Worker", h: "Start. Answer. *Stop.*", p: "A worker runs only as long as one request needs.", v: "steps", vo: { steps: ["start", "answer", "stop"] } },
-        { tag: "Timeline", k: "Worker · 24 hours", h: "Only on when someone *asks*", p: "Each blip is one request. Between them, nothing runs.", v: "pulses", vo: { kind: "worker" } },
-        { tag: "Small", k: "Worker", h: "A small program, not a *computer*", p: "You don't rent a box. Cloudflare runs your code when it is needed.", v: "bulb", vo: { walker: true, label: "on when needed" } },
-        { tag: "Many cities", k: "Worker", h: "It starts in a city close to *you*", p: "The same worker can run in many places at once.", v: "globe", vo: { label: "" } },
-        { tag: "Keyword", k: "Keyword: worker", h: "*Worker:* a program that runs per request", p: "on Cloudflare. It starts, answers and stops.", v: "pulses", vo: { kind: "worker" } },
-        { tag: "Nobody here", k: "Worker", h: "No box to keep *running*", p: "When nobody visits, the worker is not running at all.", v: "bulb", vo: { on: false, label: "nobody here: off" } },
-        { tag: "Compare", k: "Server vs worker", h: "Server: always on. Worker: on *demand.*", p: "Same job, very different shape.", v: "pulses" },
-        { tag: "Plain", k: "Worker", h: "A worker wakes up for each *visitor*", p: "It answers, then goes back to sleep.", v: "bulb", vo: { walker: true, label: "on when someone passes" } },
+      { id: "t1-s9", n: 9, name: "Hybrid", rebuilt: true, brief: "The worker is a primitive: tuck it into one box, or deploy hybrid. Scale to zero on Cloudflare, then route to your own servers when requests a second, storage, memory or cost cross over for you. On screen: a cost line crossing over.", opts: [
+        { tag: "From your note", k: "Server vs worker", h: "Scale to zero. Then move to your *boxes.*", p: "When requests, storage, memory or cost cross over for you, route to your own servers.", v: "crossover" },
+        { tag: "Tuck in", k: "Hybrid", h: "One box, or spread *out*", p: "The same worker runs on one server, on Cloudflare, or on both.", v: "anywhere", vo: { hi: "both" } },
+        { tag: "Crossover", k: "Hybrid", h: "Find your *crossover*", p: "Cheap at zero on Cloudflare. Cheaper on your own boxes past a point.", v: "crossover" },
+        { tag: "Keyword", k: "Keyword: hybrid", h: "*Hybrid:* Cloudflare and your servers at once", p: "Same worker. You choose where each request goes.", v: "crossover" },
+        { tag: "Pay nothing", k: "Hybrid", h: "Nobody visiting? Pay *nothing.*", p: "On Cloudflare the worker scales to zero. Busy? Send the load to your servers.", v: "crossover" },
+        { tag: "Your call", k: "Hybrid", h: "Where is the line? *Your call.*", p: "Requests a second, storage, memory or money. You choose the point.", v: "crossover" },
+        { tag: "Route", k: "Hybrid", h: "Route to the boxes when it *pays*", p: "Rusty Buns gives you the primitive. You choose the rule.", v: "crossover" },
+        { tag: "Plain", k: "Hybrid", h: "Start small. Grow into *servers.*", p: "No rewrite when you move.", v: "crossover" },
+        { tag: "Both", k: "Hybrid", h: "Not either-or. *Both.*", p: "Some requests on Cloudflare, some on your servers, one worker.", v: "anywhere", vo: { hi: "both" } },
+        { tag: "Your earlier pick", k: "Keyword: worker", h: "*Worker:* a program that runs per request", p: "on Cloudflare. It starts, answers and stops.", v: "pulses", vo: { kind: "worker" } },
       ] },
-      { id: "t1-s10", n: 10, name: "Experiment", brief: "Send 1 request, then 1,000, to each. Watch what each one does. On stage: a load test against both, with a live request counter.", opts: [
-        { tag: "As written", k: "Server vs worker", h: "*Experiment*", p: "Send 1 request, then 1,000, to each. Watch what each one does.", v: "load" },
-        { tag: "Count", k: "Experiment 4", h: "1 request. Then *1,000.*", p: "Sent to the server and to the worker. Watch the counters.", v: "load" },
+      { id: "t1-s10", n: 10, name: "Experiment", brief: "Send 1 request, then 1,000, to each. Then 10,000, 100K, 1M and 10M, in theory. On stage: a load test against both, with a live request counter.", opts: [
+        { tag: "As written", k: "Server vs worker", h: "*Experiment*", p: "Send 1 request, then 1,000, to each. Then 10,000, 100K, 1M and 10M, in theory.", v: "load" },
+        { tag: "Count", k: "Experiment 4", h: "1 request. Then *1,000.*", p: "Then 10,000, 100K, 1M and 10M, in theory. Please don't send those for real.", v: "ladder" },
         { tag: "Guess", k: "Experiment 4", h: "Which one *struggles?*", p: "Guess now. Then we send 1,000 requests to each.", v: "load", vo: { n: "?" } },
         { tag: "Steps", k: "Experiment 4", h: "Send, count, *compare*", p: "Same app, same load, two places.", v: "steps", vo: { steps: ["send 1", "send 1,000", "compare"] } },
         { tag: "Hypothesis", k: "Hypothesis", h: "The worker handles 1,000 as easily as *1*", p: "Let's find out, live.", v: "load" },
         { tag: "Watch", k: "Experiment 4", h: "Watch the *counter*", p: "A live count of requests answered, server and worker side by side.", v: "load" },
         { tag: "Everyone", k: "Experiment 4", h: "What if everyone here clicked at *once?*", p: "We'll fake it: 1,000 requests to each.", v: "load" },
-        { tag: "Live", k: "Experiment 4", h: "Load test, *live*", p: "1 request, then 1,000. Server on the left, worker on the right.", v: "load" },
+        { tag: "Ladder", k: "Experiment 4", h: "1. 1,000. Then up to *10M.*", p: "The first two live. The rest in theory.", v: "ladder" },
         { tag: "Plain", k: "Experiment 4", h: "Let's push them *both*", p: "Send 1 request, then 1,000, and see what happens.", v: "load", vo: { n: "1" } },
         { tag: "Two subjects", k: "Experiment 4", h: "Same test, two *subjects*", p: "Server and worker. 1 request, then 1,000.", v: "pair" },
       ] },
-      { id: "t1-s11", n: 11, name: "Venn diagram", brief: "Both answer web requests. Only a server keeps a running process. Only a worker runs in many cities at once.", opts: [
-        { tag: "As written", k: "Server vs worker", h: "Venn *diagram*", p: "Both answer web requests. Only a server keeps a running process. Only a worker runs in many cities at once.", v: "venn2", vo: SW },
-        { tag: "Overlap", k: "Server vs worker", h: "Where they *agree*", p: "Both answer web requests. That middle part is what we build on.", v: "venn2", vo: SWH },
-        { tag: "One and two", k: "Server vs worker", h: "One shared, two *different*", p: "Both answer requests. A server keeps running. A worker runs in many cities.", v: "venn2", vo: SW },
-        { tag: "Only", k: "Server vs worker", h: "Only a server *keeps running*", p: "Only a worker runs in many cities at once. Both answer requests.", v: "venn2", vo: SW },
-        { tag: "Results", k: "Experiment 4 · results", h: "What the test *showed*", p: "Both answered. The server kept one process going. The worker spread out.", v: "venn2", vo: SW },
-        { tag: "Question", k: "Server vs worker", h: "What do they have in *common?*", p: "Less than you'd think. Enough to build on.", v: "venn2", vo: SWH },
-        { tag: "Plain", k: "Server vs worker", h: "Server and worker, *side by side*", p: "Both answer requests. Each has one thing the other doesn't.", v: "venn2", vo: SW },
-        { tag: "Your app", k: "Server vs worker", h: "The middle is the *app*", p: "Everything both can do goes in the overlap.", v: "venn2", vo: { ...SW, mid: "your|app", hi: true } },
-        { tag: "Read it", k: "Server vs worker", h: "Two circles, one *overlap*", p: "Left: keeps running. Right: many cities. Middle: answers requests.", v: "venn2", vo: SW },
-        { tag: "Big", k: "Server vs worker", h: "Both answer *requests*", p: "Only a server keeps running. Only a worker runs in many cities at once.", l: "big-type" },
+      { id: "t1-s11", n: 11, name: "Venn diagram", rebuilt: true, brief: "Three circles: languages, primitives and deployments. Rusty Buns is where they overlap best for me, and the dots are where I think other people's use cases sit.", opts: [
+        { tag: "From your note", k: "Server vs worker", h: "Languages, primitives, *deployments*", p: "Rusty Buns sits where they overlap best for me. Your use case is in there somewhere too.", v: "venn3", vo: { me: true, you: true } },
+        { tag: "Where I sit", k: "Venn diagram", h: "Where they overlap for *me*", p: "TypeScript and Rust. Workers, storage, memory, rooms. Cloudflare, a server, a desktop app.", v: "venn3", vo: { me: true } },
+        { tag: "Where you sit", k: "Venn diagram", h: "Where do *you* sit?", p: "Pick your languages, primitives and deployments. Find your overlap.", v: "venn3", vo: { you: true } },
+        { tag: "Me and you", k: "Venn diagram", h: "My overlap, and *yours*", p: "The middle is what I need. The grey dots are what I think other people need.", v: "venn3", vo: { me: true, you: true } },
+        { tag: "Keyword", k: "Keyword: primitive", h: "*Primitive:* a small part every app needs", p: "A worker, storage, memory, a room. Write against it once.", v: "venn3", vo: { hi: true } },
+        { tag: "Three circles", k: "Venn diagram", h: "Three *circles*", p: "Languages. Primitives. Deployments. Rusty Buns is the overlap.", v: "venn3" },
+        { tag: "The middle", k: "Venn diagram", h: "The middle is *Rusty Buns*", p: "Where my languages, primitives and deployments meet.", v: "venn3" },
+        { tag: "Question", k: "Venn diagram", h: "What overlaps *best?*", p: "For me: TypeScript, Rust and three places to run. For you: let's find out.", v: "venn3", vo: { you: true } },
+        { tag: "Results", k: "Experiment 4 · results", h: "Same worker, every *circle*", p: "It ran on every deployment, in the languages and primitives we chose.", v: "venn3" },
+        { tag: "Big", k: "Venn diagram", h: "Languages. Primitives. *Deployments.*", p: "Rusty Buns is the overlap.", l: "big-type" },
       ] },
       { id: "t1-s12", n: 12, name: "Result", brief: "Rusty Buns writes your app against the overlap, so it runs as either one. On screen: the overlap of the Venn diagram highlighted.", opts: [
         { tag: "As written", k: "Result", h: "Rusty Buns writes your app against the *overlap*", p: "so it runs as either one.", v: "venn2", vo: SWH },
@@ -508,65 +594,65 @@ section.slide-set { margin-top: 40px; }
     ] },
 
     { n: 3, name: "Storage vs memory", slides: [
-      { id: "t1-s13", n: 13, name: "The question", brief: "When the power goes off, what does your app still remember? On screen: a plug being pulled.", opts: [
-        { tag: "As written", k: "The question", h: "When the power goes off, what does your app still *remember?*", v: "plug", l: "long" },
-        { tag: "Short", k: "The question", h: "Pull the plug. What's *left?*", p: "Some of your app's data survives. Some doesn't.", v: "plug" },
-        { tag: "Memory test", k: "The question", h: "A memory *test*", p: "For your app, not for you. What does it remember after a restart?", v: "plug" },
-        { tag: "Hypothesis", k: "Hypothesis", h: "Everything the app knows is *saved*", p: "Let's pull the plug and check.", v: "plug" },
-        { tag: "Everyday", k: "The question", h: "Ever lost work when the power *cut?*", p: "Apps have the same problem. Here's why.", v: "plug" },
-        { tag: "Two kinds", k: "The question", h: "Two kinds of *remembering*", p: "One is fast and forgets. One is slower and keeps.", v: "plug" },
-        { tag: "Restart", k: "The question", h: "What survives a *restart?*", p: "Turn it off, turn it on. What's still there?", v: "plug" },
-        { tag: "Myth", k: "The myth", h: "If the app showed it, it's *saved.*", p: "Not always. Let's pull the plug.", v: "plug" },
-        { tag: "Plain", k: "The question", h: "Power off. Power on. What *remains?*", v: "plug" },
-        { tag: "Big", k: "The question", h: "What does your app *remember?*", p: "When the power goes off.", l: "big-type" },
+      { id: "t1-s13", n: 13, name: "The question", rebuilt: true, brief: "What does your app need fast, and what can it never lose? Memory is the fast store you load data into, like a KV cache or Redis. Storage is where data is kept. On screen: a fast store beside the app, the database behind it.", opts: [
+        { tag: "From your note", k: "The question", h: "What does your app need *fast?*", p: "And what can it never lose? Those are two different places to keep data.", v: "cache" },
+        { tag: "Fast or kept", k: "The question", h: "Fast, or *kept?*", p: "Memory is fast to read and gone after a restart. Storage is kept.", v: "cache" },
+        { tag: "Two stores", k: "The question", h: "Two kinds of *store*", p: "A fast one you load data into. A safe one you keep data in.", v: "cache" },
+        { tag: "Hypothesis", k: "Hypothesis", h: "A cache is just a faster *database*", p: "Let's test it.", v: "cache" },
+        { tag: "Load it in", k: "The question", h: "Fast memory has to be *loaded*", p: "It starts empty. Where does the data come from?", v: "cache", vo: { empty: true } },
+        { tag: "Redis", k: "The question", h: "Why does everyone add *Redis?*", p: "Because reading from memory is fast. And what happens when it restarts?", v: "cache" },
+        { tag: "Plug", k: "The question", h: "Pull the plug. What's *left?*", p: "The fast store is empty. The database is not.", v: "plug" },
+        { tag: "Plain", k: "The question", h: "Where does your app keep *data?*", p: "Somewhere fast. Somewhere safe. Often both.", v: "cache" },
+        { tag: "Myth", k: "The myth", h: "If it's in the cache, it's *saved.*", p: "Not after a restart. Let's look.", v: "cache", vo: { empty: true } },
+        { tag: "Big", k: "The question", h: "Fast, or *kept?*", p: "Memory or storage.", l: "big-type" },
       ] },
-      { id: "t1-s14", n: 14, name: "Memory", brief: "Fast data that lives only while the program runs. A restart wipes it. On screen: a whiteboard being wiped.", opts: [
-        { tag: "As written", k: "Storage vs memory", h: "*Memory*", p: "Fast data that lives only while the program runs. A restart wipes it.", v: "board" },
-        { tag: "Whiteboard", k: "Memory", h: "Memory is a *whiteboard*", p: "Quick to write on. Wiped clean every restart.", v: "board" },
-        { tag: "Fast", k: "Memory", h: "Fast, and *forgetful*", p: "Memory lives only while the program runs.", v: "board" },
-        { tag: "Keyword", k: "Keyword: memory", h: "*Memory:* data that lives while the app runs", p: "A restart wipes it.", v: "board" },
-        { tag: "Back to zero", k: "Memory", h: "A counter in memory goes back to *zero*", p: "Every time the program restarts.", v: "board", vo: { label: "count: 7, then 0" } },
-        { tag: "Wiped", k: "Memory", h: "Restart. *Wiped.*", p: "Memory holds data only while the program is running.", v: "board" },
-        { tag: "Why use it", k: "Memory", h: "Why use something that *forgets?*", p: "Because it is very fast. Good for things you can lose.", v: "board" },
-        { tag: "Desk", k: "Memory", h: "Notes on the desk, not in the *drawer*", p: "Close at hand. Gone when you tidy up.", v: "board" },
-        { tag: "Plain", k: "Memory", h: "Memory is gone after a *restart*", p: "Fast while it lasts.", v: "board" },
-        { tag: "Examples", k: "Memory", h: "Who's online. What's on screen. The *score.*", p: "Things kept in memory, lost on a restart.", v: "board" },
+      { id: "t1-s14", n: 14, name: "Memory", rebuilt: true, brief: "Memory is a primitive for the fast stores: a KV cache, Redis, or data held in the process. Fast to read, volatile, and it has to be loaded in. On screen: a fast store with data loading into it.", opts: [
+        { tag: "From your note", k: "Storage vs memory", h: "*Memory*", p: "A fast store: a KV cache, Redis or data in the process. Quick to read, empty after a restart, loaded in again.", v: "cache" },
+        { tag: "Primitive", k: "Memory", h: "Memory is a *primitive*", p: "One way to use a fast store, whether it is a KV cache, Redis or the process.", v: "fast3" },
+        { tag: "Fast reads", k: "Memory", h: "Fast to *read*", p: "Memory holds the data you need often, close to the app.", v: "cache" },
+        { tag: "Volatile", k: "Memory", h: "Fast, and *volatile*", p: "A restart empties it. Load it in again from storage.", v: "cache", vo: { empty: true } },
+        { tag: "Keyword", k: "Keyword: memory", h: "*Memory:* a fast store you load data into", p: "A KV cache, Redis, or the process itself.", v: "fast3" },
+        { tag: "Three kinds", k: "Memory", h: "A cache, Redis or the *process*", p: "Memory is the same idea in each. Rusty Buns gives it one shape.", v: "fast3" },
+        { tag: "Warm up", k: "Memory", h: "Cold start, then *warm*", p: "Memory starts empty and fills as the app loads data in.", v: "cache", vo: { empty: true } },
+        { tag: "Shelf", k: "Memory", h: "Memory is the fast *shelf*", p: "Close at hand, quick to grab, and empty after a restart.", v: "cache" },
+        { tag: "Examples", k: "Memory", h: "Sessions. Scores. Hot *data.*", p: "Things you read often and can load again.", v: "fast3" },
+        { tag: "Big", k: "Memory", h: "Fast. Volatile. *Loaded in.*", p: "That's memory.", l: "big-type" },
       ] },
-      { id: "t1-s15", n: 15, name: "Storage", brief: "Data written to disk or a database. It survives a restart. On screen: a filing cabinet.", opts: [
-        { tag: "As written", k: "Storage vs memory", h: "*Storage*", p: "Data written to disk or a database. It survives a restart.", v: "cabinet" },
-        { tag: "Cabinet", k: "Storage", h: "Storage is a filing *cabinet*", p: "Slower to put things away. Still there tomorrow.", v: "cabinet" },
-        { tag: "Survives", k: "Storage", h: "It survives a *restart*", p: "Storage is data written to disk or to a database.", v: "cabinet" },
-        { tag: "Keyword", k: "Keyword: storage", h: "*Storage:* data written down to keep", p: "On disk or in a database. It survives a restart.", v: "cabinet" },
-        { tag: "Slow and safe", k: "Storage", h: "Slower, and *safe*", p: "Storage takes longer to write, and it stays.", v: "cabinet" },
-        { tag: "Drawer", k: "Storage", h: "The note goes in the *drawer*", p: "Written to disk or a database, it survives the night.", v: "cabinet" },
-        { tag: "Examples", k: "Storage", h: "Accounts. Saves. *Messages.*", p: "Things kept in storage, so they survive a restart.", v: "cabinet" },
-        { tag: "Pair", k: "Storage vs memory", h: "Whiteboard or *cabinet?*", p: "Memory forgets. Storage keeps.", v: "cabinet" },
-        { tag: "Plain", k: "Storage", h: "Storage is still there *tomorrow*", p: "On disk or in a database.", v: "cabinet" },
-        { tag: "Plug", k: "Storage", h: "Pull the plug. Storage *stays.*", p: "Data on disk or in a database survives a restart.", v: "cabinet", vo: { label: "survives a restart" } },
+      { id: "t1-s15", n: 15, name: "Storage", rebuilt: true, brief: "Storage is an easy primitive: whenever you use your database, wrap it in this. You own your code. The small wrapper keeps your logic apart from the details of where data lives. On screen: your database call inside a small wrapper.", opts: [
+        { tag: "From your note", k: "Storage vs memory", h: "*Storage*", p: "Wrap your database calls in one small function. You own your code. The wrapper keeps the details out of your logic.", v: "wrap" },
+        { tag: "Wrap it", k: "Storage", h: "Just *wrap it*", p: "Whenever you call your database, call it through this.", v: "wrap" },
+        { tag: "You own it", k: "Storage", h: "You own your *code*", p: "I only ask for a small wrapper around your database.", v: "wrap" },
+        { tag: "Good practice", k: "Storage", h: "Logic here. Details *there.*", p: "A small wrapper keeps your app apart from where data lives. Also called good practice.", v: "wrap" },
+        { tag: "Keyword", k: "Keyword: storage", h: "*Storage:* data you keep, behind one wrapper", p: "Your app calls the wrapper. The wrapper calls the database.", v: "wrap" },
+        { tag: "Small ask", k: "Storage", h: "One small *ask*", p: "Wrap your database calls. That's the whole storage primitive.", v: "wrap" },
+        { tag: "Plain", k: "Storage", h: "A wrapper around your *database*", p: "Small, plain, and yours.", v: "wrap" },
+        { tag: "Keep yours", k: "Storage", h: "Not a new database. A *wrapper.*", p: "Keep the database you have. Call it through one small function.", v: "wrap" },
+        { tag: "Cabinet", k: "Storage", h: "Storage is the filing *cabinet*", p: "Kept after a restart. Reached through one small wrapper.", v: "cabinet" },
+        { tag: "Big", k: "Storage", h: "Wrap your *database*", p: "That's the storage primitive.", l: "big-type" },
       ] },
-      { id: "t1-s16", n: 16, name: "Experiment", brief: "Save a note and a counter in each place, restart the app, see what is left. On stage: restart the desktop app, the server and Cloudflare; the counter resets, the note stays.", opts: [
-        { tag: "As written", k: "Storage vs memory", h: "*Experiment*", p: "Save a note and a counter in each place, restart the app, see what is left.", v: "restart" },
-        { tag: "Three places", k: "Experiment 5", h: "A note and a counter, three *places*", p: "Save both. Restart. See what's left.", v: "restart" },
-        { tag: "Guess", k: "Experiment 5", h: "Which one *survives?*", p: "The note is in storage. The counter is in memory. Guess.", v: "restart" },
-        { tag: "Steps", k: "Experiment 5", h: "Save. Restart. *Check.*", p: "In the desktop app, on the server and on Cloudflare.", v: "steps", vo: { steps: ["save", "restart", "check"] } },
-        { tag: "Hypothesis", k: "Hypothesis", h: "The note stays. The counter *resets.*", p: "In all three places. Let's restart them.", v: "restart" },
-        { tag: "Reveal", k: "Experiment 5", h: "Counter: 0. Note: *still there.*", p: "Same result in the desktop app, on the server and on Cloudflare.", v: "restart" },
-        { tag: "Live", k: "Experiment 5", h: "Restart everything, *live*", p: "The desktop app, the server and Cloudflare, one after the other.", v: "restart" },
-        { tag: "Plug", k: "Experiment 5", h: "Pull the plug on all *three*", p: "Then count what's left.", v: "plug" },
-        { tag: "Plain", k: "Experiment 5", h: "Let's restart the *app*", p: "Save a note and a counter first. Then see what is left.", v: "restart" },
-        { tag: "One variable", k: "Experiment 5", h: "One change: the *restart*", p: "Same note, same counter, three places.", v: "restart" },
+      { id: "t1-s16", n: 16, name: "Experiment", rebuilt: true, brief: "The primitives make it easy to put your app anywhere: storage can mean this, this or this, depending on the place. Rusty Buns cares about the primitive; you care about the how, and own your code. On stage: the same wrapper, three stores underneath, no app changes.", opts: [
+        { tag: "From your note", k: "Experiment 5", h: "Storage can mean this, this or *this*", p: "Same wrapper, a different store in each place. I care about the primitive. You own the how.", v: "fan", vo: { from: "one|wrapper", to: ["desktop:|a SQLite file", "server:|your database", "Cloudflare:|D1, KV, R2"] } },
+        { tag: "Three places", k: "Experiment 5", h: "Same wrapper, three *places*", p: "Run it in the desktop app, on a server and on Cloudflare. Change no app code.", v: "fan", vo: { from: "one|wrapper", to: ["desktop:|a SQLite file", "server:|your database", "Cloudflare:|D1, KV, R2"] } },
+        { tag: "Split", k: "Storage", h: "I own the primitive. You own the *how.*", p: "Rusty Buns keeps the shape. Your code decides the details.", v: "split" },
+        { tag: "Anywhere", k: "Experiment 5", h: "Put your app *anywhere*", p: "The primitives make it easy. Storage becomes whatever the place has.", v: "fan", vo: { from: "one|wrapper", to: ["desktop:|a SQLite file", "server:|your database", "Cloudflare:|D1, KV, R2"] } },
+        { tag: "Swap", k: "Experiment 5", h: "Swap what's *underneath*", p: "SQLite, Postgres, D1. The wrapper stays. The app stays.", v: "fan", vo: { from: "one|wrapper", to: ["SQLite", "Postgres", "D1"] } },
+        { tag: "Hypothesis", k: "Hypothesis", h: "The app won't notice the *swap*", p: "Same wrapper, three different stores. Let's run it.", v: "fan", vo: { from: "one|wrapper", to: ["SQLite", "Postgres", "D1"] } },
+        { tag: "Restart", k: "Experiment 5", h: "Save, restart, *check*", p: "Memory is empty again. Storage is still there, in all three places.", v: "restart" },
+        { tag: "Plain", k: "Experiment 5", h: "One wrapper, any *store*", p: "Rusty Buns gives the shape. You choose what goes under it.", v: "fan", vo: { from: "one|wrapper", to: ["desktop:|a SQLite file", "server:|your database", "Cloudflare:|D1, KV, R2"] } },
+        { tag: "Your how", k: "Storage", h: "You get to care about the *how*", p: "Rusty Buns only cares that it fits the primitive.", v: "split" },
+        { tag: "Big", k: "Experiment 5", h: "This, this or *this*", p: "Storage, by place. Same wrapper.", l: "big-type" },
       ] },
-      { id: "t1-s17", n: 17, name: "Venn diagram", brief: "Desktop app: a file on disk. Server: a database on the box. Cloudflare: its own databases and stores. All three keep data; each does it its own way.", opts: [
-        { tag: "As written", k: "Storage vs memory", h: "Venn *diagram*", p: "Desktop app: a file on disk. Server: a database on the box. Cloudflare: its own databases and stores. All three keep data; each does it its own way.", v: "venn", vo: STO },
-        { tag: "Own way", k: "Storage", h: "All three keep data. Each its own *way.*", p: "A file, a database, Cloudflare's stores.", v: "venn", vo: STO },
-        { tag: "Three ways", k: "Storage", h: "Three ways to *keep* a note", p: "Desktop app: a file. Server: a database. Cloudflare: its own stores.", v: "venn", vo: STO },
-        { tag: "Middle", k: "Storage", h: "The middle: *it's saved*", p: "How it's saved is different in each place.", v: "venn", vo: { ...STO, mid: "saved" } },
-        { tag: "Where", k: "Storage", h: "Same note. Where does it *go?*", p: "A file on disk, a database on the box, or Cloudflare's stores.", v: "venn", vo: STO },
-        { tag: "Results", k: "Experiment 5 · results", h: "Saved in all three, three different *ways*", p: "The app only asked once.", v: "venn", vo: STO },
-        { tag: "What, not how", k: "Storage", h: "They agree on *what*, not on *how*", p: "All three keep data. Each one does it its own way.", v: "venn", vo: STO },
-        { tag: "Plain", k: "Storage", h: "Storage looks different in each *place*", p: "A file, a database, Cloudflare's own stores.", v: "venn", vo: STO },
-        { tag: "List", k: "Storage", h: "Three places, three *stores*", p: "All of them survive a restart.", v: "list3", vo: { right: ["its own stores", "a database", "a file"] } },
-        { tag: "Big", k: "Storage", h: "Same idea, three *ways*", p: "A file. A database. Cloudflare's stores.", l: "big-type" },
+      { id: "t1-s17", n: 17, name: "Venn diagram", rebuilt: true, brief: "The circles overlap more and more, toward the goal: write it once, use it everywhere. On screen: three circles sliding together.", opts: [
+        { tag: "From your note", k: "Storage vs memory", h: "More and more *overlap*", p: "Each primitive pulls the circles closer, toward one goal: write it once, use it everywhere.", v: "converge" },
+        { tag: "The goal", k: "Venn diagram", h: "Write it once. Use it *everywhere.*", p: "Every primitive makes the overlap bigger.", v: "converge" },
+        { tag: "Closer", k: "Venn diagram", h: "The circles move *closer*", p: "The worker first, then storage and memory. Each one adds to the middle.", v: "converge" },
+        { tag: "Almost one", k: "Venn diagram", h: "Almost one *circle*", p: "Desktop app, server and Cloudflare now overlap almost all the way.", v: "venn3", vo: { tight: true, places: true } },
+        { tag: "So far", k: "Venn diagram", h: "Two primitives in. The middle *grows.*", p: "The worker. Storage and memory. Next: live connections.", v: "converge" },
+        { tag: "Results", k: "Experiment 5 · results", h: "Same wrapper, all three *circles*", p: "The middle got bigger.", v: "venn3", vo: { tight: true, places: true } },
+        { tag: "Plain", k: "Venn diagram", h: "The overlap is *growing*", p: "That is the whole plan.", v: "converge" },
+        { tag: "Each one", k: "Venn diagram", h: "Each primitive adds *overlap*", p: "Write against it once, and one more part runs everywhere.", v: "converge" },
+        { tag: "Before, after", k: "Venn diagram", h: "Before: three apps. After: *one.*", p: "The circles overlap more with each primitive.", v: "converge" },
+        { tag: "Big", k: "Venn diagram", h: "Write once. Use *everywhere.*", p: "The circles keep moving closer.", l: "big-type" },
       ] },
       { id: "t1-s18", n: 18, name: "Result", brief: "Your app asks for storage one way. Rusty Buns gives it the right kind in each place. On screen: one storage call, three arrows to three backends.", opts: [
         { tag: "As written", k: "Result", h: "Your app asks for storage one *way.*", p: "Rusty Buns gives it the right kind in each place.", v: "fan" },
@@ -607,29 +693,29 @@ section.slide-set { margin-top: 40px; }
         { tag: "Compare", k: "Socket", h: "Request: ask and wait. Socket: just *talk.*", v: "phones", vo: { waves: true } },
         { tag: "Big", k: "Socket", h: "A line that stays *open*", p: "That's a socket.", l: "big-type" },
       ] },
-      { id: "t1-s21", n: 21, name: "On a server", brief: "One running program holds every open line and the room they share. On screen: one switchboard with many plugged-in lines.", opts: [
-        { tag: "As written", k: "Live connections", h: "On a *server*", p: "One running program holds every open line and the room they share.", v: "switchboard" },
-        { tag: "Switchboard", k: "On a server", h: "One *switchboard*", p: "One running program holds every open line and the room they share.", v: "switchboard" },
-        { tag: "Easy", k: "On a server", h: "On a server, this is *easy*", p: "The program is always running, so it can hold every line.", v: "switchboard" },
-        { tag: "One room", k: "On a server", h: "Everyone in one *room*", p: "One program holds all the lines and passes messages between them.", v: "switchboard" },
-        { tag: "Pays off", k: "On a server", h: "Always on pays off *here*", p: "A server keeps running, so it can keep the lines open.", v: "switchboard" },
-        { tag: "One place", k: "On a server", h: "Every line plugs into one *place*", p: "The server's program holds them all.", v: "switchboard", vo: { n: 14 } },
-        { tag: "The catch", k: "On a server", h: "One program. Every *line.*", p: "Easy, until that one program stops.", v: "switchboard" },
-        { tag: "Plain", k: "On a server", h: "A server holds the lines *itself*", p: "One program, one room, every connection.", v: "switchboard" },
-        { tag: "Count", k: "On a server", h: "100 players, one *program*", p: "Each with an open line, all held by the same server.", v: "switchboard", vo: { n: 24 } },
-        { tag: "Big", k: "On a server", h: "One program holds every *line*", l: "big-type" },
+      { id: "t1-s21", n: 21, name: "On a server", rebuilt: true, brief: "State flows downhill like water from the server, which is in charge, to every connection. Users can pump messages uphill, but they all watch one picture, like a movie theatre. The server decides what to do with each message. On screen: a server on a hilltop, state flowing down to phones, one message going up.", opts: [
+        { tag: "From your note", k: "Live connections", h: "State flows *downhill*", p: "From the server to every connection. Users pump messages uphill. The server decides what to do with them.", v: "downhill" },
+        { tag: "Theatre", k: "On a server", h: "One screen. Everyone *watches.*", p: "Like a movie theatre: all see one picture. Nobody changes the film from their seat.", v: "theatre" },
+        { tag: "In charge", k: "On a server", h: "The server is in *charge*", p: "It holds the true state. Everyone else sees a reflection of it.", v: "downhill" },
+        { tag: "Uphill", k: "On a server", h: "Messages go *uphill*", p: "Users send messages up. The server decides what to do with each one.", v: "downhill" },
+        { tag: "Keyword", k: "Keyword: authoritative", h: "*Authoritative:* the server's state wins", p: "Every connection gets a copy. Only the server changes it.", v: "downhill" },
+        { tag: "Hilltop", k: "On a server", h: "Like water from a *hilltop*", p: "State runs down to every player. It never runs back up by itself.", v: "downhill" },
+        { tag: "Ask", k: "On a server", h: "Ask. Don't *change.*", p: "A user asks the server. The server changes the state, and everyone sees it.", v: "theatre" },
+        { tag: "Reflection", k: "On a server", h: "Everyone sees one *reflection*", p: "The server's state, sent down every open line.", v: "theatre" },
+        { tag: "Switchboard", k: "On a server", h: "One program holds the *state*", p: "It sends it down every line and listens for messages coming up.", v: "switchboard" },
+        { tag: "Big", k: "On a server", h: "State flows *downhill.*", p: "Messages go up. The server decides.", l: "big-type" },
       ] },
-      { id: "t1-s22", n: 22, name: "On Cloudflare", brief: "Each room gets its own Durable Object: a small memory in the cloud that holds that room's lines. On screen: many small switchboards, one per room.", opts: [
-        { tag: "As written", k: "Live connections", h: "On *Cloudflare*", p: "Each room gets its own Durable Object: a small memory in the cloud that holds that room's lines.", v: "switchboard", vo: { rooms: true } },
-        { tag: "One per room", k: "On Cloudflare", h: "One small switchboard per *room*", p: "Each room gets its own Durable Object.", v: "switchboard", vo: { rooms: true } },
-        { tag: "Keyword", k: "Keyword: Durable Object", h: "*Durable Object:* a small memory in the cloud", p: "One per room. It holds that room's lines.", v: "switchboard", vo: { rooms: true } },
-        { tag: "Stays", k: "On Cloudflare", h: "Workers stop. Durable Objects *stay.*", p: "Each room gets one that holds its lines open.", v: "switchboard", vo: { rooms: true } },
-        { tag: "A thousand", k: "On Cloudflare", h: "A thousand rooms, a thousand *objects*", p: "Each one small, each one holding its own lines.", v: "switchboard", vo: { rooms: true } },
-        { tag: "Many small", k: "On Cloudflare", h: "Not one big room. Many *small* ones.", p: "Cloudflare gives each room its own Durable Object.", v: "switchboard", vo: { rooms: true } },
-        { tag: "A home", k: "On Cloudflare", h: "Every room has its own *home*", p: "A Durable Object: a small memory in the cloud that holds that room's lines.", v: "switchboard", vo: { rooms: true } },
-        { tag: "Compare", k: "Server vs Cloudflare", h: "Server: one switchboard. Cloudflare: *many.*", p: "Same lines, split up by room.", v: "switchboard", vo: { rooms: true } },
-        { tag: "Plain", k: "On Cloudflare", h: "Each room gets its own *object*", p: "A small memory in the cloud that holds that room's lines.", v: "switchboard", vo: { rooms: true } },
-        { tag: "Big", k: "On Cloudflare", h: "One room, one *Durable Object*", l: "big-type" },
+      { id: "t1-s22", n: 22, name: "On Cloudflare", rebuilt: true, brief: "A Durable Object is a mini computer (Sunil Pai's framing): a fetch API, an HTTP server, websockets, storage, an input gate and an output gate. It makes multiplayer sync much easier: we all tune into one, or have our own near us as well as the one we share. On screen: a small computer with those parts, phones tuned in.", opts: [
+        { tag: "From your note", k: "Live connections", h: "A Durable Object is a mini *computer*", p: "Fetch, an HTTP server, sockets, storage, an input gate and an output gate. With thanks to Sunil Pai.", v: "mini" },
+        { tag: "Tune in", k: "On Cloudflare", h: "We all tune into *one*", p: "Every player's line goes to the same small computer.", v: "tune" },
+        { tag: "Near you", k: "On Cloudflare", h: "One we share. One near *you.*", p: "A Durable Object for the room, and your own close by.", v: "tune", vo: { own: true } },
+        { tag: "Parts", k: "On Cloudflare", h: "Six parts in one small *box*", p: "Fetch, HTTP, sockets, storage, an input gate, an output gate.", v: "mini" },
+        { tag: "Keyword", k: "Keyword: Durable Object", h: "*Durable Object:* a mini computer in the cloud", p: "One per room. It holds the room's state and its lines.", v: "mini" },
+        { tag: "Gates", k: "On Cloudflare", h: "Input gate. Output *gate.*", p: "Events come in one at a time. Nothing goes out until the save is done. That makes sync easy.", v: "mini", vo: { hi: "gates" } },
+        { tag: "Credit", k: "With thanks", h: "Sunil Pai said it *best*", p: "A Durable Object is just a mini computer. That is why multiplayer gets easier.", v: "mini" },
+        { tag: "Per room", k: "On Cloudflare", h: "The server from the last slide, *per room*", p: "Each room gets its own mini computer. State flows down from it.", v: "switchboard", vo: { rooms: true } },
+        { tag: "Plain", k: "On Cloudflare", h: "Each room gets its own small *computer*", p: "Cloudflare runs it close to the players.", v: "tune" },
+        { tag: "Big", k: "On Cloudflare", h: "A mini *computer.*", p: "Per room. That's a Durable Object.", l: "big-type" },
       ] },
       { id: "t1-s23", n: 23, name: "Experiment", brief: "Open one chat room on each place with phones from the audience. Send a message, watch it arrive everywhere. On stage: audience joins by QR code, messages appear live.", opts: [
         { tag: "As written", k: "Live connections", h: "*Experiment*", p: "Open one chat room on each place with phones from the audience. Send a message, watch it arrive everywhere.", v: "qr" },
@@ -908,7 +994,7 @@ section.slide-set { margin-top: 40px; }
     sets.innerHTML = pt.slides.map((s) => {
       const p = picks.get(s.id) || {};
       return `<section class="slide-set" data-id="${s.id}">
-        <div class="set-head"><h2>Slide ${s.n} · ${esc(s.name)}</h2><span class="picked">${p.option ? `Picked: option ${p.option}` : ""}</span></div>
+        <div class="set-head"><h2>Slide ${s.n} · ${esc(s.name)}</h2>${s.rebuilt ? `<span class="rebuilt">Rebuilt from your note</span>` : ""}<span class="picked">${p.option ? `Picked: option ${p.option}` : ""}</span></div>
         <p class="says">Your slide: ${esc(s.brief)}</p>
         <div class="grid">${s.opts.map((o, i) => `
           <div class="card${p.option === i + 1 ? " is-pick" : ""}" data-opt="${i + 1}">
@@ -972,20 +1058,33 @@ section.slide-set { margin-top: 40px; }
   }
 
   const big = document.getElementById("big");
-  let at = null;
+  let at = null, playing = null; // playing: index into SLIDES while the talk plays
   function openBig(si, oi) {
-    at = { si, oi };
+    at = { si, oi }; playing = null;
     const s = SLIDES[si], o = s.opts[oi];
     document.getElementById("big-thumb").innerHTML = draw(o);
     document.getElementById("big-label").textContent = `Slide ${s.n} · option ${oi + 1}, ${o.tag}`;
     const picked = (picks.get(s.id) || {}).option === oi + 1;
     const b = document.getElementById("big-pick");
-    b.textContent = picked ? "Picked" : "Pick"; b.classList.toggle("pick-big", picked); b.disabled = !canWrite;
+    b.hidden = false; b.textContent = picked ? "Picked" : "Pick"; b.classList.toggle("pick-big", picked); b.disabled = !canWrite;
     big.hidden = false;
     document.getElementById("big-close").focus();
   }
-  const close = () => { big.hidden = true; at = null; };
-  function step(d) { if (at) { const n = SLIDES[at.si].opts.length; openBig(at.si, (at.oi + d + n) % n); } }
+  // Play the talk: every slide in order, as picked. A slide not picked yet shows option 1 and says so.
+  function openPlay(i) {
+    at = null; playing = i;
+    const s = SLIDES[i], k = (picks.get(s.id) || {}).option || 0;
+    document.getElementById("big-thumb").innerHTML = draw(s.opts[(k || 1) - 1]);
+    document.getElementById("big-label").textContent = `Slide ${s.n} of ${SLIDES.length} · ${k ? `option ${k}` : "not picked yet, showing option 1"}`;
+    document.getElementById("big-pick").hidden = true;
+    big.hidden = false;
+  }
+  document.getElementById("play").onclick = () => { openPlay(0); document.getElementById("big-next").focus(); };
+  const close = () => { big.hidden = true; at = null; playing = null; };
+  function step(d) {
+    if (playing !== null) { const n = playing + d; if (n >= 0 && n < SLIDES.length) openPlay(n); return; }
+    if (at) { const n = SLIDES[at.si].opts.length; openBig(at.si, (at.oi + d + n) % n); }
+  }
   document.getElementById("big-prev").onclick = () => step(-1);
   document.getElementById("big-next").onclick = () => step(1);
   document.getElementById("big-close").onclick = close;
