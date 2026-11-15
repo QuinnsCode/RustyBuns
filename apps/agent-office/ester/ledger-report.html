@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>RustyBuns Plan Week</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@600;700&family=IBM+Plex+Sans:wght@400;500&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* The plan-week report, refreshed every morning by ester/ledger-daily.ts: this plan week so far (reset Thursday morning),
+   the days by model, code shipped, the helpers, and every plan week before it. Same tokens as the weekly ledger. */
+:root{--bg:#f6f7f9;--panel:#fff;--ink:#1c2230;--ink2:#505a6e;--muted:#7a8497;--grid:#e3e6ec;
+--c-prs:#c4651a;--c-mervin:#3b6fb6;--c-ester:#b8892b;--c-dexter:#2f8f83;--reset:#c23c6c;
+--m-opus:#3b6fb6;--m-sonnet:#2f8f83;--m-fable:#a0527f;
+--display:"Bricolage Grotesque",system-ui,sans-serif;--body:"IBM Plex Sans",system-ui,sans-serif;--mono:"IBM Plex Mono",ui-monospace,monospace;color-scheme:light}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#12161f;--panel:#1a202c;--ink:#e8ebf2;--ink2:#a9b2c3;--muted:#7f8a9f;--grid:#2b3342;--c-prs:#e69550;--c-mervin:#6f9ee0;--c-ester:#d9ad54;--c-dexter:#58bdb0;--reset:#f07aa3;--m-opus:#6f9ee0;--m-sonnet:#58bdb0;--m-fable:#d68bb5;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#12161f;--panel:#1a202c;--ink:#e8ebf2;--ink2:#a9b2c3;--muted:#7f8a9f;--grid:#2b3342;--c-prs:#e69550;--c-mervin:#6f9ee0;--c-ester:#d9ad54;--c-dexter:#58bdb0;--reset:#f07aa3;--m-opus:#6f9ee0;--m-sonnet:#58bdb0;--m-fable:#d68bb5;color-scheme:dark}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.55 var(--body);padding:32px 16px 56px}
+main{max-width:860px;margin:0 auto;display:flex;flex-direction:column;gap:32px}
+h1,h2{font-family:var(--display);text-wrap:balance;margin:0;letter-spacing:-.01em}
+h1{font-size:2.1rem;line-height:1.1}h2{font-size:1.25rem}
+p{margin:0;max-width:66ch}
+.sub{color:var(--ink2);margin-top:6px}
+.eyebrow{font:500 .75rem var(--mono);text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
+td,th,.tile b{font-variant-numeric:tabular-nums}
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
+.tile{background:var(--panel);border:1px solid var(--grid);border-radius:6px;padding:12px 14px;min-width:0}
+.tile b{display:block;font:600 1.6rem/1.2 var(--display)}
+.tile span{font-size:.75rem;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+.tile i{display:block;font-style:normal;font-size:.8rem;color:var(--ink2)}
+section{display:flex;flex-direction:column;gap:12px;min-width:0}
+.chart{background:var(--panel);border:1px solid var(--grid);border-radius:6px;padding:10px;min-width:0}
+svg{display:block;width:100%;height:auto}
+svg text{fill:var(--muted);font:11px var(--mono)}
+.legend{display:flex;gap:16px;flex-wrap:wrap;font-size:.82rem;color:var(--ink2)}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:2px}
+.legend i.dash{width:14px;height:0;border-top:2px dashed var(--reset);border-radius:0}
+.meter{background:var(--panel);border:1px solid var(--grid);border-radius:6px;padding:14px 16px;display:flex;flex-direction:column;gap:10px}
+.bar{position:relative;height:22px;background:var(--grid);border-radius:4px}
+.bar .used{position:absolute;inset:0 auto 0 0;background:var(--m-opus);border-radius:4px 0 0 4px}
+.bar .pace{position:absolute;top:0;bottom:0;background:repeating-linear-gradient(135deg,var(--m-opus) 0 3px,transparent 3px 7px);opacity:.45}
+.bar .now{position:absolute;top:-5px;bottom:-5px;width:2px;background:var(--ink)}
+.scale{display:flex;justify-content:space-between;font:11px var(--mono);color:var(--muted)}
+.tw{overflow-x:auto;background:var(--panel);border:1px solid var(--grid);border-radius:6px}
+table{border-collapse:collapse;width:100%;font-size:.85rem}
+th,td{padding:7px 10px;text-align:right;border-bottom:1px solid var(--grid);white-space:nowrap}
+th:first-child,td:first-child{text-align:left}
+th{font:500 .72rem var(--mono);text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}
+tr:last-child td{border-bottom:0}
+tr.reset td{border-top:2px dashed var(--reset)}
+.pill{display:inline-block;font:500 .72rem var(--mono);padding:2px 8px;border-radius:999px;border:1px solid var(--grid);color:var(--ink2)}
+.note{font-size:.82rem;color:var(--muted)}
+</style></head><body>
+<main>
+  <header>
+    <div class="eyebrow" id="eyebrow"></div>
+    <h1>RustyBuns plan week</h1>
+    <p class="sub" id="lede"></p>
+  </header>
+  <div class="tiles" id="tiles"></div>
+  <section>
+    <h2 id="planhead"></h2>
+    <div class="meter" id="meter"></div>
+    <div class="tw"><table id="weeks"></table></div>
+    <p class="note">Code lines per 1% of the weekly limit is the efficiency number: higher is better. A ~ marks a week read approximately; "est." is this week, estimated from last week's units per 1% until you enter /usage with <code>--budget</code>.</p>
+  </section>
+  <section>
+    <h2>Units per day, by model</h2>
+    <div class="legend"><span><i style="background:var(--m-opus)"></i>Opus</span><span><i style="background:var(--m-sonnet)"></i>Sonnet</span><span><i style="background:var(--m-fable)"></i>Fable</span><span><i class="dash"></i>Plan reset</span></div>
+    <div class="chart" id="models"></div>
+    <p class="note">Units are input tokens at API price ratios (output 5x, cache writes 1.25x, cache reads 0.1x). The last day is still running.</p>
+  </section>
+  <section><h2>Model share per day</h2><div class="chart" id="share"></div></section>
+  <section>
+    <h2>Code shipped per day</h2>
+    <div class="legend"><span><i style="background:var(--c-prs)"></i>Code lines added on main</span><span><i class="dash"></i>Plan reset</span></div>
+    <div class="chart" id="code"></div>
+  </section>
+  <section>
+    <h2>Mervin, Dexter and Ester</h2>
+    <p>The size of each helper's job: Mervin's merges and PR and CI reads, Dexter's oversize tool results, Ester's test and typecheck output.</p>
+    <div class="legend"><span><i style="background:var(--c-mervin)"></i>Mervin</span><span><i style="background:var(--c-dexter)"></i>Dexter</span><span><i style="background:var(--c-ester)"></i>Ester</span><span><i class="dash"></i>Plan reset</span></div>
+    <div class="chart" id="helpers"></div>
+  </section>
+  <section><h2>Day by day</h2><div class="tw"><table id="days"></table></div></section>
+  <section>
+    <h2>How these are counted</h2>
+    <p class="note" id="method"></p>
+  </section>
+</main>
+<script>
+const D=/*LEDGER*/{"generated":"","start":"","days":[],"weeks":[]};
+const $=id=>document.getElementById(id);
+const fmt=n=>n>=1e9?(n/1e9).toFixed(2)+"B":n>=1e6?(n/1e6).toFixed(n>=1e8?0:1)+"M":n>=1e3?(n/1e3).toFixed(n>=1e5?0:1)+"k":String(Math.round(n));
+const comma=n=>Math.round(n).toLocaleString("en-US");
+const day=s=>{const t=new Date(s+"T12:00:00Z"),o={timeZone:"UTC"};return {wd:t.toLocaleDateString("en-US",{...o,weekday:"short"}),md:t.toLocaleDateString("en-US",{...o,month:"short",day:"numeric"})}};
+const days=D.days,week=D.days.filter(r=>r.date>=D.start),sum=(rows,k)=>rows.reduce((a,r)=>a+r[k],0);
+const cur=D.weeks.at(-1)??{pct:null,units:0,code:0,prs:0,opus:0,sonnet:0,fable:0,start:D.start,ends:D.start},prev=D.weeks.at(-2);
+const gen=new Date(D.generated||Date.now()),startAt=new Date(cur.start+"T10:00:00"),endAt=new Date(cur.ends+"T10:00:00");
+const into=Math.max(0,Math.min(7,(gen-startAt)/864e5)),left=7-into;
+
+$("eyebrow").textContent=`Plan week ${day(cur.start).wd} ${day(cur.start).md} to ${day(cur.ends).wd} ${day(cur.ends).md} · days run 10am to 10am · refreshed ${gen.toLocaleString("en-US",{weekday:"short",month:"short",day:"numeric",hour:"numeric",minute:"2-digit"})}`;
+$("lede").textContent=`This plan week so far, ${into.toFixed(1)} of 7 days in: what it cost, what it shipped, and which model ran it. Refreshed every morning at 10.`;
+
+const units=sum(week,"units"),code=sum(week,"codeAdded");
+$("tiles").innerHTML=[
+ ["Units",fmt(units),`${comma(sum(week,"turns"))} turns, ${comma(sum(week,"sessions"))} sessions`],
+ ["PRs merged",comma(sum(week,"prs")),`on main, ${week.length} day${week.length===1?"":"s"}`],
+ ["Code lines",comma(code),`added, ${comma(sum(week,"codeRemoved"))} removed`],
+ ["Units per code line",code?comma(units/code):"-","lower is leaner"],
+ ["Plan used",cur.pct==null?"?":`${cur.estimated?"~":""}${cur.pct}%`,cur.estimated?"estimated from last week":cur.pct==null?"enter /usage with --budget":"read off /usage"],
+].map(([s,b,i])=>`<div class="tile"><span>${s}</span><b>${b}</b><i>${i}</i></div>`).join("");
+
+// the meter: used so far, where the current rate lands by the reset, and how much a day uses the rest
+{const pct=cur.pct??0,rate=into>0.2?pct/into:0,land=Math.round(pct+rate*left),need=left>0?(100-pct)/left:0,share=cur.units?Math.round(cur.opus/cur.units*100):0;
+ $("planhead").textContent=`Plan week: ${cur.pct==null?"usage not known yet":`${cur.estimated?"about ":""}${pct}% used`}, resets ${day(cur.ends).wd} ${day(cur.ends).md}`;
+ $("meter").innerHTML=`<div class="bar" aria-label="${pct} percent used, about ${land} percent at the current pace"><div class="pace" style="left:${Math.min(pct,100)}%;width:${Math.max(0,Math.min(land,100)-pct)}%"></div><div class="used" style="width:${Math.min(pct,100)}%"></div><div class="now" style="left:${into/7*100}%" title="Now: ${into.toFixed(1)} of 7 days in"></div></div>
+ <div class="scale"><span>0%</span><span>25%</span><span>50%</span><span>75%</span><span>100%</span></div>
+ <p>${into.toFixed(1)} days in, about ${rate.toFixed(1)}% a day: on pace for about <b>${land}%</b> by the reset. Using it all means about <b>${need.toFixed(0)}% a day</b> for the ${left.toFixed(1)} days left${rate>0?`, roughly ${(need/rate).toFixed(1)}x the current rate`:""}. Opus ran ${share}% of this week's units.${prev&&prev.pct!=null?` Last week ended at ${prev.approx?"~":""}${prev.pct}%.`:""}</p>`;}
+
+$("weeks").innerHTML=`<thead><tr><th>Plan week ending</th><th>Used</th><th>Units</th><th>Code lines</th><th>PRs</th><th>Lines per 1%</th><th>Opus / Sonnet / Fable</th></tr></thead><tbody>`+
+ D.weeks.slice(-6).map(w=>{const t=w.opus+w.sonnet+w.fable||1,p=x=>Math.round(x/t*100),d=day(w.ends);
+  return `<tr><td>${d.wd} ${d.md}${w.running?' <span class="pill">in progress</span>':""}</td><td>${w.pct==null?"-":`${w.approx||w.estimated?"~":""}${w.pct}%${w.estimated?" est.":""}`}</td><td>${fmt(w.units)}</td><td>${comma(w.code)}</td><td>${w.prs}</td><td><b>${w.pct?comma(w.code/w.pct):"-"}</b></td><td>${p(w.opus)} / ${p(w.sonnet)} / ${p(w.fable)}%</td></tr>`}).join("")+"</tbody>";
+
+function nice(x){if(!(x>0))return 1;const p=10**Math.floor(Math.log10(x)),f=x/p;return (f<=1?1:f<=2?2:f<=2.5?2.5:f<=5?5:10)*p}
+// one bar chart: stacked series per day, a dashed line at each plan reset
+function bars(el,series,{fmtY=fmt,pct=false}={}){
+  const W=820,H=230,L=52,R=10,T=14,B=40,iw=W-L-R,ih=H-T-B,n=Math.max(days.length,1),bw=iw/n,gap=bw*.28;
+  const tot=r=>series.reduce((a,s)=>a+r[s.k],0),top=pct?1:Math.max(1,...days.map(tot));
+  const step=pct?.25:nice(top/4),ymax=pct?1:Math.ceil(top/step)*step,y=v=>T+ih-(v/ymax)*ih;
+  let g="";
+  for(let v=0;v<=ymax+1e-9;v+=step) g+=`<line x1="${L}" x2="${W-R}" y1="${y(v)}" y2="${y(v)}" stroke="var(--grid)"/><text x="${L-8}" y="${y(v)+4}" text-anchor="end">${pct?Math.round(v*100)+"%":fmtY(v)}</text>`;
+  days.forEach((r,i)=>{let acc=0;const x=L+i*bw+gap/2,t=tot(r)||1,dd=day(r.date);
+    for(const s of series){const v=pct?r[s.k]/t:r[s.k];if(v>0){g+=`<rect x="${x}" y="${y(acc+v)}" width="${bw-gap}" height="${Math.max(0,y(acc)-y(acc+v))}" fill="var(${s.c})"><title>${dd.md} ${s.n}: ${pct?Math.round(v*100)+"%":fmt(v)}</title></rect>`;acc+=v}}
+    g+=`<text x="${x+(bw-gap)/2}" y="${H-B+16}" text-anchor="middle">${dd.wd}</text><text x="${x+(bw-gap)/2}" y="${H-B+30}" text-anchor="middle">${dd.md}${i===n-1?"*":""}</text>`;
+    if(i>0&&new Date(r.date+"T12:00:00Z").getUTCDay()===4){const rx=L+i*bw;g+=`<line x1="${rx}" x2="${rx}" y1="${T-4}" y2="${T+ih}" stroke="var(--reset)" stroke-width="2" stroke-dasharray="5 4"/><text x="${rx+5}" y="${T+6}" style="fill:var(--reset)">reset</text>`}});
+  $(el).innerHTML=`<svg viewBox="0 0 ${W} ${H}" role="img">${g}</svg>`;
+}
+const MODELS=[{k:"opus",c:"--m-opus",n:"Opus"},{k:"sonnet",c:"--m-sonnet",n:"Sonnet"},{k:"fable",c:"--m-fable",n:"Fable"}];
+bars("models",MODELS);
+bars("share",MODELS,{pct:true});
+bars("code",[{k:"codeAdded",c:"--c-prs",n:"code lines"}],{fmtY:v=>comma(v)});
+bars("helpers",[{k:"mervin",c:"--c-mervin",n:"Mervin"},{k:"dexter",c:"--c-dexter",n:"Dexter"},{k:"ester",c:"--c-ester",n:"Ester"}]);
+
+$("days").innerHTML=`<thead><tr><th>Day</th><th>Units</th><th>Turns</th><th>PRs</th><th>Code +</th><th>Units / line</th><th>Opus</th><th>Mervin</th><th>Dexter</th><th>Ester</th></tr></thead><tbody>`+
+ days.map((r,i)=>{const dd=day(r.date),reset=r.date===D.start;return `<tr class="${reset?"reset":""}"><td>${dd.wd} ${dd.md}${i===days.length-1?"*":""}${reset?' <span class="pill">reset</span>':""}</td><td>${fmt(r.units)}</td><td>${comma(r.turns)}</td><td>${r.prs}</td><td>${comma(r.codeAdded)}</td><td>${r.codeAdded?comma(r.units/r.codeAdded):"-"}</td><td>${r.units?Math.round(r.opus/r.units*100):0}%</td><td>${fmt(r.mervin)}</td><td>${fmt(r.dexter)}</td><td>${fmt(r.ester)}</td></tr>`}).join("")+"</tbody>";
+
+$("method").textContent=`From Claude Code's session transcripts for this repo, read by ester/ledger.ts every morning (ledger-daily.ts). Helper figures are the units agents spent on each helper's job, not a metered saving. Plan percentages come from /usage, entered by hand with --budget; the running week is an estimate until then. Code lines count source, styles, markup, SQL and shell on main, not docs or data. * the last day is still running.`;
+</script>
+</body></html>

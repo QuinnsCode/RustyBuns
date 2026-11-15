@@ -1,5 +1,6 @@
 // The ledger every morning: at 10am, days cut 10am to 10am, so yesterday is whole. Writes the files to ~/.rustybuns/ledger,
-// then has a headless Claude put them on the two pages (Artifacts need Claude's own tools, there is no API for them).
+// then has a headless Claude put them on the three pages: the weekly ledger, the 30-day dashboard, and the plan-week report
+// (this plan week so far, reset Thursday morning, beside the weeks before it). Artifacts need Claude's own tools, there is no API.
 // Transcripts last 30 days, so every run folds its days into history.json, which only grows: the weekly page reads all of it.
 // Run: bun apps/agent-office/ester/ledger-daily.ts             (now: ledger, then publish)
 //      bun apps/agent-office/ester/ledger-daily.ts --no-publish (files only)
@@ -10,10 +11,12 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node
 import { homedir } from "node:os";
 import path from "node:path";
 import { arr, bool, num, obj, opt, str, type Of } from "@rustybuns/util/guard";
+import { help } from "../../../scripts/help.ts";
 
 const DAY_STARTS = 10;
 const WEEK = "https://claude.ai/artifact/FBNXoT3SnfvJvL8kyZPDo3"; // RustyBuns weekly ledger: last 8 days, or any recorded week, with overlays
 const MONTH = "https://claude.ai/artifact/Y7fSLkHoTgLMV1i3oLNERn"; // tokens per line of code, last 30 days
+const REPORT = "https://claude.ai/artifact/W383GZuNbN4X6W36QF2arT"; // this plan week so far, by day and model, beside the weeks before it
 const LABEL = "com.rustybuns.ledger";
 const out = path.join(homedir(), ".rustybuns", "ledger");
 const repo = path.resolve(import.meta.dir, "../../..");
@@ -54,21 +57,55 @@ export function mergeHistory(old: Row[], fresh: Row[]): Row[] {
 const PAGE = ["date", "sessions", "turns", "units", "output", "mervin", "ester", "dexter", "prs", "added", "removed", "codeAdded", "codeRemoved", "opus", "sonnet", "haiku", "fable", "other"] as const;
 /** The weekly page with every recorded day in it (only the fields it draws); it picks the weeks itself. */
 export function weekPage(template: string, ledger: { generated: string; dayStarts: number; saves: number; settles: number }, history: Row[], budget: Budget = []): string {
+  const rows = history.map((r) => Object.fromEntries(PAGE.map((k) => [k, k === "date" ? r.date : Math.round(r[k])])));
+  return fill(template, { generated: ledger.generated, dayStarts: ledger.dayStarts, saves: ledger.saves, settles: ledger.settles, rows, budget });
+}
+
+// A page template with `data` in its LEDGER slot, every `<` escaped so no string can close the script.
+function fill(template: string, data: unknown): string {
   const at = template.indexOf("/*LEDGER*/");
   const end = template.indexOf(";\n", at);
-  if (at < 0 || end < 0) throw new Error("ledger-week.html lost its /*LEDGER*/ slot");
-  const rows = history.map((r) => Object.fromEntries(PAGE.map((k) => [k, k === "date" ? r.date : Math.round(r[k])])));
-  const data = { generated: ledger.generated, dayStarts: ledger.dayStarts, saves: ledger.saves, settles: ledger.settles, rows, budget };
+  if (at < 0 || end < 0) throw new Error("a ledger page lost its LEDGER slot");
   return template.slice(0, at) + JSON.stringify(data).replace(/</g, "\\u003c") + template.slice(end);
+}
+
+const shift = (date: string, days: number) => { const t = new Date(`${date}T12:00:00Z`); t.setUTCDate(t.getUTCDate() + days); return t.toISOString().slice(0, 10); };
+/** The plan week resets Thursday morning: the Thursday on or before `date` (a 10am-to-10am day). */
+export const weekStart = (date: string) => shift(date, -((new Date(`${date}T12:00:00Z`).getUTCDay() + 3) % 7));
+
+/** Every plan week in the history, added up, oldest first. `pct` is what /usage said (budget.json); the week still
+ *  running has none yet, so it is estimated from the last read week's units per 1%. */
+export function planWeeks(history: Row[], budget: Budget) {
+  const by = new Map<string, Row[]>();
+  for (const r of history) { const s = weekStart(r.date); by.set(s, [...(by.get(s) ?? []), r]); }
+  const sum = (rows: Row[], k: "units" | "prs" | "codeAdded" | "opus" | "sonnet" | "fable") => Math.round(rows.reduce((a, r) => a + r[k], 0));
+  let perPct = 0;
+  return [...by].sort(([a], [b]) => a.localeCompare(b)).map(([start, rows], i, all) => {
+    const ends = shift(start, 7), read = budget.find((b) => b.ends === ends), units = sum(rows, "units");
+    const running = i === all.length - 1 && !read;
+    const pct = read ? read.pct : running && perPct ? Math.round(units / perPct) : null;
+    if (read?.pct) perPct = units / read.pct;
+    return { start, ends, days: rows.length, units, prs: sum(rows, "prs"), code: sum(rows, "codeAdded"), opus: sum(rows, "opus"), sonnet: sum(rows, "sonnet"), fable: sum(rows, "fable"),
+      pct, approx: read?.approx ?? false, estimated: running && pct !== null, running };
+  });
+}
+
+/** The plan-week report: this plan week's days (at least the last 8, so a Thursday isn't a page of one bar) and every week. */
+export function reportPage(template: string, generated: string, history: Row[], budget: Budget): string {
+  const start = history.length ? weekStart(history.at(-1)!.date) : "";
+  const days = history.filter((r, i) => r.date >= start || i >= history.length - 8);
+  return fill(template, { generated, start, days, weeks: planWeeks(history, budget) });
 }
 
 const read = <T>(name: string, g: (v: unknown) => T, none: T): T => { const f = path.join(out, name); return existsSync(f) ? g(JSON.parse(readFileSync(f, "utf8"))) : none; };
 const readHistory = () => read("history.json", History, []);
 const readBudget = () => read("budget.json", Budget, []);
 
-/** week.html from what is on disk: the last run's header, the history and the budget entries. */
+/** week.html and report.html from what is on disk: the last run's header, the history and the budget entries. */
 function page(ledger: Of<typeof Ledger>, history: Row[]) {
-  writeFileSync(path.join(out, "week.html"), weekPage(readFileSync(path.join(import.meta.dir, "ledger-week.html"), "utf8"), ledger, history, readBudget()));
+  const budget = readBudget(), template = (name: string) => readFileSync(path.join(import.meta.dir, name), "utf8");
+  writeFileSync(path.join(out, "week.html"), weekPage(template("ledger-week.html"), ledger, history, budget));
+  writeFileSync(path.join(out, "report.html"), reportPage(template("ledger-report.html"), ledger.generated, history, budget));
 }
 
 function build() {
@@ -88,13 +125,14 @@ function build() {
   console.log(`${ledger.generated} ledger written to ${out}; yesterday (${last?.date ?? "none"}, ${DAY_STARTS}am to ${DAY_STARTS}am) is the second-to-last row`);
 }
 
-const prompt = () => `Refresh two of my Artifacts from files on disk. Do only this, then reply in one line.
+const prompt = () => `Refresh three of my Artifacts from files on disk. Do only this, then reply in one line.
 1. Weekly ledger ${WEEK}: Artifact read it, then Artifact publish with url ${WEEK} and file_path ${path.join(out, "week.html")}.
 2. Dashboard ${MONTH}: Artifact read it. Upload ${path.join(out, "daily.json")} and then ${path.join(out, "size.json")}, each with Artifact publish, url ${MONTH}, asset: true (one file per call).
    ArtifactData get datasets/daily and datasets/size, then one ArtifactData batch of two updates pinned to the versions you read:
    source: {kind: "file", url: <that upload's url as returned>, name: <daily.json or size.json>}, updated: {at: <now, UTC ISO>, by: "ledger-daily.ts on the office Mac"}, edit: {via: "claude", at: <now>}.
    Then ArtifactData get collection data/users/me doc check; if it says checking, read it again (5 reads at most).
-Change nothing else on either page. Reply: "ledger published" plus the check status, or what failed.`;
+3. Plan-week report ${REPORT}: Artifact read it, then Artifact publish with url ${REPORT} and file_path ${path.join(out, "report.html")}.
+Change nothing else on any page. Reply: "ledger published" plus the check status, or what failed.`;
 
 function publish() {
   const tools = "Artifact ArtifactData ToolSearch";
@@ -125,6 +163,7 @@ function install() {
 }
 
 if (import.meta.main) {
+  help(import.meta.path);
   const a = process.argv.slice(2);
   if (a.includes("--install")) install();
   else if (a.includes("--uninstall")) { Bun.spawnSync(["launchctl", "bootout", `gui/${process.getuid?.() ?? 501}/${LABEL}`]); rmSync(plist, { force: true }); console.log("uninstalled"); }

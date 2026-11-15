@@ -293,6 +293,22 @@ test("each morning's run grows the history, and the weekly page carries all of i
   expect(page.match(/<\/script>/g)).toHaveLength(1);
 });
 
+test("the daily report shows this plan week from its Thursday reset, the running week's usage estimated from the last one read", async () => {
+  const { reportPage, Row } = await import("../ester/ledger-daily.ts");
+  const zero = Row({ date: "2026-01-01", sessions: 0, turns: 0, units: 0, input: 0, output: 0, cacheRead: 0, cacheWrite: 0, fights: 0, episodes: 0, ciReads: 0, testOutput: 0, oversize: 0, mervin: 0, ester: 0, dexter: 0, prs: 0, added: 0, removed: 0, codeAdded: 0, codeRemoved: 0 });
+  // Thu Nov 5 to Sun Nov 15: last week (reset Nov 5) read 76% at 76M units, so 1% is 1M; this week (reset Nov 12) has 30M.
+  const dates = ["05", "06", "07", "08", "09", "10", "11", "12", "13", "14", "15"].map((d) => `2026-11-${d}`);
+  const history = dates.map((date) => ({ ...zero, date, units: date >= "2026-11-12" ? 10e6 : 76e6 / 7, opus: 1 }));
+  const page = reportPage(readFileSync(path.join(import.meta.dir, "../ester/ledger-report.html"), "utf8"), "2026-11-15T22:00:00Z", history, [{ ends: "2026-11-12", pct: 76 }]);
+  const D: unknown = JSON.parse(/const D=(.*);\n/.exec(page)![1]!);
+  expect(D).toMatchObject({
+    start: "2026-11-12",
+    weeks: [{ start: "2026-11-05", days: 7, pct: 76, estimated: false }, { start: "2026-11-12", ends: "2026-11-19", days: 4, pct: 30, estimated: true, running: true }],
+  });
+  // Four days into the week still charts the last eight, so a Thursday morning isn't a page of one bar.
+  expect(D).toHaveProperty("days.length", 8);
+});
+
 test("the plan's weekly usage is entered by the morning it reset, a second entry replacing the first, and models split the spend", async () => {
   const { setBudget } = await import("../ester/ledger-daily.ts");
   const { familyOf } = await import("../ester/dexter.ts");
