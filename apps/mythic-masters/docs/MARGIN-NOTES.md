@@ -48,8 +48,8 @@ The demands and receipts in `src/demand.ts` (`demandOf`, `reactionOf`, `deckDema
 
 | Where | Line | Signed |
 |---|---|---|
-| Title, compendium | Item 4: something with wings, shadow type. I don't know its name yet. Finding out is your job. Bring it. | yes |
-| Title, compendium | Item 6: the Squonk. You met it. You let it leave. Rude. Go back and bring it. | yes |
+| Title, compendium | Item 4: something with wings, shadow type. Name unknown. Your problem. Bring it. | yes |
+| Title, compendium | Item 6: the Squonk. You met it and let it leave. Rude. Bring it. | yes |
 | Title, compendium | Item 77: nothing. Every cryptid is in my pages. For now. | yes |
 | Result: a new bind | Item 6. Received. (sometimes: Late. / Smaller than described. / Wipe its feet. / About time.) | no |
 | Result: a bind it has | I have one of those. Keep it. Bring me one I have not. | yes |
@@ -70,7 +70,7 @@ The demands and receipts in `src/demand.ts` (`demandOf`, `reactionOf`, `deckDema
 | Bestiary deck, no journey yet | Item 1: the Jersey Devil, top of this deck. Then the rest, in order. | yes |
 | Bestiary deck: top card unmet | Item 4: the Jersey Devil, top of my deck. Go and find it. (seen: You have seen it. Bring it.) | yes |
 | Bestiary deck: every card bound | Every card in this deck is mine. Keep them in order. | no |
-| World toast: a new bind | Entered. (then the next demand: Item 5: the Squonk. You met it. You let it leave. Rude. Go back and bring it.) | yes |
+| World toast: a new bind | Entered. (then the next demand: Item 5: the Squonk. You met it and let it leave. Rude. Bring it.) | yes |
 | World toast: a bind it has | A copy. I keep one of each. (then the next demand) | yes |
 | World toast: a keeper beaten | The Sunk Road, written in. The next stone is lit. Walk. | yes |
 | World toast: the last keeper | The Sunk Road, written in. The Jersey Devil is at the arena. Bring it. | yes |

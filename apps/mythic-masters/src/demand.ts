@@ -23,10 +23,10 @@ export function demandOf(j: Journey | null, roster: readonly Creature[] = ROSTER
   const all = roster.filter((c) => !owned.has(c.id)), want = j.talk?.wants;
   const left = want && all.some((c) => c.archetype === want) ? all.filter((c) => c.archetype === want) : all;
   const met = left.find((c) => j.seen.includes(c.id));
-  if (met) return `Item ${item}: the ${met.name}. You met it. You let it leave. Rude. Go back and bring it.`;
+  if (met) return `Item ${item}: the ${met.name}. You met it and let it leave. Rude. Bring it.`;
   const next = [...left].sort((a, b) => a.region - b.region)[0];
   if (!next) return `Item ${item}: nothing. Every cryptid is in my pages. For now.`;
-  return `Item ${item}: ${LOOKS[next.archetype]}, ${next.fields[0]} type. I don't know its name yet. Finding out is your job. Bring it.`;
+  return `Item ${item}: ${LOOKS[next.archetype]}, ${next.fields[0]} type. Name unknown. Your problem. Bring it.`;
 }
 
 /** Where the thumbprint lands on the page opened for the `n`th time: near an edge (where a hand would hold it),
