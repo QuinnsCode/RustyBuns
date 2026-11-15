@@ -60,6 +60,7 @@
           <div class="page recto">
             <p class="imprint-head" data-copy="title.imprintHead"></p>
             <h1 data-copy="title.name"></h1>
+            <p class="plain" data-copy="title.subtitle"></p>
             <div class="menu">
               <button id="continue" class="go"></button>
               <button id="newGame"></button>
@@ -69,7 +70,6 @@
             <div id="account" class="account"></div>
             <button class="info" popovertarget="aboutTitle" title="What is this?" aria-label="What is this?"></button>
             <div id="aboutTitle" class="about" popover>
-              <p class="subtitle" data-copy="title.subtitle"></p>
               <p class="tag" data-copy="title.tagline"></p>
               <p class="plate-caption" data-copy="title.plateCaption"></p>
               <p class="imprint" data-copy="title.imprint"></p>
@@ -82,15 +82,13 @@
         </div>
       </div>
     </section>
-    <section id="starters" class="select starters" hidden aria-label="Choose your first three creatures">
+    <section id="starters" class="select starters" hidden aria-label="Take three of the Book's five">
       <div class="sheet paper">
-        <h1><span data-copy="starters.heading"></span> <button class="info" popovertarget="aboutWitch" title="Who is she?" aria-label="Who is she?"></button></h1>
-        <div id="witchFrontis" class="frontis" aria-hidden="true"></div>
-        <div id="aboutWitch" class="about" popover>
-          <p class="witch" data-copy="starters.witch"></p>
-          <p class="tag" data-copy="starters.after"></p>
-        </div>
-        <p class="demand" data-demand></p>
+        <h1 data-copy="starters.heading"></h1>
+        <div id="bookFrontis" class="frontis" aria-hidden="true"></div>
+        <!-- the Book's own words, on the page: who these five are, why three, and what comes after (#4671) -->
+        <p class="spoken" data-copy="starters.says"></p>
+        <p class="tag" data-copy="starters.after"></p>
         <div id="starterCards" class="five"></div>
         <button id="setOut" class="go" disabled></button>
       </div>
@@ -101,7 +99,7 @@
         <i class="boards" aria-hidden="true"></i>
         <nav id="journalTabs" class="ribbons" aria-label="Chapters"></nav>
         <!-- the running heads, as a book you hold has them: the book's name over the left page, the chapter over the
-             right (one line on a phone). The chapter's engraving, the vine rule, the Witch's blessing and the Book's
+             right (one line on a phone). The chapter's engraving, the vine rule, the Book's blessing and its
              demand open the left page (drawJournal in src/main.ts). -->
         <header><h1><span class="rh">The Compendium</span><span class="rh chapter" id="runningHead"></span></h1><button id="closeJournal" title="Close (Tab)" aria-label="Close">x</button></header>
         <div id="journalBody" class="leaf"></div>
@@ -162,6 +160,7 @@
       <div class="dread" aria-hidden="true"></div>
       <div class="toast" role="status" hidden></div>
       <div class="road" hidden></div>
+      <p class="goal" role="status" data-copy="world.goal" hidden></p>
       <div class="arrive" aria-live="polite" hidden></div>
       <div class="tag" hidden></div>
       <button id="openJournal" class="book" title="The Compendium (Tab)" aria-label="The Compendium"></button>

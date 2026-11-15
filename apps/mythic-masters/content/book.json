@@ -5,31 +5,29 @@
     "lead": [
       "Congratulations. You opened me. Most people only get to open me once.",
       "So. Let me explain. Slowly. You look like you need slowly.",
-      "I am a book.",
-      "I am a special book.",
-      "I'm a book that can hold... special beings.",
+      "I am a book. A special book. I hold special beings.",
       "Big ones. Hairy ones. Ones with far too many teeth. Your people call them cryptids. Your people also call them fake.",
-      "They are not fake. They live in your woods, your lakes and your swamps. And right now, nobody is collecting them.",
-      "When nobody collects them, they start collecting people. That is bad. Mostly for the people.",
-      "So here is the deal. You find them. You beat them. I hold them. Everybody lives. Probably."
+      "They are not fake. They live in your woods, your lakes and your swamps. And something is waking them up.",
+      "Here is your job. You find them. You beat them in a fight. I hold them. All of them, every cryptid on Earth.",
+      "You will not do it with your fists. I already hold five, caught long ago. I will let you take three of them to fight for you."
     ],
-    "ask": "The little grey men left me with you, so now you work for me. Congratulations again.\nFirst question: how do you plan to pay?",
+    "ask": "The little grey men left me with you, so now you work for me. Congratulations again.\nFind them, beat them, I hold them. Clear?",
     "replies": [
       {
         "id": "all",
         "say": "I will bring you all of them.",
-        "book": "Everyone says all. I will count later. I always count later.",
+        "book": "Everyone says all. I will count later. Now turn the page and take three of my five.",
         "note": "Promised all of them."
       },
       {
         "id": "what",
         "say": "What... what are you?",
-        "book": "I just told you. A book. A special book. Do not make me do the whole thing again."
+        "book": "I just told you. A book that holds cryptids. Turn the page. Take three of my five. Then go and find me more."
       },
       {
         "id": "no",
         "say": "I'd rather not.",
-        "book": "Noted. In pencil. Item 1 is in pen.",
+        "book": "Noted. In pencil. Item 1 is in pen. Turn the page and take three. They do the fighting; you do the walking.",
         "nick": "the reluctant one",
         "note": "Would rather not. Came anyway."
       }

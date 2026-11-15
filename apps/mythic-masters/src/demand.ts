@@ -4,7 +4,7 @@
 // different each time it is opened, never explained: someone held this page. No DOM here; main.ts and page.ts draw it.
 import { mulberry32 } from "@rustybuns/util";
 import type { Archetype } from "./creatures.ts";
-import { cleared, hpOf, SECTIONS, sections, TRAIL_REGIONS, WITCH_SHEET, type Journey } from "./journey.ts";
+import { cleared, hpOf, SECTIONS, sections, TRAIL_REGIONS, BOOK_PAGE, type Journey } from "./journey.ts";
 import { ROSTER, type Creature } from "./roster.ts";
 
 export const SIGNATURE = "the Book";
@@ -107,7 +107,7 @@ export type Chapter = "lineup" | "bestiary" | "regions" | "factions";
 
 /** The book's line at the head of a compendium chapter, about your record there instead of the shared demand: who you
  * lead with and who is hurt, the last beast you bound and where, the last page you wrote it, or the fights you keep
- * losing past it. No journey yet, every chapter wants the same thing: three, from the witch. */
+ * losing past it. No journey yet, every chapter wants the same thing: three, from the Book's five. */
 export function pageLineOf(ch: Chapter, j: Journey | null, roster: readonly Creature[] = ROSTER): { ask: string; signed: boolean } {
   if (!j) return { ask: demandOf(null, roster), signed: true };
   const name = (id: string) => roster.find((c) => c.id === id)?.name ?? "that one";
@@ -119,8 +119,8 @@ export function pageLineOf(ch: Chapter, j: Journey | null, roster: readonly Crea
     return { ask: `The ${name(lead.id)} leads. Nobody is dripping. Go and earn the ink.`, signed: true };
   }
   if (ch === "bestiary") {
-    const last = [...j.party, ...j.journal].filter((m) => m.caught && m.caught.where !== WITCH_SHEET).sort((a, b) => a.caught!.at - b.caught!.at).at(-1);
-    if (!last) return { ask: "Three from the witch's sheet. You have not bound one yourself. Yet.", signed: true };
+    const last = [...j.party, ...j.journal].filter((m) => m.caught && m.caught.where !== BOOK_PAGE).sort((a, b) => a.caught!.at - b.caught!.at).at(-1);
+    if (!last) return { ask: "Three from my own five. You have not bound one yourself. Yet.", signed: true };
     const where = last.caught!.where.split(",")[0];
     return { ask: `Last in: the ${name(last.id)}${where ? `, ${where}` : ""}. The ink is dry. Next.`, signed: true };
   }

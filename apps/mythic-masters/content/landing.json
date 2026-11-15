@@ -2,7 +2,7 @@
   "title": {
     "imprintHead": "Cryptid Compendium",
     "name": "Mythic Masters",
-    "subtitle": "Grey aliens dropped a magic book on you and ran.\nNow you have one job: catch Earth's cryptids, or the world ends.",
+    "subtitle": "Aliens dropped a book on you. It wants every cryptid on Earth. Catch them.",
     "tagline": "Explore a big open world, built from real places.\nFind each region's cryptids where they really live.\nBeat each region's boss to open the next one.\nTrain your team. Take on bigger, rarer cryptids in arcade-style fights.\nBecome the best cryptid collector there is.",
     "continue": "Continue · {name} Lv {level}",
     "newJourney": "New game",
@@ -15,16 +15,19 @@
     "plateCaption": "The Book. It holds every cryptid you catch. Open it to call them out to fight."
   },
   "starters": {
-    "heading": "The Bog Witch",
-    "witch": "\"You fell out of the sky, you and that loud one. Nobody believes you. I'm not sure I do. And now you've got their book, have you? Keep it shut in my yard. Five of these beasts came to my door this year, and they eat all my food. Take three. Then go.\"",
-    "after": "She will not touch the Book. It fell with you, it is warm, and it is yours. Her camp is at Leeds Point. Come back when you have news.",
-    "hodag": "A hodag pup from the north woods. Hot inside, hard as rock outside. Slow to turn, and slower to fall.",
-    "squonk": "A squonk. It weeps, it hides, and its tears are a tide that puts out any fire.",
-    "agropelter": "An agropelter out of a hollow tree. It throws branches, and it holds a grudge.",
-    "jackalope": "A jackalope. Six kilos of antlers and attitude. Faster than anything in these pines.",
-    "tatzelwurm": "A tatzelwurm down from the Alps, cat-faced and four-legged. Its bite is poison and its breath is frost.",
+    "heading": "The Book’s five",
+    "says": "I caught these five long ago, before the little grey men lost me. They are yours now. Take three. They fight for you while you catch the rest.",
+    "after": "Then follow the dashed trail. Beat the keeper on the lit stone. That one comes into me.",
+    "hodag": "A hodag pup. I caught it in the north woods. Hot inside, hard as rock outside. Slow to turn, and slower to fall.",
+    "squonk": "A squonk. I caught it crying, which is how they are always caught. Its tears are a tide that puts out any fire.",
+    "agropelter": "An agropelter. I caught it in a hollow tree. It throws branches, and it holds a grudge.",
+    "jackalope": "A jackalope. Six kilos of antlers and attitude. It took me a week to catch. Faster than anything in these pines.",
+    "tatzelwurm": "A tatzelwurm, down from the Alps, cat-faced and four-legged. Its bite is poison and its breath is frost. I caught it in the snow.",
     "chooseMore": "Choose {n} more",
     "setOut": "Set out"
+  },
+  "world": {
+    "goal": "Follow the dashed trail. Beat the keeper on the lit stone."
   },
   "versus": {
     "name": "Mythic Masters",

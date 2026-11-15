@@ -1,6 +1,6 @@
 // Walking a menu page without a mouse: the arrows (or WASD), a d-pad or a stick move the focus from button to button
 // by where they sit on the screen (stepTo, the same step the compendium's quill takes), and Enter, Space or A press
-// the one that has it. The title, the Bog Witch's sheet, the result note, the versus book: any page the book shows.
+// the one that has it. The title, the Book's five, the result note, the versus book: any page the book shows.
 import { stepTo, type Dir } from "./compendium.ts";
 
 /** The buttons on `page` someone can press now: shown, not disabled, not inside a closed popover. */
@@ -28,7 +28,7 @@ export function menuStep(page: HTMLElement, dir: Dir, visible = true): HTMLEleme
 }
 
 /** Where the focus starts on a page: its main call (`.go`, the big red one) when it can be pressed, else the first
- * card to pick (the witch's five), else the first button (never the little ? in a heading when there is more). */
+ * card to pick (the Book's five), else the first button (never the little ? in a heading when there is more). */
 function firstOf(els: HTMLElement[]): number {
   for (const sel of [".go", ".card", ":not(.info)"]) { const i = els.findIndex((el) => el.matches(sel)); if (i >= 0) return i; }
   return 0;

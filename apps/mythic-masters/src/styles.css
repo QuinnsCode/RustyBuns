@@ -124,6 +124,8 @@ button.go { background: var(--hot); color: #1b1408; border-color: transparent; f
 .world-hud .road { position: absolute; transform: translate(-50%, -100%); display: grid; justify-items: center; gap: 2px; text-align: center; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; width: max-content; max-width: min(260px, calc(100% - 32px)); font-size: 12px; }
 .world-hud .road b { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; }
 .world-hud .road small { color: var(--dim); }
+/* the first goal (#4671), up at the top in the middle until the first keeper is beaten */
+.world-hud .goal { position: absolute; left: 50%; top: 16px; transform: translateX(-50%); margin: 0; max-width: min(520px, calc(100% - 32px)); text-align: center; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px 16px; font-size: 18px; font-weight: 600; }
 .world-hud .tag { position: absolute; transform: translate(-50%, -100%); display: grid; justify-items: center; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 4px 8px; font-size: 12px; width: max-content; }
 .world-hud .tag small { display: inline-flex; align-items: center; gap: 4px; color: var(--dim); }
 .world-hud .map { position: absolute; right: 16px; bottom: 16px; width: 288px; image-rendering: auto; border: 1px solid var(--line); border-radius: 6px; pointer-events: auto; cursor: pointer; }
@@ -145,11 +147,11 @@ button.go { background: var(--hot); color: #1b1408; border-color: transparent; f
   .tiles { grid-template-columns: repeat(2, 1fr); max-height: 30vh; }
 }
 
-/* the journey: title, the Bog Witch's four, the Eldritch Journal, binding in a fight */
+/* the journey: title, the Book's five, the Eldritch Journal, binding in a fight */
 .title { display: grid; place-content: center; text-align: center; gap: 4px; }
 .title .menu { display: grid; gap: 10px; justify-items: stretch; width: min(360px, 100%); margin: 8px auto 0; }
 .title .menu button { justify-content: center; padding: 12px 16px; }
-.witch { font-style: italic; color: #cfe8d6; max-width: 640px; margin: 6px 0 10px; }
+.spoken { font-style: italic; color: #cfe8d6; max-width: 640px; margin: 6px 0 10px; }
 .four { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; max-width: 1100px; }
 .five { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; max-width: 1300px; }
 .card.starter.on { border-color: #7dffb0; box-shadow: 0 0 0 2px #7dffb0; background: #1d2a22; }

@@ -32,7 +32,7 @@ Every faction line is written like a maintenance manual (ASD-STE100), and the co
   samples and measures. The Lamplighters shelter, move and walk with.
 - `WARNING:`, `CAUTION:` and `NOTE:` are allowed, and so are numbered steps ("Step 1.").
 - The game's names are the technical names, spelled as the game spells them: the Book, ink, bind, line-up, keeper,
-  stone, section, trail, bog-light, campfire, cabin, sighting board, den, lair, the Eldritch Compendium, the Bog Witch,
+  stone, section, trail, bog-light, campfire, cabin, sighting board, den, lair, the Eldritch Compendium,
   Gary, the twelve fields (ember, tide, gale, stone, frost, storm, grove, venom, spirit, shadow, iron, wild), the
   tiers (common, uncommon, rare, legendary, mythic), every region, section and creature name.
 - Your own replies (`say`) are in your voice, not theirs, and may be loose.

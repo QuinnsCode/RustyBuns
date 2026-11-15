@@ -5,61 +5,45 @@
   "inTheSaucer": [
     {
       "at": 2.2,
-      "say": "Grey: Oh no. Oh no, no, no. The human is awake!"
+      "say": "Grey: Oh no. The human is awake! We grabbed the wrong human."
     },
     {
-      "at": 4.6,
-      "say": "Other grey: Why is it doing that thing with its eyes? I hate the eye thing."
+      "at": 5.4,
+      "say": "Other grey: Too late now. It gets the book. Put it back to sleep!"
     },
     {
-      "at": 7,
-      "say": "Grey: Put it back to sleep! No. Not that button. NOT THAT ONE. That one is the radio!"
-    },
-    {
-      "at": 9.6,
-      "say": "Saucer radio: *crackle* ...smooth jazz, all night long... *crackle*"
-    },
-    {
-      "at": 12.4,
-      "say": "Narrator: Some time later. How much later is a secret. Even the President is not allowed to know."
+      "at": 10.4,
+      "say": "Narrator: Some time later. You are home, in the pines. Mostly in one piece."
     }
   ],
   "inThePines": [
     {
       "at": 16.4,
-      "say": "Grey: Hey. Hey, buddy. Wake up. You gotta wake up."
+      "say": "Grey: Hey. Wake up, human. Listen. This is the Book. It is yours now."
     },
     {
-      "at": 18.8,
-      "say": "Other grey: Sorry about the whole abduction thing. Really. We grabbed the wrong human. Paperwork.\nGood news: you are home, and we only probed you a little.\nBad news: we have to leave you something."
+      "at": 19.8,
+      "say": "Other grey: Your woods are full of cryptids. Big ones, hairy ones. They are real, and something is waking them up."
     },
     {
-      "at": 21.6,
-      "say": "Grey: You have bigger problems now. MUCH bigger problems."
+      "at": 23.6,
+      "say": "Grey: The Book wants every one of them. You catch them, the Book holds them. Do what it says."
     },
     {
-      "at": 24,
-      "say": "Other grey: Okay! We are leaving now! Bye!"
-    },
-    {
-      "at": 27.2,
-      "say": "Grey: Do what this book says.\nOr your whole planet is toast. That is not a threat. We love toast.\nBut something bad is coming. Bad, bad, BAD. We never say bad three times."
+      "at": 27.4,
+      "say": "Other grey: Or the thing waking them up wakes all the way up. Bad, bad, BAD. We never say bad three times."
     },
     {
       "at": 30.6,
-      "say": "Voice from the saucer: Guys! Get in! We are parked over a national forest, and IT is waking up. Go, go, go!"
-    },
-    {
-      "at": 33.2,
-      "say": "Other grey: Coming, Mom!"
+      "say": "Voice from the saucer: Get in! IT is waking up. Go, go, go!"
     },
     {
       "at": 36.6,
-      "say": "You: ...Gary is going to be so mad he slept through this."
+      "say": "Narrator: You wake alone in the pines. The Book is on your chest. It is warm."
     },
     {
-      "at": 38.6,
-      "say": "Book: newwwww liiiiiiifffffeeeeeeeee."
+      "at": 38.8,
+      "say": "Book: Open me. I will explain. Slowly."
     }
   ]
 }

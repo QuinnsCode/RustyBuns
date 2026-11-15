@@ -54,7 +54,7 @@ const GRIMOIRE = svg(120, 64, [
   `<path d="M60 54l-3 8l3 -2l3 2z" fill="currentColor" opacity="0.8"/>`,
 ].join(""));
 
-/** The Bog Witch: a cauldron on three stones, a fire under it, three bubbles rising. */
+/** A cauldron on three stones, a fire under it, three bubbles rising. */
 const CAULDRON = svg(120, 64, [
   `<path d="M38 24h44l-4 20q-18 8 -36 0z"/><path d="M34 24h52" stroke-width="1.4"/><path d="M42 20q18 -6 36 0" stroke-width="0.8"/>`,
   hatch(44, 30, 9, 12, 3.6, 0.2),
@@ -72,10 +72,10 @@ const LAMP = svg(120, 64, [
   `<path d="M48 18q-6 -4 -12 0M72 18q6 -4 12 0" stroke-width="0.6" opacity="0.6"/>`,
 ].join(""));
 
-export type Chapter = "lineup" | "bestiary" | "regions" | "factions" | "title" | "witch";
-const EMBLEMS: Record<Chapter, string> = { lineup: STONES, bestiary: EYE, regions: ROSE, factions: LAMP, title: GRIMOIRE, witch: CAULDRON };
+export type Chapter = "lineup" | "bestiary" | "regions" | "factions" | "title" | "cauldron";
+const EMBLEMS: Record<Chapter, string> = { lineup: STONES, bestiary: EYE, regions: ROSE, factions: LAMP, title: GRIMOIRE, cauldron: CAULDRON };
 
-/** The frontispiece of a chapter (or of the title scroll and the Bog Witch's sheet). */
+/** The frontispiece of a chapter (or of the title scroll and the Book's five). */
 export const emblem = (c: Chapter): string => EMBLEMS[c];
 
 /** A thorn-and-vine ring to frame a bound beast's plate: a ring with thorns leaning one way, a pair of leaves at
@@ -200,7 +200,7 @@ export const rumour = (n: number): string =>
 
 /** What each engraving weighs, in bytes, as the PR says it. */
 export const weights = (): Record<Chapter | "frame" | "marginalia", number> =>
-  ({ lineup: STONES.length, bestiary: EYE.length, regions: ROSE.length, factions: LAMP.length, title: GRIMOIRE.length, witch: CAULDRON.length, frame: frame().length, marginalia: marginalia(["ember", "tide"]).length });
+  ({ lineup: STONES.length, bestiary: EYE.length, regions: ROSE.length, factions: LAMP.length, title: GRIMOIRE.length, cauldron: CAULDRON.length, frame: frame().length, marginalia: marginalia(["ember", "tide"]).length });
 
 /** An engraving as a CSS image, inked in the book's faded brown: for a leaf drawn by CSS alone (the facing leaf of
  * the Settings and result spreads, #3671 round 81), where there is no element to hold the svg. */

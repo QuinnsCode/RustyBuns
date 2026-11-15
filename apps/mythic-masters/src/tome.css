@@ -1,5 +1,5 @@
 /* The Eldritch Compendium look: every menu is a page of an aged tome, hand-inked. The title is the book's first opening, the
- * Bog Witch's offer a loose sheet, the journal (Tab) a two-page spread with ribbon bookmarks that turns a leaf
+ * Book's five a loose sheet, the journal (Tab) a two-page spread with ribbon bookmarks that turns a leaf
  * when you change chapter, and the bestiary keeps what you have not met under a cloud of ink-smoke
  * (src/compendium.ts). The fight HUD and the world HUD stay as they were: this is only the book.
  *
@@ -51,7 +51,7 @@
 .paper h3 { font-size: 21px; margin: 18px 0 8px; border-bottom: 1px solid var(--ink-line); padding-bottom: 2px; }
 .paper .tag, .paper .dim, .paper small { color: var(--ink-faded); }
 .paper .tag { font-family: var(--f-hand); font-size: 20px; margin: 4px 0 12px; }
-.paper .witch { color: var(--moss); font-family: var(--f-book); font-style: italic; font-size: 17px; }
+.paper .spoken { color: var(--moss); font-family: var(--f-book); font-style: italic; font-size: 17px; }
 .paper hr.flourish { border: 0; height: 22px; margin: 6px auto 12px; width: min(360px, 80%);
   background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 360 22' fill='none' stroke='%235e4630' stroke-width='1' stroke-linecap='round'%3E%3Cpath d='M4 11q40 -12 80 0t80 0t80 0t80 0'/%3E%3Cpath d='M44 11q6 -10 16 -8q-4 8 -16 8zM124 11q6 -10 16 -8q-4 8 -16 8zM204 11q6 -10 16 -8q-4 8 -16 8zM284 11q6 -10 16 -8q-4 8 -16 8z'/%3E%3Cpath d='M84 11q-6 10 -16 8q4 -8 16 -8zM164 11q-6 10 -16 8q4 -8 16 -8zM244 11q-6 10 -16 8q4 -8 16 -8zM324 11q-6 10 -16 8q4 -8 16 -8z'/%3E%3Cpath d='M48 9l6 -4M52 10l6 -4M128 9l6 -4M132 10l6 -4M208 9l6 -4M212 10l6 -4M288 9l6 -4M292 10l6 -4M74 14l-6 4M70 13l-6 4M154 14l-6 4M150 13l-6 4M234 14l-6 4M230 13l-6 4M314 14l-6 4M310 13l-6 4' stroke-width='.6' opacity='.7'/%3E%3Ccircle cx='180' cy='11' r='3.2' fill='%237b1d14' stroke='%234d0f09'/%3E%3Ccircle cx='100' cy='11' r='1.6' fill='%237b1d14' stroke='none'/%3E%3Ccircle cx='260' cy='11' r='1.6' fill='%237b1d14' stroke='none'/%3E%3C/svg%3E") center / contain no-repeat; }
 
@@ -93,6 +93,8 @@
 .title .page { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0; padding: 6px 0; }
 .title .recto > h1 { font-size: clamp(46px, 6.4vw, 72px); margin: 2px 0 4px; }
 .title .imprint-head { font-family: var(--f-title); font-size: 17px; letter-spacing: 0.32em; text-transform: uppercase; color: var(--ink-faded); margin: 0 0 6px; }
+/* the one plain line under the name (#4671): what the game is, on the page and not behind the (?) */
+.title .plain { font-family: var(--f-book); font-size: 19px; line-height: 1.35; color: var(--ink); max-width: 30ch; margin: 4px auto 14px; text-wrap: balance; }
 .title .subtitle { font-family: var(--f-book); font-style: italic; font-size: 18px; color: var(--ink-faded); max-width: 30ch; margin: 0; }
 .title .recto > .flourish { margin: 12px auto 4px; }
 .title .menu { gap: 12px; width: min(380px, 100%); }
@@ -139,7 +141,7 @@
   .title .plate { width: min(260px, 80%); }
 }
 
-/* --- the Bog Witch's offer: a loose sheet, the five pinned to it ------------------------------------------------- */
+/* --- the Book's five: a loose sheet, the five pinned to it ------------------------------------------------- */
 .starters { background: radial-gradient(ellipse at center, rgba(10, 8, 4, 0.4), rgba(5, 3, 1, 0.9)); }
 .starters .sheet { max-width: 1320px; margin: 8px auto; padding: 32px clamp(16px, 3vw, 40px) 36px; }
 .paper .card.starter { background: rgba(255, 249, 232, 0.4); border: 1.5px solid var(--ink-line); border-radius: 3px; box-shadow: 2px 3px 0 rgba(70, 42, 18, 0.12); font-family: var(--f-book); font-size: 15px; }
@@ -175,7 +177,7 @@
 .journal header h1 .chapter { display: none; }
 .journal .opening { text-align: center; margin: 0 0 10px; }
 .journal .leaf .opening .frontis { display: flex; justify-content: center; margin: 0 0 2px; } /* over .select:not(.book) .frontis */
-.journal .opening .witch { max-width: 520px; margin: 4px auto 10px; }
+.journal .opening .spoken { max-width: 520px; margin: 4px auto 10px; }
 .journal .opening .demand { text-align: center; max-width: 520px; margin: 0 auto 12px; }
 /* after the first opening the demand is a single running line in the Book's hand, signed in the same line (#3747) */
 .journal .opening.slim { margin: 10px 0 14px; padding-bottom: 8px; border-bottom: 1px solid rgba(60, 40, 20, 0.18); }
@@ -855,7 +857,7 @@ body > .gc-dialog .gc-card::after { content: "Of the reader's hands"; right: 22p
   .select.book .lib { z-index: 2; top: 12px; }
   .select.book { padding-top: 58px; } /* room for the boards and the Librarian's key over them */
 }
-/* the Bog Witch's five as specimen cards pinned to her sheet (#3604 round 45): each a slip of paper a shade paler
+/* the Book's five as specimen cards pinned to its page (#3604 round 45): each a slip of paper a shade paler
  * than the sheet, a brass-headed pin through its top, a shadow under it, its own slant; picked, a red thread
  * ties it off (the pin goes red) */
 .paper .card.starter { position: relative; overflow: visible; border: 0; border-radius: 1px; background: rgba(255, 249, 232, 0.5); box-shadow: 2px 5px 8px rgba(40, 20, 5, 0.28), 0 0 0 1px rgba(70, 42, 18, 0.18); }
@@ -874,7 +876,7 @@ body > .gc-dialog .gc-card::after { content: "Of the reader's hands"; right: 22p
 .paper .radar polygon:not(.grid):not(.was), .select.book .radar polygon:not(.grid):not(.was) { filter: url(#ruled); }
 /* set as a book sets prose (#3604 round 51): the long passages justified and hyphenated, the last line left ragged,
  * so a column reads as type on a page, not as a web paragraph */
-.folio .ground .legend, .folio .ground .body, .paper .pages li, .paper .lore p, .starters .sheet > .witch, .result .note > p:not(.demand) {
+.folio .ground .legend, .folio .ground .body, .paper .pages li, .paper .lore p, .starters .sheet > .spoken, .result .note > p:not(.demand) {
   text-align: justify; hyphens: auto; -webkit-hyphens: auto; text-wrap: pretty; }
 .paper .pages li.unwritten { border-bottom: 0; font-style: italic; color: var(--ink-faded); text-align: right; padding-right: 8px; }
 .paper .lineup li, .paper .resting li { border-bottom: 1px solid var(--ink-line); }
@@ -895,7 +897,7 @@ body > .gc-dialog .gc-card::after { content: "Of the reader's hands"; right: 22p
 .paper ol.book-notes li { font-family: var(--f-hand); font-size: 20px; color: var(--blood); line-height: 1.2; padding: 4px 0; transform: rotate(-0.8deg); }
 .paper ol.book-notes li:nth-child(even) { transform: rotate(0.6deg); padding-left: 10px; }
 .paper ol.book-notes li:not(:first-child) { opacity: 0.78; }
-/* the first frame is the book (#3604 round 57): behind the title scroll and the Bog Witch's sheet the arena dims and
+/* the first frame is the book (#3604 round 57): behind the title scroll and the Book's five the arena dims and
  * goes out of focus, so the crowd stops reading through and the paper is what you see */
 .title, .starters { backdrop-filter: blur(4px) brightness(0.55) sepia(0.25); -webkit-backdrop-filter: blur(4px) brightness(0.55) sepia(0.25); }
 /* the field legend's dots as drops of coloured wax (#3604 round 58): raised, a highlight up and to the left, a dark
@@ -921,7 +923,7 @@ body > .gc-dialog .gc-card button.gc-sec-h svg:last-child { opacity: 0.5; }
   .paper .card.starter:hover, .paper .card.starter:focus-visible, .paper .card.starter.on { z-index: 5; }
 }
 /* a picked slip is marked in ink, not framed (#3604 round 61): no red box, a hand-drawn red ring loops round its name
- * and its number is written in red in the Witch's hand */
+ * and its number is written in red in the Book's hand */
 .paper .card.starter.on { box-shadow: 3px 8px 12px rgba(40, 20, 5, 0.32), 0 0 0 1px rgba(70, 42, 18, 0.25); }
 .paper .card.starter .pick { background: none; box-shadow: none; color: var(--blood); font-family: var(--f-hand); font-size: 26px; width: auto; height: auto; margin-left: 8px; transform: rotate(-8deg); }
 .paper .card.starter.on b { position: relative; }
@@ -944,9 +946,9 @@ body > .gc-dialog .gc-card button.gc-sec-h svg:last-child { opacity: 0.5; }
 .chart .peaks { fill: none; stroke: #5e4630; stroke-width: 0.55; stroke-linejoin: round; opacity: 0.7; }
 .chart .trees { fill: rgba(61, 86, 52, 0.35); stroke: #3d5634; stroke-width: 0.4; opacity: 0.75; }
 .chart .waves { fill: none; stroke: #5e4630; stroke-width: 0.45; opacity: 0.5; }
-/* lines broken as a scribe breaks them (#3604 round 68): the Book's demands, the Witch's words and headings balanced
+/* lines broken as a scribe breaks them (#3604 round 68): the Book's demands, its words over its five and headings balanced
  * across their lines, so no word is left alone on the last */
-.paper .demand, .paper h1, .paper h2, .paper h3, .paper .witch, .paper .tag { text-wrap: balance; }
+.paper .demand, .paper h1, .paper h2, .paper h3, .paper .spoken, .paper .tag { text-wrap: balance; }
 /* a result note's line from the Book is in its own hand at its own size, not the note's body size (#3604 round 69) */
 .result .note p.demand { font-size: 23px; }
 /* the fog lifts as the page is read (#3604 round 70): a walked region's clearing grows out of its ring when the chapter
@@ -1020,7 +1022,7 @@ body > .gc-dialog .gc-card button.gc-sec-h svg:last-child { opacity: 0.5; }
   .result .note .note-plate { width: calc(124 * var(--u)); } /* a little under scale: a journey note has the most lines */
   .result .note .note-plate .initial { font-size: calc(52 * var(--u)); }
   .result::before { padding-top: calc(296 * var(--u)); font-size: calc(19 * var(--u));
-    background: var(--ink-witch) 50% calc(132 * var(--u)) / calc(150 * var(--u)) calc(80 * var(--u)) no-repeat, var(--ink-ring) 50% calc(64 * var(--u)) / calc(216 * var(--u)) calc(216 * var(--u)) no-repeat,
+    background: var(--ink-cauldron) 50% calc(132 * var(--u)) / calc(150 * var(--u)) calc(80 * var(--u)) no-repeat, var(--ink-ring) 50% calc(64 * var(--u)) / calc(216 * var(--u)) calc(216 * var(--u)) no-repeat,
       url("/paper/gutter.png") calc(100% + 167px) 0 / 320px 384px repeat-y, var(--parchment); }
 } }
 /* a single leaf (a phone, or a browser that can't deckle the spread) is a set size, not the size of its words: the
@@ -1335,7 +1337,7 @@ body.in-fight > .gc-dialog { opacity: 0.74; }
 .about[popover] { background: var(--parchment); border: 2px solid #b48b4f; padding: 24px 28px; color: var(--ink-b); font-family: var(--f-book); font-size: 17px; line-height: 1.45; box-shadow: 0 18px 36px rgba(0, 0, 0, 0.6); }
 .about .subtitle { max-width: none; }
 .about .tag { font-family: var(--f-hand); font-size: 19px; color: var(--ink-faded); }
-.about .witch { color: var(--moss); font-style: italic; }
+.about .spoken { color: var(--moss); font-style: italic; }
 .about .keys { font-size: 15px; color: var(--ink-b); max-width: none; margin: 0 0 10px; }
 .paper button.info, .select button.info { background: none; border: 1.5px solid currentColor; border-radius: 50%; color: var(--ink-faded); font-size: 16px; }
 .paper button.info::before { display: none; }
@@ -1360,7 +1362,7 @@ body.in-fight > .gc-dialog { opacity: 0.74; }
 .select.book .slip .row button:is(#cards, #pickerBack)::before { content: "or "; font-family: var(--f-book); font-style: italic; font-size: 16px; color: var(--ink-faded); text-shadow: none; text-decoration: none; display: inline-block; margin-right: 5px; }
 .select.book .slip .row { column-gap: 8px; }
 
-/* --- the witch's sheet fills the screen, and Set out is the one big thing to press (#4671) ---------------------- */
+/* --- the Book's page fills the screen, and Set out is the one big thing to press (#4671) ---------------------- */
 .starters { padding: 16px; display: flex; }
 .starters .sheet { flex: 1; width: 100%; min-height: calc(100dvh - 32px); margin: 0 auto; display: flex; flex-direction: column; }
 .starters .sheet > .five { flex: 1; align-content: center; margin: 12px auto; width: 100%; }
@@ -1422,7 +1424,7 @@ body.in-fight > .gc-dialog { opacity: 0.74; }
   .result .capture-sheet :is(.vs, ol.moves) { font-size: calc(14 * var(--u)); }
 } }
 
-/* --- each of the witch's five in a window on its card, shadow-boxing (src/spar.ts, #4670) ------------------------ */
+/* --- each of the Book's five in a window on its card, shadow-boxing (src/spar.ts, #4670) ------------------------ */
 .spar-layer { position: fixed; inset: 0; width: 100vw; height: 100vh; pointer-events: none; z-index: 40; }
 .spar-layer[hidden] { display: none; }
 .starters .card.starter .spar-win { display: block; width: 100%; aspect-ratio: 16 / 9; margin: 6px 0 2px; border: 1px solid var(--ink-line); border-radius: 2px; background: radial-gradient(ellipse at 50% 80%, rgba(255, 249, 232, 0.55), rgba(196, 170, 128, 0.35)); }

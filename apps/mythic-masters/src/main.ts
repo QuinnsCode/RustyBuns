@@ -45,7 +45,7 @@ import { plantBudget, setPlantBudget } from "./world/flora.ts";
 import { pickQuality, QUALITY } from "@rustybuns/util/quality";
 import { tutorial } from "@rustybuns/util/tutorial";
 import { accountChip, achieve, achievements, canSignIn, finishSignIn, fresh, login, reportButton } from "./account.ts";
-import { asCreature, atLevel, bind, boundLine, PARTY_MAX, downed, heal, hpOf, wound, bindBelow, bindChance, clearSection, cleared, gainXp, INK, loadJourney, moveUp, mythicOf, newJourney, nextUp, call, owns, PICKS, rest, SAVE_KEY, SECTIONS, sections, see, slots, STARTERS, TRAIL_REGIONS, toNext, witchSays, type Journey, mend, maul } from "./journey.ts";
+import { asCreature, atLevel, bind, boundLine, PARTY_MAX, downed, heal, hpOf, wound, bindBelow, bindChance, clearSection, cleared, gainXp, INK, loadJourney, moveUp, mythicOf, newJourney, nextUp, call, owns, PICKS, rest, SAVE_KEY, SECTIONS, sections, see, slots, STARTERS, TRAIL_REGIONS, toNext, bookSays, type Journey, mend, maul } from "./journey.ts";
 import { LORE } from "./lore.ts";
 import { Bout, circleLineOf, handOf, knownOf, PAGE_INK, poolOf, ribbonsOf, summon, type Summoned } from "./grimoire.ts";
 import { deckDemandOf, demandOf, pageLineOf, reactionOf, settingsLineOf, SIGNATURE, thumbAt, worldLineOf, type Back, type Outcome } from "./demand.ts";
@@ -69,9 +69,8 @@ import { budgetQuality } from "@rustybuns/util/quality";
 import { identified, intro, type Subject } from "./casefile.ts";
 import { drowner } from "./drown.ts";
 import { ambience } from "./world/ambience.ts";
-import { findTape, ISLE_N, isleTapesFound, lightFire, sight, tapeOf, tapesFound, WITCH_CAMP, type Poi } from "./world/poi.ts";
+import { findTape, ISLE_N, isleTapesFound, lightFire, sight, tapeOf, tapesFound, type Poi } from "./world/poi.ts";
 import { lairLook, PACKS, type Pack } from "./packs.ts";
-import { regionsCleared, visit, WITCH } from "./witch.ts";
 import { approach as approachFaction, back as backAgain, deed, FACTION, factionsOf, fought as foughtFaction, hail as hailPost, postFought, postsIn, record as questRecord, reply as replyFaction, sectionCleared, waitingAll, type Ctx as FactionCtx, type Foe as FactionFoe, type Manned, type Scene } from "./factions/engine.ts";
 import { postSpot, stageSpot, walkedUp } from "./world/posts.ts";
 import { COAT_CSS, rivalsView, type Figure } from "./world/rivals-view.ts";
@@ -646,7 +645,7 @@ const world = worldView(scene, camera, {
   owns: (id) => !!journey && owns(journey, id),
   rumours: () => (journey?.factions?.met ?? []).flatMap((f) => FACTION[f].rumours),
   firstNight: () => { if (!journey || journey.nights) return false; journey.nights = 1; saveJourney(); return true; },
-  arrived: (g, fresh) => { if (fresh && worldUp && world.shown) director.play(memories.mark(arrival(g.n, world.here(), world.vista()), { id: `arrival:${g.n}`, scene: "arrival", title: `Arriving in ${g.name}`, args: { n: g.n } })); },
+  arrived: (g, fresh) => { if (fresh && worldUp && world.shown && journey) director.play(memories.mark(arrival(g.n, world.here(), world.vista()), { id: `arrival:${g.n}`, scene: "arrival", title: `Arriving in ${g.name}`, args: { n: g.n } })); },
   places: {
     log: () => journey,
     // A tape plays where it lies, once, and the journal keeps it. A fire is where you rest: lit the first time, saved every time.
@@ -679,8 +678,7 @@ const world = worldView(scene, camera, {
         return (first ? "An old cabin. The door bars from inside, and nothing comes in after dark." : "The old cabin.") + night();
       }
       const fresh = lightFire(journey, p), mended = heal(journey); saveJourney();
-      if (p.id === WITCH_CAMP) sitWithWitch();
-      else if (fresh) {
+      if (fresh) {
         // An island's fire is the island's (its pack id is the Book's region), not the port region the boat left from.
         const { region: n, isle } = world.state(), pk = isle && PACKS.find((q) => q.id === isle.id);
         say("campfire", pk ? { n, regionId: pk.id, region: pk.name } : { n, regionId: REGIONS[n - 1]?.id });
@@ -695,11 +693,10 @@ const world = worldView(scene, camera, {
       if (!director.beat) { const view = { x: p.x, y: world.groundAt(p.x, p.z) + 6, z: p.z }, k = journey.sights.length;
         director.play(memories.mark(lookout(p.name, world.here(), view, k), { id: `lookout:${p.id}`, scene: "lookout", title: p.name, sub: "Landmark", args: { name: p.name, k, vx: view.x, vy: view.y, vz: view.z } })); }
     },
-    // Travelling home to her camp sits you down with her too.
-    travelled: (p) => { if (p.id === WITCH_CAMP && sitWithWitch()) return WITCH.camp; },
     sign: (h) => { saveJourney(); const s = journey && stageOf(journey, h.id); if (s != null) online?.hunt(h.id, s); },
   },
   section: (g, k) => {
+    if (!journey) return; // a new game's Tape 1 has the pines to itself
     const key = `${g.n}:${k}`;
     if (!talked.has(key) && director.play(trail(g.id, k))) talked.add(key);
     if (k === SECTIONS - 1) say("trail-end", { n: g.n, regionId: g.id, region: g.name, mythic: mythicOf(g).name });
@@ -712,25 +709,30 @@ const world = worldView(scene, camera, {
   },
 });
 worldUp = true;
-/** The menu page open now (the title, the witch's sheet, a result note, the versus book), when no fight, walk, scene or compendium has the keys. */
+/** The menu page open now (the title, the Book's five, a result note, the versus book, the Book talking), when no fight, walk, scene or compendium has the keys. */
 function menuPage(): HTMLElement | null {
+  if (talking && !director.skippable) return talkEl; // the Book's talk stops the walk and the fight: the arrows walk its replies
   if ((m && !m.over) || world.shown || journalOpen || director.skippable) return null;
   return pages.open();
 }
 /** Close the fight and the cut-scene, and turn to `page` (or close the book on the scene). */
 function hideScreens(page: HTMLElement | null = null) { director.cut(); pending = null; $("#hud").hidden = true; pages.show(page); }
-function enterWorld() {
-  if (!journey) { showStarters(); return; }
+/** The fight's stage (the arena, its beasts) and the screens put away, for the world. */
+function clearStage() {
   for (const o of [arena, ...models, ...puppets.map((p) => p?.group)]) if (o) scene.remove(o);
   arena = null; models = []; puppets = [null, null]; m = null; trip = null;
   moveFx.clear();
   hideScreens();
+}
+function enterWorld() {
+  if (!journey) { showStarters(); return; }
+  clearStage();
   world.show(journey.party.map(asCreature));
   drawTogether();
   history.replaceState(null, "", room ? `?world=1&room=${room}` : partyId ? `?world=1&party=${partyId}` : "?world=1");
 }
 
-// --- the title, the Bog Witch's four, the Eldritch Compendium ------------------------------------------------------------
+// --- the title, a new game's opening, the Book's five, the Eldritch Compendium ------------------------------------------------------------
 let startingOver = false, signInNote = "";
 /** The title's sign-in row: the eqosys name once signed in. */
 function drawAccount() {
@@ -774,8 +776,9 @@ talkEl.hidden = true;
 document.body.append(talkEl);
 /** A beat happened: queue what the Book has to say about it, if anything. True when it had something. */
 function say(beat: Beat, ctx: Ctx = {}): boolean {
-  if (!journey) return false;
-  const mo = momentFor(beat, journey, { name: login()?.name, ...ctx });
+  const j = journey ?? opening;
+  if (!j) return false;
+  const mo = momentFor(beat, j, { name: login()?.name, ...ctx });
   if (!mo || talking?.m.talk.id === mo.talk.id || talks.some((t) => t.talk.id === mo.talk.id)) return false;
   talks.push(mo);
   return true;
@@ -808,8 +811,9 @@ function drawTalk() {
 /** Answer the open moment with reply `id`: this page's click, or the host's answer arriving at a guest's page. A click
  * on a held page does nothing; the host's own answer goes out to the party. */
 function replyBook(id: string, fromHost = false): string | null {
-  if (!talking || talking.said !== null || !journey || (!fromHost && !talkHold().canAnswer)) return null;
-  const talk = talking.m.talk.id, got = answerBook(journey, talking.m, id);
+  const j = journey ?? opening;
+  if (!talking || talking.said !== null || !j || (!fromHost && !talkHold().canAnswer)) return null;
+  const talk = talking.m.talk.id, got = answerBook(j, talking.m, id);
   if (!got) return null;
   if (!fromHost) readers?.answered(talk, id);
   saveJourney(); talking.said = got.said; drawTalk(); drawDemand();
@@ -821,26 +825,10 @@ talkEl.addEventListener("click", (e) => {
   if (!b || b.disabled) return;
   if (b.dataset.r) replyBook(b.dataset.r);
   else if (b.dataset.next !== undefined && talking) { talking.page++; drawTalk(); }
-  else if (b.dataset.go !== undefined) { talking = null; drawTalk(); }
+  else if (b.dataset.go !== undefined) { talking = null; drawTalk(); afterTalk(); }
 });
-// --- the Bog Witch's camp (src/witch.ts): walk up to it or travel there and she has a word for you ---------------
-let sitting: string | null = null;
-const witchEl = Object.assign(document.createElement("div"), { id: "witchVisit", className: "booktalk" });
-witchEl.hidden = true;
-document.body.append(witchEl);
-function drawWitch() {
-  witchEl.hidden = sitting === null;
-  witchEl.innerHTML = sitting === null ? ""
-    : `<div class="note paper" role="dialog" aria-label="${esc(WITCH.heading)}"><h2>${esc(WITCH.heading)}</h2><p class="witch">${esc(sitting)}</p><div class="replies"><button class="go" data-go>${icon("arrow-right")} ${esc(WITCH.goOn)}</button></div></div>`;
-}
-/** Sit at her fire: what she says for the regions you've cleared, saved as seen. False with no journey. */
-function sitWithWitch(): boolean {
-  if (!journey) return false;
-  sitting = visit(journey).say; saveJourney(); keys.clear(); drawWitch();
-  return true;
-}
-witchEl.addEventListener("click", (e) => { if ((e.target as Element).closest("[data-go]")) { sitting = null; drawWitch(); } });
-
+/** The Book has had its say: in a new game's opening, its five come next. */
+function afterTalk() { if (!journey && opening && !talking && !talks.length) showStarters(); }
 /** A jump link (`?faction=office.3`): a scratch journey at that step, the regions before it won, and you a few steps
  * from whoever waits there. Nothing of it is saved over your own journey. */
 function jumpToStage(id: string) {
@@ -881,7 +869,7 @@ function drawSheet() {
   const buttons = sheet.replies.length ? sheet.replies.map((r) => `<button data-r="${esc(r.id)}"${h.canAnswer ? "" : " disabled"}>${esc(r.say)}</button>`).join("")
     : sheet.team?.length ? `<button class="go" data-fight>${icon("shield")} Fight their ${sheet.team.length}</button><button data-go>${icon("map")} Walk on</button>`
     : `<button class="go" data-go>${icon("arrow-right")} Go on</button>`;
-  factionEl.innerHTML = `<div class="note paper" role="dialog" aria-label="${esc(sheet.who)}"><h2>${esc(sheet.who)}</h2>${sheet.said.map((s) => `<p class="witch">${esc(s)}</p>`).join("")}<div class="replies">${buttons}</div>${h.note ? `<p class="wait">${esc(h.note)}</p>` : ""}</div>`;
+  factionEl.innerHTML = `<div class="note paper" role="dialog" aria-label="${esc(sheet.who)}"><h2>${esc(sheet.who)}</h2>${sheet.said.map((s) => `<p class="spoken">${esc(s)}</p>`).join("")}<div class="replies">${buttons}</div>${h.note ? `<p class="wait">${esc(h.note)}</p>` : ""}</div>`;
 }
 const spoken = (...said: (string | null)[]) => said.filter((s): s is string => !!s);
 /** Walk up to faction f's waiting step: they meet you (the first time), say their piece and ask. False when nothing of theirs waits. */
@@ -1033,14 +1021,26 @@ function showTitle() {
   hideScreens($("#title"));
   history.replaceState(null, "", location.pathname);
 }
-// You take three of the witch's five; the first one you take leads.
+// --- a new game (#4671): Tape 1, then the Book opens and says the job, then its five, then the world ----------------
+/** A new game before the pick: the Book's talk has no journey to write into yet, so its reply is held here and
+ * written into the journey in begin(). `burnt` is the journey you burned, for what the Book says over its five. */
+let opening: Pick<Journey, "talk"> | null = null, burnt: Journey | null = null;
+function startOpening() {
+  burnt = journey; journey = null; opening = {}; chosen.length = 0;
+  try { localStorage.removeItem(SAVE_KEY); } catch { /* a private window */ }
+  talks.length = 0; talking = null; drawTalk();
+  world.reset(); clearStage(); world.show([]); // the pines, and nobody in them but you
+  director.play(memories.mark(abduction(world.here()), { id: "abduction", scene: "abduction", title: "Tape 1: the saucer", sub: "Nobody will believe this" }));
+  say("open", { n: 1, regionId: REGIONS[0]?.id }); // opens once the tape ends or is skipped
+}
+// You take three of the Book's five; the first one you take leads.
 const chosen: string[] = [];
 function showStarters() {
   world.hide();
   drawDemand(); // the Book's first demand, in its own hand, over the three you pick (with no journey yet: all of them, start with three)
   $("#starterCards").innerHTML = STARTERS.map((id) => {
     const c = creature(id), at = chosen.indexOf(id);
-    const said = witchSays(id, journey), took = !!journey && owns(journey, id); // on a second journey, what became of the ones you took is on the card
+    const last = journey ?? burnt, said = bookSays(id, last), took = !!last && owns(last, id); // on a second journey, what became of the ones you took is on the card
     return `<button class="card starter${at >= 0 ? " on" : ""}" data-id="${id}" aria-pressed="${at >= 0}" title="${esc(said)}"><b>${esc(c.name)}${at >= 0 ? `<i class="pick">${at + 1}</i>` : ""}</b><small>${esc(c.archetype)} · ${c.fields.join(" / ")}</small><span class="spar-win" aria-hidden="true"></span><em class="spar-says"></em>${radar(c)}${took ? `<p>${esc(said)}</p>` : ""}</button>`;
   }).join("");
   const go = $("#setOut") as HTMLButtonElement;
@@ -1049,7 +1049,7 @@ function showStarters() {
   hideScreens($("#starters"));
   spar ??= sparring(STARTERS.map(creature), (id) => $("#starterCards").querySelector<HTMLElement>(`.starter[data-id="${CSS.escape(id)}"] .spar-win`));
 }
-/** The witch's five shadow-boxing on their cards (src/spar.ts), made the first time her sheet opens. */
+/** The Book's five shadow-boxing on their cards (src/spar.ts), made the first time its page opens. */
 let spar: ReturnType<typeof sparring> | null = null;
 // a pointer on a stat's word keeps that beast on the stat's drill
 $("#starterCards").addEventListener("pointerover", (e) => {
@@ -1061,17 +1061,18 @@ $("#starterCards").addEventListener("pointerleave", () => spar?.hold(null, null)
 function begin(picks: readonly string[]): boolean {
   const j = newJourney(picks);
   if (!j) return false;
-  journey = j; chosen.length = 0; saveJourney(); world.reset(); enterWorld();
-  director.play(memories.mark(abduction(world.here()), { id: "abduction", scene: "abduction", title: "Tape 1: the saucer", sub: "Nobody will believe this" })); // tape 1
-  // the first page is said somewhere too, so a callback to it can count the regions since
-  const n = world.state().region;
-  say("open", { n, regionId: REGIONS[n - 1]?.id });
+  // the Book's open talk was had before there was a journey: what you said to it goes in now
+  if (opening?.talk) j.talk = opening.talk;
+  const opened = !!opening;
+  journey = j; opening = null; burnt = null; chosen.length = 0; saveJourney();
+  if (!opened) world.reset(); // a harness's begin() with no opening still starts in the pines
+  enterWorld();
   return true;
 }
 $("#continue").addEventListener("click", () => enterWorld());
 $("#newGame").addEventListener("click", () => {
   if (journey && !startingOver) { startingOver = true; $("#newGame").innerHTML = `${icon("triangle-alert")} ${esc(LANDING.title.startOver)}`; return; }
-  showStarters();
+  startOpening();
 });
 $("#duelBtn").addEventListener("click", () => versus.open());
 $("#versus").addEventListener("click", () => { hideScreens($("#select")); history.replaceState(null, "", location.pathname); });
@@ -1149,14 +1150,14 @@ function drawJournal(edit = true) {
         : `<p class="dim">Nothing resting yet. Bind one when the line-up is full and the compendium keeps it.</p>`)
       // the Book's ledger on you, every note it has kept, newest first, in its own hand
       + (notesOf(j).length ? `<h2 class="of-you">What the Book has written of you</h2><ol class="book-notes">${[...notesOf(j)].reverse().map((n) => `<li>${esc(n)}</li>`).join("")}</ol>` : "")
-      + `<i class="vignette rest" aria-hidden="true">${emblem("witch")}</i>`);
+      + `<i class="vignette rest" aria-hidden="true">${emblem("cauldron")}</i>`);
   } else if (tab === "bestiary") {
     const owned = new Set([...j.party, ...j.journal].map((mm) => mm.id));
     const groups = [...new Set(ROSTER.map((c) => c.region))].sort((a, b) => a - b);
     const known = (c: Creature): Known => knownOf(j, c.id, tierOf(c.id));
     // a region of one or two beasts leaves bare paper beside them: the scribe filled it with a small engraving, one of
     // the book's own, picked by the region's number (it says nothing of the beasts)
-    const VIGNETTES = ["lineup", "regions", "title", "witch", "bestiary"] as const;
+    const VIGNETTES = ["lineup", "regions", "title", "cauldron", "bestiary"] as const;
     const region = (n: number) => { const here = ROSTER.filter((c) => c.region === n);
       const met = here.filter((c) => known(c) !== "unknown").length; // a gloss in the Book's hand: how much of this country you know
       return `<h3>${n}. ${esc(REGIONS[n - 1]!.name)}<small class="gloss">${met ? `${met} of ${here.length} met` : "none met"}</small></h3><div class="entries">${here.map((c) => entry(c, known(c), tierOf(c.id), dots(c), j.seen.includes(c.id))).join("")}`
@@ -1214,7 +1215,7 @@ function drawJournal(edit = true) {
   else if (front !== tab) front = null;
   const verso = body.querySelector(".verso"), bare = !!verso && ![...verso.children].some((e) => (e as HTMLElement).offsetHeight > 0);
   verso?.insertAdjacentHTML("afterbegin", front || bare ? `<div class="opening"><div class="frontis" aria-hidden="true">${emblem(tab)}</div><hr class="flourish" />`
-    + `<p class="witch">Left in the Pine Barrens by the ones who fled: what is written here rests here, and comes when it&rsquo;s called.</p><p class="demand" data-page></p></div>`
+    + `<p class="spoken">Left in the Pine Barrens by the ones who fled: what is written here rests here, and comes when it&rsquo;s called.</p><p class="demand" data-page></p></div>`
     : `<div class="opening slim"><p class="demand" data-page></p></div>`);
   // each chapter's head is the Book's line on your record there (src/demand.ts pageLineOf), not the title's demand
   const said = pageLineOf(tab, j);
@@ -1319,19 +1320,19 @@ $("#journalBody").addEventListener("click", (e) => {
   world.show(j.party.map(asCreature));
 });
 $("#closeJournal").innerHTML = icon("x");
-for (const [id, c] of [["#titleFrontis", "title"], ["#witchFrontis", "witch"], ["#versusFrontis", "title"], ["#youEmblem", "lineup"], ["#foeEmblem", "bestiary"]] as const) $(id).innerHTML = emblem(c); // the title scroll's, the Bog Witch's and the versus book's engravings
+for (const [id, c] of [["#titleFrontis", "title"], ["#bookFrontis", "title"], ["#versusFrontis", "title"], ["#youEmblem", "lineup"], ["#foeEmblem", "bestiary"]] as const) $(id).innerHTML = emblem(c); // the title scroll's, the Book's five's and the versus book's engravings
 $("#titleRing").innerHTML = ring(); // the thorn ring round the title page's frontispiece (#3662 round 74)
 // the facing leaves of the Settings and result spreads carry an engraving each, in a thorn ring (#3671 round 81)
-for (const [name, c] of [["--verso-hands", "title"], ["--verso-rest", "witch"]] as const) document.documentElement.style.setProperty(name, `${inkUrl(emblem(c))} 50% 132px / 150px 80px no-repeat, ${inkUrl(ring())} 50% 64px / 216px 216px no-repeat`);
+for (const [name, c] of [["--verso-hands", "title"], ["--verso-rest", "cauldron"]] as const) document.documentElement.style.setProperty(name, `${inkUrl(emblem(c))} 50% 132px / 150px 80px no-repeat, ${inkUrl(ring())} 50% 64px / 216px 216px no-repeat`);
 // the result spread is drawn to the screen's size (#3963), so it places the same two engravings itself, in its own units
-document.documentElement.style.setProperty("--ink-witch", inkUrl(emblem("witch")));
+document.documentElement.style.setProperty("--ink-cauldron", inkUrl(emblem("cauldron")));
 document.documentElement.style.setProperty("--ink-ring", inkUrl(ring()));
 $("#closeJournal").addEventListener("click", () => openJournal(false));
 $("#openJournal").innerHTML = icon("book-open");
 for (const b of document.querySelectorAll<HTMLElement>("button.info")) b.innerHTML = icon("circle-help"); // each opens its screen's words (a popover)
 $("#openJournal").addEventListener("click", () => openJournal());
 
-// --- binding: the witch's ink, B in a fight ---------------------------------------------------------------------------
+// --- binding: the Book's ink, B in a fight ---------------------------------------------------------------------------
 let bindNote = "";
 function tryBind() {
   if (inCoop()) { coopTry(); return; }
@@ -1821,7 +1822,7 @@ const MOVE_CARD = `${KEY}.moveCard`;
 let moveCardOn = (() => { try { return localStorage.getItem(MOVE_CARD) !== "off"; } catch { return true; } })();
 const moveCard = Object.assign(document.createElement("aside"), { id: "moveKeys", className: "move-keys", hidden: true, ariaLabel: "Movement keys" });
 document.body.append(moveCard);
-const cineEl = $("#cine");
+const cineEl = $("#cine"), goalEl = $("#worldHud .goal");
 let moveCardFor: "fight" | "hunt" | "world" | null = null;
 function drawMoveCard(where: "fight" | "hunt" | "world") {
   moveCardFor = where;
@@ -2108,6 +2109,8 @@ function frame(now: number) {
   const dt = Math.min(0.1, (now - last) / 1000); last = now;
   padEdges();
   spar?.show(!$("#starters").hidden);
+  // the first goal stays on screen in the world until it is done: the first keeper of the Pine Barrens beaten
+  goalEl.hidden = !(world.shown && journey && cleared(journey, 1) === 0 && !talking && cineEl.hidden);
   crowdOf(arena)?.update(dt);
   tickArena(arena, performance.now() / 1000);
   const moving = world.shown || (!!m && !m.over && !bots[0]);
@@ -2157,7 +2160,7 @@ function frame(now: number) {
     hud(m);
   }
   if (!world.shown) rivals.hide();
-  if (world.shown && !paused && !journalOpen && !talking && sitting === null && !sheet) {
+  if (world.shown && !paused && !journalOpen && !talking && !sheet) {
     stepRivals(now);
     pollPad();
     const still = director.holding, turn = held || still ? 0 : padAim.sx * 1.8 * dt + lookTurn;
@@ -2348,7 +2351,7 @@ Object.assign(window, {
       say: (beat: Beat, ctx: Ctx = {}) => { say(beat, ctx); nextTalk(); return talking?.m.talk.id ?? null; },
       turn: () => { if (talking && talking.said === null && talking.page < talking.m.lead.length) { talking.page++; drawTalk(); } return talking?.page ?? 0; },
       answer: (id: string) => replyBook(id, !talkHold().canAnswer),
-      close: () => { talking = null; drawTalk(); nextTalk(); },
+      close: () => { talking = null; drawTalk(); nextTalk(); afterTalk(); },
       party: (p: { host: boolean; hostName: string } | null) => { talkParty = p; drawTalk(); },
     },
     /** The three factions behind you (src/factions/engine.ts): `state()` who you met and in what order, the steps done, the flags, each one's
@@ -2372,14 +2375,11 @@ Object.assign(window, {
       hail: (id: string) => { const p = postAt(id); return !!p && facePost(p) && sheet; },
       postFought: (id: string, won: boolean) => { const p = postAt(id); const said = journey && p ? postFought(journey, p, won, factionCtx()) : ""; saveJourney(); return said; },
     },
-    /** The Bog Witch's camp (src/witch.ts): `state()` her camp, what she is saying and the count she last saw, `sit()` as if you
-     * walked up to her fire, `close()` reads past her line. `world.fastTravel(witch.state().camp)` once it's lit goes there. */
-    witch: {
-      /** The five on her sheet shadow-boxing (#4670): each one's drill now (which stat), where it stands, its sim's tick. */
+    /** A new game before the pick (#4671): `state()` whether it is on, the open talk's reply held for begin() and the pick
+     * page up; `spar()` the Book's five shadow-boxing on that page (#4670): each one's drill now (which stat), where it stands, its sim's tick. */
+    opening: {
+      state: () => ({ on: !!opening, talk: opening?.talk ?? null, picking: !$("#starters").hidden, chosen: [...chosen] }),
       spar: () => spar?.state() ?? null,
-      state: () => ({ camp: WITCH_CAMP, saying: sitting, seen: journey?.witch ?? null, cleared: journey ? regionsCleared(journey) : 0 }),
-      sit: () => sitWithWitch() && sitting,
-      close: () => { sitting = null; drawWitch(); },
     },
     /** The stadium crowd (src/crowd.ts): `state()` (people, cast, draw calls, clips, what's playing), `show(clip)` the stands up close doing one take,
      * `play(clip | null)` every seat doing it (null: their own, on a cheer), `cheer(0..1)` as if a hit landed. */

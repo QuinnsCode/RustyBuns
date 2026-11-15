@@ -270,7 +270,7 @@
       "hail": [
         { "text": "In 1910 William T. Cox published a field guide to the beasts of the lumber camps. The Institute treats it as a protocol. The grant has 26 days left." },
         { "text": "The Book holds a squonk. Good. A squonk weeps, and I need a sample of the tears. The Institute treats the 1910 field guide as a protocol. The grant has 26 days left.", "when": { "owns": ["squonk"] } },
-        { "text": "Your first pick from the Bog Witch was a squonk. It wept on her sheet. I have a photograph of the stain. I need a fresh sample.", "when": { "starter": "squonk" } },
+        { "text": "Your first pick from the Book was a squonk. It wept on the page. I have a photograph of the stain. I need a fresh sample.", "when": { "starter": "squonk" } },
         { "text": "The Book holds no squonk. That is a gap in your catalogue and in mine. I need tears from one. The grant has 26 days left.", "when": { "lacks": ["squonk"] } },
         { "text": "The Book holds a hidebehind. Nobody sees one, because it is always behind the observer. You are a Carrier with one in front. I want that explained. First, the squonk.", "when": { "owns": ["hidebehind"] } },
         { "text": "The Lamplighters use the camp tales as a code book, and you kept their tale. I use the 1910 field guide as a protocol. One of us reads it wrong.", "when": { "flags": ["tale-kept"] } },

@@ -79,18 +79,18 @@ The demands and receipts in `src/demand.ts` (`demandOf`, `reactionOf`, `deckDema
 | Compendium line-up: one hurt | The Hodag leads. The Squonk is dripping on my page. | no |
 | Compendium line-up: one down | The Hodag leads. The Squonk is down. A fire, before you walk. | yes |
 | Compendium line-up: the lead down | The Hodag leads, flat on its back. Move it down or wake it. | yes |
-| Compendium bestiary: only starters | Three from the witch's sheet. You have not bound one yourself. Yet. | yes |
+| Compendium bestiary: only starters | Three from my own five. You have not bound one yourself. Yet. | yes |
 | Compendium bestiary: the last bind | Last in: the Squonk, the Sunk Road. The ink is dry. Next. | yes |
 | Compendium regions: nothing walked | Not one page written. The Pine Barrens are not going to walk themselves. | yes |
 | Compendium regions: the last page | Wharton Forest, Pine Barrens: the last page you wrote me. Write the next. | yes |
 | Compendium regions: a region done | Pine Barrens, the last page. Its mythic's number is in here somewhere. | no |
 | Compendium regions: losing | 3 lost in a row past the Sunk Road. Same country, same mud. Mend them first. | yes |
-| Witch's sheet, a second journey: the lead (her voice, not the Book's: `witchSays` in `src/journey.ts`) | The Squonk led for you last time. Level 14, and it came back expecting to lead again. | no |
-| Witch's sheet: the lead, never fought | The Squonk led for you last time and never got past level 5. It wants a second go. | no |
-| Witch's sheet: one left down | The Hodag came back to my door flat out. Level 9. It has not forgiven you. | no |
-| Witch's sheet: one shelved in the journal | You took the Jackalope, then shelved it in that book. It came back level 5, sulking. | no |
-| Witch's sheet: one taken | You took the Hodag last time. It came back level 12 and twice as hungry. (never fought: "came back level 5 and bored"; a third pick: "for the walk and nothing else. Still level 5. Still hungry.") | no |
-| Witch's sheet: one left behind (tooltip only) | You left the Agropelter with me last time. It noticed. | no |
+| The Book's five, a second journey: the lead (`bookSays` in `src/journey.ts`) | The Squonk led for you last time. Level 14, and it came back expecting to lead again. | no |
+| The Book's five: the lead, never fought | The Squonk led for you last time and never got past level 5. It wants a second go. | no |
+| The Book's five: one left down | The Hodag came back to me flat out. Level 9. It has not forgiven you. | no |
+| The Book's five: one shelved in the journal | You took the Jackalope, then shelved it on my back pages. It came back level 5, sulking. | no |
+| The Book's five: one taken | You took the Hodag last time. It came back level 12 and twice as hungry. (never fought: "came back level 5 and bored"; a third pick: "for the walk and nothing else. Still level 5. Still hungry.") | no |
+| The Book's five: one left behind (tooltip only) | You left the Agropelter in me last time. It noticed. | no |
 | Settings, from the title | Move the keys where you like. The accounts stay where they are. | no |
 | Settings, over a fight or the walk | Rest if you must. The ledger does not pause. | no |
 | Settings, quill sound off | You turned my quill down. I am still writing. | no |
