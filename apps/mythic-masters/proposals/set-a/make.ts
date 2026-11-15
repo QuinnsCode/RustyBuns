@@ -426,7 +426,7 @@ function sphinx() {
     bib: true,
     palette: {
       fur: [0.8, 0.63, 0.38, 0.85, 0], tuft: [0.58, 0.4, 0.2, 0.9, 0], belly: [0.92, 0.82, 0.62, 0.85, 0], stripe: [0.5, 0.36, 0.2, 0.9, 0],
-      face: [0.86, 0.68, 0.48, 0.55, 0, 0], lip: [0.55, 0.28, 0.2, 0.6, 0], kohl: [0.05, 0.04, 0.06, 0.4, 0],
+      face: [0.86, 0.68, 0.48, 0.55, 0, 0], lip: [0.6, 0.33, 0.25, 0.6, 0], kohl: [0.05, 0.04, 0.06, 0.4, 0],
       cloth: [0.1, 0.22, 0.58, 0.55, 0], gold: [0.95, 0.74, 0.28, 0.35, 0.7], feather: [0.9, 0.78, 0.52, 0.75, 0], primary: [0.7, 0.54, 0.32, 0.75, 0],
       eye: [0.95, 0.93, 0.86, 0.3, 0], pupil: [0.05, 0.04, 0.05, 0.2, 0], mouth: [0.3, 0.08, 0.06, 0.6, 0],
       nose: [0.42, 0.3, 0.22, 0.5, 0], dark: [0.1, 0.07, 0.05, 0.6, 0], fang: [0.95, 0.92, 0.84, 0.3, 0], claw: [0.3, 0.24, 0.18, 0.4, 0],
@@ -485,23 +485,27 @@ function sphinx() {
   // the neck a column under the head, the throat in front
   b.blobs.push({ at: "neck", off: [h(-0.01), h(0.12), 0], r: [h(0.1), h(0.2), h(0.095)], rot: [0, 0, -12] });
   const on = (p: V, d: V, sink = 0): V => { const q = skin(ells, p, d), n = norm(d); return [f4(q[0] - n[0] * sink), f4(q[1] - n[1] * sink), f4(q[2] - n[2] * sink)]; };
-  const nose = on([h(0.06), h(-0.04), 0], [1, 0, 0], h(0.01));
   b.blobs.push(
-    { at: "head", off: add(nose, [h(0.012), h(-0.005), 0]), r: [h(0.028), h(0.05), h(0.02)], rot: [0, 0, -14] },
+    // the brow ridge, over the eyes
     { at: "head", off: on([h(0.06), h(0.045), 0], [1, 0.1, 0], h(0.02)), r: [h(0.03), h(0.022), h(0.085)] },
-    // cheekbones
-    ...pair("head", on([h(0.05), h(-0.03), h(0.05)], [0.8, 0, 0.6], h(0.025)), [h(0.035), h(0.03), h(0.03)]),
+    // cheekbones, high and out under the eyes, and the jaw's corners below the ears, so the face is a man's square
+    // jaw tapering to the chin and not one egg
+    ...pair("head", on([h(0.05), h(-0.02), h(0.06)], [0.7, 0, 0.7], h(0.022)), [h(0.035), h(0.03), h(0.03)]),
+    ...pair("head", on([h(0.0), h(-0.1), h(0.07)], [0.2, -0.3, 1], h(0.03)), [h(0.05), h(0.035), h(0.035)]),
   );
   b.paint = [...(b.paint ?? []), { nodes: ["head", "snout"], material: "face" }];
   b.parts.push(
+    // a straight nose: a wedge from the bridge between the eyes down and forward to a broad tip, its own part in the
+    // face's skin (a blob this small melts in the blend, and a round one read as a snout)
+    { kind: "horn", at: "head", off: on([h(0.06), h(0.02), 0], [1, 0.15, 0], h(0.012)), dir: [0.6, -1, 0], len: h(0.08), base: h(0.012), tip_base: h(0.026), flat: 0.7, curve: 0, material: "face" },
     // almond eyes under the brow, lined in kohl that runs back toward the temple
     { kind: "eye", at: "head", off: on([h(0.06), h(0.015), h(0.04)], [1, 0, 0.45], h(0.014)), r: [h(0.016), h(0.014), h(0.03)], rot: [0, -18, 0], mirror: true, material: "eye" },
     { kind: "eye", at: "head", off: on([h(0.06), h(0.015), h(0.038)], [1, 0, 0.42], h(0.003)), r: h(0.011), mirror: true, material: "pupil" },
     { kind: "ridge", at: "head", off: on([h(0.06), h(0.032), h(0.03)], [1, 0.1, 0.4], h(0.004)), dir: [-0.35, 0.05, 1], len: h(0.085), base: h(0.009), curve: 15, bend: [0, 1, 0], mirror: true, material: "kohl" },
     { kind: "ridge", at: "head", off: on([h(0.06), h(0.055), h(0.03)], [1, 0.4, 0.35], h(0.004)), dir: [-0.3, 0, 1], len: h(0.08), base: h(0.011), curve: 20, bend: [0, 1, 0], mirror: true, material: "kohl" },
     // full lips, closed
-    { kind: "ridge", at: "head", off: on([h(0.06), h(-0.088), 0.0001], [1, 0, 0], h(0.006)), dir: [0, 0, 1], len: h(0.055), base: h(0.015), curve: 30, bend: [-1, 0, 0], mirror: true, material: "lip" },
-    { kind: "ridge", at: "head", off: on([h(0.06), h(-0.105), 0.0001], [1, -0.1, 0], h(0.006)), dir: [0, 0, 1], len: h(0.046), base: h(0.015), curve: 25, bend: [-1, 0, 0], mirror: true, material: "lip" },
+    { kind: "ridge", at: "head", off: on([h(0.06), h(-0.088), 0.0001], [1, 0, 0], h(0.006)), dir: [0, 0, 1], len: h(0.052), base: h(0.013), curve: 30, bend: [-1, 0, 0], mirror: true, material: "lip" },
+    { kind: "ridge", at: "head", off: on([h(0.06), h(-0.105), 0.0001], [1, -0.1, 0], h(0.006)), dir: [0, 0, 1], len: h(0.044), base: h(0.013), curve: 25, bend: [-1, 0, 0], mirror: true, material: "lip" },
     // the plaited beard: a long block hung from the chin, banded gold
     { kind: "horn", at: "head", off: on([h(0.05), h(-0.15), 0], [0.5, -1, 0], h(0.01)), dir: [0.12, -1, 0], len: h(0.13), base: h(0.022), tip_base: h(0.028), flat: 0.65, material: "cloth" },
   );
@@ -514,7 +518,7 @@ function sphinx() {
     base: f4(w), tip_base: f4(w), flat: 0.22, curve: f4(curve), material: gold ? "gold" : "cloth", ...extra,
   });
   // the cap: meridians from the brow over the crown to the nape, on a sphere round the cranium, alternating colours
-  const C: V = [h(-0.02), h(0.02), 0], R = h(0.15), end = 205;
+  const C: V = [h(-0.02), h(0.02), 0], R = h(0.15), end = 215;
   for (let i = 0; i <= 12; i++) {
     const phi = -78 + i * 13, gold = i % 2 === 1, r = R + (gold ? h(0.004) : 0);
     const a0 = rad(36 + 22 * Math.abs(phi) / 78), f = rad(phi);
@@ -526,8 +530,8 @@ function sphinx() {
   // a flap behind each cheek: level bands stacked from the temple to the shoulder, each longer and further out
   for (let i = 0; i < 10; i++) {
     const t = i / 9, gold = i % 2 === 1;
-    b.parts.push(ribbon([h(0.035 - 0.015 * t), h(0.03 - 0.3 * t), h(0.13 + 0.085 * t + (gold ? 0.004 : 0))], [-1, -0.05, -0.25], [0.25, 0, 1],
-      h(0.11 + 0.07 * t), h(0.024), 0, gold, { mirror: true }));
+    b.parts.push(ribbon([h(0.045 - 0.02 * t), h(0.06 - 0.33 * t), h(0.125 + 0.09 * t + (gold ? 0.004 : 0))], [-1, -0.05, -0.25], [0.25, 0, 1],
+      h(0.2 + 0.04 * t), h(0.026), 0, gold, { mirror: true }));
   }
   // the lappets: short bands across, hung in front of the shoulders down the breast
   for (let i = 0; i < 7; i++) {
