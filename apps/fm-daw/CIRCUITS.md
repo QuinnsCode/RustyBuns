@@ -47,7 +47,7 @@ Every part is a rule about current and voltage. A resistor's current is its volt
 
 The bends (diodes, tubes) are solved by Newton's method: guess, see how wrong the guess is, correct, repeat until it stops moving. That takes 2 to 4 tries per sample here.
 
-The speed trick: everything that doesn't bend is the same every sample, so its table is inverted once when the circuit loads. Only the bending parts are solved each sample: a 2×2 problem for a tube stage instead of the whole 8×8 circuit. This is the idea behind the K-method and DK-method that published amp simulations use (Borin, De Poli & Rocchesso 2000; Yeh 2009). Most of the time now goes to the tube's math (`exp`, `log`), not to the table.
+The speed trick: everything that doesn't bend is the same every sample, so its table is inverted once when the circuit loads. Only the bending parts are solved each sample: a 2×2 problem for a tube stage instead of the whole 8×8 circuit. This is the idea behind the K-method and DK-method that published amp simulations use (Borin, De Poli & Rocchesso 2000; Yeh 2009). Most of the time goes to the tube's math, one chain of dependent steps per Newton try, not to the table (see [Speed](#speed)).
 
 The models are published and checked:
 
@@ -85,13 +85,17 @@ One amp fits in an audio thread with room to spare; a pedalboard plus amp is tig
 
 **The Rust port, measured** (`bun run bench`, the builder Mac on battery, the riff through each rig; Rust as wasm, the way an AudioWorklet runs it):
 
-| Rig | Rust (wasm) | TypeScript |
-|---|---|---|
-| hard-clip, overdrive | 5.5, 6.2 | 4.6, 5.2 |
-| brit | 2.6 | 2.7 |
-| lead, triple | 2.0, 2.0 | 2.1, 2.1 |
+| Rig | Rust (wasm) | TypeScript (Bun) | Rust under V8 (first rig) | TypeScript under V8 |
+|---|---|---|---|---|
+| hard-clip, overdrive | 6.3, 6.8 | 5.2, 5.6 | 5.9 | 3.9 |
+| brit | 4.3 | 3.0 | 4.1 | 2.1 |
+| lead, triple | 3.3, 3.2 | 2.3, 2.2 | 3.1 | 1.6 |
 
-So no faster: the time goes to `exp` and `log` in the tube model, which Bun's JIT runs in native code and wasm runs in software. The port is still worth having (it runs where the engine runs, and over FFI in the desktop app), and the parity test is how the next speedup gets checked: the pedals come out bit for bit, the tube amps within one f32 step (the two sides' `exp` and `tanh` differ in the last bit).
+Rust beats the JIT by 1.4 to 1.5× on the tube amps, and by 1.5 to 2× under V8 (Node; Chrome's AudioWorklet runs the same engine). Before [#4599](https://github.com/QuinnsCode/RustyBuns/issues/4599) the two were level under Bun: 2.0 against 2.1 on the lead. What changed it, and what didn't:
+
+- **What was slow:** a Newton step on a tube is one chain of dependent math (a square root, then `exp`, `log1p`, `log`, `exp` for the plate current, then the 2×2 solve's divisions), and the CPU waits on each link. The sums across the circuit's nodes run alongside that chain and cost nothing extra: cutting them to the six numbers a step reads, a specialised 2×2 solve and wasm SIMD all measured 0%. A faster `exp` made of a long polynomial was slower than wasm's own libm, which is a short table-driven one.
+- **What worked:** shorter links. In `circuit.rs` the softplus and its slope come from a table of cubic pieces on [−8, 8] (one `exp` and a series outside it), and `E1^1.4` and the grid's `^0.354` split the number into mantissa and exponent: a cubic for the mantissa, a list for the power of two. No `log` at all. They agree with libm within 1e-7 (softplus near −8) and 1e-9 (the powers), held by a Rust unit test.
+- **The parity test** (`test/circuit.test.ts`) still holds Rust to TypeScript: the pedals come out bit for bit (their diodes still use `exp`), the tube amps within 4e-6 V on a 70 to 90 V swing. `mna.ts` keeps `Math.exp` and `Math.log`: Bun runs those in native libm, and an `exp` written out in JavaScript ran at half their speed.
 
 ## tscircuit
 
@@ -109,9 +113,8 @@ In order, each one usable on its own:
 
 1. **An Amp insert on an FM DAW track** ([#4555](https://github.com/QuinnsCode/RustyBuns/issues/4555)): Q Amp's live chain (`src/amp/live.ts`) after a track's voices, knobs as track params saved with the project.
 2. **Q Amp on a 3D stage** ([#4570](https://github.com/QuinnsCode/RustyBuns/issues/4570)): the clear amp, cabinet and pedalboard in three.js, 2.5D or 3D, with the screens behind as stage LED walls.
-3. **A faster Rust solver** ([#4599](https://github.com/QuinnsCode/RustyBuns/issues/4599)): the port is in and matches; it needs a cheaper tube model (a table or a polynomial for the `exp`/`log`) before it beats the JIT.
-4. **A real power amp:** push-pull output tubes, the output transformer, and supply sag (the amp compressing when you dig in). Today it is a `tanh`.
-5. **A real cabinet:** convolve a speaker impulse response instead of the EQ curve.
-6. **More parts:** transistors (Ebers-Moll) for transistor fuzzes (Q Fuzz is an op-amp fuzz today) and boosts, JFETs, potentiometers as live knobs.
-7. **Voicing by ear** against reference recordings the owner picks.
-8. **A plugin build** (VST3 and CLAP through nih-plug) if it should also run in other DAWs.
+3. **A real power amp:** push-pull output tubes, the output transformer, and supply sag (the amp compressing when you dig in). Today it is a `tanh`.
+4. **A real cabinet:** convolve a speaker impulse response instead of the EQ curve.
+5. **More parts:** transistors (Ebers-Moll) for transistor fuzzes (Q Fuzz is an op-amp fuzz today) and boosts, JFETs, potentiometers as live knobs.
+6. **Voicing by ear** against reference recordings the owner picks.
+7. **A plugin build** (VST3 and CLAP through nih-plug) if it should also run in other DAWs.
