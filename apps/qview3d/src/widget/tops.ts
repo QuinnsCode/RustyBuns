@@ -64,10 +64,15 @@ const se = (w: number, d: number, th: number) => {
   return { x: w * Math.sign(s) * Math.abs(s) ** (2 / N), z: d * Math.sign(k) * Math.abs(k) ** (2 / N) };
 };
 
-/** The top edge of a half at x: the shoulder line sloping from the neck, the neckline cut into it, a tank's armholes cut deeper. */
+/**
+ * The top edge of a half at x: the shoulder line sloping from the neck, the neckline cut into it, a tank's armholes cut
+ * deeper. A sleeve's top runs out level from the shoulder tip, so on a sleeved cut the shoulder rolls level there too
+ * (a smoothstep, steepest mid-shoulder); one still sloping at the tip met the sleeve in a notch (#4642).
+ */
 function topOf(c: Cut, back: boolean, x: number) {
   const n = back ? c.neck.back : c.neck.front, a = halfW(c, 1), ax = Math.abs(x), n0 = 0.6 * c.neck.front.w;
-  const shoulder = (q: number) => c.height - c.slope * Math.max(0, (q - n0) / (a - n0)) ** 1.3;
+  const drop = (q: number) => (c.sleeve ? smooth(0, 1, q) : Math.max(0, q) ** 1.3);
+  const shoulder = (q: number) => c.height - c.slope * drop((q - n0) / (a - n0));
   let y = shoulder(ax);
   if (ax < n.w) y -= n.dip * Math.sqrt(1 - (ax / n.w) ** 2);
   const so = c.straps && (back ? c.straps.back : c.straps.front);

@@ -7,7 +7,7 @@ import * as THREE from "three";
 // The tops' cloth textures are drawn on canvases; geometry needs none of it.
 const pen: object = new Proxy({}, { get: () => () => ({}) });
 Object.assign(globalThis, { document: { createElement: () => ({ width: 0, height: 0, getContext: () => pen }) } });
-const { buildTop } = await import("../src/widget/tops.ts");
+const { buildTop, CUTS } = await import("../src/widget/tops.ts");
 
 const MODELS = ["tee", "sweater", "hoodie", "tank", "racerback"] as const;
 
@@ -42,4 +42,27 @@ test.each([...MODELS])("a picture on the %s keeps its shape in every zone", (mod
       expect(Math.abs(mean - 1), `${model} ${z.name} quarter ${key}`).toBeLessThan(0.08);
     }
   }
+});
+
+// Seen from the front, a sleeved top's shoulder line rolls on into the sleeve: its slope barely turns at the shoulder
+// tip. A shoulder still sloping there met the level top of the sleeve in a notch (#4642, a turn of 0.24).
+test.each(["tee", "sweater", "hoodie"] as const)("the %s's shoulder rolls into its sleeve", (model) => {
+  const g = buildTop(model), W = 0.01, top = new Map<number, number>();
+  for (const mesh of g.prints) {
+    const P = mesh.geometry.getAttribute("position"), ix = mesh.geometry.getIndex()!;
+    for (let k = 0; k < ix.count; k += 3) {
+      const v = [ix.getX(k), ix.getX(k + 1), ix.getX(k + 2)];
+      if (Math.max(...v.map((i) => P.getX(i))) < 0.3) continue;
+      // Sample each triangle, so the outline is the cloth's and not just its vertices'.
+      for (let a = 0; a <= 10; a++) for (let b = 0; a + b <= 10; b++) {
+        const w = [a / 10, b / 10, (10 - a - b) / 10];
+        const x = w.reduce((s, q, j) => s + q * P.getX(v[j]!), 0), y = w.reduce((s, q, j) => s + q * P.getY(v[j]!), 0);
+        const bin = Math.round(x / W);
+        top.set(bin, Math.max(top.get(bin) ?? -Infinity, y));
+      }
+    }
+  }
+  const tip = Math.round(((0.47 + 0.05) * CUTS[model].ease) / W), y = (k: number) => top.get(k)!;
+  const inside = (y(tip - 4) - y(tip)) / (4 * W), outside = (y(tip) - y(tip + 4)) / (4 * W);
+  expect(Math.abs(outside - inside), model).toBeLessThan(0.08);
 });
