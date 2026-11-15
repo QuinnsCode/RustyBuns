@@ -27,6 +27,85 @@ const CG: f64 = 13.9;
 const XI: f64 = 1.354;
 const IG0: f64 = 3.917e-8;
 
+// The tube model's curves from tables (#4599). A Newton step is one long chain of
+// dependent math (exp, log1p, log, exp for the plate, the same again for the grid), and
+// the CPU waits on each link. A table lookup and a short cubic is a much shorter link
+// than libm's exp or log, in wasm or native. mna.ts keeps Math.exp and Math.log; these
+// agree with them within 1e-7 (softplus near -8) and 1e-9 (the powers), and the amp
+// with mna.ts well inside test/circuit.test.ts's bound.
+
+/// A smooth curve on [lo, hi] as cubic Hermite pieces: its value and slope at x.
+struct Curve { lo: f64, scale: f64, last: usize, c: Vec<[f64; 4]> }
+
+impl Curve {
+    /// `f` gives the value and slope at a point; `steps` pieces across [lo, hi].
+    fn new(lo: f64, hi: f64, steps: usize, f: impl Fn(f64) -> (f64, f64)) -> Curve {
+        let h = (hi - lo) / steps as f64;
+        let c = (0..steps).map(|i| {
+            let ((y0, d0), (y1, d1)) = (f(lo + i as f64 * h), f(lo + (i + 1) as f64 * h));
+            let (d0, d1) = (d0 * h, d1 * h);
+            [y0, d0, 3.0 * (y1 - y0) - 2.0 * d0 - d1, 2.0 * (y0 - y1) + d0 + d1]
+        }).collect();
+        Curve { lo, scale: 1.0 / h, last: steps - 1, c }
+    }
+    #[inline]
+    fn at(&self, x: f64) -> (f64, f64) {
+        let t = (x - self.lo) * self.scale;
+        let i = (t as usize).min(self.last); // `as` clamps a negative t to 0
+        let s = t - i as f64;
+        let [a, b, c, d] = self.c[i];
+        (a + s * (b + s * (c + s * d)), (b + s * (2.0 * c + s * 3.0 * d)) * self.scale)
+    }
+}
+
+/// x^p for x > 0, and its slope: x = m·2^e, m in [1, 2), so x^p = m^p (a curve) · 2^(pe) (a list).
+struct Power { p: f64, mant: Curve, two: Vec<f64> }
+
+impl Power {
+    fn new(p: f64) -> Power {
+        Power {
+            p,
+            mant: Curve::new(1.0, 2.0, 64, |m| (m.powf(p), p * m.powf(p - 1.0))),
+            two: (0..2046).map(|e| (p * (e as f64 - 1022.0)).exp2()).collect(),
+        }
+    }
+    /// x^p; 0 below the normal range (a tube current that small is none).
+    #[inline]
+    fn at(&self, x: f64) -> f64 {
+        let bits = x.to_bits();
+        let e = (bits >> 52) as usize; // biased exponent: 0 is subnormal, x > 0 so no sign bit
+        if e == 0 || e > 2046 { return if e == 0 { 0.0 } else { x.powf(self.p) }; }
+        let m = f64::from_bits((bits & 0x000f_ffff_ffff_ffff) | 0x3ff0_0000_0000_0000);
+        self.mant.at(m).0 * self.two[e - 1]
+    }
+}
+
+/// softplus ln(1 + e^x) and its slope, the sigmoid: a curve on [−8, 8], and past it one
+/// exp and three terms of the series, which are exact to 1e-14 out there.
+#[inline]
+fn softplus(t: &Tables, x: f64) -> (f64, f64) {
+    if x < -8.0 {
+        let e = x.exp();
+        (e * (1.0 - e * (0.5 - e / 3.0)), e / (1.0 + e))
+    } else if x > 8.0 {
+        let e = (-x).exp();
+        (x + e * (1.0 - e * (0.5 - e / 3.0)), 1.0 / (1.0 + e))
+    } else {
+        t.softplus.at(x)
+    }
+}
+
+struct Tables { softplus: Curve, plate: Power, grid: Power }
+
+fn tables() -> &'static Tables {
+    static T: std::sync::OnceLock<Tables> = std::sync::OnceLock::new();
+    T.get_or_init(|| Tables {
+        softplus: Curve::new(-8.0, 8.0, 1024, |x| (x.exp().ln_1p(), 1.0 / (1.0 + (-x).exp()))),
+        plate: Power::new(EX),
+        grid: Power::new(XI - 1.0),
+    })
+}
+
 fn pnjlim(v: f64, vold: f64, nvt: f64, vcrit: f64) -> f64 {
     if v > vcrit && (v - vold).abs() > 2.0 * nvt {
         if vold > 0.0 {
@@ -232,17 +311,16 @@ impl Circuit {
             i[d.port] = d.is * (e - 1.0);
             jm[d.port * kk + d.port] = (d.is * e) / d.nvt + GMIN;
         }
+        let tb = tables();
         for t in triodes {
             let (vpk, vgk) = (v[t.pk], v[t.gk]);
             let s = (KVB + vpk * vpk).sqrt();
             let u = KP * (1.0 / MU + vgk / s);
-            let eu = if u > 30.0 { 0.0 } else { u.exp() };
-            let l = if u > 30.0 { u } else { eu.ln_1p() };
-            let sg = if u > 30.0 { 1.0 } else { eu / (1.0 + eu) };
+            let (l, sg) = softplus(tb, u);
             let e1 = (vpk / KP) * l;
             let (mut ip, mut gm, mut gp) = (0.0, 0.0, 0.0);
             if e1 > 0.0 {
-                ip = (EX * e1.ln()).exp() / KG1;
+                ip = tb.plate.at(e1) / KG1;
                 let dip = (EX * ip) / e1;
                 gm = dip * ((vpk * sg) / s);
                 gp = dip * (l / KP - (vpk * vpk * vgk * sg) / (s * s * s));
@@ -254,12 +332,11 @@ impl Circuit {
                 i[t.gk] = IG0;
                 jm[t.gk * kk + t.gk] = GMIN;
             } else {
-                let cv = CG * vgk;
-                let eg = cv.exp();
-                let sp = (if cv > 30.0 { cv } else { eg.ln_1p() }) / CG;
-                let pw = ((XI - 1.0) * sp.ln()).exp();
+                let (spc, sgc) = softplus(tb, CG * vgk);
+                let sp = spc / CG;
+                let pw = tb.grid.at(sp);
                 i[t.gk] = GG * pw * sp + IG0;
-                jm[t.gk * kk + t.gk] = GG * XI * pw * (eg / (1.0 + eg)) + GMIN;
+                jm[t.gk * kk + t.gk] = GG * XI * pw * sgc + GMIN;
             }
         }
     }
@@ -545,5 +622,25 @@ mod tests {
         d[5] = 9.0; // a node that doesn't exist
         assert!(Circuit::new(&d, 48000.0).is_none());
         assert!(Circuit::new(&d[..7], 48000.0).is_none());
+    }
+
+    #[test]
+    fn the_tube_tables_match_libm() {
+        let t = tables();
+        let rel = |a: f64, b: f64| ((a - b) / b).abs();
+        // Across where the tubes play: u (plate) about -40..40, Cg·vgk -14..40.
+        for i in 0..=8000 {
+            let x = -40.0 + i as f64 * 0.01;
+            let (l, sg) = softplus(t, x);
+            assert!(rel(l, x.exp().ln_1p()) < 1e-7, "softplus({x})");
+            assert!((sg - 1.0 / (1.0 + (-x).exp())).abs() < 1e-7, "sigmoid({x})");
+        }
+        // Plate E1 and the grid's softplus/Cg run from nearly nothing to tens of volts.
+        for i in 0..=4000 {
+            let x = 10f64.powf(-30.0 + i as f64 * 0.01);
+            assert!(rel(t.plate.at(x), x.powf(EX)) < 1e-9, "x^1.4 at {x}");
+            assert!(rel(t.grid.at(x), x.powf(XI - 1.0)) < 1e-9, "x^0.354 at {x}");
+        }
+        assert_eq!(t.plate.at(1e-310), 0.0);
     }
 }
