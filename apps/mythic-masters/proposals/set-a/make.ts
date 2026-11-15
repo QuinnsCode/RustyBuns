@@ -487,10 +487,10 @@ function sphinx() {
   const on = (p: V, d: V, sink = 0): V => { const q = skin(ells, p, d), n = norm(d); return [f4(q[0] - n[0] * sink), f4(q[1] - n[1] * sink), f4(q[2] - n[2] * sink)]; };
   b.blobs.push(
     // the brow ridge, over the eyes
-    { at: "head", off: on([h(0.06), h(0.045), 0], [1, 0.1, 0], h(0.02)), r: [h(0.03), h(0.022), h(0.085)] },
+    { at: "head", off: on([h(0.06), h(0.045), 0], [1, 0.1, 0], h(0.014)), r: [h(0.032), h(0.024), h(0.085)] },
     // cheekbones, high and out under the eyes, and the jaw's corners below the ears, so the face is a man's square
     // jaw tapering to the chin and not one egg
-    ...pair("head", on([h(0.05), h(-0.02), h(0.06)], [0.7, 0, 0.7], h(0.022)), [h(0.035), h(0.03), h(0.03)]),
+    ...pair("head", on([h(0.05), h(-0.02), h(0.06)], [0.7, 0, 0.7], h(0.016)), [h(0.038), h(0.03), h(0.034)]),
     ...pair("head", on([h(0.0), h(-0.1), h(0.07)], [0.2, -0.3, 1], h(0.03)), [h(0.05), h(0.035), h(0.035)]),
   );
   b.paint = [...(b.paint ?? []), { nodes: ["head", "snout"], material: "face" }];
@@ -498,14 +498,18 @@ function sphinx() {
     // a straight nose: a wedge from the bridge between the eyes down and forward to a broad tip, its own part in the
     // face's skin (a blob this small melts in the blend, and a round one read as a snout)
     { kind: "horn", at: "head", off: on([h(0.06), h(0.02), 0], [1, 0.15, 0], h(0.012)), dir: [0.6, -1, 0], len: h(0.08), base: h(0.012), tip_base: h(0.026), flat: 0.7, curve: 0, material: "face" },
-    // almond eyes under the brow, lined in kohl that runs back toward the temple
-    { kind: "eye", at: "head", off: on([h(0.06), h(0.015), h(0.04)], [1, 0, 0.45], h(0.014)), r: [h(0.016), h(0.014), h(0.03)], rot: [0, -18, 0], mirror: true, material: "eye" },
-    { kind: "eye", at: "head", off: on([h(0.06), h(0.015), h(0.038)], [1, 0, 0.42], h(0.003)), r: h(0.011), mirror: true, material: "pupil" },
-    { kind: "ridge", at: "head", off: on([h(0.06), h(0.032), h(0.03)], [1, 0.1, 0.4], h(0.004)), dir: [-0.35, 0.05, 1], len: h(0.085), base: h(0.009), curve: 15, bend: [0, 1, 0], mirror: true, material: "kohl" },
-    { kind: "ridge", at: "head", off: on([h(0.06), h(0.055), h(0.03)], [1, 0.4, 0.35], h(0.004)), dir: [-0.3, 0, 1], len: h(0.08), base: h(0.011), curve: 20, bend: [0, 1, 0], mirror: true, material: "kohl" },
-    // full lips, closed
-    { kind: "ridge", at: "head", off: on([h(0.06), h(-0.088), 0.0001], [1, 0, 0], h(0.006)), dir: [0, 0, 1], len: h(0.052), base: h(0.013), curve: 30, bend: [-1, 0, 0], mirror: true, material: "lip" },
-    { kind: "ridge", at: "head", off: on([h(0.06), h(-0.105), 0.0001], [1, -0.1, 0], h(0.006)), dir: [0, 0, 1], len: h(0.044), base: h(0.013), curve: 25, bend: [-1, 0, 0], mirror: true, material: "lip" },
+    // almond eyes set into the face under the brow: a kohl almond a little bigger than the white sunk behind it, so
+    // the line is a rim round the eye and not shards floating on it; a heavy upper lid in the face's own skin over
+    // the top of the white, so the eye sits in a socket; and one kohl wing running back toward the temple
+    { kind: "eye", at: "head", off: on([h(0.06), h(0.015), h(0.04)], [1, 0, 0.45], h(0.008)), r: [h(0.014), h(0.015), h(0.032)], rot: [0, -18, 0], mirror: true, material: "eye" },
+    { kind: "eye", at: "head", off: on([h(0.06), h(0.015), h(0.04)], [1, 0, 0.45], h(0.011)), r: [h(0.013), h(0.02), h(0.04)], rot: [0, -18, 0], mirror: true, material: "kohl" },
+    { kind: "eye", at: "head", off: on([h(0.06), h(0.014), h(0.038)], [1, 0, 0.42], h(-0.001)), r: h(0.01), mirror: true, material: "pupil" },
+    { kind: "eye", at: "head", off: on([h(0.06), h(0.03), h(0.04)], [1, 0.2, 0.45], h(0.008)), r: [h(0.014), h(0.008), h(0.036)], rot: [0, -18, -12], mirror: true, material: "face" },
+    { kind: "ridge", at: "head", off: on([h(0.06), h(0.018), h(0.072)], [0.6, 0, 1], h(0.006)), dir: [-0.6, 0.15, 1], len: h(0.04), base: h(0.01), curve: 10, bend: [0, 1, 0], mirror: true, material: "kohl" },
+    // full lips, closed: two soft rolls with volume, the upper wide with a dip, the lower fuller
+    ...[1, -1].map((side): Part => ({ kind: "eye", at: "head", off: on([h(0.06), h(-0.09), side * h(0.012)], [1, 0, side * 0.15], h(0.007)), r: [h(0.011), h(0.008), h(0.024)], rot: [0, 0, side * -8], material: "lip" })),
+    { kind: "eye", at: "head", off: on([h(0.06), h(-0.104), 0], [1, -0.15, 0], h(0.007)), r: [h(0.013), h(0.01), h(0.03)], material: "lip" },
+    { kind: "ridge", at: "head", off: on([h(0.06), h(-0.097), 0.0001], [1, 0, 0], h(0.008)), dir: [0, 0, 1], len: h(0.04), base: h(0.005), curve: 25, bend: [-1, 0, 0], mirror: true, material: "mouth" },
     // the plaited beard: a long block hung from the chin, banded gold
     { kind: "horn", at: "head", off: on([h(0.05), h(-0.15), 0], [0.5, -1, 0], h(0.01)), dir: [0.12, -1, 0], len: h(0.13), base: h(0.022), tip_base: h(0.028), flat: 0.65, material: "cloth" },
   );
