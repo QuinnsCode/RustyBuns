@@ -471,7 +471,7 @@ export function buildCut(c: Cut, onHanger = false): Garment {
       const seam = ths.filter((th) => s * Math.sin(th) > 0).map((th) => { const x = se(halfW(c, 1), 1, th).x; return V(x, topOf(c, false, x), 0.0); }).filter((p) => Math.abs(p.x) > c.neck.front.w + 0.01 && Math.abs(p.x) < halfW(c, 1) - 0.06);
       if (seam.length > 2) add(stitchGeo(seam, seam.map(() => V(0, 1, 0))), m.stitch);
     }
-    if (c.hood) hood(c, ring, m, add, group);
+    if (c.hood) hood(c, m, add, group);
   }
   if (c.hood) pocket(c, m, add, group);
   const settle = onHanger ? hangIt(c, group, prints, fs.width) : null;
@@ -538,41 +538,96 @@ function finishSleeve(c: Cut, s: ReturnType<typeof sleeve>, m: Kit, add: (g: THR
   add(stitchGeo(first, first.map((p) => p.clone().sub(ctr).normalize())), m.stitch);
 }
 
-/** A hood lying back over the shoulders: a rolled edge round the neck that crosses at the front, and the hood's bag on the back. */
-function hood(c: Cut, neck: V3[], m: Kit, add: (g: THREE.BufferGeometry, mat: THREE.MeshStandardMaterial) => THREE.Mesh, group: THREE.Group) {
-  const nw = c.neck.front.w, rx = nw + 0.1, rz = c.nd + 0.11;
+/**
+ * A hood lying back over the shoulders, as two layers of fleece: its opening's rolled edge crosses at the front of
+ * the neck and swings back behind it to the crown's lip; inside that, the lining sinks into a dark bowl; outside, the
+ * shell rolls over the crown, stands off the upper back and comes down to lie on it in a rounded point.
+ */
+function hood(c: Cut, m: Kit, add: (g: THREE.BufferGeometry, mat: THREE.MeshStandardMaterial) => THREE.Mesh, group: THREE.Group) {
+  const nw = c.neck.front.w, rx = nw + 0.1, rz = c.nd + 0.11, yNb = topOf(c, true, 0);
+  const ang = (ph: number) => Math.atan2(Math.sin(ph), Math.cos(ph));
+  // How far round to the back: 0 round the front of the neck, 1 at the crown's lip behind it.
+  const backness = (ph: number) => smooth(0.9, 2.2, Math.abs(ang(ph)));
   const rimAt = (ph: number) => {
-    const back = Math.cos(ph) < 0, x = Math.sin(ph) * rx;
-    const y = topOf(c, back, Math.sin(ph) * nw) + 0.015 + 0.03 * (1 - Math.cos(ph)) / 2 - 0.08 * Math.exp(-((Math.atan2(Math.sin(ph), Math.cos(ph)) / 0.4) ** 2));
-    return V(x, y, Math.cos(ph) * rz);
+    const back = Math.cos(ph) < 0, a = ang(ph), b = backness(ph);
+    // Round the neck it sits on the neckline; out on the shoulders it lies on them, where they slope away.
+    const sx = Math.sin(ph) * lerp(nw, rx, smooth(0.9, 1.6, Math.abs(a)));
+    const around = topOf(c, back, sx) + 0.015 + 0.03 * (1 - Math.cos(ph)) / 2 - 0.08 * Math.exp(-((a / 0.4) ** 2));
+    // Where the edge lies on the shoulders it drops in a few soft folds.
+    const folds = 0.012 * Math.sin(ph * 7) * Math.exp(-(((Math.abs(a) - 1.45) / 0.4) ** 2));
+    return V(Math.sin(ph) * lerp(rx, rx + 0.1, b), lerp(around, yNb - 0.03, b) + folds, Math.cos(ph) * lerp(rz, 0.34, b));
   };
-  const rim = Array.from({ length: 80 }, (_, i) => rimAt((i / 80) * TAU));
+  const rim = Array.from({ length: 96 }, (_, i) => rimAt((i / 96) * TAU));
   const hoodMat = m.plain();
-  add(tubeGeo(rim, 0.032, 0.026, () => V(0, 1, 0), true, 12), hoodMat);
-  // The bag: from the rim's back half down over the upper back, puffed in the middle, flat where its edge lies.
-  const S = 28, Q = 20, Lh = 0.62, Wh = 0.34, yNb = topOf(c, true, 0);
+  add(tubeGeo(rim, 0.034, 0.028, () => V(0, 1, 0), true, 14), hoodMat);
+
+  // The back of the body at (x, y), for laying the hood on it.
+  const backAt = (x: number, y: number) => {
+    const w = halfW(c, clamp01(y / c.height)), th = Math.asin(Math.sign(-x) * Math.min(1, Math.abs(x) / w) ** (N / 2));
+    return bodyPoint(c, true, th, Math.min(y, topOf(c, true, x) - 0.02));
+  };
+  const bez = (a: V3, b: V3, c2: V3, d: V3, t: number) => {
+    const u = 1 - t;
+    return a.clone().multiplyScalar(u * u * u).addScaledVector(b, 3 * u * u * t).addScaledVector(c2, 3 * u * t * t).addScaledVector(d, t * t * t);
+  };
+  const S = 32, Q = 24, Lh = 0.6, Wh = 0.33, SPAN = 1.85;
+  const phOf = (s: number) => Math.PI + s * SPAN;
+
+  // The lining: from the neckline back to the lip, sagging into a bowl where the head would go.
+  const lining = m.inside.clone();
+  lining.side = THREE.DoubleSide;
+  const bowl: V3[][] = [];
+  for (let j = 0; j <= 10; j++) {
+    const t = j / 10, row: V3[] = [];
+    for (let i = 0; i <= S; i++) {
+      const ph = phOf((i / S) * 2 - 1), back = Math.cos(ph) < 0, x = Math.sin(ph) * nw * 0.995;
+      const seam = V(x, topOf(c, back, x), (back ? -1 : 1) * Math.max(0.012, neckZ(c, back, x)));
+      const lip = rimAt(ph);
+      row.push(seam.lerp(lip, t).add(V(0, -0.1 * backness(ph) * Math.sin(Math.PI * t) ** 0.8, 0)));
+    }
+    bowl.push(row);
+  }
+  add(gridGeo(bowl), lining);
+
+  // The shell: over the crown from the lip, standing off the back, down to a rounded point lying on it.
   const rows: V3[][] = [];
   for (let j = 0; j <= Q; j++) {
     const q = j / Q, row: V3[] = [];
     for (let i = 0; i <= S; i++) {
-      const s = (i / S) * 2 - 1, top = rimAt(Math.PI + s * 1.85).add(V(0, -0.02, 0));
-      const bx = s * Wh, by = yNb - Lh * (0.5 + 0.5 * Math.sqrt(1 - s * s));
-      const x = lerp(top.x, bx, q), y = lerp(top.y, by, q);
-      const xl = -x, t = y / c.height, w = halfW(c, t);
-      const th = Math.asin(Math.sign(xl) * Math.min(1, Math.abs(xl) / w) ** (N / 2));
-      const surf = bodyPoint(c, true, th, Math.min(y, topOf(c, true, x) - 0.02));
-      const puff = 0.03 + 0.05 * Math.sin(Math.PI * Math.min(1, q * 1.15)) ** 0.7 * Math.sqrt(1 - s * s) + 0.006 * noise(s * 3, q * 4);
-      const onBack = V(surf.x, y, surf.z - puff);
-      row.push(top.clone().lerp(onBack, smooth(0, 0.3, q)));
+      const s = (i / S) * 2 - 1, b = Math.sqrt(1 - s * s), lip = rimAt(phOf(s)).add(V(0, -0.012, 0));
+      const bx = -s * Wh, by = yNb - Lh * (0.5 + 0.5 * b), my = lerp(lip.y, by, 0.5);
+      const foot = backAt(bx, by).add(V(0, 0, -0.01));
+      const crown = lip.clone().add(V(0, 0.22 * b, -0.15 * b));
+      const fall = V(bx * 1.3, my, backAt(bx, my).z - 0.04 - 0.2 * b);
+      const p = bez(lip, crown, fall, foot, q);
+      // Soft folds running down the shell, deeper toward its point, so it reads as cloth, not a cap.
+      p.z -= (0.007 * Math.sin(s * 11 + 0.6) * smooth(0.15, 0.6, Math.abs(s)) + 0.006 * noise(s * 4, q * 5)) * b * smooth(0.2, 0.75, q);
+      const body = backAt(p.x, p.y).z - 0.012;
+      if (p.z > body) p.z = lerp(p.z, body, smooth(0.04, 0.2, q));
+      row.push(p);
     }
     rows.push(row);
   }
   add(gridGeo(rows), hoodMat);
-  // Its folded edge, round the sides and the bottom.
-  const outline = [...rows.map((r) => r[0]!), ...rows[Q]!.slice(1), ...rows.map((r) => r[S]!).reverse().slice(1)].slice(3, -3);
-  add(tubeGeo(outline, 0.014, 0.014, () => V(0, 0, -1)), hoodMat);
-  const seam = rows.slice(2).map((r) => r[S / 2]!);
-  add(stitchGeo(seam, seam.map(() => V(0, 0.3, -1).normalize())), m.stitch);
+  const seam = rows.map((r) => r[S / 2]!).slice(1, -2);
+  add(stitchGeo(seam, seam.map((p, k) => V(1, 0, 0).cross((seam[k + 1] ?? p).clone().sub(seam[Math.max(0, k - 1)]!)).normalize())), m.stitch);
+
+  // A soft shadow on the back where the shell's edge lies, round its sides and point.
+  const edge = [...rows.map((r) => r[0]!), ...rows[Q]!.slice(1), ...rows.map((r) => r[S]!).reverse().slice(1)].filter((p) => p.y < yNb - 0.05);
+  const shadow: number[] = [], tint: number[] = [], idx: number[] = [];
+  const mid = V(0, yNb - Lh * 0.55, 0);
+  edge.forEach((p, k) => {
+    const out = V(p.x - mid.x, p.y - mid.y, 0).normalize();
+    const a = backAt(p.x, p.y).add(V(0, 0, -0.004)), o = backAt(p.x + out.x * 0.05, p.y + out.y * 0.05).add(V(0, 0, -0.004));
+    shadow.push(a.x, a.y, a.z, o.x, o.y, o.z);
+    tint.push(0, 0, 0, 0.32, 0, 0, 0, 0);
+    if (k) { const n = k * 2; idx.push(n - 2, n, n + 1, n - 2, n + 1, n - 1); }
+  });
+  const sg = new THREE.BufferGeometry();
+  sg.setAttribute("position", new THREE.Float32BufferAttribute(shadow, 3));
+  sg.setAttribute("color", new THREE.Float32BufferAttribute(tint, 4));
+  sg.setIndex(idx);
+  group.add(new THREE.Mesh(sg, new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, depthWrite: false, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 })));
   // Drawcords out of the rim at the front, hanging down the chest, with metal tips.
   const cordMat = new THREE.MeshStandardMaterial({ color: "#ecebe8", roughness: 0.85 });
   const tipMat = new THREE.MeshStandardMaterial({ color: "#a8a29e", roughness: 0.35, metalness: 0.8 });

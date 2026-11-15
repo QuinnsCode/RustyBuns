@@ -66,3 +66,21 @@ test.each(["tee", "sweater", "hoodie"] as const)("the %s's shoulder rolls into i
   const inside = (y(tip - 4) - y(tip)) / (4 * W), outside = (y(tip) - y(tip + 4)) / (4 * W);
   expect(Math.abs(outside - inside), model).toBeLessThan(0.08);
 });
+
+// A hood lying back has volume: its crown stands well off the upper back, where the old one was a flat panel on it (#4637).
+test("the hoodie's hood stands off the back", () => {
+  const g = buildTop("hoodie"), prints = new Set(g.prints.map((p) => p.geometry));
+  const back = g.prints[1]!.geometry.getAttribute("position");
+  const backAt = (y: number) => {
+    let z = 0;
+    for (let i = 0; i < back.count; i++) if (Math.abs(back.getX(i)) < 0.03 && Math.abs(back.getY(i) - y) < 0.03) z = Math.min(z, back.getZ(i));
+    return z;
+  };
+  let off = 0;
+  g.group.traverse((o) => {
+    if (!(o instanceof THREE.Mesh) || prints.has(o.geometry)) return;
+    const P = o.geometry.getAttribute("position");
+    for (let i = 0; i < P.count; i++) if (Math.abs(P.getX(i)) < 0.03 && P.getY(i) > 1.2 && P.getY(i) < 1.35) off = Math.max(off, backAt(P.getY(i)) - P.getZ(i));
+  });
+  expect(off).toBeGreaterThan(0.15);
+});
