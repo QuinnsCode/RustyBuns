@@ -38,7 +38,9 @@ test("two fingers on the picture size and turn it; two fingers beside the cap zo
   const seen = () => tab.eval<Seen>(`(() => { const v = document.querySelector("qview-3d").viewer, at = v.layer.at;
     return { scale: at.scale, rotation: at.rotation, distance: v.camera.position.distanceTo(v.controls.target) }; })()`);
   // A photo goes on the front, then the camera faces it; find the middle of where it shows and an empty corner.
+  // On a cold runner the page is up before the widget's module has defined <qview-3d>: wait for it.
   const place = () => tab.eval<{ on: Pt; off: Pt }>(`(async () => {
+    await customElements.whenDefined("qview-3d");
     const el = document.querySelector("qview-3d");
     el.scrollIntoView();
     const c = new OffscreenCanvas(256, 256), g = c.getContext("2d");
