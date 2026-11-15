@@ -32,6 +32,7 @@ import { FIELDS, hex, type Field } from "./fields.ts";
 import { mountFieldChart } from "./fieldchart.ts";
 import { MAX_LIVE, MAX_LIVE_PHONE, MoveFx, shakeOf } from "./fx.ts";
 import { gallery, PAGE } from "./gallery.ts";
+import { sparring, STATS, type Stat } from "./spar.ts";
 import { mountAgent } from "./gallery-agent.ts";
 import { addCommands } from "@rustybuns/util/commands";
 import { mountPalette } from "@rustybuns/util/palette";
@@ -1040,13 +1041,23 @@ function showStarters() {
   $("#starterCards").innerHTML = STARTERS.map((id) => {
     const c = creature(id), at = chosen.indexOf(id);
     const said = witchSays(id, journey), took = !!journey && owns(journey, id); // on a second journey, what became of the ones you took is on the card
-    return `<button class="card starter${at >= 0 ? " on" : ""}" data-id="${id}" aria-pressed="${at >= 0}" title="${esc(said)}"><b>${esc(c.name)}${at >= 0 ? `<i class="pick">${at + 1}</i>` : ""}</b><small>${esc(c.archetype)} · ${c.fields.join(" / ")}</small>${radar(c)}${took ? `<p>${esc(said)}</p>` : ""}</button>`;
+    return `<button class="card starter${at >= 0 ? " on" : ""}" data-id="${id}" aria-pressed="${at >= 0}" title="${esc(said)}"><b>${esc(c.name)}${at >= 0 ? `<i class="pick">${at + 1}</i>` : ""}</b><small>${esc(c.archetype)} · ${c.fields.join(" / ")}</small><span class="spar-win" aria-hidden="true"></span><em class="spar-says"></em>${radar(c)}${took ? `<p>${esc(said)}</p>` : ""}</button>`;
   }).join("");
   const go = $("#setOut") as HTMLButtonElement;
   go.disabled = chosen.length !== PICKS;
   go.innerHTML = `${icon("footprints")} ${esc(chosen.length === PICKS ? LANDING.starters.setOut : LANDING.starters.chooseMore.replace("{n}", String(PICKS - chosen.length)))}`;
   hideScreens($("#starters"));
+  spar ??= sparring(STARTERS.map(creature), (id) => $("#starterCards").querySelector<HTMLElement>(`.starter[data-id="${CSS.escape(id)}"] .spar-win`));
 }
+/** The witch's five shadow-boxing on their cards (src/spar.ts), made the first time her sheet opens. */
+let spar: ReturnType<typeof sparring> | null = null;
+// a pointer on a stat's word keeps that beast on the stat's drill
+$("#starterCards").addEventListener("pointerover", (e) => {
+  const t = e.target instanceof Element ? e.target : null, stat = t?.closest("[data-stat]")?.getAttribute("data-stat");
+  const id = t?.closest<HTMLElement>(".starter")?.dataset.id ?? null;
+  spar?.hold(id, STATS.find((s): s is Stat => s === stat) ?? null);
+});
+$("#starterCards").addEventListener("pointerleave", () => spar?.hold(null, null));
 function begin(picks: readonly string[]): boolean {
   const j = newJourney(picks);
   if (!j) return false;
@@ -2096,6 +2107,7 @@ let last = performance.now(), acc = 0;
 function frame(now: number) {
   const dt = Math.min(0.1, (now - last) / 1000); last = now;
   padEdges();
+  spar?.show(!$("#starters").hidden);
   crowdOf(arena)?.update(dt);
   tickArena(arena, performance.now() / 1000);
   const moving = world.shown || (!!m && !m.over && !bots[0]);
@@ -2363,6 +2375,8 @@ Object.assign(window, {
     /** The Bog Witch's camp (src/witch.ts): `state()` her camp, what she is saying and the count she last saw, `sit()` as if you
      * walked up to her fire, `close()` reads past her line. `world.fastTravel(witch.state().camp)` once it's lit goes there. */
     witch: {
+      /** The five on her sheet shadow-boxing (#4670): each one's drill now (which stat), where it stands, its sim's tick. */
+      spar: () => spar?.state() ?? null,
       state: () => ({ camp: WITCH_CAMP, saying: sitting, seen: journey?.witch ?? null, cleared: journey ? regionsCleared(journey) : 0 }),
       sit: () => sitWithWitch() && sitting,
       close: () => { sitting = null; drawWitch(); },

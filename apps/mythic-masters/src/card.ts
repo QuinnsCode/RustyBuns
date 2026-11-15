@@ -22,7 +22,7 @@ export function radar(c: Creature, numbers = false, was?: Stats): string {
     <polygon points="${ring(150)}" class="grid"/><polygon points="${ring(75)}" class="grid"/>
     ${was ? `<polygon points="${AXES.map((a, i) => pt(i, was[a])).join(" ")}" class="was" fill="none" stroke="${color}" stroke-dasharray="2 1.5"/>` : ""}
     <polygon points="${AXES.map((a, i) => pt(i, c.stats[a])).join(" ")}" fill="${color}" fill-opacity="0.45" stroke="${color}"/>
-    ${AXES.map((a, i) => { const [x, y] = pt(i, 175).split(","); return `<text x="${x}" y="${y}">${a}${numbers ? `<tspan x="${x}" dy="7" class="n">${c.stats[a]}</tspan>` : ""}</text>`; }).join("")}</svg>`;
+    ${AXES.map((a, i) => { const [x, y] = pt(i, 175).split(","); return `<text x="${x}" y="${y}" data-stat="${a}">${a}${numbers ? `<tspan x="${x}" dy="7" class="n">${c.stats[a]}</tspan>` : ""}</text>`; }).join("")}</svg>`;
 }
 
 const credit = (p: Pic) => `<a href="${esc(p.page)}" target="_blank" rel="noopener" title="${esc(p.artist)}, ${esc(p.license)}">${esc(p.artist)}</a> · `
