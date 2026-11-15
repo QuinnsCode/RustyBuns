@@ -1,4 +1,4 @@
-// `bun TALKS/drafts/build-talk1.ts`: writes TALKS/concept-to-dreams.html, talk 1 as a deck.
+// `bun TALKS/drafts/build-talk1.ts`: writes TALKS/01-concept-to-dreams.html, talk 1 as a deck.
 // Each slide is the option the owner picked on the slide picks page (drafts/talk1.html, published as
 // https://claude.ai/artifact/9J1LWKbxnYYewFTxdPc6MM), drawn in style J, with the slide's brief as speaker notes.
 // The picks are drafts/talk1-picks.json, a copy of that page's `content` collection (slide id -> option number).
@@ -34,7 +34,7 @@ const sections = SLIDES.map((s) => {
   return `<section class="slide j">\n  <div class="jf">${draw(o)}</div>\n  <div class="notes">Slide ${s.n}, ${esc(s.name)} (option ${k}). ${esc(s.brief)}</div>\n</section>`;
 });
 
-const out = join(here, "../concept-to-dreams.html");
+const out = join(here, "../01-concept-to-dreams.html");
 await Bun.write(out, `<!doctype html>
 <html lang="en">
 <head>

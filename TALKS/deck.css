@@ -114,7 +114,7 @@ body.show-notes .notes { display: block; }
   .notes { display: block; }
 }
 
-/* Style J (talk 1, concept-to-dreams.html): black, white and orange 16:9 slides sized in cqw, drawn by
+/* Style J (talk 1, 01-concept-to-dreams.html): black, white and orange 16:9 slides sized in cqw, drawn by
    drafts/talk1.html. These rules are that page's, with .jf in front; change both together. */
 .slide.j { background: #0b0b0c; align-items: center; padding-top: 24px; padding-bottom: 56px; }
 .slide.j .jf { position: relative; width: min(100%, calc((100svh - 120px) * 16 / 9)); aspect-ratio: 16 / 9; container-type: inline-size; }

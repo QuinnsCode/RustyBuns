@@ -50,7 +50,7 @@ slide (`t1-s1` to `t1-s42`): `{ option, note }`. "Play the talk" runs every slid
 nothing is picked yet).
 
 All 42 are picked. `drafts/talk1-picks.json` copies the collection, and `bun TALKS/drafts/build-talk1.ts` turns it into
-the deck [concept-to-dreams.html](concept-to-dreams.html): each picked option drawn in style J (its rules are in
+the deck [01-concept-to-dreams.html](01-concept-to-dreams.html): each picked option drawn in style J (its rules are in
 `deck.css` too, so the player shows it), the slide's brief as speaker notes. After a new round of picks, update the JSON
 and rebuild.
 

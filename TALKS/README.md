@@ -14,7 +14,7 @@ address keeps the slide number (`#4`). Everything a deck needs is beside it: [de
 3. **One human line per slide.** The `.aside` holds the joke, so the plain text stays plain.
 4. **Show the shape, not the blueprint.** A talk says what a piece does and why. It never gives file paths, endpoint
    names, data layouts, algorithms or numbers that would let someone rebuild it. One "cute specific" per talk is
-   fine when it would make a good conference talk on its own (lines with name tags in talk 1).
+   fine when it would make a good conference talk on its own (lines with name tags in talk 2).
 5. **Honest status.** Every talk ends with what is live, what is in the oven and what is next. The notes name the doc
    that is the source of truth, so the slide can be kept current.
 6. **Credit the donors.** Agent Office is WebDevCody's (MIT); say so wherever it appears. Never name a commercial
@@ -23,19 +23,20 @@ address keeps the slide number (`#4`). Everything a deck needs is beside it: [de
 
 ## The lineup
 
+The order and the numbers follow [ABOUT.md](ABOUT.md), the owner's list.
+
 | # | Talk | State |
 |---|---|---|
 | 0 | [The Words](00-the-words.html) | ready |
-| 1 | [The Frankenstein Code Factory](01-frankenstein-factory.html) | ready |
-| 2 | [What Rusty Buns is](02-what-rusty-buns-is.html) | ready |
-| 3 | [The example range](03-example-range.html) | ready |
-| 4 | [The game engine: physics and netcode (with the buffer engine)](04-game-engine.html) | ready |
-| 5 | [Double Dragon, the twin engine](05-double-dragon.html) | ready |
+| 1 | [From Concept to Keyword to Dreams](01-concept-to-dreams.html) | ready: built by `bun TALKS/drafts/build-talk1.ts` from the owner's picks |
+| 2 | [The Frankenstein Code Factory](02-frankenstein-factory.html) | ready |
+| 3 | [The game engine, and the twin sim](03-game-engine.html) | ready |
+| 4 | The audio engine | planned |
+| 5 | [The example range](05-example-range.html) | ready |
 | 6 | [eqosys](06-eqosys.html) | ready |
 | 7 | [Qollab](07-qollab.html) | ready |
 | 8 | [Sign-in to party to game](08-sign-in-to-game.html) | ready |
 | 9 | [Ship it: deploys and tests](09-ship-it.html) | ready |
-| 10 | [From Concept to Keyword to Dreams](concept-to-dreams.html) | ready: talk 1 in [ABOUT.md](ABOUT.md)'s order, built by `bun TALKS/drafts/build-talk1.ts` from the owner's picks |
 
 Talks are for things we are happy to say in public. Personal setup (the phone, the owner's own machines) stays out of
 the lineup.
