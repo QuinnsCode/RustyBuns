@@ -1,10 +1,11 @@
 import { describe, expect, test } from "bun:test";
-import { entry, folio, hauntsOf, marginOf, neighbour, stepTo, type Spot } from "../src/compendium.ts";
+import { captureSheet, compare, entry, folio, hauntsOf, marginOf, neighbour, stepTo, type Spot } from "../src/compendium.ts";
+import { atLevel } from "../src/journey.ts";
 import { TALE } from "../src/creatures.ts";
 import { creature, ROSTER } from "../src/roster.ts";
 import { moveLine } from "../src/moveline.ts";
 
-// The Eldritch Compendium's bestiary keeps a cryptid under smoke until you meet it: the page must not give away
+// The Compendium's bestiary keeps a cryptid under smoke until you meet it: the page must not give away
 // its name or its picture before then, and binding it is what writes its kind on the page.
 describe("the compendium's bestiary", () => {
   const c = creature("mothman");
@@ -83,5 +84,24 @@ describe("the beast card's move lines", () => {
     expect(page.match(/<svg class="shape"/g)?.length).toBe(c.moves.length);
     for (const mv of c.moves) expect(page).toContain(moveLine(mv));
     expect(folio(c, "seen", { tier: "common", member: null, item: 1, rests: "" })).not.toContain("svg class=\"shape\"");
+  });
+});
+
+// A bind's facing page: the new creature against one of your line-up, stat by stat, and where it went.
+describe("the new capture page", () => {
+  const cat = creature("wampus-cat"), hodag = creature("hodag");
+  const vs = [{ name: hodag.name, level: 5, stats: atLevel(hodag, 5).stats }];
+  test("each stat is set against the line-up member, and the better ones counted", () => {
+    const { rows, better } = compare(atLevel(cat, 2).stats, vs[0]!.stats);
+    expect(rows.map((r) => r.diff)).toEqual(rows.map((r) => r.mine - r.theirs));
+    expect(better).toBe(rows.filter((r) => r.diff > 0).length);
+  });
+  test.each([
+    ["party", "It is in your line-up: 3 of 4 places used."],
+    ["journal", "Your line-up is full (4 of 4), so it is in the Compendium."],
+  ] as const)("a bind into the %s says where it went", (went, says) => {
+    const html = captureSheet(cat, 2, { went, used: 3, slots: 4, max: 6, travel: [], vs, at: 0, tier: "common" });
+    expect(html).toContain(says);
+    expect(html).toContain(`Better than your ${hodag.name} (level 5)`);
   });
 });

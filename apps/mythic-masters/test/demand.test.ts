@@ -32,7 +32,7 @@ describe("the book's demands", () => {
 describe("the book on a result note", () => {
   const j = newJourney(["hodag", "squonk", "jackalope"])!;
   test.each([
-    [{ kind: "bound", item: 4, repeat: false }, "Item 4. Received.", false],
+    [{ kind: "bound", item: 4, repeat: false }, "No. 4 in the Compendium.", false],
     [{ kind: "bound", item: 4, repeat: true }, "I have one of those.", true],
     [{ kind: "won", foe: "keeper" }, "A keeper is not an item. Item 4:", true],
     [{ kind: "won", foe: "wild" }, "You beat it, then you let it go.", true],

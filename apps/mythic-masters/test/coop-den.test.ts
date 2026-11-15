@@ -122,6 +122,6 @@ test("a friend binds the wild one: both pages end on the same tick, the bind in 
   expect([...jb.party, ...jb.journal].map((m) => m.id)).toContain(wild.id);
   expect([...ja.party, ...ja.journal].map((m) => m.id)).not.toContain(wild.id);
   expect(la[0]).toContain("Bo bound");
-  expect(lb[0]).toContain("The ink holds");
+  expect(lb[0]).toContain("joined your line-up");
   a.link.close(); b.link.close();
 });

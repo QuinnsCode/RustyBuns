@@ -242,6 +242,10 @@ export function bind(j: Journey, id: string, level: number, where = "", at = Dat
   return "journal";
 }
 
+/** What a result note says after a bind: where the creature went. `name` is written as given (escape it for a page). */
+export const boundLine = (name: string, level: number, went: "party" | "journal") =>
+  went === "party" ? `${name} (level ${level}) joined your line-up.` : `Your line-up is full, so ${name} (level ${level}) went into the Compendium.`;
+
 /** Section k of region n cleared (in order: an earlier one can't be skipped). Writes its page. */
 export function clearSection(j: Journey, n: number, k: number) {
   if (k > cleared(j, n)) return;

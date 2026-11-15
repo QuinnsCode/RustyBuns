@@ -840,7 +840,7 @@ body > .gc-dialog .gc-card .gc-tab.gc-prof { flex: 0 0 auto; width: auto; box-sh
  * and the leaf's own, as every page of the journal has */
 body > .gc-dialog .gc-card { background: url("/paper/gutter.png") -160px 0 / 320px 384px repeat-y, var(--parchment); padding: 40px 20px 22px 34px; }
 body > .gc-dialog .gc-card::before, body > .gc-dialog .gc-card::after { position: absolute; top: 14px; font-family: var(--f-title); font-size: 15px; letter-spacing: 0.08em; color: var(--ink-faded); opacity: 0.75; pointer-events: none; }
-body > .gc-dialog .gc-card::before { content: "Eldritch Compendium"; left: 34px; }
+body > .gc-dialog .gc-card::before { content: "The Compendium"; left: 34px; }
 body > .gc-dialog .gc-card::after { content: "Of the reader's hands"; right: 22px; font-family: var(--f-book); font-style: italic; letter-spacing: 0.02em; }
 /* the versus book lies on its boards like the compendium: cedar bark round the spread, the edges of the leaves under it */
 @media all {
@@ -1374,3 +1374,50 @@ body.in-fight > .gc-dialog { opacity: 0.74; }
 @media (max-width: 899px) {
   .paper #setOut { position: sticky; bottom: 12px; z-index: 5; width: 100%; }
 }
+
+/* --- a bind's spread: the note on the left leaf, the new capture on the right ------------------------------------
+ * The note keeps its seal pressed inside the leaf, under the button; the facing leaf (compendium.ts captureSheet)
+ * sets the new creature's stats against one of your line-up, the way an RPG sets new gear against what you wear. */
+.result .note .seal { bottom: 14px; right: 18px; }
+.result .note.o-bound { padding-bottom: 120px; }
+.result .capture-sheet { text-align: left; font-family: var(--f-book); color: var(--ink-b); }
+.result .capture-sheet h2 { font-size: 34px; margin: 0; }
+.result .capture-sheet h3 { font-size: 19px; margin: 14px 0 4px; color: var(--blood); }
+.result .capture-sheet .kinds { display: flex; flex-wrap: wrap; gap: 4px 12px; margin: 2px 0 4px; font-size: 15px; }
+.result .capture-sheet .kind { display: inline-flex; align-items: center; gap: 5px; }
+.result .capture-sheet .dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+.result .capture-sheet .carry { display: flex; align-items: center; gap: 6px; font-size: 15px; margin: 4px 0; color: var(--moss); }
+.result .capture-sheet .carry svg { width: 16px; height: 16px; flex: none; }
+.result .capture-sheet .vs { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 14px; margin: 2px 0 6px; }
+.result .capture-sheet .vs .chip { font: inherit; padding: 2px 10px; border-radius: 999px; border: 1px solid var(--ink-line); background: none; color: inherit; cursor: pointer; }
+.result .capture-sheet .vs .chip[aria-pressed="true"] { background: var(--ink-b); color: var(--parchment-hi, #efe2c4); border-color: var(--ink-b); }
+.result .capture-sheet table.cmp { border-collapse: collapse; width: 100%; font-size: 15px; }
+.result .capture-sheet .cmp th, .result .capture-sheet .cmp td { padding: 2px 6px; border-bottom: 1px dotted var(--ink-line); text-align: right; font-weight: 400; }
+.result .capture-sheet .cmp th:first-child { text-align: left; text-transform: capitalize; }
+.result .capture-sheet .cmp th small { margin-left: 6px; font-size: 0.78em; color: var(--ink-faded); text-transform: none; line-height: 1.1; }
+.result .capture-sheet .cmp thead th { font-size: 13px; color: var(--ink-faded); }
+.result .capture-sheet .cmp tr.total th, .result .capture-sheet .cmp tr.total td { border-bottom: 0; font-weight: 700; }
+.result .capture-sheet .cmp .mono { font-variant-numeric: tabular-nums; }
+.result .capture-sheet .cmp b { display: inline-flex; align-items: center; gap: 2px; font-weight: 700; }
+.result .capture-sheet .cmp b svg { width: 13px; height: 13px; }
+.result .capture-sheet .cmp .up { color: var(--moss); }
+.result .capture-sheet .cmp .down { color: var(--blood); }
+.result .capture-sheet .cmp .same { color: var(--ink-faded); }
+.result .capture-sheet .verdict, .result .capture-sheet .room { font-size: 15px; margin: 6px 0 0; }
+.result .capture-sheet .room { text-align: left; hyphens: none; display: flex; gap: 6px; align-items: baseline; color: var(--ink-faded); }
+.result .capture-sheet .room svg { width: 15px; height: 15px; flex: none; align-self: center; }
+.result .capture-sheet ol.moves { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 2px 14px; font-size: 14px; }
+.result .capture-sheet ol.moves li { display: flex; align-items: baseline; gap: 5px; min-width: 0; }
+.result .capture-sheet ol.moves small { color: var(--ink-faded); margin-left: auto; white-space: nowrap; }
+@media (max-width: 899px) { .result.capture { display: flex; flex-direction: column; align-items: center; justify-content: flex-start; gap: 18px; } .result.capture > .note { min-height: 0; flex: none; } }
+@media (min-width: 900px) { @supports (-webkit-mask-box-image: none) {
+  .result.capture::before { content: none; }
+  .result.capture > .note:not(.capture-sheet) { grid-column: 1; padding: calc(34 * var(--u)) calc(52 * var(--u)) calc(150 * var(--u)) calc(40 * var(--u)); }
+  .result.capture > .note:not(.capture-sheet)::before { -webkit-mask-box-image: url("/paper/deckle.png") 48 / 40px 0 40px 40px round; background: url("/paper/gutter.png") calc(100% + 167px) 0 / 320px 384px repeat-y, var(--parchment); }
+  .result .note .seal { bottom: calc(26 * var(--u)); right: calc(44 * var(--u)); }
+  .result .capture-sheet { grid-column: 2; grid-row: 1; justify-content: flex-start; overflow: auto; padding: calc(34 * var(--u)) calc(40 * var(--u)) calc(26 * var(--u)) calc(52 * var(--u)); }
+  .result .capture-sheet h2 { font-size: calc(34 * var(--u)); }
+  .result .capture-sheet h3 { font-size: calc(18 * var(--u)); margin: calc(12 * var(--u)) 0 calc(3 * var(--u)); }
+  .result .capture-sheet :is(.kinds, .carry, .verdict, .room, .cmp) { font-size: calc(15 * var(--u)); }
+  .result .capture-sheet :is(.vs, ol.moves) { font-size: calc(14 * var(--u)); }
+} }

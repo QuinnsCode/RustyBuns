@@ -50,8 +50,8 @@ export type Outcome =
 export function reactionOf(o: Outcome, j: Journey | null): { ask: string; signed: boolean } {
   switch (o.kind) {
     case "bound":
-      if (o.repeat) return { ask: "I have one of those. Keep it. Bring me one I have not.", signed: true };
-      return { ask: `Item ${o.item}. Received.${RECEIPTS[o.item % RECEIPTS.length]}`, signed: false };
+      if (o.repeat) return { ask: "You already have one of these. Bring one you do not have.", signed: true };
+      return { ask: `No. ${o.item} in the Compendium.`, signed: false };
     case "won":
       if (o.foe === "mythic") return { ask: "It ran. I have its smell on this page now. Go back for it.", signed: true };
       if (o.foe === "wild") return { ask: "You beat it, then you let it go. Next time, bind it.", signed: true };
@@ -66,7 +66,6 @@ export function reactionOf(o: Outcome, j: Journey | null): { ask: string; signed
       return { ask: "Practice. I keep no accounts of practice.", signed: false };
   }
 }
-const RECEIPTS = ["", " Late.", " Smaller than described.", " Wipe its feet.", "", " About time."];
 
 /** The book's line on the bestiary deck: it wants the card on top, the first in the deck's order it does not have,
  * by name (the deck prints every name anyway). With every card bound it only keeps them in order. */

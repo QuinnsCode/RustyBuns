@@ -8,7 +8,7 @@
 // it on the same tick and rolls the same dice for it, seeded by the room's seed and the tick. The lowest seat that
 // pressed tries first; the first whose ink holds binds it, into their own journey, and the rest read who did.
 import { mulberry32 } from "@rustybuns/util";
-import { bind, bindChance, clearSection, cleared, gainXp, see, sections, wound, type Journey, type Member } from "./journey.ts";
+import { bind, bindChance, boundLine, clearSection, cleared, gainXp, see, sections, wound, type Journey, type Member } from "./journey.ts";
 import type { Region } from "./regions.ts";
 import { creature } from "./roster.ts";
 
@@ -37,7 +37,7 @@ export function recordCoop(j: Journey, me: Member, at: CoopAt, won: boolean, hpL
   if (!won) return [`${foe.name} was too much for you both. ${mine} is knocked out until a campfire.`];
   if (bound?.mine) {
     const sec = sections(at.region)[at.k], where = sec ? `${sec.name}, ${at.region.name}` : at.region.name;
-    lines.push(`The ink holds. ${foe.name} (Lv ${at.foe.level}) ${bind(j, at.foe.id, at.foe.level, where) === "party" ? "joins your line-up" : "rests in the Eldritch Compendium"}.`);
+    lines.push(boundLine(foe.name, at.foe.level, bind(j, at.foe.id, at.foe.level, where)));
   } else if (bound) lines.push(`${bound.who} bound ${foe.name}. It goes home with them.`);
   const ups = gainXp(me, at.foe.level);
   lines.push(ups ? `${mine} grows to level ${me.level}.` : `${mine} learns from it.`);

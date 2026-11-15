@@ -27,7 +27,7 @@ export const ACTIONS: Action[] = [
   { id: "turnLeft", label: "Turn the camera left", keys: ["KeyQ", "ArrowLeft"], group: WORLD },
   { id: "turnRight", label: "Turn the camera right", keys: ["KeyE", "ArrowRight"], group: WORLD },
   { id: "map", label: "World map", keys: ["KeyM"], group: WORLD },
-  { id: "journal", label: "Eldritch Compendium", keys: ["Tab"], group: WORLD },
+  { id: "journal", label: "The Compendium", keys: ["Tab"], group: WORLD },
 ].map((a) => ({ group: MOVE, ...a }));
 
 export const keymap = loadBindings(KEY, ACTIONS);
