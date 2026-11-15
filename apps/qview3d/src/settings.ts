@@ -1,7 +1,7 @@
 // Required Notice: Copyright (c) 2026 Ryan Quinn (QNTBR) (https://qntbr.com). PolyForm Noncommercial 1.0.0, see ../LICENSE.
 //
 // Org and product settings, in D1 (migrations/): which sites embed an org, its admin keys, samples and eqosys studio;
-// each product's name, model, colours, print zones and default placement. Files stay in R2 (layout.ts).
+// each product's name, model, colours, print zones and default placement. A sandbox org also has an end (expires). Files stay in R2 (layout.ts).
 //
 // A fresh deploy's migrations seed the demo org and its products (0002_demo.sql, made from demo.ts by
 // scripts/demo-sql.ts), so the demo works from D1 with nothing to do by hand. An org then enters its own on /orgs.html.
@@ -39,23 +39,24 @@ export interface SettingsEnv {
 }
 
 const TTL_S = 60;
-type OrgRow = { origins: string; admins: string; samples: number; studio: string | null; read_only: number };
+type OrgRow = { origins: string; admins: string; samples: number; studio: string | null; read_only: number; expires: number | null };
 
 const json = (text: string): unknown => { try { return JSON.parse(text); } catch { return null; } };
 const parsed = <T>(g: Guard<T>, text: string): T | null => check(g, json(text));
 
+/** An org's settings, or null when there is none or it was a sandbox that ran out (then it is unknown everywhere). */
 export async function getOrg(env: SettingsEnv, id: string): Promise<Org | null> {
-  const r = await env.DB.prepare("SELECT origins, admins, samples, studio, read_only FROM orgs WHERE id = ?").bind(id).first<OrgRow>();
-  if (!r) return null;
-  return check(Org, { origins: json(r.origins), admins: json(r.admins), samples: r.samples, studio: r.studio, readOnly: !!r.read_only || undefined });
+  const r = await env.DB.prepare("SELECT origins, admins, samples, studio, read_only, expires FROM orgs WHERE id = ?").bind(id).first<OrgRow>();
+  if (!r || (r.expires !== null && r.expires < Date.now())) return null;
+  return check(Org, { origins: json(r.origins), admins: json(r.admins), samples: r.samples, studio: r.studio, readOnly: !!r.read_only || undefined, expires: r.expires ?? undefined });
 }
 
 export async function putOrg(env: SettingsEnv, id: string, o: Org): Promise<void> {
   await env.DB.prepare(
-    `INSERT INTO orgs (id, origins, admins, samples, studio, read_only, updated) VALUES (?, ?, ?, ?, ?, ?, ?)
+    `INSERT INTO orgs (id, origins, admins, samples, studio, read_only, expires, updated) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT (id) DO UPDATE SET origins = excluded.origins, admins = excluded.admins, samples = excluded.samples,
-       studio = excluded.studio, read_only = excluded.read_only, updated = excluded.updated`,
-  ).bind(id, JSON.stringify(o.origins), JSON.stringify(o.admins ?? []), o.samples ?? 0, o.studio ?? null, o.readOnly ? 1 : 0, Date.now()).run();
+       studio = excluded.studio, read_only = excluded.read_only, expires = excluded.expires, updated = excluded.updated`,
+  ).bind(id, JSON.stringify(o.origins), JSON.stringify(o.admins ?? []), o.samples ?? 0, o.studio ?? null, o.readOnly ? 1 : 0, o.expires ?? null, Date.now()).run();
 }
 
 /** The org a studio runs, the one set most lately when an owner moved it between orgs. */

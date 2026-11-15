@@ -35,6 +35,24 @@ That public demo keeps no files, so strangers can't fill the bucket. Customising
    behind the Workers Cache API for a minute, but Cloudflare keeps no cache on `workers.dev`: give it a custom domain
    and shop pages stop waiting on D1.
 
+### Hand someone a sandbox (the quick test)
+
+To let someone try it with their own product before they have a shop, send them one link:
+
+1. Open `/orgs.html` signed in as an owner or admin of QNTBR. Under **Hand off a sandbox**, type who it's for, how many
+   samples of their own product Meshy may make (each costs credits, 1 by default) and how many days it lasts (14).
+2. **Make the sandbox link** gives a message to paste to them, link included. The link is shown once.
+3. They open it. No sign-up: `/try.html` shows their product live (a tee to start), lets them add or change products,
+   and gives four ways onto their page: a line for their coding agent (`/v1/embed.md?org=&product=` with their
+   sandbox filled in), the web component, an iframe, and a `curl` that writes a product with the sandbox's key.
+   **Make a sample from photos** opens `/admin.html` with the key filled in.
+
+A sandbox is an org named `try-<who>-<6 hex>`. Any page may embed it (`*`), and on its end date every route reads it
+as unknown. To keep it, make a shop below with the same org id: the products stay and the end date goes. The routes
+are in [src/sandboxes.ts](src/sandboxes.ts). `bun run dev` prints a local sandbox link (`try-local`) to try the page.
+
+### A shop for good
+
 Then make your friend's shop. A shop is an eqosys studio, so no keys change hands:
 
 1. Your friend signs in to eqosys, makes a studio (Studio tab), then opens `/orgs.html` here and signs in. Their

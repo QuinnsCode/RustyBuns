@@ -17,6 +17,7 @@
 //   GET  /v1/embed.md, /llms.txt              how to put the widget on a page, for a coding agent (embed.ts)
 //   GET  /v1/frame?org=&product=              the widget alone, for an <iframe> where a site won't run scripts (frame.ts)
 //   GET  /api/mine, PUT /api/orgs/<org>, PUT .../products/<id>, POST .../keys   shops set up signed in through eqosys (orgs.ts)
+//   POST /api/sandboxes, GET /api/orgs/<org>  a test shop the owner hands out with one link, and what its page reads (sandboxes.ts)
 //
 // Org and product settings live in D1 (settings.ts); a fresh deploy's migrations seed the demo org (demo.ts), which keeps no files.
 import { hex } from "@rustybuns/util/bytes";
@@ -30,6 +31,7 @@ import { originalRoute, printPlanRoute } from "./print.ts";
 import { billingRoute, checkoutRoute, stripeWebhook } from "./billing.ts";
 import { countSamples, isAdmin, sampleRoute, startSampleRoute } from "./samples.ts";
 import { orgsRoute, runsShop, signedIn } from "./orgs.ts";
+import { sandboxRoute } from "./sandboxes.ts";
 import { presignUrl, readToken, uploadToken } from "./sign.ts";
 
 /** The part of an R2 bucket this Worker uses: the real binding, or shell-bun's twin over a directory. */
@@ -103,7 +105,9 @@ export async function handle(req: Request, env: Env): Promise<Response> {
   if (url.pathname.startsWith("/r/") && req.method === "GET") return serve(req, env, decodeURIComponent(url.pathname.slice(3)));
   if (url.pathname.startsWith("/u/") && req.method === "PUT") return upload(req, env, url.pathname.slice(3), origin);
   if ((url.pathname === "/v1/embed.md" || url.pathname === "/llms.txt") && req.method === "GET") {
-    return new Response(embedGuide(url.origin), { headers: { "content-type": "text/markdown; charset=utf-8", "cache-control": "public, max-age=300", ...cors(null) } });
+    const org = url.searchParams.get("org") ?? "", product = url.searchParams.get("product") ?? "";
+    const pick = ID.test(org) && ID.test(product) ? { org, product } : undefined;
+    return new Response(embedGuide(url.origin, pick), { headers: { "content-type": "text/markdown; charset=utf-8", "cache-control": "public, max-age=300", ...cors(null) } });
   }
 
   if (url.pathname === "/v1/frame" && req.method === "GET") {
@@ -113,7 +117,7 @@ export async function handle(req: Request, env: Env): Promise<Response> {
   }
   if (url.pathname === "/api/stripe-webhook" && req.method === "POST") return stripeWebhook(req, env);
 
-  const shops = await orgsRoute(req, env, cors(origin));
+  const shops = (await orgsRoute(req, env, cors(origin))) ?? (await sandboxRoute(req, env, cors(origin)));
   if (shops) return shops;
 
   const m = url.pathname.match(/^\/api\/orgs\/([^/]+)\/(products|uploads|designs|models|originals|billing|checkout)(?:\/([^/]+))?(\/print)?$/);
