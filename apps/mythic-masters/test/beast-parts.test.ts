@@ -23,10 +23,10 @@ for o in B.parts(sheet, sheet["nodes"]):
 print("PARTS" + json.dumps(out))
 `;
 
-async function build(parts: object[]): Promise<Record<string, number[][]>> {
+async function build(parts: object[], nodes: object = { head: [0, 1, 0, 0.1] }): Promise<Record<string, number[][]>> {
   const dir = mkdtempSync(join(tmpdir(), "beast-parts-"));
   writeFileSync(join(dir, "parts.py"), PY);
-  const sheet = { palette: { eye: [0, 0, 0, 0.1, 0], fur: [0.3, 0.3, 0.3, 0.8, 0] }, nodes: { head: [0, 1, 0, 0.1] }, parts };
+  const sheet = { palette: { eye: [0, 0, 0, 0.1, 0], fur: [0.3, 0.3, 0.3, 0.8, 0] }, nodes, parts };
   const { out } = await runBlender({ script: join(dir, "parts.py"), args: [JSON.stringify(sheet)], cwd: APP });
   const line = out.split("\n").find((l) => l.startsWith("PARTS"));
   if (!line) throw new Error(`no parts printed:\n${out}`);
@@ -55,4 +55,18 @@ test.skipIf(!findBlender())("a slanted almond eye lifts its outer corner on both
   };
   expect(nearTip(got["ear1"]!)).toBeLessThan(nearTip(got["ear2"]!) / 2);
   expect(nearTip(got["ear1r"]!)).toBeCloseTo(nearTip(got["ear1"]!), 4);
+});
+
+test.skipIf(!findBlender())("a leg whose gaskin slants back keeps every ring facing the same way, with no twist at the knee", async () => {
+  // a lion's hind leg: down and forward to the knee, back at 45 degrees to a high hock, upright to the paw
+  const nodes = { l_hipj: [-0.6, 0.8, 0.17, 0.05], l_knee: [-0.5, 0.53, 0.2, 0.03], l_hock: [-0.71, 0.3, 0.2, 0.03], l_bfoot: [-0.65, 0.1, 0.18, 0.04] };
+  const got = await build([{ kind: "limb", along: ["l_hipj", "l_knee", "l_hock", "l_bfoot"], radii: [0.1, 0.1, 0.1, 0.1], material: "fur" }], nodes);
+  const vs = Object.entries(got).find(([k]) => k.startsWith("limb"))![1];
+  const rings = Math.floor(vs.length / 16);
+  let worst = 0;
+  for (let i = 0; i + 1 < rings; i++) for (let j = 0; j < 16; j++) {
+    const a = vs[i * 16 + j]!, b = vs[(i + 1) * 16 + j]!;
+    worst = Math.max(worst, Math.hypot(a[0]! - b[0]!, a[1]! - b[1]!, a[2]! - b[2]!));
+  }
+  expect(worst).toBeLessThan(0.12); // a ring turned half over puts a point about two radii (0.2) from its twin
 });

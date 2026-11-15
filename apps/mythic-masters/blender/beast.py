@@ -63,7 +63,7 @@
 #                            `tooth` [len, base] in metres, in `tooth_mat` (the palette's `fang`, `tooth`, else `claw`)
 #   limb    along, radii,    a leg or arm lofted over a chain of nodes, tapering to the ankle: `radii` (metres, one per
 #           calf, depth      node) is the half-width at each, `depth` (1) how deep fore to aft in that, `calf` (0) a
-#                            bulge of that share of the radius a third of the way down. Thin the sheet's own leg nodes
+#           calf_at          bulge of that share of the radius `calf_at` (0.35) of the way down. Thin the sheet's own leg nodes
 #           shoulder, elbow  under it, or the skin tube shows through. List the `l_` nodes; `mirror` adds the twin.
 #                            `shoulder` (0) swells the top by that share of the radius, `elbow` (0) each middle node
 #                            (a knee or elbow), jutting back (-x) more than out. `skin` (false) builds it into the
@@ -72,6 +72,8 @@
 #           width, toes,     `form` paw: a pad with `toes` bumps and `claw` cones (0 none); hoof: a wedge, `toes` 2 for a cleft
 #           claw, spread,    hoof (`claw_mat` colours the claws); talon: `toes` (3) curved toes `spread` degrees apart and a hind claw; web: a flat fan between
 #           sole             `toes` ribs. `len` forward (+x), `width` across, `sole` the part's floor in metres below the node
+#           r                (centre), `r` the paw's size in metres (the node's radius), so a slim leg node can carry a deep paw
+#           tall             `tall` (1) scales the pad's height alone (not its toes), for a round, padded paw
 #   wing    hub, tips, body, a membrane that sags between finger bones: from `hub` (a wrist) a bone to each of `tips`
 #           sag, scallop,    (points or nodes, leading edge first), panels between them closing on the `body` points;
 #           bone, bone_mat,  each panel's far edge pulled in by `scallop` (0.25) and hung `sag` metres under its fingers,
@@ -395,7 +397,7 @@ def blobs(o, spec, nodes, limbs=()):
         for side in ([1, -1] if p.get("mirror") else [1]):
             chain = [mirrored(c) if side < 0 else c for c in p["along"]]
             out.append(limb(f"skinlimb{i}_{side}", [Vector(nodes[c][:3]) for c in chain], p["radii"], p.get("depth", 1),
-                            p.get("calf", 0), o.data.materials[0].name, p.get("shoulder", 0), p.get("elbow", 0)))
+                            p.get("calf", 0), o.data.materials[0].name, p.get("shoulder", 0), p.get("elbow", 0), p.get("calf_at", 0.35)))
     for i, b in enumerate(spec):
         bm = bmesh.new()
         bmesh.ops.create_uvsphere(bm, u_segments=24, v_segments=16, radius=1)
@@ -774,7 +776,7 @@ def gaping_jaw(name, at, d, side, up, p, mat):
     return out
 
 
-def limb(name, pts, radii, depth, calf, mat, shoulder=0.0, elbow=0.0):
+def limb(name, pts, radii, depth, calf, mat, shoulder=0.0, elbow=0.0, calf_at=0.35):
     """A tapered leg or arm over a chain of points: an elliptical section at each, radius from `radii`, and a
     calf swelling a third of the way down. Subdivided between the points so the taper and calf are smooth.
     The radius eases between nodes (no straight cone), the thigh is narrower across than deep and rounds out
@@ -798,8 +800,13 @@ def limb(name, pts, radii, depth, calf, mat, shoulder=0.0, elbow=0.0):
     for i, c in enumerate(path):
         t = (path[min(i + 1, total)] - path[max(i - 1, 0)]).normalized()
         side, up = loft_frame(t)
+        if rings and side.dot(prev) < 0:
+            # loft_frame swaps its hint axis on a steep slant (a gaskin angled back), which turns the frame half a
+            # turn: keep each ring on the same side as the last, or the loft twists into a V at the joint
+            side, up = -side, -up
+        prev = side
         f = i / total
-        bump = 1 + calf * math.exp(-((f - 0.35) / 0.18) ** 2)
+        bump = 1 + calf * math.exp(-((f - calf_at) / 0.18) ** 2)
         across = 0.78 + 0.22 * min(1.0, f / 0.6)  # narrow across at the thigh, round by the ankle
         dome = 1.0 if i >= 2 else (0.55 if i == 0 else 0.85)  # the buried top rings close like a cap
         bump += shoulder * math.exp(-((f - 0.14) / 0.1) ** 2)
@@ -828,7 +835,7 @@ def foot_part(name, at, r, p, side, mat):
             z = lobe * wd * 0.27 * side
             w = wd * (0.27 if cleft else 0.5)
             rings, seg = [], 10
-            top = r * (1.4 if form == "hoof" else 0.9)
+            top = r * (1.4 if form == "hoof" else 0.9) * p.get("tall", 1)
             prof = ([(0.0, 0.9, 0.0, 1.0), (0.25, 1.0, 0.0, 1.0), (0.85, 0.7, 0.0, 0.42), (1.0, 0.25, 0.0, 0.3)] if form == "hoof"
                     else [(0.0, 0.8, 0.1, 0.9), (0.3, 1.0, 0.0, 1.0), (0.8, 0.95, 0.0, 0.55), (1.0, 0.45, 0.0, 0.3)])
             for t, fw, _, fh in prof:
@@ -1225,10 +1232,10 @@ def parts(sheet, nodes):
             elif p["kind"] == "limb":
                 chain = [mirrored(c) if side < 0 else c for c in p["along"]]
                 out.append(limb(name, [Vector(nodes[c][:3]) for c in chain], p["radii"], p.get("depth", 1), p.get("calf", 0),
-                                p.get("material", sheet.get("material", "hide")), p.get("shoulder", 0), p.get("elbow", 0)))
+                                p.get("material", sheet.get("material", "hide")), p.get("shoulder", 0), p.get("elbow", 0), p.get("calf_at", 0.35)))
             elif p["kind"] == "foot":
                 k = mirrored(p["at"]) if side < 0 else p["at"]
-                out += foot_part(name, nodes[k][:3], nodes[k][3], p, side, p.get("material", sheet.get("material", "hide")))
+                out += foot_part(name, nodes[k][:3], p.get("r", nodes[k][3]), p, side, p.get("material", sheet.get("material", "hide")))
             elif p["kind"] == "wing":
                 out += wing(name, node(p["hub"]), [node(q) for q in p["tips"]], [node(q) for q in p["body"]], p, p["material"])
             else:
