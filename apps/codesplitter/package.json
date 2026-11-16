@@ -25,11 +25,11 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.132.1",
-    "@babel/parser": "7.29.12",
+    "@babel/parser": "7.29.14",
     "@rustybuns/cli": "^0.1.12",
     "@rustybuns/util": "^0.1.12",
     "@rustybuns/shell-bun": "^0.1.12",
-    "better-auth": "1.7.14",
+    "better-auth": "1.7.23",
     "lucide": "0.469.0",
     "smol-toml": "1.9.1",
     "three": "0.160.1",
@@ -41,15 +41,15 @@
     "@alchemy.run/hetzner": "2.0.0-beta.84",
     "@alchemy.run/neon": "2.0.0-beta.84",
     "@alchemy.run/railway": "2.0.0-beta.84",
-    "@effect/platform-bun": "4.0.5",
-    "@effect/platform-node": "4.0.5",
+    "@effect/platform-bun": "4.1.4",
+    "@effect/platform-node": "4.1.4",
     "alchemy": "2.0.0-beta.84",
-    "effect": "4.0.5"
+    "effect": "4.1.4"
   },
   "overrides": {
-    "effect": "4.0.5",
-    "@effect/platform-bun": "4.0.5",
-    "@effect/platform-node": "4.0.5",
+    "effect": "4.1.4",
+    "@effect/platform-bun": "4.1.4",
+    "@effect/platform-node": "4.1.4",
     "@effect/platform-node-shared": "4.0.5",
     "@effect/vitest": "4.0.5"
   }

@@ -10,6 +10,6 @@
   },
   "dependencies": {
     "@rustybuns/util": "^0.1.12",
-    "lucide": "1.55.0"
+    "lucide": "1.72.0"
   }
 }

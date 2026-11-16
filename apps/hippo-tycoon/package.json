@@ -18,7 +18,7 @@
     "@rustybuns/util": "^0.1.12",
     "@rustybuns/cli": "^0.1.12",
     "@rustybuns/shell-bun": "^0.1.12",
-    "lucide": "1.65.0",
+    "lucide": "1.72.0",
     "react": "19.3.1",
     "react-dom": "19.3.1",
     "three": "^0.180.0"
@@ -29,19 +29,19 @@
     "@alchemy.run/hetzner": "2.0.0-beta.84",
     "@alchemy.run/neon": "2.0.0-beta.84",
     "@alchemy.run/railway": "2.0.0-beta.84",
-    "@effect/platform-bun": "4.0.5",
-    "@effect/platform-node": "4.0.5",
+    "@effect/platform-bun": "4.1.4",
+    "@effect/platform-node": "4.1.4",
     "@types/react": "19",
     "@types/react-dom": "19",
     "@types/three": "^0.180.0",
     "alchemy": "2.0.0-beta.84",
-    "effect": "4.0.5",
-    "vite": "^6.4.4"
+    "effect": "4.1.4",
+    "vite": "^6.4.5"
   },
   "overrides": {
-    "effect": "4.0.5",
-    "@effect/platform-bun": "4.0.5",
-    "@effect/platform-node": "4.0.5",
+    "effect": "4.1.4",
+    "@effect/platform-bun": "4.1.4",
+    "@effect/platform-node": "4.1.4",
     "@effect/platform-node-shared": "4.0.5",
     "@effect/vitest": "4.0.5"
   }
