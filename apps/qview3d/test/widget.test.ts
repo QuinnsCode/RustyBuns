@@ -133,6 +133,9 @@ test("the iframe tells the page round it what the widget does", async () => {
     const tab = await openTab(chrome.cdp, { w: 800, h: 600 });
     await load(chrome.cdp, tab, `http://127.0.0.1:${shop.port}/`, 500);
     await until("qview:ready from the frame", () => tab.eval<boolean>(`window.heard.some((m) => m.type === "qview:ready")`));
+    // A page that started listening late asks, and hears it again.
+    await tab.eval(`window.heard.length = 0; document.querySelector("iframe").contentWindow.postMessage({ source: "qview3d", type: "ready" }, "*")`);
+    await until("qview:ready when asked", () => tab.eval<boolean>(`window.heard.some((m) => m.type === "qview:ready" && m.detail.design.model === "tee")`), 10_000);
     await tab.eval(`document.querySelector("iframe").contentWindow.postMessage({ source: "qview3d", type: "snapshot" }, "*")`);
     const shot = await until("a snapshot from the frame", () => tab.eval<{ from: string; size: number } | null>(`(() => { const m = window.heard.find((m) => m.type === "qview:snapshot"); return m ? { from: m.from, size: m.detail.blob.size, model: m.detail.design.model } : null; })()`));
     expect(shot).toMatchObject({ from: new URL(app.url).origin, model: "tee" });

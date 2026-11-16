@@ -136,6 +136,7 @@ Some site builders keep an \`<iframe>\` but strip a pasted \`<script>\`. Then pa
   \`qview:error\` (\`detail.error\` is the message). Check that \`event.origin\` is \`${origin}\`.
 - The page asks it to act with \`frame.contentWindow.postMessage({ source: "qview3d", type: "save" }, "${origin}")\`
   (or \`"snapshot"\`); the answer comes back as \`qview:saved\` or \`qview:snapshot\`.
+  Listening after the frame loaded? Send \`"ready"\`: it answers \`qview:ready\` once the widget is up.
 - For a cart: on \`qview:saved\`, put \`detail.id\` in a hidden input of the product form, then submit it. A builder
   that allows no script at all still shows the customiser and its snapshot download, but can't carry the id.
 
