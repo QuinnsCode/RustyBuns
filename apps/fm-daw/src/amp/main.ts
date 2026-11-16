@@ -15,6 +15,8 @@ import { AMPS, PEDALS, type AmpDef, type Knobs } from "../circuit/amps.ts";
 import { riff } from "../circuit/riff.ts";
 import { BoardView } from "./board.ts";
 import { icon } from "./icons.ts";
+import { h, iconButton } from "./dom.ts";
+import { benchSlot } from "./bench-slot.ts";
 import { knob, type KnobEl } from "./knob.ts";
 import { MODES, Screen, topHz, hzLabel, type ScreenMode } from "./screens.ts";
 import type { AmpSettings, FromAmp, ToAmp } from "./messages.ts";
@@ -72,7 +74,7 @@ let meter: FromAmp = { t: "meter", levels: [], out: 0, load: 0, misses: 0 };
 const dbToGain = (db: number) => (db <= -60 ? 0 : 10 ** (db / 20));
 
 function settings(): AmpSettings {
-  return { amp: S.amp, pedal: S.pedal, drive: S.pedal ? S.drive[S.pedal] ?? 5 : 0, swaps: S.pedal ? S.swaps[S.pedal] ?? {} : {}, knobs: S.knobs[S.amp] ?? ampOf(S.amp).knobs, bypass: S.bypass === 1, oversample: S.quality === "eco" ? 2 : 4 };
+  return { amp: S.amp, pedal: S.pedal, bench: S.pedal === "bench" ? ui.bench.net() ?? undefined : undefined, drive: S.pedal ? S.drive[S.pedal] ?? 5 : 0, swaps: S.pedal ? S.swaps[S.pedal] ?? {} : {}, knobs: S.knobs[S.amp] ?? ampOf(S.amp).knobs, bypass: S.bypass === 1, oversample: S.quality === "eco" ? 2 : 4 };
 }
 function send() {
   save();
@@ -141,19 +143,6 @@ function showLatency() {
 }
 
 // ---- page ----
-const h = <K extends keyof HTMLElementTagNameMap>(tag: K, cls = "", ...kids: (Node | string)[]) => {
-  const el = document.createElement(tag);
-  if (cls) el.className = cls;
-  el.append(...kids);
-  return el;
-};
-const iconButton = (name: string, title: string, onClick: () => void) => {
-  const b = h("button", "icon-btn", icon(name));
-  b.title = title; b.setAttribute("aria-label", title); b.type = "button";
-  b.addEventListener("click", onClick);
-  return b;
-};
-
 function build() {
   const root = h("div", "stage");
   // Top bar: what's playing, bypass, level, how hard the audio thread works, the screens' layout.
@@ -250,6 +239,12 @@ function build() {
     return { id: p.id, el };
   });
   const floor = h("div", "floor", ...pedalEls.map((p) => p.el));
+  // The bench: a board you drew becomes the fourth pedal (src/circuit/bench.ts).
+  const bench = benchSlot(floor, {
+    toggle: () => { S.pedal = S.pedal === "bench" ? null : "bench"; showPedals(); send(); },
+    changed: (ok) => { if (!ok && S.pedal === "bench") { S.pedal = null; showPedals(); } send(); },
+  });
+  floor.append(bench.el);
 
   const board = new BoardView((socket, choice) => swapPart(socket, choice));
   const note = h("p", "note");
@@ -259,7 +254,7 @@ function build() {
     (() => { const b = h("button", "start", icon("power"), "Plug in"); b.type = "button"; b.addEventListener("click", () => void start().catch((e) => { note.textContent = String(e); })); return b; })());
   root.append(bar, note, screensEl, rig, floor, board.el, startCard);
   document.body.append(root);
-  return { root, bar, boardBtn, board, screens, screensEl, tubes, modelName, modelBlurb, models, knobs, cones, pedalEls, sourceButtons, devices, load, latency, note, startCard };
+  return { root, bar, boardBtn, board, screens, screensEl, tubes, modelName, modelBlurb, models, knobs, cones, pedalEls, bench, sourceButtons, devices, load, latency, note, startCard };
 }
 
 const ui = build();
@@ -279,6 +274,7 @@ function watchLoad(m: FromAmp) {
 
 function showPedals() {
   for (const p of ui.pedalEls) p.el.classList.toggle("lit", S.pedal === p.id);
+  ui.bench.light(S.pedal === "bench");
   showBoard();
 }
 
@@ -288,7 +284,8 @@ function showBoard() {
   ui.board.el.hidden = S.board !== 1;
   if (S.board !== 1) return;
   const def = PEDALS.find((p) => p.id === S.pedal);
-  if (def) ui.board.show(def.board, `${def.name} · your board`, S.swaps[def.id] ?? {});
+  if (def?.board) ui.board.show(def.board, `${def.name} · your board`, S.swaps[def.id] ?? {});
+  else if (S.pedal === "bench") ui.board.blank(`${ui.bench.state()?.name ?? "Bench"} · on the bench`, "a board dropped on the bench has no drawing here yet");
   else ui.board.show("triode", `${ampOf(S.amp).name} · V1, the first tube stage`, null);
 }
 
@@ -337,7 +334,8 @@ function frame() {
   const fr = { db, wave, sampleRate: ctx?.sampleRate ?? 48000 };
   for (const s of ui.screens) s.draw(fr);
   // A tube glows with its stage's swing (log scale, 150 V is full); power tubes with the output.
-  const offset = S.pedal && !S.bypass ? 1 : 0, tubes = ui.tubes.querySelectorAll<HTMLElement>(".tube");
+  const pedalOn = S.pedal === "bench" ? !!ui.bench.state()?.ok : !!S.pedal;
+  const offset = pedalOn && !S.bypass ? 1 : 0, tubes = ui.tubes.querySelectorAll<HTMLElement>(".tube");
   let pre = 0;
   for (const t of tubes) {
     const swing = t.classList.contains("pre") ? meter.levels[offset + pre++] ?? 0 : meter.out * 150;
@@ -365,11 +363,13 @@ Object.assign(window, {
     state: () => ({
       started: !!ctx, running: ctx?.state === "running", amp: S.amp, name: ampOf(S.amp).name, knobs: S.knobs[S.amp], pedal: S.pedal,
       drive: S.pedal ? S.drive[S.pedal] : null, swaps: S.pedal ? { ...S.swaps[S.pedal] } : {}, board: S.board === 1, bypass: S.bypass === 1, quality: S.quality, source: S.source, layout: S.layout, modes: [...S.modes],
-      load: meter.load, misses: meter.misses, out: meter.out, levels: meter.levels,
+      load: meter.load, misses: meter.misses, out: meter.out, levels: meter.levels, bench: ui.bench.state(),
     }),
+    /** Puts a board (tscircuit circuit JSON) on the bench, as dropping its file does: the bench's verdict back. */
+    bench: (json: unknown, name = "Bench pedal") => ui.bench.load(json, name),
     start,
     setAmp,
-    pedal: (id: string | null) => { S.pedal = PEDALS.some((p) => p.id === id) ? id : null; showPedals(); send(); },
+    pedal: (id: string | null) => { S.pedal = PEDALS.some((p) => p.id === id) || (id === "bench" && ui.bench.state()?.ok) ? id : null; showPedals(); send(); },
     /** Open or close the board view. */
     board: (open: boolean) => { S.board = open ? 1 : 0; showBoard(); save(); },
     /** Swap a socket on the playing pedal's board (`"D1", "germanium"`); null puts the stock part back. */

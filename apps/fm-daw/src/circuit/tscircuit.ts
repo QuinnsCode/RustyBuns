@@ -9,7 +9,10 @@
 // are ignored; the rails come from `rail`), and with IABC an OTA; PLATE, GRID and
 // CATHODE make a 12AX7; DRAIN, GATE and SOURCE a JFET; LEDA, LEDK, LDR1 and LDR2 a
 // vactrol (an LED lighting an LDR). A net named in `supplies` gets a DC source to ground.
-// Knobs and part swaps reach the board by part name (`values`, `diodes`).
+// Knobs and part swaps reach the board by part name (`knobs`, `values`, `diodes`).
+//
+// A pot's `knobs` turn (0 to 1, 0.5 if not given) moves its wiper from pin1 toward
+// pin3. A two-pin pot (tscircuit's default) is a variable resistor, `max × t`.
 import { arr, bool, check, int, num, obj, oneOf, opt, raw, str } from "@rustybuns/util/guard";
 import type { Netlist, Part } from "./mna.ts";
 
@@ -24,10 +27,17 @@ const Port = obj({
   pin_number: opt(int(0, 10_000)), port_hints: opt(arr(str(80), 32)), subcircuit_connectivity_map_key: opt(str(400)),
 });
 const Net = obj({ name: str(200), is_ground: opt(bool()), subcircuit_connectivity_map_key: opt(str(400)) });
+const PcbBoard = obj({ width: num(0, 10_000), height: num(0, 10_000) });
 
 type Named<P> = P extends unknown ? P & { name: string } : never;
 /** One part on a board, by its silkscreen name, with the nets its pins sit on (before `BoardOptions`). */
 export type BoardPart = Named<Part>;
+
+/** A board read out of its circuit JSON: its parts, its named nets, and the PCB's size in millimetres if the JSON has its `pcb_board`. */
+export interface Board { parts: BoardPart[]; nets: string[]; mm: { w: number; h: number } | null }
+
+/** A pot on the board: its name (the knob's) and its full resistance. */
+export interface BoardPot { name: string; ohms: number }
 
 /** A diode's junction: saturation current and ideality (`Part` "D"). */
 export interface Junction { is: number; n: number }
@@ -44,6 +54,8 @@ export interface BoardOptions {
   germanium?: string[];
   /** JFET chips (by name) that are P-channel; the rest are N. */
   pChannel?: string[];
+  /** Each pot's turn by name, 0 to 1 (default 0.5). */
+  knobs?: Record<string, number>;
   /** New values by part name, replacing the board's: ohms (a resistor or pot), farads or henries. 0 takes the part off the board. */
   values?: Record<string, number>;
   /** Diodes by part name: another junction, or null for an empty socket. */
@@ -52,15 +64,17 @@ export interface BoardOptions {
   noisy?: string[];
 }
 
-/** The board's parts, in the order the JSON lists them. */
-export function readBoard(json: unknown): BoardPart[] {
+/** Reads a board out of tscircuit's circuit JSON. Throws, naming the part, on what the simulator can't model. */
+export function readBoard(json: unknown): Board {
   const els = arr(raw, 100_000)(json);
   const comps: ReturnType<typeof Component>[] = [], ports: ReturnType<typeof Port>[] = [], nets: ReturnType<typeof Net>[] = [];
+  let mm: Board["mm"] = null;
   for (const e of els) {
     const t = check(Kind, e)?.type;
     if (t === "source_component") comps.push(Component(e));
     else if (t === "source_port") ports.push(Port(e));
     else if (t === "source_net") nets.push(Net(e));
+    else if (t === "pcb_board" && !mm) { const p = PcbBoard(e); mm = { w: p.width, h: p.height }; }
   }
   const netName = new Map<string, string>();
   for (const n of nets) if (n.subcircuit_connectivity_map_key) netName.set(n.subcircuit_connectivity_map_key, n.is_ground ? "gnd" : n.name);
@@ -68,7 +82,7 @@ export function readBoard(json: unknown): BoardPart[] {
     const key = p.subcircuit_connectivity_map_key;
     return key ? netName.get(key) ?? key : `open:${p.source_port_id}`;
   };
-  return comps.map((c): BoardPart => {
+  const parts = comps.map((c): BoardPart => {
     const name = c.name;
     const pins = ports.filter((p) => p.source_component_id === c.source_component_id).sort((a, b) => (a.pin_number ?? 0) - (b.pin_number ?? 0));
     const label = (pin: string) => {
@@ -102,8 +116,9 @@ export function readBoard(json: unknown): BoardPart[] {
       return { name, kind: "L", a, b, henries: c.inductance };
     }
     if (c.ftype === "simple_potentiometer") {
-      if (pins.length !== 3) throw new Error(`${name}: ${pins.length} pins, expected 3`);
-      if (c.max_resistance === undefined) throw new Error(`${name}: no max_resistance`);
+      if (c.max_resistance === undefined) throw new Error(`${name}: no maxResistance`);
+      if (pins.length === 2) { const [a, w] = two(); return { name, kind: "Pot", a, w, b: w, ohms: c.max_resistance }; }
+      if (pins.length !== 3) throw new Error(`${name}: ${pins.length} pins, expected 2 or 3`);
       const w = pins.find((p) => p.name.toLowerCase() === "wiper" || p.port_hints?.includes("wiper")) ?? pins[1];
       const [a, b] = pins.filter((p) => p !== w).map(nodeOf);
       return { name, kind: "Pot", a, w: nodeOf(w), b, ohms: c.max_resistance };
@@ -129,23 +144,32 @@ export function readBoard(json: unknown): BoardPart[] {
     }
     throw new Error(`${name}: no model for ${c.ftype} yet`);
   });
+  return { parts, nets: nets.map((n) => n.name), mm };
 }
 
-export function boardToNetlist(json: unknown, o: BoardOptions = {}): Netlist {
-  const board = readBoard(json);
-  const named = new Set(board.map((p) => p.name));
+/** The board's pots, in the order they were drawn. */
+export const boardPots = (b: Board): BoardPot[] => b.parts.flatMap((p) => (p.kind === "Pot" ? [{ name: p.name, ohms: p.ohms }] : []));
+
+/** A board's JSON as a netlist the solver runs. Throws, naming the part, on what it can't model. */
+export const boardToNetlist = (json: unknown, o: BoardOptions = {}): Netlist => netlistOf(readBoard(json), o);
+
+/** A board already read (`readBoard`) as a netlist: the bench turns its knobs without reading the JSON again. */
+export function netlistOf(board: Board, o: BoardOptions = {}): Netlist {
+  const named = new Set(board.parts.map((p) => p.name));
   for (const n of [...Object.keys(o.values ?? {}), ...Object.keys(o.diodes ?? {}), ...(o.noisy ?? [])]) {
     if (!named.has(n)) throw new Error(`no part ${n} on this board (${[...named].join(", ")})`);
   }
   const parts: Part[] = [];
-  for (const { name, ...p } of board) {
+  for (const { name, ...p } of board.parts) {
     const value = o.values?.[name];
     if (value !== undefined && value <= 0) continue;
     if (p.kind === "R") parts.push({ ...p, ohms: value ?? p.ohms, ...(o.noisy?.includes(name) ? { noisy: true } : {}) });
     else if (p.kind === "C") parts.push({ ...p, farads: value ?? p.farads });
     else if (p.kind === "L") parts.push({ ...p, henries: value ?? p.henries });
-    else if (p.kind === "Pot") parts.push({ ...p, ohms: value ?? p.ohms });
-    else if (p.kind === "D") {
+    else if (p.kind === "Pot") {
+      const turn = o.knobs?.[name];
+      parts.push({ ...p, ohms: value ?? p.ohms, ...(turn === undefined ? {} : { at: Math.min(1, Math.max(0, turn)) }) });
+    } else if (p.kind === "D") {
       const j = o.diodes?.[name];
       if (j === null) continue;
       parts.push(j ? { ...p, is: j.is, n: j.n } : p);

@@ -16,7 +16,7 @@ const json = circuit.getCircuitJson();
 const errors = json.filter((e) => e.type.endsWith("_error"));
 if (errors.length) throw new Error(`${file}: ${errors.map((e) => `${e.type} ${"message" in e ? String(e.message) : ""}`).join("; ")}`);
 
-const keep = new Set(["source_component", "source_port", "source_net", "source_trace"]);
+const keep = new Set(["source_component", "source_port", "source_net", "source_trace", "pcb_board"]);
 await Bun.write(`${prefix}.circuit.json`, JSON.stringify(json.filter((e) => keep.has(e.type)), null, 1) + "\n");
 
 const name = new Map<string, string>();

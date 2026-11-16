@@ -44,8 +44,8 @@ export const AMPS: AmpDef[] = [
   },
 ];
 
-/** A pedal: its board (`circuits/<board>.tsx`) and its netlist at a Drive (0 to 10) with the player's part swaps. */
-export interface PedalDef { id: string; name: string; blurb: string; board: BoardId; net: (drive: number, swaps?: Swaps) => RigSpec["links"][number]["net"] }
+/** A pedal: its board (`circuits/<board>.tsx`; none for one dropped on the bench) and its netlist at a Drive (0 to 10) with the player's part swaps. */
+export interface PedalDef { id: string; name: string; blurb: string; board?: BoardId; net: (drive: number, swaps?: Swaps) => RigSpec["links"][number]["net"] }
 
 export const PEDALS: PedalDef[] = [
   { id: "drive", name: "Q Drive", blurb: "Diodes in the op-amp's feedback: rounded clipping and a mid push. In front of an amp at low Drive, it tightens the lows.", board: "drive", net: (d, s) => overdrive(d / 10, s) },

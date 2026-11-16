@@ -58,7 +58,7 @@ export type Swaps = Record<string, string>;
 /** The swappable sockets on a board, in board order. */
 export function sockets(board: BoardId): Socket[] {
   const out: Socket[] = [], pairs = new Map<string, string[]>();
-  for (const p of readBoard(BOARDS[board])) {
+  for (const p of readBoard(BOARDS[board]).parts) {
     if (p.kind === "C") out.push({ id: p.name, kind: "cap", parts: [p.name], farads: p.farads });
     else if (p.kind === "D") {
       const key = [p.a, p.k].sort().join("|");
