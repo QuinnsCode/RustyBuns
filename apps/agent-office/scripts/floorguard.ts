@@ -2,6 +2,7 @@
 // path lands in: the MCP tools, the office-workers command and a bare curl to the hook port.
 import { commandOf, MUSE_WRITE_HOOK, shellCommand, WRITE_HOOK } from "../askfirst/hook.ts";
 import { ASK_MS } from "../live/floorguard.ts";
+import { once } from "./once.ts";
 
 /** server/hooks/office-workers.js: people-only actions, ask-first ones held for a person (#727), forced send-homes that keep work, tell_worker marked as from its worker, and a told rebuild made its own task (#1235). */
 export function floorGuardHooks(js: string) {
@@ -179,9 +180,4 @@ export function overlapBin(js: string) {
   js = once(js, rel, "    const answer = await call('hire', body, ctx);\n",
     "    const answer = await call('hire', body, ctx);\n    if (answer.held) {\n      err(answer.held.message);\n      return 0;\n    }\n");
   return js;
-}
-
-function once(s: string, rel: string, from: string, to: string) {
-  if (s.split(from).length !== 2) throw new Error(`Agent Office changed: patch target moved in ${rel}: ${from}`);
-  return s.replace(from, () => to);
 }

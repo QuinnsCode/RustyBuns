@@ -1,6 +1,7 @@
 // The PR agent's brief also has it follow up with workers once their pull requests merge. stationDefault(kind)
 // builds every station agent's brief, once in the server (shared/prompts.js) and once in the client bundle
 // (assets/ask-*.js) the prompt settings show the defaults from; both get the same paragraph, for 'pulls' only.
+import { once } from "./once.ts";
 
 export const PULLS_FOLLOW_UP =
   `After a worker's pull request merges, tell that worker "Looks like you merged!" (tell_worker) and read what it says. ` +
@@ -22,9 +23,4 @@ export function pullsFollowUpClient(js: string) {
   // the paragraph's guard names stationDefault's parameter, e
   once(js, "assets/ask-*.js", "{let t=e===`queue`;return[", "");
   return once(js, "assets/ask-*.js", ",cn,`${t?`When you've queued it", `,cn,${paragraph("e")}\`\${t?\`When you've queued it`);
-}
-
-function once(s: string, rel: string, from: string, to: string) {
-  if (s.split(from).length !== 2) throw new Error(`Agent Office changed: patch target moved in ${rel}: ${from}`);
-  return s.replace(from, () => to);
 }
