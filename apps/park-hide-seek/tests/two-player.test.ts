@@ -3,7 +3,8 @@
 import { afterAll, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
 import { serve, durableObject } from "@rustybuns/shell-bun";
 import World from "../packages/desktop/world.ts";
-import { HUNT, circleAt, dropOk, isServerMsg, type Msg, type View } from "../src/hunt/game.ts";
+import { check } from "@rustybuns/util/guard";
+import { HUNT, ServerMsg, circleAt, dropOk, type Msg, type View } from "../src/hunt/game.ts";
 import { resolve, step, wrap, type Body } from "../src/hunt/sim.ts";
 import { loadZoneData, zoneById, type Zone } from "../src/zones/zone.ts";
 
@@ -30,7 +31,7 @@ afterAll(() => { Object.assign(HUNT, saved); shell.stop(); });
 function page(room: string, uid: string) {
   const ws = new WebSocket(`ws://127.0.0.1:${shell.port}/ws?uid=${uid}&room=${room}`);
   const p = { view: null as View | null, send: (m: Msg) => void setTimeout(() => ws.readyState === 1 && ws.send(JSON.stringify(m)), LAG), close: () => ws.close() };
-  ws.onmessage = (e) => { const m: unknown = JSON.parse(String(e.data)); if (isServerMsg(m)) setTimeout(() => { p.view = m.view; }, LAG); };
+  ws.onmessage = (e) => { const m = check(ServerMsg, JSON.parse(String(e.data))); if (m) setTimeout(() => { p.view = m.view; }, LAG); };
   return p;
 }
 const until = async (f: () => unknown, ms = 15000) => { const end = Date.now() + ms; while (!f()) { if (Date.now() > end) throw new Error("timed out"); await Bun.sleep(10); } };

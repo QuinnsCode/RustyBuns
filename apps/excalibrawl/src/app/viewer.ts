@@ -3,8 +3,8 @@
 
 import { getJson } from "@rustybuns/util/http";
 import { esc } from "@rustybuns/util";
-import { isLiveMessage, Replay, Summaries, type LiveMatch, type ReplayEntry } from "../live-wire.ts";
-import type { LogEntry } from "../engine/match.ts";
+import { check } from "@rustybuns/util/guard";
+import { LiveMessage, Replay, Summaries, type LiveMatch, type ReplayEntry } from "../live-wire.ts";
 import { scenesAt } from "../engine/match.ts";
 import { sceneSvg } from "../engine/svg.ts";
 
@@ -31,7 +31,7 @@ function said(e: ReplayEntry | undefined): string {
 export function watch(arena: HTMLElement | null, replays: HTMLElement | null): () => void {
   if (!arena || !replays) return () => {};
   let closed = false;
-  let match: (LiveMatch & { log: LogEntry[] }) | null = null;
+  let match: (LiveMatch & { log: ReplayEntry[] }) | null = null;
   let replay: { m: Replay; turn: number; timer: ReturnType<typeof setInterval> } | null = null;
   let index: Summaries = [];
 
@@ -93,9 +93,10 @@ export function watch(arena: HTMLElement | null, replays: HTMLElement | null): (
     if (closed) return;
     ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/api/live`);
     ws.onmessage = (ev) => {
-      let msg: unknown;
-      try { msg = JSON.parse(String(ev.data)); } catch { return; }
-      if (!isLiveMessage(msg)) return;
+      let raw: unknown;
+      try { raw = JSON.parse(String(ev.data)); } catch { return; }
+      const msg = check(LiveMessage, raw);
+      if (!msg) return;
       if (msg.t === "hello" || msg.t === "start") {
         // The hello's match has scenes but no log; seed the log with one add per shape so far.
         match = msg.match && {
