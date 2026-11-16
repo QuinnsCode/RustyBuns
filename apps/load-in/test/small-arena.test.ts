@@ -28,9 +28,10 @@ function hangAll(w: World, at: string, keys: string[]) {
   }
 }
 
-/** Carry `key` and set it down at (x, z) facing `rot`. */
-function place(w: World, key: string, x: number, z: number, rot = 0) {
+/** Carry `key` and set it down at (x, z) facing `rot`, by way of `via` if something stands in the way. */
+function place(w: World, key: string, x: number, z: number, rot = 0, via?: [number, number]) {
   take(w, key);
+  if (via) walkTo(w, ...via);
   walkTo(w, x, z + 0.3 + dims(item(w, key))[2] / 2);
   w.you.yaw = 0;
   w.held!.rel = rot;
@@ -104,7 +105,9 @@ test("hang the arrays, fail and pass the point's check, fly them clear, fill the
 
   // Fills on the stage lip facing the house, and the desk out at front of house.
   [-5, -1.7, 1.7, 5].forEach((x, k) => place(w, `fill-${k + 1}`, x, 29.7, Math.PI));
-  place(w, "desk", 0, 16.5);
+  // The desk sits on its case: round the case, then out to front of house.
+  place(w, "desk", 0, 16.5, 0, [1.2, 35]);
+  expect(item(w, "desk")).toMatchObject({ x: 0, y: 0, z: 16.5 });
   const after = score(w);
   expect(after.covered.front).toBeGreaterThan(0.9);
   expect(after).toMatchObject({ desk: true, pass: true });
