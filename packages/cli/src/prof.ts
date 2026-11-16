@@ -8,8 +8,8 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { RustyBunsConfig } from "./config.ts";
 import { sharedStateBase } from "./state.ts";
-import type { MemStats } from "@rustybuns/shell-bun/memwatch";
-import type { Run } from "@rustybuns/shell-bun/history";
+import { MemReply, type MemStats } from "@rustybuns/shell-bun/memwatch";
+import { HistoryReply, type Run } from "@rustybuns/shell-bun/history";
 
 export const PROF_SECRET = "RB_PROF_SECRET";
 
@@ -59,7 +59,7 @@ export async function fetchMem(o: { url: string; fetch?: typeof fetch }): Promis
   const res = await (o.fetch ?? fetch)(`${o.url}/__rb/mem`, { signal: AbortSignal.timeout(30_000) });
   if (!res.ok || !(res.headers.get("content-type") ?? "").includes("json"))
     throw new Error(`${o.url} has no /__rb/mem (status ${res.status}): is it a RustyBuns box, built before the memory watch?`);
-  return res.json() as Promise<MemStats & { boots?: number }>;
+  return MemReply(await res.json());
 }
 
 /** GET /__rb/history, behind the same secret as /__rb/prof: the box's runs, newest first. */
@@ -68,5 +68,5 @@ export async function fetchHistory(o: { url: string; secret: string; fetch?: typ
   if (res.status === 401) throw new Error(`the box refused the secret: ${PROF_SECRET} here isn't the one it was deployed with.`);
   if (!res.ok || !(res.headers.get("content-type") ?? "").includes("json"))
     throw new Error(`${o.url} has no /__rb/history (status ${res.status}): the box has no ${PROF_SECRET}, or was built before \`rustybuns history\`. Set it and deploy again.`);
-  return (await res.json() as { runs: Run[] }).runs;
+  return HistoryReply(await res.json()).runs;
 }

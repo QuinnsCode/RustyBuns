@@ -18,4 +18,6 @@ test("callDrain sends the secret and the grace, and answers null rather than fai
   expect(JSON.parse(seen[0]![1].body as string)).toEqual({ in: 30 });
   expect(await callDrain("https://x.dev", "s", { in: 1 }, (async () => new Response("no", { status: 404 })) as unknown as typeof fetch)).toBeNull();
   expect(await callDrain("https://x.dev", "s", { in: 1 }, (async () => { throw new Error("down"); }) as unknown as typeof fetch)).toBeNull();
+  // an app whose route answers something else (its own JSON) didn't drain anything
+  expect(await callDrain("https://x.dev", "s", { in: 1 }, (async () => Response.json({ ok: true })) as unknown as typeof fetch)).toBeNull();
 });

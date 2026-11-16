@@ -17,13 +17,14 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import * as shims from "../shims.ts";
+import type { Fields } from "@rustybuns/ports";
 
 type Module = string | { js: string } | { cjs: string } | { text: string } | { data: ArrayBuffer | ArrayBufferView } | { json: unknown } | { py: string };
 export interface WorkerCode {
   compatibilityDate?: string; compatibilityFlags?: string[];
   mainModule: string;
   modules: Record<string, Module>;
-  env?: Record<string, unknown>;
+  env?: Fields;
   /** null cuts the Worker off the network and runs it in a thread of its own; anything else runs in-process. */
   globalOutbound?: unknown;
 }
@@ -80,7 +81,7 @@ const methodsOf = (v: object) => {
 };
 
 /** Plain values copy across; an object with methods becomes the list of their names. */
-const boundSpec = (bound: Record<string, unknown>) => Object.fromEntries(Object.entries(bound).map(([k, v]) => {
+const boundSpec = (bound: Fields) => Object.fromEntries(Object.entries(bound).map(([k, v]) => {
   const fns = v && typeof v === "object" ? methodsOf(v) : [];
   return [k, fns.length ? { __rpc: fns } : v];
 }));
@@ -122,7 +123,7 @@ const ctx = () => ({ waitUntil(p: Promise<unknown>) { void p?.catch?.((e) => con
 
 /** What get() returns: the edge's WorkerStub. */
 export class LocalWorkerStub {
-  private loaded: Promise<{ mod?: Record<string, any>; file: string; env: Record<string, unknown> }>;
+  private loaded: Promise<{ mod?: Record<string, any>; file: string; env: Fields }>;
   constructor(dir: string, code: () => WorkerCode | Promise<WorkerCode>, private killMs = 10_000) {
     this.loaded = (async () => {
       const c = await code();
@@ -148,7 +149,7 @@ export class LocalWorkerStub {
   }
 
   /** One call in a fresh Worker thread, ended when it answers or runs past killMs. */
-  private isolated(l: { file: string; env: Record<string, unknown> }, name: string | undefined, method: string, args: unknown[]): Promise<any> {
+  private isolated(l: { file: string; env: Fields }, name: string | undefined, method: string, args: unknown[]): Promise<any> {
     return new Promise(async (resolve, reject) => {
       const url = URL.createObjectURL(new Blob([ISOLATE], { type: "text/javascript" }));
       // An empty environment: the host's variables (its keys among them) never reach the code.

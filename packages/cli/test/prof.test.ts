@@ -79,4 +79,10 @@ test("fetchMem and fetchHistory: the box's /__rb/mem, and its history behind the
     await expect(fetchMem({ url: `http://localhost:${bare.port}` })).rejects.toThrow("has no /__rb/mem");
     await expect(fetchHistory({ url: `http://localhost:${bare.port}`, secret: SECRET })).rejects.toThrow("has no /__rb/history");
   } finally { bare.stop(true); }
+  // An app with its own JSON on those paths: refused, naming the field, not printed as numbers it doesn't have.
+  const other = Bun.serve({ port: 0, fetch: () => Response.json({ rssMb: "lots", runs: [{ from: 1 }] }) });
+  try {
+    await expect(fetchMem({ url: `http://localhost:${other.port}` })).rejects.toThrow("rssMb");
+    await expect(fetchHistory({ url: `http://localhost:${other.port}`, secret: SECRET })).rejects.toThrow("runs.0.from");
+  } finally { other.stop(true); }
 });

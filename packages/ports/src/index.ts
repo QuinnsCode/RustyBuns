@@ -2,8 +2,15 @@
 // Types only. Zero runtime, zero deps. Every shell (Bun, Cloudflare, Hetzner)
 // satisfies these STRUCTURALLY: same method names, no wrapper objects.
 
+/**
+ * A row or a bag of named values whose fields the platform leaves open, as Cloudflare's own types do:
+ * a D1 or SqlStorage row before the caller names its columns, a Worker's env, a log's context.
+ * Declared once here; a caller that knows the shape passes it as the type parameter.
+ */
+export type Fields = Record<string, unknown>;
+
 /** The four things an app needs. A shell is anything that provides them. */
-export interface Ports<Env = Record<string, unknown>> {
+export interface Ports<Env = Fields> {
   http: HttpPort<Env>;
   comms: CommsPort;
   storage: StoragePort;
@@ -73,7 +80,7 @@ export interface StoragePort {
 
 /** Cloudflare's SqlStorage: what a SQLite-backed DO runs its queries on. */
 export interface SqlStoragePort {
-  exec<T = Record<string, unknown>>(query: string, ...bindings: unknown[]): SqlCursor<T>;
+  exec<T = Fields>(query: string, ...bindings: unknown[]): SqlCursor<T>;
   readonly databaseSize: number;
 }
 export interface SqlCursor<T> extends IterableIterator<T> {
@@ -99,15 +106,15 @@ export interface MemoryPort {
 // ---- reporter -------------------------------------------------------------
 
 export interface Reporter {
-  breadcrumb(name: string, data?: Record<string, unknown>): void;
-  report(err: unknown, ctx?: Record<string, unknown>): void;
-  escaped(where: string, err: unknown, ctx?: Record<string, unknown>): void;
+  breadcrumb(name: string, data?: Fields): void;
+  report(err: unknown, ctx?: Fields): void;
+  escaped(where: string, err: unknown, ctx?: Fields): void;
 }
 
 // ---- app ------------------------------------------------------------------
 
 /** What a Rusty Buns app exports. The shell calls these; nothing else. */
-export interface App<Env = Record<string, unknown>> {
+export interface App<Env = Fields> {
   fetch?: FetchHandler<Env>["fetch"];
   ws?: SocketHandlers;
   restore?(): Promise<void>;

@@ -801,7 +801,7 @@ export function forStage(c: RustyBunsConfig, stage: string): RustyBunsConfig {
   const edge = base.targets.edge && { ...base.targets.edge };
   if (edge) {
     for (const k of ["workerName", "accountId", "workersDev", "previewUrls", "domain", "routes"] as const)
-      if (s[k] !== undefined) (edge as Record<string, unknown>)[k] = s[k];
+      if (s[k] !== undefined) Object.assign(edge, { [k]: s[k] });
     // renamedFrom moves the old Worker's Durable Object data over; a stage with a Worker of its own must not take the live one's.
     if (s.workerName !== undefined) delete edge.renamedFrom;
     if (Array.isArray(edge.domain) && !edge.domain.length) delete edge.domain;

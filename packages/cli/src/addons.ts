@@ -74,7 +74,7 @@ function nativeFiles(dir: string, depth = 0): string[] {
 }
 
 const LOOKUP_NS = "rb-addon-";
-const pkgName = (dir: string) => { try { return JSON.parse(readFileSync(join(dir, "package.json"), "utf8")).name as string; } catch { return basename(dir); } };
+const pkgName = (dir: string) => { try { const { name } = JSON.parse(readFileSync(join(dir, "package.json"), "utf8")); return typeof name === "string" ? name : basename(dir); } catch { return basename(dir); } };
 const headerOf = (f: string) => { try { return addonPlatforms(readFileSync(f)); } catch { return []; } };
 /** A DesktopOs as Node names it (process.platform-process.arch), as prebuilds/ dirs are named. */
 const nodeTag = (t: DesktopOs) => t.replace(/^windows-/, "win32-");
@@ -362,7 +362,7 @@ export interface ServerAddons {
  * The addons of one server's bundle, from Bun.build's result (`metafile: true`): the ones it
  * carried, and the packages in it whose addon it couldn't (no carried .node file came from them).
  */
-export function serverAddons(r: { outputs: { path: string }[]; metafile?: { inputs: Record<string, unknown> } }, perTarget: TargetLookup[] = [], cwd = process.cwd()): ServerAddons {
+export function serverAddons(r: { outputs: { path: string }[]; metafile?: { inputs: Record<string, object> } }, perTarget: TargetLookup[] = [], cwd = process.cwd()): ServerAddons {
   const inputs = Object.keys(r.metafile?.inputs ?? {});
   const carried = r.outputs.map((o) => o.path).filter((p) => p.endsWith(".node")).map((p) => basename(p));
   const carriedFrom = inputs.filter((f) => f.endsWith(".node")).map((f) => resolve(cwd, f).split(sep).join("/"));

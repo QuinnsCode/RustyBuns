@@ -24,6 +24,7 @@
     "./client": "./src/client.ts",
     "./cpuprof": "./src/cpuprof.ts",
     "./cron": "./src/cron.ts",
+    "./guard": "./src/guard.ts",
     "./history": "./src/history.ts",
     "./intro": "./src/intro.tsx",
     "./memwatch": "./src/memwatch.ts",

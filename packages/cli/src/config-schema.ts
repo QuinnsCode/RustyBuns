@@ -6,6 +6,7 @@
 // imports defineConfig, never loads effect.
 import { Effect, Schema, SchemaAST, SchemaIssue } from "effect";
 import { PERSONAS, type Persona } from "@rustybuns/shell-bun/priority";
+import { isRecord } from "@rustybuns/shell-bun/guard";
 import { forStage, type RustyBunsConfig } from "./config.ts";
 
 const opt = Schema.optional;
@@ -183,8 +184,8 @@ export function formatIssues(issue: SchemaIssue.Issue): string[] {
         const v = SchemaIssue.hasInput(i) ? i.input : undefined;
         for (const key of ["type", "provider"]) {
           const known = tags(i.ast, key);
-          if (known.length && v && typeof v === "object" && key in v && !known.includes((v as Record<string, unknown>)[key]))
-            { lines.push(`${at([...path, key])}: ${show((v as Record<string, unknown>)[key])} isn't one of ${known.join(", ")}`); return; }
+          if (known.length && isRecord(v) && key in v && !known.includes(v[key]))
+            { lines.push(`${at([...path, key])}: ${show(v[key])} isn't one of ${known.join(", ")}`); return; }
         }
         // Otherwise the member that matched the tag says what's wrong inside it.
         if (i.issues.length) { walk(i.issues.at(-1)!, path); return; }

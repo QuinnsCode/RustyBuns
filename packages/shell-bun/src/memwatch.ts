@@ -8,6 +8,7 @@
 
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
+import { int, nul, num, obj, opt, type Guard } from "./guard.ts";
 
 export interface MemSample { at: number; rss: number; heap: number }
 
@@ -23,6 +24,13 @@ export interface MemStats {
   maxMb: number | null;
   samples: number;
 }
+
+const mb = num(0, Infinity), rate = nul(num(-Infinity, Infinity));
+/** What GET /__rb/mem answers: the stats, and on a box the boot count on this data. */
+export const MemReply: Guard<MemStats & { boots?: number }> = obj({
+  rssMb: mb, heapMb: mb, peakRssMb: mb, uptimeS: num(0, Infinity), slopeMbPerHour: rate, hoursToMax: rate,
+  maxMb: nul(mb), samples: int(0, Number.MAX_SAFE_INTEGER), boots: opt(int(0, Number.MAX_SAFE_INTEGER)),
+});
 
 export interface MemWatchOptions {
   /** @default 5 minutes */

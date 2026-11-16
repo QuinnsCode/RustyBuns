@@ -6,7 +6,7 @@
 // last event, so a cron that pokes it more often than that keeps it awake around the clock.
 
 import { cronMatches, parseCron } from "@rustybuns/shell-bun/cron";
-import type { UsageSnapshot } from "@rustybuns/shell-bun/usage";
+import { UsageReply, type UsageSnapshot } from "@rustybuns/shell-bun/usage";
 import { homedir } from "node:os";
 
 const DAY_S = 86_400, MONTH_S = 30 * DAY_S;
@@ -148,11 +148,11 @@ export async function loadUsage(src: string, f: typeof fetch = fetch): Promise<U
     const url = src.includes("/__rb/usage") ? src : `${src.replace(/\/$/, "")}/__rb/usage`;
     const res = await f(url, { signal: AbortSignal.timeout(30_000) });
     if (!res.ok) throw new Error(`${url}: status ${res.status}; is it a RustyBuns box built with usage counting?`);
-    return await res.json() as UsageSnapshot;
+    return UsageReply(await res.json());
   }
   const file = Bun.file(src.replace(/^~(?=\/)/, homedir()));
   if (!(await file.exists())) throw new Error(`--usage ${src}: no such file. A desktop host writes <data>/usage.json once a minute.`);
-  return await file.json() as UsageSnapshot;
+  return UsageReply(await file.json());
 }
 
 /** Takes `--usage <src>` and `--requests-per-day <n>` (or `=`) out of a command line. */

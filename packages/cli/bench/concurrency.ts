@@ -71,9 +71,9 @@ async function viaPromiseReject(cmds: string[][]) {
 
 async function viaEffect(cmds: string[][], concurrency: number | "unbounded", failFast: boolean) {
   const pids = new Set<number>(), stop = rssSampler(pids), t = performance.now();
-  const one = (c: string[]) => Effect.callback<number>((resume) => {
+  const one = (c: string[]) => Effect.callback<number, number>((resume) => {
     const { p, done } = run(c, pids);
-    done.then((code) => resume(failFast && code !== 0 ? Effect.fail(code) as never : Effect.succeed(code)));
+    done.then((code) => resume(failFast && code !== 0 ? Effect.fail(code) : Effect.succeed(code)));
     return Effect.sync(() => p.kill());   // interrupted: kill the process
   });
   const exit = await Effect.runPromiseExit(Effect.forEach(cmds, one, { concurrency }));

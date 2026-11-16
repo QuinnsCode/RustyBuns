@@ -4,9 +4,11 @@
 // edge's operators ($eq $ne $in $nin $lt $lte $gt $gte, or a bare value for $eq).
 
 import { Database } from "bun:sqlite";
+import type { Fields } from "@rustybuns/ports";
+import { isRecord } from "../guard.ts";
 
 export type VectorizeMetric = "cosine" | "euclidean" | "dot-product";
-export type VectorizeMetadata = Record<string, unknown>;
+export type VectorizeMetadata = Fields;
 export interface VectorizeVector { id: string; values: number[] | Float32Array | Float64Array; namespace?: string; metadata?: VectorizeMetadata }
 export interface VectorizeMatch { id: string; score: number; values?: number[]; namespace?: string; metadata?: VectorizeMetadata }
 export interface VectorizeQueryOptions {
@@ -14,7 +16,7 @@ export interface VectorizeQueryOptions {
   returnValues?: boolean;
   /** true or "all"/"indexed" returns metadata; false or "none" doesn't. */
   returnMetadata?: boolean | "all" | "indexed" | "none";
-  filter?: Record<string, unknown>;
+  filter?: Fields;
 }
 
 interface Row { id: string; namespace: string | null; vec: Uint8Array; metadata: string | null }
@@ -54,7 +56,7 @@ export class LocalVectorize {
       : this.db.query(`SELECT * FROM vectors WHERE idx = ?`).all(this.name)) as Row[];
     const q = Float32Array.from(vector);
     const scored = rows
-      .map((r) => ({ r, meta: r.metadata ? JSON.parse(r.metadata) as VectorizeMetadata : undefined }))
+      .map((r) => ({ r, meta: r.metadata ? metaOf(r.metadata) : undefined }))
       .filter(({ meta }) => !o.filter || matches(meta ?? {}, o.filter))
       .map(({ r, meta }) => { const v = vecOf(r); return { r, meta, v, score: score(this.metric, q, v) }; })
       // euclidean is a distance: nearer is better. The others are similarities.
@@ -102,10 +104,13 @@ function score(metric: VectorizeMetric, a: Float32Array, b: Float32Array): numbe
   return na && nb ? dot / Math.sqrt(na * nb) : 0;
 }
 
+/** Stored metadata: written by upsert as an object, so anything else reads as none. */
+const metaOf = (text: string): VectorizeMetadata | undefined => { const m: unknown = JSON.parse(text); return isRecord(m) ? m : undefined; };
+
 /** The edge's metadata filter: each key's condition must hold. */
-function matches(meta: VectorizeMetadata, filter: Record<string, unknown>): boolean {
+function matches(meta: VectorizeMetadata, filter: Fields): boolean {
   return Object.entries(filter).every(([k, cond]) => {
-    const v = k.split(".").reduce<unknown>((o, p) => (o as Record<string, unknown> | undefined)?.[p], meta);
+    const v = k.split(".").reduce<unknown>((o, p) => isRecord(o) ? o[p] : undefined, meta);
     if (cond === null || typeof cond !== "object" || Array.isArray(cond)) return v === cond;
     return Object.entries(cond).every(([op, x]) => {
       switch (op) {

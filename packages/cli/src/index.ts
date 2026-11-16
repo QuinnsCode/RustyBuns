@@ -68,6 +68,7 @@ import { PROF_SECRET, boxUrl, fetchHistory, fetchMem, fetchProfile, secretProble
 import { formatProfileSummary, summarizeProfile } from "@rustybuns/shell-bun/profsummary";
 import { formatMemStats } from "@rustybuns/shell-bun/memwatch";
 import { formatHistory } from "@rustybuns/shell-bun/history";
+import { isRecord } from "@rustybuns/shell-bun/guard";
 import { CONTAINERS_USAGE, bindingsWhy, buildOne, containerBindings, contextHash, envFlags, prodLikeFlag, listText, needDocker, pick, readLedger, runOne, sizeTable, smokeOne } from "./containers.ts";
 import { TRIAGE_USAGE, triage } from "./triage.ts";
 import { rustybunsContext } from "./triage-context.ts";
@@ -75,7 +76,7 @@ import { checkDisabled, checkVersion } from "./advisories.ts";
 import { BUN_CHECK_MIN, STACK_TSCONFIG, checkFlags, compactDiagnostics, pickChecker, runCheck, stackTsconfig, type CheckerName } from "./typecheck.ts";
 
 const [cmd, ...rest] = process.argv.slice(2);
-const VERSION = (await Bun.file(new URL("../package.json", import.meta.url)).json()).version as string;
+const VERSION = String((await Bun.file(new URL("../package.json", import.meta.url)).json()).version);
 
 /**
  * rustybuns.config.ts, checked against config-schema.ts: a bad one stops here, naming each field.
@@ -153,7 +154,9 @@ async function addDeploy(dryRun: boolean) {
   // In a workspace the overrides must live in the root package.json; a member's are ignored.
   const root = workspaceRoot(process.cwd());
   const pkgPath = root ? `${root}/package.json` : "package.json";
-  const pkg = await Bun.file(pkgPath).json();
+  // package.json is edited in place, keys and all, so it is walked as plain JSON rather than read through a guard.
+  const pkg: unknown = await Bun.file(pkgPath).json();
+  if (!isRecord(pkg)) throw new Error(`${pkgPath} isn't a JSON object`);
   const { changed } = applyOverrides(pkg, inf.pm);
   const cmd = installCommand(inf.pm, await Bun.file("pnpm-workspace.yaml").exists());
   console.log(`pinned deploy deps: ${Object.entries(DEPLOY_DEPS).map(([n, v]) => `${n}@${v}`).join(", ")}`);
@@ -161,8 +164,9 @@ async function addDeploy(dryRun: boolean) {
   if (dryRun) { console.log(`would write ${inf.pm === "pnpm" ? "pnpm.overrides" : "overrides"} to ${where} and run:\n  ${cmd}`); return; }
   if (changed) { await Bun.write(pkgPath, JSON.stringify(pkg, null, 2) + "\n"); console.log(`wrote overrides to ${where}`); }
   // `plan` beside `deploy`, so the deploy refusal's "plan again" works as `<pm> run plan` too (#3743).
-  const own = root ? await Bun.file("package.json").json() : pkg;
-  const scripts: Record<string, unknown> = own.scripts && typeof own.scripts === "object" ? own.scripts : (own.scripts = {});
+  const own: unknown = root ? await Bun.file("package.json").json() : pkg;
+  if (!isRecord(own)) throw new Error("package.json isn't a JSON object");
+  const scripts = isRecord(own.scripts) ? own.scripts : (own.scripts = {});
   const added = (["plan", "deploy"] as const).filter((s) => scripts[s] === undefined);
   for (const s of added) scripts[s] = `rustybuns ${s}`;
   if (added.length) { await Bun.write("package.json", JSON.stringify(own, null, 2) + "\n"); console.log(`added ${added.join(" and ")} to package.json scripts`); }
