@@ -16,3 +16,7 @@ canvas { width: 100%; height: 100%; display: block; touch-action: none; }
 button, input { font: inherit; padding: .45rem .9rem; border-radius: 8px; border: 1px solid #2b3a52; background: #16223a; color: inherit; }
 button:hover { border-color: #4cc9f0; }
 #note { color: #f4a261; min-height: 1.2em; }
+.bar-card { position: absolute; top: 10px; left: 10px; display: grid; gap: 2px; padding: 8px 12px; border-radius: 10px; background: rgba(11, 17, 28, .78); font-size: 14px; font-variant-numeric: tabular-nums; max-width: min(17rem, calc(100vw - 90px)); }
+.bar-card .pass { color: #6fdc8c; font-weight: 600; }
+.bar-card small { color: #9fb0c3; }
+@media (max-width: 600px) { .bar-card { font-size: 12px; padding: 6px 9px; } .bar-card small { display: none; } }
