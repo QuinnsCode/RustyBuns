@@ -33,7 +33,7 @@ import { mountFieldChart } from "./fieldchart.ts";
 import { MAX_LIVE, MAX_LIVE_PHONE, MoveFx, shakeOf } from "./fx.ts";
 import { gallery, PAGE } from "./gallery.ts";
 import { sparring, STATS, type Stat } from "./spar.ts";
-import { BELIEVERS, CAMPS, campOf, visit as visitCamp } from "./believers.ts";
+import { BELIEVERS, CAMPS, campers, campOf, visit as visitCamp } from "./believers.ts";
 import { mountAgent } from "./gallery-agent.ts";
 import { addCommands } from "@rustybuns/util/commands";
 import { mountPalette } from "@rustybuns/util/palette";
@@ -956,7 +956,8 @@ campEl.addEventListener("click", (e) => { if ((e.target as Element).closest("[da
 
 // The faction people on the ground (src/world/posts.ts, rivals-view.ts): a quest step's person by the stone of its section,
 // the posts round the stones behind you. Who stands where changes slowly, so it is worked out twice a second; the one
-// you walk up to speaks, once a visit.
+// you walk up to speaks, once a visit. The believers sit round their camp's fire in the region you are in (they speak
+// when you sit at the fire, not when you walk up).
 const rivals = rivalsView(scene, (x, z) => world.groundAt(x, z), camera, $("#worldHud"));
 const rivalsReached = new Set<string>();
 let figures: (Figure & { stage?: FactionId; post?: Manned })[] = [], figuresAt = -1e9;
@@ -971,6 +972,7 @@ function stepRivals(now: number) {
     figures = [
       ...waits.filter((w) => w.stage.n === p.region).flatMap((w) => { const at = stageSpot(w.faction, w.stage.n, w.stage.k); return at ? [{ id: `stage:${w.faction}`, faction: w.faction, quest: true, stage: w.faction, name: who(w.faction, w.stage.who), sub: `${FACTION[w.faction].short} · ${w.stage.title}`, ...at }] : []; }),
       ...postsIn(j, p.region, ctx).flatMap((post) => { const at = postSpot(post.id); return at ? [{ id: post.id, faction: post.faction, resting: post.resting, post, name: post.rank.title, sub: FACTION[post.faction].short, ...at }] : []; }),
+      ...BELIEVERS.groups.filter((g) => g.n === p.region).flatMap((g) => campers(g).map((c, i) => ({ ...c, faction: g.id, ...(i === 0 && { name: g.name, sub: g.camp === g.name ? "Believers" : g.camp }) }))),
     ];
     // the map marks every step waiting behind you, wherever it is, and the posts of the region you are in
     world.pins([
