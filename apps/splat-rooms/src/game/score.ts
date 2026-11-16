@@ -1,6 +1,8 @@
 // Scoring and personal bests. Pure apart from `loadRecords`/`saveRecords`,
 // which use localStorage and survive it being missing or blocked.
 
+import { check, int, maybe, num, obj, rec, type Of } from "@rustybuns/util/guard";
+
 export interface HuntResult { seconds: number; splats: number; wrong: number }
 
 /**
@@ -16,13 +18,19 @@ export function stars(points: number): 1 | 2 | 3 {
   return points >= 750 ? 3 : points >= 450 ? 2 : 1;
 }
 
-export interface RoomRecord { hunts: number; best: number; fastest: number }
+const RoomRecord = obj({ hunts: int(0, 1e9), best: num(0, 1e9), fastest: num(0, 1e9) });
+export type RoomRecord = Of<typeof RoomRecord>;
 export type Records = Record<string, RoomRecord>;
+/** The bests this browser kept, by room; a room whose row doesn't read starts over. */
+const Kept = rec(maybe(RoomRecord), 10_000);
 
 const KEY = "splat-rooms:records:v1";
 
 export function loadRecords(): Records {
-  try { return JSON.parse(localStorage.getItem(KEY) ?? "{}") as Records; } catch { return {}; }
+  try {
+    const kept = check(Kept, JSON.parse(localStorage.getItem(KEY) ?? "{}")) ?? {};
+    return Object.fromEntries(Object.entries(kept).filter((e): e is [string, RoomRecord] => e[1] !== undefined));
+  } catch { return {}; }
 }
 
 /** Folds one hunt into the records; returns the new records and whether it beat the room's best. */

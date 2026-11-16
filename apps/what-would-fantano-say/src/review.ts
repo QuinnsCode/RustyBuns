@@ -1,6 +1,7 @@
 // What the page sends. All of it is untrusted, so it's clamped and trimmed here, and
 // the clip has to be a WAV data URL of the size a 15 s clip at 16 kHz mono comes to.
 
+import { isRecord } from "@rustybuns/util/guard";
 import type { Features } from "./analyze.ts";
 import { CLIP_SECONDS, RATE } from "./clip.ts";
 
@@ -30,11 +31,11 @@ const text = (v: unknown, max: number) =>
 
 /** The request body, clamped. Throws on anything that isn't the right shape. */
 export function parseRequest(body: unknown): ReviewRequest {
-  if (!body || typeof body !== "object") throw new Error("bad request");
-  const b = body as Record<string, unknown>;
+  if (!isRecord(body)) throw new Error("bad request");
+  const b = body;
   let features: Features | null = null;
-  if (b.features && typeof b.features === "object") {
-    const f = b.features as Record<string, unknown>;
+  if (isRecord(b.features)) {
+    const f = b.features;
     features = {} as Features;
     for (const [k, [lo, hi]] of Object.entries(RANGES) as [keyof Features, [number, number]][]) {
       const n = Number(f[k]);

@@ -4,7 +4,8 @@ import { useEffect, useRef, useState } from "react";
 import { analyze, type Features } from "../analyze.ts";
 import { CLIP_SECONDS, RATE, clock, cut, encodeWav, loudestWindow, peaks } from "../clip.ts";
 import { decode } from "../decode.ts";
-import type { Review } from "../write.ts";
+import { check, obj, str } from "@rustybuns/util/guard";
+import { Review } from "../write.ts";
 
 const MAX_BYTES = 200 * 1024 * 1024;
 // The browser decodes mp3, wav, aac/m4a, flac, ogg/opus and the audio in mp4/mov/webm video;
@@ -124,9 +125,9 @@ export function Critic({ siteKey }: { siteKey: string }) {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ features: track?.features ?? null, clip, hint, title: track?.name ?? "", youtube: track ? "" : link, turnstile: token }),
       });
-      const body = (await res.json()) as Review & { error?: string };
-      if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`);
-      setStage({ kind: "done", review: body });
+      const body: unknown = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(check(obj({ error: str(2000) }), body)?.error ?? `HTTP ${res.status}`);
+      setStage({ kind: "done", review: Review(body) });
     } catch (e) {
       setStage({ kind: "error", message: (e as Error).message });
     } finally {

@@ -3,6 +3,7 @@
 // are the original site's (src/lib/excalibrawl/prompts.ts and adapters.workersai.ts), unchanged but for
 // imports and the AI Gateway, which Workers AI models don't need.
 
+import { isRecord } from "@rustybuns/util/guard";
 import type { Op, SkeletonEl } from "../engine/types.ts";
 
 // The two prompts that ARE the product: the plan (focus + hype) and the draw
@@ -78,7 +79,7 @@ sentences. No drawing yet. Just the vision.`;
 
 function sceneJson(scene: SkeletonEl[]): string {
   const trimmed = scene.map((e) => {
-    const o: Record<string, unknown> = { id: e.id, type: e.type };
+    const o: { id: string; type: string; x?: number; y?: number; width?: number; height?: number; text?: string; strokeColor?: string; backgroundColor?: string } = { id: e.id, type: e.type };
     if ("x" in e) o.x = Math.round(e.x);
     if ("y" in e) o.y = Math.round(e.y);
     if ("width" in e) o.width = Math.round((e as { width: number }).width);
@@ -145,27 +146,28 @@ Respond with ONLY the JSON array. Draw.`;
 // ─────────────────────────────────────────────────────────────────────────────
 export function extractText(res: unknown): string {
   if (typeof res === "string") return res;
-  const r = res as Record<string, unknown>;
+  const r = isRecord(res) ? res : {};
 
   // Non-empty string response is the common case.
-  if (typeof r?.response === "string" && r.response.trim()) return r.response;
+  if (typeof r.response === "string" && r.response.trim()) return r.response;
   // Structured response (array/object) — stringify so parse can unwrap it.
-  if (r?.response && typeof r.response === "object") return JSON.stringify(r.response);
+  if (r.response && typeof r.response === "object") return JSON.stringify(r.response);
 
   // OpenAI-compatible shape.
-  const choices = r?.choices as { message?: { content?: unknown } }[] | undefined;
-  const c = choices?.[0]?.message?.content;
+  const first = Array.isArray(r.choices) ? r.choices[0] : undefined;
+  const message = isRecord(first) ? first.message : undefined;
+  const c = isRecord(message) ? message.content : undefined;
   if (typeof c === "string" && c.trim()) return c;
 
   // Reasoning models (Gemma 4, QwQ, etc.): output may land in a reasoning field
   // with response left empty. Read it as a fallback so these don't come back 0.
-  if (typeof r?.reasoning === "string" && r.reasoning.trim()) return r.reasoning;
-  const rc = (r as Record<string, unknown>)?.reasoning_content;
+  if (typeof r.reasoning === "string" && r.reasoning.trim()) return r.reasoning;
+  const rc = r.reasoning_content;
   if (typeof rc === "string" && rc.trim()) return rc;
 
   // Empty string response (thinking ate the budget, etc.) — return "" so the
   // caller logs "empty response" rather than stringifying the whole envelope.
-  if (typeof r?.response === "string") return r.response;
+  if (typeof r.response === "string") return r.response;
 
   return JSON.stringify(res ?? "");
 }
@@ -215,10 +217,9 @@ function tryParse(s: string): unknown {
 // Pull an Op[] out of whatever parsed: bare array, {response:[]}, {ops:[]}.
 function asOpArray(v: unknown): Op[] | null {
   if (Array.isArray(v)) return v as Op[];
-  if (v && typeof v === "object") {
-    const o = v as Record<string, unknown>;
-    if (Array.isArray(o.response)) return o.response as Op[];
-    if (Array.isArray(o.ops)) return o.ops as Op[];
+  if (isRecord(v)) {
+    if (Array.isArray(v.response)) return v.response as Op[];
+    if (Array.isArray(v.ops)) return v.ops as Op[];
   }
   return null;
 }

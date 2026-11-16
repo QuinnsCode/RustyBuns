@@ -34,7 +34,7 @@ async function route(sql: postgres.Sql, req: Request, url: URL): Promise<Respons
     return json({ ok: true });
   }
   if (path === "/api/notes" && req.method === "POST") {
-    const b: { owner?: unknown; body?: unknown; tags?: unknown; meta?: unknown } = await req.json().catch(() => null) ?? {};
+    const b = ((await req.json().catch(() => null)) ?? {}) as { owner?: unknown; body?: unknown; tags?: unknown; meta?: unknown };
     const { owner, body, tags = [], meta = {} } = b;
     if (typeof owner !== "string" || typeof body !== "string") return json({ error: "send { owner, body } as strings" }, 400);
     if (!Array.isArray(tags) || !tags.every((t) => typeof t === "string")) return json({ error: "tags is a list of strings" }, 400);

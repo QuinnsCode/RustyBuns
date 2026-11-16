@@ -5,7 +5,11 @@
 import { formatProfileSummary, type ProfileSummary, type SavedFile } from "@rustybuns/shell-bun/profsummary";
 import { formatMemStats, type MemStats } from "@rustybuns/shell-bun/memwatch";
 import { formatHistory, type Run } from "@rustybuns/shell-bun/history";
+import { check, int, maybe, obj, str } from "@rustybuns/util/guard";
 import type { OfficeMem } from "../live/mem.ts";
+
+/** A triage tool's arguments: each one it reads, and a wrong one is left out rather than refusing the call. */
+const TriageArgs = obj({ seconds: maybe(int(1, 3600)), top: maybe(int(1, 1000)), runs: maybe(int(1, 1000)), id: maybe(str(200)) });
 
 /** One call to the office's /__rb routes: the status and the JSON it answered. */
 export type TriageCall = (method: "GET" | "POST", path: string) => Promise<{ status: number; body: any }>;
@@ -94,11 +98,9 @@ function formatProfile(a: { id: string; file: string; seconds?: number; summary:
   return `${a.id}${a.seconds ? ` (sampled ${a.seconds}s; times are of the JS thread's busy time)` : ""}\n${formatProfileSummary(a.summary)}\n\nflame graph: open ${a.file} in Chrome DevTools > Performance, or on https://www.speedscope.app`;
 }
 
-const query = (args: Record<string, unknown>) => (Number.isInteger(args.top) ? `?top=${args.top}` : "");
-
 /** Runs one tool through `call`; resolves to its text, or throws with why it failed. */
-export async function runTriageTool(name: string, args: Record<string, unknown> | undefined, call: TriageCall): Promise<string> {
-  const a = args ?? {};
+export async function runTriageTool(name: string, args: unknown, call: TriageCall): Promise<string> {
+  const a = check(TriageArgs, args ?? {}) ?? TriageArgs({});
   const ask = async (method: "GET" | "POST", path: string) => {
     const r = await call(method, path);
     if (r.status < 200 || r.status >= 300) throw new Error(r.body?.error ?? `The office answered ${r.status}`);
@@ -109,8 +111,7 @@ export async function runTriageTool(name: string, args: Record<string, unknown> 
     return [formatMem("office", m.office), ...m.ptyHosts.map((h) => h.mem ? formatMem(`pty host (floor ${h.floor}, pid ${h.mem.pid})`, h.mem) : `pty host (floor ${h.floor}): no sample yet, or not running`)].join("\n");
   }
   if (name === "take_cpu_profile") {
-    const s = Number.isInteger(a.seconds) ? Number(a.seconds) : 10;
-    return formatProfile(await ask("POST", `/__rb/prof?s=${s}${Number.isInteger(a.top) ? `&top=${a.top}` : ""}`));
+    return formatProfile(await ask("POST", `/__rb/prof?s=${a.seconds ?? 10}${a.top ? `&top=${a.top}` : ""}`));
   }
   if (name === "list_profiles") {
     const { profiles, running } = await ask("GET", "/__rb/prof");
@@ -118,16 +119,16 @@ export async function runTriageTool(name: string, args: Record<string, unknown> 
     return [head, ...files(profiles)].join("\n");
   }
   if (name === "read_profile") {
-    let id = typeof a.id === "string" ? a.id.trim() : "";
+    let id = a.id?.trim() ?? "";
     if (!id) {
       id = (await ask("GET", "/__rb/prof")).profiles[0]?.id ?? "";
       if (!id) throw new Error("No CPU profiles yet: take_cpu_profile takes one");
     }
-    return formatProfile(await ask("GET", `/__rb/prof/${encodeURIComponent(id)}${query(a)}`));
+    return formatProfile(await ask("GET", `/__rb/prof/${encodeURIComponent(id)}${a.top ? `?top=${a.top}` : ""}`));
   }
   if (name === "mem_history") {
     const { runs } = await ask("GET", "/__rb/history") as { runs: Run[] };
-    return formatHistory(runs, Number.isInteger(a.runs) ? Number(a.runs) : 5);
+    return formatHistory(runs, a.runs ?? 5);
   }
   if (name === "heap_snapshots") {
     const { snapshots } = await ask("GET", "/__rb/heap") as { snapshots: (SavedFile & { process: string })[] };

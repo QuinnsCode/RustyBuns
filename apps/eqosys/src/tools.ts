@@ -2,7 +2,7 @@
 // from a script or the CLI (scripts/eq.ts), and by the `eq_batch` tool, which runs several of them in one round trip and keeps only
 // the fields asked for. The agent's cheapest path is one batch with `pick`, not a screenshot and not a call per fact (GET /agents says so).
 // A tool is a plain function of (who is asking, checked arguments); the guard is the type. Add one here and every door has it.
-import { arr, bool, Bad, check, int, obj, oneOf, opt, raw, str, type Guard } from "@rustybuns/util/guard";
+import { arr, bool, Bad, check, int, isRecord, obj, oneOf, opt, raw, str, type Guard } from "@rustybuns/util/guard";
 import { privateJson as json } from "@rustybuns/util/http";
 import { APPS, GENRES, HOME, MATURITY, playOf } from "./apps.ts";
 import { appOf, appsOf, Draft, isListing, listings, pull, review, save, send, type Done } from "./listings.ts";
@@ -199,11 +199,10 @@ const isRead = (t: Tool) => t.annotations.readOnlyHint === true;
 /** Keep only the fields named by dotted paths, through arrays: `["apps.id", "apps.name"]` turns `{apps:[{id,name,url,..}]}` into `{apps:[{id,name}]}`. */
 export function pick(v: unknown, paths: string[][]): unknown {
   if (Array.isArray(v)) return v.map((x) => pick(x, paths));
-  if (typeof v !== "object" || v === null) return v;
-  const row = v as Record<string, unknown>, by = new Map<string, string[][]>(), out: Record<string, unknown> = {};
-  for (const p of paths) if (p[0] !== undefined && p[0] in row) by.set(p[0], [...(by.get(p[0]) ?? []), p.slice(1)]);
-  for (const [k, rest] of by) out[k] = rest.some((r) => !r.length) ? row[k] : pick(row[k], rest);
-  return out;
+  if (!isRecord(v)) return v;
+  const by = new Map<string, string[][]>();
+  for (const p of paths) if (p[0] !== undefined && p[0] in v) by.set(p[0], [...(by.get(p[0]) ?? []), p.slice(1)]);
+  return Object.fromEntries([...by].map(([k, rest]) => [k, rest.some((r) => !r.length) ? v[k] : pick(v[k], rest)]));
 }
 
 const Call = obj({ tool: str(40), args: opt(raw), pick: opt(arr(str(80), 20)) });

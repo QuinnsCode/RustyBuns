@@ -4,14 +4,16 @@ import type { Parties } from "./qollab/party.ts";
 import type { Spaces } from "./qollab/space.ts";
 import type { Vaults } from "./vault.ts";
 import type { WorkerLoaderLike } from "./codemode.ts";
-export type Row = Record<string, unknown>;
 export interface D1Statement {
   bind(...values: unknown[]): D1Statement;
-  first<T = Row>(column?: string): Promise<T | null>;
-  all<T = Row>(): Promise<{ results: T[] }>;
+  first<T = unknown>(column?: string): Promise<T | null>;
+  all<T = unknown>(): Promise<D1Result<T>>;
   run(): Promise<unknown>;
 }
-export interface D1 { prepare(sql: string): D1Statement; batch(stmts: D1Statement[]): Promise<unknown[]> }
+/** What a D1 query hands back: its rows, and what a write changed. */
+export type D1Result<T> = { results: T[]; meta: { changes: number; last_row_id: number } };
+/** The part of the D1 binding this app calls, and better-auth too (it wants `exec` and `batch`). */
+export interface D1 { prepare(sql: string): D1Statement; batch<T = unknown>(stmts: D1Statement[]): Promise<D1Result<T>[]>; exec(sql: string): Promise<unknown> }
 /** A service binding to another Worker. */
 export interface Fetcher { fetch(req: Request | string, init?: RequestInit): Promise<Response> }
 

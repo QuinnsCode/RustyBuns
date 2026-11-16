@@ -50,7 +50,22 @@ export interface Notices { text: string; entries: Entry[]; flagged: Entry[]; sum
 const overrides: Record<string, { license: string; evidence: string; text: string }> =
   (() => { try { return JSON.parse(readFileSync(join(APP, "licenses", "overrides.json"), "utf8")).packages; } catch { return {}; } })();
 
-const readJson = (p: string): any => { try { return JSON.parse(readFileSync(p, "utf8")); } catch { return null; } };
+/** A package.json as the notices read it: text fields as text ("" when missing), dependency maps by name. */
+interface Pkg { name: string; version: string; license: unknown; repository: string; dependencies: Record<string, string>; optionalDependencies: Record<string, string>; devDependencies: Record<string, string> }
+const readJson = (p: string): unknown => { try { return JSON.parse(readFileSync(p, "utf8")); } catch { return null; } };
+const text = (v: unknown) => (typeof v === "string" ? v : "");
+const deps = (v: unknown): Record<string, string> =>
+  v && typeof v === "object" ? Object.fromEntries(Object.entries(v).filter((e): e is [string, string] => typeof e[1] === "string")) : {};
+function readPkg(p: string): Pkg | null {
+  const v = readJson(p);
+  if (!v || typeof v !== "object") return null;
+  const o = v as { name?: unknown; version?: unknown; license?: unknown; licenses?: unknown; repository?: unknown; homepage?: unknown; dependencies?: unknown; optionalDependencies?: unknown; devDependencies?: unknown };
+  const repo = o.repository && typeof o.repository === "object" ? (o.repository as { url?: unknown }).url : o.repository;
+  return {
+    name: text(o.name), version: text(o.version), license: o.license ?? o.licenses, repository: text(repo) || text(o.homepage),
+    dependencies: deps(o.dependencies), optionalDependencies: deps(o.optionalDependencies), devDependencies: deps(o.devDependencies),
+  };
+}
 
 function findPackage(name: string, from: string): string | null {
   let dir = from;
@@ -73,12 +88,11 @@ export function packageDirOf(moduleId: string): string | null {
   return join(id.slice(0, i + 14), ...rest.slice(0, n));
 }
 
-function licenseOf(pkg: any): string {
-  const l = pkg.license ?? pkg.licenses;
-  if (typeof l === "string") return l;
-  if (Array.isArray(l)) return l.map((x) => (typeof x === "string" ? x : x?.type)).filter(Boolean).join(" OR ");
-  if (l && typeof l === "object" && l.type) return l.type;
-  return "UNKNOWN";
+function licenseOf(pkg: Pkg): string {
+  const typeOf = (x: unknown) => (typeof x === "string" ? x : x && typeof x === "object" ? text((x as { type?: unknown }).type) : "");
+  const l = pkg.license;
+  if (Array.isArray(l)) return l.map(typeOf).filter(Boolean).join(" OR ") || "UNKNOWN";
+  return typeOf(l) || "UNKNOWN";
 }
 
 function licenseTexts(dir: string): string[] {
@@ -119,8 +133,8 @@ class Registry {
       license: o?.license ?? "UNKNOWN", vouched: o?.evidence, texts: o ? [o.text] : [], source: "",
     });
   }
-  add(dir: string, where: string): any | null {
-    const pkg = readJson(join(dir, "package.json"));
+  add(dir: string, where: string): Pkg | null {
+    const pkg = readPkg(join(dir, "package.json"));
     if (!pkg?.name || pkg.name.startsWith("@rustybuns/") || pkg.name === "tscircuit-desktop") return pkg;
     const key = `${pkg.name}@${pkg.version}`;
     const existing = this.byKey.get(key);
@@ -131,8 +145,8 @@ class Registry {
     const o = overrides[pkg.name];
     if (license === "UNKNOWN" && o) { license = o.license; vouched = o.evidence; if (!texts.length) texts = [o.text]; }
     this.byKey.set(key, {
-      name: pkg.name, version: pkg.version ?? "?", license, texts, vouched, where: new Set([where]),
-      source: typeof pkg.repository === "string" ? pkg.repository : pkg.repository?.url ?? pkg.homepage ?? "",
+      name: pkg.name, version: pkg.version || "?", license, texts, vouched, where: new Set([where]),
+      source: pkg.repository,
     });
     return pkg;
   }
@@ -227,15 +241,15 @@ export async function collectNotices(opts: { uiPackageDirs?: string[] } = {}): P
   if (opts.uiPackageDirs) {
     for (const d of opts.uiPackageDirs) reg.add(d, "ui");
   } else {
-    const root = readJson(join(APP, "package.json"));
-    reg.closure(Object.keys(root.dependencies ?? {}).map((n) => [n, APP]), "dependencies (unbundled estimate)");
+    const root = readPkg(join(APP, "package.json"));
+    reg.closure(Object.keys(root?.dependencies ?? {}).map((n) => [n, APP]), "dependencies (unbundled estimate)");
   }
   reg.closure(HOST_ROOTS.map((n) => [n, APP]), "host");
   for (const [name, skip] of Object.entries(PREBUNDLED)) {
     const dir = findPackage(name, APP);
-    const pkg = dir && readJson(join(dir, "package.json"));
+    const pkg = dir && readPkg(join(dir, "package.json"));
     if (!pkg) continue;
-    for (const [dep, spec] of Object.entries<string>(pkg.devDependencies ?? {})) {
+    for (const [dep, spec] of Object.entries(pkg.devDependencies)) {
       if (!skip.test(dep)) reg.addBaked(dep, spec, `ui (inside ${name})`);
     }
   }

@@ -42,8 +42,8 @@ export async function runGenomeStress(o: StressOpts): Promise<StressReport> {
   const base = ptr(new Uint8Array(memory.buffer)) + slab;
   const failNative = s.rb_genome_verify(base, o.genes, parts, expected);
   const fail = failWasm | failNative;
-  const failed = FAILS.filter((_, i) => fail & (1 << i));
-  if (failWasm !== failNative) failed.push("views-disagree" as never);
+  const failed: string[] = FAILS.filter((_, i) => fail & (1 << i));
+  if (failWasm !== failNative) failed.push("views-disagree");
   return {
     ok: failed.length === 0, failed, ops: expected, ms, opsPerSec: expected / (ms / 1000),
     seqlockTorn: results.reduce((a, r) => a + r.torn, 0), racyTears: s.rb_genome_racy_tears(base), results,

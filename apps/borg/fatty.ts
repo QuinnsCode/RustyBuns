@@ -7,7 +7,7 @@
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { overCap, sweep } from "./src/edge.ts";
-import { APPS, builtPaths, deployBlocker, fattyStage, formatRun, type FattyApp, type Measure, type Run } from "./src/fatty.ts";
+import { APPS, builtPaths, deployBlocker, fattyStage, formatRun, runOf, type FattyApp, type Measure, type Run } from "./src/fatty.ts";
 
 const argv = process.argv.slice(2);
 const live = argv.includes("--run");
@@ -17,7 +17,7 @@ if (!picked.length) { console.error(`usage: bun fatty.ts [${APPS.map((a) => a.na
 
 const root = resolve(import.meta.dir, "../..");
 const lastFile = resolve(import.meta.dir, ".fatty/last.json");
-const last: Run | null = existsSync(lastFile) ? JSON.parse(readFileSync(lastFile, "utf8")) : null;
+const last = existsSync(lastFile) ? runOf(JSON.parse(readFileSync(lastFile, "utf8"))) : null;
 
 if (!live) {
   for (const a of picked) console.log(`${a.name}  (${a.note})\n${a.steps.map((s) => `  ${s.label}${s.cmd ? `: ${s.cmd.join(" ")}` : ""}`).join("\n")}`);

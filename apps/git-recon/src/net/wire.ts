@@ -340,11 +340,7 @@ export function encodeSnap(s: Snap): Uint8Array {
       else if (f === "str") o.str(v); else o.put("u8", f.indexOf(v));
     }
   }
-  const tail: Record<string, unknown> = {};
-  for (const k of TAIL) {
-    const v = s[k];
-    if (v !== undefined && !(k === "files" && !s.files.length)) tail[k] = v;
-  }
+  const tail = Object.fromEntries(TAIL.flatMap((k) => (s[k] !== undefined && !(k === "files" && !s.files.length) ? [[k, s[k]]] : [])));
   if (Object.keys(tail).length) o.bytes(text.encode(JSON.stringify(tail)));
   return o.done();
 }
@@ -385,7 +381,7 @@ export function decodeSnap(bytes: ArrayBuffer | Uint8Array): Snap | null {
     for (let n = r.get("u16"); n > 0; n--) {
       const kind = KINDS[r.get("u8")];
       if (!kind) return null;
-      const e: Record<string, unknown> = { kind };
+      const e: { [field: string]: string | number | boolean } = { kind };
       for (const [k, f] of EVENTS[kind] as [string, EventField][]) {
         e[k] = f === "soldier" ? r.get("u16") : f === "int" ? r.get("i32") : f === "cm" ? r.num(100, "i32")
           : f === "weapon" ? ORDER[r.get("u8")] ?? "commit" : f === "bool" ? r.get("u8") === 1 : f === "str" ? r.str() : f[r.get("u8")] ?? f[0];

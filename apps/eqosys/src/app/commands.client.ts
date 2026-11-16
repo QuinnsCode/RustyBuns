@@ -3,7 +3,7 @@
 // tools for an agent in the browser, window.__commands for `bun run probe eqosys --js "__commands.list()"`, and the
 // Cmd/Ctrl+K palette for a person. The page's only module script: the CSP lets it in by the request's nonce.
 import { addCommands, type Command, type Hints, type InputSchema } from "@rustybuns/util/commands";
-import { arr, check, maybe, obj, raw, rec, str } from "@rustybuns/util/guard";
+import { arr, bool, check, maybe, obj, raw, rec, str, type Of } from "@rustybuns/util/guard";
 import { mountPalette } from "@rustybuns/util/palette";
 import { mountSpaces } from "./spaces.client.ts";
 
@@ -13,17 +13,14 @@ const Prop = obj({ type: maybe(str(20)), description: maybe(str(500)) });
 const Tool = obj({
   name: str(64, { re: /^eq_[a-z_]+$/ }), title: str(100), description: str(4000),
   inputSchema: maybe(obj({ type: str(20), properties: rec(raw, 50), required: maybe(arr(str(64), 50)), additionalProperties: maybe(raw) })),
-  annotations: maybe(rec(raw, 10)),
+  annotations: maybe(obj({ readOnlyHint: maybe(bool()), destructiveHint: maybe(bool()), idempotentHint: maybe(bool()), openWorldHint: maybe(bool()) })),
 });
 const Listing = obj({ tools: arr(Tool, 200, { drop: true }) });
 const Reply = obj({ result: maybe(raw), error: maybe(str(2000)) });
 const OpenApp = obj({ app: str(64, { re: /^[a-z0-9-]+$/ }) });
 
-const hints = (a: Record<string, unknown> | undefined): Hints => {
-  const h: Hints = {};
-  for (const k of ["readOnlyHint", "destructiveHint", "idempotentHint", "openWorldHint"] as const) { const v = a?.[k]; if (typeof v === "boolean") h[k] = v; }
-  return h;
-};
+/** The hints a tool gave, without the ones it left out. */
+const hints = (a: Of<typeof Tool>["annotations"]): Hints => Object.fromEntries(Object.entries(a ?? {}).filter(([, v]) => v !== undefined));
 
 /** The listed tools as commands. In the palette: those that take nothing, and those with one argument, which it asks for. */
 export function toolCommands(listing: unknown, f: Fetch): Command[] {

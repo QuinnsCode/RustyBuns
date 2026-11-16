@@ -124,7 +124,7 @@ export function checkOp<K extends OpKind>(kind: K, params: OpParams[K]): string[
 }
 
 /** Body pieces that are pure params; the workspace adds the input (task id or model file). */
-export function opBody<K extends OpKind>(kind: K, params: OpParams[K]): Record<string, unknown> {
+export function opBody<K extends OpKind>(kind: K, params: OpParams[K]): object {
   switch (kind) {
     case "remesh": {
       const p = params as RemeshParams;

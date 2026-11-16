@@ -37,9 +37,9 @@ export const fattyStage = (now = Date.now()) => `fatty${Math.floor(now / 1000)}`
  * Why this app's deploy can't go to a throwaway stage, or null when it can. A config that pins the
  * Worker's name (or adopts) would make a stage take over the live one, and `destroy` would then delete it.
  */
-export function deployBlocker(edge: { adopt?: boolean; workerName?: string } | undefined, stages: Record<string, unknown> | undefined, stage: string): string | null {
+export function deployBlocker(edge: { adopt?: boolean; workerName?: string } | undefined, stages: object | undefined, stage: string): string | null {
   if (!edge) return "no edge target";
-  if (stages?.[stage]) return null;
+  if (Object.entries(stages ?? {}).some(([k, v]) => k === stage && v)) return null;
   if (edge.adopt || edge.workerName) return `targets.edge pins ${edge.workerName ? `the Worker name "${edge.workerName}"` : "adopt"}, so a throwaway stage would take over the live deploy and destroy would delete it; give the config a stages entry for fatty runs first`;
   return null;
 }
@@ -59,6 +59,14 @@ export function builtPaths(output: string): string[] {
 
 export interface Measure { step: string; ok: boolean; ms: number; bytes: number | null }
 export interface Run { at: string; apps: Record<string, Measure[]> }
+
+const isMeasure = (m: unknown): m is Measure => typeof m === "object" && m !== null && "step" in m && typeof m.step === "string" && "ok" in m && typeof m.ok === "boolean"
+  && "ms" in m && typeof m.ms === "number" && "bytes" in m && (m.bytes === null || typeof m.bytes === "number");
+/** A run read back from .fatty/last.json: null when it isn't one, and any measure that doesn't read is left out. */
+export function runOf(v: unknown): Run | null {
+  if (typeof v !== "object" || v === null || !("at" in v) || typeof v.at !== "string" || !("apps" in v) || typeof v.apps !== "object" || v.apps === null) return null;
+  return { at: v.at, apps: Object.fromEntries(Object.entries(v.apps).map(([k, ms]) => [k, Array.isArray(ms) ? ms.filter(isMeasure) : []])) };
+}
 
 const fmtBytes = (n: number) => n >= 1 << 20 ? `${(n / (1 << 20)).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`;
 const fmtMs = (n: number) => n >= 1000 ? `${(n / 1000).toFixed(1)} s` : `${n} ms`;

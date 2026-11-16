@@ -10,12 +10,12 @@
 // The input doesn't say what started the turn, so that comes from the transcript: its opening prompt is written
 // when the turn starts, long before the stop (only the final message may lag).
 import { readFileSync } from "node:fs";
+import { isRecord as isObj } from "../../packages/util/src/guard.ts";
 
 export const REASON =
   "This turn was started by a background-job notice or another system event, not by a person. A notice is never a reason to stop: " +
   "carry on with the task you owe. If the work really is finished, end with \"N of M done\" and the links for anything left.";
 
-const isObj = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 const nonEmpty = (v: unknown) => Array.isArray(v) && v.length > 0;
 
 /** Who started the current turn: the latest main-thread prompt (not a tool result, not harness meta) and its origin. */

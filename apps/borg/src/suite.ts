@@ -1,6 +1,6 @@
 // The slim borg suite: every check, run from outside against one URL. The local test points
 // it at the desktop host; `bun borg.ts <url>` points it at a deploy. Same checks, same verdicts.
-import type { Verdict } from "./worker.ts";
+import { type Verdict, verdictOf } from "./worker.ts";
 
 export type Result = Verdict & { check: string; ms: number };
 export interface Target {
@@ -14,7 +14,7 @@ export interface Target {
 const get = async (t: Target, path: string): Promise<Verdict> => {
   const r = await fetch(t.url + path, { headers: t.headers });
   if (!r.ok) return { ok: false, detail: `HTTP ${r.status}` };
-  return r.json() as Promise<Verdict>;
+  return verdictOf(await r.json().catch(() => null));
 };
 
 // One socket: the object accepts it, keeps an attachment, and echoes a message with it.
@@ -59,7 +59,7 @@ export const CHECKS: Record<string, (t: Target) => Promise<Verdict>> = {
 // request over memory or CPU, so an HTTP error counts as refused.
 const over = async (t: Target, name: string): Promise<Verdict> => {
   const r = await fetch(`${t.url}/borg/limit/${name}`, { headers: t.headers });
-  return r.ok ? r.json() as Promise<Verdict> : { ok: true, detail: `refused: HTTP ${r.status}` };
+  return r.ok ? verdictOf(await r.json().catch(() => null)) : { ok: true, detail: `refused: HTTP ${r.status}` };
 };
 export const LIMITS: Record<string, (t: Target) => Promise<Verdict>> = Object.fromEntries(
   ["d1-params", "kv-key", "queue-size", "do-value", "memory", "cpu"].map((n) => [n, (t: Target) => over(t, n)]),

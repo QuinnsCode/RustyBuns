@@ -30,6 +30,6 @@ export function hookCall(io: { env: Record<string, string | undefined>; fetch: t
 }
 
 /** Runs a triage tool for the MCP server: its text, as the server's own tools answer. */
-export async function runTriageMcp(name: string, args: Record<string, unknown>, io: { env: Record<string, string | undefined>; fetch: typeof fetch }) {
+export async function runTriageMcp(name: string, args: unknown, io: { env: Record<string, string | undefined>; fetch: typeof fetch }) {
   return { text: await runTriageTool(name, args, hookCall(io)) };
 }

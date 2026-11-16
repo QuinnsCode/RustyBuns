@@ -9,7 +9,8 @@ import { TOUR_GLUE, TOUR_WASM_B64 } from "./tour-pkg.ts";
 import { TOURS, tourJson } from "./tours.ts";
 
 type Namespace = { idFromName(n: string): unknown; get(id: unknown): { fetch(r: Request): Promise<Response> } };
-type Env = { SPHERE: Namespace } & Record<string, unknown>;
+/** The room binding this reads; the rest of the bindings go on to the inner Worker as they came. */
+type Env = { SPHERE: Namespace };
 type Inner = { fetch(req: Request, env: unknown, ctx: unknown): Response | Promise<Response> };
 
 export const WS_PATH = "/__sphere/ws";

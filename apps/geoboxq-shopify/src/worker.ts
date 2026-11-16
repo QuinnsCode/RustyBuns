@@ -45,10 +45,12 @@ export async function handle(req: Request, env: Env): Promise<Response> {
   const res = await (env.fetch ?? fetch)(`${env.GEOBOXQ_URL ?? "https://geoboxq.qntbr.com"}/api/solve`, {
     method: "POST", headers, body: JSON.stringify({ boxes: boxes.map(({ name, l, w, h }) => ({ name, l, w, h })), items }),
   });
-  const out = await res.json() as { error?: string; fits?: boolean; box?: { index: number; fill: number } | null; tree?: unknown };
-  if (!res.ok) return json({ error: out.error ?? "GeoBoxQ refused the cart" }, res.status === 401 ? 502 : res.status);
-  const box = out.box ? boxes[out.box.index]! : null;
-  return json({ fits: Boolean(out.fits), box: box && { id: box.id, name: box.name, fill: out.box!.fill }, tree: out.tree });
+  const sent: unknown = await res.json().catch(() => null);
+  const out = (sent && typeof sent === "object" ? sent : {}) as { error?: unknown; fits?: unknown; box?: unknown; tree?: unknown };
+  if (!res.ok) return json({ error: typeof out.error === "string" ? out.error : "GeoBoxQ refused the cart" }, res.status === 401 ? 502 : res.status);
+  const picked = (out.box && typeof out.box === "object" ? out.box : {}) as { index?: unknown; fill?: unknown };
+  const box = typeof picked.index === "number" ? boxes[picked.index] ?? null : null;
+  return json({ fits: out.fits === true, box: box && { id: box.id, name: box.name, fill: typeof picked.fill === "number" ? picked.fill : 0 }, tree: out.tree });
 }
 
 export default { fetch: (req: Request, env: Env) => handle(req, env) };

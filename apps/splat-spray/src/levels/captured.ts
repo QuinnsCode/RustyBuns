@@ -3,6 +3,7 @@
 // is the same thing the built room gets for free from generating it. So the same scan, pick and focus code
 // runs on a real room, and a new room (or a player's own scan, once it is labelled) is a new folder, not new code.
 import * as THREE from "three";
+import { isRecord } from "@rustybuns/util/guard";
 import type { SpyObject, SpyScene } from "./scene.ts";
 import type { RawSplats } from "./ply.ts";
 
@@ -147,14 +148,14 @@ export function readLabels(json: unknown): Label[] {
   if (!Array.isArray(json)) return [];
   const out: Label[] = [];
   for (const v of json) {
-    if (typeof v !== "object" || v === null) continue;
-    const { ins_id, label, bounding_box } = v as Record<string, unknown>;
+    if (!isRecord(v)) continue;
+    const { ins_id, label, bounding_box } = v;
     if (typeof label !== "string") continue;
     const corners: Corner[] = [];
     if (Array.isArray(bounding_box)) {
       for (const c of bounding_box) {
-        if (typeof c !== "object" || c === null) continue;
-        const { x, y, z } = c as Record<string, unknown>;
+        if (!isRecord(c)) continue;
+        const { x, y, z } = c;
         if (typeof x === "number" && typeof y === "number" && typeof z === "number") corners.push({ x, y, z });
       }
     }
@@ -170,8 +171,8 @@ export function readLevels(json: unknown): LevelEntry[] {
   if (!Array.isArray(json)) return [];
   const out: LevelEntry[] = [];
   for (const v of json) {
-    if (typeof v !== "object" || v === null) continue;
-    const { id, name } = v as Record<string, unknown>;
+    if (!isRecord(v)) continue;
+    const { id, name } = v;
     if (typeof id === "string" && /^[\w.-]+$/.test(id)) out.push({ id, name: typeof name === "string" ? name : id });
   }
   return out;
