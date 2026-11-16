@@ -5,7 +5,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { expect, setDefaultTimeout, test } from "bun:test";
 import { Circuit, type Netlist } from "../src/circuit/mna.ts";
-import { triodeStage } from "../src/circuit/circuits.ts";
+import { overdrive, triodeStage } from "../src/circuit/circuits.ts";
 import { AMPS, PEDALS, RIGS, buildRig } from "../src/circuit/amps.ts";
 import { Rig, runRig } from "../src/circuit/rig.ts";
 import { riff } from "../src/circuit/riff.ts";
@@ -13,6 +13,7 @@ import { WasmRig } from "../src/circuit/wasm.ts";
 import { instantiateFm } from "../src/engine/wasm.ts";
 import { boardToNetlist } from "../src/circuit/tscircuit.ts";
 import board from "./fixtures/hard-clip.circuit.json";
+import qDrive from "./fixtures/q-drive.circuit.json";
 
 setDefaultTimeout(60_000);
 const SR = 48000;
@@ -35,6 +36,23 @@ test("a pedal drawn in tscircuit plays like the hand-written netlist", () => {
   expect(p).toBeGreaterThan(0.3);
   expect(p).toBeLessThan(1);
   expect(() => boardToNetlist([{ type: "source_component", source_component_id: "x", ftype: "simple_inductor", name: "L1" }])).toThrow("L1: no model for simple_inductor");
+});
+
+test("the orderable Q Drive board (circuits/q-drive.tsx) plays like its voicing at every Drive", () => {
+  // The 9 V rail and the 4.5 V bias are ground to the signal; jacks, footswitch, LED and supply diode are the box.
+  const box = { acGround: ["V9", "VREF"], leaveOut: ["J1", "J2", "J3", "J4", "LED1", "R8", "D3"] };
+  expect(() => boardToNetlist(qDrive)).toThrow("a chip the simulator doesn't know");
+  const play = (net: Netlist) => {
+    const c = new Circuit(net, SR), rest = c.settle(0);
+    return Float32Array.from({ length: SR / 2 }, (_, i) => c.step(0.2 * Math.sin((2 * Math.PI * 220 * i) / SR)) - rest);
+  };
+  for (const drive of [0, 0.5, 1]) {
+    const voicing = play(overdrive(drive)), built = play(boardToNetlist(qDrive, { ...box, knobs: { RV1: drive, RV2: 1 } }));
+    let diff = 0;
+    for (let i = SR / 4; i < voicing.length; i++) diff = Math.max(diff, Math.abs(voicing[i] - built[i]));
+    // What is left is the Level pot (100k) and its 1 µF cap loading the output, about 1.5%.
+    inRange(`Drive ${drive}: off the voicing by`, diff / peak(voicing, SR / 4), 0, 0.03);
+  }
 });
 
 /** Gain in dB of a circuit at `hz`, measured on the second half of 0.2 s of a small sine. */
