@@ -48,6 +48,17 @@ describe("bun cli.ts", () => {
     expect(JSON.parse(stale.out)).toMatchObject({ tag: "LinesChanged", conflicts: [{ index: 0 }] });
   });
 
+  test("a risky command says so, and runs only with --yes, the person's say-so", async () => {
+    const { cli, seen } = await app();
+    const rows = (await cli(["tools"])).out.split("\n");
+    expect(rows.find((l) => l.startsWith("land "))).toContain(" risky ");
+    expect(rows.find((l) => l.startsWith("read_file "))).toContain(" read ");
+    const asked = await cli(["create_repo", "--body", '{"name":"two"}']);
+    expect(asked).toMatchObject({ code: 2, err: expect.stringMatching(/^create_repo is risky.*run it again with --yes$/) });
+    expect(seen).toEqual([]);   // nothing was called
+    expect((await cli(["create_repo", "--yes", "--body", '{"name":"two"}'])).code).toBe(0);
+  });
+
   test("a failure says what to do", async () => {
     const { cli } = await app();
     const gone = await cli(["read_file", "--owner", "ryan", "--repo", "nope", "--path", "a.ts"]);

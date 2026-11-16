@@ -3493,6 +3493,13 @@ function pickRanges(text, n) {
   }
   return out;
 }
+/** The pick `now` with `want` put to it: replace (just `want`), add, remove, or toggle (each of `want` flips). */
+function pickWith(now, want, mode = "replace") {
+  if (mode === "add") return new Set([...now, ...want]);
+  if (mode === "remove") return new Set([...now].filter((k) => !want.has(k)));
+  if (mode === "toggle") return new Set([...[...now].filter((k) => !want.has(k)), ...[...want].filter((k) => !now.has(k))]);
+  return new Set(want);
+}
 /** Lines holding `q` (any case), or matching it when it is written /regex/flags. */
 function pickMatching(texts, q) {
   const m = /^\/(.+)\/([a-z]*)$/.exec(q), re = m && new RegExp(m[1], m[2].replace(/[gy]/g, "")), low = q.toLowerCase();
@@ -7801,7 +7808,7 @@ const readTools = () => [
       }
       if (!want.size && mode !== "replace") throw new Error("name the lines: from/to or ranges");
       const now = f.picker.picked;
-      f.picker.set(new Set(mode === "add" ? [...now, ...want] : mode === "remove" ? [...now].filter((k) => !want.has(k)) : mode === "toggle" ? [...now].filter((k) => !want.has(k)).concat([...want].filter((k) => !now.has(k))) : want));
+      f.picker.set(pickWith(now, want, mode));
     }) },
   { name: "deselect_lines", title: "Deselect lines", description: "Drop the picked lines on the file on screen, as Esc does. With `from`/`to`, drop just those and keep the rest.",
     inputSchema: { type: "object", properties: { from: { type: "integer", minimum: 1 }, to: { type: "integer", minimum: 1 } } },
@@ -7820,16 +7827,16 @@ const readTools = () => [
       f.picker.set(pickBlock(f.lines().map((l) => l.text), f.picker.picked));
     }) },
   { name: "select_matching", title: "Select lines matching", description: "Pick the lines of the file on screen that hold `match` (any case), or match it when written /regex/flags. `mode` as select_lines: replace (the default), add, remove or toggle. Answers with the pick as runs.",
-    inputSchema: { type: "object", properties: { match: { type: "string" }, mode: { type: "string", enum: ["replace", "add", "remove"] } }, required: ["match"] },
+    inputSchema: { type: "object", properties: { match: { type: "string" }, mode: { type: "string", enum: ["replace", "add", "remove", "toggle"] } }, required: ["match"] },
     execute: ({ match, mode = "replace" }) => asAgent(() => {
-      const f = fileSel(), hit = pickMatching(f.lines().map((l) => l.text), match), now = f.picker.picked;
-      f.picker.set(mode === "add" ? new Set([...now, ...hit]) : mode === "remove" ? new Set([...now].filter((k) => !hit.has(k))) : hit);
+      const f = fileSel();
+      f.picker.set(pickWith(f.picker.picked, pickMatching(f.lines().map((l) => l.text), match), mode));
     }) },
   { name: "select_lines_by", title: "Select lines by an author", description: "Pick the lines of the file on screen that `who` last wrote (a handle, or an agent's name as read_file shows it in `by`). Mode as select_matching.",
-    inputSchema: { type: "object", properties: { who: { type: "string" }, mode: { type: "string", enum: ["replace", "add", "remove"] } }, required: ["who"] },
+    inputSchema: { type: "object", properties: { who: { type: "string" }, mode: { type: "string", enum: ["replace", "add", "remove", "toggle"] } }, required: ["who"] },
     execute: ({ who, mode = "replace" }) => asAgent(() => {
-      const f = fileSel(), hit = pickBy(f.lines(), who), now = f.picker.picked;
-      f.picker.set(mode === "add" ? new Set([...now, ...hit]) : mode === "remove" ? new Set([...now].filter((k) => !hit.has(k))) : hit);
+      const f = fileSel();
+      f.picker.set(pickWith(f.picker.picked, pickBy(f.lines(), who), mode));
     }) },
   { name: "selected_lines", title: "Read the selection", description: "The lines picked on the file on screen: the runs ([from, to], 1-based) and each line's text and author.",
     inputSchema: noInput, annotations: { readOnlyHint: true, untrustedContentHint: true }, execute: async () => {

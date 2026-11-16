@@ -23,8 +23,8 @@ import { keptPairs } from "./sync.ts";
 
 /** `at`: when it was authored, in ms (git keeps seconds). */
 export interface Waiting { sha: string; message: string; author: string; at: number }
-/** `commits`: the ones not cleared, newest first; `more`: the walk stopped before it reached a cleared commit or the root. */
-export interface Review { tip: string | null; base: string | null; commits: Waiting[]; more: boolean }
+/** `commits`: the ones not cleared, newest first; `more`: the walk stopped before it reached a cleared commit or the root; `owner`: whose keys. */
+export interface Review { tip: string | null; base: string | null; commits: Waiting[]; more: boolean; owner?: string }
 
 /** How far back a review walks before it calls the rest unknown. */
 const MAX_WALK = 200;
@@ -35,8 +35,13 @@ export const isCleared = (r: Review) => !!r.tip && !r.commits.length && !r.more;
 /** Why a deploy waits, in a sentence. */
 export function waitingNote(r: Review) {
   if (!r.tip) return "this repo has no commits to deploy yet";
-  const n = r.commits.length, who = [...new Set(r.commits.map((c) => c.author))].slice(0, 3).join(", ");
-  return `waiting for you: ${n ? `${n}${r.more ? "+" : ""} commit${n === 1 && !r.more ? "" : "s"} since your last approved deploy aren't yours alone${who ? ` (${who})` : ""}` : "this history goes back further than it checks"}. Read the diff and approve it in the Deploy panel`;
+  const n = r.commits.length, many = `${n}${r.more ? "+" : ""} commit${n === 1 && !r.more ? "" : "s"}`;
+  // Name who else is in it; when it's only the owner, say how their own commits came in uncleared.
+  const others = [...new Set(r.commits.map((c) => c.author))].filter((a) => a !== r.owner);
+  const what = !n ? "this history goes back further than it checks"
+    : others.length ? `${many} since your last approved deploy ${n === 1 && !r.more ? "has" : "have"} code from ${others.slice(0, 3).join(", ")}${others.length > 3 ? ` and ${others.length - 3} more` : ""}`
+    : `${many} since your last approved deploy came in through a token, a merge, a mirror or an import, not your own commit in the app`;
+  return `waiting for you: ${what}. Read the diff and approve it in the Deploy panel`;
 }
 
 /** The owner's own commit, of a file only they edited since its last commit. */
@@ -55,7 +60,7 @@ export async function review(env: Env, owner: string, repo: string): Promise<Rev
   const h = await handleFor(env, owner, repo, true);
   const log = h ? await h.handle.log({ ref: h.branch, limit: 100 }).catch(() => []) : [];
   const tip = log[0]?.hash ?? null;
-  if (!h || !tip) return { tip: null, base: null, commits: [], more: false };
+  if (!h || !tip) return { tip: null, base: null, commits: [], more: false, owner };
   const known = new Map(log.map((c) => [c.hash, c]));
   const kinds = new Map<string, string>();
   const look = async (shas: string[]) => {
@@ -82,7 +87,7 @@ export async function review(env: Env, owner: string, repo: string): Promise<Rev
     if (kinds.get(sha) !== "own") commits.push({ sha, message: c.message.split("\n")[0]!.slice(0, 200), author: c.author.name, at: c.authoredAt < 1e12 ? c.authoredAt * 1000 : c.authoredAt });
     queue.push(...c.parents);
   }
-  return { tip, base, commits, more, handle: h.handle };
+  return { tip, base, commits, more, owner, handle: h.handle };
 }
 
 /** `cut`: the person sees less than the file holds (lines past the cap, or binary or too big to show). */

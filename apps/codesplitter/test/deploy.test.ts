@@ -1,5 +1,5 @@
 import { afterAll, expect, setDefaultTimeout, test } from "bun:test";
-import { review } from "../src/deploy-review.ts";
+import { review, waitingNote } from "../src/deploy-review.ts";
 import { local as boot } from "../src/local.ts";
 import type { Runner } from "../src/preview.ts";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -126,7 +126,7 @@ test("a crew commit holds a desktop deploy until the owner approves the diff at 
   const pressed = await send("ryan", D, {});
   expect(pressed.status).toBe(409);
   const waiting = (await pressed.json()) as any;
-  expect(waiting.error).toContain("waiting for you");
+  expect(waiting.error).toStartWith("waiting for you: 1 commit since your last approved deploy has code from pat.");
   expect(waiting.review.commits.map((c: any) => c.message)).toEqual(["pat's config"]);
   expect(((await (await call("ryan", D)).json()) as any).review).toMatchObject({ cleared: false, tip: waiting.review.tip });
   const r = (await (await call("ryan", `${D}/review`)).json()) as any;
@@ -372,4 +372,11 @@ test("Ship's journey: plan against the stage shows its deletes, Deploy ships tha
   expect(d.history[0]).toMatchObject({ status: "done", trigger: "destroy", note: "prod is torn down" });
   expect(ran.find((l) => l.includes("rustybuns destroy"))).toContain("--stage prod --real");
   expect(seen).toEqual(["plan state:true", "destroy state:true"]);
+});
+
+test("why a deploy waits names who else is in it, or how the owner's own commits came in", () => {
+  const c = (author: string) => ({ sha: author, message: "m", author, at: 0 });
+  const r = { tip: "t", base: null, more: false, owner: "ryan" };
+  expect(waitingNote({ ...r, commits: [c("ryan"), c("ryan")] })).toBe("waiting for you: 2 commits since your last approved deploy came in through a token, a merge, a mirror or an import, not your own commit in the app. Read the diff and approve it in the Deploy panel");
+  expect(waitingNote({ ...r, commits: [c("ryan"), c("pat")] })).toStartWith("waiting for you: 2 commits since your last approved deploy have code from pat.");
 });

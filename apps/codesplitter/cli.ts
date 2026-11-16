@@ -10,6 +10,9 @@
 //   bun cli.ts edit_lines --owner ryan --repo lab --path a.ts --body '{"ops":[…]}'
 //   echo '{"ops":[…]}' | bun cli.ts edit_lines … --body -
 //
+// A risky command (one MCP marks destructive: it changes who can get in or see what, can't be undone, or ships
+// code) runs only with --yes, the person's say-so; without it the CLI says so and calls nothing. `tools` marks them.
+//
 // --url and --token stand in for the variables. On the desktop (aliases, no
 // accounts) --as NAME signs in as that handle instead of a token. The answer is
 // printed as the app sent it. A failed call goes through the typed client (client.ts):
@@ -38,14 +41,14 @@ import PLAYBOOK from "./triage/PLAYBOOK.md" with { type: "text" };
 type Out = { code: number; out: string; err: string };
 type Fetch = (req: Request) => Promise<Response>;
 
-const USAGE = "usage: codesplitter <command> [--param value …] [--body JSON|-] [--url URL] [--token cst_…|--as NAME]\n       codesplitter tools | help <command> | prompt | login [--url URL] [--token cst_…]\n       codesplitter " + TRIAGE_USAGE;
+const USAGE = "usage: codesplitter <command> [--param value …] [--body JSON|-] [--url URL] [--token cst_…|--as NAME] [--yes: a risky one, once the person said so]\n       codesplitter tools | help <command> | prompt | login [--url URL] [--token cst_…]\n       codesplitter " + TRIAGE_USAGE;
 
 /** Run one command. `env` and `send` are the process's own unless a test says otherwise. */
 export async function main(argv: string[], env: Record<string, string | undefined> = process.env, send: Fetch = (r) => fetch(r), stdin = readStdin): Promise<Out> {
   const [name, ...rest] = argv;
   const ok = (out: string): Out => ({ code: 0, out, err: "" }), fail = (err: string, code = 2): Out => ({ code, out: "", err });
   if (!name || name === "--help" || name === "-h") return ok(USAGE);
-  if (name === "tools") return ok(tools().map((t) => `${t.name.padEnd(24)} ${t.method === "GET" ? "read " : "write"} ${t.title}`).join("\n"));
+  if (name === "tools") return ok(tools().map((t) => `${t.name.padEnd(24)} ${t.method === "GET" ? "read " : t.risky ? "risky" : "write"} ${t.title}`).join("\n"));
   if (name === "help") {
     const t = rest[0] && tool(rest[0]);
     if (!t) return fail(rest[0] ? `no command ${rest[0]}: codesplitter tools lists them` : USAGE);
@@ -56,6 +59,9 @@ export async function main(argv: string[], env: Record<string, string | undefine
   }
   const t = tool(name);
   if (!t) return fail(`no command ${name}: codesplitter tools lists them`);
+  const yes = rest.includes("--yes");
+  if (yes) rest.splice(rest.indexOf("--yes"), 1);
+  if (t.risky && !yes) return fail(`${name} is risky: it changes who can get in or see what, can't be undone, or ships code. Ask the person first; once they say so, run it again with --yes`);
 
   const args: ToolArgs = {}, opts: Record<string, string> = {};
   for (let i = 0; i < rest.length; i += 2) {
