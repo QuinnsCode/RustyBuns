@@ -98,4 +98,4 @@ test("the audit calls a button covered when something sits on it, not when its l
     const covered = audit.controls.filter((c) => c.obscured).map((c) => c.label);
     expect(covered).toEqual(["Help"]);
   } finally { chrome.stop(); }
-});
+}, 30_000); // a fresh Chrome on a CI runner takes several seconds to start
