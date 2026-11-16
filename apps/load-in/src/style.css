@@ -20,7 +20,7 @@ button:hover { border-color: #4cc9f0; }
 .bar-card .pass { color: #6fdc8c; font-weight: 600; }
 .bar-card .warn { color: #f08a5d; font-weight: 600; }
 .bar-card small { color: #9fb0c3; }
-@media (max-width: 600px) { .bar-card { font-size: 12px; padding: 6px 9px; } .bar-card small { display: none; } }
+@media (max-width: 600px) { .bar-card { top: 48px; font-size: 12px; padding: 6px 9px; } .bar-card small { display: none; } }
 #speakers { position: absolute; left: 10px; bottom: 48px; max-width: min(22rem, calc(100vw - 20px)); pointer-events: auto; text-align: left; background: #16223aee; }
 .bar-card .trip { color: #f06a5a; font-weight: 600; }
 .dial { display: inline-flex; border: 1px solid #2b3a52; border-radius: 10px; overflow: hidden; }

@@ -145,6 +145,16 @@ const list: Gear[] = [
   { id: "road-case-m", what: "road case on wheels", size: box(0.6, 0.5, 0.5), kg: 14, jacks: {} },
   { id: "stand-tripod", what: "speaker stand, 1.2 to 2.0 m", size: box(0.9, 1.2, 0.9), kg: 4, jacks: {} },
   { id: "mic-stand", what: "boom mic stand", size: box(0.6, 1.6, 0.6), kg: 3, jacks: {} },
+  {
+    // Hung, not stood: one element of a flown line array, too heavy for one person (two carry it, or a crew).
+    id: "line-array-box",
+    what: "line array element, powered",
+    size: box(1.0, 0.32, 0.55),
+    kg: 75,
+    jacks: { "power-in": 1, "xlr-in": 1, "xlr-out": 1 },
+    speaker: { sensitivity: 100, maxSpl: 138, ratedWatts: 1000, ohms: null, coverage: { h: 100, v: 12 }, lowCut: 60, highCut: 18000, rearLoss: 25 },
+    draw: { idle: 40, loud: 500 },
+  },
   { id: "guitar", what: "electric guitar", size: box(0.33, 1.0, 0.05), kg: 3.5, jacks: { "line-out": 1 } },
   // Not road gear: the venue's own back-bar cooler, a load on a wall circuit that is always on.
   { id: "bar-cooler", what: "back-bar drinks cooler", size: box(0.9, 0.9, 0.6), kg: 70, jacks: { "power-in": 1 }, draw: { idle: 450, loud: 450 } },
