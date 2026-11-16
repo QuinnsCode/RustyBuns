@@ -892,6 +892,8 @@ pub unsafe extern "C" fn fm_amp_set_link(r: *mut circuit::Rig, i: u32, net: *con
 #[no_mangle]
 pub extern "C" fn fm_amp_set_gain(r: *mut circuit::Rig, i: u32, gain: f64) { with!(r, r.set_gain(i as usize, gain)) }
 #[no_mangle]
+pub extern "C" fn fm_amp_set_pot(r: *mut circuit::Rig, i: u32, pot: u32, at: f64) { with!(r, r.set_pot(i as usize, pot as usize, at)) }
+#[no_mangle]
 pub extern "C" fn fm_amp_set_power(r: *mut circuit::Rig, power: f64) { with!(r, r.set_power(power)) }
 #[no_mangle]
 pub extern "C" fn fm_amp_set_noise(r: *mut circuit::Rig, noise: f64) { with!(r, r.set_noise(noise)) }

@@ -99,7 +99,7 @@ Rust beats the JIT by 1.4 to 1.5× on the tube amps, and by 1.5 to 2× under V8 
 
 ## tscircuit
 
-tscircuit renders a board to circuit JSON. Its `source_*` elements are the schematic, and every port already names its net, so turning a board into a netlist is a lookup. `boardToNetlist` reads resistors, capacitors and diodes, and chips by their pin labels: `OUT`/`INP`/`INN` is an op-amp, `PLATE`/`GRID`/`CATHODE` a 12AX7. Name a net in `supplies` to put a DC supply on it (`{ B_PLUS: 300 }`).
+tscircuit renders a board to circuit JSON. Its `source_*` elements are the schematic, and every port already names its net, so turning a board into a netlist is a lookup. `boardToNetlist` reads resistors, capacitors, diodes, inductors, potentiometers and transistors (`germanium: ["Q1"]` for the old ones), and chips by their pin labels: `OUT`/`INP`/`INN` is an op-amp (with `IABC`, an OTA), `PLATE`/`GRID`/`CATHODE` a 12AX7, `DRAIN`/`GATE`/`SOURCE` a JFET (`pChannel: ["U1"]`), `LEDA`/`LEDK`/`LDR1`/`LDR2` a vactrol. Name a net in `supplies` to put a DC supply on it (`{ B_PLUS: 300 }`).
 
 tscircuit itself stays out of this app: it is parked in this repo because it pins zod 3 (see `apps/tscircuit-desktop`). The app reads only its JSON. To change the board, render `circuits/hard-clip.tsx` in a scratch folder (the command is at its top) and replace the fixture.
 
