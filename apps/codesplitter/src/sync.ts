@@ -143,6 +143,19 @@ export function merge3(base: string[], ours: string[], theirs: string[]): string
 }
 
 /**
+ * Whether `ours` already carries `theirs`' changes to `base`: each line theirs wrote is in ours more often than in
+ * base, and each line it took out is in ours less often. A clash someone settled by hand reads as taken in, so the
+ * next merge of the same three doesn't stop on it again.
+ */
+export function carries(base: string[], ours: string[], theirs: string[]) {
+  const count = (xs: string[]) => xs.reduce((m, x) => m.set(x, (m.get(x) ?? 0) + 1), new Map<string, number>());
+  const kept = keptPairs(base, theirs), b = count(base), o = count(ours);
+  const keptB = new Set(kept.map((k) => k.i)), keptT = new Set(kept.map((k) => k.j));
+  return theirs.every((t, j) => keptT.has(j) || (o.get(t) ?? 0) > (b.get(t) ?? 0))
+    && base.every((t, k) => keptB.has(k) || (o.get(t) ?? 0) < (b.get(t) ?? 0));
+}
+
+/**
  * Pairs of (base index, next index) for lines the two texts share, in order: a
  * longest common subsequence, found with Myers' linear-space diff. Memory is
  * O(n + m) and time O((n + m) * d) for d changed lines, so a big file with a

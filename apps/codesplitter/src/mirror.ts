@@ -71,7 +71,7 @@ import { fromDisk } from "./agent-run.ts";
 import { GIT_BOT, GIT_EMAIL_DOMAIN } from "./git.ts";
 import { branchAndPath, githubToken, parseFolder, parseRepo } from "./github.ts";
 import { branchEdited, postOrder, startChecks, upstreamMoved, upstreamTaken } from "./checks.ts";
-import { diffToOps, merge3 } from "./sync.ts";
+import { carries, diffToOps, merge3 } from "./sync.ts";
 import { branchNameError, fail, json, NAME, need, type Env, readBody } from "./env.ts";
 import type { ErrorTag } from "./openapi.ts";
 import { readJson } from "@rustybuns/util/http";
@@ -400,23 +400,34 @@ async function step(env: Env, owner: string, repo: string, o: { resolve?: Resolv
 /**
  * A folder mirror's work, sent up (folder-mirror.ts): this copy's tree under the folder's path on upstream's tip, as one
  * commit on its own branch for a pull request. Upstream's main never takes it from here. Held until upstream merges it;
- * when upstream's folder already reads as this copy's, there's nothing to send and it's in step.
+ * when upstream's folder already reads as this copy's, there's nothing to send and it's in step. A send replaces only
+ * the commit this copy sent last (refs/folder-sent/<name>, a lease): the same tree again isn't pushed, and a commit
+ * someone else added to that branch upstream stays, with this copy's newer work waiting until it's merged or gone.
  */
 async function send(env: Env, r: Row, dir: string, net: Record<string, string>, theirs: string, ours: string, took: boolean) {
   const branch = r.branch ?? "main", source = await must(["rev-parse", sourceRef(branch)], dir);
   const tree = await graft(git, dir, r.mirror_path!, source, ours);
   if (!tree) return settled(env, r, theirs, "ok", null, took);
+  const to = sendBranch(r.name), sent = `refs/folder-sent/${r.name}`;
+  const gh = /^https:\/\/github\.com\/([\w.-]+\/[\w.-]+?)(?:\.git)?$/.exec(r.mirror_url)?.[1];
+  const held = `sent up as branch ${to}${gh ? `: open a pull request at https://github.com/${gh}/compare/${branch}...${to}` : ", for a pull request"}`;
+  const ls = await git(["ls-remote", "--heads", r.mirror_url, `refs/heads/${to}`], dir, net);
+  if (ls.code) { const t = turnedAway(ls.err); return failed(env, r, t.state, PUSH_SAYS[t.state], [], t.git); }
+  const there = ls.out.trim().split(/\s/)[0] || "", last = (await git(["rev-parse", "--verify", "--quiet", sent], dir)).out.trim();
+  if (there && there === last && tree === await must(["rev-parse", `${last}^{tree}`], dir)) return settled(env, r, theirs, "held", held, took);
+  if (there && there !== last) return settled(env, r, theirs, "held", `someone else added to upstream's branch ${to}, so this copy's newer work waits rather than replace it: merge or delete that branch upstream`, took);
   const subjects = (await must(["log", "--format=- %s", `${theirs}..${ours}`, "--no-merges"], dir)).split("\n").filter(Boolean).slice(0, 50);
   const c = await must(["commit-tree", tree, "-p", source, "-m", `${r.name}: ${r.mirror_path} from codeSplitter\n\n${subjects.join("\n")}`], dir, authorEnv());
-  const to = sendBranch(r.name);
-  // The branch is this copy's own proposal: a new send replaces it. Upstream's main is never pushed.
-  const p = await git(["push", "--porcelain", r.mirror_url, `+${c}:refs/heads/${to}`], dir, net);
+  // The branch is this copy's own proposal: a new send replaces the last one, and only that. Upstream's main is never pushed.
+  const p = await git(["push", "--porcelain", `--force-with-lease=refs/heads/${to}:${there}`, r.mirror_url, `+${c}:refs/heads/${to}`], dir, net);
   if (p.code) {
-    const t = turnedAway([p.err, p.out].filter(Boolean).join("\n"));
+    const said = [p.err, p.out].filter(Boolean).join("\n");
+    if (/\[rejected\]|stale info/.test(said)) return again(env, r);
+    const t = turnedAway(said);
     return failed(env, r, t.state, PUSH_SAYS[t.state], [], t.git);
   }
-  const gh = /^https:\/\/github\.com\/([\w.-]+\/[\w.-]+?)(?:\.git)?$/.exec(r.mirror_url)?.[1];
-  return settled(env, r, theirs, "held", `sent up as branch ${to}${gh ? `: open a pull request at https://github.com/${gh}/compare/${branch}...${to}` : ", for a pull request"}`, took);
+  await must(["update-ref", sent, c], dir);
+  return settled(env, r, theirs, "held", held, took);
 }
 
 /**
@@ -727,8 +738,12 @@ export function upstreamLag(m: { url: string; state: string; ahead: number; behi
   const parts = [behind ? `behind by ${commits(behind)}` : "", ahead ? `ahead by ${commits(ahead)}` : ""].filter(Boolean);
   const why = m.state === "down" ? `${who} isn't answering` : m.state === "refused" ? `${who} turned the push away`
     : m.state === "clash" ? "both sides changed the same lines" : m.state === "rewritten" ? `${who}'s history was rewritten` : "";
-  const line = `${who} is ${parts.length ? parts.join(" and ") : "in step"}`;
-  return { who, behind, ahead, line, says: why ? `${line}: ${why}, so it waits for you` : line };
+  // Down isn't in step, even with nothing waiting (the counts are the last fetch's), and it tries again by itself.
+  const down = m.state === "down";
+  const line = down && !parts.length ? `${who} isn't answering` : `${who} is ${parts.length ? parts.join(" and ") : "in step"}`;
+  const says = down ? (parts.length ? `${line}: ${why}, so it tries again by itself` : `${line}: nothing is waiting to move, and it tries again by itself`)
+    : why ? `${line}: ${why}, so it waits for you` : line;
+  return { who, behind, ahead, line, says };
 }
 
 /** Where a mirror stands: its state, and how far ahead and behind it was at the last fetch. */
@@ -947,18 +962,20 @@ const heads = (lsRemote: string) => lsRemote.trim().split("\n").filter(Boolean).
  * Bring upstream's changes `from`..`to` into branch `b` here: each file they
  * changed gets a copy on the branch with its text, merged into the copy's live
  * lines (main's, for a file the branch hadn't touched) where those moved on too
- * (sync.ts merge3; where they touch the same lines, upstream wins). New files
+ * (sync.ts merge3). Where they touch the same lines, upstream wins when the
+ * branch is new (`stop` false); on a branch that has edits of its own the file is
+ * left as it is and named in `clash`, so nothing written here is lost. New files
  * are new on the branch. A file the branch hasn't touched that's already as
  * main has it stays main's. A file upstream deleted is deleted on the branch
  * (one only the branch had just goes). A binary one, or one too big to dig, comes over as its git blob
  * (#446), pinned so a gc keeps it until the branch merges or goes up.
  */
-async function take(env: Env, owner: string, repo: string, s: Setup, b: string, from: string, to: string) {
+async function take(env: Env, owner: string, repo: string, s: Setup, b: string, from: string, to: string, stop = false) {
   const { materializeOn, createOn, deleteOn } = await import("./branches.ts");
   const { results } = await env.DB.prepare("SELECT path, deleted, blob FROM branch_files WHERE owner = ? AND repo = ? AND branch = ?").bind(owner, repo, b).all<{ path: string; deleted: number; blob: string | null }>();
   const rows = new Map(results.map((f) => [f.path, f]));
   const onBranch = new Map([...rows].map(([p, f]) => [p, !!f.deleted]));
-  const files: string[] = [], deleted: string[] = [], skipped: string[] = [];
+  const files: string[] = [], deleted: string[] = [], skipped: string[] = [], clash: string[] = [];
   const changed = (await must(["diff", "--name-status", "-z", "--no-renames", from, to], s.dir)).split("\0").filter(Boolean);
   const onMain = (path: string) => git(["cat-file", "-e", `refs/heads/${s.main}:${path}`], s.dir).then((r) => !r.code);
   for (let i = 0; i < changed.length; i += 2) {
@@ -1001,11 +1018,15 @@ async function take(env: Env, owner: string, repo: string, s: Setup, b: string, 
     }
     const doc = await fileDoc(env, owner, repo, path, "upstream", "file", b);
     const was = fromDisk((await show(s.dir, from, path)) ?? ""), lines = doc.lines.map((l) => l.text);
-    const ops = diffToOps(doc.lines, merge3(was, lines, next) ?? next);
+    // Already as upstream has it (taken in by an earlier try that stopped on another file's clash).
+    if (lines.join("\n") === next.join("\n")) continue;
+    const merged = merge3(was, lines, next);
+    if (!merged && stop) { if (!carries(was, lines, next)) clash.push(path); continue; }
+    const ops = diffToOps(doc.lines, merged ?? next);
     if (ops.length) await toFile(env, owner, repo, path, "upstream", "ops", { method: "POST", body: JSON.stringify({ ops, ifRev: doc.rev }) }, "", b);
     files.push(path);
   }
-  return { files, deleted, skipped };
+  return { files, deleted, skipped, clash };
 }
 
 /**
@@ -1037,13 +1058,17 @@ export async function mergeBlobWithMain(env: Env, owner: string, repo: string, n
   return merged && new TextEncoder().encode(merged.join("\n") + "\n");
 }
 
-/** Branch `name` takes upstream's `ref` up to `theirs`: what it got since the branch here last took it in or pushed. */
+/**
+ * Branch `name` takes upstream's `ref` up to `theirs`: what it got since the branch here last took it in or pushed.
+ * A file whose edits here and upstream's touch the same lines is a `clash`: it keeps the edits here, and the branch
+ * isn't marked as having taken `theirs`, so the next try (a pull, a push, a sync) meets it again.
+ */
 async function catchUp(env: Env, owner: string, repo: string, s: Setup, name: string, ref: string, theirs: string) {
   const had = await taken(s, ref);
   if (had) await ontoSquash(env, owner, repo, s, name, ref, had);
   const from = had ?? await forkPoint(s, theirs);
-  const got = from === theirs ? { files: [], deleted: [], skipped: [] } : await take(env, owner, repo, s, name, from, theirs);
-  await must(["update-ref", tracking(ref), theirs], s.dir);
+  const got = from === theirs ? { files: [], deleted: [], skipped: [], clash: [] } : await take(env, owner, repo, s, name, from, theirs, true);
+  if (!got.clash.length) await must(["update-ref", tracking(ref), theirs], s.dir);
   return got;
 }
 
@@ -1192,7 +1217,9 @@ export async function pushBranch(env: Env, owner: string, repo: string, name: st
 
   // What's up there now, if anything, taken in first.
   const prev = await fetchBranch(s, ref);
-  const took = prev ? (await catchUp(env, owner, repo, s, name, ref, prev)).files : [];
+  const caught = prev ? await catchUp(env, owner, repo, s, name, ref, prev) : null, took = caught?.files ?? [];
+  // Upstream's branch changed lines beside or under edits here: neither side's is dropped, a person settles it.
+  if (caught?.clash.length) return fail("UpstreamClash", `upstream's ${ref} changed the same lines as this branch: settle it upstream or here, then push again`, { clash: caught.clash, took });
   if (!prev) await git(["update-ref", "-d", track], dir);
   const tip = await must(["rev-parse", `refs/heads/${main}`], dir);
   let parents = [tip], baseTree = `${tip}^{tree}`;

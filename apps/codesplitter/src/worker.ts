@@ -954,8 +954,8 @@ async function route(req: Request, env: Env): Promise<Response> {
         const note = await commitNote(env, owner, repo, path, commit.writers ?? [], content === published).catch(() => null);
         const git = await pushCatalogue(env, owner, repo, path, { content, published }, user!, commit.message, note).catch((e: Error) => ({ error: e.message }));
         await startIfFull(env, owner, repo).catch(() => null);
-        // The owner's own commit ships, when they turned that on (deploy.ts).
-        if (git && !("error" in git)) {
+        // The owner's own commit ships, when they turned that on (deploy.ts). A commit of nothing new made no git commit: nothing to tell.
+        if (git && !("error" in git) && (git.commits.length || git.deployCommit)) {
           await emit(env, owner, repo, "commit", user!, {
             ref: "refs/heads/main", before: git.parent ?? "0".repeat(40), after: git.commit, created: !git.parent, pusher: { name: user },
             head_commit: { id: git.commit, message: commit.message, timestamp: new Date().toISOString(), author: { name: user, username: user }, added: git.parent ? [] : [path], modified: git.parent ? [path] : [], removed: [] },

@@ -78,7 +78,7 @@ The highest-value things, in order:
 2. **Your git keeps going when the other git doesn't.** Make a repo a mirror of GitHub, GitLab or any git URL, or turn a fork you dug up on the desktop into one with a click (its About panel says which of its commits go up first, and asks).
    When upstream goes down, you keep editing, committing, branching and running agents.
    The Upstream panel says it's down and how many commits are waiting, and it catches up by itself once upstream answers.
-   A whole-repo mirror never force-pushes; a folder mirror replaces only its own proposal branch, `codesplitter/<name>`, on each send, and never pushes upstream's main.
+   A whole-repo mirror never force-pushes; a folder mirror replaces only its own last send on its proposal branch, `codesplitter/<name>`, when there is something new, leaves a commit someone else added there, and never pushes upstream's main.
 3. **Make your code private one line at a time.** Select some lines in a public repo and make them private.
    Everyone else sees a blank line in the same place: on the page, in blame, in search, in git (a line committed before you made it private stays in the earlier commits of a public clone, so treat a leaked secret as leaked).
    Your crew gets a second git remote with the real text.

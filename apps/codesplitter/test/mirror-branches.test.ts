@@ -107,6 +107,36 @@ describe("mirrors: branches and this copy's own git", () => {
     expect(await sh(`git --git-dir ${up} show late:src/a.ts`)).toBe("export const a = 2 + 3");
   });
 
+  test("a push meets upstream's edit beside one made here: it stops, and neither edit is lost", async () => {
+    const call = await mirrored("near");
+    const q = "?path=README&branch=near";
+    const edit = async (text: string) => {
+      const line = (await get(call, `/api/repos/ana/up/do/file${q}`)).lines[1];
+      expect((await post(call, `/api/repos/ana/up/do/ops${q}`, { ops: [{ kind: "set", line: line.id, base: line.rev, text }] })).status).toBe(200);
+    };
+    const here = async () => (await get(call, `/api/repos/ana/up/do/file${q}`)).lines.map((l: any) => l.text).join("\n");
+    expect((await post(call, "/api/repos/ana/up/branches", { name: "near" })).status).toBe(201);
+    await edit("world, here");
+    expect(await (await post(call, "/api/repos/ana/up/mirror/branches/near/push")).json()).toMatchObject({ pushed: true });
+    // Bo changes the line just above upstream while the line here is edited again.
+    const work = mkdtempSync(join(root, "work-"));
+    await sh(`git clone -q -b near ${up} . && git config user.name Bo && git config user.email bo@example.com && printf 'hi\\nworld, here\\n' > README && git commit -qam hi && git push -q origin near`, work);
+    await edit("world, again");
+    const bo = await sh(`git --git-dir ${up} rev-parse near`);
+    for (let i = 0; i < 2; i++) {
+      const r = await post(call, "/api/repos/ana/up/mirror/branches/near/push");
+      expect(r.status).toBe(409);
+      expect(await r.json()).toMatchObject({ tag: "UpstreamClash", clash: ["README"] });
+    }
+    expect(await here()).toBe("hello\nworld, again");
+    expect(await sh(`git --git-dir ${up} rev-parse near`)).toBe(bo);
+    // Settled here by taking both: the push goes on top of Bo's commit.
+    const top = (await get(call, `/api/repos/ana/up/do/file${q}`)).lines[0];
+    await post(call, `/api/repos/ana/up/do/ops${q}`, { ops: [{ kind: "set", line: top.id, base: top.rev, text: "hi" }] });
+    expect((await post(call, "/api/repos/ana/up/mirror/branches/near/push")).status).toBe(200);
+    expect(await sh(`git --git-dir ${up} show near:README`)).toBe("hi\nworld, again");
+  });
+
   test("a rebuild task that finishes pushes its branch upstream, as a merge of main's tip (#1226)", async () => {
     const call = await mirrored("rebuild");
     const q = (b: string) => `?path=src%2Fa.ts&branch=${b}`;
