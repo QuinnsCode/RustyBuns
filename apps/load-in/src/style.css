@@ -20,3 +20,4 @@ button:hover { border-color: #4cc9f0; }
 .bar-card .pass { color: #6fdc8c; font-weight: 600; }
 .bar-card small { color: #9fb0c3; }
 @media (max-width: 600px) { .bar-card { font-size: 12px; padding: 6px 9px; } .bar-card small { display: none; } }
+#speakers { position: absolute; left: 10px; bottom: 48px; max-width: min(22rem, calc(100vw - 20px)); pointer-events: auto; text-align: left; background: #16223aee; }
