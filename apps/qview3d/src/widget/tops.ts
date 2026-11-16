@@ -233,8 +233,18 @@ function tile(w: number, h: number, draw: (g: CanvasRenderingContext2D) => void,
 const ribTexture = () => tile(16, 4, (g) => {
   for (let x = 0; x < 16; x++) { const l = Math.round(255 * (0.8 + 0.2 * (0.5 + 0.5 * Math.cos((x / 16) * TAU)))); g.fillStyle = `rgb(${l},${l},${l})`; g.fillRect(x, 0, 1, 4); }
 });
-/** A stitch line: dashes of thread, a shade darker than the cloth. */
-const stitchTexture = () => tile(16, 2, (g) => { g.fillStyle = "rgba(110,110,110,1)"; g.fillRect(0, 0, 11, 2); });
+/** A seam: a soft groove where the panels meet, with a row of thread dashes either side (a cover stitch).
+ * Blended, not alpha-tested, so it fades into a tonal line at a distance instead of stair-stepping. */
+const stitchTexture = () => tile(32, 16, (g) => {
+  for (let y = 4; y < 12; y++) { g.fillStyle = `rgba(30,30,30,${(0.5 * Math.sin(((y - 3.5) / 8) * Math.PI)).toFixed(2)})`; g.fillRect(0, y, 32, 1); }
+  for (const y of [2, 12]) {
+    g.fillStyle = "rgba(90,90,90,0.9)";
+    g.fillRect(5, y, 20, 2);
+    g.fillStyle = "rgba(90,90,90,0.45)";
+    g.fillRect(4, y, 1, 2);
+    g.fillRect(25, y, 1, 2);
+  }
+});
 /** Knitted jersey for a sweater: rows of little Vs, as a bump. */
 const knitTexture = () => tile(16, 16, (g) => {
   g.fillStyle = "#808080";
@@ -262,13 +272,13 @@ function kit(c: Cut): Kit {
   const shade = tile(1, 1, (g) => { g.fillStyle = "#8a8a8a"; g.fillRect(0, 0, 1, 1); });
   const inside = new THREE.MeshStandardMaterial({ roughness: 1, side: THREE.BackSide, map: shade });
   const sm = stitchTexture();
-  sm.repeat.set(1 / 0.02, 1);
-  const stitch = new THREE.MeshStandardMaterial({ roughness: 1, map: sm, alphaTest: 0.5, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+  sm.repeat.set(1 / 0.016, 1);
+  const stitch = new THREE.MeshStandardMaterial({ roughness: 1, map: sm, transparent: true, depthWrite: false, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
   return { print, inside, rib, stitch, plain: () => new THREE.MeshPhysicalMaterial({ ...look, side: THREE.DoubleSide }) };
 }
 
 /** A stitch line along `pts`, lifted off the cloth along `normals`: a thin ribbon of dashes. */
-function stitchGeo(pts: V3[], normals: V3[], width = 0.0045) {
+function stitchGeo(pts: V3[], normals: V3[], width = 0.012) {
   const pos: number[] = [], uv: number[] = [], idx: number[] = [];
   let run = 0;
   pts.forEach((p, i) => {
@@ -540,26 +550,27 @@ function finishSleeve(c: Cut, s: ReturnType<typeof sleeve>, m: Kit, add: (g: THR
 
 /**
  * A hood lying back over the shoulders, as two layers of fleece: its opening's rolled edge crosses at the front of
- * the neck and swings back behind it to the crown's lip; inside that, the lining sinks into a dark bowl; outside, the
- * shell rolls over the crown, stands off the upper back and comes down to lie on it in a rounded point.
+ * the neck, lies flat on the shoulders and swings back behind it to the crown's lip; inside that, the lining sinks into a
+ * dark bowl; outside, the slack shell rolls over the crown, slumps onto the shoulders and comes down to a soft point
+ * on the upper back, creased where it gathers at the neck and where the point bunches (#4657).
  */
 function hood(c: Cut, m: Kit, add: (g: THREE.BufferGeometry, mat: THREE.MeshStandardMaterial) => THREE.Mesh, group: THREE.Group) {
-  const nw = c.neck.front.w, rx = nw + 0.1, rz = c.nd + 0.11, yNb = topOf(c, true, 0);
+  const nw = c.neck.front.w, rx = nw + 0.1, rz = c.nd + 0.06, yNb = topOf(c, true, 0);
   const ang = (ph: number) => Math.atan2(Math.sin(ph), Math.cos(ph));
   // How far round to the back: 0 round the front of the neck, 1 at the crown's lip behind it.
   const backness = (ph: number) => smooth(0.9, 2.2, Math.abs(ang(ph)));
   const rimAt = (ph: number) => {
     const back = Math.cos(ph) < 0, a = ang(ph), b = backness(ph);
     // Round the neck it sits on the neckline; out on the shoulders it lies on them, where they slope away.
-    const sx = Math.sin(ph) * lerp(nw, rx, smooth(0.9, 1.6, Math.abs(a)));
-    const around = topOf(c, back, sx) + 0.015 + 0.03 * (1 - Math.cos(ph)) / 2 - 0.08 * Math.exp(-((a / 0.4) ** 2));
+    const sx = Math.sin(ph) * lerp(nw, rx, smooth(0.35, 1.2, Math.abs(a)));
+    const around = topOf(c, back, sx) + 0.015 + 0.03 * (1 - Math.cos(ph)) / 2 - 0.08 * Math.exp(-((a / 0.4) ** 2)) - 0.03 * Math.exp(-(((Math.abs(a) - 1.05) / 0.45) ** 2));
     // Where the edge lies on the shoulders it drops in a few soft folds.
     const folds = 0.012 * Math.sin(ph * 7) * Math.exp(-(((Math.abs(a) - 1.45) / 0.4) ** 2));
-    return V(Math.sin(ph) * lerp(rx, rx + 0.1, b), lerp(around, yNb - 0.03, b) + folds, Math.cos(ph) * lerp(rz, 0.34, b));
+    return V(Math.sin(ph) * lerp(rx, rx + 0.05, b), lerp(around, yNb - 0.07, b) + folds, Math.cos(ph) * lerp(rz, 0.28, b));
   };
   const rim = Array.from({ length: 96 }, (_, i) => rimAt((i / 96) * TAU));
   const hoodMat = m.plain();
-  add(tubeGeo(rim, 0.034, 0.028, () => V(0, 1, 0), true, 14), hoodMat);
+  add(tubeGeo(rim, 0.034, 0.02, () => V(0, 1, 0), true, 14), hoodMat);
 
   // The back of the body at (x, y), for laying the hood on it.
   const backAt = (x: number, y: number) => {
@@ -595,13 +606,23 @@ function hood(c: Cut, m: Kit, add: (g: THREE.BufferGeometry, mat: THREE.MeshStan
     const q = j / Q, row: V3[] = [];
     for (let i = 0; i <= S; i++) {
       const s = (i / S) * 2 - 1, b = Math.sqrt(1 - s * s), lip = rimAt(phOf(s)).add(V(0, -0.012, 0));
-      const bx = -s * Wh, by = yNb - Lh * (0.5 + 0.5 * b), my = lerp(lip.y, by, 0.5);
+      const bx = -s * Wh, by = yNb - Lh * (0.45 + 0.55 * lerp(1 - Math.abs(s), b, 0.4)), my = lerp(lip.y, by, 0.5);
       const foot = backAt(bx, by).add(V(0, 0, -0.01));
-      const crown = lip.clone().add(V(0, 0.22 * b, -0.15 * b));
-      const fall = V(bx * 1.3, my, backAt(bx, my).z - 0.04 - 0.2 * b);
+      // Slack fleece: the crown barely rises before it falls back, and the sides slump out onto the shoulders.
+      const crown = lip.clone().add(V(0, 0.08 * b, -0.2 * b));
+      const fall = V(bx * 1.15, my - 0.05 * (1 - b), backAt(bx, my).z - 0.04 - 0.2 * b);
       const p = bez(lip, crown, fall, foot, q);
-      // Soft folds running down the shell, deeper toward its point, so it reads as cloth, not a cap.
-      p.z -= (0.007 * Math.sin(s * 11 + 0.6) * smooth(0.15, 0.6, Math.abs(s)) + 0.006 * noise(s * 4, q * 5)) * b * smooth(0.2, 0.75, q);
+      const slump = smooth(0.4, 1, Math.abs(s)) * Math.sin(Math.PI * q);
+      p.x += Math.sign(bx) * 0.045 * slump;
+      p.y -= 0.06 * slump;
+      // Folds where it gathers: at the neck just past the lip, and where its point bunches on the back, with two long
+      // ones running from the neck's sides toward the point. Valleys sharp, ridges round, as cloth folds.
+      const gather = Math.exp(-(((q - 0.22) / 0.13) ** 2)) + 1.1 * smooth(0.68, 1, q);
+      const crease = Math.abs(Math.sin(s * 5.2 + 0.5 + 0.9 * q + 0.6 * noise(s * 2, q * 3))) - 0.62;
+      const long = Math.max(...[-1, 1].map((k) => Math.exp(-(((s - k * (0.72 - 0.5 * q)) / 0.11) ** 2)))) * Math.sin(Math.PI * q) ** 0.7;
+      const sag = 0.012 * Math.sin(q * 13 + s * s * 4) * smooth(0.3, 0.5, q) * (1 - smooth(0.8, 0.95, q)) * b;
+      const depth = (0.045 * crease * gather + 0.035 * long + sag + 0.012 * noise(s * 3 + 7, q * 4)) * (0.35 + 0.65 * b);
+      p.addScaledVector(V(0, 1 - smooth(0.12, 0.45, q), -1).normalize(), depth);
       const body = backAt(p.x, p.y).z - 0.012;
       if (p.z > body) p.z = lerp(p.z, body, smooth(0.04, 0.2, q));
       row.push(p);
