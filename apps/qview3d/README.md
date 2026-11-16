@@ -48,18 +48,20 @@ To let someone try it with their own product before they have a shop, send them 
    **Make a sample from photos** opens `/admin.html` with the key filled in.
 
 A sandbox is an org named `try-<who>-<6 hex>`. Any page may embed it (`*`), and on its end date every route reads it
-as unknown. To keep it, make a shop below with the same org id: the products stay and the end date goes. The routes
-are in [src/sandboxes.ts](src/sandboxes.ts). `bun run dev` prints a local sandbox link (`try-local`) to try the page.
+as unknown. To keep it, they click **Keep this as my shop** on the sandbox page and sign in (below): the products and
+sites stay and the end date goes. The routes are in [src/sandboxes.ts](src/sandboxes.ts). `bun run dev` prints a local
+sandbox link (`try-local`) to try the page.
 
 ### A shop for good
 
-Then make your friend's shop. A shop is an eqosys studio, so no keys change hands:
+A shop is an eqosys studio, so no keys change hands, and nobody has to wait on you:
 
-1. Your friend signs in to eqosys, makes a studio (Studio tab), then opens `/orgs.html` here and signs in. Their
-   studio shows "Not set up yet" with its id to copy. They send you that id and their shop's address.
-2. You open `/orgs.html`, signed in as an owner or admin of QNTBR (eqosys's house studio). **Make a shop** takes an
-   org id (it goes in the embed tag), their studio id, their sites and how many samples they've paid for.
-3. Your friend reloads the page. They add products (id, name, kind, colours, which zones print, where a new picture
+1. Your friend signs in to eqosys, makes a studio (Studio tab), then opens `/orgs.html` here and signs in.
+2. As the studio's owner or admin, they click **Start my shop** (an org id from the studio's name, which goes in the
+   embed tag; they can change it first). It starts with a tee, no samples and no sites, so no page shows it until they
+   add theirs. Came from a sandbox? The card says **Keep try-... as this shop** instead. One shop per studio, at most
+   50 products. As QNTBR's owner or admin you can still **Make a shop** for any studio, and set its samples.
+3. They add products (id, name, kind, colours, which zones print, where a new picture
    lands), **Change** any of them, set their own sites, and copy the embed tag. A save shows on their shop's next page
    load. Their studio's owners and admins can do this; its makers only see it. **New script key** makes an admin key
    for a script (shown once; the org keeps its SHA-256), which writes products and makes samples without signing in.

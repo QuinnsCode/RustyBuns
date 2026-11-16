@@ -5,7 +5,7 @@
 // a studio from its id, which the friend copies from this same page, or hands someone a sandbox link (sandboxes.ts).
 import { eqosys } from "@rustybuns/util/eqosys";
 import { getJson } from "@rustybuns/util/http";
-import { APP, EQOSYS, KeyReply, Mine, SandboxReply, type SandboxRequest, type Sites } from "./api.ts";
+import { APP, EQOSYS, KeyReply, Mine, SandboxReply, slug, type SandboxRequest, type ShopStart, type Sites } from "./api.ts";
 import { act as acting, copyBox as copying, el, embedTag, field, productForm as editor } from "./shop-ui.ts";
 import { problem } from "./widget/upload.ts";
 
@@ -30,6 +30,46 @@ async function send(path: string, method: string, body: unknown): Promise<Respon
 const act = (f: () => Promise<unknown>) => acting(say, f);
 const copyBox = (title: string, text: string) => copying(title, text, say);
 const productForm = (org: string, reload: () => Promise<void>) => editor(org, send, say, reload);
+
+/**
+ * A sandbox to keep, from /try.html's Keep this as my shop (#keep=<org>&key=<key>). Held in sessionStorage too, since
+ * signing in goes to eqosys and back without the fragment; dropped once kept.
+ */
+const KEEP = "qview3d-keep";
+const keeping = ((): { org: string; key: string } | null => {
+  const q = new URLSearchParams(location.hash.slice(1));
+  const org = q.get("keep"), key = q.get("key");
+  try {
+    if (org && key) { sessionStorage.setItem(KEEP, JSON.stringify({ org, key })); history.replaceState(null, "", location.pathname); return { org, key }; }
+    const v: unknown = JSON.parse(sessionStorage.getItem(KEEP) ?? "null");
+    return v && typeof v === "object" && "org" in v && "key" in v && typeof v.org === "string" && typeof v.key === "string" ? { org: v.org, key: v.key } : null;
+  } catch { return org && key ? { org, key } : null; }
+})();
+
+/** A studio with no shop: its owner or admin starts one here, or keeps the sandbox they came from. */
+function startCard(shop: Mine["shops"][number], body: HTMLElement, reload: () => Promise<void>) {
+  if (shop.role === "maker") {
+    body.append(el("p", { textContent: "No shop yet. Your studio's owner or an admin can start one here." }));
+    return;
+  }
+  const start = (req: ShopStart) => act(async () => {
+    await send("/api/mine/shops", "POST", req);
+    try { sessionStorage.removeItem(KEEP); } catch { /* nothing kept */ }
+    say("Your shop is ready. Add your site below, then paste the tag into your product page.");
+    await reload();
+  });
+  if (keeping) {
+    const keep = el("button", { type: "button", textContent: `Keep ${keeping.org} as this shop` });
+    keep.onclick = start({ studio: shop.studio, sandbox: keeping });
+    body.append(el("p", { textContent: "Your sandbox's products and sites move here, and it no longer ends." }), keep);
+    return;
+  }
+  const id = el("input", { value: slug(shop.name), placeholder: "fern-hats", pattern: "[a-z0-9][a-z0-9\\-]{0,62}", required: true });
+  const go = el("button", { type: "button", textContent: "Start my shop" });
+  go.onclick = start({ studio: shop.studio, org: id.value });
+  id.oninput = () => { go.onclick = start({ studio: shop.studio, org: id.value }); };
+  body.append(el("p", { textContent: "No shop yet. Start one: it goes in your embed tag, and it starts with a tee to try." }), field("Shop id", id), go);
+}
 
 /**
  * The owner's hand-off: a sandbox for someone to try QView3D with their own product, as one link to send. They need
@@ -93,10 +133,11 @@ function shopCard(shop: Mine["shops"][number], reload: () => Promise<void>) {
   const card = el("section", { class: "card" }, el("div", { class: "head" }, el("h1", { textContent: shop.name }), el("p", { class: "sub", textContent: `You are its ${shop.role}.` })), body);
   const o = shop.org;
   if (!o) {
-    body.append(el("p", { textContent: "Not set up yet. Send this id to QNTBR (hello@qntbr.com) with your shop's web address, and it shows up here." }), copyBox("Your studio id", shop.studio));
+    startCard(shop, body, reload);
     return card;
   }
-  body.append(el("p", { class: "sub", textContent: `Org ${o.id}. Sites: ${o.origins.join(", ")}. Samples: ${o.samples}. Script keys: ${o.keys}.` }));
+  const sites = o.origins.length ? o.origins.join(", ") : "none yet, so no page shows it until you add yours below";
+  body.append(el("p", { class: "sub", textContent: `Org ${o.id}. Sites: ${sites}. Samples: ${o.samples}. Script keys: ${o.keys}.` }));
   const editor = runs ? productForm(o.id, reload) : null;
   const list = el("ul", { class: "products" }, ...o.products.map((row) => {
     const p = row.product;
