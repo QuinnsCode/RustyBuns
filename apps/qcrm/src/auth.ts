@@ -46,7 +46,9 @@ export const EqosysUser = obj({ sub: str(200), email: str(320), email_verified: 
  * "Sign in with eqosys": eqosys is an OpenID provider and qCRM a public client (id "qcrm" in eqosys's APPS, PKCE, no
  * secret). The endpoints are written out rather than discovered, since an auth is made per request and discovery
  * would fetch on every one. Who it is comes from userinfo, which says live whether the email is verified: a verified
- * one links to the qCRM account with that email (Better Auth's own linking), and a new one gets a fresh account.
+ * one links to a verified qCRM account with that email (Better Auth's own linking), and a new one gets a fresh account.
+ * An unverified qCRM account is never taken over that way: its owner signs in with the password and connects eqosys
+ * from Settings (/api/auth/link-social), which proves both halves.
  */
 const eqosysProvider = (url: string) => {
   const base = url.replace(/\/+$/, "");
@@ -79,6 +81,8 @@ const make = (env: Env, origin: string) => betterAuth({
   // Not the default name: the QNTBR site sets better-auth.session_token on .qntbr.com, which also reaches this host.
   advanced: { cookiePrefix: "qcrm" },
   trustedOrigins: [env.BETTER_AUTH_URL ?? origin],
+  // A sign-in that goes wrong comes back to the app with ?error=<code>, which the page says in words (Crm.tsx), not Better Auth's own page.
+  onAPIError: { errorURL: `${env.BETTER_AUTH_URL ?? origin}/app` },
   emailAndPassword: {
     enabled: true,
     ...(mailOn(env) ? {
