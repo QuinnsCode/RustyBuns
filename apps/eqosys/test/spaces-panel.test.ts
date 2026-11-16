@@ -1,6 +1,6 @@
 // The spaces panel a game mounts (@rustybuns/util/spaces), through a real page: a signed-in player makes a space, a friend
 // joins by its invite from another Q app, they talk both ways in #general, the owner opens a voice channel and talks in
-// it (Qlave's client stood in for by the page) while the friend sees them there, and the owner kicks the friend from their row.
+// it (Qlave's client stood in for by the page) while the friend sees them there, and the owner lets the friend into a private channel and kicks them from their row.
 // eqosys runs in-process with its Space DO and also serves the page; headless Chrome drives it over CDP (scripts/chrome.ts).
 import { afterAll, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
 import { join } from "node:path";
@@ -91,6 +91,14 @@ test("make a space in the panel, a friend joins by invite, they talk, the owner 
   await tab.eval(`voice.gone("ended")`);
   await seen("Ada out of voice", (s) => s.inVoice === null && s.note === "That voice channel ended.");
   await until("Bo seeing Ada leave voice", () => friendSees.join() === "Ada,Bo");
+
+  // A private channel: Ada adds it with a lock on its tab, opens it, and lets Bo in from Bo's row.
+  await type("Private channel", "leads");
+  await seen("the private tab", (s) => s.private.join() === "leads" && s.role === "owner");
+  await tab.eval(`[...document.querySelectorAll('#spaces [role=tab]')].find((b) => b.textContent === "leads").click()`);
+  await seen("on #leads", (s) => s.channel === "leads");
+  await press("Let Bo into leads");
+  await until("Bo let in", () => tab.eval<boolean>(`!!document.querySelector('#spaces button[title="Keep Bo out of leads"]')`));
 
   await press("Kick Bo");
   await seen("Bo gone", (s) => s.online.join() === "Ada");

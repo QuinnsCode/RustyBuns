@@ -82,7 +82,7 @@ test("a studio's space: the studio's members are in, its admins run it, a new ro
   expect((await run("eq_studio_add", { studio, email: "cy@example.com", role: "maker" }, { cookie: ada.cookie })).status).toBe(200);
   await until(() => !c.runs());
   c.c.channel("cy-only");
-  await until(() => c.refused.includes("only the space's owner can do that"));
+  await until(() => c.refused.includes("only the space's owner or an admin can do that"));
   expect(c.gone()).toBe("");
 
   // Coworkers see each other online with no friend request: Bo has the game open, and Cy's hub says so.
