@@ -147,7 +147,8 @@ test("deploy guardrail: refuses without a matching plan, accepts --yes", async (
   writeFileSync(bin + "/alchemy", `#!/bin/sh\necho "STUB alchemy $@ built=$RUSTYBUNS_BUILT" >> ${r}/calls.log\n`); require("node:fs").chmodSync(bin + "/alchemy", 0o755);
   // a token with no account id leaves Alchemy to its profile, here an empty ALCHEMY_HOME until the login below (#1170)
   const { CLOUDFLARE_ACCOUNT_ID: _a, CI: _ci, ...shell } = process.env;
-  const env = { ...shell, CLOUDFLARE_API_TOKEN: "test-token", ALCHEMY_HOME: r + "/alchemy-home" };
+  // pin the package manager: no lockfile here, so the hint names whatever the shell's user agent says (npx on the builder, #4809)
+  const env = { ...shell, CLOUDFLARE_API_TOKEN: "test-token", ALCHEMY_HOME: r + "/alchemy-home", npm_config_user_agent: "bun/1" };
   // --no-check on plan/deploy: the stub alchemy has no types, and on Bun >= 1.4.3 bun check is always there to fail on it
   const run = (...a: string[]) => Bun.spawnSync(["bun", cli, ...a, ...(a[0] === "plan" || a[0] === "deploy" ? ["--no-check"] : [])], { cwd: r, env, stdout: "pipe", stderr: "pipe" });
   // init needs @rustybuns/cli resolvable for the config import; link the package dir
@@ -186,7 +187,7 @@ test("deploy guardrail: refuses without a matching plan, accepts --yes", async (
   // the refusal names the stage, so following it doesn't plan production instead
   const d0 = run("deploy", "--stage", "staging");
   expect(d0.exitCode).toBe(2);
-  expect(d0.stderr.toString()).toContain("`rustybuns plan --stage staging`");
+  expect(d0.stderr.toString()).toContain("`bunx rustybuns plan --stage staging`");
   expect(run("plan", "--stage", "staging").exitCode).toBe(0);
   expect(await Bun.file(r + "/.rustybuns/alchemy.run.ts").text()).toContain(`MODE: "staging"`);
   // the checked-in wrangler.jsonc stays the config as written (#3905)
