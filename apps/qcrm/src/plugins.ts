@@ -88,7 +88,7 @@ export async function unseal(env: Env, sealed: string): Promise<string | null> {
 /** A phone plugin's config as stored: the account id, the sending number, the sealed token and its last four. */
 const Stored = obj({ account: str(64), from: str(20), auth_token: str(2000), tail: str(8) });
 type Stored = Of<typeof Stored>;
-const stored = (row: PluginRow) => check(Stored, parseJson<unknown>(row.config, null));
+const stored = (row: PluginRow) => check(Stored, parseJson(row.config, null));
 
 interface Phone { kind: PhoneKind; account: string; from: string; token: string }
 async function unpack(env: Env, row: PluginRow): Promise<Phone | null> {
@@ -349,7 +349,7 @@ async function formFields(req: Request, text: string): Promise<Partial<Record<Fo
   const type = req.headers.get("content-type") ?? "";
   let get: (k: string) => unknown;
   if (type.includes("json")) {
-    const v = parseJson<unknown>(text, null);
+    const v = parseJson(text, null);
     if (!v || typeof v !== "object" || Array.isArray(v)) return null;
     get = (k) => Object.getOwnPropertyDescriptor(v, k)?.value;
   } else if (type.includes("multipart/form-data")) {
@@ -386,7 +386,7 @@ async function formIn(req: Request, env: Env, row: PluginRow, text: string): Pro
   if (!first && !last && f.name) { const [a, ...rest] = f.name.split(/\s+/); first = a; last = rest.join(" ") || undefined; }
   const org = row.org_id;
   const known = email ? await contactByEmail(env, org, email) : await contactByPhone(env, org, f.phone!);
-  const data: Record<string, unknown> = { first_name: first, last_name: last, email, phone: f.phone, company_id: f.company ? await companyId(env, org, f.company) : undefined };
+  const data: Row = { first_name: first, last_name: last, email, phone: f.phone, company_id: f.company ? await companyId(env, org, f.company) : undefined };
   const contact = known ? await updateRow(env, org, "contacts", String(known.id), data, null) : await createRow(env, org, "contacts", { ...data, tags: ["form"] }, null);
   if (typeof contact === "string") return error(400, contact);
   if (!contact) return error(404, "not found");

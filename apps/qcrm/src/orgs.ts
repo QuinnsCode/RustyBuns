@@ -90,7 +90,7 @@ export async function orgListRoutes(req: Request, env: Env, user: User): Promise
   if (req.method === "GET") { await ensureOwnOrg(env, user); return json(await listOrgs(env, user)); }
   if (req.method !== "POST") return null;
   if (user.key) return error(403, "API keys can't make orgs: sign in on the site");
-  const b = await readBody<{ name?: unknown }>(req);
+  const b = await readBody(req);
   const name = typeof b?.name === "string" ? b.name.trim().slice(0, 120) : "";
   if (!name) return error(400, "name: what to call the org");
   const own = await orgRow(env, await orgId(user.id, env.BETTER_AUTH_SECRET!));
@@ -133,7 +133,7 @@ export async function orgRoutes(c: Ctx): Promise<Response | null> {
   }
   if (!can(role, "members")) return error(403, "managers and up manage members");
   if (!p[1] && req.method === "POST") {
-    const b = await readBody<{ email?: unknown; role?: unknown }>(req);
+    const b = await readBody(req);
     return addMember(env, org, user, role, b?.email, b?.role);
   }
   if (!p[1] || p[2]) return null;
@@ -142,7 +142,7 @@ export async function orgRoutes(c: Ctx): Promise<Response | null> {
   if (!canSetRole(role, target)) return error(403, `a ${role} can't change a ${target}`);
   const lastAdmin = async () => target === "admin" && (await env.DB.prepare("SELECT count(*) AS n FROM memberships WHERE org_id = ? AND role = 'admin'").bind(org).first<{ n: number }>())!.n < 2;
   if (req.method === "PUT") {
-    const b = await readBody<{ role?: unknown }>(req);
+    const b = await readBody(req);
     const r = b?.role;
     if (!isRole(r) || !GRANTABLE.includes(r)) return error(400, `role: one of ${GRANTABLE.join(", ")}`);
     if (!canSetRole(role, r)) return error(403, `a ${role} can't grant ${r}`);

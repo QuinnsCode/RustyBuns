@@ -16,7 +16,7 @@ export async function adminRoutes(req: Request, env: Env, user: User, p: string[
   }
   if (p[1] && p[2] === "members" && !p[3] && req.method === "POST") {
     if (!(await orgRow(env, p[1]))) return error(404, "no such org");
-    const b = await readBody<{ email?: unknown; role?: unknown }>(req);
+    const b = await readBody(req);
     return addMember(env, p[1], user, "super_admin", b?.email, b?.role);
   }
   return null;

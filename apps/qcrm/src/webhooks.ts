@@ -18,7 +18,8 @@
 // http:// the app runs on someone's own machine (the desktop, tests), and there http and
 // loopback are allowed: the receiver is the same machine.
 
-import { error, hex, hmacHex, json, parseJson, readBody, type Env, type HookMessage } from "./env.ts";
+import { error, hex, hmacHex, json, parseJson, readBody, Strings, type Env, type HookMessage, type Row } from "./env.ts";
+import { maybe, obj, raw, rec, str } from "@rustybuns/util/guard";
 import type { Ctx } from "./orgs.ts";
 
 const ENTITIES = ["contact", "company", "deal", "activity"] as const;
@@ -56,10 +57,10 @@ function checkUrl(env: Env, u: unknown) {
 }
 
 /** Something happened in `org`: a delivery row per hook that listens, and its first try on the queue. */
-export async function emit(env: Env, org: string, event: Event, data: Record<string, unknown>) {
+export async function emit(env: Env, org: string, event: Event, data: Row) {
   try {
     const { results } = await env.DB.prepare("SELECT id, events FROM webhooks WHERE org_id = ? AND disabled = 0").bind(org).all<{ id: string; events: string }>();
-    const hooks = results.filter((h) => parseJson<string[]>(h.events, []).includes(event));
+    const hooks = results.filter((h) => parseJson(h.events, [], Strings).includes(event));
     if (!hooks.length) return;
     const now = Date.now();
     const payload = JSON.stringify({ event, org, at: now, data });
@@ -72,12 +73,15 @@ export async function emit(env: Env, org: string, event: Event, data: Record<str
   }
 }
 
+/** What `emit` writes as a delivery's payload, as far as a chat line reads it: the event and the row's fields. */
+const Payload = obj({ event: maybe(str(200)), data: maybe(rec(raw)) });
+
 export const FORMATS = ["json", "slack", "discord"] as const;
 
 /** An event as one line a team channel shows: what happened, to whom, and a link that opens the row. */
 export function chatLine(env: Env, payload: string): string {
-  const p = parseJson<{ event?: unknown; data?: Record<string, unknown> }>(payload, {});
-  const event = typeof p.event === "string" ? p.event : "event", d = p.data ?? {};
+  const p = parseJson(payload, { event: undefined, data: undefined }, Payload);
+  const event = p.event ?? "event", d = p.data ?? {};
   const pick = (...ks: string[]) => ks.map((k) => d[k]).filter((v): v is string => typeof v === "string" && !!v.trim());
   const name = pick("name").concat([pick("first_name", "last_name").join(" ")]).find(Boolean) || pick("email", "body")[0] || "";
   const amount = typeof d.amount_cents === "number" && d.amount_cents ? ` · ${(d.amount_cents / 100).toLocaleString("en-US", { style: "currency", currency: typeof d.currency === "string" ? d.currency : "USD", maximumFractionDigits: 0 })}` : "";
@@ -114,17 +118,19 @@ export async function deliver(env: Env, { delivery, attempt }: HookMessage) {
   if (delay !== null) await env.HOOKS?.send({ delivery: d.id, attempt: attempt + 1 }, { delaySeconds: delay });
 }
 
-const shown = (h: Record<string, unknown>) => ({ ...h, events: parseJson(h.events, []), disabled: !!h.disabled, format: h.format ?? "json" });
+/** A webhooks row as the list and PUT read it: `events` is stored as JSON, `disabled` as 0 or 1. */
+type HookRow = { id: string; url: string; events: string; created_at: number; disabled: number | boolean; format: string | null };
+const shown = (h: HookRow) => ({ ...h, events: parseJson(h.events, [], Strings), disabled: !!h.disabled, format: h.format ?? "json" });
 const formatOf = (v: unknown, dflt: string) => (v === undefined ? dflt : FORMATS.find((f) => f === v) ?? null);
 
 export async function webhookRoutes({ req, env, org, p, audit }: Ctx): Promise<Response | null> {
   if (p[0] !== "webhooks") return null;
   if (!p[1] && req.method === "GET") {
-    const { results } = await env.DB.prepare("SELECT id, url, events, created_at, disabled, format FROM webhooks WHERE org_id = ? ORDER BY created_at").bind(org).all();
+    const { results } = await env.DB.prepare("SELECT id, url, events, created_at, disabled, format FROM webhooks WHERE org_id = ? ORDER BY created_at").bind(org).all<HookRow>();
     return json({ events: EVENTS, formats: FORMATS, webhooks: results.map(shown) });
   }
   if (!p[1] && req.method === "POST") {
-    const b = await readBody<{ url?: unknown; events?: unknown; format?: unknown }>(req);
+    const b = await readBody(req);
     const url = checkUrl(env, b?.url);
     if (!url) return error(400, "url: an https URL out on the internet, without a password in it");
     const events = b?.events === undefined ? [...EVENTS] : b.events;
@@ -139,24 +145,24 @@ export async function webhookRoutes({ req, env, org, p, audit }: Ctx): Promise<R
     await audit("webhook.create", hook.id, new URL(url).host);
     return json(hook, 201);
   }
-  const hook = p[1] ? await env.DB.prepare("SELECT id, url, events, created_at, disabled, format FROM webhooks WHERE id = ? AND org_id = ?").bind(p[1], org).first() : null;
+  const hook = p[1] ? await env.DB.prepare("SELECT id, url, events, created_at, disabled, format FROM webhooks WHERE id = ? AND org_id = ?").bind(p[1], org).first<HookRow>() : null;
   if (!hook) return error(404, "no such webhook");
   if (!p[2] && req.method === "PUT") {
-    const b = await readBody<{ url?: unknown; events?: unknown; disabled?: unknown; format?: unknown }>(req);
+    const b = await readBody(req);
     const url = b?.url === undefined ? hook.url : checkUrl(env, b.url);
     if (!url) return error(400, "url: an https URL out on the internet");
-    const events = b?.events === undefined ? parseJson(hook.events, []) : b.events;
+    const events = b?.events === undefined ? parseJson(hook.events, [], Strings) : b.events;
     if (!Array.isArray(events) || !events.length || events.some((e) => !(EVENTS as readonly string[]).includes(e))) return error(400, `events: some of ${EVENTS.join(", ")}`);
     const disabled = b?.disabled === undefined ? !!hook.disabled : b.disabled === true;
     const format = formatOf(b?.format, String(hook.format ?? "json"));
     if (!format) return error(400, `format: one of ${FORMATS.join(", ")}`);
     await env.DB.prepare("UPDATE webhooks SET url = ?, events = ?, disabled = ?, format = ? WHERE id = ?").bind(url, JSON.stringify(events), disabled ? 1 : 0, format, hook.id).run();
-    await audit("webhook.update", hook.id as string);
+    await audit("webhook.update", hook.id);
     return json(shown({ ...hook, url, events: JSON.stringify(events), disabled, format }));
   }
   if (!p[2] && req.method === "DELETE") {
     await env.DB.batch([env.DB.prepare("DELETE FROM webhooks WHERE id = ?").bind(hook.id), env.DB.prepare("DELETE FROM webhook_deliveries WHERE webhook_id = ?").bind(hook.id)]);
-    await audit("webhook.delete", hook.id as string);
+    await audit("webhook.delete", hook.id);
     return json({ ok: true });
   }
   if (p[2] === "deliveries" && !p[3] && req.method === "GET") {
@@ -170,7 +176,7 @@ export async function webhookRoutes({ req, env, org, p, audit }: Ctx): Promise<R
     // Back to attempt 0: a retry message still queued for an older attempt no longer matches and is dropped.
     await env.DB.prepare("UPDATE webhook_deliveries SET status = 'pending', attempts = 0, next_at = ?, last_code = NULL WHERE id = ?").bind(Date.now(), d.id).run();
     await env.HOOKS?.send({ delivery: d.id, attempt: 1 });
-    await audit("webhook.replay", hook.id as string, d.id);
+    await audit("webhook.replay", hook.id, d.id);
     return json({ ok: true });
   }
   return null;

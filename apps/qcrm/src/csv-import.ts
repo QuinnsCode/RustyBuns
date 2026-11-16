@@ -9,7 +9,7 @@
 // skipped and counted as a duplicate.
 
 import { createRow, ENTITIES, type Entity } from "./crm.ts";
-import { error, json } from "./env.ts";
+import { error, json, type Row } from "./env.ts";
 import type { Ctx } from "./orgs.ts";
 import { can } from "./rbac.ts";
 
@@ -53,7 +53,7 @@ export function mapHeaders(entity: Entity, headers: string[], map: Record<string
   });
 }
 
-const dupeKey = (entity: Entity, r: Record<string, unknown>) =>
+const dupeKey = (entity: Entity, r: Row) =>
   entity === "contacts" ? (r.email as string | undefined)?.toLowerCase() : ((r.domain as string | undefined) || (r.name as string | undefined))?.trim().toLowerCase();
 
 export interface ImportResult { created: number; duplicates: number; failed: number; errors: { row: number; error: string }[] }
@@ -81,7 +81,7 @@ export async function importCsv({ env, org, user }: Ctx, entity: Entity, text: s
 
   const out: ImportResult = { created: 0, duplicates: 0, failed: 0, errors: [] };
   for (let i = 0; i < body.length; i++) {
-    const data: Record<string, unknown> = {};
+    const data: Row = {};
     fields.forEach((f, j) => {
       const v = (body[i]![j] ?? "").trim();
       if (!f || !v) return;

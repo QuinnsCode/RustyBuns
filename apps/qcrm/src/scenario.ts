@@ -36,7 +36,7 @@ export async function scenarioRoute(req: Request, env: Env): Promise<Response> {
   if (!env.BETTER_AUTH_URL?.startsWith("http://")) return error(404, "not found");
   if (req.method === "GET") return json({ scenarios: Object.entries(SCENARIOS).map(([name, s]) => ({ name, ...s })) });
   if (req.method !== "POST") return error(405, "POST {name} to land in a scenario");
-  const name = (await readBody<{ name?: unknown }>(req))?.name;
+  const name = (await readBody(req))?.name;
   if (!isScenario(name)) return error(400, `name: one of ${Object.keys(SCENARIOS).join(", ")}`);
 
   const made = await throwaway(req, env, "Scenario");

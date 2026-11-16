@@ -1,6 +1,7 @@
 // The Worker's bindings as the app sees them, and the two helpers every route uses.
 // Keep this file importing nothing: src/openapi.ts and the tests lean on it.
 
+/** A table row, or an entity's fields before `validate` (crm.ts) checks them against ENTITIES: the one shapeless bag the app passes around. */
 export type Row = Record<string, unknown>;
 export interface D1Result<T = Row> { results: T[]; success: boolean; meta: { changes?: number; last_row_id?: number } }
 export interface D1Statement {
@@ -75,7 +76,7 @@ export { esc };
 export const NAME ="qCRM";
 export const VERSION = "0.1.4";
 
-import { obj, str } from "@rustybuns/util/guard";
+import { arr, check, isRecord, obj, str, type Guard } from "@rustybuns/util/guard";
 /** A JSON response. Private by default: CRM rows never sit in a shared cache. */
 import { privateJson as json } from "@rustybuns/util/http";
 export { json };
@@ -86,10 +87,21 @@ export const error = (status: number, message: string) => json({ error: message 
 
 // Small helpers every file may use; look here before writing a toHex or a digest again.
 export { b64url, digest, hex, hmacHex, sha256 } from "@rustybuns/util/bytes";
-/** `s` parsed as JSON, or `fallback`: one bad stored row spoils one entry, not the listing. */
-export const parseJson = <T>(s: unknown, fallback: T): T => { try { return typeof s === "string" && s ? JSON.parse(s) : fallback; } catch { return fallback; } };
+/**
+ * `s` parsed as JSON and through `g`, or `fallback`: one bad stored row spoils one entry, not the listing.
+ * Without a guard it is `unknown`, for a stored value that is only passed on (a change's data, a run's result).
+ */
+export function parseJson(s: unknown, fallback: null): unknown;
+export function parseJson<T>(s: unknown, fallback: T, g: Guard<T>): T;
+export function parseJson<T>(s: unknown, fallback: T, g?: Guard<T>): unknown {
+  let v: unknown;
+  try { v = typeof s === "string" && s ? JSON.parse(s) : fallback; } catch { return fallback; }
+  return g ? (check(g, v) ?? fallback) : v;
+}
+/** A stored list of strings: a webhook's events, a row's tags, a client's redirect URIs. */
+export const Strings = arr(str(Infinity, { min: 0 }), 10_000);
 
-/** The request's JSON body, or null when it isn't one. */
-export const readBody = async <T = Record<string, unknown>>(req: Request): Promise<T | null> => {
-  try { const v = await req.json(); return v && typeof v === "object" ? (v as T) : null; } catch { return null; }
+/** The request's JSON body when it is an object, its fields still to be checked by the route; null otherwise. */
+export const readBody = async (req: Request): Promise<Row | null> => {
+  try { const v: unknown = await req.json(); return isRecord(v) ? v : null; } catch { return null; }
 };

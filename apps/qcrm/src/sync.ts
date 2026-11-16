@@ -10,12 +10,20 @@
 // the client's updated_at is newer. Each op is checked against the caller's role like the
 // matching HTTP call would be.
 
-import { createAction, createRow, deleteRow, getRow, isEntity, shape, updateRow } from "./crm.ts";
+import { createAction, createRow, deleteRow, getRow, isEntity, shape, updateRow, type Entity } from "./crm.ts";
+import { Bad, check, int, isRecord, maybe, obj, oneOf, str, type Guard } from "@rustybuns/util/guard";
 import { error, json, parseJson, readBody, type Row } from "./env.ts";
 import type { Ctx } from "./orgs.ts";
 import { can } from "./rbac.ts";
 
 const MAX_OPS = 500;
+
+const EntityName: Guard<Entity> = (v) => { if (!isEntity(v)) throw new Bad("an entity"); return v; };
+/** One pushed op. `data` that isn't an object is no fields; a `baseSeq` that isn't a whole number is none. */
+export const SyncOp = obj({
+  entity: EntityName, id: str(200), op: oneOf(["upsert", "delete"]),
+  baseSeq: maybe(int(0, Number.MAX_SAFE_INTEGER)), data: (v: unknown): Row => (isRecord(v) ? v : {}),
+});
 
 export async function syncRoutes({ req, env, url, user, org, role, p }: Ctx): Promise<Response | null> {
   if (p[0] !== "sync" || p[1]) return null;
@@ -27,21 +35,21 @@ export async function syncRoutes({ req, env, url, user, org, role, p }: Ctx): Pr
     return json({ changes: page, next: page.length ? page[page.length - 1]!.seq : since, done: results.length <= limit });
   }
   if (req.method !== "POST") return null;
-  const b = await readBody<{ ops?: unknown }>(req);
+  const b = await readBody(req);
   if (!b || !Array.isArray(b.ops) || b.ops.length > MAX_OPS) return error(400, `ops: a list of at most ${MAX_OPS}`);
   let applied = 0;
   const conflicts: { id: string; server: Row | null; reason?: string }[] = [];
   const rejected: { id: string; error: string }[] = [];
-  for (const raw of b.ops as Record<string, unknown>[]) {
-    const { entity, id, op, baseSeq } = raw ?? {};
-    const data = raw?.data && typeof raw.data === "object" ? (raw.data as Record<string, unknown>) : {};
-    if (!isEntity(entity) || typeof id !== "string" || (op !== "upsert" && op !== "delete")) { rejected.push({ id: String(id), error: "entity, id and op (upsert or delete) are required" }); continue; }
+  for (const sent of b.ops) {
+    const o = check(SyncOp, sent);
+    if (!o) { rejected.push({ id: String(isRecord(sent) ? sent.id : undefined), error: "entity, id and op (upsert or delete) are required" }); continue; }
+    const { entity, id, op, baseSeq, data } = o;
     const server = await getRow(env, org, entity, id, true);
     const need = op === "delete" ? "delete" : server ? "update" : createAction(entity);
     if (!can(role, need)) { rejected.push({ id, error: `a ${role} can't ${need.replace(":", " ")}` }); continue; }
-    if (server && Number.isInteger(baseSeq)) {
+    if (server && baseSeq !== undefined) {
       const last = await env.DB.prepare("SELECT MAX(seq) AS seq FROM changes WHERE org_id = ? AND entity = ? AND entity_id = ?").bind(org, entity, id).first<{ seq: number | null }>();
-      if ((last?.seq ?? 0) > (baseSeq as number)) {
+      if ((last?.seq ?? 0) > baseSeq) {
         const shown = shape(entity, server);
         conflicts.push({ id, server: shown });
         // The server moved on and is at least as fresh: the client takes the server's copy.

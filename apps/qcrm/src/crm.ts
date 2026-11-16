@@ -12,7 +12,7 @@
 
 import { importRoute } from "./csv-import.ts";
 import { demoRows, isDemo, isTable, materialize, snapshotRow } from "./demo-snapshot.ts";
-import { b64url, error, json, parseJson, readBody, type Env, type Row } from "./env.ts";
+import { b64url, error, json, parseJson, readBody, Strings, type Env, type Row } from "./env.ts";
 import type { Ctx } from "./orgs.ts";
 import { can, type Action } from "./rbac.ts";
 import { emit, type Event } from "./webhooks.ts";
@@ -45,7 +45,7 @@ const MAX_STR = 2000;
 const ID = /^[A-Za-z0-9_-]{1,64}$/;
 
 /** `data` cut to the entity's columns and checked; `partial` for an update. A string says what is wrong. */
-export function validate(entity: Entity, data: Record<string, unknown>, partial: boolean): Row | string {
+export function validate(entity: Entity, data: Row, partial: boolean): Row | string {
   const out: Row = {};
   for (const [col, f] of Object.entries(ENTITIES[entity]!.fields)) {
     const v = data[col];
@@ -64,7 +64,7 @@ export function validate(entity: Entity, data: Record<string, unknown>, partial:
 }
 
 /** A stored row as the API shows it. */
-export const shape = (entity: Entity, r: Row) => ("tags" in ENTITIES[entity]!.fields ? { ...r, tags: parseJson(r.tags, []) } : r);
+export const shape = (entity: Entity, r: Row) => ("tags" in ENTITIES[entity]!.fields ? { ...r, tags: parseJson(r.tags, [], Strings) } : r);
 
 /** One row; a demo org's comes from the snapshot until the visitor has changed it (demo-snapshot.ts). */
 export async function getRow(env: Env, org: string, entity: Entity, id: string, includeDeleted = false) {
@@ -121,7 +121,7 @@ export async function record(env: Env, org: string, entity: Entity, id: string, 
 
 type WriteOpts = { id?: string; updated_at?: number };
 
-export async function createRow(env: Env, org: string, entity: Entity, data: Record<string, unknown>, actor: string | null, opts: WriteOpts = {}) {
+export async function createRow(env: Env, org: string, entity: Entity, data: Row, actor: string | null, opts: WriteOpts = {}) {
   const v = validate(entity, data, false);
   if (typeof v === "string") return v;
   if (opts.id !== undefined && !ID.test(opts.id)) return "id: up to 64 letters, digits, - or _";
@@ -138,7 +138,7 @@ export async function createRow(env: Env, org: string, entity: Entity, data: Rec
   return out;
 }
 
-export async function updateRow(env: Env, org: string, entity: Entity, id: string, data: Record<string, unknown>, actor: string | null, opts: WriteOpts = {}) {
+export async function updateRow(env: Env, org: string, entity: Entity, id: string, data: Row, actor: string | null, opts: WriteOpts = {}) {
   const v = validate(entity, data, true);
   if (typeof v === "string") return v;
   await materialize(env, org, entity, id);

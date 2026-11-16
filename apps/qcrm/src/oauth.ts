@@ -21,7 +21,7 @@
 //   GET  /api/oauth/grants      DELETE /api/oauth/grants/:id
 
 import { sessionUser } from "./auth.ts";
-import { b64url, digest, error, esc, json, NAME, parseJson, readBody, sha256, type Env } from "./env.ts";
+import { b64url, digest, error, esc, json, NAME, parseJson, readBody, sha256, Strings, type Env } from "./env.ts";
 import { listOrgs } from "./orgs.ts";
 
 const HOUR = 3_600_000, DAY = 24 * HOUR, CODE_MS = 10 * 60_000, REFRESH_MS = 30 * DAY, GRANT_MS = 365 * DAY;
@@ -85,7 +85,7 @@ async function client(env: Env, clientId: string, redirectUri: string): Promise<
   if (clientId.startsWith("qc_")) {
     const c = await env.DB.prepare("SELECT name, redirect_uris FROM oauth_clients WHERE id = ?").bind(clientId).first<{ name: string; redirect_uris: string }>();
     if (!c) return "no such client: register again";
-    if (!parseJson<string[]>(c.redirect_uris, []).some((r) => sameRedirect(r, redirectUri))) return "that redirect_uri isn't one this client registered";
+    if (!parseJson(c.redirect_uris, [], Strings).some((r) => sameRedirect(r, redirectUri))) return "that redirect_uri isn't one this client registered";
     return { name: c.name, local: loopback(redirect) };
   }
   // Unregistered: only an app on this computer, named by itself.
@@ -232,7 +232,7 @@ async function token(req: Request, env: Env) {
 }
 
 async function register(req: Request, env: Env) {
-  const b = (await readBody<{ redirect_uris?: unknown; client_name?: unknown }>(req)) ?? {};
+  const b = (await readBody(req)) ?? {};
   const uris = b.redirect_uris;
   if (!Array.isArray(uris) || !uris.length || uris.length > 5 || !uris.every(registrable))
     return oauthError("invalid_redirect_uri", "redirect_uris: 1 to 5 https URLs, or http://127.0.0.1 / localhost ones");

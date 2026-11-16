@@ -9,6 +9,7 @@
 // GET /api/mcp says the same in JSON. Risky tools (openapi.ts) are marked destructive so a
 // client asks a person first; the routes check the caller's role all the same.
 
+import { check, isRecord, maybe, obj, oneOf, raw, rec, str } from "@rustybuns/util/guard";
 import { readJson } from "@rustybuns/util/http";
 import { ErrorReply, json, NAME, VERSION, type Env } from "./env.ts";
 import { tools, toRequest, type Tool } from "./mcp-tools.ts";
@@ -38,6 +39,11 @@ export const connectInfo = (origin: string) => ({
   note: `${all().length} tools, one per operation (method + path) of the spec; openapi.json lists fewer paths because a path can have several methods`,
 });
 
+/** One JSON-RPC 2.0 request; `id` and `params` are passed on as they came. */
+const Rpc = obj({ jsonrpc: oneOf(["2.0"]), id: raw, method: str(200), params: raw });
+/** The params the methods read: what `initialize` and `tools/call` were sent. A tool's `arguments` are checked by `toRequest` against the tool. */
+const Params = obj({ protocolVersion: raw, name: raw, arguments: maybe(rec(raw)) });
+
 export async function mcp(req: Request, env: Env, dispatch: (r: Request) => Promise<Response>): Promise<Response> {
   const origin = env.BETTER_AUTH_URL ?? new URL(req.url).origin;
   if (req.method === "GET") return json(connectInfo(origin));
@@ -48,16 +54,17 @@ export async function mcp(req: Request, env: Env, dispatch: (r: Request) => Prom
   const carried: Record<string, string> = auth ? { authorization: auth } : cookie ? { cookie, origin } : {};
   if (!auth && !cookie) return unauthorized("sign in with OAuth, or send an org API key: Authorization: Bearer qk_…", origin);
 
-  let msg: { jsonrpc?: unknown; id?: unknown; method?: unknown; params?: unknown } | null;
-  try { msg = await req.json(); } catch { return rpcError(null, -32700, "parse error", 400); }
-  if (Array.isArray(msg) || msg?.jsonrpc !== "2.0" || typeof msg.method !== "string") return rpcError(msg?.id, -32600, "one JSON-RPC 2.0 request per POST", 400);
+  let sent: unknown;
+  try { sent = await req.json(); } catch { return rpcError(null, -32700, "parse error", 400); }
+  const msg = check(Rpc, sent);
+  if (!msg) return rpcError(isRecord(sent) ? sent.id : undefined, -32600, "one JSON-RPC 2.0 request per POST", 400);
   // Notifications (initialized, cancelled, …) need no answer.
   if (msg.id === undefined) return new Response(null, { status: 202 });
 
   const who = await dispatch(new Request(`${origin}/api/me`, { headers: carried }));
   if (who.status === 401 || who.status === 503) return who.status === 503 ? who : unauthorized((await readJson(who, ErrorReply))?.error ?? "bad key", origin);
 
-  const { id, method } = msg, params = (msg.params ?? {}) as { protocolVersion?: unknown; name?: unknown; arguments?: unknown };
+  const { id, method } = msg, params = check(Params, msg.params) ?? {};
   switch (method) {
     case "initialize":
       return rpc(id, { protocolVersion: VERSIONS.find((v) => v === params.protocolVersion) ?? VERSIONS[0], capabilities: { tools: { listChanged: false } }, serverInfo: { name: "qcrm", title: NAME, version: VERSION }, instructions: INSTRUCTIONS });
@@ -68,7 +75,7 @@ export async function mcp(req: Request, env: Env, dispatch: (r: Request) => Prom
     case "tools/call": {
       const t = all().find((t) => t.name === params.name);
       if (!t) return rpcError(id, -32602, `no tool ${params.name}`);
-      const r = toRequest(t, (params.arguments ?? {}) as Record<string, unknown>, origin, carried);
+      const r = toRequest(t, params.arguments ?? {}, origin, carried);
       if (typeof r === "string") return rpc(id, { content: [{ type: "text", text: r }], isError: true });
       const res = await dispatch(r);
       const text = await res.text();
