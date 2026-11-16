@@ -150,6 +150,24 @@ zone's width, turned, cut at the zone's edge.
 `GET /api/orgs/<org>/originals/<file>` (admin key) the original, so a script can make them too. The pixels are
 drawn in the page, since a Worker has no canvas.
 
+### Webhooks, both ways
+
+A shop wires QView3D into its own tools on any store ([src/hooks.ts](src/hooks.ts)); section 9 of `/v1/embed.md`
+walks a shop's coding agent through it.
+
+- **Out.** Under **Webhooks** on `/orgs.html` (or `POST /api/orgs/<org>/hooks` with a script key) a shop adds a URL
+  and gets a signing secret, shown once; the org keeps it sealed with AES-GCM under a key made from `UPLOAD_SECRET`.
+  Up to 5 a shop. Events are `design.saved` and `order.ready`, one `HookEvent` body (`src/api.ts`), signed like
+  Stripe's: `QView3D-Signature: t=<unix>,v1=<HMAC-SHA256 of "<t>.<body>">` ([src/hook-sign.ts](src/hook-sign.ts)).
+  A non-2xx or no answer in 10 s is tried again at 1 min, 5 min, 30 min, 2 h and 12 h, then marked failed. The page
+  shows the last 20 deliveries and has **Send test**.
+- **In.** `POST /api/orgs/<org>/orders` (script key) with `{id, lines: [{design, qty}]}` records the order once, lays
+  out each line's print files (the plan above) and fires `order.ready` with their links. Sent again, it answers the
+  same order and fires nothing. A Shopify or WooCommerce connector calls this later.
+
+Retries need no Queue or Durable Object: a once-a-minute cron trigger reads due deliveries from D1. Cron triggers
+are free on every Workers plan, and a minute's sweep is one indexed D1 read (1,440 a day of the free 5 million).
+
 ## The bucket
 
 Settings are rows in D1 ([migrations/](migrations)): `orgs` (sites, admin keys, samples, studio, whether it's the

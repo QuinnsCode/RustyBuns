@@ -16,6 +16,8 @@ export default defineConfig({
     compatibilityDate: "2026-09-01",
     compatibilityFlags: [],
     build: "bun run build",
+    // Once a minute: webhook deliveries whose retry is due (src/hooks.ts). Cron triggers are free on every plan.
+    crons: ["* * * * *"],
   },
   bindings: {
     // orgs/<org>/{originals/, textures/, snapshots/, designs/, models/, ...}: the files. See src/layout.ts.

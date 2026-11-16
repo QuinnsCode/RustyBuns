@@ -1,7 +1,7 @@
 // Required Notice: Copyright (c) 2026 Ryan Quinn (QNTBR) (https://qntbr.com). PolyForm Noncommercial 1.0.0, see ../LICENSE.
 //
 // Every shape that crosses the wire, as one guard both the Worker and the widget import.
-import { arr, bool, int, num, obj, oneOf, opt, str, type Of } from "@rustybuns/util/guard";
+import { arr, bool, int, num, obj, oneOf, opt, or, str, type Of } from "@rustybuns/util/guard";
 import { ID, KIND_NAMES, SHA } from "./layout.ts";
 
 /** The products made in code: hats, then tops. A shop's own product, made from its photos, is "custom" and names its GLB. */
@@ -290,3 +290,73 @@ export const CheckoutRequest = obj({ pack: str(20) });
 /** Where to send the admin to pay. The test provider pays at once and names the receipt. */
 export const CheckoutReply = obj({ url: str(2000), receipt: opt(str(24)) });
 export type CheckoutReply = Of<typeof CheckoutReply>;
+
+/** What a shop's webhook can hear: a design the widget saved, and an order whose print files are ready. "test" is the Send test button. */
+export const HOOK_EVENTS = ["design.saved", "order.ready"] as const;
+export const EVENT_TYPES = [...HOOK_EVENTS, "test"] as const;
+/** A shop's own URL: https anywhere, or http on this machine (local dev and tests). */
+export const HOOK_URL = /^(https:\/\/[^\s/]+|http:\/\/(localhost|127\.0\.0\.1)(:\d+)?)(\/\S*)?$/;
+
+/** POST /api/orgs/<org>/hooks (an admin): a URL to send events to, and which (all of them when unset). */
+export const HookRequest = obj({ url: str(500, { re: HOOK_URL }), events: opt(arr(oneOf(HOOK_EVENTS), 2, { min: 1 })) });
+export type HookRequest = Of<typeof HookRequest>;
+/** The new webhook and its signing secret, shown this once (the org keeps it sealed). */
+export const HookReply = obj({ id: str(24), secret: str(100) });
+export type HookReply = Of<typeof HookReply>;
+
+/** One send of one event to one webhook: the delivery log a shop sees, last 20. Pending ones are tried again with backoff. */
+export const Delivery = obj({
+  id: str(32),
+  hook: str(24),
+  event: oneOf(EVENT_TYPES),
+  status: oneOf(["pending", "ok", "failed"] as const),
+  attempts: int(0, 100),
+  /** The shop's answer to the last try, or why there was none. */
+  code: opt(int(0, 999)),
+  error: opt(str(300)),
+  at: num(0, 1e15),
+  next: opt(num(0, 1e15)),
+});
+export type Delivery = Of<typeof Delivery>;
+
+/** GET /api/orgs/<org>/hooks (an admin): its webhooks, and the last 20 deliveries, newest first. */
+export const Hooks = obj({
+  hooks: arr(obj({ id: str(24), url: str(500), events: arr(oneOf(HOOK_EVENTS), 2), created: num(0, 1e15) }), 5),
+  deliveries: arr(Delivery, 20),
+});
+export type Hooks = Of<typeof Hooks>;
+
+/** POST /api/orgs/<org>/orders (the script key): an order came in, a line per saved design. `id` is the store's own (#1001, a uuid). */
+export const OrderRequest = obj({
+  id: str(64, { re: /^[A-Za-z0-9#._:-]+$/ }),
+  lines: arr(obj({ design: str(24, { re: /^[0-9a-f]{24}$/ }), qty: or(int(1, 10_000), 1) }), 100, { min: 1 }),
+});
+export type OrderRequest = Of<typeof OrderRequest>;
+
+/** An order line with its print files: a sheet per zone (each with its original's link), what can't print and why, and the plan's link. */
+export const OrderLine = obj({ design: str(24), qty: int(1, 10_000), print: str(400), sheets: arr(PrintSheet, 8), skipped: arr(obj({ zone: oneOf(ZONES), why: str(200) }), 8) });
+export type OrderLine = Of<typeof OrderLine>;
+
+/** POST /api/orgs/<org>/orders answers the order as recorded; `fresh` is false when the store sent it before (nothing fires twice). */
+export const OrderReply = obj({ id: str(64), lines: arr(OrderLine, 100), created: num(0, 1e15), fresh: bool() });
+export type OrderReply = Of<typeof OrderReply>;
+
+/**
+ * The body every webhook gets, signed in `QView3D-Signature: t=<unix seconds>,v1=<hex HMAC-SHA256 of "<t>.<body>">`.
+ * design.saved fills design, url, model and product; order.ready fills order and lines; test fills nothing.
+ */
+export const HookEvent = obj({
+  id: str(32),
+  type: oneOf(EVENT_TYPES),
+  org: str(63, { re: ID }),
+  created: num(0, 1e15),
+  data: obj({
+    design: opt(str(24)),
+    url: opt(str(400)),
+    model: opt(oneOf(ANY_MODEL)),
+    product: opt(str(63)),
+    order: opt(str(64)),
+    lines: opt(arr(OrderLine, 100)),
+  }),
+});
+export type HookEvent = Of<typeof HookEvent>;
