@@ -10,7 +10,17 @@ export const liveRepo = (t: string, at = "?") => `JOIN repos r ON r.owner = ${t}
 /** `JOIN branches b` on `t`'s owner, repo and branch columns. */
 export const branchOf = (t: string) => `JOIN branches b ON b.owner = ${t}.owner AND b.repo = ${t}.repo AND b.name = ${t}.branch`;
 
+type Trim<S extends string> = S extends ` ${infer R}` ? Trim<R> : S extends `${infer R} ` ? Trim<R> : S;
+type Named<S extends string> = S extends `${string} AS ${infer A}` ? Trim<A> : Trim<S>;
+type Names<S extends string> = S extends `${infer H},${infer T}` ? Named<H> | Names<T> : Named<S>;
+/** The row `SELECT <cols>` gives, named from `cols` ("a, b AS c" is {a, c}): a column you didn't select is a type error. D1 doesn't say what each holds; `repoRow<Row>` names that too. */
+export type Columns<S extends string> = { [K in Names<S>]: unknown };
+
+type RowOpt = { mirrored?: boolean; liveAt?: number };
 /** One repo's row, the columns you name. `mirrored` adds "only if it mirrors upstream"; `liveAt` adds "only if it hasn't expired by then". */
-export const repoRow = <T = Record<string, unknown>>(env: Env, owner: string, name: string, cols: string, opt: { mirrored?: boolean; liveAt?: number } = {}) =>
-  env.DB.prepare(`SELECT ${cols} FROM repos WHERE owner = ? AND name = ?${opt.mirrored ? " AND mirror_url IS NOT NULL" : ""}${opt.liveAt === undefined ? "" : ` AND ${live()}`}`)
-    .bind(...(opt.liveAt === undefined ? [owner, name] : [owner, name, opt.liveAt])).first<T>();
+export function repoRow<const S extends string>(env: Env, owner: string, name: string, cols: S, opt?: RowOpt): Promise<Columns<S> | null>;
+export function repoRow<T>(env: Env, owner: string, name: string, cols: string, opt?: RowOpt): Promise<T | null>;
+export function repoRow(env: Env, owner: string, name: string, cols: string, opt: RowOpt = {}): Promise<unknown> {
+  return env.DB.prepare(`SELECT ${cols} FROM repos WHERE owner = ? AND name = ?${opt.mirrored ? " AND mirror_url IS NOT NULL" : ""}${opt.liveAt === undefined ? "" : ` AND ${live()}`}`)
+    .bind(...(opt.liveAt === undefined ? [owner, name] : [owner, name, opt.liveAt])).first();
+}

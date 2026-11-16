@@ -6,14 +6,14 @@
 // directory on this machine (localSandbox), or a container on Cloudflare (sandbox.ts).
 
 import type { Call } from "./local.ts";
-import { PROTOCOL, type Line, type Op } from "./lines.ts";
+import { oneOp, PROTOCOL, type Line, type Op } from "./lines.ts";
 import { ASK_BY_NAME, harnessCommand, LISTEN_ASK, pictureType, picturesIn, streamMessage, taskPrompt, type BlenderMcp, type Command, type Harness, type HeldLine } from "./harness.ts";
 import { diffToOps, rebase } from "./sync.ts";
 import { NOTE_ASK, tokens, tripped, usageOf, type Budget, type Trip } from "./budget.ts";
 import { leakIn, redact } from "./leaks.ts";
 import { failed } from "./failed.ts";
-import { ClaimRefused, ClaimsReply, FileDoc, OpsRefused, OpsReply } from "./file-do.ts";
-import { arr, check, obj, opt, str } from "@rustybuns/util/guard";
+import { ClaimRefused, ClaimsReply, FileDoc, FileLine, OpsRefused, OpsReply } from "./file-do.ts";
+import { arr, check, nul, obj, opt, str, type Guard } from "@rustybuns/util/guard";
 import { parseJson } from "@rustybuns/util/http";
 import type { Session } from "./thread-do.ts";
 import { newReport, tally, type Report } from "@rustybuns/util/dexter";
@@ -182,6 +182,9 @@ export interface Conflict {
   /** The file it's in, when that's one of the run's `also` rather than its own. */
   path?: string;
 }
+/** A Conflict as a run's reply carries it. Built on first use: file-do.ts, where FileLine lives, imports this file's importers. */
+let conflict: Guard<Conflict> | undefined;
+export const CONFLICT: Guard<Conflict> = (v) => (conflict ??= obj({ op: oneOp, now: nul(FileLine), held: opt(str(Infinity, { min: 0 })), path: opt(str(4096)) }))(v);
 
 export interface Result {
   harness: Harness;

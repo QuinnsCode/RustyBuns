@@ -20,7 +20,8 @@ test("httpUrl: http(s) only, short enough to store", () => {
 
 test("parseOps: the three kinds with their fields, one line per text, a cap on the batch", () => {
   const ok = [{ kind: "insert", after: null, text: "a" }, { kind: "set", line: "L1", base: 1, text: "b" }, { kind: "delete", line: "L2", base: 2 }];
-  expect<unknown>(parseOps(ok)).toBe(ok);
+  // Each op as checked, its extra fields left behind.
+  expect<unknown>(parseOps([...ok.slice(0, 2), { ...ok[2], stray: 1 }])).toEqual(ok);
   expect(parseOps(undefined)).toMatch(/^ops:/);
   expect(parseOps([{ kind: "insert", after: null, text: 5 }])).toMatch(/^ops\[0\]: text/);
   expect(parseOps([{ kind: "insert", after: null, text: "a\nb" }])).toMatch(/text: one line/);

@@ -19,6 +19,18 @@ export const listOf = (v: unknown, key: string): { [k: string]: unknown }[] => {
 export const pad10 = (n: number) => String(n).padStart(10, "0");
 /** `s` parsed as JSON, or `fallback` when it's empty or not JSON: a stored row that went bad spoils one entry, not the whole listing. */
 export const parseJson = <T>(s: string | null | undefined, fallback: T): T => { try { return s ? JSON.parse(s) : fallback; } catch { return fallback; } };
+declare const KEPT: unique symbol;
+/**
+ * A JSON column only this app writes, as the text of a `T`: `keep(v)` writes it, a row typed `first<{ run: Kept<CutRun> }>()`
+ * reads it, and `unkeep` hands the `T` back. The type comes from the writer through the generic, not from a cast at each read.
+ * Anything someone else wrote (a body, a reply, a setting a person typed) goes through a guard instead.
+ */
+export type Kept<T> = string & { readonly [KEPT]: T };
+export const keep = <T>(v: T) => JSON.stringify(v) as Kept<T>;
+/** A kept column's value, or `fallback` when the row is empty or the text went bad. */
+export function unkeep<T>(s: Kept<T> | null | undefined): T | null;
+export function unkeep<T>(s: Kept<T> | null | undefined, fallback: NoInfer<T>): T;
+export function unkeep<T>(s: Kept<T> | null | undefined, fallback: T | null = null): T | null { return parseJson(s, fallback); }
 /** `v` when it's an http(s) URL short enough to store and link to, else null. */
 export const httpUrl = (v: unknown, max = 2048): string | null => {
   if (typeof v !== "string" || v.length > max) return null;

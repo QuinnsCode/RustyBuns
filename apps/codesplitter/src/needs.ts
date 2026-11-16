@@ -3,6 +3,8 @@
 // owner's own) instead of failing partway with `command not found`. `missingTool` is the net under it: the
 // signature of a run that hit a missing tool anyway, so it can be handed over rather than marked failed.
 
+import { bool, check, obj, type Guard } from "@rustybuns/util/guard";
+
 export type Need = "docker" | "rust";
 
 /**
@@ -12,9 +14,10 @@ export type Need = "docker" | "rust";
 export function imageCaps(raw?: string): Record<Need, boolean> {
   let v: unknown = null;
   try { v = raw ? JSON.parse(raw) : null; } catch { /* no caps */ }
-  const has = (k: Need) => typeof v === "object" && v !== null && (v as Record<string, unknown>)[k] === true;
-  return { docker: has("docker"), rust: has("rust") };
+  return check(Caps, v) ?? { docker: false, rust: false };
 }
+/** CI_IMAGE_CAPS: anything but `true` for a need is "not there". */
+const Caps = obj({ docker: bool(false), rust: bool(false) }) satisfies Guard<Record<Need, boolean>>;
 
 const PATTERNS: Record<Need, RegExp> = {
   docker: /(^|[\s;&|(])(docker|docker-compose|podman)(\s|$)|docker\s+compose/,

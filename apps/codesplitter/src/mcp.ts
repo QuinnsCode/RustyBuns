@@ -22,9 +22,9 @@
 // routes check who may call them all the same. No sessions and no
 // server-sent stream: each POST is one JSON-RPC request, answered as JSON.
 
-import { INSTRUCTIONS as CODE_INSTRUCTIONS, META, edge, answer, describe, execute, search, type CSProps, type ToolAnswer } from "./codemode.ts";
+import { INSTRUCTIONS as CODE_INSTRUCTIONS, META, edge, answer, describe, execute, search, toolArgs, type CSProps, type ToolAnswer } from "./codemode.ts";
 import { json, type WorkerLoaderLike } from "./env.ts";
-import { tools, type Tool } from "./mcp-tools.ts";
+import { tools, type Tool, type ToolArgs } from "./mcp-tools.ts";
 import type { ErrorTag } from "./openapi.ts";
 import { failed } from "./failed.ts";
 import { check, obj, opt, str } from "@rustybuns/util/guard";
@@ -59,7 +59,7 @@ const unauthorized = (why: string, origin: string) => json({ error: why, tag: "S
 export const tool = (name: string) => all().find((t) => t.name === name);
 
 /** The HTTP call a tool stands for, or what's missing from its arguments. */
-export function toRequest(t: Tool, args: Record<string, unknown>, origin: string, headers: Record<string, string>): Request | string {
+export function toRequest(t: Tool, args: ToolArgs, origin: string, headers: Record<string, string>): Request | string {
   for (const k of t.inputSchema.required ?? []) if (args[k] === undefined || args[k] === "") return `${k} is required`;
   const path = t.path.replace(/\{(\w+)\}/g, (_, k) => encodeURIComponent(String(args[k])));
   const url = new URL(`${origin}/api${path}`);
@@ -69,7 +69,7 @@ export function toRequest(t: Tool, args: Record<string, unknown>, origin: string
 }
 
 /** One tool's HTTP call, as the token that made it. */
-async function fetchTool(t: Tool, args: Record<string, unknown>, origin: string, auth: string, dispatch: (r: Request) => Promise<Response>): Promise<ToolAnswer> {
+async function fetchTool(t: Tool, args: ToolArgs, origin: string, auth: string, dispatch: (r: Request) => Promise<Response>): Promise<ToolAnswer> {
   const req = toRequest(t, args, origin, { authorization: auth });
   if (typeof req === "string") return { status: 400, text: req };
   const res = await dispatch(req);
@@ -79,15 +79,15 @@ async function fetchTool(t: Tool, args: Record<string, unknown>, origin: string,
 const result = (text: string, isError = false) => ({ content: [{ type: "text", text }], isError });
 
 /** One tool call: the HTTP call it stands for, as the token that made it. */
-async function call(t: Tool, args: Record<string, unknown>, origin: string, auth: string, dispatch: (r: Request) => Promise<Response>) {
+async function call(t: Tool, args: ToolArgs, origin: string, auth: string, dispatch: (r: Request) => Promise<Response>) {
   const { status, text } = await fetchTool(t, args, origin, auth, dispatch);
   // A 202 is a queued request or a run that's started: an answer, not an error.
   return status >= 200 && status < 300 ? result(text) : result(failed(status, text), true);
 }
 
 /** Code mode's four tools: find, describe, run a program, and the way to a risky one. */
-async function meta(name: string, args: Record<string, unknown>, mine: Tool[], loader: WorkerLoaderLike, origin: string, auth: string, dispatch: (r: Request) => Promise<Response>, scope?: string, ip?: string) {
-  const run = (t: Tool, a: Record<string, unknown>) => fetchTool(t, a, origin, auth, dispatch);
+async function meta(name: string, args: ToolArgs, mine: Tool[], loader: WorkerLoaderLike, origin: string, auth: string, dispatch: (r: Request) => Promise<Response>, scope?: string, ip?: string) {
+  const run = (t: Tool, a: ToolArgs) => fetchTool(t, a, origin, auth, dispatch);
   switch (name) {
     case "search_tools": return result(search(mine, typeof args.query === "string" ? args.query : "", typeof args.limit === "number" ? args.limit : undefined));
     case "describe_tools": return result(describe(mine, Array.isArray(args.names) ? args.names.map(String) : []));
@@ -109,7 +109,7 @@ async function meta(name: string, args: Record<string, unknown>, mine: Tool[], l
       const t = mine.find((t) => t.name === args.name);
       if (!t) return result(`no tool ${args.name} for this token: search_tools lists them`, true);
       if (!t.risky) return result(`${t.name} isn't risky: call it from execute`, true);
-      return call(t, (args.arguments ?? {}) as Record<string, unknown>, origin, auth, dispatch);
+      return call(t, toolArgs(args.arguments), origin, auth, dispatch);
     }
   }
 }
@@ -149,7 +149,7 @@ export async function mcp(req: Request, origin: string, dispatch: (r: Request) =
     case "tools/list":
       return rpc(id, { tools: (code ? META : mine).map(listed) });
     case "tools/call": {
-      const args = (params.arguments ?? {}) as Record<string, unknown>;
+      const args = toolArgs(params.arguments);
       if (code && META.some((m) => m.name === params.name)) return rpc(id, await meta(params.name as string, args, mine, code, origin, auth, dispatch, scope, req.headers.get("cf-connecting-ip") ?? undefined));
       const t = mine.find((t) => t.name === params.name);
       if (!t) return rpcError(id, -32602, all().some((t) => t.name === params.name) ? `${params.name} needs a write token` : `no tool ${params.name}`);

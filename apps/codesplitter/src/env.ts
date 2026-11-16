@@ -219,7 +219,7 @@ export { json, readBody, type Body };
 import { ERRORS, type ErrorTag } from "./openapi.ts";
 
 /** A named failure (#3804): `error` the sentence a person reads, `tag` what a client matches on. The status is the tag's (openapi.ts ERRORS). */
-export const fail = (tag: ErrorTag, error: string, extra?: Record<string, unknown>) => json({ ...extra, error, tag }, ERRORS[tag][0]);
+export const fail = <X extends object>(tag: ErrorTag, error: string, extra?: X) => json({ ...extra, error, tag }, ERRORS[tag][0]);
 /** A failure reply's body: `json({ error })`, `fail`'s, a limit's 429 or the hosted budget's. */
 export const ErrorReply = obj({ error: str(Infinity) });
 /** What a failure reply says went wrong, or `dflt` when it doesn't say. */

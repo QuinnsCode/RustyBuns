@@ -37,12 +37,12 @@ import { ConflictSavedCounter } from "./stats.ts";
 import { lintMerge } from "./lint.ts";
 import { DocStore } from "./doc-store.ts";
 import { sha256 as sha } from "./util.ts";
-import { apply, empty, MAX_OPS, merge, MERGE_ASK, mergeWords, parseOps, PROTOCOL, replay, text, type Applied, type Doc, type Line, type MergeReply, type Op, type Resolve } from "./lines.ts";
+import { apply, empty, MAX_OPS, merge, MERGE_ASK, mergeWords, parseOps, PROTOCOL, replay, text, type Applied, type Doc, type Line, type FileCommit, type FileCommitted, type FileTexts, type MergeReply, type Op, type Resolve } from "./lines.ts";
 import type { Live, Rule } from "./policy.ts";
 import { pad10 } from "./util.ts";
 
 /** `writers`: everyone whose edits since the file's last commit this one carries (a hosted deploy asks about others', deploy.ts). */
-interface Commit { n: number; sha: string; parent: string | null; rev: number; by: string; at: number; message: string; writers: string[] }
+type Commit = FileCommit;
 
 declare const WebSocketPair: { new (): Record<0 | 1, unknown> };
 
@@ -344,7 +344,7 @@ export class FileDurableObject {
       if (!last) return json(null);
       const doc = await this.at(last.rev), ids = new Set(lines);
       if (!doc.lines.some((l) => ids.has(l.id) && l.text)) return json(null);
-      return json({ content: text(doc), published: text(this.shown(doc, false)) });
+      return json({ content: text(doc), published: text(this.shown(doc, false)) } satisfies FileTexts);
     }
     if (req.method === "POST" && route === "pushclash") {
       // A push to the repo's git clashed with edits here, or that was settled (mirror.ts, #788).
@@ -463,7 +463,7 @@ export class FileDurableObject {
       const done = this.queue.then(() => this.commit(by, typeof message === "string" ? message.slice(0, 1000) : undefined));
       this.queue = done.catch(() => {});
       const { commit, content, published } = await done;
-      return json({ commit, content, published });
+      return json({ commit, content, published } satisfies FileCommitted);
     }
     if (req.method === "GET" && route === "commits") {
       const m: Map<string, Commit> = await this.ctx.storage.list({ prefix: "commit:" });
@@ -728,7 +728,7 @@ export class FileDurableObject {
     let msg: { type?: unknown; id?: unknown; ops?: unknown; ifRev?: unknown; claim?: unknown; proto?: unknown };
     try { msg = JSON.parse(typeof raw === "string" ? raw : new TextDecoder().decode(raw)); } catch { return; }
     if (!msg || msg.type !== "ops") return;
-    const answer = (m: Record<string, unknown>) => { try { ws.send(JSON.stringify({ ...m, id: msg.id })); } catch {} };
+    const answer = <M extends { type: "ack" | "nack" }>(m: M) => { try { ws.send(JSON.stringify({ ...m, id: msg.id })); } catch {} };
     if (msg.proto !== undefined && msg.proto !== PROTOCOL) return answer({ type: "nack", rev: this.doc.rev, ...this.stale() });
     const ops = parseOps(msg.ops);
     if (typeof ops === "string") return answer({ type: "nack", rev: this.doc.rev, error: ops });

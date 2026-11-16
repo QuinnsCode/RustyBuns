@@ -15,7 +15,9 @@
 import { Effect, Schedule, Schema } from "effect";
 import { ERRORS, OP_ERRORS, TOKEN_CANT_DO, type ErrorTag, type OpWithErrors } from "./src/openapi.ts";
 import { tool, toRequest } from "./src/mcp.ts";
-import { isRecord } from "@rustybuns/util/guard";
+import { check } from "@rustybuns/util/guard";
+import { FailureBody } from "./src/failed.ts";
+import type { ToolArgs } from "./src/mcp-tools.ts";
 
 // A named failure's fields: the server's sentence, its status, and the whole reply (conflicts, files, hash), unchecked.
 const named = { message: Schema.String, status: Schema.Number, reply: Schema.Unknown };
@@ -259,8 +261,8 @@ const declares = (id: string, tag: string): tag is ErrorTag => id in OP_ERRORS &
 
 /** A failed reply, as operation `id`'s error. Plain, so a test can hand it any reply. */
 export function failure<Id extends string>(id: Id, status: number, reply: unknown, retryAfter?: string | null, authenticate?: string | null): Failure<Id> {
-  const body = isRecord(reply) ? reply : {};
-  const message = typeof body.error === "string" ? body.error : typeof body.message === "string" ? body.message : `${id} didn't go through, and the server didn't say why`;
+  const body = check(FailureBody, reply) ?? {};
+  const message = body.error ?? body.message ?? `${id} didn't go through, and the server didn't say why`;
   if (typeof body.tag === "string" && declares(id, body.tag)) return new NAMED[body.tag]({ message, status, reply }) as Failure<Id>;
   if (status === 401) return new Unauthorized({ message });
   if (status === 403 && body.tag === TOKEN_CANT_DO) {
@@ -289,7 +291,7 @@ const reply = (text: string): unknown => { try { return JSON.parse(text); } catc
 export function codesplitter(o: Options) {
   const send = o.send ?? ((r: Request) => fetch(r));
   const headers: Record<string, string> = { ...o.headers, ...(o.token && { authorization: `Bearer ${o.token}` }) };
-  const once = <Id extends string>(id: Id, args: Record<string, unknown>): Effect.Effect<unknown, Failure<Id>> => {
+  const once = <Id extends string>(id: Id, args: ToolArgs): Effect.Effect<unknown, Failure<Id>> => {
     const t = tool(id);
     const req = t ? toRequest(t, args, o.url.replace(/\/$/, ""), headers) : `no operation ${id}`;
     if (typeof req === "string") return Effect.fail(new BadArgs({ message: req }));
@@ -301,7 +303,7 @@ export function codesplitter(o: Options) {
   };
   return {
     /** Operation `id` (an operationId, as `codesplitter tools` lists them), its path, query and `body` args by name. */
-    call: <Id extends string>(id: Id, args: Record<string, unknown> = {}): Effect.Effect<unknown, Failure<Id>> =>
+    call: <Id extends string>(id: Id, args: ToolArgs = {}): Effect.Effect<unknown, Failure<Id>> =>
       once(id, args).pipe(Effect.retry({ while: (e) => e._tag === "Transient", schedule: Schedule.exponential("200 millis"), times: o.retries ?? 3 })),
   };
 }

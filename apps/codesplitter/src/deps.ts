@@ -94,11 +94,11 @@
 //   PUT  /api/repos/:o/:r/deps        any of the settings in FIELDS
 //   POST /api/repos/:o/:r/deps/run    check now; {rank} ranks the packages for this run only
 
-import { arr, bool, int, isRecord, maybe, nul, num, obj, opt, raw, rec, str } from "@rustybuns/util/guard";
+import { arr, bool, int, maybe, nul, num, obj, opt, raw, rec, str, type Guard, type Of } from "@rustybuns/util/guard";
 import { readJson } from "@rustybuns/util/http";
 import type { Doc, Op } from "./lines.ts";
 import { access as artifactAccess, docIn, handleFor, toFile, TreeReply } from "./archive.ts";
-import { listOf } from "./util.ts";
+import { keep, unkeep, type Kept } from "./util.ts";
 import { actingAs, isAdmin, mail, mailOn } from "./identity.ts";
 import { workspaceDirs, workspaceGlobs } from "./fit.ts";
 import { diffToOps, merge3 } from "./sync.ts";
@@ -223,6 +223,13 @@ export interface Vuln { id: string; summary: string; fixed: string[] }
 export type Advisories = (pkgs: { name: string; version: string }[]) => Promise<Map<string, Vuln[]>>;
 
 const OSV = "https://api.osv.dev/v1";
+// OSV's answers, the fields read here; an entry of the wrong shape counts as none rather than failing the check.
+const osvText = str(Infinity, { min: 0 });
+const some = <T>(g: Guard<T>) => maybe(arr(maybe(g), Infinity));
+/** The batch query: per package asked, in order, the ids of what hits it. */
+const OsvBatch = obj({ results: arr(maybe(obj({ vulns: some(obj({ id: maybe(osvText) })) })), Infinity) });
+/** One vulnerability: its summary, and the ranges of each package it affects with the versions that fix it. */
+const OsvVuln = obj({ summary: maybe(osvText), affected: some(obj({ package: maybe(obj({ ecosystem: maybe(osvText), name: maybe(osvText) })), ranges: some(obj({ events: some(obj({ fixed: maybe(osvText) })) })) })) });
 /** OSV's batch query says which versions are hit; each hit's details say which versions fix it. */
 export const osvAdvisories = (get: typeof fetch = fetch): Advisories => async (pkgs) => {
   const out = new Map<string, Vuln[]>();
@@ -230,24 +237,22 @@ export const osvAdvisories = (get: typeof fetch = fetch): Advisories => async (p
   const res = await get(`${OSV}/querybatch`, { method: "POST", headers: { "content-type": "application/json" },
     body: JSON.stringify({ queries: pkgs.map((p) => ({ package: { name: p.name, ecosystem: "npm" }, version: p.version })) }) });
   if (!res.ok) throw new Error(`osv.dev: ${res.status}`);
-  const body: unknown = await res.json().catch(() => null);
-  const results = isRecord(body) && Array.isArray(body.results) ? body.results : null;
+  const results = (await readJson(res, OsvBatch))?.results;
   if (!results) throw new Error("osv.dev: no results");
-  const details = new Map<string, Promise<unknown>>();
+  const details = new Map<string, Promise<Of<typeof OsvVuln> | null>>();
   const detail = (id: string) => {
-    if (!details.has(id)) details.set(id, get(`${OSV}/vulns/${encodeURIComponent(id)}`).then((r): Promise<unknown> | null => r.ok ? r.json() : null).catch(() => null));
+    if (!details.has(id)) details.set(id, get(`${OSV}/vulns/${encodeURIComponent(id)}`).then((r) => readJson(r, OsvVuln)).catch(() => null));
     return details.get(id)!;
   };
-  const strings = (xs: unknown[]) => xs.filter((x): x is string => typeof x === "string");
   await Promise.all(pkgs.map(async (p, i) => {
-    const ids = strings(listOf(results[i], "vulns").map((v) => v.id));
+    const ids = (results[i]?.vulns ?? []).flatMap((v) => v?.id ? [v.id] : []);
     if (!ids.length) return;
     out.set(`${p.name}@${p.version}`, await Promise.all(ids.map(async (id) => {
       const v = await detail(id);
       // The versions that fix it: every "fixed" event in the npm ranges that name this package.
-      const ours = listOf(v, "affected").filter((a) => isRecord(a.package) && a.package.ecosystem === "npm" && a.package.name === p.name);
-      const fixed = strings(ours.flatMap((a) => listOf(a, "ranges").flatMap((r) => listOf(r, "events").map((e) => e.fixed))));
-      return { id, summary: isRecord(v) && typeof v.summary === "string" ? v.summary : "", fixed };
+      const ours = (v?.affected ?? []).filter((a) => a?.package?.ecosystem === "npm" && a.package.name === p.name);
+      const fixed = ours.flatMap((a) => (a?.ranges ?? []).flatMap((r) => (r?.events ?? []).flatMap((e) => e?.fixed ? [e.fixed] : [])));
+      return { id, summary: v?.summary ?? "", fixed };
     })));
   }));
   return out;
@@ -300,8 +305,8 @@ export const npmrcHosts = (rcs: Npmrc[]): string[] =>
 /** The part of a registry's package document this reads; a wrong field makes the whole answer "unknown package". */
 const RegistryDoc = obj({
   versions: opt(rec(maybe(obj({ peerDependencies: opt(rec(str(1000, { min: 0, dflt: "" }))) })))),
-  time: opt(rec(raw)),
-  "dist-tags": opt(rec(raw)),
+  time: opt(rec(maybe(str(1000, { min: 0 })))),
+  "dist-tags": opt(rec(maybe(str(1000, { min: 0 })))),
 });
 
 export const npmrcRegistry = (rcs: Npmrc[]): Registry => async (name) => {
@@ -311,7 +316,7 @@ export const npmrcRegistry = (rcs: Npmrc[]): Registry => async (name) => {
   // A registry from the owner's .npmrc can answer anything: keep only the dates and tags that are strings.
   const doc = await readJson(res, RegistryDoc);
   if (!doc) return null;
-  const strings = (o: Record<string, unknown> | undefined) => Object.fromEntries(Object.entries(o ?? {}).filter((e): e is [string, string] => typeof e[1] === "string"));
+  const strings = (o: Record<string, string | undefined> | undefined) => Object.fromEntries(Object.entries(o ?? {}).filter((e): e is [string, string] => typeof e[1] === "string"));
   const peers = Object.fromEntries(Object.entries(doc.versions ?? {}).flatMap(([v, m]) => m?.peerDependencies ? [[v, m.peerDependencies]] : []));
   return { versions: Object.keys(doc.versions ?? {}), time: strings(doc.time), tags: strings(doc["dist-tags"]), peers };
 };
@@ -1033,7 +1038,7 @@ export async function runDoctor(env: Env, call: Call, owner: string, repo: strin
     .catch((e: Error): Report => ({ at: now, checked: 0, updates: [], note: `failed: ${e.message}` }))
     .finally(() => clearInterval(beat));
   if (s.rank.length) Object.assign(report, { rank: s.rank, ...(opts.rank ? { once: true } : {}) });
-  await env.DB.prepare("UPDATE dep_watches SET last_run = ?, last_report = ?, running_since = NULL WHERE owner = ? AND repo = ?").bind(now, JSON.stringify(report), owner, repo).run();
+  await env.DB.prepare("UPDATE dep_watches SET last_run = ?, last_report = ?, running_since = NULL WHERE owner = ? AND repo = ?").bind(now, keep(report), owner, repo).run();
   // A failed run knows nothing new, so it neither alerts nor forgets what was told.
   if (!report.note?.startsWith("failed:")) {
     const row = await env.DB.prepare("SELECT alerted FROM dep_watches WHERE owner = ? AND repo = ?").bind(owner, repo).first();
@@ -1721,8 +1726,8 @@ export async function depRoutes(req: Request, env: Env, p: string[], url: URL, u
   await env.DB.prepare("INSERT OR IGNORE INTO dep_watches (owner, repo) VALUES (?, ?)").bind(owner, repo).run();
 
   if (!p[5] && req.method === "GET") {
-    const r = await env.DB.prepare("SELECT last_run, last_report, running_since FROM dep_watches WHERE owner = ? AND repo = ?").bind(owner, repo).first<{ last_run: number | null; last_report: string | null; running_since: number | null }>();
-    return json({ settings: await settings(env, owner, repo), last_run: r?.last_run ?? null, report: r?.last_report ? JSON.parse(r.last_report) : null, running: !!r?.running_since && r.running_since > Date.now() - STALE, can_test: !!testerAt(env, owner), can_preview: !!runnerFor(env) || !(await hostedPreviewWhy(env, owner, repo)), ...(!runnerFor(env) && { preview_why: await hostedPreviewWhy(env, owner, repo) }), malicious: await hitsFor(env, owner, repo) });
+    const r = await env.DB.prepare("SELECT last_run, last_report, running_since FROM dep_watches WHERE owner = ? AND repo = ?").bind(owner, repo).first<{ last_run: number | null; last_report: Kept<Report> | null; running_since: number | null }>();
+    return json({ settings: await settings(env, owner, repo), last_run: r?.last_run ?? null, report: unkeep(r?.last_report), running: !!r?.running_since && r.running_since > Date.now() - STALE, can_test: !!testerAt(env, owner), can_preview: !!runnerFor(env) || !(await hostedPreviewWhy(env, owner, repo)), ...(!runnerFor(env) && { preview_why: await hostedPreviewWhy(env, owner, repo) }), malicious: await hitsFor(env, owner, repo) });
   }
   if (!p[5] && req.method === "PUT") {
     // Only what's sent changes; each field's write() checks it before it lands.
@@ -1754,8 +1759,8 @@ export async function depRoutes(req: Request, env: Env, p: string[], url: URL, u
     const advisories = (env.DEPS_ADVISORIES as Advisories | undefined) ?? osvAdvisories();
     let note: string | undefined;
     const vulns = await advisories([...asks.values()]).catch((e: Error) => { note = `couldn't check for known vulnerabilities (${e.message})`; return new Map<string, Vuln[]>(); });
-    const row = await env.DB.prepare("SELECT last_report FROM dep_watches WHERE owner = ? AND repo = ?").bind(owner, repo).first();
-    const last: Report | null = row?.last_report ? JSON.parse(row.last_report as string) : null;
+    const row = await env.DB.prepare("SELECT last_report FROM dep_watches WHERE owner = ? AND repo = ?").bind(owner, repo).first<{ last_report: Kept<Report> | null }>();
+    const last = unkeep(row?.last_report);
     const digs = last?.digs ?? (await settings(env, owner, repo)).digs.map((d): Dug => ({ ...d, status: "waiting" }));
     const h = await health(files.manifests, (env.DEPS_REGISTRY as Registry | undefined) ?? npmrcRegistry(rcs), vulns, digs);
     return json({ ...h, ...(malicious.length && h.score !== null ? { score: 0 } : {}), ...(note ? { note } : {}), malicious, digs });

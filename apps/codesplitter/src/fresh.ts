@@ -19,7 +19,8 @@ import { copyObjects, GIT_BOT, rawObj, type Obj } from "./git.ts";
 import { digCap } from "./github.ts";
 import { usage } from "./limits.ts";
 import { fail, json, type Env } from "./env.ts";
-import { nul, num, obj, str } from "@rustybuns/util/guard";
+import { arr, check, nul, num, obj, str } from "@rustybuns/util/guard";
+import { keep, parseJson, unkeep, type Kept } from "./util.ts";
 import type { ErrorTag } from "./openapi.ts";
 import { repoRow } from "./repos.ts";
 import type { RepoRef } from "./repos";
@@ -40,7 +41,9 @@ export const FreshReply = obj({ state: str(200), done: num(0, Infinity), total: 
 /** What `/limits` answers, as far as a reader finds the repo's current Artifact. */
 export const LimitsReply = obj({ git: obj({ artifact: nul(str(Infinity)) }) });
 
-type Fresh = { owner: string; repo: string; state: string; artifact: string; remote: string; previous: string; tip: string; tree: string; queue: string | null; stage: string | null; seq: number; done: number; total: number; bytes: number; error: string | null; started_at: number; finished_at: number | null };
+/** Trees still to read on the walk: a hash and the number it was found at. */
+type Queue = [string, number][];
+type Fresh = { owner: string; repo: string; state: string; artifact: string; remote: string; previous: string; tip: string; tree: string; queue: Kept<Queue> | null; stage: string | null; seq: number; done: number; total: number; bytes: number; error: string | null; started_at: number; finished_at: number | null };
 
 const row = (env: Env, owner: string, repo: string) =>
   env.DB.prepare("SELECT * FROM fresh_starts WHERE owner = ? AND repo = ?").bind(owner, repo).first<Fresh>();
@@ -58,8 +61,8 @@ export async function freshRoutes(req: Request, env: Env, p: string[], url: URL,
   }
   if (req.method === "DELETE") {
     const name = url.searchParams.get("artifact") ?? "";
-    const r = await repoRow(env, owner, repo, "old_artifacts, namespace");
-    const old: string[] = JSON.parse((r?.old_artifacts as string) ?? "[]");
+    const r = await repoRow<{ old_artifacts: string | null; namespace: string | null }>(env, owner, repo, "old_artifacts, namespace");
+    const old = check(arr(str(), Infinity), parseJson<unknown>(r?.old_artifacts, [])) ?? [];
     if (!old.includes(name)) return fail("NoSuchOldGit", "that isn't git this repo moved off");
     await artifactsFor(env, r?.namespace)?.delete?.(name);
     await env.DB.prepare("UPDATE repos SET old_artifacts = ? WHERE owner = ? AND name = ?").bind(JSON.stringify(old.filter((n) => n !== name)), owner, repo).run();
@@ -124,7 +127,7 @@ async function start(env: Env, owner: string, repo: string): Promise<Fresh | { e
   const art = await arts.create(`${previous.replace(/\.f[0-9a-z]+$/, "")}.f${Date.now().toString(36)}`, { description: `${owner}/${repo}, started fresh`, setDefaultBranch: h.branch });
   await env.DB.batch([
     env.DB.prepare(`INSERT OR REPLACE INTO fresh_starts (owner, repo, state, artifact, remote, previous, tip, tree, queue, seq, started_at)
-      VALUES (?, ?, 'walking', ?, ?, ?, ?, ?, ?, 1, ?)`).bind(owner, repo, art.name, art.remote, previous, tip.hash, tip.treeHash, JSON.stringify([[tip.treeHash, TREES]]), Date.now()),
+      VALUES (?, ?, 'walking', ?, ?, ?, ?, ?, ?, 1, ?)`).bind(owner, repo, art.name, art.remote, previous, tip.hash, tip.treeHash, keep<Queue>([[tip.treeHash, TREES]]), Date.now()),
     env.DB.prepare("DELETE FROM fresh_objects WHERE owner = ? AND repo = ?").bind(owner, repo),
     env.DB.prepare("INSERT INTO fresh_objects (owner, repo, hash, type, seq) VALUES (?, ?, ?, 'tree', ?)").bind(owner, repo, tip.treeHash, TREES),
   ]);
@@ -172,7 +175,7 @@ async function step(env: Env, f: Fresh) {
     // up: one query a tree, so no step's D1 work grows with the repo. A tree found later is
     // copied sooner. One found again under a parent that would be copied before it is
     // renumbered and read again, so a tree shared by two folders still lands before both.
-    const queue: [string, number][] = JSON.parse(f.queue!);
+    const queue = unkeep(f.queue, []);
     let seq = f.seq;
     for (let reads = 0; queue.length && reads < STEP.reads; reads++) {
       const [hash, at] = queue.pop()!;
@@ -186,7 +189,7 @@ async function step(env: Env, f: Fresh) {
       }
     }
     if (queue.length) {
-      await env.DB.prepare("UPDATE fresh_starts SET queue = ?, seq = ? WHERE owner = ? AND repo = ?").bind(JSON.stringify(queue), seq, f.owner, f.repo).run();
+      await env.DB.prepare("UPDATE fresh_starts SET queue = ?, seq = ? WHERE owner = ? AND repo = ?").bind(keep(queue), seq, f.owner, f.repo).run();
       return;
     }
     await env.DB.prepare(`UPDATE fresh_starts SET state = 'copying', queue = NULL, seq = 0,

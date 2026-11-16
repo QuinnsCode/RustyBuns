@@ -20,7 +20,9 @@
 import { remote } from "./src/local.ts";
 import { HARNESSES, type Harness } from "./src/harness.ts";
 import { runAgent, type Result } from "./src/agent-run.ts";
-import type { Run } from "./src/agent-routes.ts";
+import { RunSeen } from "./src/agent-routes.ts";
+import { readJson } from "@rustybuns/util/http";
+import { arr } from "@rustybuns/util/guard";
 
 const arg = (f: string) => { const i = process.argv.indexOf(f); return i > 0 ? process.argv[i + 1] : undefined; };
 
@@ -42,11 +44,12 @@ if (process.argv.includes("--hosted")) {
   const res = await call(as, `/api/repos/${owner}/${repo}/agents`, { method: "POST", body: JSON.stringify({ path, harness, task, model: run.model }) });
   if (!res.ok) { console.error(`${res.status} ${await res.text()}`); process.exit(1); }
   // A container run answers when done; a desktop one at once, so poll for it.
-  let h = (await res.json()) as Run;
+  let h = await readJson(res, RunSeen);
+  if (!h) { console.error("the run's answer did not read"); process.exit(1); }
   while (h.status === "running") {
     await Bun.sleep(2000);
-    const all = (await (await call(as, `/api/repos/${owner}/${repo}/agents?path=${encodeURIComponent(path)}`)).json()) as Run[];
-    h = all.find((x) => x.id === h.id) ?? h;
+    const all = await readJson(await call(as, `/api/repos/${owner}/${repo}/agents?path=${encodeURIComponent(path)}`), arr(RunSeen, Infinity, { drop: true }));
+    h = all?.find((x) => x.id === h!.id) ?? h;
   }
   if (h.status === "failed") { console.error(h.error); process.exit(1); }
   r = { harness, path, changed: !!h.applied, applied: h.applied ?? 0, runs: h.runs ?? 1, conflicts: h.conflicts ?? [], rev: h.rev ?? 0, output: h.output ?? "", spent: h.spent ?? 0 };
