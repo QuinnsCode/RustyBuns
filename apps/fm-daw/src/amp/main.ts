@@ -29,7 +29,7 @@ const Saved = obj({
   amp: str(20, { dflt: "lead" }),
   knobs: rec(KnobsGuard, 10),
   pedal: nul(str(20)),
-  drive: rec(num(0, 10, 5), 10),
+  drive: rec(num(0, 10, 5), 32),
   bypass: oneOf([0, 1], 0),
   source: oneOf(["riff", "guitar"], "riff"),
   layout: oneOf(["wide", "split"], "split"),
@@ -42,7 +42,7 @@ type State = ReturnType<typeof Saved>;
 function loadState(): State {
   const fresh: State = {
     amp: "lead", knobs: Object.fromEntries(AMPS.map((a) => [a.id, { ...a.knobs }])), pedal: null,
-    drive: { drive: 3, dist: 5, fuzz: 7 }, bypass: 0, source: "riff", layout: "split", modes: ["analog", "focus"], level: -12, quality: "hq",
+    drive: { drive: 3, dist: 5, fuzz: 7, germ: 4 }, bypass: 0, source: "riff", layout: "split", modes: ["analog", "focus"], level: -12, quality: "hq",
   };
   try {
     const raw = localStorage.getItem(KEY);
@@ -234,7 +234,7 @@ function build() {
   // Pedals on the floor: one on at a time (the chain has one slot).
   const pedalEls = PEDALS.map((p) => {
     const led = h("span", "pedal-led");
-    const drive = knob("Drive", S.drive[p.id] ?? 5, 5, (v) => { S.drive[p.id] = v; if (S.pedal === p.id) send(); else save(); }, "small");
+    const drive = knob(p.knob ?? "Drive", S.drive[p.id] ?? 5, 5, (v) => { S.drive[p.id] = v; if (S.pedal === p.id) send(); else save(); }, "small");
     const sw = h("button", "footswitch");
     sw.type = "button"; sw.title = `${p.name} on or off`; sw.setAttribute("aria-label", `${p.name} on or off`);
     const el = h("div", `pedal ${p.id}`, led, drive.el, h("span", "pedal-name", p.name), sw);

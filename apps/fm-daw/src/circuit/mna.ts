@@ -24,8 +24,24 @@ export type Part =
   | { kind: "V"; a: string; b: string; volts: number }
   /** A diode, anode `a`, cathode `k`. Defaults are a 1N4148-ish silicon diode. */
   | { kind: "D"; a: string; k: string; is?: number; n?: number }
-  /** An op-amp (TL072-ish gain and bandwidth) with its output swinging about ±`rail` volts around ground. */
+  /**
+   * An op-amp (TL072-ish gain and bandwidth) with its output swinging about ±`rail` volts around ground.
+   * `rail: 0` leaves the rails off: a stage that never clips (an all-pass, a buffer) costs no Newton.
+   */
   | { kind: "Opamp"; plus: string; minus: string; out: string; rail?: number }
+  /** An inductor. Its winding's resistance is a separate R. */
+  | { kind: "L"; a: string; b: string; henries: number }
+  /**
+   * A bipolar transistor (Ebers-Moll): collector, base, emitter. Defaults are a small silicon NPN;
+   * germanium is a bigger `is` and a `celsius`: its leakage doubles every 10 °C.
+   */
+  | { kind: "Q"; c: string; b: string; e: string; pnp?: boolean; is?: number; bf?: number; br?: number; celsius?: number }
+  /**
+   * A resistor something else moves: a light-dependent resistor under a lamp or LED, a JFET's channel
+   * under its gate, a pot under a foot. Control `ctl` (0 to 1, set by `setCtl` or a rig's `Mod`)
+   * sweeps it from `hi` ohms at 0 to `lo` at 1, on a log scale.
+   */
+  | { kind: "VarR"; a: string; b: string; ctl: string; hi: number; lo: number }
   /** A 12AX7 triode: plate, grid, cathode. */
   | { kind: "Triode"; p: string; g: string; k: string };
 
@@ -34,7 +50,8 @@ export interface Netlist { parts: Part[]; input: string; output: string }
 
 const GROUND = new Set(["gnd", "GND", "0"]);
 const VT = 0.02585; // thermal voltage at room temperature
-const GMIN = 1e-12; // a whisper of conductance from every node to ground, so no node floats
+const GMIN = 1e-12;
+const L_DC = 1e3; // an inductor at DC: a 1 mΩ short // a whisper of conductance from every node to ground, so no node floats
 // Op-amp: a TL072-ish open-loop gain and gain-bandwidth, and its hidden node's resistance.
 const OPAMP_A0 = 2e5, OPAMP_GBW = 3e6, OPAMP_R0 = 1e6;
 // 12AX7 (Koren): amplification, exponent, and fitted constants.
@@ -101,7 +118,9 @@ export function encodeNetlist(net: Netlist): Float64Array {
     else if (p.kind === "C") rows.push([1, node(p.a), node(p.b), 0, 0, p.farads, 0, 0]);
     else if (p.kind === "V") rows.push([2, node(p.a), node(p.b), 0, 0, p.volts, 0, 0]);
     else if (p.kind === "D") rows.push([3, node(p.a), node(p.k), 0, 0, p.is ?? 2.52e-9, p.n ?? 1.752, 0]);
-    else if (p.kind === "Opamp") rows.push([4, node(p.plus), node(p.minus), node(p.out), node(`~${opamps++}`), p.rail ?? 4, 0, 0]);
+    else if (p.kind === "L" || p.kind === "Q" || p.kind === "VarR" || (p.kind === "Opamp" && p.rail === 0)) {
+      throw new Error(`the Rust solver has no ${p.kind === "Opamp" ? "rail-less op-amp" : p.kind} yet (#4826)`);
+    } else if (p.kind === "Opamp") rows.push([4, node(p.plus), node(p.minus), node(p.out), node(`~${opamps++}`), p.rail ?? 4, 0, 0]);
     else rows.push([5, node(p.p), node(p.g), node(p.k), 0, 0, 0, 0]);
   }
   const at = (name: string) => {
@@ -131,7 +150,8 @@ export class Circuit {
   private out: number;
   private inRow: number;
   private supplies: { row: number; volts: number }[] = [];
-  private caps: { a: number; b: number; g: number; v: number; i: number; ieq: number }[] = [];
+  /** Capacitors and (`s` −1) inductors: trapezoidal companions, `g` in parallel with a current `ieq`. */
+  private caps: { a: number; b: number; g: number; v: number; i: number; ieq: number; s: number }[] = [];
   private hiss: { a: number; b: number; sigma: number }[] = [];
   /**
    * How loud the noisy resistors hiss: 0 is silent, 1 is a perfect resistor's thermal
@@ -153,6 +173,10 @@ export class Circuit {
   private poff: number[] = [];
   private diodes: { port: number; is: number; nvt: number; vcrit: number }[] = [];
   private triodes: { pk: number; gk: number }[] = [];
+  private bjts: { be: number; ce: number; sign: number; is: number; vt: number; bf: number; br: number; vcrit: number }[] = [];
+  private varRs: { port: number; slot: number; lnHi: number; lnSpan: number; g: number }[] = [];
+  private ctlSlots = new Map<string, number>();
+  private ctls: number[] = [];
   private K = 0;
   // Port-space Newton: the inverted linear matrix (column-major), W = A⁻¹U and H = VᵀA⁻¹U.
   private Ainv: Float64Array;
@@ -176,7 +200,8 @@ export class Circuit {
     };
     let opamps = 0;
     for (const p of net.parts) {
-      if (p.kind === "R" || p.kind === "C" || p.kind === "V") { node(p.a); node(p.b); }
+      if (p.kind === "R" || p.kind === "C" || p.kind === "V" || p.kind === "L" || p.kind === "VarR") { node(p.a); node(p.b); }
+      else if (p.kind === "Q") { node(p.c); node(p.b); node(p.e); }
       else if (p.kind === "D") { node(p.a); node(p.k); }
       else if (p.kind === "Opamp") { node(p.plus); node(p.minus); node(p.out); node(`~${opamps++}`); }
       else { node(p.p); node(p.g); node(p.k); }
@@ -220,7 +245,20 @@ export class Circuit {
       } else if (p.kind === "C") {
         const a = g(node(p.a)), b = g(node(p.b)), gc = (2 * p.farads) / T;
         conductance(tr, a, b, gc); // open at DC: the dc matrix leaves it out
-        this.caps.push({ a, b, g: gc, v: 0, i: 0, ieq: 0 });
+        this.caps.push({ a, b, g: gc, v: 0, i: 0, ieq: 0, s: 1 });
+      } else if (p.kind === "L") {
+        // i' = v/L, trapezoidal: g = T/2L beside a history current; a short at DC.
+        const a = g(node(p.a)), b = g(node(p.b)), gl = T / (2 * p.henries);
+        conductance(tr, a, b, gl); conductance(dc, a, b, L_DC);
+        this.caps.push({ a, b, g: gl, v: 0, i: 0, ieq: 0, s: -1 });
+      } else if (p.kind === "Q") {
+        const c = g(node(p.c)), b = g(node(p.b)), e = g(node(p.e)), celsius = p.celsius ?? 25;
+        const vt = (VT * (celsius + 273.15)) / 300, is = (p.is ?? 1e-14) * 2 ** ((celsius - 25) / 10);
+        this.bjts.push({ be: port(b, e, 0), ce: port(c, e, 0), sign: p.pnp ? -1 : 1, is, vt, bf: p.bf ?? 200, br: p.br ?? 2, vcrit: vt * Math.log(vt / (Math.SQRT2 * is)) });
+      } else if (p.kind === "VarR") {
+        let slot = this.ctlSlots.get(p.ctl);
+        if (slot === undefined) { slot = this.ctls.length; this.ctlSlots.set(p.ctl, slot); this.ctls.push(0); }
+        this.varRs.push({ port: port(g(node(p.a)), g(node(p.b)), 0), slot, lnHi: Math.log(p.hi), lnSpan: Math.log(p.lo / p.hi), g: 1 / p.hi });
       } else if (p.kind === "V") {
         this.supplies.push({ row: source(g(node(p.a)), g(node(p.b))), volts: p.volts });
       } else if (p.kind === "D") {
@@ -234,9 +272,11 @@ export class Circuit {
         const gm = OPAMP_A0 / OPAMP_R0, c0 = OPAMP_A0 / (2 * Math.PI * OPAMP_GBW * OPAMP_R0);
         both(hid, plus, -gm); both(hid, minus, gm);
         conductance(tr, hid, n, 1 / OPAMP_R0 + (2 * c0) / T); conductance(dc, hid, n, 1 / OPAMP_R0);
-        this.caps.push({ a: hid, b: n, g: (2 * c0) / T, v: 0, i: 0, ieq: 0 });
-        const vr = (p.rail ?? 4) - 0.5;
-        diode(hid, n, vr); diode(n, hid, vr);
+        this.caps.push({ a: hid, b: n, g: (2 * c0) / T, v: 0, i: 0, ieq: 0, s: 1 });
+        if (p.rail !== 0) {
+          const vr = (p.rail ?? 4) - 0.5;
+          diode(hid, n, vr); diode(n, hid, vr);
+        }
         const j = row++;
         both(out, j, 1); both(j, out, 1); both(j, hid, -1);
       } else {
@@ -268,6 +308,20 @@ export class Circuit {
     return i === undefined ? 0 : this.x[i];
   }
 
+  /** The names `VarR` parts listen to. */
+  get controls(): string[] { return [...this.ctlSlots.keys()]; }
+
+  /** Control `name` (0 to 1) for the `VarR`s on it; `slot` from `controlSlot` skips the lookup. */
+  setCtl(name: string | number, value: number): void {
+    const slot = typeof name === "number" ? name : this.ctlSlots.get(name);
+    if (slot === undefined) return;
+    this.ctls[slot] = value;
+    for (const r of this.varRs) if (r.slot === slot) r.g = Math.exp(-(r.lnHi + value * r.lnSpan));
+  }
+
+  /** A control's slot for `setCtl` in a hot loop (−1 if no part listens to it). */
+  controlSlot(name: string): number { return this.ctlSlots.get(name) ?? -1; }
+
   /** Each part's current out of its ports at port voltages `v` into `i`, and their slopes into `J` (K×K). */
   private currents(v: Float64Array, i: Float64Array, J: Float64Array): void {
     const K = this.K;
@@ -276,6 +330,22 @@ export class Circuit {
       const e = Math.exp(Math.min(vd / d.nvt, 80));
       i[d.port] = d.is * (e - 1);
       J[d.port * K + d.port] = (d.is * e) / d.nvt + GMIN;
+    }
+    for (const r of this.varRs) {
+      i[r.port] = r.g * v[r.port];
+      J[r.port * K + r.port] = r.g;
+    }
+    for (const q of this.bjts) {
+      // Ebers-Moll (transport form) on vbe and vce; a PNP is an NPN with every sign flipped.
+      const sg = q.sign, vbe = sg * v[q.be], vbc = vbe - sg * v[q.ce], vt = q.vt, is = q.is;
+      const ef = Math.exp(Math.min(vbe / vt, 80)), er = Math.exp(Math.min(vbc / vt, 80));
+      const ic = is * (ef - er) - (is / q.br) * (er - 1), ib = (is / q.bf) * (ef - 1) + (is / q.br) * (er - 1);
+      const gf = (is * ef) / vt, gr = (is * er) / vt;
+      i[q.be] = sg * ib; i[q.ce] = sg * ic;
+      J[q.be * K + q.be] = gf / q.bf + gr / q.br + GMIN;
+      J[q.be * K + q.ce] = -gr / q.br;
+      J[q.ce * K + q.be] = gf - gr * (1 + 1 / q.br);
+      J[q.ce * K + q.ce] = gr * (1 + 1 / q.br) + GMIN;
     }
     for (const t of this.triodes) {
       const vpk = v[t.pk], vgk = v[t.gk];
@@ -312,6 +382,12 @@ export class Circuit {
     for (const d of this.diodes) {
       const off = this.poff[d.port];
       v[d.port] = pnjlim(v[d.port] - off, old[d.port] - off, d.nvt, d.vcrit) + off;
+    }
+    for (const q of this.bjts) {
+      // Limit both junctions, then put vce back together from them.
+      const sg = q.sign, vbe = sg * v[q.be], vbc = vbe - sg * v[q.ce], obe = sg * old[q.be], obc = obe - sg * old[q.ce];
+      const be = pnjlim(vbe, obe, q.vt, q.vcrit), bc = pnjlim(vbc, obc, q.vt, q.vcrit);
+      v[q.be] = sg * be; v[q.ce] = sg * (be - bc);
     }
   }
 
@@ -356,7 +432,7 @@ export class Circuit {
       }
     }
     for (let k = 0; k < K; k++) v[k] = x[pa[k]] - x[pb[k]];
-    for (const c of this.caps) { c.v = x[c.a] - x[c.b]; c.i = 0; }
+    for (const c of this.caps) { c.v = x[c.a] - x[c.b]; c.i = c.s < 0 ? c.v * L_DC : 0; }
     return x[this.out];
   }
 
@@ -374,7 +450,7 @@ export class Circuit {
     this.addCol(this.inRow, vin);
     for (const s of this.supplies) this.addCol(s.row, s.volts);
     for (const c of this.caps) {
-      c.ieq = c.g * c.v + c.i;
+      c.ieq = c.s * (c.g * c.v + c.i);
       if (c.a < n) this.addCol(c.a, c.ieq);
       if (c.b < n) this.addCol(c.b, -c.ieq);
     }

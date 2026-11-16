@@ -6,7 +6,7 @@ export interface AmpSettings {
   amp: string;
   /** The pedal switched on, or null. */
   pedal: string | null;
-  /** Its Drive, 0 to 10. */
+  /** Its one knob (Drive, Rate, Treadle...), 0 to 10. */
   drive: number;
   knobs: Knobs;
   /** The dry input straight through, to compare. */

@@ -2,8 +2,12 @@
 // stages, the pots between them, a tone stack and a power stage; `buildRig`
 // turns an amp, an optional pedal and the knobs into a rig. Names are ours and
 // describe the circuit, never a product.
-import { fuzz, hardClip, overdrive, toneStack, triodeStage, type StageSpec, type ToneSpec } from "./circuits.ts";
-import type { RigSpec } from "./rig.ts";
+import {
+  fuzz, germaniumFuzz, hardClip, octaveUp, opticalComp, opticalTremolo, overdrive, phaser, toneStack, triodeStage, vibe, wah,
+  type StageSpec, type ToneSpec,
+} from "./circuits.ts";
+import type { Netlist } from "./mna.ts";
+import type { Mod, RigSpec } from "./rig.ts";
 
 /** The amp's front panel, every knob 0 to 10. Noise is how much the first tube's resistors hiss (see `noiseScale`). */
 export interface Knobs { gain: number; bass: number; mid: number; treble: number; master: number; noise: number }
@@ -44,12 +48,39 @@ export const AMPS: AmpDef[] = [
   },
 ];
 
-export interface PedalDef { id: string; name: string; blurb: string; net: (drive: number) => RigSpec["links"][number]["net"] }
+/** A pedal: its circuit for its one knob (0 to 10), what the knob is called (Drive if not said), and what moves its `VarR`s. */
+export interface PedalDef { id: string; name: string; blurb: string; knob?: string; net: (k: number) => Netlist; mods?: (k: number) => Mod[] }
 
 export const PEDALS: PedalDef[] = [
   { id: "drive", name: "Q Drive", blurb: "Diodes in the op-amp's feedback: rounded clipping and a mid push. In front of an amp at low Drive, it tightens the lows.", net: (d) => overdrive(d / 10) },
   { id: "fuzz", name: "Q Fuzz", blurb: "×2000 into soft diodes, then hard ones. Its input resistor hisses, and the hiss gets clipped with the notes.", net: (d) => fuzz(d / 10) },
   { id: "dist", name: "Q Dist", blurb: "Op-amp gain into two diodes to ground: flat-topped, buzzy distortion.", net: (d) => hardClip(10e3 + (d / 10) * 190e3) },
+  {
+    id: "phase", name: "Q Phase", knob: "Rate", blurb: "Four all-pass stages, JFETs as their resistors, one LFO on the gates, some fed back: two notches sweeping.",
+    net: () => phaser(0.45), mods: (k) => [{ ctl: "gate", hz: 0.05 + (k / 10) ** 2 * 6 }],
+  },
+  {
+    id: "vibe", name: "Q Vibe", knob: "Speed", blurb: "Four phase stages, four LDRs, one lamp. The lamp heats faster than it cools, so the throb leans.",
+    net: vibe, mods: (k) => [{ ctl: "lamp", hz: 0.5 + (k / 10) * 9, pow: 2, lag: [[0.02, 0.07], [0.004, 0.05]] }],
+  },
+  {
+    id: "trem", name: "Q Trem", knob: "Rate", blurb: "An LED blinking on an LDR that shunts the signal to ground. The LDR recovers slowly, so each dip has a soft back.",
+    net: opticalTremolo, mods: (k) => [{ ctl: "led", hz: 1 + (k / 10) * 11, lag: [[0.002, 0.02]] }],
+  },
+  { id: "wah", name: "Q Wah", knob: "Treadle", blurb: "An inductor and capacitor ringing; the treadle pot sets a Miller capacitor's size. Heel ~550 Hz, toe ~1.8 kHz.", net: (k) => wah(k / 10) },
+  {
+    id: "autowah", name: "Q Envelope", knob: "Sens", blurb: "The same wah, its treadle pushed by how hard you play: a quick attack, then it falls back to the heel.",
+    net: () => wah("foot"), mods: (k) => [{ ctl: "foot", sens: 0.5 + (k / 10) ** 2 * 10, lag: [[0.005, 0.15]] }],
+  },
+  {
+    id: "comp", name: "Q Squeeze", knob: "Sustain", blurb: "Optical compressor: the output lights an LED that darkens an LDR ahead of the gain. The LDR's slow recovery is the smooth release.",
+    net: (k) => opticalComp(k / 10), mods: () => [{ ctl: "led", sens: 0.4, lag: [[0.01, 0.6]] }],
+  },
+  { id: "octave", name: "Q Octave", knob: "Fuzz", blurb: "A fuzz, then two diodes keeping the higher of it and its mirror: the wave folds, the pitch doubles.", net: (k) => octaveUp(k / 10) },
+  {
+    id: "germ", name: "Q Germ", knob: "Warm", blurb: "Two germanium transistors. They leak more as the room warms, and the bias moves: cold is spitty, 25 °C at 4, hot is mush.",
+    net: (k) => germaniumFuzz(5 + k * 5),
+  },
 ];
 
 /** The Gain knob's pot: log taper, never quite off, all the way open at 10. */
@@ -64,7 +95,7 @@ export const noiseScale = (k: number) => (k <= 0 ? 0 : 10 ** ((k - 1) / 3));
 /** A pedal (or none) into an amp, with these knobs. */
 export function buildRig(amp: AmpDef, knobs: Knobs, pedal?: { def: PedalDef; drive: number }): RigSpec {
   const links: RigSpec["links"] = [];
-  if (pedal) links.push({ net: pedal.def.net(pedal.drive) });
+  if (pedal) links.push({ net: pedal.def.net(pedal.drive), mods: pedal.def.mods?.(pedal.drive) });
   amp.stages.forEach((s, i) => links.push({ net: triodeStage({ ...s, noisy: i === 0 }), gain: amp.pots[i] ?? gainPot(knobs.gain) }));
   links.push({ net: toneStack({ ...amp.tone, bass: knobs.bass, mid: knobs.mid, treble: knobs.treble }) });
   return { inputVolts: 0.5, links, power: amp.power * (0.25 + 0.15 * knobs.master), cab: true, noise: noiseScale(knobs.noise) };
@@ -75,7 +106,7 @@ const amp = (id: string) => {
   if (!a) throw new Error(`no amp ${id}`);
   return a;
 };
-const pedalRig = (net: RigSpec["links"][number]["net"]): RigSpec => ({ inputVolts: 0.5, links: [{ net }], power: 0, cab: false });
+const pedalRig = (net: Netlist): RigSpec => ({ inputVolts: 0.5, links: [{ net }], power: 0, cab: false });
 
 /** Every amp at its own knob settings, and the two pedals alone into a clean desk. */
 export const RIGS = {
