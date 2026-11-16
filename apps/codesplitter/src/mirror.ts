@@ -66,7 +66,7 @@
 import { existsSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { fileDoc, fileIds, MAX_BYTES, MAX_LINES, materialize, toFile } from "./archive.ts";
+import { asGit, endsOf, fileDoc, fileIds, MAX_BYTES, MAX_LINES, materialize, toFile } from "./archive.ts";
 import { fromDisk } from "./agent-run.ts";
 import { GIT_BOT, GIT_EMAIL_DOMAIN } from "./git.ts";
 import { branchAndPath, githubToken, parseFolder, parseRepo } from "./github.ts";
@@ -657,6 +657,18 @@ export async function seeGit(env: Env, owner: string, repo: string) {
   await env.DB.prepare("UPDATE repos SET git_seen = ? WHERE owner = ? AND name = ? AND git_seen IS NULL").bind(t.code ? "" : t.out.trim(), owner, repo).run();
 }
 
+/**
+ * The desktop's git, once it's a remote the owner can push back to (#464), takes only pushes that build on
+ * what it has (#4774): a forced one would rewrite main under lines the app still holds. Set once, in that
+ * repo's own config; the app's own pushes always build on the tip, and a fresh start's new git is a new repo.
+ */
+export async function refuseForcedPushes(env: Env, owner: string, repo: string) {
+  const lg = localGit(env), r = lg && await repoRow<{ artifact: string | null }>(env, owner, repo, "artifact");
+  if (!lg || !r?.artifact) return;
+  const dir = lg.path(r.artifact);
+  if ((await git(["config", "--get", "receive.denyNonFastForwards"], dir)).out.trim() !== "true") await must(["config", "receive.denyNonFastForwards", "true"], dir);
+}
+
 /** The files a push clashed with (#788), each with its pushed commit. */
 export async function pushClashes(env: Env, owner: string, repo: string) {
   const r = await repoRow(env, owner, repo, "artifact, git_clash");
@@ -1178,11 +1190,12 @@ export async function branchTree(env: Env, owner: string, repo: string, name: st
       // A binary file is a blob this git has already.
       if (blob) { await must(["update-index", "--add", "--cacheinfo", `${binMode ?? "100644"},${blob},${path}`], dir, e); continue; }
       const doc = await fileDoc(env, owner, repo, path, "upstream", "file", name);
-      // As main's commits write it (archive.ts pushCatalogues): the lines, ending in one newline (#1041).
-      const text = (t => t.endsWith("\n") ? t : t + "\n")(doc.lines.map((l) => l.text).join("\n"));
+      // As main's commits write it (archive.ts asGit): the lines, ending in one newline (#1041) unless the base's copy had none, with its BOM if it had one.
+      const [m, , was] = (await must(["ls-tree", baseTree, "--", path], dir)).split(/\s+/), mode = m || "100644";
+      const base = was ? Bun.spawnSync(["git", "cat-file", "blob", was], { cwd: dir, stdout: "pipe", stderr: "ignore" }).stdout : null;
+      const text = asGit(doc.lines.map((l) => l.text).join("\n"), endsOf(base && new Uint8Array(base)));
       const put = Bun.spawn(["git", "hash-object", "-w", "--stdin"], { cwd: dir, stdin: new TextEncoder().encode(text), stdout: "pipe", stderr: "pipe" });
       const [, hash] = await Promise.all([put.exited, new Response(put.stdout).text()]);
-      const mode = (await must(["ls-tree", baseTree, "--", path], dir)).split(" ")[0] || "100644";
       await must(["update-index", "--add", "--cacheinfo", `${mode},${hash.trim()},${path}`], dir, e);
     }
     // The ones it deleted: a zero entry takes each out (a bare repo has no work tree for --force-remove).

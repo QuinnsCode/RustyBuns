@@ -17,6 +17,7 @@
 import { access, artifactsFor, flushPending, handleFor, MAX_BYTES, MAX_LINES, readTree } from "./archive.ts";
 import { copyObjects, GIT_BOT, rawObj, type Obj } from "./git.ts";
 import { digCap } from "./github.ts";
+import { git, localGit } from "./mirror.ts";
 import { usage } from "./limits.ts";
 import { fail, json, type Env } from "./env.ts";
 import { arr, check, nul, num, obj, str } from "@rustybuns/util/guard";
@@ -223,6 +224,10 @@ async function step(env: Env, f: Fresh) {
     last ? { tree: f.tree, message: `Fresh start from ${f.tip.slice(0, 7)}: the same files, in a new Artifact. Every line's history is kept in codeSplitter.` } : undefined);
   await env.DB.prepare("UPDATE fresh_starts SET done = done + ?, bytes = bytes + ?, stage = ?, seq = ? WHERE owner = ? AND repo = ?").bind(objs.length, r.bytes, r.stage, upTo, f.owner, f.repo).run();
   if (!last) return;
+  // The staging commits fell away (git.ts copyObjects). On the desktop the new git is only ours while the
+  // state is 'copying' (commits wait), so they go now rather than sit dangling (#4774); Cloudflare collects its own.
+  const lg = f.stage ? localGit(env) : null;
+  if (lg) await git(["prune", "--expire=now"], lg.path(f.artifact)).catch(() => null);
 
   // Done: point the repo at the new git, keep the old, and land what waited.
   const repo = await repoRow(env, f.owner, f.repo, "old_artifacts");
