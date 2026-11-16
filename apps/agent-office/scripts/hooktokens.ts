@@ -3,6 +3,7 @@
 // terminal outlives a restart still has its token in its own env, and the office checks it against that hash
 // until the worker is launched again with a fresh env. The token itself only ever lives in the office's memory
 // and the worker's env.
+import { once } from "./once.ts";
 
 /** server/workers/util.js: the hash, and the check authenticate and handleProviderHook make. */
 export function hookTokensUtil(js: string) {
@@ -35,9 +36,4 @@ export function hookTokensManager(js: string) {
   js = once(js, "workers/manager.js", "            AGENT_OFFICE_HOOK_TOKEN: w.hookToken,\n        });\n",
     "            AGENT_OFFICE_HOOK_TOKEN: w.hookToken,\n        });\n        w.hookHash = undefined;\n");
   return "import { __rbHookOk } from './util.js';\n" + js;
-}
-
-function once(s: string, rel: string, from: string, to: string) {
-  if (s.split(from).length !== 2) throw new Error(`Agent Office changed: patch target moved in ${rel}: ${from}`);
-  return s.replace(from, () => to);
 }
