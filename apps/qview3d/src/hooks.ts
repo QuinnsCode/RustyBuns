@@ -13,8 +13,8 @@
 // at 1 min, 5 min, 30 min, 2 h and 12 h by the cron (retryDue, from worker.ts scheduled), then marked failed. A cron
 // trigger and a few D1 rows cost nothing on the free plan, so no Queue or Durable Object.
 import { b64url, digest, unb64url } from "@rustybuns/util/bytes";
-import { check } from "@rustybuns/util/guard";
-import { privateJson, readJson } from "@rustybuns/util/http";
+import { arr, check, str } from "@rustybuns/util/guard";
+import { parseJson, privateJson, readJson } from "@rustybuns/util/http";
 import { Delivery, EVENT_TYPES, HOOK_EVENTS, HookEvent, HookRequest, OrderReply, OrderRequest, PrintPlan, type HookReply, type Hooks, type OrderLine } from "./api.ts";
 import { signHook, SIGNATURE } from "./hook-sign.ts";
 import { designKey } from "./layout.ts";
@@ -49,7 +49,7 @@ async function unseal(env: Env, sealed: string): Promise<string | null> {
 type HookRow = { id: string; url: string; secret: string; events: string; created: number };
 type DeliveryRow = { id: string; org: string; hook: string; event: string; body: string; status: string; attempts: number; code: number | null; error: string | null; at: number; next: number | null };
 
-const eventsOf = (row: HookRow): string[] => { try { const v: unknown = JSON.parse(row.events); return Array.isArray(v) ? v.filter((e) => typeof e === "string") : []; } catch { return []; } };
+const eventsOf = (row: HookRow): string[] => check(arr(str(20), 10), parseJson(row.events)) ?? [];
 const asDelivery = (r: DeliveryRow): Delivery | null =>
   check(Delivery, { id: r.id, hook: r.hook, event: r.event, status: r.status, attempts: r.attempts, code: r.code ?? undefined, error: r.error ?? undefined, at: r.at, next: r.next ?? undefined });
 
@@ -152,9 +152,7 @@ async function orderRoute(req: Request, env: Env, ctx: Later, org: string, origi
   if (!body) return fail("expected {id, lines: [{design, qty?}]}", 400);
   const was = await env.DB.prepare("SELECT body FROM orders WHERE org = ? AND id = ?").bind(org, body.id).first<{ body: string }>();
   if (was) {
-    let kept: unknown = null;
-    try { kept = JSON.parse(was.body); } catch { /* a broken row reads as missing */ }
-    const reply = check(OrderReply, kept);
+    const reply = check(OrderReply, parseJson(was.body));
     if (reply) return privateJson({ ...reply, fresh: false } satisfies OrderReply, 200, h);
   }
   const lines: OrderLine[] = [];
