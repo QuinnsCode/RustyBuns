@@ -1,0 +1,345 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RustyBuns Bridge</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Antonio:wght@400;600;700&display=swap" rel="stylesheet">
+<!--DATA-->
+<style>
+  :root {
+    --bg: #000; --panel: #0b0b10; --ink: #f2e6d4; --dim: #7c7468; --line: #232029;
+    --orange: #ff9c00; --peach: #ffcc99; --lilac: #cc99cc; --blue: #9999ff; --sky: #99ccff; --red: #e0504a; --tan: #d8a26b;
+    --green: #7fd08a; --amber: #ffb24d;
+    --S: #ff9c00; --A: #ffcc99; --B: #cc99cc; --C: #9999ff; --D: #99ccff; --F: #e0504a; --U: #4a4652;
+    --font: "Antonio", "Arial Narrow", "Roboto Condensed", sans-serif-condensed, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--font); letter-spacing: .02em; }
+  body { padding: 12px 16px 24px; min-height: 100vh; }
+  button { font: inherit; letter-spacing: inherit; cursor: pointer; }
+
+  /* The frame: a top elbow, a left column of buttons, a bottom elbow. */
+  .frame { display: grid; grid-template-columns: 150px 1fr; grid-template-rows: auto 1fr auto; gap: 6px; }
+  .elbow-top, .elbow-bot { grid-column: 1 / -1; display: grid; grid-template-columns: 150px 1fr; gap: 6px; }
+  .elbow-top .corner { background: var(--orange); border-radius: 40px 0 0 0; height: 64px; position: relative; }
+  .elbow-top .corner::after { content: ""; position: absolute; right: 0; bottom: 0; width: 40px; height: 22px; background: var(--bg); border-radius: 22px 0 0 0; }
+  .elbow-bot .corner { background: var(--lilac); border-radius: 0 0 0 40px; height: 40px; position: relative; }
+  .elbow-bot .corner::after { content: ""; position: absolute; right: 0; top: 0; width: 40px; height: 18px; background: var(--bg); border-radius: 0 0 0 18px; }
+  .bar { display: flex; gap: 6px; align-items: stretch; }
+  .elbow-top .bar { align-items: flex-start; }
+  .seg { height: 22px; border-radius: 0; background: var(--peach); flex: 1; }
+  .elbow-bot .bar { align-items: flex-start; }
+  .elbow-bot .seg { height: 18px; }
+  .title { font-size: 34px; font-weight: 700; color: var(--orange); text-transform: uppercase; line-height: 1; padding: 0 10px; white-space: nowrap; margin-top: -6px; }
+  .stamp { color: var(--peach); font-size: 15px; white-space: nowrap; padding-top: 2px; }
+  .pill { border: 0; border-radius: 999px; padding: 2px 14px; height: 22px; font-size: 14px; font-weight: 600; color: #000; background: var(--blue); text-transform: uppercase; white-space: nowrap; }
+  .pill:hover { filter: brightness(1.15); }
+  .pill.busy { background: var(--amber); animation: blink 1s steps(2) infinite; }
+  @keyframes blink { 50% { opacity: .45; } }
+
+  .side { display: flex; flex-direction: column; gap: 6px; }
+  .side .stat { background: var(--tan); color: #000; padding: 6px 10px 4px; text-align: right; text-transform: uppercase; font-size: 12px; font-weight: 600; min-height: 54px; display: flex; flex-direction: column; justify-content: space-between; }
+  .side .stat b { font-size: 26px; line-height: 1; font-weight: 700; }
+  .side .stat:nth-child(2) { background: var(--lilac); } .side .stat:nth-child(3) { background: var(--blue); }
+  .side .stat:nth-child(4) { background: var(--peach); } .side .stat:nth-child(5) { background: var(--sky); }
+  .side .stat.alert { background: var(--red); }
+  .side .fill { flex: 1; background: var(--orange); min-height: 30px; }
+
+  main { min-width: 0; display: flex; flex-direction: column; gap: 14px; }
+  h2 { margin: 0 0 6px; font-size: 18px; color: var(--orange); text-transform: uppercase; letter-spacing: .08em; display: flex; gap: 10px; align-items: baseline; }
+  h2 small { color: var(--dim); font-size: 13px; letter-spacing: .02em; text-transform: none; }
+
+  /* Tier board */
+  .tiers { display: flex; flex-direction: column; gap: 4px; }
+  .tier { display: grid; grid-template-columns: 54px 1fr; gap: 4px; min-height: 40px; }
+  .tier .tag { display: grid; place-items: center; font-size: 26px; font-weight: 700; color: #000; border-radius: 20px 0 0 20px; }
+  .tier .row { background: var(--panel); border: 1px solid var(--line); display: flex; flex-wrap: wrap; gap: 4px; padding: 5px; align-content: flex-start; transition: background .12s; }
+  .tier .row.over { background: #1c1610; border-color: var(--orange); }
+  .tier .row.pickable { border-style: dashed; border-color: var(--dim); cursor: pointer; }
+  .chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px 3px 6px; border-radius: 999px; background: #1a1820; border: 1px solid #2e2a35; font-size: 14px; cursor: grab; user-select: none; white-space: nowrap; }
+  .chip:active { cursor: grabbing; }
+  .chip.dragging { opacity: .35; }
+  .chip.picked { outline: 2px solid var(--orange); }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--U); flex: none; }
+  .dot.green { background: var(--green); } .dot.amber { background: var(--amber); } .dot.red { background: var(--red); box-shadow: 0 0 6px var(--red); }
+  .hint { color: var(--dim); font-size: 13px; }
+
+  /* Controls */
+  .controls { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+  .controls .pill { background: #2a2730; color: var(--ink); }
+  .controls .pill.on { background: var(--lilac); color: #000; }
+  .controls input, .controls select { font: inherit; background: var(--panel); color: var(--ink); border: 1px solid var(--line); border-radius: 999px; height: 26px; padding: 0 12px; font-size: 14px; }
+  .controls input { width: 160px; }
+
+  /* App cards */
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 10px; }
+  .card { display: grid; grid-template-columns: 40px 1fr; background: var(--panel); border: 1px solid var(--line); border-radius: 22px 4px 4px 22px; overflow: hidden; min-width: 0; }
+  .card .spine { display: flex; flex-direction: column; align-items: center; justify-content: space-between; padding: 10px 0; color: #000; font-weight: 700; font-size: 22px; cursor: grab; }
+  .card .spine .dot { border: 2px solid #000; width: 13px; height: 13px; }
+  .card .body { padding: 8px 10px 10px; min-width: 0; display: flex; flex-direction: column; gap: 7px; }
+  .card .head { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
+  .card .name { font-size: 20px; font-weight: 600; color: var(--peach); text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .card .name a { color: inherit; text-decoration: none; }
+  .card .name a:hover { color: var(--orange); }
+  .card .grp { font-size: 12px; color: var(--dim); white-space: nowrap; text-transform: uppercase; }
+  .plats { display: flex; gap: 3px; flex-wrap: wrap; }
+  .plat { font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 999px; background: #18161c; color: #3d3944; text-transform: uppercase; }
+  .plat.l1 { background: transparent; color: var(--sky); box-shadow: inset 0 0 0 1px var(--sky); }
+  .plat.l2 { background: var(--sky); color: #000; }
+  .plat.cf.l1, .plat.cf.l2 { background: var(--orange); color: #000; box-shadow: none; }
+  .stats { display: grid; grid-template-columns: auto 1fr; gap: 3px 10px; font-size: 14px; align-items: baseline; }
+  .stats dt { color: var(--lilac); font-size: 11px; text-transform: uppercase; letter-spacing: .08em; font-weight: 600; }
+  .stats dd { margin: 0; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--ink); }
+  .stats dd .sub { color: var(--dim); }
+  .stats dd.wrap { white-space: normal; }
+  .ok { color: var(--green); } .bad { color: var(--red); } .warn { color: var(--amber); } .na { color: var(--dim); }
+  .ibar { display: inline-block; width: 60px; height: 6px; background: #2a2730; vertical-align: middle; margin-left: 6px; border-radius: 3px; overflow: hidden; }
+  .ibar i { display: block; height: 100%; background: var(--orange); }
+  .res { display: flex; flex-wrap: wrap; gap: 3px; }
+  .res span { font-size: 11px; padding: 1px 6px; background: #221e28; border-radius: 3px; color: var(--peach); white-space: nowrap; }
+  .empty { color: var(--dim); padding: 20px 0; }
+  a { color: var(--sky); }
+
+  @media (max-width: 720px) {
+    body { padding: 8px 16px 16px; }
+    .frame, .elbow-top, .elbow-bot { grid-template-columns: 1fr; }
+    .elbow-top .corner, .elbow-bot .corner { display: none; }
+    .elbow-top .bar { flex-wrap: wrap; }
+    .title { font-size: 26px; padding: 0; margin: 0; }
+    .side { flex-direction: row; flex-wrap: wrap; }
+    .side .stat { flex: 1 1 30%; min-height: 44px; }
+    .side .fill { display: none; }
+    .seg { display: none; }
+    .grid { grid-template-columns: 1fr; }
+    .controls input { width: 100%; }
+  }
+</style>
+</head>
+<body>
+<div class="frame">
+  <div class="elbow-top">
+    <div class="corner"></div>
+    <div class="bar">
+      <div class="title">RustyBuns Bridge</div>
+      <div class="seg"></div>
+      <div class="stamp" id="stamp">SCANNING · ABOUT A MINUTE</div>
+      <button class="pill" id="refresh" title="Scan the repo and gh again">Rescan</button>
+    </div>
+  </div>
+  <aside class="side" id="side"></aside>
+  <main>
+    <section>
+      <h2>Tier board <small id="tierhint">Drag an app (or a card's spine) into a row. Tap a chip, then a row, on a phone.</small></h2>
+      <div class="tiers" id="tiers"></div>
+    </section>
+    <section>
+      <h2>Systems <small id="count"></small></h2>
+      <div class="controls" id="controls">
+        <input id="q" type="search" placeholder="Find an app" aria-label="Find an app">
+        <select id="sort" aria-label="Sort">
+          <option value="tier">By tier</option>
+          <option value="open">Most open issues</option>
+          <option value="recent">Latest commit</option>
+          <option value="busy">Busiest 30 days</option>
+          <option value="since">Most commits since release</option>
+          <option value="health">Worst health first</option>
+        </select>
+        <span id="groups"></span>
+      </div>
+    </section>
+    <div class="grid" id="grid"></div>
+  </main>
+  <div class="elbow-bot">
+    <div class="corner"></div>
+    <div class="bar"><div class="seg" style="background:var(--lilac)"></div><div class="seg" style="background:var(--blue);flex:.3"></div><div class="seg" style="background:var(--tan);flex:.15"></div></div>
+  </div>
+</div>
+<script>
+const TIERS = ["S", "A", "B", "C", "D", "F"];
+const SNAP = !!window.BRIDGE;
+const KEY = "bridge-tiers";
+let scan = null, tiers = Object.fromEntries(TIERS.map((t) => [t, []])), scanning = false;
+let group = "all", picked = null;
+
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+const ago = (iso) => {
+  if (!iso) return "";
+  const s = (Date.now() - new Date(iso).getTime()) / 1000;
+  if (s < 3600) return `${Math.max(1, Math.round(s / 60))}m`;
+  if (s < 86400 * 2) return `${Math.round(s / 3600)}h`;
+  if (s < 86400 * 60) return `${Math.round(s / 86400)}d`;
+  return `${Math.round(s / 86400 / 30)}mo`;
+};
+const tierOf = (id) => TIERS.find((t) => tiers[t].includes(id)) ?? null;
+// The same move as bridge-lib.ts's, for the snapshot (no server) and for showing a move before the server answers.
+function move(t, m) {
+  const out = Object.fromEntries(TIERS.map((k) => [k, t[k].filter((id) => id !== m.app)]));
+  if (m.tier !== "-") { const row = out[m.tier]; row.splice(m.index < 0 || m.index > row.length ? row.length : m.index, 0, m.app); }
+  return out;
+}
+
+async function load(kind = "GET") {
+  if (SNAP) {
+    scan = window.BRIDGE.scan;
+    tiers = window.BRIDGE.tiers;
+    try { const saved = JSON.parse(localStorage.getItem(KEY) || "null"); if (saved && TIERS.every((t) => Array.isArray(saved[t]))) tiers = saved; } catch {}
+    return render();
+  }
+  try {
+    const r = await fetch(kind === "POST" ? "/api/refresh" : "/api/data", { method: kind });
+    const d = await r.json();
+    if (d.scan) scan = d.scan;
+    tiers = d.tiers; scanning = d.scanning;
+  } catch { scanning = false; }
+  render();
+  if (scanning) setTimeout(load, 3000);
+}
+
+async function place(app, tier, index = -1) {
+  const m = { app, tier, index };
+  tiers = move(tiers, m);
+  render();
+  if (SNAP) { try { localStorage.setItem(KEY, JSON.stringify(tiers)); } catch {} return; }
+  try {
+    const r = await fetch("/api/tiers", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(m) });
+    const d = await r.json();
+    if (d.tiers) { tiers = d.tiers; render(); }
+  } catch {}
+}
+
+const RANK = { red: 0, amber: 1, off: 2, green: 3 };
+function sorted(apps) {
+  const by = $("sort").value;
+  const tierRank = (a) => { const t = tierOf(a.id); return t ? TIERS.indexOf(t) : 6; };
+  const key = {
+    tier: (a, b) => tierRank(a) - tierRank(b) || (tierOf(a.id) ? tiers[tierOf(a.id)].indexOf(a.id) - tiers[tierOf(b.id)].indexOf(b.id) : a.name.localeCompare(b.name)),
+    open: (a, b) => b.issues.open - a.issues.open,
+    recent: (a, b) => (b.commit?.at ?? "").localeCompare(a.commit?.at ?? ""),
+    busy: (a, b) => b.commits30 - a.commits30,
+    since: (a, b) => (b.since ?? -1) - (a.since ?? -1),
+    health: (a, b) => RANK[a.light] - RANK[b.light] || tierRank(a) - tierRank(b),
+  }[by];
+  return [...apps].sort((a, b) => key(a, b) || a.name.localeCompare(b.name));
+}
+
+function render() {
+  if (!scan) { $("stamp").textContent = "SCANNING"; $("refresh").classList.add("busy"); return; }
+  const apps = scan.apps;
+  const byId = new Map(apps.map((a) => [a.id, a]));
+  $("refresh").classList.toggle("busy", scanning);
+  $("refresh").textContent = scanning ? "Scanning" : "Rescan";
+  $("refresh").hidden = SNAP;
+  const at = new Date(scan.at);
+  $("stamp").textContent = `${SNAP ? "SNAPSHOT " : ""}SCAN ${at.toISOString().slice(0, 16).replace("T", " ")} · ${ago(scan.at)} AGO${scan.offline ? " · OFFLINE" : ""}`;
+
+  const red = apps.filter((a) => a.light === "red");
+  const shipped = apps.filter((a) => a.good).length;
+  $("side").innerHTML = [
+    ["Apps", apps.length, ""],
+    ["Open issues", scan.issues.open, ""],
+    ["Closed", scan.issues.closed, ""],
+    ["Released", shipped, ""],
+    ["Hourly CI", scan.hourly ? ago(scan.hourly) : "none", ""],
+    ["Red alert", red.length, red.length ? "alert" : ""],
+  ].map(([k, v, c]) => `<div class="stat ${c}" title="${k === "Red alert" ? esc(red.map((a) => a.name).join(", ")) : ""}"><span>${k}</span><b>${esc(v)}</b></div>`).join("") + `<div class="fill"></div>`;
+
+  // Tier board: each tier's row, then unranked.
+  const ranked = new Set(TIERS.flatMap((t) => tiers[t]));
+  const chip = (id) => { const a = byId.get(id); if (!a) return ""; return `<span class="chip${picked === id ? " picked" : ""}" draggable="true" data-app="${esc(id)}" title="${esc(a.line)}"><i class="dot ${a.light}"></i>${esc(a.name)}</span>`; };
+  const rows = [...TIERS.map((t) => [t, tiers[t].filter((id) => byId.has(id))]), ["-", apps.filter((a) => !ranked.has(a.id)).map((a) => a.id).sort((x, y) => byId.get(x).name.localeCompare(byId.get(y).name))]];
+  $("tiers").innerHTML = rows.map(([t, ids]) => `<div class="tier"><div class="tag" style="background:var(--${t === "-" ? "U" : t});${t === "-" ? "font-size:12px;color:var(--ink)" : ""}">${t === "-" ? "UNRANKED" : t}</div><div class="row${picked ? " pickable" : ""}" data-tier="${t}">${ids.map(chip).join("") || `<span class="hint">${t === "-" ? "Every app has a tier." : "Drop here"}</span>`}</div></div>`).join("");
+
+  // Group filter pills.
+  const groups = [...new Set([...(scan.groups ?? []), ...apps.map((a) => a.group)])].filter((g) => apps.some((a) => a.group === g));
+  $("groups").innerHTML = ["all", ...groups].map((g) => `<button class="pill${g === group ? " on" : ""}" data-group="${esc(g)}">${esc(g === "all" ? "All" : g)}</button>`).join(" ");
+
+  const q = $("q").value.trim().toLowerCase();
+  const shown = sorted(apps.filter((a) => (group === "all" || a.group === group) && (!q || `${a.name} ${a.id}`.toLowerCase().includes(q))));
+  $("count").textContent = `${shown.length} of ${apps.length} · ${scan.unfiled} issues name no app`;
+  $("grid").innerHTML = shown.map(card).join("") || `<div class="empty">No app matches.</div>`;
+}
+
+const PLATS = [["mac", "Mac"], ["windows", "Win"], ["linux", "Linux"], ["android", "Android"], ["ios", "iOS"], ["server", "Server"], ["cloudflare", "Cloudflare", "cf"]];
+const PLAT_TIP = { 2: "CI builds and ships it", 1: "has a target for it", 0: "no" };
+function card(a) {
+  const t = tierOf(a.id);
+  const total = a.issues.open + a.issues.closed;
+  const closedPct = total ? Math.round((a.issues.closed / total) * 100) : 0;
+  const plats = PLATS.map(([k, label, cls]) => `<span class="plat ${cls ?? ""} l${a.platforms[k]}" title="${label}: ${PLAT_TIP[a.platforms[k]]}">${label}</span>`).join("");
+  const rel = a.release
+    ? `${esc(a.release.tag.replace(/^.*?-?(v[\d.].*)$/, "$1"))} <span class="sub">${ago(a.release.at)}</span> ${a.release.ok === true ? `<span class="ok">GOOD</span>` : a.release.ok === false ? `<span class="bad">FAILED</span>` : `<span class="na">?</span>`}${a.good && a.good.tag !== a.release.tag ? ` <span class="sub">good: ${esc(a.good.tag)}</span>` : ""}`
+    : `<span class="na">no release tag</span>`;
+  const since = a.since != null ? `<span class="${a.since > 50 ? "warn" : ""}">${a.since}</span> commits since release` : a.release ? `<span class="bad">no good release</span>` : `<span class="na">–</span>`;
+  const ci = a.ci.test ? `<span class="${a.ci.test === "success" ? "ok" : a.ci.test === "failure" ? "bad" : "warn"}">${a.ci.test.toUpperCase()}</span>${a.ci.smoke ? ` <span class="sub">smoke</span> <span class="${a.ci.smoke === "success" ? "ok" : "bad"}">${a.ci.smoke.toUpperCase()}</span>` : ""} <span class="sub">${ago(a.ci.at)} ago</span>` : `<span class="na">not in the hourly run</span>`;
+  const live = a.live ? `<span class="${a.live.ok ? "ok" : "bad"}">${a.live.ok ? "UP" : "DOWN"}</span> <span class="sub">${a.live.status || "no answer"} · ${a.live.ms} ms</span>` : a.play ? `<span class="na">not checked</span>` : `<span class="na">no live page</span>`;
+  const res = Object.entries(a.resources).map(([k, n]) => `<span>${esc(k.replace(/_/g, " ").replace("durable object", "DO").toUpperCase())}${n > 1 ? ` ×${n}` : ""}</span>`).join("");
+  const issuesUrl = `https://github.com/QuinnsCode/RustyBuns/issues?q=${encodeURIComponent(`is:issue is:open "${a.name}"`)}`;
+  return `<article class="card">
+    <div class="spine" style="background:var(--${t ?? "U"})" draggable="true" data-app="${esc(a.id)}" title="Drag into a tier">${t ?? "–"}<i class="dot ${a.light}" title="Health: ${a.light}"></i></div>
+    <div class="body">
+      <div class="head"><div class="name" title="${esc(a.line)}">${a.play ? `<a href="${esc(a.play)}" target="_blank" rel="noopener">${esc(a.name)}</a>` : esc(a.name)}</div><div class="grp">${esc(a.group)}</div></div>
+      <div class="plats">${plats}</div>
+      <dl class="stats">
+        <dt>Issues</dt><dd class="wrap"><a href="${issuesUrl}" target="_blank" rel="noopener">${a.issues.open} open</a> <span class="sub">/ ${a.issues.closed} closed</span><span class="ibar" title="${closedPct}% closed"><i style="width:${closedPct}%"></i></span>${a.issues.manual ? ` <span class="warn" title="MANUAL RUN issues waiting on you">${a.issues.manual} manual</span>` : ""}${a.prs ? ` <span class="sub">· ${a.prs} PR${a.prs > 1 ? "s" : ""}</span>` : ""}</dd>
+        <dt>Commit</dt><dd title="${esc(a.commit?.subject)}">${a.commit ? `${ago(a.commit.at)} ago <span class="sub">${esc(a.commit.sha)} · ${a.commits30} in 30d</span>` : `<span class="na">none</span>`}</dd>
+        <dt>Release</dt><dd>${rel}</dd>
+        <dt>Drift</dt><dd>${since}</dd>
+        <dt>Hourly</dt><dd>${ci}</dd>
+        <dt>Live</dt><dd title="${esc(a.play)}">${live}</dd>
+        <dt>Size</dt><dd>${a.files} files <span class="sub">· ${a.tests} test files</span></dd>
+      </dl>
+      ${res ? `<div class="res" title="What its config binds">${res}</div>` : ""}
+    </div>
+  </article>`;
+}
+
+// Drag and drop: chips and card spines carry an app id; a tier row takes it at the spot it's dropped on.
+document.addEventListener("dragstart", (e) => {
+  const el = e.target.closest?.("[data-app]");
+  if (!el) return;
+  e.dataTransfer.setData("text/plain", el.dataset.app);
+  e.dataTransfer.effectAllowed = "move";
+  el.classList.add("dragging");
+});
+document.addEventListener("dragend", (e) => { e.target.closest?.("[data-app]")?.classList.remove("dragging"); });
+const indexAt = (row, x, y) => {
+  const chips = [...row.querySelectorAll(".chip:not(.dragging)")];
+  const i = chips.findIndex((c) => { const r = c.getBoundingClientRect(); return y < r.top || (y <= r.bottom && x < r.left + r.width / 2); });
+  return i < 0 ? -1 : i;
+};
+document.addEventListener("dragover", (e) => {
+  const row = e.target.closest?.(".row");
+  document.querySelectorAll(".row.over").forEach((r) => r !== row && r.classList.remove("over"));
+  if (!row) return;
+  e.preventDefault();
+  row.classList.add("over");
+});
+document.addEventListener("drop", (e) => {
+  const row = e.target.closest?.(".row");
+  document.querySelectorAll(".row.over").forEach((r) => r.classList.remove("over"));
+  if (!row) return;
+  e.preventDefault();
+  const app = e.dataTransfer.getData("text/plain");
+  if (!app) return;
+  // Dropping in the same row: the index counts without the app itself.
+  place(app, row.dataset.tier, row.dataset.tier === "-" ? -1 : indexAt(row, e.clientX, e.clientY));
+});
+// Tap a chip, then a row: for touch screens, where drag and drop doesn't fire.
+document.addEventListener("click", (e) => {
+  const g = e.target.closest?.("[data-group]");
+  if (g) { group = g.dataset.group; return render(); }
+  const c = e.target.closest?.(".chip");
+  if (c) { picked = picked === c.dataset.app ? null : c.dataset.app; return render(); }
+  const row = e.target.closest?.(".row");
+  if (row && picked) { const app = picked; picked = null; return place(app, row.dataset.tier); }
+});
+$("q").addEventListener("input", render);
+$("sort").addEventListener("change", render);
+$("refresh").addEventListener("click", () => { scanning = true; render(); load("POST"); });
+load();
+</script>
+</body>
+</html>

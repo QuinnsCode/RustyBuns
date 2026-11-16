@@ -16,6 +16,7 @@
     "ios": "bun scripts/ios-sim.ts",
     "usdz": "bun scripts/usdz.ts",
     "manual": "bun scripts/manual-runs.ts",
+    "bridge": "bun scripts/bridge.ts",
     "pr": "bun scripts/pr.ts",
     "issue": "bun scripts/issue.ts",
     "rings": "bun scripts/rings.ts",
