@@ -15,11 +15,11 @@ export function heatColour(db: number, target = TARGET): [number, number, number
   return t < 0 ? [40, 90 + 110 * (1 + t), 230, 150] : [235, 170 - 140 * t, 50, 170];
 }
 
-/** Q / E turn and R / V tilt the top you look at; Z / X lower and raise its stand. True when the key did something. */
+/** Q / E turn and R / V tilt the top (or front fill) you look at; Z / X lower and raise its stand. True when the key did something. */
 export function aimKey(w: World, code: string): boolean {
   const at = aimed(w);
   if (!at) return false;
-  if (at.gear === "top-12-powered") {
+  if (at.gear === "top-12-powered" || at.gear === "fill-8-powered") {
     if (code === "KeyQ" || code === "KeyE") return aim(w, at.key, { turn: code === "KeyQ" ? STEP : -STEP }).ok;
     if (code === "KeyR" || code === "KeyV") return aim(w, at.key, { tilt: code === "KeyR" ? TILT : -TILT }).ok;
   }

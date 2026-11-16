@@ -10,6 +10,8 @@ export const VENUES: Record<string, { window: number; fee: number }> = {
   "bigger-bar": { window: 480, fee: 300 },
   // The park: a long push from the truck and long runs, so a longer window.
   park: { window: 720, fee: 400 },
+  // The small arena: four hangs, each box carried to its point and every motor at 4 m a minute.
+  "small-arena": { window: 1800, fee: 1500 },
 };
 const FALLBACK = { window: 300, fee: 0 };
 

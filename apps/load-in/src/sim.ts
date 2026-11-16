@@ -15,7 +15,11 @@ export const EYE = 1.65, EYE_CROUCH = 1.0, RADIUS = 0.25;
 const SNAP = Math.PI / 12;
 
 /** A piece of gear on the floor: its own key and its id in @rustybuns/gear, where its size, weight and jacks come from. */
-export interface Item { key: string; gear: string; x: number; y: number; z: number; rot: number }
+export interface Item {
+  key: string; gear: string; x: number; y: number; z: number; rot: number;
+  /** Hung from a rigging point (the arena): never picked up off the floor, stacked on, or walked into once it is overhead. */
+  hung?: boolean;
+}
 export interface Level {
   name: string;
   /** Where you can walk: x and z bounds in metres (the garage floor and the driveway). */
@@ -118,7 +122,7 @@ export function holdPose(w: World): { x: number; y: number; z: number; rot: numb
 function collide(w: World) {
   const { bounds: b } = w.level, you = w.you;
   for (const i of w.items) {
-    if (i.key === w.held?.key || dims(i)[1] < LOW) continue;
+    if (i.key === w.held?.key || dims(i)[1] < LOW || (i.hung && i.y > EYE)) continue;
     const [sw, , sd] = dims(i), c = Math.cos(i.rot), s = Math.sin(i.rot);
     const dx = you.x - i.x, dz = you.z - i.z;
     const lx = dx * c - dz * s, lz = dx * s + dz * c;
@@ -156,7 +160,7 @@ export function aimed(w: World): Item | null {
   const f = facing(w.you.yaw);
   let best: Item | null = null, bestD = Infinity;
   for (const i of w.items) {
-    if (i.key === w.held?.key) continue;
+    if (i.key === w.held?.key || i.hung) continue;
     const dx = i.x - w.you.x, dz = i.z - w.you.z, d = Math.hypot(dx, dz);
     if (d > REACH || (d > 0.3 && (dx * f.x + dz * f.z) / d < 0.7)) continue;
     if (d < bestD) best = i, bestD = d;
@@ -175,7 +179,7 @@ export function pickUp(w: World, key: string): Answer {
   if (Math.hypot(i.x - w.you.x, i.z - w.you.z) > REACH) return { ok: false, why: `${g.what} is out of reach` };
   if (feltKg(g.kg) > MAX_LIFT) return { ok: false, why: `${g.what} is ${g.kg} kg, too heavy to lift alone` };
   const fp = footprint(i), top = i.y + dims(i)[1];
-  if (w.items.some((o) => o !== i && Math.abs(o.y - top) < 0.01 && overlap(fp, footprint(o)))) return { ok: false, why: `something is on the ${g.what}` };
+  if (w.items.some((o) => o !== i && !o.hung && Math.abs(o.y - top) < 0.01 && overlap(fp, footprint(o)))) return { ok: false, why: `something is on the ${g.what}` };
   w.held = { key, rel: i.rot - w.you.yaw };
   return { ok: true };
 }
@@ -194,7 +198,7 @@ export function putDown(w: World): Answer {
   const x = clamp(p.x, r.x0 + half, r.x1 - half), z = clamp(p.z, r.z0 + half, w.level.bounds.z1 + RADIUS - half);
   const fp = corners(x, z, rot, sw, sd);
   let y = 0;
-  for (const o of w.items) if (o !== i && overlap(fp, footprint(o))) y = Math.max(y, o.y + dims(o)[1]);
+  for (const o of w.items) if (o !== i && !o.hung && overlap(fp, footprint(o))) y = Math.max(y, o.y + dims(o)[1]);
   Object.assign(i, { x, y, z, rot });
   w.held = null;
   collide(w);
