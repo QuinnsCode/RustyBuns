@@ -35,5 +35,13 @@ With `SWARM_URL` (the Worker) and `SWARM_TOKEN` set in the shell:
 Tests (`bun test test`): two fake runners with a lease that runs out and a stub GitHub, then a Mac with two slots on a
 local git repo. Still to come: a watch page.
 
+## Cost
+
+One Worker and one Durable Object on the Workers paid plan. Nothing runs on its own: no alarms, no crons, no stored
+files. It costs money only when it gets a request. An idle joined slot asks once every 2 min at most (it backs off from
+15 s), which is about 22,000 requests a month. A busy slot also extends its lease every 200 s. Ten slots left on for good
+come to well under the 1 million Durable Object requests the plan includes. The tests run on our own Macs, and the
+statuses go to GitHub for free.
+
 Deploying is the owner's: `bun run deploy` in this folder, with `SWARM_TOKEN` and `GITHUB_STATUS_TOKEN` in 1Password
 (names in `.env.schema`).
