@@ -69,7 +69,7 @@ test.skipIf(!chromePath())("the eqosys badge looks the same in Two Fronts, Mythi
     const tab = await openTab(chrome!.cdp, { w: 1024, h: 700 });
     await tab.call("Emulation.setEmulatedMedia", { features: [{ name: "prefers-reduced-motion", value: "reduce" }] });
     await load(chrome!.cdp, tab, `http://127.0.0.1:${server.port}/${query}`, 300);
-    const got = await tab.eval<unknown[]>(`[".rb-report .eq-badge", ".eq-toast .eq-badge", ".eq-chip .eq-badge"].map((sel) => {
+    const got = await tab.eval<unknown[][][]>(`[".rb-report .eq-badge", ".eq-toast .eq-badge", ".eq-chip .eq-badge"].map((sel) => {
       const look = (el, keys) => { const s = getComputedStyle(el); return [el.offsetWidth, el.offsetHeight, ...keys.map((k) => s[k])]; };
       const b = document.querySelector(sel), rim = getComputedStyle(b, "::after");
       return [look(b, ["borderRadius", "boxShadow", "opacity"]), look(b.querySelector("b"), ["backgroundImage", "color", "fontFamily", "fontSize", "fontWeight", "letterSpacing", "textTransform"]), look(b.querySelector("i"), ["filter"]), [rim.content, rim.borderTopStyle, rim.borderTopColor]];
