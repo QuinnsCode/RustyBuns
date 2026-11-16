@@ -51,7 +51,15 @@ export function pageAudit(): Audit {
     const shown = r.width > 0 && r.height > 0 && cs.visibility !== "hidden" && cs.display !== "none" && +cs.opacity > 0.01;
     let obscured = false;
     const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
-    if (shown && !(el instanceof SVGElement) && cx >= 0 && cx < vw && cy >= 0 && cy < vh) {
+    // A control scrolled out of its list (a level list with a max-height) is a scroll away, not covered.
+    let scrolledAway = false;
+    for (let p = el.parentElement; p && !scrolledAway; p = p.parentElement) {
+      const ps = getComputedStyle(p);
+      if (!/auto|scroll/.test(ps.overflowY + ps.overflowX) || (p.scrollHeight <= p.clientHeight && p.scrollWidth <= p.clientWidth)) continue;
+      const b = p.getBoundingClientRect();
+      scrolledAway = cx <= b.left || cx >= b.right || cy <= b.top || cy >= b.bottom;
+    }
+    if (shown && !scrolledAway && !(el instanceof SVGElement) && cx >= 0 && cx < vw && cy >= 0 && cy < vh) {
       const top = document.elementFromPoint(cx, cy);
       obscured = !!top && top !== el && !el.contains(top) && !top.contains(el);
     }
