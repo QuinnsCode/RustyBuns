@@ -44,7 +44,7 @@ import { join } from "node:path";
 import { startChecks } from "./checks.ts";
 import { branchNameError, fail, json, readBody, type Body, type Env } from "./env.ts";
 import { repoRow, liveRepo, branchOf } from "./repos.ts";
-import { access as artifactAccess, fileDoc, handleFor, readTree, toFile } from "./archive.ts";
+import { access as artifactAccess, asGit, endsOf, fileDoc, handleFor, readTree, toFile } from "./archive.ts";
 import { ancestors } from "./branches.ts";
 import { blobId, GIT_EMAIL_DOMAIN, push, setRef, ZERO, type Change as GitChange } from "./git.ts";
 import { text, type Doc } from "./lines.ts";
@@ -380,8 +380,9 @@ async function hostedBeam(env: Env, owner: string, repo: string, user: string, m
         hash = f.blob;
       } else {
         const doc = await fileDoc(env, owner, repo, f.path, "upstream", "file", name);
-        // As main's commits write it (archive.ts pushCatalogues): the lines, ending in one newline.
-        next = (t => t.endsWith("\n") ? t : t + "\n")(text(doc));
+        // As main's commits write it (archive.ts asGit): the lines, ending as the copy under them does.
+        const was = under ? await (await h.handle.readBlob(under))?.arrayBuffer() : null;
+        next = asGit(text(doc), endsOf(was && new Uint8Array(was)));
         hash = await blobId(new TextEncoder().encode(next));
       }
       if (hash === under) continue;

@@ -262,6 +262,7 @@ import {
   hearPushes,
   pushClashes,
   pushHolds,
+  refuseForcedPushes,
   seeGit,
   settlePush,
   syncDue,
@@ -601,6 +602,7 @@ async function route(req: Request, env: Env): Promise<Response> {
       // On the desktop the owner can push back too (#464): the bare repo is a remote for their own tools, with a
       // day-long write token (gone when the app restarts). Not with private lines, which that git holds blank.
       const wa = home === "local" && user === owner && !ch?.crew && !token ? await artifactAccess(h!.handle, h!.remote, "write", 86400).catch(() => null) : null;
+      if (wa) await refuseForcedPushes(env, owner, repo).catch(() => {});
       const push = wa && `git remote add codesplitter ${wa.remote.replace("://", `://x:${wa.token.split("?")[0]}@`)}`;
       // The owner sees who's invited but not in yet, beside the crew.
       const invites = user === owner ? { invites: await pendingInvites(env, owner, repo) } : {};
