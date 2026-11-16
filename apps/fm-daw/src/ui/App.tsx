@@ -63,7 +63,7 @@ const COUNT_IN = 4;
 function loadMsg(p: Project): ToWorklet {
   return {
     t: "load", params: p.tracks.flatMap((t) => t.params), notes: p.tracks.map((t) => t.notes), auto: p.tracks.map((t) => t.auto ?? []),
-    bpm: p.bpm, swing: p.swing, loopBeats: loopBeats(p), audible: audible(p), space: p.space, squash: p.squash, eq: p.eq, eqAuto: p.eqAuto ?? [],
+    bpm: p.bpm, swing: p.swing, loopBeats: loopBeats(p), audible: audible(p), space: p.space, squash: p.squash, eq: p.eq, eqAuto: p.eqAuto ?? [], eqLinear: !!p.eqLinear,
     trackEq: p.tracks.map((t) => t.eq ?? flatEq()),
   };
 }
@@ -78,6 +78,7 @@ function opMsg(op: Op, next: Project): ToWorklet {
     case "eq": if (op.track !== undefined) return { t: "trackEq", track: op.track, bands: next.tracks[op.track].eq ?? flatEq() };
     // falls through: the master
     case "eqAuto": return { t: "eq", bands: next.eq, lanes: next.eqAuto ?? [] };
+    case "eqPhase": return { t: "eqPhase", linear: !!next.eqLinear };
     case "global":
       if (op.bpm === undefined && op.swing === undefined && op.bars === undefined) {
         if (op.space !== undefined && op.squash === undefined) return { t: "space", amount: next.space };
@@ -607,7 +608,8 @@ export function App() {
                 onChange={(bands, group) => commit({ t: "eq", bands }, group ? { group } : {})}
                 onListen={(band) => audio?.send({ t: "eqListen", band })}
                 lanes={project.eqAuto ?? []} onLanes={(lanes) => commit({ t: "eqAuto", lanes })}
-                onMove={(i, v, was) => move(MASTER, i, v, was)} />
+                onMove={(i, v, was) => move(MASTER, i, v, was)}
+                linear={!!project.eqLinear} onLinear={(linear) => commit({ t: "eqPhase", linear })} />
             ) : (
               <Shape key={`track:${shapeOn}`} head={head} doc={project.tracks[shapeOn].eq ?? flatEq()} sampleRate={sr} analyser={an}
                 onChange={(bands, group) => commit({ t: "eq", bands, track: shapeOn }, group ? { group } : {})} />

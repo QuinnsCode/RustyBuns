@@ -6,9 +6,11 @@
 // still for a moment to hear only its range (it follows a drag) until you let go.
 // Drag or roll a dot while recording and the move is kept as automation. The strip
 // under the curve sets the selected band exactly. What's drawn is the filters'
-// real digital response (src/engine/eq.ts `response`), phase included.
+// real digital response (src/engine/eq.ts `response`), phase included. Linear
+// plays the same curve as an FIR (src/engine/linear.ts): no phase turn, a fixed delay.
 import { useEffect, useMemo, useRef, useState } from "react";
 import { clamp } from "@rustybuns/util";
+import { linearLatency } from "../engine/linear.ts";
 import {
   EQ_BANDS, EQ_LIMITS, EQ_SLOPES, bandResponse, eqLane, eqLaneName, hasGain, hasReso, isCut, listenOf, response, flatEq,
   type EqBand, type EqDoc, type EqKind, type EqListen,
@@ -63,9 +65,11 @@ export function Shape(props: { doc: EqDoc; sampleRate: number; analyser: Analyse
   lanes?: Lane[]; onLanes?(lanes: Lane[]): void;
   /** A hand move on a dot (lane, new value, old value): kept as automation while recording. */
   onMove?(lane: number, v: number, was: number): void;
+  /** Linear phase, and the switch. */
+  linear?: boolean; onLinear?(on: boolean): void;
   /** What the bar names, in place of "Shape · master EQ": the master-or-track picker. */
   head?: React.ReactNode }) {
-  const { doc, sampleRate: sr, analyser, onChange, onListen, lanes = [], onLanes } = props;
+  const { doc, sampleRate: sr, analyser, onChange, onListen, lanes = [], onLanes, linear = false, onLinear } = props;
   const wrap = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
   const [size, setSize] = useState({ w: 800, h: 300 });
@@ -202,8 +206,10 @@ export function Shape(props: { doc: EqDoc; sampleRate: number; analyser: Analyse
       if (phase) {
         ctx.beginPath();
         for (let x = 0; x < w; x++) {
-          const y = h / 2 - (total.deg[x] / 180) * (h / 2 - 10);
-          if (x && Math.abs(total.deg[x] - total.deg[x - 1]) < 180) ctx.lineTo(x, y); else ctx.moveTo(x, y);
+          // linear phase: every frequency is late by the same amount, so none turns against another
+          const deg = linear ? 0 : total.deg[x];
+          const y = h / 2 - (deg / 180) * (h / 2 - 10);
+          if (x && (linear || Math.abs(total.deg[x] - total.deg[x - 1]) < 180)) ctx.lineTo(x, y); else ctx.moveTo(x, y);
         }
         ctx.setLineDash([4, 4]); ctx.strokeStyle = warn; ctx.lineWidth = 1.25; ctx.stroke(); ctx.setLineDash([]);
       }
@@ -227,7 +233,7 @@ export function Shape(props: { doc: EqDoc; sampleRate: number; analyser: Analyse
     };
     draw();
     return () => cancelAnimationFrame(raf);
-  }, [size, curves, phase, analyser, sel, listening]);
+  }, [size, curves, phase, linear, analyser, sel, listening]);
 
   const at = (e: { clientX: number; clientY: number }) => {
     const r = canvas.current!.getBoundingClientRect();
@@ -309,6 +315,7 @@ export function Shape(props: { doc: EqDoc; sampleRate: number; analyser: Analyse
         <span className="dim shape-hint">Double-click to add or remove · drag to move{onListen ? " · hold to listen" : ""} · wheel for Q · Alt-click to bypass{props.onMove ? " · record to automate" : ""}</span>
         <span className="spacer" />
         <label className="check" title="Draw the phase the bands add (dashed, -180 to +180 degrees). Steep cuts turn it most"><input type="checkbox" checked={phase} onChange={(e) => setPhase(e.currentTarget.checked)} /> Phase</label>
+        {onLinear && <label className="check" title={`Linear phase: the same curve with no phase turn, for mastering. Holds the whole mix back ${Math.round((linearLatency(sr) / sr) * 1000)} ms (the bounce and recording make up for it), and steep cuts below ~60 Hz come out a little softer`}><input type="checkbox" checked={linear} onChange={(e) => onLinear(e.currentTarget.checked)} /> Linear</label>}
         <span className="dim">{used}/{EQ_BANDS}</span>
         <button className="ghost" disabled={!used} onClick={() => { onChange(flatEq()); setSel(null); }} title="Take every band out (undo brings them back)">Flat</button>
       </div>

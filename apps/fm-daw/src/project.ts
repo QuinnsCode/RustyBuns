@@ -31,8 +31,9 @@ export interface TrackDoc {
  * squash: the multiband up/down compressor on the master, 0 off to 1 over the top (src/engine/squash.ts).
  * eq: Shape, the master EQ before it: a slot per band, null when empty (src/engine/eq.ts).
  * eqAuto: its automation, a lane per band and setting (eqLane), only on bands that are there.
+ * eqLinear: Shape in linear phase (src/engine/linear.ts), only there when on.
  */
-export interface Project { v: 1; bpm: number; swing: number; space: number; squash: number; eq: EqDoc; eqAuto?: Lane[]; bars: number; tracks: TrackDoc[] }
+export interface Project { v: 1; bpm: number; swing: number; space: number; squash: number; eq: EqDoc; eqAuto?: Lane[]; eqLinear?: boolean; bars: number; tracks: TrackDoc[] }
 
 export type Op =
   | { t: "param"; track: number; i: number; v: number }
@@ -43,6 +44,7 @@ export type Op =
   /** Shape on the master, or with `track` that track's own. */
   | { t: "eq"; bands: EqDoc; track?: number }
   | { t: "eqAuto"; lanes: Lane[] }
+  | { t: "eqPhase"; linear: boolean }
   | { t: "replace"; project: Project };
 
 export const BEATS_PER_BAR = 4;
@@ -86,6 +88,8 @@ function withTrackEq(t: TrackDoc, eq: EqDoc): TrackDoc {
   const { eq: _, ...rest } = t;
   return eq.some(Boolean) ? { ...rest, eq } : rest;
 }
+/** eqLinear the same way: only when on. */
+const linearOf = (on: boolean) => (on ? { eqLinear: true } : {});
 
 /**
  * A recorded take into a track's lanes: lane `i` between the take's first and
@@ -133,7 +137,7 @@ export class Take {
 }
 
 const bad = (why: string): never => { throw new Bad(why); };
-const PROJECT = obj({ tracks: arr(raw, TRACKS, { min: 1 }), bars: raw, bpm: num(40, 240, 120), swing: num(0, 0.6, 0), space: num(0, 1, 0), squash: num(0, 1, 0), eq: raw, eqAuto: raw });
+const PROJECT = obj({ tracks: arr(raw, TRACKS, { min: 1 }), bars: raw, bpm: num(40, 240, 120), swing: num(0, 0.6, 0), space: num(0, 1, 0), squash: num(0, 1, 0), eq: raw, eqAuto: raw, eqLinear: bool(false) });
 
 export function sanitize(x: unknown): Project | null {
   const p = check(PROJECT, x);
@@ -142,7 +146,7 @@ export function sanitize(x: unknown): Project | null {
   // older projects had fewer tracks: pad with silent synth tracks (gain 0)
   const tracks = [...p.tracks, ...Array.from({ length: TRACKS - p.tracks.length }, () => ({ kind: "synth" }))];
   const eq = sanitizeEq(p.eq);
-  return { v: 1, bpm: p.bpm, swing: p.swing, space: p.space, squash: p.squash, eq, ...eqAutoOf(sanitizeEqAuto(p.eqAuto, beats, eq)), bars, tracks: tracks.map((v, ti) => track(v, ti, beats)) };
+  return { v: 1, bpm: p.bpm, swing: p.swing, space: p.space, squash: p.squash, eq, ...eqAutoOf(sanitizeEqAuto(p.eqAuto, beats, eq)), ...linearOf(p.eqLinear), bars, tracks: tracks.map((v, ti) => track(v, ti, beats)) };
 }
 
 function track(v: unknown, ti: number, beats: number): TrackDoc {
@@ -164,6 +168,7 @@ const OPS: Guard<Op>[] = [
   obj({ t: tag("global"), bpm: maybe(real), swing: maybe(real), space: maybe(real), squash: maybe(real), bars: maybe(BARS) }),
   obj({ t: tag("eq"), bands: sanitizeEq, track: maybe(TRACK) }),
   obj({ t: tag("eqAuto"), lanes: (v: unknown) => sanitizeLanes(v, MAX_BARS * BEATS_PER_BAR, EQ_AUTO) }),
+  obj({ t: tag("eqPhase"), linear: bool() }),
   obj({ t: tag("replace"), project: PROJ }),
 ];
 export const decodeOp = (v: unknown): Op | null => OPS.reduce<Op | null>((got, g) => got ?? check(g, v), null);
@@ -281,6 +286,10 @@ export function apply(p: Project, op: Op): Project {
     case "eqAuto":
       const { eqAuto: _, ...rest } = p;
       return { ...rest, ...eqAutoOf(sanitizeEqAuto(op.lanes, loopBeats(p), p.eq)) };
+    case "eqPhase": {
+      const { eqLinear: _, ...rest } = p;
+      return { ...rest, ...linearOf(op.linear) };
+    }
     case "replace":
       return sanitize(op.project) ?? p;
     default:

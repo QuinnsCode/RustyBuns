@@ -5,7 +5,7 @@
   "version": "0.1.0",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "rustybuns boundary && vite build",
     "desktop:dev": "rustybuns build desktop --dev && rustybuns run desktop",
     "desktop:build": "rustybuns build desktop",
     "test": "bun test test"

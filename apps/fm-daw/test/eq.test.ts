@@ -11,6 +11,7 @@ import { MASTER, Sequencer } from "../src/engine/sequencer.ts";
 import { Take, loopBeats, punchLane } from "../src/project.ts";
 import { WasmEq, instantiateFm } from "../src/engine/wasm.ts";
 import { CEILING } from "../src/engine/params.ts";
+import { LinearEq, linearLatency } from "../src/engine/linear.ts";
 import { apply, decodeOp, sanitize } from "../src/project.ts";
 import { demoProject } from "../src/presets.ts";
 import { newBand, qOfResoDb } from "../src/ui/Shape.tsx";
@@ -198,4 +199,42 @@ test("Shape on one track: a cut on the hats leaves the bounce's other tracks as 
   for (let i = 0; i < a.length; i++) maxDiff = Math.max(maxDiff, Math.abs(a[i] - b[i]));
   console.log(`  track Shape: max |rust - ts| = ${maxDiff.toExponential(2)}`);
   expect(maxDiff).toBeLessThan(1e-4);
+});
+
+test("linear phase: the same curve with no phase turn, late by its latency, and the bounce still lands on the beat", () => {
+  const chain = doc(
+    band({ kind: "lowCut", f: 40, slope: 24 }),
+    band({ kind: "bell", f: 400, g: -6, q: 2 }),
+    band({ kind: "bell", f: 2500, g: 4, q: 1 }),
+    band({ kind: "notch", f: 6000, q: 4 }),
+    band({ kind: "highCut", f: 16000, slope: 12 }),
+  );
+  const lin = (d: EqDoc, input: Float32Array) => { const eq = new LinearEq(SR), out = input.slice(); eq.set(d); eq.reset(); eq.process(out, out.length >> 1); return out; };
+  // what the curve says is what you hear, as in minimum phase
+  const freqs = [100, 400, 1000, 2500, 6000, 12000], curve = response(chain, SR, freqs).db;
+  freqs.forEach((f, i) => { const s = sine(f, 0.05); expect(Math.max(gainDb(s, lin(chain, s)), -40)).toBeCloseTo(Math.max(curve[i], -40), 0); });
+  const s25 = sine(25, 0.05);
+  expect(gainDb(s25, lin(chain, s25))).toBeLessThan(-10);
+  // an impulse comes out `latency` late: untouched when flat, mirror-symmetric around it through the chain (no phase turn)
+  const L = linearLatency(SR), click = new Float32Array(SR * 2);
+  click[2000 * 2] = click[2000 * 2 + 1] = 0.5;
+  const flat = lin(flatEq(), click);
+  expect(flat[(2000 + L) * 2]).toBeCloseTo(0.5, 5);
+  expect(flat.reduce((a, v) => a + Math.abs(v), 0)).toBeCloseTo(1, 4);
+  const ir = lin(chain, click), c = 2000 + L;
+  let asym = 0, energy = 0;
+  for (let k = 1; k < 2000; k++) { asym += Math.abs(ir[(c + k) * 2] - ir[(c - k) * 2]); energy += Math.abs(ir[(c + k) * 2]); }
+  expect(asym / energy).toBeLessThan(1e-3);
+  // the bounce trims the delay off: a linear-phase bounce of a flat EQ is the plain bounce, sample for sample
+  const p = { ...demoProject(), eq: flatEq() }, secs = 2;
+  const plain = renderProject(new TsEngine(SR), p, SR, secs, 0.5), linear = renderProject(new TsEngine(SR), { ...p, eqLinear: true }, SR, secs, 0.5);
+  expect(linear.length).toBe(plain.length);
+  let worst = 0;
+  for (let i = 0; i < plain.length; i++) worst = Math.max(worst, Math.abs(linear[i] - plain[i]));
+  expect(worst).toBeLessThan(1e-4);
+  // the switch is saved, sent as an op, and an older project reads as minimum phase
+  const on = apply(p, decodeOp(JSON.parse(JSON.stringify({ t: "eqPhase", linear: true })))!);
+  expect(sanitize(JSON.parse(JSON.stringify(on)))!.eqLinear).toBe(true);
+  expect("eqLinear" in apply(on, { t: "eqPhase", linear: false })).toBe(false);
+  expect("eqLinear" in sanitize(JSON.parse(JSON.stringify(p)))!).toBe(false);
 });

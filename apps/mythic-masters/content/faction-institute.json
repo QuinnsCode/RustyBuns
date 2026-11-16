@@ -620,6 +620,9 @@
     }
   ],
   "echoes": {
+    "went-south": [
+      { "text": "You went south. The grant covers fieldwork in eight regions only. Ms. Carrow did not sign for more. We lost the trail at the border." }
+    ],
     "mythic-bound": [
       { "text": "The Book took the {mythic}. Our meter jumped when the page closed. We logged the time. Dr. Vale wants your account of it." }
     ],

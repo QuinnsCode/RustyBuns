@@ -150,9 +150,11 @@ Every `apps/<fw>-example` does the same small thing, so one journey covers them 
 
 The journey, in order: no token is a 403; `/` shows `count: 0` on a fresh data dir; two posts make it `count: 2`; after a restart on the same data dir it is still 2; and `rustybuns generate` writes a stack with a `Cloudflare.Worker` and the `COUNTER` namespace.
 
+CI runs it on the dev host. Every few days, [`scripts/framework-check.ts`](scripts/framework-check.ts) runs it on each example's compiled binary (`--binary`, on the builder), takes the README thumbnail from the page in headless Chrome (`--shots`, which fails if the page throws), and prints what a deploy would create (`--plan`, offline, read only).
+
 ## Adding a framework
 
-1. Copy the nearest example: `apps/hono-example` for a plain Worker, `apps/nuxt-example` for a built Worker plus assets, `apps/svelte-spa-example` for a client-only SPA.
+1. Copy the nearest example: `apps/hono-example` for a plain Worker, `apps/nuxt-example` for a built Worker plus assets, `apps/svelte-spa-example` for a client-only SPA. A Vite SPA with `"use server"` modules also needs the boundary plugin in `vite.config.ts` and `rustybuns boundary` before its web build. `init` doesn't add them yet ([#4815](https://github.com/QuinnsCode/RustyBuns/issues/4815)): see [that README](apps/svelte-spa-example/README.md#the-two-hand-edits). Without them the page is blank.
 2. Swap in the framework's starter, build the counter page and its form, and run `rustybuns init`. If `init` gets it wrong, fix `init` (with a test in `packages/cli/test`), not the config.
 3. `test/desktop.test.ts` is one line: `test("...", () => counterJourney(join(import.meta.dir, "..")))`.
 4. A row in `scripts/ci-apps.ts` with `test: "bun test test"` and `boot: true`, so tier 1 and the journey run on every PR that touches it.

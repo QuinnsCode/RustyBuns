@@ -3,7 +3,7 @@
     "office-closed", "institute-closed", "lamplighters-closed",
     "protocol-quiet", "annex-raided", "cache-burned", "bay-held", "toby-out", "quist-turned", "specimen-freed",
     "office-file", "office-gary", "sample-given", "reagent-taken", "squonk-lent", "lamp-carried", "message-run", "ridge-promise",
-    "mythic-bound", "mythic-loose", "binds-16", "binds-8", "hunt-closed", "long-away"
+    "mythic-bound", "mythic-loose", "binds-16", "binds-8", "hunt-closed", "long-away", "went-south"
   ],
   "promises": [
     { "flag": "ridge-promise", "creature": "sasquatch" }
