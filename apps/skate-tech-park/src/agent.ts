@@ -32,7 +32,7 @@ export class Driver {
   next(): Partial<Input> | null {
     const q = this.queue[0];
     if (!q) return null;
-    const { jump, nollie, flick, flip, ...held } = q.hold.input;
+    const { jump, nollie, noComply, flick, flip, ...held } = q.hold.input;
     const out = q.at < PRESS ? q.hold.input : held;
     if (++q.at >= q.hold.steps) { this.queue.shift(); q.done?.(); }
     return out;
@@ -43,7 +43,7 @@ export class Driver {
 }
 
 const flag = bool(false), axis = num(-1, 1, 0);
-const HOLD = obj({ seconds: num(DT, MAX_SECONDS, 0.5), push: axis, steer: axis, ollie: flag, nollie: flag, jets: flag, fan: flag, trick: maybe(flick), manual: maybe(oneOf(["tail", "nose"])) });
+const HOLD = obj({ seconds: num(DT, MAX_SECONDS, 0.5), push: axis, steer: axis, ollie: flag, nollie: flag, noComply: flag, jets: flag, fan: flag, trick: maybe(flick), manual: maybe(oneOf(["tail", "nose"])) });
 // The other tools' arguments, read the same way: wrong or missing reads as nothing.
 const LineArgs = obj({ moves: arr(raw, 200, { drop: true }) });
 const GoArgs = obj({
@@ -56,7 +56,7 @@ const AtArgs = obj({ at: str(100, { min: 0, dflt: "" }) });
 export function holdOf(v: unknown): Hold {
   const m = check(HOLD, v) ?? HOLD({});
   const input: Partial<Input> = {
-    throttle: m.push, steer: m.steer, jump: m.ollie, nollie: m.nollie, boost: m.jets, fan: m.fan,
+    throttle: m.push, steer: m.steer, jump: m.ollie, nollie: m.nollie, noComply: m.noComply, boost: m.jets, fan: m.fan,
     flick: m.trick ?? null,
     manual: m.manual === "tail" ? 1 : m.manual === "nose" ? -1 : 0,
   };
@@ -105,6 +105,7 @@ const MOVE = {
   steer: { type: "number", description: "-1..1, left is +. In the air it spins the board" },
   ollie: { type: "boolean", description: "Pop an ollie at the start" },
   nollie: { type: "boolean", description: "Pop off the nose instead" },
+  noComply: { type: "boolean", description: "A no-comply instead, from the ground: the front foot plants and the tail pops a lower air. With manual held in the air (a grab) it lands as a boneless" },
   trick: { type: "string", enum: Object.keys(TRICKS), description: "A flick trick at the start (in the air)" },
   jets: { type: "boolean", description: "Rear jets: speed, and a strong pump through a transition" },
   fan: { type: "boolean", description: "Suction fan: holds the board to banks and walls" },

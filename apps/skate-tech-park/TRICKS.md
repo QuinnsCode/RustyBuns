@@ -12,7 +12,7 @@ in our own words; the physics stays our own.
 
 | Family | Tricks | Named by |
 | --- | --- | --- |
-| Pops | ollie, nollie | which foot snaps (`popT`, `nollie`) |
+| Pops | ollie, nollie, no-comply, boneless | which foot snaps (`popT`, `nollie`); a no-comply (`comply`, from the ground only, else an ollie) plants the front foot beside the nose first and pops `COMPLY_POP` as high, and a grab held through it names the air a boneless in place of the grab; a spin in the air is the 180 the foot carries round ("backside 180 no-comply") |
 | Flicks (16) | kickflip, heelflip, shove-it, frontside shove-it, 360 shove-it, frontside 360 shove-it, varial, inward heel, hardflip, 360 hardflip, varial heel, tre flip, laser flip, nightmare flip, double kickflip, double heelflip | `board` turn and `flip` turns, the SkateBench grid (`src/tricks.ts`) |
 | Flick + rider spin | big flip (tre + 180), bigspin (360 shove-it + 180), "180 kickflip" and the like | `WITH_HALF_TURN`, else the degrees go in front |
 | Frontside and backside | "frontside 180 kickflip", "backside bigspin", "frontside 180 50-50 grind", "backside disaster" | the spin's sign against `stance` (`sideOf`), set from the flick pad's layout (goofy layouts mirror it) |
@@ -56,9 +56,8 @@ it drops off the foot, rises over the top or `WALL_MAX` runs out. On the ground 
 
 Ordered by how little the sim needs to learn.
 
-1. **No-comply, boneless, footplant.** A foot leaves the board, plants, and the board follows. A different pop:
-   `pop` with a foot on the ground, a shorter air, a 180 of the board carried by the hand or the foot. One new
-   pop kind beside ollie and nollie, named at landing.
+1. **Footplant (fastplant, boneless off a coping).** A no-comply whose foot plants on the coping or a ledge
+   rather than the flat: the pop would have to read what is under the planted foot.
 2. **Handplants (inverts).** A hand on the coping, the board overhead, back down the wall. A stall with the rider
    upside down: now that stalls exist, an invert is a stall with a hold time and its own pose, once there is a rider
    to pose.
@@ -67,4 +66,4 @@ Ordered by how little the sim needs to learn.
    not turn about, and darkslide and primo need the board to ride on something other than its wheels or its
    deck. Furthest off.
 
-The follow-ups are tracked in [#2789](https://github.com/QuinnsCode/RustyBuns/issues/2789).
+The follow-ups are tracked in [#4806](https://github.com/QuinnsCode/RustyBuns/issues/4806).

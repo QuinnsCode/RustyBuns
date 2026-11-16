@@ -7,8 +7,8 @@ import type { Skin } from "./skins.ts";
 
 /** Each spot on the deck, about the skin's pivot (the middle of the board, a little under the grip). */
 const SPOTS: Record<Skin, Record<Spot, [number, number, number]>> = {
-  fingerboard: { tail: [0, 0.15, -1.9], nose: [0, 0.15, 1.9], "nose-left": [0.55, 0.15, 1.5], "nose-right": [-0.55, 0.15, 1.5] },
-  roadster: { tail: [0, 0.3, -1.9], nose: [0, 0.3, 1.9], "nose-left": [0.8, 0.3, 1.5], "nose-right": [-0.8, 0.3, 1.5] },
+  fingerboard: { tail: [0, 0.15, -1.9], nose: [0, 0.15, 1.9], "nose-left": [0.55, 0.15, 1.5], "nose-right": [-0.55, 0.15, 1.5], ground: [1.2, -0.3, 1.2] },
+  roadster: { tail: [0, 0.3, -1.9], nose: [0, 0.3, 1.9], "nose-left": [0.8, 0.3, 1.5], "nose-right": [-0.8, 0.3, 1.5], ground: [1.6, -0.3, 1.2] },
 };
 export const spotOn = (skin: Skin, at: Spot) => new THREE.Vector3(...SPOTS[skin][at]);
 
