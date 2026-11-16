@@ -6,14 +6,19 @@ import * as THREE from "three";
 import { DEFAULTS, loadPad, mountControls, type Settings } from "@rustybuns/game-controls";
 import { clamp } from "@rustybuns/util";
 import { GEAR } from "./gear.ts";
-import { EYE, EYE_CROUCH, aimed, heldItem, holdPose, newWorld, pickUp, putDown, snapshot, step, turnHeld, walkTo, type World } from "./sim.ts";
+import { gear as model, gearLook } from "@rustybuns/models/gear";
+import { EYE, EYE_CROUCH, GARAGE, type Level, aimed, heldItem, holdPose, newWorld, pickUp, putDown, snapshot, step, turnHeld, walkTo, type World } from "./sim.ts";
+import { DIVE_BAR, aim, barState, master, raise, settle, standHeight } from "./venues/dive-bar.ts";
+import { type BarView, barView } from "./venues/dive-bar-view.ts";
 import { accountChip, canSignIn, finishSignIn, login, party, type PartyMember } from "./eqosys.ts";
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const canvas = $<HTMLCanvasElement>("stage");
 const KEY = "load-in.controls";
 
-let world: World = newWorld();
+const LEVELS: Record<string, Level> = { garage: GARAGE, "dive-bar": DIVE_BAR };
+const levelFrom = (name: string | null) => LEVELS[name ?? ""] ?? GARAGE;
+let world: World = newWorld(levelFrom(new URLSearchParams(location.search).get("level")));
 let phase: "menu" | "play" = "menu";
 let ctl: Settings = DEFAULTS;
 const keys = new Set<string>();
@@ -63,17 +68,20 @@ function room(l: World["level"]) {
 let roomGroup = room(world.level);
 scene.add(roomGroup);
 
-const meshes = new Map<string, THREE.Mesh<THREE.BoxGeometry, THREE.MeshStandardMaterial>>();
+const meshes = new Map<string, THREE.Object3D>(), look = gearLook();
+const highlight = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(1, 1, 1).translate(0, 0.5, 0)), new THREE.LineBasicMaterial({ color: 0x4cc9f0 }));
+scene.add(highlight);
+let bar: BarView | null = null;
 function buildItems() {
   for (const m of meshes.values()) scene.remove(m);
   meshes.clear();
   for (const i of world.items) {
-    const [w, h, d] = GEAR[i.gear].size;
-    const geo = new THREE.BoxGeometry(w, h, d).translate(0, h / 2, 0);
-    const m = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: GEAR[i.gear].color, roughness: 0.7 }));
+    const m = model(i.gear, { look });
     meshes.set(i.key, m);
     scene.add(m);
   }
+  bar?.dispose();
+  bar = world.level === DIVE_BAR ? barView(scene, $("hud"), () => world) : null;
 }
 buildItems();
 
@@ -90,11 +98,16 @@ function draw() {
   camera.position.set(you.x, you.crouch ? EYE_CROUCH : EYE, you.z);
   camera.rotation.set(you.pitch, you.yaw, 0);
   for (const i of world.items) {
+    const tall = i.gear === "stand-tripod" ? standHeight(world, i.key) : 0;
+    // A stand raised or lowered is a new model: its pole grows.
+    if (tall && meshes.get(i.key)!.userData.size[1] !== tall) { scene.remove(meshes.get(i.key)!); const n = model(i.gear, { look, height: tall }); meshes.set(i.key, n); scene.add(n); }
     const m = meshes.get(i.key)!, p = i === held && hp ? hp : i;
     m.position.set(p.x, p.y, p.z);
     m.rotation.y = p.rot;
-    m.material.emissive.setHex(i === at && !held ? 0x2a4a5a : 0);
   }
+  highlight.visible = !!at && !held;
+  if (at && !held) { const [w, h, d] = GEAR[at.gear].size; highlight.position.set(at.x, at.y, at.z); highlight.rotation.y = at.rot; highlight.scale.set(w + 0.04, h + 0.04, d + 0.04); }
+  bar?.update();
   const g = held ? GEAR[held.gear] : null;
   $("hint").textContent = phase !== "play" ? "" : held ? "F put down, Q / E turn" : at ? `F pick up ${GEAR[at.gear].name} (${GEAR[at.gear].kg} kg)` : "";
   $("carry").textContent = phase !== "play" ? "" : g ? `${g.name}, ${g.kg} kg, ${you.speed.toFixed(1)} m/s` : `Hands free, ${you.speed.toFixed(1)} m/s`;
@@ -114,6 +127,7 @@ document.addEventListener("mousemove", (e) => {
 document.addEventListener("keydown", (e) => {
   keys.add(e.code);
   if (phase !== "play" || e.repeat) return;
+  if (!world.held && bar?.key(e.code)) return;
   if (e.code === "KeyF") grab();
   if (e.code === "KeyQ") turnHeld(world, -1);
   if (e.code === "KeyE") turnHeld(world, 1);
@@ -122,10 +136,13 @@ document.addEventListener("keyup", (e) => keys.delete(e.code));
 addEventListener("blur", () => keys.clear());
 
 function grab() {
-  if (world.held) return putDown(world);
+  if (world.held) return place();
   const at = aimed(world);
   return at ? pickUp(world, at.key) : { ok: false as const, why: "nothing in reach" };
 }
+
+/** Put down, then let a top set on a stand find its pole. */
+function place() { const a = putDown(world); settle(world); return a; }
 
 function play() { phase = "play"; menu(); lock(); }
 
@@ -202,19 +219,30 @@ async function boot() {
 declare global { interface Window { loadIn: typeof harness } }
 /** The harness (scripts/probe.ts HANDLES): the level as data, and the moves a test or an agent makes without pointer lock. */
 const harness = {
-  state: () => ({ phase, ...snapshot(world), signedIn: !!login(), party: crew.code ? { code: crew.code, members: crew.members.length, room: crew.room || null, seat: crew.seat >= 0 ? crew.seat : null } : null }),
+  state: () => ({ phase, ...snapshot(world), ...(bar ? { bar: { ...barState(world), heat: bar.heatOn } } : {}), signedIn: !!login(), party: crew.code ? { code: crew.code, members: crew.members.length, room: crew.room || null, seat: crew.seat >= 0 ? crew.seat : null } : null }),
   /** Into the level, without asking for the mouse. */
   start: () => { phase = "play"; menu(); },
   /** Walk to (x, z) at your carrying pace; the seconds it took. */
   walkTo: (x: number, z: number) => walkTo(world, x, z),
   pickUp: (key: string) => pickUp(world, key),
-  putDown: () => putDown(world),
+  putDown: () => place(),
+  /** Dive bar: turn a placed speaker by degrees (positive toward +x) and tilt it (degrees up). */
+  aim: (key: string, turn: number, tilt = 0) => aim(world, key, { turn: (turn * Math.PI) / 180, tilt: (tilt * Math.PI) / 180 }),
+  /** Dive bar: a stand (and the top on it) to `height` metres. */
+  raise: (key: string, height: number) => raise(world, key, height),
+  /** Dive bar: the master fader, dB. */
+  master: (db: number) => master(world, db),
+  heat: (on: boolean) => bar?.setHeat(on),
+  /** Dive bar: open the doors; the final score. */
+  doors: () => bar?.doors() ?? null,
+  /** Load a level by name (garage, dive-bar). */
+  level: (name: string) => { world = newWorld(levelFrom(name)); scene.remove(roomGroup); roomGroup = room(world.level); scene.add(roomGroup); buildItems(); },
   /** Turn what you hold a 15 degree step: -1 left, 1 right. */
   turn: (dir: number) => turnHeld(world, dir),
   /** Look to `yaw` degrees (0 is into the garage) and `pitch` degrees up. */
   look: (yaw: number, pitch = 0) => { world.you.yaw = (yaw * Math.PI) / 180; world.you.pitch = (pitch * Math.PI) / 180; },
   /** The level as it began. */
-  reset: () => { world = newWorld(); scene.remove(roomGroup); roomGroup = room(world.level); scene.add(roomGroup); buildItems(); },
+  reset: () => { world = newWorld(world.level); scene.remove(roomGroup); roomGroup = room(world.level); scene.add(roomGroup); buildItems(); },
 };
 window.loadIn = harness;
 
