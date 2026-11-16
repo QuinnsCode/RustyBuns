@@ -113,7 +113,7 @@ export async function seedOrg(env: Env, org: string, actorId: string | null, n: 
 
 export async function seedRoutes({ req, env, user, org, p, audit }: Ctx): Promise<Response | null> {
   if (p[0] !== "seed" || p[1] || req.method !== "POST") return null;
-  const b = await readBody<{ n?: unknown; seed?: unknown }>(req);
+  const b = await readBody(req);
   const n = Number(b?.n);
   if (!Number.isInteger(n) || n < 1 || n > MAX_SEED) return error(400, `n: 1 to ${MAX_SEED} contacts`);
   const counts = await seedOrg(env, org, user.id, n, Number.isInteger(b?.seed) ? (b!.seed as number) : Date.now() % 100_000);

@@ -177,7 +177,7 @@ export async function keyRoutes({ req, env, user, org, p, audit }: Ctx): Promise
     return json(results);
   }
   if (!p[1] && req.method === "POST") {
-    const b = await readBody<{ name?: unknown }>(req);
+    const b = await readBody(req);
     const name = typeof b?.name === "string" ? b.name.trim().slice(0, 80) : "";
     if (!name) return error(400, "name: what this key is for");
     const secret = "qk_" + b64url(crypto.getRandomValues(new Uint8Array(24)));

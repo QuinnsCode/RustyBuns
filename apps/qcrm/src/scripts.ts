@@ -189,7 +189,7 @@ export async function scriptRoutes(c: Ctx, dispatch: (r: Request) => Promise<Res
   if (p[2] === "run" && !p[3] && req.method === "POST") {
     if (!atLeast(role, "employee")) return error(403, "employees and up run scripts");
     if (!script.enabled) return error(409, "this script is switched off");
-    const b = await readBody<{ input?: unknown }>(req);
+    const b = await readBody(req);
     return json(await run(env, c, script, b?.input, dispatch), 201);
   }
   if (p[2] === "runs" && !p[3] && req.method === "GET") {
