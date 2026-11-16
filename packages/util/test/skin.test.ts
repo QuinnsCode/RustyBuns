@@ -69,15 +69,17 @@ test.skipIf(!chromePath())("the eqosys badge looks the same in Two Fronts, Mythi
     const tab = await openTab(chrome!.cdp, { w: 1024, h: 700 });
     await tab.call("Emulation.setEmulatedMedia", { features: [{ name: "prefers-reduced-motion", value: "reduce" }] });
     await load(chrome!.cdp, tab, `http://127.0.0.1:${server.port}/${query}`, 300);
-    const got = await tab.eval<unknown[]>(`[".rb-report .eq-badge", ".eq-toast .eq-badge", ".eq-chip .eq-badge"].map((sel) => {
+    const got = await tab.eval<unknown[][][]>(`[".rb-report .eq-badge", ".eq-toast .eq-badge", ".eq-chip .eq-badge"].map((sel) => {
       const look = (el, keys) => { const s = getComputedStyle(el); return [el.offsetWidth, el.offsetHeight, ...keys.map((k) => s[k])]; };
-      const b = document.querySelector(sel);
-      return [look(b, ["borderRadius", "boxShadow", "opacity"]), look(b.querySelector("b"), ["backgroundImage", "color", "fontFamily", "fontSize", "fontWeight", "letterSpacing", "textTransform"]), look(b.querySelector("i"), ["filter"])];
+      const b = document.querySelector(sel), rim = getComputedStyle(b, "::after");
+      return [look(b, ["borderRadius", "boxShadow", "opacity"]), look(b.querySelector("b"), ["backgroundImage", "color", "fontFamily", "fontSize", "fontWeight", "letterSpacing", "textTransform"]), look(b.querySelector("i"), ["filter"]), [rim.content, rim.borderTopStyle, rim.borderTopColor]];
     })`);
     await tab.close();
     return got;
   };
   const house = await badges("?house");
+  // The strip's hole has its own dark rim, outside the strip's mask, so it reads as a hole on a bright plate too.
+  expect(house[0][3]).toEqual(['""', "solid", "rgba(11, 11, 14, 0.9)"]);
   expect(house[1]).toEqual(house[0]);
   expect(house[2]).toEqual(house[0]);
   for (const game of ["two-fronts", "mythic-masters", "skate-tech-park"]) expect({ game, badge: await badges(`?game=${game}`) }).toEqual({ game, badge: house });
