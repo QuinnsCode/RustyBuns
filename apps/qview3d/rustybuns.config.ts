@@ -18,6 +18,10 @@ export default defineConfig({
     build: "bun run build",
     // Once a minute: webhook deliveries whose retry is due (src/hooks.ts). Cron triggers are free on every plan.
     crons: ["* * * * *"],
+    // An order makes its print files in the request (src/print-render.ts): a 30 x 40 cm tee front took ~6 s in workerd
+    // locally, so the default 30 s fits only a few new ones. This is a cap, billed per ms used ($0.02 a million past
+    // the plan's 30 million a month: about $0.0001 a tee front).
+    cpuMs: 300_000,
   },
   bindings: {
     // orgs/<org>/{originals/, textures/, snapshots/, designs/, models/, ...}: the files. See src/layout.ts.

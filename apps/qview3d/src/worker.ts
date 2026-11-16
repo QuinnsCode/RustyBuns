@@ -10,6 +10,7 @@
 //   POST /api/orgs/<org>/models               an admin starts a sample model from product photos, or files a scan (samples.ts)
 //   GET  /api/orgs/<org>/models/<id>          an admin asks how it's going
 //   GET  /api/orgs/<org>/designs/<id>/print   an admin gets a design's print files laid out, per zone (print.ts)
+//   GET  /api/orgs/<org>/designs/<id>/print/<zone>.png   an admin fetches a print file the plan made
 //   GET  /api/orgs/<org>/originals/<file>     an admin fetches a shopper's original, the print source
 //   GET  /api/orgs/<org>/billing           an admin: samples paid for and used, packs, receipts (billing.ts)
 //   POST /api/orgs/<org>/checkout          an admin buys a pack of samples
@@ -28,7 +29,7 @@ import { embedGuide } from "./embed.ts";
 import { framePage } from "./frame.ts";
 import { designKey, fileKey, ID, KINDS, servable } from "./layout.ts";
 import { cachedProduct, getOrg, getProduct, type SettingsEnv } from "./settings.ts";
-import { originalRoute, printPlanRoute } from "./print.ts";
+import { originalRoute, printFileRoute, printPlanRoute } from "./print.ts";
 import { billingRoute, checkoutRoute, stripeWebhook } from "./billing.ts";
 import { countSamples, isAdmin, sampleRoute, startSampleRoute } from "./samples.ts";
 import { orgsRoute, runsShop, signedIn } from "./orgs.ts";
@@ -122,10 +123,11 @@ export async function handle(req: Request, env: Env, ctx?: Later): Promise<Respo
   const shops = (await orgsRoute(req, env, cors(origin))) ?? (await sandboxRoute(req, env, cors(origin)));
   if (shops) return shops;
 
-  const m = url.pathname.match(/^\/api\/orgs\/([^/]+)\/(products|uploads|designs|models|originals|billing|checkout|hooks|orders)(?:\/([^/]+))?(\/print|\/test)?$/);
+  const m = url.pathname.match(/^\/api\/orgs\/([^/]+)\/(products|uploads|designs|models|originals|billing|checkout|hooks|orders)(?:\/([^/]+))?(\/print|\/test)?(?:\/([a-z-]+)\.png)?$/);
   if (!m) return fail("not found", 404, origin);
-  const [, org, what, id, suffix] = m;
+  const [, org, what, id, suffix, zone] = m;
   const print = suffix === "/print", test = suffix === "/test";
+  if (zone && !print) return fail("not found", 404, origin);
   if (!org || !ID.test(org)) return fail("unknown org", 404, origin);
   if ((print && what !== "designs") || (test && what !== "hooks")) return fail("not found", 404, origin);
   // The widget's read on every shop page load: from the edge cache when it can be, before anything asks D1.
@@ -142,6 +144,7 @@ export async function handle(req: Request, env: Env, ctx?: Later): Promise<Respo
     if (!admin) return fail("an admin key is needed for print files", 401, origin);
     if (req.method !== "GET" || !id) return fail("not found", 404, origin);
     if (what === "originals") return originalRoute(env, org, id, cors(origin));
+    if (what === "designs" && zone) return printFileRoute(env, org, id, zone, cors(origin));
     if (what === "designs") return printPlanRoute(env, org, id, url.origin, cors(origin));
     return fail("not found", 404, origin);
   }

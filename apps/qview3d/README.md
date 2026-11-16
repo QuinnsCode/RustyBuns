@@ -138,17 +138,21 @@ Both are in [`/v1/embed.md`](src/embed.ts).
 
 ### Print files
 
-Whoever fulfils the order pastes the design id (or its `/r/` link) into **Print files** on `/admin.html`, with the
-org's admin key. It gets one PNG per print zone: the shopper's original at 300 dpi over the zone's real size, on a
+The server makes them: an order (below) hands over finished files, and **Print files** on `/admin.html` (the design
+id or its `/r/` link, with the org's admin key) shows the same ones. One PNG per print zone: the shopper's original at 300 dpi over the zone's real size, on a
 clear background, with the dpi written into the file so print software opens it at its real size. A cap's front
 (12 x 6 cm) is 1417 x 709 px. The sizes are product data: a product's `zones` (`{ "front": { "w": 12, "h": 6 } }`,
 in centimetres) overrides the defaults in `PRINT_CM` (`src/api.ts`). A shop's own model has no default, so its
 product must name them. The picture sits as the widget shows it: centred at u across and v up, `scale` of the
 zone's width, turned, cut at the zone's edge.
 
-`GET /api/orgs/<org>/designs/<id>/print` (admin key) answers the layout as JSON, and
-`GET /api/orgs/<org>/originals/<file>` (admin key) the original, so a script can make them too. The pixels are
-drawn in the page, since a Worker has no canvas.
+`GET /api/orgs/<org>/designs/<id>/print` (admin key) answers the layout as JSON and makes each zone's PNG once, kept
+at `orgs/<org>/prints/<design>/<zone>.png`; each sheet's `png` is its link (admin key). The Worker decodes the
+original with WASM (jsquash's PNG, MozJPEG and libwebp decoders, about 480 KB) and lays it out in plain TS
+([src/print-render.ts](src/print-render.ts)), the same picture the page's canvas draws to a pixel or two. No paid
+service: a tee front is a few seconds of Worker CPU, about $0.0001 past the plan's included 30 million ms a month.
+An original over 12 MP is too big for a Worker's 128 MB, so its sheet says why (`unmade`) and `/admin.html` draws
+it from the original (`GET /api/orgs/<org>/originals/<file>`, admin key) instead.
 
 ### Webhooks, both ways
 
@@ -162,7 +166,7 @@ walks a shop's coding agent through it.
   A non-2xx or no answer in 10 s is tried again at 1 min, 5 min, 30 min, 2 h and 12 h, then marked failed. The page
   shows the last 20 deliveries and has **Send test**.
 - **In.** `POST /api/orgs/<org>/orders` (script key) with `{id, lines: [{design, qty}]}` records the order once, lays
-  out each line's print files (the plan above) and fires `order.ready` with their links. Sent again, it answers the
+  out and makes each line's print files (the plan above), then fires `order.ready` with their links. Sent again, it answers the
   same order and fires nothing. A Shopify or WooCommerce connector calls this later.
 
 Retries need no Queue or Durable Object: a once-a-minute cron trigger reads due deliveries from D1. Cron triggers
