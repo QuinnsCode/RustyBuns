@@ -123,7 +123,7 @@ const list: Gear[] = [
     what: "12-channel mixer",
     size: box(0.4, 0.1, 0.35),
     kg: 4,
-    jacks: { "power-in": 1, "xlr-in": 8, "line-in": 4, "xlr-out": 2, "line-out": 2 },
+    jacks: { "power-in": 1, "xlr-in": 8, "line-in": 4, "xlr-out": 4, "line-out": 2 },
     draw: { idle: 30, loud: 30 },
   },
   {
@@ -146,6 +146,8 @@ const list: Gear[] = [
   { id: "stand-tripod", what: "speaker stand, 1.2 to 2.0 m", size: box(0.9, 1.2, 0.9), kg: 4, jacks: {} },
   { id: "mic-stand", what: "boom mic stand", size: box(0.6, 1.6, 0.6), kg: 3, jacks: {} },
   { id: "guitar", what: "electric guitar", size: box(0.33, 1.0, 0.05), kg: 3.5, jacks: { "line-out": 1 } },
+  // Not road gear: the venue's own back-bar cooler, a load on a wall circuit that is always on.
+  { id: "bar-cooler", what: "back-bar drinks cooler", size: box(0.9, 0.9, 0.6), kg: 70, jacks: { "power-in": 1 }, draw: { idle: 450, loud: 450 } },
 ];
 
 /** Every piece of gear by id. */

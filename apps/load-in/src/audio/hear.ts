@@ -32,7 +32,7 @@ export function hasSwitch(gearId: string): boolean {
 }
 
 /** A venue's rig, when it has one (the dive bar): each top's tilt in radians and the master fader in dB. */
-export type Rig = { tilt?: Readonly<Record<string, number>>; master?: number };
+export type Rig = { tilt?: Readonly<Record<string, number>>; master?: number; lossDb?: Readonly<Record<string, number>> };
 
 export type Heard = {
   key: string;
@@ -91,7 +91,7 @@ export function hear(w: World, on: Switches, fed: Fed = switchedOnIsFed, at: Vec
     const pan = d > 0.01 ? Math.max(-1, Math.min(1, ((pos.x - at.x) * rx + (pos.z - at.z) * rz) / d)) : 0;
     const bright = Math.min(spec.highCut, Math.max(600, 16000 * 10 ** (-loss / 14)));
     if (isFed) playing.push(src);
-    speakers.push({ key: item.key, gear: item.gear, fed: isFed, highs: spec.highCut > 500, db: isFed ? r1(splAt(src, at)) : null, offAxis: r1(loss), brightHz: Math.round(bright), pan: r1(pan) });
+    speakers.push({ key: item.key, gear: item.gear, fed: isFed, highs: spec.highCut > 500, db: isFed ? r1(splAt(src, at) - (rig.lossDb?.[item.key] ?? 0)) : null, offAxis: r1(loss), brightHz: Math.round(bright), pan: r1(pan) });
   }
   const highs = playing.filter((s) => s.speaker.highCut > 500);
   const lows = playing.filter((s) => s.speaker.lowCut <= LOW_HZ && LOW_HZ <= s.speaker.highCut);

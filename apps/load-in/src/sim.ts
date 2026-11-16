@@ -22,7 +22,7 @@ export interface Level {
   /** The room you see: walls stand on these edges, with the door open on the +z side. */
   room: { x0: number; x1: number; z0: number; z1: number; height: number; door: number };
   /** Fixed things you plug into, not carried. */
-  outlets: { key: string; x: number; y: number; z: number }[];
+  outlets: { key: string; x: number; y: number; z: number; circuit?: string; amps?: 15 | 20 }[];
   /** Where people walk: a cable lying across one with no ramp over it is a trip hazard. */
   walkways?: { name: string; x0: number; x1: number; z0: number; z1: number }[];
   start: { x: number; z: number; yaw: number };

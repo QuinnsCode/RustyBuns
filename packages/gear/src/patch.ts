@@ -17,12 +17,13 @@ export type End = readonly [string, string];
 /** A cable run between two jacks. Either end may be the output; `compile` turns it round. */
 export type Cable = { kind: CableKind; lengthM: number; from: End; to: End };
 
-/** A wall outlet on a named circuit; outlets that share a circuit share its breaker. */
-export type Outlet = { id: string; circuit: string; breaker: Circuit; jacks?: number };
+/** A wall outlet on a named circuit; outlets that share a circuit share its breaker. `off` when its breaker has tripped. */
+export type Outlet = { id: string; circuit: string; breaker: Circuit; jacks?: number; off?: boolean };
 
 export type ProblemKind = "no-jack" | "wrong-cable" | "jack-twice" | "direction" | "low-load" | "breaker" | "loop" | "no-power";
 
-export type Problem = { kind: ProblemKind; items: string[]; jack?: string; message: string };
+/** `circuit` is set on a breaker problem: the outlet circuit's name, or the generator's id. */
+export type Problem = { kind: ProblemKind; items: string[]; jack?: string; circuit?: string; message: string };
 
 export type Compiled = { fed: Map<string, boolean>; problems: Problem[] };
 
@@ -129,7 +130,8 @@ export function compile(placed: readonly Placed[], cables: readonly Cable[], opt
   // Mains: where an item's power comes from, an outlet or a generator (through any distros).
   const roots = new Map<string, string | null>();
   const rootOf = (id: string, seen = new Set<string>()): string | null => {
-    if (outlets.has(id) || items.get(id)?.generator) return id;
+    if (outlets.has(id)) return outlets.get(id)?.off ? null : id;
+    if (items.get(id)?.generator) return id;
     if (roots.has(id)) return roots.get(id) ?? null;
     if (seen.has(id)) return null;
     seen.add(id);
@@ -157,6 +159,7 @@ export function compile(placed: readonly Placed[], cables: readonly Cable[], opt
     const f = outlet ? circuitLoad(gearOn, outlet.breaker) : gen ? generatorLoad(gen, gearOn) : null;
     if (f?.trips) {
       say("breaker", on, `${on.join(", ")}: ${Math.round(f.watts)} W on ${outlet ? `circuit ${key}` : key}, rated ${Math.round(f.limit)} W: it trips`);
+      problems[problems.length - 1]!.circuit = key;
     }
   }
 

@@ -13,6 +13,8 @@ import * as cable from "./cables/cables.ts";
 import { cableView } from "./cables/draw.ts";
 import { DIVE_BAR, aim, barState, master, raise, rig, settle, standHeight } from "./venues/dive-bar.ts";
 import { type BarView, barView } from "./venues/dive-bar-view.ts";
+import { BIGGER_BAR } from "./venues/bigger-bar.ts";
+import { type BiggerBarView, biggerBarView } from "./venues/bigger-bar-view.ts";
 import { hasSwitch, hear, type Switches } from "./audio/hear.ts";
 import { soundSystem } from "./audio/play.ts";
 import { accountChip, canSignIn, finishSignIn, login, party, type PartyMember } from "./eqosys.ts";
@@ -21,7 +23,7 @@ const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as 
 const canvas = $<HTMLCanvasElement>("stage");
 const KEY = "load-in.controls";
 
-const LEVELS: Record<string, Level> = { garage: GARAGE, "dive-bar": DIVE_BAR };
+const LEVELS: Record<string, Level> = { garage: GARAGE, "dive-bar": DIVE_BAR, "bigger-bar": BIGGER_BAR };
 const levelFrom = (name: string | null) => LEVELS[name ?? ""] ?? GARAGE;
 let world: World = newWorld(levelFrom(new URLSearchParams(location.search).get("level")));
 let cables = cable.newCables(world);
@@ -82,6 +84,7 @@ const meshes = new Map<string, THREE.Object3D>(), look = gearLook();
 const highlight = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(1, 1, 1).translate(0, 0.5, 0)), new THREE.LineBasicMaterial({ color: 0x4cc9f0 }));
 scene.add(highlight);
 let bar: BarView | null = null;
+let big: BiggerBarView | null = null;
 /** A piece's model (a stand at `height`), or a plain box at its catalog size if @rustybuns/models has none. */
 function modelOf(id: string, height?: number): THREE.Object3D {
   if (cable.hasModel(id)) return model(id, { look, height });
@@ -99,6 +102,8 @@ function buildItems() {
   }
   bar?.dispose();
   bar = world.level === DIVE_BAR ? barView(scene, $("hud"), () => world) : null;
+  big?.dispose();
+  big = world.level === BIGGER_BAR ? biggerBarView(scene, $("hud"), () => world, () => cables) : null;
 }
 buildItems();
 const ropes = cableView(scene);
@@ -138,7 +143,7 @@ function draw() {
   bar?.update();
   ropes.update(cables);
   const g = held ? gear(held.gear) : null;
-  $("hint").textContent = phase !== "play" ? "" : performance.now() < flash.until ? flash.text : hint(at, jack);
+  $("hint").textContent = phase !== "play" ? "" : performance.now() < flash.until ? flash.text : (big?.hint() ?? hint(at, jack));
   $("carry").textContent = phase !== "play" ? "" : g ? `${g.what}, ${g.kg} kg, ${you.speed.toFixed(1)} m/s`
     : end ? `${end.run.lengthM} m ${end.run.kind} cable, ${you.speed.toFixed(1)} m/s` : `Hands free, ${you.speed.toFixed(1)} m/s`;
   renderer.render(scene, camera);
@@ -170,6 +175,7 @@ document.addEventListener("keydown", (e) => {
   keys.add(e.code);
   if (phase !== "play" || e.repeat) return;
   if (!world.held && !cable.inHand(cables) && bar?.key(e.code)) return;
+  if (big?.key(e.code)) return;
   if (e.code === "KeyF") grab();
   if (e.code === "KeyQ") turnHeld(world, -1);
   if (e.code === "KeyE") turnHeld(world, 1);
@@ -204,7 +210,7 @@ function flip() {
 
 /** What you hear now: in the dive bar, through its tilts and master fader. */
 /** What you hear: a speaker plays when it's switched on and, once a cable goes into it, when the patch feeds it. */
-const heard = () => hear(world, switchedOn, cable.fedBy(world, cables), undefined, bar ? rig(world) : undefined);
+const heard = () => hear(world, switchedOn, big ? big.fed() : cable.fedBy(world, cables), undefined, bar ? rig(world) : big?.rig());
 
 function play() { phase = "play"; menu(); lock(); }
 
@@ -237,6 +243,7 @@ function frame(now: number) {
     });
     cable.stepCables(world, cables, dt);
   }
+  big?.tick();
   draw();
   sound.update(heard());
   requestAnimationFrame(frame);
@@ -283,7 +290,7 @@ async function boot() {
 declare global { interface Window { loadIn: typeof harness } }
 /** The harness (scripts/probe.ts HANDLES): the level as data, and the moves a test or an agent makes without pointer lock. */
 const harness = {
-  state: () => ({ phase, ...snapshot(world), ...cable.cableState(world, cables), sound: { up: sound.up, on: [...switchedOn], ...heard() }, ...(bar ? { bar: { ...barState(world), heat: bar.heatOn } } : {}), signedIn: !!login(), party: crew.code ? { code: crew.code, members: crew.members.length, room: crew.room || null, seat: crew.seat >= 0 ? crew.seat : null } : null }),
+  state: () => ({ phase, ...snapshot(world), ...cable.cableState(world, cables), sound: { up: sound.up, on: [...switchedOn], ...heard() }, ...(big ? { biggerBar: big.state() } : {}), ...(bar ? { bar: { ...barState(world), heat: bar.heatOn } } : {}), signedIn: !!login(), party: crew.code ? { code: crew.code, members: crew.members.length, room: crew.room || null, seat: crew.seat >= 0 ? crew.seat : null } : null }),
   /** Into the level, without asking for the mouse. */
   start: () => { phase = "play"; menu(); },
   /** Walk to (x, z) at your carrying pace, cables dragging; the seconds it took. */
@@ -324,6 +331,8 @@ const harness = {
   /** Bring the speakers up or down (the card, or M). Browsers start sound only after a click, so a probe reads state instead. */
   speakers: (up: boolean) => sound.setUp(up),
   /** The level as it began. */
+  /** In the bigger bar, at the panel: reset a tripped breaker (or all of them). */
+  resetBreaker: (circuit?: string) => big?.reset(circuit) ?? { ok: false, why: "no breaker panel here" },
   reset: () => { switchedOn.clear(); load(world.level); },
 };
 window.loadIn = harness;
