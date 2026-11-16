@@ -14,7 +14,8 @@
 // head pickers, each side's in its own place, both kept).
 
 import { parse } from "@babel/parser";
-import { apply, text, type Conflict, type Doc, type Op, type Resolve } from "./lines.ts";
+import { apply, merge, text, type Conflict, type Doc, type Op, type Resolve } from "./lines.ts";
+import type { Rule } from "./policy.ts";
 
 export interface Problem { key: string; message: string; line: number }
 
@@ -67,6 +68,20 @@ export function lintMerge(path: string, main: Doc, branch: Doc, m: { ops: Op[]; 
   return newProblems(path, text(merged), text(main), text(branch))
     .filter((p) => resolve[`lint:${p.key}`] !== "branch")
     .map((p) => ({ line: `lint:${p.key}`, base: "", main: null, branch: null, lint: `${p.message} (line ${p.line})` }));
+}
+
+/**
+ * `merge`, then `lintMerge` when every line settled. Where what Mervin settled on his own won't build (#4772: a loop
+ * main made one line, blended with the branch's edit inside it), the stretches he blended come back as cards, with
+ * every pick, instead of a lint card nothing but the branch's broken line gets past.
+ */
+export function lintedMerge(base: Doc, branch: Doc, main: Doc, resolve: Resolve = {}, deleter = "anon", path = "", writer = deleter, rule?: Rule) {
+  const m = merge(base, branch, main, resolve, deleter, path, writer, rule);
+  if (m.conflicts.length || !path) return m;
+  const lint = lintMerge(path, main, branch, m, resolve);
+  if (!lint.length) return m;
+  const plain = m.solved ? merge(base, branch, main, resolve, deleter, path, writer, rule, false) : null;
+  return { ...m, conflicts: plain?.conflicts.length && !plain.conflicts.some((c) => c.lint) ? plain.conflicts : lint };
 }
 
 // An `id` attribute (not `data-id`), its value quoted either way or bare.

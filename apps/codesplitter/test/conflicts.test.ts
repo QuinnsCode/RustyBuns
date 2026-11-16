@@ -4,7 +4,8 @@ import { arr, int, obj, str } from "@rustybuns/util/guard";
 import { tmpdir } from "node:os";
 import { syntaxCheck } from "../src/deps.ts";
 import { join } from "node:path";
-import { apply, empty, explain, fromText, generatedRegions, merge, mergeWords, text, type Doc, type Resolve } from "../src/lines.ts";
+import { apply, empty, explain, fromText, generatedRegions, merge, mergeWords, PICKS, text, type Doc, type Resolve } from "../src/lines.ts";
+import { lintedMerge } from "../src/lint.ts";
 import { diffToOps } from "../src/sync.ts";
 import { markers, settled } from "../src/conflict-agent.ts";
 import { fill } from "../src/mergiraf.ts";
@@ -89,6 +90,39 @@ describe("settling a conflict", () => {
     expect(merge(s.base, s.branch, s.main, { file: "both" }, "bot", "bun.lock").conflicts).toMatchObject([{ whole: true }]);
     expect(merge(s.base, s.branch, s.main, { file: { text: "x" } }, "bot", "bun.lock").conflicts).toMatchObject([{ whole: true }]);
     expect(text(settle(s, { file: "branch" }, "bun.lock"))).toBe("lock 3");
+  });
+});
+
+describe("cards that had no way out (#4772)", () => {
+  test("a block the branch moved and edited where main edited it too: the card has both lines, and each pick lands in the moved block", () => {
+    const fn = (arg: string) => `function run() {\n  const x = compute(${arg});\n  return x;\n}`, helper = "function helper() {\n  return 1;\n}";
+    const s = sides(`${fn("1")}\n\n${helper}`, `${fn(`1, "fast"`)}\n\n${helper}`, `${helper}\n\n${fn("2")}`);
+    expect(conflicts(s)).toEqual([{ line: "L2", base: "  const x = compute(1);", main: "  const x = compute(1, \"fast\");", branch: "  const x = compute(2);" }]);
+    expect(text(settle(s, { L2: "main" }))).toBe(`${helper}\n\n${fn(`1, "fast"`)}`);
+    expect(text(settle(s, { L2: "branch" }))).toBe(`${helper}\n\n${fn("2")}`);
+  });
+
+  test("a blend that won't build comes back as the stretch's card, and main's pick lands", () => {
+    const fn = (body: string) => `export function total(items) {\n  let sum = 0;\n${body}\n  return sum;\n}`;
+    const loop = (add: string) => `  for (const it of items) {\n    sum += ${add};\n  }`, one = "  sum = items.reduce((s, it) => s + it.price, 0);";
+    const s = sides(fn(loop("it.price")), fn(one), fn(loop("it.price * it.qty")));
+    const linted = (resolve: Resolve) => lintedMerge(s.base, s.branch, s.main, resolve, "bot", "a.ts", "ryan");
+    const [card] = linted({}).conflicts;
+    expect(card).toMatchObject({ line: "L3", main: one, branch: loop("it.price * it.qty") });
+    expect(explain(card!).choices).toEqual([...PICKS, "text"]);
+    const m = linted({ L3: "main" }), main = structuredClone(s.main);
+    expect(m.conflicts).toEqual([]);
+    apply(main, m.ops, m.by, 0, main.rev);
+    expect(text(main)).toBe(fn(one));
+  });
+
+  test("words both added at one spot of a sentence are a card, not a sentence neither wrote; under merge=union both lines stay", () => {
+    expect(conflicts(sides(`say("hello")`, `say("hello world")`, `say("hello there")`))).toHaveLength(1);
+    const log = sides("# Log\n\nThe app saves files.", "# Log\n\nThe app saves files to disk now.", "# Log\n\nThe app now saves files quickly.");
+    expect(conflicts(log, "CHANGELOG.md")).toHaveLength(1);
+    const main = structuredClone(log.main), m = merge(log.base, log.branch, main, {}, "bot", "CHANGELOG.md", "ryan", "union");
+    apply(main, m.ops, m.by, 0, main.rev);
+    expect(text(main)).toBe("# Log\n\nThe app saves files to disk now.\nThe app now saves files quickly.");
   });
 });
 
@@ -425,6 +459,17 @@ describe("over the API", () => {
     expect((await landed.json() as any).mergiraf).toEqual(["a.ts"]);
     expect(await file()).toBe("const a = 2;\nx(2, 3);");
     expect(runs).toBe(2);
+  });
+
+  test("Mergiraf's clean answer that doesn't fit the cards (two touching) still lands, put on the branch (#4772)", async () => {
+    const { call, post, file } = await app();
+    await post("ana", "/api/repos/ana/r/do/ops?path=a.ts&branch=b1", { ops: [{ kind: "set", line: "L1", base: 1, text: "const a = 3;" }] });
+    await post("ana", "/api/repos/ana/r/do/ops?path=a.ts", { ops: [{ kind: "set", line: "L1", base: 1, text: "const a = 2;" }] });
+    call.env.MERGIRAF = (async (_cmd, cwd) => { writeFileSync(join(cwd, "MERGED"), "const a = 2;\nx(2, 3);\n"); return { code: 0, out: "" }; }) as Exec;
+    const landed = await post("ana", "/api/repos/ana/r/branches/b1/merge", {});
+    expect(landed.status).toBe(200);
+    expect((await landed.json() as any).mergiraf).toEqual(["a.ts"]);
+    expect(await file()).toBe("const a = 2;\nx(2, 3);");
   });
 
   test("suggest_resolution: a coding agent writes the settled lines, and nothing lands until a merge takes them", async () => {

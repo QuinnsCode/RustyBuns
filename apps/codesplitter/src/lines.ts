@@ -263,9 +263,9 @@ export function kindOf(path: string): Kind {
  * the batch must land on `main` exactly as passed. Deleted lines leave no
  * blame, so their ops are credited to `deleter`.
  */
-export function merge(base: Doc, branch: Doc, main: Doc, given: Resolve = {}, deleter = "anon", path = "", writer = deleter, rule: Rule = kindOf(path)): { ops: Op[]; by: string[]; conflicts: Conflict[]; checks?: Conflict[]; regenerate?: string[]; solved?: number } {
+export function merge(base: Doc, branch: Doc, main: Doc, given: Resolve = {}, deleter = "anon", path = "", writer = deleter, rule: Rule = kindOf(path), blends = true): { ops: Op[]; by: string[]; conflicts: Conflict[]; checks?: Conflict[]; regenerate?: string[]; solved?: number } {
   const g = generated(base, branch, main);
-  let m = mergeLines(base, g.branch, main, given, deleter, path, writer, rule);
+  let m = mergeLines(base, g.branch, main, given, deleter, path, writer, rule, blends);
   // A package.json the lines merge asks on: merge it by key (src/manifest.ts), unless the writer already answered a card.
   if (m.conflicts.length && !Object.keys(given).length && isManifest(path)) {
     const keyed = mergeManifest(text(base), text(main), text(g.branch));
@@ -319,17 +319,17 @@ function generated(base: Doc, branch: Doc, main: Doc): { branch: Doc; regenerate
   return { branch: lines === branch.lines ? branch : { ...branch, lines }, regenerate };
 }
 
-function mergeLines(base: Doc, branch: Doc, main: Doc, given: Resolve, deleter: string, path: string, writer: string, rule: Rule): { ops: Op[]; by: string[]; conflicts: Conflict[]; checks?: Conflict[]; solved?: number } {
+function mergeLines(base: Doc, branch: Doc, main: Doc, given: Resolve, deleter: string, path: string, writer: string, rule: Rule, blends = true): { ops: Op[]; by: string[]; conflicts: Conflict[]; checks?: Conflict[]; solved?: number } {
   if (rule === "union") {
     // git's merge=union: what both rewrote keeps both, main's first; a line both added lands once. Markers and broken data still refuse.
-    const first = mergeLines(base, branch, main, given, deleter, path, writer, "prose");
+    const first = mergeLines(base, branch, main, given, deleter, path, writer, "prose", blends);
     const keep = (c: Conflict): Pick => {
       if (c.doubled) return "main";
       const m = c.main?.split("\n") ?? [], b = c.branch?.split("\n") ?? [], fresh = b.filter((l) => !m.includes(l));
       return fresh.length === b.length ? "both" : { text: [...m, ...fresh].join("\n") };
     };
     const both: Resolve = Object.fromEntries(first.conflicts.filter((c) => !sideOnly(c.line)).map((c) => [c.line, keep(c)]));
-    return mergeLines(base, branch, main, { ...both, ...given }, deleter, path, writer, "prose");
+    return mergeLines(base, branch, main, { ...both, ...given }, deleter, path, writer, "prose", blends);
   }
   // What only takes a side keeps only a side.
   const resolve: Resolve = Object.fromEntries(Object.entries(given).filter(([id, v]) => !sideOnly(id) || v === "main" || v === "branch"));
@@ -473,7 +473,7 @@ function mergeLines(base: Doc, branch: Doc, main: Doc, given: Resolve, deleter: 
       return;
     }
     // Both sides set one thing here (#2737): blending keeps both, and the second silently wins.
-    const bl = base.lines.filter((_, i) => covers(g, 2 * i + 1)), both = pick || twiceSet.some((t) => g.lo <= t.lo && t.hi <= g.hi) ? null : blend(bl, ms, bs, kind !== "prose", loose) ?? rejoin(bl, ms, bs, kind !== "prose", loose);
+    const bl = base.lines.filter((_, i) => covers(g, 2 * i + 1)), both = pick || !blends || twiceSet.some((t) => g.lo <= t.lo && t.hi <= g.hi) ? null : blend(bl, ms, bs, kind !== "prose", loose) ?? rejoin(bl, ms, bs, kind !== "prose", loose);
     // A stretch both sides changed, blended with nobody picking: Mervin settled it on his own.
     if (both) {
       solved++;
@@ -502,6 +502,18 @@ function mergeLines(base: Doc, branch: Doc, main: Doc, given: Resolve, deleter: 
       const from = moveOf.get(l.id), m = from && now.get(from);
       // The branch moved a line: it carries main's edit, and a line both moved stays where main put it.
       // And a line main deleted that the branch only moved (a move keeps its text, bar indentation) stays deleted.
+      const bt = from ? was.get(from)!.text : "", mm = m || undefined;
+      // A line the branch moved and edited where main changed or deleted it (#4772): one line merge, else a card where it moved to.
+      if (from && l.text.trim() !== bt.trim() && (!mm || mm.text !== bt)) {
+        shift = null;
+        const words = mm && blends ? blendLine(bt, mm.text, l.text, loose(bt)) : null, pick = words === null ? resolve[from] : "branch";
+        if (!pick) { conflicts.push({ line: from, base: bt, main: mm?.text ?? null, branch: l.text }); continue; }
+        const own = written(pick), mine = mm ? [{ text: mm.text, by: mm.by }] : [], theirs = [{ text: words ?? l.text, by: l.by }];
+        const lands = own ? own.map((t) => ({ text: t, by: writer })) : pick === "main" ? mine : pick === "branch" ? theirs : pick === "both" ? [...mine, ...theirs] : [...theirs, ...mine];
+        if (words !== null) solved++;
+        for (const t of lands) insert(t.text, t.by);
+        continue;
+      }
       if (from && !m) continue;
       if (from) shift = null;
       if (m && m.text !== was.get(from)!.text) { insert(blendLine(was.get(from)!.text, m.text, l.text, loose(m.text)) ?? m.text, m.by); continue; }
@@ -527,10 +539,10 @@ function mergeLines(base: Doc, branch: Doc, main: Doc, given: Resolve, deleter: 
     shift = m && indent(m.text) !== indent(b.text) && indent(l.text) === indent(b.text) ? { from: indent(b.text), to: indent(m.text) } : null;
     if (l.text !== b.text && m?.text !== l.text) {
       const pick = m?.text === b.text ? "branch" : resolve[l.id];
-      const words = m && !pick ? blendLine(b.text, m.text, l.text, loose(b.text)) : null;
+      const words = m && !pick && blends ? blendLine(b.text, m.text, l.text, loose(b.text)) : null;
       if (words !== null) { solved++; push({ kind: "set", line: m!.id, base: m!.rev, text: words }, l.by); }
       // Two `//` comments in code that each reworded the same spot: both stand, main's first, nothing to decide.
-      else if (!pick && kind === "code" && m && /^\s*\/\//.test(m.text) && /^\s*\/\//.test(l.text)) { solved++; beside(m.id, l); continue; }
+      else if (!pick && blends && kind === "code" && m && /^\s*\/\//.test(m.text) && /^\s*\/\//.test(l.text)) { solved++; beside(m.id, l); continue; }
       else if (!pick) conflicts.push({ line: l.id, base: b.text, main: m?.text ?? null, branch: l.text });
       else if (pick !== "main") {
         const own = written(pick);
@@ -883,6 +895,17 @@ function moves(base: Doc, side: Doc, was: Map<string, Line>) {
       out.set(b.id, s); into.add(s.id); todo.push([b.id, s]);
     }
   }
+  // A line the side edited inside a block it moved (#4772): the base lines between two moved ones, and as many new
+  // lines between where those landed, moved with them, edit and all.
+  const moved = [...out].sort((x, y) => bi.get(x[0])! - bi.get(y[0])!);
+  for (const [k, [id, to]] of moved.entries()) {
+    const next = moved[k + 1];
+    if (!next) break;
+    const b0 = bi.get(id)!, b1 = bi.get(next[0])!, s0 = si.get(to.id)!, s1 = si.get(next[1].id)!;
+    const bs = base.lines.slice(b0 + 1, b1), ss = side.lines.slice(s0 + 1, s1);
+    if (!bs.length || bs.length !== ss.length || bs.some((b) => has.has(b.id) || out.has(b.id)) || ss.some((s) => was.has(s.id) || into.has(s.id))) continue;
+    bs.forEach((b, i) => { out.set(b.id, ss[i]!); into.add(ss[i]!.id); });
+  }
   return out;
 }
 
@@ -1172,13 +1195,16 @@ export function mergeWords(base: string, a: string, b: string, both = false, loo
     if (twice(x, y) || twice(y, x)) return null;
   }
   const all = [...sa, ...sb].sort((p, q) => p.from - q.from || p.to - q.to);
-  const inOrder = both && sorted(base), first = (ws: string[]) => ws.join("").match(/[\w$]+/)?.[0]?.toLowerCase() ?? "";
+  // Two inserts at one spot are items of a list, not words of a sentence ("hello world" and "hello there", #4772): one
+  // opens on a separator (`, x`, `&& y`, `${…}`) or closes on one, or in code the spot ends a run of three bare words.
+  const listed = (at: number, x: string[], y: string[]) => [x, y].some((w) => SEP_OPEN.test(w.join("")) || SEP_CLOSE.test(w.join(""))) || (!loose && spaced(o.slice(0, at)));
+  const inOrder = both && sorted(base), first =(ws: string[]) => ws.join("").match(/[\w$]+/)?.[0]?.toLowerCase() ?? "";
   let out = "", i = 0, last: (typeof all)[number] | null = null;
   for (const s of all) {
     if (last && s.from <= last.to) {
       if (s.from === last.from && s.to === last.to && s.add.join("") === last.add.join("")) continue;
       // Two inserts at one spot (the sort is stable, so a's came first): b's goes after a's, or before it in a sorted list.
-      if (both && s.from === s.to && last.from === last.to && s.from === last.from && !clash(keysOf(s.add), keysOf(last.add)) && (loose || !regroups(last.add, s.add))) {
+      if (both && s.from === s.to && last.from === last.to && s.from === last.from && listed(s.from, last.add, s.add) && !clash(keysOf(s.add), keysOf(last.add)) && (loose || !regroups(last.add, s.add))) {
         const add = s.add.join("");
         if (inOrder && first(s.add) < first(last.add)) out = out.slice(0, out.length - last.add.join("").length) + add + last.add.join("");
         else out += add;
@@ -1191,6 +1217,14 @@ export function mergeWords(base: string, a: string, b: string, both = false, loo
     last = s;
   }
   return out + o.slice(i).join("");
+}
+
+const SEP_OPEN = /^\s*(,|;|\|\|?|&&|\?\?|\$\{)/, SEP_CLOSE = /(,|;|\|\|?|&&|\?\?)\s*$/;
+/** Do `ws` end on three or more bare words a space apart (`clock mem pulls`)? */
+function spaced(ws: string[]) {
+  let n = 0, i = ws.length - 1;
+  while (i >= 0 && /^\w+$/.test(ws[i]!)) { n++; i--; if (ws[i] !== " ") break; i--; }
+  return n >= 3;
 }
 
 /**
