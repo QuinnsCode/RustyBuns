@@ -60,7 +60,7 @@ import { describeBlast, load, rank } from "./blast.ts";
 import { debtLines, hold, hurtLines, insight, keep, kept, packagesChanged, report, rows, slowChecks, triage, waitLines } from "./ester.ts";
 import { fromJunit, hot, recall, recallLines, remember, resolve as resolveTest, withJunit } from "./ester-memory.ts";
 import { heal, layout } from "../layout.ts";
-import { check } from "@rustybuns/util/guard";
+import { arr, check, int, nul, obj, opt, raw, str, type Of } from "@rustybuns/util/guard";
 import { PIPELINE_FILE, Pipeline } from "../src/pipeline.ts";
 import type { Lane, LaneStep, Line } from "../src/mervin-replay.ts";
 import { sandbox, shadow, testRuns, testTree, writeTree } from "./shadow.ts";
@@ -89,11 +89,14 @@ export function regenerate(root: string) {
 
 export const TIERS: Tier[] = ["certain", "agree", "mervin", "differ", "card"];
 
-export interface BoardPr {
-  number: number; title?: string; body?: string; headRefOid: string; headRefName?: string; baseRefName?: string;
-  autoMergeRequest?: object | null;
-  statusCheckRollup?: { name?: string; conclusion?: string | null; status?: string; startedAt?: string; completedAt?: string }[];
-}
+/** One open PR as `gh pr list --json` writes it: Mervin's board, live board and merge train all read it through this. */
+export const BoardPr = obj({
+  number: int(1, 1e9), title: opt(str(1000)), body: opt(str(70_000)), headRefOid: str(64), headRefName: opt(str(1000)), baseRefName: opt(str(1000)),
+  autoMergeRequest: opt(raw),
+  statusCheckRollup: opt(arr(obj({ name: opt(str(1000)), conclusion: opt(nul(str(100))), status: opt(str(100)), startedAt: opt(str(100)), completedAt: opt(str(100)) }), 1000)),
+});
+export type BoardPr = Of<typeof BoardPr>;
+export const BoardPrs = arr(BoardPr, 1000);
 /** The PR's own CI: red on its own means a failure in the merged tree may be the PR's, not the merge's. */
 /** One CI check on a PR: how long it ran (0 when GitHub gave no times) and whether it has finished. */
 export interface CheckTime { name: string; secs: number; done: boolean }
@@ -481,8 +484,8 @@ if (import.meta.main) {
 
   const given = args.filter((a, i) => /^\d+$/.test(a) && !args[i - 1]?.startsWith("--")).map(Number);
   const from = arg("from");
-  const prs: BoardPr[] = JSON.parse(from ? readFileSync(from, "utf8")
-    : Bun.spawnSync(["gh", "pr", "list", "--state", "open", "--limit", "200", "--json", "number,title,body,headRefOid,headRefName,baseRefName,statusCheckRollup"], { cwd: top }).stdout.toString() || "[]");
+  const prs = BoardPrs(JSON.parse(from ? readFileSync(from, "utf8")
+    : Bun.spawnSync(["gh", "pr", "list", "--state", "open", "--limit", "200", "--json", "number,title,body,headRefOid,headRefName,baseRefName,statusCheckRollup"], { cwd: top }).stdout.toString() || "[]"));
   const main = gitIn(top)("rev-parse", arg("main") ?? "origin/main")!.trim();
   const out = arg("out") ? resolve(arg("out")!) : mkdtempSync(join(tmpdir(), "mervin-board-"));
   if (arg("out")) { if (existsSync(out)) throw new Error(`${out} exists: pick a new folder`); mkdirSync(out, { recursive: true }); }
