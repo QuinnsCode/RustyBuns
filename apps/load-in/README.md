@@ -48,7 +48,7 @@ A gamepad works too (left stick walk, right stick look, A grab, LB / RB turn, B 
 | `src/audio/play.ts` | Web Audio: our own synthesised house loop, per-speaker gain, top end and pan, one sub bus, the speakers-down card and a -1 dBFS limiter |
 | `src/eqosys.ts` | the eqosys sign-in and the Qollab party client, with this game's id |
 | `test/garage.test.ts` | the cab carried in from the door, set by the amp, the head stacked on it |
-| `test/tour.test.ts` | the dive bar on rented gear, booked up to the bigger bar, a van rented, a miss booked back, a sub and the van bought, the rent dropping; a bad save is a new tour |
+| `test/tour.test.ts` | the dive bar on rented gear, booked up to the bigger bar, a van rented, a miss booked back, a distro and the van bought, the rent dropping; a bad save is a new tour |
 | `test/bigger-bar.test.ts` | cable the rig, trip the bar's breaker, reset it at the panel, move the plug, every speaker fed and the show passing; four boxes on one rack channel hold, five shut it down |
 | `test/dial.test.ts` | the clock read on each stop, and the same dive bar load-in on Cozy, Crew and Sim: the same layout, a different time and show |
 | `test/dive-bar.test.ts` | both tops set on their stands: pointed at the wall they score low, aimed at the crowd they pass |

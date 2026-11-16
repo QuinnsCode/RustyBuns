@@ -1,5 +1,5 @@
 // The tour from the first booking: the dive bar on rented gear, a good night books the bigger bar, whose kit outweighs
-// the hatchback; a poor night there books you back; pay buys the stands and, saved up, the van, and the rent drops.
+// the hatchback; a poor night there books you back; pay buys a distro and, saved up, the van, and the rent drops.
 import { expect, test } from "bun:test";
 import { BIGGER_BAR } from "../src/venues/bigger-bar.ts";
 import { DIVE_BAR } from "../src/venues/dive-bar.ts";
@@ -31,17 +31,17 @@ test("a tour: rent what you lack, a pass books the next rung, a miss books you b
 
   expect(buy(t, "van")).toMatchObject({ ok: false, why: "that's $1200, you have $156" });
   expect(buy(t, "bar-cooler")).toMatchObject({ ok: false, why: "bar-cooler isn't for sale" });
-  const sub = buy(t, "sub-18");
-  expect(sub.ok).toBe(true);
-  t = sub.tour;
-  expect(t.owned["sub-18"]).toBe(1);
-  expect(ready(t, BIGGER_BAR).rent).toBe(269 - 25);
+  const distro = buy(t, "distro-box");
+  expect(distro.ok).toBe(true);
+  t = distro.tour;
+  expect(t).toMatchObject({ cash: 76, owned: { "distro-box": 1 } });
+  expect(ready(t, BIGGER_BAR).rent).toBe(269 - 4);
 
   // Saved up for the van: the kit fits, no truck rent, and the hatchback can't be bought back as an upgrade.
   t = { ...t, cash: 1300 };
   t = buy(t, "van").tour;
   expect(t).toMatchObject({ truck: "van", cash: 100 });
-  expect(ready(t, BIGGER_BAR)).toMatchObject({ fits: true, rentTruck: null, rent: 124 });
+  expect(ready(t, BIGGER_BAR)).toMatchObject({ fits: true, rentTruck: null, rent: 145 });
   expect(buy(t, "hatchback")).toMatchObject({ ok: false });
 
   // A pass at the bigger bar books the community event; the top rung books itself.
