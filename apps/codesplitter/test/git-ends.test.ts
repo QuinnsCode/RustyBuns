@@ -8,14 +8,13 @@ import { local as boot } from "../src/local.ts";
 setDefaultTimeout(30_000);
 const root = mkdtempSync(join(tmpdir(), "codesplitter-ends-"));
 writeFileSync(join(root, "gitconfig"), "[user]\n\tname = Ana Real\n\temail = ana@example.com\n[init]\n\tdefaultBranch = main\n");
-process.env.GIT_CONFIG_GLOBAL = join(root, "gitconfig");
 const call = await boot();
 afterAll(() => { call.close(); rmSync(root, { recursive: true, force: true }); });
 
 const post = (user: string, url: string, body: unknown) => call(user, url, { method: "POST", body: JSON.stringify(body) });
-// Not spawnSync: git talks to this same process's server.
+// Not spawnSync: git talks to this same process's server. Its own git config: CI runs test files side by side, sharing process.env.
 const sh = async (cmd: string, cwd: string) => {
-  const p = Bun.spawn(["sh", "-c", cmd], { cwd, stdout: "pipe", stderr: "pipe" });
+  const p = Bun.spawn(["sh", "-c", cmd], { cwd, stdout: "pipe", stderr: "pipe", env: { ...process.env, GIT_CONFIG_GLOBAL: join(root, "gitconfig") } });
   const [code, out, err] = await Promise.all([p.exited, new Response(p.stdout).arrayBuffer().then((b) => new TextDecoder("utf-8", { ignoreBOM: true }).decode(b)), new Response(p.stderr).text()]);
   return { code, out: out + err };
 };
