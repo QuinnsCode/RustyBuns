@@ -679,3 +679,24 @@ test("the day's hosted-run limit counts starts, not stops or notes", async () =>
   expect(over.status).toBe(429);
   expect(await over.json()).toMatchObject({ error: expect.stringContaining("limited to 1 per day") });
 });
+
+test("a batch the merge refuses waits, held, in the merge's own words", async () => {
+  const { call, post } = await app();
+  await call("ryan", "/api/repos/ryan/lab/checks/settings", { method: "PUT", body: JSON.stringify({ required: ["ci/jenkins"] }) });
+  await post("ryan", "/api/repos/ryan/lab/agents", { path: "a.js", harness: "claude", task: "shout" });
+  let runs: any[] = [];
+  await until(async () => !!(runs = await runsOf(call))[0].pending?.why);
+  expect(runs[0].pending).toMatchObject({ until: null, why: expect.stringContaining("required checks haven't passed") });
+});
+
+test("the owner's @agent lands a batch still on its clock and starts again, rather than making them wait it out", async () => {
+  const { call, post } = await app();
+  call.env.AGENT_REVIEW_MS = "60000";
+  const run = await (await post("ryan", "/api/repos/ryan/lab/agents", { path: "a.js", harness: "claude", task: "shout" })).json() as any;
+  await until(async () => !!(await runsOf(call))[0].pending?.until);
+  const again = await (await post("ryan", `/api/repos/ryan/lab/agents/${run.id}/thread`, { text: "@agent once more" })).json() as any;
+  expect(again.started).toMatchObject({ agent: "agent-claude", status: "running" });
+  const first = (await runsOf(call)).find((r) => r.id === run.id);
+  expect(first).toMatchObject({ landed: { by: "auto" } });
+  expect(first.pending).toBeUndefined();
+});

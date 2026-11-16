@@ -52,3 +52,18 @@ describe("a 401 from the API", () => {
     expect(meta.status).toBe(200);
   });
 });
+
+test("a route that isn't one answers 404, whatever the method, and changes nothing", async () => {
+  const call = await local();
+  afterAll(() => call.close());
+  await call("ryan", "/api/login", { method: "POST", body: JSON.stringify({ name: "ryan" }) });
+  await call("ryan", "/api/me", { method: "PUT", body: JSON.stringify({ bio: "hi" }) });
+  for (const [method, path] of [["GET", "/api/me/billing"], ["POST", "/api/me/billing"], ["DELETE", "/api/me/page"], ["DELETE", "/api/me/x/y"],
+    ["DELETE", "/api/search"], ["DELETE", "/api/levels"], ["POST", "/api/levels"], ["DELETE", "/api/agents"]] as const) {
+    const r = await call("ryan", path, { method });
+    expect([method, path, r.status]).toEqual([method, path, 404]);
+  }
+  // The real ones still answer.
+  expect(await (await call("ryan", "/api/me")).json()).toMatchObject({ name: "ryan", bio: "hi" });
+  for (const path of ["/api/search?q=x", "/api/levels", "/api/agents"]) expect((await call("ryan", path)).status).toBe(200);
+});

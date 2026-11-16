@@ -59,7 +59,9 @@ export const SNAP_EVERY = 2000;
 export const KEEP_SNAPS = 10;
 
 /** Asked for history from before `trimmed`. */
-class Trimmed extends Error { constructor(readonly from: number) { super(`history before rev ${from} is trimmed: read the file instead`); } }
+class Trimmed extends Error { constructor(readonly from: number, why = `history before rev ${from} is trimmed: read the file instead`) { super(why); } }
+/** A rev or since from the query: a whole number from 0, or null. */
+const revIn = (s: string | null) => s !== null && /^\d{1,15}$/.test(s) ? Number(s) : null;
 
 type Shown = Line & { private?: true };
 
@@ -309,10 +311,16 @@ export class FileDurableObject {
     }
     try {
       if (req.method === "GET" && route === "log") {
-        const page = await this.log(Number(url.searchParams.get("since") ?? 0), Number(url.searchParams.get("limit") || OP_PAGE));
+        const since = revIn(url.searchParams.get("since") ?? "0");
+        if (since === null) return fail("BadInput", "since: a rev, a whole number from 0");
+        const page = await this.log(since, Number(url.searchParams.get("limit") || OP_PAGE));
         return json({ ops: this.hide(page.ops, crew), next: page.next });
       }
-      if (req.method === "GET" && route === "at") return json(this.shown(await this.at(Number(url.searchParams.get("rev"))), crew));
+      if (req.method === "GET" && route === "at") {
+        const rev = revIn(url.searchParams.get("rev"));
+        if (rev === null) return fail("BadInput", "rev: a whole number from 0");
+        return json(this.shown(await this.at(rev), crew));
+      }
     } catch (e) {
       if (e instanceof Trimmed) return fail("HistoryTrimmed", e.message, { from: e.from });
       throw e;
@@ -630,6 +638,8 @@ export class FileDurableObject {
   /** Time travel: the doc as it was at rev, from the last snapshot at or before it, or from the start. */
   async at(rev: number): Promise<Doc> {
     if (rev < this.trimmed) throw new Trimmed(this.trimmed);
+    // A branch's copy begins at the fork: anything earlier is main's history, not this copy's.
+    if (this.base && rev < this.base.rev) throw new Trimmed(this.base.rev, `this branch's copy starts at rev ${this.base.rev}, where it forked: read main's file for anything earlier`);
     const snap = this.snaps.findLast((n) => n <= rev);
     const from = snap === undefined ? this.base ?? empty() : (await new DocStore(this.ctx.storage, "snap:" + pad10(snap)).load()) ?? empty();
     const log: Applied[] = [];
