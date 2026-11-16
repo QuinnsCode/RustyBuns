@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { previewApps, rangeLine, ringLines, rollbackCandidates, sinceLastGreen, soaked, type Commit, type Tested } from "./rings.ts";
+import { expressByOwner, previewApps, rangeLine, ringLines, rollbackCandidates, sinceLastGreen, soaked, type Commit, type LabelEvent, type Tested } from "./rings.ts";
 
 const sha = (c: string) => c.repeat(40);
 const [a, b, c, d] = ["a", "b", "c", "d"].map(sha) as [string, string, string, string];
@@ -77,4 +77,22 @@ test.each<[string, Record<string, string>, string[]]>([
   ]],
 ])("ringLines: %s", (_, refs, want) => {
   expect(ringLines(main, refs, now)).toEqual(want);
+});
+
+test("ringLines: an express sweep in flight gets its own line", () => {
+  const flying: Commit[] = main.map((c) => ({ ...c, rings: { ...c.rings } }));
+  flying[0]!.rings.daily = { state: "PENDING", at: hour(0.25) };
+  expect(ringLines(flying, {}, now).at(-1)).toBe("express aaaaaaa  daily sweep running, started 15m ago");
+  expect(ringLines(main, {}, now)).toHaveLength(3);
+});
+
+const labeled = (actor: string | null) => ({ event: "labeled", label: "express", actor });
+test.each<[string, LabelEvent[], string[], boolean]>([
+  ["the owner put it on", [labeled("QuinnsCode")], ["express"], true],
+  ["someone else put it on", [labeled("drive-by")], ["express"], false],
+  ["someone else re-labelled after the owner", [labeled("QuinnsCode"), { event: "unlabeled", label: "express", actor: "drive-by" }, labeled("drive-by")], ["express"], false],
+  ["the owner took it off", [labeled("QuinnsCode"), { event: "unlabeled", label: "express", actor: "QuinnsCode" }], [], false],
+  ["another label from the owner", [{ event: "labeled", label: "bug", actor: "QuinnsCode" }, labeled("drive-by")], ["bug", "express"], false],
+])("expressByOwner: %s", (_, events, labels, want) => {
+  expect(expressByOwner(events, labels, "quinnscode")).toBe(want);
 });
