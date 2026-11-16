@@ -840,6 +840,22 @@
       "tip_base": 0.0437,
       "flat": 0.7,
       "curve": 0,
+      "segments": 12,
+      "material": "face"
+    },
+    {
+      "kind": "eye",
+      "at": "head",
+      "off": [
+        0.2439,
+        -0.0581,
+        0
+      ],
+      "r": [
+        0.0286,
+        0.0252,
+        0.037
+      ],
       "material": "face"
     },
     {
@@ -1939,6 +1955,9 @@
     "gold": 0.75,
     "feather": 0.75,
     "primary": 0.75
+  },
+  "round": {
+    "face": 1800
   },
   "wings": 2
 }

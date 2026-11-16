@@ -65,7 +65,7 @@ type Hound = {
 type Sheet = {
   id: string; name: string; about: string; archetype: string; feet: number; budget: number; root: string; material: string; belly: string; belly_turn: number; blend: number;
   palette: Hound["palette"]; hide: Hound["hide"]; nodes: Record<string, N>; links: string[][]; blobs: Blob[]; parts: Part[];
-  paint?: { nodes: string[]; material: string }[]; dense?: Record<string, number>; stripes?: { along: string[]; n: number; width: number; material: string; below: number };
+  paint?: { nodes: string[]; material: string }[]; dense?: Record<string, number>; round?: Record<string, number>; stripes?: { along: string[]; n: number; width: number; material: string; below: number };
 };
 
 function hound(o: Hound): Sheet {
@@ -494,10 +494,14 @@ function sphinx() {
     ...pair("head", on([h(0.0), h(-0.1), h(0.07)], [0.2, -0.3, 1], h(0.03)), [h(0.05), h(0.035), h(0.035)]),
   );
   b.paint = [...(b.paint ?? []), { nodes: ["head", "snout"], material: "face" }];
+  const nose = on([h(0.06), h(0.02), 0], [1, 0.15, 0], h(0.012)), nd = norm([0.6, -1, 0]);
+  const nip: V = [f4(nose[0] + nd[0] * h(0.072)), f4(nose[1] + nd[1] * h(0.072)), 0];
   b.parts.push(
     // a straight nose: a wedge from the bridge between the eyes down and forward to a broad tip, its own part in the
     // face's skin (a blob this small melts in the blend, and a round one read as a snout)
-    { kind: "horn", at: "head", off: on([h(0.06), h(0.02), 0], [1, 0.15, 0], h(0.012)), dir: [0.6, -1, 0], len: h(0.08), base: h(0.012), tip_base: h(0.026), flat: 0.7, curve: 0, material: "face" },
+    { kind: "horn", at: "head", off: nose, dir: [0.6, -1, 0], len: h(0.08), base: h(0.012), tip_base: h(0.026), flat: 0.7, curve: 0, segments: 12, material: "face" },
+    // the tip a soft ball over the wedge's flat end, so the nose rounds off instead of ending in a box
+    { kind: "eye", at: "head", off: nip, r: [h(0.017), h(0.015), h(0.022)], material: "face" },
     // almond eyes set into the face under the brow: a kohl almond a little bigger than the white sunk behind it, so
     // the line is a rim round the eye and not shards floating on it; a heavy upper lid in the face's own skin over
     // the top of the white, so the eye sits in a socket; and one kohl wing running back toward the temple
@@ -579,6 +583,8 @@ function sphinx() {
   // the face takes more of the triangle budget than its size would give it, so the cheeks, jaw and brow stay round
   // and the nose and lips keep their volume (the lion body behind it, under the fur hide, pays)
   b.dense = { face: 0.7, lip: 1, kohl: 1, eye: 1, pupil: 1, mouth: 1, cloth: 0.75, gold: 0.75, feather: 0.75, primary: 0.75 };
+  // and keeps 1800 triangles of its own, enough to shade round (at 775 it shadowed itself in facets across the cheeks)
+  b.round = { face: 1800 };
   return { ...b, wings: 2 };
 }
 BEASTS.sphinx = sphinx;

@@ -18,10 +18,14 @@
 #                            its spacing (bands between ribs)
 #           dense            {material: 0..1}: how much of those materials' detail the decimator keeps (1: all, and
 #                            the budget is missed), so a face takes more of the budget and the furred body pays
+#           round            {material: triangles}: those materials decimated on their own to that many triangles,
+#                            then kept whole while the rest of the beast pays, so a face keeps enough triangles to
+#                            shade round: a coarse one shadows itself in facets across the cheeks
 #           black: true      the body may be truly black: no luminance floor (LUM[0]), no lift toward the belly's hue
 #   blob    material, rot    its own material; [x, y, z] degrees of tilt (a shell, a brow)
 #   horn    curve, bend      degrees it bends along its length, toward the `bend` direction (default up)
-#           tip_base, flat   radius at its far end (> base: a club), section squashed to `flat` of its width
+#           tip_base, flat   radius at its far end (> base: a club), section squashed to `flat` of its width;
+#           segments         sides round its section (8)
 #           web, scallop,    horns in a row with the same `web` name (a fin's ribs) get a skin between each and the next,
 #           web_thick        its free edge pulled in `scallop` (0.3) toward the root, `web_thick` (0.012) thick, in
 #                            `web_mat` (the first rib's material), the settings read off the group's first rib
@@ -1171,7 +1175,7 @@ def parts(sheet, nodes):
                     # an ox horn, a hooked beak, a club: bent `curve` degrees toward `bend`, `tip_base` thick at the end
                     bend = s(p["bend"]) if "bend" in p else None
                     out.append(tube(name, at, d, p["len"], p["base"], p.get("tip_base", 0), p["material"],
-                                    curve=p.get("curve", 0), bend=bend, flat=p.get("flat", 1), segments=8, rings=8))
+                                    curve=p.get("curve", 0), bend=bend, flat=p.get("flat", 1), segments=p.get("segments", 8), rings=8))
                     d, b = bend_frame(d, bend)
                 else:
                     out.append(cone(name, at, d, p["len"], p["base"], p["material"]))
@@ -1942,9 +1946,10 @@ def bake_hide(o, h, back, lift, segs=None):
     return img
 
 
-def low_poly(o, budget, dense=None):
+def low_poly(o, budget, dense=None, quota=None):
     """A copy of `o` decimated to `budget` triangles and shaded smooth: the mesh the GLB holds. `dense` maps
-    materials to how much of their detail the decimator keeps (1: all of it), so a face can take more of the budget."""
+    materials to how much of their detail the decimator keeps (1: all of it), so a face can take more of the budget;
+    `quota` (a sheet's `round`) maps materials to the triangles they end with."""
     bpy.ops.object.select_all(action="DESELECT")
     lod = o.copy()
     lod.data = o.data.copy()
@@ -1952,6 +1957,23 @@ def low_poly(o, budget, dense=None):
     # the decimator's result depends on the order it is handed the mesh in, which changes run to run: put the
     # mesh in canonical order before and after, so one sheet always builds the same GLB
     canonical(lod)
+    if quota:
+        # each `round` material down to its own count first, nothing else touched; the main pass then keeps it whole
+        mats = [m.name for m in lod.data.materials]
+        own = sorted({v for f in lod.data.polygons if f.material_index < len(mats) and mats[f.material_index] in quota
+                      for v in f.vertices})
+        have = sum(len(f.vertices) - 2 for f in lod.data.polygons if f.material_index < len(mats) and mats[f.material_index] in quota)
+        want = sum(quota.values())
+        if have > want:
+            group = lod.vertex_groups.new(name="own")
+            group.add(own, 1.0, "REPLACE")
+            dec = lod.modifiers.new("own", "DECIMATE")
+            dec.ratio, dec.vertex_group = 1 - (have - want) / tris(lod), "own"
+            apply_all(lod)
+            canonical(lod)
+            if "own" in lod.vertex_groups:
+                lod.vertex_groups.remove(lod.vertex_groups["own"])
+        dense = {**(dense or {}), **{m: 1 for m in quota}}
     if dense:
         # a face's materials keep their triangles (the rest of the beast pays): weighted into `keep`, which the
         # decimator collapses everywhere but
@@ -1967,7 +1989,7 @@ def low_poly(o, budget, dense=None):
                 keep.add([v], k, "REPLACE")
     if budget and tris(o) > budget:
         dec = lod.modifiers.new("decimate", "DECIMATE")
-        dec.ratio = budget / tris(o)
+        dec.ratio = budget / tris(lod if quota else o)
         if "keep" in lod.vertex_groups:  # an underside band's borders (`paint`): collapse everywhere but there
             dec.vertex_group, dec.invert_vertex_group = "keep", True
         apply_all(lod)
@@ -1978,9 +2000,9 @@ def low_poly(o, budget, dense=None):
     return lod
 
 
-def write_glb(o, path, budget, tone=None, hide=None, keep=False, segs=None, hard=None, dense=None):
+def write_glb(o, path, budget, tone=None, hide=None, keep=False, segs=None, hard=None, dense=None, quota=None):
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    lod = low_poly(o, budget, dense)
+    lod = low_poly(o, budget, dense, quota)
     if hard:
         # an underside band (`hard`, its material) only a triangle or two wide: its border split, so `shade` paints it
         # full strength to the edge instead of halving it on every vertex it shares with the flesh beside it
@@ -2117,7 +2139,7 @@ def main():
     lod = write_glb(beast, os.path.join(APP, "public", "models", sheet["id"] + ".glb"), sheet.get("budget", 3000), tone, hide,
                     keep=bool(hide) or "--close" in argv, segs=chains(sheet, nodes, links) if hide else None,
                     hard=sheet["stripes"]["material"] if sheet.get("stripes", {}).get("side") == "under" else None,
-                    dense=sheet.get("dense"))
+                    dense=sheet.get("dense"), quota=sheet.get("round"))
     if lod and not hide:
         lod.hide_render = True  # kept only for the close-up; the contact sheet draws the full mesh
     if "--render" in argv:
