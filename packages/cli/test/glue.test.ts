@@ -987,6 +987,8 @@ test("startLayout: TanStack Start's server and static files, by Nitro setup", as
   // no preset: steer it to "standard" ({ fetch }), which an app's own preset would override
   expect(startLayout(`plugins: [tanstackStart(), nitro()]`)).toEqual({ builtMain: ".output/server/index.mjs", assets: ".output/public", env: "NITRO_PRESET=standard " });
   expect(startLayout(`nitro({ preset: "bun" })`).warn).toMatch(/starts a server of its own/);
+  // a preset only one build sets, inside a conditional spread, leaves the normal build unset (#4107)
+  expect(startLayout(`nitro({ serverDir: "./server", ...(isElectronBuild ? { preset: "node-server" } : {}) })`)).toEqual({ builtMain: ".output/server/index.mjs", assets: ".output/public", env: "NITRO_PRESET=standard " });
 });
 
 test("builtEntry: finds the Worker in any environment folder by its wrangler.json, or a lone custom server entry", () => {
