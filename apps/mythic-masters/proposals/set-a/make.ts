@@ -65,7 +65,7 @@ type Hound = {
 type Sheet = {
   id: string; name: string; about: string; archetype: string; feet: number; budget: number; root: string; material: string; belly: string; belly_turn: number; blend: number;
   palette: Hound["palette"]; hide: Hound["hide"]; nodes: Record<string, N>; links: string[][]; blobs: Blob[]; parts: Part[];
-  paint?: { nodes: string[]; material: string }[]; stripes?: { along: string[]; n: number; width: number; material: string; below: number };
+  paint?: { nodes: string[]; material: string }[]; dense?: Record<string, number>; stripes?: { along: string[]; n: number; width: number; material: string; below: number };
 };
 
 function hound(o: Hound): Sheet {
@@ -576,6 +576,9 @@ function sphinx() {
       b.parts.push({ kind: "horn", at: "l_wroot", off: [f4(p[0] - root[0]), f4(p[1] - root[1]), f4(p[2] - root[2])], dir: norm([Bp[0] - A[0], Bp[1] - A[1], Bp[2] - A[2]]), len: s(0.2 + row * 0.06), base: s(0.075), tip_base: s(0.035), flat: 0.06, curve: 8, bend: [0, 0, 1], mirror: true, material: "feather" });
     }
   }
+  // the face takes more of the triangle budget than its size would give it, so the cheeks, jaw and brow stay round
+  // and the nose and lips keep their volume (the lion body behind it, under the fur hide, pays)
+  b.dense = { face: 0.7, lip: 1, kohl: 1, eye: 1, pupil: 1, mouth: 1, cloth: 0.75, gold: 0.75, feather: 0.75, primary: 0.75 };
   return { ...b, wings: 2 };
 }
 BEASTS.sphinx = sphinx;
