@@ -32,7 +32,11 @@ export interface Level {
   outdoor?: boolean;
   /** What the road case holds here, if not the usual three (cables.ts CASE_LOAD). */
   caseLoad?: readonly { key: string; kind: CableKind; lengthM: number }[];
+  /** The box truck the gear came in, parked outside with its back open: its bed, floor to roof. The back (the open end)
+   * is at z0, the bulkhead behind the cab at z1. */
+  truck?: Truck;
 }
+export interface Truck { x0: number; x1: number; z0: number; z1: number; h: number }
 
 export interface Input { forward: number; right: number; turn: number; crouch: boolean }
 export interface World {
@@ -48,11 +52,12 @@ export interface World {
  * speaker across the way in, and a road case of cables and a cable ramp by the left wall. */
 export const GARAGE: Level = {
   name: "garage",
-  bounds: { x0: -2.75, x1: 2.75, z0: 0.25, z1: 9.75 },
+  bounds: { x0: -2.75, x1: 2.75, z0: 0.25, z1: 13.75 },
   room: { x0: -3, x1: 3, z0: 0, z1: 7, height: 2.6, door: 4.8 },
   outlets: [{ key: "outlet", x: -2.2, y: 0.3, z: 0.01 }],
   walkways: [{ name: "the way in", x0: -0.4, x1: 0.4, z0: 0.4, z1: 9.75 }],
   start: { x: -0.6, z: 9.5, yaw: 0 },
+  truck: { x0: -1.1, x1: 1.1, z0: 10, z1: 14, h: 2.2 },
   items: [
     { key: "amp-head", gear: "amp-head", x: -1.4, y: 0, z: 0.45, rot: 0 },
     { key: "cab-4x12", gear: "cab-4x12", x: 0.9, y: 0, z: 7.9, rot: 0 },
@@ -89,12 +94,12 @@ export const wheeled = (gearId: string) => !!gear(gearId).generator;
 export const pushSpeed = (kg: number) => WALK * clamp(1 - feltKg(kg) / 120, 0.2, 1);
 
 /** A box's footprint as its four corners on the floor. */
-function corners(x: number, z: number, rot: number, w: number, d: number): [number, number][] {
+export function corners(x: number, z: number, rot: number, w: number, d: number): [number, number][] {
   const c = Math.cos(rot), s = Math.sin(rot), hw = w / 2, hd = d / 2;
   return [[-hw, -hd], [hw, -hd], [hw, hd], [-hw, hd]].map(([a, b]) => [x + a * c + b * s, z - a * s + b * c]);
 }
 /** Whether two footprints overlap (separating axes, two boxes on the floor). */
-function overlap(a: [number, number][], b: [number, number][]): boolean {
+export function overlap(a: [number, number][], b: [number, number][]): boolean {
   for (const poly of [a, b]) for (let i = 0; i < 2; i++) {
     const [x0, z0] = poly[i], [x1, z1] = poly[i + 1], nx = z1 - z0, nz = x0 - x1;
     const pa = a.map(([x, z]) => x * nx + z * nz), pb = b.map(([x, z]) => x * nx + z * nz);
@@ -102,7 +107,7 @@ function overlap(a: [number, number][], b: [number, number][]): boolean {
   }
   return true;
 }
-const footprint = (i: Item, x = i.x, z = i.z, rot = i.rot) => corners(x, z, rot, dims(i)[0], dims(i)[2]);
+export const footprint = (i: Item, x = i.x, z = i.z, rot = i.rot) => corners(x, z, rot, dims(i)[0], dims(i)[2]);
 
 /** Where the held item sits now: in front of you, low if it's heavy, turned as you turned it. */
 export function holdPose(w: World): { x: number; y: number; z: number; rot: number } | null {
@@ -133,6 +138,12 @@ function collide(w: World) {
   }
   you.x = clamp(you.x, b.x0, b.x1);
   you.z = clamp(you.z, b.z0, b.z1);
+  // The truck's side walls: in by the open back, never through the sides.
+  const t = w.level.truck;
+  if (t && you.z > t.z0 && you.x > t.x0 - RADIUS && you.x < t.x1 + RADIUS) {
+    const mid = (t.x0 + t.x1) / 2, half = (t.x1 - t.x0) / 2, off = you.x - mid;
+    if (Math.abs(off) > half - RADIUS) you.x = mid + Math.sign(off) * (Math.abs(off) < half ? half - RADIUS : half + RADIUS);
+  }
 }
 
 /** One tick: walk and turn by the input, at the pace of what you carry. */

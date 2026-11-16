@@ -11,10 +11,11 @@ export type Zone = { x0: number; x1: number; z0: number; z1: number };
 
 export const DIVE_BAR: Level = {
   name: "dive-bar",
-  bounds: { x0: -2.25, x1: 2.25, z0: 0.25, z1: 13.5 },
+  bounds: { x0: -2.25, x1: 2.25, z0: 0.25, z1: 17.55 },
   room: { x0: -2.5, x1: 2.5, z0: 0, z1: 12, height: 2.7, door: 1.6 },
   outlets: [{ key: "stage-outlet", x: 0, y: 0.3, z: 0.01 }, { key: "bar-outlet", x: -2.49, y: 0.3, z: 4.5 }],
   start: { x: 0, z: 12.8, yaw: 0 },
+  truck: { x0: -1.1, x1: 1.1, z0: 13.8, z1: 17.8, h: 2.2 },
   items: [
     { key: "top-l", gear: "top-12-powered", x: -1.0, y: 0, z: 10.4, rot: 0 },
     { key: "top-r", gear: "top-12-powered", x: -0.4, y: 0, z: 10.4, rot: 0 },

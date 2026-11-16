@@ -1,5 +1,5 @@
 // The park on the page: grass under an open sky, the pop-up tent, the paths, the road and the houses across it (red
-// when they hear more than the limit), the truck at the gate, the heat map over the lot (painted only when something
+// when they hear more than the limit), the heat map over the lot (painted only when something
 // moved) and the card: the generator's load, the crowd, the houses and the score. main.ts calls `parkView` once per
 // world and then `key` and `update`, the same as the dive bar's view.
 import * as THREE from "three";
@@ -47,8 +47,6 @@ export function parkView(scene: THREE.Scene, hud: HTMLElement, getWorld: () => W
     new THREE.EdgesGeometry(new THREE.BoxGeometry(c.x1 - c.x0, 0.001, c.z1 - c.z0)), new THREE.LineBasicMaterial({ color: 0xf2c230 }));
   edge.position.set((c.x0 + c.x1) / 2, 0.015, (c.z0 + c.z1) / 2);
   g.add(edge);
-  // The truck at the gate, its tail open toward the park.
-  slab({ x0: -1.3, x1: 1.3, z0: 32.6, z1: 39 }, 0.3, 2.6, mat(0xe8e2d0));
   // The houses across the road: a row of them, their front gardens on the property line.
   const houseMat = mat(0xb9a58e), loudMat = mat(0xd0503c);
   const houses: THREE.Mesh[] = [];

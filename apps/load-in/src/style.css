@@ -30,3 +30,4 @@ button:hover { border-color: #4cc9f0; }
 .clock .time { min-width: 7.5ch; }
 .clock.late { color: #ff6b6b; }
 .clock .tip { display: inline-grid; place-items: center; width: 1.1em; height: 1.1em; border-radius: 50%; border: 1px solid currentColor; font-size: .75em; cursor: help; }
+.strike-card { left: auto; right: 10px; top: 52px; }

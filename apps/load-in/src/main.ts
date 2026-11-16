@@ -22,6 +22,8 @@ import { soundSystem } from "./audio/play.ts";
 import { currentDial, setDial } from "./assists.ts";
 import { doors } from "./clock.ts";
 import { mountClock, mountDial, mountGlow, savedDial } from "./dial-view.ts";
+import { shut, stow, strike, strikeState, striking } from "./strike.ts";
+import { mountStrike, truckMesh } from "./strike-view.ts";
 import { accountChip, canSignIn, finishSignIn, login, party, type PartyMember } from "./eqosys.ts";
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -62,6 +64,7 @@ scene.add(bulb);
 
 function room(l: World["level"]) {
   const g = new THREE.Group(), r = l.room, b = l.bounds;
+  if (l.truck) g.add(truckMesh(l.truck));
   if (l.outdoor) return g; // the venue's view draws the ground and the sky
   const mat = (color: number) => new THREE.MeshStandardMaterial({ color, roughness: 0.9 });
   const box = (w: number, h: number, d: number, x: number, y: number, z: number, m: THREE.Material) => {
@@ -117,6 +120,7 @@ const ropes = cableView(scene);
 /** A new level, or the same one as it began: the room, the gear and the case of cables. */
 const glow = mountGlow(scene);
 let clock: ReturnType<typeof mountClock> | null = null;
+let loadOut: ReturnType<typeof mountStrike> | null = null;
 
 function load(level: Level) {
   world = newWorld(level);
@@ -152,7 +156,8 @@ function draw() {
   bar?.update();
   ropes.update(cables);
   glow.update(cable.glowing(world, cables), world.t);
-  clock?.update(world.level.name, world.t);
+  clock?.update(world.level.name, world.t, strikeState(world, cables)?.since ?? null);
+  loadOut?.update(world, cables);
   const g = held ? gear(held.gear) : null;
   $("hint").textContent = phase !== "play" ? "" : performance.now() < flash.until ? flash.text : (big?.hint() ?? hint(at, jack));
   $("carry").textContent = phase !== "play" ? "" : g ? `${g.what}, ${g.kg} kg, ${you.speed.toFixed(1)} m/s`
@@ -162,7 +167,8 @@ function draw() {
 
 /** What F (or a click) would do now. */
 function hint(at: ReturnType<typeof aimed>, jack: ReturnType<typeof cable.aimedJack>): string {
-  const end = cable.inHand(cables);
+  const end = cable.inHand(cables), coil = cable.coiling(cables);
+  if (coil?.coiling) return `Q over, E under (${coil.coiling.ways.length} of ${cable.loopsFor(coil)})`;
   if (end) return jack ? `F plug into ${jack.owner} ${jack.jack}` : at?.key === cables.caseKey ? "F coil it back" : "F drop the cable";
   if (world.held) return "F put down, Q / E turn";
   const plugged = jack && cables.runs.some((r) => [r.a, r.b].some((e) => "plug" in e && e.plug[0] === jack.owner && e.plug[1] === jack.jack));
@@ -170,7 +176,9 @@ function hint(at: ReturnType<typeof aimed>, jack: ReturnType<typeof cable.aimedJ
   if (at?.key === cables.caseKey && cables.runs.some((r) => !r.rope || "case" in r.b)) return "F take a cable";
   const sw = at && hasSwitch(at.gear, !!big) ? `, P switch it ${switchedOn.has(at.key) ? "off" : "on"}` : "";
   if (at && wheeled(at.gear)) return `F push the ${gear(at.gear).what} (${gear(at.gear).kg} kg)`;
-  return at ? `F pick up ${gear(at.gear).what} (${gear(at.gear).kg} kg)${sw}` : "";
+  if (at) return `F pick up ${gear(at.gear).what} (${gear(at.gear).kg} kg)${sw}`;
+  if (!world.level.truck) return "";
+  return !striking(world) ? "L strike and load out" : strikeState(world, cables)?.tally ? "" : "T shut the truck";
 }
 
 // Input: pointer lock for the mouse, keys while playing, the pad every frame.
@@ -189,8 +197,11 @@ document.addEventListener("keydown", (e) => {
   if (!world.held && !cable.inHand(cables) && bar?.key(e.code)) return;
   if (big?.key(e.code)) return;
   if (e.code === "KeyF") grab();
+  if ((e.code === "KeyQ" || e.code === "KeyE") && cable.coiling(cables)) return void say(cable.loop(world, cables, e.code === "KeyQ" ? "over" : "under"));
   if (e.code === "KeyQ") turnHeld(world, -1);
   if (e.code === "KeyE") turnHeld(world, 1);
+  if (e.code === "KeyL") say(strike(world));
+  if (e.code === "KeyT") say(shut(world, cables));
   if (e.code === "KeyP") flip();
   if (e.code === "KeyM") sound.toggle();
 });
@@ -201,7 +212,12 @@ addEventListener("blur", () => keys.clear());
 function grab(): Answer {
   const at = aimed(world);
   const r = cable.use(world, cables, at) ?? (world.held ? place() : at ? (wheeled(at.gear) ? push : pickUp)(world, at.key) : { ok: false as const, why: "nothing in reach" });
-  if (!r.ok) flash = { text: r.why, until: performance.now() + 1800 };
+  return say(r);
+}
+
+/** A refusal, shown under the crosshair for a moment. */
+function say<A extends { ok: boolean; why?: string }>(r: A): A {
+  if (!r.ok && r.why) flash = { text: r.why, until: performance.now() + 1800 };
   return r;
 }
 
@@ -209,7 +225,7 @@ function grab(): Answer {
 function place(): Answer {
   const key = world.held?.key, a = putDown(world);
   settle(world);
-  if (a.ok && key) cable.linkRamp(world, key);
+  if (a.ok && key) { cable.linkRamp(world, key); stow(world, key); }
   return a;
 }
 
@@ -244,8 +260,9 @@ function frame(now: number) {
     const k = 2.4 * dt;
     world.you.pitch = clamp(world.you.pitch - gp.right.y * k * ctl.lookY * (ctl.invertY ? -1 : 1), -1.3, 1.2);
     if (gp.pressed.has("grab")) grab();
-    if (gp.pressed.has("turnLeft")) turnHeld(world, -1);
-    if (gp.pressed.has("turnRight")) turnHeld(world, 1);
+    const turn = (dir: -1 | 1) => (cable.coiling(cables) ? say(cable.loop(world, cables, dir < 0 ? "over" : "under")) : turnHeld(world, dir));
+    if (gp.pressed.has("turnLeft")) turn(-1);
+    if (gp.pressed.has("turnRight")) turn(1);
     const on = (c: string) => (keys.has(c) ? 1 : 0);
     step(world, dt, {
       forward: on("KeyW") - on("KeyS") || -gp.left.y,
@@ -288,10 +305,11 @@ async function boot() {
   savedDial();
   mountDial($("dial-host"));
   clock = mountClock($("hud"));
+  loadOut = mountStrike($("hud"));
   $("party").hidden = !canSignIn();
   mountControls({
     key: KEY, pad, parent: $("controls-host"), title: "Controls", skin: "house",
-    keys: [["WASD / left stick", "Walk"], ["Mouse / right stick", "Look"], ["F / click", "Pick up, put down, plug in, unplug"], ["Q / E", "Turn what you hold"], ["C", "Crouch"], ["Esc", "Let go of the mouse"]],
+    keys: [["WASD / left stick", "Walk"], ["Mouse / right stick", "Look"], ["F / click", "Pick up, put down, plug in, unplug"], ["Q / E", "Turn what you hold; coiling, over and under"], ["L", "Strike and load out"], ["T", "Shut the truck"], ["C", "Crouch"], ["Esc", "Let go of the mouse"]],
     onChange: (s) => { ctl = s; },
     onToggle: (open) => { if (open) document.exitPointerLock?.(); },
   });
@@ -305,7 +323,7 @@ async function boot() {
 declare global { interface Window { loadIn: typeof harness } }
 /** The harness (scripts/probe.ts HANDLES): the level as data, and the moves a test or an agent makes without pointer lock. */
 const harness = {
-  state: () => ({ phase, dial: currentDial(), doors: doors(world.level.name, world.t), ...snapshot(world), ...cable.cableState(world, cables), sound: { up: sound.up, on: [...switchedOn], ...heard() }, ...(big ? { biggerBar: big.state() } : {}), ...(bar ? { bar: { ...(world.level === PARK ? parkState(world, cables) : barState(world)), heat: bar.heatOn } } : {}), signedIn: !!login(), party: crew.code ? { code: crew.code, members: crew.members.length, room: crew.room || null, seat: crew.seat >= 0 ? crew.seat : null } : null }),
+  state: () => ({ phase, dial: currentDial(), doors: doors(world.level.name, world.t), ...snapshot(world), ...cable.cableState(world, cables), sound: { up: sound.up, on: [...switchedOn], ...heard() }, ...(big ? { biggerBar: big.state() } : {}), strike: strikeState(world, cables), ...(bar ? { bar: { ...(world.level === PARK ? parkState(world, cables) : barState(world)), heat: bar.heatOn } } : {}), signedIn: !!login(), party: crew.code ? { code: crew.code, members: crew.members.length, room: crew.room || null, seat: crew.seat >= 0 ? crew.seat : null } : null }),
   /** Turn the cozy-to-sim dial: "cozy", "crew" or "sim". */
   dial: (d: string) => setDial(d),
   /** Into the level, without asking for the mouse. */
@@ -322,7 +340,26 @@ const harness = {
   unplug: (owner: string, jack: string) => cable.unplug(world, cables, owner, jack),
   grabEnd: (key: string, end: "a" | "b") => cable.grabEnd(world, cables, key, end),
   dropEnd: () => cable.dropEnd(cables),
+  /** Start coiling a cable at the case (neither end plugged in); then `loop` it, or `coilAll` in one call. */
   coil: (key: string) => cable.coil(world, cables, key),
+  /** One loop onto the coil being made: "over" (Q) or "under" (E). */
+  loop: (way: cable.Way) => cable.loop(world, cables, way),
+  /** Coil `key` all the way, a loop at a time with a steady hand between: `ways` as "ou" letters, over-under by default. */
+  coilAll: (key: string, ways?: string): Answer => {
+    const r = cable.coil(world, cables, key);
+    if (!r.ok) return r;
+    const run = cables.runs.find((x) => x.key === key)!;
+    for (let k = 0; run.coiling; k++) {
+      cable.settle(world, cables, cable.LOOP_S);
+      const ch = ways?.[k] ?? (k % 2 ? "u" : "o"), a = cable.loop(world, cables, ch === "u" ? "under" : "over");
+      if (!a.ok) return a;
+    }
+    return { ok: true };
+  },
+  /** The show is over: start the load-out and the curfew clock (L). */
+  strike: () => strike(world),
+  /** Pull the truck's door down (T): every piece in, every cable coiled; the tally. */
+  shut: () => shut(world, cables),
   /** Stand still for `seconds` while the cables settle. */
   wait: (seconds = 2) => cable.settle(world, cables, seconds),
   /** Dive bar: turn a placed speaker by degrees (positive toward +x) and tilt it (degrees up). */

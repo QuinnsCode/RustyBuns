@@ -14,7 +14,7 @@ import { type Zone, WINDOW, cellsIn, mean, sources } from "./dive-bar.ts";
 export const PARK: Level = {
   name: "park",
   outdoor: true,
-  bounds: { x0: -14, x1: 14, z0: 0.3, z1: 32 },
+  bounds: { x0: -14, x1: 14, z0: 0.3, z1: 37.05 },
   room: { x0: -14, x1: 14, z0: 0, z1: 32, height: 0, door: 0 },
   outlets: [],
   walkways: [
@@ -22,6 +22,7 @@ export const PARK: Level = {
     { name: "the dog walk", x0: 8.5, x1: 9.7, z0: 0.3, z1: 32 },
   ],
   start: { x: 0, z: 31.5, yaw: 0 },
+  truck: { x0: -1.2, x1: 1.2, z0: 32.3, z1: 37.3, h: 2.4 },
   // Everything comes off the truck's tail at the gate.
   items: [
     { key: "generator", gear: "generator-7kva", x: 0, y: 0, z: 29.6, rot: 0 },

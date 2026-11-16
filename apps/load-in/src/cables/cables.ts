@@ -11,7 +11,24 @@ import { THICK, newRope, pathLength, stepRope, type Rope, type Solid, type Vec }
 
 /** Where a cable's end is: in a jack, in your hand, lying loose, or still coiled in the case. */
 export type EndAt = { plug: End } | { hand: true } | { loose: true } | { case: true };
-export interface Run { key: string; kind: CableKind; lengthM: number; a: EndAt; b: EndAt; rope: Rope | null }
+export interface Run {
+  key: string; kind: CableKind; lengthM: number; a: EndAt; b: EndAt; rope: Rope | null;
+  /** Being coiled at the case: the loops so far, over or under, and when the last one went on. */
+  coiling?: { ways: Way[]; at: number };
+  /** Twists it went into the case with: each one is a knot to work out the next time it comes out. */
+  twists?: number;
+}
+
+/** One loop of a coil: over-under alternates them, so the cable lies flat when it is thrown out again. */
+export type Way = "over" | "under";
+/** A loop per this many metres of cable, and the least seconds between two loops. */
+export const LOOP_M = 0.6, LOOP_S = 0.4;
+/** Seconds it takes to work one twist out of a cable coiled wrong, when it next comes out of the case. */
+export const UNTANGLE_S = 15;
+/** How many loops coil this cable. */
+export const loopsFor = (r: { lengthM: number }) => Math.ceil(r.lengthM / LOOP_M);
+/** Twists in a coil: every loop that went the same way as the one before it. */
+export const twistsIn = (ways: readonly Way[]) => ways.filter((x, i) => i > 0 && x === ways[i - 1]).length;
 export interface Cables { runs: Run[]; caseKey: string | null }
 
 /** What the road case holds when you open it. */
@@ -122,9 +139,9 @@ export function stepCables(w: World, c: Cables, dt: number) {
 /** Walk to (x, z) with the cables dragging behind you; the seconds it took. */
 export const walkWith = (w: World, c: Cables, x: number, z: number) => walkTo(w, x, z, 120, (dt) => stepCables(w, c, dt));
 
-/** Stand still for `seconds` while the cables settle. */
+/** Stand still for `seconds` while the cables settle (the clock runs on). */
 export function settle(w: World, c: Cables, seconds = 2) {
-  for (let t = 0; t < seconds; t += 1 / 60) stepCables(w, c, 1 / 60);
+  for (let t = 0; t < seconds; t += 1 / 60) { stepCables(w, c, 1 / 60); w.t += 1 / 60; }
 }
 
 /** Take the next coiled cable out of the case, its `a` end in your hand (or the one of `kind`). */
@@ -136,6 +153,8 @@ export function takeCable(w: World, c: Cables, kind?: CableKind): Answer {
   const run = c.runs.find((r) => !r.rope && (!kind || r.kind === kind));
   if (!run) return { ok: false, why: kind ? `no ${kind} cable left in the case` : "the case is empty" };
   run.rope = newRope(run.lengthM, top);
+  w.t += (run.twists ?? 0) * UNTANGLE_S;
+  run.twists = 0;
   run.a = { hand: true };
   run.b = { case: true };
   return { ok: true };
@@ -181,17 +200,42 @@ export function dropEnd(c: Cables): Answer {
   const h = inHand(c);
   if (!h) return { ok: false, why: "no cable in your hand" };
   h.run[h.end] = { loose: true };
+  delete h.run.coiling;
   if (assist("autoCoil") && !isPlug(h.run.a) && !isPlug(h.run.b)) Object.assign(h.run, { rope: null, a: { case: true }, b: { case: true } });
   return { ok: true };
 }
 
-/** Coil a cable back into the case: neither end in a jack, and you by the case. */
+/** Start coiling a cable back into the case: neither end in a jack, and you by the case. Then a `loop` at a time,
+ * over and under in turn; the autoCoil assist coils it neatly at once. */
 export function coil(w: World, c: Cables, key: string): Answer {
   const run = c.runs.find((r) => r.key === key), top = caseTop(w, c);
   if (!run?.rope) return { ok: false, why: `${key} is already coiled` };
   if (isPlug(run.a) || isPlug(run.b)) return { ok: false, why: `unplug ${key} first` };
   if (!top || !near(w, top)) return { ok: false, why: "the cable case is out of reach" };
-  Object.assign(run, { rope: null, a: { case: true }, b: { case: true } });
+  if (run.coiling) return { ok: false, why: "Q over, E under" };
+  if (assist("autoCoil")) return stow(run, 0), { ok: true };
+  run.coiling = { ways: [], at: -Infinity };
+  return { ok: true };
+}
+
+function stow(run: Run, twists: number) {
+  Object.assign(run, { rope: null, a: { case: true }, b: { case: true }, twists });
+  delete run.coiling;
+}
+
+/** The cable being coiled now, if any. */
+export const coiling = (c: Cables) => c.runs.find((r) => r.coiling) ?? null;
+
+/** One loop onto the coil (Q over, E under): the last one puts it in the case, with a twist for every loop that went
+ * the same way as the one before. */
+export function loop(w: World, c: Cables, way: Way): Answer {
+  const run = coiling(c), top = caseTop(w, c);
+  if (!run?.coiling) return { ok: false, why: "no cable being coiled" };
+  if (!top || !near(w, top)) return { ok: false, why: "the cable case is out of reach" };
+  if (w.t - run.coiling.at < LOOP_S - 1e-3) return { ok: false, why: "steady: one loop at a time" };
+  run.coiling.ways.push(way);
+  run.coiling.at = w.t;
+  if (run.coiling.ways.length >= loopsFor(run)) stow(run, twistsIn(run.coiling.ways));
   return { ok: true };
 }
 
@@ -314,7 +358,8 @@ const endName = (e: EndAt) => (isPlug(e) ? `${e.plug[0]} ${e.plug[1]}` : isHand(
 export function cableState(w: World, c: Cables) {
   return {
     cables: c.runs.map((r) => ({
-      key: r.key, kind: r.kind, lengthM: r.lengthM, coiled: !r.rope, a: endName(r.a), b: endName(r.b),
+      key: r.key, kind: r.kind, lengthM: r.lengthM, coiled: !r.rope, a: endName(r.a), b: endName(r.b), twists: r.twists ?? 0,
+      ...(r.coiling ? { coiling: `${r.coiling.ways.length} of ${loopsFor(r)}` } : {}),
       slack: r.rope ? cm(r.lengthM - Math.hypot(...(["x", "y", "z"] as const).map((k) => r.rope!.pts[0]![k] - r.rope!.pts[r.rope!.pts.length - 1]![k]))) : null,
       laid: r.rope ? cm(pathLength(r.rope)) : 0,
     })),
