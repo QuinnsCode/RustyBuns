@@ -33,6 +33,11 @@ describe("a commit's changes, planned against the file now (#880)", () => {
     expect(plan("revert", c, doc(["one", "TWO", "three", "four", "FIVE"]))).toMatchObject({ do: "edit", next: ["one", "two", "three", "four", "FIVE"] });
     expect(plan("revert", c, doc(["one", "two", "three", "four", "five"]))).toEqual({ path: "a.ts", do: "skip" });
     expect(plan("revert", c, doc(["one", "zwei", "three", "four", "five"]))).toEqual({ path: "a.ts", why: "the same lines changed since" });
+    // A neighbour changed since, not the line itself: looser than git, it still lands (#4773).
+    expect(plan("revert", c, doc(["ONE", "TWO", "THREE", "four", "five"]))).toMatchObject({ do: "edit", next: ["ONE", "two", "THREE", "four", "five"] });
+    const ins = { path: "a.ts", before: ["one", "two"], after: ["one", "new", "two"] };
+    expect(plan("pick", ins, doc(["ONE", "two"]))).toMatchObject({ do: "edit", next: ["ONE", "new", "two"] });
+    expect(plan("pick", ins, doc(["one", "mid", "two"]))).toEqual({ path: "a.ts", why: "the same lines changed since" });
     expect(plan("revert", c, null)).toEqual({ path: "a.ts", why: "deleted since" });
   });
   test("a pick merges before to after; new and deleted files", () => {
@@ -117,6 +122,26 @@ describe("revert and cherry-pick from the commit graph (#880)", () => {
     expect(clash.status).toBe(409);
     expect((await clash.json()).clashes).toEqual([{ path: "a.ts", why: "the same lines changed since" }]);
     expect(await texts(call, "a.ts")).toEqual(["one", "zwei", "three", "four", "FIVE"]);
+  });
+
+  test("a commit that changed only a private line reverts from the crew's copy, and git keeps the line blank (#4773)", async () => {
+    const call = await boot();
+    opened.push(call);
+    await post(call, "/api/login", { name: "ana" });
+    await post(call, "/api/repos", { name: "p" });
+    await post(call, "/api/repos/ana/p/files", { path: "a.ts", content: "one\nkey = 1\nthree" });
+    expect((await post(call, "/api/repos/ana/p/do/commit?path=a.ts", { message: "first" })).status).toBe(200);
+    const key = (await file(call, "a.ts")).lines[1].id;
+    expect((await post(call, "/api/repos/ana/p/do/private?path=a.ts", { lines: [key], private: true })).status).toBe(200);
+    expect((await post(call, "/api/repos/ana/p/do/commit?path=a.ts", { message: "hide the key" })).status).toBe(200);
+    await edit(call, "a.ts", 2, "key = 2");
+    const c = await (await post(call, "/api/repos/ana/p/do/commit?path=a.ts", { message: "new key" })).json();
+    const sha = c.git.deployCommit as string;
+    expect(sha).toEqual(expect.any(String));
+    const r = await post(call, `/api/repos/ana/p/commits/${sha}/revert`);
+    expect(r.status).toBe(200);
+    expect(await texts(call, "a.ts")).toEqual(["one", "key = 1", "three"]);
+    expect(await git(call, "show", "main:a.ts")).not.toContain("key = ");
   });
 });
 

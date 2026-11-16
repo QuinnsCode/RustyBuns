@@ -118,15 +118,33 @@ export function rebase(ops: Op[], doc: Doc): { ops: Op[]; skipped: Op[] } {
  * lines. Each change lands where the lines it replaces (and their neighbours)
  * are still as `base` had them in `ours`. A change that touches a line `ours`
  * changed is a clash, and then nothing is merged: null.
+ *
+ * `loose` (revert and pick, #4773) lets a change land beside a line `ours` changed:
+ * only the lines it replaces must be untouched, and an insertion needs one of its two
+ * neighbours still in place (with nothing new between them) to know where it goes.
+ * Git stops on touching hunks; a pick lands as reviewable line ops, so it needn't.
  */
-export function merge3(base: string[], ours: string[], theirs: string[]): string[] | null {
+export function merge3(base: string[], ours: string[], theirs: string[], loose = false): string[] | null {
   const kept = new Map(keptPairs(base, ours).map(({ i, j }) => [i, j]));
   // Where base line k sits in ours; before the start and past the end always line up.
   const at = (k: number) => k < 0 ? -1 : k >= base.length ? ours.length : kept.get(k);
   const hunks: { from: number; to: number; lines: string[] }[] = [];
   let i = 0, j = 0;
   for (const p of [...keptPairs(base, theirs), { i: base.length, j: theirs.length }]) {
-    if (p.i > i || p.j > j) {
+    if (loose && (p.i > i || p.j > j)) {
+      // base[i..p.i) became theirs[j..p.j): just those lines must be untouched, and in a row, in ours.
+      let from: number | undefined, to: number | undefined;
+      if (p.i > i) {
+        for (let k = i; k < p.i; k++) if (at(k) === undefined || (k > i && at(k) !== at(k - 1)! + 1)) return null;
+        from = at(i)!; to = at(p.i - 1)! + 1;
+      } else {
+        const x = at(i - 1), y = at(i);
+        if (x !== undefined && y !== undefined && y !== x + 1) return null;
+        from = to = x !== undefined ? x + 1 : y;
+        if (from === undefined) return null;
+      }
+      hunks.push({ from, to: to!, lines: theirs.slice(j, p.j) });
+    } else if (p.i > i || p.j > j) {
       // base[i..p.i) became theirs[j..p.j): it, and the line either side, must be untouched in ours.
       for (let k = i - 1; k < p.i; k++) {
         const x = at(k), y = at(k + 1);

@@ -481,6 +481,21 @@ test("a path whose policy escalates waits for a person instead, its note attache
   expect((await runsOf(call)).length).toBe(1);
 });
 
+test("a run that finishes in the round that went past its budget is noted as over, not handed off (#4773)", async () => {
+  const { call, post } = await app();
+  await post("ryan", "/api/repos/ryan/lab/files", { path: ".gitattributes", content: "a.js codesplitter-budget=10 codesplitter-over=handoff" });
+  const cli = gated(call);
+  const run = await (await post("ryan", "/api/repos/ryan/lab/agents", { path: "a.js", harness: "codex", task: "shout every line" })).json() as any;
+  await cli.started(1);
+  cli.go();
+  await until(async () => (await runsOf(call)).find((r) => r.id === run.id).status !== "running");
+  const done = (await runsOf(call)).find((r) => r.id === run.id);
+  expect(done).toMatchObject({ status: "done", runs: 1, overspent: { budget: 10, at: done.spent } });
+  expect(done.spent).toBeGreaterThan(10);
+  expect(done.handoff).toBeUndefined();
+  expect(cli.prompts.length).toBe(1);
+});
+
 test("bulk Stop: by harness, by the lines they claimed, or all of them", async () => {
   const { call, post } = await app();
   call.env.AGENT_EXEC = (async (_cmd, _cwd, signal) => new Promise((_, fail) => signal?.addEventListener("abort", () => fail(new Error("killed"))))) as Exec;

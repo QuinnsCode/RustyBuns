@@ -102,7 +102,7 @@ export function plan(kind: PickKind, c: Change, doc: Doc | null): Step | Clash {
   if (!lines) return want === null ? { path: c.path, do: "skip" } : { path: c.path, why: "deleted since" };
   if (want === null) return same(lines, base) ? { path: c.path, do: "delete" } : { path: c.path, why: "changed since: deleting it would lose those lines" };
   if (same(lines, want)) return { path: c.path, do: "skip" };
-  const next = merge3(base, lines, want);
+  const next = merge3(base, lines, want, true);
   return next ? { path: c.path, do: "edit", doc: doc!, next } : { path: c.path, why: "the same lines changed since" };
 }
 
@@ -129,13 +129,16 @@ export async function pickRoute(env: Env, owner: string, repo: string, user: str
   const branch = typeof body.branch === "string" && body.branch && body.branch !== "main" ? body.branch : undefined;
   if (branch && !(await openBranch(env, owner, repo, branch))) return fail("NoSuchBranch", `no open branch ${branch}`);
   if (!/^[0-9a-f]{4,64}$/.test(sha)) return fail("BadInput", "sha: a commit hash");
-  let h: Awaited<ReturnType<typeof handleFor>>;
-  try { h = await handleFor(env, owner, repo); } catch (e) {
+  let h: Awaited<ReturnType<typeof handleFor>>, crew: typeof h = null;
+  try { [h, crew] = await Promise.all([handleFor(env, owner, repo), handleFor(env, owner, repo, true)]); } catch (e) {
     if (code(e) === "FORK_IN_PROGRESS" || code(e) === "IMPORT_IN_PROGRESS") return fail("StillCopying", "this repo is still being copied in");
     throw e;
   }
   if (!h) return fail("NoGit", "this repo has no git yet");
-  const got = await commitChanges(h.handle, sha);
+  // The crew's copy first (#4773): it has private lines' real text, and a commit that changed only those is there alone.
+  const fromCrew = crew?.crew ? await commitChanges(crew.handle, sha) : null;
+  if (fromCrew) h = crew!;
+  const got = fromCrew ?? await commitChanges(h.handle, sha);
   if (!got) return fail("NoSuchCommit", `no commit ${sha} here`);
   if (!branch) for (const c of got.changes) { const closed = policyClosed(owner, c.path, user); if (closed) return closed; }
   if (got.more) return fail("CommitTooBig", `it changed more than ${MAX_FILES} files: too many to ${kind === "revert" ? "revert" : "pick"} here`);

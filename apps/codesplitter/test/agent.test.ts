@@ -264,7 +264,11 @@ describe("claims", () => {
     expect(z).toMatchObject({ who: "agent-z", lines: ["L1", "L3"] });
     expect(z.until! - Date.now()).toBeLessThanOrEqual(GRANT_MS);
     expect(await until(() => got.some((m) => m.type === "grant" && m.claim.id === "run-z"))).toBe(true);
-    // It takes them by claiming again by id: a lease like any other.
+    // y gets back in line behind z, and z still takes its grant by claiming again by id, waiting or not: a lease like any other.
+    expect(await (await wait(call, "agent-y", { id: "run-y2", lines: ["L1"] })).json()).toMatchObject({ queued: true, place: 1 });
+    const take = await wait(call, "agent-z", { id: "run-z" });
+    expect(take.status).toBe(200);
+    expect(await take.json()).toMatchObject({ until: expect.any(Number) });
     expect(await (await post(call, "agent-z", "claims", { id: "run-z" })).json()).toMatchObject({ until: expect.any(Number) });
     expect((await claims(call))[0]!.until! - Date.now()).toBeGreaterThan(GRANT_MS);
   });
