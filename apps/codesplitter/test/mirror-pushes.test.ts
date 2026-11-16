@@ -57,7 +57,8 @@ describe("mirrors: primary, pull-only, pushes and tags", () => {
   test.each([
     ["https://github.com/ana/up.git", "ok", 3, 0, false, "GitHub is behind by 3 commits"],
     ["git@github.com:ana/up.git", "clash", 1, 2, false, "GitHub is behind by 1 commit and ahead by 2 commits: both sides changed the same lines, so it waits for you"],
-    ["https://gitlab.com/ana/up", "down", 2, 0, false, "GitLab is behind by 2 commits: GitLab isn't answering, so it waits for you"],
+    ["https://gitlab.com/ana/up", "down", 2, 0, false, "GitLab is behind by 2 commits: GitLab isn't answering, so it tries again by itself"],
+    ["https://git.example.org/up", "down", 0, 0, false, "Upstream isn't answering: nothing is waiting to move, and it tries again by itself"],
     ["https://git.example.org/up", "ok", 4, 1, true, "Upstream is ahead by 1 commit"],
   ] as const)("a copy that leads says where %s stands, never a git error (#2954)", (url, state, ahead, behind, pullOnly, says) => {
     expect(upstreamLag({ url, state, ahead, behind, pullOnly }).says).toBe(says);

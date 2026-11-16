@@ -61,6 +61,23 @@ describe("folder mirrors", () => {
     expect(await sh(`git --git-dir ${up} rev-parse main`)).toBe(taken);
     expect(await sh(`git --git-dir ${here} show main:a.ts`)).toBe("ONE\ntwo\nthree");
 
+    // The next send replaces the last one; idle syncs push nothing. A commit Bo adds to that branch is never replaced.
+    const branch = () => sh(`git --git-dir ${up} rev-parse codesplitter/up`);
+    await editHere(call, "a.ts", 2, "TWO");
+    expect(await sync(call)).toMatchObject({ state: "held" });
+    const second = await branch();
+    expect(await upShow(second, "apps/web/a.ts")).toBe("ONE\nTWO\nthree");
+    for (let i = 0; i < 2; i++) await sync(call);
+    expect(await branch()).toBe(second);
+    const work = mkdtempSync(join(root, "work-"));
+    await sh(`git clone -q -b codesplitter/up ${up} . && git config user.name Bo && git config user.email bo@example.com && printf 'b\\n' > other/b.ts && git add -A && git commit -qm "bo adds" && git push -q origin codesplitter/up`, work);
+    const bo = await branch();
+    await editHere(call, "a.ts", 3, "THREE");
+    const waits = await sync(call);
+    expect(waits).toMatchObject({ state: "held" });
+    expect(waits.error).toContain("someone else added");
+    expect(await branch()).toBe(bo);
+
     // Upstream's branches and tags stay upstream, and the folder can't lead.
     expect((await call("ana", "/api/repos/ana/up/mirror/branches")).status).toBe(409);
     expect((await post(call, "/api/repos/ana/up/mirror/tags/v1/push")).status).toBe(409);
