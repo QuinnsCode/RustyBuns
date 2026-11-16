@@ -34,7 +34,7 @@ const CRC = Array.from({ length: 256 }, (_, n) => {
   for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
   return c >>> 0;
 });
-const crc32 = (b: Uint8Array) => {
+export const crc32 = (b: Uint8Array) => {
   let c = 0xffffffff;
   for (const x of b) c = CRC[(c ^ x) & 0xff]! ^ (c >>> 8);
   return (c ^ 0xffffffff) >>> 0;
@@ -44,7 +44,7 @@ const crc32 = (b: Uint8Array) => {
  * The PNG with its resolution written in (a pHYs chunk after the header), so a print shop's software opens it at
  * its real size rather than 72 dpi. A canvas's PNG has none; anything that isn't a PNG comes back as it was.
  */
-export function withDpi(png: Uint8Array, dpi: number): Uint8Array {
+export function withDpi(png: Uint8Array<ArrayBuffer>, dpi: number): Uint8Array<ArrayBuffer> {
   const sig = [137, 80, 78, 71, 13, 10, 26, 10];
   if (png.length < 33 || sig.some((b, i) => png[i] !== b)) return png;
   const chunk = new Uint8Array(21);

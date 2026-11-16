@@ -12,6 +12,7 @@
 //   orgs/<org>/models/<id>.glb           the sample model itself: served, cached a year
 //   orgs/<org>/scans/<sha>.glb           a sample scanned on the shop's own iPhone (Object Capture, ios/): served, cached a year
 //   orgs/<org>/receipts/<id>.json        a paid pack of samples (billing.ts): never served
+//   orgs/<org>/prints/<design>/<zone>.png  a design's print file at 300 dpi, made once (print.ts): never served by /r/
 //   meta/meshy/<yyyy-mm-dd>.json         samples started that day, across every org: the ceiling on our Meshy bill
 //
 // Files are named by their own SHA-256, so the same picture uploaded twice is one object, and a served key never

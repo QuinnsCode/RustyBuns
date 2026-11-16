@@ -7,7 +7,7 @@
 // Below that, print files: a saved design's original laid out per zone at print resolution, for the fulfiller.
 // Above the form: how many samples are left, and packs to buy more (billing.ts).
 import { getJson, readJson } from "@rustybuns/util/http";
-import { Billing, CheckoutReply, PrintPlan, Product, Sample, areaOf, type PrintArea } from "./api.ts";
+import { Billing, CheckoutReply, PrintPlan, Product, Sample, areaOf, type PrintArea, type PrintSheet } from "./api.ts";
 import { drawSheet, withDpi } from "./print-sheet.ts";
 import { sha256Of } from "./widget/image.ts";
 import { problem, upload } from "./widget/upload.ts";
@@ -220,7 +220,7 @@ function sayPrint(text: string, bad = false) {
   printStatus.classList.toggle("bad", bad);
 }
 
-/** A saved design's print files: ask for the plan, fetch each original with the admin key, draw it, offer the PNG. */
+/** A saved design's print files: ask for the plan (the server makes them), fetch each with the admin key, offer the PNG. One the server couldn't make is drawn here from its original. */
 async function printFiles() {
   const id = design.value.trim().split("/").pop()?.replace(/\.json$/, "") ?? "";
   const base = `${location.origin}/api/orgs/${encodeURIComponent(org.value.trim())}`;
@@ -234,15 +234,8 @@ async function printFiles() {
     const plan = await readJson(res, PrintPlan);
     if (!plan) throw new Error("the server sent something this page can't read");
     for (const s of plan.sheets) {
-      sayPrint(`Drawing the ${s.zone} at ${s.px.w} x ${s.px.h} px...`);
-      const got = await fetch(s.original, { headers: auth });
-      if (!got.ok) throw new Error(`${s.zone}: ${await problem(got)}`);
-      const image = await createImageBitmap(await got.blob());
-      const canvas = new OffscreenCanvas(s.px.w, s.px.h);
-      drawSheet(canvas.getContext("2d")!, s, image, image.width / image.height);
-      image.close();
-      const png = withDpi(new Uint8Array(await (await canvas.convertToBlob({ type: "image/png" })).arrayBuffer()), plan.dpi);
-      const href = URL.createObjectURL(new Blob([png as Uint8Array<ArrayBuffer>], { type: "image/png" }));
+      const png = s.png ? await fetchPrint(s.png, s.zone, auth) : await drawPrint(s, plan.dpi, auth);
+      const href = URL.createObjectURL(new Blob([png], { type: "image/png" }));
       const card = document.createElement("figure");
       card.className = "sheet";
       card.style.margin = "0";
@@ -263,6 +256,25 @@ async function printFiles() {
   } finally {
     printGo.disabled = false;
   }
+}
+/** The server's print file for one zone. */
+async function fetchPrint(url: string, zone: string, auth: Record<string, string>) {
+  sayPrint(`Fetching the ${zone} print file...`);
+  const got = await fetch(url, { headers: auth });
+  if (!got.ok) throw new Error(`${zone}: ${await problem(got)}`);
+  return new Uint8Array(await got.arrayBuffer());
+}
+
+/** A print file drawn here, from its original: for one the server couldn't make (`unmade` says why). */
+async function drawPrint(s: PrintSheet, dpi: number, auth: Record<string, string>) {
+  sayPrint(`Drawing the ${s.zone} at ${s.px.w} x ${s.px.h} px (${s.unmade ?? "not made on the server"})...`);
+  const got = await fetch(s.original, { headers: auth });
+  if (!got.ok) throw new Error(`${s.zone}: ${await problem(got)}`);
+  const image = await createImageBitmap(await got.blob());
+  const canvas = new OffscreenCanvas(s.px.w, s.px.h);
+  drawSheet(canvas.getContext("2d")!, s, image, image.width / image.height);
+  image.close();
+  return withDpi(new Uint8Array(await (await canvas.convertToBlob({ type: "image/png" })).arrayBuffer()), dpi);
 }
 printGo.onclick = () => void printFiles();
 design.onkeydown = (e) => { if (e.key === "Enter") void printFiles(); };

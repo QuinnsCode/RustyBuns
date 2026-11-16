@@ -44,6 +44,9 @@
   "vars": {
     "MESHY_DAILY": "50"
   },
+  "limits": {
+    "cpu_ms": 300000
+  },
   "triggers": {
     "crons": [
       "* * * * *"

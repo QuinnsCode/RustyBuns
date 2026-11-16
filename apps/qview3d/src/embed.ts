@@ -162,7 +162,9 @@ Each event is a POST with this JSON body:
 
 \`order.ready\` carries \`data.order\` (the store's order id) and \`data.lines\`: each \`{ design, qty, print, sheets, skipped }\`,
 where \`sheets\` is a print file per zone (\`zone\`, size in \`cm\` and \`px\` at 300 dpi, \`at\` where the picture sits, and
-\`original\`, the print source: fetch it with the script key) and \`print\` is the same plan's own link.
+\`png\`, the finished print file, a PNG with its dpi written in; \`original\` is the print source. Fetch either with the
+script key) and \`print\` is the same plan's own link. A sheet with no \`png\` has \`unmade\` saying why (an original
+over 12 MP): draw it from \`original\`, or open the design on /admin.html.
 
 Check every call before trusting it. The header is \`QView3D-Signature: t=<unix seconds>,v1=<hex>\`, where the hex is
 the HMAC-SHA256 of \`<t>.<raw body>\` under the secret. Use the raw body, before any JSON parsing:

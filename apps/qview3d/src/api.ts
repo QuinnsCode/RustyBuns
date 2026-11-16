@@ -244,6 +244,10 @@ export const PrintSheet = obj({
   px: obj({ w: int(1, 20_000), h: int(1, 20_000) }),
   original: str(400),
   at: Placement,
+  /** The print file made on the server (an admin fetches it): `orgs/<org>/prints/<design>/<zone>.png`. */
+  png: opt(str(400)),
+  /** Why the server made none (the admin page can still draw it from the original). */
+  unmade: opt(str(200)),
 });
 export type PrintSheet = Of<typeof PrintSheet>;
 

@@ -7,7 +7,7 @@
 //   DELETE /api/orgs/<org>/hooks/<id>         remove one
 //   POST   /api/orgs/<org>/hooks/<id>/test    send it a "test" event now (-> Delivery)
 //   POST   /api/orgs/<org>/orders             an order came in (OrderRequest -> OrderReply): recorded once, its print
-//                                             files laid out, and order.ready fired with their links
+//                                             files made (one PNG per zone, print.ts), and order.ready fired with their links
 //
 // Out: each event is one HookEvent body, signed (hook-sign.ts), sent at once; a non-2xx or no answer is tried again
 // at 1 min, 5 min, 30 min, 2 h and 12 h by the cron (retryDue, from worker.ts scheduled), then marked failed. A cron
@@ -145,7 +145,7 @@ export async function hooksRoute(req: Request, env: Env, ctx: Later, org: string
   return fail("not found", 404);
 }
 
-/** An order: each line's design must be the org's; its print plan is laid out; order.ready goes to the shop's webhooks. */
+/** An order: each line's design must be the org's; its print files are made; order.ready goes to the shop's webhooks once they exist. */
 async function orderRoute(req: Request, env: Env, ctx: Later, org: string, origin: string, h: Record<string, string>): Promise<Response> {
   const fail = (why: string, status: number) => privateJson({ error: why }, status, h);
   const body = await readJson(req, OrderRequest);
@@ -158,7 +158,7 @@ async function orderRoute(req: Request, env: Env, ctx: Later, org: string, origi
   const lines: OrderLine[] = [];
   for (const l of body.lines) {
     if (!(await env.BUCKET.head(designKey(org, l.design)))) return fail(`design ${l.design}: not one of this org's saved designs`, 400);
-    // The print plan, as an admin would get it from GET .../designs/<id>/print.
+    // The print plan, as an admin would get it from GET .../designs/<id>/print: each sheet's PNG made, and linked from `png`.
     const plan = check(PrintPlan, await (await printPlanRoute(env, org, l.design, origin, {})).json());
     if (!plan) return fail(`design ${l.design}: its print files couldn't be laid out`, 500);
     lines.push({ design: l.design, qty: l.qty, print: `${origin}/api/orgs/${org}/designs/${l.design}/print`, sheets: plan.sheets, skipped: plan.skipped });
