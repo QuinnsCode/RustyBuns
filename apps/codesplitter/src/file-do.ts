@@ -846,7 +846,9 @@ export class FileDurableObject {
     if (!soft) {
       const clash = [...new Set(lines.map((id) => this.claimOf.get(id)).filter((c) => c && c !== old))] as Claim[];
       // People steer agents: a person's hold doesn't wait behind agents in line for free lines.
-      const ahead = bot || b.wait ? this.ahead(b.id, want) : [];
+      // Lines it already holds (a grant it takes by id, a renewal) are its: those behind it wait for them, not it.
+      const fresh = old ? new Set(lines.filter((id) => this.claimOf.get(id) !== old)) : want;
+      const ahead = (bot || b.wait) && fresh.size ? this.ahead(b.id, fresh) : [];
       if (clash.length || ahead.length) {
         if (b.wait) return this.wait(by, b, lines, rank);
         if (clash.length) return fail("LinesHeld", `held by ${clash.map((c) => "@" + c.who).join(", ")}`, { claims: clash, retryAfter: retryAfter(clash) });

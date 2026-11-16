@@ -136,6 +136,8 @@ export interface Run {
   spent?: number;
   /** It stopped short of its budget (#1077): at how many tokens, why, its note, and who took over: run `next`, or a person. */
   handoff?: { at: number; why: string; over: Over; note: string; next?: number };
+  /** It finished in the round that went past its budget (#4773): noted, not handed off, since a fresh agent would cost more and has nothing left to do. */
+  overspent?: { at: number; budget: number };
   /** It took over from run `from`, its task that run's note; `hops` handoffs into the task. */
   from?: number; hops?: number;
   /** Times an update cut the run off and it started again from the file as it stood (at most MAX_RESTARTS), and when a hosted run last said it was alive. */
@@ -964,6 +966,9 @@ async function execute(env: Env, self: (req: Request) => Promise<Response>, orig
       ...r.tripped, hops: hops ?? 0, branch: r.applied ? branch : row.branch ?? undefined, lines, also, rebuild,
       note: noteFor({ path, task: row.task, why: r.tripped.why, applied: r.applied, edited: r.edited, conflicts: r.conflicts, failures: r.failures, output: r.output, notes: unheard }),
     });
+    // Past its budget in the round that finished the task: there's nothing to hand off, so it's only noted (#4773).
+    const overspent = !r.tripped && r.spent > policy.budget ? { at: r.spent, budget: policy.budget } : undefined;
+    if (overspent) talk({ who: agent, kind: "event", text: `finished, but spent ~${short(overspent.at)} tokens on a ${short(overspent.budget)} budget`, run: id });
     // Its batch waits for whoever took over: held till the fresh agent is done, or for a person.
     const waits = !own || !r.applied ? undefined : !handoff ? { branch: own, until: protectedMain ? null : Date.now() + wait, ...(protectedMain && { why: "main is protected: a person accepts it" }) }
       : { branch: own, until: null, why: handoff.next ? `handed off to run ${handoff.next}` : `stopped at ~${short(handoff.at)} tokens (${handoff.why}): a person's turn` };
@@ -980,7 +985,7 @@ async function execute(env: Env, self: (req: Request) => Promise<Response>, orig
     // Where its session got to: everything said up to now was heard, or sent it round again.
     const kept = !local && r.kept?.id === r.session && r.kept && await keepSession(env, owner, repo, home, r.kept);
     const session = r.session && (local || kept) ? { id: r.session, last: (await threadMessages(env, owner, repo, home, 1e12)).last } : undefined;
-    const done = await finish(env, id, "done", { ...extra, ...(session && { session }), ...(engine.length && { engine }), ...(pushed && { pushed }), applied: r.applied, rev: r.rev, runs: r.runs, conflicts: r.conflicts, output: r.output.slice(-4000), spent: r.spent, ...(r.edited && { edited: r.edited }), ...(r.private && { private: r.private }), ...(pending ? { pending } : {}), ...(handoff && { handoff }) });
+    const done = await finish(env, id, "done", { ...extra, ...(session && { session }), ...(engine.length && { engine }), ...(pushed && { pushed }), applied: r.applied, rev: r.rev, runs: r.runs, conflicts: r.conflicts, output: r.output.slice(-4000), spent: r.spent, ...(r.edited && { edited: r.edited }), ...(r.private && { private: r.private }), ...(pending ? { pending } : {}), ...(handoff && { handoff }), ...(overspent && { overspent }) });
     // Its token use, per tool, if the repo has Dexter on (dexter.ts). Never fails the run.
     await (await import("./dexter.ts")).recordRun(env, owner, repo, String(id), r.dexter);
     // Stopped just as it ended: nothing waits.
