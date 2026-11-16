@@ -292,8 +292,6 @@ collars are rib knit or rolled and stitched; inside faces are drawn a shade dark
 hanger by its shoulders, its own mesh run as cloth (position-based, [src/widget/hanger.ts](src/widget/hanger.ts)) for about
 a second when it loads or changes colour, then frozen. Shots before and after: [docs/shots-2026-11-14-range](docs/shots-2026-11-14-range/README.md).
 
-## Not in the spike
+## Not built yet
 
-Print zones on a shop's own model (the picture goes anywhere on it now). More than one picture. Text. Pinch-to-size
-on touch (sliders do it now). Real sample
-prices (#4515). A rate limit on signing.
+Real sample prices: the packs carry placeholder prices until the first real Meshy sample is priced (#4515).
