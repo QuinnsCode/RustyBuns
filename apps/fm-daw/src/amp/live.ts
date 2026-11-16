@@ -22,13 +22,13 @@ export interface Live { rig: Rig; chain: string; keys: string[] }
 /**
  * The rig for these settings. A different amp, a pedal in or out, or a new
  * oversampling builds a new chain; otherwise only links whose parts changed are
- * rebuilt (a tone knob: the tone stack; Drive: the pedal), and pots and the
+ * rebuilt (a tone knob: the tone stack; Drive or a part swap: the pedal), and pots and the
  * power stage are just set.
  */
 export function applySettings(s: AmpSettings, live: Live | null, sampleRate: number): Live {
   const amp = AMPS.find((a) => a.id === s.amp) ?? AMPS[0];
   const def = PEDALS.find((p) => p.id === s.pedal);
-  const spec = buildRig(amp, s.knobs, def && { def, drive: s.drive });
+  const spec = buildRig(amp, s.knobs, def && { def, drive: s.drive, swaps: s.swaps });
   const chain = `${amp.id}|${def?.id ?? ""}|${s.oversample}`;
   const keys = spec.links.map((l) => JSON.stringify(l.net));
   if (!live || live.chain !== chain) return { rig: new Rig(spec, sampleRate, s.oversample), chain, keys };

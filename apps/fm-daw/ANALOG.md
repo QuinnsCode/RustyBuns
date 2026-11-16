@@ -88,7 +88,7 @@ Honest limit: a topology we don't have only gets the closest one. That gap tells
 
 ## 7. The board is the source
 
-Today `circuits.ts` writes netlists by hand, and one board (`circuits/hard-clip.tsx`) proves tscircuit can stand in. Flip it:
+Done in #4831: every circuit is a board in `circuits/`, the netlist is read from it, and Q Amp has the board view with clipper and capacitor sockets. The plan it followed:
 
 - **Every circuit is a `.tsx` board.** The netlist is derived from it, never written twice. Tests check each board plays like its voicing.
 - **A board view in Q Amp:** the schematic and the PCB of the pedal you are playing, its tube or diodes glowing with the signal.
