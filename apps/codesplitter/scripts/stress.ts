@@ -18,7 +18,9 @@ import { FileReply } from "../src/file-do.ts";
 import { sign } from "../src/hooks.ts";
 import { AgentSandbox, type ContainerApi } from "../src/sandbox.ts";
 import { gated } from "../test/fake-gate.ts";
+import { help } from "../../../scripts/help.ts";
 
+help(import.meta.path);
 const arg = (n: string, d: number) => { const i = process.argv.indexOf(`--${n}`); return i > 0 ? Number(process.argv[i + 1]) : d; };
 const EXTRA = arg("extra", 25), COMMITS = arg("commits", 150), AS_JSON = process.argv.includes("--json");
 const ip = { "cf-connecting-ip": "203.0.113.7" };

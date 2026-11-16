@@ -5,7 +5,9 @@
 //   bun scripts/swarm-readme.ts --png docs/swarm-week.png     the git wall as one still frame, for viewers that drop SMIL
 //                                                              (needs rsvg-convert); --at <minute> picks another frame
 import { band, changes, timeline, gitPeak, OPEN, type Band, type Week } from "../src/swarm-replay.ts";
+import { help } from "../../../scripts/help.ts";
 
+help(import.meta.path);
 const FILL: Record<Band, string> = { unborn: "#f0f0f0", working: "#9a9a9a", git: "#b3261e", test: "#e8a10c", ready: "#2f7d32", merged: "#d0d7de", closed: "#d0d7de" };
 
 /** The animated chart; with `at` (a minute of the week), one still frame of it instead, playhead and dots frozen there. */

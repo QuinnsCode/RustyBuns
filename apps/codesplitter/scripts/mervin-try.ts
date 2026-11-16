@@ -12,7 +12,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { run } from "./mervin-corpus.ts";
 import { score, tally } from "./mervin-score.ts";
+import { help } from "../../../scripts/help.ts";
 
+help(import.meta.path);
 const pct = (n: number, d: number) => (d ? `${Math.round((100 * n) / d)}%` : "n/a");
 
 /** The plain-words report for a clone at `repo`. */

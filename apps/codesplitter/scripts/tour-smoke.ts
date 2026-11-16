@@ -11,7 +11,9 @@ import { join } from "node:path";
 import { serve } from "@rustybuns/shell-bun";
 import worker from "../src/worker.ts";
 import { local } from "../src/local.ts";
+import { help } from "../../../scripts/help.ts";
 
+help(import.meta.path);
 const arg = (n: string) => { const i = process.argv.indexOf(`--${n}`); return i > 0 ? process.argv[i + 1] : undefined; };
 const CHROME = arg("chrome") ?? "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 
@@ -87,7 +89,7 @@ const scene = (spec: string) => page(`(() => { sessionStorage.setItem("cs_tour",
 /** One chapter is data: the checks below are the same three per way for each. `first` is a phrase from its opening step; `held` from the person-only step's hold. */
 type Chapter = { id: string; steps: string[]; you: number; held: string; first: string; other: string };
 const CHAPTERS: Chapter[] = [
-  { id: "queue", steps: ["Meet the trio", "Mervin reads the board", "Mervin queues the merges", "Ester sorts the red tests", "Queue the merge"], you: 4, held: "A merge changes main", first: "deterministic", other: "play" },
+  { id: "queue", steps: ["Meet the trio", "Mervin reads the board", "Mervin queues the merges", "Ester flags the red tests", "Queue the merge"], you: 4, held: "A merge changes main", first: "deterministic", other: "play" },
   { id: "agents", steps: ["Agents on one repo", "Agents claim lines", "Two on the same line", "Merges settle by line id", "Agents rebase themselves", "Hosted agents", "Agents can't ship"], you: 5, held: "costs money", first: "at once", other: "play" },
   { id: "history", steps: ["A new way to think about a repo", "Own your git history", "Say where git truth lives", "A repo that builds itself", "Deploy all over"], you: 2, held: "which side wins", first: "living lines", other: "play" },
   { id: "together", steps: ["Multiplayer, every which way", "Edit live, together", "Private lines in a public repo"], you: 2, held: "who can see", first: "same repo at once", other: "play" },

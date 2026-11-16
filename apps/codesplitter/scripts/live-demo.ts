@@ -16,7 +16,9 @@ import { FileDoc } from "../src/file-do.ts";
 import { obj, str } from "@rustybuns/util/guard";
 import { readJson } from "@rustybuns/util/http";
 import { PORTS } from "@rustybuns/util/ports";
+import { help } from "../../../scripts/help.ts";
 
+help(import.meta.path);
 const arg = (n: string, d: number) => { const i = process.argv.indexOf(`--${n}`); return i > 0 ? Number(process.argv[i + 1]) : d; };
 const PORT = arg("port", PORTS.liveDemo), ROUNDS = arg("rounds", 3), PACE = arg("pace", 700), WAIT = arg("wait", 20);
 const FILE = "src/server.ts";

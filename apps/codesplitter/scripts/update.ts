@@ -9,7 +9,9 @@
 // it) and replaced by a watched one; its data in ~/.codesplitters is untouched.
 import { $ } from "bun";
 import { desktop } from "./phone.ts";
+import { help } from "../../../scripts/help.ts";
 
+help(import.meta.path);
 const root = new URL("../../..", import.meta.url).pathname;
 const app = new URL("..", import.meta.url).pathname;
 

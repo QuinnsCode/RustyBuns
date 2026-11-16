@@ -13,7 +13,9 @@ import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { bump, floors, npmRegistry, osvAdvisories, outdated, DEFAULTS, type Exposed, type Update, type Vuln } from "../src/deps.ts";
 import { workspaceDirs, workspaceGlobs } from "../src/fit.ts";
+import { help } from "../../../scripts/help.ts";
 
+help(import.meta.path);
 const args = process.argv.slice(2);
 const opt = (name: string) => { const i = args.indexOf(name); return i >= 0 ? args[i + 1] : undefined; };
 const root = resolve(opt("--root") ?? join(import.meta.dir, "../../.."));

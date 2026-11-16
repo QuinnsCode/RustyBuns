@@ -10,7 +10,9 @@ import { join, resolve } from "node:path";
 import { FEED, PAUSE, costOf } from "../src/mervin-replay.ts";
 import { deploySteps, readGraphs } from "../src/deploy-map.ts";
 import { portArg } from "@rustybuns/util/ports";
+import { help } from "../../../scripts/help.ts";
 
+help(import.meta.path);
 /** The feed from event `from` on, and whether the pause file is there. */
 export function feed(dir: string, from: number) {
   const file = join(dir, FEED);

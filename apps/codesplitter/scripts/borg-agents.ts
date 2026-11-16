@@ -17,7 +17,9 @@
 import { text, type Doc, type Op } from "../src/lines.ts";
 import { diffToOps } from "../src/sync.ts";
 import { local, type Call } from "../src/local.ts";
+import { help } from "../../../scripts/help.ts";
 
+help(import.meta.path);
 const git = (repo: string, ...a: string[]) => {
   const r = Bun.spawnSync(["git", "-C", repo, ...a], { stderr: "pipe", maxBuffer: 64 << 20 });
   return r.exitCode === 0 ? r.stdout.toString() : null;

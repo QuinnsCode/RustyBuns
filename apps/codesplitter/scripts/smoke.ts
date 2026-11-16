@@ -11,7 +11,9 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { APP, citedFiles, promises, type Cite } from "../test/trust-promises.ts";
+import { help } from "../../../scripts/help.ts";
 
+help(import.meta.path);
 const AS_JSON = process.argv.includes("--json"), STRESS = !process.argv.includes("--no-stress");
 
 type Verdict = "ok" | "FAIL" | "skipped" | "missing";

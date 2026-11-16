@@ -5,7 +5,9 @@
 // and `flags` names a major bump with no migration notes and a bump two PRs make to different versions.
 //
 // The core is pure (`blast`, `rank`, `flags`); `load` is the only part that reads git.
+import { help } from "../../../scripts/help.ts";
 
+help(import.meta.path);
 export interface Pkg { dir: string; name: string; deps: Record<string, string> }
 export interface Bump { pkg: string; dir: string; from: string | null; to: string | null; major: boolean }
 export interface Blast { pr: number; workspaces: string[]; files: number; tests: number; shared: boolean; bumps: Bump[]; score: number }

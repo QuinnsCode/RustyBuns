@@ -34,7 +34,9 @@ import { dirname, join, resolve } from "node:path";
 import { run, order, ciOf, type Board, type BoardPr, BoardPrs } from "./mervin-board.ts";
 import { events, FEED, PAUSE, costOf, type Ev, type Round } from "../src/mervin-replay.ts";
 import { ghTrain, Train } from "@rustybuns/util/train";
+import { help } from "../../../scripts/help.ts";
 
+help(import.meta.path);
 export interface Verdict { pr: number; title?: string; go: boolean; wave?: number; why: string; behind: number[]; method?: "squash" | "merge" }
 
 /** The checks the main ruleset requires. One that hasn't reported yet is pending, never passed (#1542). */

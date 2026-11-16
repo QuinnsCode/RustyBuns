@@ -22,7 +22,9 @@ import { arr, bool, check as guarded, num, nul, obj, oneOf, opt, raw, str, type 
 import { push } from "../src/git.ts";
 import type { Artifacts, ArtifactsRepo, TreeEntry } from "../src/env.ts";
 import { parseAuthToken } from "./release.ts";
+import { help } from "../../../scripts/help.ts";
 
+help(import.meta.path);
 const account = process.env.CLOUDFLARE_ACCOUNT_ID;
 /** Wrangler's login as a token. Its plain output moved to stderr in 4.155 (#2669); --json keeps it on stdout. */
 const wranglerToken = () => parseAuthToken(Bun.spawnSync(["npx", "wrangler", "auth", "token", "--json"], { stderr: "ignore" }).stdout.toString()) ?? undefined;

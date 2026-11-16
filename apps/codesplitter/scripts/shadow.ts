@@ -47,7 +47,9 @@ import { lintMerge } from "../src/lint.ts";
 import { policyOf } from "../src/policy.ts";
 import { NO_KEYCHAIN } from "../src/check-env.ts";
 import { arr, int, nul, obj, str, type Of } from "@rustybuns/util/guard";
+import { help } from "../../../scripts/help.ts";
 
+help(import.meta.path);
 export type Verdict = "agree" | "both" | "git-only" | "ours-only" | "differ" | "guard" | "lock";
 export interface Shadow {
   verdict: Verdict;
