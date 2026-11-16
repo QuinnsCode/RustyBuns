@@ -347,7 +347,7 @@ test("a recorded take: its sound reaches the room in chunks before it lands on a
   const { world, join, leave, store } = await setup();
   const a = (await join()).ws, b = (await join()).ws;
   world.webSocketMessage(a, JSON.stringify({ t: "init", project }));
-  const s16 = new Int16Array(TAKE_RATE).map((_, i) => Math.round(8000 * Math.sin(i / 10)));
+  const s16 = new Int16Array(3 * TAKE_RATE).map((_, i) => Math.round(8000 * Math.sin(i / 10)));
   const chunks = toChunks("take0001", s16);
   const place = (ws: Sock, id: string, track = 3) => world.webSocketMessage(ws, JSON.stringify({ t: "op", op: { t: "take", track, take: { id, beat: 2, frames: s16.length } } }));
 

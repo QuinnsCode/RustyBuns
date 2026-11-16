@@ -41,13 +41,13 @@ const rms = (x: Float32Array, a: number, b: number) => {
 test("record a pass of the loop onto a track, share it in chunks, and hear it there at its beat", async () => {
   const p = new Processor();
   const say = (m: ToWorklet) => p.port.onmessage({ data: m });
-  say({ t: "tempo", bpm: 120, swing: 0, loopBeats: 4 });               // a 2 s loop
+  say({ t: "tempo", bpm: 120, swing: 0, loopBeats: 6 });               // a 3 s loop: two chunks of sound
   say({ t: "master", gain: 1 });
   say({ t: "arm", track: 2, inLatency: 0 });
   say({ t: "rec", on: true });
   say({ t: "play", countIn: 0 });
   // a pass and a bit: the whole pass is the take, the bit cut short by Stop doesn't replace it
-  await run(p, 2.5, burst);
+  await run(p, 3.5, burst);
   say({ t: "rec", on: false });
   say({ t: "stop" });
   await Promise.resolve();
@@ -56,7 +56,7 @@ test("record a pass of the loop onto a track, share it in chunks, and hear it th
   const got = takes[0];
   if (got.t !== "taken") throw new Error("no take");
   expect(got).toMatchObject({ track: 2, beat: 0, rate: SR });
-  expect(got.pcm.length).toBe(2 * SR);
+  expect(got.pcm.length).toBe(3 * SR);
 
   // the page keeps it at 24 kHz in 16 bits and sends it in chunks; the others put it back together
   const s16 = encodeTake(got.pcm, got.rate);
@@ -70,10 +70,10 @@ test("record a pass of the loop onto a track, share it in chunks, and hear it th
   // on the track a beat (0.5 s) later than it was played: the tone now sounds from 1 s to 1.5 s
   say({ t: "take", track: 2, pcm, beat: 1 });
   say({ t: "play", countIn: 0 });
-  const heard = await run(p, 2);
+  const heard = await run(p, 3);
   expect(rms(heard, 0.05, 0.95)).toBeLessThan(0.01);
   expect(rms(heard, 1.05, 1.45)).toBeGreaterThan(0.3);
-  expect(rms(heard, 1.55, 1.95)).toBeLessThan(0.01);
+  expect(rms(heard, 1.55, 2.95)).toBeLessThan(0.01);
   // muted with its track
   say({ t: "audible", mask: Array.from({ length: 12 }, (_, i) => i !== 2) });
   say({ t: "play", countIn: 0 });
