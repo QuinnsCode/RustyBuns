@@ -726,6 +726,17 @@
       "name": "playground",
       "version": "0.0.1",
     },
+    "apps/pwa-example": {
+      "name": "pwa-example",
+      "version": "0.0.1",
+      "dependencies": {
+        "@rustybuns/util": "^0.1.12",
+        "lucide": "1.55.0",
+      },
+      "devDependencies": {
+        "vite": "^6.4.4",
+      },
+    },
     "apps/qcrm": {
       "name": "qcrm",
       "version": "0.1.4",
@@ -3879,6 +3890,8 @@
     "puppeteer-core": ["puppeteer-core@25.4.0", "", { "dependencies": { "@puppeteer/browsers": "3.0.6", "chromium-bidi": "17.0.2", "devtools-protocol": "0.0.1653615", "typed-query-selector": "^2.12.2", "webdriver-bidi-protocol": "0.4.2", "ws": "^8.21.1" } }, "sha512-K1plkLOdeoUnGeT1OvdqF3qxl33v+Ra/uH5VyPEhXdMcpvGiEskHzxxEU3fgpccJpJLIipB/rPUsvkZRWeKqOA=="],
 
     "pure-rand": ["pure-rand@6.1.0", "", {}, "sha512-bVWawvoZoBYpp6yIoQtQXHZjmz35RSVHnUOTefl8Vcjr8snTPY1wnpSPMWekcFwbxI6gtmT7rSYPFvz71ldiOA=="],
+
+    "pwa-example": ["pwa-example@workspace:apps/pwa-example"],
 
     "qcrm": ["qcrm@workspace:apps/qcrm"],
 
