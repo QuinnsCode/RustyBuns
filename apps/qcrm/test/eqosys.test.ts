@@ -45,14 +45,15 @@ afterAll(() => eqosys.stop(true));
 
 const cookiesOf = (r: Response) => r.headers.getSetCookie().map((c) => c.split(";")[0]).join("; ");
 
-/** Press "Continue with eqosys" and follow it home: where qCRM sends the browser, and its cookies. */
-async function viaEqosys(app: Awaited<ReturnType<typeof local>>) {
-  const start = await app("", "/api/auth/sign-in/social", { method: "POST", body: JSON.stringify({ provider: "eqosys", callbackURL: "/app" }) });
+/** Press "Continue with eqosys" (or, signed in, Settings' "Connect eqosys") and follow it home: where qCRM sends the browser, and its cookies. */
+async function viaEqosys(app: Awaited<ReturnType<typeof local>>, signedIn = "") {
+  const path = signedIn ? "/api/auth/link-social" : "/api/auth/sign-in/social";
+  const start = await app(signedIn, path, { method: "POST", body: JSON.stringify({ provider: "eqosys", callbackURL: "/app" }) });
   expect(start.status).toBe(200);
   const { url } = await start.json();
   const there = await fetch(url, { redirect: "manual" });
   const back = new URL(there.headers.get("location")!);
-  const home = await app(cookiesOf(start), back.pathname + back.search);
+  const home = await app([signedIn, cookiesOf(start)].filter(Boolean).join("; "), back.pathname + back.search);
   return { to: home.headers.get("location") ?? "", cookie: cookiesOf(home) };
 }
 
@@ -88,6 +89,27 @@ test("eqosys signs a new person in, links an existing account by verified email,
   const refused = await viaEqosys(app);
   expect(refused.to).toContain("error=");
   expect((await app(refused.cookie, "/api/me")).status).toBe(401);
+});
+
+test("a password account nobody verified (mail off): eqosys comes back to the app saying why, and Connect eqosys in Settings joins them", async () => {
+  const app = await local({ EQOSYS_URL: eqosys.url.origin });
+  const pw = await signup(app, "cat@example.com");
+  const cat = (await (await app(pw, "/api/me")).json()).user;
+  next = { sub: "eq-4", email: "cat@example.com", email_verified: true, name: "Cat" };
+
+  const refused = await viaEqosys(app);
+  expect(refused.to).toBe(`${app.env.BETTER_AUTH_URL}/app?error=account_not_linked`);
+
+  // Signed in with the password, she connects eqosys; from then on eqosys signs her straight in to the same account.
+  const connected = await viaEqosys(app, pw);
+  expect(connected.to).toBe("/app");
+  expect((await (await app(pw, "/api/auth/list-accounts")).json()).map((a: { providerId: string }) => a.providerId)).toContain("eqosys");
+  const again = await viaEqosys(app);
+  expect((await (await app(again.cookie, "/api/me")).json()).user.id).toBe(cat.id);
+
+  // Someone else's eqosys account can't be connected to hers.
+  next = { sub: "eq-5", email: "dan@example.com", email_verified: true, name: "Dan" };
+  expect((await viaEqosys(app, pw)).to).toContain("error=email_does_not_match");
 });
 
 test("without EQOSYS_URL there is no eqosys button", async () => {
