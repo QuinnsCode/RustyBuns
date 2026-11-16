@@ -1,6 +1,6 @@
 // The amp's live chain, apart from the audio thread so a test can play it:
 // settings in, a rig out (rebuilding only what changed), and the speaker limiter.
-import { AMPS, PEDALS, buildRig } from "../circuit/amps.ts";
+import { AMPS, PEDALS, buildRig, type PedalDef } from "../circuit/amps.ts";
 import { POWER_VOLTS, Rig } from "../circuit/rig.ts";
 import type { AmpSettings } from "./messages.ts";
 
@@ -27,7 +27,8 @@ export interface Live { rig: Rig; chain: string; keys: string[] }
  */
 export function applySettings(s: AmpSettings, live: Live | null, sampleRate: number): Live {
   const amp = AMPS.find((a) => a.id === s.amp) ?? AMPS[0];
-  const def = PEDALS.find((p) => p.id === s.pedal);
+  const bench = s.bench;
+  const def: PedalDef | undefined = s.pedal === "bench" && bench ? { id: "bench", name: "Bench", blurb: "", net: () => bench } : PEDALS.find((p) => p.id === s.pedal);
   const spec = buildRig(amp, s.knobs, def && { def, drive: s.drive });
   const chain = `${amp.id}|${def?.id ?? ""}|${s.oversample}`;
   const keys = spec.links.map((l) => JSON.stringify(l.net));

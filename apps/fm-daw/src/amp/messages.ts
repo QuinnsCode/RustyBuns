@@ -1,11 +1,14 @@
 // What the amp page and its audio thread say to each other.
 import type { Knobs } from "../circuit/amps.ts";
+import type { Netlist } from "../circuit/mna.ts";
 
 /** The whole front panel, every time: the audio thread works out what changed. */
 export interface AmpSettings {
   amp: string;
   /** The pedal switched on, or null. */
   pedal: string | null;
+  /** The board on the bench, at its knobs' turn: played when `pedal` is "bench" (src/circuit/bench.ts). */
+  bench?: Netlist;
   /** Its Drive, 0 to 10. */
   drive: number;
   knobs: Knobs;

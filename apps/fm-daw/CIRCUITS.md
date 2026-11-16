@@ -35,10 +35,12 @@ One amp on a stage, live in the browser. The head and the cabinet are clear acry
 | `src/circuit/riff.ts` | The dry guitar riff (Karplus-Strong plucks, seeded). |
 | `src/amp/` | Q Amp: `live.ts` (settings into a rig, rebuilding only what changed; the limiter), `worklet.ts` (the audio thread), `screens.ts`, `main.ts`, `amp.css`. |
 | `native/crates/fm_daw/src/circuit.rs` | The solver and the rig in Rust, step for step, with an `fm_amp_*` C surface in the engine's wasm. `src/circuit/wasm.ts` (`WasmRig`) drives it with the same knobs as `Rig`; `encodeNetlist` in `mna.ts` hands it a netlist as numbers. |
-| `src/circuit/tscircuit.ts` | Reads a tscircuit board's JSON and makes a netlist of it. |
-| `circuits/hard-clip.tsx` | The hard-clip pedal drawn as a tscircuit board. `test/fixtures/hard-clip.circuit.json` is what tscircuit rendered from it. |
+| `src/circuit/tscircuit.ts` | Reads a tscircuit board's JSON and makes a netlist of it, pots set by their knobs. |
+| `src/circuit/bench.ts` | The bench: a board becomes gear (a `@rustybuns/gear` box its size, a jack in and out, a knob per pot) once it plays, or the reasons it won't. Q Amp's floor takes one by drop (`src/amp/bench-slot.ts`). |
+| `circuits/hard-clip.tsx` | The hard-clip pedal drawn as a tscircuit board. `test/fixtures/hard-clip.circuit.json` is what tscircuit rendered from it. `circuits/bench-drive.tsx` is the same with DRIVE and LEVEL pots, the bench's board. |
 | `scripts/amp.ts` | Plucks a guitar riff (Karplus-Strong), runs it through every rig, writes WAVs, prints the speed. |
 | `test/circuit.test.ts` | The tscircuit board plays like the hand-written circuit; the solver hits textbook numbers; no rig blows up on a hot input; the Rust port plays every rig like the TypeScript one while the knobs turn. |
+| `test/bench.test.ts` | The drawn drive pedal becomes gear and plays in front of the amp, its pots turning; boards people get wrong say why. |
 | `test/amp.test.ts` | Working Q Amp's panel while the riff plays: only what moved is rebuilt, nothing passes −1 dBFS, no Newton misses. |
 
 ## How it works
@@ -99,7 +101,9 @@ Rust beats the JIT by 1.4 to 1.5× on the tube amps, and by 1.5 to 2× under V8 
 
 ## tscircuit
 
-tscircuit renders a board to circuit JSON. Its `source_*` elements are the schematic, and every port already names its net, so turning a board into a netlist is a lookup. `boardToNetlist` reads resistors, capacitors and diodes, and chips by their pin labels: `OUT`/`INP`/`INN` is an op-amp, `PLATE`/`GRID`/`CATHODE` a 12AX7. Name a net in `supplies` to put a DC supply on it (`{ B_PLUS: 300 }`).
+tscircuit renders a board to circuit JSON. Its `source_*` elements are the schematic, and every port already names its net, so turning a board into a netlist is a lookup. `boardToNetlist` reads resistors, capacitors and diodes, and chips by their pin labels: `OUT`/`INP`/`INN` is an op-amp, `PLATE`/`GRID`/`CATHODE` a 12AX7. Name a net in `supplies` to put a DC supply on it (`{ B_PLUS: 300 }`). A potentiometer (`<potentiometer pinVariant="three_pin">`) is two resistors split at its wiper, pin2, turned by `knobs` (0 to 1 by its name); the two-pin kind is a variable resistor.
+
+**The bench.** Drop a board's circuit JSON on Q Amp's floor and it becomes the fourth pedal, with a knob per pot. First the bench plays a hot note through it with every knob down, centred and up; a board that won't solve (Newton gives up, it blows up, nothing reaches `OUT`, a part with no model) shows the reasons in the slot and never plays. Wire the jacks to `net.IN` and `net.OUT`. The box it becomes is `@rustybuns/gear`'s `Gear`, so the 3D studio can stand it on the floor once the room is built.
 
 tscircuit itself stays out of this app: it is parked in this repo because it pins zod 3 (see `apps/tscircuit-desktop`). The app reads only its JSON. To change the board, render `circuits/hard-clip.tsx` in a scratch folder (the command is at its top) and replace the fixture.
 
