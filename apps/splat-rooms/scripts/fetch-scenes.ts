@@ -13,13 +13,16 @@
 import { mkdir, readdir, readFile, rename, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { arr, int, obj, oneOf, or, str, type Of } from "@rustybuns/util/guard";
 
 const REPO = "spatialverse/InteriorGS";
 const API = `https://huggingface.co/api/datasets/${REPO}/tree/main`;
 const FILE = (path: string) => `https://huggingface.co/datasets/${REPO}/resolve/main/${path}`;
 const DIR = (process.env.SPLAT_ROOMS_DIR ?? "~/Documents/SplatRooms").replace(/^~/, homedir());
 
-interface Entry { type: "file" | "directory"; path: string; size: number }
+/** One row of the dataset's folder listing; a row that doesn't read is left out. */
+const Entry = obj({ type: oneOf(["file", "directory"]), path: str(1000), size: or(int(0, 1e13), 0) });
+type Entry = Of<typeof Entry>;
 
 async function token(): Promise<string | null> {
   if (process.env.HF_TOKEN) return process.env.HF_TOKEN.trim();
@@ -34,7 +37,7 @@ async function tree(path = "", auth: Record<string, string>): Promise<Entry[]> {
   while (url) {
     const r: Response = await fetch(url, { headers: auth });
     if (!r.ok) throw new Error(`listing ${path || "dataset"}: HTTP ${r.status}`);
-    out.push(...((await r.json()) as Entry[]));
+    out.push(...arr(Entry, 100_000, { drop: true })(await r.json()));
     url = r.headers.get("link")?.match(/<([^>]+)>;\s*rel="next"/)?.[1] ?? null;
   }
   return out;

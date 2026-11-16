@@ -128,7 +128,7 @@ export function mountControls(o: Opts) {
 
   // Four profiles. The active slot always mirrors what the player has; picking another loads it.
   const bookKey = `${o.key}.profiles`;
-  let book: Book = (() => { try { return parseBook(JSON.parse(localStorage.getItem(bookKey) ?? "null")); } catch { return parseBook(null); } })();
+  let book = ((): Book => { try { return parseBook(JSON.parse(localStorage.getItem(bookKey) ?? "null")); } catch { return parseBook(null); } })();
   const snapshot = (): Profile => ({ settings: { ...s }, keys: o.bindings?.toJSON() ?? {}, pad: o.pad?.binds.toJSON() ?? {} });
   const persist = () => { book = remember(book, snapshot()); try { localStorage.setItem(bookKey, JSON.stringify(book)); } catch {} };
   const profBar = Object.assign(document.createElement("div"), { className: "gc-profiles", role: "group", ariaLabel: "Profiles" });

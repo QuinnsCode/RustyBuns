@@ -3,7 +3,6 @@
 // window.__commands for a script or `bun run probe`. The worker's MCP server has the same tools. commands/ adds them,
 // so the page has one copy of the commands module (and one __commands) rather than one per page script.
 import type { Command } from "@rustybuns/util/commands";
-import { check, raw, rec } from "@rustybuns/util/guard";
 import { runTriageTool, TRIAGE_TOOLS, type TriageCall } from "./tools.ts";
 
 const pageCall: TriageCall = async (method, p) => {
@@ -15,4 +14,4 @@ const pageCall: TriageCall = async (method, p) => {
 
 /** The six triage tools as commands; a failed call throws its message. */
 export const triageCommands = (call: TriageCall = pageCall): Command[] =>
-  TRIAGE_TOOLS.map((t) => ({ ...t, group: "Triage", execute: (args: unknown) => runTriageTool(t.name, check(rec(raw), args) ?? {}, call) }));
+  TRIAGE_TOOLS.map((t) => ({ ...t, group: "Triage", execute: (args: unknown) => runTriageTool(t.name, args, call) }));

@@ -5,6 +5,8 @@
 // (it is restarting while workers keep running), only a command that looks like a write is held, by the crude pattern
 // below; git status, gh pr view and the rest go ahead. The first PreToolUse hook (upstream's) stays as it is; it only tells
 // the office what happened and can't block.
+import { isRecord } from "@rustybuns/util/guard";
+
 const WRITES = "git[[:space:]]+(-C[[:space:]]+[^[:space:]]+[[:space:]]+)?push|gh[[:space:]]+(pr|issue)[[:space:]]+(create|merge|close|reopen|edit|comment|review|ready|lock|unlock|delete|transfer|develop|pin|unpin)|gh[[:space:]]+api.*(-X|--method)[[:space:]=]*(POST|PATCH|PUT|DELETE)";
 
 /**
@@ -46,7 +48,7 @@ export const MUSE_WRITE_HOOK = writeHook(true);
  * `tool_input.cmd` (its schema reads like Codex's exec_command; not yet seen on a live Muse, #2526).
  */
 export function commandOf(call: unknown): string | undefined {
-  const field = (o: unknown, k: string) => (typeof o === "object" && o !== null && k in o ? (o as Record<string, unknown>)[k] : undefined);
+  const field = (o: unknown, k: string) => (isRecord(o) ? o[k] : undefined);
   for (const c of [field(field(call, "tool_input"), "command"), field(field(call, "tool_input"), "cmd"), field(field(call, "toolInput"), "command"), field(call, "command")])
     if (typeof c === "string") return c;
   return undefined;

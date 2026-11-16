@@ -155,7 +155,7 @@ export function rankCommands<C extends Pick<Command, "name" | "title" | "group">
 const inOrder = (hay: string, w: string) => { let k = 0; for (const ch of hay) if (ch === w[k] && ++k === w.length) return true; return false; };
 
 /** The palette's one line as a command's arguments: the first property of its inputSchema, a number when that property is one. */
-export function askArgs(c: Pick<Command, "inputSchema">, line: string): Record<string, unknown> {
+export function askArgs(c: Pick<Command, "inputSchema">, line: string): { [arg: string]: string | number } {
   const [key, prop] = Object.entries(c.inputSchema?.properties ?? {})[0] ?? [];
   if (!key) return {};
   const type = prop && Reflect.get(prop, "type");

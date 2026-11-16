@@ -216,7 +216,7 @@ export function applyOps(
         continue;
       }
       // patch cannot change type or id; merge then re-clamp
-      const { id: _i, type: _t, ...safe } = op.patch as Record<string, unknown>;
+      const { id: _i, type: _t, ...safe } = op.patch;
       let next = sanitizeStyle({ ...cur, ...safe } as SkeletonEl);
       if (next.type === "text" && typeof next.text === "string")
         next.text = next.text.slice(0, limits.maxTextLen);

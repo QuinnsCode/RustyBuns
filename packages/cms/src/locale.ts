@@ -4,7 +4,8 @@
 // one, so a line nobody has translated yet (missing, or left blank) reads in the source language. Numbers always
 // come from the source. Imports nothing, so a build script or a page can use it.
 
-const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
+/** A plain JSON object, its fields still unknown: content files have no fixed shape, so they are walked. */
+export const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 const isStrings = (v: unknown): v is string[] => Array.isArray(v) && v.every((x) => typeof x === "string");
 
 function overlay(source: unknown, tr: unknown, keepBlank: boolean): unknown {
@@ -73,14 +74,14 @@ function graft(into: Record<string, unknown> | unknown[], next: unknown): void {
  *  `sources` the originals by name. Run it before the sim reads a line (the entry's first import), never per tick, so a
  *  replay stays a replay. Returns the language it picked. */
 export function localizeContent(sources: Record<string, object>, files: Record<string, unknown>, wanted: readonly (string | null | undefined)[], fallback = "en"): string {
-  const byLang: Record<string, Record<string, unknown>> = {};
+  const byLang = new Map<string, Map<string, unknown>>();
   for (const [path, file] of Object.entries(files)) {
     const m = /([^/\\]+)[/\\]([^/\\]+)\.json$/.exec(path);
-    if (m && isLocale(m[1]!)) (byLang[m[1]!] ??= {})[m[2]!] = file;
+    if (m && isLocale(m[1]!)) byLang.set(m[1]!, (byLang.get(m[1]!) ?? new Map<string, unknown>()).set(m[2]!, file));
   }
-  const lang = pickLocale(wanted, [fallback, ...Object.keys(byLang)], fallback);
+  const lang = pickLocale(wanted, [fallback, ...byLang.keys()], fallback);
   for (const [name, source] of Object.entries(sources)) {
-    const tr = byLang[lang]?.[name];
+    const tr = byLang.get(lang)?.get(name);
     if (tr !== undefined && (isRecord(source) || Array.isArray(source))) graft(source, localize(source, tr));
   }
   return lang;

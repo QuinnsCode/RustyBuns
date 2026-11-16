@@ -1,6 +1,7 @@
 // Gamepad reading and rebindable buttons, pure where it can be so a test reaches it without a page. A game lists its
 // button actions with the standard-layout button each ships on, calls `poll` once a frame, and reads sticks and
 // held/pressed actions off the result. Sticks have a radial dead zone; buttons rebind in the Controls dialog.
+import { fieldsOf } from "./settings.ts";
 
 export interface PadAction {
   id: string;
@@ -27,10 +28,10 @@ export function deadZone(x: number, y: number, zone = 0.15): { x: number; y: num
 
 /** Whatever was stored (unknown) down to bindings for known actions with no button twice; anything off is dropped. */
 export function parsePadBindings(raw: unknown, actions: PadAction[]): PadBindings {
-  const o: Record<string, unknown> = typeof raw === "object" && raw !== null && !Array.isArray(raw) ? Object.fromEntries(Object.entries(raw)) : {};
+  const o = fieldsOf(raw);
   const out: PadBindings = {};
   for (const a of actions) {
-    const v = o[a.id];
+    const v = o.get(a.id);
     if (typeof v === "number" && Number.isInteger(v) && v >= 0 && v < 32) out[a.id] = v;
   }
   // A stored clash: the later action goes back to its shipped button rather than share one.

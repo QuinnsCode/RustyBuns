@@ -1,4 +1,10 @@
 import { EXTRAS } from "./schema.ts";
+
+/** A stored value's fields by name, each still unknown; anything but a plain object has none. */
+/** A stored list, or none. */
+export const listOf = (v: unknown): unknown[] => (Array.isArray(v) ? v : []);
+export const fieldsOf = (raw: unknown): Map<string, unknown> =>
+  new Map(typeof raw === "object" && raw !== null && !Array.isArray(raw) ? Object.entries(raw) : []);
 // The numbers every game's Controls panel holds. Pure, so a test can reach it without a page.
 export interface Settings {
   /** Mouse (or stick) look speed left/right, 1 as shipped. */
@@ -53,10 +59,10 @@ const clampTo = (k: NumKey, n: number) => Math.min(RANGES[k].max, Math.max(RANGE
 
 /** Optional rows from a save: known ids only, a number clamped into its range, a flag as a flag; anything else is dropped. */
 function parseMore(raw: unknown): Settings["more"] {
-  const o: Record<string, unknown> = typeof raw === "object" && raw !== null && !Array.isArray(raw) ? Object.fromEntries(Object.entries(raw)) : {};
+  const o = fieldsOf(raw);
   const out: Settings["more"] = {};
   for (const [id, x] of Object.entries(EXTRAS)) {
-    const v = o[id];
+    const v = o.get(id);
     if (x.kind === "slider" && typeof v === "number" && Number.isFinite(v)) out[id] = Math.min(x.max, Math.max(x.min, v));
     else if (x.kind === "toggle" && typeof v === "boolean") out[id] = v;
   }
@@ -65,15 +71,15 @@ function parseMore(raw: unknown): Settings["more"] {
 
 /** Whatever was stored (unknown: a hand-edited or older save) down to valid settings; a bad field falls back to its default. */
 export function parseSettings(raw: unknown): Settings {
-  const o: Record<string, unknown> = typeof raw === "object" && raw !== null && !Array.isArray(raw) ? Object.fromEntries(Object.entries(raw)) : {};
-  const num = (k: NumKey) => { const v = o[k]; return typeof v === "number" && Number.isFinite(v) ? clampTo(k, v) : DEFAULTS[k]; };
-  const flag = (k: "invertY" | "musicOn" | "sfxOn") => { const v = o[k]; return typeof v === "boolean" ? v : DEFAULTS[k]; };
+  const o = fieldsOf(raw);
+  const num = (k: NumKey) => { const v = o.get(k); return typeof v === "number" && Number.isFinite(v) ? clampTo(k, v) : DEFAULTS[k]; };
+  const flag = (k: "invertY" | "musicOn" | "sfxOn") => { const v = o.get(k); return typeof v === "boolean" ? v : DEFAULTS[k]; };
   return {
     lookX: num("lookX"), lookY: num("lookY"), touch: num("touch"), invertY: flag("invertY"),
     touchX: num("touchX"), touchY: num("touchY"), brightness: num("brightness"),
     music: num("music"), sfx: num("sfx"), musicOn: flag("musicOn"), sfxOn: flag("sfxOn"),
-    muted: Array.isArray(o.muted) ? o.muted.filter((m): m is string => typeof m === "string") : [],
-    zoom: num("zoom"), tilt: num("tilt"), more: parseMore(o.more),
+    muted: listOf(o.get("muted")).filter((m): m is string => typeof m === "string"),
+    zoom: num("zoom"), tilt: num("tilt"), more: parseMore(o.get("more")),
   };
 }
 

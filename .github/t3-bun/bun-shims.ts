@@ -32,7 +32,7 @@ const BunSocket = net.Socket;
 class Socket extends BunSocket {
   constructor(options?: { fd?: number; readable?: boolean; writable?: boolean }) {
     if (typeof options?.fd === "number" && options.readable !== false && options.writable === false) {
-      return Readable.fromWeb(Bun.file(options.fd).stream() as never);
+      return Readable.fromWeb(Bun.file(options.fd).stream() as import("node:stream/web").ReadableStream);
     }
     super(options);
   }
@@ -51,7 +51,7 @@ type NodeServeOptions = { onNodeHTTPRequest?: unknown; websocket?: object };
 Bun.serve = ((options: NodeServeOptions) =>
   serve((options?.onNodeHTTPRequest && options.websocket
     ? { ...options, websocket: { ...options.websocket, perMessageDeflate: true } }
-    : options) as never)) as typeof Bun.serve;
+    : options) as Parameters<typeof serve>[0])) as typeof Bun.serve;
 
 // v8.queryObjects(Ctor, { format: "count" }): count live instances by class name in a JSC heap snapshot.
 const v8 = require("node:v8");

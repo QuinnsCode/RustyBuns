@@ -1,4 +1,5 @@
 // What the page keeps and how it talks to the engine: pure functions, no DOM, so the tests drive them directly.
+import { arr, bool, int, num as number, nul, obj, oneOf, or, str, type Guard } from "@rustybuns/util/guard";
 import type { Placed, Solution, Thing, V3 } from "./engine.ts";
 
 /** `inner` is what a product that opens (`holds`) has room for inside; null until it is typed, then half a unit of wall all round. */
@@ -14,6 +15,15 @@ export interface State {
   boxes: Row[];
   items: Row[];
 }
+
+const Size = or(number(0, 1e6), 0);
+const Cavity: Guard<V3> = (v) => { const [l, w, h] = arr(number(0, 1e6), 3, { min: 3 })(v); return [l!, w!, h!]; };
+const SavedRow = obj({ name: or(str(200), ""), l: Size, w: Size, h: Size, qty: or(int(0, 1e6), 1), holds: or(bool(), false), inner: or(nul(Cavity), null) });
+/** The page as this browser kept it (localStorage): a field left out reads as the example's, a row that doesn't read is dropped. */
+export const Saved: Guard<State> = obj({
+  unit: or(oneOf(["in", "cm"]), "in"), pad: or(number(0, 1e4), 0), theme: or(int(0, 100), 0), nest: or(bool(), true),
+  boxes: arr(SavedRow, 500, { drop: true }), items: arr(SavedRow, 500, { drop: true }),
+});
 
 export const blank = (): Row => ({ name: "", l: 0, w: 0, h: 0, qty: 1, holds: false, inner: null });
 const row = (name: string, l: number, w: number, h: number, qty = 1, holds = false): Row => ({ name, l, w, h, qty, holds, inner: null });

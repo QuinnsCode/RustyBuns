@@ -2,6 +2,8 @@
 // Vendor-neutral on purpose. RATES_URL is an endpoint that takes `{ parcel, from, to }` and answers
 // `{ rates: [{ carrier, service, amount, currency, days? }] }`; a thin adapter in front of the chosen aggregator
 // (or the aggregator itself, if it speaks this) is all that is left to plug in. Unset, the route says so.
+import { isRecord } from "@rustybuns/util/guard";
+
 export interface RatesEnv { RATES_URL?: string; RATES_KEY?: string }
 export interface Rate { carrier: string; service: string; amount: number; currency: string; days?: number }
 
@@ -10,11 +12,12 @@ const dim = (v: unknown) => (typeof v === "number" && Number.isFinite(v) && v > 
 
 /** Cheapest first; rows the aggregator filled badly are dropped rather than shown. */
 export function cleanRates(raw: unknown): Rate[] {
-  const list = Array.isArray((raw as { rates?: unknown })?.rates) ? (raw as { rates: unknown[] }).rates : [];
+  const list: unknown[] = isRecord(raw) && Array.isArray(raw.rates) ? raw.rates : [];
   const out: Rate[] = [];
-  for (const r of list as Record<string, unknown>[]) {
-    const amount = typeof r?.amount === "string" ? Number(r.amount) : r?.amount;
-    const carrier = str(r?.carrier), service = str(r?.service), currency = str(r?.currency);
+  for (const r of list) {
+    if (!isRecord(r)) continue;
+    const amount = typeof r.amount === "string" ? Number(r.amount) : r.amount;
+    const carrier = str(r.carrier), service = str(r.service), currency = str(r.currency);
     if (!carrier || !service || !currency || typeof amount !== "number" || !Number.isFinite(amount) || amount < 0) continue;
     out.push({ carrier, service, amount, currency, ...(typeof r.days === "number" ? { days: r.days } : {}) });
   }
@@ -27,13 +30,14 @@ export function cleanRates(raw: unknown): Rate[] {
  */
 export async function ratesApi(text: string, env: RatesEnv, fetcher: typeof fetch = fetch): Promise<{ status: number; body: unknown }> {
   if (!env.RATES_URL) return { status: 501, body: { error: "no shipping aggregator is linked yet" } };
-  let b: { box?: Record<string, unknown>; weight?: unknown; from?: unknown; to?: unknown };
-  try { b = JSON.parse(text); } catch { return { status: 400, body: { error: "body is not JSON" } }; }
-  const l = dim(b?.box?.l), w = dim(b?.box?.w), h = dim(b?.box?.h), from = str(b?.from), to = str(b?.to);
+  let sent: unknown;
+  try { sent = JSON.parse(text); } catch { return { status: 400, body: { error: "body is not JSON" } }; }
+  const b = isRecord(sent) ? sent : {}, box = isRecord(b.box) ? b.box : {};
+  const l = dim(box.l), w = dim(box.w), h = dim(box.h), from = str(b.from), to = str(b.to);
   if (!l || !w || !h || !from || !to) return { status: 400, body: { error: "send { box: { l, w, h }, from, to } (from and to are postcodes)" } };
   const weight = b.weight === undefined ? undefined : dim(b.weight);
   if (weight === null) return { status: 400, body: { error: "weight must be a positive number" } };
-  const unit = b.box?.unit === "cm" ? "cm" : "in";
+  const unit = box.unit === "cm" ? "cm" : "in";
   try {
     const res = await fetcher(env.RATES_URL, {
       method: "POST",

@@ -32,6 +32,7 @@ import {
   type ConceptParams, type OpKind, type OpParams,
 } from "./ops.ts";
 import { fitGlb } from "./fit.ts";
+import { isRecord } from "@rustybuns/util/guard";
 
 export const INBOX = "000_to_be_meshyd";
 export const SENT = "already done";
@@ -177,9 +178,8 @@ function validConcept(c: Concept): boolean {
   return ID.test(String(c.id)) && isFolder(c.folder) && cleanName(c.name) && (c.files === undefined || (Array.isArray(c.files) && c.files.every(cleanName)));
 }
 const validSize = (s: unknown): s is Size => {
-  if (!s || typeof s !== "object") return false;
-  const o = s as Record<string, unknown>;
-  const keys = Object.keys(o);
+  if (!isRecord(s)) return false;
+  const o = s, keys = Object.keys(o);
   if (keys.length !== 1) return false;
   return o.auto === true || ((keys[0] === "height" || keys[0] === "longest") && typeof o[keys[0]] === "number" && (o[keys[0]] as number) > 0);
 };
@@ -236,8 +236,9 @@ export class Workspace {
     }
     const lf = Bun.file(this.path(LEDGER));
     if (await lf.exists()) {
-      const l = await lf.json();
-      for (const j of Object.values(l.jobs ?? {}) as (Job & { texture?: Op & { state: StepState } })[]) {
+      const read: unknown = await lf.json(), l = isRecord(read) ? read : {};
+      // Each row is checked by validJob and validConcept below, after the old ledgers' fields are moved over.
+      for (const j of Object.values(isRecord(l.jobs) ? l.jobs : {}) as (Job & { texture?: Op & { state: StepState } })[]) {
         j.source ??= "image";
         // Ledgers from before steps kept one texture track.
         if (j.texture) {
@@ -248,12 +249,12 @@ export class Workspace {
         if (!validJob(j)) { console.warn(`[meshy-studio] ledger row ${JSON.stringify(j.key)} points outside the workspace; ignored`); continue; }
         this.jobs.set(j.key, j);
       }
-      this.concepts = (Array.isArray(l.concepts) ? l.concepts : []).filter((c: Concept) => {
+      this.concepts = (Array.isArray(l.concepts) ? l.concepts as Concept[] : []).filter((c) => {
         if (validConcept(c)) return true;
         console.warn(`[meshy-studio] concept ${JSON.stringify(c?.name)} points outside the workspace; ignored`);
         return false;
       });
-      this.origins = l.origins ?? {};
+      this.origins = isRecord(l.origins) ? Object.fromEntries(Object.entries(l.origins).filter((e): e is [string, string] => typeof e[1] === "string")) : {};
       // Unsent cards follow today's rules (models an endpoint dropped, prices that changed).
       for (const j of this.jobs.values()) if (this.unsent(j)) { this.fitModel(j); this.reprice(j); }
     }

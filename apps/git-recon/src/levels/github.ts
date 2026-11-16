@@ -55,7 +55,7 @@ const Commit = obj({
   author: opt(obj({ login: opt(text) })), files: opt(arr(obj({ filename: text }), many)),
 });
 const Tree = obj({ tree: arr(obj({ path: text, type: text, size: opt(num(0, Number.MAX_SAFE_INTEGER)) }), many) });
-const CheckRuns = obj({ check_runs: arr(obj({ name: text, conclusion: nul(text) }), many) });
+export const CheckRuns = obj({ check_runs: arr(obj({ name: text, conclusion: nul(text) }), many) });
 
 export async function loadRepo(slug: string, get: Fetch = (u) => fetch(u)): Promise<RepoSnapshot> {
   const info = await api(get, `/repos/${slug}`, slug, Info);

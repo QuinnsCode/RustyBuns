@@ -10,7 +10,7 @@ export const authOn = (conf: Env) => !!conf.BETTER_AUTH_SECRET && !!conf.ADMIN_E
 const same = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
 
 const make = (conf: Env, origin: string) => betterAuth({
-  database: conf.DB as never,
+  database: conf.DB,
   secret: conf.BETTER_AUTH_SECRET,
   baseURL: conf.BETTER_AUTH_URL ?? origin,
   basePath: "/api/auth",

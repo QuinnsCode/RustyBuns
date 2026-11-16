@@ -3,24 +3,25 @@
 import { playerId, worldSocket } from "@rustybuns/shell-bun/client";
 import { LAN_VERSION } from "../engine/wire.ts";
 import { pv } from "@rustybuns/util/protocol";
+import { arr, bool, check, int, obj, opt, str, type Of } from "@rustybuns/util/guard";
 import { PROTOCOL } from "../protocol.ts";
 import { fresh, login } from "./eqosys.ts";
 
-export interface HostInfo {
-  app: string;
-  listen: { hostname: string; port: number };
-  /** The host machine's LAN addresses, from /__rb/info. */
-  lan?: string[];
-  guests: { open: boolean; connected: number; max: number };
-}
+/** What the desktop host's /__rb/info says: the app, where it listens, its LAN addresses, and its guests. */
+const HostInfo = obj({
+  app: str(100),
+  listen: obj({ hostname: str(255), port: int(0, 65535) }),
+  lan: opt(arr(str(100), 50)),
+  guests: obj({ open: bool(), connected: int(0, 1e6), max: int(0, 1e6) }),
+});
+export type HostInfo = Of<typeof HostInfo>;
 
 /** The desktop host's info, or null in a plain browser (where /__rb/info is not JSON). */
 export async function hostInfo(): Promise<HostInfo | null> {
   try {
     const r = await fetch("/__rb/info");
     if (!r.ok || !(r.headers.get("content-type") ?? "").includes("json")) return null;
-    const j = await r.json();
-    return j && typeof j.app === "string" ? (j as HostInfo) : null;
+    return check(HostInfo, await r.json());
   } catch { return null; }
 }
 

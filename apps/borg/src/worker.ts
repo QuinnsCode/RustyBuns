@@ -2,8 +2,7 @@
 // says whether it behaved like Cloudflare documents it. The same file runs on the edge and
 // on the local twins; src/suite.ts calls it from outside and compares.
 
-type Row = Record<string, unknown>;
-interface Stmt { bind(...v: unknown[]): Stmt; all(): Promise<{ results: Row[] }>; first(col?: string): Promise<unknown>; run(): Promise<unknown> }
+interface Stmt { bind(...v: unknown[]): Stmt; all(): Promise<{ results: unknown[] }>; first(col?: string): Promise<unknown>; run(): Promise<unknown> }
 interface Env {
   DB: { prepare(sql: string): Stmt; batch(s: Stmt[]): Promise<unknown[]>; exec(sql: string): Promise<unknown> };
   KV: { get(k: string): Promise<string | null>; put(k: string, v: string): Promise<void>; delete(k: string): Promise<void>; list(o: { prefix: string }): Promise<{ keys: { name: string }[] }> };
@@ -19,6 +18,10 @@ interface State {
 declare const WebSocketPair: { new (): { 0: unknown; 1: Socket } };
 
 export type Verdict = { ok: boolean; detail: string };
+/** A verdict read back from outside (src/suite.ts): anything else is a failed one that says what came. */
+export const verdictOf = (v: unknown): Verdict =>
+  typeof v === "object" && v !== null && "ok" in v && typeof v.ok === "boolean" && "detail" in v && typeof v.detail === "string"
+    ? { ok: v.ok, detail: v.detail } : { ok: false, detail: `not a verdict: ${JSON.stringify(v)?.slice(0, 200)}` };
 const verdict = (ok: boolean, detail: string) => Response.json({ ok, detail } satisfies Verdict);
 const nonce = () => crypto.randomUUID().slice(0, 8);
 

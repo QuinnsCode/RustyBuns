@@ -19,7 +19,7 @@ import { Claimed, MAX_WARS, PartyAsk, TICKET_SEAT_HEADER, War, type Started, typ
 import { check } from "@rustybuns/util/guard";
 
 // Cloudflare's SqlStorage, and the in-process one Rusty Buns hosts locally, as far as this uses them.
-interface Sql { exec<T = Record<string, unknown>>(query: string, ...bindings: unknown[]): { toArray(): T[] } }
+interface Sql { exec<T = unknown>(query: string, ...bindings: unknown[]): { toArray(): T[] } }
 interface State extends RoomCtx { storage: { sql: Sql } }
 /** The binding the room reaches an account's list of wars through (the same class, named by warsOf). */
 export interface Rooms { idFromName(name: string): unknown; get(id: unknown): { fetch(r: Request): Promise<Response> } }

@@ -13,7 +13,7 @@
 //
 // No DOM and no three.js: the page draws the list and plays a memory back with `playNamed` (director.ts).
 import type { Frame, Scene } from "./director.ts";
-import { arr, check, obj, opt, raw, rec, str } from "./guard.ts";
+import { arr, check, obj, opt, raw, rec, str, type Of } from "./guard.ts";
 
 /** What a memory needs to play again: flat values, or a list of lines. */
 export type Args = Record<string, string | number | readonly string[]>;
@@ -30,7 +30,7 @@ const local = (key: string): Keep => ({
 /** At most this many memories are kept (a long journey's regions, landmarks and tapes fit many times over). */
 export const MAX_MEMORIES = 500;
 const Row = obj({ id: str(160), scene: str(80), title: str(200), sub: opt(str(200)), args: opt(rec(raw, 16)) });
-const argsOf = (a: Record<string, unknown> | undefined): Args | undefined => {
+const argsOf = (a: Of<typeof Row>["args"]): Args | undefined => {
   if (!a) return undefined;
   const out: Args = {};
   for (const [k, v] of Object.entries(a)) {

@@ -4,7 +4,7 @@
 // confirmation (unless turned off in Settings) and the host's spend guards.
 import { useEffect, useMemo, useState } from "react";
 import { MODEL_CHOICES, TEXTURE_MODELS, type ModelId, type TextureModel } from "../engine/presets.ts";
-import { api, imageUrl, type Card, type EditPatch, type Op, type Status, type Summary } from "./api.ts";
+import { api, imageUrl, type Card, type EditPatch, type MeshyOptions, type Op, type Overrides, type Status, type Summary } from "./api.ts";
 import { Board } from "./Board.tsx";
 import { ConfirmSend, costOf, type SendAsk } from "./Confirm.tsx";
 import { CreateDialog } from "./CreateDialog.tsx";
@@ -23,11 +23,10 @@ type View = "folders" | "pipeline";
 const savedView = (): View => { try { return localStorage.getItem("meshy-view") === "pipeline" ? "pipeline" : "folders"; } catch { return "folders"; } };
 
 /** A card's overrides patch from the option editor: values and null set, undefined goes back to the preset. */
-const toEdit = (patch: Record<string, unknown>): EditPatch => {
-  const overrides: Record<string, unknown> = {};
-  const clear: string[] = [];
-  for (const [k, v] of Object.entries(patch)) (v === undefined ? clear.push(k) : (overrides[k] = v));
-  return { ...(Object.keys(overrides).length ? { overrides } : {}), ...(clear.length ? { clear: clear as EditPatch["clear"] } : {}) };
+const toEdit = (patch: Overrides): EditPatch => {
+  const given = Object.entries(patch).filter(([, v]) => v !== undefined);
+  const clear = (Object.keys(patch) as (keyof MeshyOptions)[]).filter((k) => patch[k] === undefined);
+  return { ...(given.length ? { overrides: Object.fromEntries(given) } : {}), ...(clear.length ? { clear } : {}) };
 };
 
 export function Studio({ status, onLeave, onStatus }: { status: Status; onLeave: () => void; onStatus: () => void }) {

@@ -19,22 +19,26 @@ export const BRANCH = "loud-banner";
 const FILE = "src/tally.ts";
 
 type Line = { id: string; text: string; rev: number };
+const isLine = (l: unknown): l is Line =>
+  !!l && typeof l === "object" && "id" in l && typeof l.id === "string" && "text" in l && typeof l.text === "string" && "rev" in l && typeof l.rev === "number";
 type Send = (req: Request) => Promise<Response>;
 
 export interface SeedOptions { url: string; token: string; name: string; files: Record<string, string>; send?: Send; log?: (s: string) => void }
 
 export async function seed({ url, token, name, files, send = (r) => fetch(r), log = console.log }: SeedOptions) {
   const site = url.replace(/\/+$/, "");
-  const api = async <T = any>(method: string, path: string, body?: unknown): Promise<T> => {
+  const api = async (method: string, path: string, body?: unknown): Promise<unknown> => {
     const res = await send(new Request(`${site}/api${path}`, {
       method, headers: { authorization: `Bearer ${token}`, "content-type": "application/json", "user-agent": "agent-demo-seed/1" },
       ...(body !== undefined && { body: JSON.stringify(body) }),
     }));
     if (!res.ok) throw new Error(`${method} ${path}: ${res.status} ${await res.text()}`);
-    return res.json() as Promise<T>;
+    return res.json();
   };
 
-  const { owner } = await api<{ owner: string }>("POST", "/repos", { name, visibility: "public" });
+  const made = await api("POST", "/repos", { name, visibility: "public" });
+  const owner = made && typeof made === "object" && "owner" in made && typeof made.owner === "string" ? made.owner : null;
+  if (!owner) throw new Error("POST /repos: the answer names no owner");
   const repo = `/repos/${owner}/${name}`;
   log(`made ${owner}/${name}`);
   for (const [path, content] of Object.entries(files)) {
@@ -47,7 +51,8 @@ export async function seed({ url, token, name, files, send = (r) => fetch(r), lo
   // The branch also documents total(), which main leaves alone: that merges by itself.
   const edit = async (branch: string | null, change: (find: (has: string, next?: number) => Line) => unknown[]) => {
     const q = `?path=${encodeURIComponent(FILE)}${branch ? `&branch=${branch}` : ""}`;
-    const doc = await api<{ lines: Line[] }>("GET", `${repo}/do/file${q}`);
+    const got = await api("GET", `${repo}/do/file${q}`);
+    const doc = { lines: got && typeof got === "object" && "lines" in got && Array.isArray(got.lines) ? got.lines.filter(isLine) : [] };
     // The line holding `has`, or the one `next` lines below it.
     const find = (has: string, next = 0) => {
       const l = doc.lines[doc.lines.findIndex((l) => l.text.includes(has)) + next];
@@ -71,8 +76,9 @@ export async function seed({ url, token, name, files, send = (r) => fetch(r), lo
   });
   await api("POST", `${repo}/do/commit?path=${encodeURIComponent(FILE)}`, { message: "Banner says how many votes the leader has" });
 
-  const review = await api<{ files: { path: string; conflicts: unknown[] }[] }>("GET", `${repo}/branches/${BRANCH}`);
-  const conflicts = review.files.reduce((n, f) => n + f.conflicts.length, 0);
+  const review = await api("GET", `${repo}/branches/${BRANCH}`);
+  const changed: unknown[] = review && typeof review === "object" && "files" in review && Array.isArray(review.files) ? review.files : [];
+  const conflicts = changed.reduce((n: number, f) => n + (f && typeof f === "object" && "conflicts" in f && Array.isArray(f.conflicts) ? f.conflicts.length : 0), 0);
   log(`branch ${BRANCH}: ${conflicts} conflict${conflicts === 1 ? "" : "s"} waiting on its merge page`);
 
   return { owner, name, conflicts, page: `${site}/#/r/${owner}/${name}`, file: `${site}/#/r/${owner}/${name}/${FILE}` };

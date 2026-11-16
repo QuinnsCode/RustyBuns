@@ -9,7 +9,8 @@
 // If origin is on GitHub and `gh` is signed in, the check runs failing at HEAD too, which set compounds on fire.
 
 import { resolve } from "node:path";
-import { failingChecks, parseSlug, type CheckRun } from "../src/levels/github.ts";
+import { check } from "@rustybuns/util/guard";
+import { CheckRuns, failingChecks, parseSlug } from "../src/levels/github.ts";
 import { folderOf } from "../src/sim/codemap.ts";
 import { excerpts, folderLinks, isAgentCommit, isScript, MAX_FILES, SKIP, SOURCE, tally, workspacePackages } from "../src/sim/intel.ts";
 
@@ -49,7 +50,7 @@ let failing: string[] = [];
 if (slug) {
   const sha = (await Bun.$`git -C ${repo} rev-parse HEAD`.text()).trim();
   const res = await Bun.$`gh api ${`repos/${slug}/commits/${sha}/check-runs?per_page=100`}`.nothrow().quiet();
-  if (res.exitCode === 0) failing = failingChecks((JSON.parse(res.text()) as { check_runs: CheckRun[] }).check_runs);
+  if (res.exitCode === 0) failing = failingChecks(check(CheckRuns, JSON.parse(res.text()))?.check_runs ?? []);
   else console.warn(`couldn't read ${slug}'s checks at ${ref} with gh, so none are on fire`);
 }
 

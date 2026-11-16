@@ -5,13 +5,17 @@ export type Result = { check: string; ok: boolean; detail: string };
 
 const nonce = () => crypto.randomUUID().slice(0, 8);
 
-async function call(t: Target, method: string, path: string, body?: unknown): Promise<any> {
+/** Field `k` of a JSON answer, still `unknown`: each check compares it with what it sent. */
+const at = (v: unknown, k: string | number): unknown =>
+  typeof v === "object" && v !== null ? Object.entries(v).find(([key]) => key === String(k))?.[1] : undefined;
+
+async function call(t: Target, method: string, path: string, body?: unknown): Promise<unknown> {
   const res = await fetch(new URL(path, t.url), {
     method, headers: { ...t.headers, ...(body ? { "content-type": "application/json" } : {}) },
     body: body ? JSON.stringify(body) : undefined,
   });
-  const out = await res.json() as any;
-  if (!res.ok) throw new Error(`${method} ${path}: ${res.status} ${out?.error ?? ""}`);
+  const out: unknown = await res.json();
+  if (!res.ok) throw new Error(`${method} ${path}: ${res.status} ${at(out, "error") ?? ""}`);
   return out;
 }
 
@@ -23,25 +27,25 @@ export const CHECKS: Record<string, (t: Target) => Promise<string | true>> = {
     const owner = nonce();
     await call(t, "POST", "/api/notes", { owner, body: "hello" });
     const rows = await call(t, "GET", `/api/notes?owner=${owner}`);
-    return rows.length === 1 && rows[0].body === "hello" || `got ${JSON.stringify(rows)}`;
+    return Array.isArray(rows) && rows.length === 1 && at(rows[0], "body") === "hello" || `got ${JSON.stringify(rows)}`;
   },
   // Postgres-only types: text[] and jsonb round-trip as arrays and objects
   async types(t) {
     const owner = nonce(), meta = { a: [1, 2], b: { c: "d" } };
     await call(t, "POST", "/api/notes", { owner, body: "typed", tags: ["x", "y"], meta });
-    const [row] = await call(t, "GET", `/api/notes?owner=${owner}`);
-    return same(row.tags, ["x", "y"]) && same(row.meta, meta) || `got ${JSON.stringify(row)}`;
+    const row = at(await call(t, "GET", `/api/notes?owner=${owner}`), 0);
+    return same(at(row, "tags"), ["x", "y"]) && same(at(row, "meta"), meta) || `got ${JSON.stringify(row)}`;
   },
   // a failing statement rolls back the ones before it in a transaction
   async transaction(t) {
-    const { left } = await call(t, "POST", `/api/rollback?owner=${nonce()}`);
+    const left = at(await call(t, "POST", `/api/rollback?owner=${nonce()}`), "left");
     return left === 0 || `${left} rows survived the rollback`;
   },
   // ten concurrent upserts land as ten counts
   async concurrent(t) {
     const name = nonce();
     await Promise.all(Array.from({ length: 10 }, () => call(t, "POST", `/api/count?name=${name}`)));
-    const { n } = await call(t, "POST", `/api/count?name=${name}`);
+    const n = at(await call(t, "POST", `/api/count?name=${name}`), "n");
     return n === 11 || `expected 11, got ${n}`;
   },
 };
