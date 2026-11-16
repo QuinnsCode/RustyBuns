@@ -113,6 +113,8 @@ export async function importTarball(ns: Artifacts, p: {
   tarball: () => Promise<Response>; submodules?: () => Promise<{ path: string; commit: string }[]>; repo: string; sha: string; branch: string; message: string; author: string; email?: string; at?: number; packBytes?: number;
   /** Keep only this folder, as the root (#381). */
   folder?: string;
+  /** Each file as it lands, changed on the way (the starter game takes its new name: starter.ts). */
+  map?: (f: TreeFile) => TreeFile;
   target: { name: string; opts?: { description?: string; readOnly?: boolean } };
 }): Promise<{ name: string; remote: string; defaultBranch: string }> {
   const ro = p.target.opts?.readOnly === true, name = ro ? `${p.target.name}-tip` : p.target.name;
@@ -131,10 +133,11 @@ export async function importTarball(ns: Artifacts, p: {
       for (const m of (await p.submodules?.()) ?? []) yield { path: m.path, mode: "160000", commit: m.commit };
     }
     async function* files(): AsyncGenerator<TreeFile> {
-      if (!p.folder) return yield* all();
+      const map = p.map ?? ((f: TreeFile) => f);
+      if (!p.folder) { for await (const f of all()) yield map(f); return; }
       const under = p.folder + "/";
       let kept = 0;
-      for await (const f of all()) if (f.path.startsWith(under)) { kept++; yield { ...f, path: f.path.slice(under.length) }; }
+      for await (const f of all()) if (f.path.startsWith(under)) { kept++; yield map({ ...f, path: f.path.slice(under.length) }); }
       if (!kept) throw new Error(`${p.repo} has no folder ${p.folder} at ${p.sha.slice(0, 7)}`);
     }
     await pushTree(made.remote, token, files(), {

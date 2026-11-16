@@ -11,6 +11,8 @@ import { fail, json, NAME, need, type Env, readBody } from "./env.ts";
 import { arr, bool, obj, oneOf, opt, str, type Of } from "@rustybuns/util/guard";
 import { readJson } from "@rustybuns/util/http";
 import { importTarball, tooBigToImport } from "./tarball.ts";
+import type { TreeFile } from "./git.ts";
+import { STARTER, isStarterText, renameStarter, starterNames } from "./starter.ts";
 import { git, mirrorsOn, seeGit } from "./mirror.ts";
 import { wipeSearch } from "./search.ts";
 import { repoRow } from "./repos.ts";
@@ -381,7 +383,7 @@ export const githubTarball = (repo: string, sha: string, token?: string) =>
  * 40 MB import cap, which depth 1 can't get under, it comes from GitHub's
  * tarball instead, as one commit (tarball.ts).
  */
-export async function importRepo(env: Env, src: { repo: string; branch: string; token?: string; private?: boolean; folder?: string },
+export async function importRepo(env: Env, src: { repo: string; branch: string; token?: string; private?: boolean; folder?: string; map?: (f: TreeFile) => TreeFile },
   target: { name: string; opts?: { description?: string; readOnly?: boolean } }) {
   const ns = env.ARTIFACTS!;
   try {
@@ -392,7 +394,7 @@ export async function importRepo(env: Env, src: { repo: string; branch: string; 
     if (!src.folder && !tooBigToImport(e)) throw e;
     const c = await githubHead(src.repo, src.branch, src.token);
     return importTarball(ns, {
-      tarball: () => githubTarball(src.repo, c.sha, src.token), submodules: () => submodules(src.repo, c.sha, src.token), repo: src.repo, sha: c.sha, branch: src.branch, target, folder: src.folder,
+      tarball: () => githubTarball(src.repo, c.sha, src.token), submodules: () => submodules(src.repo, c.sha, src.token), repo: src.repo, sha: c.sha, branch: src.branch, target, folder: src.folder, map: src.map,
       message: c.message, author: (c.author?.name ?? src.repo.split("/")[0]!).replace(/[<>\n]/g, ""),
       email: c.author?.email?.replace(/[<>\n\s]/g, "") || undefined, at: Date.parse(c.author?.date ?? "") || undefined,
     });
@@ -415,7 +417,11 @@ async function makeRoom(env: Env, more: number, owner: string) {
 /** A dig's body: `repo` is read as owner/name or a URL after, so a bad one gets the long message. */
 const DIG_BODY = obj({ repo: str(4096, { min: 0, dflt: "" }), name: opt(str(100)), visibility: opt(oneOf(["public", "private"])), path: opt(str(1000)) });
 
-async function digRepo(env: Env, user: string, t: Awaited<ReturnType<typeof githubToken>>, b: Of<typeof DIG_BODY>): Promise<Response> {
+/** The starter's body: the new game's id (its repo's name too) and, if not from the id, its title. */
+const STARTER_BODY = obj({ name: str(40), title: opt(str(60)), visibility: opt(oneOf(["public", "private"])) });
+
+/** `map` changes each file as it lands; `keep` makes a repo of the person's own that never expires, like an empty one (the starter game). */
+async function digRepo(env: Env, user: string, t: Awaited<ReturnType<typeof githubToken>>, b: Of<typeof DIG_BODY>, o: { map?: (f: TreeFile) => TreeFile; keep?: boolean } = {}): Promise<Response> {
   const full = parseRepo(b.repo);
   if (!full) return fail("BadInput", "give a GitHub repo as owner/name or its URL");
   // A folder's URL (or a path) digs up just that folder, at the branch the URL names (#381).
@@ -425,7 +431,7 @@ async function digRepo(env: Env, user: string, t: Awaited<ReturnType<typeof gith
   const name = b.name || (folder.split("/").at(-1) || full.split("/")[1]!).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
   if (!NAME.test(name)) return fail("BadInput", "name: lowercase letters and digits, single dashes between");
   const visibility = b.visibility ?? "public";
-  const expires = isAdmin(env, user) ? null : Date.now() + DIG_TTL;
+  const expires = o.keep || isAdmin(env, user) ? null : Date.now() + DIG_TTL;
   // The housekeeping runs alongside the lookups on GitHub, not before them. The name check skips
   // an expired dig of yours, which makeRoom is about to evict. Only once the name is known to be
   // free is an Artifact under it an orphan to delete: an import cut off halfway stays "being
@@ -478,7 +484,8 @@ async function digRepo(env: Env, user: string, t: Awaited<ReturnType<typeof gith
     info = { ...info, default_branch: at.branch };
     sha = c.sha;
   }
-  const upstream = `github:${info.full_name}${folder ? `/tree/${info.default_branch}/${folder}` : ""}`;
+  // A renamed copy (the starter) is a new repo, not a fork: no upstream to pull the old names back from.
+  const upstream = o.map ? null : `github:${info.full_name}${folder ? `/tree/${info.default_branch}/${folder}` : ""}`;
 
   if (!(await ready)) return fail("RepoExists", "you already have a repo with that name");
   if (expires) await makeRoom(env, 1, user);
@@ -486,7 +493,7 @@ async function digRepo(env: Env, user: string, t: Awaited<ReturnType<typeof gith
   // Shallow, like the levels; writable, because it's yours now.
   let art;
   try {
-    art = await importRepo(env, { repo: info.full_name, branch: info.default_branch, token: machine ? undefined : t?.token, private: info.private && !machine, folder: folder || undefined },
+    art = await importRepo(env, { repo: info.full_name, branch: info.default_branch, token: machine ? undefined : t?.token, private: info.private && !machine, folder: folder || undefined, map: o.map },
       { name: `${user}--${name}`, opts: { description: `${user}'s fork of ${info.full_name}${folder ? `'s ${folder}` : ""}` } });
   } catch (e) {
     // What the import said (git's or Artifacts' own words) goes to the log; the person reads a sentence. A 502, untagged: a client retries it.
@@ -494,7 +501,7 @@ async function digRepo(env: Env, user: string, t: Awaited<ReturnType<typeof gith
     return json({ error: `couldn't dig up ${info.full_name} just now: try again in a minute` }, 502);
   }
   await env.DB.prepare("INSERT INTO repos (owner, name, visibility, created_at, artifact, artifact_remote, branch, upstream, upstream_commit, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
-    .bind(user, name, visibility, Date.now(), art.name, art.remote, info.default_branch, upstream, sha, expires).run();
+    .bind(user, name, visibility, Date.now(), art.name, art.remote, info.default_branch, upstream, upstream ? sha : null, expires).run();
   // On the desktop its git takes pushes from the start: land them from here on (#788). That
   // waits for the background clone, so the dig answers without it.
   void seeGit(env, user, name).catch(() => {});
@@ -559,6 +566,19 @@ export async function githubRoutes(req: Request, env: Env, p: string[], user: st
     if (!user) return fail("SignInFirst", "sign in first");
     const b = need(await readBody(req), DIG_BODY);
     return b instanceof Response ? b : digRepo(env, user, t, b);
+  }
+
+  // POST /api/github/starter {name, title?}  a new game of your own from the starter (apps/starter-game, #4053): that
+  // folder dug up from GitHub with the starter's id, window handle and title renamed to the new game's. Kept, not a day's dig.
+  if (p[2] === "starter" && req.method === "POST") {
+    if (!user) return fail("SignInFirst", "sign in first");
+    const b = need(await readBody(req), STARTER_BODY);
+    if (b instanceof Response) return b;
+    const n = starterNames(b.name, b.title);
+    if (!n) return fail("BadInput", "name: a game id, lowercase letters and digits with single dashes between, 3 to 40 long");
+    const text = new TextDecoder(), bytes = new TextEncoder();
+    const map = (f: TreeFile): TreeFile => "data" in f && isStarterText(f.path) ? { ...f, data: bytes.encode(renameStarter(f.path, text.decode(f.data), n)) } : f;
+    return digRepo(env, user, t, { repo: STARTER.repo, path: STARTER.folder, name: n.id, visibility: b.visibility }, { map, keep: true });
   }
 
   // POST /api/github/wreck {repo}  anyone, signed in or not: the one shared read-only copy of a public

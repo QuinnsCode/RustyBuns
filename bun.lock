@@ -1035,6 +1035,19 @@
         "vite": "^6.2.6",
       },
     },
+    "apps/starter-game": {
+      "name": "starter-game",
+      "version": "0.0.1",
+      "dependencies": {
+        "@rustybuns/shell-bun": "^0.1.12",
+        "@rustybuns/util": "^0.1.12",
+      },
+      "devDependencies": {
+        "@rustybuns/cli": "^0.1.12",
+        "@types/bun": "^1.4.0",
+        "vite": "^6.4.4",
+      },
+    },
     "apps/svelte-spa-example": {
       "name": "svelte-spa-example",
       "version": "0.1.0",
@@ -4156,6 +4169,8 @@
     "standard-as-callback": ["standard-as-callback@2.1.0", "", {}, "sha512-qoRRSyROncaz1z0mvYqIE4lCd9p2R90i6GxW3uZv5ucSu8tU7B5HXUP1gG8pVZsYNVaXjk8ClXHPttLyxAL48A=="],
 
     "standardwebhooks": ["standardwebhooks@1.1.1", "", { "dependencies": { "@stablelib/base64": "^1.0.0", "fast-sha256": "^1.3.0" } }, "sha512-bCbX9ZEyFkWPsRz7Bl3NuQUJohmwGSev/yhr7vhaGPlc4AfIrspIRa6cPTBuI1ItmrTDJ4d/S2hCsfe4+vQGnQ=="],
+
+    "starter-game": ["starter-game@workspace:apps/starter-game"],
 
     "statuses": ["statuses@2.0.2", "", {}, "sha512-DvEy55V3DB7uknRo+4iOGT5fP1slR8wQohVdknigZPMpMstaKJQWhwiYBACJE3Ul2pTnATihhBYnRhZQHGBiRw=="],
 
