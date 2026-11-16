@@ -43,5 +43,10 @@
   ],
   "vars": {
     "MESHY_DAILY": "50"
+  },
+  "triggers": {
+    "crons": [
+      "* * * * *"
+    ]
   }
 }

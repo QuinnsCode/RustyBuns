@@ -5,7 +5,7 @@
 // a studio from its id, which the friend copies from this same page, or hands someone a sandbox link (sandboxes.ts).
 import { eqosys } from "@rustybuns/util/eqosys";
 import { getJson } from "@rustybuns/util/http";
-import { APP, EQOSYS, KeyReply, Mine, SandboxReply, slug, type SandboxRequest, type ShopStart, type Sites } from "./api.ts";
+import { APP, Delivery, EQOSYS, HookReply, Hooks, KeyReply, Mine, SandboxReply, slug, type HookRequest, type SandboxRequest, type ShopStart, type Sites } from "./api.ts";
 import { act as acting, copyBox as copying, el, embedTag, field, productForm as editor } from "./shop-ui.ts";
 import { problem } from "./widget/upload.ts";
 
@@ -163,7 +163,42 @@ function shopCard(shop: Mine["shops"][number], reload: () => Promise<void>) {
     await reload();
   });
   body.append(el("div", { class: "keys" }, key, el("a", { href: "/admin.html", textContent: "Make a sample" })), shown);
+  body.append(el("h2", { textContent: "Webhooks" }), hooksBlock(o.id));
   return card;
+}
+
+/** The shop's webhooks: add a URL (its secret shown once), Send test, Remove, and the last 20 deliveries. */
+function hooksBlock(org: string) {
+  const box = el("div", { class: "hooks" });
+  const draw = act(async () => {
+    const t = token();
+    const got = t ? await getJson(`/api/orgs/${org}/hooks`, Hooks, { headers: { authorization: `Bearer ${t}` } }) : null;
+    if (!got) throw new Error("Couldn't read the webhooks. Sign in again.");
+    const url = el("input", { type: "url", placeholder: "https://yourshop.com/qview3d-hook", required: true });
+    const add = el("form", {}, field("Send events to", url), el("button", { class: "go", type: "submit", textContent: "Add the webhook" }));
+    add.onsubmit = act(async () => {
+      const made = HookReply(await (await send(`/api/orgs/${org}/hooks`, "POST", { url: url.value.trim() } satisfies HookRequest)).json());
+      await draw();
+      box.append(copyBox("Signing secret, shown once: your receiver checks QView3D-Signature with it", made.secret));
+    });
+    const list = el("ul", { class: "products" }, ...got.hooks.map((h) => {
+      const test = el("button", { class: "copy", type: "button", textContent: "Send test" });
+      test.onclick = act(async () => { const d = Delivery(await (await send(`/api/orgs/${org}/hooks/${h.id}/test`, "POST", {})).json()); say(d.status === "ok" ? `Test sent: it answered ${d.code}.` : `Test failed: ${d.error ?? "no answer"}.`, d.status !== "ok"); await draw(); });
+      const remove = el("button", { class: "copy", type: "button", textContent: "Remove" });
+      remove.onclick = act(async () => { await send(`/api/orgs/${org}/hooks/${h.id}`, "DELETE", {}); say("Removed the webhook."); await draw(); });
+      return el("li", {}, el("b", { textContent: h.url }), ` ${h.events.join(", ")}`, test, remove);
+    }));
+    const when = (ms: number) => new Date(ms).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+    const log = el("ul", { class: "log" }, ...got.deliveries.map((d) =>
+      el("li", { textContent: `${when(d.at)}  ${d.event}  ${d.status}${d.code ? ` (${d.code})` : ""}${d.error && d.status !== "ok" ? `: ${d.error}` : ""}${d.next ? `, next try ${when(d.next)}` : ""}` })));
+    box.replaceChildren(
+      el("p", { class: "sub", textContent: "We POST design.saved and order.ready to your URL, signed. Stores send orders to POST /api/orgs/" + org + "/orders with a script key. How: /v1/embed.md." }),
+      got.hooks.length ? list : el("p", { class: "sub", textContent: "No webhooks yet." }),
+      ...(got.hooks.length < 5 ? [add] : []),
+      ...(got.deliveries.length ? [el("p", { class: "sub", textContent: "Last deliveries" }), log] : []));
+  });
+  void draw();
+  return box;
 }
 
 async function load() {

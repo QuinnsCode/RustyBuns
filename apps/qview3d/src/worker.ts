@@ -18,6 +18,7 @@
 //   GET  /v1/frame?org=&product=              the widget alone, for an <iframe> where a site won't run scripts (frame.ts)
 //   GET  /api/mine, PUT /api/orgs/<org>, PUT .../products/<id>, POST .../keys   shops set up signed in through eqosys (orgs.ts)
 //   POST /api/sandboxes, GET /api/orgs/<org>  a test shop the owner hands out with one link, and what its page reads (sandboxes.ts)
+//   GET/POST /api/orgs/<org>/hooks, DELETE .../hooks/<id>, POST .../hooks/<id>/test, POST .../orders   webhooks both ways (hooks.ts)
 //
 // Org and product settings live in D1 (settings.ts); a fresh deploy's migrations seed the demo org (demo.ts), which keeps no files.
 import { hex } from "@rustybuns/util/bytes";
@@ -32,6 +33,7 @@ import { billingRoute, checkoutRoute, stripeWebhook } from "./billing.ts";
 import { countSamples, isAdmin, sampleRoute, startSampleRoute } from "./samples.ts";
 import { orgsRoute, runsShop, signedIn } from "./orgs.ts";
 import { sandboxRoute } from "./sandboxes.ts";
+import { fire, hooksRoute, later, retryDue, type Later } from "./hooks.ts";
 import { presignUrl, readToken, uploadToken } from "./sign.ts";
 
 /** The part of an R2 bucket this Worker uses: the real binding, or shell-bun's twin over a directory. */
@@ -78,7 +80,7 @@ const IMMUTABLE = "public, max-age=31536000, immutable";
 
 const cors = (origin: string | null): Record<string, string> => ({
   "access-control-allow-origin": origin ?? "*",
-  "access-control-allow-methods": "GET, POST, PUT, OPTIONS",
+  "access-control-allow-methods": "GET, POST, PUT, DELETE, OPTIONS",
   "access-control-allow-headers": "content-type, authorization",
   "access-control-max-age": "86400",
   vary: "origin",
@@ -97,7 +99,7 @@ async function sha256(bytes: ArrayBuffer) {
 /** Whether a page at `origin` may act for the org: listed exactly, or the org allows any ("*"). */
 const allowed = (o: Org, origin: string | null) => o.origins.includes("*") || (origin !== null && o.origins.includes(origin));
 
-export async function handle(req: Request, env: Env): Promise<Response> {
+export async function handle(req: Request, env: Env, ctx?: Later): Promise<Response> {
   const url = new URL(req.url);
   const origin = req.headers.get("origin");
   if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: cors(origin) });
@@ -120,10 +122,12 @@ export async function handle(req: Request, env: Env): Promise<Response> {
   const shops = (await orgsRoute(req, env, cors(origin))) ?? (await sandboxRoute(req, env, cors(origin)));
   if (shops) return shops;
 
-  const m = url.pathname.match(/^\/api\/orgs\/([^/]+)\/(products|uploads|designs|models|originals|billing|checkout)(?:\/([^/]+))?(\/print)?$/);
+  const m = url.pathname.match(/^\/api\/orgs\/([^/]+)\/(products|uploads|designs|models|originals|billing|checkout|hooks|orders)(?:\/([^/]+))?(\/print|\/test)?$/);
   if (!m) return fail("not found", 404, origin);
-  const [, org, what, id, print] = m;
+  const [, org, what, id, suffix] = m;
+  const print = suffix === "/print", test = suffix === "/test";
   if (!org || !ID.test(org)) return fail("unknown org", 404, origin);
+  if ((print && what !== "designs") || (test && what !== "hooks")) return fail("not found", 404, origin);
   // The widget's read on every shop page load: from the edge cache when it can be, before anything asks D1.
   if (what === "products" && req.method === "GET" && id && ID.test(id) && !print) {
     const p = await cachedProduct(env, org, id, url.origin);
@@ -140,6 +144,11 @@ export async function handle(req: Request, env: Env): Promise<Response> {
     if (what === "originals") return originalRoute(env, org, id, cors(origin));
     if (what === "designs") return printPlanRoute(env, org, id, url.origin, cors(origin));
     return fail("not found", 404, origin);
+  }
+  if (what === "hooks" || what === "orders") {
+    if (!admin) return fail(`an admin key is needed for ${what === "hooks" ? "webhooks" : "orders"}`, 401, origin);
+    if (readOnly) return fail("the public demo has no webhooks or orders", 403, origin);
+    return hooksRoute(req, env, ctx, org, what, id, test, url.origin, cors(origin));
   }
   if (what === "models") {
     if (!admin) return fail("an admin key is needed for samples", 401, origin);
@@ -165,7 +174,7 @@ export async function handle(req: Request, env: Env): Promise<Response> {
     if (await over(env.SIGN_LIMIT, `${req.headers.get("cf-connecting-ip") ?? "-"}:${org}`)) return slowDown("uploads signed", origin);
     return sign(req, env, org, url, origin, admin);
   }
-  return saveDesign(req, env, org, url, origin);
+  return saveDesign(req, env, org, url, origin, ctx);
 }
 
 async function sign(req: Request, env: Env, org: string, url: URL, origin: string | null, admin: boolean): Promise<Response> {
@@ -207,7 +216,7 @@ async function upload(req: Request, env: Env, token: string, origin: string | nu
   return privateJson({ key: claim.key }, 201, cors(origin));
 }
 
-async function saveDesign(req: Request, env: Env, org: string, url: URL, origin: string | null): Promise<Response> {
+async function saveDesign(req: Request, env: Env, org: string, url: URL, origin: string | null, ctx: Later): Promise<Response> {
   const d = await readJson(req, Design);
   if (!d) return fail("expected a design (v, model, color, layers, camera)", 400, origin);
   // One picture a zone, and only zones the product prints on: a cap has no back, and a shop may switch a zone off.
@@ -228,7 +237,9 @@ async function saveDesign(req: Request, env: Env, org: string, url: URL, origin:
   const id = (await sha256(new TextEncoder().encode(body).buffer as ArrayBuffer)).slice(0, 24);
   const key = designKey(org, id);
   await env.BUCKET.put(key, body, { httpMetadata: { contentType: "application/json", cacheControl: IMMUTABLE } });
-  return privateJson({ id, url: `${url.origin}/r/${key}` } satisfies DesignReply, 201, cors(origin));
+  const reply: DesignReply = { id, url: `${url.origin}/r/${key}` };
+  await later(ctx, fire(env, org, "design.saved", { design: id, url: reply.url, model: d.model, ...(d.product ? { product: d.product } : {}) }));
+  return privateJson(reply, 201, cors(origin));
 }
 
 /** One served object: from the edge cache when it is there, else R2, then into the cache. WebGL needs the CORS header. */
@@ -248,4 +259,8 @@ async function serve(req: Request, env: Env, key: string): Promise<Response> {
   return res;
 }
 
-export default { fetch: handle };
+export default {
+  fetch: (req: Request, env: Env, ctx: Later) => handle(req, env, ctx),
+  /** The once-a-minute cron (rustybuns.config.ts): webhook deliveries whose retry is due. */
+  scheduled: (_: unknown, env: Env, ctx: { waitUntil(p: Promise<unknown>): void }) => ctx.waitUntil(retryDue(env)),
+};

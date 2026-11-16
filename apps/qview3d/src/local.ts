@@ -11,6 +11,7 @@ import { standInMeshy } from "./local-meshy.ts";
 import { DEMO_ORG, DEMO_SETTINGS } from "./demo.ts";
 import { putOrg, type SettingsCache } from "./settings.ts";
 import { handle, type Env } from "./worker.ts";
+import { retryDue } from "./hooks.ts";
 
 const BUILT = resolve(import.meta.dir, "../dist/client");
 
@@ -65,5 +66,7 @@ export async function local(o: { dir: string; port?: number; secret?: string; me
       return handle(req, bindings);
     },
   });
-  return { url: `http://localhost:${server.port}`, bindings, standIn, stop: () => { server.stop(true); standIn?.stop(); } };
+  // The cron, here: due webhook retries every 30 s.
+  const sweep = setInterval(() => void retryDue(bindings).catch(() => {}), 30_000);
+  return { url: `http://localhost:${server.port}`, bindings, standIn, stop: () => { clearInterval(sweep); server.stop(true); standIn?.stop(); } };
 }

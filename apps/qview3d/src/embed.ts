@@ -138,5 +138,60 @@ Some site builders keep an \`<iframe>\` but strip a pasted \`<script>\`. Then pa
   (or \`"snapshot"\`); the answer comes back as \`qview:saved\` or \`qview:snapshot\`.
 - For a cart: on \`qview:saved\`, put \`detail.id\` in a hidden input of the product form, then submit it. A builder
   that allows no script at all still shows the customiser and its snapshot download, but can't carry the id.
+
+## 9. Wire it to the shop's own tools: webhooks, both ways (optional)
+
+This is server code, for a shop with an org of its own (not the demo). It needs the org's script key: the shop's
+owner makes one on ${origin}/orgs.html (New script key) and keeps it in a server secret, never in page code.
+
+**Out: QView3D tells the shop's server.** On ${origin}/orgs.html under Webhooks, the shop adds its URL (https) and
+copies the signing secret, shown once. Or by script:
+
+\`\`\`sh
+curl -X POST ${origin}/api/orgs/<org>/hooks -H "authorization: Bearer <script key>" \\
+  -H "content-type: application/json" -d '{"url":"https://shop.example/qview3d-hook"}'
+# -> {"id":"…","secret":"whsec_…"}   GET .../hooks lists them and the last 20 deliveries; DELETE .../hooks/<id> removes one
+\`\`\`
+
+Each event is a POST with this JSON body:
+
+\`\`\`json
+{ "id": "<delivery id>", "type": "design.saved" | "order.ready" | "test", "org": "<org>", "created": <ms since 1970>,
+  "data": { "design": "<24 hex>", "url": "${origin}/r/…", "model": "cap", "product": "<product id>" } }
+\`\`\`
+
+\`order.ready\` carries \`data.order\` (the store's order id) and \`data.lines\`: each \`{ design, qty, print, sheets, skipped }\`,
+where \`sheets\` is a print file per zone (\`zone\`, size in \`cm\` and \`px\` at 300 dpi, \`at\` where the picture sits, and
+\`original\`, the print source: fetch it with the script key) and \`print\` is the same plan's own link.
+
+Check every call before trusting it. The header is \`QView3D-Signature: t=<unix seconds>,v1=<hex>\`, where the hex is
+the HMAC-SHA256 of \`<t>.<raw body>\` under the secret. Use the raw body, before any JSON parsing:
+
+\`\`\`js
+async function fromQView3D(req, secret) {
+  const body = await req.text();
+  const head = req.headers.get("QView3D-Signature") ?? "";
+  const t = Number(head.match(/t=(\\d+)/)?.[1]), v1 = head.match(/v1=([0-9a-f]{64})/)?.[1];
+  if (!v1 || Math.abs(Date.now() / 1000 - t) > 300) return null;
+  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["verify"]);
+  const sig = new Uint8Array(v1.match(/../g).map((h) => parseInt(h, 16)));
+  return (await crypto.subtle.verify("HMAC", key, sig, new TextEncoder().encode(\`\${t}.\${body}\`))) ? JSON.parse(body) : null;
+}
+\`\`\`
+
+Answer 2xx quickly. Anything else, or no answer in 10 s, is tried again after 1 min, 5 min, 30 min, 2 h and 12 h
+(the same body, signed afresh), then marked failed in the log. \`QView3D-Delivery\` names the delivery, so a receiver
+can drop one it has already handled. The Send test button on ${origin}/orgs.html sends a \`test\` event.
+
+**In: the store tells QView3D about an order.** When an order with saved designs comes in (the design id is the cart
+line's \`design\` field from section 4), the shop's server posts it:
+
+\`\`\`sh
+curl -X POST ${origin}/api/orgs/<org>/orders -H "authorization: Bearer <script key>" \\
+  -H "content-type: application/json" -d '{"id":"#1001","lines":[{"design":"<24 hex>","qty":2}]}'
+\`\`\`
+
+It answers \`201\` with the order and its lines' print files, and sends \`order.ready\` to the webhooks. Posting the same
+order id again answers it as recorded (\`"fresh": false\`) and sends nothing, so a store's own retries are safe.
 `;
 }
