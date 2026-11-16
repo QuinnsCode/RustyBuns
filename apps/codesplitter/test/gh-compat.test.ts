@@ -15,6 +15,8 @@ async function app() {
   const made = await (await send("ryan", "/api/repos/ryan/lab/checks/tokens", { label: "jenkins" })).json() as { id: string; token: string };
   const github = (path: string, body?: unknown, method = body === undefined ? "GET" : "POST", auth = `token ${made.token}`) =>
     call(null, GH + path, { method, headers: { authorization: auth, accept: "application/vnd.github+json" }, ...(body !== undefined && { body: JSON.stringify(body) }) });
+  // Main went upstream as SHA, as the mirror's push records it.
+  await watchGithub(call.env as any, "ryan", "lab", "main", SHA);
   const checks = async (ref = "main") => (await call("ryan", `/api/repos/ryan/lab/checks?ref=${ref}`)).json() as Promise<any>;
   return { call, send, made, github, checks };
 }
@@ -66,6 +68,15 @@ test("POST statuses/:sha: a run per context, moved on, read back, and in GET /ch
   await github(`/statuses/${SHA}`, { state: "pending", context: "ci/lint" });
   expect((await checks()).runs.find((r: any) => r.name === "ci/lint")).toMatchObject({ status: "running" });
   expect((await github(`/statuses/${SHA}`, { state: "great" })).status).toBe(422);
+});
+
+test("a status on a sha the repo never showed stays off main's checks", async () => {
+  const { github, checks } = await app();
+  await github(`/statuses/${SHA}`, { state: "success", context: "ci/jenkins" });
+  const stray = "c".repeat(40);
+  expect((await github(`/statuses/${stray}`, { state: "failure", context: "ci/jenkins" })).status).toBe(201);
+  expect((await checks()).runs).toMatchObject([{ name: "ci/jenkins", status: "passed", sha: SHA }]);
+  expect(await (await github(`/commits/${stray}/status`)).json()).toMatchObject({ state: "failure", total_count: 1 });
 });
 
 test("check-runs: POST and PATCH move a run on, GET reads them back", async () => {

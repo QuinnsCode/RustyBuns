@@ -204,6 +204,21 @@
         "line": "The first five minutes: a twenty-line page. The welcome tour finds it, lets three agents write it again at the same time, and then asks you to deploy it."
       },
       {
+        "app": "load-in",
+        "name": "Load In",
+        "line": "A first-person roadie sim, speakers first: carry the gear into a garage at a pace its real weight sets, and set it down on the floor or stacked."
+      },
+      {
+        "app": "starter-game",
+        "name": "Starter Game",
+        "line": "The template a new game starts from: catch falling stars, with an eqosys sign-in, a Qollab party and a state() harness already in."
+      },
+      {
+        "app": "test-swarm",
+        "name": "Test Swarm",
+        "line": "Not an app: a Worker that queues our test runs for any of our Macs to lease, and posts the typecheck and apps statuses on GitHub when they pass."
+      },
+      {
         "app": "pwa-example",
         "name": "Pocket Dice (PWA)",
         "line": "A web page that Android installs as an app and that opens offline: a TypeScript page, a 370-byte Rust roller as wasm, a service worker and a manifest."

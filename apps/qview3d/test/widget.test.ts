@@ -7,10 +7,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { build } from "vite";
 import { launchChrome, load, openTab, type Tab } from "../../../scripts/chrome.ts";
-import { Design } from "../src/api.ts";
+import { Design, PrintPlan } from "../src/api.ts";
 import { designKey } from "../src/layout.ts";
 import { putOrg, putProduct } from "../src/settings.ts";
-import { local } from "../src/local.ts";
+import { DEMO_ADMIN, local } from "../src/local.ts";
 
 setDefaultTimeout(120_000);
 
@@ -20,7 +20,7 @@ let app: Awaited<ReturnType<typeof local>>;
 let chrome: Awaited<ReturnType<typeof launchChrome>>;
 beforeAll(async () => {
   await build({ root, logLevel: "error", build: { outDir: join(dir, "client"), emptyOutDir: true } });
-  app = await local({ dir, assets: join(dir, "client") });
+  app = await local({ dir, assets: join(dir, "client"), standInSeconds: 0.3 });
   chrome = await launchChrome();
 });
 afterAll(() => { chrome?.stop(); app?.stop(); rmSync(dir, { recursive: true, force: true }); });
@@ -117,7 +117,8 @@ test("the hat, the shirt and the hoodie each go in the cart with their design id
     expect(line["design-url"]).toEndWith(`/r/${designKey("demo", line.design!)}`);
     const stored = Design(JSON.parse((await (await app.bindings.BUCKET.get(designKey("demo", line.design!)))?.text()) ?? "null"));
     expect(stored).toMatchObject({ model: p.model, product: p.product });
-    expect(stored!.layers.map((l): string => l.zone ?? "front").sort()).toEqual([...p.zones].sort());
+    // The cap's picture stays on the shirt's front when the shopper switches; each zone they printed on is there.
+    expect([...new Set(stored!.layers.map((l): string => l.zone ?? "front"))].sort()).toEqual([...p.zones].sort());
   }
   expect(tab.noise).toEqual([]);
   await tab.close();
@@ -132,6 +133,9 @@ test("the iframe tells the page round it what the widget does", async () => {
     const tab = await openTab(chrome.cdp, { w: 800, h: 600 });
     await load(chrome.cdp, tab, `http://127.0.0.1:${shop.port}/`, 500);
     await until("qview:ready from the frame", () => tab.eval<boolean>(`window.heard.some((m) => m.type === "qview:ready")`));
+    // A page that started listening late asks, and hears it again.
+    await tab.eval(`window.heard.length = 0; document.querySelector("iframe").contentWindow.postMessage({ source: "qview3d", type: "ready" }, "*")`);
+    await until("qview:ready when asked", () => tab.eval<boolean>(`window.heard.some((m) => m.type === "qview:ready" && m.detail.design.model === "tee")`), 10_000);
     await tab.eval(`document.querySelector("iframe").contentWindow.postMessage({ source: "qview3d", type: "snapshot" }, "*")`);
     const shot = await until("a snapshot from the frame", () => tab.eval<{ from: string; size: number } | null>(`(() => { const m = window.heard.find((m) => m.type === "qview:snapshot"); return m ? { from: m.from, size: m.detail.blob.size, model: m.detail.design.model } : null; })()`));
     expect(shot).toMatchObject({ from: new URL(app.url).origin, model: "tee" });
@@ -160,5 +164,80 @@ test("a product's print zones and starting place shape what the shopper gets", a
   expect(await layer(tab)).toMatchObject({ u: 0.5, v: 0.7, scale: 0.3 });
   // A sleeve picture a page asks for anyway is refused, not printed where the shop said no.
   expect(await tab.eval<string>(`${HAT}.addImage(new Blob(["x"], { type: "image/png" }), "left-sleeve").then(() => "added", (e) => e.message)`)).toContain("left-sleeve");
+  await tab.close();
+});
+
+// A shirt front with two photos and a line of text: the shopper adds them, rewrites the text, picks the first photo
+// and brings it forward, removes the second, and saves. The design keeps them in drawing order, the text and all, and
+// the print plan lays each one's original on the front's one sheet, where the shopper put it.
+test("a shopper puts photos and a line of text on one shirt front, restacks them, and each prints", async () => {
+  const tab = await openTab(chrome.cdp, { w: 390, h: 844 }, true);
+  await load(chrome.cdp, tab, `${app.url}/`, 500);
+  await tab.eval(`document.querySelector('[data-product="crew-tee"]').click()`);
+  await until("the tee", () => tab.eval<boolean>(`${HAT}.model === "tee" && !!${HAT}.design`));
+  const UI = (sel: string) => `${HAT}.shadowRoot.querySelector(${JSON.stringify(sel)})`;
+  await tab.eval(`(async () => {
+    for (const [colour, u] of [["#1d4ed8", 0.35], ["#16a34a", 0.65]]) {
+      const c = new OffscreenCanvas(128, 128), g = c.getContext("2d");
+      g.fillStyle = colour; g.fillRect(0, 0, 128, 128);
+      await ${HAT}.addImage(await c.convertToBlob({ type: "image/png" }));
+      ${HAT}.place({ u, v: 0.6, scale: 0.3 });
+    }
+  })()`);
+  // The Add text button puts a line on and hands the shopper its words to type over.
+  await tab.eval(`${UI('[title="Add text"]')}.click()`);
+  await until("the text box focused", () => tab.eval<boolean>(`${HAT}.shadowRoot.activeElement === ${UI(".editor input")}`));
+  await tab.call("Input.insertText", { text: "Fern & Co" });
+  const lines = (d: string) => tab.eval<{ text?: { value: string }; u: number }[]>(`${HAT}.design.layers.map((l) => ({ text: l.text, u: l.u }))`).then((ls) => (ls.some((l) => l.text?.value === d) ? ls : null));
+  await until("the new words on the shirt", () => lines("Fern & Co"));
+  await tab.eval(`${HAT}.place({ v: 0.25, scale: 0.6 })`);
+
+  // Three chips, bottom first; pick the blue photo and bring it forward once, past the green one.
+  expect(await tab.eval<number>(`${UI(".stack")}.children.length`)).toBe(3);
+  await tab.eval(`${UI(".stack")}.children[0].click()`);
+  await tab.eval(`${UI('[title="Bring forward"]')}.click()`);
+  const order = await tab.eval<number[]>(`${HAT}.design.layers.map((l) => l.u)`);
+  expect(order.map((u) => Math.round(u * 100))).toEqual([65, 35, 50]);
+  // Pick the green one (now at the bottom) and remove it.
+  await tab.eval(`${UI(".stack")}.children[0].click()`);
+  await tab.eval(`${UI('[title="Remove it"]')}.click()`);
+  expect(await tab.eval<number>(`${UI(".stack")}.children.length`)).toBe(2);
+
+  const saved = await tab.eval<{ id: string }>(`${HAT}.save().then((s) => ({ id: s.id }))`);
+  const stored = Design(JSON.parse((await (await app.bindings.BUCKET.get(designKey("demo", saved.id)))?.text()) ?? "null"))!;
+  expect(stored.layers.map((l) => [Math.round(l.u * 100), l.text?.value])).toEqual([[35, undefined], [50, "Fern & Co"]]);
+  expect(stored.layers[1]!.text).toMatchObject({ font: "sans" });
+
+  const plan = PrintPlan(await (await fetch(`${app.url}/api/orgs/demo/designs/${saved.id}/print`, { headers: { authorization: `Bearer ${DEMO_ADMIN}` } })).json());
+  expect(plan.sheets.map((s) => [s.zone, s.unmade])).toEqual([["front", undefined]]);
+  expect(plan.sheets[0]!.pictures.map((p) => [p.original.split("/").pop(), Math.round(p.at.u * 100), p.at.scale])).toEqual(
+    stored.layers.map((l) => [l.original!.split("/").pop(), Math.round(l.u * 100), l.scale]));
+  expect(tab.noise).toEqual([]);
+  await tab.close();
+});
+
+// A shop's own model (a sample from its photos) takes several pictures too: each one lies on it as its own decal.
+test("two pictures on a shop's own model each show on it", async () => {
+  const admin = { authorization: `Bearer ${DEMO_ADMIN}`, "content-type": "application/json" };
+  const bytes = new Uint8Array([9, 8, 7]), sha = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", bytes)), (b) => b.toString(16).padStart(2, "0")).join("");
+  const signed = (await (await fetch(`${app.url}/api/orgs/demo/uploads`, { method: "POST", headers: admin, body: JSON.stringify({ kind: "photo", type: "image/jpeg", size: 3, sha256: sha }) })).json()) as { key: string; put: { url: string; headers: Record<string, string> } };
+  await fetch(signed.put.url, { method: "PUT", headers: signed.put.headers, body: bytes });
+  const started = (await (await fetch(`${app.url}/api/orgs/demo/models`, { method: "POST", headers: admin, body: JSON.stringify({ name: "Tumbler", photos: [signed.key] }) })).json()) as { id: string };
+  await until("the sample", async () => ((await (await fetch(`${app.url}/api/orgs/demo/models/${started.id}`, { headers: admin })).json()) as { status: string }).status === "ready");
+
+  const tab = await openTab(chrome.cdp, { w: 1280, h: 800 });
+  await load(chrome.cdp, tab, `${app.url}/`, 500);
+  await tab.eval(`${HAT}.removeAttribute("model"); ${HAT}.setAttribute("product", ${JSON.stringify(started.id)})`);
+  await until("the shop's model", () => tab.eval<boolean>(`${HAT}.model === "custom"`));
+  await tab.eval(`(async () => {
+    for (const fill of ["#1d4ed8", "#b91c1c"]) {
+      const c = new OffscreenCanvas(64, 64); c.getContext("2d").fillStyle = fill; c.getContext("2d").fillRect(0, 0, 64, 64);
+      await ${HAT}.addImage(await c.convertToBlob({ type: "image/png" }));
+    }
+  })()`);
+  // What the shopper sees: a decal on the model for each picture, not only the first.
+  const decals = `${HAT}.viewer.surface.group.children.filter((o) => o.isMesh && o.material?.polygonOffset).length`;
+  expect(await until("both decals", async () => (await tab.eval<number>(decals)) === 2 && 2)).toBe(2);
+  expect(tab.noise).toEqual([]);
   await tab.close();
 });

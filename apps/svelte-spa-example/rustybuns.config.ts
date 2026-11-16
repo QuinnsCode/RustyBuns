@@ -10,7 +10,7 @@ export default defineConfig({
     "assets": "dist/web",
     "compatibilityDate": "2026-10-28",
     "compatibilityFlags": [],
-    "build": "bunx vite build --outDir dist/web --emptyOutDir",
+    "build": "bunx rustybuns boundary && bunx vite build --outDir dist/web --emptyOutDir",
     "notFoundHandling": "single-page-application"
   },
   "bindings": {},

@@ -1,30 +1,7 @@
 // The live socket (/api/live) between the arena and the page: one type, sent by arena.ts and read by
 // app/viewer.ts. Its own file so the page can import the check without the Durable Object.
-import { arr, bool, Bad, int, isRecord, nul, num, obj, oneOf, opt, str, type Guard, type Of } from "@rustybuns/util/guard";
-import type { MatchSummary } from "./archive.ts";
-import type { LogEntry, MatchState } from "./engine/match.ts";
+import { arr, bool, Bad, int, nul, num, obj, oneOf, opt, str, type Guard, type Of } from "@rustybuns/util/guard";
 import type { Op, SkeletonEl } from "./engine/types.ts";
-
-/** What a viewer or the office needs to draw the fight so far. */
-export type LiveMatch = Omit<MatchState, "log" | "nextId" | "talks">;
-
-/** Everything the live socket sends. */
-export type LiveMessage =
-  | { t: "hello"; match: LiveMatch | null }
-  | { t: "start"; match: LiveMatch }
-  | { t: "turn"; id: string; turn: number; entries: LogEntry[] }
-  | { t: "end"; id: string; summary: MatchSummary };
-
-const isMatch = (v: unknown) => isRecord(v) && typeof v.id === "string" && Array.isArray(v.scenes);
-
-/** The arena's message read on the page. The arena is this build's own, so each kind's envelope is what's checked. */
-export const isLiveMessage = (m: unknown): m is LiveMessage =>
-  isRecord(m) && (
-    m.t === "hello" ? m.match === null || isMatch(m.match)
-    : m.t === "start" ? isMatch(m.match)
-    : m.t === "turn" ? typeof m.id === "string" && typeof m.turn === "number" && Array.isArray(m.entries)
-    : m.t === "end" ? typeof m.id === "string" && isRecord(m.summary)
-    : false);
 
 // A replay (GET /api/matches/<id>) and the list of them (GET /api/matches), read by this site's viewer and by the
 // office's broadcaster (apps/agent-office/live/brawl.ts), which may be a version ahead or behind: so the whole
@@ -63,14 +40,39 @@ const Score = obj({ likeness: num(-100, 100), craft: num(-100, 100) });
 const Fighter = obj({ model: text(100), name: text(200) });
 const time = num(0, Number.MAX_SAFE_INTEGER);
 /** A finished fight as the archive keeps it: what a page needs to play it back. */
-export const Replay = obj({
+const fight = {
   id: text(200), prompt: text(2000), fighters: arr(Fighter, 64), turns: count, turn: count, startedAt: time, endedAt: opt(time),
-  scenes: arr(arr(Element, 10_000), 64), scores: opt(arr(nul(Score), 64)), winner: opt(int(-1, 64)), log: arr(Entry, 100_000),
-});
+  scenes: arr(arr(Element, 10_000), 64), scores: opt(arr(nul(Score), 64)), winner: opt(int(-1, 64)),
+};
+export const Replay = obj({ ...fight, log: arr(Entry, 100_000) });
 export type Replay = Of<typeof Replay>;
 /** The archive's list, newest first. A row that doesn't fit is left out rather than losing the list. */
-export const Summaries = arr(obj({
+const Summary = obj({
   id: text(200), prompt: text(2000), fighters: arr(Fighter, 64), turns: count, startedAt: time, endedAt: opt(time),
   shapes: arr(count, 64), scores: opt(arr(nul(Score), 64)), winner: opt(int(-1, 64)),
-}), 100_000, { drop: true });
+});
+export const Summaries = arr(Summary, 100_000, { drop: true });
 export type Summaries = Of<typeof Summaries>;
+
+// The live socket (/api/live), read whole. A fight sends a hello, a start, one message a turn (seconds apart) and
+// an end, so checking every field costs nothing a viewer could notice (measured in #4584).
+const LiveFight = obj(fight);
+/** What the page draws a live fight from: the fight so far, without its log (a hello's scenes stand in for it). */
+export type LiveMatch = Of<typeof LiveFight>;
+const kinds = {
+  hello: obj({ match: nul(LiveFight) }),
+  start: obj({ match: LiveFight }),
+  turn: obj({ id: text(200), turn: count, entries: arr(Entry, 64) }),
+  end: obj({ id: text(200), summary: Summary }),
+};
+type Kinds = typeof kinds;
+/** Everything the live socket sends: the arena writes `x satisfies LiveMessage`, the page reads `check(LiveMessage, v)`. */
+export type LiveMessage = { [K in keyof Kinds]: { t: K } & Of<Kinds[K]> }[keyof Kinds];
+export const LiveMessage: Guard<LiveMessage> = (v) => {
+  const t = field(v, "t");
+  if (t === "hello") return { t, ...kinds.hello(v) };
+  if (t === "start") return { t, ...kinds.start(v) };
+  if (t === "turn") return { t, ...kinds.turn(v) };
+  if (t === "end") return { t, ...kinds.end(v) };
+  throw new Bad("a hello, start, turn or end");
+};

@@ -1,6 +1,7 @@
 // The door in front of the one paid call: Turnstile proves a person pressed the
 // button, and a YouTube link only ever becomes a fixed oEmbed URL (no fetching
 // whatever someone pastes).
+import { check, obj, opt, str } from "@rustybuns/util/guard";
 
 export async function turnstileOk(secret: string, token: string, ip: string, fetcher: typeof fetch = fetch): Promise<boolean> {
   if (!token) { console.warn("turnstile: no token sent (widget not solved or script blocked)"); return false; }
@@ -35,6 +36,6 @@ export async function youtubeTitle(id: string, fetcher: typeof fetch = fetch): P
   const watch = `https://www.youtube.com/watch?v=${id}`;
   const res = await fetcher(`https://www.youtube.com/oembed?format=json&url=${encodeURIComponent(watch)}`);
   if (!res.ok) return null;
-  const j = (await res.json()) as { title?: string; author_name?: string };
-  return j.title ? `${j.title}${j.author_name ? `, by ${j.author_name}` : ""}` : null;
+  const j = check(obj({ title: str(500), author_name: opt(str(500)) }), await res.json().catch(() => null));
+  return j?.title ? `${j.title}${j.author_name ? `, by ${j.author_name}` : ""}` : null;
 }

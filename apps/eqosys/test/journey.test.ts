@@ -27,7 +27,7 @@ test("one account across apps: sign up in a game, carry on into the suite, sourc
   // Later, qCRM sends her over; already signed in, she presses Continue. Her source stays the game.
   const crm = await asks("qcrm", QCRM);
   const on = await call("/do/continue", { form: crm.form, cookie: up.cookie });
-  expect(on.to.startsWith(`${QCRM}/?`)).toBe(true);
+  expect(on.to.startsWith(`${QCRM}/api/auth/callback/eqosys?`)).toBe(true);
   const second = await (await call("/api/exchange", { json: { app: "qcrm", code: codeIn(on.to), verifier: crm.verifier } })).res.json();
   expect(second).toMatchObject({ app: "qcrm", source: "park-hide-seek", access: ["member"] });
 

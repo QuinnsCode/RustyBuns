@@ -46,7 +46,10 @@ import { diffToOps } from "../src/sync.ts";
 import { lintMerge } from "../src/lint.ts";
 import { policyOf } from "../src/policy.ts";
 import { NO_KEYCHAIN } from "../src/check-env.ts";
+import { arr, int, nul, obj, str, type Of } from "@rustybuns/util/guard";
+import { help } from "../../../scripts/help.ts";
 
+help(import.meta.path);
 export type Verdict = "agree" | "both" | "git-only" | "ours-only" | "differ" | "guard" | "lock";
 export interface Shadow {
   verdict: Verdict;
@@ -141,7 +144,9 @@ const top = () => cwd ?? git("rev-parse", "--show-toplevel")!.trim();
 const changed = (from: string, to: string) => new Set((git("diff", "--name-only", "--no-renames", "--diff-filter=AM", from, to) ?? "").split("\n").filter(Boolean));
 const binary = (s: string) => s.includes("\0");
 
-interface Pr { number: number; headRefOid: string; mergeCommit: { oid: string } | null }
+/** A merged PR as `gh pr list --state merged --json number,headRefOid,mergeCommit` writes it. */
+const Pr = obj({ number: int(1, 1e9), headRefOid: str(64), mergeCommit: nul(obj({ oid: str(64) })) });
+type Pr = Of<typeof Pr>;
 /** One merge git made: the two sides it joined and what it committed. */
 interface Join { label: string; main: string; branch: string; landed: string }
 
@@ -344,8 +349,8 @@ if (import.meta.main) {
   const from = arg("from");
   const checking = process.argv.includes("--check");
   if (checking && !only) throw new Error("--check installs and tests each merge: pick them with --pr");
-  const prs: Pr[] = JSON.parse(from ? readFileSync(from, "utf8")
-    : Bun.spawnSync(["gh", "pr", "list", "--state", "merged", "--limit", arg("limit") ?? "1000", "--json", "number,headRefOid,mergeCommit"]).stdout.toString() || "[]");
+  const prs = arr(Pr, 10_000)(JSON.parse(from ? readFileSync(from, "utf8")
+    : Bun.spawnSync(["gh", "pr", "list", "--state", "merged", "--limit", arg("limit") ?? "1000", "--json", "number,headRefOid,mergeCommit"]).stdout.toString() || "[]"));
   const tally: Record<Verdict | "prs" | "skipped" | "merges" | "files", number> = { agree: 0, both: 0, "git-only": 0, "ours-only": 0, differ: 0, guard: 0, lock: 0, prs: 0, skipped: 0, merges: 0, files: 0 };
   const found: { label: string; path: string; s: Shadow; check?: Check }[] = [];
   const checks: Record<Check["result"], number> = { pass: 0, fail: 0, same: 0, unclear: 0, untested: 0 };

@@ -21,7 +21,7 @@ import { unb64url } from "@rustybuns/util/bytes";
 import { arr, Bad, bool, check, obj, oneOf, opt, str, type Guard, type Of } from "@rustybuns/util/guard";
 import { createRow, getRow, updateRow } from "./crm.ts";
 import { demoRows, isDemo } from "./demo-snapshot.ts";
-import { b64url, error, json, parseJson, readBody, sha256, type Env, type Row } from "./env.ts";
+import { b64url, error, json, need, parseJson, sha256, type Env, type Row } from "./env.ts";
 import { orgRow, type Ctx } from "./orgs.ts";
 import { can } from "./rbac.ts";
 
@@ -88,7 +88,7 @@ export async function unseal(env: Env, sealed: string): Promise<string | null> {
 /** A phone plugin's config as stored: the account id, the sending number, the sealed token and its last four. */
 const Stored = obj({ account: str(64), from: str(20), auth_token: str(2000), tail: str(8) });
 type Stored = Of<typeof Stored>;
-const stored = (row: PluginRow) => check(Stored, parseJson<unknown>(row.config, null));
+const stored = (row: PluginRow) => check(Stored, parseJson(row.config, null));
 
 interface Phone { kind: PhoneKind; account: string; from: string; token: string }
 async function unpack(env: Env, row: PluginRow): Promise<Phone | null> {
@@ -120,11 +120,6 @@ const PutBody = obj({
 });
 const SmsBody = obj({ body: str(SMS_MAX), via: opt(oneOf(PHONE_KINDS)) });
 
-/** A guard's value, or the 400 it explains. */
-function read<T>(g: Guard<T>, v: unknown): T | Response {
-  try { return g(v); } catch (e) { if (e instanceof Bad) return error(400, e.message); throw e; }
-}
-
 const rowOf = (env: Env, org: string, kind: string) => env.DB.prepare("SELECT * FROM plugins WHERE org_id = ? AND kind = ?").bind(org, kind).first<PluginRow>();
 
 export async function pluginRoutes(ctx: Ctx): Promise<Response | null> {
@@ -150,7 +145,7 @@ export async function pluginRoutes(ctx: Ctx): Promise<Response | null> {
     const plan = (await orgRow(env, org))?.plan;
     if (plan === "demo" || plan === "scenario") return error(403, `${kind} is not in a trial org: texts cost money, so make your own org first`);
   }
-  const b = read(PutBody, (await readBody(req)) ?? {});
+  const b = await need(req, PutBody);
   if (b instanceof Response) return b;
   let config: Stored | Record<string, never> = {};
   if (kind !== "form") {
@@ -217,7 +212,7 @@ async function send(c: Phone, to: string, text: string): Promise<{ id: string } 
 
 async function sendSms({ req, env, org, role, user }: Ctx, contactId: string): Promise<Response> {
   if (!can(role, "sms")) return error(403, `a ${role} can't send texts`);
-  const b = read(SmsBody, await readBody(req));
+  const b = await need(req, SmsBody);
   if (b instanceof Response) return b;
   const contact = await getRow(env, org, "contacts", contactId);
   if (!contact) return error(404, "not found");
@@ -349,7 +344,7 @@ async function formFields(req: Request, text: string): Promise<Partial<Record<Fo
   const type = req.headers.get("content-type") ?? "";
   let get: (k: string) => unknown;
   if (type.includes("json")) {
-    const v = parseJson<unknown>(text, null);
+    const v = parseJson(text, null);
     if (!v || typeof v !== "object" || Array.isArray(v)) return null;
     get = (k) => Object.getOwnPropertyDescriptor(v, k)?.value;
   } else if (type.includes("multipart/form-data")) {
@@ -386,7 +381,7 @@ async function formIn(req: Request, env: Env, row: PluginRow, text: string): Pro
   if (!first && !last && f.name) { const [a, ...rest] = f.name.split(/\s+/); first = a; last = rest.join(" ") || undefined; }
   const org = row.org_id;
   const known = email ? await contactByEmail(env, org, email) : await contactByPhone(env, org, f.phone!);
-  const data: Record<string, unknown> = { first_name: first, last_name: last, email, phone: f.phone, company_id: f.company ? await companyId(env, org, f.company) : undefined };
+  const data: Row = { first_name: first, last_name: last, email, phone: f.phone, company_id: f.company ? await companyId(env, org, f.company) : undefined };
   const contact = known ? await updateRow(env, org, "contacts", String(known.id), data, null) : await createRow(env, org, "contacts", { ...data, tags: ["form"] }, null);
   if (typeof contact === "string") return error(400, contact);
   if (!contact) return error(404, "not found");

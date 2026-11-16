@@ -33,7 +33,9 @@ import { BranchReview } from "../src/branches.ts";
 import { UPSTREAM_BRANCHES, checkEnv, runDirs, sandboxUser, spawnAs } from "../src/check-env.ts";
 import { ClaimedRun } from "../src/checks.ts";
 import { FileReply } from "../src/file-do.ts";
+import { help } from "../../../scripts/help.ts";
 
+help(import.meta.path);
 const { values: o, positionals: [slug] } = parseArgs({ allowPositionals: true, options: {
   label: { type: "string", default: `${process.env.USER ?? "runner"}@${hostname()}` },
   names: { type: "string" }, command: { type: "string" }, once: { type: "boolean" }, idle: { type: "string", default: "10" },
@@ -125,7 +127,7 @@ async function work(job: Of<typeof ClaimedRun>) {
     out += `$ ${command}\n`;
     const as = spawnAs(["sh", "-c", command], env, user);
     const p = Bun.spawn(as.cmd, { cwd: dir, stdout: "pipe", stderr: "pipe", env: as.env });
-    const pump = async (s: ReadableStream<Uint8Array>) => { for await (const t of s.pipeThrough(new TextDecoderStream())) out += t; };
+    const pump = async (s: ReadableStream<Uint8Array>) => { const d = new TextDecoder(); for await (const c of s) out += d.decode(c, { stream: true }); out += d.decode(); };
     const tick = setInterval(() => flush().catch(() => p.kill()), 2000);
     const [code] = await Promise.all([p.exited, pump(p.stdout), pump(p.stderr)]).finally(() => clearInterval(tick));
     const junit = await Bun.file(join(dir, "junit.xml")).text().catch(() => undefined);

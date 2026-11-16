@@ -9,7 +9,7 @@ import threePlaces from "../content/three-places.json";
 
 export type Tour = { title: string; json: string; langs: Record<string, string> };
 
-export const tour = (t: { title: string; tourTasks: unknown[] }, translations: Record<string, unknown> = {}): Tour => ({
+export const tour = (t: { title: string; tourTasks: unknown[] }, translations: Record<string, object> = {}): Tour => ({
   title: t.title,
   json: JSON.stringify(t),
   langs: Object.fromEntries(Object.entries(translations).map(([lang, tr]) => [lang, JSON.stringify(localize(t, tr))])),

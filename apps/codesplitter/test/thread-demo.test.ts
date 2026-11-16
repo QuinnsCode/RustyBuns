@@ -73,6 +73,10 @@ test("bring your own agent (#3742): the live seed's two links put Florence and h
     expect(s.message).toContain(s.person);
     expect(s.message).toContain(s.brief);
     expect(s.brief).toContain(s.agent);
+    // Run again (its output says to, for fresh links): the repo is kept and two new links come out.
+    const again = await seedLive(`http://127.0.0.1:${site.port}`, owner);
+    expect(again).toMatchObject({ owner: "ryan", repo: "florence-demo" });
+    expect(again.person).not.toBe(s.person);
 
     // Florence comes in by his link; his agent claims the other with the brief's own curl body, and gets a token of its own.
     await send("florence", "/api/login", { name: "florence" });

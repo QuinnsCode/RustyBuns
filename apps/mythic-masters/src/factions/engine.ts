@@ -138,6 +138,14 @@ export function back(j: Journey, now: number) {
   if (fs.seen !== undefined && now - fs.seen >= AWAY_MS) deed(j, "long-away");
   fs.seen = now;
 }
+/** You walked into region `n`. The factions stop at the Ozarks (docs/FACTIONS.md "The south"): the first time you go
+ * past them into the high-level south, once you have met one, it is a deed, and each says it lost the trail. */
+export function arrived(j: Journey, n: number): boolean {
+  const fs = factionsOf(j);
+  if (REGIONS[n - 1]?.tier !== "high-level" || !fs.met.length || fs.flags.includes("went-south")) return false;
+  deed(j, "went-south");
+  return true;
+}
 /** What faction `f` has to say about the rest of your journey before it gets to its own business: the first crossing
  * that holds and it has not said (its standing and flag applied), else its echo of the first waiting hook. Said once. */
 export function aside(j: Journey, f: FactionId, who: string, ctx: Ctx): string | null {

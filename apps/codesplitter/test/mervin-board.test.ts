@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { ciOf, order, run, score, type BoardPr, type StageCache } from "../scripts/mervin-board.ts";
+import { BoardPrs, ciOf, order, run, score, type BoardPr, type StageCache } from "../scripts/mervin-board.ts";
 
 // scripts/mervin-board.ts: the open PRs merged in a sandbox one stage at a time, then scored against what landed.
 describe("mervin board", () => {
@@ -104,6 +104,14 @@ describe("mervin board", () => {
     expect(pr([{ name: "typecheck", conclusion: "", status: "IN_PROGRESS" }]).ci).toBe("pending");
     expect(pr([{ name: "typecheck", conclusion: "SKIPPED", status: "COMPLETED" }]).ci).toBe("pass");
     expect(pr([]).ci).toBe("none");
+  });
+
+  test("gh's PR list reads through BoardPrs: a PR with no head commit is refused", () => {
+    const listed = [{ number: 5, headRefOid: "abc", autoMergeRequest: { enabledAt: "x" }, statusCheckRollup: [{ context: "legacy", state: "SUCCESS" }, { name: "apps", conclusion: null, status: "QUEUED" }] }];
+    const [pr] = BoardPrs(listed);
+    expect(pr.autoMergeRequest).toBeTruthy();
+    expect(ciOf(pr).ci).toBe("pending");
+    expect(() => BoardPrs([{ number: 6, title: "no head" }])).toThrow();
   });
 
 });

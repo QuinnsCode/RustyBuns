@@ -72,7 +72,7 @@ import { drowner } from "./drown.ts";
 import { ambience } from "./world/ambience.ts";
 import { findTape, ISLE_N, isleTapesFound, lightFire, sight, tapeOf, tapesFound, type Poi } from "./world/poi.ts";
 import { lairLook, PACKS, type Pack } from "./packs.ts";
-import { approach as approachFaction, back as backAgain, deed, FACTION, factionsOf, fought as foughtFaction, hail as hailPost, postFought, postsIn, record as questRecord, reply as replyFaction, sectionCleared, waitingAll, type Ctx as FactionCtx, type Foe as FactionFoe, type Manned, type Scene } from "./factions/engine.ts";
+import { approach as approachFaction, arrived as arrivedFactions, back as backAgain, deed, FACTION, factionsOf, fought as foughtFaction, hail as hailPost, postFought, postsIn, record as questRecord, reply as replyFaction, sectionCleared, waitingAll, type Ctx as FactionCtx, type Foe as FactionFoe, type Manned, type Scene } from "./factions/engine.ts";
 import { postSpot, stageSpot, walkedUp } from "./world/posts.ts";
 import { COAT_CSS, rivalsView, type Figure } from "./world/rivals-view.ts";
 import { FACTIONS, type FactionId } from "./factions/model.ts";
@@ -646,7 +646,9 @@ const world = worldView(scene, camera, {
   owns: (id) => !!journey && owns(journey, id),
   rumours: () => (journey?.factions?.met ?? []).flatMap((f) => FACTION[f].rumours),
   firstNight: () => { if (!journey || journey.nights) return false; journey.nights = 1; saveJourney(); return true; },
-  arrived: (g, fresh) => { if (fresh && worldUp && world.shown && journey) director.play(memories.mark(arrival(g.n, world.here(), world.vista()), { id: `arrival:${g.n}`, scene: "arrival", title: `Arriving in ${g.name}`, args: { n: g.n } })); },
+  arrived: (g, fresh) => {
+    if (journey?.factions && arrivedFactions(journey, g.n)) saveJourney(); // the factions stop at the Ozarks
+    if (fresh && worldUp && world.shown && journey) director.play(memories.mark(arrival(g.n, world.here(), world.vista()), { id: `arrival:${g.n}`, scene: "arrival", title: `Arriving in ${g.name}`, args: { n: g.n } })); },
   places: {
     log: () => journey,
     // A tape plays where it lies, once, and the journal keeps it. A fire is where you rest: lit the first time, saved every time.

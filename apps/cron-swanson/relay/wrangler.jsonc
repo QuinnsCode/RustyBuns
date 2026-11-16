@@ -1,0 +1,10 @@
+// Cron Swanson's live channel (src/relay.ts): one Worker, one Durable Object that only fans out.
+// The owner deploys it from this folder (`bunx wrangler deploy`), gives it a TOKEN secret equal to the server's
+// CRON_SWANSON_TOKEN, and sets CRON_SWANSON_RELAY on the server to the Worker's URL. Steps: README "Live pages".
+{
+  "name": "cron-swanson-relay",
+  "main": "../src/relay.ts",
+  "compatibility_date": "2026-09-01",
+  "durable_objects": { "bindings": [{ "name": "RELAY", "class_name": "Relay" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Relay"] }]
+}

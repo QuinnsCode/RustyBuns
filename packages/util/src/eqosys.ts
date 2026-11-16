@@ -547,15 +547,35 @@ export type SpaceMessage = Of<typeof SpaceMessage>;
 /** A voice channel: its id (what `talk` and `inVoice` take) and its name. */
 export const SpaceVoice = obj({ id: str(24), name: str(24) });
 export type SpaceVoice = Of<typeof SpaceVoice>;
-/** Someone online in a space, and the voice channel their page is in. */
-export const SpaceMember = obj({ id: str(200), name: str(200), voice: opt(str(24)) });
+/**
+ * Someone's role in a space. An owner and an admin run it (channels, private channels, mute and kick); a member sees every channel
+ * that isn't private; a guest sees #general and the private channels they are let into, and no voice channels. In a studio's space
+ * the studio's roles carry over (an owner, an admin, a maker is a member); in a person's own space the owner hands them out.
+ */
+export const SPACE_ROLES = ["owner", "admin", "member", "guest"] as const;
+export type SpaceRole = (typeof SPACE_ROLES)[number];
+export const SpaceRole = oneOf(SPACE_ROLES);
+/** Someone online in a space, their role, and the voice channel their page is in. */
+export const SpaceMember = obj({ id: str(200), name: str(200), role: opt(SpaceRole), voice: opt(str(24)) });
 export type SpaceMember = Of<typeof SpaceMember>;
+/** Who is let into a private channel (to those who run the space). */
+export const SpaceAllowed = obj({ channel: str(24), ids: arr(str(200), 1000) });
+/**
+ * What a space tells one member about itself: its name, the channels they can see (`private` the ones of those only some see),
+ * its voice channels, whether they run it and their role, and the longest message it takes. Those who run it also hear who is let
+ * into each private channel (`allowed`).
+ */
+export const SpaceInfo = obj({
+  name: str(60), channels: arr(str(24), 100), voice: arr(SpaceVoice, 100), owner: bool(), max: opt(int(1, 100_000)),
+  role: opt(SpaceRole), private: opt(arr(str(24), 100)), allowed: opt(arr(SpaceAllowed, 100)),
+});
+export type SpaceInfo = Of<typeof SpaceInfo>;
 /**
  * What a space says: its name and channels, who is online, a new message, a page of history, a refusal, (to the owner)
  * a report, or (to whoever asked) a one-use ticket into a voice channel on Qlave, for `join` in @rustybuns/util/voice.
  */
 export const SpaceMsg: Guard<
-  | { t: "space"; name: string; channels: string[]; voice: SpaceVoice[]; owner: boolean; max?: number }
+  | ({ t: "space" } & SpaceInfo)
   | { t: "online"; members: SpaceMember[] }
   | ({ t: "said"; channel: string } & SpaceMessage)
   | { t: "history"; channel: string; messages: SpaceMessage[]; more: boolean }
@@ -565,7 +585,7 @@ export const SpaceMsg: Guard<
 > = (v) => {
   const t = check(obj({ t: oneOf(["space", "online", "said", "history", "refused", "reported", "ticket"]) }), v)?.t;
   const ch = str(24);
-  if (t === "space") return { t, ...obj({ name: str(60), channels: arr(ch, 100), voice: arr(SpaceVoice, 100), owner: bool(), max: opt(int(1, 100_000)) })(v) };
+  if (t === "space") return { t, ...SpaceInfo(v) };
   if (t === "online") return { t, ...obj({ members: arr(SpaceMember, 1000) })(v) };
   if (t === "ticket") return { t, ...obj({ channel: ch, url: str(300, { re: /^https?:\/\// }), ticket: str(5000) })(v) };
   if (t === "said") return { t, channel: obj({ channel: ch })(v).channel, ...SpaceMessage(v) };
@@ -575,16 +595,16 @@ export const SpaceMsg: Guard<
   throw new Error("not a space message");
 };
 export type SpaceMsg = Of<typeof SpaceMsg>;
-/** A space a person is in, as GET /q/space lists it; `invite` only on the ones they own. `studio` is the studio that owns it: its members
- * are the studio's, `owner` means they are one of its owners or admins, and it has no invite. */
+/** A space a person is in, as GET /q/space lists it. `owner` means they run it (its owner or an admin), and `invite` is only on those.
+ * `studio` is the studio that owns it: its members are the studio's, and it has no invite. */
 export const SpaceRow = obj({ id: str(64), name: str(60), owner: bool(), invite: opt(str(12)), studio: opt(str(64)) });
 export type SpaceRow = Of<typeof SpaceRow>;
 export const SpaceRows = obj({ spaces: arr(SpaceRow, 1000) });
 
 /** What a page hears from an open space. Every one is optional. */
 export interface SpaceHandlers {
-  /** `max`: the longest message this space takes. */
-  space?: (s: { name: string; channels: string[]; voice: SpaceVoice[]; owner: boolean; max?: number }) => void;
+  /** `max`: the longest message this space takes; `role` yours in it; `private` the channels only some see. */
+  space?: (s: SpaceInfo) => void;
   online?: (members: SpaceMember[]) => void;
   said?: (channel: string, m: SpaceMessage) => void;
   history?: (channel: string, messages: SpaceMessage[], more: boolean) => void;
@@ -599,10 +619,10 @@ export interface SpaceHandlers {
 /**
  * The page's side of Qollab's spaces (apps/eqosys, QOLLAB.md): groups that last, across every Q app, with text channels.
  * `mine()` lists them, `make(name)` and `join(invite)` add one, `open(id, on)` connects; then `say`, `history`, and for the
- * owner `channel`, `mute` and `kick`. `leave()` takes you out of the space; `close()` only hangs up.
+ * owner and admins `channel`, `privateChannel`, `allow`, `mute` and `kick`, and the owner `role`. `leave()` takes you out of the space; `close()` only hangs up.
  */
 export function space({ url, token }: PartyConfig) {
-  type Out = { t: string; channel?: string; text?: string; before?: number; id?: string; on?: boolean; voice?: boolean };
+  type Out = { t: string; channel?: string; text?: string; before?: number; id?: string; on?: boolean; voice?: boolean; private?: boolean; role?: SpaceRole };
   let link: Link<Out> | null = null;
   const authed = (method: string, body?: unknown): RequestInit | null => {
     const t = token();
@@ -660,6 +680,12 @@ export function space({ url, token }: PartyConfig) {
     history: (channel: string, before?: number) => send({ t: "history", channel, ...(before ? { before } : {}) }),
     /** Owner only: add a channel (lower-case letters, digits and dashes), a voice one with `voice`. */
     channel: (name: string, voice = false) => send({ t: "channel", channel: name, ...(voice ? { voice } : {}) }),
+    /** Those who run it: add a private text channel, one only they and the people they let in see. */
+    privateChannel: (name: string) => send({ t: "channel", channel: name, private: true }),
+    /** Those who run it: let someone into a private channel, or (`on` false) keep them out of it again. */
+    allow: (channel: string, id: string, on = true) => send({ t: "allow", channel, id, on }),
+    /** The owner of a person's own space: make a member an admin, a member or a guest. Their open pages reconnect with it. */
+    role: (id: string, role: Exclude<SpaceRole, "owner">) => send({ t: "role", id, role }),
     /** Owner only: delete a channel (a voice one by its id). #general stays. */
     drop: (channel: string) => send({ t: "drop", channel }),
     /** Ask for a ticket into a voice channel; it comes back to `ticket`. */

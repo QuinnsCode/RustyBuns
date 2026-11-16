@@ -38,7 +38,13 @@ window.WebSocket = class extends Native {
   }
 };
 
-function send(msg: Record<string, unknown>) {
+/** What this page sends the office: hire, prompt one worker, send one home. */
+type Out =
+  | ({ t: "queue.add"; title: string } & Of<typeof Hire>)
+  | { t: "worker.prompt"; workerId: string; prompt: string }
+  | { t: "worker.kill"; workerId: string; cleanup?: Of<typeof Home>["cleanup"] };
+
+function send(msg: Out) {
   if (!sock || sock.readyState !== Native.OPEN) throw new Error("The office isn't connected: reload the page, or sign in first");
   sock.send(JSON.stringify(msg));
 }

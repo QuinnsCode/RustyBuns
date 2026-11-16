@@ -159,6 +159,7 @@ function entriesOf(body: Uint8Array) {
  * Push a commit on `branch` that applies `changes` to whatever the branch
  * points at now (and `then`'s commits on top of it). If someone moves it in
  * between, rebuild on theirs and retry. `commits` is every commit made, the first first.
+ * Changes that leave the branch's tree as it is make no commit: `commit` is the branch's tip, `commits` empty.
  */
 export async function push(remote: string, token: string, snap: Snapshot, tries = 3): Promise<{ commit: string; commits: string[]; parent: string | null; bytes: number }> {
   const ref = snap.to?.ref ?? `refs/heads/${snap.branch ?? "main"}`;
@@ -187,6 +188,8 @@ export async function push(remote: string, token: string, snap: Snapshot, tries 
     for (const c of [{ changes: snap.changes, message: snap.message }, ...snap.then ?? []]) {
       const out: Obj[] = [];
       const t = (await apply(reader, tree, c.changes, out)) ?? (out.push(await obj("tree", new Uint8Array())), out.at(-1)!);
+      // Nothing changed (a commit of a file as git has it): no empty commit on the branch.
+      if (!snap.to && !snap.then?.length && parent !== ZERO && t.id === tree) return { commit: parent, commits: [], parent, bytes: 0 };
       for (const o of out) if (o.type === "tree") made.set(o.id, o);
       const commit = await obj("commit", enc.encode(
         `tree ${t.id}\n${under !== ZERO ? `parent ${under}\n` : ""}author ${who}\ncommitter ${who}\n\n${c.message}\n`));

@@ -18,7 +18,7 @@ export const R = (y: number, rx: number, rz = rx, o: { cx?: number; cz?: number;
 function finish(geo: THREE.BufferGeometry, slot: string, smooth = false): Piece {
   for (const k of Object.keys(geo.attributes)) if (k !== "position") geo.deleteAttribute(k);
   if (smooth) { geo.computeVertexNormals(); geo = geo.toNonIndexed(); }
-  else { geo = geo.toNonIndexed(); geo.computeVertexNormals(); }
+  else { if (geo.index) geo = geo.toNonIndexed(); geo.computeVertexNormals(); }
   return { geo, slot };
 }
 

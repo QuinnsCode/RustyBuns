@@ -4,7 +4,7 @@
 // also adds and deletes channels, copies the invite, and mutes or kicks from a member's row. The party lobby's
 // sibling (./lobby.ts). Plain DOM with `rb-spaces*` classes in the page's eqosys skin (./skin.ts); the page places the
 // box and hands over its icons (lucide, say) so this package keeps no dependencies.
-import type { SpaceMember, SpaceMessage, SpaceRow, SpaceVoice, space } from "./eqosys.ts";
+import type { SpaceMember, SpaceMessage, SpaceRole, SpaceRow, SpaceVoice, space } from "./eqosys.ts";
 import { join as joinVoice, type Speaker, type VoiceHandle } from "./voice.ts";
 import { wearSkin } from "./skin.ts";
 import { el } from "./dom.ts";
@@ -14,7 +14,7 @@ export type VoiceCall = Omit<VoiceHandle, "call">;
 
 /** The icons the panel asks for, by lucide name. */
 export type SpaceIcon = "arrow-left" | "arrow-up" | "plus" | "log-in" | "send" | "copy" | "hash" | "mic-off" | "mic" | "user-x" | "flag" | "log-out"
-  | "volume-2" | "phone-off" | "trash-2";
+  | "volume-2" | "phone-off" | "trash-2" | "lock" | "user-plus" | "user-minus" | "shield";
 
 export interface SpacesPanel {
   box: HTMLElement;
@@ -36,7 +36,13 @@ export interface SpacesState {
   open: string | null; spaces: string[]; channel: string; channels: string[]; messages: string[]; online: string[]; note: string; more: boolean;
   /** Voice channels by name, the one this page is in, and who Qlave says is in it ("Ada", "Ada (muted)", "Ada (talking)"). */
   voices: string[]; inVoice: string | null; speakers: string[];
+  /** Your role in the open space, and which of its channels are private (only some see them). */
+  role: SpaceRole | null; private: string[];
 }
+
+/** The role the owner's button hands out next: member, then admin, then guest, then member again. */
+const NEXT_ROLE = { member: "admin", admin: "guest", guest: "member" } as const;
+const ROLE_WORD = { admin: "an admin", guest: "a guest", member: "a member" } as const;
 
 /**
  * Keep `box` showing this person's spaces. Returns the panel's handle: `state()` for a harness, `close()` to hang up
@@ -45,6 +51,8 @@ export interface SpacesState {
 export function spacesPanel({ box, space: sp, name, icon, say, join = joinVoice, start }: SpacesPanel) {
   let rows: SpaceRow[] = [], open: SpaceRow | null = null, note = "";
   let channels: string[] = [], channel = "general", owner = false, online: SpaceMember[] = [];
+  // Your role, the private channels you see, and (when you run the space) who is let into each.
+  let role: SpaceRole | null = null, locked: string[] = [], allowed = new Map<string, string[]>();
   // Voice: the channels, the one this page is in (or asked to join), its handle once Qlave let us in, who is in it, our own mute.
   let voices: SpaceVoice[] = [], talkingIn: SpaceVoice | null = null, call: VoiceCall | null = null, speakers: Speaker[] = [], selfMuted = false;
   const msgs = new Map<string, SpaceMessage[]>(), more = new Map<string, boolean>(), muted = new Set<string>();
@@ -75,11 +83,12 @@ export function spacesPanel({ box, space: sp, name, icon, say, join = joinVoice,
   }
   function enter(row: SpaceRow) {
     hangUp();
-    open = row; channel = "general"; channels = []; voices = []; online = []; owner = row.owner; note = "";
+    open = row; channel = "general"; channels = []; voices = []; online = []; owner = row.owner; note = ""; role = null; locked = []; allowed = new Map();
     msgs.clear(); more.clear();
     sp.open(row.id, {
       space: (s) => {
         channels = s.channels; voices = s.voice; owner = s.owner; open = open && { ...open, name: s.name };
+        role = s.role ?? null; locked = s.private ?? []; allowed = new Map((s.allowed ?? []).map((a) => [a.channel, a.ids]));
         if (talkingIn && !voices.some((v) => v.id === talkingIn!.id)) hangUp();
         if (!channels.includes(channel) && !voices.some((v) => v.id === channel)) channel = channels[0] ?? "general";
         if (channels.includes(channel) && !msgs.has(channel)) sp.history(channel);
@@ -181,10 +190,11 @@ export function spacesPanel({ box, space: sp, name, icon, say, join = joinVoice,
       return b;
     };
     const tabs = el("nav", { className: "rb-spaces-tabs", role: "tablist" },
-      ...channels.map((ch) => tabOf(ch, `#${ch}`)),
+      ...channels.map((ch) => locked.includes(ch) ? tabOf(ch, icon("lock"), ch) : tabOf(ch, `#${ch}`)),
       ...voices.map((v) => tabOf(v.id, icon("volume-2"), v.name)));
     const slug = (v: string) => v.toLowerCase().replace(/[^a-z0-9-]+/g, "-");
-    if (owner) tabs.append(line("New channel", 24, "plus", "Add channel", (v) => sp.channel(slug(v))), line("Voice room", 24, "volume-2", "Add voice channel", (v) => sp.channel(slug(v), true)));
+    if (owner) tabs.append(line("New channel", 24, "plus", "Add channel", (v) => sp.channel(slug(v))), line("Voice room", 24, "volume-2", "Add voice channel", (v) => sp.channel(slug(v), true)),
+      line("Private channel", 24, "lock", "Add private channel", (v) => sp.privateChannel(slug(v))));
     const drop = owner && channel !== "general" ? btn("trash-2", `Delete ${voiceName(channel) ?? `#${channel}`}`, () => { sp.drop(channel); channel = "general"; draw(); }, false, "rb-spaces-drop") : "";
     const voice = voices.find((v) => v.id === channel);
     if (voice) return [head, tabs, el("div", { className: "rb-spaces-body" }, drawVoice(voice), who()), drop, noteEl()];
@@ -214,10 +224,17 @@ export function spacesPanel({ box, space: sp, name, icon, say, join = joinVoice,
   }
 
   function who() {
-    const me = name();
-    return el("ul", { className: "rb-spaces-online", ariaLabel: "Online" }, ...online.map((m) => el("li", {}, m.name, ...(m.voice ? [el("span", { className: "rb-spaces-in-voice", title: `In ${voiceName(m.voice) ?? "voice"}` }, icon("volume-2"))] : []), ...(m.name === me ? [] : owner
+    const me = name(), let_in = allowed.get(channel);
+    // In a private channel, those who run the space let people in or keep them out; the owner of a person's own space hands out roles.
+    const gate = (m: SpaceMember) => !let_in || m.role === "owner" || m.role === "admin" ? []
+      : let_in.includes(m.id) ? [btn("user-minus", `Keep ${m.name} out of ${channel}`, () => sp.allow(channel, m.id, false))]
+      : [btn("user-plus", `Let ${m.name} into ${channel}`, () => sp.allow(channel, m.id))];
+    const ranks = (m: SpaceMember) => role !== "owner" || open?.studio || !m.role || m.role === "owner" ? []
+      : [btn("shield", `Make ${m.name} ${ROLE_WORD[NEXT_ROLE[m.role]]}`, () => sp.role(m.id, NEXT_ROLE[m.role as keyof typeof NEXT_ROLE]))];
+    const tag = (m: SpaceMember) => m.role && m.role !== "member" ? [el("small", { className: "rb-spaces-role" }, m.role)] : [];
+    return el("ul", { className: "rb-spaces-online", ariaLabel: "Online" }, ...online.map((m) => el("li", {}, m.name, ...tag(m), ...(m.voice ? [el("span", { className: "rb-spaces-in-voice", title: `In ${voiceName(m.voice) ?? "voice"}` }, icon("volume-2"))] : []), ...(m.name === me ? [] : owner
       ? [btn(muted.has(m.id) ? "mic" : "mic-off", muted.has(m.id) ? `Unmute ${m.name}` : `Mute ${m.name}`, () => { const on = !muted.has(m.id); if (on) muted.add(m.id); else muted.delete(m.id); sp.mute(m.id, on); draw(); }),
-        btn("user-x", `Kick ${m.name}`, () => sp.kick(m.id))]
+        btn("user-x", `Kick ${m.name}`, () => sp.kick(m.id)), ...gate(m), ...ranks(m)]
       : [btn("flag", `Report ${m.name}`, () => { sp.report(m.id); note = `Reported ${m.name}`; draw(); })]))));
   }
 
@@ -241,6 +258,7 @@ export function spacesPanel({ box, space: sp, name, icon, say, join = joinVoice,
       online: online.map((m) => m.name), note, more: more.get(channel) ?? false,
       voices: voices.map((v) => v.name), inVoice: call ? talkingIn?.name ?? null : null,
       speakers: speakers.map((s) => `${s.name}${s.muted ? " (muted)" : s.talking ? " (talking)" : ""}`),
+      role, private: locked,
     }),
     close: () => { hangUp(); sp.close(); box.hidden = true; },
   };

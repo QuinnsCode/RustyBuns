@@ -41,8 +41,7 @@ export async function exportRoutes({ req, env, org, p, audit }: Ctx): Promise<Re
   if (p[0] === "export") {
     const deleted = new URL(req.url).searchParams.get("deleted") === "1";
     const tables = await env.DB.batch(EXPORTED.map((t) => env.DB.prepare(`SELECT * FROM ${t} WHERE org_id = ?${SOFT.has(t) && !deleted ? " AND deleted_at IS NULL" : ""}`).bind(org)));
-    const out: Record<string, unknown> = { org: await orgRow(env, org), exported_at: Date.now(), includes_deleted: deleted };
-    EXPORTED.forEach((t, i) => { out[t] = tables[i]!.results; });
+    const out = { org: await orgRow(env, org), exported_at: Date.now(), includes_deleted: deleted, ...Object.fromEntries(EXPORTED.map((t, i) => [t, tables[i]!.results])) };
     await audit("export", null, Object.fromEntries(EXPORTED.map((t, i) => [t, tables[i]!.results.length])));
     return json(out, 200, { "content-disposition": `attachment; filename="qcrm-${org}${deleted ? "-with-deleted" : ""}.json"` });
   }

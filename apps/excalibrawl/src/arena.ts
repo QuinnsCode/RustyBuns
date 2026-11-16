@@ -93,14 +93,15 @@ export class Arena extends DurableObject<Cloudflare.Env> {
   /** The models, metered against today's budget. */
   private deps(): TurnDeps {
     // Local dev would reach the real (billed) Workers AI, so dev fights are practice unless EXCALIBRAWL_REAL_AI=1.
-    const ai = import.meta.env.VITE_IS_DEV_SERVER && !import.meta.env.VITE_REAL_AI ? undefined : this.env.AI;
+    // Any model by name, its input as the turn built it: Clef checks the answer, not the binding's per-model types.
+    const ai: { run(model: string, input: unknown): Promise<unknown> } | undefined = import.meta.env.VITE_IS_DEV_SERVER && !import.meta.env.VITE_REAL_AI ? undefined : this.env.AI;
     const cap = Number(this.env.DAILY_CALLS) || DEFAULT_DAILY_CALLS;
     return {
       // No AI: a practice fight on random answers (or random pen lines), free.
       run: ai
-        ? (model, input) => ai.run(model as keyof AiModels, input as never)
+        ? (model, input) => ai.run(model, input)
         : async (_m, input) => ((input as { messages?: unknown }).messages ? { response: practicePen(regionFor(0, 2, CANVAS)) } : practiceAnswers(input)),
-      plan: ai ? async (prompt, persona) => parsePlan(await ai.run(PLANNER as keyof AiModels, planRequest(prompt, persona) as never)) : async () => practicePlan(),
+      plan: ai ? async (prompt, persona) => parsePlan(await ai.run(PLANNER, planRequest(prompt, persona))) : async () => practicePlan(),
       take: async () => {
         if (!ai) return true;
         const today = new Date().toISOString().slice(0, 10);

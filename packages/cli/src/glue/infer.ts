@@ -393,7 +393,7 @@ export function infer(root = process.cwd()): Inferred {
   }
   const framework = (inits(stack, vite.plugins, deps) ? stack : "unknown") as Framework;
   const pm = detectPm(root);
-  const wranglerPath = ["wrangler.jsonc", "wrangler.json", "wrangler.toml"].map((c) => join(root, c)).find(existsSync) ?? null;
+  const wranglerPath = ["cloudflare.config.ts", "wrangler.jsonc", "wrangler.json", "wrangler.toml"].map((c) => join(root, c)).find(existsSync) ?? null;
   const tsAliases = inferTsconfigAliases(root);
   const aliases = { ...vite.aliases, ...tsAliases };   // tsconfig wins: it is what the framework and editor use
   let srcDir: string, srcDirSource: Inferred["srcDirSource"];

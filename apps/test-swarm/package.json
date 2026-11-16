@@ -1,0 +1,18 @@
+{
+  "name": "test-swarm",
+  "private": true,
+  "type": "module",
+  "version": "0.0.1",
+  "scripts": {
+    "gen": "bun ../../packages/cli/src/index.ts generate",
+    "test": "bun test test",
+    "deploy": "bun ../../packages/cli/src/index.ts deploy"
+  },
+  "dependencies": {
+    "@rustybuns/util": "^0.1.12"
+  },
+  "devDependencies": {
+    "@rustybuns/cli": "^0.1.12",
+    "@rustybuns/shell-bun": "^0.1.12"
+  }
+}

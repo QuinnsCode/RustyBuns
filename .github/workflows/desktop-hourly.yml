@@ -7,23 +7,34 @@
 # artifact ring-<sha>-<app>-<target> for 7 days, so `bun scripts/rings.ts rollback` goes back to a green build in seconds (#4497).
 # A failure opens (or comments on) one issue labelled ci-hourly for triage, with the commits since the last green;
 # a PR is never held for it.
+# express.yml calls it with a sha (#4586): that commit runs now, gate or no gate, marked pending until the verdict.
 name: desktop-hourly
 on:
   schedule:
     - cron: "0 * * * *"
   workflow_dispatch:
+  workflow_call:
+    # The express lane (express.yml, #4586): this sweep on one squash commit, now.
+    inputs:
+      sha: { type: string, required: true }
 
 concurrency:
-  group: desktop-hourly
+  group: desktop-hourly${{ inputs.sha && format('-{0}', inputs.sha) || '' }}
   cancel-in-progress: false
 
 permissions:
   contents: read
 
+env:
+  SHA: ${{ inputs.sha || github.sha }}
+
 jobs:
   plan:
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    permissions:
+      contents: read
+      statuses: write
     outputs:
       run: ${{ steps.gate.outputs.run }}
       smoke: ${{ steps.p.outputs.smoke }}
@@ -31,14 +42,19 @@ jobs:
       apps: ${{ steps.a.outputs.apps }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with: { fetch-depth: 0 }
+        with: { fetch-depth: 0, ref: "${{ env.SHA }}" }
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with: { bun-version: "1.4.3" }
       - id: gate
-        env: { GH_TOKEN: "${{ github.token }}", MANUAL: "${{ github.event_name == 'workflow_dispatch' }}" }
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MANUAL: ${{ github.event_name == 'workflow_dispatch' }}
+          EXPRESS: ${{ inputs.sha }}
+          RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-          if [ "$MANUAL" = true ]; then echo run=true >> "$GITHUB_OUTPUT"
-          else bun scripts/rings.ts gate hourly "$GITHUB_SHA" >> "$GITHUB_OUTPUT"; fi
+          if [ -n "$EXPRESS" ]; then echo run=true >> "$GITHUB_OUTPUT"; bun scripts/rings.ts status hourly "$SHA" pending "$RUN"
+          elif [ "$MANUAL" = true ]; then echo run=true >> "$GITHUB_OUTPUT"
+          else bun scripts/rings.ts gate hourly "$SHA" >> "$GITHUB_OUTPUT"; fi
       - id: p
         if: steps.gate.outputs.run == 'true'
         run: bun scripts/ci-apps.ts smoke >> "$GITHUB_OUTPUT"
@@ -64,6 +80,7 @@ jobs:
         working-directory: apps/${{ matrix.app }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { ref: "${{ env.SHA }}" }
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with: { bun-version: "1.4.3" }
       # windows-arm64 installs sometimes stall for minutes and die linking a binary (ENOENT); a retry works.
@@ -89,7 +106,7 @@ jobs:
       # (`bun scripts/rings.ts rollback`) instead of rebuilding. Only SHAs the ring marks green are ever picked.
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: ring-${{ github.sha }}-${{ matrix.app }}-${{ matrix.target }}
+          name: ring-${{ env.SHA }}-${{ matrix.app }}-${{ matrix.target }}
           path: apps/${{ matrix.app }}/dist/${{ matrix.app }}-*
           if-no-files-found: warn
           retention-days: 7
@@ -101,6 +118,7 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { ref: "${{ env.SHA }}" }
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with: { bun-version: "1.4.3" }
       - run: bun install --frozen-lockfile
@@ -125,6 +143,7 @@ jobs:
         working-directory: apps/${{ matrix.app }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { ref: "${{ env.SHA }}" }
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with: { bun-version: "1.4.3" }
       - if: matrix.prep
@@ -149,6 +168,7 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { ref: "${{ env.SHA }}" }
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with: { bun-version: "1.4.3" }
       - run: bun install --frozen-lockfile
@@ -170,11 +190,12 @@ jobs:
       STATE: ${{ (contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')) && 'failure' || 'success' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { ref: "${{ env.SHA }}" }
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with: { bun-version: "1.4.3" }
-      - run: bun scripts/rings.ts status hourly "$GITHUB_SHA" "$STATE" "$RUN"
+      - run: bun scripts/rings.ts status hourly "$SHA" "$STATE" "$RUN"
       - if: env.STATE == 'success'
-        run: bun scripts/rings.ts move hourly "$GITHUB_SHA"
+        run: bun scripts/rings.ts move hourly "$SHA"
 
   flag:
     needs: [plan, smoke, suite, apps, packages]
@@ -186,6 +207,7 @@ jobs:
       issues: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { ref: "${{ env.SHA }}" }
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with: { bun-version: "1.4.3" }
       - env:
@@ -194,13 +216,13 @@ jobs:
           RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           RESULTS: smoke ${{ needs.smoke.result }}, suite ${{ needs.suite.result }}, apps ${{ needs.apps.result }}, packages ${{ needs.packages.result }}
         run: |
-          RANGE=$(bun scripts/rings.ts range hourly "$GITHUB_SHA" || echo "Commits since the last green: couldn't read them.")
+          RANGE=$(bun scripts/rings.ts range hourly "$SHA" || echo "Commits since the last green: couldn't read them.")
           gh label create ci-hourly --color B60205 --description "the hourly desktop and suite run" 2>/dev/null || true
           open=$(gh issue list --label ci-hourly --state open --json number -q '.[0].number')
-          if [ -n "$open" ]; then gh issue comment "$open" --body "Failed again ($RESULTS) on ${GITHUB_SHA:0:7}: $RUN
+          if [ -n "$open" ]; then gh issue comment "$open" --body "Failed again ($RESULTS) on ${SHA:0:7}: $RUN
 
           $RANGE"
-          else gh issue create --label ci-hourly --title "Hourly desktop/suite run is failing" --body "The hourly run failed ($RESULTS) on ${GITHUB_SHA:0:7}: $RUN
+          else gh issue create --label ci-hourly --title "Hourly desktop/suite run is failing" --body "The hourly run failed ($RESULTS) on ${SHA:0:7}: $RUN
 
           $RANGE
 

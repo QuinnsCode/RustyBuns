@@ -7,7 +7,9 @@
 // text, or the same lines in another order), settled to other text ("differ"), or left as a card for a person.
 import { CASES, replay, type Outcome, type Replay } from "./merge-replay.ts";
 import type { Round, Tier } from "../src/mervin-replay.ts";
+import { help } from "../../../scripts/help.ts";
 
+help(import.meta.path);
 const TIER: Record<Outcome, Tier> = { exact: "agree", reordered: "agree", differs: "differ", cards: "card", blob: "card", deleted: "agree", missing: "card" };
 
 /** A round from replayed merges (each with its PR number), in the order given, three to a wave. */

@@ -113,6 +113,26 @@ test("a sweep out of time picks up where it stopped next hour", async () => {
   expect((await (await call("ryan", "/api/watch")).json()).hits.map((h: any) => h.repo).sort()).toEqual(["a", "b"]);
 });
 
+test("a quiet hour sweeps too: a repo made after the last sweep gets its hit, a pinned one loses it", async () => {
+  const call = await boot({ GH_CLI: "off" });
+  call.env.WATCH_FETCH = internet(() => `${iso(1)},MAL-2026-2\n`, { "MAL-2026-2": CHALK });
+  const send = (user: string, url: string, body: unknown, method = "POST") => call(user, url, { method, body: JSON.stringify(body) });
+  await send("ryan", "/api/login", { name: "ryan" });
+  const self = (r: Request) => worker.fetch(r, call.env);
+  await scheduledWatch(call.env, self, NOW);
+  await send("ryan", "/api/repos", { name: "late", visibility: "public" });
+  await send("ryan", "/api/repos/ryan/late/files", { path: "package.json", content: JSON.stringify({ dependencies: { chalk: "^5.3.0" } }, null, 2) });
+  await scheduledWatch(call.env, self, NOW + 3_600_000);   // nothing new on OSV
+  expect((await (await call("ryan", "/api/watch")).json()).hits.map((h: any) => [h.repo, h.name])).toEqual([["late", "chalk"]]);
+  // The owner pins it below the poisoned release: the next quiet hour clears the hit.
+  const pkg = await (await call("ryan", "/api/repos/ryan/late/do/file?path=package.json")).json();
+  const line = pkg.lines.find((l: any) => l.text.includes("chalk"));
+  const ops = [{ kind: "insert", after: line.id, text: `    "chalk": "5.3.0"` }, { kind: "delete", line: line.id, base: line.rev }];
+  expect((await send("ryan", "/api/repos/ryan/late/do/ops?path=package.json", { ops })).ok).toBe(true);
+  await scheduledWatch(call.env, self, NOW + 2 * 3_600_000);
+  expect((await (await call("ryan", "/api/watch")).json()).hits).toEqual([]);
+});
+
 test("newsFrom: only incidents a search turned up, tidied", () => {
   const seen = new Set(["https://example.com/a", "javascript:alert(1)"]);
   const got = newsFrom({ incidents: [

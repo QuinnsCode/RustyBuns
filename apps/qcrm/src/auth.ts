@@ -1,4 +1,4 @@
-// Who is asking. Better Auth (email and password, plus GitHub and Google when their keys are
+// Who is asking. Better Auth (email and password, eqosys when EQOSYS_URL is set, plus GitHub and Google when their keys are
 // set) answers /api/auth/*; the rest of the app sees a User or null. An API key (qk_…, made
 // per org by an owner) acts as the person who made it, inside that org only.
 //
@@ -6,7 +6,9 @@
 // letting anyone in as anyone.
 
 import { betterAuth } from "better-auth";
-import { b64url, error, esc, json, NAME, readBody, sha256, type Env } from "./env.ts";
+import { genericOAuth } from "better-auth/plugins";
+import { check, obj, opt, str, bool } from "@rustybuns/util/guard";
+import { b64url, error, esc, json, NAME, named, need, sha256, type Env } from "./env.ts";
 import type { Ctx } from "./orgs.ts";
 
 export interface User { id: string; email: string; name: string; /** Set when the request came in on an API key: the one org it opens. */ key?: { id: string; org_id: string } }
@@ -16,6 +18,7 @@ export const accountsOff = () => error(503, "accounts off");
 
 export function providers(env: Env) {
   const out = ["email"];
+  if (env.EQOSYS_URL) out.push("eqosys");
   if (env.GITHUB_CLIENT_ID && env.GITHUB_CLIENT_SECRET) out.push("github");
   if (env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET) out.push("google");
   return out;
@@ -36,6 +39,39 @@ async function mail(env: Env, to: string, subject: string, line: string, link: s
   catch (e) { console.error("qCRM: account email failed", String((e as Error)?.message ?? e)); }
 }
 
+/** What eqosys's /oauth/userinfo answers (apps/eqosys/src/oauth.ts): who, and whether eqosys has seen them prove the email. */
+export const EqosysUser = obj({ sub: str(200), email: str(320), email_verified: opt(bool()), name: opt(str(200, { min: 0 })) });
+
+/**
+ * "Sign in with eqosys": eqosys is an OpenID provider and qCRM a public client (id "qcrm" in eqosys's APPS, PKCE, no
+ * secret). The endpoints are written out rather than discovered, since an auth is made per request and discovery
+ * would fetch on every one. Who it is comes from userinfo, which says live whether the email is verified: a verified
+ * one links to a verified qCRM account with that email (Better Auth's own linking), and a new one gets a fresh account.
+ * An unverified qCRM account is never taken over that way: its owner signs in with the password and connects eqosys
+ * from Settings (/api/auth/link-social), which proves both halves.
+ */
+const eqosysProvider = (url: string) => {
+  const base = url.replace(/\/+$/, "");
+  return genericOAuth({
+    config: [{
+      providerId: "eqosys",
+      clientId: "qcrm",
+      tokenEndpointAuth: { method: "none" },
+      authorizationUrl: `${base}/oauth/authorize`,
+      tokenUrl: `${base}/oauth/token`,
+      userInfoUrl: `${base}/oauth/userinfo`,
+      scopes: ["openid", "email", "profile"],
+      pkce: true,
+      getUserInfo: async (tokens) => {
+        const r = await fetch(`${base}/oauth/userinfo`, { headers: { authorization: `Bearer ${tokens.accessToken}` } });
+        if (!r.ok) return null;
+        const u = check(EqosysUser, await r.json().catch(() => null));
+        return u && { id: u.sub, email: u.email, emailVerified: u.email_verified === true, name: u.name || u.email.split("@")[0]! };
+      },
+    }],
+  });
+};
+
 const make = (env: Env, origin: string) => betterAuth({
   // better-auth wants Cloudflare's D1Database class; Env.DB is the part of it this app calls.
   database: env.DB as never,
@@ -45,6 +81,8 @@ const make = (env: Env, origin: string) => betterAuth({
   // Not the default name: the QNTBR site sets better-auth.session_token on .qntbr.com, which also reaches this host.
   advanced: { cookiePrefix: "qcrm" },
   trustedOrigins: [env.BETTER_AUTH_URL ?? origin],
+  // A sign-in that goes wrong comes back to the app with ?error=<code>, which the page says in words (Crm.tsx), not Better Auth's own page.
+  onAPIError: { errorURL: `${env.BETTER_AUTH_URL ?? origin}/app` },
   emailAndPassword: {
     enabled: true,
     ...(mailOn(env) ? {
@@ -66,6 +104,7 @@ const make = (env: Env, origin: string) => betterAuth({
     ...(env.GITHUB_CLIENT_ID && env.GITHUB_CLIENT_SECRET ? { github: { clientId: env.GITHUB_CLIENT_ID, clientSecret: env.GITHUB_CLIENT_SECRET } } : {}),
     ...(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET ? { google: { clientId: env.GOOGLE_CLIENT_ID, clientSecret: env.GOOGLE_CLIENT_SECRET } } : {}),
   },
+  plugins: env.EQOSYS_URL ? [eqosysProvider(env.EQOSYS_URL)] : [],
 });
 // One instance per request, never per isolate: Better Auth's D1 queries share one connection
 // mutex, and a request cancelled while holding it would hang every later sign-in in the isolate.
@@ -130,6 +169,9 @@ export const cookieOf = (headers: Headers) => (headers.getSetCookie?.() ?? [head
  *   DELETE /api/orgs/:org/keys/:id
  * Keys are made and revoked from a signed-in browser, never with another key.
  */
+/** POST /api/orgs/:org/keys: what the key is for. */
+const NewKey = obj({ name: named(80, "what this key is for") });
+
 export async function keyRoutes({ req, env, user, org, p, audit }: Ctx): Promise<Response | null> {
   if (p[0] !== "keys") return null;
   if (user.key) return error(403, "API keys can't manage keys: sign in on the site");
@@ -138,9 +180,9 @@ export async function keyRoutes({ req, env, user, org, p, audit }: Ctx): Promise
     return json(results);
   }
   if (!p[1] && req.method === "POST") {
-    const b = await readBody<{ name?: unknown }>(req);
-    const name = typeof b?.name === "string" ? b.name.trim().slice(0, 80) : "";
-    if (!name) return error(400, "name: what this key is for");
+    const b = await need(req, NewKey);
+    if (b instanceof Response) return b;
+    const { name } = b;
     const secret = "qk_" + b64url(crypto.getRandomValues(new Uint8Array(24)));
     const key = { id: crypto.randomUUID(), name, prefix: secret.slice(0, 8), created_at: Date.now() };
     await env.DB.prepare("INSERT INTO api_keys (id, org_id, user_id, name, hash, prefix, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)")

@@ -23,7 +23,8 @@ interface RunRow { id: number; agent: string; harness: string; model: string | n
 
 /**
  * The note for a commit of `path` that carries `writers`' edits: one block per agent among them, from
- * its newest run on the file. Null when no agent wrote any of it. `open` is false when the file has
+ * its newest run on the file, or just its name when it has none on record (its lines came through the
+ * API, #4774). Null when no agent wrote any of it. `open` is false when the file has
  * private lines, and a run that read any (its `also` files' too, #3637) is marked private: its own words
  * could quote them, so only the facts go in.
  */
@@ -33,8 +34,9 @@ export async function commitNote(env: Env, owner: string, repo: string, path: st
   const { results } = await env.DB.prepare(`SELECT id, agent, harness, model, task, status, result FROM agent_runs WHERE owner = ? AND repo = ? AND path = ? AND agent IN (${agents.map(() => "?").join(", ")}) ORDER BY id DESC LIMIT 20`)
     .bind(owner, repo, path, ...agents).all<RunRow>();
   const seen = new Set<string>(), newest = results.filter((r) => !seen.has(r.agent) && !!seen.add(r.agent));
-  if (!newest.length) return null;
-  const blocks = await Promise.all(newest.map(async (r) => {
+  const blocks = await Promise.all(agents.map(async (agent) => {
+    const r = newest.find((n) => n.agent === agent);
+    if (!r) return `agent: ${agent}\nrun: none on record`;
     const out = check(RunResult, parseJson<unknown>(r.result, null)) ?? {};
     const handoff = out.handoff?.note ?? null;
     const said = open && out.private !== true ? handoff ?? writeNote(readNote(out.output ?? "")) : "";

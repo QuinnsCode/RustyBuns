@@ -143,12 +143,12 @@ export function modelsFor(source: Source): ModelId[] {
 
 /** A preset's options with a card's overrides on top. An override of undefined removes the preset's value. */
 export function mergeOptions(base: MeshyOptions, overrides?: Partial<Record<keyof MeshyOptions, unknown>>): MeshyOptions {
-  const o: Record<string, unknown> = { ...base };
+  const o = new Map<string, unknown>(Object.entries(base));
   for (const [k, v] of Object.entries(overrides ?? {})) {
-    if (v === null) delete o[k];
-    else if (v !== undefined) o[k] = v;
+    if (v === null) o.delete(k);
+    else if (v !== undefined) o.set(k, v);
   }
-  return o as MeshyOptions;
+  return Object.fromEntries(o) as MeshyOptions;
 }
 
 /** What a card adds on top of its preset. */

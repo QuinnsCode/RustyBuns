@@ -66,12 +66,12 @@
 import { existsSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { fileDoc, fileIds, MAX_BYTES, MAX_LINES, materialize, toFile } from "./archive.ts";
+import { asGit, endsOf, fileDoc, fileIds, MAX_BYTES, MAX_LINES, materialize, toFile } from "./archive.ts";
 import { fromDisk } from "./agent-run.ts";
-import { GIT_BOT, GIT_EMAIL_DOMAIN } from "./git.ts";
+import { GIT_BOT, GIT_EMAIL_DOMAIN, NOTES_REF } from "./git.ts";
 import { branchAndPath, githubToken, parseFolder, parseRepo } from "./github.ts";
 import { branchEdited, postOrder, startChecks, upstreamMoved, upstreamTaken } from "./checks.ts";
-import { diffToOps, merge3 } from "./sync.ts";
+import { carries, diffToOps, merge3 } from "./sync.ts";
 import { branchNameError, fail, json, NAME, need, type Env, readBody } from "./env.ts";
 import type { ErrorTag } from "./openapi.ts";
 import { readJson } from "@rustybuns/util/http";
@@ -284,6 +284,28 @@ async function step(env: Env, owner: string, repo: string, o: { resolve?: Resolv
     if (/\[rejected\]|non-fast-forward|fetch first/.test(said)) return "moved" as const;
     return turnedAway(said);
   };
+  /**
+   * A fork turned into a mirror goes up as every mirror commit does (#4771): before its first push, its own
+   * commits (all but upstream's `theirs`) are made again as this machine's git identity's. `sent` is the tip
+   * to push; `pushed` is for once upstream took it: only then does the branch here move onto the new commits,
+   * so a push that's turned away leaves this copy as it was.
+   */
+  const stamp = async (tip: string, theirs: string) => {
+    const from = (await git(["rev-parse", "--verify", "--quiet", turnedRef(branch)], dir)).out.trim(), id = gitIdentity();
+    const s = from && id ? await restamp(dir, tip, [from, theirs], owner, id) : { tip, map: new Map<string, string>() };
+    const pushed = async () => {
+      await must(["update-ref", up, s.tip], dir);
+      if (s.tip === tip) return void await git(["update-ref", "-d", turnedRef(branch)], dir);
+      // A commit landed on the old tip meanwhile: the marker stays, and the next round makes the same new commits again.
+      if ((await git(["update-ref", heads, s.tip, tip], dir)).code) return;
+      await git(["update-ref", `refs/kept/${branch}/${Date.now()}`, tip], dir);
+      await carryNotes(dir, s.map);
+      // The app's baseline for pushes from outside (landPushes) is the same commit, made again.
+      if (!crew) await env.DB.prepare("UPDATE repos SET git_seen = ? WHERE owner = ? AND name = ? AND git_seen = ?").bind(s.tip, owner, repo, tip).run();
+      await git(["update-ref", "-d", turnedRef(branch)], dir);
+    };
+    return { sent: s.tip, pushed };
+  };
   try {
     // Commits pushed to this git from outside reach the files open here first (#773).
     if (!crew) await landPushes(env, owner, repo);
@@ -292,8 +314,9 @@ async function step(env: Env, owner: string, repo: string, o: { resolve?: Resolv
     if (primaryOf(r.mirror_primary) === "here" && !held && !crew && !r.mirror_pull_only && !r.mirror_path) {
       const known = await git(["rev-parse", "--verify", "--quiet", up], dir), tip = await must(["rev-parse", heads], dir), last = known.out.trim();
       if (!known.code && last !== tip && await isAncestor(dir, last, tip)) {
-        const p = await push(tip);
-        if (!p) { await must(["update-ref", up, tip], dir); return settled(env, r, tip); }
+        const { sent, pushed } = await stamp(tip, last);
+        const p = await push(sent);
+        if (!p) { await pushed(); return settled(env, r, sent); }
         if (p !== "moved") return failed(env, r, p.state, PUSH_SAYS[p.state], [], p.git);
       }
     }
@@ -384,12 +407,13 @@ async function step(env: Env, owner: string, repo: string, o: { resolve?: Resolv
       if (held) return settled(env, r, theirs, "held", "this repo has private lines, and its git holds them blank, so nothing goes upstream", ours !== before);
       if (r.mirror_pull_only) return settled(env, r, theirs, "held", "this mirror is pull-only, so nothing goes upstream", ours !== before);
       if (r.mirror_path) return send(env, r, dir, net, theirs, ours, ours !== before);
-      const p = await push(ours);
+      const { sent, pushed } = await stamp(ours, theirs);
+      const p = await push(sent);
       // Upstream moved since the fetch: the next round merges it in, then pushes.
       if (p === "moved") return again(env, r);
       if (p) return failed(env, r, p.state, PUSH_SAYS[p.state], [], p.git);
-      await must(["update-ref", up, ours], dir);
-      theirs = ours;
+      await pushed();
+      theirs = ours = sent;
     }
     return settled(env, r, theirs, "ok", null, ours !== before);
   } catch (e) {
@@ -400,23 +424,34 @@ async function step(env: Env, owner: string, repo: string, o: { resolve?: Resolv
 /**
  * A folder mirror's work, sent up (folder-mirror.ts): this copy's tree under the folder's path on upstream's tip, as one
  * commit on its own branch for a pull request. Upstream's main never takes it from here. Held until upstream merges it;
- * when upstream's folder already reads as this copy's, there's nothing to send and it's in step.
+ * when upstream's folder already reads as this copy's, there's nothing to send and it's in step. A send replaces only
+ * the commit this copy sent last (refs/folder-sent/<name>, a lease): the same tree again isn't pushed, and a commit
+ * someone else added to that branch upstream stays, with this copy's newer work waiting until it's merged or gone.
  */
 async function send(env: Env, r: Row, dir: string, net: Record<string, string>, theirs: string, ours: string, took: boolean) {
   const branch = r.branch ?? "main", source = await must(["rev-parse", sourceRef(branch)], dir);
   const tree = await graft(git, dir, r.mirror_path!, source, ours);
   if (!tree) return settled(env, r, theirs, "ok", null, took);
+  const to = sendBranch(r.name), sent = `refs/folder-sent/${r.name}`;
+  const gh = /^https:\/\/github\.com\/([\w.-]+\/[\w.-]+?)(?:\.git)?$/.exec(r.mirror_url)?.[1];
+  const held = `sent up as branch ${to}${gh ? `: open a pull request at https://github.com/${gh}/compare/${branch}...${to}` : ", for a pull request"}`;
+  const ls = await git(["ls-remote", "--heads", r.mirror_url, `refs/heads/${to}`], dir, net);
+  if (ls.code) { const t = turnedAway(ls.err); return failed(env, r, t.state, PUSH_SAYS[t.state], [], t.git); }
+  const there = ls.out.trim().split(/\s/)[0] || "", last = (await git(["rev-parse", "--verify", "--quiet", sent], dir)).out.trim();
+  if (there && there === last && tree === await must(["rev-parse", `${last}^{tree}`], dir)) return settled(env, r, theirs, "held", held, took);
+  if (there && there !== last) return settled(env, r, theirs, "held", `someone else added to upstream's branch ${to}, so this copy's newer work waits rather than replace it: merge or delete that branch upstream`, took);
   const subjects = (await must(["log", "--format=- %s", `${theirs}..${ours}`, "--no-merges"], dir)).split("\n").filter(Boolean).slice(0, 50);
   const c = await must(["commit-tree", tree, "-p", source, "-m", `${r.name}: ${r.mirror_path} from codeSplitter\n\n${subjects.join("\n")}`], dir, authorEnv());
-  const to = sendBranch(r.name);
-  // The branch is this copy's own proposal: a new send replaces it. Upstream's main is never pushed.
-  const p = await git(["push", "--porcelain", r.mirror_url, `+${c}:refs/heads/${to}`], dir, net);
+  // The branch is this copy's own proposal: a new send replaces the last one, and only that. Upstream's main is never pushed.
+  const p = await git(["push", "--porcelain", `--force-with-lease=refs/heads/${to}:${there}`, r.mirror_url, `+${c}:refs/heads/${to}`], dir, net);
   if (p.code) {
-    const t = turnedAway([p.err, p.out].filter(Boolean).join("\n"));
+    const said = [p.err, p.out].filter(Boolean).join("\n");
+    if (/\[rejected\]|stale info/.test(said)) return again(env, r);
+    const t = turnedAway(said);
     return failed(env, r, t.state, PUSH_SAYS[t.state], [], t.git);
   }
-  const gh = /^https:\/\/github\.com\/([\w.-]+\/[\w.-]+?)(?:\.git)?$/.exec(r.mirror_url)?.[1];
-  return settled(env, r, theirs, "held", `sent up as branch ${to}${gh ? `: open a pull request at https://github.com/${gh}/compare/${branch}...${to}` : ", for a pull request"}`, took);
+  await must(["update-ref", sent, c], dir);
+  return settled(env, r, theirs, "held", held, took);
 }
 
 /**
@@ -646,6 +681,18 @@ export async function seeGit(env: Env, owner: string, repo: string) {
   await env.DB.prepare("UPDATE repos SET git_seen = ? WHERE owner = ? AND name = ? AND git_seen IS NULL").bind(t.code ? "" : t.out.trim(), owner, repo).run();
 }
 
+/**
+ * The desktop's git, once it's a remote the owner can push back to (#464), takes only pushes that build on
+ * what it has (#4774): a forced one would rewrite main under lines the app still holds. Set once, in that
+ * repo's own config; the app's own pushes always build on the tip, and a fresh start's new git is a new repo.
+ */
+export async function refuseForcedPushes(env: Env, owner: string, repo: string) {
+  const lg = localGit(env), r = lg && await repoRow<{ artifact: string | null }>(env, owner, repo, "artifact");
+  if (!lg || !r?.artifact) return;
+  const dir = lg.path(r.artifact);
+  if ((await git(["config", "--get", "receive.denyNonFastForwards"], dir)).out.trim() !== "true") await must(["config", "receive.denyNonFastForwards", "true"], dir);
+}
+
 /** The files a push clashed with (#788), each with its pushed commit. */
 export async function pushClashes(env: Env, owner: string, repo: string) {
   const r = await repoRow(env, owner, repo, "artifact, git_clash");
@@ -727,8 +774,12 @@ export function upstreamLag(m: { url: string; state: string; ahead: number; behi
   const parts = [behind ? `behind by ${commits(behind)}` : "", ahead ? `ahead by ${commits(ahead)}` : ""].filter(Boolean);
   const why = m.state === "down" ? `${who} isn't answering` : m.state === "refused" ? `${who} turned the push away`
     : m.state === "clash" ? "both sides changed the same lines" : m.state === "rewritten" ? `${who}'s history was rewritten` : "";
-  const line = `${who} is ${parts.length ? parts.join(" and ") : "in step"}`;
-  return { who, behind, ahead, line, says: why ? `${line}: ${why}, so it waits for you` : line };
+  // Down isn't in step, even with nothing waiting (the counts are the last fetch's), and it tries again by itself.
+  const down = m.state === "down";
+  const line = down && !parts.length ? `${who} isn't answering` : `${who} is ${parts.length ? parts.join(" and ") : "in step"}`;
+  const says = down ? (parts.length ? `${line}: ${why}, so it tries again by itself` : `${line}: nothing is waiting to move, and it tries again by itself`)
+    : why ? `${line}: ${why}, so it waits for you` : line;
+  return { who, behind, ahead, line, says };
 }
 
 /** Where a mirror stands: its state, and how far ahead and behind it was at the last fetch. */
@@ -947,18 +998,20 @@ const heads = (lsRemote: string) => lsRemote.trim().split("\n").filter(Boolean).
  * Bring upstream's changes `from`..`to` into branch `b` here: each file they
  * changed gets a copy on the branch with its text, merged into the copy's live
  * lines (main's, for a file the branch hadn't touched) where those moved on too
- * (sync.ts merge3; where they touch the same lines, upstream wins). New files
+ * (sync.ts merge3). Where they touch the same lines, upstream wins when the
+ * branch is new (`stop` false); on a branch that has edits of its own the file is
+ * left as it is and named in `clash`, so nothing written here is lost. New files
  * are new on the branch. A file the branch hasn't touched that's already as
  * main has it stays main's. A file upstream deleted is deleted on the branch
  * (one only the branch had just goes). A binary one, or one too big to dig, comes over as its git blob
  * (#446), pinned so a gc keeps it until the branch merges or goes up.
  */
-async function take(env: Env, owner: string, repo: string, s: Setup, b: string, from: string, to: string) {
+async function take(env: Env, owner: string, repo: string, s: Setup, b: string, from: string, to: string, stop = false) {
   const { materializeOn, createOn, deleteOn } = await import("./branches.ts");
   const { results } = await env.DB.prepare("SELECT path, deleted, blob FROM branch_files WHERE owner = ? AND repo = ? AND branch = ?").bind(owner, repo, b).all<{ path: string; deleted: number; blob: string | null }>();
   const rows = new Map(results.map((f) => [f.path, f]));
   const onBranch = new Map([...rows].map(([p, f]) => [p, !!f.deleted]));
-  const files: string[] = [], deleted: string[] = [], skipped: string[] = [];
+  const files: string[] = [], deleted: string[] = [], skipped: string[] = [], clash: string[] = [];
   const changed = (await must(["diff", "--name-status", "-z", "--no-renames", from, to], s.dir)).split("\0").filter(Boolean);
   const onMain = (path: string) => git(["cat-file", "-e", `refs/heads/${s.main}:${path}`], s.dir).then((r) => !r.code);
   for (let i = 0; i < changed.length; i += 2) {
@@ -1001,11 +1054,15 @@ async function take(env: Env, owner: string, repo: string, s: Setup, b: string, 
     }
     const doc = await fileDoc(env, owner, repo, path, "upstream", "file", b);
     const was = fromDisk((await show(s.dir, from, path)) ?? ""), lines = doc.lines.map((l) => l.text);
-    const ops = diffToOps(doc.lines, merge3(was, lines, next) ?? next);
+    // Already as upstream has it (taken in by an earlier try that stopped on another file's clash).
+    if (lines.join("\n") === next.join("\n")) continue;
+    const merged = merge3(was, lines, next);
+    if (!merged && stop) { if (!carries(was, lines, next)) clash.push(path); continue; }
+    const ops = diffToOps(doc.lines, merged ?? next);
     if (ops.length) await toFile(env, owner, repo, path, "upstream", "ops", { method: "POST", body: JSON.stringify({ ops, ifRev: doc.rev }) }, "", b);
     files.push(path);
   }
-  return { files, deleted, skipped };
+  return { files, deleted, skipped, clash };
 }
 
 /**
@@ -1037,13 +1094,17 @@ export async function mergeBlobWithMain(env: Env, owner: string, repo: string, n
   return merged && new TextEncoder().encode(merged.join("\n") + "\n");
 }
 
-/** Branch `name` takes upstream's `ref` up to `theirs`: what it got since the branch here last took it in or pushed. */
+/**
+ * Branch `name` takes upstream's `ref` up to `theirs`: what it got since the branch here last took it in or pushed.
+ * A file whose edits here and upstream's touch the same lines is a `clash`: it keeps the edits here, and the branch
+ * isn't marked as having taken `theirs`, so the next try (a pull, a push, a sync) meets it again.
+ */
 async function catchUp(env: Env, owner: string, repo: string, s: Setup, name: string, ref: string, theirs: string) {
   const had = await taken(s, ref);
   if (had) await ontoSquash(env, owner, repo, s, name, ref, had);
   const from = had ?? await forkPoint(s, theirs);
-  const got = from === theirs ? { files: [], deleted: [], skipped: [] } : await take(env, owner, repo, s, name, from, theirs);
-  await must(["update-ref", tracking(ref), theirs], s.dir);
+  const got = from === theirs ? { files: [], deleted: [], skipped: [], clash: [] } : await take(env, owner, repo, s, name, from, theirs, true);
+  if (!got.clash.length) await must(["update-ref", tracking(ref), theirs], s.dir);
   return got;
 }
 
@@ -1153,11 +1214,12 @@ export async function branchTree(env: Env, owner: string, repo: string, name: st
       // A binary file is a blob this git has already.
       if (blob) { await must(["update-index", "--add", "--cacheinfo", `${binMode ?? "100644"},${blob},${path}`], dir, e); continue; }
       const doc = await fileDoc(env, owner, repo, path, "upstream", "file", name);
-      // As main's commits write it (archive.ts pushCatalogues): the lines, ending in one newline (#1041).
-      const text = (t => t.endsWith("\n") ? t : t + "\n")(doc.lines.map((l) => l.text).join("\n"));
+      // As main's commits write it (archive.ts asGit): the lines, ending in one newline (#1041) unless the base's copy had none, with its BOM if it had one.
+      const [m, , was] = (await must(["ls-tree", baseTree, "--", path], dir)).split(/\s+/), mode = m || "100644";
+      const base = was ? Bun.spawnSync(["git", "cat-file", "blob", was], { cwd: dir, stdout: "pipe", stderr: "ignore" }).stdout : null;
+      const text = asGit(doc.lines.map((l) => l.text).join("\n"), endsOf(base && new Uint8Array(base)));
       const put = Bun.spawn(["git", "hash-object", "-w", "--stdin"], { cwd: dir, stdin: new TextEncoder().encode(text), stdout: "pipe", stderr: "pipe" });
       const [, hash] = await Promise.all([put.exited, new Response(put.stdout).text()]);
-      const mode = (await must(["ls-tree", baseTree, "--", path], dir)).split(" ")[0] || "100644";
       await must(["update-index", "--add", "--cacheinfo", `${mode},${hash.trim()},${path}`], dir, e);
     }
     // The ones it deleted: a zero entry takes each out (a bare repo has no work tree for --force-remove).
@@ -1192,7 +1254,9 @@ export async function pushBranch(env: Env, owner: string, repo: string, name: st
 
   // What's up there now, if anything, taken in first.
   const prev = await fetchBranch(s, ref);
-  const took = prev ? (await catchUp(env, owner, repo, s, name, ref, prev)).files : [];
+  const caught = prev ? await catchUp(env, owner, repo, s, name, ref, prev) : null, took = caught?.files ?? [];
+  // Upstream's branch changed lines beside or under edits here: neither side's is dropped, a person settles it.
+  if (caught?.clash.length) return fail("UpstreamClash", `upstream's ${ref} changed the same lines as this branch: settle it upstream or here, then push again`, { clash: caught.clash, took });
   if (!prev) await git(["update-ref", "-d", track], dir);
   const tip = await must(["rev-parse", `refs/heads/${main}`], dir);
   let parents = [tip], baseTree = `${tip}^{tree}`;
@@ -1583,6 +1647,39 @@ async function turnable(env: Env, owner: string, repo: string): Promise<Turn | {
   return { artifact: r.artifact, url, branch, commit: r.upstream_commit, ahead: n.code ? 0 : Number(n.out.trim()) };
 }
 
+/** Where a fork turned into a mirror keeps the commit it was dug at, until its first push upstream has gone (#4771). */
+const turnedRef = (branch: string) => `refs/turned/${branch}`;
+
+/**
+ * A fork's commits from before it was a mirror (`top`'s, less those in any of `not`, in the git at `dir`),
+ * made again as a mirror's are (archive.ts byline): by this machine's git identity, with a `Co-authored-by`
+ * for a handle other than the owner. Trees, parents, dates and messages stay, so the same commits come out
+ * each time; one already by this identity, on parents that didn't change, stays as it is. No ref moves:
+ * the new tip, and each old commit's new one.
+ */
+async function restamp(dir: string, top: string, not: string[], owner: string, id: { name: string; email: string }) {
+  const commits = (await must(["rev-list", "--reverse", "--topo-order", top, ...not.map((c) => `^${c}`)], dir)).split("\n").filter(Boolean);
+  const map = new Map<string, string>();
+  for (const c of commits) {
+    const [an, ae, ad, cd, parents, body] = (await must(["log", "-1", "--format=%an%x00%ae%x00%aI%x00%cI%x00%P%x00%B", c], dir)).split("\0");
+    const message = body!.replace(/\n+$/, "");
+    const mine = an === id.name && ae === id.email, owners = an === owner || an === GIT_BOT || ae === `${owner}@${GIT_EMAIL_DOMAIN}`;
+    const credit = `Co-authored-by: ${an} <${ae}>`;
+    const text = mine || owners || message.includes(credit) ? message : `${message}\n\n${credit}`;
+    const by = { GIT_AUTHOR_NAME: id.name, GIT_AUTHOR_EMAIL: id.email, GIT_AUTHOR_DATE: ad!, GIT_COMMITTER_NAME: id.name, GIT_COMMITTER_EMAIL: id.email, GIT_COMMITTER_DATE: cd! };
+    const was = parents!.split(" ").filter(Boolean), now = was.map((p) => map.get(p) ?? p);
+    const same = mine && now.every((p, i) => p === was[i]);
+    map.set(c, same ? c : await must(["commit-tree", `${c}^{tree}`, ...now.flatMap((p) => ["-p", p]), "-m", text], dir, by));
+  }
+  return { tip: map.get(top) ?? top, map };
+}
+
+/** Each commit's codeSplitter note, onto the commit made again from it (the old ones stay under refs/kept). */
+async function carryNotes(dir: string, map: Map<string, string>) {
+  const noted = new Set((await git(["notes", `--ref=${NOTES_REF}`, "list"], dir)).out.split("\n").map((l) => l.split(" ")[1]).filter(Boolean));
+  for (const [old, now] of map) if (old !== now && noted.has(old)) await git(["notes", `--ref=${NOTES_REF}`, "copy", "-f", old, now], dir);
+}
+
 /** GET|POST /api/repos/:o/:r/mirror/turn, for the owner. */
 export async function turnRoute(req: Request, env: Env, owner: string, repo: string, user: string | null) {
   if (user !== owner) return fail("OwnerOnly", "owner only");
@@ -1596,7 +1693,12 @@ export async function turnRoute(req: Request, env: Env, owner: string, repo: str
     // What goes up is what the owner was shown: a commit made since (or a POST that never looked) asks again.
     if (!b.pullOnly && b.ahead !== t.ahead) return fail("CommitsAhead", `${t.ahead} commit${t.ahead === 1 ? "" : "s"} made here would go up: say {ahead: ${t.ahead}} to send ${t.ahead === 1 ? "it" : "them"}`, { ahead: t.ahead });
     // The agreed commit is upstream's tip as far as this copy knows; a mirror stays, with no dig's time limit.
-    await must(["update-ref", `refs/upstream/${t.branch}`, t.commit], localGit(env)!.path(t.artifact));
+    const lg = localGit(env)!, dir = lg.path(t.artifact);
+    await must(["update-ref", `refs/upstream/${t.branch}`, t.commit], dir);
+    // Its commits since the dig are restamped as the first push goes up (step's stamp), in the crew's copy too when that's the one pushed.
+    await must(["update-ref", turnedRef(t.branch), t.commit], dir);
+    const crew = (await repoRow<{ crew_artifact: string | null }>(env, owner, repo, "crew_artifact"))?.crew_artifact;
+    if (crew && existsSync(lg.path(crew))) await git(["update-ref", turnedRef(t.branch), t.commit], lg.path(crew));
     await env.DB.prepare("UPDATE repos SET mirror_url = ?, mirror_state = 'ok', mirror_error = NULL, mirror_clash = NULL, mirror_fails = 0, mirror_down_since = NULL, mirror_next_at = ?, expires_at = NULL, mirror_pull_only = ? WHERE owner = ? AND name = ? AND mirror_url IS NULL")
       .bind(t.url, Date.now(), b.pullOnly ? 1 : null, owner, repo).run();
     return null;

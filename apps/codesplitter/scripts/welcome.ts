@@ -11,14 +11,14 @@
 // Open the printed link first: the firehose glow and the shimmering claims are on the file page.
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
-import { readJson } from "@rustybuns/util/http";
-import type { Guard } from "@rustybuns/util/guard";
 import { MergePlanReply } from "../src/branches.ts";
 import { ClaimRow, FileReply } from "../src/file-do.ts";
 import { FitReply } from "../src/fit.ts";
-import { local } from "../src/local.ts";
-import { PORTS } from "@rustybuns/util/ports";
+import { got, local } from "../src/local.ts";
+import { PORTS, onPortOrFree } from "@rustybuns/util/ports";
+import { help } from "../../../scripts/help.ts";
 
+help(import.meta.path);
 const FILE = "src/greeting.ts";
 const APP = join(import.meta.dir, "../../hello-world");
 
@@ -43,7 +43,7 @@ const JOBS = [
   { who: "agent-cy", marker: "// Footer", task: "reword the footer", add: "// cy: footer says who built it" },
 ];
 
-export interface Tour { say(who: string, what: string): void; pace: number; rounds: number; stopAfterDig?: boolean; }
+export interface Tour { say(who: string, what: string): void; pace: number; rounds: number; stopAfterDig?: boolean; dug?: boolean; }
 
 export async function tour(call: Awaited<ReturnType<typeof local>>, t: Tour) {
   const j = (user: string, path: string, body?: unknown, method = body === undefined ? "GET" : "POST") =>
@@ -53,23 +53,23 @@ export async function tour(call: Awaited<ReturnType<typeof local>>, t: Tour) {
     if (!res.ok) throw new Error(`${what}: ${res.status} ${await res.text()}`);
     return res;
   };
-  const got = async <T>(r: Response | Promise<Response>, what: string, g: Guard<T>) =>
-    (await readJson(await ok(r, what), g)) ?? Promise.reject(new Error(`${what}: not the reply it answers`));
   const base = "/repos/ryan/hello-world", at = `${base}/do`, q = (b?: string) => `?path=${encodeURIComponent(FILE)}${b ? `&branch=${b}` : ""}`;
-  const read = async (b?: string) => (await got(j("ryan", `${at}/file${q(b)}`), "read", FileReply)).lines;
+  const read = async (b?: string) => (await got(j("ryan", `${at}/file${q(b)}`), FileReply, "read")).lines;
   const block = async (marker: string) => {
     const ls = await read(), i = ls.findIndex((l) => l.text === marker), n = ls.slice(i).findIndex((l) => l.text === "");
     return ls.slice(i + 1, n < 0 ? undefined : i + n);
   };
 
-  // 1. Dig it up.
-  t.say("1 dig", "digging up apps/hello-world");
-  await ok(j("ryan", "/login", { name: "ryan" }), "login");
-  await ok(j("ryan", "/repos", { name: "hello-world", visibility: "public" }), "create repo");
-  const files = appFiles();
-  for (const [path, content] of Object.entries(files)) await ok(j("ryan", `${base}/files`, { path, content }), `add ${path}`);
-  for (const a of JOBS) await ok(j("ryan", `${base}/collaborators`, { name: a.who }), `invite ${a.who}`);
-  t.say("1 dig", `${Object.keys(files).length} files, ${(await read()).length} lines in ${FILE}, every line with an id and an author`);
+  // 1. Dig it up (unless the caller already did, to have the repo there before it prints the link).
+  if (!t.dug) {
+    t.say("1 dig", "digging up apps/hello-world");
+    await ok(j("ryan", "/login", { name: "ryan" }), "login");
+    await ok(j("ryan", "/repos", { name: "hello-world", visibility: "public" }), "create repo");
+    const files = appFiles();
+    for (const [path, content] of Object.entries(files)) await ok(j("ryan", `${base}/files`, { path, content }), `add ${path}`);
+    for (const a of JOBS) await ok(j("ryan", `${base}/collaborators`, { name: a.who }), `invite ${a.who}`);
+    t.say("1 dig", `${Object.keys(files).length} files, ${(await read()).length} lines in ${FILE}, every line with an id and an author`);
+  }
 
   if (t.stopAfterDig) return { landed: 0, held: 0, waves: 0, conflicted: false };
 
@@ -78,7 +78,7 @@ export async function tour(call: Awaited<ReturnType<typeof local>>, t: Tour) {
   let landed = 0, held = 0;
   const work = async (job: (typeof JOBS)[number], round: number) => {
     const lines = await block(job.marker);
-    const claim = await got(j(job.who, `${at}/claims${q()}`, { id: `run-${job.who.slice(6)}-${round}`, task: job.task, lines: lines.map((l) => l.id) }), "claim", ClaimRow);
+    const claim = await got(j(job.who, `${at}/claims${q()}`, { id: `run-${job.who.slice(6)}-${round}`, task: job.task, lines: lines.map((l) => l.id) }), ClaimRow, "claim");
     for (const l of lines) {
       await Bun.sleep(t.pace + Math.random() * t.pace);
       const cur = (await read()).find((x) => x.id === l.id)!;
@@ -110,7 +110,7 @@ export async function tour(call: Awaited<ReturnType<typeof local>>, t: Tour) {
   const edit = (b: string, text: string) => ok(j("ryan", `${at}/ops${q(b)}`, { ops: [{ kind: "set", line: target.id, base: fresh.rev, text }] }), `edit ${b}`);
   await edit("warmer", "  return `Hello there, ${name}!`;");
   await edit("shorter", "  return `Hi ${name}`;");
-  const plan = await got(j("ryan", `${base}/merge-plan`), "merge plan", MergePlanReply);
+  const plan = await got(j("ryan", `${base}/merge-plan`), MergePlanReply, "merge plan");
   t.say("3 mervin", `${plan.engine} plans ${plan.waves.length} waves before anyone merges: the clashing branch waits its turn`);
   await ok(j("ryan", `${base}/branches/warmer/merge`, {}), "merge warmer");
   const card = await j("ryan", `${base}/branches/shorter/merge`, {});
@@ -120,7 +120,7 @@ export async function tour(call: Awaited<ReturnType<typeof local>>, t: Tour) {
 
   // 4. But wait: we have your code here.
   t.say("4 deploy", "but wait, we have your code here. Why not just deploy it?");
-  const fit = await got(j("ryan", `${base}/fit`), "fit", FitReply);
+  const fit = await got(j("ryan", `${base}/fit`), FitReply, "fit");
   t.say("4 deploy", `Rusty Buns reads the repo: ${fit.verdict}${fit.reasons.length ? ` (${fit.reasons.slice(0, 2).join("; ")})` : ""}`);
   t.say("4 deploy", "deploys refuse without a plan for this exact config, list what bills you, and only a person presses the button");
 
@@ -139,21 +139,29 @@ if (import.meta.main) {
   const arg = (n: string, d: number) => { const i = process.argv.indexOf(`--${n}`); return i > 0 ? Number(process.argv[i + 1]) : d; };
   const PORT = arg("port", PORTS.welcome), WAIT = arg("wait", 20);
   const call = await local({ GH_CLI: "off" });
-  const box = process.argv.includes("--box");
-  if (!process.argv.includes("--no-serve")) {
+  const box = process.argv.includes("--box"), serving = !process.argv.includes("--no-serve");
+  const say = (who: string, what: string) => console.log(`${new Date().toISOString().slice(11, 19)}  ${who.padEnd(10)} ${what}`);
+  const t = { pace: arg("pace", 500), rounds: arg("rounds", 3), say };
+  if (serving) {
     const { serve } = await import("@rustybuns/shell-bun");
     const { default: worker } = await import("../src/worker.ts");
     if (!(await Bun.file("dist/client/index.html").exists())) await Bun.$`bun run build.ts`.quiet();
-    const shell = serve({ port: PORT, assets: "dist/client", runWorkerFirst: ["/api"], reporter: { escaped: (...a: unknown[]) => console.error("[server]", ...a) } as any });
+    // `/as/ryan` signs the viewer in as ryan (alias mode: a name in the cs_user cookie) and opens the dug-up repo.
+    const signIn = () => new Response(null, { status: 302, headers: { location: "/#/r/ryan/hello-world", "set-cookie": "cs_user=ryan; Path=/; SameSite=Lax" } });
+    const { server: shell, moved } = onPortOrFree(PORT, (port) => serve({ port, assets: "dist/client", runWorkerFirst: ["/api"], open: { "/as/ryan": signIn }, reporter: { escaped: (...a: unknown[]) => console.error("[server]", ...a) } as any }));
+    if (moved) console.log(`Port ${PORT} is taken, so the tour is on ${shell.port} instead.`);
     shell.mount(worker as any, call.env);
-    console.log(`\nOpen: ${shell.url}/#/r/ryan/hello-world\n(sign in as "ryan" first: run  document.cookie = "cs_user=ryan; path=/"  in the page console, then reload)`);
-    if (box) console.log(`Box up on ${shell.url}: sign in as ryan, API at ${shell.url}/api, MCP at ${shell.url}/api/mcp. Nothing runs until an agent does it.`);
+    await tour(call, { ...t, stopAfterDig: true }); // dug before the link is printed, so it never opens on a 404
+    console.log(`\nOpen (signs you in as ryan): ${shell.url}/as/ryan`);
+    if (box) console.log(`Box up on ${shell.url}: API at ${shell.url}/api, MCP at ${shell.url}/api/mcp. Nothing runs until an agent does it.`);
     else {
       console.log(`Then open ${FILE}. The tour starts in ${WAIT}s.\n`);
       await Bun.sleep(WAIT * 1000);
+      await tour(call, { ...t, dug: true });
     }
+    console.log("\nCtrl-C to stop the server");
+    await new Promise(() => {});
   }
-  await tour(call, { pace: arg("pace", 500), rounds: arg("rounds", 3), stopAfterDig: box, say: (who, what) => console.log(`${new Date().toISOString().slice(11, 19)}  ${who.padEnd(10)} ${what}`) });
-  if (!process.argv.includes("--no-serve")) { console.log("\nCtrl-C to stop the server"); await new Promise(() => {}); }
+  await tour(call, { ...t, stopAfterDig: box });
   call.close();
 }

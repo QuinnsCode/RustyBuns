@@ -142,7 +142,7 @@ export function clefRequest(model: "clef" | "clef-flash", t: TurnInput) {
   const step = nextStep(t);
   const it = step ? `the next part (${step.part}), or the shape you change` : "the new or changed shape";
 
-  const questions: Record<string, unknown> = {
+  const questions: Record<string, Question> = {
     shape: { type: "choice", instructions: "If you add a shape, which kind?", criteria: SHAPES },
     color: { type: "choice", instructions: "Which colour for the new or changed shape?", criteria: Object.fromEntries(Object.keys(COLORS).map((c) => [c, null])) },
     col: { type: "choice", instructions: `Looking at what's drawn, which column should the centre of ${it} be in?`, criteria: Object.fromEntries(Array.from({ length: g.cols }, (_, i) => [`c${i + 1}`, `column ${i + 1}`])) },
@@ -158,6 +158,8 @@ export function clefRequest(model: "clef" | "clef-flash", t: TurnInput) {
 
 // --- answers -----------------------------------------------------------------
 
+/** One question for Clef: pick one of the criteria, or score along them. */
+type Question = { type: "choice" | "score"; instructions: string; criteria: unknown };
 type Answer = { choice?: unknown; score?: unknown; probabilities?: Record<string, number> };
 
 /** Sample an option from Clef's probabilities, sharpened by `temperature` (0 = always the top pick). */
@@ -288,8 +290,8 @@ export function toOps(d: Decision, scene: SkeletonEl[], region: Bounds, nextId: 
 
 /** Clef-shaped answers picked at random, for practice fights where there's no Workers AI (local dev, tests). Free. */
 export function practiceAnswers(input: unknown, rand: () => number = Math.random) {
-  const questions = (input as { questions?: Record<string, { type: string; criteria: unknown }> }).questions ?? {};
-  const answers: Record<string, unknown> = {};
+  const questions = (input as { questions?: Record<string, Question> }).questions ?? {};
+  const answers: Record<string, { type: "score"; score: number } | { type: "choice"; choice: string | undefined; probabilities: Record<string, number> }> = {};
   for (const [id, q] of Object.entries(questions)) {
     if (q.type === "score") {
       const levels = (q.criteria as unknown[]).length;

@@ -5,6 +5,8 @@
 //     --collab-token T1 --owner-token T2 --remove bob [--idle 90]
 //
 // Tokens are codeSplitter API tokens (read the names, not the values, from your own settings); nothing is stored.
+import { help } from "../../../scripts/help.ts";
+help(import.meta.path);
 const flag = (name: string) => { const i = process.argv.indexOf(`--${name}`); return i < 0 ? undefined : process.argv[i + 1]; };
 const [base, repo, path] = process.argv.slice(2).filter((a, i, all) => !a.startsWith("--") && !all[i - 1]?.startsWith("--"));
 const [collab, owner, remove, idle] = [flag("collab-token"), flag("owner-token"), flag("remove"), Number(flag("idle") ?? 90)];
@@ -14,6 +16,7 @@ if (!base || !repo?.includes("/") || !path || !collab || !owner || !remove) {
 }
 const wsUrl = `${base.replace(/^http/, "ws")}/api/repos/${repo}/do/ws?path=${encodeURIComponent(path)}`;
 const open = (token: string) => new Promise<WebSocket>((res, rej) => {
+  // @ts-expect-error Bun's socket takes headers, but the browser's constructor type wins the overload here.
   const ws = new WebSocket(wsUrl, { headers: { authorization: `Bearer ${token}` } });
   ws.onopen = () => res(ws); ws.onerror = () => rej(new Error("upgrade refused"));
 });

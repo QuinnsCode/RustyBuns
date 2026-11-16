@@ -7,7 +7,8 @@
 //
 //   POST /api/orgs/:org/seed {n}   (owner+, n ≤ 100000)
 
-import { error, json, readBody, type D1Statement, type Env, type Row } from "./env.ts";
+import { error, json, need, type D1Statement, type Env, type Row } from "./env.ts";
+import { int, maybe, obj, said } from "@rustybuns/util/guard";
 import type { Ctx } from "./orgs.ts";
 
 export const MAX_SEED = 100_000;
@@ -111,12 +112,14 @@ export async function seedOrg(env: Env, org: string, actorId: string | null, n: 
   return counts;
 }
 
+/** POST /api/orgs/:org/seed: how many contacts, and a seed to make the same ones again. */
+const SeedBody = obj({ n: said(int(1, MAX_SEED), `1 to ${MAX_SEED} contacts`), seed: maybe(int(0, Number.MAX_SAFE_INTEGER)) });
+
 export async function seedRoutes({ req, env, user, org, p, audit }: Ctx): Promise<Response | null> {
   if (p[0] !== "seed" || p[1] || req.method !== "POST") return null;
-  const b = await readBody<{ n?: unknown; seed?: unknown }>(req);
-  const n = Number(b?.n);
-  if (!Number.isInteger(n) || n < 1 || n > MAX_SEED) return error(400, `n: 1 to ${MAX_SEED} contacts`);
-  const counts = await seedOrg(env, org, user.id, n, Number.isInteger(b?.seed) ? (b!.seed as number) : Date.now() % 100_000);
+  const b = await need(req, SeedBody);
+  if (b instanceof Response) return b;
+  const counts = await seedOrg(env, org, user.id, b.n, b.seed ?? Date.now() % 100_000);
   await audit("seed", null, counts);
   return json(counts, 201);
 }

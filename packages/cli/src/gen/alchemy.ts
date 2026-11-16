@@ -4,7 +4,7 @@
 // Cloudflare.InferEnv. The generated file is readable and committable; the
 // eject path is "keep this file, delete the config".
 
-import { hyperdriveUrlEnv, workerName, type Binding, type RustyBunsConfig } from "../config.ts";
+import { hyperdriveUrlEnv, workerName, type AiGateway, type Binding, type RustyBunsConfig } from "../config.ts";
 import { BOX_DIR, RAILWAY_DATA, RAILWAY_DIR, boxDefaults, railwayDefaults } from "../box.ts";
 import { checkWheel, mintedSecrets } from "../wheel.ts";
 import { isProtected, workerKept } from "../protect.ts";
@@ -16,6 +16,17 @@ const propsArg = (props: Record<string, string | number | undefined>) => {
   const set = Object.entries(props).filter(([, v]) => v !== undefined);
   return set.length ? `, { ${set.map(([k, v]) => `${k}: ${JSON.stringify(v)}`).join(", ")} }` : "";
 };
+
+/** An `ai` binding's gateway in Cloudflare.AI.Gateway's props: caching and rate limiting stay off unless asked for. */
+function gatewayProps(g: AiGateway): string {
+  const props = {
+    id: g.id,
+    ...(g.cacheTtl ? { cacheTtl: g.cacheTtl } : {}),
+    ...(g.rateLimit ? { rateLimitingLimit: g.rateLimit.limit, rateLimitingInterval: g.rateLimit.seconds } : {}),
+    ...(g.spendCap ? { spendLimits: { enabled: true, rules: [{ limit: g.spendCap.cents, limitType: "cost", window: g.spendCap.window }] } } : {}),
+  };
+  return JSON.stringify(props);
+}
 
 /** `adopt`: name D1 and R2 as the config does, so existing ones are found by name. */
 function resource(name: string, b: Binding, adopt: boolean): string | null {
@@ -70,8 +81,9 @@ function resource(name: string, b: Binding, adopt: boolean): string | null {
       // Worker-only: loaded Workers are made at runtime.
       return `export const ${id} = Cloudflare.WorkerLoader("${name}");`;
     case "ai":
-      // Worker-only: Workers AI has no resource to provision.
-      return `export const ${id} = Cloudflare.Workers.AI(${JSON.stringify(name)});`;
+      // Worker-only: Workers AI has no resource to provision. With a gateway, the gateway is the resource and binds as the same `ai`.
+      return b.gateway ? `export const ${id} = Cloudflare.AI.Gateway(${JSON.stringify(name)}, ${gatewayProps(b.gateway)});`
+        : `export const ${id} = Cloudflare.Workers.AI(${JSON.stringify(name)});`;
     case "browser":
       // Worker-only: Browser Run has no resource to provision; Kitesurf is picked per call.
       return `export const ${id} = Cloudflare.Workers.Browser(${JSON.stringify(name)});`;

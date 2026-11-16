@@ -4,6 +4,7 @@ import { join } from "node:path";
 import type { Env } from "../src/env.ts";
 import { handle } from "../src/handle.ts";
 import { challengeOf } from "../src/members.ts";
+import { APPS, callbacksOf } from "../src/apps.ts";
 
 export const ORIGIN = "http://eqosys.local";
 export const ADMIN = "boss@example.com", PASSWORD = "correct horse battery";
@@ -29,9 +30,14 @@ export async function boot(extra: Partial<Env> = {}) {
   return { conf, call };
 }
 
-/** What an app does: a verifier it keeps, and the ask it sends people to /login with. */
+/** What an app does: a verifier it keeps, and the ask it sends people to /login with, back to its first registered callback on `origin`. */
+const returnOf = (app: string, origin: string) => {
+  const q = APPS.find((a) => a.id === app);
+  return (q && callbacksOf(q).find((r) => r.startsWith(`${origin}/`))) ?? `${origin}/`;
+};
+
 export async function asks(app: string, origin: string) {
   const verifier = "v".repeat(20) + crypto.randomUUID().replaceAll("-", "");
-  return { verifier, form: { app, return: `${origin}/`, challenge: await challengeOf(verifier), state: "s1" } };
+  return { verifier, form: { app, return: returnOf(app, origin), challenge: await challengeOf(verifier), state: "s1" } };
 }
 export const codeIn = (to: string) => new URL(to).searchParams.get("code")!;

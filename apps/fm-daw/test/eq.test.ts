@@ -1,15 +1,17 @@
-// Shape, the master EQ: it does what the curve says, never gets loud, Rust and
+// Shape, on the master and on each track: it does what the curve says, never gets loud, Rust and
 // TS agree, and the band list survives the wire. The Rust check skips (with a
 // note) when the wasm isn't built.
 import { test, expect } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
 import { TsEq, eqLane, flatEq, listenOf, response, type EqBand, type EqDoc } from "../src/engine/eq.ts";
 import { TsEngine } from "../src/engine/engine.ts";
+import { createNativeEngine } from "../src/engine/native.ts";
 import { renderProject } from "../src/engine/offline.ts";
 import { MASTER, Sequencer } from "../src/engine/sequencer.ts";
 import { Take, loopBeats, punchLane } from "../src/project.ts";
 import { WasmEq, instantiateFm } from "../src/engine/wasm.ts";
 import { CEILING } from "../src/engine/params.ts";
+import { LinearEq, linearLatency } from "../src/engine/linear.ts";
 import { apply, decodeOp, sanitize } from "../src/project.ts";
 import { demoProject } from "../src/presets.ts";
 import { newBand, qOfResoDb } from "../src/ui/Shape.tsx";
@@ -166,4 +168,73 @@ test("automate a band: a move recorded on the master plays back in the bounce, a
   expect(Math.abs(db(auto, half + SR / 10, 2 * half) - db(plain, half + SR / 10, 2 * half))).toBeLessThan(1); // back once it lets go
   // a removed band takes its lane with it, so the next band in that slot starts clean
   expect(apply(p, { t: "eq", bands: flatEq() }).eqAuto).toBeUndefined();
+});
+
+test("Shape on one track: a cut on the hats leaves the bounce's other tracks as they were, saves with the track, and rust matches ts", async () => {
+  const p0 = { ...demoProject(), space: 0 }, HAT = 2, KICK = 0, secs = 2;
+  // the hats lose everything above 2 kHz, sent as an op off the wire like any edit
+  const cut = doc(band({ kind: "highCut", f: 2000, slope: 48 }));
+  const p = apply(p0, decodeOp(JSON.parse(JSON.stringify({ t: "eq", track: HAT, bands: cut })))!);
+  expect(p.tracks[HAT].eq).toEqual(cut);
+  expect(p.eq).toEqual(flatEq());
+  const saved = sanitize(JSON.parse(JSON.stringify(p)))!;
+  expect(saved.tracks[HAT].eq).toEqual(cut);
+  expect(saved.tracks.filter((t) => t.eq).length).toBe(1);
+  // going flat again drops the field, so the track reads as it did before tracks had a Shape
+  expect("eq" in apply(p, { t: "eq", track: HAT, bands: flatEq() }).tracks[HAT]).toBe(false);
+
+  const bounce = (q: typeof p, solo: number) => renderProject(new TsEngine(SR), { ...q, tracks: q.tracks.map((t, i) => ({ ...t, solo: i === solo })) }, SR, secs, 1);
+  const energy = (a: Float32Array) => a.reduce((e, x) => e + x * x, 0);
+  // the hats alone: most of their energy is up high, so the cut takes most of it
+  expect(10 * Math.log10(energy(bounce(p, HAT)) / energy(bounce(p0, HAT)))).toBeLessThan(-6);
+  // the kick alone: the hats' Shape never touches it, sample for sample
+  expect(bounce(p, KICK)).toEqual(bounce(p0, KICK));
+
+  const rust = await createNativeEngine(SR);
+  if (!rust) { console.log("  (skipped: cdylib not built; run `bun run build:native`)"); return; }
+  const both = { ...p, tracks: p.tracks.map((t, i) => (i === 5 ? { ...t, eq: doc(band({ kind: "lowCut", f: 120, slope: 24 }), band({ f: 400, g: 6, q: 2 })) } : t)) };
+  const a = renderProject(rust, both, SR, secs, 1), b = renderProject(new TsEngine(SR), both, SR, secs, 1);
+  rust.free?.();
+  let maxDiff = 0;
+  for (let i = 0; i < a.length; i++) maxDiff = Math.max(maxDiff, Math.abs(a[i] - b[i]));
+  console.log(`  track Shape: max |rust - ts| = ${maxDiff.toExponential(2)}`);
+  expect(maxDiff).toBeLessThan(1e-4);
+});
+
+test("linear phase: the same curve with no phase turn, late by its latency, and the bounce still lands on the beat", () => {
+  const chain = doc(
+    band({ kind: "lowCut", f: 40, slope: 24 }),
+    band({ kind: "bell", f: 400, g: -6, q: 2 }),
+    band({ kind: "bell", f: 2500, g: 4, q: 1 }),
+    band({ kind: "notch", f: 6000, q: 4 }),
+    band({ kind: "highCut", f: 16000, slope: 12 }),
+  );
+  const lin = (d: EqDoc, input: Float32Array) => { const eq = new LinearEq(SR), out = input.slice(); eq.set(d); eq.reset(); eq.process(out, out.length >> 1); return out; };
+  // what the curve says is what you hear, as in minimum phase
+  const freqs = [100, 400, 1000, 2500, 6000, 12000], curve = response(chain, SR, freqs).db;
+  freqs.forEach((f, i) => { const s = sine(f, 0.05); expect(Math.max(gainDb(s, lin(chain, s)), -40)).toBeCloseTo(Math.max(curve[i], -40), 0); });
+  const s25 = sine(25, 0.05);
+  expect(gainDb(s25, lin(chain, s25))).toBeLessThan(-10);
+  // an impulse comes out `latency` late: untouched when flat, mirror-symmetric around it through the chain (no phase turn)
+  const L = linearLatency(SR), click = new Float32Array(SR * 2);
+  click[2000 * 2] = click[2000 * 2 + 1] = 0.5;
+  const flat = lin(flatEq(), click);
+  expect(flat[(2000 + L) * 2]).toBeCloseTo(0.5, 5);
+  expect(flat.reduce((a, v) => a + Math.abs(v), 0)).toBeCloseTo(1, 4);
+  const ir = lin(chain, click), c = 2000 + L;
+  let asym = 0, energy = 0;
+  for (let k = 1; k < 2000; k++) { asym += Math.abs(ir[(c + k) * 2] - ir[(c - k) * 2]); energy += Math.abs(ir[(c + k) * 2]); }
+  expect(asym / energy).toBeLessThan(1e-3);
+  // the bounce trims the delay off: a linear-phase bounce of a flat EQ is the plain bounce, sample for sample
+  const p = { ...demoProject(), eq: flatEq() }, secs = 2;
+  const plain = renderProject(new TsEngine(SR), p, SR, secs, 0.5), linear = renderProject(new TsEngine(SR), { ...p, eqLinear: true }, SR, secs, 0.5);
+  expect(linear.length).toBe(plain.length);
+  let worst = 0;
+  for (let i = 0; i < plain.length; i++) worst = Math.max(worst, Math.abs(linear[i] - plain[i]));
+  expect(worst).toBeLessThan(1e-4);
+  // the switch is saved, sent as an op, and an older project reads as minimum phase
+  const on = apply(p, decodeOp(JSON.parse(JSON.stringify({ t: "eqPhase", linear: true })))!);
+  expect(sanitize(JSON.parse(JSON.stringify(on)))!.eqLinear).toBe(true);
+  expect("eqLinear" in apply(on, { t: "eqPhase", linear: false })).toBe(false);
+  expect("eqLinear" in sanitize(JSON.parse(JSON.stringify(p)))!).toBe(false);
 });

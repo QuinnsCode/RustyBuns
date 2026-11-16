@@ -4,7 +4,8 @@
 // pasted <script> but keeps an <iframe>. The page around it hears the widget through postMessage:
 //
 //   frame -> page   { source: "qview3d", type: "qview:ready" | "qview:change" | "qview:snapshot" | "qview:saved" | "qview:error", detail }
-//   page -> frame   { source: "qview3d", type: "save" | "snapshot" }   (answered by qview:saved / qview:snapshot, or qview:error)
+//   page -> frame   { source: "qview3d", type: "save" | "snapshot" | "ready" }   (answered by qview:saved / qview:snapshot /
+//                   qview:ready once the widget is up, or qview:error)
 //
 // Only the org's own sites may frame it (frame-ancestors) or talk to it: the frame posts to its parent's origin only
 // when that origin is one of the org's, and takes commands only from there.
@@ -27,9 +28,14 @@ function relay(allowed: string[]) {
       post(type, type === "qview:error" ? { error: d?.error instanceof Error ? d.error.message : String(d?.error) } : d);
     });
   }
+  const q = el as HTMLElement & { design: unknown; save(): Promise<unknown>; snapshot(): Promise<unknown> };
+  // The widget may have booted before this script ran (its code and product were cached), so its qview:ready went
+  // by unheard: say it now. A page whose listener came late asks with "ready" and hears it again.
+  const sayReady = () => { if (q.design) post("qview:ready", { design: q.design }); };
+  sayReady();
   addEventListener("message", (e: MessageEvent) => {
     if (e.origin !== parentOrigin || e.source !== parent || e.data?.source !== "qview3d") return;
-    const q = el as HTMLElement & { save(): Promise<unknown>; snapshot(): Promise<unknown> };
+    if (e.data.type === "ready") sayReady();
     if (e.data.type === "save") q.save().catch(() => {});
     if (e.data.type === "snapshot") q.snapshot().catch(() => {});
   });

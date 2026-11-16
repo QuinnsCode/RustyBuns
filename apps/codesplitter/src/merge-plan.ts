@@ -8,8 +8,8 @@
 // Before a task starts, taskFiles and busyOn (@rustybuns/util/overlap) say which open branches already rewrite its files
 // (#1163, GET .../dispatch-hint and the agent start's `busy`), so it can wait or stack on one.
 
-import { apply, merge, type Conflict, type Doc } from "./lines.ts";
-import { lintMerge } from "./lint.ts";
+import { apply, type Conflict, type Doc } from "./lines.ts";
+import { lintedMerge } from "./lint.ts";
 import type { Rule } from "./policy.ts";
 
 /** `then` merges clean on main now, and not after `first` lands: in `files`. `stacked`: it's built on `first`. */
@@ -39,8 +39,7 @@ export interface Side { base: Doc; copy: Doc }
 
 /** codeSplitter's merge of `side` into `main`, as a branch merge runs it: what's left, and main after it if nothing is. */
 function settle(path: string, main: Doc, side: Side, rule?: Rule): { conflicts: Conflict[]; after?: Doc } {
-  const m = merge(side.base, side.copy, main, {}, "branch", path, "branch", rule);
-  const conflicts = m.conflicts.length ? m.conflicts : lintMerge(path, main, side.copy, m);
+  const m = lintedMerge(side.base, side.copy, main, {}, "branch", path, "branch", rule), conflicts = m.conflicts;
   if (conflicts.length) return { conflicts };
   const after = structuredClone(main);
   return apply(after, m.ops, m.by, 0, main.rev).ok ? { conflicts, after } : { conflicts: [{ line: "apply", base: "", main: null, branch: null, lint: "the merge's ops don't apply to main" }] };

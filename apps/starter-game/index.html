@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Starter Game</title>
+  <link rel="stylesheet" href="/src/style.css">
+</head>
+<body>
+  <main>
+    <canvas id="stage" aria-label="Starter Game"></canvas>
+    <section id="menu">
+      <h1 id="title">Starter Game</h1>
+      <p>Catch the stars. Pointer or arrow keys.</p>
+      <button id="play">Play</button>
+      <div id="account"></div>
+      <div id="party" hidden>
+        <button id="make">Make a party</button>
+        <form id="join"><input id="joincode" placeholder="party code" maxlength="12" aria-label="Party code"><button>Join</button></form>
+        <p id="code"></p>
+        <p id="crew"></p>
+        <button id="start" hidden>Start</button>
+      </div>
+      <p id="note"></p>
+    </section>
+  </main>
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>

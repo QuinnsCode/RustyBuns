@@ -5,17 +5,20 @@
 import type { Features } from "./analyze.ts";
 import type { Box } from "./boxes.ts";
 import type { Verdict } from "./judge.ts";
+import { num, obj, oneOf, str, type Of } from "@rustybuns/util/guard";
 
-export interface Review {
-  score: number;
-  verdict: "NOT GOOD" | "LIGHT" | "DECENT" | "STRONG";
-  box: string;
-  headline: string;
-  review: string;
-  bestBit: string;
-  worstBit: string;
-  by: Verdict["by"];
-}
+/** What /api/review answers, as the page reads it back. */
+export const Review = obj({
+  score: num(0, 10),
+  verdict: oneOf(["NOT GOOD", "LIGHT", "DECENT", "STRONG"]),
+  box: str(200),
+  headline: str(2000),
+  review: str(20000),
+  bestBit: str(2000),
+  worstBit: str(2000),
+  by: oneOf(["clef", "estimate"]),
+});
+export type Review = Of<typeof Review>;
 
 export const verdictFor = (score: number): Review["verdict"] =>
   score <= 2 ? "NOT GOOD" : score <= 4 ? "LIGHT" : score <= 6 ? "DECENT" : "STRONG";

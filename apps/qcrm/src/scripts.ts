@@ -18,8 +18,8 @@
 //   POST   /api/orgs/:org/scripts/examples        (manager+)    install the three examples
 
 import { RunReply } from "@rustybuns/util/codemode";
-import { check } from "@rustybuns/util/guard";
-import { error, json, parseJson, readBody, type Env, type Row } from "./env.ts";
+import { bool, check, obj, opt, raw, said, str } from "@rustybuns/util/guard";
+import { error, json, need, parseJson, type Env, type Row } from "./env.ts";
 import type { Ctx } from "./orgs.ts";
 import { rank, type Role } from "./rbac.ts";
 import { EXAMPLES } from "./script-examples.ts";
@@ -95,13 +95,14 @@ const shown = (s: Row) => ({ ...s, enabled: !!s.enabled });
 const scriptRow = (env: Env, org: string, id: string) =>
   env.DB.prepare("SELECT id, org_id, name, body, lang, created_by, created_at, updated_at, enabled FROM scripts WHERE org_id = ? AND id = ? AND deleted_at IS NULL").bind(org, id).first();
 
-function checkScript(b: { name?: unknown; body?: unknown; enabled?: unknown } | null, partial: boolean): { name?: string; body?: string; enabled?: number } | string {
-  const out: { name?: string; body?: string; enabled?: number } = {};
-  if (b?.name !== undefined || !partial) { if (typeof b?.name !== "string" || !b.name.trim() || b.name.length > 120) return "name: up to 120 characters"; out.name = b.name.trim(); }
-  if (b?.body !== undefined || !partial) { if (typeof b?.body !== "string" || b.body.length > MAX_BODY) return `body: JavaScript, up to ${MAX_BODY} characters`; out.body = b.body; }
-  if (b?.enabled !== undefined) { if (typeof b.enabled !== "boolean") return "enabled: true or false"; out.enabled = b.enabled ? 1 : 0; }
-  return out;
-}
+const ScriptName = said(str(120, { re: /\S/ }), "up to 120 characters");
+const ScriptBody = said(str(MAX_BODY, { min: 0 }), `JavaScript, up to ${MAX_BODY} characters`);
+/** POST /api/orgs/:org/scripts: a new script. */
+const NewScript = obj({ name: ScriptName, body: ScriptBody });
+/** PUT /api/orgs/:org/scripts/:id: the fields to change. */
+const ScriptEdit = obj({ name: opt(ScriptName), body: opt(ScriptBody), enabled: opt(said(bool(), "true or false")) });
+/** POST /api/orgs/:org/scripts/:id/run: what the script gets as its input. */
+const RunBody = obj({ input: raw });
 
 export async function insert(env: Env, org: string, by: string, name: string, body: string) {
   const now = Date.now();
@@ -155,9 +156,9 @@ export async function scriptRoutes(c: Ctx, dispatch: (r: Request) => Promise<Res
   }
   if (!p[1] && req.method === "POST") {
     if (!atLeast(role, "manager")) return error(403, "managers and up write scripts");
-    const v = checkScript(await readBody(req), false);
-    if (typeof v === "string") return error(400, v);
-    const s = await insert(env, org, user.id, v.name!, v.body!);
+    const v = await need(req, NewScript);
+    if (v instanceof Response) return v;
+    const s = await insert(env, org, user.id, v.name.trim(), v.body);
     await c.audit("script.create", s.id, s.name);
     return json(s, 201);
   }
@@ -173,9 +174,9 @@ export async function scriptRoutes(c: Ctx, dispatch: (r: Request) => Promise<Res
   if (!p[2] && req.method === "GET") return json(shown(script));
   if (!p[2] && req.method === "PUT") {
     if (!atLeast(role, "manager")) return error(403, "managers and up write scripts");
-    const v = checkScript(await readBody(req), true);
-    if (typeof v === "string") return error(400, v);
-    const next = { ...script, ...v, updated_at: Date.now() };
+    const v = await need(req, ScriptEdit);
+    if (v instanceof Response) return v;
+    const next = { ...script, ...v, ...(v.name !== undefined && { name: v.name.trim() }), updated_at: Date.now() };
     await env.DB.prepare("UPDATE scripts SET name = ?, body = ?, enabled = ?, updated_at = ? WHERE id = ?").bind(next.name, next.body, next.enabled ? 1 : 0, next.updated_at, script.id).run();
     await c.audit("script.update", script.id as string);
     return json(shown(next));
@@ -189,8 +190,9 @@ export async function scriptRoutes(c: Ctx, dispatch: (r: Request) => Promise<Res
   if (p[2] === "run" && !p[3] && req.method === "POST") {
     if (!atLeast(role, "employee")) return error(403, "employees and up run scripts");
     if (!script.enabled) return error(409, "this script is switched off");
-    const b = await readBody<{ input?: unknown }>(req);
-    return json(await run(env, c, script, b?.input, dispatch), 201);
+    const b = await need(req, RunBody);
+    if (b instanceof Response) return b;
+    return json(await run(env, c, script, b.input, dispatch), 201);
   }
   if (p[2] === "runs" && !p[3] && req.method === "GET") {
     const { results } = await env.DB.prepare("SELECT id, actor_user_id, started_at, finished_at, status, log, result, calls FROM script_runs WHERE org_id = ? AND script_id = ? ORDER BY started_at DESC LIMIT 50").bind(org, script.id).all();

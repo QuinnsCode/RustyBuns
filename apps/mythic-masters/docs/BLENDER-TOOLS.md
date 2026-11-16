@@ -31,6 +31,8 @@ Run them from `apps/mythic-masters`. Everything they write to look at goes in `b
 | Plants, fresh judge | `bun run flora --judge` (take `bun run flora --lineup --as before` first) | `blender/out/judge-flora.md`, every biome's lineup BEFORE vs NOW | about 1 min |
 | Ground, fresh judge | `bun run ground --judge` (take `bun run ground --sheet-only --as before` first) | `blender/out/judge-ground.md`, the contact sheet BEFORE vs NOW | about 1 min |
 | USDZ for iOS | `bun run usdz mythic-masters` from the repo root; `bun run usdz beasts` for skinned beasts (no Blender) | `dist/ios/mythic-masters/` | per app |
+| Warm vs cold, one beast | `bun scripts/warm-blender.ts [id] [--runs 3]` (on Bob: `bun run builder run apps/mythic-masters bun scripts/warm-blender.ts <id>`) | times, memory, and whether every warm GLB is byte for byte the cold one | about 10 s |
+| Blender MCP (load, stats, render) | `bun scripts/blender-mcp.ts [--local]`, added to a claude run (below) | nothing: answers text and PNGs | Blender starts on the first call |
 | Model diff by picture | `bun apps/codesplitter/scripts/model-review.ts [base] [head] [out.html]` | before and after renders of every changed `.glb` | per GLB |
 
 What you can put in a sheet (`horn`, `tuft`, `skull`, `membrane`, `teeth`, ...) is listed at the top of
@@ -53,8 +55,8 @@ What you can put in a sheet (`horn`, `tuft`, `skull`, `membrane`, `teeth`, ...) 
   plants and two ground layers, #3823), so they need no pin.
 - **One Blender per core, not all at once.** All 76 at once asked about 26 GB of a 16 GB Mac (126 s). One per
   core (`--jobs`, the default) took 98 s. Build only the sheet you changed.
-- **A cold start is most of the time.** A warm single build takes 1-5 s. `--watch` is the fast loop. Rebuilding
-  the whole roster is not.
+- **The build is most of the time, not the start.** A single build takes 1-5 s; Blender's start is about 0.8 s
+  of it on Bob (#3941). `--watch` is the fast loop. Rebuilding the whole roster is not.
 - **Snap steps choose the decimation.** `SNAP_STEPS` in `beasts.ts` tries a fixed list and keeps the first
   result whose rig matches the sheet. When a row says a foot or wing is off, the sheet is the problem.
 - **Always use `blender -b --factory-startup --python-exit-code 1`.** Without `--python-exit-code 1`, a Python
@@ -69,8 +71,44 @@ What you can put in a sheet (`horn`, `tuft`, `skull`, `membrane`, `teeth`, ...) 
 
 ## Blender MCP: where it fits
 
-**Today, no Blender MCP reaches the office's agents.** No worker in the 2026-10-31 spike had one, and this
-session had none either (a tool search for `blender` came back empty). Every build so far was headless.
+**Ours: `scripts/blender-mcp.ts`, three named calls, no Python (#3941).** It speaks MCP on stdio on the
+office Mac and forwards each call to a warm Blender (`warmBlender` in `@rustybuns/cli/blender`), on Bob over ssh
+when `BUILDER_HOST` is set, else on this Mac (`--local`). Bob needs nothing but Blender: the server script
+(`packages/cli/src/blender-warm.py`) goes over ssh as the first line, and a GLB goes as bytes. Blender starts on
+the first call and lives as long as its stdin: when the client closes, or is killed, the ssh and Bob's Blender go
+with it (checked with `kill -9` on the client).
+
+| Tool | Arguments | Answers |
+|---|---|---|
+| `blender_load` | `beast` (an id) or `glb` (a path under this app) | the mesh names; an empty scene first |
+| `blender_stats` | `part` (a mesh or a material: a beast is one mesh, its parts are materials) | verts, faces, triangles and size per mesh, faces and triangles per material |
+| `blender_render` | `view` (front, back, left, right, top, three-quarter) or `yaw` and `pitch` degrees; `size` 64-2048 | a Workbench PNG in the beast's vertex colours |
+
+Add it to a run: `claude mcp add blender -- bun <repo>/apps/mythic-masters/scripts/blender-mcp.ts` (user scope),
+or `claude -p ... --mcp-config <file>` for one run. A Haiku worker on 2026-11-16 loaded the jackalope, counted its
+antler (328 triangles) and described a left view, all on Bob. The warm Blender also takes `build {script, args}`,
+a `.py` under its folder run as a fresh cold run would (`bun scripts/warm-blender.ts`); the MCP doesn't offer it.
+
+**What the spike measured (Bob, Blender 5.2.1, `-t 8`).**
+
+| | squonk (9000 tris) | jackalope (5596 tris) |
+|---|---|---|
+| Cold build (a fresh Blender) | 2.9-3.1 s | 2.2 s |
+| Warm build (same Blender, again) | 2.0-2.4 s | 1.3-1.4 s |
+| Warm GLB = cold GLB, byte for byte | yes, 3 of 3 (twice) | yes, 8 of 8 |
+| Blender start | 0.7 s, 233 MB idle | the same |
+| Memory after the builds | 418-427 MB | 361 MB, level over 8 builds |
+| 1024 px render | 0.2 s, about 555 MB while it ran | 0.2 s, 499 MB |
+
+So warm saves about 0.8 s a build: a third of a light beast, a quarter of a heavy one. The rest is the build
+itself (bake, decimate, export). On the office Mac (busy, 5.2.0) squonk took 15-20 s warm or cold, and the start
+was 2 s of it. A whole MCP session over ssh (start, load, stats, a render) took 2.7 s.
+
+**A 4th and 5th call** go in `CALLS` in `blender-warm.py`, a tool row in `blender-mcp.ts`, and a guard for its
+answer: `try_modifier {name, settings}` adds one of a fixed list of modifiers (Weighted Normal, Data Transfer,
+Remesh, Decimate) with only that modifier's known settings checked, and answers the new stats and a render, then
+takes it off. `select_faces {material | near: [x, y, z], radius}` answers the face count, centre and size of the
+faces picked, with a render that draws them in another colour. Neither needs Python from the caller.
 
 That is right for building. A build has to come out the same in CI, on any worker and on any Mac, and an MCP
 drives one open Blender that runs its calls one after another. An MCP is worth adding for **looking and poking
@@ -86,7 +124,9 @@ The loop with both: build headless (`--watch <id>`), import the GLB into the MCP
 poking there, write it into the sheet or the builder, and build headless again. Nothing an MCP session changes
 ships until a script does the same thing.
 
-### Wiring one up (needs the owner)
+### A third-party one instead (needs the owner)
+
+Ours covers looking. If an agent needs a free hand in Blender, these are the steps:
 
 - **Server.** Use Blender Lab's official server (add-on v1.0.3, Blender 5.1 or newer, stdio or Streamable HTTP;
   docs at blender.org/lab/mcp-server). The community server uses the same default port, so install only one.
@@ -101,9 +141,6 @@ ships until a script does the same thing.
 
 ## What to build next (most value first)
 
-1. **A warm Blender.** Cold start is most of a single build. A long-running `blender -b` that takes jobs on a
-   socket or stdin would make `--watch` and `beast_nudge` feel close to instant. It would also give agents a
-   guarded, scripted version of what an MCP offers: named calls like `load`, `stats(part)`,
-   `render(view)` and `try_modifier`, not arbitrary Python. (#3822)
-2. **A Blender MCP on Bob for looking.** Once the owner installs it, write the one-model recipe above into this
-   file with the tool names the server really has. (MANUAL RUN #3824)
+1. **`--watch` and `beast_nudge` on the warm Blender.** `warmBlender` is built and a warm build is byte for byte a
+   cold one, so the watch loop can keep one Blender and call `build` per save: about 0.8 s off each rebuild. (#3822)
+2. **`try_modifier` and `select_faces`** in the MCP, as above.

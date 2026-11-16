@@ -398,6 +398,7 @@
         "@fontsource/ibm-plex-mono": "^5.3.0",
         "@fontsource/ibm-plex-sans": "^5.3.0",
         "@rustybuns/cli": "^0.1.12",
+        "@rustybuns/gear": "^0.1.12",
         "@rustybuns/native": "^0.1.12",
         "@rustybuns/shell-bun": "^0.1.12",
         "@rustybuns/util": "^0.1.12",
@@ -546,6 +547,24 @@
         "@effect/platform-node": "4.0.5",
         "alchemy": "2.0.0-beta.84",
         "effect": "4.0.5",
+      },
+    },
+    "apps/load-in": {
+      "name": "load-in",
+      "version": "0.0.1",
+      "dependencies": {
+        "@rustybuns/game-controls": "^0.1.12",
+        "@rustybuns/gear": "^0.1.12",
+        "@rustybuns/models": "^0.1.12",
+        "@rustybuns/shell-bun": "^0.1.12",
+        "@rustybuns/util": "^0.1.12",
+        "three": "^0.180.0",
+      },
+      "devDependencies": {
+        "@rustybuns/cli": "^0.1.12",
+        "@types/bun": "^1.4.0",
+        "@types/three": "^0.180.0",
+        "vite": "^6.4.4",
       },
     },
     "apps/meshy-studio": {
@@ -1035,6 +1054,19 @@
         "vite": "^6.2.6",
       },
     },
+    "apps/starter-game": {
+      "name": "starter-game",
+      "version": "0.0.1",
+      "dependencies": {
+        "@rustybuns/shell-bun": "^0.1.12",
+        "@rustybuns/util": "^0.1.12",
+      },
+      "devDependencies": {
+        "@rustybuns/cli": "^0.1.12",
+        "@types/bun": "^1.4.0",
+        "vite": "^6.4.4",
+      },
+    },
     "apps/svelte-spa-example": {
       "name": "svelte-spa-example",
       "version": "0.1.0",
@@ -1119,6 +1151,17 @@
       "devDependencies": {
         "@rustybuns/cli": "^0.1.12",
         "@rustybuns/cms": "^0.1.12",
+        "@rustybuns/shell-bun": "^0.1.12",
+      },
+    },
+    "apps/test-swarm": {
+      "name": "test-swarm",
+      "version": "0.0.1",
+      "dependencies": {
+        "@rustybuns/util": "^0.1.12",
+      },
+      "devDependencies": {
+        "@rustybuns/cli": "^0.1.12",
         "@rustybuns/shell-bun": "^0.1.12",
       },
     },
@@ -1226,6 +1269,10 @@
         "@rustybuns/ui": "workspace:*",
         "lucide": "1.55.0",
       },
+    },
+    "packages/gear": {
+      "name": "@rustybuns/gear",
+      "version": "0.1.12",
     },
     "packages/models": {
       "name": "@rustybuns/models",
@@ -2225,6 +2272,8 @@
     "@rustybuns/cms": ["@rustybuns/cms@workspace:packages/cms"],
 
     "@rustybuns/game-controls": ["@rustybuns/game-controls@workspace:packages/game-controls"],
+
+    "@rustybuns/gear": ["@rustybuns/gear@workspace:packages/gear"],
 
     "@rustybuns/models": ["@rustybuns/models@workspace:packages/models"],
 
@@ -3484,6 +3533,8 @@
 
     "listhen": ["listhen@1.10.1", "", { "dependencies": { "@parcel/watcher-wasm": "^2.5.6", "citty": "^0.2.2", "consola": "^3.4.2", "crossws": "^0.4.10", "defu": "^6.1.7", "get-port-please": "^3.2.0", "h3": "^1.15.11", "http-shutdown": "^1.2.2", "jiti": "^2.7.0", "node-forge": "^1.4.0", "pathe": "^2.0.3", "std-env": "^4.2.0", "tinyclip": "^0.1.15", "ufo": "^1.6.4", "untun": "^0.2.2", "uqr": "^0.1.3" }, "peerDependencies": { "@parcel/watcher": "^2.5.6" }, "optionalPeers": ["@parcel/watcher"], "bin": { "listen": "./bin/listhen.mjs", "listhen": "./bin/listhen.mjs" } }, "sha512-6nt/86SkqUQSLW1ofz8MxC6RhRMqOl3ONISe6qqvJ3xj09aJWQx6DhgSZpugs3PX4PXdOas/WD6A9jx6J2N19A=="],
 
+    "load-in": ["load-in@workspace:apps/load-in"],
+
     "loader-utils": ["loader-utils@3.3.1", "", {}, "sha512-FMJTLMXfCLMLfJxcX9PFqX5qD88Z5MRGaZCVzfuqeZSPsyiBzs+pahDQjbIWz2QIzPZz0NX9Zy4FX3lmK6YHIg=="],
 
     "local-pkg": ["local-pkg@1.2.1", "", { "dependencies": { "mlly": "^1.7.4", "pkg-types": "^2.3.0", "quansync": "^0.2.11" } }, "sha512-++gUqRDEvcnN6Zhqrr+y/CkVEHhlrR96vZn3nZZPYzMcBUyBtTKzB9NadClFIsIVSsu+3i9tfk/erqy9kAmt7Q=="],
@@ -4146,6 +4197,8 @@
 
     "standardwebhooks": ["standardwebhooks@1.1.1", "", { "dependencies": { "@stablelib/base64": "^1.0.0", "fast-sha256": "^1.3.0" } }, "sha512-bCbX9ZEyFkWPsRz7Bl3NuQUJohmwGSev/yhr7vhaGPlc4AfIrspIRa6cPTBuI1ItmrTDJ4d/S2hCsfe4+vQGnQ=="],
 
+    "starter-game": ["starter-game@workspace:apps/starter-game"],
+
     "statuses": ["statuses@2.0.2", "", {}, "sha512-DvEy55V3DB7uknRo+4iOGT5fP1slR8wQohVdknigZPMpMstaKJQWhwiYBACJE3Ul2pTnATihhBYnRhZQHGBiRw=="],
 
     "std-env": ["std-env@4.3.0", "", {}, "sha512-OtU/EgQ1kIm5KwqQpBC6ZEMXrZRui11w8zgfTWp8cdO9B8OaPsbA8bTHO2P+HNo1VlUTGMVBwPhydu6poeXiag=="],
@@ -4215,6 +4268,8 @@
     "terraviz-demo": ["terraviz-demo@workspace:apps/terraviz-demo"],
 
     "terser": ["terser@5.51.2", "", { "dependencies": { "@jridgewell/source-map": "^0.3.3", "acorn": "^8.15.0", "commander": "^2.20.0", "source-map-support": "~0.5.20" }, "bin": { "terser": "bin/terser" } }, "sha512-bWnjSNscmuI+GJze6ZupnHP8G/cTcsJF+bXCeQknk2SHQsgbNJnLrqiH9jZ2W4STPVXH2mDKKRX3iwPhc9Cn/Q=="],
+
+    "test-swarm": ["test-swarm@workspace:apps/test-swarm"],
 
     "text-decoder": ["text-decoder@1.2.7", "", { "dependencies": { "b4a": "^1.6.4" } }, "sha512-vlLytXkeP4xvEq2otHeJfSQIRyWxo/oZGEbXrtEEF9Hnmrdly59sUbzZ/QgyWuLYHctCHxFF4tRQZNQ9k60ExQ=="],
 

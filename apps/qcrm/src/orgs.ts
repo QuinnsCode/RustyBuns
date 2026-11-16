@@ -18,7 +18,8 @@
 // org that does not exist, so an id never tells whether it is real.
 
 import type { User } from "./auth.ts";
-import { b64url, digest, error, json, readBody, type Env } from "./env.ts";
+import { b64url, digest, error, json, named, need, type Env } from "./env.ts";
+import { obj, oneOf, or, said, str, type Of } from "@rustybuns/util/guard";
 import { dropFiles } from "./files.ts";
 import { can, canSetRole, DEFAULT_ROLE, GRANTABLE, isRole, rank, type Role } from "./rbac.ts";
 import { emit } from "./webhooks.ts";
@@ -90,23 +91,27 @@ export async function orgListRoutes(req: Request, env: Env, user: User): Promise
   if (req.method === "GET") { await ensureOwnOrg(env, user); return json(await listOrgs(env, user)); }
   if (req.method !== "POST") return null;
   if (user.key) return error(403, "API keys can't make orgs: sign in on the site");
-  const b = await readBody<{ name?: unknown }>(req);
-  const name = typeof b?.name === "string" ? b.name.trim().slice(0, 120) : "";
-  if (!name) return error(400, "name: what to call the org");
+  const b = await need(req, NewOrg);
+  if (b instanceof Response) return b;
   const own = await orgRow(env, await orgId(user.id, env.BETTER_AUTH_SECRET!));
-  return json(await createOrg(env, user, name, "free", own ? `/${crypto.randomUUID()}` : ""), 201);
+  return json(await createOrg(env, user, b.name, "free", own ? `/${crypto.randomUUID()}` : ""), 201);
 }
+const NewOrg = obj({ name: named(120, "what to call the org") });
+
+/** A role a member can be given. */
+const Grant = said(oneOf(GRANTABLE), `one of ${GRANTABLE.join(", ")}`);
+/** Who to add and as what (seasonal when left out): POST /api/orgs/:org/members and /api/admin/orgs/:org/members. */
+export const NewMember = obj({ email: said(str(320, { re: /^[^@\s]+@[^@\s]+$/ }), "the account to add"), role: or(Grant, DEFAULT_ROLE) });
+const RoleChange = obj({ role: Grant });
 
 const userByEmail = (env: Env, email: string) =>
   env.DB.prepare('SELECT id, email, name FROM "user" WHERE lower(email) = ?').bind(email.trim().toLowerCase()).first<{ id: string; email: string; name: string }>();
 
-/** Add `email`'s account to `org` as `role`, if the actor's role allows it. Shared with admin.ts. */
-export async function addMember(env: Env, org: string, actor: User, actorRole: Role, email: unknown, role: unknown) {
-  const r = role === undefined ? DEFAULT_ROLE : role;
-  if (!isRole(r) || !GRANTABLE.includes(r)) return error(400, `role: one of ${GRANTABLE.join(", ")}`);
+/** Add `m.email`'s account to `org` as `m.role`, if the actor's role allows it. Shared with admin.ts. */
+export async function addMember(env: Env, org: string, actor: User, actorRole: Role, m: Of<typeof NewMember>) {
+  const r = m.role;
   if (!canSetRole(actorRole, r)) return error(403, `a ${actorRole} can't grant ${r}`);
-  if (typeof email !== "string" || !/^[^@\s]+@[^@\s]+$/.test(email)) return error(400, "email: the account to add");
-  const u = await userByEmail(env, email);
+  const u = await userByEmail(env, m.email);
   if (!u) return error(404, "no account with that email: they sign up first");
   if (await memberOf(env, org, u.id)) return error(409, "already a member");
   await env.DB.prepare("INSERT INTO memberships (org_id, user_id, role, created_at) VALUES (?, ?, ?, ?)").bind(org, u.id, r, Date.now()).run();
@@ -133,8 +138,8 @@ export async function orgRoutes(c: Ctx): Promise<Response | null> {
   }
   if (!can(role, "members")) return error(403, "managers and up manage members");
   if (!p[1] && req.method === "POST") {
-    const b = await readBody<{ email?: unknown; role?: unknown }>(req);
-    return addMember(env, org, user, role, b?.email, b?.role);
+    const b = await need(req, NewMember);
+    return b instanceof Response ? b : addMember(env, org, user, role, b);
   }
   if (!p[1] || p[2]) return null;
   const target = await memberOf(env, org, p[1]);
@@ -142,9 +147,9 @@ export async function orgRoutes(c: Ctx): Promise<Response | null> {
   if (!canSetRole(role, target)) return error(403, `a ${role} can't change a ${target}`);
   const lastAdmin = async () => target === "admin" && (await env.DB.prepare("SELECT count(*) AS n FROM memberships WHERE org_id = ? AND role = 'admin'").bind(org).first<{ n: number }>())!.n < 2;
   if (req.method === "PUT") {
-    const b = await readBody<{ role?: unknown }>(req);
-    const r = b?.role;
-    if (!isRole(r) || !GRANTABLE.includes(r)) return error(400, `role: one of ${GRANTABLE.join(", ")}`);
+    const b = await need(req, RoleChange);
+    if (b instanceof Response) return b;
+    const r = b.role;
     if (!canSetRole(role, r)) return error(403, `a ${role} can't grant ${r}`);
     if (r !== "admin" && (await lastAdmin())) return error(409, "the org needs at least one admin");
     await env.DB.prepare("UPDATE memberships SET role = ? WHERE org_id = ? AND user_id = ?").bind(r, org, p[1]).run();

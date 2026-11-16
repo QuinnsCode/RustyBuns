@@ -97,6 +97,9 @@ describe("fresh start", () => {
     const { git } = await get(call, "ana", "/api/repos/ana/dig/limits");
     const log = await (await call.artifacts.get(git.artifact)).log({ ref: "main" });
     expect(log.map((c) => c.treeHash)).toEqual([tip!.treeHash]);
+    // The staging commits it copied on are gone, not left dangling (#4774).
+    const fsck = Bun.spawnSync(["git", "fsck", "--no-reflogs"], { cwd: call.artifacts.path(git.artifact), stdout: "pipe", stderr: "pipe" });
+    expect(fsck.stdout.toString() + fsck.stderr.toString()).not.toContain("dangling");
   });
 
   test("a folder that turns up twice, at different depths, still lands before both its parents", async () => {

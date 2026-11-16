@@ -10,6 +10,7 @@ export const ACTIONS: Action[] = [
   { id: "right", label: "Steer right", keys: ["KeyD", "ArrowRight"] },
   { id: "ollie", label: "Ollie / jump", keys: ["Space"] },
   { id: "nollie", label: "Nollie", keys: ["KeyN"] },
+  { id: "noComply", label: "No-comply (with a grab held: boneless)", keys: ["KeyC"] },
   { id: "kickflip", label: "Kickflip", keys: ["KeyF"] },
   { id: "heelflip", label: "Heelflip", keys: ["KeyG"] },
   { id: "shoveit", label: "Shove-it", keys: ["KeyV"] },

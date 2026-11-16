@@ -14,7 +14,9 @@
 
 import { gitMerge, lineMerge } from "./shadow.ts";
 import { waves, type Clash } from "../src/merge-plan.ts";
+import { help } from "../../../scripts/help.ts";
 
+help(import.meta.path);
 /** That day's merge-main fixes: the PR, and the PR that the person merging main in named as the cause, where they did. */
 export const CASES = [
   { pr: 1081, commit: "e49e19a" },

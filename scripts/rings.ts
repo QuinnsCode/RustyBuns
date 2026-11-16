@@ -6,7 +6,11 @@
 //                                                            PRs waiting to climb into it. Ester's card shows the same.
 //   bun scripts/rings.ts gate <ring> <sha>                   prints run=true|false: false when <sha> already has a
 //                                                            ring/<ring> status (main hasn't moved since the last run)
-//   bun scripts/rings.ts status <ring> <sha> <state> <url>   writes the ring/<ring> status (success or failure) on <sha>
+//   bun scripts/rings.ts status <ring> <sha> <state> <url>   writes the ring/<ring> status (success or failure) on <sha>;
+//                                                            pending marks an express sweep in flight
+//   bun scripts/rings.ts express <pr>                        prints sha=<squash commit> and run=true|false: true when
+//                                                            the PR merged into main and the owner (the repo's owner)
+//                                                            set its `express` label; express.yml runs on it (#4586)
 //   bun scripts/rings.ts move <ring> <sha>                   points refs/ring/<ring> at <sha>; without the permission
 //                                                            (MANUAL RUN #4495) it says so and exits 0
 //   bun scripts/rings.ts range <ring> <sha>                  a markdown line: the commits since the last green, for
@@ -27,7 +31,7 @@
 // so rolling back is a download, never a rebuild.
 //
 // Needs GH_TOKEN and GITHUB_REPOSITORY (owner/name), as in a workflow; rollback falls back to gh's own login and repo.
-import { arr, bool, nul, num, obj, opt, str } from "../packages/util/src/guard.ts";
+import { arr, bool, nul, num, obj, opt, str, type Of } from "../packages/util/src/guard.ts";
 import { help } from "./help.ts";
 import { WEB_APPS } from "./phone-smoke-lib.ts";
 
@@ -41,6 +45,7 @@ export const RINGS = ["hourly", "daily", "stable"] as const;
 export type Commit = { sha: string; date: string; rings: Record<string, { state: string; at: string }> };
 
 const green = (state?: string) => state === "SUCCESS" || state === "success";
+const pending = (state?: string) => state === "PENDING" || state === "pending";
 const red = (state?: string) => state === "FAILURE" || state === "failure" || state === "ERROR" || state === "error";
 
 /** "40m", "5h", "3d": how long before `now` `iso` was. */
@@ -56,7 +61,10 @@ export function ago(iso: string, now: number): string {
 export function ringLines(commits: Commit[], refs: Record<string, string>, now: number): string[] {
   const width = Math.max(...RINGS.map((r) => r.length));
   let below: number | undefined = 0; // where the ring below sits in `commits`; main is the head
-  return RINGS.map((ring) => {
+  // Only an express sweep writes pending (express.yml, #4586): the commit in flight and the ring it is in now.
+  const express = commits.flatMap((c) => RINGS.filter((r) => pending(c.rings[r]?.state))
+    .map((r) => `express ${c.sha.slice(0, 7)}  ${r} sweep running, started ${ago(c.rings[r]!.at, now)} ago`));
+  return [...RINGS.map((ring) => {
     const name = ring.padEnd(width);
     const ref = refs[ring], greenAt = commits.findIndex((c) => green(c.rings[ring]?.state));
     const at = ref ? commits.findIndex((c) => c.sha === ref) : greenAt;
@@ -69,8 +77,22 @@ export function ringLines(commits: Commit[], refs: Record<string, string>, now: 
     if (at < 0) return `${name}  ${sha.slice(0, 7)}  older than main's last ${commits.length}, ${redText}`;
     const waiting = prev === undefined ? "?" : String(Math.max(0, at - prev));
     return `${name}  ${sha.slice(0, 7)}  ${ago(commits[at]!.date, now).padStart(3)} old${ref ? "" : " (no ref)"}  ${redText}  ${waiting} waiting`;
-  });
+  }), ...express];
 }
+
+/** A label being put on or taken off a PR, and by whom (the issue events API, cut to these three fields). */
+export const LabelEvent = obj({ event: str(40), label: nul(str(100)), actor: nul(str(100)) });
+export type LabelEvent = Of<typeof LabelEvent>;
+
+/** Whether the PR's `express` label is the owner's: it is on now and the last time anyone put it on, it was `owner`.
+ *  Anyone else's label is ignored, even after the owner's (a re-label by someone else takes it out of the lane). */
+export function expressByOwner(events: LabelEvent[], labels: string[], owner: string): boolean {
+  if (!labels.includes("express")) return false;
+  const last = events.filter((e) => e.event === "labeled" && e.label === "express").at(-1);
+  return !!last && last.actor?.toLowerCase() === owner.toLowerCase();
+}
+
+const Pr = obj({ merged: bool(), merge_commit_sha: nul(str(64)), base: obj({ ref: str(200) }), labels: arr(obj({ name: str(100) }), 100) });
 
 /** The commits since the last green one, newest first, and that green SHA; `green` is undefined when none was in view. */
 export function sinceLastGreen(history: Tested[]): { green?: string; shas: string[] } {
@@ -251,6 +273,20 @@ if (import.meta.main) {
   }
   const [cmd, ring = "", sha = "", ...rest] = process.argv.slice(2);
   const repo = process.env.GITHUB_REPOSITORY ?? "";
+  if (cmd === "express") {
+    // express <pr>: the PR's squash commit, and whether the owner sent it down the express lane.
+    if (!/^\d+$/.test(ring) || !/^[\w.-]+\/[\w.-]+$/.test(repo)) { console.error("usage: bun scripts/rings.ts express <pr> (with GITHUB_REPOSITORY set)"); process.exit(2); }
+    const pr = Pr(JSON.parse(await Bun.$`gh api repos/${repo}/pulls/${ring}`.quiet().text()));
+    const lines = (await Bun.$`gh api --paginate repos/${repo}/issues/${ring}/events --jq ${".[] | select(.event == \"labeled\" or .event == \"unlabeled\") | {event, label: .label.name, actor: .actor.login}"}`.quiet().text()).split("\n").filter(Boolean);
+    const owner = repo.split("/")[0]!;
+    const ok = pr.merged && pr.base.ref === "main" && !!pr.merge_commit_sha
+      && expressByOwner(lines.map((l) => LabelEvent(JSON.parse(l))), pr.labels.map((l) => l.name), owner);
+    console.log(`sha=${pr.merged ? pr.merge_commit_sha ?? "" : ""}`);
+    console.log(`run=${ok}`);
+    console.error(ok ? `#${ring} goes down the express lane: ${pr.merge_commit_sha!.slice(0, 7)}`
+      : `#${ring} stays in the normal lane: ${!pr.merged ? "not merged" : pr.base.ref !== "main" ? `merged into ${pr.base.ref}` : `no express label from ${owner}`}`);
+    process.exit(0);
+  }
   if (cmd === "previews") {
     // previews <base> <sha>: base may be empty (no refs/ring/daily yet). Local git only, no GitHub calls.
     const isSha = (x: string) => /^[0-9a-f]{40}$/.test(x);
@@ -276,8 +312,9 @@ if (import.meta.main) {
     if (head?.state) console.error(`${sha.slice(0, 7)} already has ring/${ring} ${head.state.toLowerCase()}: main hasn't moved, skipping`);
   } else if (cmd === "status") {
     const [state = "", url = ""] = rest;
-    if (state !== "success" && state !== "failure") throw new Error("state is success or failure");
-    await Bun.$`gh api repos/${repo}/statuses/${sha} -f state=${state} -f context=${`ring/${ring}`} -f target_url=${url} -f description=${`${ring} ring ${state === "success" ? "green" : "red"}`}`.quiet();
+    if (state !== "success" && state !== "failure" && state !== "pending") throw new Error("state is success, failure or pending");
+    const description = state === "pending" ? `express: ${ring} sweep running` : `${ring} ring ${state === "success" ? "green" : "red"}`;
+    await Bun.$`gh api repos/${repo}/statuses/${sha} -f state=${state} -f context=${`ring/${ring}`} -f target_url=${url} -f description=${description}`.quiet();
     console.log(`ring/${ring} ${state} on ${sha.slice(0, 7)}`);
   } else if (cmd === "move") {
     const ref = `ring/${ring}`;

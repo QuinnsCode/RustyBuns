@@ -15,7 +15,9 @@
 // recall on fights, with precision kept honest. Repos with no real merge commits (squash-only) score nothing.
 
 import { lineMerge } from "./shadow.ts";
+import { help } from "../../../scripts/help.ts";
 
+help(import.meta.path);
 const git = (repo: string, ...args: string[]) => {
   const r = Bun.spawnSync(["git", ...args], { cwd: repo, stderr: "pipe" });
   return { code: r.exitCode, out: r.stdout.toString() };

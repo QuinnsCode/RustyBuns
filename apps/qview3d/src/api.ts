@@ -185,10 +185,21 @@ export const SignReply = obj({
 });
 export type SignReply = Of<typeof SignReply>;
 
-/** One picture on the product: its files, its print zone (the front when unnamed), and where it sits in it (0..1 across and up). */
+/** The faces a line of text comes in (widget/text.ts maps each to a font stack). */
+export const FONTS = ["sans", "serif", "mono", "script", "block"] as const;
+/** A line of text on the product: drawn to a picture in the widget, so it prints the way a picture does. */
+export const TextLine = obj({ value: str(60, { min: 1 }), font: oneOf(FONTS), color: str(7, { re: HEX }) });
+export type TextLine = Of<typeof TextLine>;
+
+/**
+ * One picture on the product: its files, its print zone (the front when unnamed), and where it sits in it (0..1 across
+ * and up). A design's layers are in drawing order, the last on top; a zone can hold several.
+ */
 export const Layer = obj({
   texture: str(300),
   original: opt(str(300)),
+  /** A line of text rather than a photo: what it says, so it can be edited again. Its files are the text drawn. */
+  text: opt(TextLine),
   zone: opt(oneOf(ZONES)),
   u: num(0, 1),
   v: num(0, 1),
@@ -237,13 +248,15 @@ export const Sample = obj({
 });
 export type Sample = Of<typeof Sample>;
 
-/** One zone's print file: the shopper's original (an admin fetches it), laid at `dpi` over the zone's real size. */
+/**
+ * One zone's print file: each of the zone's pictures (its original, which an admin fetches, and where it sits), laid
+ * at `dpi` over the zone's real size in drawing order, the last on top.
+ */
 export const PrintSheet = obj({
   zone: oneOf(ZONES),
   cm: PrintCm,
   px: obj({ w: int(1, 20_000), h: int(1, 20_000) }),
-  original: str(400),
-  at: Placement,
+  pictures: arr(obj({ original: str(400), at: Placement }), 8, { min: 1 }),
   /** The print file made on the server (an admin fetches it): `orgs/<org>/prints/<design>/<zone>.png`. */
   png: opt(str(400)),
   /** Why the server made none (the admin page can still draw it from the original). */

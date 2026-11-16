@@ -1178,7 +1178,7 @@ async function check(env: Env, call: Call, owner: string, repo: string, s: Setti
     return remote = art ? art.remote.replace("://", `://x:${art.token.split("?")[0]}@`) : null;
   };
   const installer = installerFor(env);
-  const key = (us: Update[]) => us.map((u) => `${u.path}:${u.name}`).join(",");
+  const key = (us: Update[]) => us.map((u) => `${u.path}:${u.name}@${u.to}`).join(",");
   const tried = new Map<string, Awaited<ReturnType<Tester>>>();
 
   // Try them together, and only one by one when that breaks.
@@ -1335,7 +1335,7 @@ async function check(env: Env, call: Call, owner: string, repo: string, s: Setti
       }
       if (short) note = [note, "ran out of time before every test ran; only what passed went on a branch, and the next run tries the rest"].filter(Boolean).join("; ");
       // Each broken update goes down the owner's on-fail chain in turn, on top of what's kept and fixed so far.
-      const runTests: Check = (us) => timed(() => tester(r, filesWith(us), { pm, lock, test: true, hosts }));
+      const runTests: Check = async (us) => { const t = await timed(() => tester(r, filesWith(us), { pm, lock, test: true, hosts })); tried.set(key(us), t); return t; };
       for (const u of updates.filter((u) => u.status === "broke")) await runChain(u, r, runTests);
       // 🪏 Each dig that's out, on top of what passes (in place of an update of the same package), then down the chain if it breaks.
       // Its fix's edits stay its own unless it's taken.

@@ -92,11 +92,17 @@ test("sync: the change log replays every write, and a stale op is a conflict", a
   expect(now.title).toBe("Intern");
   expect(now.updated_at).toBe(server.updated_at + 1000);
 
-  // A row the client made offline, with its own id.
+  // A row the client made offline, with its own id. An op that isn't one is turned away by its id; the rest still land.
   const id = crypto.randomUUID();
-  const fresh = await (await post(app, cookie, sync, { ops: [{ entity: "companies", id, op: "upsert", data: { name: "Cedar Labs" } }, { entity: "deals", id: crypto.randomUUID(), op: "upsert", data: { stage: "won" } }] })).json();
+  const ops = [
+    { entity: "companies", id, op: "upsert", data: { name: "Cedar Labs" } },
+    { entity: "deals", id: crypto.randomUUID(), op: "upsert", data: { stage: "won" } },
+    { entity: "planets", id: "p1", op: "upsert" },
+    "not an op",
+  ];
+  const fresh = await (await post(app, cookie, sync, { ops })).json();
   expect(fresh.applied).toBe(1);
-  expect(fresh.rejected).toHaveLength(1);
+  expect(fresh.rejected.map((r: { id: string }) => r.id)).toEqual([expect.any(String), "p1", "undefined"]);
   expect((await app(cookie, `/api/orgs/${org}/companies/${id}`)).status).toBe(200);
 });
 

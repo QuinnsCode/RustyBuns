@@ -6,7 +6,7 @@ import { json, loopbackOn, type Env } from "../env.ts";
 import { bearerOf, cors, echoProtocol, issuer, socketToken, tokenOf } from "../door.ts";
 import { hubAsk, hubOf, Op } from "./hub.ts";
 import { codeOf, mintCode, PARTY_LIFE, PARTY_LIFE_MAX, partyOf } from "./party.ts";
-import { makeSpace, seatIn, SPACE_MEMBERS, SPACE_NAME, SPACES_OF, spaceOf } from "./space.ts";
+import { makeSpace, ROLE_OF, seatIn, SPACE_MEMBERS, SPACE_NAME, SPACES_OF, spaceOf } from "./space.ts";
 import { rosterIn } from "./qlave.ts";
 import { get as getSave, MAX_BODY, put as putSave, slotOf } from "./saves.ts";
 import type { SpaceRow } from "@rustybuns/util/eqosys";
@@ -108,12 +108,15 @@ export async function qollab(req: Request, conf: Env): Promise<Response | null> 
     const t = await tokenOf(req, conf, bearerOf(req), { home: true });
     if (!t) return json({ error: "send the token /api/exchange gave you" }, 401, head);
     if (req.method === "GET" && pathname === "/q/space") {
-      const { results } = await conf.DB.prepare(`SELECT s.id, s.name, s.owner, s.invite, s.studio_id AS studio,
-        (SELECT role FROM studio_members sm WHERE sm.studio_id = s.studio_id AND sm.user_id = ?1) AS role FROM spaces s WHERE s.id IN (${SPACES_OF}) ORDER BY s.name`)
-        .bind(t.who.id).all<{ id: string; name: string; owner: string; invite: string; studio: string | null; role: string | null }>();
-      const spaces = results.map((r): SpaceRow => r.studio
-        ? { id: r.id, name: r.name, owner: r.role === "owner" || r.role === "admin", studio: r.studio }
-        : { id: r.id, name: r.name, owner: r.owner === t.who.id, ...(r.owner === t.who.id ? { invite: r.invite } : {}) });
+      const { results } = await conf.DB.prepare(`SELECT s.id, s.name, s.invite, s.studio_id AS studio, ${ROLE_OF} AS role
+        FROM spaces s LEFT JOIN studio_members sm ON sm.studio_id = s.studio_id AND sm.user_id = ?1
+        LEFT JOIN space_members m ON s.studio_id IS NULL AND m.space_id = s.id AND m.user_id = ?1 WHERE s.id IN (${SPACES_OF}) ORDER BY s.name`)
+        .bind(t.who.id, t.who.id).all<{ id: string; name: string; invite: string; studio: string | null; role: string }>();
+      // `owner`: they run it (an owner or an admin). The invite is for those who run a person's own space; a studio's has none.
+      const spaces = results.map((r): SpaceRow => {
+        const runs = r.role === "owner" || r.role === "admin";
+        return r.studio ? { id: r.id, name: r.name, owner: runs, studio: r.studio } : { id: r.id, name: r.name, owner: runs, ...(runs ? { invite: r.invite } : {}) };
+      });
       return json({ spaces }, 200, head);
     }
     if (req.method !== "POST") return json({ error: "GET your spaces or POST one" }, 405, head);
@@ -153,7 +156,7 @@ export async function qollab(req: Request, conf: Env): Promise<Response | null> 
     if (origin && !onSite(t.app, origin, loopbackOn(conf))) return json({ error: "not from that app's site" }, 403);
     const s = await seatIn(conf, spaceAt[1]!, t.who.id);
     if (!s) return json({ error: "not a space you're in" }, 404);
-    const q = new URLSearchParams({ ...t.who, sid: spaceAt[1]!, space: s.name, ...(s.runs ? { owner: "1" } : {}), ...(s.studio ? { studio: s.studio } : {}), iss: issuer(req, conf) });
+    const q = new URLSearchParams({ ...t.who, sid: spaceAt[1]!, space: s.name, role: s.role, ...(s.runs ? { owner: "1" } : {}), ...(s.studio ? { studio: s.studio } : {}), iss: issuer(req, conf) });
     return echoProtocol(await spaceOf(conf.SPACE, spaceAt[1]!).fetch(new Request(`https://space/socket?${q}`, { headers: { upgrade: "websocket" } })), sock.offered);
   }
 

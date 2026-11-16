@@ -55,19 +55,24 @@ function picture(w: number, h: number, clear: boolean) {
   return { data, width: w, height: h, colorSpace: "srgb" } as ImageData;
 }
 
-async function design(model: string, product: string, zone: string, type: string, bytes: Uint8Array<ArrayBuffer>, at: PrintSheet["at"]) {
-  const layer = { texture: await upload("texture", "image/webp", new Uint8Array([zone.length, 1])), original: await upload("original", type, bytes), zone, ...at };
-  const res = await call("/api/orgs/demo/designs", { v: 1, model, color: "#1f2937", product, layers: [layer], camera: { azimuth: 0, polar: 1.2, distance: 5.6 } }, {});
+type At = PrintSheet["pictures"][number]["at"];
+/** A saved design with these pictures on one zone, in drawing order. */
+async function design(model: string, product: string, zone: string, pictures: { type: string; bytes: Uint8Array<ArrayBuffer>; at: At }[]) {
+  const layers = await Promise.all(pictures.map(async (p, i) => ({ texture: await upload("texture", "image/webp", new Uint8Array([zone.length, i])), original: await upload("original", p.type, p.bytes), zone, ...p.at })));
+  const res = await call("/api/orgs/demo/designs", { v: 1, model, color: "#1f2937", product, layers, camera: { azimuth: 0, polar: 1.2, distance: 5.6 } }, {});
   return ((await res.json()) as { id: string }).id;
 }
 
-/** The sheet as the admin page draws it in Chrome: its original fetched with the key, drawn, its dpi written in. */
+/** The sheet as the admin page draws it in Chrome: its originals fetched with the key, drawn, its dpi written in. */
 async function drawnInChrome(s: PrintSheet) {
   const b64 = await tab.eval<string>(`(async () => {
     const s = ${JSON.stringify(s)};
-    const image = await createImageBitmap(await (await fetch(s.original, { headers: ${JSON.stringify(admin)} })).blob());
+    const images = await Promise.all(s.pictures.map(async (p) => {
+      const image = await createImageBitmap(await (await fetch(p.original, { headers: ${JSON.stringify(admin)} })).blob());
+      return { image, aspect: image.width / image.height };
+    }));
     const canvas = new OffscreenCanvas(s.px.w, s.px.h);
-    drawSheet(canvas.getContext("2d"), s, image, image.width / image.height);
+    drawSheet(canvas.getContext("2d"), s, images);
     const png = withDpi(new Uint8Array(await (await canvas.convertToBlob({ type: "image/png" })).arrayBuffer()), 300);
     let out = "";
     for (let i = 0; i < png.length; i += 0x8000) out += String.fromCharCode(...png.subarray(i, i + 0x8000));
@@ -100,16 +105,22 @@ function colourGap(a: Picture, b: Picture) {
 test("an order's print files are made on the server, the same PNGs the admin page draws", async () => {
   const hook = HookReply(await (await call("/api/orgs/demo/hooks", { url: `http://localhost:${receiver.port}/qv`, events: ["order.ready"] })).json());
   expect(hook.secret).toStartWith("whsec_");
-  // A cap with a PNG that has a clear corner, a little turned; a tee front with a JPEG photo, turned the other way.
-  const cap = await design("cap", "field-cap", "front", "image/png", new Uint8Array(await encodePng(picture(800, 400, true))), { u: 0.5, v: 0.55, scale: 0.7, rotation: 0.2 });
-  const tee = await design("tee", "crew-tee", "front", "image/jpeg", new Uint8Array(await encodeJpeg(picture(1200, 1500, false), { quality: 92 })), { u: 0.45, v: 0.6, scale: 0.8, rotation: -0.35 });
+  // A cap with a PNG that has a clear corner, a little turned; a tee front with a JPEG photo turned the other way and,
+  // over its corner, a small PNG (a line of text arrives as one): one sheet, each picture where the shopper put it.
+  const png = new Uint8Array(await encodePng(picture(800, 400, true)));
+  const cap = await design("cap", "field-cap", "front", [{ type: "image/png", bytes: png, at: { u: 0.5, v: 0.55, scale: 0.7, rotation: 0.2 } }]);
+  const tee = await design("tee", "crew-tee", "front", [
+    { type: "image/jpeg", bytes: new Uint8Array(await encodeJpeg(picture(1200, 1500, false), { quality: 92 })), at: { u: 0.45, v: 0.6, scale: 0.8, rotation: -0.35 } },
+    { type: "image/png", bytes: png, at: { u: 0.7, v: 0.2, scale: 0.4, rotation: 0.1 } },
+  ]);
 
   expect((await call("/api/orgs/demo/orders", { id: "#2001", lines: [{ design: cap }, { design: tee, qty: 3 }] })).status).toBe(201);
   const ready = HookEvent(JSON.parse(events.at(-1)!));
   expect(ready).toMatchObject({ type: "order.ready", data: { order: "#2001" } });
   const sheets = ready.data.lines!.map((l) => l.sheets[0]!);
   // A cap front is 12 x 6 cm and a tee front 30 x 40 cm: at 300 dpi, these many pixels.
-  expect(sheets.map((s) => [s.zone, s.px.w, s.px.h, s.unmade])).toEqual([["front", 1417, 709, undefined], ["front", 3543, 4724, undefined]]);
+  expect(sheets.map((s) => [s.zone, s.px.w, s.px.h, s.pictures.length, s.unmade])).toEqual([["front", 1417, 709, 1, undefined], ["front", 3543, 4724, 2, undefined]]);
+  expect(sheets[1]!.pictures.map((p) => p.at.u)).toEqual([0.45, 0.7]);
 
   for (const s of sheets) {
     expect((await fetch(s.png!)).status).toBe(401);

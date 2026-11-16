@@ -262,6 +262,7 @@ import {
   hearPushes,
   pushClashes,
   pushHolds,
+  refuseForcedPushes,
   seeGit,
   settlePush,
   syncDue,
@@ -508,8 +509,8 @@ async function route(req: Request, env: Env): Promise<Response> {
   const page = await pageRoutes(req, env, p, user);
   if (page) return page;
 
-  // GET|PUT /api/me
-  if (p[1] === "me") {
+  // GET|PUT /api/me (only those: /api/me/<anything else> and other methods are no route)
+  if (p[1] === "me" && !p[2] && (req.method === "GET" || req.method === "PUT")) {
     if (!user) return fail("SignInFirst", "sign in first");
     let warning: string | undefined;
     if (req.method === "PUT") {
@@ -601,6 +602,7 @@ async function route(req: Request, env: Env): Promise<Response> {
       // On the desktop the owner can push back too (#464): the bare repo is a remote for their own tools, with a
       // day-long write token (gone when the app restarts). Not with private lines, which that git holds blank.
       const wa = home === "local" && user === owner && !ch?.crew && !token ? await artifactAccess(h!.handle, h!.remote, "write", 86400).catch(() => null) : null;
+      if (wa) await refuseForcedPushes(env, owner, repo).catch(() => {});
       const push = wa && `git remote add codesplitter ${wa.remote.replace("://", `://x:${wa.token.split("?")[0]}@`)}`;
       // The owner sees who's invited but not in yet, beside the crew.
       const invites = user === owner ? { invites: await pendingInvites(env, owner, repo) } : {};
@@ -954,8 +956,8 @@ async function route(req: Request, env: Env): Promise<Response> {
         const note = await commitNote(env, owner, repo, path, commit.writers ?? [], content === published).catch(() => null);
         const git = await pushCatalogue(env, owner, repo, path, { content, published }, user!, commit.message, note).catch((e: Error) => ({ error: e.message }));
         await startIfFull(env, owner, repo).catch(() => null);
-        // The owner's own commit ships, when they turned that on (deploy.ts).
-        if (git && !("error" in git)) {
+        // The owner's own commit ships, when they turned that on (deploy.ts). A commit of nothing new made no git commit: nothing to tell.
+        if (git && !("error" in git) && (git.commits.length || git.deployCommit)) {
           await emit(env, owner, repo, "commit", user!, {
             ref: "refs/heads/main", before: git.parent ?? "0".repeat(40), after: git.commit, created: !git.parent, pusher: { name: user },
             head_commit: { id: git.commit, message: commit.message, timestamp: new Date().toISOString(), author: { name: user, username: user }, added: git.parent ? [] : [path], modified: git.parent ? [path] : [], removed: [] },
@@ -975,7 +977,7 @@ async function route(req: Request, env: Env): Promise<Response> {
   }
 
   // GET /api/search?q=[&repo=owner/name]  committed code you are allowed to see, in one repo or across them (search.ts)
-  if (p[1] === "search") {
+  if (p[1] === "search" && !p[2] && req.method === "GET") {
     const q = url.searchParams.get("q") ?? "", only = url.searchParams.get("repo");
     if (!only) return json(await searchAll(env, user, q));
     const [o, r] = only.split("/");

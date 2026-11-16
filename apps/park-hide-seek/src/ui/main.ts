@@ -52,7 +52,7 @@ let room: string | null = null;
 /** Quick play: when this room starts by itself (the World starts it, see world.ts). */
 let quick: { at: number } | null = null;
 let info: { app?: string; version?: string } | null = null;
-let look: Look = (() => { try { return parseLook(JSON.parse(store.get("look"))) ?? randomLook(); } catch { return randomLook(); } })();
+let look = ((): Look => { try { return parseLook(JSON.parse(store.get("look"))) ?? randomLook(); } catch { return randomLook(); } })();
 
 // The first time, the first round you camp in is the tutorial: drop in, look round, walk, crouch in a bush, lie low.
 // Play sets you camping for it (`solo`); a jump link or an agent's start never runs it. Each flag is set by the frame

@@ -89,8 +89,9 @@ export async function open(url: string, opts: OpenOptions = {}): Promise<Page> {
   // The page's `window` and `self` are Bun's global itself, as in a browser, so `self.x = 1` in an
   // inline script and `globalThis.x` in the bundle are one value. The DOM's own window lends it
   // its APIs: its classes by value, the rest (location, history, events...) forwarded live.
-  const g = globalThis as unknown as Record<string, unknown>;
-  const w = window as unknown as Record<string, unknown>;
+  // Both are walked by property name (whatever this happy-dom has), so they're read and written through Reflect.
+  const g: object = globalThis;
+  const from = (k: string): unknown => Reflect.get(window, k);
   const dom = (k: string) => !(k in g) || /Event|^Node|^HTML|^SVG|^Element|^Document|^DOM|^Mutation|^Text$|^Comment$|^Range$|^Selection$|^Storage$|^FormData$/.test(k);
   const lower = new Set<string>();
   for (let o: object | null = window; o && o !== Object.prototype; o = Object.getPrototypeOf(o))
@@ -100,15 +101,15 @@ export async function open(url: string, opts: OpenOptions = {}): Promise<Page> {
   const names = [...upper, ...lower, "window", "self", "fetch"].filter((k) => Object.getOwnPropertyDescriptor(g, k)?.configurable !== false);
   const saved = new Map(names.map((k) => [k, Object.getOwnPropertyDescriptor(g, k)] as const));
   const set = (k: string, d: PropertyDescriptor) => names.includes(k) && Object.defineProperty(g, k, { configurable: true, ...d });
-  for (const k of upper) set(k, { value: w[k], writable: true });
+  for (const k of upper) set(k, { value: from(k), writable: true });
   for (const k of lower) set(k, {
-    get: () => { const v = w[k]; return typeof v === "function" ? v.bind(window) : v; },
-    set: (v: unknown) => { w[k] = v; },
+    get: () => { const v = from(k); return typeof v === "function" ? v.bind(window) : v; },
+    set: (v: unknown) => { Reflect.set(window, k, v); },
   });
   set("window", { value: globalThis, writable: true });
   set("self", { value: globalThis, writable: true });
   set("fetch", { value: pageFetch, writable: true });
-  w.fetch = pageFetch;
+  Reflect.set(window, "fetch", pageFetch);
 
   // A module and everything it imports, copied from the server into one folder by URL path,
   // so the bundle's relative imports resolve as they would in the browser.
@@ -141,7 +142,7 @@ export async function open(url: string, opts: OpenOptions = {}): Promise<Page> {
     }
     return import(join(modules, entry.pathname));
   };
-  g.__rbImport = load;
+  Reflect.set(g, "__rbImport", load);
 
   const recorder = new Recorder(window.document, window.MutationObserver);
 
@@ -182,8 +183,8 @@ export async function open(url: string, opts: OpenOptions = {}): Promise<Page> {
     },
     async close() {
       recorder.close();
-      for (const [k, d] of saved) { if (d) Object.defineProperty(g, k, d); else delete g[k]; }
-      delete g.__rbImport;
+      for (const [k, d] of saved) { if (d) Object.defineProperty(g, k, d); else Reflect.deleteProperty(g, k); }
+      Reflect.deleteProperty(g, "__rbImport");
       await window.happyDOM.close();
       rmSync(modules, { recursive: true, force: true });
     },

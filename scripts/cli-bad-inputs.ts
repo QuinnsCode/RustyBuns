@@ -14,28 +14,35 @@ const CONFIG = resolve(import.meta.dir, "../packages/cli/src/config.ts");
 // Any app that has alchemy and effect installed, for the stack check.
 const MODULES = resolve(import.meta.dir, "../apps/park-hide-seek/node_modules");
 
-const base = () => ({
+/** A config a case bends out of shape: the wrong values are the point, so a field the CLI types strictly is `unknown` here. */
+interface Cfg {
+  name: string; state?: string;
+  worker: { main: string; compatibilityDate: string; compatibilityFlags?: string[]; cpuMs?: unknown; crons?: unknown };
+  bindings: { [name: string]: object };
+  targets: { [name: string]: object };
+}
+const base = (): Cfg => ({
   name: "demo-app",
   worker: { main: "src/worker.ts", compatibilityDate: "2026-06-01", compatibilityFlags: ["nodejs_compat"] },
-  bindings: { DB: { type: "d1", databaseName: "demo-db" }, KV: { type: "kv" } } as Record<string, unknown>,
-  targets: { edge: { provider: "cloudflare" } } as Record<string, unknown>,
+  bindings: { DB: { type: "d1", databaseName: "demo-db" }, KV: { type: "kv" } },
+  targets: { edge: { provider: "cloudflare" } },
 });
-type Cfg = ReturnType<typeof base> & Record<string, any>;
-const edit = (f: (c: Cfg) => void) => { const c = base() as Cfg; f(c); return `export default defineConfig(${JSON.stringify(c, null, 2)});\n`; };
+/** The config file for `base()` after `f`, which edits it in place or hands back a copy without some field. */
+const edit = (f: (c: Cfg) => object | void) => { const c = base(); return `export default defineConfig(${JSON.stringify(f(c) ?? c, null, 2)});\n`; };
 
 interface Case { name: string; field?: string; config?: string; args: string[] }
 const cases: Case[] = [
   { name: "valid config", config: edit(() => {}), args: ["generate"] },
-  { name: "no targets", field: "targets", config: edit((c) => { delete (c as any).targets; }), args: ["generate"] },
-  { name: "no bindings", field: "bindings", config: edit((c) => { delete (c as any).bindings; }), args: ["generate"] },
+  { name: "no targets", field: "targets", config: edit(({ targets: _, ...c }) => c), args: ["generate"] },
+  { name: "no bindings", field: "bindings", config: edit(({ bindings: _, ...c }) => c), args: ["generate"] },
   { name: "binding type typo", field: "KV", config: edit((c) => { c.bindings.KV = { type: "kvv" }; }), args: ["generate"] },
   { name: "d1 without databaseName", field: "databaseName", config: edit((c) => { c.bindings.DB = { type: "d1" }; }), args: ["generate"] },
   { name: "r2 without bucketName", field: "bucketName", config: edit((c) => { c.bindings.FILES = { type: "r2" }; }), args: ["generate"] },
   { name: "durable_object without className", field: "className", config: edit((c) => { c.bindings.ROOM = { type: "durable_object" }; }), args: ["generate"] },
-  { name: "no compatibilityFlags", field: "compatibilityFlags", config: edit((c) => { delete (c.worker as any).compatibilityFlags; }), args: ["generate"] },
+  { name: "no compatibilityFlags", field: "compatibilityFlags", config: edit((c) => ({ ...c, worker: { main: c.worker.main, compatibilityDate: c.worker.compatibilityDate } })), args: ["generate"] },
   { name: "compatibilityDate not a date", field: "compatibilityDate", config: edit((c) => { c.worker.compatibilityDate = "June 1st"; }), args: ["generate"] },
-  { name: "cpuMs as a string", field: "cpuMs", config: edit((c) => { (c.worker as any).cpuMs = "50"; }), args: ["generate"] },
-  { name: "bad cron", field: "crons", config: edit((c) => { (c.worker as any).crons = ["every minute"]; }), args: ["generate"] },
+  { name: "cpuMs as a string", field: "cpuMs", config: edit((c) => { c.worker.cpuMs = "50"; }), args: ["generate"] },
+  { name: "bad cron", field: "crons", config: edit((c) => { c.worker.crons = ["every minute"]; }), args: ["generate"] },
   { name: "ratelimit period 30", field: "period", config: edit((c) => { c.bindings.RL = { type: "ratelimit", namespaceId: "1001", simple: { limit: 10, period: 30 } }; }), args: ["generate"] },
   { name: "queue batchSize 500", field: "batchSize", config: edit((c) => { c.bindings.JOBS = { type: "queue", queueName: "jobs", consumer: { batchSize: 500 } }; }), args: ["generate"] },
   { name: "vectorize dimensions as string", field: "dimensions", config: edit((c) => { c.bindings.VEC = { type: "vectorize", indexName: "v", dimensions: "384" }; }), args: ["generate"] },

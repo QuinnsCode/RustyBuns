@@ -26,9 +26,9 @@ const HEX = /^#[0-9a-f]{6}$/i;
 /** A saved avatar as it should be: every part present and valid, or null when the input isn't one. Extra keys are dropped. */
 export function cleanAvatar(x: unknown): Avatar | null {
   if (!x || typeof x !== "object") return null;
-  const out: Record<string, string> = {};
+  const fields = new Map<string, unknown>(Object.entries(x)), out: Record<string, string> = {};
   for (const k of Object.keys(PARTS) as (keyof typeof PARTS)[]) {
-    const v = (x as Record<string, unknown>)[k];
+    const v = fields.get(k);
     if (typeof v !== "string") return null;
     if (COLORS.has(k) ? !HEX.test(v) : !(PARTS[k] as readonly string[]).includes(v)) return null;
     out[k] = COLORS.has(k) ? v.toLowerCase() : v;

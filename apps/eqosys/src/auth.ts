@@ -35,8 +35,7 @@ export function nameFor(email: string) {
 }
 
 const make = (conf: Env, origin: string) => betterAuth({
-  // better-auth wants Cloudflare's D1Database class; Env.DB is the part of it this app calls.
-  database: conf.DB as never,
+  database: conf.DB,
   secret: conf.BETTER_AUTH_SECRET,
   baseURL: conf.BETTER_AUTH_URL ?? origin,
   basePath: "/api/auth",

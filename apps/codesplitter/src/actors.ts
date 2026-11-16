@@ -39,13 +39,18 @@ export async function agentProfile(env: Env, agent: string, viewer: string | nul
       // Who gave it the task sees the task.
       ...(viewer === r.owner && { task: r.task }) };
   });
-  // Its pulse: runs and line edits per UTC day, oldest first, the last DAYS of them.
-  const today = Math.floor(now / DAY) * DAY;
+  // Its pulse: runs and line edits per UTC day, oldest first, the last DAYS of them. Line edits are every one it made
+  // (line_events, kept as long as the pulse looks back), a site-started run's or not: an invited agent edits over the API.
+  const today = Math.floor(now / DAY) * DAY, since = today - (DAYS - 1) * DAY;
   const pulse = Array.from({ length: DAYS }, (_, i) => ({ day: today - (DAYS - 1 - i) * DAY, runs: 0, lines: 0 }));
-  for (const r of runs) {
-    const d = pulse[DAYS - 1 - Math.floor((today - Math.floor(r.started / DAY) * DAY) / DAY)];
-    if (d) { d.runs++; d.lines += r.applied; }
-  }
+  const dayOf = (t: number) => pulse[DAYS - 1 - Math.floor((today - Math.floor(t / DAY) * DAY) / DAY)];
+  for (const r of runs) { const d = dayOf(r.started); if (d) d.runs++; }
+  const { results: edits } = await env.DB.prepare(
+    `SELECT e.last_at, e.sets + e.inserts AS n FROM line_events e JOIN repos r ON r.owner = e.owner AND r.name = e.repo WHERE e.who = ? AND e.last_at >= ? AND ${SEEN}`)
+    .bind(agent, since, now, viewer, viewer).all<{ last_at: number; n: number }>();
+  for (const e of edits) { const d = dayOf(e.last_at); if (d) d.lines += e.n; }
+  // Before the pulse's window only its runs' tallies are left.
+  const older = runs.reduce((n, r) => n + (r.started < since ? r.applied : 0), 0);
   // Who runs it: the owners whose repos it works in, busiest first.
   const by = new Map<string, number>();
   for (const r of repos) by.set(r.owner, by.get(r.owner) ?? 0);
@@ -54,7 +59,7 @@ export async function agentProfile(env: Env, agent: string, viewer: string | nul
     harness: rows[0]?.harness ?? harnessOf(agent),
     run_by: [...by].sort((a, b) => b[1] - a[1]).map(([name, n]) => ({ name, runs: n })),
     repos,
-    lines: runs.reduce((n, r) => n + r.applied, 0),
+    lines: older + pulse.reduce((n, d) => n + d.lines, 0),
     pulse,
     runs: runs.slice(0, RUNS),
     run_count: runs.length,

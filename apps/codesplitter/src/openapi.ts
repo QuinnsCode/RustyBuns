@@ -141,7 +141,7 @@ export const ERRORS = {
   PullOnly: [409, "the mirror is pull-only: nothing goes upstream"],
   PrivateLines: [409, "the repo has private lines, and its git holds them blank: no worktree reads it, and nothing goes upstream or into a beam until the crew's copy is pushed"],
   MirrorMain: [409, "that's the branch the mirror keeps in step, not one to push"],
-  UpstreamClash: [409, "upstream's branch and main changed the same lines, or share no history: settle it upstream, then push again"],
+  UpstreamClash: [409, "upstream's branch changed the same lines as main or as the branch here, or shares no history with main: settle it, then push again"],
   UpstreamMoved: [409, "upstream's branch moved while pushing: push again"],
   TagExists: [409, "a tag by that name names another commit (here, or upstream for a mirror): delete it first to move it"],
   RepoExists: [409, "you have a repo by that name already"],

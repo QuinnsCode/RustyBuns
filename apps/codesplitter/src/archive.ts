@@ -150,6 +150,29 @@ export async function payBackfill(env: Env, owner: string, repo: string, except?
   }
 }
 
+/** What git keeps of a text file that its lines don't (#4774): a UTF-8 BOM at its start, and whether it ends in a newline. */
+export type Ends = { bom: boolean; eol: boolean };
+/** A new (or empty) file's: no BOM, a final newline. */
+const NEW_FILE: Ends = { bom: false, eol: true };
+
+/** The ends of `bytes`, a file as git has it now; null (no such file) or empty is a new file's. */
+export function endsOf(bytes: Uint8Array | null | undefined): Ends {
+  if (!bytes?.length) return NEW_FILE;
+  return { bom: bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf, eol: bytes[bytes.length - 1] === 0x0a };
+}
+
+/** The ends of `path` on `ref` in `handle`'s git. */
+export async function endsAt(handle: ArtifactsRepo, ref: string, path: string): Promise<Ends> {
+  const blob = await handle.readFile({ ref, path }).catch(() => null);
+  return endsOf(blob && new Uint8Array(await blob.arrayBuffer()));
+}
+
+/** A file's lines as git gets them: ending in one newline and without a BOM, unless the file it was read from (`ends`) had none or had one. */
+export function asGit(lines: string, ends: Ends = NEW_FILE): string {
+  const t = ends.eol && !lines.endsWith("\n") ? lines + "\n" : lines;
+  return ends.bom && !t.startsWith("\uFEFF") ? "\uFEFF" + t : t;
+}
+
 /**
  * A fork of the remote holds private lines blank where they were committed
  * before the crew remote was there (#341). Each such file's real text, as last
@@ -165,8 +188,9 @@ async function backfillCrew(env: Env, owner: string, repo: string, except?: stri
     if (!(await fileIds(env, owner, repo, path, "codesplitters", "private"))?.length) continue;
     const doc = await lastDoc(env, owner, repo, path);
     if (!doc) continue;
-    const real = (t => t.endsWith("\n") ? t : t + "\n")(text(doc));
-    if ((await (await crew.handle.readFile({ ref: crew.branch, path }).catch(() => null))?.text()) !== real) changes[path] = real;
+    const was = await crew.handle.readFile({ ref: crew.branch, path }).catch(() => null);
+    const bytes = was && new Uint8Array(await was.arrayBuffer()), real = asGit(text(doc), endsOf(bytes));
+    if (!bytes || new TextDecoder("utf-8", { ignoreBOM: true }).decode(bytes) !== real) changes[path] = real;
   }
   if (!Object.keys(changes).length) return;
   const a = await access(crew.handle, crew.remote, "write", 300);
@@ -278,20 +302,23 @@ export async function pushCatalogues(env: Env, owner: string, repo: string, file
     await pend(env, owner, repo, paths);
     throw new Error("git is moving to a fresh start; this commit lands when it's done");
   }
-  const text = (c: string) => c.endsWith("\n") ? c : c + "\n";
-  const changes = (side: "content" | "published"): Record<string, Change> => Object.fromEntries(paths.map((p) => [p, lines(p) ? text(lines(p)![side]) : files[p] as Change]));
+  // Each file keeps its BOM and its missing final newline, as git has it now.
+  const ends = new Map(await Promise.all(paths.filter(lines).map(async (p) => [p, await endsAt(h.handle, h.branch, p)] as const)));
+  const changes = (side: "content" | "published"): Record<string, Change> => Object.fromEntries(paths.map((p) => [p, lines(p) ? asGit(lines(p)![side], ends.get(p)) : files[p] as Change]));
   const crewPush = async (to: Handle) => {
     const a = await access(to.handle, to.remote, "write", 300);
     return push(a.remote, a.token, { changes: changes("content"), ...(await byline(env, owner, repo, author, message)), branch: to.branch, base: to.handle });
   };
-  const pending = await pendingChanges(env, owner, repo);
+  const pending = await pendingChanges(env, owner, repo, h);
   const [pub, crewed] = await Promise.allSettled([
     pushChanges(env, owner, repo, h, { ...pending, ...changes("published") }, author, message, note ?? undefined),
     crew?.crew ? crewPush(crew) : null,
   ]);
   if (pub.status === "rejected") throw pub.reason;
   if (crewed.status === "rejected") return { ...pub.value, crewError: (crewed.reason as Error).message, deployCommit: undefined };
-  const deployCommit = crew?.crew ? crewed.value?.commit : Object.keys(pending).some((p) => !(p in files)) ? undefined : pub.value.commit;
+  // Only a commit this push made: one that changed nothing names the tip under it, which may be someone else's (deploy-review.ts).
+  const made = (c: { commit: string; commits: string[] } | null | undefined) => c?.commits.length ? c.commit : undefined;
+  const deployCommit = crew?.crew ? made(crewed.value) : Object.keys(pending).some((p) => !(p in files)) ? undefined : made(pub.value);
   return { ...pub.value, deployCommit };
 }
 
@@ -307,7 +334,7 @@ export async function uncatalogue(env: Env, owner: string, repo: string, path: s
     throw new Error("git is moving to a fresh start; this deletion lands when it's done");
   }
   const [pub] = await Promise.allSettled([
-    (async () => pushChanges(env, owner, repo, h, { ...(await pendingChanges(env, owner, repo)), [path]: null }, author, message))(),
+    (async () => pushChanges(env, owner, repo, h, { ...(await pendingChanges(env, owner, repo, h)), [path]: null }, author, message))(),
     crew?.crew ? (async () => {
       const a = await access(crew.handle, crew.remote, "write", 300);
       return push(a.remote, a.token, { changes: { [path]: null }, ...(await byline(env, owner, repo, author, message)), branch: crew.branch, base: crew.handle });
@@ -327,7 +354,7 @@ export async function catalogueBlob(env: Env, owner: string, repo: string, path:
   if (await env.DB.prepare("SELECT 1 FROM fresh_starts WHERE owner = ? AND repo = ? AND state IN ('walking', 'copying')").bind(owner, repo).first())
     throw new Error("git is moving to a fresh start; merge again when it's done");
   const [pub] = await Promise.allSettled([
-    (async () => pushChanges(env, owner, repo, h, { ...(await pendingChanges(env, owner, repo)), [path]: blob }, author, message))(),
+    (async () => pushChanges(env, owner, repo, h, { ...(await pendingChanges(env, owner, repo, h)), [path]: blob }, author, message))(),
     crew?.crew ? (async () => {
       const a = await access(crew.handle, crew.remote, "write", 300);
       return push(a.remote, a.token, { changes: { [path]: blob }, ...(await byline(env, owner, repo, author, message)), branch: crew.branch, base: crew.handle });
@@ -339,7 +366,7 @@ export async function catalogueBlob(env: Env, owner: string, repo: string, path:
 
 /** Push the files still waiting, if any, as one commit. */
 export async function flushPending(env: Env, owner: string, repo: string) {
-  const h = await handleFor(env, owner, repo), changes = await pendingChanges(env, owner, repo);
+  const h = await handleFor(env, owner, repo), changes = h ? await pendingChanges(env, owner, repo, h) : {};
   if (!h || !Object.keys(changes).length) return null;
   return pushChanges(env, owner, repo, h, changes, GIT_BOT, `Catalogued while git was away: ${Object.keys(changes).join(", ")}`);
 }
@@ -374,13 +401,13 @@ const pend = (env: Env, owner: string, repo: string, paths: string[]) =>
   env.DB.batch(paths.map((p) => env.DB.prepare("INSERT OR IGNORE INTO git_pending (owner, repo, path) VALUES (?, ?, ?)").bind(owner, repo, p)));
 
 /** Each waiting file as it was last catalogued, private lines blank, as git gets it; null for one deleted since. */
-async function pendingChanges(env: Env, owner: string, repo: string): Promise<Record<string, string | null>> {
+async function pendingChanges(env: Env, owner: string, repo: string, h: Handle): Promise<Record<string, string | null>> {
   const { results } = await env.DB.prepare("SELECT path FROM git_pending WHERE owner = ? AND repo = ?").bind(owner, repo).all<{ path: string }>();
   const out: Record<string, string | null> = {};
   for (const { path } of results) {
     if (!(await env.DB.prepare("SELECT 1 FROM files WHERE owner = ? AND repo = ? AND path = ?").bind(owner, repo, path).first())) { out[path] = null; continue; }
     const doc = await lastDoc(env, owner, repo, path, "0");
-    if (doc) out[path] = text(doc) + "\n";
+    if (doc) out[path] = asGit(text(doc), await endsAt(h.handle, h.branch, path));
   }
   return out;
 }

@@ -8,8 +8,11 @@ import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, relative, resolve } from "node:path";
 import { valveFile, valveOf } from "../../scripts/remote-ci.ts";
+import { type Of, obj, opt, or, raw, rec, str } from "../../packages/util/src/guard.ts";
 
-export type HookInput = { tool_name: string; tool_input: Record<string, unknown>; cwd?: string };
+/** What Claude Code sends a PreToolUse hook on stdin: the tool, its arguments, and where it runs. */
+export const HookInput = obj({ tool_name: str(200), tool_input: or(rec(raw), {}), cwd: opt(str(4096)) });
+export type HookInput = Of<typeof HookInput>;
 type BranchOf = (cwd: string) => string | null;
 
 const MAIN = new Set(["main", "master"]);
@@ -290,7 +293,7 @@ export function check(input: HookInput, branchOf: BranchOf = gitBranch): string 
 }
 
 if (import.meta.main) {
-  const input: HookInput = JSON.parse(await Bun.stdin.text());
+  const input = HookInput(JSON.parse(await Bun.stdin.text()));
   if (input.tool_name === "Bash") {
     const cwd = input.cwd ?? process.cwd();
     const shut = valveOf((() => { try { return readFileSync(valveFile(), "utf8"); } catch { return ""; } })()) === "off";

@@ -1,14 +1,17 @@
-// Loads a room's splats into PlayCanvas, thinned to SPLAT_BUDGET first so a
-// 1M+ splat scan doesn't sort and draw every splat each frame.
+// Loads a room's splats into PlayCanvas, thinned to the quality tier's splat
+// budget first so a 1M+ splat scan doesn't sort and draw every splat each frame
+// (low is about a third of high, so an integrated GPU keeps up).
 import * as pc from "playcanvas";
+import { pickQuality, type Quality } from "@rustybuns/util/quality";
 import { decimatePly } from "./decimate.ts";
 
-export const SPLAT_BUDGET = 500_000;
+/** Most splats a scan keeps on each quality tier. */
+export const SPLAT_BUDGET: Record<Quality, number> = { low: 170_000, mid: 300_000, high: 500_000 };
 
 export async function loadScan(app: pc.AppBase, plyUrl: string): Promise<{ asset: pc.Asset; entity: pc.Entity }> {
   const res = await fetch(plyUrl);
   if (!res.ok) throw new Error(`${plyUrl}: ${res.status}`);
-  const bytes = decimatePly(new Uint8Array(await res.arrayBuffer()), SPLAT_BUDGET);
+  const bytes = decimatePly(new Uint8Array(await res.arrayBuffer()), SPLAT_BUDGET[pickQuality().quality]);
   // A blob url has no extension, so the filename is what makes PlayCanvas pick its PLY parser.
   const blobUrl = URL.createObjectURL(new Blob([bytes]));
   const asset = new pc.Asset(plyUrl, "gsplat", { url: blobUrl, filename: "scan.ply" });

@@ -3,6 +3,7 @@
 // model writes each fighter that list, in Clef's own vocabulary (shape, colour, rough spot, size, proportions),
 // and every turn Clef works through it, looking at its canvas to place each part against what's already there.
 // One call a fighter, ~1,500 tokens.
+import { isRecord } from "@rustybuns/util/guard";
 
 /** The shapes a fighter can draw; brain.ts describes each to Clef. */
 export const SHAPE_KINDS = ["ellipse", "rectangle", "diamond", "triangle", "stroke", "dot"] as const;
@@ -64,10 +65,11 @@ export function parsePlan(res: unknown): PlanStep[] {
   }
   if (!Array.isArray(parts)) return [];
   const steps: PlanStep[] = [];
-  for (const p of parts.slice(0, MAX_STEPS) as Record<string, unknown>[]) {
-    const shape = pick(p?.shape, SHAPE_KINDS);
-    const color = pick(p?.color, COLOR_NAMES);
-    const size = pick(p?.size, SIZES);
+  for (const p of parts.slice(0, MAX_STEPS)) {
+    if (!isRecord(p)) continue;
+    const shape = pick(p.shape, SHAPE_KINDS);
+    const color = pick(p.color, COLOR_NAMES);
+    const size = pick(p.size, SIZES);
     if (!shape || !color || !size) continue;
     steps.push({
       part: String(p.part ?? shape).slice(0, 40),

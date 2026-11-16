@@ -39,7 +39,7 @@ This page is the picture and the gaps. Each layer's own design stays in its own 
 | **Engine** | the engine itself | Rusty Buns: write once, ship to a Worker, a desktop binary or a Linux box ([ROADMAP.md](ROADMAP.md)); pure Rust cores built three ways ([STORES.md](STORES.md)) | built; many games on it |
 | **Asset store** | the engine's asset store | the parts our games already share: `packages/models` (seeded three.js models), `packages/rig` and `apps/auto-rig`, `packages/terrain`, `packages/game-controls`, `packages/ui`, `packages/render`; Meshy Studio and the Blender beast-sheet loop make new ones | listed on the playground shelf with the line that adds each ([#4054](https://github.com/QuinnsCode/RustyBuns/issues/4054)); a maker's own parts not yet |
 | **Code store** | templates and samples | every `apps/*` is a game or tool a maker can fork: the playground lists them ([apps/playground](../apps/playground/README.md)) | listing exists; no one-click fork into your own studio |
-| **The harness** | the editor's play mode | how an agent sees and drives a running game: `window.<game>.state()`, `bun run probe`, WebMCP tools on the page ([WEBMCP.md](../WEBMCP.md)) | per game, by convention; the new-game template should ship one |
+| **The harness** | the editor's play mode | how an agent sees and drives a running game: `window.<game>.state()`, `bun run probe`, WebMCP tools on the page ([WEBMCP.md](../WEBMCP.md)) | per game, by convention; the starter game ([apps/starter-game](../apps/starter-game/README.md)) ships one |
 | **Office** | the team | Agent Office, our edit of WebDevCody's office, skinned as the Druids grove, inside codeSplitter ([MOVE.md](../apps/agent-office/MOVE.md)) | runs as a Bun binary; the move is [#3423](https://github.com/QuinnsCode/RustyBuns/issues/3423) |
 | **Repo and merges** | source control | codeSplitter on Cloudflare Artifacts, Mervin for merges, git hidden from the maker | live |
 | **Library** | the game store | eqosys: one account, Home, Library, Saves, Achievements, Studios with the four doors Play, Keep, Make, Ship ([VISION.md](../apps/eqosys/VISION.md)) | live; Make and Ship doors wired |
@@ -74,7 +74,8 @@ A shared box host is [#4083](https://github.com/QuinnsCode/RustyBuns/issues/4083
    needs our Mac. Everything after this assumes a maker can hire workers from a browser.
 2. **New game from a template** ([#4053](https://github.com/QuinnsCode/RustyBuns/issues/4053)). One command (and one button on the Studio page) that makes a repo in codeSplitter from a
    starter game: the engine, an eqosys sign-in, a Qollab party, a `window.<game>.state()` harness, a probe row. Every
-   game we made since #2978 has done these by hand.
+   game we made since #2978 has done these by hand. Built: `bun run new-game <id>` copies [apps/starter-game](../apps/starter-game/README.md)
+   into `apps/` with its probe row, and New game on the Studio tab makes a codeSplitter repo of it (`POST /api/github/starter`).
 3. **The shelf** ([#4054](https://github.com/QuinnsCode/RustyBuns/issues/4054)). A listing of the packages as parts, each with a picture, what it does and the line that adds it, read
    from each package's own `package.json`. Ours first; a maker's own parts later, published from their studio.
 4. **Games from other studios in the Library** ([#4055](https://github.com/QuinnsCode/RustyBuns/issues/4055)). Today `APPS` is our list. A studio's game needs a review step before it

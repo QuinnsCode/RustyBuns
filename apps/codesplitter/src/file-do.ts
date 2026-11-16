@@ -34,10 +34,10 @@ import { noteStep } from "./insights.ts";
 import { branchEdited } from "./checks.ts";
 import { Tally } from "./limits.ts";
 import { ConflictSavedCounter } from "./stats.ts";
-import { lintMerge } from "./lint.ts";
+import { lintedMerge } from "./lint.ts";
 import { DocStore } from "./doc-store.ts";
 import { sha256 as sha } from "./util.ts";
-import { apply, empty, MAX_OPS, merge, MERGE_ASK, mergeWords, parseOps, PROTOCOL, replay, text, type Applied, type Doc, type Line, type FileCommit, type FileCommitted, type FileTexts, type MergeReply, type Op, type Resolve } from "./lines.ts";
+import { apply, empty, MAX_OPS, MERGE_ASK, mergeWords, parseOps, PROTOCOL, replay, text, type Applied, type Doc, type Line, type FileCommit, type FileCommitted, type FileTexts, type MergeReply, type Op, type Resolve } from "./lines.ts";
 import type { Live, Rule } from "./policy.ts";
 import { pad10 } from "./util.ts";
 
@@ -59,7 +59,9 @@ export const SNAP_EVERY = 2000;
 export const KEEP_SNAPS = 10;
 
 /** Asked for history from before `trimmed`. */
-class Trimmed extends Error { constructor(readonly from: number) { super(`history before rev ${from} is trimmed: read the file instead`); } }
+class Trimmed extends Error { constructor(readonly from: number, why = `history before rev ${from} is trimmed: read the file instead`) { super(why); } }
+/** A rev or since from the query: a whole number from 0, or null. */
+const revIn = (s: string | null) => s !== null && /^\d{1,15}$/.test(s) ? Number(s) : null;
 
 type Shown = Line & { private?: true };
 
@@ -309,10 +311,16 @@ export class FileDurableObject {
     }
     try {
       if (req.method === "GET" && route === "log") {
-        const page = await this.log(Number(url.searchParams.get("since") ?? 0), Number(url.searchParams.get("limit") || OP_PAGE));
+        const since = revIn(url.searchParams.get("since") ?? "0");
+        if (since === null) return fail("BadInput", "since: a rev, a whole number from 0");
+        const page = await this.log(since, Number(url.searchParams.get("limit") || OP_PAGE));
         return json({ ops: this.hide(page.ops, crew), next: page.next });
       }
-      if (req.method === "GET" && route === "at") return json(this.shown(await this.at(Number(url.searchParams.get("rev"))), crew));
+      if (req.method === "GET" && route === "at") {
+        const rev = revIn(url.searchParams.get("rev"));
+        if (rev === null) return fail("BadInput", "rev: a whole number from 0");
+        return json(this.shown(await this.at(rev), crew));
+      }
     } catch (e) {
       if (e instanceof Trimmed) return fail("HistoryTrimmed", e.message, { from: e.from });
       throw e;
@@ -445,9 +453,8 @@ export class FileDurableObject {
       const ask = need(await readBody(req), MERGE_ASK);
       if (ask instanceof Response) return ask;
       const { base, branch, resolve, dry, deleter, path, writer, rule } = ask;
-      const m = merge(base, branch, this.doc, resolve, deleter, path, writer, rule);
-      // Every line settled: check the merged code still builds before it lands.
-      if (!m.conflicts.length && path) m.conflicts = lintMerge(path, this.doc, branch, m, resolve);
+      // Every line settled: the merged code is checked to still build before it lands.
+      const m = lintedMerge(base, branch, this.doc, resolve, deleter, path, writer, rule);
       // Generated text both sides touched kept main's copy: its command runs once the merge lands.
       // Prose that settled but may say something untrue now goes back as checks for the review (#1254).
       const regen = { ...m.regenerate && { regenerate: m.regenerate }, ...m.checks && { checks: m.checks }, ...m.solved && { solved: m.solved } };
@@ -630,6 +637,8 @@ export class FileDurableObject {
   /** Time travel: the doc as it was at rev, from the last snapshot at or before it, or from the start. */
   async at(rev: number): Promise<Doc> {
     if (rev < this.trimmed) throw new Trimmed(this.trimmed);
+    // A branch's copy begins at the fork: anything earlier is main's history, not this copy's.
+    if (this.base && rev < this.base.rev) throw new Trimmed(this.base.rev, `this branch's copy starts at rev ${this.base.rev}, where it forked: read main's file for anything earlier`);
     const snap = this.snaps.findLast((n) => n <= rev);
     const from = snap === undefined ? this.base ?? empty() : (await new DocStore(this.ctx.storage, "snap:" + pad10(snap)).load()) ?? empty();
     const log: Applied[] = [];
@@ -837,7 +846,9 @@ export class FileDurableObject {
     if (!soft) {
       const clash = [...new Set(lines.map((id) => this.claimOf.get(id)).filter((c) => c && c !== old))] as Claim[];
       // People steer agents: a person's hold doesn't wait behind agents in line for free lines.
-      const ahead = bot || b.wait ? this.ahead(b.id, want) : [];
+      // Lines it already holds (a grant it takes by id, a renewal) are its: those behind it wait for them, not it.
+      const fresh = old ? new Set(lines.filter((id) => this.claimOf.get(id) !== old)) : want;
+      const ahead = (bot || b.wait) && fresh.size ? this.ahead(b.id, fresh) : [];
       if (clash.length || ahead.length) {
         if (b.wait) return this.wait(by, b, lines, rank);
         if (clash.length) return fail("LinesHeld", `held by ${clash.map((c) => "@" + c.who).join(", ")}`, { claims: clash, retryAfter: retryAfter(clash) });

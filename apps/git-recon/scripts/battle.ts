@@ -8,15 +8,15 @@ import World from "../src/net/world.ts";
 import { PORTS } from "@rustybuns/util/ports";
 
 const PORT = Number(process.env.BATTLE_PORT ?? PORTS.battle);
-const env: any = {};
-env.WORLD = durableObject(World as never, env);
-const shell = serve<any>({ hostname: "127.0.0.1", port: PORT });
+const env: { ONLINE?: string } = {};
+const WORLD = durableObject(World, env);
+const shell = serve<typeof env>({ hostname: "127.0.0.1", port: PORT });
 shell.mount({
-  fetch: (req: Request, e: any) => {
+  fetch: (req: Request) => {
     const q = new URL(req.url).searchParams, headers = new Headers(req.headers);
     headers.set("X-User-Id", q.get("uid") || crypto.randomUUID());
     headers.set("X-User-Name", q.get("name") || "soldier");
-    return e.WORLD.get(e.WORLD.idFromName("battle")).fetch(new Request(req, { headers }));
+    return WORLD.get(WORLD.idFromName("battle")).fetch(new Request(req, { headers }));
   },
-} as never, env);
+}, env);
 console.log(`git-recon battle world on ws://127.0.0.1:${shell.port}/ws`);

@@ -94,8 +94,9 @@ const BASE = `
 /**
  * eqosys's own mark, the same in every game whatever its skin: a badge tag, "eqosys" on black, then a punched strip of
  * oil-slick sunset that drifts like slow weather (three gradient blobs on registered properties, one long cycle each).
- * The strip ends in a punched hole (--eq-hole) that shows what is behind it, ringed by a dark rim so it reads as a hole
- * and not a dot; its edge fades over most of a pixel, so it is round on a 1x screen as on a 3x one.
+ * The strip ends in a punched hole (--eq-hole) that shows what is behind it; its edge fades over most of a pixel, so it
+ * is round on a 1x screen as on a 3x one. The hole's rim is its own ring on the badge, outside the strip's mask:
+ * near-black with a pale hairline, so it reads on a bright brass plate and on a dark one alike.
  * Kept after the skin's rules and off the `--ui-*` tokens on purpose; still under prefers-reduced-motion.
  */
 const BADGE = `
@@ -108,6 +109,7 @@ const BADGE = `
 .eq .eq-badge i::after{content:"";position:absolute;inset:0;background:radial-gradient(circle at calc(100% - 7px) 50%,transparent 3px,#000000b3 3.3px,#00000040 4.2px,transparent 5px),repeating-linear-gradient(0deg,#ffffff0d 0 1px,transparent 1px 3px),linear-gradient(90deg,#00000059,transparent 45%)}
 @keyframes eq-drift{0%{--eq-ax:18%;--eq-ay:30%;--eq-bx:78%;--eq-by:70%}33%{--eq-ax:62%;--eq-ay:12%;--eq-bx:30%;--eq-by:88%}66%{--eq-ax:40%;--eq-ay:84%;--eq-bx:86%;--eq-by:22%}100%{--eq-ax:82%;--eq-ay:52%;--eq-bx:14%;--eq-by:40%}}
 @keyframes eq-turn{to{--eq-tilt:560deg}}
+.eq .eq-badge{position:relative}.eq .eq-badge::after{content:"";position:absolute;right:3px;top:calc(50% - 4px);width:8px;height:8px;border-radius:50%;border:1.5px solid #0b0b0ee6;box-shadow:0 0 0 .75px #ffffff73,inset 0 1px 1.5px #000000b3;pointer-events:none}
 @media (prefers-reduced-motion:reduce){.eq .eq-badge i{animation:none}}
 @media (prefers-color-scheme:dark){.eq .eq-badge{box-shadow:0 0 0 1px #ffffff2e,0 1px 2px #0000007a}}
 `;

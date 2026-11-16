@@ -1,6 +1,7 @@
 import { test, expect, setDefaultTimeout } from "bun:test";
 import { infer, bunServerEntry } from "../src/glue/infer.ts";
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync, readdirSync } from "node:fs";
+import { loadCloudflareConfig } from "../src/cloudflare-config.ts";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { analyze, plan } from "../src/glue/boundary.ts";
@@ -146,7 +147,8 @@ test("deploy guardrail: refuses without a matching plan, accepts --yes", async (
   writeFileSync(bin + "/alchemy", `#!/bin/sh\necho "STUB alchemy $@ built=$RUSTYBUNS_BUILT" >> ${r}/calls.log\n`); require("node:fs").chmodSync(bin + "/alchemy", 0o755);
   // a token with no account id leaves Alchemy to its profile, here an empty ALCHEMY_HOME until the login below (#1170)
   const { CLOUDFLARE_ACCOUNT_ID: _a, CI: _ci, ...shell } = process.env;
-  const env = { ...shell, CLOUDFLARE_API_TOKEN: "test-token", ALCHEMY_HOME: r + "/alchemy-home" };
+  // pin the package manager: no lockfile here, so the hint names whatever the shell's user agent says (npx on the builder, #4809)
+  const env = { ...shell, CLOUDFLARE_API_TOKEN: "test-token", ALCHEMY_HOME: r + "/alchemy-home", npm_config_user_agent: "bun/1" };
   // --no-check on plan/deploy: the stub alchemy has no types, and on Bun >= 1.4.3 bun check is always there to fail on it
   const run = (...a: string[]) => Bun.spawnSync(["bun", cli, ...a, ...(a[0] === "plan" || a[0] === "deploy" ? ["--no-check"] : [])], { cwd: r, env, stdout: "pipe", stderr: "pipe" });
   // init needs @rustybuns/cli resolvable for the config import; link the package dir
@@ -185,7 +187,7 @@ test("deploy guardrail: refuses without a matching plan, accepts --yes", async (
   // the refusal names the stage, so following it doesn't plan production instead
   const d0 = run("deploy", "--stage", "staging");
   expect(d0.exitCode).toBe(2);
-  expect(d0.stderr.toString()).toContain("`rustybuns plan --stage staging`");
+  expect(d0.stderr.toString()).toContain("`bunx rustybuns plan --stage staging`");
   expect(run("plan", "--stage", "staging").exitCode).toBe(0);
   expect(await Bun.file(r + "/.rustybuns/alchemy.run.ts").text()).toContain(`MODE: "staging"`);
   // the checked-in wrangler.jsonc stays the config as written (#3905)
@@ -221,6 +223,25 @@ test("add deploy: an override whose range covers the pin is left alone", async (
   for (const [have, want] of [["^4.0.5", "^4.0.5"], [undefined, "4.0.5"], ["^3.0.0", "4.0.5"]] as const) {
     const pkg = applyOverrides({ overrides: have ? { effect: have } : {} }, "bun").pkg;
     expect([have, pkg.overrides.effect]).toEqual([have, want]);
+  }
+});
+
+test("add deploy: an app with its own Alchemy + Effect pins keeps them and installs only what it lacks", async () => {
+  const { deployDeps, installCommand, ownDeploySet, DEPLOY_DEPS } = await import("../src/glue/deploy-deps.ts");
+  // A Rat Stack app: its own exact Alchemy 2 and Effect 4, and the Cloudflare provider already.
+  const rat = { alchemy: "2.0.0-beta.87", "@alchemy.run/cloudflare": "2.0.0-beta.87", effect: "4.1.4", "@effect/platform-node": "4.1.4" };
+  expect(ownDeploySet(rat)).toEqual({ alchemy: "2.0.0-beta.87", effect: "4.1.4" });
+  const want = deployDeps(rat);
+  expect(want).toEqual({
+    "@alchemy.run/hetzner": "2.0.0-beta.87", "@alchemy.run/railway": "2.0.0-beta.87", "@alchemy.run/neon": "2.0.0-beta.87",
+    "@alchemy.run/frontend-frameworks": "2.0.0-beta.87", "@effect/platform-bun": "4.1.4",
+  });
+  expect(installCommand("pnpm", true, want)).toBe("pnpm add -Dw @alchemy.run/hetzner@2.0.0-beta.87 @alchemy.run/railway@2.0.0-beta.87 @alchemy.run/neon@2.0.0-beta.87 @alchemy.run/frontend-frameworks@2.0.0-beta.87 @effect/platform-bun@4.1.4");
+  expect(installCommand("bun", false, deployDeps({ ...rat, ...want }))).toBeNull();
+  // A range, a catalog, another major or only one of the two: the pinned set as before.
+  const cases: Record<string, string>[] = [{ alchemy: "^2.0.0-beta.87", effect: "4.1.4" }, { alchemy: "catalog:", effect: "catalog:" }, { alchemy: "2.0.0-beta.87", effect: "3.17.0" }, { effect: "4.1.4" }];
+  for (const deps of cases) {
+    expect(deployDeps(deps)).toBe(DEPLOY_DEPS);
   }
 });
 
@@ -967,6 +988,8 @@ test("startLayout: TanStack Start's server and static files, by Nitro setup", as
   // no preset: steer it to "standard" ({ fetch }), which an app's own preset would override
   expect(startLayout(`plugins: [tanstackStart(), nitro()]`)).toEqual({ builtMain: ".output/server/index.mjs", assets: ".output/public", env: "NITRO_PRESET=standard " });
   expect(startLayout(`nitro({ preset: "bun" })`).warn).toMatch(/starts a server of its own/);
+  // a preset only one build sets, inside a conditional spread, leaves the normal build unset (#4107)
+  expect(startLayout(`nitro({ serverDir: "./server", ...(isElectronBuild ? { preset: "node-server" } : {}) })`)).toEqual({ builtMain: ".output/server/index.mjs", assets: ".output/public", env: "NITRO_PRESET=standard " });
 });
 
 test("builtEntry: finds the Worker in any environment folder by its wrangler.json, or a lone custom server entry", () => {
@@ -1175,4 +1198,67 @@ test("another app's Worker, objects and database: refs into its stack, a class m
   expect(generateAlchemy(old)).toContain(`ROOMS: app_rooms }`);
   // Dropping the binding outright is still refused: that would delete the data.
   expect(() => generateWrangler(app("home", {}), before)).toThrow(/not bound by this run/);
+});
+
+/** An app the way `cf migrate` leaves it: cf/config in node_modules, a Worker that must not run at load. */
+function cfApp(config: string) {
+  const dir = mkdtempSync(join(tmpdir(), "rb-cfconfig-"));
+  mkdirSync(join(dir, "node_modules/cf"), { recursive: true });
+  mkdirSync(join(dir, "src"));
+  writeFileSync(join(dir, "node_modules/cf/package.json"), JSON.stringify({ name: "cf", type: "module", exports: { "./config": "./config.js" } }));
+  writeFileSync(join(dir, "node_modules/cf/config.js"), `export const defineConfig = (c) => c;
+const b = (type) => (o = {}) => ({ type, ...o });
+export const bindings = { text: (value) => ({ type: "text", value }), d1: b("d1"), kv: b("kv"), r2: b("r2"), secret: b("secret"), durableObject: b("durable-object"), assets: b("assets"), queue: b("queue") };`);
+  writeFileSync(join(dir, "src/worker.ts"), `import "cloudflare:workers"; require("node:fs").writeFileSync(${JSON.stringify(join(dir, "ran"))}, "");`);
+  writeFileSync(join(dir, "cloudflare.config.ts"), config);
+  return dir;
+}
+
+const CF_ENV = `env: {
+      API_URL: bindings.text("https://example.com"),
+      DB: bindings.d1({ name: "spike-db", id: "abc" }),
+      CACHE: bindings.kv({ id: "kvid" }),
+      UPLOADS: bindings.r2({ name: "spike-uploads" }),
+      ROOM: bindings.durableObject({ worker: "spike-app", exportName: "Room" }),
+      SESSION_SECRET: bindings.secret(),
+      ASSETS: bindings.assets(),
+    }`;
+
+test("cloudflare.config.ts: object and function forms carry every binding, and the Worker never runs", () => {
+  const forms = {
+    object: `import { bindings, defineConfig } from "cf/config";
+import * as entrypoint from "./src/worker" with { type: "cf-worker" };
+export default defineConfig({ worker: { name: "spike-app", compatibilityDate: "2026-09-01", compatibilityFlags: ["nodejs_compat"], entrypoint, ${CF_ENV} } });`,
+    function: `import { bindings, defineConfig } from "cf/config";
+export default defineConfig(({ mode }) => ({ worker: { name: mode === "production" ? "spike-app" : "dev", compatibilityDate: "2026-09-01", entrypoint: "src/worker.ts", ${CF_ENV} } }));`,
+  };
+  for (const [form, src] of Object.entries(forms)) {
+    const dir = cfApp(src);
+    const cf = loadCloudflareConfig(join(dir, "cloudflare.config.ts"));
+    expect(existsSync(join(dir, "ran"))).toBe(false);
+    expect(cf.unsupported).toEqual([]);
+    expect(cf.secrets).toEqual(["SESSION_SECRET"]);
+    const c = wranglerToConfig(cf.wrangler, {}, "vite");
+    expect([form, c.name, c.worker!.main, c.worker!.compatibilityDate]).toEqual([form, "spike-app", "src/worker.ts", "2026-09-01"]);
+    expect(c.bindings).toMatchObject({
+      API_URL: { type: "var", value: "https://example.com" },
+      DB: { type: "d1", databaseName: "spike-db" },
+      CACHE: { type: "kv" },
+      UPLOADS: { type: "r2", bucketName: "spike-uploads" },
+    });
+    expect(c.bindings.ROOM).toEqual({ type: "durable_object", className: "Room" });   // its own Worker's class: no scriptName
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("cloudflare.config.ts: an unfinished cf migrate and bindings init can't carry are named", () => {
+  const unfinished = cfApp(`throw new Error("Migration incomplete: see TODOs");\nexport default {};`);
+  expect(() => loadCloudflareConfig(join(unfinished, "cloudflare.config.ts"))).toThrow(/Migration incomplete.*Finish them/);
+  const queue = cfApp(`import { bindings, defineConfig } from "cf/config";
+export default defineConfig({ worker: { name: "q", env: { JOBS: bindings.queue({ name: "jobs" }), DB: bindings.d1({ name: "d" }) } } });`);
+  const cf = loadCloudflareConfig(join(queue, "cloudflare.config.ts"), "src/worker.ts");
+  expect(cf.unsupported).toEqual(["JOBS (queue)"]);
+  expect(cf.wrangler.main).toBe("src/worker.ts");
+  expect(readdirSync(queue).filter((f) => f.includes("rustybuns"))).toEqual([]);   // its temp copy is gone
+  for (const d of [unfinished, queue]) rmSync(d, { recursive: true, force: true });
 });

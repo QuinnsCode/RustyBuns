@@ -25,6 +25,7 @@ import { openNewFirstClient } from "./board.ts";
 import { pullsFollowUpClient, pullsFollowUpServer } from "./briefs.ts";
 import { floorGuardBin, floorGuardClaude, floorGuardClicks, floorGuardCodex, floorGuardCursor, floorGuardGrok, floorGuardHooks, floorGuardMuse, floorGuardQueue } from "./floorguard.ts";
 import { hookTokensManager, hookTokensPersist, hookTokensUtil } from "./hooktokens.ts";
+import { endedClicks, endedManager } from "./ended.ts";
 import { PINNED, REPO, releaseTarball } from "./release.ts";
 import { POWER_PATCHES } from "../power/patch.ts";
 import { TRIAGE_READ_ONLY } from "../triage/tools.ts";
@@ -65,7 +66,7 @@ let shared: Promise<Map<string, string>> | undefined;
 const stamp = path.join(office, ".rustybuns");
 // what a prepared ./office was built with: one string for the check and the write, so a restart skips the prepare (#3385)
 // a new patch in prepare() needs a new word here, or a restart skips it
-const STAMP = `${tag} ${skin} lucide live clock mem pulls checks triage vale podcast codesplitter connect hosts hooktokens env ticks power board guard asks brawl ester dexter reload external box builder askfirst setup storage install sweep fable52 modules reattach`;
+const STAMP = `${tag} ${skin} lucide live clock mem pulls checks triage vale podcast codesplitter connect hosts hooktokens env ticks power board guard asks brawl ester dexter reload external box builder askfirst setup storage install sweep fable52 modules reattach ended`;
 if (existsSync(stamp) && readFileSync(stamp, "utf8").trim() === STAMP && !process.argv.includes("--fresh")) {
   console.log(`🥐 Agent Office ${tag} already Rusty Buns-ified in ./office`);
   // the skin is ours and changes far more often than the release, so it's rebuilt every start
@@ -237,6 +238,9 @@ async function prepare(tag: string) {
   writeFileSync(path.join(srv, "hooks/office-workers.js"), floorGuardHooks(readFileSync(path.join(srv, "hooks/office-workers.js"), "utf8")));
   // a person's send-home click is logged beside an agent's (#2201), and a key from a terminal that lost its attach attaches it again (#4315)
   writeFileSync(path.join(srv, "ws/handlers/workers.js"), floorGuardClicks(readFileSync(path.join(srv, "ws/handlers/workers.js"), "utf8")));
+  // 12c. a worker whose agent died unheard ends its session, and a prompt typed or told to it wakes it instead of going nowhere (#4663)
+  writeFileSync(path.join(srv, "workers/manager.js"), endedManager(readFileSync(path.join(srv, "workers/manager.js"), "utf8")));
+  writeFileSync(path.join(srv, "ws/handlers/workers.js"), endedClicks(readFileSync(path.join(srv, "ws/handlers/workers.js"), "utf8")));
   // and a Claude worker's GitHub writes ask first (#2498, askfirst/): a second PreToolUse hook in its settings, the grants list's route below
   writeFileSync(path.join(srv, "providers/claude.js"), floorGuardClaude(readFileSync(path.join(srv, "providers/claude.js"), "utf8")));
   // and Codex, Cursor, Grok and Muse workers'
@@ -380,7 +384,7 @@ async function buildSkin(dir: string) {
 
 // next to the server code they hook into, rebuilt every start like the skin
 async function buildLive() {
-  for (const [entry, out] of [["live/github.ts", "rb-live.js"], ["live/mem.ts", "rb-mem.js"], ["live/storage.ts", "rb-storage.js"], ["live/hosts.ts", "rb-hosts.js"], ["live/env.ts", "rb-env.js"], ["live/install.ts", "rb-install.js"], ["live/sweep.ts", "rb-sweep.js"], ["live/floorguard.ts", "rb-floorguard.js"], ["checks/server.ts", "rb-checks.js"], ["external/server.ts", "rb-external.js"], ["triage/server.ts", "rb-triage.js"],
+  for (const [entry, out] of [["live/github.ts", "rb-live.js"], ["live/mem.ts", "rb-mem.js"], ["live/storage.ts", "rb-storage.js"], ["live/hosts.ts", "rb-hosts.js"], ["live/env.ts", "rb-env.js"], ["live/install.ts", "rb-install.js"], ["live/sweep.ts", "rb-sweep.js"], ["live/floorguard.ts", "rb-floorguard.js"], ["live/ended.ts", "rb-ended.js"], ["checks/server.ts", "rb-checks.js"], ["external/server.ts", "rb-external.js"], ["triage/server.ts", "rb-triage.js"],
     ["codesplitter/server.ts", "rb-codesplitter.js"], ["podcast/feed.ts", "rb-podcast.js"], ["sandbox/server.ts", "rb-box.js"], ["askfirst/server.ts", "rb-askfirst.js"], ["connect/github.ts", "rb-connect.js"], ["builder/server.ts", "rb-builder.js"], ["live/brawl.ts", "rb-brawl.js"], ["train/server.ts", "rb-train.js"],
     // beside bin/office-workers.js, the workers' MCP server
     ["triage/mcp.ts", "../../../bin/rb-triage.js"]]) {

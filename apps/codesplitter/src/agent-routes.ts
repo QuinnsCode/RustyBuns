@@ -53,7 +53,7 @@ import { localGit } from "./mirror.ts";
 import { protectOn } from "./protect.ts";
 import { errorIn, fail, json, named, need, type Env, readBody } from "./env.ts";
 import { byToken } from "./tokens.ts";
-import { charge, every, SITE } from "./limits.ts";
+import { charge, every, limit, SITE } from "./limits.ts";
 import { accountsOn, actingAs, isAdmin } from "./identity.ts";
 import { grantRunToken, revokeRunToken } from "./run-token.ts";
 import { HARNESSES, HOSTED_HARNESSES, RUNS_COMMANDS, blenderMcpFor, harnessCommand, type Harness } from "./harness.ts";
@@ -61,7 +61,6 @@ import { CONFLICT, Interrupted, localSandbox, runAgent, type Conflict, type Exec
 import { containerSandbox, LOGINS } from "./sandbox.ts";
 import { agentGithubToken } from "./github.ts";
 import { docIn, toFile } from "./archive.ts";
-import { ClaimRefused } from "./file-do.ts";
 import { MERGE_CONFLICTS, text } from "./lines.ts";
 import { arr, bool, check, int, num, obj, oneOf, opt, str, type Guard, type Of } from "@rustybuns/util/guard";
 import { readJson } from "@rustybuns/util/http";
@@ -137,6 +136,8 @@ export interface Run {
   spent?: number;
   /** It stopped short of its budget (#1077): at how many tokens, why, its note, and who took over: run `next`, or a person. */
   handoff?: { at: number; why: string; over: Over; note: string; next?: number };
+  /** It finished in the round that went past its budget (#4773): noted, not handed off, since a fresh agent would cost more and has nothing left to do. */
+  overspent?: { at: number; budget: number };
   /** It took over from run `from`, its task that run's note; `hops` handoffs into the task. */
   from?: number; hops?: number;
   /** Times an update cut the run off and it started again from the file as it stood (at most MAX_RESTARTS), and when a hosted run last said it was alive. */
@@ -286,7 +287,7 @@ export async function agentRoutes(req: Request, env: Env, p: string[], url: URL,
     const days = Math.min(Math.max(Number(url.searchParams.get("days")) || 30, 1), 60);
     return json({ saved: await readSaved(env, Date.now() - days * 864e5) }, 200, { "cache-control": "public, max-age=300" });
   }
-  if (p[1] === "agents" && !p[2]) {
+  if (p[1] === "agents" && !p[2] && req.method === "GET") {
     const why = agentsUnavailable(env);
     return json({ available: !why, why, harnesses: why ? [] : installedHarnesses(env), all: HARNESSES, admins_only: adminsOnly(env, user) });
   }
@@ -515,7 +516,15 @@ async function threadRoute(req: Request, env: Env, self: (req: Request) => Promi
     await sayIn(env, owner, repo, thread, { who: user, kind: "event", text: `@${user} asked @${owner} to start ${last.agent} again` });
     return json({ message, started: null, asked: owner, why: `asked @${owner}: their Go starts it` });
   }
-  if (last.pending) return json({ message, started: null, why: "its last batch is still waiting: accept or reject it first" });
+  // A batch still on its clock would land by itself in a moment: the owner's go lands it now, as the clock would, and
+  // goes on. One held for a person (until: null) waits for their accept or reject.
+  if (last.pending?.until) {
+    const landed = await land(env, self, origin, last.id, "auto");
+    if (!landed.ok) return json({ message, started: null, why: `its last batch couldn't land: ${await errorIn(landed, String(landed.status))}` });
+  } else if (last.pending) return json({ message, started: null, why: "its last batch is still waiting: accept or reject it first" });
+  // Starting it again is a hosted run like any other, so it counts against the day's.
+  const slow = await limit(req, env, "agent", user, !byToken(req) && isAdmin(env, user));
+  if (slow) return json({ message, started: null, why: await errorIn(slow, "slow down") });
   const started = await startRun(env, self, origin, user, owner, repo, { path: last.path, harness: last.harness, task: first.task, model: (await getRow(env, last.id))?.model ?? undefined }, thread);
   if (started.status !== 202) return json({ message, started: null, why: await errorIn(started, `${started.status}`) });
   return json({ message, started: await started.json() });
@@ -706,7 +715,9 @@ async function land(env: Env, self: (req: Request) => Promise<Response>, origin:
     return json({ landed: true, kept });
   }
   // Not now: it waits, held, saying why.
-  const why = (await readJson(res, ClaimRefused))?.error ?? `merge: ${res.status}`;
+  // The merge's own words (readJson reads only an ok reply), else the files it still conflicts in.
+  const left = check(MERGE_CONFLICTS, await res.clone().json().catch(() => null))?.conflicts ?? [];
+  const why = await errorIn(res, left.length ? `it conflicts with main in ${left.map((c) => c.path).join(", ")}` : `the merge didn't go (${res.status})`);
   await env.DB.prepare("UPDATE agent_runs SET result = ? WHERE id = ?").bind(JSON.stringify({ ...rest, pending: { ...p, until: null, why } }), id).run();
   return fail("BatchHeld", why, { held: true });
 }
@@ -955,6 +966,9 @@ async function execute(env: Env, self: (req: Request) => Promise<Response>, orig
       ...r.tripped, hops: hops ?? 0, branch: r.applied ? branch : row.branch ?? undefined, lines, also, rebuild,
       note: noteFor({ path, task: row.task, why: r.tripped.why, applied: r.applied, edited: r.edited, conflicts: r.conflicts, failures: r.failures, output: r.output, notes: unheard }),
     });
+    // Past its budget in the round that finished the task: there's nothing to hand off, so it's only noted (#4773).
+    const overspent = !r.tripped && r.spent > policy.budget ? { at: r.spent, budget: policy.budget } : undefined;
+    if (overspent) talk({ who: agent, kind: "event", text: `finished, but spent ~${short(overspent.at)} tokens on a ${short(overspent.budget)} budget`, run: id });
     // Its batch waits for whoever took over: held till the fresh agent is done, or for a person.
     const waits = !own || !r.applied ? undefined : !handoff ? { branch: own, until: protectedMain ? null : Date.now() + wait, ...(protectedMain && { why: "main is protected: a person accepts it" }) }
       : { branch: own, until: null, why: handoff.next ? `handed off to run ${handoff.next}` : `stopped at ~${short(handoff.at)} tokens (${handoff.why}): a person's turn` };
@@ -971,7 +985,7 @@ async function execute(env: Env, self: (req: Request) => Promise<Response>, orig
     // Where its session got to: everything said up to now was heard, or sent it round again.
     const kept = !local && r.kept?.id === r.session && r.kept && await keepSession(env, owner, repo, home, r.kept);
     const session = r.session && (local || kept) ? { id: r.session, last: (await threadMessages(env, owner, repo, home, 1e12)).last } : undefined;
-    const done = await finish(env, id, "done", { ...extra, ...(session && { session }), ...(engine.length && { engine }), ...(pushed && { pushed }), applied: r.applied, rev: r.rev, runs: r.runs, conflicts: r.conflicts, output: r.output.slice(-4000), spent: r.spent, ...(r.edited && { edited: r.edited }), ...(r.private && { private: r.private }), ...(pending ? { pending } : {}), ...(handoff && { handoff }) });
+    const done = await finish(env, id, "done", { ...extra, ...(session && { session }), ...(engine.length && { engine }), ...(pushed && { pushed }), applied: r.applied, rev: r.rev, runs: r.runs, conflicts: r.conflicts, output: r.output.slice(-4000), spent: r.spent, ...(r.edited && { edited: r.edited }), ...(r.private && { private: r.private }), ...(pending ? { pending } : {}), ...(handoff && { handoff }), ...(overspent && { overspent }) });
     // Its token use, per tool, if the repo has Dexter on (dexter.ts). Never fails the run.
     await (await import("./dexter.ts")).recordRun(env, owner, repo, String(id), r.dexter);
     // Stopped just as it ended: nothing waits.

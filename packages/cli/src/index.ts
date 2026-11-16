@@ -7,6 +7,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseWrangler, parseWranglerToml, wranglerToConfig, wranglerStages, droppedWranglerKeys, embeddingDims } from "./wrangler.ts";
+import { CLOUDFLARE_CONFIG, loadCloudflareConfig } from "./cloudflare-config.ts";
 import { hasPagesFunctions, writePagesWorker, compilesAtStartup, EVAL_AT_STARTUP_DEFAULT_DATE, PAGES_ENTRY } from "./pages-functions.ts";
 import { generateAlchemy, referencedApps } from "./gen/alchemy.ts";
 import { generateWrangler } from "./gen/wrangler.ts";
@@ -47,7 +48,7 @@ import { jekyllPlan, type JekyllEnv } from "./glue/jekyll.ts";
 import { sourceLayout, caseCollisions } from "./glue/source.ts";
 import { analyze, report } from "./glue/boundary.ts";
 import { generateBoundaryFiles, scaffoldDesktopPackage } from "./glue/desktop-scaffold.ts";
-import { installCommand, applyOverrides, workspaceRoot, DEPLOY_DEPS } from "./glue/deploy-deps.ts";
+import { installCommand, applyOverrides, workspaceRoot, deployDeps, ownDeploySet, pkgDeps, DEPLOY_DEPS } from "./glue/deploy-deps.ts";
 import { workspacePrebuild } from "./glue/workspace-build.ts";
 import { Profiler } from "./profile.ts";
 import { adoptProblem, adoptQuestion, confirmAdopt, forceFresh, isolationFlags, ISOLATION_ARGS, modeLine } from "./isolation.ts";
@@ -148,7 +149,7 @@ async function addDesktop(flags: string[]) {
   console.log(`\nnext: ${inf.execCmd("rustybuns build desktop --dev")}, then ${inf.execCmd("rustybuns run desktop")}`);
 }
 
-/** Install the pinned Alchemy + Effect set and force transitive @effect/* to match. */
+/** Install the pinned Alchemy + Effect set and force transitive @effect/* to match; an app with its own set keeps it. */
 async function addDeploy(dryRun: boolean) {
   const inf = infer();
   // In a workspace the overrides must live in the root package.json; a member's are ignored.
@@ -157,27 +158,40 @@ async function addDeploy(dryRun: boolean) {
   // package.json is edited in place, keys and all, so it is walked as plain JSON rather than read through a guard.
   const pkg: unknown = await Bun.file(pkgPath).json();
   if (!isRecord(pkg)) throw new Error(`${pkgPath} isn't a JSON object`);
-  const { changed } = applyOverrides(pkg, inf.pm);
-  const cmd = installCommand(inf.pm, await Bun.file("pnpm-workspace.yaml").exists());
-  console.log(`pinned deploy deps: ${Object.entries(DEPLOY_DEPS).map(([n, v]) => `${n}@${v}`).join(", ")}`);
-  const where = root ? `the workspace root (${pkgPath})` : "package.json";
-  if (dryRun) { console.log(`would write ${inf.pm === "pnpm" ? "pnpm.overrides" : "overrides"} to ${where} and run:\n  ${cmd}`); return; }
-  if (changed) { await Bun.write(pkgPath, JSON.stringify(pkg, null, 2) + "\n"); console.log(`wrote overrides to ${where}`); }
-  // `plan` beside `deploy`, so the deploy refusal's "plan again" works as `<pm> run plan` too (#3743).
   const own: unknown = root ? await Bun.file("package.json").json() : pkg;
   if (!isRecord(own)) throw new Error("package.json isn't a JSON object");
+  const deps = pkgDeps(own);
+  // An app with its own Alchemy + Effect pins (a Rat Stack app) keeps them: no overrides, only what it lacks.
+  const brought = ownDeploySet(deps);
+  const want = deployDeps(deps);
+  const { changed } = brought ? { changed: false } : applyOverrides(pkg, inf.pm);
+  const cmd = installCommand(inf.pm, await Bun.file("pnpm-workspace.yaml").exists(), want);
+  console.log(brought
+    ? `own deploy deps: alchemy@${brought.alchemy}, effect@${brought.effect} (kept; the pinned set is alchemy@${DEPLOY_DEPS.alchemy}, effect@${DEPLOY_DEPS.effect})`
+    : `pinned deploy deps: ${Object.entries(DEPLOY_DEPS).map(([n, v]) => `${n}@${v}`).join(", ")}`);
+  const where = root ? `the workspace root (${pkgPath})` : "package.json";
+  if (dryRun) {
+    if (changed) console.log(`would write ${inf.pm === "pnpm" ? "pnpm.overrides" : "overrides"} to ${where}`);
+    console.log(cmd ? `would run:\n  ${cmd}` : "nothing to install");
+    return;
+  }
+  if (changed) { await Bun.write(pkgPath, JSON.stringify(pkg, null, 2) + "\n"); console.log(`wrote overrides to ${where}`); }
+  // `plan` beside `deploy`, so the deploy refusal's "plan again" works as `<pm> run plan` too (#3743).
   const scripts = isRecord(own.scripts) ? own.scripts : (own.scripts = {});
   const added = (["plan", "deploy"] as const).filter((s) => scripts[s] === undefined);
   for (const s of added) scripts[s] = `rustybuns ${s}`;
   if (added.length) { await Bun.write("package.json", JSON.stringify(own, null, 2) + "\n"); console.log(`added ${added.join(" and ")} to package.json scripts`); }
-  console.log(`$ ${cmd}`);
-  // npm's strict peer check refuses trees whose own vitest/@effect peers disagree with the overrides (TerraViz);
-  // the pinned set is known to work together, so a second try may skip that check.
-  const strict = await $`sh -c ${cmd}`.nothrow();
-  if (strict.exitCode !== 0) {
-    if (inf.pm !== "npm") process.exit(strict.exitCode);
-    console.log(`\nnpm refused on a peer conflict; retrying with --legacy-peer-deps\n$ ${cmd} --legacy-peer-deps`);
-    await $`sh -c ${`${cmd} --legacy-peer-deps`}`;
+  if (!cmd) console.log("nothing to install: this app already has every deploy package");
+  else {
+    console.log(`$ ${cmd}`);
+    // npm's strict peer check refuses trees whose own vitest/@effect peers disagree with the overrides (TerraViz);
+    // the pinned set is known to work together, so a second try may skip that check.
+    const strict = await $`sh -c ${cmd}`.nothrow();
+    if (strict.exitCode !== 0) {
+      if (inf.pm !== "npm") process.exit(strict.exitCode);
+      console.log(`\nnpm refused on a peer conflict; retrying with --legacy-peer-deps\n$ ${cmd} --legacy-peer-deps`);
+      await $`sh -c ${`${cmd} --legacy-peer-deps`}`;
+    }
   }
   console.log(`\nnext: set a throwaway "name" in rustybuns.config.ts, then ${inf.execCmd("rustybuns plan")}`);
 }
@@ -199,7 +213,8 @@ async function init() {
   const spa = rest.includes("--spa");
   // A wrangler.jsonc that plan wrote from an earlier config doesn't make this a Worker app:
   // `init --force` after `plan` would otherwise read its own output back as the app's wrangler.
-  const found = ["wrangler.jsonc", "wrangler.json", "wrangler.toml"].find((f) => existsSync(f)) ?? null;
+  // The `cf` CLI's cloudflare.config.ts comes first: the wrangler.jsonc beside it is one it generated.
+  const found = [CLOUDFLARE_CONFIG, "wrangler.jsonc", "wrangler.json", "wrangler.toml"].find((f) => existsSync(f)) ?? null;
   const ours = found === "wrangler.jsonc" && readFileSync(found, "utf8").startsWith("// GENERATED by rustybuns");
   const src = ours ? null : found;
   // Refuse before printing or writing anything.
@@ -269,15 +284,23 @@ async function init() {
     if (src && spa) console.log(`ignoring ${src} (--spa): desktop-only config. Remove the flag to carry its bindings over.`);
     await initSpa(inf); return;
   }
-  const wsrc = src ? await Bun.file(src).text() : null;
+  const cf = src === CLOUDFLARE_CONFIG ? loadCloudflareConfig(CLOUDFLARE_CONFIG, inf.workerEntry) : null;
+  if (cf?.unsupported.length) {
+    const what = `${CLOUDFLARE_CONFIG} binds ${cf.unsupported.join(", ")}, which init can't carry over yet`;
+    if (!force) throw new Error(`${what}. Pass --force to write the config without ${cf.unsupported.length > 1 ? "them" : "it"}, then add ${cf.unsupported.length > 1 ? "them" : "it"} to rustybuns.config.ts by hand.`);
+    console.log(`left out: ${cf.unsupported.join(", ")}\n          (${what}; add ${cf.unsupported.length > 1 ? "them" : "it"} to rustybuns.config.ts by hand)`);
+  }
+  if (src === "wrangler.toml") console.log("note:     `cf migrate` turns wrangler.toml into cloudflare.config.ts, which init reads too.");
+  const wsrc = src && !cf ? await Bun.file(src).text() : null;
   // Astro's adapter makes a wrangler config of its own when the app has none.
-  const w = wsrc === null ? { name: inf.name.replace(/^@[^/]+\//, "") } : src!.endsWith(".toml") ? parseWranglerToml(wsrc) : parseWrangler(wsrc);
+  const w = cf ? cf.wrangler : wsrc === null ? { name: inf.name.replace(/^@[^/]+\//, "") } : src!.endsWith(".toml") ? parseWranglerToml(wsrc) : parseWrangler(wsrc);
   const dropped = droppedWranglerKeys(w);
   if (dropped.length) console.log(`not carried over: ${dropped.join(", ")}\n          (rustybuns.config.ts has no place for these yet; keep them in ${src} and do NOT run \`rustybuns adopt\`)`);
   // Where the Worker's bundle comes from: RWSDK's or the Cloudflare Vite plugin's build, else
   // none (a plain Worker; Alchemy bundles its main). Astro's adapter is set up below.
   const built = inf.framework === "rwsdk" ? "rwsdk" : !astroWorker && inf.vite.plugins.includes("cloudflare") ? "vite" : null;
   const cfg = wranglerToConfig(w, inf.scripts, built);
+  for (const s of cf?.secrets ?? []) cfg.bindings[s] ??= { type: "secret" };
   // Cloudflare Pages: no Worker main, a functions/ folder routed by file name. The Worker is the one
   // `rustybuns pages-functions` writes from that folder, its build writes it first, and it sees every
   // request before the static files, as Pages Functions do (_routes.json sends the rest straight there).
@@ -736,7 +759,10 @@ async function generate(opts: { adopt: boolean; stage?: string }) {
     console.log(`${other} is hand-written; wrote wrangler.generated.jsonc beside it. Diff it, then delete ${other} and \`rustybuns adopt\` to make wrangler.jsonc the one config (wrangler reads ${other} first while it's there).`);
     return;
   }
-  const r = await writeIfChanged("wrangler.jsonc", generateWrangler(local, existsSync("wrangler.jsonc") ? readFileSync("wrangler.jsonc", "utf8") : null), opts);
+  // Beside cloudflare.config.ts, wrangler.jsonc is the one `cf` generated from it, not a hand-written file,
+  // so it's ours to rewrite unless it holds something the config can't (its DO history is kept either way).
+  const cfGenerated = existsSync(CLOUDFLARE_CONFIG) && !wranglerLosses().length;
+  const r = await writeIfChanged("wrangler.jsonc", generateWrangler(local, existsSync("wrangler.jsonc") ? readFileSync("wrangler.jsonc", "utf8") : null), { adopt: opts.adopt || cfGenerated });
   if (r === "conflict") console.log("wrangler.jsonc is hand-written and differs; wrote wrangler.generated.jsonc. Diff it" + (wranglerLosses().length ? " (it lacks " + wranglerLosses().join(", ") + ", so adopt will refuse)." : ", then `rustybuns adopt`."));
   else console.log(`wrangler.jsonc ${r}`);
 }
@@ -777,15 +803,22 @@ function installAlchemyHint(): string {
     : `Run \`${inf.execCmd("rustybuns add deploy")}\` here first (it installs the pinned set), or cd into an app that has it.`;
 }
 
+/** The Alchemy version this app pins itself, with its own Effect (a Rat Stack app): it runs that one. */
+function ownAlchemy(): string | undefined {
+  let pkg: unknown;
+  try { pkg = JSON.parse(readFileSync("package.json", "utf8")); } catch { return undefined; }
+  return ownDeploySet(pkgDeps(pkg))?.alchemy;
+}
+
 function alchemyCli(): string[] {
   if (existsSync("node_modules/.bin/alchemy")) return ["node_modules/.bin/alchemy"];
   let pkg: string | undefined;
   try { pkg = Bun.resolveSync("alchemy/package.json", process.cwd()); } catch { /* not installed */ }
   // Bun's auto-install resolves from its global cache; that copy has no peers either.
   const version = pkg && !pkg.includes("/.bun/install/cache/") ? JSON.parse(readFileSync(pkg, "utf8")).version : undefined;
-  if (version === DEPLOY_DEPS.alchemy) return ["node", join(dirname(pkg!), "bin", "cli.js")];
+  if (version && (version === DEPLOY_DEPS.alchemy || version === ownAlchemy())) return ["node", join(dirname(pkg!), "bin", "cli.js")];
   throw new Error(version
-    ? `this project has alchemy ${version}, not the pinned ${DEPLOY_DEPS.alchemy}. Run \`rustybuns add deploy\` to pin it.`
+    ? `this project has alchemy ${version}, not the pinned ${DEPLOY_DEPS.alchemy} or one package.json pins exactly. Run \`rustybuns add deploy\` to pin it.`
     : `no Alchemy in this project. ${installAlchemyHint()}`);
 }
 

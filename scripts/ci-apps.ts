@@ -25,6 +25,7 @@ type App = {
 };
 
 import { shard } from "../apps/codesplitter/scripts/ester.ts";
+import { check, num, rec } from "../packages/util/src/guard.ts";
 
 export const APPS: Record<string, App> = {
   "agent-demo":        { test: "bun test test", drop: false },
@@ -38,6 +39,8 @@ export const APPS: Record<string, App> = {
   "geoboxq":            { test: "bun test test", drop: false },
   "geoboxq-shopify":   { test: "bun test test", drop: false },
   "sharesplat":        { test: "bun test test", drop: false },
+  "starter-game":      { test: "bun test test", drop: false },
+  "load-in":           { test: "bun test test", drop: false },
   "pwa-example":       { test: "bun test test", drop: false },
   "qview3d":           { test: "bun test test", drop: false },
   "astro-example":     { test: "bun test test", boot: true },
@@ -49,6 +52,7 @@ export const APPS: Record<string, App> = {
   "example":           { boot: true, drop: false },
   "fm-daw":            { test: "bun test test", prep: "bun run build:native", perOs: true, check: true, boot: true },
   "cron-swanson":      { test: "bun test test", drop: false },
+  "test-swarm":        { test: "bun test test", drop: false },
   "codesplitter":     { test: "bun test --parallel test", shards: 3, boot: true },
   "delayed-reaction":  { test: "bun test test", drop: false },
   "git-recon":         { test: "bun test", drop: false },
@@ -105,11 +109,10 @@ function buildCmd(app: string, a: App, targets: string[]) {
 async function shardedTests(app: string, test: string, n: number): Promise<string[]> {
   const dir = `apps/${app}`;
   const [root = "test"] = test.split(/\s+/).slice(-1);
-  const times: Record<string, unknown> = await Bun.file(`${dir}/test-times.json`).json().catch(() => ({}));
+  const times = check(rec(num(0, Infinity)), await Bun.file(`${dir}/test-times.json`).json().catch(() => null)) ?? {};
   const files = [...new Bun.Glob("**/*.test.ts").scanSync({ cwd: `${dir}/${root}` })].map((f) => `${root}/${f}`).sort();
   const timed = await Promise.all(files.map(async (name) => {
-    const ms = times[name];
-    return { name, ms: typeof ms === "number" ? ms : Math.round(Bun.file(`${dir}/${name}`).size / 20) };
+    return { name, ms: times[name] ?? Math.round(Bun.file(`${dir}/${name}`).size / 20) };
   }));
   const prefix = test.slice(0, test.lastIndexOf(root)).trim();
   return shard(timed, n).filter((s) => s.length).map((s) => `${prefix} ${s.map((t) => `./${t.name}`).sort().join(" ")}`);

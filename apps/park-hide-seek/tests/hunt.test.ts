@@ -1,7 +1,8 @@
 import { beforeAll, describe, expect, test } from "bun:test";
 import { CLIFF, PARKS, ZONES, loadZoneData, zoneById, zoneLoaded, zonesFor, type Zone } from "../src/zones/zone.ts";
 import { MOVE, canSee, clearLine, step, type Body } from "../src/hunt/sim.ts";
-import { HUNT, Hunt, circleAt, disguiseFor, dropOk, parseMsg } from "../src/hunt/game.ts";
+import { check } from "@rustybuns/util/guard";
+import { HUNT, Hunt, ServerMsg, circleAt, disguiseFor, dropOk, parseMsg } from "../src/hunt/game.ts";
 import { fits, radioGrid, toKm } from "../src/clues.ts";
 import { cellAt } from "../src/grid.ts";
 import { Room, TICK_MS } from "../src/room.ts";
@@ -38,6 +39,30 @@ test("a round on ground the host hasn't got yet waits for it, then starts there"
   expect(g.phase).toBe("drop");
   expect(g.round?.zone).toBe("zion");
   expect(g.view("b", now).zone).toBe("zion");
+});
+
+test("every view a full lobby gets, round to results, reads back whole on the page; a broken one is dropped", () => {
+  const g = new Room(7).game;
+  let now = 1_000_000;
+  g.join("h", "Host", now, { host: true });
+  g.handle("h", { t: "settings", zone: "el-capitan" }, now);
+  for (let i = 0; i < 7; i++) g.handle("h", { t: "bot", level: "normal" }, now);
+  g.handle("h", { t: "start" }, now);
+  const phases = new Set<string>();
+  for (let i = 0; i < 6000; i++) {
+    g.tick(now += TICK_MS);
+    if (i % 150) continue;
+    for (const p of g.view("h", now).players) {
+      const sent = JSON.parse(JSON.stringify({ t: "view", view: g.view(p.id, now) }));
+      expect(check(ServerMsg, sent)).toEqual(sent);
+      phases.add(sent.view.phase);
+    }
+  }
+  expect([...phases]).toEqual(expect.arrayContaining(["drop", "hide", "hunt", "results"]));
+
+  const view = JSON.parse(JSON.stringify(g.view("h", now)));
+  for (const broken of [{ ...view, phase: "dance" }, { ...view, players: [{ ...view.players[0], look: null }] }, { ...view, round: { ...view.round, cues: [{ id: 1 }] } }])
+    expect(check(ServerMsg, { t: "view", view: broken })).toBeNull();
 });
 
 describe.each(ZONES.map((d) => [d.id] as const))("%s", (id) => {

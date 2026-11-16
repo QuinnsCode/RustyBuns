@@ -64,12 +64,16 @@ export function overCap(plan: string, cap: Cap = DEFAULT_CAP): string[] {
 
 // The sweeper: anything borg's that outlived its run, for runs that died before their destroy.
 // Queues go first (their consumer is the Worker), then the Worker (and its Durable Objects).
+// The API's answers are read field by field: `at` is one field, still unknown; `text` one as a string.
+const at = (v: unknown, k: string): unknown => typeof v === "object" && v !== null ? Object.entries(v).find(([key]) => key === k)?.[1] : undefined;
+const list = (v: unknown): unknown[] => (Array.isArray(v) ? v : []);
+const text = (v: unknown, k: string) => { const x = at(v, k); return typeof x === "string" ? x : ""; };
 const KINDS = [
-  { kind: "queue", list: "queues", paged: true, items: (r: any) => r, name: (x: any) => x.queue_name, del: (x: any) => `queues/${x.queue_id}` },
-  { kind: "worker", list: "workers/scripts", paged: false, items: (r: any) => r, name: (x: any) => x.id, del: (x: any) => `workers/scripts/${x.id}?force=true` },
-  { kind: "d1", list: "d1/database", paged: true, items: (r: any) => r, name: (x: any) => x.name, del: (x: any) => `d1/database/${x.uuid}` },
-  { kind: "kv", list: "storage/kv/namespaces", paged: true, items: (r: any) => r, name: (x: any) => x.title, del: (x: any) => `storage/kv/namespaces/${x.id}` },
-  { kind: "r2", list: "r2/buckets?per_page=1000", paged: false, items: (r: any) => r?.buckets, name: (x: any) => x.name, del: (x: any) => `r2/buckets/${x.name}` },
+  { kind: "queue", list: "queues", paged: true, items: list, name: (x: unknown) => text(x, "queue_name"), del: (x: unknown) => `queues/${text(x, "queue_id")}` },
+  { kind: "worker", list: "workers/scripts", paged: false, items: list, name: (x: unknown) => text(x, "id"), del: (x: unknown) => `workers/scripts/${text(x, "id")}?force=true` },
+  { kind: "d1", list: "d1/database", paged: true, items: list, name: (x: unknown) => text(x, "name"), del: (x: unknown) => `d1/database/${text(x, "uuid")}` },
+  { kind: "kv", list: "storage/kv/namespaces", paged: true, items: list, name: (x: unknown) => text(x, "title"), del: (x: unknown) => `storage/kv/namespaces/${text(x, "id")}` },
+  { kind: "r2", list: "r2/buckets?per_page=1000", paged: false, items: (r: unknown) => list(at(r, "buckets")), name: (x: unknown) => text(x, "name"), del: (x: unknown) => `r2/buckets/${text(x, "name")}` },
 ] as const;
 
 export interface SweepOpts {
@@ -85,17 +89,18 @@ export async function sweep(o: SweepOpts): Promise<Swept[]> {
   const f = o.fetch ?? fetch, now = o.now ?? Date.now();
   const base = `https://api.cloudflare.com/client/v4/accounts/${o.accountId}/`;
   const call = async (path: string, method = "GET") => {
-    const r = (await (await f(base + path, { method, headers: { Authorization: `Bearer ${o.token}` } })).json().catch(() => null)) as any;
-    if (!r?.success) throw new Error(`${method} ${path.split("?")[0]}: ${r?.errors?.map((e: any) => e.message).join("; ") || "no answer"}`);
+    const r: unknown = await (await f(base + path, { method, headers: { Authorization: `Bearer ${o.token}` } })).json().catch(() => null);
+    if (at(r, "success") !== true) throw new Error(`${method} ${path.split("?")[0]}: ${list(at(r, "errors")).map((e) => text(e, "message")).join("; ") || "no answer"}`);
     return r;
   };
   const out: Swept[] = [];
   for (const k of KINDS) {
-    const found: any[] = [];
+    const found: unknown[] = [];
     for (let page = 1; ; page++) {
       const r = await call(k.paged ? `${k.list}?per_page=100&page=${page}` : k.list);
-      found.push(...(k.items(r.result) ?? []));
-      if (!k.paged || page >= (r.result_info?.total_pages ?? 1)) break;
+      found.push(...k.items(at(r, "result")));
+      const pages = at(at(r, "result_info"), "total_pages");
+      if (!k.paged || page >= (typeof pages === "number" ? pages : 1)) break;
     }
     const mine = (n: string) => !!o.stage && stageStarted(n, o.app, o.prefix) !== null && n.toLowerCase().includes(`-${o.stage.toLowerCase()}-`);
     for (const x of found.filter((x) => stale(k.name(x), now, o.maxAgeMs, o.app, o.prefix) || mine(k.name(x)))) {

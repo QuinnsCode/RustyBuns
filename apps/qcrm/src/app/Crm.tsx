@@ -142,6 +142,22 @@ async function landIn(name: string): Promise<{ view: View; open?: { entity: View
 }
 const ENTITY_VIEWS = ["contacts", "companies", "deals", "activities"];
 
+/** What a sign-in that came back with Better Auth's ?error=<code> says to the person. */
+const AUTH_ERRORS: Record<string, string> = {
+  account_not_linked: "That email already has a qCRM account. Sign in with its password, then press Connect eqosys in Settings; after that, eqosys signs you straight in.",
+  email_does_not_match: "That eqosys account has a different email from this qCRM account, so it wasn't connected.",
+  account_already_linked_to_different_user: "That eqosys account is already connected to another qCRM account.",
+  email_not_verified: "eqosys hasn't verified that email yet. Verify it on eqosys, then try again.",
+};
+/** The ?error= a sign-in came back with, in words, taken out of the address bar so a reload doesn't show it again. */
+function authErrorOnce(): string {
+  const q = new URLSearchParams(location.search), code = q.get("error");
+  if (!code) return "";
+  q.delete("error"); q.delete("error_description");
+  history.replaceState(null, "", location.pathname + (q.size ? `?${q}` : ""));
+  return AUTH_ERRORS[code] ?? `Sign-in didn't finish (${code}). Try again.`;
+}
+
 export function Crm() {
   const [me, setMe] = useState<Me | undefined>(undefined);
   const [org, setOrg] = useState<string | null>(null);
@@ -162,6 +178,7 @@ export function Crm() {
     catch { setMe({ user: null, orgs: [] }); }
   }, [org]);
 
+  useEffect(() => { const e = authErrorOnce(); if (e) setErr(e); }, []);
   useEffect(() => {
     try { const t = localStorage.getItem("qcrm-theme"); if (t) document.documentElement.setAttribute("data-theme", t); } catch {}
     const q = new URLSearchParams(location.search);
@@ -280,6 +297,7 @@ function Auth({ onDone, demo, err }: { onDone: () => Promise<void>; demo: boolea
   const token = new URLSearchParams(location.search).get("token");
   const [mode, setMode] = useState<"in" | "up" | "forgot" | "reset">(token ? "reset" : new URLSearchParams(location.search).has("signup") ? "up" : "in");
   const [msg, setMsg] = useState(err);
+  useEffect(() => { if (err) setMsg(err); }, [err]);
   const [note, setNote] = useState("");
   const go = (m: typeof mode) => { setMsg(""); setNote(""); setMode(m); };
   const [social, setSocial] = useState<string[]>([]);
@@ -303,7 +321,7 @@ function Auth({ onDone, demo, err }: { onDone: () => Promise<void>; demo: boolea
   return (
     <div className="auth" data-tour="auth">
       <h2>{{ in: "Sign in", up: "Create your account", forgot: "Reset your password", reset: "Pick a new password" }[mode]}</h2>
-      {social.length > 0 && <div className="row">{social.map((p) => <button key={p} type="button" onClick={() => via(p)}><Icon name={p === "github" ? "github" : "mail"} /> Continue with {p === "github" ? "GitHub" : "Google"}</button>)}</div>}
+      {social.length > 0 && <div className="row">{social.map((p) => <button key={p} type="button" onClick={() => via(p)}><Icon name={p === "github" ? "github" : p === "eqosys" ? "key-round" : "mail"} /> Continue with {{ github: "GitHub", google: "Google", eqosys: "eqosys" }[p] ?? p}</button>)}</div>}
       <p className="muted">Email and password, kept by Better Auth. Your first org is made when you sign up.</p>
       <form onSubmit={submit}>
         {mode === "up" && <label><span>Name</span><input name="name" aria-label="Name" autoComplete="name" /></label>}
@@ -864,6 +882,16 @@ function Settings({ me, org, role, can, reload }: { me: Me; org: { id: string; n
   const [withDeleted, setWithDeleted] = useState(false);
   /** Webhook id → its deliveries, once its list is opened. */
   const [sent, setSent] = useState<Record<string, Row[]>>({});
+  /** eqosys is on here, and whether this account is connected to it. */
+  const [eqosys, setEqosys] = useState<{ on: boolean; linked: boolean }>({ on: false, linked: false });
+  useEffect(() => {
+    Promise.all([api("/providers"), api("/auth/list-accounts")]).then(([p, a]) =>
+      setEqosys({ on: Array.isArray(p) && p.includes("eqosys"), linked: Array.isArray(a) && a.some((x) => x?.providerId === "eqosys") })).catch(() => {});
+  }, []);
+  const connectEqosys = () => act(async () => {
+    const r = await api("/auth/link-social", { method: "POST", body: JSON.stringify({ provider: "eqosys", callbackURL: "/app" }) });
+    if (r?.url) location.href = r.url;
+  });
   const base = `/orgs/${org.id}`;
   const refresh = useCallback(() => {
     api(`${base}/members`).then((r) => setMembers(rowsOf(r))).catch(() => {});
@@ -887,6 +915,12 @@ function Settings({ me, org, role, can, reload }: { me: Me; org: { id: string; n
       <h2>Settings</h2>
       <p className="muted">{org.name} · <code>{org.id}</code> · you are <b>{role}</b> · {me.user!.email}</p>
       {msg && <p className="err">{msg}</p>}
+      {eqosys.on && <div className="card">
+        <h3><Icon name="key-round" /> Sign-in</h3>
+        {eqosys.linked
+          ? <p className="muted">eqosys is connected: Continue with eqosys signs you in to this account.</p>
+          : <div className="row"><span className="grow muted">Sign in with your eqosys account too. It needs the same email, {me.user!.email}.</span><button type="button" onClick={connectEqosys}><Icon name="key-round" /> Connect eqosys</button></div>}
+      </div>}
       <div className="card" data-tour="members">
         <h3><Icon name="users" /> Members</h3>
         <div className="list">{members.map((m) => (

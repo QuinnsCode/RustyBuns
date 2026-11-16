@@ -20,18 +20,25 @@ export interface Exports {
   fm_click(e: number, accent: number): void;
   fm_render(e: number, out: number, send: number, frames: number): void;
   fm_meter(e: number, out: number): void;
+  fm_track_eq_set(e: number, track: number, band: number, kind: number, freq: number, gain: number, width: number, slope: number, on: number): void;
   fm_eq_new(sr: number): number;
   fm_eq_free(q: number): void;
   fm_eq_set(q: number, band: number, kind: number, freq: number, gain: number, width: number, slope: number, on: number): void;
   fm_eq_reset(q: number): void;
   fm_eq_process(q: number, buf: number, frames: number): void;
-  fm_amp_new(sr: number, oversample: number, inputVolts: number, power: number, cab: number, noise: number): number;
+  fm_amp_new(sr: number, oversample: number, inputVolts: number, power: number, noise: number): number;
   fm_amp_free(r: number): void;
   fm_amp_push(r: number, net: number, len: number, gain: number): number;
   fm_amp_set_link(r: number, i: number, net: number, len: number): number;
   fm_amp_set_gain(r: number, i: number, gain: number): void;
+  fm_amp_set_pot(r: number, i: number, pot: number, at: number): void;
   fm_amp_set_power(r: number, power: number): void;
   fm_amp_set_noise(r: number, noise: number): void;
+  fm_amp_set_output(r: number, pairs: number, sag: number, load: number): void;
+  fm_amp_set_load(r: number, load: number): void;
+  fm_amp_set_cab(r: number, ir: number, len: number): void;
+  fm_amp_fault(r: number): number;
+  fm_amp_supply(r: number): number;
   fm_amp_process(r: number, buf: number, frames: number): void;
   fm_amp_levels(r: number, out: number): void;
   fm_amp_misses(r: number): number;
@@ -73,6 +80,7 @@ export class WasmEngine implements FmEngine {
   allOff() { this.x.fm_all_off(this.h); }
   panic() { this.x.fm_panic(this.h); }
   click(accent: boolean) { this.x.fm_click(this.h, accent ? 1 : 0); }
+  setTrackBand(t: number, i: number, k: number, f: number, g: number, q: number, sl: number, on: boolean) { this.x.fm_track_eq_set(this.h, t >>> 0, i >>> 0, k >>> 0, f, g, q, sl, on ? 1 : 0); }
   render(out: Float32Array, frames: number, send?: Float32Array) {
     const n = Math.min(frames, out.length >> 1, send ? send.length >> 1 : Infinity);
     for (let at = 0; at < n; at += CHUNK) {

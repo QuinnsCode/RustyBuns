@@ -3,7 +3,9 @@
 /** Where a TanStack Start build puts its server ({ fetch }) and its static files, by Nitro setup. */
 export function startLayout(viteConfig: string): { builtMain: string; assets: string; env: string; warn?: string } {
   const nitro = /\bnitro(?:V2Plugin)?\s*\(/.test(viteConfig);
-  const preset = viteConfig.match(/\bpreset\s*:\s*["']([\w-]+)["']/)?.[1];
+  // A preset inside a conditional spread (`...(electron ? { preset: "node-server" } : {})`) is one
+  // build's, not the normal one's: read it as unset (#4107).
+  const preset = viteConfig.replace(/\.\.\.\s*\([^()]*\?[^()]*\)/g, "").match(/\bpreset\s*:\s*["']([\w-]+)["']/)?.[1];
   // No Nitro: Start's own Vite build, <outDir>/server/server.js exports { fetch } (a custom server
   // entry is found at build time: the one script in that folder).
   const out = (viteConfig.match(/\boutDir\s*:\s*["'](?:\.\/)?([^"']+?)\/?["']/)?.[1]) ?? "dist";

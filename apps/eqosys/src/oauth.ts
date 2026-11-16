@@ -46,11 +46,8 @@ const oops = (error: string, description: string, status = 400, head: Record<str
   json({ error, error_description: description }, status, head);
 
 /** The body of a token or revoke request: a form, as OAuth sends it, or JSON. */
-async function bodyOf(req: Request): Promise<Record<string, unknown>> {
-  if (/json/.test(req.headers.get("content-type") ?? "")) {
-    const v: unknown = await req.json().catch(() => null);
-    return typeof v === "object" && v && !Array.isArray(v) ? { ...v } : {};
-  }
+async function bodyOf(req: Request): Promise<unknown> {
+  if (/json/.test(req.headers.get("content-type") ?? "")) return req.json().catch(() => null);
   const form = await req.formData().catch(() => null);
   return form ? Object.fromEntries([...form.entries()].map(([k, v]) => [k, String(v)])) : {};
 }
@@ -104,7 +101,8 @@ export async function oauth(req: Request, conf: Env): Promise<Response | null> {
     if (req.method !== "POST") return oops("invalid_request", "POST a form", 405, head);
     const raw = await bodyOf(req);
     const body = check(Grant, raw);
-    if (!body) return oops(raw.grant_type && !["authorization_code", "refresh_token"].includes(String(raw.grant_type)) ? "unsupported_grant_type" : "invalid_request", "send grant_type and its fields", 400, head);
+    const named = check(obj({ grant_type: str(100) }), raw)?.grant_type;
+    if (!body) return oops(named && !["authorization_code", "refresh_token"].includes(named) ? "unsupported_grant_type" : "invalid_request", "send grant_type and its fields", 400, head);
     const app = await clientOf(req, conf, body);
     if (!app) return oops("invalid_client", "client_id is an app in eqosys", 401, head);
     if (!(await jwksOf(conf)).keys.length) return oops("temporarily_unavailable", "eqosys has no signing key yet", 503, head);
@@ -138,9 +136,9 @@ export async function oauth(req: Request, conf: Env): Promise<Response | null> {
   }
 
   if (pathname === "/oauth/revoke" && req.method === "POST") {
-    const body = await bodyOf(req);
+    const token = check(obj({ token: str(100) }), await bodyOf(req))?.token;
     // RFC 7009: the answer is 200 whether or not the token was there, so it tells a guesser nothing.
-    if (typeof body.token === "string" && body.token.length <= 100) await revokeRefresh(conf, body.token);
+    if (token) await revokeRefresh(conf, token);
     return json({}, 200, await cors(req, conf));
   }
 

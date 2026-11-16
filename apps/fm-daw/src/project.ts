@@ -3,6 +3,7 @@
 // may face the internet on the edge, so everything that arrives is sanitized.
 import { arr, Bad, bool, check, int, maybe, num, obj, oneOf, opt, raw, str, type Guard } from "@rustybuns/util/guard";
 import { EQ_LANES, clampEqLane, eqLaneBand, sanitizeEq, type EqDoc } from "./engine/eq.ts";
+import { ROOM_M } from "./studio.ts";
 import { TRACKS, NPARAMS, BEND_RANGE, LANE_BEND, LANE_STUTTER, clampLane, clampParam } from "./engine/params.ts";
 
 export interface Note { s: number; l: number; m: number; v: number } // start/length in beats, midi, velocity 0..1
@@ -21,6 +22,8 @@ export interface TrackDoc {
   params: number[];
   notes: Note[];
   auto?: Lane[];
+  /** Shape on this track alone, before the sum (src/engine/eq.ts); absent when flat. */
+  eq?: EqDoc;
   mute: boolean;
   solo: boolean;
 }
@@ -29,8 +32,9 @@ export interface TrackDoc {
  * squash: the multiband up/down compressor on the master, 0 off to 1 over the top (src/engine/squash.ts).
  * eq: Shape, the master EQ before it: a slot per band, null when empty (src/engine/eq.ts).
  * eqAuto: its automation, a lane per band and setting (eqLane), only on bands that are there.
+ * eqLinear: Shape in linear phase (src/engine/linear.ts), only there when on.
  */
-export interface Project { v: 1; bpm: number; swing: number; space: number; squash: number; eq: EqDoc; eqAuto?: Lane[]; bars: number; tracks: TrackDoc[] }
+export interface Project { v: 1; bpm: number; swing: number; space: number; squash: number; eq: EqDoc; eqAuto?: Lane[]; eqLinear?: boolean; bars: number; tracks: TrackDoc[] }
 
 export type Op =
   | { t: "param"; track: number; i: number; v: number }
@@ -38,8 +42,10 @@ export type Op =
   | { t: "auto"; track: number; lanes: Lane[] }
   | { t: "track"; track: number; mute?: boolean; solo?: boolean; name?: string }
   | { t: "global"; bpm?: number; swing?: number; space?: number; squash?: number; bars?: number }
-  | { t: "eq"; bands: EqDoc }
+  /** Shape on the master, or with `track` that track's own. */
+  | { t: "eq"; bands: EqDoc; track?: number }
   | { t: "eqAuto"; lanes: Lane[] }
+  | { t: "eqPhase"; linear: boolean }
   | { t: "replace"; project: Project };
 
 export const BEATS_PER_BAR = 4;
@@ -78,6 +84,13 @@ export function sanitizeLanes(x: unknown, beats: number, kind = TRACK_LANES): La
 export const sanitizeEqAuto = (x: unknown, beats: number, eq: EqDoc) => sanitizeLanes(x, beats, EQ_AUTO).filter((l) => eq[eqLaneBand(l.i)]);
 /** eqAuto only when there is some, so a project without moves reads the same as before it had the field. */
 const eqAutoOf = (lanes: Lane[]) => (lanes.length ? { eqAuto: lanes } : {});
+/** A track with this Shape: the field only when a slot is filled, so a flat track reads as it did before tracks had one. */
+function withTrackEq(t: TrackDoc, eq: EqDoc): TrackDoc {
+  const { eq: _, ...rest } = t;
+  return eq.some(Boolean) ? { ...rest, eq } : rest;
+}
+/** eqLinear the same way: only when on. */
+const linearOf = (on: boolean) => (on ? { eqLinear: true } : {});
 
 /**
  * A recorded take into a track's lanes: lane `i` between the take's first and
@@ -125,7 +138,7 @@ export class Take {
 }
 
 const bad = (why: string): never => { throw new Bad(why); };
-const PROJECT = obj({ tracks: arr(raw, TRACKS, { min: 1 }), bars: raw, bpm: num(40, 240, 120), swing: num(0, 0.6, 0), space: num(0, 1, 0), squash: num(0, 1, 0), eq: raw, eqAuto: raw });
+const PROJECT = obj({ tracks: arr(raw, TRACKS, { min: 1 }), bars: raw, bpm: num(40, 240, 120), swing: num(0, 0.6, 0), space: num(0, 1, 0), squash: num(0, 1, 0), eq: raw, eqAuto: raw, eqLinear: bool(false) });
 
 export function sanitize(x: unknown): Project | null {
   const p = check(PROJECT, x);
@@ -134,13 +147,14 @@ export function sanitize(x: unknown): Project | null {
   // older projects had fewer tracks: pad with silent synth tracks (gain 0)
   const tracks = [...p.tracks, ...Array.from({ length: TRACKS - p.tracks.length }, () => ({ kind: "synth" }))];
   const eq = sanitizeEq(p.eq);
-  return { v: 1, bpm: p.bpm, swing: p.swing, space: p.space, squash: p.squash, eq, ...eqAutoOf(sanitizeEqAuto(p.eqAuto, beats, eq)), bars, tracks: tracks.map((v, ti) => track(v, ti, beats)) };
+  return { v: 1, bpm: p.bpm, swing: p.swing, space: p.space, squash: p.squash, eq, ...eqAutoOf(sanitizeEqAuto(p.eqAuto, beats, eq)), ...linearOf(p.eqLinear), bars, tracks: tracks.map((v, ti) => track(v, ti, beats)) };
 }
 
 function track(v: unknown, ti: number, beats: number): TrackDoc {
   const t = obj({ name: str(24, { min: 0, dflt: `Track ${ti + 1}` }), kind: oneOf(["drum", "synth"], "drum"), root: int(0, 127, 60),
-    params: arr(raw, NPARAMS, { drop: true }), notes: raw, auto: raw, mute: bool(false), solo: bool(false) })(typeof v === "object" && v ? v : {});
-  return { ...t, params: Array.from({ length: NPARAMS }, (_, i) => clampParam(i, Number(t.params[i]))), notes: sanitizeNotes(t.notes, beats), auto: sanitizeLanes(t.auto, beats) };
+    params: arr(raw, NPARAMS, { drop: true }), notes: raw, auto: raw, eq: raw, mute: bool(false), solo: bool(false) })(typeof v === "object" && v ? v : {});
+  const { eq, ...rest } = t;
+  return withTrackEq({ ...rest, params: Array.from({ length: NPARAMS }, (_, i) => clampParam(i, Number(t.params[i]))), notes: sanitizeNotes(t.notes, beats), auto: sanitizeLanes(t.auto, beats) }, sanitizeEq(eq));
 }
 
 const tag = <T extends string>(t: T) => oneOf([t]);
@@ -153,8 +167,9 @@ const OPS: Guard<Op>[] = [
   obj({ t: tag("auto"), track: TRACK, lanes: (v: unknown) => sanitizeLanes(v, MAX_BARS * BEATS_PER_BAR) }),
   obj({ t: tag("track"), track: TRACK, mute: maybe(bool()), solo: maybe(bool()), name: maybe(str(Infinity, { min: 0 })) }),
   obj({ t: tag("global"), bpm: maybe(real), swing: maybe(real), space: maybe(real), squash: maybe(real), bars: maybe(BARS) }),
-  obj({ t: tag("eq"), bands: sanitizeEq }),
+  obj({ t: tag("eq"), bands: sanitizeEq, track: maybe(TRACK) }),
   obj({ t: tag("eqAuto"), lanes: (v: unknown) => sanitizeLanes(v, MAX_BARS * BEATS_PER_BAR, EQ_AUTO) }),
+  obj({ t: tag("eqPhase"), linear: bool() }),
   obj({ t: tag("replace"), project: PROJ }),
 ];
 export const decodeOp = (v: unknown): Op | null => OPS.reduce<Op | null>((got, g) => got ?? check(g, v), null);
@@ -173,7 +188,9 @@ export type Live =
   | { t: "play" }
   | { t: "stop" }
   /** Where their pointer is, as a share of the window (0..1 across and down), so others can see it. */
-  | { t: "cursor"; x: number; y: number };
+  | { t: "cursor"; x: number; y: number }
+  /** Where they stand in the studio and which way they face, so others see them and what's in their hand (src/studio.ts). */
+  | { t: "body"; at: number[]; yaw: number };
 const MIDI = int(0, 127);
 const LIVE: Guard<Live>[] = [
   obj({ t: tag("on"), track: TRACK, midi: MIDI, vel: num(0, 1, 0.8) }),
@@ -182,12 +199,13 @@ const LIVE: Guard<Live>[] = [
   obj({ t: tag("repeat"), beats: num(0, BEATS_PER_BAR, 0) }),
   obj({ t: tag("play") }), obj({ t: tag("stop") }),
   obj({ t: tag("cursor"), x: num(0, 1, 0), y: num(0, 1, 0) }),
+  obj({ t: tag("body"), at: arr(num(-ROOM_M, ROOM_M), 3, { min: 3 }), yaw: num(-Math.PI * 2, Math.PI * 2) }),
 ];
 const LIVE_EVENT = (v: unknown) => LIVE.reduce<Live | null>((got, g) => got ?? check(g, v), null) ?? bad("a live event");
 
 /** A held room still passes these, so a guest's notes, stutter and bend are let go everywhere. */
 export const lettingGo = (e: Live) =>
-  e.t === "off" || e.t === "cursor" || (e.t === "repeat" && e.beats === 0) || (e.t === "bend" && e.semis === 0);
+  e.t === "off" || e.t === "cursor" || e.t === "body" || (e.t === "repeat" && e.beats === 0) || (e.t === "bend" && e.semis === 0);
 
 /**
  * Who may change a sesh. Whoever made it is its maker (a key kept in their browser). Free, the
@@ -265,12 +283,17 @@ export function apply(p: Project, op: Op): Project {
     }
     case "eq": {
       const eq = sanitizeEq(op.bands);
+      if (op.track !== undefined) return withTrack(p, op.track, (t) => withTrackEq(t, eq));
       const { eqAuto, ...rest } = p;
       return { ...rest, eq, ...eqAutoOf(sanitizeEqAuto(eqAuto, loopBeats(p), eq)) };
     }
     case "eqAuto":
       const { eqAuto: _, ...rest } = p;
       return { ...rest, ...eqAutoOf(sanitizeEqAuto(op.lanes, loopBeats(p), p.eq)) };
+    case "eqPhase": {
+      const { eqLinear: _, ...rest } = p;
+      return { ...rest, ...linearOf(op.linear) };
+    }
     case "replace":
       return sanitize(op.project) ?? p;
     default:

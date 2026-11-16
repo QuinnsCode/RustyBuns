@@ -17,9 +17,10 @@
 import { access, artifactsFor, flushPending, handleFor, MAX_BYTES, MAX_LINES, readTree } from "./archive.ts";
 import { copyObjects, GIT_BOT, rawObj, type Obj } from "./git.ts";
 import { digCap } from "./github.ts";
+import { git, localGit } from "./mirror.ts";
 import { usage } from "./limits.ts";
 import { fail, json, type Env } from "./env.ts";
-import { arr, check, nul, num, obj, str } from "@rustybuns/util/guard";
+import { arr, check, nul, num, obj, opt, or, str } from "@rustybuns/util/guard";
 import { keep, parseJson, unkeep, type Kept } from "./util.ts";
 import type { ErrorTag } from "./openapi.ts";
 import { repoRow } from "./repos.ts";
@@ -37,7 +38,7 @@ const TREES = 2 ** 50;
 const FULL = /storage|quota|too large|exceed|size limit|limit exceeded|no space/i;
 
 /** What `/fresh` answers about a fresh start under way, as far as a watcher of it reads (scripts/fresh-check.ts). */
-export const FreshReply = obj({ state: str(200), done: num(0, Infinity), total: num(0, Infinity) });
+export const FreshReply = obj({ state: str(200), done: num(0, Infinity), total: num(0, Infinity), bytes: or(num(0, Infinity), 0), error: opt(str(Infinity, { min: 0 })) });
 /** What `/limits` answers, as far as a reader finds the repo's current Artifact. */
 export const LimitsReply = obj({ git: obj({ artifact: nul(str(Infinity)) }) });
 
@@ -223,6 +224,10 @@ async function step(env: Env, f: Fresh) {
     last ? { tree: f.tree, message: `Fresh start from ${f.tip.slice(0, 7)}: the same files, in a new Artifact. Every line's history is kept in codeSplitter.` } : undefined);
   await env.DB.prepare("UPDATE fresh_starts SET done = done + ?, bytes = bytes + ?, stage = ?, seq = ? WHERE owner = ? AND repo = ?").bind(objs.length, r.bytes, r.stage, upTo, f.owner, f.repo).run();
   if (!last) return;
+  // The staging commits fell away (git.ts copyObjects). On the desktop the new git is only ours while the
+  // state is 'copying' (commits wait), so they go now rather than sit dangling (#4774); Cloudflare collects its own.
+  const lg = f.stage ? localGit(env) : null;
+  if (lg) await git(["prune", "--expire=now"], lg.path(f.artifact)).catch(() => null);
 
   // Done: point the repo at the new git, keep the old, and land what waited.
   const repo = await repoRow(env, f.owner, f.repo, "old_artifacts");

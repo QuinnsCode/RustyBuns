@@ -1,0 +1,58 @@
+# The express lane (notes/RELEASE_RINGS.md, #4586): a PR the owner labels `express` goes straight out once it lands.
+# When it merges into main, scripts/rings.ts express checks the label is the owner's (anyone else's is ignored) and
+# gives the squash commit. That commit's hourly sweep (desktop-hourly.yml) runs now, then, if it was green, its daily
+# sweep (daily-ring.yml), with no wait for :00 or 10:17 and no soak. Each writes a pending ring status while it runs,
+# which `bun run rings` shows as the commit in flight. Every sweep must still pass; stable still waits for the owner's
+# OK and `v` tag. A red sweep writes its ring red as usual (failure issue, Ester's bisect) and the express run stops
+# there: the commit is back in the normal lane at that ring and soaks like any other.
+# A manual run takes a PR number, for a label put on after the merge.
+name: express
+on:
+  pull_request_target:
+    types: [closed]
+  workflow_dispatch:
+    inputs:
+      pr: { description: "the merged PR to send down the express lane", type: number, required: true }
+
+concurrency:
+  group: express-${{ github.event.pull_request.number || inputs.pr }}
+  cancel-in-progress: false
+
+# The most any sweep needs (the called workflows ask for these per job): ring statuses and the failure issue.
+permissions:
+  contents: read
+  statuses: write
+  issues: write
+
+jobs:
+  check:
+    if: github.event_name == 'workflow_dispatch' || (github.event.pull_request.merged && contains(github.event.pull_request.labels.*.name, 'express'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+      issues: read
+    outputs:
+      run: ${{ steps.x.outputs.run }}
+      sha: ${{ steps.x.outputs.sha }}
+    steps:
+      # main's own code, never the PR's.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { ref: main }
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with: { bun-version: "1.4.3" }
+      - id: x
+        env: { GH_TOKEN: "${{ github.token }}", PR: "${{ github.event.pull_request.number || inputs.pr }}" }
+        run: bun scripts/rings.ts express "$PR" >> "$GITHUB_OUTPUT"
+
+  hourly:
+    needs: check
+    if: needs.check.outputs.run == 'true'
+    uses: ./.github/workflows/desktop-hourly.yml
+    with: { sha: "${{ needs.check.outputs.sha }}" }
+
+  daily:
+    needs: [check, hourly]
+    uses: ./.github/workflows/daily-ring.yml
+    with: { sha: "${{ needs.check.outputs.sha }}" }

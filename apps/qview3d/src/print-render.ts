@@ -1,7 +1,7 @@
 // Required Notice: Copyright (c) 2026 Ryan Quinn (QNTBR) (https://qntbr.com). PolyForm Noncommercial 1.0.0, see ../LICENSE.
 //
-// Print files made in the Worker, the same PNG the admin page draws (print-sheet.ts drawSheet): the original laid over
-// the zone at 300 dpi, clear around it, cut at the zone's edge, its dpi written in.
+// Print files made in the Worker, the same PNG the admin page draws (print-sheet.ts drawSheet): each original laid
+// over the zone at 300 dpi, clear around it, cut at the zone's edge, its dpi written in.
 //
 // Decoding is WASM (jsquash's PNG, MozJPEG and libwebp decoders, about 480 KB together, Apache-2.0): a Worker has no
 // image codecs of its own. Everything after that is plain TS: the picture is boxed down to about the size it prints,
@@ -106,13 +106,28 @@ function premultiplied(p: Picture, f: number): Picture {
 
 const STRIP = 64;
 
-/** The sheet's PNG, with its dpi: the picture where `sheet.at` puts it, as drawSheet draws it on the page. */
-export async function renderSheet(sheet: PrintSheet, picture: Picture, dpi: number): Promise<Uint8Array<ArrayBuffer>> {
+/** One picture ready to lay on a sheet: boxed down to about the size it prints there, premultiplied, and its true aspect. */
+export type Boxed = Picture & { aspect: number };
+
+/** Box a decoded original down for its place on the sheet, so the full-size one can go before the next is decoded. */
+export function boxFor(picture: Picture, px: PrintSheet["px"], at: PrintSheet["pictures"][number]["at"]): Boxed {
+  const aspect = picture.width / picture.height, w = sheetLayout(px, at, aspect).w;
+  return { ...premultiplied(picture, Math.max(1, Math.floor(picture.width / w))), aspect };
+}
+
+/**
+ * The sheet's PNG, with its dpi: each picture (`boxed[i]` for `sheet.pictures[i]`) where its placement puts it, the
+ * last on top, as drawSheet draws them on the page.
+ */
+export async function renderSheet(sheet: PrintSheet, boxed: Boxed[], dpi: number): Promise<Uint8Array<ArrayBuffer>> {
   const W = sheet.px.w, H = sheet.px.h;
-  const { x, y, w, h, rotation } = sheetLayout(sheet.px, sheet.at, picture.width / picture.height);
-  const src = premultiplied(picture, Math.max(1, Math.floor(picture.width / w)));
-  const sw = src.width, sh = src.height, d = src.data;
-  const kx = sw / w, ky = sh / h, cos = Math.cos(rotation), sin = Math.sin(rotation);
+  const layers = sheet.pictures.flatMap((p, i) => {
+    const src = boxed[i];
+    if (!src) return [];
+    const { x, y, w, h, rotation } = sheetLayout(sheet.px, p.at, src.aspect);
+    return [{ x, y, w, h, src, kx: src.width / w, ky: src.height / h, cos: Math.cos(rotation), sin: Math.sin(rotation) }];
+  });
+  const px = new Float64Array(4);
 
   const deflate = new CompressionStream("deflate");
   const packed = new Response(deflate.readable).arrayBuffer();
@@ -121,23 +136,17 @@ export async function renderSheet(sheet: PrintSheet, picture: Picture, dpi: numb
     const rows = Math.min(STRIP, H - y0), row = 1 + W * 4;
     const strip = new Uint8Array(rows * row);
     for (let r = 0; r < rows; r++) {
-      const dy = y0 + r + 0.5 - y;
       for (let X = 0; X < W; X++) {
-        const dx = X + 0.5 - x;
-        // Back through the page's translate(x, y) rotate(-rotation): sheet pixel to picture pixel.
-        const sx = (dx * cos - dy * sin + w / 2) * kx - 0.5, sy = (dx * sin + dy * cos + h / 2) * ky - 0.5;
-        if (sx <= -1 || sy <= -1 || sx >= sw || sy >= sh) continue;
-        const tx = Math.floor(sx), ty = Math.floor(sy), fx = sx - tx, fy = sy - ty;
-        // The four texels around it and their weights; one outside the picture counts as clear.
-        const inL = tx >= 0, inR = tx + 1 < sw, inT = ty >= 0, inB = ty + 1 < sh;
-        const i00 = (ty * sw + tx) * 4, i01 = i00 + sw * 4;
-        const w00 = inL && inT ? (1 - fx) * (1 - fy) : 0, w10 = inR && inT ? fx * (1 - fy) : 0;
-        const w01 = inL && inB ? (1 - fx) * fy : 0, w11 = inR && inB ? fx * fy : 0;
-        const a = (w00 && w00 * d[i00 + 3]!) + (w10 && w10 * d[i00 + 7]!) + (w01 && w01 * d[i01 + 3]!) + (w11 && w11 * d[i01 + 7]!);
-        if (a < 0.5) continue;
-        const o = r * row + 1 + X * 4, k = 255 / a;
-        for (let c = 0; c < 3; c++) strip[o + c] = Math.round(((w00 && w00 * d[i00 + c]!) + (w10 && w10 * d[i00 + 4 + c]!) + (w01 && w01 * d[i01 + c]!) + (w11 && w11 * d[i01 + 4 + c]!)) * k);
-        strip[o + 3] = Math.round(a);
+        let R = 0, G = 0, B = 0, A = 0;
+        for (const l of layers) {
+          if (!sample(l, X + 0.5, y0 + r + 0.5, px)) continue;
+          const keep = 1 - px[3]! / 255;
+          R = px[0]! + R * keep; G = px[1]! + G * keep; B = px[2]! + B * keep; A = px[3]! + A * keep;
+        }
+        if (A < 0.5) continue;
+        const o = r * row + 1 + X * 4, k = 255 / A;
+        strip[o] = Math.round(R * k); strip[o + 1] = Math.round(G * k); strip[o + 2] = Math.round(B * k);
+        strip[o + 3] = Math.round(A);
       }
     }
     await writer.write(strip);
@@ -160,4 +169,23 @@ export async function renderSheet(sheet: PrintSheet, picture: Picture, dpi: numb
   const png = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
   parts.reduce((at, p) => (png.set(p, at), at + p.length), 0);
   return withDpi(png, dpi);
+}
+
+type Placed = { x: number; y: number; w: number; h: number; src: Boxed; kx: number; ky: number; cos: number; sin: number };
+
+/** One picture's premultiplied colour at a sheet spot, into `out` (0..255 each); false where it doesn't reach. */
+function sample(l: Placed, X: number, Y: number, out: Float64Array): boolean {
+  const { src, w, h, kx, ky, cos, sin } = l, sw = src.width, sh = src.height, d = src.data;
+  const dx = X - l.x, dy = Y - l.y;
+  // Back through the page's translate(x, y) rotate(-rotation): sheet pixel to picture pixel.
+  const sx = (dx * cos - dy * sin + w / 2) * kx - 0.5, sy = (dx * sin + dy * cos + h / 2) * ky - 0.5;
+  if (sx <= -1 || sy <= -1 || sx >= sw || sy >= sh) return false;
+  const tx = Math.floor(sx), ty = Math.floor(sy), fx = sx - tx, fy = sy - ty;
+  // The four texels around it and their weights; one outside the picture counts as clear.
+  const inL = tx >= 0, inR = tx + 1 < sw, inT = ty >= 0, inB = ty + 1 < sh;
+  const i00 = (ty * sw + tx) * 4, i01 = i00 + sw * 4;
+  const w00 = inL && inT ? (1 - fx) * (1 - fy) : 0, w10 = inR && inT ? fx * (1 - fy) : 0;
+  const w01 = inL && inB ? (1 - fx) * fy : 0, w11 = inR && inB ? fx * fy : 0;
+  for (let c = 0; c < 4; c++) out[c] = (w00 && w00 * d[i00 + c]!) + (w10 && w10 * d[i00 + 4 + c]!) + (w01 && w01 * d[i01 + c]!) + (w11 && w11 * d[i01 + 4 + c]!);
+  return true;
 }

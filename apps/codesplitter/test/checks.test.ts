@@ -524,8 +524,8 @@ test("pinned, only the settings' commands run: codesplitter.ci and package.json 
   await send("ryan", "/api/repos/ryan/lab/checks/run", { ref: "main" });
   expect((await checks()).runs.map((r: any) => [r.name, r.status])).toEqual([["test", "queued"]]);
   await send("ryan", "/api/repos/ryan/lab/checks/settings", { required: ["test"] }, "PUT");
-  await send("ryan", "/api/repos/ryan/lab/files", { path: "a.ts", content: "four" });
-  await send("ryan", "/api/repos/ryan/lab/do/commit?path=a.ts", { message: "a" });
+  await send("ryan", "/api/repos/ryan/lab/files", { path: "b.ts", content: "four" });
+  await send("ryan", "/api/repos/ryan/lab/do/commit?path=b.ts", { message: "b" });
   await send("ryan", "/api/repos/ryan/lab/checks/run", { ref: "main" });
   expect((await checks()).runs.filter((r: any) => r.status === "queued")).toEqual([]);
 });

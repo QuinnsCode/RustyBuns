@@ -118,15 +118,33 @@ export function rebase(ops: Op[], doc: Doc): { ops: Op[]; skipped: Op[] } {
  * lines. Each change lands where the lines it replaces (and their neighbours)
  * are still as `base` had them in `ours`. A change that touches a line `ours`
  * changed is a clash, and then nothing is merged: null.
+ *
+ * `loose` (revert and pick, #4773) lets a change land beside a line `ours` changed:
+ * only the lines it replaces must be untouched, and an insertion needs one of its two
+ * neighbours still in place (with nothing new between them) to know where it goes.
+ * Git stops on touching hunks; a pick lands as reviewable line ops, so it needn't.
  */
-export function merge3(base: string[], ours: string[], theirs: string[]): string[] | null {
+export function merge3(base: string[], ours: string[], theirs: string[], loose = false): string[] | null {
   const kept = new Map(keptPairs(base, ours).map(({ i, j }) => [i, j]));
   // Where base line k sits in ours; before the start and past the end always line up.
   const at = (k: number) => k < 0 ? -1 : k >= base.length ? ours.length : kept.get(k);
   const hunks: { from: number; to: number; lines: string[] }[] = [];
   let i = 0, j = 0;
   for (const p of [...keptPairs(base, theirs), { i: base.length, j: theirs.length }]) {
-    if (p.i > i || p.j > j) {
+    if (loose && (p.i > i || p.j > j)) {
+      // base[i..p.i) became theirs[j..p.j): just those lines must be untouched, and in a row, in ours.
+      let from: number | undefined, to: number | undefined;
+      if (p.i > i) {
+        for (let k = i; k < p.i; k++) if (at(k) === undefined || (k > i && at(k) !== at(k - 1)! + 1)) return null;
+        from = at(i)!; to = at(p.i - 1)! + 1;
+      } else {
+        const x = at(i - 1), y = at(i);
+        if (x !== undefined && y !== undefined && y !== x + 1) return null;
+        from = to = x !== undefined ? x + 1 : y;
+        if (from === undefined) return null;
+      }
+      hunks.push({ from, to: to!, lines: theirs.slice(j, p.j) });
+    } else if (p.i > i || p.j > j) {
       // base[i..p.i) became theirs[j..p.j): it, and the line either side, must be untouched in ours.
       for (let k = i - 1; k < p.i; k++) {
         const x = at(k), y = at(k + 1);
@@ -140,6 +158,19 @@ export function merge3(base: string[], ours: string[], theirs: string[]): string
   const out = [...ours];
   for (const h of hunks.reverse()) out.splice(h.from, h.to - h.from, ...h.lines);
   return out;
+}
+
+/**
+ * Whether `ours` already carries `theirs`' changes to `base`: each line theirs wrote is in ours more often than in
+ * base, and each line it took out is in ours less often. A clash someone settled by hand reads as taken in, so the
+ * next merge of the same three doesn't stop on it again.
+ */
+export function carries(base: string[], ours: string[], theirs: string[]) {
+  const count = (xs: string[]) => xs.reduce((m, x) => m.set(x, (m.get(x) ?? 0) + 1), new Map<string, number>());
+  const kept = keptPairs(base, theirs), b = count(base), o = count(ours);
+  const keptB = new Set(kept.map((k) => k.i)), keptT = new Set(kept.map((k) => k.j));
+  return theirs.every((t, j) => keptT.has(j) || (o.get(t) ?? 0) > (b.get(t) ?? 0))
+    && base.every((t, k) => keptB.has(k) || (o.get(t) ?? 0) < (b.get(t) ?? 0));
 }
 
 /**

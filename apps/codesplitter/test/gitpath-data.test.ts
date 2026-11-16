@@ -70,10 +70,11 @@ describe("gitpath's data for a hosted repo", () => {
     expect((await get(call, "/api/repos/ana/p/gitpath?path=nope.ts")).commits).toEqual([]);
     expect((await get(call, "/api/repos/ana/p/gitpath?path=src")).commits).toEqual([]);
 
-    // The busiest files, by edits: the first commit is the repo's start, not an edit.
+    // The busiest files: each one's count is as many commits as its own history lists, the first commit too.
     const top = await get(call, "/api/repos/ana/p/gitpath");
     expect(top).toMatchObject({ repo: "ana/p", branch: "main", more: false });
-    expect(top.files).toEqual([{ path: "a.ts", commits: 2 }, { path: "src/b.ts", commits: 2 }]);
+    expect(top.files).toEqual([{ path: "a.ts", commits: a.commits.length }, { path: "src/b.ts", commits: b.commits.length }]);
+    expect(top.files.map((f: any) => f.commits)).toEqual([3, 2]);
 
     // The limit cuts it, and says so.
     expect((await get(call, "/api/repos/ana/p/gitpath?path=a.ts&limit=1")).more).toBe(true);

@@ -6,14 +6,19 @@
 # on the pick and, on green, moves refs/ring/daily there (that move waits on MANUAL RUN #4495 and only logs until then).
 # A failure opens (or comments on) one issue labelled ci-daily, with the commits since the last green daily.
 # Bob's native builds (scripts/builder-nightly.ts) run on his own launchd clock and don't gate this ring yet.
+# express.yml calls it with a sha (#4586) once that commit's hourly sweep is green: no pick, no soak, marked pending.
 name: daily-ring
 on:
   schedule:
     - cron: "17 10 * * *"
   workflow_dispatch:
+  workflow_call:
+    # The express lane (express.yml, #4586): this sweep on one squash commit, now, with no soak.
+    inputs:
+      sha: { type: string, required: true }
 
 concurrency:
-  group: daily-ring
+  group: daily-ring${{ inputs.sha && format('-{0}', inputs.sha) || '' }}
   cancel-in-progress: false
 
 permissions:
@@ -23,19 +28,30 @@ jobs:
   pick:
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    permissions:
+      contents: read
+      statuses: write
     outputs:
       run: ${{ steps.pick.outputs.run }}
       sha: ${{ steps.pick.outputs.sha }}
       previews: ${{ steps.previews.outputs.previews }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with: { fetch-depth: 0 }
+        with: { fetch-depth: 0, ref: "${{ inputs.sha || github.sha }}" }
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with: { bun-version: "1.4.3" }
-      # A manual run re-runs the pick even when it already has a ring/daily status.
+      # A manual run re-runs the pick even when it already has a ring/daily status; an express run skips the pick.
       - id: pick
-        env: { GH_TOKEN: "${{ github.token }}", MANUAL: "${{ github.event_name == 'workflow_dispatch' }}" }
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MANUAL: ${{ github.event_name == 'workflow_dispatch' }}
+          EXPRESS: ${{ inputs.sha }}
+          RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
+          if [ -n "$EXPRESS" ]; then
+            bun scripts/rings.ts status daily "$EXPRESS" pending "$RUN"
+            { echo "sha=$EXPRESS"; echo run=true; } >> "$GITHUB_OUTPUT"; exit 0
+          fi
           bun scripts/rings.ts pick daily "$GITHUB_SHA" > "$RUNNER_TEMP/pick"
           cat "$RUNNER_TEMP/pick"
           sha=$(grep '^sha=' "$RUNNER_TEMP/pick" | cut -d= -f2)

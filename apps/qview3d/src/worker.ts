@@ -222,14 +222,13 @@ async function upload(req: Request, env: Env, token: string, origin: string | nu
 async function saveDesign(req: Request, env: Env, org: string, url: URL, origin: string | null, ctx: Later): Promise<Response> {
   const d = await readJson(req, Design);
   if (!d) return fail("expected a design (v, model, color, layers, camera)", 400, origin);
-  // One picture a zone, and only zones the product prints on: a cap has no back, and a shop may switch a zone off.
+  // Only zones the product prints on (any number of pictures in each, up to the design's 8): a cap has no back, and a shop may switch a zone off.
   const zones = d.layers.map((l) => l.zone ?? "front");
   const product = d.product ? await getProduct(env, org, d.product) : null;
   const bad = zones.find((z) => !zonesOf(d.model).includes(z));
   if (bad) return fail(`a ${d.model} has no ${bad} to print on`, 400, origin);
   const off = product && product.model === d.model ? zones.find((z) => !printZones(product).includes(z)) : undefined;
   if (off) return fail(`${product!.name} doesn't print on its ${off}`, 400, origin);
-  if (new Set(zones).size < zones.length) return fail("one picture a zone", 400, origin);
   const own = `orgs/${org}/`;
   const files = [d.snapshot, ...d.layers.flatMap((l) => [l.texture, l.original])].filter((k): k is string => !!k);
   for (const key of files) {

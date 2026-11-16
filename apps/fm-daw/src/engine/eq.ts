@@ -4,8 +4,9 @@
 // both run when the Rust engine is or isn't loaded; plus the band model the
 // project saves, and `response()`, the exact curve the page draws.
 //
-// It runs after either engine and before Squash: corrective EQ first, then
-// compression. No allocation in process().
+// On the master it runs after either engine and before Squash: corrective EQ
+// first, then compression. Each track also has one inside the engine (insert(),
+// before the sum; engine.ts and lib.rs). No allocation in process() or insert().
 import { bool, num, obj, oneOf, type Guard } from "@rustybuns/util/guard";
 import { CEILING } from "./params.ts";
 
@@ -76,6 +77,8 @@ export interface EqStage {
   listen(b: EqListen | null): void;
   process(buf: Float32Array, frames: number): void;
   reset(): void;
+  /** Frames the stage holds the mix back (linear phase); 0 or absent when it adds none. */
+  readonly latency?: number;
   free?(): void;
 }
 
@@ -273,44 +276,67 @@ export class TsEq implements EqStage {
     this.limEnv = 0;
   }
 
+  /** Whether any band plays or is still fading out: a flat EQ costs nothing. */
+  live() { return this.bands.some((b) => b.on || b.mix > 0); }
+
+  /** One frame through the bands (gliding every BLOCK frames) into outL / outR. No limiter. */
+  private outL = 0; private outR = 0;
+  private frame(l: number, r: number) {
+    if (this.tick === 0) {
+      const c = this.glide;
+      for (const b of this.bands) {
+        const target = b.on ? 1 : 0;
+        if (b.mix === target && b.fNow === b.f && b.gNow === b.g && b.qNow === b.q) continue;
+        b.fNow += (b.f - b.fNow) * c;
+        b.gNow += (b.g - b.gNow) * c;
+        b.qNow += (b.q - b.qNow) * c;
+        b.mix += (target - b.mix) * c;
+        if (Math.abs(b.f - b.fNow) < 1e-6) b.fNow = b.f;
+        if (Math.abs(b.g - b.gNow) < 1e-6) b.gNow = b.g;
+        if (Math.abs(b.q - b.qNow) < 1e-6) b.qNow = b.q;
+        if (Math.abs(target - b.mix) < 1e-4) { b.mix = target; if (!b.on) b.clear(); }
+        b.design(this.sr);
+      }
+    }
+    this.tick = (this.tick + 1) % BLOCK;
+    const dl = l, dr = r;
+    for (const b of this.bands) {
+      if (b.mix === 0) continue;
+      l = b.run(0, l);
+      r = b.run(1, r);
+    }
+    if (!Number.isFinite(l) || !Number.isFinite(r)) {
+      for (const b of this.bands) b.clear();
+      l = Number.isFinite(dl) ? dl : 0;
+      r = Number.isFinite(dr) ? dr : 0;
+    }
+    this.outL = l; this.outR = r;
+  }
+
+  /** The master stage: the bands, then a peak limiter and a clamp at CEILING. */
   process(buf: Float32Array, frames: number) {
     const n = Math.min(frames, buf.length >> 1);
-    if (!this.bands.some((b) => b.on || b.mix > 0)) { this.limEnv = 0; return; }
+    if (!this.live()) { this.limEnv = 0; return; }
     for (let f = 0; f < n; f++) {
-      if (this.tick === 0) {
-        const c = this.glide;
-        for (const b of this.bands) {
-          const target = b.on ? 1 : 0;
-          if (b.mix === target && b.fNow === b.f && b.gNow === b.g && b.qNow === b.q) continue;
-          b.fNow += (b.f - b.fNow) * c;
-          b.gNow += (b.g - b.gNow) * c;
-          b.qNow += (b.q - b.qNow) * c;
-          b.mix += (target - b.mix) * c;
-          if (Math.abs(b.f - b.fNow) < 1e-6) b.fNow = b.f;
-          if (Math.abs(b.g - b.gNow) < 1e-6) b.gNow = b.g;
-          if (Math.abs(b.q - b.qNow) < 1e-6) b.qNow = b.q;
-          if (Math.abs(target - b.mix) < 1e-4) { b.mix = target; if (!b.on) b.clear(); }
-          b.design(this.sr);
-        }
-      }
-      this.tick = (this.tick + 1) % BLOCK;
-      let l = buf[f * 2], r = buf[f * 2 + 1];
-      const dl = l, dr = r;
-      for (const b of this.bands) {
-        if (b.mix === 0) continue;
-        l = b.run(0, l);
-        r = b.run(1, r);
-      }
-      if (!Number.isFinite(l) || !Number.isFinite(r)) {
-        for (const b of this.bands) b.clear();
-        l = Number.isFinite(dl) ? dl : 0;
-        r = Number.isFinite(dr) ? dr : 0;
-      }
+      this.frame(buf[f * 2], buf[f * 2 + 1]);
+      const l = this.outL, r = this.outR;
       const pk = Math.max(Math.abs(l), Math.abs(r));
       this.limEnv = pk > this.limEnv ? pk : pk + (this.limEnv - pk) * this.limRel;
       const lim = this.limEnv > CEILING ? CEILING / this.limEnv : 1;
       buf[f * 2] = Math.min(Math.max(l * lim, -CEILING), CEILING);
       buf[f * 2 + 1] = Math.min(Math.max(r * lim, -CEILING), CEILING);
+    }
+  }
+
+  /**
+   * A track's insert, inside the engine before the sum: the bands only, in doubles, no
+   * limiter (a track runs hotter than the master until the master gain brings it down).
+   */
+  insert(buf: Float64Array, frames: number) {
+    const n = Math.min(frames, buf.length >> 1);
+    for (let f = 0; f < n; f++) {
+      this.frame(buf[f * 2], buf[f * 2 + 1]);
+      buf[f * 2] = this.outL; buf[f * 2 + 1] = this.outR;
     }
   }
 }
@@ -326,7 +352,7 @@ export class TsEq implements EqStage {
  * so this is what process() does, cramping near Nyquist included.
  */
 export function bandResponse(b: EqBand, sr: number, freqs: ArrayLike<number>, db: Float64Array, deg: Float64Array) {
-  const band = new Band();
+  const band = scratch;
   band.kind = EQ_KINDS.indexOf(b.kind);
   band.order = isCut(b.kind) ? orderOf(b.slope) : 0;
   band.fNow = Math.log2(clampf(b.f, 20, 20000, 1000));
@@ -359,15 +385,25 @@ export function bandResponse(b: EqBand, sr: number, freqs: ArrayLike<number>, db
   }
 }
 
-/** The whole EQ: the sum of each band's dB and phase (bands in series multiply). */
-export function response(doc: EqDoc, sr: number, freqs: ArrayLike<number>) {
-  const db = new Float64Array(freqs.length), deg = new Float64Array(freqs.length);
-  const bd = new Float64Array(freqs.length), bp = new Float64Array(freqs.length);
+/** One Band reused for every curve, so drawing (and the linear stage's redesigns) allocate nothing per band. */
+const scratch = new Band();
+
+/**
+ * The whole EQ into db and deg (bd and bp are scratch, all freqs.length long): the sum of
+ * each band's dB and phase (bands in series multiply). No allocation, for the audio thread.
+ */
+export function responseInto(doc: EqDoc, sr: number, freqs: ArrayLike<number>, db: Float64Array, deg: Float64Array, bd: Float64Array, bp: Float64Array) {
+  db.fill(0); deg.fill(0);
   for (const b of doc) {
     if (!b?.on) continue;
     bandResponse(b, sr, freqs, bd, bp);
     for (let i = 0; i < freqs.length; i++) { db[i] += bd[i]; deg[i] += bp[i]; }
   }
   for (let i = 0; i < freqs.length; i++) deg[i] = ((((deg[i] + 180) % 360) + 360) % 360) - 180;
+}
+
+export function response(doc: EqDoc, sr: number, freqs: ArrayLike<number>) {
+  const n = freqs.length, db = new Float64Array(n), deg = new Float64Array(n);
+  responseInto(doc, sr, freqs, db, deg, new Float64Array(n), new Float64Array(n));
   return { db, deg };
 }

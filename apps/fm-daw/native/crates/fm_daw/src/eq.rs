@@ -30,8 +30,9 @@
 //
 // The TypeScript twin is src/engine/eq.ts, the same arithmetic in the same
 // order. Parameters glide over ~20 ms; turning a band on or off crossfades it.
-// Ends in a peak limiter and a clamp at CEILING: a boost adds level, and
-// nothing leaves louder than -1 dBFS. No allocation in process().
+// On the master it ends in a peak limiter and a clamp at CEILING: a boost adds level, and
+// nothing leaves louder than -1 dBFS. As a track's insert (insert()) it
+// filters only. No allocation in either.
 
 use crate::CEILING;
 use std::f64::consts::PI;
@@ -254,49 +255,67 @@ impl Eq {
         self.lim_env = 0.0;
     }
 
-    fn live(&self) -> bool { self.bands.iter().any(|b| b.on || b.mix > 0.0) }
+    /// Whether any band plays or is still fading out: a flat EQ costs nothing.
+    pub fn live(&self) -> bool { self.bands.iter().any(|b| b.on || b.mix > 0.0) }
 
-    /// Filters interleaved stereo `buf` in place.
+    /// One frame through the bands (gliding every BLOCK frames). No limiter.
+    #[inline]
+    fn frame(&mut self, l: f64, r: f64) -> (f64, f64) {
+        let sr = self.sr;
+        if self.tick == 0 {
+            let c = self.glide;
+            for b in self.bands.iter_mut() {
+                let target = if b.on { 1.0 } else { 0.0 };
+                if b.mix == target && b.f_now == b.f && b.g_now == b.g && b.q_now == b.q { continue; }
+                b.f_now += (b.f - b.f_now) * c;
+                b.g_now += (b.g - b.g_now) * c;
+                b.q_now += (b.q - b.q_now) * c;
+                b.mix += (target - b.mix) * c;
+                if (b.f - b.f_now).abs() < 1e-6 { b.f_now = b.f; }
+                if (b.g - b.g_now).abs() < 1e-6 { b.g_now = b.g; }
+                if (b.q - b.q_now).abs() < 1e-6 { b.q_now = b.q; }
+                if (target - b.mix).abs() < 1e-4 { b.mix = target; if !b.on { b.clear(); } }
+                b.design(sr);
+            }
+        }
+        self.tick = (self.tick + 1) % BLOCK;
+        let (mut l, mut r) = (l, r);
+        let (dl, dr) = (l, r);
+        for b in self.bands.iter_mut() {
+            if b.mix == 0.0 { continue; }
+            l = b.run(0, l);
+            r = b.run(1, r);
+        }
+        if !l.is_finite() || !r.is_finite() {
+            for b in self.bands.iter_mut() { b.clear(); }
+            l = if dl.is_finite() { dl } else { 0.0 };
+            r = if dr.is_finite() { dr } else { 0.0 };
+        }
+        (l, r)
+    }
+
+    /// The master stage: filters interleaved stereo `buf` in place, then a peak limiter and a clamp at CEILING.
     pub fn process(&mut self, buf: &mut [f32], frames: usize) {
         let n = frames.min(buf.len() / 2);
         if !self.live() { self.lim_env = 0.0; return; }
-        let sr = self.sr;
         for f in 0..n {
-            if self.tick == 0 {
-                let c = self.glide;
-                for b in self.bands.iter_mut() {
-                    let target = if b.on { 1.0 } else { 0.0 };
-                    if b.mix == target && b.f_now == b.f && b.g_now == b.g && b.q_now == b.q { continue; }
-                    b.f_now += (b.f - b.f_now) * c;
-                    b.g_now += (b.g - b.g_now) * c;
-                    b.q_now += (b.q - b.q_now) * c;
-                    b.mix += (target - b.mix) * c;
-                    if (b.f - b.f_now).abs() < 1e-6 { b.f_now = b.f; }
-                    if (b.g - b.g_now).abs() < 1e-6 { b.g_now = b.g; }
-                    if (b.q - b.q_now).abs() < 1e-6 { b.q_now = b.q; }
-                    if (target - b.mix).abs() < 1e-4 { b.mix = target; if !b.on { b.clear(); } }
-                    b.design(sr);
-                }
-            }
-            self.tick = (self.tick + 1) % BLOCK;
-            let mut l = buf[f * 2] as f64;
-            let mut r = buf[f * 2 + 1] as f64;
-            let (dl, dr) = (l, r);
-            for b in self.bands.iter_mut() {
-                if b.mix == 0.0 { continue; }
-                l = b.run(0, l);
-                r = b.run(1, r);
-            }
-            if !l.is_finite() || !r.is_finite() {
-                for b in self.bands.iter_mut() { b.clear(); }
-                l = if dl.is_finite() { dl } else { 0.0 };
-                r = if dr.is_finite() { dr } else { 0.0 };
-            }
+            let (l, r) = self.frame(buf[f * 2] as f64, buf[f * 2 + 1] as f64);
             let pk = l.abs().max(r.abs());
             self.lim_env = if pk > self.lim_env { pk } else { pk + (self.lim_env - pk) * self.lim_rel };
             let lim = if self.lim_env > CEILING { CEILING / self.lim_env } else { 1.0 };
             buf[f * 2] = (l * lim).max(-CEILING).min(CEILING) as f32;
             buf[f * 2 + 1] = (r * lim).max(-CEILING).min(CEILING) as f32;
+        }
+    }
+
+    /// A track's insert, inside the engine before the sum: the bands only, in f64, no
+    /// limiter (a track runs hotter than the master until the master gain brings it down).
+    pub fn insert(&mut self, buf: &mut [f64], frames: usize) {
+        let n = frames.min(buf.len() / 2);
+        for f in 0..n {
+            let (l, r) = self.frame(buf[f * 2], buf[f * 2 + 1]);
+            buf[f * 2] = l;
+            buf[f * 2 + 1] = r;
         }
     }
 }

@@ -6,7 +6,8 @@ import { solve, type Solution } from "./engine.ts";
 import { addCommands } from "@rustybuns/util/commands";
 import { esc } from "@rustybuns/util";
 import { mountPalette } from "@rustybuns/util/palette";
-import { blank, example, group, innerOf, parseRows, toInput, usableBoxes, verdict, wallOf, type Group, type Row, type State } from "./model.ts";
+import { check } from "@rustybuns/util/guard";
+import { blank, example, group, innerOf, parseRows, Saved, toInput, usableBoxes, verdict, wallOf, type Group, type Row, type State } from "./model.ts";
 import { parts, sceneSvg, shapeSvg, THEMES } from "./viz.ts";
 
 // Lucide icons (24-unit grid, stroke), inline so the page loads no icon font.
@@ -28,7 +29,7 @@ const KEY = "geoboxq:v2";
 const num = (n: number) => String(Math.round(n * 100) / 100);
 
 function load(): State {
-  try { const s = localStorage.getItem(KEY); if (s) return { ...example(), ...JSON.parse(s) } as State; } catch { /* private window: start fresh */ }
+  try { const s = localStorage.getItem(KEY); const kept = s ? check(Saved, JSON.parse(s)) : null; if (kept) return kept; } catch { /* private window: start fresh */ }
   return example();
 }
 let state = load();

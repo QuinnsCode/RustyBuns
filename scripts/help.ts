@@ -13,9 +13,10 @@ export function usage(src: string): string {
   return out.join("\n").trim();
 }
 
-/** When the arguments ask for help, print the file's usage (and `extra`, if any) and exit 0; otherwise do nothing. */
+/** When the arguments ask for help, print the file's usage (and `extra`, if any) and exit 0; otherwise do nothing.
+ *  Only the script that was run answers: one imported as a library (blast.ts by mervin-board.ts) stays quiet. */
 export function help(file: string, argv = process.argv.slice(2), extra?: () => string): void {
-  if (!argv.some((a) => a === "--help" || a === "-h")) return;
+  if (Bun.main !== file || !argv.some((a) => a === "--help" || a === "-h")) return;
   console.log([usage(readFileSync(file, "utf8")) || "No usage written at the top of this script.", extra?.()].filter(Boolean).join("\n\n"));
   process.exit(0);
 }

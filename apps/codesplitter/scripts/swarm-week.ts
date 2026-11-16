@@ -10,22 +10,23 @@
 // - test-blocked: a failed workflow run on its branch, until that workflow next passes there.
 import { $ } from "bun";
 import { mkdirSync } from "node:fs";
-import { conflictCommits } from "./jam-report.ts";
+import { conflictCommits, prsByNumber } from "./jam-report.ts";
+import { arr, bool, int, nul, num, obj, str, type Of } from "@rustybuns/util/guard";
 import type { Week, WeekRow } from "../src/swarm-replay.ts";
+import { help } from "../../../scripts/help.ts";
 
+help(import.meta.path);
 const MIN = 6e4;
 
-async function gql(repo: string, nums: number[]) {
-  const [owner, name] = repo.split("/");
-  const one = (n: number) => `p${n}:pullRequest(number:${n}){number title createdAt mergedAt closedAt headRefName mergeable commits(last:100){nodes{commit{committedDate messageHeadline}}} timelineItems(last:50,itemTypes:[HEAD_REF_FORCE_PUSHED_EVENT]){nodes{... on HeadRefForcePushedEvent{createdAt}}}}`;
-  const q = `{repository(owner:"${owner}",name:"${name}"){${nums.map(one).join(" ")}}}`;
-  for (let tries = 0; tries < 6; tries++) {
-    const r = await $`gh api graphql -f query=${q}`.quiet().nothrow();
-    if (!r.exitCode) return Object.values(JSON.parse(r.stdout.toString()).data.repository) as any[];
-    await Bun.sleep(2000 * (tries + 1));
-  }
-  throw new Error(`GitHub kept failing for PRs ${nums[0]}..${nums.at(-1)}`);
-}
+/** What the week needs of a PR: when it opened, merged or closed, its commits and force-pushes. */
+const when = str(100);
+const Detail = obj({
+  number: int(1, 1e9), title: str(Infinity, { min: 0 }), createdAt: when, mergedAt: nul(when), closedAt: nul(when), headRefName: str(Infinity, { min: 0 }), mergeable: str(100),
+  commits: obj({ nodes: arr(obj({ commit: obj({ committedDate: when, messageHeadline: str(Infinity, { min: 0 }) }) }), Infinity) }),
+  timelineItems: obj({ nodes: arr(obj({ createdAt: when }), Infinity) }),
+});
+type Detail = Of<typeof Detail>;
+const DETAIL = "number title createdAt mergedAt closedAt headRefName mergeable commits(last:100){nodes{commit{committedDate messageHeadline}}} timelineItems(last:50,itemTypes:[HEAD_REF_FORCE_PUSHED_EVENT]){nodes{... on HeadRefForcePushedEvent{createdAt}}}";
 
 /** Red spans per branch: from a failed run's end until the same workflow next passes on that branch. */
 export function redSpans(runs: { branch: string; name: string; ok: boolean; at: number }[]) {
@@ -66,18 +67,18 @@ if (import.meta.main) {
   mkdirSync(cache, { recursive: true });
 
   const nums = (await $`gh pr list --repo ${repo} --state all --search ${`created:${fromDay}..${toDay}`} --limit 3000 --json number --jq ${".[].number"}`.text()).trim().split("\n").map(Number);
-  const detail = new Map<number, any>(), file = Bun.file(`${cache}/detail.json`);
-  if (await file.exists()) for (const d of await file.json()) detail.set(d.number, d);
+  const detail = new Map<number, Detail>(), file = Bun.file(`${cache}/detail.json`);
+  if (await file.exists()) for (const d of arr(Detail, Infinity)(await file.json())) detail.set(d.number, d);
   const todo = nums.filter((n) => !detail.has(n));
   for (let i = 0; i < todo.length; i += 10) {
-    for (const d of await gql(repo, todo.slice(i, i + 10))) if (d) detail.set(d.number, d);
+    for (const d of await prsByNumber(repo, todo.slice(i, i + 10), DETAIL, Detail)) detail.set(d.number, d);
     await Bun.write(file, JSON.stringify([...detail.values()]));
     console.error(`${detail.size}/${nums.length}`);
   }
 
   const runFile = Bun.file(`${cache}/runs.json`);
   let runs: { branch: string; name: string; ok: boolean; at: number }[];
-  if (await runFile.exists()) runs = await runFile.json();
+  if (await runFile.exists()) runs = arr(obj({ branch: str(Infinity, { min: 0 }), name: str(Infinity, { min: 0 }), ok: bool(), at: num(0, Number.MAX_SAFE_INTEGER) }), Infinity)(await runFile.json());
   else {
     // The runs API stops at 1,000 per query, so ask a day at a time.
     runs = [];
@@ -108,17 +109,17 @@ if (import.meta.main) {
   const clip = (s: [number, number | null][], z: number | null): [number, number][] =>
     s.map(([a, b]): [number, number] => [Math.round((a - start) / MIN), Math.round(((b ?? (z !== null ? z * MIN + start : end)) - start) / MIN)])
       .map(([a, b]): [number, number] => [a, z !== null ? Math.min(b, z) : b]).filter(([a, b]) => b > a);
-  const rows: WeekRow[] = [...detail.values()].filter((d) => nums.includes(d.number)).map((d) => {
+  const rows: (WeekRow & { f?: string[] })[] = [...detail.values()].filter((d) => nums.includes(d.number)).map((d) => {
     const opened = +new Date(d.createdAt), z = at(d.mergedAt ?? d.closedAt), f = files.get(d.number) ?? [];
-    const commits = d.commits.nodes.map((c: any) => c.commit);
+    const commits = d.commits.nodes.map((c) => c.commit);
     const fixes = [
-      ...commits.filter((c: any) => conflictCommits([c.messageHeadline])).map((c: any) => +new Date(c.committedDate)),
-      ...d.timelineItems.nodes.map((n: any) => +new Date(n.createdAt)),
+      ...commits.filter((c) => conflictCommits([c.messageHeadline])).map((c) => +new Date(c.committedDate)),
+      ...d.timelineItems.nodes.map((n) => +new Date(n.createdAt)),
     ].filter((t) => t >= opened);
     const under = moves.filter((m) => m.files.some((x) => f.includes(x))).map((m) => m.at);
     let g = gitSpans(fixes, opened, under);
     if (z === null && d.mergeable === "CONFLICTING") g = [...g, [Math.max(opened, ...g.map(([, b]) => b)), end]];
-    const last = Math.max(opened, ...commits.map((c: any) => +new Date(c.committedDate)));
+    const last = Math.max(opened, ...commits.map((c) => +new Date(c.committedDate)));
     const row: WeekRow & { f?: string[] } = {
       n: d.number, t: d.title, a: at(d.createdAt)!, z, m: !!d.mergedAt, w: Math.round((last - start) / MIN),
       g: clip(g, z), r: clip(red.get(d.headRefName) ?? [], z).filter(([a]) => a >= Math.round((opened - start) / MIN)),
@@ -128,9 +129,9 @@ if (import.meta.main) {
   }).sort((a, b) => a.n - b.n);
   // Only the shared files many PRs touched (the ones a crowd piles into) keep their names, as indexes into `hot`.
   const touched = new Map<string, number>();
-  for (const r of rows) for (const f of (r as any).f ?? []) touched.set(f, (touched.get(f) ?? 0) + 1);
+  for (const r of rows) for (const f of r.f ?? []) touched.set(f, (touched.get(f) ?? 0) + 1);
   const hot = [...touched].filter(([, n]) => n >= 12).sort((a, b) => b[1] - a[1]).slice(0, 40).map(([f]) => f);
-  for (const r of rows as any[]) { const h = (r.f ?? []).map((f: string) => hot.indexOf(f)).filter((i: number) => i >= 0); delete r.f; if (h.length) r.h = h; }
+  for (const r of rows) { const h = (r.f ?? []).map((f) => hot.indexOf(f)).filter((i) => i >= 0); delete r.f; if (h.length) r.h = h; }
 
   // The ship times: Mervin's first merge board and Ester's first failing-test sort, from main's history.
   const ship = async (re: string) => +(await $`git log origin/main --first-parent --reverse --format=%ct -E --grep=${re}`.text()).trim().split("\n")[0]! * 1000;

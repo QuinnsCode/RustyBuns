@@ -20,7 +20,9 @@
 // The repo may be bare and full (not shallow). Nothing is written to it.
 
 import { shadow, type Verdict } from "./shadow.ts";
+import { help } from "../../../scripts/help.ts";
 
+help(import.meta.path);
 const GIT_BUF = 64 << 20;
 
 export type Bucket = "solved" | "close" | "wrong" | "cards" | "gap" | "guard" | "lock" | "agree" | "differ";

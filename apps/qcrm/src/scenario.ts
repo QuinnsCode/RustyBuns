@@ -11,7 +11,8 @@
 
 import type { User } from "./auth.ts";
 import { throwaway } from "./demo.ts";
-import { error, json, readBody, type Env } from "./env.ts";
+import { error, json, need, type Env } from "./env.ts";
+import { Bad, obj, type Guard } from "@rustybuns/util/guard";
 import { addMember, createOrg } from "./orgs.ts";
 import { insert } from "./scripts.ts";
 import { EXAMPLES } from "./script-examples.ts";
@@ -30,14 +31,19 @@ export const SCENARIOS = {
 export type Scenario = keyof typeof SCENARIOS;
 export const isScenario = (n: unknown): n is Scenario => typeof n === "string" && Object.hasOwn(SCENARIOS, n);
 
+const scenario: Guard<Scenario> = (v) => { if (isScenario(v)) return v; throw new Bad(`one of ${Object.keys(SCENARIOS).join(", ")}`); };
+/** POST /api/scenario: which one to land in. */
+const Pick = obj({ name: scenario });
+
 const MEMBERS = [["manager", "Maya Manager"], ["employee", "Eli Employee"], ["seasonal", "Sam Seasonal"]] as const;
 
 export async function scenarioRoute(req: Request, env: Env): Promise<Response> {
   if (!env.BETTER_AUTH_URL?.startsWith("http://")) return error(404, "not found");
   if (req.method === "GET") return json({ scenarios: Object.entries(SCENARIOS).map(([name, s]) => ({ name, ...s })) });
   if (req.method !== "POST") return error(405, "POST {name} to land in a scenario");
-  const name = (await readBody<{ name?: unknown }>(req))?.name;
-  if (!isScenario(name)) return error(400, `name: one of ${Object.keys(SCENARIOS).join(", ")}`);
+  const b = await need(req, Pick);
+  if (b instanceof Response) return b;
+  const { name } = b;
 
   const made = await throwaway(req, env, "Scenario");
   if (!made) return error(500, "could not make the account");
@@ -67,7 +73,7 @@ async function populate(req: Request, env: Env, org: string, user: User) {
   // Members are throwaway accounts added the way an owner adds one (before the hook, so no delivery of theirs is queued).
   for (const [role, who] of MEMBERS) {
     const m = await throwaway(req, env, who, "scenario");
-    if (m) await addMember(env, org, user, "admin", m.user.email, role);
+    if (m) await addMember(env, org, user, "admin", { email: m.user.email, role });
   }
 
   // A hook nobody listens at (.invalid never resolves), with deliveries written straight in so no request is sent.

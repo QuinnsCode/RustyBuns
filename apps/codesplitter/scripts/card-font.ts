@@ -6,8 +6,11 @@
 //   bun add --no-save opentype.js@1.3.4
 //   bun scripts/card-font.ts GeistMono-Regular.ttf src/font-geist.ts "Geist Mono, SIL OFL 1.1: ..."
 
-import opentype from "opentype.js";
+import { help } from "../../../scripts/help.ts";
 
+help(import.meta.path);
+// @ts-expect-error opentype.js has no types here: it is only installed for a run (above).
+const { default: opentype } = await import("opentype.js"); // after help: it is only installed for a run (above)
 const W = 11, H = 22, BASE = 17, SS = 4;
 const [src, out, note] = process.argv.slice(2);
 if (!src || !out) throw new Error("usage: bun scripts/card-font.ts <font.ttf> <out.ts> [note]");

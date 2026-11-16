@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Load In</title>
+  <link rel="stylesheet" href="/src/style.css">
+</head>
+<body>
+  <main>
+    <canvas id="stage" aria-label="Load In"></canvas>
+    <div id="hud">
+      <div id="cross"></div>
+      <p id="hint"></p>
+      <p id="carry"></p>
+      <button id="speakers" type="button">Speakers are down. Click, or press M, to bring them up.</button>
+      <div id="controls-host"></div>
+    </div>
+    <section id="menu">
+      <h1 id="title">Load In</h1>
+      <p>Get the gear in. Pick it up, carry it, set it down where it goes.</p>
+      <p class="keys">WASD walk, mouse look, F pick up or put down, Q / E turn it, P switch on what you look at, M speakers up or down, C crouch, Esc lets go of the mouse.</p>
+      <button id="play">Play</button>
+      <div id="dial-host"></div>
+      <div id="account"></div>
+      <div id="party" hidden>
+        <button id="make">Make a party</button>
+        <form id="join"><input id="joincode" placeholder="party code" maxlength="12" aria-label="Party code"><button>Join</button></form>
+        <p id="code"></p>
+        <p id="crew"></p>
+        <button id="start" hidden>Start</button>
+      </div>
+      <p id="note"></p>
+    </section>
+  </main>
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>

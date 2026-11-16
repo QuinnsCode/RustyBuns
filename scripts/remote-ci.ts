@@ -9,6 +9,12 @@
 //   bun run builder passed                     what Bob passed, newest first, and whether each branch moved since
 //   bun run builder nightly                    the last nightly desktop build on the builder (builder-nightly.sh) and its failures
 //   bun run builder off | on                   shut or open this Mac's valve; bare `bun run builder` says which, and if Bob answers
+//   bun run builder queue [base-ref]           send the pushed HEAD's suites (what both required checks run) to the test swarm
+//   bun run builder join [--slots N]           this Mac takes test jobs from the swarm, N at a time (default 1), until Ctrl-C
+//
+// The test swarm (apps/test-swarm, #4758) is a queue any of our Macs pulls from when GitHub is slow: SWARM_URL is its
+// Worker and SWARM_TOKEN its bearer token (the owner's, from 1Password). With both set, a run that finds no builder
+// queues a pushed, clean HEAD there too. A joined Mac keeps its slots in SWARM_DIR (default ~/.rustybuns/swarm).
 //
 // The valve (~/.rustybuns/valve, per machine) is the water main for heavy work here. Shut, nothing heavy runs on this Mac:
 // tests and native builds go to the builder, and wait for him while he is off. Open, a run with no builder runs here.
@@ -22,23 +28,23 @@
 // Each run leaves a record on the builder (runs/<slot>.json and .log, then runs/done) for its menu bar: scripts/builder-bar.ts.
 import { homedir, tmpdir } from "node:os";
 import { basename, relative, resolve } from "node:path";
-import { arr, check, num, obj, type Of, str } from "../packages/util/src/guard.ts";
-import { report } from "./builder-nightly.ts";
+import { arr, check, num, obj, str, type Of } from "../packages/util/src/guard.ts";
+import { Matrix, report } from "./builder-nightly.ts";
 
-export type Job = { app: string; test: string; prep: string; boot: boolean };
+/** A row of ci-apps' matrix: one without an app, test and prep isn't a job. */
+const line = str(Infinity, { min: 0 });
+const Row = obj({ app: line, test: line, prep: line, boot: (v: unknown) => v === true, shard: (v: unknown) => (typeof v === "string" ? v : "") });
+export type Job = Of<typeof Row>;
 
 // The `apps=` line of `ci-apps.ts test`: the apps with a test command or a boot check.
 export function parseJobs(out: string): Job[] {
   const line = out.split("\n").find((l) => l.startsWith("apps="));
   if (!line) throw new Error("no apps= line in ci-apps output");
   const parsed: unknown = JSON.parse(line.slice(5));
-  const include = typeof parsed === "object" && parsed !== null && "include" in parsed && Array.isArray(parsed.include) ? parsed.include : [];
   const jobs: Job[] = [];
-  for (const j of include) {
-    if (typeof j !== "object" || j === null) continue;
-    const { app, test, prep, boot } = j as Record<string, unknown>;
-    if (typeof app !== "string" || typeof test !== "string" || typeof prep !== "string") continue;
-    if (test || boot === true) jobs.push({ app, test, prep, boot: boot === true });
+  for (const row of check(Matrix, parsed)?.include ?? []) {
+    const j = check(Row, row);
+    if (j && (j.test || j.boot)) jobs.push(j);
   }
   return jobs;
 }
@@ -195,7 +201,8 @@ type RemoteJob = { label: string; dir: string; cmd: string };
 export function ciJobs(out: string, all = false): RemoteJob[] {
   const apps = parseJobs(out).flatMap((j) => {
     const steps = [j.test, all && j.boot ? "bun ../../scripts/boot.ts" : ""].filter(Boolean);
-    return steps.length ? [{ label: j.app, dir: `apps/${j.app}`, cmd: [j.prep, ...steps].filter(Boolean).join(" && ") }] : [];
+    // A shard's label is the test swarm's suite name for it ("codesplitter:2/3").
+    return steps.length ? [{ label: j.shard ? `${j.app}:${j.shard}` : j.app, dir: `apps/${j.app}`, cmd: [j.prep, ...steps].filter(Boolean).join(" && ") }] : [];
   });
   if (!all) return apps;
   const flag = (k: string) => out.split("\n").includes(`${k}=true`);
@@ -252,7 +259,8 @@ async function passed(cwd: string): Promise<number> {
   return 0;
 }
 
-// No builder: one command runs here; every touched suite is GitHub CI's job, so say which and move on.
+// No builder: one command runs here; every touched suite is GitHub CI's job, so say which and move on. With a swarm, a
+// pushed HEAD is queued there as well, so whichever answers first (GitHub or one of our Macs) posts the checks.
 async function fallback(argv: string[], cwd: string, why: string): Promise<number> {
   if (argv[0] === "run") {
     console.log(`${why}: running here`);
@@ -260,7 +268,60 @@ async function fallback(argv: string[], cwd: string, why: string): Promise<numbe
   }
   const jobs = await touched(argv[0]!, cwd);
   console.log(`${why}: GitHub CI runs ${jobs.length ? jobs.map((j) => j.label).join(", ") : "no app suites"} for this branch`);
+  if (swarm()) await queue(argv[0]!, cwd, true);
   console.log("push, then `bun run pr <n>` waits for them");
+  return 0;
+}
+
+// The test swarm's Worker and token, when this Mac has them.
+const swarm = () => (process.env.SWARM_URL && process.env.SWARM_TOKEN ? { url: process.env.SWARM_URL, token: process.env.SWARM_TOKEN } : undefined);
+// Imported when used: build scripts import this file for `offload`, and their CI install may not have the swarm app's packages.
+const runner = () => import("../apps/test-swarm/src/runner.ts");
+
+/** `bun run builder queue`: HEAD's suites, as both required checks would run them, onto the swarm. Only a clean HEAD
+ *  that origin has: a runner fetches the SHA from GitHub, and the statuses land on what the PR merges. `quiet`: from a
+ *  fallback run, where not being pushed yet is normal and just skips it. */
+export async function queue(base: string, cwd: string, quiet = false): Promise<number> {
+  const s = swarm();
+  if (!s) { console.error("SWARM_URL and SWARM_TOKEN aren't set: no test swarm to send to"); return 2; }
+  const say = (why: string) => { (quiet ? console.log : console.error)(`not sent to the swarm: ${why}`); return quiet ? 0 : 1; };
+  const branch = (await Bun.$`git rev-parse --abbrev-ref HEAD`.cwd(cwd).quiet().nothrow().text()).trim();
+  const sha = (await Bun.$`git rev-parse HEAD`.cwd(cwd).quiet().text()).trim();
+  if (!branch || branch === "HEAD") return say("HEAD isn't on a branch");
+  if ((await Bun.$`git status --porcelain --untracked-files=no`.cwd(cwd).quiet().text()).trim()) return say("the working tree has uncommitted changes");
+  const pushed = (await Bun.$`git ls-remote origin refs/heads/${branch}`.cwd(cwd).quiet().nothrow().text()).split(/\s/)[0];
+  if (pushed !== sha) return say(`origin's ${branch} isn't at ${sha.slice(0, 8)}: push first`);
+  const suites = (await touched(base, cwd, true)).map((j) => j.label);
+  const res = await (await runner()).enqueue(s, { sha, branch, suites });
+  if (!res?.ok) { say(`the swarm answered ${res ? res.status : "nothing"}`); return 1; }
+  console.log(`queued ${suites.join(", ")} for ${sha.slice(0, 8)} on the swarm; its typecheck and apps statuses land on the PR`);
+  return 0;
+}
+
+/** `bun run builder join [--slots N]`: this Mac takes jobs until Ctrl-C. Each slot looks its suite up with
+ *  `ci-apps.ts test <root commit>` (every suite, as apps.yml asks when it has no base) at the job's own SHA, so a suite
+ *  runs what that commit's checks would. */
+async function joinSwarm(argv: string[], cwd: string): Promise<number> {
+  const s = swarm();
+  if (!s) { console.error("SWARM_URL and SWARM_TOKEN aren't set: no test swarm to join"); return 2; }
+  const i = argv.indexOf("--slots"), slots = i < 0 ? 1 : Number(argv[i + 1]);
+  if (!Number.isInteger(slots) || slots < 1 || slots > 16) { console.error("--slots takes 1 to 16"); return 2; }
+  const remote = (await Bun.$`git remote get-url origin`.cwd(cwd).quiet().text()).trim();
+  const stop = new AbortController();
+  process.once("SIGINT", () => { console.log("leaving the swarm: running suites stop, and their jobs go back on the queue"); stop.abort(); });
+  process.once("SIGTERM", () => stop.abort());
+  await (await runner()).join({
+    swarm: s, slots, source: cwd, remote, signal: stop.signal,
+    name: (process.env.SWARM_NAME || (await Bun.$`hostname -s`.quiet().text()).trim()).slice(0, 70),
+    home: process.env.SWARM_DIR ?? `${homedir()}/.rustybuns/swarm`,
+    resolve: async (slot, suite) => {
+      const root = (await Bun.$`git rev-list --max-parents=0 HEAD`.cwd(slot).quiet().nothrow().text()).split("\n")[0]!;
+      const out = await Bun.$`bun scripts/ci-apps.ts test ${root}`.cwd(slot).quiet().nothrow();
+      if (out.exitCode) return { why: `ci-apps.ts test failed at this commit:\n${out.stderr.toString().slice(-2000)}` };
+      const job = ciJobs(out.text(), true).find((j) => j.label === suite);
+      return job ? { dir: job.dir, cmd: job.cmd } : { why: `no suite "${suite}" at this commit (ci-apps.ts doesn't list it)` };
+    },
+  });
   return 0;
 }
 
@@ -283,10 +344,12 @@ export const NOT_RUN = 125;
  *  (unset, off, charging) answers NOT_RUN at once instead of running here or waiting. scripts/ring-red.ts bisects with it. */
 export async function main(argv: string[], cwd: string, at?: string): Promise<number> {
   const host = process.env.BUILDER_HOST;
-  const usage = "usage: bun run builder [on|off]  |  bun run builder <base-ref>  |  bun run builder all [base-ref]  |  bun run builder passed  |  bun run builder run <dir> <cmd...>  |  bun run builder nightly";
+  const usage = "usage: bun run builder [on|off]  |  bun run builder queue [base-ref]  |  bun run builder join [--slots N]  |  bun run builder <base-ref>  |  bun run builder all [base-ref]  |  bun run builder passed  |  bun run builder run <dir> <cmd...>  |  bun run builder nightly";
   if (!argv.length || argv[0] === "on" || argv[0] === "off") return setValve(argv[0]);
   if (argv[0] === "nightly") return nightly(host);
   if (argv[0] === "passed") return passed(cwd);
+  if (argv[0] === "queue") return queue(argv[1] ?? "origin/main", cwd);
+  if (argv[0] === "join") return joinSwarm(argv, cwd);
   const all = argv[0] === "all";
   if (all) argv = [argv[1] ?? "origin/main"];
   if (argv[0] === "run" && argv.length < 3) { console.error(usage); return 2; }

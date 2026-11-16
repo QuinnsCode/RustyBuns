@@ -13,3 +13,4 @@ bun scripts/judge/play.ts <app dir>              # raw rides: pumping, wall ride
 - Tighten the scorecard when a gap shows up; never loosen it to raise a score.
 
 Scores: main before the physics loop 53.8 (v1) / 56.5 (v2); after round 1 (#2417) 79.1 / 74.6; main at this commit 77.2 (v2).
+Round 7 added `hillRoll` (speed after 50 board lengths down a 6 deg grade, no input): main had climbed to 100 but scored 94.6 with it, since any speed past push top was bled off at half the excess a second; with only the cited rolling and air losses left it scores 100.

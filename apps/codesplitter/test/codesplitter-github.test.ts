@@ -401,11 +401,14 @@ describe("shares", () => {
     expect((await call("bo", "/api/repos/ana/vault/do/file?path=a.ts")).status).toBe(404);     // the rest stays sealed
     expect((await post(call, "bo", "/api/repos/ana/vault/shares", { path: "a.ts", from: 1, to: 4 })).status).toBe(404);
 
-    // Edits around and inside the range: it follows the lines.
+    // Edits around and inside the range: it follows the lines, and a line written between them later was never shared.
     const doc = await (await call("ana", "/api/repos/ana/vault/do/file?path=a.ts")).json() as any;
-    const two = doc.lines[1];
+    const [, two, three, four] = doc.lines;
     await post(call, "ana", "/api/repos/ana/vault/do/ops?path=a.ts", { ops: [{ kind: "insert", after: null, text: "zero" }, { kind: "insert", after: two.id, text: "two and a half" }, { kind: "set", line: two.id, base: two.rev, text: "TWO" }] });
-    expect((await look("bo")).lines.map((l: any) => [l.n, l.text])).toEqual([[3, "TWO"], [4, "two and a half"], [5, "three"]]);
+    expect((await look("bo")).lines.map((l: any) => [l.n, l.text])).toEqual([[3, "TWO"], [5, "three"]]);
+    // A shared line moved (a delete and an insert, so a new id) is still in it, where it is now.
+    await post(call, "ana", "/api/repos/ana/vault/do/ops?path=a.ts", { ops: [{ kind: "insert", after: four.id, text: "three" }, { kind: "delete", line: three.id, base: three.rev }] });
+    expect((await look("bo")).lines.map((l: any) => [l.n, l.text])).toEqual([[3, "TWO"], [6, "three"]]);
 
     expect((await call("bo", `/api/shares/${id}`, { method: "DELETE" })).status).toBe(403);
     expect((await call("ana", `/api/shares/${id}`, { method: "DELETE" })).status).toBe(200);

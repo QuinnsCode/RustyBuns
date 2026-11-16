@@ -17,10 +17,12 @@
 import { mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { order, run, score, TIERS, type Board, type BoardPr, type Stage } from "./mervin-board.ts";
+import { order, run, score, TIERS, type Board, BoardPrs, type Stage } from "./mervin-board.ts";
 import { writeTree } from "./shadow.ts";
 import { needless, roundOf, type BoardRow, type Hits, type Round } from "../src/board.ts";
+import { help } from "../../../scripts/help.ts";
 
+help(import.meta.path);
 const MANIFESTS = /^(package\.json|bun\.lock)$/;
 const appOf = (path: string) => path.match(/^apps\/([^/]+)\//)?.[1];
 const pkgOf = (path: string) => path.match(/^packages\/([^/]+)\//)?.[1];
@@ -102,7 +104,7 @@ if (import.meta.main) {
   const hits: Hits = {};
   const pass = async () => {
     sh(["git", "fetch", "origin", "main", "--quiet"], top);
-    const prs: BoardPr[] = JSON.parse(sh(["gh", "pr", "list", "--state", "open", "--limit", "200", "--json", "number,title,headRefOid,headRefName,baseRefName,statusCheckRollup"], top) || "[]");
+    const prs = BoardPrs(JSON.parse(sh(["gh", "pr", "list", "--state", "open", "--limit", "200", "--json", "number,title,headRefOid,headRefName,baseRefName,statusCheckRollup"], top) || "[]"));
     for (const p of prs) if (sh(["git", "cat-file", "-e", `${p.headRefOid}^{commit}`], top) === null) sh(["git", "fetch", "origin", `pull/${p.number}/head`, "--quiet"], top);
     const main = sh(["git", "rev-parse", mainRef], top)!.trim();
     const fp = main + prs.map((p) => `${p.number}:${p.headRefOid}:${p.statusCheckRollup?.map((c) => c.conclusion ?? c.status).join(",") ?? ""}`).join(";");

@@ -31,10 +31,12 @@
 
 import { appendFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
-import { run, order, ciOf, type Board, type BoardPr } from "./mervin-board.ts";
+import { run, order, ciOf, type Board, type BoardPr, BoardPrs } from "./mervin-board.ts";
 import { events, FEED, PAUSE, costOf, type Ev, type Round } from "../src/mervin-replay.ts";
 import { ghTrain, Train } from "@rustybuns/util/train";
+import { help } from "../../../scripts/help.ts";
 
+help(import.meta.path);
 export interface Verdict { pr: number; title?: string; go: boolean; wave?: number; why: string; behind: number[]; method?: "squash" | "merge" }
 
 /** The checks the main ruleset requires. One that hasn't reported yet is pending, never passed (#1542). */
@@ -229,8 +231,8 @@ if (import.meta.main) {
   const replay = arg("replay");
   const rec = replay ? JSON.parse(await Bun.file(replay).text()) : undefined;
   const from = arg("from");
-  const prs: BoardPr[] = rec ? rec.prs : JSON.parse(from ? await Bun.file(from).text()
-    : Bun.spawnSync(["gh", "pr", "list", "--state", "open", "--limit", "200", "--json", "number,title,body,headRefOid,headRefName,baseRefName,autoMergeRequest,statusCheckRollup"], { cwd: top }).stdout.toString() || "[]");
+  const prs = BoardPrs(rec ? rec.prs : JSON.parse(from ? await Bun.file(from).text()
+    : Bun.spawnSync(["gh", "pr", "list", "--state", "open", "--limit", "200", "--json", "number,title,body,headRefOid,headRefName,baseRefName,autoMergeRequest,statusCheckRollup"], { cwd: top }).stdout.toString() || "[]"));
   const main: string = rec ? rec.main : Bun.spawnSync(["git", "rev-parse", "origin/main"], { cwd: top }).stdout.toString().trim();
   const given = args.filter((a, i) => /^\d+$/.test(a) && !args[i - 1]?.startsWith("--")).map(Number);
   say(`reading ${prs.length} open PRs against main ${main.slice(0, 9)}`);

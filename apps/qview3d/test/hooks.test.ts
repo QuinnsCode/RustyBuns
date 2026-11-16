@@ -74,7 +74,7 @@ test("a design saved, an order posted: the shop's receiver gets a signed order.r
   expect(await verifyHook("whsec_someone-else", last.sig, last.body)).toBe(false);
   const ev = HookEvent(JSON.parse(last.body));
   expect(ev).toMatchObject({ type: "order.ready", org: "demo", data: { order: "#1001" } });
-  expect((await fetch(ev.data.lines![0]!.sheets[0]!.original, { headers: admin })).status).toBe(200);
+  expect((await fetch(ev.data.lines![0]!.sheets[0]!.pictures[0]!.original, { headers: admin })).status).toBe(200);
 
   // The store retries its call: same order back, nothing fires twice. A design that isn't the org's is refused.
   const again = OrderReply(await (await call("/api/orgs/demo/orders", "POST", order)).json());

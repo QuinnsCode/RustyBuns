@@ -250,6 +250,12 @@ test("a push is gentle and tops out at a speed you can steer at, while the jets 
   const hill = makeLevel({ name: "h", pieces: [piece("ramp", "slope", 0, 0, Math.PI, 20, 400, 0, 120)], rails: [], spawns: [], bounds: { minX: -300, maxX: 300, minZ: -400, maxZ: 400 } });
   const down = run(start(0, -198, 0, hill), 10, () => ({}), hill); // heading downhill, no push at all
   expect(kmh(down)).toBeGreaterThan(75); // gravity carries it past what pushing reaches
+
+  // let go at jet speed, only the wheels and the air slow it: no hidden brake back down to push speed
+  const loose = Object.assign(start(0, -250, 0, flatLv), { speed: 40 });
+  run(loose, 3, () => ({}), flatLv);
+  expect(loose.speed).toBeGreaterThan(0.85 * 40);
+  expect(loose.speed).toBeLessThan(40);
 });
 
 test("a bad landing carries on: the rider slides and rolls across the ground, slowing, before standing up", () => {

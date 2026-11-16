@@ -21,7 +21,7 @@ import { NO_ASKS, RADIO, askBlocked, answerText, parseAsk, radioGrid, resolve, t
 import { CLIFF, loadZoneData, readyZone, zoneById, zoneLoaded, zonesFor, type Zone } from "../zones/zone.ts";
 import { MOVE, TAG_REACH, canSee, clearSky, resolve as pushOut, soundJitter, stepReach, type Body, type Role, type Sky, type TimeOfDay } from "./sim.ts";
 import { describe, type Weather } from "../weather.ts";
-import { isRecord } from "@rustybuns/util/guard";
+import { arr, Bad, bool, int, isRecord, nul, num as within, obj, oneOf, opt, str, type Guard } from "@rustybuns/util/guard";
 
 export const HUNT = {
   dropSecs: 15,
@@ -224,8 +224,70 @@ export interface View {
 
 /** What the world sends each page: the hunt as that player sees it. */
 export type ServerMsg = { t: "view"; view: View };
-/** The world's message read on the page. The world runs this build's own Room, so the envelope is what's checked. */
-export const isServerMsg = (m: unknown): m is ServerMsg => isRecord(m) && m.t === "view" && isRecord(m.view) && typeof m.view.now === "number";
+
+// The view read on the page, every field of it, 20 times a second. At a full lobby (8 players, ~3.7 KB a
+// view) the whole check takes about 5 µs, as long as the JSON.parse before it: 0.1 ms a second, nothing
+// against a 16 ms frame (measured in #4584). So nothing is left to the envelope.
+const fail = (why: string): never => { throw new Bad(why); };
+const text = (max: number) => str(max, { min: 0 });
+const id = text(200);
+const at = within(-1e12, 1e12);
+const time = within(0, Number.MAX_SAFE_INTEGER);
+const when = nul(time);
+const unit = within(0, 1);
+const pt = (v: unknown): Pt => { const [x, y] = arr(at, 2, { min: 2 })(v); return [x!, y!]; };
+const LookG: Guard<Look> = obj({ shirt: int(0, 64), pants: int(0, 64), skin: int(0, 64), hat: oneOf(HATS), pack: bool() });
+const RoleG = oneOf(["camper", "ranger"]);
+const TodG = oneOf(["day", "dusk", "night"]);
+const SkyG: Guard<Sky> = obj({ tod: TodG, fog: unit, rain: unit, wind: unit, overcast: bool(), snow: bool() });
+const DisguiseG: Guard<Disguise> = obj({ kind: oneOf(["bush", "boulder", "log"]), size: within(0, 1e4), rot: at });
+const MatchG = oneOf(["peak", "lake", "sight"]), MeasureG = oneOf(["water", "road"]);
+const AskG: Guard<Ask> = (v) => parseAsk(v) ?? fail("a radio question");
+const ClueG: Guard<Clue> = (v) => {
+  const kind = isRecord(v) ? v.kind : undefined;
+  if (kind === "radar") return { kind, ...obj({ x: at, y: at, r: at, yes: bool() })(v) };
+  if (kind === "compass") return { kind, ...obj({ axis: oneOf(["ns", "ew"]), v: at, plus: bool() })(v) };
+  if (kind === "thermo") return { kind, ...obj({ ax: at, ay: at, bx: at, by: at, hotter: bool() })(v) };
+  if (kind === "match") return { kind, ...obj({ cat: MatchG, idx: int(-1, 1e6), same: bool() })(v) };
+  if (kind === "measure") return { kind, ...obj({ what: MeasureG, d: at, closer: bool() })(v) };
+  return fail("a radio answer");
+};
+const uses = int(0, 100);
+const ActorG: Guard<Actor> = obj({
+  id, role: RoleG, x: at, y: at, yaw: at, pitch: at, stamina: unit, crouch: bool(), prone: opt(bool()), run: bool(), light: bool(),
+  caughtAt: when, caughtBy: nul(id), drop: nul(pt), disguise: nul(DisguiseG), climbAt: when, outsideAt: when,
+  climbHeld: bool(), movedAt: time, walkedAt: time,
+});
+const ActorViewG: Guard<ActorView> = obj({
+  id, role: RoleG, x: at, y: at, yaw: at, pitch: at, crouch: bool(), prone: bool(), climb: bool(), run: bool(), light: bool(),
+  caughtAt: when, disguise: nul(DisguiseG),
+});
+const CueG: Guard<Cue> = obj({
+  id: int(0, Number.MAX_SAFE_INTEGER), kind: oneOf(["step", "rustle", "call", "caught", "howl", "thud"]), x: at, y: at, at: time, by: id,
+  to: oneOf(["rangers", "campers", "all"]),
+});
+const AskLogG: Guard<AskLog> = obj({ at: time, ask: AskG, by: id, x: at, y: at, answers: arr(obj({ id, text: text(500), clue: ClueG }), 64) });
+const RadioG = obj({
+  x: at, y: at, cooldownUntil: time, lastAsk: nul(pt),
+  used: obj({ radar: uses, compass: uses, thermo: uses, match: uses, measure: uses }),
+});
+const CircleG: Guard<Circle> = obj({ x0: at, y0: at, r0: at, x1: at, y1: at, r1: at, from: time, to: time });
+const WeatherG: Guard<Weather> = obj({ sky: SkyG, tempC: within(-100, 100), code: int(0, 1000), local: text(20), label: text(100) });
+const ResultG: Guard<RoundResult> = obj({ id, role: RoleG, caughtAt: when, points: within(-1e6, 1e6), bigfoot: opt(bool()) });
+const RoundG: Guard<NonNullable<View["round"]>> = obj({
+  id: int(0, 1e9), n: int(0, 1000), total: int(0, 1000), rangers: arr(id, 64), you: nul(ActorG), others: arr(ActorViewG, 64),
+  cues: arr(CueG, 10_000), asks: arr(AskLogG, 100), radio: nul(RadioG), huntStartedAt: time, circle: nul(CircleG),
+  bigfoot: nul(obj({ x: at, y: at, yaw: at, foundBy: nul(id) })), sky: SkyG, weather: nul(WeatherG), results: nul(arr(ResultG, 64)),
+});
+const ViewG: Guard<View> = obj({
+  me: id, hostId: nul(id), phase: oneOf(["lobby", "drop", "hide", "hunt", "results", "over"]), now: time, endsAt: time,
+  zone: id, zonePick: id, tod: TodG, live: bool(), laps: int(0, 100), mode: oneOf(["classic", "props"]),
+  players: arr(obj({ id, name: text(200), bot: nul(oneOf(["easy", "normal", "hard"])), score: within(-1e9, 1e9), online: bool(), look: LookG }), 64),
+  round: nul(RoundG),
+  log: arr(text(1000), 100),
+});
+/** The world's message read on the page: `check(ServerMsg, v)` is the view, or null. */
+export const ServerMsg: Guard<ServerMsg> = obj({ t: oneOf(["view"]), view: ViewG });
 
 interface Player { id: string; name: string; bot: BotLevel | null; score: number; online: boolean; look: Look }
 interface Round {

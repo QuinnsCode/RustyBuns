@@ -481,6 +481,21 @@ test("a path whose policy escalates waits for a person instead, its note attache
   expect((await runsOf(call)).length).toBe(1);
 });
 
+test("a run that finishes in the round that went past its budget is noted as over, not handed off (#4773)", async () => {
+  const { call, post } = await app();
+  await post("ryan", "/api/repos/ryan/lab/files", { path: ".gitattributes", content: "a.js codesplitter-budget=10 codesplitter-over=handoff" });
+  const cli = gated(call);
+  const run = await (await post("ryan", "/api/repos/ryan/lab/agents", { path: "a.js", harness: "codex", task: "shout every line" })).json() as any;
+  await cli.started(1);
+  cli.go();
+  await until(async () => (await runsOf(call)).find((r) => r.id === run.id).status !== "running");
+  const done = (await runsOf(call)).find((r) => r.id === run.id);
+  expect(done).toMatchObject({ status: "done", runs: 1, overspent: { budget: 10, at: done.spent } });
+  expect(done.spent).toBeGreaterThan(10);
+  expect(done.handoff).toBeUndefined();
+  expect(cli.prompts.length).toBe(1);
+});
+
 test("bulk Stop: by harness, by the lines they claimed, or all of them", async () => {
   const { call, post } = await app();
   call.env.AGENT_EXEC = (async (_cmd, _cwd, signal) => new Promise((_, fail) => signal?.addEventListener("abort", () => fail(new Error("killed"))))) as Exec;
@@ -665,4 +680,38 @@ test("a hosted agent runs with a write token of its own, and loses it when its r
   expect(seen.during).toBe(true);
   expect(await live(seen.remote!)).toBe(false);
   expect(await call.env.DB.prepare("SELECT token FROM agent_runs WHERE id = ?").bind(row.id).first()).toEqual({ token: null });
+});
+
+test("the day's hosted-run limit counts starts, not stops or notes", async () => {
+  const { call } = await app();
+  call.env.AGENT_REVIEW_MS = "60000";
+  call.env.ADMINS = "boss";   // on a desktop everyone is an admin, and admins aren't counted
+  await call.env.DB.prepare("INSERT INTO limit_rules (name, max, window_s, enabled, on_fail) VALUES ('agent', 1, 86400, 1, 'reject')").run();
+  const post = (url: string, body: unknown) => call("ryan", url, { method: "POST", headers: { "cf-connecting-ip": "203.0.113.7" }, body: JSON.stringify(body) });
+  expect((await post("/api/repos/ryan/lab/agents", { path: "a.js", harness: "claude", task: "shout" })).status).toBe(202);
+  for (let i = 0; i < 3; i++) expect((await post("/api/repos/ryan/lab/agents/stop", {})).status).toBe(200);
+  const over = await post("/api/repos/ryan/lab/agents", { path: "a.js", harness: "claude", task: "again" });
+  expect(over.status).toBe(429);
+  expect(await over.json()).toMatchObject({ error: expect.stringContaining("limited to 1 per day") });
+});
+
+test("a batch the merge refuses waits, held, in the merge's own words", async () => {
+  const { call, post } = await app();
+  await call("ryan", "/api/repos/ryan/lab/checks/settings", { method: "PUT", body: JSON.stringify({ required: ["ci/jenkins"] }) });
+  await post("ryan", "/api/repos/ryan/lab/agents", { path: "a.js", harness: "claude", task: "shout" });
+  let runs: any[] = [];
+  await until(async () => !!(runs = await runsOf(call))[0].pending?.why);
+  expect(runs[0].pending).toMatchObject({ until: null, why: expect.stringContaining("required checks haven't passed") });
+});
+
+test("the owner's @agent lands a batch still on its clock and starts again, rather than making them wait it out", async () => {
+  const { call, post } = await app();
+  call.env.AGENT_REVIEW_MS = "60000";
+  const run = await (await post("ryan", "/api/repos/ryan/lab/agents", { path: "a.js", harness: "claude", task: "shout" })).json() as any;
+  await until(async () => !!(await runsOf(call))[0].pending?.until);
+  const again = await (await post("ryan", `/api/repos/ryan/lab/agents/${run.id}/thread`, { text: "@agent once more" })).json() as any;
+  expect(again.started).toMatchObject({ agent: "agent-claude", status: "running" });
+  const first = (await runsOf(call)).find((r) => r.id === run.id);
+  expect(first).toMatchObject({ landed: { by: "auto" } });
+  expect(first.pending).toBeUndefined();
 });

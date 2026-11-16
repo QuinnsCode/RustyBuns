@@ -139,3 +139,9 @@ test("SvelteKit is ready with adapter-cloudflare, needs work without it", () => 
   expect(auto.reasons[0]).toContain("adapter-cloudflare");
   expect(auto.issue).toMatch(/issues\/2455$/);
 });
+
+test("Rat Stack: its web app is named and ready, and keeps its own deploy pins", () => {
+  const web = fit({ pkg: { name: "@rat-stack/web", dependencies: { "@rat-stack/core": "workspace:*", alchemy: "2.0.0-beta.87", effect: "4.1.4", foldkit: "0.170.0" }, devDependencies: { vite: "8.3.8", typescript: "7.0.2" } }, files: ["package.json", "vite.config.ts", "src/main.ts"] });
+  expect(web).toMatchObject({ verdict: "ready", stack: "vite", label: "Rat Stack (Vite), TypeScript" });
+  expect(web.reasons.join("\n")).toContain("keeps its versions");
+});
