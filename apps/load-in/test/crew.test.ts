@@ -50,8 +50,9 @@ test("two carry the cooler together, walk it out the same way, and it lands wher
   const cooler = (w: World) => snapshot(w).items.find((i) => i.key === "cooler")!;
 
   const ada = await join("Ada", "guest-ada-0001");
-  // Alone in the room, the cooler is what it always was.
-  walkTo(ada.w, -3.4, 1.2);
+  // In by the left wall (straight from the door runs into the stage gear). Alone, the cooler is what it always was.
+  const byTheWall = (p: Page, x: number, z: number) => { walkTo(p.w, -3.3, 14.5); walkTo(p.w, x, 14.5); walkTo(p.w, x, z); };
+  byTheWall(ada, -3.3, 1.2);
   expect(pickUp(ada.w, "cooler")).toEqual({ ok: false, why: "back-bar drinks cooler is 70 kg, too heavy to lift alone" });
 
   const bea = await join("Bea", "guest-bea-0001");
@@ -66,7 +67,7 @@ test("two carry the cooler together, walk it out the same way, and it lands wher
   pump(ada, bea);
 
   // Bea takes the other end: it comes up between them.
-  walkTo(bea.w, -2.3, 0.9);
+  byTheWall(bea, -2.5, 0.9);
   expect(pickUp(bea.w, "cooler")).toEqual({ ok: true });
   pump(bea, ada); pump(ada, bea);
   expect([snapshot(ada.w).together, snapshot(bea.w).together]).toEqual(["Bea", "Ada"]);
@@ -78,7 +79,7 @@ test("two carry the cooler together, walk it out the same way, and it lands wher
   walkTo(ada.w, -3.0, 6, 3);
   expect(apart()).toBeLessThan(span + 0.2);
 
-  // Both walk it toward the stage, a step at a time each, and Bea sets it down.
+  // Both walk it across the room, a step at a time each, and Bea sets it down.
   for (let k = 0; k < 40; k++) {
     walkTo(ada.w, ada.w.you.x + 0.6, ada.w.you.z + 0.1, 0.1);
     walkTo(bea.w, bea.w.you.x + 0.6, bea.w.you.z + 0.1, 0.1);
@@ -93,7 +94,8 @@ test("two carry the cooler together, walk it out the same way, and it lands wher
   expect(landed.x).toBeGreaterThan(-2.5);
 
   // A wedge is light: whoever has it has it.
-  walkTo(ada.w, 1.2, 12.6); walkTo(bea.w, 1.6, 12.6);
+  // Round by the right wall to the front of the stage gear.
+  for (const [p, x] of [[ada, 1.2], [bea, 2.0]] as const) { walkTo(p.w, 3.3, 3); walkTo(p.w, 3.3, 14); walkTo(p.w, x, 14); }
   expect(pickUp(ada.w, "wedge-1")).toEqual({ ok: true });
   pump(ada, bea);
   expect(pickUp(bea.w, "wedge-1")).toEqual({ ok: false, why: "Ada has the 12\" floor monitor" });
