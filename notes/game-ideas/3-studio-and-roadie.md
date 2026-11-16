@@ -72,20 +72,22 @@ Steps, each usable on its own:
 
 1. **Q Amp on a 3D stage** ([#4570](https://github.com/QuinnsCode/RustyBuns/issues/4570), filed): the clear amp, cab
    and pedals in three.js. The first room.
-2. **Gear on cables** ([#4835](https://github.com/QuinnsCode/RustyBuns/issues/4835)): the shared layer above, and a pedal chain of any length (today one pedal slot). Q Amp's page
-   gets a patch view: drag cables between jacks in 2D; the 3D room uses the same patch later.
+2. **Gear on cables** ([#4835](https://github.com/QuinnsCode/RustyBuns/issues/4835)): the shared layer above, with the pedalboard (its slots and their order, [#4827](https://github.com/QuinnsCode/RustyBuns/issues/4827))
+   as one piece of gear in it. Q Amp's page gets a patch view: drag cables between jacks in 2D; the 3D room uses the
+   same patch later.
 3. **Walk the room** ([#4836](https://github.com/QuinnsCode/RustyBuns/issues/4836)): move, pick up, place, cable and turn knobs in 3D (`@rustybuns/game-controls`), with
    `qstudio.state()` for probes.
 4. **More circuits, part 1: the back end of the amp** ([#4837](https://github.com/QuinnsCode/RustyBuns/issues/4837)): push-pull power tubes, the output transformer, supply sag, a
    cabinet impulse response and a mic you can move on the cab (CIRCUITS.md Next 3 and 4).
-5. **More circuits, part 2: new parts and new gear** ([#4838](https://github.com/QuinnsCode/RustyBuns/issues/4838)): transistors (Ebers-Moll) for a transistor fuzz and a boost,
-   JFETs, live pots; a DI box with a ground lift; a console channel (preamp, Shape EQ, fader) (CIRCUITS.md Next 5).
+5. **More circuits, part 2: the gear a stage needs** ([#4838](https://github.com/QuinnsCode/RustyBuns/issues/4838)): a DI box with a ground lift and a console channel
+   (preamp, Shape EQ, fader), built from the new parts in [#4826](https://github.com/QuinnsCode/RustyBuns/issues/4826) (transistors, JFETs, pots).
 6. **Record** ([#4839](https://github.com/QuinnsCode/RustyBuns/issues/4839)): the desk's output lands on an FM DAW track in the sesh (needs [#4555](https://github.com/QuinnsCode/RustyBuns/issues/4555)).
 7. **Friends in the studio** ([#4840](https://github.com/QuinnsCode/RustyBuns/issues/4840)): a studio is a sesh. The patch, knob turns and who carries what go in the sesh beside the
    groove (the World already holds one per sesh). Each player hears the circuits on their own machine. Hearing a
    friend's guitar live needs audio between players (Qlave), which comes after.
-8. **The bench** ([#4841](https://github.com/QuinnsCode/RustyBuns/issues/4841)): draw a pedal (a tscircuit board, which `tscircuit.ts` already reads), and it shows up as a box on the
-   floor with your knobs on it. That is what makes it a world people add to rather than a showroom.
+8. **The bench** ([#4841](https://github.com/QuinnsCode/RustyBuns/issues/4841)): draw a pedal as a tscircuit board (the board view and part swaps are [#4831](https://github.com/QuinnsCode/RustyBuns/issues/4831)), and it
+   shows up as a box on the floor with your knobs on it. That is what makes it a world people add to rather than a
+   showroom.
 
 ## Load In
 
@@ -127,6 +129,11 @@ Steps, each usable on its own:
 5. **The tour and the crew** ([#4846](https://github.com/QuinnsCode/RustyBuns/issues/4846)): more venues, pay, gear to buy, and friends as crew.
 
 ## Order
+
+The circuit work has its own map, FM DAW's ANALOG.md ([#4826](https://github.com/QuinnsCode/RustyBuns/issues/4826) to [#4832](https://github.com/QuinnsCode/RustyBuns/issues/4832): more parts, a pedalboard, phasers to
+tape echo, profiling a real amp, orderable boards). Every pedal it adds is gear in both games for free, so this plan
+files only what the games need on top: the patch, the room, the power amp and cab, the stage gear, and the games.
+
 
 Studio steps 1 and 2 come first: they give both games the gear and the patch. After that the two can run side by
 side: Studio 3 to 8 in FM DAW, Load In 1 to 5 in its own app. Once either one is playable, its feel gets a hill climb

@@ -115,7 +115,7 @@ In order, each one usable on its own:
 2. **Q Amp on a 3D stage** ([#4570](https://github.com/QuinnsCode/RustyBuns/issues/4570)): the clear amp, cabinet and pedalboard in three.js, 2.5D or 3D, with the screens behind as stage LED walls.
 3. **A real power amp:** push-pull output tubes, the output transformer, and supply sag (the amp compressing when you dig in). Today it is a `tanh`. With step 4, [#4837](https://github.com/QuinnsCode/RustyBuns/issues/4837).
 4. **A real cabinet:** convolve a speaker impulse response instead of the EQ curve, with a mic you can move on the cone.
-5. **More parts:** transistors (Ebers-Moll) for transistor fuzzes (Q Fuzz is an op-amp fuzz today) and boosts, JFETs, potentiometers as live knobs; a DI box and a console channel ([#4838](https://github.com/QuinnsCode/RustyBuns/issues/4838)).
+5. **More parts:** transistors (Ebers-Moll) for transistor fuzzes (Q Fuzz is an op-amp fuzz today) and boosts, JFETs, potentiometers as live knobs.
 6. **Voicing by ear** against reference recordings the owner picks.
 7. **A plugin build** (VST3 and CLAP through nih-plug) if it should also run in other DAWs.
 
