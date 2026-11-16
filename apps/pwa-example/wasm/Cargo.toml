@@ -1,0 +1,23 @@
+[package]
+name = "pocket_dice"
+version = "0.1.0"
+edition = "2021"
+publish = false
+license = "MIT"
+description = "Pocket Dice's roller: mulberry32, bit for bit with @rustybuns/util's, as a raw wasm module with no glue (scripts/wasm.ts)"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+# No dependencies: builds to wasm32-unknown-unknown offline, no wasm-bindgen or wasm-pack.
+[dependencies]
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
+
+# Standalone: keep the root native/Cargo.toml workspace from claiming this crate.
+[workspace]

@@ -1,0 +1,5 @@
+# The service worker and the manifest are read fresh on every visit, so a deploy reaches installed phones on their next launch.
+/sw.js
+  Cache-Control: no-cache
+/manifest.webmanifest
+  Cache-Control: no-cache

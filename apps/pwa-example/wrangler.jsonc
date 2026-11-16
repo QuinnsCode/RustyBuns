@@ -1,0 +1,7 @@
+// Pocket Dice on the web: the built page, its manifest and its service worker as static assets, no Worker code.
+// An installed PWA on Android needs HTTPS, which workers.dev gives. `bun run deploy` ships it.
+{
+  "name": "pwa-example",
+  "compatibility_date": "2026-09-01",
+  "assets": { "directory": "dist/ui", "not_found_handling": "single-page-application" }
+}
