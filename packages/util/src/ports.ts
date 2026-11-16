@@ -27,6 +27,7 @@ export const PORTS = {
   battle: 4180,
   // repo tools and previews
   manual: 4790,
+  bridge: 4796,
   eqosysPreview: 4792,
   qview3d: 5190,
   parkHideSeek: 5391,
