@@ -45,3 +45,13 @@ export const portArg = (v: string | undefined, fallback: PortName): number => {
   if (v && /^\d+$/.test(v)) return Number(v);
   return v && isName(v) ? PORTS[v] : PORTS[fallback];
 };
+
+/** Start a server on `port` with `start`; when that port is taken (an old demo still holds it), on any free one (0)
+ *  instead, so a "try it" command never dies with a stack trace. `moved` says which happened, for the printed link. */
+export function onPortOrFree<T>(port: number, start: (port: number) => T): { server: T; moved: boolean } {
+  try { return { server: start(port), moved: false }; }
+  catch (e) {
+    if (!/in use|EADDRINUSE/i.test(String(e))) throw e;
+    return { server: start(0), moved: true };
+  }
+}

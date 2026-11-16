@@ -27,7 +27,9 @@ import { apply, empty, text, type Conflict, type Doc } from "../src/lines.ts";
 import { local, type Call } from "../src/local.ts";
 import { FileDoc } from "../src/file-do.ts";
 import { readJson } from "@rustybuns/util/http";
+import { help } from "../../../scripts/help.ts";
 
+help(import.meta.path);
 /** The fixes #1097 replayed: PR, and the merge commit that settled its conflicts by hand. */
 export const CASES = [
   { pr: 1081, commit: "e49e19a" },

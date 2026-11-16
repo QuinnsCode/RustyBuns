@@ -19,8 +19,10 @@ import { readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { check, obj, str } from "@rustybuns/util/guard";
 import { give, type Exec } from "../src/agent-run.ts";
-import { portArg } from "@rustybuns/util/ports";
+import { onPortOrFree, portArg } from "@rustybuns/util/ports";
+import { help } from "../../../scripts/help.ts";
 
+help(import.meta.path);
 export const OWNER = "demo", REPO = "team", CREW = "florence", FILE = "src/greet.ts";
 const SOURCE = `// Says hello to whoever opens the repo.\nexport function greet(name: string) {\n  return "hello " + name;\n}\n`;
 const TASK = "make greet() friendlier, and ask the crew what tone they want";
@@ -168,7 +170,8 @@ ${copied ? "Copied. Paste it to Florence as one message." : "Send Florence every
   const call = await local({ GH_CLI: "off", ...(!REAL && { AGENT_EXEC: scriptedAgent(FILE) }) });
   if (!(await Bun.file("dist/client/index.html").exists())) await Bun.$`bun run build.ts`.quiet();
   let to = "";
-  const shell = serve({ port: PORT, assets: "dist/client", runWorkerFirst: ["/api"], open: { "/as/": (req) => signIn(req, to) } });
+  const { server: shell, moved } = onPortOrFree(PORT, (port) => serve({ port, assets: "dist/client", runWorkerFirst: ["/api"], open: { "/as/": (req) => signIn(req, to) } }));
+  if (moved) console.log(`Port ${PORT} is taken, so the demo is on ${shell.port} instead.`);
   shell.mount(worker, call.env);
   const { id, token, thread, file } = await seed(call);
   to = thread;

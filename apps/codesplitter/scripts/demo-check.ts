@@ -8,7 +8,9 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { local, remote, type Call } from "../src/local.ts";
+import { help } from "../../../scripts/help.ts";
 
+help(import.meta.path);
 const arg = (n: string) => { const i = process.argv.indexOf(`--${n}`); return i > 0 ? process.argv[i + 1] : undefined; };
 const URL_ = arg("url"), USER = arg("user") ?? "demo", RUN = Date.now().toString(36);
 const REPO = `demo-${RUN}`, base = `/api/repos/${USER}/${REPO}`, at = `${base}/do`, F = "src/server.ts";

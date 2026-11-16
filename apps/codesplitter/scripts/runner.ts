@@ -33,7 +33,9 @@ import { BranchReview } from "../src/branches.ts";
 import { UPSTREAM_BRANCHES, checkEnv, runDirs, sandboxUser, spawnAs } from "../src/check-env.ts";
 import { ClaimedRun } from "../src/checks.ts";
 import { FileReply } from "../src/file-do.ts";
+import { help } from "../../../scripts/help.ts";
 
+help(import.meta.path);
 const { values: o, positionals: [slug] } = parseArgs({ allowPositionals: true, options: {
   label: { type: "string", default: `${process.env.USER ?? "runner"}@${hostname()}` },
   names: { type: "string" }, command: { type: "string" }, once: { type: "boolean" }, idle: { type: "string", default: "10" },

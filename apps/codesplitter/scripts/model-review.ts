@@ -6,7 +6,9 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { runBlender } from "@rustybuns/cli/blender";
 import { modelPaths, sideBySide, type ModelPair } from "../src/model-review.ts";
+import { help } from "../../../scripts/help.ts";
 
+help(import.meta.path);
 const [base = "origin/main", head = "HEAD", out = "model-review.html"] = process.argv.slice(2);
 const sh = async (cmd: string[], opts: { cwd?: string } = {}) => {
   const p = Bun.spawn(cmd, { stdout: "pipe", stderr: "pipe", ...opts });

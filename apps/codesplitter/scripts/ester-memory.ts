@@ -24,7 +24,9 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type { Run } from "./shadow.ts";
 import { isRecord } from "@rustybuns/util/guard";
+import { help } from "../../../scripts/help.ts";
 
+help(import.meta.path);
 export type Status = "pass" | "fail" | "skip";
 export type Kind = "fix" | "stale" | "flaky";
 

@@ -13,7 +13,9 @@
 // nearest earlier commits that touched the file too. Open the result in gitpath with its Open or Paste button.
 import { basename, resolve } from "node:path";
 import { LOG_FORMAT, keptAncestors, parseDag, parsePatchLog, simplifyParents, topFiles, type Commit } from "../src/gitpath/gitpath.ts";
+import { help } from "../../../scripts/help.ts";
 
+help(import.meta.path);
 async function git(repo: string, ...args: string[]): Promise<string> {
   const p = Bun.spawn(["git", "-C", repo, ...args], { stdout: "pipe", stderr: "pipe" });
   const [out, err, code] = await Promise.all([new Response(p.stdout).text(), new Response(p.stderr).text(), p.exited]);

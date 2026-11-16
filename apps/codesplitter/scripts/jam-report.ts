@@ -8,7 +8,9 @@
 // force push; "red" when GitHub has a failed workflow run on its branch.
 import { $ } from "bun";
 import { mkdirSync } from "node:fs";
+import { help } from "../../../scripts/help.ts";
 
+help(import.meta.path);
 export interface Row { n: number; created: number; merged: number; commits: number; conflicts: number; pushes: number; red: number; files: string[] }
 
 const CONFLICT = /merge (remote-tracking )?(branch )?'?(origin\/)?main|merge main|conflict|rebase|rebuild/i;

@@ -14,6 +14,9 @@ describe("--help", () => {
     ["apps/mythic-masters/scripts/tune.ts", "--each"],
     ["apps/mythic-masters/scripts/beasts.ts", "--jobs"],
     ["apps/mythic-masters/scripts/dens.ts", "dens.json"],
+    ["apps/codesplitter/scripts/smoke.ts", "--no-stress"],
+    ["apps/codesplitter/scripts/update.ts", "desktop:update"],
+    ["apps/codesplitter/scripts/tour-smoke.ts", "WebMCP"],
   ])("%s", (file, mentions) => {
     for (const flag of ["--help", "-h"]) {
       const r = Bun.spawnSync(["bun", file, flag], { cwd: root });

@@ -1,6 +1,8 @@
 // See the dependency doctor's health page: starts the desktop app, seeds a repo of old packages,
 // and opens the page. `bun scripts/dep-doctor-demo.ts` from apps/codesplitter; Ctrl+C stops it.
 // The packages are small on purpose: express or vite make the health call grow past the edge's 128 MB.
+import { help } from "../../../scripts/help.ts";
+help(import.meta.path);
 const app = Bun.spawn(["bun", "run", "desktop:agent"], {
   env: { ...process.env, DEPLOYS: "1", AGENTS: "1", CHECKS: "1" },
   stdout: "pipe",

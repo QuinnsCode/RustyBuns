@@ -14,7 +14,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
 import { arr, type Guard, nul, obj, type Of, str } from "@rustybuns/util/guard";
+import { help } from "../../../scripts/help.ts";
 
+help(import.meta.path);
 const JobG = obj({ name: str(), from: str(Infinity), to: str(Infinity) });
 export type Job = { name: string; from: string; to: string };
 

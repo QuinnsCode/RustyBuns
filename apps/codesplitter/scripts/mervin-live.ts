@@ -20,7 +20,9 @@ import { join } from "node:path";
 import { order, run, score, TIERS, type Board, BoardPrs, type Stage } from "./mervin-board.ts";
 import { writeTree } from "./shadow.ts";
 import { needless, roundOf, type BoardRow, type Hits, type Round } from "../src/board.ts";
+import { help } from "../../../scripts/help.ts";
 
+help(import.meta.path);
 const MANIFESTS = /^(package\.json|bun\.lock)$/;
 const appOf = (path: string) => path.match(/^apps\/([^/]+)\//)?.[1];
 const pkgOf = (path: string) => path.match(/^packages\/([^/]+)\//)?.[1];

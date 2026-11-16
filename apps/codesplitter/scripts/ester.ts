@@ -21,7 +21,9 @@ import type { CheckTime, Stage } from "./mervin-board.ts";
 import type { Lane, Pipeline } from "../src/pipeline.ts";
 // The sort itself is shared with the app's own check runs (src/ester-checks.ts); it imports nothing, so CI's plan step still loads.
 import { sortRed, type Owner, type Verdict as SortedVerdict } from "../src/ester-sort.ts";
+import { help } from "../../../scripts/help.ts";
 
+help(import.meta.path);
 /** pipeline.ts's PIPELINE_FILE. */
 const PIPELINE_FILE = "codesplitter.pipeline.json";
 

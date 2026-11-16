@@ -22,7 +22,9 @@ import { join } from "node:path";
 import { run, type Row } from "./mervin-corpus.ts";
 import { local } from "../src/local.ts";
 import { replayCommit } from "./borg-agents.ts";
+import { help } from "../../../scripts/help.ts";
 
+help(import.meta.path);
 /** Busy public repos that keep real merge commits (docs/mervin.md has what each one measured). */
 export const DEFAULT_REPOS = ["https://github.com/git/git.git", "https://github.com/rails/rails.git", "https://github.com/expressjs/express.git"];
 

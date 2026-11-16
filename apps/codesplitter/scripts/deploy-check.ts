@@ -41,7 +41,9 @@ import { diffToOps } from "../src/sync.ts";
 import type { Run } from "../src/preview.ts";
 import { bool, nul, obj, opt, str } from "@rustybuns/util/guard";
 import { readJson } from "@rustybuns/util/http";
+import { help } from "../../../scripts/help.ts";
 
+help(import.meta.path);
 const { values: a } = parseArgs({ options: {
   url: { type: "string" }, cookie: { type: "string", default: "" },
   as: { type: "string", default: "quinn" }, repo: { type: "string" },

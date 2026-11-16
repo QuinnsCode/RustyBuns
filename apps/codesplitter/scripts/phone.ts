@@ -17,7 +17,9 @@ import { join } from "node:path";
 import { qrText } from "../src/qr.ts";
 import { obj, str } from "@rustybuns/util/guard";
 import { readJson } from "@rustybuns/util/http";
+import { help } from "../../../scripts/help.ts";
 
+help(import.meta.path);
 export type Plan = { via: "tailscale"; off: boolean } | { via: "cloudflare"; tunnel?: string; hostname?: string };
 
 export function plan(args: string[]): Plan {

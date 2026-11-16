@@ -16,7 +16,9 @@
 
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { help } from "../../../scripts/help.ts";
 
+help(import.meta.path);
 export const ACCOUNT = /c2d417e6[0-9a-f]{24}/;
 /** Plan and deploy rewrite these from rustybuns.config.ts and the flags (#776, the vault rename). */
 export const GENERATED = ["wrangler.jsonc", ".env.schema"];

@@ -64,7 +64,9 @@ import { arr, check, int, nul, obj, opt, raw, str, type Of } from "@rustybuns/ut
 import { PIPELINE_FILE, Pipeline } from "../src/pipeline.ts";
 import type { Lane, LaneStep, Line } from "../src/mervin-replay.ts";
 import { sandbox, shadow, testRuns, testTree, writeTree } from "./shadow.ts";
+import { help } from "../../../scripts/help.ts";
 
+help(import.meta.path);
 /** The repo's pipeline file at `top`, for Ester's release-only question, or null when it has none (or one that isn't a pipeline). */
 function pipelineAt(top: string): Pipeline | null {
   const file = join(top, PIPELINE_FILE);

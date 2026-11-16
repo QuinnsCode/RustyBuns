@@ -7,7 +7,9 @@
 // A file missing from test-times.json (a new one) is weighed by its size, so a stale snapshot only unbalances the shards.
 import { readFileSync, writeFileSync } from "node:fs";
 import { fromJunit } from "./ester-memory.ts";
+import { help } from "../../../scripts/help.ts";
 
+help(import.meta.path);
 /** Total ms per test file in a bun JUnit report. */
 export function timesOf(xml: string): Record<string, number> {
   const out: Record<string, number> = {};

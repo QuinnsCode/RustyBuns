@@ -17,8 +17,10 @@ import { MergePlanReply } from "../src/branches.ts";
 import { ClaimRow, FileReply } from "../src/file-do.ts";
 import { FitReply } from "../src/fit.ts";
 import { local } from "../src/local.ts";
-import { PORTS } from "@rustybuns/util/ports";
+import { PORTS, onPortOrFree } from "@rustybuns/util/ports";
+import { help } from "../../../scripts/help.ts";
 
+help(import.meta.path);
 const FILE = "src/greeting.ts";
 const APP = join(import.meta.dir, "../../hello-world");
 
@@ -43,7 +45,7 @@ const JOBS = [
   { who: "agent-cy", marker: "// Footer", task: "reword the footer", add: "// cy: footer says who built it" },
 ];
 
-export interface Tour { say(who: string, what: string): void; pace: number; rounds: number; stopAfterDig?: boolean; }
+export interface Tour { say(who: string, what: string): void; pace: number; rounds: number; stopAfterDig?: boolean; dug?: boolean; }
 
 export async function tour(call: Awaited<ReturnType<typeof local>>, t: Tour) {
   const j = (user: string, path: string, body?: unknown, method = body === undefined ? "GET" : "POST") =>
@@ -62,14 +64,16 @@ export async function tour(call: Awaited<ReturnType<typeof local>>, t: Tour) {
     return ls.slice(i + 1, n < 0 ? undefined : i + n);
   };
 
-  // 1. Dig it up.
-  t.say("1 dig", "digging up apps/hello-world");
-  await ok(j("ryan", "/login", { name: "ryan" }), "login");
-  await ok(j("ryan", "/repos", { name: "hello-world", visibility: "public" }), "create repo");
-  const files = appFiles();
-  for (const [path, content] of Object.entries(files)) await ok(j("ryan", `${base}/files`, { path, content }), `add ${path}`);
-  for (const a of JOBS) await ok(j("ryan", `${base}/collaborators`, { name: a.who }), `invite ${a.who}`);
-  t.say("1 dig", `${Object.keys(files).length} files, ${(await read()).length} lines in ${FILE}, every line with an id and an author`);
+  // 1. Dig it up (unless the caller already did, to have the repo there before it prints the link).
+  if (!t.dug) {
+    t.say("1 dig", "digging up apps/hello-world");
+    await ok(j("ryan", "/login", { name: "ryan" }), "login");
+    await ok(j("ryan", "/repos", { name: "hello-world", visibility: "public" }), "create repo");
+    const files = appFiles();
+    for (const [path, content] of Object.entries(files)) await ok(j("ryan", `${base}/files`, { path, content }), `add ${path}`);
+    for (const a of JOBS) await ok(j("ryan", `${base}/collaborators`, { name: a.who }), `invite ${a.who}`);
+    t.say("1 dig", `${Object.keys(files).length} files, ${(await read()).length} lines in ${FILE}, every line with an id and an author`);
+  }
 
   if (t.stopAfterDig) return { landed: 0, held: 0, waves: 0, conflicted: false };
 
@@ -139,21 +143,29 @@ if (import.meta.main) {
   const arg = (n: string, d: number) => { const i = process.argv.indexOf(`--${n}`); return i > 0 ? Number(process.argv[i + 1]) : d; };
   const PORT = arg("port", PORTS.welcome), WAIT = arg("wait", 20);
   const call = await local({ GH_CLI: "off" });
-  const box = process.argv.includes("--box");
-  if (!process.argv.includes("--no-serve")) {
+  const box = process.argv.includes("--box"), serving = !process.argv.includes("--no-serve");
+  const say = (who: string, what: string) => console.log(`${new Date().toISOString().slice(11, 19)}  ${who.padEnd(10)} ${what}`);
+  const t = { pace: arg("pace", 500), rounds: arg("rounds", 3), say };
+  if (serving) {
     const { serve } = await import("@rustybuns/shell-bun");
     const { default: worker } = await import("../src/worker.ts");
     if (!(await Bun.file("dist/client/index.html").exists())) await Bun.$`bun run build.ts`.quiet();
-    const shell = serve({ port: PORT, assets: "dist/client", runWorkerFirst: ["/api"], reporter: { escaped: (...a: unknown[]) => console.error("[server]", ...a) } as any });
+    // `/as/ryan` signs the viewer in as ryan (alias mode: a name in the cs_user cookie) and opens the dug-up repo.
+    const signIn = () => new Response(null, { status: 302, headers: { location: "/#/r/ryan/hello-world", "set-cookie": "cs_user=ryan; Path=/; SameSite=Lax" } });
+    const { server: shell, moved } = onPortOrFree(PORT, (port) => serve({ port, assets: "dist/client", runWorkerFirst: ["/api"], open: { "/as/ryan": signIn }, reporter: { escaped: (...a: unknown[]) => console.error("[server]", ...a) } as any }));
+    if (moved) console.log(`Port ${PORT} is taken, so the tour is on ${shell.port} instead.`);
     shell.mount(worker as any, call.env);
-    console.log(`\nOpen: ${shell.url}/#/r/ryan/hello-world\n(sign in as "ryan" first: run  document.cookie = "cs_user=ryan; path=/"  in the page console, then reload)`);
-    if (box) console.log(`Box up on ${shell.url}: sign in as ryan, API at ${shell.url}/api, MCP at ${shell.url}/api/mcp. Nothing runs until an agent does it.`);
+    await tour(call, { ...t, stopAfterDig: true }); // dug before the link is printed, so it never opens on a 404
+    console.log(`\nOpen (signs you in as ryan): ${shell.url}/as/ryan`);
+    if (box) console.log(`Box up on ${shell.url}: API at ${shell.url}/api, MCP at ${shell.url}/api/mcp. Nothing runs until an agent does it.`);
     else {
       console.log(`Then open ${FILE}. The tour starts in ${WAIT}s.\n`);
       await Bun.sleep(WAIT * 1000);
+      await tour(call, { ...t, dug: true });
     }
+    console.log("\nCtrl-C to stop the server");
+    await new Promise(() => {});
   }
-  await tour(call, { pace: arg("pace", 500), rounds: arg("rounds", 3), stopAfterDig: box, say: (who, what) => console.log(`${new Date().toISOString().slice(11, 19)}  ${who.padEnd(10)} ${what}`) });
-  if (!process.argv.includes("--no-serve")) { console.log("\nCtrl-C to stop the server"); await new Promise(() => {}); }
+  await tour(call, { ...t, stopAfterDig: box });
   call.close();
 }

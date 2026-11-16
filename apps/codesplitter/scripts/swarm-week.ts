@@ -12,7 +12,9 @@ import { $ } from "bun";
 import { mkdirSync } from "node:fs";
 import { conflictCommits } from "./jam-report.ts";
 import type { Week, WeekRow } from "../src/swarm-replay.ts";
+import { help } from "../../../scripts/help.ts";
 
+help(import.meta.path);
 const MIN = 6e4;
 
 async function gql(repo: string, nums: number[]) {
