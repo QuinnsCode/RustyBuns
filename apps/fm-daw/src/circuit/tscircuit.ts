@@ -13,6 +13,12 @@
 //
 // A pot's `knobs` turn (0 to 1, 0.5 if not given) moves its wiper from pin1 toward
 // pin3. A two-pin pot (tscircuit's default) is a variable resistor, `max × t`.
+//
+// A real 9 V pedal board (circuits/q-drive.tsx) also carries parts the sim
+// doesn't hear: name them in `leaveOut` (jacks, footswitch, LED, the supply
+// diode). Its 9 V rail and 4.5 V bias are steady, so to the signal they are
+// ground: name them in `acGround`. A part left with both ends on one node
+// (the bias divider, the supply caps) carries no signal and is dropped.
 import { arr, bool, check, int, num, obj, oneOf, opt, raw, str } from "@rustybuns/util/guard";
 import type { Netlist, Part } from "@rustybuns/gear/circuit";
 
@@ -42,7 +48,15 @@ export interface BoardPot { name: string; ohms: number }
 /** A diode's junction: saturation current and ideality (`Part` "D"). */
 export interface Junction { is: number; n: number }
 
-export interface BoardOptions {
+/** What reading a board needs to know: the box's parts to leave out, and the nets that are ground to the signal. */
+export interface ReadOptions {
+  /** Nets that are ground to the signal: a steady supply rail or bias. */
+  acGround?: string[];
+  /** Components the sim leaves out, by name. */
+  leaveOut?: string[];
+}
+
+export interface BoardOptions extends ReadOptions {
   /** The net the guitar drives (default "IN") and the net read out (default "OUT"). */
   input?: string;
   output?: string;
@@ -65,7 +79,7 @@ export interface BoardOptions {
 }
 
 /** Reads a board out of tscircuit's circuit JSON. Throws, naming the part, on what the simulator can't model. */
-export function readBoard(json: unknown): Board {
+export function readBoard(json: unknown, o: ReadOptions = {}): Board {
   const els = arr(raw, 100_000)(json);
   const comps: ReturnType<typeof Component>[] = [], ports: ReturnType<typeof Port>[] = [], nets: ReturnType<typeof Net>[] = [];
   let mm: Board["mm"] = null;
@@ -77,12 +91,14 @@ export function readBoard(json: unknown): Board {
     else if (t === "pcb_board" && !mm) { const p = PcbBoard(e); mm = { w: p.width, h: p.height }; }
   }
   const netName = new Map<string, string>();
-  for (const n of nets) if (n.subcircuit_connectivity_map_key) netName.set(n.subcircuit_connectivity_map_key, n.is_ground ? "gnd" : n.name);
+  const ground = new Set(o.acGround);
+  for (const n of nets) if (n.subcircuit_connectivity_map_key) netName.set(n.subcircuit_connectivity_map_key, n.is_ground || ground.has(n.name) ? "gnd" : n.name);
+  const skip = new Set(o.leaveOut);
   const nodeOf = (p: ReturnType<typeof Port>) => {
     const key = p.subcircuit_connectivity_map_key;
     return key ? netName.get(key) ?? key : `open:${p.source_port_id}`;
   };
-  const parts = comps.map((c): BoardPart => {
+  const parts = comps.filter((c) => !skip.has(c.name)).map((c): BoardPart => {
     const name = c.name;
     const pins = ports.filter((p) => p.source_component_id === c.source_component_id).sort((a, b) => (a.pin_number ?? 0) - (b.pin_number ?? 0));
     const label = (pin: string) => {
@@ -151,7 +167,7 @@ export function readBoard(json: unknown): Board {
 export const boardPots = (b: Board): BoardPot[] => b.parts.flatMap((p) => (p.kind === "Pot" ? [{ name: p.name, ohms: p.ohms }] : []));
 
 /** A board's JSON as a netlist the solver runs. Throws, naming the part, on what it can't model. */
-export const boardToNetlist = (json: unknown, o: BoardOptions = {}): Netlist => netlistOf(readBoard(json), o);
+export const boardToNetlist = (json: unknown, o: BoardOptions = {}): Netlist => netlistOf(readBoard(json, o), o);
 
 /** A board already read (`readBoard`) as a netlist: the bench turns its knobs without reading the JSON again. */
 export function netlistOf(board: Board, o: BoardOptions = {}): Netlist {
@@ -179,5 +195,6 @@ export function netlistOf(board: Board, o: BoardOptions = {}): Netlist {
     else parts.push(p);
   }
   for (const [net, volts] of Object.entries(o.supplies ?? {})) parts.push({ kind: "V", a: net, b: "gnd", volts });
-  return { parts, input: o.input ?? "IN", output: o.output ?? "OUT" };
+  const shorted = (p: Part) => (p.kind === "R" || p.kind === "C") && p.a === p.b;
+  return { parts: parts.filter((p) => !shorted(p)), input: o.input ?? "IN", output: o.output ?? "OUT" };
 }

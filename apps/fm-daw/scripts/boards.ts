@@ -5,6 +5,7 @@
 // tscircuit is parked in this repo (it pins zod 3, see apps/tscircuit-desktop), so
 // this installs it once into a cache folder outside the workspace and renders there
 // (circuits/render.tsx). The app and its tests read only the files it writes.
+// The orderable Q Drive (circuits/q-drive.tsx) has its own, routed pipeline: scripts/pcb.ts.
 import { existsSync, mkdirSync, readdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -26,7 +27,9 @@ if (!existsSync(join(cache, "node_modules", "tscircuit"))) {
 await Bun.write(join(cache, "render.tsx"), Bun.file(join(here, "render.tsx")));
 
 const asked = process.argv.slice(2);
-const boards = readdirSync(here).filter((f) => f.endsWith(".tsx") && f !== "render.tsx").map((f) => f.slice(0, -4)).filter((b) => !asked.length || asked.includes(b));
+// Every board but q-drive.tsx, which scripts/pcb.ts renders routed for a fab.
+const isBoard = (f: string) => f.endsWith(".tsx") && f !== "render.tsx" && f !== "q-drive.tsx";
+const boards = readdirSync(here).filter(isBoard).map((f) => f.slice(0, -4)).filter((b) => !asked.length || asked.includes(b));
 let failed = 0;
 for (const b of boards) {
   // A copy beside render.tsx, so the board's JSX resolves tscircuit's react from the cache.

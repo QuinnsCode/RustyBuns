@@ -69,7 +69,7 @@ Some classic effects are not only circuits. A tape echo is a motor, a tape and t
 - **Spring reverb.** A tube driver pushes a transformer into the spring tank, and a recovery tube reads it. The springs carry high notes faster than low ones, which makes the "boing" chirp. Model it with chains of all-pass filters inside a feedback delay (Välimäki, Parker & Abel, 2010). The driver and recovery stages are 12AX7 and 12AT7 circuits we already solve.
 - **Plate reverb** later (a steel plate's modes, more CPU), and only if spring is not enough.
 
-**Built** (`src/circuit/machines.ts`, on Q Amp as Q Bucket, Q Tape and Q Spring in a second row on the floor): all three, in the amp's effects loop after the tone stack and before the power stage, any of them on at once. The loop is fixed in order (modulation, echo, reverb) and mono until the pedalboard (#4827) makes it a chain you arrange. What is a stand-in for now:
+**Built** (`packages/gear/src/circuit/machines.ts`, on Q Amp as Q Bucket, Q Tape and Q Spring in a second row on the floor): all three, in the amp's effects loop after the tone stack and before the power stage, any of them on at once. The loop is fixed in order (modulation, echo, reverb) and mono until the pedalboard (#4827) makes it a chain you arrange. What is a stand-in for now:
 
 - The spring's transformer is a high-pass and a soft ceiling: the solver has no inductor yet (#4826). The 12AT7 driver and the 12AX7 recovery are real tube circuits (the solver gained the 12AT7, TypeScript only; the Rust port still has only the 12AX7).
 - Tape's hysteresis uses Chowdhury's constants with his plugin's reversible share (c = 0.7), which keeps quiet notes linear the way AC bias does; there is no simulated bias tone. Head loss is the spacing and gap equations folded into a low-pass that follows the tape speed.
@@ -121,6 +121,44 @@ What the hardware path needs, for the spike (#4832):
 - Not tube amps on a kit: 300 V is a safety line. A low-voltage tube preamp (a 12AX7 at 12 to 24 V) sounds different, and the sim can model exactly that, so it is a later option.
 - A second hardware path, the other way round: one generic pedal with a DSP chip and a codec running the Rust solver, loading any circuit from the app. The same Rust code that runs in the browser's wasm, if the chip is fast enough (measure it).
 - Owner decisions before anything is sold: selling built electronics needs compliance checks (FCC, CE), kits less so; the hardware license for our layouts; what a fab order costs per board.
+
+### What the spike found (#4832)
+
+**Yes, one pedal goes from the board you play to files a fab takes, and nothing is drawn twice.** Q Drive (`circuits/q-drive.tsx`) is the `drive` voicing plus everything a box needs. `bun scripts/pcb.ts` renders it, packs and autoroutes it, runs tscircuit's DRC (0 errors), and writes `circuits/q-drive/`: Gerbers and the drill file, `bom.csv`, `pnp.csv`, `pcb.svg` and `drill.svg`.
+
+- **The board:** 58 × 68 mm, 2 layers, 27 parts, all through-hole. TL071 op-amp on 9 V with a 4.5 V bias, Drive (500k) and Level (100k) as 16 mm board-mount pots, a 1N5817 in series against a reversed adapter, an LED, and wire pads for the jacks, the DC jack and a 3PDT true-bypass footswitch. Only the knobs, LED and pads are placed by hand; tscircuit packs the rest.
+- **Sockets:** D1, D2 (the clipping diodes) and C4 (the tone cap) have 1.1 mm holes for machined-pin socket strips, and U1 is a DIP-8, so a kit builder can try the same swaps the app offers (#4831).
+- **It still plays like the voicing:** `test/circuit.test.ts` reads the board's own netlist back (9 V and bias as AC ground, the box parts left out, the Drive knob at 0, 0.5 and 1) and compares it with `overdrive()`. It is within 1.6%, and that gap is the Level pot and output cap the voicing doesn't have.
+- **Drill template:** the pot and LED holes come from where their legs sit on the PCB, so the box and the board can't disagree. The footswitch, jacks and DC jack go where kit builders usually put them on a 125B box. Two guesses to check by hand: the 7.5 mm from the pot's legs to its shaft, and the 3PDT lug wiring (#4937).
+- **tscircuit stays parked:** it pins zod 3, so the script installs it in a scratch folder. The Gerber exporter needs a newer helper than tscircuit pins, so it gets its own folder. Rendering takes about 4 seconds, and the files come out the same each time apart from their timestamps.
+
+**Prices (before ordering; ordering is the owner's, #4937):**
+
+| | 5 boards | Per pedal |
+|---|---|---|
+| Bare boards (JLCPCB, 2-layer, up to 100 × 100 mm) | about $2 + shipping ($8 to $20) | under $5 with shipping |
+| Through-hole hand assembly (JLCPCB: about $3.50 per order + $0.016 per joint, 69 joints) | about $9 + parts | about $2 + parts |
+| Parts at a hobby shop (pots, 3PDT, jacks, DC jack, TL071, passives) | | about $12 to $18 |
+| 125B box, undrilled | | about $5 |
+
+PCBWay lists 10 bare boards at $5 and doesn't publish a through-hole rate per joint. Its quote tool gives one. These are list prices from the fabs' pages in 2026-11, not a quote. Pots and footswitches are rarely in a fab's own stock, so an assembled order means sending those parts in, or soldering them yourself.
+
+**The three ways to own it, weighed:**
+
+- **Order your own:** works now. The zip is what a fab takes. What's missing is a button in the app and a parts cart (#4939).
+- **Kit:** board, parts, drilled box and a bag of the swap parts. Most of the work is buying, packing and posting things. About $20 to $25 of board, parts and box per kit, before packing and postage.
+- **Built:** the same board, assembled and tested. This is the one that needs compliance checks (a 9 V analog pedal is low risk, but it is still electronics we sell) and a test rig at our end.
+
+**The other way round, a DSP pedal:** the TypeScript solver runs Q Drive in about 1.2 µs per sample on one M1 Pro core (17× real time at 48 kHz, 5× at the rigs' 4× oversampling). A 480 MHz Cortex-M7 audio board has about 10,000 cycles per sample at 48 kHz and 2,500 at 192 kHz. So a single pedal in Rust may fit at 1× or 2× oversampling, a tube amp likely doesn't, and a Cortex-A board has room. That is an estimate from the TS figure, not a measurement on hardware (#4938).
+
+**Owner decisions, listed, not answered:**
+
+1. Sell built pedals at all? It needs FCC (US) and CE (EU) checks, and a returns and repair story. Kits need less.
+2. The hardware license for our layouts (open hardware like CERN-OHL, or the app's own license).
+3. Kit, built, or only "order your own".
+4. Tube amps stay off kits (300 V). A low-voltage 12AX7 preamp (12 to 24 V) is a later maybe.
+
+Closing the loop (record a built board, compare it with the sim, a Monte Carlo band for part tolerances) waits for boards in hand. The tolerance band is part of #4939.
 
 ## 9. Synth and studio, not only guitar
 

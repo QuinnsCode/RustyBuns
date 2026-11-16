@@ -49,7 +49,7 @@ function tryPlay(net: Netlist): string | number {
 /** A tscircuit board's JSON as a pedal, or why it isn't one. `name` defaults to the board's file name, if the caller has one. */
 export function bench(json: unknown, o: BoardOptions & { name?: string } = {}): Bench {
   let board: Board;
-  try { board = readBoard(json); } catch (e) { return { ok: false, why: [e instanceof Bad ? `not tscircuit circuit JSON: ${errText(e)}` : errText(e)] }; }
+  try { board = readBoard(json, o); } catch (e) { return { ok: false, why: [e instanceof Bad ? `not tscircuit circuit JSON: ${errText(e)}` : errText(e)] }; }
   if (!board.parts.length) return { ok: false, why: ["no parts on the board (export the circuit JSON with its source_* elements)"] };
   const knobs = boardPots(board);
   const net = (turns: Record<string, number>) => netlistOf(board, { ...o, knobs: turns });
