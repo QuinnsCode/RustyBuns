@@ -76,6 +76,8 @@ export interface EqStage {
   listen(b: EqListen | null): void;
   process(buf: Float32Array, frames: number): void;
   reset(): void;
+  /** Frames the stage holds the mix back (linear phase); 0 or absent when it adds none. */
+  readonly latency?: number;
   free?(): void;
 }
 
@@ -326,7 +328,7 @@ export class TsEq implements EqStage {
  * so this is what process() does, cramping near Nyquist included.
  */
 export function bandResponse(b: EqBand, sr: number, freqs: ArrayLike<number>, db: Float64Array, deg: Float64Array) {
-  const band = new Band();
+  const band = scratch;
   band.kind = EQ_KINDS.indexOf(b.kind);
   band.order = isCut(b.kind) ? orderOf(b.slope) : 0;
   band.fNow = Math.log2(clampf(b.f, 20, 20000, 1000));
@@ -359,15 +361,25 @@ export function bandResponse(b: EqBand, sr: number, freqs: ArrayLike<number>, db
   }
 }
 
-/** The whole EQ: the sum of each band's dB and phase (bands in series multiply). */
-export function response(doc: EqDoc, sr: number, freqs: ArrayLike<number>) {
-  const db = new Float64Array(freqs.length), deg = new Float64Array(freqs.length);
-  const bd = new Float64Array(freqs.length), bp = new Float64Array(freqs.length);
+/** One Band reused for every curve, so drawing (and the linear stage's redesigns) allocate nothing per band. */
+const scratch = new Band();
+
+/**
+ * The whole EQ into db and deg (bd and bp are scratch, all freqs.length long): the sum of
+ * each band's dB and phase (bands in series multiply). No allocation, for the audio thread.
+ */
+export function responseInto(doc: EqDoc, sr: number, freqs: ArrayLike<number>, db: Float64Array, deg: Float64Array, bd: Float64Array, bp: Float64Array) {
+  db.fill(0); deg.fill(0);
   for (const b of doc) {
     if (!b?.on) continue;
     bandResponse(b, sr, freqs, bd, bp);
     for (let i = 0; i < freqs.length; i++) { db[i] += bd[i]; deg[i] += bp[i]; }
   }
   for (let i = 0; i < freqs.length; i++) deg[i] = ((((deg[i] + 180) % 360) + 360) % 360) - 180;
+}
+
+export function response(doc: EqDoc, sr: number, freqs: ArrayLike<number>) {
+  const n = freqs.length, db = new Float64Array(n), deg = new Float64Array(n);
+  responseInto(doc, sr, freqs, db, deg, new Float64Array(n), new Float64Array(n));
   return { db, deg };
 }
