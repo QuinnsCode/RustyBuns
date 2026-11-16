@@ -84,6 +84,8 @@ Profiling amps record a real amp and play back a copy of it. Ours can do somethi
 
 Honest limit: a topology we don't have only gets the closest one. That gap tells us which circuit to add next.
 
+**Built so far (offline):** `src/circuit/fit.ts` and `bun scripts/profile-amp.ts <amp>`. The script scrambles one of our own amps (each part up to ×/÷ 2), then fits the parts back from a render alone. The test signal is sines at three or four levels, a log sweep and a noise burst. The score is a log spectrum at three frame sizes plus each tone's first five harmonics, level and phase. The search is separable CMA-ES at 2× oversampling, then an E24 snap and a pass that tries one step either way. From a scrambled Q Brit 3, the cathode resistors, bypass caps, power drive and last coupling cap come back exactly. A coupling cap whose corner sits under 10 Hz is marked "can't hear". The tone stack's four parts still trade off against each other at one knob setting. That, and recording a real amp, is [#4943](https://github.com/QuinnsCode/RustyBuns/issues/4943).
+
 ## 7. The board is the source
 
 Today `circuits.ts` writes netlists by hand, and one board (`circuits/hard-clip.tsx`) proves tscircuit can stand in. Flip it:
@@ -126,6 +128,6 @@ Each lane is its own issue, in this order (each usable on its own):
 3. Circuit effects: phaser, vibe, tremolo, wah, compressor ([#4828](https://github.com/QuinnsCode/RustyBuns/issues/4828))
 4. Machine effects: tape echo, bucket-brigade delay and chorus, spring reverb ([#4829](https://github.com/QuinnsCode/RustyBuns/issues/4829))
 5. The rest of the amp: power amp, output transformer, sag, speaker (CIRCUITS.md [Next](CIRCUITS.md#next) 3 and 4)
-6. Profiling: fit a circuit to a real amp's recording ([#4830](https://github.com/QuinnsCode/RustyBuns/issues/4830))
+6. Profiling: fit a circuit to a real amp's recording ([#4830](https://github.com/QuinnsCode/RustyBuns/issues/4830), offline fit done; tone stack and capture [#4943](https://github.com/QuinnsCode/RustyBuns/issues/4943))
 7. The board is the source, with a board view and part swaps ([#4831](https://github.com/QuinnsCode/RustyBuns/issues/4831))
 8. Spike: from a tscircuit board to a PCB you can order, as a kit or built ([#4832](https://github.com/QuinnsCode/RustyBuns/issues/4832))
