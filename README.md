@@ -270,9 +270,21 @@ See [Typed deploys](REFERENCE.md#typed-deploys-thanks-to-effect), [Deploy to Het
 
 </details>
 
+### Know what a room costs before you pick where it lives
+
+Run your real games side by side on one machine, fill them with players, and see the bill for an always-on room at the edge next to a share of one cheap server.
+
+<details><summary>More</summary>
+
+`bun scripts/one-box.ts` builds each game's box host (the same Bun bundle that Railway runs and a Hetzner box compiles). It starts the games next to each other, each on its own port and data dir, and opens rooms of sockets on each. Then it prints the memory that each game holds idle and with players in, and the cost: an awake Durable Object room on Cloudflare, against a share of one box. `--box-ram` and `--box-price` set the box, and the answer is how many games fit on it.
+
+eqosys's Scale tab does the same for Qollab's rooms: measured room CPU and Durable Object handler time, priced on Durable Objects, on Rivet and on a Hetzner box behind Cloudflare, with the points where one gets cheaper than another.
+
+</details>
+
 ### Why not just add in a CMS engine? I did.
 
-An app's script text is in `content/*.json`. `bun run cms` in the app serves these files as textarea forms that save to the files. The same editor translates the text into `content/<lang>/`.
+Change the words in your app without touching the code, and translate them, from one local page. `bun run cms` turns an app's `content/*.json` into forms that save back to the files, and the same page fills in `content/<lang>/` for each language.
 
 <details><summary>More</summary>
 
@@ -332,6 +344,24 @@ A signed-in player presses Report in a game. The report arrives here as an issue
 A game adds the corner button with `reportButton()` from its `eqosys()` client (`@rustybuns/util/report`). The button has the game's eqosys skin. `eqosys({ ..., skin: { theme, css } })` takes `--ui-*` tokens (packages/ui) and extra rules one time. The account chip (`accountChip(slot)`), the achievement toast, the report form, the party lobby and the spaces panel all use this skin.
 
 The surfaces move a little, and only with transform and opacity, so nothing waits on the motion. The chip starts with the eqosys badge. When you are signed in, press the badge and the name and Sign out fold into it, then fold back out. When you are signed out, the badge is only a mark and Sign in always shows. Sign in turns into Sign out. A party member's dot pops when they get ready, and Copy link shows a check. With reduced motion turned on, nothing moves.
+
+</details>
+
+### Parties, chat and voice for any game, with no server to write
+
+Qollab gives a game friends, parties, room codes, chat, voice and cloud saves on the player's one account. The game keeps its own world, and it does not build a lobby again.
+
+<details><summary>More</summary>
+
+Qollab is the realtime layer under [eqosys](apps/eqosys/README.md), in its own Worker (`apps/qollab`). Each part is one Durable Object:
+
+- **A hub for each player**: friends, who is online, notifications.
+- **A party for each room code**: join, ready and start, party chat, voice, friends-only rooms, mute and report. The host's invite links are checked on the server. Who may join, mute, invite and report, and how long a party lives, are settings in one menu.
+- **Seats**: after "start", a game asks Qollab who holds each seat, and the game's own Worker checks that the player was in the party. Each game had built this room again; now it is a call.
+- **A space for each group that lasts**: text channels with history, and voice channels through Qlave. A game can mount the chat panel. A studio's space follows the studio's members.
+- **Cloud saves**: the game owns the shape of a save, and Qollab keeps the sealed blob.
+
+A game's live state, ticks and sync stay in the game, as fast as before. Qollab only knows who you play with. The split and the reasons are in [QOLLAB.md](apps/eqosys/QOLLAB.md).
 
 </details>
 
@@ -607,6 +637,16 @@ Keep your Worker and its Rust engine (as wasm) on the edge. The logic stays in o
 
 </details>
 
+### An old app in the store asks to update, and does not just break
+
+A store build stays on phones for months. The edge says which app versions it still serves, and an older one shows "Update to keep playing" with the store link.
+
+<details><summary>More</summary>
+
+`@rustybuns/util/protocol` is one file that the edge and the page import. Each client sends `pv`, its protocol version, with its socket hello and its JSON calls. A build from before versions existed sends none, which counts as 0. The edge keeps a floor: `tooOld(url, { min, store })` answers a call below it with HTTP 426, or accepts the socket, says why and closes it with code 4426. The page shows the update message, never a bare failure. A Steam build is the web page in a Chromium window, and `inStoreShell()` lets the page hide what a store forbids, such as a link out to a payment page. [RustyBunsKit](packages/ios-kit/README.md) does the same handshake for native iOS.
+
+</details>
+
 ### LAN multiplayer with no server
 
 A desktop app can host its world for other copies of the app on the same network. The page turns this on and off at runtime.
@@ -691,6 +731,145 @@ Claude Code is a co-author of almost all of the commits in this repo. Some were 
 
 </details>
 
+### Release rings: ship all day, and only good code climbs out
+
+A change merges in minutes, then climbs out through rings (hourly, daily, stable) as each wider test passes. A bad change stops at its ring, is found and is reverted by itself, and `main` never freezes.
+
+<details><summary>More</summary>
+
+A pull request proves its own feature and merges. "Safe to ship" moves to three clocks behind it. Each ring is a ref on `main` that only moves forward, so there are no release branches.
+
+| Ring | When | Runs | Moves on when |
+|---|---|---|---|
+| PR | each push | typecheck, the tests of the apps it touched, the feature's journey | green, then Mervin merges it |
+| hourly (`ring/hourly`) | on the hour, if `main` moved | every app's suite, desktop smoke, the package tests | its run is green |
+| daily (`ring/daily`) | 10:17 UTC | phone smoke at every size, web builds, manual-run pre-checks | the newest commit with three green hourlies in a row |
+| stable (`ring/stable`) | Monday | the dependency doctor, framework trials, a taste check by the owner | the newest daily, green three days running, and the owner's OK |
+
+**When a ring goes red**, it stops moving and the rest of the work goes on. `scripts/ring-red.ts` checks that the red commit also fails on the builder Mac (not a flake), bisects the merges since the last green, and tells the worker whose PR did it. If no fix lands in 60 minutes, it opens a revert of that one commit.
+
+**Rollback is a download, not a rebuild.** Each hourly keeps the binaries it built for 7 days, and `bun scripts/rings.ts rollback <ring> <app> <target>` fetches the newest green one. `bun run rings` prints one line for each ring: its commit, its age, its last red and how many PRs wait to climb into it.
+
+**Lanes.** Normal PRs wait for the clocks. An owner-only express lane, which runs each ring's tests on one commit at once with no soak, is next ([#4586](https://github.com/QuinnsCode/RustyBuns/issues/4586)). The design is in [notes/RELEASE_RINGS.md](notes/RELEASE_RINGS.md).
+
+</details>
+
+### Merges that settle themselves, with no AI and no tokens
+
+When many agents change the same files, Mervin settles the merges and Ester tells which red check is whose. They are plain code, so the answer is the same each time, in milliseconds, for free.
+
+<details><summary>More</summary>
+
+In one week this repo merged 966 pull requests, built by many agents at once. The thing that ran short was not the agents' intelligence. It was git: two agents add a line to the same list, two migrations get the same number, a red check that nobody can tell is theirs. Each one cost an agent a turn and tokens that bought no new work.
+
+- **Mervin** merges by meaning, not by line. Two additions to one list both go in. A case that a person must choose becomes a card, not a conflict marker. The merge train takes one PR at a time onto a green `main`, and `bun scripts/preflight.ts` asks Mervin before you open a PR (below).
+- **Ester** sorts red checks: caused by this PR, already red on `main`, or flaky. Thus an agent does not fix what it did not break.
+- **Dexter** reads the agents' session transcripts and names the chores that they do by hand, which became the one-call tools below.
+
+They are part of [codeSplitter](apps/codesplitter/README.md). The full story, with the numbers, is in [Mervin and Ester](apps/codesplitter/docs/mervin-and-ester.md).
+
+</details>
+
+### Know before you open a PR whether it will merge
+
+`bun scripts/preflight.ts` finds the open PRs that change your files and plays the merges in memory, older PRs first, so you see a clash before anyone waits on it.
+
+<details><summary>More</summary>
+
+First it does the cheap part: one `gh pr list` and one `git diff`. If an open PR shares a file with you, Mervin's board merges those PRs and then your branch, and says how each of your files merges: fine, Mervin settles it (rebase after they land), different text (look), or a card (a person must choose). It also finds clashes that merge clean as text and break later, such as two migrations with one number or one export added twice. It exits 1 on a card, so a hook can stop and ask.
+
+</details>
+
+### Tests and builds run on a second Mac
+
+The laptop you work on stays fast. Heavy tests and native builds go to a builder Mac on your network, which runs your working tree as it is, with no commit or push.
+
+<details><summary>More</summary>
+
+`bun run builder run apps/<app> bun test test/foo.test.ts` sends the working tree to the builder and runs the command there. `bun run builder origin/main` runs each suite that you touched. When GitHub Actions is down, `bun run builder all` runs everything that the required checks run on your committed branch and records a pass, and `bun run builder passed` lists what is ready to merge.
+
+A valve in the agents' guard hook sends `bun test`, `bun run build`, `vite build` and `cargo build` to the builder, and waits while it is off. On battery it runs one suite at a time, and it waits below 20%. It also runs a full sweep twice a day, and its runs show in its own menu bar. Setup: [MAC_SETUP.md](MAC_SETUP.md#part-4-a-builder-20-min-plus-the-first-installs).
+
+</details>
+
+### Data from outside is checked, and the count of unchecked data only goes down
+
+A request body or a fetch reply is "unknown" until a guard looks at it. CI finds each place that skips the look, and no file may get worse.
+
+<details><summary>More</summary>
+
+`@rustybuns/util/guard` writes a shape once (`obj`, `str`, `num`, `oneOf`, `arr`, `opt`), and the guard is the type (`type X = Of<typeof X>`). The server and the page import the same guard: the server writes `json(x satisfies Reply)`, and the page reads `getJson(url, Reply)`. Thus the two sides of the wire cannot drift.
+
+`bun scripts/boundary-audit.ts` finds casts (`as { owner: string }`), `any` and `as never` on outside data. Each file has a count in `scripts/boundary-audit.allow.json`. CI fails when a count goes up, and also when a file got better but did not lower its count. The allowance only goes down.
+
+</details>
+
+### Tests that bite
+
+A new test that still passes on the old code proves nothing. `bun scripts/test-bites.ts` runs your new tests against `main` and names each one that does.
+
+<details><summary>More</summary>
+
+It checks `origin/main` out into a scratch worktree, copies your changed test files over it and runs them there. A test that passes on the old code is printed, and the exit code is 1. `--lines` also lists the changed lines that no test ran. That is a report, not a gate, with no percentage to hit.
+
+</details>
+
+### One call, not a loop: tools for the chores agents do
+
+The jobs that agents did by hand in many small steps (wait for CI, read an issue, look at a game, read a big file) are each one command with a short answer.
+
+<details><summary>More</summary>
+
+- `bun run pr <n>`: waits for a PR's checks and prints one line for each result, with the log tail of a failed step.
+- `bun run issue <n>`: an issue's brief, with the PRs that close it and the last comments.
+- `bun run probe <app>`: a game's state as JSON from headless Chrome, plus its errors, with no tabs or screenshots.
+- `bun run outline <file> [name]`: a file's symbols with line ranges, or one symbol's source. `--api` shows a package's exports as one-line signatures.
+- Each script answers `--help` with its own top comment.
+
+Dexter found these chores in the transcripts, so each tool replaces a loop that agents ran often. The specs are in [agentic-processes/CHORE_TOOLS.md](agentic-processes/CHORE_TOOLS.md).
+
+</details>
+
+### Hill climbs: a score that goes up round by round
+
+Some work has no "done", only "better", like how a game feels or looks. A climb is a score and a target, and each round a fresh agent picks up the baton and moves the score up.
+
+<details><summary>More</summary>
+
+`bun run climbs` lists each open climb with its last score, its target and the days since anyone touched it. A round ends with a `Score:` line and a `Next:` line on the issue, and then the climb moves to a fresh issue so it stays at the top. `bun run climbs --next` hands the next round to a free worker. Three rounds with no gain stop the climb, and it waits for a person. The owner sees a climb once, when a judge scores it at the target.
+
+</details>
+
+### The owner's hands-on checks, in one window
+
+Each thing that only a person can judge is its own issue. `bun run manual` opens each one in the right app and state, and Yes or No answers it.
+
+<details><summary>More</summary>
+
+A check that needs the owner (a sign-in, a live run, "does this feel right?") gets an issue titled `MANUAL RUN:` with the steps and a time. Agents check everything else first. `bun run manual` starts each app on a free port and opens the jump-to-state links that the issue needs. Yes comments and closes the issue, and No comments and leaves it open. `y` and `n` work on the keyboard.
+
+</details>
+
+### The Ledger: what a week of agents cost, and what it got
+
+Tokens by model, code lines that landed for each percent of the plan, and the conflicts that Mervin saved, day by day and week by week.
+
+<details><summary>More</summary>
+
+`apps/agent-office/ester/ledger.ts` reads the session transcripts and git. It counts tokens by kind and model, subagents too, PRs merged, the code that landed on `main` and what Mervin, Ester and Dexter handed back. The weekly page compares each week with the last, and shows if the repo is growing or getting smaller. A day runs 10am to 10am, and `ledger-daily.ts` refreshes both pages.
+
+</details>
+
+### A setup that other repos can copy
+
+The rules, guard rails, chore tools and playbooks that run this repo's agents are written down so that a different repo can work the same way, with or without Claude Code.
+
+<details><summary>More</summary>
+
+[agentic-processes/](agentic-processes/README.md) has the rulebook as a template (`AGENTS.template.md`), the secrets, git and money rules and how to enforce them, the specs for the chore tools, and the playbooks: rebuilding a PR, merge waves, parallel workers, hill climbs, manual runs and audit rounds. It is documentation only. Nothing in this repo reads it.
+
+</details>
+
 ### A page's functions are its agent's tools and your Cmd+K
 
 One list of plain functions for each page becomes WebMCP tools, `window.__commands` and a Cmd/Ctrl+K palette.
@@ -726,6 +905,28 @@ A scene that the game selects becomes a memory when it plays to its end. The gam
 
 </details>
 
+### Every screen, from a small phone to an open foldable, checked by a robot
+
+One command opens each web app on seven phones and a desktop, and draws a board of screenshots with each place where a layout broke.
+
+<details><summary>More</summary>
+
+`bun scripts/phone-smoke.ts` boots each app's dev server and drives Chrome over CDP at an iPhone SE, an iPhone 15, an iPhone 15 Pro Max, a Pixel 8, a Galaxy S23, a folding phone (outer screen and open, upright and sideways) and a desktop. It writes `dist/phone-smoke/index.html`: a screenshot for each screen, and a finding for a page wider than the screen, or a button that is cut off, covered or gone since the laptop layout. It needs only Chrome. `--shard 2/4` splits the apps across runners, and the daily release ring runs it at every size.
+
+</details>
+
+### One controls menu and one UI kit for every game
+
+Each game gets the same cog menu for controls and gamepads, and the same soft, bold buttons and panels, painted in its own colours.
+
+<details><summary>More</summary>
+
+- **`@rustybuns/game-controls`** is the Controls panel that each game shares: look sensitivity for mouse, stick and touch, invert Y, a key list, gamepad support and profiles, saved for each game. Its sections fold, and a game can wear the house skin or its own theme.
+- **`@rustybuns/ui`** is the house kit: design tokens and small DOM components (button, chip, toggle, slider, tabs, panel, dialog, toast) with no dependencies. A game changes its look with CSS custom properties, not by forking the components. codeSplitter, eqosys, the Playground and the games use it.
+- The eqosys surfaces in a game (the account chip, the report form, the lobby, the spaces panel, the tutorial card) take the same tokens, so they look like part of the game.
+
+</details>
+
 ### Accessible by default
 
 You can use the docs site with only a screen reader and a keyboard. It has reading settings: dyslexia-friendly fonts (Atkinson Hyperlegible, OpenDyslexic), larger text and wider spacing.
@@ -743,6 +944,7 @@ The parts that a team will be glad to find in the stack. Each has its own entry 
 - **Your machine stays usable.** [Background work that steps aside](#background-work-that-steps-aside-experimental) runs low work in a CPU and memory budget. [The Two Fronts balance sim](#thousands-of-battles-at-low-priority) uses it for thousands of headless battles.
 - **A fast loop, with numbers.** [Build timings](#a-fast-loop-and-it-tells-you-how-fast) are saved for each step.
 - **Free local twins.** [Every Cloudflare binding has an easy local twin](#every-cloudflare-binding-has-an-easy-local-twin), and [a plan comes before anything costs money](#plan-step-plan-before-anything-costs-money-see-the-resource-matrix).
+- **A swarm of agents that does not jam.** [Release rings](#release-rings-ship-all-day-and-only-good-code-climbs-out) keep `main` moving while a bad change is found and reverted. [Mervin and Ester](#merges-that-settle-themselves-with-no-ai-and-no-tokens) settle merges and sort red checks with plain code, and [preflight](#know-before-you-open-a-pr-whether-it-will-merge) sees a clash before anyone waits on it.
 
 ## What's the catch?
 
