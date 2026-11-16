@@ -24,9 +24,10 @@ test("the Next line walks a new player through the garage's first minute", () =>
   walkWith(w, c, -2.2, 0.6);
   expect(plug(w, c, "outlet", "power-out-1")).toEqual({ ok: true });
 
-  expect(next()).toEqual({ text: "Switch on the guitar amp head: look at it, press P", key: "amp-head" });
-  on.add("amp-head");
-  expect(next()).toEqual({ text: 'Switch on the 12" two-way powered speaker: look at it, press P', key: "top" });
-  on.add("top");
+  // Then each switch in the garage, one at a time, until there's nothing left to say.
+  for (const [key, what] of [["amp-head", "guitar amp head"], ["cab-4x12", "guitar speaker cabinet"], ["top", '12" two-way powered speaker']]) {
+    expect(next()).toEqual({ text: `Switch on the ${what}: look at it, press P`, key });
+    on.add(key);
+  }
   expect(next()).toBeNull();
 });
