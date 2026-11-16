@@ -4,7 +4,7 @@
 // says which part each knob turns, and which parts a player can swap.
 // Pedals run on a split supply (op-amp rails ±4 V around ground) instead of a
 // 9 V battery and a 4.5 V bias divider: the same circuit, minus the bias parts.
-import type { Netlist } from "./mna.ts";
+import type { Netlist } from "@rustybuns/gear/circuit";
 import { boardToNetlist, readBoard, type BoardOptions, type Junction } from "./tscircuit.ts";
 import dist from "../../circuits/dist.circuit.json";
 import drive from "../../circuits/drive.circuit.json";
@@ -58,7 +58,7 @@ export type Swaps = Record<string, string>;
 /** The swappable sockets on a board, in board order. */
 export function sockets(board: BoardId): Socket[] {
   const out: Socket[] = [], pairs = new Map<string, string[]>();
-  for (const p of readBoard(BOARDS[board])) {
+  for (const p of readBoard(BOARDS[board]).parts) {
     if (p.kind === "C") out.push({ id: p.name, kind: "cap", parts: [p.name], farads: p.farads });
     else if (p.kind === "D") {
       const key = [p.a, p.k].sort().join("|");

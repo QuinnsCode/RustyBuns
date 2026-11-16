@@ -11,7 +11,7 @@ import { help } from "../../../scripts/help.ts";
 import { encodeWav } from "../src/engine/wav.ts";
 import { hardClip, overdrive } from "../src/circuit/circuits.ts";
 import { RIGS } from "../src/circuit/amps.ts";
-import { runRig, type RigSpec } from "../src/circuit/rig.ts";
+import { runRig, type RigSpec } from "@rustybuns/gear/circuit";
 import { riff } from "../src/circuit/riff.ts";
 
 help(import.meta.path);
@@ -24,6 +24,7 @@ const rigs: Record<string, RigSpec> = {
   ...RIGS,
   "hard-clip-germanium": { ...RIGS["hard-clip"], links: [{ net: hardClip(100e3, { D1: "germanium" }) }] },
   "boosted-lead": { ...RIGS.lead, links: [{ net: overdrive(0) }, ...RIGS.lead.links] },
+  "lead-mic-edge": { ...RIGS.lead, cab: { at: 1, angle: 45 } }, // the mic out at the cone's edge, turned away: darker
 };
 
 const dry = riff(SR);

@@ -91,6 +91,16 @@ export class BoardView {
     void this.draw();
   }
 
+  /** No drawing to show: just a title and why. */
+  blank(title: string, why: string): void {
+    this.title.textContent = title;
+    this.hint.textContent = why;
+    this.board = null; this.swaps = null; this.sockets = []; this.drawn = "";
+    this.reset.hidden = true;
+    this.menu.hidden = true;
+    this.art.replaceChildren();
+  }
+
   /** How hard the board is working, 0 to 1: the parts that bend the signal glow with it. */
   glow(level: number): void {
     this.el.style.setProperty("--signal", level.toFixed(3));

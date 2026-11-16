@@ -9,7 +9,7 @@
 import { mulberry32 } from "@rustybuns/util";
 import { Fft } from "../engine/linear.ts";
 import { buildRig, type AmpDef, type Knobs } from "./amps.ts";
-import { runRig } from "./rig.ts";
+import { runRig } from "@rustybuns/gear/circuit";
 
 export const E12 = [10, 12, 15, 18, 22, 27, 33, 39, 47, 56, 68, 82];
 export const E24 = [10, 11, 12, 13, 15, 16, 18, 20, 22, 24, 27, 30, 33, 36, 39, 43, 47, 51, 56, 62, 68, 75, 82, 91];
