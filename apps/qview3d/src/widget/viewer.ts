@@ -6,12 +6,13 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
-import { TOPS, type Design, type Made, type Model, type PrintArea, type TopModel, type ZoneName } from "../api.ts";
+import { TOPS, type Design, type TextLine, type Made, type Model, type PrintArea, type TopModel, type ZoneName } from "../api.ts";
 import { buildHat } from "./hats.ts";
 import { buildTop } from "./tops.ts";
 import { clampPlacement, type Placement } from "./print.ts";
 import { GarmentSurface, type Surface, type ZoneInfo } from "./surfaces.ts";
 import { prepare, type Prepared } from "./image.ts";
+import { drawText } from "./text.ts";
 import ImageWorker from "./image-worker.ts?worker&inline";
 
 export type View = "front" | "angle" | "side" | "back";
@@ -19,14 +20,19 @@ export type View = "front" | "angle" | "side" | "back";
 export type Display = "form" | "hanger";
 const VIEWS: Record<View, number> = { front: 0, angle: Math.PI / 4, side: Math.PI / 2, back: Math.PI };
 
-export type Layer = { picture: Prepared; at: Placement; texture?: string; original?: string };
+export type Layer = { picture: Prepared; at: Placement; texture?: string; original?: string; text?: TextLine };
+/** The most pictures and lines of text on one product (a design's `layers`). */
+export const MAX_LAYERS = 8;
+const zoneOfLayer = (l: Layer): ZoneName => l.at.zone ?? "front";
 
 export class Viewer {
   readonly canvas: HTMLCanvasElement;
   model: Model = "cap";
   color = "#1f2937";
-  /** The pictures on the product, one a zone. */
+  /** The pictures and lines of text on the product, in drawing order (the last on top), any number a zone. */
   layers: Layer[] = [];
+  /** The one the sliders, keys and buttons work on: the last added or touched, in the zone being worked on. */
+  private chosen: Layer | null = null;
   /** The zone the shopper is working on: where a new picture goes, and what the sliders and keys move. */
   zone: ZoneName = "front";
   display: Display = "form";
@@ -128,8 +134,35 @@ export class Viewer {
     this.renderer.render(this.scene, this.camera);
   };
 
-  /** The picture in the zone being worked on, if it has one. */
-  get layer(): Layer | null { return this.layers.find((l) => (l.at.zone ?? "front") === this.zone) ?? null; }
+  /** The picture or text being worked on: the chosen one, else the top one in the zone being worked on. */
+  get layer(): Layer | null {
+    if (this.chosen && this.layers.includes(this.chosen) && zoneOfLayer(this.chosen) === this.zone) return this.chosen;
+    return this.layers.findLast((l) => zoneOfLayer(l) === this.zone) ?? null;
+  }
+  /** The zone's pictures and text, bottom first. */
+  get inZone(): Layer[] { return this.layers.filter((l) => zoneOfLayer(l) === this.zone); }
+
+  /** Work on this one (and its zone). */
+  choose(l: Layer) {
+    if (!this.layers.includes(l)) return;
+    this.chosen = l;
+    if (zoneOfLayer(l) !== this.zone) this.setZone(zoneOfLayer(l));
+    else { this.repaint(); this.onChange(); }
+  }
+
+  /** Move the one being worked on up (1) or down (-1) past the next one in its zone. */
+  restack(step: 1 | -1) {
+    const l = this.layer;
+    if (!l) return;
+    const zone = this.inZone, at = zone.indexOf(l), other = zone[at + step];
+    if (!other) return;
+    const i = this.layers.indexOf(l), j = this.layers.indexOf(other);
+    this.layers[i] = other;
+    this.layers[j] = l;
+    this.chosen = l;
+    this.repaint();
+    this.onChange();
+  }
 
   /** The zones the shop switched on (a product's `print`), or null for all of them. */
   private print: readonly ZoneName[] | null = null;
@@ -144,10 +177,15 @@ export class Viewer {
   setPrint(print: readonly ZoneName[] | null) {
     this.print = print;
     const on = (z: ZoneName) => this.zones.some((x) => x.name === z);
-    for (const l of this.layers.filter((l) => !on(l.at.zone ?? "front"))) l.picture.bitmap.close();
-    this.layers = this.layers.filter((l) => on(l.at.zone ?? "front"));
+    this.keepOnly(on);
     if (!on(this.zone)) this.zone = this.zones[0]!.name;
     this.repaint();
+  }
+
+  /** Take off the pictures whose zone fails `keep`. */
+  private keepOnly(keep: (z: ZoneName) => boolean) {
+    for (const l of this.layers.filter((l) => !keep(zoneOfLayer(l)))) l.picture.bitmap.close();
+    this.layers = this.layers.filter((l) => keep(zoneOfLayer(l)));
   }
 
   /** Redraw the pictures on the surface and mark the frame dirty. */
@@ -170,8 +208,7 @@ export class Viewer {
     // Pictures keep their zones where the new product has them (a hat's front is a top's front); the rest come off.
     // One moving between a made product and a shop's model keeps its size and turn and starts in the middle.
     const has = (z: ZoneName) => this.zones.some((x) => x.name === z);
-    for (const l of this.layers.filter((l) => !has(l.at.zone ?? "front"))) l.picture.bitmap.close();
-    this.layers = this.layers.filter((l) => has(l.at.zone ?? "front"));
+    this.keepOnly(has);
     for (const l of this.layers) {
       if (m !== "custom" && !l.at.point) continue;
       const { point, normal, ...rest } = next.start(l.at.zone ?? "front");
@@ -249,35 +286,53 @@ export class Viewer {
     this.view(order[(at + 1) % order.length]!);
   }
 
-  /** Decode, shrink and hash a photo (in a Worker when allowed), then put it in the middle of `zone` (the one being worked on), in place of any picture there. */
-  async addImage(file: Blob, zone: ZoneName = this.zone): Promise<Layer> {
+  /** Decode, shrink and hash a photo (in a Worker when allowed), then put it on top in the middle of `zone` (the one being worked on). */
+  async addImage(file: Blob, zone: ZoneName = this.zone, text?: TextLine): Promise<Layer> {
     const info = this.zones.find((x) => x.name === zone);
     if (!info) throw new Error(`This product has no ${zone} to print on`);
+    if (this.layers.length >= MAX_LAYERS) throw new Error(`${MAX_LAYERS} pictures and lines of text at most: remove one first`);
     const picture = await this.prepare(file);
     this.zone = zone;
-    this.layer?.picture.bitmap.close();
     const start = this.surface.start(zone);
-    const layer = { picture, at: this.startAt && this.model !== "custom" ? clampPlacement({ ...start, ...this.startAt }) : start };
-    this.layers = [...this.layers.filter((l) => (l.at.zone ?? "front") !== zone), layer];
+    const layer: Layer = { picture, at: this.startAt && this.model !== "custom" ? clampPlacement({ ...start, ...this.startAt }) : start, text };
+    this.layers = [...this.layers, layer];
+    this.chosen = layer;
     this.repaint();
     this.view(info.view);
     this.onChange();
     return layer;
   }
 
-  /** Take the picture off the zone being worked on. */
+  /** A line of text, drawn to a picture and put on top in the middle of `zone`, the way a photo goes. */
+  addText(line: TextLine, zone: ZoneName = this.zone): Promise<Layer> {
+    return drawText(line).then((png) => this.addImage(png, zone, line));
+  }
+
+  /** Change the text being worked on (what it says, its font or colour); it keeps its place. */
+  async setText(line: TextLine) {
+    const l = this.layer;
+    if (!l?.text) return;
+    const picture = await this.prepare(await drawText(line));
+    l.picture.bitmap.close();
+    Object.assign(l, { picture, text: line, texture: undefined, original: undefined });
+    this.repaint();
+    this.onChange();
+  }
+
+  /** Take the picture or text being worked on off; the next one down in its zone is worked on after it. */
   removeImage() {
     const l = this.layer;
     if (!l) return;
     l.picture.bitmap.close();
     this.layers = this.layers.filter((x) => x !== l);
+    this.chosen = null;
     this.repaint();
     this.onChange();
   }
 
-  /** The picture under a pointer spot, the zone being worked on first. */
+  /** The picture under a pointer spot: the top one, the zone being worked on first. */
   private under(spot: unknown) {
-    const order = [...this.layers].sort((a, b) => Number((b.at.zone ?? "front") === this.zone) - Number((a.at.zone ?? "front") === this.zone));
+    const order = [...this.layers].reverse().sort((a, b) => Number(zoneOfLayer(b) === this.zone) - Number(zoneOfLayer(a) === this.zone));
     return order.find((l) => this.surface.onPicture(l.at, l.picture.aspect, spot)) ?? null;
   }
 
@@ -335,7 +390,10 @@ export class Viewer {
       if (z && z !== this.zone && this.zones.some((x) => x.name === z)) { this.zone = z; this.repaint(false); this.onChange(); }
       return;
     }
-    if ((l.at.zone ?? "front") !== this.zone) { this.zone = l.at.zone ?? "front"; this.onChange(); }
+    const touched = l !== this.layer;
+    this.chosen = l;
+    this.zone = zoneOfLayer(l);
+    if (touched) this.onChange();
     this.dragging = { pointer: e.pointerId, layer: l, at: { ...l.at }, from: spot, xy: [e.clientX, e.clientY] };
     this.controls.enabled = false;
     try { this.canvas.setPointerCapture(e.pointerId); } catch { /* a pointer that already ended */ }
@@ -421,7 +479,8 @@ export class Viewer {
     if (!l) return;
     e.preventDefault();
     e.stopImmediatePropagation();
-    this.zone = l.at.zone ?? "front";
+    this.chosen = l;
+    this.zone = zoneOfLayer(l);
     if (e.shiftKey) this.place({ rotation: l.at.rotation + Math.sign(e.deltaY || e.deltaX) * 0.08 });
     else this.place({ scale: l.at.scale * Math.exp(-e.deltaY * 0.0015) });
   };
@@ -431,20 +490,23 @@ export class Viewer {
     const s = new THREE.Spherical().setFromVector3(this.camera.position.clone().sub(this.controls.target));
     return {
       v: 1, model: this.model, color: this.color,
-      layers: this.layers.map((l) => ({ texture: l.texture ?? "", original: l.original, ...l.at })),
+      layers: this.layers.map((l) => ({ texture: l.texture ?? "", original: l.original, ...(l.text ? { text: l.text } : {}), ...l.at })),
       camera: { azimuth: s.theta, polar: s.phi, distance: s.radius },
     };
   }
 
-  /** Put the camera, model and colour back as a design had them (its pictures come back through addImage, zone by zone). A custom model is the element's to load first. */
+  /** Put the camera, model and colour back as a design had them, and its places on the pictures already here (matched zone by zone, bottom first; they come back through addImage). A custom model is the element's to load first. */
   apply(d: Design) {
     if (d.model !== this.model && d.model !== "custom") this.setModel(d.model);
     this.setColor(d.color);
     const s = new THREE.Spherical(d.camera.distance, d.camera.polar, d.camera.azimuth);
     this.camera.position.copy(this.controls.target).add(new THREE.Vector3().setFromSpherical(s));
-    for (const at of d.layers) {
-      const l = this.layers.find((x) => (x.at.zone ?? "front") === (at.zone ?? "front"));
-      if (l) l.at = clampPlacement({ ...at, zone: at.zone ?? "front" });
+    const seen = new Map<ZoneName, number>();
+    for (const { texture: _t, original: _o, text: _x, ...at } of d.layers) {
+      const zone = at.zone ?? "front", n = seen.get(zone) ?? 0;
+      seen.set(zone, n + 1);
+      const l = this.layers.filter((x) => zoneOfLayer(x) === zone)[n];
+      if (l) l.at = clampPlacement({ ...at, zone });
     }
     this.repaint();
   }

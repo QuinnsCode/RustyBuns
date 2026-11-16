@@ -22,7 +22,7 @@ export interface Surface<S> {
   readonly target: THREE.Vector3;
   /** A model that keeps its own colours: no swatches. */
   readonly ownColors: boolean;
-  /** Where pictures may go, one picture each; the first is where a new picture starts. */
+  /** Where pictures may go, any number each; the first is where a new picture starts. */
   readonly zones: readonly ZoneInfo[];
   hit(ray: THREE.Raycaster): S | null;
   /** The zone under a spot, if any. */

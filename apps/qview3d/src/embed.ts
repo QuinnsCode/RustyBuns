@@ -103,7 +103,7 @@ Events bubble from the element, each with a \`detail\`:
 - \`qview:saved\`: \`{ id, url, design }\` once saved to the org (not on the demo).
 - \`qview:ready\` and \`qview:error\` (\`{ error }\`).
 
-Methods: \`addImage(file)\`, \`place({ scale, rotation })\`, \`view("front" | "angle" | "side" | "back")\`,
+Methods: \`addImage(file)\`, \`addText({ value, font, color })\` (font: sans, serif, mono, script or block), \`removeImage()\`, \`place({ scale, rotation })\`, \`view("front" | "angle" | "side" | "back")\`,
 \`snapshot()\`, \`save()\`, \`load(design)\`, the \`model\`, \`zone\` and \`color\` properties, and \`value\` (the saved design id, in a form).
 
 ## 6. If the site has a Content-Security-Policy

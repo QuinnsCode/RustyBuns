@@ -1,6 +1,6 @@
 // Required Notice: Copyright (c) 2026 Ryan Quinn (QNTBR) (https://qntbr.com). PolyForm Noncommercial 1.0.0, see ../LICENSE.
 //
-// Drawing a print file: the shopper's original laid over one zone at print resolution, on a clear background, the
+// Drawing a print file: the shopper's originals laid over one zone at print resolution, on a clear background, the
 // same way the widget lays its texture over the zone (print.ts): centre at u across and v up, width `scale` of the
 // zone's, turned by `rotation`, cut at the zone's edge. The admin page runs it (a Worker has no canvas to draw with).
 import type { PrintCm, PrintSheet } from "./api.ts";
@@ -9,7 +9,7 @@ import type { PrintCm, PrintSheet } from "./api.ts";
 export const toPx = (cm: number, dpi: number) => Math.max(1, Math.round((cm / 2.54) * dpi));
 
 /** The sheet's size in pixels, and where the picture goes on it (its centre, size and turn; canvas y runs down). */
-export function sheetLayout(px: { w: number; h: number }, at: PrintSheet["at"], aspect: number) {
+export function sheetLayout(px: { w: number; h: number }, at: PrintSheet["pictures"][number]["at"], aspect: number) {
   const w = at.scale * px.w;
   return { x: at.u * px.w, y: (1 - at.v) * px.h, w, h: w / aspect, rotation: at.rotation };
 }
@@ -17,16 +17,20 @@ export function sheetLayout(px: { w: number; h: number }, at: PrintSheet["at"], 
 /** The zone's size in pixels at `dpi`. */
 export const sheetPx = (cm: PrintCm, dpi: number) => ({ w: toPx(cm.w, dpi), h: toPx(cm.h, dpi) });
 
-/** Draw the sheet: clear, the picture placed and cut at the zone's edge. */
-export function drawSheet(ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D, sheet: PrintSheet, image: CanvasImageSource, aspect: number) {
-  const { x, y, w, h, rotation } = sheetLayout(sheet.px, sheet.at, aspect);
+/** Draw the sheet: clear, then each picture (`images[i]` for `sheet.pictures[i]`) placed and cut at the zone's edge, the last on top. */
+export function drawSheet(ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D, sheet: PrintSheet, images: { image: CanvasImageSource; aspect: number }[]) {
   ctx.clearRect(0, 0, sheet.px.w, sheet.px.h);
-  ctx.save();
   ctx.imageSmoothingQuality = "high";
-  ctx.translate(x, y);
-  ctx.rotate(-rotation);
-  ctx.drawImage(image, -w / 2, -h / 2, w, h);
-  ctx.restore();
+  sheet.pictures.forEach((p, i) => {
+    const im = images[i];
+    if (!im) return;
+    const { x, y, w, h, rotation } = sheetLayout(sheet.px, p.at, im.aspect);
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(-rotation);
+    ctx.drawImage(im.image, -w / 2, -h / 2, w, h);
+    ctx.restore();
+  });
 }
 
 const CRC = Array.from({ length: 256 }, (_, n) => {
