@@ -1122,6 +1122,17 @@
         "@rustybuns/shell-bun": "^0.1.12",
       },
     },
+    "apps/test-swarm": {
+      "name": "test-swarm",
+      "version": "0.0.1",
+      "dependencies": {
+        "@rustybuns/util": "^0.1.12",
+      },
+      "devDependencies": {
+        "@rustybuns/cli": "^0.1.12",
+        "@rustybuns/shell-bun": "^0.1.12",
+      },
+    },
     "apps/two-fronts": {
       "name": "two-fronts",
       "version": "0.0.1",
@@ -4215,6 +4226,8 @@
     "terraviz-demo": ["terraviz-demo@workspace:apps/terraviz-demo"],
 
     "terser": ["terser@5.51.2", "", { "dependencies": { "@jridgewell/source-map": "^0.3.3", "acorn": "^8.15.0", "commander": "^2.20.0", "source-map-support": "~0.5.20" }, "bin": { "terser": "bin/terser" } }, "sha512-bWnjSNscmuI+GJze6ZupnHP8G/cTcsJF+bXCeQknk2SHQsgbNJnLrqiH9jZ2W4STPVXH2mDKKRX3iwPhc9Cn/Q=="],
+
+    "test-swarm": ["test-swarm@workspace:apps/test-swarm"],
 
     "text-decoder": ["text-decoder@1.2.7", "", { "dependencies": { "b4a": "^1.6.4" } }, "sha512-vlLytXkeP4xvEq2otHeJfSQIRyWxo/oZGEbXrtEEF9Hnmrdly59sUbzZ/QgyWuLYHctCHxFF4tRQZNQ9k60ExQ=="],
 
