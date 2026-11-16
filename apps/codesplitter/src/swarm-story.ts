@@ -64,7 +64,8 @@ export const SCENES: Scene[] = [
     caption: "Top: old git. Bottom: codeSplitter. Count who got home." },
 ];
 
-export const lerp = (a: number, b: number, k: number) => a + (b - a) * k;
+import { lerp } from "@rustybuns/util";
+export { lerp };
 const ease = (k: number) => (k < 0.5 ? 2 * k * k : 1 - (-2 * k + 2) ** 2 / 2);
 
 /** Where the story is `ms` real milliseconds in (looping): the scene, how far through it, and where the faders are. */

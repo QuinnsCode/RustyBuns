@@ -11,6 +11,7 @@ import type { Subprocess } from "bun";
 import { bool, int, obj, oneOf, str } from "../packages/util/src/guard.ts";
 import { APPS, Issues, answer, queue, type AppId } from "./manual-runs-lib.ts";
 import { portArg } from "../packages/util/src/ports.ts";
+import { json } from "../packages/util/src/http.ts";
 
 const args = process.argv.slice(2);
 const value = (k: string) => { const i = args.indexOf(k); return i >= 0 ? args[i + 1] : undefined; };
@@ -58,7 +59,6 @@ for (const s of ["SIGINT", "SIGTERM", "SIGHUP"] as const) process.on(s, () => { 
 const Answer = obj({ number: int(1, 1e7), yes: bool(), note: str(5000, { min: 0, dflt: "" }) });
 const Start = obj({ app: oneOf(Object.keys(APPS) as AppId[]) });
 const answered = new Map<number, boolean>();
-const json = (v: unknown, status = 200) => Response.json(v, { status });
 
 const listen = (port: number) => Bun.serve({
   port,

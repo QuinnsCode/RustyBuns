@@ -2,6 +2,7 @@
 // Between fights the arena replays the last one and counts down to the hour.
 
 import { getJson } from "@rustybuns/util/http";
+import { esc } from "@rustybuns/util";
 import { isLiveMessage, Replay, Summaries, type LiveMatch, type ReplayEntry } from "../live-wire.ts";
 import type { LogEntry } from "../engine/match.ts";
 import { scenesAt } from "../engine/match.ts";
@@ -9,7 +10,6 @@ import { sceneSvg } from "../engine/svg.ts";
 
 const REPLAY_TURN_MS = 180;
 
-const esc = (s: string) => s.replace(/[&<>"]/g, (c) => `&#${c.charCodeAt(0)};`);
 const clock = (ms: number) => {
   const s = Math.max(0, Math.ceil(ms / 1000));
   return `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;

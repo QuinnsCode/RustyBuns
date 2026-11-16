@@ -59,7 +59,8 @@ export const slug = (heading: string) =>
 // The first `# Heading` of a doc, as its title.
 export const titleOf = (md: string, fallback: string) => md.match(/^# (.+)$/m)?.[1]?.replace(/`/g, "") ?? fallback;
 
-export const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+import { esc } from "../../packages/util/src/index.ts";
+export { esc };
 
 // Rewrites one page's href/src attributes. A link to a repo file the site has a page for becomes a
 // relative link to that page; any other repo path goes to GitHub at this version's ref.

@@ -8,6 +8,7 @@
 import type { Features } from "./analyze.ts";
 import type { Box } from "./boxes.ts";
 import { bool, num, obj, oneOf, opt, str, type Of } from "@rustybuns/util/guard";
+import { clamp01 } from "@rustybuns/util";
 
 export const MODEL = "@cf/cloudflare/clef-omni";
 
@@ -79,4 +80,3 @@ export function estimate(f: Features | null, boxes: Box[]): Verdict {
   return { box: boxes[0]!.id, craft: clamp01(craft), originality: clamp01(originality), by: "estimate" };
 }
 
-const clamp01 = (x: number) => Math.max(0, Math.min(1, x));

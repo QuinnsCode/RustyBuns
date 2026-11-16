@@ -176,6 +176,7 @@
         "@electric-sql/pglite-socket": "^0.2.11",
         "@rustybuns/cli": "^0.1.12",
         "@rustybuns/shell-bun": "^0.1.12",
+        "@rustybuns/util": "^0.1.12",
         "postgres": "^3.4.7",
       },
       "devDependencies": {
@@ -443,6 +444,9 @@
     "apps/geoboxq-shopify": {
       "name": "geoboxq-shopify",
       "version": "0.1.0",
+      "dependencies": {
+        "@rustybuns/util": "^0.1.12",
+      },
       "devDependencies": {
         "geoboxq": "workspace:*",
         "wrangler": "4.156.0",

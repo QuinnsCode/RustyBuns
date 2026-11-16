@@ -1,8 +1,8 @@
 // A fight as SVG, for the viewer: crisp shapes on the shared 700 × 700 canvas.
 
 import type { SkeletonEl } from "./types.ts";
+import { esc } from "@rustybuns/util";
 
-const esc = (s: string) => s.replace(/[&<>"]/g, (c) => `&${({ "&": "amp", "<": "lt", ">": "gt", '"': "quot" } as Record<string, string>)[c]};`);
 const r = (n: number) => Math.round(n * 10) / 10;
 
 export function elementSvg(el: SkeletonEl): string {

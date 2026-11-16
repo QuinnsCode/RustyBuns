@@ -15,6 +15,8 @@ import { cameraOf, logFile, record } from "../live/camera.ts";
 import { asksRoute, answerAsk, outboundRoute, pendingAsks } from "../live/floorguard.ts";
 import { boxRoute } from "../sandbox/server.ts";
 import { fakeGitHub } from "./fake-github.ts";
+import { esc } from "@rustybuns/util";
+import { json } from "@rustybuns/util/http";
 import { RINGS, RUN_SECONDS, TALLY, helperAt, lineAt, type Timeline } from "./runs.ts";
 import { SCENARIOS, isScenario, names, type DemoWorker } from "./scenarios.ts";
 
@@ -115,7 +117,6 @@ export async function startStage({ scenario, port = 0 }: { scenario: string; por
     return switching;
   };
 
-  const json = (body: unknown, status = 200) => Response.json(body, { status });
   const server = Bun.serve<{ w: World }>({
     hostname: "127.0.0.1",
     port,
@@ -209,7 +210,6 @@ export async function startStage({ scenario, port = 0 }: { scenario: string; por
   };
 }
 
-const esc = (s: string) => s.replace(/[<&>]/g, (c) => `&#${c.charCodeAt(0)};`);
 
 /** The page: the localStorage the real scripts read is set first, then the stage's own script brings them all in. */
 function page(name: string) {

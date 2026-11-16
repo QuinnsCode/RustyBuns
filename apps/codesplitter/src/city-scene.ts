@@ -4,11 +4,11 @@
 // bloomed, tilt-shifted and grained.
 
 import type { CityCard } from "./card.ts";
+import { clamp, clamp01 } from "@rustybuns/util";
 
 type RGB = [number, number, number];
 type Pt = [number, number];
 
-const clamp = (x: number, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
 const mix = (a: RGB, b: RGB, t: number): RGB => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
 const mul = (c: RGB, k: number): RGB => [c[0] * k, c[1] * k, c[2] * k];
 function hash(a: number, b = 0, c = 0) {
@@ -119,9 +119,9 @@ export function paintCity(out: Uint8Array, W: number, H: number, city: CityCard,
     for (let x = 0; x < W; x++) px.d.set(base, (y * W + x) * 3);
   }
   for (let y = 0; y < 360; y += 2) for (let x = 0; x < W; x += 2) {
-    const n = fbm(x / 230, y / 90, seed), cover = clamp((n - (0.46 + (y / 360) * 0.22)) / 0.18) * (1 - clamp(y / 360) * 0.6);
+    const n = fbm(x / 230, y / 90, seed), cover = clamp01((n - (0.46 + (y / 360) * 0.22)) / 0.18) * (1 - clamp01(y / 360) * 0.6);
     if (cover <= 0) continue;
-    const col = mix([24, 26, 40], [96, 70, 118], clamp(fbm(x / 110, y / 60, seed + 1) * 1.3 - 0.25));
+    const col = mix([24, 26, 40], [96, 70, 118], clamp01(fbm(x / 110, y / 60, seed + 1) * 1.3 - 0.25));
     for (let dy = 0; dy < 2; dy++) for (let dx = 0; dx < 2; dx++) {
       const o = ((y + dy) * W + x + dx) * 3;
       for (let k = 0; k < 3; k++) px.d[o + k]! += (col[k]! - px.d[o + k]!) * cover * 0.85;

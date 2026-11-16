@@ -1,6 +1,7 @@
 // The favourite-features vote behind the docs home page: visitors drag features into S/A/B/C tiers and
 // send the ranking with a comment. Only the last KEEP votes are kept; the home page cycles through them.
 // This file is the logic with no Cloudflare in it (so bun test can run it); worker.ts is the glue.
+import { privateJson as json } from "../../packages/util/src/http.ts";
 export const KEEP = 50;
 export const TIERS = ["S", "A", "B", "C"] as const;
 const MIN_GAP_MS = 15_000; // one vote per visitor every 15 seconds
@@ -28,7 +29,6 @@ export function parseVote(body: unknown): { tiers: Record<string, string>; comme
 
 export const push = (votes: Vote[], vote: Vote) => [...votes, vote].slice(-KEEP);
 
-const json = (data: unknown, status = 200) => new Response(JSON.stringify(data), { status, headers: { "content-type": "application/json", "cache-control": "no-store" } });
 
 // GET /api/votes lists the kept votes, oldest first. POST adds one. `who` is the visitor (an address
 // or anything stable) for the rate limit, and `last` remembers when each one last voted.

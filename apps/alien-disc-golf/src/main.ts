@@ -4,7 +4,7 @@
 // stroke back. Miss into the sea and the real ocean current takes the disc while you paddle against it.
 // `?seed=` is a course, `?hole=` jumps, `?wind=synthetic` plays without NOAA.
 import { loadPad, mountControls } from "@rustybuns/game-controls";
-import { clamp } from "@rustybuns/util";
+import { clamp, esc } from "@rustybuns/util";
 import { addCommands } from "@rustybuns/util/commands";
 import { mountPalette } from "@rustybuns/util/palette";
 import { cssUrl, forecastStrip, fronds, lieGlyph, markFor, orbitMark, punchStrip, routeMap, turnRose, windRose, type CardHole, type Vane } from "./board.ts";
@@ -34,7 +34,6 @@ const pad = loadPad(PAD_KEY, [
 let padPaddling = false, padPower = 0;
 const $ = <T extends HTMLElement>(sel: string) => document.querySelector<T>(sel)!;
 const fmt = (n: number) => Math.round(n).toLocaleString("en-US");
-const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 
 type Phase = "loading" | "guess" | "aim" | "flying" | "swim" | "done";
 /** `wet`: the disc went in the sea on this hole (the scorecard marks it with a wave). */

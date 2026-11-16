@@ -7,7 +7,7 @@
 //
 //   bun scripts/paper.ts            writes public/paper/{vellum,deckle,gutter,bark}.png and prints their sizes
 //   bun scripts/paper.ts --size 768 --seed 9
-import { mulberry32 } from "@rustybuns/util";
+import { clamp01, mulberry32 } from "@rustybuns/util";
 
 const arg = (name: string, d: number) => { const i = process.argv.indexOf(name); return i > 0 ? Number(process.argv[i + 1]) : d; };
 const SIZE = arg("--size", 640), SEED = arg("--seed", 7);
@@ -66,7 +66,6 @@ export function vellum(size: number, seed: number): Uint8Array {
 export const DECKLE = { size: 384, border: 48 } as const;
 export const GUTTER = { w: 320, h: 384 } as const;
 export const BARK = 192;
-const clamp01 = (t: number) => (t < 0 ? 0 : t > 1 ? 1 : t);
 
 /** One edge of hand-made paper, `len` along by `depth` deep (depth 0 is the outside), as coverage 0..1, periodic
  * along its length: the ragged line where the fibres thin out, the thinner (more see-through) paper just inside it,

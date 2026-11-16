@@ -14,7 +14,6 @@ import { local } from "../src/local.ts";
 
 const arg = (n: string) => { const i = process.argv.indexOf(`--${n}`); return i > 0 ? process.argv[i + 1] : undefined; };
 const CHROME = arg("chrome") ?? "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 const call = await local({ GH_CLI: "off" });
 if (!(await Bun.file("dist/client/index.html").exists())) await Bun.$`bun run build.ts`.quiet();
@@ -55,7 +54,7 @@ const page = async <T = any>(expr: string): Promise<T> => {
   return r.result.result.value;
 };
 const until = async (what: string, expr: string, ms = 15000) => {
-  for (const end = Date.now() + ms; Date.now() < end; await sleep(150)) if (await page(expr).catch(() => false)) return;
+  for (const end = Date.now() + ms; Date.now() < end; await Bun.sleep(150)) if (await page(expr).catch(() => false)) return;
   throw new Error(`never saw: ${what}`);
 };
 await cdp("Page.enable");
@@ -66,7 +65,7 @@ await cdp("Page.addScriptToEvaluateOnNewDocument", { source: `
 
 const open = async () => {
   await cdp("Page.navigate", { url: `${shell.url}/#/f/ryan/office/src/server.ts` });
-  await sleep(500);
+  await Bun.sleep(500);
   await cdp("Page.navigate", { url: `${shell.url}/#/f/ryan/office/src/server.ts` });
   await until("the file page", `!!document.querySelector("#lines .ln")`);
   await page(`sessionStorage.removeItem("cs_tour")`);

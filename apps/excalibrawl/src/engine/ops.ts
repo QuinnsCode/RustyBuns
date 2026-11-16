@@ -1,6 +1,7 @@
 // Pure: skeleton element schema + op validation + region clamping, from excalibrawl.com.
 // No I/O, no Cloudflare, no Excalidraw import.
 import { arr, check, maybe, num as num_, obj, oneOf, str, type Guard } from "@rustybuns/util/guard";
+import { clamp } from "@rustybuns/util";
 import type {
   SkeletonEl, Scene, Op, OpLimits, Rejection, ApplyResult,
   Bounds, BoxEl, LinearEl, ElementType,
@@ -33,8 +34,6 @@ const TYPES = ["rectangle", "ellipse", "diamond", "line", "arrow", "text"] as co
 
 const num = (v: unknown): v is number =>
   typeof v === "number" && Number.isFinite(v);
-const clamp = (v: number, lo: number, hi: number) =>
-  Math.min(hi, Math.max(lo, v));
 
 // --- region geometry ---------------------------------------------------------
 

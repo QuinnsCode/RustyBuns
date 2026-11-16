@@ -8,6 +8,7 @@
 // under the curve sets the selected band exactly. What's drawn is the filters'
 // real digital response (src/engine/eq.ts `response`), phase included.
 import { useEffect, useMemo, useRef, useState } from "react";
+import { clamp } from "@rustybuns/util";
 import {
   EQ_BANDS, EQ_LIMITS, EQ_SLOPES, bandResponse, eqLane, eqLaneName, hasGain, hasReso, isCut, listenOf, response, flatEq,
   type EqBand, type EqDoc, type EqKind, type EqListen,
@@ -41,7 +42,6 @@ export const fOfX = (x: number, w: number) => Math.min(F_HI, Math.max(F_LO, F_LO
 const yOfDb = (db: number, h: number) => h / 2 - (db / RANGE) * (h / 2 - 10);
 const dbOfY = (y: number, h: number) => ((h / 2 - y) / (h / 2 - 10)) * RANGE;
 export const fmtHz = (f: number) => (f < 1000 ? `${Math.round(f)} Hz` : `${(f / 1000).toFixed(f < 10000 ? 2 : 1)} kHz`);
-const clamp = (v: number, lo: number, hi: number) => Math.min(Math.max(v, lo), hi);
 
 /** The band a double-click at (f, dB) makes: a cut near either end, a bell between. */
 export function newBand(f: number, db: number): EqBand {
