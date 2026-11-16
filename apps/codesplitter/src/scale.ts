@@ -123,21 +123,23 @@ async function dbBytes(env: Env): Promise<number | null> {
 
 /** Live readings for the cards that can be measured from D1. */
 export async function readings(env: Env, now = Date.now()): Promise<Record<string, Reading>> {
-  const first = async (sql: string, ...args: unknown[]) => ((await env.DB.prepare(sql).bind(...args).first()) ?? {}) as Record<string, unknown>;
+  // Each is a MAX, SUM or COUNT, or the top row: any of it missing when there are no rows yet.
+  const first = async <T,>(sql: string, ...args: unknown[]): Promise<Partial<T>> => (await env.DB.prepare(sql).bind(...args).first<T>()) ?? {};
+  type At = { owner: string; repo: string; path: string };
   // The busiest edit window in the last day, in D1 writes: a file's Tally writes each typist's edits once every TALLY_MS at most, before the feed's and traffic's.
-  const edits = await first("SELECT MAX(c) AS peak FROM (SELECT SUM(MIN(count, ?)) AS c FROM limit_hits WHERE rule = 'edit' AND win >= ? GROUP BY win)", 60_000 / TALLY_MS, now - 86_400_000);
+  const edits = await first<{ peak: number | null }>("SELECT MAX(c) AS peak FROM (SELECT SUM(MIN(count, ?)) AS c FROM limit_hits WHERE rule = 'edit' AND win >= ? GROUP BY win)", 60_000 / TALLY_MS, now - 86_400_000);
   // The biggest committed file: its text, plus ~70 bytes a line of id, rev, author and time in the doc.
-  const big = await first("SELECT owner, repo, big_path AS path, big_bytes AS bytes, big_lines AS lines FROM repo_search ORDER BY big_bytes DESC LIMIT 1");
+  const big = await first<At & { bytes: number; lines: number }>("SELECT owner, repo, big_path AS path, big_bytes AS bytes, big_lines AS lines FROM repo_search ORDER BY big_bytes DESC LIMIT 1");
   // The biggest repo's search index (its DO's SQLite, as of its last commit).
-  const search = await first("SELECT owner, repo, size_bytes AS bytes FROM repo_search ORDER BY size_bytes DESC LIMIT 1");
+  const search = await first<Omit<At, "path"> & { bytes: number }>("SELECT owner, repo, size_bytes AS bytes FROM repo_search ORDER BY size_bytes DESC LIMIT 1");
   // The most edited file in the 30 days of line_events: ops added to its log.
-  const hot = await first("SELECT owner, repo, path, SUM(sets + inserts + deletes) AS ops FROM line_events GROUP BY owner, repo, path ORDER BY ops DESC LIMIT 1");
+  const hot = await first<At & { ops: number }>("SELECT owner, repo, path, SUM(sets + inserts + deletes) AS ops FROM line_events GROUP BY owner, repo, path ORDER BY ops DESC LIMIT 1");
   // 5xx as a share of the last day's requests, from the tally Insights reads.
-  const errs = await first("SELECT SUM(hits) AS hits, SUM(errors) AS errors FROM traffic WHERE last_at >= ?", now - 86_400_000);
-  const runs = await first("SELECT COUNT(*) AS c FROM agent_runs WHERE status = 'running'");
-  const deploys = await first("SELECT COUNT(*) AS c FROM deploys WHERE status = 'running'");
+  const errs = await first<{ hits: number | null; errors: number | null }>("SELECT SUM(hits) AS hits, SUM(errors) AS errors FROM traffic WHERE last_at >= ?", now - 86_400_000);
+  const runs = await first<{ c: number }>("SELECT COUNT(*) AS c FROM agent_runs WHERE status = 'running'");
+  const deploys = await first<{ c: number }>("SELECT COUNT(*) AS c FROM deploys WHERE status = 'running'");
   const size = await dbBytes(env);
-  const where = (r: Record<string, unknown>) => r.path ? `${r.owner ? `${r.owner}/${r.repo}/` : ""}${r.path}` : "";
+  const where = (r: Partial<At>) => r.path ? `${r.owner ? `${r.owner}/${r.repo}/` : ""}${r.path}` : "";
   return {
     "d1-writes": { value: n(edits.peak) / 60, limit: 500, unit: "writes/s", note: "edit tallies in the busiest minute of the last day; traffic and feed writes come on top" },
     "d1-size": { value: size, limit: 10 * GB, unit: "bytes", note: size === null ? "D1 didn't say" : "the whole database" },

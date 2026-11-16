@@ -1,18 +1,19 @@
 // POST /api/repos/:o/:r/do/edit?path=&branch=: claim the lines the ops touch (in line if held), apply them naming the claim, release it.
 // Every check lives in the routes it calls (do/claims, do/ops), so access, locks, policy and limits answer as they do there.
 import { fail, json, need, readBody } from "./env.ts";
-import { arr, int, isRecord, num, obj, opt, raw, str } from "@rustybuns/util/guard";
+import { arr, check, int, isRecord, num, obj, opt, raw, str } from "@rustybuns/util/guard";
+import { parseOps, type Op } from "./lines.ts";
+import { ClaimRow } from "./file-do.ts";
 import { actingAs, onBehalfOf } from "./identity.ts";
 
 const MAX_WAIT_S = 20;
 
 /** The line ids the ops touch: what a set or delete names, and an insert's anchor. */
-const touched = (ops: unknown[]): string[] => {
+const touched = (ops: Op[]): string[] => {
   const ids = new Set<string>();
   for (const o of ops) {
-    if (!isRecord(o)) continue;
     const id = o.kind === "insert" ? o.after : o.line;
-    if (typeof id === "string" && id) ids.add(id);
+    if (id) ids.add(id);
   }
   return [...ids];
 };
@@ -37,7 +38,10 @@ export async function editRoutes(req: Request, p: string[], url: URL, user: stri
     return self(r);
   };
 
-  const lines = touched(b.ops);
+  // Checked here as the file checks them, so the claim is for the lines they really touch.
+  const ops = parseOps(b.ops);
+  if (typeof ops === "string") return fail("BadInput", ops);
+  const lines = touched(ops);
   let claim: string | undefined;
   try {
     if (lines.length) {
@@ -45,10 +49,10 @@ export async function editRoutes(req: Request, p: string[], url: URL, user: stri
       const reply = await bodyOf(got);
       // Still in line (202) or refused: the caller asks again with the id, or hears why.
       if (got.status !== 201) return json(reply, got.status);
-      claim = isRecord(reply) && typeof reply.id === "string" ? reply.id : undefined;
+      claim = check(ClaimRow, reply)?.id;
       if (!claim) return json({ error: "the claim came back without an id" }, 502);
     }
-    const done = await call("ops", { ops: b.ops, ifRev: b.ifRev, claim, proto: b.proto });
+    const done = await call("ops", { ops, ifRev: b.ifRev, claim, proto: b.proto });
     const reply = await bodyOf(done);
     return json(done.ok && isRecord(reply) ? { ...reply, claim: claim ?? null } : reply, done.status);
   } finally {

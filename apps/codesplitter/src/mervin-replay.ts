@@ -3,11 +3,13 @@
 // it into one ordered stream, `Player` plays it with play, pause, stop, step and a speed, and `view` folds the
 // events played so far into what the page draws. Files can carry their lines, which stream in and settle (the live
 // diff), and add, build and deploy steps ride the same stream in lanes. A live player takes events as they arrive
-// (`push`) and waits at the end instead of finishing. No DOM and no imports, so tests read it; the build ships it to
-// the page as mervin-replay.js.
+// (`push`) and waits at the end instead of finishing. No DOM and no imports but the shared guards, so tests read it;
+// the build ships it to the page as mervin-replay.js.
 //
 // Pausing a replay holds the replay and touches nothing else. Pausing a live feed is real: the page tells the feed
 // (`PAUSE`, scripts/mervin-watch.ts), and `scripts/mervin-merge.ts --go` waits on it before it merges the next PR.
+
+import { arr, check, int, maybe, num, obj, rec, str, type Guard } from "@rustybuns/util/guard";
 
 export type Tier = "certain" | "agree" | "mervin" | "differ" | "card";
 export const TIERS: Tier[] = ["certain", "agree", "mervin", "differ", "card"];
@@ -191,21 +193,29 @@ export interface Rounds {
 
 /** The `rounds` of a board GET reply, or null when the repo records none (or the reply isn't one). */
 export function readRounds(reply: unknown): Rounds | null {
-  const r = reply && typeof reply === "object" ? (reply as { rounds?: unknown }).rounds : undefined;
-  if (!r || typeof r !== "object") return null;
-  const o = r as Record<string, unknown>;
-  const n = (x: unknown) => (typeof x === "number" && Number.isFinite(x) && x >= 0 ? x : 0);
-  const list = (x: unknown) => (Array.isArray(x) ? x.filter((e): e is Record<string, unknown> => !!e && typeof e === "object") : []);
-  const tiers = o.tiers && typeof o.tiers === "object" ? Object.entries(o.tiers as Record<string, unknown>) : [];
-  const ci = o.ci && typeof o.ci === "object" ? (o.ci as Record<string, unknown>) : null;
+  const o = check(RoundsReply, reply)?.rounds;
+  if (!o) return null;
   return {
-    exact: n(o.exact), of: n(o.of), rounds: n(o.rounds),
-    tiers: tiers.flatMap(([tier, h]) => (h && typeof h === "object" ? [{ tier, exact: n((h as { exact?: unknown }).exact), of: n((h as { of?: unknown }).of) }] : [])),
-    kinds: list(o.kinds).flatMap((k) => (typeof k.kind === "string" ? [{ kind: k.kind, wrong: n(k.wrong) }] : [])),
-    needless: Array.isArray(o.needless) ? o.needless.filter((x): x is number => Number.isInteger(x)) : [],
-    ci: ci && n(ci.prs) ? { median: n(ci.median), max: n(ci.max), prs: n(ci.prs), last: new Map(list(ci.last).flatMap((c) => (Number.isInteger(c.pr) ? [[c.pr as number, n(c.secs)] as [number, number]] : []))) } : null,
+    exact: o.exact, of: o.of, rounds: o.rounds,
+    tiers: Object.entries(o.tiers).flatMap(([tier, h]) => (h ? [{ tier, ...h }] : [])),
+    kinds: o.kinds, needless: o.needless,
+    ci: o.ci?.prs ? { ...o.ci, last: new Map(o.ci.last.map((c) => [c.pr, c.secs])) } : null,
   };
 }
+
+// The board GET's `rounds` (board-routes.ts, roundsHit in board.ts), read loosely: a field of the wrong shape reads as none.
+/** `g`, or `d` when the value is missing or wrong. */
+const soft = <T>(g: Guard<T>, d: T): Guard<T> => (v) => maybe(g)(v) ?? d;
+const count = num(0, Number.MAX_VALUE, 0);
+const prNo = int(-Number.MAX_SAFE_INTEGER, Number.MAX_SAFE_INTEGER);
+const list = <T>(g: Guard<T>) => soft(arr(g, Infinity, { drop: true }), []);
+const RoundsReply = obj({ rounds: obj({
+  exact: count, of: count, rounds: count,
+  tiers: soft(rec(maybe(obj({ exact: count, of: count }))), {}),
+  kinds: list(obj({ kind: str(), wrong: count })),
+  needless: list(prNo),
+  ci: maybe(obj({ median: count, max: count, prs: count, last: list(obj({ pr: prNo, secs: count })) })),
+}) });
 
 /** CI time with a fixed width: 07:42, or 1h05 past the hour. */
 export function ciText(secs: number): string {

@@ -1,6 +1,8 @@
 // Limits for the TV view (#1562): a flood, say 10,000 cheap agents all branching at once, has to stay
 // readable and not melt the page. The view is drawn from these pure functions; the viewer's choices
-// live in their browser (localStorage "tv-limits"). Imports nothing.
+// live in their browser (localStorage "tv-limits"). Imports only the shared guards.
+
+import { check, maybe, num, obj, oneOf } from "@rustybuns/util/guard";
 
 export interface Limits {
   /** Lanes drawn in full before the rest share a thinning band and fold into "+N more". */
@@ -24,19 +26,19 @@ export const DEFAULT: Preset = "calm";
 /** Hard bounds on what a viewer may set, so no setting can melt the page. */
 export const BOUNDS: Record<keyof Limits, [number, number]> = { maxLanes: [1, 200], smoothSecs: [0.5, 60], minLines: [0, 100], maxLines: [10, 20000] };
 
+/** One limit as stored: out of bounds is pulled in, missing or not a number is the default preset's. */
+const limit = (k: keyof Limits) => num(BOUNDS[k][0], BOUNDS[k][1], PRESETS[DEFAULT][k]);
+/** What the browser keeps: a preset, or limits of the viewer's own. */
+const Stored = obj({ preset: maybe(oneOf(["calm", "busy", "firehose"] as const satisfies readonly Preset[])), maxLanes: limit("maxLanes"), smoothSecs: limit("smoothSecs"), minLines: limit("minLines"), maxLines: limit("maxLines") });
+
 /** Stored settings back into valid limits: anything missing, wrong or out of bounds falls to the default's. */
 export function parseLimits(raw: string | null | undefined): Limits {
-  const base = PRESETS[DEFAULT];
-  try {
-    const o = JSON.parse(raw ?? "null") as Record<string, unknown> | null;
-    if (typeof o?.preset === "string" && o.preset in PRESETS) return { ...PRESETS[o.preset as Preset] };
-    const out = { ...base };
-    for (const k of Object.keys(BOUNDS) as (keyof Limits)[]) {
-      const v = o?.[k], [lo, hi] = BOUNDS[k];
-      if (typeof v === "number" && Number.isFinite(v)) out[k] = Math.min(hi, Math.max(lo, v));
-    }
-    return out;
-  } catch { return { ...base }; }
+  let v: unknown = null;
+  try { v = JSON.parse(raw ?? "null"); } catch { /* not JSON: the default */ }
+  const o = check(Stored, v);
+  if (!o) return { ...PRESETS[DEFAULT] };
+  const { preset, ...limits } = o;
+  return preset ? { ...PRESETS[preset] } : limits;
 }
 
 /**

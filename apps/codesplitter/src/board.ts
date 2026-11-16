@@ -193,7 +193,7 @@ export function brief(rows: BoardRow[]): string[] {
 
 /** Each row cut down to the named fields (`pr` always kept). */
 export const pick = (rows: BoardRow[], fields: string[]) =>
-  rows.map((r) => Object.fromEntries([["pr", r.pr], ...fields.filter((f) => f in r && f !== "pr").map((f) => [f, (r as unknown as Record<string, unknown>)[f]])]));
+  rows.map((r) => { const has = new Map(Object.entries(r)); return Object.fromEntries([["pr", r.pr], ...fields.filter((f) => has.has(f) && f !== "pr").map((f) => [f, has.get(f)])]); });
 
 /** Is `x` a row the board takes? A row that is, or what's wrong with it. */
 export function parseRow(x: unknown): BoardRow | string {

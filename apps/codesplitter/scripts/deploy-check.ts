@@ -39,6 +39,8 @@ import { DEPLOY_DEPS, DEPLOY_OVERRIDES } from "../../../packages/cli/src/glue/de
 import { local, remote, type Call } from "../src/local.ts";
 import { diffToOps } from "../src/sync.ts";
 import type { Run } from "../src/preview.ts";
+import { bool, nul, obj, opt, str } from "@rustybuns/util/guard";
+import { readJson } from "@rustybuns/util/http";
 
 const { values: a } = parseArgs({ options: {
   url: { type: "string" }, cookie: { type: "string", default: "" },
@@ -156,7 +158,7 @@ if (a.destroy) { await destroy(); process.exit(0); }
 
 if (a.hosted) {
   // Accounts, not aliases: the cookie is who we are, and only an admin deploys.
-  const s = (await (await call(null, "/api/session")).json()) as { user: string | null; admin?: boolean };
+  const s = (await readJson(await call(null, "/api/session"), obj({ user: nul(str(200)), admin: opt(bool()) }))) ?? { user: null };
   if (s.user !== user || !s.admin) throw new Error(`the cookie signs in as ${s.user ?? "nobody"}${s.admin ? "" : " (not an admin)"}; expected admin ${user}`);
 } else await send("/api/login", { name: user });
 if ((await call(user, base)).status === 404) await send("/api/repos", { name: repo, visibility: "private" });

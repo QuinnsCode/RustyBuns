@@ -4,7 +4,10 @@
 
 import { parseJson } from "@rustybuns/util/http";
 import { ERRORS, type ErrorTag } from "./openapi.ts";
-import { isRecord } from "@rustybuns/util/guard";
+import { isRecord, maybe, num, obj, str } from "@rustybuns/util/guard";
+
+/** What every failed reply may say (env.ts `fail`, a limit's 429): its sentence, its tag, when to try again. The rest of it is the route's own. */
+export const FailureBody = obj({ error: maybe(str(Infinity, { min: 0 })), message: maybe(str(Infinity, { min: 0 })), tag: maybe(str(200)), retryAfter: maybe(num(0, Infinity)) });
 
 const isTag = (t: unknown): t is ErrorTag => typeof t === "string" && Object.hasOwn(ERRORS, t);
 

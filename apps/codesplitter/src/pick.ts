@@ -14,7 +14,8 @@
 //   POST /api/repos/:o/:r/commits/:sha/revert {branch?}
 //   POST /api/repos/:o/:r/commits/:sha/pick {branch?}
 
-import { fromText, type Doc } from "./lines.ts";
+import { FileCommitted, fromText, type Doc } from "./lines.ts";
+import { readJson } from "@rustybuns/util/http";
 import { fileDoc, handleFor, materialize, pushCatalogues, toFile, MAX_BYTES } from "./archive.ts";
 import { blobBytesOf, blobOn, createOn, deleteOn, materializeOn, openBranch } from "./branches.ts";
 import { fromDisk } from "./agent-run.ts";
@@ -225,7 +226,9 @@ export async function commitMain(env: Env, owner: string, repo: string, user: st
   const catalogue: Catalogue = { ...rest }, notes = new Set<string>();
   for (const path of texts) {
     const res = await toFile(env, owner, repo, path, user, "commit", { method: "POST", body: JSON.stringify({ message }) });
-    const { commit, content, published } = (await res.json()) as { commit: { writers?: string[] }; content: string; published: string };
+    const got = await readJson(res, FileCommitted);
+    if (!got) throw new Error(`${path}: its commit did not read`);
+    const { commit, content, published } = got;
     // An agent's lines carry its run's why as a git note (why.ts), as a one-file commit's do.
     const note = await commitNote(env, owner, repo, path, commit.writers ?? [], content === published).catch(() => null);
     if (note) notes.add(note);

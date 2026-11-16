@@ -61,7 +61,8 @@ export const isManifest = (path: string) => /(^|\/)package\.json$/.test(path);
 /** The merged file's text, or null when it can't be settled by key. Indentation and the last newline follow main. */
 export function mergeManifest(base: string, main: string, branch: string): string | null {
   try {
-    const [b, m, br] = [base, main, branch].map((t) => JSON.parse(t) as Json);
+    // JSON of any shape: isObj checks each is an object, and the merge walks the rest.
+    const [b, m, br] = [base, main, branch].map((t): unknown => JSON.parse(t));
     if (!isObj(b) || !isObj(m) || !isObj(br)) return null;
     const out = mixObj(b, m, br, false);
     if (!out) return null;

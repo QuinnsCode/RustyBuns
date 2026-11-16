@@ -171,33 +171,36 @@ async function health(env: Env, now: number): Promise<{ db_ms: number; checks: C
   const since = now - DAY, t0 = Date.now();
   await env.DB.prepare("SELECT 1").first();
   const db_ms = Date.now() - t0;
-  const first = (sql: string, ...args: unknown[]) => env.DB.prepare(sql).bind(...args).first().catch(() => null) as Promise<Record<string, unknown> | null>;
+  // Every count here is a SUM or a COUNT: null over no rows, which `n` reads as 0.
+  type Count = number | null;
+  const first = <T,>(sql: string, ...args: unknown[]) => env.DB.prepare(sql).bind(...args).first<T>().catch(() => null);
   const checks: Check[] = [{ name: "Database", state: db_ms > 500 ? "warn" : "ok", detail: `answered in ${db_ms} ms` }];
-  const api = await first("SELECT SUM(hits) AS hits, SUM(errors) AS errors FROM traffic WHERE last_at >= ?", since);
+  const api = await first<{ hits: Count; errors: Count }>("SELECT SUM(hits) AS hits, SUM(errors) AS errors FROM traffic WHERE last_at >= ?", since);
   if (api) {
     const hits = n(api.hits), errors = n(api.errors), rate = hits ? errors / hits : 0;
     checks.push({ name: "API errors", state: rate > 0.1 ? "bad" : rate > 0.02 ? "warn" : "ok", detail: `${plural(errors, "server error")} in ${plural(hits, "request")}` });
   }
-  const runs = (name: string, row: Record<string, unknown> | null, stuck = 0) => {
+  type Runs = { total: Count; failed: Count };
+  const runs = (name: string, row: Runs | null, stuck = 0) => {
     if (!row) return;
     const total = n(row.total), failed = n(row.failed);
     checks.push({ name, state: stuck || (total && failed / total > 0.5) ? "bad" : failed ? "warn" : "ok",
       detail: `${plural(total, "run")}, ${failed} failed${stuck ? `, ${stuck} stuck over an hour` : ""}` });
   };
-  const agents = await first("SELECT COUNT(*) AS total, SUM(status = 'failed') AS failed, SUM(status = 'running' AND started < ?) AS stuck FROM agent_runs WHERE started >= ?", now - 3_600_000, since);
+  const agents = await first<Runs & { stuck: Count }>("SELECT COUNT(*) AS total, SUM(status = 'failed') AS failed, SUM(status = 'running' AND started < ?) AS stuck FROM agent_runs WHERE started >= ?", now - 3_600_000, since);
   runs("Agent runs", agents, n(agents?.stuck));
-  const deploys = await first("SELECT COUNT(*) AS total, SUM(status = 'failed') AS failed, SUM(status = 'running' AND at < ?) AS stuck FROM deploys WHERE at >= ?", now - 3_600_000, since);
+  const deploys = await first<Runs & { stuck: Count }>("SELECT COUNT(*) AS total, SUM(status = 'failed') AS failed, SUM(status = 'running' AND at < ?) AS stuck FROM deploys WHERE at >= ?", now - 3_600_000, since);
   runs("Deploys and previews", deploys, n(deploys?.stuck));
-  runs("Checks", await first("SELECT COUNT(*) AS total, SUM(status = 'failed') AS failed FROM check_runs WHERE created_at >= ?", since));
-  runs("Webhooks", await first("SELECT COUNT(*) AS total, SUM(status = 'failed') AS failed FROM webhook_deliveries WHERE at >= ?", since));
-  const jobs = await first("SELECT COUNT(*) AS waiting, MIN(at) AS oldest FROM limit_jobs WHERE state = 'waiting'");
+  runs("Checks", await first<Runs>("SELECT COUNT(*) AS total, SUM(status = 'failed') AS failed FROM check_runs WHERE created_at >= ?", since));
+  runs("Webhooks", await first<Runs>("SELECT COUNT(*) AS total, SUM(status = 'failed') AS failed FROM webhook_deliveries WHERE at >= ?", since));
+  const jobs = await first<{ waiting: Count; oldest: Count }>("SELECT COUNT(*) AS waiting, MIN(at) AS oldest FROM limit_jobs WHERE state = 'waiting'");
   if (jobs) {
     const waiting = n(jobs.waiting), wait = waiting ? now - n(jobs.oldest) : 0;
     checks.push({ name: "Queued requests", state: wait > 3_600_000 ? "bad" : wait > 900_000 ? "warn" : "ok", detail: waiting ? `${waiting} waiting, the oldest ${Math.round(wait / 60_000)} min` : "none waiting" });
   }
-  const over = await first("SELECT COUNT(*) AS n, COUNT(DISTINCT who) AS callers FROM limit_events WHERE at >= ?", since);
+  const over = await first<{ n: Count; callers: Count }>("SELECT COUNT(*) AS n, COUNT(DISTINCT who) AS callers FROM limit_events WHERE at >= ?", since);
   if (over) checks.push({ name: "Rate limits", state: n(over.n) > 20 ? "warn" : "ok", detail: `${plural(n(over.callers), "caller")} went over ${plural(n(over.n), "time")}` });
-  const levels = await first("SELECT SUM(status = 'failed') AS failed, SUM(status = 'importing') AS importing FROM levels");
+  const levels = await first<{ failed: Count; importing: Count }>("SELECT SUM(status = 'failed') AS failed, SUM(status = 'importing') AS importing FROM levels");
   if (levels) checks.push({ name: "Level imports", state: n(levels.failed) ? "warn" : "ok", detail: `${n(levels.failed)} failed, ${n(levels.importing)} digging` });
   return { db_ms, checks };
 }

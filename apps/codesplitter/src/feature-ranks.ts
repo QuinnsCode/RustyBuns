@@ -5,6 +5,7 @@
 // Scores are the average of the tiers people gave (S 4, A 3, B 2, C 1), unranked left out.
 
 import { fail, json, readBody, type Env } from "./env.ts";
+import { check, oneOf } from "@rustybuns/util/guard";
 
 export const TIERS = ["S", "A", "B", "C"] as const;
 export const POINTS: Record<string, number> = { S: 4, A: 3, B: 2, C: 1 };
@@ -17,8 +18,9 @@ export function parseTiers(v: unknown): Record<string, string> | string {
   const out: Record<string, string> = {};
   for (const [id, tier] of Object.entries(v)) {
     if (!/^[a-z0-9_-]{1,80}$/.test(id)) return "bad feature id";
-    if (typeof tier !== "string" || !TIERS.includes(tier as never)) return `${id}: tier must be one of ${TIERS.join(", ")}`;
-    out[id] = tier;
+    const t = check(oneOf(TIERS), tier);
+    if (t === null) return `${id}: tier must be one of ${TIERS.join(", ")}`;
+    out[id] = t;
   }
   return Object.keys(out).length > 100 ? "too many features" : out;
 }

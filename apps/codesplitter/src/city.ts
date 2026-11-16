@@ -16,7 +16,7 @@ import { fileIds, fileLines, handleFor, MAX_BYTES, readTree } from "./archive.ts
 import { cleanAvatar, type Avatar } from "@rustybuns/util/avatar";
 import { renderCity } from "./card.ts";
 import { fail, json, readBody, type Env } from "./env.ts";
-import { esc, plural } from "./util.ts";
+import { esc, keep, plural, unkeep, type Kept } from "./util.ts";
 import { live } from "./repos.ts";
 
 /** Districts and buildings a city holds at most, and how many files of a repo's git it looks through. */
@@ -199,14 +199,12 @@ async function districtsOf(env: Env, name: string, now: number): Promise<Distric
   const { results } = await env.DB.prepare(
     `SELECT name FROM repos WHERE owner = ? AND visibility = 'public' AND ${live()} ORDER BY created_at DESC LIMIT ?`).bind(name, now, DISTRICTS).all<{ name: string }>();
   const open = new Set(results.map((r) => r.name));
-  const kept = await env.DB.prepare("SELECT body FROM city_cache WHERE name = ? AND built_at > ?").bind(name, now - KEEP_MS).first<{ body: string }>();
-  if (kept) try {
-    const districts = JSON.parse(kept.body) as District[];
-    if (districts.every((d) => open.has(d.repo))) return districts;
-  } catch {}
+  const kept = await env.DB.prepare("SELECT body FROM city_cache WHERE name = ? AND built_at > ?").bind(name, now - KEEP_MS).first<{ body: Kept<District[]> }>();
+  const cached = unkeep(kept?.body);
+  if (cached?.every((d) => open.has(d.repo))) return cached;
   const built = await Promise.all(results.map(async ({ name: repo }) => ({ repo, ...await buildings(env, name, repo, now) })));
   const districts = layout(built.filter((d) => d.buildings.length));
-  await env.DB.prepare("INSERT OR REPLACE INTO city_cache (name, built_at, body) VALUES (?, ?, ?)").bind(name, now, JSON.stringify(districts)).run().catch(() => {});
+  await env.DB.prepare("INSERT OR REPLACE INTO city_cache (name, built_at, body) VALUES (?, ?, ?)").bind(name, now, keep(districts)).run().catch(() => {});
   return districts;
 }
 

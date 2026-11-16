@@ -21,7 +21,7 @@
 //   (the object's own POST /run {workerId, run}: a desk's run, from the Worker only)
 // Until auth mapping (slice 7), everything but the hook takes the signed-in owner only.
 
-import { arr, check, int, isRecord, obj, oneOf, opt, str, type Of } from "@rustybuns/util/guard";
+import { arr, check, int, maybe, num, obj, oneOf, opt, str, type Of } from "@rustybuns/util/guard";
 import { Sockets, type RoomCtx, type RoomSocket } from "@rustybuns/util/room";
 import { fail, json, type Env } from "./env.ts";
 import { parseJson, sha256 } from "./util.ts";
@@ -72,7 +72,9 @@ const Hook = obj({ status: opt(oneOf(STATUSES)), activity: opt(str(200, { min: 0
 const hexId = (n: number) => [...crypto.getRandomValues(new Uint8Array(n))].map((b) => b.toString(16).padStart(2, "0")).join("");
 const firstLine = (s: string) => s.split("\n")[0]!.trim();
 
-type Sql = { exec<T = Record<string, unknown>>(q: string, ...args: unknown[]): { toArray(): T[]; one(): T } };
+/** Every frame's type, and a ping's clock: enough to drop or answer it before the full check. */
+const Head = obj({ t: str(100), at: maybe(num(-Infinity, Infinity)) });
+type Sql = { exec<T = unknown>(q: string, ...args: unknown[]): { toArray(): T[]; one(): T } };
 type Ctx = RoomCtx & { storage: { sql: Sql } };
 /** Who a socket is: the office's id for them, and the person. */
 type Peer = { you: string; by: string };
@@ -271,9 +273,9 @@ export class OfficeFloor {
     if (!f || !me) return;
     // The 3D client also sends what this floor doesn't keep yet (walking, the whiteboard, chat): dropped, as upstream
     // drops a type it has no handler for. Its ping gets the pong it times the connection with.
-    const t = isRecord(f.value) ? f.value.t : undefined;
-    if (t === "ping") return this.sockets.send(ws, { t: "pong", at: Number(isRecord(f.value) && f.value.at) || 0, now: Date.now() });
-    if (typeof t !== "string" || !FLOOR_TYPES.has(t)) return;
+    const head = check(Head, f.value), t = head?.t;
+    if (t === "ping") return this.sockets.send(ws, { t: "pong", at: head?.at || 0, now: Date.now() });
+    if (t === undefined || !FLOOR_TYPES.has(t)) return;
     const m = check(Msg, f.value);
     if (!m) return;
     const r = await this.apply(m, me.by);

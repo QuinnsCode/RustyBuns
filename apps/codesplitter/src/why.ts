@@ -13,7 +13,11 @@ import type { ArtifactsRepo, Env } from "./env.ts";
 import { NOTES_REF, remoteRefs, setNote } from "./git.ts";
 import { DONE, type CheckRun } from "./checks.ts";
 import { parseJson, sha256 } from "./util.ts";
-import { isRecord } from "@rustybuns/util/guard";
+import { bool, check, maybe, obj, str } from "@rustybuns/util/guard";
+
+const anyText = str(Infinity, { min: 0 });
+/** An agent run's stored result, the fields a note reads: its hand-off, whether its lines were private, what it said, how it failed. */
+const RunResult = obj({ handoff: maybe(obj({ note: anyText })), private: maybe(bool()), output: maybe(anyText), error: maybe(anyText) });
 
 interface RunRow { id: number; agent: string; harness: string; model: string | null; task: string; status: string; result: string | null }
 
@@ -31,14 +35,14 @@ export async function commitNote(env: Env, owner: string, repo: string, path: st
   const seen = new Set<string>(), newest = results.filter((r) => !seen.has(r.agent) && !!seen.add(r.agent));
   if (!newest.length) return null;
   const blocks = await Promise.all(newest.map(async (r) => {
-    const res: unknown = parseJson(r.result, null), out = isRecord(res) ? res : {};
-    const handoff = isRecord(out.handoff) && typeof out.handoff.note === "string" ? out.handoff.note : null;
-    const said = open && out.private !== true ? handoff ?? writeNote(readNote(typeof out.output === "string" ? out.output : "")) : "";
+    const out = check(RunResult, parseJson<unknown>(r.result, null)) ?? {};
+    const handoff = out.handoff?.note ?? null;
+    const said = open && out.private !== true ? handoff ?? writeNote(readNote(out.output ?? "")) : "";
     return [
       `agent: ${r.agent}`,
       `harness: ${r.harness}${r.model ? `, model ${r.model}` : ""}`,
       `prompt: sha256:${(await sha256(r.task)).slice(0, 16)}`,
-      `run: ${r.id}, ${r.status}${typeof out.error === "string" ? ` (${out.error.split("\n")[0]!.slice(0, 200)})` : ""}`,
+      `run: ${r.id}, ${r.status}${out.error !== undefined ? ` (${out.error.split("\n")[0]!.slice(0, 200)})` : ""}`,
       ...said ? [said] : [],
     ].join("\n");
   }));

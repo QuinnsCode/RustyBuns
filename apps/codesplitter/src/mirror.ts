@@ -66,7 +66,7 @@
 import { existsSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { CommitReply, fileDoc, fileIds, MAX_BYTES, MAX_LINES, materialize, toFile } from "./archive.ts";
+import { fileDoc, fileIds, MAX_BYTES, MAX_LINES, materialize, toFile } from "./archive.ts";
 import { fromDisk } from "./agent-run.ts";
 import { GIT_BOT, GIT_EMAIL_DOMAIN } from "./git.ts";
 import { branchAndPath, githubToken, parseFolder, parseRepo } from "./github.ts";
@@ -77,7 +77,7 @@ import type { ErrorTag } from "./openapi.ts";
 import { readJson } from "@rustybuns/util/http";
 import { arr, bool, check, obj, oneOf, opt, str, type Of } from "@rustybuns/util/guard";
 import { repoRow } from "./repos.ts";
-import { MAX_TEXT, type Doc } from "./lines.ts";
+import { FileTexts, MAX_TEXT, type Doc } from "./lines.ts";
 import { depsRef, depsTree, folderPath, graft, sendBranch, sourceRef, split, splitFromRef, workspaceDeps } from "./folder-mirror.ts";
 import { indexFile, unindexFile } from "./search.ts";
 import { byVersion, tagNameError } from "./tags.ts";
@@ -557,7 +557,7 @@ async function land(env: Env, owner: string, repo: string, p: Plan, tip: string,
   }
   if (!p.clean) return;
   const c = await toFile(env, owner, repo, p.path, by, "commit", { method: "POST", body: JSON.stringify({ message }) });
-  const published = (await readJson(c, CommitReply))?.published;
+  const published = (await readJson(c, FileTexts))?.published;
   if (published !== undefined) await indexFile(env, owner, repo, p.path, published);
 }
 

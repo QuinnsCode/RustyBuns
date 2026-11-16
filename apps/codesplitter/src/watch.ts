@@ -24,6 +24,11 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { caller, mayTake, readManifests, type Call } from "./deps.ts";
 import { json, type Env } from "./env.ts";
+import { obj, opt, str } from "@rustybuns/util/guard";
+import { readJson } from "@rustybuns/util/http";
+
+/** What a status page's /api/v2/status.json says, the fields read here. */
+const StatusPage = obj({ status: opt(obj({ indicator: opt(str(100)), description: opt(str(1000, { min: 0 })) })) });
 
 export const STATUS_PAGES = [
   { name: "Anthropic", url: "https://status.claude.com" },
@@ -56,7 +61,7 @@ export async function pollStatus(env: Env, now = Date.now()): Promise<Status[]> 
     try {
       const r = await get(`${url}/api/v2/status.json`, { signal: AbortSignal.timeout(10_000) });
       if (!r.ok) throw new Error(String(r.status));
-      const { status } = (await r.json()) as { status?: { indicator?: string; description?: string } };
+      const status = (await readJson(r, StatusPage))?.status;
       return { name, url, indicator: status?.indicator ?? "unknown", description: status?.description ?? "", checked_at: now };
     } catch {
       return { name, url, indicator: "unknown", description: "didn't answer", checked_at: now };

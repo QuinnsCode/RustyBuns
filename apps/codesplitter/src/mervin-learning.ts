@@ -3,6 +3,7 @@
 // The weekly report reads them back. Deleting the data removes every event. Nothing here changes how a merge is computed.
 import type { Env } from "./env.ts";
 import { sha256 } from "./util.ts";
+import type { Pick } from "./lines.ts";
 
 /** "mergiraf": Mervin left cards and Mergiraf settled the file (mergiraf.ts). */
 export type Outcome = "settled" | "asked" | "wrong" | "mergiraf";
@@ -10,7 +11,7 @@ export type Outcome = "settled" | "asked" | "wrong" | "mergiraf";
 export interface Event { path: string; outcome: Outcome; answer?: string }
 
 /** How a card's picks for one file add up, as one answer; "written" for a text, "mixed" when they differ. */
-export function answerOf(picks: Record<string, unknown> | undefined): string | undefined {
+export function answerOf(picks: Record<string, Pick> | undefined): string | undefined {
   const kinds = new Set(Object.values(picks ?? {}).map((p) => typeof p === "object" ? "written" : String(p).startsWith("both") ? "both" : String(p)));
   return kinds.size === 0 ? undefined : kinds.size > 1 ? "mixed" : [...kinds][0];
 }

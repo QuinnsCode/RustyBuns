@@ -6,7 +6,7 @@
 //   mergeTable              Cargo.toml / pyproject.toml / go.mod dependency tables, merged by key like manifest.ts
 //   proveMerge              install and build the merged tree in a sandbox that is torn down whatever happens
 import { floor, higher, mergeManifest } from "./manifest.ts";
-import { isRecord } from "@rustybuns/util/guard";
+import { check, maybe, obj, opt, raw, rec, str } from "@rustybuns/util/guard";
 
 export type Ecosystem = "npm" | "cargo" | "python" | "go" | "ruby";
 export interface DepFile { path: string; eco: Ecosystem; kind: "manifest" | "lock"; /** The manifest a lockfile follows. */ follows?: string; /** A workspace member of the root manifest at this path. */ member?: string }
@@ -129,14 +129,14 @@ export function npmDocs(get: typeof fetch = fetch, advisories?: (name: string, v
 }
 
 /** The parts of an npm packument we read, each checked: the registry is someone else's data. */
+const Packument = obj({
+  versions: maybe(rec(maybe(obj({ deprecated: opt(raw) })))),
+  "dist-tags": maybe(obj({ latest: maybe(str(1000)) })),
+  readme: maybe(str(Infinity, { min: 0 })),
+});
 function packument(x: unknown): { versions: Record<string, { deprecated?: unknown } | undefined>; latest?: string; readme: string } {
-  const o = isRecord(x) ? x : {};
-  const tags = isRecord(o["dist-tags"]) ? o["dist-tags"] : {};
-  return {
-    versions: isRecord(o.versions) ? Object.fromEntries(Object.entries(o.versions).map(([k, v]) => [k, isRecord(v) ? v : undefined])) : {},
-    latest: typeof tags.latest === "string" ? tags.latest : undefined,
-    readme: typeof o.readme === "string" ? o.readme : "",
-  };
+  const o = check(Packument, x);
+  return { versions: o?.versions ?? {}, latest: o?.["dist-tags"]?.latest, readme: o?.readme ?? "" };
 }
 
 // ---- Cargo.toml, pyproject.toml, go.mod: tables merged by key ----

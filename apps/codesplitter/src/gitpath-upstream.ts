@@ -8,18 +8,27 @@ import type { Commit } from "./gitpath/gitpath.ts";
 import { gh } from "./github.ts";
 import { upstreamOf } from "./listen.ts";
 import { inBatches } from "./util.ts";
+import { arr, bool, int, obj, opt, str, type Guard } from "@rustybuns/util/guard";
+import { readJson } from "@rustybuns/util/http";
 
 /** How many commits get their line counts read, one request each; older ones keep 0/0. */
 const DETAILS = 40;
 
-interface Row { sha: string; commit: { message: string; author: { name?: string; date?: string } | null; committer: { date?: string } | null }; author: { login?: string } | null }
-interface Detail { files?: { filename: string; additions: number; deletions: number }[] }
+const anyText = str(Infinity, { min: 0 });
+/** A commit as GitHub's commit list gives it, the fields read here. */
+const Row = obj({
+  sha: str(64),
+  commit: obj({ message: anyText, author: opt(obj({ name: opt(anyText), date: opt(anyText) })), committer: opt(obj({ date: opt(anyText) })) }),
+  author: opt(obj({ login: opt(anyText) })),
+});
+const Rows = arr(Row, Infinity);
+/** One commit's files, with the lines each added and removed. */
+const Detail = obj({ files: opt(arr(obj({ filename: anyText, additions: int(0, Number.MAX_SAFE_INTEGER), deletions: int(0, Number.MAX_SAFE_INTEGER) }), Infinity, { drop: true })) });
+const Repo = obj({ private: opt(bool()) });
 
-const getJson = async <T>(path: string, token?: string): Promise<T | null> => {
-  try {
-    const r = await gh(path, token);
-    return r.ok ? (await r.json()) as T : null;
-  } catch { return null; }
+/** GitHub's reply at `path` through `guard`, or null when it didn't answer or said something else. */
+const getJson = async <T>(path: string, guard: Guard<T>, token?: string): Promise<T | null> => {
+  try { return await readJson(await gh(path, token), guard); } catch { return null; }
 };
 
 /**
@@ -36,7 +45,7 @@ export async function upstreamIsPublic(r: UpstreamRepo | null): Promise<boolean>
   if (!s) return false;
   const seen = publicSeen.get(s.repo);
   if (seen && Date.now() - seen.at < PUBLIC_FOR_MS) return seen.ok;
-  const ok = !!(await getJson<{ private?: boolean }>(`/repos/${s.repo}`));
+  const ok = !!(await getJson(`/repos/${s.repo}`, Repo));
   publicSeen.set(s.repo, { ok, at: Date.now() });
   return ok;
 }
@@ -72,13 +81,13 @@ export async function upstreamFileHistory(r: UpstreamRepo | null, path: string, 
 
 async function readFileHistory(s: NonNullable<ReturnType<typeof source>>, path: string, limit: number, token?: string): Promise<{ commits: Commit[]; more: boolean } | null> {
   const full = s.folder ? `${s.folder}/${path}` : path;
-  const rows = await getJson<Row[]>(`/repos/${s.repo}/commits?sha=${s.sha}&path=${encodeURIComponent(full)}&per_page=${Math.min(100, limit + 1)}`, token);
+  const rows = await getJson(`/repos/${s.repo}/commits?sha=${s.sha}&path=${encodeURIComponent(full)}&per_page=${Math.min(100, limit + 1)}`, Rows, token);
   if (!rows) return null;
   const more = rows.length > limit;
   const kept = rows.slice(0, limit);
   const counts = new Map<string, { added: number; removed: number }>();
   await inBatches(kept.slice(0, DETAILS), async (row) => {
-    const d = await getJson<Detail>(`/repos/${s.repo}/commits/${row.sha}`, token);
+    const d = await getJson(`/repos/${s.repo}/commits/${row.sha}`, Detail, token);
     const f = d?.files?.find((x) => x.filename === full);
     if (f) counts.set(row.sha, { added: f.additions, removed: f.deletions });
   });
@@ -118,12 +127,12 @@ export async function upstreamBusiest(r: UpstreamRepo | null, token?: string, co
 }
 
 async function readBusiest(s: NonNullable<ReturnType<typeof source>>, token: string | undefined, commits: number): Promise<Map<string, number> | null> {
-  const rows = await getJson<Row[]>(`/repos/${s.repo}/commits?sha=${s.sha}&per_page=${commits}`, token);
+  const rows = await getJson(`/repos/${s.repo}/commits?sha=${s.sha}&per_page=${commits}`, Rows, token);
   if (!rows) return null;
   const counts = new Map<string, number>();
   const prefix = s.folder ? `${s.folder}/` : "";
   await inBatches(rows, async (row) => {
-    const d = await getJson<Detail>(`/repos/${s.repo}/commits/${row.sha}`, token);
+    const d = await getJson(`/repos/${s.repo}/commits/${row.sha}`, Detail, token);
     if (!d?.files || d.files.length > 300) return;
     for (const f of d.files) {
       if (!f.filename.startsWith(prefix) || /(^|\/)(bun\.lockb?|package-lock\.json|yarn\.lock|pnpm-lock\.yaml|Cargo\.lock)$/.test(f.filename)) continue;
