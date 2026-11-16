@@ -8,8 +8,10 @@ import { clamp } from "@rustybuns/util";
 import { GEAR } from "./gear.ts";
 import { gear as model, gearLook } from "@rustybuns/models/gear";
 import { EYE, EYE_CROUCH, GARAGE, type Level, aimed, heldItem, holdPose, newWorld, pickUp, putDown, snapshot, step, turnHeld, walkTo, type World } from "./sim.ts";
-import { DIVE_BAR, aim, barState, master, raise, settle, standHeight } from "./venues/dive-bar.ts";
+import { DIVE_BAR, aim, barState, master, raise, rig, settle, standHeight } from "./venues/dive-bar.ts";
 import { type BarView, barView } from "./venues/dive-bar-view.ts";
+import { hasSwitch, hear, type Switches } from "./audio/hear.ts";
+import { soundSystem } from "./audio/play.ts";
 import { accountChip, canSignIn, finishSignIn, login, party, type PartyMember } from "./eqosys.ts";
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -22,6 +24,8 @@ let world: World = newWorld(levelFrom(new URLSearchParams(location.search).get("
 let phase: "menu" | "play" = "menu";
 let ctl: Settings = DEFAULTS;
 const keys = new Set<string>();
+const switchedOn: Switches = new Set();
+const sound = soundSystem($("speakers"));
 const crew = { code: "", members: [] as PartyMember[], room: "", seat: -1, note: "" };
 const pad = loadPad(KEY, [
   { id: "grab", label: "Pick up / put down", button: 0 },
@@ -109,7 +113,7 @@ function draw() {
   if (at && !held) { const [w, h, d] = GEAR[at.gear].size; highlight.position.set(at.x, at.y, at.z); highlight.rotation.y = at.rot; highlight.scale.set(w + 0.04, h + 0.04, d + 0.04); }
   bar?.update();
   const g = held ? GEAR[held.gear] : null;
-  $("hint").textContent = phase !== "play" ? "" : held ? "F put down, Q / E turn" : at ? `F pick up ${GEAR[at.gear].name} (${GEAR[at.gear].kg} kg)` : "";
+  $("hint").textContent = phase !== "play" ? "" : held ? "F put down, Q / E turn" : at ? `F pick up ${GEAR[at.gear].name} (${GEAR[at.gear].kg} kg)${hasSwitch(at.gear) ? `, P switch it ${switchedOn.has(at.key) ? "off" : "on"}` : ""}` : "";
   $("carry").textContent = phase !== "play" ? "" : g ? `${g.name}, ${g.kg} kg, ${you.speed.toFixed(1)} m/s` : `Hands free, ${you.speed.toFixed(1)} m/s`;
   renderer.render(scene, camera);
 }
@@ -131,6 +135,8 @@ document.addEventListener("keydown", (e) => {
   if (e.code === "KeyF") grab();
   if (e.code === "KeyQ") turnHeld(world, -1);
   if (e.code === "KeyE") turnHeld(world, 1);
+  if (e.code === "KeyP") flip();
+  if (e.code === "KeyM") sound.toggle();
 });
 document.addEventListener("keyup", (e) => keys.delete(e.code));
 addEventListener("blur", () => keys.clear());
@@ -143,6 +149,16 @@ function grab() {
 
 /** Put down, then let a top set on a stand find its pole. */
 function place() { const a = putDown(world); settle(world); return a; }
+
+/** P: switch what you look at on or off, if it has a switch. */
+function flip() {
+  const at = aimed(world);
+  if (!at || !hasSwitch(at.gear)) return;
+  if (!switchedOn.delete(at.key)) switchedOn.add(at.key);
+}
+
+/** What you hear now: in the dive bar, through its tilts and master fader. */
+const heard = () => hear(world, switchedOn, undefined, undefined, bar ? rig(world) : undefined);
 
 function play() { phase = "play"; menu(); lock(); }
 
@@ -175,6 +191,7 @@ function frame(now: number) {
     });
   }
   draw();
+  sound.update(heard());
   requestAnimationFrame(frame);
 }
 
@@ -219,7 +236,7 @@ async function boot() {
 declare global { interface Window { loadIn: typeof harness } }
 /** The harness (scripts/probe.ts HANDLES): the level as data, and the moves a test or an agent makes without pointer lock. */
 const harness = {
-  state: () => ({ phase, ...snapshot(world), ...(bar ? { bar: { ...barState(world), heat: bar.heatOn } } : {}), signedIn: !!login(), party: crew.code ? { code: crew.code, members: crew.members.length, room: crew.room || null, seat: crew.seat >= 0 ? crew.seat : null } : null }),
+  state: () => ({ phase, ...snapshot(world), sound: { up: sound.up, on: [...switchedOn], ...heard() }, ...(bar ? { bar: { ...barState(world), heat: bar.heatOn } } : {}), signedIn: !!login(), party: crew.code ? { code: crew.code, members: crew.members.length, room: crew.room || null, seat: crew.seat >= 0 ? crew.seat : null } : null }),
   /** Into the level, without asking for the mouse. */
   start: () => { phase = "play"; menu(); },
   /** Walk to (x, z) at your carrying pace; the seconds it took. */
@@ -241,8 +258,17 @@ const harness = {
   turn: (dir: number) => turnHeld(world, dir),
   /** Look to `yaw` degrees (0 is into the garage) and `pitch` degrees up. */
   look: (yaw: number, pitch = 0) => { world.you.yaw = (yaw * Math.PI) / 180; world.you.pitch = (pitch * Math.PI) / 180; },
+  /** Switch a piece of gear on or off (P while looking at it); false if it has no switch. */
+  power: (key: string, state = !switchedOn.has(key)) => {
+    const item = world.items.find((i) => i.key === key);
+    if (!item || !hasSwitch(item.gear)) return false;
+    if (state) switchedOn.add(key); else switchedOn.delete(key);
+    return true;
+  },
+  /** Bring the speakers up or down (the card, or M). Browsers start sound only after a click, so a probe reads state instead. */
+  speakers: (up: boolean) => sound.setUp(up),
   /** The level as it began. */
-  reset: () => { world = newWorld(world.level); scene.remove(roomGroup); roomGroup = room(world.level); scene.add(roomGroup); buildItems(); },
+  reset: () => { switchedOn.clear(); world = newWorld(world.level); scene.remove(roomGroup); roomGroup = room(world.level); scene.add(roomGroup); buildItems(); },
 };
 window.loadIn = harness;
 
