@@ -19,6 +19,7 @@ import { DAMP, IkRig } from "@rustybuns/rig/ik";
 import { loadGlb, type Model } from "@rustybuns/rig/model";
 import { pupils } from "./eyes.ts";
 import { Secondary } from "./secondary.ts";
+import { LOOSE_PARS, LOOSE_VERT, LooseLag, looseParts, reachOf } from "./loose.ts";
 import { smoothNormals } from "./smooth.ts";
 import { hideDetail, surfaceFor, surfaceOf, type Surface } from "./hide.ts";
 import type { Archetype, Body, Move } from "./roster.ts";
@@ -157,6 +158,23 @@ const cache = new Map<string, Promise<Beast | null>>();
 const settled = new Set<string>(); // ids whose load finished; a load in flight is never evicted
 const stale = new Set<string>();
 
+/** Each loose part's reach per vertex (loose.ts `reachOf`), worked out once per beast: how far out from the body (every
+ * part that isn't loose) it sits. */
+const REACH = new WeakMap<Beast, Map<number, Float32Array>>();
+function reachFor(beast: Beast, part: number, gains: readonly number[]): Float32Array {
+  let byPart = REACH.get(beast);
+  if (!byPart) REACH.set(beast, (byPart = new Map()));
+  let r = byPart.get(part);
+  if (!r) {
+    const parts = beast.model.parts, own = parts[part]!.geometry.getAttribute("position").array;
+    const body: number[] = [];
+    parts.forEach((p, i) => { if (!gains[i]) { const a = p.geometry.getAttribute("position").array; for (let k = 0; k < a.length; k++) body.push(a[k]!); } });
+    r = reachOf(own, body, beast.sheet.height, gains[part]!);
+    byPart.set(part, r);
+  }
+  return r;
+}
+
 /** A baked hide map's mean colour (linear), which beast.py writes into the body material's extras. */
 const HideMean = arr(num(0, 1), 3, { min: 3 });
 /** A beast's skin merged into one geometry (Puppet's `merged`), built once and shared. */
@@ -223,7 +241,7 @@ export function reloadBeast(id: string): Promise<Beast | null> {
  * bright at the head. `top` is the model's height, shared by every material of one beast.
  */
 const SHADE_KEY = "beast-shade-v2";
-function stylize(m: THREE.MeshStandardMaterial, top: { value: number }, name: string, fx: FieldLook | null = null, amt: { value: number } = { value: 1 }, surface: Surface = "hide") {
+function stylize(m: THREE.MeshStandardMaterial, top: { value: number }, name: string, fx: FieldLook | null = null, amt: { value: number } = { value: 1 }, surface: Surface = "hide", loose: LooseLag["uniforms"] | null = null) {
   // a hide baked into a map (beast.py `hide`) already draws its grain; the shader's own on top washed it out
   const kind = m.map ? null : surfaceFor(name, surface), hd = kind ? hideDetail(kind) : null;
   const hard = /horn|claw|spike|tooth|teeth|beak|talon|tusk|fang|bone/.test(name);
@@ -235,6 +253,10 @@ function stylize(m: THREE.MeshStandardMaterial, top: { value: number }, name: st
     if (fx) { sh.uniforms.uFxTime = FX_TIME; sh.uniforms.uFxAmt = amt; }
     sh.vertexShader = "varying float vBeastY;\nuniform float uTop;\n" + (fx ? "varying vec3 vFxPos;\n" : "") + sh.vertexShader.replace("#include <begin_vertex>", "#include <begin_vertex>\n" + (fx ? "vFxPos = position / max(uTop, 1e-4);\n" : "") + "vBeastY = clamp(position.y / max(uTop, 1e-4), 0.0, 1.0);" + (hd ? hd.vert : ""));
     if (hd) sh.vertexShader = "varying vec3 vHideP;\n" + sh.vertexShader;
+    if (loose) {
+      Object.assign(sh.uniforms, loose);
+      sh.vertexShader = LOOSE_PARS + sh.vertexShader.replace("#include <skinning_vertex>", "#include <skinning_vertex>\n" + LOOSE_VERT);
+    }
     // half-Lambert squared: a surface turned from the light keeps a soft share of it
     // only the diffuse term is wrapped: the specular BRDF divides by the true N.L and blows up on the dark side
     const pars = THREE.ShaderChunk.lights_physical_pars_fragment.replace(
@@ -262,7 +284,7 @@ function stylize(m: THREE.MeshStandardMaterial, top: { value: number }, name: st
     if (hd) sh.fragmentShader = hd.pars + sh.fragmentShader.replace("#include <normal_fragment_maps>", "#include <normal_fragment_maps>\n" + hd.frag);
     if (fx) sh.fragmentShader = "varying vec3 vFxPos;\nuniform float uFxTime;\nuniform float uFxAmt;\n" + fx.helpers + sh.fragmentShader;
   };
-  m.customProgramCacheKey = () => SHADE_KEY + (fx ? ":" + fx.key : "") + (hd ? ":" + hd.key : "");
+  m.customProgramCacheKey = () => SHADE_KEY + (fx ? ":" + fx.key : "") + (hd ? ":" + hd.key : "") + (loose ? ":loose" : "");
 }
 
 const CONTACT_GEO = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
@@ -326,6 +348,9 @@ export class Puppet {
   private readonly limbs: { top: number; tip: number }[];
   private readonly look = new THREE.Vector3();
   private readonly sec: Secondary;
+  /** The loose cards and spikes' springs, one a bone (loose.ts); null when no part is loose or the skin is merged. */
+  private readonly loose: LooseLag | null = null;
+  private looseClock = 0;
   private readonly soft = { x: 0, y: 0, z: 0 };
   private readonly lids: { m: THREE.MeshStandardMaterial; open: THREE.Color; shut: THREE.Color }[] = [];
   private readonly pupilMeshes: THREE.Object3D[] = [];
@@ -412,9 +437,13 @@ export class Puppet {
     inner.updateMatrixWorld(true);
     const skeleton = new THREE.Skeleton(this.bones);
     const surface = surfaceOf(model.parts.flatMap((p) => (Array.isArray(p.material) ? p.material : [p.material]).map((m) => m.name)));
+    const gains = opts.merged ? [] : looseParts(model.parts.map((p) => ({ name: (Array.isArray(p.material) ? p.material[0] : p.material)?.name ?? "", count: p.count })));
+    if (gains.some((x) => x > 0)) this.loose = new LooseLag(rig.parents.length, archetype);
     if (opts.merged) inner.add(this.mergedSkin(model, rig, skeleton, look, amt, surface));
-    else for (const part of model.parts) {
+    else for (const [pi, part] of model.parts.entries()) {
       const g = part.geometry.clone();
+      const reach = gains[pi] ? reachFor(beast, pi, gains) : null;
+      if (reach) g.setAttribute("aLoose", new THREE.BufferAttribute(reach, 1));
       g.setAttribute("skinIndex", new THREE.Uint16BufferAttribute(rig.skinIndex.slice(part.start * 4, (part.start + part.count) * 4), 4));
       g.setAttribute("skinWeight", new THREE.Float32BufferAttribute(rig.skinWeight.slice(part.start * 4, (part.start + part.count) * 4), 4));
       const mats = Array.isArray(part.material) ? part.material : [part.material];
@@ -424,7 +453,7 @@ export class Puppet {
         // an eye is wet and glossy with a glow behind it, not a lamp; flames and markings keep the colour they were given
         if (isEye) { this.lids.push({ m, open: m.color.clone(), shut: m.color.clone().multiplyScalar(0.12) }); m.roughness = 0.08; m.metalness = 0; m.emissiveIntensity = Math.min(m.emissiveIntensity, 1.2); }
         else if (m.emissiveIntensity > 0 && m.emissive.getHex() !== 0) m.toneMapped = false;
-        else stylize(m, this.top, m.name, look, amt, surface);
+        else stylize(m, this.top, m.name, look, amt, surface, reach && this.loose ? this.loose.uniforms : null);
         this.materials.push(m); this.glow.push({ color: m.emissive.clone(), intensity: m.emissiveIntensity }); }
       const sm = new THREE.SkinnedMesh(g, own.length === 1 ? own[0]! : own);
       sm.bind(skeleton, new THREE.Matrix4());
@@ -560,6 +589,7 @@ export class Puppet {
     const shared = MERGED.get(this.beast); // other puppets of this beast still draw it
     this.group.traverse((o) => { if (o instanceof THREE.Mesh && o.geometry !== shared) o.geometry.dispose(); });
     for (const m of this.materials) m.dispose();
+    this.loose?.dispose();
   }
   private homeWorld(ft: Foot, out: THREE.Vector3) { return out.copy(ft.home).multiplyScalar(this.scale).applyMatrix4(this.group.matrixWorld); }
 
@@ -924,6 +954,17 @@ export class Puppet {
     this.flexWings(grounded);
     this.swingLimbs(dt);
     this.sec.settle();
+    this.swayLoose(dt);
+  }
+
+  /** The loose cards and spikes trail their bones (loose.ts): each bone's spring reads where the bone is in the world now. */
+  private swayLoose(dt: number) {
+    const lag = this.loose;
+    if (!lag) return;
+    this.looseClock += Math.min(dt, 1 / 30);
+    this.group.updateMatrixWorld(true);
+    const inv = this.inv.copy(this.inner.matrixWorld).invert(), bones = this.bones;
+    lag.step(dt, (j, out) => out.setFromMatrixPosition(bones[j]!.matrixWorld), inv, this.beast.sheet.height * this.scale, this.looseClock);
   }
 
   /** The limbs that hang trail the body, on top of what the IK did (like the wings' flex, so they never pull the
