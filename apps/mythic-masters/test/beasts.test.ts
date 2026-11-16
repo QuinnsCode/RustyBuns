@@ -276,7 +276,8 @@ test("a heavy blow flattens the struck body front to back and curls it over the 
   expect(least).toBeLessThan(rest * 0.88);
   // inside 0.2 s, on the hit's flash, the body folds around the blow instead (without the curl it see-saws 0.6 of its height)
   expect(seesaw).toBeLessThan(body(c).height * 0.4);
-  expect(most).toBeGreaterThan(rest * 1.02);   // the rebound stretches it past rest (the statue Hodag's heavy head: about 2.6%)
+  // the rebound stretches it past rest (the statue Hodag's heavy head: about 2.6%, 1.7% since its ankles hold the feet flat)
+  expect(most).toBeGreaterThan(rest * 1.012);
   for (let i = 120; i < 300; i++) p.update(f, 1 / 60, i);
   expect(Math.abs(span() - rest)).toBeLessThan(rest * 0.03);
 }, 30_000);
@@ -299,6 +300,27 @@ test.each(["rougarou", "hodag"])("a blow from in front steps the struck body's f
   expect(back).toBeGreaterThan(0.08 * body(c).height);   // a foot went back, away from the striker
   for (let i = 100; i < 300; i++) p.update(f, 1 / 60, i, striker);
   expect(p.drift()).toBeLessThan(p.stride());
+}, 30_000);
+
+// #4685 round 22: stepping back from a blow, the solver stood the long flat foot on its toe and folded the ankle down
+// under it, onto the grass, so the foot and claws lay on the ground apart from the leg
+test.each(["yeti", "sasquatch", "hodag"])("the %s's feet stay flat on their legs through blows", async (id) => {
+  const c = ROSTER.find((x) => x.id === id)!;
+  const b = await beast(c.id);
+  const p = new Puppet(b, body(c), c.archetype);
+  const f = newMatch(c, c).f[0];
+  f.pos = { x: 0, y: 0, z: 0 }; f.vel = { x: 0, y: 0, z: 0 }; f.yaw = 0; f.onGround = true;
+  const striker = { x: 3, y: 0, z: 0 };
+  let tick = 0, sink = 0;
+  for (let i = 0; i < 60; i++) p.update(f, 1 / 60, tick++, striker);
+  for (let blow = 0; blow < 3; blow++) {
+    f.state = "stun"; f.stun = 22;
+    for (let i = 0; i < 40; i++) {
+      f.stun = Math.max(0, f.stun - 1); if (f.stun === 0) f.state = "free"; p.update(f, 1 / 60, tick++, striker);
+      for (const ft of b.sheet.feet) sink = Math.max(sink, p.jointLocal(ft)[1] - p.jointLocal(b.rig.parents[ft]!)[1]);
+    }
+  }
+  expect(sink).toBeLessThan(0.06 * b.sheet.height);   // the ankle stays over the toe (it sank 0.1-0.15 of the height under it)
 }, 30_000);
 
 // the Mothman's wing tips tower over its head, which once read it as half upright and halved its lean (#4267). The bar sits
