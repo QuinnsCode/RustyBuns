@@ -1,13 +1,16 @@
 // The page: draws the level (sim.ts) in first person with three.js, reads the mouse (pointer lock), WASD and a gamepad,
 // and holds the menu with the eqosys account chip and the Qollab party. `window.loadIn` is the harness: `state()` says
 // where you are, what you hold and where every piece of gear sits, and walkTo / pickUp / putDown play it without
-// pointer lock, so an agent (bun run probe load-in) or a test asks the game instead of reading screenshots.
+// pointer lock, so an agent (bun run probe load-in) or a test asks the game instead of reading screenshots. The gear is
+// @rustybuns/models' models at @rustybuns/gear's sizes; cables (src/cables/) drag behind you and plug into the models' jacks.
 import * as THREE from "three";
 import { DEFAULTS, loadPad, mountControls, type Settings } from "@rustybuns/game-controls";
 import { clamp } from "@rustybuns/util";
-import { GEAR } from "./gear.ts";
+import { gear } from "@rustybuns/gear";
 import { gear as model, gearLook } from "@rustybuns/models/gear";
-import { EYE, EYE_CROUCH, GARAGE, type Level, aimed, heldItem, holdPose, newWorld, pickUp, putDown, snapshot, step, turnHeld, walkTo, type World } from "./sim.ts";
+import { EYE, EYE_CROUCH, GARAGE, type Answer, type Level, aimed, dims, heldItem, holdPose, newWorld, pickUp, putDown, snapshot, step, turnHeld, type World } from "./sim.ts";
+import * as cable from "./cables/cables.ts";
+import { cableView } from "./cables/draw.ts";
 import { DIVE_BAR, aim, barState, master, raise, rig, settle, standHeight } from "./venues/dive-bar.ts";
 import { type BarView, barView } from "./venues/dive-bar-view.ts";
 import { hasSwitch, hear, type Switches } from "./audio/hear.ts";
@@ -21,6 +24,9 @@ const KEY = "load-in.controls";
 const LEVELS: Record<string, Level> = { garage: GARAGE, "dive-bar": DIVE_BAR };
 const levelFrom = (name: string | null) => LEVELS[name ?? ""] ?? GARAGE;
 let world: World = newWorld(levelFrom(new URLSearchParams(location.search).get("level")));
+let cables = cable.newCables(world);
+/** A refusal shown under the crosshair for a moment ("a power cable doesn't fit xlr-in"). */
+let flash = { text: "", until: 0 };
 let phase: "menu" | "play" = "menu";
 let ctl: Settings = DEFAULTS;
 const keys = new Set<string>();
@@ -28,13 +34,13 @@ const switchedOn: Switches = new Set();
 const sound = soundSystem($("speakers"));
 const crew = { code: "", members: [] as PartyMember[], room: "", seat: -1, note: "" };
 const pad = loadPad(KEY, [
-  { id: "grab", label: "Pick up / put down", button: 0 },
+  { id: "grab", label: "Pick up / put down / plug in", button: 0 },
   { id: "crouch", label: "Crouch", button: 1 },
   { id: "turnLeft", label: "Turn it left", button: 4 },
   { id: "turnRight", label: "Turn it right", button: 5 },
 ]);
 
-// The scene: the garage's floor, walls and ceiling bulb, the driveway outside, and a box per piece of gear.
+// The scene: the garage's floor, walls and ceiling bulb, the driveway outside, a model per piece of gear, and the cables.
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
 renderer.setPixelRatio(Math.min(2, devicePixelRatio));
 const scene = new THREE.Scene();
@@ -76,11 +82,18 @@ const meshes = new Map<string, THREE.Object3D>(), look = gearLook();
 const highlight = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(1, 1, 1).translate(0, 0.5, 0)), new THREE.LineBasicMaterial({ color: 0x4cc9f0 }));
 scene.add(highlight);
 let bar: BarView | null = null;
+/** A piece's model (a stand at `height`), or a plain box at its catalog size if @rustybuns/models has none. */
+function modelOf(id: string, height?: number): THREE.Object3D {
+  if (cable.hasModel(id)) return model(id, { look, height });
+  const { w, h, d } = gear(id).size, m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d).translate(0, h / 2, 0), look.paint);
+  m.userData.size = [w, h, d];
+  return m;
+}
 function buildItems() {
   for (const m of meshes.values()) scene.remove(m);
   meshes.clear();
   for (const i of world.items) {
-    const m = model(i.gear, { look });
+    const m = modelOf(i.gear);
     meshes.set(i.key, m);
     scene.add(m);
   }
@@ -88,6 +101,16 @@ function buildItems() {
   bar = world.level === DIVE_BAR ? barView(scene, $("hud"), () => world) : null;
 }
 buildItems();
+const ropes = cableView(scene);
+
+/** A new level, or the same one as it began: the room, the gear and the case of cables. */
+function load(level: Level) {
+  world = newWorld(level);
+  cables = cable.newCables(world);
+  ropes.clear();
+  scene.remove(roomGroup); roomGroup = room(world.level); scene.add(roomGroup);
+  buildItems();
+}
 
 function resize() {
   const w = canvas.clientWidth, h = canvas.clientHeight;
@@ -104,24 +127,39 @@ function draw() {
   for (const i of world.items) {
     const tall = i.gear === "stand-tripod" ? standHeight(world, i.key) : 0;
     // A stand raised or lowered is a new model: its pole grows.
-    if (tall && meshes.get(i.key)!.userData.size[1] !== tall) { scene.remove(meshes.get(i.key)!); const n = model(i.gear, { look, height: tall }); meshes.set(i.key, n); scene.add(n); }
+    if (tall && meshes.get(i.key)!.userData.size[1] !== tall) { scene.remove(meshes.get(i.key)!); const n = modelOf(i.gear, tall); meshes.set(i.key, n); scene.add(n); }
     const m = meshes.get(i.key)!, p = i === held && hp ? hp : i;
     m.position.set(p.x, p.y, p.z);
     m.rotation.y = p.rot;
   }
-  highlight.visible = !!at && !held;
-  if (at && !held) { const [w, h, d] = GEAR[at.gear].size; highlight.position.set(at.x, at.y, at.z); highlight.rotation.y = at.rot; highlight.scale.set(w + 0.04, h + 0.04, d + 0.04); }
+  const end = cable.inHand(cables), jack = cable.aimedJack(world);
+  highlight.visible = !!at && !held && !end && !jack;
+  if (highlight.visible && at) { const [w, h, d] = dims(at); highlight.position.set(at.x, at.y, at.z); highlight.rotation.y = at.rot; highlight.scale.set(w + 0.04, h + 0.04, d + 0.04); }
   bar?.update();
-  const g = held ? GEAR[held.gear] : null;
-  $("hint").textContent = phase !== "play" ? "" : held ? "F put down, Q / E turn" : at ? `F pick up ${GEAR[at.gear].name} (${GEAR[at.gear].kg} kg)${hasSwitch(at.gear) ? `, P switch it ${switchedOn.has(at.key) ? "off" : "on"}` : ""}` : "";
-  $("carry").textContent = phase !== "play" ? "" : g ? `${g.name}, ${g.kg} kg, ${you.speed.toFixed(1)} m/s` : `Hands free, ${you.speed.toFixed(1)} m/s`;
+  ropes.update(cables);
+  const g = held ? gear(held.gear) : null;
+  $("hint").textContent = phase !== "play" ? "" : performance.now() < flash.until ? flash.text : hint(at, jack);
+  $("carry").textContent = phase !== "play" ? "" : g ? `${g.what}, ${g.kg} kg, ${you.speed.toFixed(1)} m/s`
+    : end ? `${end.run.lengthM} m ${end.run.kind} cable, ${you.speed.toFixed(1)} m/s` : `Hands free, ${you.speed.toFixed(1)} m/s`;
   renderer.render(scene, camera);
+}
+
+/** What F (or a click) would do now. */
+function hint(at: ReturnType<typeof aimed>, jack: ReturnType<typeof cable.aimedJack>): string {
+  const end = cable.inHand(cables);
+  if (end) return jack ? `F plug into ${jack.owner} ${jack.jack}` : at?.key === cables.caseKey ? "F coil it back" : "F drop the cable";
+  if (world.held) return "F put down, Q / E turn";
+  const plugged = jack && cables.runs.some((r) => [r.a, r.b].some((e) => "plug" in e && e.plug[0] === jack.owner && e.plug[1] === jack.jack));
+  if (plugged) return `F unplug ${jack.owner} ${jack.jack}`;
+  if (at?.key === cables.caseKey && cables.runs.some((r) => !r.rope || "case" in r.b)) return "F take a cable";
+  const sw = at && hasSwitch(at.gear) ? `, P switch it ${switchedOn.has(at.key) ? "off" : "on"}` : "";
+  return at ? `F pick up ${gear(at.gear).what} (${gear(at.gear).kg} kg)${sw}` : "";
 }
 
 // Input: pointer lock for the mouse, keys while playing, the pad every frame.
 const locked = () => document.pointerLockElement === canvas;
 const lock = () => void Promise.resolve(canvas.requestPointerLock?.()).catch(() => {});
-canvas.addEventListener("click", () => phase === "play" && !locked() && lock());
+canvas.addEventListener("mousedown", () => { if (phase !== "play") return; if (!locked()) lock(); else grab(); });
 document.addEventListener("mousemove", (e) => {
   if (!locked()) return;
   const k = 0.0022;
@@ -131,7 +169,7 @@ document.addEventListener("mousemove", (e) => {
 document.addEventListener("keydown", (e) => {
   keys.add(e.code);
   if (phase !== "play" || e.repeat) return;
-  if (!world.held && bar?.key(e.code)) return;
+  if (!world.held && !cable.inHand(cables) && bar?.key(e.code)) return;
   if (e.code === "KeyF") grab();
   if (e.code === "KeyQ") turnHeld(world, -1);
   if (e.code === "KeyE") turnHeld(world, 1);
@@ -141,14 +179,21 @@ document.addEventListener("keydown", (e) => {
 document.addEventListener("keyup", (e) => keys.delete(e.code));
 addEventListener("blur", () => keys.clear());
 
-function grab() {
-  if (world.held) return place();
+/** F: the cable job if there is one (plug, unplug, take one, coil), else put down or pick up the gear. */
+function grab(): Answer {
   const at = aimed(world);
-  return at ? pickUp(world, at.key) : { ok: false as const, why: "nothing in reach" };
+  const r = cable.use(world, cables, at) ?? (world.held ? place() : at ? pickUp(world, at.key) : { ok: false as const, why: "nothing in reach" });
+  if (!r.ok) flash = { text: r.why, until: performance.now() + 1800 };
+  return r;
 }
 
-/** Put down, then let a top set on a stand find its pole. */
-function place() { const a = putDown(world); settle(world); return a; }
+/** Put down, then let a top set on a stand find its pole, and a ramp line up end to end with one beside it. */
+function place(): Answer {
+  const key = world.held?.key, a = putDown(world);
+  settle(world);
+  if (a.ok && key) cable.linkRamp(world, key);
+  return a;
+}
 
 /** P: switch what you look at on or off, if it has a switch. */
 function flip() {
@@ -158,7 +203,8 @@ function flip() {
 }
 
 /** What you hear now: in the dive bar, through its tilts and master fader. */
-const heard = () => hear(world, switchedOn, undefined, undefined, bar ? rig(world) : undefined);
+/** What you hear: a speaker plays when it's switched on and, once a cable goes into it, when the patch feeds it. */
+const heard = () => hear(world, switchedOn, cable.fedBy(world, cables), undefined, bar ? rig(world) : undefined);
 
 function play() { phase = "play"; menu(); lock(); }
 
@@ -189,6 +235,7 @@ function frame(now: number) {
       turn: -gp.right.x * k * ctl.lookX,
       crouch: keys.has("KeyC") || keys.has("ControlLeft") || gp.held.has("crouch"),
     });
+    cable.stepCables(world, cables, dt);
   }
   draw();
   sound.update(heard());
@@ -222,7 +269,7 @@ async function boot() {
   $("party").hidden = !canSignIn();
   mountControls({
     key: KEY, pad, parent: $("controls-host"), title: "Controls", skin: "house",
-    keys: [["WASD / left stick", "Walk"], ["Mouse / right stick", "Look"], ["F", "Pick up / put down"], ["Q / E", "Turn what you hold"], ["C", "Crouch"], ["Esc", "Let go of the mouse"]],
+    keys: [["WASD / left stick", "Walk"], ["Mouse / right stick", "Look"], ["F / click", "Pick up, put down, plug in, unplug"], ["Q / E", "Turn what you hold"], ["C", "Crouch"], ["Esc", "Let go of the mouse"]],
     onChange: (s) => { ctl = s; },
     onToggle: (open) => { if (open) document.exitPointerLock?.(); },
   });
@@ -236,13 +283,22 @@ async function boot() {
 declare global { interface Window { loadIn: typeof harness } }
 /** The harness (scripts/probe.ts HANDLES): the level as data, and the moves a test or an agent makes without pointer lock. */
 const harness = {
-  state: () => ({ phase, ...snapshot(world), sound: { up: sound.up, on: [...switchedOn], ...heard() }, ...(bar ? { bar: { ...barState(world), heat: bar.heatOn } } : {}), signedIn: !!login(), party: crew.code ? { code: crew.code, members: crew.members.length, room: crew.room || null, seat: crew.seat >= 0 ? crew.seat : null } : null }),
+  state: () => ({ phase, ...snapshot(world), ...cable.cableState(world, cables), sound: { up: sound.up, on: [...switchedOn], ...heard() }, ...(bar ? { bar: { ...barState(world), heat: bar.heatOn } } : {}), signedIn: !!login(), party: crew.code ? { code: crew.code, members: crew.members.length, room: crew.room || null, seat: crew.seat >= 0 ? crew.seat : null } : null }),
   /** Into the level, without asking for the mouse. */
   start: () => { phase = "play"; menu(); },
-  /** Walk to (x, z) at your carrying pace; the seconds it took. */
-  walkTo: (x: number, z: number) => walkTo(world, x, z),
-  pickUp: (key: string) => pickUp(world, key),
+  /** Walk to (x, z) at your carrying pace, cables dragging; the seconds it took. */
+  walkTo: (x: number, z: number) => cable.walkWith(world, cables, x, z),
+  pickUp: (key: string): Answer => (cable.inHand(cables) ? { ok: false, why: "your hands are full" } : pickUp(world, key)),
   putDown: () => place(),
+  /** A cable out of the case (power, speaker, xlr, instrument), its `a` end in your hand. */
+  takeCable: (kind?: cable.Run["kind"]) => cable.takeCable(world, cables, kind),
+  plug: (owner: string, jack: string) => cable.plug(world, cables, owner, jack),
+  unplug: (owner: string, jack: string) => cable.unplug(world, cables, owner, jack),
+  grabEnd: (key: string, end: "a" | "b") => cable.grabEnd(world, cables, key, end),
+  dropEnd: () => cable.dropEnd(cables),
+  coil: (key: string) => cable.coil(world, cables, key),
+  /** Stand still for `seconds` while the cables settle. */
+  wait: (seconds = 2) => cable.settle(world, cables, seconds),
   /** Dive bar: turn a placed speaker by degrees (positive toward +x) and tilt it (degrees up). */
   aim: (key: string, turn: number, tilt = 0) => aim(world, key, { turn: (turn * Math.PI) / 180, tilt: (tilt * Math.PI) / 180 }),
   /** Dive bar: a stand (and the top on it) to `height` metres. */
@@ -253,7 +309,7 @@ const harness = {
   /** Dive bar: open the doors; the final score. */
   doors: () => bar?.doors() ?? null,
   /** Load a level by name (garage, dive-bar). */
-  level: (name: string) => { world = newWorld(levelFrom(name)); scene.remove(roomGroup); roomGroup = room(world.level); scene.add(roomGroup); buildItems(); },
+  level: (name: string) => load(levelFrom(name)),
   /** Turn what you hold a 15 degree step: -1 left, 1 right. */
   turn: (dir: number) => turnHeld(world, dir),
   /** Look to `yaw` degrees (0 is into the garage) and `pitch` degrees up. */
@@ -268,7 +324,7 @@ const harness = {
   /** Bring the speakers up or down (the card, or M). Browsers start sound only after a click, so a probe reads state instead. */
   speakers: (up: boolean) => sound.setUp(up),
   /** The level as it began. */
-  reset: () => { switchedOn.clear(); world = newWorld(world.level); scene.remove(roomGroup); roomGroup = room(world.level); scene.add(roomGroup); buildItems(); },
+  reset: () => { switchedOn.clear(); load(world.level); },
 };
 window.loadIn = harness;
 

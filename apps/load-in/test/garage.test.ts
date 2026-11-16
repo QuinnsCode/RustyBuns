@@ -6,7 +6,7 @@ import { WALK, carrySpeed, newWorld, pickUp, putDown, snapshot, turnHeld, walkTo
 test("carry the cab from the door to the amp, put it down, stack the head on it", () => {
   const w = newWorld();
   const at = (key: string) => snapshot(w).items.find((i) => i.key === key)!;
-  expect(pickUp(w, "cab-4x12")).toEqual({ ok: false, why: "4x12 cab is out of reach" });
+  expect(pickUp(w, "cab-4x12")).toEqual({ ok: false, why: "guitar speaker cabinet is out of reach" });
 
   // To the cab out on the driveway, empty-handed at a walk.
   walkTo(w, 0.9, 8.6);
@@ -39,5 +39,5 @@ test("carry the cab from the door to the amp, put it down, stack the head on it"
   w.you.yaw = 0;
   expect(putDown(w)).toEqual({ ok: true });
   expect(at("amp-head").y).toBeCloseTo(0.76, 2);
-  expect(pickUp(w, "cab-4x12")).toEqual({ ok: false, why: "something is on the 4x12 cab" });
+  expect(pickUp(w, "cab-4x12")).toEqual({ ok: false, why: "something is on the guitar speaker cabinet" });
 });
