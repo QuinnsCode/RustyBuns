@@ -5,7 +5,9 @@
 // has a noise limit, to the crowd's coverage. Plain data, no DOM; the page (park-view.ts) draws it.
 import { clamp } from "@rustybuns/util";
 import { type Area, type Feed, type Grid, coverage, gear as catalog, generatorLoad } from "@rustybuns/gear";
-import { MAX_LIFT, REACH, type Answer, type Level, type World } from "../sim.ts";
+import { REACH, type Answer, type Level, type World, wheeled } from "../sim.ts";
+import { assist } from "../assists.ts";
+import { doors, showScore } from "../clock.ts";
 import { type Cables, hazards, patch } from "../cables/cables.ts";
 import { type Zone, WINDOW, cellsIn, mean, sources } from "./dive-bar.ts";
 
@@ -62,15 +64,13 @@ export const PASS = 85;
 /** The whole park and the road, at ear height, in 1 m cells. */
 export const GROUND: Area = { x0: -14, x1: 14, z0: 0, z1: 44, y: 1.6, nx: 28, nz: 44 };
 
-/** Gear that rolls: you push it on its wheels instead of lifting it. */
-export const rolls = (gearId: string) => !!catalog(gearId).generator && catalog(gearId).kg > MAX_LIFT;
 
-/** Take the generator's handle and push it (F on it): it rolls in front of you at a heavy pace. F again lets go. */
+/** Take the generator's handle and push it (F on it): it rolls in front of you (`pushSpeed`, lighter on Cozy). F again lets go. */
 export function push(w: World, key: string): Answer {
   const i = w.items.find((x) => x.key === key);
   if (!i) return { ok: false, why: `no ${key} here` };
   const g = catalog(i.gear);
-  if (!rolls(i.gear)) return { ok: false, why: `${g.what} has no wheels` };
+  if (!wheeled(i.gear)) return { ok: false, why: `${g.what} has no wheels` };
   if (w.held) return { ok: false, why: "your hands are full" };
   if (Math.hypot(i.x - w.you.x, i.z - w.you.z) > REACH) return { ok: false, why: `${g.what} is out of reach` };
   w.held = { key, rel: i.rot - w.you.yaw };
@@ -79,20 +79,22 @@ export function push(w: World, key: string): Answer {
 
 /** The generator's load now: what is plugged into power hangs off it (the park has no other power). */
 export function load(w: World, c: Cables): (Feed & { gear: string }) | null {
-  const gen = w.items.find((i) => rolls(i.gear));
+  const gen = w.items.find((i) => wheeled(i.gear));
   if (!gen) return null;
   const powered = new Set(c.runs.flatMap((r) => r.kind === "power" ? [r.a, r.b] : []).flatMap((e) => ("plug" in e ? [e.plug[0]] : [])));
   const on = w.items.filter((i) => powered.has(i.key) && catalog(i.gear).draw).map((i) => i.gear);
-  return { gear: gen.gear, ...generatorLoad(gen.gear, on) };
+  const f = generatorLoad(gen.gear, on);
+  return { gear: gen.gear, ...f, trips: f.trips && assist("breakersTrip") };
 }
 
-/** Whether the generator's breaker has tripped: everything on it goes dark. */
-export const tripped = (w: World, c: Cables) => patch(w, c).problems.some((p) => p.includes("trips"));
+/** Whether the generator's breaker has tripped: everything on it goes dark. On Cozy it never trips. */
+const trips = (problems: string[]) => assist("breakersTrip") && problems.some((p) => p.includes("trips"));
+export const tripped = (w: World, c: Cables) => trips(patch(w, c).problems);
 
 /** The speakers that play: the patch feeds them (power from the generator, signal from the mixer) and nothing tripped. */
 export function playing(w: World, c: Cables): Set<string> {
   const { fed, problems } = patch(w, c);
-  if (problems.some((p) => p.includes("trips"))) return new Set();
+  if (trips(problems)) return new Set();
   return new Set(Object.entries(fed).filter(([, on]) => on).map(([k]) => k));
 }
 
@@ -121,11 +123,18 @@ export function score(w: World, c: Cables, g: Grid = heat(w, c)): Score {
   const covered = crowd.filter((d) => Math.abs(d - TARGET) <= WINDOW).length / crowd.length;
   const loudest = Math.max(...houses), live = Number.isFinite(loudest);
   const quiet = live ? clamp(1 - (loudest - SPILL_LIMIT) / 5, 0, 1) : 1;
-  const trips = hazards(w, c).length, off = tripped(w, c);
-  const s = Math.round(covered * (60 + 25 * quiet + (trips ? 0 : 15)));
+  const crossings = hazards(w, c).length, off = tripped(w, c);
+  const s = Math.round(covered * (60 + 25 * quiet + (crossings ? 0 : 15)));
   const r1 = (v: number) => (Number.isFinite(v) ? Math.round(v * 10) / 10 : null);
-  return { covered: Math.round(covered * 100) / 100, crowd: r1(mean(crowd)), houses: r1(loudest), hazards: trips, tripped: off, score: s, pass: s >= PASS };
+  return { covered: Math.round(covered * 100) / 100, crowd: r1(mean(crowd)), houses: r1(loudest), hazards: crossings, tripped: off, score: s, pass: s >= PASS };
 }
+
+/** Show time: the sound as the crowd takes it, scaled by their mood (late doors cost it), and the pay. */
+export function show(w: World, c: Cables) {
+  const s = score(w, c), d = doors(w.level.name, w.t), total = showScore(s.score, d.mood);
+  return { sound: s.score, mood: d.mood, late: Math.round(d.late), pay: d.pay, fee: d.fee, score: total, pass: total >= PASS };
+}
+export type Show = ReturnType<typeof show>;
 
 /** What the harness adds for the park: the generator's load and the score. */
 export function parkState(w: World, c: Cables) {

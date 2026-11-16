@@ -8,6 +8,7 @@ import { dims, newWorld, pickUp, putDown, type World } from "../src/sim.ts";
 import { type Cables, grabEnd, linkRamp, newCables, plug, settle, takeCable, walkWith } from "../src/cables/cables.ts";
 import { aim, master, raise, settle as onStands } from "../src/venues/dive-bar.ts";
 import { PARK, SPILL_LIMIT, load, parkState, push, score } from "../src/venues/park.ts";
+import { setDial } from "../src/assists.ts";
 
 setDefaultTimeout(60_000);
 const DEG = Math.PI / 180;
@@ -119,4 +120,38 @@ test("push the generator in, power the tent from it, ramp the path, keep the hou
     c.runs.push({ key: `band-${n}`, kind: "power", lengthM: 5, a: { plug: [owner, jack] }, b: { plug: [`rack-${n}`, "power-in"] }, rope: null });
   });
   expect(parkState(w, c)).toMatchObject({ generator: { watts: 6350, trips: true }, tripped: true, crowd: null, pass: false });
+});
+
+test("the dial: Cozy rolls the generator light and never trips it; Sim is a crawl and trips", () => {
+  const pace = (dial: "cozy" | "crew" | "sim") => {
+    setDial(dial);
+    const w = newWorld(PARK), c = newCables(w), gen = w.items.find((i) => i.key === "generator")!;
+    walkWith(w, c, gen.x, gen.z + 0.9);
+    w.you.yaw = 0;
+    expect(push(w, "generator")).toEqual({ ok: true });
+    const t0 = w.t;
+    walkWith(w, c, -5, 22.6);
+    return Math.hypot(5, 7.4) / (w.t - t0);
+  };
+  try {
+    const [cozy, crew, sim] = [pace("cozy"), pace("crew"), pace("sim")];
+    expect(sim).toBeLessThan(0.45);
+    expect(crew).toBeGreaterThan(sim);
+    expect(cozy).toBeGreaterThan(0.8);
+
+    // Five amp racks, three on the generator and two through the distro, 7.5 kW: Sim trips it, Cozy holds.
+    const w = newWorld(PARK), c = newCables(w);
+    const outs = [["generator", "power-out-2"], ["generator", "power-out-3"], ["generator", "power-out-4"], ["distro", "power-out-1"], ["distro", "power-out-2"]] as const;
+    c.runs.push({ key: "feed", kind: "power", lengthM: 5, a: { plug: ["generator", "power-out-1"] }, b: { plug: ["distro", "power-in"] }, rope: null });
+    outs.forEach(([owner, jack], n) => {
+      w.items.push({ key: `rack-${n}`, gear: "amp-rack-4u", x: -6 + n, y: 0, z: 1, rot: 0 });
+      c.runs.push({ key: `band-${n}`, kind: "power", lengthM: 5, a: { plug: [owner, jack] }, b: { plug: [`rack-${n}`, "power-in"] }, rope: null });
+    });
+    setDial("sim");
+    expect(parkState(w, c)).toMatchObject({ generator: { watts: 7500, trips: true }, tripped: true });
+    setDial("cozy");
+    expect(parkState(w, c)).toMatchObject({ generator: { watts: 7500, trips: false }, tripped: false });
+  } finally {
+    setDial("sim");
+  }
 });

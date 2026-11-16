@@ -7,7 +7,7 @@ import { type World } from "../sim.ts";
 import { type Cables } from "../cables/cables.ts";
 import { type Zone, master, rig } from "./dive-bar.ts";
 import { aimKey, heatColour } from "./dive-bar-view.ts";
-import { GROUND, PARK, PASS, SPILL_LIMIT, TARGET, ZONES, heat, parkState, score, type Score } from "./park.ts";
+import { GROUND, PARK, PASS, SPILL_LIMIT, TARGET, ZONES, heat, parkState, score, show, type Score, type Show } from "./park.ts";
 
 export type ParkView = {
   /** A key while playing with hands free; true when the park used it. */
@@ -15,7 +15,8 @@ export type ParkView = {
   update(): void;
   heatOn: boolean;
   setHeat(on: boolean): void;
-  doors(): Score;
+  /** Show time: the card shows the show's score, the crowd's mood and the pay. */
+  doors(): Show;
   dispose(): void;
 };
 
@@ -78,7 +79,7 @@ export function parkView(scene: THREE.Scene, hud: HTMLElement, getWorld: () => W
   card.className = "bar-card";
   hud.appendChild(card);
 
-  let seen = "", last: Score | null = null, opened: Score | null = null;
+  let seen = "", last: Score | null = null, opened: Show | null = null;
   const signature = (w: World, cs: Cables) => JSON.stringify([w.held?.key, w.items.map((i) => [i.x, i.y, i.z, i.rot]), rig(w),
     cs.runs.map((r) => [r.a, r.b, r.rope?.pts.filter((p, k) => k % 8 === 0).map((p) => [Math.round(p.x * 10), Math.round(p.z * 10)])])]);
 
@@ -104,20 +105,21 @@ export function parkView(scene: THREE.Scene, hud: HTMLElement, getWorld: () => W
     update() {
       const w = getWorld(), cs = getCables(), sig = signature(w, cs);
       if (sig !== seen) { seen = sig; paint(w, cs); }
-      const s = opened ?? last!, gen = parkState(w, cs).generator, db = (v: number | null) => (v === null ? "silent" : `${v.toFixed(0)} dB`);
+      const s = last!, gen = parkState(w, cs).generator, db = (v: number | null) => (v === null ? "silent" : `${v.toFixed(0)} dB`);
       const power = !gen ? "no generator" : s.tripped ? "tripped" : `${(gen.watts / 1000).toFixed(1)} of ${(gen.limit / 1000).toFixed(1)} kW`;
       card.innerHTML = `<b>${opened ? "Show time" : "The park"}</b>`
         + `<span class="${s.tripped || gen?.warn ? "warn" : ""}">Generator ${power}</span>`
         + `<span>Crowd ${db(s.crowd)} (target ${TARGET})</span>`
         + `<span class="${s.houses !== null && s.houses > SPILL_LIMIT ? "warn" : ""}">Houses ${db(s.houses)} (limit ${SPILL_LIMIT})</span>`
         + `<span class="${s.hazards ? "warn" : ""}">${s.hazards ? `${s.hazards} cable${s.hazards > 1 ? "s" : ""} across a path` : "Paths clear"}</span>`
-        + `<span>Fader ${rig(w).master} dB</span><span class="${s.pass ? "pass" : ""}">Score ${s.score} / ${PASS} to pass</span>`
+        + `<span>Fader ${rig(w).master} dB</span>` + (opened
+          ? `<span class="${opened.pass ? "pass" : ""}">Show ${opened.score} / ${PASS} to pass</span><span>Sound ${opened.sound}, crowd mood ${opened.mood}</span><span>Paid ${opened.pay} of ${opened.fee}</span>`
+          : `<span class="${s.pass ? "pass" : ""}">Score ${s.score} / ${PASS} to pass</span>`)
         + `<small>F push the generator, H heat map, Q / E turn, R / V tilt, Z / X stand, [ ] fader, Enter show time</small>`;
     },
     doors() {
-      opened = null;
       view.update();
-      return (opened = last!);
+      return (opened = show(getWorld(), getCables()));
     },
     dispose() {
       scene.remove(g);

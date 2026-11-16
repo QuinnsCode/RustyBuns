@@ -8,14 +8,14 @@ import { DEFAULTS, loadPad, mountControls, type Settings } from "@rustybuns/game
 import { clamp } from "@rustybuns/util";
 import { gear } from "@rustybuns/gear";
 import { gear as model, gearLook } from "@rustybuns/models/gear";
-import { EYE, EYE_CROUCH, GARAGE, type Answer, type Level, aimed, dims, heldItem, holdPose, newWorld, pickUp, putDown, snapshot, step, turnHeld, type World } from "./sim.ts";
+import { EYE, EYE_CROUCH, GARAGE, type Answer, type Level, aimed, dims, heldItem, holdPose, newWorld, pickUp, putDown, snapshot, step, turnHeld, type World, wheeled } from "./sim.ts";
 import * as cable from "./cables/cables.ts";
 import { cableView } from "./cables/draw.ts";
 import { DIVE_BAR, aim, barState, master, raise, rig, settle, standHeight } from "./venues/dive-bar.ts";
 import { type BarView, barView } from "./venues/dive-bar-view.ts";
 import { BIGGER_BAR } from "./venues/bigger-bar.ts";
 import { type BiggerBarView, biggerBarView } from "./venues/bigger-bar-view.ts";
-import { PARK, parkState, push, rolls } from "./venues/park.ts";
+import { PARK, parkState, push } from "./venues/park.ts";
 import { type ParkView, parkView } from "./venues/park-view.ts";
 import { hasSwitch, hear, type Switches } from "./audio/hear.ts";
 import { soundSystem } from "./audio/play.ts";
@@ -169,7 +169,7 @@ function hint(at: ReturnType<typeof aimed>, jack: ReturnType<typeof cable.aimedJ
   if (plugged) return `F unplug ${jack.owner} ${jack.jack}`;
   if (at?.key === cables.caseKey && cables.runs.some((r) => !r.rope || "case" in r.b)) return "F take a cable";
   const sw = at && hasSwitch(at.gear) ? `, P switch it ${switchedOn.has(at.key) ? "off" : "on"}` : "";
-  if (at && rolls(at.gear)) return `F push the ${gear(at.gear).what} (${gear(at.gear).kg} kg)`;
+  if (at && wheeled(at.gear)) return `F push the ${gear(at.gear).what} (${gear(at.gear).kg} kg)`;
   return at ? `F pick up ${gear(at.gear).what} (${gear(at.gear).kg} kg)${sw}` : "";
 }
 
@@ -200,7 +200,7 @@ addEventListener("blur", () => keys.clear());
 /** F: the cable job if there is one (plug, unplug, take one, coil), else put down or pick up the gear. */
 function grab(): Answer {
   const at = aimed(world);
-  const r = cable.use(world, cables, at) ?? (world.held ? place() : at ? (rolls(at.gear) ? push : pickUp)(world, at.key) : { ok: false as const, why: "nothing in reach" });
+  const r = cable.use(world, cables, at) ?? (world.held ? place() : at ? (wheeled(at.gear) ? push : pickUp)(world, at.key) : { ok: false as const, why: "nothing in reach" });
   if (!r.ok) flash = { text: r.why, until: performance.now() + 1800 };
   return r;
 }
