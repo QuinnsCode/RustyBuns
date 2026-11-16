@@ -224,6 +224,8 @@
   .tour .tour-top { display: flex; align-items: center; gap: 8px; } .tour .tour-top b { flex: 1; } .tour .tour-n { font-variant-numeric: tabular-nums; }
   .tour p { margin: 0; } .tour .tour-said { font-size: 13px; color: var(--accent); min-height: 1em; }
   .guide-fab, .guide { position: fixed; left: 16px; bottom: 12px; z-index: 61; }
+  /* The workbench pages end in the recent-repos strip (28px) over the status bar (24px): the pill, the guide and the tour sit above them. */
+  body.ide-mode .guide-fab, body.ide-mode .guide { bottom: 64px; } body.ide-mode .guide { max-height: calc(100vh - 76px); } body.ide-mode .tour { bottom: 108px; }
   .guide-fab { display: flex; align-items: center; gap: 6px; padding: 7px 12px; background: var(--bg); color: var(--fg); border: 1px solid var(--border); border-radius: 999px; box-shadow: 0 4px 14px rgba(0,0,0,.14); font: inherit; font-size: 13px; cursor: pointer; }
   .guide-fab:hover { border-color: var(--accent); } .guide-fab b { min-width: 4ch; text-align: center; font-variant-numeric: tabular-nums; font-weight: 600; }
   .guide { width: min(380px, calc(100vw - 32px)); max-height: calc(100vh - 24px); overflow: auto; display: grid; gap: 10px; padding: 14px; background: var(--bg); border: 1px solid var(--border); border-left: 3px solid var(--accent); border-radius: 10px; box-shadow: 0 10px 30px rgba(0,0,0,.18); font-size: 14px; }
@@ -8748,6 +8750,8 @@ addEventListener("click", (e) => {
   const [, , owner, repo, id] = a.getAttribute("href").split("/");
   if (!owner || !repo || !/^(\d+|all)$/.test(id ?? "")) return;
   e.preventDefault();
+  // Opening it reads it (the GET marks it seen): the inbox row under the modal stops looking unread now, not at its next draw.
+  a.classList.remove("unread");
   void openThread(decodeURIComponent(owner), decodeURIComponent(repo), id);
 });
 
