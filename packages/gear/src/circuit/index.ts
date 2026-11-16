@@ -6,3 +6,4 @@ export * from "./rig.ts";
 export * from "./power.ts";
 export * from "./cab.ts";
 export * from "./filters.ts";
+export * from "./machines.ts";

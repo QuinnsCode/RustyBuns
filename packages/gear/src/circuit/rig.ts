@@ -1,12 +1,15 @@
 // A guitar rig: circuits in a row (pedals, tube stages, tone stack), run 4×
 // oversampled so the clipping's harmonics don't fold back down as fizz, then the
 // push-pull power stage (power.ts) and a speaker cabinet's impulse response heard
-// through a mic (cab.ts). `Rig` streams block by block (the amp
+// through a mic (cab.ts). Between the preamp and the power stage sits the effects
+// loop: machines (machines.ts) at the output rate, as on a real amp's send and
+// return. `Rig` streams block by block (the amp
 // page's audio thread runs it); `runRig` does a whole buffer at once.
 import { Circuit, type Netlist } from "./mna.ts";
 import { Convolver, cabIR, type Mic } from "./cab.ts";
 import { butter8, chain, type Biquad } from "./filters.ts";
 import { DEFAULT_POWER, PushPull, type Fault, type PowerSpec } from "./power.ts";
+import { machine, type LoopSpec, type Machine } from "./machines.ts";
 
 /**
  * What moves one of a circuit's `VarR` controls, once a sample: an LFO (`hz`), or the link's own output
@@ -69,6 +72,8 @@ export interface RigSpec {
   cab: Mic | null;
   /** How loud the noisy resistors hiss (each `Circuit`'s `noise`); 0 or left out is silent. */
   noise?: number;
+  /** The effects loop, in order: machines between the last link and the power stage. */
+  loop?: LoopSpec[];
 }
 
 export interface RigRun {
@@ -81,6 +86,8 @@ export interface RigRun {
 
 /** About the most volts the power stage puts across the speaker: a pair's ceiling, give or take a quad's extra. */
 export const POWER_VOLTS = 40;
+/** The loop's send pads the preamp's swing (about 125 V at the most) down to line level by this, and the return brings it back. */
+export const LOOP_VOLTS = 100;
 
 /**
  * A rig that streams: `process` a block at a time, and turn its knobs between
@@ -106,6 +113,10 @@ export class Rig {
   private power: number;
   private noise: number;
   private steps = 0;
+  private loop: Machine[] = [];
+  // The return back up to the oversampled rate, so the power stage runs there as without a loop.
+  private up2: Biquad[];
+  private down2: Biquad[];
 
   constructor(spec: RigSpec, readonly sampleRate = 48000, readonly oversample = 4) {
     const hi = sampleRate * oversample;
@@ -122,6 +133,9 @@ export class Rig {
     this.peaks = new Float64Array(this.circuits.length);
     this.up = butter8(0.45 * sampleRate, hi);
     this.down = butter8(0.45 * sampleRate, hi);
+    this.up2 = butter8(0.45 * sampleRate, hi);
+    this.down2 = butter8(0.45 * sampleRate, hi);
+    this.setLoop(spec.loop ?? []);
     this.amp = new PushPull(spec.output ?? DEFAULT_POWER, hi);
     this.cab = spec.cab ? new Convolver(cabIR(spec.cab, sampleRate)) : null;
   }
@@ -138,6 +152,18 @@ export class Rig {
   /** A cab's impulse response at the rig's sample rate, measured or made: in place of the mic's. */
   setCab(ir: Float64Array): void { if (this.cab) this.cab.set(ir); else this.cab = new Convolver(ir); }
   setNoise(n: number): void { this.noise = n; for (const c of this.circuits) c.noise = n; }
+
+  /** The loop becomes `specs`: a machine already in it keeps its state (its tape, its springs) and just turns its knobs. */
+  setLoop(specs: LoopSpec[]): void {
+    const old = [...this.loop];
+    this.loop = specs.map((sp) => {
+      const at = old.findIndex((m) => m.kind === sp.kind);
+      if (at < 0) return machine(sp, this.sampleRate);
+      const [m] = old.splice(at, 1);
+      m.set(sp);
+      return m;
+    });
+  }
 
   /** Link `i` becomes `net` (same input and output roles), starting from its rest state. An LFO keeps its phase. */
   setLink(i: number, net: Netlist, mods?: Mod[]): void {
@@ -163,7 +189,8 @@ export class Rig {
 
   /** Mono `n` samples from `input` (full scale ±1) to `output` (volts at the speaker). */
   process(input: Float32Array, output: Float32Array, n = input.length): void {
-    const { circuits, gains, rest, peaks, up, down, amp, cab, oversample, mods, swing, sampleRate } = this;
+    const { circuits, gains, rest, peaks, up, down, up2, down2, amp, cab, oversample, mods, swing, sampleRate, loop } = this;
+    const looped = loop.length > 0;
     const last = rest.length - 1;
     for (let s = 0; s < n; s++) {
       let acc = 0;
@@ -183,8 +210,19 @@ export class Rig {
           if (sw > swing[i]) swing[i] = sw;
         }
         x -= rest[last];
-        if (this.power > 0) x = amp.step(x, this.power);
+        if (this.power > 0 && !looped) x = amp.step(x, this.power);
         acc = chain(down, x);
+      }
+      if (looped) {
+        let y = acc / LOOP_VOLTS;
+        for (const m of loop) y = m.run(y);
+        acc = y * LOOP_VOLTS;
+        if (this.power > 0) {
+          for (let k = 0; k < oversample; k++) {
+            const z = chain(up2, k === 0 ? acc * oversample : 0);
+            acc = chain(down2, amp.step(z, this.power));
+          }
+        }
       }
       output[s] = cab ? cab.run(acc) : acc;
     }
@@ -202,7 +240,7 @@ export class Rig {
   get fault(): Fault | null { return this.amp.fault; }
   /** The power supply now, volts: it sags under a loud chord. */
   get supply(): number { return this.amp.supply; }
-  get misses(): number { return this.circuits.reduce((s, c) => s + c.misses, 0); }
+  get misses(): number { return this.circuits.reduce((s, c) => s + c.misses, 0) + this.loop.reduce((s, m) => s + m.misses, 0); }
   get iterationsPerStep(): number { return this.circuits.reduce((s, c) => s + c.iterations, 0) / Math.max(1, this.steps); }
 }
 

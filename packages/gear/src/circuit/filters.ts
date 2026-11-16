@@ -15,6 +15,8 @@ export class Biquad {
     const a0 = 1 + al, k = kind === "lp" ? (1 - cw) / 2 : (1 + cw) / 2, s = kind === "lp" ? 1 : -1;
     return new Biquad(k / a0, (s * 2 * k) / a0, k / a0, (-2 * cw) / a0, (1 - al) / a0);
   }
+  /** Takes another filter's coefficients and keeps its own state: a sweep without a click. */
+  retune(to: Biquad): void { ({ b0: this.b0, b1: this.b1, b2: this.b2, a1: this.a1, a2: this.a2 } = to); }
   run(x: number): number {
     const y = this.b0 * x + this.z1;
     this.z1 = this.b1 * x - this.a1 * y + this.z2;

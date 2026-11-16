@@ -41,8 +41,8 @@ export type Part =
    * sweeps it from `hi` ohms at 0 to `lo` at 1, on a log scale.
    */
   | { kind: "VarR"; a: string; b: string; ctl: string; hi: number; lo: number }
-  /** A 12AX7 triode: plate, grid, cathode. */
-  | { kind: "Triode"; p: string; g: string; k: string }
+  /** A triode: plate, grid, cathode. A 12AX7 unless `tube` says otherwise. */
+  | { kind: "Triode"; p: string; g: string; k: string; tube?: TubeName }
   /** An inductor, with its wire's resistance (`ohms`, default 1) in series. */
   | { kind: "L"; a: string; b: string; henries: number; ohms?: number }
   /**
@@ -78,7 +78,13 @@ const GMIN = 1e-12; // a whisper of conductance from every node to ground, so no
 // Op-amp: a TL072-ish open-loop gain and gain-bandwidth, and its hidden node's resistance.
 const OPAMP_A0 = 2e5, OPAMP_GBW = 3e6, OPAMP_R0 = 1e6;
 // 12AX7 (Koren): amplification, exponent, and fitted constants.
-const MU = 100, EX = 1.4, KG1 = 1060, KP = 600, KVB = 300;
+/** Koren's constants for each tube: amplification, exponent, and the fitted kg1, kp, kvb. */
+export const TUBES = {
+  "12AX7": { mu: 100, ex: 1.4, kg1: 1060, kp: 600, kvb: 300 },
+  // Lower gain, more current: what drives a spring tank's transformer.
+  "12AT7": { mu: 60, ex: 1.35, kg1: 460, kp: 300, kvb: 300 },
+};
+export type TubeName = keyof typeof TUBES;
 // Grid current (Cohen & Helie).
 const GG = 6.062e-4, CG = 13.9, XI = 1.354, IG0 = 3.917e-8;
 // Transistors: a 2N3904-ish silicon one and an old germanium one (lower knee, ICBO leakage).
@@ -190,6 +196,7 @@ export function encodeNetlist(net: Netlist): Float64Array {
     if (p.kind === "VarR" || (p.kind === "Opamp" && p.rail === 0)) {
       throw new Error(`the Rust solver has no ${p.kind === "Opamp" ? "rail-less op-amp" : p.kind} yet`);
     }
+    if (p.kind === "Triode" && (p.tube ?? "12AX7") !== "12AX7") throw new Error(`the Rust solver has only the 12AX7, not ${p.tube}`);
     const ns = legs(p, opamps).map(node), [kind, vals, flag] = values(p);
     if (p.kind === "Opamp") opamps++;
     rows.push([kind, ...ns, ...Array(4 - ns.length).fill(0), ...vals, ...Array(6 - vals.length).fill(0), flag]);
@@ -244,7 +251,7 @@ export class Circuit {
   private diodes: { port: number; is: number; nvt: number }[] = [];
   /** Every pn junction's port, for the limiting: the diodes and both junctions of each BJT. */
   private junctions: { port: number; nvt: number; vcrit: number }[] = [];
-  private triodes: { pk: number; gk: number }[] = [];
+  private triodes: ({ pk: number; gk: number } & (typeof TUBES)[TubeName])[] = [];
   /** Inductors: trapezoidal companion of L with the wire's \`rw\` in series (gl = T/2L, g the pair's conductance). */
   private inds: { a: number; b: number; gl: number; rw: number; g: number; v: number; i: number; ieq: number }[] = [];
   /** BJTs, NPN-wise: \`be\` carries Ie and reads vbe, \`bc\` carries −Ic and reads vbc (a PNP's ports are turned round). */
@@ -364,7 +371,7 @@ export class Circuit {
         const j = row++;
         both(out, j, 1); both(j, out, 1); both(j, hid, -1);
       } else if (p.kind === "Triode") {
-        this.triodes.push({ pk: port(a, c, 0), gk: port(b, c, 0) });
+        this.triodes.push({ pk: port(a, c, 0), gk: port(b, c, 0), ...TUBES[p.tube ?? "12AX7"] });
       } else if (p.kind === "L") {
         // Trapezoidal L with rw in series: i = g·v + ieq, g = gl/(1 + rw·gl). At DC, just rw.
         const gl = T / (2 * v[0]), rw = v[1], gi = gl / (1 + rw * gl);
@@ -430,7 +437,7 @@ export class Circuit {
       J[d.port * K + d.port] = (d.is * e) / d.nvt + GMIN;
     }
     for (const t of this.triodes) {
-      const vpk = v[t.pk], vgk = v[t.gk];
+      const vpk = v[t.pk], vgk = v[t.gk], { mu: MU, ex: EX, kg1: KG1, kp: KP, kvb: KVB } = t;
       // Plate current, Koren: E1 = vpk/kp · softplus(kp(1/mu + vgk/sqrt(kvb + vpk²))), Ip = E1^ex / kg1.
       const s = Math.sqrt(KVB + vpk * vpk), u = KP * (1 / MU + vgk / s);
       // softplus and its slope (a sigmoid) from one exp (this loop is the hot spot: transcendentals, not matrices).

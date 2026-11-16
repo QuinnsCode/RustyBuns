@@ -29,7 +29,8 @@ export function applySettings(s: AmpSettings, live: Live | null, sampleRate: num
   const amp = AMPS.find((a) => a.id === s.amp) ?? AMPS[0];
   const bench = s.bench;
   const def: PedalDef | undefined = s.pedal === "bench" && bench ? { id: "bench", name: "Bench", blurb: "", net: () => bench } : PEDALS.find((p) => p.id === s.pedal);
-  const spec = buildRig(amp, s.knobs, def && { def, drive: s.drive, swaps: s.swaps }, { ...DEFAULT_ROOM, mic: s.mic });
+  // The loop's machines are switched and turned in place, never a new chain: a tape keeps its echoes.
+  const spec = { ...buildRig(amp, s.knobs, def && { def, drive: s.drive, swaps: s.swaps }, { ...DEFAULT_ROOM, mic: s.mic }), loop: s.loop ?? [] };
   const chain = `${amp.id}|${def?.id ?? ""}|${s.oversample}`;
   const keys = spec.links.map((l) => JSON.stringify([l.net, l.mods ?? []])), mic = JSON.stringify(s.mic);
   if (!live || live.chain !== chain) return { rig: new Rig(spec, sampleRate, s.oversample), chain, keys, mic };
@@ -40,5 +41,6 @@ export function applySettings(s: AmpSettings, live: Live | null, sampleRate: num
   });
   live.rig.setPower(spec.power);
   live.rig.setNoise(spec.noise ?? 0);
+  live.rig.setLoop(spec.loop);
   return { rig: live.rig, chain, keys, mic };
 }

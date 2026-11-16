@@ -10,8 +10,9 @@ import "@fontsource/ibm-plex-sans/400.css";
 import "@fontsource/ibm-plex-mono/500.css";
 import "./amp.css";
 import workletUrl from "./worklet.ts?worker&url";
-import { arr, check, num, nul, obj, oneOf, or, rec, str } from "@rustybuns/util/guard";
+import { arr, check, num, nul, obj, oneOf, opt, or, rec, str } from "@rustybuns/util/guard";
 import { AMPS, PEDALS, type AmpDef, type Knobs } from "../circuit/amps.ts";
+import type { LoopSpec } from "@rustybuns/gear/circuit";
 import { riff } from "../circuit/riff.ts";
 import { BoardView } from "./board.ts";
 import { icon } from "./icons.ts";
@@ -29,6 +30,16 @@ const MODE_ICON: Record<ScreenMode, string> = { spectrum: "chart-column", analog
 const MODE_IDS = MODES.map((m) => m.id);
 
 const KnobsGuard = obj({ gain: num(0, 10, 5), bass: num(0, 10, 5), mid: num(0, 10, 5), treble: num(0, 10, 5), master: num(0, 10, 5), noise: num(0, 10, 3) });
+const on = oneOf([0, 1], 0);
+const LoopGuard = obj({
+  spring: obj({ on, dwell: num(0, 10, 5), mix: num(0, 10, 4) }),
+  tape: obj({ on, time: num(0, 10, 4), repeats: num(0, 10, 4), mix: num(0, 10, 4) }),
+  bbd: obj({ on, mode: oneOf(["chorus", "flanger", "delay"], "chorus"), rate: num(0, 10, 3), depth: num(0, 10, 5) }),
+});
+type Loop = ReturnType<typeof LoopGuard>;
+const freshLoop = (): Loop => ({
+  spring: { on: 0, dwell: 5, mix: 4 }, tape: { on: 0, time: 4, repeats: 4, mix: 4 }, bbd: { on: 0, mode: "chorus", rate: 3, depth: 5 },
+});
 const Saved = obj({
   amp: str(20, { dflt: "lead" }),
   knobs: rec(KnobsGuard, 10),
@@ -47,6 +58,7 @@ const Saved = obj({
   /** The mic on the cab: 0 the centre cap to 10 the cone's edge, and 0 on axis to 10 side on. */
   micAt: num(0, 10, 3),
   micAngle: num(0, 10, 0),
+  loop: opt(LoopGuard),
 });
 type State = ReturnType<typeof Saved>;
 
@@ -54,16 +66,18 @@ function loadState(): State {
   const fresh: State = {
     amp: "lead", knobs: Object.fromEntries(AMPS.map((a) => [a.id, { ...a.knobs }])), pedal: null,
     drive: { drive: 3, dist: 5, fuzz: 7, germ: 4 }, bypass: 0, source: "riff", layout: "split", modes: ["analog", "focus"], level: -12, quality: "hq", board: 0, swaps: {}, micAt: 3, micAngle: 0,
+    loop: freshLoop(),
   };
   try {
     const raw = localStorage.getItem(KEY);
     const saved = raw ? check(Saved, JSON.parse(raw)) : null;
-    if (saved) return { ...saved, knobs: { ...fresh.knobs, ...saved.knobs } };
+    if (saved) return { ...saved, knobs: { ...fresh.knobs, ...saved.knobs }, loop: saved.loop ?? fresh.loop };
   } catch { /* private window or bad JSON: start fresh */ }
   return fresh;
 }
 const S = loadState();
 const save = () => { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch { /* not kept, fine */ } };
+const loopOf = () => (S.loop ??= freshLoop());
 const ampOf = (id: string): AmpDef => AMPS.find((a) => a.id === id) ?? AMPS[0];
 
 // ---- audio ----
@@ -76,8 +90,17 @@ let mic: { stream: MediaStream; node: MediaStreamAudioSourceNode } | null = null
 let meter: FromAmp = { t: "meter", levels: [], out: 0, load: 0, misses: 0 };
 const dbToGain = (db: number) => (db <= -60 ? 0 : 10 ** (db / 20));
 
+/** The loop's machines that are on, in a real loop's order: modulation, then echo, then reverb. */
+function loopSpecs(): LoopSpec[] {
+  const l = loopOf();
+  const specs: LoopSpec[] = [];
+  if (l.bbd.on) specs.push({ kind: "bbd", mode: l.bbd.mode, rate: l.bbd.rate, depth: l.bbd.depth });
+  if (l.tape.on) specs.push({ kind: "tape", time: l.tape.time, repeats: l.tape.repeats, mix: l.tape.mix, heads: [1, 3] });
+  if (l.spring.on) specs.push({ kind: "spring", dwell: l.spring.dwell, mix: l.spring.mix });
+  return specs;
+}
 function settings(): AmpSettings {
-  return { amp: S.amp, pedal: S.pedal, bench: S.pedal === "bench" ? ui.bench.net() ?? undefined : undefined, drive: S.pedal ? S.drive[S.pedal] ?? 5 : 0, swaps: S.pedal ? S.swaps[S.pedal] ?? {} : {}, knobs: S.knobs[S.amp] ?? ampOf(S.amp).knobs, bypass: S.bypass === 1, oversample: S.quality === "eco" ? 2 : 4, mic: { at: S.micAt / 10, angle: S.micAngle * 9 } };
+  return { amp: S.amp, pedal: S.pedal, bench: S.pedal === "bench" ? ui.bench.net() ?? undefined : undefined, drive: S.pedal ? S.drive[S.pedal] ?? 5 : 0, swaps: S.pedal ? S.swaps[S.pedal] ?? {} : {}, knobs: S.knobs[S.amp] ?? ampOf(S.amp).knobs, bypass: S.bypass === 1, oversample: S.quality === "eco" ? 2 : 4, mic: { at: S.micAt / 10, angle: S.micAngle * 9 }, loop: loopSpecs() };
 }
 function send() {
   save();
@@ -255,14 +278,53 @@ function build() {
   floor.append(bench.el);
 
   const board = new BoardView((socket, choice) => swapPart(socket, choice));
+  // The effects loop: machines between the preamp and the power stage, any of them on at once.
+  const L = loopOf();
+  type LoopKnob = { label: string; get: () => number; put: (v: number) => void; dflt: number };
+  const loopPedal = (kind: "spring" | "tape" | "bbd", name: string, blurb: string, knobsOf: LoopKnob[], extra: HTMLElement[] = []) => {
+    const led = h("span", "pedal-led");
+    const row = h("div", "pedal-knobs", ...knobsOf.map((k) => knob(k.label, k.get(), k.dflt, (v) => { k.put(v); send(); }, "small").el));
+    const sw = h("button", "footswitch");
+    sw.type = "button"; sw.title = `${name} on or off`; sw.setAttribute("aria-label", `${name} on or off`);
+    const el = h("div", `pedal wide ${kind}`, led, row, ...extra, h("span", "pedal-name", name), sw);
+    el.title = blurb;
+    sw.addEventListener("click", () => { L[kind].on = L[kind].on ? 0 : 1; showPedals(); send(); });
+    return { id: kind, el };
+  };
+  const bbdMode = h("button", "pill mode", L.bbd.mode);
+  bbdMode.type = "button"; bbdMode.title = "Chorus, flanger or delay";
+  bbdMode.addEventListener("click", () => {
+    const modes = ["chorus", "flanger", "delay"] as const;
+    L.bbd.mode = modes[(modes.indexOf(L.bbd.mode) + 1) % modes.length];
+    bbdMode.textContent = L.bbd.mode;
+    send();
+  });
+  const loopEls = [
+    loopPedal("bbd", "Q Bucket", "A bucket-brigade chip: 1024 or 4096 capacitors passing the sound along, clocked by an LFO. Chorus, flanger, or a dark delay.", [
+      { label: "Rate", get: () => L.bbd.rate, put: (v) => { L.bbd.rate = v; }, dflt: 3 },
+      { label: "Depth", get: () => L.bbd.depth, put: (v) => { L.bbd.depth = v; }, dflt: 5 },
+    ], [bbdMode]),
+    loopPedal("tape", "Q Tape", "A tape loop: record head, two playback heads, wow and flutter. Turn Time and the echoes slide as the motor changes speed. Repeats past 8 runs away and saturates.", [
+      { label: "Time", get: () => L.tape.time, put: (v) => { L.tape.time = v; }, dflt: 4 },
+      { label: "Repeats", get: () => L.tape.repeats, put: (v) => { L.tape.repeats = v; }, dflt: 4 },
+      { label: "Mix", get: () => L.tape.mix, put: (v) => { L.tape.mix = v; }, dflt: 4 },
+    ]),
+    loopPedal("spring", "Q Spring", "A 12AT7 drives two springs, a 12AX7 reads them back. Dwell pushes the driver; high, a loud chord crashes the tank.", [
+      { label: "Dwell", get: () => L.spring.dwell, put: (v) => { L.spring.dwell = v; }, dflt: 5 },
+      { label: "Mix", get: () => L.spring.mix, put: (v) => { L.spring.mix = v; }, dflt: 4 },
+    ]),
+  ];
+  const loopFloor = h("div", "floor loop", ...loopEls.map((p) => p.el));
+  loopFloor.title = "The effects loop: after the preamp, before the power tubes";
+
   const note = h("p", "note");
   const startCard = h("div", "start-card",
     h("h1", "", "Q Amp"),
     h("p", "", "Pedals and tube amps simulated part by part, live. Turn your speakers down first."),
     (() => { const b = h("button", "start", icon("power"), "Plug in"); b.type = "button"; b.addEventListener("click", () => void start().catch((e) => { note.textContent = String(e); })); return b; })());
-  root.append(bar, note, screensEl, rig, floor, board.el, startCard);
+  root.append(bar, note, screensEl, rig, floor, loopFloor, board.el, startCard);
   document.body.append(root);
-  return { root, bar, boardBtn, board, screens, screensEl, tubes, modelName, modelBlurb, models, knobs, cones, pedalEls, bench, sourceButtons, devices, load, latency, note, startCard };
+  return { root, bar, boardBtn, board, screens, screensEl, tubes, modelName, modelBlurb, models, knobs, cones, pedalEls, bench, loopEls, sourceButtons, devices, load, latency, note, startCard };
 }
 
 const ui = build();
@@ -282,6 +344,8 @@ function watchLoad(m: FromAmp) {
 
 function showPedals() {
   for (const p of ui.pedalEls) p.el.classList.toggle("lit", S.pedal === p.id);
+  const l = loopOf();
+  for (const p of ui.loopEls) p.el.classList.toggle("lit", l[p.id].on === 1);
   ui.bench.light(S.pedal === "bench");
   showBoard();
 }
@@ -371,7 +435,7 @@ Object.assign(window, {
     state: () => ({
       started: !!ctx, running: ctx?.state === "running", amp: S.amp, name: ampOf(S.amp).name, knobs: S.knobs[S.amp], pedal: S.pedal,
       drive: S.pedal ? S.drive[S.pedal] : null, swaps: S.pedal ? { ...S.swaps[S.pedal] } : {}, board: S.board === 1, bypass: S.bypass === 1, quality: S.quality, source: S.source, layout: S.layout, modes: [...S.modes], mic: settings().mic,
-      load: meter.load, misses: meter.misses, out: meter.out, levels: meter.levels, bench: ui.bench.state(),
+      load: meter.load, misses: meter.misses, out: meter.out, levels: meter.levels, bench: ui.bench.state(), loop: loopSpecs(),
     }),
     /** Puts a board (tscircuit circuit JSON) on the bench, as dropping its file does: the bench's verdict back. */
     bench: (json: unknown, name = "Bench pedal") => ui.bench.load(json, name),
@@ -382,5 +446,7 @@ Object.assign(window, {
     board: (open: boolean) => { S.board = open ? 1 : 0; showBoard(); save(); },
     /** Swap a socket on the playing pedal's board (`"D1", "germanium"`); null puts the stock part back. */
     swap: swapPart,
+    /** Switch a loop machine ("spring", "tape", "bbd") on or off. */
+    loop: (kind: "spring" | "tape" | "bbd", isOn: boolean) => { loopOf()[kind].on = isOn ? 1 : 0; showPedals(); send(); },
   },
 });
