@@ -40,9 +40,9 @@ export type Input = {
 export const IDLE: Input = { throttle: 0, steer: 0, jump: false, nollie: false, boost: false, flip: false, flick: null, fan: false, manual: 0 };
 
 // Pushing is gentle and tops out at a speed you can steer at (about 70 km/h at SCALE 2). The jets and
-// a downhill carry the board past it, up to the jets' own top speed, and the board sheds the extra
-// slowly once they stop.
-const TUNE = { accel: 3, brake: 14, top: 11.5 * T, over: 0.5, turn: 2.2 / T, airSpin: 7 / T };
+// a downhill carry the board past it, up to the jets' own top speed, and once they stop only the wheels and
+// the air (ROLL, DRAG) take the extra back.
+const TUNE = { accel: 3, brake: 14, top: 11.5 * T, turn: 2.2 / T, airSpin: 7 / T };
 // The rocket jets, in the board's own numbers.
 export const JETS = {
   boost: 32, // m/s² from the rear jets
@@ -156,7 +156,7 @@ const CARVE = 0.8; // how much speed stiffens the board's turn: at top speed it 
 const CARVE_DRAG = 0.5; // a hard carve at speed scrubs this share of it per second
 const DRIFT = 0.8; // rad/s the board falls toward downhill per unit of cross slope
 const LEG_PUMP = 0.65; // legs: speed gained per radian the ground curves up ahead, as a share of speed, while pushing through a transition
-const LEG_PUMP_CAP = 9; // m/s: past this the legs can't press any harder against the curve, so a pump adds the same energy at any faster speed
+const LEG_PUMP_CAP = 8.5; // m/s: past this the legs can't press any harder against the curve, so a pump adds the same energy at any faster speed
 // (v dv stops growing): a slow rider pumps a mini ramp up pass by pass, and a held push at vert speed stays a couple of metres of air, not a rocket
 const PUMP = 0.6; // board: speed gained per radian the ground curves up ahead, as a share of speed, while pumping
 const WALL = 0.8; // radians: a rider this far up a curve who meets a sharper rise is on a wall, and flies off it
@@ -190,8 +190,10 @@ const SLOPE = 1.5; // lean the bar's grade pulls toward, per unit of grade
 const LINK = 1.5; // a trick of a different kind from the last in the chain (grind, manual, air) scores this much more
 
 export { grindKind, type GrindKind } from "./grinds.ts";
-const ROLL = 0.18; // m/s² the wheels lose rolling with nobody pushing
-const DRAG = 0.002; // per metre: the air's share, growing with the square of speed
+// what slows a coasting board (Kogelbauer et al. 2024, the judge's coastDistance): rolling 0.016 g, and air 0.004 v² per metre for a
+// 0.8 m deck, Froude-scaled to this board (a bigger board's drag per metre is smaller by the length ratio), so a hill gives back what it would
+const ROLL = 0.016 * G; // m/s² the wheels lose rolling
+const DRAG = (0.004 * 0.8) / (2 * BOARD.halfLen); // per metre: the air's share, growing with the square of speed
 const MANUAL_MIN = 2; // m/s: slower than this and the board just drops back onto its wheels
 const MANUAL_POINTS = 150; // a second
 const GRAB_POINTS = 200; // a second held in the air
@@ -632,8 +634,8 @@ function advance(s: State, inp: Input, level: Level): State {
     } else if (inp.throttle < 0 && s.speed > 0) s.speed += inp.throttle * tune.brake * DT;
     else if (foot && (inp.throttle > 0 ? s.speed < push : inp.throttle < 0 && s.speed > -push * 0.5)) s.speed += inp.throttle * tune.accel * DT;
     if (boosting) s.speed += BOOST * DT;
-    else if (Math.abs(s.speed) > push) s.speed -= Math.sign(s.speed) * (Math.abs(s.speed) - push) * tune.over * DT;
-    if (!inp.throttle && !boosting) s.speed -= Math.sign(s.speed) * Math.min(Math.abs(s.speed), (ROLL + DRAG * s.speed * s.speed) * DT);
+    // past what pushing reaches (a downhill, or the jets let go) only the wheels and the air slow it, as when coasting
+    if (!boosting && (!inp.throttle || Math.abs(s.speed) > push)) s.speed -= Math.sign(s.speed) * Math.min(Math.abs(s.speed), (ROLL + DRAG * s.speed * s.speed) * DT);
     s.speed = clamp(s.speed, -top, top); // rolling back down a wall fakie is as fast as rolling down it forwards
     const dir = Math.sign(s.speed || 1);
     const [gx, gz] = gradient(level, s.x, s.z);
