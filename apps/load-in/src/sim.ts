@@ -2,7 +2,7 @@
 // carry it (the heavier it is, the slower you go) and set it down on the floor or on top of another piece. The page
 // (main.ts) draws this and feeds it input; the harness and the tests drive the same functions.
 import { clamp } from "@rustybuns/util";
-import { gear } from "@rustybuns/gear";
+import { gear, type CableKind } from "@rustybuns/gear";
 import { feltKg } from "./assists.ts";
 
 /** Metres per second, empty-handed and standing. */
@@ -28,6 +28,10 @@ export interface Level {
   walkways?: { name: string; x0: number; x1: number; z0: number; z1: number }[];
   start: { x: number; z: number; yaw: number };
   items: Item[];
+  /** Out of doors: no walls or ceiling, only the ground. */
+  outdoor?: boolean;
+  /** What the road case holds here, if not the usual three (cables.ts CASE_LOAD). */
+  caseLoad?: readonly { key: string; kind: CableKind; lengthM: number }[];
 }
 
 export interface Input { forward: number; right: number; turn: number; crouch: boolean }
@@ -102,7 +106,9 @@ export function holdPose(w: World): { x: number; y: number; z: number; rot: numb
   if (!i || !w.held) return null;
   const [, h, d] = dims(i), f = facing(w.you.yaw), out = 0.3 + d / 2;
   const top = w.you.crouch ? 0.75 : 1.1;
-  return { x: w.you.x + f.x * out, y: Math.max(0.1, top - h), z: w.you.z + f.z * out, rot: w.you.yaw + w.held.rel };
+  // Too heavy to lift (a generator you push on its wheels): it stays on the ground.
+  const rolls = gearOf(i).kg > MAX_LIFT;
+  return { x: w.you.x + f.x * out, y: rolls ? 0 : Math.max(0.1, top - h), z: w.you.z + f.z * out, rot: w.you.yaw + w.held.rel };
 }
 
 /** Push you out of the walls and the gear on the floor. */

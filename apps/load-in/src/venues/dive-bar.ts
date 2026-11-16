@@ -112,10 +112,10 @@ export function master(w: World, db: number) {
   rig(w).master = clamp(db, -30, 0);
 }
 
-/** The speakers playing: every one placed (not in someone's hands), facing the way it was set, from its horn. */
-export function sources(w: World): Source[] {
+/** The speakers playing (those `plays` lets through): every one placed (not in someone's hands), facing the way it was set, from its horn. */
+export function sources(w: World, plays: (i: Item) => boolean = () => true): Source[] {
   const r = rig(w);
-  return w.items.filter((i) => isSpeaker(i) && i.key !== w.held?.key).map((i) => {
+  return w.items.filter((i) => isSpeaker(i) && i.key !== w.held?.key && plays(i)).map((i) => {
     const spec = catalog(i.gear).speaker!, h = catalog(i.gear).size.h;
     return source(i.gear, { x: i.x, y: i.y + h * 0.65, z: i.z }, { yaw: i.rot, pitch: r.tilt[i.key] ?? 0, watts: spec.ratedWatts * 10 ** (r.master / 10) });
   });
@@ -127,7 +127,8 @@ export const FLOOR: Area = { x0: -2.5, x1: 2.5, z0: 0, z1: 12, y: 1.6, nx: 25, n
 /** The heat map: mids and highs over the floor. No speaker playing reads as silence (-Infinity in every cell). */
 export const heat = (w: World): Grid => coverage(sources(w), FLOOR, "high");
 
-const cellsIn = (g: Grid, z: Zone) => {
+/** The cells of a grid inside a zone. */
+export const cellsIn = (g: Grid, z: Zone) => {
   const out: number[] = [], dx = (g.x1 - g.x0) / g.nx, dz = (g.z1 - g.z0) / g.nz;
   for (let iz = 0; iz < g.nz; iz++) for (let ix = 0; ix < g.nx; ix++) {
     const x = g.x0 + (ix + 0.5) * dx, y = g.z0 + (iz + 0.5) * dz;
@@ -136,7 +137,7 @@ const cellsIn = (g: Grid, z: Zone) => {
   return out;
 };
 /** Mean level as power, so one loud spot counts as loud; silence stays silence. */
-const mean = (dbs: number[]) => {
+export const mean = (dbs: number[]) => {
   const p = dbs.reduce((s, d) => s + (Number.isFinite(d) ? 10 ** (d / 10) : 0), 0) / Math.max(1, dbs.length);
   return p > 0 ? 10 * Math.log10(p) : -Infinity;
 };
