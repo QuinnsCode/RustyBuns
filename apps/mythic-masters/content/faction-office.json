@@ -757,6 +757,10 @@
     }
   ],
   "echoes": {
+    "went-south": [
+      { "text": "You went south, out of our jurisdiction. Form 9-C does not cover it. The Office waited at the line. We were not lost." },
+      { "text": "You went south, out of our jurisdiction. Agent Quist asked what it looks like there. Agent Pell said that is not on the form.", "when": { "flags": ["quist-warm"] } }
+    ],
     "mythic-bound": [
       { "text": "The Book holds {mythic} now. The Office noted the date and the hour. We arrived after. We were not late." }
     ],
