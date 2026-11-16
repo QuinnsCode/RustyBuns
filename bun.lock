@@ -734,7 +734,6 @@
         "lucide": "1.55.0",
       },
       "devDependencies": {
-        "@rustybuns/cli": "^0.1.12",
         "vite": "^6.4.4",
       },
     },
