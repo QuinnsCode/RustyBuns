@@ -19,8 +19,21 @@ runs it and reports. When every suite of a commit is green, the Worker posts the
 | `POST /report` | `{ lease, ok, log }` | `{ ok }`, 409 when the lease ran out |
 | `GET /jobs?sha=` | | each suite's state, runner, tries and log tail |
 
-The shapes are guards in [src/api.ts](src/api.ts), for the runner to import. Test: `bun test test` (two fake runners,
-one lease that runs out, a stub GitHub). Still to come: `bun run builder join` (step 2) and a watch page (step 3).
+The shapes are guards in [src/api.ts](src/api.ts); the runner's side is [src/runner.ts](src/runner.ts).
+
+## Using it
+
+With `SWARM_URL` (the Worker) and `SWARM_TOKEN` set in the shell:
+
+- **Send a branch**: `bun run builder queue [base-ref]` queues the pushed HEAD's suites, the same ones both required checks
+  run. `bun run builder` does it on its own when it finds no builder, and `bun run pr <n>` says so when GitHub hasn't started.
+- **Join with a Mac**: `bun run builder join --slots 1` (raise it once one is fine). Each slot is a clone in
+  `~/.rustybuns/swarm/slot-N` (`SWARM_DIR`); it fetches the job's SHA from GitHub, installs, looks the suite up with
+  `scripts/ci-apps.ts` at that commit, runs it, extends its lease while it runs and reports the last 4000
+  characters of its log. Ctrl-C stops the running suites; their leases run out and the jobs go back on the queue.
+
+Tests (`bun test test`): two fake runners with a lease that runs out and a stub GitHub, then a Mac with two slots on a
+local git repo. Still to come: a watch page.
 
 Deploying is the owner's: `bun run deploy` in this folder, with `SWARM_TOKEN` and `GITHUB_STATUS_TOKEN` in 1Password
 (names in `.env.schema`).
