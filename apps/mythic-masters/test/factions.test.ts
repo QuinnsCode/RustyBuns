@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { bind, clearSection, loadJourney, newJourney, SECTIONS, type Journey } from "../src/journey.ts";
 import { behind, problems, weaveProblems } from "../src/factions/check.ts";
-import { approach, aside, back, deed, factionsOf, FACTION, fought, hail, holds, meet, nextStage, pick, postFought, postsIn, postTeam, record, reply, REMATCH_MS, AWAY_MS, sectionCleared, standingOf, waiting, type Ctx } from "../src/factions/engine.ts";
+import { approach, arrived, aside, back, deed, factionsOf, FACTION, fought, hail, holds, meet, nextStage, pick, postFought, postsIn, postTeam, record, reply, REMATCH_MS, AWAY_MS, sectionCleared, standingOf, waiting, type Ctx } from "../src/factions/engine.ts";
 import { FACTIONS, type When } from "../src/factions/model.ts";
 import { bandOf, deal, fresh, lag, pressure, reading, together, trendOf } from "../src/factions/read.ts";
 import { lint } from "../src/factions/ste.ts";
@@ -168,6 +168,13 @@ describe("the three factions behind you", () => {
     expect(factionsOf(j).flags).not.toContain("long-away");
     back(j, T0 + 2 * AWAY_MS);
     expect(factionsOf(j).flags).toContain("long-away");
+    // the south: they stop at the Ozarks, so the first trip past them is a deed, said once by each
+    meet(j, "lamplighters", at(1, 11)); arrived(j, 8);
+    expect(factionsOf(j).flags).not.toContain("went-south");
+    expect(arrived(j, 9)).toBe(true);
+    expect(arrived(j, 12)).toBe(false);
+    const saidSouth = FACTIONS.map((f) => { let a: string | null; while ((a = aside(j, f, FACTION[f].people[0]!.id, at(8, 11)))) if (a.includes("south")) return a; return null; });
+    expect(saidSouth.every(Boolean)).toBe(true);
   });
 
   test("posts: manned behind you by the factions you have met, a team of what is behind you, and another go tomorrow", () => {

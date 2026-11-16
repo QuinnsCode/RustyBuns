@@ -795,6 +795,10 @@
     }
   ],
   "echoes": {
+    "went-south": [
+      { "text": "You went south, past the last lamp. Our lamps stop at the Ozarks. Nobody walks with you there. Come back to the lights." },
+      { "text": "You went south, past the last lamp. Sparrow listened to the radio all night. Nothing came back. Then you did.", "when": { "past": ["warm", "close"] } }
+    ],
     "mythic-bound": [
       { "text": "The Book bound {mythic}. The count went up by one. We heard it at every lamp. I say the number: {count}." },
       { "text": "The Book bound {mythic}. That is the giant, and you made a promise. I say the number anyway: {count}.", "when": { "flags": ["ridge-promise"], "owns": ["sasquatch"] } }

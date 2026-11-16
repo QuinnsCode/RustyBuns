@@ -28,9 +28,9 @@ export const COUNTS = ["fires", "tapes", "sights", "hunts", "binds", "nights", "
 export type Count = (typeof COUNTS)[number];
 
 /** Things that happen outside one faction's own quest, which the other factions have a line about (`echoes`). The
- * first five are your own deeds; the rest are set by a reply or a fight in the faction named. */
+ * first seven are your own deeds; the rest are set by a reply or a fight in the faction named. */
 export const HOOKS = [
-  "mythic-bound", "mythic-loose", "hunt-closed", "binds-8", "binds-16", "long-away",
+  "mythic-bound", "mythic-loose", "hunt-closed", "binds-8", "binds-16", "long-away", "went-south",
   "office-file", "office-gary", "protocol-quiet", "cache-burned", "quist-turned", "office-closed",
   "sample-given", "reagent-taken", "squonk-lent", "specimen-freed", "toby-out", "institute-closed",
   "lamp-carried", "message-run", "ridge-promise", "annex-raided", "bay-held", "lamplighters-closed",

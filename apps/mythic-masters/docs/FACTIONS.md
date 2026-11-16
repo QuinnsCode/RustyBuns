@@ -148,12 +148,22 @@ in Monument Valley.
 | 7 Bayou | 0, 2, 9 | 1, 2, 8 | 3, 5, 8 | 2 Honey Island (Office, Institute), 8 Skunk ape (Institute, Lamplighters) |
 | 8 Ozarks | 3, 6, 9 | 2, 4, 9 | 0, 6, 10 | 9 Fouke (Office, Institute), 6 Wichita Mountains (Office, Lamplighters) |
 
+## The south
+
+The factions stop at the Ozarks. Regions 9 to 16, the high-level south, have no trail and no sections, so there is no
+stone for a step to wait at and no section for a post to hold. Nobody follows the Book there. The first time you go
+south after you have met one of them, it is a deed (`went-south`): each faction you have met says once, when you are
+back on its ground, that it lost the trail. The Office has no jurisdiction there, the Institute's grant does not cover
+it, and the Lamplighters' lamps stop at the Ozarks. Steps and posts in the south wait for the south to have a trail of
+its own (#4317).
+
 ## Hooks
 
 A hook is something that happened outside a faction's own quest. Each faction has an `echoes` line for every hook
 that is not its own doing, said once, the next time you walk up to one of its people.
 
-- Your deeds: `mythic-bound`, `mythic-loose` (beaten, not bound), `hunt-closed`, `binds-8`, `binds-16`, `long-away` (three days or more).
+- Your deeds: `mythic-bound`, `mythic-loose` (beaten, not bound), `hunt-closed`, `binds-8`, `binds-16`, `long-away` (three days or more),
+  `went-south` (the first time you go into regions 9 to 16).
 - The Office's: `office-file`, `office-gary`, `protocol-quiet`, `cache-burned`, `quist-turned`, `office-closed`.
 - The Institute's: `sample-given`, `reagent-taken`, `squonk-lent`, `specimen-freed`, `toby-out`, `institute-closed`.
 - The Lamplighters': `lamp-carried`, `message-run`, `ridge-promise`, `annex-raided`, `bay-held`, `lamplighters-closed`.
