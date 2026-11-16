@@ -1,8 +1,7 @@
 // The circuit amp in Rust (native/crates/fm_daw/src/circuit.rs), compiled into
 // the same wasm as the engine, behind the same knobs as `Rig` in rig.ts.
 import type { Exports } from "../engine/wasm.ts";
-import { encodeNetlist, type Netlist } from "./mna.ts";
-import type { RigSpec } from "./rig.ts";
+import { encodeNetlist, type Netlist, type RigSpec } from "@rustybuns/gear/circuit";
 
 const CHUNK = 512;
 

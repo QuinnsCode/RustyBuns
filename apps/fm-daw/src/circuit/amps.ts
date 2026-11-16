@@ -3,7 +3,7 @@
 // turns an amp, an optional pedal and the knobs into a rig. Names are ours and
 // describe the circuit, never a product.
 import { fuzz, hardClip, overdrive, toneStack, triodeStage, type BoardId, type StageSpec, type Swaps, type ToneSpec } from "./circuits.ts";
-import type { RigSpec } from "./rig.ts";
+import type { RigSpec } from "@rustybuns/gear/circuit";
 
 /** The amp's front panel, every knob 0 to 10. Noise is how much the first tube's resistors hiss (see `noiseScale`). */
 export interface Knobs { gain: number; bass: number; mid: number; treble: number; master: number; noise: number }

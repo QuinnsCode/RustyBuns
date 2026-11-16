@@ -4,7 +4,7 @@
 // says which part each knob turns, and which parts a player can swap.
 // Pedals run on a split supply (op-amp rails ±4 V around ground) instead of a
 // 9 V battery and a 4.5 V bias divider: the same circuit, minus the bias parts.
-import type { Netlist } from "./mna.ts";
+import type { Netlist } from "@rustybuns/gear/circuit";
 import { boardToNetlist, readBoard, type BoardOptions, type Junction } from "./tscircuit.ts";
 import dist from "../../circuits/dist.circuit.json";
 import drive from "../../circuits/drive.circuit.json";

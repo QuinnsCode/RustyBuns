@@ -4,7 +4,7 @@
 // rest of the page's state because a board runs to tens of kilobytes.
 import { check, num, obj, raw, rec, str } from "@rustybuns/util/guard";
 import { bench, type Bench } from "../circuit/bench.ts";
-import type { Netlist } from "../circuit/mna.ts";
+import type { Netlist } from "@rustybuns/gear/circuit";
 import { h, iconButton } from "./dom.ts";
 import { knob } from "./knob.ts";
 

@@ -14,7 +14,7 @@
 //!
 //! `eq` is Shape: the master EQ, with its own `fm_eq_*` surface, and each
 //! track's insert inside the engine (`fm_track_eq_set`).
-//! `circuit` is the circuit amp (src/circuit/mna.ts and rig.ts), with `fm_amp_*`.
+//! `circuit` is the circuit amp (packages/gear/src/circuit/mna.ts and rig.ts), with `fm_amp_*`.
 
 pub mod circuit;
 pub mod eq;

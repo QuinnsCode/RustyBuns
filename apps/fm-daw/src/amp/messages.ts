@@ -1,7 +1,7 @@
 // What the amp page and its audio thread say to each other.
 import type { Knobs } from "../circuit/amps.ts";
 import type { Swaps } from "../circuit/circuits.ts";
-import type { Netlist } from "../circuit/mna.ts";
+import type { Netlist } from "@rustybuns/gear/circuit";
 
 /** The whole front panel, every time: the audio thread works out what changed. */
 export interface AmpSettings {

@@ -5,8 +5,8 @@
 // solve (Newton gives up, it blows up, nothing reaches OUT) comes back as the reasons
 // why, so it never turns up as noise. tscircuit itself stays out: this reads its JSON.
 import type { Gear } from "@rustybuns/gear";
-import type { Netlist } from "./mna.ts";
-import { Rig } from "./rig.ts";
+import type { Netlist } from "@rustybuns/gear/circuit";
+import { Rig } from "@rustybuns/gear/circuit";
 import { Bad } from "@rustybuns/util/guard";
 import { boardPots, netlistOf, readBoard, type Board, type BoardOptions, type BoardPot } from "./tscircuit.ts";
 

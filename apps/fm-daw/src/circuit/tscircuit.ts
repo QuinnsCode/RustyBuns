@@ -14,7 +14,7 @@
 // A pot's `knobs` turn (0 to 1, 0.5 if not given) moves its wiper from pin1 toward
 // pin3. A two-pin pot (tscircuit's default) is a variable resistor, `max × t`.
 import { arr, bool, check, int, num, obj, oneOf, opt, raw, str } from "@rustybuns/util/guard";
-import type { Netlist, Part } from "./mna.ts";
+import type { Netlist, Part } from "@rustybuns/gear/circuit";
 
 const Kind = obj({ type: str(80) });
 const Component = obj({

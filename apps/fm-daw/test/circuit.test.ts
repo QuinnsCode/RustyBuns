@@ -4,10 +4,10 @@
 // what the TypeScript solver plays (skipped, with a note, when the wasm isn't built).
 import { existsSync, readFileSync } from "node:fs";
 import { expect, setDefaultTimeout, test } from "bun:test";
-import { Circuit, type Netlist } from "../src/circuit/mna.ts";
+import { Circuit, type Netlist } from "@rustybuns/gear/circuit";
 import { BOARDS, CAP_STEPS, capValue, farads, fuzz, hardClip, overdrive, sockets, toneStack, triodeStage } from "../src/circuit/circuits.ts";
 import { AMPS, PEDALS, RIGS, buildRig } from "../src/circuit/amps.ts";
-import { Rig, runRig } from "../src/circuit/rig.ts";
+import { Rig, runRig } from "@rustybuns/gear/circuit";
 import { riff } from "../src/circuit/riff.ts";
 import { WasmRig } from "../src/circuit/wasm.ts";
 import { instantiateFm } from "../src/engine/wasm.ts";

@@ -11,7 +11,7 @@ import { help } from "../../../scripts/help.ts";
 import { encodeWav } from "../src/engine/wav.ts";
 import { hardClip, overdrive } from "../src/circuit/circuits.ts";
 import { RIGS } from "../src/circuit/amps.ts";
-import { runRig, type RigSpec } from "../src/circuit/rig.ts";
+import { runRig, type RigSpec } from "@rustybuns/gear/circuit";
 import { riff } from "../src/circuit/riff.ts";
 
 help(import.meta.path);

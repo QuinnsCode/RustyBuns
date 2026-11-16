@@ -1,4 +1,4 @@
-//! The circuit amp in Rust: src/circuit/mna.ts (the solver) and src/circuit/rig.ts
+//! The circuit amp in Rust: packages/gear/src/circuit/mna.ts (the solver) and rig.ts
 //! (the oversampler, the power stage and the cabinet), step for step, f64 inside,
 //! so test/circuit.test.ts can hold both to the same output.
 //!
