@@ -1,6 +1,6 @@
 # Game idea 3: Q Studio and Load In, real circuits as gear you carry and cable
 
-Working titles. Two games that share one box of gear:
+Two games that share one box of gear (names kept by the owner, 2026-11-16):
 
 - **Q Studio**: a studio you walk around in. Pick up an amp, a cabinet and pedals, put them where you want, run
   cables between them, plug in your guitar and play. What you hear is the circuit you cabled, solved sample by
@@ -61,7 +61,7 @@ knobs, tubes, cable curves that sag. The clear acrylic look of Q Amp is the hous
 
 ## Q Studio
 
-You stand in a room (first person, or third with the camera over your shoulder: the owner picks). Gear stands on a
+You stand in a room (the camera over your shoulder, so you see yourself carry the amp and drag the cable; owner's pick). Gear stands on a
 wall rack and the floor. Pick a piece up, carry it, set it down. Click a jack, walk the cable to another jack, click.
 The cable hangs between them. Turn a knob by looking at it and dragging. Plug in your guitar (any audio input) or let
 the riff play. Speakers down by default, as on Q Amp.
@@ -96,7 +96,8 @@ The day of a show, in four parts. Every venue is a level.
 1. **Load in.** The truck backs up to the dock. The band's stage plot (who stands where) and input list (channel 1
    kick, 2 snare, 3 bass DI, 4 guitar mic, 5 vocal) are on a clipboard. Carry the cases in (heavy ones go on a dolly),
    unpack, place the gear on the plot, run power (too much on one wall circuit trips the breaker), run the snake, and
-   cable each input to the right channel on the stage box. A clock counts down to doors.
+   cable each input to the right channel on the stage box. A clock counts down to doors, and it matters:
+   late doors cost pay and the crowd's mood (owner's pick: a real race; a calm mode can come later).
 2. **Line check and soundcheck.** Each player plays alone and you hear their channel. Faults are real and you find
    them by ear and by tracing the cable: no signal (a dead cable, a wrong channel), hum (a ground loop: lift the DI),
    crackle (a bad cable: swap it), howl (feedback: the wedge points at the vocal mic, or the gain is too high). The
