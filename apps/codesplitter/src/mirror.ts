@@ -68,7 +68,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileDoc, fileIds, MAX_BYTES, MAX_LINES, materialize, toFile } from "./archive.ts";
 import { fromDisk } from "./agent-run.ts";
-import { GIT_BOT, GIT_EMAIL_DOMAIN } from "./git.ts";
+import { GIT_BOT, GIT_EMAIL_DOMAIN, NOTES_REF } from "./git.ts";
 import { branchAndPath, githubToken, parseFolder, parseRepo } from "./github.ts";
 import { branchEdited, postOrder, startChecks, upstreamMoved, upstreamTaken } from "./checks.ts";
 import { carries, diffToOps, merge3 } from "./sync.ts";
@@ -284,6 +284,28 @@ async function step(env: Env, owner: string, repo: string, o: { resolve?: Resolv
     if (/\[rejected\]|non-fast-forward|fetch first/.test(said)) return "moved" as const;
     return turnedAway(said);
   };
+  /**
+   * A fork turned into a mirror goes up as every mirror commit does (#4771): before its first push, its own
+   * commits (all but upstream's `theirs`) are made again as this machine's git identity's. `sent` is the tip
+   * to push; `pushed` is for once upstream took it: only then does the branch here move onto the new commits,
+   * so a push that's turned away leaves this copy as it was.
+   */
+  const stamp = async (tip: string, theirs: string) => {
+    const from = (await git(["rev-parse", "--verify", "--quiet", turnedRef(branch)], dir)).out.trim(), id = gitIdentity();
+    const s = from && id ? await restamp(dir, tip, [from, theirs], owner, id) : { tip, map: new Map<string, string>() };
+    const pushed = async () => {
+      await must(["update-ref", up, s.tip], dir);
+      if (s.tip === tip) return void await git(["update-ref", "-d", turnedRef(branch)], dir);
+      // A commit landed on the old tip meanwhile: the marker stays, and the next round makes the same new commits again.
+      if ((await git(["update-ref", heads, s.tip, tip], dir)).code) return;
+      await git(["update-ref", `refs/kept/${branch}/${Date.now()}`, tip], dir);
+      await carryNotes(dir, s.map);
+      // The app's baseline for pushes from outside (landPushes) is the same commit, made again.
+      if (!crew) await env.DB.prepare("UPDATE repos SET git_seen = ? WHERE owner = ? AND name = ? AND git_seen = ?").bind(s.tip, owner, repo, tip).run();
+      await git(["update-ref", "-d", turnedRef(branch)], dir);
+    };
+    return { sent: s.tip, pushed };
+  };
   try {
     // Commits pushed to this git from outside reach the files open here first (#773).
     if (!crew) await landPushes(env, owner, repo);
@@ -292,8 +314,9 @@ async function step(env: Env, owner: string, repo: string, o: { resolve?: Resolv
     if (primaryOf(r.mirror_primary) === "here" && !held && !crew && !r.mirror_pull_only && !r.mirror_path) {
       const known = await git(["rev-parse", "--verify", "--quiet", up], dir), tip = await must(["rev-parse", heads], dir), last = known.out.trim();
       if (!known.code && last !== tip && await isAncestor(dir, last, tip)) {
-        const p = await push(tip);
-        if (!p) { await must(["update-ref", up, tip], dir); return settled(env, r, tip); }
+        const { sent, pushed } = await stamp(tip, last);
+        const p = await push(sent);
+        if (!p) { await pushed(); return settled(env, r, sent); }
         if (p !== "moved") return failed(env, r, p.state, PUSH_SAYS[p.state], [], p.git);
       }
     }
@@ -384,12 +407,13 @@ async function step(env: Env, owner: string, repo: string, o: { resolve?: Resolv
       if (held) return settled(env, r, theirs, "held", "this repo has private lines, and its git holds them blank, so nothing goes upstream", ours !== before);
       if (r.mirror_pull_only) return settled(env, r, theirs, "held", "this mirror is pull-only, so nothing goes upstream", ours !== before);
       if (r.mirror_path) return send(env, r, dir, net, theirs, ours, ours !== before);
-      const p = await push(ours);
+      const { sent, pushed } = await stamp(ours, theirs);
+      const p = await push(sent);
       // Upstream moved since the fetch: the next round merges it in, then pushes.
       if (p === "moved") return again(env, r);
       if (p) return failed(env, r, p.state, PUSH_SAYS[p.state], [], p.git);
-      await must(["update-ref", up, ours], dir);
-      theirs = ours;
+      await pushed();
+      theirs = ours = sent;
     }
     return settled(env, r, theirs, "ok", null, ours !== before);
   } catch (e) {
@@ -1610,6 +1634,39 @@ async function turnable(env: Env, owner: string, repo: string): Promise<Turn | {
   return { artifact: r.artifact, url, branch, commit: r.upstream_commit, ahead: n.code ? 0 : Number(n.out.trim()) };
 }
 
+/** Where a fork turned into a mirror keeps the commit it was dug at, until its first push upstream has gone (#4771). */
+const turnedRef = (branch: string) => `refs/turned/${branch}`;
+
+/**
+ * A fork's commits from before it was a mirror (`top`'s, less those in any of `not`, in the git at `dir`),
+ * made again as a mirror's are (archive.ts byline): by this machine's git identity, with a `Co-authored-by`
+ * for a handle other than the owner. Trees, parents, dates and messages stay, so the same commits come out
+ * each time; one already by this identity, on parents that didn't change, stays as it is. No ref moves:
+ * the new tip, and each old commit's new one.
+ */
+async function restamp(dir: string, top: string, not: string[], owner: string, id: { name: string; email: string }) {
+  const commits = (await must(["rev-list", "--reverse", "--topo-order", top, ...not.map((c) => `^${c}`)], dir)).split("\n").filter(Boolean);
+  const map = new Map<string, string>();
+  for (const c of commits) {
+    const [an, ae, ad, cd, parents, body] = (await must(["log", "-1", "--format=%an%x00%ae%x00%aI%x00%cI%x00%P%x00%B", c], dir)).split("\0");
+    const message = body!.replace(/\n+$/, "");
+    const mine = an === id.name && ae === id.email, owners = an === owner || an === GIT_BOT || ae === `${owner}@${GIT_EMAIL_DOMAIN}`;
+    const credit = `Co-authored-by: ${an} <${ae}>`;
+    const text = mine || owners || message.includes(credit) ? message : `${message}\n\n${credit}`;
+    const by = { GIT_AUTHOR_NAME: id.name, GIT_AUTHOR_EMAIL: id.email, GIT_AUTHOR_DATE: ad!, GIT_COMMITTER_NAME: id.name, GIT_COMMITTER_EMAIL: id.email, GIT_COMMITTER_DATE: cd! };
+    const was = parents!.split(" ").filter(Boolean), now = was.map((p) => map.get(p) ?? p);
+    const same = mine && now.every((p, i) => p === was[i]);
+    map.set(c, same ? c : await must(["commit-tree", `${c}^{tree}`, ...now.flatMap((p) => ["-p", p]), "-m", text], dir, by));
+  }
+  return { tip: map.get(top) ?? top, map };
+}
+
+/** Each commit's codeSplitter note, onto the commit made again from it (the old ones stay under refs/kept). */
+async function carryNotes(dir: string, map: Map<string, string>) {
+  const noted = new Set((await git(["notes", `--ref=${NOTES_REF}`, "list"], dir)).out.split("\n").map((l) => l.split(" ")[1]).filter(Boolean));
+  for (const [old, now] of map) if (old !== now && noted.has(old)) await git(["notes", `--ref=${NOTES_REF}`, "copy", "-f", old, now], dir);
+}
+
 /** GET|POST /api/repos/:o/:r/mirror/turn, for the owner. */
 export async function turnRoute(req: Request, env: Env, owner: string, repo: string, user: string | null) {
   if (user !== owner) return fail("OwnerOnly", "owner only");
@@ -1623,7 +1680,12 @@ export async function turnRoute(req: Request, env: Env, owner: string, repo: str
     // What goes up is what the owner was shown: a commit made since (or a POST that never looked) asks again.
     if (!b.pullOnly && b.ahead !== t.ahead) return fail("CommitsAhead", `${t.ahead} commit${t.ahead === 1 ? "" : "s"} made here would go up: say {ahead: ${t.ahead}} to send ${t.ahead === 1 ? "it" : "them"}`, { ahead: t.ahead });
     // The agreed commit is upstream's tip as far as this copy knows; a mirror stays, with no dig's time limit.
-    await must(["update-ref", `refs/upstream/${t.branch}`, t.commit], localGit(env)!.path(t.artifact));
+    const lg = localGit(env)!, dir = lg.path(t.artifact);
+    await must(["update-ref", `refs/upstream/${t.branch}`, t.commit], dir);
+    // Its commits since the dig are restamped as the first push goes up (step's stamp), in the crew's copy too when that's the one pushed.
+    await must(["update-ref", turnedRef(t.branch), t.commit], dir);
+    const crew = (await repoRow<{ crew_artifact: string | null }>(env, owner, repo, "crew_artifact"))?.crew_artifact;
+    if (crew && existsSync(lg.path(crew))) await git(["update-ref", turnedRef(t.branch), t.commit], lg.path(crew));
     await env.DB.prepare("UPDATE repos SET mirror_url = ?, mirror_state = 'ok', mirror_error = NULL, mirror_clash = NULL, mirror_fails = 0, mirror_down_since = NULL, mirror_next_at = ?, expires_at = NULL, mirror_pull_only = ? WHERE owner = ? AND name = ? AND mirror_url IS NULL")
       .bind(t.url, Date.now(), b.pullOnly ? 1 : null, owner, repo).run();
     return null;
