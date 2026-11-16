@@ -3,7 +3,8 @@
 // as they're edited, and works from a private repo without opening the rest.
 //   POST   /api/repos/:o/:r/shares {path, from, to, note}  from/to are line numbers now
 //   GET    /api/repos/:o/:r/shares   every share of the repo, and whether each still serves (owner only)
-//   GET    /api/shares/:id      the lines as they are now, for anyone with the link
+//   GET    /api/shares/:id      the shared lines as they are now (only those: never one written between them since), for anyone
+//                               with the link. A line moved since (a new id) is found by the text it had when shared
 //   DELETE /api/shares/:id      whoever shared it, or the repo's owner
 //
 // A share of a private repo serves only while its sharer can still read the repo: one who left the crew (or a reader of a
@@ -18,7 +19,7 @@ import { repoRow, liveRepo } from "./repos.ts";
 /** Whether `who` may read owner/repo now (worker.ts's access). */
 export type MayRead = (owner: string, repo: string, who: string) => Promise<boolean>;
 
-interface ShareRow { id: string; owner: string; repo: string; path: string; ids: string; by: string; note: string; created_at: number }
+interface ShareRow { id: string; owner: string; repo: string; path: string; ids: string; texts: string | null; by: string; note: string; created_at: number }
 
 /** GET /api/repos/:o/:r/shares: every share of the repo, newest first, and whether its sharer still holds it open. The owner's to see. */
 export async function listShares(env: Env, owner: string, repo: string, user: string | null, mayRead: MayRead) {
@@ -42,8 +43,9 @@ export async function createShare(env: Env, owner: string, repo: string, user: s
   if (!lines[from - 1]) return fail("BadInput", "the file has no such lines");
   if (to - from >= 500) return fail("BadInput", "share at most 500 lines");
   const id = crypto.randomUUID().replace(/-/g, "").slice(0, 12);
-  await env.DB.prepare("INSERT INTO shares (id, owner, repo, path, ids, by, note, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
-    .bind(id, owner, repo, path, JSON.stringify(lines.slice(from - 1, to).map((l) => l.id)), user, String(body.note ?? "").slice(0, 280), Date.now()).run();
+  const shared = lines.slice(from - 1, to);
+  await env.DB.prepare("INSERT INTO shares (id, owner, repo, path, ids, texts, by, note, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
+    .bind(id, owner, repo, path, JSON.stringify(shared.map((l) => l.id)), JSON.stringify(shared.map((l) => l.private ? "" : l.text)), user, String(body.note ?? "").slice(0, 280), Date.now()).run();
   return json({ id, from, to }, 201);
 }
 
@@ -60,13 +62,23 @@ export async function shareRoutes(req: Request, env: Env, p: string[], user: str
   // A sharer who can't read the repo any more (it's private, and they're not crew) holds no link open: it answers as revoked.
   const repo = await repoRow(env, s.owner, s.repo, "visibility");
   if (repo?.visibility === "private" && !(await mayRead(s.owner, s.repo, s.by))) return gone;
-  // The range is wherever its surviving lines are now, plus anything written between them.
-  const wanted = new Set(check(arr(str(Infinity), Infinity), JSON.parse(s.ids)) ?? []);
   // Anyone with the link reads it, so private lines come as placeholders.
   const lines = await fileLines(env, s.owner, s.repo, s.path, "share", false);
-  const hit = lines.flatMap((l, i) => (wanted.has(l.id) ? [i] : []));
+  const ids = check(arr(str(Infinity), Infinity), JSON.parse(s.ids)) ?? [];
+  const texts = s.texts ? check(arr(str(Infinity), Infinity), JSON.parse(s.texts)) ?? [] : [];
+  const at = new Map(lines.map((l, i) => [l.id, i]));
+  // A shared line is where its id is now; one whose id went was moved (a delete and an insert) when a line not
+  // otherwise shared has the text it had. Blank lines aren't matched: any blank would do.
+  const hit = new Set(ids.flatMap((id) => at.has(id) ? [at.get(id)!] : []));
+  for (const [k, id] of ids.entries()) {
+    const t = texts[k];
+    if (at.has(id) || !t?.trim()) continue;
+    const i = lines.findIndex((l, i) => !hit.has(i) && l.text === t && !ids.includes(l.id));
+    if (i >= 0) hit.add(i);
+  }
   const out = { id: s.id, owner: s.owner, repo: s.repo, path: s.path, by: s.by, note: s.note, created_at: s.created_at, visibility: repo?.visibility ?? "public" };
-  if (!hit.length) return json({ ...out, lines: [], gone: true });
-  const a = hit[0]!, b = hit[hit.length - 1]!;
-  return json({ ...out, from: a + 1, to: b + 1, lines: lines.slice(a, b + 1).map((l, k) => ({ id: l.id, n: a + k + 1, text: l.text, by: l.by, rev: l.rev, ...(l.private && { private: true }) })) });
+  // Only the shared lines: one written between them since was never shared.
+  const shown = [...hit].sort((x, y) => x - y);
+  if (!shown.length) return json({ ...out, lines: [], gone: true });
+  return json({ ...out, from: shown[0]! + 1, to: shown.at(-1)! + 1, lines: shown.map((i) => { const l = lines[i]!; return { id: l.id, n: i + 1, text: l.text, by: l.by, rev: l.rev, ...(l.private && { private: true }) }; }) });
 }

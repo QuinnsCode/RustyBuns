@@ -92,30 +92,37 @@ describe("agent profiles", () => {
     const now = Date.now();
     await run("ana", "pub", "shout", 3, now - 1000);
     await run("ana", "pub", "whisper", 2, now - 2 * 86_400_000);
+    await run("ana", "pub", "long ago", 4, now - 40 * 86_400_000);   // before the pulse's window: only its tally is left
     await run("bo", "hidden", "secret plans", 9, now);
+    // It edits bo's private file over the API too, with no site-started run, as an invited agent does over MCP.
+    await send("bo", "/api/repos/bo/hidden/files", { path: "s.ts", content: "x" });
+    const s = ((await (await call("bo", "/api/repos/bo/hidden/do/file?path=s.ts")).json()) as any).lines[0];
+    await send("agent-claude", "/api/repos/bo/hidden/do/ops?path=s.ts", { ops: [{ kind: "set", line: s.id, base: s.rev, text: "X" }, { kind: "insert", after: s.id, text: "y" }] });
     const [, two] = await lines();
     await send("bo", "/api/repos/ana/pub/stamps", { path: "a.ts", stamp: "gem", lines: [two!.id] });
 
     const look = async (who: string | null) => (await (await call(who, "/api/users/agent-claude")).json()) as any;
     const ana = await look("ana");
-    expect(ana.agent).toMatchObject({ harness: "claude", run_by: [{ name: "ana", runs: 2 }], lines: 5, run_count: 2 });
+    // Its lines: the one it set in ana/pub over the API (no run), and the old run's 4. A recent run's tally isn't counted twice.
+    expect(ana.agent).toMatchObject({ harness: "claude", run_by: [{ name: "ana", runs: 3 }], lines: 5, run_count: 3 });
     expect(ana.agent.repos.map((r: any) => `${r.owner}/${r.name}`)).toEqual(["ana/pub"]);
-    expect(ana.agent.runs.map((r: any) => r.task)).toEqual(["shout", "whisper"]);
+    expect(ana.agent.runs.map((r: any) => r.task)).toEqual(["shout", "whisper", "long ago"]);
     expect(ana.agent.pulse).toHaveLength(30);
-    expect(ana.agent.pulse.slice(-3).map((d: any) => d.lines)).toEqual([2, 0, 3]);
+    expect(ana.agent.pulse.slice(-3).map((d: any) => [d.runs, d.lines])).toEqual([[1, 0], [0, 0], [1, 1]]);
     // Stamps on its lines show on its profile, as on a person's.
     expect(ana.stamps.got).toMatchObject([{ by: "bo", author: "agent-claude", stamp: "gem" }]);
     expect((await (await call(null, "/api/users/bo")).json() as any).stamps.given).toMatchObject([{ author: "agent-claude", stamp: "gem" }]);
 
     // bo sees their own private repo's run, and its task; not ana's tasks.
     const bo = await look("bo");
-    expect(bo.agent.run_count).toBe(3);
-    expect(bo.agent.runs.map((r: any) => r.task ?? null)).toEqual(["secret plans", null, null]);
+    expect(bo.agent.run_count).toBe(4);
+    expect(bo.agent.runs.map((r: any) => r.task ?? null)).toEqual(["secret plans", null, null, null]);
+    expect([bo.agent.lines, bo.agent.pulse.at(-1).lines]).toEqual([7, 3]);
     expect(bo.agent.run_by.map((o: any) => o.name).sort()).toEqual(["ana", "bo"]);
 
     // Signed out, nothing of the private repo; and a person's profile has no agent part.
     const anon = await look(null);
-    expect([anon.agent.run_count, anon.agent.repos.length]).toEqual([2, 1]);
+    expect([anon.agent.run_count, anon.agent.repos.length, anon.agent.lines]).toEqual([3, 1, 5]);
     expect((await (await call(null, "/api/users/ana")).json() as any).agent).toBeUndefined();
   });
 });
