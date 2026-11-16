@@ -191,6 +191,9 @@ export const Journey = obj({
   /** The three factions behind you (src/factions/model.ts): who you met and in what order, the quest steps done, the
    * flags, and each one's standing with you. */
   factions: opt(Factions),
+  /** The believers at each region's first campfire (src/believers.ts), by group id: how many of their region's
+   * sections you had cleared when you last sat with them. Missing until you meet them. */
+  believers: opt(rec(int(0, SECTIONS), 64)),
 });
 export type Journey = Of<typeof Journey>;
 

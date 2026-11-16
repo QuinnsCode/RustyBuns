@@ -33,6 +33,7 @@ import { mountFieldChart } from "./fieldchart.ts";
 import { MAX_LIVE, MAX_LIVE_PHONE, MoveFx, shakeOf } from "./fx.ts";
 import { gallery, PAGE } from "./gallery.ts";
 import { sparring, STATS, type Stat } from "./spar.ts";
+import { BELIEVERS, CAMPS, campOf, visit as visitCamp } from "./believers.ts";
 import { mountAgent } from "./gallery-agent.ts";
 import { addCommands } from "@rustybuns/util/commands";
 import { mountPalette } from "@rustybuns/util/palette";
@@ -678,7 +679,8 @@ const world = worldView(scene, camera, {
         return (first ? "An old cabin. The door bars from inside, and nothing comes in after dark." : "The old cabin.") + night();
       }
       const fresh = lightFire(journey, p), mended = heal(journey); saveJourney();
-      if (fresh) {
+      if (CAMPS.has(p.id)) sitAtCamp(p.id);
+      else if (fresh) {
         // An island's fire is the island's (its pack id is the Book's region), not the port region the boat left from.
         const { region: n, isle } = world.state(), pk = isle && PACKS.find((q) => q.id === isle.id);
         say("campfire", pk ? { n, regionId: pk.id, region: pk.name } : { n, regionId: REGIONS[n - 1]?.id });
@@ -693,6 +695,8 @@ const world = worldView(scene, camera, {
       if (!director.beat) { const view = { x: p.x, y: world.groundAt(p.x, p.z) + 6, z: p.z }, k = journey.sights.length;
         director.play(memories.mark(lookout(p.name, world.here(), view, k), { id: `lookout:${p.id}`, scene: "lookout", title: p.name, sub: "Landmark", args: { name: p.name, k, vx: view.x, vy: view.y, vz: view.z } })); }
     },
+    // Travelling to a believers' camp sits you down with them too.
+    travelled: (p) => { if (sitAtCamp(p.id)) return p.name; },
     sign: (h) => { saveJourney(); const s = journey && stageOf(journey, h.id); if (s != null) online?.hunt(h.id, s); },
   },
   section: (g, k) => {
@@ -712,6 +716,7 @@ worldUp = true;
 /** The menu page open now (the title, the Book's five, a result note, the versus book, the Book talking), when no fight, walk, scene or compendium has the keys. */
 function menuPage(): HTMLElement | null {
   if (talking && !director.skippable) return talkEl; // the Book's talk stops the walk and the fight: the arrows walk its replies
+  if (camp && !director.skippable) return campEl; // so does sitting at a believers' camp
   if ((m && !m.over) || world.shown || journalOpen || director.skippable) return null;
   return pages.open();
 }
@@ -928,6 +933,26 @@ factionEl.addEventListener("click", (e) => {
   else if (b.dataset.fight !== undefined) fightSheet();
   else { sheet = null; drawSheet(); }
 });
+
+// --- the believers (src/believers.ts): a crowd of friendly conspiracy folk at each region's first campfire ----------
+let camp: { who: string; said: string[] } | null = null;
+const campEl = Object.assign(document.createElement("div"), { id: "campVisit", className: "booktalk" });
+campEl.hidden = true;
+document.body.append(campEl);
+function drawCamp() {
+  campEl.hidden = !camp;
+  campEl.innerHTML = !camp ? ""
+    : `<div class="note paper" role="dialog" aria-label="${esc(camp.who)}"><h2>${esc(camp.who)}</h2>${camp.said.map((s) => `<p class="spoken">${esc(s)}</p>`).join("")}<div class="replies"><button class="go" data-go>${icon("arrow-right")} ${esc(BELIEVERS.goOn)}</button></div></div>`;
+}
+/** Sit at a believers' camp (fire id): who they are the first time, their line for the keepers you've beaten in their
+ * region and a hint, saved as seen. False when it is not a camp or there is no journey. */
+function sitAtCamp(id: string): boolean {
+  const g = CAMPS.get(id);
+  if (!journey || !g) return false;
+  camp = { who: g.name, said: visitCamp(journey, g).said }; saveJourney(); keys.clear(); drawCamp();
+  return true;
+}
+campEl.addEventListener("click", (e) => { if ((e.target as Element).closest("[data-go]")) { camp = null; drawCamp(); } });
 
 // The faction people on the ground (src/world/posts.ts, rivals-view.ts): a quest step's person by the stone of its section,
 // the posts round the stones behind you. Who stands where changes slowly, so it is worked out twice a second; the one
@@ -2160,7 +2185,7 @@ function frame(now: number) {
     hud(m);
   }
   if (!world.shown) rivals.hide();
-  if (world.shown && !paused && !journalOpen && !talking && !sheet) {
+  if (world.shown && !paused && !journalOpen && !talking && !sheet && !camp) {
     stepRivals(now);
     pollPad();
     const still = director.holding, turn = held || still ? 0 : padAim.sx * 1.8 * dt + lookTurn;
@@ -2374,6 +2399,13 @@ Object.assign(window, {
       fought: (won: boolean) => { const said = journey && facing ? foughtFaction(journey, facing.faction, facing.stage.id, won, factionCtx()) : ""; saveJourney(); return said; },
       hail: (id: string) => { const p = postAt(id); return !!p && facePost(p) && sheet; },
       postFought: (id: string, won: boolean) => { const p = postAt(id); const said = journey && p ? postFought(journey, p, won, factionCtx()) : ""; saveJourney(); return said; },
+    },
+    /** The believers (src/believers.ts): `state()` each group, its camp's fire id and what it last saw (sections cleared,
+     * undefined before you meet them) and the visit open now; `sit(id)` sits you at group id's camp as if you walked up. */
+    believers: {
+      state: () => ({ groups: BELIEVERS.groups.map((g) => ({ id: g.id, n: g.n, name: g.name, camp: campOf(g.id) ?? null, seen: journey?.believers?.[g.id] ?? null })), open: camp }),
+      sit: (id: string) => { const fire = campOf(id); return !!fire && sitAtCamp(fire) && camp; },
+      close: () => { camp = null; drawCamp(); },
     },
     /** A new game before the pick (#4671): `state()` whether it is on, the open talk's reply held for begin() and the pick
      * page up; `spar()` the Book's five shadow-boxing on that page (#4670): each one's drill now (which stat), where it stands, its sim's tick. */

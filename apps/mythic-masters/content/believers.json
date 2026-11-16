@@ -1,0 +1,73 @@
+{
+  "goOn": "Go on",
+  "groups": [
+    {
+      "id": "hatters",
+      "n": 1,
+      "name": "The Hatters of Ong's Hat",
+      "camp": "The Hatters' camp",
+      "meet": "A ring of folding chairs round the fire, and everyone in them wears a tin-foil hat. The dog too. \"Ong's Hat is named for a hat thrown up a pine tree. We think he was the first of us. The Devil out at Leeds Point is a broadcast, friend, and foil keeps it out. Sit. We made you one.\"",
+      "hint": "Their leader taps the corkboard. Red string runs from a photo of the {creature} to a pin marked {section}. \"Signal's strongest there. Wear the hat.\"",
+      "lair": "Every string on the corkboard ends at one pin: {section}. \"That is where the {creature} transmits from. Nobody comes back from there with their hat on straight.\"",
+      "allHeld": "\"The corkboard's all crossed out. You did that. We're going to need a bigger corkboard.\"",
+      "visits": [
+        { "cleared": 0, "first": "\"Rest your feet. Foil's on the house.\"", "again": "\"Still got your hat? Good. Keep it shiny side out.\"" },
+        { "cleared": 3, "first": "\"Three keepers down out there. We added a layer of foil to celebrate. Two layers, for safety.\"", "again": "\"The signal's weaker this week. We think it's you.\"" },
+        { "cleared": 6, "first": "\"Half the pines quiet. Someone saw you on the trail and said you walk like a person with nothing in their head but good ideas.\"", "again": "\"We ran out of foil and used baking trays. It's fine. It's fine.\"" },
+        { "cleared": 9, "first": "\"Nine. The dog took his hat off today. We let him. He's earned it, and so have you.\"", "again": "\"Sit nearer the fire. Hats reflect the heat, you see.\"" },
+        { "cleared": 12, "first": "\"The broadcast stopped. First quiet night in forty years. We kept your chair. It's the one with the hat on it.\"", "again": "\"Back home, Hatter? You're one of us now. You don't have to wear the hat. But you could.\"" }
+      ]
+    },
+    {
+      "id": "porchlight",
+      "n": 2,
+      "name": "The Porchlight Vigil",
+      "camp": "The Vigil's porch",
+      "meet": "A long porch, a bare bulb, and a row of rocking chairs. Everyone wears sunglasses and a felt cape cut like moth wings, day or night. \"Don't look at the light. Look at the moths. They spell things. The red eyes up by Point Pleasant? That's a warning, not a threat. We're here to read it for you.\"",
+      "hint": "A woman in the end chair watches the moths circle the bulb. \"They're spelling {section}. And a shape. The {creature}, I'd say. Or a lamp. No, the {creature}.\"",
+      "lair": "Every moth on the bulb lands at once, in one shape. \"{section},\" she says. \"The {creature}. They've never all agreed before.\"",
+      "allHeld": "\"The moths are just flying round in circles now. That's what moths do when there's nothing left to warn about.\"",
+      "visits": [
+        { "cleared": 0, "first": "\"Pull up a rocker. Sunglasses are optional. The cape is not.\"", "again": "\"Sit. The bulb's warm and the moths are chatty tonight.\"" },
+        { "cleared": 3, "first": "\"Someone down the hollow turned their porch light on for you. That's how it starts.\"", "again": "\"The moths spelled your name today. Spelt it wrong, but it was you.\"" },
+        { "cleared": 6, "first": "\"Half the hollows lit up now. You can see the porches from the ridge, like a string of beads.\"", "again": "\"There's iced tea. Mind the moth in it. He's one of ours.\"" },
+        { "cleared": 9, "first": "\"Nine porches more than last month. We had to buy bulbs in bulk.\"", "again": "\"Take the good rocker. The one that doesn't squeak. Mostly doesn't.\"" },
+        { "cleared": 12, "first": "\"Every light in the hollows is on tonight. That's for you. The moths are having the best night of their lives.\"", "again": "\"Your rocker's kept. Your cape's on the hook. Sit a while.\"" }
+      ]
+    },
+    {
+      "id": "backwards",
+      "n": 3,
+      "name": "The Backwards Lodge",
+      "camp": "The Backwards Lodge",
+      "meet": "A log lodge with the door on the back. Everyone inside walks backwards and wears a car mirror on a headband. \"The hidebehind is always behind you, so we face the other way. Cox wrote it all down in 1910. We take him at his word. Mind the step. It's behind you.\"",
+      "hint": "An old logger tilts his mirror until it catches the trail. \"Look there. Behind you, in the glass. That's {section}, and the {creature} is in it.\"",
+      "lair": "Every mirror in the lodge turns the same way on its own. \"{section},\" the logger says, not turning round. \"The {creature}. It's been behind us for a hundred years.\"",
+      "allHeld": "\"Nothing in the mirrors now but us. Strange. We'd got used to the company.\"",
+      "visits": [
+        { "cleared": 0, "first": "\"Sit on the bench. Facing the wall. You'll get used to it.\"", "again": "\"Welcome back. Or goodbye. We can never tell which way you're going.\"" },
+        { "cleared": 3, "first": "\"Three keepers. One of us turned round at supper and looked at the door. First time in years.\"", "again": "\"Stove's lit. It's behind you.\"" },
+        { "cleared": 6, "first": "\"Half the lodge walks forwards on Sundays now. Only on Sundays. We are not reckless.\"", "again": "\"We polished your mirror. You don't have to wear it.\"" },
+        { "cleared": 9, "first": "\"We took the door off the back and hung it on the front. It looks wrong. It looks wonderful.\"", "again": "\"Sit facing whichever way you like. Truly. We mean it now.\"" },
+        { "cleared": 12, "first": "\"We all turned round tonight, all at once, and there was nothing behind us. Only you, coming home.\"", "again": "\"Your mirror's on the peg. We look at you in it sometimes, so we know you're well.\"" }
+      ]
+    },
+    {
+      "id": "blurry",
+      "n": 4,
+      "name": "The Blurry Society",
+      "camp": "The Blurry Society's darkroom",
+      "meet": "A tent full of drying photos, every one of them blurry. Everyone wears smeared goggles and carries an old film camera with the focus taped off. \"The big one stays out of focus on purpose. A sharp photo is a fake, so we never take one. Look at our plaster casts if you want the truth.\"",
+      "hint": "They pull a plaster cast off the shelf and point its toes at the map. \"This one walked towards {section}. The {creature}. Probably. It's a bit blurry.\"",
+      "lair": "The biggest cast on the shelf has a label in shaky pen: {section}. \"The {creature},\" they whisper. \"Even the cast came out blurry.\"",
+      "allHeld": "\"Every cast is labelled now. You cleared the forest so well we can nearly see it.\"",
+      "visits": [
+        { "cleared": 0, "first": "\"Sit on the crate. Don't take a photo of us. You'll ruin it.\"", "again": "\"Back again? You look slightly out of focus. Good sign.\"" },
+        { "cleared": 3, "first": "\"Three keepers. Our photos this week are a touch less blurry. We are worried and delighted.\"", "again": "\"Coffee's on. It's blurry too. That's just the steam.\"" },
+        { "cleared": 6, "first": "\"Half the coast cleared. One of us took the tape off her focus ring. She put it back. But she took it off.\"", "again": "\"Tea, or a plaster cast? We have more casts.\"" },
+        { "cleared": 9, "first": "\"We printed one sharp photo today, of you, and pinned it up. It's the only one we've ever kept.\"", "again": "\"Your crate's here. We wrote your name on it. A little blurry.\"" },
+        { "cleared": 12, "first": "\"The forest is quiet, and for the first time the photos came out clear. They're all of trees. We've never been so happy.\"", "again": "\"Sit. Your photo's still up, the sharp one. Nobody's allowed to touch it.\"" }
+      ]
+    }
+  ]
+}
