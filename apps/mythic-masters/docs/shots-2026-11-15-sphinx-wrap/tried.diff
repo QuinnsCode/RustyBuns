@@ -1,0 +1,43 @@
+diff --git a/apps/mythic-masters/proposals/set-a/make.ts b/apps/mythic-masters/proposals/set-a/make.ts
+index 34d40cab..10c1a81c 100644
+--- a/apps/mythic-masters/proposals/set-a/make.ts
++++ b/apps/mythic-masters/proposals/set-a/make.ts
+@@ -478,9 +478,12 @@ function sphinx() {
+   b.nodes.snout = [f4(hd[0] + s(0.06)), f4(hd[1] - s(0.09)), 0, s(0.04)];
+   // the head, in metres from the head node: a cranium, a face narrowing to the jaw, a chin, a straight nose, a brow
+   const cran: Ell = { c: [h(-0.01), h(0.03), 0], r: [h(0.13), h(0.14), h(0.115)] };
+-  const face: Ell = { c: [h(0.045), h(-0.06), 0], r: [h(0.09), h(0.1), h(0.088)] };
++  const face: Ell = { c: [h(0.045), h(-0.06), 0], r: [h(0.09), h(0.1), h(0.096)] };
+   const chin: Ell = { c: [h(0.085), h(-0.135), 0], r: [h(0.045), h(0.04), h(0.048)] };
+-  const ells = [cran, face, chin];
++  // the skull's side plane: a broad mass from the cheek back under the head-cloth to the jaw's angle, so the face
++  // wraps round the head and doesn't sit on it as a mask with a seam down the cheek
++  const side: Ell = { c: [h(-0.005), h(-0.045), 0], r: [h(0.105), h(0.115), h(0.108)] };
++  const ells = [cran, face, chin, side];
+   for (const e of ells) b.blobs.push({ at: "head", off: e.c, r: e.r });
+   // the neck a column under the head, the throat in front
+   b.blobs.push({ at: "neck", off: [h(-0.01), h(0.12), 0], r: [h(0.1), h(0.2), h(0.095)], rot: [0, 0, -12] });
+@@ -491,7 +494,7 @@ function sphinx() {
+     // cheekbones, high and out under the eyes, and the jaw's corners below the ears, so the face is a man's square
+     // jaw tapering to the chin and not one egg
+     ...pair("head", on([h(0.05), h(-0.02), h(0.06)], [0.7, 0, 0.7], h(0.016)), [h(0.038), h(0.03), h(0.034)]),
+-    ...pair("head", on([h(0.0), h(-0.1), h(0.07)], [0.2, -0.3, 1], h(0.03)), [h(0.05), h(0.035), h(0.035)]),
++    ...pair("head", on([h(-0.03), h(-0.105), h(0.07)], [0.1, -0.3, 1], h(0.03)), [h(0.06), h(0.04), h(0.035)]),
+   );
+   b.paint = [...(b.paint ?? []), { nodes: ["head", "snout"], material: "face" }];
+   b.parts.push(
+@@ -501,10 +504,10 @@ function sphinx() {
+     // almond eyes set into the face under the brow: a kohl almond a little bigger than the white sunk behind it, so
+     // the line is a rim round the eye and not shards floating on it; a heavy upper lid in the face's own skin over
+     // the top of the white, so the eye sits in a socket; and one kohl wing running back toward the temple
+-    { kind: "eye", at: "head", off: on([h(0.06), h(0.015), h(0.04)], [1, 0, 0.45], h(0.008)), r: [h(0.014), h(0.015), h(0.032)], rot: [0, -18, 0], mirror: true, material: "eye" },
+-    { kind: "eye", at: "head", off: on([h(0.06), h(0.015), h(0.04)], [1, 0, 0.45], h(0.011)), r: [h(0.013), h(0.02), h(0.04)], rot: [0, -18, 0], mirror: true, material: "kohl" },
+-    { kind: "eye", at: "head", off: on([h(0.06), h(0.014), h(0.038)], [1, 0, 0.42], h(-0.001)), r: h(0.01), mirror: true, material: "pupil" },
+-    { kind: "eye", at: "head", off: on([h(0.06), h(0.03), h(0.04)], [1, 0.2, 0.45], h(0.008)), r: [h(0.014), h(0.008), h(0.036)], rot: [0, -18, -12], mirror: true, material: "face" },
++    { kind: "eye", at: "head", off: on([h(0.06), h(0.015), h(0.036)], [1, 0, 0.3], h(0.006)), r: [h(0.0112), h(0.012), h(0.0256)], rot: [0, -6, 0], mirror: true, material: "eye" },
++    { kind: "eye", at: "head", off: on([h(0.06), h(0.015), h(0.036)], [1, 0, 0.3], h(0.009)), r: [h(0.0104), h(0.016), h(0.032)], rot: [0, -6, 0], mirror: true, material: "kohl" },
++    { kind: "eye", at: "head", off: on([h(0.06), h(0.014), h(0.036)], [1, 0, 0.2], h(-0.001)), r: h(0.008), mirror: true, material: "pupil" },
++    { kind: "eye", at: "head", off: on([h(0.06), h(0.03), h(0.04)], [1, 0.2, 0.45], h(0.008)), r: [h(0.0112), h(0.0064), h(0.029)], rot: [0, -6, -12], mirror: true, material: "face" },
+     { kind: "ridge", at: "head", off: on([h(0.06), h(0.018), h(0.072)], [0.6, 0, 1], h(0.006)), dir: [-0.6, 0.15, 1], len: h(0.04), base: h(0.01), curve: 10, bend: [0, 1, 0], mirror: true, material: "kohl" },
+     // full lips, closed: two soft rolls with volume, the upper wide with a dip, the lower fuller
+     ...[1, -1].map((side): Part => ({ kind: "eye", at: "head", off: on([h(0.06), h(-0.09), side * h(0.012)], [1, 0, side * 0.15], h(0.007)), r: [h(0.011), h(0.008), h(0.024)], rot: [0, 0, side * -8], material: "lip" })),
