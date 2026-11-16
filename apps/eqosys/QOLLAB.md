@@ -174,6 +174,59 @@ How a person reaches their friends, from the easiest case to the hardest (owner,
 - **One account, several ways in.** The Account tab adds GitHub, Google or Apple to the account someone is signed in to, so the
   phone's Apple sign-in and the laptop's Google one open the same games, friends, saves and achievements.
 
+## Posts and reactions ([#4020](https://github.com/QuinnsCode/RustyBuns/issues/4020)): design, not built
+
+**Not built. The owner reads this before any code.** For Excalibrawl and What Would Fantano Say, whose people never meet in
+a party: one person puts something up, and others react to it (owner, 2026-11-08). Neither app signs in through eqosys yet;
+that comes first (both are already in `APPS`).
+
+**A post** is one short thing a signed-in person puts up in one app, for anyone to see: a line of text (up to 280
+characters, as in chat) and a pointer to the thing it is about, which the app keeps (#3168). Qollab keeps only the post
+itself: `{ id, app, by, kind, ref, text, at }`. `kind` is the app's word for it (`prompt`, `review`), `ref` the app's name
+for the thing (`fight:K3X9`, `review:<clip hash>`). Qollab never reads what `ref` points to; the app draws the post.
+
+**A reaction** is one press by one signed-in person on one thing: `{ app, ref, by, icon }`. `icon` is one of a short list the
+app sets in `APPS` (up to 6 lucide names: `flame`, `laugh`, `skull`), never free text, so a reaction can't carry words to
+moderate. One of each icon a person a thing; pressing it again takes it back. A reaction's `ref` is any thing in the app,
+not only a post: a fight nobody posted can still get flames, and a post is the thing `post:<id>`. Everyone sees the counts;
+only the person sees which ones are theirs.
+
+**For the two apps:**
+
+| | Excalibrawl | What Would Fantano Say |
+| --- | --- | --- |
+| a post | a prompt you want drawn (`kind: "prompt"`, no `ref`) | your review, shared (`kind: "review"`, `ref: "review:<clip hash>"`) |
+| reactions on | each fight's replay (`fight:<id>`), each prompt post | each shared review |
+| what the app does with them | the next hour's fight takes the prompt with the most reactions this hour | a "most reacted this week" list |
+| the app keeps | its replays in R2, as now | the review text by clip hash in its own KV (today it keeps none: the share button sends text) |
+
+**Where it lives.** A post is never live the way a party is, so no socket and no Durable Object to start: two D1 tables in
+Qollab (`posts`, `reactions`, with each post's counts kept on its row), HTTP routes in `src/qollab/routes.ts`, and the
+token door as every other Qollab path. Reading a feed needs no sign-in (an edge cache for 30 seconds); posting and reacting
+need the app's token. If live counts on a fight ever matter, one `Board` object an app pushes them; not before.
+
+**Paths.** `GET /q/posts?app=&kind=&before=` (newest first, 50 a page, or `sort=top&since=` for the most reacted),
+`POST /q/posts`, `DELETE /q/posts/<id>` (the author, or the app's studio), `GET /q/reactions?app=&ref=` (up to 50 refs a
+call: counts plus your own), `PUT` and `DELETE /q/reactions` (`{ ref, icon }`). In the page: `eqosys().board()` with
+`post`, `list`, `react(ref, icon, on)`, `counts(refs)`. One guard file both ends import.
+
+**Safety.** Posts: 10 an hour a person an app, 280 characters, the same word check as chat. Reactions: `TokenBucket` at 2 a
+second, burst 5. Anyone signed in can report a post (the game-report path); the app's studio hides one. Account delete takes
+the person's posts and reactions; the privacy export lists them. A blocked person's posts are hidden from the one who
+blocked them.
+
+**Questions for the owner:**
+
+1. Is a post always about one thing in the app, or can it stand alone (Excalibrawl's prompt does)? The note says it can.
+2. Replies to a post: none, or one level? The note says none for now; reactions only.
+3. Does a signed-out visitor see the feed? The note says yes, read only.
+4. Do these show anywhere on eqosys (your posts on the Account tab, a feed on the home)? The note says only in the app at first.
+
+**The build, once the owner says yes:** (1) eqosys sign-in in both apps (account chip, `signInHere`); (2) the tables, routes
+and `board()` client with one journey test (two people: one posts, the other reacts, both see the count, the reaction taken
+back); (3) Excalibrawl's prompt posts and fight reactions; (4) Fantano's shared reviews and their reactions; (5) report, hide,
+delete and export.
+
 ## After "start": seats ([#3878](https://github.com/QuinnsCode/RustyBuns/issues/3878))
 
 Qollab's job ends at "start", and each game then builds its own room. The survey (2026-11-06) of what each one builds:
