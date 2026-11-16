@@ -1,6 +1,6 @@
 # How far the analog idea goes
 
-Q Amp ([CIRCUITS.md](CIRCUITS.md)) plays a guitar through real circuits: resistors, capacitors, diodes, op-amps and 12AX7s, solved every sample. That one idea goes much further than distortion. This page maps how far, in the order worth building. Nothing here is built yet. Each lane has its own issue.
+Q Amp ([CIRCUITS.md](CIRCUITS.md)) plays a guitar through real circuits: resistors, capacitors, diodes, op-amps and 12AX7s, solved every sample. That one idea goes much further than distortion. This page maps how far, in the order worth building. Section 4's machines are built; the rest is not yet. Each lane has its own issue.
 
 **The big picture in one line:** every sound in Q Amp is a circuit, every circuit is a tscircuit board, so every sound is something you can **hear, change part by part, and then hold in your hand** as a kit or a built pedal.
 
@@ -62,6 +62,12 @@ Some classic effects are not only circuits. A tape echo is a motor, a tape and t
 - **Bucket-brigade delay, chorus and flanger.** A BBD chip passes the signal down 1024 to 4096 capacitors, one step per clock tick. The delay is set by the clock, so a modulated clock gives chorus and flanger. Model the sampling, the clock noise, the filters around the chip and the compander that hides its hiss (Holters & Parker, 2018). Real BBD chips are hard to buy; check that before one goes on a kit.
 - **Spring reverb.** A tube driver pushes a transformer into the spring tank, and a recovery tube reads it. The springs carry high notes faster than low ones, which makes the "boing" chirp. Model it with chains of all-pass filters inside a feedback delay (Välimäki, Parker & Abel, 2010). The driver and recovery stages are 12AX7 and 12AT7 circuits we already solve.
 - **Plate reverb** later (a steel plate's modes, more CPU), and only if spring is not enough.
+
+**Built** (`src/circuit/machines.ts`, on Q Amp as Q Bucket, Q Tape and Q Spring in a second row on the floor): all three, in the amp's effects loop after the tone stack and before the power stage, any of them on at once. The loop is fixed in order (modulation, echo, reverb) and mono until the pedalboard (#4827) makes it a chain you arrange. What is a stand-in for now:
+
+- The spring's transformer is a high-pass and a soft ceiling: the solver has no inductor yet (#4826). The 12AT7 driver and the 12AX7 recovery are real tube circuits (the solver gained the 12AT7, TypeScript only; the Rust port still has only the 12AX7).
+- Tape's hysteresis uses Chowdhury's constants with his plugin's reversible share (c = 0.7), which keeps quiet notes linear the way AC bias does; there is no simulated bias tone. Head loss is the spacing and gap equations folded into a low-pass that follows the tape speed.
+- The bucket brigade's filters stay at one corner per mode rather than following the clock as in Holters and Parker, and its clock noise is jitter, not clock bleed.
 
 ## 5. More amps, and the rest of the amp
 

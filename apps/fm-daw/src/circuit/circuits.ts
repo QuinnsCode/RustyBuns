@@ -106,3 +106,39 @@ export function toneStack(t: ToneSpec): Netlist {
     ],
   };
 }
+
+/**
+ * A spring tank's driver: a 12AT7 (lower gain, more current than a 12AX7) with
+ * a bypassed cathode, its plate into the tank transformer's primary. The
+ * solver has no inductor yet (#4826), so the primary is its impedance at
+ * mid frequencies, 22k to B+; the transformer itself is in `SpringReverb`.
+ */
+export function springDriver(): Netlist {
+  return {
+    input: "IN", output: "OUT",
+    parts: [
+      C("IN", "a", 47e-9), R("a", "gnd", 1e6), R("a", "g", 10e3),
+      { kind: "Triode", p: "OUT", g: "g", k: "k", tube: "12AT7" },
+      R("k", "gnd", 2.2e3), C("k", "gnd", 25e-6),
+      { kind: "V", a: "bplus", b: "gnd", volts: 250 }, R("bplus", "OUT", 22e3),
+    ],
+  };
+}
+
+/** The recovery stage: a 12AX7 lifting the tank's millivolts back to line level. */
+export const springRecovery = (): Netlist => triodeStage({ rk: 1.5e3, ck: 25e-6, cc: 4.7e-9 });
+
+/**
+ * A tape echo's record amp: an op-amp at ×4 on ±4 V rails. The echoes feed back
+ * through it, so a runaway flattens on the rails instead of growing forever.
+ */
+export function recordAmp(): Netlist {
+  return {
+    input: "IN", output: "OUT",
+    parts: [
+      C("IN", "inp", 1e-6), R("inp", "gnd", 100e3),
+      { kind: "Opamp", plus: "inp", minus: "inn", out: "OUT" },
+      R("OUT", "inn", 30e3), R("inn", "gnd", 10e3), C("OUT", "inn", 100e-12),
+    ],
+  };
+}

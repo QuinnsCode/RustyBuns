@@ -26,8 +26,8 @@ export type Part =
   | { kind: "D"; a: string; k: string; is?: number; n?: number }
   /** An op-amp (TL072-ish gain and bandwidth) with its output swinging about ±`rail` volts around ground. */
   | { kind: "Opamp"; plus: string; minus: string; out: string; rail?: number }
-  /** A 12AX7 triode: plate, grid, cathode. */
-  | { kind: "Triode"; p: string; g: string; k: string };
+  /** A triode: plate, grid, cathode. A 12AX7 unless `tube` says otherwise. */
+  | { kind: "Triode"; p: string; g: string; k: string; tube?: TubeName };
 
 /** A circuit with one input (driven by an ideal voltage source) and one output node. */
 export interface Netlist { parts: Part[]; input: string; output: string }
@@ -37,8 +37,13 @@ const VT = 0.02585; // thermal voltage at room temperature
 const GMIN = 1e-12; // a whisper of conductance from every node to ground, so no node floats
 // Op-amp: a TL072-ish open-loop gain and gain-bandwidth, and its hidden node's resistance.
 const OPAMP_A0 = 2e5, OPAMP_GBW = 3e6, OPAMP_R0 = 1e6;
-// 12AX7 (Koren): amplification, exponent, and fitted constants.
-const MU = 100, EX = 1.4, KG1 = 1060, KP = 600, KVB = 300;
+/** Koren's constants for each tube: amplification, exponent, and the fitted kg1, kp, kvb. */
+export const TUBES = {
+  "12AX7": { mu: 100, ex: 1.4, kg1: 1060, kp: 600, kvb: 300 },
+  // Lower gain, more current: what drives a spring tank's transformer.
+  "12AT7": { mu: 60, ex: 1.35, kg1: 460, kp: 300, kvb: 300 },
+};
+export type TubeName = keyof typeof TUBES;
 // Grid current (Cohen & Helie).
 const GG = 6.062e-4, CG = 13.9, XI = 1.354, IG0 = 3.917e-8;
 
@@ -102,7 +107,8 @@ export function encodeNetlist(net: Netlist): Float64Array {
     else if (p.kind === "V") rows.push([2, node(p.a), node(p.b), 0, 0, p.volts, 0, 0]);
     else if (p.kind === "D") rows.push([3, node(p.a), node(p.k), 0, 0, p.is ?? 2.52e-9, p.n ?? 1.752, 0]);
     else if (p.kind === "Opamp") rows.push([4, node(p.plus), node(p.minus), node(p.out), node(`~${opamps++}`), p.rail ?? 4, 0, 0]);
-    else rows.push([5, node(p.p), node(p.g), node(p.k), 0, 0, 0, 0]);
+    else if ((p.tube ?? "12AX7") === "12AX7") rows.push([5, node(p.p), node(p.g), node(p.k), 0, 0, 0, 0]);
+    else throw new Error(`the Rust solver has only the 12AX7, not ${p.tube}`);
   }
   const at = (name: string) => {
     const i = nodes.get(name);
@@ -152,7 +158,7 @@ export class Circuit {
   private pb: number[] = [];
   private poff: number[] = [];
   private diodes: { port: number; is: number; nvt: number; vcrit: number }[] = [];
-  private triodes: { pk: number; gk: number }[] = [];
+  private triodes: ({ pk: number; gk: number } & (typeof TUBES)[TubeName])[] = [];
   private K = 0;
   // Port-space Newton: the inverted linear matrix (column-major), W = A⁻¹U and H = VᵀA⁻¹U.
   private Ainv: Float64Array;
@@ -241,7 +247,7 @@ export class Circuit {
         both(out, j, 1); both(j, out, 1); both(j, hid, -1);
       } else {
         const p_ = g(node(p.p)), g_ = g(node(p.g)), k = g(node(p.k));
-        this.triodes.push({ pk: port(p_, k, 0), gk: port(g_, k, 0) });
+        this.triodes.push({ pk: port(p_, k, 0), gk: port(g_, k, 0), ...TUBES[p.tube ?? "12AX7"] });
       }
     }
     const K = (this.K = this.pa.length);
@@ -278,7 +284,7 @@ export class Circuit {
       J[d.port * K + d.port] = (d.is * e) / d.nvt + GMIN;
     }
     for (const t of this.triodes) {
-      const vpk = v[t.pk], vgk = v[t.gk];
+      const vpk = v[t.pk], vgk = v[t.gk], { mu: MU, ex: EX, kg1: KG1, kp: KP, kvb: KVB } = t;
       // Plate current, Koren: E1 = vpk/kp · softplus(kp(1/mu + vgk/sqrt(kvb + vpk²))), Ip = E1^ex / kg1.
       const s = Math.sqrt(KVB + vpk * vpk), u = KP * (1 / MU + vgk / s);
       // softplus and its slope (a sigmoid) from one exp (this loop is the hot spot: transcendentals, not matrices).

@@ -1,34 +1,12 @@
 // A guitar rig: circuits in a row (pedals, tube stages, tone stack), run 4×
 // oversampled so the clipping's harmonics don't fold back down as fizz, then a
-// power stage and a speaker-cabinet EQ. `Rig` streams block by block (the amp
+// power stage and a speaker-cabinet EQ. Between the preamp and the power stage
+// sits the effects loop: machines (machines.ts) at the output rate, as on a real
+// amp's send and return. `Rig` streams block by block (the amp
 // page's audio thread runs it); `runRig` does a whole buffer at once.
+import { Biquad, butter8, chain } from "./biquad.ts";
+import { machine, type LoopSpec, type Machine } from "./machines.ts";
 import { Circuit, type Netlist } from "./mna.ts";
-
-/** RBJ cookbook biquad, transposed direct form II. */
-class Biquad {
-  private z1 = 0;
-  private z2 = 0;
-  constructor(private b0: number, private b1: number, private b2: number, private a1: number, private a2: number) {}
-  static make(kind: "lp" | "hp" | "peak", hz: number, q: number, sr: number, db = 0): Biquad {
-    const w = (2 * Math.PI * hz) / sr, cw = Math.cos(w), al = Math.sin(w) / (2 * q);
-    if (kind === "peak") {
-      const A = 10 ** (db / 40), a0 = 1 + al / A;
-      return new Biquad((1 + al * A) / a0, (-2 * cw) / a0, (1 - al * A) / a0, (-2 * cw) / a0, (1 - al / A) / a0);
-    }
-    const a0 = 1 + al, k = kind === "lp" ? (1 - cw) / 2 : (1 + cw) / 2, s = kind === "lp" ? 1 : -1;
-    return new Biquad(k / a0, (s * 2 * k) / a0, k / a0, (-2 * cw) / a0, (1 - al) / a0);
-  }
-  run(x: number): number {
-    const y = this.b0 * x + this.z1;
-    this.z1 = this.b1 * x - this.a1 * y + this.z2;
-    this.z2 = this.b2 * x - this.a2 * y;
-    return y;
-  }
-}
-
-const chain = (fs: Biquad[], x: number) => { for (const f of fs) x = f.run(x); return x; };
-/** 8th-order Butterworth low-pass as four biquads (the Q of each pole pair). */
-const butter8 = (hz: number, sr: number) => [0.5098, 0.6013, 0.9, 2.5629].map((q) => Biquad.make("lp", hz, q, sr));
 
 /** A link in the rig: a circuit, with an optional volume pot (0 to 1) ahead of it. */
 export interface Link { net: Netlist; gain?: number }
@@ -43,6 +21,8 @@ export interface RigSpec {
   cab: boolean;
   /** How loud the noisy resistors hiss (each `Circuit`'s `noise`); 0 or left out is silent. */
   noise?: number;
+  /** The effects loop, in order: machines between the last link and the power stage. */
+  loop?: LoopSpec[];
 }
 
 export interface RigRun {
@@ -55,6 +35,8 @@ export interface RigRun {
 
 /** The power stage's ceiling, in volts: its `tanh` flattens out here. */
 export const POWER_VOLTS = 40;
+/** The loop's send pads the preamp's swing (about 125 V at the most) down to line level by this, and the return brings it back. */
+export const LOOP_VOLTS = 100;
 
 /**
  * A rig that streams: `process` a block at a time, and turn its knobs between
@@ -75,6 +57,10 @@ export class Rig {
   private power: number;
   private noise: number;
   private steps = 0;
+  private loop: Machine[] = [];
+  // The return back up to the oversampled rate, so the power stage clips there as without a loop.
+  private up2: Biquad[];
+  private down2: Biquad[];
 
   constructor(spec: RigSpec, readonly sampleRate = 48000, readonly oversample = 4) {
     const hi = sampleRate * oversample;
@@ -89,6 +75,9 @@ export class Rig {
     this.peaks = new Float64Array(this.circuits.length);
     this.up = butter8(0.45 * sampleRate, hi);
     this.down = butter8(0.45 * sampleRate, hi);
+    this.up2 = butter8(0.45 * sampleRate, hi);
+    this.down2 = butter8(0.45 * sampleRate, hi);
+    this.setLoop(spec.loop ?? []);
     this.cab = spec.cab
       ? [Biquad.make("hp", 75, 0.7, sampleRate), Biquad.make("peak", 120, 1, sampleRate, 4), Biquad.make("peak", 1800, 1.2, sampleRate, -3),
          Biquad.make("peak", 3000, 1.2, sampleRate, 3), Biquad.make("lp", 5000, 0.54, sampleRate), Biquad.make("lp", 5000, 1.31, sampleRate)]
@@ -100,6 +89,18 @@ export class Rig {
   setPower(p: number): void { this.power = p; }
   setNoise(n: number): void { this.noise = n; for (const c of this.circuits) c.noise = n; }
 
+  /** The loop becomes `specs`: a machine already in it keeps its state (its tape, its springs) and just turns its knobs. */
+  setLoop(specs: LoopSpec[]): void {
+    const old = [...this.loop];
+    this.loop = specs.map((sp) => {
+      const at = old.findIndex((m) => m.kind === sp.kind);
+      if (at < 0) return machine(sp, this.sampleRate);
+      const [m] = old.splice(at, 1);
+      m.set(sp);
+      return m;
+    });
+  }
+
   /** Link `i` becomes `net` (same input and output roles), starting from its rest state. */
   setLink(i: number, net: Netlist): void {
     const c = new Circuit(net, this.sampleRate * this.oversample);
@@ -110,7 +111,8 @@ export class Rig {
 
   /** Mono `n` samples from `input` (full scale ±1) to `output` (volts at the speaker). */
   process(input: Float32Array, output: Float32Array, n = input.length): void {
-    const { circuits, gains, rest, peaks, up, down, cab, oversample } = this;
+    const { circuits, gains, rest, peaks, up, down, up2, down2, cab, oversample, loop } = this;
+    const looped = loop.length > 0;
     const last = rest.length - 1;
     for (let s = 0; s < n; s++) {
       let acc = 0;
@@ -125,8 +127,19 @@ export class Rig {
           if (swing > peaks[i]) peaks[i] = swing;
         }
         x -= rest[last];
-        if (this.power > 0) x = Math.tanh((x * this.power) / POWER_VOLTS) * POWER_VOLTS;
+        if (this.power > 0 && !looped) x = Math.tanh((x * this.power) / POWER_VOLTS) * POWER_VOLTS;
         acc = chain(down, x);
+      }
+      if (looped) {
+        let y = acc / LOOP_VOLTS;
+        for (const m of loop) y = m.run(y);
+        acc = y * LOOP_VOLTS;
+        if (this.power > 0) {
+          for (let k = 0; k < oversample; k++) {
+            const z = chain(up2, k === 0 ? acc * oversample : 0);
+            acc = chain(down2, Math.tanh((z * this.power) / POWER_VOLTS) * POWER_VOLTS);
+          }
+        }
       }
       output[s] = cab.length ? chain(cab, acc) : acc;
     }
@@ -140,7 +153,7 @@ export class Rig {
     return out;
   }
 
-  get misses(): number { return this.circuits.reduce((s, c) => s + c.misses, 0); }
+  get misses(): number { return this.circuits.reduce((s, c) => s + c.misses, 0) + this.loop.reduce((s, m) => s + m.misses, 0); }
   get iterationsPerStep(): number { return this.circuits.reduce((s, c) => s + c.iterations, 0) / Math.max(1, this.steps); }
 }
 

@@ -28,7 +28,8 @@ export interface Live { rig: Rig; chain: string; keys: string[] }
 export function applySettings(s: AmpSettings, live: Live | null, sampleRate: number): Live {
   const amp = AMPS.find((a) => a.id === s.amp) ?? AMPS[0];
   const def = PEDALS.find((p) => p.id === s.pedal);
-  const spec = buildRig(amp, s.knobs, def && { def, drive: s.drive });
+  // The loop's machines are switched and turned in place, never a new chain: a tape keeps its echoes.
+  const spec = { ...buildRig(amp, s.knobs, def && { def, drive: s.drive }), loop: s.loop ?? [] };
   const chain = `${amp.id}|${def?.id ?? ""}|${s.oversample}`;
   const keys = spec.links.map((l) => JSON.stringify(l.net));
   if (!live || live.chain !== chain) return { rig: new Rig(spec, sampleRate, s.oversample), chain, keys };
@@ -38,5 +39,6 @@ export function applySettings(s: AmpSettings, live: Live | null, sampleRate: num
   });
   live.rig.setPower(spec.power);
   live.rig.setNoise(spec.noise ?? 0);
+  live.rig.setLoop(spec.loop);
   return { rig: live.rig, chain, keys };
 }
