@@ -22,27 +22,30 @@ The page list is fixed in `src/bench.ts`, so the deployed Worker can't be pointe
 isolate stops after 600 browser calls. Kitesurf is free in beta. A full run at three turns uses about a
 minute of Chromium browser time.
 
-## First numbers (2026-11-13)
+## First numbers (2026-11-13 and 2026-11-16)
 
-The owner's first live run ([#4369](https://github.com/QuinnsCode/RustyBuns/issues/4369)): 7 pages × 3
-actions per engine. Turns 2 and 3 hit Browser Run's 5-second cache, so only turn 1 was a real render
-(the bench now passes `cacheTTL: 0`, #4426). One sample per cell: read it for direction.
+Two live runs by the owner ([#4369](https://github.com/QuinnsCode/RustyBuns/issues/4369)), 7 pages × 3
+actions per engine. In both, turns 2 and 3 hit Browser Run's 5-second cache, so only turn 1 was a real
+render (the bench now passes `cacheTTL: 0`, #4426; a deploy from a checkout that has it gives three).
+One sample per cell per run: read them for direction.
 
-| Over the 20 cells both engines finished | Kitesurf | Chromium |
-|---|---|---|
-| Failures (of 21 calls each) | 0 | 1 (network closed, Hello World screenshot) |
-| Median browser time Cloudflare reported | 1337 ms | 1198 ms |
-| Median total time from the Worker | 2782 ms | 1503 ms |
-| Median time outside the browser (total − browser) | 1370 ms | 225 ms |
-| Cells where it was faster (browser time / total) | 10 / 8 | 10 / 12 |
+| Turn 1, medians over the cells | Kitesurf 11-13 | Chromium 11-13 | Kitesurf 11-16 | Chromium 11-16 |
+|---|---|---|---|---|
+| Failures (of 21 calls) | 0 | 1 (network closed) | 0 | 0 |
+| Browser time Cloudflare reported | 1337 ms | 1198 ms | 727 ms | 824 ms |
+| Total time from the Worker | 2782 ms | 1503 ms | 1249 ms | 1023 ms |
+| Outside the browser (total − browser) | 1370 ms | 225 ms | 413 ms | 177 ms |
+| Cells where it was faster (browser / total) | 10 / 8 | 10 / 12 | 12 / 7 | 9 / 14 |
 
 What it says:
 
-- **Kitesurf works on all our pages**, the WebGL one (Skate Tech Park) included, with no failures.
-- **Inside the browser, it's a tie**: each engine was faster on 10 of the 20 cells, and the medians are
-  about 10% apart.
-- **The gap is outside the browser**: about 1.4 s per call for Kitesurf against 0.2 s for Chromium.
-  That looks like queueing or start-up on the beta side, not page work, so it is the number to ask
-  Cloudflare about.
-
-Full table, cell by cell, in [the issue's first comment](https://github.com/QuinnsCode/RustyBuns/issues/4369).
+- **Kitesurf answered every call on every page**: 0 failures in 42.
+- **Inside the browser, it's a tie or a little ahead.** Cloudflare's own pitch is less CPU and memory
+  per page at 1.7–1.8× the wall time; a Worker can't see CPU or memory, so this bench can't check that part.
+- **The gap is outside the browser**, and it moves: 1.4 s per call on the first run, 0.4 s on the
+  second (Chromium: about 0.2 s both times). That looks like queueing or start-up on the beta side.
+- **WebGL is not shown to work.** Kitesurf answered on Skate Tech Park, but an answer is not a
+  rendered scene. Chromium's markdown there was 6042 bytes against Kitesurf's 1390, so the game's
+  script likely got further in Chromium. Screenshot sizes don't settle it: Kitesurf's PNGs are bigger
+  on every simple page too (Hello World 54 KB against 16 KB), so the encoders differ. Look at the two
+  screenshots before saying either engine draws the park.
