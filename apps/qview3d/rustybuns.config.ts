@@ -41,6 +41,7 @@ export default defineConfig({
   experimental: { wheel: "human" },
   targets: {
     // qview3d.<subdomain>.workers.dev. `bun run plan` shows what it makes (a Worker, the bucket and the D1 database), `bun run deploy` makes it.
-    edge: { provider: "cloudflare", workerName: "qview3d" },
+    // adopt: the names below are used as written. Without it Alchemy picks random ones, and eqosys only accepts qview3d.<subdomain>.
+    edge: { provider: "cloudflare", adopt: true, workerName: "qview3d" },
   },
 });
