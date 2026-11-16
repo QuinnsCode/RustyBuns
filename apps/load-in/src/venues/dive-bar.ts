@@ -4,7 +4,6 @@
 // target level, the bar quiet enough for the staff to hear orders. Plain data, no DOM; the page draws the heat map.
 import { clamp } from "@rustybuns/util";
 import { type Area, type Grid, type Source, coverage, gear as catalog, source } from "@rustybuns/gear";
-import { GEAR } from "../gear.ts";
 import { REACH, type Item, type Level, type World } from "../sim.ts";
 
 export type Zone = { x0: number; x1: number; z0: number; z1: number };
@@ -82,7 +81,7 @@ function reach(w: World, key: string): Item | string {
   const i = w.items.find((x) => x.key === key);
   if (!i) return `no ${key} here`;
   if (w.held) return "your hands are full";
-  if (Math.hypot(i.x - w.you.x, i.z - w.you.z) > REACH + 0.4) return `${GEAR[i.gear].name} is out of reach`;
+  if (Math.hypot(i.x - w.you.x, i.z - w.you.z) > REACH + 0.4) return `${catalog(i.gear).what} is out of reach`;
   return i;
 }
 
@@ -90,7 +89,7 @@ function reach(w: World, key: string): Item | string {
 export function aim(w: World, key: string, { turn = 0, tilt = 0 }: { turn?: number; tilt?: number }): Answer {
   const i = reach(w, key);
   if (typeof i === "string") return { ok: false, why: i };
-  if (!isSpeaker(i)) return { ok: false, why: `${GEAR[i.gear].name} isn't a speaker` };
+  if (!isSpeaker(i)) return { ok: false, why: `${catalog(i.gear).what} isn't a speaker` };
   i.rot += turn;
   const r = rig(w);
   r.tilt[key] = clamp((r.tilt[key] ?? 0) + tilt, -MAX_TILT, MAX_TILT);
@@ -101,7 +100,7 @@ export function aim(w: World, key: string, { turn = 0, tilt = 0 }: { turn?: numb
 export function raise(w: World, key: string, height: number): Answer {
   const i = reach(w, key);
   if (typeof i === "string") return { ok: false, why: i };
-  if (i.gear !== "stand-tripod") return { ok: false, why: `${GEAR[i.gear].name} isn't a stand` };
+  if (i.gear !== "stand-tripod") return { ok: false, why: `${catalog(i.gear).what} isn't a stand` };
   rig(w).stand[key] = clamp(height, STAND_MIN, STAND_MAX);
   settle(w);
   return { ok: true };
@@ -116,7 +115,7 @@ export function master(w: World, db: number) {
 export function sources(w: World): Source[] {
   const r = rig(w);
   return w.items.filter((i) => isSpeaker(i) && i.key !== w.held?.key).map((i) => {
-    const spec = catalog(i.gear).speaker!, h = GEAR[i.gear].size[1];
+    const spec = catalog(i.gear).speaker!, h = catalog(i.gear).size.h;
     return source(i.gear, { x: i.x, y: i.y + h * 0.65, z: i.z }, { yaw: i.rot, pitch: r.tilt[i.key] ?? 0, watts: spec.ratedWatts * 10 ** (r.master / 10) });
   });
 }

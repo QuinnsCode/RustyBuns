@@ -2,7 +2,7 @@
 // carry it (the heavier it is, the slower you go) and set it down on the floor or on top of another piece. The page
 // (main.ts) draws this and feeds it input; the harness and the tests drive the same functions.
 import { clamp } from "@rustybuns/util";
-import { GEAR, type GearId } from "./gear.ts";
+import { gear } from "@rustybuns/gear";
 
 /** Metres per second, empty-handed and standing. */
 export const WALK = 1.5;
@@ -13,7 +13,8 @@ export const REACH = 1.6;
 export const EYE = 1.65, EYE_CROUCH = 1.0, RADIUS = 0.25;
 const SNAP = Math.PI / 12;
 
-export interface Item { key: string; gear: GearId; x: number; y: number; z: number; rot: number }
+/** A piece of gear on the floor: its own key and its id in @rustybuns/gear, where its size, weight and jacks come from. */
+export interface Item { key: string; gear: string; x: number; y: number; z: number; rot: number }
 export interface Level {
   name: string;
   /** Where you can walk: x and z bounds in metres (the garage floor and the driveway). */
@@ -22,6 +23,8 @@ export interface Level {
   room: { x0: number; x1: number; z0: number; z1: number; height: number; door: number };
   /** Fixed things you plug into, not carried. */
   outlets: { key: string; x: number; y: number; z: number }[];
+  /** Where people walk: a cable lying across one with no ramp over it is a trip hazard. */
+  walkways?: { name: string; x0: number; x1: number; z0: number; z1: number }[];
   start: { x: number; z: number; yaw: number };
   items: Item[];
 }
@@ -36,17 +39,22 @@ export interface World {
   held: { key: string; rel: number } | null;
 }
 
-/** The garage: one amp head on the floor by the back-wall outlet, the 4x12 cab out on the driveway, a guitar in the corner. */
+/** The garage: an amp head by the back-wall outlet, the 4x12 cab out on the driveway, a guitar in the corner, a powered
+ * speaker across the way in, and a road case of cables and a cable ramp by the left wall. */
 export const GARAGE: Level = {
   name: "garage",
   bounds: { x0: -2.75, x1: 2.75, z0: 0.25, z1: 9.75 },
   room: { x0: -3, x1: 3, z0: 0, z1: 7, height: 2.6, door: 4.8 },
   outlets: [{ key: "outlet", x: -2.2, y: 0.3, z: 0.01 }],
+  walkways: [{ name: "the way in", x0: -0.4, x1: 0.4, z0: 0.4, z1: 9.75 }],
   start: { x: -0.6, z: 9.5, yaw: 0 },
   items: [
     { key: "amp-head", gear: "amp-head", x: -1.4, y: 0, z: 0.45, rot: 0 },
     { key: "cab-4x12", gear: "cab-4x12", x: 0.9, y: 0, z: 7.9, rot: 0 },
     { key: "guitar", gear: "guitar", x: 2.5, y: 0, z: 1.2, rot: -Math.PI / 2 },
+    { key: "top", gear: "top-12-powered", x: 2.0, y: 0, z: 2.6, rot: 0 },
+    { key: "case", gear: "road-case-m", x: -2.3, y: 0, z: 3.2, rot: Math.PI / 2 },
+    { key: "ramp", gear: "cable-ramp-2ch", x: -2.1, y: 0, z: 5.2, rot: 0 },
   ],
 };
 
@@ -59,7 +67,11 @@ export function newWorld(level: Level = GARAGE): World {
   };
 }
 
-const gearOf = (i: Item) => GEAR[i.gear];
+const gearOf = (i: Item) => gear(i.gear);
+/** Width, height and depth in metres. */
+export const dims = (i: Item): [number, number, number] => { const s = gearOf(i).size; return [s.w, s.h, s.d]; };
+/** Gear this low (a cable ramp) is walked over, not round. */
+export const LOW = 0.1;
 /** Where you face on the floor: yaw 0 looks down -z, as a three.js camera does. */
 export const facing = (yaw: number) => ({ x: -Math.sin(yaw), z: -Math.cos(yaw) });
 export const heldItem = (w: World) => (w.held ? w.items.find((i) => i.key === w.held!.key) ?? null : null);
@@ -81,13 +93,13 @@ function overlap(a: [number, number][], b: [number, number][]): boolean {
   }
   return true;
 }
-const footprint = (i: Item, x = i.x, z = i.z, rot = i.rot) => corners(x, z, rot, gearOf(i).size[0], gearOf(i).size[2]);
+const footprint = (i: Item, x = i.x, z = i.z, rot = i.rot) => corners(x, z, rot, dims(i)[0], dims(i)[2]);
 
 /** Where the held item sits now: in front of you, low if it's heavy, turned as you turned it. */
 export function holdPose(w: World): { x: number; y: number; z: number; rot: number } | null {
   const i = heldItem(w);
   if (!i || !w.held) return null;
-  const [, h, d] = gearOf(i).size, f = facing(w.you.yaw), out = 0.3 + d / 2;
+  const [, h, d] = dims(i), f = facing(w.you.yaw), out = 0.3 + d / 2;
   const top = w.you.crouch ? 0.75 : 1.1;
   return { x: w.you.x + f.x * out, y: Math.max(0.1, top - h), z: w.you.z + f.z * out, rot: w.you.yaw + w.held.rel };
 }
@@ -96,8 +108,8 @@ export function holdPose(w: World): { x: number; y: number; z: number; rot: numb
 function collide(w: World) {
   const { bounds: b } = w.level, you = w.you;
   for (const i of w.items) {
-    if (i.key === w.held?.key) continue;
-    const [sw, , sd] = gearOf(i).size, c = Math.cos(i.rot), s = Math.sin(i.rot);
+    if (i.key === w.held?.key || dims(i)[1] < LOW) continue;
+    const [sw, , sd] = dims(i), c = Math.cos(i.rot), s = Math.sin(i.rot);
     const dx = you.x - i.x, dz = you.z - i.z;
     const lx = dx * c - dz * s, lz = dx * s + dz * c;
     const px = clamp(lx, -sw / 2, sw / 2), pz = clamp(lz, -sd / 2, sd / 2);
@@ -150,10 +162,10 @@ export function pickUp(w: World, key: string): Answer {
   if (!i) return { ok: false, why: `no ${key} here` };
   if (w.held) return { ok: false, why: "your hands are full" };
   const g = gearOf(i);
-  if (Math.hypot(i.x - w.you.x, i.z - w.you.z) > REACH) return { ok: false, why: `${g.name} is out of reach` };
-  if (g.kg > MAX_LIFT) return { ok: false, why: `${g.name} is ${g.kg} kg, too heavy to lift alone` };
-  const fp = footprint(i), top = i.y + g.size[1];
-  if (w.items.some((o) => o !== i && Math.abs(o.y - top) < 0.01 && overlap(fp, footprint(o)))) return { ok: false, why: `something is on the ${g.name}` };
+  if (Math.hypot(i.x - w.you.x, i.z - w.you.z) > REACH) return { ok: false, why: `${g.what} is out of reach` };
+  if (g.kg > MAX_LIFT) return { ok: false, why: `${g.what} is ${g.kg} kg, too heavy to lift alone` };
+  const fp = footprint(i), top = i.y + dims(i)[1];
+  if (w.items.some((o) => o !== i && Math.abs(o.y - top) < 0.01 && overlap(fp, footprint(o)))) return { ok: false, why: `something is on the ${g.what}` };
   w.held = { key, rel: i.rot - w.you.yaw };
   return { ok: true };
 }
@@ -167,20 +179,21 @@ export function turnHeld(w: World, dir: number) {
 export function putDown(w: World): Answer {
   const i = heldItem(w), p = holdPose(w);
   if (!i || !p) return { ok: false, why: "your hands are empty" };
-  const [sw, , sd] = gearOf(i).size, r = w.level.room, half = Math.max(sw, sd) / 2;
+  const [sw, , sd] = dims(i), r = w.level.room, half = Math.max(sw, sd) / 2;
   const rot = Math.round(p.rot / SNAP) * SNAP;
   const x = clamp(p.x, r.x0 + half, r.x1 - half), z = clamp(p.z, r.z0 + half, w.level.bounds.z1 + RADIUS - half);
   const fp = corners(x, z, rot, sw, sd);
   let y = 0;
-  for (const o of w.items) if (o !== i && overlap(fp, footprint(o))) y = Math.max(y, o.y + gearOf(o).size[1]);
+  for (const o of w.items) if (o !== i && overlap(fp, footprint(o))) y = Math.max(y, o.y + dims(o)[1]);
   Object.assign(i, { x, y, z, rot });
   w.held = null;
   collide(w);
   return { ok: true };
 }
 
-/** Walk straight to (x, z) at your carrying pace, tick by tick; the seconds it took. Stops at a wall or after `limit` s. */
-export function walkTo(w: World, x: number, z: number, limit = 120): number {
+/** Walk straight to (x, z) at your carrying pace, tick by tick; the seconds it took. Stops at a wall or after `limit` s.
+ * `tick` runs after each step (the cables drag behind you). */
+export function walkTo(w: World, x: number, z: number, limit = 120, tick?: (dt: number) => void): number {
   const t0 = w.t, dt = 1 / 60;
   let lastD = Infinity, stuck = 0;
   while (w.t - t0 < limit) {
@@ -190,6 +203,7 @@ export function walkTo(w: World, x: number, z: number, limit = 120): number {
     lastD = d;
     w.you.yaw = Math.atan2(-dx, -dz);
     step(w, dt, { forward: Math.min(1, d / (w.you.speed * dt || 1)), right: 0, turn: 0, crouch: w.you.crouch });
+    tick?.(dt);
   }
   return w.t - t0;
 }
@@ -207,7 +221,7 @@ export function snapshot(w: World) {
     aimed: at?.key ?? null,
     items: w.items.map((i) => {
       const p = i.key === w.held?.key ? holdPose(w)! : i;
-      return { key: i.key, gear: i.gear, kg: GEAR[i.gear].kg, x: cm(p.x), y: cm(p.y), z: cm(p.z), rot: deg(p.rot), held: i.key === w.held?.key };
+      return { key: i.key, gear: i.gear, kg: gearOf(i).kg, x: cm(p.x), y: cm(p.y), z: cm(p.z), rot: deg(p.rot), held: i.key === w.held?.key };
     }),
   };
 }

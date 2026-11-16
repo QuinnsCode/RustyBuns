@@ -55,5 +55,5 @@ test("a silent room scores nothing; tops at the wall score low; aimed at the cro
   expect(aimed.pass).toBe(true);
   expect(aimed.crowd!).toBeGreaterThan(95);
   expect(aimed.gap!).toBeGreaterThan(4);
-  expect(raise(w, "top-r", 1.8)).toEqual({ ok: false, why: '12" powered top isn\'t a stand' });
+  expect(raise(w, "top-r", 1.8)).toEqual({ ok: false, why: '12" two-way powered speaker isn\'t a stand' });
 });

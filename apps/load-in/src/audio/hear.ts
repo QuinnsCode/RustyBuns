@@ -2,7 +2,6 @@
 // (distance and off-axis), how dull it sounds from where you are, and the sub band summed with phase so the
 // alley between two subs is loud. No DOM: the page (play.ts) turns this into gains, and state() reports it.
 import { GEAR as SPECS, levelAt, offAxisLoss, aimTo, source, splAt, type Source, type Vec3 } from "@rustybuns/gear";
-import { GEAR } from "../gear.ts";
 import { EYE, EYE_CROUCH, holdPose, type Item, type World } from "../sim.ts";
 
 /** The level you hear at 0 dB gain: louder than this is pushed into the limiter. */
@@ -14,8 +13,8 @@ export const LOW_HZ = 63;
 export type Switches = Set<string>;
 
 /**
- * Whether a speaker gets power and signal. Until cables land (#4853) switched on is fed: a speaker by its own switch,
- * a passive one also when any amp in the level is on. Cables replace this with packages/gear's `compile`.
+ * Whether a speaker gets power and signal. `switchedOnIsFed` is the cozy answer, a switch is enough: a speaker by its own
+ * switch, a passive one also when any amp in the level is on. `fedBy` in src/cables/cables.ts adds the patch on top.
  */
 export type Fed = (w: World, key: string, on: Switches) => boolean;
 
@@ -63,7 +62,7 @@ export type Hearing = {
 /** Where a speaker's drivers are: two thirds up its box (as the dive bar scores it), wherever it sits or is carried. */
 function placed(w: World, i: Item): { pos: Vec3; yaw: number } {
   const p = i.key === w.held?.key ? (holdPose(w) ?? i) : i;
-  const h = GEAR[i.gear as keyof typeof GEAR]?.size[1] ?? SPECS[i.gear]?.size.h ?? 0;
+  const h = SPECS[i.gear]?.size.h ?? 0;
   return { pos: { x: p.x, y: p.y + h * 0.65, z: p.z }, yaw: p.rot };
 }
 
