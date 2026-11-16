@@ -1,6 +1,7 @@
 import { test, expect, setDefaultTimeout } from "bun:test";
 import { infer, bunServerEntry } from "../src/glue/infer.ts";
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync, readdirSync } from "node:fs";
+import { loadCloudflareConfig } from "../src/cloudflare-config.ts";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { analyze, plan } from "../src/glue/boundary.ts";
@@ -1175,4 +1176,67 @@ test("another app's Worker, objects and database: refs into its stack, a class m
   expect(generateAlchemy(old)).toContain(`ROOMS: app_rooms }`);
   // Dropping the binding outright is still refused: that would delete the data.
   expect(() => generateWrangler(app("home", {}), before)).toThrow(/not bound by this run/);
+});
+
+/** An app the way `cf migrate` leaves it: cf/config in node_modules, a Worker that must not run at load. */
+function cfApp(config: string) {
+  const dir = mkdtempSync(join(tmpdir(), "rb-cfconfig-"));
+  mkdirSync(join(dir, "node_modules/cf"), { recursive: true });
+  mkdirSync(join(dir, "src"));
+  writeFileSync(join(dir, "node_modules/cf/package.json"), JSON.stringify({ name: "cf", type: "module", exports: { "./config": "./config.js" } }));
+  writeFileSync(join(dir, "node_modules/cf/config.js"), `export const defineConfig = (c) => c;
+const b = (type) => (o = {}) => ({ type, ...o });
+export const bindings = { text: (value) => ({ type: "text", value }), d1: b("d1"), kv: b("kv"), r2: b("r2"), secret: b("secret"), durableObject: b("durable-object"), assets: b("assets"), queue: b("queue") };`);
+  writeFileSync(join(dir, "src/worker.ts"), `import "cloudflare:workers"; require("node:fs").writeFileSync(${JSON.stringify(join(dir, "ran"))}, "");`);
+  writeFileSync(join(dir, "cloudflare.config.ts"), config);
+  return dir;
+}
+
+const CF_ENV = `env: {
+      API_URL: bindings.text("https://example.com"),
+      DB: bindings.d1({ name: "spike-db", id: "abc" }),
+      CACHE: bindings.kv({ id: "kvid" }),
+      UPLOADS: bindings.r2({ name: "spike-uploads" }),
+      ROOM: bindings.durableObject({ worker: "spike-app", exportName: "Room" }),
+      SESSION_SECRET: bindings.secret(),
+      ASSETS: bindings.assets(),
+    }`;
+
+test("cloudflare.config.ts: object and function forms carry every binding, and the Worker never runs", () => {
+  const forms = {
+    object: `import { bindings, defineConfig } from "cf/config";
+import * as entrypoint from "./src/worker" with { type: "cf-worker" };
+export default defineConfig({ worker: { name: "spike-app", compatibilityDate: "2026-09-01", compatibilityFlags: ["nodejs_compat"], entrypoint, ${CF_ENV} } });`,
+    function: `import { bindings, defineConfig } from "cf/config";
+export default defineConfig(({ mode }) => ({ worker: { name: mode === "production" ? "spike-app" : "dev", compatibilityDate: "2026-09-01", entrypoint: "src/worker.ts", ${CF_ENV} } }));`,
+  };
+  for (const [form, src] of Object.entries(forms)) {
+    const dir = cfApp(src);
+    const cf = loadCloudflareConfig(join(dir, "cloudflare.config.ts"));
+    expect(existsSync(join(dir, "ran"))).toBe(false);
+    expect(cf.unsupported).toEqual([]);
+    expect(cf.secrets).toEqual(["SESSION_SECRET"]);
+    const c = wranglerToConfig(cf.wrangler, {}, "vite");
+    expect([form, c.name, c.worker!.main, c.worker!.compatibilityDate]).toEqual([form, "spike-app", "src/worker.ts", "2026-09-01"]);
+    expect(c.bindings).toMatchObject({
+      API_URL: { type: "var", value: "https://example.com" },
+      DB: { type: "d1", databaseName: "spike-db" },
+      CACHE: { type: "kv" },
+      UPLOADS: { type: "r2", bucketName: "spike-uploads" },
+    });
+    expect(c.bindings.ROOM).toEqual({ type: "durable_object", className: "Room" });   // its own Worker's class: no scriptName
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("cloudflare.config.ts: an unfinished cf migrate and bindings init can't carry are named", () => {
+  const unfinished = cfApp(`throw new Error("Migration incomplete: see TODOs");\nexport default {};`);
+  expect(() => loadCloudflareConfig(join(unfinished, "cloudflare.config.ts"))).toThrow(/Migration incomplete.*Finish them/);
+  const queue = cfApp(`import { bindings, defineConfig } from "cf/config";
+export default defineConfig({ worker: { name: "q", env: { JOBS: bindings.queue({ name: "jobs" }), DB: bindings.d1({ name: "d" }) } } });`);
+  const cf = loadCloudflareConfig(join(queue, "cloudflare.config.ts"), "src/worker.ts");
+  expect(cf.unsupported).toEqual(["JOBS (queue)"]);
+  expect(cf.wrangler.main).toBe("src/worker.ts");
+  expect(readdirSync(queue).filter((f) => f.includes("rustybuns"))).toEqual([]);   // its temp copy is gone
+  for (const d of [unfinished, queue]) rmSync(d, { recursive: true, force: true });
 });

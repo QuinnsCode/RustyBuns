@@ -148,7 +148,7 @@ export function fit({ pkg, files, viteConfig }: FitInput): Fit {
   let verdict: Verdict;
   let issue: string | undefined;
   let name = LABEL[stack];
-  const worker = ["wrangler.jsonc", "wrangler.json", "wrangler.toml"].find(has);
+  const worker = ["cloudflare.config.ts", "wrangler.jsonc", "wrangler.json", "wrangler.toml"].find(has);
   const fetchServer = FETCH_SERVERS.find((d) => deps[d]);
 
   if (inits(stack, plugins, deps)) {
