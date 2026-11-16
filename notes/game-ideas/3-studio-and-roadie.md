@@ -5,9 +5,9 @@ Two games that share one box of gear (names kept by the owner, 2026-11-16):
 - **Q Studio**: a studio you walk around in. Pick up an amp, a cabinet and pedals, put them where you want, run
   cables between them, plug in your guitar and play. What you hear is the circuit you cabled, solved sample by
   sample (the [Q Amp](../../apps/fm-daw/CIRCUITS.md) solver), not a recording of one. Friends can be in the room.
-- **Load In**: you are the crew for a band. The truck pulls up at a club, the band sends a stage plot and an input
-  list, and you have until doors to carry, place and cable everything. Then you run the sound desk through the show,
-  and then you strike it all and pack the truck before curfew.
+- **Load In**: a first-person roadie sim, speakers first. Carry the speakers in, pull the cable out, lay the ramps,
+  aim the sound at the crowd, from a garage to a big arena. Later the whole job: the band's inputs, the show at the
+  desk, strike and the truck.
 
 Both run on the same gear: one model, one list of jacks, one circuit (or a cheap stand-in) per piece. A pedal built
 for the studio turns up in the roadie's road case, and a fault the roadie learns to find (hum, feedback, a dead
@@ -61,7 +61,8 @@ knobs, tubes, cable curves that sag. The clear acrylic look of Q Amp is the hous
 
 ## Q Studio
 
-You stand in a room (the camera over your shoulder, so you see yourself carry the amp and drag the cable; owner's pick). Gear stands on a
+You stand in a room, first person (the owner's call on 2026-11-16, replacing an earlier over-the-shoulder pick; the same
+controller as Load In). Gear stands on a
 wall rack and the floor. Pick a piece up, carry it, set it down. Click a jack, walk the cable to another jack, click.
 The cable hangs between them. Turn a knob by looking at it and dragging. Plug in your guitar (any audio input) or let
 the riff play. Speakers down by default, as on Q Amp.
@@ -91,43 +92,76 @@ Steps, each usable on its own:
 
 ## Load In
 
-The day of a show, in four parts. Every venue is a level.
+**What it is (owner, 2026-11-16):** a first-person sim. You pick up the speaker, pull the cable out across the floor,
+and lay the cable ramps over the walkways. Real enough that it could almost be the job, the way a good flight sim
+could almost be flying: real weights, real cable lengths, breakers that trip, sound that falls off the way sound does.
+Under the same sim, a dial goes down to a cozy game (no clock, light gear, cables that coil themselves), and friends
+can join as a crew where half the fun is the mess.
 
-1. **Load in.** The truck backs up to the dock. The band's stage plot (who stands where) and input list (channel 1
-   kick, 2 snare, 3 bass DI, 4 guitar mic, 5 vocal) are on a clipboard. Carry the cases in (heavy ones go on a dolly),
-   unpack, place the gear on the plot, run power (too much on one wall circuit trips the breaker), run the snake, and
-   cable each input to the right channel on the stage box. A clock counts down to doors, and it matters:
-   late doors cost pay and the crowd's mood (owner's pick: a real race; a calm mode can come later).
-2. **Line check and soundcheck.** Each player plays alone and you hear their channel. Faults are real and you find
-   them by ear and by tracing the cable: no signal (a dead cable, a wrong channel), hum (a ground loop: lift the DI),
-   crackle (a bad cable: swap it), howl (feedback: the wedge points at the vocal mic, or the gain is too high). The
-   guitarist hands you their amp settings; you dial them in, and that tone is baked for the show.
-3. **The show.** You're at front of house. The set list plays (FM DAW songs, with the band's parts as stems through
-   your patch). Push the guitar for the solo, ride the vocal, answer "more me in my wedge" hand signals. Things go
-   wrong: a string breaks (swap the guitar, keep the channel), a cable dies, a wedge starts to ring. A crowd meter shows
-   how it's going.
-4. **Strike and load out.** Break it all down, coil the cables (over-under, or they tangle next show), pack the cases
-   into the truck so they fit and don't slide, and get out before curfew or pay the fine.
+**Speakers first.** The game starts as setting up the sound system: where the speakers go, how they're aimed, how
+they're powered and cabled. The rest of the roadie job (the band's inputs, line check, running the show, strike) comes
+after, on the same gear.
+
+### The venue ladder
+
+| Rung | Venue | What's new there |
+|---|---|---|
+| 1 | A garage | One guitar amp: carry it, plug it in, learn the hands |
+| 2 | A dive bar | Two powered speakers on stands, a sub, a small mixer; aim for the crowd, keep the bar quiet |
+| 3 | A bigger bar | Passive speakers and an amp rack, speaker cable, amp loads, wall circuits that trip |
+| 4 | A community event outdoors ([#4859](https://github.com/QuinnsCode/RustyBuns/issues/4859)) | A generator and distro, ramps on every path, the neighbours across the road |
+| 5 | A desert night party ([#4860](https://github.com/QuinnsCode/RustyBuns/issues/4860)) | The sound-system crew's wall of speakers, built by you; sand, fuel for twelve hours, sunrise |
+| 6 | A small arena ([#4861](https://github.com/QuinnsCode/RustyBuns/issues/4861)) | Speakers that hang: rigging points, a line array, fills |
+| 7 | A big arena ([#4862](https://github.com/QuinnsCode/RustyBuns/issues/4862)) | Delay towers, sub arrays, a power plan for a building, and a crew you need |
+
+### Why it's a sim and not a quiz
+
+The numbers are textbook acoustics and electrics, in `packages/gear`: a speaker's level falls 6 dB each time the
+distance doubles, drops off outside its coverage angle, and two subs add or cancel depending on where you stand. Two
+boxes on one amp channel are a 4 ohm load; a 15 A breaker trips past 1800 W; a long thin speaker cable loses level.
+A coverage heat map on the floor shows what the crowd will hear, and walking the room you hear it too.
+
+### The modes
+
+One dial, like a flight sim's assists. **Cozy**: no clock, gear weighs half, cables coil themselves, ramps snap,
+jacks glow. **Crew**: in between. **Sim**: real weights, the clock to doors, breakers trip, a short cable is short.
+Late doors cost pay and the crowd's mood. Between shows there is a home base (the van, the warehouse, the gear you've
+bought), the cozy-sim side of it ([#4846](https://github.com/QuinnsCode/RustyBuns/issues/4846)). Friends join as crew
+through a Qollab party ([#4863](https://github.com/QuinnsCode/RustyBuns/issues/4863)): two to lift a sub, one running
+cable while another lays ramps.
+
+### The rest of the roadie job, after the speakers
+
+1. **Load in.** The band's stage plot and input list on a clipboard (channel 1 kick, 2 snare, 3 bass DI, 4 guitar mic,
+   5 vocal): the snake, the stage box, each input to its channel.
+2. **Line check and soundcheck.** Faults found by ear and by tracing the cable: no signal, hum (lift the DI), crackle
+   (swap the cable), howl (feedback). The guitarist's amp settings dialled in and baked for the show.
+3. **The show.** Front of house: FM DAW songs as the band's stems through your patch, the solo pushed, "more me in my
+   wedge", a broken string, a crowd meter.
+4. **Strike and load out.** Coil the cables over-under, pack the truck so nothing slides, out before curfew.
 
 **Feedback is computed, not scripted.** A mic picks up the wedge with a gain that depends on the distance, the angle
 (a cardioid mic hears little from behind) and the channel's gain and EQ. When that loop gain passes 1 at some
-frequency, that frequency rings. A notch in Shape at that frequency, or turning the wedge, fixes it. The same goes for
-gain staging (a channel that clips) and the amp with no speaker load (the power-amp circuit from Studio step 4).
+frequency, that frequency rings. A notch in Shape at that frequency, or turning the wedge, fixes it.
 
-**The tour.** Venues grow: a coffee shop with one mic, a club, a theatre with a monitor desk, a festival changeover
-with fifteen minutes between bands. Pay buys gear and a bigger truck; a good night gets the next booking. Later, a
-crew of friends (a Qollab party): one at the desk, one on stage, one at the dock.
+### Steps
 
-Steps, each usable on its own:
+Tonight's build ([#4849](https://github.com/QuinnsCode/RustyBuns/issues/4849), rungs 1 to 3):
 
-1. **The shared gear package** ([#4842](https://github.com/QuinnsCode/RustyBuns/issues/4842)): the solver, rigs and `compile` move from `apps/fm-daw` to `packages/gear`, the models
-   to `packages/models/src/gear.ts`; FM DAW imports them back (after Studio step 2).
-2. **One club, load in and line check** ([#4843](https://github.com/QuinnsCode/RustyBuns/issues/4843)): a three-piece band, one stage plot, carry, place, cable, the clock, and the
-   faults found by ear. The sim is plain TS with a `loadIn.state()` handle.
-3. **The show at front of house** ([#4844](https://github.com/QuinnsCode/RustyBuns/issues/4844)): the desk, the set list from FM DAW songs, the baked guitar, the computed feedback,
-   the hand signals, the crowd meter.
-4. **Strike and load out** ([#4845](https://github.com/QuinnsCode/RustyBuns/issues/4845)): coiling, packing the truck, curfew.
-5. **The tour and the crew** ([#4846](https://github.com/QuinnsCode/RustyBuns/issues/4846)): more venues, pay, gear to buy, and friends as crew.
+- Wave 1: the app, first-person walk and carry, the garage ([#4850](https://github.com/QuinnsCode/RustyBuns/issues/4850));
+  `packages/gear`, the sound and power math ([#4851](https://github.com/QuinnsCode/RustyBuns/issues/4851)); the gear
+  models ([#4852](https://github.com/QuinnsCode/RustyBuns/issues/4852)).
+- Wave 2: cables and ramps ([#4853](https://github.com/QuinnsCode/RustyBuns/issues/4853)); the dive bar and the heat
+  map ([#4854](https://github.com/QuinnsCode/RustyBuns/issues/4854)); hearing the speakers as you walk
+  ([#4855](https://github.com/QuinnsCode/RustyBuns/issues/4855)).
+- Wave 3: the bigger bar, amp rack and breakers ([#4856](https://github.com/QuinnsCode/RustyBuns/issues/4856)); the
+  cozy-to-sim dial and the clock ([#4857](https://github.com/QuinnsCode/RustyBuns/issues/4857)).
+
+After that: the venues above, the crew, then the roadie job: the band's inputs and line check
+([#4843](https://github.com/QuinnsCode/RustyBuns/issues/4843)), the show
+([#4844](https://github.com/QuinnsCode/RustyBuns/issues/4844)), strike ([#4845](https://github.com/QuinnsCode/RustyBuns/issues/4845)),
+the tour ([#4846](https://github.com/QuinnsCode/RustyBuns/issues/4846)). The circuit solver joins `packages/gear` in
+[#4842](https://github.com/QuinnsCode/RustyBuns/issues/4842), so the guitar amp in the garage can be the real Q Amp.
 
 ## Order
 
@@ -135,10 +169,10 @@ The circuit work has its own map, FM DAW's ANALOG.md ([#4826](https://github.com
 tape echo, profiling a real amp, orderable boards). Every pedal it adds is gear in both games for free, so this plan
 files only what the games need on top: the patch, the room, the power amp and cab, the stage gear, and the games.
 
-
-Studio steps 1 and 2 come first: they give both games the gear and the patch. After that the two can run side by
-side: Studio 3 to 8 in FM DAW, Load In 1 to 5 in its own app. Once either one is playable, its feel gets a hill climb
-(a score chased round by round), as the other games do.
+Load In goes first (speakers, tonight's build [#4849](https://github.com/QuinnsCode/RustyBuns/issues/4849)): it makes
+`packages/gear`, the gear models and the first-person controller. Q Studio then stands on them: Studio steps 1 and 2
+(the 3D stage and the patch), then 3 to 8 in FM DAW. Once either game is playable, its feel gets a hill climb (a score
+chased round by round), as the other games do.
 
 ## What it costs
 
