@@ -169,7 +169,7 @@ export async function runDigs(batch: { messages: readonly { body: DigMessage; at
 /** /api/levels... ; `user` is the caller's handle, `admin` whether they may import. */
 export async function levelRoutes(req: Request, env: Env, p: string[], url: URL, user: string | null, admin: boolean): Promise<Response | null> {
   if (p[1] !== "levels") return null;
-  if (!p[2]) return json(await states(env));
+  if (!p[2]) return req.method === "GET" ? json(await states(env)) : null;
   const slug = p[2];
   const level = LEVELS.find((l) => l.slug === slug);
   if (!level) return fail("NoSuchLevel", "no such level");

@@ -110,9 +110,10 @@ export async function busiestFiles(h: Handle, branch: string, limit = 60, top = 
     return true;
   };
   const counts = new Map<string, number>();
-  await inBatches(rows.map((r) => r.c).filter((c) => c.parents.length === 1), async (c) => {
+  // The first commit counts against an empty tree, as the file's own history counts it (one that adds hundreds of files still doesn't).
+  await inBatches(rows.map((r) => r.c).filter((c) => c.parents.length <= 1), async (c) => {
     const out: string[] = [];
-    if (!(await differ(await read.root(c.parents[0]!), c.treeHash, "", out))) return;
+    if (!(await differ(c.parents[0] ? await read.root(c.parents[0]) : null, c.treeHash, "", out))) return;
     for (const p of out) if (!LOCKFILE.test(p)) counts.set(p, (counts.get(p) ?? 0) + 1);
   });
   const files = [...counts].map(([path, commits]) => ({ path, commits })).sort((x, y) => y.commits - x.commits || (x.path < y.path ? -1 : 1)).slice(0, top);

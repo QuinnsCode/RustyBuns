@@ -150,9 +150,14 @@ describe("lineKey", () => {
 // Selecting by rule, for the palette, the right-click menu and agents.
 describe("picking lines by rule", () => {
   const src = html.slice(html.indexOf("const pickAll"), html.indexOf('/** "line 4", "lines 4'));
-  const { pickAll, pickInvert, pickMatching, pickBy, pickBlock, pickDrop, pickRunAt, pickRanges } = new Function(`${src}; return { pickAll, pickInvert, pickMatching, pickBy, pickBlock, pickDrop, pickRunAt, pickRanges };`)();
+  const { pickAll, pickInvert, pickMatching, pickBy, pickBlock, pickDrop, pickRunAt, pickRanges, pickWith } = new Function(`${src}; return { pickAll, pickInvert, pickMatching, pickBy, pickBlock, pickDrop, pickRunAt, pickRanges, pickWith };`)();
   const sorted = (s: Set<number>) => [...s].sort((a, b) => a - b);
   const code = ["function a() {", "  if (x) {", "    one();", "", "    two();", "  }", "  three();", "}", "", "const b = 1;"];
+
+  test("a rule's lines go onto the pick by mode: a toggle flips each, keeping the rest", () => {
+    const now = new Set([0, 3]), hit = new Set([3, 11]);
+    expect([undefined, "add", "remove", "toggle"].map((m) => sorted(pickWith(now, hit, m)))).toEqual([[3, 11], [0, 3, 11], [0], [0, 11]]);
+  });
 
   test("matching is a substring in any case, or /regex/", () => {
     expect(sorted(pickMatching(["Foo()", "bar", "fooBar"], "foo"))).toEqual([0, 2]);

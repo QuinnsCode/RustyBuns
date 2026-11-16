@@ -508,8 +508,8 @@ async function route(req: Request, env: Env): Promise<Response> {
   const page = await pageRoutes(req, env, p, user);
   if (page) return page;
 
-  // GET|PUT /api/me
-  if (p[1] === "me") {
+  // GET|PUT /api/me (only those: /api/me/<anything else> and other methods are no route)
+  if (p[1] === "me" && !p[2] && (req.method === "GET" || req.method === "PUT")) {
     if (!user) return fail("SignInFirst", "sign in first");
     let warning: string | undefined;
     if (req.method === "PUT") {
@@ -975,7 +975,7 @@ async function route(req: Request, env: Env): Promise<Response> {
   }
 
   // GET /api/search?q=[&repo=owner/name]  committed code you are allowed to see, in one repo or across them (search.ts)
-  if (p[1] === "search") {
+  if (p[1] === "search" && !p[2] && req.method === "GET") {
     const q = url.searchParams.get("q") ?? "", only = url.searchParams.get("repo");
     if (!only) return json(await searchAll(env, user, q));
     const [o, r] = only.split("/");

@@ -80,4 +80,15 @@ test("a short log keeps everything: since=0 and time travel to rev 1", async () 
   expect(await (await call("log?since=1")).json()).toEqual({ ops: r.applied.slice(1), next: null });
   expect(await (await call("log?since=0&limit=1")).json()).toEqual({ ops: r.applied.slice(0, 1), next: r.applied[0]!.rev });
   expect(((await (await call("at?rev=1")).json()) as { lines: { text: string }[] }).lines.map((l) => l.text)).toEqual(["a"]);
+  // A rev that isn't one is a bad ask, not an empty doc or a trimmed history.
+  for (const q of ["at?rev=abc", "at?rev=-5", "at", "log?since=-1"]) expect((await call(q)).status).toBe(400);
+
+  // A branch's copy starts at the fork: before it is main's history, not this copy's.
+  const doc = await (await call("at?rev=2")).json();
+  const branch = await file();
+  expect((await branch.call("fork", { doc })).status).toBe(200);
+  const early = await branch.call("at?rev=1");
+  expect(early.status).toBe(410);
+  expect(await early.json()).toMatchObject({ from: 2, error: expect.stringContaining("forked") });
+  expect(((await (await branch.call("at?rev=2")).json()) as { lines: unknown[] }).lines).toHaveLength(2);
 });

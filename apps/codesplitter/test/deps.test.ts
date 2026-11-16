@@ -359,11 +359,15 @@ test("the on-fail chain: the owner orders the steps, and the first that works se
   // clsx 2 and kleur 4 both break; clsx has a 1.3.0 to roll back to, kleur nothing smaller than its major.
   const tester: Tester = async (_remote, files) => {
     const deps = JSON.parse(files["package.json"]!).dependencies;
-    return deps.clsx === "~2.0.0" || deps.kleur === "^4.1.5" ? { ok: false, out: `broke with ${deps.clsx} ${deps.kleur}` } : { ok: true, out: "pass" };
+    // The install writes a lockfile from what it was handed, so the branch's shows which try it came from.
+    const lock = `clsx ${deps.clsx}\nkleur ${deps.kleur}\n`;
+    return deps.clsx === "~2.0.0" || deps.kleur === "^4.1.5" ? { ok: false, out: `broke with ${deps.clsx} ${deps.kleur}`, lock } : { ok: true, out: "pass", lock };
   };
   const jobs: any[] = [];
   const fixer: Fixer = async (job) => { jobs.push(job); return { ok: false, tries: 1, out: "still broken", edits: [], usd: 0.25 }; };
   const { call, send } = await app(tester, fixer);
+  await send("ryan", "/api/repos/ryan/lab/files", { path: "bun.lock", content: "clsx ^1.2.1\nkleur ^3.0.0" });
+  await send("ryan", "/api/repos/ryan/lab/do/commit?path=bun.lock", { message: "bun.lock" });
   call.env.DEPS_REGISTRY = registry({ ...{ mitt: { "3.0.0": 400 }, hono: { "4.0.0": 90 }, ky: { "1.0.0": 300 } }, kleur: { "3.0.0": 900, "4.1.5": 30 }, clsx: { "1.2.1": 500, "1.3.0": 200, "2.0.0": 60 } });
   const put = (b: unknown) => send("ryan", "/api/repos/ryan/lab/deps", b, "PUT");
   expect((await put({ on_fail: ["retry", "pray"] })).status).toBe(400);
@@ -387,6 +391,10 @@ test("the on-fail chain: the owner orders the steps, and the first that works se
   expect(jobs.map((j) => [j.update.name, j.tries, j.usd])).toEqual([["clsx", 3, 2], ["kleur", 3, 2]]);
   const pkg = await (await call("ryan", `/api/repos/ryan/lab/do/file?path=package.json&branch=${got.report.branch}`)).json();
   expect(pkg.lines.map((l: any) => l.text).filter((t: string) => /clsx|kleur/.test(t))).toEqual([`    "kleur": "^3.0.0",`, `    "clsx": "~1.3.0",`]);
+  // The lockfile is the rolled-back try's, not main's.
+  const lock = await (await call("ryan", `/api/repos/ryan/lab/do/file?path=bun.lock&branch=${got.report.branch}`)).json();
+  expect(lock.lines.map((l: any) => l.text).filter(Boolean)).toEqual(["clsx ~1.3.0", "kleur ^3.0.0"]);
+  expect(got.report.note ?? "").not.toContain("couldn't be regenerated");
 
   // Held back: the next run doesn't propose that release again.
   expect((await (await call("ryan", "/api/repos/ryan/lab/deps")).json()).settings.held).toEqual(["kleur@4.1.5"]);

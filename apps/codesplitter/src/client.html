@@ -224,6 +224,8 @@
   .tour .tour-top { display: flex; align-items: center; gap: 8px; } .tour .tour-top b { flex: 1; } .tour .tour-n { font-variant-numeric: tabular-nums; }
   .tour p { margin: 0; } .tour .tour-said { font-size: 13px; color: var(--accent); min-height: 1em; }
   .guide-fab, .guide { position: fixed; left: 16px; bottom: 12px; z-index: 61; }
+  /* The workbench pages end in the recent-repos strip (28px) over the status bar (24px): the pill, the guide and the tour sit above them. */
+  body.ide-mode .guide-fab, body.ide-mode .guide { bottom: 64px; } body.ide-mode .guide { max-height: calc(100vh - 76px); } body.ide-mode .tour { bottom: 108px; }
   .guide-fab { display: flex; align-items: center; gap: 6px; padding: 7px 12px; background: var(--bg); color: var(--fg); border: 1px solid var(--border); border-radius: 999px; box-shadow: 0 4px 14px rgba(0,0,0,.14); font: inherit; font-size: 13px; cursor: pointer; }
   .guide-fab:hover { border-color: var(--accent); } .guide-fab b { min-width: 4ch; text-align: center; font-variant-numeric: tabular-nums; font-weight: 600; }
   .guide { width: min(380px, calc(100vw - 32px)); max-height: calc(100vh - 24px); overflow: auto; display: grid; gap: 10px; padding: 14px; background: var(--bg); border: 1px solid var(--border); border-left: 3px solid var(--accent); border-radius: 10px; box-shadow: 0 10px 30px rgba(0,0,0,.18); font-size: 14px; }
@@ -3492,6 +3494,13 @@ function pickRanges(text, n) {
     for (let k = Math.max(1, Math.min(a, b)); k <= Math.min(n, Math.max(a, b)); k++) out.add(k - 1);
   }
   return out;
+}
+/** The pick `now` with `want` put to it: replace (just `want`), add, remove, or toggle (each of `want` flips). */
+function pickWith(now, want, mode = "replace") {
+  if (mode === "add") return new Set([...now, ...want]);
+  if (mode === "remove") return new Set([...now].filter((k) => !want.has(k)));
+  if (mode === "toggle") return new Set([...[...now].filter((k) => !want.has(k)), ...[...want].filter((k) => !now.has(k))]);
+  return new Set(want);
 }
 /** Lines holding `q` (any case), or matching it when it is written /regex/flags. */
 function pickMatching(texts, q) {
@@ -7801,7 +7810,7 @@ const readTools = () => [
       }
       if (!want.size && mode !== "replace") throw new Error("name the lines: from/to or ranges");
       const now = f.picker.picked;
-      f.picker.set(new Set(mode === "add" ? [...now, ...want] : mode === "remove" ? [...now].filter((k) => !want.has(k)) : mode === "toggle" ? [...now].filter((k) => !want.has(k)).concat([...want].filter((k) => !now.has(k))) : want));
+      f.picker.set(pickWith(now, want, mode));
     }) },
   { name: "deselect_lines", title: "Deselect lines", description: "Drop the picked lines on the file on screen, as Esc does. With `from`/`to`, drop just those and keep the rest.",
     inputSchema: { type: "object", properties: { from: { type: "integer", minimum: 1 }, to: { type: "integer", minimum: 1 } } },
@@ -7820,16 +7829,16 @@ const readTools = () => [
       f.picker.set(pickBlock(f.lines().map((l) => l.text), f.picker.picked));
     }) },
   { name: "select_matching", title: "Select lines matching", description: "Pick the lines of the file on screen that hold `match` (any case), or match it when written /regex/flags. `mode` as select_lines: replace (the default), add, remove or toggle. Answers with the pick as runs.",
-    inputSchema: { type: "object", properties: { match: { type: "string" }, mode: { type: "string", enum: ["replace", "add", "remove"] } }, required: ["match"] },
+    inputSchema: { type: "object", properties: { match: { type: "string" }, mode: { type: "string", enum: ["replace", "add", "remove", "toggle"] } }, required: ["match"] },
     execute: ({ match, mode = "replace" }) => asAgent(() => {
-      const f = fileSel(), hit = pickMatching(f.lines().map((l) => l.text), match), now = f.picker.picked;
-      f.picker.set(mode === "add" ? new Set([...now, ...hit]) : mode === "remove" ? new Set([...now].filter((k) => !hit.has(k))) : hit);
+      const f = fileSel();
+      f.picker.set(pickWith(f.picker.picked, pickMatching(f.lines().map((l) => l.text), match), mode));
     }) },
   { name: "select_lines_by", title: "Select lines by an author", description: "Pick the lines of the file on screen that `who` last wrote (a handle, or an agent's name as read_file shows it in `by`). Mode as select_matching.",
-    inputSchema: { type: "object", properties: { who: { type: "string" }, mode: { type: "string", enum: ["replace", "add", "remove"] } }, required: ["who"] },
+    inputSchema: { type: "object", properties: { who: { type: "string" }, mode: { type: "string", enum: ["replace", "add", "remove", "toggle"] } }, required: ["who"] },
     execute: ({ who, mode = "replace" }) => asAgent(() => {
-      const f = fileSel(), hit = pickBy(f.lines(), who), now = f.picker.picked;
-      f.picker.set(mode === "add" ? new Set([...now, ...hit]) : mode === "remove" ? new Set([...now].filter((k) => !hit.has(k))) : hit);
+      const f = fileSel();
+      f.picker.set(pickWith(f.picker.picked, pickBy(f.lines(), who), mode));
     }) },
   { name: "selected_lines", title: "Read the selection", description: "The lines picked on the file on screen: the runs ([from, to], 1-based) and each line's text and author.",
     inputSchema: noInput, annotations: { readOnlyHint: true, untrustedContentHint: true }, execute: async () => {
@@ -8741,6 +8750,8 @@ addEventListener("click", (e) => {
   const [, , owner, repo, id] = a.getAttribute("href").split("/");
   if (!owner || !repo || !/^(\d+|all)$/.test(id ?? "")) return;
   e.preventDefault();
+  // Opening it reads it (the GET marks it seen): the inbox row under the modal stops looking unread now, not at its next draw.
+  a.classList.remove("unread");
   void openThread(decodeURIComponent(owner), decodeURIComponent(repo), id);
 });
 
