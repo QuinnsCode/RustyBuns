@@ -136,6 +136,8 @@ if (import.meta.main) {
   let runs = await look();
   while (wait && !settled(pr, Date.now(), runs) && Date.now() < until) { await Bun.sleep(20_000); pr = await view(n); runs = await look(); }
   console.log(summarize(pr, Date.now(), runs).join("\n"));
+  // GitHub hasn't started the checks: the test swarm (apps/test-swarm) can run them on our own Macs instead.
+  if (needRuns(pr) && process.env.SWARM_URL) console.log("  GitHub is slow: `bun run builder queue` from the PR's branch sends its suites to the test swarm");
   for (const o of outcomes(pr).filter((o) => o.outcome === "fail")) { const log = await failedLog(o.url); if (log.length) console.log(`--- ${o.name}\n${log.join("\n")}`); }
   if (wait && !settled(pr, Date.now(), runs)) console.log(`  still running after ${minutes} min`);
   process.exit(outcomes(pr).some((o) => o.outcome === "fail") ? 1 : 0);
