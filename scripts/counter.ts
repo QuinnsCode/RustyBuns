@@ -5,11 +5,14 @@
 //   3. the page's <form method="post"> increments it through the framework's own server mechanism
 //      (an action, an endpoint, a server function); posted twice, `/` shows `count: 2`
 //   4. the host quits and starts again on the same data dir: still `count: 2` (KV is the local twin, on disk)
+//   5. the edge column: the stack `plan` would run declares the Worker and the COUNTER namespace (no account,
+//      no second build: `rustybuns generate`, read the way `plan --offline` reads it)
 //
 // Each example's test is one line: `test("...", () => counterJourney(import.meta.dir + "/.."))`.
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { plannedResources } from "../packages/cli/src/offline-plan.ts";
 
 const cli = join(import.meta.dir, "../packages/cli/src/index.ts");
 const token = "counter-journey-token";
@@ -86,6 +89,22 @@ export async function counterJourney(app: string, opts: { build?: boolean; spa?:
     await stop(host);
     rmSync(home, { recursive: true, force: true });
   }
+  if (!opts.spa) await edgePlan(app);
+}
+
+/**
+ * What the edge would get: `rustybuns generate` writes the stack `plan` and `deploy` run, and it must declare
+ * the Worker and the COUNTER namespace. A client-only SPA is desktop-only, so it has no Worker to check.
+ */
+export async function edgePlan(app: string): Promise<void> {
+  const gen = Bun.spawn(["bun", cli, "generate"], { cwd: app, stdout: "pipe", stderr: "pipe" });
+  if (await gen.exited) throw new Error(`generate failed:\n${await new Response(gen.stdout).text()}\n${await new Response(gen.stderr).text()}`);
+  const made = plannedResources(readFileSync(join(app, ".rustybuns/alchemy.run.ts"), "utf8"));
+  const missing = [
+    made.some((r) => r.type === "Cloudflare.Worker") ? "" : "a Cloudflare.Worker",
+    made.some((r) => r.id === "COUNTER" && r.type === "Cloudflare.KV.Namespace") ? "" : "the COUNTER KV namespace",
+  ].filter(Boolean);
+  if (missing.length) throw new Error(`the edge plan is missing ${missing.join(" and ")}; it declares: ${made.map((r) => `${r.id} ${r.type}`).join(", ") || "nothing"}`);
 }
 
 // A client-only app (a Vite SPA) has no server render and no form: the page is a shell and the count lives
