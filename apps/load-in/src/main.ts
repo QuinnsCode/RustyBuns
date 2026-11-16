@@ -192,7 +192,8 @@ document.addEventListener("mousemove", (e) => {
 document.addEventListener("keydown", (e) => {
   keys.add(e.code);
   if (phase !== "play" || e.repeat) return;
-  if (!world.held && !cable.inHand(cables) && (bar?.key(e.code) || ar?.key(e.code))) return;
+  if (!world.held && !cable.inHand(cables) && bar?.key(e.code)) return;
+  if (!world.held && !cable.inHand(cables) && ar?.key(e.code)) return;
   if (big?.key(e.code)) return;
   if (e.code === "KeyF") grab();
   if (e.code === "KeyQ") turnHeld(world, -1);
@@ -341,7 +342,9 @@ const harness = {
   dropEnd: () => cable.dropEnd(cables),
   coil: (key: string) => cable.coil(world, cables, key),
   /** Stand still for `seconds` while the cables settle. */
-  wait: (seconds = 2) => { cable.settle(world, cables, seconds); if (ar) idle(world, seconds); },
+  wait: (seconds = 2) => cable.settle(world, cables, seconds),
+  /** Arena: let `seconds` go by on the clock while the crew works. */
+  crewWait: (seconds: number) => idle(world, seconds),
   /** Arena: send the crew to carry `key` to a rigging point's fly bar (its key) or to (x, z). */
   send: (key: string, to: string | number, z?: number) => send(world, key, typeof to === "string" ? to : { x: to, z: z ?? 0 }),
   /** Arena: fly a hang to trim, or lower it, at its motor controller. */
@@ -359,9 +362,13 @@ const harness = {
   raise: (key: string, height: number) => raise(world, key, height),
   /** Dive bar: the master fader, dB. */
   master: (db: number) => master(world, db),
-  heat: (on: boolean) => (bar ?? ar)?.setHeat(on),
+  heat: (on: boolean) => bar?.setHeat(on),
+  /** Arena: the heat map on or off. */
+  arenaHeat: (on: boolean) => ar?.setHeat(on),
   /** Dive bar: open the doors; the final score. */
-  doors: () => (bar ?? ar)?.doors() ?? null,
+  doors: () => bar?.doors() ?? null,
+  /** Arena: show time; the final score. */
+  arenaDoors: () => ar?.doors() ?? null,
   /** Load a level by name (garage, dive-bar, bigger-bar, park, arena). */
   level: (name: string) => load(levelFrom(name)),
   /** Turn what you hold a 15 degree step: -1 left, 1 right. */
