@@ -30,3 +30,8 @@ button:hover { border-color: #4cc9f0; }
 .clock .time { min-width: 7.5ch; }
 .clock.late { color: #ff6b6b; }
 .clock .tip { display: inline-grid; place-items: center; width: 1.1em; height: 1.1em; border-radius: 50%; border: 1px solid currentColor; font-size: .75em; cursor: help; }
+.tour { display: grid; gap: 4px; justify-items: center; max-width: min(34rem, calc(100vw - 32px)); font-variant-numeric: tabular-nums; }
+.tour .pass { color: #6fdc8c; }
+.tour .warn { color: #f4a261; }
+.tour .shop { display: flex; flex-wrap: wrap; gap: .4rem; justify-content: center; }
+.tour .shop button { padding: .3rem .7rem; font-size: 14px; }

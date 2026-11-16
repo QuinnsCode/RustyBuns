@@ -19,9 +19,11 @@ The dial under Play goes from **Cozy** (no clock, gear weighs half, a cable you 
 
 The dive bar (`?level=dive-bar`): set the tops on their stands, then, looking at one with your hands free, Q / E turn it, R / V tilt it, Z / X lower or raise its stand. H shows the coverage heat map, [ and ] move the master fader, and Enter opens the doors on your score. The crowd area should sit within 4 dB of 100 dB, with the bar at least 5 dB quieter so the staff can hear orders.
 
-The bigger bar (`?level=bigger-bar`): passive 15" tops and two subs run off the amp rack over speaker cable, two powered wedges, and wall outlets on four numbered circuits (two 20 A on the stage, 15 A at the bar and the side). The cables decide what plays. The bar's cooler is always on circuit 3, so the rack on that circuit trips it at show level. Walk to the panel on the right wall and press B to reset it, then move the plug. The card shows each circuit and how many speakers are fed.
+The bigger bar (`?level=bigger-bar`): passive 15" tops and two subs run off the amp rack over speaker cable, two powered wedges, and wall outlets on four numbered circuits (two 20 A on the stage, 15 A at the bar and the side). The cables decide what plays. The bar's cooler is always on circuit 3, so the rack on that circuit trips it at show level. Walk to the panel on the right wall and press B to reset it, then move the plug. The card shows each circuit and how many speakers are fed; Enter opens the doors on the share of speakers fed (warm drinks, from a tripped cooler, cost 30).
 
 The park (`?level=park`): a Saturday event with a pop-up tent and no wall power. F on the generator (90 kg, too heavy to lift) takes its handle and you push it in from the truck at a heavy pace; run the 25 m power cable to the distro in the tent and the short ones to the tops and the mixer, all inside the generator's 6.3 kW (past it, it trips and the park goes quiet). Cables across the lakeside path or the dog walk need a ramp, and the houses across the road have a noise limit of 82 dB at their property line: aim, tilt and the fader trade the crowd's 95 dB against the neighbours. On Cozy the generator rolls light and never trips, and ramps snap over the runs. Same keys as the dive bar; Enter is show time.
+**The tour.** Play takes you to the gig you're booked at, up a ladder: the dive bar, the bigger bar, the community event in the park (the desert party and the arenas join as they're built). Home base, in the menu, is the cash, the truck and the shop. Each gig needs its kit, the gear its venue starts with; what you don't own you rent for the night at 5% of its price, and if the kit outweighs your truck (the hatchback carries 150 kg, the van 600, the box truck 2000) you rent the next one up at 10%. Doors settle the night: the pay less the rent goes in the bank, a show that passes books the next rung, and one that doesn't books you back at the same place. Buy gear and a bigger truck to keep more of the pay. The tour is kept in this browser; a page opened with `?level=` plays that level and leaves the tour alone.
+
 A gamepad works too (left stick walk, right stick look, A grab, LB / RB turn, B crouch); the cog rebinds it.
 
 ## What's in it
@@ -32,6 +34,8 @@ A gamepad works too (left stick walk, right stick look, A grab, LB / RB turn, B 
 | `src/venues/bigger-bar.ts` | the bigger bar: its outlets and their circuits, the cooler's house plug, the breaker panel, and `judge`, which runs the cables through `compile()` and trips what is over |
 | `src/venues/bigger-bar-view.ts` | the stage, the counter, the panel with a lamp per circuit, the circuit card, B to reset; what plays comes from the judge |
 | `src/assists.ts` | the cozy-to-sim dial: each assist is a named rule (`assist("autoCoil")`), one row per stop in `RULES` |
+| `src/tour.ts` | the tour: the ladder, prices and trucks, `ready` (what a gig's kit makes you rent), `record` (a night settled and the next booking), `buy`, and `TourSave`, the guard a saved tour is read through |
+| `src/tour-view.ts` | home base in the menu: the bank, the truck, the next gig and its rent, the shop, the last night |
 | `src/clock.ts` | the clock to doors: each venue's window and fee, the dial's stretch and grace, and what being late costs |
 | `src/dial-view.ts` | the dial in the menu, the clock in the HUD, and the jack glow |
 | `src/venues/dive-bar.ts` | the dive bar: the room, the crowd and bar zones, aiming (turn, tilt, raise the stand), the master fader, and the score from `coverage()` in `packages/gear` |
@@ -44,7 +48,8 @@ A gamepad works too (left stick walk, right stick look, A grab, LB / RB turn, B 
 | `src/audio/play.ts` | Web Audio: our own synthesised house loop, per-speaker gain, top end and pan, one sub bus, the speakers-down card and a -1 dBFS limiter |
 | `src/eqosys.ts` | the eqosys sign-in and the Qollab party client, with this game's id |
 | `test/garage.test.ts` | the cab carried in from the door, set by the amp, the head stacked on it |
-| `test/bigger-bar.test.ts` | cable the rig, trip the bar's breaker, reset it at the panel, move the plug, every speaker fed; four boxes on one rack channel hold, five shut it down |
+| `test/tour.test.ts` | the dive bar on rented gear, booked up to the bigger bar, a van rented, a miss booked back, a sub and the van bought, the rent dropping; a bad save is a new tour |
+| `test/bigger-bar.test.ts` | cable the rig, trip the bar's breaker, reset it at the panel, move the plug, every speaker fed and the show passing; four boxes on one rack channel hold, five shut it down |
 | `test/dial.test.ts` | the clock read on each stop, and the same dive bar load-in on Cozy, Crew and Sim: the same layout, a different time and show |
 | `test/dive-bar.test.ts` | both tops set on their stands: pointed at the wall they score low, aimed at the crowd they pass |
 | `test/park.test.ts` | the generator pushed in, the tent powered from it, the path ramped, the houses under the limit; then four amp racks trip it |
@@ -66,6 +71,6 @@ Signed in, **Make a party** gives a code to hand out; friends type it in **Join*
 ## The harness
 
 `window.loadIn.state()` returns you (place, facing, speed), what you hold, what F would pick up, and every piece of gear
-(where it sits, its weight), the cables (ends, slack), the hazards and the patch (`fed`, `problems`), and `sound`: each speaker's level at your head, the high and low band totals. `power(key)` switches gear on, `speakers(up)` brings the sound up. `start()`, `walkTo(x, z)`, `pickUp(key)`, `putDown()`, `turn(dir)` and `look(yaw, pitch)`
+(where it sits, its weight), the cables (ends, slack), the hazards and the patch (`fed`, `problems`), and `sound`: each speaker's level at your head, the high and low band totals. `state().tour` is the cash, truck, booked gig, nights played and whether tonight is settled; `tour()` is the whole tour and `buy(id)` buys gear or a truck. `power(key)` switches gear on, `speakers(up)` brings the sound up. `start()`, `walkTo(x, z)`, `pickUp(key)`, `putDown()`, `turn(dir)` and `look(yaw, pitch)`
 play it without pointer lock, and `takeCable`, `plug`, `unplug`, `grabEnd`, `dropEnd`, `coil` and `wait` run the cables. In the Rusty Buns repo, `bun run probe load-in` reads it from headless Chrome.
 When the game grows, grow `state()` with it, and its row in `HANDLES` (`scripts/probe.ts`).

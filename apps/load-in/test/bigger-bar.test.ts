@@ -2,7 +2,7 @@
 // take the cooler with it, walk to the panel, reset it, move the rack's plug to a stage circuit, and every speaker is fed.
 import { expect, test } from "bun:test";
 import type { Cable, CableKind } from "@rustybuns/gear";
-import { BIGGER_BAR, judge, newPanel, resetBreaker } from "../src/venues/bigger-bar.ts";
+import { BIGGER_BAR, judge, newPanel, resetBreaker, show } from "../src/venues/bigger-bar.ts";
 import { newWorld, walkTo } from "../src/sim.ts";
 import { setDial } from "../src/assists.ts";
 import { hasSwitch } from "../src/audio/hear.ts";
@@ -45,6 +45,8 @@ test("cable the rig, trip the bar's breaker, reset it at the panel, move the plu
   expect(tripped.circuits.find((x) => x.circuit === "3")).toEqual({ circuit: "3", amps: 15, tripped: true, over: false });
   expect(fed(tripped)).toEqual(["wedge-1", "wedge-2"]);
   expect(tripped.problems.map((p) => `${p.kind} ${p.items[0]}`)).toEqual(["no-power cooler", "no-power rack"]);
+  // Doors on that: two speakers of six, and warm drinks behind the bar.
+  expect(show(w, tripped)).toMatchObject({ sound: 3, coolerOff: true, pass: false });
 
   // The panel is across the room; reset it there, and with the rack still on that circuit it trips again.
   expect(resetBreaker(w, panel)).toEqual({ ok: false, why: "the breaker panel is out of reach" });
@@ -60,6 +62,7 @@ test("cable the rig, trip the bar's breaker, reset it at the panel, move the plu
   expect(fixed.problems).toEqual([]);
   expect(fed(fixed)).toEqual(speakers);
   expect(fixed.circuits.every((x) => !x.tripped)).toBe(true);
+  expect(show(w, fixed)).toMatchObject({ sound: 100, coolerOff: false, pass: true, pay: 300 });
 
   // The 20 m run to the left top loses over half a dB in 16 AWG; the short ones barely anything.
   expect(fixed.lossDb["top-l"]).toBeGreaterThan(0.5);

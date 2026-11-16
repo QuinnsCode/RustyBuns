@@ -22,6 +22,8 @@ import { soundSystem } from "./audio/play.ts";
 import { currentDial, setDial } from "./assists.ts";
 import { doors } from "./clock.ts";
 import { mountClock, mountDial, mountGlow, savedDial } from "./dial-view.ts";
+import { type Tour, bookedRung, buy, record } from "./tour.ts";
+import { loadTour, mountTour, saveTour } from "./tour-view.ts";
 import { accountChip, canSignIn, finishSignIn, login, party, type PartyMember } from "./eqosys.ts";
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -30,7 +32,13 @@ const KEY = "load-in.controls";
 
 const LEVELS: Record<string, Level> = { garage: GARAGE, "dive-bar": DIVE_BAR, "bigger-bar": BIGGER_BAR, park: PARK };
 const levelFrom = (name: string | null) => LEVELS[name ?? ""] ?? GARAGE;
-let world: World = newWorld(levelFrom(new URLSearchParams(location.search).get("level")));
+/** The tour between nights; a page opened on ?level= plays that level and leaves the tour alone. */
+let tour: Tour = loadTour();
+const asked = new URLSearchParams(location.search).get("level");
+let world: World = newWorld(asked ? levelFrom(asked) : bookedRung(tour).level);
+/** Whether tonight's show at the booked gig has been settled into the tour. */
+let settled = false;
+let tourView: ReturnType<typeof mountTour> | null = null;
 let cables = cable.newCables(world);
 /** A refusal shown under the crosshair for a moment ("a power cable doesn't fit xlr-in"). */
 let flash = { text: "", until: 0 };
@@ -120,6 +128,7 @@ let clock: ReturnType<typeof mountClock> | null = null;
 
 function load(level: Level) {
   world = newWorld(level);
+  settled = false;
   cables = cable.newCables(world);
   ropes.clear();
   scene.remove(roomGroup); roomGroup = room(world.level); scene.add(roomGroup);
@@ -186,6 +195,7 @@ document.addEventListener("mousemove", (e) => {
 document.addEventListener("keydown", (e) => {
   keys.add(e.code);
   if (phase !== "play" || e.repeat) return;
+  if (e.code === "Enter" && (bar || big)) return void openDoors();
   if (!world.held && !cable.inHand(cables) && bar?.key(e.code)) return;
   if (big?.key(e.code)) return;
   if (e.code === "KeyF") grab();
@@ -224,7 +234,23 @@ function flip() {
 /** What you hear: a speaker plays when it's switched on and, once a cable goes into it, when the patch feeds it. */
 const heard = () => hear(world, switchedOn, big ? big.fed() : cable.fedBy(world, cables), undefined, bar ? rig(world) : big?.rig());
 
-function play() { phase = "play"; menu(); lock(); }
+function play() {
+  // On tour, Play goes to the booked gig: a fresh load once last night is settled.
+  if (!asked && (settled || world.level !== bookedRung(tour).level)) load(bookedRung(tour).level);
+  phase = "play"; menu(); lock();
+}
+
+/** Enter: doors on the venue's own score; at the booked gig the night is settled (pay less rent, the next booking) and home base shows how it went. */
+function openDoors() {
+  const s = bar?.doors() ?? big?.doors() ?? null;
+  if (!s || settled || asked || world.level !== bookedRung(tour).level) return s;
+  settled = true;
+  tour = record(tour, world.level, s).tour;
+  saveTour(tour);
+  tourView?.update();
+  setTimeout(() => { if (settled && phase === "play") { phase = "menu"; document.exitPointerLock?.(); menu(); } }, 2500);
+  return s;
+}
 
 function menu() {
   $("menu").hidden = phase === "play";
@@ -287,6 +313,7 @@ async function boot() {
   accountChip($("account"), { onSignIn: () => menu(), onSignOut: () => menu() });
   savedDial();
   mountDial($("dial-host"));
+  if (!asked) tourView = mountTour($("tour-host"), () => tour, (t) => { tour = t; saveTour(t); });
   clock = mountClock($("hud"));
   $("party").hidden = !canSignIn();
   mountControls({
@@ -305,7 +332,7 @@ async function boot() {
 declare global { interface Window { loadIn: typeof harness } }
 /** The harness (scripts/probe.ts HANDLES): the level as data, and the moves a test or an agent makes without pointer lock. */
 const harness = {
-  state: () => ({ phase, dial: currentDial(), doors: doors(world.level.name, world.t), ...snapshot(world), ...cable.cableState(world, cables), sound: { up: sound.up, on: [...switchedOn], ...heard() }, ...(big ? { biggerBar: big.state() } : {}), ...(bar ? { bar: { ...(world.level === PARK ? parkState(world, cables) : barState(world)), heat: bar.heatOn } } : {}), signedIn: !!login(), party: crew.code ? { code: crew.code, members: crew.members.length, room: crew.room || null, seat: crew.seat >= 0 ? crew.seat : null } : null }),
+  state: () => ({ phase, tour: { cash: tour.cash, truck: tour.truck, booked: tour.booked, nights: tour.nights.length, settled }, dial: currentDial(), doors: doors(world.level.name, world.t), ...snapshot(world), ...cable.cableState(world, cables), sound: { up: sound.up, on: [...switchedOn], ...heard() }, ...(big ? { biggerBar: big.state() } : {}), ...(bar ? { bar: { ...(world.level === PARK ? parkState(world, cables) : barState(world)), heat: bar.heatOn } } : {}), signedIn: !!login(), party: crew.code ? { code: crew.code, members: crew.members.length, room: crew.room || null, seat: crew.seat >= 0 ? crew.seat : null } : null }),
   /** Turn the cozy-to-sim dial: "cozy", "crew" or "sim". */
   dial: (d: string) => setDial(d),
   /** Into the level, without asking for the mouse. */
@@ -332,8 +359,12 @@ const harness = {
   /** Dive bar: the master fader, dB. */
   master: (db: number) => master(world, db),
   heat: (on: boolean) => bar?.setHeat(on),
-  /** Dive bar: open the doors; the final score. */
-  doors: () => bar?.doors() ?? null,
+  /** Dive bar, bigger bar or park: open the doors; the final score (at the booked gig, the night is settled into the tour). */
+  doors: () => openDoors(),
+  /** The tour: cash, gear owned, truck, the booked gig and the nights so far. */
+  tour: () => tour,
+  /** Buy a piece of gear (by gear id) or a truck ("van", "box-truck") at home base. */
+  buy: (id: string): Answer => { const r = buy(tour, id); if (r.ok) { tour = r.tour; saveTour(tour); tourView?.update(); } return r.ok ? { ok: true } : { ok: false, why: r.why }; },
   /** Load a level by name (garage, dive-bar, bigger-bar, park). */
   level: (name: string) => load(levelFrom(name)),
   /** Turn what you hold a 15 degree step: -1 left, 1 right. */
