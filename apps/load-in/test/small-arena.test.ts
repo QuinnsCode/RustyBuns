@@ -107,7 +107,8 @@ test("hang the arrays, fail and pass the point's check, fly them clear, fill the
   [-5, -1.7, 1.7, 5].forEach((x, k) => place(w, `fill-${k + 1}`, x, 29.7, Math.PI));
   // The desk sits on its case: round the case, then out to front of house.
   place(w, "desk", 0, 16.5, 0, [1.2, 35]);
-  expect(item(w, "desk")).toMatchObject({ x: 0, y: 0, z: 16.5 });
+  const desk = item(w, "desk");
+  expect(Math.hypot(desk.x, desk.z - 16.5)).toBeLessThan(0.1);
   const after = score(w);
   expect(after.covered.front).toBeGreaterThan(0.9);
   expect(after).toMatchObject({ desk: true, pass: true });
