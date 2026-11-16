@@ -109,6 +109,15 @@ function pushGrade() {
   return { pushGrade: accel(hill, 40, G * Math.sin(th)) / accel(flat, 40, 0) };
 }
 
+// a long hill gives the board speed until only the wheels and the air hold it back: no input, 50 L down a 6 deg street grade from push top
+function hillRoll() {
+  const th = (6 * Math.PI) / 180, d = 2000, from = 1.61 * v0;
+  const hill = lv.makeLevel({ name: "judge-downhill", pieces: [lv.piece("ramp", "hill", 0, d / 2, 0, 40, d, 0, d * Math.tan(th))], rails: [], spawns: [], bounds: BOUNDS });
+  const s = Object.assign(start(0, 1900, Math.PI, hill), { speed: from });
+  for (let i = 0; i < 120 / DT && 1900 - s.z < 50 * L && s.speed > 0.01; i++) run(s, {}, hill);
+  return { hillRoll: s.speed / v0 };
+}
+
 function pipe(rider: (s: S, h: number) => object, secs: number, speed?: number) {
   const hp = pcs.halfpipe({ x: 0, z: 0 }, { w: 20, d: 40, h: 3 });
   const level = lv.makeLevel({ name: "judge-pipe", pieces: hp.pieces, rails: [], spawns: [], bounds: BOUNDS });
@@ -139,7 +148,7 @@ function halfpipe() {
   return { pipeDecay: decay, pumpGain: gain, vertAir: Math.max(0, best - vert.h) / vert.h, _peaksIdle: idle, _peaksPumped: pumped.peaks.slice(0, 8), _peaksVert: vert.peaks.slice(0, 8) };
 }
 
-const game: Record<string, number | number[]> = { ...ollie(), ...flip(), ...coast(), ...push(), ...pushGrade(), ...carve(), ...grind(), ...halfpipe() };
+const game: Record<string, number | number[]> = { ...ollie(), ...flip(), ...coast(), ...push(), ...pushGrade(), ...hillRoll(), ...carve(), ...grind(), ...halfpipe() };
 const score = (x: number, t: number, tol: number) => (!Number.isFinite(x) ? 0 : Math.max(0, Math.min(100, 100 * (1 - (Math.abs(x - t) - tol) / (2 * tol)))));
 const rows = Object.entries(ref.metrics as Record<string, { target: number; tol: number; unit: string; weight: number; kind: string }>).map(([k, m]) => {
   const x = game[k] as number;
