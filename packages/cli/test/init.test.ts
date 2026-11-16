@@ -83,6 +83,27 @@ test("init: wrangler keys that cannot be carried over are reported, and adopt re
   expect(p.read("rustybuns.config.ts")).toMatch(/"crons": \[\s*"\* \* \* \* \*"\s*\]/);   // Cron Triggers carry over
 });
 
+test("init: reads cloudflare.config.ts over the wrangler.jsonc cf generated, and rewrites that file", () => {
+  const cf = (env: string) => ({
+    "package.json": JSON.stringify({ name: "r", dependencies: { vite: "5" } }),
+    "cloudflare.config.ts": `export default ({ mode }) => ({ worker: { name: "r", compatibilityDate: "2026-09-01", entrypoint: "src/worker.ts", env: { ${env} } } });`,
+    "wrangler.jsonc": `{ "name": "r", "main": "src/worker.ts", "compatibility_date": "2026-09-01" }`,
+    "src/worker.ts": "export default {}",
+  });
+  const p = project(cf(`DB: { type: "d1", name: "r-db" }, TOKEN: { type: "secret" }`));
+  const r = p.run("init");
+  expect([r.code, r.out]).toEqual([0, expect.stringMatching(/from cloudflare\.config\.ts/)]);
+  expect(p.read("rustybuns.config.ts")).toMatch(/"DB": \{\s*"type": "d1",\s*"databaseName": "r-db"/);
+  expect(p.read("rustybuns.config.ts")).toMatch(/"TOKEN": \{\s*"type": "secret"/);
+  expect(p.read("wrangler.jsonc")).toStartWith("// GENERATED");
+  expect(existsSync(join(p.dir, "wrangler.generated.jsonc"))).toBe(false);
+  // A binding it can't carry stops init until --force, which says what it left out.
+  const q = project(cf(`JOBS: { type: "queue", name: "jobs" }`));
+  const stop = q.run("init");
+  expect([stop.code, stop.out]).toEqual([1, expect.stringMatching(/binds JOBS \(queue\).*--force/)]);
+  expect(q.run("init", "--force").out).toMatch(/left out: JOBS \(queue\)/);
+});
+
 test("init: env blocks become stages, with account_id, workers_dev and preview_urls; adopt goes ahead (#1211)", () => {
   const acct = "0123456789abcdef0123456789abcdef", other = "fedcba9876543210fedcba9876543210";
   const p = project({
