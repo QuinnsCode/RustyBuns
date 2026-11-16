@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
+import { maybe, obj, opt, rec, str } from "@rustybuns/shell-bun/guard";
 
 // The Alchemy + Effect version set that is known to work together. Alchemy is
 // beta and Effect is rc; carets drift across breaking changes within days, so
@@ -27,8 +28,48 @@ export const DEPLOY_OVERRIDES: Record<string, string> = {
   "@effect/vitest": "4.0.5",
 };
 
-export function installCommand(pm: string, hasWorkspaceFile: boolean): string {
-  const specs = Object.entries(DEPLOY_DEPS).map(([n, v]) => `${n}@${v}`).join(" ");
+/** A package.json's dependencies and devDependencies, as name -> version. */
+const Deps = obj({ dependencies: opt(rec(str())), devDependencies: opt(rec(str())) });
+export function pkgDeps(pkg: unknown): Record<string, string> {
+  const d = maybe(Deps)(pkg);
+  return { ...d?.dependencies, ...d?.devDependencies };
+}
+
+/** The Alchemy and Effect versions an app already pins exactly, or null. */
+export interface OwnDeploySet { alchemy: string; effect: string }
+
+const EXACT = /^\d+\.\d+\.\d+(-[0-9A-Za-z.]+)?$/;
+const major = (v: string) => v.split(".")[0];
+
+/**
+ * An app that brings its own Alchemy 2 + Effect 4, pinned exactly (a Rat Stack app, or any project
+ * on that toolchain): its versions, or null. Such an app keeps them. `add deploy` adds only the
+ * packages it is missing, at its versions, and writes no overrides. A range, a `catalog:` or
+ * another major gets the pinned set.
+ */
+export function ownDeploySet(deps: Record<string, string>): OwnDeploySet | null {
+  const alchemy = deps.alchemy, effect = deps.effect;
+  if (alchemy === undefined || effect === undefined) return null;
+  if (!EXACT.test(alchemy) || !EXACT.test(effect)) return null;
+  if (major(alchemy) !== major(DEPLOY_DEPS.alchemy!) || major(effect) !== major(DEPLOY_DEPS.effect!)) return null;
+  return { alchemy, effect };
+}
+
+/** What `add deploy` installs: the pinned set, or, for an app with its own set, only what it lacks, at its versions. */
+export function deployDeps(deps: Record<string, string>): Record<string, string> {
+  const own = ownDeploySet(deps);
+  if (!own) return DEPLOY_DEPS;
+  const out: Record<string, string> = {};
+  for (const name of Object.keys(DEPLOY_DEPS)) {
+    if (deps[name] !== undefined) continue;
+    out[name] = name === "effect" || name.startsWith("@effect/") ? own.effect : own.alchemy;
+  }
+  return out;
+}
+
+export function installCommand(pm: string, hasWorkspaceFile: boolean, deps: Record<string, string> = DEPLOY_DEPS): string | null {
+  if (!Object.keys(deps).length) return null;
+  const specs = Object.entries(deps).map(([n, v]) => `${n}@${v}`).join(" ");
   switch (pm) {
     case "bun": return `bun add -d ${specs}`;
     case "pnpm": return `pnpm add -D${hasWorkspaceFile ? "w" : ""} ${specs}`;

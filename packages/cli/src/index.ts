@@ -48,7 +48,7 @@ import { jekyllPlan, type JekyllEnv } from "./glue/jekyll.ts";
 import { sourceLayout, caseCollisions } from "./glue/source.ts";
 import { analyze, report } from "./glue/boundary.ts";
 import { generateBoundaryFiles, scaffoldDesktopPackage } from "./glue/desktop-scaffold.ts";
-import { installCommand, applyOverrides, workspaceRoot, DEPLOY_DEPS } from "./glue/deploy-deps.ts";
+import { installCommand, applyOverrides, workspaceRoot, deployDeps, ownDeploySet, pkgDeps, DEPLOY_DEPS } from "./glue/deploy-deps.ts";
 import { workspacePrebuild } from "./glue/workspace-build.ts";
 import { Profiler } from "./profile.ts";
 import { adoptProblem, adoptQuestion, confirmAdopt, forceFresh, isolationFlags, ISOLATION_ARGS, modeLine } from "./isolation.ts";
@@ -149,7 +149,7 @@ async function addDesktop(flags: string[]) {
   console.log(`\nnext: ${inf.execCmd("rustybuns build desktop --dev")}, then ${inf.execCmd("rustybuns run desktop")}`);
 }
 
-/** Install the pinned Alchemy + Effect set and force transitive @effect/* to match. */
+/** Install the pinned Alchemy + Effect set and force transitive @effect/* to match; an app with its own set keeps it. */
 async function addDeploy(dryRun: boolean) {
   const inf = infer();
   // In a workspace the overrides must live in the root package.json; a member's are ignored.
@@ -158,27 +158,40 @@ async function addDeploy(dryRun: boolean) {
   // package.json is edited in place, keys and all, so it is walked as plain JSON rather than read through a guard.
   const pkg: unknown = await Bun.file(pkgPath).json();
   if (!isRecord(pkg)) throw new Error(`${pkgPath} isn't a JSON object`);
-  const { changed } = applyOverrides(pkg, inf.pm);
-  const cmd = installCommand(inf.pm, await Bun.file("pnpm-workspace.yaml").exists());
-  console.log(`pinned deploy deps: ${Object.entries(DEPLOY_DEPS).map(([n, v]) => `${n}@${v}`).join(", ")}`);
-  const where = root ? `the workspace root (${pkgPath})` : "package.json";
-  if (dryRun) { console.log(`would write ${inf.pm === "pnpm" ? "pnpm.overrides" : "overrides"} to ${where} and run:\n  ${cmd}`); return; }
-  if (changed) { await Bun.write(pkgPath, JSON.stringify(pkg, null, 2) + "\n"); console.log(`wrote overrides to ${where}`); }
-  // `plan` beside `deploy`, so the deploy refusal's "plan again" works as `<pm> run plan` too (#3743).
   const own: unknown = root ? await Bun.file("package.json").json() : pkg;
   if (!isRecord(own)) throw new Error("package.json isn't a JSON object");
+  const deps = pkgDeps(own);
+  // An app with its own Alchemy + Effect pins (a Rat Stack app) keeps them: no overrides, only what it lacks.
+  const brought = ownDeploySet(deps);
+  const want = deployDeps(deps);
+  const { changed } = brought ? { changed: false } : applyOverrides(pkg, inf.pm);
+  const cmd = installCommand(inf.pm, await Bun.file("pnpm-workspace.yaml").exists(), want);
+  console.log(brought
+    ? `own deploy deps: alchemy@${brought.alchemy}, effect@${brought.effect} (kept; the pinned set is alchemy@${DEPLOY_DEPS.alchemy}, effect@${DEPLOY_DEPS.effect})`
+    : `pinned deploy deps: ${Object.entries(DEPLOY_DEPS).map(([n, v]) => `${n}@${v}`).join(", ")}`);
+  const where = root ? `the workspace root (${pkgPath})` : "package.json";
+  if (dryRun) {
+    if (changed) console.log(`would write ${inf.pm === "pnpm" ? "pnpm.overrides" : "overrides"} to ${where}`);
+    console.log(cmd ? `would run:\n  ${cmd}` : "nothing to install");
+    return;
+  }
+  if (changed) { await Bun.write(pkgPath, JSON.stringify(pkg, null, 2) + "\n"); console.log(`wrote overrides to ${where}`); }
+  // `plan` beside `deploy`, so the deploy refusal's "plan again" works as `<pm> run plan` too (#3743).
   const scripts = isRecord(own.scripts) ? own.scripts : (own.scripts = {});
   const added = (["plan", "deploy"] as const).filter((s) => scripts[s] === undefined);
   for (const s of added) scripts[s] = `rustybuns ${s}`;
   if (added.length) { await Bun.write("package.json", JSON.stringify(own, null, 2) + "\n"); console.log(`added ${added.join(" and ")} to package.json scripts`); }
-  console.log(`$ ${cmd}`);
-  // npm's strict peer check refuses trees whose own vitest/@effect peers disagree with the overrides (TerraViz);
-  // the pinned set is known to work together, so a second try may skip that check.
-  const strict = await $`sh -c ${cmd}`.nothrow();
-  if (strict.exitCode !== 0) {
-    if (inf.pm !== "npm") process.exit(strict.exitCode);
-    console.log(`\nnpm refused on a peer conflict; retrying with --legacy-peer-deps\n$ ${cmd} --legacy-peer-deps`);
-    await $`sh -c ${`${cmd} --legacy-peer-deps`}`;
+  if (!cmd) console.log("nothing to install: this app already has every deploy package");
+  else {
+    console.log(`$ ${cmd}`);
+    // npm's strict peer check refuses trees whose own vitest/@effect peers disagree with the overrides (TerraViz);
+    // the pinned set is known to work together, so a second try may skip that check.
+    const strict = await $`sh -c ${cmd}`.nothrow();
+    if (strict.exitCode !== 0) {
+      if (inf.pm !== "npm") process.exit(strict.exitCode);
+      console.log(`\nnpm refused on a peer conflict; retrying with --legacy-peer-deps\n$ ${cmd} --legacy-peer-deps`);
+      await $`sh -c ${`${cmd} --legacy-peer-deps`}`;
+    }
   }
   console.log(`\nnext: set a throwaway "name" in rustybuns.config.ts, then ${inf.execCmd("rustybuns plan")}`);
 }
@@ -790,15 +803,22 @@ function installAlchemyHint(): string {
     : `Run \`${inf.execCmd("rustybuns add deploy")}\` here first (it installs the pinned set), or cd into an app that has it.`;
 }
 
+/** The Alchemy version this app pins itself, with its own Effect (a Rat Stack app): it runs that one. */
+function ownAlchemy(): string | undefined {
+  let pkg: unknown;
+  try { pkg = JSON.parse(readFileSync("package.json", "utf8")); } catch { return undefined; }
+  return ownDeploySet(pkgDeps(pkg))?.alchemy;
+}
+
 function alchemyCli(): string[] {
   if (existsSync("node_modules/.bin/alchemy")) return ["node_modules/.bin/alchemy"];
   let pkg: string | undefined;
   try { pkg = Bun.resolveSync("alchemy/package.json", process.cwd()); } catch { /* not installed */ }
   // Bun's auto-install resolves from its global cache; that copy has no peers either.
   const version = pkg && !pkg.includes("/.bun/install/cache/") ? JSON.parse(readFileSync(pkg, "utf8")).version : undefined;
-  if (version === DEPLOY_DEPS.alchemy) return ["node", join(dirname(pkg!), "bin", "cli.js")];
+  if (version && (version === DEPLOY_DEPS.alchemy || version === ownAlchemy())) return ["node", join(dirname(pkg!), "bin", "cli.js")];
   throw new Error(version
-    ? `this project has alchemy ${version}, not the pinned ${DEPLOY_DEPS.alchemy}. Run \`rustybuns add deploy\` to pin it.`
+    ? `this project has alchemy ${version}, not the pinned ${DEPLOY_DEPS.alchemy} or one package.json pins exactly. Run \`rustybuns add deploy\` to pin it.`
     : `no Alchemy in this project. ${installAlchemyHint()}`);
 }
 

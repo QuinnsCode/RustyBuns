@@ -225,6 +225,25 @@ test("add deploy: an override whose range covers the pin is left alone", async (
   }
 });
 
+test("add deploy: an app with its own Alchemy + Effect pins keeps them and installs only what it lacks", async () => {
+  const { deployDeps, installCommand, ownDeploySet, DEPLOY_DEPS } = await import("../src/glue/deploy-deps.ts");
+  // A Rat Stack app: its own exact Alchemy 2 and Effect 4, and the Cloudflare provider already.
+  const rat = { alchemy: "2.0.0-beta.87", "@alchemy.run/cloudflare": "2.0.0-beta.87", effect: "4.1.4", "@effect/platform-node": "4.1.4" };
+  expect(ownDeploySet(rat)).toEqual({ alchemy: "2.0.0-beta.87", effect: "4.1.4" });
+  const want = deployDeps(rat);
+  expect(want).toEqual({
+    "@alchemy.run/hetzner": "2.0.0-beta.87", "@alchemy.run/railway": "2.0.0-beta.87", "@alchemy.run/neon": "2.0.0-beta.87",
+    "@alchemy.run/frontend-frameworks": "2.0.0-beta.87", "@effect/platform-bun": "4.1.4",
+  });
+  expect(installCommand("pnpm", true, want)).toBe("pnpm add -Dw @alchemy.run/hetzner@2.0.0-beta.87 @alchemy.run/railway@2.0.0-beta.87 @alchemy.run/neon@2.0.0-beta.87 @alchemy.run/frontend-frameworks@2.0.0-beta.87 @effect/platform-bun@4.1.4");
+  expect(installCommand("bun", false, deployDeps({ ...rat, ...want }))).toBeNull();
+  // A range, a catalog, another major or only one of the two: the pinned set as before.
+  const cases: Record<string, string>[] = [{ alchemy: "^2.0.0-beta.87", effect: "4.1.4" }, { alchemy: "catalog:", effect: "catalog:" }, { alchemy: "2.0.0-beta.87", effect: "3.17.0" }, { effect: "4.1.4" }];
+  for (const deps of cases) {
+    expect(deployDeps(deps)).toBe(DEPLOY_DEPS);
+  }
+});
+
 test("infer worker build from the release script", async () => {
   const { inferWorkerBuild } = await import("../src/glue/build-script.ts");
   const scripts = {
