@@ -198,6 +198,11 @@ export function fit({ pkg, files, viteConfig }: FitInput): Fit {
     verdict = worst(verdict, "needs-work");
     reasons.push(`Native ${native.length === 1 ? "addon" : "addons"} (${native.join(", ")}): no Worker runs them, and they don't fit in one binary.`);
   }
+  // Rat Stack (Effect 4, XState, Alchemy, varlock): the toolchain Rusty Buns prefers, so a deploy keeps its own pins.
+  if (pkg.name === "rat-stack" || String(pkg.name ?? "").startsWith("@rat-stack/") || Object.keys(deps).some((d) => d.startsWith("@rat-stack/"))) {
+    name = name === LABEL.unknown ? "Rat Stack" : `Rat Stack (${name})`;
+    reasons.push("Rat Stack: it brings its own Alchemy, Effect and varlock, so `rustybuns add deploy` keeps its versions and adds only what's missing.");
+  }
   if (pkg.workspaces || has("pnpm-workspace.yaml")) {
     verdict = worst(verdict, "needs-work");
     reasons.push("A monorepo root: Rusty Buns boxes one app, so point it at that app's folder.");

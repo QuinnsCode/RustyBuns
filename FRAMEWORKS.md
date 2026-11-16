@@ -85,6 +85,18 @@ The 🧪, 🔧 and ⏳ rows describe what each framework's Cloudflare build offe
 
 So the build output is the shape the desktop already mounts. `init` still reads Next.js only with `@opennextjs/cloudflare`; teaching it vinext (a `vinext` dependency, `dist/server/index.js` plus `dist/client`) is a follow-up if people ask.
 
+## Rat Stack: our toolchain, so install less
+
+[Rat Stack](https://github.com/joelhooks/rat-stack) is a pnpm monorepo on Effect 4, XState, Alchemy 2 and varlock: the stack Rusty Buns prefers. Its web app (`apps/web`) is a Vite app, so `init` reads it as `vite`, and `fit` names it "Rat Stack (Vite)".
+
+It already pins its own Alchemy and Effect (2.0.0-beta.87 and 4.1.4 in Nov 2026, newer than ours). So when an app lists both `alchemy` and `effect` at exact versions on the same majors as the pinned set (any app on this toolchain, not only Rat Stack), `rustybuns add deploy`:
+
+- keeps those versions and writes no `overrides` (the pinned set would downgrade them);
+- installs only the deploy packages the app lacks, at its own Alchemy and Effect versions (`--dry-run` shows the list, or "nothing to install");
+- and `plan`/`deploy` then run that Alchemy instead of asking to re-pin.
+
+A range (`^2.0.0-beta.87`), a pnpm `catalog:` or another major still gets the pinned set. Not tried yet: a real Rat Stack clone through `init`, `plan` and the desktop host.
+
 ## Out of scope: Angular and Gatsby
 
 Both stay named in `stackOf()` (so `fit` says what they are) and neither gets an `init` reader.
