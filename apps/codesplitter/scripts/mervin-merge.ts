@@ -241,7 +241,7 @@ if (import.meta.main) {
   const mainRed = [...new Set([...(arg("main-red") ?? "").split(",").filter(Boolean), ...redOn(mainRuns)])];
   const verdicts = decide(board, prs, mainRed);
   const file = join(resolve(arg("record") ?? join(top, ".mervin/rounds")), `${new Date().toISOString().replace(/[:.]/g, "-")}-${main.slice(0, 9)}.json`);
-  const recorded: Record<string, unknown> = { at: new Date().toISOString(), main, replayOf: replay, prs, board, verdicts };
+  const recorded: { at: string; main: string; replayOf: typeof replay; prs: BoardPr[]; board: typeof board; verdicts: typeof verdicts; advice?: unknown; stack?: unknown } = { at: new Date().toISOString(), main, replayOf: replay, prs, board, verdicts };
   const save = () => {
     if (args.includes("--no-record") || replay) return;
     mkdirSync(dirname(file), { recursive: true });

@@ -90,7 +90,7 @@ if (import.meta.main) {
   const limit = Number(args[args.indexOf("--limit") + 1]) || 200;
   const repos = args.filter((a, i) => !a.startsWith("--") && args[i - 1] !== "--limit");
   const pct = (x: number) => (Number.isNaN(x) ? "n/a" : `${Math.round(x * 100)}%`);
-  const all: Record<string, unknown> = {};
+  const all: Record<string, Record<"overlap" | "clash" | "lines" | "plan", ReturnType<typeof tally>>> = {};
   for (const repo of repos.length ? repos : ["."]) {
     const cases = score(repo, limit);
     all[repo] = { overlap: tally(cases, "overlap"), clash: tally(cases, "clash"), lines: tally(cases, "lines"), plan: tally(cases, "plan") };

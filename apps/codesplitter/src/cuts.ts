@@ -28,7 +28,7 @@ import { num, obj, opt, str, type Of } from "@rustybuns/util/guard";
 import { readJson } from "@rustybuns/util/http";
 import { isAdmin } from "./identity.ts";
 import type { Doc, Line } from "./lines.ts";
-import { parseJson, esc } from "./util.ts";
+import { parseJson, esc, keep, unkeep, type Kept } from "./util.ts";
 import { liveRepo, branchOf } from "./repos.ts";
 
 export type Mark = "pass" | "fail";
@@ -365,7 +365,7 @@ export async function createCut(env: Env, owner: string, repo: string, user: str
   return json({ id, branch, files: files.map((f) => ({ path: f.path, lines: f.doc.lines.length, ...(f.pulled ? { pulled: true } : {}) })) }, 201);
 }
 
-interface CutRow { id: string; owner: string; repo: string; branch: string; paths: string; by: string; note: string; created_at: number; run: string | null; status: string }
+interface CutRow { id: string; owner: string; repo: string; branch: string; paths: string; by: string; note: string; created_at: number; run: Kept<CutRun> | null; status: string }
 
 /** The cut's files as they are on its branch, each line with its line number on main now (null: new in the cut, or gone from main). */
 async function cutFiles(env: Env, c: CutRow, crew: boolean) {
@@ -383,7 +383,7 @@ export async function cutRoutes(req: Request, env: Env, p: string[], url: URL, u
   // Like a shared range, the link is the key: it shows only the cut's lines, even from a private repo.
   const c = await env.DB.prepare(`SELECT c.*, b.status FROM cuts c ${liveRepo("c")} ${branchOf("c")} WHERE c.id = ?`).bind(Date.now(), p[2]).first<CutRow>();
   if (!c) return fail("NoSuchCut", "no such cut");
-  const run: CutRun | null = c.run ? JSON.parse(c.run) : null;
+  const run = unkeep(c.run);
   // Its private lines are the crew's, as in the file itself: anyone else gets them blank.
   const crew = () => write(c.owner, c.repo);
 
@@ -405,7 +405,7 @@ export async function cutRoutes(req: Request, env: Env, p: string[], url: URL, u
     const r = readRun(t.out, ("report" in t && t.report) || "", files);
     const out: CutRun = { at: Date.now(), code: t.code, ...r, out: t.out.slice(-MAX_OUT),
       note: /No tests found/i.test(t.out) ? "no tests in this cut: add the lines that test it" : t.code === -1 ? "the run didn't start" : undefined };
-    await env.DB.prepare("UPDATE cuts SET run = ? WHERE id = ?").bind(JSON.stringify(out), c.id).run();
+    await env.DB.prepare("UPDATE cuts SET run = ? WHERE id = ?").bind(keep<CutRun>(out), c.id).run();
     return json(out);
   }
 

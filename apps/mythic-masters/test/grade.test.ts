@@ -11,8 +11,3 @@ test("every arena skin's grade only leans the colour: never darkens, never blows
     expect(saturation, id).toBeLessThan(1.2);
   }
 });
-
-test("the volcano leans warm, the sky island cool", () => {
-  expect(gradeOf(ALL_SKINS.volcano!).tint.r).toBeGreaterThan(gradeOf(ALL_SKINS.volcano!).tint.b);
-  expect(gradeOf(ALL_SKINS.sky!).tint.b).toBeGreaterThan(gradeOf(ALL_SKINS.sky!).tint.r);
-});

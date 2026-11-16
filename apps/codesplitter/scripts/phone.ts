@@ -15,6 +15,8 @@ import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { qrText } from "../src/qr.ts";
+import { obj, str } from "@rustybuns/util/guard";
+import { readJson } from "@rustybuns/util/http";
 
 export type Plan = { via: "tailscale"; off: boolean } | { via: "cloudflare"; tunnel?: string; hostname?: string };
 
@@ -48,8 +50,9 @@ export function desktop(file = join(homedir(), ".codesplitters/desktop.json")): 
 export async function pairCode(d: Desktop): Promise<string> {
   const port = new URL(d.url).port;
   const r = await fetch(`${d.url}/__rb/pair`, { method: "POST", headers: { cookie: `rb_token_${port}=${d.token}`, origin: d.url } });
-  if (!r.ok) throw new Error(`the desktop wouldn't make a pairing code (${r.status})`);
-  return ((await r.json()) as { code: string }).code;
+  const got = await readJson(r, obj({ code: str(200) }));
+  if (!got) throw new Error(`the desktop wouldn't make a pairing code (${r.status})`);
+  return got.code;
 }
 
 export const pairLink = (origin: string, code: string) => `${origin.replace(/\/+$/, "")}/?rb_launch=${code}`;

@@ -14,6 +14,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import type { RustyBunsConfig } from "./config.ts";
 import { workspaceRoot } from "./glue/deploy-deps.ts";
+import { arr, bool, check, obj, opt, str, type Guard, type Of } from "@rustybuns/shell-bun/guard";
 
 /** Every Worker deploy: find the account, upload the script, its Durable Objects and workers.dev route. */
 export const BASE_SCOPES = ["account:read", "user:read", "workers:write", "workers_scripts:write", "workers_routes:write", "workers_tail:read"];
@@ -38,17 +39,21 @@ export function cloudflareScopes(c: RustyBunsConfig): string[] {
   return [...s];
 }
 
-export interface WhoAmI {
-  loggedIn: boolean;
-  authType?: string;
-  accounts?: { id: string; name: string }[];
-  tokenPermissions?: string[];
-}
+/** What `wrangler whoami --json` prints, the parts read here. */
+export const WhoAmI = obj({
+  loggedIn: bool(),
+  authType: opt(str(200)),
+  accounts: opt(arr(obj({ id: str(100), name: str(1000) }), 10_000, { drop: true })),
+  tokenPermissions: opt(arr(str(200), 10_000, { drop: true })),
+});
+export type WhoAmI = Of<typeof WhoAmI>;
+/** What `wrangler auth token --json` prints. */
+const AuthToken = obj({ token: opt(str(10_000)) });
 
 /** The two wrangler calls cloudflareEnv makes, so a test can stand in for the real CLI. */
 export interface Wrangler {
-  /** `wrangler <args> --json`, parsed; null when it fails or prints no JSON. */
-  json<T>(args: string[]): Promise<T | null>;
+  /** `wrangler <args> --json`, read through `shape`; null when it fails or prints no JSON of that shape. */
+  json<T>(args: string[], shape: Guard<T>): Promise<T | null>;
   /** `wrangler login --scopes ...` with the terminal attached; true when it finished. */
   login(scopes: string[]): Promise<boolean>;
 }
@@ -87,13 +92,13 @@ export function wranglerCli(cwd = process.cwd(), env: Record<string, string | un
 
 export function realWrangler(cli: string[]): Wrangler {
   return {
-    async json<T>(args: string[]) {
+    async json<T>(args: string[], shape: Guard<T>) {
       const p = Bun.spawn([...cli, ...args, "--json"], { stdout: "pipe", stderr: "pipe" });
       const out = await new Response(p.stdout).text();
       await p.exited;
       // --json keeps wrangler's banner off stdout; the braces guard against any stray line anyway.
       const body = out.slice(out.indexOf("{"), out.lastIndexOf("}") + 1);
-      try { return JSON.parse(body) as T; } catch { return null; }
+      try { return check(shape, JSON.parse(body)); } catch { return null; }
     },
     async login(scopes: string[]) {
       const p = Bun.spawn([...cli, "login", "--scopes", ...scopes], { stdio: ["inherit", "inherit", "inherit"] });
@@ -126,7 +131,7 @@ export async function cloudflareEnv(c: RustyBunsConfig, env: Record<string, stri
     return null;
   }
   const need = cloudflareScopes(c);
-  let me = await w.json<WhoAmI>(["whoami"]);
+  let me = await w.json(["whoami"], WhoAmI);
   let missing = missingScopes(need, me);
   if (!me?.loggedIn || missing.length > 0) {
     // A browser login needs someone at a terminal; CI or a script would wait on it forever.
@@ -142,7 +147,7 @@ export async function cloudflareEnv(c: RustyBunsConfig, env: Record<string, stri
       log("Cloudflare: wrangler login did not finish; falling back to Alchemy's own profile.\n");
       return null;
     }
-    me = await w.json<WhoAmI>(["whoami"]);
+    me = await w.json(["whoami"], WhoAmI);
     missing = missingScopes(need, me);
     if (!me?.loggedIn || missing.length > 0) {
       log(`Cloudflare: wrangler ${me?.loggedIn ? `still lacks ${missing.join(", ")}` : "still isn't logged in"}; falling back to Alchemy's own profile.\n`);
@@ -155,7 +160,7 @@ export async function cloudflareEnv(c: RustyBunsConfig, env: Record<string, stri
     throw new Error(`this Cloudflare login reaches ${accounts.length} accounts. Pick one with CLOUDFLARE_ACCOUNT_ID=<id>:\n` +
       accounts.map((a) => `  ${a.id}  ${a.name}`).join("\n"));
   }
-  const t = await w.json<{ token?: string }>(["auth", "token"]);
+  const t = await w.json(["auth", "token"], AuthToken);
   if (!t?.token) {
     log("Cloudflare: couldn't read wrangler's token (`wrangler auth token`); falling back to Alchemy's own profile.\n");
     return null;

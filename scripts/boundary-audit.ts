@@ -79,9 +79,11 @@ export function findings(text: string): [number, string, string][] {
 }
 
 const SKIP = /(^|\/)(tests?|node_modules|dist)\/|\.test\.tsx?$|\.d\.ts$/;
+// The guards themselves: util's, and the copy in shell-bun for the packages that can't depend on util (#4559).
+const GUARDS = new Set(["packages/util/src/guard.ts", "packages/shell-bun/src/guard.ts"]);
 
 function scan(): Map<string, [number, string, string][]> {
-  const files = Bun.spawnSync(["git", "ls-files", "*.ts", "*.tsx"]).stdout.toString().split("\n").filter((f) => f && !SKIP.test(f) && f !== "scripts/boundary-audit.ts" && f !== "packages/util/src/guard.ts");
+  const files = Bun.spawnSync(["git", "ls-files", "*.ts", "*.tsx"]).stdout.toString().split("\n").filter((f) => f && !SKIP.test(f) && f !== "scripts/boundary-audit.ts" && !GUARDS.has(f));
   const all = new Map<string, [number, string, string][]>();
   for (const f of files) {
     let found: [number, string, string][];

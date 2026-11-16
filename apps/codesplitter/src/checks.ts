@@ -76,7 +76,7 @@
 
 import { httpUrl, listOf, parseJson } from "./util.ts";
 import { fail, json, need, readBody, type Env } from "./env.ts";
-import { arr, bool, int, isRecord, nul, num, obj, oneOf, opt, str, type Of } from "@rustybuns/util/guard";
+import { arr, bool, check, int, isRecord, maybe, nul, num, obj, oneOf, opt, rec, str, type Of } from "@rustybuns/util/guard";
 import { repoRow } from "./repos.ts";
 import { githubToken, parseRepo } from "./github.ts";
 import { emit } from "./hooks.ts";
@@ -320,8 +320,10 @@ export interface Planned { name: string; command: string; paths?: string[] }
 
 const parse = (t: string | null) => { try { const v = t && JSON.parse(t); return isRecord(v) ? v : null; } catch { return null; } };
 const SCRIPTS = ["test", "typecheck"];
+/** package.json's scripts, each a command (anything else in it reads as no script). */
+const Scripts = obj({ scripts: opt(rec(maybe(str(Infinity, { min: 0 })))) });
 const scriptsOf = (pkg: string | null) => {
-  const s = parse(pkg)?.scripts as Record<string, unknown> | undefined;
+  const s = check(Scripts, parse(pkg))?.scripts;
   return SCRIPTS.filter((n) => typeof s?.[n] === "string");
 };
 /** Files that, changed, can break any workspace: the root package.json and the lockfiles. */

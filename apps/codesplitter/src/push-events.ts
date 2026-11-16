@@ -11,26 +11,37 @@
 import { audit } from "./audit.ts";
 import type { Env } from "./env.ts";
 import { GIT_EMAIL_DOMAIN } from "./git.ts";
-import { listOf, plural } from "./util.ts";
-import { isRecord } from "@rustybuns/util/guard";
+import { plural } from "./util.ts";
+import { arr, bool, check, maybe, num, obj, oneOf, str } from "@rustybuns/util/guard";
 
 export const PUSHED = "cf.artifacts.repo.pushed";
 /** How far back the repo's log is read when the event's list was cut short. */
 const LOG_READ = 100;
 
 /** Whether a queue message is one of Artifacts' events (ARTIFACT_EVENTS), pushed or otherwise. */
-export const artifactsEvent = (body: unknown) => isRecord(body) && typeof body.type === "string" && body.type.startsWith("cf.artifacts.");
+export const artifactsEvent = (body: unknown) => !!check(obj({ type: str(200) }), body)?.type.startsWith("cf.artifacts.");
+
+const anyText = str(Infinity, { min: 0 });
+/** Artifacts' push event, the fields read here: a commit that isn't an object, or an author without an email, still counts. */
+const PushedIn = obj({
+  type: oneOf([PUSHED]),
+  source: obj({ repoName: anyText }),
+  payload: obj({
+    ref: anyText, after: anyText, totalCommitsCount: maybe(num(-Infinity, Infinity)), commitsTruncated: maybe(bool()),
+    commits: maybe(arr(maybe(obj({ author: maybe(obj({ email: maybe(anyText) })) })), Infinity)),
+  }),
+});
 
 export interface Pushed { repoName: string; ref: string; after: string; total: number; truncated: boolean; emails: string[] }
 
 /** A queue message as a push event, or null when it's something else (another event, another queue's message). */
 export function pushedEvent(body: unknown): Pushed | null {
-  if (!isRecord(body) || body.type !== PUSHED || !isRecord(body.source) || !isRecord(body.payload)) return null;
-  const { repoName } = body.source, { ref, after, totalCommitsCount, commitsTruncated } = body.payload;
-  if (typeof repoName !== "string" || typeof ref !== "string" || typeof after !== "string") return null;
-  const commits = listOf(body.payload, "commits");
-  const emails = commits.map((c) => isRecord(c.author) && typeof c.author.email === "string" ? c.author.email : "");
-  return { repoName, ref, after, total: typeof totalCommitsCount === "number" ? totalCommitsCount : commits.length, truncated: commitsTruncated === true, emails };
+  const e = check(PushedIn, body);
+  if (!e) return null;
+  const { ref, after, totalCommitsCount, commitsTruncated } = e.payload;
+  const commits = (e.payload.commits ?? []).filter((c) => c !== undefined);
+  const emails = commits.map((c) => c.author?.email ?? "");
+  return { repoName: e.source.repoName, ref, after, total: totalCommitsCount ?? commits.length, truncated: commitsTruncated === true, emails };
 }
 
 const ours = (email: string) => email.toLowerCase().endsWith(`@${GIT_EMAIL_DOMAIN}`);

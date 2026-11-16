@@ -2,12 +2,14 @@
 // gitpath replays one file's history as a git graph in perspective: branches fan out and rejoin, and the
 // hot path is the route with the most churn. Flip on the game and a unicyclist rides it, with git's own
 // events (merges, forks, branches, squashes) as the gusts. Everything that can be wrong without a
-// screen is here, with no DOM and no imports, so test/gitpath.test.ts covers it:
+// screen is here, with no DOM and no imports but the shared guards, so test/gitpath.test.ts covers it:
 //   - reading `git log -p -U0 --parents` (parsePatchLog) and the JSON that scripts/gitpath-log.ts writes (readInput)
 //   - cutting the repo's graph down to the commits that touched the file (simplifyParents)
 //   - notes: a kind (add, remove, rewrite), a size, parents, in an order where parents come first
 //   - the graph's layout (lanes, edges, the hot path), the board's perspective, and the time slider's maths
 //   - the ride: the unicycle's balance, the pedal timing, and which commits blow a gust
+
+import { arr, check, int, maybe, obj, raw, rec, str, type Guard } from "@rustybuns/util/guard";
 
 /** One commit that touched the file. `parents` are the nearest earlier commits that touched it too, first parent first. */
 export interface Commit {
@@ -158,19 +160,21 @@ export function topFiles(statusRaw: string, exists: (path: string) => boolean, l
 
 // -- reading the JSON ---------------------------------------------------------------------------------
 
-const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) && v >= 0 ? Math.round(v) : 0);
-const strings = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : undefined);
+// What scripts/gitpath-log.ts writes, read as kindly as a hand-made file allows: a field left out takes its default.
+/** Any value as text (a number hash still reads), `d` when it's left out. */
+const asText = (d: string): Guard<string> => (v) => (v === undefined || v === null ? d : String(v));
+const count = int(0, Number.MAX_SAFE_INTEGER, 0);
+const names = maybe(arr(str(Infinity, { min: 0 }), Infinity, { drop: true }));
+const CommitIn = obj({ hash: asText(""), author: asText("unknown"), date: asText(""), subject: asText(""), added: count, removed: count, parents: names, refs: names });
+/** A history (`[…]` or `{path, commits}`) or a bundle (`{repo, files, histories}`), each list still to read commit by commit. */
+const InputIn = obj({ repo: maybe(str(Infinity)), path: maybe(str(Infinity)), commits: maybe(arr(raw, Infinity)), histories: maybe(rec(raw)), files: maybe(arr(maybe(obj({ path: str(Infinity) })), Infinity)) });
 
 function readCommit(c: unknown, at: number): Commit {
-  const o = c as Record<string, unknown> | null;
-  if (!o || typeof o !== "object") throw new Error(`commit ${at} isn't an object`);
-  const date = String(o.date ?? "");
-  if (!Number.isFinite(Date.parse(date))) throw new Error(`commit ${at} has no usable date`);
-  const parents = strings(o.parents), refs = strings(o.refs);
-  return {
-    hash: String(o.hash ?? ""), author: String(o.author ?? "unknown"), date, subject: String(o.subject ?? ""),
-    added: num(o.added), removed: num(o.removed), ...(parents ? { parents } : {}), ...(refs?.length ? { refs } : {}),
-  };
+  const o = check(CommitIn, c);
+  if (!o) throw new Error(`commit ${at} isn't an object`);
+  if (!Number.isFinite(Date.parse(o.date))) throw new Error(`commit ${at} has no usable date`);
+  const { parents, refs, ...rest } = o;
+  return { ...rest, ...(parents ? { parents } : {}), ...(refs?.length ? { refs } : {}) };
 }
 
 /**
@@ -209,24 +213,24 @@ export function readInput(source: unknown): Input {
     try { v = JSON.parse(v); } catch { throw new Error("that isn't JSON"); }
   }
   if (Array.isArray(v)) v = { commits: v };
-  const o = v as Record<string, unknown> | null;
-  if (!o || typeof o !== "object") throw new Error("expected a list of commits or a gitpath bundle");
-  const repo = typeof o.repo === "string" ? o.repo : "";
+  const o = check(InputIn, v);
+  if (!o) throw new Error("expected a list of commits or a gitpath bundle");
+  const repo = o.repo ?? "";
   const histories: Record<string, Commit[]> = {};
-  if (o.histories && typeof o.histories === "object") {
-    for (const [p, list] of Object.entries(o.histories as Record<string, unknown>)) {
+  if (o.histories) {
+    for (const [p, list] of Object.entries(o.histories)) {
       if (!Array.isArray(list)) throw new Error(`${p}: expected a list of commits`);
       histories[p] = orderCommits(list.map(readCommit));
     }
-  } else if (Array.isArray(o.commits)) {
-    histories[typeof o.path === "string" && o.path ? o.path : "this file"] = orderCommits(o.commits.map(readCommit));
+  } else if (o.commits) {
+    histories[o.path || "this file"] = orderCommits(o.commits.map(readCommit));
   } else throw new Error("no commits in there: expected a list, {commits}, or {histories}");
   const paths = Object.keys(histories);
   if (!paths.length || paths.every((p) => histories[p]!.length === 0)) throw new Error("that history has no commits");
-  const listed = Array.isArray(o.files) ? (o.files as { path?: unknown; commits?: unknown }[]) : [];
+  const listed = (o.files ?? []).flatMap((f) => (f ? [f.path] : []));
   const files = [
-    ...listed.filter((f) => typeof f.path === "string" && f.path in histories).map((f) => ({ path: f.path as string, commits: histories[f.path as string]!.length })),
-    ...paths.filter((p) => !listed.some((f) => f.path === p)).map((p) => ({ path: p, commits: histories[p]!.length })),
+    ...listed.filter((p) => p in histories).map((p) => ({ path: p, commits: histories[p]!.length })),
+    ...paths.filter((p) => !listed.includes(p)).map((p) => ({ path: p, commits: histories[p]!.length })),
   ];
   return { repo, files, histories };
 }

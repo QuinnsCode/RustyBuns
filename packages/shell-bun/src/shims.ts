@@ -4,7 +4,8 @@
 // in-process DOs); `requestInfo` is the one local identity. Actions are only
 // reachable on the host's token-gated page, so this is always the host: a
 // remote guest reaches the world socket alone and carries its identity there.
-declare global { var __RB_ENV: Record<string, unknown> | undefined; var __RB_IDENTITY: Record<string, string> | undefined; }
+import type { Fields } from "@rustybuns/ports";
+declare global { var __RB_ENV: Fields | undefined; var __RB_IDENTITY: Record<string, string> | undefined; }
 
 export const env: Record<string, any> = new Proxy({}, {
   get: (_t, k) => globalThis.__RB_ENV?.[k as string],

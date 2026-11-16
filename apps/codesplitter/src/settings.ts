@@ -4,15 +4,21 @@
 // across devices.
 //   GET /api/me/settings         {theme?, ...}: what you've set, nothing for what you haven't
 //   PUT /api/me/settings {theme} only what you send changes; null puts one back to its default
-// Slice 1 holds the light/dark choice. Add a setting by adding it to SETTINGS.
+// Slice 1 holds the light/dark choice. Add a setting by adding it to SETTING.
 
 import { fail, json, type Env } from "./env.ts";
-import { isRecord } from "@rustybuns/util/guard";
+import { check, isRecord, maybe, obj, oneOf, type Guard, type Of } from "@rustybuns/util/guard";
+import { parseJson } from "./util.ts";
 
 /** Each setting and what it accepts. Anything else is refused, so the table can't grow without bound. */
-export const SETTINGS: Record<string, (v: unknown) => boolean> = {
-  theme: (v) => v === "light" || v === "dark" || v === "system",
-};
+const SETTING = {
+  theme: oneOf(["light", "dark", "system"] as const),
+} satisfies Record<string, Guard<unknown>>;
+const isSetting = (k: string): k is keyof typeof SETTING => Object.hasOwn(SETTING, k);
+/** What you've set, as GET answers it: a setting you haven't set (or that no longer reads) is left out. */
+export const Settings = obj({ theme: maybe(SETTING.theme) });
+export type Settings = Of<typeof Settings>;
+type Sql = { exec<T = unknown>(q: string, ...args: unknown[]): { toArray(): T[] } };
 
 /** Cloudflare's location hints, by the continent a request came from (coarse: never the colo or the city). */
 const HINTS: Record<string, string> = { NA: "enam", SA: "sam", EU: "weur", AS: "apac", OC: "oc", AF: "afr" };
@@ -24,18 +30,19 @@ export function locationHint(req: Request): string | undefined {
 }
 
 export class UserSettings {
-  sql: any;
-  constructor(ctx: any) {
+  sql: Sql;
+  constructor(ctx: { storage: { sql: Sql } }) {
     this.sql = ctx.storage.sql;
     this.sql.exec("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)");
   }
 
-  all(): Record<string, unknown> {
-    return Object.fromEntries(this.sql.exec("SELECT key, value FROM settings").toArray().map((r: any) => [r.key, JSON.parse(r.value)]));
+  all(): Settings {
+    const rows = this.sql.exec<{ key: string; value: string }>("SELECT key, value FROM settings").toArray();
+    return check(Settings, Object.fromEntries(rows.map((r) => [r.key, parseJson<unknown>(r.value, null)]))) ?? {};
   }
 
   async fetch(req: Request): Promise<Response> {
-    if (req.method === "GET") return json(this.all());
+    if (req.method === "GET") return json(this.all() satisfies Settings);
     if (req.method === "DELETE") { this.sql.exec("DELETE FROM settings"); return json({ ok: true }); }
     const changes: unknown = await req.json().catch(() => null);
     if (!isRecord(changes)) return fail("BadInput", "send an object of settings");
@@ -58,8 +65,8 @@ export async function settingsRoutes(req: Request, env: Env, p: string[], user: 
   const b: unknown = await req.json().catch(() => null);
   if (!isRecord(b)) return fail("BadInput", "send an object of settings");
   for (const [k, v] of Object.entries(b)) {
-    if (!(k in SETTINGS)) return fail("BadInput", `${k}: not a setting (${Object.keys(SETTINGS).join(", ")})`);
-    if (v !== null && !SETTINGS[k]!(v)) return fail("BadInput", `${k}: not an accepted value`);
+    if (!isSetting(k)) return fail("BadInput", `${k}: not a setting (${Object.keys(SETTING).join(", ")})`);
+    if (v !== null && check(SETTING[k], v) === null) return fail("BadInput", `${k}: not an accepted value`);
   }
   return settingsStub(env, user, req).fetch(new Request("https://settings/", { method: "PUT", body: JSON.stringify(b) }));
 }

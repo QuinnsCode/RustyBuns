@@ -28,9 +28,10 @@ import { TRIAGE_USAGE, triage } from "@rustybuns/cli/triage";
 import { Effect } from "effect";
 import { codesplitter, type Failure } from "./client.ts";
 import { agentPrompt } from "./src/agent-prompt.ts";
-import { explain } from "./src/failed.ts";
 import { tool, tools } from "./src/mcp.ts";
-import { isRecord } from "@rustybuns/util/guard";
+import { check } from "@rustybuns/util/guard";
+import { explain, FailureBody } from "./src/failed.ts";
+import type { ToolArgs } from "./src/mcp-tools.ts";
 import { splittersContext } from "./triage/context.ts";
 import PLAYBOOK from "./triage/PLAYBOOK.md" with { type: "text" };
 
@@ -56,7 +57,7 @@ export async function main(argv: string[], env: Record<string, string | undefine
   const t = tool(name);
   if (!t) return fail(`no command ${name}: codesplitter tools lists them`);
 
-  const args: Record<string, unknown> = {}, opts: Record<string, string> = {};
+  const args: ToolArgs = {}, opts: Record<string, string> = {};
   for (let i = 0; i < rest.length; i += 2) {
     const flag = rest[i]!, value = rest[i + 1];
     if (!flag.startsWith("--") || value === undefined) return fail(`expected --param value, got ${flag}\n${USAGE}`);
@@ -90,7 +91,7 @@ export function say(e: Failure<string>, site: string): string {
     case "TokenCantDo": return `${e.message}. Make a token${e.scope ? ` with ${e.scope} scope` : ""} at ${site}/#/me/tokens and run: codesplitter login`;
     case "RateLimited": return `Too many calls for now: try again in ${e.retryAfter} seconds.`;
     case "Transient": return `${site} didn't answer, after a few tries: try again in a minute.`;
-    default: return explain(e.message, "reply" in e && isRecord(e.reply) ? e.reply.tag : null);
+    default: return explain(e.message, "reply" in e ? check(FailureBody, e.reply)?.tag ?? null : null);
   }
 }
 

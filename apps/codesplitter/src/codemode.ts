@@ -14,7 +14,8 @@
 // against the tool's schema, so a typo fails at once with what is wrong, not after a request.
 // Imports only types, like mcp-tools.ts, so the docs site can list the tools.
 
-import type { Tool } from "./mcp-tools.ts";
+import type { Tool, ToolArgs } from "./mcp-tools.ts";
+import { isRecord } from "@rustybuns/util/guard";
 import { runProgram, type Ran, type ToolAnswer, type WorkerLoaderLike } from "@rustybuns/util/codemode";
 
 export type { Ran, ToolAnswer };
@@ -115,8 +116,8 @@ export function check(schema: Schema, v: unknown, at = "", out: string[] = []): 
   const fits = !t || (t === "integer" ? Number.isInteger(v) || (numeric && Number.isInteger(Number(v))) : t === "number" ? kind === "number" || numeric : t === "boolean" ? kind === "boolean" || v === "true" || v === "false" : t === "object" ? kind === "object" : kind === t);
   if (!fits) return out.push(`${where} should be ${t}, got ${kind}`), out;
   if (Array.isArray(schema.enum) && !schema.enum.includes(v)) out.push(`${where} must be one of ${schema.enum.join(", ")}, got ${JSON.stringify(v)}`);
-  if (kind === "object" && schema.properties) {
-    const o = v as Record<string, unknown>;
+  if (isRecord(v) && schema.properties) {
+    const o = v;
     for (const k of schema.required ?? []) if (o[k] === undefined) out.push(`${at ? at + "." : ""}${k} is required`);
     for (const [k, x] of Object.entries(o)) {
       if (schema.properties[k]) check(schema.properties[k], x, `${at ? at + "." : ""}${k}`, out);
@@ -140,21 +141,24 @@ export function csProps(x: unknown): CSProps {
 }
 
 /** One tool's answer to a program's call: the HTTP call it stands for, made as the caller. Only plain values cross. */
-export async function answer(tools: Tool[], run: (t: Tool, args: Record<string, unknown>) => Promise<ToolAnswer>, name: string, json: string): Promise<ToolAnswer> {
+export async function answer(tools: Tool[], run: (t: Tool, args: ToolArgs) => Promise<ToolAnswer>, name: string, json: string): Promise<ToolAnswer> {
   const fail = (status: number, error: string): ToolAnswer => ({ status, text: JSON.stringify({ error }) });
   const t = tools.find((t) => t.name === name);
   if (!t) return fail(404, `no tool ${name} for this token: search_tools lists them`);
   if (t.risky) return fail(403, `${name} is risky (it ships code, changes who can get in or see what, or can't be undone): ask for it with call_tool, so the person is asked`);
   let args: unknown;
   try { args = JSON.parse(json); } catch { return fail(400, "arguments must be JSON"); }
-  if (!args || typeof args !== "object" || Array.isArray(args)) return fail(400, "arguments are an object");
+  if (!isRecord(args)) return fail(400, "arguments are an object");
   const bad = check(t.inputSchema, args);
   if (bad.length) return fail(400, `${name}: ${bad.join("; ")} (describe_tools gives the schema)`);
-  return run(t, args as Record<string, unknown>);
+  return run(t, args);
 }
 
+/** A call's arguments when they are an object (MCP's `arguments`): anything else reads as none, and the schema check says what's missing. */
+export const toolArgs = (v: unknown): ToolArgs => (isRecord(v) ? v : {});
+
 /** Run `code` over `tools` as the caller (`run` makes each call), in a Worker of its own. */
-export function execute(loader: WorkerLoaderLike, code: string, tools: Tool[], run: (t: Tool, args: Record<string, unknown>) => Promise<ToolAnswer>, input?: unknown, edge?: unknown): Promise<Ran> {
+export function execute(loader: WorkerLoaderLike, code: string, tools: Tool[], run: (t: Tool, args: ToolArgs) => Promise<ToolAnswer>, input?: unknown, edge?: unknown): Promise<Ran> {
   // On the edge the binding is a stub of the worker's own CSBridge entrypoint (a plain object can't be an env binding there);
   // under Bun, where the local loader runs the program in-process, an object will do.
   return runProgram(loader, code, {

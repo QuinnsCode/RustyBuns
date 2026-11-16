@@ -57,13 +57,13 @@ import { charge, every, SITE } from "./limits.ts";
 import { accountsOn, actingAs, isAdmin } from "./identity.ts";
 import { grantRunToken, revokeRunToken } from "./run-token.ts";
 import { HARNESSES, HOSTED_HARNESSES, RUNS_COMMANDS, blenderMcpFor, harnessCommand, type Harness } from "./harness.ts";
-import { Interrupted, localSandbox, runAgent, type Conflict, type Exec, type Given, type Sandbox } from "./agent-run.ts";
+import { CONFLICT, Interrupted, localSandbox, runAgent, type Conflict, type Exec, type Given, type Sandbox } from "./agent-run.ts";
 import { containerSandbox, LOGINS } from "./sandbox.ts";
 import { agentGithubToken } from "./github.ts";
 import { docIn, toFile } from "./archive.ts";
 import { ClaimRefused } from "./file-do.ts";
 import { MERGE_CONFLICTS, text } from "./lines.ts";
-import { arr, bool, check, num, obj, oneOf, opt, str, type Of } from "@rustybuns/util/guard";
+import { arr, bool, check, int, num, obj, oneOf, opt, str, type Guard, type Of } from "@rustybuns/util/guard";
 import { readJson } from "@rustybuns/util/http";
 import { FILE_MAX, SAY_CHARS, keepIn, sayIn, threadFetch, threadFiles, threadLasts, threadMessages, threadRun, threadSay, threadSession, keepSession, transcript, type Message, type RunCard } from "./thread-do.ts";
 import { askOwner, seeThread } from "./mentions.ts";
@@ -77,6 +77,13 @@ import { readSaved, readStats } from "./stats.ts";
 import { deskHeard } from "./office.ts";
 import { engineLines, type Engine } from "./heal.ts";
 import { isBuildFile } from "./buildfiles.ts";
+
+/** The fields of a Run (below) a client acts on: whether it's done, and what it landed or left. */
+export const RunSeen = obj({
+  id: int(0, Number.MAX_SAFE_INTEGER), status: oneOf(["running", "done", "failed", "stopped"]),
+  applied: opt(int(0, Number.MAX_SAFE_INTEGER)), rev: opt(int(0, Number.MAX_SAFE_INTEGER)), runs: opt(int(0, Number.MAX_SAFE_INTEGER)),
+  conflicts: opt(arr(CONFLICT, Infinity)), output: opt(str(Infinity, { min: 0 })), error: opt(str(Infinity, { min: 0 })), spent: opt(num(0, Infinity)),
+}) satisfies Guard<Pick<Run, "id" | "status" | "applied" | "rev" | "runs" | "conflicts" | "output" | "error" | "spent">>;
 
 export interface Run {
   id: number;
@@ -884,7 +891,7 @@ async function execute(env: Env, self: (req: Request) => Promise<Response>, orig
       const inner = sandbox;
       sandbox = (cmd, file, sig, ear) => inner({ ...cmd, env: { ...cmd.env, CODESPLITTER_GIT_REMOTE: git } }, file, sig, ear);
     }
-    const log: string[] = JSON.parse(row.log);
+    const log = check(arr(str(Infinity, { min: 0 }), Infinity), parseJson<unknown>(row.log, [])) ?? [];
     let logged = Promise.resolve();
     // Started over after an update: its branch is there already, with what it landed before.
     if (own && !(restarts && await env.DB.prepare("SELECT 1 FROM branches WHERE owner = ? AND repo = ? AND name = ?").bind(owner, repo, own).first())) {

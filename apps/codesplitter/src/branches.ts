@@ -23,7 +23,7 @@
 // When it really clashes, a rebuild task merges main in for it, both sides kept (#1219, rebuildOnMain).
 // So does one that follows a branch upstream and clashes with main only in git, at the next sync (#1190, takeMainUpstream).
 
-import { apply, empty, explain, fromText, isMergeReply, merge, PICK, PICKS, text, type Conflict, type Doc, type Line, type Op, type Pick, type Resolve } from "./lines.ts";
+import { apply, empty, explain, FileCommit, fromText, isMergeReply, merge, PICK, PICKS, text, type Conflict, type Doc, type Line, type Op, type Pick, type Resolve } from "./lines.ts";
 import { lintMerge } from "./lint.ts";
 import { policyOf, type Policy, type Rule } from "./policy.ts";
 import { conflictNote, conflictRound } from "./budget.ts";
@@ -34,6 +34,7 @@ import { branchEdited, mergeBlock, refChecks, waiting } from "./checks.ts";
 import { settings as deploySettings } from "./deploy.ts";
 import { branchNameError, errorIn, fail, json, named, type Env, need, readBody } from "./env.ts";
 import { arr, Bad, bool, check, isRecord, maybe, num, obj, oneOf, opt, raw, rec, str } from "@rustybuns/util/guard";
+import { readJson } from "@rustybuns/util/http";
 import { byToken } from "./tokens.ts";
 import { emit } from "./hooks.ts";
 import { diffToOps, keptPairs } from "./sync.ts";
@@ -51,7 +52,7 @@ import { MERVIN } from "./mervin.ts";
 import { noteConflict } from "./usage.ts";
 import { clashIn, settleAll, waves, type Clash, type Side } from "./merge-plan.ts";
 import { busyOn, taskFiles, type Busy } from "@rustybuns/util/overlap";
-import { listOf, parseJson, sha256 } from "./util.ts";
+import { keep, listOf, parseJson, sha256, unkeep, type Kept } from "./util.ts";
 import { countMerge } from "./stats.ts";
 import { answerOf, deleteLearning, hashesPaths, learningOn, learningState, pathKey, recordEvents, setLearning, type Event as LearnEvent } from "./mervin-learning.ts";
 import { answerRows, fightRows, fightWeights, suggestions, weightOrder } from "./mervin-learn.ts";
@@ -384,8 +385,8 @@ async function cleanMerged(env: Env, owner: string, repo: string, branch: Branch
 /** Why each side changed `path`: what the checked agent reads, and what land shows with a conflict (#1013). */
 async function reasons(env: Env, owner: string, repo: string, branch: BranchRow, path: string, user: string) {
   // Why main changed the file since the branch forked: its commit messages. A branch doesn't commit.
-  const log: unknown = await (await toFile(env, owner, repo, path, user, "commits")).json().catch(() => []);
-  const said = (Array.isArray(log) ? log : []).filter(isRecord).filter((x) => Number(x.at) >= Number(branch.created_at) && typeof x.message === "string" && x.message !== "commit").map((x) => String(x.message)).slice(0, 10);
+  const log = (await readJson(await toFile(env, owner, repo, path, user, "commits"), arr(FileCommit, Infinity, { drop: true }))) ?? [];
+  const said = log.filter((x) => x.at >= Number(branch.created_at) && x.message !== "commit").map((x) => x.message).slice(0, 10);
   // Why the branch changed it: the task of the agent run that made it (agent-routes.ts runBranch), if one did.
   const run = /^agent-run-(\d+)$/.exec(branch.name);
   const task = run ? (await env.DB.prepare("SELECT task FROM agent_runs WHERE owner = ? AND repo = ? AND id = ?").bind(owner, repo, Number(run[1])).first())?.task : undefined;
@@ -440,8 +441,8 @@ async function conflictKey(c: Conflict) {
 
 /** The answers kept for the branch's conflicts, by `path\nline`, with the conflict each was for. */
 async function keptAnswers(env: Env, owner: string, repo: string, branch: string) {
-  const { results } = await env.DB.prepare("SELECT path, line, key, answer FROM leftover_answers WHERE owner = ? AND repo = ? AND branch = ?").bind(owner, repo, branch).all<{ path: string; line: string; key: string; answer: string }>();
-  return new Map(results.map((r) => [`${r.path}\n${r.line}`, { key: r.key, answer: JSON.parse(r.answer) as Answer }]));
+  const { results } = await env.DB.prepare("SELECT path, line, key, answer FROM leftover_answers WHERE owner = ? AND repo = ? AND branch = ?").bind(owner, repo, branch).all<{ path: string; line: string; key: string; answer: Kept<Answer> }>();
+  return new Map(results.map((r) => [`${r.path}\n${r.line}`, { key: r.key, answer: unkeep(r.answer) ?? undefined }]));
 }
 
 /** The kept answer to `c`, if it was for this conflict as it stands. */
@@ -495,7 +496,7 @@ async function askLeftovers(env: Env, owner: string, repo: string, branch: Branc
     await noteConflict(env, owner, f.path, { round, who, harness: a.harness, ok: a.ok, tests: a.tests });
     await env.DB.prepare(`INSERT INTO leftover_answers (owner, repo, branch, path, line, key, answer, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT (owner, repo, branch, path, line) DO UPDATE SET key = excluded.key, answer = excluded.answer, at = excluded.at`)
-      .bind(owner, repo, branch.name, f.path, c.line, await conflictKey(c), JSON.stringify(a), Date.now()).run();
+      .bind(owner, repo, branch.name, f.path, c.line, await conflictKey(c), keep(a), Date.now()).run();
   }
   return { answers, why, notes };
 }

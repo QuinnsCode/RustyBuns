@@ -2,6 +2,7 @@
 // Defaults are functions you call; ejecting is passing your own object with
 // the same method names. No container, no decorators, no magic.
 
+export type { Fields } from "@rustybuns/ports";
 export { serve, type ServeOptions, type BunShell } from "./serve.ts";
 export { openBrowser, writeDesktopFile, findChromium, mintToken, type LaunchOptions } from "./launcher.ts";
 export { d1, D1Database, applyD1Migrations } from "./bindings/d1.ts";
@@ -33,8 +34,9 @@ export { sendEmail, LocalSendEmail, type EmailBuilder } from "./bindings/email.t
 export { workerLoader, LocalWorkerLoader, LocalWorkerStub, type WorkerCode } from "./bindings/worker-loader.ts";
 export { durableObject, LocalDurableObjectNamespace, LocalDurableObjectState, WebSocketPair, installCloudflareGlobals, type DurableObjectCtor } from "./bindings/durable-object.ts";
 
-import type { MemoryPort, Reporter } from "@rustybuns/ports";
+import type { Fields, MemoryPort, Reporter } from "@rustybuns/ports";
 import type { BunShell } from "./serve.ts";
+import { check, int, maybe, num, obj, str, type Guard } from "./guard.ts";
 import { existsSync, renameSync } from "node:fs";
 import { d1 } from "./bindings/d1.ts";
 import { kv } from "./bindings/kv.ts";
@@ -69,13 +71,13 @@ export const stdoutReporter: Reporter = {
 
 /** What a desktop host module's fetch(req, ctx) receives. */
 export interface HostContext {
-  env: Record<string, unknown>;
+  env: Fields;
   dataDir: string;
   /** The host's own identity. A guest's travels on its upgrade request instead. */
   identity: Record<string, string>;
   reporter: Reporter;
   /** The shell itself: `shell.comms.sockets()` for who is connected, `shell.rebind()` to move. */
-  shell: BunShell<Record<string, unknown>>;
+  shell: BunShell<Fields>;
   /** Multiplayer state the generated host keeps: see POST /__rb/host. */
   guests: GuestState;
 }
@@ -89,6 +91,22 @@ export interface GuestState {
   /** Live guest sockets (the host's own is not counted). */
   connected(): number;
 }
+
+/** `join` in POST /__rb/host: a passphrase, true for a made-up one, or anything else (null, "") to close. */
+const joinField: Guard<string | true | null | undefined> = (v) => v === undefined ? undefined : v === true || (typeof v === "string" && v.length > 0) ? v : null;
+/** `version`: the `?v=` guests must send, or anything but text to stop checking. */
+const versionField: Guard<string | null | undefined> = (v) => v === undefined ? undefined : typeof v === "string" ? v : null;
+const HostBody = obj({
+  listen: maybe(obj({ hostname: maybe(str(253)), port: maybe(int(0, 65535)) })),
+  join: joinField,
+  max: maybe(num(0, Infinity)),
+  version: versionField,
+});
+/**
+ * The host page's POST /__rb/host body. It is the client's, so a field of the wrong kind is dropped (a
+ * non-object body has none), except `join` and `version`, where a wrong value means "off".
+ */
+export const hostRequest = (v: unknown) => check(HostBody, v) ?? {};
 
 /** Local binding bundle: everything a desktop build hands to the Worker's env. */
 export function localBindings(dataDir: string) {

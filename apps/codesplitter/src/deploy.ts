@@ -152,7 +152,8 @@ async function start(env: Env, owner: string, repo: string, by: string, trigger:
     const held = await gate(env, owner, repo, approved, unseen);
     if ("error" in held) return held;
     const res = await hostedStub(env, owner, repo).fetch(new Request("http://deploy/start", { method: "POST", body: JSON.stringify({ owner, repo, by, trigger, ...flags }) }));
-    const started: Started = check(StartReply, await res.json().catch(() => null)) ?? { error: "the deploy runner's answer didn't read", status: 502 };
+    const said = check(StartReply, await res.json().catch(() => null));
+    const started: Started = said ?? { error: "the deploy runner's answer didn't read", status: 502 };
     // The runner's one refusal is a 409: something of its own is running.
     if (started.error && started.status === 409) started.tag = "DeployRunning";
     // Flagged now, not after the run has cloned and installed and then refused it.

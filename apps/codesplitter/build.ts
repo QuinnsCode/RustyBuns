@@ -152,14 +152,15 @@ async function wordsOf(name: string): Promise<string> {
   const words = await readFile(`content/${name}.json`, "utf8");
   const source: unknown = JSON.parse(words);
   const langs = (await readdir("content", { withFileTypes: true })).filter((d) => d.isDirectory() && isLocale(d.name)).map((d) => d.name).sort();
-  const all: Record<string, unknown> = { en: source };
+  // Each language's words, as authored: no fixed shape here, the page reads them.
+  const all = new Map<string, unknown>([["en", source]]);
   for (const lang of langs) {
     const f = Bun.file(`content/${lang}/${name}.json`);
-    if (await f.exists()) all[lang] = localize(source, JSON.parse(await f.text()));
+    if (await f.exists()) all.set(lang, localize(source, JSON.parse(await f.text())));
   }
-  if (Object.keys(all).length === 1) return words.trim();
+  if (all.size === 1) return words.trim();
   return `(() => {
-  const all = ${JSON.stringify(all)};
+  const all = ${JSON.stringify(Object.fromEntries(all))};
   const lang = (${pickLocale.toString()})([new URLSearchParams(location.search).get("lang"), ...(navigator.languages || [navigator.language])], Object.keys(all), "en");
   document.documentElement.lang = lang;
   return all[lang];

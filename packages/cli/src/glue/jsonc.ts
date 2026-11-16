@@ -19,6 +19,7 @@ export function stripJsonc(src: string): string {
   return out.replace(/,(\s*[}\]])/g, "$1");
 }
 
-export function parseJsonc<T = any>(src: string): T {
-  return JSON.parse(stripJsonc(src)) as T;
+/** A JSONC file's value, `unknown` until the caller looks at it. */
+export function parseJsonc(src: string): unknown {
+  return JSON.parse(stripJsonc(src));
 }

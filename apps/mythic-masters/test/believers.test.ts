@@ -1,7 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import { bind, clearSection, loadJourney, newJourney, SECTIONS, sections } from "../src/journey.ts";
 import { arrive, fireSpot, lightFire, poiById } from "../src/world/poi.ts";
-import { BELIEVERS, campOf, CAMPS, Lines, visit } from "../src/believers.ts";
+import { BELIEVERS, campers, campOf, CAMPS, Lines, visit } from "../src/believers.ts";
+import { WORLD } from "../src/world/trail.ts";
+import { dry } from "../src/world/world.ts";
 import { REGIONS } from "../src/regions.ts";
 import { creature } from "../src/roster.ts";
 
@@ -15,6 +17,21 @@ describe("the believers at each region's first campfire", () => {
       expect(arrive({ x: camp.x, z: camp.z }, new Set()).map((p) => p.id)).toContain(camp.id);
       lightFire(j, camp);
       expect(fireSpot(j, camp.id)?.n).toBe(g.n);
+    }
+  });
+
+  test("walk up to a camp and its believers sit round the fire on dry ground, facing it (the Lodge with their backs to it)", () => {
+    for (const g of BELIEVERS.groups) {
+      const fire = poiById(campOf(g.id)!)!, sat = campers(g);
+      expect(sat.length).toBeGreaterThanOrEqual(3);
+      expect(new Set(sat.map((c) => c.id)).size).toBe(sat.length);
+      for (const c of sat) {
+        expect(Math.hypot(c.x - fire.x, c.z - fire.z)).toBeLessThan(5);
+        expect(dry(WORLD, c.x, c.z)).toBe(true);
+        // a figure's front is +z turned by yaw; dot it with the way to the fire
+        const toFire = Math.sin(c.yaw) * (fire.x - c.x) + Math.cos(c.yaw) * (fire.z - c.z);
+        expect(g.id === "backwards" ? toFire < 0 : toFire > 0).toBe(true);
+      }
     }
   });
 

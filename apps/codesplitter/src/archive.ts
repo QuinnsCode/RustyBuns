@@ -3,8 +3,9 @@
 // trees, reading files, turning a file into a live Durable Object on first
 // open, and pushing a catalogue as a commit.
 
-import { arr, isRecord, nul, obj, opt, str, type Of } from "@rustybuns/util/guard";
-import { MAX_TEXT, fromText, isDoc, text, type Doc } from "./lines.ts";
+import { arr, bool, check, int, nul, obj, opt, str, type Guard, type Of } from "@rustybuns/util/guard";
+import { parseJson } from "./util.ts";
+import { FileCommit, MAX_TEXT, fromText, isDoc, text, type Doc } from "./lines.ts";
 import { FileReply, Names, type FileLine } from "./file-do.ts";
 import { readJson } from "@rustybuns/util/http";
 import { GIT_BOT, GIT_EMAIL_DOMAIN, push, type Change } from "./git.ts";
@@ -61,9 +62,8 @@ export const docIn = async (res: Response): Promise<Doc | null> => {
 
 /** The file as of its latest commit (private lines blank when `crew` is "0"), or null when it has none. */
 async function lastDoc(env: Env, owner: string, repo: string, path: string, crew = "1"): Promise<Doc | null> {
-  const commits: unknown = await (await toFile(env, owner, repo, path, "codesplitters", "commits")).json();
-  const last = Array.isArray(commits) ? commits[0] : null;
-  if (!isRecord(last) || typeof last.rev !== "number") return null;
+  const last = (await readJson(await toFile(env, owner, repo, path, "codesplitters", "commits"), arr(FileCommit, Infinity)))?.[0];
+  if (!last) return null;
   return docIn(await toFile(env, owner, repo, path, "codesplitters", "at", { headers: { "x-codesplitter-crew": crew } }, `?rev=${last.rev}`));
 }
 
@@ -99,11 +99,12 @@ export function artifactsFor(env: Env, namespace?: unknown) {
  * real text): what previews, deploys and the crew's own clone use.
  */
 export async function handleFor(env: Env, owner: string, repo: string, crew = false) {
-  const r = await repoRow<any>(env, owner, repo, "artifact, artifact_remote, crew_artifact, crew_remote, branch, namespace");
+  type Text = string | null;
+  const r = await repoRow<{ artifact: Text; artifact_remote: Text; crew_artifact: Text; crew_remote: Text; branch: Text; namespace: Text }>(env, owner, repo, "artifact, artifact_remote, crew_artifact, crew_remote, branch, namespace");
   const arts = artifactsFor(env, r?.namespace);
   if (!arts || !r?.artifact) return null;
   const [name, remote] = crew && r.crew_artifact ? [r.crew_artifact, r.crew_remote] : [r.artifact, r.artifact_remote];
-  return { handle: await arts.get(name), branch: (r.branch ?? "main") as string, remote: remote as string, crew: name !== r.artifact };
+  return { handle: await arts.get(name), branch: r.branch ?? "main", remote: remote ?? "", crew: name !== r.artifact };
 }
 
 /**
@@ -114,11 +115,11 @@ export async function handleFor(env: Env, owner: string, repo: string, crew = fa
  * `except`, which its caller is about to push), tried again until it lands.
  */
 export async function ensureCrewRemote(env: Env, owner: string, repo: string, except?: string) {
-  const r = await repoRow<any>(env, owner, repo, "artifact, crew_artifact, crew_backfill, branch, namespace, git_bytes");
+  const r = await repoRow<{ artifact: string | null; crew_artifact: string | null; crew_backfill: number | null; branch: string | null; namespace: string | null; git_bytes: number | null }>(env, owner, repo, "artifact, crew_artifact, crew_backfill, branch, namespace, git_bytes");
   const arts = artifactsFor(env, r?.namespace);
   if (!arts || !r?.artifact) return;
   if (r.crew_artifact) return r.crew_backfill ? payBackfill(env, owner, repo, except) : undefined;
-  const name = `${r.artifact}--crew`, branch = (r.branch ?? "main") as string, description = `codeSplitter ${owner}/${repo}, the crew's copy`;
+  const name = `${r.artifact}--crew`, branch = r.branch ?? "main", description = `codeSplitter ${owner}/${repo}, the crew's copy`;
   const pub = await arts.get(r.artifact);
   let mine = true;
   const made = await (async () => {
@@ -253,8 +254,11 @@ export async function materialize(env: Env, owner: string, repo: string, path: s
  * `deployCommit` is the commit on the remote deploys clone (the crew's, when there is one),
  * when that commit carries this file alone.
  */
-/** What a file's commit answers, as far as callers read it: `git.error` when its push didn't land, and the `published` text (private lines blanked). */
-export const CommitReply = obj({ git: opt(obj({ error: opt(str(Infinity, { min: 0 })) })), published: opt(str(Infinity, { min: 0 })) });
+/** What a file's commit route answers (worker.ts), as far as callers read it: the commit, `git` (its git commit and remote, or `error` when the push didn't land), and the `published` text (private lines blanked). */
+export const CommitReply = obj({
+  sha: str(64), rev: int(0, Number.MAX_SAFE_INTEGER),
+  git: opt(nul(obj({ commit: opt(str(64)), remote: opt(str(Infinity, { min: 0 })), error: opt(str(Infinity, { min: 0 })) }))),
+});
 
 export function pushCatalogue(env: Env, owner: string, repo: string, path: string, files: { content: string; published: string }, author: string, message: string, note?: string | null) {
   return pushCatalogues(env, owner, repo, { [path]: files }, author, message, note);
@@ -381,7 +385,11 @@ async function pendingChanges(env: Env, owner: string, repo: string): Promise<Re
   return out;
 }
 
-export interface Walls { commit: string | null; doors: { name: string; path: string }[]; files: { name: string; path: string; lines: string[]; noodles?: Noodle[] }[] }
+const anyLine = str(Infinity, { min: 0 });
+const NoodleShape = obj({ name: str(), start: int(0, Number.MAX_SAFE_INTEGER), end: int(0, Number.MAX_SAFE_INTEGER), lines: arr(anyLine, Infinity), record: bool() }) satisfies Guard<Noodle>;
+/** One room of the backrooms, as it is cached: its doors (subfolders) and the first lines of its files. */
+const Walls = obj({ commit: nul(str()), doors: arr(obj({ name: str(4096), path: str(4096, { min: 0 }) }), Infinity), files: arr(obj({ name: str(4096), path: str(4096), lines: arr(anyLine, Infinity), noodles: opt(arr(NoodleShape, Infinity)) }), Infinity) });
+export type Walls = Of<typeof Walls>;
 // Bumped when a room carries something new, so cached rooms are built again.
 const WALLS_V = "v2:";
 const WALL_FILES = 12, WALL_DOORS = 12, WALL_LINES = 48, WALL_WIDTH = 90;
@@ -396,7 +404,7 @@ const WALL_FILES = 12, WALL_DOORS = 12, WALL_LINES = 48, WALL_WIDTH = 90;
 export async function walls(env: Env, handle: ArtifactsRepo, ref: string, dir: string, commit?: string | null): Promise<Walls | null> {
   const cached = async (c: string) => {
     const hit = await env.DB.prepare("SELECT data FROM walls_cache WHERE key = ?").bind(`${WALLS_V}${c}:${dir}`).first<{ data: string }>();
-    return hit ? (JSON.parse(hit.data) as Walls) : null;
+    return hit ? check(Walls, parseJson<unknown>(hit.data, null)) : null;
   };
   if (commit) { const hit = await cached(commit); if (hit) return hit; }
   const listing = await listDir(env, handle, ref, dir);

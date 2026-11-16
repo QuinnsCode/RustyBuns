@@ -25,6 +25,8 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { apply, empty, text, type Conflict, type Doc } from "../src/lines.ts";
 import { local, type Call } from "../src/local.ts";
+import { FileDoc } from "../src/file-do.ts";
+import { readJson } from "@rustybuns/util/http";
 
 /** The fixes #1097 replayed: PR, and the merge commit that settled its conflicts by hand. */
 export const CASES = [
@@ -103,7 +105,7 @@ export async function replay(commit: string, pr?: number): Promise<Replay> {
       if (landed === null) { row("missing"); continue; }
       const now = await call("me", `/api/repos/me/up/do/file?path=${encodeURIComponent(f.path)}`);
       // A file only the branch has is an empty doc on main, as the merge sees it.
-      const doc: Doc = now.ok ? await now.json() as Doc : empty();
+      const doc = (await readJson(now, FileDoc)) ?? empty();
       if (!apply(doc, f.ops, "branch").ok) { row("cards"); continue; }
       const ours = text(doc);
       // git show keeps the file's last newline; a doc's text drops it.

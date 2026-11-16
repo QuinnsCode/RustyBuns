@@ -1,0 +1,147 @@
+diff --git a/apps/mythic-masters/src/beasts.ts b/apps/mythic-masters/src/beasts.ts
+index eb1afd7a..37f31a10 100644
+--- a/apps/mythic-masters/src/beasts.ts
++++ b/apps/mythic-masters/src/beasts.ts
+@@ -19,7 +19,7 @@ import { DAMP, IkRig } from "@rustybuns/rig/ik";
+ import { loadGlb, type Model } from "@rustybuns/rig/model";
+ import { pupils } from "./eyes.ts";
+ import { Secondary } from "./secondary.ts";
+-import { LOOSE_PARS, LOOSE_VERT, LooseLag, looseParts, reachOf } from "./loose.ts";
++import { LOOSE_PARS, LOOSE_VERT, LooseLag, looseParts, reachOf, tipOf } from "./loose.ts";
+ import { smoothNormals } from "./smooth.ts";
+ import { hideDetail, surfaceFor, surfaceOf, type Surface } from "./hide.ts";
+ import type { Archetype, Body, Move } from "./roster.ts";
+@@ -175,6 +175,28 @@ function reachFor(beast: Beast, part: number, gains: readonly number[]): Float32
+   return r;
+ }
+ 
++/** The parts made of small pieces that grow out of the body: horns, claws and teeth, spikes and quills, tufts and manes. */
++const PIECES = /horn|claw|spike|tooth|teeth|beak|talon|tusk|fang|quill|tuft|mane/;
++const TIP = new WeakMap<Beast, Map<number, Float32Array>>();
++/** Each piece part's root-to-tip per vertex (loose.ts `tipOf`), worked out once per beast; null for every other part. */
++function tipFor(beast: Beast, part: number, name: string): Float32Array | null {
++  const parts = beast.model.parts;
++  if (!PIECES.test(name) || parts.every((p) => p.count <= parts[part]!.count)) return null;
++  let byPart = TIP.get(beast);
++  if (!byPart) TIP.set(beast, (byPart = new Map()));
++  let t = byPart.get(part);
++  if (!t) {
++    const g = parts[part]!.geometry, own = g.getAttribute("position").array, body: number[] = [];
++    parts.forEach((p, i) => {
++      const m = Array.isArray(p.material) ? p.material[0] : p.material;
++      if (i !== part && !PIECES.test(m?.name ?? "")) { const a = p.geometry.getAttribute("position").array; for (let k = 0; k < a.length; k++) body.push(a[k]!); }
++    });
++    t = tipOf(own, g.index?.array ?? null, reachOf(own, body, 1, 1));
++    byPart.set(part, t);
++  }
++  return t;
++}
++
+ /** A baked hide map's mean colour (linear), which beast.py writes into the body material's extras. */
+ const HideMean = arr(num(0, 1), 3, { min: 3 });
+ /** A beast's skin merged into one geometry (Puppet's `merged`), built once and shared. */
+@@ -241,11 +263,13 @@ export function reloadBeast(id: string): Promise<Beast | null> {
+  * bright at the head. `top` is the model's height, shared by every material of one beast.
+  */
+ const SHADE_KEY = "beast-shade-v2";
+-function stylize(m: THREE.MeshStandardMaterial, top: { value: number }, name: string, fx: FieldLook | null = null, amt: { value: number } = { value: 1 }, surface: Surface = "hide", loose: LooseLag["uniforms"] | null = null) {
++function stylize(m: THREE.MeshStandardMaterial, top: { value: number }, name: string, fx: FieldLook | null = null, amt: { value: number } = { value: 1 }, surface: Surface = "hide", loose: LooseLag["uniforms"] | null = null, tipped = false) {
+   // a hide baked into a map (beast.py `hide`) already draws its grain; the shader's own on top washed it out
+   const kind = m.map ? null : surfaceFor(name, surface), hd = kind ? hideDetail(kind) : null;
+   const hard = /horn|claw|spike|tooth|teeth|beak|talon|tusk|fang|bone/.test(name);
+-  if (hard) m.roughness = Math.min(m.roughness, 0.32);
++  // horn and claw are dense keratin, waxy rather than lacquered: a glossy coat on a near-white cone caught the sun as a
++  // flat white disc that bloomed (#4726 round 25)
++  if (hard) { m.roughness = Math.min(Math.max(m.roughness, 0.45), 0.55); if (m instanceof THREE.MeshPhysicalMaterial) m.clearcoat = Math.min(m.clearcoat, 0.15); }
+   else if (m.roughnessMap) m.roughness = 1; // a baked hide's roughness map says where it shines (wet skin, a scale's crown)
+   else m.roughness = Math.max(0.78, Math.min(m.roughness, 0.9)); // hide, fur and scale take light softly: no vinyl sheen
+   m.onBeforeCompile = (sh) => {
+@@ -253,6 +277,7 @@ function stylize(m: THREE.MeshStandardMaterial, top: { value: number }, name: st
+     if (fx) { sh.uniforms.uFxTime = FX_TIME; sh.uniforms.uFxAmt = amt; }
+     sh.vertexShader = "varying float vBeastY;\nuniform float uTop;\n" + (fx ? "varying vec3 vFxPos;\n" : "") + sh.vertexShader.replace("#include <begin_vertex>", "#include <begin_vertex>\n" + (fx ? "vFxPos = position / max(uTop, 1e-4);\n" : "") + "vBeastY = clamp(position.y / max(uTop, 1e-4), 0.0, 1.0);" + (hd ? hd.vert : ""));
+     if (hd) sh.vertexShader = "varying vec3 vHideP;\n" + sh.vertexShader;
++    if (tipped) sh.vertexShader = "attribute float aTip;\nvarying float vTip;\n" + sh.vertexShader.replace("#include <begin_vertex>", "#include <begin_vertex>\nvTip = aTip;");
+     if (loose) {
+       Object.assign(sh.uniforms, loose);
+       sh.vertexShader = LOOSE_PARS + sh.vertexShader.replace("#include <skinning_vertex>", "#include <skinning_vertex>\n" + LOOSE_VERT);
+@@ -270,7 +295,7 @@ function stylize(m: THREE.MeshStandardMaterial, top: { value: number }, name: st
+         // rather than stacking on it. And a pale hide has no dark to set a light edge against: a full rim on it glazed the
+         // whole silhouette into glass (#4265).
+         float beastLum = dot( diffuseColor.rgb, vec3( 0.3, 0.59, 0.11 ) );
+-        float beastRim = mix( 0.35, 1.0, smoothstep( 0.35, 0.8, roughnessFactor ) ) * ( 1.0 - 0.6 * smoothstep( 0.15, 0.6, beastLum ) );
++        float beastRim = mix( 0.35, 1.0, smoothstep( 0.35, 0.8, roughnessFactor ) ) * ( 1.0 - 0.6 * smoothstep( 0.15, 0.6, beastLum ) )${tipped && !hard ? " * 0.2" : ""};
+         {
+           vec3 wN = inverseTransformDirection( normal, viewMatrix );
+           float sky = wN.y * 0.5 + 0.5;
+@@ -281,10 +306,20 @@ function stylize(m: THREE.MeshStandardMaterial, top: { value: number }, name: st
+           reflectedLight.indirectSpecular += mix( vec3( 0.5, 0.55, 0.7 ), vec3( 1.0, 0.95, 0.85 ), sky ) * rim * ( 0.2 + 0.45 * sky ) * ( 1.0 - beastLum ) * beastRim * ( 1.0 - 0.5 * metalnessFactor );
+         }
+         ${fx?.frag ?? ""}`);
++    // A piece that grows out of the body darkens toward its root: a horn or a claw is stained and dark where it leaves the
++    // skin and pale only at the tip, and a tuft or a mane card sits in the shade of the ones over it, so a coat of cards
++    // reads as layered fur, not shingles each with its own lit edge (#4726 round 25). A pale tip is held under the
++    // bloom's threshold.
++    if (tipped) sh.fragmentShader = "varying float vTip;\n" + sh.fragmentShader.replace("#include <color_fragment>", `#include <color_fragment>
++        {
++          float tipT = smoothstep( 0.1, 1.0, vTip );
++          ${hard ? "diffuseColor.rgb = min( diffuseColor.rgb, vec3( 0.62 ) ) * mix( vec3( 0.2, 0.16, 0.12 ), vec3( 1.0 ), tipT );"
++            : "diffuseColor.rgb *= mix( 0.55, 1.05, tipT );"}
++        }`);
+     if (hd) sh.fragmentShader = hd.pars + sh.fragmentShader.replace("#include <normal_fragment_maps>", "#include <normal_fragment_maps>\n" + hd.frag);
+     if (fx) sh.fragmentShader = "varying vec3 vFxPos;\nuniform float uFxTime;\nuniform float uFxAmt;\n" + fx.helpers + sh.fragmentShader;
+   };
+-  m.customProgramCacheKey = () => SHADE_KEY + (fx ? ":" + fx.key : "") + (hd ? ":" + hd.key : "") + (loose ? ":loose" : "");
++  m.customProgramCacheKey = () => SHADE_KEY + (fx ? ":" + fx.key : "") + (hd ? ":" + hd.key : "") + (loose ? ":loose" : "") + (tipped ? (hard ? ":tip-hard" : ":tip") : "");
+ }
+ 
+ const CONTACT_GEO = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
+@@ -444,6 +479,8 @@ export class Puppet {
+       const g = part.geometry.clone();
+       const reach = gains[pi] ? reachFor(beast, pi, gains) : null;
+       if (reach) g.setAttribute("aLoose", new THREE.BufferAttribute(reach, 1));
++      const tip = tipFor(beast, pi, (Array.isArray(part.material) ? part.material[0] : part.material)?.name ?? "");
++      if (tip) g.setAttribute("aTip", new THREE.BufferAttribute(tip, 1));
+       g.setAttribute("skinIndex", new THREE.Uint16BufferAttribute(rig.skinIndex.slice(part.start * 4, (part.start + part.count) * 4), 4));
+       g.setAttribute("skinWeight", new THREE.Float32BufferAttribute(rig.skinWeight.slice(part.start * 4, (part.start + part.count) * 4), 4));
+       const mats = Array.isArray(part.material) ? part.material : [part.material];
+@@ -453,7 +490,7 @@ export class Puppet {
+         // an eye is wet and glossy with a glow behind it, not a lamp; flames and markings keep the colour they were given
+         if (isEye) { this.lids.push({ m, open: m.color.clone(), shut: m.color.clone().multiplyScalar(0.12) }); m.roughness = 0.08; m.metalness = 0; m.emissiveIntensity = Math.min(m.emissiveIntensity, 1.2); }
+         else if (m.emissiveIntensity > 0 && m.emissive.getHex() !== 0) m.toneMapped = false;
+-        else stylize(m, this.top, m.name, look, amt, surface, reach && this.loose ? this.loose.uniforms : null);
++        else stylize(m, this.top, m.name, look, amt, surface, reach && this.loose ? this.loose.uniforms : null, !!tip);
+         this.materials.push(m); this.glow.push({ color: m.emissive.clone(), intensity: m.emissiveIntensity }); }
+       const sm = new THREE.SkinnedMesh(g, own.length === 1 ? own[0]! : own);
+       sm.bind(skeleton, new THREE.Matrix4());
+diff --git a/apps/mythic-masters/src/loose.ts b/apps/mythic-masters/src/loose.ts
+index 7db4fd58..ad62bf29 100644
+--- a/apps/mythic-masters/src/loose.ts
++++ b/apps/mythic-masters/src/loose.ts
+@@ -35,6 +35,27 @@ export function reachOf(pos: ArrayLike<number>, body: ArrayLike<number>, h: numb
+   return out;
+ }
+ 
++/** Per vertex of a part made of many small pieces (spikes, horns, claws, fur cards), how far from root to tip it sits
++ * on its own piece, 0 to 1: its distance from the body over the furthest of its piece's. A piece is the triangles that
++ * share a corner (welded by position, since a flat-shaded cone splits every face). `distOut` is `reachOf` at gain 1. */
++export function tipOf(pos: ArrayLike<number>, index: ArrayLike<number> | null, distOut: Float32Array): Float32Array {
++  const n = pos.length / 3, up = new Int32Array(n).map((_, i) => i);
++  const find = (i: number): number => { while (up[i] !== i) i = up[i] = up[up[i]!]!; return i; };
++  const join = (a: number, b: number) => { a = find(a); b = find(b); if (a !== b) up[a] = b; };
++  const at = new Map<string, number>();
++  for (let i = 0; i < n; i++) {
++    const k = `${Math.round(pos[i * 3]! * 1e4)},${Math.round(pos[i * 3 + 1]! * 1e4)},${Math.round(pos[i * 3 + 2]! * 1e4)}`;
++    const j = at.get(k);
++    if (j === undefined) at.set(k, i); else join(i, j);
++  }
++  const corner = (t: number) => (index ? index[t]! : t), corners = index ? index.length : n;
++  for (let t = 0; t + 2 < corners; t += 3) { join(corner(t), corner(t + 1)); join(corner(t), corner(t + 2)); }
++  const far = new Float32Array(n), out = new Float32Array(n);
++  for (let i = 0; i < n; i++) { const r = find(i); far[r] = Math.max(far[r]!, distOut[i]!); }
++  for (let i = 0; i < n; i++) { const f = far[find(i)]!; out[i] = f > 1e-6 ? distOut[i]! / f : 1; }
++  return out;
++}
++
+ /** Per archetype: spring stiffness (1/s squared), damping ratio (under 1 overshoots) and how far the springs reach. */
+ const FEEL: Record<Archetype, { k: number; zeta: number; reach: number }> = {
+   tank: { k: 45, zeta: 0.4, reach: 2.2 },

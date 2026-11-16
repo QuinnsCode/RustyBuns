@@ -11,6 +11,9 @@
 
 import { local, remote, type Call } from "./src/local.ts";
 import type { Line, Op } from "./src/lines.ts";
+import { CommitReply } from "./src/archive.ts";
+import { FileDoc } from "./src/file-do.ts";
+import { check, raw, type Guard } from "@rustybuns/util/guard";
 
 const START = `// my taste in code
 var foo = 0
@@ -66,20 +69,26 @@ const agents: Agent[] = [
 export async function run(call: Call, opts: { owner?: string; repo?: string; delay?: number; log?: (s: string) => void } = {}) {
   const owner = opts.owner ?? "ryan", repo = opts.repo ?? `playground-${Date.now().toString(36)}`, path = "src/taste.js";
   const log = opts.log ?? console.log;
-  const ok = async (r: Promise<Response>) => { const res = await r; if (!res.ok) throw new Error(`${res.status} ${await res.text()}`); return res.json() as any; };
-  const post = (user: string, url: string, body: unknown) => ok(call(user, url, { method: "POST", body: JSON.stringify(body) }));
+  const ok = async <T>(r: Promise<Response>, g: Guard<T>): Promise<T> => {
+    const res = await r;
+    if (!res.ok) throw new Error(`${res.status} ${await res.text()}`);
+    const v = check(g, await res.json());
+    if (v === null) throw new Error(`${res.url}: an answer of the wrong shape`);
+    return v;
+  };
+  const post = <T>(user: string, url: string, body: unknown, g: Guard<T>) => ok(call(user, url, { method: "POST", body: JSON.stringify(body) }), g);
 
-  await post(owner, "/api/login", { name: owner });
-  await post(owner, "/api/repos", { name: repo, visibility: "public" });
-  for (const a of agents) await post(owner, `/api/repos/${owner}/${repo}/collaborators`, { name: a.name });
-  await post(owner, `/api/repos/${owner}/${repo}/files`, { path, content: START });
+  await post(owner, "/api/login", { name: owner }, raw);
+  await post(owner, "/api/repos", { name: repo, visibility: "public" }, raw);
+  for (const a of agents) await post(owner, `/api/repos/${owner}/${repo}/collaborators`, { name: a.name }, raw);
+  await post(owner, `/api/repos/${owner}/${repo}/files`, { path, content: START }, raw);
   const file = `/api/repos/${owner}/${repo}/do`, q = `?path=${encodeURIComponent(path)}`;
   log(`${owner}/${repo}/${path}: ${START.split("\n").length} lines, ${agents.length} agents starting`);
 
   const stats = Object.fromEntries(agents.map((a) => [a.name, { edits: 0, conflicts: 0 }]));
   await Promise.all(agents.map(async (a) => {
     for (;;) {
-      const doc = await ok(call(a.name, `${file}/file${q}`));
+      const doc = await ok(call(a.name, `${file}/file${q}`), FileDoc);
       const move = a.pick(doc.lines);
       if (!move) return;
       await Bun.sleep(Math.random() * (opts.delay ?? 5)); // think
@@ -91,8 +100,8 @@ export async function run(call: Call, opts: { owner?: string; repo?: string; del
     }
   }));
 
-  const commit = await post(owner, `${file}/commit${q}`, { message: "three agents tidied this up" });
-  const doc = await ok(call(owner, `${file}/file${q}`));
+  const commit = await post(owner, `${file}/commit${q}`, { message: "three agents tidied this up" }, CommitReply);
+  const doc = await ok(call(owner, `${file}/file${q}`), FileDoc);
   return { owner, repo, path, commit, doc, stats };
 }
 

@@ -15,7 +15,7 @@ import type { Rule } from "./policy.ts";
 import { parseAllDocuments } from "yaml";
 import { alike, diffToOps, keptPairs } from "./sync.ts";
 import { isManifest, mergeManifest } from "./manifest.ts";
-import { arr, Bad, bool, check, isRecord, nul, obj, oneOf, opt, rec, str } from "@rustybuns/util/guard";
+import { arr, Bad, bool, check, int, isRecord, nul, num, obj, oneOf, opt, rec, said, str, type Guard, type Of } from "@rustybuns/util/guard";
 
 /**
  * The ops protocol's version. A writer that names one (`proto` on an ops request) and meets a file
@@ -33,22 +33,31 @@ export type Op =
 
 /** A batch is at most this many ops (a big file pasted line by line is tens of thousands), each line at most this long. */
 export const MAX_OPS = 100_000, MAX_TEXT = 10_000;
-const lineText = (v: unknown): v is string => typeof v === "string" && v.length <= MAX_TEXT && !v.includes("\n");
-/** `v` as a batch of ops, or what's wrong with it. A line's text is one line; an unknown kind is refused, not taken for a delete. */
+const lineText = said(str(MAX_TEXT, { min: 0, re: /^[^\n]*$/ }), `one line, up to ${MAX_TEXT} characters`);
+const lineId = said(str(Infinity, { min: 0 }), "a line id");
+const lineRev = said(int(-Number.MAX_SAFE_INTEGER, Number.MAX_SAFE_INTEGER), "the line's rev");
+/** Each kind of op, its fields in the order they're checked. */
+const OPS = {
+  insert: obj({ kind: oneOf(["insert"]), text: lineText, after: said(nul(str(Infinity, { min: 0 })), "a line id, or null for the top") }),
+  set: obj({ kind: oneOf(["set"]), line: lineId, base: lineRev, text: lineText }),
+  delete: obj({ kind: oneOf(["delete"]), line: lineId, base: lineRev }),
+} satisfies { [K in Op["kind"]]: Guard<Extract<Op, { kind: K }>> };
+/** One op, by its kind: an unknown kind is refused, not taken for a delete. */
+export const oneOp = (v: unknown): Op => {
+  if (!isRecord(v)) throw new Bad("an object");
+  const g = v.kind === "insert" || v.kind === "set" || v.kind === "delete" ? OPS[v.kind] : null;
+  if (!g) throw new Bad("kind: insert, set or delete");
+  return g(v);
+};
+/** `v` as a batch of ops, or what's wrong with it. A line's text is one line. */
 export function parseOps(v: unknown): Op[] | string {
   if (!Array.isArray(v)) return "ops: a list of {kind, …}";
   if (v.length > MAX_OPS) return `ops: at most ${MAX_OPS} in one batch`;
-  for (const [i, op] of v.entries()) {
-    const bad = (why: string) => `ops[${i}]: ${why}`;
-    if (!op || typeof op !== "object") return bad("an object");
-    const { kind, text, after, line, base } = op as Record<string, unknown>;
-    if (kind === "insert") { if (!lineText(text)) return bad(`text: one line, up to ${MAX_TEXT} characters`); if (after !== null && typeof after !== "string") return bad("after: a line id, or null for the top"); continue; }
-    if (kind !== "set" && kind !== "delete") return bad("kind: insert, set or delete");
-    if (typeof line !== "string") return bad("line: a line id");
-    if (!Number.isInteger(base)) return bad("base: the line's rev");
-    if (kind === "set" && !lineText(text)) return bad(`text: one line, up to ${MAX_TEXT} characters`);
+  const out: Op[] = [];
+  for (const [i, x] of v.entries()) {
+    try { out.push(oneOp(x)); } catch (e) { if (e instanceof Bad) return `ops[${i}]: ${e.message}`; throw e; }
   }
-  return v as Op[];
+  return out;
 }
 
 export interface Applied { rev: number; by: string; at: number; op: Op; line: string }
@@ -173,6 +182,17 @@ const RULES = ["lock", "keyed", "prose", "code", "union"] as const satisfies rea
 /** A file Durable Object's doc, checked as far as its frame: a rev and a list of lines (they're handed on whole). */
 export const isDoc = (v: unknown): v is Doc => isRecord(v) && Number.isInteger(v.rev) && Array.isArray(v.lines);
 const doc = (v: unknown): Doc => { if (!isDoc(v)) throw new Bad("a lines doc"); return v; };
+
+const anyText = str(Infinity, { min: 0 });
+/** One commit of a file, as its Durable Object keeps it. */
+export const FileCommit = obj({ n: int(0, Number.MAX_SAFE_INTEGER), sha: str(), parent: nul(str()), rev: int(0, Number.MAX_SAFE_INTEGER), by: str(), at: num(0, Number.MAX_SAFE_INTEGER), message: str(), writers: arr(str(), Infinity) });
+export type FileCommit = Of<typeof FileCommit>;
+/** What a file's Durable Object answers a commit (or a "hidden" re-push): the text, and the text git and search get (private lines blank). */
+export const FileTexts = obj({ content: anyText, published: anyText });
+export type FileTexts = Of<typeof FileTexts>;
+/** A file's commit route: the commit, plus its texts. */
+export const FileCommitted = obj({ commit: FileCommit, content: anyText, published: anyText });
+export type FileCommitted = Of<typeof FileCommitted>;
 
 /** What a branch asks main's copy of a file to merge (mergeFile in branches.ts sends it, file-do.ts's "merge" route takes it). */
 export const MERGE_ASK = obj({ base: doc, branch: doc, resolve: opt(rec(PICK)), dry: opt(bool()), deleter: opt(str()), path: opt(str(4096)), writer: opt(str()), rule: opt(oneOf(RULES)) });

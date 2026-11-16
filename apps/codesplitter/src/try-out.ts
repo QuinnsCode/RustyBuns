@@ -22,12 +22,12 @@
 //   GET  /api/repos/:o/:r/try     the current or last run (owner only)
 //   POST /api/repos/:o/:r/try     start one: {branch?} tries that branch's files, else main; {save?} commits init's work to a branch
 
-import { access as artifactAccess, handleFor, toFile } from "./archive.ts";
+import { access as artifactAccess, docIn, handleFor, toFile } from "./archive.ts";
 import { settings } from "./deploy.ts";
 import { hostedWhy } from "./deploy-keys.ts";
 import { fail, json, readBody, type Env } from "./env.ts";
 import { caller, landFix, type Edit } from "./deps.ts";
-import { text, type Doc } from "./lines.ts";
+import { text } from "./lines.ts";
 import { runnerFor, type Run, type Runner } from "./preview.ts";
 import { checkEnv, runDirs } from "./check-env.ts";
 import { repoRow } from "./repos.ts";
@@ -45,7 +45,8 @@ export async function branchFiles(env: Env, owner: string, repo: string, branch:
   const out: Record<string, string> = {};
   for (const { path } of rows) {
     const res = await toFile(env, owner, repo, path, user, "file", {}, "", branch);
-    if (res.ok) out[path] = text((await res.json()) as Doc);
+    const doc = await docIn(res);
+    if (doc) out[path] = text(doc);
   }
   return out;
 }

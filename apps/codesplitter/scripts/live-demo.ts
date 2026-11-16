@@ -12,6 +12,9 @@
 import { serve } from "@rustybuns/shell-bun";
 import worker from "../src/worker.ts";
 import { local } from "../src/local.ts";
+import { FileDoc } from "../src/file-do.ts";
+import { obj, str } from "@rustybuns/util/guard";
+import { readJson } from "@rustybuns/util/http";
 import { PORTS } from "@rustybuns/util/ports";
 
 const arg = (n: string, d: number) => { const i = process.argv.indexOf(`--${n}`); return i > 0 ? Number(process.argv[i + 1]) : d; };
@@ -68,8 +71,7 @@ await j("ryan", "/repos/ryan/office/files", { path: FILE, content: SOURCE });
 for (const a of ["agent-ada", "agent-bo", "agent-cy"]) await j("ryan", "/repos/ryan/office/collaborators", { name: a });
 
 const at = `/repos/ryan/office/do`, q = `?path=${encodeURIComponent(FILE)}`;
-type Line = { id: string; text: string; rev: number; by: string };
-const read = async () => ((await (await j("ryan", `${at}/file${q}`)).json()) as { lines: Line[] }).lines;
+const read = async () => (await readJson(await j("ryan", `${at}/file${q}`), FileDoc))?.lines ?? [];
 /** The block under a `// marker` comment: its lines up to the next blank one. */
 const find = async (marker: string) => {
   const ls = await read(), i = ls.findIndex((l) => l.text === marker), n = ls.slice(i).findIndex((l) => l.text === "");
@@ -87,7 +89,8 @@ const JOBS = [
 async function work(job: (typeof JOBS)[number], round: number) {
   const { who } = job;
   const block = await find(job.marker);
-  const claim = (await (await j(who, `${at}/claims${q}`, { id: `run-${who.slice(6)}-${round}`, task: job.task, lines: block.map((l) => l.id) })).json()) as { id: string };
+  const claim = await readJson(await j(who, `${at}/claims${q}`, { id: `run-${who.slice(6)}-${round}`, task: job.task, lines: block.map((l) => l.id) }), obj({ id: str(200) }));
+  if (!claim) return say(who, "claim refused: next round");
   say(who, `claimed ${block.length} lines: ${job.task}`);
   for (const l of block) {
     await Bun.sleep(PACE + Math.random() * PACE);

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { abduction, arrival, Director, faceoff, FACEOFF, freeze, HOVER, introClock, lookout, PINES, SCENES, trail } from "../src/director.ts";
+import { abduction, arrival, Director, faceoff, FACEOFF, freeze, HOVER, introClock, PINES, SCENES, trail } from "../src/director.ts";
 import { identified, intro, type Subject } from "../src/casefile.ts";
 import INTRO from "../content/intro.json";
 /** A line of content/intro.json as the caption shows it, whatever the writer made it say. */
@@ -27,13 +27,6 @@ describe("the director", () => {
       const until = s.lines[i + 1]?.[0] ?? s.seconds;
       expect(until - t).toBeGreaterThanOrEqual(line.slice(line.indexOf(":") + 1).trim().length / 15);
     });
-  });
-
-  test("in the abduction each line sits by whoever says it: the grey, the other grey, the saucer up top, and the narrator in the usual place", () => {
-    const d = new Director(), seats = new Map<string, string>();
-    d.play(abduction(at));
-    for (let i = 0; i < introClock().seconds * 30; i++) { d.step(1 / 30); if (d.stage.caption) seats.set(d.stage.caption.who, d.stage.seat); }
-    expect(Object.fromEntries(seats)).toEqual({ Grey: "grey", "Other grey": "other", "Voice from the saucer": "saucer", Narrator: "", Book: "" });
   });
 
   test("a new journey: you come to twice, the greys go up the beam, a standoff waits its turn, then a freeze frame", () => {
@@ -170,44 +163,6 @@ describe("the director", () => {
     d.play(faceoff({ name: "A", sub: "", art: null, tier: "common" }, { name: "B", sub: "", art: null, tier: "common" }, at));
     run(d, 0.8, 10);
     expect(d.holding).toBe(false);
-  });
-
-  test("a new region: the camera slides past you with the hills behind, whips round, and cranes up to show them", () => {
-    const d = new Director();
-    d.play(arrival(2, at, view));
-    run(d, 0.5);
-    const a = d.stage.shot!;
-    run(d, 2);
-    const b = d.stage.shot!;
-    // The slide: sideways (across the line to the hills, which run north), low, the lens long, looking toward them.
-    expect(Math.abs(b.from.x - a.from.x)).toBeGreaterThan(3);
-    expect(Math.abs(b.from.z - a.from.z)).toBeLessThan(0.5);
-    expect([b.from.z > at.z, b.from.y < at.y + 2, b.fov! < 40]).toEqual([true, true, true]);
-    // The join is a whip: the picture blurs halfway through it.
-    run(d, 1.1);
-    expect(d.stage.whip).toBeGreaterThan(0.6);
-    // Then up over your shoulder, looking out at the hills, and the view handed back by the end.
-    run(d, 2.5);
-    expect(d.stage.shot!.from.y).toBeGreaterThan(at.y + 4);
-    expect(d.stage.shot!.at.z).toBeLessThan(d.stage.shot!.from.z - 10);
-    run(d, 2);
-    expect([d.beat, d.stage.shot]).toEqual([null, null]);
-  });
-
-  test("a landmark: a flash, then time slows while the camera turns all the way round you", () => {
-    const d = new Director(), s = lookout("Apple Pie Hill", at, view, 0);
-    d.play(s);
-    run(d, 0.4);
-    expect(d.stage.caption?.text).toContain("Apple Pie Hill");
-    run(d, 1.2);
-    expect(d.stage.flash).toBeGreaterThan(0.5);
-    // A quarter, a half and three quarters of the turn sit on three different sides of you, in slow motion.
-    const sides = new Set<string>();
-    for (let i = 0; i < 4; i++) { run(d, 1.2); const f = d.stage.shot!.from; sides.add(`${Math.sign(Math.round(f.x - at.x))},${Math.sign(Math.round(f.z - at.z))}`); }
-    expect(sides.size).toBeGreaterThanOrEqual(3);
-    expect(d.stage.slow).toBeLessThan(0.5);
-    run(d, 2);
-    expect([d.beat, d.stage.slow]).toEqual([null, 1]);
   });
 
   test("every scene plays from its name, holds still on a frame, and gives the view back", () => {

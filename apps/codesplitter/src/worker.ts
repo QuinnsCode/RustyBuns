@@ -11,7 +11,7 @@ import { featureRankRoutes } from "./feature-ranks.ts";
 import { findRoutes } from "./finds.ts";
 import { programRoutes } from "./programs.ts";
 import { rankOf } from "./policy.ts";
-import { fromText, text, type Doc } from "./lines.ts";
+import { FileCommitted, FileTexts, fromText, text, type Doc } from "./lines.ts";
 import { mainClosed, policyClosed, protectRoute } from "./protect.ts";
 import {
   artifactsFor,
@@ -25,6 +25,7 @@ import {
   materialize,
   pushCatalogue,
   revokeSockets,
+  CommitReply,
   toFile,
 } from "./archive.ts";
 import { repoRow, live, branchOf } from "./repos.ts";
@@ -41,7 +42,7 @@ import {
   type DigMessage,
   type Env,
 } from "./env.ts";
-import { arr, bool, isRecord, obj, oneOf, opt, str } from "@rustybuns/util/guard";
+import { arr, bool, check, maybe, obj, oneOf, opt, raw, str, type Of } from "@rustybuns/util/guard";
 import { readJson } from "@rustybuns/util/http";
 import {
   accountsOn,
@@ -878,7 +879,7 @@ async function route(req: Request, env: Env): Promise<Response> {
       // Hiding lines is the crew's; showing them again (to git and search on the next commit) the owner's.
       const sent = writes ? await req.text() : undefined;
       // The few fields read here; the file's Durable Object checks the whole body.
-      const said = (() => { try { const v: unknown = JSON.parse(sent ?? ""); return isRecord(v) ? v : {}; } catch { return {}; } })();
+      const said = check(obj({ private: maybe(bool()), wait: maybe(raw), soft: maybe(raw) }), parseJson<unknown>(sent, null)) ?? {};
       if (p[5] === "private" && req.method === "POST") {
         const on = said.private;
         if (typeof on !== "boolean") return fail("BadInput", "{lines, private: true|false}, please");
@@ -930,9 +931,8 @@ async function route(req: Request, env: Env): Promise<Response> {
           // Git's HEAD holds the last commit's text until the file's next commit: push that commit again with these lines blank.
           if (!branch) {
             const hid = await toFile(env, owner, repo, path, user!, "hidden", { method: "POST", body: sent });
-            const files: unknown = hid.ok ? await hid.json().catch(() => null) : null;
-            if (isRecord(files) && typeof files.content === "string" && typeof files.published === "string")
-              await pushCatalogue(env, owner, repo, path, { content: files.content, published: files.published }, user!, "hide private lines").catch(() => null);
+            const files = await readJson(hid, FileTexts);
+            if (files) await pushCatalogue(env, owner, repo, path, files, user!, "hide private lines").catch(() => null);
           }
         }
         // Open branches' copies of the file hide the same lines.
@@ -943,7 +943,9 @@ async function route(req: Request, env: Env): Promise<Response> {
       if (p[5] === "commit" && res.ok) {
         // Index what was committed, not every keystroke; git and search get private lines blank,
         // the crew's remote the real text.
-        const { commit, content, published } = (await res.json()) as { commit: { message: string; writers?: string[] }; content: string; published: string };
+        const got = await readJson(res, FileCommitted);
+        if (!got) return json({ error: `${path}: its commit did not read` }, 502);
+        const { commit, content, published } = got;
         await indexFile(env, owner, repo, path, published);
         await env.DB.prepare("DELETE FROM uncommitted WHERE owner = ? AND repo = ? AND path = ?").bind(owner, repo, path).run().catch(() => {});
         // The catalogue entry stands even if the push fails; the next push that lands carries it,
@@ -966,7 +968,7 @@ async function route(req: Request, env: Env): Promise<Response> {
           // A mirror hands the commit upstream now, if upstream's there to take it.
           await kickMirror(env, owner, repo);
         }
-        return json({ ...commit, git });
+        return json({ ...commit, git } satisfies Of<typeof CommitReply>);
       }
       return res;
     }

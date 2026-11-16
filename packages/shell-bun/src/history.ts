@@ -7,8 +7,10 @@
 
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
+import type { Fields } from "@rustybuns/ports";
 import { slope, type MemStats } from "./memwatch.ts";
 import type { HotFrame, ProfileSummary } from "./profsummary.ts";
+import { arr, int, nul, num, obj, oneOf, opt, str, type Guard } from "./guard.ts";
 
 export type HistoryEntry =
   | { at: string; kind: "boot"; pid: number; build?: string }
@@ -30,7 +32,7 @@ const TOP = 5;
 export function history(o: HistoryOptions) {
   const keep = o.keep ?? 5000, now = o.now ?? (() => new Date());
   let lines = existsSync(o.file) ? readFileSync(o.file, "utf8").split("\n").filter(Boolean).length : 0;
-  const add = (e: Record<string, unknown>) => {
+  const add = (e: Fields) => {
     try {
       mkdirSync(dirname(o.file), { recursive: true });
       appendFileSync(o.file, JSON.stringify({ at: now().toISOString(), ...e }) + "\n");
@@ -73,6 +75,20 @@ export interface Run {
   /** It went over its memory ceiling, at this RSS, and restarted. */
   ceiling: { at: string; rssMb: number; maxMb: number | null } | null;
 }
+
+const n0 = num(0, Infinity), text = str(10_000), rate = nul(num(-Infinity, Infinity));
+const Frame: Guard<HotFrame> = obj({ fn: text, at: text, ms: n0, pct: n0, stack: opt(arr(text, 10_000)) });
+const Profile: Guard<Extract<HistoryEntry, { kind: "profile" }>> = obj({
+  at: text, kind: oneOf(["profile"]), id: text, reason: text, durationMs: n0, samples: n0, idlePct: n0, self: arr(Frame, 10_000),
+});
+const RunShape: Guard<Run> = obj({
+  from: text, to: text, build: opt(text), pid: nul(int(0, 2 ** 31)),
+  mem: nul(obj({ samples: n0, firstMb: n0, lastMb: n0, peakMb: n0, slopeMbPerHour: rate })),
+  profiles: arr(Profile, 100_000),
+  ceiling: nul(obj({ at: text, rssMb: n0, maxMb: nul(n0) })),
+});
+/** What GET /__rb/history answers (without ?text=1): the box's runs, newest first. */
+export const HistoryReply = obj({ runs: arr(RunShape, 100_000) });
 
 const round = (n: number) => Math.round(n * 10) / 10;
 

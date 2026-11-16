@@ -6,16 +6,20 @@
 // are the first time, hint where a cryptid you don't hold yet roams on the trail ahead, and react to how many of the
 // region's twelve keepers you have beaten. Their words are content/believers.json (`bun run cms`). No DOM here:
 // main.ts draws the visit.
-import { arr, int, obj, str, type Of } from "@rustybuns/util/guard";
+import { arr, int, obj, oneOf, str, type Of } from "@rustybuns/util/guard";
 import { cleared, owns, SECTIONS, sections, type Journey } from "./journey.ts";
 import { REGIONS } from "./regions.ts";
 import { creature } from "./roster.ts";
 import { POIS } from "./world/poi.ts";
 import raw from "../content/believers.json";
 
+/** The groups, each with its own look at its fire (rivals-view.ts draws them). */
+export const BELIEVER_IDS = ["hatters", "porchlight", "backwards", "blurry"] as const;
+export type BelieverId = (typeof BELIEVER_IDS)[number];
+
 const Visit = obj({ cleared: int(0, SECTIONS), first: str(400), again: str(400) });
 const Group = obj({
-  id: str(32), n: int(1, 64), name: str(60), camp: str(60), meet: str(600),
+  id: oneOf(BELIEVER_IDS), n: int(1, 64), name: str(60), camp: str(60), meet: str(600),
   /** `{creature}` and `{section}` are filled in. */
   hint: str(300), lair: str(300), allHeld: str(300),
   visits: arr(Visit, 13, { min: 1 }),
@@ -34,6 +38,22 @@ export const CAMPS = new Map<string, Group>(BELIEVERS.groups.flatMap((g) => {
   return [[fire.id, g]];
 }));
 export const campOf = (id: string) => [...CAMPS].find(([, g]) => g.id === id)?.[0];
+
+/** Metres from the fire the believers sit, and how many sit round it. */
+const RING = 3.2, SEATS = 4;
+
+/** Who sits round group g's fire: four of them on a ring, the same every time, each facing the flames (`yaw` turns a
+ * figure whose front is +z), except the Backwards Lodge, who sit with their backs to it and watch it in their mirrors. */
+export function campers(g: Group): { id: string; x: number; z: number; yaw: number }[] {
+  const fire = POIS.get(g.n)?.find((p) => p.id === campOf(g.id));
+  if (!fire) return [];
+  return Array.from({ length: SEATS }, (_, i) => {
+    const a = 0.4 + (i * Math.PI * 2) / SEATS + (i % 2) * 0.35;
+    const x = fire.x + Math.cos(a) * RING, z = fire.z + Math.sin(a) * RING;
+    const toFire = Math.atan2(fire.x - x, fire.z - z);
+    return { id: `camp:${g.id}:${i}`, x, z, yaw: g.id === "backwards" ? toFire + Math.PI : toFire };
+  });
+}
 
 const fill = (s: string, c: string, section: string) => s.replaceAll("{creature}", c).replaceAll("{section}", section);
 

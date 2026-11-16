@@ -5,6 +5,11 @@
 import { openapi } from "./openapi.ts";
 
 type Schema = Record<string, any>;
+/**
+ * A tool call's arguments by parameter name. What each one is lives in the tool's `inputSchema`, so it is held to that at
+ * run time (codemode.ts `check`), not here; `toolArgs` (codemode.ts) reads one off the wire.
+ */
+export type ToolArgs = { [param: string]: unknown };
 export interface Tool {
   name: string; title: string; description: string; tag: string; risky: boolean;
   inputSchema: Schema;

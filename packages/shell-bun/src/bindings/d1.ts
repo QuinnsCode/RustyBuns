@@ -3,8 +3,9 @@
 // Only the shape RWSDK / drizzle-d1 / raw handlers actually call.
 
 import { Database, type Statement } from "bun:sqlite";
+import type { Fields } from "@rustybuns/ports";
 
-export interface D1Result<T = Record<string, unknown>> {
+export interface D1Result<T = Fields> {
   results: T[];
   success: true;
   meta: { changes: number; last_row_id: number; duration: number; rows_read: number; rows_written: number };
@@ -25,12 +26,12 @@ export class D1PreparedStatement {
     return this.db.query(this.sql);
   }
 
-  async all<T = Record<string, unknown>>(): Promise<D1Result<T>> {
+  async all<T = Fields>(): Promise<D1Result<T>> {
     return this.allSync<T>();
   }
 
   /** all() without the promise, so batch() can run every statement inside one sqlite transaction. */
-  allSync<T = Record<string, unknown>>(): D1Result<T> {
+  allSync<T = Fields>(): D1Result<T> {
     const t0 = performance.now();
     // D1 reports writes made through all() too (INSERT ... RETURNING, or a
     // query builder that runs everything via all()); count them the same way.
@@ -42,13 +43,13 @@ export class D1PreparedStatement {
     return { results, success: true, meta: { ...this.meta(t0, results.length, changes), last_row_id: last } };
   }
 
-  async first<T = Record<string, unknown>>(column?: string): Promise<T | null> {
-    const row = this.stmt().get(...(this.params as any[])) as Record<string, unknown> | null;
+  async first<T = Fields>(column?: string): Promise<T | null> {
+    const row = this.stmt().get(...(this.params as any[])) as Fields | null;
     if (!row) return null;
     return (column ? row[column] : row) as T;
   }
 
-  async run<T = Record<string, unknown>>(): Promise<D1Result<T>> {
+  async run<T = Fields>(): Promise<D1Result<T>> {
     const t0 = performance.now();
     const r = this.stmt().run(...(this.params as any[]));
     return {
@@ -83,7 +84,7 @@ export class D1Database {
   prepare(sql: string): D1PreparedStatement {
     return new D1PreparedStatement(this.sqlite, sql);
   }
-  async batch<T = Record<string, unknown>>(stmts: D1PreparedStatement[]): Promise<D1Result<T>[]> {
+  async batch<T = Fields>(stmts: D1PreparedStatement[]): Promise<D1Result<T>[]> {
     // D1 runs a batch as one transaction: a failing statement rolls back the ones before it.
     // The callback must be synchronous; an async one returns at its first await and commits early.
     return this.sqlite.transaction(() => stmts.map((s) => s.allSync<T>()))();

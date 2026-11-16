@@ -57,7 +57,7 @@ export function vitePlugins(src: string): string[] {
 }
 
 /** The framework, from deps and vite plugins. Specific frameworks first: most of them pull in vite too. */
-export function stackOf(deps: Record<string, unknown>, plugins: string[] = []): Stack {
+export function stackOf(deps: Record<string, string>, plugins: string[] = []): Stack {
   if (deps["rwsdk"] || plugins.includes("rwsdk")) return "rwsdk";
   if (deps["@tanstack/react-start"] || deps["@tanstack/start"] || plugins.includes("tanstack-start")) return "tanstack-start";
   if (deps["next"]) return "next";
@@ -83,7 +83,7 @@ export function stackOf(deps: Record<string, unknown>, plugins: string[] = []): 
  * Whether `init` reads this app. React Router only as a Worker (its Cloudflare template's
  * @cloudflare/vite-plugin), SvelteKit only with @sveltejs/adapter-cloudflare, Next.js only with @opennextjs/cloudflare.
  */
-export const inits = (stack: Stack, plugins: string[], deps: Record<string, unknown> = {}) =>
+export const inits = (stack: Stack, plugins: string[], deps: Record<string, string> = {}) =>
   SUPPORTED.includes(stack)
   && (stack !== "react-router" || plugins.includes("cloudflare"))
   && (stack !== "sveltekit" || !!deps["@sveltejs/adapter-cloudflare"])

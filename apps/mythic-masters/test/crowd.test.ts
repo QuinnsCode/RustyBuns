@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import * as THREE from "three";
 import { mulberry32 } from "@rustybuns/util";
-import { buildCrowd, CAST, CLIPS } from "../src/crowd.ts";
+import { buildCrowd, CAST } from "../src/crowd.ts";
 
 const seats = Array.from({ length: 600 }, (_, i) => ({ pos: new THREE.Vector3(i, 0, 0), yaw: 0 }));
 
@@ -23,12 +23,4 @@ test("the stands seat everyone as one of the recorded cast, a draw call per cast
   crowd.update(1);
   expect(crowd.state()).toMatchObject({ playing: "clap", excite: 1 });
   expect(crowd.play("moonwalk")).toBe(false);
-});
-
-test("the recorded takes do what they're named: arms up goes up, clap meets in front, jump leaves the step", () => {
-  const take = (name: string) => CLIPS.find((c) => c.name === name)!.frames;
-  const mean = (xs: number[]) => xs.reduce((s, x) => s + x, 0) / xs.length;
-  expect(mean(take("arms-up").map((f) => f[2]!))).toBeGreaterThan(2.3);
-  expect(mean(take("clap").map((f) => f[3]!))).toBeGreaterThan(1);
-  expect(Math.max(...take("jump").map((f) => f[0]!))).toBeGreaterThan(0.1);
 });

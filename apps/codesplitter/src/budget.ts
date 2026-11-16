@@ -8,6 +8,10 @@
 // whose CLI said nothing is counted from what went in and came out of it: four characters to the token.
 
 import type { Over } from "./policy.ts";
+import { check, maybe, num as number, rec } from "@rustybuns/util/guard";
+
+/** A CLI's token counts by name; one that isn't a number counts 0. */
+const Usage = rec(maybe(number(-Infinity, Infinity)));
 
 /** Characters to a token, near enough for a budget. */
 const CHARS_PER_TOKEN = 4;
@@ -28,7 +32,7 @@ export const tokens = (chars: number) => Math.ceil(chars / CHARS_PER_TOKEN);
  * counted by characters instead.
  */
 export function usageOf(out: string): { reply: string; tokens: number } | null {
-  const num = (o: unknown, k: string) => { const v = (o as Record<string, unknown> | undefined)?.[k]; return typeof v === "number" ? v : 0; };
+  const num = (o: unknown, k: string) => check(Usage, o)?.[k] ?? 0;
   const sum = (o: unknown, ...ks: string[]) => ks.reduce((n, k) => n + num(o, k), 0);
   let claude: { reply: string; tokens: number } | null = null, tokens = 0, seen = false, reply = "";
   const texts: string[] = [];

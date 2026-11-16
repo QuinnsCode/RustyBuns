@@ -119,7 +119,7 @@ export function findConfigs(root: string): Src[] {
   for (const f of ["Gruntfile.js", "Gruntfile.cjs", "gulpfile.js", "gulpfile.cjs", "gulpfile.mjs"])
     if (existsSync(join(root, f)) && /webpack/.test(readFileSync(join(root, f), "utf8"))) rel.add(f);
   try {
-    const scripts = Object.values(JSON.parse(readFileSync(join(root, "package.json"), "utf8")).scripts ?? {}) as string[];
+    const scripts = Object.values(JSON.parse(readFileSync(join(root, "package.json"), "utf8")).scripts ?? {}).filter((s) => typeof s === "string");
     for (const s of scripts) for (const m of s.matchAll(/(?:--config|-c)[ =]+["']?([^\s"']+)/g)) if (existsSync(join(root, m[1]!)) && /\.[cm]?[jt]s$/.test(m[1]!) && !NOT_WEBPACK.test(m[1]!)) rel.add(m[1]!.replace(/^\.\//, ""));
   } catch { /* no package.json */ }
   const out: Src[] = [], seen = new Set<string>();
