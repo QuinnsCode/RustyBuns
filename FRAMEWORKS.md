@@ -138,6 +138,8 @@ Every `apps/<fw>-example` does the same small thing, so one journey covers them 
 
 The journey, in order: no token is a 403; `/` shows `count: 0` on a fresh data dir; two posts make it `count: 2`; after a restart on the same data dir it is still 2; and `rustybuns generate` writes a stack with a `Cloudflare.Worker` and the `COUNTER` namespace.
 
+CI runs it on the dev host. Every few days, [`scripts/framework-check.ts`](scripts/framework-check.ts) runs it on each example's compiled binary (`--binary`, on the builder), takes the README thumbnail from the page in headless Chrome (`--shots`, which fails if the page throws), and prints what a deploy would create (`--plan`, offline, read only).
+
 ## Adding a framework
 
 1. Copy the nearest example: `apps/hono-example` for a plain Worker, `apps/nuxt-example` for a built Worker plus assets, `apps/svelte-spa-example` for a client-only SPA.
