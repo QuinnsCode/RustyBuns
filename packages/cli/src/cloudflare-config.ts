@@ -6,8 +6,10 @@
 
 import { existsSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, relative, resolve } from "node:path";
-import { isRecord } from "./state.ts";
 import type { WranglerJson } from "./wrangler.ts";
+
+// state.ts's isRecord, kept here: importing state.ts from index.ts this early closes an import cycle.
+const isRecord = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v);
 
 export const CLOUDFLARE_CONFIG = "cloudflare.config.ts";
 
