@@ -237,7 +237,8 @@ test("add deploy: an app with its own Alchemy + Effect pins keeps them and insta
   expect(installCommand("pnpm", true, want)).toBe("pnpm add -Dw @alchemy.run/hetzner@2.0.0-beta.87 @alchemy.run/railway@2.0.0-beta.87 @alchemy.run/neon@2.0.0-beta.87 @alchemy.run/frontend-frameworks@2.0.0-beta.87 @effect/platform-bun@4.1.4");
   expect(installCommand("bun", false, deployDeps({ ...rat, ...want }))).toBeNull();
   // A range, a catalog, another major or only one of the two: the pinned set as before.
-  for (const deps of [{ alchemy: "^2.0.0-beta.87", effect: "4.1.4" }, { alchemy: "catalog:", effect: "catalog:" }, { alchemy: "2.0.0-beta.87", effect: "3.17.0" }, { effect: "4.1.4" }]) {
+  const cases: Record<string, string>[] = [{ alchemy: "^2.0.0-beta.87", effect: "4.1.4" }, { alchemy: "catalog:", effect: "catalog:" }, { alchemy: "2.0.0-beta.87", effect: "3.17.0" }, { effect: "4.1.4" }];
+  for (const deps of cases) {
     expect(deployDeps(deps)).toBe(DEPLOY_DEPS);
   }
 });
