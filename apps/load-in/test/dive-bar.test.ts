@@ -1,6 +1,7 @@
 // The dive bar as a player does it: carry both stands and both tops from the door to the stage, set each top on its
 // stand, point them at the back wall (the crowd hears their backs: a low score), then turn them round, toe them in
-// toward the crowd and away from the bar, raise the stands, and pass. The same calls `window.loadIn` makes.
+// toward the crowd and away from the bar, raise the stands; the sub still by the door booms at the back of the crowd and
+// fades at the front, so carry it to the stage, and pass. The same calls `window.loadIn` makes.
 import { expect, test } from "bun:test";
 import { newWorld, pickUp, putDown, type World, walkTo } from "../src/sim.ts";
 import { DIVE_BAR, PASS, aim, raise, score, settle, sources } from "../src/venues/dive-bar.ts";
@@ -19,7 +20,7 @@ function carry(w: World, key: string, x: number, z: number) {
   settle(w);
 }
 
-test("a silent room scores nothing; tops at the wall score low; aimed at the crowd they pass", () => {
+test("a silent room scores nothing; tops at the wall score low; aimed at the crowd with the sub on stage they pass", () => {
   const w = newWorld(DIVE_BAR), at = (key: string) => w.items.find((i) => i.key === key)!;
   // With no speaker in the room, every cell is silence (-Infinity from levelAt), and silence scores nothing.
   const empty = newWorld({ ...DIVE_BAR, items: [] });
@@ -51,7 +52,14 @@ test("a silent room scores nothing; tops at the wall score low; aimed at the cro
   expect(raise(w, "stand-r", 1.6)).toEqual({ ok: true });
   expect(at("top-l").y).toBeCloseTo(1.6, 5);
 
+  // The sub left at the door: the bass is uneven over the crowd, and the show doesn't pass yet.
+  const doorSub = score(w);
+  expect(doorSub.bass).toBeLessThan(0.5);
+  expect(doorSub.pass).toBe(false);
+
+  carry(w, "sub", 0.4, 1.3);
   const aimed = score(w);
+  expect(aimed.bass).toBeGreaterThan(0.8);
   expect(aimed.pass).toBe(true);
   expect(aimed.crowd!).toBeGreaterThan(95);
   expect(aimed.gap!).toBeGreaterThan(4);
