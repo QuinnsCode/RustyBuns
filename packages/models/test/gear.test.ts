@@ -11,8 +11,8 @@ import { GEAR_IDS as catalogIds, gear as catalogGear, jackNames } from "../../ge
 const book = new Map(catalogIds.map((id) => [id, catalogGear(id)]));
 
 test("the models and the catalog list the same gear at the same sizes", () => {
-  expect([...GEAR_IDS].sort()).toEqual([...catalogIds].sort());
-  for (const id of GEAR_IDS) { const { w, h, d } = book.get(id)!.size; expect([...GEAR_SIZES[id]]).toEqual([w, h, d]); }
+  expect<string[]>([...GEAR_IDS].sort()).toEqual([...catalogIds].sort());
+  for (const id of GEAR_IDS) { const { w, h, d } = book.get(id)!.size; expect<number[]>([...GEAR_SIZES[id]]).toEqual([w, h, d]); }
 });
 
 test.each(GEAR_IDS)("%s builds at its size, on the floor, with its jacks facing out and a grab", (id) => {
