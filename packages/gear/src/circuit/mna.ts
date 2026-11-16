@@ -30,8 +30,17 @@ export type Part =
   | { kind: "V"; a: string; b: string; volts: number }
   /** A diode, anode `a`, cathode `k`. Defaults are a 1N4148-ish silicon diode. */
   | { kind: "D"; a: string; k: string; is?: number; n?: number }
-  /** An op-amp (TL072-ish gain and bandwidth) with its output swinging about ±`rail` volts around ground. */
+  /**
+   * An op-amp (TL072-ish gain and bandwidth) with its output swinging about ±`rail` volts around ground.
+   * `rail: 0` leaves the rails off: a stage that never clips (an all-pass, a buffer) costs no Newton.
+   */
   | { kind: "Opamp"; plus: string; minus: string; out: string; rail?: number }
+  /**
+   * A resistor something else moves: a light-dependent resistor under a lamp or LED, a JFET's channel
+   * under its gate, a pot under a foot. Control `ctl` (0 to 1, set by `setCtl` or a rig's `Mod`)
+   * sweeps it from `hi` ohms at 0 to `lo` at 1, on a log scale.
+   */
+  | { kind: "VarR"; a: string; b: string; ctl: string; hi: number; lo: number }
   /** A 12AX7 triode: plate, grid, cathode. */
   | { kind: "Triode"; p: string; g: string; k: string }
   /** An inductor, with its wire's resistance (`ohms`, default 1) in series. */
@@ -92,7 +101,7 @@ function taper(kind: number, at: number): number {
 /** A part's nodes in the order both solvers number them; `opamp` names an op-amp's hidden node. */
 function legs(p: Part, opamp: number): string[] {
   switch (p.kind) {
-    case "R": case "C": case "V": case "L": return [p.a, p.b];
+    case "R": case "C": case "V": case "L": case "VarR": return [p.a, p.b];
     case "D": return [p.a, p.k];
     case "Opamp": return [p.plus, p.minus, p.out, `~${opamp}`];
     case "Triode": return [p.p, p.g, p.k];
@@ -119,6 +128,7 @@ function values(p: Part): [number, number[], number] {
     case "Pot": return [9, [p.ohms, Math.min(1, Math.max(0, p.at ?? 0.5)), Math.max(0, TAPERS.indexOf(p.taper ?? "lin"))], 0];
     case "LDR": return [10, [p.dark ?? 1e6, p.lit ?? 1e3, p.rise ?? 0.0025, p.fall ?? 0.035, p.lamp ?? 0], 0];
     case "OTA": return [11, [], 0];
+    case "VarR": return [12, [p.hi, p.lo], 0];
   }
 }
 
@@ -177,6 +187,9 @@ export function encodeNetlist(net: Netlist): Float64Array {
   const rows: number[][] = [];
   let opamps = 0;
   for (const p of net.parts) {
+    if (p.kind === "VarR" || (p.kind === "Opamp" && p.rail === 0)) {
+      throw new Error(`the Rust solver has no ${p.kind === "Opamp" ? "rail-less op-amp" : p.kind} yet`);
+    }
     const ns = legs(p, opamps).map(node), [kind, vals, flag] = values(p);
     if (p.kind === "Opamp") opamps++;
     rows.push([kind, ...ns, ...Array(4 - ns.length).fill(0), ...vals, ...Array(6 - vals.length).fill(0), flag]);
@@ -248,6 +261,9 @@ export class Circuit {
   private ldrs: { r: number; led: number; la: number; lk: number; lamp: number; dark: number; lit: number; up: number; down: number; light: number }[] = [];
   /** Each port's current after the last step or settle (an LED's, for its LDR). */
   private iNow: Float64Array;
+  /** `VarR`s: their `vres` index and the control slot they listen to, swept on a log scale from `hi`. */
+  private varRs: { r: number; slot: number; lnHi: number; lnSpan: number }[] = [];
+  private ctlSlots = new Map<string, number>();
   private K = 0;
   // Port-space Newton: the inverted linear matrix (column-major), W = A⁻¹U and H = VᵀA⁻¹U.
   private Ainv: Float64Array;
@@ -326,6 +342,10 @@ export class Circuit {
         this.supplies.push({ row: source(a, b), volts: p.volts });
       } else if (p.kind === "D") {
         diode(a, b, 0, v[0], v[1]);
+      } else if (p.kind === "VarR") {
+        let slot = this.ctlSlots.get(p.ctl);
+        if (slot === undefined) { slot = this.ctlSlots.size; this.ctlSlots.set(p.ctl, slot); }
+        this.varRs.push({ r: moving(a, b, 1 / p.hi), slot, lnHi: Math.log(p.hi), lnSpan: Math.log(p.lo / p.hi) });
       } else if (p.kind === "Opamp") {
         // Input stage: gm·(v+ − v−) into a hidden node with R0 and C0 to ground
         // (open-loop gain A0 = gm·R0, one pole at GBW/A0). Two diodes clamp it near
@@ -337,8 +357,10 @@ export class Circuit {
         both(hid, plus, -gm); both(hid, minus, gm);
         conductance(tr, hid, n, 1 / OPAMP_R0 + (2 * c0) / T); conductance(dc, hid, n, 1 / OPAMP_R0);
         this.caps.push({ a: hid, b: n, g: (2 * c0) / T, v: 0, i: 0, ieq: 0 });
-        const vr = v[0] - 0.5;
-        diode(hid, n, vr, 2.52e-9, 1.752); diode(n, hid, vr, 2.52e-9, 1.752);
+        if (p.rail !== 0) {
+          const vr = v[0] - 0.5;
+          diode(hid, n, vr, 2.52e-9, 1.752); diode(n, hid, vr, 2.52e-9, 1.752);
+        }
         const j = row++;
         both(out, j, 1); both(j, out, 1); both(j, hid, -1);
       } else if (p.kind === "Triode") {
@@ -490,6 +512,19 @@ export class Circuit {
       v[d.port] = pnjlim(v[d.port] - off, old[d.port] - off, d.nvt, d.vcrit) + off;
     }
   }
+
+  /** The names `VarR` parts listen to. */
+  get controls(): string[] { return [...this.ctlSlots.keys()]; }
+
+  /** Control `name` (0 to 1) for the `VarR`s on it; a slot from `controlSlot` skips the lookup. */
+  setCtl(name: string | number, value: number): void {
+    const slot = typeof name === "number" ? name : this.ctlSlots.get(name);
+    if (slot === undefined) return;
+    for (const r of this.varRs) if (r.slot === slot) this.vres[r.r].g = Math.exp(-(r.lnHi + value * r.lnSpan));
+  }
+
+  /** A control's slot for `setCtl` in a hot loop (−1 if no part listens to it). */
+  controlSlot(name: string): number { return this.ctlSlots.get(name) ?? -1; }
 
   /** Turns pot `i` (in netlist order) to `at`, 0 to 1. It glides there over about 10 ms. */
   setPot(i: number, at: number): void {

@@ -22,8 +22,8 @@ export interface Live { rig: Rig; chain: string; keys: string[]; mic: string }
 /**
  * The rig for these settings. A different amp, a pedal in or out, or a new
  * oversampling builds a new chain; otherwise only links whose parts changed are
- * rebuilt (a tone knob: the tone stack; Drive or a part swap: the pedal), a moved mic makes a
- * new impulse response, and pots and the power stage are just set.
+ * rebuilt (a tone knob: the tone stack; the pedal's knob or a part swap: the pedal, an LFO keeping its phase),
+ * a moved mic makes a new impulse response, and pots and the power stage are just set.
  */
 export function applySettings(s: AmpSettings, live: Live | null, sampleRate: number): Live {
   const amp = AMPS.find((a) => a.id === s.amp) ?? AMPS[0];
@@ -31,11 +31,11 @@ export function applySettings(s: AmpSettings, live: Live | null, sampleRate: num
   const def: PedalDef | undefined = s.pedal === "bench" && bench ? { id: "bench", name: "Bench", blurb: "", net: () => bench } : PEDALS.find((p) => p.id === s.pedal);
   const spec = buildRig(amp, s.knobs, def && { def, drive: s.drive, swaps: s.swaps }, { ...DEFAULT_ROOM, mic: s.mic });
   const chain = `${amp.id}|${def?.id ?? ""}|${s.oversample}`;
-  const keys = spec.links.map((l) => JSON.stringify(l.net)), mic = JSON.stringify(s.mic);
+  const keys = spec.links.map((l) => JSON.stringify([l.net, l.mods ?? []])), mic = JSON.stringify(s.mic);
   if (!live || live.chain !== chain) return { rig: new Rig(spec, sampleRate, s.oversample), chain, keys, mic };
   if (mic !== live.mic) live.rig.setMic(s.mic);
   spec.links.forEach((l, i) => {
-    if (keys[i] !== live.keys[i]) live.rig.setLink(i, l.net);
+    if (keys[i] !== live.keys[i]) live.rig.setLink(i, l.net, l.mods);
     live.rig.setGain(i, l.gain ?? 1);
   });
   live.rig.setPower(spec.power);

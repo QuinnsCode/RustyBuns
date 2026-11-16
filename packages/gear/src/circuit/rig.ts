@@ -8,8 +8,54 @@ import { Convolver, cabIR, type Mic } from "./cab.ts";
 import { butter8, chain, type Biquad } from "./filters.ts";
 import { DEFAULT_POWER, PushPull, type Fault, type PowerSpec } from "./power.ts";
 
-/** A link in the rig: a circuit, with an optional volume pot (0 to 1) ahead of it. */
-export interface Link { net: Netlist; gain?: number }
+/**
+ * What moves one of a circuit's `VarR` controls, once a sample: an LFO (`hz`), or the link's own output
+ * swing times `sens` (an envelope: a compressor's LED, an auto-wah). It runs 0 to 1, is mapped onto
+ * `from`..`to` (default 0..1), raised to `pow` (a lamp's light climbs faster than its current), then
+ * through each `lag`, `[rise, fall]` in seconds: a lamp heating and cooling, an LDR that darkens fast and
+ * recovers slowly. Those lags, not the LFO, are where an optical effect's sound comes from.
+ */
+export interface Mod { ctl: string; hz?: number; sens?: number; from?: number; to?: number; pow?: number; lag?: [number, number][] }
+
+/** A link in the rig: a circuit, with an optional volume pot (0 to 1) ahead of it, and what moves its controls. */
+export interface Link { net: Netlist; gain?: number; mods?: Mod[] }
+
+/** A `Mod` running on one circuit at the rig's sample rate. */
+class ModRun {
+  phase = 0;
+  private ys: Float64Array;
+  private coef: [number, number][];
+  readonly slot: number;
+  constructor(readonly m: Mod, circuit: Circuit, sampleRate: number) {
+    this.slot = circuit.controlSlot(m.ctl);
+    const a = (sec: number) => (sec > 0 ? 1 - Math.exp(-1 / (sec * sampleRate)) : 1);
+    this.coef = (m.lag ?? []).map(([up, down]) => [a(up), a(down)]);
+    this.ys = new Float64Array(this.coef.length).fill(this.shape(0));
+  }
+  private shape(raw: number): number {
+    const { from = 0, to = 1, pow = 1 } = this.m;
+    const v = from + (to - from) * Math.min(1, Math.max(0, raw));
+    return pow === 1 ? v : v ** pow;
+  }
+  /** The value at rest (before a sample has run). */
+  get rest(): number { return this.ys.length ? this.ys[this.ys.length - 1] : this.shape(0); }
+  /** One sample: `swing` is the link's last output swing in volts. */
+  step(swing: number, sampleRate: number): number {
+    const m = this.m;
+    let raw = 0;
+    if (m.hz) {
+      raw = 0.5 - 0.5 * Math.cos(this.phase);
+      this.phase += (2 * Math.PI * m.hz) / sampleRate;
+      if (this.phase > 2 * Math.PI) this.phase -= 2 * Math.PI;
+    } else raw = swing * (m.sens ?? 1);
+    let y = this.shape(raw);
+    for (let k = 0; k < this.coef.length; k++) {
+      const prev = this.ys[k];
+      y = this.ys[k] = prev + (y > prev ? this.coef[k][0] : this.coef[k][1]) * (y - prev);
+    }
+    return y;
+  }
+}
 
 export interface RigSpec {
   /** Volts at the input for a full-scale sample: a guitar pickup peaks around 0.1 to 1 V. */
@@ -46,6 +92,9 @@ export const POWER_VOLTS = 40;
 export class Rig {
   private circuits: Circuit[];
   private gains: number[];
+  private mods: ModRun[][];
+  /** Each link's biggest swing over the last sample's oversampled steps: what an envelope `Mod` reads. */
+  private swing: Float64Array;
   /** Each link's resting output voltage. */
   private rest: number[] = [];
   private peaks: Float64Array;
@@ -66,6 +115,8 @@ export class Rig {
     this.circuits = spec.links.map((l) => new Circuit(l.net, hi));
     this.noise = spec.noise ?? 0;
     for (const c of this.circuits) c.noise = this.noise;
+    this.mods = spec.links.map((l, i) => this.startMods(i, l.mods));
+    this.swing = new Float64Array(this.circuits.length);
     // Rest state, stage by stage: each one's input is the last one's resting output.
     this.circuits.forEach((c, i) => this.rest.push(c.settle(i ? this.rest[i - 1] : 0)));
     this.peaks = new Float64Array(this.circuits.length);
@@ -88,20 +139,38 @@ export class Rig {
   setCab(ir: Float64Array): void { if (this.cab) this.cab.set(ir); else this.cab = new Convolver(ir); }
   setNoise(n: number): void { this.noise = n; for (const c of this.circuits) c.noise = n; }
 
-  /** Link `i` becomes `net` (same input and output roles), starting from its rest state. */
-  setLink(i: number, net: Netlist): void {
+  /** Link `i` becomes `net` (same input and output roles), starting from its rest state. An LFO keeps its phase. */
+  setLink(i: number, net: Netlist, mods?: Mod[]): void {
     const c = new Circuit(net, this.sampleRate * this.oversample);
     c.noise = this.noise;
-    this.rest[i] = c.settle(i ? this.rest[i - 1] : 0);
+    const old = this.mods[i];
     this.circuits[i] = c;
+    this.mods[i] = this.startMods(i, mods);
+    this.mods[i].forEach((m, k) => { if (old[k]) m.phase = old[k].phase; });
+    this.rest[i] = c.settle(i ? this.rest[i - 1] : 0);
+  }
+
+  /** Link `i`'s mods, each control set to its resting value. */
+  private startMods(i: number, mods: Mod[] = []): ModRun[] {
+    const c = this.circuits[i];
+    return mods.map((m) => {
+      const r = new ModRun(m, c, this.sampleRate);
+      if (r.slot < 0) throw new Error(`no part listens to control "${m.ctl}"`);
+      c.setCtl(r.slot, r.rest);
+      return r;
+    });
   }
 
   /** Mono `n` samples from `input` (full scale ±1) to `output` (volts at the speaker). */
   process(input: Float32Array, output: Float32Array, n = input.length): void {
-    const { circuits, gains, rest, peaks, up, down, amp, cab, oversample } = this;
+    const { circuits, gains, rest, peaks, up, down, amp, cab, oversample, mods, swing, sampleRate } = this;
     const last = rest.length - 1;
     for (let s = 0; s < n; s++) {
       let acc = 0;
+      for (let i = 0; i < mods.length; i++) {
+        for (const m of mods[i]) circuits[i].setCtl(m.slot, m.step(swing[i], sampleRate));
+        swing[i] = 0;
+      }
       for (let k = 0; k < oversample; k++) {
         // Zero-stuffed upsampling: the sample, then silence, smoothed by the low-pass (×oversample keeps the level).
         let x = chain(up, k === 0 ? input[s] * this.inputVolts * oversample : 0);
@@ -109,8 +178,9 @@ export class Rig {
           // A volume pot after the coupling cap: it scales the swing, not the resting voltage.
           const r = i ? rest[i - 1] : 0;
           x = circuits[i].step(r + (x - r) * gains[i]);
-          const swing = Math.abs(x - rest[i]);
-          if (swing > peaks[i]) peaks[i] = swing;
+          const sw = Math.abs(x - rest[i]);
+          if (sw > peaks[i]) peaks[i] = sw;
+          if (sw > swing[i]) swing[i] = sw;
         }
         x -= rest[last];
         if (this.power > 0) x = amp.step(x, this.power);

@@ -10,7 +10,7 @@ export interface AmpSettings {
   pedal: string | null;
   /** The board on the bench, at its knobs' turn: played when `pedal` is "bench" (src/circuit/bench.ts). */
   bench?: Netlist;
-  /** Its Drive, 0 to 10. */
+  /** Its one knob (Drive, Rate, Treadle...), 0 to 10. */
   drive: number;
   /** The player's parts on that pedal's board (circuits.ts `Swaps`). */
   swaps: Swaps;

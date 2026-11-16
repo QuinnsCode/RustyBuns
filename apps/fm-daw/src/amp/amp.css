@@ -163,6 +163,14 @@ button { cursor: pointer; }
 .bench-why { margin: 0; padding-left: 16px; max-width: 230px; font: 500 0.74rem/1.3 var(--mono); color: var(--warn); }
 .bench-knobs { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px; }
 .bench-row { display: flex; align-items: center; gap: 10px; }
+.pedal.phase { background: linear-gradient(160deg, #3aa8f0, #1a5fb4); }
+.pedal.vibe { background: linear-gradient(160deg, #e0b84a, #8f6a12); }
+.pedal.trem { background: linear-gradient(160deg, #4ad0c0, #16786e); }
+.pedal.wah { background: linear-gradient(160deg, #5a5f66, #2a2d31); }
+.pedal.autowah { background: linear-gradient(160deg, #f05ab0, #9e2a6a); }
+.pedal.comp { background: linear-gradient(160deg, #8fa3b8, #4a5d70); }
+.pedal.octave { background: linear-gradient(160deg, #f0d23a, #b4901a); }
+.pedal.germ { background: linear-gradient(160deg, #c0503a, #6e2416); }
 .pedal-led { width: 10px; height: 10px; border-radius: 50%; background: #3a0f0c; box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.6); }
 .pedal.lit .pedal-led { background: #ff3b2b; box-shadow: 0 0 10px #ff3b2b, 0 0 2px #fff inset; }
 .pedal-name { font: 700 1.05rem/1 var(--silk); letter-spacing: 0.08em; text-transform: uppercase; color: #fff; text-shadow: 0 1px 0 rgba(0, 0, 0, 0.35); }

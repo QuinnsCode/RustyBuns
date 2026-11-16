@@ -8,7 +8,7 @@ What we are not doing: copying products. We name a circuit by what it does ("two
 
 ## 1. More parts in the solver
 
-The solver knew R, C, V, diode, op-amp and 12AX7. Almost every classic pedal and amp needs only a few more. The first six rows are in (#4826): `BJT`, `JFET`, `L`, `Pot` (`Circuit.setPot` and `Rig.setPot` turn it live, gliding over 10 ms), `LDR` and `OTA` in `mna.ts` and `circuit.rs`, with their textbook numbers in `test/circuit.test.ts`:
+The solver knew R, C, V, diode, op-amp and 12AX7. Almost every classic pedal and amp needs only a few more. The first six rows are in (#4826): `BJT`, `JFET`, `L`, `Pot` (`Circuit.setPot` and `Rig.setPot` turn it live, gliding over 10 ms), `LDR` and `OTA` in `mna.ts` and `circuit.rs`, with their textbook numbers in `test/circuit.test.ts`. In TypeScript only (not `circuit.rs` yet) there is also a rail-less op-amp and a `VarR`: a resistor a control moves (a rig `Mod`: an LFO or the signal's envelope), standing in for a JFET's channel, an LDR under a lamp or LED, or a pot under a foot. The effects in `src/circuit/effects.ts` use them:
 
 | Part | Model | What it opens up |
 |---|---|---|
@@ -48,6 +48,12 @@ These fit the solver as it is, once section 1's parts are in:
 | **Compressor** | OTA or optical (LED + LDR in a feedback loop) | The LDR's slow release is why optical ones sound smooth |
 | **Octave up** | A full-wave rectifier (diodes, or a transformer and diodes) after a fuzz | Folding the wave doubles its pitch |
 | **Boosts and fuzzes** | One- to three-transistor stages, germanium or silicon | Germanium's leakage changes with temperature: a "warm room" knob is honest here |
+
+On Q Amp's floor now (`src/circuit/circuits.ts`, a `PEDALS` row each, tested in `test/effects.test.ts`): Q Phase, Q Vibe,
+Q Trem (optical), Q Wah, Q Envelope (the wah on an envelope), Q Squeeze (optical), Q Octave and Q Germ (two germanium
+transistors, its one knob the room's temperature). What moves a `VarR` is a rig `Mod` (`rig.ts`): an LFO or the link's own
+output, through `[rise, fall]` lags that are the lamp heating and cooling and the LDR darkening and recovering. Each pedal has
+one knob until the pedalboard (section 2) gives them more. Bias tremolo waits for a power stage that is a circuit.
 
 ## 4. Effects that are machines
 
