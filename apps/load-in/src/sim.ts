@@ -2,7 +2,7 @@
 // carry it (the heavier it is, the slower you go) and set it down on the floor or on top of another piece. The page
 // (main.ts) draws this and feeds it input; the harness and the tests drive the same functions.
 import { clamp } from "@rustybuns/util";
-import { gear } from "@rustybuns/gear";
+import { gear, type CableKind } from "@rustybuns/gear";
 import { feltKg } from "./assists.ts";
 
 /** Metres per second, empty-handed and standing. */
@@ -28,6 +28,10 @@ export interface Level {
   walkways?: { name: string; x0: number; x1: number; z0: number; z1: number }[];
   start: { x: number; z: number; yaw: number };
   items: Item[];
+  /** Out of doors: no walls or ceiling, only the ground. */
+  outdoor?: boolean;
+  /** What the road case holds here, if not the usual three (cables.ts CASE_LOAD). */
+  caseLoad?: readonly { key: string; kind: CableKind; lengthM: number }[];
 }
 
 export interface Input { forward: number; right: number; turn: number; crouch: boolean }
@@ -79,6 +83,10 @@ export const heldItem = (w: World) => (w.held ? w.items.find((i) => i.key === w.
 
 /** How fast you walk carrying `kg` (as the dial feels it, so Cozy carries half): a 45 kg sub is a slow shuffle on Sim. */
 export const carrySpeed = (kg: number, crouch = false) => WALK * clamp(1 - feltKg(kg) / 55, 0.2, 1) * (crouch ? 0.5 : 1);
+/** Gear on wheels (a generator): pushed along the ground, never lifted. */
+export const wheeled = (gearId: string) => !!gear(gearId).generator;
+/** How fast you push gear on wheels: a 90 kg generator is a crawl on Sim, and rolls light on Cozy. */
+export const pushSpeed = (kg: number) => WALK * clamp(1 - feltKg(kg) / 120, 0.2, 1);
 
 /** A box's footprint as its four corners on the floor. */
 function corners(x: number, z: number, rot: number, w: number, d: number): [number, number][] {
@@ -102,7 +110,8 @@ export function holdPose(w: World): { x: number; y: number; z: number; rot: numb
   if (!i || !w.held) return null;
   const [, h, d] = dims(i), f = facing(w.you.yaw), out = 0.3 + d / 2;
   const top = w.you.crouch ? 0.75 : 1.1;
-  return { x: w.you.x + f.x * out, y: Math.max(0.1, top - h), z: w.you.z + f.z * out, rot: w.you.yaw + w.held.rel };
+  // Too heavy to lift (a generator you push on its wheels): it stays on the ground.
+  return { x: w.you.x + f.x * out, y: wheeled(i.gear) ? 0 : Math.max(0.1, top - h), z: w.you.z + f.z * out, rot: w.you.yaw + w.held.rel };
 }
 
 /** Push you out of the walls and the gear on the floor. */
@@ -131,7 +140,7 @@ export function step(w: World, dt: number, input: Input) {
   const you = w.you, i = heldItem(w);
   you.crouch = input.crouch;
   you.yaw += input.turn;
-  you.speed = carrySpeed(i ? gearOf(i).kg : 0, you.crouch);
+  you.speed = i && wheeled(i.gear) ? pushSpeed(gearOf(i).kg) : carrySpeed(i ? gearOf(i).kg : 0, you.crouch);
   const f = facing(you.yaw), len = Math.hypot(input.forward, input.right);
   if (len > 0) {
     const k = (you.speed * dt) / Math.max(1, len);

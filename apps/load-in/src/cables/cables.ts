@@ -24,7 +24,7 @@ export const CASE_LOAD: readonly { key: string; kind: CableKind; lengthM: number
 export function newCables(w: World): Cables {
   return {
     caseKey: w.items.find((i) => i.gear === "road-case-m")?.key ?? null,
-    runs: CASE_LOAD.map((c) => ({ ...c, a: { case: true }, b: { case: true }, rope: null })),
+    runs: (w.level.caseLoad ?? CASE_LOAD).map((c) => ({ ...c, a: { case: true }, b: { case: true }, rope: null })),
   };
 }
 
