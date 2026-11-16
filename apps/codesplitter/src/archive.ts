@@ -291,7 +291,9 @@ export async function pushCatalogues(env: Env, owner: string, repo: string, file
   ]);
   if (pub.status === "rejected") throw pub.reason;
   if (crewed.status === "rejected") return { ...pub.value, crewError: (crewed.reason as Error).message, deployCommit: undefined };
-  const deployCommit = crew?.crew ? crewed.value?.commit : Object.keys(pending).some((p) => !(p in files)) ? undefined : pub.value.commit;
+  // Only a commit this push made: one that changed nothing names the tip under it, which may be someone else's (deploy-review.ts).
+  const made = (c: { commit: string; commits: string[] } | null | undefined) => c?.commits.length ? c.commit : undefined;
+  const deployCommit = crew?.crew ? made(crewed.value) : Object.keys(pending).some((p) => !(p in files)) ? undefined : made(pub.value);
   return { ...pub.value, deployCommit };
 }
 
