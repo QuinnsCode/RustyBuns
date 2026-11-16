@@ -24,6 +24,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { parseArgs } from "node:util";
 import { esc } from "../packages/util/src/index.ts";
+import { bool, obj, opt, raw, str } from "../packages/util/src/guard.ts";
 
 const { values: o, positionals: files } = parseArgs({
   allowPositionals: true,
@@ -49,13 +50,15 @@ const s3 = new S3Client({ bucket, endpoint: `https://${env("CLOUDFLARE_ACCOUNT_I
 
 // An R2 token's S3 keys: the token's id, and the SHA-256 of the token itself.
 // https://developers.cloudflare.com/r2/api/tokens/#get-s3-api-credentials-from-an-api-token
+/** What Cloudflare's token verify answers, as far as the keys need. */
+const Verified = obj({ success: bool(), result: opt(obj({ id: str(200) })), errors: raw });
 async function s3Keys() {
   if (o.dry) return { accessKeyId: "dry", secretAccessKey: "dry" };
   const token = env("CLOUDFLARE_API_TOKEN");
   const res = await fetch(`https://api.cloudflare.com/client/v4/accounts/${env("CLOUDFLARE_ACCOUNT_ID")}/tokens/verify`, {
     headers: { authorization: `Bearer ${token}` },
   });
-  const body = (await res.json()) as { success: boolean; result?: { id: string }; errors?: unknown };
+  const body = Verified(await res.json());
   if (!body.success || !body.result) fail(`CLOUDFLARE_API_TOKEN didn't verify: ${JSON.stringify(body.errors)}`);
   return { accessKeyId: body.result.id, secretAccessKey: createHash("sha256").update(token).digest("hex") };
 }

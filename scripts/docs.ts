@@ -8,6 +8,7 @@
 //   - every relative link in the root *.md files must point at a file that exists (reported, not fixed)
 import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { obj, str } from "../packages/util/src/guard.ts";
 import { APPS, HOME } from "../apps/eqosys/src/apps.ts";
 import { DATA, END, inOrder, readGroups, render, plays, START } from "./readme-apps.ts";
 
@@ -19,7 +20,7 @@ let readme = readFileSync("README.md", "utf8");
 const before = readme;
 
 // Banner version.
-const version = JSON.parse(readFileSync("packages/cli/package.json", "utf8")).version as string;
+const version = obj({ version: str(100) })(JSON.parse(readFileSync("packages/cli/package.json", "utf8"))).version;
 readme = readme.replace(/Alpha, `([^`]+)`/, (m, v) => {
   if (v === version) return m;
   healed.push(`README banner ${v} -> ${version}`);

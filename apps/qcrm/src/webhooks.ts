@@ -18,8 +18,8 @@
 // http:// the app runs on someone's own machine (the desktop, tests), and there http and
 // loopback are allowed: the receiver is the same machine.
 
-import { error, hex, hmacHex, json, parseJson, readBody, Strings, type Env, type HookMessage, type Row } from "./env.ts";
-import { maybe, obj, raw, rec, str } from "@rustybuns/util/guard";
+import { error, hex, hmacHex, json, need, parseJson, Strings, type Env, type HookMessage, type Row } from "./env.ts";
+import { arr, Bad, bool, maybe, obj, oneOf, opt, or, raw, rec, said, str, type Guard } from "@rustybuns/util/guard";
 import type { Ctx } from "./orgs.ts";
 
 const ENTITIES = ["contact", "company", "deal", "activity"] as const;
@@ -121,7 +121,14 @@ export async function deliver(env: Env, { delivery, attempt }: HookMessage) {
 /** A webhooks row as the list and PUT read it: `events` is stored as JSON, `disabled` as 0 or 1. */
 type HookRow = { id: string; url: string; events: string; created_at: number; disabled: number | boolean; format: string | null };
 const shown = (h: HookRow) => ({ ...h, events: parseJson(h.events, [], Strings), disabled: !!h.disabled, format: h.format ?? "json" });
-const formatOf = (v: unknown, dflt: string) => (v === undefined ? dflt : FORMATS.find((f) => f === v) ?? null);
+const Events = said(arr(oneOf(EVENTS), EVENTS.length * 4, { min: 1 }), `some of ${EVENTS.join(", ")}`);
+const Format = said(oneOf(FORMATS), `one of ${FORMATS.join(", ")}`);
+/** A URL a hook may post to here (https out on the internet; http and private hosts on the desktop). */
+const hookUrl = (env: Env, why: string): Guard<string> => (v) => checkUrl(env, v) ?? (() => { throw new Bad(why); })();
+/** POST /api/orgs/:org/webhooks: every event in JSON unless it says otherwise. */
+const NewHook = (env: Env) => obj({ url: hookUrl(env, "an https URL out on the internet, without a password in it"), events: or(Events, [...EVENTS]), format: or(Format, "json") });
+/** PUT /api/orgs/:org/webhooks/:id: the fields to change. */
+const HookEdit = (env: Env) => obj({ url: opt(hookUrl(env, "an https URL out on the internet")), events: opt(Events), disabled: opt(said(bool(), "true or false")), format: opt(Format) });
 
 export async function webhookRoutes({ req, env, org, p, audit }: Ctx): Promise<Response | null> {
   if (p[0] !== "webhooks") return null;
@@ -130,16 +137,12 @@ export async function webhookRoutes({ req, env, org, p, audit }: Ctx): Promise<R
     return json({ events: EVENTS, formats: FORMATS, webhooks: results.map(shown) });
   }
   if (!p[1] && req.method === "POST") {
-    const b = await readBody(req);
-    const url = checkUrl(env, b?.url);
-    if (!url) return error(400, "url: an https URL out on the internet, without a password in it");
-    const events = b?.events === undefined ? [...EVENTS] : b.events;
-    if (!Array.isArray(events) || !events.length || events.some((e) => !(EVENTS as readonly string[]).includes(e))) return error(400, `events: some of ${EVENTS.join(", ")}`);
-    const format = formatOf(b?.format, "json");
-    if (!format) return error(400, `format: one of ${FORMATS.join(", ")}`);
+    const b = await need(req, NewHook(env));
+    if (b instanceof Response) return b;
+    const { url, events, format } = b;
     const n = await env.DB.prepare("SELECT COUNT(*) AS n FROM webhooks WHERE org_id = ?").bind(org).first<{ n: number }>();
     if ((n?.n ?? 0) >= MAX_HOOKS) return error(400, `an org has at most ${MAX_HOOKS} webhooks`);
-    const hook = { id: crypto.randomUUID(), url, events: [...new Set(events as string[])], secret: hex(crypto.getRandomValues(new Uint8Array(24))), created_at: Date.now(), disabled: false, format };
+    const hook = { id: crypto.randomUUID(), url, events: [...new Set(events)], secret: hex(crypto.getRandomValues(new Uint8Array(24))), created_at: Date.now(), disabled: false, format };
     await env.DB.prepare("INSERT INTO webhooks (id, org_id, url, events, secret, created_at, disabled, format) VALUES (?, ?, ?, ?, ?, ?, 0, ?)")
       .bind(hook.id, org, url, JSON.stringify(hook.events), hook.secret, hook.created_at, format).run();
     await audit("webhook.create", hook.id, new URL(url).host);
@@ -148,14 +151,10 @@ export async function webhookRoutes({ req, env, org, p, audit }: Ctx): Promise<R
   const hook = p[1] ? await env.DB.prepare("SELECT id, url, events, created_at, disabled, format FROM webhooks WHERE id = ? AND org_id = ?").bind(p[1], org).first<HookRow>() : null;
   if (!hook) return error(404, "no such webhook");
   if (!p[2] && req.method === "PUT") {
-    const b = await readBody(req);
-    const url = b?.url === undefined ? hook.url : checkUrl(env, b.url);
-    if (!url) return error(400, "url: an https URL out on the internet");
-    const events = b?.events === undefined ? parseJson(hook.events, [], Strings) : b.events;
-    if (!Array.isArray(events) || !events.length || events.some((e) => !(EVENTS as readonly string[]).includes(e))) return error(400, `events: some of ${EVENTS.join(", ")}`);
-    const disabled = b?.disabled === undefined ? !!hook.disabled : b.disabled === true;
-    const format = formatOf(b?.format, String(hook.format ?? "json"));
-    if (!format) return error(400, `format: one of ${FORMATS.join(", ")}`);
+    const b = await need(req, HookEdit(env));
+    if (b instanceof Response) return b;
+    const url = b.url ?? hook.url, events = b.events ?? parseJson(hook.events, [], Strings);
+    const disabled = b.disabled ?? !!hook.disabled, format = b.format ?? String(hook.format ?? "json");
     await env.DB.prepare("UPDATE webhooks SET url = ?, events = ?, disabled = ?, format = ? WHERE id = ?").bind(url, JSON.stringify(events), disabled ? 1 : 0, format, hook.id).run();
     await audit("webhook.update", hook.id);
     return json(shown({ ...hook, url, events: JSON.stringify(events), disabled, format }));

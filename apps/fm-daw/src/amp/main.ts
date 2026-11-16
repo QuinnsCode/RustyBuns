@@ -1,7 +1,8 @@
 // Q Amp: one of the circuit amps on a stage, live. The riff on a loop or a guitar
 // through the audio thread (worklet.ts), out to the speakers and to the stage
 // screens (screens.ts). The amp head and cabinet are clear, so you see the tubes
-// glow with what each stage is doing. 2D for now; a three.js stage comes later.
+// glow with what each stage is doing. The board view (board.ts) shows the circuit
+// you are playing, and swaps its socketed parts live. 2D for now; a three.js stage comes later.
 import "@fontsource/barlow-condensed/500.css";
 import "@fontsource/barlow-condensed/600.css";
 import "@fontsource/barlow-condensed/700.css";
@@ -9,9 +10,10 @@ import "@fontsource/ibm-plex-sans/400.css";
 import "@fontsource/ibm-plex-mono/500.css";
 import "./amp.css";
 import workletUrl from "./worklet.ts?worker&url";
-import { arr, check, num, nul, obj, oneOf, rec, str } from "@rustybuns/util/guard";
+import { arr, check, num, nul, obj, oneOf, or, rec, str } from "@rustybuns/util/guard";
 import { AMPS, PEDALS, type AmpDef, type Knobs } from "../circuit/amps.ts";
 import { riff } from "../circuit/riff.ts";
+import { BoardView } from "./board.ts";
 import { icon } from "./icons.ts";
 import { knob, type KnobEl } from "./knob.ts";
 import { MODES, Screen, topHz, hzLabel, type ScreenMode } from "./screens.ts";
@@ -36,13 +38,17 @@ const Saved = obj({
   modes: arr(oneOf(MODE_IDS, "spectrum"), 2, { min: 2 }),
   level: num(-60, 0, -12),
   quality: oneOf(["hq", "eco"], "hq"),
+  /** The board view open (1) or not. */
+  board: oneOf([0, 1], 0),
+  /** Each pedal's parts the player swapped: pedal id → socket → choice (circuits.ts `Swaps`). */
+  swaps: or(rec(rec(str(12), 40), 10), {}),
 });
 type State = ReturnType<typeof Saved>;
 
 function loadState(): State {
   const fresh: State = {
     amp: "lead", knobs: Object.fromEntries(AMPS.map((a) => [a.id, { ...a.knobs }])), pedal: null,
-    drive: { drive: 3, dist: 5, fuzz: 7 }, bypass: 0, source: "riff", layout: "split", modes: ["analog", "focus"], level: -12, quality: "hq",
+    drive: { drive: 3, dist: 5, fuzz: 7 }, bypass: 0, source: "riff", layout: "split", modes: ["analog", "focus"], level: -12, quality: "hq", board: 0, swaps: {},
   };
   try {
     const raw = localStorage.getItem(KEY);
@@ -66,7 +72,7 @@ let meter: FromAmp = { t: "meter", levels: [], out: 0, load: 0, misses: 0 };
 const dbToGain = (db: number) => (db <= -60 ? 0 : 10 ** (db / 20));
 
 function settings(): AmpSettings {
-  return { amp: S.amp, pedal: S.pedal, drive: S.pedal ? S.drive[S.pedal] ?? 5 : 0, knobs: S.knobs[S.amp] ?? ampOf(S.amp).knobs, bypass: S.bypass === 1, oversample: S.quality === "eco" ? 2 : 4 };
+  return { amp: S.amp, pedal: S.pedal, drive: S.pedal ? S.drive[S.pedal] ?? 5 : 0, swaps: S.pedal ? S.swaps[S.pedal] ?? {} : {}, knobs: S.knobs[S.amp] ?? ampOf(S.amp).knobs, bypass: S.bypass === 1, oversample: S.quality === "eco" ? 2 : 4 };
 }
 function send() {
   save();
@@ -170,6 +176,7 @@ function build() {
   load.title = "How much of the audio thread's time the amp uses. Click: 4× oversampling (cleanest) or 2× (Eco, half the work)";
   load.addEventListener("click", () => setQuality(S.quality === "hq" ? "eco" : "hq"));
   const latency = h("span", "chip dim");
+  const boardBtn = iconButton("circuit-board", "Board view: the circuit you're playing. Click a diode or capacitor to swap it", () => { S.board = S.board ? 0 : 1; showBoard(); save(); });
   const layout = iconButton(S.layout === "split" ? "columns-2" : "rectangle-horizontal", "Screens: one wide or two half", () => {
     S.layout = S.layout === "split" ? "wide" : "split";
     layout.replaceChildren(icon(S.layout === "split" ? "columns-2" : "rectangle-horizontal"));
@@ -179,7 +186,7 @@ function build() {
   const bar = h("header", "bar",
     h("div", "brand", h("span", "q", "Q"), h("span", "", "AMP")),
     h("div", "group", ...sourceButtons, devices), bypass,
-    h("label", "group", icon("volume-2", 16), level), load, latency, h("span", "spacer"), layout);
+    h("label", "group", icon("volume-2", 16), level), load, latency, h("span", "spacer"), boardBtn, layout);
 
   // Screens.
   const screens: Screen[] = [];
@@ -244,14 +251,15 @@ function build() {
   });
   const floor = h("div", "floor", ...pedalEls.map((p) => p.el));
 
+  const board = new BoardView((socket, choice) => swapPart(socket, choice));
   const note = h("p", "note");
   const startCard = h("div", "start-card",
     h("h1", "", "Q Amp"),
     h("p", "", "Pedals and tube amps simulated part by part, live. Turn your speakers down first."),
     (() => { const b = h("button", "start", icon("power"), "Plug in"); b.type = "button"; b.addEventListener("click", () => void start().catch((e) => { note.textContent = String(e); })); return b; })());
-  root.append(bar, note, screensEl, rig, floor, startCard);
+  root.append(bar, note, screensEl, rig, floor, board.el, startCard);
   document.body.append(root);
-  return { root, bar, screens, screensEl, tubes, modelName, modelBlurb, models, knobs, cones, pedalEls, sourceButtons, devices, load, latency, note, startCard };
+  return { root, bar, boardBtn, board, screens, screensEl, tubes, modelName, modelBlurb, models, knobs, cones, pedalEls, sourceButtons, devices, load, latency, note, startCard };
 }
 
 const ui = build();
@@ -271,6 +279,29 @@ function watchLoad(m: FromAmp) {
 
 function showPedals() {
   for (const p of ui.pedalEls) p.el.classList.toggle("lit", S.pedal === p.id);
+  showBoard();
+}
+
+/** The board view: the pedal that's on, with its sockets, or the amp's first tube stage. */
+function showBoard() {
+  ui.boardBtn.setAttribute("aria-pressed", String(S.board === 1));
+  ui.board.el.hidden = S.board !== 1;
+  if (S.board !== 1) return;
+  const def = PEDALS.find((p) => p.id === S.pedal);
+  if (def) ui.board.show(def.board, `${def.name} · your board`, S.swaps[def.id] ?? {});
+  else ui.board.show("triode", `${ampOf(S.amp).name} · V1, the first tube stage`, null);
+}
+
+/** Puts `choice` in the playing pedal's socket (null or the stock part: back to stock; socket null: every socket). */
+function swapPart(socket: string | null, choice: string | null) {
+  if (!S.pedal) return;
+  const mine = { ...S.swaps[S.pedal] };
+  if (socket === null) for (const k of Object.keys(mine)) delete mine[k];
+  else if (choice === null || choice === "silicon" || choice === "1") delete mine[socket];
+  else mine[socket] = choice;
+  if (Object.keys(mine).length) S.swaps[S.pedal] = mine; else delete S.swaps[S.pedal];
+  showBoard();
+  send();
 }
 
 function setAmp(id: string) {
@@ -281,6 +312,7 @@ function setAmp(id: string) {
   for (const b of ui.models.children) if (b instanceof HTMLElement) b.setAttribute("aria-pressed", String(b.dataset.amp === amp.id));
   for (const { key } of KNOB_NAMES) ui.knobs[key].set(k[key]);
   const tube = (cls: string, label: string) => h("div", `tube ${cls}`, h("div", "glass", h("div", "plate"), h("div", "filament")), h("span", "tube-label", label));
+  if (!S.pedal) showBoard();
   ui.tubes.replaceChildren(
     ...amp.stages.map((_, i) => tube("pre", `V${i + 1}`)),
     h("span", "tube-gap"),
@@ -312,6 +344,11 @@ function frame() {
     const glow = Math.min(1, Math.log10(1 + swing) / Math.log10(151));
     t.style.setProperty("--glow", (0.25 + 0.75 * glow).toFixed(3));
   }
+  // The board glows with its link: the pedal's swing (4 V is full), or V1's (150 V).
+  if (S.board === 1 && ctx) {
+    const v = S.bypass ? 0 : meter.levels[0] ?? 0, full = S.pedal ? 4 : 150;
+    ui.board.glow(Math.min(1, Math.log10(1 + (v * 150) / full) / Math.log10(151)));
+  }
   push += (meter.out - push) * 0.35;
   for (const c of ui.cones) c.style.setProperty("--push", push.toFixed(3));
   const loadText = ui.load.lastElementChild;
@@ -327,11 +364,15 @@ Object.assign(window, {
   qamp: {
     state: () => ({
       started: !!ctx, running: ctx?.state === "running", amp: S.amp, name: ampOf(S.amp).name, knobs: S.knobs[S.amp], pedal: S.pedal,
-      drive: S.pedal ? S.drive[S.pedal] : null, bypass: S.bypass === 1, quality: S.quality, source: S.source, layout: S.layout, modes: [...S.modes],
+      drive: S.pedal ? S.drive[S.pedal] : null, swaps: S.pedal ? { ...S.swaps[S.pedal] } : {}, board: S.board === 1, bypass: S.bypass === 1, quality: S.quality, source: S.source, layout: S.layout, modes: [...S.modes],
       load: meter.load, misses: meter.misses, out: meter.out, levels: meter.levels,
     }),
     start,
     setAmp,
     pedal: (id: string | null) => { S.pedal = PEDALS.some((p) => p.id === id) ? id : null; showPedals(); send(); },
+    /** Open or close the board view. */
+    board: (open: boolean) => { S.board = open ? 1 : 0; showBoard(); save(); },
+    /** Swap a socket on the playing pedal's board (`"D1", "germanium"`); null puts the stock part back. */
+    swap: swapPart,
   },
 });

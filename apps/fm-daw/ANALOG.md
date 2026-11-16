@@ -1,6 +1,6 @@
 # How far the analog idea goes
 
-Q Amp ([CIRCUITS.md](CIRCUITS.md)) plays a guitar through real circuits: resistors, capacitors, diodes, op-amps and 12AX7s, solved every sample. That one idea goes much further than distortion. This page maps how far, in the order worth building. Nothing here is built yet. Each lane has its own issue.
+Q Amp ([CIRCUITS.md](CIRCUITS.md)) plays a guitar through real circuits: resistors, capacitors, diodes, op-amps and 12AX7s, solved every sample. That one idea goes much further than distortion. This page maps how far, in the order worth building. Section 1's first six parts are built; the rest is not yet. Each lane has its own issue.
 
 **The big picture in one line:** every sound in Q Amp is a circuit, every circuit is a tscircuit board, so every sound is something you can **hear, change part by part, and then hold in your hand** as a kit or a built pedal.
 
@@ -8,7 +8,7 @@ What we are not doing: copying products. We name a circuit by what it does ("two
 
 ## 1. More parts in the solver
 
-The solver knows R, C, V, diode, op-amp and 12AX7. Almost every classic pedal and amp needs only a few more:
+The solver knew R, C, V, diode, op-amp and 12AX7. Almost every classic pedal and amp needs only a few more. The first six rows are in (#4826): `BJT`, `JFET`, `L`, `Pot` (`Circuit.setPot` and `Rig.setPot` turn it live, gliding over 10 ms), `LDR` and `OTA` in `mna.ts` and `circuit.rs`, with their textbook numbers in `test/circuit.test.ts`:
 
 | Part | Model | What it opens up |
 |---|---|---|
@@ -84,9 +84,11 @@ Profiling amps record a real amp and play back a copy of it. Ours can do somethi
 
 Honest limit: a topology we don't have only gets the closest one. That gap tells us which circuit to add next.
 
+**Built so far (offline):** `src/circuit/fit.ts` and `bun scripts/profile-amp.ts <amp>`. The script scrambles one of our own amps (each part up to ×/÷ 2), then fits the parts back from a render alone. The test signal is sines at three or four levels, a log sweep and a noise burst. The score is a log spectrum at three frame sizes plus each tone's first five harmonics, level and phase. The search is separable CMA-ES at 2× oversampling, then an E24 snap and a pass that tries one step either way. From a scrambled Q Brit 3, the cathode resistors, bypass caps, power drive and last coupling cap come back exactly. A coupling cap whose corner sits under 10 Hz is marked "can't hear". The tone stack's four parts still trade off against each other at one knob setting. That, and recording a real amp, is [#4943](https://github.com/QuinnsCode/RustyBuns/issues/4943).
+
 ## 7. The board is the source
 
-Today `circuits.ts` writes netlists by hand, and one board (`circuits/hard-clip.tsx`) proves tscircuit can stand in. Flip it:
+Done in #4831: every circuit is a board in `circuits/`, the netlist is read from it, and Q Amp has the board view with clipper and capacitor sockets. The plan it followed:
 
 - **Every circuit is a `.tsx` board.** The netlist is derived from it, never written twice. Tests check each board plays like its voicing.
 - **A board view in Q Amp:** the schematic and the PCB of the pedal you are playing, its tube or diodes glowing with the signal.
@@ -126,6 +128,6 @@ Each lane is its own issue, in this order (each usable on its own):
 3. Circuit effects: phaser, vibe, tremolo, wah, compressor ([#4828](https://github.com/QuinnsCode/RustyBuns/issues/4828))
 4. Machine effects: tape echo, bucket-brigade delay and chorus, spring reverb ([#4829](https://github.com/QuinnsCode/RustyBuns/issues/4829))
 5. The rest of the amp: power amp, output transformer, sag, speaker (CIRCUITS.md [Next](CIRCUITS.md#next) 3 and 4)
-6. Profiling: fit a circuit to a real amp's recording ([#4830](https://github.com/QuinnsCode/RustyBuns/issues/4830))
+6. Profiling: fit a circuit to a real amp's recording ([#4830](https://github.com/QuinnsCode/RustyBuns/issues/4830), offline fit done; tone stack and capture [#4943](https://github.com/QuinnsCode/RustyBuns/issues/4943))
 7. The board is the source, with a board view and part swaps ([#4831](https://github.com/QuinnsCode/RustyBuns/issues/4831))
 8. Spike: from a tscircuit board to a PCB you can order, as a kit or built ([#4832](https://github.com/QuinnsCode/RustyBuns/issues/4832))

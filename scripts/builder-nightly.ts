@@ -14,9 +14,13 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
-import { arr, bool, num, obj, str, type Of } from "../packages/util/src/guard.ts";
+import { arr, bool, check, num, obj, or, raw, str, type Of } from "../packages/util/src/guard.ts";
 
-type Job = { app: string; runner: string; target: string; prep: string; build: string };
+/** A GitHub matrix's rows, each still to be read (here desktop-drop's, in remote-ci ci-apps'): a row that isn't a job is skipped, not a failure. */
+export const Matrix = obj({ include: or(arr(raw, Infinity), []) });
+const text = str(Infinity, { min: 0 });
+const Entry = obj({ app: text, runner: text, target: text, prep: (v: unknown) => (typeof v === "string" ? v : ""), build: text });
+type Job = Of<typeof Entry>;
 const Results = obj({ at: str(40), commit: str(40), results: arr(obj({ app: str(200), target: str(200), ok: bool(), seconds: num(0, Infinity), tail: str(Infinity, { min: 0 }) }), 1000) });
 type Results = Of<typeof Results>;
 type Result = Results["results"][number];
@@ -32,15 +36,12 @@ export function report(text: string): { text: string; ok: boolean } {
 
 /** The build jobs this Mac does out of desktop-drop's matrix. */
 export function mine(matrix: unknown, only: string[] = []): Job[] {
-  const include = typeof matrix === "object" && matrix !== null && "include" in matrix && Array.isArray(matrix.include) ? matrix.include : [];
   const jobs: Job[] = [];
-  for (const e of include) {
-    if (typeof e !== "object" || e === null) continue;
-    const { app, runner, target, prep, build } = e as Record<string, unknown>;
-    if (typeof app !== "string" || typeof runner !== "string" || typeof target !== "string" || typeof build !== "string") continue;
-    if (only.length && !only.includes(app)) continue;
-    if (runner !== "macos-latest" && target !== "all") continue;
-    jobs.push({ app, runner, target, prep: typeof prep === "string" ? prep : "", build });
+  for (const e of check(Matrix, matrix)?.include ?? []) {
+    const j = check(Entry, e);
+    if (!j || (only.length && !only.includes(j.app))) continue;
+    if (j.runner !== "macos-latest" && j.target !== "all") continue;
+    jobs.push(j);
   }
   return jobs;
 }

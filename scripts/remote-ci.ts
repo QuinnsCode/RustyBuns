@@ -28,23 +28,23 @@
 // Each run leaves a record on the builder (runs/<slot>.json and .log, then runs/done) for its menu bar: scripts/builder-bar.ts.
 import { homedir, tmpdir } from "node:os";
 import { basename, relative, resolve } from "node:path";
-import { arr, check, num, obj, type Of, str } from "../packages/util/src/guard.ts";
-import { report } from "./builder-nightly.ts";
+import { arr, check, num, obj, str, type Of } from "../packages/util/src/guard.ts";
+import { Matrix, report } from "./builder-nightly.ts";
 
-export type Job = { app: string; test: string; prep: string; boot: boolean; shard: string };
+/** A row of ci-apps' matrix: one without an app, test and prep isn't a job. */
+const line = str(Infinity, { min: 0 });
+const Row = obj({ app: line, test: line, prep: line, boot: (v: unknown) => v === true, shard: (v: unknown) => (typeof v === "string" ? v : "") });
+export type Job = Of<typeof Row>;
 
 // The `apps=` line of `ci-apps.ts test`: the apps with a test command or a boot check.
 export function parseJobs(out: string): Job[] {
   const line = out.split("\n").find((l) => l.startsWith("apps="));
   if (!line) throw new Error("no apps= line in ci-apps output");
   const parsed: unknown = JSON.parse(line.slice(5));
-  const include = typeof parsed === "object" && parsed !== null && "include" in parsed && Array.isArray(parsed.include) ? parsed.include : [];
   const jobs: Job[] = [];
-  for (const j of include) {
-    if (typeof j !== "object" || j === null) continue;
-    const { app, test, prep, boot, shard } = j as Record<string, unknown>;
-    if (typeof app !== "string" || typeof test !== "string" || typeof prep !== "string") continue;
-    if (test || boot === true) jobs.push({ app, test, prep, boot: boot === true, shard: typeof shard === "string" ? shard : "" });
+  for (const row of check(Matrix, parsed)?.include ?? []) {
+    const j = check(Row, row);
+    if (j && (j.test || j.boot)) jobs.push(j);
   }
   return jobs;
 }

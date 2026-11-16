@@ -31,6 +31,7 @@ export interface Exports {
   fm_amp_push(r: number, net: number, len: number, gain: number): number;
   fm_amp_set_link(r: number, i: number, net: number, len: number): number;
   fm_amp_set_gain(r: number, i: number, gain: number): void;
+  fm_amp_set_pot(r: number, i: number, pot: number, at: number): void;
   fm_amp_set_power(r: number, power: number): void;
   fm_amp_set_noise(r: number, noise: number): void;
   fm_amp_process(r: number, buf: number, frames: number): void;

@@ -31,6 +31,8 @@ export type Facts = { advisories: Advisory[]; latest?: string; latestAt?: number
 
 const issue: Guard<number | string> = (v) => { if (typeof v === "number" || typeof v === "string") return v; throw new Bad("an issue number or a URL"); };
 const AdvisoryEntry: Guard<Advisory> = obj({ versions: str(200), do: oneOf(["upgrade", "downgrade"]), to: str(100), why: str(2000), issue: opt(issue) });
+/** advisories.json as a whole, as scripts/deprecate-bad.ts reads it. */
+export const AdvisoryFile = obj({ advisories: arr(AdvisoryEntry, 1000) });
 const when = num(0, Infinity);
 /** The once-a-day cache file, ours (a CLI's Facts or an app's AppFacts): a bad entry is left out, a bad file is no cache. */
 const Cache = obj({ advisories: arr(AdvisoryEntry, 1000, { drop: true }), latest: opt(str(100)), latestAt: opt(when), download: opt(str(2000)), checkedAt: when });

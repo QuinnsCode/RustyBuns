@@ -4,7 +4,7 @@
 // cable across one needs a ramp. Across the road are houses: the score adds the level at their property line, which
 // has a noise limit, to the crowd's coverage. The generator comes with little in its tank: the jerry cans on the truck
 // (18 kg full, one in your hands at a time) fill it for the whole day, and the harder it works the faster it burns. Plain data, no DOM; the page (park-view.ts) draws it.
-import { clamp } from "@rustybuns/util";
+import { clamp, mulberry32 } from "@rustybuns/util";
 import { type Area, type Feed, type Grid, coverage, gear as catalog, generatorLoad, runHours } from "@rustybuns/gear";
 import { REACH, type Answer, type Level, type World, heldItem, wheeled } from "../sim.ts";
 import { assist } from "../assists.ts";
@@ -119,10 +119,54 @@ export function playing(w: World, c: Cables): Set<string> {
   return new Set(Object.entries(fed).filter(([, on]) => on).map(([k]) => k));
 }
 
-/** The heat map over the park and the road: only the fed speakers. */
+/** The breeze: where it blows toward (radians on the ground, 0 = +z, toward the road and the houses; π/2 = +x) and
+ * how hard, m/s. */
+export type Wind = { toward: number; speed: number };
+/** dB the mids and highs gain per metre downwind, per m/s of breeze (and lose upwind): 5 m/s is +4 dB at 40 m. */
+export const WIND_DB = 0.02;
+/** No breeze bends the sound more than this, either way, dB. */
+export const WIND_MAX = 8;
+
+const winds = new WeakMap<World, (t: number) => Wind>();
+/** The breeze this run (`blow(w, windFor(seed))`, or a fixed one in a test). A world nobody gave a wind is calm. */
+export const blow = (w: World, f: (t: number) => Wind) => void winds.set(w, f);
+/** The breeze now, at the world's clock. */
+export const wind = (w: World): Wind => winds.get(w)?.(w.t) ?? { toward: 0, speed: 0 };
+
+/** A seeded breeze for one run: a direction from anywhere, 1 to 6 m/s, that swings and gusts as the day goes on
+ * (minutes, not seconds), so a fader set at the start is wrong an hour of game time later. */
+export function windFor(seed: number): (t: number) => Wind {
+  const r = mulberry32(seed), base = r() * 2 * Math.PI, speed = 1 + r() * 5, swing = (0.3 + r() * 0.7) * (Math.PI / 3);
+  const period = 240 + r() * 240, gust = 200 + r() * 160, p1 = r() * 2 * Math.PI, p2 = r() * 2 * Math.PI;
+  return (t) => ({
+    toward: base + swing * Math.sin((2 * Math.PI * t) / period + p1),
+    speed: Math.max(0, speed * (1 + 0.4 * Math.sin((2 * Math.PI * t) / gust + p2))),
+  });
+}
+
+/** The breeze in words for the card: how hard, and whether it carries the sound to the houses. */
+export function windText({ toward, speed }: Wind): string {
+  if (speed < 0.5) return "Calm";
+  const to = Math.cos(toward), where = to > 0.5 ? "toward the houses" : to < -0.5 ? "away from the houses" : "across the park";
+  return `Wind ${speed.toFixed(0)} m/s ${where}`;
+}
+
+/** The heat map over the park and the road: only the fed speakers, the highs bent by the breeze (louder downwind of the
+ * rig, quieter upwind, measured from the speakers' middle). */
 export function heat(w: World, c: Cables): Grid {
-  const on = playing(w, c);
-  return coverage(sources(w, (i) => on.has(i.key)), GROUND, "high");
+  const on = playing(w, c), src = sources(w, (i) => on.has(i.key));
+  const g = coverage(src, GROUND, "high"), { toward, speed } = wind(w);
+  if (!speed || !src.length) return g;
+  const ux = Math.sin(toward), uz = Math.cos(toward);
+  const cx = src.reduce((s, o) => s + o.pos.x, 0) / src.length, cz = src.reduce((s, o) => s + o.pos.z, 0) / src.length;
+  const dx = (g.x1 - g.x0) / g.nx, dz = (g.z1 - g.z0) / g.nz;
+  for (let iz = 0; iz < g.nz; iz++) {
+    for (let ix = 0; ix < g.nx; ix++) {
+      const along = (g.x0 + (ix + 0.5) * dx - cx) * ux + (g.z0 + (iz + 0.5) * dz - cz) * uz;
+      g.db[iz * g.nx + ix] += clamp(WIND_DB * speed * along, -WIND_MAX, WIND_MAX);
+    }
+  }
+  return g;
 }
 
 export type Score = {
@@ -161,8 +205,9 @@ export function show(w: World, c: Cables) {
 }
 export type Show = ReturnType<typeof show>;
 
-/** What the harness adds for the park: the generator's load and fuel, and the score. */
+/** What the harness adds for the park: the generator's load and fuel, the breeze and the score. */
 export function parkState(w: World, c: Cables) {
   const l = load(w, c);
-  return { generator: l && { watts: Math.round(l.watts), limit: Math.round(l.limit), warn: l.warn, trips: l.trips, litres: Math.round(l.litres * 10) / 10 }, spillLimit: SPILL_LIMIT, ...score(w, c) };
+  const { toward, speed } = wind(w);
+  return { generator: l && { watts: Math.round(l.watts), limit: Math.round(l.limit), warn: l.warn, trips: l.trips, litres: Math.round(l.litres * 10) / 10 }, spillLimit: SPILL_LIMIT, wind: { toward: Math.round(toward * 100) / 100, speed: Math.round(speed * 10) / 10 }, ...score(w, c) };
 }

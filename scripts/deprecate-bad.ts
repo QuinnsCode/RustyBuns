@@ -2,9 +2,9 @@
 // install time, before the CLI's own check ever runs. Needs your npm login
 // (`npm login`), so you run it: `bun run deprecate:bad`. Re-running is harmless.
 import { readFileSync } from "node:fs";
-import { validRange, type Advisory } from "../packages/cli/src/advisories.ts";
+import { AdvisoryFile, validRange } from "../packages/cli/src/advisories.ts";
 
-const { advisories } = JSON.parse(readFileSync("advisories.json", "utf8")) as { advisories: Advisory[] };
+const { advisories } = AdvisoryFile(JSON.parse(readFileSync("advisories.json", "utf8")));
 let failed = 0;
 for (const a of advisories) {
   if (!validRange(a.versions)) { console.error(`skipping ${JSON.stringify(a.versions)}: not a plain range`); failed++; continue; }

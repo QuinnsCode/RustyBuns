@@ -26,9 +26,12 @@ export const switchedOnIsFed: Fed = (w, key, on) => {
   return spec.ohms !== null && w.items.some((i) => SPECS[i.gear]?.amp && on.has(i.key));
 };
 
-/** Whether a piece of gear can be switched on: anything that draws power, and (until cables) every speaker. */
-export function hasSwitch(gearId: string): boolean {
-  return !!(SPECS[gearId]?.draw || SPECS[gearId]?.speaker);
+/**
+ * Whether a piece of gear can be switched on: anything that draws power, and every speaker while a switch is enough to
+ * play it. Where the cables decide what plays (`cablesDecide`, the bigger bar), a passive speaker has nothing to switch.
+ */
+export function hasSwitch(gearId: string, cablesDecide = false): boolean {
+  return !!(SPECS[gearId]?.draw || (!cablesDecide && SPECS[gearId]?.speaker));
 }
 
 /** A venue's rig, when it has one (the dive bar): each top's tilt in radians and the master fader in dB. */

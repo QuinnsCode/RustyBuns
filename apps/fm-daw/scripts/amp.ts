@@ -1,7 +1,7 @@
 // Hear the circuit-sim amp spike (CIRCUITS.md): plucks a dry guitar riff (Karplus-Strong),
 // runs it through every rig in src/circuit/amps.ts, writes a WAV for each and prints how
 // many times faster than real time each one ran.
-//   bun scripts/amp.ts                 every rig, plus the dry riff and the tscircuit board
+//   bun scripts/amp.ts                 every rig, plus the dry riff and a germanium-swapped Q Dist
 //   bun scripts/amp.ts brit triple     just those
 //   --play                             play each one after writing it (afplay, macOS)
 // WAVs land in $FM_DAW_DIR, or the temp folder. Speakers down: they're normalized to -1 dBFS.
@@ -9,10 +9,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { help } from "../../../scripts/help.ts";
 import { encodeWav } from "../src/engine/wav.ts";
-import { overdrive } from "../src/circuit/circuits.ts";
+import { hardClip, overdrive } from "../src/circuit/circuits.ts";
 import { RIGS } from "../src/circuit/amps.ts";
 import { runRig, type RigSpec } from "../src/circuit/rig.ts";
-import { boardToNetlist } from "../src/circuit/tscircuit.ts";
 import { riff } from "../src/circuit/riff.ts";
 
 help(import.meta.path);
@@ -21,10 +20,9 @@ const SR = 48000;
 const want = process.argv.slice(2).filter((a) => !a.startsWith("--"));
 const play = process.argv.includes("--play");
 const dir = process.env.FM_DAW_DIR ?? tmpdir();
-const board = boardToNetlist(await Bun.file(join(import.meta.dir, "../test/fixtures/hard-clip.circuit.json")).json());
 const rigs: Record<string, RigSpec> = {
   ...RIGS,
-  "hard-clip-tscircuit": { ...RIGS["hard-clip"], links: [{ net: board }] },
+  "hard-clip-germanium": { ...RIGS["hard-clip"], links: [{ net: hardClip(100e3, { D1: "germanium" }) }] },
   "boosted-lead": { ...RIGS.lead, links: [{ net: overdrive(0) }, ...RIGS.lead.links] },
 };
 

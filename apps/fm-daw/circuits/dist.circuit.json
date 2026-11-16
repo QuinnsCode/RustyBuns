@@ -280,9 +280,9 @@
   "type": "source_component",
   "source_component_id": "source_component_5",
   "ftype": "simple_resistor",
-  "name": "R3",
-  "resistance": 100000,
-  "display_resistance": "100kΩ",
+  "name": "RV1",
+  "resistance": 105000,
+  "display_resistance": "105kΩ",
   "are_pins_interchangeable": true,
   "source_group_id": "source_group_0"
  },
@@ -606,7 +606,7 @@
   ],
   "connected_source_net_ids": [],
   "subcircuit_id": "subcircuit_source_group_0",
-  "display_name": ".R3 > .pin1 to .U1 > .OUT",
+  "display_name": ".RV1 > .pin1 to .U1 > .OUT",
   "subcircuit_connectivity_map_key": "unnamedsubcircuitsubcircuit_source_group_0_connectivity_net3"
  },
  {
@@ -618,7 +618,7 @@
   ],
   "connected_source_net_ids": [],
   "subcircuit_id": "subcircuit_source_group_0",
-  "display_name": ".R3 > .pin2 to .U1 > .INN",
+  "display_name": ".RV1 > .pin2 to .U1 > .INN",
   "subcircuit_connectivity_map_key": "unnamedsubcircuitsubcircuit_source_group_0_connectivity_net4"
  },
  {
