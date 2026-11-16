@@ -5,6 +5,9 @@ eight steps, one per playable region, and posts of rank and file along the trail
 fights to go back for. Their words are data (`content/faction-*.json`), their shape is `src/factions/model.ts`, and
 what is said depends on what you did first, how long you were away and how you talk to each person.
 
+The believers at each region's first campfire (the Hatters of Ong's Hat and the rest, `src/believers.ts`) are not a
+faction: they help you rest and point you to cryptids, with no quest, no posts and no standing.
+
 None of them knows what the Book is. Each has a theory, and each theory is wrong. Nothing here says what the Book
 is: that reveal is the owner's.
 
