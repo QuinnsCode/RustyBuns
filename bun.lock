@@ -1251,6 +1251,10 @@
         "lucide": "1.55.0",
       },
     },
+    "packages/gear": {
+      "name": "@rustybuns/gear",
+      "version": "0.1.12",
+    },
     "packages/models": {
       "name": "@rustybuns/models",
       "version": "0.1.12",
@@ -2249,6 +2253,8 @@
     "@rustybuns/cms": ["@rustybuns/cms@workspace:packages/cms"],
 
     "@rustybuns/game-controls": ["@rustybuns/game-controls@workspace:packages/game-controls"],
+
+    "@rustybuns/gear": ["@rustybuns/gear@workspace:packages/gear"],
 
     "@rustybuns/models": ["@rustybuns/models@workspace:packages/models"],
 
