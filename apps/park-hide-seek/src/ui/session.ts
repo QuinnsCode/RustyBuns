@@ -7,7 +7,8 @@ import { guestId } from "@rustybuns/util/eqosys";
 import { connectSocket, seatClosed, type Link } from "@rustybuns/util/socket";
 import { UPDATE_CLOSE, updateNotice } from "@rustybuns/util/protocol";
 import { STORE_URL } from "../api.ts";
-import { isServerMsg, type BotLevel, type Look, type Msg, type ServerMsg, type View } from "../hunt/game.ts";
+import { check } from "@rustybuns/util/guard";
+import { ServerMsg, type BotLevel, type Look, type Msg, type View } from "../hunt/game.ts";
 import type { Role, TimeOfDay } from "../hunt/sim.ts";
 import { Room, TICK_MS } from "../room.ts";
 import { fetchWeather } from "../weather.ts";
@@ -68,7 +69,7 @@ export class NetSession implements Session {
   constructor(readonly kind: "host" | "guest" | "online", target: string, params: Record<string, string | undefined> = {}) {
     this.onStatus({ state: "connecting" });
     this.link = connectSocket<ServerMsg, Msg>(worldUrl(target, params), {
-      decode: (v) => (isServerMsg(v) ? v : null), queue: 50,
+      decode: (v) => check(ServerMsg, v), queue: 50,
       onOpen: () => this.onStatus({ state: "online" }),
       onMessage: (m) => { this.offset = m.view.now - Date.now(); this.onView(m.view); },
       onClose: (e) => {

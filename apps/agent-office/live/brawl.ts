@@ -18,8 +18,7 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { check } from "@rustybuns/util/guard";
-import type { LogEntry } from "../../excalibrawl/src/engine/match.ts";
-import { isLiveMessage, Replay, Summaries, type LiveMessage, type ReplayEntry } from "../../excalibrawl/src/live-wire.ts";
+import { LiveMessage, Replay, Summaries, type ReplayEntry } from "../../excalibrawl/src/live-wire.ts";
 import { isLinear, type Op, type SkeletonEl } from "../../excalibrawl/src/engine/types.ts";
 
 /** An element on the office whiteboard: Excalidraw's, as loose as the server keeps it. */
@@ -319,13 +318,14 @@ export class Feed {
     const ws = new WebSocket(`${this.url.replace(/^http/, "ws")}/api/live`);
     this.ws = ws;
     ws.onmessage = (ev) => {
-      let msg: unknown;
+      let raw: unknown;
       try {
-        msg = JSON.parse(String(ev.data));
+        raw = JSON.parse(String(ev.data));
       } catch {
         return;
       }
-      if (!isLiveMessage(msg)) return;
+      const msg = check(LiveMessage, raw);
+      if (!msg) return;
       for (const fn of this.listeners) fn(msg);
     };
     ws.onclose = () => {
@@ -368,7 +368,7 @@ export class FloorBrawl {
   private curtain: Curtain;
   private timer?: ReturnType<typeof setInterval>;
   private phase: Phase | "off" = "off";
-  private fight: { started: boolean; endedAt?: number; id?: string; m?: { prompt: string; fighters: { name: string }[]; turns: number; turn: number }; log: LogEntry[] } = { started: false, log: [] };
+  private fight: { started: boolean; endedAt?: number; id?: string; m?: { prompt: string; fighters: { name: string }[]; turns: number; turn: number }; log: ReplayEntry[] } = { started: false, log: [] };
   private unlisten?: () => void;
   private slide?: { m: Replay; turn: number; next: number; i: number };
   private busy = false;

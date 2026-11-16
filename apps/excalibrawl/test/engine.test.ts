@@ -6,6 +6,9 @@ import { parsePlan } from "../src/engine/plan.ts";
 import { encodePng, rasterize, snapshot } from "../src/engine/raster.ts";
 import { applyOps } from "../src/engine/ops.ts";
 import type { Op, SkeletonEl } from "../src/engine/types.ts";
+import { check } from "@rustybuns/util/guard";
+import { summarize } from "../src/archive.ts";
+import { LiveMessage } from "../src/live-wire.ts";
 
 const region = { x: 350, y: 0, w: 350, h: 700 };
 const blank = (over: Partial<TurnInput> = {}): TurnInput => ({ prompt: "a very long cat", turn: 1, turns: 20, scene: [], region, image: "data:image/png;base64,AA", ...over });
@@ -155,6 +158,22 @@ describe("a fight", () => {
     expect(scenesAt(m, 2).map((s) => s.length)).toEqual([2, 2]);
     // each side stays in its half
     for (const el of m.scenes[1]!) expect(el.x).toBeGreaterThanOrEqual(regionOf(m, 1).x);
+  });
+
+  test("the live socket's messages read back whole on the page, and a broken one is dropped", async () => {
+    const m = newMatch("m-1", "a very long cat", [{ model: "clef", name: "Clef" }, { model: "clef-flash", name: "Clef Flash" }], 3, 0);
+    const deps = fake({ action: "add", target: "none", shape: "rectangle", color: "green", col: "c3", row: "r4", aspect: "wide" });
+    const { log: _l, nextId: _n, talks: _t, ...match } = m;
+    const sent: LiveMessage[] = [{ t: "hello", match: null }, { t: "start", match: structuredClone(match) }];
+    while (!finished(m)) sent.push({ t: "turn", id: m.id, turn: m.turn + 1, entries: await playTurn(m, deps) });
+    const { log: _l2, nextId: _n2, talks: _t2, ...ended } = m;
+    sent.push({ t: "hello", match: ended }, { t: "end", id: m.id, summary: summarize(m) });
+    const wire = <T>(v: T): T => JSON.parse(JSON.stringify(v));
+    for (const msg of sent) expect(check(LiveMessage, wire(msg))).toEqual(wire(msg));
+
+    const turn = wire(sent[2]);
+    for (const broken of [{ ...Object(turn), entries: [{ side: 0, turn: 1, ops: [{ op: "add" }] }] }, { ...Object(turn), t: "chat" }, { t: "start", match: { id: "m-1" } }])
+      expect(check(LiveMessage, broken)).toBeNull();
   });
 
   test("past the budget a fighter sits out the turn, and a bad answer costs only that turn", async () => {
