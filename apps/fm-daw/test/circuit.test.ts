@@ -1,18 +1,17 @@
-// The circuit-sim amp spike (CIRCUITS.md): a pedal drawn in tscircuit plays
-// through the solver like the hand-written netlist, the solver lands on the
+// The circuit amps (CIRCUITS.md): every board in circuits/ plays like its voicing,
+// a part swapped in its socket is one you hear, the solver lands on the
 // textbook numbers, no rig blows up on a hot input, and the Rust port plays
 // what the TypeScript solver plays (skipped, with a note, when the wasm isn't built).
 import { existsSync, readFileSync } from "node:fs";
 import { expect, setDefaultTimeout, test } from "bun:test";
 import { Circuit, type Netlist } from "../src/circuit/mna.ts";
-import { triodeStage } from "../src/circuit/circuits.ts";
+import { BOARDS, CAP_STEPS, capValue, farads, fuzz, hardClip, overdrive, sockets, toneStack, triodeStage } from "../src/circuit/circuits.ts";
 import { AMPS, PEDALS, RIGS, buildRig } from "../src/circuit/amps.ts";
 import { Rig, runRig } from "../src/circuit/rig.ts";
 import { riff } from "../src/circuit/riff.ts";
 import { WasmRig } from "../src/circuit/wasm.ts";
 import { instantiateFm } from "../src/engine/wasm.ts";
 import { boardToNetlist } from "../src/circuit/tscircuit.ts";
-import board from "./fixtures/hard-clip.circuit.json";
 
 setDefaultTimeout(60_000);
 const SR = 48000;
@@ -20,22 +19,6 @@ const sine = (hz: number, seconds: number, amp = 1) => Float32Array.from({ lengt
 /** Fails naming `what` and the value when it falls outside lo..hi. */
 const inRange = (what: string, v: number, lo: number, hi: number) => expect([what, v >= lo && v <= hi ? "in range" : v]).toEqual([what, "in range"]);
 const peak = (b: Float32Array, from = 0) => { let p = 0; for (let i = from; i < b.length; i++) p = Math.max(p, Math.abs(b[i])); return p; };
-
-test("a pedal drawn in tscircuit plays like the hand-written netlist", () => {
-  const net = boardToNetlist(board);
-  expect(net.parts.filter((p) => p.kind === "D")).toHaveLength(2);
-  const hand = runRig(RIGS["hard-clip"], sine(220, 0.2));
-  const drawn = runRig({ ...RIGS["hard-clip"], links: [{ net }] }, sine(220, 0.2));
-  expect(drawn.misses).toBe(0);
-  let diff = 0;
-  for (let i = 0; i < hand.out.length; i++) diff = Math.max(diff, Math.abs(hand.out[i] - drawn.out[i]));
-  expect(diff).toBeLessThan(1e-6);
-  // ×101 on a 0.3 V input would be 30 V; the diodes hold it under a volt.
-  const p = peak(drawn.out, SR / 10);
-  expect(p).toBeGreaterThan(0.3);
-  expect(p).toBeLessThan(1);
-  expect(() => boardToNetlist([{ type: "source_component", source_component_id: "x", ftype: "simple_crystal", name: "X1" }])).toThrow("X1: no model for simple_crystal");
-});
 
 /** Gain in dB of a circuit at `hz`, measured on the second half of 0.2 s of a small sine. */
 function gainDb(net: Netlist, hz: number, sr = 192000, amp = 0.01): number {
@@ -48,6 +31,34 @@ function gainDb(net: Netlist, hz: number, sr = 192000, amp = 0.01): number {
   }
   return 20 * Math.log10((hi - lo) / (2 * amp));
 }
+
+/** Peak over RMS after the first 0.1 s: a sine is 1.41, a square 1. */
+const crest = (b: Float32Array) => { let ss = 0; const from = SR / 10; for (let i = from; i < b.length; i++) ss += b[i] ** 2; return peak(b, from) / Math.sqrt(ss / (b.length - from)); };
+const pedalOut = (net: Netlist, x = sine(220, 0.2, 0.6)) => runRig({ inputVolts: 0.5, links: [{ net }], power: 0, cab: false }, x).out;
+
+test("every board plays like its voicing", () => {
+  for (const [what, v, lo, hi] of [
+    // x101 on a 0.3 V input would be 30 V; the diodes hold it under a volt.
+    ["Q Dist: diodes to ground flatten the tops (peak, V)", peak(pedalOut(hardClip()), SR / 10), 0.3, 1],
+    ["Q Drive: the mids get more gain than the lows (dB, 800 Hz over 80 Hz)", gainDb(overdrive(0.5), 800, 192000, 0.001) - gainDb(overdrive(0.5), 80, 192000, 0.001), 6, 20],
+    ["Q Fuzz: near square (crest factor)", crest(pedalOut(fuzz(0.7))), 1, 1.2],
+    ["the tone stack's Middle knob (dB at 500 Hz, 10 over 0)", gainDb(toneStack({ bass: 5, mid: 10, treble: 5 }), 500) - gainDb(toneStack({ bass: 5, mid: 0, treble: 5 }), 500), 3, 30],
+  ] as const) inRange(what, v, lo, hi);
+  for (const id of Object.keys(BOARDS)) expect([id, boardToNetlist(BOARDS[id as keyof typeof BOARDS]).parts.length > 5]).toEqual([id, true]);
+  expect(() => boardToNetlist(BOARDS.dist, { values: { R9: 1 } })).toThrow("no part R9");
+  expect(() => boardToNetlist([{ type: "source_component", source_component_id: "x", ftype: "simple_crystal", name: "X1" }])).toThrow("X1: no model for simple_crystal");
+});
+
+test("a part swapped in its socket is one you hear", () => {
+  expect(sockets("fuzz").filter((s) => s.kind === "clipper").map((s) => s.parts)).toEqual([["D1", "D2"], ["D3", "D4"]]);
+  // Each clipper holds the Q Dist at its own forward drop, lowest to highest.
+  const peaks = (["germanium", "silicon", "mosfet", "led", "none"] as const).map((c) => [c, peak(pedalOut(hardClip(100e3, { D1: c })), SR / 10)] as const);
+  for (let i = 1; i < peaks.length; i++) expect([peaks[i - 1][0], peaks[i][0], peaks[i][1] > peaks[i - 1][1] * 1.3]).toEqual([peaks[i - 1][0], peaks[i][0], true]);
+  // A capacitor socket offers parts you can buy, and a smaller gain-leg cap tightens the lows; a choice the socket doesn't offer leaves it stock.
+  inRange("C2 x0.22: dB lost at 60 Hz", gainDb(hardClip(10e3), 60, 192000, 0.001) - gainDb(hardClip(10e3, { C2: "0.22" }), 60, 192000, 0.001), 3, 20);
+  expect(CAP_STEPS.map((s) => farads(capValue(47e-9, Number(s))))).toEqual(["10nF", "22nF", "47nF", "100nF", "220nF"]);
+  expect(hardClip(10e3, { C2: "0.3", D1: "gold" })).toEqual(hardClip(10e3));
+});
 
 test("the solver lands on the textbook numbers", () => {
   const rc: Netlist = { input: "in", output: "out", parts: [{ kind: "R", a: "in", b: "out", ohms: 1000 }, { kind: "C", a: "out", b: "gnd", farads: 1 / (2 * Math.PI * 1000 * 1000) }] };
@@ -202,9 +213,11 @@ test("rust (wasm) plays every rig like ts, while the knobs turn", async () => {
   if (!existsSync(f)) { console.log("  (skipped: wasm not built; run `bun run build:native`)"); return; }
   const x = await instantiateFm(readFileSync(f));
   const input = riff(SR).subarray(0, SR / 2), half = SR / 4;
-  const lead = AMPS[1], fuzz = PEDALS[1];
+  const lead = AMPS[1];
   const rigs = {
-    ...RIGS, "fuzz into lead, hissing": buildRig(lead, { ...lead.knobs, noise: 7 }, { def: fuzz, drive: 6 }),
+    ...RIGS,
+    "fuzz into lead, hissing": buildRig(lead, { ...lead.knobs, noise: 7 }, { def: PEDALS[1], drive: 6 }),
+    "LED dist into lead": buildRig(lead, lead.knobs, { def: PEDALS[2], drive: 6, swaps: { D1: "led", C2: "0.47" } }),
     "every new part": { inputVolts: 1, power: 0, cab: false, links: [{ net: everyPart(false) }] },
     "every new part, mirrored": { inputVolts: 1, power: 0, cab: false, links: [{ net: everyPart(true) }] },
   };

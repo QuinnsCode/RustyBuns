@@ -11,7 +11,7 @@ const SR = 48000, BLOCK = 128;
 
 test("working the knobs while the riff plays: rebuilds only what moved, never past -1 dBFS", () => {
   const dry = riff(SR);
-  let s: AmpSettings = { amp: "lead", pedal: null, drive: 3, knobs: { ...AMPS[1].knobs }, bypass: false, oversample: 4 };
+  let s: AmpSettings = { amp: "lead", pedal: null, drive: 3, knobs: { ...AMPS[1].knobs }, bypass: false, oversample: 4, swaps: {} };
   let live: Live = applySettings(s, null, SR);
   let at = 0, peak = 0;
   const out = new Float32Array(BLOCK);
@@ -30,6 +30,7 @@ test("working the knobs while the riff plays: rebuilds only what moved, never pa
     ["Q Fuzz on", { pedal: "fuzz" }, true],
     ["Q Drive instead", { pedal: "drive" }, true],
     ["its Drive up", { drive: 10 }, false],
+    ["germanium in its clipper socket", { swaps: { D1: "germanium" } }, false],
     ["Q Triple", { amp: "triple", knobs: { ...AMPS[2].knobs } }, true],
     ["Eco", { oversample: 2 }, true],
     ["Q Dist instead", { pedal: "dist" }, true],
@@ -52,7 +53,7 @@ test("working the knobs while the riff plays: rebuilds only what moved, never pa
 test("the Noise knob: silent at 0, a hiss through the tubes at 7", () => {
   const quiet = new Float32Array(SR / 2), out = new Float32Array(quiet.length);
   const floor = (noise: number) => {
-    const live = applySettings({ amp: "lead", pedal: null, drive: 0, knobs: { ...AMPS[1].knobs, noise }, bypass: false, oversample: 4 }, null, SR);
+    const live = applySettings({ amp: "lead", pedal: null, drive: 0, knobs: { ...AMPS[1].knobs, noise }, bypass: false, oversample: 4, swaps: {} }, null, SR);
     live.rig.process(quiet, out);
     let ss = 0;
     for (let i = quiet.length / 2; i < quiet.length; i++) ss += (out[i] / FULL_SCALE) ** 2;

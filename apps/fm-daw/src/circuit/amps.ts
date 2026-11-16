@@ -2,7 +2,7 @@
 // stages, the pots between them, a tone stack and a power stage; `buildRig`
 // turns an amp, an optional pedal and the knobs into a rig. Names are ours and
 // describe the circuit, never a product.
-import { fuzz, hardClip, overdrive, toneStack, triodeStage, type StageSpec, type ToneSpec } from "./circuits.ts";
+import { fuzz, hardClip, overdrive, toneStack, triodeStage, type BoardId, type StageSpec, type Swaps, type ToneSpec } from "./circuits.ts";
 import type { RigSpec } from "./rig.ts";
 
 /** The amp's front panel, every knob 0 to 10. Noise is how much the first tube's resistors hiss (see `noiseScale`). */
@@ -44,12 +44,13 @@ export const AMPS: AmpDef[] = [
   },
 ];
 
-export interface PedalDef { id: string; name: string; blurb: string; net: (drive: number) => RigSpec["links"][number]["net"] }
+/** A pedal: its board (`circuits/<board>.tsx`) and its netlist at a Drive (0 to 10) with the player's part swaps. */
+export interface PedalDef { id: string; name: string; blurb: string; board: BoardId; net: (drive: number, swaps?: Swaps) => RigSpec["links"][number]["net"] }
 
 export const PEDALS: PedalDef[] = [
-  { id: "drive", name: "Q Drive", blurb: "Diodes in the op-amp's feedback: rounded clipping and a mid push. In front of an amp at low Drive, it tightens the lows.", net: (d) => overdrive(d / 10) },
-  { id: "fuzz", name: "Q Fuzz", blurb: "×2000 into soft diodes, then hard ones. Its input resistor hisses, and the hiss gets clipped with the notes.", net: (d) => fuzz(d / 10) },
-  { id: "dist", name: "Q Dist", blurb: "Op-amp gain into two diodes to ground: flat-topped, buzzy distortion.", net: (d) => hardClip(10e3 + (d / 10) * 190e3) },
+  { id: "drive", name: "Q Drive", blurb: "Diodes in the op-amp's feedback: rounded clipping and a mid push. In front of an amp at low Drive, it tightens the lows.", board: "drive", net: (d, s) => overdrive(d / 10, s) },
+  { id: "fuzz", name: "Q Fuzz", blurb: "×2000 into soft diodes, then hard ones. Its input resistor hisses, and the hiss gets clipped with the notes.", board: "fuzz", net: (d, s) => fuzz(d / 10, s) },
+  { id: "dist", name: "Q Dist", blurb: "Op-amp gain into two diodes to ground: flat-topped, buzzy distortion.", board: "dist", net: (d, s) => hardClip(10e3 + (d / 10) * 190e3, s) },
 ];
 
 /** The Gain knob's pot: log taper, never quite off, all the way open at 10. */
@@ -61,10 +62,10 @@ export const gainPot = (gain: number) => 0.02 + 0.98 * (gain / 10) ** 2;
  */
 export const noiseScale = (k: number) => (k <= 0 ? 0 : 10 ** ((k - 1) / 3));
 
-/** A pedal (or none) into an amp, with these knobs. */
-export function buildRig(amp: AmpDef, knobs: Knobs, pedal?: { def: PedalDef; drive: number }): RigSpec {
+/** A pedal (or none, and with the player's part swaps) into an amp, with these knobs. */
+export function buildRig(amp: AmpDef, knobs: Knobs, pedal?: { def: PedalDef; drive: number; swaps?: Swaps }): RigSpec {
   const links: RigSpec["links"] = [];
-  if (pedal) links.push({ net: pedal.def.net(pedal.drive) });
+  if (pedal) links.push({ net: pedal.def.net(pedal.drive, pedal.swaps) });
   amp.stages.forEach((s, i) => links.push({ net: triodeStage({ ...s, noisy: i === 0 }), gain: amp.pots[i] ?? gainPot(knobs.gain) }));
   links.push({ net: toneStack({ ...amp.tone, bass: knobs.bass, mid: knobs.mid, treble: knobs.treble }) });
   return { inputVolts: 0.5, links, power: amp.power * (0.25 + 0.15 * knobs.master), cab: true, noise: noiseScale(knobs.noise) };
