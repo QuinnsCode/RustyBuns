@@ -62,7 +62,7 @@ test("over the rating trips, and a load below the amp's minimum is a problem", (
 test("the catalog has every shared id with its size, and jacks number from 1", () => {
   expect(GEAR_IDS).toEqual([
     "top-12-powered", "top-15-passive", "sub-18", "wedge-12", "amp-head", "cab-4x12", "amp-rack-4u", "mixer-small",
-    "generator-7kva", "distro-box", "cable-ramp-2ch", "road-case-m", "stand-tripod", "mic-stand", "guitar",
+    "generator-7kva", "distro-box", "cable-ramp-2ch", "road-case-m", "stand-tripod", "mic-stand", "guitar", "bar-cooler",
   ]);
   expect(gear("sub-18")).toMatchObject({ size: { w: 0.55, h: 0.7, d: 0.75 }, kg: 45 });
   expect(jackNames(gear("generator-7kva"))).toEqual(["power-out-1", "power-out-2", "power-out-3", "power-out-4"]);

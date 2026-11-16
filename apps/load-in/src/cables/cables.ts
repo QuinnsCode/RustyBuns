@@ -1,7 +1,7 @@
 // Cables: take one out of the road case, walk its end out (it drags behind you as a rope, and at its full length it
 // stops you), plug it into a jack of its kind, and lay a cable ramp over it where it crosses a walkway. The patch
 // (who is fed, what is wrong) is @rustybuns/gear's `compile`; the jacks are where the models in @rustybuns/models put them.
-import { CIRCUIT_15A, cableFor, compile, gear, jackKind, jackNames, type Cable, type CableKind, type End } from "@rustybuns/gear";
+import { CIRCUIT_15A, CIRCUIT_20A, cableFor, compile, gear, jackKind, jackNames, type Cable, type CableKind, type End, type Placed } from "@rustybuns/gear";
 import { GEAR_SIZES, gear as model, gearJacks, type GearId } from "@rustybuns/models/gear";
 import { Vector3 } from "three";
 import { EYE, EYE_CROUCH, LOW, REACH, dims, facing, holdPose, walkTo, type Answer, type Item, type World } from "../sim.ts";
@@ -231,12 +231,17 @@ export function hazards(w: World, c: Cables): { cable: string; walkway: string; 
   return out;
 }
 
-/** The patch as @rustybuns/gear reads it: what is fed, and what is wrong (only cables with both ends in jacks count). */
-export function patch(w: World, c: Cables) {
+/** What compile reads: the gear with jacks, and every cable with both ends in jacks. */
+export function plugged(w: World, c: Cables): { placed: Placed[]; runs: Cable[] } {
   const runs: Cable[] = [];
   for (const r of c.runs) if (isPlug(r.a) && isPlug(r.b)) runs.push({ kind: r.kind, lengthM: r.lengthM, from: r.a.plug, to: r.b.plug });
-  const placed = w.items.filter((i) => jackNames(gear(i.gear)).length).map((i) => ({ id: i.key, gear: i.gear }));
-  const outlets = w.level.outlets.map((o) => ({ id: o.key, circuit: w.level.name, breaker: CIRCUIT_15A }));
+  return { placed: w.items.filter((i) => jackNames(gear(i.gear)).length).map((i) => ({ id: i.key, gear: i.gear })), runs };
+}
+
+/** The patch as @rustybuns/gear reads it: what is fed, and what is wrong (only cables with both ends in jacks count). */
+export function patch(w: World, c: Cables) {
+  const { placed, runs } = plugged(w, c);
+  const outlets = w.level.outlets.map((o) => ({ id: o.key, circuit: o.circuit ?? w.level.name, breaker: o.amps === 20 ? CIRCUIT_20A : CIRCUIT_15A }));
   const { fed, problems } = compile(placed, runs, { outlets });
   return { fed: Object.fromEntries(fed), problems: problems.map((p) => p.message) };
 }
