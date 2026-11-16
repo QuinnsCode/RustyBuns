@@ -98,6 +98,7 @@ Methods: `addImage(file, zone?)`, `removeImage()`, `place({u, v, scale, rotation
 and `save()` resolves to `{id, url, design}`; `value` is the saved id (below). Attributes: `name`, `org`, `product`, `model`, `color`, `colors="#111111,#ffffff"`,
 `controls`, `theme`, and `api` (the server, by default the script's own origin).
 A product's `print` (the zones the shop switched on) and `place` (where a new picture lands), set on `/orgs.html`, shape the widget: it offers only those zones, refuses a picture on one switched off, and starts each new picture at `place`.
+A shop's own model takes a picture anywhere until the shop marks its `area` on `/admin.html`: put a picture where the print goes, at the size it prints, and click **Use as print area**. Then a new picture starts there, can't be dragged or nudged past the dashed square, and is never wider than it.
 Events, which bubble out of the shadow DOM: `qview:ready`, `qview:change`, `qview:snapshot`, `qview:saved` and `qview:error`.
 
 **The default look is codeSplitter's:** ink on white, hairline borders, paper panels, one orange. It is built to

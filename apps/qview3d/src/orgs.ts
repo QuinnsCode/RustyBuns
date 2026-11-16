@@ -113,6 +113,7 @@ export async function orgsRoute(req: Request, env: Env, h: Record<string, string
   if (p.glb && !p.glb.startsWith(`orgs/${org}/models/`)) return fail("glb: one of this org's sample models", 400);
   const wrong = p.print?.find((z) => !zonesOf(p.model).includes(z));
   if (wrong) return fail(`print: a ${p.model} has no ${wrong}`, 400);
+  if (p.area && p.model !== "custom") return fail("area: only a shop's own model has one", 400);
   if (!(await getProduct(env, org, id)) && (await listProducts(env, org, PRODUCTS_MAX)).length >= PRODUCTS_MAX) return fail(`a shop has at most ${PRODUCTS_MAX} products`, 409);
   await putProduct(env, org, id, p, url.origin);
   return privateJson(p, 200, h);

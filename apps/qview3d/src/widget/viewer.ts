@@ -6,7 +6,7 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
-import { TOPS, type Design, type Made, type Model, type TopModel, type ZoneName } from "../api.ts";
+import { TOPS, type Design, type Made, type Model, type PrintArea, type TopModel, type ZoneName } from "../api.ts";
 import { buildHat } from "./hats.ts";
 import { buildTop } from "./tops.ts";
 import { clampPlacement, type Placement } from "./print.ts";
@@ -204,9 +204,9 @@ export class Viewer {
   }
 
   /** A shop's own model, from its GLB. */
-  async setCustom(url: string) {
+  async setCustom(url: string, area: PrintArea | null = null) {
     const { loadModel } = await import("./model-surface.ts"); // its own chunk: hats-only pages never load it
-    this.use(await loadModel(url), "custom");
+    this.use(await loadModel(url, area), "custom");
   }
 
   setColor(c: string) {

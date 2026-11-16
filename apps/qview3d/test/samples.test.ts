@@ -6,7 +6,9 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { hex, sha256 } from "@rustybuns/util/bytes";
-import { Product, Sample } from "../src/api.ts";
+import * as THREE from "three";
+import { areaOf, Product, Sample } from "../src/api.ts";
+import { ModelSurface } from "../src/widget/model-surface.ts";
 import { DEMO_ADMIN, local } from "../src/local.ts";
 import { putOrg } from "../src/settings.ts";
 
@@ -54,6 +56,27 @@ test("photos in, a sample model out, and the widget's product names it", async (
   const glb = await fetch(`${app.url}/r/${product.glb}`);
   expect(new TextDecoder().decode((await glb.arrayBuffer()).slice(0, 4))).toBe("glTF");
   expect(glb.headers.get("cache-control")).toContain("immutable");
+
+  // The admin puts a picture where it prints and clicks Use as print area: the product keeps it, the widget reads it.
+  const area = areaOf({ point: [0, 1, 0.5], normal: [0, 0, 1], scale: 0.3 })!;
+  const put = (p: unknown) => fetch(`${app.url}/api/orgs/demo/products/${s.product}`, { method: "PUT", headers: { ...admin, "content-type": "application/json" }, body: JSON.stringify(p) });
+  expect((await put({ ...product, area })).status).toBe(200);
+  expect(Product(await (await fetch(`${app.url}/api/orgs/demo/products/${s.product}`)).json()).area).toEqual(area);
+  expect((await put({ name: "Cap", model: "cap", colors: ["#111111"], area })).status).toBe(400);
+});
+
+test("on a shop's own model with a print area, a picture starts in it and can't be dragged out", () => {
+  const box = new THREE.Mesh(new THREE.BoxGeometry(2, 2, 2));
+  const area = areaOf({ point: [0, 1, 1], normal: [0, 0, 1], scale: 0.3 })!; // 0.42 across, on the front face
+  const m = new ModelSurface(new THREE.Group().add(box), area);
+  const at = m.start();
+  expect(at.point).toEqual([0, 1, 1]);
+  const spot = (x: number, y: number) => ({ point: new THREE.Vector3(x, y, 1), normal: new THREE.Vector3(0, 0, 1) });
+  expect(m.drag(at, spot(0, 1), spot(0.1, 1.1)).point).toEqual([0.1, 1.1, 1]); // inside: moves
+  expect(m.drag(at, spot(0, 1), spot(0.6, 1)).point).toEqual([0, 1, 1]); // past the edge: stays
+  // With no area it goes anywhere.
+  const free = new ModelSurface(new THREE.Group().add(new THREE.Mesh(new THREE.BoxGeometry(2, 2, 2))));
+  expect(free.drag(free.start(), spot(0, 1), spot(0.9, 1)).point).toEqual([0.9, 1, 1]);
 });
 
 /** The smallest GLB: the header and one JSON chunk, what the iPhone app writes around its mesh. */

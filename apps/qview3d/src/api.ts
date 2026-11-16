@@ -71,6 +71,16 @@ export const PRINT_CM: Record<Made, Partial<Record<ZoneName, PrintCm>>> = {
 export const Placement = obj({ u: num(0, 1), v: num(0, 1), scale: num(0.05, 1), rotation: num(-Math.PI, Math.PI) });
 export type Placement = Of<typeof Placement>;
 
+/**
+ * A shop's own model's print area: a square on its surface, centred on `point` and facing `normal` (the model's own
+ * space, as a Layer's), `size` across. A picture's middle stays inside it, and the picture is never wider.
+ */
+export const PrintArea = obj({ point: arr(num(-10, 10), 3, { min: 3 }), normal: arr(num(-1, 1), 3, { min: 3 }), size: num(0.05, 4) });
+export type PrintArea = Of<typeof PrintArea>;
+/** The print area a placed picture marks: its spot and facing, as wide as it shows (model-surface.ts: scale x 1.4). */
+export const areaOf = (l: { point?: number[]; normal?: number[]; scale: number }): PrintArea | null =>
+  l.point && l.normal ? { point: l.point, normal: l.normal, size: Math.min(4, Math.max(0.05, l.scale * 1.4)) } : null;
+
 /** A product's settings (D1 `products`, settings.ts): everything the widget reads when it loads one. */
 export const Product = obj({
   name: str(120),
@@ -85,6 +95,8 @@ export const Product = obj({
   print: opt(arr(oneOf(ZONES), 3, { min: 1 })),
   /** Where a new picture lands before the shopper moves it. Unset: the widget's own middle. */
   place: opt(Placement),
+  /** A custom model's print area, marked on /admin.html. Unset: anywhere on it. */
+  area: opt(PrintArea),
 });
 export type Product = Of<typeof Product>;
 
