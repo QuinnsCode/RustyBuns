@@ -7,12 +7,29 @@ import { FLOOR, PASS, STAND_MIN, TARGET, WINDOW, ZONES, type Zone, type Show, ai
 
 const STEP = Math.PI / 36, TILT = Math.PI / 60;
 
-/** dB to a colour: deep blue far under the target, green on it, red over it; silence is clear. */
-export function heatColour(db: number): [number, number, number, number] {
+/** dB to a colour against `target`: deep blue far under it, green on it, red over it; silence is clear. */
+export function heatColour(db: number, target = TARGET): [number, number, number, number] {
   if (!Number.isFinite(db)) return [0, 0, 0, 0];
-  const t = Math.max(-1, Math.min(1, (db - TARGET) / (WINDOW * 3)));
-  if (Math.abs(db - TARGET) <= WINDOW) return [60, 200, 90, 170];
+  const t = Math.max(-1, Math.min(1, (db - target) / (WINDOW * 3)));
+  if (Math.abs(db - target) <= WINDOW) return [60, 200, 90, 170];
   return t < 0 ? [40, 90 + 110 * (1 + t), 230, 150] : [235, 170 - 140 * t, 50, 170];
+}
+
+/** Q / E turn and R / V tilt the top you look at; Z / X lower and raise its stand. True when the key did something. */
+export function aimKey(w: World, code: string): boolean {
+  const at = aimed(w);
+  if (!at) return false;
+  if (at.gear === "top-12-powered") {
+    if (code === "KeyQ" || code === "KeyE") return aim(w, at.key, { turn: code === "KeyQ" ? STEP : -STEP }).ok;
+    if (code === "KeyR" || code === "KeyV") return aim(w, at.key, { tilt: code === "KeyR" ? TILT : -TILT }).ok;
+  }
+  // Z and X lower and raise the stand you look at, or the one under the top you look at.
+  const stand = at.gear === "stand-tripod" ? at : w.items.find((s) => s.gear === "stand-tripod" && Math.hypot(s.x - at.x, s.z - at.z) < 0.05);
+  if (stand && (code === "KeyZ" || code === "KeyX")) {
+    const h = rig(w).stand[stand.key] ?? STAND_MIN;
+    return raise(w, stand.key, h + (code === "KeyX" ? 0.1 : -0.1)).ok;
+  }
+  return false;
 }
 
 export type BarView = {
@@ -78,22 +95,11 @@ export function barView(scene: THREE.Scene, hud: HTMLElement, getWorld: () => Wo
     heatOn: false,
     setHeat(on) { view.heatOn = on; plane.visible = on; },
     key(code) {
-      const w = getWorld(), at = aimed(w);
+      const w = getWorld();
       if (code === "KeyH") return view.setHeat(!view.heatOn), true;
       if (code === "BracketLeft" || code === "BracketRight") return master(w, rig(w).master + (code === "BracketLeft" ? -1 : 1)), true;
       if (code === "Enter") return view.doors(), true;
-      if (!at) return false;
-      if (at.gear === "top-12-powered") {
-        if (code === "KeyQ" || code === "KeyE") return aim(w, at.key, { turn: code === "KeyQ" ? STEP : -STEP }).ok;
-        if (code === "KeyR" || code === "KeyV") return aim(w, at.key, { tilt: code === "KeyR" ? TILT : -TILT }).ok;
-      }
-      // Z and X lower and raise the stand you look at, or the one under the top you look at.
-      const stand = at.gear === "stand-tripod" ? at : w.items.find((s) => s.gear === "stand-tripod" && Math.hypot(s.x - at.x, s.z - at.z) < 0.05);
-      if (stand && (code === "KeyZ" || code === "KeyX")) {
-        const h = rig(w).stand[stand.key] ?? STAND_MIN;
-        return raise(w, stand.key, h + (code === "KeyX" ? 0.1 : -0.1)).ok;
-      }
-      return false;
+      return aimKey(w, code);
     },
     update() {
       const w = getWorld(), sig = signature(w);
