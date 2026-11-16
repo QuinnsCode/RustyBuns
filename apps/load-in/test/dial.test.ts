@@ -31,7 +31,7 @@ test("the dial turns to a stop and nowhere else; the clock reads fixed width", (
   expect([clockText(65), clockText(5.5), clockText(-61)]).toEqual([" 1:05", " 0:05", "-1:01"]);
 });
 
-/** The dive bar set up the same way on any stop: both stands and tops to the stage, the sub between them, the left top
+/** The dive bar set up the same way on any stop: both stands and tops to the stage, the sub against the back between them, the left top
  * toed in, then a long chat with the bar staff (four minutes) before the doors. What it costs depends on the dial. */
 function loadIn(dial: Dial) {
   setDial(dial);
@@ -50,7 +50,7 @@ function loadIn(dial: Dial) {
   carry("stand-r", 1.7, 2.0);
   carry("top-l", -1.7, 1.95);
   carry("top-r", 1.7, 1.95);
-  carry("sub", 0, 2.4);
+  carry("sub", 0, 1.3);
   walkTo(w, -1, 2.4);
   aim(w, "top-l", { turn: (30 * Math.PI) / 180 });
   const work = w.t;

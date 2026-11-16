@@ -51,8 +51,10 @@ export type Gear = {
   amp?: AmpSpec;
   /** Mains draw in watts, idle and at show level. */
   draw?: { idle: number; loud: number };
-  /** A generator's rating. */
-  generator?: { kva: number; powerFactor: number };
+  /** A generator's rating, and its fuel: the tank, what it burns ticking over, and litres more per kWh it makes. */
+  generator?: { kva: number; powerFactor: number; tankL: number; idleLph: number; perKwh: number };
+  /** A fuel can: the litres it holds full. */
+  can?: { litres: number };
 };
 
 const box = (w: number, h: number, d: number) => ({ w, h, d });
@@ -132,7 +134,7 @@ const list: Gear[] = [
     size: box(0.7, 0.6, 0.55),
     kg: 90,
     jacks: { "power-out": 4 },
-    generator: { kva: 7, powerFactor: 0.9 },
+    generator: { kva: 7, powerFactor: 0.9, tankL: 25, idleLph: 0.6, perKwh: 0.35 },
   },
   {
     id: "distro-box",
@@ -146,6 +148,7 @@ const list: Gear[] = [
   { id: "stand-tripod", what: "speaker stand, 1.2 to 2.0 m", size: box(0.9, 1.2, 0.9), kg: 4, jacks: {} },
   { id: "mic-stand", what: "boom mic stand", size: box(0.6, 1.6, 0.6), kg: 3, jacks: {} },
   { id: "guitar", what: "electric guitar", size: box(0.33, 1.0, 0.05), kg: 3.5, jacks: { "line-out": 1 } },
+  { id: "jerry-can-20l", what: "jerry can of fuel", size: box(0.35, 0.47, 0.17), kg: 18, jacks: {}, can: { litres: 20 } },
   // Not road gear: the venue's own back-bar cooler, a load on a wall circuit that is always on.
   { id: "bar-cooler", what: "back-bar drinks cooler", size: box(0.9, 0.9, 0.6), kg: 70, jacks: { "power-in": 1 }, draw: { idle: 450, loud: 450 } },
 ];

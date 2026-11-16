@@ -1,17 +1,22 @@
-//! The circuit amp in Rust: src/circuit/mna.ts (the solver) and src/circuit/rig.ts
-//! (the oversampler, the power stage and the cabinet), step for step, f64 inside,
+//! The circuit amp in Rust: packages/gear/src/circuit/mna.ts (the solver) and rig.ts
+//! (the oversampler), power.ts (the push-pull power stage) and cab.ts (the cabinet's
+//! convolution; its impulse response is made on the TypeScript side), step for step, f64 inside,
 //! so test/circuit.test.ts can hold both to the same output.
 //!
 //! The netlist comes in already numbered (`encodeNetlist` in mna.ts): node names
 //! are the TypeScript side's business, so both sides number nodes the same way.
 //! Layout: `[nodes, input, output, parts]`, then `PART` f64s per part:
-//! `[kind, n0, n1, n2, n3, v0, v1, flag]`, node −1 is ground.
-//!   R: a b . . ohms . noisy   C: a b . . farads   V: a b . . volts
-//!   D: a k . . is n           Opamp: plus minus out hidden rail   Triode: p g k
+//! `[kind, n0, n1, n2, n3, v0, v1, v2, v3, v4, v5, flag]`, node −1 is ground.
+//!   0 R: a b, ohms, flag noisy      1 C: a b, farads       2 V: a b, volts
+//!   3 D: a k, is n                  4 Opamp: plus minus out hidden, rail   5 Triode: p g k
+//!   6 L: a b, henries wire-ohms     7 BJT: c b e, is bf br leak, flag pnp
+//!   8 JFET: d g s, idss vp lambda, flag p-channel    9 Pot: a w b, ohms at taper
+//!   10 LDR: a b la lk, dark lit rise fall lamp       11 OTA: plus minus out abc
 
 use std::f64::consts::{PI, SQRT_2};
 
-pub const PART: usize = 8;
+pub const PART: usize = 12;
+const FLAG: usize = 11;
 const VT: f64 = 0.02585;
 const GMIN: f64 = 1e-12;
 const OPAMP_A0: f64 = 2e5;
@@ -26,6 +31,18 @@ const GG: f64 = 6.062e-4;
 const CG: f64 = 13.9;
 const XI: f64 = 1.354;
 const IG0: f64 = 3.917e-8;
+const JUNCTION_IS: f64 = 1e-14;
+const LED_IS: f64 = 1e-18;
+const LED_N: f64 = 2.0;
+const LED_FULL: f64 = 0.01;
+const LAMP_FULL: f64 = 0.04;
+const LDR_GAMMA: f64 = 0.75;
+const POT_GLIDE: f64 = 0.01;
+
+/// A pot's travel through its taper (0 linear, 1 log, 2 reverse log): the share between `a` and the wiper.
+fn taper(kind: f64, at: f64) -> f64 {
+    if kind == 1.0 { (81f64.powf(at) - 1.0) / 80.0 } else if kind == 2.0 { 1.0 - (81f64.powf(1.0 - at) - 1.0) / 80.0 } else { at }
+}
 
 // The tube model's curves from tables (#4599). A Newton step is one long chain of
 // dependent math (exp, log1p, log, exp for the plate, the same again for the grid), and
@@ -149,8 +166,20 @@ fn solve(a: &mut [f64], b: &mut [f64], n: usize, m: usize) -> bool {
 
 struct Cap { a: usize, b: usize, g: f64, v: f64, i: f64, ieq: f64 }
 struct Hiss { a: usize, b: usize, sigma: f64 }
-struct Diode { port: usize, is: f64, nvt: f64, vcrit: f64 }
+struct Diode { port: usize, is: f64, nvt: f64 }
+struct Junction { port: usize, nvt: f64, vcrit: f64 }
 struct Triode { pk: usize, gk: usize }
+struct Inductor { a: usize, b: usize, gl: f64, rw: f64, g: f64, v: f64, i: f64, ieq: f64 }
+struct Bjt { be: usize, bc: usize, is: f64, bf: f64, br: f64, leak: f64 }
+struct Jfet { ds: usize, gs: usize, beta: f64, vp: f64, lambda: f64 }
+struct Ota { vd: usize, abc: usize, out: usize }
+struct VRes { port: usize, g0: f64, g: f64 }
+struct Pot { r1: usize, r2: usize, ohms: f64, taper: f64, at: f64, to: f64 }
+struct Ldr { r: usize, led: Option<usize>, la: usize, lk: usize, lamp: f64, dark: f64, lit: f64, up: f64, down: f64, light: f64 }
+
+/// The parts with ports, for `currents` (split from `Circuit` so the solver's buffers can be borrowed beside them).
+#[derive(Default)]
+struct Ports { diodes: Vec<Diode>, triodes: Vec<Triode>, bjts: Vec<Bjt>, jfets: Vec<Jfet>, otas: Vec<Ota>, vres: Vec<VRes> }
 
 pub struct Circuit {
     size: usize,
@@ -169,8 +198,13 @@ pub struct Circuit {
     pa: Vec<usize>,
     pb: Vec<usize>,
     poff: Vec<f64>,
-    diodes: Vec<Diode>,
-    triodes: Vec<Triode>,
+    ports: Ports,
+    junctions: Vec<Junction>,
+    inds: Vec<Inductor>,
+    pots: Vec<Pot>,
+    pot_glide: f64,
+    ldrs: Vec<Ldr>,
+    i_now: Vec<f64>,
     k: usize,
     ainv: Vec<f64>,
     w: Vec<f64>,
@@ -196,7 +230,7 @@ impl Circuit {
         let mut branches = 1;
         for i in 0..parts {
             let k = part(i)[0] as u32;
-            if k > 5 { return None; }
+            if k > 11 { return None; }
             if k == 2 || k == 4 { branches += 1; }
         }
         let n = node_count + branches;
@@ -213,11 +247,13 @@ impl Circuit {
         }
         for i in 0..node_count { both(&mut tr, &mut dc, m, i, i, GMIN); }
         let mut row = node_count;
+        let t = 1.0 / sample_rate;
         let mut c = Circuit {
             size: n, m, misses: 0, iterations: 0, noise: 0.0, seed: 0x9e3779b9,
             base_dc: Vec::new(), x: vec![0.0; m], out: desc[2] as usize, in_row: 0,
             supplies: Vec::new(), caps: Vec::new(), hiss: Vec::new(),
-            pa: Vec::new(), pb: Vec::new(), poff: Vec::new(), diodes: Vec::new(), triodes: Vec::new(),
+            pa: Vec::new(), pb: Vec::new(), poff: Vec::new(), ports: Ports::default(), junctions: Vec::new(),
+            inds: Vec::new(), pots: Vec::new(), pot_glide: 1.0 - (-t / POT_GLIDE).exp(), ldrs: Vec::new(), i_now: Vec::new(),
             k: 0, ainv: Vec::new(), w: Vec::new(), h: Vec::new(), z: vec![0.0; m],
             v: Vec::new(), v_new: Vec::new(), ip: Vec::new(), j: Vec::new(), f: Vec::new(), jf: Vec::new(), p: Vec::new(),
         };
@@ -228,21 +264,32 @@ impl Circuit {
             j
         }
         fn port(c: &mut Circuit, a: usize, b: usize, off: f64) -> usize { c.pa.push(a); c.pb.push(b); c.poff.push(off); c.pa.len() - 1 }
-        fn diode(c: &mut Circuit, a: usize, k: usize, off: f64, is: f64, nf: f64) {
-            let nvt = nf * VT;
-            let port = port(c, a, k, off);
-            c.diodes.push(Diode { port, is, nvt, vcrit: nvt * (nvt / (SQRT_2 * is)).ln() });
+        fn junction(c: &mut Circuit, port: usize, is: f64, nvt: f64) {
+            c.junctions.push(Junction { port, nvt, vcrit: nvt * (nvt / (SQRT_2 * is)).ln() });
         }
-        let t = 1.0 / sample_rate;
+        fn diode(c: &mut Circuit, a: usize, k: usize, off: f64, is: f64, nf: f64) -> usize {
+            let nvt = nf * VT;
+            let at = port(c, a, k, off);
+            c.ports.diodes.push(Diode { port: at, is, nvt });
+            junction(c, at, is, nvt);
+            at
+        }
+        fn moving(c: &mut Circuit, tr: &mut [f64], dc: &mut [f64], m: usize, a: usize, b: usize, g0: f64) -> usize {
+            conductance(tr, m, a, b, g0); conductance(dc, m, a, b, g0);
+            let at = port(c, a, b, 0.0);
+            c.ports.vres.push(VRes { port: at, g0, g: g0 });
+            c.ports.vres.len() - 1
+        }
         c.in_row = source(&mut tr, &mut dc, m, &mut row, desc[1] as usize, n);
         for i in 0..parts {
             let p = part(i);
             let kind = p[0] as u32;
             let (a, b) = (g(p[1])?, g(p[2])?);
+            let flag = p[FLAG] != 0.0;
             match kind {
                 0 => {
                     conductance(&mut tr, m, a, b, 1.0 / p[5]); conductance(&mut dc, m, a, b, 1.0 / p[5]);
-                    if p[7] != 0.0 { c.hiss.push(Hiss { a, b, sigma: (((4.0 * 1.380649e-23 * 300.0) / p[5]) * (sample_rate / 2.0)).sqrt() }); }
+                    if flag { c.hiss.push(Hiss { a, b, sigma: (((4.0 * 1.380649e-23 * 300.0) / p[5]) * (sample_rate / 2.0)).sqrt() }); }
                 }
                 1 => {
                     let gc = (2.0 * p[5]) / t;
@@ -250,7 +297,7 @@ impl Circuit {
                     c.caps.push(Cap { a, b, g: gc, v: 0.0, i: 0.0, ieq: 0.0 });
                 }
                 2 => { let r = source(&mut tr, &mut dc, m, &mut row, a, b); c.supplies.push((r, p[5])); }
-                3 => diode(&mut c, a, b, 0.0, p[5], p[6]),
+                3 => { diode(&mut c, a, b, 0.0, p[5], p[6]); }
                 4 => {
                     let (plus, minus, out, hid) = (a, b, g(p[3])?, g(p[4])?);
                     let gm = OPAMP_A0 / OPAMP_R0;
@@ -263,11 +310,54 @@ impl Circuit {
                     let j = row; row += 1;
                     both(&mut tr, &mut dc, m, out, j, 1.0); both(&mut tr, &mut dc, m, j, out, 1.0); both(&mut tr, &mut dc, m, j, hid, -1.0);
                 }
-                _ => {
+                5 => {
                     let k = g(p[3])?;
                     let pk = port(&mut c, a, k, 0.0);
                     let gk = port(&mut c, b, k, 0.0);
-                    c.triodes.push(Triode { pk, gk });
+                    c.ports.triodes.push(Triode { pk, gk });
+                }
+                6 => {
+                    let (gl, rw) = (t / (2.0 * p[5]), p[6].max(1e-3));
+                    let gi = gl / (1.0 + rw * gl);
+                    conductance(&mut tr, m, a, b, gi); conductance(&mut dc, m, a, b, 1.0 / rw);
+                    c.inds.push(Inductor { a, b, gl, rw, g: gi, v: 0.0, i: 0.0, ieq: 0.0 });
+                }
+                7 => {
+                    let (col, base, em) = (a, b, g(p[3])?);
+                    let be = if flag { port(&mut c, em, base, 0.0) } else { port(&mut c, base, em, 0.0) };
+                    let bc = if flag { port(&mut c, col, base, 0.0) } else { port(&mut c, base, col, 0.0) };
+                    junction(&mut c, be, p[5], VT); junction(&mut c, bc, p[5], VT);
+                    c.ports.bjts.push(Bjt { be, bc, is: p[5], bf: p[6], br: p[7], leak: p[8] });
+                }
+                8 => {
+                    let (dr, gate, src) = (a, b, g(p[3])?);
+                    let gs = if flag { diode(&mut c, src, gate, 0.0, JUNCTION_IS, 1.0) } else { diode(&mut c, gate, src, 0.0, JUNCTION_IS, 1.0) };
+                    let ds = if flag { port(&mut c, src, dr, 0.0) } else { port(&mut c, dr, src, 0.0) };
+                    c.ports.jfets.push(Jfet { ds, gs, beta: p[5] / (p[6] * p[6]), vp: p[6], lambda: p[7] });
+                }
+                9 => {
+                    let (ohms, at, tp) = (p[5], p[6], p[7]);
+                    let w = taper(tp, at);
+                    let r1 = moving(&mut c, &mut tr, &mut dc, m, a, b, 1.0 / (ohms * w).max(1.0));
+                    let r2 = moving(&mut c, &mut tr, &mut dc, m, b, g(p[3])?, 1.0 / (ohms * (1.0 - w)).max(1.0));
+                    c.pots.push(Pot { r1, r2, ohms, taper: tp, at, to: at });
+                }
+                10 => {
+                    let (la, lk) = (g(p[3])?, g(p[4])?);
+                    let (dark, lit, rise, fall, lamp) = (p[5], p[6], p[7], p[8], p[9]);
+                    let led = if lamp > 0.0 {
+                        conductance(&mut tr, m, la, lk, 1.0 / lamp); conductance(&mut dc, m, la, lk, 1.0 / lamp);
+                        None
+                    } else { Some(diode(&mut c, la, lk, 0.0, LED_IS, LED_N)) };
+                    let r = moving(&mut c, &mut tr, &mut dc, m, a, b, 1.0 / (dark * lit).sqrt());
+                    c.ldrs.push(Ldr { r, led, la, lk, lamp, dark, lit, up: 1.0 - (-t / rise).exp(), down: 1.0 - (-t / fall).exp(), light: 0.0 });
+                }
+                _ => {
+                    let (out, abc) = (g(p[3])?, g(p[4])?);
+                    let vd = port(&mut c, a, b, 0.0);
+                    let abc = diode(&mut c, abc, n, 0.0, JUNCTION_IS, 1.0);
+                    let out = port(&mut c, n, out, 0.0);
+                    c.ports.otas.push(Ota { vd, abc, out });
                 }
             }
         }
@@ -290,7 +380,7 @@ impl Circuit {
         for j in 0..kk { for k in 0..kk { h[j * kk + k] = w[k * m + c.pa[j]] - w[k * m + c.pb[j]]; } }
         c.ainv = ainv; c.w = w; c.h = h; c.base_dc = dc;
         c.v = vec![0.0; kk]; c.v_new = vec![0.0; kk]; c.ip = vec![0.0; kk]; c.p = vec![0.0; kk];
-        c.j = vec![0.0; kk * kk]; c.f = vec![0.0; kk]; c.jf = vec![0.0; kk * kk];
+        c.j = vec![0.0; kk * kk]; c.f = vec![0.0; kk]; c.jf = vec![0.0; kk * kk]; c.i_now = vec![0.0; kk];
         Some(c)
     }
 
@@ -304,15 +394,15 @@ impl Circuit {
         (-2.0 * u1.ln()).sqrt() * (2.0 * PI * u2).cos()
     }
 
-    fn currents(diodes: &[Diode], triodes: &[Triode], poff: &[f64], kk: usize, v: &[f64], i: &mut [f64], jm: &mut [f64]) {
-        for d in diodes {
+    fn currents(ps: &Ports, poff: &[f64], kk: usize, v: &[f64], i: &mut [f64], jm: &mut [f64]) {
+        for d in &ps.diodes {
             let vd = v[d.port] - poff[d.port];
             let e = (vd / d.nvt).min(80.0).exp();
             i[d.port] = d.is * (e - 1.0);
             jm[d.port * kk + d.port] = (d.is * e) / d.nvt + GMIN;
         }
         let tb = tables();
-        for t in triodes {
+        for t in &ps.triodes {
             let (vpk, vgk) = (v[t.pk], v[t.gk]);
             let s = (KVB + vpk * vpk).sqrt();
             let u = KP * (1.0 / MU + vgk / s);
@@ -339,12 +429,85 @@ impl Circuit {
                 jm[t.gk * kk + t.gk] = GG * XI * pw * sgc + GMIN;
             }
         }
+        for q in &ps.bjts {
+            let (vbe, vbc) = (v[q.be], v[q.bc]);
+            let ef = (vbe / VT).min(80.0).exp();
+            let er = (vbc / VT).min(80.0).exp();
+            let (gf, gr, th) = ((q.is * ef) / VT, (q.is * er) / VT, (vbc / VT).tanh());
+            i[q.be] = q.is * (ef - er) + (q.is / q.bf) * (ef - 1.0);
+            jm[q.be * kk + q.be] = gf * (1.0 + 1.0 / q.bf) + GMIN;
+            jm[q.be * kk + q.bc] = -gr;
+            i[q.bc] = (q.is / q.br) * (er - 1.0) - q.is * (ef - er) + q.leak * th;
+            jm[q.bc * kk + q.be] = -gf;
+            jm[q.bc * kk + q.bc] = gr * (1.0 + 1.0 / q.br) + (q.leak * (1.0 - th * th)) / VT + GMIN;
+        }
+        for f in &ps.jfets {
+            let (vds, vgs) = (v[f.ds], v[f.gs]);
+            let rev = vds < 0.0;
+            let og = (if rev { vgs - vds } else { vgs }) + f.vp;
+            let od = if rev { -vds } else { vds };
+            let (mut id, mut dg, mut dd) = (0.0, 0.0, 0.0);
+            if og > 0.0 {
+                let l = 1.0 + f.lambda * od;
+                if od < og {
+                    let q = 2.0 * og * od - od * od;
+                    id = f.beta * q * l; dg = 2.0 * f.beta * od * l; dd = 2.0 * f.beta * (og - od) * l + f.beta * q * f.lambda;
+                } else {
+                    id = f.beta * og * og * l; dg = 2.0 * f.beta * og * l; dd = f.beta * og * og * f.lambda;
+                }
+            }
+            i[f.ds] = if rev { -id } else { id };
+            jm[f.ds * kk + f.ds] = (if rev { dg + dd } else { dd }) + GMIN;
+            jm[f.ds * kk + f.gs] = if rev { -dg } else { dg };
+        }
+        for o in &ps.otas {
+            let ib = i[o.abc];
+            let iabc = if ib > 0.0 { ib } else { 0.0 };
+            let th = (v[o.vd] / (2.0 * VT)).tanh();
+            i[o.vd] = 0.0;
+            i[o.out] = iabc * th;
+            jm[o.out * kk + o.vd] = (iabc * (1.0 - th * th)) / (2.0 * VT);
+            jm[o.out * kk + o.abc] = if ib > 0.0 { jm[o.abc * kk + o.abc] * th } else { 0.0 };
+        }
+        for r in &ps.vres {
+            let dg = r.g - r.g0;
+            i[r.port] = dg * v[r.port];
+            jm[r.port * kk + r.port] = dg;
+        }
     }
 
-    fn limit(diodes: &[Diode], poff: &[f64], v: &mut [f64], old: &[f64]) {
-        for d in diodes {
+    fn limit(junctions: &[Junction], poff: &[f64], v: &mut [f64], old: &[f64]) {
+        for d in junctions {
             let off = poff[d.port];
             v[d.port] = pnjlim(v[d.port] - off, old[d.port] - off, d.nvt, d.vcrit) + off;
+        }
+    }
+
+    /// Turns pot `i` (in netlist order) to `at`, 0 to 1 (mna.ts `setPot`): it glides there over about 10 ms.
+    pub fn set_pot(&mut self, i: usize, at: f64) {
+        if let Some(p) = self.pots.get_mut(i) { p.to = at.clamp(0.0, 1.0); }
+    }
+
+    fn turn_pots(&mut self, share: f64) {
+        for p in &mut self.pots {
+            if p.at == p.to { continue; }
+            p.at += (p.to - p.at) * share;
+            if (p.to - p.at).abs() < 1e-6 { p.at = p.to; }
+            let t = taper(p.taper, p.at);
+            self.ports.vres[p.r1].g = 1.0 / (p.ohms * t).max(1.0);
+            self.ports.vres[p.r2].g = 1.0 / (p.ohms * (1.0 - t)).max(1.0);
+        }
+    }
+
+    /// Each LDR's light `share` of the way to what its source gives now (None: at its own pace up or down).
+    fn light(&mut self, share: Option<f64>) {
+        for d in &mut self.ldrs {
+            let target = match d.led {
+                Some(k) => self.i_now[k].max(0.0) / LED_FULL,
+                None => { let a = (self.x[d.la] - self.x[d.lk]) / d.lamp / LAMP_FULL; a * a }
+            };
+            d.light += (target - d.light) * share.unwrap_or(if target > d.light { d.up } else { d.down });
+            self.ports.vres[d.r].g = 1.0 / d.dark + d.light.powf(LDR_GAMMA) / d.lit;
         }
     }
 
@@ -355,16 +518,19 @@ impl Circuit {
         let mut b = vec![0.0; m];
         let mut old = vec![0.0; kk];
         self.x.fill(0.0); self.v.fill(0.0);
-        for s in 1..=10 {
+        self.turn_pots(1.0);
+        for d in &mut self.ldrs { d.light = 0.0; self.ports.vres[d.r].g = 1.0 / d.dark; }
+        let passes = if self.ldrs.is_empty() { 10 } else { 11 };
+        for s in 1..=passes {
             for it in 0..200 {
                 a.copy_from_slice(&self.base_dc); b.fill(0.0);
                 b[self.in_row] = vin;
-                for &(row, volts) in &self.supplies { b[row] = (volts * s as f64) / 10.0; }
+                for &(row, volts) in &self.supplies { b[row] = (volts * s.min(10) as f64) / 10.0; }
                 old.copy_from_slice(&self.v);
                 for k in 0..kk { self.v[k] = self.x[self.pa[k]] - self.x[self.pb[k]]; }
-                if it > 0 { Self::limit(&self.diodes, &self.poff, &mut self.v, &old); }
+                if it > 0 { Self::limit(&self.junctions, &self.poff, &mut self.v, &old); }
                 self.j.fill(0.0);
-                Self::currents(&self.diodes, &self.triodes, &self.poff, kk, &self.v, &mut self.ip, &mut self.j);
+                Self::currents(&self.ports, &self.poff, kk, &self.v, &mut self.ip, &mut self.j);
                 let (pa, pb) = (&self.pa, &self.pb);
                 for j in 0..kk {
                     let mut rest = self.ip[j];
@@ -385,9 +551,16 @@ impl Circuit {
                 self.x[n] = 0.0;
                 if done { break; }
             }
+            if !self.ldrs.is_empty() {
+                for k in 0..kk { self.v[k] = self.x[self.pa[k]] - self.x[self.pb[k]]; }
+                self.j.fill(0.0);
+                Self::currents(&self.ports, &self.poff, kk, &self.v, &mut self.i_now, &mut self.j);
+                self.light(Some(1.0));
+            }
         }
         for k in 0..kk { self.v[k] = self.x[self.pa[k]] - self.x[self.pb[k]]; }
         for c in &mut self.caps { c.v = self.x[c.a] - self.x[c.b]; c.i = 0.0; }
+        for l in &mut self.inds { l.v = self.x[l.a] - self.x[l.b]; l.i = l.v / l.rw; }
         Some(self.x[self.out])
     }
 
@@ -401,12 +574,18 @@ impl Circuit {
     pub fn step(&mut self, vin: f64) -> f64 {
         let (m, n, kk) = (self.m, self.size, self.k);
         self.z.fill(0.0);
+        if !self.pots.is_empty() { self.turn_pots(self.pot_glide); }
         Self::add_col(&mut self.z, &self.ainv, m, n, self.in_row, vin);
         for &(row, volts) in &self.supplies { Self::add_col(&mut self.z, &self.ainv, m, n, row, volts); }
         for c in &mut self.caps {
             c.ieq = c.g * c.v + c.i;
             if c.a < n { Self::add_col(&mut self.z, &self.ainv, m, n, c.a, c.ieq); }
             if c.b < n { Self::add_col(&mut self.z, &self.ainv, m, n, c.b, -c.ieq); }
+        }
+        for l in &mut self.inds {
+            l.ieq = (l.i + l.gl * (l.v - l.rw * l.i)) / (1.0 + l.rw * l.gl);
+            if l.a < n { Self::add_col(&mut self.z, &self.ainv, m, n, l.a, -l.ieq); }
+            if l.b < n { Self::add_col(&mut self.z, &self.ainv, m, n, l.b, l.ieq); }
         }
         if self.noise > 0.0 {
             for h in 0..self.hiss.len() {
@@ -423,7 +602,7 @@ impl Circuit {
             let mut converged = false;
             while it < 50 && !converged {
                 self.j.fill(0.0);
-                Self::currents(&self.diodes, &self.triodes, &self.poff, kk, &self.v, &mut self.ip, &mut self.j);
+                Self::currents(&self.ports, &self.poff, kk, &self.v, &mut self.ip, &mut self.j);
                 for j in 0..kk {
                     let mut f = self.v[j] - self.p[j];
                     for k in 0..kk {
@@ -440,7 +619,7 @@ impl Circuit {
                     self.v_new[k] = self.v[k] + self.f[k];
                     if self.f[k].abs() > 1e-7 + 1e-7 * self.v[k].abs() { converged = false; }
                 }
-                Self::limit(&self.diodes, &self.poff, &mut self.v_new, &self.v);
+                Self::limit(&self.junctions, &self.poff, &mut self.v_new, &self.v);
                 self.v.copy_from_slice(&self.v_new);
                 it += 1;
             }
@@ -448,12 +627,13 @@ impl Circuit {
             if !converged {
                 self.misses += 1;
                 self.j.fill(0.0);
-                Self::currents(&self.diodes, &self.triodes, &self.poff, kk, &self.v, &mut self.ip, &mut self.j);
+                Self::currents(&self.ports, &self.poff, kk, &self.v, &mut self.ip, &mut self.j);
                 self.f.fill(0.0);
             }
             for k in 0..kk {
                 let mut ik = self.ip[k];
                 for l in 0..kk { ik += self.j[k * kk + l] * self.f[l]; }
+                self.i_now[k] = ik;
                 let o = k * m;
                 for r in 0..n { self.x[r] -= self.w[o + r] * ik; }
             }
@@ -461,33 +641,24 @@ impl Circuit {
             self.iterations += 1;
         }
         for c in &mut self.caps { c.v = self.x[c.a] - self.x[c.b]; c.i = c.g * c.v - c.ieq; }
+        for l in &mut self.inds { l.v = self.x[l.a] - self.x[l.b]; l.i = l.g * l.v + l.ieq; }
+        if !self.ldrs.is_empty() { self.light(None); }
         self.x[self.out]
     }
 }
 
-/// RBJ cookbook biquad, transposed direct form II (rig.ts `Biquad`).
+/// RBJ cookbook low-pass biquad, transposed direct form II (filters.ts `Biquad`; the oversampler only needs the low-pass).
 #[derive(Clone, Copy)]
 struct Biquad { b0: f64, b1: f64, b2: f64, a1: f64, a2: f64, z1: f64, z2: f64 }
 
-#[derive(Clone, Copy)]
-enum Kind { Lp, Hp, Peak }
-
 impl Biquad {
-    fn make(kind: Kind, hz: f64, q: f64, sr: f64, db: f64) -> Biquad {
+    fn lp(hz: f64, q: f64, sr: f64) -> Biquad {
         let w = (2.0 * PI * hz) / sr;
         let cw = w.cos();
         let al = w.sin() / (2.0 * q);
-        let new = |b0, b1, b2, a1, a2| Biquad { b0, b1, b2, a1, a2, z1: 0.0, z2: 0.0 };
-        if let Kind::Peak = kind {
-            let a = 10f64.powf(db / 40.0);
-            let a0 = 1.0 + al / a;
-            return new((1.0 + al * a) / a0, (-2.0 * cw) / a0, (1.0 - al * a) / a0, (-2.0 * cw) / a0, (1.0 - al / a) / a0);
-        }
         let a0 = 1.0 + al;
-        let lp = matches!(kind, Kind::Lp);
-        let k = if lp { (1.0 - cw) / 2.0 } else { (1.0 + cw) / 2.0 };
-        let s = if lp { 1.0 } else { -1.0 };
-        new(k / a0, (s * 2.0 * k) / a0, k / a0, (-2.0 * cw) / a0, (1.0 - al) / a0)
+        let k = (1.0 - cw) / 2.0;
+        Biquad { b0: k / a0, b1: (2.0 * k) / a0, b2: k / a0, a1: (-2.0 * cw) / a0, a2: (1.0 - al) / a0, z1: 0.0, z2: 0.0 }
     }
     #[inline]
     fn run(&mut self, x: f64) -> f64 {
@@ -502,12 +673,100 @@ impl Biquad {
 fn chain(fs: &mut [Biquad], mut x: f64) -> f64 { for f in fs { x = f.run(x); } x }
 
 fn butter8(hz: f64, sr: f64) -> Vec<Biquad> {
-    [0.5098, 0.6013, 0.9, 2.5629].iter().map(|&q| Biquad::make(Kind::Lp, hz, q, sr, 0.0)).collect()
+    [0.5098, 0.6013, 0.9, 2.5629].iter().map(|&q| Biquad::lp(hz, q, sr)).collect()
 }
 
-pub const POWER_VOLTS: f64 = 40.0;
+// The push-pull power stage (power.ts `PushPull`, constant for constant).
+const B_PLUS: f64 = 450.0;
+const KNEE: f64 = 50.0;
+const BIAS: f64 = -36.0;
+const CUTOFF: f64 = -45.0;
+const WIDTH: f64 = 3.0;
+const K_PLATE: f64 = 6.6e-3;
+const ZAA: f64 = 4300.0;
+const TAP: f64 = 8.0;
+const FLYBACK_AMPS: f64 = 0.1;
+const GRID: f64 = 0.9;
+
+#[inline]
+fn softplus_exact(x: f64) -> f64 { if x > 30.0 { x } else { x.exp().ln_1p() } }
+#[inline]
+fn plate(g: f64) -> f64 {
+    let gg = g - softplus_exact(g);
+    K_PLATE * softplus_exact((gg - CUTOFF) / WIDTH).powf(1.5)
+}
+
+/// Output tubes in push-pull, the supply that sags under them, the output transformer and the speaker on it.
+pub struct PushPull {
+    pairs: f64, sag: f64, load: f64, draw: f64, idle: f64,
+    attack: f64, release: f64, hp_x: f64, hp_y: f64, lp: f64, hp_a: f64, lp_a: f64,
+    pub supply: f64,
+    /// 0 fine, 1 played through an open speaker jack.
+    pub fault: u32,
+}
+
+impl PushPull {
+    pub fn new(pairs: f64, sag: f64, load: f64, sample_rate: f64) -> PushPull {
+        let idle = plate(BIAS);
+        PushPull {
+            pairs, sag, load, draw: 2.0 * idle * pairs, idle,
+            attack: 1.0 - (-1.0 / (0.015 * sample_rate)).exp(), release: 1.0 - (-1.0 / (0.12 * sample_rate)).exp(),
+            hp_x: 0.0, hp_y: 0.0, lp: 0.0,
+            hp_a: (-2.0 * PI * 35.0 / sample_rate).exp(), lp_a: (-2.0 * PI * 9000.0 / sample_rate).exp(),
+            supply: B_PLUS, fault: 0,
+        }
+    }
+    pub fn set_load(&mut self, ohms: f64) { self.load = ohms; }
+
+    #[inline]
+    pub fn step(&mut self, x: f64, drive: f64) -> f64 {
+        if self.fault != 0 { return 0.0; }
+        let d = x * drive * GRID;
+        let (a, b) = (plate(BIAS + d), plate(BIAS - d));
+        let n = self.pairs;
+        let now = (a + b) * n;
+        self.draw += (now - self.draw) * (if now > self.draw { self.attack } else { self.release });
+        let supply = B_PLUS - self.sag * (self.draw - 2.0 * self.idle * n);
+        self.supply = supply;
+        let swing = (a - b) * n;
+        if self.load <= 0.0 {
+            if swing.abs() > FLYBACK_AMPS { self.fault = 1; }
+            return 0.0;
+        }
+        let raw = (swing * (ZAA / n) * (self.load / TAP)) / 2.0;
+        let ceiling = 2.0 * (supply - KNEE).max(1.0);
+        let vp = ceiling * (raw / ceiling).tanh();
+        let hp = self.hp_a * (self.hp_y + vp - self.hp_x);
+        self.hp_x = vp; self.hp_y = hp;
+        self.lp = hp + self.lp_a * (self.lp - hp);
+        self.lp / (ZAA / n / TAP).sqrt()
+    }
+}
+
+/// Direct convolution with the history kept twice over (cab.ts `Convolver`).
+pub struct Convolver { ir: Vec<f64>, buf: Vec<f64>, at: usize }
+
+impl Convolver {
+    pub fn new(ir: &[f64]) -> Convolver { Convolver { ir: ir.to_vec(), buf: vec![0.0; 2 * ir.len()], at: 0 } }
+    pub fn set(&mut self, ir: &[f64]) {
+        if ir.len() != self.ir.len() { self.buf = vec![0.0; 2 * ir.len()]; self.at = 0; }
+        self.ir = ir.to_vec();
+    }
+    #[inline]
+    pub fn run(&mut self, x: f64) -> f64 {
+        let n = self.ir.len();
+        if n == 0 { return x; }
+        self.at = (if self.at == 0 { n } else { self.at }) - 1;
+        let at = self.at;
+        self.buf[at] = x; self.buf[at + n] = x;
+        let mut y = 0.0;
+        for (k, h) in self.ir.iter().zip(&self.buf[at..at + n]) { y += k * h; }
+        y
+    }
+}
 
 /// Circuits in a row, oversampled, then the power stage and the cabinet (rig.ts `Rig`).
+/// The power stage starts as power.ts `DEFAULT_POWER` until `set_output`; no cab until `set_cab`.
 pub struct Rig {
     circuits: Vec<Circuit>,
     gains: Vec<f64>,
@@ -515,7 +774,8 @@ pub struct Rig {
     peaks: Vec<f64>,
     up: Vec<Biquad>,
     down: Vec<Biquad>,
-    cab: Vec<Biquad>,
+    amp: PushPull,
+    cab: Option<Convolver>,
     input_volts: f64,
     power: f64,
     noise: f64,
@@ -525,18 +785,12 @@ pub struct Rig {
 }
 
 impl Rig {
-    pub fn new(sample_rate: f64, oversample: usize, input_volts: f64, power: f64, cab: bool, noise: f64) -> Rig {
+    pub fn new(sample_rate: f64, oversample: usize, input_volts: f64, power: f64, noise: f64) -> Rig {
         let hi = sample_rate * oversample as f64;
-        let cab = if cab {
-            vec![
-                Biquad::make(Kind::Hp, 75.0, 0.7, sample_rate, 0.0), Biquad::make(Kind::Peak, 120.0, 1.0, sample_rate, 4.0),
-                Biquad::make(Kind::Peak, 1800.0, 1.2, sample_rate, -3.0), Biquad::make(Kind::Peak, 3000.0, 1.2, sample_rate, 3.0),
-                Biquad::make(Kind::Lp, 5000.0, 0.54, sample_rate, 0.0), Biquad::make(Kind::Lp, 5000.0, 1.31, sample_rate, 0.0),
-            ]
-        } else { Vec::new() };
         Rig {
             circuits: Vec::new(), gains: Vec::new(), rest: Vec::new(), peaks: Vec::new(),
-            up: butter8(0.45 * sample_rate, hi), down: butter8(0.45 * sample_rate, hi), cab,
+            up: butter8(0.45 * sample_rate, hi), down: butter8(0.45 * sample_rate, hi),
+            amp: PushPull::new(1.0, 120.0, 8.0, hi), cab: None,
             input_volts, power, noise, steps: 0, sample_rate, oversample,
         }
     }
@@ -566,8 +820,25 @@ impl Rig {
     }
 
     pub fn set_gain(&mut self, i: usize, g: f64) { if let Some(x) = self.gains.get_mut(i) { *x = g; } }
+    /// Turns pot `pot` (in netlist order) of link `i` to `at`, 0 to 1.
+    pub fn set_pot(&mut self, i: usize, pot: usize, at: f64) { if let Some(c) = self.circuits.get_mut(i) { c.set_pot(pot, at); } }
     pub fn set_power(&mut self, p: f64) { self.power = p; }
     pub fn set_noise(&mut self, n: f64) { self.noise = n; for c in &mut self.circuits { c.noise = n; } }
+    /// The power stage's parts, fresh (rig.ts builds it from `RigSpec.output` the same way).
+    pub fn set_output(&mut self, pairs: f64, sag: f64, load: f64) {
+        self.amp = PushPull::new(pairs, sag, load, self.sample_rate * self.oversample as f64);
+    }
+    pub fn set_load(&mut self, ohms: f64) { self.amp.set_load(ohms); }
+    /// The cabinet's impulse response at the rig's sample rate; empty for no cab.
+    pub fn set_cab(&mut self, ir: &[f64]) {
+        match (&mut self.cab, ir.is_empty()) {
+            (_, true) => self.cab = None,
+            (Some(c), false) => c.set(ir),
+            (None, false) => self.cab = Some(Convolver::new(ir)),
+        }
+    }
+    pub fn fault(&self) -> u32 { self.amp.fault }
+    pub fn supply(&self) -> f64 { self.amp.supply }
 
     /// Mono, in place: full scale ±1 in, volts at the speaker out (each sample is read before it is written).
     pub fn process(&mut self, io: &mut [f32]) {
@@ -586,10 +857,10 @@ impl Rig {
                     if swing > self.peaks[i] { self.peaks[i] = swing; }
                 }
                 x -= self.rest[last];
-                if self.power > 0.0 { x = ((x * self.power) / POWER_VOLTS).tanh() * POWER_VOLTS; }
+                if self.power > 0.0 { x = self.amp.step(x, self.power); }
                 acc = chain(&mut self.down, x);
             }
-            io[s] = (if self.cab.is_empty() { acc } else { chain(&mut self.cab, acc) }) as f32;
+            io[s] = (match &mut self.cab { Some(c) => c.run(acc), None => acc }) as f32;
         }
         self.steps += (n * os * self.circuits.len()) as u64;
     }
@@ -608,7 +879,7 @@ impl Rig {
 #[cfg(test)]
 mod tests {
     use super::*;
-    fn part(kind: f64, n: [f64; 4], v0: f64, v1: f64, flag: f64) -> [f64; PART] { [kind, n[0], n[1], n[2], n[3], v0, v1, flag] }
+    fn part(kind: f64, n: [f64; 4], v0: f64, v1: f64, flag: f64) -> [f64; PART] { [kind, n[0], n[1], n[2], n[3], v0, v1, 0.0, 0.0, 0.0, 0.0, flag] }
 
     #[test]
     fn a_divider_halves_and_a_bad_netlist_is_refused() {
