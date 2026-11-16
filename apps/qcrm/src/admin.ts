@@ -4,8 +4,8 @@
 //   POST /api/admin/orgs/:org/members {email, role?}     add an account to any org, any role but super_admin
 
 import type { User } from "./auth.ts";
-import { error, json, readBody, type Env } from "./env.ts";
-import { addMember, orgRow, superAdmin } from "./orgs.ts";
+import { error, json, need, type Env } from "./env.ts";
+import { addMember, NewMember, orgRow, superAdmin } from "./orgs.ts";
 
 export async function adminRoutes(req: Request, env: Env, user: User, p: string[]): Promise<Response | null> {
   if (p[0] !== "orgs") return null;
@@ -16,8 +16,8 @@ export async function adminRoutes(req: Request, env: Env, user: User, p: string[
   }
   if (p[1] && p[2] === "members" && !p[3] && req.method === "POST") {
     if (!(await orgRow(env, p[1]))) return error(404, "no such org");
-    const b = await readBody(req);
-    return addMember(env, p[1], user, "super_admin", b?.email, b?.role);
+    const b = await need(req, NewMember);
+    return b instanceof Response ? b : addMember(env, p[1], user, "super_admin", b);
   }
   return null;
 }

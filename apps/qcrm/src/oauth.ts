@@ -22,6 +22,7 @@
 
 import { sessionUser } from "./auth.ts";
 import { b64url, digest, error, esc, json, NAME, parseJson, readBody, sha256, Strings, type Env } from "./env.ts";
+import { arr, Bad, check, maybe, obj, str, type Guard } from "@rustybuns/util/guard";
 import { listOrgs } from "./orgs.ts";
 
 const HOUR = 3_600_000, DAY = 24 * HOUR, CODE_MS = 10 * 60_000, REFRESH_MS = 30 * DAY, GRANT_MS = 365 * DAY;
@@ -231,13 +232,16 @@ async function token(req: Request, env: Env) {
   return oauthError("unsupported_grant_type", "authorization_code or refresh_token");
 }
 
+const RedirectUri: Guard<string> = (v) => { if (typeof v === "string" && registrable(v)) return v; throw new Bad("an https URL, or an http://127.0.0.1 / localhost one"); };
+/** Dynamic client registration (RFC 7591): only the fields a public client needs; a client_name that isn't text is no name. */
+const Registration = obj({ redirect_uris: arr(RedirectUri, 5, { min: 1 }), client_name: maybe(str(1000, { min: 0 })) });
+
 async function register(req: Request, env: Env) {
-  const b = (await readBody(req)) ?? {};
+  const b = check(Registration, (await readBody(req)) ?? {});
+  if (!b) return oauthError("invalid_redirect_uri", "redirect_uris: 1 to 5 https URLs, or http://127.0.0.1 / localhost ones");
   const uris = b.redirect_uris;
-  if (!Array.isArray(uris) || !uris.length || uris.length > 5 || !uris.every(registrable))
-    return oauthError("invalid_redirect_uri", "redirect_uris: 1 to 5 https URLs, or http://127.0.0.1 / localhost ones");
-  const name = (typeof b.client_name === "string" ? b.client_name.replace(/[\x00-\x1f<>]/g, "").trim().slice(0, 60) : "") || "an app";
-  const c = { client_id: random("qc_").slice(0, 28), client_name: name, redirect_uris: uris as string[], client_id_issued_at: Math.floor(Date.now() / 1000) };
+  const name = (b.client_name ?? "").replace(/[\x00-\x1f<>]/g, "").trim().slice(0, 60) || "an app";
+  const c = { client_id: random("qc_").slice(0, 28), client_name: name, redirect_uris: uris, client_id_issued_at: Math.floor(Date.now() / 1000) };
   await env.DB.prepare("INSERT INTO oauth_clients (id, name, redirect_uris, created_at) VALUES (?, ?, ?, ?)").bind(c.client_id, name, JSON.stringify(uris), Date.now()).run();
   // Public clients only: whatever auth method it asked for, it sends no secret.
   return json({ ...c, grant_types: ["authorization_code", "refresh_token"], response_types: ["code"], token_endpoint_auth_method: "none" }, 201, { ...NO_STORE, ...CORS });
