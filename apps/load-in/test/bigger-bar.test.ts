@@ -5,6 +5,7 @@ import type { Cable, CableKind } from "@rustybuns/gear";
 import { BIGGER_BAR, judge, newPanel, resetBreaker } from "../src/venues/bigger-bar.ts";
 import { newWorld, walkTo } from "../src/sim.ts";
 import { setDial } from "../src/assists.ts";
+import { hasSwitch } from "../src/audio/hear.ts";
 
 const c = (kind: CableKind, from: string, to: string, lengthM = 5): Cable => {
   const end = (s: string) => {
@@ -90,4 +91,10 @@ test("on Cozy the same overload warns instead of tripping: circuit 3 is marked o
     expect(r.circuits.find((x) => x.circuit === "3")).toEqual({ circuit: "3", amps: 15, tripped: false, over: true });
     expect(["top-l", "top-r", "sub-l", "sub-r"].every((s) => r.fed.get(s))).toBe(true);
   } finally { setDial("sim"); }
+});
+
+test("where the cables decide what plays, only gear that draws power offers a switch", () => {
+  const switches = Object.fromEntries(BIGGER_BAR.items.map((i) => [i.gear, hasSwitch(i.gear, true)]));
+  expect(switches).toMatchObject({ "top-15-passive": false, "sub-18": false, "wedge-12": true, "amp-rack-4u": true, "mixer-small": true });
+  expect(hasSwitch("top-15-passive")).toBe(true);
 });

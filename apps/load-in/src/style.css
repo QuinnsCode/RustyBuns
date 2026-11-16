@@ -32,3 +32,8 @@ button:hover { border-color: #4cc9f0; }
 .clock .time { min-width: 7.5ch; }
 .clock.late { color: #ff6b6b; }
 .clock .tip { display: inline-grid; place-items: center; width: 1.1em; height: 1.1em; border-radius: 50%; border: 1px solid currentColor; font-size: .75em; cursor: help; }
+.bar-card > div:first-child { display: grid; gap: 2px; }
+/* The aim pad: only where the pointer is a finger. Two rows of five, big enough to hit. */
+.aim-pad { display: none; grid-template-columns: repeat(5, 2.6rem); gap: 4px; margin-top: 6px; pointer-events: auto; }
+.aim-pad button { height: 2.6rem; padding: 0; border-radius: 8px; font-size: 1rem; touch-action: none; user-select: none; -webkit-user-select: none; }
+@media (pointer: coarse) { .aim-pad { display: grid; } .bar-card small { display: none; } }

@@ -3,6 +3,7 @@
 // reading: install scripts, what the sandbox stopped, a host busy while idle, known-malicious packages.
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { arr, obj, opt, str } from "../packages/util/src/guard.ts";
 
 export type Installed = { name: string; version: string; scripts: string[] };
 
@@ -102,6 +103,8 @@ export const IDLE_CPU = 0.5, BIG_RSS_MB = 1024;
 export type Idle = { cpu: number; rssMb: number };
 
 /** OSV's MAL- advisories (OpenSSF malicious packages) for these versions: known-bad, not merely vulnerable. */
+/** osv.dev's querybatch answer: per query, the ids of the advisories it matched. */
+const OsvBatch = obj({ results: arr(obj({ vulns: opt(arr(obj({ id: str(200) }), Infinity)) }), Infinity) });
 export async function malicious(pkgs: { name: string; version: string }[], get: typeof fetch = fetch): Promise<string[]> {
   const out: string[] = [];
   for (let i = 0; i < pkgs.length; i += 1000) {
@@ -109,7 +112,7 @@ export async function malicious(pkgs: { name: string; version: string }[], get: 
     const res = await get("https://api.osv.dev/v1/querybatch", { method: "POST", headers: { "content-type": "application/json" },
       body: JSON.stringify({ queries: batch.map((p) => ({ package: { name: p.name, ecosystem: "npm" }, version: p.version })) }) });
     if (!res.ok) throw new Error(`osv.dev: ${res.status}`);
-    const { results } = (await res.json()) as { results: { vulns?: { id: string }[] }[] };
+    const { results } = OsvBatch(await res.json());
     batch.forEach((p, j) => { for (const v of results[j]?.vulns ?? []) if (v.id.startsWith("MAL-")) out.push(`${p.name}@${p.version} (${v.id})`); });
   }
   return out;

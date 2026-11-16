@@ -15,7 +15,7 @@ import { DIVE_BAR, aim, barState, master, raise, rig, settle, standHeight } from
 import { type BarView, barView } from "./venues/dive-bar-view.ts";
 import { BIGGER_BAR } from "./venues/bigger-bar.ts";
 import { type BiggerBarView, biggerBarView } from "./venues/bigger-bar-view.ts";
-import { PARK, parkState, push } from "./venues/park.ts";
+import { PARK, parkState, pour, push } from "./venues/park.ts";
 import { type ParkView, parkView } from "./venues/park-view.ts";
 import { hasSwitch, hear, type Switches } from "./audio/hear.ts";
 import { soundSystem } from "./audio/play.ts";
@@ -191,7 +191,7 @@ function hint(at: ReturnType<typeof aimed>, jack: ReturnType<typeof cable.aimedJ
   const plugged = jack && cables.runs.some((r) => [r.a, r.b].some((e) => "plug" in e && e.plug[0] === jack.owner && e.plug[1] === jack.jack));
   if (plugged) return `F unplug ${jack.owner} ${jack.jack}`;
   if (at?.key === cables.caseKey && cables.runs.some((r) => !r.rope || "case" in r.b)) return "F take a cable";
-  const sw = at && hasSwitch(at.gear) ? `, P switch it ${switchedOn.has(at.key) ? "off" : "on"}` : "";
+  const sw = at && hasSwitch(at.gear, !!big) ? `, P switch it ${switchedOn.has(at.key) ? "off" : "on"}` : "";
   if (at && wheeled(at.gear)) return `F push the ${gear(at.gear).what} (${gear(at.gear).kg} kg)`;
   return at ? `F pick up ${gear(at.gear).what} (${gear(at.gear).kg} kg)${sw}` : "";
 }
@@ -220,10 +220,11 @@ document.addEventListener("keydown", (e) => {
 document.addEventListener("keyup", (e) => keys.delete(e.code));
 addEventListener("blur", () => keys.clear());
 
-/** F: the cable job if there is one (plug, unplug, take one, coil), else put down or pick up the gear. */
+/** F: the cable job if there is one (plug, unplug, take one, coil), a jerry can poured into the generator you face,
+ * else put down or pick up the gear. */
 function grab(): Answer {
-  const at = aimed(world);
-  const r = cable.use(world, cables, at) ?? (world.held ? place() : at ? (wheeled(at.gear) ? push : pickUp)(world, at.key) : { ok: false as const, why: "nothing in reach" });
+  const at = aimed(world), can = heldItem(world);
+  const r = cable.use(world, cables, at) ?? (can && at && wheeled(at.gear) && gear(can.gear).can ? pour(world, at.key) : world.held ? place() : at ? (wheeled(at.gear) ? push : pickUp)(world, at.key) : { ok: false as const, why: "nothing in reach" });
   if (!r.ok) flash = { text: r.why, until: performance.now() + 1800 };
   return r;
 }
@@ -239,7 +240,7 @@ function place(): Answer {
 /** P: switch what you look at on or off, if it has a switch. */
 function flip() {
   const at = aimed(world);
-  if (!at || !hasSwitch(at.gear)) return;
+  if (!at || !hasSwitch(at.gear, !!big)) return;
   if (!switchedOn.delete(at.key)) switchedOn.add(at.key);
 }
 
@@ -328,7 +329,7 @@ async function boot() {
 declare global { interface Window { loadIn: typeof harness } }
 /** The harness (scripts/probe.ts HANDLES): the level as data, and the moves a test or an agent makes without pointer lock. */
 const harness = {
-  state: () => ({ phase, next: nextStep(world, cables, switchedOn), dial: currentDial(), doors: doors(world.level.name, world.t), ...snapshot(world), ...cable.cableState(world, cables), sound: { up: sound.up, on: [...switchedOn], ...heard() }, ...(big ? { biggerBar: big.state() } : {}), ...(bar ? { bar: { ...(world.level === PARK ? parkState(world, cables) : barState(world)), heat: bar.heatOn } } : {}), signedIn: !!login(), party: crew.code ? { code: crew.code, members: crew.members.length, room: crew.room || null, seat: crew.seat >= 0 ? crew.seat : null } : null }),
+  state: () => ({ phase, next: nextStep(world, cables, switchedOn), dial: currentDial(), doors: doors(world.level.name, world.t), ...snapshot(world), ...cable.cableState(world, cables), sound: { up: sound.up, on: [...switchedOn], ...heard() }, ...(big ? { biggerBar: big.state() } : {}), ...(bar ? { bar: { ...(world.level === PARK ? parkState(world, cables) : barState(world)), heat: bar.heatOn, ...("band" in bar ? { band: bar.band } : {}) } } : {}), signedIn: !!login(), party: crew.code ? { code: crew.code, members: crew.members.length, room: crew.room || null, seat: crew.seat >= 0 ? crew.seat : null } : null }),
   /** Turn the cozy-to-sim dial: "cozy", "crew" or "sim". */
   dial: (d: string) => setDial(d),
   /** Into the level, without asking for the mouse. */
@@ -337,6 +338,8 @@ const harness = {
   walkTo: (x: number, z: number) => cable.walkWith(world, cables, x, z),
   /** Park: take the generator's handle and push it on its wheels (put it down with putDown). */
   push: (key: string): Answer => (cable.inHand(cables) ? { ok: false, why: "your hands are full" } : push(world, key)),
+  /** Park: holding a jerry can, pour it into the generator. */
+  pour: (key: string): Answer => pour(world, key),
   pickUp: (key: string): Answer => (cable.inHand(cables) ? { ok: false, why: "your hands are full" } : pickUp(world, key)),
   putDown: () => place(),
   /** A cable out of the case (power, speaker, xlr, instrument), its `a` end in your hand. */
@@ -354,7 +357,7 @@ const harness = {
   raise: (key: string, height: number) => raise(world, key, height),
   /** Dive bar: the master fader, dB. */
   master: (db: number) => master(world, db),
-  heat: (on: boolean) => bar?.setHeat(on),
+  heat: (on: boolean, band?: "high" | "low") => (bar && "band" in bar ? bar.setHeat(on, band) : bar?.setHeat(on)),
   /** Dive bar: open the doors; the final score. */
   doors: () => bar?.doors() ?? null,
   /** Load a level by name (garage, dive-bar, bigger-bar, park). */
@@ -366,7 +369,7 @@ const harness = {
   /** Switch a piece of gear on or off (P while looking at it); false if it has no switch. */
   power: (key: string, state = !switchedOn.has(key)) => {
     const item = world.items.find((i) => i.key === key);
-    if (!item || !hasSwitch(item.gear)) return false;
+    if (!item || !hasSwitch(item.gear, !!big)) return false;
     if (state) switchedOn.add(key); else switchedOn.delete(key);
     return true;
   },

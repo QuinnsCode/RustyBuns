@@ -11,8 +11,8 @@
 // matching HTTP call would be.
 
 import { createAction, createRow, deleteRow, getRow, isEntity, shape, updateRow, type Entity } from "./crm.ts";
-import { Bad, check, int, isRecord, maybe, obj, oneOf, str, type Guard } from "@rustybuns/util/guard";
-import { error, json, parseJson, readBody, type Row } from "./env.ts";
+import { arr, Bad, check, int, isRecord, maybe, obj, oneOf, raw, said, str, type Guard } from "@rustybuns/util/guard";
+import { json, need, parseJson, type Row } from "./env.ts";
 import type { Ctx } from "./orgs.ts";
 import { can } from "./rbac.ts";
 
@@ -25,6 +25,9 @@ export const SyncOp = obj({
   baseSeq: maybe(int(0, Number.MAX_SAFE_INTEGER)), data: (v: unknown): Row => (isRecord(v) ? v : {}),
 });
 
+/** POST /api/orgs/:org/sync: the ops, each checked on its own so one bad op is rejected, not the push. */
+const SyncBody = obj({ ops: said(arr(raw, MAX_OPS, { min: 0 }), `a list of at most ${MAX_OPS}`) });
+
 export async function syncRoutes({ req, env, url, user, org, role, p }: Ctx): Promise<Response | null> {
   if (p[0] !== "sync" || p[1]) return null;
   if (req.method === "GET") {
@@ -35,8 +38,8 @@ export async function syncRoutes({ req, env, url, user, org, role, p }: Ctx): Pr
     return json({ changes: page, next: page.length ? page[page.length - 1]!.seq : since, done: results.length <= limit });
   }
   if (req.method !== "POST") return null;
-  const b = await readBody(req);
-  if (!b || !Array.isArray(b.ops) || b.ops.length > MAX_OPS) return error(400, `ops: a list of at most ${MAX_OPS}`);
+  const b = await need(req, SyncBody);
+  if (b instanceof Response) return b;
   let applied = 0;
   const conflicts: { id: string; server: Row | null; reason?: string }[] = [];
   const rejected: { id: string; error: string }[] = [];

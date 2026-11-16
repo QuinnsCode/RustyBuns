@@ -1,9 +1,9 @@
 // The dive bar: a narrow room with the bar along the left wall, a small stage at the back, a marked crowd area and the
 // door to the street. Two powered 12" tops, their stands, an 18" sub, a mixer and two cases wait at the door. Set the tops
 // on their stands, aim them (turn, tilt, raise the stand), and the score is how the room sounds: the crowd area near the
-// target level, the bar quiet enough for the staff to hear orders. Plain data, no DOM; the page draws the heat map.
+// target level, the bar quiet enough for the staff to hear orders, and the sub's bass even over the crowd. Plain data, no DOM; the page draws the heat map.
 import { clamp } from "@rustybuns/util";
-import { type Area, type Grid, type Source, coverage, gear as catalog, source } from "@rustybuns/gear";
+import { type Area, type Band, type Grid, type Source, coverage, gear as catalog, source } from "@rustybuns/gear";
 import { REACH, type Item, type Level, type World } from "../sim.ts";
 import { doors, showScore } from "../clock.ts";
 
@@ -43,6 +43,8 @@ export const WINDOW = 4;
 /** The bar should sit this far under the crowd. */
 export const BAR_GAP = 5;
 export const PASS = 85;
+/** The kick's fundamental, Hz: under the tops' low cut, so only subs play it, summed with phase. */
+export const LOW_FREQ = 50;
 
 /** What the dive bar adds to a world: each top's tilt, each stand's height, the master fader. */
 export type Rig = { tilt: Record<string, number>; stand: Record<string, number>; master: number };
@@ -124,8 +126,8 @@ export function sources(w: World, plays: (i: Item) => boolean = () => true): Sou
 /** The whole floor at ear height, in cells about 20 cm across. */
 export const FLOOR: Area = { x0: -2.5, x1: 2.5, z0: 0, z1: 12, y: 1.6, nx: 25, nz: 60 };
 
-/** The heat map: mids and highs over the floor. No speaker playing reads as silence (-Infinity in every cell). */
-export const heat = (w: World): Grid => coverage(sources(w), FLOOR, "high");
+/** The heat map in one band: mids and highs, or the subs' bass. No speaker playing reads as silence (-Infinity in every cell). */
+export const heat = (w: World, band: Band = "high"): Grid => coverage(sources(w), FLOOR, band, LOW_FREQ);
 
 /** The cells of a grid inside a zone. */
 export const cellsIn = (g: Grid, z: Zone) => {
@@ -149,20 +151,24 @@ export type Score = {
   bar: number | null;
   /** How far the bar sits under the crowd, dB. */
   gap: number | null;
+  /** Share of the crowd area whose bass sits within WINDOW dB of TARGET, 0 to 1: a sub near the crowd booms up close and fades at the back. */
+  bass: number;
   score: number;
   pass: boolean;
 };
 
-/** How the room sounds: 70 points for the crowd area at the target level, 30 for a bar the staff can hear orders at. */
-export function score(w: World, g: Grid = heat(w)): Score {
+const near = (dbs: number[]) => dbs.filter((d) => Math.abs(d - TARGET) <= WINDOW).length / dbs.length;
+
+/** How the room sounds: 55 points for the crowd area at the target level, 25 for a bar the staff can hear orders at, 20 for even bass. */
+export function score(w: World, g: Grid = heat(w), low: Grid = heat(w, "low")): Score {
   const crowd = cellsIn(g, ZONES.crowd), bar = cellsIn(g, ZONES.bar);
-  const covered = crowd.filter((d) => Math.abs(d - TARGET) <= WINDOW).length / crowd.length;
+  const covered = near(crowd), bass = near(cellsIn(low, ZONES.crowd));
   const c = mean(crowd), b = mean(bar), live = Number.isFinite(c);
   const gap = live ? c - (Number.isFinite(b) ? b : 0) : null;
   const quiet = gap === null ? 0 : clamp(gap / BAR_GAP, 0, 1);
-  const s = Math.round(70 * covered + 30 * quiet * covered);
+  const s = Math.round(55 * covered + 25 * quiet * covered + 20 * bass);
   const r1 = (v: number) => (Number.isFinite(v) ? Math.round(v * 10) / 10 : null);
-  return { covered: Math.round(covered * 100) / 100, crowd: r1(c), bar: r1(b), gap: gap === null ? null : Math.round(gap * 10) / 10, score: s, pass: s >= PASS };
+  return { covered: Math.round(covered * 100) / 100, crowd: r1(c), bar: r1(b), gap: gap === null ? null : Math.round(gap * 10) / 10, bass: Math.round(bass * 100) / 100, score: s, pass: s >= PASS };
 }
 
 /** The show when the doors open: the room's sound scaled by the crowd's mood (late doors sour it), and the pay. */

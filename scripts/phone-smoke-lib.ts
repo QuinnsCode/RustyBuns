@@ -2,6 +2,7 @@
 // the triage board. No browser here, so it tests without one (phone-smoke.test.ts); phone-smoke.ts drives Chrome.
 // Relative imports of files that import nothing: rings.ts loads this in the ring workflows, which run before any `bun install`.
 import { esc } from "../packages/util/src/index.ts";
+import { arr, num, obj, oneOf, opt, str, type Of } from "../packages/util/src/guard.ts";
 
 const plural = (n: number, one: string) => `${n} ${n === 1 ? one : one + "s"}`;
 
@@ -30,10 +31,16 @@ export const REFERENCE = { name: "Desktop", w: 1280, h: 800 } as const;
 /** `inScroller`: inside a box that scrolls sideways (a card strip), where running past the screen's edge is the point. */
 export type Control = { tag: string; label: string; x: number; y: number; w: number; h: number; shown: boolean; obscured: boolean; inScroller?: boolean };
 export type Audit = { vw: number; vh: number; scrollW: number; viewportMeta: boolean; textLen: number; canvases: number; controls: Control[] };
-export type Finding = { kind: string; sev: "error" | "warn"; detail: string };
-export type PhoneResult = { phone: string; w: number; h: number; shot?: string; findings: Finding[] };
-export type AppResult = { app: string; bootError?: string; phones: PhoneResult[] };
-export type Report = { generatedAt: string; apps: AppResult[] };
+const text = str(Infinity, { min: 0 }), px = num(0, 1e6);
+export const Finding = obj({ kind: text, sev: oneOf(["error", "warn"]), detail: text });
+export type Finding = Of<typeof Finding>;
+export const PhoneResult = obj({ phone: text, w: px, h: px, shot: opt(text), findings: arr(Finding, Infinity) });
+export type PhoneResult = Of<typeof PhoneResult>;
+export const AppResult = obj({ app: text, bootError: opt(text), phones: arr(PhoneResult, Infinity) });
+export type AppResult = Of<typeof AppResult>;
+/** A shard's report.json, which `--merge` reads back. */
+export const Report = obj({ generatedAt: text, apps: arr(AppResult, Infinity) });
+export type Report = Of<typeof Report>;
 
 /** Runs inside the page (stringified): every control the user could tap, where it is and whether it is really there. */
 export function pageAudit(): Audit {
