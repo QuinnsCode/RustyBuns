@@ -32,7 +32,7 @@ const BASE = `
 .eq-form{display:grid;gap:8px;width:min(320px,calc(100vw - 24px));padding:14px;border:var(--ui-border) solid var(--ui-line);border-radius:var(--ui-radius);background:var(--ui-bg);box-shadow:var(--ui-shadow)}
 .eq-form[hidden]{display:none}
 .eq-title{margin:0;font:700 17px/1.2 var(--ui-font-head);color:var(--ui-ink)}
-.eq-status{min-height:1em;color:var(--ui-dim);font-size:12px}
+.eq-status{min-height:1em;color:var(--ui-dim);font-size:12px}.eq-status a{color:var(--ui-accent)}
 .eq-toasts{position:fixed;left:16px;right:16px;top:calc(max(16px,env(safe-area-inset-top)) + var(--ui-top));z-index:2147483001;display:grid;gap:8px;justify-items:center;pointer-events:none}
 .eq-toast{display:flex;align-items:center;gap:12px;max-width:min(420px,calc(100vw - 32px));padding:10px 18px 10px 12px;border:var(--ui-border) solid var(--ui-line);border-radius:var(--ui-radius);background:var(--ui-toast-bg);color:var(--ui-toast-ink);box-shadow:var(--ui-shadow);animation:eq-in .3s ease-out}
 .eq-toast svg{width:30px;height:30px;flex:none;color:var(--ui-accent)}

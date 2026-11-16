@@ -82,8 +82,8 @@ export interface Parties { idFromName(name: string): unknown; get(id: unknown): 
 export const partyOf = (parties: Parties, code: string): Stub => parties.get(parties.idFromName(code));
 
 const LETTERS = "BCDFGHJKLMNPQRSTVWXYZ";
-/** A fresh six-character room code, no vowels. */
-export const mintCode = (): string => Array.from(crypto.getRandomValues(new Uint8Array(6)), (b) => LETTERS[b % LETTERS.length]).join("");
+/** A fresh room code, no vowels: six letters to read out across a room, or `n` for one that is only ever copied (a space's invite). */
+export const mintCode = (n = 6): string => Array.from(crypto.getRandomValues(new Uint8Array(n)), (b) => LETTERS[b % LETTERS.length]).join("");
 /** How long a party's code is good. */
 export const PARTY_LIFE = 24 * 60 * 60 * 1000;
 /** The longest a party can live (the `hours` rule's top choice): how long a seat is remembered. */

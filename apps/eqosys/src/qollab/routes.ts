@@ -15,6 +15,16 @@ import { check, obj, opt, str } from "@rustybuns/util/guard";
 
 const mints = new RoomMintGate(12, 60_000);
 
+/** How many different party codes or space invites one account, or one address, may try in a minute. A person tries one or two
+ *  (the same one again is free); a script guessing codes tries thousands. In memory, so per isolate: a speed bump on top of codes
+ *  too many to guess, not a global count. */
+export const TRIES_PER_MINUTE = 20;
+const tries = new RoomMintGate(TRIES_PER_MINUTE, 60_000);
+const tryCode = (req: Request, who: string, code: string) => {
+  const ip = req.headers.get("cf-connecting-ip"), now = Date.now();
+  return tries.allow(`who:${who}`, code, now) && (!ip || tries.allow(`ip:${ip}`, code, now));
+};
+
 /** The paths below, the ones eqosys hands to Qollab's own Worker. `/q/achieve` is eqosys's (achievements). */
 export const isQollab = (pathname: string) =>
   /^\/(?:hub|api\/hub|q\/party(?:\/[^/]+)?|q\/space(?:\/[^/]+)?|q\/qlave\/roster|q\/save\/[^/]+)$/.test(pathname);
@@ -76,6 +86,7 @@ export async function qollab(req: Request, conf: Env): Promise<Response | null> 
     if (req.headers.get("upgrade")?.toLowerCase() !== "websocket") return json({ error: "a websocket" }, 426);
     const origin = req.headers.get("origin");
     if (origin && !onSite(t.app, origin, loopbackOn(conf))) return json({ error: "not from that app's site" }, 403);
+    if (!tryCode(req, t.who.id, code)) return json({ error: "too many party codes just now; wait a minute" }, 429);
     // Remember the seat so deleting the account can clear it (members.ts); seats older than the longest a party lives are pruned here.
     const now = Date.now();
     await conf.DB.batch([
@@ -109,6 +120,7 @@ export async function qollab(req: Request, conf: Env): Promise<Response | null> 
     const now = Date.now();
     if (pathname === "/q/space/join") {
       const invite = codeOf(String(check(obj({ invite: str(12) }), await req.json().catch(() => null))?.invite ?? ""));
+      if (invite && !tryCode(req, t.who.id, invite)) return json({ error: "too many invites just now; wait a minute" }, 429, head);
       const s = invite && await conf.DB.prepare("SELECT id, name FROM spaces WHERE invite = ? AND studio_id IS NULL").bind(invite).first<{ id: string; name: string }>();
       if (!s) return json({ error: "no space has that invite" }, 404, head);
       if (((await conf.DB.prepare("SELECT COUNT(*) AS n FROM space_members WHERE space_id = ?").bind(s.id).first<number>("n")) ?? 0) >= SPACE_MEMBERS)

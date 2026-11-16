@@ -4,6 +4,8 @@
 
 Please report anything that looks like a vulnerability privately, with **Report a vulnerability** on this repo's [Security tab](https://github.com/QuinnsCode/RustyBuns/security), not in a public issue. I'll reply there.
 
+No GitHub account, or it's about a game or eqosys rather than the code? Email [theqntbr@gmail.com](mailto:theqntbr@gmail.com?subject=Security). The same address is on eqosys's sign-in and privacy pages and in every game's Report form, for players with a problem they'd rather not post in public.
+
 ## Dependencies
 
 codeSplitter' [dependency doctor](apps/codesplitter/README.md) keeps a repo's dependencies current on a schedule, so nobody has to remember to:

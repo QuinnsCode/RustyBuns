@@ -25,6 +25,10 @@ import { file, reporterId } from "../reports.ts";
 import { mintCode } from "./party.ts";
 
 export const PAGE = 50, KEEP_PAGES = 200, CHANNELS = 20, SPACES_OWNED = 10, SPACE_MEMBERS = 500;
+/** A space's invite is copied, never read out, and lets anyone in for good, so it is twice a party code's length: 21^12 codes,
+ *  too many to guess even before the door's tries a minute (routes.ts). The longest a room code may be (`codeOf`). */
+export const INVITE_LETTERS = 12;
+const mintInvite = () => mintCode(INVITE_LETTERS);
 export const CHANNEL = str(24, { min: 1, re: /^[a-z0-9-]+$/ });
 /** A space's name as its owner typed it. */
 export const SPACE_NAME = str(60, { min: 1 });
@@ -87,7 +91,7 @@ export async function makeSpace(conf: Pick<Env, "DB">, owner: string, name: stri
     return { ok: false, status: 409, error: `you own ${SPACES_OWNED} spaces already` };
   const id = crypto.randomUUID();
   for (let i = 0; i < 5; i++) {
-    const invite = mintCode();
+    const invite = mintInvite();
     const made = await conf.DB.prepare("INSERT INTO spaces (id, name, owner, invite, at, studio_id) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING RETURNING id")
       .bind(id, name, owner, invite, now, studio).first<string>("id");
     if (!made) continue;
@@ -322,7 +326,7 @@ export class Space {
       .bind(sid, id, id).first<string>("user_id");
     this.close((m) => m.id === id && !m.owner, 4003, why);
     // A kick retires the invite too: the kicked person holds it (everyone joined with it), so a fresh one is minted that only the owner hands out.
-    if (out && why !== "left the space") await this.env.DB.prepare("UPDATE spaces SET invite = ? WHERE id = ?").bind(mintCode(), sid).run();
+    if (out && why !== "left the space") await this.env.DB.prepare("UPDATE spaces SET invite = ? WHERE id = ?").bind(mintInvite(), sid).run();
     // The owner can't leave their own space, so nothing goes to Qlave for them.
     if (out) await this.enqueue((await this.voices()).map((v): Order => ({ t: "kick", room: roomOf(sid, v.id), sub: id })));
   }

@@ -12,6 +12,7 @@ import { Badge } from "./Badge.tsx";
 import { ACHIEVEMENTS, catalogOf, shownFor, TOTAL, type Achievement } from "../achievements.ts";
 import { cardOf } from "../cards.ts";
 import { HOLDERS } from "../privacy.ts";
+import { CONTACT_EMAIL, contactHref } from "@rustybuns/util/report";
 import type { Visitors as Counts } from "../visitors.ts";
 import type { Load } from "../scale.ts";
 import { SCALE_CSS, Scale } from "./Scale.tsx";
@@ -798,13 +799,15 @@ export const Privacy = () => (
       download everything we keep and delete it all yourself, any time, without asking anyone; and each thing you agree to is written down
       with the time, so you can see it in the download.</p>
     <p>What we are still working on: your account itself (email, name and sign-in links) sits in one database that is not kept in the EU. It
-      is still only on Cloudflare and still goes when you delete your account. We will also name who is responsible for your data and a
-      private contact for privacy requests here; until then, the ways below are the ones there are.</p>
+      is still only on Cloudflare and still goes when you delete your account. We will also name who is responsible for your data here;
+      until then, write to the private address below.</p>
     <h2>Questions</h2>
     <p>For your data, download and delete above need no one's help. For anything else, use Report in any Q app while signed in: it reaches us
       tied to your account, so we can find what is yours without you giving any details. Reports become issues on a public GitHub page (or, from a game
       another studio made, notes that studio reads) that name
       you only by a short id, so write the question, not your email or anything personal. Please don't open GitHub issues about your own data.</p>
+    <p>For anything private (a privacy request, a worry about someone, a security problem, or you can't sign in to report), email{" "}
+      <a href={contactHref("eqosys: a private question")}>{CONTACT_EMAIL}</a>.</p>
   </>
 );
 
