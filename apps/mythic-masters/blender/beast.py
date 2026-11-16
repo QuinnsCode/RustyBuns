@@ -16,6 +16,8 @@
 #                            face kept when it sits within `reach` (0.05) of the skin a ray from the chain meets,
 #                            so a body of blended blobs bands too; `phase` (0) shifts every band by that share of
 #                            its spacing (bands between ribs)
+#           dense            {material: 0..1}: how much of those materials' detail the decimator keeps (1: all, and
+#                            the budget is missed), so a face takes more of the budget and the furred body pays
 #           black: true      the body may be truly black: no luminance floor (LUM[0]), no lift toward the belly's hue
 #   blob    material, rot    its own material; [x, y, z] degrees of tilt (a shell, a brow)
 #   horn    curve, bend      degrees it bends along its length, toward the `bend` direction (default up)
@@ -1940,8 +1942,9 @@ def bake_hide(o, h, back, lift, segs=None):
     return img
 
 
-def low_poly(o, budget):
-    """A copy of `o` decimated to `budget` triangles and shaded smooth: the mesh the GLB holds."""
+def low_poly(o, budget, dense=None):
+    """A copy of `o` decimated to `budget` triangles and shaded smooth: the mesh the GLB holds. `dense` maps
+    materials to how much of their detail the decimator keeps (1: all of it), so a face can take more of the budget."""
     bpy.ops.object.select_all(action="DESELECT")
     lod = o.copy()
     lod.data = o.data.copy()
@@ -1949,6 +1952,19 @@ def low_poly(o, budget):
     # the decimator's result depends on the order it is handed the mesh in, which changes run to run: put the
     # mesh in canonical order before and after, so one sheet always builds the same GLB
     canonical(lod)
+    if dense:
+        # a face's materials keep their triangles (the rest of the beast pays): weighted into `keep`, which the
+        # decimator collapses everywhere but
+        mats = [m.name for m in lod.data.materials]
+        keep = lod.vertex_groups.get("keep") or lod.vertex_groups.new(name="keep")
+        w = {}
+        for f in lod.data.polygons:
+            k = dense.get(mats[f.material_index], 0) if f.material_index < len(mats) else 0
+            for v in f.vertices:
+                w[v] = max(w.get(v, 0), k)
+        for v, k in w.items():
+            if k > 0:
+                keep.add([v], k, "REPLACE")
     if budget and tris(o) > budget:
         dec = lod.modifiers.new("decimate", "DECIMATE")
         dec.ratio = budget / tris(o)
@@ -1962,9 +1978,9 @@ def low_poly(o, budget):
     return lod
 
 
-def write_glb(o, path, budget, tone=None, hide=None, keep=False, segs=None, hard=None):
+def write_glb(o, path, budget, tone=None, hide=None, keep=False, segs=None, hard=None, dense=None):
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    lod = low_poly(o, budget)
+    lod = low_poly(o, budget, dense)
     if hard:
         # an underside band (`hard`, its material) only a triangle or two wide: its border split, so `shade` paints it
         # full strength to the edge instead of halving it on every vertex it shares with the flesh beside it
@@ -2100,7 +2116,8 @@ def main():
     hide, lod = sheet.get("hide"), None
     lod = write_glb(beast, os.path.join(APP, "public", "models", sheet["id"] + ".glb"), sheet.get("budget", 3000), tone, hide,
                     keep=bool(hide) or "--close" in argv, segs=chains(sheet, nodes, links) if hide else None,
-                    hard=sheet["stripes"]["material"] if sheet.get("stripes", {}).get("side") == "under" else None)
+                    hard=sheet["stripes"]["material"] if sheet.get("stripes", {}).get("side") == "under" else None,
+                    dense=sheet.get("dense"))
     if lod and not hide:
         lod.hide_render = True  # kept only for the close-up; the contact sheet draws the full mesh
     if "--render" in argv:

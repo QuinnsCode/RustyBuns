@@ -1928,5 +1928,17 @@
       "material": "feather"
     }
   ],
+  "dense": {
+    "face": 0.7,
+    "lip": 1,
+    "kohl": 1,
+    "eye": 1,
+    "pupil": 1,
+    "mouth": 1,
+    "cloth": 0.75,
+    "gold": 0.75,
+    "feather": 0.75,
+    "primary": 0.75
+  },
   "wings": 2
 }
