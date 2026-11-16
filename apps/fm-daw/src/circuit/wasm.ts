@@ -1,7 +1,7 @@
 // The circuit amp in Rust (native/crates/fm_daw/src/circuit.rs), compiled into
 // the same wasm as the engine, behind the same knobs as `Rig` in rig.ts.
 import type { Exports } from "../engine/wasm.ts";
-import { encodeNetlist, type Netlist, type RigSpec } from "@rustybuns/gear/circuit";
+import { DEFAULT_POWER, cabIR, encodeNetlist, type Fault, type Mic, type Netlist, type RigSpec } from "@rustybuns/gear/circuit";
 
 const CHUNK = 512;
 
@@ -11,9 +11,12 @@ export class WasmRig {
   private readonly lv: number;
   private readonly links: number;
 
-  constructor(private readonly x: Exports, spec: RigSpec, sampleRate = 48000, readonly oversample = 4) {
-    this.h = x.fm_amp_new(sampleRate, oversample, spec.inputVolts, spec.power, spec.cab ? 1 : 0, spec.noise ?? 0);
+  constructor(private readonly x: Exports, spec: RigSpec, readonly sampleRate = 48000, readonly oversample = 4) {
+    this.h = x.fm_amp_new(sampleRate, oversample, spec.inputVolts, spec.power, spec.noise ?? 0);
     if (!this.h) throw new Error("rust amp rejected the sample rate or oversampling");
+    const o = spec.output ?? DEFAULT_POWER;
+    x.fm_amp_set_output(this.h, o.pairs, o.sag, o.load);
+    if (spec.cab) this.setCab(cabIR(spec.cab, sampleRate));
     for (const l of spec.links) {
       if (this.send(l.net, (p, n) => x.fm_amp_push(this.h, p, n, l.gain ?? 1)) < 0) {
         x.fm_amp_free(this.h);
@@ -26,8 +29,8 @@ export class WasmRig {
   }
 
   /** Copies a netlist into wasm memory for `call`, then frees it. */
-  private send(net: Netlist, call: (ptr: number, len: number) => number): number {
-    const d = encodeNetlist(net), p = this.x.fm_alloc_f64(d.length);
+  private send(net: Netlist | Float64Array, call: (ptr: number, len: number) => number): number {
+    const d = net instanceof Float64Array ? net : encodeNetlist(net), p = this.x.fm_alloc_f64(d.length);
     new Float64Array(this.x.memory.buffer, p, d.length).set(d);
     const r = call(p, d.length);
     this.x.fm_dealloc_f64(p, d.length);
@@ -37,6 +40,12 @@ export class WasmRig {
   setGain(i: number, g: number): void { this.x.fm_amp_set_gain(this.h, i >>> 0, g); }
   setPower(p: number): void { this.x.fm_amp_set_power(this.h, p); }
   setNoise(n: number): void { this.x.fm_amp_set_noise(this.h, n); }
+  setLoad(ohms: number): void { this.x.fm_amp_set_load(this.h, ohms); }
+  /** The impulse response is made here (cab.ts) and handed over; Rust only convolves. */
+  setMic(mic: Mic): void { this.setCab(cabIR(mic, this.sampleRate)); }
+  setCab(ir: Float64Array): void { this.send(ir, (p, n) => { this.x.fm_amp_set_cab(this.h, p, n); return 0; }); }
+  get fault(): Fault | null { return this.x.fm_amp_fault(this.h) ? "open-load" : null; }
+  get supply(): number { return this.x.fm_amp_supply(this.h); }
   setLink(i: number, net: Netlist): void {
     if (!this.send(net, (p, n) => this.x.fm_amp_set_link(this.h, i >>> 0, p, n))) throw new Error(`rust amp refused link ${i}`);
   }

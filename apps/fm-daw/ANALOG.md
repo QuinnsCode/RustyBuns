@@ -65,12 +65,11 @@ Some classic effects are not only circuits. A tape echo is a motor, a tape and t
 
 ## 5. More amps, and the rest of the amp
 
-Q Amp's three amps are preamps into a `tanh`. A real amp's feel lives in the back half:
+Q Amp now has a back half ([CIRCUITS.md](CIRCUITS.md#the-back-end)): push-pull output tubes with sag, an output transformer that cares what is on its jack, and a cabinet impulse response with a mic you move. What is left of a real amp's feel:
 
-- **Power amp:** push-pull pentodes, a phase inverter, the negative feedback loop with Presence and Resonance knobs.
+- **Power amp:** the negative feedback loop with Presence and Resonance knobs.
 - **Output transformer:** the inductor from section 1, with a core that saturates.
-- **Sag:** a tube rectifier and the supply's resistance, so the amp squashes when you dig in and recovers.
-- **Speaker:** the voice coil's impedance talks back to the output transformer (that is half of why a real amp feels alive), then a cabinet impulse response and a mic position.
+- **Speaker:** the voice coil's impedance talks back to the output transformer (that is half of why a real amp feels alive), and measured cab IRs alongside the made ones.
 - **More voicings**, each named by what it is: a small single-ended class A, a clean amp with spring reverb and bias tremolo built in, a bright one with a top boost, a channel-switching high gain. All from the same parts.
 
 ## 6. Profiling: a real amp in, a real circuit out

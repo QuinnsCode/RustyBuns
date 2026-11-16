@@ -3,7 +3,7 @@
 // with a note, when the wasm isn't built). The solver's own numbers are tested in packages/gear.
 import { existsSync, readFileSync } from "node:fs";
 import { expect, setDefaultTimeout, test } from "bun:test";
-import { AMPS, PEDALS, RIGS, buildRig, Rig, runRig } from "@rustybuns/gear/circuit";
+import { AMPS, DEFAULT_ROOM, PEDALS, RIGS, buildRig, Rig, runRig } from "@rustybuns/gear/circuit";
 import { riff } from "../src/circuit/riff.ts";
 import { WasmRig } from "../src/circuit/wasm.ts";
 import { instantiateFm } from "../src/engine/wasm.ts";
@@ -37,19 +37,27 @@ test("rust (wasm) plays every rig like ts, while the knobs turn", async () => {
   const x = await instantiateFm(readFileSync(f));
   const input = riff(SR).subarray(0, SR / 2), half = SR / 4;
   const lead = AMPS[1], fuzz = PEDALS[1];
-  const rigs = { ...RIGS, "fuzz into lead, hissing": buildRig(lead, { ...lead.knobs, noise: 7 }, { def: fuzz, drive: 6 }) };
+  const rigs = {
+    ...RIGS,
+    "fuzz into lead, hissing": buildRig(lead, { ...lead.knobs, noise: 7 }, { def: fuzz, drive: 6 }),
+    "brit with nothing on the jack": buildRig(AMPS[0], AMPS[0].knobs, undefined, { ...DEFAULT_ROOM, load: 0 }),
+  };
   for (const [name, spec] of Object.entries(rigs)) {
     const ts = new Rig(spec, SR), rust = new WasmRig(x, spec, SR);
     const a = new Float32Array(input.length), b = new Float32Array(input.length);
     ts.process(input, a, half); rust.process(input, b, half);
-    // Halfway: every knob Q Amp turns live (a pot, the power drive, the hiss, a rebuilt circuit).
+    // Halfway: every knob Q Amp turns live (a pot, the power drive, the hiss, a rebuilt circuit, the mic), and a 16 ohm cab.
     const last = spec.links.length - 1;
-    for (const r of [ts, rust]) { r.setGain(last, 0.5); r.setPower(spec.power ? 3 : 0); r.setNoise(2); r.setLink(0, spec.links[0].net); }
+    for (const r of [ts, rust]) {
+      r.setGain(last, 0.5); r.setPower(spec.power ? 3 : 0); r.setNoise(2); r.setLink(0, spec.links[0].net);
+      if (spec.cab) r.setMic({ at: 0.8, angle: 30 });
+      if (spec.output?.load) r.setLoad(16);
+    }
     ts.process(input.subarray(half), a.subarray(half)); rust.process(input.subarray(half), b.subarray(half));
     let diff = 0, top = 0;
     for (let i = 0; i < a.length; i++) { diff = Math.max(diff, Math.abs(a[i] - b[i])); top = Math.max(top, Math.abs(a[i])); }
     console.log(`  ${name}: max |rust - ts| = ${diff.toExponential(2)} (peak ${top.toFixed(2)} V)`);
-    expect([name, rust.misses, rust.levels().length]).toEqual([name, ts.misses, spec.links.length]);
+    expect([name, rust.misses, rust.levels().length, rust.fault]).toEqual([name, ts.misses, spec.links.length, ts.fault]);
     expect([name, diff <= 1e-6 * top]).toEqual([name, true]);
     rust.free();
   }

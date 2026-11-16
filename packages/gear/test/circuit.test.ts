@@ -1,7 +1,8 @@
-// The circuit solver lands on the textbook numbers, and no rig blows up on a hot input.
+// The circuit solver lands on the textbook numbers, no rig blows up on a hot input,
+// the power amp sags and blows with nothing on its jack, and the mic darkens off the centre.
 // FM DAW's own tests play a tscircuit board and the Rust port against it.
 import { expect, setDefaultTimeout, test } from "bun:test";
-import { Circuit, RIGS, runRig, triodeStage, type Netlist } from "../src/circuit/index.ts";
+import { AMPS, B_PLUS, Circuit, DEFAULT_ROOM, RIGS, Rig, buildRig, cabIR, gainAt, runRig, triodeStage, type Netlist } from "../src/circuit/index.ts";
 
 setDefaultTimeout(60_000);
 
@@ -45,3 +46,43 @@ test("every rig stays finite, bounded and converged on a hot input", () => {
   }
 });
 
+const rms = (b: Float32Array, from = 0) => { let s = 0; for (let i = from; i < b.length; i++) s += b[i] * b[i]; return Math.sqrt(s / (b.length - from)); };
+const brit = AMPS[0];
+
+test("the power amp sags when you dig in: a loud chord compresses, a quiet one doesn't", () => {
+  // The same amp with a stiff supply and with its own; the ratio of what comes out is the compression.
+  const stiff = { ...buildRig(brit, brit.knobs), output: { pairs: 1, sag: 0, load: 8 } };
+  for (const [what, level, lo, hi] of [["picked softly", 0.005, 0.98, 1.01], ["dug in", 1, 0.5, 0.93]] as const) {
+    const input = sine(110, 0.5, level), soft = new Rig(buildRig(brit, brit.knobs), SR), out = new Float32Array(input.length);
+    let low = B_PLUS;
+    for (let i = 0; i < input.length; i += 128) { soft.process(input.subarray(i, i + 128), out.subarray(i, i + 128), Math.min(128, input.length - i)); low = Math.min(low, soft.supply); }
+    inRange(`${what}: sagged over stiff`, rms(out, SR / 4) / rms(runRig(stiff, input).out, SR / 4), lo, hi);
+    if (level === 1) inRange("the supply under a loud chord", low, 300, 430);
+  }
+});
+
+test("nothing on the speaker jack: silent, survives the hiss, blows when played", () => {
+  const open = buildRig(brit, { ...brit.knobs, noise: 5 }, undefined, { ...DEFAULT_ROOM, load: 0 });
+  const rig = new Rig(open, SR), out = new Float32Array(SR / 2);
+  rig.process(new Float32Array(SR / 2), out);
+  expect([rig.fault, peak(out)]).toEqual([null, 0]);
+  rig.process(sine(220, 0.5, 0.3), out);
+  expect([rig.fault, peak(out)]).toEqual(["open-load", 0]);
+  // Plugging the speaker in afterwards doesn't mend it; a mended amp (a new rig) plays.
+  rig.setLoad(8);
+  rig.process(sine(220, 0.5, 0.3), out);
+  expect(peak(out)).toBe(0);
+  inRange("the same amp with a speaker", peak(runRig({ ...open, output: { ...open.output!, load: 8 } }, sine(220, 0.5, 0.3)).out), 5, 100);
+});
+
+test("the mic on the cab: bright on the centre cap, darker at the edge and off axis", () => {
+  const top = (at: number, angle: number) => { const ir = cabIR({ at, angle }, SR); return gainAt(ir, 5000, SR) / gainAt(ir, 800, SR); };
+  const centre = top(0, 0), edge = top(1, 0), away = top(1, 60);
+  expect([centre > 2 * edge, edge > away]).toEqual([true, true]);
+  // Moving it while the amp plays is just a new response: no rebuild, no misses.
+  const rig = new Rig(RIGS.lead, SR), out = new Float32Array(SR / 4);
+  rig.process(sine(220, 0.25), out);
+  rig.setMic({ at: 1, angle: 60 });
+  rig.process(sine(220, 0.25), out);
+  expect(rig.misses).toBe(0);
+});

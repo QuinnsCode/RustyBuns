@@ -135,7 +135,9 @@ button { cursor: pointer; }
 .knob.small .knob-value { display: none; }
 
 /* the cabinet */
-.cab { display: flex; justify-content: center; gap: clamp(16px, 6vw, 70px); padding: 22px; margin-top: 8px; border-radius: 12px 12px 6px 6px; }
+.cab { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: clamp(16px, 6vw, 70px); padding: 22px; margin-top: 8px; border-radius: 12px 12px 6px 6px; }
+.mic-knobs { display: flex; flex-direction: column; gap: 12px; }
+@media (max-width: 520px) { .mic-knobs { flex-direction: row; } }
 .speaker { width: clamp(120px, 24vw, 230px); aspect-ratio: 1; border-radius: 50%; display: grid; place-items: center; background: radial-gradient(circle, #1b1d21 60%, #2c2f35 62%, #111215 70%); box-shadow: inset 0 0 0 6px #0c0d0f; }
 .cone {
   --push: 0; width: 84%; aspect-ratio: 1; border-radius: 50%;
