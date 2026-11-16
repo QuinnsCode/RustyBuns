@@ -504,8 +504,9 @@ async function askLeftovers(env: Env, owner: string, repo: string, branch: Branc
 /**
  * Picks for the conflicts Mervin left in `path`, from Mergiraf's merge of the file on its syntax tree (mergiraf.ts): the
  * text it wrote where each card is, taken only when it agrees with Mervin on every line he settled and merging with
- * the picks gives its text exactly. Each try is kept by the three versions it saw, so a file it couldn't settle isn't
- * run again until one of them moves. Null when there are none.
+ * the picks gives its text exactly; else, when the cards don't fit it, its text put on the branch (no picks needed).
+ * Each try is kept by the three versions it saw, so a file it couldn't settle isn't run again until one of them moves.
+ * Null when there are none.
  */
 async function mergirafPicks(env: Env, owner: string, repo: string, branch: BranchRow, path: string, conflicts: Conflict[], rule: Rule, user: string): Promise<Resolve | null> {
   const box = mergirafBox(env);
@@ -527,9 +528,19 @@ async function mergirafPicks(env: Env, owner: string, repo: string, branch: Bran
   const marks = conflicts.map((_, i) => `\u0000${MERGIRAF} ${i}`);
   const template = mergedWith(Object.fromEntries(conflicts.map((c, i) => [c.line, { text: marks[i]! }])));
   const texts = template === null ? null : fill(template.split("\n"), marks, merged.split("\n"));
-  if (!texts) return null;
-  const resolve: Resolve = Object.fromEntries(conflicts.map((c, i) => [c.line, { text: texts[i]! }]));
-  return mergedWith(resolve) === merged ? resolve : null;
+  const resolve: Resolve | null = texts && Object.fromEntries(conflicts.map((c, i) => [c.line, { text: texts[i]! }]));
+  if (resolve && mergedWith(resolve) === merged) return resolve;
+  // Its answer doesn't fit the cards (#4772: a function the branch moved, settled whole): it goes onto the branch, as
+  // a lockfile made again does, with each card merging from there settled as the branch, when that lands exactly it.
+  const ops = diffToOps(ours.lines, merged.split("\n")), onto = structuredClone(ours);
+  if (!ops.length || !apply(onto, ops, MERGIRAF, 0, ours.rev).ok) return null;
+  const left = merge(base, onto, main, {}, String(branch.by), path, user, rule).conflicts;
+  if (left.some((c) => c.lint || c.whole || c.line.startsWith("key:"))) return null;
+  const asBranch: Resolve = Object.fromEntries(left.map((c) => [c.line, "branch"]));
+  const m = merge(base, onto, main, asBranch, String(branch.by), path, user, rule), d = structuredClone(main);
+  if (m.conflicts.length || !apply(d, m.ops, m.by, 0, main.rev).ok || text(d) !== merged) return null;
+  const res = await toFile(env, owner, repo, path, user, "ops", { method: "POST", body: JSON.stringify({ ops, ifRev: ours.rev }) }, "", branch.name);
+  return res.ok ? asBranch : null;
 }
 
 /**

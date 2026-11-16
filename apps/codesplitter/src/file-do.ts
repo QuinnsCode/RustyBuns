@@ -34,10 +34,10 @@ import { noteStep } from "./insights.ts";
 import { branchEdited } from "./checks.ts";
 import { Tally } from "./limits.ts";
 import { ConflictSavedCounter } from "./stats.ts";
-import { lintMerge } from "./lint.ts";
+import { lintedMerge } from "./lint.ts";
 import { DocStore } from "./doc-store.ts";
 import { sha256 as sha } from "./util.ts";
-import { apply, empty, MAX_OPS, merge, MERGE_ASK, mergeWords, parseOps, PROTOCOL, replay, text, type Applied, type Doc, type Line, type FileCommit, type FileCommitted, type FileTexts, type MergeReply, type Op, type Resolve } from "./lines.ts";
+import { apply, empty, MAX_OPS, MERGE_ASK, mergeWords, parseOps, PROTOCOL, replay, text, type Applied, type Doc, type Line, type FileCommit, type FileCommitted, type FileTexts, type MergeReply, type Op, type Resolve } from "./lines.ts";
 import type { Live, Rule } from "./policy.ts";
 import { pad10 } from "./util.ts";
 
@@ -453,9 +453,8 @@ export class FileDurableObject {
       const ask = need(await readBody(req), MERGE_ASK);
       if (ask instanceof Response) return ask;
       const { base, branch, resolve, dry, deleter, path, writer, rule } = ask;
-      const m = merge(base, branch, this.doc, resolve, deleter, path, writer, rule);
-      // Every line settled: check the merged code still builds before it lands.
-      if (!m.conflicts.length && path) m.conflicts = lintMerge(path, this.doc, branch, m, resolve);
+      // Every line settled: the merged code is checked to still build before it lands.
+      const m = lintedMerge(base, branch, this.doc, resolve, deleter, path, writer, rule);
       // Generated text both sides touched kept main's copy: its command runs once the merge lands.
       // Prose that settled but may say something untrue now goes back as checks for the review (#1254).
       const regen = { ...m.regenerate && { regenerate: m.regenerate }, ...m.checks && { checks: m.checks }, ...m.solved && { solved: m.solved } };
