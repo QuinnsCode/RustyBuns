@@ -9,6 +9,7 @@
 import { help } from "../../../scripts/help.ts";
 
 help(import.meta.path);
+// @ts-expect-error opentype.js has no types here: it is only installed for a run (above).
 const { default: opentype } = await import("opentype.js"); // after help: it is only installed for a run (above)
 const W = 11, H = 22, BASE = 17, SS = 4;
 const [src, out, note] = process.argv.slice(2);

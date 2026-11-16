@@ -97,6 +97,7 @@ class CloudRepo implements ArtifactsRepo {
   async readBlob(hash: string) { return this.raw(`/repos/${this.name}/blob/${hash}`); }
   async readFile(a: { ref: string; path: string }) { return this.raw(`/repos/${this.name}/file?ref=${encodeURIComponent(a.ref)}&path=${encodeURIComponent(a.path)}`); }
   async fork(): Promise<never> { throw new Error("not needed here"); }
+  async revokeToken(): Promise<never> { throw new Error("not needed here"); }
   private async raw(path: string) {
     const res = await authed(BASE + path);
     if (res.status === 404) return null;

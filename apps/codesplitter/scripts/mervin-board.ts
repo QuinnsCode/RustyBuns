@@ -60,7 +60,7 @@ import { describeBlast, load, rank } from "./blast.ts";
 import { debtLines, hold, hurtLines, insight, keep, kept, packagesChanged, report, rows, slowChecks, triage, waitLines } from "./ester.ts";
 import { fromJunit, hot, recall, recallLines, remember, resolve as resolveTest, withJunit } from "./ester-memory.ts";
 import { heal, layout } from "../layout.ts";
-import { arr, check, int, nul, obj, opt, raw, str, type Of } from "@rustybuns/util/guard";
+import { arr, check, int, nul, obj, oneOf, opt, raw, str, type Of } from "@rustybuns/util/guard";
 import { PIPELINE_FILE, Pipeline } from "../src/pipeline.ts";
 import type { Lane, LaneStep, Line } from "../src/mervin-replay.ts";
 import { sandbox, shadow, testRuns, testTree, writeTree } from "./shadow.ts";
@@ -89,7 +89,7 @@ export function regenerate(root: string) {
   } catch { /* a Layout line naming a missing file, or no table: the tree's own layout test says so */ }
 }
 
-export const TIERS: Tier[] = ["certain", "agree", "mervin", "differ", "card"];
+export const TIERS = ["certain", "agree", "mervin", "differ", "card"] as const satisfies Tier[];
 
 /** One open PR as `gh pr list --json` writes it: Mervin's board, live board and merge train all read it through this. */
 export const BoardPr = obj({
@@ -426,7 +426,10 @@ const unindented = (t: string) => t.split("\n").map((l) => l.trim()).join("\n");
 const sorted = (t: string) => t.split("\n").sort().join("\n");
 
 /** Each board file against `now` (main after the real merges). */
-export function score(repo: string | undefined, board: Board, treeDir: string, now: string) {
+/** What `--score` reads back of a written board.json: its base, and each stage's PR and files with their tiers. */
+export const Scored = obj({ main: str(200), stages: arr(obj({ pr: int(1, 1e9), files: arr(obj({ path: str(Infinity), tier: oneOf(TIERS) }), Infinity) }), Infinity) });
+
+export function score(repo: string | undefined, board: Of<typeof Scored>, treeDir: string, now: string) {
   const git = gitIn(repo);
   const log = (git("log", "--first-parent", "--format=%H%x09%s", `${board.main}..${now}`) ?? "").split("\n").filter(Boolean);
   const onBoard = new Set(board.stages.map((s) => s.pr));
@@ -469,7 +472,7 @@ if (import.meta.main) {
   const scoring = arg("score");
   if (scoring) {
     const dir = resolve(scoring);
-    const board: Board = JSON.parse(readFileSync(join(dir, "board.json"), "utf8"));
+    const board = Scored(JSON.parse(readFileSync(join(dir, "board.json"), "utf8")));
     const now = gitIn(top)("rev-parse", arg("main") ?? "origin/main")!.trim();
     const { landed, rows } = score(top, board, join(dir, "tree"), now);
     const tally = (k: Score) => rows.filter((r) => r.score === k).length;

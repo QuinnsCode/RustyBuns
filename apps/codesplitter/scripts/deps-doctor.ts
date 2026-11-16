@@ -13,6 +13,7 @@ import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { bump, floors, npmRegistry, osvAdvisories, outdated, DEFAULTS, type Exposed, type Update, type Vuln } from "../src/deps.ts";
 import { workspaceDirs, workspaceGlobs } from "../src/fit.ts";
+import { isRecord } from "@rustybuns/util/guard";
 import { help } from "../../../scripts/help.ts";
 
 help(import.meta.path);
@@ -21,7 +22,8 @@ const opt = (name: string) => { const i = args.indexOf(name); return i >= 0 ? ar
 const root = resolve(opt("--root") ?? join(import.meta.dir, "../../.."));
 const reportPath = opt("--report");
 
-const read = (path: string) => JSON.parse(readFileSync(join(root, path), "utf8")) as Record<string, any>;
+// A package.json is walked, not shaped: deps.ts and fit.ts look for the fields they know.
+const read = (path: string) => { const v: unknown = JSON.parse(readFileSync(join(root, path), "utf8")); return isRecord(v) ? v : {}; };
 const top = read("package.json");
 const pnpm = existsSync(join(root, "pnpm-workspace.yaml")) ? readFileSync(join(root, "pnpm-workspace.yaml"), "utf8") : null;
 const list = async (dir: string) => existsSync(join(root, dir))
@@ -30,7 +32,7 @@ const list = async (dir: string) => existsSync(join(root, dir))
 const paths = ["package.json", ...(await workspaceDirs(workspaceGlobs(top, pnpm), list)).map((d) => `${d}/package.json`).filter((p) => existsSync(join(root, p)))];
 const manifests = new Map(paths.map((p) => [p, read(p)]));
 // The workspace's own packages are ours, not the registry's.
-const own = new Set([...manifests.values()].map((m) => m.name).filter(Boolean));
+const own = new Set([...manifests.values()].map((m) => m.name).filter((n): n is string => typeof n === "string" && !!n));
 
 const asks = new Map([...manifests.values()].flatMap((m) => floors(m)).filter((p) => !own.has(p.name)).map((p) => [`${p.name}@${p.version}`, p]));
 let note = "";

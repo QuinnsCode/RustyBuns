@@ -16,6 +16,7 @@ if (!base || !repo?.includes("/") || !path || !collab || !owner || !remove) {
 }
 const wsUrl = `${base.replace(/^http/, "ws")}/api/repos/${repo}/do/ws?path=${encodeURIComponent(path)}`;
 const open = (token: string) => new Promise<WebSocket>((res, rej) => {
+  // @ts-expect-error Bun's socket takes headers, but the browser's constructor type wins the overload here.
   const ws = new WebSocket(wsUrl, { headers: { authorization: `Bearer ${token}` } });
   ws.onopen = () => res(ws); ws.onerror = () => rej(new Error("upgrade refused"));
 });
