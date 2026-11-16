@@ -11,12 +11,10 @@
 // Open the printed link first: the firehose glow and the shimmering claims are on the file page.
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
-import { readJson } from "@rustybuns/util/http";
-import type { Guard } from "@rustybuns/util/guard";
 import { MergePlanReply } from "../src/branches.ts";
 import { ClaimRow, FileReply } from "../src/file-do.ts";
 import { FitReply } from "../src/fit.ts";
-import { local } from "../src/local.ts";
+import { got, local } from "../src/local.ts";
 import { PORTS, onPortOrFree } from "@rustybuns/util/ports";
 import { help } from "../../../scripts/help.ts";
 
@@ -55,10 +53,8 @@ export async function tour(call: Awaited<ReturnType<typeof local>>, t: Tour) {
     if (!res.ok) throw new Error(`${what}: ${res.status} ${await res.text()}`);
     return res;
   };
-  const got = async <T>(r: Response | Promise<Response>, what: string, g: Guard<T>) =>
-    (await readJson(await ok(r, what), g)) ?? Promise.reject(new Error(`${what}: not the reply it answers`));
   const base = "/repos/ryan/hello-world", at = `${base}/do`, q = (b?: string) => `?path=${encodeURIComponent(FILE)}${b ? `&branch=${b}` : ""}`;
-  const read = async (b?: string) => (await got(j("ryan", `${at}/file${q(b)}`), "read", FileReply)).lines;
+  const read = async (b?: string) => (await got(j("ryan", `${at}/file${q(b)}`), FileReply, "read")).lines;
   const block = async (marker: string) => {
     const ls = await read(), i = ls.findIndex((l) => l.text === marker), n = ls.slice(i).findIndex((l) => l.text === "");
     return ls.slice(i + 1, n < 0 ? undefined : i + n);
@@ -82,7 +78,7 @@ export async function tour(call: Awaited<ReturnType<typeof local>>, t: Tour) {
   let landed = 0, held = 0;
   const work = async (job: (typeof JOBS)[number], round: number) => {
     const lines = await block(job.marker);
-    const claim = await got(j(job.who, `${at}/claims${q()}`, { id: `run-${job.who.slice(6)}-${round}`, task: job.task, lines: lines.map((l) => l.id) }), "claim", ClaimRow);
+    const claim = await got(j(job.who, `${at}/claims${q()}`, { id: `run-${job.who.slice(6)}-${round}`, task: job.task, lines: lines.map((l) => l.id) }), ClaimRow, "claim");
     for (const l of lines) {
       await Bun.sleep(t.pace + Math.random() * t.pace);
       const cur = (await read()).find((x) => x.id === l.id)!;
@@ -114,7 +110,7 @@ export async function tour(call: Awaited<ReturnType<typeof local>>, t: Tour) {
   const edit = (b: string, text: string) => ok(j("ryan", `${at}/ops${q(b)}`, { ops: [{ kind: "set", line: target.id, base: fresh.rev, text }] }), `edit ${b}`);
   await edit("warmer", "  return `Hello there, ${name}!`;");
   await edit("shorter", "  return `Hi ${name}`;");
-  const plan = await got(j("ryan", `${base}/merge-plan`), "merge plan", MergePlanReply);
+  const plan = await got(j("ryan", `${base}/merge-plan`), MergePlanReply, "merge plan");
   t.say("3 mervin", `${plan.engine} plans ${plan.waves.length} waves before anyone merges: the clashing branch waits its turn`);
   await ok(j("ryan", `${base}/branches/warmer/merge`, {}), "merge warmer");
   const card = await j("ryan", `${base}/branches/shorter/merge`, {});
@@ -124,7 +120,7 @@ export async function tour(call: Awaited<ReturnType<typeof local>>, t: Tour) {
 
   // 4. But wait: we have your code here.
   t.say("4 deploy", "but wait, we have your code here. Why not just deploy it?");
-  const fit = await got(j("ryan", `${base}/fit`), "fit", FitReply);
+  const fit = await got(j("ryan", `${base}/fit`), FitReply, "fit");
   t.say("4 deploy", `Rusty Buns reads the repo: ${fit.verdict}${fit.reasons.length ? ` (${fit.reasons.slice(0, 2).join("; ")})` : ""}`);
   t.say("4 deploy", "deploys refuse without a plan for this exact config, list what bills you, and only a person presses the button");
 

@@ -36,10 +36,11 @@ import { homedir, tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { DEPLOY_DEPS, DEPLOY_OVERRIDES } from "../../../packages/cli/src/glue/deploy-deps.ts";
-import { local, remote, type Call } from "../src/local.ts";
+import { got, local, remote, type Call } from "../src/local.ts";
+import { FileReply } from "../src/file-do.ts";
 import { diffToOps } from "../src/sync.ts";
-import type { Run } from "../src/preview.ts";
-import { bool, nul, obj, opt, str } from "@rustybuns/util/guard";
+import { RunReply, StartReply, type Run } from "../src/preview.ts";
+import { arr, bool, nul, obj, opt, or, raw, str, type Guard } from "@rustybuns/util/guard";
 import { readJson } from "@rustybuns/util/http";
 import { help } from "../../../scripts/help.ts";
 
@@ -116,11 +117,10 @@ function fromFolder(dir: string): Record<string, string> {
 const APP = folder ? fromFolder(folder) : throwaway();
 const app = a.url || (a.destroy && !a.hosted) ? null : await local({ GH_CLI: "off" });
 const call: Call = app ?? remote(a.url!, a.cookie);
-const send = async (path: string, body?: unknown, method = body === undefined ? "GET" : "POST") => {
-  const res = await call(user, path, { method, ...(body !== undefined && { body: JSON.stringify(body) }) });
-  if (!res.ok && res.status !== 409) throw new Error(`${method} ${path}: ${res.status} ${await res.text()}`);
-  return res.json() as Promise<any>;
-};
+/** A call as `user`, its reply through `g`; a 409 is an answer too (a refused merge, a run already going). */
+const send = <T>(g: Guard<T>, path: string, body?: unknown, method = body === undefined ? "GET" : "POST") =>
+  got(call(user, path, { method, ...(body !== undefined && { body: JSON.stringify(body) }) }), g, `${method} ${path}`, (s) => (s >= 200 && s < 300) || s === 409);
+const Merged = obj({ status: str(200), merged: or(arr(obj({ path: str(2000) }), Infinity), []) });
 const base = `/api/repos/${user}/${repo}`;
 
 /** Where deploy.ts keeps a desktop deploy's Alchemy state (the app is at the repo's root). */
@@ -146,7 +146,7 @@ async function destroy() {
 
 if (a.hosted && a.destroy) {
   // The Worker's script name is its workers.dev URL's first label.
-  const url = (await send(`${base}/deploy`)).run?.url;
+  const url = (await send(RunReply, `${base}/deploy`)).run?.url;
   if (url) {
     const name = new URL(url).hostname.split(".")[0];
     const res = await fetch(`https://api.cloudflare.com/client/v4/accounts/${accountId}/workers/scripts/${name}?force=true`, { method: "DELETE", headers: { authorization: `Bearer ${token}` } });
@@ -162,27 +162,27 @@ if (a.hosted) {
   // Accounts, not aliases: the cookie is who we are, and only an admin deploys.
   const s = (await readJson(await call(null, "/api/session"), obj({ user: nul(str(200)), admin: opt(bool()) }))) ?? { user: null };
   if (s.user !== user || !s.admin) throw new Error(`the cookie signs in as ${s.user ?? "nobody"}${s.admin ? "" : " (not an admin)"}; expected admin ${user}`);
-} else await send("/api/login", { name: user });
-if ((await call(user, base)).status === 404) await send("/api/repos", { name: repo, visibility: "private" });
+} else await send(raw, "/api/login", { name: user });
+if ((await call(user, base)).status === 404) await send(raw, "/api/repos", { name: repo, visibility: "private" });
 for (const [path, content] of Object.entries(APP)) {
-  await send(`${base}/files`, { path, content });
-  await send(`${base}/do/commit?path=${encodeURIComponent(path)}`, { message: `add ${path}` });
+  await send(raw, `${base}/files`, { path, content });
+  await send(raw, `${base}/do/commit?path=${encodeURIComponent(path)}`, { message: `add ${path}` });
 }
-await send(`${base}/deploy`, { stage }, "PUT");
+await send(raw, `${base}/deploy`, { stage }, "PUT");
 say(`${user}/${repo} committed (${Object.keys(APP).length} files), stage ${stage}`);
 if (a.hosted) {
-  const key = (await send(`${base}/deploy/key`, { token, account_id: accountId }, "PUT")) as { set?: boolean; last4?: string };
+  const key = await send(obj({ last4: opt(str(10)) }), `${base}/deploy/key`, { token, account_id: accountId }, "PUT");
   console.log(`stored the deploy key (…${key.last4})`);
 }
 
 /** Start a run on `route` and poll it as the page does, printing each step as it settles, with the end of its log. */
 async function walk(label: string, route: string, body: unknown = {}, poll = route) {
-  const started = await send(route, body);
+  const started = await send(StartReply, route, body);
   if (started.error) { say(`${label}: refused: ${started.error}`); return { green: false, run: null as Run | null, grew: false }; }
   const shown = new Set<string>(), seen = new Map<string, number>();
   let run: Run | null = null, grew = false;
   for (;;) {
-    run = (await send(poll)).run;
+    run = (await send(RunReply, poll)).run;
     for (const s of run?.steps ?? []) {
       // A running step whose log gets longer between polls is streaming, not landing at the end.
       if (s.status === "running" && s.out.length > (seen.get(s.key) ?? Infinity)) grew = true;
@@ -219,13 +219,13 @@ if (a.init) {
   const branch = saved.match(/^branch (\S+)$/m)?.[1];
   if (!init.green || !branch) ok = false;
   else {
-    const merged = await send(`${base}/branches/${encodeURIComponent(branch)}/merge`, {});
+    const merged = await send(Merged, `${base}/branches/${encodeURIComponent(branch)}/merge`, {});
     if (merged.status !== "merged") { say(`merge ${branch}: ${JSON.stringify(merged).slice(0, 400)}`); ok = false; }
     else {
       // The merge commits what it merged (#3402), so the deploy's clone has init's files.
-      const paths: string[] = merged.merged.map((m: { path: string }) => m.path);
+      const paths = merged.merged.map((m) => m.path);
       // destroy() rebuilds the app from APP: it needs the files init wrote, as main has them now.
-      for (const path of paths) APP[path] = (await send(`${base}/do/file?path=${encodeURIComponent(path)}`)).lines.map((l: { text: string }) => l.text).join("\n");
+      for (const path of paths) APP[path] = (await send(FileReply, `${base}/do/file?path=${encodeURIComponent(path)}`)).lines.map((l) => l.text).join("\n");
       say(`merged ${branch}: ${paths.join(", ")}`);
     }
   }
@@ -239,9 +239,9 @@ if (ok && a.drop) {
   else if (changed === cfg) { say(`--drop ${a.drop}: no such binding in rustybuns.config.ts`); ok = false; }
   else {
     // POST /files only makes a file; an edit is line ops against the lines it has now.
-    const doc = await send(`${base}/do/file?path=rustybuns.config.ts`);
-    await send(`${base}/do/ops?path=rustybuns.config.ts`, { ops: diffToOps(doc.lines, changed.split("\n")) });
-    await send(`${base}/do/commit?path=rustybuns.config.ts`, { message: `drop ${a.drop}` });
+    const doc = await send(FileReply, `${base}/do/file?path=rustybuns.config.ts`);
+    await send(raw, `${base}/do/ops?path=rustybuns.config.ts`, { ops: diffToOps(doc.lines, changed.split("\n")) });
+    await send(raw, `${base}/do/commit?path=rustybuns.config.ts`, { message: `drop ${a.drop}` });
     say(`committed rustybuns.config.ts without ${a.drop}; planning against ${stage}, as Ship's Deploy tab does`);
     const plan = await walk("plan   ", `${base}/deploy/plan`);
     const rows = plan.run?.plan ?? [];
@@ -256,7 +256,7 @@ if (ok && a.drop) {
   else ok = (await walk("down   ", `${base}/deploy/destroy`, { stage }, `${base}/deploy`)).green && ok;
 } else if (ok) {
   // Init's commits are agent-rustybuns's, so the first deploy waits for the owner to read that diff: approve it as they would.
-  const tip = a.init ? (await send(`${base}/deploy/review`)).tip as string | undefined : undefined;
+  const tip = a.init ? (await send(obj({ tip: opt(str(200)) }), `${base}/deploy/review`)).tip : undefined;
   if (tip) say(`approving init's commits up to ${tip.slice(0, 7)}, as the owner does after reading the diff`);
   const first = await deploy("deploy ", tip ? { approve: tip, approve_unseen: true } : {}), second = await deploy("deploy2");
   say(`second deploy ${first.url && first.url === second.url ? "updated the same Worker" : `went to ${second.url ?? "no URL"}, not ${first.url ?? "no URL"}`}`);

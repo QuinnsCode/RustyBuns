@@ -5,6 +5,7 @@ import { LocalArtifacts, applyD1Migrations, d1, durableObject, gitHttp, installC
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { Guard } from "@rustybuns/util/guard";
 import worker, { AgentThread, FileDurableObject, OfficeFloor, GameRoom, RepoSearch, UserSettings } from "./worker.ts";
 
 // Each queue here is consumed at once, not through the host scheduler: that one is the process's, and holds its slots for
@@ -62,6 +63,17 @@ export async function local(extra: Record<string, unknown> = {}) {
 }
 
 export type Call = (user: string | null, path: string, init?: RequestInit) => Promise<Response>;
+
+/**
+ * A reply read through `g` for a script driving the app: throws naming `what` on a status `fine` refuses
+ * (any 2xx by default) or a body that isn't the shape. `raw` for a reply the script doesn't read.
+ */
+export async function got<T>(r: Response | Promise<Response>, g: Guard<T>, what = "", fine = (s: number) => s >= 200 && s < 300): Promise<T> {
+  const res = await r;
+  if (!fine(res.status)) throw new Error(`${what || res.url}: ${res.status} ${await res.text()}`);
+  const v: unknown = await res.json();
+  try { return g(v); } catch (e) { throw new Error(`${what || res.url}: not the reply it answers (${e instanceof Error ? e.message : e})`); }
+}
 
 /** The same caller shape over HTTP, for a running app (`--url`). */
 export function remote(base: string, extraCookie = ""): Call {

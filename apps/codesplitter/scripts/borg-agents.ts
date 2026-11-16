@@ -14,9 +14,11 @@
 // A run passes when the file ends as the commit wrote it (uncontested), or, for a contested line, as exactly
 // one of the texts offered: no lost update, no line doubled, no agent left hanging. Nothing leaves the
 // machine: the local twins, no GitHub, no Cloudflare.
-import { text, type Doc, type Op } from "../src/lines.ts";
+import { text, type Op } from "../src/lines.ts";
 import { diffToOps } from "../src/sync.ts";
-import { local, type Call } from "../src/local.ts";
+import { got, local, type Call } from "../src/local.ts";
+import { FileDoc } from "../src/file-do.ts";
+import { raw } from "@rustybuns/util/guard";
 import { help } from "../../../scripts/help.ts";
 
 help(import.meta.path);
@@ -59,8 +61,7 @@ export interface FileRun {
 export async function pretend(call: Call, path: string, base: string, target: string, opts: { agents?: number; contest?: number; seed?: number; owner?: string; repo?: string } = {}): Promise<FileRun> {
   const n = Math.max(1, opts.agents ?? 4), rand = rng(opts.seed ?? 1), t0 = performance.now();
   const owner = opts.owner ?? "borg", repo = opts.repo ?? `replay-${Math.floor(rand() * 1e9).toString(36)}`;
-  const ok = async (r: Promise<Response>) => { const res = await r; if (!res.ok) throw new Error(`${res.status} ${await res.text()}`); return res.json() as Promise<any>; };
-  const post = (user: string, url: string, body: unknown) => ok(call(user, url, { method: "POST", body: JSON.stringify(body) }));
+  const post = (user: string, url: string, body: unknown) => got(call(user, url, { method: "POST", body: JSON.stringify(body) }), raw, url);
   const names = Array.from({ length: n }, (_, i) => `agent-${i + 1}`);
 
   await post(owner, "/api/login", { name: owner });
@@ -68,7 +69,7 @@ export async function pretend(call: Call, path: string, base: string, target: st
   for (const a of names) await post(owner, `/api/repos/${owner}/${repo}/collaborators`, { name: a });
   await post(owner, `/api/repos/${owner}/${repo}/files`, { path, content: base });
   const door = `/api/repos/${owner}/${repo}/do`, q = `?path=${encodeURIComponent(path)}`;
-  const read = (as: string): Promise<Doc> => ok(call(as, `${door}/file${q}`));
+  const read = (as: string) => got(call(as, `${door}/file${q}`), FileDoc, "read");
 
   // What the commit did, as ops on the seeded doc's own ids.
   const seeded = await read(owner);

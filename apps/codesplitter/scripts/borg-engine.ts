@@ -22,6 +22,7 @@ import { join } from "node:path";
 import { run, type Row } from "./mervin-corpus.ts";
 import { local } from "../src/local.ts";
 import { replayCommit } from "./borg-agents.ts";
+import { arr, int, obj, or, rec, str, type Of } from "@rustybuns/util/guard";
 import { help } from "../../../scripts/help.ts";
 
 help(import.meta.path);
@@ -58,10 +59,13 @@ export function humanEdit(ours: string | null, texts: { main: string; branch: st
   return { added: added.slice(0, KEEP), dropped: dropped.slice(0, KEEP), edited: added.length + dropped.length };
 }
 
-export interface Tally { merges: number; files: number; solved: number; close: number; wrong: number; cards: number; gap: number; other: number; lessons: number }
+const count = or(int(0, Number.MAX_SAFE_INTEGER), 0);
+export const Tally = obj({ merges: count, files: count, solved: count, close: count, wrong: count, cards: count, gap: count, other: count, lessons: count });
+export type Tally = Of<typeof Tally>;
 export const noTally = (): Tally => ({ merges: 0, files: 0, solved: 0, close: 0, wrong: 0, cards: 0, gap: 0, other: 0, lessons: 0 });
 
-interface State { seen: Record<string, string[]>; tally: Record<string, Tally> }
+/** state.json: the merges each repo has had judged, and its running tally. Only this script writes it. */
+const State = obj({ seen: or(rec(arr(str(200), Infinity)), {}), tally: or(rec(Tally), {}) });
 
 const git = (...a: string[]) => {
   const r = Bun.spawnSync(["git", ...a], { stderr: "pipe" });
@@ -86,7 +90,7 @@ export async function roll(repo: string, dir: string, opts: { limit?: number; ag
   const log = opts.log ?? console.log;
   mkdirSync(dir, { recursive: true });
   const statePath = join(dir, "state.json");
-  const state: State = existsSync(statePath) ? JSON.parse(readFileSync(statePath, "utf8")) : { seen: {}, tally: {} };
+  const state = existsSync(statePath) ? State(JSON.parse(readFileSync(statePath, "utf8"))) : { seen: {}, tally: {} };
   const slug = slugOf(repo), clone = checkout(repo, dir);
   const seen = new Set(state.seen[slug] ?? []);
   const tally = state.tally[slug] ??= noTally();

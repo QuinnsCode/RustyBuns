@@ -23,8 +23,9 @@
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { apply, empty, text, type Conflict, type Doc } from "../src/lines.ts";
-import { local, type Call } from "../src/local.ts";
+import { apply, empty, oneOp, text } from "../src/lines.ts";
+import { got, local, type Call } from "../src/local.ts";
+import { arr, bool, obj, opt, or, raw, str, type Guard } from "@rustybuns/util/guard";
 import { FileDoc } from "../src/file-do.ts";
 import { readJson } from "@rustybuns/util/http";
 import { help } from "../../../scripts/help.ts";
@@ -57,6 +58,11 @@ const show = (rev: string, path: string) => {
 };
 const sorted = (s: string) => s.split("\n").sort().join("\n");
 
+// What the replay reads of the mirror's replies: what it skipped, whether the sync took, and the branch review's files.
+const Opened = obj({ skipped: or(arr(str(Infinity), Infinity), []) });
+const Synced = obj({ state: str(200) });
+const Review = obj({ files: arr(obj({ path: str(Infinity), binary: opt(bool()), deleted: opt(bool()), ops: arr(oneOp, Infinity), conflicts: arr(obj({ lint: opt(str(Infinity)) }), Infinity) }), Infinity) });
+
 /** The files git's own merge of the two sides conflicts on. */
 function gitConflicts(main: string, branch: string) {
   const r = Bun.spawnSync(["git", "merge-tree", "--write-tree", "--name-only", "--no-messages", main, branch], { cwd: top });
@@ -81,22 +87,20 @@ export async function replay(commit: string, pr?: number): Promise<Replay> {
     pin("pr", branch);
 
     call = await local({ GH_CLI: "off" });
-    const ask = async (path: string, body?: unknown) => {
-      const r = await call!("me", path, body === undefined ? {} : { method: "POST", body: JSON.stringify(body) });
-      if (!r.ok) throw new Error(`${path}: ${r.status} ${await r.text()}`);
-      return r.json() as Promise<any>;
+    const ask = <T>(g: Guard<T>, path: string, body?: unknown) => {
+      return got(call!("me", path, body === undefined ? {} : { method: "POST", body: JSON.stringify(body) }), g, path);
     };
-    await ask("/api/login", { name: "me" });
-    await ask("/api/mirrors", { url: `file://${up}`, name: "up", pullOnly: true });
-    const opened = await ask("/api/repos/me/up/mirror/branches", { ref: "pr" });
+    await ask(raw, "/api/login", { name: "me" });
+    await ask(raw, "/api/mirrors", { url: `file://${up}`, name: "up", pullOnly: true });
+    const opened = await ask(Opened, "/api/repos/me/up/mirror/branches", { ref: "pr" });
     pin("main", main);
-    const synced = await ask("/api/repos/me/up/mirror", {});
+    const synced = await ask(Synced, "/api/repos/me/up/mirror", {});
     if (synced.state !== "ok") throw new Error(`sync: ${JSON.stringify(synced)}`);
 
     const conflicted = gitConflicts(main, branch);
-    const review = await ask("/api/repos/me/up/branches/pr");
+    const review = await ask(Review, "/api/repos/me/up/branches/pr");
     const files: FileResult[] = [];
-    for (const f of review.files as { path: string; binary?: true; deleted?: true; ops: any[]; conflicts: Conflict[] }[]) {
+    for (const f of review.files) {
       const gitConflict = conflicted.includes(f.path);
       const cards = f.conflicts.length, lint = f.conflicts.flatMap((c) => c.lint ? [c.lint] : []);
       const row = (outcome: Outcome) => files.push({ path: f.path, outcome, gitConflict, cards, lint });

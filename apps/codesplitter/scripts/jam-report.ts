@@ -8,6 +8,7 @@
 // force push; "red" when GitHub has a failed workflow run on its branch.
 import { $ } from "bun";
 import { mkdirSync } from "node:fs";
+import { arr, int, nul, obj, raw, rec, str, type Guard, type Of } from "@rustybuns/util/guard";
 import { help } from "../../../scripts/help.ts";
 
 help(import.meta.path);
@@ -75,13 +76,25 @@ export function svg(rows: Row[]) {
 
 // ---- collecting (not unit tested: it is gh and git) --------------------------------------------------------------
 
-async function gql(repo: string, nums: number[]) {
+/** What a jam needs of a PR: its commits' headlines and how often it was force-pushed. */
+const Detail = obj({
+  number: int(1, 1e9),
+  commits: obj({ totalCount: int(0, 1e9), nodes: arr(obj({ commit: obj({ messageHeadline: str(Infinity, { min: 0 }) }) }), Infinity) }),
+  timelineItems: obj({ nodes: arr(raw, Infinity) }),
+});
+type Detail = Of<typeof Detail>;
+const DETAIL = "number commits(first:60){totalCount nodes{commit{messageHeadline}}} timelineItems(first:60,itemTypes:[HEAD_REF_FORCE_PUSHED_EVENT]){nodes{__typename}}";
+const Listed = obj({ n: int(1, 1e9), c: str(100), m: nul(str(100)), h: str(Infinity, { min: 0 }) });
+
+
+/** These PRs' `fields` from GitHub's GraphQL in one ask, each through `g` (a PR that isn't there is left out), retried while GitHub fails. */
+export async function prsByNumber<T>(repo: string, nums: number[], fields: string, g: Guard<T>): Promise<T[]> {
   const [owner, name] = repo.split("/");
-  const one = (n: number) => `p${n}:pullRequest(number:${n}){number commits(first:60){totalCount nodes{commit{messageHeadline}}} timelineItems(first:60,itemTypes:[HEAD_REF_FORCE_PUSHED_EVENT]){nodes{__typename}}}`;
+  const one = (n: number) => `p${n}:pullRequest(number:${n}){${fields}}`;
   const q = `{repository(owner:"${owner}",name:"${name}"){${nums.map(one).join(" ")}}}`;
   for (let tries = 0; tries < 6; tries++) {
     const r = await $`gh api graphql -f query=${q}`.quiet().nothrow();
-    if (!r.exitCode) return Object.values(JSON.parse(r.stdout.toString()).data.repository) as any[];
+    if (!r.exitCode) return Object.values(obj({ data: obj({ repository: rec(nul(g)) }) })(JSON.parse(r.stdout.toString())).data.repository).filter((d) => d !== null);
     await Bun.sleep(2000 * (tries + 1));
   }
   throw new Error(`GitHub kept failing for PRs ${nums[0]}..${nums.at(-1)}`);
@@ -89,17 +102,17 @@ async function gql(repo: string, nums: number[]) {
 
 export async function collect(repo: string, cache: string): Promise<Row[]> {
   mkdirSync(cache, { recursive: true });
-  const list = (await $`gh api ${`repos/${repo}/pulls?state=all&per_page=100`} --paginate --jq ${".[]|{n:.number,c:.created_at,m:.merged_at,h:.head.ref}"}`.text()).trim().split("\n").map((l) => JSON.parse(l));
+  const list = (await $`gh api ${`repos/${repo}/pulls?state=all&per_page=100`} --paginate --jq ${".[]|{n:.number,c:.created_at,m:.merged_at,h:.head.ref}"}`.text()).trim().split("\n").map((l) => Listed(JSON.parse(l)));
   const runs = (await $`gh api ${`repos/${repo}/actions/runs?status=failure&per_page=100`} --paginate --jq ${".workflow_runs[]|.head_branch"}`.text()).trim().split("\n");
   const redBy = new Map<string, number>();
   for (const b of runs) redBy.set(b, (redBy.get(b) ?? 0) + 1);
 
-  const merged = list.filter((p) => p.m), detail = new Map<number, any>();
+  const merged = list.filter((p) => p.m), detail = new Map<number, Detail>();
   const file = Bun.file(`${cache}/detail.json`);
-  if (await file.exists()) for (const d of await file.json()) detail.set(d.number, d);
+  if (await file.exists()) for (const d of arr(Detail, Infinity)(await file.json())) detail.set(d.number, d);
   const todo = merged.map((p) => p.n).filter((n) => !detail.has(n));
   for (let i = 0; i < todo.length; i += 8) {
-    for (const d of await gql(repo, todo.slice(i, i + 8))) if (d) detail.set(d.number, d);
+    for (const d of await prsByNumber(repo, todo.slice(i, i + 8), DETAIL, Detail)) detail.set(d.number, d);
     await Bun.write(file, JSON.stringify([...detail.values()]));
     console.error(`${detail.size}/${merged.length}`);
   }
@@ -112,8 +125,8 @@ export async function collect(repo: string, cache: string): Promise<Row[]> {
     if (m) files.set(+m[1]!, f.filter(Boolean).map((x) => x.replace("apps/codesplitters/", "apps/codesplitter/")));
   }
   return merged.map((p) => {
-    const d = detail.get(p.n);
-    return { n: p.n, created: +new Date(p.c), merged: +new Date(p.m), commits: d.commits.totalCount, conflicts: conflictCommits(d.commits.nodes.map((c: any) => c.commit.messageHeadline)), pushes: d.timelineItems.nodes.length, red: redBy.get(p.h) ?? 0, files: files.get(p.n) ?? [] };
+    const d = detail.get(p.n)!;
+    return { n: p.n, created: +new Date(p.c), merged: +new Date(p.m!), commits: d.commits.totalCount, conflicts: conflictCommits(d.commits.nodes.map((c) => c.commit.messageHeadline)), pushes: d.timelineItems.nodes.length, red: redBy.get(p.h) ?? 0, files: files.get(p.n) ?? [] };
   });
 }
 

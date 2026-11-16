@@ -9,6 +9,8 @@ import { help } from "../../../scripts/help.ts";
 
 help(import.meta.path);
 const FILL: Record<Band, string> = { unborn: "#f0f0f0", working: "#9a9a9a", git: "#b3261e", test: "#e8a10c", ready: "#2f7d32", merged: "#d0d7de", closed: "#d0d7de" };
+/** The legend's words for the open bands. */
+const LABEL: Partial<Record<Band, string>> = { working: "working", git: "stuck on git", test: "red check", ready: "ready" };
 
 /** The animated chart; with `at` (a minute of the week), one still frame of it instead, playhead and dots frozen there. */
 export function svg(week: Week, seconds = 30, at?: number) {
@@ -34,7 +36,7 @@ export function svg(week: Week, seconds = 30, at?: number) {
     if (ch[0]![0] !== 0) ch.unshift([0, "unborn"]);
     return `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${(cell * 0.4).toFixed(1)}" fill="${FILL[still ? band(r, at) : ch[0]![1]]}">${!still && ch.length > 1 ? anim(ch.map(([, b]) => FILL[b]), ch.map(([t]) => t)) : ""}</circle>`;
   }).join("");
-  const legend = OPEN.map((b, i) => `<rect x="${W - 380 + i * 92}" y="12" width="9" height="9" fill="${FILL[b]}"/><text x="${W - 367 + i * 92}" y="20" font-size="11" fill="#24292f">${{ working: "working", git: "stuck on git", test: "red check", ready: "ready" }[b]}</text>`).join("");
+  const legend = OPEN.map((b, i) => `<rect x="${W - 380 + i * 92}" y="12" width="9" height="9" fill="${FILL[b]}"/><text x="${W - 367 + i * 92}" y="20" font-size="11" fill="#24292f">${LABEL[b]}</text>`).join("");
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" font-family="-apple-system,Segoe UI,sans-serif">`
     + `<rect width="${W}" height="${H}" fill="#fff"/>`
     + `<text x="20" y="20" font-size="13" font-weight="600" fill="#24292f">${week.rows.length} PRs in a week, one dot each: what the open ones were waiting on</text>${legend}`
