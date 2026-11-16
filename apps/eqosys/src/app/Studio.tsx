@@ -2,10 +2,11 @@
 // shows its four doors: Play (its site), Keep (the person's own unlocks in it, on its eqosys page), Make (its codeSplitter repo,
 // once linked) and Ship (live, with the stage, version and time its last deploy reported). An owner or admin adds people by email here; with no studio yet, the person can make one.
 // A studio's own game (listings.ts) also has its form by the Ship door, for its owners and admins: save, send to review, pull. Its
-// players' reports (reports.ts) sit under it, for everyone in the studio. A new game starts from the form under the shelf.
+// players' reports (reports.ts) sit under it, for everyone in the studio. A new game starts from the form under the shelf; New game
+// (and the Make door of a game with no repo) makes its code in codeSplitter from the starter game (apps/starter-game, #4053).
 import { KINDS, ROLES, type Role, type Studio as Shelf } from "../studios.ts";
 import type { Draft, State } from "../listings.ts";
-import { GENRES } from "../apps.ts";
+import { GENRES, ourApp } from "../apps.ts";
 import { btn } from "./Glass.tsx";
 
 type Unlocks = Map<string, Map<string, number>>;
@@ -57,6 +58,11 @@ const STATE_TIP: Record<State, string> = {
 
 const runs = (s: Shelf) => s.role === "owner" || s.role === "admin";
 
+/** codeSplitter, where New game makes a repo from the starter game (its /?starter=<id>&title=<name> asks, then POST /api/github/starter). */
+const CODESPLITTER = ourApp("codesplitter")?.origins[0] ?? "https://codesplitter.notryanquinn.workers.dev";
+/** A new game's repo from the starter, under this id and name. */
+const starterUrl = (id: string, name?: string) => `${CODESPLITTER}/?${new URLSearchParams({ starter: id, ...(name ? { title: name } : {}) })}`;
+
 /** One app's four doors. */
 function Doors({ a, unlocks }: { a: Shelf["apps"][number]; unlocks: Unlocks }) {
   const kept = unlocks.get(a.id)?.size ?? 0;
@@ -64,7 +70,7 @@ function Doors({ a, unlocks }: { a: Shelf["apps"][number]; unlocks: Unlocks }) {
     <span className="doors">
       {a.play ? <a className="pill" href={a.play} title={`Play ${a.name}`}>Play</a> : <span className="pill" title="No site yet">Play</span>}
       <a className="pill" href={`/app/${a.id}`} title="Your unlocks and saves in it">Keep{kept ? ` ${kept}` : ""}</a>
-      {a.make ? <span className="pill" title={`Its code: ${a.make}`}>Make</span> : <span className="pill" title="No codeSplitter repo linked yet">Make</span>}
+      {a.make ? <span className="pill" title={`Its code: ${a.make}`}>Make</span> : a.state ? <a className="pill" href={starterUrl(a.id, a.name)} title="No repo yet: make one in codeSplitter from the starter game">Make</a> : <span className="pill" title="No codeSplitter repo linked yet">Make</span>}
       <span className={a.ship === "live" ? "pill on" : "pill"} title={a.shipped ? `${a.shipped.stage} ${a.shipped.version}, ${shippedAt(a.shipped.at)}` : a.ship === "live" ? "Live (no deploy reported yet)" : "Not deployed yet"}>{a.ship === "live" ? "Live" : "Not shipped"}</span>
       {a.shipped && <span className="shipped">{a.shipped.stage} {a.shipped.version} · {shippedAt(a.shipped.at)}</span>}
     </span>
@@ -134,6 +140,12 @@ export function Studios({ studios, unlocks }: { studios: Shelf[]; unlocks: Unloc
             ))}
           </div>
           {runs(s) && <details className="add"><summary className="pill">Add a game</summary><GameForm studio={s.id} /></details>}
+          {runs(s) && <details className="add"><summary className="pill">New game</summary>
+            <form method="get" action={`${CODESPLITTER}/`} aria-label="A new game from the starter" title="Opens codeSplitter: a repo of yours with the engine, an eqosys sign-in, a Qollab party and a state() harness">
+              <input name="starter" placeholder="its id, like rocket-golf" pattern="[a-z0-9]+(-[a-z0-9]+)*" minLength={3} maxLength={40} required />
+              <input name="title" placeholder="its name" maxLength={60} />
+              <button className={btn(true)} type="submit">Make its repo</button>
+            </form></details>}
           {s.space ? <p><a className="pill" href="/spaces">The studio's space</a></p> : runs(s) && (
             <form method="post" action="/do/studio-space" aria-label={`Make ${s.name}'s space`}>
               <input type="hidden" name="studio" value={s.id} />

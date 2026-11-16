@@ -22,6 +22,7 @@
     "climbs": "bun scripts/climbs.ts",
     "phil": "bun scripts/phil.ts",
     "probe": "bun scripts/probe.ts",
+    "new-game": "bun scripts/new-game.ts",
     "preview": "bun scripts/preview.ts",
     "shots": "bun scripts/shots.ts",
     "outline": "bun scripts/outline.ts",

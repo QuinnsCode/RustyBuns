@@ -8801,7 +8801,27 @@ async function askUsageModal() {
   d.el.querySelector("#usage-no").addEventListener("click", () => answer(false));
   d.open();  // Esc leaves it unanswered: asked again next visit
 }
-refreshSession().then(() => { header(); noticeBar(); if (!jump(location.search)) route(); mailedLink(); askUsageModal(); });
+/** Where eqosys's New game sends a maker: /?starter=<id>&title=<title>. Asks once, then makes the repo from the starter game (POST /api/github/starter). */
+function starterLink() {
+  const q = new URLSearchParams(location.search), id = q.get("starter");
+  if (!id) return false;
+  const title = q.get("title") || "";
+  if (!me()) { toast("Sign in (top right), then press New game on eqosys again."); return true; }
+  history.replaceState(null, "", location.pathname + location.hash);
+  const d = kitDialog("New game", `<p style="margin:0">Make <b>${esc(title || id)}</b> (<code>${esc(id)}</code>), a repo of yours from the starter game: the engine, an eqosys sign-in, a Qollab party and its <code>state()</code> harness.</p>
+    <p class="formmsg" id="startermsg"></p>
+    <div style="display:flex;gap:8px;justify-content:flex-end"><button class="btn" id="starter-no">Not now</button><button class="btn primary" id="starter-yes">${icon("gamepad-2")}Make it</button></div>`);
+  d.el.querySelector("#starter-no").addEventListener("click", () => d.close());
+  const yes = d.el.querySelector("#starter-yes");
+  yes.addEventListener("click", async () => {
+    yes.disabled = true;
+    try { const r = await api("/github/starter", { name: id, ...(title && { title }) }); d.close(); location.hash = `#/r/${r.owner}/${r.name}`; }
+    catch (err) { d.el.querySelector("#startermsg").textContent = err.message; yes.disabled = false; }
+  });
+  d.open();
+  return true;
+}
+refreshSession().then(() => { header(); noticeBar(); if (!jump(location.search)) route(); mailedLink(); if (!starterLink()) askUsageModal(); });
 icons();
 </script>
 </body>
