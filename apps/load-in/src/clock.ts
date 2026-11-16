@@ -7,6 +7,7 @@ import { type Dial, assist, currentDial } from "./assists.ts";
 export const VENUES: Record<string, { window: number; fee: number }> = {
   garage: { window: 180, fee: 0 },
   "dive-bar": { window: 300, fee: 150 },
+  "bigger-bar": { window: 480, fee: 300 },
 };
 const FALLBACK = { window: 300, fee: 0 };
 
