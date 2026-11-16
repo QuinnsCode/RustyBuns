@@ -6,7 +6,17 @@ One Worker with a Browser Run binding and one page. **Run the bench** takes each
 (eqosys, qCRM, codeSplitter, ShareSplat, the Playground, Hello World, and Skate Tech Park to see what
 WebGL does) through three Quick Actions (`content`, `markdown`, `screenshot`). Kitesurf and Chromium
 take turns, and the page shows the median time for each, the browser time Cloudflare reports when it
-sends one, and any errors. **Copy results** puts the raw runs on the clipboard as JSON.
+sends one, what 1,000 calls of that browser time would cost at Chromium's $0.09 a browser hour, and
+any errors. Kitesurf has no price yet, so its cost column is "if it were billed the same way".
+
+Two more checks are there to be fair to what Kitesurf is built for:
+
+- **Burst** sends 5, 10 or 20 calls at once to one page, Kitesurf first and then Chromium (never both
+  together, so they don't share the 30-a-second limit). A lighter engine should hold up better under load.
+- **Screenshots** shows both engines' picture of one page side by side, so you can see whether either
+  one draws the WebGL scene on Skate Tech Park.
+
+**Copy results** puts the raw runs and bursts on the clipboard as JSON.
 
 The times are from inside the Worker, from the call to the last byte. They're not Cloudflare's CPU and
 memory figures: those come from inside the engine, and a Worker can't see them.
