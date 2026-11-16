@@ -105,12 +105,13 @@ export function atLevel(c: Creature, level: number, wild = false): Creature {
 }
 export const asCreature = (m: Member) => atLevel(creature(m.id), m.level);
 
-/** How a lone wild one grows to face a team of 2, 3 or 4 (#4411), from the tuner's 2v1 table
- * (`bun scripts/tune.ts --teams 20 8 0 2 2.5 2 --rust`, and 3 and 4 friends): at these, the friends win about half
- * the time in 20-30 s. Levels barely move a team fight (a wild one 15 levels up still loses 98% to two). The sim's
- * pile-on (sim.ts PILE_ON, #4441) keeps a team from stun-locking and ringing it out, so health counts and its hits
- * stay hits: four friends once needed 18x damage, near one-shots in 15 s fights. */
-export const OUTNUMBERED: Record<2 | 3 | 4, { hp: number; edge: number }> = { 2: { hp: 2, edge: 2.5 }, 3: { hp: 3, edge: 4.5 }, 4: { hp: 4, edge: 8 } };
+/** How a lone wild one grows to face a team of 2, 3 or 4 (#4411), from the tuner's team tables
+ * (`bun scripts/tune.ts --teams 20 8 0 1 2.5 2 --rust`, and 3 and 4 friends): at these, the friends win about half
+ * the time in 25-30 s, with no ring-outs. Levels barely move a team fight (a wild one 15 levels up still loses 98% to two).
+ * The sim's pile-on (sim.ts PILE_ON, #4441, #4628) cuts the knockback, stun and damage it takes from each foe past the
+ * first, so it holds out without growing much health and its hits stay a share of a bar: four friends once needed 18x
+ * damage (three bars a hit), then 8x (about one). */
+export const OUTNUMBERED: Record<2 | 3 | 4, { hp: number; edge: number }> = { 2: { hp: 1, edge: 2.5 }, 3: { hp: 1.25, edge: 3.5 }, 4: { hp: 1.25, edge: 5 } };
 /** A creature facing `foes` at once: one on one it is `c` itself, unchanged. */
 export function outnumbered(c: Creature, foes: number): Creature {
   const g = OUTNUMBERED[Math.min(4, foes) as 2 | 3 | 4];

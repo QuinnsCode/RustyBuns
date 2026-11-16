@@ -444,14 +444,16 @@ const CORNERED_PER: f64 = 3.0;
 const CORNERED_CAP: f64 = 0.5;
 const CORNERED_EVEN: f64 = 0.95;
 const PILE_ON_PER: f64 = 2.0;
-fn piled(m: &Match, on: usize) -> f64 {
+const PILE_ON_HURT: f64 = 1.0;
+fn extra_foes(m: &Match, on: usize) -> f64 {
     let team = m.f[on].team;
-    let n = m.f.iter().filter(|o| o.team != team && !o.down).count();
-    if n < 2 {
-        1.0
-    } else {
-        1.0 / (1.0 + PILE_ON_PER * (n - 1) as f64)
-    }
+    m.f.iter().filter(|o| o.team != team && !o.down).count().saturating_sub(1) as f64
+}
+fn piled(m: &Match, on: usize) -> f64 {
+    1.0 / (1.0 + PILE_ON_PER * extra_foes(m, on))
+}
+fn shrugged(m: &Match, on: usize) -> f64 {
+    1.0 / (1.0 + PILE_ON_HURT * extra_foes(m, on))
 }
 fn cornered(a: &Fighter, d: &Fighter) -> f64 {
     if a.c.stat_total() < d.c.stat_total() * CORNERED_EVEN {
@@ -1138,13 +1140,14 @@ fn hit(m: &mut Match, by: usize, on: usize, mv: &Move, power: f64, from: V3, at:
     };
     let chart = m.chart;
     let pile = piled(m, on);
+    let shrug = shrugged(m, on);
     let d = &mut m.f[on];
     let def = if ranged { d.c.will() } else { d.c.guard() };
     let facing_away = wrap(angle_to(d.pos, from) - d.yaw).abs();
     let guarded = d.state == State::Guard && facing_away < 1.2 && !mv.delivery.is_blast();
     let rear = !ranged && facing_away > 2.2;
     let mut damage = 1.1 * pow(power, 0.7) * (atk / def).sqrt() * chart.type_mul(mv.field, &d.c.fields);
-    damage *= a_edge * corner;
+    damage *= a_edge * corner * shrug;
     if guarded {
         damage *= if mv.field == IRON { 0.4 } else { 0.2 };
     }
