@@ -43,6 +43,9 @@ A gamepad works too (left stick walk, right stick look, A grab, LB / RB turn, B 
 | `src/audio/hear.ts` | what you hear where you stand: each fed speaker's level at your head from `@rustybuns/gear` (distance, off-axis), how dull it is from there, and the sub band summed with phase; the `fed` hook cables fill in |
 | `src/audio/play.ts` | Web Audio: our own synthesised house loop, per-speaker gain, top end and pan, one sub bus, the speakers-down card and a -1 dBFS limiter |
 | `src/eqosys.ts` | the eqosys sign-in and the Qollab party client, with this game's id |
+| `src/crew/` | the crew: `room.ts` who is here and whose hands are on what (shared by the room and the page), `sync.ts` your world to and from the room, `online.ts` the socket, `view.ts` your friends in the scene |
+| `src/edge/` | the Worker's door to a crew room, and the room's Durable Object |
+| `test/crew.test.ts` | two in the bigger bar through the room: the cooler carried together, walked out side by side, set down for both |
 | `test/garage.test.ts` | the cab carried in from the door, set by the amp, the head stacked on it |
 | `test/bigger-bar.test.ts` | cable the rig, trip the bar's breaker, reset it at the panel, move the plug, every speaker fed; four boxes on one rack channel hold, five shut it down |
 | `test/dial.test.ts` | the clock read on each stop, and the same dive bar load-in on Cozy, Crew and Sim: the same layout, a different time and show |
@@ -61,7 +64,15 @@ The page plays as a guest until eqosys knows the game. To turn sign-in on:
 2. Put the same address in `SIGN_IN_FROM` in `src/eqosys.ts`, and deploy (`bun run deploy`).
 
 Signed in, **Make a party** gives a code to hand out; friends type it in **Join**. The host's **Start** seats everyone
-(`state().party.seat`) and starts the load-in on every page. A shared crew, everyone carrying in the same garage, comes later.
+(`state().party.seat`) and puts everyone in one crew room on the level the host is on (`?room=CODE` in the address does
+the same). You see each other, and gear one of you moves is moved for everyone. Anything 30 kg or more (a sub, the bar's
+cooler) takes two: F on it takes one end, and your friend's F on it takes the other. It comes up between you at
+the pace of half its weight, and neither of you can walk off from the other, so you walk it the same way. Over 50 kg one
+person can't lift it at all. Light gear someone holds is theirs until they set it down. Cables and switches are still
+each player's own for now.
+
+The crew room is a World Durable Object per level and code (`src/edge/`); `bun run edge:dev` runs it locally behind
+the built page. Plain `bun run dev` has no `/ws`, so a party plays alone there.
 
 ## The harness
 
