@@ -4,6 +4,7 @@
 import { next } from "./bacron.ts";
 import type { Job, Run } from "./api.ts";
 import type { Store } from "./store.ts";
+import { push } from "./live.ts";
 
 export const MINUTE = 60_000;
 const SETTLE_MS = 250;
@@ -33,6 +34,16 @@ export const deliver: Deliver = async (job, scheduledAt, firedAt) => {
   }
 };
 
+/** `send`, and a reminder also pinged to the phone through the ntfy `topic`; a push that fails says so on the run. */
+export function withPush(send: Deliver, topic: string): Deliver {
+  return async (job, scheduledAt, firedAt) => {
+    const out = await send(job, scheduledAt, firedAt);
+    if (job.action.kind !== "remind") return out;
+    const error = await push(topic, `${job.app}: ${job.name}`, job.why || job.note);
+    return error ? { ...out, error } : out;
+  };
+}
+
 /** Fires one job now and logs the run. */
 export async function fire(store: Store, job: Job, scheduledAt: number, firedAt: number, send: Deliver, manual = false): Promise<Run> {
   const out = await send(job, scheduledAt, firedAt);
@@ -46,10 +57,13 @@ export function tick(store: Store, now: number, send: Deliver = deliver): Promis
   return Promise.all(due.filter((job) => job.action.kind !== "elsewhere").map((job) => fire(store, job, job.nextAt!, now, send)));
 }
 
-/** Ticks now (to catch up) and then on every minute until stopped. */
-export function startTicker(store: Store, send: Deliver = deliver, log: (e: unknown) => void = console.error): { stop(): void } {
+/** Ticks now (to catch up) and then on every minute until stopped; `changed` after a minute that fired or booked anything. */
+export function startTicker(store: Store, send: Deliver = deliver, log: (e: unknown) => void = console.error, changed?: () => void): { stop(): void } {
   let timer: ReturnType<typeof setTimeout> | undefined;
-  const beat = () => { tick(store, Date.now(), send).catch(log); };
+  const beat = () => {
+    const now = Date.now(), any = store.due(now).length > 0;
+    tick(store, now, send).then(() => { if (any) changed?.(); }, log);
+  };
   const loop = () => {
     const wait = MINUTE - (Date.now() % MINUTE) + SETTLE_MS;
     timer = setTimeout(() => { beat(); loop(); }, wait);
