@@ -30,6 +30,7 @@ export type Input = {
   steer: number; // -1..1, left is +
   jump: boolean; // ollie, on press
   nollie: boolean; // the ollie off the nose: the front foot pops it and the back foot drags it level (on press)
+  noComply?: boolean; // the front foot steps off and plants, the back foot pops a lower air (on press, from the ground; else an ollie). With a grab held it is a boneless
   boost: boolean; // rear jets: speed on the ground and a pump through a transition (held); nothing in the air
   flip: boolean; // board: kickflip (on press, in the air); shorthand for flick "kickflip"
   flick: Flick | null; // board: a flick trick, on press, in the air (the gesture layer resolves a drag or stick into this)
@@ -183,6 +184,8 @@ export const POP = { angle: 0.5, snap: 0.07 * T, level: 0.32 * T };
 const REVERT_TIME = 0.25; // seconds a revert pivots the board half way round on the wheels
 const REVERT_POINTS = 100;
 const NOLLIE_BONUS = 100; // popping off the nose is the harder way round
+const COMPLY_POP = 0.75; // a no-comply's pop against an ollie's: one foot on the ground, so a lower, shorter air
+const COMPLY_BONUS = 50;
 const CATCH = 0.3; // land with less than this share of a flick left and the board is caught flat, not a bail
 const CHAIN_WINDOW = 3; // seconds on the ground between tricks before the chain ends
 const CHAIN_MAX = 8;
@@ -216,7 +219,7 @@ export type Firing = { rear: boolean; lift: boolean; spin: -1 | 0 | 1; roll: -1 
 
 /** Where a foot works the board: the back foot pops the tail or scoops it (a shove-it), the front foot
  * drags to the nose to level an ollie or flicks off one side of it. Left is the board's own left. */
-export type Spot = "tail" | "nose" | "nose-left" | "nose-right";
+export type Spot = "tail" | "nose" | "nose-left" | "nose-right" | "ground"; // ground: beside the nose, where a no-comply's front foot plants
 export type Foot = { foot: "back" | "front"; at: Spot };
 
 export type State = {
@@ -269,6 +272,7 @@ export type State = {
   firing: Firing;
   popT: number; // seconds since the last ollie's pop, or -1 once the board is level again
   nollie: boolean; // this air was popped off the nose
+  comply: boolean; // this air was a no-comply: the front foot planted on the ground for the pop
   feet: Foot[]; // what the feet did this step, for the view
   plateDown: boolean;
   bail: number; // seconds left on the floor
@@ -290,7 +294,7 @@ export function start(x = 0, z = -20, yaw = 0, level: Level = plaza, planted = f
     air: false, airTime: 0, spun: 0, spin: 0, flipT: 0, flipKind: "kickflip", tricks: [], grind: -1, grindTime: 0,
     grindKind: "50-50", grindOff: 0, balance: 0, lean: 0, push: 0, grindAt: 0, grindSide: 1, grindSpun: 0, grab: 0, grabRail: 0, grabTime: 0, grabs: [], grindNose: 0, stall: false, wall: -1, wallN: [0, 1], stance: "regular", switched: false, revert: 0, revertDir: 1,
     manual: 0, manualTime: 0, chain: 0, chainT: 0, combo: [], comboScore: 0, comboKind: null, fan: false, jetT: 0,
-    firing: { rear: false, lift: false, spin: 0, roll: 0 }, popT: -1, nollie: false, feet: [], plateDown: false,
+    firing: { rear: false, lift: false, spin: 0, roll: 0 }, popT: -1, nollie: false, comply: false, feet: [], plateDown: false,
     bail: 0, tumbleDir: 1, score: 0, last: null, prevJump: false, prevFlip: false, prevFlick: false,
   };
 }
@@ -306,10 +310,17 @@ export function noseUp(s: Pick<State, "popT" | "nollie">): number {
   return u >= 1 ? 0 : way * POP.angle * (1 - u) ** 2;
 }
 
-/** The ollie: the tail snaps (the nose, on a nollie), the lift jets burn, and the board leaves the ground. */
-function pop(s: State, nollie: boolean) {
-  s.vy = Math.max(0, s.vy) + OLLIE; s.jetT = JETS.pop; s.popT = 0; s.nollie = nollie; // off a kicker's lip the pop adds to the climb
-  s.feet.push(nollie ? { foot: "front", at: "nose" } : { foot: "back", at: "tail" });
+/** The three pops. A no-comply needs a foot on the ground, so off a bar or a coping (`ground` false) it is an ollie. */
+export type PopKind = "ollie" | "nollie" | "no-comply";
+const popOf = (inp: Input, ground: boolean): PopKind => (inp.nollie ? "nollie" : inp.noComply && ground ? "no-comply" : "ollie");
+
+/** The ollie: the tail snaps (the nose, on a nollie), the lift jets burn, and the board leaves the ground. On a
+ * no-comply the front foot steps off beside the nose and plants first, and the pop is lower. */
+function pop(s: State, kind: PopKind) {
+  const comply = kind === "no-comply";
+  s.vy = Math.max(0, s.vy) + OLLIE * (comply ? COMPLY_POP : 1); s.jetT = JETS.pop; s.popT = 0; s.nollie = kind === "nollie"; s.comply = comply; // off a kicker's lip the pop adds to the climb
+  if (comply) s.feet.push({ foot: "front", at: "ground" });
+  s.feet.push(s.nollie ? { foot: "front", at: "nose" } : { foot: "back", at: "tail" });
   takeOff(s);
 }
 
@@ -452,7 +463,7 @@ function land(s: State, level: Level, steer: number, brake: boolean) {
   }
   s.vx = vx; s.vz = vz; // a fall slides on along the ground
   s.y = level.height(s.x, s.z); s.vy = 0; s.air = false; s.popT = -1;
-  const nollie = s.nollie; s.nollie = false;
+  const nollie = s.nollie, comply = s.comply; s.nollie = false; s.comply = false;
   if (s.airTime > 0.2) s.jetT = JETS.landBurst;
   const fx = Math.sin(s.yaw), fz = Math.cos(s.yaw), a = gx * fx + gz * fz;
   s.pitch = Math.atan(a); s.roll = Math.atan(gx * fz - gz * fx);
@@ -469,19 +480,21 @@ function land(s: State, level: Level, steer: number, brake: boolean) {
   const big = turns === 180 && s.tricks.length === 1 ? WITH_HALF_TURN[s.tricks[0]!] : undefined; // a tre flip (or a 360 shove-it) with the rider turning 180 too
   if (turns >= 180) parts.push(sideOf(s.spun, footForward(s))); // which way the rider turned, against their stance
   if (turns >= 180 && !big) parts.push(String(turns));
+  const boneless = comply && s.grabs.length > 0; // the hand carried the board while the foot was down: the grab is the boneless
+  if (comply) parts.push(boneless ? "boneless" : "no-comply");
   if (big) parts.push(big);
   else for (const t of new Set(s.tricks)) {
     const n = s.tricks.filter((x) => x === t).length;
     parts.push(n > 1 ? `${n}x ${t}` : t);
   }
-  for (const name of new Set(s.grabs.map(grabName))) parts.push(name);
+  if (!boneless) for (const name of new Set(s.grabs.map(grabName))) parts.push(name);
   const odd = (turns / 180) % 2 === 1;
   s.switched = odd && s.speed < 0; // a half turn that lands rolling backwards is the other foot forward; rolling forward again clears it
   if (s.switched) parts.unshift("switch");
   else if (s.speed < 0) parts.push("fakie");
   if (nollie) parts.unshift("nollie");
   const held = s.grabs.reduce((n, g) => n + g.seconds, 0);
-  const points = Math.round(s.airTime * 100 + (turns / 180) * 250 + s.tricks.reduce((n, t) => n + TRICKS[t].points, 0) + held * GRAB_POINTS + (nollie ? NOLLIE_BONUS : 0));
+  const points = Math.round(s.airTime * 100 + (turns / 180) * 250 + s.tricks.reduce((n, t) => n + TRICKS[t].points, 0) + held * GRAB_POINTS + (nollie ? NOLLIE_BONUS : 0) + (comply ? COMPLY_BONUS : 0));
   award(s, parts.length ? parts.join(" ") : "Air", points, "air");
   if (steer && brake && turns === 0) { s.revert = REVERT_TIME; s.revertDir = steer > 0 ? 1 : -1; } // steer and brake together as the wheels touch, short of a spin: pivot out of it (steer alone is just carving on)
 }
@@ -503,7 +516,7 @@ function skid(s: State, level: Level) {
 
 /** One fixed step on `level` (the plaza unless told otherwise). Mutates and returns `s`. */
 export function step(s: State, inp: Input, level: Level = plaza): State {
-  const moved = inp.throttle || inp.steer || inp.jump || inp.nollie || inp.boost || inp.flip || inp.flick || inp.fan || inp.manual;
+  const moved = inp.throttle || inp.steer || inp.jump || inp.nollie || inp.noComply || inp.boost || inp.flip || inp.flick || inp.fan || inp.manual;
   if (!s.planted || moved) { s.planted = false; return advance(s, inp, level); }
   // the foot is down: the step still sets the board to the ground's pitch and roll, but it doesn't roll anywhere
   const { x, z, yaw } = s;
@@ -513,7 +526,7 @@ export function step(s: State, inp: Input, level: Level = plaza): State {
 
 function advance(s: State, inp: Input, level: Level): State {
   const tune = TUNE;
-  const pops = inp.jump || inp.nollie, pressed = pops && !s.prevJump;
+  const pops = inp.jump || inp.nollie || !!inp.noComply, pressed = pops && !s.prevJump;
   const flipPressed = inp.flip && !s.prevFlip;
   const flick = inp.flick ?? (flipPressed ? "kickflip" : null);
   const flickPressed = flick !== null && (!inp.flick || !s.prevFlick);
@@ -564,7 +577,7 @@ function advance(s: State, inp: Input, level: Level): State {
       s.grind = -1; s.stall = false; s.grindNose = 0;
       s.x += nx * drop * 0.3; s.z += nz * drop * 0.3;
       s.vx = nx * drop * STALL_OUT; s.vz = nz * drop * STALL_OUT; s.vy = 0;
-      if (pressed) pop(s, inp.nollie); else takeOff(s);
+      if (pressed) pop(s, popOf(inp, false)); else takeOff(s);
     }
     return s;
   }
@@ -609,7 +622,7 @@ function advance(s: State, inp: Input, level: Level): State {
       if (!pressed && t >= 0 && t <= 1) { const side = (Math.sign(s.balance) || 1) * (BOARD.halfWid + 0.2); s.x += fz * side; s.z -= fx * side; } // stalled on the bar: it steps off the side rather than dropping back onto it
       s.vx = fx * s.speed; s.vz = fz * s.speed;
       s.vy = 0;
-      if (pressed) pop(s, inp.nollie); else takeOff(s);
+      if (pressed) pop(s, popOf(inp, false)); else takeOff(s);
     }
     return s;
   }
@@ -731,12 +744,12 @@ function advance(s: State, inp: Input, level: Level): State {
     }
     if (!s.air && pressed) {
       if (s.pitch * dir >= WALL && s.speed * dir > 0) { s.speed += dir * OLLIE * 0.5; s.jetT = JETS.pop; s.popT = 0; s.feet.push({ foot: "back", at: "tail" }); } // up a steep wall the pop drives it on up the face, for a higher air off the lip
-      else pop(s, inp.nollie);
+      else pop(s, popOf(inp, true));
     }
   }
 
   if (s.air) {
-    if (pressed && s.popT < 0 && s.airTime < COYOTE && s.flipT <= 0 && !s.tricks.length) pop(s, inp.nollie); // the wheels only just left a bump or a lip: the tail still reaches it
+    if (pressed && s.popT < 0 && s.airTime < COYOTE && s.flipT <= 0 && !s.tricks.length) pop(s, popOf(inp, false)); // the wheels only just left a bump or a lip: the tail still reaches it
     s.airTime += DT;
     if (s.lip) s.lip = Math.max(0, Math.min(s.lip, Math.atan2(s.vy, Math.hypot(s.vx, s.vz)))); // nose along its path off the wall, levelling as it turns over
     s.vy -= (G + (s.fan ? JETS.fanPull : 0)) * DT;

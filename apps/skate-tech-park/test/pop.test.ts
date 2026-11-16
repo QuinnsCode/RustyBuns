@@ -2,7 +2,7 @@
 // the board comes down flat on its own. A flip that is nearly round when it lands is caught, not a bail.
 import { expect, test } from "bun:test";
 import { makeLevel } from "../src/level.ts";
-import { DT, FLICK_TIME, type Foot, IDLE, noseUp, POP, start, step } from "../src/sim.ts";
+import { DT, FLICK_TIME, type Foot, IDLE, type Input, noseUp, POP, start, step } from "../src/sim.ts";
 
 const flat = makeLevel({ name: "t", pieces: [], rails: [], spawns: [], bounds: { minX: -80, maxX: 80, minZ: -80, maxZ: 300 } });
 
@@ -43,4 +43,22 @@ test("a flip flicked late is caught flat if it is nearly round, and still a bail
   };
   expect(land(0.15)).toBe("kickflip");
   expect(land(0.5)).toMatch(/Bail: still flipping/);
+});
+
+test("a no-comply plants the front foot, pops lower than an ollie, and with a grab held lands as a boneless", () => {
+  const ride = (pop: Partial<Input>, air: Partial<Input> = {}) => {
+    const sk = start(0, -60, 0, flat);
+    for (let i = 0; i < 60; i++) step(sk, { ...IDLE, throttle: 1 }, flat);
+    step(sk, { ...IDLE, ...pop }, flat);
+    const feet = sk.feet.map((f) => `${f.foot} ${f.at}`);
+    let peak = 0;
+    for (let i = 0; sk.air && i < 300; i++) { step(sk, { ...IDLE, ...air }, flat); feet.push(...sk.feet.map((f) => `${f.foot} ${f.at}`)); peak = Math.max(peak, sk.y); }
+    return { name: sk.last?.name, feet, peak };
+  };
+  const ollie = ride({ jump: true }), comply = ride({ noComply: true });
+  expect(comply.feet).toEqual(["front ground", "back tail", "front nose"]); // the foot steps off, the tail pops, the foot comes back on
+  expect(comply.peak).toBeLessThan(ollie.peak * 0.8);
+  expect(comply.name).toBe("no-comply");
+  expect(ride({ noComply: true }, { manual: 1 }).name).toBe("boneless"); // the hand carries the board: the grab is the trick, not "tail grab" too
+  expect(ride({ noComply: true }, { steer: 1 }).name).toMatch(/^(switch )?(frontside|backside) 180 no-comply$/); // the foot carries the board round
 });
