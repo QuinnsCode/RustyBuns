@@ -27,7 +27,7 @@
 //   PATCH  /api/gh/v3/repos/:o/:r/check-runs/:id     {status?, conclusion?, details_url?, output?}
 //   GET    /api/gh/v3/repos/:o/:r/commits/:sha/check-runs   {total_count, check_runs}
 
-import { DONE, fromCheckRun, fromState, get, logsAreCrews, recordRun, shaped, updateRun, type CheckRun, type Status } from "./checks.ts";
+import { DONE, fromCheckRun, fromState, get, headOf, logsAreCrews, recordRun, shaped, updateRun, type CheckRun, type Status } from "./checks.ts";
 import { audit } from "./audit.ts";
 import { errorIn, fail as tagged, json, type Env, readBody } from "./env.ts";
 import { limit } from "./limits.ts";
@@ -87,7 +87,10 @@ async function ciToken(req: Request, env: Env, owner: string, repo: string) {
 async function refOf(env: Env, owner: string, repo: string, sha: string) {
   const run = await env.DB.prepare("SELECT ref FROM check_runs WHERE owner = ? AND repo = ? AND sha = ? ORDER BY id DESC LIMIT 1").bind(owner, repo, sha).first();
   const watch = run ? null : await env.DB.prepare("SELECT ref FROM check_watches WHERE owner = ? AND repo = ? AND sha = ?").bind(owner, repo, sha).first();
-  return (run?.ref ?? watch?.ref ?? "main") as string;
+  if (run || watch) return (run?.ref ?? watch?.ref) as string;
+  // Main's tip is main's. A sha the repo has never shown is filed under itself, so it can't pass for main's newest commit
+  // and hide the real one's runs; `commits/:sha/status` still reads it back.
+  return sha === await headOf(env, owner, repo, "main") ? "main" : sha;
 }
 
 const iso = (t: number | null) => t ? new Date(t).toISOString() : null;

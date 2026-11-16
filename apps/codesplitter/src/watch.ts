@@ -294,7 +294,10 @@ export async function scheduledWatch(env: Env, self: (r: Request) => Promise<Res
   await pollStatus(env, now).catch(() => {});
   const s = await state(env, now);
   const fresh = await takeNewMal(env, s, now).catch(() => 0);
-  if (fresh) { if (s.after) s.again = true; else s.after = ["", ""]; }
+  // Every hour starts a sweep when none is under way: a repo made, or a dependency pinned, since the last one
+  // is checked against what's kept without waiting for a new advisory. New ones mid-sweep start it again once it ends.
+  if (!s.after) s.after = ["", ""];
+  else if (fresh) s.again = true;
   if (s.after) {
     const mal = await allMal(env);
     const call = caller(self, "http://codesplitter.local");

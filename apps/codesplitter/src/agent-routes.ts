@@ -53,7 +53,7 @@ import { localGit } from "./mirror.ts";
 import { protectOn } from "./protect.ts";
 import { errorIn, fail, json, named, need, type Env, readBody } from "./env.ts";
 import { byToken } from "./tokens.ts";
-import { charge, every, SITE } from "./limits.ts";
+import { charge, every, limit, SITE } from "./limits.ts";
 import { accountsOn, actingAs, isAdmin } from "./identity.ts";
 import { grantRunToken, revokeRunToken } from "./run-token.ts";
 import { HARNESSES, HOSTED_HARNESSES, RUNS_COMMANDS, blenderMcpFor, harnessCommand, type Harness } from "./harness.ts";
@@ -516,6 +516,9 @@ async function threadRoute(req: Request, env: Env, self: (req: Request) => Promi
     return json({ message, started: null, asked: owner, why: `asked @${owner}: their Go starts it` });
   }
   if (last.pending) return json({ message, started: null, why: "its last batch is still waiting: accept or reject it first" });
+  // Starting it again is a hosted run like any other, so it counts against the day's.
+  const slow = await limit(req, env, "agent", user, !byToken(req) && isAdmin(env, user));
+  if (slow) return json({ message, started: null, why: await errorIn(slow, "slow down") });
   const started = await startRun(env, self, origin, user, owner, repo, { path: last.path, harness: last.harness, task: first.task, model: (await getRow(env, last.id))?.model ?? undefined }, thread);
   if (started.status !== 202) return json({ message, started: null, why: await errorIn(started, `${started.status}`) });
   return json({ message, started: await started.json() });

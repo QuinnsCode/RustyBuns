@@ -120,7 +120,8 @@ export function ruleFor(method: string, p: string[]): string | null {
   if (p[1] === "repos" && p[4] === "merges" && !p[5]) return "commit";
   if (p[1] === "repos" && p[4] === "fresh" && !p[5]) return "fresh";
   if (p[1] === "repos" && p[4] === "hooks" && !p[5]) return "hook";
-  if (p[1] === "repos" && p[4] === "agents") return "agent";
+  // Only what starts a run counts: telling one something, stopping it or reviewing its batch bills nothing.
+  if (p[1] === "repos" && p[4] === "agents" && !p[5]) return "agent";
   if (p[1] === "repos" && p[4] === "preview" && !p[5]) return "preview";
   if (p[1] === "repos" && p[4] === "deploy" && !p[5]) return "deploy";
   if (p[1] === "repos" && p[4] === "deps" && p[5] === "run") return "doctor";
