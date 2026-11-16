@@ -4,6 +4,8 @@
 import { esc } from "@rustybuns/util";
 import { Bad } from "@rustybuns/util/guard";
 import { readJson } from "@rustybuns/util/http";
+import { connectSocket, type Link } from "@rustybuns/util/socket";
+import { LiveMsg, PROTOCOL } from "./live.ts";
 import { createElement, AlarmClock, Bell, Check, Cloud, Pause, Pencil, Play, Plus, Search, Webhook, X, CircleAlert, type IconNode } from "lucide";
 import { FLOWS, describe, flow, upcoming, type Cadence, type Flow } from "./bacron.ts";
 import { Job, JobInput, JobsReply, Refusal, type Run } from "./api.ts";
@@ -37,6 +39,23 @@ async function load() {
   state.runs = data.runs;
   state.skew = data.now - Date.now();
   render();
+  if (data.live && !link) goLive(data.live);
+}
+
+// ---- live ----
+
+// With a relay, every page hears a nudge the moment a job changes or a run lands (on this device or another) and
+// fetches again; the minute poll below only runs while that socket is down.
+let link: Link<never> | null = null;
+function goLive(url: string) {
+  link = connectSocket<LiveMsg, never>(url, {
+    protocols: token ? [PROTOCOL, token] : [PROTOCOL],
+    decode: (v) => { try { return LiveMsg(v); } catch { return null; } },
+    onMessage: () => { void load(); },
+    // Catch up on whatever happened while it was down.
+    onOpen: (tries) => { if (tries) void load(); },
+    onClose: ({ tries }) => Math.min(60_000, 1_000 * 2 ** Math.min(tries, 6)),
+  });
 }
 
 // ---- filters ----
@@ -305,5 +324,5 @@ form.addEventListener("submit", async (e) => {
 void load();
 setInterval(tickClocks, 1000);
 // Just after each minute the ticker fires; fetch then so new runs and countdowns show without waiting.
-const refresh = () => setTimeout(() => { void load(); refresh(); }, 60_000 - (serverNow() % 60_000) + 2_000);
+const refresh = () => setTimeout(() => { if (!link?.open) void load(); refresh(); }, 60_000 - (serverNow() % 60_000) + 2_000);
 refresh();

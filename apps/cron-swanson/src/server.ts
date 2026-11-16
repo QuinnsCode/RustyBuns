@@ -6,19 +6,19 @@ import { next } from "./bacron.ts";
 import { AppJobs, AppName, Declared, JobInput, type Job, type JobsReply, type SyncReply } from "./api.ts";
 import { fire, deliver, type Deliver } from "./ticker.ts";
 import type { Store } from "./store.ts";
+import { sameToken } from "./live.ts";
 
 const MAX_BODY = 64 * 1024;
 
-export interface Options { token?: string; send?: Deliver; now?: () => number }
+export interface Options {
+  token?: string; send?: Deliver; now?: () => number;
+  /** The relay's socket URL the page should hold (wss://.../live), or none to poll each minute. */
+  live?: string;
+  /** Called after anything a page shows changed: the nudge to the relay. */
+  changed?: () => void;
+}
 
 const refuse = (error: string, status: number) => privateJson({ error }, status);
-
-function sameToken(given: string, want: string): boolean {
-  const a = new TextEncoder().encode(given), b = new TextEncoder().encode(want);
-  let diff = a.length ^ b.length;
-  for (let i = 0; i < b.length; i++) diff |= (a[i] ?? 0) ^ b[i]!;
-  return diff === 0;
-}
 
 async function body<T>(req: Request, guard: Guard<T>): Promise<T | Response> {
   const text = await req.text();
@@ -65,6 +65,15 @@ export function sync(store: Store, app: string, list: Declared[], t: number): Sy
 
 export function api(store: Store, o: Options = {}): (req: Request) => Promise<Response> {
   const now = o.now ?? Date.now, send = o.send ?? deliver;
+  const handle = route(store, o, now, send);
+  return async (req) => {
+    const res = await handle(req);
+    if (req.method !== "GET" && res.ok) o.changed?.();
+    return res;
+  };
+}
+
+function route(store: Store, o: Options, now: () => number, send: Deliver): (req: Request) => Promise<Response> {
   return async (req) => {
     const url = new URL(req.url), path = url.pathname;
     if (path === "/api/health") return privateJson({ ok: true, now: now() });
@@ -73,7 +82,7 @@ export function api(store: Store, o: Options = {}): (req: Request) => Promise<Re
 
     if (path === "/api/jobs" && req.method === "GET") {
       const last = store.lastRuns();
-      const reply: JobsReply = { jobs: store.jobs().map((job) => ({ job, last: last.get(job.id) ?? null })), runs: store.runs(100), now: now() };
+      const reply: JobsReply = { jobs: store.jobs().map((job) => ({ job, last: last.get(job.id) ?? null })), runs: store.runs(100), now: now(), live: o.live ?? null };
       return privateJson(reply);
     }
     if (path === "/api/jobs" && req.method === "POST") {

@@ -68,8 +68,8 @@ export const Run = obj({
 });
 export type Run = Of<typeof Run>;
 
-/** GET /api/jobs: every job with its last run, the latest runs across all of them, and the server's clock. */
-export const JobsReply = obj({ jobs: arr(obj({ job: Job, last: nul(Run) }), 10_000), runs: arr(Run, 1000), now: TIME });
+/** GET /api/jobs: every job with its last run, the latest runs across all of them, the server's clock, and the relay's socket URL when there is one. */
+export const JobsReply = obj({ jobs: arr(obj({ job: Job, last: nul(Run) }), 10_000), runs: arr(Run, 1000), now: TIME, live: nul(str(2000)) });
 export type JobsReply = Of<typeof JobsReply>;
 
 const { app: _app, enabled: _enabled, ...DECLARED } = INPUT;
