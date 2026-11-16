@@ -43,6 +43,7 @@ import { $ } from "bun";
 import { existsSync, mkdirSync, appendFileSync, writeFileSync, rmSync, symlinkSync, readFileSync, readdirSync } from "node:fs";
 import { join, resolve, dirname } from "node:path";
 import { parseArgs } from "node:util";
+import { arr, bool, check, int, obj, str } from "../packages/util/src/guard.ts";
 import { Cache, cacheKey, DAY, overBudget, parseRate, rateLine } from "./trial-github-cache.ts";
 import { scheduler, lowPriorityCommand, PERSONAS, type Persona } from "../packages/shell-bun/src/priority.ts";
 import { staticBuild, staticTool, toolchainError } from "./trial-static.ts";
@@ -85,6 +86,10 @@ export const isMajor = (range: string, major: string) => new RegExp(`^[\\^~=v]?$
 const rate = async () => parseRate(await $`gh api rate_limit`.quiet().nothrow().text()); // free: rate_limit doesn't count
 
 type Meta = { stars: number; archived: boolean; pushed: string; pushedAt: string };
+// What the two gh calls answer, as far as a trial reads: code search hits, and a repo's stars, archived flag and last push.
+const ghText = str(Infinity, { min: 0 });
+const CodeSearch = obj({ items: arr(obj({ path: ghText, repository: obj({ full_name: ghText, fork: bool() }) }), 100) });
+const RepoMeta = obj({ stars: int(0, Number.MAX_SAFE_INTEGER), archived: bool(), pushedAt: ghText });
 type Deps = { dependencies?: Record<string, string>; devDependencies?: Record<string, string> } | null;
 
 /** Repos depending on <dep>. Everything it asks GitHub is cached under <out>/gh-cache (see trial-github-cache.ts),
@@ -100,7 +105,7 @@ async function search(dep: string): Promise<App[]> {
     if (!items) {
       const r = await $`gh api -X GET search/code -f q=${q} -f per_page=100 -f page=${page}`.quiet().nothrow();
       if (r.exitCode) { console.error(`search page ${page}: ${r.stderr.toString().trim().split("\n").at(-1)}`); break; }
-      items = (JSON.parse(r.stdout.toString()).items as { path: string; repository: { full_name: string; fork: boolean } }[])
+      items = CodeSearch(JSON.parse(r.stdout.toString())).items
         .map((it) => ({ path: it.path, repo: it.repository.full_name, fork: it.repository.fork }));
       cache.set(key, items);
       if (items.length === 100) await Bun.sleep(7000); // code search allows 10 requests a minute
@@ -126,11 +131,11 @@ async function search(dep: string): Promise<App[]> {
   const repoMeta = (repo: string) => meta.get(repo) ?? meta.set(repo, (async () => {
     const hit = cache.get<Meta>(metaKey(repo), DAY);
     if (hit) return hit;
-    const r = await $`gh api repos/${repo} --jq ${"[.stargazers_count,.archived,.pushed_at]"}`.quiet().nothrow();
-    let parsed: unknown; try { parsed = JSON.parse(r.stdout.toString()); } catch {}
-    if (r.exitCode || !Array.isArray(parsed)) return { stars: 0, archived: true, pushed: "", pushedAt: "" }; // not cached: ask again next run
-    const [stars, archived, pushedAt] = parsed;
-    const m: Meta = { stars, archived, pushed: String(pushedAt).slice(0, 10), pushedAt: String(pushedAt) };
+    const r = await $`gh api repos/${repo} --jq ${"{stars:.stargazers_count,archived:.archived,pushedAt:.pushed_at}"}`.quiet().nothrow();
+    let got = null;
+    try { got = r.exitCode ? null : check(RepoMeta, JSON.parse(r.stdout.toString())); } catch { /* not JSON: treated like a failed call */ }
+    if (!got) return { stars: 0, archived: true, pushed: "", pushedAt: "" }; // not cached: ask again next run
+    const m: Meta = { ...got, pushed: got.pushedAt.slice(0, 10) };
     cache.set(metaKey(repo), m);
     return m;
   })()).get(repo)!;
