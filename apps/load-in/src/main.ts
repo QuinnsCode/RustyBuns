@@ -23,6 +23,9 @@ import { currentDial, setDial } from "./assists.ts";
 import { doors } from "./clock.ts";
 import { mountClock, mountDial, mountGlow, savedDial } from "./dial-view.ts";
 import { accountChip, canSignIn, finishSignIn, login, party, type PartyMember } from "./eqosys.ts";
+import { eyeFill, handsView, readable, venueLights, type Grip } from "./look.ts";
+import { nextStep } from "./next.ts";
+import { COLOR } from "./cables/draw.ts";
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const canvas = $<HTMLCanvasElement>("stage");
@@ -47,18 +50,26 @@ const pad = loadPad(KEY, [
   { id: "turnRight", label: "Turn it right", button: 5 },
 ]);
 
-// The scene: the garage's floor, walls and ceiling bulb, the driveway outside, a model per piece of gear, and the cables.
+// The scene: the garage's floor, walls and the venue's own lights (look.ts), the driveway outside, a model per piece
+// of gear, the cables, and your hands.
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
 renderer.setPixelRatio(Math.min(2, devicePixelRatio));
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.1;
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x0d1420);
 scene.fog = new THREE.Fog(0x0d1420, 8, 22);
 const camera = new THREE.PerspectiveCamera(70, 1, 0.05, 60);
 camera.rotation.order = "YXZ";
-scene.add(new THREE.HemisphereLight(0xc8d4e6, 0x2a2420, 0.7));
-const bulb = new THREE.PointLight(0xffe2b0, 18, 12, 1.6);
-bulb.position.set(0, 2.45, 3.5);
-scene.add(bulb);
+scene.add(camera);
+scene.add(new THREE.HemisphereLight(0xc8d4e6, 0x2a2420, 0.85));
+eyeFill(camera);
+const hands = handsView(scene, camera);
+let lights = venueLights(world.level);
+scene.add(lights);
+// The marker over what the Next line is about: a small cone pointing down, bobbing.
+const marker = new THREE.Mesh(new THREE.ConeGeometry(0.07, 0.16, 12).rotateX(Math.PI), new THREE.MeshBasicMaterial({ color: 0x4cc9f0 }));
+scene.add(marker);
 
 function room(l: World["level"]) {
   const g = new THREE.Group(), r = l.room, b = l.bounds;
@@ -87,6 +98,7 @@ let roomGroup = room(world.level);
 scene.add(roomGroup);
 
 const meshes = new Map<string, THREE.Object3D>(), look = gearLook();
+readable(look);
 const highlight = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(1, 1, 1).translate(0, 0.5, 0)), new THREE.LineBasicMaterial({ color: 0x4cc9f0 }));
 scene.add(highlight);
 let bar: BarView | ParkView | null = null;
@@ -123,6 +135,7 @@ function load(level: Level) {
   cables = cable.newCables(world);
   ropes.clear();
   scene.remove(roomGroup); roomGroup = room(world.level); scene.add(roomGroup);
+  scene.remove(lights); lights = venueLights(world.level); scene.add(lights);
   buildItems();
 }
 
@@ -153,12 +166,22 @@ function draw() {
   ropes.update(cables);
   glow.update(cable.glowing(world, cables), world.t);
   clock?.update(world.level.name, world.t);
+  const grip: Grip = held && hp ? { kind: "gear", ...hp, ...whd(dims(held)) }
+    : end ? { kind: "cable", at: cable.handAt(world), color: COLOR[end.run.kind] ?? 0x222222 } : { kind: "free" };
+  hands.update(grip, world.t);
+  const next = phase === "play" ? nextStep(world, cables, switchedOn) : null, tgt = next?.key ? world.items.find((i) => i.key === next.key) : null;
+  marker.visible = !!tgt;
+  if (tgt) marker.position.set(tgt.x, tgt.y + dims(tgt)[1] + 0.25 + Math.sin(performance.now() / 260) * 0.05, tgt.z);
+  $("next").textContent = next ? next.text : "";
+  $("next").hidden = !next;
   const g = held ? gear(held.gear) : null;
   $("hint").textContent = phase !== "play" ? "" : performance.now() < flash.until ? flash.text : (big?.hint() ?? hint(at, jack));
   $("carry").textContent = phase !== "play" ? "" : g ? `${g.what}, ${g.kg} kg, ${you.speed.toFixed(1)} m/s`
     : end ? `${end.run.lengthM} m ${end.run.kind} cable, ${you.speed.toFixed(1)} m/s` : `Hands free, ${you.speed.toFixed(1)} m/s`;
   renderer.render(scene, camera);
 }
+
+const whd = ([w, h, d]: [number, number, number]) => ({ w, h, d });
 
 /** What F (or a click) would do now. */
 function hint(at: ReturnType<typeof aimed>, jack: ReturnType<typeof cable.aimedJack>): string {
@@ -305,7 +328,7 @@ async function boot() {
 declare global { interface Window { loadIn: typeof harness } }
 /** The harness (scripts/probe.ts HANDLES): the level as data, and the moves a test or an agent makes without pointer lock. */
 const harness = {
-  state: () => ({ phase, dial: currentDial(), doors: doors(world.level.name, world.t), ...snapshot(world), ...cable.cableState(world, cables), sound: { up: sound.up, on: [...switchedOn], ...heard() }, ...(big ? { biggerBar: big.state() } : {}), ...(bar ? { bar: { ...(world.level === PARK ? parkState(world, cables) : barState(world)), heat: bar.heatOn } } : {}), signedIn: !!login(), party: crew.code ? { code: crew.code, members: crew.members.length, room: crew.room || null, seat: crew.seat >= 0 ? crew.seat : null } : null }),
+  state: () => ({ phase, next: nextStep(world, cables, switchedOn), dial: currentDial(), doors: doors(world.level.name, world.t), ...snapshot(world), ...cable.cableState(world, cables), sound: { up: sound.up, on: [...switchedOn], ...heard() }, ...(big ? { biggerBar: big.state() } : {}), ...(bar ? { bar: { ...(world.level === PARK ? parkState(world, cables) : barState(world)), heat: bar.heatOn } } : {}), signedIn: !!login(), party: crew.code ? { code: crew.code, members: crew.members.length, room: crew.room || null, seat: crew.seat >= 0 ? crew.seat : null } : null }),
   /** Turn the cozy-to-sim dial: "cozy", "crew" or "sim". */
   dial: (d: string) => setDial(d),
   /** Into the level, without asking for the mouse. */
