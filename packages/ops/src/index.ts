@@ -30,10 +30,10 @@ const typeOk = (v: unknown, t: string) => (t === "integer" ? Number.isInteger(v)
 
 /** Minimal input check: required keys, known keys, primitive types, enums. A view that needs more (formats, ranges) says so in `run`. */
 export function check(schema: Schema, input: unknown): string | null {
-  if (!typeOk(input, "object")) return "input must be an object";
-  const o = input as Record<string, unknown>;
-  for (const k of schema.required ?? []) if (o[k] === undefined) return `${k} is required`;
-  for (const [k, v] of Object.entries(o)) {
+  if (!input || typeof input !== "object" || Array.isArray(input)) return "input must be an object";
+  const o = new Map<string, unknown>(Object.entries(input));
+  for (const k of schema.required ?? []) if (o.get(k) === undefined) return `${k} is required`;
+  for (const [k, v] of o) {
     const p = schema.properties[k];
     if (!p) return `unknown input ${k}`;
     if (!typeOk(v, p.type)) return `${k} must be a ${p.type}`;
@@ -58,7 +58,7 @@ export function createOps<Ctx>(list: Op<Ctx>[], can: (ctx: Ctx, needs: string) =
       if (op.needs && !can(ctx, op.needs)) throw new OpError("forbidden", `${name} needs ${op.needs}`);
       const bad = check(op.input, input ?? {});
       if (bad) throw new OpError("invalid", `${name}: ${bad}`);
-      return op.run((input ?? {}) as never, ctx);
+      return op.run(input ?? {}, ctx);
     },
 
     /** MCP and WebMCP tool definitions (the two share a shape; WebMCP registers them with `execute`). */
@@ -68,18 +68,19 @@ export function createOps<Ctx>(list: Op<Ctx>[], can: (ctx: Ctx, needs: string) =
     })),
 
     /** `deals-create --title Acme --amount 5` or `deals-create --json '{"title":"Acme"}'` to [name, input]. */
-    parseArgv(argv: string[]): [string, Record<string, unknown>] {
+    parseArgv(argv: string[]): [string, { [flag: string]: unknown }] {
       const [cmd = "", ...rest] = argv;
       const name = cmd.replace(/-/g, "_"), op = byName.get(name);
       if (!op) throw new OpError("unknown", `no command ${cmd}`);
-      const input: Record<string, unknown> = {};
+      const input = new Map<string, unknown>();
       for (let i = 0; i < rest.length; i += 2) {
         const flag = rest[i]!.replace(/^--/, "").replace(/-/g, "_"), raw = rest[i + 1] ?? "";
-        if (flag === "json") { Object.assign(input, JSON.parse(raw)); continue; }
+        // --json's fields go in as they came: `call` checks them against the schema like any other input.
+        if (flag === "json") { const j: unknown = JSON.parse(raw); if (j && typeof j === "object") for (const [k, v] of Object.entries(j)) input.set(k, v); continue; }
         const t = op.input.properties[flag]?.type;
-        input[flag] = t === "integer" || t === "number" ? Number(raw) : t === "boolean" ? raw === "true" : raw;
+        input.set(flag, t === "integer" || t === "number" ? Number(raw) : t === "boolean" ? raw === "true" : raw);
       }
-      return [name, input];
+      return [name, Object.fromEntries(input)];
     },
 
     /** A SKILL.md for the operations this caller can run, so an agent with a shell can use the CLI without the tools loaded. */

@@ -35,9 +35,11 @@ export async function engineKey(conf: LeaseEnv, fetcher: typeof fetch = fetch, n
   try {
     const res = await fetcher(new URL("/lease", conf.ARTSTEW_URL), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ license: conf.license, host: conf.host, version: conf.version }) });
     if (res.status === 402) { held = undefined; return null; }
-    const body = await res.json() as { ok?: boolean; key?: string; seconds?: number };
-    if (!res.ok || !body.ok || !body.key) throw new Error(`lease ${res.status}`);
-    held = { key: body.key, until: now + (body.seconds ?? 3600) * 1000 };
+    const sent: unknown = await res.json();
+    const body = (sent && typeof sent === "object" ? sent : {}) as { ok?: unknown; key?: unknown; seconds?: unknown };
+    if (!res.ok || body.ok !== true || typeof body.key !== "string" || !body.key) throw new Error(`lease ${res.status}`);
+    const seconds = typeof body.seconds === "number" && body.seconds > 0 ? body.seconds : 3600;
+    held = { key: body.key, until: now + seconds * 1000 };
     return body.key;
   } catch {
     return held && now < held.until + OUTAGE_GRACE_MS ? held.key : null;

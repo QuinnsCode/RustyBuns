@@ -9,6 +9,7 @@
 //   v.onGone(reason => ...);                             // "kicked" | "ended" | "network"
 //   v.muteSelf(true); v.leave();
 
+import { arr, check, maybe, num, obj, oneOf, or, raw, str } from "./guard.ts";
 import { QlaveCall } from "./qlave-call.ts";
 
 export interface Speaker {
@@ -38,11 +39,19 @@ export interface VoiceOptions {
 }
 
 /** What an event carries, unchecked. */
-const detailOf = (e: Event): Record<string, unknown> => {
-  const d: unknown = e instanceof CustomEvent ? e.detail : undefined;
-  return d && typeof d === "object" ? { ...d } : {};
-};
-const strOf = (v: unknown): string | undefined => (typeof v === "string" ? v : undefined);
+const detailOf = (e: Event): unknown => (e instanceof CustomEvent ? e.detail : undefined);
+/** The room a join answers with: who you are, who the server has muted, and the ticket a reconnect goes in with. */
+const Joined = obj({ room: obj({
+  self: maybe(obj({ sub: str(200), name: or(str(200), "") })),
+  serverMuted: or(arr(str(200), 10_000, { drop: true }), []),
+  resume: maybe(str(4000)),
+}) });
+/** A peer that came or went. */
+const Peer = obj({ peerId: str(200, { min: 1 }) });
+/** Why the call ended: a close code, a reason. */
+const Fatal = obj({ code: maybe(num(0, 1e6)), message: maybe(str(500)) });
+/** The server muting (or unmuting) one person. */
+const ServerMute = obj({ type: oneOf(["server-mute"]), sub: str(200, { min: 1 }), on: maybe(raw) });
 
 const TALK_LEVEL = 0.02;   // audioLevel 0..1
 const POLL_MS = 100;
@@ -68,23 +77,20 @@ export async function join(url: string, ticket: string, opts: VoiceOptions = {})
   const applySelfMute = () => call.setAudioEnabled(!selfMuted && !isServerMuted());
 
   call.addEventListener("joined", (e) => {
-    const r = detailOf(e).room;
-    const room: Record<string, unknown> = r && typeof r === "object" ? { ...r } : {};
-    const me: Record<string, unknown> = room.self && typeof room.self === "object" ? { ...room.self } : {};
-    const sub = strOf(me.sub);
-    if (sub) self = { sub, name: strOf(me.name) ?? "" };
+    const room = check(Joined, detailOf(e))?.room;
+    if (room?.self?.sub) self = { sub: room.self.sub, name: room.self.name };
     serverMuted.clear();
-    for (const s of Array.isArray(room.serverMuted) ? room.serverMuted : []) if (typeof s === "string") serverMuted.add(s);
+    for (const s of room?.serverMuted ?? []) serverMuted.add(s);
     // The eqosys ticket is single use: reconnects go in with the room's resume ticket.
-    const resume = strOf(room.resume);
+    const resume = room?.resume;
     if (resume) call.setSignalingUrl(`${wsBase}?resume=${encodeURIComponent(resume)}`);
     applySelfMute();
     for (const p of call.remotePeers) playPeer(p.peerId);
   });
 
   call.addEventListener("message", (e) => {
-    const m = detailOf(e), sub = strOf(m.sub);
-    if (m.type !== "server-mute" || !sub) return;
+    const m = check(ServerMute, detailOf(e)), sub = m?.sub;
+    if (!m || !sub) return;
     if (m.on) serverMuted.add(sub); else serverMuted.delete(sub);
     if (sub === self.sub) applySelfMute();
     for (const p of call.remotePeers) if (p.sub === sub) playPeer(p.peerId);
@@ -108,9 +114,9 @@ export async function join(url: string, ticket: string, opts: VoiceOptions = {})
     el.play?.().catch(() => { /* autoplay blocked until a gesture */ });
   };
 
-  call.addEventListener("peer-stream", (e) => { const id = strOf(detailOf(e).peerId); if (id) playPeer(id); });
+  call.addEventListener("peer-stream", (e) => { const id = check(Peer, detailOf(e))?.peerId; if (id) playPeer(id); });
   call.addEventListener("peer-left", (e) => {
-    const id = strOf(detailOf(e).peerId);
+    const id = check(Peer, detailOf(e))?.peerId;
     if (!id) return;
     audios.get(id)?.remove();
     audios.delete(id);
@@ -123,7 +129,7 @@ export async function join(url: string, ticket: string, opts: VoiceOptions = {})
     for (const fn of goneFns) fn(reason);
   };
   call.addEventListener("fatal", (e) => {
-    const { code, message } = detailOf(e);
+    const { code, message } = check(Fatal, detailOf(e)) ?? {};
     end(code === 4004 || message === "kicked" || message === "erased" ? "kicked" : code === 4005 ? "ended" : "network");
   });
 

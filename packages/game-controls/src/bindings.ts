@@ -1,6 +1,7 @@
 // Key rebinding, pure so a test reaches it without a page. A game lists its actions with the keys it ships (a
 // `KeyboardEvent.code` each) and keeps reading those default codes; `canon` turns the key that was really pressed into
 // the default code of the action it is bound to, so the game's own checks never change.
+import { fieldsOf } from "./settings.ts";
 
 export interface Action {
   id: string;
@@ -33,11 +34,11 @@ export function keyName(code: string): string {
 
 /** Whatever was stored (unknown) down to bindings for known actions with no key twice; anything off is dropped. */
 export function parseBindings(raw: unknown, actions: Action[]): Bindings {
-  const o: Record<string, unknown> = typeof raw === "object" && raw !== null && !Array.isArray(raw) ? Object.fromEntries(Object.entries(raw)) : {};
+  const o = fieldsOf(raw);
   const out: Bindings = {};
   const taken = new Set<string>();
   for (const a of actions) {
-    const v = o[a.id];
+    const v = o.get(a.id);
     if (!Array.isArray(v)) continue;
     const codes = v.filter((c): c is string => typeof c === "string" && c !== "" && !RESERVED.includes(c));
     if (codes.length) out[a.id] = codes;
