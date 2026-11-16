@@ -1,13 +1,13 @@
 // The park on the page: grass under an open sky, the pop-up tent, the paths, the road and the houses across it (red
 // when they hear more than the limit), the truck at the gate, the heat map over the lot (painted only when something
-// moved) and the card: the generator's load, the crowd, the houses and the score. main.ts calls `parkView` once per
-// world and then `key` and `update`, the same as the dive bar's view.
+// moved, or the breeze shifted) and the card: the generator's load, the breeze, the crowd, the houses and the score.
+// main.ts calls `parkView` once per world and then `key` and `update`, the same as the dive bar's view.
 import * as THREE from "three";
 import { type World } from "../sim.ts";
 import { type Cables } from "../cables/cables.ts";
 import { type Zone, master, rig } from "./dive-bar.ts";
 import { aimKey, heatColour } from "./dive-bar-view.ts";
-import { GROUND, PARK, PASS, SPILL_LIMIT, TARGET, ZONES, heat, parkState, score, show, type Score, type Show } from "./park.ts";
+import { GROUND, PARK, PASS, SPILL_LIMIT, TARGET, ZONES, blow, heat, parkState, score, show, wind, windFor, windText, type Score, type Show } from "./park.ts";
 
 export type ParkView = {
   /** A key while playing with hands free; true when the park used it. */
@@ -75,12 +75,17 @@ export function parkView(scene: THREE.Scene, hud: HTMLElement, getWorld: () => W
   scene.background = new THREE.Color(SKY);
   scene.fog = new THREE.Fog(SKY, 40, 110);
 
+  // A breeze of its own each run (`?wind=<seed>` to replay one).
+  const seed = Number(new URLSearchParams(location.search).get("wind")) || (Math.random() * 2 ** 32) >>> 0;
+  blow(getWorld(), windFor(seed));
+
   const card = document.createElement("div");
   card.className = "bar-card";
   hud.appendChild(card);
 
   let seen = "", last: Score | null = null, opened: Show | null = null;
-  const signature = (w: World, cs: Cables) => JSON.stringify([w.held?.key, w.items.map((i) => [i.x, i.y, i.z, i.rot]), rig(w),
+  const breeze = (w: World) => { const b = wind(w); return [Math.round(b.toward * 36 / Math.PI), Math.round(b.speed * 2)]; };
+  const signature = (w: World, cs: Cables) => JSON.stringify([breeze(w), w.held?.key, w.items.map((i) => [i.x, i.y, i.z, i.rot]), rig(w),
     cs.runs.map((r) => [r.a, r.b, r.rope?.pts.filter((p, k) => k % 8 === 0).map((p) => [Math.round(p.x * 10), Math.round(p.z * 10)])])]);
 
   function paint(w: World, cs: Cables) {
@@ -109,6 +114,7 @@ export function parkView(scene: THREE.Scene, hud: HTMLElement, getWorld: () => W
       const power = !gen ? "no generator" : s.tripped ? "tripped" : `${(gen.watts / 1000).toFixed(1)} of ${(gen.limit / 1000).toFixed(1)} kW`;
       card.innerHTML = `<b>${opened ? "Show time" : "The park"}</b>`
         + `<span class="${s.tripped || gen?.warn ? "warn" : ""}">Generator ${power}</span>`
+        + `<span>${windText(wind(w))}</span>`
         + `<span>Crowd ${db(s.crowd)} (target ${TARGET})</span>`
         + `<span class="${s.houses !== null && s.houses > SPILL_LIMIT ? "warn" : ""}">Houses ${db(s.houses)} (limit ${SPILL_LIMIT})</span>`
         + `<span class="${s.hazards ? "warn" : ""}">${s.hazards ? `${s.hazards} cable${s.hazards > 1 ? "s" : ""} across a path` : "Paths clear"}</span>`
