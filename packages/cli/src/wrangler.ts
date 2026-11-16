@@ -121,7 +121,7 @@ export function wranglerStages(w: WranglerJson, base: RustyBunsConfig): { stages
     for (const [k, b] of Object.entries(own)) {
       const was = base.bindings[k];
       if (!was || was.type !== b.type) { bindings[k] = b; continue; }
-      const diff = Object.entries(b).filter(([f, v]) => JSON.stringify(v) !== JSON.stringify((was as Record<string, unknown>)[f]));
+      const diff = Object.entries(b).filter(([f, v]) => JSON.stringify(v) !== JSON.stringify(Reflect.get(was, f)));
       if (!diff.length) continue;
       bindings[k] = diff.every(([f]) => STAGE_FIELDS.has(f)) ? Object.fromEntries(diff) : b;
     }
@@ -144,7 +144,7 @@ function edgeRoutes(w: WranglerJson) {
 /** A binding key from a queue or class name: `jobs-dlq` -> `JOBS_DLQ`, `MyBox` -> `MY_BOX`. */
 const bindingKey = (s: string) => s.replace(/([a-z0-9])([A-Z])/g, "$1_$2").replace(/[^A-Za-z0-9]+/g, "_").replace(/^_+|_+$/g, "").toUpperCase() || "BINDING";
 /** `key`, or `key_2`, `key_3`... when bindings already has it. */
-const freeKey = (bindings: Record<string, unknown>, key: string) => { let k = key; for (let i = 2; k in bindings; i++) k = `${key}_${i}`; return k; };
+const freeKey = (bindings: object, key: string) => { let k = key; for (let i = 2; k in bindings; i++) k = `${key}_${i}`; return k; };
 
 /**
  * How the Worker is built, which decides where its bundle lands: RWSDK's vite build
@@ -221,7 +221,7 @@ export function wranglerToConfig(w: WranglerJson, scripts: Record<string, string
   // Routes: a custom domain is a hostname the Worker owns; the rest are zone routes.
   const { domains, zoneRoutes } = edgeRoutes(w);
   const o = w.observability;
-  const camel = (x: Record<string, unknown>) => JSON.parse(JSON.stringify(Object.fromEntries(Object.entries(x).map(([k, v]) => [k.replace(/_([a-z])/g, (_, c) => c.toUpperCase()), v]))));
+  const camel = (x: object) => JSON.parse(JSON.stringify(Object.fromEntries(Object.entries(x).map(([k, v]) => [k.replace(/_([a-z])/g, (_, c) => c.toUpperCase()), v]))));
   const pick = <T extends object>(x: T, keys: (keyof T)[]) => Object.fromEntries(keys.filter((k) => x[k] !== undefined).map((k) => [k, x[k]]));
   return {
     name: w.name ?? "app",

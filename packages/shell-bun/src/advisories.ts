@@ -8,6 +8,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
+import { Bad, arr, check, num, obj, oneOf, opt, str, type Guard } from "./guard.ts";
 
 export const ADVISORIES_URL = "https://raw.githubusercontent.com/QuinnsCode/RustyBuns/main/advisories.json";
 export const LATEST_URL = "https://registry.npmjs.org/@rustybuns/cli/latest";
@@ -27,6 +28,12 @@ export type Advisory = {
 
 /** `latestAt` is when `latest` was published (ms), to tell a release the age gate holds back from an old one. */
 export type Facts = { advisories: Advisory[]; latest?: string; latestAt?: number; checkedAt: number };
+
+const issue: Guard<number | string> = (v) => { if (typeof v === "number" || typeof v === "string") return v; throw new Bad("an issue number or a URL"); };
+const AdvisoryEntry: Guard<Advisory> = obj({ versions: str(200), do: oneOf(["upgrade", "downgrade"]), to: str(100), why: str(2000), issue: opt(issue) });
+const when = num(0, Infinity);
+/** The once-a-day cache file, ours (a CLI's Facts or an app's AppFacts): a bad entry is left out, a bad file is no cache. */
+const Cache = obj({ advisories: arr(AdvisoryEntry, 1000, { drop: true }), latest: opt(str(100)), latestAt: opt(when), download: opt(str(2000)), checkedAt: when });
 
 // Bun.semver.satisfies treats a range it cannot parse as matching everything,
 // so a typo in advisories.json would warn every user. Only plain comparators
@@ -91,8 +98,8 @@ export function ageGate(dir = process.cwd(), home = homedir()): number | null {
 
 export const cachePath = () => join(process.env.XDG_CACHE_HOME || join(homedir(), ".cache"), "rustybuns", "version-check.json");
 
-function readCache(path: string): Facts | null {
-  try { return JSON.parse(readFileSync(path, "utf8")) as Facts; } catch { return null; }
+function readCache(path: string) {
+  try { return check(Cache, JSON.parse(readFileSync(path, "utf8"))); } catch { return null; }
 }
 
 async function getJson(url: string, fetcher: typeof fetch, ms: number): Promise<any> {
@@ -209,7 +216,7 @@ export async function appLaunchCheck(app: string, version: string | undefined, u
   if (!v || checkDisabled(opts.env)) return null;
   try {
     const { path = join(dirname(cachePath()), `app-${app.replace(/[^\w.-]/g, "_")}.json`), now = Date.now(), fetcher = fetch, ms = 1500 } = opts;
-    let facts = readCache(path) as AppFacts | null;
+    let facts: AppFacts | null = readCache(path);
     if (!facts || now - facts.checkedAt > DAY) {
       const got = await getJson(url, fetcher, ms).catch(() => null);
       facts = {

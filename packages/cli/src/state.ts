@@ -12,6 +12,11 @@ import { closeSync, existsSync, lstatSync, mkdirSync, openSync, readFileSync, re
 import { dirname, join, relative, resolve } from "node:path";
 import { workerName, type RustyBunsConfig } from "./config.ts";
 import { UsageError } from "./errors.ts";
+import { check, int, isRecord, maybe, obj, str } from "@rustybuns/shell-bun/guard";
+
+const pid = maybe(int(1, 2 ** 31));
+/** The lock file a deploy holds, ours: who holds it. A field that's wrong reads as missing, a bad file as stale. */
+const Held = obj({ pid, cwd: maybe(str(4096)), what: maybe(str(100)), child: pid });
 
 /** `<git common dir>/rustybuns/alchemy/<app path in repo>`, or null outside git. */
 export function sharedStateBase(projectDir: string): string | null {
@@ -90,8 +95,8 @@ export function lockState(base: string, what: string): () => void {
       fd = openSync(file, "wx");
     } catch (e: any) {
       if (e?.code !== "EEXIST") throw e;
-      let held: { pid?: number; cwd?: string; what?: string; child?: number } = {};
-      try { held = JSON.parse(readFileSync(file, "utf8")); } catch { /* half-written: treat as stale */ }
+      let held: ReturnType<typeof Held> = {};
+      try { held = check(Held, JSON.parse(readFileSync(file, "utf8"))) ?? {}; } catch { /* half-written: a stale lock */ }
       if (held.pid && held.pid !== process.pid && alive(held.pid))
         throw new Error(`another \`rustybuns ${held.what ?? "deploy"}\` (pid ${held.pid}, in ${held.cwd ?? "?"}) is using this app's shared Alchemy state. Wait for it, or stop it.`);
       if (held.child && alive(held.child))
@@ -177,8 +182,6 @@ export function unexportedClasses(projectDir: string, cfg: Pick<RustyBunsConfig,
   }
   return out;
 }
-
-export const isRecord = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v);
 
 /**
  * Make each app in `apps` (beside `projectDir`, in `apps/<app>`) readable from this app's state, so a

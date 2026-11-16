@@ -3,14 +3,14 @@
 // come along, as they do on Cloudflare.
 
 import { Database } from "bun:sqlite";
-import type { SqlStoragePort, SqlCursor } from "@rustybuns/ports";
+import type { Fields, SqlStoragePort, SqlCursor } from "@rustybuns/ports";
 
 /** SqlStorage over `db`, opened on first use (most DOs never touch sql). */
 export function sqlStorage(open: () => Database): SqlStoragePort {
   let db: Database | null = null;
   const get = () => (db ??= open());
   return {
-    exec<T = Record<string, unknown>>(query: string, ...bindings: unknown[]): SqlCursor<T> {
+    exec<T = Fields>(query: string, ...bindings: unknown[]): SqlCursor<T> {
       const d = get();
       // Like Cloudflare, several statements run in one call when nothing is bound.
       const many = !bindings.length && /;\s*\S/.test(query.trim().replace(/;\s*$/, ""));

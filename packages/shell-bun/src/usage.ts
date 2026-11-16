@@ -10,6 +10,7 @@
 // a queue. `/__rb/usage` serves the snapshot, and the desktop host writes it to <data>/usage.json.
 
 import { AsyncLocalStorage } from "node:async_hooks";
+import { num, obj, rec, type Guard } from "./guard.ts";
 
 export interface CauseUsage {
   /** Requests, ticks, or messages for a queue's consumer. */
@@ -26,6 +27,10 @@ export interface UsageSnapshot {
   /** Keyed "request", "cron <expr>", "queue <binding>", "other". */
   causes: Record<string, CauseUsage>;
 }
+
+const n = num(0, Infinity);
+/** A snapshot as /__rb/usage serves it and <data>/usage.json holds it. */
+export const UsageReply: Guard<UsageSnapshot> = obj({ since: n, uptimeS: n, causes: rec(obj({ runs: n, busyMs: n, ops: rec(n) })) });
 
 interface Run { cause: string; seen: Set<string> }
 

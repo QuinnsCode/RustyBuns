@@ -54,6 +54,7 @@ export function pagesWorker(table: Table) {
         ...table.middleware.filter((m) => m.prefix.every((s, i) => parts[i] === s)).flatMap((m) => m.fns),
         handler ?? ((c: { request: Request }) => assets(c.request)),
       ];
+      // Pages types `data` as Record<string, unknown> itself, and this file imports nothing, so it stays.
       const data: Record<string, unknown> = {};
       const run = (i: number, req: Request): Promise<Response> => Promise.resolve(chain[i]!({
         request: req, env, params, data, functionPath,

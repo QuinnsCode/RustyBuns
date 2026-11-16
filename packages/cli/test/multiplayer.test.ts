@@ -119,6 +119,9 @@ test("generated host: host identity by cookie, guests by passphrase with their o
     expect(await act(JSON.stringify({ module: "constructor", fn: "assign", args: [] }))).toBe(404);
     expect(await act(JSON.stringify({ module: "m", fn: "constructor", args: [] }))).toBe(404);
     expect((await fetch(`${url}/__rb/host`, { method: "POST", headers: { cookie, "content-type": "application/json" }, body: "42" })).status).toBe(200);
+    // fields of the wrong kind are dropped: max stays 2 (g3 below is turned away) and the world stays open
+    expect((await host({ max: "9", listen: "nope" })).status).toBe(200);
+    expect((await info()).guests).toMatchObject({ open: true, max: 2 });
 
     const g2 = await connect(`${url}/ws?join=pwxxxxxxxxxx&uid=g2&name=Two&v=v1`);
     expect("hello" in g2).toBe(true);

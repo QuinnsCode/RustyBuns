@@ -9,7 +9,8 @@ import { Session } from "node:inspector";
 import { mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import { timingSafeEqual } from "node:crypto";
-import { formatHistory, historyRuns, type History } from "./history.ts";
+import { HistoryReply, formatHistory, historyRuns, type History } from "./history.ts";
+import type { Of } from "./guard.ts";
 import { formatProfileSummary, summarizeProfile } from "./profsummary.ts";
 
 export interface CpuProfileOptions {
@@ -93,7 +94,7 @@ export function profRoute(o: { secret?: string; dir: string; log?: (l: string) =
     if (hist) {
       if (req.method !== "GET") return text("GET /__rb/history", 405, { Allow: "GET" });
       const runs = historyRuns(hist.read());
-      return asText ? text(formatHistory(runs, n("runs", 5))) : Response.json({ runs });
+      return asText ? text(formatHistory(runs, n("runs", 5))) : Response.json({ runs } satisfies Of<typeof HistoryReply>);
     }
     if (req.method !== "POST") return text("POST /__rb/prof?s=<seconds>", 405, { Allow: "POST" });
     if (busy) return text("a profile is already running", 409);

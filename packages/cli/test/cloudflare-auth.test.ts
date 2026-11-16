@@ -17,9 +17,9 @@ const me = (over: Partial<WhoAmI> = {}): WhoAmI => ({
 function fake(states: (WhoAmI | null)[], loginOk = true, token: string | null = "tok") {
   const logins: string[][] = [];
   const w: Wrangler = {
-    async json<T>(args: string[]) {
-      if (args[0] === "whoami") return (states.length > 1 ? states.shift()! : states[0]!) as T | null;
-      if (args[0] === "auth") return { token } as T;
+    async json(args, shape) {
+      if (args[0] === "whoami") { const s = states.length > 1 ? states.shift()! : states[0]!; return s && shape(s); }
+      if (args[0] === "auth") return shape({ token });
       throw new Error(`unexpected wrangler ${args.join(" ")}`);
     },
     async login(scopes) { logins.push(scopes); return loginOk; },

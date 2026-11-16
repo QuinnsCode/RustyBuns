@@ -6,6 +6,8 @@
 // then { cancel: true } lifts the drain on rooms still on the old build.
 // Off unless --drain-url is given. It never fails a deploy that could go out: an app that doesn't answer is said so and skipped.
 
+import { check, int, obj, type Of } from "@rustybuns/shell-bun/guard";
+
 /** Seconds of warning before the deploy goes live, when --drain-seconds isn't given. Small on purpose: the owner decides. */
 export const DEFAULT_GRACE_S = 30;
 
@@ -29,13 +31,16 @@ export function drainFlags(args: string[]): DrainFlags {
   return { url, seconds, rest };
 }
 
-export interface DrainReply { rooms: number; drained: number }
+const count = int(0, Number.MAX_SAFE_INTEGER);
+/** What /api/admin/drain answers: the rooms open, and how many it drained. */
+export const DrainReply = obj({ rooms: count, drained: count });
+export type DrainReply = Of<typeof DrainReply>;
 
 /** Tells the app to drain in `seconds` (or lifts it, with `cancel`). Null when it didn't answer well: the caller says so and goes on. */
 export async function callDrain(url: string, secret: string, body: { in?: number; cancel?: true }, fetcher: typeof fetch = fetch): Promise<DrainReply | null> {
   try {
     const res = await fetcher(`${url}/api/admin/drain`, { method: "POST", headers: { authorization: `Bearer ${secret}`, "content-type": "application/json" }, body: JSON.stringify(body), signal: AbortSignal.timeout(15_000) });
-    return res.ok ? (await res.json()) as DrainReply : null;
+    return res.ok ? check(DrainReply, await res.json()) : null;
   } catch {
     return null;
   }

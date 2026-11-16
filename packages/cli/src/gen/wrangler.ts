@@ -65,7 +65,7 @@ function wranglerConsumer(queue: string, c: QueueConsumer, dlq?: string) {
 
 /** worker.observability with wrangler's snake_case keys. */
 function wranglerObservability(o: NonNullable<NonNullable<RustyBunsConfig["worker"]>["observability"]>) {
-  const snake = (x: Record<string, unknown>) => Object.fromEntries(Object.entries(x).map(([k, v]) => [k.replace(/[A-Z]/g, (m) => "_" + m.toLowerCase()), v]));
+  const snake = (x: object) => Object.fromEntries(Object.entries(x).map(([k, v]) => [k.replace(/[A-Z]/g, (m) => "_" + m.toLowerCase()), v]));
   return { ...snake({ enabled: o.enabled, headSamplingRate: o.headSamplingRate }), ...(o.logs ? { logs: snake(o.logs) } : {}), ...(o.traces ? { traces: snake(o.traces) } : {}) };
 }
 
@@ -78,6 +78,7 @@ export function previousMigrations(src: string | null): DoMigration[] {
 /** `previous` is the current wrangler.jsonc, whose migration history is kept. */
 export function generateWrangler(c: RustyBunsConfig, previous: string | null = null): string {
   if (!c.worker) throw new Error("this config has no worker section (desktop-only app); there is no edge stack to generate");
+  // wrangler.jsonc is wrangler's own schema (node_modules/wrangler/config-schema.json), built up key by key here.
   const w: Record<string, unknown> = {
     $schema: "node_modules/wrangler/config-schema.json",
     name: workerName(c),

@@ -1,4 +1,8 @@
 // Browser-side helpers bundled into the desktop client.
+import { nul, obj, opt, str } from "./guard.ts";
+
+/** The part of /__rb/info a guest reads. */
+const Info = obj({ guests: opt(obj({ version: opt(nul(str(200))) })) });
 export async function callAction<T = unknown>(module: string, fn: string, args: unknown[]): Promise<T> {
   const r = await fetch(`/__rb/action`, {
     method: "POST", headers: { "content-type": "application/json" },
@@ -36,7 +40,7 @@ export function worldUrl(target = "/ws", params: Record<string, string | undefin
 export async function wireVersion(info = "/__rb/info"): Promise<string | undefined> {
   const r = await fetch(info);
   if (!r.ok) throw new Error(`wireVersion: ${info} ${r.status}`);
-  const i = await r.json() as { guests?: { version?: string | null } };
+  const i = Info(await r.json());
   return i.guests?.version ?? undefined;
 }
 

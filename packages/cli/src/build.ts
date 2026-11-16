@@ -5,7 +5,7 @@
 // Targets: current OS by default. Cross-OS is a CI matrix, not one machine.
 
 import { needDocker } from "./containers.ts";
-import { isRecord } from "./state.ts";
+import { isRecord } from "@rustybuns/shell-bun/guard";
 import { $ } from "bun";
 import { mkdir } from "node:fs/promises";
 import { existsSync, statSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
@@ -207,7 +207,7 @@ export function spaEntry(c: RustyBunsConfig, host: HostKind = "desktop"): string
 // as a Durable Object with sqlite storage, vouches the local identity at ${worldPath}.
 // Guests (other machines) reach ${worldPath} alone, with ?join=<passphrase>&uid=&name=&v=.
 // Replaces desktop_host.ts + desktop_gen_embed.ts.
-${reflectMetadataImport()}import { serve, openBrowser, writeDesktopFile, mintToken, localBindings, stdoutReporter, applyD1Migrations, launchCheck, memWatch, edgeLike${h.box ? ", cpuProfile, profRoute, history, summarizeProfile" : ""}${webmcpOn(c, h.box) ? ", webMcpRoute, WEBMCP_TAG" : ""}${appImport(c)}${d.server ? ", appServer" : ""}, type GuestState } from "@rustybuns/shell-bun";
+${reflectMetadataImport()}import { serve, openBrowser, writeDesktopFile, mintToken, localBindings, stdoutReporter, applyD1Migrations, launchCheck, memWatch, edgeLike${h.box ? ", cpuProfile, profRoute, history, summarizeProfile" : ""}${webmcpOn(c, h.box) ? ", webMcpRoute, WEBMCP_TAG" : ""}${appImport(c)}${d.server ? ", appServer" : ""}, hostRequest, type Fields, type GuestState } from "@rustybuns/shell-bun";
 ${hasWorld ? `import World from ${JSON.stringify("../" + (d.world || "packages/desktop/world.ts"))};` : "// no world (desktop.world: false)"}
 ${d.host ? `import host from ${JSON.stringify("../" + d.host)};` : "const host: any = null;"}
 import { homedir, networkInterfaces } from "node:os";
@@ -247,7 +247,7 @@ ${Object.entries(mounts).map(([route, dir]) => `  ${JSON.stringify(route)}: reso
 
 // What the world sees as env. KV and D1 are real sqlite; vars are baked;
 // anything with no local twin (pipelines, R2) is a no-op reporter.
-const env: Record<string, unknown> = {
+const env: Fields = {
 ${kvNames.map((n) => `  ${n}: local.kv(${JSON.stringify(n)}),`).join("\n")}
 ${d1s.map(([n, db]) => `  ${n}: local.d1(${JSON.stringify(db)}),`).join("\n")}
 ${vars.map(([n, v]) => `  ${n}: ${JSON.stringify(v)},`).join("\n")}
@@ -291,7 +291,7 @@ if (guests.join !== undefined && guests.join.length < JOIN_MIN && !LOOPBACK.test
   process.exit(1);
 }
 const token = ${h.token};
-const shell = serve<Record<string, unknown>>({ assets: clientDir, mounts, token, reporter: stdoutReporter, headers: ${JSON.stringify(d.headers ?? {})}${webmcpOn(c, h.box) ? ", head: WEBMCP_TAG" : ""}${h.listen},
+const shell = serve<Fields>({ assets: clientDir, mounts, token, reporter: stdoutReporter, headers: ${JSON.stringify(d.headers ?? {})}${webmcpOn(c, h.box) ? ", head: WEBMCP_TAG" : ""}${h.listen},
   public: ${JSON.stringify(d.publicPaths ?? [])},
   guest: { paths: [${JSON.stringify(worldPath)}], passphrase: () => guests.join } });
 const hostCtx = { env, dataDir, identity, reporter: stdoutReporter, shell, guests };
@@ -312,7 +312,7 @@ function guestIdentity(url: URL): Record<string, string> | string {
   if (!NAME.test(name)) return "bad name: 1-32 printable characters";
   return { ...identity, "X-User-Id": uid, "X-User-Name": name };
 }
-const reject = (status: number, error: string, extra: Record<string, unknown> = {}) => Response.json({ error, ...extra }, { status });
+const reject = (status: number, error: string, extra: Fields = {}) => Response.json({ error, ...extra }, { status });
 const madeUpJoin = () => Array.from(crypto.getRandomValues(new Uint8Array(15)), (n) => "abcdefghjkmnpqrstuvwxyz23456789"[n % 31]).join("").replace(/(.{5})(?!$)/g, "$1-");
 ${h.box ? `
 // A box is public and plays like the edge: no local player, so every socket
@@ -411,19 +411,16 @@ ${h.box ? `    // Hosting controls are the desktop owner's; on a public box anyo
       // "Host a world" = { listen: { hostname: "0.0.0.0" }, join: "a long passphrase" }; "Stop hosting" = { join: null, listen: { hostname: "127.0.0.1" } }.
       // join: true makes up a passphrase, returned once as guests.join. Off loopback a passphrase is the only lock
       // on the world, so it takes at least JOIN_MIN characters there, or the request changes nothing.
-      // The body is the client's: every field is unknown until checked, and a non-object body just has none.
-      const rec = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v);
-      const sent: unknown = await req.json().catch(() => null);
-      const b = rec(sent) ? sent : {}, l = rec(b.listen) ? b.listen : undefined;
+      const b = hostRequest(await req.json().catch(() => null)), l = b.listen;
       const made = b.join === true ? madeUpJoin() : undefined;
-      const join = b.join === undefined ? guests.join : made ?? (typeof b.join === "string" && b.join.length > 0 ? b.join : undefined);
-      const bindTo = typeof l?.hostname === "string" ? l.hostname : shell.hostname;
+      const join = b.join === undefined ? guests.join : made ?? (b.join === true ? undefined : b.join ?? undefined);
+      const bindTo = l?.hostname ?? shell.hostname;
       if (join !== undefined && join.length < JOIN_MIN && !LOOPBACK.test(bindTo))
         return reject(400, "weak_passphrase", { detail: "guests off this machine need a passphrase of at least " + JOIN_MIN + " characters, or send join: true for one", min: JOIN_MIN });
       guests.join = join;
-      if (typeof b.max === "number" && b.max >= 0) guests.max = b.max;
-      if (b.version !== undefined) guests.version = typeof b.version === "string" ? b.version : undefined;
-      if (l) shell.rebind({ hostname: typeof l.hostname === "string" ? l.hostname : undefined, port: typeof l.port === "number" && Number.isInteger(l.port) ? l.port : undefined });
+      if (b.max !== undefined) guests.max = b.max;
+      if (b.version !== undefined) guests.version = b.version ?? undefined;
+      if (l) shell.rebind({ hostname: l.hostname, port: l.port });
       return Response.json({ listen: { hostname: shell.hostname, port: shell.port }, guests: { open: guests.join !== undefined, connected: guestCount, max: guests.max, version: guests.version ?? null, ...(made ? { join: made } : {}) } });
     }
 ${h.box ? `    // Actions run as the desktop's one host identity. A box has no token, so
@@ -596,7 +593,7 @@ export function desktopEntry(c: RustyBunsConfig, host: HostKind = "desktop"): st
 // with sqlite standing in for D1/KV. Same fetch(), same env shape.
 // First: workerd's globalThis.Cloudflare, read by nodejs_compat builds as they load.
 import "@rustybuns/shell-bun/workerd-global";
-import { serve, openBrowser, writeDesktopFile, mintToken, localBindings, stdoutReporter, applyD1Migrations, launchCheck, memWatch, within, metered, usageSnapshot, capped, edgeLimits, edgeLike, recycling, restartHost, watchEnvAtImport${h.box ? ", cpuProfile, profRoute, history, summarizeProfile" : ""}${webmcpOn(c, h.box) ? ", webMcpRoute, WEBMCP_TAG" : ""}${appImport(c)}${artifacts.length ? ", gitHttp" : ""}${crons.length ? ", schedule" : ""} } from "@rustybuns/shell-bun";
+import { serve, openBrowser, writeDesktopFile, mintToken, localBindings, stdoutReporter, applyD1Migrations, launchCheck, memWatch, within, metered, usageSnapshot, capped, edgeLimits, edgeLike, recycling, restartHost, watchEnvAtImport${h.box ? ", cpuProfile, profRoute, history, summarizeProfile" : ""}${webmcpOn(c, h.box) ? ", webMcpRoute, WEBMCP_TAG" : ""}${appImport(c)}${artifacts.length ? ", gitHttp" : ""}${crons.length ? ", schedule" : ""}, type Fields } from "@rustybuns/shell-bun";
 // Bun's own process: a Worker built with nodejs_compat (unenv) swaps globalThis.process for
 // one whose cwd() is "/" and argv is empty, and that would move assets and flags (#741).
 import process from "node:process";
@@ -620,7 +617,7 @@ const flag = (n: string) => { const i = argv.indexOf("--" + n); return i >= 0 ? 
 const [lh, lp] = (flag("listen") ?? process.env.RB_LISTEN ?? "").split(":");
 const listen = { hostname: lh || ${JSON.stringify(c.targets.desktop?.listen?.hostname ?? "127.0.0.1")}, port: lp ? Number(lp) : ${c.targets.desktop?.listen?.port ?? 0} };
 
-const env: Record<string, unknown> = {
+const env: Fields = {
 ${bind.join("\n")}
 };
 // What each binding does, counted per request, cron tick and queue batch: /__rb/usage serves it and
