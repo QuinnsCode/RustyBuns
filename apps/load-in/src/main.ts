@@ -207,7 +207,9 @@ addEventListener("blur", () => keys.clear());
 /** F: the cable job if there is one (plug, unplug, take one, coil), else put down or pick up the gear. */
 function grab(): Answer {
   const at = aimed(world);
-  const r = cable.use(world, cables, at) ?? (world.held ? place() : at ? lift(at.key) : { ok: false as const, why: "nothing in reach" });
+  if (ar && at && !world.held && !cable.inHand(cables) && reserved(world, at.key)) return (flash = { text: "the crew has that one", until: performance.now() + 1800 }), { ok: false, why: "the crew has that one" };
+  const r = cable.use(world, cables, at) ?? (world.held ? place() : at ? (wheeled(at.gear) ? push : pickUp)(world, at.key) : { ok: false as const, why: "nothing in reach" });
+  if (r.ok && ar && world.held) unrack(world, world.held.key);
   if (!r.ok) flash = { text: r.why, until: performance.now() + 1800 };
   return r;
 }
