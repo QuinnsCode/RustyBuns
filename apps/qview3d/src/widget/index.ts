@@ -19,7 +19,7 @@
 import { createElement, Camera, CloudUpload, Eraser, ImagePlus, Rotate3d, RotateCw, Scaling } from "lucide";
 import { esc } from "@rustybuns/util";
 import { getJson, readJson } from "@rustybuns/util/http";
-import { DesignReply, MODELS, Product, TOPS, ZONES, type Design, type DesignReply as Saved, type Made, type Model, type Placement as Place, type ZoneName } from "../api.ts";
+import { DesignReply, MODELS, Product, TOPS, ZONES, type Design, type DesignReply as Saved, type Made, type Model, type Placement as Place, type PrintArea, type ZoneName } from "../api.ts";
 import { sha256Of } from "./image.ts";
 import { css } from "./style.ts";
 import { problem, upload } from "./upload.ts";
@@ -61,6 +61,7 @@ export class QView3D extends HTMLElement {
   private colors = DEFAULT_COLORS;
   /** The product's own model (a sample's GLB key), when it has one. */
   private glb: string | null = null;
+  private area: PrintArea | null = null;
   /** The product's switched-on zones and where a new picture lands, when the shop set them. */
   private print: readonly ZoneName[] | null = null;
   private startAt: Place | null = null;
@@ -150,7 +151,7 @@ export class QView3D extends HTMLElement {
       v.display = this.display;
       v.onChange = () => this.changed();
       v.startAt = this.startAt;
-      if (this.glb) await v.setCustom(this.glbUrl(this.glb));
+      if (this.glb) await v.setCustom(this.glbUrl(this.glb), this.area);
       else v.setModel(asModel(this.getAttribute("model")));
       v.setColor(this.getAttribute("color") ?? this.firstColor());
       v.setPrint(this.print);
@@ -171,10 +172,11 @@ export class QView3D extends HTMLElement {
     if (!p) return this.fail(new Error(`No product "${product}" for ${org}`));
     this.colors = p.colors;
     this.glb = p.model === "custom" && p.glb ? p.glb : null;
+    this.area = p.area ?? null;
     this.print = p.print ?? null;
     this.startAt = p.place ?? null;
     if (this.viewer) { this.viewer.startAt = this.startAt; this.viewer.setPrint(this.print); }
-    if (this.glb && this.viewer) { await this.viewer.setCustom(this.glbUrl(this.glb)); this.changed(); }
+    if (this.glb && this.viewer) { await this.viewer.setCustom(this.glbUrl(this.glb), this.area); this.changed(); }
     if (p.model !== "custom" && !this.hasAttribute("model")) this.setAttribute("model", p.model);
     if (!this.hasAttribute("color") && p.colors[0]) this.setAttribute("color", p.colors[0]);
     this.drawSwatches();

@@ -3,14 +3,15 @@
 // The admin page (public/admin.html): a shop makes a sample of its own product. Photos (or a short video, from
 // which four frames are taken here in the browser) are cut to 1600 px JPEGs, uploaded privately with the admin
 // key, and sent to make a model. The page polls until it's ready, then shows it in the widget with its embed tag.
+// Under the sample, Use as print area marks where it prints: wherever its picture sits now, that size across.
 // Below that, print files: a saved design's original laid out per zone at print resolution, for the fulfiller.
 // Above the form: how many samples are left, and packs to buy more (billing.ts).
 import { getJson, readJson } from "@rustybuns/util/http";
-import { Billing, CheckoutReply, PrintPlan, Sample } from "./api.ts";
+import { Billing, CheckoutReply, PrintPlan, Product, Sample, areaOf, type PrintArea } from "./api.ts";
 import { drawSheet, withDpi } from "./print-sheet.ts";
 import { sha256Of } from "./widget/image.ts";
 import { problem, upload } from "./widget/upload.ts";
-import "./widget/index.ts";
+import { QView3D } from "./widget/index.ts";
 
 const PHOTO_MAX = 1600;
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T; // the page's own elements, by id
@@ -190,6 +191,23 @@ function show(o: string, product: string) {
   $<HTMLDivElement>("preview").replaceChildren(el);
   $<HTMLElement>("tag").textContent = tag;
   $<HTMLButtonElement>("copy").onclick = () => void navigator.clipboard.writeText(tag).then(() => say("Copied the tag."));
+  const mark = $<HTMLButtonElement>("area"), clear = $<HTMLButtonElement>("area-clear");
+  const setArea = async (area: PrintArea | null) => {
+    const url = `${location.origin}/api/orgs/${encodeURIComponent(o)}/products/${encodeURIComponent(product)}`;
+    const p = await getJson(url, Product);
+    if (!p) return say("Couldn't read the product.", true);
+    const { area: _was, ...rest } = p;
+    const res = await fetch(url, { method: "PUT", headers: { ...auth(), "content-type": "application/json" }, body: JSON.stringify(area ? { ...rest, area } : rest) });
+    if (!res.ok) return say(await problem(res), true);
+    el.setAttribute("product", product); // reload it with the new area
+    say(area ? "Print area saved: shoppers' pictures stay inside the dashed square." : "Print area cleared: a picture goes anywhere on it.");
+  };
+  mark.onclick = () => {
+    const l = el instanceof QView3D ? el.design?.layers[0] : undefined;
+    if (!l?.point || !l.normal) return say("Add a picture first and put it where the print goes, at the size it prints.", true);
+    void setArea(areaOf(l));
+  };
+  clear.onclick = () => void setArea(null);
   result.hidden = false;
   $<HTMLDivElement>("empty").hidden = true;
 }
