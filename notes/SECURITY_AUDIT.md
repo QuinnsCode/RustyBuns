@@ -455,3 +455,70 @@ A claims audit of codeSplitter, run against the app on its local twins. This sec
 - **A check run as the owner stays out of the owner's home** (high). On macOS the command runs under `sandbox-exec`: it reads only the tools on PATH there and writes nothing there, and its package caches are its own in the owner's temp dir, never `~/.bun` or `~/.npm` (`check-env.test.ts`).
 - **`codesplitter login` doesn't echo the token** (low). Only the question reaches the terminal (`cli.test.ts`).
 - **In alias mode a retired handle's cookie is no one** (medium). A `cs_user` cookie set by hand to a deleted account's handle, or `@ghost`, is signed out on every request, not only at sign-in (`privacy.test.ts`).
+
+## Round 15, November 15: secrets left in plain text, and the limits from eqosys down to the games
+
+The owner asked two things: that no agent has left a password, token or key where it can be read, and that every surface has
+sensible limits against floods, top down from eqosys through Qollab to the games (codeSplitter's model, `src/limits.ts`, is the one
+to match). One pass by one agent, source and history only. Nothing was deployed or run against a live site.
+
+### Secrets: none found
+
+What was searched, and how, so the next sweep can repeat it:
+
+- **Every tracked file** (7,458) for the formats real credentials take: GitHub (`ghp_`, `gho_`, `ghs_`, `github_pat_`), Anthropic,
+  OpenAI, AWS access keys, npm, 1Password service accounts, Stripe live keys, Slack, Google API keys, Hugging Face, Replicate and PEM
+  private keys. Then any `password`, `secret`, `token` or `api_key` given a literal value outside a test, and any long high-entropy
+  literal. The only credential-shaped string is AWS's published example key in a QView3D test. The rest were a test webhook
+  secret in `codesplitter/scripts/stress.ts`, asset ids and alphabets.
+- **All 2,729 commits of history** (`git log --all -G` over the same formats), and every file name ever added: no `.env`,
+  `.dev.vars`, key, certificate, `.netrc` or Alchemy state file was ever committed. `.gitignore` covers all of them.
+- **GitHub issues and pull requests**: no token prefix anywhere. Seven mention a private key in prose, none holds one.
+- **This Mac**: every agent transcript and memory file under `~/.claude/projects` (2,136 files) and every file name in the
+  checkout and its worktrees. Two AWS-shaped strings sat inside 29,000-character base64 blobs (an image in a tool's output):
+  chance, not keys. No `.dev.vars`, `.env`, key or token file is lying in any worktree. Values were never printed: the scan reports a
+  kind and a hash.
+
+Turnstile site keys in `wrangler.jsonc` are public by design. Secrets still go through varlock and 1Password, as above.
+
+### Limits: what each surface has
+
+| Surface | Floods it already refuses |
+| --- | --- |
+| eqosys sign-in, sign-up, account mail | `AUTH_LIMIT` at the edge, 20 a minute an address, on every `/api/auth/*` and `/do/*` POST |
+| eqosys reports | `REPORT_LIMIT` (5 a minute an address) and a per-account hour and day cap in D1 |
+| Qollab hub | one token per call; friends 200, waiting asks 100, notes 50, tabs 10, email lookups 20 an hour; 5 frames a second a socket |
+| Qollab parties | 12 new codes a minute an address; 5 frames a second a socket; chat 2 a second (burst 5); friends-only unless opened |
+| Qollab spaces | 10 owned, 500 members, 20 channels; 5 frames a second a socket |
+| Qollab saves | 256 KB a save, 20 slots a game, 5 versions, 50 MB a person |
+| Game rooms (Mythic Masters, Park Hide & Seek, Skate Tech Park, Git Recon, Splat Spray, Two Fronts, fm-daw, TerraViz) | new rooms per address capped at the door (`RoomMintGate` or `allowStart`), and every deployed room budgets each socket's frames (`Sockets`/`Seats` limits) |
+| codeSplitter | the model: per-IP, per-person, per-token and site-wide rules in D1 behind the edge's `AUTH_LIMIT`, tunable on its rate limits page |
+
+Under all of it, Cloudflare's own DDoS protection is always on, for workers.dev and the qntbr.com zone alike.
+
+### Fixed in this round
+
+Each with a test that fails without the fix.
+
+- **A space's invite could be guessed** (medium). An invite is the only key a space needs, it lasts until a kick, and it was six
+  letters from 21 (86 million codes) with nothing counting wrong guesses at `POST /q/space/join`. New and rotated invites are twelve
+  letters (21^12, about 7 quadrillion), and one account, or one address, may try 20 different invites a minute; the same invite
+  again is free (`space.test.ts`). Spaces made before this keep their six-letter invite until a kick rotates it, and the per-minute
+  cap covers them.
+- **No per-address gate on party knocks** (low, from #3725). Opening `/q/party/<code>` writes a seat row before the party answers,
+  so a script trying codes wrote a row a try. The same 20 different codes a minute, per account and per address, now covers knocks.
+  The same code again (a reconnect, or the player's own party) is free (`party.test.ts`).
+- **No private way to reach a person** (owner's ask). Reports become public issues and need a sign-in, so someone locked out, or
+  with something private, had nowhere to write. `theqntbr@gmail.com` (`CONTACT_EMAIL` in `@rustybuns/util/report`) is now on
+  eqosys's sign-in page (Help), its privacy page, every game's Report form and `SECURITY.md` (`pages.test.tsx`).
+
+### Known limits, kept on purpose
+
+- The door gates (`RoomMintGate`, `allowStart`, the new tries gate) count in memory, so per isolate: a speed bump, as their
+  comments say. The codes behind them are what make guessing hopeless, and a real flood meets Cloudflare's DDoS protection first.
+- eqosys's sign-in limit is 20 a minute an address (Workers rate limiting counts per minute at most), looser than codeSplitter's
+  10 in 10 minutes in D1. A ten-character password minimum keeps it fair; a D1 count like codeSplitter's is the step up if it
+  ever matters.
+- The games live on workers.dev, which no zone rule reaches, so their protection is what their code does (the table above).
+  eqosys, qCRM, GeoBoxQ and artstewengine are on the qntbr.com zone, where one free rate limiting rule and a billing alert are the
+  owner's to add: MANUAL RUN https://github.com/QuinnsCode/RustyBuns/issues/4691.

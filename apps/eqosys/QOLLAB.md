@@ -126,7 +126,9 @@ friends who play different games still share one.
 - **Where it lives:** D1 holds who owns a space and who is in it (`spaces`, `space_members`, migration 0007), so
   "my spaces" is one query and the Worker checks membership before a socket reaches the space. A `Space` Durable Object
   per space (`src/space.ts`) holds its channels, their messages and who is online.
-- **Joining:** the owner hands out a six-letter invite (same alphabet as a party code). Up to 500 members a space, 10 spaces a person owns.
+- **Joining:** the owner hands out a twelve-letter invite (a party code's alphabet, twice as long: it is copied, never read out,
+  and lets anyone in for good). One account or address may try 20 different invites, or party codes, a minute. Up to 500
+  members a space, 10 spaces a person owns.
 - **Channels:** `#general` to start; the owner adds more (up to 20 text and voice together, lower-case, digits and
   dashes) and deletes any but `#general`.
 - **Voice channels:** carried by Qlave ([QLAVE.md](QLAVE.md)). A member asks the space for a one-use ticket and

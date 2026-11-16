@@ -6,6 +6,12 @@ import { readJson } from "./http.ts";
 import { int, obj, opt, str } from "./guard.ts";
 import { eqBadge, eqButton, wearSkin } from "./skin.ts";
 
+/** Where a player writes when a public report won't do: they can't sign in to send one, or it's private (their account, a worry
+ *  about someone, a security hole). eqosys's sign-in and privacy pages show it too. */
+export const CONTACT_EMAIL = "theqntbr@gmail.com";
+/** A mailto link to CONTACT_EMAIL with the subject filled in. */
+export const contactHref = (subject: string) => `mailto:${CONTACT_EMAIL}?subject=${encodeURIComponent(subject)}`;
+
 export type ReportKind = "bug" | "suggestion" | "error";
 export interface ReportIn { kind: ReportKind; title: string; body: string; page?: string; build?: string; detail?: string }
 export type Sent = { ok: true; issue: number | null } | { ok: false; error: string };
@@ -43,11 +49,14 @@ export function mountReportButton(host: ReportHost, parent: HTMLElement = docume
   const send = eqButton({ text: "Send", type: "submit", primary: true });
   const note = Object.assign(document.createElement("div"), { className: "eq-status" });
   note.setAttribute("role", "status");
-  const top = Object.assign(document.createElement("div"), { className: "eq-head" });
+  // Reports become public issues, so the private way is always in view, signed in or not.
+  const mail = Object.assign(document.createElement("div"), { className: "eq-status" });
+  mail.append("Private, or can't sign in? Email ", Object.assign(document.createElement("a"), { href: contactHref(`A problem in ${document.title || "a Q game"}`), textContent: CONTACT_EMAIL }));
+  const top =Object.assign(document.createElement("div"), { className: "eq-head" });
   const shut = () => { form.hidden = true; open.focus(); };
   top.append(head, eqBadge(), eqButton({ text: "Close", icon: "x", onClick: shut }));
   form.addEventListener("keydown", (e) => { if (e.key === "Escape") shut(); });
-  form.append(top, kind, title, body, send, note);
+  form.append(top, kind, title, body, send, note, mail);
   open.onclick = () => { form.hidden = !form.hidden; note.textContent = ""; };
   form.onsubmit = async (e) => {
     e.preventDefault();

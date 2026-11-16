@@ -63,7 +63,7 @@ test("make, invite, talk, add a channel, read history, kick; a member from anoth
   const a = member(ada.token), b = member(bo.token);
 
   const made = (await a.c.make("Night owls"))!;
-  expect(made.invite).toMatch(/^[BCDFGHJKLMNPQRSTVWXYZ]{6}$/);
+  expect(made.invite).toMatch(/^[BCDFGHJKLMNPQRSTVWXYZ]{12}$/);
   expect(await b.c.join("WRONG1")).toBeNull();
   expect(await b.c.join(made.invite.toLowerCase())).toEqual({ id: made.id, name: "Night owls" });
   expect(await a.c.mine()).toEqual([{ id: made.id, name: "Night owls", owner: true, invite: made.invite }]);
@@ -129,6 +129,22 @@ test("deleting the owner's account deletes their space for everyone", async () =
   expect(await (await call("/api/account/delete", { json: {}, bearer: ada.token, origin: PARK })).res.json()).toEqual({ ok: true });
   await until(() => b.gone() === "the space was deleted");
   expect(await b.c.mine()).toEqual([]);
+});
+
+test("guessing invites: past the tries a minute an account, then its address, is told to wait; the right invite still lets a friend in", async () => {
+  const ada = await signUp("Ada4", "park-hide-seek", PARK), eve = await signUp("Eve", "park-hide-seek", PARK);
+  const eve2 = await signUp("Eve2", "park-hide-seek", PARK), cy = await signUp("Cy", "park-hide-seek", PARK);
+  const made = (await member(ada.token).c.make("Book club"))!;
+  const join = (token: string, invite: string, ip: string) => fetch(`${base}/q/space/join`, {
+    method: "POST", body: JSON.stringify({ invite }),
+    headers: { authorization: `Bearer ${token}`, "content-type": "application/json", "cf-connecting-ip": ip },
+  }).then((r) => r.status);
+  const guess = (i: number) => `BCDFGHJKL${String(i).padStart(3, "0")}`;
+  for (let i = 0; i < 20; i++) expect(await join(eve.token, guess(i), "203.0.113.7")).toBe(404);
+  expect(await join(eve.token, guess(20), "203.0.113.8")).toBe(429); // a new address doesn't help the same account
+  expect(await join(eve.token, guess(0), "203.0.113.7")).toBe(404); // one already tried isn't a new guess
+  expect(await join(eve2.token, guess(21), "203.0.113.7")).toBe(429); // nor does a new account from the same address
+  expect(await join(cy.token, made.invite, "198.51.100.4")).toBe(200);
 });
 
 /** Qlave's POST of who is in a room, signed the way Qlave signs it (`sig` overrides the signature). */

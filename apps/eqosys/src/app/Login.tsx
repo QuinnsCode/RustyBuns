@@ -4,6 +4,7 @@ import type { Me } from "../auth.ts";
 import type { Ask } from "../handle.ts";
 import { Brand, Glass, btn, greeting } from "./Glass.tsx";
 import { messageOf } from "./pages.tsx";
+import { contactHref } from "@rustybuns/util/report";
 
 const CSS = `
 body:has(.sky) main{display:grid;align-content:center}
@@ -119,7 +120,7 @@ export function Login({ ask, me, social, appleTop, error, t0, friend }: { ask: A
             </>
           )}
         </section>
-        <p className="foot">{app ? <>After that you go straight back to {app}.</> : "Your games, your friends, one account."} <a href="/privacy">Privacy</a></p>
+        <p className="foot">{app ? <>After that you go straight back to {app}.</> : "Your games, your friends, one account."} <a href="/privacy">Privacy</a> · <a href={contactHref("Trouble signing in to eqosys")}>Help</a></p>
       </div>
     </Glass>
   );
