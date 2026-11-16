@@ -29,6 +29,11 @@ class Biquad {
 const chain = (fs: Biquad[], x: number) => { for (const f of fs) x = f.run(x); return x; };
 /** 8th-order Butterworth low-pass as four biquads (the Q of each pole pair). */
 const butter8 = (hz: number, sr: number) => [0.5098, 0.6013, 0.9, 2.5629].map((q) => Biquad.make("lp", hz, q, sr));
+/** The anti-alias filters around an oversampled run: none at 1×. */
+const aliasFilter = (sr: number, oversample: number) => (oversample > 1 ? butter8(0.45 * sr, sr * oversample) : []);
+/** A closed-back 4×12's EQ: no deep lows, a bump and a dip in the mids, nothing past 5 kHz. */
+const cabFilters = (sr: number) => [Biquad.make("hp", 75, 0.7, sr), Biquad.make("peak", 120, 1, sr, 4), Biquad.make("peak", 1800, 1.2, sr, -3),
+  Biquad.make("peak", 3000, 1.2, sr, 3), Biquad.make("lp", 5000, 0.54, sr), Biquad.make("lp", 5000, 1.31, sr)];
 
 /** A link in the rig: a circuit, with an optional volume pot (0 to 1) ahead of it. */
 export interface Link { net: Netlist; gain?: number }
@@ -87,12 +92,9 @@ export class Rig {
     // Rest state, stage by stage: each one's input is the last one's resting output.
     this.circuits.forEach((c, i) => this.rest.push(c.settle(i ? this.rest[i - 1] : 0)));
     this.peaks = new Float64Array(this.circuits.length);
-    this.up = butter8(0.45 * sampleRate, hi);
-    this.down = butter8(0.45 * sampleRate, hi);
-    this.cab = spec.cab
-      ? [Biquad.make("hp", 75, 0.7, sampleRate), Biquad.make("peak", 120, 1, sampleRate, 4), Biquad.make("peak", 1800, 1.2, sampleRate, -3),
-         Biquad.make("peak", 3000, 1.2, sampleRate, 3), Biquad.make("lp", 5000, 0.54, sampleRate), Biquad.make("lp", 5000, 1.31, sampleRate)]
-      : [];
+    this.up = aliasFilter(sampleRate, oversample);
+    this.down = aliasFilter(sampleRate, oversample);
+    this.cab = spec.cab ? cabFilters(sampleRate) : [];
   }
 
   /** The volume pot ahead of link `i`, 0 to 1. */
@@ -142,6 +144,34 @@ export class Rig {
 
   get misses(): number { return this.circuits.reduce((s, c) => s + c.misses, 0); }
   get iterationsPerStep(): number { return this.circuits.reduce((s, c) => s + c.iterations, 0) / Math.max(1, this.steps); }
+}
+
+/**
+ * The power tubes, output transformer and cabinet on their own, for a chain that
+ * puts an effects loop between the preamp and here: swing in volts in, volts at
+ * the speaker out, the tanh run oversampled so it doesn't alias. In place is fine.
+ */
+export class PowerStage {
+  private up: Biquad[];
+  private down: Biquad[];
+  private cab: Biquad[];
+  constructor(public drive: number, readonly sampleRate = 48000, readonly oversample = 4) {
+    this.up = aliasFilter(sampleRate, oversample);
+    this.down = aliasFilter(sampleRate, oversample);
+    this.cab = cabFilters(sampleRate);
+  }
+  process(input: Float32Array, output: Float32Array, n = input.length): void {
+    const { up, down, cab, oversample, drive } = this;
+    for (let s = 0; s < n; s++) {
+      let acc = 0;
+      for (let k = 0; k < oversample; k++) {
+        let x = chain(up, k === 0 ? input[s] * oversample : 0);
+        if (drive > 0) x = Math.tanh((x * drive) / POWER_VOLTS) * POWER_VOLTS;
+        acc = chain(down, x);
+      }
+      output[s] = chain(cab, acc);
+    }
+  }
 }
 
 /** Runs a mono buffer through a rig. Each call starts from the rig's resting state. */

@@ -143,8 +143,24 @@ button { cursor: pointer; }
   transform: scale(calc(1 + var(--push) * 0.07)); transition: transform 40ms linear;
 }
 
-/* ---- pedals on the floor ---- */
-.floor { display: flex; flex-wrap: wrap; justify-content: center; gap: 22px; padding-top: 10px; }
+/* ---- the board on the floor ---- */
+.board { display: grid; justify-items: center; gap: 8px; padding-top: 10px; }
+.floor { display: flex; flex-wrap: wrap; justify-content: center; align-items: stretch; gap: 22px; }
+.slot.dragging { opacity: 0.6; outline: 2px dashed rgba(255, 255, 255, 0.5); outline-offset: 4px; }
+.slot-top { display: flex; align-items: center; justify-content: space-between; width: 100%; }
+.grip { display: grid; place-items: center; padding: 4px; border: 0; border-radius: 6px; background: rgba(0, 0, 0, 0.18); color: rgba(255, 255, 255, 0.85); cursor: grab; touch-action: none; }
+.grip:active { cursor: grabbing; }
+.slot-load { min-width: 3.5ch; font: 500 0.75rem/1 var(--mono, monospace); text-align: right; color: rgba(255, 255, 255, 0.85); }
+.amp-slot {
+  display: grid; justify-items: center; align-content: center; gap: 10px; width: 92px; padding: 14px 8px; border-radius: 12px;
+  background: #1b1d21; border: 2px solid #3a3d44; color: var(--dim);
+}
+.amp-slot-name { font: 700 1.1rem/1 var(--silk); letter-spacing: 0.1em; color: #fff; }
+.amp-slot-loop { font: 600 0.75rem/1 var(--silk); letter-spacing: 0.08em; text-transform: uppercase; }
+.amp-slot-loop::after { content: " →"; }
+.amp-slot .slot-load { color: var(--dim); }
+.slot.in-loop { box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.3), inset 0 -10px 20px rgba(0, 0, 0, 0.25), 0 14px 26px rgba(0, 0, 0, 0.6), 0 0 0 2px #3a3d44; }
+.slot.wide .pedal-name::after { content: " · L R"; font-size: 0.7em; opacity: 0.8; }
 .pedal {
   position: relative; display: grid; justify-items: center; gap: 8px; width: 132px; padding: 14px 10px 16px; border-radius: 12px;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.3), inset 0 -10px 20px rgba(0, 0, 0, 0.25), 0 14px 26px rgba(0, 0, 0, 0.6);
@@ -152,6 +168,7 @@ button { cursor: pointer; }
 .pedal.drive { background: linear-gradient(160deg, #3fbf7a, #1d7a4b); }
 .pedal.dist { background: linear-gradient(160deg, #f08a3a, #b4501a); }
 .pedal.fuzz { background: linear-gradient(160deg, #a35cf0, #5a2a9e); }
+.pedal.space { background: linear-gradient(160deg, #3aa6f0, #1a5a9e); }
 .pedal-led { width: 10px; height: 10px; border-radius: 50%; background: #3a0f0c; box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.6); }
 .pedal.lit .pedal-led { background: #ff3b2b; box-shadow: 0 0 10px #ff3b2b, 0 0 2px #fff inset; }
 .pedal-name { font: 700 1.05rem/1 var(--silk); letter-spacing: 0.08em; text-transform: uppercase; color: #fff; text-shadow: 0 1px 0 rgba(0, 0, 0, 0.35); }

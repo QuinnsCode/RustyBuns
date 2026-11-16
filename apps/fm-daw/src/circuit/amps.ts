@@ -3,7 +3,7 @@
 // turns an amp, an optional pedal and the knobs into a rig. Names are ours and
 // describe the circuit, never a product.
 import { fuzz, hardClip, overdrive, toneStack, triodeStage, type StageSpec, type ToneSpec } from "./circuits.ts";
-import type { RigSpec } from "./rig.ts";
+import type { Link, RigSpec } from "./rig.ts";
 
 /** The amp's front panel, every knob 0 to 10. Noise is how much the first tube's resistors hiss (see `noiseScale`). */
 export interface Knobs { gain: number; bass: number; mid: number; treble: number; master: number; noise: number }
@@ -61,13 +61,21 @@ export const gainPot = (gain: number) => 0.02 + 0.98 * (gain / 10) ** 2;
  */
 export const noiseScale = (k: number) => (k <= 0 ? 0 : 10 ** ((k - 1) / 3));
 
-/** A pedal (or none) into an amp, with these knobs. */
+/** An amp in the three pieces an effects loop splits it into: the tubes (with their pots), the tone stack, and the power stage's drive. */
+export function ampParts(amp: AmpDef, knobs: Knobs): { tubes: Link[]; tone: Link; power: number; noise: number } {
+  return {
+    tubes: amp.stages.map((s, i) => ({ net: triodeStage({ ...s, noisy: i === 0 }), gain: amp.pots[i] ?? gainPot(knobs.gain) })),
+    tone: { net: toneStack({ ...amp.tone, bass: knobs.bass, mid: knobs.mid, treble: knobs.treble }) },
+    power: amp.power * (0.25 + 0.15 * knobs.master),
+    noise: noiseScale(knobs.noise),
+  };
+}
+
+/** A pedal (or none) into an amp, with these knobs, as one rig. */
 export function buildRig(amp: AmpDef, knobs: Knobs, pedal?: { def: PedalDef; drive: number }): RigSpec {
-  const links: RigSpec["links"] = [];
-  if (pedal) links.push({ net: pedal.def.net(pedal.drive) });
-  amp.stages.forEach((s, i) => links.push({ net: triodeStage({ ...s, noisy: i === 0 }), gain: amp.pots[i] ?? gainPot(knobs.gain) }));
-  links.push({ net: toneStack({ ...amp.tone, bass: knobs.bass, mid: knobs.mid, treble: knobs.treble }) });
-  return { inputVolts: 0.5, links, power: amp.power * (0.25 + 0.15 * knobs.master), cab: true, noise: noiseScale(knobs.noise) };
+  const p = ampParts(amp, knobs);
+  const links = [...(pedal ? [{ net: pedal.def.net(pedal.drive) }] : []), ...p.tubes, p.tone];
+  return { inputVolts: 0.5, links, power: p.power, cab: true, noise: p.noise };
 }
 
 const amp = (id: string) => {

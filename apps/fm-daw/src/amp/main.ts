@@ -9,13 +9,14 @@ import "@fontsource/ibm-plex-sans/400.css";
 import "@fontsource/ibm-plex-mono/500.css";
 import "./amp.css";
 import workletUrl from "./worklet.ts?worker&url";
-import { arr, check, num, nul, obj, oneOf, rec, str } from "@rustybuns/util/guard";
-import { AMPS, PEDALS, type AmpDef, type Knobs } from "../circuit/amps.ts";
+import { arr, bool, check, num, obj, oneOf, or, rec, str } from "@rustybuns/util/guard";
+import { AMPS, type Knobs } from "../circuit/amps.ts";
 import { riff } from "../circuit/riff.ts";
 import { icon } from "./icons.ts";
 import { knob, type KnobEl } from "./knob.ts";
 import { MODES, Screen, topHz, hzLabel, type ScreenMode } from "./screens.ts";
 import type { AmpSettings, FromAmp, ToAmp } from "./messages.ts";
+import { AMP_SLOT, EFFECTS, ampOf, freshBoard, tidyBoard, type Slot } from "./slots.ts";
 
 const KEY = "q-amp";
 const KNOB_NAMES: { key: keyof Knobs; label: string }[] = [
@@ -28,8 +29,7 @@ const KnobsGuard = obj({ gain: num(0, 10, 5), bass: num(0, 10, 5), mid: num(0, 1
 const Saved = obj({
   amp: str(20, { dflt: "lead" }),
   knobs: rec(KnobsGuard, 10),
-  pedal: nul(str(20)),
-  drive: rec(num(0, 10, 5), 10),
+  board: or(arr(obj({ id: str(20), on: bool(false), knob: num(0, 10, 5) }), 12, { drop: true }), []),
   bypass: oneOf([0, 1], 0),
   source: oneOf(["riff", "guitar"], "riff"),
   layout: oneOf(["wide", "split"], "split"),
@@ -41,19 +41,17 @@ type State = ReturnType<typeof Saved>;
 
 function loadState(): State {
   const fresh: State = {
-    amp: "lead", knobs: Object.fromEntries(AMPS.map((a) => [a.id, { ...a.knobs }])), pedal: null,
-    drive: { drive: 3, dist: 5, fuzz: 7 }, bypass: 0, source: "riff", layout: "split", modes: ["analog", "focus"], level: -12, quality: "hq",
+    amp: "lead", knobs: Object.fromEntries(AMPS.map((a) => [a.id, { ...a.knobs }])), board: freshBoard(), bypass: 0, source: "riff", layout: "split", modes: ["analog", "focus"], level: -12, quality: "hq",
   };
   try {
     const raw = localStorage.getItem(KEY);
     const saved = raw ? check(Saved, JSON.parse(raw)) : null;
-    if (saved) return { ...saved, knobs: { ...fresh.knobs, ...saved.knobs } };
+    if (saved) return { ...saved, knobs: { ...fresh.knobs, ...saved.knobs }, board: tidyBoard(saved.board) };
   } catch { /* private window or bad JSON: start fresh */ }
   return fresh;
 }
 const S = loadState();
 const save = () => { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch { /* not kept, fine */ } };
-const ampOf = (id: string): AmpDef => AMPS.find((a) => a.id === id) ?? AMPS[0];
 
 // ---- audio ----
 let ctx: AudioContext | null = null;
@@ -62,11 +60,11 @@ let out: GainNode | null = null;
 let analyser: AnalyserNode | null = null;
 let riffNode: AudioBufferSourceNode | null = null;
 let mic: { stream: MediaStream; node: MediaStreamAudioSourceNode } | null = null;
-let meter: FromAmp = { t: "meter", levels: [], out: 0, load: 0, misses: 0 };
+let meter: FromAmp = { t: "meter", levels: [], out: 0, load: 0, slots: [], stereo: false, chain: "", misses: 0 };
 const dbToGain = (db: number) => (db <= -60 ? 0 : 10 ** (db / 20));
 
 function settings(): AmpSettings {
-  return { amp: S.amp, pedal: S.pedal, drive: S.pedal ? S.drive[S.pedal] ?? 5 : 0, knobs: S.knobs[S.amp] ?? ampOf(S.amp).knobs, bypass: S.bypass === 1, oversample: S.quality === "eco" ? 2 : 4 };
+  return { amp: S.amp, knobs: S.knobs[S.amp] ?? ampOf(S.amp).knobs, board: S.board, bypass: S.bypass === 1, oversample: S.quality === "eco" ? 2 : 4 };
 }
 function send() {
   save();
@@ -231,27 +229,46 @@ function build() {
   const cab = h("div", "cab clear", ...cones.map((c) => h("div", "speaker", c)));
   const rig = h("div", "rig", head, cab, modelBlurb);
 
-  // Pedals on the floor: one on at a time (the chain has one slot).
-  const pedalEls = PEDALS.map((p) => {
+  // The board on the floor, in chain order: pedals, the amp's own slot (what follows is in its effects loop), more pedals.
+  const tiles = new Map<string, HTMLElement>();
+  const loads = new Map<string, HTMLElement>();
+  for (const slot of S.board) {
+    const load = h("span", "slot-load", "--");
+    loads.set(slot.id, load);
+    const grip = h("button", "grip", icon("grip-vertical", 16));
+    grip.type = "button";
+    if (slot.id === AMP_SLOT) {
+      grip.title = grip.ariaLabel = "Move the amp: pedals after it go in its effects loop. Drag, or the arrow keys";
+      const el = h("div", "slot amp-slot", grip, h("span", "amp-slot-name", "AMP"), h("span", "amp-slot-loop", "loop"), load);
+      el.dataset.id = slot.id;
+      dragToMove(el, grip);
+      tiles.set(slot.id, el);
+      continue;
+    }
+    const def = EFFECTS.find((e) => e.id === slot.id);
+    if (!def) continue;
     const led = h("span", "pedal-led");
-    const drive = knob("Drive", S.drive[p.id] ?? 5, 5, (v) => { S.drive[p.id] = v; if (S.pedal === p.id) send(); else save(); }, "small");
+    const k = knob(def.knob, slot.knob, def.dflt, (v) => { slot.knob = v; if (slot.on) send(); else save(); }, "small");
     const sw = h("button", "footswitch");
-    sw.type = "button"; sw.title = `${p.name} on or off`; sw.setAttribute("aria-label", `${p.name} on or off`);
-    const el = h("div", `pedal ${p.id}`, led, drive.el, h("span", "pedal-name", p.name), sw);
-    el.title = p.blurb;
-    sw.addEventListener("click", () => { S.pedal = S.pedal === p.id ? null : p.id; showPedals(); send(); });
-    return { id: p.id, el };
-  });
-  const floor = h("div", "floor", ...pedalEls.map((p) => p.el));
-
+    sw.type = "button"; sw.title = sw.ariaLabel = `${def.name} on or off`;
+    grip.title = grip.ariaLabel = `Move ${def.name}: drag, or the arrow keys`;
+    const el = h("div", `slot pedal ${def.id}`, h("div", "slot-top", grip, led, load), k.el, h("span", "pedal-name", def.name), sw);
+    el.title = def.blurb;
+    el.dataset.id = slot.id;
+    sw.addEventListener("click", () => { slot.on = !slot.on; showBoard(); send(); });
+    dragToMove(el, grip);
+    tiles.set(slot.id, el);
+  }
+  const stereo = h("span", "chip dim board-stereo", "mono");
+  const floor = h("div", "floor");
   const note = h("p", "note");
   const startCard = h("div", "start-card",
     h("h1", "", "Q Amp"),
     h("p", "", "Pedals and tube amps simulated part by part, live. Turn your speakers down first."),
     (() => { const b = h("button", "start", icon("power"), "Plug in"); b.type = "button"; b.addEventListener("click", () => void start().catch((e) => { note.textContent = String(e); })); return b; })());
-  root.append(bar, note, screensEl, rig, floor, startCard);
+  root.append(bar, note, screensEl, rig, h("div", "board", stereo, floor), startCard);
   document.body.append(root);
-  return { root, bar, screens, screensEl, tubes, modelName, modelBlurb, models, knobs, cones, pedalEls, sourceButtons, devices, load, latency, note, startCard };
+  return { root, bar, screens, screensEl, tubes, modelName, modelBlurb, models, knobs, cones, tiles, loads, stereo, floor, sourceButtons, devices, load, latency, note, startCard };
 }
 
 const ui = build();
@@ -269,8 +286,66 @@ function watchLoad(m: FromAmp) {
   if (fullReports >= 30) { fullReports = 0; setQuality("eco", "Switched to Eco (2× oversampling): the audio thread was full. Click the load meter to go back."); }
 }
 
-function showPedals() {
-  for (const p of ui.pedalEls) p.el.classList.toggle("lit", S.pedal === p.id);
+/** Move slot `id` to index `to` on the board (clamped), and play it that way. */
+function move(id: string, to: number) {
+  const from = S.board.findIndex((s) => s.id === id);
+  if (from < 0) return;
+  const [slot] = S.board.splice(from, 1);
+  S.board.splice(Math.max(0, Math.min(S.board.length, to)), 0, slot);
+  showBoard();
+  send();
+}
+
+/**
+ * Drag a slot by its grip to anywhere on the board (mouse, pen or finger): it
+ * moves as it passes another slot's middle. Arrow keys on the grip move it one place.
+ */
+function dragToMove(el: HTMLElement, grip: HTMLElement) {
+  const id = () => el.dataset.id ?? "";
+  grip.addEventListener("keydown", (e) => {
+    const step = e.key === "ArrowLeft" || e.key === "ArrowUp" ? -1 : e.key === "ArrowRight" || e.key === "ArrowDown" ? 1 : 0;
+    if (!step) return;
+    e.preventDefault();
+    move(id(), S.board.findIndex((s) => s.id === id()) + step);
+    grip.focus();
+  });
+  grip.addEventListener("pointerdown", (e) => {
+    e.preventDefault();
+    grip.setPointerCapture(e.pointerId);
+    el.classList.add("dragging");
+    const onMove = (m: PointerEvent) => {
+      const over = document.elementFromPoint(m.clientX, m.clientY)?.closest<HTMLElement>(".slot");
+      if (!over || over === el || !over.dataset.id) return;
+      const r = over.getBoundingClientRect(), at = S.board.findIndex((s) => s.id === over.dataset.id);
+      const after = r.width > r.height * 0.6 ? m.clientX > r.left + r.width / 2 : m.clientY > r.top + r.height / 2;
+      const from = S.board.findIndex((s) => s.id === id());
+      const to = after ? (from < at ? at : at + 1) : (from < at ? at - 1 : at);
+      if (to !== from) move(id(), to);
+    };
+    const onUp = () => { el.classList.remove("dragging"); grip.removeEventListener("pointermove", onMove); grip.removeEventListener("pointerup", onUp); grip.removeEventListener("pointercancel", onUp); };
+    grip.addEventListener("pointermove", onMove);
+    grip.addEventListener("pointerup", onUp);
+    grip.addEventListener("pointercancel", onUp);
+  });
+}
+
+/** The board in its order, each pedal lit or not, marked as in the loop or stereo by where it sits. */
+function showBoard() {
+  let loop = false, wide = false;
+  const els: HTMLElement[] = [];
+  for (const slot of S.board) {
+    const el = ui.tiles.get(slot.id);
+    if (!el) continue;
+    const def = EFFECTS.find((e) => e.id === slot.id);
+    if (slot.on && def?.stereo) wide = true;
+    el.classList.toggle("lit", slot.on);
+    el.classList.toggle("in-loop", loop && slot.id !== AMP_SLOT);
+    el.classList.toggle("wide", wide && slot.on);
+    if (slot.id === AMP_SLOT) loop = true;
+    els.push(el);
+  }
+  ui.floor.replaceChildren(...els);
+  ui.stereo.textContent = wide ? "stereo" : "mono";
 }
 
 function setAmp(id: string) {
@@ -289,7 +364,7 @@ function setAmp(id: string) {
   send();
 }
 setAmp(S.amp);
-showPedals();
+showBoard();
 ui.sourceButtons.forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.src === S.source)));
 ui.devices.hidden = S.source !== "guitar";
 
@@ -305,10 +380,10 @@ function frame() {
   const fr = { db, wave, sampleRate: ctx?.sampleRate ?? 48000 };
   for (const s of ui.screens) s.draw(fr);
   // A tube glows with its stage's swing (log scale, 150 V is full); power tubes with the output.
-  const offset = S.pedal && !S.bypass ? 1 : 0, tubes = ui.tubes.querySelectorAll<HTMLElement>(".tube");
+  const tubes = ui.tubes.querySelectorAll<HTMLElement>(".tube");
   let pre = 0;
   for (const t of tubes) {
-    const swing = t.classList.contains("pre") ? meter.levels[offset + pre++] ?? 0 : meter.out * 150;
+    const swing = t.classList.contains("pre") ? meter.levels[pre++] ?? 0 : meter.out * 150;
     const glow = Math.min(1, Math.log10(1 + swing) / Math.log10(151));
     t.style.setProperty("--glow", (0.25 + 0.75 * glow).toFixed(3));
   }
@@ -318,6 +393,11 @@ function frame() {
   if (loadText) loadText.textContent = `${ctx ? `${Math.round(meter.load * 100)}%` : "--"} · ${S.quality === "eco" ? "2×" : "4×"}`;
   ui.load.classList.toggle("warn", meter.load > 0.7);
   ui.load.classList.toggle("hot", meter.load > 1);
+  // Each slot's share of the audio thread, as a DSP unit shows it.
+  for (const [id, el] of ui.loads) {
+    const share = meter.slots.find((s) => s.id === id)?.load;
+    el.textContent = ctx && share !== undefined && !S.bypass ? `${Math.round(share * 100)}%` : "--";
+  }
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
@@ -326,12 +406,17 @@ requestAnimationFrame(frame);
 Object.assign(window, {
   qamp: {
     state: () => ({
-      started: !!ctx, running: ctx?.state === "running", amp: S.amp, name: ampOf(S.amp).name, knobs: S.knobs[S.amp], pedal: S.pedal,
-      drive: S.pedal ? S.drive[S.pedal] : null, bypass: S.bypass === 1, quality: S.quality, source: S.source, layout: S.layout, modes: [...S.modes],
+      started: !!ctx, running: ctx?.state === "running", amp: S.amp, name: ampOf(S.amp).name, knobs: S.knobs[S.amp],
+      board: S.board.map((s) => ({ ...s, load: meter.slots.find((m) => m.id === s.id)?.load ?? null })),
+      chain: meter.chain, stereo: meter.stereo, bypass: S.bypass === 1, quality: S.quality, source: S.source, layout: S.layout, modes: [...S.modes],
       load: meter.load, misses: meter.misses, out: meter.out, levels: meter.levels,
     }),
     start,
     setAmp,
-    pedal: (id: string | null) => { S.pedal = PEDALS.some((p) => p.id === id) ? id : null; showPedals(); send(); },
+    /** Switch an effect on or off (flips it when `on` is left out). */
+    pedal: (id: string, on?: boolean) => { const s = S.board.find((b) => b.id === id && b.id !== AMP_SLOT); if (s) { s.on = on ?? !s.on; showBoard(); send(); } },
+    /** Move an effect (or "amp") to a place on the board, 0 first. */
+    move,
+    knob: (id: string, v: number) => { const s: Slot | undefined = S.board.find((b) => b.id === id); if (s && Number.isFinite(v)) { s.knob = Math.max(0, Math.min(10, v)); send(); } },
   },
 });

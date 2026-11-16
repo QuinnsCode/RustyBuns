@@ -25,7 +25,7 @@ Each part needs: the model in `mna.ts`, the same in Rust (`circuit.rs`) held by 
 
 ## 2. The pedalboard
 
-Today there is one pedal slot. A real board is a chain:
+Built ([#4827](https://github.com/QuinnsCode/RustyBuns/issues/4827), how it works in [CIRCUITS.md](CIRCUITS.md#q-amp)), all but the worker split ([#4948](https://github.com/QuinnsCode/RustyBuns/issues/4948)). A real board is a chain:
 
 - **Slots in any order**, drag to reorder, each with its own footswitch. Drive before or after the phaser sounds different, and that is the point.
 - **An effects loop** on the amp: time effects (delay, reverb) sound best after the preamp and before the power amp, as on a real amp.
