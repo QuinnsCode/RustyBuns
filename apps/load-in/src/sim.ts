@@ -15,7 +15,11 @@ export const EYE = 1.65, EYE_CROUCH = 1.0, RADIUS = 0.25;
 const SNAP = Math.PI / 12;
 
 /** A piece of gear on the floor: its own key and its id in @rustybuns/gear, where its size, weight and jacks come from. */
-export interface Item { key: string; gear: string; x: number; y: number; z: number; rot: number }
+export interface Item {
+  key: string; gear: string; x: number; y: number; z: number; rot: number;
+  /** Fuel in it now, litres: a generator's tank or a jerry can. */
+  litres?: number;
+}
 export interface Level {
   name: string;
   /** Where you can walk: x and z bounds in metres (the garage floor and the driveway). */

@@ -15,7 +15,7 @@ import { DIVE_BAR, aim, barState, master, raise, rig, settle, standHeight } from
 import { type BarView, barView } from "./venues/dive-bar-view.ts";
 import { BIGGER_BAR } from "./venues/bigger-bar.ts";
 import { type BiggerBarView, biggerBarView } from "./venues/bigger-bar-view.ts";
-import { PARK, parkState, push } from "./venues/park.ts";
+import { PARK, parkState, pour, push } from "./venues/park.ts";
 import { type ParkView, parkView } from "./venues/park-view.ts";
 import { hasSwitch, hear, type Switches } from "./audio/hear.ts";
 import { soundSystem } from "./audio/play.ts";
@@ -197,10 +197,11 @@ document.addEventListener("keydown", (e) => {
 document.addEventListener("keyup", (e) => keys.delete(e.code));
 addEventListener("blur", () => keys.clear());
 
-/** F: the cable job if there is one (plug, unplug, take one, coil), else put down or pick up the gear. */
+/** F: the cable job if there is one (plug, unplug, take one, coil), a jerry can poured into the generator you face,
+ * else put down or pick up the gear. */
 function grab(): Answer {
-  const at = aimed(world);
-  const r = cable.use(world, cables, at) ?? (world.held ? place() : at ? (wheeled(at.gear) ? push : pickUp)(world, at.key) : { ok: false as const, why: "nothing in reach" });
+  const at = aimed(world), can = heldItem(world);
+  const r = cable.use(world, cables, at) ?? (can && at && wheeled(at.gear) && gear(can.gear).can ? pour(world, at.key) : world.held ? place() : at ? (wheeled(at.gear) ? push : pickUp)(world, at.key) : { ok: false as const, why: "nothing in reach" });
   if (!r.ok) flash = { text: r.why, until: performance.now() + 1800 };
   return r;
 }
@@ -314,6 +315,8 @@ const harness = {
   walkTo: (x: number, z: number) => cable.walkWith(world, cables, x, z),
   /** Park: take the generator's handle and push it on its wheels (put it down with putDown). */
   push: (key: string): Answer => (cable.inHand(cables) ? { ok: false, why: "your hands are full" } : push(world, key)),
+  /** Park: holding a jerry can, pour it into the generator. */
+  pour: (key: string): Answer => pour(world, key),
   pickUp: (key: string): Answer => (cable.inHand(cables) ? { ok: false, why: "your hands are full" } : pickUp(world, key)),
   putDown: () => place(),
   /** A cable out of the case (power, speaker, xlr, instrument), its `a` end in your hand. */
