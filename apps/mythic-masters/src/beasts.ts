@@ -280,7 +280,9 @@ const CONTACT = (() => {
 
 interface Foot { tip: number; home: THREE.Vector3; planted: THREE.Vector3; from: THREE.Vector3; to: THREE.Vector3; t: number; swing: number;
   /** Where the leg hangs from at rest, and how long it is when straight: a goal further off than that can't be reached, so the leg would fold itself up trying. */
-  hip: THREE.Vector3; reach: number }
+  hip: THREE.Vector3; reach: number;
+  /** The ankle (the joint the foot's own bone turns on), and the rest foot from the toe back to it; -1 for a leg with no knee above it. */
+  ankle: number; heel: THREE.Vector3 }
 
 const SWING = 0.14;      // seconds a step takes at a walk; a sprint's steps are quicker
 const STEP = 0.22;       // how far (as a fraction of the model's height) a foot is left behind before it steps
@@ -313,6 +315,10 @@ export class Puppet {
    * (0 to 1), its side (+1 or -1 in z), the stroke's speed last frame and the tip's goal height a frame ago. */
   private readonly wingBones: { tip: number; joints: number[]; out: number[]; side: number; v: number; y: number | null }[];
   private wingsHeld = false;
+  private anklesHeld = false;
+  private readonly gq = new THREE.Quaternion();
+  private readonly fq = [new THREE.Quaternion(), new THREE.Quaternion(), new THREE.Quaternion()] as const;
+  private readonly fv = [new THREE.Vector3(), new THREE.Vector3()] as const;
   private readonly head: { tip: number; rest: THREE.Vector3 }[];
   private readonly tail: { tip: number; rest: THREE.Vector3; lag: THREE.Vector3 } | null;
   private tailSet = false;
@@ -484,7 +490,11 @@ export class Puppet {
         top = q;
       }
       const hip = new THREE.Vector3(rig.joints[top * 3]!, rig.joints[top * 3 + 1]!, rig.joints[top * 3 + 2]!);
-      return { tip, home, planted: new THREE.Vector3(), from: new THREE.Vector3(), to: new THREE.Vector3(), t: 1, swing: SWING, hip, reach };
+      // an ankle worth holding: a leg joint with a knee above it, on this foot alone
+      const a = rig.parents[tip]!, knee = a >= 0 ? rig.parents[a]! : -1;
+      const ankle = legJoints.has(a) && legJoints.has(knee) && sheet.feet.filter((o) => rig.parents[o] === a).length === 1 ? a : -1;
+      const heel = ankle < 0 ? new THREE.Vector3() : new THREE.Vector3(rig.joints[a * 3]! - x, rig.joints[a * 3 + 1]! - rig.joints[tip * 3 + 1]!, rig.joints[a * 3 + 2]! - z);
+      return { tip, home, planted: new THREE.Vector3(), from: new THREE.Vector3(), to: new THREE.Vector3(), t: 1, swing: SWING, hip, reach, ankle, heel };
     });
   }
 
@@ -833,6 +843,22 @@ export class Puppet {
       const d = this.tmp.length(), max = ft.reach * 0.96;
       if (d > max) { this.tmp.multiplyScalar(max / d); this.ik.moveGoal(ft.tip, ft.hip.x + rx + this.tmp.x, ft.hip.y + ry + this.tmp.y, ft.hip.z + this.tmp.z); }
     }
+    // the foot stays flat on its leg (#4685 round 22): with only the toe as a goal, a blow that stepped a foot back had
+    // the solver stand the long flat foot on its toe and fold the shin and ankle down onto the grass, so the foot and its
+    // claws lay on the ground apart from the leg. On the ground each ankle is held one rest foot-length behind its toe,
+    // level with the ground (turned with the body, not leaned with it), so the leg bends at the knee instead.
+    const level = grounded && !hanging;
+    if (level !== this.anklesHeld) { for (const ft of this.feet) if (ft.ankle >= 0) this.ik.setPinned(ft.ankle, level); this.anklesHeld = level; }
+    if (level) {
+      g.getWorldQuaternion(this.gq);
+      this.tmp2.set(0, 0, 0).applyMatrix4(this.inv);
+      for (const ft of this.feet) {
+        const goal = ft.ankle >= 0 ? this.ik.goalPosition(ft.tip) : null;
+        if (!goal) continue;
+        this.tmp.copy(ft.heel).multiplyScalar(s).applyQuaternion(this.gq).applyMatrix4(this.inv).sub(this.tmp2);
+        this.ik.moveGoal(ft.ankle, goal[0] + this.tmp.x, goal[1] + this.tmp.y, goal[2] + this.tmp.z);
+      }
+    }
     // the head rides the body and turns a little toward what it looks at, pulls back in the coil and thrusts
     // on the strike; a breath sweeps it side to side, a beam holds it with a tremor, a hit throws it back
     this.look.set(0, 0, 0);
@@ -894,6 +920,7 @@ export class Puppet {
       if (p >= 0) this.m.premultiply(this.pm.fromArray(this.ik.matrixWorld(p) as number[]).invert());
       this.m.decompose(this.bones[j]!.position, this.bones[j]!.quaternion, this.bones[j]!.scale);
     }
+    if (this.anklesHeld) this.levelFeet();
     this.flexWings(grounded);
     this.swingLimbs(dt);
     this.sec.settle();
@@ -944,6 +971,30 @@ export class Puppet {
         xw.set(1, 0, 0).applyQuaternion(this.qw);
         bone.quaternion.multiply(q.setFromAxisAngle(xw, droop * wb.side * 0.8 * o));
       }
+    }
+  }
+
+  /** A held foot's two goals fix where its ankle and toe are but not its roll about the line between them, so the solver
+   *  left feet on their edge (thin slivers from the side). Turn each foot bone back to its rest roll, sole down: the
+   *  ground's frame (the body's turn, not its lean), swung onto the ankle-to-toe line the solve found. */
+  private levelFeet() {
+    const [ground, swing, parent] = this.fq, [rest, now] = this.fv;
+    this.inner.getWorldQuaternion(ground).invert().multiply(this.group.getWorldQuaternion(this.gq));
+    for (const ft of this.feet) {
+      const a = ft.ankle;
+      if (a < 0) continue;
+      rest.copy(ft.heel).negate().normalize().applyQuaternion(ground);
+      const T = this.ik.worldPosition(ft.tip), A = this.ik.worldPosition(a);
+      now.set(T[0] - A[0], T[1] - A[1], T[2] - A[2]).normalize();
+      swing.setFromUnitVectors(rest, now).multiply(ground);   // the foot's rotation in the model's space
+      this.m.fromArray(this.ik.matrixWorld(this.ik.parents[a]!) as number[]);
+      parent.setFromRotationMatrix(this.m).invert();
+      this.bones[a]!.quaternion.copy(parent).multiply(swing);
+      // the toe hangs off the ankle: its offset and turn re-read from the solve against the ankle's new turn
+      swing.invert();
+      this.bones[ft.tip]!.position.copy(now.set(T[0] - A[0], T[1] - A[1], T[2] - A[2])).applyQuaternion(swing);
+      this.m.fromArray(this.ik.matrixWorld(ft.tip) as number[]);
+      this.bones[ft.tip]!.quaternion.copy(swing).multiply(parent.setFromRotationMatrix(this.m));
     }
   }
 
