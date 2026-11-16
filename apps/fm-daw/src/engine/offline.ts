@@ -1,5 +1,5 @@
 // Render the current project without the audio thread: bounce and bench.
-import type { FmEngine } from "./engine.ts";
+import { sendTrackEq, type FmEngine } from "./engine.ts";
 import { renderPattern } from "./sequencer.ts";
 import { Space } from "./space.ts";
 import { Squash } from "./squash.ts";
@@ -14,6 +14,8 @@ export function renderProject(engine: FmEngine, p: Project, sampleRate: number, 
   eq.reset();
   const out = renderPattern(engine, sampleRate, seconds, (seq) => {
     p.tracks.forEach((t, ti) => { t.params.forEach((v, i) => engine.setParam(ti, i, v)); seq.setNotes(ti, t.notes); seq.setAuto(ti, t.auto ?? []); });
+    // each track's Shape plays from the first sample, not fading in
+    if (p.tracks.some((t) => t.eq)) { p.tracks.forEach((t, ti) => { if (t.eq) sendTrackEq(engine, ti, t.eq, []); }); engine.panic(); }
     seq.bpm = p.bpm; seq.setSwing(p.swing); seq.setLoopBeats(loopBeats(p)); seq.setAudible(audible(p));
     engine.setMaster(masterGain);
     seq.setEqAuto(p.eqAuto ?? []);

@@ -2,7 +2,7 @@
 // voice (detuned saws, pulses or a seven-saw supersaw + sub, a wavefolder, an
 // SVF, ladder, diode ladder or vowel filter, filter envelope, LFO, glide, drive),
 // with a pitch envelope and noise, a chorus, flanger or phaser per track, then
-// the master safety chain. native/crates/fm_daw mirrors it line for
+// each track's own Shape (an EQ insert, src/engine/eq.ts), then the master safety chain. native/crates/fm_daw mirrors it line for
 // line (same order of operations, f64 inside, f32 out), so the golden test can
 // hold the two to the same output. render() allocates nothing.
 //
@@ -11,6 +11,10 @@
 // attack at CEILING, then a hard clamp at CEILING. Nothing leaves louder than
 // -1 dBFS, whatever the patch.
 import { TRACKS, OPS, NPARAMS, VOICES, CEILING, MOD_DEPTH, FB_DEPTH, P, LFO_DIVS, BEND_RANGE, clampParam } from "./params.ts";
+import { TsEq, sendEq, type EqBand, type EqDoc } from "./eq.ts";
+
+/** render() works in chunks this long, so the inserts can filter each track's chunk before the sum. */
+const CHUNK = 128;
 
 const LN_1000TH = Math.log(0.001); // "decay" = time to fall 60 dB
 const GAIN_SMOOTH = 0.002;
@@ -73,6 +77,11 @@ function saw(ph: number, dt: number): number {
   return y;
 }
 
+/** A track's Shape into an engine; `last` is that track's, kept between calls so an emptied slot fades out. */
+export function sendTrackEq(e: FmEngine, track: number, doc: EqDoc, last: EqBand[]) {
+  sendEq(doc, last, (i, k, f, g, q, sl, on) => e.setTrackBand(track, i, k, f, g, q, sl, on));
+}
+
 export interface FmEngine {
   setParam(track: number, index: number, value: number): void;
   setMute(track: number, muted: boolean): void;
@@ -92,9 +101,11 @@ export interface FmEngine {
   allOff(): void;
   panic(): void;
   click(accent: boolean): void;
+  /** One band of a track's Shape insert (as EqStage.setBand: slot, kind number, Hz, dB, Q, slope, on). */
+  setTrackBand(track: number, band: number, kind: number, freq: number, gain: number, q: number, slope: number, on: boolean): void;
   /**
    * Interleaved stereo into `out` (length >= frames * 2). With `send`, also
-   * the Space send bus: each track times its SEND, after pan and master.
+   * the Space send bus: each track times its SEND, after pan, its insert and master.
    */
   render(out: Float32Array, frames: number, send?: Float32Array): void;
   /** [peakL, peakR, lowest limiter gain, NaN resets] since the last call. */
@@ -188,6 +199,12 @@ export class TsEngine implements FmEngine {
   private masterTarget = 0.25; private master = 0.25;
   private limEnv = 0; private readonly limRel: number;
   private peakL = 0; private peakR = 0; private minGain = 1; private nans = 0;
+  // each track's Shape, its chunk while the insert filters it, and the chunk's dry sum and send
+  private readonly inserts: TsEq[];
+  private readonly insLive = new Uint8Array(TRACKS);
+  private readonly tb = new Float64Array(TRACKS * CHUNK * 2);
+  private readonly mix = new Float64Array(CHUNK * 2);
+  private readonly snd = new Float64Array(CHUNK * 2);
 
   constructor(sampleRate: number) {
     this.sr = sampleRate;
@@ -195,6 +212,7 @@ export class TsEngine implements FmEngine {
     this.dcR = 1 - (TAU * 10) / sampleRate;
     this.limRel = Math.exp(-1 / (0.1 * sampleRate));
     this.chK = 1 - Math.exp((-TAU * CH_TONE) / sampleRate);
+    this.inserts = Array.from({ length: TRACKS }, () => new TsEq(sampleRate));
     for (let t = 0; t < TRACKS; t++) for (let i = 0; i < NPARAMS; i++) this.setParam(t, i, 0);
   }
 
@@ -300,6 +318,11 @@ export class TsEngine implements FmEngine {
     this.limEnv = 0;
     this.lpS.fill(0); this.hpS.fill(0);
     this.chBuf.fill(0); this.chLp.fill(0); this.phZ.fill(0); this.phY.fill(0);
+    for (const q of this.inserts) q.reset();
+  }
+
+  setTrackBand(t: number, i: number, kind: number, freq: number, gain: number, q: number, slope: number, on: boolean) {
+    if (t >= 0 && t < TRACKS) this.inserts[t].setBand(i, kind, freq, gain, q, slope, on);
   }
 
   click(accent: boolean) { this.clickFreq = accent ? 1760 : 1320; this.clickEnv = 0.3; this.clickPhase = 0; }
@@ -322,333 +345,354 @@ export class TsEngine implements FmEngine {
     const n = Math.min(frames, out.length >> 1, send ? send.length >> 1 : Infinity);
     const sr = this.sr;
     const beatInc = this.tempo / 60 / sr;
-    for (let f = 0; f < n; f++) {
-      let l = 0, r = 0, sl = 0, sr2 = 0;
-      for (let t = 0; t < TRACKS; t++) {
-        const p = t * NPARAMS;
-        const gainTarget = this.muted[t] ? 0 : this.params[p + P.GAIN];
-        this.gainNow[t] += (gainTarget - this.gainNow[t]) * GAIN_SMOOTH;
-        const algo = this.params[p + P.ALGO] | 0;
-        const carriers = CARRIERS[algo];
-        const nc = carriers[0] + carriers[1] + carriers[2] + carriers[3];
-        const fbAmt = this.params[p + P.FEEDBACK] * FB_DEPTH;
-        const pitchAmt = this.params[p + P.PITCH_AMT];
-        const noise = this.params[p + P.NOISE];
-        const tone = 0.05 + 0.95 * this.params[p + P.NOISE_TONE];
-        // the LFO runs for every track, every frame, so it's free-running across
-        // notes; a synced one that doesn't restart on notes follows the transport
-        const sync = this.params[p + P.LFO_SYNC] | 0;
-        if (sync > 0 && this.params[p + P.LFO_RETRIG] < 0.5) { const q = this.beat / LFO_DIVS[sync]; this.lfoPhase[t] = q - Math.floor(q); }
-        const lph = this.lfoPhase[t], shape = this.params[p + P.LFO_SHAPE] | 0;
-        const lfo = shape === 0 ? Math.sin(TAU * lph) : shape === 1 ? 1 - 4 * Math.abs(lph - 0.5) : shape === 2 ? 1 - 2 * lph : lph < 0.5 ? 1 : -1;
-        const rate = sync > 0 ? this.tempo / 60 / LFO_DIVS[sync] : this.params[p + P.LFO_RATE];
-        let lp = this.lfoPhase[t] + rate / sr;
-        lp -= Math.floor(lp);
-        this.lfoPhase[t] = lp;
-        const analog = this.params[p + P.MODE] >= 0.5;
-        const vibAmt = this.params[p + P.LFO_PITCH];
-        const velTone = this.params[p + P.VEL_TONE];
-        const cutOct = this.params[p + P.CUTOFF] * 10 + this.params[p + P.LFO_CUT] * 4 * lfo;
-        const fenvOct = this.params[p + P.FENV_AMT] * 6;
-        const k2 = 2 - 1.8 * this.params[p + P.RES]; // resonance tops out near Q 5, musical not screaming
-        const sub = this.params[p + P.SUB];
-        const drive = this.params[p + P.DRIVE] > 0;
-        const ftype = this.params[p + P.FILTER] | 0;
-        const wave = this.params[p + P.WAVE];
-        const supersaw = this.params[p + P.SUPER] > 0;
-        const fold = this.params[p + P.FOLD];
-        const pw = 0.5 - 0.45 * this.params[p + P.PWM] * (0.5 + 0.5 * lfo);
-        const kq = 3.9 * this.params[p + P.RES]; // ladder feedback: self-oscillation starts at 4
-        const kd = DL_K * this.params[p + P.RES];
-        const kv = 0.5 - 0.4 * this.params[p + P.RES]; // vowel band-pass damping: Q 2 to 10
-        const bend = this.bendMul[t];
-        const fmWob = 1 + this.params[p + P.LFO_CUT] * lfo; // FM: the LFO moves modulation depth
-        let mono = 0;
-        for (let v = 0; v < VOICES; v++) {
-          const k = t * VOICES + v;
-          if (!this.active[k]) continue;
-          const pm = pitchAmt > 0 ? Math.pow(2, (pitchAmt * this.pitchEnv[k]) / 12) : 1;
-          this.pitchEnv[k] *= this.pitchCoef[t];
-          if (analog) {
-            const target = this.freq[k];
-            this.freqNow[k] = target + (this.freqNow[k] - target) * this.glideCoef[t];
-            const fade = Math.min(this.age[k] / VIB_FADE, 1);
-            this.age[k] += 1 / sr;
-            const vib = vibAmt > 0 ? Math.pow(2, (lfo * vibAmt * 0.5 * fade) / 12) : 1;
-            const base = this.freqNow[k] * pm * vib * bend;
-            // amp envelope: operator 1's
-            const oi = k * OPS, ti = t * OPS;
-            let e = this.env[oi];
-            const st = this.stage[oi];
-            let attacking = false;
-            if (st === 0) {
-              e += this.atkInc[ti];
-              if (e >= 1) { e = 1; this.stage[oi] = 1; }
-              attacking = true;
-            } else if (st === 1) {
-              const s = this.params[p + P.sustain(0)];
-              e = s + (e - s) * this.decCoef[ti];
-            } else e *= this.relCoef[ti];
-            this.env[oi] = e;
-            // filter envelope: attack, then decay to nothing
-            let fe = this.fEnv[k];
-            if (this.fStage[k] === 0) {
-              fe += this.fAtkInc[t];
-              if (fe >= 1) { fe = 1; this.fStage[k] = 1; }
-            } else fe *= this.fDecCoef[t];
-            this.fEnv[k] = fe;
-            // oscillators
-            const dt1 = (base * this.detUp[t]) / sr, dt2 = base / this.detUp[t] / sr;
-            let s1 = saw(this.saw1[k], dt1), s2 = saw(this.saw2[k], dt2);
-            let ss = 0;
-            if (supersaw) {
-              // seven saws spread by the detune curve, the centre one against the six around it
-              for (let i = 0; i < SAWS; i++) {
-                const o = k * SAWS + i, dt = (base * (1 + SS_OFF[i] * this.ssDet[t])) / sr;
-                ss += saw(this.ssPh[o], dt) * (i === 3 ? this.ssC[t] : this.ssS[t]);
-                let w = this.ssPh[o] + dt; w -= Math.floor(w); this.ssPh[o] = w;
+    const { tb, mix, snd } = this;
+    for (let at = 0; at < n; at += CHUNK) {
+      const k = Math.min(CHUNK, n - at);
+      for (let t = 0; t < TRACKS; t++) this.insLive[t] = this.inserts[t].live() ? 1 : 0;
+      for (let j = 0; j < k; j++) {
+        let l = 0, r = 0, sl = 0, sr2 = 0;
+        for (let t = 0; t < TRACKS; t++) {
+          const p = t * NPARAMS;
+          const gainTarget = this.muted[t] ? 0 : this.params[p + P.GAIN];
+          this.gainNow[t] += (gainTarget - this.gainNow[t]) * GAIN_SMOOTH;
+          const algo = this.params[p + P.ALGO] | 0;
+          const carriers = CARRIERS[algo];
+          const nc = carriers[0] + carriers[1] + carriers[2] + carriers[3];
+          const fbAmt = this.params[p + P.FEEDBACK] * FB_DEPTH;
+          const pitchAmt = this.params[p + P.PITCH_AMT];
+          const noise = this.params[p + P.NOISE];
+          const tone = 0.05 + 0.95 * this.params[p + P.NOISE_TONE];
+          // the LFO runs for every track, every frame, so it's free-running across
+          // notes; a synced one that doesn't restart on notes follows the transport
+          const sync = this.params[p + P.LFO_SYNC] | 0;
+          if (sync > 0 && this.params[p + P.LFO_RETRIG] < 0.5) { const q = this.beat / LFO_DIVS[sync]; this.lfoPhase[t] = q - Math.floor(q); }
+          const lph = this.lfoPhase[t], shape = this.params[p + P.LFO_SHAPE] | 0;
+          const lfo = shape === 0 ? Math.sin(TAU * lph) : shape === 1 ? 1 - 4 * Math.abs(lph - 0.5) : shape === 2 ? 1 - 2 * lph : lph < 0.5 ? 1 : -1;
+          const rate = sync > 0 ? this.tempo / 60 / LFO_DIVS[sync] : this.params[p + P.LFO_RATE];
+          let lp = this.lfoPhase[t] + rate / sr;
+          lp -= Math.floor(lp);
+          this.lfoPhase[t] = lp;
+          const analog = this.params[p + P.MODE] >= 0.5;
+          const vibAmt = this.params[p + P.LFO_PITCH];
+          const velTone = this.params[p + P.VEL_TONE];
+          const cutOct = this.params[p + P.CUTOFF] * 10 + this.params[p + P.LFO_CUT] * 4 * lfo;
+          const fenvOct = this.params[p + P.FENV_AMT] * 6;
+          const k2 = 2 - 1.8 * this.params[p + P.RES]; // resonance tops out near Q 5, musical not screaming
+          const sub = this.params[p + P.SUB];
+          const drive = this.params[p + P.DRIVE] > 0;
+          const ftype = this.params[p + P.FILTER] | 0;
+          const wave = this.params[p + P.WAVE];
+          const supersaw = this.params[p + P.SUPER] > 0;
+          const fold = this.params[p + P.FOLD];
+          const pw = 0.5 - 0.45 * this.params[p + P.PWM] * (0.5 + 0.5 * lfo);
+          const kq = 3.9 * this.params[p + P.RES]; // ladder feedback: self-oscillation starts at 4
+          const kd = DL_K * this.params[p + P.RES];
+          const kv = 0.5 - 0.4 * this.params[p + P.RES]; // vowel band-pass damping: Q 2 to 10
+          const bend = this.bendMul[t];
+          const fmWob = 1 + this.params[p + P.LFO_CUT] * lfo; // FM: the LFO moves modulation depth
+          let mono = 0;
+          for (let v = 0; v < VOICES; v++) {
+            const k = t * VOICES + v;
+            if (!this.active[k]) continue;
+            const pm = pitchAmt > 0 ? Math.pow(2, (pitchAmt * this.pitchEnv[k]) / 12) : 1;
+            this.pitchEnv[k] *= this.pitchCoef[t];
+            if (analog) {
+              const target = this.freq[k];
+              this.freqNow[k] = target + (this.freqNow[k] - target) * this.glideCoef[t];
+              const fade = Math.min(this.age[k] / VIB_FADE, 1);
+              this.age[k] += 1 / sr;
+              const vib = vibAmt > 0 ? Math.pow(2, (lfo * vibAmt * 0.5 * fade) / 12) : 1;
+              const base = this.freqNow[k] * pm * vib * bend;
+              // amp envelope: operator 1's
+              const oi = k * OPS, ti = t * OPS;
+              let e = this.env[oi];
+              const st = this.stage[oi];
+              let attacking = false;
+              if (st === 0) {
+                e += this.atkInc[ti];
+                if (e >= 1) { e = 1; this.stage[oi] = 1; }
+                attacking = true;
+              } else if (st === 1) {
+                const s = this.params[p + P.sustain(0)];
+                e = s + (e - s) * this.decCoef[ti];
+              } else e *= this.relCoef[ti];
+              this.env[oi] = e;
+              // filter envelope: attack, then decay to nothing
+              let fe = this.fEnv[k];
+              if (this.fStage[k] === 0) {
+                fe += this.fAtkInc[t];
+                if (fe >= 1) { fe = 1; this.fStage[k] = 1; }
+              } else fe *= this.fDecCoef[t];
+              this.fEnv[k] = fe;
+              // oscillators
+              const dt1 = (base * this.detUp[t]) / sr, dt2 = base / this.detUp[t] / sr;
+              let s1 = saw(this.saw1[k], dt1), s2 = saw(this.saw2[k], dt2);
+              let ss = 0;
+              if (supersaw) {
+                // seven saws spread by the detune curve, the centre one against the six around it
+                for (let i = 0; i < SAWS; i++) {
+                  const o = k * SAWS + i, dt = (base * (1 + SS_OFF[i] * this.ssDet[t])) / sr;
+                  ss += saw(this.ssPh[o], dt) * (i === 3 ? this.ssC[t] : this.ssS[t]);
+                  let w = this.ssPh[o] + dt; w -= Math.floor(w); this.ssPh[o] = w;
+                }
+                ss *= this.ssN[t];
+              } else if (wave > 0) {
+                // a pulse is a saw minus a saw shifted by the width
+                let w = this.saw1[k] + pw; w -= Math.floor(w);
+                s1 -= saw(w, dt1) * wave;
+                w = this.saw2[k] + pw; w -= Math.floor(w);
+                s2 -= saw(w, dt2) * wave;
               }
-              ss *= this.ssN[t];
-            } else if (wave > 0) {
-              // a pulse is a saw minus a saw shifted by the width
-              let w = this.saw1[k] + pw; w -= Math.floor(w);
-              s1 -= saw(w, dt1) * wave;
-              w = this.saw2[k] + pw; w -= Math.floor(w);
-              s2 -= saw(w, dt2) * wave;
-            }
-            let q = this.saw1[k] + dt1; q -= Math.floor(q); this.saw1[k] = q;
-            q = this.saw2[k] + dt2; q -= Math.floor(q); this.saw2[k] = q;
-            const sv = Math.sin(TAU * this.subPh[k]) * sub;
-            q = this.subPh[k] + (base * 0.5) / sr; q -= Math.floor(q); this.subPh[k] = q;
-            let x = (supersaw ? ss : (s1 + s2) * 0.5) + sv;
-            // noise goes into the filter here (bow and breath), held by the amp envelope
-            if (noise > 0) {
-              const nl = this.noiseLp[k] + tone * (this.nextNoise() - this.noiseLp[k]);
-              this.noiseLp[k] = nl;
-              x += nl * noise;
-            }
-            // wavefolder: a sine fold, the textbook West Coast shaper; past +-1 the wave turns back on itself
-            if (fold > 0) x = Math.sin(x * (1 + 6 * fold) * Math.PI * 0.5);
-            // resonant low-pass: a trapezoidal state-variable filter, stable at any cutoff
-            const velOct = velTone * 3 * (2 * this.vel[k] - 1);
-            const oct = cutOct + fenvOct * fe + velOct;
-            let f2: number;
-            if (ftype === 2) {
-              // vowel: two formant band-passes, their centres slid along the vowel table by the cutoff
-              const pos = Math.min(Math.max(oct / 10, 0), 1) * 4;
-              const vi = Math.min(Math.floor(pos), 3), fr = pos - vi;
-              const fa = Math.min(VOWEL_F1[vi] * Math.pow(VOWEL_F1[vi + 1] / VOWEL_F1[vi], fr), MAX_CUTOFF * sr);
-              const fb = Math.min(VOWEL_F2[vi] * Math.pow(VOWEL_F2[vi + 1] / VOWEL_F2[vi], fr), MAX_CUTOFF * sr);
-              let g = Math.tan((Math.PI * fa) / sr);
-              let a1 = 1 / (1 + g * (g + kv)), a2 = g * a1, a3 = g * a2;
-              let v3 = x - this.ic2[k];
-              const b1 = a1 * this.ic1[k] + a2 * v3;
-              let v2 = this.ic2[k] + a2 * this.ic1[k] + a3 * v3;
-              this.ic1[k] = 2 * b1 - this.ic1[k];
-              this.ic2[k] = 2 * v2 - this.ic2[k];
-              g = Math.tan((Math.PI * fb) / sr);
-              a1 = 1 / (1 + g * (g + kv)); a2 = g * a1; a3 = g * a2;
-              v3 = x - this.ic4[k];
-              const b2 = a1 * this.ic3[k] + a2 * v3;
-              v2 = this.ic4[k] + a2 * this.ic3[k] + a3 * v3;
-              this.ic3[k] = 2 * b2 - this.ic3[k];
-              this.ic4[k] = 2 * v2 - this.ic4[k];
-              f2 = (b1 + 0.7 * b2) * kv * 2.5;
-            } else {
-              const fc = Math.min(Math.max(20 * Math.pow(2, oct), 20), MAX_CUTOFF * sr);
-              if (ftype === 3) {
-                // diode ladder: trapezoidal stages, the coupled system solved back to front each
-                // sample (y4 from y3, y3 from y2...), then the feedback through a tanh on the input
-                const g = Math.tan((Math.PI * fc) / (sr * SQRT2)), g4 = 2 * g;
-                const a4 = g4 / (1 + g4), b4 = this.ic4[k] / (1 + g4);
-                let d = 1 + 2 * g - g * a4;
-                const a3 = g / d, b3 = (this.ic3[k] + g * b4) / d;
-                d = 1 + 2 * g - g * a3;
-                const a2 = g / d, b2 = (this.ic2[k] + g * b3) / d;
-                d = 1 + 2 * g - g * a2;
-                const a1 = g / d, b1 = (this.ic1[k] + g * b2) / d;
-                const G = a1 * a2 * a3 * a4, S = ((b1 * a2 + b2) * a3 + b3) * a4 + b4;
-                const u = Math.tanh((x * (1 + 0.3 * kd) - kd * S) / (1 + kd * G));
-                const y1 = a1 * u + b1, y2 = a2 * y1 + b2, y3 = a3 * y2 + b3;
-                f2 = a4 * y3 + b4;
-                this.ic1[k] = 2 * y1 - this.ic1[k]; this.ic2[k] = 2 * y2 - this.ic2[k];
-                this.ic3[k] = 2 * y3 - this.ic3[k]; this.ic4[k] = 2 * f2 - this.ic4[k];
-              } else if (ftype === 1) {
-                const g = Math.tan((Math.PI * fc) / sr);
-                // ladder: four zero-delay one-poles, the feedback solved, then tanh on the input
-                const G = g / (1 + g), H = 1 - G;
-                const S = G * G * G * H * this.ic1[k] + G * G * H * this.ic2[k] + G * H * this.ic3[k] + H * this.ic4[k];
-                const u = Math.tanh((x * (1 + 0.5 * kq) - kq * S) / (1 + kq * G * G * G * G));
-                let vv = (u - this.ic1[k]) * G; const y1 = vv + this.ic1[k]; this.ic1[k] = y1 + vv;
-                vv = (y1 - this.ic2[k]) * G; const y2 = vv + this.ic2[k]; this.ic2[k] = y2 + vv;
-                vv = (y2 - this.ic3[k]) * G; const y3 = vv + this.ic3[k]; this.ic3[k] = y3 + vv;
-                vv = (y3 - this.ic4[k]) * G; f2 = vv + this.ic4[k]; this.ic4[k] = f2 + vv;
+              let q = this.saw1[k] + dt1; q -= Math.floor(q); this.saw1[k] = q;
+              q = this.saw2[k] + dt2; q -= Math.floor(q); this.saw2[k] = q;
+              const sv = Math.sin(TAU * this.subPh[k]) * sub;
+              q = this.subPh[k] + (base * 0.5) / sr; q -= Math.floor(q); this.subPh[k] = q;
+              let x = (supersaw ? ss : (s1 + s2) * 0.5) + sv;
+              // noise goes into the filter here (bow and breath), held by the amp envelope
+              if (noise > 0) {
+                const nl = this.noiseLp[k] + tone * (this.nextNoise() - this.noiseLp[k]);
+                this.noiseLp[k] = nl;
+                x += nl * noise;
+              }
+              // wavefolder: a sine fold, the textbook West Coast shaper; past +-1 the wave turns back on itself
+              if (fold > 0) x = Math.sin(x * (1 + 6 * fold) * Math.PI * 0.5);
+              // resonant low-pass: a trapezoidal state-variable filter, stable at any cutoff
+              const velOct = velTone * 3 * (2 * this.vel[k] - 1);
+              const oct = cutOct + fenvOct * fe + velOct;
+              let f2: number;
+              if (ftype === 2) {
+                // vowel: two formant band-passes, their centres slid along the vowel table by the cutoff
+                const pos = Math.min(Math.max(oct / 10, 0), 1) * 4;
+                const vi = Math.min(Math.floor(pos), 3), fr = pos - vi;
+                const fa = Math.min(VOWEL_F1[vi] * Math.pow(VOWEL_F1[vi + 1] / VOWEL_F1[vi], fr), MAX_CUTOFF * sr);
+                const fb = Math.min(VOWEL_F2[vi] * Math.pow(VOWEL_F2[vi + 1] / VOWEL_F2[vi], fr), MAX_CUTOFF * sr);
+                let g = Math.tan((Math.PI * fa) / sr);
+                let a1 = 1 / (1 + g * (g + kv)), a2 = g * a1, a3 = g * a2;
+                let v3 = x - this.ic2[k];
+                const b1 = a1 * this.ic1[k] + a2 * v3;
+                let v2 = this.ic2[k] + a2 * this.ic1[k] + a3 * v3;
+                this.ic1[k] = 2 * b1 - this.ic1[k];
+                this.ic2[k] = 2 * v2 - this.ic2[k];
+                g = Math.tan((Math.PI * fb) / sr);
+                a1 = 1 / (1 + g * (g + kv)); a2 = g * a1; a3 = g * a2;
+                v3 = x - this.ic4[k];
+                const b2 = a1 * this.ic3[k] + a2 * v3;
+                v2 = this.ic4[k] + a2 * this.ic3[k] + a3 * v3;
+                this.ic3[k] = 2 * b2 - this.ic3[k];
+                this.ic4[k] = 2 * v2 - this.ic4[k];
+                f2 = (b1 + 0.7 * b2) * kv * 2.5;
               } else {
-                const g = Math.tan((Math.PI * fc) / sr);
-                const a1 = 1 / (1 + g * (g + k2)), a2 = g * a1, a3 = g * a2;
-                const v3 = x - this.ic2[k];
-                const v1 = a1 * this.ic1[k] + a2 * v3;
-                f2 = this.ic2[k] + a2 * this.ic1[k] + a3 * v3;
-                this.ic1[k] = 2 * v1 - this.ic1[k];
-                this.ic2[k] = 2 * f2 - this.ic2[k];
+                const fc = Math.min(Math.max(20 * Math.pow(2, oct), 20), MAX_CUTOFF * sr);
+                if (ftype === 3) {
+                  // diode ladder: trapezoidal stages, the coupled system solved back to front each
+                  // sample (y4 from y3, y3 from y2...), then the feedback through a tanh on the input
+                  const g = Math.tan((Math.PI * fc) / (sr * SQRT2)), g4 = 2 * g;
+                  const a4 = g4 / (1 + g4), b4 = this.ic4[k] / (1 + g4);
+                  let d = 1 + 2 * g - g * a4;
+                  const a3 = g / d, b3 = (this.ic3[k] + g * b4) / d;
+                  d = 1 + 2 * g - g * a3;
+                  const a2 = g / d, b2 = (this.ic2[k] + g * b3) / d;
+                  d = 1 + 2 * g - g * a2;
+                  const a1 = g / d, b1 = (this.ic1[k] + g * b2) / d;
+                  const G = a1 * a2 * a3 * a4, S = ((b1 * a2 + b2) * a3 + b3) * a4 + b4;
+                  const u = Math.tanh((x * (1 + 0.3 * kd) - kd * S) / (1 + kd * G));
+                  const y1 = a1 * u + b1, y2 = a2 * y1 + b2, y3 = a3 * y2 + b3;
+                  f2 = a4 * y3 + b4;
+                  this.ic1[k] = 2 * y1 - this.ic1[k]; this.ic2[k] = 2 * y2 - this.ic2[k];
+                  this.ic3[k] = 2 * y3 - this.ic3[k]; this.ic4[k] = 2 * f2 - this.ic4[k];
+                } else if (ftype === 1) {
+                  const g = Math.tan((Math.PI * fc) / sr);
+                  // ladder: four zero-delay one-poles, the feedback solved, then tanh on the input
+                  const G = g / (1 + g), H = 1 - G;
+                  const S = G * G * G * H * this.ic1[k] + G * G * H * this.ic2[k] + G * H * this.ic3[k] + H * this.ic4[k];
+                  const u = Math.tanh((x * (1 + 0.5 * kq) - kq * S) / (1 + kq * G * G * G * G));
+                  let vv = (u - this.ic1[k]) * G; const y1 = vv + this.ic1[k]; this.ic1[k] = y1 + vv;
+                  vv = (y1 - this.ic2[k]) * G; const y2 = vv + this.ic2[k]; this.ic2[k] = y2 + vv;
+                  vv = (y2 - this.ic3[k]) * G; const y3 = vv + this.ic3[k]; this.ic3[k] = y3 + vv;
+                  vv = (y3 - this.ic4[k]) * G; f2 = vv + this.ic4[k]; this.ic4[k] = f2 + vv;
+                } else {
+                  const g = Math.tan((Math.PI * fc) / sr);
+                  const a1 = 1 / (1 + g * (g + k2)), a2 = g * a1, a3 = g * a2;
+                  const v3 = x - this.ic2[k];
+                  const v1 = a1 * this.ic1[k] + a2 * v3;
+                  f2 = this.ic2[k] + a2 * this.ic1[k] + a3 * v3;
+                  this.ic1[k] = 2 * v1 - this.ic1[k];
+                  this.ic2[k] = 2 * f2 - this.ic2[k];
+                }
               }
+              const y = drive ? Math.tanh(f2 * this.driveG[t]) * this.driveNorm[t] : f2;
+              mono += y * e * this.params[p + P.level(0)] * this.amp[k];
+              if (!attacking && e < SILENT) this.active[k] = 0;
+              continue;
             }
-            const y = drive ? Math.tanh(f2 * this.driveG[t]) * this.driveNorm[t] : f2;
-            mono += y * e * this.params[p + P.level(0)] * this.amp[k];
-            if (!attacking && e < SILENT) this.active[k] = 0;
-            continue;
-          }
-          const base = this.freq[k] * pm * bend;
-          const mv = (1 + velTone * (2 * this.vel[k] - 1)) * fmWob;
-          // operators 4..1 (indices 3..0); oN holds this sample's output of operator N+1
-          let o3 = 0, o2 = 0, o1 = 0;
-          let carrierSum = 0, loudest = 0, attacking = false;
-          for (let op = OPS - 1; op >= 0; op--) {
-            const oi = k * OPS + op, ti = t * OPS + op;
-            // envelope
-            let e = this.env[oi];
-            const st = this.stage[oi];
-            if (st === 0) {
-              e += this.atkInc[ti];
-              if (e >= 1) { e = 1; this.stage[oi] = 1; }
-              attacking = true;
-            } else if (st === 1) {
-              const s = this.params[p + P.sustain(op)];
-              e = s + (e - s) * this.decCoef[ti];
-            } else e *= this.relCoef[ti];
-            this.env[oi] = e;
-            // modulation input for this operator
-            let mod: number;
-            if (op === 3) mod = (this.fb1[k] + this.fb2[k]) * 0.5 * fbAmt;
-            else if (algo === 0) mod = (op === 2 ? o3 : op === 1 ? o2 : o1) * MOD_DEPTH;
-            else if (algo === 1) mod = op === 2 ? o3 * MOD_DEPTH : op === 0 ? o1 * MOD_DEPTH : 0;
-            else if (algo === 2) mod = op === 0 ? (o1 + o2 + o3) * MOD_DEPTH : 0;
-            else mod = 0;
-            mod *= mv;
-            const ph = this.phase[oi];
-            const y = Math.sin(TAU * (ph + mod)) * e * this.params[p + P.level(op)];
-            let np = ph + (base * this.params[p + P.ratio(op)]) / sr;
-            np -= Math.floor(np);
-            this.phase[oi] = np;
-            if (op === 3) { this.fb2[k] = this.fb1[k]; this.fb1[k] = y; o3 = y; }
-            else if (op === 2) o2 = y;
-            else if (op === 1) o1 = y;
-            if (carriers[op]) { carrierSum += y; if (e > loudest) loudest = e; }
-          }
-          let ns = 0;
-          if (noise > 0) {
-            const lp = this.noiseLp[k] + tone * (this.nextNoise() - this.noiseLp[k]);
-            this.noiseLp[k] = lp;
-            ns = lp * this.noiseEnv[k] * noise;
-            this.noiseEnv[k] *= this.noiseCoef[t];
-            if (this.noiseEnv[k] > loudest) loudest = this.noiseEnv[k];
-          }
-          mono += (carrierSum / nc + ns) * this.amp[k];
-          if (!attacking && loudest < SILENT) this.active[k] = 0;
-        }
-        if (this.lpOn[t]) {
-          const c = t * 3, z = t * 2;
-          const v3 = mono - this.lpS[z + 1];
-          const v1 = this.lpK[c] * this.lpS[z] + this.lpK[c + 1] * v3;
-          const v2 = this.lpS[z + 1] + this.lpK[c + 1] * this.lpS[z] + this.lpK[c + 2] * v3;
-          this.lpS[z] = 2 * v1 - this.lpS[z];
-          this.lpS[z + 1] = 2 * v2 - this.lpS[z + 1];
-          mono = v2;
-        }
-        if (this.hpOn[t]) {
-          const c = t * 3, z = t * 2;
-          const v3 = mono - this.hpS[z + 1];
-          const v1 = this.hpK[c] * this.hpS[z] + this.hpK[c + 1] * v3;
-          const v2 = this.hpS[z + 1] + this.hpK[c + 1] * this.hpS[z] + this.hpK[c + 2] * v3;
-          this.hpS[z] = 2 * v1 - this.hpS[z];
-          this.hpS[z + 1] = 2 * v2 - this.hpS[z + 1];
-          mono = mono - SQRT2 * v1 - v2;
-        }
-        mono *= this.gainNow[t];
-        const cb = t * CH_LEN;
-        this.chBuf[cb + this.chW] = mono;
-        let ml: number, mr: number;
-        const cm = this.params[p + P.CHORUS] | 0;
-        if (cm > 0) {
-          const cp = this.chPh[t];
-          const tri = 1 - 4 * Math.abs(cp - 0.5);
-          let q = cp + CH_RATE[cm] / sr; q -= Math.floor(q); this.chPh[t] = q;
-          if (cm === 5) {
-            // phaser
-            const g = Math.tan((Math.PI * PH_LO * Math.pow(PH_HI / PH_LO, 0.5 + 0.5 * tri)) / sr);
-            const a = (g - 1) / (g + 1);
-            let y = mono + PH_FB * (this.phY[t] - mono);
-            for (let s = 0; s < PH_STAGES; s++) {
-              const z = t * PH_STAGES + s, o = a * y + this.phZ[z];
-              this.phZ[z] = y - a * o;
-              y = o;
+            const base = this.freq[k] * pm * bend;
+            const mv = (1 + velTone * (2 * this.vel[k] - 1)) * fmWob;
+            // operators 4..1 (indices 3..0); oN holds this sample's output of operator N+1
+            let o3 = 0, o2 = 0, o1 = 0;
+            let carrierSum = 0, loudest = 0, attacking = false;
+            for (let op = OPS - 1; op >= 0; op--) {
+              const oi = k * OPS + op, ti = t * OPS + op;
+              // envelope
+              let e = this.env[oi];
+              const st = this.stage[oi];
+              if (st === 0) {
+                e += this.atkInc[ti];
+                if (e >= 1) { e = 1; this.stage[oi] = 1; }
+                attacking = true;
+              } else if (st === 1) {
+                const s = this.params[p + P.sustain(op)];
+                e = s + (e - s) * this.decCoef[ti];
+              } else e *= this.relCoef[ti];
+              this.env[oi] = e;
+              // modulation input for this operator
+              let mod: number;
+              if (op === 3) mod = (this.fb1[k] + this.fb2[k]) * 0.5 * fbAmt;
+              else if (algo === 0) mod = (op === 2 ? o3 : op === 1 ? o2 : o1) * MOD_DEPTH;
+              else if (algo === 1) mod = op === 2 ? o3 * MOD_DEPTH : op === 0 ? o1 * MOD_DEPTH : 0;
+              else if (algo === 2) mod = op === 0 ? (o1 + o2 + o3) * MOD_DEPTH : 0;
+              else mod = 0;
+              mod *= mv;
+              const ph = this.phase[oi];
+              const y = Math.sin(TAU * (ph + mod)) * e * this.params[p + P.level(op)];
+              let np = ph + (base * this.params[p + P.ratio(op)]) / sr;
+              np -= Math.floor(np);
+              this.phase[oi] = np;
+              if (op === 3) { this.fb2[k] = this.fb1[k]; this.fb1[k] = y; o3 = y; }
+              else if (op === 2) o2 = y;
+              else if (op === 1) o1 = y;
+              if (carriers[op]) { carrierSum += y; if (e > loudest) loudest = e; }
             }
-            this.phY[t] = y;
-            const w = 0.5 * (mono + y);
-            ml = w * this.panL[t]; mr = w * this.panR[t];
-          } else {
-            const d = (CH_MIN[cm] + (CH_MAX[cm] - CH_MIN[cm]) * (0.5 + 0.5 * tri)) * sr * 0.001;
-            const rp = this.chW - d + CH_LEN;
-            const ri = Math.floor(rp), fr = rp - ri;
-            const i0 = ri >= CH_LEN ? ri - CH_LEN : ri, i1 = i0 + 1 === CH_LEN ? 0 : i0 + 1;
-            const raw = this.chBuf[cb + i0] + (this.chBuf[cb + i1] - this.chBuf[cb + i0]) * fr;
-            if (cm === 4) {
-              // flanger: what goes into the line now carries some of what came out
-              this.chBuf[cb + this.chW] = mono + FL_FB * (raw - mono);
-              const w = 0.5 * (mono + raw);
+            let ns = 0;
+            if (noise > 0) {
+              const lp = this.noiseLp[k] + tone * (this.nextNoise() - this.noiseLp[k]);
+              this.noiseLp[k] = lp;
+              ns = lp * this.noiseEnv[k] * noise;
+              this.noiseEnv[k] *= this.noiseCoef[t];
+              if (this.noiseEnv[k] > loudest) loudest = this.noiseEnv[k];
+            }
+            mono += (carrierSum / nc + ns) * this.amp[k];
+            if (!attacking && loudest < SILENT) this.active[k] = 0;
+          }
+          if (this.lpOn[t]) {
+            const c = t * 3, z = t * 2;
+            const v3 = mono - this.lpS[z + 1];
+            const v1 = this.lpK[c] * this.lpS[z] + this.lpK[c + 1] * v3;
+            const v2 = this.lpS[z + 1] + this.lpK[c + 1] * this.lpS[z] + this.lpK[c + 2] * v3;
+            this.lpS[z] = 2 * v1 - this.lpS[z];
+            this.lpS[z + 1] = 2 * v2 - this.lpS[z + 1];
+            mono = v2;
+          }
+          if (this.hpOn[t]) {
+            const c = t * 3, z = t * 2;
+            const v3 = mono - this.hpS[z + 1];
+            const v1 = this.hpK[c] * this.hpS[z] + this.hpK[c + 1] * v3;
+            const v2 = this.hpS[z + 1] + this.hpK[c + 1] * this.hpS[z] + this.hpK[c + 2] * v3;
+            this.hpS[z] = 2 * v1 - this.hpS[z];
+            this.hpS[z + 1] = 2 * v2 - this.hpS[z + 1];
+            mono = mono - SQRT2 * v1 - v2;
+          }
+          mono *= this.gainNow[t];
+          const cb = t * CH_LEN;
+          this.chBuf[cb + this.chW] = mono;
+          let ml: number, mr: number;
+          const cm = this.params[p + P.CHORUS] | 0;
+          if (cm > 0) {
+            const cp = this.chPh[t];
+            const tri = 1 - 4 * Math.abs(cp - 0.5);
+            let q = cp + CH_RATE[cm] / sr; q -= Math.floor(q); this.chPh[t] = q;
+            if (cm === 5) {
+              // phaser
+              const g = Math.tan((Math.PI * PH_LO * Math.pow(PH_HI / PH_LO, 0.5 + 0.5 * tri)) / sr);
+              const a = (g - 1) / (g + 1);
+              let y = mono + PH_FB * (this.phY[t] - mono);
+              for (let s = 0; s < PH_STAGES; s++) {
+                const z = t * PH_STAGES + s, o = a * y + this.phZ[z];
+                this.phZ[z] = y - a * o;
+                y = o;
+              }
+              this.phY[t] = y;
+              const w = 0.5 * (mono + y);
               ml = w * this.panL[t]; mr = w * this.panR[t];
             } else {
-              const wet = this.chLp[t] + this.chK * (raw - this.chLp[t]);
-              this.chLp[t] = wet;
-              ml = (mono + wet * CH_WET) * this.panL[t];
-              mr = (mono - wet * CH_WET) * this.panR[t];
+              const d = (CH_MIN[cm] + (CH_MAX[cm] - CH_MIN[cm]) * (0.5 + 0.5 * tri)) * sr * 0.001;
+              const rp = this.chW - d + CH_LEN;
+              const ri = Math.floor(rp), fr = rp - ri;
+              const i0 = ri >= CH_LEN ? ri - CH_LEN : ri, i1 = i0 + 1 === CH_LEN ? 0 : i0 + 1;
+              const raw = this.chBuf[cb + i0] + (this.chBuf[cb + i1] - this.chBuf[cb + i0]) * fr;
+              if (cm === 4) {
+                // flanger: what goes into the line now carries some of what came out
+                this.chBuf[cb + this.chW] = mono + FL_FB * (raw - mono);
+                const w = 0.5 * (mono + raw);
+                ml = w * this.panL[t]; mr = w * this.panR[t];
+              } else {
+                const wet = this.chLp[t] + this.chK * (raw - this.chLp[t]);
+                this.chLp[t] = wet;
+                ml = (mono + wet * CH_WET) * this.panL[t];
+                mr = (mono - wet * CH_WET) * this.panR[t];
+              }
             }
-          }
-        } else { ml = mono * this.panL[t]; mr = mono * this.panR[t]; }
-        l += ml;
-        r += mr;
-        const sa = this.params[p + P.SEND];
-        sl += ml * sa;
-        sr2 += mr * sa;
+          } else { ml = mono * this.panL[t]; mr = mono * this.panR[t]; }
+          // a track with a Shape waits in its own chunk; the rest go straight into the sum
+          if (this.insLive[t]) { const o = (t * CHUNK + j) * 2; tb[o] = ml; tb[o + 1] = mr; continue; }
+          l += ml;
+          r += mr;
+          const sa = this.params[p + P.SEND];
+          sl += ml * sa;
+          sr2 += mr * sa;
+        }
+        this.chW = this.chW + 1 === CH_LEN ? 0 : this.chW + 1;
+        this.beat += beatInc;
+        if (this.clickEnv > SILENT) {
+          const c = Math.sin(TAU * this.clickPhase) * this.clickEnv;
+          this.clickPhase += this.clickFreq / sr;
+          this.clickPhase -= Math.floor(this.clickPhase);
+          this.clickEnv *= this.clickCoef;
+          l += c; r += c;
+        }
+        mix[j * 2] = l; mix[j * 2 + 1] = r; snd[j * 2] = sl; snd[j * 2 + 1] = sr2;
       }
-      this.chW = this.chW + 1 === CH_LEN ? 0 : this.chW + 1;
-      this.beat += beatInc;
-      if (this.clickEnv > SILENT) {
-        const c = Math.sin(TAU * this.clickPhase) * this.clickEnv;
-        this.clickPhase += this.clickFreq / sr;
-        this.clickPhase -= Math.floor(this.clickPhase);
-        this.clickEnv *= this.clickCoef;
-        l += c; r += c;
+      // each Shape on its track's chunk, then into the sum and the send, track by track
+      for (let t = 0; t < TRACKS; t++) {
+        if (!this.insLive[t]) continue;
+        const buf = tb.subarray(t * CHUNK * 2, (t * CHUNK + k) * 2);
+        this.inserts[t].insert(buf, k);
+        const sa = this.params[t * NPARAMS + P.SEND];
+        for (let j = 0; j < k * 2; j++) { mix[j] += buf[j]; snd[j] += buf[j] * sa; }
       }
-      // DC blocker
-      const yl = l - this.dcXL + this.dcR * this.dcYL;
-      this.dcXL = l; this.dcYL = yl;
-      const yr = r - this.dcXR + this.dcR * this.dcYR;
-      this.dcXR = r; this.dcYR = yr;
-      this.master += (this.masterTarget - this.master) * MASTER_SMOOTH;
-      l = yl * this.master; r = yr * this.master;
-      // NaN guard
-      if (!Number.isFinite(l) || !Number.isFinite(r)) {
-        this.nans++;
-        this.panic();
-        l = 0; r = 0;
-      }
-      // limiter: instant attack, 100 ms release
-      const pk = Math.max(Math.abs(l), Math.abs(r));
-      this.limEnv = pk > this.limEnv ? pk : pk + (this.limEnv - pk) * this.limRel;
-      const g = this.limEnv > CEILING ? CEILING / this.limEnv : 1;
-      if (g < this.minGain) this.minGain = g;
-      l = Math.min(Math.max(l * g, -CEILING), CEILING);
-      r = Math.min(Math.max(r * g, -CEILING), CEILING);
-      if (Math.abs(l) > this.peakL) this.peakL = Math.abs(l);
-      if (Math.abs(r) > this.peakR) this.peakR = Math.abs(r);
-      out[f * 2] = l;
-      out[f * 2 + 1] = r;
-      if (send) {
-        const a = sl * this.master, b = sr2 * this.master;
-        const ok = Number.isFinite(a) && Number.isFinite(b);
-        send[f * 2] = ok ? Math.min(Math.max(a, -1), 1) : 0;
-        send[f * 2 + 1] = ok ? Math.min(Math.max(b, -1), 1) : 0;
+      for (let j = 0; j < k; j++) {
+        const f = at + j;
+        let l = mix[j * 2], r = mix[j * 2 + 1];
+        const sl = snd[j * 2], sr2 = snd[j * 2 + 1];
+        // DC blocker
+        const yl = l - this.dcXL + this.dcR * this.dcYL;
+        this.dcXL = l; this.dcYL = yl;
+        const yr = r - this.dcXR + this.dcR * this.dcYR;
+        this.dcXR = r; this.dcYR = yr;
+        this.master += (this.masterTarget - this.master) * MASTER_SMOOTH;
+        l = yl * this.master; r = yr * this.master;
+        // NaN guard
+        if (!Number.isFinite(l) || !Number.isFinite(r)) {
+          this.nans++;
+          this.panic();
+          l = 0; r = 0;
+        }
+        // limiter: instant attack, 100 ms release
+        const pk = Math.max(Math.abs(l), Math.abs(r));
+        this.limEnv = pk > this.limEnv ? pk : pk + (this.limEnv - pk) * this.limRel;
+        const g = this.limEnv > CEILING ? CEILING / this.limEnv : 1;
+        if (g < this.minGain) this.minGain = g;
+        l = Math.min(Math.max(l * g, -CEILING), CEILING);
+        r = Math.min(Math.max(r * g, -CEILING), CEILING);
+        if (Math.abs(l) > this.peakL) this.peakL = Math.abs(l);
+        if (Math.abs(r) > this.peakR) this.peakR = Math.abs(r);
+        out[f * 2] = l;
+        out[f * 2 + 1] = r;
+        if (send) {
+          const a = sl * this.master, b = sr2 * this.master;
+          const ok = Number.isFinite(a) && Number.isFinite(b);
+          send[f * 2] = ok ? Math.min(Math.max(a, -1), 1) : 0;
+          send[f * 2 + 1] = ok ? Math.min(Math.max(b, -1), 1) : 0;
+        }
       }
     }
   }

@@ -8,7 +8,7 @@ import type { FmEngine } from "../src/engine/engine.ts";
 function spy() {
   const log: string[] = [];
   const e: FmEngine = {
-    setParam() {}, setMute() {}, setMaster() {}, setTempo() {}, setBeat() {}, allOff() {}, panic() {}, render() {}, meter() {},
+    setParam() {}, setMute() {}, setMaster() {}, setTempo() {}, setBeat() {}, allOff() {}, panic() {}, setTrackBand() {}, render() {}, meter() {},
     setBend: (t, s) => log.push(`bend ${t} ${s}`),
     noteOn: (t, id, m) => log.push(`on ${t} ${m}`),
     noteOff: (t) => log.push(`off ${t}`),

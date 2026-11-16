@@ -31,6 +31,7 @@ import { encodeWav } from "../engine/wav.ts";
 import { saveBounce, reveal } from "../actions/files.ts";
 import type { FromWorklet, ToWorklet } from "../engine/messages.ts";
 import { MASTER, type RecordedMove } from "../engine/sequencer.ts";
+import { flatEq } from "../engine/eq.ts";
 import { LANE_BEND, LANE_STUTTER } from "../engine/params.ts";
 import "@fontsource/barlow-condensed/500.css";
 import "@fontsource/barlow-condensed/600.css";
@@ -63,6 +64,7 @@ function loadMsg(p: Project): ToWorklet {
   return {
     t: "load", params: p.tracks.flatMap((t) => t.params), notes: p.tracks.map((t) => t.notes), auto: p.tracks.map((t) => t.auto ?? []),
     bpm: p.bpm, swing: p.swing, loopBeats: loopBeats(p), audible: audible(p), space: p.space, squash: p.squash, eq: p.eq, eqAuto: p.eqAuto ?? [],
+    trackEq: p.tracks.map((t) => t.eq ?? flatEq()),
   };
 }
 
@@ -73,7 +75,9 @@ function opMsg(op: Op, next: Project): ToWorklet {
     case "notes": return { t: "notes", track: op.track, notes: next.tracks[op.track].notes };
     case "auto": return { t: "auto", track: op.track, lanes: next.tracks[op.track].auto ?? [] };
     case "track": return { t: "audible", mask: audible(next) };
-    case "eq": case "eqAuto": return { t: "eq", bands: next.eq, lanes: next.eqAuto ?? [] };
+    case "eq": if (op.track !== undefined) return { t: "trackEq", track: op.track, bands: next.tracks[op.track].eq ?? flatEq() };
+    // falls through: the master
+    case "eqAuto": return { t: "eq", bands: next.eq, lanes: next.eqAuto ?? [] };
     case "global":
       if (op.bpm === undefined && op.swing === undefined && op.bars === undefined) {
         if (op.space !== undefined && op.squash === undefined) return { t: "space", amount: next.space };
@@ -107,6 +111,8 @@ export function App() {
   const [midiDevices, setMidiDevices] = useState<string[]>([]);
   const [netStatus, setNetStatus] = useState<NetStatus>({ state: "connecting", peers: 0 });
   const [view, setView] = useState<"pattern" | "shape" | "engines">("pattern");
+  /** Which Shape the tab shows: the master's (null) or a track's own insert. */
+  const [shapeOn, setShapeOn] = useState<number | null>(null);
   const [page, setPage] = useState(0);
   const [repeat, setRepeatState] = useState(0);
   const [bend, setBendState] = useState(0);
@@ -564,7 +570,7 @@ export function App() {
           <div className="toolbar">
             <div className="seg tabs">
               <button className={view === "pattern" ? "on" : ""} onClick={() => setView("pattern")}>Pattern</button>
-              <button className={view === "shape" ? "on" : ""} onClick={() => setView("shape")} title="Shape: the master EQ (cuts, shelves, bells, notch)">Shape</button>
+              <button className={view === "shape" ? "on" : ""} onClick={() => setView("shape")} title="Shape: an EQ on the master or on any one track (cuts, shelves, bells, notch)">Shape</button>
               <button className={view === "engines" ? "on" : ""} onClick={() => setView("engines")}>Engine race</button>
             </div>
             <label className="field inline"><span className="silk">Grid</span>
@@ -585,13 +591,28 @@ export function App() {
 
           {view === "engines" ? (
             <Bench project={project} wasm={fetchWasm} />
-          ) : view === "shape" ? (
-            <Shape doc={project.eq} sampleRate={audio?.ctx.sampleRate ?? 48000} analyser={audio?.analyser ?? null}
-              onChange={(bands, group) => commit({ t: "eq", bands }, group ? { group } : {})}
-              onListen={(band) => audio?.send({ t: "eqListen", band })}
-              lanes={project.eqAuto ?? []} onLanes={(lanes) => commit({ t: "eqAuto", lanes })}
-              onMove={(i, v, was) => move(MASTER, i, v, was)} />
-          ) : t.kind === "drum" ? (<>
+          ) : view === "shape" ? (() => {
+            // the master's Shape listens and automates; a track's is a plain insert for now
+            const head = (
+              <label className="field inline"><span className="silk">Shape on</span>
+                <select value={shapeOn ?? -1} onChange={(e) => { const v = Number(e.currentTarget.value); setShapeOn(v < 0 ? null : v); }} aria-label="Which Shape to edit">
+                  <option value={-1}>Master</option>
+                  {project.tracks.map((tr, i) => <option key={i} value={i}>{tr.name}{tr.eq ? " ·" : ""}</option>)}
+                </select>
+              </label>
+            );
+            const sr = audio?.ctx.sampleRate ?? 48000, an = audio?.analyser ?? null;
+            return shapeOn === null ? (
+              <Shape key="master" head={head} doc={project.eq} sampleRate={sr} analyser={an}
+                onChange={(bands, group) => commit({ t: "eq", bands }, group ? { group } : {})}
+                onListen={(band) => audio?.send({ t: "eqListen", band })}
+                lanes={project.eqAuto ?? []} onLanes={(lanes) => commit({ t: "eqAuto", lanes })}
+                onMove={(i, v, was) => move(MASTER, i, v, was)} />
+            ) : (
+              <Shape key={`track:${shapeOn}`} head={head} doc={project.tracks[shapeOn].eq ?? flatEq()} sampleRate={sr} analyser={an}
+                onChange={(bands, group) => commit({ t: "eq", bands, track: shapeOn }, group ? { group } : {})} />
+            );
+          })() : t.kind === "drum" ? (<>
             <div className="machine" aria-label="Drum machine">
               <span className="silk">Drum machine</span>
               <label className="field inline"><span className="silk">Groove</span>

@@ -62,7 +62,9 @@ export function Shape(props: { doc: EqDoc; sampleRate: number; analyser: Analyse
   /** Shape's automation, and the list with a lane taken out. */
   lanes?: Lane[]; onLanes?(lanes: Lane[]): void;
   /** A hand move on a dot (lane, new value, old value): kept as automation while recording. */
-  onMove?(lane: number, v: number, was: number): void }) {
+  onMove?(lane: number, v: number, was: number): void;
+  /** What the bar names, in place of "Shape · master EQ": the master-or-track picker. */
+  head?: React.ReactNode }) {
   const { doc, sampleRate: sr, analyser, onChange, onListen, lanes = [], onLanes } = props;
   const wrap = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
@@ -301,10 +303,10 @@ export function Shape(props: { doc: EqDoc; sampleRate: number; analyser: Analyse
 
   const used = doc.filter(Boolean).length;
   return (
-    <section className="shape" aria-label="Shape: the master EQ">
+    <section className="shape" aria-label="Shape: an EQ">
       <div className="shape-bar">
-        <span className="silk">Shape · master EQ</span>
-        <span className="dim shape-hint">Double-click to add or remove · drag to move · hold to listen · wheel for Q · Alt-click to bypass · record to automate</span>
+        {props.head ?? <span className="silk">Shape · master EQ</span>}
+        <span className="dim shape-hint">Double-click to add or remove · drag to move{onListen ? " · hold to listen" : ""} · wheel for Q · Alt-click to bypass{props.onMove ? " · record to automate" : ""}</span>
         <span className="spacer" />
         <label className="check" title="Draw the phase the bands add (dashed, -180 to +180 degrees). Steep cuts turn it most"><input type="checkbox" checked={phase} onChange={(e) => setPhase(e.currentTarget.checked)} /> Phase</label>
         <span className="dim">{used}/{EQ_BANDS}</span>
