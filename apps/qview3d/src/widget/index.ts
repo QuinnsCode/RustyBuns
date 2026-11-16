@@ -10,20 +10,22 @@
 // adds its own buttons in slot="controls", or turns them all off (controls="none") and drives the element through
 // its methods and events instead:
 //
-//   el.addImage(file, zone?) · el.place({u, v, scale, rotation}) · el.model = "hoodie" · el.zone = "back" · el.color = "#b91c1c" · el.view("side")
+//   el.addImage(file, zone?) · el.addText({value, font, color}, zone?) · el.setText(line) · el.choose(i) · el.restack(1 | -1) · el.removeImage()
+//   el.place({u, v, scale, rotation}) · el.model = "hoodie" · el.zone = "back" · el.color = "#b91c1c" · el.view("side")
 //   el.design (the settings) · el.load(design) · el.snapshot() -> {blob, design} · el.save() -> {id, url, design}
 //   events: qview:ready, qview:change, qview:snapshot, qview:saved, qview:error (each with a detail)
 //
 // In a shop's own <form> it is a form field: <qview-3d name="design"> saves the design when the form is submitted and
 // sends its id as `design` and its link as `design-url`, the way a hidden input would (a form-associated element).
-import { createElement, Camera, CloudUpload, Eraser, ImagePlus, Rotate3d, RotateCw, Scaling } from "lucide";
+import { createElement, BringToFront, Camera, CloudUpload, Eraser, ImagePlus, Rotate3d, RotateCw, Scaling, SendToBack, Type } from "lucide";
 import { esc } from "@rustybuns/util";
 import { getJson, readJson } from "@rustybuns/util/http";
-import { DesignReply, MODELS, Product, TOPS, ZONES, type Design, type DesignReply as Saved, type Made, type Model, type Placement as Place, type PrintArea, type ZoneName } from "../api.ts";
+import { DesignReply, FONTS, MODELS, Product, TextLine, TOPS, ZONES, type Design, type DesignReply as Saved, type Made, type Model, type Placement as Place, type PrintArea, type ZoneName } from "../api.ts";
 import { sha256Of } from "./image.ts";
 import { css } from "./style.ts";
+import { FACES } from "./text.ts";
 import { problem, upload } from "./upload.ts";
-import type { Display, View, Viewer } from "./viewer.ts";
+import type { Display, Layer, View, Viewer } from "./viewer.ts";
 
 const DEFAULT_COLORS = ["#1f2937", "#f5f5f4", "#b91c1c", "#1d4ed8", "#166534", "#d97706", "#7c3aed", "#e7d7b9"];
 const LABELS: Record<Made, string> = { cap: "Cap", beanie: "Beanie", bucket: "Bucket", tee: "Tee", sweater: "Sweater", hoodie: "Hoodie", tank: "Tank", racerback: "Racerback" };
@@ -191,6 +193,19 @@ export class QView3D extends HTMLElement {
     try { await v.addImage(file, zone && (ZONES as readonly string[]).includes(zone) ? zone : undefined); } catch (e) { this.fail(e); throw e; }
     this.sync();
   }
+  /** Put a line of text on top in the zone being worked on (or `zone`); it is drawn to a picture and prints as one. */
+  async addText(line: TextLine, zone?: ZoneName) {
+    const v = await this.boot();
+    try { await v.addText(TextLine(line), zone && (ZONES as readonly string[]).includes(zone) ? zone : undefined); } catch (e) { this.fail(e); throw e; }
+    this.sync();
+  }
+  /** Change the line of text being worked on. */
+  async setText(line: TextLine) { await this.viewer?.setText(TextLine(line)); this.sync(); }
+  /** Work on the zone's `i`th picture or text, bottom first. */
+  choose(i: number) { const l = this.viewer?.inZone[i]; if (l) this.viewer!.choose(l); this.sync(); }
+  /** Move the one being worked on up (1) or down (-1) a layer in its zone. */
+  restack(step: 1 | -1) { this.viewer?.restack(step); this.sync(); }
+  /** Take the picture or text being worked on off. */
   removeImage() { this.viewer?.removeImage(); this.sync(); }
   place(p: { u?: number; v?: number; scale?: number; rotation?: number }) { this.viewer?.place(p); this.sync(); }
   view(v: View) { this.viewer?.view(v); }
@@ -256,10 +271,32 @@ export class QView3D extends HTMLElement {
     scale.oninput = () => this.place({ scale: Number(scale.value) });
     const turn = h("input", { type: "range", min: String(-Math.PI), max: String(Math.PI), step: "0.01", title: "Turn", ariaLabel: "Picture turn" });
     turn.oninput = () => this.place({ rotation: Number(turn.value) });
+    const up = iconButton(BringToFront, "Bring forward", () => this.restack(1));
+    const down = iconButton(SendToBack, "Send backward", () => this.restack(-1));
     const tune = h("div", { class: "tune", hidden: true, role: "group", ariaLabel: "Picture" },
       h("label", { class: "slider", part: "slider", title: "Size" }, icon(Scaling), scale),
       h("label", { class: "slider", part: "slider", title: "Turn" }, icon(RotateCw), turn),
-      iconButton(Eraser, "Remove the picture", () => this.removeImage()));
+      up, down,
+      iconButton(Eraser, "Remove it", () => this.removeImage()));
+    const addText = () => void this.addText({ value: "Your text", font: "sans", color: contrast(this.color) }).then(() => { this.ui.words.select(); this.ui.words.focus(); }, () => {});
+
+    // The zone's pictures and text, bottom first: pick one to work on. With text picked, what it says, its font and colour.
+    const stack = h("div", { class: "stack", role: "group", ariaLabel: "Layers" });
+    const words = h("input", { type: "text", maxLength: 60, ariaLabel: "Text", placeholder: "Your text" });
+    const font = h("select", { ariaLabel: "Font" }, ...FONTS.map((f) => h("option", { value: f }, FACES[f].label)));
+    const ink = h("input", { type: "color", ariaLabel: "Text colour", title: "Text colour" });
+    const retext = () => {
+      const line = this.viewer?.layer?.text;
+      if (!line || !words.value.trim()) return;
+      const f = FONTS.find((x) => x === font.value) ?? line.font;
+      void this.setText({ value: words.value.slice(0, 60), font: f, color: /^#[0-9a-f]{6}$/i.test(ink.value) ? ink.value : line.color });
+    };
+    let typing = 0;
+    words.oninput = () => { clearTimeout(typing); typing = Number(setTimeout(retext, 250)); };
+    font.onchange = retext;
+    ink.oninput = retext;
+    const editor = h("div", { class: "editor", hidden: true, role: "group", ariaLabel: "Text" }, words, font, ink);
+    const layers = h("div", { class: "layers panel", part: "layers", hidden: true }, stack, editor);
     // Dividers show only with something on both sides: a shop's own model has no swatches.
     const sepAdd = h("span", { class: "sep" }), sepTune = h("span", { class: "sep" });
 
@@ -281,16 +318,16 @@ export class QView3D extends HTMLElement {
     const slot = h("slot");
     slot.name = "controls";
     const toolbar = h("div", { class: "toolbar panel", part: "toolbar", role: "toolbar", ariaLabel: "Customise" },
-      iconButton(ImagePlus, "Add a picture", pick), sepAdd, tune, sepTune, swatches, slot);
+      iconButton(ImagePlus, "Add a picture", pick), iconButton(Type, "Add text", addText), sepAdd, tune, sepTune, swatches, slot);
     const corner = h("div", { class: "corner panel" }, turnView, shotBtn, saveBtn);
     const toast = h("div", { class: "toast panel", part: "toast", role: "status", ariaLive: "polite" });
     const keys = h("div", { class: "keys panel", part: "keys", hidden: true });
     keys.innerHTML = "<kbd>&larr;</kbd><kbd>&rarr;</kbd><kbd>&uarr;</kbd><kbd>&darr;</kbd> move &nbsp; <kbd>+</kbd><kbd>&minus;</kbd> size &nbsp; <kbd>[</kbd><kbd>]</kbd> turn &nbsp; <kbd>Shift</kbd>+arrows spin";
     gl.addEventListener("focusin", () => (keys.hidden = !this.viewer?.layer));
     gl.addEventListener("focusout", () => (keys.hidden = true));
-    const stage = h("div", { class: "stage", part: "stage" }, gl, loading, models, zones, corner, hint, keys, toolbar, h("div", { class: "drop" }, "Drop your picture"), toast, file);
+    const stage = h("div", { class: "stage", part: "stage" }, gl, loading, models, zones, corner, hint, keys, h("div", { class: "dock" }, layers, toolbar), h("div", { class: "drop" }, "Drop your picture"), toast, file);
     this.root.append(style, stage);
-    return { gl, loading, models, zones, hint, tune, scale, turn, swatches, saveBtn, toast, sepAdd, sepTune, chrome: [models, zones, corner, hint, toolbar] as HTMLElement[] };
+    return { gl, loading, models, zones, hint, tune, scale, turn, up, down, swatches, saveBtn, toast, sepAdd, sepTune, layers, stack, editor, words, font, ink, chrome: [models, zones, corner, hint, layers, toolbar] as HTMLElement[] };
   }
 
   private drawSwatches() {
@@ -334,6 +371,42 @@ export class QView3D extends HTMLElement {
     this.ui.sepTune.hidden = this.ui.tune.hidden || this.ui.swatches.hidden;
     this.ui.saveBtn.hidden = !this.org;
     if (l) { this.ui.scale.value = String(l.at.scale); this.ui.turn.value = String(l.at.rotation); }
+    this.drawStack(v?.inZone ?? [], l ?? null, none);
+  }
+
+  /** The zone's layers as small chips (a picture's thumbnail, a line's own words), and the text editor for a line. */
+  private thumbs = new WeakMap<Layer, string>();
+  private drawStack(stack: Layer[], l: Layer | null, none: boolean) {
+    const ui = this.ui;
+    ui.layers.hidden = none || !stack.length || (stack.length < 2 && !l?.text);
+    const key = stack.map((x) => (x.text ? `t:${x.text.value}:${x.text.font}:${x.text.color}` : x.picture.texture.sha256)).join("|");
+    if (ui.stack.dataset.key !== key) {
+      ui.stack.dataset.key = key;
+      ui.stack.replaceChildren(...stack.map((x, i) => {
+        const b = h("button", { class: "chip", part: "button layer", onclick: () => this.choose(i) });
+        if (x.text) {
+          b.textContent = x.text.value;
+          b.style.fontFamily = FACES[x.text.font].css;
+          b.title = `Text: ${x.text.value}`;
+        } else {
+          let url = this.thumbs.get(x);
+          if (!url) this.thumbs.set(x, (url = URL.createObjectURL(x.picture.texture.blob)));
+          b.append(h("img", { src: url, alt: "" }));
+          b.title = `Picture ${i + 1}`;
+        }
+        b.setAttribute("aria-label", b.title);
+        return b;
+      }));
+    }
+    ui.stack.hidden = stack.length < 2;
+    [...ui.stack.children].forEach((b, i) => b.setAttribute("aria-pressed", String(stack[i] === l)));
+    const at = l ? stack.indexOf(l) : -1;
+    ui.up.hidden = ui.down.hidden = stack.length < 2;
+    ui.up.disabled = at < 0 || at === stack.length - 1;
+    ui.down.disabled = at <= 0;
+    ui.editor.hidden = !l?.text;
+    if (l?.text && this.root.activeElement !== ui.words) ui.words.value = l.text.value;
+    if (l?.text) { ui.font.value = l.text.font; ui.ink.value = l.text.color; }
   }
 
   private changed() {
@@ -373,6 +446,11 @@ export class QView3D extends HTMLElement {
 
 /** A design's settings without the camera: turning the view doesn't change what gets printed. */
 const keyOf = (d: Design | null | undefined) => (d ? JSON.stringify({ ...d, camera: undefined }) : "");
+/** Black or white, whichever reads on this colour: a new line of text starts in it. */
+const contrast = (hex: string) => {
+  const n = parseInt(hex.slice(1), 16), lum = 0.299 * (n >> 16) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255);
+  return lum > 150 ? "#111111" : "#ffffff";
+};
 const asModel = (m: string | null): Made => MODELS.find((x) => x === m) ?? "cap";
 const parseColors = (s: string | null) => {
   const list = (s ?? "").split(",").map((c) => c.trim()).filter((c) => /^#[0-9a-f]{6}$/i.test(c));

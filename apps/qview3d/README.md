@@ -1,10 +1,11 @@
 # QView3D
 
-A 3D product customiser a shop puts on its own page with one script and one tag. Shoppers add a photo, drag it
-round the front of a hat or over a top's front, back or sleeve, size it, turn it, pick a colour and spin the product.
+A 3D product customiser a shop puts on its own page with one script and one tag. Shoppers add photos and a line of
+text, drag each round the front of a hat or over a top's front, back or sleeve, size, turn and stack them, pick a
+colour and spin the product.
 Then they export a snapshot with the settings that made it. A Cloudflare Worker and one R2 bucket, with a folder for
-each org. A spike: hats (cap, beanie, bucket hat) and tops (a tee, a sweater, a hoodie and two tanks on one body form, a
-picture on each print zone: front, back and, with sleeves, the left sleeve), plus **samples**: a shop with a product these don't cover uploads photos or a video, and Meshy makes a model
+each org. A spike: hats (cap, beanie, bucket hat) and tops (a tee, a sweater, a hoodie and two tanks on one body form, print
+zones on the front, the back and, with sleeves, the left sleeve; up to 8 pictures and lines of text in all), plus **samples**: a shop with a product these don't cover uploads photos or a video, and Meshy makes a model
 of it the widget can print on. PolyForm Noncommercial.
 
 ```html
@@ -89,12 +90,12 @@ hats are in a second, hashed chunk (146 kB gzipped). It loads only when the tag 
 | The page wants | It does |
 |---|---|
 | Our look, its colours | Set `--qv-accent`, `--qv-accent-ink`, `--qv-fg`, `--qv-bg`, `--qv-paper`, `--qv-line`, `--qv-radius`, `--qv-font` on the tag, or `theme="dark"` |
-| Our controls, restyled | `qview-3d::part(toolbar \| button \| swatch \| slider \| models \| hint \| keys \| stage \| toast)` |
+| Our controls, restyled | `qview-3d::part(toolbar \| button \| swatch \| slider \| models \| hint \| keys \| layers \| stage \| toast)` |
 | Its own buttons beside ours | Children with `slot="controls"` go in our toolbar |
 | Only the 3D, its own UI | `controls="none"`, then drive it with the methods and events below |
 
-Methods: `addImage(file, zone?)`, `removeImage()`, `place({u, v, scale, rotation})`, `view("front"|"angle"|"side"|"back")`,
-`model = "beanie"`, `zone = "back"` (a top's `"front"`, `"back"` or `"left-sleeve"`: where the next picture goes and what `place()` moves), `color = "#b91c1c"`, `design` (the settings, a layer for each zone's picture), `load(design)`, `snapshot()` resolves to `{blob, design}`,
+Methods: `addImage(file, zone?)` and `addText({value, font, color}, zone?)` (each goes on top and is the one worked on; `font` is `sans`, `serif`, `mono`, `script` or `block`), `setText(line)`, `choose(i)` (the zone's `i`th, bottom first), `restack(1 | -1)`, `removeImage()`, `place({u, v, scale, rotation})`, `view("front"|"angle"|"side"|"back")`,
+`model = "beanie"`, `zone = "back"` (a top's `"front"`, `"back"` or `"left-sleeve"`: where the next picture goes and what `place()` moves), `color = "#b91c1c"`, `design` (the settings: a layer for each picture or line, in drawing order, a line's words in its `text`), `load(design)`, `snapshot()` resolves to `{blob, design}`,
 and `save()` resolves to `{id, url, design}`; `value` is the saved id (below). Attributes: `name`, `org`, `product`, `model`, `color`, `colors="#111111,#ffffff"`,
 `controls`, `theme`, and `api` (the server, by default the script's own origin).
 A product's `print` (the zones the shop switched on) and `place` (where a new picture lands), set on `/orgs.html`, shape the widget: it offers only those zones, refuses a picture on one switched off, and starts each new picture at `place`.
@@ -139,11 +140,12 @@ Both are in [`/v1/embed.md`](src/embed.ts).
 ### Print files
 
 The server makes them: an order (below) hands over finished files, and **Print files** on `/admin.html` (the design
-id or its `/r/` link, with the org's admin key) shows the same ones. One PNG per print zone: the shopper's original at 300 dpi over the zone's real size, on a
+id or its `/r/` link, with the org's admin key) shows the same ones. One PNG per print zone: each of the zone's originals at 300 dpi over the zone's real size, in the order the shopper stacked them, on a
 clear background, with the dpi written into the file so print software opens it at its real size. A cap's front
 (12 x 6 cm) is 1417 x 709 px. The sizes are product data: a product's `zones` (`{ "front": { "w": 12, "h": 6 } }`,
 in centimetres) overrides the defaults in `PRINT_CM` (`src/api.ts`). A shop's own model has no default, so its
-product must name them. The picture sits as the widget shows it: centred at u across and v up, `scale` of the
+product must name them. A line of text is drawn to a PNG in the widget (`src/widget/text.ts`) and saved as its original, so it prints the
+letters the shopper saw. Each picture sits as the widget shows it: centred at u across and v up, `scale` of the
 zone's width, turned, cut at the zone's edge.
 
 `GET /api/orgs/<org>/designs/<id>/print` (admin key) answers the layout as JSON and makes each zone's PNG once, kept
@@ -151,7 +153,7 @@ at `orgs/<org>/prints/<design>/<zone>.png`; each sheet's `png` is its link (admi
 original with WASM (jsquash's PNG, MozJPEG and libwebp decoders, about 480 KB) and lays it out in plain TS
 ([src/print-render.ts](src/print-render.ts)), the same picture the page's canvas draws to a pixel or two. No paid
 service: a tee front is a few seconds of Worker CPU, about $0.0001 past the plan's included 30 million ms a month.
-An original over 12 MP is too big for a Worker's 128 MB, so its sheet says why (`unmade`) and `/admin.html` draws
+An original over 12 MP (or a zone's pictures over that together, once boxed down to the size they print) is too big for a Worker's 128 MB, so its sheet says why (`unmade`) and `/admin.html` draws
 it from the original (`GET /api/orgs/<org>/originals/<file>`, admin key) instead.
 
 ### Webhooks, both ways

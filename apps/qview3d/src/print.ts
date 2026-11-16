@@ -3,7 +3,7 @@
 // Print files, for whoever fulfils an order. Both routes need an admin key: originals are the print source and
 // are never served on /r/.
 //
-//   GET /api/orgs/<org>/designs/<id>/print   the plan: per zone, its real size, its pixels at 300 dpi, where the picture sits
+//   GET /api/orgs/<org>/designs/<id>/print   the plan: per zone, its real size, its pixels at 300 dpi, where each picture sits
 //   GET /api/orgs/<org>/designs/<id>/print/<zone>.png   that zone's print file, made by the plan
 //   GET /api/orgs/<org>/originals/<file>     one original, as uploaded
 //
@@ -16,7 +16,7 @@ import { Design, PRINT_CM, ZONES, Product, type Model, type PrintPlan, type Prin
 import { designKey } from "./layout.ts";
 import { getProduct } from "./settings.ts";
 import { sheetPx } from "./print-sheet.ts";
-import { decodePicture, renderSheet } from "./print-render.ts";
+import { PRINT_MAX_PX, boxFor, decodePicture, renderSheet, type Boxed } from "./print-render.ts";
 import type { Env } from "./worker.ts";
 
 export const PRINT_DPI = 300;
@@ -38,13 +38,16 @@ export async function printPlanRoute(env: Env, org: string, id: string, origin: 
   if (!d) return nope("unknown design", 404, headers);
   const product = d.product ? await getProduct(env, org, d.product) : null;
   const sheets: PrintSheet[] = [], skipped: PrintPlan["skipped"] = [];
-  for (const l of d.layers) {
-    const zone = l.zone ?? "front";
+  // One sheet a zone, its pictures in drawing order. A zone with a picture that can't print is left out whole: half a
+  // design on a shirt is worse than none, and the admin hears why.
+  for (const zone of ZONES) {
+    const layers = d.layers.filter((l) => (l.zone ?? "front") === zone);
+    if (!layers.length) continue;
     const cm = zoneCm(d.model, product, zone);
-    const file = l.original?.split("/").pop();
-    if (!l.original || !file || !ORIGINAL.test(file)) skipped.push({ zone, why: "no original was saved with this picture" });
+    const files = layers.map((l) => l.original?.split("/").pop() ?? "");
+    if (files.some((f) => !ORIGINAL.test(f))) skipped.push({ zone, why: `no original was saved with ${layers.length > 1 ? "one of its pictures" : "this picture"}` });
     else if (!cm) skipped.push({ zone, why: `the product names no size for its ${zone}: add zones to its product file` });
-    else sheets.push({ zone, cm, px: sheetPx(cm, PRINT_DPI), original: `${origin}/api/orgs/${org}/originals/${file}`, at: { u: l.u, v: l.v, scale: l.scale, rotation: l.rotation } });
+    else sheets.push({ zone, cm, px: sheetPx(cm, PRINT_DPI), pictures: layers.map((l, i) => ({ original: `${origin}/api/orgs/${org}/originals/${files[i]}`, at: { u: l.u, v: l.v, scale: l.scale, rotation: l.rotation } })) });
   }
   for (const s of sheets) {
     const why = await makePrint(env, org, id, s);
@@ -58,11 +61,20 @@ export async function printPlanRoute(env: Env, org: string, id: string, origin: 
 async function makePrint(env: Env, org: string, id: string, s: PrintSheet): Promise<string | null> {
   const key = printKey(org, id, s.zone);
   if (await env.BUCKET.head(key)) return null;
-  const o = await env.BUCKET.get(`orgs/${org}/originals/${s.original.split("/").pop()}`);
-  if (!o) return "its original is gone from the bucket";
-  const picture = await decodePicture(new Uint8Array(await new Response(o.body).arrayBuffer()));
-  if (typeof picture === "string") return picture;
-  const png = await renderSheet(s, picture, PRINT_DPI);
+  // One original decoded at a time and boxed down to its printed size before the next, so a zone of several fits.
+  const boxed: Boxed[] = [];
+  let px = 0;
+  for (const p of s.pictures) {
+    const o = await env.BUCKET.get(`orgs/${org}/originals/${p.original.split("/").pop()}`);
+    if (!o) return "its original is gone from the bucket";
+    const picture = await decodePicture(new Uint8Array(await new Response(o.body).arrayBuffer()));
+    if (typeof picture === "string") return picture;
+    const b = boxFor(picture, s.px, p.at);
+    px += b.width * b.height;
+    if (px > PRINT_MAX_PX) return "its pictures together are too big to make here";
+    boxed.push(b);
+  }
+  const png = await renderSheet(s, boxed, PRINT_DPI);
   await env.BUCKET.put(key, png.buffer, { httpMetadata: { contentType: "image/png", cacheControl: "private, no-store" } });
   return null;
 }

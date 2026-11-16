@@ -265,15 +265,18 @@ async function fetchPrint(url: string, zone: string, auth: Record<string, string
   return new Uint8Array(await got.arrayBuffer());
 }
 
-/** A print file drawn here, from its original: for one the server couldn't make (`unmade` says why). */
+/** A print file drawn here, from its originals: for one the server couldn't make (`unmade` says why). */
 async function drawPrint(s: PrintSheet, dpi: number, auth: Record<string, string>) {
   sayPrint(`Drawing the ${s.zone} at ${s.px.w} x ${s.px.h} px (${s.unmade ?? "not made on the server"})...`);
-  const got = await fetch(s.original, { headers: auth });
-  if (!got.ok) throw new Error(`${s.zone}: ${await problem(got)}`);
-  const image = await createImageBitmap(await got.blob());
+  const images = await Promise.all(s.pictures.map(async (p) => {
+    const got = await fetch(p.original, { headers: auth });
+    if (!got.ok) throw new Error(`${s.zone}: ${await problem(got)}`);
+    const image = await createImageBitmap(await got.blob());
+    return { image, aspect: image.width / image.height };
+  }));
   const canvas = new OffscreenCanvas(s.px.w, s.px.h);
-  drawSheet(canvas.getContext("2d")!, s, image, image.width / image.height);
-  image.close();
+  drawSheet(canvas.getContext("2d")!, s, images);
+  for (const i of images) i.image.close();
   return withDpi(new Uint8Array(await (await canvas.convertToBlob({ type: "image/png" })).arrayBuffer()), dpi);
 }
 printGo.onclick = () => void printFiles();

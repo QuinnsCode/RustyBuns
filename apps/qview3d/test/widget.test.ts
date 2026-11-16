@@ -7,10 +7,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { build } from "vite";
 import { launchChrome, load, openTab, type Tab } from "../../../scripts/chrome.ts";
-import { Design } from "../src/api.ts";
+import { Design, PrintPlan } from "../src/api.ts";
 import { designKey } from "../src/layout.ts";
 import { putOrg, putProduct } from "../src/settings.ts";
-import { local } from "../src/local.ts";
+import { DEMO_ADMIN, local } from "../src/local.ts";
 
 setDefaultTimeout(120_000);
 
@@ -117,7 +117,8 @@ test("the hat, the shirt and the hoodie each go in the cart with their design id
     expect(line["design-url"]).toEndWith(`/r/${designKey("demo", line.design!)}`);
     const stored = Design(JSON.parse((await (await app.bindings.BUCKET.get(designKey("demo", line.design!)))?.text()) ?? "null"));
     expect(stored).toMatchObject({ model: p.model, product: p.product });
-    expect(stored!.layers.map((l): string => l.zone ?? "front").sort()).toEqual([...p.zones].sort());
+    // The cap's picture stays on the shirt's front when the shopper switches; each zone they printed on is there.
+    expect([...new Set(stored!.layers.map((l): string => l.zone ?? "front"))].sort()).toEqual([...p.zones].sort());
   }
   expect(tab.noise).toEqual([]);
   await tab.close();
@@ -160,5 +161,54 @@ test("a product's print zones and starting place shape what the shopper gets", a
   expect(await layer(tab)).toMatchObject({ u: 0.5, v: 0.7, scale: 0.3 });
   // A sleeve picture a page asks for anyway is refused, not printed where the shop said no.
   expect(await tab.eval<string>(`${HAT}.addImage(new Blob(["x"], { type: "image/png" }), "left-sleeve").then(() => "added", (e) => e.message)`)).toContain("left-sleeve");
+  await tab.close();
+});
+
+// A shirt front with two photos and a line of text: the shopper adds them, rewrites the text, picks the first photo
+// and brings it forward, removes the second, and saves. The design keeps them in drawing order, the text and all, and
+// the print plan lays each one's original on the front's one sheet, where the shopper put it.
+test("a shopper puts photos and a line of text on one shirt front, restacks them, and each prints", async () => {
+  const tab = await openTab(chrome.cdp, { w: 390, h: 844 }, true);
+  await load(chrome.cdp, tab, `${app.url}/`, 500);
+  await tab.eval(`document.querySelector('[data-product="crew-tee"]').click()`);
+  await until("the tee", () => tab.eval<boolean>(`${HAT}.model === "tee" && !!${HAT}.design`));
+  const UI = (sel: string) => `${HAT}.shadowRoot.querySelector(${JSON.stringify(sel)})`;
+  await tab.eval(`(async () => {
+    for (const [colour, u] of [["#1d4ed8", 0.35], ["#16a34a", 0.65]]) {
+      const c = new OffscreenCanvas(128, 128), g = c.getContext("2d");
+      g.fillStyle = colour; g.fillRect(0, 0, 128, 128);
+      await ${HAT}.addImage(await c.convertToBlob({ type: "image/png" }));
+      ${HAT}.place({ u, v: 0.6, scale: 0.3 });
+    }
+  })()`);
+  // The Add text button puts a line on and hands the shopper its words to type over.
+  await tab.eval(`${UI('[title="Add text"]')}.click()`);
+  await until("the text box focused", () => tab.eval<boolean>(`${HAT}.shadowRoot.activeElement === ${UI(".editor input")}`));
+  await tab.call("Input.insertText", { text: "Fern & Co" });
+  const lines = (d: string) => tab.eval<{ text?: { value: string }; u: number }[]>(`${HAT}.design.layers.map((l) => ({ text: l.text, u: l.u }))`).then((ls) => (ls.some((l) => l.text?.value === d) ? ls : null));
+  await until("the new words on the shirt", () => lines("Fern & Co"));
+  await tab.eval(`${HAT}.place({ v: 0.25, scale: 0.6 })`);
+
+  // Three chips, bottom first; pick the blue photo and bring it forward once, past the green one.
+  expect(await tab.eval<number>(`${UI(".stack")}.children.length`)).toBe(3);
+  await tab.eval(`${UI(".stack")}.children[0].click()`);
+  await tab.eval(`${UI('[title="Bring forward"]')}.click()`);
+  const order = await tab.eval<number[]>(`${HAT}.design.layers.map((l) => l.u)`);
+  expect(order.map((u) => Math.round(u * 100))).toEqual([65, 35, 50]);
+  // Pick the green one (now at the bottom) and remove it.
+  await tab.eval(`${UI(".stack")}.children[0].click()`);
+  await tab.eval(`${UI('[title="Remove it"]')}.click()`);
+  expect(await tab.eval<number>(`${UI(".stack")}.children.length`)).toBe(2);
+
+  const saved = await tab.eval<{ id: string }>(`${HAT}.save().then((s) => ({ id: s.id }))`);
+  const stored = Design(JSON.parse((await (await app.bindings.BUCKET.get(designKey("demo", saved.id)))?.text()) ?? "null"))!;
+  expect(stored.layers.map((l) => [Math.round(l.u * 100), l.text?.value])).toEqual([[35, undefined], [50, "Fern & Co"]]);
+  expect(stored.layers[1]!.text).toMatchObject({ font: "sans" });
+
+  const plan = PrintPlan(await (await fetch(`${app.url}/api/orgs/demo/designs/${saved.id}/print`, { headers: { authorization: `Bearer ${DEMO_ADMIN}` } })).json());
+  expect(plan.sheets.map((s) => [s.zone, s.unmade])).toEqual([["front", undefined]]);
+  expect(plan.sheets[0]!.pictures.map((p) => [p.original.split("/").pop(), Math.round(p.at.u * 100), p.at.scale])).toEqual(
+    stored.layers.map((l) => [l.original!.split("/").pop(), Math.round(l.u * 100), l.scale]));
+  expect(tab.noise).toEqual([]);
   await tab.close();
 });
