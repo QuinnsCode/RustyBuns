@@ -1,6 +1,6 @@
 # Preview deploys and shared state: plan (#2238, #2237)
 
-Plan only. Nothing here deploys, and nothing is built until someone asks for a preview.
+Nothing deploys by default. The local `bun run preview` (below) is built; the CI parts are still a plan.
 Sources: Alchemy docs for [Previews](https://alchemy.run/cloudflare/compute/previews) and [state stores](https://alchemy.run/state-store), read 2026-10-28.
 
 ## Price first
@@ -25,7 +25,16 @@ Estimate: $0 extra on the current plans. Verify on the first real preview by rea
 
 Blocked on the owner: creating the Neon project and storing the URL. Filed as a `MANUAL RUN:` issue.
 
-## #2238: preview on demand (after #2237)
+## #2238: preview on demand
+
+**Built, local version:** `bun run preview <app>` (`scripts/preview.ts`, `--help` for the flags). You run it from the
+PR's worktree on the owner's Mac. It deploys the app as the EPHEMERAL stage `pr-<n>` with this machine's Cloudflare
+login, then posts one PR comment with the URL and edits that same comment on later runs. Running it again refreshes the
+preview. `--off` destroys it. `--sweep` destroys previews whose PR closed and ones older than 3 days. At most 5 are live.
+The live list is `rustybuns-previews.json` in the shared git dir. This is a whole stage, not an Alchemy Worker Preview.
+That costs the same here (the app's own Worker and DOs, near zero idle), and `destroy --stage` removes all of it.
+
+The CI version below still waits on #2237 and a CI token:
 
 1. Trigger: `/preview` comment or `preview` label on a PR, by a collaborator only (PR text is untrusted). `/preview off` destroys.
 2. A workflow `preview.yml` runs the deploy with `PR_NUMBER` set. Generated stack: `Cloudflare.Worker.ref(name, { stage: "prod" })` as `parent`, then `preview: { of: parent, message: "PR #N" }`. Name defaults to a DNS-safe form of the stage (`pr-123`).
