@@ -37,6 +37,7 @@ export function installable(o: Installable) {
   return {
     name: "rustybuns:installable",
     apply: "build" as const,
+    enforce: "post" as const,   // after vite writes index.html into the bundle
     configResolved(c: { publicDir: string }) { publicDir = c.publicDir; },
     transformIndexHtml(html: string) {
       const head = [
@@ -104,7 +105,7 @@ export function serviceWorker(files: ReadonlyMap<string, string | Uint8Array>): 
   const hash = createHash("sha256");
   for (const n of keep) hash.update(n).update(files.get(n)!);
   const version = `rb-${hash.digest("hex").slice(0, 16)}`;
-  const paths = keep.map((n) => (n === "index.html" ? "/" : `/${n}`));
+  const paths = [...new Set(["/", ...keep.map((n) => (n === "index.html" ? "/" : `/${n}`))])];   // the page, even when vite adds index.html later
   return `// Written by @rustybuns/cli/installable at build time.
 const V = ${JSON.stringify(version)};
 const FILES = ${JSON.stringify(paths)};

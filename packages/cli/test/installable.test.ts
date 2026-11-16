@@ -17,7 +17,6 @@ async function build(publicFiles: Record<string, string>) {
   const html = plugin.transformIndexHtml("<html><head><title>x</title></head><body></body></html>");
   const emitted = new Map<string, string | Uint8Array>();
   await plugin.generateBundle.call({ emitFile: (f) => emitted.set(f.fileName, f.source) }, {}, {
-    "index.html": { type: "asset", source: html },
     "assets/main-abc.js": { type: "chunk", code: "console.log(1)" },
     "assets/main-abc.js.map": { type: "asset", source: "{}" },
   });
