@@ -57,7 +57,7 @@ async function smokeApp(app: string, cdp: Cdp, out: string): Promise<AppResult> 
     server = await serve(app, cwd);
     const url = new URL(PATHS[app] ?? "/", server.url).href;
     mkdirSync(join(out, app), { recursive: true });
-    const ref = await visit(cdp, url, REFERENCE, false);
+    const ref = await visit(cdp, url, REFERENCE, false).catch(() => visit(cdp, url, REFERENCE, false));
     const phones: PhoneResult[] = [];
     for (const ph of screens) {
       const shotName = `${app}/${ph.name.replaceAll(" ", "-").toLowerCase()}.jpg`;
@@ -81,7 +81,8 @@ async function smokeApp(app: string, cdp: Cdp, out: string): Promise<AppResult> 
 const out = resolve(opt("out") ?? "dist/phone-smoke");
 
 if (flag("merge")) {
-  const dirs = argv.slice(argv.indexOf("--merge") + 1).filter((a) => !a.startsWith("--") && a !== out).map((d) => resolve(d));
+  // `--out`'s value sits among the shard folders (`--merge phone-* --out dist/phone-smoke`): it is where they go, not one of them.
+  const dirs = argv.slice(argv.indexOf("--merge") + 1).filter((a, i, all) => !a.startsWith("--") && all[i - 1] !== "--out").map((d) => resolve(d));
   mkdirSync(out, { recursive: true });
   const reports = dirs.map((d) => { cpSync(d, out, { recursive: true }); return JSON.parse(readFileSync(join(d, "report.json"), "utf8")) as Report; });
   finish(mergeReports(reports));

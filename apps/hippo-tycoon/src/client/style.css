@@ -22,7 +22,8 @@ button, input, select { font: inherit; color: inherit; }
 .popup.big { font-size: 34px; }
 @keyframes rise { from { transform: translate(-50%, -50%) scale(0.7); opacity: 1; } 60% { opacity: 1; } to { transform: translate(-50%, -200%) scale(1.1); opacity: 0; } }
 
-.menu { position: fixed; inset: 0; display: grid; place-items: center; overflow: auto; padding: 20px;
+/* 64px above and below: the fixed Controls cog (.cog-host) sits in the top right, and a card that fills a short phone would put its ? under it */
+.menu { position: fixed; inset: 0; display: grid; place-items: center; overflow: auto; padding: 64px 20px;
   background: radial-gradient(900px 520px at 50% 0%, rgba(255, 61, 154, 0.14), transparent 62%), radial-gradient(800px 560px at 0% 100%, rgba(57, 230, 255, 0.10), transparent 60%), linear-gradient(rgba(8, 6, 16, 0.25), rgba(8, 6, 16, 0.55)); }
 /* the island behind the menus (ui/Backdrop.tsx); the gradient under it stands in when there is no WebGL */
 .backdrop { position: fixed; inset: 0; background: radial-gradient(900px 520px at 50% 0%, rgba(255, 61, 154, 0.2), transparent 62%), radial-gradient(700px 500px at 100% 100%, rgba(40, 150, 110, 0.18), transparent 60%), var(--bg); }
