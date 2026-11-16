@@ -1,5 +1,4 @@
 {
-  "apps/borg-postgres/.rustybuns/desktop.ts": 1,
   "apps/codesplitter/src/env.ts": 3,
   "apps/codesplitter/src/hooks.ts": 2,
   "apps/codesplitter/src/identity.ts": 1,
@@ -25,16 +24,5 @@
   "packages/shell-bun/src/webmcp.ts": 1,
   "packages/util/src/codemode.ts": 1,
   "packages/util/src/features.ts": 1,
-  "packages/util/src/qlave-call.ts": 2,
-  "scripts/builder-nightly.ts": 1,
-  "scripts/check-release.ts": 1,
-  "scripts/ci-apps.ts": 1,
-  "scripts/cli-bad-inputs.ts": 2,
-  "scripts/deprecate-bad.ts": 1,
-  "scripts/docs.ts": 1,
-  "scripts/drop.ts": 1,
-  "scripts/phone-smoke.ts": 1,
-  "scripts/remote-ci.ts": 1,
-  "scripts/trial-flags.ts": 1,
-  "scripts/trial-github.ts": 2
+  "packages/util/src/qlave-call.ts": 2
 }

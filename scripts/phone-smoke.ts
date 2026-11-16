@@ -12,7 +12,7 @@
 import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { launchChrome, load, openTab, startVite, type Cdp } from "./chrome.ts";
-import { PHONES, REFERENCE, WEB_APPS, analyze, appStatus, board, mergeReports, pageAudit, shardOf, type AppResult, type Audit, type PhoneResult, type Report } from "./phone-smoke-lib.ts";
+import { PHONES, REFERENCE, WEB_APPS, analyze, appStatus, board, mergeReports, pageAudit, shardOf, Report, type AppResult, type Audit, type PhoneResult } from "./phone-smoke-lib.ts";
 
 /** Where an app opens for the run, when its root is random: the same course on every screen, so the laptop and the phones show the same buttons. */
 export const PATHS: Record<string, string> = { "alien-disc-golf": "/?seed=42&wind=synthetic" };
@@ -84,7 +84,7 @@ if (flag("merge")) {
   // `--out`'s value sits among the shard folders (`--merge phone-* --out dist/phone-smoke`): it is where they go, not one of them.
   const dirs = argv.slice(argv.indexOf("--merge") + 1).filter((a, i, all) => !a.startsWith("--") && all[i - 1] !== "--out").map((d) => resolve(d));
   mkdirSync(out, { recursive: true });
-  const reports = dirs.map((d) => { cpSync(d, out, { recursive: true }); return JSON.parse(readFileSync(join(d, "report.json"), "utf8")) as Report; });
+  const reports = dirs.map((d) => { cpSync(d, out, { recursive: true }); return Report(JSON.parse(readFileSync(join(d, "report.json"), "utf8"))); });
   finish(mergeReports(reports));
 } else {
   let apps = opt("apps")?.split(",") ?? WEB_APPS;

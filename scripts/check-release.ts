@@ -4,6 +4,9 @@
 // `--list` prints the published packages, dependencies first: the order npm-publish.yml packs and
 // publishes them in, and the names scripts/npm-claim.ts claims.
 import { readFileSync } from "node:fs";
+import { obj, str } from "../packages/util/src/guard.ts";
+
+const Versioned = obj({ version: str(100) });
 
 const PKGS = ["ports", "ui", "util", "game-controls", "models", "terrain", "rig", "seal", "cms", "shell-bun", "native", "cli"];
 if (process.argv.includes("--list")) { console.log(PKGS.join(" ")); process.exit(0); }
@@ -11,7 +14,7 @@ const lock = readFileSync("bun.lock", "utf8");
 const bad: string[] = [];
 const versions = new Set<string>();
 for (const p of PKGS) {
-  const want = JSON.parse(readFileSync(`packages/${p}/package.json`, "utf8")).version as string;
+  const want = Versioned(JSON.parse(readFileSync(`packages/${p}/package.json`, "utf8"))).version;
   versions.add(want);
   const got = lock.match(new RegExp(`"packages/${p}": \\{[^}]*?"version": "([^"]+)"`))?.[1];
   if (got !== want) bad.push(`${p}: package.json ${want}, bun.lock ${got ?? "missing"}`);
