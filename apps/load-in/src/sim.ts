@@ -3,6 +3,7 @@
 // (main.ts) draws this and feeds it input; the harness and the tests drive the same functions.
 import { clamp } from "@rustybuns/util";
 import { gear } from "@rustybuns/gear";
+import { feltKg } from "./assists.ts";
 
 /** Metres per second, empty-handed and standing. */
 export const WALK = 1.5;
@@ -76,8 +77,8 @@ export const LOW = 0.1;
 export const facing = (yaw: number) => ({ x: -Math.sin(yaw), z: -Math.cos(yaw) });
 export const heldItem = (w: World) => (w.held ? w.items.find((i) => i.key === w.held!.key) ?? null : null);
 
-/** How fast you walk carrying `kg`: a 45 kg sub is a slow shuffle, a guitar barely counts. */
-export const carrySpeed = (kg: number, crouch = false) => WALK * clamp(1 - kg / 55, 0.2, 1) * (crouch ? 0.5 : 1);
+/** How fast you walk carrying `kg` (as the dial feels it, so Cozy carries half): a 45 kg sub is a slow shuffle on Sim. */
+export const carrySpeed = (kg: number, crouch = false) => WALK * clamp(1 - feltKg(kg) / 55, 0.2, 1) * (crouch ? 0.5 : 1);
 
 /** A box's footprint as its four corners on the floor. */
 function corners(x: number, z: number, rot: number, w: number, d: number): [number, number][] {
@@ -163,7 +164,7 @@ export function pickUp(w: World, key: string): Answer {
   if (w.held) return { ok: false, why: "your hands are full" };
   const g = gearOf(i);
   if (Math.hypot(i.x - w.you.x, i.z - w.you.z) > REACH) return { ok: false, why: `${g.what} is out of reach` };
-  if (g.kg > MAX_LIFT) return { ok: false, why: `${g.what} is ${g.kg} kg, too heavy to lift alone` };
+  if (feltKg(g.kg) > MAX_LIFT) return { ok: false, why: `${g.what} is ${g.kg} kg, too heavy to lift alone` };
   const fp = footprint(i), top = i.y + dims(i)[1];
   if (w.items.some((o) => o !== i && Math.abs(o.y - top) < 0.01 && overlap(fp, footprint(o)))) return { ok: false, why: `something is on the ${g.what}` };
   w.held = { key, rel: i.rot - w.you.yaw };

@@ -39,7 +39,8 @@ export const RULES: Record<Dial, Rules> = {
 
 export type Assist = keyof Rules;
 
-let dial: Dial = "crew";
+// The plain sim (tests, the harness before the page turns it) runs on real numbers; the page starts a new player on Crew.
+let dial: Dial = "sim";
 
 /** Where the dial sits now. */
 export const currentDial = () => dial;

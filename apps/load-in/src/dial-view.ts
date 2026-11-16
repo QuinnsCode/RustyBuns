@@ -1,5 +1,7 @@
 // The dial on the page: three stops in the menu (Cozy, Crew, Sim), remembered in this browser, and the clock to doors
-// in the HUD (fixed width, counting down, red once doors have passed; an "i" tip says what being late costs).
+// in the HUD (fixed width, counting down, red once doors have passed; an "i" tip says what being late costs), and the
+// jack glow (the jackGlow assist) while you hold a cable end.
+import * as THREE from "three";
 import { DIALS, DIAL_NAMES, type Dial, currentDial, setDial } from "./assists.ts";
 import { MOOD_PER_MIN, PAY_PER_MIN, clockText, doors } from "./clock.ts";
 
@@ -10,9 +12,11 @@ const TIPS: Record<Dial, string> = {
   sim: "Real weights, doors on time, breakers trip, a short cable is short",
 };
 
-/** The stop saved in this browser, if any (storage can be missing or blocked). */
+/** The stop saved in this browser, or Crew for a new player (storage can be missing or blocked). */
 export function savedDial(): Dial {
-  try { return setDial(localStorage.getItem(KEY)); } catch { return currentDial(); }
+  let saved: string | null = null;
+  try { saved = localStorage.getItem(KEY); } catch { /* no storage: the default stop */ }
+  return setDial(saved ?? "crew");
 }
 
 /** Three buttons that turn the dial; `onChange` after each turn. */
@@ -58,6 +62,23 @@ export function mountClock(parent: HTMLElement) {
       time.textContent = `Doors ${clockText(d.left)}`;
       el.classList.toggle("late", d.left < 0);
       return d;
+    },
+  };
+}
+
+/** The jackGlow assist on the page: a soft light on each free jack that would take the cable in your hand. */
+export function mountGlow(scene: THREE.Scene, most = 64) {
+  const dots = new THREE.InstancedMesh(new THREE.SphereGeometry(0.035, 8, 6), new THREE.MeshBasicMaterial({ color: 0x6fdc8c, transparent: true, opacity: 0.85, depthTest: false }), most);
+  dots.renderOrder = 2;
+  dots.count = 0;
+  scene.add(dots);
+  const m = new THREE.Matrix4();
+  return {
+    update(points: readonly { x: number; y: number; z: number }[], t: number) {
+      const s = 1 + 0.25 * Math.sin(t * 5);
+      dots.count = Math.min(most, points.length);
+      for (let i = 0; i < dots.count; i++) dots.setMatrixAt(i, m.makeScale(s, s, s).setPosition(points[i]!.x, points[i]!.y, points[i]!.z));
+      dots.instanceMatrix.needsUpdate = true;
     },
   };
 }

@@ -3,7 +3,7 @@
 // once per world and then `keys` and `update`; everything else stays in here.
 import * as THREE from "three";
 import { aimed, type World } from "../sim.ts";
-import { FLOOR, PASS, STAND_MIN, TARGET, WINDOW, ZONES, type Zone, aim, heat, master, raise, rig, score, type Score } from "./dive-bar.ts";
+import { FLOOR, PASS, STAND_MIN, TARGET, WINDOW, ZONES, type Zone, type Show, aim, heat, master, raise, rig, score, show, type Score } from "./dive-bar.ts";
 
 const STEP = Math.PI / 36, TILT = Math.PI / 60;
 
@@ -23,7 +23,7 @@ export type BarView = {
   heatOn: boolean;
   setHeat(on: boolean): void;
   /** The doors open: the card shows the final score. */
-  doors(): Score;
+  doors(): Show;
   dispose(): void;
 };
 
@@ -64,7 +64,7 @@ export function barView(scene: THREE.Scene, hud: HTMLElement, getWorld: () => Wo
   card.className = "bar-card";
   hud.appendChild(card);
 
-  let seen = "", last: Score | null = null, opened: Score | null = null;
+  let seen = "", last: Score | null = null, opened: Show | null = null;
   const signature = (w: World) => JSON.stringify([w.held?.key, w.items.map((i) => [i.x, i.y, i.z, i.rot]), rig(w)]);
 
   function paint(w: World) {
@@ -101,12 +101,14 @@ export function barView(scene: THREE.Scene, hud: HTMLElement, getWorld: () => Wo
       const s = last!, db = (v: number | null) => (v === null ? "silent" : `${v.toFixed(0)} dB`);
       card.innerHTML = `<b>${opened ? "Doors open" : "Dive bar"}</b>`
         + `<span>Crowd ${db(s.crowd)} (target ${TARGET})</span><span>Bar ${s.gap === null ? "silent" : `${s.gap.toFixed(0)} dB under`}</span>`
-        + `<span>Fader ${rig(w).master} dB</span><span class="${s.pass ? "pass" : ""}">Score ${(opened ?? s).score} / ${PASS} to pass</span>`
+        + `<span>Fader ${rig(w).master} dB</span>` + (opened
+          ? `<span class="${opened.pass ? "pass" : ""}">Show ${opened.score} / ${PASS} to pass</span><span>Sound ${opened.sound}, crowd mood ${opened.mood}</span><span>Paid $${opened.pay} of $${opened.fee}</span>`
+          : `<span class="${s.pass ? "pass" : ""}">Score ${s.score} / ${PASS} to pass</span>`)
         + `<small>H heat map, Q / E turn, R / V tilt, Z / X stand, [ ] fader, Enter doors</small>`;
     },
     doors() {
       view.update();
-      return (opened = last!);
+      return (opened = show(getWorld()));
     },
     dispose() { scene.remove(g); card.remove(); tex.dispose(); },
   };

@@ -3,6 +3,7 @@
 // and the back-bar cooler is always plugged into circuit 3. Put the amp rack on the cooler's circuit and it trips at
 // show level, killing the cooler with it: walk to the panel, reset it, move the plug. `judge` runs the patch through
 // packages/gear's compile, trips what is over, and says what is fed. Plain data, no DOM.
+import { assist } from "../assists.ts";
 import { CIRCUIT_15A, CIRCUIT_20A, type Cable, type Compiled, type Outlet, type Placed, cableLoss, compile, gear as catalog } from "@rustybuns/gear";
 import { REACH, type Answer, type Level, type World } from "../sim.ts";
 import type { Fed } from "../audio/hear.ts";
@@ -48,8 +49,8 @@ export const newPanel = (): Panel => ({ tripped: new Set() });
 export const SPEAKER_AWG = 16;
 
 export type Judged = Compiled & {
-  /** Each circuit, its breaker and whether it has tripped. */
-  circuits: { circuit: string; amps: number; tripped: boolean }[];
+  /** Each circuit, its breaker, whether it has tripped, and whether it is over (on Cozy it warns instead of tripping). */
+  circuits: { circuit: string; amps: number; tripped: boolean; over: boolean }[];
   /** Breakers that tripped on this check. */
   justTripped: string[];
   /** dB each passive speaker loses in its speaker cable. */
@@ -74,7 +75,8 @@ export function judge(w: World, placed: readonly Placed[], cables: readonly Cabl
   let r = compile(placed, all, { outlets: outlets(w.level, panel) });
   for (let i = 0; i < 4; i++) {
     const over = r.problems.filter((p) => p.kind === "breaker" && p.circuit && !panel.tripped.has(p.circuit)).map((p) => p.circuit!);
-    if (over.length === 0) break;
+    // The breakersTrip assist: off (Cozy), an overloaded circuit only warns and keeps playing.
+    if (over.length === 0 || !assist("breakersTrip")) break;
     for (const c of over) panel.tripped.add(c), justTripped.push(c);
     r = compile(placed, all, { outlets: outlets(w.level, panel) });
   }
@@ -89,7 +91,8 @@ export function judge(w: World, placed: readonly Placed[], cables: readonly Cabl
   }
   const seen = new Map<string, number>();
   for (const o of outlets(w.level, panel)) seen.set(o.circuit, o.breaker.amps);
-  const circuits = [...seen].map(([circuit, amps]) => ({ circuit, amps, tripped: panel.tripped.has(circuit) }));
+  const over = new Set(r.problems.filter((p) => p.kind === "breaker" && p.circuit).map((p) => p.circuit!));
+  const circuits = [...seen].map(([circuit, amps]) => ({ circuit, amps, tripped: panel.tripped.has(circuit), over: over.has(circuit) }));
   return { ...r, circuits, justTripped, lossDb };
 }
 
