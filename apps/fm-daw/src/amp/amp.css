@@ -161,6 +161,30 @@ button { cursor: pointer; }
 }
 .footswitch:active { transform: translateY(3px); box-shadow: 0 1px 0 #3a3d42, 0 3px 8px rgba(0, 0, 0, 0.5); }
 
+/* ---- the patch: gear, jacks, cables ---- */
+.patch { position: relative; display: grid; gap: 10px; padding: 14px 0 40px; touch-action: none; }
+.patch-row { display: flex; flex-wrap: wrap; justify-content: center; gap: 28px 44px; }
+.patch-gear {
+  display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 10px;
+  border: 1px solid var(--edge); background: var(--glass); user-select: none;
+}
+.patch-gear.bad { border-color: var(--hot); }
+.patch-name { font: 600 0.95rem/1 var(--silk); letter-spacing: 0.08em; text-transform: uppercase; white-space: nowrap; }
+.jack {
+  width: 26px; height: 26px; border-radius: 50%; padding: 0; cursor: grab;
+  border: 3px solid #5c6168; background: radial-gradient(circle, #050607 0 34%, #2a2d32 36%);
+}
+.jack.instrument { border-color: #b37c00; }
+.jack.speaker { border-color: #3d86b0; }
+.jack.plugged { background: radial-gradient(circle, #d8dbe0 0 30%, #2a2d32 34%); }
+.jack.bad { box-shadow: 0 0 0 3px var(--hot); }
+.patch-cables { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; }
+.patch-cables path { fill: none; stroke-width: 5; stroke-linecap: round; opacity: 0.9; }
+.patch-cables path.bad { stroke-dasharray: 10 6; }
+.patch-cables path.held { opacity: 0.6; }
+.patch-problems { list-style: none; margin: 0; padding: 0; display: grid; justify-items: center; gap: 4px; color: var(--hot); }
+.patch-problems:empty { display: none; }
+
 /* ---- plug in ---- */
 .start-card {
   position: fixed; inset: 0; display: grid; place-content: center; justify-items: center; gap: 14px; padding: 16px; text-align: center;
