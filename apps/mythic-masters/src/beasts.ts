@@ -360,6 +360,8 @@ export class Puppet {
   private kb = 0;
   private kbV = 0;
   private readonly kbDir = new THREE.Vector3();
+  /** A blow just landed on the ground: the next foot pass steps the far feet back to catch the shove. */
+  private reel = false;
   private lean = 0;
   private leanV = 0;
   /** The strike's follow-through: a spring chasing the strike's extent that overshoots it as it snaps out. */
@@ -635,6 +637,7 @@ export class Puppet {
     if (f.stun > this.prevStun + 1 && look) {
       const dx = f.pos.x - look.x, dz = f.pos.z - look.z, d = Math.hypot(dx, dz) || 1;
       this.kbDir.set(dx / d, 0, dz / d); this.kbV = 3 + 5 * Math.min(1, (f.stun - this.prevStun) / 22);
+      if (grounded && !hanging) this.reel = true;
     }
     const kk = 55, bkdt = Math.min(dt, 1 / 30);
     this.kbV += (-kk * this.kb - 2 * 0.75 * Math.sqrt(kk) * this.kbV) * bkdt;
@@ -707,10 +710,26 @@ export class Puppet {
         this.ik.moveGoal(ft.tip, this.tmp.x, this.tmp.y, this.tmp.z);
       }
     } else if (grounded) {
+      // a blow moves the feet (#4669 round 21: the head and chest took the hit, the feet stayed planted). The feet on the
+      // side away from the striker step back at once, past where the shove carries the body, so it reels onto them; while
+      // it rocks the rest follow sooner than a walk's stride, a shuffle to catch the weight.
+      if (this.reel) {
+        this.reel = false;
+        const gx = g.position.x, gz = g.position.z, along = (ft: Foot) => (ft.planted.x - gx) * this.kbDir.x + (ft.planted.z - gz) * this.kbDir.z;
+        const back = [...this.feet].sort((a, b) => along(b) - along(a)).slice(0, Math.max(1, Math.floor(this.feet.length / 2)));
+        const reach = 0.06 * this.kbV + (0.08 + 0.1 * this.stagger) * h * s;
+        for (const ft of back) {
+          ft.from.copy(ft.planted);
+          this.homeWorld(ft, ft.to).addScaledVector(this.kbDir, reach);
+          ft.to.y = f.pos.y;
+          ft.swing = 0.13; ft.t = 0;
+        }
+      }
+      const reeling = this.stagger > 0.12 || this.kb > 0.05;
       const swinging = this.feet.filter((ft) => ft.t < 1).length;
       const due = this.feet.filter((ft) => ft.t >= 1)
         .map((ft) => ({ ft, d: ft.planted.distanceTo(this.homeWorld(ft, this.tmp)) }))
-        .filter(({ d }) => d > this.stride(speed)).sort((a, b) => b.d - a.d);
+        .filter(({ d }) => d > this.stride(speed) * (reeling ? 0.45 : 1)).sort((a, b) => b.d - a.d);
       let budget = Math.max(1, Math.floor(this.feet.length / 2)) - swinging;
       const stride = this.stride(speed);
       for (const { ft } of due) {

@@ -281,6 +281,26 @@ test("a heavy blow flattens the struck body front to back and curls it over the 
   expect(Math.abs(span() - rest)).toBeLessThan(rest * 0.03);
 }, 30_000);
 
+// #4669 round 21: the head and chest took a blow while every foot stayed where it stood
+test.each(["rougarou", "hodag"])("a blow from in front steps the struck body's feet back, and it stands again", async (id) => {
+  const c = ROSTER.find((x) => x.id === id)!;
+  const p = new Puppet(await beast(c.id), body(c), c.archetype);
+  const f = newMatch(c, c).f[0];
+  f.pos = { x: 0, y: 0, z: 0 }; f.vel = { x: 0, y: 0, z: 0 }; f.yaw = 0; f.onGround = true;
+  const striker = { x: 3, y: 0, z: 0 };
+  for (let i = 0; i < 60; i++) p.update(f, 1 / 60, i, striker);
+  const rest = p.feetWorld();
+  f.state = "stun"; f.stun = 22;
+  let back = 0;
+  for (let i = 60; i < 100; i++) {
+    f.stun = Math.max(0, f.stun - 1); if (f.stun === 0) f.state = "free"; p.update(f, 1 / 60, i, striker);
+    back = Math.max(back, ...p.feetWorld().map((v, k) => rest[k]!.x - v.x));
+  }
+  expect(back).toBeGreaterThan(0.08 * body(c).height);   // a foot went back, away from the striker
+  for (let i = 100; i < 300; i++) p.update(f, 1 / 60, i, striker);
+  expect(p.drift()).toBeLessThan(p.stride());
+}, 30_000);
+
 // the Mothman's wing tips tower over its head, which once read it as half upright and halved its lean (#4267). The bar sits
 // between the two: flying leans 0.82 rad past standing for the Jersey Devil, 0.85 for the Mothman, 0.60 when it read half upright.
 test.each(["jersey-devil", "mothman"])("an upright flyer (%s) flies leaning into it, head well ahead of its hips, not hanging like a lifted biped", async (id) => {
