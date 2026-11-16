@@ -96,11 +96,16 @@ describe("a hosted deploy", () => {
     const { call, send, seen } = await hosted();
     await send("ryan-quinn", K, { token: TOKEN, account_id: ACCOUNT }, "PUT");
     await send("ryan-quinn", D, { on_commit: true }, "PUT");
-    await send("ryan-quinn", "/api/repos/ryan-quinn/lab/do/commit?path=package.json", { message: "mine" });
+    // Each commits a file of its own: a commit of nothing new makes no commit, so it ships nothing.
+    const commit = async (who: string, path: string) => {
+      await send(who, "/api/repos/ryan-quinn/lab/files", { path, content: "export {}" });
+      await send(who, `/api/repos/ryan-quinn/lab/do/commit?path=${path}`, { message: who });
+    };
+    await commit("ryan-quinn", "mine.ts");
     const d = await settle(call);
     expect(d.history).toHaveLength(1);
     expect(d.history[0]).toMatchObject({ by: "ryan-quinn", trigger: "commit", runner: "hosted", status: "done" });
-    await send("pat-person", "/api/repos/ryan-quinn/lab/do/commit?path=package.json", { message: "crew" });
+    await commit("pat-person", "crew.ts");
     await Bun.sleep(30);
     expect(seen.env).toHaveLength(1);
   });

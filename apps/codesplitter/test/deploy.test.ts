@@ -185,8 +185,10 @@ test("a commit while a deploy runs ships once more afterwards; a second press is
   await send("ryan", "/api/repos/ryan/lab/deploy", { on_commit: true }, "PUT");
   expect((await send("ryan", "/api/repos/ryan/lab/deploy", {})).status).toBe(202);
   expect((await send("ryan", "/api/repos/ryan/lab/deploy", {})).status).toBe(409);
-  await send("ryan", "/api/repos/ryan/lab/do/commit?path=package.json", { message: "during" });
-  await send("ryan", "/api/repos/ryan/lab/do/commit?path=package.json", { message: "during, again" });
+  for (const [path, message] of [["c1.ts", "during"], ["c2.ts", "during, again"]]) {
+    await send("ryan", "/api/repos/ryan/lab/files", { path, content: "export {}" });
+    await send("ryan", `/api/repos/ryan/lab/do/commit?path=${path}`, { message });
+  }
   f.release();
   const d = await settle(call, 2);
   expect(d.history.map((h: any) => [h.trigger, h.status])).toEqual([["commit", "done"], ["button", "done"]]);
