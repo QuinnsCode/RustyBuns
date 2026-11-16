@@ -1,4 +1,4 @@
-// Who is asking. Better Auth (email and password, plus GitHub and Google when their keys are
+// Who is asking. Better Auth (email and password, eqosys when EQOSYS_URL is set, plus GitHub and Google when their keys are
 // set) answers /api/auth/*; the rest of the app sees a User or null. An API key (qk_…, made
 // per org by an owner) acts as the person who made it, inside that org only.
 //
@@ -6,6 +6,8 @@
 // letting anyone in as anyone.
 
 import { betterAuth } from "better-auth";
+import { genericOAuth } from "better-auth/plugins";
+import { check, obj, opt, str, bool } from "@rustybuns/util/guard";
 import { b64url, error, esc, json, NAME, readBody, sha256, type Env } from "./env.ts";
 import type { Ctx } from "./orgs.ts";
 
@@ -16,6 +18,7 @@ export const accountsOff = () => error(503, "accounts off");
 
 export function providers(env: Env) {
   const out = ["email"];
+  if (env.EQOSYS_URL) out.push("eqosys");
   if (env.GITHUB_CLIENT_ID && env.GITHUB_CLIENT_SECRET) out.push("github");
   if (env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET) out.push("google");
   return out;
@@ -35,6 +38,37 @@ async function mail(env: Env, to: string, subject: string, line: string, link: s
   try { await env.EMAIL!.send({ from: { email: env.EMAIL_FROM!, name: NAME }, to, subject, text, html }); }
   catch (e) { console.error("qCRM: account email failed", String((e as Error)?.message ?? e)); }
 }
+
+/** What eqosys's /oauth/userinfo answers (apps/eqosys/src/oauth.ts): who, and whether eqosys has seen them prove the email. */
+export const EqosysUser = obj({ sub: str(200), email: str(320), email_verified: opt(bool()), name: opt(str(200, { min: 0 })) });
+
+/**
+ * "Sign in with eqosys": eqosys is an OpenID provider and qCRM a public client (id "qcrm" in eqosys's APPS, PKCE, no
+ * secret). The endpoints are written out rather than discovered, since an auth is made per request and discovery
+ * would fetch on every one. Who it is comes from userinfo, which says live whether the email is verified: a verified
+ * one links to the qCRM account with that email (Better Auth's own linking), and a new one gets a fresh account.
+ */
+const eqosysProvider = (url: string) => {
+  const base = url.replace(/\/+$/, "");
+  return genericOAuth({
+    config: [{
+      providerId: "eqosys",
+      clientId: "qcrm",
+      tokenEndpointAuth: { method: "none" },
+      authorizationUrl: `${base}/oauth/authorize`,
+      tokenUrl: `${base}/oauth/token`,
+      userInfoUrl: `${base}/oauth/userinfo`,
+      scopes: ["openid", "email", "profile"],
+      pkce: true,
+      getUserInfo: async (tokens) => {
+        const r = await fetch(`${base}/oauth/userinfo`, { headers: { authorization: `Bearer ${tokens.accessToken}` } });
+        if (!r.ok) return null;
+        const u = check(EqosysUser, await r.json().catch(() => null));
+        return u && { id: u.sub, email: u.email, emailVerified: u.email_verified === true, name: u.name || u.email.split("@")[0]! };
+      },
+    }],
+  });
+};
 
 const make = (env: Env, origin: string) => betterAuth({
   // better-auth wants Cloudflare's D1Database class; Env.DB is the part of it this app calls.
@@ -66,6 +100,7 @@ const make = (env: Env, origin: string) => betterAuth({
     ...(env.GITHUB_CLIENT_ID && env.GITHUB_CLIENT_SECRET ? { github: { clientId: env.GITHUB_CLIENT_ID, clientSecret: env.GITHUB_CLIENT_SECRET } } : {}),
     ...(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET ? { google: { clientId: env.GOOGLE_CLIENT_ID, clientSecret: env.GOOGLE_CLIENT_SECRET } } : {}),
   },
+  plugins: env.EQOSYS_URL ? [eqosysProvider(env.EQOSYS_URL)] : [],
 });
 // One instance per request, never per isolate: Better Auth's D1 queries share one connection
 // mutex, and a request cancelled while holding it would hang every later sign-in in the isolate.

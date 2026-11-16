@@ -38,6 +38,8 @@ export default defineConfig({
     AUTH_LIMIT: { type: "ratelimit", namespaceId: "8201", simple: { limit: 20, period: 60 } },
     BETTER_AUTH_SECRET: { type: "secret", op: "op://qcrm/better-auth/password" },
     BETTER_AUTH_URL: { type: "var", value: "https://qcrm.qntbr.com" },
+    // Sign in with eqosys: eqosys sends people back only to https://qcrm.qntbr.com/api/auth/callback/eqosys (its apps.ts).
+    EQOSYS_URL: { type: "var", value: "https://eqosys.qntbr.com" },
     // Optional social sign-in: a button shows once both halves of a provider are set (src/auth.ts).
     GITHUB_CLIENT_ID: { type: "secret", op: "op://qcrm/github-client-id/password", optional: true },
     GITHUB_CLIENT_SECRET: { type: "secret", op: "op://qcrm/github-client-secret/password", optional: true },

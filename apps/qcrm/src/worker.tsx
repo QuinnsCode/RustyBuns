@@ -28,9 +28,11 @@ let secret: Promise<string> | undefined;
 const e = async (req?: Request): Promise<AppEnv> => {
   const base = env as unknown as AppEnv;
   if (!req) return base;
-  if (import.meta.env.VITE_IS_DEV_SERVER) return { ...base, BETTER_AUTH_URL: new URL(req.url).origin, BETTER_AUTH_SECRET: base.BETTER_AUTH_SECRET ?? "dev-only-secret-never-in-production-0000" };
+  // eqosys sends a sign-in back only to qcrm.qntbr.com's callback, so the dev server and the desktop don't offer it.
+  const local = { ...base, EQOSYS_URL: undefined };
+  if (import.meta.env.VITE_IS_DEV_SERVER) return { ...local, BETTER_AUTH_URL: new URL(req.url).origin, BETTER_AUTH_SECRET: base.BETTER_AUTH_SECRET ?? "dev-only-secret-never-in-production-0000" };
   if (!loopback(req)) return base;
-  return { ...base, BETTER_AUTH_URL: new URL(req.url).origin, BETTER_AUTH_SECRET: base.BETTER_AUTH_SECRET || await deskSecret(base.DB) };
+  return { ...local, BETTER_AUTH_URL: new URL(req.url).origin, BETTER_AUTH_SECRET: base.BETTER_AUTH_SECRET || await deskSecret(base.DB) };
 };
 
 // vite dev's local D1 starts empty; the first API call applies every migration itself, so `bun run dev`

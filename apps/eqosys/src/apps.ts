@@ -57,7 +57,7 @@ export const APPS: QApp[] = [
   { id: "fm-daw", name: "FM DAW", kind: "suite", origins: ["https://fm-daw-worker-live-ryanquinn-ugis7btfi5dsu52t.notryanquinn.workers.dev"], starts: ["member"], shot: true, genre: "Party & Music" },
   { id: "motion-midi", name: "Motion MIDI", kind: "suite", origins: ["https://motion-midi.notryanquinn.workers.dev"], starts: ["member"], shot: true, genre: "Party & Music", maturity: "experimental" },
   { id: "brianfloresblitzing", name: "One Team in 32", kind: "suite", origins: ["https://brianfloresblitzing.notryanquinn.workers.dev"], starts: ["member"], shot: true, genre: "Sports & Skate" },
-  { id: "qcrm", name: "qCRM", kind: "suite", origins: ["https://qcrm.qntbr.com"], starts: ["member"], shot: true, genre: "Work & Tools" },
+  { id: "qcrm", name: "qCRM", kind: "suite", origins: ["https://qcrm.qntbr.com"], returns: ["https://qcrm.qntbr.com/api/auth/callback/eqosys"], starts: ["member"], shot: true, genre: "Work & Tools" },
   // The QNTBR site (the qbear3 repo): its Better Auth signs people in with eqosys as an OpenID provider (oauth.ts).
   { id: "qntbr", name: "QNTBR", kind: "suite", origins: ["https://qntbr.com"], returns: ["https://qntbr.com/api/auth/callback/eqosys"], starts: ["member"], shot: true, genre: "Work & Tools" },
   // A packing helper for qCRM, not a game: listed with the suites, at the bottom.

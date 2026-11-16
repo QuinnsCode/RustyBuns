@@ -61,7 +61,8 @@
   ],
   "vars": {
     "BETTER_AUTH_URL": "https://qcrm.qntbr.com",
-    "ARTSTEW_URL": "https://artstewengine.qntbr.com"
+    "ARTSTEW_URL": "https://artstewengine.qntbr.com",
+    "EQOSYS_URL": "https://eqosys.qntbr.com"
   },
   "triggers": {
     "crons": [

@@ -52,7 +52,7 @@ Agents and scripts: `POST /api/scenario {"name": "webhooks"}` (`GET /api/scenari
 
 | Piece | Where | Notes |
 | --- | --- | --- |
-| Accounts | `src/auth.ts` | Better Auth on D1. Email and password; GitHub and Google when their keys are set. API keys (`qk_…`, hashed at rest) for agents. |
+| Accounts | `src/auth.ts` | Better Auth on D1. Email and password; eqosys (`EQOSYS_URL`, PKCE, a verified email links to the qCRM account with it); GitHub and Google when their keys are set. API keys (`qk_…`, hashed at rest) for agents. |
 | Orgs | `src/orgs.ts` | An org id is `org_` + a hash of the owner's account id and the server secret. No subdomains, nothing to enumerate. |
 | Roles | `src/rbac.ts` | `seasonal < employee < manager < owner < admin < super_admin`, one `can(role, action)` table. `super_admin` is the account named by `SUPER_ADMIN_EMAIL`: admin in every org and never stored as a member. |
 | CRUD | `src/crm.ts` | Four entities, one generic helper, keyset paging, `?q=` search, soft delete. Every query carries `org_id`. |
