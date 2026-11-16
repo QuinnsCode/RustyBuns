@@ -28,6 +28,9 @@ describe("mirrors: a dug fork turned into one (#875)", () => {
     expect(turned.status).toBe(201);
     expect(await turned.json()).toMatchObject({ state: "ok", ahead: 0, behind: 0 });
     expect(await upShow("README")).toBe("hello from the dig\nworld");
+    // Made in the fork before it was a mirror, it still goes up as this machine's git identity, not the handle's.
+    expect(await sh(`git --git-dir ${up} log --format=%an%x20%ae%x20%cn --grep="edit README" main`)).toBe("Ana Real ana@example.com Ana Real");
+    expect(await sh(`git --git-dir ${up} log --format=%an --author=codesplitters main | wc -l`)).toBe("0");
     expect(await get(call, "/api/repos/ana/up/tree?path=src")).toMatchObject({ entries: [{ name: "a.ts" }, { name: "b.ts" }] });
     expect(await get(call, "/api/repos/ana/up")).toMatchObject({ mirror: true, expires_at: null });
     expect((await get(call, "/api/repos/ana/up")).mirrorable).toBeUndefined();

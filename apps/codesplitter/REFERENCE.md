@@ -96,7 +96,7 @@ The pitch is in [README.md](README.md).
 - **Mirrors: Git going when git stops going (desktop).** Tick "keep it in sync" in the dig box and the repo becomes a mirror of the real one: GitHub, GitLab, or any git URL this machine can reach (`POST /api/mirrors {url}`, with this machine's own credentials: the GitHub token digs use, else git's credential helper or ssh keys).
   Every 5 minutes, and right after each commit, it fetches upstream's branch into the local bare repo, takes what's new (a fast-forward, or a merge commit made with `git merge-tree`, nothing checked out), lands it in any file open here as line edits by `upstream`, merged into live edits, and pushes back what upstream doesn't have yet.
   It never force-pushes.
-  Commits go up as this machine's git `user.name` and `user.email`, with a `Co-authored-by` trailer when a handle like `agent-claude` made them.
+  Commits go up as this machine's git `user.name` and `user.email`, with a `Co-authored-by` trailer when a handle like `agent-claude` made them. A fork turned into a mirror gets the same: its commits from before the turn are made again under this identity as they first go up (same files, dates and messages; the old ones stay in git under `refs/kept`).
   When upstream doesn't answer, the Upstream panel on the repo page says it's down and since when, with how many commits are waiting.
   Edits, commits, branches and agents carry on as usual, it tries again (backing off to every 15 minutes), and once upstream answers it catches up by itself.
   If both sides changed the same lines it stops at a clash and moves nothing until the owner picks Keep mine or Take upstream's for those files.
