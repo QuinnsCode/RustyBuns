@@ -6,7 +6,7 @@
 // (18 kg full, one in your hands at a time) fill it for the whole day, and the harder it works the faster it burns. Plain data, no DOM; the page (park-view.ts) draws it.
 import { clamp, mulberry32 } from "@rustybuns/util";
 import { type Area, type Feed, type Grid, coverage, gear as catalog, generatorLoad, runHours } from "@rustybuns/gear";
-import { REACH, type Answer, type Level, type World, heldItem, wheeled } from "../sim.ts";
+import { REACH, type Answer, type Level, type World, heldItem } from "../sim.ts";
 import { assist } from "../assists.ts";
 import { doors, showScore } from "../clock.ts";
 import { type Cables, hazards, patch } from "../cables/cables.ts";
@@ -70,23 +70,11 @@ export const DAY_HOURS = 8;
 export const GROUND: Area = { x0: -14, x1: 14, z0: 0, z1: 44, y: 1.6, nx: 28, nz: 44 };
 
 
-/** Take the generator's handle and push it (F on it): it rolls in front of you (`pushSpeed`, lighter on Cozy). F again lets go. */
-export function push(w: World, key: string): Answer {
-  const i = w.items.find((x) => x.key === key);
-  if (!i) return { ok: false, why: `no ${key} here` };
-  const g = catalog(i.gear);
-  if (!wheeled(i.gear)) return { ok: false, why: `${g.what} has no wheels` };
-  if (w.held) return { ok: false, why: "your hands are full" };
-  if (Math.hypot(i.x - w.you.x, i.z - w.you.z) > REACH) return { ok: false, why: `${g.what} is out of reach` };
-  w.held = { key, rel: i.rot - w.you.yaw };
-  return { ok: true };
-}
-
 /** Holding a jerry can, pour it into the generator in reach (F on it): the tank fills up to its size, the rest stays in the can. */
 export function pour(w: World, key: string): Answer {
   const can = heldItem(w), gen = w.items.find((x) => x.key === key);
   if (!can || !catalog(can.gear).can) return { ok: false, why: "you hold no fuel" };
-  if (!gen || !wheeled(gen.gear)) return { ok: false, why: `no generator ${key} here` };
+  if (!gen || !catalog(gen.gear).generator) return { ok: false, why: `no generator ${key} here` };
   if (Math.hypot(gen.x - w.you.x, gen.z - w.you.z) > REACH) return { ok: false, why: "the generator is out of reach" };
   const room = catalog(gen.gear).generator!.tankL - (gen.litres ?? 0), have = can.litres ?? 0;
   if (have <= 0) return { ok: false, why: "the can is empty" };
@@ -99,7 +87,7 @@ export function pour(w: World, key: string): Answer {
 
 /** The generator's load now: what is plugged into power hangs off it (the park has no other power). */
 export function load(w: World, c: Cables): (Feed & { gear: string; litres: number; hours: number }) | null {
-  const gen = w.items.find((i) => wheeled(i.gear));
+  const gen = w.items.find((i) => catalog(i.gear).generator);
   if (!gen) return null;
   const powered = new Set(c.runs.flatMap((r) => r.kind === "power" ? [r.a, r.b] : []).flatMap((e) => ("plug" in e ? [e.plug[0]] : [])));
   const on = w.items.filter((i) => powered.has(i.key) && catalog(i.gear).draw).map((i) => i.gear);

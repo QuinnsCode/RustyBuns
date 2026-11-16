@@ -8,6 +8,7 @@ Sound and power math for live-sound gear, with no dependencies. It runs the numb
 - `coverage(sources, area, band)`: a `Float32Array` of dB over a floor, for a heat map.
 - `ampWatts`, `parallel`, `series`: watts per channel into a load, and what happens below the amp's minimum load.
 - `circuitLoad`, `generatorLoad`: mains draw against a 15 A or 20 A breaker, or a generator's kVA.
+- `burnLph`, `runHours`: litres an hour a generator burns at a load, and how long a tank (and jerry cans) runs it.
 - `cableLoss(awg, metres, ohms)`: dB lost in a speaker cable run.
 - `compile(placed, cables, { outlets })`: a patch of gear, cables and wall outlets. It returns which speakers are fed and a list of problems, each naming the items and jack: wrong cable, jack used twice, two outputs joined, a load below the amp minimum, a tripped breaker, a loop, no power.
 
