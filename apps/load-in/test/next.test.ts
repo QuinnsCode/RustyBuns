@@ -1,5 +1,5 @@
 // The garage's first minute, as a new player plays it, with the Next line (src/next.ts) read at every step: it points
-// at the cab out on the driveway, follows you in with it, sends you to the road case for a cable, then to the switch.
+// at the cab out on the driveway, follows you in with it, sends you to the road case for a cable, then to each switch.
 import { expect, test } from "bun:test";
 import { newWorld, pickUp, putDown } from "../src/sim.ts";
 import { newCables, plug, takeCable, walkWith } from "../src/cables/cables.ts";
@@ -24,6 +24,8 @@ test("the Next line walks a new player through the garage's first minute", () =>
   walkWith(w, c, -2.2, 0.6);
   expect(plug(w, c, "outlet", "power-out-1")).toEqual({ ok: true });
 
+  expect(next()).toEqual({ text: "Switch on the guitar amp head: look at it, press P", key: "amp-head" });
+  on.add("amp-head");
   expect(next()).toEqual({ text: 'Switch on the 12" two-way powered speaker: look at it, press P', key: "top" });
   on.add("top");
   expect(next()).toBeNull();
