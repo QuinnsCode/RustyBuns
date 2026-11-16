@@ -46,6 +46,10 @@ Saved builds (#4497): each hourly smoke row keeps the binary it built as the Act
 Express lane (#4586): an owner-only `express` label runs every ring's sweep on that commit right away, with no clock and
 no soak. Every sweep must still pass and stable still needs the owner's OK. A red sweep drops it into the normal lane at
 that ring, where it soaks like any other commit.
+Built: `express.yml` runs on a merged PR (or a manual run with its number). `rings.ts express <pr>` checks the owner
+put the label on last (anyone else's is ignored) and gives the squash commit; then it calls `desktop-hourly.yml` and,
+on green, `daily-ring.yml` with that SHA. Each writes a pending `ring/<name>` status while it runs (the hourly gate and
+the daily pick skip that commit), and `bun run rings` adds an `express <sha7>  <ring> sweep running` line for it.
 
 Open: whether daily auto-deploys previews, and whether
 "Ringo" (moves pointers, writes notes) is its own helper or a job inside Ester.
