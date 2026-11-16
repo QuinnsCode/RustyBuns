@@ -298,13 +298,14 @@ function stitchGeo(pts: V3[], normals: V3[], width = 0.012) {
   return g;
 }
 
-/** A tube along a curve, its section `rx` across by `ry` (in the curve's normal plane, ry along `up`). */
-function tubeGeo(pts: V3[], rx: number, ry: number, up: (i: number) => V3, closed = false, round = 10) {
+/** A tube along a curve, its section `rx` across by `ry` (in the curve's normal plane, ry along `up`), each scaled by `size(i)`. */
+function tubeGeo(pts: V3[], rx: number, ry: number, up: (i: number) => V3, closed = false, round = 10, size = (_i: number): [number, number] => [1, 1]) {
   const rows: V3[][] = [];
   pts.forEach((p, i) => {
     const a = pts[closed ? (i - 1 + pts.length) % pts.length : Math.max(0, i - 1)]!, b = pts[closed ? (i + 1) % pts.length : Math.min(pts.length - 1, i + 1)]!;
     const tan = b.clone().sub(a).normalize(), u = up(i).clone().addScaledVector(tan, -up(i).dot(tan)).normalize(), s = V().crossVectors(tan, u);
-    rows.push(Array.from({ length: round + 1 }, (_, k) => { const a2 = (k / round) * TAU; return p.clone().addScaledVector(s, Math.cos(a2) * rx).addScaledVector(u, Math.sin(a2) * ry); }));
+    const [sx, sy] = size(i);
+    rows.push(Array.from({ length: round + 1 }, (_, k) => { const a2 = (k / round) * TAU; return p.clone().addScaledVector(s, Math.cos(a2) * rx * sx).addScaledVector(u, Math.sin(a2) * ry * sy); }));
   });
   if (closed) rows.push(rows[0]!.map((p) => p.clone()));
   return gridGeo(rows);
@@ -557,20 +558,23 @@ function finishSleeve(c: Cut, s: ReturnType<typeof sleeve>, m: Kit, add: (g: THR
 function hood(c: Cut, m: Kit, add: (g: THREE.BufferGeometry, mat: THREE.MeshStandardMaterial) => THREE.Mesh, group: THREE.Group) {
   const nw = c.neck.front.w, rx = nw + 0.1, rz = c.nd + 0.06, yNb = topOf(c, true, 0);
   const ang = (ph: number) => Math.atan2(Math.sin(ph), Math.cos(ph));
+  const loopNoise = (ph: number, seed: number) => noise(Math.cos(ph) * 1.6 + seed, Math.sin(ph) * 1.6 + seed);
   // How far round to the back: 0 round the front of the neck, 1 at the crown's lip behind it.
   const backness = (ph: number) => smooth(0.9, 2.2, Math.abs(ang(ph)));
   const rimAt = (ph: number) => {
     const back = Math.cos(ph) < 0, a = ang(ph), b = backness(ph);
     // Round the neck it sits on the neckline; out on the shoulders it lies on them, where they slope away.
     const sx = Math.sin(ph) * lerp(nw, rx, smooth(0.35, 1.2, Math.abs(a)));
-    const around = topOf(c, back, sx) + 0.015 + 0.03 * (1 - Math.cos(ph)) / 2 - 0.08 * Math.exp(-((a / 0.4) ** 2)) - 0.03 * Math.exp(-(((Math.abs(a) - 1.05) / 0.45) ** 2));
+    const around = topOf(c, back, sx) + 0.015 + 0.03 * (1 - Math.cos(ph)) / 2 - 0.08 * Math.exp(-((a / 0.4) ** 2)) - 0.05 * Math.exp(-(((Math.abs(a) - 0.9) / 0.5) ** 2));
     // Where the edge lies on the shoulders it drops in a few soft folds.
-    const folds = 0.012 * Math.sin(ph * 7) * Math.exp(-(((Math.abs(a) - 1.45) / 0.4) ** 2));
+    const folds = 0.012 * Math.sin(ph * 7) * Math.exp(-(((Math.abs(a) - 1.45) / 0.4) ** 2)) + 0.006 * loopNoise(ph, 9);
     return V(Math.sin(ph) * lerp(rx, rx + 0.05, b), lerp(around, yNb - 0.07, b) + folds, Math.cos(ph) * lerp(rz, 0.28, b));
   };
   const rim = Array.from({ length: 96 }, (_, i) => rimAt((i / 96) * TAU));
   const hoodMat = m.plain();
-  add(tubeGeo(rim, 0.034, 0.02, () => V(0, 1, 0), true, 14), hoodMat);
+  // Its roll is soft, not an even pipe: fatter where it bunches, squashed where it lies on the shoulders.
+  const roll = (i: number): [number, number] => { const w = loopNoise((i / 96) * TAU, 2.3); return [1 + 0.2 * w, 1 - 0.3 * w]; };
+  add(tubeGeo(rim, 0.034, 0.02, () => V(0, 1, 0), true, 14, roll), hoodMat);
 
   // The back of the body at (x, y), for laying the hood on it.
   const backAt = (x: number, y: number) => {
@@ -606,7 +610,7 @@ function hood(c: Cut, m: Kit, add: (g: THREE.BufferGeometry, mat: THREE.MeshStan
     const q = j / Q, row: V3[] = [];
     for (let i = 0; i <= S; i++) {
       const s = (i / S) * 2 - 1, b = Math.sqrt(1 - s * s), lip = rimAt(phOf(s)).add(V(0, -0.012, 0));
-      const bx = -s * Wh, by = yNb - Lh * (0.45 + 0.55 * lerp(1 - Math.abs(s), b, 0.4)), my = lerp(lip.y, by, 0.5);
+      const bx = -s * Wh, by = yNb - Lh * (0.45 + 0.55 * lerp(1 - Math.sqrt(s * s + 0.02), b, 0.4)), my = lerp(lip.y, by, 0.5);
       const foot = backAt(bx, by).add(V(0, 0, -0.01));
       // Slack fleece: the crown barely rises before it falls back, and the sides slump out onto the shoulders.
       const crown = lip.clone().add(V(0, 0.08 * b, -0.2 * b));
@@ -623,6 +627,8 @@ function hood(c: Cut, m: Kit, add: (g: THREE.BufferGeometry, mat: THREE.MeshStan
       const sag = 0.012 * Math.sin(q * 13 + s * s * 4) * smooth(0.3, 0.5, q) * (1 - smooth(0.8, 0.95, q)) * b;
       const depth = (0.045 * crease * gather + 0.035 * long + sag + 0.012 * noise(s * 3 + 7, q * 4)) * (0.35 + 0.65 * b);
       p.addScaledVector(V(0, 1 - smooth(0.12, 0.45, q), -1).normalize(), depth);
+      // The middle drifts a little side to side as it hangs, so the centre seam isn't ruler-straight.
+      p.x += 0.008 * noise(q * 4 + 3, 1.7) * b * smooth(0.1, 0.45, q);
       const body = backAt(p.x, p.y).z - 0.012;
       if (p.z > body) p.z = lerp(p.z, body, smooth(0.04, 0.2, q));
       row.push(p);
@@ -649,17 +655,21 @@ function hood(c: Cut, m: Kit, add: (g: THREE.BufferGeometry, mat: THREE.MeshStan
   sg.setAttribute("color", new THREE.Float32BufferAttribute(tint, 4));
   sg.setIndex(idx);
   group.add(new THREE.Mesh(sg, new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, depthWrite: false, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 })));
-  // Drawcords out of the rim at the front, hanging down the chest, with metal tips.
+  // Drawcords out of the rim's underside at the front, lying on the chest as they fall, with a soft sway and
+  // uneven lengths, so they read as cord, not rods. Metal tips.
   const cordMat = new THREE.MeshStandardMaterial({ color: "#ecebe8", roughness: 0.85 });
   const tipMat = new THREE.MeshStandardMaterial({ color: "#a8a29e", roughness: 0.35, metalness: 0.8 });
   for (const s of [-1, 1]) {
     const start = rimAt(s * 0.32);
-    const pts = Array.from({ length: 12 }, (_, k) => {
-      const y = start.y - 0.03 - k * 0.032, x = start.x * 0.9 + s * 0.012 * Math.sin(k * 0.7);
+    const n = s < 0 ? 22 : 19;
+    const pts = Array.from({ length: n }, (_, k) => {
+      const t = k / (n - 1), y = start.y - 0.012 - k * 0.019;
+      const x = start.x * lerp(0.95, 0.78, t) + s * 0.016 * Math.sin(t * 4.2 + (s < 0 ? 0.4 : 1.6)) * smooth(0, 0.3, t);
       const front = bodyPoint(c, false, Math.asin(Math.sign(x) * Math.min(1, Math.abs(x) / halfW(c, y / c.height)) ** (N / 2)), y);
-      return V(x, y, Math.max(front.z + 0.012, start.z - k * 0.01));
+      // Out of the rim it eases down onto the cloth over its first few points, then rests on it.
+      return V(x, y, lerp(start.z, front.z + 0.01, smooth(0, 0.18, t)));
     });
-    group.add(new THREE.Mesh(tubeGeo(pts, 0.008, 0.008, () => V(0, 0, 1)), cordMat));
+    group.add(new THREE.Mesh(tubeGeo(pts, 0.0105, 0.0075, () => V(0, 0, 1)), cordMat));
     const end = pts[pts.length - 1]!;
     const tip = new THREE.Mesh(new THREE.CylinderGeometry(0.009, 0.007, 0.04, 10), tipMat);
     tip.position.copy(end).add(V(0, -0.02, 0));
