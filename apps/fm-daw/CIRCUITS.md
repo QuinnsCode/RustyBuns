@@ -109,7 +109,7 @@ Kit sellers' build documents (layouts, photos, text) are their work, so none of 
 
 ## Next
 
-In order, each one usable on its own:
+The longer map (more parts, a pedalboard, phasers to tape echo, profiling a real amp, and boards you can order as a kit) is in [ANALOG.md](ANALOG.md). The next steps here, in order, each one usable on its own:
 
 1. **An Amp insert on an FM DAW track** ([#4555](https://github.com/QuinnsCode/RustyBuns/issues/4555)): Q Amp's live chain (`src/amp/live.ts`) after a track's voices, knobs as track params saved with the project.
 2. **Q Amp on a 3D stage** ([#4570](https://github.com/QuinnsCode/RustyBuns/issues/4570)): the clear amp, cabinet and pedalboard in three.js, 2.5D or 3D, with the screens behind as stage LED walls.
