@@ -5,7 +5,7 @@
 // from this shared patch; nothing here is audio.
 //
 // Pure, no DOM: the World applies each op and passes it on, and the page applies the same ops to its own copy.
-import { arr, check, num, obj, oneOf, rec, str, type Guard, type Of } from "@rustybuns/util/guard";
+import { arr, Bad, check, num, obj, oneOf, rec, str, type Guard, type Of } from "@rustybuns/util/guard";
 
 export const MAX_GEAR = 64;
 export const MAX_CABLES = 128;
@@ -69,7 +69,7 @@ const OPS: Guard<StudioOp>[] = [
   obj({ t: tag("bin"), id: ID }),
 ];
 export const decodeStudioOp = (v: unknown): StudioOp | null => OPS.reduce<StudioOp | null>((got, g) => got ?? check(g, v), null);
-const OP = (v: unknown) => { const op = decodeStudioOp(v); if (!op) throw new Error("not a studio op"); return op; };
+const OP = (v: unknown) => { const op = decodeStudioOp(v); if (!op) throw new Bad("a studio op"); return op; };
 
 /** Page to world: one thing done in the studio. */
 export type StudioClient = { t: "studio"; op: StudioOp };
