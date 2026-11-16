@@ -44,8 +44,7 @@ const browserMs = (r: Response): number | null => {
 async function once(b: Browser, engine: Engine, action: Action, url: string, now: () => number): Promise<Run> {
   const t0 = now();
   try {
-    // cacheTTL 0: Browser Run keeps a result for 5 s by default, so without it every turn after the first is a cache hit.
-    const r = await b.quickAction(action, engine === "kitesurf" ? { url, browser: "kitesurf", cacheTTL: 0 } : { url, cacheTTL: 0 });
+    const r = await raw(b, engine, action, url);
     const body = await r.arrayBuffer();
     const run: Run = { ms: now() - t0, ok: r.ok, status: r.status, bytes: body.byteLength, browserMs: browserMs(r) };
     if (!r.ok) run.error = new TextDecoder().decode(body.slice(0, 300));
@@ -73,4 +72,21 @@ export async function cell(b: Browser, siteIndex: number, action: Action, reps: 
     for (const e of order) runs[e].push(await once(b, e, action, site.url, now));
   }
   return { site: site.name, url: site.url, action, kitesurf: side(runs.kitesurf), chromium: side(runs.chromium) };
+}
+
+/** Chromium's price for browser time on Workers Paid, past the 10 included hours a month. Kitesurf has no price yet (free in beta). */
+export const DOLLARS_PER_BROWSER_HOUR = 0.09;
+
+export type Burst = { engine: Engine; n: number; wallMs: number; side: Side };
+
+/** `n` calls at once on one engine: how it holds up under load, where a lighter engine should pull ahead. */
+export async function burst(b: Browser, engine: Engine, action: Action, url: string, n: number, now = () => Date.now()): Promise<Burst> {
+  const t0 = now();
+  const runs = await Promise.all(Array.from({ length: n }, () => once(b, engine, action, url, now)));
+  return { engine, n, wallMs: now() - t0, side: side(runs) };
+}
+
+/** One call's raw answer. cacheTTL 0: Browser Run keeps a result for 5 s by default, so without it every turn after the first is a cache hit. */
+export function raw(b: Browser, engine: Engine, action: Action, url: string): Promise<Response> {
+  return b.quickAction(action, engine === "kitesurf" ? { url, browser: "kitesurf", cacheTTL: 0 } : { url, cacheTTL: 0 });
 }
