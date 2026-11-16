@@ -1,8 +1,10 @@
 // The amps and pedals by name, and their knobs. Each amp is a list of 12AX7
-// stages, the pots between them, a tone stack and a power stage; `buildRig`
-// turns an amp, an optional pedal and the knobs into a rig. Names are ours and
+// stages, the pots between them, a tone stack, a push-pull power stage and its
+// supply; `buildRig` turns an amp, an optional pedal, the knobs, the mic on the cab
+// and what is on the speaker jack into a rig. Names are ours and
 // describe the circuit, never a product.
 import { fuzz, hardClip, overdrive, toneStack, triodeStage, type StageSpec, type ToneSpec } from "./circuits.ts";
+import { DEFAULT_MIC, type Mic } from "./cab.ts";
 import type { RigSpec } from "./rig.ts";
 
 /** The amp's front panel, every knob 0 to 10. Noise is how much the first tube's resistors hiss (see `noiseScale`). */
@@ -18,8 +20,10 @@ export interface AmpDef {
   tone: Omit<ToneSpec, "bass" | "mid" | "treble">;
   /** Power-stage drive at Master 5. */
   power: number;
-  /** How many power tubes to draw. */
+  /** Output tubes, in push-pull pairs (and drawn on the page). */
   powerTubes: number;
+  /** The supply's resistance, ohms: how much it sags when you dig in. */
+  sag: number;
   knobs: Knobs;
 }
 
@@ -27,19 +31,19 @@ export const AMPS: AmpDef[] = [
   {
     id: "brit", name: "Q Brit 3", blurb: "Three tubes, the middle one biased cold, tone stack last. Crunch to lead.",
     stages: [{ rk: 2.7e3, ck: 0.68e-6 }, { rk: 10e3, ck: 0, cc: 22e-9 }, { rk: 820, ck: 0.68e-6, cc: 22e-9 }],
-    pots: [1, null, 0.8], tone: {}, power: 1.5, powerTubes: 2,
+    pots: [1, null, 0.8], tone: {}, power: 1.5, powerTubes: 2, sag: 250,
     knobs: { gain: 7, bass: 5, mid: 7, treble: 6, master: 5, noise: 3 },
   },
   {
     id: "lead", name: "Q Lead 50", blurb: "Four tubes, small coupling caps for tight lows, two cold clippers. Saturated high gain.",
     stages: [{ rk: 1.5e3, ck: 0.47e-6, cc: 10e-9 }, { rk: 39e3, ck: 0, cc: 4.7e-9 }, { rk: 10e3, ck: 0, cc: 22e-9 }, { rk: 1.5e3, ck: 0.47e-6, cc: 22e-9 }],
-    pots: [1, null, 0.9, 0.6], tone: { slope: 47e3, cTreble: 250e-12 }, power: 2, powerTubes: 4,
+    pots: [1, null, 0.9, 0.6], tone: { slope: 47e3, cTreble: 250e-12 }, power: 2, powerTubes: 4, sag: 90,
     knobs: { gain: 7, bass: 4, mid: 5, treble: 7, master: 5, noise: 3 },
   },
   {
     id: "triple", name: "Q Triple", blurb: "Fat bypass caps early, a scooped tone stack. Big, loose, modern.",
     stages: [{ rk: 1.8e3, ck: 22e-6 }, { rk: 1.8e3, ck: 1e-6, cc: 22e-9 }, { rk: 15e3, ck: 0, cc: 10e-9 }, { rk: 1.5e3, ck: 0.68e-6, cc: 22e-9 }],
-    pots: [1, null, 0.9, 0.6], tone: { cTreble: 500e-12, cBass: 100e-9, cMid: 47e-9 }, power: 2.5, powerTubes: 4,
+    pots: [1, null, 0.9, 0.6], tone: { cTreble: 500e-12, cBass: 100e-9, cMid: 47e-9 }, power: 2.5, powerTubes: 4, sag: 60,
     knobs: { gain: 7, bass: 7, mid: 2, treble: 7, master: 5, noise: 1 },
   },
 ];
@@ -61,13 +65,20 @@ export const gainPot = (gain: number) => 0.02 + 0.98 * (gain / 10) ** 2;
  */
 export const noiseScale = (k: number) => (k <= 0 ? 0 : 10 ** ((k - 1) / 3));
 
-/** A pedal (or none) into an amp, with these knobs. */
-export function buildRig(amp: AmpDef, knobs: Knobs, pedal?: { def: PedalDef; drive: number }): RigSpec {
+/** The cab and the jack: where the mic sits, and the ohms on the speaker jack (0 for nothing plugged in). */
+export interface Room { mic: Mic; load: number }
+export const DEFAULT_ROOM: Room = { mic: DEFAULT_MIC, load: 8 };
+
+/** A pedal (or none) into an amp, with these knobs, into a cab. */
+export function buildRig(amp: AmpDef, knobs: Knobs, pedal?: { def: PedalDef; drive: number }, room: Room = DEFAULT_ROOM): RigSpec {
   const links: RigSpec["links"] = [];
   if (pedal) links.push({ net: pedal.def.net(pedal.drive) });
   amp.stages.forEach((s, i) => links.push({ net: triodeStage({ ...s, noisy: i === 0 }), gain: amp.pots[i] ?? gainPot(knobs.gain) }));
   links.push({ net: toneStack({ ...amp.tone, bass: knobs.bass, mid: knobs.mid, treble: knobs.treble }) });
-  return { inputVolts: 0.5, links, power: amp.power * (0.25 + 0.15 * knobs.master), cab: true, noise: noiseScale(knobs.noise) };
+  return {
+    inputVolts: 0.5, links, power: amp.power * (0.25 + 0.15 * knobs.master), noise: noiseScale(knobs.noise),
+    output: { pairs: amp.powerTubes / 2, sag: amp.sag, load: room.load }, cab: room.mic,
+  };
 }
 
 const amp = (id: string) => {
@@ -75,7 +86,7 @@ const amp = (id: string) => {
   if (!a) throw new Error(`no amp ${id}`);
   return a;
 };
-const pedalRig = (net: RigSpec["links"][number]["net"]): RigSpec => ({ inputVolts: 0.5, links: [{ net }], power: 0, cab: false });
+const pedalRig = (net: RigSpec["links"][number]["net"]): RigSpec => ({ inputVolts: 0.5, links: [{ net }], power: 0, cab: null });
 
 /** Every amp at its own knob settings, and the two pedals alone into a clean desk. */
 export const RIGS = {
