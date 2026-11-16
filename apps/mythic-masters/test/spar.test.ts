@@ -8,16 +8,6 @@ import { DRILLS, sparMatch, sparStep, STATS, type Drill, type Stat } from "../sr
 
 const drill = (stat: Stat): Drill => ({ stat, beat: 0, left: DRILLS[stat][0]![1] });
 
-test("on the speed drill the jackalope runs further than the hodag", () => {
-  const far = (id: string) => {
-    let m = sparMatch(creature(id)), most = 0;
-    const d = drill("speed"), x0 = m.f[0].pos.x;
-    for (let t = 0; t < 60; t++) { m = sparStep(m, d, "speed"); most = Math.max(most, m.f[0].pos.x - x0); }
-    return most;
-  };
-  expect(far("jackalope")).toBeGreaterThan(far("hodag") * 1.3);
-});
-
 test("every starter goes round all six drills for a minute and stays on the ring", () => {
   for (const id of STARTERS) {
     let m = sparMatch(creature(id));

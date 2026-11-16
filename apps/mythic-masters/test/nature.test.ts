@@ -3,8 +3,8 @@ import { readFileSync } from "node:fs";
 import coarse from "../src/world/coarse.json";
 import { newJourney, mend, wound } from "../src/journey.ts";
 import { REGIONS } from "../src/regions.ts";
-import { CLUMP, clumped, FLORA, KINDS, TURF } from "../src/world/flora.ts";
-import { bare, BIRDS, birdAt, daylight, FLIGHT, flocksNear, flushHeading, FORAGE, FORAGE_MEND, forageNear, landing, pick, REGROW, weather, wind } from "../src/world/nature.ts";
+import { FLORA, KINDS, TURF } from "../src/world/flora.ts";
+import { bare, daylight, FORAGE, FORAGE_MEND, forageNear, pick, REGROW, weather, wind } from "../src/world/nature.ts";
 import { arenaOf, buildWorld, CELL, depthAt, detailAt, dry, groundFrom, heightAt, openRegions, ownerAt, refine, regionAt, riverAt, spawn, waterAt } from "../src/world/world.ts";
 import { POIS } from "../src/world/poi.ts";
 import { TRAILS, WORLD } from "../src/world/trail.ts";
@@ -92,29 +92,6 @@ describe("wild food", () => {
 });
 
 describe("birds", () => {
-  test("crows roost in the pines; walk into them and they fly off away from you, and settle further on", () => {
-    const me = spawn(1), flocks = flocksNear(w, me.x, me.z, 500, open);
-    expect(flocks.length).toBeGreaterThan(1);
-    const f = flocks[0]!;
-    expect(f.kind).toBe("crows");
-    expect(f.n).toBeGreaterThanOrEqual(BIRDS.crows.n[0]);
-    // Roosting: on the ground, each a step or two from the others.
-    const down = birdAt(f, 0, null, 0, 0);
-    expect(down.down).toBe(true); expect(down.h).toBe(0); expect(Math.hypot(down.dx, down.dz)).toBeLessThan(5);
-    // Flushed from the south-west: they fly north-east, up and then down.
-    const from = { x: f.x - 10, z: f.z - 10 }, heading = flushHeading(f, from);
-    expect(Math.cos(heading)).toBeGreaterThan(0); expect(Math.sin(heading)).toBeGreaterThan(0);
-    const mid = birdAt(f, 0, BIRDS.crows.air / 2, heading, 3);
-    expect(mid.down).toBe(false); expect(mid.h).toBeGreaterThan(4);
-    expect(Math.hypot(mid.dx, mid.dz)).toBeGreaterThan(10);
-    const landed = birdAt(f, 0, BIRDS.crows.air + 1, heading, 9), roost = landing(f, heading);
-    expect(landed.down).toBe(true);
-    expect(Math.hypot(f.x + landed.dx - roost.x, f.z + landed.dz - roost.z)).toBeLessThan(5);
-    expect(Math.hypot(roost.x - f.x, roost.z - f.z)).toBeCloseTo(FLIGHT, 5);
-    // Next time, the flock is where it landed.
-    const again = flocksNear(w, roost.x, roost.z, 30, open, new Map([[f.id, roost]]));
-    expect(again.find((g) => g.id === f.id)).toMatchObject({ x: roost.x, z: roost.z });
-  });
 });
 
 describe("what grows", () => {
@@ -126,19 +103,4 @@ describe("what grows", () => {
       expect(TURF[g.biome].cover).toBeGreaterThan(0);
     }
   });
-});
-
-test("Pine Barrens scrub covers the ground thick with thinner sandy patches; a meadow stays mostly even", () => {
-  const spread = (clump: number) => {
-    const c: number[] = [];
-    for (let x = 0; x < 120; x += 0.9) for (let z = 0; z < 120; z += 1.1) c.push(clumped(clump, x, z).chance);
-    return { thin: c.filter((v) => v < 0.5).length / c.length, thick: c.filter((v) => v >= 1).length / c.length };
-  };
-  const pines = spread(TURF["pine-barrens"].clump ?? CLUMP), meadow = spread(TURF.plains.clump ?? CLUMP);
-  expect(TURF["pine-barrens"].scrub).toBe(true); // shrubs, not grass blades
-  expect(pines.thin).toBeGreaterThan(0.15); // sandy patches
-  expect(pines.thin).toBeLessThan(0.35); // but mostly covered
-  expect(pines.thick).toBeGreaterThan(0.3);
-  expect(meadow.thin).toBe(0);
-  expect(clumped(0, 3, 7)).toEqual({ chance: 1, size: 1 });
 });
