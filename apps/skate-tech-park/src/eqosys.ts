@@ -23,6 +23,7 @@ export const SKIN = { theme: {
 // the paper, the chip set a touch askew, and buttons that press into their shadow like the HUD's (styles.css .icon-btn).
 css: `.eq-form,.eq-toast,.rb-lobby,.rb-spaces,.eq-chip.in{background-image:radial-gradient(#1b1b1f12 1px,transparent 1.3px);background-size:5px 5px;box-shadow:0 0 0 3px #fff,5px 5px 0 2px var(--ink)}
 .eq-chip.in{transform:rotate(-1.2deg);transform-origin:left center}
+.eq-chip.in .eq-who{padding:2px 0 2px 3px}.eq-chip.in .eq-who::before{content:"";display:inline-block;width:15px;height:12px;margin-right:7px;vertical-align:-1px;border-radius:3px;background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23fff'%3E%3Cpath d='M13 2 3 14h9l-1 8 10-12h-9z'/%3E%3C/svg%3E") center/9px no-repeat,var(--hot);box-shadow:0 0 0 1.5px #fff,1.5px 1.5px 0 1.5px var(--ink);transform:rotate(9deg)}
 .eq-btn{box-shadow:2px 2px 0 var(--ink)}.eq-btn:active{transform:translate(2px,2px);box-shadow:0 0 0 var(--ink)}
 @media (max-width:720px){.eq-coach{top:140px}}` }; // on a phone the tutorial's card sits under the HUD's buttons and park picker
 

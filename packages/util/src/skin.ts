@@ -94,16 +94,18 @@ const BASE = `
 /**
  * eqosys's own mark, the same in every game whatever its skin: a badge tag, "eqosys" on black, then a punched strip of
  * oil-slick sunset that drifts like slow weather (three gradient blobs on registered properties, one long cycle each).
+ * The strip ends in a punched hole (--eq-hole) that shows what is behind it, ringed by a dark rim so it reads as a hole
+ * and not a dot; its edge fades over most of a pixel, so it is round on a 1x screen as on a 3x one.
  * Kept after the skin's rules and off the `--ui-*` tokens on purpose; still under prefers-reduced-motion.
  */
 const BADGE = `
 @property --eq-ax{syntax:"<percentage>";inherits:false;initial-value:18%}@property --eq-ay{syntax:"<percentage>";inherits:false;initial-value:30%}
 @property --eq-bx{syntax:"<percentage>";inherits:false;initial-value:78%}@property --eq-by{syntax:"<percentage>";inherits:false;initial-value:70%}
 @property --eq-tilt{syntax:"<angle>";inherits:false;initial-value:200deg}
-.eq .eq-badge{display:inline-flex;opacity:1;align-items:stretch;flex:none;height:20px;border-radius:5px;overflow:hidden;font:700 10px/20px ui-monospace,"SF Mono",Menlo,monospace;letter-spacing:.16em;color:#ecebf2;box-shadow:0 0 0 1px #0000004d,0 1px 2px #0000003d;user-select:none}
+.eq .eq-badge{--eq-hole:radial-gradient(circle at calc(100% - 7px) 50%,transparent 3px,#000 3.7px);display:inline-flex;opacity:1;align-items:stretch;flex:none;height:20px;border-radius:5px;overflow:hidden;font:700 10px/20px ui-monospace,"SF Mono",Menlo,monospace;letter-spacing:.16em;color:#ecebf2;box-shadow:0 0 0 1px #0000004d,0 1px 2px #0000003d;user-select:none}
 .eq .eq-badge b{display:block;text-transform:lowercase;letter-spacing:.16em;padding:0 6px 0 7px;background:linear-gradient(#1a1a1f,#050506);font:inherit;box-shadow:inset 0 1px 0 #ffffff21}
-.eq .eq-badge i{display:block;position:relative;width:34px;background:radial-gradient(60% 80% at var(--eq-ax) var(--eq-ay),#ff8a5c,transparent 70%),radial-gradient(70% 90% at var(--eq-bx) var(--eq-by),#7d5bd6,transparent 70%),conic-gradient(from var(--eq-tilt) at 50% 50%,#f6b24e,#e2557b,#5a8fd8,#3ec7b6,#f6b24e);filter:saturate(.7) brightness(.92);animation:eq-drift 41s ease-in-out infinite alternate,eq-turn 67s linear infinite;-webkit-mask:radial-gradient(circle 2.6px at calc(100% - 7px) 50%,transparent 98%,#000);mask:radial-gradient(circle 2.6px at calc(100% - 7px) 50%,transparent 98%,#000)}
-.eq .eq-badge i::after{content:"";position:absolute;inset:0;background:repeating-linear-gradient(0deg,#ffffff0d 0 1px,transparent 1px 3px),linear-gradient(90deg,#00000059,transparent 45%)}
+.eq .eq-badge i{display:block;position:relative;width:34px;background:radial-gradient(60% 80% at var(--eq-ax) var(--eq-ay),#ff8a5c,transparent 70%),radial-gradient(70% 90% at var(--eq-bx) var(--eq-by),#7d5bd6,transparent 70%),conic-gradient(from var(--eq-tilt) at 50% 50%,#f6b24e,#e2557b,#5a8fd8,#3ec7b6,#f6b24e);filter:saturate(.7) brightness(.92);animation:eq-drift 41s ease-in-out infinite alternate,eq-turn 67s linear infinite;-webkit-mask:var(--eq-hole);mask:var(--eq-hole)}
+.eq .eq-badge i::after{content:"";position:absolute;inset:0;background:radial-gradient(circle at calc(100% - 7px) 50%,transparent 3px,#000000b3 3.3px,#00000040 4.2px,transparent 5px),repeating-linear-gradient(0deg,#ffffff0d 0 1px,transparent 1px 3px),linear-gradient(90deg,#00000059,transparent 45%)}
 @keyframes eq-drift{0%{--eq-ax:18%;--eq-ay:30%;--eq-bx:78%;--eq-by:70%}33%{--eq-ax:62%;--eq-ay:12%;--eq-bx:30%;--eq-by:88%}66%{--eq-ax:40%;--eq-ay:84%;--eq-bx:86%;--eq-by:22%}100%{--eq-ax:82%;--eq-ay:52%;--eq-bx:14%;--eq-by:40%}}
 @keyframes eq-turn{to{--eq-tilt:560deg}}
 @media (prefers-reduced-motion:reduce){.eq .eq-badge i{animation:none}}
