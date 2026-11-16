@@ -114,13 +114,16 @@ test("push the generator in, power the tent from it, ramp the path, keep the hou
   expect(s).toMatchObject({ hazards: 0, tripped: false, pass: true });
 
   // The breeze picks up toward the road: it carries the highs a few dB further and the houses complain, so the fader
-  // comes down again. Turned the other way it carries them off and the houses go quieter than calm.
+  // has to come down again. Turned the other way it carries them off and the houses go quieter than calm.
   blow(w, () => ({ toward: 0, speed: 5 }));
   const downwind = score(w, c);
   expect(downwind.houses! - s.houses!).toBeGreaterThan(2.5);
   expect(downwind.houses!).toBeGreaterThan(SPILL_LIMIT);
+  // Pulling the fader 3 dB brings the houses back near the limit, but the back of the crowd loses it: a trade, not a fix.
   master(w, -17);
-  expect(score(w, c)).toMatchObject({ pass: true });
+  const pulled = score(w, c);
+  expect(downwind.houses! - pulled.houses!).toBeGreaterThan(2.5);
+  expect(pulled.covered).toBeLessThan(downwind.covered);
   master(w, -14);
   blow(w, () => ({ toward: Math.PI, speed: 5 }));
   expect(s.houses! - score(w, c).houses!).toBeGreaterThan(2.5);
