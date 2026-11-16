@@ -357,7 +357,9 @@ export class MoveFx {
     const { field, at, slot, damage } = e, color = COLOR[field];
     if (e.guarded) { this.flash(WHITE, at, 1.4, 0.18, 0.6); this.burst(field, at, 4, 0.6); return; }
     const big = Math.min(2.2, 0.6 + damage / 25);
-    this.flash(e.rear ? 0xff5040 : WHITE, at, big * (e.rear ? 1.5 : 1), 0.12);
+    // the star's core is the hot point; this flash only warms the air round it (#4669 round 21: a full white flash on top
+    // washed both bodies pale for a frame)
+    this.flash(e.rear ? 0xff5040 : WHITE, at, big * (e.rear ? 0.9 : 0.6), 0.1, 0.5);
     this.flash(color, at, big * 1.3, 0.14, 0.4); // a big hit's glow was a blob that hid both bodies (#4046 round 5)
     const n = Math.min(26, 6 + damage), sp = 1 + damage / 40;
     this.star(e.rear ? 0xff5040 : WHITE, color, at, damage);
@@ -505,7 +507,9 @@ export class MoveFx {
     return this.spawn("glow", color, at, { x: 0, y: 0, z: 0 }, size * 0.5, life, { grow: size / life, alpha });
   }
   private ring(color: number, at: V3, size: number, life: number) { return this.spawn("ring", color, at, { x: 0, y: 0, z: 0 }, 0.3, life, { grow: (size - 0.3) / life }); }
-  private shell(color: number, at: V3, size: number, life: number) { return this.spawn("shell", color, at, { x: 0, y: 0, z: 0 }, 0.3, life, { grow: (size - 0.3) / life, alpha: 0.35 }); }
+  /** A sphere of light swelling out to `size`: a soft sprite that fades to its rim (#4669 round 21: a sphere mesh read as
+   * a faceted white ball hiding both bodies). A sprite's scale is its width, so twice the sphere's radius. */
+  private shell(color: number, at: V3, size: number, life: number) { return this.spawn("glow", color, at, { x: 0, y: 0, z: 0 }, 0.6, life, { grow: (2 * size - 0.6) / life, alpha: 0.3 }); }
   /** Point a streak along `dir` and stretch it to `len`. */
   private aim(p: P, dir: V3, len: number) {
     this.v.set(dir.x, dir.y, dir.z).normalize();
