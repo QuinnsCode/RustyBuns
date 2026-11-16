@@ -2,27 +2,18 @@
 // sound and power math wires up (each on the outside, facing out) and a grab point, and stays cheap to draw.
 import { expect, test } from "bun:test";
 import * as THREE from "three";
-import { GEAR_IDS, GEAR_SIZES, type GearId, gear, gearJacks } from "../src/gear.ts";
+import { GEAR_IDS, GEAR_SIZES, gear, gearJacks } from "../src/gear.ts";
 import { triangles } from "../src/index.ts";
+import { GEAR_IDS as catalogIds, gear as catalogGear, jackNames } from "../../gear/src/catalog.ts";
 
-const n = (stem: string, k: number) => Array.from({ length: k }, (_, i) => `${stem}-${i + 1}`);
-const JACKS: Record<GearId, string[]> = {
-  "top-12-powered": ["power-in", "xlr-in", "xlr-out"],
-  "top-15-passive": ["speaker-in", "speaker-out"],
-  "sub-18": ["speaker-in", "speaker-out"],
-  "wedge-12": ["speaker-in", "speaker-out"],
-  "amp-head": ["inst-in", "speaker-out", "power-in"],
-  "cab-4x12": ["speaker-in"],
-  "amp-rack-4u": ["xlr-in-1", "xlr-in-2", "speaker-out-1", "speaker-out-2", "power-in"],
-  "mixer-small": [...n("xlr-in", 12), "xlr-out-1", "xlr-out-2", "power-in"],
-  "generator-7kva": n("power-out", 4),
-  "distro-box": [...n("power-out", 6), "power-in"],
-  "cable-ramp-2ch": [],
-  "road-case-m": [],
-  "stand-tripod": [],
-  "mic-stand": [],
-  guitar: ["inst-out"],
-};
+// The sound and power math's catalog (lane B). It imports nothing, so the models package can read it without a
+// dependency on it; this pins the join: the same ids, sizes and jack names on both sides.
+const book = new Map(catalogIds.map((id) => [id, catalogGear(id)]));
+
+test("the models and the catalog list the same gear at the same sizes", () => {
+  expect([...GEAR_IDS].sort()).toEqual([...catalogIds].sort());
+  for (const id of GEAR_IDS) { const { w, h, d } = book.get(id)!.size; expect([...GEAR_SIZES[id]]).toEqual([w, h, d]); }
+});
 
 test.each(GEAR_IDS)("%s builds at its size, on the floor, with its jacks facing out and a grab", (id) => {
   const g = gear(id);
@@ -33,7 +24,7 @@ test.each(GEAR_IDS)("%s builds at its size, on the floor, with its jacks facing 
   expect(triangles(g)).toBeLessThan(1500);
 
   const jacks = gearJacks(g);
-  expect([...jacks.keys()].sort()).toEqual([...JACKS[id]].sort());
+  expect([...jacks.keys()].sort()).toEqual(jackNames(book.get(id)!).sort());
   const centre = box.getCenter(new THREE.Vector3());
   for (const [name, j] of jacks) {
     const out = new THREE.Vector3(0, 0, 1).applyQuaternion(j.quaternion);

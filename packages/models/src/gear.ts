@@ -158,7 +158,7 @@ function wedge(): Build {
   for (const x of [-1, 1]) for (const z of [-1, 1]) b.pieces.push(disc("rubber", 0.016, 0.01, "y", [x * (w / 2 - 0.05), 0.005, z * (d / 2 - 0.05)], 6));
   b.pieces.push(...handle("metal", [0, h * 0.62, -d / 2], "-z", 0.14, 0.02));
   b.pieces.push(box("panel", [w * 0.3, h * 0.2, 0.01], [w * 0.28, h * 0.25, -d / 2 - 0.003]));
-  jacks(b, ["speaker-in", "speaker-out"], "back", [w * 0.22, h * 0.25, -d / 2 - 0.008], [w * 0.12, 0, 0]);
+  jacks(b, ["power-in", "xlr-in", "xlr-out"], "back", [w * 0.2, h * 0.25, -d / 2 - 0.008], [w * 0.08, 0, 0]);
   mark(b, "grab", [0, h * 0.62, -d / 2 - 0.02], [0, 0, -1]);
   return b;
 }
@@ -173,7 +173,7 @@ function ampHead(): Build {
   for (const x of [-1, 1]) for (const z of [-1, 1]) b.pieces.push(disc("rubber", 0.012, 0.012, "y", [x * (w / 2 - 0.05), 0.006, z * (d / 2 - 0.04)], 6));
   jacks(b, ["inst-in"], "front", [-w * 0.4, body * 0.32, d / 2 + 0.004], [0, 0, 0], 0.01);
   b.pieces.push(box("panel", [w * 0.4, body * 0.5, 0.008], [0, body * 0.42, -d / 2 - 0.002]));
-  jacks(b, ["speaker-out", "power-in"], "back", [-w * 0.12, body * 0.42, -d / 2 - 0.006], [w * 0.24, 0, 0]);
+  jacks(b, ["speaker-out-1", "speaker-out-2", "power-in"], "back", [-w * 0.12, body * 0.42, -d / 2 - 0.006], [w * 0.12, 0, 0]);
   mark(b, "grab", [0, h, 0]);
   return b;
 }
@@ -209,14 +209,14 @@ function ampRack(): Build {
   for (const x of [-1, 1]) b.pieces.push(...handle("metal", [x * w / 2, floor + ch * 0.6, 0], x > 0 ? "x" : "-x", 0.16, 0.012));
   b.pieces.push(box("panel", [w * 0.8, ch * 0.5, 0.008], [0, floor + ch * 0.5, -d / 2 - 0.012]));
   const back = -d / 2 - 0.016;
-  jacks(b, ["xlr-in-1", "xlr-in-2"], "back", [-w * 0.3, floor + ch * 0.62, back], [0.08, 0, 0]);
-  jacks(b, ["speaker-out-1", "speaker-out-2"], "back", [0.06, floor + ch * 0.62, back], [0.08, 0, 0]);
-  jacks(b, ["power-in"], "back", [w * 0.3, floor + ch * 0.38, back], [0, 0, 0], 0.016);
+  jacks(b, numbered("xlr-in", 4), "back", [-0.21, floor + ch * 0.62, back], [0.06, 0, 0]);
+  jacks(b, numbered("speaker-out", 4), "back", [0.03, floor + ch * 0.62, back], [0.06, 0, 0]);
+  jacks(b, ["power-in"], "back", [0.18, floor + ch * 0.38, back], [0, 0, 0], 0.016);
   mark(b, "grab", [w / 2 + 0.012, floor + ch * 0.6, 0], [1, 0, 0]);
   return b;
 }
 
-/** A 12-channel mixer: a low wedge, a column of knobs and a fader per channel, jacks along the back. */
+/** A 12-channel mixer (8 mic, 4 line): a low wedge, a column of knobs and a fader per channel, jacks along the back. */
 function mixer(): Build {
   const [w, h, d] = GEAR_SIZES["mixer-small"], b: Build = { pieces: [], marks: [] }, front = 0.04, back = h - 0.003;
   b.pieces.push(prism("paint", [[d / 2, 0.006], [d / 2, front], [-d / 2 + 0.05, back], [-d / 2, back], [-d / 2, 0.006]], w));
@@ -229,9 +229,10 @@ function mixer(): Build {
   b.pieces.push(box("knob", [0.014, 0.014, 0.02], [w * 0.4, yAt(0.11) + 0.006, 0.11], { rot: [slope, 0, 0] }));
   for (const x of [-1, 1]) for (const z of [-1, 1]) b.pieces.push(disc("rubber", 0.01, 0.006, "y", [x * (w / 2 - 0.03), 0.003, z * (d / 2 - 0.03)], 6));
   const rear = -d / 2 - 0.002, y = back * 0.55;
-  jacks(b, numbered("xlr-in", 12), "back", [-w * 0.42, y, rear], [w * 0.062, 0, 0], 0.009);
-  // the mains and power sit above the inputs' right end
-  jacks(b, ["xlr-out-1", "xlr-out-2", "power-in"], "back", [w * 0.24, back * 0.85, rear], [w * 0.08, 0, 0], 0.008);
+  jacks(b, numbered("xlr-in", 8), "back", [-w * 0.42, y, rear], [w * 0.062, 0, 0], 0.009);
+  jacks(b, numbered("line-in", 4), "back", [w * 0.08, y, rear], [w * 0.062, 0, 0], 0.007);
+  // the mains, line outs and power sit above the inputs
+  jacks(b, ["xlr-out-1", "xlr-out-2", "line-out-1", "line-out-2", "power-in"], "back", [w * 0.1, back * 0.85, rear], [w * 0.08, 0, 0], 0.007);
   mark(b, "grab", [0, back, -d / 2 + 0.03]);
   return b;
 }
@@ -348,7 +349,7 @@ function guitar(): Build {
   for (const y of [0.23, 0.34]) b.pieces.push(box("knob", [0.075, 0.022, 0.006], [0, y, d * 0.4 + 0.002]));
   b.pieces.push(box("chrome", [0.08, 0.018, 0.008], [0, 0.15, d * 0.4 + 0.002]));
   for (const [x, y] of [[0.09, 0.12], [0.12, 0.18]]) b.pieces.push(disc("knob", 0.011, 0.012, "z", [x, y, d * 0.4 + 0.005], 6));
-  jacks(b, ["inst-out"], "front", [0.11, 0.07, mid * 0.8], [0, 0, 0], 0.009);
+  jacks(b, ["line-out"], "front", [0.11, 0.07, mid * 0.8], [0, 0, 0], 0.009);
   mark(b, "grab", [0, 0.68, 0.02], [0, 0, 1]);
   return b;
 }
