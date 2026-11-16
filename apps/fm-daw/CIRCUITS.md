@@ -28,10 +28,10 @@ One amp on a stage, live in the browser. The head and the cabinet are clear acry
 
 | File | What it does |
 |---|---|
-| `src/circuit/mna.ts` | The circuit solver. Give it parts and the nodes they connect to; it gives back the output voltage, one sample at a time. |
-| `src/circuit/circuits.ts` | The circuits: a hard-clip distortion, a mid-hump overdrive, a 12AX7 gain stage, and the bass/mid/treble tone stack most guitar amps share. |
-| `src/circuit/rig.ts` | Circuits in a row, run at 4× the sample rate so clipping doesn't alias into fizz, then a stand-in power stage and a cabinet EQ. `Rig` streams a block at a time with live knobs; `runRig` does a whole buffer. |
-| `src/circuit/amps.ts` | The Q amps and pedals, their knobs, and `buildRig` (an amp, a pedal and the knobs into a rig). `RIGS` is each at its own settings. |
+| `packages/gear/src/circuit/mna.ts` | The circuit solver. Give it parts and the nodes they connect to; it gives back the output voltage, one sample at a time. |
+| `packages/gear/src/circuit/circuits.ts` | The circuits: a hard-clip distortion, a mid-hump overdrive, a 12AX7 gain stage, and the bass/mid/treble tone stack most guitar amps share. |
+| `packages/gear/src/circuit/rig.ts` | Circuits in a row, run at 4× the sample rate so clipping doesn't alias into fizz, then a stand-in power stage and a cabinet EQ. `Rig` streams a block at a time with live knobs; `runRig` does a whole buffer. |
+| `packages/gear/src/circuit/amps.ts` | The Q amps and pedals, their knobs, and `buildRig` (an amp, a pedal and the knobs into a rig). `RIGS` is each at its own settings. |
 | `src/circuit/riff.ts` | The dry guitar riff (Karplus-Strong plucks, seeded). |
 | `src/amp/` | Q Amp: `live.ts` (settings into a rig, rebuilding only what changed; the limiter), `worklet.ts` (the audio thread), `screens.ts`, `main.ts`, `amp.css`. |
 | `native/crates/fm_daw/src/circuit.rs` | The solver and the rig in Rust, step for step, with an `fm_amp_*` C surface in the engine's wasm. `src/circuit/wasm.ts` (`WasmRig`) drives it with the same knobs as `Rig`; `encodeNetlist` in `mna.ts` hands it a netlist as numbers. |
@@ -57,7 +57,7 @@ The models are published and checked:
 
 ## The voicings
 
-All of them are built from the same parts (`src/circuit/amps.ts`; the amps are named as on Q Amp). Their values are starting points to tune by ear, not copies of any product.
+All of them are built from the same parts (`packages/gear/src/circuit/amps.ts`; the amps are named as on Q Amp). Their values are starting points to tune by ear, not copies of any product.
 
 | Rig | What it is |
 |---|---|

@@ -7,7 +7,7 @@
 // (its supply pins are ignored; the rails come from `rail`), PLATE, GRID and
 // CATHODE make a 12AX7. A net named in `supplies` gets a DC source to ground.
 import { arr, bool, check, int, num, obj, opt, raw, str } from "@rustybuns/util/guard";
-import type { Netlist, Part } from "./mna.ts";
+import type { Netlist, Part } from "@rustybuns/gear/circuit";
 
 const Kind = obj({ type: str(80) });
 const Component = obj({

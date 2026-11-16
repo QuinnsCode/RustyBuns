@@ -10,3 +10,5 @@ Sound and power math for live-sound gear, with no dependencies. It runs the numb
 - `circuitLoad`, `generatorLoad`: mains draw against a 15 A or 20 A breaker, or a generator's kVA.
 - `cableLoss(awg, metres, ohms)`: dB lost in a speaker cable run.
 - `compile(placed, cables, { outlets })`: a patch of gear, cables and wall outlets. It returns which speakers are fed and a list of problems, each naming the items and jack: wrong cable, jack used twice, two outputs joined, a load below the amp minimum, a tripped breaker, a loop, no power.
+
+`@rustybuns/gear/circuit` is the guitar side: `Circuit`, an audio circuit solver (modified nodal analysis, Newton-Raphson for diodes, triodes and op-amps), textbook pedal and tube-stage netlists (`hardClip`, `overdrive`, `fuzz`, `triodeStage`, `toneStack`), `Rig` and `runRig` to run them oversampled through a power stage and cabinet, and the named `AMPS`, `PEDALS` and `buildRig`. FM DAW's Q Amp plays through it; its Rust port stays in FM DAW's engine wasm.

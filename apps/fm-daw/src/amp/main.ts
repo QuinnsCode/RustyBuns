@@ -10,7 +10,7 @@ import "@fontsource/ibm-plex-mono/500.css";
 import "./amp.css";
 import workletUrl from "./worklet.ts?worker&url";
 import { arr, check, num, nul, obj, oneOf, rec, str } from "@rustybuns/util/guard";
-import { AMPS, PEDALS, type AmpDef, type Knobs } from "../circuit/amps.ts";
+import { AMPS, PEDALS, type AmpDef, type Knobs } from "@rustybuns/gear/circuit";
 import { riff } from "../circuit/riff.ts";
 import { icon } from "./icons.ts";
 import { knob, type KnobEl } from "./knob.ts";

@@ -1,7 +1,7 @@
 // Q Amp's live chain (src/amp/live.ts, what the audio thread runs): play the riff
 // in 128-sample blocks while someone works the front panel, the way the page does.
 import { expect, setDefaultTimeout, test } from "bun:test";
-import { AMPS } from "../src/circuit/amps.ts";
+import { AMPS } from "@rustybuns/gear/circuit";
 import { riff } from "../src/circuit/riff.ts";
 import { FULL_SCALE, applySettings, limit, type Live } from "../src/amp/live.ts";
 import type { AmpSettings } from "../src/amp/messages.ts";

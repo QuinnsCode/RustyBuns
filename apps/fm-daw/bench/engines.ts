@@ -4,8 +4,7 @@
 // `bun run bench [seconds]` (default 20 per song, a quarter of that per rig; Rust is "not built" until `bun run build:native`).
 import { existsSync, readFileSync } from "node:fs";
 import { benchOnHost } from "../src/actions/files.ts";
-import { RIGS } from "../src/circuit/amps.ts";
-import { Rig, type RigSpec } from "../src/circuit/rig.ts";
+import { RIGS, Rig, type RigSpec } from "@rustybuns/gear/circuit";
 import { riff } from "../src/circuit/riff.ts";
 import { WasmRig } from "../src/circuit/wasm.ts";
 import { instantiateFm } from "../src/engine/wasm.ts";

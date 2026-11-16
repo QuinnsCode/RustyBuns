@@ -1,7 +1,6 @@
 // The amp's live chain, apart from the audio thread so a test can play it:
 // settings in, a rig out (rebuilding only what changed), and the speaker limiter.
-import { AMPS, PEDALS, buildRig } from "../circuit/amps.ts";
-import { POWER_VOLTS, Rig } from "../circuit/rig.ts";
+import { AMPS, PEDALS, buildRig, POWER_VOLTS, Rig } from "@rustybuns/gear/circuit";
 import type { AmpSettings } from "./messages.ts";
 
 /** Volts at the speaker for full scale: the power stage's ceiling plus the cabinet's bumps. */

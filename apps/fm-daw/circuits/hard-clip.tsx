@@ -1,6 +1,6 @@
 // A hard-clip distortion pedal drawn in tscircuit: op-amp gain of 101, then two
 // silicon diodes to ground, then a one-pole tone. The same circuit as
-// `hardClip()` in src/circuit/circuits.ts, and the board behind
+// `hardClip()` in packages/gear/src/circuit/circuits.ts, and the board behind
 // test/fixtures/hard-clip.circuit.json.
 //
 // tscircuit is parked in this repo (it pins zod 3, see apps/tscircuit-desktop),
