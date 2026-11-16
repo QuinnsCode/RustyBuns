@@ -235,12 +235,14 @@ async function printFiles() {
     if (!plan) throw new Error("the server sent something this page can't read");
     for (const s of plan.sheets) {
       sayPrint(`Drawing the ${s.zone} at ${s.px.w} x ${s.px.h} px...`);
-      const got = await fetch(s.original, { headers: auth });
-      if (!got.ok) throw new Error(`${s.zone}: ${await problem(got)}`);
-      const image = await createImageBitmap(await got.blob());
+      const images = await Promise.all(s.layers.map(async (l) => {
+        const got = await fetch(l.original, { headers: auth });
+        if (!got.ok) throw new Error(`${s.zone}: ${await problem(got)}`);
+        return createImageBitmap(await got.blob());
+      }));
       const canvas = new OffscreenCanvas(s.px.w, s.px.h);
-      drawSheet(canvas.getContext("2d")!, s, image, image.width / image.height);
-      image.close();
+      drawSheet(canvas.getContext("2d")!, s, images.map((image) => ({ image, aspect: image.width / image.height })));
+      for (const image of images) image.close();
       const png = withDpi(new Uint8Array(await (await canvas.convertToBlob({ type: "image/png" })).arrayBuffer()), plan.dpi);
       const href = URL.createObjectURL(new Blob([png as Uint8Array<ArrayBuffer>], { type: "image/png" }));
       const card = document.createElement("figure");

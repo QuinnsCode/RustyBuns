@@ -93,8 +93,8 @@ hats are in a second, hashed chunk (146 kB gzipped). It loads only when the tag 
 | Its own buttons beside ours | Children with `slot="controls"` go in our toolbar |
 | Only the 3D, its own UI | `controls="none"`, then drive it with the methods and events below |
 
-Methods: `addImage(file, zone?)`, `removeImage()`, `place({u, v, scale, rotation})`, `view("front"|"angle"|"side"|"back")`,
-`model = "beanie"`, `zone = "back"` (a top's `"front"`, `"back"` or `"left-sleeve"`: where the next picture goes and what `place()` moves), `color = "#b91c1c"`, `design` (the settings, a layer for each zone's picture), `load(design)`, `snapshot()` resolves to `{blob, design}`,
+Methods: `addImage(file, zone?)`, `addText({line, font, color}, zone?)` (a line of text, drawn to a picture; `font` one of sans, serif, mono, bold, script), `setText(words)`, `select(i)`, `raise()`, `lower()`, `removeImage()` (the layer being worked on, `selected`), `place({u, v, scale, rotation})`, `view("front"|"angle"|"side"|"back")`,
+`model = "beanie"`, `zone = "back"` (a top's `"front"`, `"back"` or `"left-sleeve"`: where the next picture goes and what `place()` moves), `color = "#b91c1c"`, `design` (the settings: its layers, bottom first, up to 8 pictures and lines of text across the zones), `load(design)`, `snapshot()` resolves to `{blob, design}`,
 and `save()` resolves to `{id, url, design}`; `value` is the saved id (below). Attributes: `name`, `org`, `product`, `model`, `color`, `colors="#111111,#ffffff"`,
 `controls`, `theme`, and `api` (the server, by default the script's own origin).
 A product's `print` (the zones the shop switched on) and `place` (where a new picture lands), set on `/orgs.html`, shape the widget: it offers only those zones, refuses a picture on one switched off, and starts each new picture at `place`.
@@ -139,7 +139,7 @@ Both are in [`/v1/embed.md`](src/embed.ts).
 ### Print files
 
 Whoever fulfils the order pastes the design id (or its `/r/` link) into **Print files** on `/admin.html`, with the
-org's admin key. It gets one PNG per print zone: the shopper's original at 300 dpi over the zone's real size, on a
+org's admin key. It gets one PNG per print zone: each of its layers' originals (pictures and lines of text, bottom first) at 300 dpi over the zone's real size, on a
 clear background, with the dpi written into the file so print software opens it at its real size. A cap's front
 (12 x 6 cm) is 1417 x 709 px. The sizes are product data: a product's `zones` (`{ "front": { "w": 12, "h": 6 } }`,
 in centimetres) overrides the defaults in `PRINT_CM` (`src/api.ts`). A shop's own model has no default, so its

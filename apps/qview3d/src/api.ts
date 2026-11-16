@@ -185,10 +185,21 @@ export const SignReply = obj({
 });
 export type SignReply = Of<typeof SignReply>;
 
-/** One picture on the product: its files, its print zone (the front when unnamed), and where it sits in it (0..1 across and up). */
+/** The faces a line of text can be set in: each a stack every browser has, so the widget ships no font files. */
+export const FONTS = ["sans", "serif", "mono", "bold", "script"] as const;
+export type Font = (typeof FONTS)[number];
+/** A line of text a shopper wrote: drawn to a picture (widget/text.ts), kept so it can be changed and read. */
+export const Words = obj({ line: str(60, { min: 1 }), font: oneOf(FONTS), color: str(7, { re: HEX }) });
+export type Words = Of<typeof Words>;
+
+/**
+ * One layer on the product, a picture or a line of text (drawn to a picture): its files, its print zone (the front
+ * when unnamed), and where it sits in it (0..1 across and up). A zone holds several; later ones lie on top.
+ */
 export const Layer = obj({
   texture: str(300),
   original: opt(str(300)),
+  text: opt(Words),
   zone: opt(oneOf(ZONES)),
   u: num(0, 1),
   v: num(0, 1),
@@ -200,12 +211,15 @@ export const Layer = obj({
 });
 export type Layer = Of<typeof Layer>;
 
+/** Layers a design holds in all, across its zones: pictures and lines of text. */
+export const MAX_LAYERS = 8;
+
 /** A design: everything needed to draw it again. What the widget's `design` is and what a snapshot is exported with. */
 export const Design = obj({
   v: oneOf([1] as const),
   model: oneOf(ANY_MODEL),
   color: str(7, { re: HEX }),
-  layers: arr(Layer, 8),
+  layers: arr(Layer, MAX_LAYERS),
   camera: obj({ azimuth: num(-10, 10), polar: num(0, Math.PI), distance: num(0.1, 10) }),
   product: opt(str(63, { re: ID })),
   snapshot: opt(str(300)),
@@ -237,13 +251,16 @@ export const Sample = obj({
 });
 export type Sample = Of<typeof Sample>;
 
-/** One zone's print file: the shopper's original (an admin fetches it), laid at `dpi` over the zone's real size. */
+/** One layer on a print file: its original (an admin fetches it) and where it sits in the zone. */
+export const SheetLayer = obj({ original: str(400), at: Placement, text: opt(Words) });
+export type SheetLayer = Of<typeof SheetLayer>;
+
+/** One zone's print file: its layers' originals, bottom first, each laid at `dpi` over the zone's real size where it sits. */
 export const PrintSheet = obj({
   zone: oneOf(ZONES),
   cm: PrintCm,
   px: obj({ w: int(1, 20_000), h: int(1, 20_000) }),
-  original: str(400),
-  at: Placement,
+  layers: arr(SheetLayer, 8, { min: 1 }),
 });
 export type PrintSheet = Of<typeof PrintSheet>;
 

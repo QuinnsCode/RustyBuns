@@ -62,8 +62,24 @@ button.busy svg { animation: spin 0.9s linear infinite; }
 
 .corner { position: absolute; top: 10px; right: 10px; display: flex; align-items: center; padding: 3px; gap: 2px; }
 
-.toolbar { position: absolute; left: 10px; right: 10px; bottom: 10px; width: fit-content; margin-inline: auto; display: flex; align-items: center; gap: 2px;
-  padding: 4px; flex-wrap: wrap; justify-content: center; }
+/* The bottom dock: the layers panel (when there is one to show) sits on the toolbar, both centred. */
+.dock { position: absolute; left: 10px; right: 10px; bottom: 10px; display: flex; flex-direction: column; align-items: center; gap: 6px; pointer-events: none; }
+.dock > * { pointer-events: auto; max-width: 100%; }
+.toolbar { width: fit-content; display: flex; align-items: center; gap: 2px; padding: 4px; flex-wrap: wrap; justify-content: center; }
+
+.layers { display: flex; align-items: center; gap: 6px; padding: 4px; flex-wrap: wrap; justify-content: center; }
+.stack { display: flex; gap: 4px; overflow-x: auto; scrollbar-width: none; }
+.chip { width: 40px; height: 40px; flex: none; padding: 3px; border: 1px solid var(--qv-line); background: var(--qv-bg);
+  background-image: conic-gradient(#0000000d 25%, #0000 0 50%, #0000000d 0 75%, #0000 0); background-size: 10px 10px; }
+.chip canvas { width: 100%; height: 100%; display: block; }
+.chip:hover { border-color: var(--qv-accent); }
+.chip[aria-pressed="true"] { box-shadow: inset 0 0 0 2px var(--qv-accent-ink); border-color: var(--qv-accent-ink); }
+.text { display: flex; align-items: center; gap: 4px; }
+.text input[type="text"], .text select { height: 36px; border: 1px solid var(--qv-line); border-radius: var(--qv-radius-sm); background: var(--qv-bg);
+  color: var(--qv-fg); font: inherit; padding: 0 10px; }
+.text input[type="text"] { width: 160px; }
+.text input[type="color"] { width: 36px; height: 36px; padding: 2px; border: 1px solid var(--qv-line); border-radius: var(--qv-radius-sm); background: var(--qv-bg); cursor: pointer; }
+select:focus-visible { outline: 2px solid var(--qv-accent-ink); outline-offset: 2px; }
 .sep { width: 1px; align-self: stretch; margin: 6px 4px; background: var(--qv-line); }
 
 .icon { width: 40px; height: 40px; }
@@ -108,6 +124,8 @@ input[type="range"]::-moz-range-thumb { width: 16px; height: 16px; border-radius
   .models:not(.zones) button { padding: 0 9px; flex: none; }
   .corner { top: 58px; }
   input[type="range"] { width: 64px; }
+  .text input[type="text"] { width: 120px; }
+  .stack { max-width: 100%; }
   .primary span { display: none; }
   .primary { width: 40px; height: 40px; padding: 0; }
   .keys { display: none; }

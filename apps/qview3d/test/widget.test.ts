@@ -7,10 +7,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { build } from "vite";
 import { launchChrome, load, openTab, type Tab } from "../../../scripts/chrome.ts";
-import { Design } from "../src/api.ts";
+import { Design, PrintPlan } from "../src/api.ts";
 import { designKey } from "../src/layout.ts";
 import { putOrg, putProduct } from "../src/settings.ts";
-import { local } from "../src/local.ts";
+import { DEMO_ADMIN, local } from "../src/local.ts";
 
 setDefaultTimeout(120_000);
 
@@ -88,6 +88,46 @@ test("a shopper puts a picture on the cap, drags it, nudges it, and saves it", a
   expect(stored).toMatchObject({ model: "cap", product: "field-cap" });
   expect(stored!.layers[0]).toMatchObject({ u: nudged.u, v: nudged.v });
   for (const key of [stored!.layers[0]!.texture, stored!.layers[0]!.original, stored!.snapshot]) expect(await app.bindings.BUCKET.head(key!)).not.toBeNull();
+  expect(tab.noise).toEqual([]);
+  await tab.close();
+});
+
+// Several layers on one zone, through the default controls: two pictures and a line of text on the tee's front, the
+// bottom picture picked from the strip and brought forward, the words changed, one picture removed, then saved. The
+// fulfiller's print plan lays what is left on one front sheet, in the order the shopper left it.
+test("a shopper stacks pictures and a line of text on the tee's front, reorders them, and the print sheet follows", async () => {
+  const tab = await openTab(chrome.cdp, { w: 1280, h: 800 });
+  await load(chrome.cdp, tab, `${app.url}/`, 500);
+  await tab.eval(`document.querySelector('[data-product="crew-tee"]').click()`);
+  await until("the tee", () => tab.eval<boolean>(`${HAT}.model === "tee" && !!${HAT}.design`));
+  const ui = (sel: string) => `${HAT}.shadowRoot.querySelector(${JSON.stringify(sel)})`;
+  await tab.eval(`(async () => {
+    for (const fill of ["#1d4ed8", "#b91c1c"]) {
+      const c = new OffscreenCanvas(128, 128), g = c.getContext("2d");
+      g.fillStyle = fill; g.fillRect(0, 0, 128, 128);
+      await ${HAT}.addImage(await c.convertToBlob({ type: "image/png" }));
+    }
+  })()`);
+  await tab.eval(`${ui('button[title="Add text"]')}.click()`);
+  await until("the text layer", () => tab.eval<boolean>(`${HAT}.design.layers.length === 3 && !!${HAT}.design.layers[2].text`));
+  const order = () => tab.eval<string[]>(`${HAT}.design.layers.map((l) => l.text ? "text:" + l.text.line : "picture")`);
+  // The strip lists the zone's three, top first; the last chip is the bottom picture.
+  expect(await tab.eval<number>(`${HAT}.shadowRoot.querySelectorAll(".chip").length`)).toBe(3);
+  await tab.eval(`[...${HAT}.shadowRoot.querySelectorAll(".chip")].at(-1).click()`);
+  expect(await tab.eval<number>(`${HAT}.selected`)).toBe(0);
+  await tab.eval(`${ui('button[title="Bring forward"]')}.click()`);
+  expect(await tab.eval<number>(`${HAT}.selected`)).toBe(1);
+  // The blue picture now lies over the red one; pick the text and change its words.
+  await tab.eval(`${HAT}.select(2)`);
+  await tab.eval(`(() => { const w = ${ui('input[aria-label="Text"]')}; w.value = "Fern Hats"; w.dispatchEvent(new Event("input")); })()`);
+  await until("the new words", async () => (await order())[2] === "text:Fern Hats");
+  await tab.eval(`${HAT}.select(1); ${HAT}.removeImage()`);
+  expect(await order()).toEqual(["picture", "text:Fern Hats"]);
+
+  const saved = await tab.eval<{ id: string }>(`${HAT}.save().then((s) => ({ id: s.id }))`);
+  const res = await fetch(`${app.url}/api/orgs/demo/designs/${saved.id}/print`, { headers: { authorization: `Bearer ${DEMO_ADMIN}` } });
+  const plan = PrintPlan(await res.json());
+  expect(plan.sheets.map((s) => [s.zone, s.layers.map((l) => l.text?.line ?? "picture")])).toEqual([["front", ["picture", "Fern Hats"]]]);
   expect(tab.noise).toEqual([]);
   await tab.close();
 });

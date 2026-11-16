@@ -1,5 +1,6 @@
-// A shop saves a cap design, then whoever fulfils the order asks for its print files with the admin key: the plan
-// lays the original at 300 dpi over the cap front's real size, and the original comes back byte for byte. Without
+// A shop saves a cap design (a picture and a line of text on its front), then whoever fulfils the order asks for its
+// print files with the admin key: the plan lays both originals at 300 dpi over the cap front's real size, each where
+// the shopper put it and in its order, and each original comes back byte for byte. Without
 // the key, neither. Then the page's own drawing maths and the resolution it writes into the PNG.
 import { afterAll, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -28,10 +29,13 @@ async function upload(kind: string, type: string, bytes: Uint8Array<ArrayBuffer>
   return s.key;
 }
 
-test("a saved cap design gives the fulfiller a 300 dpi print file of its front, and the original behind it", async () => {
-  const original = new Uint8Array([137, 80, 78, 71, 1, 2, 3]);
-  const layer = { texture: await upload("texture", "image/webp", new Uint8Array([5, 5])), original: await upload("original", "image/png", original), u: 0.5, v: 0.55, scale: 0.7, rotation: 0.2 };
-  const saved = await post("/api/orgs/demo/designs", { v: 1, model: "cap", color: "#1f2937", product: "field-cap", layers: [layer], camera: { azimuth: 0, polar: 1.2, distance: 5.6 } });
+test("a cap with a picture and a line of text gives one 300 dpi print file of its front, both laid where they sit", async () => {
+  const original = new Uint8Array([137, 80, 78, 71, 1, 2, 3]), words = new Uint8Array([137, 80, 78, 71, 4, 5, 6]);
+  const picture = { texture: await upload("texture", "image/webp", new Uint8Array([5, 5])), original: await upload("original", "image/png", original), u: 0.5, v: 0.55, scale: 0.7, rotation: 0.2 };
+  const text = { line: "Fern Hats", font: "serif", color: "#ffffff" };
+  const caption = { texture: await upload("texture", "image/webp", new Uint8Array([5, 6])), original: await upload("original", "image/png", words), text, u: 0.5, v: 0.2, scale: 0.6, rotation: 0 };
+  const saved = await post("/api/orgs/demo/designs", { v: 1, model: "cap", color: "#1f2937", product: "field-cap", layers: [picture, caption], camera: { azimuth: 0, polar: 1.2, distance: 5.6 } });
+  expect(saved.status).toBe(201);
   const { id } = (await saved.json()) as { id: string };
 
   expect((await fetch(`${app.url}/api/orgs/demo/designs/${id}/print`)).status).toBe(401);
@@ -39,11 +43,15 @@ test("a saved cap design gives the fulfiller a 300 dpi print file of its front, 
   const plan = PrintPlan(await res.json());
   expect(plan).toMatchObject({ design: id, model: "cap", dpi: 300, skipped: [] });
   // A cap front is 12 x 6 cm: 1417 x 709 px at 300 dpi.
-  expect(plan.sheets).toMatchObject([{ zone: "front", cm: { w: 12, h: 6 }, px: { w: 1417, h: 709 }, at: { u: 0.5, v: 0.55, scale: 0.7, rotation: 0.2 } }]);
+  expect(plan.sheets).toMatchObject([{ zone: "front", cm: { w: 12, h: 6 }, px: { w: 1417, h: 709 }, layers: [
+    { at: { u: 0.5, v: 0.55, scale: 0.7, rotation: 0.2 } },
+    { at: { u: 0.5, v: 0.2, scale: 0.6, rotation: 0 }, text },
+  ] }]);
 
-  const url = plan.sheets[0]!.original;
-  expect((await fetch(url)).status).toBe(401);
-  expect(new Uint8Array(await (await fetch(url, { headers: admin })).arrayBuffer())).toEqual(original);
+  const [a, b] = plan.sheets[0]!.layers;
+  expect((await fetch(a!.original)).status).toBe(401);
+  expect(new Uint8Array(await (await fetch(a!.original, { headers: admin })).arrayBuffer())).toEqual(original);
+  expect(new Uint8Array(await (await fetch(b!.original, { headers: admin })).arrayBuffer())).toEqual(words);
 });
 
 test("a picture saved without its original is named as not printable, with why", async () => {
@@ -51,7 +59,7 @@ test("a picture saved without its original is named as not printable, with why",
   const saved = await post("/api/orgs/demo/designs", { v: 1, model: "tee", color: "#f5f5f4", product: "crew-tee", layers: [layer], camera: { azimuth: 0, polar: 1.2, distance: 5.6 } });
   const { id } = (await saved.json()) as { id: string };
   const plan = PrintPlan(await (await fetch(`${app.url}/api/orgs/demo/designs/${id}/print`, { headers: admin })).json());
-  expect(plan).toMatchObject({ sheets: [], skipped: [{ zone: "back", why: "no original was saved with this picture" }] });
+  expect(plan).toMatchObject({ sheets: [], skipped: [{ zone: "back", why: "no original was saved with a picture" }] });
 });
 
 test("the picture sits where the shopper put it: u across, v up, scale of the zone's width", () => {

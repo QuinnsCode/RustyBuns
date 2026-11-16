@@ -8,7 +8,7 @@
 //
 // The pixels themselves are drawn where there is a canvas: the admin page (print-sheet.ts), one PNG per zone.
 import { privateJson, readJson } from "@rustybuns/util/http";
-import { Design, PRINT_CM, Product, type Model, type PrintPlan, type PrintSheet, type ZoneName } from "./api.ts";
+import { Design, PRINT_CM, Product, type Model, type PrintPlan, type PrintSheet, type SheetLayer, type ZoneName } from "./api.ts";
 import { designKey } from "./layout.ts";
 import { getProduct } from "./settings.ts";
 import { sheetPx } from "./print-sheet.ts";
@@ -31,14 +31,18 @@ export async function printPlanRoute(env: Env, org: string, id: string, origin: 
   const d = o ? await readJson(new Response(await o.text()), Design) : null;
   if (!d) return nope("unknown design", 404, headers);
   const product = d.product ? await getProduct(env, org, d.product) : null;
+  // One sheet a zone, its layers in the design's order (bottom first), each where the shopper put it.
   const sheets: PrintSheet[] = [], skipped: PrintPlan["skipped"] = [];
-  for (const l of d.layers) {
-    const zone = l.zone ?? "front";
+  for (const zone of new Set(d.layers.map((l) => l.zone ?? "front"))) {
     const cm = zoneCm(d.model, product, zone);
-    const file = l.original?.split("/").pop();
-    if (!l.original || !file || !ORIGINAL.test(file)) skipped.push({ zone, why: "no original was saved with this picture" });
-    else if (!cm) skipped.push({ zone, why: `the product names no size for its ${zone}: add zones to its product file` });
-    else sheets.push({ zone, cm, px: sheetPx(cm, PRINT_DPI), original: `${origin}/api/orgs/${org}/originals/${file}`, at: { u: l.u, v: l.v, scale: l.scale, rotation: l.rotation } });
+    if (!cm) { skipped.push({ zone, why: `the product names no size for its ${zone}: add zones to its product file` }); continue; }
+    const layers: SheetLayer[] = [];
+    for (const l of d.layers.filter((l) => (l.zone ?? "front") === zone)) {
+      const file = l.original?.split("/").pop();
+      if (!file || !ORIGINAL.test(file)) skipped.push({ zone, why: `no original was saved with ${l.text ? `the text "${l.text.line}"` : "a picture"}` });
+      else layers.push({ original: `${origin}/api/orgs/${org}/originals/${file}`, at: { u: l.u, v: l.v, scale: l.scale, rotation: l.rotation }, ...(l.text ? { text: l.text } : {}) });
+    }
+    if (layers.length) sheets.push({ zone, cm, px: sheetPx(cm, PRINT_DPI), layers });
   }
   return privateJson({ design: id, model: d.model, dpi: PRINT_DPI, sheets, skipped } satisfies PrintPlan, 200, headers);
 }
