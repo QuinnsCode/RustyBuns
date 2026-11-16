@@ -145,6 +145,9 @@ const list: Gear[] = [
   { id: "road-case-m", what: "road case on wheels", size: box(0.6, 0.5, 0.5), kg: 14, jacks: {} },
   { id: "stand-tripod", what: "speaker stand, 1.2 to 2.0 m", size: box(0.9, 1.2, 0.9), kg: 4, jacks: {} },
   { id: "mic-stand", what: "boom mic stand", size: box(0.6, 1.6, 0.6), kg: 3, jacks: {} },
+  // A DI box: an instrument in, a thru to the amp, a balanced XLR to the desk. Phantom-powered, so no mains.
+  // Its ground lift (`lift` on the placed box) breaks pin 1 when the amp and the desk make a ground loop.
+  { id: "di-box", what: "active DI box with a ground lift", size: box(0.1, 0.05, 0.13), kg: 0.6, jacks: { "inst-in": 1, "line-out": 1, "xlr-out": 1 } },
   { id: "guitar", what: "electric guitar", size: box(0.33, 1.0, 0.05), kg: 3.5, jacks: { "line-out": 1 } },
   // Not road gear: the venue's own back-bar cooler, a load on a wall circuit that is always on.
   { id: "bar-cooler", what: "back-bar drinks cooler", size: box(0.9, 0.9, 0.6), kg: 70, jacks: { "power-in": 1 }, draw: { idle: 450, loud: 450 } },

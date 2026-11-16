@@ -43,6 +43,20 @@ const chainCables = (n: number) => [
   ...Array.from({ length: n - 1 }, (_, i) => c("speaker", `box${i + 1} speaker-out`, `box${i + 2} speaker-in`)),
 ];
 
+// The stage: the guitar through a DI, its thru to the amp, its XLR to the desk, the desk to a top. Amp and desk on the wall.
+const stage = (lift: boolean): Placed[] => [...garage, { id: "di", gear: "di-box", lift }, bar[0]!, bar[1]!];
+const stageCables = [
+  c("power", "wall power-out-1", "head power-in"),
+  c("power", "wall power-out-2", "desk power-in"),
+  c("power", "wall power-out-3", "topL power-in"),
+  c("instrument", "gtr line-out", "di inst-in"),
+  c("instrument", "di line-out", "head inst-in"),
+  c("speaker", "head speaker-out-1", "cab speaker-in"),
+  c("xlr", "di xlr-out", "desk xlr-in-1"),
+  c("xlr", "desk xlr-out-1", "topL xlr-in"),
+];
+const stageWall: Outlet = { ...wall(20), jacks: 3 };
+
 const cases: { name: string; placed: Placed[]; cables: Cable[]; outlets: Outlet[]; fed: Record<string, boolean>; problems: string[] }[] = [
   { name: "the garage: guitar, head, cab", placed: garage, cables: garageCables, outlets: [wall(15)], fed: { cab: true }, problems: [] },
   { name: "the garage with the head unplugged", placed: garage, cables: garageCables.slice(1), outlets: [wall(15)], fed: { cab: false }, problems: ["no-power head"] },
@@ -74,6 +88,8 @@ const cases: { name: string; placed: Placed[]; cables: Cable[]; outlets: Outlet[
     fed: { topL: true },
     problems: ["loop desk,topL"],
   },
+  { name: "the stage: a DI's thru to the amp and XLR to the desk hums", placed: stage(false), cables: stageCables, outlets: [stageWall], fed: { cab: true, topL: true }, problems: ["hum di,head,desk"] },
+  { name: "the stage with the DI's ground lifted is quiet", placed: stage(true), cables: stageCables, outlets: [stageWall], fed: { cab: true, topL: true }, problems: [] },
   {
     name: "an outlet that isn't there, and a jack the box doesn't have",
     placed: garage,
