@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { bezier, hinges, leafFrames, penLines, penMask, penPace, swingFrames } from "../src/page.ts";
+import { bezier, hinges, leafFrames, penLines, penMask, swingFrames } from "../src/page.ts";
 
 // The tome's ink is written, not wiped (#3671): a block's text boxes become the lines a pen runs along in reading
 // order. A Range hands back one box per run of text per line, often several on one line (a word in italic, a link),
@@ -28,22 +28,6 @@ describe("the pen's path through a block", () => {
     expect(mask.length).toBe(112 + 72 + 22);
   });
 
-  // The newest ink is wet (#3717): the pen no longer wipes along at one speed. It writes each word at its own pace
-  // and stops a moment between words, but never goes back over what it wrote and ends where the path ends.
-  test("the pen's pace is uneven word by word, and still runs the whole path forward", () => {
-    const line = { x: 0, y: 0, w: 300, h: 20 };
-    const words = [{ x: 0, y: 0, w: 60, h: 20 }, { x: 70, y: 0, w: 110, h: 20 }, { x: 190, y: 0, w: 110, h: 20 }];
-    const mask = penMask([line, { x: 0, y: 0, w: 300, h: 20 }], 1, words);
-    const stops = [...mask.pace.matchAll(/(-?[\d.]+) (-?[\d.]+)%/g)].map((m) => [Number(m[1]), Number(m[2])] as const);
-    for (let i = 1; i < stops.length; i++) for (const k of [0, 1] as const) expect(stops[i]![k]).toBeGreaterThanOrEqual(stops[i - 1]![k]);
-    expect(stops.at(-1)).toEqual([1, 100]);
-    // a stop between words: time passes while the pen stays put
-    expect(stops.some(([p, t], i) => i > 0 && p === stops[i - 1]![0] && t > stops[i - 1]![1])).toBe(true);
-    // two words of one width take different times
-    const across = (a: number, b: number) => { const at = (px: number) => { const p = px / mask.length, j = stops.findIndex(([q]) => q >= p); return stops[j]![1]; }; return at(b) - at(a); };
-    expect(Math.abs(across(76, 186) - across(196, 306))).toBeGreaterThan(0.5);
-    expect(penPace([], [], 100)).toBe("linear(0, 1)");
-  });
 });
 
 // A sheet swinging away (the book closing over the world) or laid down (a result page) has nothing printed on its

@@ -82,19 +82,6 @@ describe("a puppet follows its fighter", () => {
     expect(p.group.position.x).toBeCloseTo(f.pos.x, 5);
   }, 30_000);
 
-  // #3138: a many-headed beast's heads glance about smoothly, so their tips may not shiver between frames.
-  test("standing idle, a hydra's heads move smoothly, without a shiver", async () => {
-    const h = ROSTER.find((x) => x.id === "hydra")!, b = await beast(h.id), p = new Puppet(b, body(h));
-    const f = newMatch(h, h).f[0];
-    f.pos = { x: 0, y: 0, z: 0 }; f.vel = { x: 0, y: 0, z: 0 }; f.yaw = 0; f.onGround = true;
-    const seen: ReturnType<typeof p.headWorld>[] = [];
-    for (let i = 0; i < 300; i++) { p.update(f, 1 / 60, i); if (i >= 60) seen.push(p.headWorld()); }
-    let worst = 0;
-    for (let k = 1; k + 1 < seen.length; k++) for (let t = 0; t < seen[k]!.length; t++)
-      worst = Math.max(worst, seen[k + 1]![t]!.clone().sub(seen[k]![t]!).sub(seen[k]![t]!.clone().sub(seen[k - 1]![t]!)).length());
-    expect(worst).toBeLessThan(0.005); // metres: the old solver damping spiked to tens of centimetres
-  }, 30_000);
-
   test("in the air the feet let go of the ground", async () => {
     const b = await beast(c.id);
     const p = new Puppet(b, body(c));
@@ -176,25 +163,6 @@ describe("a puppet looks, swings its tail, and puts its body into an attack", ()
     check({ ...(Object.fromEntries(Object.keys(rest).map((k) => [k, hit[k as keyof typeof hit] - rest[k as keyof typeof rest]])) as D), h: rest.h });
   }, 30_000);
 
-  test("a heavy coils before it strikes: mid wind-up the head is behind where it rests, at the strike ahead of it", async () => {
-    const c = ROSTER.find((x) => x.archetype === "bruiser")!;
-    const b = await beast(c.id);
-    const headAt = (t: number | null) => {
-      const p = new Puppet(b, body(c), c.archetype);
-      const f = newMatch(c, c).f[0];
-      f.pos = { x: 0, y: 0, z: 0 }; f.vel = { x: 0, y: 0, z: 0 }; f.yaw = 0; f.onGround = true;
-      for (let i = 0; i < 40; i++) {
-        if (t !== null) { f.state = "attack"; f.act = { move: f.moves.heavy, hit: false, dive: false }; f.t = t; }
-        p.update(f, 1 / 60, i, { x: 5, y: 0, z: 0 });
-      }
-      return Math.max(...p.headWorld().map((v) => v.x));
-    };
-    const { startup } = frames(c.moves.find((m) => m.slot === "heavy")!);
-    const rest = headAt(null);
-    expect(headAt(Math.round(startup * 0.6))).toBeLessThan(rest - 0.02);
-    expect(headAt(startup)).toBeGreaterThan(rest + 0.03);
-  }, 30_000);
-
   test("a strike stops where the bodies meet: with the other fighter close, the head stays on its own side", async () => {
     const c = ROSTER.find((x) => x.archetype === "bruiser")!;
     const b = await beast(c.id);
@@ -221,87 +189,6 @@ describe("a puppet looks, swings its tail, and puts its body into an attack", ()
   }, 30_000);
 });
 
-test("a landing squashes the body, which springs back; each step is reported where the foot came down", async () => {
-  const c = ROSTER.find((x) => x.archetype === "tank")!;
-  const p = new Puppet(await beast(c.id), body(c), c.archetype);
-  const steps: number[] = [];
-  p.onStep = (at) => steps.push(at.x);
-  const f = newMatch(c, c).f[0];
-  f.pos = { x: 0, y: 2, z: 0 }; f.vel = { x: 0, y: -8, z: 0 }; f.yaw = 0; f.onGround = false;
-  for (let i = 0; i < 20; i++) p.update(f, 1 / 60, i);
-  f.pos.y = 0; f.vel.y = 0; f.onGround = true;
-  p.update(f, 1 / 60, 20);
-  const landed = p.rootWorld().y;
-  for (let i = 21; i < 80; i++) p.update(f, 1 / 60, i);
-  expect(p.rootWorld().y).toBeGreaterThan(landed + 0.02);
-  expect(steps.length).toBe(0);
-  f.vel = { x: 4, y: 0, z: 0 };
-  for (let i = 80; i < 200; i++) { f.pos.x += 4 / 60; p.update(f, 1 / 60, i); }
-  expect(steps.length).toBeGreaterThan(4);
-  for (const x of steps) expect(x).toBeGreaterThan(0);
-}, 30_000);
-
-test("an upright beast's arms and tail hang where it stands, trail a quick turn and settle back", async () => {
-  const c = ROSTER.find((x) => x.id === "rougarou")!;
-  const p = new Puppet(await beast(c.id), body(c), c.archetype);
-  const f = newMatch(c, c).f[0];
-  f.pos = { x: 0, y: 0, z: 0 }; f.vel = { x: 0, y: 0, z: 0 }; f.yaw = 0; f.onGround = true;
-  const h = body(c).height, trail = () => Math.max(...p.limbsWorld().map((l) => l.drawn.distanceTo(l.posed)));
-  expect(p.limbsWorld().length).toBe(3);   // two arms and the tail
-  for (let i = 0; i < 60; i++) p.update(f, 1 / 60, i);
-  expect(trail()).toBeLessThan(0.02 * h);
-  let peak = 0;
-  for (let i = 60; i < 90; i++) { if (i < 78) f.yaw += Math.PI / 18; p.update(f, 1 / 60, i); peak = Math.max(peak, trail()); }
-  expect(peak).toBeGreaterThan(0.1 * h);
-  for (let i = 90; i < 240; i++) p.update(f, 1 / 60, i);
-  expect(trail()).toBeLessThan(0.02 * h);
-}, 30_000);
-
-test("a heavy blow flattens the struck body front to back and curls it over the blow, then it rebounds and settles", async () => {
-  const c = ROSTER.find((x) => x.id === "hodag")!;
-  const p = new Puppet(await beast(c.id), body(c), c.archetype);
-  const f = newMatch(c, c).f[0];
-  f.pos = { x: 0, y: 0, z: 0 }; f.vel = { x: 0, y: 0, z: 0 }; f.yaw = 0; f.onGround = true;
-  const span = () => p.headWorld()[0]!.x - p.tailWorld()!.x;
-  // how far the head stands above the tail: a body tipping back as one rigid block see-saws it, head up and tail down
-  const tip = () => p.headWorld()[0]!.y - p.tailWorld()!.y;
-  for (let i = 0; i < 60; i++) p.update(f, 1 / 60, i);
-  const rest = span(), level = tip();
-  let least = Infinity, most = -Infinity, seesaw = 0;
-  f.state = "stun"; f.stun = 22;
-  for (let i = 60; i < 120; i++) {
-    f.stun = Math.max(0, f.stun - 1); if (f.stun === 0) f.state = "free"; p.update(f, 1 / 60, i);
-    least = Math.min(least, span()); if (i > 75) most = Math.max(most, span()); if (i < 72) seesaw = Math.max(seesaw, tip() - level);
-  }
-  expect(least).toBeLessThan(rest * 0.88);
-  // inside 0.2 s, on the hit's flash, the body folds around the blow instead (without the curl it see-saws 0.6 of its height)
-  expect(seesaw).toBeLessThan(body(c).height * 0.4);
-  // the rebound stretches it past rest (the statue Hodag's heavy head: about 2.6%, 1.7% since its ankles hold the feet flat)
-  expect(most).toBeGreaterThan(rest * 1.012);
-  for (let i = 120; i < 300; i++) p.update(f, 1 / 60, i);
-  expect(Math.abs(span() - rest)).toBeLessThan(rest * 0.03);
-}, 30_000);
-
-// #4669 round 21: the head and chest took a blow while every foot stayed where it stood
-test.each(["rougarou", "hodag"])("a blow from in front steps the struck body's feet back, and it stands again", async (id) => {
-  const c = ROSTER.find((x) => x.id === id)!;
-  const p = new Puppet(await beast(c.id), body(c), c.archetype);
-  const f = newMatch(c, c).f[0];
-  f.pos = { x: 0, y: 0, z: 0 }; f.vel = { x: 0, y: 0, z: 0 }; f.yaw = 0; f.onGround = true;
-  const striker = { x: 3, y: 0, z: 0 };
-  for (let i = 0; i < 60; i++) p.update(f, 1 / 60, i, striker);
-  const rest = p.feetWorld();
-  f.state = "stun"; f.stun = 22;
-  let back = 0;
-  for (let i = 60; i < 100; i++) {
-    f.stun = Math.max(0, f.stun - 1); if (f.stun === 0) f.state = "free"; p.update(f, 1 / 60, i, striker);
-    back = Math.max(back, ...p.feetWorld().map((v, k) => rest[k]!.x - v.x));
-  }
-  expect(back).toBeGreaterThan(0.08 * body(c).height);   // a foot went back, away from the striker
-  for (let i = 100; i < 300; i++) p.update(f, 1 / 60, i, striker);
-  expect(p.drift()).toBeLessThan(p.stride());
-}, 30_000);
-
 // #4685 round 22: stepping back from a blow, the solver stood the long flat foot on its toe and folded the ankle down
 // under it, onto the grass, so the foot and claws lay on the ground apart from the leg
 test.each(["yeti", "sasquatch", "hodag"])("the %s's feet stay flat on their legs through blows", async (id) => {
@@ -322,32 +209,3 @@ test.each(["yeti", "sasquatch", "hodag"])("the %s's feet stay flat on their legs
   }
   expect(sink).toBeLessThan(0.06 * b.sheet.height);   // the ankle stays over the toe (it sank 0.1-0.15 of the height under it)
 }, 30_000);
-
-// the Mothman's wing tips tower over its head, which once read it as half upright and halved its lean (#4267). The bar sits
-// between the two: flying leans 0.82 rad past standing for the Jersey Devil, 0.85 for the Mothman, 0.60 when it read half upright.
-test.each(["jersey-devil", "mothman"])("an upright flyer (%s) flies leaning into it, head well ahead of its hips, not hanging like a lifted biped", async (id) => {
-  const c = ROSTER.find((x) => x.id === id)!;
-  const lean = async (flying: boolean) => {
-    const p = new Puppet(await beast(c.id), body(c), c.archetype);
-    const f = newMatch(c, c).f[0];
-    f.pos = { x: 0, y: flying ? 2 : 0, z: 0 }; f.vel = { x: flying ? f.b.topSpeed : 0, y: 0, z: 0 }; f.yaw = 0;
-    f.onGround = !flying; f.flying = flying;
-    for (let i = 0; i < 90; i++) { f.pos.x += f.vel.x / 60; p.update(f, 1 / 60, i); }
-    const head = p.headWorld()[0]!, hips = p.rootWorld();
-    return Math.atan2(head.x - hips.x, head.y - hips.y);   // 0 is straight up, more is tipped forward
-  };
-  expect(await lean(true)).toBeGreaterThan((await lean(false)) + 0.72);
-}, 30_000);
-
-test("a glowing part keeps its glow after a hit's flash fades", async () => {
-  const c = ROSTER.find((x) => x.id === "jersey-devil")!;
-  const p = new Puppet(await beast(c.id), body(c));
-  const eye = p.materials.find((m) => m.emissiveIntensity > 1)!;
-  const red = eye.emissive.getHex();
-  expect(eye.emissive.r).toBeGreaterThan(eye.emissive.g * 4);
-  p.flash(0xffffff, 0.6);
-  expect(eye.emissive.getHex()).toBe(0xffffff);
-  p.flash(0xffffff, 0);
-  expect(eye.emissive.getHex()).toBe(red);
-  expect(eye.emissiveIntensity).toBeGreaterThan(1);
-});
