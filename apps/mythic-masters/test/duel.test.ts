@@ -126,7 +126,7 @@ test("a co-op room's wild one is a fair fight for two or four: grown to face the
   expect(outnumbered(ROSTER[0]!, 1)).toBe(ROSTER[0]!);
 });
 
-test("four friends against a wild one: it isn't stun-locked, and a hit of its takes about one health bar, not three (#4441)", async () => {
+test("four friends against a wild one: it isn't stun-locked, and a hit of its takes well under one health bar (#4441, #4628)", async () => {
   const { BASE, teamFights } = await import("../scripts/tune.ts");
   const { outnumbered } = await import("../src/journey.ts");
   const { newTeamMatch, step } = await import("../src/sim.ts");
@@ -144,9 +144,10 @@ test("four friends against a wild one: it isn't stun-locked, and a hit of its ta
   }
   const median = shares.sort((x, y) => x - y)[shares.length >> 1]!;
   console.log(`four friends: wild one stunned ${(100 * stunned / ticks).toFixed(0)}% of the fight, its median clean hit takes ${(100 * median).toFixed(0)}% of a friend's health`);
-  // Before the pile-on, four friends needed it at 18x damage: each clean hit took about three of their health bars.
+  // Before the pile-on, four friends needed it at 18x damage: each clean hit took about three of their health bars; before
+  // it shrugged off damage too, 8x and a whole bar.
   expect(stunned / ticks).toBeLessThan(0.25);
-  expect(median).toBeLessThan(1.5);
+  expect(median).toBeLessThan(0.8);
 });
 
 test("the stick rounds the same way on both pages, and stays inside the circle", () => {

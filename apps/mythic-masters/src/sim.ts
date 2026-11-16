@@ -207,12 +207,17 @@ export const CORNERED = { per: 3, cap: 0.5, even: 0.95 } as const;
 /** Pile-on (#4441): a fighter facing more than one foe still in shrugs off part of each blow, so a team can't keep a lone
  * wild one stunned and launched by numbers alone. Knockback and hit-stun are cut to 1 / (1 + `per` × each foe past the
  * first). One on one it is 1: the duel is untouched. */
-export const PILE_ON = { per: 2 } as const;
-function piled(m: Match, d: Fighter) {
+export const PILE_ON = { per: 2, hurt: 1 } as const;
+/** Foes past the first still in against `d`. */
+function extraFoes(m: Match, d: Fighter) {
   let n = 0;
   for (const o of m.f) if (o.team !== d.team && !o.down) n++;
-  return n < 2 ? 1 : 1 / (1 + PILE_ON.per * (n - 1));
+  return Math.max(0, n - 1);
 }
+const piled = (m: Match, d: Fighter) => 1 / (1 + PILE_ON.per * extraFoes(m, d));
+/** Damage it takes is cut to 1 / (1 + `hurt` × each foe past the first) (#4628): more health would do the same for its
+ * health bar, but the launch it builds from damage taken would keep growing into ring-outs. */
+const shrugged = (m: Match, d: Fighter) => 1 / (1 + PILE_ON.hurt * extraFoes(m, d));
 const statTotal = (c: Creature) => c.stats.vigor + c.stats.might + c.stats.guard + c.stats.focus + c.stats.will + c.stats.speed;
 function cornered(a: Fighter, d: Fighter) {
   if (statTotal(a.c) < statTotal(d.c) * CORNERED.even) return 1;
@@ -535,7 +540,7 @@ function hit(m: Match, by: number, on: number, move: Move, power: number, from: 
   const rear = !ranged && facingAway > 2.2;
   // Power is squashed (a 120 move is ~2.6x a 30, not 4x) so quick light hits add up.
   let damage = 1.1 * pow(power, 0.7) * Math.sqrt(atk / def) * typeMul(move.field, d.c.fields);
-  damage *= a.c.edge * cornered(a, d);
+  damage *= a.c.edge * cornered(a, d) * shrugged(m, d);
   if (guarded) damage *= move.field === "iron" ? 0.4 : 0.2;
   if (rear) damage *= 1.35;
   // Hit again while red: it turns real. Then part of this hit is red, to come back if you get clear.
