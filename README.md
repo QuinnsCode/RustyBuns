@@ -620,6 +620,16 @@ Use Rust only when TypeScript is not fast enough. `@rustybuns/native` loads a cd
 
 </details>
 
+### On the home screen, and playable with no signal
+
+One vite plugin makes a browser build installable: a full-screen icon on a phone's home screen, and the page plays offline.
+
+<details><summary>More</summary>
+
+`installable` from `@rustybuns/cli/installable` adds the web manifest, home-screen icons drawn in code, the iOS tags and a service worker that keeps every built file. Online, a page load still asks the network first, so a deploy shows up on the next visit; offline, the kept copy answers. Sockets and anything else outside the build go to the network as before. [Hippo Tycoon](apps/hippo-tycoon/README.md) uses it: solo and couch play in airplane mode. No Mac and no App Store review. The other roads to an iPhone (a WebView shell, native SwiftUI) are in [notes/IOS_HAPPY_PATHS.md](notes/IOS_HAPPY_PATHS.md).
+
+</details>
+
 ### A native iOS app as a thin client
 
 The backend stays on the edge, and a native app is a thin client of the same http and comms. The first tools are a SwiftUI shell, a USDZ model export and a shared Swift package.
