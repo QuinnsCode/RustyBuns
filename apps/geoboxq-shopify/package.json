@@ -8,6 +8,9 @@
     "test": "bun test test",
     "serve": "bun src/serve.ts"
   },
+  "dependencies": {
+    "@rustybuns/util": "^0.1.12"
+  },
   "devDependencies": {
     "geoboxq": "workspace:*",
     "wrangler": "4.156.0"

@@ -21,7 +21,6 @@ import { PORTS } from "@rustybuns/util/ports";
 
 const FILE = "src/greeting.ts";
 const APP = join(import.meta.dir, "../../hello-world");
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /** The app's source files as {path: text}: what "digging it up" brings in. */
 export function appFiles(dir = APP) {
@@ -81,7 +80,7 @@ export async function tour(call: Awaited<ReturnType<typeof local>>, t: Tour) {
     const lines = await block(job.marker);
     const claim = await got(j(job.who, `${at}/claims${q()}`, { id: `run-${job.who.slice(6)}-${round}`, task: job.task, lines: lines.map((l) => l.id) }), "claim", ClaimRow);
     for (const l of lines) {
-      await sleep(t.pace + Math.random() * t.pace);
+      await Bun.sleep(t.pace + Math.random() * t.pace);
       const cur = (await read()).find((x) => x.id === l.id)!;
       const r = await j(job.who, `${at}/ops${q()}`, { claim: claim.id, ops: [{ kind: "set", line: l.id, base: cur.rev, text: cur.text.replace(/ \/\/ r\d+$/, "") + ` // r${round}` }] });
       r.ok ? landed++ : held++;
@@ -92,9 +91,9 @@ export async function tour(call: Awaited<ReturnType<typeof local>>, t: Tour) {
     await ok(j(job.who, `${at}/release${q()}`, { id: claim.id }), "release");
   };
   for (let round = 1; round <= t.rounds; round++) {
-    const runs = JOBS.map((job, i) => sleep(i * t.pace).then(() => work(job, round)));
+    const runs = JOBS.map((job, i) => Bun.sleep(i * t.pace).then(() => work(job, round)));
     // Ada reaches for bo's lines while bo holds them: held, not clobbered.
-    await sleep(t.pace * 2);
+    await Bun.sleep(t.pace * 2);
     const theme = await block("// Theme"), cur = (await read()).find((l) => l.id === theme[0]!.id)!;
     const r = await j("agent-ada", `${at}/ops${q()}`, { ops: [{ kind: "set", line: cur.id, base: cur.rev, text: cur.text + " // ada was here" }] });
     if (r.status === 409) held++;
@@ -151,7 +150,7 @@ if (import.meta.main) {
     if (box) console.log(`Box up on ${shell.url}: sign in as ryan, API at ${shell.url}/api, MCP at ${shell.url}/api/mcp. Nothing runs until an agent does it.`);
     else {
       console.log(`Then open ${FILE}. The tour starts in ${WAIT}s.\n`);
-      await sleep(WAIT * 1000);
+      await Bun.sleep(WAIT * 1000);
     }
   }
   await tour(call, { pace: arg("pace", 500), rounds: arg("rounds", 3), stopAfterDig: box, say: (who, what) => console.log(`${new Date().toISOString().slice(11, 19)}  ${who.padEnd(10)} ${what}`) });

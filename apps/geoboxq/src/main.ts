@@ -4,6 +4,7 @@ import { accountChip, finishSignIn, reportButton } from "./account.ts";
 import { learn, suggest, type Memory } from "./baxter.ts";
 import { solve, type Solution } from "./engine.ts";
 import { addCommands } from "@rustybuns/util/commands";
+import { esc } from "@rustybuns/util";
 import { mountPalette } from "@rustybuns/util/palette";
 import { blank, example, group, innerOf, parseRows, toInput, usableBoxes, verdict, wallOf, type Group, type Row, type State } from "./model.ts";
 import { parts, sceneSvg, shapeSvg, THEMES } from "./viz.ts";
@@ -24,7 +25,6 @@ const ICON = {
 };
 
 const KEY = "geoboxq:v2";
-const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
 const num = (n: number) => String(Math.round(n * 100) / 100);
 
 function load(): State {

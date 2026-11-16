@@ -6,13 +6,13 @@ import { existsSync, readdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { $ } from "bun";
+import { esc } from "@rustybuns/util";
 import { Refs } from "../../../scripts/beast-refs.ts";
 import { Layers, type Layer } from "./shape.ts";
 
 type B = Layer["beasts"][number];
 const [src, out] = process.argv.slice(2) as [string, string];
 const regions = Layers(await Bun.file(src).json());
-const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
 
 async function jpeg(file: string, w: number, q: number): Promise<string> {
   const o = join(tmpdir(), `bd-${Math.random().toString(36).slice(2)}.jpg`);

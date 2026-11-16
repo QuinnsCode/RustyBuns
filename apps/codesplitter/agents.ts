@@ -62,7 +62,6 @@ const agents: Agent[] = [
   },
 ];
 
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 export async function run(call: Call, opts: { owner?: string; repo?: string; delay?: number; log?: (s: string) => void } = {}) {
   const owner = opts.owner ?? "ryan", repo = opts.repo ?? `playground-${Date.now().toString(36)}`, path = "src/taste.js";
@@ -83,7 +82,7 @@ export async function run(call: Call, opts: { owner?: string; repo?: string; del
       const doc = await ok(call(a.name, `${file}/file${q}`));
       const move = a.pick(doc.lines);
       if (!move) return;
-      await sleep(Math.random() * (opts.delay ?? 5)); // think
+      await Bun.sleep(Math.random() * (opts.delay ?? 5)); // think
       const res = await call(a.name, `${file}/ops${q}`, { method: "POST", body: JSON.stringify({ ops: move.ops, ifRev: a.whole ? doc.rev : undefined }) });
       if (res.status === 409) { stats[a.name]!.conflicts++; log(`  ${a.name}: conflict on ${a.whole ? "the file" : move.line.id}, re-reading`); continue; }
       if (!res.ok) throw new Error(`${a.name}: ${res.status} ${await res.text()}`);

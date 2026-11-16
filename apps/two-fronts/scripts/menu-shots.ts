@@ -9,7 +9,6 @@ const out = resolve(process.argv[2] ?? "shots");
 mkdirSync(out, { recursive: true });
 const SIZES = { desk: { w: 1280, h: 800, mobile: false }, tablet: { w: 820, h: 1180, mobile: true }, phone: { w: 390, h: 844, mobile: true } };
 const click = (sel: string) => `document.querySelector(${JSON.stringify(sel)})?.click()`;
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 // Each screen: the address to open fresh (empty storage), then a script that brings the screen up.
 // A war starts on the fleet chooser (the line-up), so the other screens take a fleet first.
 const fleet = click('[data-preset="line"]');
@@ -37,7 +36,7 @@ try {
       await tab.call("Storage.clearDataForOrigin", { origin: new URL(vite.url).origin, storageTypes: "all" });
       await load(chrome.cdp, tab, new URL(sc.path, vite.url).href, 2500);
       if (sc.login) { await tab.eval(LOGIN); await load(chrome.cdp, tab, new URL(sc.path, vite.url).href, 2500); }
-      if (sc.js) { await tab.eval(sc.js); await sleep(600); }
+      if (sc.js) { await tab.eval(sc.js); await Bun.sleep(600); }
       const { data } = await tab.call("Page.captureScreenshot", { format: "png" });
       const file = join(out, `${sc.name}-${size}.png`);
       writeFileSync(file, Buffer.from(data, "base64"));

@@ -6,7 +6,8 @@ import { isRecord } from "@rustybuns/util/guard";
 export { b64, b64url, digest, hex, hmacHex, sha256 } from "@rustybuns/util/bytes";
 
 /** `s` safe inside HTML text and attribute values. */
-export const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+import { esc } from "@rustybuns/util";
+export { esc };
 /** "1 line", "3 lines"; pass `many` for an irregular plural. */
 export const plural = (n: number, one: string, many = one + "s") => `${n} ${n === 1 ? one : many}`;
 /** `v` is a JSON object: not null, not an array. What a parsed body must be before its keys are read. */

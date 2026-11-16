@@ -2,10 +2,10 @@
 // be (postgres.js over a connection string). The same file runs on the edge through Hyperdrive,
 // on the desktop against PGlite, and on a box against the real URL. src/suite.ts checks it.
 import postgres from "postgres";
+import { json } from "@rustybuns/util/http";
 
 interface Env { HYPERDRIVE: { connectionString: string } }
 
-const json = (v: unknown, status = 200) => Response.json(v, { status });
 
 export default {
   async fetch(req: Request, env: Env): Promise<Response> {

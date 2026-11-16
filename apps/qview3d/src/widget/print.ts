@@ -4,6 +4,7 @@
 // covers the print meshes' whole UV square, so moving a picture is a redraw of one canvas, never new geometry. A
 // product has one or more print zones (a hat's front; a top's front, back and sleeve), each a rect of that square.
 import type { ZoneName } from "../api.ts";
+import { clamp } from "@rustybuns/util";
 
 /** Where a picture may go on the print meshes, in their UVs. */
 export type Zone = { u0: number; u1: number; v0: number; v1: number };
@@ -24,7 +25,6 @@ export type PrintZone = Zone & { name: ZoneName; label: string; view: Side; widt
  */
 export type Placement = { zone?: ZoneName; u: number; v: number; scale: number; rotation: number; point?: number[]; normal?: number[] };
 
-const clamp = (x: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, x));
 export const clampPlacement = (p: Placement): Placement => ({
   ...p,
   u: clamp(p.u, 0, 1), v: clamp(p.v, 0, 1), scale: clamp(p.scale, 0.05, 1), rotation: clamp(p.rotation, -Math.PI, Math.PI),

@@ -16,7 +16,6 @@ import { PORTS } from "@rustybuns/util/ports";
 
 const arg = (n: string, d: number) => { const i = process.argv.indexOf(`--${n}`); return i > 0 ? Number(process.argv[i + 1]) : d; };
 const PORT = arg("port", PORTS.liveDemo), ROUNDS = arg("rounds", 3), PACE = arg("pace", 700), WAIT = arg("wait", 20);
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const FILE = "src/server.ts";
 
 const SOURCE = `import { serve } from "bun";
@@ -91,16 +90,16 @@ async function work(job: (typeof JOBS)[number], round: number) {
   const claim = (await (await j(who, `${at}/claims${q}`, { id: `run-${who.slice(6)}-${round}`, task: job.task, lines: block.map((l) => l.id) })).json()) as { id: string };
   say(who, `claimed ${block.length} lines: ${job.task}`);
   for (const l of block) {
-    await sleep(PACE + Math.random() * PACE);
+    await Bun.sleep(PACE + Math.random() * PACE);
     const cur = (await read()).find((x) => x.id === l.id)!;
     const text = cur.text.replace(/ \/\/ r\d+$/, "") + ` // r${round}`;
     const r = await j(who, `${at}/ops${q}`, { claim: claim.id, ops: [{ kind: "set", line: l.id, base: cur.rev, text }] });
     say(who, r.ok ? `rewrote  ${l.text.trim().slice(0, 44)}` : `refused (${r.status})`);
   }
-  await sleep(PACE);
+  await Bun.sleep(PACE);
   const ins = await j(who, `${at}/ops${q}`, { claim: claim.id, ops: [{ kind: "insert", after: block.at(-1)!.id, text: `${job.add} (r${round})` }] });
   say(who, ins.ok ? "added a line" : `insert refused (${ins.status})`);
-  await sleep(PACE * 2);
+  await Bun.sleep(PACE * 2);
   // Take the line back out the round after, so the file doesn't grow for ever: a delete folds away.
   await j(who, `${at}/release${q}`, { id: claim.id });
   say(who, "released");
@@ -115,12 +114,12 @@ async function collide() {
 
 console.log(`\nOpen: ${shell.url}/#/r/ryan/office\n(sign in as "ryan" first: run  document.cookie = "cs_user=ryan; path=/"  in the page console, then reload)`);
 console.log(`Then open ${FILE}. Edits start in ${WAIT}s.\n`);
-await sleep(WAIT * 1000);
+await Bun.sleep(WAIT * 1000);
 
 for (let round = 1; round <= ROUNDS; round++) {
   say("demo", `round ${round}`);
-  const runs = JOBS.map((job, i) => sleep(i * PACE).then(() => work(job, round)));
-  await sleep(PACE * 6).then(collide);
+  const runs = JOBS.map((job, i) => Bun.sleep(i * PACE).then(() => work(job, round)));
+  await Bun.sleep(PACE * 6).then(collide);
   await Promise.all(runs);
 }
 say("demo", "done. Ctrl-C to stop the server");

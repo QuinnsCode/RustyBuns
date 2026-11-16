@@ -16,7 +16,7 @@ const app = URL_ ? null : await local({ GH_CLI: "off" });
 const call: Call = app ?? remote(URL_!, arg("cookie"));
 const j = (user: string, path: string, body?: unknown, method = body === undefined ? "GET" : "POST") =>
   call(user || null, path, { method, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
-const json = async (res: Response) => res.json() as Promise<any>;
+const bodyOf = async (res: Response) => res.json() as Promise<any>;
 
 let failed = 0;
 async function beat(name: string, fn: () => Promise<void>) {
@@ -36,7 +36,7 @@ const fine = (s: number) => s >= 200 && s < 300;
 const SOURCE = "const a = 1;\nconst b = 2;\nconst c = 3;\nfunction run() {\n  return a + b + c;\n}";
 const AGENTS = ["agent-claude", "agent-codex"];
 type Line = { id: string; text: string; rev: number; by: string };
-const lines = async (branch = "") => ((await json(await j(USER, `${at}/file?path=${F}${branch && `&branch=${branch}`}`))).lines as Line[]);
+const lines = async (branch = "") => ((await bodyOf(await j(USER, `${at}/file?path=${F}${branch && `&branch=${branch}`}`))).lines as Line[]);
 
 await beat("the page loads", async () => {
   // Locally the page is the built client the shell serves; against a deployment it is whatever `/` answers.
@@ -55,23 +55,23 @@ await beat("setup: a fresh repo with both agents on the crew", async () => {
 await beat("the line: stable ids, author per line, time travel", async () => {
   const before = await lines(), ids = before.map((l) => l.id);
   must(before.length === 6 && before.every((l) => l.id && l.by), "every line has an id and an author");
-  const log = await json(await j(USER, `${at}/log?path=${F}&since=0`));
+  const log = await bodyOf(await j(USER, `${at}/log?path=${F}&since=0`));
   const first = (log.ops as { rev: number }[]).at(-1)!.rev;
   await status(j(AGENTS[0]!, `${at}/ops?path=${F}`, { ops: [{ kind: "insert", after: before[0]!.id, text: "// agent was here" }] }), 200, "insert");
   const now = await lines();
   must(ids.every((id) => now.some((l) => l.id === id)), "ids survived an insert");
   must(now.find((l) => l.text === "// agent was here")?.by === AGENTS[0], "the new line is blamed on the agent");
-  const then = await json(await j(USER, `${at}/at?path=${F}&rev=${first}`));
+  const then = await bodyOf(await j(USER, `${at}/at?path=${F}&rev=${first}`));
   must(then.lines.length === before.length, `time travel to rev ${first} shows ${then.lines.length} lines, wanted ${before.length}`);
 });
 
 await beat("two agents, one file: claims queue the second, a stale edit is refused not clobbered", async () => {
   const ls = await lines(), mine = [ls[2]!, ls[3]!];
-  const claim = await json(await status(j(AGENTS[0]!, `${at}/claims?path=${F}`, { id: "run-a", task: "rewrite b and c", lines: mine.map((l) => l.id) }), fine, "claim"));
-  const held = await json(await j(USER, `${at}/claims?path=${F}`));
+  const claim = await bodyOf(await status(j(AGENTS[0]!, `${at}/claims?path=${F}`, { id: "run-a", task: "rewrite b and c", lines: mine.map((l) => l.id) }), fine, "claim"));
+  const held = await bodyOf(await j(USER, `${at}/claims?path=${F}`));
   must(JSON.stringify(held).includes(AGENTS[0]!), "the claim shows who holds the lines");
   const clash = await status(j(AGENTS[1]!, `${at}/ops?path=${F}`, { ops: [{ kind: "set", line: mine[0]!.id, base: mine[0]!.rev, text: "stolen" }] }), 409, "second agent on a held line");
-  must((await json(clash)).claims?.length, "the 409 names who holds the lines");
+  must((await bodyOf(clash)).claims?.length, "the 409 names who holds the lines");
   await status(j(AGENTS[0]!, `${at}/ops?path=${F}`, { claim: claim.id, ops: [{ kind: "set", line: mine[0]!.id, base: mine[0]!.rev, text: "const b = 20;" }] }), 200, "holder edits");
   await status(j(AGENTS[0]!, `${at}/release?path=${F}`, { id: claim.id }), 200, "release");
   await status(j(AGENTS[1]!, `${at}/ops?path=${F}`, { ops: [{ kind: "set", line: mine[0]!.id, base: mine[0]!.rev, text: "const b = 99;" }] }), 409, "stale edit after release");
@@ -86,18 +86,18 @@ await beat("merge and review: clashing branches get a plan, a conflict card, and
   const edit = (b: string, text: string) => j(USER, `${at}/ops?path=${F}&branch=${b}`, { ops: [{ kind: "set", line: target.id, base: target.rev, text }] });
   await status(edit("b1", "const c = 30;"), 200, "b1 edit");
   await status(edit("b2", "const c = 31;"), 200, "b2 edit");
-  const plan = await json(await status(j(USER, `${base}/merge-plan`), 200, "merge plan"));
+  const plan = await bodyOf(await status(j(USER, `${base}/merge-plan`), 200, "merge plan"));
   must(plan.waves.length === 2, `the clash should split into two waves, got ${plan.waves.length}`);
   await status(j(USER, `${base}/branches/b1/merge`, {}), 200, "merge b1");
   const card = await status(j(USER, `${base}/branches/b2/merge`, {}), 409, "merge b2 on b1's line");
-  must(JSON.stringify(await json(card)).includes("const c = 31;"), "the conflict card doesn't show the branch's side");
+  must(JSON.stringify(await bodyOf(card)).includes("const c = 31;"), "the conflict card doesn't show the branch's side");
   const merged = await j(USER, `${base}/branches/b2/merge`, { resolve: { [F]: { [target.id]: "branch" } } });
   if (!merged.ok) throw new Error(`settling the conflict gave ${merged.status}: ${await merged.text()}`);
 });
 
 await beat("it is real git: clone it with stock git and find the commit", async () => {
   await status(j(USER, `${at}/commit?path=${F}`, { message: "demo" }), fine, "commit to git");
-  const { clone } = await json(await j(USER, base));
+  const { clone } = await bodyOf(await j(USER, base));
   must(clone, "the repo page has no clone command");
   const dir = mkdtempSync(join(tmpdir(), "cs-demo-"));
   const sh = async (cmd: string, cwd = dir) => {

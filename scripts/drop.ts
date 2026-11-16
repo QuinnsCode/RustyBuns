@@ -23,6 +23,7 @@ import { S3Client } from "bun";
 import { mkdir, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { parseArgs } from "node:util";
+import { esc } from "../packages/util/src/index.ts";
 
 const { values: o, positionals: files } = parseArgs({
   allowPositionals: true,
@@ -125,7 +126,6 @@ function reportUrl() {
   return `${repo()}/issues/new?${q}`;
 }
 function joinUrl() { return `${repo()}/issues/new?template=join-beta.yml`; }
-function esc(s: string) { return s.replace(/[&<>"]/g, (c) => `&#${c.charCodeAt(0)};`); }
 function style() { return `<style>body{font:16px/1.5 system-ui,sans-serif;max-width:40rem;margin:2rem auto;padding:0 1rem;color:#222;background:#fff}
 a.dl{display:block;padding:.8rem 1rem;margin:.5rem 0;border:1px solid #ccc;border-radius:8px;text-decoration:none;color:inherit}
 a.dl:hover{border-color:#888}small,code{color:#666}code{font-size:.85em;word-break:break-all}

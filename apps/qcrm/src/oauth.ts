@@ -21,7 +21,7 @@
 //   GET  /api/oauth/grants      DELETE /api/oauth/grants/:id
 
 import { sessionUser } from "./auth.ts";
-import { b64url, digest, error, json, NAME, parseJson, readBody, sha256, type Env } from "./env.ts";
+import { b64url, digest, error, esc, json, NAME, parseJson, readBody, sha256, type Env } from "./env.ts";
 import { listOrgs } from "./orgs.ts";
 
 const HOUR = 3_600_000, DAY = 24 * HOUR, CODE_MS = 10 * 60_000, REFRESH_MS = 30 * DAY, GRANT_MS = 365 * DAY;
@@ -30,7 +30,6 @@ const random = (prefix: string) => prefix + b64url(crypto.getRandomValues(new Ui
 const NO_STORE = { "cache-control": "no-store" };
 const CORS = { "access-control-allow-origin": "*", "access-control-allow-headers": "content-type, authorization", "access-control-allow-methods": "GET, POST, OPTIONS" };
 const oauthError = (e: string, description: string, status = 400) => json({ error: e, error_description: description }, status, { ...NO_STORE, ...CORS });
-const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 
 /** The metadata MCP clients find the endpoints by. The issuer is the site. */
 export const metadata = (origin: string) => ({

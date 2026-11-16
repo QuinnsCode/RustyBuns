@@ -2,12 +2,13 @@
 // line items), looks up each variant's size, asks GeoBoxQ's `POST /api/solve`, and answers in the store's own box ids.
 // Config is env: STORE_BOXES (the store's box set), STORE_DIMS (variant id -> size), GEOBOXQ_URL, GEOBOXQ_KEY.
 
+import { privateJson as json } from "@rustybuns/util/http";
+
 export interface StoreBox { id: string; name: string; l: number; w: number; h: number }
 export interface Dims { l: number; w: number; h: number; wall?: number }
 export interface Env { GEOBOXQ_URL?: string; GEOBOXQ_KEY?: string; STORE_BOXES?: string; STORE_DIMS?: string; fetch?: typeof fetch }
 interface Line { variant_id?: number | string; title?: string; quantity?: number }
 
-const json = (body: unknown, status = 200) => Response.json(body, { status, headers: { "cache-control": "no-store" } });
 
 /** Cart lines to GeoBoxQ items. Variants with no size are returned apart: the store has to say how big they are. */
 export function toItems(lines: Line[], dims: Record<string, Dims>) {

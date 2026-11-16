@@ -67,7 +67,8 @@ export interface Env extends SocialEnv {
 }
 
 /** `s` safe inside HTML text and attributes. */
-export const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+import { esc } from "@rustybuns/util";
+export { esc };
 
 export const NAME ="qCRM";
 export const VERSION = "0.1.4";

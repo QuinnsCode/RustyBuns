@@ -8,6 +8,7 @@
     "desktop": "bun ../../packages/cli/src/index.ts build desktop --check"
   },
   "dependencies": {
+    "@rustybuns/util": "^0.1.12",
     "@rustybuns/cli": "^0.1.12",
     "@rustybuns/shell-bun": "^0.1.12",
     "@electric-sql/pglite": "^0.5.8",

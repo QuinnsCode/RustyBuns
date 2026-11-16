@@ -1,6 +1,8 @@
 // Layout: reviewing a model change by picture: which changed files are models, and the before/after page
 // A reviewer judges a model by looking, not by reading node coordinates (#3055). The render itself is headless
-// Blender (scripts/model-review.ts); this file is the pure part. Imports nothing.
+// Blender (scripts/model-review.ts); this file is the pure part. Imports only `esc`.
+import { esc } from "@rustybuns/util";
+
 
 /** The changed paths that are models a picture can show (GLB files; a sheet's GLB changes in the same commit). */
 export const modelPaths = (changed: string[]): string[] => changed.filter((p) => /\.glb$/i.test(p)).sort();
@@ -8,7 +10,6 @@ export const modelPaths = (changed: string[]): string[] => changed.filter((p) =>
 /** One model's pair of renders: a side is a data URL or a relative path, null when the file did not exist there. */
 export interface ModelPair { path: string; before: string | null; after: string | null }
 
-const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
 
 /** The review page: each model with before and after side by side, "new" or "removed" where a side is missing. */
 export function sideBySide(pairs: ModelPair[], title = "Model changes"): string {
