@@ -4,6 +4,7 @@
 // person's studios and their role in each (eqosys APPS `studios`), so nobody pastes a key. Settings live in D1 (settings.ts).
 //
 //   GET  /api/mine                          your studios, each with its org and products once there is one (Mine)
+//   POST /api/mine/shops                    a studio's owner or admin starts its shop, or keeps a sandbox as it (ShopStart)
 //   PUT  /api/orgs/<org>                    QView3D's owner (an owner or admin of eqosys's house studio) makes an org
 //                                           for a studio, or changes its studio, sites and samples allowance (OrgSetup)
 //   PUT  /api/orgs/<org>/sites              the shop's owner or admin changes the pages that may embed it (Sites)
@@ -14,13 +15,18 @@ import { b64url, sha256 } from "@rustybuns/util/bytes";
 import { privateJson, readJson } from "@rustybuns/util/http";
 import { checkerFor, type Claims } from "@rustybuns/util/token";
 import { ID } from "./layout.ts";
-import { APP, EQOSYS, Org, OrgSetup, Product, Sites, zonesOf, type KeyReply, type Mine, type Shop } from "./api.ts";
-import { getOrg, listProducts, orgOfStudio, putOrg, putProduct } from "./settings.ts";
+import { APP, EQOSYS, Org, OrgSetup, Product, ShopStart, Sites, slug, zonesOf, type KeyReply, type Mine, type Shop } from "./api.ts";
+import { getOrg, getProduct, listProducts, orgOfStudio, putOrg, putProduct } from "./settings.ts";
 import type { Env } from "./worker.ts";
 
 /** eqosys's house studio (QNTBR): its owners and admins are QView3D's owner. */
 export const HOUSE = "qntbr";
 const KEYS_MAX = 20;
+/** Products a shop may have; changing one it has is always fine. */
+export const PRODUCTS_MAX = 50;
+
+/** What a new shop or sandbox starts with: a tee prints front, back and sleeve, so every zone is there to try. */
+export const STARTER = { id: "my-tee", product: { name: "My tee", model: "tee", colors: ["#1f2937", "#f4efe6", "#b91c1c"] } satisfies Product };
 
 /** The person behind `authorization: Bearer <eqosys token>`, or null (no token, a key, or one eqosys didn't sign for us). */
 export async function signedIn(req: Request, env: Env): Promise<Claims | null> {
@@ -56,6 +62,8 @@ export async function orgsRoute(req: Request, env: Env, h: Record<string, string
     }
     return privateJson({ owner: isOwner(c), shops } satisfies Mine, 200, h);
   }
+
+  if (url.pathname === "/api/mine/shops" && req.method === "POST") return startShop(req, env, h);
 
   const m = url.pathname.match(/^\/api\/orgs\/([^/]+)(?:\/(products|keys|sites)(?:\/([^/]+))?)?$/);
   if (!m) return null;
@@ -105,6 +113,40 @@ export async function orgsRoute(req: Request, env: Env, h: Record<string, string
   if (p.glb && !p.glb.startsWith(`orgs/${org}/models/`)) return fail("glb: one of this org's sample models", 400);
   const wrong = p.print?.find((z) => !zonesOf(p.model).includes(z));
   if (wrong) return fail(`print: a ${p.model} has no ${wrong}`, 400);
+  if (!(await getProduct(env, org, id)) && (await listProducts(env, org, PRODUCTS_MAX)).length >= PRODUCTS_MAX) return fail(`a shop has at most ${PRODUCTS_MAX} products`, 409);
   await putProduct(env, org, id, p, url.origin);
   return privateJson(p, 200, h);
+}
+
+/**
+ * POST /api/mine/shops: a shop with no one in between. A studio's owner or admin, signed in, starts one shop for it:
+ * a new org (no sites yet, so nothing embeds it until they add theirs, no samples, the starter tee), or a sandbox
+ * they were handed, kept with its products and sites, its end date gone. One shop per studio.
+ */
+async function startShop(req: Request, env: Env, h: Record<string, string>): Promise<Response> {
+  const fail = (why: string, status: number) => privateJson({ error: why }, status, h);
+  const c = await signedIn(req, env);
+  if (!c) return fail("sign in with eqosys", 401);
+  const body = await readJson(req, ShopStart);
+  if (!body) return fail("expected {studio, org?, sandbox?: {org, key}}", 400);
+  const studio = (c.studios ?? []).find((s) => s.id === body.studio);
+  if (!runs(c, studio?.id)) return fail("only the studio's owner or admin starts its shop", 403);
+  if (await orgOfStudio(env, body.studio)) return fail("this studio has a shop already", 409);
+
+  if (body.sandbox) {
+    const was = await getOrg(env, body.sandbox.org);
+    // A wrong key, an unknown org and one that's no sandbox answer alike.
+    if (!was?.expires || was.studio || !(was.admins ?? []).includes(await sha256(body.sandbox.key))) return fail("unknown sandbox, or not its key", 404);
+    const settings: Org = { ...was, studio: body.studio, expires: undefined };
+    await putOrg(env, body.sandbox.org, settings);
+    return privateJson(await shopOf(env, body.sandbox.org, settings), 200, h);
+  }
+
+  const org = body.org ?? slug(studio?.name ?? "");
+  if (!ID.test(org) || org.startsWith("try-")) return fail("pick an org id: lowercase letters, digits and dashes", 400);
+  if (await getOrg(env, org)) return fail(`the org id ${org} is taken: pick another`, 409);
+  const settings: Org = { origins: [], samples: 0, studio: body.studio };
+  await putOrg(env, org, settings);
+  await putProduct(env, org, STARTER.id, STARTER.product);
+  return privateJson(await shopOf(env, org, settings), 201, h);
 }

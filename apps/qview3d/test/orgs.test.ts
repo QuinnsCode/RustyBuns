@@ -8,7 +8,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { hex } from "@rustybuns/util/bytes";
 import { jwksOf, newKey, sign, type StudioRole } from "@rustybuns/util/token";
-import { KeyReply, Mine, Product, SignReply } from "../src/api.ts";
+import { KeyReply, Mine, Product, SandboxReply, SignReply } from "../src/api.ts";
 import { fieldsOf, productBody } from "../src/product-form.ts";
 import { local } from "../src/local.ts";
 
@@ -97,6 +97,41 @@ test("the friend changes the cap on /orgs.html; the next page load shows it, tho
   expect((await call("/api/orgs/fern/sites", "PUT", { origins: ["https://x.example"] }, as(maker))).status).toBe(403);
   expect((await call("/api/orgs/fern/sites", "PUT", { origins: ["fern.shop"] }, as(fern))).status).toBe(400);
   expect(Mine(await (await call("/api/mine", "GET", undefined, as(fern))).json()).shops[0]?.org).toMatchObject({ origins: ["https://fernhats.example", "https://fern.shop"], samples: 1 });
+});
+
+test("a shop owner starts their own shop, or keeps the sandbox they were sent, with nobody in between", async () => {
+  const ivy = await tokenFor("ivy", [{ id: "ivy-studio", name: "Ivy Caps!", role: "owner" }, { id: "fern-studio", name: "Fern Hats", role: "maker" }]);
+  // A maker can't start one; a studio that has a shop can't start another; a taken id is refused.
+  expect((await call("/api/mine/shops", "POST", { studio: "fern-studio" }, as(ivy))).status).toBe(403);
+  expect((await call("/api/mine/shops", "POST", { studio: "fern-studio" }, as(fern))).status).toBe(409);
+  expect((await call("/api/mine/shops", "POST", { studio: "ivy-studio", org: "fern" }, as(ivy))).status).toBe(409);
+
+  // Start my shop: named after the studio, the starter tee, no sites yet, so no page shows it until they add theirs.
+  const started = await call("/api/mine/shops", "POST", { studio: "ivy-studio" }, as(ivy));
+  expect(started.status).toBe(201);
+  const shop = Mine(await (await call("/api/mine", "GET", undefined, as(ivy))).json()).shops.find((s) => s.studio === "ivy-studio")!.org!;
+  expect(shop).toMatchObject({ id: "ivy-caps", origins: [], samples: 0 });
+  expect(shop.products.map((p) => p.id)).toEqual(["my-tee"]);
+  const design = { v: 1, model: "tee", color: "#1f2937", product: "my-tee", layers: [], camera: { azimuth: 0, polar: 1.2, distance: 2 } };
+  expect((await call("/api/orgs/ivy-caps/designs", "POST", design, { origin: "https://ivycaps.example" })).status).toBe(403);
+  expect((await call("/api/orgs/ivy-caps/sites", "PUT", { origins: ["https://ivycaps.example"] }, as(ivy))).status).toBe(200);
+  expect((await call("/api/orgs/ivy-caps/designs", "POST", design, { origin: "https://ivycaps.example" })).status).toBe(201);
+  expect((await call("/api/mine/shops", "POST", { studio: "ivy-studio" }, as(ivy))).status).toBe(409);
+
+  // Keep a sandbox: the owner hands one out, its person signs in and keeps it with the link's key.
+  const { org: sbOrg, key: sbKey } = SandboxReply(await (await call("/api/sandboxes", "POST", { for: "Oak" }, as(owner))).json());
+  const sb = { org: sbOrg, key: sbKey };
+  const oak = await tokenFor("oak", [{ id: "oak-studio", name: "Oak Tees", role: "owner" }]);
+  expect((await call("/api/mine/shops", "POST", { studio: "oak-studio", sandbox: { org: sb.org, key: "qv_wrong" } }, as(oak))).status).toBe(404);
+  expect((await call("/api/mine/shops", "POST", { studio: "oak-studio", sandbox: { org: "ivy-caps", key: sb.key } }, as(oak))).status).toBe(404);
+  expect((await call("/api/mine/shops", "POST", { studio: "oak-studio", sandbox: sb }, as(oak))).status).toBe(200);
+  const kept = Mine(await (await call("/api/mine", "GET", undefined, as(oak))).json()).shops[0]!.org!;
+  expect(kept).toMatchObject({ id: sb.org, origins: ["*"] });
+  expect(kept.expires).toBeUndefined();
+  expect(kept.products.map((p) => p.id)).toEqual(["my-tee"]);
+  // Kept once: another studio can't take it with the same link.
+  const pine = await tokenFor("pine", [{ id: "pine-studio", name: "Pine", role: "owner" }]);
+  expect((await call("/api/mine/shops", "POST", { studio: "pine-studio", sandbox: sb }, as(pine))).status).toBe(404);
 });
 
 test.each([

@@ -8,21 +8,17 @@
 //
 // A sandbox is an ordinary org with three differences: any page may embed it ("*", since a test page can be anywhere),
 // it starts with one product so the preview works at once, and it ends (`expires`), after which every route reads it
-// as unknown. Making a shop with its org id on /orgs.html turns it into a real one: same products, no end.
+// as unknown. Keep this as my shop on /try.html (POST /api/mine/shops with its key, signed in) turns it into a real
+// one for the person's studio: same products, no end. QView3D's owner can still do it from /orgs.html with its org id.
 import { b64url, hex, sha256 } from "@rustybuns/util/bytes";
 import { privateJson, readJson } from "@rustybuns/util/http";
-import { SandboxRequest, type Product, type SandboxReply } from "./api.ts";
-import { isOwner, runsShop, shopOf, signedIn } from "./orgs.ts";
+import { SandboxRequest, slug, type SandboxReply } from "./api.ts";
+import { isOwner, runsShop, shopOf, signedIn, STARTER } from "./orgs.ts";
 import { getOrg, getProduct, putOrg, putProduct } from "./settings.ts";
 import { isAdmin } from "./samples.ts";
 import type { Env } from "./worker.ts";
 
 const DAY = 86_400_000;
-/** What a sandbox starts with: a tee prints front, back and sleeve, so every zone is there to try. */
-export const STARTER = { id: "my-tee", product: { name: "My tee", model: "tee", colors: ["#1f2937", "#f4efe6", "#b91c1c"] } satisfies Product };
-
-/** "Fern's Hats!" -> "fern-s-hats": the part of a sandbox's org id that says who it's for. */
-const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 24).replace(/-+$/, "");
 
 /** The link to send: the sandbox page, the org and key in the fragment so they never reach a server log. */
 export const sandboxLink = (origin: string, org: string, key: string) => `${origin}/try.html#${new URLSearchParams({ org, key })}`;

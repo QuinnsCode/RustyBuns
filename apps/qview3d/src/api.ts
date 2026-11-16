@@ -101,6 +101,20 @@ export const OrgSetup = obj({
 export type OrgSetup = Of<typeof OrgSetup>;
 
 /** PUT /api/orgs/<org>/sites (the shop's owner or admin): the pages that may embed the widget. */
+/** "Fern's Hats!" -> "fern-s-hats": an org id from a name. */
+export const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 24).replace(/-+$/, "");
+
+/**
+ * POST /api/mine/shops: a studio's owner or admin starts its shop. `org` names it (else the studio's name does);
+ * `sandbox` keeps a sandbox instead, its products and all, with the key its link carried.
+ */
+export const ShopStart = obj({
+  studio: str(64, { re: STUDIO }),
+  org: opt(str(63, { re: ID })),
+  sandbox: opt(obj({ org: str(63, { re: ID }), key: str(200) })),
+});
+export type ShopStart = Of<typeof ShopStart>;
+
 export const Sites = obj({ origins: arr(str(200, { re: ORIGIN }), 50, { min: 1 }) });
 export type Sites = Of<typeof Sites>;
 

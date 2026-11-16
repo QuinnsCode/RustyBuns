@@ -70,6 +70,9 @@ async function load() {
     shop.samples
       ? el("p", { class: "sub own" }, "Not a hat or a top? ", own, ` of your own product (${shop.samples} on this sandbox).`)
       : el("p", { class: "sub own", textContent: "Not a hat or a top? Ask whoever sent this link for a sample: a 3D model made from photos of your product." }));
+  // Kept already (no end date): it's a shop, run from /orgs.html.
+  const keep = el("a", { href: `/orgs.html#${new URLSearchParams({ keep: shop.id, key })}`, textContent: shop.expires ? "Keep this as my shop" : "Open my shop" });
+  $<HTMLDivElement>("keep").replaceChildren(el("p", { class: "sub" }, keep, shop.expires ? ": sign in with eqosys and these products become your shop, with no end date." : ""));
 }
 
 await act(load)();
