@@ -56,6 +56,8 @@ export interface Env extends SocialEnv {
   /** Signs sessions, salts org ids. Without it nobody signs in (every route answers 503). */
   BETTER_AUTH_SECRET?: string;
   BETTER_AUTH_URL?: string;
+  /** Where eqosys is: set, the sign-in page offers "Continue with eqosys" (auth.ts). Its callback is registered in eqosys's APPS. */
+  EQOSYS_URL?: string;
   /** The one account above every org: sees every org, grants admins, never a member of any. */
   SUPER_ADMIN_EMAIL?: string;
   /** Cloudflare Email Sending. With EMAIL_FROM it turns on verification and reset links (auth.ts). */

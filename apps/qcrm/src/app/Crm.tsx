@@ -303,7 +303,7 @@ function Auth({ onDone, demo, err }: { onDone: () => Promise<void>; demo: boolea
   return (
     <div className="auth" data-tour="auth">
       <h2>{{ in: "Sign in", up: "Create your account", forgot: "Reset your password", reset: "Pick a new password" }[mode]}</h2>
-      {social.length > 0 && <div className="row">{social.map((p) => <button key={p} type="button" onClick={() => via(p)}><Icon name={p === "github" ? "github" : "mail"} /> Continue with {p === "github" ? "GitHub" : "Google"}</button>)}</div>}
+      {social.length > 0 && <div className="row">{social.map((p) => <button key={p} type="button" onClick={() => via(p)}><Icon name={p === "github" ? "github" : p === "eqosys" ? "key-round" : "mail"} /> Continue with {{ github: "GitHub", google: "Google", eqosys: "eqosys" }[p] ?? p}</button>)}</div>}
       <p className="muted">Email and password, kept by Better Auth. Your first org is made when you sign up.</p>
       <form onSubmit={submit}>
         {mode === "up" && <label><span>Name</span><input name="name" aria-label="Name" autoComplete="name" /></label>}
