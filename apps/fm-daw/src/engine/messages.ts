@@ -34,10 +34,16 @@ export type ToWorklet =
   | { t: "repeat"; beats: number }
   /** A Perform move of yours, sent beside the bend, repeat or param that makes the sound: recorded as automation while recording. */
   | { t: "move"; track: number; i: number; v: number; was: number }
-  | { t: "engine"; kind: "ts" | "rust"; bytes?: ArrayBuffer };
+  | { t: "engine"; kind: "ts" | "rust"; bytes?: ArrayBuffer }
+  /** A track's take to play (16-bit sound decoded, at TAKE_RATE), or null for none. */
+  | { t: "take"; track: number; pcm: Float32Array | null; beat: number }
+  /** Record the input onto this track while recording (-1: no track). `inLatency`: seconds the input arrives late. */
+  | { t: "arm"; track: number; inLatency: number };
 
 export type FromWorklet =
   | { t: "tick"; pos: number; playing: boolean; countIn: number; peakL: number; peakR: number; minGain: number; nans: number }
   | { t: "rec"; track: number; note: Note }
   | ({ t: "move" } & RecordedMove)
-  | { t: "engine"; kind: "ts" | "rust"; error?: string };
+  | { t: "engine"; kind: "ts" | "rust"; error?: string }
+  /** A pass of the input recorded on the armed track: mono at `rate`, starting where the player heard `beat`. */
+  | { t: "taken"; track: number; beat: number; pcm: Float32Array; rate: number };

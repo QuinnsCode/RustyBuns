@@ -7,7 +7,8 @@ import { apply, decodeClient, lettingGo, sanitize, type Floor, type Full, type P
 import { decodeChatClient, empty, personId, rename, sanitizeChat, say, unsay, type Chat, type ChatClient, type ChatServer } from "../../src/chat.ts";
 import { Sockets, type RoomCtx, type RoomSocket } from "@rustybuns/util/room";
 import { TokenBucket } from "@rustybuns/util/limits";
-import { check, maybe, obj, oneOf, raw, str } from "@rustybuns/util/guard";
+import { check, int, maybe, obj, oneOf, raw, rec, str } from "@rustybuns/util/guard";
+import { MAX_CHUNKS, MAX_TAKES, type TakeBytes } from "../../src/take.ts";
 
 const SAVE_AFTER_MS = 500;
 // A room holds this many sockets (ROOM_SEATS online); past it a socket is told so and closed.
@@ -42,6 +43,12 @@ const backupKey = (room: string) => `sesh/${room}.json`;
 const HASH = str(64, { re: /^[0-9a-f]{64}$/ });
 /** The bucket copy: the groove, its maker's key hash, the floor and the room code's hash. An older copy is the project alone. */
 const Backup = obj({ project: raw, host: maybe(HASH), floor: maybe(oneOf(["free", "held", "closed"])), lock: maybe(HASH) });
+// Takes kept at once, used or not: the ones on tracks, plus what undo may bring back until the room empties.
+const MAX_STORED_TAKES = MAX_TAKES * 3;
+const takeKey = (id: string, i: number) => `take:${id}:${i}`;
+/** The take ids on a project's tracks. */
+const takeIds = (p: Project | null) => new Set((p?.tracks ?? []).flatMap((t) => (t.take ? [t.take.id] : [])));
+const TakeIndex = rec(int(1, MAX_CHUNKS), MAX_STORED_TAKES);
 // A private sesh lets one address get its code wrong this often a minute, then says so instead of checking.
 export const MAX_WRONG = 5;
 const WRONG_MS = 60_000;
@@ -91,6 +98,10 @@ export default class World {
   private lock = "";
   /** When each address last got the code wrong. */
   private wrong = new Map<string, number[]>();
+  /** Every whole take in storage, id to how many chunks it is. */
+  private takes: Record<string, number> = {};
+  /** Takes still coming in: the chunk numbers here so far. */
+  private arriving = new Map<string, { n: number; got: Set<number> }>();
 
   constructor(private ctx: Ctx, env: WorldEnv = {}) {
     this.sockets = new Sockets(ctx, LIMITS);
@@ -107,6 +118,7 @@ export default class World {
       const floor = await ctx.storage.get("floor");
       if (floor === "held" || floor === "closed") this.floor = floor;
       this.lock = String((await ctx.storage.get("lock")) ?? "");
+      this.takes = check(TakeIndex, await ctx.storage.get("takes")) ?? {};
     });
   }
 
@@ -134,6 +146,7 @@ export default class World {
     this.sockets.send(server, { t: "snapshot", project: this.project });
     if (this.host) this.sockets.send(server, { t: "floor", state: this.floor, host });
     if (room) this.sockets.send(server, { t: "lock", on: !!this.lock });
+    void this.sendTakes(takeIds(this.project), [server]);
     this.broadcastPeers();
     return response;
   }
@@ -214,6 +227,7 @@ export default class World {
       if (seat?.peer && !(guest && !lettingGo(msg.e))) this.broadcast({ t: "live", from: seat.peer, e: msg.e }, ws);
       return;
     }
+    if (msg.t === "takeBytes") { if (!guest) this.onTakeBytes(ws, msg); return; }
     if (guest) {
       // the maker holds the floor: the edit goes nowhere, and the guest is put back in step
       if (this.project) this.sockets.send(ws, { t: "snapshot", project: this.project });
@@ -228,13 +242,60 @@ export default class World {
       return;
     }
     if (msg.t !== "op" || !this.project) return;
+    // a take goes on a track only once all of its sound is here
+    if (msg.op.t === "take" && msg.op.take && !this.takes[msg.op.take.id]) { this.sockets.send(ws, { t: "snapshot", project: this.project }); return; }
+    const had = takeIds(this.project);
     const next = apply(this.project, msg.op);
     if (next === this.project) return;
     this.project = next;
     this.save();
     // rebroadcast the sanitized result for replace, the op itself otherwise
     const op = msg.op.t === "replace" ? { t: "replace" as const, project: next } : msg.op;
+    // an undo can bring back a take the others never heard: its sound goes before the edit
+    if (msg.op.t === "replace") void this.sendTakes(new Set([...takeIds(next)].filter((id) => !had.has(id))), this.sockets.open().filter((w) => w !== ws));
     this.broadcast({ t: "op", op }, ws);
+  }
+
+  /** A chunk of a take's sound: kept, and passed on so the others have it before the take lands on a track. */
+  private onTakeBytes(ws: RoomSocket, m: TakeBytes) {
+    if (this.takes[m.id]) return;                    // already whole
+    let a = this.arriving.get(m.id);
+    if (!a || a.n !== m.n) {
+      if (Object.keys(this.takes).length + this.arriving.size >= MAX_STORED_TAKES) return;
+      this.arriving.set(m.id, (a = { n: m.n, got: new Set() }));
+    }
+    a.got.add(m.i);
+    void this.ctx.storage.put(takeKey(m.id, m.i), m.data);
+    this.broadcast(m, ws);
+    if (a.got.size < a.n) return;
+    this.arriving.delete(m.id);
+    this.takes = { ...this.takes, [m.id]: m.n };
+    void this.ctx.storage.put("takes", this.takes);
+  }
+
+  /** These takes' sound, chunk by chunk, to these sockets. */
+  private async sendTakes(ids: Set<string>, to: RoomSocket[]) {
+    for (const id of ids) {
+      const n = this.takes[id];
+      if (!n || !to.length) continue;
+      for (let i = 0; i < n; i++) {
+        const data = await this.ctx.storage.get(takeKey(id, i));
+        if (typeof data !== "string") break;
+        for (const ws of to) this.sockets.send(ws, { t: "takeBytes", id, i, n, data });
+      }
+    }
+  }
+
+  /** Takes in storage that aren't in `keep` go. Chunks still arriving are dropped too: their sender left. */
+  private async dropTakes(keep: Set<string>) {
+    const s = this.ctx.storage;
+    const gone = Object.entries(this.takes).filter(([id]) => !keep.has(id));
+    for (const [id, a] of this.arriving) gone.push([id, a.n]);
+    this.arriving.clear();
+    if (!gone.length) return;
+    for (const [id, n] of gone) for (let i = 0; i < n; i++) await s.delete(takeKey(id, i));
+    this.takes = Object.fromEntries(Object.entries(this.takes).filter(([id]) => keep.has(id)));
+    if (Object.keys(this.takes).length) await s.put("takes", this.takes); else await s.delete("takes");
   }
 
   /** The chat: `hello` says who a socket is; lines, renames and deletions only count after it. */
@@ -313,10 +374,13 @@ export default class World {
       this.backedUpAt = Date.now();
       try { await this.bucket.put(backupKey(this.room), JSON.stringify({ project: this.project, host: this.host, floor: this.floor, lock: this.lock || undefined })); } catch { this.backupDirty = true; }
     }
+    // the last one out: undo goes with them, so only the takes on tracks are kept
+    if (lastOut) await this.dropTakes(takeIds(this.project));
     if (!this.idleMs || this.sockets.open().length) return;
     if (!lastOut && this.idleAt && Date.now() >= this.idleAt) {
       // nobody came back: the room goes, groove and all
       await s.deleteAlarm();
+      await this.dropTakes(new Set());
       for (const k of ["project", "chat", "idleMs", "idleAt", "room", "host", "floor", "lock"]) await s.delete(k);
       if (this.bucket && this.room) await this.bucket.delete(backupKey(this.room)).catch(() => {});
       this.project = null;

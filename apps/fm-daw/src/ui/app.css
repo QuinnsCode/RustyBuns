@@ -93,6 +93,7 @@ h2 { font: 600 1.2rem/1.1 var(--silk); margin: 0; }
   border: 0; border-left: 4px solid var(--track); border-radius: 4px; background: transparent; font-weight: 500;
 }
 .track-name kbd { font-size: .7rem; }
+.track-name .take-mark { margin-left: 6px; color: var(--track); flex: none; }
 .track-name .kind { margin-left: auto; font: 600 .7rem var(--silk); letter-spacing: .06em; text-transform: uppercase; color: var(--dim); }
 .track.sel .track-name { background: color-mix(in srgb, var(--track) 22%, var(--raised)); }
 .ms { width: 26px; height: 26px; border: 1px solid var(--edge); border-radius: 3px; background: var(--raised); font: 700 .78rem var(--silk); color: var(--dim); }

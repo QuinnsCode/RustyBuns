@@ -4,6 +4,7 @@ import { expect, test, setSystemTime, afterEach, beforeAll, afterAll } from "bun
 import World, { CLOSE_FLOOD, CLOSE_FULL, MAX_SOCKETS, MAX_WRONG, type WorldEnv } from "../packages/desktop/world.ts";
 import Lobby from "../src/lobby.ts";
 import { TRACKS } from "../src/engine/params.ts";
+import { TAKE_RATE, TakeInbox, toChunks } from "../src/take.ts";
 
 class Sock {
   readyState = 1; sent: any[] = []; closed: number | null = null; att: unknown;
@@ -340,4 +341,38 @@ test("online, the sesh's maker holds the floor, lets it go, and closes it out", 
   world.webSocketMessage(back, JSON.stringify({ t: "floor", state: "free" }));
   await settle();
   expect((await join({}, "c".repeat(32))).ws.closed).toBeNull();
+});
+
+test("a recorded take: its sound reaches the room in chunks before it lands on a track, a late joiner gets it, and it goes when it's off every track", async () => {
+  const { world, join, leave, store } = await setup();
+  const a = (await join()).ws, b = (await join()).ws;
+  world.webSocketMessage(a, JSON.stringify({ t: "init", project }));
+  const s16 = new Int16Array(TAKE_RATE).map((_, i) => Math.round(8000 * Math.sin(i / 10)));
+  const chunks = toChunks("take0001", s16);
+  const place = (ws: Sock, id: string, track = 3) => world.webSocketMessage(ws, JSON.stringify({ t: "op", op: { t: "take", track, take: { id, beat: 2, frames: s16.length } } }));
+
+  // a take whose sound isn't all here yet goes nowhere, and the player is put back in step
+  b.sent = []; a.sent = [];
+  world.webSocketMessage(a, JSON.stringify(chunks[0]));
+  place(a, "take0001");
+  expect(a.sent.map((m) => m.t)).toEqual(["snapshot"]);
+  for (const c of chunks.slice(1)) world.webSocketMessage(a, JSON.stringify(c));
+  place(a, "take0001");
+  await settle();
+  expect(b.sent.map((m) => m.t)).toEqual([...chunks.map(() => "takeBytes"), "op"]);
+  const heard = new TakeInbox();
+  expect(b.sent.filter((m) => m.t === "takeBytes").map((m) => heard.add(m)).at(-1)?.length).toBe(s16.length);
+
+  // someone who comes in later gets the groove, then the take's sound
+  const c = (await join()).ws;
+  await settle();
+  expect(c.sent.find((m) => m.t === "snapshot")?.project.tracks[3].take).toEqual({ id: "take0001", beat: 2, frames: s16.length });
+  expect(c.sent.filter((m) => m.t === "takeBytes").map((m) => m.data)).toEqual(chunks.map((m) => m.data));
+
+  // off the track, its sound stays for undo while anyone's in, and goes with the last one out
+  world.webSocketMessage(a, JSON.stringify({ t: "op", op: { t: "take", track: 3, take: null } }));
+  expect(store.has("take:take0001:0")).toBe(true);
+  for (const ws of [a, b, c]) leave(ws);
+  await settle();
+  expect([...store.keys()].filter((k) => k.startsWith("take"))).toEqual([]);
 });
