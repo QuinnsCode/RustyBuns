@@ -1,6 +1,6 @@
 # How far the analog idea goes
 
-Q Amp ([CIRCUITS.md](CIRCUITS.md)) plays a guitar through real circuits: resistors, capacitors, diodes, op-amps and 12AX7s, solved every sample. That one idea goes much further than distortion. This page maps how far, in the order worth building. Nothing here is built yet. Each lane has its own issue.
+Q Amp ([CIRCUITS.md](CIRCUITS.md)) plays a guitar through real circuits: resistors, capacitors, diodes, op-amps and 12AX7s, solved every sample. That one idea goes much further than distortion. This page maps how far, in the order worth building. Section 1's first six parts are built; the rest is not yet. Each lane has its own issue.
 
 **The big picture in one line:** every sound in Q Amp is a circuit, every circuit is a tscircuit board, so every sound is something you can **hear, change part by part, and then hold in your hand** as a kit or a built pedal.
 
@@ -8,7 +8,7 @@ What we are not doing: copying products. We name a circuit by what it does ("two
 
 ## 1. More parts in the solver
 
-The solver knows R, C, V, diode, op-amp and 12AX7. Almost every classic pedal and amp needs only a few more:
+The solver knew R, C, V, diode, op-amp and 12AX7. Almost every classic pedal and amp needs only a few more. The first six rows are in (#4826): `BJT`, `JFET`, `L`, `Pot` (`Circuit.setPot` and `Rig.setPot` turn it live, gliding over 10 ms), `LDR` and `OTA` in `mna.ts` and `circuit.rs`, with their textbook numbers in `test/circuit.test.ts`:
 
 | Part | Model | What it opens up |
 |---|---|---|

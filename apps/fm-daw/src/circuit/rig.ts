@@ -58,7 +58,7 @@ export const POWER_VOLTS = 40;
 
 /**
  * A rig that streams: `process` a block at a time, and turn its knobs between
- * blocks. `setGain` is a volume pot (free), `setLink` swaps one circuit for
+ * blocks. `setGain` is a volume pot (free), `setPot` turns a pot inside a circuit (free too), `setLink` swaps one circuit for
  * another with new part values (one matrix inversion and a rest solve), `setPower`
  * drives the power stage.
  */
@@ -97,6 +97,8 @@ export class Rig {
 
   /** The volume pot ahead of link `i`, 0 to 1. */
   setGain(i: number, g: number): void { this.gains[i] = g; }
+  /** Pot `pot` (in netlist order) of link `i`, 0 to 1: it glides there over about 10 ms. */
+  setPot(i: number, pot: number, at: number): void { this.circuits[i]?.setPot(pot, at); }
   setPower(p: number): void { this.power = p; }
   setNoise(n: number): void { this.noise = n; for (const c of this.circuits) c.noise = n; }
 

@@ -1,6 +1,6 @@
 // A circuit simulator for audio: modified nodal analysis (MNA), capacitors as
 // trapezoidal companions, Newton-Raphson every sample for the parts that bend
-// (diodes, triodes, op-amps at their rails).
+// (diodes, transistors, triodes, OTAs, op-amps at their rails).
 //
 // The speed trick: at a fixed sample rate everything linear (resistors, the
 // capacitors' companions, sources, the op-amps' insides) is one constant
@@ -11,9 +11,15 @@
 // of Borin, De Poli & Rocchesso (2000) and Yeh (2009), done straight on the MNA
 // matrix. `settle` still solves the whole circuit, to find where the tubes rest.
 //
+// Parts whose value moves while it plays (a pot being turned, an LDR following its
+// light) keep a fixed conductance in that matrix and a port for the difference, so
+// turning one costs a port, never a new inversion.
+//
 // Sources: Ho, Ruehli & Brennan (1975) for MNA; Nagel's SPICE2 thesis (1975)
 // for the junction limiting (pnjlim); Koren (1996) for the triode plate
-// current; Cohen & Helie (2010) for the triode grid current.
+// current; Cohen & Helie (2010) for the triode grid current; Ebers & Moll (1954)
+// for the BJT; Shichman & Hodges (1968) for the JFET; the OTA is the bipolar
+// differential pair's textbook law, Iabc·tanh(vd/2VT).
 
 /** One part. Node names are free text; "gnd" (or "GND", "0") is ground. */
 export type Part =
@@ -27,7 +33,32 @@ export type Part =
   /** An op-amp (TL072-ish gain and bandwidth) with its output swinging about ±`rail` volts around ground. */
   | { kind: "Opamp"; plus: string; minus: string; out: string; rail?: number }
   /** A 12AX7 triode: plate, grid, cathode. */
-  | { kind: "Triode"; p: string; g: string; k: string };
+  | { kind: "Triode"; p: string; g: string; k: string }
+  /** An inductor, with its wire's resistance (`ohms`, default 1) in series. */
+  | { kind: "L"; a: string; b: string; henries: number; ohms?: number }
+  /**
+   * A bipolar transistor (Ebers-Moll): NPN unless `pnp`, silicon unless `ge`. Germanium has a
+   * lower knee and leaks: `leak` amps (ICBO) from collector to base, which the gain multiplies.
+   */
+  | { kind: "BJT"; c: string; b: string; e: string; pnp?: boolean; ge?: boolean; is?: number; bf?: number; br?: number; leak?: number }
+  /**
+   * A JFET (square law with a triode region): N-channel unless `p`. `vp` is the size of the
+   * pinch-off voltage (default 2 V), `idss` the drain current at vgs = 0 (3 mA).
+   */
+  | { kind: "JFET"; d: string; g: string; s: string; p?: boolean; idss?: number; vp?: number; lambda?: number }
+  /** A pot, `a` to wiper `w` to `b`: `at` (0 to 1, default 0.5) is the wiper's travel from `a`. `Circuit.setPot` turns it. */
+  | { kind: "Pot"; a: string; w: string; b: string; ohms: number; at?: number; taper?: Taper }
+  /**
+   * An LDR from `a` to `b`, lit by an LED from `la` to `lk` (or with `lamp`, a filament of that
+   * many ohms). It reads `lit` ohms with 10 mA in the LED (40 mA in a lamp), `dark` in the dark, and
+   * its light comes up in `rise` seconds and dies away in `fall`, the slow, lopsided part.
+   */
+  | { kind: "LDR"; a: string; b: string; la: string; lk: string; dark?: number; lit?: number; rise?: number; fall?: number; lamp?: number }
+  /** An OTA: Iabc·tanh((v+ − v−)/2VT) out of `out`, where Iabc is the current into `abc` (a junction to ground). */
+  | { kind: "OTA"; plus: string; minus: string; out: string; abc: string };
+
+/** How a pot's resistance follows its travel: straight, audio (log, 10% at half way) or reverse audio. */
+export type Taper = "lin" | "log" | "rlog";
 
 /** A circuit with one input (driven by an ideal voltage source) and one output node. */
 export interface Netlist { parts: Part[]; input: string; output: string }
@@ -41,6 +72,55 @@ const OPAMP_A0 = 2e5, OPAMP_GBW = 3e6, OPAMP_R0 = 1e6;
 const MU = 100, EX = 1.4, KG1 = 1060, KP = 600, KVB = 300;
 // Grid current (Cohen & Helie).
 const GG = 6.062e-4, CG = 13.9, XI = 1.354, IG0 = 3.917e-8;
+// Transistors: a 2N3904-ish silicon one and an old germanium one (lower knee, ICBO leakage).
+const SI = { is: 6.7e-15, bf: 200, br: 1, leak: 0 }, GE = { is: 1e-7, bf: 90, br: 2, leak: 5e-6 };
+// A small-signal junction (JFET gate, OTA bias pin) and a red LED.
+const JUNCTION_IS = 1e-14, LED_IS = 1e-18, LED_N = 2;
+// An LDR's light against its source's current (10 mA in an LED, 40 mA in a lamp), and its law, R ∝ light^−γ.
+const LED_FULL = 0.01, LAMP_FULL = 0.04, LDR_GAMMA = 0.75;
+// A pot follows its knob over about 10 ms, so a jump is a quick glide, not a click.
+const POT_GLIDE = 0.01;
+const TAPERS: Taper[] = ["lin", "log", "rlog"];
+
+/** A pot's travel through its taper: the share of its resistance between `a` and the wiper. */
+function taper(kind: number, at: number): number {
+  if (kind === 1) return (Math.pow(81, at) - 1) / 80;
+  if (kind === 2) return 1 - (Math.pow(81, 1 - at) - 1) / 80;
+  return at;
+}
+
+/** A part's nodes in the order both solvers number them; `opamp` names an op-amp's hidden node. */
+function legs(p: Part, opamp: number): string[] {
+  switch (p.kind) {
+    case "R": case "C": case "V": case "L": return [p.a, p.b];
+    case "D": return [p.a, p.k];
+    case "Opamp": return [p.plus, p.minus, p.out, `~${opamp}`];
+    case "Triode": return [p.p, p.g, p.k];
+    case "BJT": return [p.c, p.b, p.e];
+    case "JFET": return [p.d, p.g, p.s];
+    case "Pot": return [p.a, p.w, p.b];
+    case "LDR": return [p.a, p.b, p.la, p.lk];
+    case "OTA": return [p.plus, p.minus, p.out, p.abc];
+  }
+}
+
+/** A part's kind number, values (defaults filled in) and flag, as the Rust layout carries them. */
+function values(p: Part): [number, number[], number] {
+  switch (p.kind) {
+    case "R": return [0, [p.ohms], p.noisy ? 1 : 0];
+    case "C": return [1, [p.farads], 0];
+    case "V": return [2, [p.volts], 0];
+    case "D": return [3, [p.is ?? 2.52e-9, p.n ?? 1.752], 0];
+    case "Opamp": return [4, [p.rail ?? 4], 0];
+    case "Triode": return [5, [], 0];
+    case "L": return [6, [p.henries, Math.max(p.ohms ?? 1, 1e-3)], 0];
+    case "BJT": { const d = p.ge ? GE : SI; return [7, [p.is ?? d.is, p.bf ?? d.bf, p.br ?? d.br, p.leak ?? d.leak], p.pnp ? 1 : 0]; }
+    case "JFET": return [8, [p.idss ?? 3e-3, Math.abs(p.vp ?? 2), p.lambda ?? 0.01], p.p ? 1 : 0];
+    case "Pot": return [9, [p.ohms, Math.min(1, Math.max(0, p.at ?? 0.5)), Math.max(0, TAPERS.indexOf(p.taper ?? "lin"))], 0];
+    case "LDR": return [10, [p.dark ?? 1e6, p.lit ?? 1e3, p.rise ?? 0.0025, p.fall ?? 0.035, p.lamp ?? 0], 0];
+    case "OTA": return [11, [], 0];
+  }
+}
 
 
 /** SPICE's junction limiting: keeps a Newton step from flying up the diode's exponential. */
@@ -83,7 +163,7 @@ function solve(A: Float64Array, b: Float64Array, n: number, m: number): boolean 
 
 /**
  * A netlist as numbers for the Rust solver (native/crates/fm_daw/src/circuit.rs):
- * `[nodes, input, output, parts]`, then 8 per part, `[kind, n0, n1, n2, n3, v0, v1, flag]`,
+ * `[nodes, input, output, parts]`, then 12 per part, `[kind, n0, n1, n2, n3, v0 … v5, flag]`,
  * ground −1. Nodes are numbered in the order `Circuit` numbers them, defaults filled in.
  */
 export function encodeNetlist(net: Netlist): Float64Array {
@@ -97,12 +177,9 @@ export function encodeNetlist(net: Netlist): Float64Array {
   const rows: number[][] = [];
   let opamps = 0;
   for (const p of net.parts) {
-    if (p.kind === "R") rows.push([0, node(p.a), node(p.b), 0, 0, p.ohms, 0, p.noisy ? 1 : 0]);
-    else if (p.kind === "C") rows.push([1, node(p.a), node(p.b), 0, 0, p.farads, 0, 0]);
-    else if (p.kind === "V") rows.push([2, node(p.a), node(p.b), 0, 0, p.volts, 0, 0]);
-    else if (p.kind === "D") rows.push([3, node(p.a), node(p.k), 0, 0, p.is ?? 2.52e-9, p.n ?? 1.752, 0]);
-    else if (p.kind === "Opamp") rows.push([4, node(p.plus), node(p.minus), node(p.out), node(`~${opamps++}`), p.rail ?? 4, 0, 0]);
-    else rows.push([5, node(p.p), node(p.g), node(p.k), 0, 0, 0, 0]);
+    const ns = legs(p, opamps).map(node), [kind, vals, flag] = values(p);
+    if (p.kind === "Opamp") opamps++;
+    rows.push([kind, ...ns, ...Array(4 - ns.length).fill(0), ...vals, ...Array(6 - vals.length).fill(0), flag]);
   }
   const at = (name: string) => {
     const i = nodes.get(name);
@@ -151,8 +228,26 @@ export class Circuit {
   private pa: number[] = [];
   private pb: number[] = [];
   private poff: number[] = [];
-  private diodes: { port: number; is: number; nvt: number; vcrit: number }[] = [];
+  private diodes: { port: number; is: number; nvt: number }[] = [];
+  /** Every pn junction's port, for the limiting: the diodes and both junctions of each BJT. */
+  private junctions: { port: number; nvt: number; vcrit: number }[] = [];
   private triodes: { pk: number; gk: number }[] = [];
+  /** Inductors: trapezoidal companion of L with the wire's \`rw\` in series (gl = T/2L, g the pair's conductance). */
+  private inds: { a: number; b: number; gl: number; rw: number; g: number; v: number; i: number; ieq: number }[] = [];
+  /** BJTs, NPN-wise: \`be\` carries Ie and reads vbe, \`bc\` carries −Ic and reads vbc (a PNP's ports are turned round). */
+  private bjts: { be: number; bc: number; is: number; bf: number; br: number; leak: number }[] = [];
+  /** JFETs, N-wise: \`ds\` carries the drain current, \`gs\` is the gate junction (and reads vgs). */
+  private jfets: { ds: number; gs: number; beta: number; vp: number; lambda: number }[] = [];
+  /** OTAs: \`vd\` reads the inputs, \`abc\` is the bias junction, \`out\` pushes the output current. */
+  private otas: { vd: number; abc: number; out: number }[] = [];
+  /** Resistances that move: \`g0\` sits in the inverted matrix, the port carries (g − g0)·v. */
+  private vres: { port: number; g0: number; g: number }[] = [];
+  private pots: { r1: number; r2: number; ohms: number; taper: number; at: number; to: number }[] = [];
+  private potGlide: number;
+  /** LDRs: \`led\` is the LED's port (−1 for a lamp across \`la\`–\`lk\`), \`light\` 1 at full current. */
+  private ldrs: { r: number; led: number; la: number; lk: number; lamp: number; dark: number; lit: number; up: number; down: number; light: number }[] = [];
+  /** Each port's current after the last step or settle (an LED's, for its LDR). */
+  private iNow: Float64Array;
   private K = 0;
   // Port-space Newton: the inverted linear matrix (column-major), W = A⁻¹U and H = VᵀA⁻¹U.
   private Ainv: Float64Array;
@@ -175,12 +270,7 @@ export class Circuit {
       return i;
     };
     let opamps = 0;
-    for (const p of net.parts) {
-      if (p.kind === "R" || p.kind === "C" || p.kind === "V") { node(p.a); node(p.b); }
-      else if (p.kind === "D") { node(p.a); node(p.k); }
-      else if (p.kind === "Opamp") { node(p.plus); node(p.minus); node(p.out); node(`~${opamps++}`); }
-      else { node(p.p); node(p.g); node(p.k); }
-    }
+    for (const p of net.parts) { for (const l of legs(p, opamps)) node(l); if (p.kind === "Opamp") opamps++; }
     if (!this.nodes.has(net.input)) throw new Error(`input node "${net.input}" isn't on any part`);
     if (!this.nodes.has(net.output)) throw new Error(`output node "${net.output}" isn't on any part`);
     const nodeCount = this.nodes.size;
@@ -203,45 +293,85 @@ export class Circuit {
       return j;
     };
     const port = (a: number, b: number, off: number) => { this.pa.push(a); this.pb.push(b); this.poff.push(off); return this.pa.length - 1; };
-    /** A diode whose voltage is read `off` volts below a−k: with k at ground, a clamp at `off`. */
-    const diode = (a: number, k: number, off: number, is = 2.52e-9, nf = 1.752) => {
-      const nvt = nf * VT;
-      this.diodes.push({ port: port(a, k, off), is, nvt, vcrit: nvt * Math.log(nvt / (Math.SQRT2 * is)) });
+    const junction = (port: number, is: number, nvt: number) => { this.junctions.push({ port, nvt, vcrit: nvt * Math.log(nvt / (Math.SQRT2 * is)) }); };
+    /** A diode whose voltage is read `off` volts below a−k: with k at ground, a clamp at `off`. Its port. */
+    const diode = (a: number, k: number, off: number, is: number, nf: number) => {
+      const nvt = nf * VT, at = port(a, k, off);
+      this.diodes.push({ port: at, is, nvt });
+      junction(at, is, nvt);
+      return at;
+    };
+    /** A resistance that moves, starting at conductance `g0`. Its index in `vres`. */
+    const moving = (a: number, b: number, g0: number) => {
+      conductance(tr, a, b, g0); conductance(dc, a, b, g0);
+      this.vres.push({ port: port(a, b, 0), g0, g: g0 });
+      return this.vres.length - 1;
     };
     const T = 1 / sampleRate;
+    this.potGlide = 1 - Math.exp(-T / POT_GLIDE);
     this.inRow = source(g(node(net.input)), n);
     opamps = 0;
     for (const p of net.parts) {
+      const [a, b, c, d] = legs(p, opamps).map((l) => g(node(l)));
+      const [, v] = values(p);
       if (p.kind === "R") {
-        const a = g(node(p.a)), b = g(node(p.b));
         conductance(tr, a, b, 1 / p.ohms); conductance(dc, a, b, 1 / p.ohms);
         // Johnson noise as a current beside the resistor: sqrt(4kT/R · bandwidth), bandwidth = half the rate.
         if (p.noisy) this.hiss.push({ a, b, sigma: Math.sqrt(((4 * 1.380649e-23 * 300) / p.ohms) * (sampleRate / 2)) });
       } else if (p.kind === "C") {
-        const a = g(node(p.a)), b = g(node(p.b)), gc = (2 * p.farads) / T;
+        const gc = (2 * p.farads) / T;
         conductance(tr, a, b, gc); // open at DC: the dc matrix leaves it out
         this.caps.push({ a, b, g: gc, v: 0, i: 0, ieq: 0 });
       } else if (p.kind === "V") {
-        this.supplies.push({ row: source(g(node(p.a)), g(node(p.b))), volts: p.volts });
+        this.supplies.push({ row: source(a, b), volts: p.volts });
       } else if (p.kind === "D") {
-        diode(g(node(p.a)), g(node(p.k)), 0, p.is, p.n);
+        diode(a, b, 0, v[0], v[1]);
       } else if (p.kind === "Opamp") {
         // Input stage: gm·(v+ − v−) into a hidden node with R0 and C0 to ground
         // (open-loop gain A0 = gm·R0, one pole at GBW/A0). Two diodes clamp it near
         // the rails. Output: a unity buffer of the hidden node. A finite bandwidth
         // is also what keeps Newton calm: an ideal op-amp with a hard rail bounces.
-        const hid = g(node(`~${opamps++}`)), plus = g(node(p.plus)), minus = g(node(p.minus)), out = g(node(p.out));
+        opamps++;
+        const [plus, minus, out, hid] = [a, b, c, d];
         const gm = OPAMP_A0 / OPAMP_R0, c0 = OPAMP_A0 / (2 * Math.PI * OPAMP_GBW * OPAMP_R0);
         both(hid, plus, -gm); both(hid, minus, gm);
         conductance(tr, hid, n, 1 / OPAMP_R0 + (2 * c0) / T); conductance(dc, hid, n, 1 / OPAMP_R0);
         this.caps.push({ a: hid, b: n, g: (2 * c0) / T, v: 0, i: 0, ieq: 0 });
-        const vr = (p.rail ?? 4) - 0.5;
-        diode(hid, n, vr); diode(n, hid, vr);
+        const vr = v[0] - 0.5;
+        diode(hid, n, vr, 2.52e-9, 1.752); diode(n, hid, vr, 2.52e-9, 1.752);
         const j = row++;
         both(out, j, 1); both(j, out, 1); both(j, hid, -1);
+      } else if (p.kind === "Triode") {
+        this.triodes.push({ pk: port(a, c, 0), gk: port(b, c, 0) });
+      } else if (p.kind === "L") {
+        // Trapezoidal L with rw in series: i = g·v + ieq, g = gl/(1 + rw·gl). At DC, just rw.
+        const gl = T / (2 * v[0]), rw = v[1], gi = gl / (1 + rw * gl);
+        conductance(tr, a, b, gi); conductance(dc, a, b, 1 / rw);
+        this.inds.push({ a, b, gl, rw, g: gi, v: 0, i: 0, ieq: 0 });
+      } else if (p.kind === "BJT") {
+        const [col, base, em] = [a, b, c], pnp = !!p.pnp;
+        const be = pnp ? port(em, base, 0) : port(base, em, 0), bc = pnp ? port(col, base, 0) : port(base, col, 0);
+        junction(be, v[0], VT); junction(bc, v[0], VT);
+        this.bjts.push({ be, bc, is: v[0], bf: v[1], br: v[2], leak: v[3] });
+      } else if (p.kind === "JFET") {
+        const [dr, gate, src] = [a, b, c], pch = !!p.p;
+        const gs = pch ? diode(src, gate, 0, JUNCTION_IS, 1) : diode(gate, src, 0, JUNCTION_IS, 1);
+        const ds = pch ? port(src, dr, 0) : port(dr, src, 0);
+        this.jfets.push({ ds, gs, beta: v[0] / (v[1] * v[1]), vp: v[1], lambda: v[2] });
+      } else if (p.kind === "Pot") {
+        const [ohms, at, tp] = v, t = taper(tp, at);
+        const r1 = moving(a, b, 1 / Math.max(ohms * t, 1)), r2 = moving(b, c, 1 / Math.max(ohms * (1 - t), 1));
+        this.pots.push({ r1, r2, ohms, taper: tp, at, to: at });
+      } else if (p.kind === "LDR") {
+        const [dark, lit, rise, fall, lamp] = v;
+        let led = -1;
+        if (lamp > 0) { conductance(tr, c, d, 1 / lamp); conductance(dc, c, d, 1 / lamp); }
+        else led = diode(c, d, 0, LED_IS, LED_N);
+        const r = moving(a, b, 1 / Math.sqrt(dark * lit));
+        this.ldrs.push({ r, led, la: c, lk: d, lamp, dark, lit, up: 1 - Math.exp(-T / rise), down: 1 - Math.exp(-T / fall), light: 0 });
       } else {
-        const p_ = g(node(p.p)), g_ = g(node(p.g)), k = g(node(p.k));
-        this.triodes.push({ pk: port(p_, k, 0), gk: port(g_, k, 0) });
+        const vd = port(a, b, 0), abc = diode(d, n, 0, JUNCTION_IS, 1), out = port(n, c, 0);
+        this.otas.push({ vd, abc, out });
       }
     }
     const K = (this.K = this.pa.length);
@@ -259,7 +389,7 @@ export class Circuit {
     for (let j = 0; j < K; j++) for (let k = 0; k < K; k++) H[j * K + k] = W[k * m + this.pa[j]] - W[k * m + this.pb[j]];
     this.z = new Float64Array(m);
     this.v = new Float64Array(K); this.vNew = new Float64Array(K); this.iP = new Float64Array(K); this.p = new Float64Array(K);
-    this.J = new Float64Array(K * K); this.F = new Float64Array(K); this.JF = new Float64Array(K * K);
+    this.J = new Float64Array(K * K); this.F = new Float64Array(K); this.JF = new Float64Array(K * K); this.iNow = new Float64Array(K);
   }
 
   /** The voltage on a named node after the last step (0 for ground or a name not in the circuit). */
@@ -305,13 +435,88 @@ export class Circuit {
         J[t.gk * K + t.gk] = GG * XI * pw * (eg / (1 + eg)) + GMIN;
       }
     }
+    for (const q of this.bjts) {
+      // Ebers-Moll (transport): Ic = Is(ef − er) − Is/βr·(er − 1), Ib = Is/βf·(ef − 1) + Is/βr·(er − 1),
+      // and germanium's leakage from collector to base, smooth through vbc = 0.
+      const vbe = v[q.be], vbc = v[q.bc];
+      const ef = Math.exp(Math.min(vbe / VT, 80)), er = Math.exp(Math.min(vbc / VT, 80));
+      const gf = (q.is * ef) / VT, gr = (q.is * er) / VT, th = Math.tanh(vbc / VT);
+      i[q.be] = q.is * (ef - er) + (q.is / q.bf) * (ef - 1);
+      J[q.be * K + q.be] = gf * (1 + 1 / q.bf) + GMIN;
+      J[q.be * K + q.bc] = -gr;
+      i[q.bc] = (q.is / q.br) * (er - 1) - q.is * (ef - er) + q.leak * th;
+      J[q.bc * K + q.be] = -gf;
+      J[q.bc * K + q.bc] = gr * (1 + 1 / q.br) + (q.leak * (1 - th * th)) / VT + GMIN;
+    }
+    for (const f of this.jfets) {
+      // Shichman-Hodges, β = Idss/Vp²: cut off below pinch-off, a resistor that the gate sets
+      // while vds is under the overdrive (the triode region), then a current source. Symmetric:
+      // with vds < 0 the drain and source swap.
+      const vds = v[f.ds], vgs = v[f.gs], rev = vds < 0;
+      const og = (rev ? vgs - vds : vgs) + f.vp, od = rev ? -vds : vds;
+      let id = 0, dg = 0, dd = 0;
+      if (og > 0) {
+        const l = 1 + f.lambda * od;
+        if (od < og) {
+          const q = 2 * og * od - od * od;
+          id = f.beta * q * l; dg = 2 * f.beta * od * l; dd = 2 * f.beta * (og - od) * l + f.beta * q * f.lambda;
+        } else {
+          id = f.beta * og * og * l; dg = 2 * f.beta * og * l; dd = f.beta * og * og * f.lambda;
+        }
+      }
+      i[f.ds] = rev ? -id : id;
+      J[f.ds * K + f.ds] = (rev ? dg + dd : dd) + GMIN;
+      J[f.ds * K + f.gs] = rev ? -dg : dg;
+    }
+    for (const o of this.otas) {
+      // The bias junction's current (computed with the diodes above) sets the transconductance.
+      const ib = i[o.abc], iabc = ib > 0 ? ib : 0, th = Math.tanh(v[o.vd] / (2 * VT));
+      i[o.vd] = 0;
+      i[o.out] = iabc * th;
+      J[o.out * K + o.vd] = (iabc * (1 - th * th)) / (2 * VT);
+      J[o.out * K + o.abc] = ib > 0 ? J[o.abc * K + o.abc] * th : 0;
+    }
+    for (const r of this.vres) {
+      const dg = r.g - r.g0;
+      i[r.port] = dg * v[r.port];
+      J[r.port * K + r.port] = dg;
+    }
   }
 
-  /** Junction limiting on the diode ports: `v` is the new guess, `old` the last. */
+  /** Junction limiting on the pn-junction ports: `v` is the new guess, `old` the last. */
   private limit(v: Float64Array, old: Float64Array): void {
-    for (const d of this.diodes) {
+    for (const d of this.junctions) {
       const off = this.poff[d.port];
       v[d.port] = pnjlim(v[d.port] - off, old[d.port] - off, d.nvt, d.vcrit) + off;
+    }
+  }
+
+  /** Turns pot `i` (in netlist order) to `at`, 0 to 1. It glides there over about 10 ms. */
+  setPot(i: number, at: number): void {
+    const p = this.pots[i];
+    if (p) p.to = Math.min(1, Math.max(0, at));
+  }
+
+  /** Moves each pot's resistances `share` of the way to where its knob is (1: all the way). */
+  private turnPots(share: number): void {
+    for (const p of this.pots) {
+      if (p.at === p.to) continue;
+      p.at += (p.to - p.at) * share;
+      if (Math.abs(p.to - p.at) < 1e-6) p.at = p.to;
+      const t = taper(p.taper, p.at);
+      this.vres[p.r1].g = 1 / Math.max(p.ohms * t, 1);
+      this.vres[p.r2].g = 1 / Math.max(p.ohms * (1 - t), 1);
+    }
+  }
+
+  /** Each LDR's light `share` of the way to what its source gives now (null: up or down at its own pace). */
+  private light(share: number | null): void {
+    const { x, iNow } = this;
+    for (const d of this.ldrs) {
+      const amps = d.led >= 0 ? Math.max(0, iNow[d.led]) / LED_FULL : (x[d.la] - x[d.lk]) / d.lamp / LAMP_FULL;
+      const target = d.led >= 0 ? amps : amps * amps; // a lamp glows with the power in its filament
+      d.light += (target - d.light) * (share ?? (target > d.light ? d.up : d.down));
+      this.vres[d.r].g = 1 / d.dark + Math.pow(d.light, LDR_GAMMA) / d.lit;
     }
   }
 
@@ -324,11 +529,15 @@ export class Circuit {
     const { m, size: n, K, pa, pb, x, v, iP, J } = this;
     const A = new Float64Array(m * m), b = new Float64Array(m), old = new Float64Array(K);
     x.fill(0); v.fill(0);
-    for (let s = 1; s <= 10; s++) {
+    this.turnPots(1);
+    for (const d of this.ldrs) { d.light = 0; this.vres[d.r].g = 1 / d.dark; }
+    // With LDRs, one more pass at full supply: each pass lights them from the one before.
+    const passes = this.ldrs.length ? 11 : 10;
+    for (let s = 1; s <= passes; s++) {
       for (let it = 0; it < 200; it++) {
         A.set(this.baseDc); b.fill(0);
         b[this.inRow] = vin;
-        for (const sp of this.supplies) b[sp.row] = (sp.volts * s) / 10;
+        for (const sp of this.supplies) b[sp.row] = (sp.volts * Math.min(s, 10)) / 10;
         old.set(v);
         for (let k = 0; k < K; k++) v[k] = x[pa[k]] - x[pb[k]];
         if (it > 0) this.limit(v, old);
@@ -354,9 +563,16 @@ export class Circuit {
         x[n] = 0;
         if (done) break;
       }
+      if (this.ldrs.length) {
+        for (let k = 0; k < K; k++) v[k] = x[pa[k]] - x[pb[k]];
+        J.fill(0);
+        this.currents(v, this.iNow, J);
+        this.light(1);
+      }
     }
     for (let k = 0; k < K; k++) v[k] = x[pa[k]] - x[pb[k]];
     for (const c of this.caps) { c.v = x[c.a] - x[c.b]; c.i = 0; }
+    for (const l of this.inds) { l.v = x[l.a] - x[l.b]; l.i = l.v / l.rw; }
     return x[this.out];
   }
 
@@ -371,12 +587,19 @@ export class Circuit {
     const { m, size: n, K, Ainv, W, H, z, x, v, vNew, iP, J, F, JF, p, pa, pb } = this;
     // z = A⁻¹b: what the circuit would do if nothing bent. b is sparse, so add only its columns.
     z.fill(0);
+    if (this.pots.length) this.turnPots(this.potGlide);
     this.addCol(this.inRow, vin);
     for (const s of this.supplies) this.addCol(s.row, s.volts);
     for (const c of this.caps) {
       c.ieq = c.g * c.v + c.i;
       if (c.a < n) this.addCol(c.a, c.ieq);
       if (c.b < n) this.addCol(c.b, -c.ieq);
+    }
+    for (const l of this.inds) {
+      // The inductor's history: i_n = g·v_n + ieq, ieq = (i + gl·(v − rw·i)) / (1 + rw·gl) from the last sample.
+      l.ieq = (l.i + l.gl * (l.v - l.rw * l.i)) / (1 + l.rw * l.gl);
+      if (l.a < n) this.addCol(l.a, -l.ieq);
+      if (l.b < n) this.addCol(l.b, l.ieq);
     }
     if (this.noise > 0) for (const r of this.hiss) {
       const i = r.sigma * this.noise * this.gauss();
@@ -416,6 +639,7 @@ export class Circuit {
       for (let k = 0; k < K; k++) {
         let ik = iP[k];
         for (let l = 0; l < K; l++) ik += J[k * K + l] * F[l];
+        this.iNow[k] = ik;
         const o = k * m;
         for (let r = 0; r < n; r++) x[r] -= W[o + r] * ik;
       }
@@ -423,6 +647,8 @@ export class Circuit {
       this.iterations++;
     }
     for (const c of this.caps) { c.v = x[c.a] - x[c.b]; c.i = c.g * c.v - c.ieq; }
+    for (const l of this.inds) { l.v = x[l.a] - x[l.b]; l.i = l.g * l.v + l.ieq; }
+    if (this.ldrs.length) this.light(null);
     return x[this.out];
   }
 }

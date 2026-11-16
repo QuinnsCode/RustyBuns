@@ -36,6 +36,7 @@ export class WasmRig {
   }
 
   setGain(i: number, g: number): void { this.x.fm_amp_set_gain(this.h, i >>> 0, g); }
+  setPot(i: number, pot: number, at: number): void { this.x.fm_amp_set_pot(this.h, i >>> 0, pot >>> 0, at); }
   setPower(p: number): void { this.x.fm_amp_set_power(this.h, p); }
   setNoise(n: number): void { this.x.fm_amp_set_noise(this.h, n); }
   setLink(i: number, net: Netlist): void {
