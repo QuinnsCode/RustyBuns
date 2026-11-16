@@ -17,6 +17,8 @@ import { BIGGER_BAR } from "./venues/bigger-bar.ts";
 import { type BiggerBarView, biggerBarView } from "./venues/bigger-bar-view.ts";
 import { PARK, parkState, push } from "./venues/park.ts";
 import { type ParkView, parkView } from "./venues/park-view.ts";
+import { SHOW } from "./venues/show.ts";
+import { type ShowView, showView } from "./venues/show-view.ts";
 import { hasSwitch, hear, type Switches } from "./audio/hear.ts";
 import { soundSystem } from "./audio/play.ts";
 import { currentDial, setDial } from "./assists.ts";
@@ -28,7 +30,7 @@ const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as 
 const canvas = $<HTMLCanvasElement>("stage");
 const KEY = "load-in.controls";
 
-const LEVELS: Record<string, Level> = { garage: GARAGE, "dive-bar": DIVE_BAR, "bigger-bar": BIGGER_BAR, park: PARK };
+const LEVELS: Record<string, Level> = { garage: GARAGE, "dive-bar": DIVE_BAR, "bigger-bar": BIGGER_BAR, park: PARK, show: SHOW };
 const levelFrom = (name: string | null) => LEVELS[name ?? ""] ?? GARAGE;
 let world: World = newWorld(levelFrom(new URLSearchParams(location.search).get("level")));
 let cables = cable.newCables(world);
@@ -91,6 +93,7 @@ const highlight = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGe
 scene.add(highlight);
 let bar: BarView | ParkView | null = null;
 let big: BiggerBarView | null = null;
+let foh: ShowView | null = null;
 /** A piece's model (a stand at `height`), or a plain box at its catalog size if @rustybuns/models has none. */
 function modelOf(id: string, height?: number): THREE.Object3D {
   if (cable.hasModel(id)) return model(id, { look, height });
@@ -110,6 +113,8 @@ function buildItems() {
   bar = world.level === DIVE_BAR ? barView(scene, $("hud"), () => world) : world.level === PARK ? parkView(scene, $("hud"), () => world, () => cables) : null;
   big?.dispose();
   big = world.level === BIGGER_BAR ? biggerBarView(scene, $("hud"), () => world, () => cables) : null;
+  foh?.dispose();
+  foh = world.level === SHOW ? showView(scene, $("hud"), () => world) : null;
 }
 buildItems();
 const ropes = cableView(scene);
@@ -154,7 +159,7 @@ function draw() {
   glow.update(cable.glowing(world, cables), world.t);
   clock?.update(world.level.name, world.t);
   const g = held ? gear(held.gear) : null;
-  $("hint").textContent = phase !== "play" ? "" : performance.now() < flash.until ? flash.text : (big?.hint() ?? hint(at, jack));
+  $("hint").textContent = phase !== "play" ? "" : performance.now() < flash.until ? flash.text : (foh?.hint() ?? big?.hint() ?? hint(at, jack));
   $("carry").textContent = phase !== "play" ? "" : g ? `${g.what}, ${g.kg} kg, ${you.speed.toFixed(1)} m/s`
     : end ? `${end.run.lengthM} m ${end.run.kind} cable, ${you.speed.toFixed(1)} m/s` : `Hands free, ${you.speed.toFixed(1)} m/s`;
   renderer.render(scene, camera);
@@ -168,7 +173,7 @@ function hint(at: ReturnType<typeof aimed>, jack: ReturnType<typeof cable.aimedJ
   const plugged = jack && cables.runs.some((r) => [r.a, r.b].some((e) => "plug" in e && e.plug[0] === jack.owner && e.plug[1] === jack.jack));
   if (plugged) return `F unplug ${jack.owner} ${jack.jack}`;
   if (at?.key === cables.caseKey && cables.runs.some((r) => !r.rope || "case" in r.b)) return "F take a cable";
-  const sw = at && hasSwitch(at.gear, !!big) ? `, P switch it ${switchedOn.has(at.key) ? "off" : "on"}` : "";
+  const sw = at && hasSwitch(at.gear, !!big || !!foh) ? `, P switch it ${switchedOn.has(at.key) ? "off" : "on"}` : "";
   if (at && wheeled(at.gear)) return `F push the ${gear(at.gear).what} (${gear(at.gear).kg} kg)`;
   return at ? `F pick up ${gear(at.gear).what} (${gear(at.gear).kg} kg)${sw}` : "";
 }
@@ -188,6 +193,7 @@ document.addEventListener("keydown", (e) => {
   if (phase !== "play" || e.repeat) return;
   if (!world.held && !cable.inHand(cables) && bar?.key(e.code)) return;
   if (big?.key(e.code)) return;
+  if (foh?.key(e.code)) return;
   if (e.code === "KeyF") grab();
   if (e.code === "KeyQ") turnHeld(world, -1);
   if (e.code === "KeyE") turnHeld(world, 1);
@@ -216,7 +222,7 @@ function place(): Answer {
 /** P: switch what you look at on or off, if it has a switch. */
 function flip() {
   const at = aimed(world);
-  if (!at || !hasSwitch(at.gear, !!big)) return;
+  if (!at || !hasSwitch(at.gear, !!big || !!foh)) return;
   if (!switchedOn.delete(at.key)) switchedOn.add(at.key);
 }
 
@@ -254,6 +260,7 @@ function frame(now: number) {
       crouch: keys.has("KeyC") || keys.has("ControlLeft") || gp.held.has("crouch"),
     });
     cable.stepCables(world, cables, dt);
+    foh?.tick(dt);
   }
   big?.tick();
   draw();
@@ -305,7 +312,7 @@ async function boot() {
 declare global { interface Window { loadIn: typeof harness } }
 /** The harness (scripts/probe.ts HANDLES): the level as data, and the moves a test or an agent makes without pointer lock. */
 const harness = {
-  state: () => ({ phase, dial: currentDial(), doors: doors(world.level.name, world.t), ...snapshot(world), ...cable.cableState(world, cables), sound: { up: sound.up, on: [...switchedOn], ...heard() }, ...(big ? { biggerBar: big.state() } : {}), ...(bar ? { bar: { ...(world.level === PARK ? parkState(world, cables) : barState(world)), heat: bar.heatOn } } : {}), signedIn: !!login(), party: crew.code ? { code: crew.code, members: crew.members.length, room: crew.room || null, seat: crew.seat >= 0 ? crew.seat : null } : null }),
+  state: () => ({ phase, dial: currentDial(), doors: doors(world.level.name, world.t), ...snapshot(world), ...cable.cableState(world, cables), sound: { up: sound.up, on: [...switchedOn], ...heard() }, ...(big ? { biggerBar: big.state() } : {}), ...(foh ? { show: foh.state() } : {}), ...(bar ? { bar: { ...(world.level === PARK ? parkState(world, cables) : barState(world)), heat: bar.heatOn } } : {}), signedIn: !!login(), party: crew.code ? { code: crew.code, members: crew.members.length, room: crew.room || null, seat: crew.seat >= 0 ? crew.seat : null } : null }),
   /** Turn the cozy-to-sim dial: "cozy", "crew" or "sim". */
   dial: (d: string) => setDial(d),
   /** Into the level, without asking for the mouse. */
@@ -334,7 +341,7 @@ const harness = {
   heat: (on: boolean) => bar?.setHeat(on),
   /** Dive bar: open the doors; the final score. */
   doors: () => bar?.doors() ?? null,
-  /** Load a level by name (garage, dive-bar, bigger-bar, park). */
+  /** Load a level by name (garage, dive-bar, bigger-bar, park, show). */
   level: (name: string) => load(levelFrom(name)),
   /** Turn what you hold a 15 degree step: -1 left, 1 right. */
   turn: (dir: number) => turnHeld(world, dir),
@@ -343,7 +350,7 @@ const harness = {
   /** Switch a piece of gear on or off (P while looking at it); false if it has no switch. */
   power: (key: string, state = !switchedOn.has(key)) => {
     const item = world.items.find((i) => i.key === key);
-    if (!item || !hasSwitch(item.gear, !!big)) return false;
+    if (!item || !hasSwitch(item.gear, !!big || !!foh)) return false;
     if (state) switchedOn.add(key); else switchedOn.delete(key);
     return true;
   },
@@ -353,6 +360,8 @@ const harness = {
   /** In the bigger bar, at the panel: reset a tripped breaker (or all of them). */
   resetBreaker: (circuit?: string) => big?.reset(circuit) ?? { ok: false, why: "no breaker panel here" },
   reset: () => { switchedOn.clear(); load(world.level); },
+  /** The show: the desk and the stage, without the keys (desk.nudge(channel, { fader, send, trim }), desk.notch(channel, hz), desk.start(), desk.fix(kind), desk.run(seconds)). */
+  get desk() { return foh?.desk ?? null; },
 };
 window.loadIn = harness;
 

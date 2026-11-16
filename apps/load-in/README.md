@@ -22,6 +22,8 @@ The dive bar (`?level=dive-bar`): set the tops on their stands, then, looking at
 The bigger bar (`?level=bigger-bar`): passive 15" tops and two subs run off the amp rack over speaker cable, two powered wedges, and wall outlets on four numbered circuits (two 20 A on the stage, 15 A at the bar and the side). The cables decide what plays. The bar's cooler is always on circuit 3, so the rack on that circuit trips it at show level. Walk to the panel on the right wall and press B to reset it, then move the plug. The card shows each circuit and how many speakers are fed.
 
 The park (`?level=park`): a Saturday event with a pop-up tent and no wall power. F on the generator (90 kg, too heavy to lift) takes its handle and you push it in from the truck at a heavy pace; run the 25 m power cable to the distro in the tent and the short ones to the tops and the mixer, all inside the generator's 6.3 kW (past it, it trips and the park goes quiet). Cables across the lakeside path or the dog walk need a ramp, and the houses across the road have a noise limit of 82 dB at their property line: aim, tilt and the fader trade the crowd's 95 dB against the neighbours. On Cozy the generator rolls light and never trips, and ramps snap over the runs. Same keys as the dive bar; Enter is show time.
+The show (`?level=show`): the rig is up and the band is on stage; you run front of house. At the desk, 1 to 5 pick a channel (kick, snare, bass, guitar, vocal), [ ] move its fader, ; ' its send to the singer's wedge, , . its trim, J / K move the notch finder a third of an octave and N puts a notch there (three per channel). Enter opens the doors, or the clock does after two minutes. Three songs of our own play as stems through the desk, and the crowd meter climbs while every part sits within 3 dB of where the song wants it (the guitar 5 dB up for the solo in the second song). Feedback is computed: the vocal mic hears the wedge at their distance and angle, through the channel's trim, send and notches, and a band whose loop gain passes 0 dB rings. "More me" asks for 3 dB more in the wedge, which rings at 5 kHz unless you notch it or turn the wedge (Q / E beside it). A broken string (F by the guitarist hands up the spare) and a dying bass cable (F at the bass rig) cut that part until you fix them. Cozy names the ringing band and the fix and gives the band a minute; Sim gives 25 seconds and you find the ring by ear.
+
 A gamepad works too (left stick walk, right stick look, A grab, LB / RB turn, B crouch); the cog rebinds it.
 
 ## What's in it
@@ -38,6 +40,9 @@ A gamepad works too (left stick walk, right stick look, A grab, LB / RB turn, B 
 | `src/venues/park.ts` | the park: no outlets, the generator you push (`push`), the generator's load (`load`), the paths, and the score: the crowd, the houses' property line against its limit, clear paths |
 | `src/venues/park-view.ts` | the park on the page: grass and sky, the tent, paths, road, houses (red when over the limit), the truck, the heat map and the card |
 | `src/venues/dive-bar-view.ts` | the dive bar on the page: the counter, stage and crowd marks, the heat map (repainted only when something moves) and the score card |
+| `src/venues/show.ts` | the show: the band, the desk's channel strips, the set list and its cues, the vocal loop through `feedback()` in `packages/gear`, the wedge level at the singer's head, the mix against each song's targets and the crowd meter |
+| `src/venues/show-view.ts` | the show on the page: the band with a marker over whoever needs you, the desk keys, the card (song, crowd, cues, what rings, the selected strip) |
+| `src/audio/stems.ts` | the set's five stems per song, synthesised, each through its strip (level and notches), the dying bass, and the howl at the ringing band |
 | `src/cables/` | cables: `rope.ts` the rope (verlet points on the floor and over the gear), `cables.ts` taking, plugging, the length stop, ramps and hazards (the patch is `compile` from `@rustybuns/gear`), `draw.ts` the tubes on screen |
 | `src/main.ts` | the page: three.js in first person, pointer lock, keys and a pad, the menu, and `window.loadIn` (the harness) |
 | `src/audio/hear.ts` | what you hear where you stand: each fed speaker's level at your head from `@rustybuns/gear` (distance, off-axis), how dull it is from there, and the sub band summed with phase; the `fed` hook cables fill in |
@@ -49,6 +54,7 @@ A gamepad works too (left stick walk, right stick look, A grab, LB / RB turn, B 
 | `test/dive-bar.test.ts` | both tops set on their stands: pointed at the wall they score low, aimed at the crowd they pass |
 | `test/park.test.ts` | the generator pushed in, the tent powered from it, the path ramped, the houses under the limit; then four amp racks trip it |
 | `test/hearing.test.ts` | the head switched on: the cab 6 dB down at double the distance, duller behind, silent when switched off |
+| `test/show.test.ts` | a set worked from the desk: the vocal brought up, more me rings and is notched, the spare guitar and the bass cable fixed on stage, the solo pushed, the crowd happy; turning the wedge stops the ring too, and a set nobody works sours the crowd |
 | `test/cables.test.ts` | power from the outlet across the way in to the speaker, the hazard, the ramp over it, a cable's length stopping you |
 
 Sizes, weights and jacks come from `@rustybuns/gear`; the models (and where their jacks sit) from `@rustybuns/models/gear`.
@@ -66,6 +72,6 @@ Signed in, **Make a party** gives a code to hand out; friends type it in **Join*
 ## The harness
 
 `window.loadIn.state()` returns you (place, facing, speed), what you hold, what F would pick up, and every piece of gear
-(where it sits, its weight), the cables (ends, slack), the hazards and the patch (`fed`, `problems`), and `sound`: each speaker's level at your head, the high and low band totals. `power(key)` switches gear on, `speakers(up)` brings the sound up. `start()`, `walkTo(x, z)`, `pickUp(key)`, `putDown()`, `turn(dir)` and `look(yaw, pitch)`
+(where it sits, its weight), the cables (ends, slack), the hazards and the patch (`fed`, `problems`), and `sound`: each speaker's level at your head, the high and low band totals. In the show, `state().show` is the set (song, solo, crowd, open, fixed and missed cues), `ringing` and `margin` for the vocal loop, `me` and `wants` for the wedge, the mix and the desk; `desk.nudge(channel, { fader, send, trim })`, `desk.notch(channel, hz)`, `desk.start()`, `desk.fix(kind)` and `desk.run(seconds)` play it. `power(key)` switches gear on, `speakers(up)` brings the sound up. `start()`, `walkTo(x, z)`, `pickUp(key)`, `putDown()`, `turn(dir)` and `look(yaw, pitch)`
 play it without pointer lock, and `takeCable`, `plug`, `unplug`, `grabEnd`, `dropEnd`, `coil` and `wait` run the cables. In the Rusty Buns repo, `bun run probe load-in` reads it from headless Chrome.
 When the game grows, grow `state()` with it, and its row in `HANDLES` (`scripts/probe.ts`).

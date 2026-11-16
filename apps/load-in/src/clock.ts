@@ -10,6 +10,8 @@ export const VENUES: Record<string, { window: number; fee: number }> = {
   "bigger-bar": { window: 480, fee: 300 },
   // The park: a long push from the truck and long runs, so a longer window.
   park: { window: 720, fee: 400 },
+  // The show: the rig is up, so the clock is the minutes to set the desk before the band walks on.
+  show: { window: 120, fee: 300 },
 };
 const FALLBACK = { window: 300, fee: 0 };
 

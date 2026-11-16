@@ -4,7 +4,7 @@
 //
 //   cozy  no clock, gear weighs half, cables coil themselves, ramps snap into place, jacks glow, breakers never trip
 //   crew  in between: a clock with a few minutes' grace, gear at three quarters, ramps snap, jacks glow
-//   sim   real weights, the clock to doors with no grace, breakers trip, a short cable is short
+//   sim   real weights, the clock to doors with no grace, breakers trip, a short cable is short, a ring found by ear
 export const DIALS = ["cozy", "crew", "sim"] as const;
 export type Dial = (typeof DIALS)[number];
 
@@ -29,12 +29,16 @@ type Rules = {
   breakersTrip: boolean;
   /** Metres of reach a cable gives beyond its real length. */
   cableSlack: number;
+  /** Seconds the band waits on a cue at the show (more me, a broken string) before it counts as missed. */
+  cueSeconds: number;
+  /** The desk names the band that rings; without it you find it by ear. */
+  ringNamed: boolean;
 };
 
 export const RULES: Record<Dial, Rules> = {
-  cozy: { weight: 0.5, clock: false, grace: Infinity, doorsScale: 2, autoCoil: true, rampSnap: true, jackGlow: true, breakersTrip: false, cableSlack: 2 },
-  crew: { weight: 0.75, clock: true, grace: 120, doorsScale: 1.5, autoCoil: false, rampSnap: true, jackGlow: true, breakersTrip: true, cableSlack: 0.5 },
-  sim: { weight: 1, clock: true, grace: 0, doorsScale: 1, autoCoil: false, rampSnap: false, jackGlow: false, breakersTrip: true, cableSlack: 0 },
+  cozy: { weight: 0.5, clock: false, grace: Infinity, doorsScale: 2, autoCoil: true, rampSnap: true, jackGlow: true, breakersTrip: false, cableSlack: 2, cueSeconds: 60, ringNamed: true },
+  crew: { weight: 0.75, clock: true, grace: 120, doorsScale: 1.5, autoCoil: false, rampSnap: true, jackGlow: true, breakersTrip: true, cableSlack: 0.5, cueSeconds: 40, ringNamed: true },
+  sim: { weight: 1, clock: true, grace: 0, doorsScale: 1, autoCoil: false, rampSnap: false, jackGlow: false, breakersTrip: true, cableSlack: 0, cueSeconds: 25, ringNamed: false },
 };
 
 export type Assist = keyof Rules;
