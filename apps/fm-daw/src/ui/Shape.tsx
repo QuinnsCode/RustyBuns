@@ -66,7 +66,9 @@ export function Shape(props: { doc: EqDoc; sampleRate: number; analyser: Analyse
   /** A hand move on a dot (lane, new value, old value): kept as automation while recording. */
   onMove?(lane: number, v: number, was: number): void;
   /** Linear phase, and the switch. */
-  linear?: boolean; onLinear?(on: boolean): void }) {
+  linear?: boolean; onLinear?(on: boolean): void;
+  /** What the bar names, in place of "Shape · master EQ": the master-or-track picker. */
+  head?: React.ReactNode }) {
   const { doc, sampleRate: sr, analyser, onChange, onListen, lanes = [], onLanes, linear = false, onLinear } = props;
   const wrap = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
@@ -307,10 +309,10 @@ export function Shape(props: { doc: EqDoc; sampleRate: number; analyser: Analyse
 
   const used = doc.filter(Boolean).length;
   return (
-    <section className="shape" aria-label="Shape: the master EQ">
+    <section className="shape" aria-label="Shape: an EQ">
       <div className="shape-bar">
-        <span className="silk">Shape · master EQ</span>
-        <span className="dim shape-hint">Double-click to add or remove · drag to move · hold to listen · wheel for Q · Alt-click to bypass · record to automate</span>
+        {props.head ?? <span className="silk">Shape · master EQ</span>}
+        <span className="dim shape-hint">Double-click to add or remove · drag to move{onListen ? " · hold to listen" : ""} · wheel for Q · Alt-click to bypass{props.onMove ? " · record to automate" : ""}</span>
         <span className="spacer" />
         <label className="check" title="Draw the phase the bands add (dashed, -180 to +180 degrees). Steep cuts turn it most"><input type="checkbox" checked={phase} onChange={(e) => setPhase(e.currentTarget.checked)} /> Phase</label>
         {onLinear && <label className="check" title={`Linear phase: the same curve with no phase turn, for mastering. Holds the whole mix back ${Math.round((linearLatency(sr) / sr) * 1000)} ms (the bounce and recording make up for it), and steep cuts below ~60 Hz come out a little softer`}><input type="checkbox" checked={linear} onChange={(e) => onLinear(e.currentTarget.checked)} /> Linear</label>}

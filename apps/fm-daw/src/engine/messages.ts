@@ -4,7 +4,7 @@ import type { RecordedMove } from "./sequencer.ts";
 import type { EqDoc, EqListen } from "./eq.ts";
 
 export type ToWorklet =
-  | { t: "load"; params: number[]; notes: Note[][]; auto: Lane[][]; bpm: number; swing: number; loopBeats: number; audible: boolean[]; space: number; squash: number; eq: EqDoc; eqAuto: Lane[]; eqLinear: boolean }
+  | { t: "load"; params: number[]; notes: Note[][]; auto: Lane[][]; bpm: number; swing: number; loopBeats: number; audible: boolean[]; space: number; squash: number; eq: EqDoc; eqAuto: Lane[]; trackEq: EqDoc[]; eqLinear: boolean }
   | { t: "param"; track: number; i: number; v: number }
   | { t: "notes"; track: number; notes: Note[] }
   | { t: "auto"; track: number; lanes: Lane[] }
@@ -14,6 +14,8 @@ export type ToWorklet =
   | { t: "squash"; amount: number }
   /** Shape, the master EQ: every slot at once (it is small), and its automation. */
   | { t: "eq"; bands: EqDoc; lanes: Lane[] }
+  /** A track's Shape, its EQ insert before the sum (not automated). */
+  | { t: "trackEq"; track: number; bands: EqDoc }
   /** A held dot: hear only this range until null. Not saved, not bounced. */
   | { t: "eqListen"; band: EqListen | null }
   /** Shape in linear phase (true) or minimum phase. Linear holds the whole mix back by its latency. */

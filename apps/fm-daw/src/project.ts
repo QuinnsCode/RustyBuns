@@ -21,6 +21,8 @@ export interface TrackDoc {
   params: number[];
   notes: Note[];
   auto?: Lane[];
+  /** Shape on this track alone, before the sum (src/engine/eq.ts); absent when flat. */
+  eq?: EqDoc;
   mute: boolean;
   solo: boolean;
 }
@@ -39,7 +41,8 @@ export type Op =
   | { t: "auto"; track: number; lanes: Lane[] }
   | { t: "track"; track: number; mute?: boolean; solo?: boolean; name?: string }
   | { t: "global"; bpm?: number; swing?: number; space?: number; squash?: number; bars?: number }
-  | { t: "eq"; bands: EqDoc }
+  /** Shape on the master, or with `track` that track's own. */
+  | { t: "eq"; bands: EqDoc; track?: number }
   | { t: "eqAuto"; lanes: Lane[] }
   | { t: "eqPhase"; linear: boolean }
   | { t: "replace"; project: Project };
@@ -80,6 +83,11 @@ export function sanitizeLanes(x: unknown, beats: number, kind = TRACK_LANES): La
 export const sanitizeEqAuto = (x: unknown, beats: number, eq: EqDoc) => sanitizeLanes(x, beats, EQ_AUTO).filter((l) => eq[eqLaneBand(l.i)]);
 /** eqAuto only when there is some, so a project without moves reads the same as before it had the field. */
 const eqAutoOf = (lanes: Lane[]) => (lanes.length ? { eqAuto: lanes } : {});
+/** A track with this Shape: the field only when a slot is filled, so a flat track reads as it did before tracks had one. */
+function withTrackEq(t: TrackDoc, eq: EqDoc): TrackDoc {
+  const { eq: _, ...rest } = t;
+  return eq.some(Boolean) ? { ...rest, eq } : rest;
+}
 /** eqLinear the same way: only when on. */
 const linearOf = (on: boolean) => (on ? { eqLinear: true } : {});
 
@@ -143,8 +151,9 @@ export function sanitize(x: unknown): Project | null {
 
 function track(v: unknown, ti: number, beats: number): TrackDoc {
   const t = obj({ name: str(24, { min: 0, dflt: `Track ${ti + 1}` }), kind: oneOf(["drum", "synth"], "drum"), root: int(0, 127, 60),
-    params: arr(raw, NPARAMS, { drop: true }), notes: raw, auto: raw, mute: bool(false), solo: bool(false) })(typeof v === "object" && v ? v : {});
-  return { ...t, params: Array.from({ length: NPARAMS }, (_, i) => clampParam(i, Number(t.params[i]))), notes: sanitizeNotes(t.notes, beats), auto: sanitizeLanes(t.auto, beats) };
+    params: arr(raw, NPARAMS, { drop: true }), notes: raw, auto: raw, eq: raw, mute: bool(false), solo: bool(false) })(typeof v === "object" && v ? v : {});
+  const { eq, ...rest } = t;
+  return withTrackEq({ ...rest, params: Array.from({ length: NPARAMS }, (_, i) => clampParam(i, Number(t.params[i]))), notes: sanitizeNotes(t.notes, beats), auto: sanitizeLanes(t.auto, beats) }, sanitizeEq(eq));
 }
 
 const tag = <T extends string>(t: T) => oneOf([t]);
@@ -157,7 +166,7 @@ const OPS: Guard<Op>[] = [
   obj({ t: tag("auto"), track: TRACK, lanes: (v: unknown) => sanitizeLanes(v, MAX_BARS * BEATS_PER_BAR) }),
   obj({ t: tag("track"), track: TRACK, mute: maybe(bool()), solo: maybe(bool()), name: maybe(str(Infinity, { min: 0 })) }),
   obj({ t: tag("global"), bpm: maybe(real), swing: maybe(real), space: maybe(real), squash: maybe(real), bars: maybe(BARS) }),
-  obj({ t: tag("eq"), bands: sanitizeEq }),
+  obj({ t: tag("eq"), bands: sanitizeEq, track: maybe(TRACK) }),
   obj({ t: tag("eqAuto"), lanes: (v: unknown) => sanitizeLanes(v, MAX_BARS * BEATS_PER_BAR, EQ_AUTO) }),
   obj({ t: tag("eqPhase"), linear: bool() }),
   obj({ t: tag("replace"), project: PROJ }),
@@ -270,6 +279,7 @@ export function apply(p: Project, op: Op): Project {
     }
     case "eq": {
       const eq = sanitizeEq(op.bands);
+      if (op.track !== undefined) return withTrack(p, op.track, (t) => withTrackEq(t, eq));
       const { eqAuto, ...rest } = p;
       return { ...rest, eq, ...eqAutoOf(sanitizeEqAuto(eqAuto, loopBeats(p), eq)) };
     }

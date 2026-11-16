@@ -1,9 +1,9 @@
 // The audio thread. Owns one FmEngine (TS, or Rust compiled to wasm) and the
 // sequencer that drives it. The page talks to it only through messages; the
 // worklet keeps a mirror of every param so it can swap engines mid-groove.
-import { TsEngine, type FmEngine } from "./engine.ts";
+import { TsEngine, sendTrackEq, type FmEngine } from "./engine.ts";
 import { WasmEngine, WasmEq, instantiateFm } from "./wasm.ts";
-import { TsEq, flatEq, withEqLane, type EqDoc, type EqListen, type EqStage } from "./eq.ts";
+import { TsEq, flatEq, withEqLane, type EqBand, type EqDoc, type EqListen, type EqStage } from "./eq.ts";
 import { Delay, LinearEq } from "./linear.ts";
 import { Sequencer } from "./sequencer.ts";
 import { Space } from "./space.ts";
@@ -32,6 +32,9 @@ class FmProcessor extends AudioWorkletProcessor {
   private eqDoc: EqDoc = flatEq();
   private eqPlayed: EqDoc = this.eqDoc;
   private eq: EqStage = new TsEq(sampleRate);
+  /** Each track's Shape, the insert inside the engine, as saved. */
+  private trackEq: EqDoc[] = Array.from({ length: TRACKS }, flatEq);
+  private trackLast: EqBand[][] = Array.from({ length: TRACKS }, () => []);
   /** Shape's minimum-phase stage (TS or Rust) is kept while linear phase plays, so switching back is instant. */
   private minEq: EqStage = this.eq;
   private linear: LinearEq | null = null;
@@ -66,6 +69,7 @@ class FmProcessor extends AudioWorkletProcessor {
         this.space.setTempo(m.bpm); this.space.setAmount(m.space);
         this.squash.setAmount(m.squash);
         this.setEq(m.eq, m.eqAuto);
+        m.trackEq.forEach((d, t) => this.setTrackEq(t, d));
         this.setLinear(m.eqLinear);
         break;
       case "param":
@@ -79,6 +83,7 @@ class FmProcessor extends AudioWorkletProcessor {
       case "space": this.space.setAmount(m.amount); break;
       case "squash": this.squash.setAmount(m.amount); break;
       case "eq": this.setEq(m.bands, m.lanes); break;
+      case "trackEq": this.setTrackEq(m.track, m.bands); break;
       case "eqListen": this.listening = m.band; this.eq.listen(m.band); break;
       case "eqPhase": this.setLinear(m.linear); break;
       case "master": this.master = m.gain; this.engine.setMaster(m.gain); break;
@@ -107,6 +112,12 @@ class FmProcessor extends AudioWorkletProcessor {
     this.eqDoc = this.eqPlayed = doc;
     this.eq.set(doc);
     this.seq.setEqAuto(lanes);
+  }
+
+  private setTrackEq(t: number, doc: EqDoc) {
+    if (t < 0 || t >= TRACKS) return;
+    this.trackEq[t] = doc;
+    sendTrackEq(this.engine, t, doc, this.trackLast[t]);
   }
 
   /**
@@ -143,6 +154,9 @@ class FmProcessor extends AudioWorkletProcessor {
       for (let i = 0; i < this.params.length; i++) next.setParam((i / NPARAMS) | 0, i % NPARAMS, this.params[i]);
       for (let t = 0; t < TRACKS; t++) { next.setMute(t, this.muted[t]); next.setBend(t, this.bend[t]); }
       next.setMaster(this.master);
+      // a new engine starts with every insert where it is now, not fading in
+      this.trackEq.forEach((d, t) => sendTrackEq(next, t, d, []));
+      next.panic();
       const old = this.engine;
       this.engine = next;
       this.seq.engine = next;

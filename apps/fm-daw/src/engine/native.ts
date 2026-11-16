@@ -20,6 +20,7 @@ export const fmSymbols = {
   fm_click: { args: [FFIType.ptr, FFIType.u32], returns: FFIType.void },
   fm_render: { args: [FFIType.ptr, FFIType.ptr, FFIType.ptr, FFIType.u32], returns: FFIType.void },
   fm_meter: { args: [FFIType.ptr, FFIType.ptr], returns: FFIType.void },
+  fm_track_eq_set: { args: [FFIType.ptr, FFIType.u32, FFIType.u32, FFIType.u32, FFIType.f64, FFIType.f64, FFIType.f64, FFIType.f64, FFIType.u32], returns: FFIType.void },
 } as const;
 
 let lib: Awaited<ReturnType<typeof loadNative<typeof fmSymbols>>> | undefined;
@@ -46,6 +47,7 @@ export async function createNativeEngine(sampleRate: number): Promise<FmEngine |
     allOff: () => l.fm_all_off(h),
     panic: () => l.fm_panic(h),
     click: (a) => l.fm_click(h, a ? 1 : 0),
+    setTrackBand: (t, i, k, f, g, q, sl, on) => l.fm_track_eq_set(h, t >>> 0, i >>> 0, k >>> 0, f, g, q, sl, on ? 1 : 0),
     render: (out, frames, send) => l.fm_render(h, ptr(out), send ? ptr(send) : null, Math.min(frames, out.length >> 1, send ? send.length >> 1 : Infinity)),
     meter: (out) => l.fm_meter(h, ptr(out)),
     free: () => { if (alive) { alive = false; l.fm_free(h); } },

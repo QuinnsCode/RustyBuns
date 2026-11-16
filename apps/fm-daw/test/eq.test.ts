@@ -1,10 +1,11 @@
-// Shape, the master EQ: it does what the curve says, never gets loud, Rust and
+// Shape, on the master and on each track: it does what the curve says, never gets loud, Rust and
 // TS agree, and the band list survives the wire. The Rust check skips (with a
 // note) when the wasm isn't built.
 import { test, expect } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
 import { TsEq, eqLane, flatEq, listenOf, response, type EqBand, type EqDoc } from "../src/engine/eq.ts";
 import { TsEngine } from "../src/engine/engine.ts";
+import { createNativeEngine } from "../src/engine/native.ts";
 import { renderProject } from "../src/engine/offline.ts";
 import { MASTER, Sequencer } from "../src/engine/sequencer.ts";
 import { Take, loopBeats, punchLane } from "../src/project.ts";
@@ -167,6 +168,37 @@ test("automate a band: a move recorded on the master plays back in the bounce, a
   expect(Math.abs(db(auto, half + SR / 10, 2 * half) - db(plain, half + SR / 10, 2 * half))).toBeLessThan(1); // back once it lets go
   // a removed band takes its lane with it, so the next band in that slot starts clean
   expect(apply(p, { t: "eq", bands: flatEq() }).eqAuto).toBeUndefined();
+});
+
+test("Shape on one track: a cut on the hats leaves the bounce's other tracks as they were, saves with the track, and rust matches ts", async () => {
+  const p0 = { ...demoProject(), space: 0 }, HAT = 2, KICK = 0, secs = 2;
+  // the hats lose everything above 2 kHz, sent as an op off the wire like any edit
+  const cut = doc(band({ kind: "highCut", f: 2000, slope: 48 }));
+  const p = apply(p0, decodeOp(JSON.parse(JSON.stringify({ t: "eq", track: HAT, bands: cut })))!);
+  expect(p.tracks[HAT].eq).toEqual(cut);
+  expect(p.eq).toEqual(flatEq());
+  const saved = sanitize(JSON.parse(JSON.stringify(p)))!;
+  expect(saved.tracks[HAT].eq).toEqual(cut);
+  expect(saved.tracks.filter((t) => t.eq).length).toBe(1);
+  // going flat again drops the field, so the track reads as it did before tracks had a Shape
+  expect("eq" in apply(p, { t: "eq", track: HAT, bands: flatEq() }).tracks[HAT]).toBe(false);
+
+  const bounce = (q: typeof p, solo: number) => renderProject(new TsEngine(SR), { ...q, tracks: q.tracks.map((t, i) => ({ ...t, solo: i === solo })) }, SR, secs, 1);
+  const energy = (a: Float32Array) => a.reduce((e, x) => e + x * x, 0);
+  // the hats alone: most of their energy is up high, so the cut takes most of it
+  expect(10 * Math.log10(energy(bounce(p, HAT)) / energy(bounce(p0, HAT)))).toBeLessThan(-6);
+  // the kick alone: the hats' Shape never touches it, sample for sample
+  expect(bounce(p, KICK)).toEqual(bounce(p0, KICK));
+
+  const rust = await createNativeEngine(SR);
+  if (!rust) { console.log("  (skipped: cdylib not built; run `bun run build:native`)"); return; }
+  const both = { ...p, tracks: p.tracks.map((t, i) => (i === 5 ? { ...t, eq: doc(band({ kind: "lowCut", f: 120, slope: 24 }), band({ f: 400, g: 6, q: 2 })) } : t)) };
+  const a = renderProject(rust, both, SR, secs, 1), b = renderProject(new TsEngine(SR), both, SR, secs, 1);
+  rust.free?.();
+  let maxDiff = 0;
+  for (let i = 0; i < a.length; i++) maxDiff = Math.max(maxDiff, Math.abs(a[i] - b[i]));
+  console.log(`  track Shape: max |rust - ts| = ${maxDiff.toExponential(2)}`);
+  expect(maxDiff).toBeLessThan(1e-4);
 });
 
 test("linear phase: the same curve with no phase turn, late by its latency, and the bounce still lands on the beat", () => {
