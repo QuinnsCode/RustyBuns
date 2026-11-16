@@ -112,6 +112,9 @@ export async function work(o: JoinOptions, slot: string, job: Job): Promise<"pas
   }
 }
 
+/** An empty queue doubles a slot's wait up to this many polls: 15 s grows to 2 min. */
+export const IDLE_BACKOFF = 8;
+
 /** Every slot leases, works and reports until `signal` aborts. Resolves once each slot has stopped. */
 export async function join(o: JoinOptions): Promise<void> {
   const log = o.log ?? console.log, poll = o.pollMs ?? 15_000;
@@ -122,9 +125,12 @@ export async function join(o: JoinOptions): Promise<void> {
   log(`joined ${o.swarm.url} as ${o.name} with ${o.slots} slot${o.slots === 1 ? "" : "s"} (${o.home})`);
   await Promise.all(Array.from({ length: o.slots }, async (_, i) => {
     const runner = `${o.name}/${i + 1}`, slot = path(o.home, `slot-${i + 1}`);
-    while (!o.signal?.aborted) {
+    // An idle Mac asks less and less often (up to IDLE_BACKOFF times the poll), so one left joined for good costs next to
+    // nothing on the Worker's bill; the first job found puts it back to the quick poll.
+    for (let wait = poll; !o.signal?.aborted; ) {
       const got = await call(o.swarm, "/lease", { runner, seconds: o.seconds ?? LEASE_SECONDS }, LeaseReply);
-      if (!got?.job) { await nap(poll); continue; }
+      if (!got?.job) { await nap(wait); wait = Math.min(wait * 2, poll * IDLE_BACKOFF); continue; }
+      wait = poll;
       await work(o, slot, got.job);
     }
   }));
