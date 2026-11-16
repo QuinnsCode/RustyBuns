@@ -5,6 +5,7 @@ import { Effect, Exit } from "effect";
 import { decodeConfig } from "../src/config-schema.ts";
 import { forStage, type RustyBunsConfig } from "../src/config.ts";
 import { generateAlchemy } from "../src/gen/alchemy.ts";
+import { costReport } from "../src/costs.ts";
 
 const apps = resolve(import.meta.dir, "../../../apps");
 // A parked app (a "parked" note in its package.json) is out of the workspace, so its config's imports don't resolve.
@@ -97,4 +98,19 @@ test("stages: each is laid over the config by --stage, and checked as it deploys
   expect(await problems({ ...base, stages: { qa: { workerName: "Bad_Name" } } })).toHaveLength(1);
   expect(await problems({ ...base, stages: { "no good": {} } })).toHaveLength(1);
   expect(await problems({ ...base, targets: { edge: { provider: "cloudflare", accountId: "abc" } } })).toHaveLength(1);
+});
+
+test("ai gateway: checked, made by the stack in front of env.AI, its spend cap in the cost report", async () => {
+  const ai = (gateway: object) => problems({ ...ok, bindings: { AI: { type: "ai", gateway } } });
+  const gateway = { id: "game-ai", cacheTtl: 300, rateLimit: { limit: 100, seconds: 60 }, spendCap: { cents: 500, window: "1 day" } };
+  expect(await ai(gateway)).toEqual([]);
+  expect(await ai({ id: "Game AI" })).toHaveLength(1);
+  expect(await ai({ id: "game-ai", spendCap: { cents: 500, window: "daily" } })).toHaveLength(1);
+  const c = { name: "game", worker: { main: "src/worker.ts", compatibilityDate: "2026-06-01", compatibilityFlags: [] },
+    bindings: { AI: { type: "ai", gateway } }, targets: { edge: { provider: "cloudflare" } } } as RustyBunsConfig;
+  const stack = generateAlchemy(c);
+  expect(stack).toContain(`export const AI = Cloudflare.AI.Gateway("AI", {"id":"game-ai","cacheTtl":300,"rateLimitingLimit":100,"rateLimitingInterval":60,"spendLimits":{"enabled":true,"rules":[{"limit":500,"limitType":"cost","window":"1 day"}]}});`);
+  expect(stack).toContain(`env: { AI: AI }`);
+  expect(costReport(c)).toContain("AI Gateway game-ai");
+  expect(costReport(c)).toContain("past 500 cents of model spend per 1 day");
 });

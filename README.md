@@ -264,6 +264,8 @@ The deploy side is a typed Alchemy and Effect stack. Cloudflare, Hetzner and Rai
 
 To try a different person's repo, use `plan --offline`. It builds and typechecks with no login, and it lists the full stack as creates. It does not touch their account or your account.
 
+To put a hard stop on model spend, give an `ai` binding a gateway: `AI: { type: "ai", gateway: { id: "my-app", spendCap: { cents: 500, window: "1 day" } } }`. The stack then makes a Cloudflare AI Gateway with that cap, and you can add a cache (`cacheTtl`) and a rate limit (`rateLimit: { limit, seconds }`). The gateway is bound as `env.AI`. A call that names the gateway (`env.AI.run(model, input, { gateway: { id: "my-app" } })`) goes through the cap. A call that does not name it skips the gateway.
+
 The fan-out causes the monthly bill. Thus the desktop and box hosts count each binding call for each request, cron tick and queue message. `plan --usage` makes a monthly estimate from such a run. It also flags a cron that keeps a Durable Object awake all day ([COSTS.md](COSTS.md#what-it-would-cost-a-month-plan---usage)).
 
 See [Typed deploys](REFERENCE.md#typed-deploys-thanks-to-effect), [Deploy to Hetzner](REFERENCE.md#deploy-to-hetzner), [Deploy to Railway](REFERENCE.md#deploy-to-railway), [DigitalOcean by hand](REFERENCE.md#deploy-to-digitalocean-by-hand) and [COSTS.md](COSTS.md).

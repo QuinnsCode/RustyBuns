@@ -2,6 +2,18 @@
 
 import type { Persona } from "@rustybuns/shell-bun/priority";
 
+/** An AI Gateway in front of a Workers AI binding: Alchemy's `Cloudflare.AI.Gateway`. */
+export interface AiGateway {
+  /** The gateway's id on the account: the `gateway: { id }` each call names. One per stage (override it in `stages`). */
+  id: string;
+  /** Seconds a repeated request is answered from the gateway's cache. Off when left out. */
+  cacheTtl?: number;
+  /** At most `limit` requests in each `seconds`, across every caller. */
+  rateLimit?: { limit: number; seconds: number };
+  /** At most `cents` of model spend in each `window` (`"1 day"`, `"1 hour"`); past it the gateway refuses calls. */
+  spendCap?: { cents: number; window: string };
+}
+
 export type Binding =
   | {
       type: "d1";
@@ -97,8 +109,12 @@ export type Binding =
    * Workers AI: `await env.NAME.run(model, inputs)`, e.g. embeddings for a vectorize
    * binding. No resource behind it. On the desktop there's no model: each call throws an error
    * that says it runs only on Cloudflare.
+   *
+   * `gateway` puts a Cloudflare AI Gateway in the stack and binds it as `env.NAME`. Calls that pass
+   * `{ gateway: { id } }` (`env.NAME.run(model, inputs, { gateway: { id: "my-app" } })`) then go through
+   * its cache, rate limit and spend cap. Calls that leave the option out skip the gateway.
    */
-  | { type: "ai" }
+  | { type: "ai"; gateway?: AiGateway }
   /**
    * Browser Run: `await env.NAME.quickAction("markdown", { url, browser: "kitesurf" })` (screenshot, pdf,
    * content, links, scrape, json, snapshot), or `env.NAME.fetch` for a CDP session. `browser: "kitesurf"`
