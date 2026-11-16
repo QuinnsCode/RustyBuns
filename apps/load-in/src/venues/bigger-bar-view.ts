@@ -68,7 +68,7 @@ export function biggerBarView(scene: THREE.Scene, hud: HTMLElement, getWorld: ()
       const fed = [...j.fed].filter(([, on]) => on).length;
       const lines = [
         "<b>Bigger bar</b>",
-        ...j.circuits.map((c) => `Circuit ${c.circuit} (${c.amps} A) ${c.tripped ? '<span class="trip">tripped</span>' : "on"}`),
+        ...j.circuits.map((c) => `Circuit ${c.circuit} (${c.amps} A) ${c.tripped ? '<span class="trip">tripped</span>' : c.over ? '<span class="trip">overloaded</span>' : "on"}`),
         `Speakers fed ${fed} / ${j.fed.size}`,
         j.problems[0] ? `<small>${esc(j.problems[0].message)}</small>` : "",
       ];

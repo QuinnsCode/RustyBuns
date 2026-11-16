@@ -22,3 +22,10 @@ button:hover { border-color: #4cc9f0; }
 @media (max-width: 600px) { .bar-card { font-size: 12px; padding: 6px 9px; } .bar-card small { display: none; } }
 #speakers { position: absolute; left: 10px; bottom: 48px; max-width: min(22rem, calc(100vw - 20px)); pointer-events: auto; text-align: left; background: #16223aee; }
 .bar-card .trip { color: #f06a5a; font-weight: 600; }
+.dial { display: inline-flex; border: 1px solid #2b3a52; border-radius: 10px; overflow: hidden; }
+.dial button { border: 0; border-radius: 0; background: transparent; padding: .45rem 1rem; }
+.dial button[aria-checked="true"] { background: #4cc9f0; color: #0b111c; font-weight: 600; }
+.clock { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); margin: 0; padding: 4px 10px; border-radius: 8px; background: rgba(11, 17, 28, .78); font-variant-numeric: tabular-nums; white-space: pre; display: flex; gap: 8px; align-items: center; pointer-events: auto; }
+.clock .time { min-width: 7.5ch; }
+.clock.late { color: #ff6b6b; }
+.clock .tip { display: inline-grid; place-items: center; width: 1.1em; height: 1.1em; border-radius: 50%; border: 1px solid currentColor; font-size: .75em; cursor: help; }

@@ -17,6 +17,9 @@ import { BIGGER_BAR } from "./venues/bigger-bar.ts";
 import { type BiggerBarView, biggerBarView } from "./venues/bigger-bar-view.ts";
 import { hasSwitch, hear, type Switches } from "./audio/hear.ts";
 import { soundSystem } from "./audio/play.ts";
+import { currentDial, setDial } from "./assists.ts";
+import { doors } from "./clock.ts";
+import { mountClock, mountDial, mountGlow, savedDial } from "./dial-view.ts";
 import { accountChip, canSignIn, finishSignIn, login, party, type PartyMember } from "./eqosys.ts";
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -109,6 +112,9 @@ buildItems();
 const ropes = cableView(scene);
 
 /** A new level, or the same one as it began: the room, the gear and the case of cables. */
+const glow = mountGlow(scene);
+let clock: ReturnType<typeof mountClock> | null = null;
+
 function load(level: Level) {
   world = newWorld(level);
   cables = cable.newCables(world);
@@ -142,6 +148,8 @@ function draw() {
   if (highlight.visible && at) { const [w, h, d] = dims(at); highlight.position.set(at.x, at.y, at.z); highlight.rotation.y = at.rot; highlight.scale.set(w + 0.04, h + 0.04, d + 0.04); }
   bar?.update();
   ropes.update(cables);
+  glow.update(cable.glowing(world, cables), world.t);
+  clock?.update(world.level.name, world.t);
   const g = held ? gear(held.gear) : null;
   $("hint").textContent = phase !== "play" ? "" : performance.now() < flash.until ? flash.text : (big?.hint() ?? hint(at, jack));
   $("carry").textContent = phase !== "play" ? "" : g ? `${g.what}, ${g.kg} kg, ${you.speed.toFixed(1)} m/s`
@@ -273,6 +281,9 @@ async function boot() {
   const back = await finishSignIn();
   if (back?.error) crew.note = back.error;
   accountChip($("account"), { onSignIn: () => menu(), onSignOut: () => menu() });
+  savedDial();
+  mountDial($("dial-host"));
+  clock = mountClock($("hud"));
   $("party").hidden = !canSignIn();
   mountControls({
     key: KEY, pad, parent: $("controls-host"), title: "Controls", skin: "house",
@@ -290,7 +301,9 @@ async function boot() {
 declare global { interface Window { loadIn: typeof harness } }
 /** The harness (scripts/probe.ts HANDLES): the level as data, and the moves a test or an agent makes without pointer lock. */
 const harness = {
-  state: () => ({ phase, ...snapshot(world), ...cable.cableState(world, cables), sound: { up: sound.up, on: [...switchedOn], ...heard() }, ...(big ? { biggerBar: big.state() } : {}), ...(bar ? { bar: { ...barState(world), heat: bar.heatOn } } : {}), signedIn: !!login(), party: crew.code ? { code: crew.code, members: crew.members.length, room: crew.room || null, seat: crew.seat >= 0 ? crew.seat : null } : null }),
+  state: () => ({ phase, dial: currentDial(), doors: doors(world.level.name, world.t), ...snapshot(world), ...cable.cableState(world, cables), sound: { up: sound.up, on: [...switchedOn], ...heard() }, ...(big ? { biggerBar: big.state() } : {}), ...(bar ? { bar: { ...barState(world), heat: bar.heatOn } } : {}), signedIn: !!login(), party: crew.code ? { code: crew.code, members: crew.members.length, room: crew.room || null, seat: crew.seat >= 0 ? crew.seat : null } : null }),
+  /** Turn the cozy-to-sim dial: "cozy", "crew" or "sim". */
+  dial: (d: string) => setDial(d),
   /** Into the level, without asking for the mouse. */
   start: () => { phase = "play"; menu(); },
   /** Walk to (x, z) at your carrying pace, cables dragging; the seconds it took. */

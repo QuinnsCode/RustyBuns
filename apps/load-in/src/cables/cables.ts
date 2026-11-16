@@ -1,6 +1,7 @@
 // Cables: take one out of the road case, walk its end out (it drags behind you as a rope, and at its full length it
 // stops you), plug it into a jack of its kind, and lay a cable ramp over it where it crosses a walkway. The patch
 // (who is fed, what is wrong) is @rustybuns/gear's `compile`; the jacks are where the models in @rustybuns/models put them.
+import { assist } from "../assists.ts";
 import { CIRCUIT_15A, CIRCUIT_20A, cableFor, compile, gear, jackKind, jackNames, type Cable, type CableKind, type End, type Placed } from "@rustybuns/gear";
 import { GEAR_SIZES, gear as model, gearJacks, type GearId } from "@rustybuns/models/gear";
 import { Vector3 } from "three";
@@ -109,7 +110,7 @@ export function stepCables(w: World, c: Cables, dt: number) {
     const other = pinOf(w, c, h.run[h.end === "a" ? "b" : "a"]);
     if (other) {
       // Measure from your hand: past the cable's length, you are pulled back to it.
-      const hand = handAt(w), reach = h.run.lengthM * 0.98, dx = hand.x - other.x, dz = hand.z - other.z;
+      const hand = handAt(w), reach = h.run.lengthM * 0.98 + assist("cableSlack"), dx = hand.x - other.x, dz = hand.z - other.z;
       const flat = Math.sqrt(Math.max(0, reach * reach - (hand.y - other.y) ** 2)), d = Math.hypot(dx, dz);
       if (d > flat) { w.you.x -= (dx / d) * (d - flat); w.you.z -= (dz / d) * (d - flat); }
     }
@@ -175,11 +176,12 @@ export function unplug(w: World, c: Cables, owner: string, jack: string): Answer
   return { ok: false, why: `nothing plugged into ${owner} ${jack}` };
 }
 
-/** Let go of the end in your hand: it drops where it is. */
+/** Let go of the end in your hand: it drops where it is, or (the autoCoil assist) with neither end plugged in, it coils itself back into the case. */
 export function dropEnd(c: Cables): Answer {
   const h = inHand(c);
   if (!h) return { ok: false, why: "no cable in your hand" };
   h.run[h.end] = { loose: true };
+  if (assist("autoCoil") && !isPlug(h.run.a) && !isPlug(h.run.b)) Object.assign(h.run, { rope: null, a: { case: true }, b: { case: true } });
   return { ok: true };
 }
 
@@ -196,7 +198,7 @@ export function coil(w: World, c: Cables, key: string): Answer {
 /** Lay a ramp you just set down end to end with one it was put next to: same line, ends touching. */
 export function linkRamp(w: World, key: string): boolean {
   const r = w.items.find((i) => i.key === key);
-  if (!r || r.gear !== "cable-ramp-2ch") return false;
+  if (!r || r.gear !== "cable-ramp-2ch" || !assist("rampSnap")) return false;
   const len = dims(r)[0];
   for (const o of w.items) {
     if (o === r || o.gear !== "cable-ramp-2ch" || Math.abs(o.y - r.y) > 0.01) continue;
@@ -238,10 +240,21 @@ export function plugged(w: World, c: Cables): { placed: Placed[]; runs: Cable[] 
   return { placed: w.items.filter((i) => jackNames(gear(i.gear)).length).map((i) => ({ id: i.key, gear: i.gear })), runs };
 }
 
+/** The free jacks that would take the cable in your hand: what the jackGlow assist lights up. */
+export function glowing(w: World, c: Cables): Vec[] {
+  const h = inHand(c);
+  if (!h || !assist("jackGlow")) return [];
+  const used = new Set(c.runs.flatMap((r) => [r.a, r.b].filter(isPlug).map((e) => e.plug.join(" "))));
+  return jacks(w).filter((j) => cableFor(jackKind(j.jack)) === h.run.kind && !used.has(`${j.owner} ${j.jack}`)).map((j) => j.at);
+}
+
+/** A breaker nothing in a small venue can trip, for the stops where breakers don't. */
+const NO_TRIP = { volts: 120, amps: 1000 };
+
 /** The patch as @rustybuns/gear reads it: what is fed, and what is wrong (only cables with both ends in jacks count). */
 export function patch(w: World, c: Cables) {
   const { placed, runs } = plugged(w, c);
-  const outlets = w.level.outlets.map((o) => ({ id: o.key, circuit: o.circuit ?? w.level.name, breaker: o.amps === 20 ? CIRCUIT_20A : CIRCUIT_15A }));
+  const outlets = w.level.outlets.map((o) => ({ id: o.key, circuit: o.circuit ?? w.level.name, breaker: !assist("breakersTrip") ? NO_TRIP : o.amps === 20 ? CIRCUIT_20A : CIRCUIT_15A }));
   const { fed, problems } = compile(placed, runs, { outlets });
   return { fed: Object.fromEntries(fed), problems: problems.map((p) => p.message) };
 }

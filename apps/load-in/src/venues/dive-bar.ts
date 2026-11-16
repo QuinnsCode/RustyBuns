@@ -5,6 +5,7 @@
 import { clamp } from "@rustybuns/util";
 import { type Area, type Grid, type Source, coverage, gear as catalog, source } from "@rustybuns/gear";
 import { REACH, type Item, type Level, type World } from "../sim.ts";
+import { doors, showScore } from "../clock.ts";
 
 export type Zone = { x0: number; x1: number; z0: number; z1: number };
 
@@ -162,6 +163,13 @@ export function score(w: World, g: Grid = heat(w)): Score {
   const r1 = (v: number) => (Number.isFinite(v) ? Math.round(v * 10) / 10 : null);
   return { covered: Math.round(covered * 100) / 100, crowd: r1(c), bar: r1(b), gap: gap === null ? null : Math.round(gap * 10) / 10, score: s, pass: s >= PASS };
 }
+
+/** The show when the doors open: the room's sound scaled by the crowd's mood (late doors sour it), and the pay. */
+export function show(w: World) {
+  const s = score(w), d = doors(w.level.name, w.t), total = showScore(s.score, d.mood);
+  return { sound: s.score, mood: d.mood, late: Math.round(d.late), pay: d.pay, fee: d.fee, score: total, pass: total >= PASS };
+}
+export type Show = ReturnType<typeof show>;
 
 /** What the harness adds for the dive bar: the rig and the score. */
 export function barState(w: World) {

@@ -4,6 +4,7 @@ import { expect, test } from "bun:test";
 import type { Cable, CableKind } from "@rustybuns/gear";
 import { BIGGER_BAR, judge, newPanel, resetBreaker } from "../src/venues/bigger-bar.ts";
 import { newWorld, walkTo } from "../src/sim.ts";
+import { setDial } from "../src/assists.ts";
 
 const c = (kind: CableKind, from: string, to: string, lengthM = 5): Cable => {
   const end = (s: string) => {
@@ -40,7 +41,7 @@ test("cable the rig, trip the bar's breaker, reset it at the panel, move the plu
   // The rack on the cooler's 15 A circuit: 1500 W plus the cooler's 450 trips it, and the cooler goes off with the mains.
   const tripped = judge(w, placed, rig("bar-1 power-out-2"), panel);
   expect(tripped.justTripped).toEqual(["3"]);
-  expect(tripped.circuits.find((x) => x.circuit === "3")).toEqual({ circuit: "3", amps: 15, tripped: true });
+  expect(tripped.circuits.find((x) => x.circuit === "3")).toEqual({ circuit: "3", amps: 15, tripped: true, over: false });
   expect(fed(tripped)).toEqual(["wedge-1", "wedge-2"]);
   expect(tripped.problems.map((p) => `${p.kind} ${p.items[0]}`)).toEqual(["no-power cooler", "no-power rack"]);
 
@@ -78,4 +79,15 @@ test("both subs and both tops on one rack channel is 2 ohms in parallel at best:
   const low = (n: number) => judge(w, placed, cables(n), newPanel()).problems.filter((p) => p.kind === "low-load").map((p) => p.items.length);
   expect(low(4)).toEqual([]);
   expect(low(5)).toEqual([6]);
+});
+
+test("on Cozy the same overload warns instead of tripping: circuit 3 is marked over and everything plays", () => {
+  setDial("cozy");
+  try {
+    const w = newWorld(BIGGER_BAR), panel = newPanel();
+    const r = judge(w, w.items.map((i) => ({ id: i.key, gear: i.gear })), rig("bar-1 power-out-2"), panel);
+    expect(r.justTripped).toEqual([]);
+    expect(r.circuits.find((x) => x.circuit === "3")).toEqual({ circuit: "3", amps: 15, tripped: false, over: true });
+    expect(["top-l", "top-r", "sub-l", "sub-r"].every((s) => r.fed.get(s))).toBe(true);
+  } finally { setDial("sim"); }
 });
