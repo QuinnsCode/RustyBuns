@@ -2,7 +2,7 @@
 
 **The question:** can FM DAW model guitar pedals and tube amps as real circuits (resistors, capacitors, diodes, op-amps, tubes), drawn as boards in tscircuit, and play a guitar through them?
 
-**The answer: yes.** The solver here runs a full four-tube amp 2.3 to 3.1 times faster than real time in plain TypeScript, a pedal 5 to 6 times, and a board drawn in tscircuit plays sample for sample like the same circuit written by hand. **Q Amp** (`/amp.html`) plays it live, with a guitar or a built-in riff. The solver and the rig are also ported to Rust (in the engine's wasm), and play the same output. What's missing is an amp insert on an FM DAW track, a real power amp and speaker cabinet, and a 3D stage. Those steps are listed under [Next](#next).
+**The answer: yes.** The solver here runs a full four-tube amp 2.3 to 3.1 times faster than real time in plain TypeScript, a pedal 5 to 6 times, and a board drawn in tscircuit plays sample for sample like the same circuit written by hand. **Q Amp** (`/amp.html`) plays it live, with a guitar or a built-in riff. The solver and the rig are also ported to Rust (in the engine's wasm), and play the same output. Behind the preamp is a push-pull power stage that sags when you dig in, and a speaker cabinet's impulse response heard through a mic you can move on the cone. What's missing is an amp insert on an FM DAW track and a 3D stage. Those steps are listed under [Next](#next).
 
 Play it live, speakers down: in `apps/fm-daw`, `bunx rustybuns boundary` once (it writes the Vite plugin the dev server needs), then `bun run dev` and open `/amp.html`. Or render WAVs (every file normalized to −1 dBFS):
 
@@ -17,6 +17,7 @@ One amp on a stage, live in the browser. The head and the cabinet are clear acry
 
 - **Amps:** Q Brit 3, Q Lead 50, Q Triple, with Gain, Bass, Middle, Treble, Master and Noise. Each amp keeps its own knob settings. Gain, Master and Noise cost nothing to turn; a tone knob rebuilds the tone stack's circuit (one matrix inversion) between two audio blocks.
 - **Noise:** the first tube's grid stopper and plate resistor hiss, as real resistors do (Johnson noise, `noisy` on a resistor in a netlist). 0 is silent, 1 is a perfect resistor, 10 is 1000× that (+60 dB, a worn carbon resistor and then some). The hiss goes in at the front, so every stage after it amplifies and soft-clips it with the guitar: fizz on the notes, a wash in the gaps. On Q Lead 50 with nothing playing, 3 is about −55 dBFS, 5 −40, 7 −28 and 10 −20.
+- **The mic on the cab:** two small knobs on the cabinet. **Mic** slides it from the centre cap (0, bright and forward) to the cone's edge (10, dark and round); **Angle** turns it off axis (0 straight on, 10 side on), which takes the top off further. Moving it only makes a new impulse response: nothing is rebuilt.
 - **Pedals on the floor:** Q Drive, Q Fuzz and Q Dist, each with a Drive knob and a footswitch. One is on at a time (the chain has one pedal slot). Q Fuzz is an op-amp at up to ×2000 into soft diodes, then hard ones, and its 1M input resistor hisses (with the amp's Noise), so the fuzz clips its own hiss.
 - **Board view** (the circuit-board button in the top bar): the schematic and the PCB of the pedal that's on (or the amp's first tube stage), drawn by tscircuit, its diodes, op-amp or tube glowing with the signal. The clipping diodes and the capacitors are sockets: click one and pick silicon, germanium, LED, MOSFET or none, or a capacitor a size or two up or down (real E6 values), and hear it while you play. Swaps are saved per pedal as your version of its board; the reset button puts the stock parts back. `qamp.swap("D1", "germanium")` does it from a probe.
 - **Input:** the riff on a loop, or your guitar through any audio input (echo cancellation, noise suppression and auto gain are off). **Bypass** sends the dry input straight through, to compare.
@@ -29,18 +30,21 @@ One amp on a stage, live in the browser. The head and the cabinet are clear acry
 
 | File | What it does |
 |---|---|
-| `src/circuit/mna.ts` | The circuit solver. Give it parts and the nodes they connect to; it gives back the output voltage, one sample at a time. |
+| `packages/gear/src/circuit/mna.ts` | The circuit solver. Give it parts and the nodes they connect to; it gives back the output voltage, one sample at a time. |
 | `circuits/*.tsx` | Every circuit as a tscircuit board: `dist`, `drive`, `fuzz`, `triode` (a 12AX7 stage) and `tone` (the bass/mid/treble stack). `bun scripts/boards.ts` renders each (tscircuit is installed into `~/.cache/rustybuns`, outside the workspace) to `<board>.circuit.json`, the netlist the app reads, and `<board>.schematic.svg` / `.pcb.svg` for the board view. Edit a board, rerun the script, commit all three. |
 | `src/circuit/circuits.ts` | Which part each knob turns (Drive is `RV1`; a tone knob splits its pot's two halves) and the part swaps: `CLIPPERS`, `CAP_STEPS`, `sockets`, `swapOptions`. No netlist is written here. |
-| `src/circuit/rig.ts` | Circuits in a row, run at 4× the sample rate so clipping doesn't alias into fizz, then a stand-in power stage and a cabinet EQ. `Rig` streams a block at a time with live knobs; `runRig` does a whole buffer. |
-| `src/circuit/amps.ts` | The Q amps and pedals, their knobs, and `buildRig` (an amp, a pedal and the knobs into a rig). `RIGS` is each at its own settings. |
+| `packages/gear/src/circuit/rig.ts` | Circuits in a row, run at 4× the sample rate so clipping doesn't alias into fizz, then the power stage and the cabinet. `Rig` streams a block at a time with live knobs; `runRig` does a whole buffer. |
+| `packages/gear/src/circuit/power.ts` | The power stage: push-pull output tubes, the supply and its sag, the output transformer, and the speaker on its jack. See [The back end](#the-back-end). |
+| `packages/gear/src/circuit/cab.ts` | The cabinet: `cabIR` makes an impulse response for where the mic sits, `Convolver` plays it (or a measured one). |
+| `packages/gear/src/circuit/filters.ts` | The biquad, and the 8th-order low-pass the oversampler uses. |
+| `src/circuit/amps.ts` | The Q amps and pedals, their knobs, and `buildRig` (an amp, a pedal, the knobs, the mic and the speaker jack into a rig). `RIGS` is each at its own settings. |
 | `src/circuit/riff.ts` | The dry guitar riff (Karplus-Strong plucks, seeded). |
 | `src/amp/` | Q Amp: `live.ts` (settings into a rig, rebuilding only what changed; the limiter), `worklet.ts` (the audio thread), `screens.ts`, `board.ts` (the board view and its sockets), `main.ts`, `amp.css`. |
-| `native/crates/fm_daw/src/circuit.rs` | The solver and the rig in Rust, step for step, with an `fm_amp_*` C surface in the engine's wasm. `src/circuit/wasm.ts` (`WasmRig`) drives it with the same knobs as `Rig`; `encodeNetlist` in `mna.ts` hands it a netlist as numbers. |
+| `native/crates/fm_daw/src/circuit.rs` | The solver, the rig, the power stage and the convolution in Rust, step for step (the cab's impulse response is made in TypeScript and handed over), with an `fm_amp_*` C surface in the engine's wasm. `src/circuit/wasm.ts` (`WasmRig`) drives it with the same knobs as `Rig`; `encodeNetlist` in `mna.ts` hands it a netlist as numbers. |
 | `src/circuit/tscircuit.ts` | Reads a tscircuit board's JSON and makes a netlist of it: pots set by their knobs, part values and diodes replaced by name. |
 | `src/circuit/bench.ts` | The bench: a board becomes gear (a `@rustybuns/gear` box its size, a jack in and out, a knob per pot) once it plays, or the reasons it won't. Q Amp's floor takes one by drop (`src/amp/bench-slot.ts`). `circuits/bench-drive.tsx` is the Q Dist board with DRIVE and LEVEL pots, the bench's first board. |
 | `scripts/amp.ts` | Plucks a guitar riff (Karplus-Strong), runs it through every rig, writes WAVs, prints the speed. |
-| `test/circuit.test.ts` | Every board plays like its voicing; each clipper swap lands at its own forward drop and a smaller cap tightens the lows; the solver hits textbook numbers; no rig blows up on a hot input; the Rust port plays every rig like the TypeScript one while the knobs turn. |
+| `test/circuit.test.ts` | Every board plays like its voicing; each clipper swap lands at its own forward drop and a smaller cap tightens the lows; the solver hits textbook numbers; no rig blows up on a hot input; the supply sags on a loud chord and not a quiet one; an amp with nothing on its jack is silent, then blows when played; the mic darkens off the centre; the Rust port plays every rig like the TypeScript one while the knobs, the mic and the load change. |
 | `test/bench.test.ts` | The drawn drive pedal becomes gear and plays in front of the amp, its pots turning; boards people get wrong say why. |
 | `test/amp.test.ts` | Working Q Amp's panel while the riff plays: only what moved is rebuilt, nothing passes −1 dBFS, no Newton misses. |
 
@@ -57,6 +61,18 @@ The models are published and checked:
 - **12AX7 tube:** Koren's plate-current equation (1996) and Cohen and Helie's grid current (2010). A stage with a 100k plate load and a bypassed 1.5k cathode rests at 217 V on a 300 V supply and gains about ×52, as the textbooks say (the test checks this).
 - **Diodes:** the Shockley equation, with SPICE's step limiting so a guess can't fly up the exponential.
 - **Op-amps:** gain 200,000 and 3 MHz bandwidth (like a TL072), with the output clamped near the rails. The finite bandwidth matters: an ideal op-amp with a hard rail made Newton bounce between two answers on thousands of samples.
+
+## The back end
+
+The preamp's swing drives the power stage (`packages/gear/src/circuit/power.ts`), at the oversampled rate. It is behavioural, not a netlist, so it costs a few `exp`s a sample instead of another Newton solve:
+
+- **Push-pull, class AB:** a phase inverter sends the swing to two output tubes, one the other way up. Each idles at about 35 mA (a pentode's plate current is a 3/2 power of its grid voltage above cutoff) and carries its half of the wave; the transformer hears the difference. Where one tube hands over to the other the curves bend (crossover), and driven past 0 V the grids conduct and round the top over. Q Brit 3 has one pair; Q Lead 50 and Q Triple two.
+- **The plate's knee:** a plate can't swing closer than about 50 V to its cathode, so the clean ceiling is the supply less that.
+- **Sag:** the supply has a resistance (`sag` on each amp: 250 Ω for Q Brit 3's tube rectifier, 90 and 60 for the others' diodes). A loud chord draws current, the supply falls (Q Brit 3 from 450 V to about 370 V), the ceiling falls with it, and the amp compresses: about 10% quieter than a stiff supply when you dig in, the same when you pick softly. It drops in 15 ms and recovers over 120 ms.
+- **The output transformer** blocks DC (its primary's inductance, 35 Hz) and rolls the top off (its leakage, 9 kHz), and steps the plates' swing down to the speaker on its 8 Ω tap.
+- **The speaker jack:** a mismatched cab changes what the plates see (16 Ω on the 8 Ω tap clips sooner and louder). **Nothing on the jack is a real failure:** the plates' signal current has nowhere to go, the transformer's kick arcs over the moment you play (0.1 A of swing; idle hiss is a few milliamps and doesn't do it), and the amp is `fault: "open-load"` and silent until it is rebuilt. Plugging a speaker in afterwards doesn't mend it. Load In can ask `rig.fault`.
+
+Then the cabinet (`packages/gear/src/circuit/cab.ts`): the speaker's output is convolved with an impulse response 12 ms long (576 taps at 48 kHz), at the base rate. `cabIR` makes one for where the mic sits: the closed box's thump at 110 Hz, the cone's dip at 1.6 kHz, its breakup peak (3.6 kHz and +5 dB on the centre cap, sliding to 2 kHz and +1 dB at the edge), the back panel's reflection through the cone 0.7 ms late, and a top that falls from 7 kHz at the centre to 3.2 kHz at the edge, and further off axis. At 5 kHz against 800 Hz, the centre cap is 12 times the edge. `Rig.setCab` takes a measured IR instead (a WAV someone recorded of a real cab).
 
 ## The voicings
 
@@ -83,6 +99,8 @@ On the 64 GB builder Mac, one thread, 4× oversampled, `bun scripts/amp.ts` (sec
 | brit (3 stages) | 3.1 |
 | lead, triple (4 stages) | 2.4, 2.3 |
 | overdrive into lead | 1.7 |
+
+These were measured with the old `tanh` and cab EQ. The push-pull stage and the cab convolution each cost about 3% of a thread: on the office Mac (busy, so slower than the builder's numbers), Q Lead 50 went from 2.07 to 1.88× real time, Q Triple 2.1 to 1.85, Q Brit 3 2.7 to 2.35. One amp still fits an audio thread with room to spare.
 
 One amp fits in an audio thread with room to spare; a pedalboard plus amp is tight. Q Amp's Eco runs everything at 2× instead of 4× (half the work; tubes clip softly, so they alias less).
 
@@ -118,8 +136,8 @@ The longer map (more parts, a pedalboard, phasers to tape echo, profiling a real
 
 1. **An Amp insert on an FM DAW track** ([#4555](https://github.com/QuinnsCode/RustyBuns/issues/4555)): Q Amp's live chain (`src/amp/live.ts`) after a track's voices, knobs as track params saved with the project.
 2. **Q Amp on a 3D stage** ([#4570](https://github.com/QuinnsCode/RustyBuns/issues/4570)): the clear amp, cabinet and pedalboard in three.js, 2.5D or 3D, with the screens behind as stage LED walls.
-3. **A real power amp:** push-pull output tubes, the output transformer, and supply sag (the amp compressing when you dig in). Today it is a `tanh`. With step 4, [#4837](https://github.com/QuinnsCode/RustyBuns/issues/4837).
-4. **A real cabinet:** convolve a speaker impulse response instead of the EQ curve, with a mic you can move on the cone.
+3. **A real power amp:** done in [#4837](https://github.com/QuinnsCode/RustyBuns/issues/4837) ([The back end](#the-back-end)). Still to come: the negative feedback loop with Presence and Resonance, a transformer core that saturates, and the voice coil's impedance talking back to the plates.
+4. **A real cabinet:** done in #4837, a made impulse response with a mic you move. Still to come: measured cab IRs (`Rig.setCab` takes one).
 5. **More parts:** transistors (Ebers-Moll) for transistor fuzzes (Q Fuzz is an op-amp fuzz today) and boosts, JFETs, potentiometers as live knobs.
 6. **Voicing by ear** against reference recordings the owner picks.
 7. **A plugin build** (VST3 and CLAP through nih-plug) if it should also run in other DAWs.

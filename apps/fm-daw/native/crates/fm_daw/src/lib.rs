@@ -862,9 +862,9 @@ unsafe fn desc<'a>(p: *const f64, len: u32) -> &'a [f64] {
 }
 
 #[no_mangle]
-pub extern "C" fn fm_amp_new(sample_rate: f64, oversample: u32, input_volts: f64, power: f64, cab: u32, noise: f64) -> *mut circuit::Rig {
+pub extern "C" fn fm_amp_new(sample_rate: f64, oversample: u32, input_volts: f64, power: f64, noise: f64) -> *mut circuit::Rig {
     if !(sample_rate >= 8000.0 && sample_rate <= 384000.0) || !(1..=16).contains(&oversample) { return std::ptr::null_mut(); }
-    Box::into_raw(Box::new(circuit::Rig::new(sample_rate, oversample as usize, input_volts, power, cab != 0, noise)))
+    Box::into_raw(Box::new(circuit::Rig::new(sample_rate, oversample as usize, input_volts, power, noise)))
 }
 
 /// # Safety
@@ -897,6 +897,24 @@ pub extern "C" fn fm_amp_set_pot(r: *mut circuit::Rig, i: u32, pot: u32, at: f64
 pub extern "C" fn fm_amp_set_power(r: *mut circuit::Rig, power: f64) { with!(r, r.set_power(power)) }
 #[no_mangle]
 pub extern "C" fn fm_amp_set_noise(r: *mut circuit::Rig, noise: f64) { with!(r, r.set_noise(noise)) }
+/// The power stage: tube pairs, the supply's ohms, the ohms on the speaker jack (0 for none).
+#[no_mangle]
+pub extern "C" fn fm_amp_set_output(r: *mut circuit::Rig, pairs: f64, sag: f64, load: f64) { with!(r, r.set_output(pairs, sag, load)) }
+#[no_mangle]
+pub extern "C" fn fm_amp_set_load(r: *mut circuit::Rig, load: f64) { with!(r, r.set_load(load)) }
+/// The cabinet's impulse response (len 0 for none).
+/// # Safety
+/// `ir` must point to `len` f64s, or be null.
+#[no_mangle]
+pub unsafe extern "C" fn fm_amp_set_cab(r: *mut circuit::Rig, ir: *const f64, len: u32) {
+    let d = desc(ir, len);
+    with!(r, r.set_cab(d))
+}
+/// 0 while the amp is fine, 1 once it was played with nothing on the speaker jack.
+#[no_mangle]
+pub extern "C" fn fm_amp_fault(r: *mut circuit::Rig) -> u32 { unsafe { r.as_ref() }.map_or(0, |r| r.fault()) }
+#[no_mangle]
+pub extern "C" fn fm_amp_supply(r: *mut circuit::Rig) -> f64 { unsafe { r.as_ref() }.map_or(0.0, |r| r.supply()) }
 
 /// Mono, in place: `frames` samples in (full scale ±1), volts at the speaker out.
 /// # Safety

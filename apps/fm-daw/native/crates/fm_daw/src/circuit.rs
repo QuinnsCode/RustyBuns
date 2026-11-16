@@ -1,5 +1,6 @@
 //! The circuit amp in Rust: packages/gear/src/circuit/mna.ts (the solver) and rig.ts
-//! (the oversampler, the power stage and the cabinet), step for step, f64 inside,
+//! (the oversampler), power.ts (the push-pull power stage) and cab.ts (the cabinet's
+//! convolution; its impulse response is made on the TypeScript side), step for step, f64 inside,
 //! so test/circuit.test.ts can hold both to the same output.
 //!
 //! The netlist comes in already numbered (`encodeNetlist` in mna.ts): node names
@@ -646,29 +647,18 @@ impl Circuit {
     }
 }
 
-/// RBJ cookbook biquad, transposed direct form II (rig.ts `Biquad`).
+/// RBJ cookbook low-pass biquad, transposed direct form II (filters.ts `Biquad`; the oversampler only needs the low-pass).
 #[derive(Clone, Copy)]
 struct Biquad { b0: f64, b1: f64, b2: f64, a1: f64, a2: f64, z1: f64, z2: f64 }
 
-#[derive(Clone, Copy)]
-enum Kind { Lp, Hp, Peak }
-
 impl Biquad {
-    fn make(kind: Kind, hz: f64, q: f64, sr: f64, db: f64) -> Biquad {
+    fn lp(hz: f64, q: f64, sr: f64) -> Biquad {
         let w = (2.0 * PI * hz) / sr;
         let cw = w.cos();
         let al = w.sin() / (2.0 * q);
-        let new = |b0, b1, b2, a1, a2| Biquad { b0, b1, b2, a1, a2, z1: 0.0, z2: 0.0 };
-        if let Kind::Peak = kind {
-            let a = 10f64.powf(db / 40.0);
-            let a0 = 1.0 + al / a;
-            return new((1.0 + al * a) / a0, (-2.0 * cw) / a0, (1.0 - al * a) / a0, (-2.0 * cw) / a0, (1.0 - al / a) / a0);
-        }
         let a0 = 1.0 + al;
-        let lp = matches!(kind, Kind::Lp);
-        let k = if lp { (1.0 - cw) / 2.0 } else { (1.0 + cw) / 2.0 };
-        let s = if lp { 1.0 } else { -1.0 };
-        new(k / a0, (s * 2.0 * k) / a0, k / a0, (-2.0 * cw) / a0, (1.0 - al) / a0)
+        let k = (1.0 - cw) / 2.0;
+        Biquad { b0: k / a0, b1: (2.0 * k) / a0, b2: k / a0, a1: (-2.0 * cw) / a0, a2: (1.0 - al) / a0, z1: 0.0, z2: 0.0 }
     }
     #[inline]
     fn run(&mut self, x: f64) -> f64 {
@@ -683,12 +673,100 @@ impl Biquad {
 fn chain(fs: &mut [Biquad], mut x: f64) -> f64 { for f in fs { x = f.run(x); } x }
 
 fn butter8(hz: f64, sr: f64) -> Vec<Biquad> {
-    [0.5098, 0.6013, 0.9, 2.5629].iter().map(|&q| Biquad::make(Kind::Lp, hz, q, sr, 0.0)).collect()
+    [0.5098, 0.6013, 0.9, 2.5629].iter().map(|&q| Biquad::lp(hz, q, sr)).collect()
 }
 
-pub const POWER_VOLTS: f64 = 40.0;
+// The push-pull power stage (power.ts `PushPull`, constant for constant).
+const B_PLUS: f64 = 450.0;
+const KNEE: f64 = 50.0;
+const BIAS: f64 = -36.0;
+const CUTOFF: f64 = -45.0;
+const WIDTH: f64 = 3.0;
+const K_PLATE: f64 = 6.6e-3;
+const ZAA: f64 = 4300.0;
+const TAP: f64 = 8.0;
+const FLYBACK_AMPS: f64 = 0.1;
+const GRID: f64 = 0.9;
+
+#[inline]
+fn softplus_exact(x: f64) -> f64 { if x > 30.0 { x } else { x.exp().ln_1p() } }
+#[inline]
+fn plate(g: f64) -> f64 {
+    let gg = g - softplus_exact(g);
+    K_PLATE * softplus_exact((gg - CUTOFF) / WIDTH).powf(1.5)
+}
+
+/// Output tubes in push-pull, the supply that sags under them, the output transformer and the speaker on it.
+pub struct PushPull {
+    pairs: f64, sag: f64, load: f64, draw: f64, idle: f64,
+    attack: f64, release: f64, hp_x: f64, hp_y: f64, lp: f64, hp_a: f64, lp_a: f64,
+    pub supply: f64,
+    /// 0 fine, 1 played through an open speaker jack.
+    pub fault: u32,
+}
+
+impl PushPull {
+    pub fn new(pairs: f64, sag: f64, load: f64, sample_rate: f64) -> PushPull {
+        let idle = plate(BIAS);
+        PushPull {
+            pairs, sag, load, draw: 2.0 * idle * pairs, idle,
+            attack: 1.0 - (-1.0 / (0.015 * sample_rate)).exp(), release: 1.0 - (-1.0 / (0.12 * sample_rate)).exp(),
+            hp_x: 0.0, hp_y: 0.0, lp: 0.0,
+            hp_a: (-2.0 * PI * 35.0 / sample_rate).exp(), lp_a: (-2.0 * PI * 9000.0 / sample_rate).exp(),
+            supply: B_PLUS, fault: 0,
+        }
+    }
+    pub fn set_load(&mut self, ohms: f64) { self.load = ohms; }
+
+    #[inline]
+    pub fn step(&mut self, x: f64, drive: f64) -> f64 {
+        if self.fault != 0 { return 0.0; }
+        let d = x * drive * GRID;
+        let (a, b) = (plate(BIAS + d), plate(BIAS - d));
+        let n = self.pairs;
+        let now = (a + b) * n;
+        self.draw += (now - self.draw) * (if now > self.draw { self.attack } else { self.release });
+        let supply = B_PLUS - self.sag * (self.draw - 2.0 * self.idle * n);
+        self.supply = supply;
+        let swing = (a - b) * n;
+        if self.load <= 0.0 {
+            if swing.abs() > FLYBACK_AMPS { self.fault = 1; }
+            return 0.0;
+        }
+        let raw = (swing * (ZAA / n) * (self.load / TAP)) / 2.0;
+        let ceiling = 2.0 * (supply - KNEE).max(1.0);
+        let vp = ceiling * (raw / ceiling).tanh();
+        let hp = self.hp_a * (self.hp_y + vp - self.hp_x);
+        self.hp_x = vp; self.hp_y = hp;
+        self.lp = hp + self.lp_a * (self.lp - hp);
+        self.lp / (ZAA / n / TAP).sqrt()
+    }
+}
+
+/// Direct convolution with the history kept twice over (cab.ts `Convolver`).
+pub struct Convolver { ir: Vec<f64>, buf: Vec<f64>, at: usize }
+
+impl Convolver {
+    pub fn new(ir: &[f64]) -> Convolver { Convolver { ir: ir.to_vec(), buf: vec![0.0; 2 * ir.len()], at: 0 } }
+    pub fn set(&mut self, ir: &[f64]) {
+        if ir.len() != self.ir.len() { self.buf = vec![0.0; 2 * ir.len()]; self.at = 0; }
+        self.ir = ir.to_vec();
+    }
+    #[inline]
+    pub fn run(&mut self, x: f64) -> f64 {
+        let n = self.ir.len();
+        if n == 0 { return x; }
+        self.at = (if self.at == 0 { n } else { self.at }) - 1;
+        let at = self.at;
+        self.buf[at] = x; self.buf[at + n] = x;
+        let mut y = 0.0;
+        for (k, h) in self.ir.iter().zip(&self.buf[at..at + n]) { y += k * h; }
+        y
+    }
+}
 
 /// Circuits in a row, oversampled, then the power stage and the cabinet (rig.ts `Rig`).
+/// The power stage starts as power.ts `DEFAULT_POWER` until `set_output`; no cab until `set_cab`.
 pub struct Rig {
     circuits: Vec<Circuit>,
     gains: Vec<f64>,
@@ -696,7 +774,8 @@ pub struct Rig {
     peaks: Vec<f64>,
     up: Vec<Biquad>,
     down: Vec<Biquad>,
-    cab: Vec<Biquad>,
+    amp: PushPull,
+    cab: Option<Convolver>,
     input_volts: f64,
     power: f64,
     noise: f64,
@@ -706,18 +785,12 @@ pub struct Rig {
 }
 
 impl Rig {
-    pub fn new(sample_rate: f64, oversample: usize, input_volts: f64, power: f64, cab: bool, noise: f64) -> Rig {
+    pub fn new(sample_rate: f64, oversample: usize, input_volts: f64, power: f64, noise: f64) -> Rig {
         let hi = sample_rate * oversample as f64;
-        let cab = if cab {
-            vec![
-                Biquad::make(Kind::Hp, 75.0, 0.7, sample_rate, 0.0), Biquad::make(Kind::Peak, 120.0, 1.0, sample_rate, 4.0),
-                Biquad::make(Kind::Peak, 1800.0, 1.2, sample_rate, -3.0), Biquad::make(Kind::Peak, 3000.0, 1.2, sample_rate, 3.0),
-                Biquad::make(Kind::Lp, 5000.0, 0.54, sample_rate, 0.0), Biquad::make(Kind::Lp, 5000.0, 1.31, sample_rate, 0.0),
-            ]
-        } else { Vec::new() };
         Rig {
             circuits: Vec::new(), gains: Vec::new(), rest: Vec::new(), peaks: Vec::new(),
-            up: butter8(0.45 * sample_rate, hi), down: butter8(0.45 * sample_rate, hi), cab,
+            up: butter8(0.45 * sample_rate, hi), down: butter8(0.45 * sample_rate, hi),
+            amp: PushPull::new(1.0, 120.0, 8.0, hi), cab: None,
             input_volts, power, noise, steps: 0, sample_rate, oversample,
         }
     }
@@ -751,6 +824,21 @@ impl Rig {
     pub fn set_pot(&mut self, i: usize, pot: usize, at: f64) { if let Some(c) = self.circuits.get_mut(i) { c.set_pot(pot, at); } }
     pub fn set_power(&mut self, p: f64) { self.power = p; }
     pub fn set_noise(&mut self, n: f64) { self.noise = n; for c in &mut self.circuits { c.noise = n; } }
+    /// The power stage's parts, fresh (rig.ts builds it from `RigSpec.output` the same way).
+    pub fn set_output(&mut self, pairs: f64, sag: f64, load: f64) {
+        self.amp = PushPull::new(pairs, sag, load, self.sample_rate * self.oversample as f64);
+    }
+    pub fn set_load(&mut self, ohms: f64) { self.amp.set_load(ohms); }
+    /// The cabinet's impulse response at the rig's sample rate; empty for no cab.
+    pub fn set_cab(&mut self, ir: &[f64]) {
+        match (&mut self.cab, ir.is_empty()) {
+            (_, true) => self.cab = None,
+            (Some(c), false) => c.set(ir),
+            (None, false) => self.cab = Some(Convolver::new(ir)),
+        }
+    }
+    pub fn fault(&self) -> u32 { self.amp.fault }
+    pub fn supply(&self) -> f64 { self.amp.supply }
 
     /// Mono, in place: full scale ±1 in, volts at the speaker out (each sample is read before it is written).
     pub fn process(&mut self, io: &mut [f32]) {
@@ -769,10 +857,10 @@ impl Rig {
                     if swing > self.peaks[i] { self.peaks[i] = swing; }
                 }
                 x -= self.rest[last];
-                if self.power > 0.0 { x = ((x * self.power) / POWER_VOLTS).tanh() * POWER_VOLTS; }
+                if self.power > 0.0 { x = self.amp.step(x, self.power); }
                 acc = chain(&mut self.down, x);
             }
-            io[s] = (if self.cab.is_empty() { acc } else { chain(&mut self.cab, acc) }) as f32;
+            io[s] = (match &mut self.cab { Some(c) => c.run(acc), None => acc }) as f32;
         }
         self.steps += (n * os * self.circuits.len()) as u64;
     }

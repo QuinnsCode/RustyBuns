@@ -3,3 +3,6 @@
 // tscircuit boards in FM DAW (apps/fm-daw/circuits), read into netlists there.
 export * from "./mna.ts";
 export * from "./rig.ts";
+export * from "./power.ts";
+export * from "./cab.ts";
+export * from "./filters.ts";

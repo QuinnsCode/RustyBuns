@@ -23,7 +23,7 @@ test("a drawn drive pedal becomes gear with a knob per pot, and plays in front o
   // On Q Amp's floor: the board at its knobs is the pedal link, ahead of the lead amp.
   const lead = AMPS[1];
   const play = (DRIVE: number, LEVEL: number) => {
-    const live = applySettings({ amp: "lead", pedal: "bench", bench: net({ DRIVE, LEVEL }), drive: 0, swaps: {}, knobs: lead.knobs, bypass: false, oversample: 2 }, null, SR);
+    const live = applySettings({ amp: "lead", pedal: "bench", bench: net({ DRIVE, LEVEL }), drive: 0, swaps: {}, knobs: lead.knobs, bypass: false, oversample: 2, mic: { at: 0.3, angle: 0 } }, null, SR);
     const n = SR / 5, out = new Float32Array(n);
     live.rig.process(Float32Array.from({ length: n }, (_, i) => 0.05 * Math.sin((2 * Math.PI * 220 * i) / SR)), out);
     live.rig.levels();

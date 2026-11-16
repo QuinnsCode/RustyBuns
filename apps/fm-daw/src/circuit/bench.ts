@@ -30,7 +30,7 @@ const errText = (e: unknown) => (e instanceof Error ? e.message : String(e));
 /** Runs 50 ms of a hot 220 Hz note through `net`: why it won't play, or its peak volts when it does. */
 function tryPlay(net: Netlist): string | number {
   let rig: Rig;
-  try { rig = new Rig({ inputVolts: TEST_VOLTS, links: [{ net }], power: 0, cab: false }, SR, 2); }
+  try { rig = new Rig({ inputVolts: TEST_VOLTS, links: [{ net }], power: 0, cab: null }, SR, 2); }
   catch (e) { return errText(e); }
   const n = SR / 20;
   const input = Float32Array.from({ length: n }, (_, i) => Math.sin((2 * Math.PI * 220 * i) / SR));

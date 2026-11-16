@@ -44,13 +44,16 @@ const Saved = obj({
   board: oneOf([0, 1], 0),
   /** Each pedal's parts the player swapped: pedal id → socket → choice (circuits.ts `Swaps`). */
   swaps: or(rec(rec(str(12), 40), 10), {}),
+  /** The mic on the cab: 0 the centre cap to 10 the cone's edge, and 0 on axis to 10 side on. */
+  micAt: num(0, 10, 3),
+  micAngle: num(0, 10, 0),
 });
 type State = ReturnType<typeof Saved>;
 
 function loadState(): State {
   const fresh: State = {
     amp: "lead", knobs: Object.fromEntries(AMPS.map((a) => [a.id, { ...a.knobs }])), pedal: null,
-    drive: { drive: 3, dist: 5, fuzz: 7 }, bypass: 0, source: "riff", layout: "split", modes: ["analog", "focus"], level: -12, quality: "hq", board: 0, swaps: {},
+    drive: { drive: 3, dist: 5, fuzz: 7 }, bypass: 0, source: "riff", layout: "split", modes: ["analog", "focus"], level: -12, quality: "hq", board: 0, swaps: {}, micAt: 3, micAngle: 0,
   };
   try {
     const raw = localStorage.getItem(KEY);
@@ -74,7 +77,7 @@ let meter: FromAmp = { t: "meter", levels: [], out: 0, load: 0, misses: 0 };
 const dbToGain = (db: number) => (db <= -60 ? 0 : 10 ** (db / 20));
 
 function settings(): AmpSettings {
-  return { amp: S.amp, pedal: S.pedal, bench: S.pedal === "bench" ? ui.bench.net() ?? undefined : undefined, drive: S.pedal ? S.drive[S.pedal] ?? 5 : 0, swaps: S.pedal ? S.swaps[S.pedal] ?? {} : {}, knobs: S.knobs[S.amp] ?? ampOf(S.amp).knobs, bypass: S.bypass === 1, oversample: S.quality === "eco" ? 2 : 4 };
+  return { amp: S.amp, pedal: S.pedal, bench: S.pedal === "bench" ? ui.bench.net() ?? undefined : undefined, drive: S.pedal ? S.drive[S.pedal] ?? 5 : 0, swaps: S.pedal ? S.swaps[S.pedal] ?? {} : {}, knobs: S.knobs[S.amp] ?? ampOf(S.amp).knobs, bypass: S.bypass === 1, oversample: S.quality === "eco" ? 2 : 4, mic: { at: S.micAt / 10, angle: S.micAngle * 9 } };
 }
 function send() {
   save();
@@ -224,7 +227,12 @@ function build() {
     tubes,
     h("div", "panel", h("div", "badge", h("span", "q", "Q"), modelName, h("span", "jewel")), models, knobRow));
   const cones = [h("div", "cone"), h("div", "cone")];
-  const cab = h("div", "cab clear", ...cones.map((c) => h("div", "speaker", c)));
+  // The mic on the cab: across the cone, and turned off axis.
+  const micKnobs = h("div", "mic-knobs",
+    knob("Mic", S.micAt, 3, (v) => { S.micAt = v; send(); }, "small").el,
+    knob("Angle", S.micAngle, 0, (v) => { S.micAngle = v; send(); }, "small").el);
+  micKnobs.title = "Where the mic sits: on the centre cap it is bright, out at the cone's edge and turned off axis it is darker";
+  const cab = h("div", "cab clear", ...cones.map((c) => h("div", "speaker", c)), micKnobs);
   const rig = h("div", "rig", head, cab, modelBlurb);
 
   // Pedals on the floor: one on at a time (the chain has one slot).
@@ -362,7 +370,7 @@ Object.assign(window, {
   qamp: {
     state: () => ({
       started: !!ctx, running: ctx?.state === "running", amp: S.amp, name: ampOf(S.amp).name, knobs: S.knobs[S.amp], pedal: S.pedal,
-      drive: S.pedal ? S.drive[S.pedal] : null, swaps: S.pedal ? { ...S.swaps[S.pedal] } : {}, board: S.board === 1, bypass: S.bypass === 1, quality: S.quality, source: S.source, layout: S.layout, modes: [...S.modes],
+      drive: S.pedal ? S.drive[S.pedal] : null, swaps: S.pedal ? { ...S.swaps[S.pedal] } : {}, board: S.board === 1, bypass: S.bypass === 1, quality: S.quality, source: S.source, layout: S.layout, modes: [...S.modes], mic: settings().mic,
       load: meter.load, misses: meter.misses, out: meter.out, levels: meter.levels, bench: ui.bench.state(),
     }),
     /** Puts a board (tscircuit circuit JSON) on the bench, as dropping its file does: the bench's verdict back. */

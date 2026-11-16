@@ -24,6 +24,7 @@ const rigs: Record<string, RigSpec> = {
   ...RIGS,
   "hard-clip-germanium": { ...RIGS["hard-clip"], links: [{ net: hardClip(100e3, { D1: "germanium" }) }] },
   "boosted-lead": { ...RIGS.lead, links: [{ net: overdrive(0) }, ...RIGS.lead.links] },
+  "lead-mic-edge": { ...RIGS.lead, cab: { at: 1, angle: 45 } }, // the mic out at the cone's edge, turned away: darker
 };
 
 const dry = riff(SR);

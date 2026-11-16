@@ -1,7 +1,7 @@
 // What the amp page and its audio thread say to each other.
 import type { Knobs } from "../circuit/amps.ts";
 import type { Swaps } from "../circuit/circuits.ts";
-import type { Netlist } from "@rustybuns/gear/circuit";
+import type { Mic, Netlist } from "@rustybuns/gear/circuit";
 
 /** The whole front panel, every time: the audio thread works out what changed. */
 export interface AmpSettings {
@@ -15,6 +15,8 @@ export interface AmpSettings {
   /** The player's parts on that pedal's board (circuits.ts `Swaps`). */
   swaps: Swaps;
   knobs: Knobs;
+  /** Where the mic sits on the cab. */
+  mic: Mic;
   /** The dry input straight through, to compare. */
   bypass: boolean;
   /** Circuit samples per output sample: 4 sounds cleanest, 2 (Eco) costs half. */
