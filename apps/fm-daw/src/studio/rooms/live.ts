@@ -6,7 +6,7 @@ export const LIVE_ROOM: StudioDef = {
   id: "live-room",
   name: "The live room",
   size: { w: 10, d: 9, h: 3.4 },
-  colors: { floor: "#7a5a3e", walls: "#3c3f46", ceiling: "#24262b", trim: "#c8a46a" },
+  colors: { floor: "#8a6646", walls: "#5a5d63", ceiling: "#b9b6ae", trim: "#9a7650" },
   about: "Our own room: a wooden floor, drywall walls, an acoustic tile ceiling, absorbers on the side walls, a vocal booth lined in absorbers, and the control room behind a glass wall.",
   materials: { floor: "floorboards", ceiling: "ceilingTile", walls: { front: "drywall", back: "drywall", left: "drywall", right: "drywall" } },
   panels: [{ wall: "left", material: "foam", m2: 4 }, { wall: "right", material: "curtain", m2: 6 }, { wall: "back", material: "foam", m2: 8 }],

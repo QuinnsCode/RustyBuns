@@ -33,6 +33,7 @@ import { synth } from "@rustybuns/models/synth";
 import { lookBack, studioTools, syncRoom, type Player, type Rights } from "./agent.ts";
 import { madeSpot } from "./instrument.ts";
 import { prop } from "./props.ts";
+import { dress, loadQuality, metreUV, saveQuality, surface, type Quality } from "./look.ts";
 
 const CONTROLS = "qollab-studio:controls";
 const LOOK = "qollab-studio:avatar";
@@ -78,44 +79,40 @@ if (!(canvas instanceof HTMLCanvasElement)) throw new Error("#stage is not a can
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
 renderer.setPixelRatio(Math.min(2, devicePixelRatio));
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x15171b);
-const camera = new THREE.PerspectiveCamera(70, 1, 0.05, 60);
+// a lens about a phone's main camera: wide enough to see the room, not so wide its corners stretch (the light: look.ts)
+const camera = new THREE.PerspectiveCamera(56, 1, 0.05, 80);
 camera.rotation.order = "YXZ";
-scene.add(new THREE.HemisphereLight(0xe6e2da, 0x2a2420, 1.1));
-for (const [x, z] of [[-2.5, 1.5], [2.5, 1.5], [0, -3]]) {
-  const l = new THREE.PointLight(0xffe2bc, 10, 9, 1.4);
-  l.position.set(x, def.size.h - 0.3, z);
-  scene.add(l);
-}
 const std = (c: string, o: Partial<THREE.MeshStandardMaterialParameters> = {}) => new THREE.MeshStandardMaterial({ color: c, roughness: 0.85, ...o });
 function buildRoom() {
   const { w, d, h } = def.size;
-  const floor = new THREE.Mesh(new THREE.PlaneGeometry(w, d), std(def.colors.floor));
+  const made = def.materials ?? { floor: "floorboards", ceiling: "drywall", walls: { back: "drywall", right: "drywall", front: "drywall", left: "drywall" } };
+  const floor = new THREE.Mesh(metreUV(new THREE.PlaneGeometry(w, d)), surface(made.floor, def.colors.floor));
   floor.rotation.x = -Math.PI / 2;
-  const ceil = new THREE.Mesh(new THREE.PlaneGeometry(w, d), std(def.colors.ceiling));
+  const ceil = new THREE.Mesh(metreUV(new THREE.PlaneGeometry(w, d)), surface(made.ceiling, def.colors.ceiling));
   ceil.rotation.x = Math.PI / 2; ceil.position.y = h;
   scene.add(floor, ceil);
   const outside = [{ from: [-w / 2, -d / 2], to: [w / 2, -d / 2] }, { from: [w / 2, -d / 2], to: [w / 2, d / 2] }, { from: [w / 2, d / 2], to: [-w / 2, d / 2] }, { from: [-w / 2, d / 2], to: [-w / 2, -d / 2] }] as const;
-  const wallMat = std(def.colors.walls), glass = std("#9fc6d8", { transparent: true, opacity: 0.18, roughness: 0.1 }), trim = std(def.colors.trim);
-  for (const wall of [...outside.map((x) => ({ from: [...x.from] as [number, number], to: [...x.to] as [number, number] })), ...def.walls]) {
+  const glass = surface("glass", "#9fc6d8"), trim = surface("wood", def.colors.trim), sides = ["back", "right", "front", "left"] as const;
+  for (const wall of [...outside.map((x, i) => ({ from: [...x.from] as [number, number], to: [...x.to] as [number, number], material: made.walls[sides[i]] })), ...def.walls]) {
+    const wallMat = surface(wall.material ?? "drywall", wall.material ? undefined : def.colors.walls);
     for (const p of wallPieces(wall, 0.12)) {
       const isGlass = "glass" in wall && wall.glass;
-      const m = new THREE.Mesh(new THREE.BoxGeometry(p.hw * 2, isGlass ? h - 1.1 : h, p.hd * 2), isGlass ? glass : wallMat);
+      const m = new THREE.Mesh(metreUV(new THREE.BoxGeometry(p.hw * 2, isGlass ? h - 1.1 : h, p.hd * 2)), isGlass ? glass : wallMat);
       m.position.set(p.cx, isGlass ? 0.9 + (h - 1.1) / 2 : h / 2, p.cz);
       m.rotation.y = p.turn;
       scene.add(m);
       if (isGlass) {
         // a solid wall under the window, a trim along its sill
-        const sill = new THREE.Mesh(new THREE.BoxGeometry(p.hw * 2, 0.9, p.hd * 2 + 0.02), wallMat);
+        const sill = new THREE.Mesh(metreUV(new THREE.BoxGeometry(p.hw * 2, 0.9, p.hd * 2 + 0.02)), wallMat);
         sill.position.set(p.cx, 0.45, p.cz); sill.rotation.y = p.turn;
-        const t = new THREE.Mesh(new THREE.BoxGeometry(p.hw * 2, 0.04, p.hd * 2 + 0.08), trim);
+        const t = new THREE.Mesh(metreUV(new THREE.BoxGeometry(p.hw * 2, 0.04, p.hd * 2 + 0.08)), trim);
         t.position.set(p.cx, 0.9, p.cz); t.rotation.y = p.turn;
         scene.add(sill, t);
       }
     }
   }
   for (const s of def.spots) scene.add(thing(s));
-  for (const p of def.props ?? []) scene.add(prop(p));
+  for (const p of def.props ?? []) scene.add(prop(p, surface));
 }
 /** A spot's instrument or furniture, and its seat. */
 function thing(s: Spot): THREE.Group {
@@ -157,6 +154,9 @@ function thing(s: Spot): THREE.Group {
   return g;
 }
 buildRoom();
+const picture = dress(renderer, scene, camera, def, loadQuality());
+/** Q, standing: the other quality setting, kept for next time (the page loads again with it). */
+function setQuality(q: Quality) { saveQuality(q); const u = new URL(location.href); u.searchParams.delete("quality"); location.replace(u); }
 
 // ---- people: you, and everyone the live line says is here ----
 interface Drawn { fig: Figure; key: string; x: number; z: number; yaw: number; speed: number }
@@ -309,6 +309,7 @@ function keyDown(code: string, shift = false) {
   if (phase !== "play") return;
   if (code === "KeyV") return toggleCam(jam);
   if (code === "Space") return sitOrStand();
+  if (code === "KeyQ" && !jam.me.seat) return setQuality(picture.quality === "high" ? "low" : "high");
   if (jam.me.seat) {
     if (code === "KeyZ") { releaseAll(); octave = Math.max(-3, octave - 1); return; }
     if (code === "KeyX") { releaseAll(); octave = Math.min(3, octave + 1); return; }
@@ -403,14 +404,14 @@ $("look").addEventListener("click", () => {
 });
 mountControls({
   key: CONTROLS, pad, parent: $("controls-host"), title: "Controls", skin: "house",
-  keys: [["WASD / left stick", "Walk"], ["Mouse / right stick", "Look"], ["Space / click", "Sit at a spot, stand up"], ["A to ' (seated)", "Play notes; Shift plays louder"], ["Z / X", "Octave down, up"], ["V", "Over the shoulder or first person"], ["M", "Speakers up"], ["Esc", "Let go of the mouse"]],
+  keys: [["WASD / left stick", "Walk"], ["Mouse / right stick", "Look"], ["Space / click", "Sit at a spot, stand up"], ["A to ' (seated)", "Play notes; Shift plays louder"], ["Z / X", "Octave down, up"], ["V", "Over the shoulder or first person"], ["Q (standing)", "Picture quality: high or low"], ["M", "Speakers up"], ["Esc", "Let go of the mouse"]],
   onChange: (s) => { ctl = s; },
   onToggle: (open) => { if (open) document.exitPointerLock?.(); },
 });
 
 function resize() {
   const w = innerWidth, h = innerHeight;
-  renderer.setSize(w, h, false);
+  picture.resize(w, h);
   camera.aspect = w / h;
   camera.updateProjectionMatrix();
 }
@@ -461,7 +462,7 @@ function frame(now: number) {
   $("hint").textContent = now < flash.until ? flash.text : hint();
   const playing = [...jam.others.values()].filter((o) => o.seat).map((o) => `${o.name || "Someone"} at ${spotOf(jam, o.seat)?.label ?? o.seat}`);
   $("heard").textContent = `${status.state === "online" ? `${status.peers} in the sesh` : status.state}${playing.length ? `. ${playing.join(", ")}` : ""}${out ? "" : ". M brings the speakers up"}`;
-  renderer.render(scene, camera);
+  picture.render(camera);
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
@@ -470,13 +471,15 @@ menu();
 // ---- the harness (scripts/probe.ts HANDLES): the jam as data, and a player's moves without pointer lock ----
 declare global { interface Window { qjam?: typeof harness } }
 const harness = {
-  state: () => ({ door: { signedIn: signedIn(), name, room: here?.room ?? null, look: lookFrom, rooms: loadRecent() }, phase, net: status.state, peers: status.peers, octave, audio: !!out, holding: [...holding.values()], ...snapshot(jam, project) }),
+  state: () => ({ door: { signedIn: signedIn(), name, room: here?.room ?? null, look: lookFrom, rooms: loadRecent() }, phase, net: status.state, peers: status.peers, octave, audio: !!out, picture: picture.state(), holding: [...holding.values()], ...snapshot(jam, project) }),
   start: () => { if (!here) return harness.state(); phase = "play"; menu(); void startAudio(); return harness.state(); },
   walkTo: (x: number, z: number) => { const s = walkTo(jam, x, z); live(body(jam)); return s; },
   look: (yaw: number, pitch = 0) => { jam.me.yaw = yaw; jam.me.pitch = pitch; },
   sit: (id?: string) => { const a = id ? sit(jam, id) : (sitOrStand(), { ok: !!jam.me.seat }); live(body(jam)); return a; },
   stand: () => { releaseAll(); stand(jam); live(body(jam)); },
   cam: () => { toggleCam(jam); return jam.me.cam; },
+  /** The picture quality, kept for next time: the page loads again with it. */
+  quality: (q: Quality) => setQuality(q),
   /** Press (down true) or let go of a key: KeyA plays the seat's lowest note. */
   key: (code: string, down = true) => (down ? keyDown(code) : noteOff(`kb:${code}`)),
 };
