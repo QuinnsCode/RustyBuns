@@ -6,7 +6,10 @@ import * as THREE from "three";
 import type { Booth } from "../crew/sync.ts";
 import { esc } from "@rustybuns/util";
 import { gearParts } from "@rustybuns/models/gear";
-import { type BoothJudged, boothOf, judgeBoothCables } from "./dj-booth.ts";
+import { type BoothJudged, DANCE, boothOf, judgeBoothCables } from "./dj-booth.ts";
+import { crowdOf, letIn, regions } from "../crowd/crowd.ts";
+import { crowdView } from "../crowd/crowd-view.ts";
+import { newSetMood, tickSetMood } from "../audio/set-mood.ts";
 import { rig } from "./dive-bar.ts";
 import type { Answer, World } from "../sim.ts";
 import type { Cables } from "../cables/cables.ts";
@@ -124,6 +127,9 @@ export function djBoothView(scene: THREE.Scene, hud: HTMLElement, getWorld: () =
   let last = "";
   const atBooth = () => { const y = getWorld().you; return Math.abs(y.x - b.head.x) < 1 && Math.abs(y.z - b.head.z) < 0.7; };
 
+  // The dance floor: people come in once music reaches the speakers, and take the set as it goes (audio/set-mood.ts).
+  const people = crowdView(scene);
+  let floor = newSetMood();
   /** The decks as the crew room sees them: alone (no room) the decks are yours; in a room, one DJ at a time. */
   const shared: Booth = { decks, want: false, room: false, dj: null, note: "" };
   /** Whether your hands may move the decks: always alone; in a room, when the seat is yours or free (touching them asks for it). */
@@ -150,6 +156,15 @@ export function djBoothView(scene: THREE.Scene, hud: HTMLElement, getWorld: () =
       KEYS.forEach((key, i) => { if (j.dead.includes(key)) decks.deck[i]!.playing = false; });
       tickDecks(decks, dt);
       m = mix(decks, KEYS, j.routing, j.hum);
+      const w = getWorld(), sent = [m.gain[KEYS[0]] ?? 0, m.gain[KEYS[1]] ?? 0] as const;
+      if (j.live && sent[0] + sent[1] > 0 && !crowdOf(w)) letIn(w, DANCE);
+      const c = crowdOf(w);
+      if (c) {
+        floor = tickSetMood(floor, j.live ? sent : [0, 0], [bpmOf(decks, 1), bpmOf(decks, 2)], dt);
+        const doing = floor.mood >= 50 ? "dancing" as const : floor.mood >= 25 ? "thinning" as const : "leaving" as const;
+        people.moods(regions(c, () => ({ soundcheck: null, full: null }), 0, 0).map((r) => ({ ...r, mood: Math.round(floor.mood), doing })));
+      }
+      people.update(w, c);
       sound?.update(decks, m, KEYS, j.distort);
       animate(dt);
       const deckLine = (i: number) => {
@@ -160,6 +175,7 @@ export function djBoothView(scene: THREE.Scene, hud: HTMLElement, getWorld: () =
       const lines = [
         `<b>DJ booth (${b.kind === "vinyl" ? "turntables" : "media players"})</b>`,
         deckLine(0), deckLine(1),
+        ...(crowdOf(getWorld()) ? [`The floor: ${crowdOf(getWorld())!.people} in, ${floor.say}, mood ${Math.round(floor.mood)}`] : []),
         // In a crew room: who has the decks.
         ...(shared.room ? [shared.dj?.me ? '<span class="pass">You are on the decks</span>' : shared.dj ? `${esc(shared.dj.name || "Someone")} is on the decks` : "The decks are free: touch them to take them"] : []),
         `Crossfader ${decks.cross === 0 ? "centre" : decks.cross < 0 ? `${Math.round(-decks.cross * 100)}% to A` : `${Math.round(decks.cross * 100)}% to B`}, master ${j.live ? "to the speakers" : "goes nowhere yet"}`,
@@ -178,6 +194,8 @@ export function djBoothView(scene: THREE.Scene, hud: HTMLElement, getWorld: () =
       shared: shared.room, dj: shared.dj?.name ?? null, onDecks: !shared.room || !!shared.dj?.me, seatNote: shared.note,
       fader: [...decks.fader], cross: decks.cross, mix: m.gain, meter: m.meter, hum: j.hum, distort: j.distort, live: j.live,
       problems: j.problems.map((p) => p.message),
+      /** The dance floor, once music reaches the speakers: who is in, and how they take the set. */
+      floor: crowdOf(getWorld()) ? { people: crowdOf(getWorld())!.people, mood: Math.round(floor.mood), say: floor.say } : null,
     }),
     /** The harness's hands on the decks. */
     decks: {
@@ -202,6 +220,7 @@ export function djBoothView(scene: THREE.Scene, hud: HTMLElement, getWorld: () =
     dispose() {
       sound?.stop();
       sound = null;
+      people.dispose();
       scene.remove(group);
       card.remove();
       for (const s of screens) s.tex.dispose();

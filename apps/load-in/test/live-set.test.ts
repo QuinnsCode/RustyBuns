@@ -92,3 +92,32 @@ test("one DJ plays and the whole crew is in step: a second DJ is refused, a late
   expect(apartMs(bea, ada)).toBeLessThan(50);
   expect(apartMs(bea, cy)).toBeLessThan(50);
 });
+
+test("the floor takes the set: a matched blend lifts it, a trainwreck clears it, dead air drops it, a hot master tires it", async () => {
+  const { newSetMood, tickSetMood } = await import("../src/audio/set-mood.ts");
+  const run = (gains: readonly [number, number], bpms: readonly [number, number], seconds: number, from = newSetMood()) => {
+    let m = from;
+    for (let i = 0; i < seconds * 10; i++) m = tickSetMood(m, gains, bpms, 0.1);
+    return m;
+  };
+  // One deck playing warms the room; bringing the second in at the same tempo locks it in and lifts it faster.
+  const one = run([0.8, 0], [124, 128], 4);
+  expect(one).toMatchObject({ say: "in the mix" });
+  expect(one.mood).toBeCloseTo(70, 0);
+  const blend = run([0.57, 0.57], [124, 124], 2, one);
+  expect(blend).toMatchObject({ say: "locked in" });
+  expect(blend.mood).toBeGreaterThan(one.mood + 20);
+  // The same two faders with the tempos 4 BPM apart is a trainwreck: the floor empties in seconds.
+  const wreck = run([0.57, 0.57], [124, 128], 3, blend);
+  expect(wreck).toMatchObject({ say: "trainwreck" });
+  expect(wreck.mood).toBeLessThan(blend.mood - 60);
+  // Two seconds of nothing is a breath; six is dead air.
+  expect(run([0, 0], [124, 124], 2, blend).mood).toBe(blend.mood);
+  const dead = run([0, 0], [124, 124], 6, blend);
+  expect(dead.say).toBe("dead air");
+  expect(dead.mood).toBeLessThan(15);
+  // Both faders slammed up: the limiter is working, and the room tires.
+  const hot = run([0.8, 0.8], [124, 124], 4, one);
+  expect(hot.say).toBe("too hot");
+  expect(hot.mood).toBeCloseTo(50, 0);
+});

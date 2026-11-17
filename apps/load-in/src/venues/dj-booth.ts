@@ -8,6 +8,20 @@
 import { CIRCUIT_20A, type Cable, type Compiled, type Placed, compile, gear as catalog, jackKind } from "@rustybuns/gear";
 import { EYE, type Item, type Level, type World } from "../sim.ts";
 import { type Cables, plugged } from "../cables/cables.ts";
+import type { CrowdSpot } from "../crowd/crowd.ts";
+
+/** The dance floor: the room in front of the sub, 80 people when it is full (8 x 9 x 3 m, painted walls, a hard floor). */
+export const DANCE: CrowdSpot = {
+  floor: { x0: -3.2, x1: 3.2, z0: 3.7, z1: 8.5, nx: 13, nz: 10 },
+  stageZ: 3.6,
+  capacity: 80,
+  room: { w: 8, d: 9, h: 3, alpha: 0.12 },
+  regions: [
+    { name: "front", zone: { x0: -3.2, x1: 3.2, z0: 3.7, z1: 5.3 } },
+    { name: "middle", zone: { x0: -3.2, x1: 3.2, z0: 5.3, z1: 6.9 } },
+    { name: "back", zone: { x0: -3.2, x1: 3.2, z0: 6.9, z1: 8.5 } },
+  ],
+};
 
 export type DeckKind = "media" | "vinyl";
 
