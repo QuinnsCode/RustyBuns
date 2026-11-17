@@ -63,7 +63,8 @@ test("over the rating trips, and a load below the amp's minimum is a problem", (
 });
 
 test("the catalog has every shared id with its size, and jacks number from 1", () => {
-  expect(GEAR_IDS).toEqual([
+  // The ids the models share, in table order; a level adds its own after them (the festival: #5029 step 9).
+  expect(GEAR_IDS.slice(0, 22)).toEqual([
     "top-12-powered", "top-15-passive", "sub-18", "wedge-12", "amp-head", "cab-4x12", "amp-rack-4u", "mixer-small",
     "generator-7kva", "distro-box", "cable-ramp-2ch", "road-case-m", "stand-tripod", "mic-stand", "sand-cart", "di-box", "line-array-box", "guitar", "line-array-10", "fill-8-powered", "mic-condenser", "wedge-12-passive", "jerry-can-20l", "bar-cooler",
   ]);

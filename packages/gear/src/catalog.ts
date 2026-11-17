@@ -202,6 +202,77 @@ const list: Gear[] = [
   { id: "jerry-can-20l", what: "jerry can of fuel", size: box(0.35, 0.47, 0.17), kg: 18, jacks: {}, can: { litres: 20 } },
   // Not road gear: the venue's own back-bar cooler, a load on a wall circuit that is always on.
   { id: "bar-cooler", what: "back-bar drinks cooler", size: box(0.9, 0.9, 0.6), kg: 70, jacks: { "power-in": 1 }, draw: { idle: 450, loud: 450 } },
+  // ---- The festival's two systems (Sound Guy Simulator step 9, #5029), our own boxes in two well-known families. ----
+  // The dance stack: horn-loaded all the way down, a point source for a dance floor. Numbers are typical of that class's
+  // spec sheets: a mid-high horn box (10" mid on a horn, 1.4" compression driver) at 105-109 dB 1 W / 1 m with a tight
+  // 50 x 25 degree pattern; a horn-loaded 15" mid-bass; folded-horn 21" bass bins at 108-110 dB, about 115 kg. Horns
+  // are efficient (few amp watts per dB) and beam: outside the pattern the highs fall away fast (rearLoss).
+  {
+    id: "stack-mid-high",
+    what: "dance stack mid-high horn",
+    size: box(0.75, 0.5, 0.7),
+    kg: 52,
+    jacks: { "speaker-in": 1, "speaker-out": 1 },
+    speaker: { sensitivity: 108, maxSpl: 139, ratedWatts: 600, ohms: 8, coverage: { h: 50, v: 25 }, lowCut: 180, highCut: 20000, rearLoss: 28 },
+  },
+  {
+    id: "stack-mid-bass",
+    what: "dance stack mid-bass horn",
+    size: box(0.75, 0.75, 0.85),
+    kg: 68,
+    jacks: { "speaker-in": 1, "speaker-out": 1 },
+    speaker: { sensitivity: 106, maxSpl: 136, ratedWatts: 1000, ohms: 8, coverage: { h: 60, v: 40 }, lowCut: 60, highCut: 250, rearLoss: 14 },
+  },
+  {
+    id: "horn-sub-21",
+    what: '21" horn-loaded bass bin',
+    size: box(1.1, 0.8, 1.0),
+    kg: 115,
+    jacks: { "speaker-in": 1, "speaker-out": 1 },
+    // At 63 Hz a horn bin is near omni: about 6 dB front to back, which the cardioid trick (site.ts) builds on.
+    speaker: { sensitivity: 109, maxSpl: 141, ratedWatts: 2000, ohms: 8, coverage: { h: 360, v: 360 }, lowCut: 35, highCut: 120, rearLoss: 6 },
+  },
+  // The sculpted array: a moulded composite shell with flowing curves, three conical horns (low-mid, mid, high) in one
+  // body, about 850 mm tall and 35 kg, 60 x 50 degrees, flown or on a pole in pairs, over low-profile arc subs. Numbers
+  // are typical of that family's published sheets (3-way passive, ~104 dB 1 W / 1 m, ~134 dB peak).
+  {
+    id: "sculpted-3way",
+    what: "sculpted three-way horn",
+    size: box(0.42, 0.85, 0.52),
+    kg: 35,
+    jacks: { "speaker-in": 1, "speaker-out": 1 },
+    speaker: { sensitivity: 104, maxSpl: 134, ratedWatts: 800, ohms: 8, coverage: { h: 60, v: 50 }, lowCut: 90, highCut: 20000, rearLoss: 22 },
+  },
+  {
+    id: "arc-sub-18",
+    what: "low-profile arc sub",
+    size: box(1.2, 0.5, 0.75),
+    kg: 78,
+    jacks: { "speaker-in": 1, "speaker-out": 1 },
+    speaker: { sensitivity: 101, maxSpl: 136, ratedWatts: 1600, ohms: 8, coverage: { h: 360, v: 360 }, lowCut: 38, highCut: 120, rearLoss: 4 },
+  },
+  {
+    // A stage's amps: three 4-channel DSP amps in a 12U rack on casters. Mains at show level is about an eighth of the
+    // rated output (music's crest factor) over class-D efficiency: ~5 kW from ~36 kW of channels.
+    id: "amp-rack-12u",
+    what: "stage amp rack, 12 channels",
+    size: box(0.6, 1.05, 0.75),
+    kg: 95,
+    jacks: { "power-in": 1, "xlr-in": 4, "speaker-out": 8 },
+    amp: { channels: 12, watts: { 8: 1700, 4: 3000, 2: 4000 } },
+    draw: { idle: 450, loud: 5200 },
+    wheels: "small",
+  },
+  {
+    // A silenced 100 kVA three-phase set on a trailer, 120/208 V: 80 kW at 0.8 power factor, a 300 L tank, about 22 L/h
+    // at three quarters load (typical of the class's fuel tables).
+    id: "generator-100kva",
+    what: "100 kVA three-phase generator",
+    size: box(1.3, 2.0, 3.6),
+    kg: 2900,
+    jacks: { "power-out": 3 },
+    generator: { kva: 100, powerFactor: 0.8, tankL: 300, idleLph: 4, perKwh: 0.3 },
+  },
 ];
 
 /** Every piece of gear by id. */
