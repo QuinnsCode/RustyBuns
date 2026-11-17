@@ -30,10 +30,12 @@ import { ROOMS, LIVE_ROOM } from "./rooms/index.ts";
 import { yours } from "./builder.ts";
 import { addCommands } from "@rustybuns/util/commands";
 import { synth } from "@rustybuns/models/synth";
-import { lookBack, studioTools, syncRoom, type Player, type Rights } from "./agent.ts";
+import { lookBack, may, studioTools, syncRoom, type Player, type Rights } from "./agent.ts";
 import { madeSpot } from "./instrument.ts";
 import { facing, muteRoom, mutePeer, noMutes, sounds } from "./mute.ts";
-import { isMuted, leaders } from "../grants.ts";
+import { isMuted, leaders, type GrantServer } from "../grants.ts";
+import { handsUp, marks, words, type Marks } from "./hands.ts";
+import { badge, dropBadge } from "./badge.ts";
 import { prop } from "./props.ts";
 import { dress, loadQuality, metreUV, saveQuality, surface, type Quality } from "./look.ts";
 
@@ -183,6 +185,24 @@ function drawPerson(id: number | "me", a: Avatar, label: string | null, x: numbe
 function dropPerson(id: number | "me") {
   const d = drawn.get(id);
   if (d) { scene.remove(d.fig.group); d.fig.dispose(); drawn.delete(id); }
+  const b = badges.get(id);
+  if (b?.sprite) dropBadge(b.sprite);
+  badges.delete(id);
+}
+/** Each person's grants over their head (hands.ts): leads, hand up, listen only, muted for everyone. */
+const badges = new Map<number | "me", { key: string; sprite: THREE.Sprite | null }>();
+function markPerson(id: number | "me", m: Marks) {
+  const d = drawn.get(id);
+  if (!d) return;
+  const key = JSON.stringify(m);
+  let b = badges.get(id);
+  if (b && b.key !== key) { if (b.sprite) dropBadge(b.sprite); b = undefined; }
+  if (!b) { b = { key, sprite: badge(m) }; badges.set(id, b); }
+  // a figure made again (a new look) dropped its children: hang the badge over the new one, above its name tag
+  if (b.sprite && b.sprite.parent !== d.fig.group) {
+    b.sprite.position.y = new THREE.Box3().setFromObject(d.fig.group).max.y + 0.14;
+    d.fig.group.add(b.sprite);
+  }
 }
 
 // ---- sound: the FM DAW audio thread, mirroring the sesh's groove ----
@@ -199,6 +219,8 @@ async function startAudio() {
 const holding = new Map<string, { track: number; midi: number }>();
 function noteOn(by: string, n: { track: number; midi: number }, vel: number) {
   if (holding.has(by)) return;
+  // the World passes on no note without a play grant, so a listen-only seat says so rather than going quiet
+  if (!may(player).play) return void say({ ok: false, why: rights.asked === "play" ? "Listen only: your hand is up, the leader answers Yes or No" : "Listen only: the leader hasn't let you play. H raises your hand" });
   holding.set(by, n);
   out?.send({ t: "on", ...n, vel });
   live({ t: "on", ...n, vel });
@@ -227,6 +249,16 @@ function onLive(from: number, e: Live) {
 const mutes = noMutes();
 /** Which person each peer on the live line is, from the World's grants. */
 let peerIds: Record<string, string> = {};
+/** The World's last grants message: the grants, the raised hands, who's in. */
+let lastGrants: GrantServer | null = null;
+const marksOf = (who: string | undefined) => marks(lastGrants, status.floor?.state, who);
+/** H, or the button on the room's page: raise your hand to play. */
+function raise() {
+  if (may(player).play) return void say({ ok: false, why: "You may play already" });
+  if (rights.asked !== "play") { net?.grant({ t: "ask", can: "play" }); rights.asked = "play"; }
+  say({ ok: false, why: "Your hand is up: the leader answers Yes or No" });
+  people();
+}
 const iLead = () => !!rights.grants && !!rights.me && leaders(rights.grants).includes(rights.me);
 const leaderMuted = (peer: number) => !!rights.grants && isMuted(rights.grants, peerIds[peer]);
 const letGo = (notes: { track: number; midi: number }[]) => { for (const n of notes) out?.send({ t: "off", ...n }); };
@@ -241,7 +273,8 @@ function people() {
   list.replaceChildren();
   for (const [peer, o] of jam.others) {
     const li = document.createElement("li"), n = document.createElement("span");
-    n.textContent = (o.name || "Someone") + (leaderMuted(peer) ? " (muted for everyone)" : "");
+    const who = peerIds[peer], m = marksOf(who);
+    n.textContent = [o.name || "Someone", ...words(m)].join(", ");
     const b = document.createElement("button");
     b.type = "button"; b.className = "ghost"; b.textContent = mutes.peers.has(peer) ? "Unmute" : "Mute";
     b.addEventListener("click", () => mutePerson(peer));
@@ -251,12 +284,22 @@ function people() {
       all.type = "button"; all.className = "ghost"; all.textContent = was ? "Unmute for everyone" : "Mute for everyone";
       all.addEventListener("click", () => muteForAll(peer, !was));
       li.append(all);
+      if (m.hand && who) for (const yes of [true, false]) {
+        const a = document.createElement("button");
+        a.type = "button"; a.className = "ghost"; a.textContent = yes ? `Yes, ${m.hand}` : "No";
+        a.addEventListener("click", () => net?.grant({ t: "answer", who, yes }));
+        li.append(a);
+      }
     }
     list.append(li);
   }
   $("people-none").hidden = jam.others.size > 0;
+  const me = marksOf(rights.me ?? undefined);
+  $("me-may").textContent = !lastGrants ? "" : me.lead ? "You lead this sesh: answer a raised hand here." : me.listen ? (me.hand === "play" ? "Listen only. Your hand is up: the leader answers Yes or No." : "Listen only: the leader hasn't let you play yet.") : "You may play.";
+  $("raise").hidden = !lastGrants || !me.listen || me.hand === "play";
 }
 $("mute-room").addEventListener("click", () => muteAll());
+$("raise").addEventListener("click", () => raise());
 function onGone(from: number) {
   mutes.peers.delete(from);
   for (const k of jam.others.get(from)?.held ?? []) { const [track, midi] = k.split(":").map(Number); out?.send({ t: "off", track, midi }); }
@@ -305,7 +348,7 @@ const player: Player = {
 addCommands(studioTools(player).map((t) => ({ group: "Studio", ...t })));
 
 if (here) net = connect({
-  onGrants(m) { rights.grants = m.grants; peerIds = m.peers; people(); rights.asked = (rights.me && m.asks[rights.me]) || null; },
+  onGrants(m) { lastGrants = m; rights.grants = m.grants; peerIds = m.peers; rights.asked = (rights.me && m.asks[rights.me]) || null; people(); },
   onRewound: back.answer,
   onSnapshot(p) {
     if (!p) { net?.init(project); return; }
@@ -353,6 +396,7 @@ function keyDown(code: string, shift = false) {
   if (code === "KeyN") return muteAll();
   if (code === "KeyB") { const p = facing(jam); if (p === null) return void say({ ok: false, why: "Look at someone to mute them" }); mutePerson(p); flash = { text: `${jam.others.get(p)?.name || "Someone"} ${mutes.peers.has(p) ? "muted, for you" : "unmuted"}`, until: performance.now() + 1800 }; return; }
   if (code === "Space") return sitOrStand();
+  if (code === "KeyH") return raise();
   if (code === "KeyQ" && !jam.me.seat) return setQuality(picture.quality === "high" ? "low" : "high");
   if (jam.me.seat) {
     if (code === "KeyZ") { releaseAll(); octave = Math.max(-3, octave - 1); return; }
@@ -448,7 +492,7 @@ $("look").addEventListener("click", () => {
 });
 mountControls({
   key: CONTROLS, pad, parent: $("controls-host"), title: "Controls", skin: "house",
-  keys: [["WASD / left stick", "Walk"], ["Mouse / right stick", "Look"], ["Space / click", "Sit at a spot, stand up"], ["A to ' (seated)", "Play notes; Shift plays louder"], ["Z / X", "Octave down, up"], ["V", "Over the shoulder or first person"], ["N", "Mute the room, for you"], ["B", "Mute who you look at, for you"], ["M", "Speakers up"], ["Esc", "Let go of the mouse"]],
+  keys: [["WASD / left stick", "Walk"], ["Mouse / right stick", "Look"], ["Space / click", "Sit at a spot, stand up"], ["A to ' (seated)", "Play notes; Shift plays louder"], ["Z / X", "Octave down, up"], ["V", "Over the shoulder or first person"], ["N", "Mute the room, for you"], ["B", "Mute who you look at, for you"], ["H", "Raise your hand to play"], ["M", "Speakers up"], ["Esc", "Let go of the mouse"]],
   onChange: (s) => { ctl = s; },
   onToggle: (open) => { if (open) document.exitPointerLock?.(); },
 });
@@ -466,6 +510,7 @@ function hint(): string {
   const s = spotOf(jam, jam.me.seat);
   if (s) {
     const n = keyNote(jam, project, "KeyA", octave);
+    if (!may(player).play) return `At ${s.label}, listen only: ${rights.asked === "play" ? "your hand is up" : "H raises your hand to play"}. Space stands up`;
     if (s.kind === "drums") return `At ${s.label}: A S D F G H J K L are the drums. Space stands up, V camera`;
     if (n) return `At ${s.label}, playing ${project.tracks[n.track].name}: A to ' are notes, Z / X octave (${octave >= 0 ? "+" : ""}${octave}). Space stands up, V camera`;
     return `At ${s.label}. Space stands up, V camera`;
@@ -495,19 +540,21 @@ function frame(now: number) {
   const c = cameraPose(jam);
   const player = holding.size > 0 ? [jam.me.x, jam.me.z] : [...jam.others.values()].find((o) => o.held.size > 0)?.at;
   watched = player ? new THREE.Vector3(player[0], 1, player[1]) : null;
-  if (c.boom > 0.7) drawPerson("me", look, null, jam.me.x, jam.me.z, jam.me.yaw, !!jam.me.seat, holding.size > 0, dt, t, true);
+  if (c.boom > 0.7) { drawPerson("me", look, null, jam.me.x, jam.me.z, jam.me.yaw, !!jam.me.seat, holding.size > 0, dt, t, true); markPerson("me", marksOf(rights.me ?? undefined)); }
   else dropPerson("me");
   for (const [peer, o] of jam.others) {
     if (!o.avatar && !o.name) continue;
     const seat = spotOf(jam, o.seat);
     drawPerson(peer, o.avatar ?? defaultAvatar(o.name), o.name, o.at[0], o.at[1], seat ? seat.yaw : o.yaw, !!seat, o.held.size > 0, dt, t, false);
+    markPerson(peer, marksOf(peerIds[peer]));
   }
   camera.position.set(...c.at);
   camera.rotation.set(c.pitch, c.yaw, 0);
   $("cross").hidden = jam.me.cam !== "first";
   $("hint").textContent = now < flash.until ? flash.text : hint();
+  const hands = handsUp(lastGrants);
   const playing = [...jam.others.values()].filter((o) => o.seat).map((o) => `${o.name || "Someone"} at ${spotOf(jam, o.seat)?.label ?? o.seat}`);
-  $("heard").textContent = `${status.state === "online" ? `${status.peers} in the sesh` : status.state}${playing.length ? `. ${playing.join(", ")}` : ""}${out ? "" : ". M brings the speakers up"}${mutes.room ? ". The room is muted (N)" : ""}${rights.grants && isMuted(rights.grants, rights.me ?? undefined) ? ". The leader muted you: nobody hears your notes" : ""}`;
+  $("heard").textContent = `${status.state === "online" ? `${status.peers} in the sesh` : status.state}${playing.length ? `. ${playing.join(", ")}` : ""}${out ? "" : ". M brings the speakers up"}${mutes.room ? ". The room is muted (N)" : ""}${rights.grants && isMuted(rights.grants, rights.me ?? undefined) ? ". The leader muted you: nobody hears your notes" : ""}${hands.length && iLead() ? `. ${hands.length} hand${hands.length > 1 ? "s" : ""} up: Esc to answer` : ""}`;
   picture.render(camera);
   requestAnimationFrame(frame);
 }
@@ -518,7 +565,8 @@ menu();
 declare global { interface Window { qjam?: typeof harness } }
 const harness = {
   state: () => ({ door: { signedIn: signedIn(), name, room: here?.room ?? null, look: lookFrom, rooms: loadRecent() }, phase, net: status.state, peers: status.peers, octave, audio: !!out, picture: picture.state(), holding: [...holding.values()], ...snapshot(jam, project),
-    muted: { room: mutes.room, peers: [...mutes.peers], forEveryone: [...jam.others.keys()].filter(leaderMuted), you: !!rights.grants && isMuted(rights.grants, rights.me ?? undefined), lead: iLead() } }),
+    muted: { room: mutes.room, peers: [...mutes.peers], forEveryone: [...jam.others.keys()].filter(leaderMuted), you: !!rights.grants && isMuted(rights.grants, rights.me ?? undefined), lead: iLead() },
+    grants: { me: marksOf(rights.me ?? undefined), may: may(player), asked: rights.asked, others: Object.fromEntries([...jam.others.keys()].map((p) => [p, marksOf(peerIds[p])])), hands: handsUp(lastGrants), badges: [...badges].filter(([, b]) => b.sprite).map(([id]) => id) } }),
   start: () => { if (!here) return harness.state(); phase = "play"; menu(); void startAudio(); return harness.state(); },
   walkTo: (x: number, z: number) => { const s = walkTo(jam, x, z); live(body(jam)); return s; },
   look: (yaw: number, pitch = 0) => { jam.me.yaw = yaw; jam.me.pitch = pitch; },
@@ -533,5 +581,12 @@ const harness = {
   mute: (peer: number, on?: boolean) => { mutePerson(peer, on); return harness.state().muted; },
   muteRoom: (on?: boolean) => { muteAll(on); return harness.state().muted; },
   muteForAll: (peer: number, on = true) => muteForAll(peer, on),
+  /** Raise your hand to play (H). */
+  raise: () => { raise(); return harness.state().grants; },
+  /** The leader answers this peer's raised hand. */
+  answer: (peer: number, yes: boolean) => { const who = peerIds[peer]; if (who) net?.grant({ t: "answer", who, yes }); },
+  /** The leader sets what this peer may do (null: back to the floor's), and the floor itself. */
+  grant: (peer: number, can: GrantServer["grants"]["who"][string] | null) => { const who = peerIds[peer]; if (who) net?.grant({ t: "grant", who, can }); },
+  floor: (state: "free" | "held") => net?.floor(state),
 };
 window.qjam = harness;

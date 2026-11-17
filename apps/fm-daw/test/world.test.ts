@@ -15,6 +15,8 @@ import { remotePlayer, studioTools } from "../src/studio/agent.ts";
 import { mcpAnswer } from "../src/studio/mcp.ts";
 import { roomWith } from "../src/studio/instrument.ts";
 import { facing, mutePeer, muteRoom, noMutes, sounds } from "../src/studio/mute.ts";
+import { handsUp, marks, words } from "../src/studio/hands.ts";
+import { decodeGrantServer } from "../src/grants.ts";
 import { apply, type Project } from "../src/project.ts";
 
 class Sock {
@@ -628,6 +630,44 @@ test("mute: Amy mutes Bo for herself and Cy still hears him; the leader mutes Bo
   for (const p of people) leave(p.ws);
   await settle();
   expect(JSON.parse(bucket.get(`sesh/${room}.json`)!).grants.muted).toEqual([bo.id]);
+});
+
+test("hands in the jam room: on a held floor Bo is listen only, raises his hand, Amy sees it and says Yes, and he plays", async () => {
+  const { worldEnv } = await edge();
+  const { world, join } = await setup(worldEnv, "steady-jade-lark");
+  const said = (ws: Sock, m: object) => world.webSocketMessage(ws, JSON.stringify(m));
+  const people = [];
+  for (const k of ["a", "b"]) {
+    const ws = (await join({}, k.repeat(32))).ws;
+    said(ws, { t: "hello", key: k.repeat(48), name: "" });
+    await new Promise((r) => setTimeout(r, 5));
+    people.push({ ws, id: ws.sent.find((m) => m.t === "chat").you as string });
+  }
+  const [amy, bo] = people;
+  said(amy.ws, { t: "init", project: demoProject() });
+  said(amy.ws, { t: "floor", state: "held" });
+  await settle();
+  // what each page shows, read from its socket as the page reads it
+  const grants = (p: typeof amy) => decodeGrantServer(p.ws.sent.findLast((m) => m.t === "grants"));
+  const shows = (p: typeof amy, of: typeof amy) => words(marks(grants(p), "held", of.id));
+  expect(shows(bo, bo)).toEqual(["Listen only"]);
+  expect(shows(bo, amy)).toEqual(["Leads"]);
+  // his note goes nowhere; he raises his hand, and Amy sees it over him and in her list
+  amy.ws.sent = [];
+  said(bo.ws, { t: "live", e: { t: "on", track: 0, midi: 60, vel: 0.8 } });
+  expect(amy.ws.sent.some((m) => m.t === "live")).toBe(false);
+  said(bo.ws, { t: "ask", can: "play" });
+  await settle();
+  expect(handsUp(grants(amy))).toEqual([bo.id]);
+  expect(shows(amy, bo)).toEqual(["Hand up to play", "Listen only"]);
+  // Yes: the hand comes down, he may play, and Amy hears him
+  said(amy.ws, { t: "answer", who: bo.id, yes: true });
+  await settle();
+  expect(handsUp(grants(amy))).toEqual([]);
+  expect(shows(bo, bo)).toEqual([]);
+  amy.ws.sent = [];
+  said(bo.ws, { t: "live", e: { t: "on", track: 0, midi: 60, vel: 0.8 } });
+  expect(amy.ws.sent).toContainEqual({ t: "live", from: expect.any(Number), e: { t: "on", track: 0, midi: 60, vel: 0.8 } });
 });
 
 test("wind back: play a while, hear it 5 minutes back alone, the leader brings everyone back, undo, and a reset keeps the ladder", async () => {
