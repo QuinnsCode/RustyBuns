@@ -66,6 +66,8 @@ export interface World {
   crew: Mate[];
   /** What the cable in your hands weighs on you now, kg: a roll you carry and laid cable you drag (cables.ts sets it). */
   cableKg?: number;
+  /** Your pace where you stand as a share of an open floor (a crowd in the way, src/crowd/); none: an open floor. */
+  underfoot?: (x: number, z: number) => number;
 }
 
 /** The garage: an amp head by the back-wall outlet, the 4x12 cab out on the driveway, a guitar in the corner, a powered
@@ -207,7 +209,7 @@ export function step(w: World, dt: number, input: Input) {
   you.yaw += input.turn;
   const mate = partner(w);
   const kg = i ? gearOf(i).kg + (w.held?.riders ?? []).reduce((s, r) => s + gear(w.items.find((o) => o.key === r.key)!.gear).kg, 0) : w.cableKg ?? 0;
-  you.speed = (i && wheeled(i.gear) ? pushSpeed(kg) : carrySpeed(kg / (w.held?.team ? 2 : 1), you.crouch)) * (w.level.ground === "sand" ? SAND : 1);
+  you.speed = (i && wheeled(i.gear) ? pushSpeed(kg) : carrySpeed(kg / (w.held?.team ? 2 : 1), you.crouch)) * (w.level.ground === "sand" ? SAND : 1) * (w.underfoot?.(you.x, you.z) ?? 1);
   const f = facing(you.yaw), len = Math.hypot(input.forward, input.right);
   if (len > 0) {
     const k = (you.speed * dt) / Math.max(1, len);
