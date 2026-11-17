@@ -40,6 +40,8 @@ export interface Level {
   items: Item[];
   /** Out of doors: no walls or ceiling, only the ground. */
   outdoor?: boolean;
+  /** The ground's height under (x, z) where it is not flat (the amphitheatre's benches): your eyes ride on it. */
+  floorAt?: (x: number, z: number) => number;
   /** Sand underfoot: every step is slower, and small wheels sink (only balloon tyres roll). */
   ground?: "sand";
   /** What the road case holds here, if not the usual three (cables.ts CASE_LOAD). */
