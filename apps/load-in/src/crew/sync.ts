@@ -9,7 +9,11 @@ import { tickDecks, type Decks } from "../audio/decks.ts";
  * The decks on this page, as the crew room sees them (venues/dj-booth-view.ts owns one): its deck state, whether you
  * want the DJ seat, and what the room last said: whether there is a room at all, and who is on the decks.
  */
-export type Booth = { decks: Decks; want: boolean; room: boolean; dj: { me: boolean; name: string } | null; note: string };
+export type Booth = {
+  decks: Decks; want: boolean; room: boolean; dj: { me: boolean; name: string } | null; note: string;
+  /** The dance floor's mood on this page, and the room's word on it when one has just come in (the page takes it, then clears it). */
+  mood: number; heardMood: number | null;
+};
 /** What the DJ's hands set (not where the track has got to): a change here is worth telling the room. */
 const hands = (d: Decks) => JSON.stringify([d.deck.map((k) => [k.playing, k.pitch]), d.fader, d.cross]);
 
@@ -76,7 +80,7 @@ export function outbox(w: World, s: Synced, c?: Cables, on?: ReadonlySet<string>
     if (booth.dj?.me && set !== s.sentDecks) {
       s.sentDecks = set;
       const d = booth.decks;
-      out.push({ t: "decks", deck: d.deck.map((k) => ({ playing: k.playing, pitch: k.pitch, beat: r3(k.beat) })), fader: [...d.fader], cross: d.cross });
+      out.push({ t: "decks", deck: d.deck.map((k) => ({ playing: k.playing, pitch: k.pitch, beat: r3(k.beat) })), fader: [...d.fader], cross: d.cross, mood: Math.round(booth.mood) });
     }
   }
   // The switches you threw (`on` is what is switched on, on your page).
@@ -131,6 +135,7 @@ export function hear(w: World, s: Synced, m: ServerMsg, c?: Cables, on?: Set<str
         m.decks.deck.forEach((k, i) => Object.assign(d.deck[i]!, k));
         m.decks.fader.forEach((v, i) => { d.fader[i] = v; });
         d.cross = m.decks.cross;
+        booth.heardMood = m.decks.mood;
         tickDecks(d, Math.max(0, m.clock - m.decks.at) / 1000);
       }
     }

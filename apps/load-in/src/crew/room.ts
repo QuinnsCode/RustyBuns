@@ -37,6 +37,8 @@ export type DjMsg = Of<typeof DjMsg>;
 const deckSet = () => ({
   deck: arr(obj({ playing: bool(), pitch: num(-8, 8), beat: num(0, 1e6) }), 2, { min: 2 }),
   fader: arr(num(0, 1), 4, { min: 4 }), cross: num(-1, 1),
+  /** The dance floor's mood on the DJ's page (audio/set-mood.ts), so a page that joins late starts where the room is. */
+  mood: num(0, 100, 50),
 });
 /** The decks as the DJ's page has them now: what plays, how fast, where in the track, and the mixer. */
 export const DecksMsg = obj({ t: oneOf(["decks"]), ...deckSet() });
@@ -188,7 +190,7 @@ export class Crew {
   /** The DJ's word on the decks, kept with the room's time (`now`, ms). Ignored from anyone else. */
   spin(id: string, m: DecksMsg, now: number): boolean {
     if (this.dj !== id) return false;
-    this.spun = { n: (this.spun?.n ?? 0) + 1, at: now, deck: m.deck, fader: m.fader, cross: m.cross };
+    this.spun = { n: (this.spun?.n ?? 0) + 1, at: now, deck: m.deck, fader: m.fader, cross: m.cross, mood: m.mood };
     return true;
   }
 

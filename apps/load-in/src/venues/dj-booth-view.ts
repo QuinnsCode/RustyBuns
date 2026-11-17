@@ -9,7 +9,10 @@ import { gearParts } from "@rustybuns/models/gear";
 import { type BoothJudged, DANCE, boothOf, judgeBoothCables } from "./dj-booth.ts";
 import { crowdOf, letIn, regions } from "../crowd/crowd.ts";
 import { crowdView } from "../crowd/crowd-view.ts";
-import { newSetMood, tickSetMood } from "../audio/set-mood.ts";
+import { HOT, newSetMood, tickSetMood } from "../audio/set-mood.ts";
+
+/** What both decks send to the master, added up. */
+const sum = (m: Mix) => Object.values(m.gain).reduce((s, g) => s + g, 0);
 import { rig } from "./dive-bar.ts";
 import type { Answer, World } from "../sim.ts";
 import type { Cables } from "../cables/cables.ts";
@@ -131,7 +134,7 @@ export function djBoothView(scene: THREE.Scene, hud: HTMLElement, getWorld: () =
   const people = crowdView(scene);
   let floor = newSetMood();
   /** The decks as the crew room sees them: alone (no room) the decks are yours; in a room, one DJ at a time. */
-  const shared: Booth = { decks, want: false, room: false, dj: null, note: "" };
+  const shared: Booth = { decks, want: false, room: false, dj: null, note: "", mood: 50, heardMood: null };
   /** Whether your hands may move the decks: always alone; in a room, when the seat is yours or free (touching them asks for it). */
   const mine = (): Answer => {
     if (!shared.room || shared.dj?.me) return { ok: true };
@@ -160,7 +163,10 @@ export function djBoothView(scene: THREE.Scene, hud: HTMLElement, getWorld: () =
       if (j.live && sent[0] + sent[1] > 0 && !crowdOf(w)) letIn(w, DANCE);
       const c = crowdOf(w);
       if (c) {
+        // In a crew room the DJ's page keeps the floor's mood; the others take it with each move of the DJ's hands.
+        if (shared.heardMood !== null) { floor = { ...floor, mood: shared.heardMood }; shared.heardMood = null; }
         floor = tickSetMood(floor, j.live ? sent : [0, 0], [bpmOf(decks, 1), bpmOf(decks, 2)], dt);
+        shared.mood = floor.mood;
         const doing = floor.mood >= 50 ? "dancing" as const : floor.mood >= 25 ? "thinning" as const : "leaving" as const;
         people.moods(regions(c, () => ({ soundcheck: null, full: null }), 0, 0).map((r) => ({ ...r, mood: Math.round(floor.mood), doing })));
       }
@@ -175,6 +181,7 @@ export function djBoothView(scene: THREE.Scene, hud: HTMLElement, getWorld: () =
       const lines = [
         `<b>DJ booth (${b.kind === "vinyl" ? "turntables" : "media players"})</b>`,
         deckLine(0), deckLine(1),
+        ...(sum(m) > HOT ? ['<span class="trip">Master in the red: pull a fader down</span>'] : []),
         ...(crowdOf(getWorld()) ? [`The floor: ${crowdOf(getWorld())!.people} in, ${floor.say}, mood ${Math.round(floor.mood)}`] : []),
         // In a crew room: who has the decks.
         ...(shared.room ? [shared.dj?.me ? '<span class="pass">You are on the decks</span>' : shared.dj ? `${esc(shared.dj.name || "Someone")} is on the decks` : "The decks are free: touch them to take them"] : []),
@@ -193,6 +200,8 @@ export function djBoothView(scene: THREE.Scene, hud: HTMLElement, getWorld: () =
       /** In a crew room: who is on the decks (null when the seat is free), and whether that is you. */
       shared: shared.room, dj: shared.dj?.name ?? null, onDecks: !shared.room || !!shared.dj?.me, seatNote: shared.note,
       fader: [...decks.fader], cross: decks.cross, mix: m.gain, meter: m.meter, hum: j.hum, distort: j.distort, live: j.live,
+      /** Whether the two decks together drive the master past its limiter (the mixer's red lights). */
+      clip: sum(m) > HOT,
       problems: j.problems.map((p) => p.message),
       /** The dance floor, once music reaches the speakers: who is in, and how they take the set. */
       floor: crowdOf(getWorld()) ? { people: crowdOf(getWorld())!.people, mood: Math.round(floor.mood), say: floor.say } : null,
