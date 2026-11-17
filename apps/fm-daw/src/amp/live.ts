@@ -2,6 +2,7 @@
 // settings in, a rig out (rebuilding only what changed), and the speaker limiter.
 import { AMPS, DEFAULT_ROOM, PEDALS, boardLinks, buildRig, deskRig, type PedalDef } from "../circuit/amps.ts";
 import { POWER_VOLTS, Rig, splitRig, type Mod, type Netlist, type RigSpec } from "@rustybuns/gear/circuit";
+import { MACHINES } from "../circuit/circuits.ts";
 import type { AmpSettings } from "./messages.ts";
 
 /** Volts at the speaker for full scale: the power stage's ceiling plus the cabinet's bumps. */
@@ -72,7 +73,8 @@ export function rigSpec(s: AmpSettings): { spec: RigSpec; shape: string; scale: 
   const front = s.board ? boardLinks(s.board) : null;
   const pedal = !front && def ? { def, drive: s.drive, swaps: s.swaps } : undefined;
   const base = s.direct ? deskRig(pedal) : buildRig(amp, s.knobs, pedal, { ...DEFAULT_ROOM, mic: s.mic });
-  const spec = { ...base, ...(front ? { links: [...front.links, ...base.links], blends: front.blends } : {}), loop: s.loop ?? [] };
+  // The loop machines' tubes and op-amp come from their boards (circuits/spring.tsx, tape.tsx).
+  const spec = { ...base, ...(front ? { links: [...front.links, ...base.links], blends: front.blends } : {}), loop: s.loop ?? [], machines: MACHINES };
   // A new shape (how many links, which run side by side) is a new chain; a split's blend is just set.
   const shape = `${s.direct ? "direct" : amp.id}|${front ? `${front.links.length}:${front.blends.map((b) => `${b.at}/${b.lanes.join(",")}`).join(";")}` : def?.id ?? ""}`;
   return { spec, shape, scale: s.direct ? LINE_SCALE : FULL_SCALE };

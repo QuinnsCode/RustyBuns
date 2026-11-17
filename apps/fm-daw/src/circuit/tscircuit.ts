@@ -7,7 +7,7 @@
 // `<inductor>`, `<potentiometer>` and `<transistor>` map straight to parts. Chips are
 // told apart by their pin labels: OUT, INP and INN make an op-amp (its supply pins
 // are ignored; the rails come from `rail`), and with IABC an OTA; PLATE, GRID and
-// CATHODE make a 12AX7; DRAIN, GATE and SOURCE a JFET; LEDA, LEDK, LDR1 and LDR2 a
+// CATHODE make a 12AX7 (another tube by `tubes`); DRAIN, GATE and SOURCE a JFET; LEDA, LEDK, LDR1 and LDR2 a
 // vactrol (an LED lighting an LDR); LDR1 and LDR2 alone a bare photocell under a lamp.
 // A net named in `supplies` gets a DC source to ground.
 // Knobs and part swaps reach the board by part name (`knobs`, `values`, `diodes`).
@@ -28,7 +28,7 @@
 // ground: name them in `acGround`. A part left with both ends on one node
 // (the bias divider, the supply caps) carries no signal and is dropped.
 import { arr, bool, check, int, num, obj, oneOf, opt, raw, str } from "@rustybuns/util/guard";
-import type { Netlist, Part } from "@rustybuns/gear/circuit";
+import type { Netlist, Part, TubeName } from "@rustybuns/gear/circuit";
 
 const Kind = obj({ type: str(80) });
 const Component = obj({
@@ -74,6 +74,8 @@ export interface BoardOptions extends ReadOptions {
   rail?: number;
   /** Transistors (by name, "Q1") that are germanium; the rest are silicon. */
   germanium?: string[];
+  /** Triode chips (by name) that aren't a 12AX7: `{ V1: "12AT7" }`. */
+  tubes?: Record<string, TubeName>;
   /** JFET chips (by name) that are P-channel; the rest are N. */
   pChannel?: string[];
   /** Each pot's turn by name, 0 to 1 (default 0.5). */
@@ -198,7 +200,7 @@ export const boardToNetlist = (json: unknown, o: BoardOptions = {}): Netlist => 
 /** A board already read (`readBoard`) as a netlist: the bench turns its knobs without reading the JSON again. */
 export function netlistOf(board: Board, o: BoardOptions = {}): Netlist {
   const named = new Set(board.parts.map((p) => p.name));
-  const lists = [o.values, o.diodes, o.moved, o.bjt].flatMap((r) => Object.keys(r ?? {}));
+  const lists = [o.values, o.diodes, o.moved, o.bjt, o.tubes].flatMap((r) => Object.keys(r ?? {}));
   for (const n of [...lists, ...(o.noisy ?? []), ...(o.linear ?? [])]) {
     if (!named.has(n)) throw new Error(`no part ${n} on this board (${[...named].join(", ")})`);
   }
@@ -222,6 +224,7 @@ export function netlistOf(board: Board, o: BoardOptions = {}): Netlist {
     } else if (p.kind === "Opamp") parts.push({ ...p, rail: o.linear?.includes(name) ? 0 : o.rail });
     else if (p.kind === "BJT") parts.push({ ...p, ge: o.germanium?.includes(name) ?? false, ...o.bjt?.[name] });
     else if (p.kind === "JFET") parts.push({ ...p, p: o.pChannel?.includes(name) ?? false });
+    else if (p.kind === "Triode" && o.tubes?.[name]) parts.push({ ...p, tube: o.tubes[name] });
     else parts.push(p);
   }
   for (const [net, volts] of Object.entries(o.supplies ?? {})) parts.push({ kind: "V", a: net, b: "gnd", volts });
