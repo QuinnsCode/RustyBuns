@@ -1,40 +1,90 @@
-// The turntable's page (see turntable.ts): one piece of gear on a neutral floor under a soft studio light, framed
-// to fill the picture. `window.turntable.show(id, angle)` sets it up and resolves once its textures have loaded.
+// The turntable's page (see turntable.ts): one piece of gear on a stage deck, lit as a photo of it would be: a real
+// room's light (a CC0 HDRI from Poly Haven, also the soft background), a key light with a soft shadow, and ambient
+// occlusion for the contact shadows and the creases. `window.turntable.show(id, angle)` sets it up and resolves once
+// its textures have loaded. `?hdri=0` falls back to three's RoomEnvironment and a flat backdrop (no download).
 import * as THREE from "three";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
+import { HDRLoader } from "three/examples/jsm/loaders/HDRLoader.js";
+import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
+import { GTAOPass } from "three/examples/jsm/postprocessing/GTAOPass.js";
+import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
+import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
+import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { GEAR_IDS, type GearId, gear, gearLook } from "../src/gear.ts";
-import { gearSurfaces } from "../src/surfaces.ts";
+import { surface, gearSurfaces } from "../src/surfaces.ts";
 
 const ANGLES = { front: [35, 16], side: [90, 10], back: [215, 18] } as const;
 type Angle = keyof typeof ANGLES;
 
-const size = Number(new URLSearchParams(location.search).get("size") ?? 768);
+const q = new URLSearchParams(location.search), size = Number(q.get("size") ?? 768), plain = q.has("plain"), hdri = q.get("hdri") !== "0";
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(1);
 renderer.setSize(size, size);
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.0;
+renderer.toneMappingExposure = 1.15;
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 document.body.style.margin = "0";
 document.body.appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0xb9bcc0);
 const pmrem = new THREE.PMREMGenerator(renderer);
-scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
-scene.environmentIntensity = 0.7;
-const key = new THREE.DirectionalLight(0xffffff, 1.6);
+const backdrop = 0x3b3d40;
+let lit: Promise<unknown> = Promise.resolve();
+if (hdri) {
+  lit = new HDRLoader().loadAsync("/hdri.hdr").then((t) => {
+    t.mapping = THREE.EquirectangularReflectionMapping;
+    scene.environment = pmrem.fromEquirectangular(t).texture;
+    scene.background = t;
+    scene.backgroundBlurriness = 0.35;
+    scene.backgroundIntensity = 0.45;
+  });
+} else {
+  scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+  scene.background = new THREE.Color(backdrop);
+}
+scene.environmentIntensity = 0.8;
+const key = new THREE.DirectionalLight(0xfff4e8, 1.8);
 key.castShadow = true;
 key.shadow.mapSize.set(2048, 2048);
-key.shadow.radius = 6;
+key.shadow.radius = 8;
 key.shadow.bias = -0.0004;
-scene.add(key, key.target);
-const floor = new THREE.Mesh(new THREE.PlaneGeometry(20, 20), new THREE.MeshStandardMaterial({ color: 0x8c8e91, roughness: 0.92 }));
-floor.rotation.x = -Math.PI / 2;
-floor.receiveShadow = true;
-scene.add(floor);
-const camera = new THREE.PerspectiveCamera(30, 1, 0.01, 50);
+key.shadow.normalBias = 0.01;
+const rim = new THREE.DirectionalLight(0xdfe8ff, 0.9);
+scene.add(key, key.target, rim, rim.target);
+
+// The stage deck: painted ply sheets, 1.22 by 2.44 m, with a 3 mm gap between them, fading into the room's haze. One
+// mesh, each sheet's grain shifted (UVs in metres, so the grain is at its real size), so no two sheets repeat.
+const deckLook = plain ? { material: new THREE.MeshStandardMaterial({ color: 0x2b2b2c, roughness: 0.8 }), ready: Promise.resolve() } : surface("ply", { base: "/textures/" });
+if (!plain) deckLook.material.color.setHex(0x34332f);
+deckLook.material.roughness = 0.75;
+const sheets: THREE.BufferGeometry[] = [];
+for (let i = -4; i <= 4; i++) for (let j = -3; j <= 3; j++) {
+  const g = new THREE.BoxGeometry(1.217, 0.02, 2.437), uv = g.getAttribute("uv"), pos = g.getAttribute("position"), nor = g.getAttribute("normal");
+  const du = ((i * 7 + j * 13) % 5) * 0.37, dv = ((i * 3 + j * 11) % 7) * 0.53;
+  for (let k = 0; k < uv.count; k++) {
+    const ny = Math.abs(nor.getY(k)), nx = Math.abs(nor.getX(k));
+    uv.setXY(k, du + (ny > 0.5 || nx < 0.5 ? pos.getX(k) : pos.getZ(k)), dv + (ny > 0.5 ? pos.getZ(k) : pos.getY(k)));
+  }
+  sheets.push(g.translate(i * 1.22 + 0.4, -0.01, j * 2.44 + 0.3));
+}
+const deck = new THREE.Mesh(mergeGeometries(sheets), deckLook.material);
+deck.receiveShadow = true;
+const gap = new THREE.Mesh(new THREE.PlaneGeometry(40, 40), new THREE.MeshStandardMaterial({ color: 0x050505, roughness: 1 }));
+gap.rotation.x = -Math.PI / 2;
+gap.position.y = -0.019;
+scene.add(deck, gap);
+const camera = new THREE.PerspectiveCamera(30, 1, 0.01, 60);
+
+const composer = new EffectComposer(renderer);
+composer.setPixelRatio(1);
+composer.setSize(size, size);
+composer.addPass(new RenderPass(scene, camera));
+const ao = new GTAOPass(scene, camera, size, size);
+ao.updateGtaoMaterial({ radius: 0.12, distanceExponent: 1.6, thickness: 1, scale: 1.1, samples: 16 });
+ao.blendIntensity = 0.85;
+composer.addPass(ao);
+composer.addPass(new OutputPass());
 
 let look = gearLook(), ready: Promise<unknown> = Promise.resolve();
 let shown: THREE.Object3D | null = null;
@@ -53,19 +103,27 @@ async function show(id: GearId, angle: Angle) {
   camera.position.set(c.x + Math.sin(az) * Math.cos(el) * dist, c.y + Math.sin(el) * dist, c.z + Math.cos(az) * Math.cos(el) * dist);
   camera.lookAt(c);
   camera.updateProjectionMatrix();
-  // the key light sits up and to the camera's left, so faces read and the shadow falls behind and right
+  // the key sits up and to the camera's left, so faces read and the shadow falls behind and right; the rim comes from
+  // behind on the other side, so a black box's edges part from the dark room
   key.position.set(c.x + Math.sin(az + 0.7) * r * 6, c.y + r * 8, c.z + Math.cos(az + 0.7) * r * 6);
   key.target.position.copy(c);
+  rim.position.set(c.x + Math.sin(az + Math.PI - 0.9) * r * 6, c.y + r * 4, c.z + Math.cos(az + Math.PI - 0.9) * r * 6);
+  rim.target.position.copy(c);
   const s = key.shadow.camera as THREE.OrthographicCamera;
   s.left = s.bottom = -r * 2; s.right = s.top = r * 2; s.near = 0.1; s.far = r * 20; s.updateProjectionMatrix();
-  await ready;
+  scene.fog = new THREE.Fog(backdrop, dist + r * 2, dist + r * 14);
+  ao.updateGtaoMaterial({ radius: Math.max(0.05, r * 0.25) });
+  await Promise.all([ready, lit, deckLook.ready]);
+  // count the gear's own triangles and draws on a plain render, then take the picture through the AO
   renderer.render(scene, camera);
+  const info = { triangles: renderer.info.render.triangles, calls: renderer.info.render.calls };
+  composer.render();
   await new Promise(requestAnimationFrame);
-  renderer.render(scene, camera);
-  return { id, angle, triangles: renderer.info.render.triangles, calls: renderer.info.render.calls };
+  composer.render();
+  return { id, angle, ...info };
 }
 
 // `?plain=1` is the flat look (the `low` quality setting); otherwise the material kit from the served textures/.
-if (!new URLSearchParams(location.search).has("plain")) { const kit = gearSurfaces({ base: "/textures/" }); setLook(kit.look, kit.ready); }
+if (!plain) { const kit = gearSurfaces({ base: "/textures/" }); setLook(kit.look, kit.ready); }
 
-Object.assign(window, { turntable: { ids: GEAR_IDS, angles: Object.keys(ANGLES), show, ready: true } });
+Object.assign(window, { turntable: { ids: GEAR_IDS, angles: Object.keys(ANGLES), show, ready: true, look: () => look, ao } });
