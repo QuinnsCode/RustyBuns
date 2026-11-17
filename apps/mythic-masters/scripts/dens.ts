@@ -1,7 +1,7 @@
 // Writes src/net/dens.json: who may live in each den, for the room to check a page's word against (#3700). The world's
 // owner grid takes a quarter of a second to build, too slow for a Durable Object's cold start, so it is cut down here
 // to what a den needs: the region a wild den's cell belongs to, each region's pools, sections and mythic, each
-// contract's creature, where each placed den stands (stones, arenas, trail dens, lairs), and the spots a page may jump
+// contract's creature and where its signs lie, where each placed den stands (stones, arenas, trail dens, lairs), and the spots a page may jump
 // to (every arena's doorstep and every campfire). test/dens.test.ts fails when the world moves and this file wasn't rerun.
 //
 //   bun scripts/dens.ts
@@ -62,12 +62,15 @@ export function denTable() {
     if (!near(at, w.x, w.z)) at.push(...xz(w));
   }
   for (const [id, h] of HUNTS) places[`hunt:${id}`] = xz(h.lair);
+  // Each contract's signs and then its lair, as [x, z, ...]: a sign is believed read only on the way on from it.
+  const signs: Record<string, number[]> = {};
+  for (const [id, h] of HUNTS) signs[id] = [...h.clues.flatMap((c) => xz(c.at)), ...xz(h.lair)];
   // Where travel lands you: an arena's doorstep (travel, or sent home after a loss), the trailhead past the sections
   // you have cleared (where either puts you on a trail you haven't finished), and beside a campfire (fast travel), each
   // with its region, as [x, z, region, ...]: a jump is believed only into a region the page says it has opened.
   const heads = [...TRAILS.keys()].flatMap((n) => Array.from({ length: SECTIONS }, (_, k) => trailhead(n, k)).flatMap((p) => (p ? [[...xz(p), n]] : [])));
   const land = [...REGIONS.map((g) => [...xz(spawn(g.n)), g.n]), ...heads, ...ALL.filter((p) => p.kind === "fire").map((p) => [...xz({ x: p.x + 2, z: p.z }), p.n])].flat();
-  return { cols, owner, pools, trail, mythic, hunts, places, land };
+  return { cols, owner, pools, trail, mythic, hunts, signs, places, land };
 }
 
 if (import.meta.main) {
