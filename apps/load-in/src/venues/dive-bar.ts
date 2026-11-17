@@ -74,7 +74,7 @@ function standUnder(w: World, i: Item): Item | null {
 /** After a put-down or a stand moves: a top set on a stand sits on its pole at its height. */
 export function settle(w: World) {
   for (const i of w.items) {
-    if (i.key === w.held?.key || i.gear === "stand-tripod") continue;
+    if (i.key === w.held?.key || i.gear === "stand-tripod" || i.hung) continue;
     const s = standUnder(w, i);
     if (s) Object.assign(i, { x: s.x, z: s.z, y: s.y + standHeight(w, s.key) });
   }

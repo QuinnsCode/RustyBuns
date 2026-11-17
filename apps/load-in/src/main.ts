@@ -19,6 +19,8 @@ import { PARK, parkState, pour, push } from "./venues/park.ts";
 import { type ParkView, parkView } from "./venues/park-view.ts";
 import { ARENA, type Leg, arenaState, fly, lower, rack, reserved, send, setHang, setLeg, setSub, unrack, wait as idle } from "./venues/arena.ts";
 import { type ArenaView, arenaView } from "./venues/arena-view.ts";
+import * as arenaSim from "./venues/small-arena.ts";
+import { type ArenaView as SmallArenaView, arenaView as smallArenaView } from "./venues/small-arena-view.ts";
 import { hasSwitch, hear, type Switches } from "./audio/hear.ts";
 import { soundSystem } from "./audio/play.ts";
 import { currentDial, setDial } from "./assists.ts";
@@ -39,7 +41,7 @@ const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as 
 const canvas = $<HTMLCanvasElement>("stage");
 const KEY = "load-in.controls";
 
-const LEVELS: Record<string, Level> = { garage: GARAGE, "dive-bar": DIVE_BAR, "bigger-bar": BIGGER_BAR, park: PARK, arena: ARENA };
+const LEVELS: Record<string, Level> = { garage: GARAGE, "dive-bar": DIVE_BAR, "bigger-bar": BIGGER_BAR, park: PARK, arena: ARENA, "small-arena": arenaSim.SMALL_ARENA };
 const levelFrom = (name: string | null) => LEVELS[name ?? ""] ?? GARAGE;
 /** The tour between nights; a page opened on ?level= plays that level and leaves the tour alone. */
 let tour: Tour = loadTour();
@@ -125,6 +127,8 @@ scene.add(highlight);
 let bar: BarView | ParkView | null = null;
 let big: BiggerBarView | null = null;
 let ar: ArenaView | null = null;
+/** The small arena's view (`ar` is the big arena's). */
+let arena: SmallArenaView | null = null;
 /** A piece's model (a stand at `height`), or a plain box at its catalog size if @rustybuns/models has none. */
 function modelOf(id: string, height?: number): THREE.Object3D {
   if (cable.hasModel(id)) return model(id, { look, height });
@@ -146,6 +150,8 @@ function buildItems() {
   big = world.level === BIGGER_BAR ? biggerBarView(scene, $("hud"), () => world, () => cables) : null;
   ar?.dispose();
   ar = world.level === ARENA ? arenaView(scene, $("hud"), () => world) : null;
+  arena?.dispose();
+  arena = world.level === arenaSim.SMALL_ARENA ? smallArenaView(scene, $("hud"), () => world) : null;
 }
 buildItems();
 const ropes = cableView(scene);
@@ -186,13 +192,15 @@ function draw() {
     if (tall && meshes.get(i.key)!.userData.size[1] !== tall) { scene.remove(meshes.get(i.key)!); const n = modelOf(i.gear, tall); meshes.set(i.key, n); scene.add(n); }
     const m = meshes.get(i.key)!, p = i === held && hp ? hp : i;
     m.position.set(p.x, p.y, p.z);
-    m.rotation.y = p.rot;
+    // A speaker tilted (or a line array box at its splay) leans forward or back as it faces.
+    m.rotation.set(i === held ? 0 : -(rig(world).tilt[i.key] ?? 0), p.rot, 0, "YXZ");
   }
   const end = cable.inHand(cables), jack = cable.aimedJack(world);
   highlight.visible = !!at && !held && !end && !jack;
   if (highlight.visible && at) { const [w, h, d] = dims(at); highlight.position.set(at.x, at.y, at.z); highlight.rotation.y = at.rot; highlight.scale.set(w + 0.04, h + 0.04, d + 0.04); }
   bar?.update();
   ar?.update();
+  arena?.update();
   ropes.update(cables);
   mates.update(world.crew);
   glow.update(cable.glowing(world, cables), world.t);
@@ -207,7 +215,7 @@ function draw() {
   $("next").textContent = next ? next.text : "";
   $("next").hidden = !next;
   const g = held ? gear(held.gear) : null;
-  $("hint").textContent = phase !== "play" ? "" : performance.now() < flash.until ? flash.text : (big?.hint() ?? ar?.hint() ?? hint(at, jack));
+  $("hint").textContent = phase !== "play" ? "" : performance.now() < flash.until ? flash.text : (arena?.hint() ?? big?.hint() ?? ar?.hint() ?? hint(at, jack));
   const team = world.held?.team ? partner(world) : null;
   $("carry").textContent = phase !== "play" ? "" : g && world.held?.team ? (team ? `${g.what} with ${team.name}, ${you.speed.toFixed(1)} m/s` : `One end of the ${g.what}: someone take the other`)
     : g ? `${g.what}, ${g.kg} kg, ${you.speed.toFixed(1)} m/s`
@@ -248,6 +256,7 @@ document.addEventListener("keydown", (e) => {
   if (phase !== "play" || e.repeat) return;
   if (e.code === "Enter" && (bar || big)) return void openDoors();
   if (!world.held && !cable.inHand(cables) && bar?.key(e.code)) return;
+  if (!cable.inHand(cables) && arena?.key(e.code, (why) => { flash = { text: why, until: performance.now() + 1800 }; })) return;
   if (!world.held && !cable.inHand(cables) && ar?.key(e.code)) return;
   if (big?.key(e.code)) return;
   if (e.code === "KeyF") grab();
@@ -305,7 +314,7 @@ function flip() {
 
 /** What you hear now: in the dive bar, through its tilts and master fader. */
 /** What you hear: a speaker plays when it's switched on and, once a cable goes into it, when the patch feeds it. */
-const heard = () => hear(world, switchedOn, ar ? ar.fed() : big ? big.fed() : cable.fedBy(world, cables), undefined, bar ? rig(world) : (ar ?? big)?.rig());
+const heard = () => hear(world, switchedOn, arena ? arena.fed : ar ? ar.fed() : big ? big.fed() : cable.fedBy(world, cables), undefined, bar || arena ? rig(world) : (ar ?? big)?.rig());
 
 function play() {
   // On tour, Play goes to the booked gig: a fresh load once last night is settled.
@@ -315,7 +324,7 @@ function play() {
 
 /** Enter: doors on the venue's own score; at the booked gig the night is settled (pay less rent, the next booking) and home base shows how it went. */
 function openDoors() {
-  const s = bar?.doors() ?? big?.doors() ?? null;
+  const s = bar?.doors() ?? big?.doors() ?? arena?.doors() ?? null;
   if (!s || settled || asked || world.level !== bookedRung(tour).level) return s;
   settled = true;
   tour = record(tour, world.level, s).tour;
@@ -411,7 +420,7 @@ async function boot() {
 declare global { interface Window { loadIn: typeof harness } }
 /** The harness (scripts/probe.ts HANDLES): the level as data, and the moves a test or an agent makes without pointer lock. */
 const harness = {
-  state: () => ({ phase, tour: { cash: tour.cash, truck: tour.truck, booked: tour.booked, nights: tour.nights.length, settled }, next: nextStep(world, cables, switchedOn), dial: currentDial(), doors: doors(world.level.name, world.t), ...snapshot(world), ...cable.cableState(world, cables), sound: { up: sound.up, on: [...switchedOn], ...heard() }, ...(big ? { biggerBar: big.state() } : {}), ...(ar ? { arena: { ...arenaState(world), heat: ar.heatOn } } : {}), strike: strikeState(world, cables), ...(bar ? { bar: { ...(world.level === PARK ? parkState(world, cables) : barState(world)), heat: bar.heatOn, ...("band" in bar ? { band: bar.band } : {}) } } : {}), signedIn: !!login(), party: crew.code ? { code: crew.code, members: crew.members.length, room: crew.room || null, seat: crew.seat >= 0 ? crew.seat : null } : null, crewRoom: online ? { room: online.room, status: online.status, note: online.note } : null }),
+  state: () => ({ phase, tour: { cash: tour.cash, truck: tour.truck, booked: tour.booked, nights: tour.nights.length, settled }, next: nextStep(world, cables, switchedOn), dial: currentDial(), doors: doors(world.level.name, world.t), ...snapshot(world), ...cable.cableState(world, cables), sound: { up: sound.up, on: [...switchedOn], ...heard() }, ...(big ? { biggerBar: big.state() } : {}), ...(ar ? { arena: { ...arenaState(world), heat: ar.heatOn } } : {}), ...(arena ? { smallArena: { ...arenaSim.arenaState(world), heat: arena.heatOn } } : {}), strike: strikeState(world, cables), ...(bar ? { bar: { ...(world.level === PARK ? parkState(world, cables) : barState(world)), heat: bar.heatOn, ...("band" in bar ? { band: bar.band } : {}) } } : {}), signedIn: !!login(), party: crew.code ? { code: crew.code, members: crew.members.length, room: crew.room || null, seat: crew.seat >= 0 ? crew.seat : null } : null, crewRoom: online ? { room: online.room, status: online.status, note: online.note } : null }),
   /** Join a crew room by code (what the party's Start does), on this level. */
   crew: (room: string) => crewRoom(room.toUpperCase()),
   /** Turn the cozy-to-sim dial: "cozy", "crew" or "sim". */
@@ -473,7 +482,7 @@ const harness = {
   raise: (key: string, height: number) => raise(world, key, height),
   /** Dive bar: the master fader, dB. */
   master: (db: number) => master(world, db),
-  heat: (on: boolean, band?: "high" | "low") => (bar && "band" in bar ? bar.setHeat(on, band) : bar?.setHeat(on)),
+  heat: (on: boolean, band?: "high" | "low") => (bar && "band" in bar ? bar.setHeat(on, band) : (bar ?? arena)?.setHeat(on)),
   /** Arena: the heat map on or off. */
   arenaHeat: (on: boolean) => ar?.setHeat(on),
   /** Dive bar, bigger bar or park: open the doors; the final score (at the booked gig, the night is settled into the tour). */
@@ -484,7 +493,19 @@ const harness = {
   tour: () => tour,
   /** Buy a piece of gear (by gear id) or a truck ("van", "box-truck") at home base. */
   buy: (id: string): Answer => { const r = buy(tour, id); if (r.ok) { tour = r.tour; saveTour(tour); tourView?.update(); } return r.ok ? { ok: true } : { ok: false, why: r.why }; },
-  /** Load a level by name (garage, dive-bar, bigger-bar, park, arena). */
+  /** Small arena, under a point: pin the box you hold under its hang, or take the bottom box off. */
+  hangBox: (point: string) => arenaSim.hang(world, point),
+  unhangBox: (point: string) => arenaSim.unhang(world, point),
+  /** Small arena: the splay calculator for a point flown at `trim` metres (its planned trim if left out). */
+  calc: (point: string, trim?: number) => arenaSim.calc(world, point, trim),
+  /** Small arena, under a point on the deck: the top box's angle and the pins, degrees. */
+  pin: (point: string, tilt: number, splays: number[]) => arenaSim.pin(world, point, tilt, splays),
+  /** Small arena, under a point: the rigger's check, its load against the steel's limit. */
+  check: (point: string) => arenaSim.check(world, point),
+  /** Small arena, standing clear: run a point's motor to `trim` metres, or land it on the deck. */
+  flyTo: (point: string, trim: number) => arenaSim.fly(world, point, trim),
+  land: (point: string) => arenaSim.land(world, point),
+  /** Load a level by name (garage, dive-bar, bigger-bar, park, arena, small-arena). */
   level: (name: string) => load(levelFrom(name)),
   /** Turn what you hold a 15 degree step: -1 left, 1 right. */
   turn: (dir: number) => turnHeld(world, dir),

@@ -13,6 +13,8 @@ export const VENUES: Record<string, { window: number; fee: number; curfew: numbe
   park: { window: 720, fee: 400, curfew: 900, fine: 75 },
   // The arena: sixteen boxes off the truck and flown, so the crew needs its time. No load-out here yet (no truck in the level).
   arena: { window: 1800, fee: 1500, curfew: null, fine: 0 },
+  // The small arena: four hangs, each box carried to its point and every motor at 4 m a minute.
+  "small-arena": { window: 1800, fee: 1500, curfew: null, fine: 0 },
 };
 const FALLBACK = { window: 300, fee: 0, curfew: null, fine: 0 };
 
