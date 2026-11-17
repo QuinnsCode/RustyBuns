@@ -78,6 +78,8 @@ export function connect(opts: {
   onRewound?(ago: Rung, at: number, p: Project | null): void;
   /** Who this is, said on every open so the room knows the chat's people. */
   hello(): { key: string; name: string };
+  /** An eqosys token, asked on every try (it lasts minutes): the Worker seats you under your eqosys id. Null plays as a guest. */
+  token?: () => string | null;
 }): Net {
   const room = roomName();
   const url = new URL(`ws${location.protocol === "https:" ? "s" : ""}://${location.host}/ws`);
@@ -89,7 +91,13 @@ export function connect(opts: {
   let locked = false;
   let full: Full | null = null;
   opts.onStatus({ state: "connecting", peers });
-  const link = connectSocket<ServerMsg | ChatServer | GrantServer, ClientMsg | ChatClient | GrantClient>(url, {
+  const link = connectSocket<ServerMsg | ChatServer | GrantServer, ClientMsg | ChatClient | GrantClient>(() => {
+    const t = opts.token?.();
+    if (!t) return url;
+    const signed = new URL(url);
+    signed.searchParams.set("token", t);
+    return signed;
+  }, {
     decode: (v) => decodeServer(v) ?? decodeChatServer(v) ?? decodeGrantServer(v), queue: 200,
     onMessage: (m) => {
       if (m.t === "snapshot") { opts.onSnapshot(m.project); opts.onStatus({ state: "online", peers, floor, locked }); }

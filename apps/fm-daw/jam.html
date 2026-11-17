@@ -14,9 +14,35 @@
   </div>
   <section id="menu">
     <h1>Qollab Studio</h1>
-    <p>The live room: the kit, the keys and a bass rig, a vocal booth in the corner, and the desk behind the control room's glass. Walk up to an instrument and sit, and your keys play its track in the sesh, so everyone in the room hears it.</p>
-    <p class="keys">WASD walk, mouse look. Space or click sits you at the spot in front of you, and again stands you up. Seated, A to ' are notes (Z / X octave), or play a MIDI keyboard. V switches the camera. Esc lets go of the mouse.</p>
-    <p><button id="play" type="button">Walk in</button> <button id="look" type="button" class="ghost">New look</button></p>
+    <div id="door-out" hidden>
+      <p id="invited" hidden></p>
+      <p>Sign in with eqosys to make a room and jam in it with friends, wearing your own character.</p>
+      <p class="row"><button id="sign-in" type="button" class="go">Sign in with eqosys</button></p>
+      <p id="door-error" class="keys" hidden></p>
+    </div>
+    <div id="door-lobby" hidden>
+      <div class="me">
+        <canvas id="me-look" width="96" height="132" aria-label="Your character"></canvas>
+        <div>
+          <b id="me-name"></b>
+          <p id="me-from" class="keys"></p>
+          <p class="row"><button id="look" type="button" class="ghost">New look</button><button id="sign-out" type="button" class="ghost">Sign out</button></p>
+        </div>
+      </div>
+      <form id="make" class="row">
+        <input id="room-name" maxlength="40" placeholder="Name your room" aria-label="Room name" autocomplete="off" />
+        <select id="room-studio" aria-label="Studio"></select>
+        <button type="submit" class="go">Make a room</button>
+      </form>
+      <h2>Your rooms</h2>
+      <ul id="rooms"></ul>
+    </div>
+    <div id="door-room" hidden>
+      <h2 id="room-title"></h2>
+      <p>The live room: the kit, the keys and a bass rig, a vocal booth in the corner, and the desk behind the control room&#39;s glass. Walk up to an instrument and sit, and your keys play its track in the sesh, so everyone in the room hears it.</p>
+      <p class="keys">WASD walk, mouse look. Space or click sits you at the spot in front of you, and again stands you up. Seated, A to &#39; are notes (Z / X octave), or play a MIDI keyboard. V switches the camera. Esc lets go of the mouse.</p>
+      <p class="row"><button id="play" type="button" class="go">Walk in</button><button id="invite" type="button" class="ghost">Copy invite link</button><a id="lobby" href="/jam.html" class="ghost">Lobby</a></p>
+    </div>
   </section>
 </main>
 <script type="module" src="/src/studio/main.ts"></script>
