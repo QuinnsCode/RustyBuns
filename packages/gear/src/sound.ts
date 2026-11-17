@@ -50,7 +50,7 @@ export function offAxisLoss(s: SpeakerSpec, h: number, v: number): number {
 }
 
 /** Angles from a source's axis to a point (radians) and the distance (metres). */
-export function aimTo(src: Source, p: Vec3): { h: number; v: number; d: number } {
+export function aimTo(src: Pick<Source, "pos" | "yaw" | "pitch">, p: Vec3): { h: number; v: number; d: number } {
   const dx = p.x - src.pos.x;
   const dy = p.y - src.pos.y;
   const dz = p.z - src.pos.z;

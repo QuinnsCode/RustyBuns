@@ -15,6 +15,8 @@ export const VENUES: Record<string, { window: number; fee: number; curfew: numbe
   arena: { window: 1800, fee: 1500, curfew: null, fine: 0 },
   // The small arena: four hangs, each box carried to its point and every motor at 4 m a minute.
   "small-arena": { window: 1800, fee: 1500, curfew: null, fine: 0 },
+  // The show: the rig is up, so the clock is the minutes to set the desk before the band walks on.
+  show: { window: 120, fee: 300, curfew: null, fine: 0 },
 };
 const FALLBACK = { window: 300, fee: 0, curfew: null, fine: 0 };
 
