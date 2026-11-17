@@ -484,6 +484,9 @@ impl Circuit {
     }
 
     /// Turns pot `i` (in netlist order) to `at`, 0 to 1 (mna.ts `setPot`): it glides there over about 10 ms.
+    /// How big the solve is: the unknowns (nodes and branch currents), and the nonlinear ports Newton iterates over.
+    pub fn shape(&self) -> (usize, usize) { (self.size, self.k) }
+
     pub fn set_pot(&mut self, i: usize, at: f64) {
         if let Some(p) = self.pots.get_mut(i) { p.to = at.clamp(0.0, 1.0); }
     }
