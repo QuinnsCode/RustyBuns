@@ -1,6 +1,10 @@
-# Load In
+# Sound Guy Simulator
 
 > **What it proves:** a first-person roadie sim on real numbers: you carry the gear in one piece at a time, at a pace set by its weight (a 40 kg cab is a shuffle), and set it down on the floor or stacked on another piece. Cables come out of the road case and drag behind you as a rope at their real length; a cable across a walkway is a trip hazard until a ramp goes over it. Speakers first; the plan is in #4849 and `notes/game-ideas/3-studio-and-roadie.md`.
+
+Until 2026-11-17 this was Load In; the folder, the `loadIn` handle and the deploy keep that name. The build order is #5029.
+
+**The cable feel test** (`feel.html`: `bun run dev`, then `/feel.html`): one room, a sound board, an amp rack, a wedge, a mic and four rolls of cable at their real weight (mic 0.06, speaker 0.21, feeder 1.1 kg/m). Plug a roll's end in, bowl the roll and it pays out behind it: a 16.5 kg feeder dies in a few metres, a mic cable runs the room. Dragging laid cable slows you by what it weighs. The sim is `src/cables/roll.ts`; `window.feel` plays it without a mouse (`bun run probe load-in /feel.html --js "feel.state()"`).
 
 ## Run it
 

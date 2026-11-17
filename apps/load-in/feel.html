@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<!--page-->
+<title>Cable Feel Test</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+  /* One screen: the room fills it, a job sheet top left, what is in your hands along the bottom. A stage at load-in, so one dark look. */
+  :root {
+    color-scheme: dark;
+    --deck: #10141c; --panel: rgba(14, 18, 27, .84); --line: #2c3545; --chalk: #f2ede4; --dim: #a3acba;
+    --gaff: #ffb224; --live: #53d98a;
+    --ui: "Barlow", system-ui, sans-serif; --stencil: "Barlow Condensed", "Arial Narrow", system-ui, sans-serif;
+  }
+  [hidden] { display: none !important; }
+  html, body { height: 100%; }
+  body { margin: 0; overflow: hidden; background: var(--deck); color: var(--chalk); font: 15px/1.4 var(--ui); }
+  #room { position: relative; width: 100%; height: 100%; }
+  #stage { width: 100%; height: 100%; display: block; touch-action: none; }
+  #hud { position: absolute; inset: 0; pointer-events: none; padding-block: 12px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); display: grid; grid-template-rows: auto 1fr auto; }
+  #sheet { justify-self: start; background: var(--panel); border: 1px solid var(--line); border-left: 4px solid var(--gaff); padding: 8px 14px 10px; max-width: min(19rem, 100%); }
+  #sheet h2 { margin: 0 0 4px; font: 600 13px var(--stencil); letter-spacing: .14em; text-transform: uppercase; color: var(--gaff); }
+  #list { margin: 0; padding: 0; list-style: none; display: grid; gap: 2px; font-size: 14px; }
+  #list li::before { content: ""; display: inline-block; width: 9px; height: 9px; margin-right: 8px; border: 1.5px solid var(--dim); border-radius: 50%; }
+  #list li.ok { color: var(--live); }
+  #list li.ok::before { background: var(--live); border-color: var(--live); }
+  #cross { align-self: center; justify-self: center; width: 6px; height: 6px; border-radius: 50%; background: var(--chalk); opacity: .8; }
+  #foot { display: grid; gap: 4px; justify-items: center; text-align: center; text-shadow: 0 1px 3px #000; }
+  #hint { margin: 0; font-size: 18px; font-weight: 600; min-height: 1.4em; }
+  #said { margin: 0; color: var(--dim); min-height: 1.4em; }
+  #weight { margin: 0; font: 600 20px var(--stencil); letter-spacing: .04em; font-variant-numeric: tabular-nums; }
+  #power { width: min(260px, 70%); height: 10px; border: 1px solid var(--chalk); background: linear-gradient(90deg, var(--gaff) calc(var(--p, 0) * 100%), transparent 0); }
+  #done { margin: 0; font: 600 26px var(--stencil); letter-spacing: .08em; text-transform: uppercase; color: var(--live); }
+  #pad { display: none; gap: 8px; pointer-events: auto; }
+  @media (pointer: coarse) { #pad { display: flex; } }
+  button { font: 600 15px var(--ui); color: var(--chalk); background: #1b2230; border: 1px solid var(--line); border-radius: 6px; padding: 10px 14px; }
+  button:focus-visible { outline: 2px solid var(--gaff); outline-offset: 2px; }
+  #menu { position: absolute; inset: 0; display: grid; place-content: center; justify-items: start; gap: 10px; background: rgba(10, 13, 19, .88); padding-left: max(24px, env(safe-area-inset-left, 0px)); padding-right: max(24px, env(safe-area-inset-right, 0px)); }
+  #menu > * { max-width: 34rem; margin: 0; }
+  #menu h1 { font: 600 clamp(34px, 7vw, 56px)/1 var(--stencil); letter-spacing: .02em; text-transform: uppercase; text-wrap: balance; }
+  #menu .eyebrow { font: 600 13px var(--stencil); letter-spacing: .16em; text-transform: uppercase; color: var(--gaff); }
+  #menu table { border-collapse: collapse; font-variant-numeric: tabular-nums; }
+  #menu td { padding: 2px 18px 2px 0; }
+  #menu td:first-child { color: var(--dim); }
+  #menu .keys { color: var(--dim); }
+  #play { background: var(--gaff); color: #1a1408; border-color: var(--gaff); font-size: 17px; padding: 12px 28px; }
+</style>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;600&family=Barlow+Condensed:wght@600&display=swap">
+<!--/page-->
+</head>
+<body>
+<!--page-->
+<div id="room">
+  <canvas id="stage" aria-label="A room with a stage, a sound board, an amp rack and four rolls of cable"></canvas>
+  <div id="hud">
+    <div id="sheet"><h2>Patch list</h2><ul id="list"></ul></div>
+    <div id="cross"></div>
+    <div id="foot">
+      <p id="done" hidden>The wedge is live</p>
+      <p id="hint"></p>
+      <div id="power" hidden></div>
+      <p id="said"></p>
+      <p id="weight"></p>
+      <div id="pad">
+        <button id="t-use" type="button">Grab / plug</button>
+        <button id="t-bowl" type="button">Hold to bowl</button>
+        <button id="t-48" type="button">48 V</button>
+        <button id="t-reset" type="button">Reset</button>
+      </div>
+    </div>
+  </div>
+  <section id="menu">
+    <p class="eyebrow">Sound Guy Simulator, feel test</p>
+    <h1>Bowl the cable out</h1>
+    <p>Pick up a roll, plug its end in where the run starts, bowl the roll toward where it ends, then carry what is left and plug that in. Power first, then signal.</p>
+    <table>
+      <tr><td>Power feeder</td><td>15 m</td><td>16.5 kg</td></tr>
+      <tr><td>Speaker cable</td><td>10 m</td><td>2.1 kg</td></tr>
+      <tr><td>Mic cable</td><td>15 m</td><td>0.9 kg</td></tr>
+    </table>
+    <p class="keys">WASD walk. Click the room to look (or drag). F grabs, plugs and puts down. Hold the mouse or Space to wind up, let go to bowl. P at the board for 48 V. R starts over. On a phone: left thumb walks, right thumb looks.</p>
+    <button id="play" type="button">Start the load-in</button>
+  </section>
+</div>
+<script type="module" src="/src/feel/main.ts"></script>
+<!--/page-->
+</body>
+</html>
