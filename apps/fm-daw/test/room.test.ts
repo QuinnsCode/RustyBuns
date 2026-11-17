@@ -71,7 +71,8 @@ test("cable gear into the desk's track inserts: Q Tape on track 1, Q Squeeze int
 
   // Track 1: send into the tape echo, the tape back into the return. Played straight into the desk: no amp, no cab.
   cable("desk", "send-1", "tape", "in");
-  expect(listen(r.studio.patch, 2)).toMatchObject({ playing: false, problems: ["nothing plugged into FM DAW desk's return-1"] });
+  // The insert's problem comes first, then the cab's (nothing in it yet).
+  expect(listen(r.studio.patch, 2)).toMatchObject({ playing: false, problems: ["nothing plugged into FM DAW desk's return-1", "nothing plugged into 2x12 cab"] });
   cable("tape", "out", "desk", "return-1");
   const tape = listen(r.studio.patch, 2);
   expect(tape).toMatchObject({ playing: true, chain: ["desk", "tape", "desk"], running: ["tape"], problems: [] });
