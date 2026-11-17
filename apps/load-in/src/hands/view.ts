@@ -5,7 +5,7 @@
 // UVs run as one clean rectangle, round the arm by wrist to elbow, for the tattoos of #5029's step 11.
 import * as THREE from "three";
 import { HandSolver, gripFor, type HandPose, type What } from "./grip.ts";
-import { type Box, type Frame, type Side, carryFrames, elbow, viewFrame } from "./place.ts";
+import { type Box, type Frame, type Side, carryFrames, elbow, showFrame, viewFrame } from "./place.ts";
 import { FINGERS, FOREARM, HAND, PALM, type V3 } from "./skeleton.ts";
 
 /** What your hands are doing: each hand's grip, the weight in them, and if it's a carry, the box; a cable end's lead. */
@@ -17,6 +17,8 @@ export type Hold = {
   carry?: Box;
   /** where the cable leaving your fist goes (world space), and its colour */
   lead?: { at: V3; color: number };
+  /** looking at your arms: both forearms raised into view (empty hands only) */
+  show?: boolean;
 };
 
 const SKIN = 0xb57a58;
@@ -72,10 +74,12 @@ export function handsView(scene: THREE.Scene, camera: THREE.Camera) {
   /** The forearm's skin: its `map` is the tattoo slot, empty until a tattoo is put there. */
   const arm = new THREE.MeshStandardMaterial({ color: SKIN, roughness: 0.66, metalness: 0 });
   arm.userData.slot = "tattoo";
+  /** The left forearm has its own sheet, so each arm carries its own ink. */
+  const armLeft = arm.clone();
   // A tapered tube, wrist (v 0) to elbow (v 1), U once round: an unwrapped rectangle. Drawn wider across than deep, as a forearm is.
   const forearmGeo = new THREE.CylinderGeometry(FOREARM.elbow, FOREARM.wrist, 1, 20, 1, true).translate(0, 0.5, 0);
   const sides = ([1, -1] as const).map((side) => {
-    const h = handMesh(side, skin), forearm = new THREE.Mesh(forearmGeo, arm);
+    const h = handMesh(side, skin), forearm = new THREE.Mesh(forearmGeo, side === 1 ? arm : armLeft);
     forearm.matrixAutoUpdate = false;
     camera.add(h.root, forearm);
     return {
@@ -114,16 +118,18 @@ export function handsView(scene: THREE.Scene, camera: THREE.Camera) {
       const carry = hold.carry ? carryFrames(hold.carry, hold.kg) : null;
       for (const s of sides) {
         const what = s.side > 0 ? hold.right : hold.left, grip = gripFor(what);
-        const f = carry ? toCam(s.side > 0 ? carry.right : carry.left) : viewFrame(what.kind, hold.kg, t, speed, s.side);
+        const show = !!hold.show && !carry && what.kind === "rest";
+        const f = carry ? toCam(s.side > 0 ? carry.right : carry.left) : show ? showFrame(t, s.side) : viewFrame(what.kind, hold.kg, t, speed, s.side);
         // On a tall, narrow screen (a phone held upright) the hands come in toward the middle so they stay in view.
         if (!carry && narrow < 1) f.o = [f.o[0] * narrow, f.o[1], f.o[2]];
         mPlace.makeBasis(toV(f.x, vA), toV(f.y, vB), toV(f.z, vC)).setPosition(f.o[0], f.o[1], f.o[2]);
         tAt.setFromMatrixPosition(mPlace);
         tTurn.setFromRotationMatrix(mPlace);
-        if (grip.key !== s.key) {
+        const key = show ? grip.key + " shown" : grip.key;
+        if (key !== s.key) {
           // A new grip: solve it (once, cached) and blend from what is shown now.
           const first = !s.pose;
-          s.key = grip.key;
+          s.key = key;
           s.pose = solver.pose(grip);
           s.to = localQuats(s.pose);
           s.from = first ? s.to : s.cur.map((q) => q.clone());
@@ -193,8 +199,11 @@ export function handsView(scene: THREE.Scene, camera: THREE.Camera) {
     },
     /** The middle of what the right hand grips, in world space (a coil hangs from here). */
     gripAt: () => gripWorld.clone(),
-    /** Step 11's tattoos: a texture on both forearms (null takes it off). */
-    setTattoo(tex: THREE.Texture | null) { arm.map = tex; arm.needsUpdate = true; },
+    /** Step 11's tattoos: a sheet for the right forearm and one for the left (the same if only one is given; null takes it off). */
+    setTattoo(right: THREE.Texture | null, left: THREE.Texture | null = right) {
+      arm.map = right; armLeft.map = left;
+      arm.needsUpdate = armLeft.needsUpdate = true;
+    },
     /** Solve the grips a page will use ahead of time, so the first grab doesn't hitch. */
     warm(whats: What[]) { for (const w of whats) solver.pose(gripFor(w)); },
   };

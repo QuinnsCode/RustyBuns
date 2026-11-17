@@ -159,3 +159,11 @@
 .paper .pass, .bar-card .pass, .pass.paper { color: var(--pass-ink); }
 .paper .warn, .bar-card .warn, .warn.paper { color: var(--warn-ink); }
 .paper .trip, .bar-card .trip, .trip.paper { color: var(--trip-ink); }
+
+/* The Ink scrap (src/you/ink-view.ts): your earned tattoos and your own picture. */
+.ink { --tilt: -0.6deg; display: grid; gap: 6px; font: 600 15px/1.35 var(--pen); max-width: 30rem; }
+.ink p { margin: 0; }
+.ink-row { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; }
+.ink label { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; }
+.ink input[type="range"] { width: 7rem; }
+.ink input[type="file"] { max-width: 100%; font: inherit; }

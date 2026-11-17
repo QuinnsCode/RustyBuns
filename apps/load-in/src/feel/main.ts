@@ -8,6 +8,8 @@ import { GEAR_SIZES, gear, gearJacks, type GearId } from "@rustybuns/models/gear
 import { bundleR } from "../cables/draw.ts";
 import { REST } from "../hands/grip.ts";
 import { handsView, type Hold } from "../hands/view.ts";
+import { mountInk } from "../you/ink-view.ts";
+import { FLASH } from "../you/ink.ts";
 import { CABLE, ROLL_R, bowl, leftM, newRoll, rollKg, stepRoll, throwSpeed, type CableKind, type Roll } from "../cables/roll.ts";
 import type { Solid, Vec } from "../cables/rope.ts";
 
@@ -250,6 +252,12 @@ const links = () => LINKS.map((l) => ({ text: l.text, ok: joined(l.a, l.b) }));
 // ---- drawing --------------------------------------------------------------------------------------------------
 scene.add(camera);
 const hands = handsView(scene, camera);
+// The feel room shows a finished tour's arms: every rung's tattoo, and your own if you pick one.
+// Hold I to look at your arms.
+let showArms = false;
+window.addEventListener("keydown", (e) => { if (e.code === "KeyI") showArms = true; });
+window.addEventListener("keyup", (e) => { if (e.code === "KeyI") showArms = false; });
+const ink = mountInk($("ink-host"), hands, () => Object.keys(FLASH).map((level) => ({ level, pass: 1 as const })));
 /** What the hands hold: a roll hooked on the right hand's fingers (the left on its end once that is out), a plug
  * ready at a lit jack, a fist round a cable you walk, or nothing. The wrist drops with what the cable weighs on it. */
 function holding(): Hold {
@@ -266,7 +274,7 @@ function draw() {
   camera.rotation.set(you.pitch, you.yaw, 0);
   const now = performance.now() / 1000, dt = now - seen.t;
   if (dt > 0) seen = { x: you.x, z: you.z, t: now, v: dt > 0.5 ? 0 : seen.v * 0.8 + (Math.hypot(you.x - seen.x, you.z - seen.z) / dt) * 0.2 };
-  hands.update(holding(), now, seen.v);
+  hands.update({ ...holding(), show: showArms }, now, seen.v);
   const grip = hold?.part === "roll" ? hands.gripAt() : null;
   const held = hold?.run.roll.kind;
   for (const j of jacks) { const fits = held === j.kind && !taken(j); j.mesh.material.emissiveIntensity = fits ? 2.2 : taken(j) ? 0.1 : 0.5; j.mesh.scale.setScalar(fits ? 1.5 : 1); }
@@ -396,7 +404,9 @@ const feel = {
     links: links(),
     cables: runs.map((r) => ({ key: r.key, kind: r.roll.kind, state: r.roll.state, leftM: leftM(r.roll), kg: rollKg(r.roll), x: r.roll.x, z: r.roll.z, a: typeof r.a === "object" ? r.a.id : r.a, b: typeof r.b === "object" ? r.b.id : r.b })),
   }),
-  start, reset, use, run: run_,
+  start, reset, use,
+  /** Raise your forearms into view (or lower them): what holding I does. */
+  arms: (show: boolean) => { showArms = show; }, run: run_,
   look: (yaw: number, pitch = -0.3) => { you.yaw = yaw; you.pitch = pitch; },
   /** Walk to (x, z) at the pace your load allows, facing the way you go; the seconds it took. */
   walkTo(x: number, z: number) {
