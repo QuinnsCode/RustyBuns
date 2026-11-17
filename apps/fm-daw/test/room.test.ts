@@ -204,9 +204,9 @@ test("two pedals off the pedal wall: in a row, reordered while it plays, then si
   cable("split", "send-a", "drive", "in");
   cable("drive", "out", "split", "return-a");
   cable("split", "send-b", "fuzz", "in");
+  cable("split", "out", "lead", "in");
   expect(listen(r.studio.patch).problems).toEqual(["nothing plugged into Q Split's return-b"]);
   cable("fuzz", "out", "split", "return-b");
-  cable("split", "out", "lead", "in");
   const parallel = play();
   expect(parallel.heard).toMatchObject({ chain: ["guitar", "split", "drive", "fuzz", "lead", "cab"], running: ["split", "drive", "fuzz", "lead"] });
   expect(parallel.heard.settings?.board).toEqual([{ split: [[{ pedal: "drive", drive: 3 }], [{ pedal: "fuzz", drive: 7 }]], mix: [0.5, 0.5] }]);
