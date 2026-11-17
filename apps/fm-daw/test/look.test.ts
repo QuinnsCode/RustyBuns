@@ -2,10 +2,10 @@
 // plank or a ceiling tile comes out the same size on a small wall and a big one.
 import { expect, test } from "bun:test";
 import * as THREE from "three";
-import { metreUV, pickQuality } from "../src/studio/look.ts";
+import { metreUV, pickQuality, type Quality } from "../src/studio/look.ts";
 
 test("the link picks the quality, then what this browser chose last, else high unless it's a phone", () => {
-  const cases: [string, string | null, boolean, string][] = [
+  const cases: [string, string | null, boolean, Quality][] = [
     ["?quality=low", "high", false, "low"],
     ["?room=x&quality=high", "low", true, "high"],
     ["", "low", false, "low"],

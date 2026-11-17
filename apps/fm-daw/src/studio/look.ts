@@ -361,7 +361,7 @@ export function dress(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera:
       const mat = o.material;
       if (glow > 0 && mat instanceof THREE.MeshStandardMaterial) {
         o.material = mat.clone();
-        if (o.material instanceof THREE.MeshStandardMaterial) { o.material.emissive.copy(mat.color); o.material.emissiveIntensity = 2 * glow; }
+        if (o.material instanceof THREE.MeshStandardMaterial) { o.material.emissive.copy(mat.color); o.material.emissiveIntensity = 2 * glow; o.material.transparent = false; o.material.opacity = 1; o.material.depthWrite = true; } // a lit bulb is solid light, even one made of glass
         if (o.userData.lamp && lamps.length < 4) { const p = new THREE.PointLight(0xffd7a8, 6 * glow, 6, 2); o.add(p); lamps.push(p); }
         return;
       }
