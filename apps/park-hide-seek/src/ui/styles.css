@@ -197,9 +197,12 @@ select { font: inherit; padding: 7px 9px; border: 1px solid var(--line); border-
 
 /* After dark the rangers' torches are out: the backdrop drops to night and a beam sweeps the Play board. */
 [data-tod="night"] .menu { background: linear-gradient(160deg, rgba(8, 12, 24, 0.35), rgba(4, 6, 12, 0.75)); }
-[data-tod="night"] .play { background: radial-gradient(ellipse 45% 140% at var(--beam, 20%) 50%, rgba(255, 242, 176, 0.38), transparent 70%), var(--brown); animation: beam 5s ease-in-out infinite alternate; }
-@property --beam { syntax: "<percentage>"; inherits: false; initial-value: 20%; }
-@keyframes beam { to { --beam: 85%; } }
+/* The beam is a flat cream cone with a hard edge, thrown from a torch at the left edge and swept up and down across the board,
+   like the ranger's on the ridge: screen-print flat, never a soft glow. */
+:root { --torch: rgba(243, 230, 192, 0.35); }
+[data-tod="night"] .play { background: conic-gradient(from var(--sweep, 84deg) at -3% 52%, var(--torch) 0 12deg, transparent 12deg), var(--brown); animation: beam 5s ease-in-out infinite alternate; }
+@property --sweep { syntax: "<angle>"; inherits: false; initial-value: 84deg; }
+@keyframes beam { from { --sweep: 76deg; } to { --sweep: 92deg; } }
 @media (prefers-reduced-motion: reduce) { [data-tod="night"] .play { animation: none; } }
 
 /* Round 2 (#3568). The front card's insignia, pinned across the poster's foot and the sunset stripes. */
@@ -290,10 +293,10 @@ body:has(#lobby:not([hidden])) .narrator p { display: none; }
 @media (max-width: 520px) { .permit .long { display: none; } .permit { letter-spacing: 0.1em; } }
 @media (max-width: 400px) { .stub .long { display: none; } }
 
-/* After dark: darker kraft card stock, the type and rules darkened to match, and the torch beam picks out the plank you chose. */
-:root[data-tod="night"] { --red: #8f1d0f; --paper: #cdb68d; --paper-2: #b99f73; --field: #e6d7b6; --line: #977d55; --muted: #4a3b27; --lan: #dccaa2; }
+/* After dark: cool moonlit card stock, a clear step lighter than the wood planks, and the torch beam picks out the plank you chose. */
+:root[data-tod="night"] { --red: #8f1d0f; --paper: #e6dcc4; --paper-2: #d4c9ae; --field: #f2ecdc; --line: #94896f; --muted: #4a3f2f; --lan: #ece3cc; }
 [data-tod="night"] :is(.lobby .ui-chip[aria-pressed="true"], .lobby .ui-btn.primary, .gc-dialog.ui-house .gc-tab[aria-selected="true"]) {
-  background: radial-gradient(ellipse 60% 160% at var(--beam, 20%) 40%, rgba(255, 242, 176, 0.42), transparent 70%), var(--plank), var(--wood);
+  background: conic-gradient(from var(--sweep, 84deg) at -3% 52%, var(--torch) 0 12deg, transparent 12deg), var(--plank), var(--wood);
   animation: beam 5s ease-in-out infinite alternate; }
 @media (prefers-reduced-motion: reduce) { [data-tod="night"] :is(.lobby .ui-chip, .lobby .ui-btn, .gc-dialog.ui-house .gc-tab) { animation: none; } }
 
@@ -333,8 +336,8 @@ body:has(#lobby:not([hidden])) .narrator p { display: none; }
 
 /* The torch beam sweeps the front poster's title after dark, not only the Play board. */
 .poster-head { overflow: hidden; }
-[data-tod="night"] .poster-head::after { content: ""; position: absolute; inset: 0; pointer-events: none; mix-blend-mode: screen;
-  background: radial-gradient(ellipse 34% 70% at var(--beam, 20%) 26%, rgba(255, 242, 176, 0.42), rgba(255, 242, 176, 0.1) 55%, transparent 75%);
+[data-tod="night"] .poster-head::after { content: ""; position: absolute; inset: 0; pointer-events: none;
+  background: conic-gradient(from var(--sweep, 84deg) at -3% 52%, var(--torch) 0 12deg, transparent 12deg);
   animation: beam 6s ease-in-out infinite alternate; }
 @media (prefers-reduced-motion: reduce) { [data-tod="night"] .poster-head::after { animation: none; } }
 
@@ -375,7 +378,7 @@ h2 button.info.info.info { width: 20px; height: 20px; margin-left: 4px; } h2 but
 .backdrop { position: fixed; inset: 0; z-index: 1; display: none; pointer-events: none; background: #f9e6bf center bottom / cover no-repeat;
   box-shadow: inset 0 0 0 var(--margin, 10px) var(--cream), inset 0 0 0 calc(var(--margin, 10px) + 2px) var(--ink); }
 @media (max-width: 520px) { .backdrop { --margin: 5px; } }
-[data-tod="night"] .backdrop { box-shadow: inset 0 0 0 var(--margin, 10px) #1a140c, inset 0 0 0 calc(var(--margin, 10px) + 2px) #cdb68d; }
+[data-tod="night"] .backdrop { box-shadow: inset 0 0 0 var(--margin, 10px) #1a140c, inset 0 0 0 calc(var(--margin, 10px) + 2px) #e6dcc4; }
 body:has(> #menu:not([hidden]), > #lobby:not([hidden]), > #results:not([hidden])) .backdrop { display: block; }
 body:has(> #menu:not([hidden]), > #lobby:not([hidden]), > #results:not([hidden])) .narrator i { display: none; }
 .menu, .results, .lobby { z-index: 2; }
@@ -393,11 +396,11 @@ body:has(> #menu:not([hidden]), > #lobby:not([hidden]), > #results:not([hidden])
    itself, with the front card, lobby and caption put away behind it. The camper waits in the sky's own inks. */
 @media (max-width: 820px) {
   .lobby { padding-top: 112px; gap: 24dvh; }
-  .lobby-main { max-height: calc(76dvh - 112px); overflow: auto; }
+  .lobby-main { max-height: calc(80dvh - 112px); overflow: auto; }
   .lobby-main::after { content: ""; }
   .gc-dialog.ui-house.ui-house { place-items: start center; padding: 112px 12px 0; }
   .gc-dialog.ui-house.ui-house .gc-card { border-bottom: 2px solid var(--brown); }
-  .gc-dialog.ui-house .gc-card { max-height: calc(76dvh - 112px); }
+  .gc-dialog.ui-house .gc-card { max-height: calc(80dvh - 112px); }
   .menu-card .ridges { height: 150px; }
 }
 .gc-dialog.ui-house { background: rgba(43, 33, 22, 0.28); }
@@ -405,3 +408,17 @@ body:has(> #menu:not([hidden]), > #lobby:not([hidden]), > #results:not([hidden])
 body:has(> .gc-dialog:not([hidden])) :is(.menu-card, .lobby, .results .panel, .narrator) { visibility: hidden; }
 .preview { background: linear-gradient(#eaa75c, #f6d39a 70%, #f9e6bf); }
 [data-tod="night"] .preview { background: linear-gradient(#0d1426, #24365c 70%, #3f5f92); }
+
+/* Round 10 (#4323). The phone and tablet scroll windows say there is more: the lobby's fade carries a painted trail
+   marker (a cream chevron on a rust blaze) that goes once the list is read to its end, the tablet lobby keeps about
+   70/30 against the ridges, and in Controls the open section's head stays pinned at the top while its rows scroll. */
+.lobby-main::after { background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='34' height='22'%3E%3Crect x='1' y='1' width='32' height='20' rx='2' fill='%239a3412' stroke='%232b2116' stroke-width='2'/%3E%3Cpath d='M10 8l7 6 7-6' fill='none' stroke='%23f6e8c6' stroke-width='3' stroke-linejoin='round'/%3E%3C/svg%3E") center 6px / 34px 22px no-repeat,
+  linear-gradient(transparent, var(--paper) 55%); }
+@media (max-width: 820px) { .lobby-main::after { height: 44px; margin-top: -44px; } }
+@supports (animation-timeline: scroll()) {
+  .lobby-main::after { animation: trail-end linear both; animation-timeline: scroll(nearest); animation-range: calc(100% - 60px) 100%; }
+  @keyframes trail-end { to { opacity: 0; } }
+}
+@media (min-width: 521px) and (max-width: 820px) { .lobby { gap: 30dvh; } .lobby-main { max-height: calc(70dvh - 112px); } }
+.gc-dialog.ui-house .gc-sec { overflow: clip; }
+.gc-dialog.ui-house .gc-sec:not(.shut) .gc-sec-h { position: sticky; top: -90px; z-index: 1; box-shadow: 0 2px 0 var(--brown); } /* -90px: up through the card's poster-head padding, flush with its top edge */
