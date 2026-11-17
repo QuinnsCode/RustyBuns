@@ -7,6 +7,7 @@ import type { StudioDef } from "../room.ts";
 import { DESK_CONCERT } from "./desk-concert.ts";
 import { all, colors, seat } from "./kit.ts";
 import { LIVE_ROOM } from "./live.ts";
+import { ORCHESTRA_ROOM } from "./orchestra.ts";
 
 /** A scoring hall: room for a full orchestra, the sound blooming for two seconds. */
 export const SCORING_HALL: StudioDef = {
@@ -70,7 +71,7 @@ export const BARN: StudioDef = {
   door: { at: [-1, 6], yaw: 0 },
 };
 
-export const ROOM_LIST: StudioDef[] = [LIVE_ROOM, SCORING_HALL, BASEMENT, STONE_ROOM, BARN, DESK_CONCERT];
+export const ROOM_LIST: StudioDef[] = [LIVE_ROOM, SCORING_HALL, BASEMENT, STONE_ROOM, BARN, DESK_CONCERT, ORCHESTRA_ROOM];
 /** Every room, by id. */
 export const ROOMS: Record<string, StudioDef> = Object.fromEntries(ROOM_LIST.map((r) => [r.id, r]));
 export { LIVE_ROOM };
