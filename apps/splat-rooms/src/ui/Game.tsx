@@ -3,7 +3,7 @@ import { readScene, type SceneDetail } from "../actions/scenes.ts";
 import { planRound, type Candidate, type Round } from "../game/round.ts";
 import { record, stars, type Records } from "../game/score.ts";
 import { onControlsToggle } from "./controls.ts";
-import { achieve, achievements } from "./eqosys.ts";
+import { achieve, achievements, celebrate } from "./eqosys.ts";
 import { learn, lessons, newLearnt } from "../game/lessons.ts";
 import { tutorial } from "@rustybuns/util/tutorial";
 import { GameView } from "../game/view.ts";
@@ -123,6 +123,8 @@ export function Game({ sceneId, records, onRecords, onAnotherRoom, onRooms, onQu
       forgetTutorial: coach.forget,
       find: () => { if (round) judgeRef.current(round.target); },
       pause,
+      /** Show the achievement toast as a first find would, without eqosys (a shot of the skin). Stays until removed. */
+      toast: () => celebrate({ id: "first-find", name: "First find", blurb: "Lit a room and named what you spied.", secret: false, at: null }, 0),
     } });
     return () => { Reflect.deleteProperty(window, "splatHunt"); };
   });

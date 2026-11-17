@@ -5,6 +5,7 @@ import { SKIN } from "./eqosys.ts";
 /**
  * The Controls sheet as the gadget watch's settings plate: riveted glass with a stamped hairline inside the edge, the
  * red-and-cream hatched trim along its top, a stencilled serial beside the title, and each section an inset panel.
+ * A switch's row gives its words the width a slider's track would take, so "Toggle instead of hold" stays on one line.
  */
 const LAB_CSS = `.ui-house .gc-card{box-shadow:var(--glow),0 30px 80px -30px #000;border-top:0;backdrop-filter:blur(8px);position:relative;padding-top:26px;
 background:var(--rivets),var(--wear),var(--panel);outline:1px solid rgb(239 228 201 / .06);outline-offset:-5px}
@@ -16,7 +17,8 @@ font:.62rem var(--mono);letter-spacing:.18em;color:var(--cream);background:rgb(0
 .ui-house .gc-sec{background:var(--wear),rgb(0 0 0 / .22);border-color:var(--oxide);box-shadow:inset 0 1px 4px rgb(0 0 0 / .5)}
 .gc-cog.ui-house{background:var(--glass);border-color:var(--edge-hi);color:var(--accent);box-shadow:var(--glow)}
 .ui-house .gc-tab[aria-selected=true]{box-shadow:var(--glow)}
-.ui-house .gc-keys dt{font-family:var(--mono);font-size:.85em;color:var(--accent)}`;
+.ui-house .gc-keys dt{font-family:var(--mono);font-size:.85em;color:var(--accent)}
+.ui-house .gc-card label:has(>input[type=checkbox]){grid-template-columns:1fr auto}`;
 
 /** The saved look settings; GameView reads this on every drag. */
 export const look = { ...DEFAULTS };
