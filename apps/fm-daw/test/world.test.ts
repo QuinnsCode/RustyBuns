@@ -561,7 +561,7 @@ test("grants: the leader lets one play, another asks and is told No, an edit wit
 test("mute: Amy mutes Bo for herself and Cy still hears him; the leader mutes Bo for everyone and he's told", async () => {
   const { bucket, worldEnv } = await edge();
   const room = "quiet-jade-wren";
-  const { world, join } = await setup(worldEnv, room);
+  const { world, join, leave } = await setup(worldEnv, room);
   const said = (ws: Sock, m: object) => world.webSocketMessage(ws, JSON.stringify(m));
   const tick = () => new Promise((r) => setTimeout(r, 5));
   // Amy made the room, so she leads; Bo and Cy came in from her link
@@ -625,7 +625,7 @@ test("mute: Amy mutes Bo for herself and Cy still hears him; the leader mutes Bo
   live(bo, { t: "body", at: [1, 0, -3], yaw: 0 });
   expect(cy.ws.sent.map((m) => m.e.t)).toEqual(["off", "body"]);
   // it is kept with the grants, so a reset doesn't let him back in unheard
-  for (const p of people) world.webSocketClose(p.ws);
+  for (const p of people) leave(p.ws);
   await settle();
   expect(JSON.parse(bucket.get(`sesh/${room}.json`)!).grants.muted).toEqual([bo.id]);
 });
