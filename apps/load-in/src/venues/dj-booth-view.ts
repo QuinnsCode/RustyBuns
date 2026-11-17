@@ -149,6 +149,8 @@ export function djBoothView(scene: THREE.Scene, hud: HTMLElement, getWorld: () =
     shared.want = true;
     return { ok: true };
   };
+  /** The deck in your headphones (1 or 2; 0 for none): heard before its fader, by you alone, and only at the booth. */
+  let cue = 0;
   /** The booth monitors' own level, 0 to 1 (the mixer's booth knob): the DJ's alone, so it is not shared with the room. */
   let boothLevel = 0.7;
   const view = {
@@ -161,6 +163,7 @@ export function djBoothView(scene: THREE.Scene, hud: HTMLElement, getWorld: () =
     key(code: string): boolean {
       if (!atBooth()) return false;
       if (code === "Digit1" || code === "Digit2") return say(view.decks.play(code === "Digit1" ? 1 : 2)), true;
+      if (code === "Digit3" || code === "Digit4") return view.decks.cue(code === "Digit3" ? 1 : 2), true;
       if (code === "Comma" || code === "Period") return view.decks.booth(boothLevel + (code === "Comma" ? -0.1 : 0.1)), true;
       if (code === "KeyZ" || code === "KeyX") return view.decks.cross(decks.cross + (code === "KeyZ" ? -0.25 : 0.25)), true;
       return false;
@@ -183,7 +186,7 @@ export function djBoothView(scene: THREE.Scene, hud: HTMLElement, getWorld: () =
         people.moods(regions(c, () => ({ soundcheck: null, full: null }), 0, 0).map((r) => ({ ...r, mood: Math.round(floor.mood), doing })));
       }
       people.update(w, c);
-      sound?.update(decks, m, KEYS, j.distort);
+      sound?.update(decks, m, KEYS, j.distort, atBooth() ? cue : 0);
       animate(dt);
       const deckLine = (i: number) => {
         const key = KEYS[i]!, k = decks.deck[i]!, ch = j.routing[key];
@@ -198,7 +201,7 @@ export function djBoothView(scene: THREE.Scene, hud: HTMLElement, getWorld: () =
         // In a crew room: who has the decks.
         ...(shared.room ? [shared.dj?.me ? '<span class="pass">You are on the decks</span>' : shared.dj ? `${esc(shared.dj.name || "Someone")} is on the decks` : "The decks are free: touch them to take them"] : []),
         `Crossfader ${decks.cross === 0 ? "centre" : decks.cross < 0 ? `${Math.round(-decks.cross * 100)}% to A` : `${Math.round(decks.cross * 100)}% to B`}, master ${j.live ? "to the speakers" : "goes nowhere yet"}`,
-        j.problems[0] ? `<small>${esc(j.problems[0].message)}</small>` : "<small>At the decks: 1 / 2 play, Z / X crossfader, , / . booth monitors</small>",
+        j.problems[0] ? `<small>${esc(j.problems[0].message)}</small>` : "<small>At the decks: 1 / 2 play, Z / X crossfader, 3 / 4 cue, , / . booth</small>",
       ];
       const html = lines.map((l) => `<div>${l}</div>`).join("");
       if (html !== last) card.innerHTML = last = html;
@@ -211,6 +214,8 @@ export function djBoothView(scene: THREE.Scene, hud: HTMLElement, getWorld: () =
       decks: decks.deck.map((k, i) => ({ deck: i + 1, track: TRACKS[i]!.name, playing: k.playing, pitch: k.pitch, bpm: Math.round(bpmOf(decks, i + 1) * 10) / 10, beat: Math.round(k.beat * 10) / 10, channel: j.routing[KEYS[i]!] ?? null })),
       /** In a crew room: who is on the decks (null when the seat is free), and whether that is you. */
       shared: shared.room, dj: shared.dj?.name ?? null, onDecks: !shared.room || !!shared.dj?.me, seatNote: shared.note,
+      /** The deck in your headphones, or 0. */
+      cue,
       /** The booth monitors' level, 0 to 1. */
       booth: Math.round(boothLevel * 100) / 100,
       fader: [...decks.fader], cross: decks.cross, mix: m.gain, meter: m.meter, hum: j.hum, distort: j.distort, live: j.live,
@@ -238,6 +243,8 @@ export function djBoothView(scene: THREE.Scene, hud: HTMLElement, getWorld: () =
       /** In a crew room: ask for the DJ seat, or give it up. */
       take: () => { shared.want = true; },
       leave: () => { shared.want = false; },
+      /** Put a deck in your headphones, before its fader (again takes it out; 0 for none). Yours alone. */
+      cue: (n: number) => { cue = n === cue || n < 1 || n > 2 ? 0 : Math.round(n); },
       /** The booth monitors' level, 0 to 1: yours alone, apart from the master the room hears. */
       booth: (v: number) => { boothLevel = Math.max(0, Math.min(1, v)); },
       range: PITCH_RANGE,
