@@ -3,6 +3,7 @@
 import * as THREE from "three";
 import { FLASH, earned, plainLook, readLook, type Look } from "./ink.ts";
 import { inkSheet } from "./ink-draw.ts";
+import { SHOE_COLOURS, type ShoeColour } from "./shoes.ts";
 
 const KEY = "load-in.look", MAX_PX = 512;
 type Nights = readonly { level: string; pass: 0 | 1 }[];
@@ -36,7 +37,7 @@ function shrink(file: File): Promise<string> {
   });
 }
 
-export function mountInk(host: HTMLElement, arms: Arms, nights: () => Nights) {
+export function mountInk(host: HTMLElement, arms: Arms, nights: () => Nights, shoes?: { setColour(c: ShoeColour): void }) {
   let look = loadLook(), own: HTMLImageElement | null = null, sheets: THREE.CanvasTexture[] = [];
   host.innerHTML = `<div class="paper ink">
     <b>Ink</b>
@@ -49,6 +50,8 @@ export function mountInk(host: HTMLElement, arms: Arms, nights: () => Nights) {
       <button id="ink-off" type="button">Take it off</button>
     </div>
     <p id="ink-note" class="warn"></p>
+    <b>Shoes</b>
+    <div class="ink-row shoe-row" role="radiogroup" aria-label="High-top colour">${Object.entries(SHOE_COLOURS).map(([name, hex]) => `<button type="button" class="shoe" role="radio" data-shoe="${name}" title="${name}" aria-label="${name}" style="--shoe: #${hex.toString(16).padStart(6, "0")}"></button>`).join("")}</div>
   </div>`;
   const el = <T extends HTMLElement>(id: string) => host.querySelector<T>(`#${id}`)!;
   const file = el<HTMLInputElement>("ink-file"), arm = el<HTMLSelectElement>("ink-arm"), at = el<HTMLInputElement>("ink-at"), size = el<HTMLInputElement>("ink-size");
@@ -58,6 +61,9 @@ export function mountInk(host: HTMLElement, arms: Arms, nights: () => Nights) {
     el("ink-earned").textContent = got.length ? `${got.length} of ${all} earned on tour. Next: pass a new rung.` : `Pass a gig to earn your first. ${all} to collect.`;
     arm.value = look.arm; at.value = String(look.at); size.value = String(look.size);
     el<HTMLElement>("ink-off").hidden = !look.own;
+    const worn = look.shoes ?? "black";
+    shoes?.setColour(worn);
+    for (const b of host.querySelectorAll<HTMLElement>(".shoe")) b.setAttribute("aria-checked", String(b.dataset.shoe === worn));
     for (const s of sheets) s.dispose();
     sheets = (["right", "left"] as const).map((side) => {
       const t = new THREE.CanvasTexture(inkSheet(side, got, look, own));
@@ -85,6 +91,7 @@ export function mountInk(host: HTMLElement, arms: Arms, nights: () => Nights) {
   arm.addEventListener("change", () => change({ arm: arm.value === "right" ? "right" : "left" }));
   at.addEventListener("input", () => change({ at: Number(at.value) }));
   size.addEventListener("input", () => change({ size: Number(size.value) }));
+  for (const b of host.querySelectorAll<HTMLElement>(".shoe")) b.addEventListener("click", () => change({ shoes: readLook({ ...look, shoes: b.dataset.shoe }).shoes ?? "black" }));
   el("ink-off").addEventListener("click", () => { file.value = ""; setOwn(undefined); saveLook(look); });
 
   setOwn(look.own);
@@ -93,6 +100,8 @@ export function mountInk(host: HTMLElement, arms: Arms, nights: () => Nights) {
     refresh: paint,
     /** Put a picture on (a data URL) or take it off, and place it: what the harness calls. */
     ink(url: string | null, where: Partial<Pick<Look, "arm" | "at" | "size">> = {}) { look = readLook({ ...look, ...where }); setOwn(url ?? undefined); saveLook(look); },
-    state: () => ({ earned: earned(nights()), own: !!look.own, arm: look.arm, at: look.at, size: look.size }),
+    /** Lace up another colour. */
+    shoes(c: ShoeColour) { change({ shoes: c }); },
+    state: () => ({ earned: earned(nights()), own: !!look.own, arm: look.arm, at: look.at, size: look.size, shoes: look.shoes ?? "black" }),
   };
 }

@@ -49,6 +49,7 @@ import { CABLE_RADIUS, REST } from "./hands/grip.ts";
 import { CABLE, leftM, rollKg } from "./cables/roll.ts";
 import { handsView, type Hold } from "./hands/view.ts";
 import { mountInk } from "./you/ink-view.ts";
+import { shoesView, type ShoeColour } from "./you/shoes.ts";
 import { dress, faceLook, type Dressed } from "./faces.ts";
 import { nextStep } from "./next.ts";
 import { COLOR } from "./cables/draw.ts";
@@ -112,7 +113,8 @@ const hands = handsView(scene, camera);
 let showArms = false;
 window.addEventListener("keydown", (e) => { if (e.code === "KeyI") showArms = true; });
 window.addEventListener("keyup", (e) => { if (e.code === "KeyI") showArms = false; });
-const ink = mountInk($("ink-host"), hands, () => tour.nights);
+const shoes = shoesView(scene);
+const ink = mountInk($("ink-host"), hands, () => tour.nights, shoes);
 // Solve the grips the game uses while the menu is up, one a tick, so the first grab doesn't hitch.
 [REST, { kind: "flat" } as const, { kind: "roll" } as const, { kind: "plug" } as const, ...[...Object.values(CABLE_RADIUS), ...Object.values(CABLE).map((c) => c.radius)].map((radius) => ({ kind: "cable", radius }) as const)].forEach((w, i) => setTimeout(() => hands.warm([w]), 200 + i * 60));
 let lights = venueLights(world.level);
@@ -270,6 +272,7 @@ function draw() {
   clock?.update(world.level.name, world.t, strikeState(world, cables)?.since ?? null);
   loadOut?.update(world, cables);
   hands.update({ ...holding(), show: showArms }, world.t, stepSpeed());
+  shoes.update(you.x, world.level.floorAt?.(you.x, you.z) ?? 0, you.z, you.yaw, stepSpeed(), 1 / 60);
   ropes.update(cables, { at: hands.gripAt(), yaw: world.you.yaw });
   const next = phase === "play" && !festival ? nextStep(world, cables, switchedOn) : null, tgt = next?.key ? world.items.find((i) => i.key === next.key) : null;
   marker.visible = !!tgt;
@@ -556,6 +559,8 @@ const harness = {
   /** Bowl the roll you carry along where you face at `power` (0 to 1), then let it run `seconds` until it stops. */
   /** Your own tattoo: a picture as a data URL (null takes it off) and where it sits; `arms()` says what is on them. */
   ink: (url: string | null, where?: { arm?: "left" | "right"; at?: number; size?: number }) => { ink.ink(url, where); return ink.state(); },
+  /** Lace up another colour of high-tops: black, red, navy, cream, green or yellow. */
+  shoes: (colour: ShoeColour) => { ink.shoes(colour); return ink.state(); },
   arms: (show?: boolean) => { if (show !== undefined) showArms = show; return { ...ink.state(), shown: showArms }; },
   bowl: (power: number, seconds = 6) => { const a = cable.bowl(world, cables, power); if (a.ok) cable.settle(world, cables, seconds); return a; },
   plug: (owner: string, jack: string) => cable.plug(world, cables, owner, jack),

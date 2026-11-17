@@ -32,6 +32,8 @@ export const Look = obj({
   arm: oneOf(["left", "right"]),
   at: num(0.1, 0.9),
   size: num(0.15, 0.7),
+  /** Your high-tops' colour (src/you/shoes.ts); black when a save has none. */
+  shoes: opt(oneOf(["black", "red", "navy", "cream", "green", "yellow"])),
 });
 export type Look = Of<typeof Look>;
 export const plainLook = (): Look => ({ arm: "left", at: 0.62, size: 0.4 });
