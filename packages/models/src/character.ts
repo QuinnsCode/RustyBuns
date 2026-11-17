@@ -269,7 +269,11 @@ function hair(a: Avatar, head: THREE.Object3D, r: number, mesh: Mesh) {
     case "long": cap(2.1); add(new THREE.CapsuleGeometry(r * 0.75, r * 1.6, 6, 12).scale(1.15, 1, 0.45), [0, -r * 1.2, r * 0.6]); break;
     case "mullet": cap(1.7); add(new THREE.CapsuleGeometry(r * 0.6, r * 0.9, 6, 12).scale(1.2, 1, 0.45), [0, -r * 1.05, r * 0.7]); break;
     case "spiky": cap(1.4); for (let i = 0; i < 7; i++) { const a2 = (i / 7) * Math.PI * 2; add(new THREE.ConeGeometry(r * 0.22, r * 0.6, 8), [Math.cos(a2) * r * 0.55, r * 0.95, Math.sin(a2) * r * 0.55 + r * 0.1], [Math.sin(a2) * 0.6, 0, -Math.cos(a2) * 0.6]); } break;
-    case "afro": add(new THREE.SphereGeometry(r * 1.55, 20, 16), [0, r * 0.45, r * 0.25]); break;
+    // a big round ring of hair around the face, open at the front, with a crown over the top: never over the eyes
+    case "afro": for (const [k, flip] of [[1.45, 1], [1.3, -1]] as const) { // the outside, then the inside turned to face in (x mirrored flips the winding)
+      add(new THREE.SphereGeometry(r * k, 24, 8, 0, Math.PI * 2, 0, 0.95).scale(flip, 1, 1), [0, r * 0.3, r * 0.2]);
+      add(shell(r * k, 2.2, Math.PI * 0.72).scale(flip, 1, 1), [0, r * 0.3, r * 0.2]);
+    } break;
     case "curly": cap(1.6); for (let i = 0; i < 12; i++) { const a2 = (i / 12) * Math.PI * 2; ball(r * 0.3, [Math.cos(a2) * R * 0.95, r * 0.35 + Math.sin(a2 * 3) * r * 0.1, Math.sin(a2) * R * 0.95 + r * 0.08]); } break;
     case "mohawk": add(new THREE.SphereGeometry(r * 1.02, 24, 14, 0, Math.PI * 2, 0, 1.2), [0, 0, 0]); add(new THREE.BoxGeometry(r * 0.22, r * 0.6, r * 1.8), [0, r * 1.05, r * 0.15]); break;
     case "flat-top": cap(1.35); add(new THREE.CylinderGeometry(r * 0.95, r * 0.95, r * 0.55, 20), [0, r * 0.95, r * 0.05]); break;

@@ -59,3 +59,16 @@ test("sitting, playing and walking move the body the way they say", () => {
   expect(Math.abs(walk.feet[0]!.z - walk.feet[1]!.z)).toBeGreaterThan(0.15);
   expect(Math.abs(stand.feet[0]!.z - stand.feet[1]!.z)).toBeLessThan(0.02);
 });
+
+test("no hair covers the face: looking at an eye from in front, the first thing hit is the face, not hair", () => {
+  for (const hair of PARTS.hair) {
+    const c = character({ ...defaultAvatar("Ada"), hair, hairColor: "#c23a6b", hat: "none", glasses: "none", eyes: "dot" });
+    c.pose({ t: 0 });
+    c.group.updateMatrixWorld(true);
+    const eye = c.head.localToWorld(new THREE.Vector3(0.04, 0.0125, 0));
+    const hit = new THREE.Raycaster(new THREE.Vector3(eye.x, eye.y, -3), new THREE.Vector3(0, 0, 1)).intersectObject(c.group, true)[0];
+    const m = hit?.object instanceof THREE.Mesh ? hit.object.material : null;
+    expect([hair, m instanceof THREE.MeshStandardMaterial ? m.color.getHexString() : "nothing"]).not.toEqual([hair, "c23a6b"]);
+    c.dispose();
+  }
+});
