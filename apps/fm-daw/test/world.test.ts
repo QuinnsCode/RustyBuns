@@ -343,8 +343,9 @@ test("online, the sesh's maker holds the floor, lets it go, and closes it out", 
   expect((await join({}, "c".repeat(32))).ws.closed).toBeNull();
 });
 
-test("a recorded take: its sound reaches the room in chunks before it lands on a track, a late joiner gets it, and it goes when it's off every track", async () => {
-  const { world, join, leave, store } = await setup();
+test("a recorded take: its sound reaches the room in chunks before it lands on a track, a late joiner gets it, a reset keeps it, and it goes when it's off every track", async () => {
+  const { bucket, worldEnv } = await edge();
+  const { world, join, leave } = await setup(worldEnv, "merry-rust-fox");
   const a = (await join()).ws, b = (await join()).ws;
   world.webSocketMessage(a, JSON.stringify({ t: "init", project }));
   const s16 = new Int16Array(3 * TAKE_RATE).map((_, i) => Math.round(8000 * Math.sin(i / 10)));
@@ -368,13 +369,23 @@ test("a recorded take: its sound reaches the room in chunks before it lands on a
   await settle();
   expect(c.sent.find((m) => m.t === "snapshot")?.project.tracks[3].take).toEqual({ id: "take0001", beat: 2, frames: s16.length });
   expect(c.sent.filter((m) => m.t === "takeBytes").map((m) => m.data)).toEqual(chunks.map((m) => m.data));
-
-  // off the track, its sound stays for undo while anyone's in, and goes with the last one out
-  world.webSocketMessage(a, JSON.stringify({ t: "op", op: { t: "take", track: 3, take: null } }));
-  expect(store.has("take:take0001:0")).toBe(true);
   for (const ws of [a, b, c]) leave(ws);
   await settle();
-  expect([...store.keys()].filter((k) => k.startsWith("take"))).toEqual([]);
+
+  // the Durable Object is reset: the groove and the take's sound come back from the bucket
+  const fresh = await setup(worldEnv, "merry-rust-fox");
+  const d = (await fresh.join()).ws;
+  await settle();
+  expect(d.sent.find((m) => m.t === "snapshot")?.project.tracks[3].take).toEqual({ id: "take0001", beat: 2, frames: s16.length });
+  expect(d.sent.filter((m) => m.t === "takeBytes").map((m) => m.data)).toEqual(chunks.map((m) => m.data));
+
+  // off the track, its sound stays for undo while anyone's in, and goes with the last one out, bucket copy too
+  fresh.world.webSocketMessage(d, JSON.stringify({ t: "op", op: { t: "take", track: 3, take: null } }));
+  expect(fresh.store.has("take:take0001:0")).toBe(true);
+  fresh.leave(d);
+  await settle();
+  expect([...fresh.store.keys()].filter((k) => k.startsWith("take"))).toEqual([]);
+  expect([...bucket.keys()].filter((k) => k.includes("/take/"))).toEqual([]);
 });
 
 test("studio: friends share one patch, two can't carry one amp, a held lead is in its player's hand, and it's kept", async () => {

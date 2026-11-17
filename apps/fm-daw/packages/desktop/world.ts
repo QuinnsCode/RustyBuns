@@ -8,8 +8,8 @@ import { decodeChatClient, empty, personId, rename, sanitizeChat, say, unsay, ty
 import { applyStudio, decodeStudioClient, emptyStudio, letGo, sanitizePatch, type Studio, type StudioOp, type StudioServer } from "../../src/studio.ts";
 import { Sockets, type RoomCtx, type RoomSocket } from "@rustybuns/util/room";
 import { TokenBucket } from "@rustybuns/util/limits";
-import { check, int, maybe, obj, oneOf, raw, rec, str } from "@rustybuns/util/guard";
-import { MAX_CHUNKS, MAX_TAKES, type TakeBytes } from "../../src/take.ts";
+import { arr, check, int, maybe, obj, oneOf, raw, rec, str } from "@rustybuns/util/guard";
+import { MAX_CHUNKS, MAX_TAKES, TakeBytesGuard, type TakeBytes } from "../../src/take.ts";
 
 const SAVE_AFTER_MS = 500;
 // A room holds this many sockets (ROOM_SEATS online); past it a socket is told so and closed.
@@ -50,6 +50,9 @@ const takeKey = (id: string, i: number) => `take:${id}:${i}`;
 /** The take ids on a project's tracks. */
 const takeIds = (p: Project | null) => new Set((p?.tracks ?? []).flatMap((t) => (t.take ? [t.take.id] : [])));
 const TakeIndex = rec(int(1, MAX_CHUNKS), MAX_STORED_TAKES);
+/** A whole take in the bucket, written once (a take never changes): its chunks in order. */
+const bucketTakeKey = (room: string, id: string) => `sesh/${room}/take/${id}.json`;
+const BucketTake = arr(str(Math.ceil((MAX_CHUNKS * 96 * 1024 * 4) / 3), { min: 1 }), MAX_CHUNKS, { min: 1 });
 // A private sesh lets one address get its code wrong this often a minute, then says so instead of checking.
 export const MAX_WRONG = 5;
 const WRONG_MS = 60_000;
@@ -169,6 +172,7 @@ export default class World {
       if (!p || this.project) return;
       this.project = p;
       this.save();
+      await this.restoreTakes(bucket, room, takeIds(p));
       if (b?.host && !this.host) { this.host = b.host; await this.ctx.storage.put("host", b.host); }
       if (b?.floor && b.floor !== "free") { this.floor = b.floor; await this.ctx.storage.put("floor", b.floor); }
       if (b?.lock && !this.lock) { this.lock = b.lock; await this.ctx.storage.put("lock", b.lock); }
@@ -281,6 +285,34 @@ export default class World {
     this.arriving.delete(m.id);
     this.takes = { ...this.takes, [m.id]: m.n };
     void this.ctx.storage.put("takes", this.takes);
+    void this.backUpTake(m.id, m.n);
+  }
+
+  /** A whole take's sound to the bucket, so a reset Durable Object gets it back with the groove. */
+  private async backUpTake(id: string, n: number) {
+    if (!this.bucket || !this.room) return;
+    const chunks: string[] = [];
+    for (let i = 0; i < n; i++) {
+      const data = await this.ctx.storage.get(takeKey(id, i));
+      if (typeof data !== "string") return;
+      chunks.push(data);
+    }
+    await this.bucket.put(bucketTakeKey(this.room, id), JSON.stringify(chunks)).catch(() => {});
+  }
+
+  /** The takes on a restored groove, out of the bucket and back into storage. */
+  private async restoreTakes(bucket: Bucket, room: string, ids: Set<string>) {
+    for (const id of ids) {
+      try {
+        const got = await bucket.get(bucketTakeKey(room, id));
+        const chunks = check(BucketTake, got && JSON.parse(await got.text()));
+        // each chunk is checked as the socket would check it
+        if (!chunks || chunks.some((data, i) => !check(TakeBytesGuard, { t: "takeBytes", id, i, n: chunks.length, data }))) continue;
+        for (let i = 0; i < chunks.length; i++) await this.ctx.storage.put(takeKey(id, i), chunks[i]);
+        this.takes = { ...this.takes, [id]: chunks.length };
+      } catch { /* no copy: the take stays named on its track, silent */ }
+    }
+    await this.ctx.storage.put("takes", this.takes);
   }
 
   /** These takes' sound, chunk by chunk, to these sockets. */
@@ -303,7 +335,10 @@ export default class World {
     for (const [id, a] of this.arriving) gone.push([id, a.n]);
     this.arriving.clear();
     if (!gone.length) return;
-    for (const [id, n] of gone) for (let i = 0; i < n; i++) await s.delete(takeKey(id, i));
+    for (const [id, n] of gone) {
+      for (let i = 0; i < n; i++) await s.delete(takeKey(id, i));
+      if (this.bucket && this.room) await this.bucket.delete(bucketTakeKey(this.room, id)).catch(() => {});
+    }
     this.takes = Object.fromEntries(Object.entries(this.takes).filter(([id]) => keep.has(id)));
     if (Object.keys(this.takes).length) await s.put("takes", this.takes); else await s.delete("takes");
   }
