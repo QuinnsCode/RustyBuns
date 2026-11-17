@@ -15,7 +15,7 @@
 import * as THREE from "three";
 import { clamp } from "@rustybuns/util";
 import { ConvexGeometry } from "three/examples/jsm/geometries/ConvexGeometry.js";
-import { mergeGeometries, mergeVertices } from "three/examples/jsm/utils/BufferGeometryUtils.js";
+import { mergeGeometries, mergeVertices, toCreasedNormals } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { type Piece, R, along, box, loft } from "./shapes.ts";
 
 export type GearId = keyof typeof GEAR_SIZES;
@@ -83,9 +83,15 @@ function disc(slot: GearSlot, r: number, len: number, axis: "x" | "y" | "z", at:
   return loft(slot, [R(-len / 2, r), R(len / 2, r)], { seg, m });
 }
 
-/** The convex hull of a side profile (z, y pairs) pushed `wide` across x, centred at x = cx. */
-function prism(slot: GearSlot, profile: [number, number][], wide: number, cx = 0): Piece {
-  const pts = profile.flatMap(([z, y]) => [new THREE.Vector3(cx - wide / 2, y, z), new THREE.Vector3(cx + wide / 2, y, z)]);
+/** The convex hull of a side profile (z, y pairs) pushed `wide` across x, centred at x = cx; `chamfer` bevels the
+ * edges round each side face. */
+function prism(slot: GearSlot, profile: [number, number][], wide: number, cx = 0, chamfer = 0): Piece {
+  const [mz, my] = [0, 1].map((k) => profile.reduce((s, p) => s + p[k], 0) / profile.length);
+  const shrink = (z: number, y: number, k: number): [number, number] => { const l = Math.hypot(z - mz, y - my) || 1; return [z - ((z - mz) / l) * k, y - ((y - my) / l) * k]; };
+  const pts = profile.flatMap(([z, y]) => [-1, 1].flatMap((s) => {
+    const [iz, iy] = shrink(z, y, chamfer);
+    return [new THREE.Vector3(cx + (s * wide) / 2, iy, iz), new THREE.Vector3(cx + s * (wide / 2 - chamfer), y, z)];
+  }));
   let geo: THREE.BufferGeometry = new ConvexGeometry(pts);
   for (const k of Object.keys(geo.attributes)) if (k !== "position") geo.deleteAttribute(k);
   geo = geo.index ? geo.toNonIndexed() : geo;
@@ -103,16 +109,114 @@ function handle(slot: GearSlot, at: THREE.Vector3Tuple, out: "x" | "-x" | "y" | 
   return [rod(slot, p(-1, 0), p(-1, 1), 0.008, 4), rod(slot, p(1, 0), p(1, 1), 0.008, 4), rod(slot, p(-1, 1), p(1, 1), 0.01, 6)];
 }
 
+/** A rounded cabinet: the convex hull of round corners, `wf` wide at the front and `wb` at the back (a trapezoid in
+ * plan, as a moulded PA box tapers), its upright edges rounded `r` and its top and bottom edges `e`. Smooth across
+ * the rounds and flat on the faces. Built from y0 up, its depth centred on z0; `m` turns it afterwards; `detail` 1 for
+ * small parts (a cap, a handle). */
+function rounded(slot: GearSlot, { wf, wb = wf, h, d, r, e = r, y0 = 0, z0 = 0, m, detail = 2 }: { wf: number; wb?: number; h: number; d: number; r: number; e?: number; y0?: number; z0?: number; m?: THREE.Matrix4; detail?: 1 | 2 }): Piece {
+  const pts: THREE.Vector3[] = [], layers = detail === 2 ? 4 : 1, round = detail === 2 ? 12 : 6;
+  const corners = [[wf / 2, d / 2], [-wf / 2, d / 2], [wb / 2, -d / 2], [-wb / 2, -d / 2]].map(([x, z]) => [x - Math.sign(x) * r, z0 + z - Math.sign(z) * r]);
+  for (let k = 0; k <= layers; k++) {
+    const t = (k / layers) * (Math.PI / 2), inset = e * (1 - Math.cos(t)), rr = Math.max(r - inset, 0.0004);
+    for (const y of [y0 + e * (1 - Math.sin(t)), y0 + h - e * (1 - Math.sin(t))])
+      for (const [cx, cz] of corners) for (let j = 0; j < round; j++) {
+        const a = (j / round) * Math.PI * 2;
+        pts.push(new THREE.Vector3(cx + Math.cos(a) * rr, y, cz + Math.sin(a) * rr));
+      }
+  }
+  let geo: THREE.BufferGeometry = new ConvexGeometry(pts);
+  if (m) geo.applyMatrix4(m);
+  for (const k of Object.keys(geo.attributes)) if (k !== "position") geo.deleteAttribute(k);
+  geo = toCreasedNormals(geo.index ? geo.toNonIndexed() : geo, 0.6);
+  return { geo, slot };
+}
+
+/** A surface of revolution round the z axis, seen from the front: a cone's dish, its rubber surround, a horn's
+ * flare. `rings` run from back to front ([z, rx, ry]); `p` > 2 squares the rings off (a horn's mouth). Every face is
+ * turned to look forward (+z), so the inside of a dish is what shows. */
+function lathe(slot: GearSlot, rings: [number, number, number][], { p = 2, seg = 20, m }: { p?: number; seg?: number; m?: THREE.Matrix4 } = {}): Piece {
+  const ring = (z: number, rx: number, ry: number) => Array.from({ length: seg }, (_, j) => {
+    const a = (2 * Math.PI * j) / seg, c = Math.cos(a), s = Math.sin(a);
+    return new THREE.Vector3(Math.sign(c) * Math.abs(c) ** (2 / p) * rx, Math.sign(s) * Math.abs(s) ** (2 / p) * ry, z);
+  });
+  const rows = rings.map(([z, rx, ry]) => ring(z, rx, ry)), pos: number[] = [];
+  const tri = (a: THREE.Vector3, b: THREE.Vector3, c: THREE.Vector3) => {
+    const n = b.clone().sub(a).cross(c.clone().sub(a));
+    pos.push(...(n.z >= 0 ? [a, b, c] : [a, c, b]).flatMap((v) => v.toArray()));
+  };
+  for (let i = 0; i + 1 < rows.length; i++) for (let j = 0; j < seg; j++) {
+    const k = (j + 1) % seg, [a, b] = [rows[i], rows[i + 1]];
+    tri(a[j], a[k], b[k]); tri(a[j], b[k], b[j]);
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+  if (m) geo.applyMatrix4(m);
+  geo.computeVertexNormals();
+  return { geo, slot };
+}
+
+/** A loudspeaker as it shows through a grille: the cone's dish, its rolled rubber surround, the dust cap and the
+ * basket's rim, `r` the cone's radius, its rim at z = 0 and its throat `deep` behind. `m` places it. */
+function cone(r: number, deep: number, m: THREE.Matrix4): Piece[] {
+  return [
+    lathe("rubber", [[-deep, r * 0.22, r * 0.22], [-deep * 0.55, r * 0.6, r * 0.6], [-deep * 0.12, r * 0.92, r * 0.92], [0, r, r]], { m, seg: 24 }),
+    lathe("rubber", [[0, r, r], [deep * 0.25, r * 1.04, r * 1.04], [deep * 0.2, r * 1.09, r * 1.09], [0, r * 1.12, r * 1.12]], { m, seg: 24 }),
+    lathe("knob", [[-deep * 0.95, r * 0.22, r * 0.22], [-deep * 0.72, r * 0.16, r * 0.16], [-deep * 0.62, 0.001, 0.001]], { m, seg: 16 }),
+    lathe("knob", [[0, r * 1.12, r * 1.12], [deep * 0.1, r * 1.13, r * 1.13], [deep * 0.1, r * 1.2, r * 1.2], [-deep * 0.2, r * 1.2, r * 1.2]], { m, seg: 24 }),
+  ];
+}
+
+/** A constant-directivity horn's mouth: a squared-off flare from a small throat, `w` by `h` at the mouth. */
+function horn(w: number, h: number, deep: number, m: THREE.Matrix4): Piece[] {
+  return [
+    lathe("knob", [[-deep, 0.014, 0.014], [-deep * 0.6, w * 0.16, h * 0.2], [-deep * 0.2, w * 0.38, h * 0.42], [0, w / 2, h / 2]], { p: 4, seg: 24, m }),
+    lathe("knob", [[0, w / 2, h / 2], [deep * 0.15, w / 2 + 0.008, h / 2 + 0.008], [0, w / 2 + 0.014, h / 2 + 0.014]], { p: 4, seg: 24, m }),
+  ];
+}
+
+/** A handle set into a face: a dark pocket with a grip bar across it, `w` by `h` on the face, `out` its normal (its
+ * `w` runs across x on a face looking up or back, along z on a side). */
+function pocket(at: THREE.Vector3Tuple, out: THREE.Vector3Tuple, w: number, h: number): Piece[] {
+  const n = new THREE.Vector3(...out).normalize(), turn = new THREE.Matrix4().makeRotationFromQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), n));
+  const place = () => new THREE.Matrix4().makeTranslation(...at).multiply(turn).multiply(new THREE.Matrix4().makeRotationX(Math.PI / 2));
+  // The pocket's lip, a rounded ring that stands 3 mm proud, its dark floor, and the bar across it.
+  const lip = rounded("paint", { wf: w + 0.02, h: 0.004, d: h + 0.02, r: 0.012, e: 0.0018, y0: -0.002, m: place(), detail: 1 });
+  const floor = rounded("knob", { wf: w, h: 0.002, d: h, r: 0.008, e: 0.0008, y0: 0.0015, m: place(), detail: 1 });
+  const bar = rounded("paint", { wf: w * 0.92, h: 0.012, d: h * 0.32, r: 0.005, e: 0.004, y0: -0.004, m: place(), detail: 1 });
+  return [lip, floor, bar];
+}
+
+/** A pan-head screw on a face looking along `out`. */
+function screw(at: THREE.Vector3Tuple, out: "z" | "-z" | "x" | "-x" | "y", r = 0.0045): Piece[] {
+  return [disc("chrome", r, 0.002, out.endsWith("x") ? "x" : out === "y" ? "y" : "z", at, 8)];
+}
+
+/** UVs in metres across each triangle's own plane, so a photo texture tiles at its real size on every face. */
+function metreUv(geo: THREE.BufferGeometry) {
+  const p = geo.getAttribute("position"), uv = new Float32Array(p.count * 2);
+  const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3(), n = new THREE.Vector3(), t = new THREE.Vector3(), s = new THREE.Vector3(), X = new THREE.Vector3(1, 0, 0);
+  for (let i = 0; i + 2 < p.count; i += 3) {
+    a.fromBufferAttribute(p, i); b.fromBufferAttribute(p, i + 1); c.fromBufferAttribute(p, i + 2);
+    n.subVectors(b, a).cross(c.clone().sub(a)).normalize();
+    if (Math.abs(n.y) > 0.9) t.copy(X); else t.crossVectors(UP, n).normalize();
+    s.crossVectors(n, t);
+    [a, b, c].forEach((v, k) => { uv[(i + k) * 2] = v.dot(t); uv[(i + k) * 2 + 1] = v.dot(s); });
+  }
+  geo.setAttribute("uv", new THREE.BufferAttribute(uv, 2));
+  return geo;
+}
+
 type Face = "front" | "back" | "top" | "left" | "right";
 const NORMAL: Record<Face, THREE.Vector3Tuple> = { front: [0, 0, 1], back: [0, 0, -1], top: [0, 1, 0], left: [-1, 0, 0], right: [1, 0, 0] };
 
-/** Sockets in a row on a face, each a ring with a mark. `at` is the face point of the first, `step` to the next. */
+/** Sockets in a row on a face, each a ring round an insert, with a mark. `at` is the face point of the first, `step` to the next. */
 function jacks(b: Build, names: string[], face: Face, at: THREE.Vector3Tuple, step: THREE.Vector3Tuple, r = 0.012) {
   const out = NORMAL[face], axis = face === "top" ? "y" : face === "front" || face === "back" ? "z" : "x";
   names.forEach((name, i) => {
     const p: THREE.Vector3Tuple = [at[0] + step[0] * i, at[1] + step[1] * i, at[2] + step[2] * i];
     const c: THREE.Vector3Tuple = [p[0] + out[0] * 0.004, p[1] + out[1] * 0.004, p[2] + out[2] * 0.004];
-    b.pieces.push(disc("chrome", r, 0.008, axis, c, 6));
+    // a socket: a metal ring round a black insert
+    b.pieces.push(disc("metal", r, 0.008, axis, c, 14), disc("knob", r * 0.74, 0.009, axis, c, 14));
     b.marks.push({ name: `jack:${name}`, at: [p[0] + out[0] * 0.008, p[1] + out[1] * 0.008, p[2] + out[2] * 0.008], out });
   });
 }
@@ -122,50 +226,107 @@ const numbered = (stem: string, n: number) => Array.from({ length: n }, (_, i) =
 
 // ---- the gear -------------------------------------------------------------------------------------------------
 
-/** A speaker box: cabinet, front grille, top handle, rubber feet, a back panel and a pole cup underneath. */
+/** Feet, corner caps and the like: a small rounded block `s` across, centred at `at`. */
+const block = (slot: GearSlot, s: THREE.Vector3Tuple, at: THREE.Vector3Tuple, r: number) =>
+  rounded(slot, { wf: s[0], h: s[1], d: s[2], r, e: r, y0: at[1] - s[1] / 2, m: new THREE.Matrix4().makeTranslation(at[0], 0, at[2]), detail: 1 });
+
+/** A grille slab standing up at the front: `w` by `h` on the face, `t` thick from z0 forward, centred at (0, yc). */
+const grilleSlab = (w: number, h: number, t: number, yc: number, z0: number, r: number, m = new THREE.Matrix4()) =>
+  rounded("grille", { wf: w, h: t, d: h, r, e: 0.003, y0: z0, m: m.clone().multiply(new THREE.Matrix4().makeTranslation(0, yc, 0)).multiply(new THREE.Matrix4().makeRotationX(Math.PI / 2)) });
+
+/** A back panel: a painted steel plate with a screw in each corner. */
+function plate(b: Build, w: number, h: number, at: THREE.Vector3Tuple) {
+  b.pieces.push(box("panel", [w, h, 0.008], at, { bevel: 0.002 }));
+  for (const x of [-1, 1]) for (const y of [-1, 1]) b.pieces.push(...screw([at[0] + x * (w / 2 - 0.012), at[1] + y * (h / 2 - 0.012), at[2] - 0.004], "-z"));
+}
+
+/** A knob with a skirt and a pointer, standing out of a face along `out` (+1 front, -1 back). */
+function knob(b: Build, at: THREE.Vector3Tuple, out: 1 | -1, r = 0.011) {
+  const z = (k: number): THREE.Vector3Tuple => [at[0], at[1], at[2] + out * k];
+  b.pieces.push(disc("knob", r * 1.3, 0.003, "z", z(0.0015), 16), lathe("knob", [[0, r, r], [r * 0.9, r * 0.85, r * 0.85], [r * 0.95, 0.001, 0.001]].map(([k, rx, ry]) => [out * k, rx, ry] as [number, number, number]), { seg: 14, m: new THREE.Matrix4().makeTranslation(...z(0.003)) }));
+  b.pieces.push(box("chrome", [0.0016, r * 0.7, 0.001], [at[0], at[1] + r * 0.4, at[2] + out * (0.0035 + r * 0.9)]));
+}
+
+/** A speaker box, built as a moulded PA top is: a cabinet that tapers to the back, a perforated steel grille across
+ * the front with the woofer and the horn behind it, a handle set into the top and each side, rubber feet and a pole
+ * cup underneath, threaded fly points, and a back panel (a powered box's amp plate has a heat sink and knobs). */
 function speaker([w, h, d]: readonly number[], backJacks: string[], powered: boolean): Build {
-  const b: Build = { pieces: [], marks: [] }, body = h - 0.025;
-  b.pieces.push(box("paint", [w, body - 0.01, d], [0, 0.01 + (body - 0.01) / 2, 0], { bevel: 0.02 }));
-  b.pieces.push(box("grille", [w - 0.04, body - 0.08, 0.012], [0, 0.01 + (body - 0.01) / 2, d / 2 - 0.004], { bevel: 0.004 }));
-  b.pieces.push(...handle("metal", [0, body, 0], "y", w * 0.4, 0.025));
-  for (const x of [-1, 1]) for (const z of [-1, 1]) b.pieces.push(disc("rubber", 0.018, 0.01, "y", [x * (w / 2 - 0.04), 0.005, z * (d / 2 - 0.04)], 6));
-  b.pieces.push(disc("metal", 0.02, 0.012, "y", [0, 0.006, 0], 8));
-  const ph = powered ? h * 0.4 : h * 0.18, py = powered ? h * 0.32 : h * 0.3;
-  b.pieces.push(box("panel", [w * 0.62, ph, 0.01], [0, py, -d / 2 - 0.003]));
-  if (powered) b.pieces.push(disc("light", 0.004, 0.006, "z", [w * 0.22, py + ph * 0.38, -d / 2 - 0.009], 4));
+  const b: Build = { pieces: [], marks: [] }, body = h - 0.025, y0 = 0.012, g = 0.012, front = d / 2 - g;
+  const wb = w * 0.72, r = Math.min(0.016, w * 0.05), fh = body - y0;
+  b.pieces.push(rounded("paint", { wf: w, wb, h: fh, d: d - g, r, e: 0.014, y0, z0: -g / 2 }));
+  const gw = w - 0.006, gh = fh - 0.006, yc = y0 + fh / 2;
+  b.pieces.push(grilleSlab(gw, gh, g + 0.002, yc, front - 0.001, r));
+  // behind the grille: the woofer low, the horn above it
+  const rw = Math.min(gw, gh * 0.62) * 0.43, at = (y: number, x = 0) => new THREE.Matrix4().makeTranslation(x, y, front + 0.009);
+  b.pieces.push(...cone(rw, 0.008, at(yc - gh * 0.16)));
+  b.pieces.push(...horn(gw * 0.62, gh * 0.2, 0.008, at(y0 + gh * 0.8)));
+  // handles set into the top and the sides (the sides lean in as the box tapers)
+  b.pieces.push(...pocket([0, body, -d * 0.04], [0, 1, 0], w * 0.42, d * 0.2));
+  const lean = Math.atan2((w - wb) / 2, d);
+  for (const s of [-1, 1]) b.pieces.push(...pocket([s * ((w + wb) / 4 + 0.001), y0 + fh * 0.62, -g / 2], [s * Math.cos(lean), 0, Math.sin(lean)], d * 0.32, 0.05));
+  for (const x of [-1, 1]) for (const [z, half] of [[d / 2 - 0.05, w / 2], [-d / 2 + 0.05, wb / 2]]) b.pieces.push(block("rubber", [0.035, y0 + 0.002, 0.035], [x * (half - 0.04), (y0 + 0.002) / 2, z], 0.006));
+  // the pole cup: a steel ring round a dark socket
+  b.pieces.push(disc("metal", 0.024, 0.004, "y", [0, y0 - 0.002, 0], 16), disc("knob", 0.018, 0.003, "y", [0, y0 - 0.0035, 0], 16));
+  for (const z of [-d * 0.3, d * 0.22]) for (const x of [-1, 1]) b.pieces.push(disc("knob", 0.007, 0.003, "y", [x * w * 0.3, body + 0.001, z], 8));
+  const ph = powered ? h * 0.4 : h * 0.18, py = powered ? h * 0.32 : h * 0.3, pw = w * 0.62;
+  plate(b, pw, ph, [0, py, -d / 2 - 0.004]);
+  if (powered) {
+    // the amp's heat sink across the top of the plate, its knobs and the power LED below
+    const fins = 9;
+    for (let i = 0; i < fins; i++) b.pieces.push(box("metal", [0.003, ph * 0.34, 0.008], [-pw * 0.36 + (i * pw * 0.72) / (fins - 1), py + ph * 0.24, -d / 2 - 0.012]));
+    for (const x of [-0.6, -0.1]) knob(b, [x * pw * 0.5, py - ph * 0.02, -d / 2 - 0.008], -1, 0.009);
+    b.pieces.push(disc("light", 0.0035, 0.004, "z", [pw * 0.32, py - ph * 0.02, -d / 2 - 0.01], 8));
+  }
   const gap = (w * 0.5) / Math.max(1, backJacks.length - 1);
-  jacks(b, backJacks, "back", [-w * 0.25, py - (powered ? ph * 0.15 : 0), -d / 2 - 0.008], [gap, 0, 0]);
+  jacks(b, backJacks, "back", [-w * 0.25, py - (powered ? ph * 0.3 : 0), -d / 2 - 0.008], [gap, 0, 0]);
   mark(b, "grab", [0, body + 0.025, 0]);
   mark(b, "pole-cup", [0, 0.012, 0], [0, -1, 0]);
   return b;
 }
 
+/** An 18-inch sub: a rounded-over box in a textured coat, a full steel grille with the cone and the port slot behind
+ * it, a cap on every corner, a dish handle in each side, a pole socket on top and the speaker jacks on the back. */
 function sub(): Build {
-  const [w, h, d] = GEAR_SIZES["sub-18"], b: Build = { pieces: [], marks: [] };
-  b.pieces.push(box("paint", [w, h - 0.02, d], [0, 0.01 + (h - 0.02) / 2, 0], { bevel: 0.02 }));
-  b.pieces.push(box("grille", [w - 0.05, h - 0.08, 0.012], [0, h / 2, d / 2 - 0.004], { bevel: 0.004 }));
-  for (const x of [-1, 1]) b.pieces.push(...handle("metal", [x * w / 2, h * 0.6, 0], x > 0 ? "x" : "-x", 0.14, 0.012));
-  for (const x of [-1, 1]) for (const z of [-1, 1]) b.pieces.push(disc("rubber", 0.02, 0.01, "y", [x * (w / 2 - 0.05), 0.005, z * (d / 2 - 0.05)], 6));
-  b.pieces.push(disc("metal", 0.025, 0.006, "y", [0, h - 0.008, 0], 8));
-  b.pieces.push(box("panel", [w * 0.4, h * 0.16, 0.01], [0, h * 0.25, -d / 2 - 0.003]));
+  const [w, h, d] = GEAR_SIZES["sub-18"], b: Build = { pieces: [], marks: [] }, y0 = 0.014, g = 0.014, front = d / 2 - g, fh = h - y0 - 0.004;
+  b.pieces.push(rounded("paint", { wf: w - 0.01, h: fh, d: d - g, r: 0.01, y0, z0: -g / 2 }));
+  const yc = y0 + fh / 2;
+  b.pieces.push(grilleSlab(w - 0.016, fh - 0.01, g + 0.002, yc, front - 0.001, 0.01));
+  const at = (y: number) => new THREE.Matrix4().makeTranslation(0, y, front + 0.011);
+  b.pieces.push(...cone(0.2, 0.009, at(yc + 0.06)));
+  // the port: a dark slot right across the bottom with rounded lips
+  b.pieces.push(box("knob", [w - 0.12, 0.05, 0.002], [0, y0 + 0.07, front + 0.002]));
+  for (const y of [y0 + 0.04, y0 + 0.1]) b.pieces.push(rod("rubber", [-(w - 0.12) / 2, y, front + 0.004], [(w - 0.12) / 2, y, front + 0.004], 0.005, 8));
+  // a cap on each corner: the bottom four are its feet
+  const c = 0.056;
+  for (const x of [-1, 1]) for (const y of [c / 2, h - c / 2]) for (const z of [-1, 1]) b.pieces.push(block("rubber", [c, c, c], [x * (w / 2 - c / 2 + 0.001), y, z * (d / 2 - c / 2 + 0.001)], 0.014));
+  for (const x of [-1, 1]) b.pieces.push(...pocket([x * (w / 2 - 0.005), h * 0.6, 0], [x, 0, 0], 0.16, 0.07));
+  b.pieces.push(disc("metal", 0.026, 0.005, "y", [0, h - 0.002, 0], 16), disc("knob", 0.019, 0.002, "y", [0, h + 0.0005, 0], 16));
+  plate(b, w * 0.4, h * 0.16, [0, h * 0.25, -d / 2 - 0.004]);
   jacks(b, ["speaker-in", "speaker-out"], "back", [-w * 0.08, h * 0.25, -d / 2 - 0.008], [w * 0.16, 0, 0]);
   mark(b, "grab", [w / 2 + 0.012, h * 0.6, 0], [1, 0, 0]);
   mark(b, "pole", [0, h - 0.005, 0], [0, 1, 0]);
   return b;
 }
 
-/** A floor monitor: a wedge whose long sloped face (the grille) looks up at the player. */
+/** A floor monitor: a wedge whose long sloped face (the grille) looks up at the player, the woofer and the horn side
+ * by side behind it, caps on its corners, a handle set into the back and the jack plate beside it. */
 function wedge(): Build {
   const [w, h, d] = GEAR_SIZES["wedge-12"], b: Build = { pieces: [], marks: [] };
   const lo = 0.08, backTop = -d / 2 + 0.07;
-  b.pieces.push(prism("paint", [[-d / 2, 0.01], [d / 2, 0.01], [d / 2, lo], [backTop, h], [-d / 2, h]], w));
-  // the grille on the slope, from (d/2, lo) to (backTop, h)
-  const dz = backTop - d / 2, dy = h - lo, len = Math.hypot(dz, dy), tilt = Math.atan2(-dz, dy);
-  const n = new THREE.Vector3(0, -dz, dy).normalize().multiplyScalar(0.003);
-  b.pieces.push(box("grille", [w - 0.06, 0.012, len - 0.04], [0, (lo + h) / 2 + n.y, (d / 2 + backTop) / 2 + n.z], { rot: [tilt, 0, 0] }));
-  for (const x of [-1, 1]) for (const z of [-1, 1]) b.pieces.push(disc("rubber", 0.016, 0.01, "y", [x * (w / 2 - 0.05), 0.005, z * (d / 2 - 0.05)], 6));
-  b.pieces.push(...handle("metal", [0, h * 0.62, -d / 2], "-z", 0.14, 0.02));
-  b.pieces.push(box("panel", [w * 0.3, h * 0.2, 0.01], [w * 0.28, h * 0.25, -d / 2 - 0.003]));
+  b.pieces.push(prism("paint", [[-d / 2, 0.012], [d / 2, 0.012], [d / 2, lo], [backTop, h], [-d / 2, h]], w - 0.004, 0, 0.008));
+  // the slope's own frame: x across, y up the slope from the front edge, z out of it
+  const dz = backTop - d / 2, dy = h - lo, len = Math.hypot(dz, dy);
+  const up = new THREE.Vector3(0, dy, dz).divideScalar(len), out = new THREE.Vector3(0, -dz, dy).divideScalar(len);
+  const slope = new THREE.Matrix4().makeBasis(new THREE.Vector3(1, 0, 0), up, out).setPosition(0, (lo + h) / 2, (d / 2 + backTop) / 2);
+  b.pieces.push(grilleSlab(w - 0.05, len - 0.03, 0.011, 0, 0, 0.012, slope));
+  const on = (x: number, y: number) => slope.clone().multiply(new THREE.Matrix4().makeTranslation(x, y, 0.008));
+  b.pieces.push(...cone(0.14, 0.007, on(-0.11, 0)), ...horn(0.16, 0.12, 0.007, on(0.17, 0.02)));
+  const c = 0.05;
+  for (const x of [-1, 1]) {
+    for (const [y, z] of [[c / 2, -d / 2 + c / 2], [h - c / 2, -d / 2 + c / 2], [c / 2, d / 2 - c / 2]]) b.pieces.push(block("rubber", [c, c, c], [x * (w / 2 - c / 2 + 0.001), y, z + Math.sign(z) * 0.001], 0.012));
+  }
+  b.pieces.push(...pocket([0, h * 0.62, -d / 2], [0, 0, -1], 0.14, 0.05));
+  plate(b, w * 0.3, h * 0.2, [w * 0.28, h * 0.25, -d / 2 - 0.004]);
   jacks(b, ["power-in", "xlr-in", "xlr-out"], "back", [w * 0.2, h * 0.25, -d / 2 - 0.008], [w * 0.08, 0, 0]);
   mark(b, "grab", [0, h * 0.62, -d / 2 - 0.02], [0, 0, -1]);
   return b;
@@ -240,7 +401,7 @@ function mixer(): Build {
   jacks(b, numbered("xlr-in", 8), "back", [-w * 0.42, y, rear], [w * 0.062, 0, 0], 0.009);
   jacks(b, numbered("line-in", 4), "back", [w * 0.08, y, rear], [w * 0.062, 0, 0], 0.007);
   // the mains, line outs and power sit above the inputs
-  jacks(b, ["xlr-out-1", "xlr-out-2", "line-out-1", "line-out-2", "power-in"], "back", [w * 0.1, back * 0.85, rear], [w * 0.08, 0, 0], 0.007);
+  jacks(b, [...numbered("xlr-out", 4), "line-out-1", "line-out-2", "power-in"], "back", [-w * 0.3, back * 0.85, rear], [w * 0.08, 0, 0], 0.007);
   mark(b, "grab", [0, back, -d / 2 + 0.03]);
   return b;
 }
@@ -474,7 +635,7 @@ function built(id: GearId, height: number): Built {
   if (!hit) {
     const { pieces, marks } = BUILDERS[id](height);
     const slots = SLOTS.filter((s) => pieces.some((p) => p.slot === s))
-      .map((s): [GearSlot, THREE.BufferGeometry] => [s, mergeVertices(mergeGeometries(pieces.filter((p) => p.slot === s).map((p) => p.geo))!)]);
+      .map((s): [GearSlot, THREE.BufferGeometry] => [s, mergeVertices(mergeGeometries(pieces.filter((p) => p.slot === s).map((p) => metreUv(p.geo)))!)]);
     hit = { slots, marks };
     cache.set(key, hit);
   }

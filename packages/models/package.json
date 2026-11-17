@@ -24,6 +24,8 @@
     "./catalog": "./src/catalog.ts",
     "./scenery": "./src/scenery.ts",
     "./gear": "./src/gear.ts",
+    "./surfaces": "./src/surfaces.ts",
+    "./textures/*": "./textures/*",
     "./synth": "./src/synth.ts",
     "./character": "./src/character.ts"
   },
@@ -35,7 +37,8 @@
     "@types/three": "^0.180.0"
   },
   "files": [
-    "src"
+    "src",
+    "textures"
   ],
   "keywords": [
     "rustybuns",
