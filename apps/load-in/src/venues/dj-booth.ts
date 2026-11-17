@@ -104,6 +104,8 @@ const media = booth("media");
 function room(b: Booth, name: string): Level {
   return {
     name,
+    // The booth table is solid to cables: the leads run off its back edge and down, not through the top.
+    tables: [b.table],
     bounds: { x0: -3.75, x1: 3.75, z0: 0.25, z1: 8.75 },
     room: { x0: -4, x1: 4, z0: 0, z1: 9, height: 3, door: 1.8 },
     outlets: [

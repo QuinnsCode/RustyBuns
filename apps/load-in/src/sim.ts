@@ -32,6 +32,8 @@ export interface Level {
   bounds: { x0: number; x1: number; z0: number; z1: number };
   /** The room you see: walls stand on these edges, with the door open on the +z side. */
   room: { x0: number; x1: number; z0: number; z1: number; height: number; door: number };
+  /** Built-in furniture a cable lies on or falls off, not through (a DJ booth's table): centre on the floor, size. */
+  tables?: readonly { x: number; z: number; w: number; d: number; h: number }[];
   /** Fixed things you plug into, not carried. */
   outlets: { key: string; x: number; y: number; z: number; circuit?: string; amps?: 15 | 20 }[];
   /** Where people walk: a cable lying across one with no ramp over it is a trip hazard. */

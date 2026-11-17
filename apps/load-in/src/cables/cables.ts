@@ -158,8 +158,10 @@ export function endAt(w: World, c: Cables, run: Run, end: "a" | "b"): Vec | null
 }
 const near = (w: World, p: Vec, reach = REACH) => Math.hypot(p.x - w.you.x, p.z - w.you.z) <= reach;
 
-const solids = (w: World): Solid[] =>
-  w.items.filter((i) => i.key !== w.held?.key).map((i) => { const [sw, h, d] = dims(i); return { x: i.x, y: i.y, z: i.z, rot: i.rot, w: sw, h, d }; });
+const solids = (w: World): Solid[] => [
+  ...w.items.filter((i) => i.key !== w.held?.key).map((i) => { const [sw, h, d] = dims(i); return { x: i.x, y: i.y, z: i.z, rot: i.rot, w: sw, h, d }; }),
+  ...(w.level.tables ?? []).map((t) => ({ x: t.x, y: 0, z: t.z, rot: 0, w: t.w, h: t.h, d: t.d })),
+];
 
 /** One tick: a held end can't go farther than the cable reaches (it stops you), then every laid-out cable settles. */
 export function stepCables(w: World, c: Cables, dt: number) {
