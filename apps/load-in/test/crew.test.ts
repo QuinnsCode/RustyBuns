@@ -115,10 +115,11 @@ test("two run one power cable: Ada takes it to the wall, Bea walks the far end t
   const { join, pump } = crewRoom(newWorld().level);
   const ada = await join("Ada", "guest-ada-0002"), bea = await join("Bea", "guest-bea-0002");
   const run = (p: Page, key = "power-10") => cableState(p.w, p.c).cables.find((r) => r.key === key)!;
-  // Each walks a step at a time, the wire between every step, so the friend's end follows their hand.
+  // Each walks ten steps, the wire between every step, so the friend's end follows their hand. (Ten, not more: the room
+  // drops a socket's frames past a burst of 80, and the test sends them all in a moment.)
   const walk = (p: Page, x: number, z: number, ...all: Page[]) => {
-    for (let k = 0; k < 30 && Math.hypot(p.w.you.x - x, p.w.you.z - z) > 0.05; k++) {
-      walkWith(p.w, p.c, p.w.you.x + (x - p.w.you.x) / (30 - k), p.w.you.z + (z - p.w.you.z) / (30 - k));
+    for (let k = 0; k < 10 && Math.hypot(p.w.you.x - x, p.w.you.z - z) > 0.05; k++) {
+      walkWith(p.w, p.c, p.w.you.x + (x - p.w.you.x) / (10 - k), p.w.you.z + (z - p.w.you.z) / (10 - k));
       for (const o of all) if (o !== p) settle(o.w, o.c, 0.05);
       pump(...all);
     }
