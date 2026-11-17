@@ -254,10 +254,10 @@ const links = () => LINKS.map((l) => ({ text: l.text, ok: joined(l.a, l.b) }));
 scene.add(camera);
 const hands = handsView(scene, camera);
 // The feel room shows a finished tour's arms: every rung's tattoo, and your own if you pick one.
-// Hold I to look at your arms.
+// Hold Y to look at your arms (I is taken: the arena levels check a point with it).
 let showArms = false;
-window.addEventListener("keydown", (e) => { if (e.code === "KeyI") showArms = true; });
-window.addEventListener("keyup", (e) => { if (e.code === "KeyI") showArms = false; });
+window.addEventListener("keydown", (e) => { if (e.code === "KeyY") showArms = true; });
+window.addEventListener("keyup", (e) => { if (e.code === "KeyY") showArms = false; });
 const shoes = shoesView(scene);
 const ink = mountInk($("ink-host"), hands, () => Object.keys(FLASH).map((level) => ({ level, pass: 1 as const })), shoes);
 /** What the hands hold: a roll hooked on the right hand's fingers (the left on its end once that is out), a plug
@@ -397,6 +397,9 @@ $("play").addEventListener("click", start);
 $("t-use").addEventListener("click", () => { if (live) use(); });
 $("t-48").addEventListener("click", () => { if (live) togglePhantom(); });
 $("t-reset").addEventListener("click", reset);
+// Arms: held, like the Y key.
+$("t-arms").addEventListener("pointerdown", (e) => { e.stopPropagation(); showArms = true; });
+for (const up of ["pointerup", "pointercancel", "pointerleave"]) $("t-arms").addEventListener(up, () => { showArms = false; });
 $("t-bowl").addEventListener("pointerdown", (e) => { e.stopPropagation(); if (live && hold?.part === "roll") charging = true; });
 $("t-bowl").addEventListener("pointerup", (e) => { e.stopPropagation(); if (charging) { charging = false; release(charge); } });
 

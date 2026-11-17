@@ -43,7 +43,7 @@ export function sway(t: number, speed: number, side: Side): V3 {
   return [Math.cos(w / 2) * 0.006 * a, Math.sin(w + (side > 0 ? 0 : Math.PI)) * 0.009 * a + Math.sin(t * 1.7 + side) * 0.0015, 0];
 }
 
-/** Looking at your arms (hold I): both forearms raised across the view, backs up, so the ink on them shows. */
+/** Looking at your arms (hold Y): both forearms raised across the view, backs up, so the ink on them shows. */
 export function showFrame(t: number, side: Side = 1): Frame {
   const f = frame([0.13, -0.1 + Math.sin(t * 1.3) * 0.004, -0.36], [0.42, -0.5, 0.75], [-0.75, 0.55, -0.3]);
   return side > 0 ? f : mirror(f);
