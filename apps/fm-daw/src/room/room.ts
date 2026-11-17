@@ -1,4 +1,4 @@
-// Q Studio's room, pure (no DOM, no three.js): the gear it knows and where its jacks and knobs sit, you walking it
+// Qollab Studio's gear room, pure (no DOM, no three.js): the gear it knows and where its jacks and knobs sit, you walking it
 // in first person, what you look at, what a click does, and what you hear. The patch and who holds what are the
 // sesh's own Studio (../studio.ts, the same ops friends' rooms apply); this file only adds the body and the hands.
 // What you hear is a walk back along the cables: from the speaker cab to the guitar, or from a desk track's insert

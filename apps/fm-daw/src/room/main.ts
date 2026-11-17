@@ -1,4 +1,4 @@
-// Q Studio, the live room (/studio.html): you stand in it in first person, the same controls as Load In (mouse or
+// Qollab Studio's gear room (/studio.html): you stand in it in first person, the same controls as Load In (mouse or
 // right stick to look, WASD or left stick to walk). Click a box to pick it up and click again to set it down; click
 // a jack to pull a cable out of it, walk the cable to another jack and click there; look at a knob and drag. The
 // room's patch is the sesh's Studio (../studio.ts), kept in this browser for now. What you hear is the walk back

@@ -1,4 +1,4 @@
-// Q Studio's room as a player walks it: to the rack, the amp down onto the cab, the guitar through a pedal into the
+// Qollab Studio's gear room as a player walks it: to the rack, the amp down onto the cab, the guitar through a pedal into the
 // amp and the amp into the cab by looking and clicking, a knob turned, and a cable pulled out again; then gear
 // cabled into the desk's track inserts (#4902).
 import { expect, test } from "bun:test";

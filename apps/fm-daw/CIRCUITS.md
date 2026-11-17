@@ -146,4 +146,4 @@ The longer map (more parts, a pedalboard, phasers to tape echo, profiling a real
 6. **Voicing by ear** against reference recordings the owner picks.
 7. **A plugin build** (VST3 and CLAP through nih-plug) if it should also run in other DAWs.
 
-Beyond the amp: the circuits as gear you carry, place and cable in a 3D studio (Q Studio) and in a roadie game (Load In), in [game idea 3](../../notes/game-ideas/3-studio-and-roadie.md).
+Beyond the amp: the circuits as gear you carry, place and cable in a 3D studio (Qollab Studio's gear room) and in a roadie game (Load In), in [game idea 3](../../notes/game-ideas/3-studio-and-roadie.md).

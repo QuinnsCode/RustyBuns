@@ -1,5 +1,5 @@
 // Walking a room on foot, pure: a body on the floor pushed out of the walls and whatever stands in the way.
-// Q Studio's gear room (../room/room.ts) and the jam room (./jam.ts) both walk with it (from PR #4985).
+// Qollab Studio's gear room (../room/room.ts) and the jam room (./jam.ts) both walk with it (from PR #4985).
 import { clamp } from "@rustybuns/util";
 
 /** A box on the floor seen from above: its middle, half its width and depth, and how far it is turned. */
