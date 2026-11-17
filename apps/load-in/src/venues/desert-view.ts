@@ -8,8 +8,12 @@ import { type World } from "../sim.ts";
 import { type Cables } from "../cables/cables.ts";
 import { type Zone, master, rig } from "./dive-bar.ts";
 import { aimKey, heatColour } from "./dive-bar-view.ts";
-import { BASS, CAMP_LIMIT, GROUND, PASS, SPREAD, TARGET, ZONES, desertState, heat, score, show, wrapNear, type Score, type Show } from "./desert.ts";
+import { BASS, CAMP_LIMIT, GROUND, PASS, SPREAD, TARGET, ZONES, desertState, heat, score, show, wrapNear, DANCE_FLOOR, type Score, type Show } from "./desert.ts";
 import { playing } from "./park.ts";
+import { cellsIn, mean } from "./dive-bar.ts";
+import { crowdOf, letIn, regions } from "../crowd/crowd.ts";
+import { crowdView } from "../crowd/crowd-view.ts";
+import type { Grid } from "@rustybuns/gear";
 
 export type DesertView = {
   /** A key while playing with hands free; true when the desert used it. */
@@ -111,6 +115,9 @@ export function desertView(scene: THREE.Scene, hud: HTMLElement, getWorld: () =>
   card.className = "bar-card";
   hud.appendChild(card);
 
+  // The night's crowd on the dance floor: they come at show time, more of them the better the wall sounds.
+  const people = crowdView(scene);
+  let heard: Grid | null = null;
   let seen = "", last: Score | null = null, opened: Show | null = null, band: "high" | "low" = "high", night: { at: number; hours: number; dawn: boolean } | null = null;
   const signature = (w: World, cs: Cables) => JSON.stringify([band, w.held?.key, w.items.map((i) => [i.x, i.y, i.z, i.rot]), rig(w),
     cs.runs.map((r) => [r.a, r.b, r.rope?.pts.filter((p, k) => k % 8 === 0).map((p) => [Math.round(p.x * 10), Math.round(p.z * 10)])])]);
@@ -120,6 +127,7 @@ export function desertView(scene: THREE.Scene, hud: HTMLElement, getWorld: () =>
     for (let k = 0; k < shown.db.length; k++) data.set(band === "high" ? heatColour(shown.db[k], TARGET, SPREAD) : heatColour(shown.db[k], BASS + SPREAD, SPREAD), k * 4);
     tex.needsUpdate = true;
     last = score(w, cs, high, low);
+    heard = high;
     for (const t of tents) t.material = last.camp !== null && last.camp > CAMP_LIMIT ? loudMat : tentMat;
   }
 
@@ -148,6 +156,9 @@ export function desertView(scene: THREE.Scene, hud: HTMLElement, getWorld: () =>
     },
     update() {
       const w = getWorld(), cs = getCables(), sig = signature(w, cs), now = performance.now();
+      const crowd = crowdOf(w), map = heard;
+      if (crowd && map) people.moods(regions(crowd, (zone) => ({ soundcheck: null, full: mean(cellsIn(map, zone)) }), TARGET, SPREAD));
+      people.update(w, crowd);
       if (sig !== seen) { seen = sig; paint(w, cs); }
       const s = last!, st = desertState(w, cs), gen = st.generator, fuel = st.fuel, db = (v: number | null) => (v === null ? "silent" : `${v.toFixed(0)} dB`);
       // The night on show time: twelve hours in twelve seconds; the lasers and the wall stop when the fuel does.
@@ -168,6 +179,7 @@ export function desertView(scene: THREE.Scene, hud: HTMLElement, getWorld: () =>
         + `<span class="${s.bass < 1 ? "warn" : ""}">Bass ${Math.round(s.bass * 100)}% of the floor at ${BASS} dB</span>`
         + `<span class="${s.camp !== null && s.camp > CAMP_LIMIT ? "warn" : ""}">Camp ${db(s.camp)} (limit ${CAMP_LIMIT})</span>`
         + (s.dusty.length ? `<span class="warn">Dust: ${s.dusty.length} joint${s.dusty.length === 1 ? "" : "s"} on the sand (lift the gear or tape them: G)</span>` : getCables().runs.some((r) => "plug" in r.a || "plug" in r.b) ? "<span>Dust: every joint is off the sand or taped</span>" : "")
+        + (crowdOf(w) ? `<span>The floor: ${crowdOf(w)!.people} people</span>` : "")
         + `<span>Fader ${rig(w).master} dB</span>` + (opened
           ? `<span class="${opened.pass ? "pass" : ""}">${opened.sunrise ? "The sun came up on the wall" : `Silent at ${opened.until}, before sunrise`}: ${opened.score} / ${PASS}</span><span>Sound ${opened.sound}, crowd mood ${opened.mood}</span><span>Paid ${opened.pay} of ${opened.fee}</span>`
           : `<span class="${s.pass ? "pass" : ""}">Score ${s.score} / ${PASS} to pass</span>`)
@@ -176,10 +188,14 @@ export function desertView(scene: THREE.Scene, hud: HTMLElement, getWorld: () =>
     doors() {
       view.update();
       opened = show(getWorld(), getCables());
+      // Nobody walks out into the desert for a wall that makes no sound.
+      const coming = Math.round(DANCE_FLOOR.capacity * Math.min(1, opened.sound / 100));
+      if (!crowdOf(getWorld()) && coming > 0) letIn(getWorld(), DANCE_FLOOR, coming);
       night = { at: performance.now(), hours: opened.night, dawn: opened.sunrise };
       return opened;
     },
     dispose() {
+      people.dispose();
       scene.remove(g);
       scene.background = was.background;
       scene.fog = was.fog;

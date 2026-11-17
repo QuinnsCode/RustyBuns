@@ -8,7 +8,7 @@ import { expect, setDefaultTimeout, test } from "bun:test";
 import { dims, newWorld, pickUp, push, putDown, type World } from "../src/sim.ts";
 import { type Cables, grabEnd, newCables, plug, settle, takeCable, walkWith } from "../src/cables/cables.ts";
 import { aim, master } from "../src/venues/dive-bar.ts";
-import { CAMP_LIMIT, DESERT, desertState, score, wrap } from "../src/venues/desert.ts";
+import { CAMP_LIMIT, DANCE_FLOOR, DESERT, desertState, score, wrap } from "../src/venues/desert.ts";
 
 setDefaultTimeout(60_000);
 const DEG = Math.PI / 180;
@@ -137,4 +137,14 @@ test.each([
   const { bass } = score(w, c);
   expect(bass).toBeGreaterThanOrEqual(least);
   expect(bass).toBeLessThanOrEqual(most);
+});
+
+test("the dance floor's crowd spot covers the floor the wall is scored on, and holds 500", () => {
+  const { floor, regions, capacity } = DANCE_FLOOR;
+  expect(capacity).toBe(500);
+  // Front, middle and back meet edge to edge from the wall to the far end of the floor, with no gap or overlap.
+  expect(regions.map((r) => [r.zone.z0, r.zone.z1])).toEqual([[floor.z0, 10.5], [10.5, 15.5], [15.5, floor.z1]]);
+  // Before show time nobody is there, and the state says so.
+  const w = newWorld(DESERT), c = newCables(w);
+  expect(desertState(w, c).crowd).toBeNull();
 });
