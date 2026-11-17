@@ -17,6 +17,7 @@ import { STAGE, compile, heard, type Cable, type End, type Patch } from "../circ
 import { patchView } from "./patch-view.ts";
 import { riff } from "../circuit/riff.ts";
 import { BoardView } from "./board.ts";
+import { BuildSheet } from "../kit/sheet.ts";
 import { icon } from "./icons.ts";
 import { h, iconButton } from "./dom.ts";
 import { benchSlot } from "./bench-slot.ts";
@@ -326,6 +327,10 @@ function build() {
   floor.append(bench.el);
 
   const board = new BoardView((socket, choice) => swapPart(socket, choice));
+  // The pedal's build sheet: its parts with your swaps, the board files, and the kit as a zip (../kit/sheet.ts).
+  const sheet = new BuildSheet(() => {});
+  const sheetBtn = iconButton("download", "Build sheet: the parts with your swaps, the board files, and the kit to download", () => void openSheet());
+  board.tool(sheetBtn);
   // The effects loop: machines between the preamp and the power stage, any of them on at once.
   const L = loopOf();
   type LoopKnob = { label: string; get: () => number; put: (v: number) => void; dflt: number };
@@ -372,9 +377,9 @@ function build() {
     h("h1", "", "Q Amp"),
     h("p", "", "Pedals and tube amps simulated part by part, live. Turn your speakers down first."),
     (() => { const b = h("button", "start", icon("power"), "Plug in"); b.type = "button"; b.addEventListener("click", () => void start().catch((e) => { note.textContent = String(e); })); return b; })());
-  root.append(bar, note, screensEl, rig, floor, loopFloor, patchUi.el, board.el, startCard);
+  root.append(bar, note, screensEl, rig, floor, loopFloor, patchUi.el, board.el, sheet.el, startCard);
   document.body.append(root);
-  return { root, bar, boardBtn, board, patch: patchUi, screens, screensEl, tubes, modelName, modelBlurb, models, knobs, cones, pedalEls, bench, loopEls, sourceButtons, devices, load, latency, note, startCard };
+  return { root, bar, boardBtn, board, sheet, sheetBtn, patch: patchUi, screens, screensEl, tubes, modelName, modelBlurb, models, knobs, cones, pedalEls, bench, loopEls, sourceButtons, devices, load, latency, note, startCard };
 }
 
 const ui = build();
@@ -406,9 +411,16 @@ function showBoard() {
   ui.board.el.hidden = S.board !== 1;
   if (S.board !== 1) return;
   const def = PEDALS.find((p) => p.id === S.pedal);
+  ui.sheetBtn.hidden = !def?.board;
   if (def?.board) ui.board.show(def.board, `${def.name} · your board`, S.swaps[def.id] ?? {});
   else if (S.pedal === "bench") ui.board.blank(`${ui.bench.state()?.name ?? "Bench"} · on the bench`, "a board dropped on the bench has no drawing here yet");
   else ui.board.show("triode", `${ampOf(S.amp).name} · V1, the first tube stage`, null);
+}
+
+/** The playing pedal's build sheet, with your swaps on it. */
+function openSheet() {
+  const def = PEDALS.find((p) => p.id === S.pedal);
+  return def?.board ? ui.sheet.open(def, S.swaps[def.id] ?? {}) : null;
 }
 
 /** Puts `choice` in the playing pedal's socket (null or the stock part: back to stock; socket null: every socket). */
@@ -505,6 +517,10 @@ Object.assign(window, {
     pedal: (id: string | null) => { S.pedal = PEDALS.some((p) => p.id === id) || (id === "bench" && ui.bench.state()?.ok) ? id : null; showPedals(); send(); },
     /** Open or close the board view. */
     board: (open: boolean) => { S.board = open ? 1 : 0; showBoard(); save(); },
+    /** The playing pedal's build sheet open: what it shows once its kit has loaded (null: no pedal with a board on). */
+    sheet: async () => (await openSheet(), ui.sheet.state()),
+    /** The open sheet's Download button: the zip's file name and size. */
+    sheetDownload: () => ui.sheet.download(),
     /** Swap a socket on the playing pedal's board (`"D1", "germanium"`); null puts the stock part back. */
     swap: swapPart,
     /** Switch a loop machine ("spring", "tape", "bbd") on or off. */

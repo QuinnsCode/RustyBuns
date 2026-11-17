@@ -220,6 +220,11 @@ function act(r: Room, op: StudioOp): boolean {
 export const hand = (r: Room) => r.studio.held[String(r.me)];
 export const heldId = (r: Room) => { const h = hand(r); return h && "item" in h ? h.item : null; };
 export const item = (r: Room, id: string) => r.studio.patch.placed.find((p) => p.id === id);
+/** The pedal whose build sheet you'd open: the one in your hand, else the one you look at (its box, a knob or a jack). */
+export function pedalAt(r: Room): (typeof PEDALS)[number] | null {
+  const a = aimed(r), id = heldId(r) ?? (a ? (a.t === "jack" ? a.end[0] : a.id) : null), p = id ? item(r, id) : undefined, g = p && gearOf(p);
+  return (g?.kind === "pedal" && PEDALS.find((x) => x.id === g.circuit)) || null;
+}
 const nameOf = (r: Room, id: string) => { const p = item(r, id); return (p && gearOf(p)?.name) ?? id; };
 
 // ---- geometry ----

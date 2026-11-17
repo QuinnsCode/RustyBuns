@@ -1,0 +1,43 @@
+/* A pedal's build sheet (sheet.ts): a dark panel over the gear room or Q Amp, the same look as the board view. */
+.build-sheet {
+  --ink: #eceef1; --dim: #9aa1ab; --warn: #ffb000; --mono: "IBM Plex Mono", ui-monospace, monospace;
+  /* Under the site's page links along the top. */
+  position: fixed; z-index: 20; left: 50%; top: 68px; transform: translateX(-50%);
+  width: min(980px, calc(100% - 32px)); max-height: calc(100% - 84px); display: flex; flex-direction: column;
+  background: #0b0e11; color: var(--ink); border: 1px solid rgba(255, 255, 255, 0.14); border-radius: 14px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.6); font: 14px/1.45 "IBM Plex Sans", system-ui, sans-serif; outline: none;
+}
+.build-sheet[hidden] { display: none; }
+.sheet-top { display: flex; align-items: center; gap: 8px; padding: 8px 8px 8px 12px; color: var(--dim); border-bottom: 1px solid rgba(255, 255, 255, 0.08); }
+.sheet-title { font: 600 1rem/1 "Barlow Condensed", "Arial Narrow", sans-serif; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink); white-space: nowrap; }
+.sheet-note { flex: 1; min-width: 0; font: 500 11px/1.2 var(--mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sheet-tabs { display: flex; gap: 4px; }
+.build-sheet .icon-btn {
+  display: inline-flex; align-items: center; justify-content: center; height: 32px; min-width: 32px; padding: 0 6px; cursor: pointer;
+  border-radius: 9px; border: 1px solid rgba(255, 255, 255, 0.14); background: rgba(255, 255, 255, 0.05); color: inherit;
+}
+.build-sheet .icon-btn:hover { background: rgba(255, 255, 255, 0.1); }
+.build-sheet .icon-btn[aria-pressed="true"] { border-color: var(--warn); color: var(--warn); background: rgba(255, 176, 0, 0.1); }
+.build-sheet .icon-btn:disabled { opacity: 0.35; cursor: default; }
+/* The board view inside: the sheet's own bar picks the drawing, so the view's bar goes. */
+.build-sheet .board-view { width: 100%; border: 0; border-radius: 0; box-shadow: none; }
+.build-sheet .board-top { display: none; }
+.build-sheet .board-art svg { height: clamp(220px, 58vh, 620px); }
+.sheet-parts, .sheet-files { overflow: auto; padding: 8px 12px 12px; }
+.sheet-bom { width: 100%; border-collapse: collapse; font-size: 13px; }
+.sheet-bom th { text-align: left; font: 600 11px/1.2 var(--mono); color: var(--dim); text-transform: uppercase; letter-spacing: 0.06em; padding: 6px 8px; border-bottom: 1px solid rgba(255, 255, 255, 0.12); }
+.sheet-bom td { padding: 6px 8px; border-bottom: 1px solid rgba(255, 255, 255, 0.05); vertical-align: top; }
+.sheet-bom td:nth-child(3) { text-align: right; font-family: var(--mono); }
+.sheet-bom td:nth-child(4), .sheet-bom td:nth-child(5) { font: 12px/1.4 var(--mono); color: var(--dim); overflow-wrap: anywhere; }
+.sheet-bom tr.socketed td:first-child::after { content: " · socket"; color: var(--dim); font-size: 11px; }
+.sheet-bom tr.swapped td:nth-child(2) { color: var(--warn); }
+.sheet-layers { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 6px; }
+.sheet-layers li { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 9px; background: rgba(255, 255, 255, 0.04); font: 12px/1.2 var(--mono); }
+.sheet-empty { color: var(--dim); margin: 12px 4px; }
+@media (max-width: 640px) {
+  .build-sheet { width: calc(100% - 16px); top: 72px; max-height: calc(100% - 80px); }
+  .sheet-top { flex-wrap: wrap; }
+  .sheet-note { order: 9; flex-basis: 100%; }
+  .sheet-title { flex: 1; overflow: hidden; text-overflow: ellipsis; }
+  .sheet-bom td:nth-child(4), .sheet-bom th:nth-child(4) { display: none; }
+}

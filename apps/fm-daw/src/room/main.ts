@@ -18,12 +18,13 @@ import type { ToDesk } from "./desk-worklet.ts";
 import { Desk, deskFor, withChannel, withReturn, withSend, type Source } from "../mixer.ts";
 import { drawDesk } from "./desk.ts";
 import type { FromAmp, ToAmp } from "../amp/messages.ts";
-import { DEFAULT_ROOM } from "../circuit/amps.ts";
+import { DEFAULT_ROOM, PEDALS, type PedalDef } from "../circuit/amps.ts";
+import { BuildSheet, savedSwaps } from "../kit/sheet.ts";
 import { riff } from "../circuit/riff.ts";
 import { bench, type Bench, type BenchPedal } from "../circuit/bench.ts";
 import { sanitizePatch, type Patch } from "../studio.ts";
 import { check, obj, raw, rec, str, type Of } from "@rustybuns/util/guard";
-import { type Aim, type Answer, EYE, benchGear, furnish, benchIn, HALF_D, HALF_W, type Heard, type Room, WALL_H, aimed, drop, gearOf, hand, handAt, heldId, jackAt, knobValue, lead, listen, lookAt, newRoom, pickUp, placedNow, plug, putDown, sag, setKnob, snapshot, startPatch, step, turnHeld, unplug, use, walkTo } from "./room.ts";
+import { type Aim, type Answer, EYE, benchGear, furnish, benchIn, HALF_D, HALF_W, type Heard, type Room, WALL_H, aimed, drop, gearOf, hand, handAt, heldId, jackAt, knobValue, lead, listen, lookAt, newRoom, pedalAt, pickUp, placedNow, plug, putDown, sag, setKnob, snapshot, startPatch, step, turnHeld, unplug, use, walkTo } from "./room.ts";
 import { type GearModel, gearModel, pedalWallModel, rackModel, turnKnob } from "./models.ts";
 
 const KEY = "q-studio", CONTROLS = "q-studio.controls", DESK = "q-studio.desk";
@@ -85,7 +86,7 @@ function setDesk(d: Desk) {
   drawn = "";
 }
 
-let phase: "menu" | "play" | "desk" = "menu";
+let phase: "menu" | "play" | "desk" | "sheet" = "menu";
 let ctl: Settings = DEFAULTS;
 let flash = { text: "", until: 0 };
 let dragging: { id: string; knob: string } | null = null;
@@ -95,6 +96,7 @@ const pad = loadPad(CONTROLS, [
   { id: "drop", label: "Let go of a cable", button: 1 },
   { id: "turnLeft", label: "Turn it left", button: 4 },
   { id: "turnRight", label: "Turn it right", button: 5 },
+  { id: "sheet", label: "A pedal's build sheet", button: 3 },
 ]);
 
 // ---- the scene ----
@@ -266,12 +268,14 @@ document.addEventListener("keydown", (e) => {
   keys.add(e.code);
   if (e.repeat) return;
   if (e.code === "KeyM") void speakers(!speakersUp);
+  if (e.code === "Escape" && phase === "sheet") { sheet.close(); return; }
   if (e.code === "Tab" && phase !== "menu") { e.preventDefault(); openDesk(phase !== "desk"); return; }
   if (phase !== "play") return;
   if (e.code === "KeyF") say(use(room));
   if (e.code === "KeyG") say(drop(room));
   if (e.code === "KeyQ") turnHeld(room, -1);
   if (e.code === "KeyE") turnHeld(room, 1);
+  if (e.code === "KeyB") openSheetHere();
 });
 document.addEventListener("keyup", (e) => keys.delete(e.code));
 /** A board's JSON dropped in the room: it stands on the floor in front of you, or the bench says why it won't play. */
@@ -301,11 +305,23 @@ function hint(a: Aim | null): string {
   if (h && "item" in h) return `Click to set ${name(h.item)} down, Q / E to turn it`;
   if (a?.t === "jack") return h ? `Plug into ${name(a.end[0])}'s ${a.end[1]}` : room.studio.patch.cables.some((c) => c.from.join() === a.end.join() || c.to.join() === a.end.join()) ? `Pull the cable out of ${name(a.end[0])}'s ${a.end[1]}` : `Take a cable from ${name(a.end[0])}'s ${a.end[1]}`;
   if (a?.t === "knob") { const p = room.studio.patch.placed.find((x) => x.id === a.id), k = p && gearOf(p)?.knobs.find((x) => x.name === a.knob); return k && p ? `${name(a.id)} ${k.label} ${(knobValue(room.studio.patch, p.id, k) * 10).toFixed(1)}: drag to turn` : ""; }
-  if (a?.t === "item") return h ? "Plug the cable into a jack" : `Pick up ${name(a.id)}`;
+  if (a?.t === "item") return h ? "Plug the cable into a jack" : `Pick up ${name(a.id)}${pedalAt(room) ? ", B for its build sheet" : ""}`;
   return h ? "Right-click or G lets go of the cable" : "";
 }
 
-function menu() { $("menu").hidden = phase !== "menu"; $("desk").hidden = phase !== "desk"; }
+function menu() { $("menu").hidden = phase !== "menu"; $("desk").hidden = phase !== "desk"; if (phase !== "sheet") sheet.el.hidden = true; }
+
+// ---- a pedal's build sheet (../kit/sheet.ts): B, or the pad's Y, on a pedal on the wall or in your hand ----
+const sheet = new BuildSheet(() => { if (phase === "sheet") play(); });
+$("stage").after(sheet.el);
+function openSheet(p: PedalDef) {
+  phase = "sheet"; menu(); document.exitPointerLock?.();
+  return sheet.open(p, savedSwaps(p.id));
+}
+function openSheetHere() {
+  const p = pedalAt(room);
+  if (p) void openSheet(p); else say(no("Look at a pedal, or hold one, for its build sheet"));
+}
 function play() { phase = "play"; menu(); lock(); }
 
 function resize() {
@@ -329,6 +345,7 @@ function frame(now: number) {
     if (gp.pressed.has("drop")) say(drop(room));
     if (gp.pressed.has("turnLeft")) turnHeld(room, -1);
     if (gp.pressed.has("turnRight")) turnHeld(room, 1);
+    if (gp.pressed.has("sheet")) openSheetHere();
     const on = (c: string) => (keys.has(c) ? 1 : 0);
     step(room, dt, { forward: on("KeyW") - on("KeyS") || -gp.left.y, right: on("KeyD") - on("KeyA") || gp.left.x, turn: -gp.right.x * k * ctl.lookX });
   }
@@ -376,7 +393,15 @@ function glow(h: Heard) {
 declare global { interface Window { qstudio: typeof harness } }
 /** The harness (scripts/probe.ts HANDLES): the room as data, and a player's moves without pointer lock. */
 const harness = {
-  state: () => ({ phase, speakers: speakersUp, ...snapshot(room), meter: { out: meter.out, load: meter.load }, desk, returns: listen(room.studio.patch).returns }),
+  state: () => ({ phase, speakers: speakersUp, sheet: sheet.state(), ...snapshot(room), meter: { out: meter.out, load: meter.load }, desk, returns: listen(room.studio.patch).returns }),
+  /** A pedal's build sheet open (B on it), by pedal id: what it shows once its kit has loaded; null for no such pedal. */
+  sheet: async (id: string) => { const p = PEDALS.find((x) => x.id === id); return p ? (await openSheet(p), sheet.state()) : null; },
+  /** The open sheet's tab: "schematic", "pcb", "parts" or "files". */
+  sheetTab: (tab: "schematic" | "pcb" | "parts" | "files") => sheet.show(tab),
+  /** The open sheet's Download button: the zip's file name and size. */
+  sheetDownload: () => sheet.download(),
+  /** Close the sheet, back into the room. */
+  sheetClose: () => sheet.close(),
   /** The desk view open or shut (Tab). */
   desk: (open: boolean) => openDesk(open),
   /** A channel's controls (`you` is the guitar's), an aux send 0 to 1, or a return's fader 0 to 1 (0.75 is 0 dB). */
@@ -415,7 +440,7 @@ window.qstudio = harness;
 
 mountControls({
   key: CONTROLS, pad, parent: $("controls-host"), title: "Controls", skin: "house",
-  keys: [["WASD / left stick", "Walk"], ["Mouse / right stick", "Look"], ["Click / F", "Pick up, set down, take or plug a cable"], ["Drag on a knob", "Turn it"], ["Q / E", "Turn what you hold"], ["Right-click / G", "Let go of a cable"], ["M", "Speakers up or down"], ["Tab", "The desk"], ["Esc", "Let go of the mouse"]],
+  keys: [["WASD / left stick", "Walk"], ["Mouse / right stick", "Look"], ["Click / F", "Pick up, set down, take or plug a cable"], ["Drag on a knob", "Turn it"], ["Q / E", "Turn what you hold"], ["B", "A pedal's build sheet"], ["Right-click / G", "Let go of a cable"], ["M", "Speakers up or down"], ["Tab", "The desk"], ["Esc", "Let go of the mouse"]],
   onChange: (s) => { ctl = s; },
   onToggle: (open) => { if (open) document.exitPointerLock?.(); },
 });
