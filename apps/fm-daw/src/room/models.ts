@@ -78,6 +78,11 @@ export function gearModel(g: GearDef): GearModel {
       const magnet = onFace(0.05, 0.05, "back", [x, h / 2, d / 2 - 0.16], mat(0x8a8f96, 0.8, 0.3));
       group.add(magnet);
     }
+  } else if (g.circuit === "bench") {
+    // A board off the bench in the clear house box: acrylic over a green board, so you see what you drew.
+    const shell = new THREE.BoxGeometry(w, h, d), glass = new THREE.Mesh(shell, acrylic()), lines = edges(shell);
+    glass.position.y = lines.position.y = h / 2;
+    group.add(glass, lines, box(w * 0.84, 0.0016, d * 0.8, mat(0x1f6b3a, 0.1, 0.7), 0.008));
   } else if (g.kind === "pedal") {
     group.add(box(w, h, d, mat(PEDAL_COLOR[g.circuit ?? ""] ?? 0x777777, 0.55, 0.35)));
     group.add(onFace(0.013, 0.012, "top", [0, h + 0.006, d / 2 - 0.05], mat(0xc9ccd1, 0.9, 0.2)));
@@ -110,6 +115,8 @@ export function gearModel(g: GearDef): GearModel {
     pointer.position.set(0, 0.019, 0.006);
     cap.add(knob, pointer);
     cap.position.set(k.at[0], k.at[1], k.at[2]);
+    // A small board's pots sit close: their caps shrink to fit side by side.
+    if (g.circuit === "bench") cap.scale.setScalar(Math.min(1, w / (g.knobs.length + 1) / 0.034));
     group.add(cap);
     m.knobs.set(k.name, { mesh: cap, face: k.face });
   }
