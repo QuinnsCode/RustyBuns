@@ -14,12 +14,41 @@ import workletUrl from "../amp/worklet.ts?worker&url";
 import type { FromAmp, ToAmp } from "../amp/messages.ts";
 import { DEFAULT_ROOM } from "../circuit/amps.ts";
 import { riff } from "../circuit/riff.ts";
-import { sanitizePatch } from "../studio.ts";
-import { type Aim, type Answer, EYE, HALF_D, HALF_W, type Heard, type Room, WALL_H, aimed, drop, gearOf, hand, handAt, heldId, jackAt, knobValue, lead, listen, lookAt, newRoom, pickUp, placedNow, plug, putDown, sag, setKnob, snapshot, startPatch, step, turnHeld, unplug, use, walkTo } from "./room.ts";
+import { bench, type Bench, type BenchPedal } from "../circuit/bench.ts";
+import { sanitizePatch, type Patch } from "../studio.ts";
+import { check, obj, raw, rec, str, type Of } from "@rustybuns/util/guard";
+import { type Aim, type Answer, EYE, benchGear, benchIn, HALF_D, HALF_W, type Heard, type Room, WALL_H, aimed, drop, gearOf, hand, handAt, heldId, jackAt, knobValue, lead, listen, lookAt, newRoom, pickUp, placedNow, plug, putDown, sag, setKnob, snapshot, startPatch, step, turnHeld, unplug, use, walkTo } from "./room.ts";
 import { type GearModel, gearModel, rackModel, turnKnob } from "./models.ts";
 
 const KEY = "q-studio", CONTROLS = "q-studio.controls";
 const $ = (id: string) => { const el = document.getElementById(id); if (!el) throw new Error(`#${id} missing`); return el; };
+
+// Bench pedals: each board read here is kept by its gear id, so a saved patch that names one finds it again.
+// Q Amp's bench (its own localStorage key) comes along too, and stands on the floor the first time.
+const BENCHES = "q-studio.benches", AMP_BENCH = "q-amp-bench";
+const Kept = obj({ name: str(80), board: raw });
+const keptBenches = (): Record<string, Of<typeof Kept>> => {
+  try { return check(rec(Kept, 32), JSON.parse(localStorage.getItem(BENCHES) ?? "{}")) ?? {}; } catch { return {}; }
+};
+function readBench(json: unknown, name: string): Bench {
+  const b = bench(json, { name });
+  if (b.ok) {
+    const id = benchGear(b.pedal).id;
+    try { localStorage.setItem(BENCHES, JSON.stringify({ ...keptBenches(), [id]: { name: name.slice(0, 80), board: json } })); } catch { /* not kept, fine */ }
+  }
+  return b;
+}
+for (const k of Object.values(keptBenches())) { const b = bench(k.board, { name: k.name }); if (b.ok) benchGear(b.pedal); }
+/** Q Amp's bench pedal when it plays and this room hasn't had it before (binned once, it stays binned). */
+function newAmpBench(): BenchPedal | null {
+  try {
+    const k = check(Kept, JSON.parse(localStorage.getItem(AMP_BENCH) ?? "null"));
+    const b = k ? bench(k.board, { name: k.name }) : null;
+    if (!k || !b?.ok || benchGear(b.pedal).id in keptBenches()) return null;
+    readBench(k.board, k.name);
+    return b.pedal;
+  } catch { return null; }
+}
 
 function loadPatch() {
   try {
@@ -30,7 +59,8 @@ function loadPatch() {
   return startPatch();
 }
 let room: Room = newRoom(loadPatch());
-let savedPatch = room.studio.patch;
+{ const p = newAmpBench(); if (p) benchIn(room, p, { x: 0.6, z: 1.0 }); }
+let savedPatch: Patch | null = null;
 const save = () => {
   if (room.studio.patch === savedPatch) return;
   savedPatch = room.studio.patch;
@@ -197,6 +227,24 @@ document.addEventListener("keydown", (e) => {
   if (e.code === "KeyE") turnHeld(room, 1);
 });
 document.addEventListener("keyup", (e) => keys.delete(e.code));
+/** A board's JSON dropped in the room: it stands on the floor in front of you, or the bench says why it won't play. */
+function dropBoard(json: unknown, name: string): Answer {
+  const b = readBench(json, name);
+  if (!b.ok) return say(no(`${name} won't play: ${b.why[0]}`));
+  return say(benchIn(room, b.pedal));
+}
+const no = (why: string): Answer => ({ ok: false, why });
+document.addEventListener("dragover", (e) => e.preventDefault());
+document.addEventListener("drop", (e) => {
+  e.preventDefault();
+  const f = e.dataTransfer?.files[0];
+  if (!f) return;
+  void f.text().then((t) => {
+    let json: unknown = null;
+    try { json = JSON.parse(t); } catch { /* not JSON: the bench says so */ }
+    dropBoard(json, f.name.replace(/(\.circuit)?\.json$/i, ""));
+  });
+});
 addEventListener("blur", () => { keys.clear(); dragging = null; });
 document.addEventListener("pointerlockchange", () => { if (!locked() && phase === "play") { phase = "menu"; menu(); } });
 
@@ -299,6 +347,8 @@ const harness = {
   /** A knob to `v`, 0 to 10 as the panel reads. */
   knob: (id: string, knob: string, v: number) => setKnob(room, id, knob, v / 10),
   held: () => heldId(room),
+  /** A tscircuit board's circuit JSON, as a drop in the room: on the floor in front of you, or why it won't play. */
+  bench: (json: unknown, name = "Bench pedal") => dropBoard(json, name),
   /** Bring the speakers up or down. Browsers start sound only after a click, so a probe reads state instead. */
   speakers: (up: boolean) => speakers(up),
   /** The room as it starts. */
