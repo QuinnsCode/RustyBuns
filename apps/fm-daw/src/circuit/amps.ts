@@ -71,7 +71,7 @@ export const PEDALS: PedalDef[] = [
     id: "trem", name: "Q Trem", knob: "Rate", blurb: "An LED blinking on an LDR that shunts the signal to ground. The LDR recovers slowly, so each dip has a soft back.",
     net: opticalTremolo, mods: (k) => [{ ctl: "led", hz: 1 + (k / 10) * 11, lag: [[0.002, 0.02]] }],
   },
-  { id: "wah", name: "Q Wah", knob: "Treadle", blurb: "An inductor and capacitor ringing; the treadle pot sets a Miller capacitor's size. Heel ~550 Hz, toe ~1.8 kHz.", net: (k) => wah(k / 10) },
+  { id: "wah", name: "Q Wah", knob: "Treadle", blurb: "An inductor and capacitor ringing; the treadle pot sets a Miller capacitor's size. Heel ~550 Hz, toe ~1.8 kHz. An expression pedal (MIDI CC 11) rocks it.", net: (k) => wah(k / 10) },
   {
     id: "autowah", name: "Q Envelope", knob: "Sens", blurb: "The same wah, its treadle pushed by how hard you play: a quick attack, then it falls back to the heel.",
     net: () => wah("foot"), mods: (k) => [{ ctl: "foot", sens: 0.5 + (k / 10) ** 2 * 10, lag: [[0.005, 0.15]] }],
