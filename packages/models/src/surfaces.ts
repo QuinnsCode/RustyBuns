@@ -23,12 +23,15 @@ type Spec = {
   color?: boolean;
   alpha?: boolean;
   normalScale?: number;
+  /** How solid an alpha map's holes are. */
+  backing?: number;
 };
 
 /** Each surface's folder under textures/ and how it is laid on. */
 export const SURFACES = {
-  /** Perforated steel speaker grille: round holes on a 3 mm pitch, an alpha map, so the cone shows through. */
-  grille: { tile: 0.05, tint: 0x24262a, roughness: 0.5, metalness: 0.7, alpha: true, normalScale: 0.6 },
+  /** Perforated steel speaker grille: round holes on a 3 mm pitch, an alpha map, so the cone shows through, faintly:
+   * `backing` is the dark foam behind the holes (0 clear, 1 solid). */
+  grille: { tile: 0.05, tint: 0x45484d, roughness: 0.55, metalness: 0.25, alpha: true, normalScale: 0.3, backing: 0.4 },
   /** Woven grille cloth (a guitar cab's front). */
   cloth: { tile: 0.12, tint: 0x8a8070, roughness: 1, metalness: 0, color: true },
   /** Tolex: black textured vinyl over a guitar amp's ply. */
@@ -82,9 +85,24 @@ export function surface(name: SurfaceName, { base, quality = "high", loader = ne
     s.color ? load("color", true).then((t) => void (material.map = t)) : undefined,
     load("normal", false).then((t) => { material.normalMap = t; material.normalScale.setScalar(s.normalScale ?? 1); }),
     load("rough", false).then((t) => void (material.roughnessMap = t)),
-    s.alpha ? load("alpha", false).then((t) => { material.alphaMap = t; material.alphaTest = 0.5; material.alphaToCoverage = true; }) : undefined,
+    s.alpha ? load("alpha", false).then((t) => see(material, t, s.backing ?? 0)) : undefined,
   ]).then(() => void (material.needsUpdate = true));
   return { material, ready };
+}
+
+/** Lays an alpha map of holes on, blended rather than cut: a cut (alpha test) turns 3 mm holes into crawling noise
+ * a few metres off, where a blend fades them into an even see-through sheet as the mips shrink. `backing` fills the
+ * holes partly, so what is behind (a speaker's cone) shows dark and faint, as through foam. */
+function see(material: THREE.MeshStandardMaterial, map: THREE.Texture, backing: number) {
+  map.anisotropy = 8;
+  material.alphaMap = map;
+  material.transparent = true;
+  material.depthWrite = true;
+  if (!backing) return;
+  material.onBeforeCompile = (shader) => {
+    shader.fragmentShader = shader.fragmentShader.replace("#include <alphamap_fragment>", `diffuseColor.a *= mix(${backing.toFixed(3)}, 1.0, texture2D(alphaMap, vAlphaMapUv).g);`);
+  };
+  material.customProgramCacheKey = () => `see-${backing}`;
 }
 
 /** The gear's look made of the kit: cabinets in textured plastic, perforated steel grilles, brushed aluminium,

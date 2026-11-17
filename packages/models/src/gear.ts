@@ -230,9 +230,31 @@ const numbered = (stem: string, n: number) => Array.from({ length: n }, (_, i) =
 const block = (slot: GearSlot, s: THREE.Vector3Tuple, at: THREE.Vector3Tuple, r: number) =>
   rounded(slot, { wf: s[0], h: s[1], d: s[2], r, e: r, y0: at[1] - s[1] / 2, m: new THREE.Matrix4().makeTranslation(at[0], 0, at[2]), detail: 1 });
 
-/** A grille slab standing up at the front: `w` by `h` on the face, `t` thick from z0 forward, centred at (0, yc). */
-const grilleSlab = (w: number, h: number, t: number, yc: number, z0: number, r: number, m = new THREE.Matrix4()) =>
-  rounded("grille", { wf: w, h: t, d: h, r, e: 0.003, y0: z0, m: m.clone().multiply(new THREE.Matrix4().makeTranslation(0, yc, 0)).multiply(new THREE.Matrix4().makeRotationX(Math.PI / 2)) });
+/** A grille standing up at the front, `w` by `h` on the face, `t` thick from z0 forward, centred at (0, yc), made as a
+ * steel grille is: a flat perforated face (the `grille` slot, holes and all), and its edge bent back round the
+ * cabinet as a solid lip (`panel`), so no holes run round the rounded edge. The back is open onto the drivers. */
+function grilleSlab(w: number, h: number, t: number, yc: number, z0: number, r: number, m = new THREE.Matrix4()): Piece[] {
+  const slab = rounded("grille", { wf: w, h: t, d: h, r, e: Math.min(0.006, t * 0.45), y0: z0 }).geo;
+  const place = m.clone().multiply(new THREE.Matrix4().makeTranslation(0, yc, 0)).multiply(new THREE.Matrix4().makeRotationX(Math.PI / 2));
+  const p = slab.getAttribute("position"), n = slab.getAttribute("normal"), face: number[] = [], lip: number[] = [], fn: number[] = [], ln: number[] = [];
+  const a = new THREE.Vector3(), bv = new THREE.Vector3(), c = new THREE.Vector3();
+  for (let i = 0; i + 2 < p.count; i += 3) {
+    // a triangle's own facing (not its corners' normals, smoothed into the bend): the flat front, +y here and out of
+    // the cabinet once turned, is the perforated sheet, shaded flat
+    a.fromBufferAttribute(p, i); bv.fromBufferAttribute(p, i + 1); c.fromBufferAttribute(p, i + 2);
+    const ny = bv.sub(a).cross(c.sub(a)).normalize().y;
+    if (ny < -0.999) continue;
+    const front = ny > 0.999, [pos, nor] = front ? [face, fn] : [lip, ln];
+    for (let k = 0; k < 3; k++) { pos.push(p.getX(i + k), p.getY(i + k), p.getZ(i + k)); nor.push(...(front ? [0, 1, 0] : [n.getX(i + k), n.getY(i + k), n.getZ(i + k)])); }
+  }
+  const make = (slot: GearSlot, pos: number[], nor: number[]): Piece => {
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+    geo.setAttribute("normal", new THREE.Float32BufferAttribute(nor, 3));
+    return { geo: geo.applyMatrix4(place), slot };
+  };
+  return [make("grille", face, fn), make("panel", lip, ln)];
+}
 
 /** A back panel: a painted steel plate with a screw in each corner. */
 function plate(b: Build, w: number, h: number, at: THREE.Vector3Tuple) {
@@ -255,7 +277,7 @@ function speaker([w, h, d]: readonly number[], backJacks: string[], powered: boo
   const wb = w * 0.72, r = Math.min(0.016, w * 0.05), fh = body - y0;
   b.pieces.push(rounded("paint", { wf: w, wb, h: fh, d: d - g, r, e: 0.014, y0, z0: -g / 2 }));
   const gw = w - 0.006, gh = fh - 0.006, yc = y0 + fh / 2;
-  b.pieces.push(grilleSlab(gw, gh, g + 0.002, yc, front - 0.001, r));
+  b.pieces.push(...grilleSlab(gw, gh, g + 0.002, yc, front - 0.001, r));
   // behind the grille: the woofer low, the horn above it
   const rw = Math.min(gw, gh * 0.62) * 0.43, at = (y: number, x = 0) => new THREE.Matrix4().makeTranslation(x, y, front + 0.009);
   b.pieces.push(...cone(rw, 0.008, at(yc - gh * 0.16)));
@@ -290,7 +312,7 @@ function sub(): Build {
   const [w, h, d] = GEAR_SIZES["sub-18"], b: Build = { pieces: [], marks: [] }, y0 = 0.014, g = 0.014, front = d / 2 - g, fh = h - y0 - 0.004;
   b.pieces.push(rounded("paint", { wf: w - 0.01, h: fh, d: d - g, r: 0.01, y0, z0: -g / 2 }));
   const yc = y0 + fh / 2;
-  b.pieces.push(grilleSlab(w - 0.016, fh - 0.01, g + 0.002, yc, front - 0.001, 0.01));
+  b.pieces.push(...grilleSlab(w - 0.016, fh - 0.01, g + 0.002, yc, front - 0.001, 0.01));
   const at = (y: number) => new THREE.Matrix4().makeTranslation(0, y, front + 0.011);
   b.pieces.push(...cone(0.2, 0.009, at(yc + 0.06)));
   // the port: a dark slot right across the bottom with rounded lips
@@ -318,7 +340,7 @@ function wedge(): Build {
   const dz = backTop - d / 2, dy = h - lo, len = Math.hypot(dz, dy);
   const up = new THREE.Vector3(0, dy, dz).divideScalar(len), out = new THREE.Vector3(0, -dz, dy).divideScalar(len);
   const slope = new THREE.Matrix4().makeBasis(new THREE.Vector3(1, 0, 0), up, out).setPosition(0, (lo + h) / 2, (d / 2 + backTop) / 2);
-  b.pieces.push(grilleSlab(w - 0.05, len - 0.03, 0.011, 0, 0, 0.012, slope));
+  b.pieces.push(...grilleSlab(w - 0.05, len - 0.03, 0.011, 0, 0, 0.012, slope));
   const on = (x: number, y: number) => slope.clone().multiply(new THREE.Matrix4().makeTranslation(x, y, 0.008));
   b.pieces.push(...cone(0.14, 0.007, on(-0.11, 0)), ...horn(0.16, 0.12, 0.007, on(0.17, 0.02)));
   const c = 0.05;

@@ -56,3 +56,12 @@ test("ramps link end to end: one's b end meets the next one's a end", () => {
   const r = gear("cable-ramp-2ch"), a = r.getObjectByName("link-a")!, b = r.getObjectByName("link-b")!;
   expect(b.position.x - a.position.x).toBeCloseTo(GEAR_SIZES["cable-ramp-2ch"][0], 3);
 });
+
+test("a speaker's perforated grille is one flat sheet; its edge bends back as a solid lip, so no holes run round it", () => {
+  for (const id of ["top-12-powered", "sub-18", "wedge-12"] as const) {
+    const g = gear(id), sheet = g.getObjectByName(`${id}-grille`) as THREE.Mesh;
+    const n = sheet.geometry.getAttribute("normal"), first = new THREE.Vector3().fromBufferAttribute(n, 0);
+    for (let i = 0; i < n.count; i++) expect(new THREE.Vector3().fromBufferAttribute(n, i).dot(first), id).toBeGreaterThan(0.999);
+    expect(first.z, id).toBeGreaterThan(0.5);
+  }
+});
