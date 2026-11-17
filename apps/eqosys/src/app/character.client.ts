@@ -1,11 +1,12 @@
-// The character picker on the Me tab (#4987, #5009): your figure (@rustybuns/models' character) large in the middle,
-// turning slowly, drag to spin. Four tabs of choices: Face (its shape, eyes, brows, nose, mouth, cheeks, facial hair,
+// The character picker on the Me tab (#4987, #5009): your figure (@rustybuns/models' character) large on a framed
+// stage, turning slowly, drag to spin (a "Drag to turn" hint until you do), with the poses to try under it and a button
+// for a close look at the face. Four tabs of choices: Face (its shape, eyes, brows, nose, mouth, cheeks, facial hair,
 // glasses, skin, and sliders to size and move them; the camera comes in close on the head), Hair, Clothes and Body
-// (build, height, and poses to try). Shuffle and Save sit right under the tabs, so they're in sight at every size. It reads and saves through GET and PUT
+// (build and height). Someone new (signed up, or signed in without one: ?new=1) is welcomed to it, with a Later link. Shuffle and Save sit right under the tabs, so they're in sight at every size. It reads and saves through GET and PUT
 // /me/avatar (avatar.ts) with the session cookie. Its own module script, on the Me tab alone, so three.js loads only
 // here. `window.__character` is its handle: `bun run probe eqosys "/?tab=account" --js "__character.state()"`.
 import * as THREE from "three";
-import { createElement, PersonStanding, Save, Scissors, Shirt, Shuffle, Smile } from "lucide";
+import { createElement, MoveHorizontal, PersonStanding, Save, Scissors, Shirt, Shuffle, Smile, ZoomIn, ZoomOut } from "lucide";
 import { AvatarReply, FACE, PARTS, randomAvatar, TUNE, TUNE_STEPS, type Avatar } from "@rustybuns/util/avatar";
 import { getJson } from "@rustybuns/util/http";
 import { character, type Character, type Play } from "@rustybuns/models/character";
@@ -28,7 +29,7 @@ const TABS = {
 } satisfies Record<string, { word: string; icon: Parameters<typeof createElement>[0]; rows: Row[] }>;
 type TabName = keyof typeof TABS;
 const COLOUR = new Set<Part>(["skin", "hairColor", "topColor", "bottomColor"]);
-/** What the figure does while you dress it: a row on the Body tab, so you see the clothes walk, sit and play. */
+/** What the figure does while you dress it: a row under the stage, so you see the clothes walk, sit and play. */
 const POSES = { stand: "Stand", walk: "Walk", sit: "Sit", keys: "Keys", sticks: "Drums", strings: "Guitar" } as const;
 type PoseName = keyof typeof POSES;
 const WORDS: Record<string, string> = { vr: "VR", none: "None", full: "Full beard", "flat-top": "Flat top" };
@@ -38,12 +39,25 @@ export async function mountCharacter(box: HTMLElement) {
   const got = await getJson("/me/avatar", AvatarReply, { credentials: "same-origin" });
   if (!got) { box.textContent = "Sign in to make your character."; return null; }
   let avatar: Avatar = got.avatar, saved = got.saved, dirty = false, pose: PoseName = "stand", status = "", tab: TabName = "face";
+  /** The close look at the face: null follows the tab (Face and Hair come in close), true or false is the button's say. */
+  let zoom: boolean | null = null, turned = false;
   const first = new URLSearchParams(location.search).get("new") === "1";
 
   box.textContent = "";
   const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls: string, parent: HTMLElement) => { const e = document.createElement(tag); e.className = cls; parent.append(e); return e; };
-  if (first) el("p", "ch-first", box).textContent = "Welcome. Make your character first: you wear it in every Q app.";
-  const stage = el("div", "ch-stage", box), side = el("div", "ch-side", box);
+  if (first) {
+    const hi = el("p", "ch-first", box), later = document.createElement("a");
+    hi.textContent = "Welcome. Make your character first: you wear it in every Q app. ";
+    later.href = "/"; later.textContent = "Later"; later.className = "ch-later"; hi.append(later);
+  }
+  const left = el("div", "ch-left", box), stage = el("div", "ch-stage", left), side = el("div", "ch-side", box);
+  stage.setAttribute("aria-label", "Your character. Drag to turn it round.");
+  const hint = el("span", "ch-hint", stage);
+  hint.append(createElement(MoveHorizontal, { width: 16, height: 16, "aria-hidden": "true" }), document.createTextNode("Drag to turn"));
+  const zoomButton = el("button", "ch-zoom", stage);
+  zoomButton.type = "button";
+  zoomButton.addEventListener("pointerdown", (e) => e.stopPropagation());
+  zoomButton.addEventListener("click", () => { zoom = !isClose(); show(); });
   const tabs = el("div", "ch-tabs", side), bar = el("div", "ch-bar", side), rows = el("div", "ch-rows", side);
   tabs.setAttribute("role", "tablist");
 
@@ -74,7 +88,7 @@ export async function mountCharacter(box: HTMLElement) {
 
   // drag to spin, and it keeps turning slowly when let go; on the Face tab it turns only a little, to show the face
   let turn = 0, spin = 0.35, held = false, drag: { x: number; at: number } | null = null;
-  stage.addEventListener("pointerdown", (e) => { drag = { x: e.clientX, at: performance.now() }; stage.setPointerCapture(e.pointerId); spin = 0; held = false; });
+  stage.addEventListener("pointerdown", (e) => { drag = { x: e.clientX, at: performance.now() }; stage.setPointerCapture(e.pointerId); spin = 0; held = false; turned = true; hint.hidden = true; });
   stage.addEventListener("pointermove", (e) => {
     if (!drag) return;
     const dx = (e.clientX - drag.x) / Math.max(1, stage.clientWidth) * Math.PI * 2, dt = Math.max(1, performance.now() - drag.at) / 1000;
@@ -90,9 +104,10 @@ export async function mountCharacter(box: HTMLElement) {
   // the camera eases between the whole figure and a close look at the face
   const eye = new THREE.Vector3(0, 0.9, -3.6), aim = new THREE.Vector3(0, 0.7, 0), headAt = new THREE.Vector3();
   let last = performance.now();
+  function isClose() { return zoom ?? (tab === "face" || tab === "hair"); }
   const frame = (now: number) => {
     const dt = Math.min(0.1, (now - last) / 1000); last = now;
-    const close = tab === "face" || tab === "hair";
+    const close = isClose();
     if (!drag && !held) {
       if (close) { const back = Math.atan2(Math.sin(turn), Math.cos(turn)); spin = 0; turn -= back * Math.min(1, dt * 2); turn += Math.sin(now / 1400) * 0.12 * dt; }
       else { spin += (0.35 * Math.sign(spin || 1) - spin) * Math.min(1, dt * 1.5); turn += spin * dt; }
@@ -122,7 +137,7 @@ export async function mountCharacter(box: HTMLElement) {
     const b = el("button", "ch-tab", tabs);
     b.type = "button"; b.dataset.value = name; b.setAttribute("role", "tab"); b.title = t.word;
     b.append(createElement(t.icon, { width: 18, height: 18, "aria-hidden": "true" }), document.createTextNode(t.word));
-    b.addEventListener("click", () => { tab = name; show(); });
+    b.addEventListener("click", () => { tab = name; zoom = null; show(); });
     tabButtons.push(b);
     const panel = el("div", "ch-panel", rows);
     panel.setAttribute("role", "tabpanel");
@@ -146,11 +161,12 @@ export async function mountCharacter(box: HTMLElement) {
       buttons.set(part, bs);
     }
   }
-  const poses = row("Try it", panels.get("body")!), poseButtons: HTMLButtonElement[] = [];
+  const poses = el("div", "ch-poses", left), poseButtons: HTMLButtonElement[] = [];
+  poses.setAttribute("aria-label", "Try it");
   for (const [k, w] of Object.entries(POSES) as [PoseName, string][]) {
     const b = el("button", "ch-chip", poses);
     b.type = "button"; b.dataset.value = k; b.textContent = w;
-    b.addEventListener("click", () => { pose = k; show(); });
+    b.addEventListener("click", () => { pose = k; zoom = k === "stand" ? zoom : false; show(); });
     poseButtons.push(b);
   }
   const action = (icon: Parameters<typeof createElement>[0], text: string, primary: boolean, go: () => void) => {
@@ -175,6 +191,10 @@ export async function mountCharacter(box: HTMLElement) {
     }
     for (const [k, input] of sliders) input.value = String(avatar[k]);
     for (const b of poseButtons) b.setAttribute("aria-pressed", String(b.dataset.value === pose));
+    const near = isClose();
+    zoomButton.replaceChildren(createElement(near ? ZoomOut : ZoomIn, { width: 18, height: 18, "aria-hidden": "true" }));
+    zoomButton.title = near ? "Whole figure" : "Close-up of the face"; zoomButton.setAttribute("aria-label", zoomButton.title);
+    zoomButton.setAttribute("aria-pressed", String(near));
     saveButton.disabled = !dirty && saved;
     note.textContent = status || (dirty ? "Not saved yet" : saved ? "Saved" : "Not saved yet: this one is made from your name");
   }
@@ -195,12 +215,14 @@ export async function mountCharacter(box: HTMLElement) {
     show();
     return state();
   }
-  const state = () => ({ avatar, saved, dirty, pose, tab, status, turn: Math.round(THREE.MathUtils.radToDeg(turn) % 360), first, height: fig ? Math.round(fig.height * 100) / 100 : 0 });
+  const state = () => ({ avatar, saved, dirty, pose, tab, status, turn: Math.round(THREE.MathUtils.radToDeg(turn) % 360), first, close: isClose(), turned, height: fig ? Math.round(fig.height * 100) / 100 : 0 });
   show();
   /** Stop turning, facing `deg` (0: its face to you), for a picture; a drag sets it spinning again. */
   const turnTo = (deg: number) => { turn = THREE.MathUtils.degToRad(deg); held = true; return state(); };
-  const open = (t: TabName) => { if (!(t in TABS)) throw new Error(`tab is one of ${Object.keys(TABS).join(", ")}`); tab = t; show(); return state(); };
-  return { state, pick, tune, shuffle, save, turnTo, tab: open, pose: (p: PoseName) => { if (!(p in POSES)) throw new Error(`pose is one of ${Object.keys(POSES).join(", ")}`); pose = p; tab = "body"; show(); return state(); } };
+  const open = (t: TabName) => { if (!(t in TABS)) throw new Error(`tab is one of ${Object.keys(TABS).join(", ")}`); tab = t; zoom = null; show(); return state(); };
+  /** The close look at the face: true, false, or null to follow the tab. */
+  const closeUp = (on: boolean | null) => { zoom = on; show(); return state(); };
+  return { state, pick, tune, shuffle, save, turnTo, tab: open, zoom: closeUp, pose: (p: PoseName) => { if (!(p in POSES)) throw new Error(`pose is one of ${Object.keys(POSES).join(", ")}`); pose = p; zoom = false; show(); return state(); } };
 }
 
 if (typeof document !== "undefined") {

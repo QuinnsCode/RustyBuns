@@ -1,4 +1,4 @@
-// Your character, kept on eqosys (#4987): someone new signs up and lands on the picker, reads the avatar made from their
+// Your character, kept on eqosys (#4987): someone new signs up (or signs in without one) and lands on the picker, reads the avatar made from their
 // name, picks parts and makes the face (#5009: its shape, facial hair, the sliders) and saves, and reads it back, from
 // eqosys's own page and from a game with its token. A save from before the face maker still reads. A wrong shape is a 400
 // and changes nothing; signed out is a 401; deleting the account takes the avatar with it.
@@ -30,12 +30,18 @@ test("sign up, make your character, save it, and every app reads the same one", 
   // before saving: the one made from their name, not saved yet
   expect(await avatar("GET", me)).toMatchObject({ status: 200, body: { avatar: defaultAvatar("Ada"), saved: false } });
 
+  // signing in again before saving one: back to the picker first
+  const signin = () => call("/do/signin", { form: { email: "ada@example.com", password: PASSWORD } });
+  expect((await signin()).to).toBe("/?tab=account&new=1");
+
   // pick parts (a hat, the round build, a colour typed in capitals), make the face, and save
   const picked: Avatar = { ...defaultAvatar("Ada"), hat: "headphones", build: "round", topColor: "#3A6BD8", glasses: "round", face: "heart", beard: "mustache", eyeSize: 2, mouthHeight: -3 };
   const put = await avatar("PUT", me, picked);
   expect(put.status).toBe(200);
   expect(put.body).toEqual({ avatar: { ...picked, topColor: "#3a6bd8" }, saved: true });
   expect((await avatar("GET", me)).body).toEqual(put.body);
+  // saved, signing in goes straight home
+  expect((await signin()).to).toBe("/");
 
   // a wrong shape is a 400 that names what to send, and the saved one stays
   for (const bad of [{ ...picked, hat: "sombrero" }, { ...picked, skin: "pink" }, { ...picked, face: "triangle" }, { ...picked, eyeSize: 9 }, { ...picked, eyeGap: 0.5 }, { ...picked, nose: 2 }, { hair: "short" }, "nope", null]) {

@@ -14,6 +14,11 @@ export async function avatarOf(conf: Env, who: { id: string; name: string }): Pr
   return saved ? { avatar: saved, saved: true } : { avatar: defaultAvatar(who.name || who.id), saved: false };
 }
 
+/** Whether they ever saved one: someone who never did makes it first when they sign in (the picker's first-visit step). */
+export async function savedAvatar(conf: Env, id: string): Promise<boolean> {
+  return (await conf.DB.prepare("SELECT 1 AS n FROM avatars WHERE user_id = ?").bind(id).first<number>("n")) === 1;
+}
+
 export async function avatarRoute(req: Request, conf: Env): Promise<Response> {
   const head = { ...await cors(req, conf), "access-control-allow-methods": "GET, PUT" };
   if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: head });

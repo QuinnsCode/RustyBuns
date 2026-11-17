@@ -1,10 +1,11 @@
-// A person's character in 3D (#4987, #5009): a cute, chunky toy of a person. A bean of a body, stubby limbs with mitten
+// A person's character in 3D (#4987, #5009): a cute, chunky toy of a person. A bean of a body, stubby limbs with chunky
 // hands, and a big round head (about two fifths of its height) so a face reads from across the room. It wears every part
 // of @rustybuns/util/avatar: skin, hair, hat, glasses, clothes and build, and the face maker's face shape, eyes, brows,
 // nose, mouth, cheeks and facial hair, each moved and sized by its sliders. It stands, walks, sits and plays (hands on
 // keys, sticks or strings) from one `pose` call a frame, and it is alive while it does: it blinks, turns its head to look
 // at whoever you point it at, nods to the beat, and beams while you play a note.
-// Feet at y 0, facing -z (as a three.js camera does), about 1.25 m tall. The seed only shifts the idle sway and the blinks,
+// Hands have a thumb and four stubby fingers that curl as they play, glasses have arms back to the ears, and a hat
+// tucks a tall style (spikes, a crest, a bun) under it. Feet at y 0, facing -z (as a three.js camera does), about 1.25 m tall. The seed only shifts the idle sway and the blinks,
 // so two people in the same clothes don't move as one. No DOM: the face is geometry, so it builds anywhere (a test, a
 // Worker writing a GLB).
 import * as THREE from "three";
@@ -167,12 +168,18 @@ export function character(a: Avatar, o: { seed?: number; material?: (color: stri
     const elbow = node(shoulder, [0, -upperL, 0]);
     elbow.add(limb(0.055, foreL, longSleeves ? top : skin));
     if (!longSleeves) elbow.add(mesh(new THREE.CylinderGeometry(0.066 * Math.sqrt(wide), 0.064, 0.05, 14), top, [0, 0.035, 0]));
+    // a chunky toy hand: a round palm, a thumb, and four stubby fingers that each curl from a knuckle
     const wrist = node(elbow, [0, -foreL, 0]);
-    const hand = mesh(new THREE.SphereGeometry(0.068, 14, 10).scale(0.88, 1, 0.78), skin, [0, -0.05, 0]); hand.name = "hand";
+    const hand = mesh(new THREE.SphereGeometry(0.056, 14, 10).scale(0.78, 0.92, 0.95), skin, [0, -0.045, 0]); hand.name = "hand";
     wrist.add(hand);
-    const thumb = mesh(new THREE.SphereGeometry(0.03, 10, 8).scale(0.9, 1.3, 0.9), skin, [s * -0.045, -0.035, -0.03]);
-    thumb.rotation.z = s * 0.5; wrist.add(thumb);
-    return { shoulder, elbow, wrist, s };
+    const thumb = node(wrist, [s * -0.03, -0.035, -0.035]);
+    thumb.add(limb(0.017, 0.022, skin)).rotation.set(-0.5, 0, s * 0.35);
+    const fingers = [-0.03, -0.01, 0.01, 0.03].map((z, i) => {
+      const knuckle = node(wrist, [s * 0.004, -0.083 + Math.abs(z) * 0.25, z], "finger");
+      knuckle.add(limb(0.0145, 0.024 - (i === 3 ? 0.006 : 0), skin));
+      return knuckle;
+    });
+    return { shoulder, elbow, wrist, fingers, s };
   });
 
   // legs: hip, knee, ankle, and a round shoe pointing forward
@@ -234,14 +241,14 @@ export function character(a: Avatar, o: { seed?: number; material?: (color: stri
   };
 }
 
-type Arm = { shoulder: THREE.Object3D; elbow: THREE.Object3D; wrist: THREE.Object3D; s: number };
+type Arm = { shoulder: THREE.Object3D; elbow: THREE.Object3D; wrist: THREE.Object3D; fingers: THREE.Object3D[]; s: number };
 /**
  * Where the arms go. Rotation x swings an arm forward, z out to its own side (`s`: -1 left, 1 right, as the figure stands).
  * The arms are short and the belly is round, so a resting arm hangs out at an angle and a playing one reaches well forward.
  * Keys: forearms level, hands over the keys, tapping in turn. Sticks: both hands up, striking down one after the other.
  * Strings: the left hand out on the neck, the right across the body strumming.
  */
-function armPose({ shoulder, elbow, wrist, s }: Arm, p: { t: number; walk: number; swing: number; seated: boolean; play: Play | null; idle: number }) {
+function armPose({ shoulder, elbow, wrist, fingers, s }: Arm, p: { t: number; walk: number; swing: number; seated: boolean; play: Play | null; idle: number }) {
   const { t, play } = p;
   let sx: number, sz: number, ex: number, wx = 0;
   if (play === "keys") {
@@ -258,6 +265,12 @@ function armPose({ shoulder, elbow, wrist, s }: Arm, p: { t: number; walk: numbe
   shoulder.rotation.set(sx, 0, sz);
   elbow.rotation.x = ex;
   wrist.rotation.x = wx;
+  // fingers: a little curl at rest, one after another on keys, a fist round sticks, and the fretting and strumming hands
+  fingers.forEach((f, i) => {
+    const curl = play === "keys" ? 0.25 + Math.max(0, Math.sin(t * 13 + i * 1.4 + (s > 0 ? 0 : 2.1))) * 0.8
+      : play === "sticks" ? 1.5 : play === "strings" ? (s < 0 ? 0.9 + (i % 2) * 0.3 : 1.2) : 0.3 + i * 0.05;
+    f.rotation.z = -s * curl;
+  });
 }
 
 type Mesh = (g: THREE.BufferGeometry, c: string, at?: [number, number, number]) => THREE.Mesh;
@@ -307,8 +320,8 @@ function face(a: Avatar, head: THREE.Object3D, r: number, shape: Shape, mesh: Me
       eye.add(mesh(new THREE.SphereGeometry(0.027 * u, 16, 12).scale(1, 1.12, 0.45), "#f8f8f6"));
       pupil.add(mesh(new THREE.SphereGeometry(0.016 * u, 14, 10).scale(1, 1.05, 0.5), INK, [0, 0, -0.008 * u])); pupil.add(shine(0.005 * u)).position.z -= 0.008 * u;
     } else if (kind === "sleepy") {
-      pupil.add(mesh(new THREE.SphereGeometry(0.017 * u, 14, 10, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2).scale(0.95, 0.9, 0.5), INK));
-      eye.add(line(0.028 * u, INK, 0.0045 * u));
+      eye.add(arc(0.016 * u, 0.0055 * u, INK, false)).position.y = 0.006 * u;
+      const lash = eye.add(line(0.008 * u, INK, 0.004 * u)).children.at(-1)!; lash.position.set(s * 0.019 * u, 0.008 * u, 0); lash.rotation.z = Math.PI / 2 + s * 0.9;
     } else eye.add(arc(0.016 * u, 0.0055 * u, INK, true)); // happy
     // brows: their own holder, so the slider lifts them off the eye; angry eyes always bring them down in the middle
     const browY = eyeY + (0.22 + tune("browHeight") * 0.035) * eyeK;
@@ -367,7 +380,9 @@ function face(a: Avatar, head: THREE.Object3D, r: number, shape: Shape, mesh: Me
       head.add(mesh(g, c));
     };
     const FRONT = Math.PI * 1.5, below = Math.acos(THREE.MathUtils.clamp(mouthY - 0.1 * mouthK, -1, 1));
-    if (a.beard === "full" || a.beard === "stubble") { patch(FRONT, 2.6, below, Math.PI - 0.35); for (const s of [-1, 1]) patch(FRONT + s * 1.2, 0.5, 1.5, below + 0.05); }
+    if (a.beard === "full") { patch(FRONT, 2.6, below, Math.PI - 0.35); for (const s of [-1, 1]) patch(FRONT + s * 1.2, 0.5, 1.5, below + 0.05); }
+    // stubble is a shadow on the chin and jaw only: up the cheeks its hard edges read as a block
+    if (a.beard === "stubble") patch(FRONT, 1.9, below + 0.08, Math.PI - 0.45);
     if (a.beard === "goatee") patch(FRONT, 0.8, below, Math.PI - 0.6);
     if (a.beard === "sideburns") for (const s of [-1, 1]) patch(FRONT + s * 1.15, 0.38, 1.4, 2.05);
     if (a.beard === "mustache" || a.beard === "full" || a.beard === "goatee") for (const s of [-1, 1]) {
@@ -390,7 +405,17 @@ function face(a: Avatar, head: THREE.Object3D, r: number, shape: Shape, mesh: Me
     }
     if (a.glasses === "shades") { for (const s of [-1, 1]) lens(s).add(mesh(new THREE.BoxGeometry(0.068 * k, 0.044 * k, 0.008 * u), INK)); bridge(); }
     if (a.glasses === "monocle") { const l = lens(1); l.add(mesh(new THREE.TorusGeometry(0.031 * k, 0.004 * u, 8, 24), "#c9a227")); const chain = mesh(new THREE.CapsuleGeometry(0.0025 * u, 0.07 * u, 4, 6), "#c9a227", [0.02 * u, -0.055 * u, 0]); chain.rotation.z = 0.3; l.add(chain); }
-    if (a.glasses === "vr") { const g = at(0, eyeY, 0.03 * u); g.add(mesh(new THREE.BoxGeometry(0.19 * u, 0.07 * u, 0.06 * u), "#2e3439")); g.add(mesh(new THREE.BoxGeometry(0.16 * u, 0.013 * u, 0.01 * u), "#8a5cff", [0, 0, -0.031 * u])); }
+    if (a.glasses === "vr") { const strap = mesh(new THREE.TorusGeometry(r * 1.02, 0.007 * u, 6, 32), "#2e3439"); strap.rotation.x = Math.PI / 2; strap.position.y = eyeY * r; strap.scale.set(shape(new THREE.Vector3(1, 0, 0)).x, 1, -shape(new THREE.Vector3(0, 0, -1)).z); head.add(strap); const g = at(0, eyeY, 0.02 * u); g.add(mesh(new THREE.BoxGeometry(0.165 * u, 0.064 * u, 0.045 * u), "#2e3439")); g.add(mesh(new THREE.BoxGeometry(0.14 * u, 0.012 * u, 0.01 * u), "#8a5cff", [0, 0, -0.023 * u])); }
+    if (["round", "square", "shades", "pixel"].includes(a.glasses)) for (const s of [-1, 1]) {
+      const spot = lens(s), edge = new THREE.Vector3(s * 0.034 * k, 0.004 * u, 0).applyQuaternion(spot.quaternion).add(spot.position);
+      const ear = shape(new THREE.Vector3(s, 0, 0.3)).multiplyScalar(r * 1.0); // just behind the ear, where an arm tucks in
+      ear.y = edge.y;
+      const len = edge.distanceTo(ear), arm = mesh(new THREE.CapsuleGeometry(0.0032 * u, len, 4, 6), frame);
+      arm.position.copy(edge).add(ear).multiplyScalar(0.5);
+      arm.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), ear.clone().sub(edge).normalize());
+      arm.name = "temple";
+      head.add(arm);
+    }
     if (a.glasses === "pixel") for (const s of [-1, 1]) { const l = lens(s); for (const [x, y, w] of [[0, 0.012, 0.06], [-0.006, 0, 0.048], [-0.01, -0.012, 0.036]]) l.add(mesh(new THREE.BoxGeometry(w! * u, 0.012 * u, 0.008 * u), INK, [x! * u, y! * u, 0])); }
   }
 
@@ -409,14 +434,18 @@ function face(a: Avatar, head: THREE.Object3D, r: number, shape: Shape, mesh: Me
 const shell = (r: number, down: number, open = Math.PI * 0.62) =>
   new THREE.SphereGeometry(r, 28, 16, Math.PI * 1.5 + open / 2, Math.PI * 2 - open, 0, down);
 
+/** Hats that cover the crown: a style that stands up off it (spikes, a crest, a flat top, a bun) tucks under one. */
+const COVERS = new Set(["cap", "beanie", "hardhat", "propeller", "bucket", "tophat", "wizard", "cone"]);
+const TALL = new Set(["spiky", "mohawk", "flat-top", "pompadour", "topknot", "bun"]);
+
 function hair(a: Avatar, head: THREE.Object3D, r: number, mesh: Mesh) {
   if (a.hair === "none") return;
-  const c = a.hairColor, R = r * 1.05;
+  const c = a.hairColor, R = r * 1.05, style = COVERS.has(a.hat) && TALL.has(a.hair) ? (a.hair === "mohawk" ? "buzz" : "short") : a.hair;
   const add = (g: THREE.BufferGeometry, at: [number, number, number], rot?: [number, number, number], fit = false) => { const m = mesh(g, c, at); if (rot) m.rotation.set(...rot); m.userData.fit = fit; head.add(m); return m; };
   const ball = (rad: number, at: [number, number, number]) => add(new THREE.SphereGeometry(rad, 14, 10), at);
   // the cap every style starts from: a fringe over the brow at the front, down to the nape at the back
   const cap = (down = 1.55, fringe = 1.08) => { add(new THREE.SphereGeometry(R, 32, 16, 0, Math.PI * 2, 0, fringe), [0, 0.005, 0], undefined, true); add(shell(R, down), [0, 0.005, 0], undefined, true); };
-  switch (a.hair) {
+  switch (style) {
     case "buzz": add(new THREE.SphereGeometry(r * 1.015, 32, 16, 0, Math.PI * 2, 0, 1.25), [0, 0, 0.005], undefined, true); break;
     case "short": cap(); break;
     case "bob": cap(2.05); break;
@@ -429,8 +458,16 @@ function hair(a: Avatar, head: THREE.Object3D, r: number, mesh: Mesh) {
       add(shell(r * k, 2.2, Math.PI * 0.72).scale(flip, 1, 1), [0, r * 0.25, r * 0.2]);
     } break;
     case "curly": cap(1.6); for (let i = 0; i < 12; i++) { const a2 = (i / 12) * Math.PI * 2; ball(r * 0.27, [Math.cos(a2) * R * 0.95, r * 0.4 + Math.sin(a2 * 3) * r * 0.08, Math.sin(a2) * R * 0.95 + r * 0.1]); } break;
-    case "mohawk": add(new THREE.SphereGeometry(r * 1.015, 32, 16, 0, Math.PI * 2, 0, 1.2), [0, 0, 0], undefined, true); add(new THREE.BoxGeometry(r * 0.22, r * 0.5, r * 1.7), [0, r * 1.0, r * 0.15]); break;
-    case "flat-top": cap(1.35); add(new THREE.CylinderGeometry(r * 0.9, r * 0.9, r * 0.45, 24), [0, r * 0.92, r * 0.05]); break;
+    case "mohawk": add(new THREE.SphereGeometry(r * 1.015, 32, 16, 0, Math.PI * 2, 0, 1.2), [0, 0, 0], undefined, true);
+      for (let i = 0; i < 7; i++) { const t = -0.75 + i * 0.3, tuft = add(new THREE.SphereGeometry(r * 0.2, 14, 10).scale(0.62, 1.5, 1.05), [0, Math.cos(t) * r * 1.08, Math.sin(t) * r * 1.08]); tuft.rotation.x = t; } break;
+    case "flat-top": {
+      cap(1.35);
+      // a lathed block with soft shoulders: straight sides, a flat top, every edge rounded
+      const w = r * 0.86, hgt = r * 0.42, b = r * 0.14, pts = [new THREE.Vector2(0, hgt / 2)];
+      for (let i = 0; i <= 6; i++) { const q = (i / 6) * Math.PI / 2; pts.push(new THREE.Vector2(w - b + Math.sin(q) * b, hgt / 2 - b + Math.cos(q) * b)); }
+      pts.push(new THREE.Vector2(w, -hgt / 2), new THREE.Vector2(w * 0.9, -hgt / 2), new THREE.Vector2(0, -hgt / 2));
+      add(new THREE.LatheGeometry(pts.reverse(), 32), [0, r * 0.9, r * 0.05]); break; // bottom to top, so it faces out
+    }
     case "pompadour": cap(1.45); add(new THREE.SphereGeometry(r * 0.7, 18, 12).scale(1.2, 0.7, 1.1), [0, r * 0.92, -r * 0.3]); break;
     case "bun": cap(); ball(r * 0.38, [0, r * 1.0, r * 0.45]); break;
     case "topknot": cap(); add(new THREE.CylinderGeometry(r * 0.14, r * 0.18, r * 0.3, 12), [0, r * 1.1, 0]); ball(r * 0.27, [0, r * 1.35, 0]); break;
@@ -438,7 +475,8 @@ function hair(a: Avatar, head: THREE.Object3D, r: number, mesh: Mesh) {
     case "ponytail": cap(); { const tail = add(new THREE.CapsuleGeometry(r * 0.2, r * 1.0, 6, 12), [0, -r * 0.3, r * 1.2]); tail.rotation.x = -0.45; } break;
     case "pigtails": cap(); for (const s of [-1, 1]) { const tail = add(new THREE.CapsuleGeometry(r * 0.19, r * 0.8, 6, 12), [s * r * 1.12, -r * 0.45, r * 0.2]); tail.rotation.z = s * 0.3; } break;
     case "braids": cap(1.9); for (const s of [-1, 1]) for (let j = 0; j < 5; j++) ball(r * 0.16, [s * r * 0.92, -r * (0.35 + j * 0.25), r * 0.3]); break;
-    case "locs": cap(1.7); for (let i = 0; i < 11; i++) { const a2 = Math.PI * (0.05 + (i / 10) * 0.9); add(new THREE.CapsuleGeometry(r * 0.075, r * 1.1, 4, 6), [Math.cos(a2) * R, -r * 0.55, Math.sin(a2) * R * 0.95]); } break;
+    // locs hang from the sides and back only, parted round the face, the side ones behind the ears
+    case "locs": cap(1.7); for (let i = 0; i < 11; i++) { const a2 = Math.PI * (0.12 + (i / 10) * 0.76), len = r * (0.8 + Math.sin(a2) * 0.4); add(new THREE.CapsuleGeometry(r * 0.08, len, 4, 6), [Math.cos(a2) * R * 1.02, -len * 0.5 + r * 0.05, Math.sin(a2) * R + r * 0.06]); } break;
     default: cap();
   }
 }

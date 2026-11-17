@@ -282,8 +282,20 @@ const HOME_CSS = `
 .home .character{display:grid;gap:1rem;grid-template-columns:minmax(0,1fr)}
 @media(min-width:56rem){.home .character{grid-template-columns:minmax(0,1.1fr) minmax(0,1fr);align-items:start}}
 .home .character .ch-first{grid-column:1/-1;margin:0;padding-right:9rem;font:600 1.15rem Lexend,system-ui,sans-serif}
-.home .ch-stage{position:relative;aspect-ratio:1;max-height:70vh;width:100%;border-radius:16px;cursor:grab;touch-action:pan-y;
- background:radial-gradient(circle at 50% 40%,color-mix(in oklab,var(--acc) 16%,transparent),transparent 70%)}
+.home .ch-left{display:grid;gap:.6rem;min-width:0}
+.home .ch-stage{position:relative;aspect-ratio:1;max-height:70vh;width:100%;border-radius:20px;cursor:grab;touch-action:pan-y;overflow:hidden;
+ border:1px solid var(--rim);box-shadow:inset 0 1px 0 color-mix(in oklab,#fff 10%,transparent),0 10px 30px -18px rgb(0 0 0/.5);
+ background:radial-gradient(ellipse 60% 22% at 50% 88%,color-mix(in oklab,var(--ink) 10%,transparent),transparent 70%),
+ radial-gradient(circle at 50% 38%,color-mix(in oklab,var(--acc) 18%,transparent),transparent 70%),color-mix(in oklab,var(--rim) 18%,transparent)}
+.home .ch-hint{position:absolute;left:50%;bottom:.75rem;transform:translateX(-50%);display:inline-flex;align-items:center;gap:.35rem;white-space:nowrap;
+ pointer-events:none;font-size:.85rem;font-weight:600;padding:.3rem .75rem;border-radius:999px;background:color-mix(in oklab,var(--paper) 80%,transparent);color:var(--ink)}
+.home .ch-hint[hidden]{display:none}
+.home .ch-zoom{position:absolute;top:.6rem;right:.6rem;display:grid;place-items:center;width:2.75rem;height:2.75rem;border-radius:50%;cursor:pointer;
+ border:1px solid var(--rim);background:color-mix(in oklab,var(--paper) 85%,transparent);color:var(--ink)}
+.home .ch-zoom[aria-pressed=true]{border-color:var(--acc)}
+.home .ch-poses{display:flex;gap:.4rem;overflow-x:auto;justify-content:safe center;padding:.15rem;scrollbar-width:thin}
+.home .ch-poses .ch-chip{min-height:2.4rem}
+.home .ch-later{margin-left:.4rem;font-weight:500;font-size:.95rem;color:var(--acc)}
 .home .ch-stage:active{cursor:grabbing}.home .ch-stage canvas{display:block;width:100%;height:100%}
 .home .ch-side{display:grid;gap:.9rem;min-width:0}.home .ch-rows{display:grid;gap:.55rem;min-width:0}
 .home .ch-row{display:grid;grid-template-columns:6.5rem minmax(0,1fr);align-items:center;gap:.5rem;min-width:0}
