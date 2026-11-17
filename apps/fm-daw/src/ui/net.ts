@@ -67,8 +67,8 @@ export function connect(opts: {
   onGone(from: number): void;
   onStatus(s: NetStatus): void;
   onChat(m: ChatServer): void;
-  /** Who may do what, who has a hand up, and who's in. */
-  onGrants(m: GrantServer): void;
+  /** Who may do what, who has a hand up, and who's in (the jam room has no use for it yet). */
+  onGrants?(m: GrantServer): void;
   /** A chunk of a take's sound (someone recorded one, or the room has it from before). */
   onTakeBytes(m: TakeBytes): void;
   /** Who this is, said on every open so the room knows the chat's people. */
@@ -95,7 +95,7 @@ export function connect(opts: {
       else if (m.t === "floor") { floor = { state: m.state, host: m.host }; opts.onStatus({ state: "online", peers, floor, locked }); }
       else if (m.t === "full") full = m.why;
       else if (m.t === "takeBytes") opts.onTakeBytes(m);
-      else if (m.t === "grants") opts.onGrants(m);
+      else if (m.t === "grants") opts.onGrants?.(m);
       else if (m.t === "lock") {
         // the maker changed it: keep the new one, or this tab's next reconnect is turned away
         if (m.code !== undefined) { saveCode(room, m.code); if (m.code) url.searchParams.set("code", m.code); else url.searchParams.delete("code"); }
