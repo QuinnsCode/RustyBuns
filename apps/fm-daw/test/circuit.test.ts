@@ -12,9 +12,11 @@ import { riff } from "../src/circuit/riff.ts";
 import { WasmRig } from "../src/circuit/wasm.ts";
 import { instantiateFm } from "../src/engine/wasm.ts";
 import { boardToNetlist, readBoard } from "../src/circuit/tscircuit.ts";
+import { opticalComp } from "../src/circuit/effects.ts";
 import qDist from "../circuits/q-dist.circuit.json";
 import qDrive from "../circuits/q-drive.circuit.json";
 import qFuzz from "../circuits/q-fuzz.circuit.json";
+import qSqueeze from "../circuits/q-squeeze.circuit.json";
 
 setDefaultTimeout(60_000);
 const SR = 48000;
@@ -25,7 +27,7 @@ const peak = (b: Float32Array, from = 0) => { let p = 0; for (let i = from; i < 
 
 test("each orderable pedal board (circuits/q-*.tsx) plays like its voicing at every Drive", () => {
   // The 9 V rail and the 4.5 V bias are ground to the signal; jacks, footswitch, LED and supply diode are the box.
-  const box = (supply: string, ledR: string) => ({ acGround: ["V9", "VREF"], leaveOut: ["J1", "J2", "J3", "J4", "LED1", ledR, supply] });
+  const box = (supply: string, ledR: string, more: string[] = []) => ({ acGround: ["V9", "VREF"], leaveOut: ["J1", "J2", "J3", "J4", "LED1", ledR, supply, ...more] });
   const play = (net: Netlist) => {
     const c = new Circuit(net, SR), rest = c.settle(0);
     return Float32Array.from({ length: SR / 2 }, (_, i) => c.step(0.2 * Math.sin((2 * Math.PI * 220 * i) / SR)) - rest);
@@ -38,6 +40,10 @@ test("each orderable pedal board (circuits/q-*.tsx) plays like its voicing at ev
     ["Q Dist", qDist, box("D3", "R9"), (t: number) => hardClip(10e3 + t * 200e3)],
     // 20k + a 2M audio pot, whose turn comes out near the square `fuzz()` takes.
     ["Q Fuzz", qFuzz, box("D5", "R9"), (t: number) => fuzz(Math.sqrt(t))],
+    // 10k + a 250k pot (the sim turns 10k + 300k by sustain squared), its vactrol dark. The LED driver
+    // (C2, R5, D1, Q1, R6) is the board's envelope follower: the sim's "led" Mod, off its board.
+    ["Q Squeeze", qSqueeze, { ...box("D2", "R10", ["C2", "R5", "D1", "Q1", "R6"]), moved: { U2: { ctl: "led", hi: 2e6, lo: 300 } } },
+      (t: number) => opticalComp(Math.sqrt((t * 250) / 300))],
   ] as const) {
     expect(() => boardToNetlist(board)).toThrow("a chip the simulator doesn't know");
     for (const t of [0, 0.5, 1]) {
