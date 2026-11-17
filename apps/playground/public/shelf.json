@@ -31,6 +31,7 @@
     "published": true,
     "picture": "skate-tech-park",
     "usedBy": [
+      "eqosys",
       "git-recon",
       "load-in",
       "mythic-masters",
