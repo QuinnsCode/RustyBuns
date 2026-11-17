@@ -3,13 +3,19 @@
 // walk, first person when you sit, V either way. Your body, seat and notes go on the sesh's live line; the room
 // (src/studio/rooms/) is data. ?room=<sesh> (or /jam.html opened from a sesh) is the sesh you jam in; ?studio=<id> is the
 // room (?studio=yours is the one you built in /rooms.html).
+// With no room it's the front door (door.ts): sign in with eqosys, your character, Make a room, your rooms. An invite link
+// takes a friend through the same sign-in and back into the room, wearing the character kept on their eqosys account.
 import "@fontsource/barlow-condensed/600.css";
 import "@fontsource/ibm-plex-sans/400.css";
 import "../room/studio.css";
+import "./door.css";
 import * as THREE from "three";
 import { DEFAULTS, loadPad, mountControls, type Settings } from "@rustybuns/game-controls";
 import { clamp, lerp } from "@rustybuns/util";
-import { cleanAvatar, defaultAvatar, randomAvatar, type Avatar } from "@rustybuns/util/avatar";
+import { cleanAvatar, defaultAvatar, drawAvatar, randomAvatar, type Avatar } from "@rustybuns/util/avatar";
+import { eqosys } from "@rustybuns/util/eqosys";
+import { APP, EQOSYS, SIGN_IN_FROM, eqosysAvatar } from "../account.ts";
+import { fromLink, inviteLink, loadRecent, remember, roomId, saveRecent, studios } from "./door.ts";
 import { apply, type Live, type Op, type Project } from "../project.ts";
 import { demoProject } from "../presets.ts";
 import { AudioOut, START_DB, dbToGain } from "../ui/audio.ts";
@@ -31,15 +37,30 @@ const CONTROLS = "qollab-studio:controls";
 const LOOK = "qollab-studio:avatar";
 const $ = (id: string) => { const e = document.getElementById(id); if (!e) throw new Error(`#${id} is missing`); return e; };
 
-const pick = new URLSearchParams(location.search).get("studio") ?? "";
+/** The room this page is in, from its link; null on the front door. */
+const here = fromLink(location.search);
+const pick = here?.studio ?? "";
 const def = (pick === "yours" ? yours() : ROOMS[pick]) ?? LIVE_ROOM;
 const jam = newJam(def);
-const name = localMe().name || "Someone";
+const eq = eqosys({ app: APP, url: EQOSYS, from: SIGN_IN_FROM, prefix: "qollab-studio", skin: { theme: {
+  "--ui-bg": "rgba(21, 23, 27, 0.94)", "--ui-ink": "#f4f1ea", "--ui-dim": "#a9adb4", "--ui-line": "#3a3e45", "--ui-soft": "#23262c",
+  "--ui-accent": "#ff6b4a", "--ui-on-accent": "#15171b", "--ui-radius": "14px", "--ui-radius-sm": "8px",
+} } });
+const signedIn = () => !!eq.login();
+/** A fresh token for /ws, or null: a guest (signed out, or a page eqosys won't send anyone back to). */
+const token = () => { const l = eq.login(); return l && eq.fresh(l, 5_000) ? l.token : null; };
+const name = eq.login()?.name || localMe().name || "Someone";
 function myLook(): Avatar {
   try { const a = cleanAvatar(JSON.parse(localStorage.getItem(LOOK) ?? "null")); if (a) return a; } catch { /* none saved */ }
   return defaultAvatar(name);
 }
 let look = myLook();
+/** Where your look came from: your eqosys account once it answers, else this browser's. */
+let lookFrom: "eqosys" | "local" = "local";
+{
+  const l = eq.login();
+  if (l) void eqosysAvatar(eq.eqosysUrl(), l.token).then((a) => { if (!a) return; look = a; lookFrom = "eqosys"; wear(); door(); });
+}
 
 let phase: "menu" | "play" = "menu";
 let ctl: Settings = DEFAULTS;
@@ -233,7 +254,7 @@ const player: Player = {
 };
 addCommands(studioTools(player).map((t) => ({ group: "Studio", ...t })));
 
-net = connect({
+if (here) net = connect({
   onGrants(m) { rights.grants = m.grants; rights.asked = (rights.me && m.asks[rights.me]) || null; },
   onRewound: back.answer,
   onSnapshot(p) {
@@ -251,6 +272,7 @@ net = connect({
   onChat(m) { if (m.t === "chat") rights.me = m.you; },
   onTakeBytes() {},
   hello: () => ({ key: myKey(), name }),
+  token,
 });
 
 // ---- input ----
@@ -306,8 +328,65 @@ void startMidi({
   panic: releaseAll, bend() {}, cc() {}, devices() {},
 });
 
-function menu() { $("menu").hidden = phase === "play"; }
-function play() { phase = "play"; menu(); lock(); void startAudio(); }
+// ---- the front door ----
+function door() {
+  const out = !signedIn() && eq.canSignIn();
+  $("door-out").hidden = !out;
+  $("door-lobby").hidden = out || !!here;
+  $("door-room").hidden = out || !here;
+  const invited = $("invited");
+  invited.hidden = !here;
+  invited.textContent = here ? `You're invited to ${here.name || here.room}.` : "";
+  $("sign-in").textContent = here ? "Sign in and walk in" : "Sign in with eqosys";
+  if (here) $("room-title").textContent = here.name || here.room;
+  $("me-name").textContent = name;
+  $("me-from").textContent = signedIn() ? (lookFrom === "eqosys" ? "Signed in with eqosys, wearing your eqosys character" : "Signed in with eqosys") : "A guest in this browser";
+  $("look").hidden = lookFrom === "eqosys";
+  $("sign-out").hidden = !signedIn();
+  const c = $("me-look");
+  const g = c instanceof HTMLCanvasElement ? c.getContext("2d") : null;
+  if (g) { g.clearRect(0, 0, 96, 132); drawAvatar(g, look, 48, 124, 112); }
+  const list = $("rooms");
+  list.replaceChildren();
+  const rooms = loadRecent();
+  if (!rooms.length) { const li = document.createElement("li"); li.className = "none"; li.textContent = "Rooms you make or join show up here."; list.append(li); }
+  for (const r of rooms) {
+    const li = document.createElement("li"), a = document.createElement("a"), t = document.createElement("span"), m = document.createElement("small");
+    a.href = inviteLink(location.origin, r.room, r.studio, r.name);
+    t.textContent = r.name || r.room;
+    m.textContent = r.mine ? "Yours" : "Joined";
+    a.append(t, m); li.append(a); list.append(li);
+  }
+}
+const studioPick = $("room-studio");
+if (studioPick instanceof HTMLSelectElement) for (const s of studios()) studioPick.append(new Option(s.name, s.id));
+$("make").addEventListener("submit", (e) => {
+  e.preventDefault();
+  const input = $("room-name"), label = input instanceof HTMLInputElement ? input.value.trim().slice(0, 40) : "";
+  const studio = studioPick instanceof HTMLSelectElement ? studioPick.value : LIVE_ROOM.id;
+  const room = roomId(label);
+  saveRecent(remember(loadRecent(), { room, name: label, studio, mine: true, at: Date.now() }));
+  // the first in with a key is the sesh's maker (its leader), and that's you: you walk in before anyone has the link
+  location.assign(inviteLink(location.origin, room, studio, label));
+});
+$("sign-in").addEventListener("click", () => void eq.signIn(location.search));
+$("sign-out").addEventListener("click", () => { eq.signOut(); location.reload(); });
+$("invite").addEventListener("click", () => {
+  if (!here) return;
+  const b = $("invite");
+  void navigator.clipboard?.writeText(inviteLink(location.origin, here.room, here.studio, here.name)).then(
+    () => { b.textContent = "Copied"; setTimeout(() => { b.textContent = "Copy invite link"; }, 1600); },
+    () => { flash = { text: "Copy didn't work: the link is in the address bar", until: performance.now() + 2500 }; });
+});
+if (here) saveRecent(remember(loadRecent(), { room: here.room, name: here.name, studio: here.studio, mine: false, at: Date.now() }));
+// back from eqosys: the invite's room came along as `then`, so open it signed in (a fresh page, so the socket carries the token)
+void eq.finishSignIn().then((back) => {
+  if (back?.login) { if (back.then.startsWith("?")) location.replace(`${location.pathname}${back.then}`); else location.reload(); return; }
+  if (back?.error) { const e = $("door-error"); e.hidden = false; e.textContent = back.error; }
+});
+
+function menu() { $("menu").hidden = phase === "play"; door(); }
+function play() { if (!here) return; phase = "play"; menu(); lock(); void startAudio(); }
 $("play").addEventListener("click", play);
 $("look").addEventListener("click", () => {
   look = randomAvatar(Math.random);
@@ -383,8 +462,8 @@ menu();
 // ---- the harness (scripts/probe.ts HANDLES): the jam as data, and a player's moves without pointer lock ----
 declare global { interface Window { qjam?: typeof harness } }
 const harness = {
-  state: () => ({ phase, net: status.state, peers: status.peers, octave, audio: !!out, holding: [...holding.values()], ...snapshot(jam, project) }),
-  start: () => { phase = "play"; menu(); void startAudio(); return harness.state(); },
+  state: () => ({ door: { signedIn: signedIn(), name, room: here?.room ?? null, look: lookFrom, rooms: loadRecent() }, phase, net: status.state, peers: status.peers, octave, audio: !!out, holding: [...holding.values()], ...snapshot(jam, project) }),
+  start: () => { if (!here) return harness.state(); phase = "play"; menu(); void startAudio(); return harness.state(); },
   walkTo: (x: number, z: number) => { const s = walkTo(jam, x, z); live(body(jam)); return s; },
   look: (yaw: number, pitch = 0) => { jam.me.yaw = yaw; jam.me.pitch = pitch; },
   sit: (id?: string) => { const a = id ? sit(jam, id) : (sitOrStand(), { ok: !!jam.me.seat }); live(body(jam)); return a; },

@@ -10,6 +10,8 @@ import { seshFromPath, seshName } from "./sesh.ts";
 import Profile from "./profile.ts";
 import { personId } from "./chat.ts";
 import { RoomMintGate } from "@rustybuns/util/limits";
+import { whoIs } from "@rustybuns/util/token";
+import { APP, EQOSYS } from "./account.ts";
 export { World, Lobby, Profile };
 
 const mintGate = new RoomMintGate();
@@ -25,6 +27,8 @@ interface Env extends WorldEnv {
   LOBBY: NonNullable<WorldEnv["LOBBY"]>;
   /** One per person: their name and chat layout (src/profile.ts). */
   PROFILE: { idFromName(n: string): unknown; get(id: unknown): { fetch(r: Request): Promise<Response> } };
+  /** Where eqosys is (a test's or a local one); unset, the live one. */
+  EQOSYS_URL?: string;
   /** Bearer token for GET /signups. Unset, the list can't be read from outside. */
   SIGNUPS_TOKEN?: string;
 }
@@ -44,7 +48,14 @@ export default {
       const room = (url.searchParams.get("room") ?? "lobby").slice(0, 64);
       if (ip && !mintGate.allow(ip, room, Date.now())) return new Response("too many new rooms, try again in a minute", { status: 429, headers: { "Retry-After": "60" } });
       const headers = new Headers(req.headers);
-      headers.set("X-User-Id", crypto.randomUUID());
+      // signed in with eqosys (Qollab Studio): the room knows you by your eqosys id and name; anyone else is a random guest
+      headers.delete("X-User-Name");
+      if (url.searchParams.has("token")) {
+        const who = await whoIs(url, { app: APP, eqosys: env.EQOSYS_URL ?? EQOSYS, fallbackName: "Someone" });
+        if (who instanceof Response) return who;
+        headers.set("X-User-Id", who.uid);
+        headers.set("X-User-Name", who.name);
+      } else headers.set("X-User-Id", crypto.randomUUID());
       headers.set("X-Room", room);
       headers.set("X-Room-Idle-Ms", String(IDLE_MS));
       // a private sesh's code, as the page sent it; only the World knows whether it's right
