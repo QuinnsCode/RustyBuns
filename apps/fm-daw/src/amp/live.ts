@@ -21,15 +21,14 @@ export interface Live { rig: Rig; chain: string; keys: string[]; mic: string }
 
 /** Each `Pot` part's turn, in netlist order (what `Rig.setPot` numbers them by). */
 const potTurns = (net: Netlist): number[] => net.parts.flatMap((p) => (p.kind === "Pot" ? [p.at ?? 0.5] : []));
-/** What a link is built from, its pots' turns left out: turning one is a `setPot`, not a new circuit. */
+/** What a link is built from, its pots' turns left out: turning one (the wah's treadle, a bench board's knob) is a `setPot`, not a new circuit. */
 const linkKey = (net: Netlist, mods: Mod[] = []) => JSON.stringify([{ ...net, parts: net.parts.map((p) => (p.kind === "Pot" ? { ...p, at: 0 } : p)) }, mods]);
 
 /**
  * The rig for these settings. A different amp, a pedal in or out, or a new
  * oversampling builds a new chain; otherwise only links whose parts changed are
  * rebuilt (a tone knob: the tone stack; the pedal's knob or a part swap: the pedal, an LFO keeping its phase),
- * a moved mic makes a new impulse response, and pots (the wah's treadle, a bench board's knobs) and the power
- * stage are just set.
+ * a moved mic makes a new impulse response, and pots and the power stage are just set.
  */
 export function applySettings(s: AmpSettings, live: Live | null, sampleRate: number): Live {
   const amp = AMPS.find((a) => a.id === s.amp) ?? AMPS[0];
