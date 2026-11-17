@@ -559,6 +559,8 @@ function door() {
   invited.textContent = here ? `You're invited to ${here.name || here.room}.` : "";
   $("sign-in").textContent = here ? "Sign in and walk in" : "Sign in with eqosys";
   if (here) $("room-title").textContent = here.name || here.room;
+  $("room-studio-name").textContent = `${def.name}.`;
+  $("room-about").textContent = def.about ?? "";
   $("me-name").textContent = name;
   $("me-from").textContent = signedIn() ? (lookFrom === "eqosys" ? "Signed in with eqosys, wearing your eqosys character" : "Signed in with eqosys") : "A guest in this browser";
   $("look").hidden = lookFrom === "eqosys";
