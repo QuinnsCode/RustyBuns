@@ -80,7 +80,14 @@ export type BbdSpec = { kind: "bbd"; mode: BbdMode; rate: number; depth: number 
 export type LoopSpec = SpringSpec | TapeSpec | BbdSpec;
 
 /** One machine in the loop: a line-level sample in, one out. `set` turns its knobs. */
-export interface Machine { readonly kind: LoopSpec["kind"]; run(x: number): number; set(spec: LoopSpec): void; readonly misses: number }
+export interface Machine {
+  readonly kind: LoopSpec["kind"];
+  run(x: number): number;
+  set(spec: LoopSpec): void;
+  readonly misses: number;
+  /** Its LFO this far on (radians), if it has one: a stereo pair's right side runs half a turn behind. */
+  turn?(radians: number): void;
+}
 
 /**
  * The circuits inside the machines, in place of the ones written here (`springDriver`, `springRecovery`,
@@ -388,6 +395,7 @@ export class Bbd implements Machine {
     this.rate = spec.rate / 10;
     this.depth = spec.depth / 10;
   }
+  turn(radians: number): void { const tau = 2 * Math.PI; this.lfo = (((this.lfo + radians) % tau) + tau) % tau; }
   /** The delay now, in seconds. */
   delaySeconds(): number {
     const m = BBD_MODES[this.mode];

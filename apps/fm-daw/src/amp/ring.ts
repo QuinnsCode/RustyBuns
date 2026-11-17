@@ -73,7 +73,8 @@ export class Head {
   private rings: Ring[] = [];
   private frame = 0;
   private tap = new Float64Array(WIDTH);
-  private back = new Float64Array(BLOCK);
+  /** The last part's frame: the left side's block, then the right's (a copy until a stereo slot). */
+  private back = new Float64Array(2 * BLOCK);
   private out = new Float32Array(BLOCK);
 
   constructor(readonly sampleRate: number) {}
@@ -91,7 +92,7 @@ export class Head {
    * `n` samples of `input` through the rig, its volts into `output`. False when there's no rig to play (bypassed):
    * the caller plays the input dry. `wait` (ms, tests only) blocks for the last part's frame instead of dropping it.
    */
-  block(input: Float32Array, output: Float32Array, n: number, wait = 0): boolean {
+  block(input: Float32Array, output: Float32Array, n: number, wait = 0, outputR?: Float32Array): boolean {
     // New settings, or the rings came or went since the rig was built: build it (or its first part) again.
     const p = this.pending ?? (this.split !== this.builtSplit ? this.last : null);
     if (p) {
@@ -105,18 +106,20 @@ export class Head {
     }
     const rig = this.bypass ? null : this.live?.rig;
     if (!rig) return false;
-    if (!this.split) { rig.process(input, output, n); return true; }
-    if (n !== BLOCK) { output.fill(0, 0, n); this.late++; return true; }
+    if (!this.split) { rig.process(input, output, n, outputR); return true; }
+    const silence = () => { output.fill(0, 0, n); outputR?.fill(0, 0, n); };
+    if (n !== BLOCK) { silence(); this.late++; return true; }
     const f = this.frame++, os = rig.oversample;
     rig.process(input, this.tap, n);
     this.rings[0].write(f, this.version, rig.outRest, this.tap, n * os);
     const want = f - this.hops, last = this.rings[this.rings.length - 1];
-    if (want < 0) { output.fill(0, 0, n); return true; }
+    if (want < 0) { silence(); return true; }
     if (wait) last.wait(want, wait);
-    if (!last.read(want, this.back, n)) { output.fill(0, 0, n); this.late++; return true; }
+    if (!last.read(want, this.back, 2 * n)) { silence(); this.late++; return true; }
     // Through a Float32Array, as the one-thread rig writes it.
     this.out.set(this.back.subarray(0, n));
     output.set(this.out.subarray(0, n));
+    if (outputR) { this.out.set(this.back.subarray(n, 2 * n)); outputR.set(this.out.subarray(0, n)); }
     return true;
   }
 }
@@ -173,8 +176,10 @@ export class PartRunner {
       if (!rig) { this.next = f + 1; continue; }
       rig.inRest = got.rest;
       const last = this.index === this.rings.length - 1;
-      rig.process(this.tap, this.out, BLOCK);
-      dst.write(f, got.version, rig.outRest, this.out, last ? BLOCK : BLOCK * rig.oversample);
+      // The last part hands back both sides, left then right; the others their oversampled volts.
+      if (last) rig.process(this.tap, this.out.subarray(0, BLOCK), BLOCK, this.out.subarray(BLOCK, 2 * BLOCK));
+      else rig.process(this.tap, this.out, BLOCK);
+      dst.write(f, got.version, rig.outRest, this.out, last ? 2 * BLOCK : BLOCK * rig.oversample);
       this.next = f + 1;
       this.busyMs += this.now() - t0;
       this.blocks++;

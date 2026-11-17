@@ -125,7 +125,7 @@ export function boardLinks(board: readonly BoardStep[]): { links: Link[]; blends
   const one = (p: BoardPedal): number => {
     const def = PEDALS.find((d) => d.id === p.pedal);
     if (p.pedal === "bench" && p.bench) links.push({ net: p.bench });
-    else if (def) links.push({ net: def.net(p.drive), mods: def.mods?.(p.drive) });
+    else if (def) links.push({ net: def.net(p.drive, p.swaps), mods: def.mods?.(p.drive) });
     else return 0;
     return 1;
   };
