@@ -68,6 +68,74 @@
         { "cleared": 9, "first": "\"We printed one sharp photo today, of you, and pinned it up. It's the only one we've ever kept.\"", "again": "\"Your crate's here. We wrote your name on it. A little blurry.\"" },
         { "cleared": 12, "first": "\"The forest is quiet, and for the first time the photos came out clear. They're all of trees. We've never been so happy.\"", "again": "\"Sit. Your photo's still up, the sharp one. Nobody's allowed to touch it.\"" }
       ]
+    },
+    {
+      "id": "frogwatch",
+      "n": 5,
+      "name": "The Frog Watch",
+      "camp": "The Frog Watch's landing",
+      "meet": "A ring of people in green rubber waders up to the chest, sitting on upturned buckets with a torch in every hand. Every so often they all flash them at the water. \"The Frogman stood up on a bridge once and waved a sparking wand. Everyone ran. We think it was saying hello. So we say hello back. Every night. Here, have a torch.\"",
+      "hint": "Out on the water a light blinks twice. They all go quiet. \"That came back from {section}. Short, short, long. That's the {creature}, that is. It's got manners.\"",
+      "lair": "Every torch in the ring flickers at once and points the same way. \"{section},\" someone says. \"The {creature}. It's been flashing back all week, louder every night.\"",
+      "allHeld": "\"Nobody flashes back now. We still wave. It's only polite.\"",
+      "visits": [
+        { "cleared": 0, "first": "\"Take a bucket. Waders are spare in the crate. You'll want them, it gets damp.\"", "again": "\"Torch working? Give it a flash. There. Lovely.\"" },
+        { "cleared": 3, "first": "\"Three keepers. Someone on the far shore started flashing back at us, and it was a person. We were thrilled anyway.\"", "again": "\"Kettle's on the camp stove. Mind your waders near it, they melt.\"" },
+        { "cleared": 6, "first": "\"Half the shore cleared. We've learned to flash a whole sentence now. It says: thank you, the one in the waders.\"", "again": "\"Sit. We were just flashing about you.\"" },
+        { "cleared": 9, "first": "\"Nine. A fishing boat flashed us good night last night. The whole lake's joining in.\"", "again": "\"Your bucket's kept warm. Well. Kept.\"" },
+        { "cleared": 12, "first": "\"Every light round the lake is on tonight, all flashing hello. That's for you. Even the lighthouse is having a go.\"", "again": "\"Your torch is on the hook. Batteries are new. We change them every week, in case.\"" }
+      ]
+    },
+    {
+      "id": "antlers",
+      "n": 6,
+      "name": "The Antler Choir",
+      "camp": "The Antler Choir's fire",
+      "meet": "A ring of cowboy hats round the fire, every one with a pair of little felt antlers sewn on. Each of them has a harmonica. \"Jackalopes copy what they hear. Sing a good tune by a fire and one sings it back from the dark. Sing a bad one and it laughs. We have been practising for some years.\"",
+      "hint": "They stop mid-song. From far off, a voice finishes the line, a little flat. \"That came from {section}. The {creature}, I'd bet my hat. Never could hold a note.\"",
+      "lair": "They start a slow one, and the whole desert sings it back from one place: {section}. \"The {creature},\" the leader says, hat off. \"Best voice out here. Worst manners.\"",
+      "allHeld": "\"Nothing sings back now but the wind. The wind's tone deaf. We miss the harmony.\"",
+      "visits": [
+        { "cleared": 0, "first": "\"Sit and hum along. Doesn't matter what. They like enthusiasm.\"", "again": "\"Back for the second verse? There's always a second verse.\"" },
+        { "cleared": 3, "first": "\"Three keepers. We wrote you a song. It's mostly about your boots, we couldn't think what rhymes with your name.\"", "again": "\"Coffee's in the pot. Harmonica's on the rock if you fancy.\"" },
+        { "cleared": 6, "first": "\"Half the mesas cleared. A coyote joined in last night. Not a jackalope. Still counts, we've decided.\"", "again": "\"Sit nearer. You can't harmonise from over there.\"" },
+        { "cleared": 9, "first": "\"Nine. We sewed you some antlers. They're on the hat by the fire. You don't have to wear it. It would mean a lot.\"", "again": "\"Your hat's warming by the fire. Antlers forward, that's the trick.\"" },
+        { "cleared": 12, "first": "\"The desert's quiet, so we sang your song all the way through, and the whole valley sang it back. All twelve verses. Nobody can be that lonely out here now.\"", "again": "\"Back home, singer? Take the middle spot. It's yours.\"" }
+      ]
+    },
+    {
+      "id": "counters",
+      "n": 7,
+      "name": "The Thirteen Counters",
+      "camp": "The Counters' jetty",
+      "meet": "A jetty over black water, and a row of people with thirteen big beads round each neck and a jar of beans in each lap. \"The rougarou has to count what you leave out. It can't count past twelve, so it starts over, all night, till the sun comes up. Thirteen beans. Leave them out, sleep sound. Here's your jar.\"",
+      "hint": "An old man brings back a saucer of beans from the bank and frowns at them. \"These came from out by {section}. Somebody counted them twelve times over. That'll be the {creature}.\"",
+      "lair": "Every jar on the jetty has been tipped out and counted, one by one, in a long line pointing at {section}. \"The {creature},\" they whisper. \"It got to twelve. Again.\"",
+      "allHeld": "\"Nobody's counting our beans now. We count them ourselves, at night, for the company.\"",
+      "visits": [
+        { "cleared": 0, "first": "\"Sit. Count your beans. All thirteen? Good. Now you're safe.\"", "again": "\"Back again? Count them. Go on. It's the rule.\"" },
+        { "cleared": 3, "first": "\"Three keepers. We put out a fourteenth bean for you. It's not for anything. It's just a gift.\"", "again": "\"Gumbo's on. It has beans in it. Thirteen. We counted.\"" },
+        { "cleared": 6, "first": "\"Half the bayou cleared. Some of us slept with only twelve beans out last night. Very daring.\"", "again": "\"Pull up a crate. The frogs are loud, but they don't count.\"" },
+        { "cleared": 9, "first": "\"Nine. We strung you a necklace. Thirteen beads. We checked it three times. Thirty-nine. We checked it thirty-nine times.\"", "again": "\"Your beads are on the post. Shiny side out.\"" },
+        { "cleared": 12, "first": "\"Twelve keepers, and the bayou's quiet. Twelve. We'll give you the thirteenth ourselves: you're one of us.\"", "again": "\"Sit, Counter. Your jar's full. We topped it up.\"" }
+      ]
+    },
+    {
+      "id": "howlback",
+      "n": 8,
+      "name": "The Howl-Back Club",
+      "camp": "The Howl-Back Club's ridge",
+      "meet": "A ring of folding stools on a ridge, everyone in fluffy earmuffs, each holding a tin cup to their mouth. \"The Howler isn't scary. It's lonely. Nobody howls back. So we do. The cups help with the echo. The earmuffs help with the neighbours.\"",
+      "hint": "They all howl into their cups at once. A long, sad howl answers. \"That came from {section}. The {creature}. It sounds better already, doesn't it?\"",
+      "lair": "One howl answers every cup on the ridge, from one place: {section}. \"The {creature},\" says the leader, taking off her earmuffs. \"It's never howled that loud. It knows somebody's coming.\"",
+      "allHeld": "\"Nothing howls back now. We howl anyway, a little, to the hills. Habit.\"",
+      "visits": [
+        { "cleared": 0, "first": "\"Take a cup. Take a breath. Owwooo. Lovely. You're a natural.\"", "again": "\"Back for a howl? Earmuffs on, cup up.\"" },
+        { "cleared": 3, "first": "\"Three keepers. The hills sound friendlier this week. Less howling, more singing.\"", "again": "\"Cocoa's in the flask. Sip, then howl. Not the other way round.\"" },
+        { "cleared": 6, "first": "\"Half the hills cleared. A farmer down the valley howled back at us last night. On purpose.\"", "again": "\"Sit. The good stool's free. The one that doesn't fold.\"" },
+        { "cleared": 9, "first": "\"Nine. We knitted you earmuffs. Red ones. So we can see you on the ridge.\"", "again": "\"Your earmuffs are on the stool. Still warm.\"" },
+        { "cleared": 12, "first": "\"The Howler's quiet tonight. Not sad quiet. Asleep quiet. You did that. One howl for you, everyone. Owwooo.\"", "again": "\"Back home? Howl once, so the hills know.\"" }
+      ]
     }
   ]
 }
