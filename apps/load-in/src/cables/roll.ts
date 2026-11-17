@@ -7,10 +7,19 @@ import { newRope, stepRope, type Rope, type Solid, type Vec } from "./rope.ts";
 /** Real cable by the metre. `grip` and `stick` are the rope's floor friction (rope.ts `feel`), heavier is deader. */
 export const CABLE = {
   xlr: { what: "mic cable", kgPerM: 0.06, radius: 0.0035, grip: 0.5, stick: 0.02 },
+  instrument: { what: "instrument cable", kgPerM: 0.05, radius: 0.003, grip: 0.5, stick: 0.02 },
+  /** A 12 AWG three-core rubber extension cord. */
+  cord: { what: "power cord", kgPerM: 0.17, radius: 0.0055, grip: 0.4, stick: 0.06 },
   speaker: { what: "speaker cable", kgPerM: 0.21, radius: 0.006, grip: 0.3, stick: 0.12 },
   power: { what: "power feeder", kgPerM: 1.1, radius: 0.014, grip: 0.1, stick: 0.45 },
 } as const;
 export type CableKind = keyof typeof CABLE;
+
+/** Power runs this long or longer are a feeder (a generator to a distro); shorter ones are a cord. */
+export const FEEDER_M = 20;
+/** Which roll a game cable (@rustybuns/gear's kind) is: a long power run is a feeder, a short one a cord. */
+export const rollKind = (kind: "power" | "speaker" | "xlr" | "instrument", lengthM: number): CableKind =>
+  kind === "power" ? (lengthM >= FEEDER_M ? "power" : "cord") : kind;
 
 /** The coil's radius in metres, what an arm can put into a throw (joules) and the fastest it swings (m/s). */
 export const ROLL_R = 0.2, ARM_J = 90, ARM_MS = 8;

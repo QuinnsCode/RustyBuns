@@ -2,10 +2,13 @@
 // in to the powered top. It lies on the floor where people walk (a hazard) until a ramp goes over it. The same calls the
 // page's `window.loadIn` harness makes.
 import { expect, test } from "bun:test";
+import { setDial } from "../src/assists.ts";
 import { newWorld, pickUp, putDown } from "../src/sim.ts";
 import { cableState, fedBy, grabEnd, newCables, plug, settle, takeCable, walkWith } from "../src/cables/cables.ts";
 
 test("run power from the outlet to the speaker across the walkway, see the hazard, lay a ramp over it", () => {
+  // Sim: no slack past the cable's length (another file may leave the dial on Cozy).
+  setDial("sim");
   const w = newWorld(), c = newCables(w), state = () => cableState(w, c);
 
   // Out of the case, into the wall.

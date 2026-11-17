@@ -7,12 +7,15 @@ import { type Dial, assist, currentDial } from "./assists.ts";
  * seconds to curfew (out by then or pay `fine` a minute; null: your own garage keeps no curfew). */
 export const VENUES: Record<string, { window: number; fee: number; curfew: number | null; fine: number }> = {
   garage: { window: 180, fee: 0, curfew: null, fine: 0 },
+  // The first gig: four boxes off a hatchback and five cables, so a short window; a small room pays a little.
+  "first-gig": { window: 300, fee: 120, curfew: 360, fine: 15 },
   "dive-bar": { window: 300, fee: 150, curfew: 360, fine: 25 },
   "bigger-bar": { window: 480, fee: 300, curfew: 540, fine: 50 },
   // The park: a long push from the truck and long runs, so a longer window.
   park: { window: 720, fee: 400, curfew: 900, fine: 75 },
-  // The arena: sixteen boxes off the truck and flown, so the crew needs its time, and as long to lower and pack.
-  arena: { window: 1800, fee: 1500, curfew: 2400, fine: 200 },
+  // The arena: sixteen boxes off the truck and flown, so the crew needs its time, and as long to lower and pack. Four
+  // times the heads of the small arena, so it pays the most.
+  arena: { window: 1800, fee: 4000, curfew: 2400, fine: 200 },
   // The small arena: four hangs, each box carried to its point and every motor at 4 m a minute.
   "small-arena": { window: 1800, fee: 1500, curfew: 2400, fine: 200 },
   // The show: the rig is up, so the clock is the minutes to set the desk before the band walks on.

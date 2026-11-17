@@ -15,6 +15,8 @@ import { DIVE_BAR, aim, barState, master, raise, rig, settle, standHeight } from
 import { type BarView, barView } from "./venues/dive-bar-view.ts";
 import { BIGGER_BAR } from "./venues/bigger-bar.ts";
 import { type BiggerBarView, biggerBarView } from "./venues/bigger-bar-view.ts";
+import { FIRST_GIG, gigState, runsOf } from "./venues/first-gig.ts";
+import { type FirstGigView, firstGigView } from "./venues/first-gig-view.ts";
 import { PARK, parkState, pour } from "./venues/park.ts";
 import { type ParkView, parkView } from "./venues/park-view.ts";
 import { ARENA, type Leg, arenaState, fly, lower, rack, reserved, send, setHang, setLeg, setSub, unrack, wait as idle } from "./venues/arena.ts";
@@ -39,6 +41,7 @@ import { loadTour, mountTour, saveTour } from "./tour-view.ts";
 import { accountChip, canSignIn, finishSignIn, login, party, type PartyMember } from "./eqosys.ts";
 import { eyeFill, readable, venueLights } from "./look.ts";
 import { CABLE_RADIUS, REST } from "./hands/grip.ts";
+import { CABLE, leftM, rollKg } from "./cables/roll.ts";
 import { handsView, type Hold } from "./hands/view.ts";
 import { dress, faceLook, type Dressed } from "./faces.ts";
 import { nextStep } from "./next.ts";
@@ -51,7 +54,7 @@ const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as 
 const canvas = $<HTMLCanvasElement>("stage");
 const KEY = "load-in.controls";
 
-const LEVELS: Record<string, Level> = { garage: GARAGE, "dive-bar": DIVE_BAR, "bigger-bar": BIGGER_BAR, park: PARK, arena: ARENA, "small-arena": arenaSim.SMALL_ARENA, show: SHOW, desert: DESERT, amphitheatre: amphi.AMPHITHEATRE };
+const LEVELS: Record<string, Level> = { "first-gig": FIRST_GIG, garage: GARAGE, "dive-bar": DIVE_BAR, "bigger-bar": BIGGER_BAR, park: PARK, arena: ARENA, "small-arena": arenaSim.SMALL_ARENA, show: SHOW, desert: DESERT, amphitheatre: amphi.AMPHITHEATRE };
 const levelFrom = (name: string | null) => LEVELS[name ?? ""] ?? GARAGE;
 /** The tour between nights; a page opened on ?level= plays that level and leaves the tour alone. */
 let tour: Tour = loadTour();
@@ -100,7 +103,7 @@ scene.add(new THREE.HemisphereLight(0xc8d4e6, 0x2a2420, 0.85));
 eyeFill(camera);
 const hands = handsView(scene, camera);
 // Solve the grips the game uses while the menu is up, one a tick, so the first grab doesn't hitch.
-[REST, { kind: "flat" } as const, ...Object.values(CABLE_RADIUS).map((radius) => ({ kind: "cable", radius }) as const)].forEach((w, i) => setTimeout(() => hands.warm([w]), 200 + i * 60));
+[REST, { kind: "flat" } as const, { kind: "roll" } as const, { kind: "plug" } as const, ...[...Object.values(CABLE_RADIUS), ...Object.values(CABLE).map((c) => c.radius)].map((radius) => ({ kind: "cable", radius }) as const)].forEach((w, i) => setTimeout(() => hands.warm([w]), 200 + i * 60));
 let lights = venueLights(world.level);
 scene.add(lights);
 // The marker over what the Next line is about: a small cone pointing down, bobbing.
@@ -141,6 +144,7 @@ const highlight = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGe
 scene.add(highlight);
 let bar: BarView | ParkView | DesertView | null = null;
 let big: BiggerBarView | null = null;
+let gig: FirstGigView | null = null;
 let ar: ArenaView | null = null;
 /** The small arena's view (`ar` is the big arena's). */
 let arena: SmallArenaView | null = null;
@@ -172,6 +176,8 @@ function buildItems() {
     : world.level === DESERT ? desertView(scene, $("hud"), () => world, () => cables) : null;
   big?.dispose();
   big = world.level === BIGGER_BAR ? biggerBarView(scene, $("hud"), () => world, () => cables) : null;
+  gig?.dispose();
+  gig = world.level === FIRST_GIG ? firstGigView(scene, $("hud"), () => world, () => cables, () => switchedOn) : null;
   ar?.dispose();
   ar = world.level === ARENA ? arenaView(scene, $("hud"), () => world) : null;
   arena?.dispose();
@@ -236,37 +242,39 @@ function draw() {
   ar?.update();
   arena?.update();
   amp?.update();
-  ropes.update(cables);
   mates.update(world.crew);
   glow.update(cable.glowing(world, cables), world.t);
   clock?.update(world.level.name, world.t, strikeState(world, cables)?.since ?? null);
   loadOut?.update(world, cables);
   hands.update(holding(), world.t, stepSpeed());
+  ropes.update(cables, { at: hands.gripAt(), yaw: world.you.yaw });
   const next = phase === "play" ? nextStep(world, cables, switchedOn) : null, tgt = next?.key ? world.items.find((i) => i.key === next.key) : null;
   marker.visible = !!tgt;
   if (tgt) marker.position.set(tgt.x, tgt.y + dims(tgt)[1] + 0.25 + Math.sin(performance.now() / 260) * 0.05, tgt.z);
   $("next").textContent = next ? next.text : "";
   $("next").hidden = !next;
-  const g = held ? gear(held.gear) : null;
-  $("hint").textContent = phase !== "play" ? "" : performance.now() < flash.until ? flash.text : (foh?.hint() ?? arena?.hint() ?? amp?.hint() ?? big?.hint() ?? ar?.hint() ?? hint(at, jack));
+  const g = held ? gear(held.gear) : null, roll = cable.carried(cables)?.roll;
+  $("hint").textContent = phase !== "play" ? "" : performance.now() < flash.until ? flash.text : (foh?.hint() ?? arena?.hint() ?? amp?.hint() ?? big?.hint() ?? gig?.hint() ?? ar?.hint() ?? hint(at, jack));
   const team = world.held?.team ? partner(world) : null;
   $("carry").textContent = phase !== "play" ? "" : g && world.held?.team ? (team ? `${g.what} with ${team.name}, ${you.speed.toFixed(1)} m/s` : `One end of the ${g.what}: someone take the other`)
     : g ? `${g.what}, ${g.kg} kg, ${you.speed.toFixed(1)} m/s`
-    : end ? `${end.run.lengthM} m ${end.run.kind} cable, ${you.speed.toFixed(1)} m/s` : `Hands free, ${you.speed.toFixed(1)} m/s`;
+    : roll ? `${CABLE[roll.kind].what} roll, ${rollKg(roll).toFixed(1)} kg, ${leftM(roll).toFixed(0)} m left, ${you.speed.toFixed(1)} m/s${windup ? `, bowl ${Math.round(windup.power * 100)}%` : ""}`
+    : end ? `${end.run.lengthM} m ${end.run.kind} cable${(world.cableKg ?? 0) > 0.3 ? `, pulling ${world.cableKg!.toFixed(1)} kg` : ""}, ${you.speed.toFixed(1)} m/s` : `Hands free, ${you.speed.toFixed(1)} m/s`;
   renderer.render(scene, camera);
 }
 
 const whd = ([w, h, d]: [number, number, number]) => ({ w, h, d });
 
-/** Weight a metre of each cable, kg: what hangs off your fist from hand height to the floor. */
-const CABLE_KG_M: Record<string, number> = { power: 0.15, speaker: 0.21, xlr: 0.06, instrument: 0.06 };
-/** What your hands are doing: palms flat on a carried box's sides, a fist round a cable end, or nothing. */
+/** What your hands are doing: palms flat on a carried box's sides, a roll hooked over the fingers, a plug ready at a
+ * jack, a fist round a cable you drag (the wrist dropping with what it pulls), or nothing. */
 function holding(): Hold {
-  const held = heldItem(world), hp = holdPose(world), end = cable.inHand(cables);
+  const held = heldItem(world), hp = holdPose(world), end = cable.inHand(cables), roll = cable.carried(cables)?.roll;
   if (held && hp) return { right: { kind: "flat" }, left: { kind: "flat" }, kg: gear(held.gear).kg / (world.held?.team ? 2 : 1), carry: { ...hp, ...whd(dims(held)) } };
+  if (roll) return { right: { kind: "roll" }, left: roll.tailIn ? REST : { kind: "cable", radius: CABLE[roll.kind].radius }, kg: world.cableKg ?? 0 };
   if (end) {
-    const at = cable.handAt(world), kind = end.run.kind;
-    return { right: { kind: "cable", radius: CABLE_RADIUS[kind] }, left: REST, kg: (CABLE_KG_M[kind] ?? 0.1) * at.y, lead: { at: [at.x, at.y, at.z], color: COLOR[kind] ?? 0x222222 } };
+    const at = cable.handAt(world), roll = end.run.roll, radius = roll ? CABLE[roll.kind].radius : CABLE_RADIUS[end.run.kind] ?? 0.004;
+    const what = cable.aimedJack(world) ? { kind: "plug" as const } : { kind: "cable" as const, radius };
+    return { right: what, left: REST, kg: world.cableKg ?? 0, lead: { at: [at.x, at.y, at.z], color: COLOR[end.run.kind] ?? 0x222222 } };
   }
   return { right: REST, left: REST, kg: 0 };
 }
@@ -282,12 +290,15 @@ function stepSpeed(): number {
 function hint(at: ReturnType<typeof aimed>, jack: ReturnType<typeof cable.aimedJack>): string {
   const end = cable.inHand(cables), coil = cable.coiling(cables);
   if (coil?.coiling) return `Q over, E under (${coil.coiling.ways.length} of ${cable.loopsFor(coil)})`;
+  const roll = cable.carried(cables)?.roll;
+  if (roll && jack) return `F plug ${roll.tailIn ? "the end" : "it"} into ${jack.owner} ${jack.jack}`;
+  if (roll) return roll.tailIn ? "Carry it to where the run starts, F plug the end, or Space bowl it holding the end" : "Hold Space to wind up, let go to bowl. F set it down";
   if (end) return jack ? `F plug into ${jack.owner} ${jack.jack}` : at?.key === cables.caseKey ? "F coil it back" : "F drop the cable";
   if (world.held) return "F put down, Q / E turn";
   const plugged = jack && cables.runs.some((r) => [r.a, r.b].some((e) => "plug" in e && e.plug[0] === jack.owner && e.plug[1] === jack.jack));
   if (plugged) return `F unplug ${jack.owner} ${jack.jack}`;
-  if (at?.key === cables.caseKey && cables.runs.some((r) => !r.rope || "case" in r.b)) return "F take a cable";
-  const sw = at && hasSwitch(at.gear, !!big || !!foh) ? `, P switch it ${switchedOn.has(at.key) ? "off" : "on"}` : "";
+  if (at?.key === cables.caseKey && cables.runs.some((r) => !r.rope || "case" in r.b)) return "F take a roll of cable";
+  const sw = at && hasSwitch(at.gear, !!big || !!foh || !!gig) ? `, P switch it ${switchedOn.has(at.key) ? "off" : "on"}` : "";
   if (at && wheeled(at.gear)) return `F push the ${gear(at.gear).what} (${gear(at.gear).kg} kg)`;
   if (at) return `F pick up ${gear(at.gear).what} (${gear(at.gear).kg} kg)${sw}`;
   if (!world.level.truck) return "";
@@ -317,8 +328,10 @@ function press(code: string) {
   if (!world.held && !cable.inHand(cables) && amp?.key(code, (why) => { flash = { text: why, until: performance.now() + 1800 }; })) return;
   if (!world.held && !cable.inHand(cables) && ar?.key(code)) return;
   if (big?.key(code)) return;
+  if (gig?.key(code)) return;
   if (foh?.key(code)) return;
   if (code === "KeyF") grab();
+  if (code === "Space") { if (windup) letGo(); else if (cable.carried(cables)) windup = { power: 0 }; }
   if ((code === "KeyQ" || code === "KeyE") && cable.coiling(cables)) return void say(cable.loop(world, cables, code === "KeyQ" ? "over" : "under"));
   if (code === "KeyQ") turnHeld(world, -1);
   if (code === "KeyE") turnHeld(world, 1);
@@ -327,7 +340,14 @@ function press(code: string) {
   if (code === "KeyP") flip();
   if (code === "KeyM") sound.toggle();
 }
-document.addEventListener("keyup", (e) => keys.delete(e.code));
+document.addEventListener("keyup", (e) => { keys.delete(e.code); if (e.code === "Space" && windup) letGo(); });
+/** Winding up to bowl the roll you carry (Space): the power builds slower the heavier the roll. */
+let windup: { power: number } | null = null;
+function letGo() {
+  if (!windup) return;
+  say(cable.bowl(world, cables, windup.power));
+  windup = null;
+}
 addEventListener("blur", () => keys.clear());
 
 /** F: the cable job if there is one (plug, unplug, take one, coil), a jerry can poured into the generator you face,
@@ -367,13 +387,13 @@ function place(): Answer {
 /** P: switch what you look at on or off, if it has a switch. */
 function flip() {
   const at = aimed(world);
-  if (!at || !hasSwitch(at.gear, !!big || !!foh)) return;
+  if (!at || !hasSwitch(at.gear, !!big || !!foh || !!gig)) return;
   if (!switchedOn.delete(at.key)) switchedOn.add(at.key);
 }
 
 /** What you hear now: in the dive bar, through its tilts and master fader. */
 /** What you hear: a speaker plays when it's switched on and, once a cable goes into it, when the patch feeds it. */
-const heard = () => hear(world, switchedOn, arena ? arena.fed : ar ? ar.fed() : big ? big.fed() : cable.fedBy(world, cables), undefined, bar || arena ? rig(world) : (ar ?? big)?.rig());
+const heard = () => hear(world, switchedOn, arena ? arena.fed : ar ? ar.fed() : big ? big.fed() : gig ? gig.fed() : cable.fedBy(world, cables), undefined, bar || arena ? rig(world) : (ar ?? big ?? gig)?.rig());
 
 function play() {
   // On tour, Play goes to the booked gig: a fresh load once last night is settled.
@@ -383,7 +403,7 @@ function play() {
 
 /** Enter: doors on the venue's own score; at the booked gig the night is settled (pay less rent, the next booking) and home base shows how it went. */
 function openDoors() {
-  const s = bar?.doors() ?? big?.doors() ?? arena?.doors() ?? null;
+  const s = bar?.doors() ?? big?.doors() ?? gig?.doors() ?? arena?.doors() ?? ar?.doors() ?? null;
   if (!s || settled || asked || world.level !== bookedRung(tour).level) return s;
   settled = true;
   tour = record(tour, world.level, s).tour;
@@ -426,10 +446,13 @@ function frame(now: number) {
       crouch: keys.has("KeyC") || keys.has("ControlLeft") || gp.held.has("crouch") || touch.crouch,
     });
     cable.stepCables(world, cables, dt);
+    const roll = cable.carried(cables)?.roll;
+    if (windup) windup = roll ? { power: Math.min(1, windup.power + dt / (0.45 + rollKg(roll) / 22)) } : null;
     foh?.tick(dt);
   }
   online?.tick(world, now);
   big?.tick();
+  gig?.tick();
   ar?.tick();
   draw();
   sound.update(heard());
@@ -484,7 +507,7 @@ async function boot() {
 declare global { interface Window { loadIn: typeof harness } }
 /** The harness (scripts/probe.ts HANDLES): the level as data, and the moves a test or an agent makes without pointer lock. */
 const harness = {
-  state: () => ({ phase, tour: { cash: tour.cash, truck: tour.truck, booked: tour.booked, nights: tour.nights.length, settled }, next: nextStep(world, cables, switchedOn), dial: currentDial(), doors: doors(world.level.name, world.t), ...snapshot(world), ...cable.cableState(world, cables), sound: { up: sound.up, on: [...switchedOn], ...heard() }, ...(big ? { biggerBar: big.state() } : {}), ...(ar ? { arena: { ...arenaState(world), heat: ar.heatOn } } : {}), ...(arena ? { smallArena: { ...arenaSim.arenaState(world), heat: arena.heatOn } } : {}), ...(foh ? { show: foh.state() } : {}), ...(amp ? { amphitheatre: { ...amphi.amphitheatreState(world), heat: amp.heatOn } } : {}), strike: strikeState(world, cables), hands: hands.state(), ...(bar ? { bar: { ...(world.level === PARK ? parkState(world, cables) : world.level === DESERT ? desertState(world, cables) : barState(world)), heat: bar.heatOn, ...("band" in bar ? { band: bar.band } : {}) } } : {}), signedIn: !!login(), party: crew.code ? { code: crew.code, members: crew.members.length, room: crew.room || null, seat: crew.seat >= 0 ? crew.seat : null } : null, crewRoom: online ? { room: online.room, status: online.status, note: online.note } : null }),
+  state: () => ({ phase, tour: { cash: tour.cash, truck: tour.truck, following: tour.following, booked: tour.booked, nights: tour.nights.length, settled }, next: nextStep(world, cables, switchedOn), dial: currentDial(), doors: doors(world.level.name, world.t), ...snapshot(world), ...cable.cableState(world, cables), sound: { up: sound.up, on: [...switchedOn], ...heard() }, ...(big ? { biggerBar: big.state() } : {}), ...(gig ? { firstGig: gigState(world, runsOf(world, cables), switchedOn) } : {}), ...(ar ? { arena: { ...arenaState(world), heat: ar.heatOn } } : {}), ...(arena ? { smallArena: { ...arenaSim.arenaState(world), heat: arena.heatOn } } : {}), ...(foh ? { show: foh.state() } : {}), ...(amp ? { amphitheatre: { ...amphi.amphitheatreState(world), heat: amp.heatOn } } : {}), strike: strikeState(world, cables), hands: hands.state(), ...(bar ? { bar: { ...(world.level === PARK ? parkState(world, cables) : world.level === DESERT ? desertState(world, cables) : barState(world)), heat: bar.heatOn, ...("band" in bar ? { band: bar.band } : {}) } } : {}), signedIn: !!login(), party: crew.code ? { code: crew.code, members: crew.members.length, room: crew.room || null, seat: crew.seat >= 0 ? crew.seat : null } : null, crewRoom: online ? { room: online.room, status: online.status, note: online.note } : null }),
   /** Join a crew room by code (what the party's Start does), on this level. */
   crew: (room: string) => crewRoom(room.toUpperCase()),
   /** Turn the cozy-to-sim dial: "cozy", "crew" or "sim". */
@@ -499,8 +522,12 @@ const harness = {
   pour: (key: string): Answer => pour(world, key),
   pickUp: (key: string): Answer => (cable.inHand(cables) ? { ok: false, why: "your hands are full" } : lift(key)),
   putDown: () => place(),
-  /** A cable out of the case (power, speaker, xlr, instrument), its `a` end in your hand. */
+  /** A cable out of the case (power, speaker, xlr, instrument), its `a` end in your hand and its roll left on the case. */
   takeCable: (kind?: cable.Run["kind"]) => cable.takeCable(world, cables, kind),
+  /** A roll out of the case into your arms, its end wound on: plug(...) puts the end in a jack and you keep the roll. */
+  takeRoll: (kind?: cable.Run["kind"]) => cable.takeRoll(world, cables, kind),
+  /** Bowl the roll you carry along where you face at `power` (0 to 1), then let it run `seconds` until it stops. */
+  bowl: (power: number, seconds = 6) => { const a = cable.bowl(world, cables, power); if (a.ok) cable.settle(world, cables, seconds); return a; },
   plug: (owner: string, jack: string) => cable.plug(world, cables, owner, jack),
   unplug: (owner: string, jack: string) => cable.unplug(world, cables, owner, jack),
   grabEnd: (key: string, end: "a" | "b") => cable.grabEnd(world, cables, key, end),
@@ -588,7 +615,9 @@ const harness = {
     heat: (on: boolean) => amp?.setHeat(on),
     doors: () => amp?.doors() ?? null,
   },
-  /** Load a level by name (garage, dive-bar, bigger-bar, park, desert, arena, small-arena, show, amphitheatre). */
+  /** First gig, at any distance: switch the desk's 48 V phantom. */
+  phantom: (on: boolean) => (gig ? (gig.phantom(on), true) : false),
+  /** Load a level by name (first-gig, garage, dive-bar, bigger-bar, park, desert, arena, small-arena, show, amphitheatre). */
   level: (name: string) => load(levelFrom(name)),
   /** Turn what you hold a 15 degree step: -1 left, 1 right. */
   turn: (dir: number) => turnHeld(world, dir),
@@ -597,7 +626,7 @@ const harness = {
   /** Switch a piece of gear on or off (P while looking at it); false if it has no switch. */
   power: (key: string, state = !switchedOn.has(key)) => {
     const item = world.items.find((i) => i.key === key);
-    if (!item || !hasSwitch(item.gear, !!big || !!foh)) return false;
+    if (!item || !hasSwitch(item.gear, !!big || !!foh || !!gig)) return false;
     if (state) switchedOn.add(key); else switchedOn.delete(key);
     return true;
   },

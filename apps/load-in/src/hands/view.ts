@@ -96,6 +96,8 @@ export function handsView(scene: THREE.Scene, camera: THREE.Camera) {
   const tAt = new THREE.Vector3(), tTurn = new THREE.Quaternion();
   const vA = new THREE.Vector3(), vB = new THREE.Vector3(), vC = new THREE.Vector3(), one = new THREE.Vector3(1, 1, 1), up = new THREE.Vector3(0, 1, 0);
   const toV = (v: V3, out = new THREE.Vector3()) => out.set(v[0], v[1], v[2]);
+  /** The middle of what the right hand grips (world space), as of the last update: where a page hangs a coil. */
+  const gripWorld = new THREE.Vector3();
   const fromV = (v: THREE.Vector3): V3 => [v.x, v.y, v.z];
   /** A world-space frame (a carry) in the camera's space. */
   const toCam = (f: Frame): Frame => {
@@ -108,10 +110,13 @@ export function handsView(scene: THREE.Scene, camera: THREE.Camera) {
     update(hold: Hold, t: number, speed = 0) {
       camera.updateMatrixWorld();
       camInv.copy(camera.matrixWorld).invert();
+      const narrow = camera instanceof THREE.PerspectiveCamera ? Math.min(1, Math.max(0.62, camera.aspect)) : 1;
       const carry = hold.carry ? carryFrames(hold.carry, hold.kg) : null;
       for (const s of sides) {
         const what = s.side > 0 ? hold.right : hold.left, grip = gripFor(what);
         const f = carry ? toCam(s.side > 0 ? carry.right : carry.left) : viewFrame(what.kind, hold.kg, t, speed, s.side);
+        // On a tall, narrow screen (a phone held upright) the hands come in toward the middle so they stay in view.
+        if (!carry && narrow < 1) f.o = [f.o[0] * narrow, f.o[1], f.o[2]];
         mPlace.makeBasis(toV(f.x, vA), toV(f.y, vB), toV(f.z, vC)).setPosition(f.o[0], f.o[1], f.o[2]);
         tAt.setFromMatrixPosition(mPlace);
         tTurn.setFromRotationMatrix(mPlace);
@@ -158,6 +163,8 @@ export function handsView(scene: THREE.Scene, camera: THREE.Camera) {
       }
       // A cable end: the plug out of the thumb side of the right fist, the lead out the bottom to where the rope starts.
       const right = sides[0], g = gripFor(hold.right).surface;
+      mPlace.compose(right.at, right.turn, one);
+      gripWorld.set(0, g?.kind === "cylinder" ? g.y : 0, g?.kind === "cylinder" ? g.z : -0.08).applyMatrix4(mPlace).applyMatrix4(camera.matrixWorld);
       lead.visible = plug.visible = (hold.right.kind === "cable" || hold.right.kind === "plug") && !!hold.lead && g?.kind === "cylinder";
       if (lead.visible && hold.lead && g?.kind === "cylinder") {
         mPlace.compose(right.at, right.turn, one);
@@ -168,7 +175,8 @@ export function handsView(scene: THREE.Scene, camera: THREE.Camera) {
         from.applyMatrix4(camera.matrixWorld);
         const d = toV(hold.lead.at, vB).sub(from);
         lead.position.copy(from);
-        lead.scale.set(1, d.length(), 1);
+        const thick = hold.right.kind === "cable" ? Math.max(0.5, hold.right.radius / 0.004) : 1;
+        lead.scale.set(thick, d.length(), thick);
         lead.quaternion.setFromUnitVectors(up, d.normalize());
         (lead.material as THREE.MeshStandardMaterial).color.setHex(hold.lead.color);
       }
@@ -183,6 +191,8 @@ export function handsView(scene: THREE.Scene, camera: THREE.Camera) {
       };
       return { right: one(sides[0]), left: one(sides[1]) };
     },
+    /** The middle of what the right hand grips, in world space (a coil hangs from here). */
+    gripAt: () => gripWorld.clone(),
     /** Step 11's tattoos: a texture on both forearms (null takes it off). */
     setTattoo(tex: THREE.Texture | null) { arm.map = tex; arm.needsUpdate = true; },
     /** Solve the grips a page will use ahead of time, so the first grab doesn't hitch. */
