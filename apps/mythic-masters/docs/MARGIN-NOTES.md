@@ -18,8 +18,13 @@ The magic in this world is what an eldritch being left behind: it passed over th
 into the ground like a herd's muck into a field, so the land came up full of it. Every cryptid and every odd thing in
 the world grows out of that. The Book is the being's own contacts list, and its contacts are the bosses: each region's
 mythic is a name in it. So a margin note can still read twice, once as a grimoire and once as a phone book, and the
-second reading is about the mythics. Hint at it only (rule 5: the Book never explains what the forces are). The owner
-writes the reveal; until then, no line states it.
+second reading is about the mythics. Hint at it only (rule 5: the Book never explains what the forces are).
+
+**The reveal (owner-approved, #3279).** The Book monologues at every region's mythic (the `leader` beat in
+`content/book.json`, one per trail region, played at the trail's last section), each line true under both readings.
+Once every trail's mythic is beaten, the `contacts` beat says it outright: the title reads "Contacts" from then on, each
+beast's page names its friends, and the secret "Contacts" achievement unlocks. Only that beat states it; every other
+line still only hints.
 
 ## The rules
 

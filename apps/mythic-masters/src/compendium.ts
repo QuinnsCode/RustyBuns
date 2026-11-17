@@ -13,10 +13,10 @@ import { hex } from "./fields.ts";
 import { icon } from "./icons.ts";
 import { frame, GUESSES, marginalia, rumour, struck } from "./ornaments.ts";
 import { moveLine, shapeSvg } from "./moveline.ts";
-import { atLevel, sections, TRAIL_REGIONS, type Member } from "./journey.ts";
+import { atLevel, mythicOf, sections, TRAIL_REGIONS, type Member } from "./journey.ts";
 import { TALE } from "./creatures.ts";
 import { REGIONS } from "./regions.ts";
-import type { Creature, Stats } from "./roster.ts";
+import { ROSTER, type Creature, type Stats } from "./roster.ts";
 
 export type Known = "bound" | "seen" | "unknown";
 
@@ -71,6 +71,19 @@ export interface FolioOpts {
   now?: number;
   /** The leaf's number in the book (its place in the roster), written in the corner. */
   fol?: number;
+  /** Who it was friends with, once the Book reads as its Contacts (#3279): written in the margin under its item. */
+  friends?: readonly string[];
+}
+
+/** Who a beast was friends with, up to three (#3279): a trail's mythic knows the mythics either side of it on the
+ * trails (they are the Book's contacts), and every beast knows the ones from its own legends, else the nearest along. */
+export function friendsOf(c: Creature, roster: readonly Creature[] = ROSTER): string[] {
+  const at = TRAIL_REGIONS.findIndex((g) => mythicOf(g).id === c.id);
+  const bosses = at < 0 ? [] : [TRAIL_REGIONS[at - 1], TRAIL_REGIONS[at + 1]].flatMap((g) => (g ? [mythicOf(g)] : []));
+  const others = roster.filter((o) => o.id !== c.id && !bosses.includes(o));
+  const home = others.filter((o) => o.region === c.region);
+  const near = home.length || bosses.length ? home : [...others].sort((a, b) => Math.abs(a.region - c.region) - Math.abs(b.region - c.region)).slice(0, 1);
+  return [...bosses, ...near].slice(0, 3).map((o) => o.name);
 }
 
 /** Where a beast roams: every trail section it is a wild one or the keeper of, by region. */
@@ -153,7 +166,7 @@ export function folio(c: Creature, known: Known, o: FolioOpts): string {
       <div class="naming inks"><h1>${esc(c.name)}</h1><p class="aka">${aka}</p><p class="kinds">${kinds}</p></div></header>
     <section class="ground inks">${ground}</section>
     <section class="ledger">${ledger}${kit}</section>
-    <p class="demand margin"><span class="ask">${esc(marginOf(known, o.item, drying))}</span></p>
+    <p class="demand margin"><span class="ask">${esc(marginOf(known, o.item, drying))}</span>${o.friends?.length ? `<span class="ask friends">Friends: ${esc(o.friends.join(", "))}.</span>` : ""}</p>
   </article>`;
 }
 

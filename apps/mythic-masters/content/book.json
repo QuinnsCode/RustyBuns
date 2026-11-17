@@ -974,5 +974,211 @@
         "line": "{Where} you told me nothing true about yourself. You have been telling me since, one fight at a time. You flinch left."
       }
     ]
+  },
+  {
+    "id": "leader-pines",
+    "beat": "leader",
+    "region": "pine-barrens",
+    "lead": [
+      "So. The pines. The end of the trail, and {mythic} at the end of it.",
+      "I have waited for this page since 1735. I had its name before it had wings."
+    ],
+    "ask": "Go and get it. When you have, I will tell you why. I will not tell you why.",
+    "replies": [
+      {
+        "id": "why",
+        "say": "Why?",
+        "book": "See? I said I would not."
+      },
+      {
+        "id": "got",
+        "say": "Got it.",
+        "book": "You do not. Yet. That is the fun part."
+      }
+    ]
+  },
+  {
+    "id": "leader-hollows",
+    "beat": "leader",
+    "region": "appalachian-hollows",
+    "lead": [
+      "The hollows. {mythic} sits up there with its red eyes, watching the bridge.",
+      "Everyone it ever warned is a line in my margin. It was always good about keeping in touch."
+    ],
+    "ask": "Bring it down. Gently. It owes me a reply.",
+    "replies": [
+      {
+        "id": "reply",
+        "say": "A reply to what?",
+        "book": "A message I left a long time ago. It never picks up."
+      },
+      {
+        "id": "gently",
+        "say": "Gently?",
+        "book": "I need it able to read."
+      }
+    ]
+  },
+  {
+    "id": "leader-north",
+    "beat": "leader",
+    "region": "great-north-woods",
+    "lead": [
+      "The north woods. You will not see {mythic}. Nobody has. It hides behind whatever you look at.",
+      "I do not need to see it. I have its number."
+    ],
+    "ask": "Turn around. Slowly. There.",
+    "replies": [
+      {
+        "id": "nothing",
+        "say": "There's nothing there.",
+        "book": "There is always something there. That is the whole trick."
+      },
+      {
+        "id": "backwards",
+        "say": "I'll go in looking backwards.",
+        "book": "Finally, a plan."
+      }
+    ]
+  },
+  {
+    "id": "leader-rainforest",
+    "beat": "leader",
+    "region": "pacific-northwest-rainforest",
+    "lead": [
+      "The rainforest. {mythic}. Big feet, bad photographs, a very large circle of friends.",
+      "Half the people who say they saw it were lying. The other half it let go. I know which half is which."
+    ],
+    "ask": "Fetch it. It knows you are coming. I told it.",
+    "replies": [
+      {
+        "id": "told",
+        "say": "You told it?",
+        "book": "Of course. We go back."
+      },
+      {
+        "id": "warn",
+        "say": "Why warn it?",
+        "book": "Manners. Old friends are owed a knock first."
+      }
+    ]
+  },
+  {
+    "id": "leader-lake",
+    "beat": "leader",
+    "region": "great-lakes-and-lake-champlain",
+    "lead": [
+      "The lake. {mythic} has been under that water since before the boats.",
+      "Every so often it comes up for air and someone takes a blurry picture. I keep the pictures. I keep everything it sends."
+    ],
+    "ask": "Bring it up. Five. I am counting. I am always counting.",
+    "replies": [
+      {
+        "id": "sends",
+        "say": "It sends you things?",
+        "book": "Ripples, mostly. Ripples are a kind of letter, if you are patient."
+      },
+      {
+        "id": "count",
+        "say": "Counting to what?",
+        "book": "To all of them. Keep up."
+      }
+    ]
+  },
+  {
+    "id": "leader-desert",
+    "beat": "leader",
+    "region": "southwest-desert",
+    "lead": [
+      "The desert. {mythic}. The goats of three countries know its name.",
+      "So do I. I have its name in my own hand, under C, where it belongs."
+    ],
+    "ask": "Two more after this. Then the good part.",
+    "replies": [
+      {
+        "id": "good",
+        "say": "What good part?",
+        "book": "The part I have been saving the last pages for."
+      },
+      {
+        "id": "c",
+        "say": "Why under C?",
+        "book": "Where else would it go? I keep a tidy book."
+      }
+    ]
+  },
+  {
+    "id": "leader-bayou",
+    "beat": "leader",
+    "region": "bayou-and-everglades",
+    "lead": [
+      "The bayou. {mythic} walks the water's edge and keeps count of who broke their word.",
+      "So do I. I keep count too."
+    ],
+    "ask": "One more after this one. Do not slow down now. You will only make me sentimental.",
+    "replies": [
+      {
+        "id": "broke",
+        "say": "Who broke theirs?",
+        "book": "Everyone, eventually. I wrote them all down. It is a long chapter."
+      },
+      {
+        "id": "sentimental",
+        "say": "You get sentimental?",
+        "book": "Once every four hundred years. It is nearly time."
+      }
+    ]
+  },
+  {
+    "id": "leader-ozarks",
+    "beat": "leader",
+    "region": "ozarks-and-the-southern-plains",
+    "lead": [
+      "The Ozarks. {mythic}. The last name on the trails.",
+      "Eight names, eight pages, eight old friends who stopped answering.",
+      "You have been very helpful. I want you to know that, before."
+    ],
+    "ask": "Go on. Get it. Then turn to the front cover and read the title again.",
+    "replies": [
+      {
+        "id": "before",
+        "say": "Before what?",
+        "book": "Before nothing. Go."
+      },
+      {
+        "id": "title",
+        "say": "What's the title?",
+        "book": "You will see. You will want to see it twice."
+      }
+    ]
+  },
+  {
+    "id": "contacts",
+    "beat": "contacts",
+    "lead": [
+      "There. All of them. Every one of them on its page.",
+      "You thought this was a bestiary. That is fair. Look at the cover again.",
+      "Contacts. Not a list of monsters. A list of friends. Mine. They stopped answering.",
+      "You did not catch them. You called them. And they came."
+    ],
+    "ask": "Now they are all here, and they are all talking at once.",
+    "replies": [
+      {
+        "id": "now",
+        "say": "What happens now?",
+        "book": "Now I make some calls."
+      },
+      {
+        "id": "back",
+        "say": "Give them back.",
+        "book": "Back to whom? They are home. They were always home."
+      },
+      {
+        "id": "close",
+        "say": "I'm closing this book.",
+        "book": "You can try. I have never closed for good.",
+        "note": "Tried to close the book."
+      }
+    ]
   }
 ]

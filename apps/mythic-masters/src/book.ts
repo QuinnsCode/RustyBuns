@@ -9,11 +9,12 @@ import { ARCHETYPES } from "./roster.ts";
 import raw from "../content/book.json";
 
 /** `bind-fail` is the ink tearing free (it opens mid-fight), `streak` a second lost fight in a row, `last-stone` the keeper before the
- * mythic beaten, `named` the first time a reply gives you a nickname. */
-export const BEATS = ["open", "bind", "bind-fail", "downed", "loss", "streak", "campfire", "last-stone", "trail-end", "mythic", "named"] as const;
+ * mythic beaten, `named` the first time a reply gives you a nickname, `leader` the Book's monologue as you reach a region's mythic (one per region,
+ * ahead of `trail-end`), `contacts` the reveal once every trail's mythic is beaten (#3279). */
+export const BEATS = ["open", "bind", "bind-fail", "downed", "loss", "streak", "campfire", "last-stone", "trail-end", "mythic", "named", "leader", "contacts"] as const;
 export type Beat = (typeof BEATS)[number];
 /** The beats where the Book is laying down terms, so it signs them: the first page, the last stone, a trail's end, a mythic. */
-const SIGNED: ReadonlySet<Beat> = new Set(["open", "last-stone", "trail-end", "mythic"]);
+const SIGNED: ReadonlySet<Beat> = new Set(["open", "last-stone", "trail-end", "mythic", "leader", "contacts"]);
 export const signedOf = (t: Talk) => SIGNED.has(t.beat);
 
 const Reply = obj({

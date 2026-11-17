@@ -27,7 +27,7 @@ import { buttons, NO_STICK, PAD_ACTIONS, PAD_START, PAD_ZONE, push, readPad, tou
 import { icon } from "./icons.ts";
 import { ART, radar, tradingCard } from "./card.ts";
 import { moveLine, shapeSvg } from "./moveline.ts";
-import { captureSheet, entry, folio, halves, neighbour, notePlate, ordinal, regionChart, spread, stepTo, type Dir, type Known } from "./compendium.ts";
+import { captureSheet, entry, folio, friendsOf, halves, neighbour, notePlate, ordinal, regionChart, spread, stepTo, type Dir, type Known } from "./compendium.ts";
 import { FIELDS, hex, type Field } from "./fields.ts";
 import { mountFieldChart } from "./fieldchart.ts";
 import { MAX_LIVE, MAX_LIVE_PHONE, MoveFx, shakeOf } from "./fx.ts";
@@ -46,7 +46,7 @@ import { plantBudget, setPlantBudget } from "./world/flora.ts";
 import { pickQuality, QUALITY } from "@rustybuns/util/quality";
 import { tutorial } from "@rustybuns/util/tutorial";
 import { accountChip, achieve, achievements, canSignIn, finishSignIn, fresh, login, reportButton } from "./account.ts";
-import { asCreature, atLevel, bind, boundLine, PARTY_MAX, downed, heal, hpOf, wound, bindBelow, bindChance, clearSection, cleared, gainXp, INK, loadJourney, moveUp, mythicOf, newJourney, nextUp, call, owns, PICKS, rest, SAVE_KEY, SECTIONS, sections, see, slots, STARTERS, TRAIL_REGIONS, toNext, bookSays, type Journey, mend, maul } from "./journey.ts";
+import { asCreature, atLevel, bind, boundLine, PARTY_MAX, downed, heal, hpOf, wound, bindBelow, bindChance, clearSection, cleared, gainXp, INK, loadJourney, moveUp, mythicOf, newJourney, nextUp, call, owns, PICKS, rest, SAVE_KEY, SECTIONS, sections, see, slots, STARTERS, TRAIL_REGIONS, toNext, bookSays, type Journey, mend, maul, contacted } from "./journey.ts";
 import { LORE } from "./lore.ts";
 import { Bout, circleLineOf, handOf, knownOf, PAGE_INK, poolOf, ribbonsOf, summon, type Summoned } from "./grimoire.ts";
 import { deckDemandOf, demandOf, pageLineOf, reactionOf, settingsLineOf, SIGNATURE, thumbAt, worldLineOf, type Back, type Outcome } from "./demand.ts";
@@ -705,7 +705,9 @@ const world = worldView(scene, camera, {
     if (!journey) return; // a new game's Tape 1 has the pines to itself
     const key = `${g.n}:${k}`;
     if (!talked.has(key) && director.play(trail(g.id, k))) talked.add(key);
-    if (k === SECTIONS - 1) say("trail-end", { n: g.n, regionId: g.id, region: g.name, mythic: mythicOf(g).name });
+    // the Book's monologue for the region's mythic (#3279), else its trail's-end line
+    const end = { n: g.n, regionId: g.id, region: g.name, mythic: mythicOf(g).name };
+    if (k === SECTIONS - 1 && !say("leader", end)) say("trail-end", end);
   },
   // Wild food: a quarter of their health back to whoever is hurt.
   forage: (p) => {
@@ -756,6 +758,15 @@ function heardLogin() {
 function drawDemand() {
   const note = notesOf(journey).at(-1); // the last thing it wrote about you, under what it wants
   for (const p of document.querySelectorAll("[data-demand]")) p.innerHTML = hand(demandOf(journey), true) + (note ? `<span class="ledger">${esc(note)}</span>` : "");
+  retitle();
+}
+/** The Book's title: "The Compendium" until every trail's mythic is beaten, then what it always was (#3279). */
+const bookTitle = () => (contacted(journey) ? "Contacts" : "The Compendium");
+/** Writes the title on the open book's running head and on the button that opens it. */
+function retitle() {
+  const t = bookTitle(), head = document.querySelector("#journal h1 .rh:not(.chapter)"), btn = document.querySelector("#openJournal");
+  if (head) head.textContent = t;
+  btn?.setAttribute("title", `${t} (Tab)`); btn?.setAttribute("aria-label", t);
 }
 function hand(ask: string, signed: boolean) { return `<span class="ask">${esc(ask)}</span>${signed ? `<span class="sig">${esc(SIGNATURE)}</span>` : ""}`; }
 /** The book's line on a result note, under its heading (src/demand.ts reactionOf). */
@@ -1154,7 +1165,7 @@ function drawJournal(edit = true) {
     front = null;
     const id = openFolio, known: Known = knownOf(j, id, tierOf(id)), c = creature(id);
     const owned = [...j.party, ...j.journal], at = owned.findIndex((mm) => mm.id === id), slot = j.party.findIndex((mm) => mm.id === id);
-    body.innerHTML = folio(c, known, { tier: tierOf(id), member: owned[at] ?? null, item: at + 1, rests: slot >= 0 ? `in the line-up, slot ${slot + 1}${slot ? "" : " (it leads)"}` : "in these pages", fol: ROSTER.indexOf(c) + 1 });
+    body.innerHTML = folio(c, known, { tier: tierOf(id), member: owned[at] ?? null, item: at + 1, rests: slot >= 0 ? `in the line-up, slot ${slot + 1}${slot ? "" : " (it leads)"}` : "in these pages", fol: ROSTER.indexOf(c) + 1, friends: contacted(j) ? friendsOf(c) : undefined });
     soak(body, edit);
     return;
   }
@@ -1784,6 +1795,8 @@ function tripOver(m: Match, bound: boolean, how: string) {
     if (bound && !repeat) say("bind", { n: t.region.n, item: boundCount(j) });
     const at = { n: t.region.n, regionId: t.region.id, region: t.region.name };
     if (t.kind === "mythic") say("mythic", { ...at, mythic: foe.name, item: boundCount(j) });
+    // every trail's mythic beaten: the Book reads as its Contacts, and says so (#3279)
+    if (t.kind === "mythic" && contacted(j)) { say("contacts", at); void achieve("contacts"); }
     if (t.kind === "keeper" && t.k === SECTIONS - 2) say("last-stone", { ...at, mythic: mythicOf(t.region).name });
   } else {
     t.out.add(t.slot);
@@ -1815,7 +1828,7 @@ function tripOver(m: Match, bound: boolean, how: string) {
   // no folio on a page that kept nothing, and the facing leaf says why
   if (loose) $("#result").dataset.verso = "This page stays empty.\nI only keep what you bind.\n\n\u2014\u00a0the Book";
   else delete $("#result").dataset.verso;
-  $("#result").innerHTML = `<div class="note paper o-${outcome.kind}"${torn ? ` style="--tear: ${torn.clip}"` : ""}>${mark}<p class="leaf-head" aria-hidden="true">${loose ? "Field notes<span></span>" : "The Compendium<span></span>"}</p>${plate}<h2>${title}</h2>${reaction(outcome)}${lines.map((l) => `<p>${l}</p>`).join("")}<div class="row"><button class="go" id="back">${go}</button>${again ? `<button id="flee">${icon("map")} Run back</button>` : ""}</div></div>`;
+  $("#result").innerHTML = `<div class="note paper o-${outcome.kind}"${torn ? ` style="--tear: ${torn.clip}"` : ""}>${mark}<p class="leaf-head" aria-hidden="true">${loose ? "Field notes" : bookTitle()}<span></span></p>${plate}<h2>${title}</h2>${reaction(outcome)}${lines.map((l) => `<p>${l}</p>`).join("")}<div class="row"><button class="go" id="back">${go}</button>${again ? `<button id="flee">${icon("map")} Run back</button>` : ""}</div></div>`;
   $("#result").classList.toggle("capture", !!went);
   if (went) captured(foe, t.foe.level, went);
   pages.show($("#result"));
