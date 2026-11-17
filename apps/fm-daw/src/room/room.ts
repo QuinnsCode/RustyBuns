@@ -5,7 +5,8 @@
 // their circuits, and gear cabled into nothing costs nothing.
 import { AMPS, DEFAULT_ROOM, PEDALS, type Knobs } from "../circuit/amps.ts";
 import type { AmpSettings } from "../amp/messages.ts";
-import { applyStudio, emptyStudio, type End, type Patch, type Placed, type Studio, type StudioOp } from "../studio.ts";
+import type { BenchPedal } from "../circuit/bench.ts";
+import { applyStudio, emptyStudio, MAX_KNOBS, type End, type Patch, type Placed, type Studio, type StudioOp } from "../studio.ts";
 
 export type Vec3 = [number, number, number];
 /** The face of a box a jack or knob sits on, in the box's own frame: front is +z. */
@@ -42,7 +43,48 @@ export const STUDIO_GEAR: Readonly<Record<string, GearDef>> = Object.fromEntries
   { id: "cab-2x12", name: "2x12 cab", kind: "cab", size: [0.7, 0.55, 0.3], kg: 25, jacks: [{ name: "in", dir: "in", at: [0.25, 0.1, -0.15], face: "back" }], knobs: [] } satisfies GearDef,
 ].map((g) => [g.id, g]));
 
-export const gearOf = (p: Placed): GearDef | undefined => STUDIO_GEAR[p.gear];
+// ---- bench pedals: tscircuit boards dropped in the room (../circuit/bench.ts) ----
+
+/** A bench pedal as studio gear: its def, the pedal, and each knob's pot on the board. */
+interface Benched { def: GearDef; pedal: BenchPedal; pots: Record<string, string> }
+/** The bench pedals this page has read, by gear id. A patch names a bench pedal by gear id like any other gear. */
+const BENCH = new Map<string, Benched>();
+const slug = (s: string, n: number) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+/, "").slice(0, n).replace(/-+$/, "");
+const title = (s: string) => s.charAt(0).toUpperCase() + s.slice(1).toLowerCase();
+
+/**
+ * A bench pedal as gear the room knows: a box the size of its board's enclosure, a knob per pot along its lid,
+ * the instrument jack in on its right end and the line out on its left, as the rack's pedals have them. Its gear
+ * id is the bench's (cut to an id the patch takes); reading the same board again replaces it.
+ */
+export function benchGear(pedal: BenchPedal): GearDef {
+  const { w, h, d } = pedal.gear.size, n = pedal.knobs.length;
+  const id = slug(pedal.gear.id, 32) || "bench-pedal";
+  const pots: Record<string, string> = {}, knobs: KnobDef[] = [];
+  pedal.knobs.forEach((k, i) => {
+    let name = slug(k.name, 28) || `pot-${i + 1}`;
+    while (name in pots) name = `${name.slice(0, 28)}-${i + 1}`;
+    pots[name] = k.name;
+    knobs.push({ name, label: title(k.name), at: [-w / 2 + (w * (i + 1)) / (n + 1), h, -d * 0.15], face: "top", dflt: 0.5 });
+  });
+  const def: GearDef = {
+    id, name: pedal.gear.what.replace(/, a pedal from the bench$/, ""), kind: "pedal", size: [w, h, d], kg: pedal.gear.kg, circuit: "bench",
+    jacks: [{ name: "in", dir: "in", at: [w / 2, h * 0.5, d * 0.15], face: "right" }, { name: "out", dir: "out", at: [-w / 2, h * 0.5, d * 0.15], face: "left" }],
+    knobs: knobs.slice(0, MAX_KNOBS),
+  };
+  BENCH.set(id, { def, pedal, pots });
+  return def;
+}
+
+export const gearOf = (p: Placed): GearDef | undefined => STUDIO_GEAR[p.gear] ?? BENCH.get(p.gear)?.def;
+
+/** The board's netlist at its knobs as the patch has them turned: what the cabled bench pedal `id` plays. */
+function benchNet(patch: Patch, p: Placed) {
+  const b = BENCH.get(p.gear);
+  if (!b) return undefined;
+  const turns = Object.fromEntries(b.def.knobs.map((k) => [b.pots[k.name], patch.knobs[p.id]?.[k.name] ?? k.dflt]));
+  return b.pedal.net(turns);
+}
 
 // ---- the room ----
 
@@ -303,6 +345,24 @@ export function putDown(r: Room): Answer {
   return OK;
 }
 
+/**
+ * A board off the bench onto the floor: the pedal stands a step in front of you (or at `x`, `z`), facing you, as a
+ * new box with its own id. Your hands have to be free: it passes through them as any box brought in does.
+ */
+export function benchIn(r: Room, pedal: BenchPedal, spot?: { x: number; z: number }): Answer & { id?: string } {
+  if (hand(r)) return no("your hands are full");
+  const g = benchGear(pedal);
+  let n = 1;
+  while (item(r, `bench-${n}`)) n++;
+  const id = `bench-${n}`, f = lookDir({ ...r.you, pitch: 0 });
+  const x = Math.max(-HALF_W + 0.2, Math.min(HALF_W - 0.2, spot?.x ?? r.you.x + f[0] * 0.8));
+  const z = Math.max(-HALF_D + 0.2, Math.min(HALF_D - 0.2, spot?.z ?? r.you.z + f[2] * 0.8));
+  const turn = ((r.you.yaw % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
+  if (!act(r, { t: "bring", id, gear: g.id, at: [x, 0, z], turn })) return no("the room is full");
+  act(r, { t: "put", at: [x, landing(r, id, x, z, 0), z], turn });
+  return { ok: true, id };
+}
+
 /** Turn what you hold by a 15 degree step (Q and E): -1 left, 1 right. */
 export function turnHeld(r: Room, dir: number) { if (heldId(r)) r.heldTurn += (dir * Math.PI) / 12; }
 
@@ -398,7 +458,7 @@ export interface Heard {
  */
 export function listen(patch: Patch, oversample: 2 | 4 = 4): Heard {
   const byId = new Map(patch.placed.map((p) => [p.id, p]));
-  const kind = (id: string) => { const p = byId.get(id); return p ? STUDIO_GEAR[p.gear] : undefined; };
+  const kind = (id: string) => { const p = byId.get(id); return p ? gearOf(p) : undefined; };
   const other = (end: End): End | null => {
     const c = patch.cables.find((x) => same(x.from, end) || same(x.to, end));
     return c ? (same(c.from, end) ? c.to : c.from) : null;
@@ -433,12 +493,14 @@ export function listen(patch: Patch, oversample: 2 | 4 = 4): Heard {
     const knobs: Knobs = { gain: turned("gain"), bass: turned("bass"), mid: turned("mid"), treble: turned("treble"), master: turned("master"), noise: turned("noise"), rate: turned("rate"), depth: turned("depth") };
     const ped = pedals[0], pedDef = ped ? kind(ped) : undefined;
     if (pedals.length > 1) problems.push(`the rig runs one pedal for now (#4827): ${pedals.slice(1).map(name).join(", ")} passed straight through`);
-    const drive = ped && pedDef ? (patch.knobs[ped]?.drive ?? pedDef.knobs[0].dflt) * 10 : 0;
+    const onBench = pedDef?.circuit === "bench", benchAt = onBench && ped ? byId.get(ped) : undefined;
+    const bench = benchAt && benchNet(patch, benchAt);
+    const drive = ped && pedDef && !onBench ? (patch.knobs[ped]?.drive ?? pedDef.knobs[0].dflt) * 10 : 0;
     return {
       playing: true,
       chain: [at[0], ...pedals, src[0], cab.id],
       running: [...(ped ? [ped] : []), src[0]],
-      settings: { amp: ampDef.id, pedal: pedDef?.circuit ?? null, drive, swaps: {}, knobs, mic: DEFAULT_ROOM.mic, bypass: false, oversample },
+      settings: { amp: ampDef.id, pedal: pedDef?.circuit ?? null, ...(bench ? { bench } : {}), drive, swaps: {}, knobs, mic: DEFAULT_ROOM.mic, bypass: false, oversample },
       problems,
     };
   }
