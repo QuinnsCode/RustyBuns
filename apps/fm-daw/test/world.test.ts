@@ -473,11 +473,14 @@ test("jam room: one walks up to the keys, sits and plays; the other sees them se
   expect(sit(amy, "keys")).toEqual({ ok: true });
   expect(amy.me.cam).toBe("first");
   // V, seated: the camera goes up beside her shoulder, not behind her head, and looks down at her hands on the keys,
-  // through her own head, faded so it doesn't hide them
+  // past her own head, hidden so it doesn't hide them
   toggleCam(amy);
   const over = cameraPose(amy), hands = [keys.at[0], 0.9, keys.at[1] - 0.5];
-  expect(Math.abs(over.at[0] - keys.at[0])).toBeGreaterThan(0.5);
-  expect(over.head).toBeLessThan(0.5);
+  expect(Math.abs(over.at[0] - keys.at[0])).toBeGreaterThan(0.3);
+  expect(over.head).toBe(0);
+  // close in, at about her ear, so her hands and the keys fill the frame
+  expect(Math.hypot(over.at[0] - amy.me.x, over.at[2] - amy.me.z)).toBeLessThan(0.7);
+  expect(over.at[1]).toBeLessThan(1.8);
   const toHands = Math.atan2(hands[1] - over.at[1], Math.hypot(hands[0] - over.at[0], hands[2] - over.at[2]));
   expect(Math.abs(over.pitch - toHands)).toBeLessThan(0.25);
   expect(Math.abs(Math.atan2(-(hands[0] - over.at[0]), -(hands[2] - over.at[2])) - over.yaw)).toBeLessThan(0.3);
