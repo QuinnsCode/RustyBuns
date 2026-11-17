@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { AudioOut, START_DB, dbToGain, fetchWasm } from "./audio.ts";
+import { AudioOut, START_DB, dbToGain, fetchWasm, loadMsg } from "./audio.ts";
 import { connect, roomName, type Net, type NetStatus } from "./net.ts";
 import { Cursors, dropAllCursors, dropCursor, moveCursor } from "./Cursors.tsx";
 import { FullCard } from "./Full.tsx";
@@ -59,15 +59,6 @@ function Pager(props: { page: number; pages: number; onPage(p: number): void }) 
 }
 const GROUP_MS = 800;
 const COUNT_IN = 4;
-
-/** Everything the worklet needs to mirror a project. */
-function loadMsg(p: Project): ToWorklet {
-  return {
-    t: "load", params: p.tracks.flatMap((t) => t.params), notes: p.tracks.map((t) => t.notes), auto: p.tracks.map((t) => t.auto ?? []),
-    bpm: p.bpm, swing: p.swing, loopBeats: loopBeats(p), audible: audible(p), space: p.space, squash: p.squash, eq: p.eq, eqAuto: p.eqAuto ?? [], eqLinear: !!p.eqLinear,
-    trackEq: p.tracks.map((t) => t.eq ?? flatEq()),
-  };
-}
 
 /** The smallest worklet update for an op that's already been applied. */
 function opMsg(op: Op, next: Project): ToWorklet {

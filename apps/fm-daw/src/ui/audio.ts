@@ -2,6 +2,8 @@
 // require one), loads the worklet, and fetches the wasm engine on request.
 import workletUrl from "../engine/worklet.ts?worker&url";
 import type { FromWorklet, ToWorklet } from "../engine/messages.ts";
+import { flatEq } from "../engine/eq.ts";
+import { audible, loopBeats, type Project } from "../project.ts";
 
 export const START_DB = -12;
 export const dbToGain = (db: number) => (db <= -60 ? 0 : Math.pow(10, db / 20));
@@ -44,4 +46,13 @@ export class AudioOut {
 export async function fetchWasm(): Promise<ArrayBuffer | null> {
   const res = await fetch(new URL("fm_daw.wasm", document.baseURI)).catch(() => null);
   return res?.ok ? res.arrayBuffer() : null;
+}
+
+/** Everything the worklet needs to mirror a project. */
+export function loadMsg(p: Project): ToWorklet {
+  return {
+    t: "load", params: p.tracks.flatMap((t) => t.params), notes: p.tracks.map((t) => t.notes), auto: p.tracks.map((t) => t.auto ?? []),
+    bpm: p.bpm, swing: p.swing, loopBeats: loopBeats(p), audible: audible(p), space: p.space, squash: p.squash, eq: p.eq, eqAuto: p.eqAuto ?? [], eqLinear: !!p.eqLinear,
+    trackEq: p.tracks.map((t) => t.eq ?? flatEq()),
+  };
 }

@@ -5,6 +5,7 @@
 // their circuits, and gear cabled into nothing costs nothing.
 import { AMPS, DEFAULT_ROOM, PEDALS, type Knobs } from "../circuit/amps.ts";
 import type { AmpSettings } from "../amp/messages.ts";
+import { stepFeet, walkFeet, type Input, type Rect } from "../studio/walk.ts";
 import { applyStudio, emptyStudio, type End, type Patch, type Placed, type Studio, type StudioOp } from "../studio.ts";
 
 export type Vec3 = [number, number, number];
@@ -46,7 +47,7 @@ export const gearOf = (p: Placed): GearDef | undefined => STUDIO_GEAR[p.gear];
 
 /** The live room: x from -HALF_W to HALF_W, z from -HALF_D (the back wall, with the rack) to HALF_D. */
 export const HALF_W = 3.5, HALF_D = 3, WALL_H = 2.8;
-export const EYE = 1.62, RADIUS = 0.25, WALK = 1.5;
+export const EYE = 1.62;
 /** How far your hands reach from your eyes, metres. */
 export const REACH = 2.1;
 /** The wall rack: a frame against the back wall, its shelves' tops in metres. */
@@ -187,9 +188,8 @@ export function lookAt(r: Room, id: string, part?: string): boolean {
 
 // ---- walking ----
 
-export interface Input { forward: number; right: number; turn: number }
+export type { Input } from "../studio/walk.ts";
 
-type Rect = { cx: number; cz: number; hw: number; hd: number; turn: number };
 function solids(r: Room): Rect[] {
   const held = heldId(r);
   const gear = r.studio.patch.placed.filter((p) => p.id !== held && p.at[1] < 0.5).flatMap((p) => {
@@ -199,58 +199,13 @@ function solids(r: Room): Rect[] {
   return [{ cx: (RACK.x0 + RACK.x1) / 2, cz: (RACK.z0 + RACK.z1) / 2, hw: (RACK.x1 - RACK.x0) / 2, hd: (RACK.z1 - RACK.z0) / 2, turn: 0 }, ...gear];
 }
 
-/** Push you out of the walls, the rack and the gear standing on the floor. */
-function collide(r: Room) {
-  const y = r.you;
-  for (const s of solids(r)) {
-    const c = Math.cos(s.turn), sn = Math.sin(s.turn), dx = y.x - s.cx, dz = y.z - s.cz;
-    const lx = dx * c - dz * sn, lz = dx * sn + dz * c;
-    const px = Math.max(-s.hw, Math.min(s.hw, lx)), pz = Math.max(-s.hd, Math.min(s.hd, lz));
-    let ox = lx - px, oz = lz - pz, dist = Math.hypot(ox, oz);
-    if (dist >= RADIUS) continue;
-    if (dist < 1e-6) { // inside: out the nearest side
-      const ex = s.hw - Math.abs(lx), ez = s.hd - Math.abs(lz);
-      [ox, oz] = ex < ez ? [Math.sign(lx) || 1, 0] : [0, Math.sign(lz) || 1];
-      dist = 0;
-    } else { ox /= dist; oz /= dist; }
-    const lx2 = px + ox * RADIUS, lz2 = pz + oz * RADIUS;
-    y.x = s.cx + lx2 * c + lz2 * sn;
-    y.z = s.cz - lx2 * sn + lz2 * c;
-  }
-  y.x = Math.max(-HALF_W + RADIUS, Math.min(HALF_W - RADIUS, y.x));
-  y.z = Math.max(-HALF_D + RADIUS, Math.min(HALF_D - RADIUS, y.z));
-}
-
-/** One tick: turn and walk by the input. */
+/** One tick: turn and walk by the input, out of the walls, the rack and the gear standing on the floor. */
 export function step(r: Room, dt: number, i: Input) {
-  const y = r.you;
-  y.yaw += i.turn;
-  const len = Math.hypot(i.forward, i.right);
-  if (len > 0) {
-    const k = (WALK * dt) / Math.max(1, len), f = lookDir({ ...y, pitch: 0 });
-    y.x += (f[0] * i.forward - f[2] * i.right) * k;
-    y.z += (f[2] * i.forward + f[0] * i.right) * k;
-  }
-  collide(r);
+  stepFeet(r.you, dt, i, solids(r), HALF_W, HALF_D);
 }
 
 /** Walk straight to (x, z) tick by tick; the seconds it took. Stops at the rack or a box in the way. */
-export function walkTo(r: Room, x: number, z: number): number {
-  const dt = 1 / 30;
-  let t = 0;
-  for (let n = 0; n < 900; n++) {
-    const dx = x - r.you.x, dz = z - r.you.z, d = Math.hypot(dx, dz);
-    if (d < 0.05) break;
-    const yaw = r.you.yaw;
-    r.you.yaw = Math.atan2(-dx, -dz);
-    const before = [r.you.x, r.you.z];
-    step(r, dt, { forward: Math.min(1, d / (WALK * dt)), right: 0, turn: 0 });
-    r.you.yaw = yaw;
-    t += dt;
-    if (Math.hypot(r.you.x - before[0], r.you.z - before[1]) < 1e-4) break;
-  }
-  return Math.round(t * 10) / 10;
-}
+export const walkTo = (r: Room, x: number, z: number): number => walkFeet(r.you, x, z, (dt, i) => step(r, dt, i));
 
 // ---- hands ----
 

@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Qollab Studio</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 16 16%22%3E%3Crect width=%2216%22 height=%2216%22 rx=%223%22 fill=%22%231d1f23%22/%3E%3Cpath d=%22M2 9h2l2-5 2 9 2-7 2 3h2%22 fill=%22none%22 stroke=%22%23ff6b4a%22 stroke-width=%221.6%22/%3E%3C/svg%3E" />
+</head><body>
+<main>
+  <canvas id="stage" aria-label="Qollab Studio, the live room"></canvas>
+  <div id="hud">
+    <p id="hint"></p>
+    <p id="heard"></p>
+    <div id="controls-host"></div>
+  </div>
+  <section id="menu">
+    <h1>Qollab Studio</h1>
+    <p>The live room: keys, drums, bass and a vocal booth, the couch by the door, the desk behind the glass. Walk up to a spot and sit, and your keys play that spot's track for everyone in the sesh.</p>
+    <p class="keys">WASD walk, mouse look. Space sits at a spot and stands you up again. Sat, your keys (A to ') or a MIDI keyboard play; Z / X shift the octave. V swaps first person and over the shoulder. Esc lets go of the mouse.</p>
+    <button id="play" type="button">Walk in</button> <a id="desk" class="keys" href="/">Open the desk (FM DAW)</a>
+  </section>
+</main>
+<script type="module" src="/src/studio/main.ts"></script>
+</body></html>
