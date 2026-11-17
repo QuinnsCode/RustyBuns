@@ -130,7 +130,13 @@ function thing(s: Spot): THREE.Group {
     for (const x of [-0.75, 0.75]) put(new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.22, 0.01, 20), std("#d8b04a", { metalness: 0.7, roughness: 0.3 })), x, 1.0, -0.1);
   } else if (s.kind === "keys") {
     put(new THREE.Mesh(new THREE.BoxGeometry(t.w, 0.12, t.d), m), 0, t.h - 0.06, 0);
-    put(new THREE.Mesh(new THREE.BoxGeometry(t.w - 0.1, 0.03, t.d * 0.5), std("#f4f1ea")), 0, t.h + 0.01, t.d * 0.18);
+    // white keys with a gap between each, the black ones raised and set back, as a seated player sees them
+    const white = std("#f4f1ea", { roughness: 0.5 }), black = std("#16191c", { roughness: 0.4 });
+    const n = 29, kw = (t.w - 0.12) / n, x0 = -(t.w - 0.12) / 2 + kw / 2, z = t.d * 0.18;
+    for (let i = 0; i < n; i++) {
+      put(new THREE.Mesh(new THREE.BoxGeometry(kw - 0.003, 0.022, t.d * 0.5), white), x0 + i * kw, t.h + 0.011, z);
+      if ([0, 1, 3, 4, 5].includes(i % 7) && i < n - 1) put(new THREE.Mesh(new THREE.BoxGeometry(kw * 0.58, 0.02, t.d * 0.3), black), x0 + (i + 0.5) * kw, t.h + 0.032, z - t.d * 0.1);
+    }
     for (const x of [-t.w / 2 + 0.08, t.w / 2 - 0.08]) put(new THREE.Mesh(new THREE.BoxGeometry(0.05, t.h - 0.12, 0.05), m), x, (t.h - 0.12) / 2, 0);
   } else if (s.kind === "booth") {
     put(new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, t.h, 8), m), 0, t.h / 2, 0);
@@ -153,7 +159,7 @@ buildRoom();
 // ---- people: you, and everyone the live line says is here ----
 interface Drawn { fig: Figure; key: string; x: number; z: number; yaw: number; speed: number }
 const drawn = new Map<number | "me", Drawn>();
-function drawPerson(id: number | "me", a: Avatar, label: string, x: number, z: number, yaw: number, seated: boolean, playing: boolean, dt: number, t: number, snap: boolean) {
+function drawPerson(id: number | "me", a: Avatar, label: string | null, x: number, z: number, yaw: number, seated: boolean, playing: boolean, dt: number, t: number, snap: boolean) {
   const key = JSON.stringify([a, label]);
   let d = drawn.get(id);
   if (d && d.key !== key) { scene.remove(d.fig.group); d.fig.dispose(); d = undefined; }
@@ -438,15 +444,15 @@ function frame(now: number) {
   // your body, about 10 a second while it changes, and once a second regardless so a late arrival sees you
   const b = body(jam), bs = JSON.stringify(b);
   if (now - sentAt > 1000 / BODY_HZ && (bs !== sentBody || now - sentAt > 1000)) { live(b); sentAt = now; sentBody = bs; }
-  // you: seen over your shoulder, not from inside your own head
-  if (jam.me.cam === "shoulder") drawPerson("me", look, name, jam.me.x, jam.me.z, jam.me.yaw, !!jam.me.seat, holding.size > 0, dt, t, true);
+  // you: seen over your shoulder with no tag of your own, and not at all once a wall behind pulls the camera into your head
+  const c = cameraPose(jam);
+  if (c.boom > 0.7) drawPerson("me", look, null, jam.me.x, jam.me.z, jam.me.yaw, !!jam.me.seat, holding.size > 0, dt, t, true);
   else dropPerson("me");
   for (const [peer, o] of jam.others) {
     if (!o.avatar && !o.name) continue;
     const seat = spotOf(jam, o.seat);
     drawPerson(peer, o.avatar ?? defaultAvatar(o.name), o.name, o.at[0], o.at[1], seat ? seat.yaw : o.yaw, !!seat, o.held.size > 0, dt, t, false);
   }
-  const c = cameraPose(jam);
   camera.position.set(...c.at);
   camera.rotation.set(c.pitch, c.yaw, 0);
   $("cross").hidden = jam.me.cam !== "first";

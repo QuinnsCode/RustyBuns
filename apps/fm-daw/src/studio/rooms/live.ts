@@ -25,5 +25,5 @@ export const LIVE_ROOM: StudioDef = {
     { id: "desk", kind: "desk", label: "the desk", at: [0, -2.7], yaw: Math.PI, thing: { w: 2.4, d: 0.8, h: 0.85, ahead: 0.65, color: "#3a4a6b" } },
     { id: "couch", kind: "couch", label: "the couch", at: [-2.6, -3.8], yaw: Math.PI, thing: { w: 2, d: 0.8, h: 0.45, ahead: -0.15, color: "#6b4a2c" } },
   ],
-  door: { at: [0, 3.8], yaw: 0 },
+  door: { at: [-0.4, 2.5], yaw: 0 },
 };

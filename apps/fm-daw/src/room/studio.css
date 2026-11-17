@@ -6,6 +6,8 @@ main { position: fixed; inset: 0; }
 #hud { position: absolute; inset: 0; pointer-events: none; }
 #cross { position: absolute; left: 50%; top: 50%; width: 6px; height: 6px; margin: -3px 0 0 -3px; border-radius: 50%; background: var(--ink); opacity: 0.8; }
 #hint { position: absolute; left: 0; right: 0; top: calc(50% + 18px); margin: 0; text-align: center; text-shadow: 0 1px 3px #000; }
+/* the jam room: the hint sits low, off the instrument you look down at */
+#hint.low { top: auto; bottom: 40px; left: 16px; right: 16px; }
 #heard { position: absolute; left: 16px; right: 16px; bottom: 14px; margin: 0; color: var(--dim); font-size: 13px; text-shadow: 0 1px 3px #000; }
 #speakers { position: absolute; top: 14px; left: 16px; pointer-events: auto; background: var(--card); color: var(--ink); border: 1px solid #3a3e45; border-radius: 8px; padding: 6px 12px; font: inherit; cursor: pointer; }
 #controls-host { position: absolute; top: 12px; right: 16px; pointer-events: auto; }

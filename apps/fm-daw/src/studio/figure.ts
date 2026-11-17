@@ -35,7 +35,8 @@ function nameTag(name: string): THREE.Sprite {
   return s;
 }
 
-export function figure(a: Avatar, name: string): Figure {
+/** `name` null: no tag over its head (you, seen over your own shoulder, don't need yours). */
+export function figure(a: Avatar, name: string | null): Figure {
   const tall = a.build === "tall" ? 1.08 : a.build === "short" ? 0.9 : 1, wide = a.build === "round" ? 1.25 : a.build === "slim" ? 0.85 : 1;
   const group = new THREE.Group();
   const body = new THREE.Group();
@@ -107,9 +108,8 @@ export function figure(a: Avatar, name: string): Figure {
     head.add(g);
   }
   body.add(head);
-  const tag = nameTag(name || "Someone");
-  tag.position.y = head.position.y + headR + 0.25;
-  group.add(tag);
+  const tag = name === null ? null : nameTag(name || "Someone");
+  if (tag) { tag.position.y = head.position.y + headR + 0.25; group.add(tag); }
 
   return {
     group,
@@ -126,7 +126,7 @@ export function figure(a: Avatar, name: string): Figure {
     dispose() {
       group.traverse((o) => { if (o instanceof THREE.Mesh) { o.geometry.dispose(); for (const m of [o.material].flat()) m.dispose(); } });
       faceMap.dispose();
-      tag.material.map?.dispose(); tag.material.dispose();
+      tag?.material.map?.dispose(); tag?.material.dispose();
     },
   };
 }
