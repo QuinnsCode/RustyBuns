@@ -15,7 +15,7 @@
 // The solver drives one input, so the hum is a second run of the same circuit with the
 // mains between the earths as its input and the guitar silent. Below the rails everything
 // here is linear, so the two runs add up to the line.
-import { Circuit, type Netlist, type Part } from "./mna.ts";
+import { Circuit, type Netlist, type Part } from "@rustybuns/gear/circuit";
 import { TsEq, type EqDoc } from "../engine/eq.ts";
 
 const R = (a: string, b: string, ohms: number): Part => ({ kind: "R", a, b, ohms });
