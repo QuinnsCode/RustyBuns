@@ -459,7 +459,9 @@ test("jam room: one walks up to the keys, sits and plays; the other sees them se
   live(a, { t: "wear", avatar: me, name: "Amy" });
   const keys = LIVE_ROOM.spots.find((s) => s.id === "keys")!;
   // Amy walks in seeing herself from behind, and in the back corner the camera comes in off the wall, not through it
-  expect(cameraPose(amy).boom).toBeGreaterThan(1.5);
+  const walkIn = cameraPose(amy);
+  expect(walkIn.boom).toBeGreaterThan(1.5);
+  expect(walkIn.head).toBeGreaterThan(0.9);
   walkTo(amy, 4.2, 4.1);
   amy.me.yaw = 0;   // facing into the room, the back wall right behind her
   const corner = cameraPose(amy);
@@ -470,10 +472,12 @@ test("jam room: one walks up to the keys, sits and plays; the other sees them se
   expect(nearSpot(amy)?.id).toBe("keys");
   expect(sit(amy, "keys")).toEqual({ ok: true });
   expect(amy.me.cam).toBe("first");
-  // V, seated: the camera goes up beside her shoulder, not behind her head, and looks down at her hands on the keys
+  // V, seated: the camera goes up beside her shoulder, not behind her head, and looks down at her hands on the keys,
+  // through her own head, faded so it doesn't hide them
   toggleCam(amy);
   const over = cameraPose(amy), hands = [keys.at[0], 0.9, keys.at[1] - 0.5];
   expect(Math.abs(over.at[0] - keys.at[0])).toBeGreaterThan(0.5);
+  expect(over.head).toBeLessThan(0.5);
   const toHands = Math.atan2(hands[1] - over.at[1], Math.hypot(hands[0] - over.at[0], hands[2] - over.at[2]));
   expect(Math.abs(over.pitch - toHands)).toBeLessThan(0.25);
   expect(Math.abs(Math.atan2(-(hands[0] - over.at[0]), -(hands[2] - over.at[2])) - over.yaw)).toBeLessThan(0.3);

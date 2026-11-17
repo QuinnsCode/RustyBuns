@@ -10,6 +10,8 @@ export interface Figure {
   /** Pose it for this frame: walking `speed` m/s, sitting, playing, and `t` seconds since the page opened; `look` a point
    *  in the room to turn its head to, `beat` the beats since the groove started, to nod on. */
   pose(o: { speed: number; seated: boolean; playing: boolean; t: number; look?: THREE.Vector3 | null; beat?: number | null }): void;
+  /** How solid the head (and its hair and hat) is drawn, 0 to 1: your own, seen up close beside it, so you see past it. */
+  fade(k: number): void;
   dispose(): void;
 }
 
@@ -36,6 +38,8 @@ export function figure(a: Avatar, name: string | null): Figure {
   const tag = name === null ? null : nameTag(name || "Someone");
   if (tag) group.add(tag);
   const at = new THREE.Vector3();
+  // the head's own copies of its materials, made the first time it fades (the body shares them: the hands are skin too)
+  let faded: THREE.Material[] | null = null, now = 1;
   return {
     group,
     pose({ speed, seated, playing, t, look = null, beat = null }) {
@@ -43,7 +47,24 @@ export function figure(a: Avatar, name: string | null): Figure {
       c.pose({ t, speed, seated, play: playing ? "keys" : null, note: playing, look, beat });
       if (tag) { c.head.getWorldPosition(at); group.worldToLocal(at); tag.position.set(0, at.y + 0.55, 0); }
     },
+    fade(k) {
+      if (k === now) return;
+      now = k;
+      if (!faded) {
+        faded = [];
+        c.head.traverse((o) => {
+          if (!(o instanceof THREE.Mesh) || Array.isArray(o.material)) return;
+          const m: THREE.Material = o.material.clone();
+          m.transparent = true;
+          o.material = m;
+          faded?.push(m);
+        });
+      }
+      // see-through, it writes no depth, or its far side would hide what's behind it
+      for (const m of faded) { m.opacity = k; m.depthWrite = k >= 1; }
+    },
     dispose() {
+      for (const m of faded ?? []) m.dispose();
       c.dispose();
       tag?.material.map?.dispose(); tag?.material.dispose();
     },
