@@ -18,7 +18,9 @@ export function nextStep(w: World, c: Cables, on: Switches): Next | null {
   if (out) return { text: `Bring the ${gear(out.gear).what} in`, key: out.key };
   const plugged = c.runs.some((r) => "plug" in r.a || "plug" in r.b);
   if (!plugged && c.caseKey) return { text: "Take a cable from the road case: F", key: c.caseKey };
-  const off = w.items.find((i) => hasSwitch(i.gear) && !on.has(i.key));
+  // A passive box has no switch of its own: once a cable is in it, the amp feeding it decides.
+  const cabled = new Set(c.runs.flatMap((r) => [r.a, r.b].flatMap((e) => ("plug" in e ? [e.plug[0]] : []))));
+  const off = w.items.find((i) => hasSwitch(i.gear) && !on.has(i.key) && !(cabled.has(i.key) && gear(i.gear).speaker?.ohms));
   if (off) return { text: `Switch on the ${gear(off.gear).what}: look at it, press P`, key: off.key };
   return null;
 }
