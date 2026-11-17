@@ -36,6 +36,7 @@ import { type Tour, bookedRung, buy, record } from "./tour.ts";
 import { loadTour, mountTour, saveTour } from "./tour-view.ts";
 import { accountChip, canSignIn, finishSignIn, login, party, type PartyMember } from "./eqosys.ts";
 import { eyeFill, handsView, readable, venueLights, type Grip } from "./look.ts";
+import { dress, faceLook, type Dressed } from "./faces.ts";
 import { nextStep } from "./next.ts";
 import { COLOR } from "./cables/draw.ts";
 import { joinCrew, roomCode, type Online } from "./crew/online.ts";
@@ -129,6 +130,7 @@ scene.add(roomGroup);
 
 const meshes = new Map<string, THREE.Object3D>(), look = gearLook();
 readable(look);
+const faces = faceLook(look), dressed = new Map<string, Dressed>();
 const highlight = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(1, 1, 1).translate(0, 0.5, 0)), new THREE.LineBasicMaterial({ color: 0x4cc9f0 }));
 scene.add(highlight);
 let bar: BarView | ParkView | DesertView | null = null;
@@ -138,8 +140,12 @@ let ar: ArenaView | null = null;
 let arena: SmallArenaView | null = null;
 let foh: ShowView | null = null;
 /** A piece's model (a stand at `height`), or a plain box at its catalog size if @rustybuns/models has none. */
-function modelOf(id: string, height?: number): THREE.Object3D {
-  if (cable.hasModel(id)) return model(id, { look, height });
+function modelOf(id: string, height?: number, key?: string): THREE.Object3D {
+  if (cable.hasModel(id)) {
+    const m = model(id, { look, height });
+    if (key) dressed.set(key, dress(m, faces, { stencil: key === cables.caseKey ? "CABLES" : undefined }));
+    return m;
+  }
   const { w, h, d } = gear(id).size, m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d).translate(0, h / 2, 0), look.paint);
   m.userData.size = [w, h, d];
   return m;
@@ -147,8 +153,9 @@ function modelOf(id: string, height?: number): THREE.Object3D {
 function buildItems() {
   for (const m of meshes.values()) scene.remove(m);
   meshes.clear();
+  dressed.clear();
   for (const i of world.items) {
-    const m = modelOf(i.gear);
+    const m = modelOf(i.gear, undefined, i.key);
     meshes.set(i.key, m);
     scene.add(m);
   }
@@ -209,6 +216,8 @@ function draw() {
     m.rotation.set(i === held ? 0 : -(rig(world).tilt[i.key] ?? 0), p.rot, 0, "YXZ");
   }
   const end = cable.inHand(cables), jack = cable.aimedJack(world);
+  // The jack panel you look at (or aim a cable at) lights up, the socket you'd plug into ringed in amber.
+  for (const [key, d] of dressed) d.lit(key === jack?.owner || (!held && key === at?.key), key === jack?.owner ? jack.jack : undefined);
   highlight.visible = !!at && !held && !end && !jack;
   if (highlight.visible && at) { const [w, h, d] = dims(at); highlight.position.set(at.x, at.y, at.z); highlight.rotation.y = at.rot; highlight.scale.set(w + 0.04, h + 0.04, d + 0.04); }
   bar?.update();
