@@ -12,6 +12,7 @@ import { serve } from "@rustybuns/shell-bun";
 import worker from "../src/worker.ts";
 import { local } from "../src/local.ts";
 import { help } from "../../../scripts/help.ts";
+import { dieWith } from "../../../scripts/chrome.ts";
 
 help(import.meta.path);
 const arg = (n: string) => { const i = process.argv.indexOf(`--${n}`); return i > 0 ? process.argv[i + 1] : undefined; };
@@ -37,6 +38,8 @@ await j("/repos/ryan/office/board", { main: "abc", prs: [
 // Chrome over CDP, with the page's WebMCP registry stood in for (an agent's browser has document.modelContext).
 const dir = mkdtempSync(join(tmpdir(), "tour-smoke-"));
 const chrome = Bun.spawn([CHROME, "--headless=new", "--remote-debugging-port=0", `--user-data-dir=${dir}`, "--no-first-run", "--window-size=1400,1000", "about:blank"], { stdout: "ignore", stderr: "pipe" });
+// gone with this script however it ends, a kill -9 included (#4905); --keep keeps the profile only on a normal exit
+const watch = dieWith(dir, chrome.pid);
 const wsUrl = await (async () => {
   const dec = new TextDecoder(); let buf = "";
   for await (const c of chrome.stderr as any) { buf += dec.decode(c); const m = buf.match(/DevTools listening on (ws:\/\/\S+)/); if (m) return m[1]!; }
@@ -197,7 +200,7 @@ try {
     await until("step 2", `document.querySelector(".tour b")?.textContent === "It syncs out, both ways"`, 25000);
   });
 } finally {
-  ws.close(); chrome.kill(); shell.stop?.();
+  ws.close(); chrome.kill(); watch.kill(9); shell.stop?.();
   if (!process.argv.includes("--keep")) rmSync(dir, { recursive: true, force: true });
 }
 console.log(failed ? `\n${failed} failed` : `\nall ${CHAPTERS.length * 9 + 2} passed`);

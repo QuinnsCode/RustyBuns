@@ -47,7 +47,7 @@ const quietStart = ["--no-first-run", "--no-default-browser-check", "--password-
 /** One Chrome, up once its DevTools port file appears. Its stderr is read as it runs (an unread pipe fills and blocks Chrome),
  * keeping the last lines for an error. A stall gets one more try on a fresh profile: on a just-booted CI runner the first start
  * has sat silent past 30 s while the next went straight up (#3350, #3435). Each stall's error says what Chrome's processes were blocked on. */
-export interface Chrome { cdp: Cdp; stop: () => void }
+export interface Chrome { cdp: Cdp; dir: string; stop: () => void }
 
 export async function launchChrome(): Promise<Chrome> {
   const bin = chromePath();
@@ -68,6 +68,7 @@ export async function launchChrome(): Promise<Chrome> {
 async function startChrome(bin: string, wait: number): Promise<Chrome | { exited: boolean; stall: string }> {
   const dir = mkdtempSync(join(tmpdir(), "chrome-cdp-"));
   const proc = Bun.spawn([bin, "--headless=new", "--remote-debugging-port=0", `--user-data-dir=${dir}`, ...quietStart, ...glFlags(), "--hide-scrollbars", "about:blank"], { stdout: "ignore", stderr: "pipe" });
+  const watch = dieWith(dir, proc.pid);
   const said: string[] = [];
   const drained = (async () => { for await (const line of lines(proc.stderr)) said.push(line), said.length > 8 && said.shift(); })();
   const portFile = join(dir, "DevToolsActivePort");
@@ -79,6 +80,7 @@ async function startChrome(bin: string, wait: number): Promise<Chrome | { exited
     const exited = proc.exitCode !== null;
     const blocked = exited ? "" : await blockedOn(dir);
     proc.kill();
+    watch.kill(9);
     await Promise.race([drained, Bun.sleep(2000)]);
     rmSync(dir, { recursive: true, force: true });
     const how = exited ? `exited ${proc.exitCode}` : `no DevTools port in ${wait / 1000} s`;
@@ -87,7 +89,20 @@ async function startChrome(bin: string, wait: number): Promise<Chrome | { exited
   if (Date.now() - t0 > 5000) console.warn(`Chrome took ${((Date.now() - t0) / 1000).toFixed(1)} s to start`);
   const [port, path] = readFileSync(portFile, "utf8").trim().split("\n");
   const cdp = await Cdp.open(`ws://127.0.0.1:${port}${path}`);
-  return { cdp, stop: () => { cdp.close(); proc.kill(); rmSync(dir, { recursive: true, force: true }); } };
+  return { cdp, dir, stop: () => { cdp.close(); proc.kill(); watch.kill(9); rmSync(dir, { recursive: true, force: true }); } };
+}
+
+/**
+ * A watchdog beside a Chrome: once `parent` is gone (exited, timed out, or killed with -9, when nothing of ours gets to run),
+ * it kills every process that carries the profile dir and deletes the dir. Chrome left behind this way filled the office
+ * Mac's swap (#4905). It ignores Ctrl-C and hang-ups, so it outlives the parent; `stop` kills it with -9.
+ */
+export function dieWith(dir: string, chrome: number, parent = process.pid) {
+  // the dir comes in the environment, so the watchdog's own command line doesn't match its pkill
+  const script = 'trap "" INT HUP TERM; while kill -0 "$1" 2>/dev/null; do sleep 1; done; kill -9 "$2" 2>/dev/null; pkill -9 -f -- "$CHROME_DOG_DIR"; sleep 1; rm -rf -- "$CHROME_DOG_DIR"';
+  const dog = Bun.spawn(["sh", "-c", script, "chrome-watchdog", String(parent), String(chrome)], { env: { ...process.env, CHROME_DOG_DIR: dir }, stdin: "ignore", stdout: "ignore", stderr: "ignore" });
+  dog.unref();
+  return dog;
 }
 
 async function* lines(stream: ReadableStream<Uint8Array>) {
