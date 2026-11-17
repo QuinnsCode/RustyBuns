@@ -11,9 +11,19 @@ import drive from "../../circuits/drive.circuit.json";
 import fuzzBoard from "../../circuits/fuzz.circuit.json";
 import triode from "../../circuits/triode.circuit.json";
 import tone from "../../circuits/tone.circuit.json";
+import phase from "../../circuits/phase.circuit.json";
+import vibe from "../../circuits/vibe.circuit.json";
+import trem from "../../circuits/trem.circuit.json";
+import wah from "../../circuits/wah.circuit.json";
+import autowah from "../../circuits/autowah.circuit.json";
+import comp from "../../circuits/comp.circuit.json";
+import octave from "../../circuits/octave.circuit.json";
+import germ from "../../circuits/germ.circuit.json";
 
 /** Each board's circuit JSON, read through `readBoard` before anything trusts it. */
-export const BOARDS = { dist, drive, fuzz: fuzzBoard, triode, tone };
+export const BOARDS = { dist, drive, fuzz: fuzzBoard, triode, tone, phase, vibe, trem, wah, autowah, comp, octave, germ };
+/** The effects' boards (effects.ts), named by their pedals' ids. */
+export type EffectBoard = "phase" | "vibe" | "trem" | "wah" | "autowah" | "comp" | "octave" | "germ";
 export type BoardId = keyof typeof BOARDS;
 
 // ---- part swaps ----

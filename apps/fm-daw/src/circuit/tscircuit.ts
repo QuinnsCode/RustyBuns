@@ -8,8 +8,16 @@
 // told apart by their pin labels: OUT, INP and INN make an op-amp (its supply pins
 // are ignored; the rails come from `rail`), and with IABC an OTA; PLATE, GRID and
 // CATHODE make a 12AX7; DRAIN, GATE and SOURCE a JFET; LEDA, LEDK, LDR1 and LDR2 a
-// vactrol (an LED lighting an LDR). A net named in `supplies` gets a DC source to ground.
+// vactrol (an LED lighting an LDR); LDR1 and LDR2 alone a bare photocell under a lamp.
+// A net named in `supplies` gets a DC source to ground.
 // Knobs and part swaps reach the board by part name (`knobs`, `values`, `diodes`).
+//
+// A resistance an LFO or envelope moves (`Part` "VarR") is drawn as the real part
+// that moves: a JFET's channel, an LDR (bare or in a vactrol), a pot under a foot.
+// `moved` names it with the control that moves it and its range, and the reader
+// puts a `VarR` across its channel (DRAIN to SOURCE, LDR1 to LDR2, a pot's two ends).
+// The control's own circuit (the LFO, the lamp driver, the envelope follower) is
+// off the board, on a net named after the control. A bare photocell must be `moved`.
 //
 // A pot's `knobs` turn (0 to 1, 0.5 if not given) moves its wiper from pin1 toward
 // pin3. A two-pin pot (tscircuit's default) is a variable resistor, `max × t`.
@@ -76,7 +84,16 @@ export interface BoardOptions extends ReadOptions {
   diodes?: Record<string, Junction | null>;
   /** Resistors that hiss (`Part` "R" `noisy`). */
   noisy?: string[];
+  /** Parts a control moves, by name: each becomes a `VarR` across its channel, `hi` ohms at control 0 to `lo` at 1. */
+  moved?: Record<string, Moved>;
+  /** Op-amps (by name) that never clip: no rails, so they cost no Newton (`Part` "Opamp" `rail: 0`). */
+  linear?: string[];
+  /** Transistors' own constants by name (saturation current, gains, leakage), over the silicon or germanium defaults. */
+  bjt?: Record<string, { is?: number; bf?: number; br?: number; leak?: number }>;
 }
+
+/** What moves a part: the control's name (a rig `Mod`'s `ctl`) and its range in ohms. */
+export interface Moved { ctl: string; hi: number; lo: number }
 
 /** Reads a board out of tscircuit's circuit JSON. Throws, naming the part, on what the simulator can't model. */
 export function readBoard(json: unknown, o: ReadOptions = {}): Board {
@@ -156,7 +173,9 @@ export function readBoard(json: unknown, o: ReadOptions = {}): Board {
       if (names.has("PLATE") && names.has("GRID") && names.has("CATHODE")) return { name, kind: "Triode", p: label("PLATE"), g: label("GRID"), k: label("CATHODE") };
       if (names.has("DRAIN") && names.has("GATE") && names.has("SOURCE")) return { name, kind: "JFET", d: label("DRAIN"), g: label("GATE"), s: label("SOURCE"), p: false };
       if (names.has("LEDA") && names.has("LEDK") && names.has("LDR1") && names.has("LDR2")) return { name, kind: "LDR", a: label("LDR1"), b: label("LDR2"), la: label("LEDA"), lk: label("LEDK") };
-      throw new Error(`${name}: a chip the simulator doesn't know (pins ${[...names].join(", ")}); label an op-amp OUT/INP/INN (+IABC for an OTA), a triode PLATE/GRID/CATHODE, a JFET DRAIN/GATE/SOURCE or a vactrol LEDA/LEDK/LDR1/LDR2`);
+      // A bare photocell: its lamp is off the board, so `moved` must say what lights it (an empty control until then).
+      if (names.size === 2 && names.has("LDR1") && names.has("LDR2")) return { name, kind: "VarR", a: label("LDR1"), b: label("LDR2"), ctl: "", hi: 1e6, lo: 1e3 };
+      throw new Error(`${name}: a chip the simulator doesn't know (pins ${[...names].join(", ")}); label an op-amp OUT/INP/INN (+IABC for an OTA), a triode PLATE/GRID/CATHODE, a JFET DRAIN/GATE/SOURCE, a vactrol LEDA/LEDK/LDR1/LDR2 or a photocell LDR1/LDR2`);
     }
     throw new Error(`${name}: no model for ${c.ftype} yet`);
   });
@@ -166,20 +185,31 @@ export function readBoard(json: unknown, o: ReadOptions = {}): Board {
 /** The board's pots, in the order they were drawn. */
 export const boardPots = (b: Board): BoardPot[] => b.parts.flatMap((p) => (p.kind === "Pot" ? [{ name: p.name, ohms: p.ohms }] : []));
 
+/** The two ends of the resistance a control moves: a JFET's channel, an LDR, a resistor or a pot's ends. */
+function channel(name: string, p: Part): { a: string; b: string } {
+  if (p.kind === "JFET") return { a: p.d, b: p.s };
+  if (p.kind === "LDR" || p.kind === "VarR" || p.kind === "R" || p.kind === "Pot") return { a: p.a, b: p.kind === "Pot" ? p.w : p.b };
+  throw new Error(`${name}: a ${p.kind} has no channel a control can move; draw a JFET, an LDR or a pot`);
+}
+
 /** A board's JSON as a netlist the solver runs. Throws, naming the part, on what it can't model. */
 export const boardToNetlist = (json: unknown, o: BoardOptions = {}): Netlist => netlistOf(readBoard(json, o), o);
 
 /** A board already read (`readBoard`) as a netlist: the bench turns its knobs without reading the JSON again. */
 export function netlistOf(board: Board, o: BoardOptions = {}): Netlist {
   const named = new Set(board.parts.map((p) => p.name));
-  for (const n of [...Object.keys(o.values ?? {}), ...Object.keys(o.diodes ?? {}), ...(o.noisy ?? [])]) {
+  const lists = [o.values, o.diodes, o.moved, o.bjt].flatMap((r) => Object.keys(r ?? {}));
+  for (const n of [...lists, ...(o.noisy ?? []), ...(o.linear ?? [])]) {
     if (!named.has(n)) throw new Error(`no part ${n} on this board (${[...named].join(", ")})`);
   }
   const parts: Part[] = [];
   for (const { name, ...p } of board.parts) {
     const value = o.values?.[name];
     if (value !== undefined && value <= 0) continue;
-    if (p.kind === "R") parts.push({ ...p, ohms: value ?? p.ohms, ...(o.noisy?.includes(name) ? { noisy: true } : {}) });
+    const moved = o.moved?.[name];
+    if (moved) parts.push({ kind: "VarR", ...channel(name, p), ...moved });
+    else if (p.kind === "VarR" && !p.ctl) throw new Error(`${name}: a photocell with nothing lighting it; name it in \`moved\``);
+    else if (p.kind === "R") parts.push({ ...p, ohms: value ?? p.ohms, ...(o.noisy?.includes(name) ? { noisy: true } : {}) });
     else if (p.kind === "C") parts.push({ ...p, farads: value ?? p.farads });
     else if (p.kind === "L") parts.push({ ...p, henries: value ?? p.henries });
     else if (p.kind === "Pot") {
@@ -189,8 +219,8 @@ export function netlistOf(board: Board, o: BoardOptions = {}): Netlist {
       const j = o.diodes?.[name];
       if (j === null) continue;
       parts.push(j ? { ...p, is: j.is, n: j.n } : p);
-    } else if (p.kind === "Opamp") parts.push({ ...p, rail: o.rail });
-    else if (p.kind === "BJT") parts.push({ ...p, ge: o.germanium?.includes(name) ?? false });
+    } else if (p.kind === "Opamp") parts.push({ ...p, rail: o.linear?.includes(name) ? 0 : o.rail });
+    else if (p.kind === "BJT") parts.push({ ...p, ge: o.germanium?.includes(name) ?? false, ...o.bjt?.[name] });
     else if (p.kind === "JFET") parts.push({ ...p, p: o.pChannel?.includes(name) ?? false });
     else parts.push(p);
   }

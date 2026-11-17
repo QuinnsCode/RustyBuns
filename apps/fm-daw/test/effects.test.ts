@@ -61,8 +61,21 @@ test("each effect does what its circuit does", () => {
   const hard = alone("autowah", 7, sine(1800, 0.5, 1)), soft = alone("autowah", 7, sine(1800, 0.5, 0.05));
   expect(rms(hard.out, SR / 4, SR / 2) / rms(soft.out, SR / 4, SR / 2)).toBeGreaterThan(2 * 20);
   // Germanium: a warm room moves the second transistor's bias by volts.
-  const bias = (k: number) => { const c = new Circuit(pedal("germ").net(k), 192000); c.settle(0); return c.volts("c2"); };
+  const bias = (k: number) => { const c = new Circuit(pedal("germ").net(k), 192000); c.settle(0); return c.volts("Q2_C"); };
   expect(Math.abs(bias(10) - bias(0))).toBeGreaterThan(1);
+});
+
+test("each board plays as the hand-written netlist it replaced (#4952)", () => {
+  // RMS out on a quarter second of the riff, the pedal alone at knob k, from the old netlists: the boards matched them sample for sample.
+  const input = riff(SR).subarray(0, SR / 4);
+  const table = [
+    ["phase", 5, 0.0915985], ["vibe", 5, 0.124341], ["trem", 5, 0.0479829], ["wah", 0, 0.0137797], ["wah", 10, 0.058091],
+    ["autowah", 7, 0.049804], ["comp", 5, 0.80849], ["octave", 6, 0.083778], ["germ", 0, 0.14558], ["germ", 10, 0.239098],
+  ] as const;
+  for (const [id, k, want] of table) {
+    const out = alone(id, k, input).out;
+    expect([id, k, Number(rms(out, 0, out.length).toPrecision(5))]).toEqual([id, k, Number(want.toPrecision(5))]);
+  }
 });
 
 test("every effect into the lead amp on the riff: converged and bounded, its knob turning live", () => {
