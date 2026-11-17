@@ -5,6 +5,7 @@ import { arr, Bad, bool, check, int, maybe, nul, num, obj, oneOf, opt, raw, str,
 import { EQ_LANES, clampEqLane, eqLaneBand, sanitizeEq, type EqDoc } from "./engine/eq.ts";
 import { MAX_TAKES, TakeBytesGuard, takeRef, type TakeBytes, type TakeRef } from "./take.ts";
 import { ROOM_M } from "./studio.ts";
+import { cleanAvatar, type Avatar } from "@rustybuns/util/avatar";
 import { TRACKS, NPARAMS, BEND_RANGE, LANE_BEND, LANE_STUTTER, clampLane, clampParam } from "./engine/params.ts";
 
 export interface Note { s: number; l: number; m: number; v: number } // start/length in beats, midi, velocity 0..1
@@ -207,8 +208,13 @@ export type Live =
   | { t: "stop" }
   /** Where their pointer is, as a share of the window (0..1 across and down), so others can see it. */
   | { t: "cursor"; x: number; y: number }
-  /** Where they stand in the studio and which way they face, so others see them and what's in their hand (src/studio.ts). */
-  | { t: "body"; at: number[]; yaw: number };
+  /**
+   * Where they stand in the studio and which way they face, so others see them and what's in their hand (src/studio.ts).
+   * In the jam room (src/studio/) also the spot they sit at, if any: that seat shows them playing it.
+   */
+  | { t: "body"; at: number[]; yaw: number; seat?: string }
+  /** Who they look like in the jam room: their eqosys avatar and name, said on joining and when someone new comes in. */
+  | { t: "wear"; avatar: Avatar; name: string };
 const MIDI = int(0, 127);
 const LIVE: Guard<Live>[] = [
   obj({ t: tag("on"), track: TRACK, midi: MIDI, vel: num(0, 1, 0.8) }),
@@ -217,13 +223,14 @@ const LIVE: Guard<Live>[] = [
   obj({ t: tag("repeat"), beats: num(0, BEATS_PER_BAR, 0) }),
   obj({ t: tag("play") }), obj({ t: tag("stop") }),
   obj({ t: tag("cursor"), x: num(0, 1, 0), y: num(0, 1, 0) }),
-  obj({ t: tag("body"), at: arr(num(-ROOM_M, ROOM_M), 3, { min: 3 }), yaw: num(-Math.PI * 2, Math.PI * 2) }),
+  obj({ t: tag("body"), at: arr(num(-ROOM_M, ROOM_M), 3, { min: 3 }), yaw: num(-Math.PI * 2, Math.PI * 2), seat: opt(str(24, { re: /^[a-z0-9-]+$/ })) }),
+  obj({ t: tag("wear"), avatar: (v: unknown) => cleanAvatar(v) ?? bad("an avatar"), name: str(40, { min: 0, dflt: "" }) }),
 ];
 const LIVE_EVENT = (v: unknown) => LIVE.reduce<Live | null>((got, g) => got ?? check(g, v), null) ?? bad("a live event");
 
 /** A held room still passes these, so a guest's notes, stutter and bend are let go everywhere. */
 export const lettingGo = (e: Live) =>
-  e.t === "off" || e.t === "cursor" || e.t === "body" || (e.t === "repeat" && e.beats === 0) || (e.t === "bend" && e.semis === 0);
+  e.t === "off" || e.t === "cursor" || e.t === "body" || e.t === "wear" || (e.t === "repeat" && e.beats === 0) || (e.t === "bend" && e.semis === 0);
 
 /**
  * Who may change a sesh. Whoever made it is its maker (a key kept in their browser). Free, the
