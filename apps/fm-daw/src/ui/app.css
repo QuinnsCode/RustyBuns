@@ -154,6 +154,8 @@ h2 { font: 600 1.2rem/1.1 var(--silk); margin: 0; }
 .op .role { font: 500 .72rem var(--mono); color: var(--dim); }
 .op.carrier { border-color: color-mix(in srgb, var(--track) 55%, var(--edge)); }
 .op.carrier .role { color: var(--track); }
+.amp-insert { display: grid; gap: 12px; padding: 14px; background: var(--panel); border: 1px solid var(--edge); border-top: 3px solid var(--track); border-radius: 6px; }
+.amp-insert .faders { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px 16px; }
 .fader { display: grid; grid-template-columns: 62px 1fr 58px; align-items: center; gap: 6px; }
 .fader .silk { font-size: .72rem; }
 .fader input { width: 100%; accent-color: var(--track); min-width: 0; }
