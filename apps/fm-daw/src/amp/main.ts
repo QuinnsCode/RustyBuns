@@ -423,15 +423,18 @@ function showPedals() {
   showBoard();
 }
 
-/** The board view: the pedal that's on, with its sockets, or the amp's first tube stage. */
+/** The board view: the pedal that's on, with its sockets, a loop machine's circuit (the last one on), or the amp's first tube stage. */
 function showBoard() {
   ui.boardBtn.setAttribute("aria-pressed", String(S.board === 1));
   ui.board.el.hidden = S.board !== 1;
   if (S.board !== 1) return;
   const def = PEDALS.find((p) => p.id === S.pedal);
+  const l = loopOf();
   ui.sheetBtn.hidden = !def?.board;
   if (def?.board) ui.board.show(def.board, `${def.name} · your board`, S.swaps[def.id] ?? {});
   else if (S.pedal === "bench") ui.board.blank(`${ui.bench.state()?.name ?? "Bench"} · on the bench`, "a board dropped on the bench has no drawing here yet");
+  else if (l.spring.on) ui.board.show("spring", "Q Spring · the driver and recovery tubes around the tank", null);
+  else if (l.tape.on) ui.board.show("tape", "Q Tape · the record amp", null);
   else ui.board.show("triode", `${ampOf(S.amp).name} · V1, the first tube stage`, null);
 }
 

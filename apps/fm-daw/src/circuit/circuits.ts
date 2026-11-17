@@ -4,7 +4,7 @@
 // says which part each knob turns, and which parts a player can swap.
 // Pedals run on a split supply (op-amp rails ±4 V around ground) instead of a
 // 9 V battery and a 4.5 V bias divider: the same circuit, minus the bias parts.
-import type { Netlist } from "@rustybuns/gear/circuit";
+import type { MachineCircuits, Netlist } from "@rustybuns/gear/circuit";
 import { boardToNetlist, readBoard, type BoardOptions, type Junction } from "./tscircuit.ts";
 import dist from "../../circuits/dist.circuit.json";
 import drive from "../../circuits/drive.circuit.json";
@@ -19,9 +19,11 @@ import autowah from "../../circuits/autowah.circuit.json";
 import comp from "../../circuits/comp.circuit.json";
 import octave from "../../circuits/octave.circuit.json";
 import germ from "../../circuits/germ.circuit.json";
+import spring from "../../circuits/spring.circuit.json";
+import tape from "../../circuits/tape.circuit.json";
 
 /** Each board's circuit JSON, read through `readBoard` before anything trusts it. */
-export const BOARDS = { dist, drive, fuzz: fuzzBoard, triode, tone, phase, vibe, trem, wah, autowah, comp, octave, germ };
+export const BOARDS = { dist, drive, fuzz: fuzzBoard, triode, tone, phase, vibe, trem, wah, autowah, comp, octave, germ, spring, tape };
 /** The effects' boards (effects.ts), named by their pedals' ids. */
 export type EffectBoard = "phase" | "vibe" | "trem" | "wah" | "autowah" | "comp" | "octave" | "germ";
 export type BoardId = keyof typeof BOARDS;
@@ -150,6 +152,21 @@ export function triodeStage(s: StageSpec): Netlist {
     noisy: s.noisy ? ["R2", "RP"] : [],
   });
 }
+
+// ---- the loop machines' circuits ----
+
+const DRIVER = ["V1", "C1", "R1", "R2", "RK1", "CK1", "RP1"];
+const RECOVERY = ["V2", "C2", "R3", "R4", "RK2", "CK2", "RP2"];
+
+/**
+ * The tubes and op-amp inside the effects loop's machines, read from their boards (`spring`, `tape`) and handed to
+ * gear's machines (`RigSpec.machines`). The spring board holds both stages, so each is read with the other left out.
+ */
+export const MACHINES: MachineCircuits = {
+  springDriver: boardToNetlist(BOARDS.spring, { leaveOut: RECOVERY, output: "DRIVE", supplies: { B_DRIVE: 250 }, tubes: { V1: "12AT7" } }),
+  springRecovery: boardToNetlist(BOARDS.spring, { leaveOut: DRIVER, input: "TANK", supplies: { B_PLUS: 300 } }),
+  recordAmp: boardToNetlist(BOARDS.tape),
+};
 
 /** The passive bass/mid/treble network most guitar amps share. Knobs 0 to 10. */
 export interface ToneSpec { bass: number; mid: number; treble: number; slope?: number; cTreble?: number; cBass?: number; cMid?: number }

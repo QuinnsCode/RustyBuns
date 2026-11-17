@@ -9,7 +9,7 @@ import { Circuit, type Netlist } from "./mna.ts";
 import { Convolver, cabIR, type Mic } from "./cab.ts";
 import { butter8, chain, type Biquad } from "./filters.ts";
 import { DEFAULT_POWER, PushPull, type Fault, type PowerSpec, type Trem } from "./power.ts";
-import { machine, type LoopSpec, type Machine } from "./machines.ts";
+import { machine, type LoopSpec, type Machine, type MachineCircuits } from "./machines.ts";
 
 /**
  * What moves one of a circuit's `VarR` controls, once a sample: an LFO (`hz`), or the link's own output
@@ -74,6 +74,8 @@ export interface RigSpec {
   noise?: number;
   /** The effects loop, in order: machines between the last link and the power stage. */
   loop?: LoopSpec[];
+  /** The tubes and op-amp inside the loop's machines, if not the ones `machines.ts` writes. */
+  machines?: MachineCircuits;
   /** Links run side by side instead of one after another (a splitter's sides), each blended back in (`Blend`). */
   blends?: Blend[];
   /**
@@ -136,6 +138,7 @@ export class Rig {
   private noise: number;
   private steps = 0;
   private loop: Machine[] = [];
+  private machines: MachineCircuits;
   // The return back up to the oversampled rate, so the power stage runs there as without a loop.
   private up2: Biquad[];
   private down2: Biquad[];
@@ -184,6 +187,7 @@ export class Rig {
     this.down = butter8(0.45 * sampleRate, hi);
     this.up2 = butter8(0.45 * sampleRate, hi);
     this.down2 = butter8(0.45 * sampleRate, hi);
+    this.machines = spec.machines ?? {};
     this.setLoop(spec.loop ?? []);
     this.amp = new PushPull(spec.output ?? DEFAULT_POWER, hi);
     this.cab = spec.cab ? new Convolver(cabIR(spec.cab, sampleRate)) : null;
@@ -211,7 +215,7 @@ export class Rig {
     const old = [...this.loop];
     this.loop = specs.map((sp) => {
       const at = old.findIndex((m) => m.kind === sp.kind);
-      if (at < 0) return machine(sp, this.sampleRate);
+      if (at < 0) return machine(sp, this.sampleRate, this.machines);
       const [m] = old.splice(at, 1);
       m.set(sp);
       return m;
