@@ -40,6 +40,7 @@ import { nextStep } from "./next.ts";
 import { COLOR } from "./cables/draw.ts";
 import { joinCrew, roomCode, type Online } from "./crew/online.ts";
 import { crewView } from "./crew/view.ts";
+import { touchPlay } from "./touch.ts";
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const canvas = $<HTMLCanvasElement>("stage");
@@ -75,6 +76,8 @@ const pad = loadPad(KEY, [
   { id: "turnLeft", label: "Turn it left", button: 4 },
   { id: "turnRight", label: "Turn it right", button: 5 },
 ]);
+/** Touch: a thumb stick, a drag to look, and buttons that press the same keys (touch.ts). */
+const touch = touchPlay(canvas, $("hud"), press);
 
 // The scene: the garage's floor, walls and the venue's own lights (look.ts), the driveway outside, a model per piece
 // of gear, the cables, and your hands.
@@ -161,6 +164,7 @@ function buildItems() {
   arena = world.level === arenaSim.SMALL_ARENA ? smallArenaView(scene, $("hud"), () => world) : null;
   foh?.dispose();
   foh = world.level === SHOW ? showView(scene, $("hud"), () => world) : null;
+  touch.venue(world.level.name);
 }
 buildItems();
 const ropes = cableView(scene);
@@ -263,21 +267,25 @@ document.addEventListener("mousemove", (e) => {
 document.addEventListener("keydown", (e) => {
   keys.add(e.code);
   if (phase !== "play" || e.repeat) return;
-  if (e.code === "Enter" && (bar || big)) return void openDoors();
-  if (!world.held && !cable.inHand(cables) && bar?.key(e.code)) return;
-  if (!cable.inHand(cables) && arena?.key(e.code, (why) => { flash = { text: why, until: performance.now() + 1800 }; })) return;
-  if (!world.held && !cable.inHand(cables) && ar?.key(e.code)) return;
-  if (big?.key(e.code)) return;
-  if (foh?.key(e.code)) return;
-  if (e.code === "KeyF") grab();
-  if ((e.code === "KeyQ" || e.code === "KeyE") && cable.coiling(cables)) return void say(cable.loop(world, cables, e.code === "KeyQ" ? "over" : "under"));
-  if (e.code === "KeyQ") turnHeld(world, -1);
-  if (e.code === "KeyE") turnHeld(world, 1);
-  if (e.code === "KeyL") say(strike(world));
-  if (e.code === "KeyT") say(shut(world, cables));
-  if (e.code === "KeyP") flip();
-  if (e.code === "KeyM") sound.toggle();
+  press(e.code);
 });
+/** A key while playing, from the keyboard or a touch button: the venue's view first, then the hands. */
+function press(code: string) {
+  if (code === "Enter" && (bar || big)) return void openDoors();
+  if (!world.held && !cable.inHand(cables) && bar?.key(code)) return;
+  if (!cable.inHand(cables) && arena?.key(code, (why) => { flash = { text: why, until: performance.now() + 1800 }; })) return;
+  if (!world.held && !cable.inHand(cables) && ar?.key(code)) return;
+  if (big?.key(code)) return;
+  if (foh?.key(code)) return;
+  if (code === "KeyF") grab();
+  if ((code === "KeyQ" || code === "KeyE") && cable.coiling(cables)) return void say(cable.loop(world, cables, code === "KeyQ" ? "over" : "under"));
+  if (code === "KeyQ") turnHeld(world, -1);
+  if (code === "KeyE") turnHeld(world, 1);
+  if (code === "KeyL") say(strike(world));
+  if (code === "KeyT") say(shut(world, cables));
+  if (code === "KeyP") flip();
+  if (code === "KeyM") sound.toggle();
+}
 document.addEventListener("keyup", (e) => keys.delete(e.code));
 addEventListener("blur", () => keys.clear());
 
@@ -346,6 +354,7 @@ function openDoors() {
 
 function menu() {
   $("menu").hidden = phase === "play";
+  touch.show(phase === "play");
   $("crew").textContent = crew.members.map((m) => `${m.name}${m.host ? " (host)" : ""}`).join(", ");
   $("code").textContent = crew.code ? `Party ${crew.code}${crew.room ? `, seat ${crew.seat + 1}` : ""}` : "";
   $("note").textContent = online?.note || crew.note;
@@ -360,17 +369,20 @@ function frame(now: number) {
   const gp = pad.poll();
   if (phase === "play") {
     const k = 2.4 * dt;
-    world.you.pitch = clamp(world.you.pitch - gp.right.y * k * ctl.lookY * (ctl.invertY ? -1 : 1), -1.3, 1.2);
+    // The look finger turns you as the mouse does, a pixel the same as a mouse count.
+    const finger = touch.look(), walk = touch.move(), m = 0.0022 * 1.6;
+    world.you.yaw -= finger.dx * m * ctl.lookX;
+    world.you.pitch = clamp(world.you.pitch - (gp.right.y * k + finger.dy * m) * ctl.lookY * (ctl.invertY ? -1 : 1), -1.3, 1.2);
     if (gp.pressed.has("grab")) grab();
     const turn = (dir: -1 | 1) => (cable.coiling(cables) ? say(cable.loop(world, cables, dir < 0 ? "over" : "under")) : turnHeld(world, dir));
     if (gp.pressed.has("turnLeft")) turn(-1);
     if (gp.pressed.has("turnRight")) turn(1);
     const on = (c: string) => (keys.has(c) ? 1 : 0);
     step(world, dt, {
-      forward: on("KeyW") - on("KeyS") || -gp.left.y,
-      right: on("KeyD") - on("KeyA") || gp.left.x,
+      forward: on("KeyW") - on("KeyS") || -gp.left.y || walk.y,
+      right: on("KeyD") - on("KeyA") || gp.left.x || walk.x,
       turn: -gp.right.x * k * ctl.lookX,
-      crouch: keys.has("KeyC") || keys.has("ControlLeft") || gp.held.has("crouch"),
+      crouch: keys.has("KeyC") || keys.has("ControlLeft") || gp.held.has("crouch") || touch.crouch,
     });
     cable.stepCables(world, cables, dt);
     foh?.tick(dt);
@@ -415,7 +427,7 @@ async function boot() {
   $("party").hidden = !canSignIn();
   mountControls({
     key: KEY, pad, parent: $("controls-host"), title: "Controls", skin: "house",
-    keys: [["WASD / left stick", "Walk"], ["Mouse / right stick", "Look"], ["F / click", "Pick up, put down, plug in, unplug"], ["Q / E", "Turn what you hold; coiling, over and under"], ["L", "Strike and load out"], ["T", "Shut the truck"], ["C", "Crouch"], ["Esc", "Let go of the mouse"]],
+    keys: [["WASD / left stick", "Walk"], ["Mouse / right stick", "Look"], ["F / click", "Pick up, put down, plug in, unplug"], ["Q / E", "Turn what you hold; coiling, over and under"], ["L", "Strike and load out"], ["T", "Shut the truck"], ["C", "Crouch"], ["Esc", "Let go of the mouse"], ["Touch: left thumb / right drag", "Walk / look; the buttons press the keys"]],
     onChange: (s) => { ctl = s; },
     onToggle: (open) => { if (open) document.exitPointerLock?.(); },
   });

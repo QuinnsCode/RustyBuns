@@ -30,6 +30,9 @@ The desert (`?level=desert`): a night party out past the end of the road, under 
 
 Strike and load out, at every venue but the desert, the two arenas and the show (no truck there yet): the truck is parked outside with its back open. L starts the load-out and the clock counts to curfew instead of doors. Unplug every cable, carry an end to the case and press F to coil it, then Q (over) and E (under) a loop at a time: alternate them, because each loop that goes the same way as the one before is a twist, 15 seconds of untangling the next time that cable comes out. Pack every piece into the truck front to back: set down over the bed, a piece is shoved forward to meet the bulkhead or whatever is in front of it, and one with more than an arm's shove of gap in front will slide on the drive, as will anything on top of a piece that slides; a heavy piece on a lighter one crushes it. Step out and press T to shut the truck. The card tallies the time, the minutes past curfew and the venue's fine for each, what slid and the twists. Your own garage keeps no curfew, and on Cozy cables coil themselves flat.
 A gamepad works too (left stick walk, right stick look, A grab, LB / RB turn, B crouch); the cog rebinds it.
+On a phone or tablet, a thumb on the left half of the screen is a stick to walk and a drag on the right half looks. The
+buttons bottom right press the keys: grab, turn, crouch (it stays down until you tap it again), switch, strike and the
+truck, with the venue's own keys over them (aim, stand, fader, heat map, doors, the arena's points and the desk).
 
 ## What's in it
 
