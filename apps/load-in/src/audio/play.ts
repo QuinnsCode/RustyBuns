@@ -2,15 +2,17 @@
 // Mids and highs go to each speaker on its own (its gain, how dull it is from here, and its side), and the sub band
 // goes to one bus at the phase-summed level, so the alley between two subs is loud and the lobes beside it dip.
 // The speakers start down behind a card: a click (or M) brings them up, and a limiter holds the mix at -1 dBFS.
+// `feed` swaps the house loop for another source (the DJ booth's decks, audio/decks.ts) on the same speaker path.
 import { gainOf, type Hearing } from "./hear.ts";
 
 const BPM = 120;
 const BARS = 2;
 const SPLIT_HZ = 120;
 
-/** Two bars of our own house loop: kick on the beat, offbeat hats, a bass line and an offbeat chord stab. */
-export function houseLoop(rate: number): Float32Array<ArrayBuffer> {
-  const beat = 60 / BPM;
+/** Two bars of our own house loop: kick on the beat, offbeat hats, a bass line and an offbeat chord stab. A deck's track
+ * (audio/decks.ts) is the same loop at its own tempo, bass line and chord. */
+export function houseLoop(rate: number, track: { bpm?: number; bass?: readonly number[]; chord?: readonly number[] } = {}): Float32Array<ArrayBuffer> {
+  const beat = 60 / (track.bpm ?? BPM);
   const n = Math.round(rate * beat * 4 * BARS);
   const out = new Float32Array(n);
   const add = (at: number, len: number, f: (t: number) => number) => {
@@ -20,7 +22,7 @@ export function houseLoop(rate: number): Float32Array<ArrayBuffer> {
   };
   let seed = 7;
   const noise = () => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x3fffffff) - 1;
-  const bass = [55, 55, 65.41, 49, 55, 55, 73.42, 49];
+  const bass = track.bass ?? [55, 55, 65.41, 49, 55, 55, 73.42, 49], chord = track.chord ?? [220, 261.63, 329.63];
   for (let b = 0; b < 4 * BARS; b++) {
     const t = b * beat;
     // Kick: a falling sine, 120 Hz down to 45.
@@ -38,7 +40,7 @@ export function houseLoop(rate: number): Float32Array<ArrayBuffer> {
     });
     // A minor stab on the and of 2 and 4.
     if (b % 2 === 1) {
-      add(t + beat / 2, 0.25, (x) => [220, 261.63, 329.63].reduce((s, hz) => s + Math.sin(2 * Math.PI * hz * x) + 0.3 * Math.sin(4 * Math.PI * hz * x), 0) * 0.07 * Math.exp(-x * 10));
+      add(t + beat / 2, 0.25, (x) => chord.reduce((s, hz) => s + Math.sin(2 * Math.PI * hz * x) + 0.3 * Math.sin(4 * Math.PI * hz * x), 0) * 0.07 * Math.exp(-x * 10));
     }
   }
   for (let s = 0; s < n; s++) out[s] = Math.tanh(out[s] ?? 0);
@@ -53,6 +55,8 @@ export function soundSystem(card: HTMLElement) {
   let master: GainNode | null = null;
   let highs: AudioNode | null = null;
   let lowGain: GainNode | null = null;
+  let house: GainNode | null = null, program: GainNode | null = null;
+  let make: ((c: AudioContext) => AudioNode) | null = null, fed: AudioNode | null = null;
   const voices = new Map<string, Voice>();
   let up = false;
 
@@ -83,13 +87,18 @@ export function soundSystem(card: HTMLElement) {
     lp.frequency.value = SPLIT_HZ;
     lowGain = c.createGain();
     lowGain.gain.value = 0;
-    loop.connect(lp).connect(lowGain).connect(master);
+    house = c.createGain();
+    program = c.createGain();
+    loop.connect(house).connect(program);
+    program.connect(lp).connect(lowGain).connect(master);
     const hp = c.createBiquadFilter();
     hp.type = "highpass";
     hp.frequency.value = SPLIT_HZ;
-    loop.connect(hp);
+    program.connect(hp);
     highs = hp;
     loop.start();
+    ctx = c;
+    plugIn();
     return c;
   }
 
@@ -105,6 +114,15 @@ export function soundSystem(card: HTMLElement) {
     v = { bright, gain, pan };
     voices.set(key, v);
     return v;
+  }
+
+  /** The source in place now: the house loop, or what `feed` made, on the program bus. */
+  function plugIn() {
+    if (!ctx || !house || !program) return;
+    fed?.disconnect();
+    fed = make ? make(ctx) : null;
+    fed?.connect(program);
+    house.gain.value = fed ? 0 : 1;
   }
 
   function show() {
@@ -127,6 +145,11 @@ export function soundSystem(card: HTMLElement) {
       return up;
     },
     toggle: () => setUp(!up),
+    /** Play `source` (made once the page's sound has started) instead of the house loop; null brings the loop back. */
+    feed(source: ((c: AudioContext) => AudioNode) | null) {
+      make = source;
+      plugIn();
+    },
     setUp,
     /** Follow the hearing: each fed speaker's gain, top end and side, and the sub bus. */
     update(h: Hearing) {
