@@ -63,11 +63,11 @@ const keys = new Set<string>();
 const switchedOn: Switches = new Set();
 const sound = soundSystem($("speakers"));
 const crew = { code: "", members: [] as PartyMember[], room: "", seat: -1, note: "" };
-/** The crew room the party's Start (or `?room=CODE`) put you in: friends' bodies, and gear carried together. */
+/** The crew room the party's Start (or `?room=CODE`) put you in: friends' bodies, gear carried together, and shared cables. */
 let online: Online | null = null;
 function crewRoom(room: string) {
   online?.close();
-  online = joinCrew(room, world.level.name, () => world, menu);
+  online = joinCrew(room, world.level.name, () => world, () => cables, menu);
 }
 const pad = loadPad(KEY, [
   { id: "grab", label: "Pick up / put down / plug in", button: 0 },

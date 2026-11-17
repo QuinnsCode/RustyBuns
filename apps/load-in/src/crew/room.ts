@@ -16,12 +16,26 @@ export const DropMsg = obj({ t: oneOf(["drop"]), key, ...placeShape() });
 export type PoseMsg = Of<typeof PoseMsg>;
 export type GrabMsg = Of<typeof GrabMsg>;
 export type DropMsg = Of<typeof DropMsg>;
-export type Sent = PoseMsg | GrabMsg | DropMsg;
 function placeShape() { return { x: at, y: at, z: at, rot: turn }; }
+
+/** Where one end of a cable is, as the room keeps it: coiled in the case, in a jack, in someone's hand (`hand` names
+ * them), or lying loose where it was let go. A page sends `hand` as "" for its own. */
+export const WireEnd = obj({
+  at: oneOf(["case", "plug", "hand", "loose"]),
+  plug: opt(arr(key, 2, { min: 2 })), hand: opt(str(200, { min: 0 })), x: opt(at), y: opt(at), z: opt(at),
+});
+export type WireEnd = Of<typeof WireEnd>;
+/** One end of a cable moved on your page: taken, plugged, dropped, or (with the twists it was coiled with) back in the case. */
+export const EndMsg = obj({ t: oneOf(["end"]), key, end: oneOf(["a", "b"]), to: WireEnd, twists: opt(int(0, 1000)) });
+export type EndMsg = Of<typeof EndMsg>;
+export type Sent = PoseMsg | GrabMsg | DropMsg | EndMsg;
+/** Whether an end says all it needs to: the jack it is in, or where it lies. */
+export const whole = (e: WireEnd) => (e.at === "plug" ? !!e.plug : e.at === "loose" ? e.x !== undefined && e.y !== undefined && e.z !== undefined : true);
 
 /** A message off the wire, or null if it isn't one. */
 export function readSent(raw: unknown): Sent | null {
-  const t = check(obj({ t: oneOf(["pose", "grab", "drop"]) }), raw)?.t;
+  const t = check(obj({ t: oneOf(["pose", "grab", "drop", "end"]) }), raw)?.t;
+  if (t === "end") { const m = check(EndMsg, raw); return m && whole(m.to) ? m : null; }
   return t === "pose" ? check(PoseMsg, raw) : t === "grab" ? check(GrabMsg, raw) : t === "drop" ? check(DropMsg, raw) : null;
 }
 
@@ -36,7 +50,11 @@ export type Mate = Of<typeof Mate>;
 export const Placed = obj({ key, n: int(1, 1e9), ...placeShape() });
 export type Placed = Of<typeof Placed>;
 
-const ViewMsg = obj({ t: oneOf(["view"]), you: str(200), mates: arr(Mate, MAX_CREW), placed: arr(Placed, 500) });
+/** A cable someone has touched: both ends and the twists it was coiled with, with a count that goes up each change. */
+export const Wire = obj({ key, n: int(1, 1e9), a: WireEnd, b: WireEnd, twists: int(0, 1000) });
+export type Wire = Of<typeof Wire>;
+
+const ViewMsg = obj({ t: oneOf(["view"]), you: str(200), mates: arr(Mate, MAX_CREW), placed: arr(Placed, 500), cables: arr(Wire, 100) });
 const RefusedMsg = obj({ t: oneOf(["refused"]), key, why: str(200) });
 export type ServerMsg = Of<typeof ViewMsg> | Of<typeof RefusedMsg>;
 /** The room's message read on the page. */
@@ -50,6 +68,7 @@ export class Crew {
   /** Who holds each piece: one id, or two on a team carry. */
   private hands = new Map<string, string[]>();
   private placed = new Map<string, Placed>();
+  private wires = new Map<string, Wire>();
 
   get size() { return this.mates.size; }
 
@@ -71,6 +90,11 @@ export class Crew {
     for (const [k, ids] of this.hands) {
       const rest = ids.filter((h) => h !== id);
       if (rest.length) this.hands.set(k, rest); else this.hands.delete(k);
+    }
+    // A cable end in their hand drops at their feet.
+    const was = this.mates.get(id);
+    for (const w of this.wires.values()) for (const e of ["a", "b"] as const) {
+      if (w[e].at === "hand" && w[e].hand === id) { w[e] = { at: "loose", x: was?.x ?? 0, y: 0, z: was?.z ?? 0 }; w.n++; }
     }
   }
 
@@ -105,13 +129,30 @@ export class Crew {
     return true;
   }
 
+  /** Move one end of a cable: not out of a friend's hand, and not into a jack another end already fills. */
+  end(id: string, m: EndMsg): { ok: true } | { ok: false; why: string } {
+    if (!this.mates.has(id)) return { ok: false, why: "not in the crew" };
+    const w = this.wires.get(m.key) ?? { key: m.key, n: 0, a: { at: "case" }, b: { at: "case" }, twists: 0 };
+    const cur = w[m.end];
+    if (cur.at === "hand" && cur.hand !== id) return { ok: false, why: `${this.mates.get(cur.hand ?? "")?.name ?? "someone"} has that end` };
+    const jack = m.to.plug?.join(" ");
+    if (m.to.at === "plug" && [...this.wires.values()].some((o) => (["a", "b"] as const).some((e) => !(o === w && e === m.end) && o[e].at === "plug" && o[e].plug?.join(" ") === jack))) {
+      return { ok: false, why: `${jack} already has a cable in it` };
+    }
+    w[m.end] = m.to.at === "hand" ? { at: "hand", hand: id } : m.to;
+    if (m.twists !== undefined) w.twists = m.twists;
+    w.n++;
+    this.wires.set(m.key, w);
+    return { ok: true };
+  }
+
   private letGo(id: string, k: string) {
     const rest = (this.hands.get(k) ?? []).filter((h) => h !== id);
     if (rest.length) this.hands.set(k, rest); else this.hands.delete(k);
   }
 
-  /** The room as `id` sees it: everyone else, and every piece set down so far. */
+  /** The room as `id` sees it: everyone else, every piece set down so far, and every cable touched. */
   view(id: string): Extract<ServerMsg, { t: "view" }> {
-    return { t: "view", you: id, mates: [...this.mates.values()].filter((m) => m.id !== id), placed: [...this.placed.values()] };
+    return { t: "view", you: id, mates: [...this.mates.values()].filter((m) => m.id !== id), placed: [...this.placed.values()], cables: [...this.wires.values()] };
   }
 }
