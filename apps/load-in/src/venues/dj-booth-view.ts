@@ -117,6 +117,13 @@ export function djBoothView(scene: THREE.Scene, hud: HTMLElement, getWorld: () =
       const meter = mx.parts.get(`meter-${ch}`), fader = mx.parts.get(`fader-${ch}`);
       const deck = KEYS.findIndex((k) => j.routing[k] === ch);
       if (meter) meter.scale.y = Math.max(0.001, m.meter[ch - 1]! * (deck >= 0 && decks.deck[deck]!.playing ? beatPulse(deck) : 1));
+      // The meters go red while the two decks together drive the master past its limiter.
+      if (meter) meter.traverse((o) => {
+        if (!(o instanceof THREE.Mesh) || !(o.material instanceof THREE.MeshBasicMaterial)) return;
+        // Each meter gets its own copy of the shared light, once, so turning it red does not redden every lamp in the booth.
+        if (!o.userData.own) { o.material = o.material.clone(); o.userData.own = true; o.userData.lit = o.material.color.getHex(); }
+        (o.material as THREE.MeshBasicMaterial).color.setHex(sum(m) > HOT ? 0xff3b30 : (o.userData.lit as number));
+      });
       // Up is away from the DJ: the model's -z.
       if (fader) fader.position.z = (fader.userData.home as THREE.Vector3).z - (decks.fader[ch - 1]! - 0.5) * travel;
     }

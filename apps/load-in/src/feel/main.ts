@@ -422,8 +422,8 @@ const feel = {
     stick.z = 0;
     return t;
   },
-  /** Wind up to `power` (0 to 1) and let go, then wait for the roll to stop. */
-  bowl(power: number) { charge = power; release(power); run_(8); },
+  /** `seconds` is how long to let it roll before coming back (8 by default: until it has stopped). */
+  bowl(power: number, seconds = 8) { charge = power; release(power); run_(seconds); },
   phantom: togglePhantom,
 };
 Object.assign(window, { feel });
