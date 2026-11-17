@@ -70,7 +70,7 @@ export function connect(opts: {
   /** A chunk of a take's sound (someone recorded one, or the room has it from before). */
   onTakeBytes(m: TakeBytes): void;
   /** The groove this page asked for (null: the sesh doesn't go back that far), as of `at` (ms). */
-  onRewound(ago: Rung, at: number, p: Project | null): void;
+  onRewound?(ago: Rung, at: number, p: Project | null): void;
   /** Who this is, said on every open so the room knows the chat's people. */
   hello(): { key: string; name: string };
 }): Net {
@@ -95,7 +95,7 @@ export function connect(opts: {
       else if (m.t === "floor") { floor = { state: m.state, host: m.host }; opts.onStatus({ state: "online", peers, floor, locked }); }
       else if (m.t === "full") full = m.why;
       else if (m.t === "takeBytes") opts.onTakeBytes(m);
-      else if (m.t === "rewound") opts.onRewound(m.ago, m.at, m.project);
+      else if (m.t === "rewound") opts.onRewound?.(m.ago, m.at, m.project);
       else if (m.t === "lock") {
         // the maker changed it: keep the new one, or this tab's next reconnect is turned away
         if (m.code !== undefined) { saveCode(room, m.code); if (m.code) url.searchParams.set("code", m.code); else url.searchParams.delete("code"); }
