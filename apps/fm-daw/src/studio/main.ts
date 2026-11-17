@@ -543,7 +543,11 @@ function frame(now: number) {
   const c = cameraPose(jam);
   const player = holding.size > 0 ? [jam.me.x, jam.me.z] : [...jam.others.values()].find((o) => o.held.size > 0)?.at;
   watched = player ? new THREE.Vector3(player[0], 1, player[1]) : null;
-  if (c.boom > 0.7) { drawPerson("me", look, null, jam.me.x, jam.me.z, jam.me.yaw, !!jam.me.seat, holding.size > 0, dt, t, true); markPerson("me", marksOf(rights.me ?? undefined)); }
+  if (c.boom > 0.7) {
+    drawPerson("me", look, null, jam.me.x, jam.me.z, jam.me.yaw, !!jam.me.seat, holding.size > 0, dt, t, true);
+    drawn.get("me")?.fig.fade(c.head);
+    markPerson("me", marksOf(rights.me ?? undefined));
+  }
   else dropPerson("me");
   for (const [peer, o] of jam.others) {
     if (!o.avatar && !o.name) continue;

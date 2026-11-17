@@ -125,9 +125,20 @@ export const SEAT_CAM = { back: 0.45, side: 0.75, up: 0.9, reach: 0.8, at: 0.7 }
 /**
  * Where the camera is. Over the shoulder, its boom shortens to stay in front of a wall behind you (a camera pinned
  * to the wall would sit inside your head), and rises and looks down as it shortens so you see past yourself.
- * `boom` is how long it came out: the page stops drawing you when it's too short to see past.
+ * `boom` is how long it came out: the page stops drawing you when it's too short to see past. `head` is how solid to
+ * draw your own head (1 solid): close to the camera, seated beside your shoulder, it fades so the keys and the kit show through.
  */
-export function cameraPose(j: Jam): { at: [number, number, number]; yaw: number; pitch: number; boom: number } {
+export function cameraPose(j: Jam): { at: [number, number, number]; yaw: number; pitch: number; boom: number; head: number } {
+  const p = pose(j), m = j.me, eye = m.seat ? EYE_SIT : EYE_STAND;
+  return { ...p, head: headFade(Math.hypot(p.at[0] - m.x, p.at[1] - eye, p.at[2] - m.z)) };
+}
+
+/** How solid your head is drawn, the camera this far (metres) from it: solid out on the full boom, see-through up close. */
+export function headFade(d: number): number { return clamp((d - HEAD_FADE.near) / (HEAD_FADE.far - HEAD_FADE.near), HEAD_FADE.min, 1); }
+/** Nearer than `near` the head is `min` solid; past `far`, solid. The seated shoulder camera is about 1.25 m away, the full boom 2.2. */
+export const HEAD_FADE = { near: 1.3, far: 1.9, min: 0.2 };
+
+function pose(j: Jam): { at: [number, number, number]; yaw: number; pitch: number; boom: number } {
   const m = j.me, eye = m.seat ? EYE_SIT : EYE_STAND;
   if (m.cam === "first") return { at: [m.x, eye, m.z], yaw: m.yaw, pitch: m.pitch, boom: 0 };
   const fx = -Math.sin(m.yaw), fz = -Math.cos(m.yaw), side = 0.45 / BOOM;
