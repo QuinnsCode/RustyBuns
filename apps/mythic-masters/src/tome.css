@@ -736,13 +736,21 @@ dialog.fchart::backdrop { background: rgba(10, 6, 2, 0.6); }
 /* a fight's HUD runs under the cog on a phone (every skin clears the cog, not a second button): the wheel waits it out */
 body:has(#hud:not([hidden])) .fc-open { display: none; }
 
-/* the controls over the book (#3604 round 30): while a page of it is open, the Settings cog and the field wheel are
- * bosses on the binding, dark leather with a brass rim, not screen tiles */
+/* the controls over the book (#4361 round 114): while a page of it is open, the Settings cog and the field wheel are
+ * two more ribbon bookmarks hanging from the book's head beside the chapters' (forked tail, velvet sheen), in the
+ * Book's own black-brown, not app buttons; one tugs down a little under the hand like a chapter's ribbon */
+body:has(.title:not([hidden]), .select:not([hidden]), .result:not([hidden])) .controls-host { top: 0; flex-direction: row; align-items: flex-start; gap: 6px; }
 body:has(.title:not([hidden]), .select:not([hidden]), .result:not([hidden])) .controls-host :is(.gc-cog, .fc-open) {
-  border-radius: 50%; border: 0; color: #e8d9b5; background: radial-gradient(circle at 38% 32%, #6b4527, #3a2414 62%, #24150b);
-  box-shadow: inset 0 0 0 2px #b48b4f, inset 0 0 0 3.5px #5b3d1c, 0 3px 8px rgba(0, 0, 0, 0.55); }
-body:has(.title:not([hidden]), .select:not([hidden]), .result:not([hidden])) .controls-host :is(.gc-cog, .fc-open):hover { background: radial-gradient(circle at 38% 32%, #82563a, #46301b 62%, #2a190c); }
-/* the sheet's close is the same boss, a little smaller */
+  width: 36px; height: 62px; padding: 0 0 14px; display: grid; place-items: center; border: 0; border-radius: 0; color: #f0dfb8;
+  background: linear-gradient(90deg, rgba(0, 0, 0, 0.3), rgba(255, 255, 255, 0.13) 35%, rgba(0, 0, 0, 0.12) 70%, rgba(0, 0, 0, 0.32)), linear-gradient(#3b2a1e, #1f150d);
+  clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 82%, 0 100%); box-shadow: none; filter: drop-shadow(2px 3px 3px rgba(20, 10, 4, 0.45));
+  transform: translateY(-4px); transition: transform 0.18s ease; }
+body:has(.title:not([hidden]), .select:not([hidden]), .result:not([hidden])) .controls-host :is(.gc-cog, .fc-open):is(:hover, :focus-visible) { transform: translateY(4px); outline: none;
+  background: linear-gradient(90deg, rgba(0, 0, 0, 0.3), rgba(255, 255, 255, 0.16) 35%, rgba(0, 0, 0, 0.12) 70%, rgba(0, 0, 0, 0.32)), linear-gradient(#4d3626, #2a1c11); }
+body:has(.title:not([hidden]), .select:not([hidden]), .result:not([hidden])) .controls-host .gc-cog svg { width: 19px; height: 19px; }
+/* the wheel on its ribbon is a painted roundel, its colours gone a little to earth like old pigment */
+body:has(.title:not([hidden]), .select:not([hidden]), .result:not([hidden])) .controls-host .fc-open i { width: 20px; height: 20px; filter: saturate(0.6) sepia(0.3) brightness(0.92); box-shadow: 0 0 0 1.5px #f0dfb8; }
+/* the sheet's close is a small leather boss */
 .fchart header button.fc-x { width: 34px; height: 34px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 50%; color: #e8d9b5;
   background: radial-gradient(circle at 38% 32%, #6b4527, #3a2414 62%, #24150b); box-shadow: inset 0 0 0 2px #b48b4f, inset 0 0 0 3.2px #5b3d1c, 0 2px 6px rgba(0, 0, 0, 0.45); }
 .fchart header button.fc-x::before { display: none; }
@@ -778,10 +786,6 @@ body:has(.title:not([hidden]), .select:not([hidden]), .result:not([hidden])) .co
   background: linear-gradient(135deg, #b39969 50%, transparent 50%); filter: drop-shadow(1px 1px 0 rgba(70, 42, 18, 0.35)); }
 .select.book .ribbon-tile::before { left: -4px; }
 .select.book .ribbon-tile::after { right: -4px; transform: scaleX(-1); }
-/* the Librarian's key on the versus book: a leather tab with a brass rim, like the bosses */
-.select.book .lib { border: 0; color: #e8d9b5; font-family: var(--f-hand); font-size: 17px; border-radius: 4px 4px 10px 10px;
-  background: radial-gradient(ellipse at 40% 30%, #6b4527, #3a2414 70%); box-shadow: inset 0 0 0 1.5px #b48b4f, inset 0 0 0 3px #5b3d1c, 0 3px 8px rgba(0, 0, 0, 0.5); }
-.select.book .lib:hover { background: radial-gradient(ellipse at 40% 30%, #82563a, #46301b 70%); }
 /* the answers to the Book (#3604 round 35): lines you would write back in its margin, not boxes; a pointing hand
  * inks in beside the one under the pen, and the line underscores itself */
 .paper .replies button { border: 0; background: none; border-radius: 0; text-align: left; padding: 6px 4px 6px 34px; position: relative; font-size: 21px;
@@ -820,12 +824,13 @@ body > .gc-dialog .gc-card .gc-tab.gc-prof[aria-pressed=true] { padding-bottom: 
 body > .gc-dialog .gc-profiles { display: flex; gap: 8px; justify-content: flex-start; }
 body > .gc-dialog .gc-card .gc-tab.gc-prof { flex: 0 0 auto; width: auto; box-shadow: none; border: 0; }
 
-/* on a phone the bosses sit over the book's top right corner: smaller, and the header and the folio's page-turn
+/* on a phone the ribbons hang over the book's top right corner: shorter, and the header and the folio's page-turn
  * buttons keep clear of them (#3604 round 39) */
 @media (max-width: 640px) {
-  body:has(.title:not([hidden]), .select:not([hidden]), .result:not([hidden])) .controls-host :is(.gc-cog, .fc-open) { width: 38px; height: 38px; }
+  body:has(.title:not([hidden]), .select:not([hidden]), .result:not([hidden])) .controls-host { right: 8px; gap: 4px; }
+  body:has(.title:not([hidden]), .select:not([hidden]), .result:not([hidden])) .controls-host :is(.gc-cog, .fc-open) { width: 32px; height: 54px; }
   .journal .tome header, .journal .folio-nav { padding-right: 44px; }
-  .journal #closeJournal { right: 56px; top: -4px; } /* left of the bosses with a thumb's gap to the colour wheel (8 px at 38: #3011) */
+  .journal #closeJournal { right: 56px; top: -4px; } /* left of the ribbons with a thumb's gap to the colour wheel (8 px at 38: #3011) */
   .journal .folio-nav .no { font-size: 14px; }
   .journal .tome header { padding-right: 96px; } .journal header h1 { font-size: 26px; text-align: left; } /* the title clear of the close */
 }
@@ -854,7 +859,6 @@ body > .gc-dialog .gc-card::after { content: "Of the reader's hands"; right: 22p
     box-shadow: inset 0 1px 0 rgba(255, 225, 190, 0.12), inset 0 0 14px rgba(0, 0, 0, 0.6), inset 0 0 0 6px rgba(28, 16, 8, 0.3), inset 0 0 0 7.5px rgba(200, 160, 90, 0.35); } /* aged dark, a tooled line round the cover */
 }
 @media (min-width: 761px) {
-  .select.book .lib { z-index: 2; top: 12px; }
   .select.book { padding-top: 58px; } /* room for the boards and the Librarian's key over them */
 }
 /* the Book's five as specimen cards pinned to its page (#3604 round 45): each a slip of paper a shade paler
@@ -1135,12 +1139,23 @@ body > .gc-dialog .gc-card .gc-profiles .gc-tab.gc-prof[aria-pressed=true] { col
 .journal .tome .drawn:has(> div:nth-child(4)) .note-plate { width: 132px; }
 .drawn p { margin: 2px 0 0; font-family: var(--f-hand); font-size: 20px; color: var(--ink-b); }
 .journal .tome .drawn .note-plate img { filter: sepia(0.9) contrast(1.05) brightness(0.9) saturate(1.2); } /* printed as gently as the folio's plate, so the three match; the lights the colour of the leaf */ /* the lights the colour of the leaf */
-/* the Librarian's key is a small brass boss on the boards, not a labelled pill over the world (#3671 round 91): the key
- * alone, its name in the tooltip, the same boss as Settings' */
-.select.book .lib { width: 34px; height: 34px; padding: 0; display: grid; place-items: center; font-size: 0; border-radius: 50%; }
+/* the Librarian's key is a third ribbon in the row (#4361 round 114), left of Settings' and the wheel's: the key
+ * alone, its name in the tooltip; turned on, it hangs lower and its velvet goes to old gold */
+.select.book .lib { position: absolute; z-index: 2; top: 0; right: 96px; margin: 0; width: 36px; height: 62px; padding: 0 0 14px; display: grid; place-items: center; font-size: 0;
+  border: 0; border-radius: 0; color: #f0dfb8; clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 82%, 0 100%); box-shadow: none; filter: drop-shadow(2px 3px 3px rgba(20, 10, 4, 0.45));
+  background: linear-gradient(90deg, rgba(0, 0, 0, 0.3), rgba(255, 255, 255, 0.13) 35%, rgba(0, 0, 0, 0.12) 70%, rgba(0, 0, 0, 0.32)), var(--lb, linear-gradient(#3b2a1e, #1f150d));
+  transform: translateY(-4px); transition: transform 0.18s ease; }
+.select.book .lib:is(:hover, :focus-visible) { transform: translateY(4px); outline: none; }
 .select.book .lib .icon { width: 17px; height: 17px; }
-.select.book .lib[aria-pressed=true] { box-shadow: inset 0 0 0 1.5px #e9c77d, inset 0 0 0 3px #5b3d1c, 0 0 10px rgba(233, 199, 125, 0.55); }
-@media (min-width: 761px) { .select.book .lib { top: 14px; right: 82px; } }
+.select.book .lib[aria-pressed=true] { --lb: linear-gradient(#9a7228, #6b4d16); transform: translateY(10px); }
+@media (max-width: 640px) { .select.book .lib { right: 80px; width: 32px; height: 54px; } }
+@media (min-width: 641px) { .select.book .lib, body:has(.title:not([hidden]), .select:not([hidden]), .result:not([hidden])) .controls-host :is(.gc-cog, .fc-open) { height: 78px; padding-bottom: 18px; } }
+/* on a wide screen the title and the journal are one fixed spread (--book-w, centred): the two ribbons hang from its
+ * head beside the margin ribbon, over the leaf, instead of out in the dark past the boards */
+@media (min-width: 900px) {
+  body:has(:is(.journal, .title):not([hidden])) .controls-host { right: calc((100vw - var(--book-w)) / 2 + 44px); }
+  body:has(:is(.journal, .title):not([hidden])) .controls-host :is(.gc-cog, .fc-open) { height: 72px; }
+}
 /* Settings' sections headed as the folio's are (#3671 round 92): a red fleuron, the name in the book's gothic over a
  * hairline, not an accordion bar with a device icon; folding them all is two words in the margin, not two chevrons */
 body > .gc-dialog .gc-card button.gc-sec-h { border-bottom: 1px solid var(--ink-line); justify-content: flex-start; gap: 6px; }
