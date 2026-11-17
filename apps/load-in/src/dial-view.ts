@@ -3,7 +3,7 @@
 // jack glow (the jackGlow assist) while you hold a cable end.
 import * as THREE from "three";
 import { DIALS, DIAL_NAMES, type Dial, currentDial, setDial } from "./assists.ts";
-import { MOOD_PER_MIN, PAY_PER_MIN, clockText, doors } from "./clock.ts";
+import { MOOD_PER_MIN, PAY_PER_MIN, clockText, curfew, doors } from "./clock.ts";
 
 const KEY = "load-in.dial";
 const TIPS: Record<Dial, string> = {
@@ -53,9 +53,21 @@ export function mountClock(parent: HTMLElement) {
   const tip = `Doors open when this reaches 0:00. Each minute late costs ${PAY_PER_MIN * 100}% of the pay and ${MOOD_PER_MIN} points of crowd mood.`;
   el.innerHTML = `<span class="time"></span><span class="tip" title="${tip}" aria-label="${tip}">i</span>`;
   parent.appendChild(el);
-  const time = el.querySelector<HTMLElement>(".time")!;
+  const time = el.querySelector<HTMLElement>(".time")!, info = el.querySelector<HTMLElement>(".tip")!;
+  const tips = { doors: tip, curfew: "Out with the truck shut when this reaches 0:00, or the venue fines you for each minute past curfew." };
   return {
-    update(level: string, t: number) {
+    /** `since`: seconds into the load-out, once it has started; the clock counts to curfew then. */
+    update(level: string, t: number, since: number | null = null) {
+      if (since !== null) {
+        const c = curfew(level, since);
+        el.hidden = c.left === null;
+        if (c.left === null) return;
+        time.textContent = `Curfew ${clockText(c.left)}`;
+        info.title = tips.curfew; info.ariaLabel = tips.curfew;
+        el.classList.toggle("late", c.left < 0);
+        return;
+      }
+      info.title = tips.doors; info.ariaLabel = tips.doors;
       const d = doors(level, t);
       el.hidden = d.left === null;
       if (d.left === null) return d;

@@ -11,7 +11,7 @@ export const SIGN_IN_FROM: string[] = [];
 
 export type { Login, PartyMember } from "@rustybuns/util/eqosys";
 const account = eqosys({ app: APP, url: EQOSYS, from: SIGN_IN_FROM, prefix: APP });
-export const { finishSignIn, login, canSignIn, accountChip } = account;
+export const { finishSignIn, login, canSignIn, accountChip, who } = account;
 
 let partyClient: ReturnType<typeof account.party> | undefined;
 /** The page's one party client: eqosys seats a player once per party, so the page keeps one socket. */

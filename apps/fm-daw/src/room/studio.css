@@ -1,0 +1,15 @@
+:root { --bg: #15171b; --ink: #f4f1ea; --dim: #a9adb4; --hot: #ff6b4a; --card: rgba(21, 23, 27, 0.86); }
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); font: 15px/1.45 "IBM Plex Sans", system-ui, sans-serif; overflow: hidden; }
+main { position: fixed; inset: 0; }
+#stage { display: block; width: 100%; height: 100%; }
+#hud { position: absolute; inset: 0; pointer-events: none; }
+#cross { position: absolute; left: 50%; top: 50%; width: 6px; height: 6px; margin: -3px 0 0 -3px; border-radius: 50%; background: var(--ink); opacity: 0.8; }
+#hint { position: absolute; left: 0; right: 0; top: calc(50% + 18px); margin: 0; text-align: center; text-shadow: 0 1px 3px #000; }
+#heard { position: absolute; left: 16px; right: 16px; bottom: 14px; margin: 0; color: var(--dim); font-size: 13px; text-shadow: 0 1px 3px #000; }
+#speakers { position: absolute; top: 14px; left: 16px; pointer-events: auto; background: var(--card); color: var(--ink); border: 1px solid #3a3e45; border-radius: 8px; padding: 6px 12px; font: inherit; cursor: pointer; }
+#controls-host { position: absolute; top: 12px; right: 16px; pointer-events: auto; }
+#menu { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(560px, calc(100% - 32px)); background: var(--card); border: 1px solid #3a3e45; border-radius: 14px; padding: 22px 24px; }
+#menu h1 { margin: 0 0 8px; font: 600 34px/1 "Barlow Condensed", sans-serif; letter-spacing: 0.02em; }
+#menu .keys { color: var(--dim); font-size: 13px; }
+#play { background: var(--hot); color: #1d1f23; border: 0; border-radius: 10px; padding: 10px 22px; font: 600 18px "Barlow Condensed", sans-serif; cursor: pointer; }
