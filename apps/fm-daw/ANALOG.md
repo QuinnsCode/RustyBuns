@@ -43,7 +43,7 @@ These fit the solver as it is, once section 1's parts are in:
 |---|---|---|
 | **Phaser** | 4 or 6 all-pass stages (op-amp + capacitor + JFET as the resistor), an LFO moving the JFETs' gates | The notches move; feedback ("Regen") sharpens them |
 | **Vibe** | 4 phase-shift stages with LDRs, all lit by one lamp | The lamp heats and cools slower than it is driven, so the sweep is lopsided: that is the sound |
-| **Tremolo** | Optical (LED + LDR on the signal) or bias (the LFO on a tube's grid) | Bias tremolo is the amp's own tube, so it lives inside Q Amp's circuits |
+| **Tremolo** | Optical (LED + LDR on the signal) or bias (the LFO on a tube's grid) | Bias tremolo is the amp's own tubes: Q Clean T's LFO on its power tubes' bias (`power.ts`) |
 | **Wah** | Inductor + capacitor peak inside a transistor feedback loop, a pot on the treadle | An expression pedal or a MIDI CC moves the pot; an envelope moves it for an auto-wah |
 | **Compressor** | OTA or optical (LED + LDR in a feedback loop) | The LDR's slow release is why optical ones sound smooth |
 | **Octave up** | A full-wave rectifier (diodes, or a transformer and diodes) after a fuzz | Folding the wave doubles its pitch |
@@ -53,7 +53,7 @@ On Q Amp's floor now (`src/circuit/circuits.ts`, a `PEDALS` row each, tested in 
 Q Trem (optical), Q Wah, Q Envelope (the wah on an envelope), Q Squeeze (optical), Q Octave and Q Germ (two germanium
 transistors, its one knob the room's temperature). What moves a `VarR` is a rig `Mod` (`rig.ts`): an LFO or the link's own
 output, through `[rise, fall]` lags that are the lamp heating and cooling and the LDR darkening and recovering. Each pedal has
-one knob until the pedalboard (section 2) gives them more. Bias tremolo waits for a power stage that is a circuit.
+one knob until the pedalboard (section 2) gives them more. Bias tremolo is in the amp, not on the floor: an LFO on the power stage's bias supply, Q Clean T's Rate and Depth.
 
 ## 4. Effects that are machines
 
@@ -82,7 +82,7 @@ Q Amp now has a back half ([CIRCUITS.md](CIRCUITS.md#the-back-end)): push-pull o
 - **Power amp:** the negative feedback loop with Presence and Resonance knobs.
 - **Output transformer:** the inductor from section 1, with a core that saturates.
 - **Speaker:** the voice coil's impedance talks back to the output transformer (that is half of why a real amp feels alive), and measured cab IRs alongside the made ones.
-- **More voicings**, each named by what it is: a small single-ended class A, a clean amp with spring reverb and bias tremolo built in, a bright one with a top boost, a channel-switching high gain. All from the same parts.
+- **More voicings**, each named by what it is: a small single-ended class A, a clean amp with spring reverb built in (Q Clean T has the bias tremolo), a bright one with a top boost, a channel-switching high gain. All from the same parts.
 
 ## 6. Profiling: a real amp in, a real circuit out
 

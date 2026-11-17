@@ -11,14 +11,14 @@ export const VENUES: Record<string, { window: number; fee: number; curfew: numbe
   "bigger-bar": { window: 480, fee: 300, curfew: 540, fine: 50 },
   // The park: a long push from the truck and long runs, so a longer window.
   park: { window: 720, fee: 400, curfew: 900, fine: 75 },
-  // The arena: sixteen boxes off the truck and flown, so the crew needs its time. No load-out here yet (no truck in the level).
-  arena: { window: 1800, fee: 1500, curfew: null, fine: 0 },
+  // The arena: sixteen boxes off the truck and flown, so the crew needs its time, and as long to lower and pack.
+  arena: { window: 1800, fee: 1500, curfew: 2400, fine: 200 },
   // The small arena: four hangs, each box carried to its point and every motor at 4 m a minute.
-  "small-arena": { window: 1800, fee: 1500, curfew: null, fine: 0 },
+  "small-arena": { window: 1800, fee: 1500, curfew: 2400, fine: 200 },
   // The show: the rig is up, so the clock is the minutes to set the desk before the band walks on.
-  show: { window: 120, fee: 300, curfew: null, fine: 0 },
-  // The desert: a 30 m walk over sand for every box, and a wall to stack.
-  desert: { window: 1200, fee: 600, curfew: null, fine: 0 },
+  show: { window: 120, fee: 300, curfew: 600, fine: 50 },
+  // The desert: a 30 m walk over sand for every box, and a wall to stack; out by sunrise with it all back on the truck.
+  desert: { window: 1200, fee: 600, curfew: 1500, fine: 100 },
 };
 const FALLBACK = { window: 300, fee: 0, curfew: null, fine: 0 };
 

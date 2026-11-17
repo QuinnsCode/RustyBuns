@@ -41,7 +41,16 @@ button:hover { border-color: #4cc9f0; }
 .tour .shop { display: flex; flex-wrap: wrap; gap: .4rem; justify-content: center; }
 .tour .shop button { padding: .3rem .7rem; font-size: 14px; }
 .bar-card > div:first-child { display: grid; gap: 2px; }
-/* The aim pad: only where the pointer is a finger. Two rows of five, big enough to hit. */
-.aim-pad { display: none; grid-template-columns: repeat(5, 2.6rem); gap: 4px; margin-top: 6px; pointer-events: auto; }
-.aim-pad button { height: 2.6rem; padding: 0; border-radius: 8px; font-size: 1rem; touch-action: none; user-select: none; -webkit-user-select: none; }
-@media (pointer: coarse) { .aim-pad { display: grid; } .bar-card small { display: none; } }
+/* Touch play (touch.ts): only where the pointer is a finger. The stick appears where the left thumb lands; the hands
+   pad sits bottom right, the venue's pad over it, buttons big enough to hit. */
+.touch { display: none; }
+@media (pointer: coarse) { .touch { display: block; } .bar-card small { display: none; } #speakers { max-width: calc(50vw - 40px); } }
+.stick { position: absolute; width: 112px; height: 112px; margin: -56px 0 0 -56px; border-radius: 50%; border: 2px solid #e6edf355; background: #0b111c40; }
+.stick .knob { position: absolute; left: 32px; top: 32px; width: 48px; height: 48px; border-radius: 50%; background: #4cc9f0aa; }
+.touch-pad { position: absolute; right: 10px; display: grid; grid-template-columns: repeat(4, 3rem); gap: 6px; pointer-events: auto; }
+.touch-pad.hands { bottom: 48px; }
+.touch-pad.venue { bottom: calc(48px + 2 * 3rem + 18px); grid-template-columns: repeat(5, 2.6rem); }
+.touch-pad button { height: 3rem; padding: 0; border-radius: 10px; font-size: 1.1rem; background: #16223acc; touch-action: none; user-select: none; -webkit-user-select: none; }
+.touch-pad.venue button { height: 2.6rem; font-size: .95rem; }
+.touch-pad button[aria-pressed="true"] { background: #4cc9f0; color: #0b111c; }
+@media (pointer: coarse) and (orientation: landscape) { .touch-pad.venue { grid-template-columns: repeat(8, 2.6rem); } }

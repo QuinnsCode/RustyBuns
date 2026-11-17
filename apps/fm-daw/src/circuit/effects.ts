@@ -58,15 +58,18 @@ export function opticalTremolo(): Netlist {
  * Wah: a 0.5 H inductor and a small capacitor ring at a peak; a second capacitor
  * hangs off an inverting stage whose gain is the treadle pot, so it looks
  * (1 + gain) times bigger (Miller) and pulls the peak down: heel ~450 Hz, toe ~2 kHz.
- * `treadle` 0 (heel) to 1 (toe), or a `VarR` on control "foot" for an auto-wah.
+ * `treadle` 0 (heel) to 1 (toe) is a real pot under the foot (100 Ω plus a 220k rheostat, so turning it is
+ * a `setPot` that glides, never a new circuit: an expression pedal or a MIDI CC rocks it), or a `VarR` on
+ * control "foot" for an auto-wah.
  */
 export function wah(treadle: number | "foot" = 0.5): Netlist {
-  const pot: Part = treadle === "foot" ? varR("inv", "mn", "foot", 220e3, 100) : R("inv", "mn", 100 + (1 - treadle) ** 2 * 220e3);
+  const pot: Part[] = treadle === "foot" ? [varR("inv", "mn", "foot", 220e3, 100)]
+    : [R("inv", "tr", 100), { kind: "Pot", a: "mn", w: "tr", b: "tr", ohms: 220e3, at: (1 - treadle) ** 2 }];
   return {
     input: "IN", output: "OUT",
     parts: [
       R("IN", "T", 15e3), L("T", "lr", 0.5), R("lr", "gnd", 60), C("T", "gnd", 4.7e-9), R("T", "gnd", 68e3),
-      lin("T", "b", "b"), R("b", "mn", 10e3), pot, lin("gnd", "mn", "inv"), C("inv", "T", 10e-9),
+      lin("T", "b", "b"), R("b", "mn", 10e3), ...pot, lin("gnd", "mn", "inv"), C("inv", "T", 10e-9),
       R("b", "fn", 10e3), R("OUT", "fn", 22e3), lin("gnd", "fn", "OUT"),
     ],
   };

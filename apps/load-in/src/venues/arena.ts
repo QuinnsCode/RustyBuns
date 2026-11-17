@@ -8,7 +8,8 @@
 // a box. Plain data, no DOM; the page (arena-view.ts) draws it.
 import { clamp } from "@rustybuns/util";
 import { type Area, type Grid, type Source, SPEED_OF_SOUND, coverage, gear as catalog, source } from "@rustybuns/gear";
-import { MAX_LIFT, REACH, WALK, type Answer, type Item, type Level, type World, carrySpeed } from "../sim.ts";
+import { MAX_LIFT, REACH, WALK, type Answer, type Item, type Level, type World, carrySpeed, dims, over } from "../sim.ts";
+import { stow } from "../strike.ts";
 import { assist, feltKg } from "../assists.ts";
 import { doors, showScore } from "../clock.ts";
 import { type Zone, cellsIn, mean } from "./dive-bar.ts";
@@ -23,10 +24,12 @@ const boxes: Item[] = Array.from({ length: 16 }, (_, k) => ({
 
 export const ARENA: Level = {
   name: "arena",
-  bounds: { x0: -19.75, x1: 19.75, z0: 0.25, z1: 59.5 },
+  bounds: { x0: -19.75, x1: 19.75, z0: 0.25, z1: 69.75 },
   room: { x0: -20, x1: 20, z0: 0, z1: 56, height: 16, door: 8 },
   outlets: [],
   start: { x: 0, z: 55, yaw: 0 },
+  // The trailer backed up to the dock, long enough for every box and sub.
+  truck: { x0: -1.2, x1: 1.2, z0: 57, z1: 70, h: 2.6 },
   items: [
     ...boxes,
     ...[0, 1, 2, 3].map((k) => ({ key: `sub-${k + 1}`, gear: "sub-18", x: 4 + k * 0.8, y: 0, z: DOCK_Z, rot: 0 })),
@@ -196,13 +199,21 @@ export function handsNow(w: World) {
   });
 }
 
-/** Set a carried piece down at (x, z): a box at a fly bar goes on the stack there, anything else on the floor. */
+/** Set a carried piece down at (x, z): a box at a fly bar goes on the stack there, anything else on the floor, or in the
+ * truck on top of what its middle is over and shoved forward like a piece you pack yourself. */
 function land(w: World, i: Item, to: { x: number; z: number }) {
   const p = POINTS.find((q) => Math.hypot(q.x - to.x, q.z - to.z) < 0.5);
   if (p && i.gear === BOX) {
     const h = arena(w).hangs[p.key];
     h.boxes.push(i.key);
     Object.assign(i, { x: p.x, z: p.z, y: (h.boxes.length - 1) * catalog(BOX).size.h, rot: p.yaw });
+    return;
+  }
+  const t = w.level.truck;
+  if (t && to.x > t.x0 && to.x < t.x1 && to.z > t.z0 && to.z < t.z1) {
+    const y = Math.max(0, ...w.items.filter((o) => o !== i && !o.hung && over(o, to.x, to.z)).map((o) => o.y + dims(o)[1]));
+    Object.assign(i, { x: to.x, z: to.z, y, rot: 0 });
+    stow(w, i.key);
     return;
   }
   Object.assign(i, { x: to.x, z: to.z, y: 0 });
@@ -251,6 +262,7 @@ export function fly(w: World, key: string): Answer {
   if (!h.boxes.length) return { ok: false, why: `nothing on ${key}'s fly bar` };
   if (h.boxes.length > MAX_BOXES) return { ok: false, why: `${key} takes ${MAX_BOXES} boxes at most` };
   h.flown = true;
+  for (const k of h.boxes) find(w, k)!.hung = true;
   hangBoxes(w, p);
   return { ok: true };
 }
@@ -263,7 +275,7 @@ export function lower(w: World, key: string): Answer {
   const h = arena(w).hangs[key];
   if (!h.flown) return { ok: false, why: `${key} is on the floor` };
   h.flown = false;
-  h.boxes.forEach((k, n) => Object.assign(find(w, k)!, { x: p.x, z: p.z, y: n * catalog(BOX).size.h, rot: p.yaw }));
+  h.boxes.forEach((k, n) => { const i = find(w, k)!; delete i.hung; Object.assign(i, { x: p.x, z: p.z, y: n * catalog(BOX).size.h, rot: p.yaw }); });
   return { ok: true };
 }
 

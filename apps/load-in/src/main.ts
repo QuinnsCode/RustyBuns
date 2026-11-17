@@ -36,10 +36,12 @@ import { type Tour, bookedRung, buy, record } from "./tour.ts";
 import { loadTour, mountTour, saveTour } from "./tour-view.ts";
 import { accountChip, canSignIn, finishSignIn, login, party, type PartyMember } from "./eqosys.ts";
 import { eyeFill, handsView, readable, venueLights, type Grip } from "./look.ts";
+import { dress, faceLook, type Dressed } from "./faces.ts";
 import { nextStep } from "./next.ts";
 import { COLOR } from "./cables/draw.ts";
 import { joinCrew, roomCode, type Online } from "./crew/online.ts";
 import { crewView } from "./crew/view.ts";
+import { touchPlay } from "./touch.ts";
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const canvas = $<HTMLCanvasElement>("stage");
@@ -63,11 +65,11 @@ const keys = new Set<string>();
 const switchedOn: Switches = new Set();
 const sound = soundSystem($("speakers"));
 const crew = { code: "", members: [] as PartyMember[], room: "", seat: -1, note: "" };
-/** The crew room the party's Start (or `?room=CODE`) put you in: friends' bodies, and gear carried together. */
+/** The crew room the party's Start (or `?room=CODE`) put you in: friends' bodies, gear carried together, and shared cables. */
 let online: Online | null = null;
 function crewRoom(room: string) {
   online?.close();
-  online = joinCrew(room, world.level.name, () => world, menu);
+  online = joinCrew(room, world.level.name, () => world, () => cables, menu);
 }
 const pad = loadPad(KEY, [
   { id: "grab", label: "Pick up / put down / plug in", button: 0 },
@@ -75,6 +77,8 @@ const pad = loadPad(KEY, [
   { id: "turnLeft", label: "Turn it left", button: 4 },
   { id: "turnRight", label: "Turn it right", button: 5 },
 ]);
+/** Touch: a thumb stick, a drag to look, and buttons that press the same keys (touch.ts). */
+const touch = touchPlay(canvas, $("hud"), press);
 
 // The scene: the garage's floor, walls and the venue's own lights (look.ts), the driveway outside, a model per piece
 // of gear, the cables, and your hands.
@@ -126,6 +130,7 @@ scene.add(roomGroup);
 
 const meshes = new Map<string, THREE.Object3D>(), look = gearLook();
 readable(look);
+const faces = faceLook(look), dressed = new Map<string, Dressed>();
 const highlight = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(1, 1, 1).translate(0, 0.5, 0)), new THREE.LineBasicMaterial({ color: 0x4cc9f0 }));
 scene.add(highlight);
 let bar: BarView | ParkView | DesertView | null = null;
@@ -135,8 +140,12 @@ let ar: ArenaView | null = null;
 let arena: SmallArenaView | null = null;
 let foh: ShowView | null = null;
 /** A piece's model (a stand at `height`), or a plain box at its catalog size if @rustybuns/models has none. */
-function modelOf(id: string, height?: number): THREE.Object3D {
-  if (cable.hasModel(id)) return model(id, { look, height });
+function modelOf(id: string, height?: number, key?: string): THREE.Object3D {
+  if (cable.hasModel(id)) {
+    const m = model(id, { look, height });
+    if (key) dressed.set(key, dress(m, faces, { stencil: key === cables.caseKey ? "CABLES" : undefined }));
+    return m;
+  }
   const { w, h, d } = gear(id).size, m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d).translate(0, h / 2, 0), look.paint);
   m.userData.size = [w, h, d];
   return m;
@@ -144,8 +153,9 @@ function modelOf(id: string, height?: number): THREE.Object3D {
 function buildItems() {
   for (const m of meshes.values()) scene.remove(m);
   meshes.clear();
+  dressed.clear();
   for (const i of world.items) {
-    const m = modelOf(i.gear);
+    const m = modelOf(i.gear, undefined, i.key);
     meshes.set(i.key, m);
     scene.add(m);
   }
@@ -161,6 +171,7 @@ function buildItems() {
   arena = world.level === arenaSim.SMALL_ARENA ? smallArenaView(scene, $("hud"), () => world) : null;
   foh?.dispose();
   foh = world.level === SHOW ? showView(scene, $("hud"), () => world) : null;
+  touch.venue(world.level.name);
 }
 buildItems();
 const ropes = cableView(scene);
@@ -205,6 +216,8 @@ function draw() {
     m.rotation.set(i === held ? 0 : -(rig(world).tilt[i.key] ?? 0), p.rot, 0, "YXZ");
   }
   const end = cable.inHand(cables), jack = cable.aimedJack(world);
+  // The jack panel you look at (or aim a cable at) lights up, the socket you'd plug into ringed in amber.
+  for (const [key, d] of dressed) d.lit(key === jack?.owner || (!held && key === at?.key), key === jack?.owner ? jack.jack : undefined);
   highlight.visible = !!at && !held && !end && !jack;
   if (highlight.visible && at) { const [w, h, d] = dims(at); highlight.position.set(at.x, at.y, at.z); highlight.rotation.y = at.rot; highlight.scale.set(w + 0.04, h + 0.04, d + 0.04); }
   bar?.update();
@@ -263,21 +276,25 @@ document.addEventListener("mousemove", (e) => {
 document.addEventListener("keydown", (e) => {
   keys.add(e.code);
   if (phase !== "play" || e.repeat) return;
-  if (e.code === "Enter" && (bar || big)) return void openDoors();
-  if (!world.held && !cable.inHand(cables) && bar?.key(e.code)) return;
-  if (!cable.inHand(cables) && arena?.key(e.code, (why) => { flash = { text: why, until: performance.now() + 1800 }; })) return;
-  if (!world.held && !cable.inHand(cables) && ar?.key(e.code)) return;
-  if (big?.key(e.code)) return;
-  if (foh?.key(e.code)) return;
-  if (e.code === "KeyF") grab();
-  if ((e.code === "KeyQ" || e.code === "KeyE") && cable.coiling(cables)) return void say(cable.loop(world, cables, e.code === "KeyQ" ? "over" : "under"));
-  if (e.code === "KeyQ") turnHeld(world, -1);
-  if (e.code === "KeyE") turnHeld(world, 1);
-  if (e.code === "KeyL") say(strike(world));
-  if (e.code === "KeyT") say(shut(world, cables));
-  if (e.code === "KeyP") flip();
-  if (e.code === "KeyM") sound.toggle();
+  press(e.code);
 });
+/** A key while playing, from the keyboard or a touch button: the venue's view first, then the hands. */
+function press(code: string) {
+  if (code === "Enter" && (bar || big)) return void openDoors();
+  if (!world.held && !cable.inHand(cables) && bar?.key(code)) return;
+  if (!cable.inHand(cables) && arena?.key(code, (why) => { flash = { text: why, until: performance.now() + 1800 }; })) return;
+  if (!world.held && !cable.inHand(cables) && ar?.key(code)) return;
+  if (big?.key(code)) return;
+  if (foh?.key(code)) return;
+  if (code === "KeyF") grab();
+  if ((code === "KeyQ" || code === "KeyE") && cable.coiling(cables)) return void say(cable.loop(world, cables, code === "KeyQ" ? "over" : "under"));
+  if (code === "KeyQ") turnHeld(world, -1);
+  if (code === "KeyE") turnHeld(world, 1);
+  if (code === "KeyL") say(strike(world));
+  if (code === "KeyT") say(shut(world, cables));
+  if (code === "KeyP") flip();
+  if (code === "KeyM") sound.toggle();
+}
 document.addEventListener("keyup", (e) => keys.delete(e.code));
 addEventListener("blur", () => keys.clear());
 
@@ -346,6 +363,7 @@ function openDoors() {
 
 function menu() {
   $("menu").hidden = phase === "play";
+  touch.show(phase === "play");
   $("crew").textContent = crew.members.map((m) => `${m.name}${m.host ? " (host)" : ""}`).join(", ");
   $("code").textContent = crew.code ? `Party ${crew.code}${crew.room ? `, seat ${crew.seat + 1}` : ""}` : "";
   $("note").textContent = online?.note || crew.note;
@@ -360,17 +378,20 @@ function frame(now: number) {
   const gp = pad.poll();
   if (phase === "play") {
     const k = 2.4 * dt;
-    world.you.pitch = clamp(world.you.pitch - gp.right.y * k * ctl.lookY * (ctl.invertY ? -1 : 1), -1.3, 1.2);
+    // The look finger turns you as the mouse does, a pixel the same as a mouse count.
+    const finger = touch.look(), walk = touch.move(), m = 0.0022 * 1.6;
+    world.you.yaw -= finger.dx * m * ctl.lookX;
+    world.you.pitch = clamp(world.you.pitch - (gp.right.y * k + finger.dy * m) * ctl.lookY * (ctl.invertY ? -1 : 1), -1.3, 1.2);
     if (gp.pressed.has("grab")) grab();
     const turn = (dir: -1 | 1) => (cable.coiling(cables) ? say(cable.loop(world, cables, dir < 0 ? "over" : "under")) : turnHeld(world, dir));
     if (gp.pressed.has("turnLeft")) turn(-1);
     if (gp.pressed.has("turnRight")) turn(1);
     const on = (c: string) => (keys.has(c) ? 1 : 0);
     step(world, dt, {
-      forward: on("KeyW") - on("KeyS") || -gp.left.y,
-      right: on("KeyD") - on("KeyA") || gp.left.x,
+      forward: on("KeyW") - on("KeyS") || -gp.left.y || walk.y,
+      right: on("KeyD") - on("KeyA") || gp.left.x || walk.x,
       turn: -gp.right.x * k * ctl.lookX,
-      crouch: keys.has("KeyC") || keys.has("ControlLeft") || gp.held.has("crouch"),
+      crouch: keys.has("KeyC") || keys.has("ControlLeft") || gp.held.has("crouch") || touch.crouch,
     });
     cable.stepCables(world, cables, dt);
     foh?.tick(dt);
@@ -415,7 +436,7 @@ async function boot() {
   $("party").hidden = !canSignIn();
   mountControls({
     key: KEY, pad, parent: $("controls-host"), title: "Controls", skin: "house",
-    keys: [["WASD / left stick", "Walk"], ["Mouse / right stick", "Look"], ["F / click", "Pick up, put down, plug in, unplug"], ["Q / E", "Turn what you hold; coiling, over and under"], ["L", "Strike and load out"], ["T", "Shut the truck"], ["C", "Crouch"], ["Esc", "Let go of the mouse"]],
+    keys: [["WASD / left stick", "Walk"], ["Mouse / right stick", "Look"], ["F / click", "Pick up, put down, plug in, unplug"], ["Q / E", "Turn what you hold; coiling, over and under"], ["L", "Strike and load out"], ["T", "Shut the truck"], ["C", "Crouch"], ["Esc", "Let go of the mouse"], ["Touch: left thumb / right drag", "Walk / look; the buttons press the keys"]],
     onChange: (s) => { ctl = s; },
     onToggle: (open) => { if (open) document.exitPointerLock?.(); },
   });

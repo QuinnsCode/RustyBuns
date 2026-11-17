@@ -45,6 +45,13 @@ test("copies share geometry; a stand opens to the height asked, kept between 1.2
   }
 });
 
+test("a line array box hinges at its front, one box height between its top and bottom pins", () => {
+  const g = gear("line-array-10"), top = g.getObjectByName("hinge-top")!.position, bottom = g.getObjectByName("hinge-bottom")!.position;
+  expect(top.z).toBeGreaterThan(GEAR_SIZES["line-array-10"][2] / 4);
+  expect(top.z).toBeCloseTo(bottom.z, 5);
+  expect(top.y - bottom.y).toBeGreaterThan(GEAR_SIZES["line-array-10"][1] * 0.85);
+});
+
 test("ramps link end to end: one's b end meets the next one's a end", () => {
   const r = gear("cable-ramp-2ch"), a = r.getObjectByName("link-a")!, b = r.getObjectByName("link-b")!;
   expect(b.position.x - a.position.x).toBeCloseTo(GEAR_SIZES["cable-ramp-2ch"][0], 3);

@@ -21,19 +21,23 @@ import { icon } from "./icons.ts";
 import { h, iconButton } from "./dom.ts";
 import { benchSlot } from "./bench-slot.ts";
 import { knob, type KnobEl } from "./knob.ts";
+import { startMidi } from "../ui/input.ts";
 import { MODES, Screen, topHz, hzLabel, type ScreenMode } from "./screens.ts";
 import type { AmpSettings, FromAmp, ToAmp } from "./messages.ts";
 
 const KEY = "q-amp";
 const KNOB_NAMES: { key: keyof Knobs; label: string }[] = [
   { key: "gain", label: "Gain" }, { key: "bass", label: "Bass" }, { key: "mid", label: "Middle" }, { key: "treble", label: "Treble" }, { key: "master", label: "Master" }, { key: "noise", label: "Noise" },
+  { key: "rate", label: "Rate" }, { key: "depth", label: "Depth" },
 ];
+/** The bias tremolo's knobs, shown only on an amp that has one. */
+const TREM_KNOBS: (keyof Knobs)[] = ["rate", "depth"];
 const MODE_ICON: Record<ScreenMode, string> = { spectrum: "chart-column", analog: "activity", scope: "audio-waveform", focus: "scan-search" };
 const MODE_IDS = MODES.map((m) => m.id);
 
 const EndGuard = (v: unknown): End => { const [item, jack] = arr(str(20), 2, { min: 2 })(v); return [item, jack]; };
 const CableGuard = obj({ from: EndGuard, to: EndGuard, kind: opt(oneOf(["instrument", "speaker", "xlr", "power"])) });
-const KnobsGuard = obj({ gain: num(0, 10, 5), bass: num(0, 10, 5), mid: num(0, 10, 5), treble: num(0, 10, 5), master: num(0, 10, 5), noise: num(0, 10, 3) });
+const KnobsGuard = obj({ gain: num(0, 10, 5), bass: num(0, 10, 5), mid: num(0, 10, 5), treble: num(0, 10, 5), master: num(0, 10, 5), noise: num(0, 10, 3), rate: num(0, 10, 5), depth: num(0, 10, 0) });
 const on = oneOf([0, 1], 0);
 const LoopGuard = obj({
   spring: obj({ on, dwell: num(0, 10, 5), mix: num(0, 10, 4) }),
@@ -62,6 +66,8 @@ const Saved = obj({
   /** The mic on the cab: 0 the centre cap to 10 the cone's edge, and 0 on axis to 10 side on. */
   micAt: num(0, 10, 3),
   micAngle: num(0, 10, 0),
+  /** The MIDI controller that rocks the wah's treadle: 11 is expression. */
+  cc: num(0, 119, 11),
   loop: opt(LoopGuard),
   /** The cables on the stage; left out (a page saved before the patch) is the stage as it comes. */
   cables: opt(arr(CableGuard, 16, { drop: true })),
@@ -71,7 +77,7 @@ type State = Omit<ReturnType<typeof Saved>, "cables"> & { cables: Cable[] };
 function loadState(): State {
   const fresh: State = {
     amp: "lead", knobs: Object.fromEntries(AMPS.map((a) => [a.id, { ...a.knobs }])), pedal: null,
-    drive: { drive: 3, dist: 5, fuzz: 7, germ: 4 }, bypass: 0, source: "riff", layout: "split", modes: ["analog", "focus"], level: -12, quality: "hq", board: 0, swaps: {}, micAt: 3, micAngle: 0,
+    drive: { drive: 3, dist: 5, fuzz: 7, germ: 4 }, bypass: 0, source: "riff", layout: "split", modes: ["analog", "focus"], level: -12, quality: "hq", board: 0, swaps: {}, micAt: 3, micAngle: 0, cc: 11,
     loop: freshLoop(),
     cables: [...STAGE.cables],
   };
@@ -134,6 +140,18 @@ function setCables(cables: Cable[]) {
   send();
 }
 
+/**
+ * The wah's treadle, 0 (heel) to 10 (toe), from an expression pedal, a MIDI CC or a drag: a pot turn on the
+ * audio thread (live.ts), never a new circuit, so a sweep is as cheap as it is quick.
+ */
+function rockWah(v: number) {
+  S.drive.wah = Math.round(Math.min(10, Math.max(0, v)) * 100) / 100;
+  ui.pedalEls.find((p) => p.id === "wah")?.knob.set(S.drive.wah);
+  if (S.pedal === "wah") send(); else save();
+}
+let midiInputs: string[] = [];
+const noop = () => {};
+
 async function start() {
   if (ctx) return;
   ctx = new AudioContext({ latencyHint: "interactive" });
@@ -146,6 +164,8 @@ async function start() {
   node.connect(analyser);
   node.connect(out).connect(ctx.destination);
   send();
+  // Any MIDI input's chosen controller (11, expression, unless `qamp.cc(n)` picked another) rocks the wah; no MIDI, drag it.
+  void startMidi({ on: noop, off: noop, panic: noop, bend: noop, devices: (names) => { midiInputs = names; }, cc: (n, v) => { if (n === S.cc) rockWah(v * 10); } });
   await setSource(S.source);
   await ctx.resume();
   ui.root.classList.add("on");
@@ -295,7 +315,7 @@ function build() {
     const el = h("div", `pedal ${p.id}`, led, drive.el, h("span", "pedal-name", p.name), sw);
     el.title = p.blurb;
     sw.addEventListener("click", () => { S.pedal = S.pedal === p.id ? null : p.id; showPedals(); send(); });
-    return { id: p.id, el };
+    return { id: p.id, el, knob: drive };
   });
   const floor = h("div", "floor", ...pedalEls.map((p) => p.el));
   // The bench: a board you drew becomes the fourth pedal (src/circuit/bench.ts).
@@ -409,7 +429,10 @@ function setAmp(id: string) {
   ui.modelName.textContent = amp.name;
   ui.modelBlurb.textContent = amp.blurb;
   for (const b of ui.models.children) if (b instanceof HTMLElement) b.setAttribute("aria-pressed", String(b.dataset.amp === amp.id));
-  for (const { key } of KNOB_NAMES) ui.knobs[key].set(k[key]);
+  for (const { key } of KNOB_NAMES) {
+    ui.knobs[key].set(k[key]);
+    ui.knobs[key].el.hidden = TREM_KNOBS.includes(key) && !amp.trem;
+  }
   const tube = (cls: string, label: string) => h("div", `tube ${cls}`, h("div", "glass", h("div", "plate"), h("div", "filament")), h("span", "tube-label", label));
   if (!S.pedal) showBoard();
   ui.tubes.replaceChildren(
@@ -466,7 +489,7 @@ Object.assign(window, {
     state: () => ({
       started: !!ctx, running: ctx?.state === "running", amp: S.amp, name: ampOf(S.amp).name, knobs: S.knobs[S.amp], pedal: S.pedal,
       drive: S.pedal ? S.drive[S.pedal] : null, swaps: S.pedal ? { ...S.swaps[S.pedal] } : {}, board: S.board === 1, bypass: S.bypass === 1, quality: S.quality, source: S.source, layout: S.layout, modes: [...S.modes], mic: settings().mic,
-      load: meter.load, misses: meter.misses, out: meter.out, levels: meter.levels, bench: ui.bench.state(), loop: loopSpecs(),
+      load: meter.load, misses: meter.misses, out: meter.out, levels: meter.levels, bench: ui.bench.state(), loop: loopSpecs(), midi: { cc: S.cc, inputs: midiInputs },
       patch: { cables: S.cables, chains: compiled.chains, problems: compiled.problems, audible: sound.audible, pedals: sound.pedals },
     }),
     /** Puts a board (tscircuit circuit JSON) on the bench, as dropping its file does: the bench's verdict back. */
@@ -486,5 +509,9 @@ Object.assign(window, {
     swap: swapPart,
     /** Switch a loop machine ("spring", "tape", "bbd") on or off. */
     loop: (kind: "spring" | "tape" | "bbd", isOn: boolean) => { loopOf()[kind].on = isOn ? 1 : 0; showPedals(); send(); },
+    /** The wah's treadle, 0 (heel) to 10 (toe), as an expression pedal sets it. */
+    treadle: rockWah,
+    /** Which MIDI controller rocks the treadle (11, expression, until changed); remembered. */
+    cc: (n: number) => { S.cc = Math.round(Math.min(119, Math.max(0, n))); save(); },
   },
 });

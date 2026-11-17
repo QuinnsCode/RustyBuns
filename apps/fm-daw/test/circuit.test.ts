@@ -5,9 +5,9 @@
 // what the TypeScript solver plays (skipped, with a note, when the wasm isn't built).
 import { existsSync, readFileSync } from "node:fs";
 import { expect, setDefaultTimeout, test } from "bun:test";
-import { B_PLUS, Circuit, Rig, cabIR, gainAt, runRig, type Netlist, type RigSpec } from "@rustybuns/gear/circuit";
+import { B_PLUS, Circuit, PushPull, Rig, cabIR, gainAt, runRig, type Netlist, type RigSpec } from "@rustybuns/gear/circuit";
 import { BOARDS, CAP_STEPS, capValue, farads, fuzz, hardClip, overdrive, sockets, toneStack, triodeStage } from "../src/circuit/circuits.ts";
-import { AMPS, DEFAULT_ROOM, PEDALS, RIGS, buildRig } from "../src/circuit/amps.ts";
+import { AMPS, DEFAULT_ROOM, PEDALS, RIGS, buildRig, tremHz } from "../src/circuit/amps.ts";
 import { riff } from "../src/circuit/riff.ts";
 import { WasmRig } from "../src/circuit/wasm.ts";
 import { instantiateFm } from "../src/engine/wasm.ts";
@@ -253,6 +253,43 @@ test("nothing on the speaker jack: silent, survives the hiss, blows when played"
   rig.process(sine(220, 0.5, 0.3), out);
   expect(peak(out)).toBe(0);
   inRange("the same amp with a speaker", peak(runRig({ ...open, output: { ...open.output!, load: 8 } }, sine(220, 0.5, 0.3)).out), 5, 100);
+});
+
+test("bias tremolo: a steady note swings at the LFO rate, and the power tubes clip less in the dips", () => {
+  // Through the whole amp: Depth 0 holds still, then the knob comes up and the level throbs at Rate's Hz.
+  const clean = AMPS.find((a) => a.id === "clean")!;
+  const knobs = { ...clean.knobs, noise: 0, rate: 5, depth: 0 };
+  const rig = new Rig(buildRig(clean, knobs), SR), note = sine(200, 1, 0.3), out = new Float32Array(note.length);
+  const levels = () => { // 10 ms windows: two whole cycles of 200 Hz, so a still note reads still
+    const w = SR / 100, ls: number[] = [];
+    for (let i = 0; i < note.length; i += w) {
+      rig.process(note.subarray(i, i + w), out.subarray(i, i + w), w);
+      ls.push(rms(out.subarray(i, i + w)));
+    }
+    return ls.slice(30); // past the coupling caps settling
+  };
+  const still = levels();
+  inRange("Depth 0: loudest over quietest", Math.max(...still) / Math.min(...still), 1, 1.05);
+  rig.setTrem({ hz: tremHz(5), depth: 0.8 });
+  const throb = levels(), mean = throb.reduce((s, v) => s + v, 0) / throb.length;
+  inRange("Depth 8: loudest over quietest", Math.max(...throb) / Math.min(...throb), 1.5, 3);
+  const ups = throb.filter((v, i) => i > 0 && throb[i - 1] < mean && v >= mean).length;
+  inRange("throbs in 0.7 s at Rate 5", ups, Math.floor(0.7 * tremHz(5)), Math.ceil(0.7 * tremHz(5)));
+  // The power stage alone, driven hot: each 220 Hz cycle's peak, and its crest (peak / rms, a sine's is 1.414, a clipped one's lower).
+  const hi = SR * 4, per = hi / 220, pp = new PushPull({ pairs: 1, sag: 250, load: 8, trem: { hz: 4, depth: 1 } }, hi);
+  const warm: number[][] = [], cold: number[][] = [];
+  let top = 0, sq = 0, k = 0;
+  for (let i = 0; i < hi; i++) {
+    const y = pp.step(40 * Math.sin((2 * Math.PI * 220 * i) / hi), 1);
+    top = Math.max(top, Math.abs(y)); sq += y * y; k++;
+    if (k >= per) {
+      if (i > hi / 10) (pp.bias > -37 ? warm : pp.bias < -43 ? cold : []).push([top, top / Math.sqrt(sq / k)]);
+      top = sq = k = 0;
+    }
+  }
+  const avg = (rows: number[][], j: number) => rows.reduce((s, r) => s + r[j], 0) / rows.length;
+  expect(avg(warm, 0)).toBeGreaterThan(avg(cold, 0) * 1.1);
+  expect(avg(warm, 1)).toBeLessThan(avg(cold, 1) - 0.05);
 });
 
 test("the mic on the cab: bright on the centre cap, darker at the edge and off axis", () => {

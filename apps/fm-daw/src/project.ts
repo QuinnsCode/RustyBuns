@@ -5,6 +5,8 @@ import { arr, Bad, bool, check, int, maybe, nul, num, obj, oneOf, opt, raw, str,
 import { EQ_LANES, clampEqLane, eqLaneBand, sanitizeEq, type EqDoc } from "./engine/eq.ts";
 import { MAX_TAKES, TakeBytesGuard, takeRef, type TakeBytes, type TakeRef } from "./take.ts";
 import { ROOM_M } from "./studio.ts";
+import { cleanAvatar, type Avatar } from "@rustybuns/util/avatar";
+import { RUNG, type Rung } from "./rewind.ts";
 import { TRACKS, NPARAMS, BEND_RANGE, LANE_BEND, LANE_STUTTER, clampLane, clampParam } from "./engine/params.ts";
 
 export interface Note { s: number; l: number; m: number; v: number } // start/length in beats, midi, velocity 0..1
@@ -207,8 +209,13 @@ export type Live =
   | { t: "stop" }
   /** Where their pointer is, as a share of the window (0..1 across and down), so others can see it. */
   | { t: "cursor"; x: number; y: number }
-  /** Where they stand in the studio and which way they face, so others see them and what's in their hand (src/studio.ts). */
-  | { t: "body"; at: number[]; yaw: number };
+  /**
+   * Where they stand in the studio and which way they face, so others see them and what's in their hand (src/studio.ts).
+   * In the jam room (src/studio/) also the spot they sit at, if any: that seat shows them playing it.
+   */
+  | { t: "body"; at: number[]; yaw: number; seat?: string }
+  /** Who they look like in the jam room: their eqosys avatar and name, said on joining and when someone new comes in. */
+  | { t: "wear"; avatar: Avatar; name: string };
 const MIDI = int(0, 127);
 const LIVE: Guard<Live>[] = [
   obj({ t: tag("on"), track: TRACK, midi: MIDI, vel: num(0, 1, 0.8) }),
@@ -217,13 +224,14 @@ const LIVE: Guard<Live>[] = [
   obj({ t: tag("repeat"), beats: num(0, BEATS_PER_BAR, 0) }),
   obj({ t: tag("play") }), obj({ t: tag("stop") }),
   obj({ t: tag("cursor"), x: num(0, 1, 0), y: num(0, 1, 0) }),
-  obj({ t: tag("body"), at: arr(num(-ROOM_M, ROOM_M), 3, { min: 3 }), yaw: num(-Math.PI * 2, Math.PI * 2) }),
+  obj({ t: tag("body"), at: arr(num(-ROOM_M, ROOM_M), 3, { min: 3 }), yaw: num(-Math.PI * 2, Math.PI * 2), seat: opt(str(24, { re: /^[a-z0-9-]+$/ })) }),
+  obj({ t: tag("wear"), avatar: (v: unknown) => cleanAvatar(v) ?? bad("an avatar"), name: str(40, { min: 0, dflt: "" }) }),
 ];
 const LIVE_EVENT = (v: unknown) => LIVE.reduce<Live | null>((got, g) => got ?? check(g, v), null) ?? bad("a live event");
 
 /** A held room still passes these, so a guest's notes, stutter and bend are let go everywhere. */
 export const lettingGo = (e: Live) =>
-  e.t === "off" || e.t === "cursor" || e.t === "body" || (e.t === "repeat" && e.beats === 0) || (e.t === "bend" && e.semis === 0);
+  e.t === "off" || e.t === "cursor" || e.t === "body" || e.t === "wear" || (e.t === "repeat" && e.beats === 0) || (e.t === "bend" && e.semis === 0);
 
 /**
  * Who may change a sesh. Whoever made it is its maker (a key kept in their browser). Free, the
@@ -242,27 +250,33 @@ export type Full = "room" | "rooms" | "closed" | "code" | "tries";
 /** A private sesh's code: what the maker types and every joiner types after. */
 export const CODE = str(32, { min: 4 });
 
-/** Page to world: seed an empty room with this project, one edit, one live event, or (the maker only) set the floor or the code ("" opens the sesh). */
-export type ClientMsg = TakeBytes | { t: "init"; project: Project } | { t: "op"; op: Op } | { t: "live"; e: Live } | { t: "floor"; state: Floor } | { t: "lock"; code: string };
+/**
+ * Page to world: seed an empty room with this project, one edit, one live event, (the maker only) set the floor or the code
+ * ("" opens the sesh), or ask for the groove as it was `ago` minutes back, for this page alone (src/rewind.ts).
+ */
+export type ClientMsg = TakeBytes | { t: "init"; project: Project } | { t: "op"; op: Op } | { t: "live"; e: Live } | { t: "floor"; state: Floor } | { t: "lock"; code: string } | { t: "rewind"; ago: Rung };
 /**
  * World to page: the saved project (null in an empty room), someone else's edit, how many are in,
  * someone's live event (`from` is that socket's number), that someone left (let go of their
  * notes), the floor and whether you're its maker, or no room for you (the socket closes after it).
  * `lock` says whether the sesh is private: on joining, and with the new code to everyone in when the maker changes it.
+ * `rewound` answers this page's `rewind`: the groove as of `at` (ms), or null when the sesh doesn't go back that far.
  */
 export type ServerMsg =
   | TakeBytes
   | { t: "snapshot"; project: Project | null } | { t: "op"; op: Op } | { t: "peers"; n: number }
   | { t: "live"; from: number; e: Live } | { t: "gone"; from: number } | { t: "full"; why: Full }
-  | { t: "floor"; state: Floor; host: boolean } | { t: "lock"; on: boolean; code?: string };
+  | { t: "floor"; state: Floor; host: boolean } | { t: "lock"; on: boolean; code?: string }
+  | { t: "rewound"; ago: Rung; at: number; project: Project | null };
 const PEER = int(1, Infinity);
 const CLIENT: Guard<ClientMsg>[] = [TakeBytesGuard, obj({ t: tag("init"), project: PROJ }), obj({ t: tag("op"), op: OP }), obj({ t: tag("live"), e: LIVE_EVENT }), obj({ t: tag("floor"), state: FLOOR }),
-  obj({ t: tag("lock"), code: (v: unknown) => (v === "" ? "" : CODE(v)) })];
+  obj({ t: tag("lock"), code: (v: unknown) => (v === "" ? "" : CODE(v)) }), obj({ t: tag("rewind"), ago: RUNG })];
 const SERVER: Guard<ServerMsg>[] = [
   TakeBytesGuard,
   obj({ t: tag("snapshot"), project: (v: unknown) => sanitize(v) }), obj({ t: tag("op"), op: OP }), obj({ t: tag("peers"), n: int(0, Infinity) }),
   obj({ t: tag("live"), from: PEER, e: LIVE_EVENT }), obj({ t: tag("gone"), from: PEER }), obj({ t: tag("full"), why: oneOf(["room", "rooms", "closed", "code", "tries"]) }),
   obj({ t: tag("floor"), state: FLOOR, host: bool() }), obj({ t: tag("lock"), on: bool(), code: opt(str(32, { min: 0 })) }),
+  obj({ t: tag("rewound"), ago: RUNG, at: int(0, Infinity), project: nul(PROJ) }),
 ];
 export const decodeClient = (v: unknown): ClientMsg | null => CLIENT.reduce<ClientMsg | null>((got, g) => got ?? check(g, v), null);
 export const decodeServer = (v: unknown): ServerMsg | null => SERVER.reduce<ServerMsg | null>((got, g) => got ?? check(g, v), null);
