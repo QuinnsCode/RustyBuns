@@ -26,6 +26,10 @@ test("every rung of the ladder has a tattoo, and no two share a place", () => {
 test("a saved look loads back, and anything else is the plain look", () => {
   const mine = { own: "data:image/jpeg;base64,AAAA", arm: "right" as const, at: 0.5, size: 0.3 };
   expect(readLook(JSON.parse(JSON.stringify(mine)))).toEqual(mine);
+  // The shoes ride in the same save: a colour that is kept, and black for a save from before there were shoes.
+  expect(readLook({ ...mine, shoes: "red" }).shoes).toBe("red");
+  expect(readLook(mine).shoes).toBeUndefined();
+  expect(readLook({ ...mine, shoes: "plaid" })).toEqual(plainLook());
   for (const bad of [null, "ink", { arm: "tail", at: 0.5, size: 0.3 }, { ...mine, own: "https://example.com/x.png" }, { ...mine, at: 7 }]) {
     expect(readLook(bad)).toEqual(plainLook());
   }

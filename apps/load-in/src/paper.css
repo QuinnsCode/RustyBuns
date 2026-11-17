@@ -167,3 +167,5 @@
 .ink label { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; }
 .ink input[type="range"] { width: 7rem; }
 .ink input[type="file"] { max-width: 100%; font: inherit; }
+.shoe { width: 44px; height: 44px; padding: 0; border-radius: 50%; border: 3px solid var(--ink, #1a1a1a); background: var(--shoe); cursor: pointer; }
+.shoe[aria-checked="true"] { outline: 3px solid var(--spot, #f25c05); outline-offset: 3px; }
