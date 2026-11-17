@@ -3,7 +3,7 @@
 // `tick` each frame (which judges the cables through bigger-bar.ts), and `fed` / `rig` for what you hear.
 import * as THREE from "three";
 import { esc } from "@rustybuns/util";
-import { BIGGER_BAR, PANEL, type Judged, atPanel, fedByJudge, judgeCables, newPanel, resetBreaker } from "./bigger-bar.ts";
+import { BIGGER_BAR, PANEL, PASS, type Judged, atPanel, fedByJudge, judgeCables, newPanel, resetBreaker, show } from "./bigger-bar.ts";
 import type { Answer, World } from "../sim.ts";
 import type { Cables } from "../cables/cables.ts";
 import type { Fed, Rig } from "../audio/hear.ts";
@@ -21,6 +21,8 @@ export type BiggerBarView = {
   reset(circuit?: string): Answer;
   /** What the harness adds: the circuits, what tripped, the problems and the cable losses. */
   state(): { circuits: Judged["circuits"]; fed: Record<string, boolean>; problems: string[]; lossDb: Record<string, number> };
+  /** Enter: open the doors on the rig as it stands; the show. */
+  doors(): ReturnType<typeof show>;
   /** What the hint line says at the panel, or null away from it. */
   hint(): string | null;
   dispose(): void;
@@ -50,10 +52,11 @@ export function biggerBarView(scene: THREE.Scene, hud: HTMLElement, getWorld: ()
   const card = document.createElement("div");
   card.className = "bar-card";
   hud.append(card);
-  let last = "";
+  let last = "", opened: ReturnType<typeof show> | null = null;
 
-  return {
+  const view: BiggerBarView = {
     key(code) {
+      if (code === "Enter") return view.doors(), true;
       if (code !== "KeyB" || !atPanel(getWorld())) return false;
       resetBreaker(getWorld(), panel);
       return true;
@@ -67,14 +70,19 @@ export function biggerBarView(scene: THREE.Scene, hud: HTMLElement, getWorld: ()
       circuits.forEach((c, i) => lamps[i]!.material.color.setHex(panel.tripped.has(c) ? 0xd1453a : 0x3ad16b));
       const fed = [...j.fed].filter(([, on]) => on).length;
       const lines = [
-        "<b>Bigger bar</b>",
+        `<b>${opened ? "Doors open" : "Bigger bar"}</b>`,
         ...j.circuits.map((c) => `Circuit ${c.circuit} (${c.amps} A) ${c.tripped ? '<span class="trip">tripped</span>' : c.over ? '<span class="trip">overloaded</span>' : "on"}`),
         `Speakers fed ${fed} / ${j.fed.size}`,
         j.problems[0] ? `<small>${esc(j.problems[0].message)}</small>` : "",
+        opened ? `<span class="${opened.pass ? "pass" : ""}">Show ${opened.score} / ${PASS} to pass, paid $${opened.pay} of $${opened.fee}</span>` : "<small>B reset the breakers at the panel, Enter doors</small>",
       ];
       const html = lines.filter(Boolean).map((l) => `<div>${l}</div>`).join("");
       if (html !== last) card.innerHTML = last = html;
       return j;
+    },
+    doors() {
+      j = judgeCables(getWorld(), getCables(), panel);
+      return (opened = show(getWorld(), j));
     },
     hint() {
       if (!atPanel(getWorld())) return null;
@@ -85,4 +93,5 @@ export function biggerBarView(scene: THREE.Scene, hud: HTMLElement, getWorld: ()
       card.remove();
     },
   };
+  return view;
 }

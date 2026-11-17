@@ -4,6 +4,7 @@
 // show level, killing the cooler with it: walk to the panel, reset it, move the plug. `judge` runs the patch through
 // packages/gear's compile, trips what is over, and says what is fed. Plain data, no DOM.
 import { assist } from "../assists.ts";
+import { doors, showScore } from "../clock.ts";
 import { CIRCUIT_15A, CIRCUIT_20A, type Cable, type Compiled, type Outlet, type Placed, cableLoss, compile, gear as catalog } from "@rustybuns/gear";
 import { REACH, type Answer, type Level, type World } from "../sim.ts";
 import type { Fed } from "../audio/hear.ts";
@@ -11,7 +12,7 @@ import { type Cables, plugged } from "../cables/cables.ts";
 
 export const BIGGER_BAR: Level = {
   name: "bigger-bar",
-  bounds: { x0: -3.75, x1: 3.75, z0: 0.25, z1: 15.5 },
+  bounds: { x0: -3.75, x1: 3.75, z0: 0.25, z1: 20.55 },
   room: { x0: -4, x1: 4, z0: 0, z1: 14, height: 3.2, door: 2.4 },
   outlets: [
     { key: "stage-1", x: -0.9, y: 0.3, z: 0.01, circuit: "1", amps: 20 },
@@ -20,6 +21,7 @@ export const BIGGER_BAR: Level = {
     { key: "side-1", x: 3.5, y: 0.3, z: 0.01, circuit: "4", amps: 15 },
   ],
   start: { x: 0, z: 14.8, yaw: 0 },
+  truck: { x0: -1.2, x1: 1.2, z0: 15.8, z1: 20.8, h: 2.4 },
   items: [
     { key: "cooler", gear: "bar-cooler", x: -3.4, y: 0, z: 0.5, rot: 0 },
     { key: "top-l", gear: "top-15-passive", x: -1.8, y: 0, z: 13.0, rot: 0 },
@@ -118,4 +120,19 @@ export function resetBreaker(w: World, panel: Panel, circuit?: string): Answer {
   if (circuit) panel.tripped.delete(circuit);
   else panel.tripped.clear();
   return { ok: true };
+}
+
+/** The show passes at this score, as at the dive bar and the park. */
+export const PASS = 85;
+
+/**
+ * Doors at the bigger bar: the sound is the share of speakers the cables feed, less 30 if the bar's cooler is off
+ * (a tripped circuit 3 left the staff with warm drinks), scaled by the crowd's mood from the clock.
+ */
+export function show(w: World, j: Judged) {
+  const speakers = [...j.fed.values()], fed = speakers.filter(Boolean).length;
+  const coolerOff = j.circuits.some((c) => c.circuit === "3" && c.tripped);
+  const sound = Math.max(0, Math.round((100 * fed) / Math.max(1, speakers.length)) - (coolerOff ? 30 : 0));
+  const d = doors(w.level.name, w.t), total = showScore(sound, d.mood);
+  return { sound, mood: d.mood, late: Math.round(d.late), pay: d.pay, fee: d.fee, score: total, pass: total >= PASS, coolerOff };
 }

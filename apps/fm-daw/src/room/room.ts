@@ -1,0 +1,462 @@
+// Q Studio's room, pure (no DOM, no three.js): the gear it knows and where its jacks and knobs sit, you walking it
+// in first person, what you look at, what a click does, and what you hear. The patch and who holds what are the
+// sesh's own Studio (../studio.ts, the same ops friends' rooms apply); this file only adds the body and the hands.
+// What you hear is a walk back from the speaker cab along the cables: only the amp and pedal on that walk run
+// their circuits, and gear cabled into nothing costs nothing.
+import { AMPS, DEFAULT_ROOM, PEDALS, type Knobs } from "../circuit/amps.ts";
+import type { AmpSettings } from "../amp/messages.ts";
+import { applyStudio, emptyStudio, type End, type Patch, type Placed, type Studio, type StudioOp } from "../studio.ts";
+
+export type Vec3 = [number, number, number];
+/** The face of a box a jack or knob sits on, in the box's own frame: front is +z. */
+export type Face = "front" | "back" | "left" | "right" | "top";
+export interface JackDef { name: string; dir: "in" | "out"; at: Vec3; face: Face }
+/** A knob 0 to 1 (the patch's range); `circuit` is its 0 to 10 name in the amp or pedal it drives. */
+export interface KnobDef { name: string; label: string; at: Vec3; face: Face; dflt: number }
+export type Kind = "guitar" | "pedal" | "amp" | "cab";
+/** A piece of studio gear: its size (w, h, d in metres, standing on its bottom face), jacks and knobs, and the circuit it runs. */
+export interface GearDef { id: string; name: string; kind: Kind; size: Vec3; kg: number; jacks: JackDef[]; knobs: KnobDef[]; circuit?: string }
+
+const AMP_KNOBS: (keyof Knobs)[] = ["gain", "bass", "mid", "treble", "master", "noise"];
+const LABEL: Record<keyof Knobs, string> = { gain: "Gain", bass: "Bass", mid: "Middle", treble: "Treble", master: "Master", noise: "Noise" };
+const PEDAL_DRIVE: Record<string, number> = { drive: 3, dist: 5, fuzz: 7 };
+
+const ampGear = (a: (typeof AMPS)[number]): GearDef => ({
+  id: `amp-${a.id}`, name: a.name, kind: "amp", size: [0.62, 0.26, 0.26], kg: 15, circuit: a.id,
+  jacks: [{ name: "in", dir: "in", at: [-0.26, 0.15, 0.13], face: "front" }, { name: "speaker", dir: "out", at: [0.22, 0.13, -0.13], face: "back" }],
+  knobs: AMP_KNOBS.map((k, i) => ({ name: k, label: LABEL[k], at: [-0.14 + i * 0.075, 0.15, 0.13], face: "front", dflt: a.knobs[k] / 10 })),
+});
+const pedalGear = (p: (typeof PEDALS)[number]): GearDef => ({
+  id: `pedal-${p.id}`, name: p.name, kind: "pedal", size: [0.12, 0.06, 0.2], kg: 0.5, circuit: p.id,
+  jacks: [{ name: "in", dir: "in", at: [0.06, 0.035, -0.04], face: "right" }, { name: "out", dir: "out", at: [-0.06, 0.035, -0.04], face: "left" }],
+  knobs: [{ name: "drive", label: "Drive", at: [0, 0.06, -0.05], face: "top", dflt: (PEDAL_DRIVE[p.id] ?? 5) / 10 }],
+});
+
+/** Every piece of gear the studio has, by id. */
+export const STUDIO_GEAR: Readonly<Record<string, GearDef>> = Object.fromEntries([
+  { id: "guitar", name: "Guitar", kind: "guitar", size: [0.34, 1.0, 0.06], kg: 3.5, jacks: [{ name: "out", dir: "out", at: [0.1, 0.22, 0.03], face: "front" }], knobs: [] } satisfies GearDef,
+  ...PEDALS.map(pedalGear),
+  ...AMPS.map(ampGear),
+  { id: "cab-2x12", name: "2x12 cab", kind: "cab", size: [0.7, 0.55, 0.3], kg: 25, jacks: [{ name: "in", dir: "in", at: [0.25, 0.1, -0.15], face: "back" }], knobs: [] } satisfies GearDef,
+].map((g) => [g.id, g]));
+
+export const gearOf = (p: Placed): GearDef | undefined => STUDIO_GEAR[p.gear];
+
+// ---- the room ----
+
+/** The live room: x from -HALF_W to HALF_W, z from -HALF_D (the back wall, with the rack) to HALF_D. */
+export const HALF_W = 3.5, HALF_D = 3, WALL_H = 2.8;
+export const EYE = 1.62, RADIUS = 0.25, WALK = 1.5;
+/** How far your hands reach from your eyes, metres. */
+export const REACH = 2.1;
+/** The wall rack: a frame against the back wall, its shelves' tops in metres. */
+export const RACK = { x0: -2, x1: 2, z0: -HALF_D, z1: -HALF_D + 0.45, shelves: [0.45, 0.95, 1.45] };
+
+const at = (x: number, y: number, z: number) => [x, y, z];
+const rackZ = (RACK.z0 + RACK.z1) / 2;
+/** The room as it starts: the amps and pedals on the rack, the cab on the floor, the guitar on its stand, no cables. */
+export function startPatch(): Patch {
+  return {
+    placed: [
+      { id: "drive", gear: "pedal-drive", at: at(-1.2, RACK.shelves[0], rackZ), turn: 0 },
+      { id: "fuzz", gear: "pedal-fuzz", at: at(-0.9, RACK.shelves[0], rackZ), turn: 0 },
+      { id: "dist", gear: "pedal-dist", at: at(-0.6, RACK.shelves[0], rackZ), turn: 0 },
+      { id: "brit", gear: "amp-brit", at: at(-1.1, RACK.shelves[1], rackZ), turn: 0 },
+      { id: "triple", gear: "amp-triple", at: at(1.1, RACK.shelves[1], rackZ), turn: 0 },
+      { id: "lead", gear: "amp-lead", at: at(0, RACK.shelves[2], rackZ), turn: 0 },
+      { id: "cab", gear: "cab-2x12", at: at(1.4, 0, -0.6), turn: -0.4 },
+      { id: "guitar", gear: "guitar", at: at(-1.6, 0, 0.2), turn: 0.5 },
+    ],
+    cables: [],
+    knobs: {},
+  };
+}
+
+export interface You { x: number; z: number; yaw: number; pitch: number }
+/** You in the room: your body, and the sesh's studio (the patch and what your hand holds as player `me`). */
+export interface Room { studio: Studio; you: You; me: number; /** How far you turned what you hold from where you face. */ heldTurn: number }
+
+export function newRoom(patch: Patch = startPatch()): Room {
+  return { studio: { ...emptyStudio(), patch }, you: { x: 0, z: 1.8, yaw: 0, pitch: -0.15 }, me: 1, heldTurn: 0 };
+}
+
+export type Answer = { ok: true } | { ok: false; why: string };
+const no = (why: string): Answer => ({ ok: false, why });
+const OK: Answer = { ok: true };
+
+/** Do `op` as you; false if the studio said no (it hands back the same studio then). */
+function act(r: Room, op: StudioOp): boolean {
+  const next = applyStudio(r.studio, r.me, op);
+  if (next === r.studio) return false;
+  r.studio = next;
+  return true;
+}
+
+export const hand = (r: Room) => r.studio.held[String(r.me)];
+export const heldId = (r: Room) => { const h = hand(r); return h && "item" in h ? h.item : null; };
+export const item = (r: Room, id: string) => r.studio.patch.placed.find((p) => p.id === id);
+const nameOf = (r: Room, id: string) => { const p = item(r, id); return (p && gearOf(p)?.name) ?? id; };
+
+// ---- geometry ----
+
+/** A point in a box's own frame to the room's, as three.js turns an object by rotation.y. */
+export function toWorld(p: Placed, local: Vec3): Vec3 {
+  const c = Math.cos(p.turn), s = Math.sin(p.turn);
+  return [p.at[0] + local[0] * c + local[2] * s, p.at[1] + local[1], p.at[2] - local[0] * s + local[2] * c];
+}
+const toLocal = (p: Placed, w: Vec3): Vec3 => {
+  const dx = w[0] - p.at[0], dz = w[2] - p.at[2], c = Math.cos(p.turn), s = Math.sin(p.turn);
+  return [dx * c - dz * s, w[1] - p.at[1], dx * s + dz * c];
+};
+export const eye = (r: Room): Vec3 => [r.you.x, EYE, r.you.z];
+/** Where you look: yaw 0 looks down -z, as a three.js camera does. */
+export const lookDir = (y: You): Vec3 => [-Math.sin(y.yaw) * Math.cos(y.pitch), Math.sin(y.pitch), -Math.cos(y.yaw) * Math.cos(y.pitch)];
+
+export function jackAt(r: Room, end: End): Vec3 | null {
+  const p = item(r, end[0]), j = p && gearOf(p)?.jacks.find((x) => x.name === end[1]);
+  return p && j ? toWorld(placedNow(r, p), j.at) : null;
+}
+
+/** Where a box is drawn now: where it stands, or in your hands if you carry it. */
+export function placedNow(r: Room, p: Placed): Placed {
+  return heldId(r) === p.id ? { ...p, ...holdPose(r, p) } : p;
+}
+
+/** Where the held box sits: in front of you at the height you look, turned as you turned it. */
+export function holdPose(r: Room, p: Placed): { at: number[]; turn: number } {
+  const g = gearOf(p), [, h, d] = g?.size ?? [0.3, 0.3, 0.3];
+  const out = 0.45 + d / 2, f = lookDir({ ...r.you, pitch: 0 });
+  const y = Math.min(1.7, Math.max(0, EYE + Math.tan(r.you.pitch) * out - h / 2 - 0.25));
+  return { at: [r.you.x + f[0] * out, y, r.you.z + f[2] * out], turn: r.you.yaw + r.heldTurn };
+}
+
+/** Ray against a box standing at `p`: the distance along the ray, or null. */
+function hitBox(p: Placed, size: Vec3, o: Vec3, d: Vec3): number | null {
+  const lo = toLocal(p, o), c = Math.cos(p.turn), s = Math.sin(p.turn);
+  const ld: Vec3 = [d[0] * c - d[2] * s, d[1], d[0] * s + d[2] * c];
+  const min: Vec3 = [-size[0] / 2, 0, -size[2] / 2], max: Vec3 = [size[0] / 2, size[1], size[2] / 2];
+  let t0 = 0, t1 = Infinity;
+  for (let i = 0; i < 3; i++) {
+    if (Math.abs(ld[i]) < 1e-9) { if (lo[i] < min[i] || lo[i] > max[i]) return null; continue; }
+    let a = (min[i] - lo[i]) / ld[i], b = (max[i] - lo[i]) / ld[i];
+    if (a > b) [a, b] = [b, a];
+    t0 = Math.max(t0, a); t1 = Math.min(t1, b);
+    if (t0 > t1) return null;
+  }
+  return t0;
+}
+function hitBall(c: Vec3, rad: number, o: Vec3, d: Vec3): number | null {
+  const m = [o[0] - c[0], o[1] - c[1], o[2] - c[2]];
+  const b = m[0] * d[0] + m[1] * d[1] + m[2] * d[2], cc = m[0] ** 2 + m[1] ** 2 + m[2] ** 2 - rad * rad;
+  const disc = b * b - cc;
+  if (disc < 0) return null;
+  const t = -b - Math.sqrt(disc);
+  return t >= 0 ? t : cc <= 0 ? 0 : null;
+}
+
+export type Aim = { t: "item"; id: string } | { t: "jack"; end: End } | { t: "knob"; id: string; knob: string };
+const PART_R = 0.03;
+
+/** What you look at within reach: a jack or knob before the box it is on, the nearest box otherwise. */
+export function aimed(r: Room): Aim | null {
+  const o = eye(r), d = lookDir(r.you), held = heldId(r);
+  const hits: { t: number; aim: Aim }[] = [];
+  const offer = (t: number | null, aim: Aim) => { if (t !== null && t <= REACH) hits.push({ t, aim }); };
+  for (const p of r.studio.patch.placed) {
+    const g = gearOf(p);
+    if (!g || p.id === held) continue;
+    offer(hitBox(p, g.size, o, d), { t: "item", id: p.id });
+    // A small part wins over the face it sits on: it is nearer than the face by a hair, or should be.
+    for (const j of g.jacks) { const t = hitBall(toWorld(p, j.at), PART_R, o, d); offer(t === null ? null : t - 0.05, { t: "jack", end: [p.id, j.name] }); }
+    for (const k of g.knobs) { const t = hitBall(toWorld(p, k.at), PART_R, o, d); offer(t === null ? null : t - 0.05, { t: "knob", id: p.id, knob: k.name }); }
+  }
+  hits.sort((a, b) => a.t - b.t);
+  return hits[0]?.aim ?? null;
+}
+
+/** Turn to look straight at a box, or at one of its jacks or knobs. */
+export function lookAt(r: Room, id: string, part?: string): boolean {
+  const p = item(r, id), g = p && gearOf(p);
+  if (!p || !g) return false;
+  const local = g.jacks.find((j) => j.name === part)?.at ?? g.knobs.find((k) => k.name === part)?.at ?? [0, g.size[1] * 0.85, 0];
+  const w = toWorld(p, local), o = eye(r), dx = w[0] - o[0], dy = w[1] - o[1], dz = w[2] - o[2];
+  r.you.yaw = Math.atan2(-dx, -dz);
+  r.you.pitch = Math.atan2(dy, Math.hypot(dx, dz));
+  return true;
+}
+
+// ---- walking ----
+
+export interface Input { forward: number; right: number; turn: number }
+
+type Rect = { cx: number; cz: number; hw: number; hd: number; turn: number };
+function solids(r: Room): Rect[] {
+  const held = heldId(r);
+  const gear = r.studio.patch.placed.filter((p) => p.id !== held && p.at[1] < 0.5).flatMap((p) => {
+    const g = gearOf(p);
+    return g ? [{ cx: p.at[0], cz: p.at[2], hw: g.size[0] / 2, hd: g.size[2] / 2, turn: p.turn }] : [];
+  });
+  return [{ cx: (RACK.x0 + RACK.x1) / 2, cz: (RACK.z0 + RACK.z1) / 2, hw: (RACK.x1 - RACK.x0) / 2, hd: (RACK.z1 - RACK.z0) / 2, turn: 0 }, ...gear];
+}
+
+/** Push you out of the walls, the rack and the gear standing on the floor. */
+function collide(r: Room) {
+  const y = r.you;
+  for (const s of solids(r)) {
+    const c = Math.cos(s.turn), sn = Math.sin(s.turn), dx = y.x - s.cx, dz = y.z - s.cz;
+    const lx = dx * c - dz * sn, lz = dx * sn + dz * c;
+    const px = Math.max(-s.hw, Math.min(s.hw, lx)), pz = Math.max(-s.hd, Math.min(s.hd, lz));
+    let ox = lx - px, oz = lz - pz, dist = Math.hypot(ox, oz);
+    if (dist >= RADIUS) continue;
+    if (dist < 1e-6) { // inside: out the nearest side
+      const ex = s.hw - Math.abs(lx), ez = s.hd - Math.abs(lz);
+      [ox, oz] = ex < ez ? [Math.sign(lx) || 1, 0] : [0, Math.sign(lz) || 1];
+      dist = 0;
+    } else { ox /= dist; oz /= dist; }
+    const lx2 = px + ox * RADIUS, lz2 = pz + oz * RADIUS;
+    y.x = s.cx + lx2 * c + lz2 * sn;
+    y.z = s.cz - lx2 * sn + lz2 * c;
+  }
+  y.x = Math.max(-HALF_W + RADIUS, Math.min(HALF_W - RADIUS, y.x));
+  y.z = Math.max(-HALF_D + RADIUS, Math.min(HALF_D - RADIUS, y.z));
+}
+
+/** One tick: turn and walk by the input. */
+export function step(r: Room, dt: number, i: Input) {
+  const y = r.you;
+  y.yaw += i.turn;
+  const len = Math.hypot(i.forward, i.right);
+  if (len > 0) {
+    const k = (WALK * dt) / Math.max(1, len), f = lookDir({ ...y, pitch: 0 });
+    y.x += (f[0] * i.forward - f[2] * i.right) * k;
+    y.z += (f[2] * i.forward + f[0] * i.right) * k;
+  }
+  collide(r);
+}
+
+/** Walk straight to (x, z) tick by tick; the seconds it took. Stops at the rack or a box in the way. */
+export function walkTo(r: Room, x: number, z: number): number {
+  const dt = 1 / 30;
+  let t = 0;
+  for (let n = 0; n < 900; n++) {
+    const dx = x - r.you.x, dz = z - r.you.z, d = Math.hypot(dx, dz);
+    if (d < 0.05) break;
+    const yaw = r.you.yaw;
+    r.you.yaw = Math.atan2(-dx, -dz);
+    const before = [r.you.x, r.you.z];
+    step(r, dt, { forward: Math.min(1, d / (WALK * dt)), right: 0, turn: 0 });
+    r.you.yaw = yaw;
+    t += dt;
+    if (Math.hypot(r.you.x - before[0], r.you.z - before[1]) < 1e-4) break;
+  }
+  return Math.round(t * 10) / 10;
+}
+
+// ---- hands ----
+
+const reachable = (r: Room, p: Placed) => Math.hypot(p.at[0] - r.you.x, p.at[1] + 0.1 - EYE, p.at[2] - r.you.z) <= REACH + 0.4;
+
+export function pickUp(r: Room, id: string): Answer {
+  const p = item(r, id);
+  if (!p) return no(`no ${id} in the room`);
+  if (hand(r)) return no("your hands are full");
+  if (!reachable(r, p)) return no(`${nameOf(r, id)} is out of reach`);
+  const stacked = r.studio.patch.placed.find((q) => q.id !== id && q.at[1] > p.at[1] + 0.01 && sitsOn(q, p));
+  if (stacked) return no(`${nameOf(r, stacked.id)} is on top of it`);
+  if (!act(r, { t: "pick", id })) return no(`someone else has ${nameOf(r, id)}`);
+  r.heldTurn = p.turn - r.you.yaw;
+  return OK;
+}
+
+/** Whether `q`'s middle stands within `p`'s footprint. */
+function sitsOn(q: Placed, p: Placed): boolean {
+  const g = gearOf(p);
+  if (!g) return false;
+  const l = toLocal(p, [q.at[0], q.at[1], q.at[2]]);
+  return Math.abs(l[0]) <= g.size[0] / 2 && Math.abs(l[2]) <= g.size[2] / 2;
+}
+
+/** What a box set down at (x, z) from `fromY` lands on: the highest shelf or box top under it, or the floor. */
+function landing(r: Room, id: string, x: number, z: number, fromY: number): number {
+  let y = 0;
+  const below = (top: number) => { if (top <= fromY + 0.08 && top > y) y = top; };
+  if (x >= RACK.x0 && x <= RACK.x1 && z >= RACK.z0 && z <= RACK.z1) RACK.shelves.forEach(below);
+  for (const p of r.studio.patch.placed) {
+    const g = gearOf(p);
+    if (g && p.id !== id && sitsOn({ id, gear: "", at: [x, 0, z], turn: 0 }, p)) below(p.at[1] + g.size[1]);
+  }
+  return y;
+}
+
+export function putDown(r: Room): Answer {
+  const id = heldId(r), p = id ? item(r, id) : undefined;
+  if (!id || !p) return no("you aren't carrying anything");
+  const pose = holdPose(r, p);
+  const x = Math.max(-HALF_W + 0.2, Math.min(HALF_W - 0.2, pose.at[0]));
+  const z = Math.max(-HALF_D + 0.2, Math.min(HALF_D - 0.2, pose.at[2]));
+  const y = landing(r, id, x, z, pose.at[1]);
+  const notch = Math.PI / 12, turn = Math.round(pose.turn / notch) * notch;
+  act(r, { t: "put", at: [x, y, z], turn: ((turn % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2) });
+  r.heldTurn = 0;
+  return OK;
+}
+
+/** Turn what you hold by a 15 degree step (Q and E): -1 left, 1 right. */
+export function turnHeld(r: Room, dir: number) { if (heldId(r)) r.heldTurn += (dir * Math.PI) / 12; }
+
+const same = (a: End, b: End) => a[0] === b[0] && a[1] === b[1];
+const jackDef = (r: Room, end: End) => { const p = item(r, end[0]); return p ? gearOf(p)?.jacks.find((j) => j.name === end[1]) : undefined; };
+export const cableIn = (r: Room, end: End) => r.studio.patch.cables.find((c) => same(c.from, end) || same(c.to, end));
+const label = (r: Room, end: End) => `${nameOf(r, end[0])}'s ${end[1]}`;
+
+/** Take a cable from a free jack: its other end is in your hand. */
+export function lead(r: Room, end: End): Answer {
+  if (!jackDef(r, end)) return no(`no jack ${end[1]} on ${end[0]}`);
+  if (hand(r)) return no("your hands are full");
+  if (cableIn(r, end)) return no(`${label(r, end)} has a cable in it`);
+  return act(r, { t: "lead", from: end }) ? OK : no(`can't take a cable from ${label(r, end)}`);
+}
+
+/** Push the cable in your hand into a jack: an output into an input, never a box into itself. */
+export function plug(r: Room, to: End): Answer {
+  const h = hand(r), j = jackDef(r, to);
+  if (!h || !("lead" in h)) return no("you have no cable in your hand");
+  if (!j) return no(`no jack ${to[1]} on ${to[0]}`);
+  if (h.lead[0] === to[0]) return no(`that's ${nameOf(r, to[0])} into itself`);
+  const from = jackDef(r, h.lead);
+  if (from && from.dir === j.dir) return no(`two ${j.dir === "out" ? "outputs" : "inputs"}: ${label(r, h.lead)} and ${label(r, to)}`);
+  if (cableIn(r, to)) return no(`${label(r, to)} has a cable in it`);
+  return act(r, { t: "plug", to }) ? OK : no(`can't plug into ${label(r, to)}`);
+}
+
+/** Pull a cable out of a jack: the end comes into your hand, its other end stays plugged in. */
+export function unplug(r: Room, at: End): Answer {
+  const c = cableIn(r, at);
+  if (!c) return no(`nothing in ${label(r, at)}`);
+  if (hand(r)) return no("your hands are full");
+  const other = same(c.from, at) ? c.to : c.from;
+  act(r, { t: "unplug", at });
+  act(r, { t: "lead", from: other });
+  return OK;
+}
+
+/** Let go of the cable in your hand: it is put away. */
+export function drop(r: Room): Answer { return act(r, { t: "drop" }) ? OK : no("you have no cable in your hand"); }
+
+/** A knob to `v` (0 to 1). */
+export function setKnob(r: Room, id: string, knob: string, v: number): Answer {
+  const p = item(r, id), k = p && gearOf(p)?.knobs.find((x) => x.name === knob);
+  if (!k) return no(`no knob ${knob} on ${id}`);
+  act(r, { t: "knob", id, knob, v: Math.max(0, Math.min(1, Math.round(v * 1000) / 1000)) });
+  return OK;
+}
+export const knobValue = (patch: Patch, id: string, k: KnobDef) => patch.knobs[id]?.[k.name] ?? k.dflt;
+
+/** A click (or F) on what you look at: set down, plug, unplug, take a cable, pick up, or let go of a cable. */
+export function use(r: Room, a: Aim | null = aimed(r)): Answer {
+  const h = hand(r);
+  if (h && "item" in h) return putDown(r);
+  if (a?.t === "jack") return h ? plug(r, a.end) : cableIn(r, a.end) ? unplug(r, a.end) : lead(r, a.end);
+  if (a?.t === "knob") return no("drag to turn it");
+  if (a?.t === "item") return h ? no("plug the cable into a jack") : pickUp(r, a.id);
+  return h ? drop(r) : no("nothing in reach");
+}
+
+// ---- cables ----
+
+/** A cable hanging from `a` to `b`: `n` points on a curve that sags as a cable of that length would, resting on the floor. */
+export function sag(a: Vec3, b: Vec3, n = 20): Vec3[] {
+  const span = Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]);
+  const len = span * 1.15 + 0.3, depth = Math.sqrt((3 * Math.max(span, 0.05) * (len - span)) / 8);
+  return Array.from({ length: n }, (_, i) => {
+    const t = i / (n - 1);
+    return [a[0] + (b[0] - a[0]) * t, Math.max(0.008, a[1] + (b[1] - a[1]) * t - depth * 4 * t * (1 - t)), a[2] + (b[2] - a[2]) * t] as Vec3;
+  });
+}
+
+/** Where your hand is, for the free end of a cable you carry. */
+export const handAt = (r: Room): Vec3 => { const f = lookDir(r.you); return [r.you.x + f[0] * 0.5, EYE - 0.4 + f[1] * 0.5, r.you.z + f[2] * 0.5]; };
+
+// ---- what you hear ----
+
+export interface Heard {
+  playing: boolean;
+  /** Guitar to cab along the cables, when there is a whole chain. */
+  chain: string[];
+  /** The items whose circuits run (the amp and pedal on the chain), nothing else. */
+  running: string[];
+  settings: AmpSettings | null;
+  problems: string[];
+}
+
+/**
+ * What the cab plays: from the first cab with a cable in, back along the cables to an amp's speaker out, from the
+ * amp's input back through pedals to the guitar. A whole chain plays and runs its amp and its pedal (the rig takes
+ * one pedal for now, #4827); anything else is a problem and is silent.
+ */
+export function listen(patch: Patch, oversample: 2 | 4 = 4): Heard {
+  const byId = new Map(patch.placed.map((p) => [p.id, p]));
+  const kind = (id: string) => { const p = byId.get(id); return p ? STUDIO_GEAR[p.gear] : undefined; };
+  const other = (end: End): End | null => {
+    const c = patch.cables.find((x) => same(x.from, end) || same(x.to, end));
+    return c ? (same(c.from, end) ? c.to : c.from) : null;
+  };
+  const name = (id: string) => kind(id)?.name ?? id;
+  const silent = (problems: string[]): Heard => ({ playing: false, chain: [], running: [], settings: null, problems });
+  const cabs = patch.placed.filter((p) => kind(p.id)?.kind === "cab");
+  if (!cabs.length) return silent(["no speaker cab in the room"]);
+  const why: string[] = [];
+  for (const cab of cabs) {
+    const problems: string[] = [];
+    const fail = (w: string) => { if (!why.length) why.push(w); };
+    const src = other([cab.id, "in"]);
+    if (!src) { fail(`nothing plugged into ${name(cab.id)}`); continue; }
+    const amp = kind(src[0]);
+    if (amp?.kind !== "amp" || src[1] !== "speaker") { fail(`${name(cab.id)} is cabled to ${name(src[0])}'s ${src[1]}: only an amp's speaker out drives a cab`); continue; }
+    const pedals: string[] = [];
+    let at = other([src[0], "in"]), whole = false;
+    while (at) {
+      const g = kind(at[0]);
+      if (g?.kind === "guitar") { whole = true; break; }
+      if (g?.kind !== "pedal" || at[1] !== "out" || pedals.includes(at[0])) { fail(`${name(src[0])}'s input goes to ${name(at[0])}'s ${at[1]}`); break; }
+      pedals.unshift(at[0]);
+      const back = other([at[0], "in"]);
+      if (!back) { fail(`nothing plugged into ${name(at[0])}'s input`); break; }
+      at = back;
+    }
+    if (!at) { fail(`nothing plugged into ${name(src[0])}'s input`); continue; }
+    if (!whole) continue;
+    const ampDef = AMPS.find((a) => a.id === amp.circuit) ?? AMPS[0];
+    const turned = (k: keyof Knobs) => (patch.knobs[src[0]]?.[k] ?? ampDef.knobs[k] / 10) * 10;
+    const knobs: Knobs = { gain: turned("gain"), bass: turned("bass"), mid: turned("mid"), treble: turned("treble"), master: turned("master"), noise: turned("noise") };
+    const ped = pedals[0], pedDef = ped ? kind(ped) : undefined;
+    if (pedals.length > 1) problems.push(`the rig runs one pedal for now (#4827): ${pedals.slice(1).map(name).join(", ")} passed straight through`);
+    const drive = ped && pedDef ? (patch.knobs[ped]?.drive ?? pedDef.knobs[0].dflt) * 10 : 0;
+    return {
+      playing: true,
+      chain: [at[0], ...pedals, src[0], cab.id],
+      running: [...(ped ? [ped] : []), src[0]],
+      settings: { amp: ampDef.id, pedal: pedDef?.circuit ?? null, drive, swaps: {}, knobs, mic: DEFAULT_ROOM.mic, bypass: false, oversample },
+      problems,
+    };
+  }
+  return silent(why);
+}
+
+// ---- for probes and tests ----
+
+const cm = (v: number) => Math.round(v * 100) / 100;
+const deg = (v: number) => Math.round((v * 180) / Math.PI);
+
+/** What a test or an agent reads: you, what you hold and look at, every box, cable and knob, and what you hear. */
+export function snapshot(r: Room) {
+  return {
+    you: { x: cm(r.you.x), z: cm(r.you.z), yaw: deg(r.you.yaw), pitch: deg(r.you.pitch) },
+    holding: hand(r) ?? null,
+    aimed: aimed(r),
+    items: r.studio.patch.placed.map((p) => { const q = placedNow(r, p); return { id: p.id, gear: p.gear, at: q.at.map(cm), turn: deg(q.turn), held: heldId(r) === p.id }; }),
+    cables: r.studio.patch.cables,
+    knobs: r.studio.patch.knobs,
+    heard: listen(r.studio.patch),
+  };
+}

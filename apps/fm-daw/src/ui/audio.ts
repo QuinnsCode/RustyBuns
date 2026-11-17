@@ -20,7 +20,7 @@ export class AudioOut {
   static async start(onMessage: (m: FromWorklet) => void): Promise<AudioOut> {
     const ctx = new AudioContext({ latencyHint: "interactive" });
     await ctx.audioWorklet.addModule(workletUrl);
-    const node = new AudioWorkletNode(ctx, "fm-daw", { numberOfInputs: 0, outputChannelCount: [2] });
+    const node = new AudioWorkletNode(ctx, "fm-daw", { numberOfInputs: 1, outputChannelCount: [2] });
     node.port.onmessage = (e: MessageEvent<FromWorklet>) => onMessage(e.data);
     node.connect(ctx.destination);
     await ctx.resume();

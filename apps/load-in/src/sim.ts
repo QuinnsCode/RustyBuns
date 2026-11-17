@@ -9,6 +9,10 @@ import { feltKg } from "./assists.ts";
 export const WALK = 1.5;
 /** The most one person lifts; anything heavier needs a second pair of hands or wheels. */
 export const MAX_LIFT = 50;
+/** Gear this heavy goes quicker with a friend on the other end: two carry it at the pace of half its weight. */
+export const TEAM_KG = 30;
+/** How much farther apart two people carrying one piece can get than when they lifted it, in metres. */
+const SLACK = 0.15;
 /** How far from an item's centre your hands reach, in metres. */
 export const REACH = 1.6;
 export const EYE = 1.65, EYE_CROUCH = 1.0, RADIUS = 0.25;
@@ -19,6 +23,8 @@ export interface Item {
   key: string; gear: string; x: number; y: number; z: number; rot: number;
   /** Hung from a rigging point (the arena): never picked up off the floor, stacked on, or walked into once it is overhead. */
   hung?: boolean;
+  /** Fuel in it now, litres: a generator's tank or a jerry can. */
+  litres?: number;
 }
 export interface Level {
   name: string;
@@ -36,8 +42,14 @@ export interface Level {
   outdoor?: boolean;
   /** What the road case holds here, if not the usual three (cables.ts CASE_LOAD). */
   caseLoad?: readonly { key: string; kind: CableKind; lengthM: number }[];
+  /** The box truck the gear came in, parked outside with its back open: its bed, floor to roof. The back (the open end)
+   * is at z0, the bulkhead behind the cab at z1. */
+  truck?: Truck;
 }
+export interface Truck { x0: number; x1: number; z0: number; z1: number; h: number }
 
+/** A friend in your crew as the room last told you: where they stand and what is in their hands. */
+export interface Mate { id: string; name: string; x: number; z: number; yaw: number; crouch: boolean; holding: string | null }
 export interface Input { forward: number; right: number; turn: number; crouch: boolean }
 export interface World {
   level: Level;
@@ -45,18 +57,21 @@ export interface World {
   you: { x: number; z: number; yaw: number; pitch: number; crouch: boolean; speed: number };
   items: Item[];
   /** What is in your hands: an item's key, and its turn relative to where you face. */
-  held: { key: string; rel: number } | null;
+  held: { key: string; rel: number; team?: { span: number } } | null;
+  /** The friends in the room with you (none when you play alone). */
+  crew: Mate[];
 }
 
 /** The garage: an amp head by the back-wall outlet, the 4x12 cab out on the driveway, a guitar in the corner, a powered
  * speaker across the way in, and a road case of cables and a cable ramp by the left wall. */
 export const GARAGE: Level = {
   name: "garage",
-  bounds: { x0: -2.75, x1: 2.75, z0: 0.25, z1: 9.75 },
+  bounds: { x0: -2.75, x1: 2.75, z0: 0.25, z1: 13.75 },
   room: { x0: -3, x1: 3, z0: 0, z1: 7, height: 2.6, door: 4.8 },
   outlets: [{ key: "outlet", x: -2.2, y: 0.3, z: 0.01 }],
   walkways: [{ name: "the way in", x0: -0.4, x1: 0.4, z0: 0.4, z1: 9.75 }],
   start: { x: -0.6, z: 9.5, yaw: 0 },
+  truck: { x0: -1.1, x1: 1.1, z0: 10, z1: 14, h: 2.2 },
   items: [
     { key: "amp-head", gear: "amp-head", x: -1.4, y: 0, z: 0.45, rot: 0 },
     { key: "cab-4x12", gear: "cab-4x12", x: 0.9, y: 0, z: 7.9, rot: 0 },
@@ -73,6 +88,7 @@ export function newWorld(level: Level = GARAGE): World {
     you: { x: level.start.x, z: level.start.z, yaw: level.start.yaw, pitch: 0, crouch: false, speed: 0 },
     items: level.items.map((i) => ({ ...i })),
     held: null,
+    crew: [],
   };
 }
 
@@ -83,6 +99,8 @@ export const dims = (i: Item): [number, number, number] => { const s = gearOf(i)
 export const LOW = 0.1;
 /** Where you face on the floor: yaw 0 looks down -z, as a three.js camera does. */
 export const facing = (yaw: number) => ({ x: -Math.sin(yaw), z: -Math.cos(yaw) });
+/** Who has the other end of what you carry together; null while your end is the only one up. */
+export const partner = (w: World) => (w.held?.team ? w.crew.find((m) => m.holding === w.held!.key) ?? null : null);
 export const heldItem = (w: World) => (w.held ? w.items.find((i) => i.key === w.held!.key) ?? null : null);
 
 /** How fast you walk carrying `kg` (as the dial feels it, so Cozy carries half): a 45 kg sub is a slow shuffle on Sim. */
@@ -93,12 +111,12 @@ export const wheeled = (gearId: string) => !!gear(gearId).generator;
 export const pushSpeed = (kg: number) => WALK * clamp(1 - feltKg(kg) / 120, 0.2, 1);
 
 /** A box's footprint as its four corners on the floor. */
-function corners(x: number, z: number, rot: number, w: number, d: number): [number, number][] {
+export function corners(x: number, z: number, rot: number, w: number, d: number): [number, number][] {
   const c = Math.cos(rot), s = Math.sin(rot), hw = w / 2, hd = d / 2;
   return [[-hw, -hd], [hw, -hd], [hw, hd], [-hw, hd]].map(([a, b]) => [x + a * c + b * s, z - a * s + b * c]);
 }
 /** Whether two footprints overlap (separating axes, two boxes on the floor). */
-function overlap(a: [number, number][], b: [number, number][]): boolean {
+export function overlap(a: [number, number][], b: [number, number][]): boolean {
   for (const poly of [a, b]) for (let i = 0; i < 2; i++) {
     const [x0, z0] = poly[i], [x1, z1] = poly[i + 1], nx = z1 - z0, nz = x0 - x1;
     const pa = a.map(([x, z]) => x * nx + z * nz), pb = b.map(([x, z]) => x * nx + z * nz);
@@ -106,23 +124,52 @@ function overlap(a: [number, number][], b: [number, number][]): boolean {
   }
   return true;
 }
-const footprint = (i: Item, x = i.x, z = i.z, rot = i.rot) => corners(x, z, rot, dims(i)[0], dims(i)[2]);
+export const footprint = (i: Item, x = i.x, z = i.z, rot = i.rot) => corners(x, z, rot, dims(i)[0], dims(i)[2]);
 
 /** Where the held item sits now: in front of you, low if it's heavy, turned as you turned it. */
 export function holdPose(w: World): { x: number; y: number; z: number; rot: number } | null {
   const i = heldItem(w);
   if (!i || !w.held) return null;
   const [, h, d] = dims(i), f = facing(w.you.yaw), out = 0.3 + d / 2;
+  if (w.held.team) {
+    // Carried together: between the two of you, low, turned with the line from you to them.
+    const m = partner(w);
+    if (!m) return { x: i.x, y: i.y, z: i.z, rot: i.rot };
+    return { x: (w.you.x + m.x) / 2, y: Math.max(0.1, 0.9 - h), z: (w.you.z + m.z) / 2, rot: lineYaw(w, m) + w.held.rel };
+  }
   const top = w.you.crouch ? 0.75 : 1.1;
   // Too heavy to lift (a generator you push on its wheels): it stays on the ground.
   return { x: w.you.x + f.x * out, y: wheeled(i.gear) ? 0 : Math.max(0.1, top - h), z: w.you.z + f.z * out, rot: w.you.yaw + w.held.rel };
+}
+
+const lineYaw = (w: World, m: Mate) => Math.atan2(-(m.x - w.you.x), -(m.z - w.you.z));
+
+/** What the room says about your crew. Holding an end when a friend takes the other, the piece comes up between you at
+ * the span you stand apart; a lone carry of something heavy becomes a team carry when a friend grabs it. If the friend
+ * on the other end lets go of a piece you lifted together (or leaves), it comes down where it is: true then, so the page
+ * tells the room where it landed. */
+export function seeCrew(w: World, crew: Mate[]): boolean {
+  w.crew = crew;
+  const i = heldItem(w);
+  if (!i || !w.held) return false;
+  const m = crew.find((c) => c.holding === w.held!.key);
+  if (m && !w.held.team) w.held.team = { span: 0 };
+  const team = w.held.team;
+  if (!team) return false;
+  if (m && !team.span) {
+    team.span = clamp(Math.hypot(m.x - w.you.x, m.z - w.you.z), 0.6, 2.5);
+    w.held.rel = i.rot - lineYaw(w, m);
+    return false;
+  }
+  if (!m && team.span) { putDown(w); return true; }
+  return false;
 }
 
 /** Push you out of the walls and the gear on the floor. */
 function collide(w: World) {
   const { bounds: b } = w.level, you = w.you;
   for (const i of w.items) {
-    if (i.key === w.held?.key || dims(i)[1] < LOW || (i.hung && i.y > EYE)) continue;
+    if (i.key === w.held?.key || dims(i)[1] < LOW || (i.hung && i.y > EYE) || w.crew.some((m) => m.holding === i.key)) continue;
     const [sw, , sd] = dims(i), c = Math.cos(i.rot), s = Math.sin(i.rot);
     const dx = you.x - i.x, dz = you.z - i.z;
     const lx = dx * c - dz * s, lz = dx * s + dz * c;
@@ -137,6 +184,12 @@ function collide(w: World) {
   }
   you.x = clamp(you.x, b.x0, b.x1);
   you.z = clamp(you.z, b.z0, b.z1);
+  // The truck's side walls: in by the open back, never through the sides.
+  const t = w.level.truck;
+  if (t && you.z > t.z0 && you.x > t.x0 - RADIUS && you.x < t.x1 + RADIUS) {
+    const mid = (t.x0 + t.x1) / 2, half = (t.x1 - t.x0) / 2, off = you.x - mid;
+    if (Math.abs(off) > half - RADIUS) you.x = mid + Math.sign(off) * (Math.abs(off) < half ? half - RADIUS : half + RADIUS);
+  }
 }
 
 /** One tick: walk and turn by the input, at the pace of what you carry. */
@@ -144,12 +197,20 @@ export function step(w: World, dt: number, input: Input) {
   const you = w.you, i = heldItem(w);
   you.crouch = input.crouch;
   you.yaw += input.turn;
-  you.speed = i && wheeled(i.gear) ? pushSpeed(gearOf(i).kg) : carrySpeed(i ? gearOf(i).kg : 0, you.crouch);
+  const mate = partner(w);
+  you.speed = i && wheeled(i.gear) ? pushSpeed(gearOf(i).kg) : carrySpeed(i ? gearOf(i).kg / (w.held?.team ? 2 : 1) : 0, you.crouch);
   const f = facing(you.yaw), len = Math.hypot(input.forward, input.right);
   if (len > 0) {
     const k = (you.speed * dt) / Math.max(1, len);
     you.x += (f.x * input.forward - f.z * input.right) * k;
     you.z += (f.z * input.forward + f.x * input.right) * k;
+  }
+  // Carrying together: you can't walk off with your end. Lifted, you stay within the span you lifted it at from your
+  // friend, so both have to walk the same way; waiting for a second pair of hands, you stay by the piece.
+  if (i && w.held?.team) {
+    const [ax, az, r] = mate ? [mate.x, mate.z, w.held.team.span + SLACK] : [i.x, i.z, REACH];
+    const dx = you.x - ax, dz = you.z - az, d = Math.hypot(dx, dz);
+    if (d > r) { you.x = ax + (dx / d) * r; you.z = az + (dz / d) * r; }
   }
   collide(w);
   w.t += dt;
@@ -177,10 +238,16 @@ export function pickUp(w: World, key: string): Answer {
   if (w.held) return { ok: false, why: "your hands are full" };
   const g = gearOf(i);
   if (Math.hypot(i.x - w.you.x, i.z - w.you.z) > REACH) return { ok: false, why: `${g.what} is out of reach` };
-  if (feltKg(g.kg) > MAX_LIFT) return { ok: false, why: `${g.what} is ${g.kg} kg, too heavy to lift alone` };
+  const mate = w.crew.find((m) => m.holding === key);
+  const canTeam = !wheeled(i.gear) && g.kg >= TEAM_KG && feltKg(g.kg) <= 2 * MAX_LIFT;
+  if (mate && (!canTeam || w.crew.some((m) => m !== mate && m.holding === key))) return { ok: false, why: `${mate.name} has the ${g.what}` };
+  // Too heavy alone: with a crew in the room you take one end and wait for someone on the other.
+  const team = canTeam && (!!mate || (feltKg(g.kg) > MAX_LIFT && w.crew.length > 0));
+  if (!team && feltKg(g.kg) > MAX_LIFT) return { ok: false, why: `${g.what} is ${g.kg} kg, too heavy to lift alone` };
   const fp = footprint(i), top = i.y + dims(i)[1];
   if (w.items.some((o) => o !== i && !o.hung && Math.abs(o.y - top) < 0.01 && overlap(fp, footprint(o)))) return { ok: false, why: `something is on the ${g.what}` };
-  w.held = { key, rel: i.rot - w.you.yaw };
+  w.held = team ? { key, rel: i.rot - w.you.yaw, team: { span: 0 } } : { key, rel: i.rot - w.you.yaw };
+  if (team) seeCrew(w, w.crew);
   return { ok: true };
 }
 
@@ -232,6 +299,8 @@ export function snapshot(w: World) {
     level: w.level.name, t: cm(w.t),
     you: { x: cm(w.you.x), z: cm(w.you.z), yaw: deg(w.you.yaw), crouch: w.you.crouch, speed: cm(w.you.speed) },
     holding: w.held?.key ?? null,
+    together: w.held?.team ? partner(w)?.name ?? "waiting for a second pair of hands" : null,
+    crew: w.crew.map((m) => ({ name: m.name, x: cm(m.x), z: cm(m.z), holding: m.holding })),
     aimed: at?.key ?? null,
     items: w.items.map((i) => {
       const p = i.key === w.held?.key ? holdPose(w)! : i;

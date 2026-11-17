@@ -51,8 +51,10 @@ export type Gear = {
   amp?: AmpSpec;
   /** Mains draw in watts, idle and at show level. */
   draw?: { idle: number; loud: number };
-  /** A generator's rating. */
-  generator?: { kva: number; powerFactor: number };
+  /** A generator's rating, and its fuel: the tank, what it burns ticking over, and litres more per kWh it makes. */
+  generator?: { kva: number; powerFactor: number; tankL: number; idleLph: number; perKwh: number };
+  /** A fuel can: the litres it holds full. */
+  can?: { litres: number };
 };
 
 const box = (w: number, h: number, d: number) => ({ w, h, d });
@@ -132,7 +134,7 @@ const list: Gear[] = [
     size: box(0.7, 0.6, 0.55),
     kg: 90,
     jacks: { "power-out": 4 },
-    generator: { kva: 7, powerFactor: 0.9 },
+    generator: { kva: 7, powerFactor: 0.9, tankL: 25, idleLph: 0.6, perKwh: 0.35 },
   },
   {
     id: "distro-box",
@@ -145,6 +147,16 @@ const list: Gear[] = [
   { id: "road-case-m", what: "road case on wheels", size: box(0.6, 0.5, 0.5), kg: 14, jacks: {} },
   { id: "stand-tripod", what: "speaker stand, 1.2 to 2.0 m", size: box(0.9, 1.2, 0.9), kg: 4, jacks: {} },
   { id: "mic-stand", what: "boom mic stand", size: box(0.6, 1.6, 0.6), kg: 3, jacks: {} },
+  {
+    // Hung, not stood: one element of a flown line array, too heavy for one person (two carry it, or a crew).
+    id: "line-array-box",
+    what: "line array element, powered",
+    size: box(1.0, 0.32, 0.55),
+    kg: 75,
+    jacks: { "power-in": 1, "xlr-in": 1, "xlr-out": 1 },
+    speaker: { sensitivity: 100, maxSpl: 138, ratedWatts: 1000, ohms: null, coverage: { h: 100, v: 12 }, lowCut: 60, highCut: 18000, rearLoss: 25 },
+    draw: { idle: 40, loud: 500 },
+  },
   { id: "guitar", what: "electric guitar", size: box(0.33, 1.0, 0.05), kg: 3.5, jacks: { "line-out": 1 } },
   // Speakers that hang: a line array box (flown in a column from a rigging point, its splay to the next box set at the
   // rear pins), and a small box for the front rows the arrays shoot over.
@@ -166,6 +178,7 @@ const list: Gear[] = [
     speaker: { sensitivity: 95, maxSpl: 122, ratedWatts: 300, ohms: null, coverage: { h: 100, v: 70 }, lowCut: 70, highCut: 20000, rearLoss: 18 },
     draw: { idle: 15, loud: 90 },
   },
+  { id: "jerry-can-20l", what: "jerry can of fuel", size: box(0.35, 0.47, 0.17), kg: 18, jacks: {}, can: { litres: 20 } },
   // Not road gear: the venue's own back-bar cooler, a load on a wall circuit that is always on.
   { id: "bar-cooler", what: "back-bar drinks cooler", size: box(0.9, 0.9, 0.6), kg: 70, jacks: { "power-in": 1 }, draw: { idle: 450, loud: 450 } },
 ];

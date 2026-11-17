@@ -1,8 +1,10 @@
 // The dive bar on the page: the counter, the stage and the crowd area marked on the floor, the coverage heat map
-// (painted only when something moved, not every frame), the aim keys and the score card. main.ts calls `barView`
+// (painted only when something moved, not every frame; mids and highs or the sub's bass), the aim keys, the touch aim
+// pad and the score card. main.ts calls `barView`
 // once per world and then `keys` and `update`; everything else stays in here.
 import * as THREE from "three";
 import { aimed, type World } from "../sim.ts";
+import type { Band } from "@rustybuns/gear";
 import { FLOOR, PASS, STAND_MIN, TARGET, WINDOW, ZONES, type Zone, type Show, aim, heat, master, raise, rig, score, show, type Score } from "./dive-bar.ts";
 
 const STEP = Math.PI / 36, TILT = Math.PI / 60;
@@ -32,13 +34,29 @@ export function aimKey(w: World, code: string): boolean {
   return false;
 }
 
+/** The touch aim pad: each button presses the key it stands for, so touch and keys share one path. */
+const PAD: { code: string; glyph: string; what: string }[] = [
+  { code: "KeyQ", glyph: "\u21B6", what: "Turn left" },
+  { code: "KeyE", glyph: "\u21B7", what: "Turn right" },
+  { code: "KeyR", glyph: "\u2191", what: "Tilt up" },
+  { code: "KeyV", glyph: "\u2193", what: "Tilt down" },
+  { code: "KeyZ", glyph: "\u2212", what: "Lower the stand" },
+  { code: "KeyX", glyph: "+", what: "Raise the stand" },
+  { code: "BracketLeft", glyph: "\u2212dB", what: "Fader down" },
+  { code: "BracketRight", glyph: "+dB", what: "Fader up" },
+  { code: "KeyH", glyph: "\u25A6", what: "Heat map: mids, bass, off" },
+  { code: "Enter", glyph: "\u2192|", what: "Open the doors" },
+];
+
 export type BarView = {
   /** A key while playing with hands free; true when the dive bar used it. */
   key(code: string): boolean;
   /** Each frame: repaint the heat map if anything moved, refresh the card. */
   update(): void;
   heatOn: boolean;
-  setHeat(on: boolean): void;
+  /** Which band the heat map shows. */
+  band: Band;
+  setHeat(on: boolean, band?: Band): void;
   /** The doors open: the card shows the final score. */
   doors(): Show;
   dispose(): void;
@@ -80,23 +98,37 @@ export function barView(scene: THREE.Scene, hud: HTMLElement, getWorld: () => Wo
   card.id = "bar-card";
   card.className = "bar-card";
   hud.appendChild(card);
+  const info = document.createElement("div");
+  const pad = document.createElement("div");
+  pad.className = "aim-pad";
+  for (const b of PAD) {
+    const btn = document.createElement("button");
+    Object.assign(btn, { type: "button", textContent: b.glyph, title: b.what });
+    btn.setAttribute("aria-label", b.what);
+    // pointerdown, not click: a held finger shouldn't wait for the lift, and preventDefault keeps the tap from zooming.
+    btn.addEventListener("pointerdown", (e) => { e.preventDefault(); view.key(b.code); });
+    pad.appendChild(btn);
+  }
+  card.append(info, pad);
 
   let seen = "", last: Score | null = null, opened: Show | null = null;
-  const signature = (w: World) => JSON.stringify([w.held?.key, w.items.map((i) => [i.x, i.y, i.z, i.rot]), rig(w)]);
+  const signature = (w: World) => JSON.stringify([view.band, w.held?.key, w.items.map((i) => [i.x, i.y, i.z, i.rot]), rig(w)]);
 
   function paint(w: World) {
-    const grid = heat(w);
-    for (let k = 0; k < grid.db.length; k++) data.set(heatColour(grid.db[k]), k * 4);
+    const high = heat(w), low = heat(w, "low"), shown = view.band === "low" ? low : high;
+    for (let k = 0; k < shown.db.length; k++) data.set(heatColour(shown.db[k]), k * 4);
     tex.needsUpdate = true;
-    last = score(w, grid);
+    last = score(w, high, low);
   }
 
   const view: BarView = {
     heatOn: false,
-    setHeat(on) { view.heatOn = on; plane.visible = on; },
+    band: "high",
+    setHeat(on, band = view.band) { view.heatOn = on; view.band = band; plane.visible = on; },
     key(code) {
       const w = getWorld();
-      if (code === "KeyH") return view.setHeat(!view.heatOn), true;
+      // H steps the heat map: off, mids and highs, the bass, off.
+      if (code === "KeyH") return (!view.heatOn ? view.setHeat(true, "high") : view.band === "high" ? view.setHeat(true, "low") : view.setHeat(false, "high")), true;
       if (code === "BracketLeft" || code === "BracketRight") return master(w, rig(w).master + (code === "BracketLeft" ? -1 : 1)), true;
       if (code === "Enter") return view.doors(), true;
       return aimKey(w, code);
@@ -105,12 +137,12 @@ export function barView(scene: THREE.Scene, hud: HTMLElement, getWorld: () => Wo
       const w = getWorld(), sig = signature(w);
       if (sig !== seen) { seen = sig; paint(w); }
       const s = last!, db = (v: number | null) => (v === null ? "silent" : `${v.toFixed(0)} dB`);
-      card.innerHTML = `<b>${opened ? "Doors open" : "Dive bar"}</b>`
+      info.innerHTML = `<b>${opened ? "Doors open" : "Dive bar"}</b>`
         + `<span>Crowd ${db(s.crowd)} (target ${TARGET})</span><span>Bar ${s.gap === null ? "silent" : `${s.gap.toFixed(0)} dB under`}</span>`
-        + `<span>Fader ${rig(w).master} dB</span>` + (opened
+        + `<span>Bass ${Math.round(s.bass * 100)}% even</span><span>Fader ${rig(w).master} dB${view.heatOn ? `, map: ${view.band === "low" ? "bass" : "mids"}` : ""}</span>` + (opened
           ? `<span class="${opened.pass ? "pass" : ""}">Show ${opened.score} / ${PASS} to pass</span><span>Sound ${opened.sound}, crowd mood ${opened.mood}</span><span>Paid $${opened.pay} of $${opened.fee}</span>`
           : `<span class="${s.pass ? "pass" : ""}">Score ${s.score} / ${PASS} to pass</span>`)
-        + `<small>H heat map, Q / E turn, R / V tilt, Z / X stand, [ ] fader, Enter doors</small>`;
+        + `<small>H heat map (mids, bass), Q / E turn, R / V tilt, Z / X stand, [ ] fader, Enter doors</small>`;
     },
     doors() {
       view.update();
