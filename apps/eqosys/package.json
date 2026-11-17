@@ -17,7 +17,8 @@
     "react": "19.3.1",
     "react-dom": "19.3.1",
     "react-server-dom-webpack": "19.3.1",
-    "rwsdk": "1.7.5"
+    "rwsdk": "1.7.5",
+    "three": "^0.180.0"
   },
   "devDependencies": {
     "@alchemy.run/cloudflare": "2.0.0-beta.84",
@@ -29,11 +30,13 @@
     "@effect/platform-bun": "4.0.5",
     "@effect/platform-node": "4.0.5",
     "@rustybuns/cli": "^0.1.12",
+    "@rustybuns/models": "^0.1.12",
     "@rustybuns/shell-bun": "^0.1.12",
     "@rustybuns/ui": "^0.1.12",
     "@rustybuns/util": "^0.1.12",
     "@types/react": "19",
     "@types/react-dom": "19",
+    "@types/three": "^0.180.0",
     "alchemy": "2.0.0-beta.84",
     "effect": "4.0.5",
     "vite": "8.3.5",

@@ -23,7 +23,8 @@
     "./glb": "./src/glb.ts",
     "./catalog": "./src/catalog.ts",
     "./scenery": "./src/scenery.ts",
-    "./gear": "./src/gear.ts"
+    "./gear": "./src/gear.ts",
+    "./character": "./src/character.ts"
   },
   "dependencies": {
     "@rustybuns/util": "workspace:*",

@@ -71,4 +71,7 @@ if (typeof document !== "undefined") {
   // The /spaces page's panel (spaces.client.ts), and its handle for `bun run probe eqosys /spaces --js "__spaces.state()"`.
   const box = document.getElementById("spaces");
   if (box) void mountSpaces(box).then((p) => Object.assign(window, { __spaces: p }));
+  // The Account tab's character picker (avatar.client.ts), loaded only there: it brings three.js. Its handle is __avatar.
+  const pick = document.getElementById("avatar");
+  if (pick) void import("./avatar.client.ts").then((m) => m.mountAvatar(pick)).then((p) => Object.assign(window, { __avatar: p }));
 }

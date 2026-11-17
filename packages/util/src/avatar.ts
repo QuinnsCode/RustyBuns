@@ -1,7 +1,11 @@
 // A person's avatar: a few chosen parts, saved on a codeSplitter profile (users.avatar, JSON) and worn
 // in the code city. The worker checks what's saved (cleanAvatar), the profile editor and the
 // city draw it (codeSplitter's build.ts bundles this file as /avatar.js), and Mythic Masters'
-// stadium crowd is cast from it (apps/mythic-masters/src/crowd.ts). Pure: no DOM, no imports.
+// stadium crowd is cast from it (apps/mythic-masters/src/crowd.ts). eqosys keeps one per account (GET/PUT /me/avatar,
+// read through `Avatar` and answered as `AvatarReply`), so every Q app can dress you the same. Pure: no DOM.
+import { Bad, bool, obj, type Of } from "./guard.ts";
+
+const fail = (why: string): never => { throw new Bad(why); };
 
 /** What each part can be. Colors are any #rrggbb; these are the palettes the editor offers. */
 export const PARTS = {
@@ -36,9 +40,17 @@ export function cleanAvatar(x: unknown): Avatar | null {
   return out as Avatar;
 }
 
+/** `cleanAvatar` as a guard (`@rustybuns/util/guard`): the avatar, or a `Bad` that a route answers with a 400. */
+export const Avatar = (v: unknown): Avatar => cleanAvatar(v) ?? fail("an avatar: every part one of PARTS, colours as #rrggbb");
+
+/** What eqosys's `GET /me/avatar` and `PUT /me/avatar` answer: the avatar, and whether its person chose it
+ * (`chosen: false` is `defaultAvatar` from their name, for someone who never opened the picker). */
+export const AvatarReply = obj({ avatar: Avatar, chosen: bool() });
+export type AvatarReply = Of<typeof AvatarReply>;
+
 /** One at random from `r` (a 0..1 source), so a seeded one is the same for everyone. Hats and glasses are rarer. */
 export function randomAvatar(r: () => number): Avatar {
-  const pick = <T,>(xs: readonly T[]) => xs[Math.floor(r() * xs.length)];
+  const pick = <T,>(xs: readonly T[]) => xs[Math.floor(r() * xs.length)]!;
   const out: Record<string, string> = {};
   for (const k of Object.keys(PARTS) as (keyof typeof PARTS)[]) out[k] = pick(PARTS[k]);
   if (r() < 0.6) out.hat = "none";
@@ -79,7 +91,7 @@ export function drawAvatar(g: Ctx, a: Avatar, x: number, y: number, h: number, s
   if (a.top === "hoodie") box(-w / 3, by - 2, w * 0.66, 5, a.topColor, 3);
   if (a.top === "labcoat") { box(-w / 2, by, w, 26, "#f4f5f5", 5); box(-1, by, 2, 26, "#c9d1d6"); box(-w / 2 + 3, by + 15, 6, 6, "#c9d1d6", 1); }
   if (a.top === "lanyard") { box(-w / 2 + 5, by, 2, 14, "#e8590c"); box(w / 2 - 7, by, 2, 14, "#e8590c"); box(-5, by + 12, 10, 8, "#f4f5f5", 1.5); box(-3, by + 14, 6, 1.5, "#16191c"); }
-  if (a.top === "hawaiian") for (const [dx, dy] of [[-8, 5], [4, 11], [-3, 18], [9, 4]]) { g.fillStyle = "#f4f5f5"; g.beginPath(); g.arc(x + dx * u, y + (by + dy) * u, 2 * u, 0, 7); g.fill(); }
+  if (a.top === "hawaiian") for (const [dx, dy] of [[-8, 5], [4, 11], [-3, 18], [9, 4]] as const) { g.fillStyle = "#f4f5f5"; g.beginPath(); g.arc(x + dx * u, y + (by + dy) * u, 2 * u, 0, 7); g.fill(); }
   const sleeve = a.top === "suit" ? "#2e3439" : a.top === "labcoat" ? "#f4f5f5" : a.topColor;
   if (star) for (const s of [-1, 1]) limb(s * w / 2, by + 4, -s * 2.15, 5, 24, sleeve, a.skin, 6);
   else { box(-w / 2 - 5, by + 2, 5, 18, sleeve, 2.5); box(w / 2, by + 2, 5, 18, sleeve, 2.5); box(-w / 2 - 5, by + 19, 5, 5, a.skin, 2.5); box(w / 2, by + 19, 5, 5, a.skin, 2.5); }
@@ -154,7 +166,7 @@ export function drawFace(g: Ctx, a: Avatar, x: number, cy: number, u: number) {
       else if (a.glasses === "square") g.strokeRect(ex - 5.5 * u, ey - 4.5 * u, 11 * u, 9 * u);
       else if (a.glasses === "monocle") { if (s > 0) { g.beginPath(); g.arc(ex, ey, 5.5 * u, 0, 7); g.stroke(); g.beginPath(); g.moveTo(ex + 3 * u, ey + 5 * u); g.lineTo(ex + 6 * u, ey + 14 * u); g.stroke(); } }
       else if (a.glasses === "vr") { if (s < 0) { g.fillStyle = "#2e3439"; g.beginPath(); g.roundRect(x - 17 * u, ey - 6 * u, 34 * u, 13 * u, 4 * u); g.fill(); g.fillStyle = "#8a5cff"; g.fillRect(x - 14 * u, ey - 2 * u, 28 * u, 3 * u); } }
-      else if (a.glasses === "pixel") { g.fillStyle = "#16191c"; for (const [dx, dy, w, h] of [[-7, -3, 14, 3], [-7, 0, 11, 3], [-6, 3, 8, 3]]) g.fillRect(ex + dx * u, ey + dy * u, w * u, h * u); }
+      else if (a.glasses === "pixel") { g.fillStyle = "#16191c"; for (const [dx, dy, w, h] of [[-7, -3, 14, 3], [-7, 0, 11, 3], [-6, 3, 8, 3]] as const) g.fillRect(ex + dx * u, ey + dy * u, w * u, h * u); }
       else { g.fillStyle = "#16191c"; g.fillRect(ex - 6 * u, ey - 4 * u, 12 * u, 8 * u); }
     }
     if (a.glasses !== "monocle" && a.glasses !== "vr") { g.beginPath(); g.moveTo(x - 3 * u, cy - 2 * u); g.lineTo(x + 3 * u, cy - 2 * u); g.stroke(); }

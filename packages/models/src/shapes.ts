@@ -26,8 +26,9 @@ function finish(geo: THREE.BufferGeometry, slot: string, smooth = false): Piece 
 function volume(pos: number[], idx: number[]) {
   let v = 0;
   for (let i = 0; i < idx.length; i += 3) {
-    const [a, b, c] = [idx[i], idx[i + 1], idx[i + 2]].map((k) => pos.slice(k * 3, k * 3 + 3));
-    v += (a[0] * (b[1] * c[2] - b[2] * c[1]) - a[1] * (b[0] * c[2] - b[2] * c[0]) + a[2] * (b[0] * c[1] - b[1] * c[0])) / 6;
+    const [a, b, c] = [idx[i]!, idx[i + 1]!, idx[i + 2]!].map((k) => pos.slice(k * 3, k * 3 + 3)) as [number[], number[], number[]];
+    const at = (p: number[], j: number) => p[j]!;
+    v += (at(a, 0) * (at(b, 1) * at(c, 2) - at(b, 2) * at(c, 1)) - at(a, 1) * (at(b, 0) * at(c, 2) - at(b, 2) * at(c, 0)) + at(a, 2) * (at(b, 0) * at(c, 1) - at(b, 1) * at(c, 0))) / 6;
   }
   return v;
 }
@@ -55,26 +56,26 @@ export function loft(slot: string, rings: Ring[], { seg = 8, p = 2, rot = Math.P
   const pos: number[] = [], idx: number[] = [];
   const vert = (x: number, y: number, z: number) => (pos.push(x, y, z), pos.length / 3 - 1);
   const rows = rings.map(({ y, rx, rz, cx, cz, tilt, jag }) => rx === 0 && rz === 0 ? [vert(cx, y, cz)]
-    : base.map(([ux, uz], j) => { const k = j % 2 ? 1 + jag : 1; return vert(cx + ux * rx * k, y + tilt * uz, cz + uz * rz * k); }));
+    : base.map(([ux = 0, uz = 0], j) => { const k = j % 2 ? 1 + jag : 1; return vert(cx + ux * rx * k, y + tilt * uz, cz + uz * rz * k); }));
   const n = rows.length;
   for (let i = 0; i < (closed ? n : n - 1); i++) {
-    const a = rows[i], b = rows[(i + 1) % n];
+    const a = rows[i]!, b = rows[(i + 1) % n]!;
     if (a.length === 1 && b.length === 1) continue;
     for (let j = 0; j < seg; j++) {
       const k = (j + 1) % seg;
-      if (a.length === 1) idx.push(a[0], b[k], b[j]);
-      else if (b.length === 1) idx.push(a[j], a[k], b[0]);
-      else idx.push(a[j], a[k], b[k], a[j], b[k], b[j]);
+      if (a.length === 1) idx.push(a[0]!, b[k]!, b[j]!);
+      else if (b.length === 1) idx.push(a[j]!, a[k]!, b[0]!);
+      else idx.push(a[j]!, a[k]!, b[k]!, a[j]!, b[k]!, b[j]!);
     }
   }
   // The sides above face in for rings running up; the caps are wound to agree, the bottom up and the top down.
   if (caps && !closed) {
-    const [first, last] = [rows[0], rows[n - 1]];
-    if (first.length > 2) for (let j = 1; j + 1 < seg; j++) idx.push(first[0], first[j + 1], first[j]);
-    if (last.length > 2) for (let j = 1; j + 1 < seg; j++) idx.push(last[0], last[j], last[j + 1]);
+    const [first, last] = [rows[0]!, rows[n - 1]!];
+    if (first.length > 2) for (let j = 1; j + 1 < seg; j++) idx.push(first[0]!, first[j + 1]!, first[j]!);
+    if (last.length > 2) for (let j = 1; j + 1 < seg; j++) idx.push(last[0]!, last[j]!, last[j + 1]!);
   }
   // Then face the whole thing outwards, whichever way the rings run.
-  if (volume(pos, idx) < 0) for (let i = 0; i < idx.length; i += 3) [idx[i + 1], idx[i + 2]] = [idx[i + 2], idx[i + 1]];
+  if (volume(pos, idx) < 0) for (let i = 0; i < idx.length; i += 3) [idx[i + 1], idx[i + 2]] = [idx[i + 2]!, idx[i + 1]!];
   const geo = new THREE.BufferGeometry();
   geo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
   geo.setIndex(idx);
@@ -99,7 +100,7 @@ export function ball(slot: string, r: number, at: THREE.Vector3Tuple, { scale = 
  * x @ y @ z) about its centre `at`. */
 export function box(slot: string, size: THREE.Vector3Tuple, at: THREE.Vector3Tuple, { bevel = 0, rot = [0, 0, 0] }:
   { bevel?: number; rot?: THREE.Vector3Tuple } = {}): Piece {
-  const [hx, hy, hz] = size.map((s) => s / 2);
+  const [hx, hy, hz] = [size[0] / 2, size[1] / 2, size[2] / 2];
   let geo: THREE.BufferGeometry;
   if (bevel > 0) {
     const pts: THREE.Vector3[] = [];
@@ -133,7 +134,7 @@ export function part(name: string, pieces: Piece[], palette: Palette, m?: THREE.
     let geo = mergeGeometries(pieces.filter((p) => p.slot === slot).map((p) => p.geo))!;
     if (m) geo.applyMatrix4(m);
     geo = mergeVertices(geo);
-    const [color, roughness, metalness, glow] = palette[slot];
+    const [color, roughness, metalness, glow] = palette[slot] ?? ["#ff00ff", 1, 0];
     const mat = new THREE.MeshStandardMaterial({ name: slot, color, roughness, metalness, flatShading: false });
     if (glow) { mat.emissive.set(color); mat.emissiveIntensity = glow; }
     const mesh = new THREE.Mesh(geo, mat);
@@ -146,6 +147,6 @@ export function part(name: string, pieces: Piece[], palette: Palette, m?: THREE.
 /** Triangles in an object, for budgets. */
 export function triangles(o: THREE.Object3D): number {
   let n = 0;
-  o.traverse((c) => { const g = (c as THREE.Mesh).isMesh ? (c as THREE.Mesh).geometry : null; if (g) n += (g.index ? g.index.count : g.attributes.position.count) / 3; });
+  o.traverse((c) => { const g = (c as THREE.Mesh).isMesh ? (c as THREE.Mesh).geometry : null; if (g) n += (g.index ? g.index.count : (g.attributes.position?.count ?? 0)) / 3; });
   return n;
 }

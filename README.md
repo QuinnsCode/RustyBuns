@@ -377,6 +377,19 @@ A party link carries the party's invite key, and whoever holds it comes in, whet
 
 </details>
 
+### Your character, the same in every Q app
+
+You make a 3D character on your eqosys account. Each Q app that asks shows you as that character.
+
+<details><summary>More</summary>
+
+- The picker is on eqosys's Account tab. A new account sees it first. The figure turns slowly, and you can drag it round. Each part (build, skin, hair, eyes, mouth, glasses, hat, top and colours) is a row of choices. There is also Shuffle, and Save.
+- The figure is `character(avatar, seed)` from `@rustybuns/models/character`. It is made in code (no Blender), with shoulders, hands with fingers, and a face whose eyes blink. It can stand, walk, sit, and play keys, drums or a guitar.
+- An app reads the character with `GET /me/avatar` and its eqosys token, through the `AvatarReply` guard (`@rustybuns/util/avatar`). The picker saves with `PUT /me/avatar`, and eqosys checks the body with the `Avatar` guard.
+- Someone who never made a character wears the one that their name gives them (`defaultAvatar`).
+
+</details>
+
 ### Achievements on one account across every game
 
 A game unlocks an achievement with one call. The player's eqosys page shows each game's achievements, earned and locked.
