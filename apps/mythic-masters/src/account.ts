@@ -23,7 +23,8 @@ export const SKIN = {
     "--ui-top": "52px", // under the cog and the field chart, top right
   },
   css: `.eq-form,.eq-toast,.eq-chip.in{background:var(--grain),linear-gradient(170deg,var(--paper-hi),var(--paper) 45%,var(--paper-lo))}
-.eq-who{font-family:var(--f-hand);font-size:20px;font-weight:400}.eq-title,.eq-toast b{font-weight:600;font-size:19px}
+.eq-who{font-family:var(--f-hand);font-size:20px;font-weight:400}
+.eq-chip.in .eq-who::before{content:"";display:inline-block;width:15px;height:15px;margin:0 6px 0 2px;vertical-align:-1px;border-radius:47% 53% 50% 46%;background:radial-gradient(circle at 50% 50%,transparent 3px,#00000038 3.5px,transparent 4.5px),radial-gradient(circle at 34% 30%,#d4574c,var(--blood) 55%,#3e0b08);box-shadow:0 1px 1px #2814064d}.eq-title,.eq-toast b{font-weight:600;font-size:19px}
 .eq-toast span{font-family:var(--f-hand);font-size:17px;opacity:1;color:var(--ink-faded)}.eq-toast small{font-family:var(--f-book);font-style:italic;letter-spacing:.04em;text-transform:none;font-size:13px}
 .eq input,.eq select,.eq textarea{background:var(--paper-hi)}
 .eq-coach{top:104px;background:var(--grain),linear-gradient(170deg,var(--paper-hi),var(--paper) 45%,var(--paper-lo))}.eq-coach b{font-size:19px}.eq-coach p{font-family:var(--f-book)}`,

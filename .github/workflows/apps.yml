@@ -24,6 +24,7 @@ jobs:
       apps: ${{ steps.p.outputs.apps }}
       any: ${{ steps.p.outputs.any }}
       packages: ${{ steps.p.outputs.packages }}
+      skins: ${{ steps.p.outputs.skins }}
       hooks: ${{ steps.p.outputs.hooks }}
       scripts: ${{ steps.p.outputs.scripts }}
     steps:
@@ -38,9 +39,10 @@ jobs:
         env: { BASE: "${{ github.event.pull_request.base.sha }}" }
         run: bun scripts/ci-apps.ts test "${BASE:-$(git rev-list --max-parents=0 HEAD)}" >> "$GITHUB_OUTPUT"
 
+  # A game PR that changes its eqosys skin or the stylesheet it reads runs just the shared skin test.
   packages:
     needs: plan
-    if: needs.plan.outputs.packages == 'true' || github.event_name == 'workflow_dispatch'
+    if: needs.plan.outputs.packages == 'true' || needs.plan.outputs.skins == 'true' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -48,7 +50,8 @@ jobs:
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with: { bun-version: "1.4.3" }
       - run: bun install --frozen-lockfile
-      - run: bun scripts/ci-test-count.ts "bun test packages"
+      - env: { ALL: "${{ needs.plan.outputs.packages == 'true' || github.event_name == 'workflow_dispatch' }}" }
+        run: bun scripts/ci-test-count.ts "bun test $([ "$ALL" = true ] && echo packages || echo ./packages/util/test/skin.test.ts)"
 
   # The agent guard hook (.claude/hooks/guard.ts). bun test skips dot directories, hence the explicit path.
   hooks:

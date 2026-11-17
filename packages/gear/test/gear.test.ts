@@ -14,6 +14,7 @@ import {
   levelAt,
   ohmsPerMetre,
   parallel,
+  runHours,
   series,
   source,
   splAt,
@@ -45,6 +46,8 @@ const cases: [string, number, number, number][] = [
   ["30 m of 16 AWG into 4 ohms loses about 1.6 dB", cableLoss(16, 30, 4), 1.57, 0.02],
   ["a 15 A breaker carries 1800 W", circuitLoad([heater(1800)], CIRCUIT_15A).limit, 1800, 1e-9],
   ["a 7 kVA generator runs 6300 W", generatorLoad("generator-7kva", []).limit, 6300, 1e-9],
+  ["a full tank at the full 6.3 kW lasts about 9 hours", runHours("generator-7kva", 6300, 25), 8.91, 0.01],
+  ["at 350 W, 4 litres lasts under 6 hours", runHours("generator-7kva", 350, 4), 5.54, 0.01],
 ];
 
 test.each(cases)("%s", (_name, got, want, tol) => {
@@ -62,7 +65,7 @@ test("over the rating trips, and a load below the amp's minimum is a problem", (
 test("the catalog has every shared id with its size, and jacks number from 1", () => {
   expect(GEAR_IDS).toEqual([
     "top-12-powered", "top-15-passive", "sub-18", "wedge-12", "amp-head", "cab-4x12", "amp-rack-4u", "mixer-small",
-    "generator-7kva", "distro-box", "cable-ramp-2ch", "road-case-m", "stand-tripod", "mic-stand", "line-array-box", "guitar", "bar-cooler",
+    "generator-7kva", "distro-box", "cable-ramp-2ch", "road-case-m", "stand-tripod", "mic-stand", "line-array-box", "guitar", "jerry-can-20l", "bar-cooler",
   ]);
   expect(gear("sub-18")).toMatchObject({ size: { w: 0.55, h: 0.7, d: 0.75 }, kg: 45 });
   expect(jackNames(gear("generator-7kva"))).toEqual(["power-out-1", "power-out-2", "power-out-3", "power-out-4"]);

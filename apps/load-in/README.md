@@ -21,7 +21,7 @@ The dive bar (`?level=dive-bar`): set the tops on their stands, then, looking at
 
 The bigger bar (`?level=bigger-bar`): passive 15" tops and two subs run off the amp rack over speaker cable, two powered wedges, and wall outlets on four numbered circuits (two 20 A on the stage, 15 A at the bar and the side). The cables decide what plays. The bar's cooler is always on circuit 3, so the rack on that circuit trips it at show level. Walk to the panel on the right wall and press B to reset it, then move the plug. The card shows each circuit and how many speakers are fed.
 
-The park (`?level=park`): a Saturday event with a pop-up tent and no wall power. F on the generator (90 kg, too heavy to lift) takes its handle and you push it in from the truck at a heavy pace; run the 25 m power cable to the distro in the tent and the short ones to the tops and the mixer, all inside the generator's 6.3 kW (past it, it trips and the park goes quiet). Cables across the lakeside path or the dog walk need a ramp, and the houses across the road have a noise limit of 82 dB at their property line: aim, tilt and the fader trade the crowd's 95 dB against the neighbours. On Cozy the generator rolls light and never trips, and ramps snap over the runs. Same keys as the dive bar; Enter is show time.
+The park (`?level=park`): a Saturday event with a pop-up tent and no wall power. F on the generator (90 kg, too heavy to lift) takes its handle and you push it in from the truck at a heavy pace; run the 25 m power cable to the distro in the tent and the short ones to the tops and the mixer, all inside the generator's 6.3 kW (past it, it trips and the park goes quiet). It comes with 4 litres in its tank, not enough for the 8-hour day: carry a jerry can from the truck (18 kg, one at a time) and F on the generator pours it in. The card shows the hours left at the load you've plugged in (more draw burns faster), and if the fuel runs out before the day ends, the score drops by the share of the day the park sits quiet. Cables across the lakeside path or the dog walk need a ramp, and the houses across the road have a noise limit of 82 dB at their property line: aim, tilt and the fader trade the crowd's 95 dB against the neighbours. On Cozy the generator rolls light and never trips, and ramps snap over the runs. Same keys as the dive bar; Enter is show time.
 The big arena (`?level=arena`): the PA flies. Sixteen 75 kg line-array boxes and four subs wait on the dock, and the boxes are too heavy for one person (on Cozy they weigh half, so you can), so four hired hands carry what you send them, two to a box. Press 1 to 6 to pick a rigging point (the two mains, the two side hangs, the two delay towers halfway down the floor), then K on a box sends the crew with it to that point's fly bar; K on anything else tags it, and K again sends it to where you stand. At a point's motor, U flies the hang to trim and R / V angle it. , and . step a tower's delay: it should land just after the mains (0 to 20 ms), about 65 ms for these towers. The subs go to the stage edge in cardioid pairs: a second sub 0.8 m behind the first, facing the same way, with its polarity flipped (I) and its delay stepped with , and . to the time sound takes to cross the gap (2.3 ms), so the bass cancels on the band's stage and adds out front. Power is the building's company switch on the right wall: 7 picks the sub amps, and L there moves the picked feed onto the next of three 50 A legs. Everything on one leg trips it. The card scores the floor at 102 dB, the towers in time, the stage 10 dB quieter in the lows, and every leg under 80%.
 A gamepad works too (left stick walk, right stick look, A grab, LB / RB turn, B crouch); the cog rebinds it.
 
@@ -36,7 +36,7 @@ A gamepad works too (left stick walk, right stick look, A grab, LB / RB turn, B 
 | `src/clock.ts` | the clock to doors: each venue's window and fee, the dial's stretch and grace, and what being late costs |
 | `src/dial-view.ts` | the dial in the menu, the clock in the HUD, and the jack glow |
 | `src/venues/dive-bar.ts` | the dive bar: the room, the crowd and bar zones, aiming (turn, tilt, raise the stand), the master fader, and the score from `coverage()` in `packages/gear` |
-| `src/venues/park.ts` | the park: no outlets, the generator you push (`push`), the generator's load (`load`), the paths, and the score: the crowd, the houses' property line against its limit, clear paths |
+| `src/venues/park.ts` | the park: no outlets, the generator you push (`push`), the generator's load and the hours its fuel lasts (`load`), pouring a jerry can in (`pour`), the paths, and the score: the crowd, the houses' property line against its limit, clear paths |
 | `src/venues/arena.ts` | the big arena: the rigging points and their hangs (fly, angle, tower delays), the subs' delay and polarity, the company switch's three legs, the hired crew (`send`, `crewTick`: carries on a timeline, two hands to a heavy box) and the score |
 | `src/venues/arena-view.ts` | the arena on the page: the stage, the roof grid and each point's motor and chain, the tower scaffolds, the switch's leg lamps, the crew in hi-vis, the heat map and the card |
 | `src/venues/park-view.ts` | the park on the page: grass and sky, the tent, paths, road, houses (red when over the limit), the truck, the heat map and the card |
@@ -46,11 +46,14 @@ A gamepad works too (left stick walk, right stick look, A grab, LB / RB turn, B 
 | `src/audio/hear.ts` | what you hear where you stand: each fed speaker's level at your head from `@rustybuns/gear` (distance, off-axis), how dull it is from there, and the sub band summed with phase; the `fed` hook cables fill in |
 | `src/audio/play.ts` | Web Audio: our own synthesised house loop, per-speaker gain, top end and pan, one sub bus, the speakers-down card and a -1 dBFS limiter |
 | `src/eqosys.ts` | the eqosys sign-in and the Qollab party client, with this game's id |
+| `src/crew/` | the crew: `room.ts` who is here and whose hands are on what (shared by the room and the page), `sync.ts` your world to and from the room, `online.ts` the socket, `view.ts` your friends in the scene |
+| `src/edge/` | the Worker's door to a crew room, and the room's Durable Object |
+| `test/crew.test.ts` | two in the bigger bar through the room: the cooler carried together, walked out side by side, set down for both |
 | `test/garage.test.ts` | the cab carried in from the door, set by the amp, the head stacked on it |
 | `test/bigger-bar.test.ts` | cable the rig, trip the bar's breaker, reset it at the panel, move the plug, every speaker fed; four boxes on one rack channel hold, five shut it down |
 | `test/dial.test.ts` | the clock read on each stop, and the same dive bar load-in on Cozy, Crew and Sim: the same layout, a different time and show |
 | `test/dive-bar.test.ts` | both tops set on their stands: pointed at the wall they score low, aimed at the crowd they pass |
-| `test/park.test.ts` | the generator pushed in, the tent powered from it, the path ramped, the houses under the limit; then four amp racks trip it |
+| `test/park.test.ts` | the generator pushed in, the tent powered from it, the path ramped, the houses under the limit, a jerry can poured in for the day; then four amp racks trip it |
 | `test/arena.test.ts` | the crew carries every box to its fly bar and the subs to the stage edge, the hangs fly and the towers are timed, cardioid subs quiet the stage, the legs share the load and it passes; one leg for everything trips, plain subs fill the stage |
 | `test/hearing.test.ts` | the head switched on: the cab 6 dB down at double the distance, duller behind, silent when switched off |
 | `test/cables.test.ts` | power from the outlet across the way in to the speaker, the hazard, the ramp over it, a cable's length stopping you |
@@ -65,7 +68,15 @@ The page plays as a guest until eqosys knows the game. To turn sign-in on:
 2. Put the same address in `SIGN_IN_FROM` in `src/eqosys.ts`, and deploy (`bun run deploy`).
 
 Signed in, **Make a party** gives a code to hand out; friends type it in **Join**. The host's **Start** seats everyone
-(`state().party.seat`) and starts the load-in on every page. A shared crew, everyone carrying in the same garage, comes later.
+(`state().party.seat`) and puts everyone in one crew room on the level the host is on (`?room=CODE` in the address does
+the same). You see each other, and gear one of you moves is moved for everyone. Anything 30 kg or more (a sub, the bar's
+cooler) takes two: F on it takes one end, and your friend's F on it takes the other. It comes up between you at
+the pace of half its weight, and neither of you can walk off from the other, so you walk it the same way. Over 50 kg one
+person can't lift it at all. Light gear someone holds is theirs until they set it down. Cables and switches are still
+each player's own for now.
+
+The crew room is a World Durable Object per level and code (`src/edge/`); `bun run edge:dev` runs it locally behind
+the built page. Plain `bun run dev` has no `/ws`, so a party plays alone there.
 
 ## The harness
 

@@ -1,13 +1,14 @@
 // The park as a crew does it: push the generator in from the truck (too heavy to lift), carry the distro, the mixer,
 // the case and the tops into the tent, run the 25 m power cable from the generator to the distro and the short ones to
 // the tops and the mixer, ramp the crossing on the lakeside path, aim the tops down and turn the master down until the
-// houses across the road sit under the limit, and pass. Then the band's amp racks trip the generator. The same calls
+// houses across the road sit under the limit, carry a jerry can from the truck to fill the generator for the whole
+// day, and pass. Then the band's amp racks trip the generator. The same calls
 // `window.loadIn` makes.
 import { expect, setDefaultTimeout, test } from "bun:test";
 import { dims, newWorld, pickUp, putDown, type World } from "../src/sim.ts";
 import { type Cables, grabEnd, linkRamp, newCables, plug, settle, takeCable, walkWith } from "../src/cables/cables.ts";
 import { aim, master, raise, settle as onStands } from "../src/venues/dive-bar.ts";
-import { PARK, SPILL_LIMIT, load, parkState, push, score } from "../src/venues/park.ts";
+import { DAY_HOURS, PARK, SPILL_LIMIT, blow, load, parkState, pour, push, score, windFor, windText } from "../src/venues/park.ts";
 import { setDial } from "../src/assists.ts";
 
 setDefaultTimeout(60_000);
@@ -109,9 +110,44 @@ test("push the generator in, power the tent from it, ramp the path, keep the hou
     expect(aim(w, `top-${k}`, { tilt: -10 * DEG })).toEqual({ ok: true });
   }
   master(w, -14);
+  const short = score(w, c);
+  expect(short.houses!).toBeLessThanOrEqual(SPILL_LIMIT);
+  expect(short).toMatchObject({ hazards: 0, tripped: false, pass: false });
+
+  // But the generator came with 4 litres: at this load it runs dry hours before the day is out, and the park goes quiet.
+  expect(short.fuel!.hours).toBeLessThan(DAY_HOURS);
+  expect(short.fuel!.day).toBeLessThan(1);
+
+  // A jerry can off the truck (18 kg, one at a time), carried to the generator and poured in: the tank lasts the day.
+  const can = w.items.find((i) => i.key === "can-1")!, gen2 = w.items.find((i) => i.key === "generator")!;
+  walkWith(w, c, can.x, can.z + 0.6);
+  w.you.yaw = 0;
+  expect(pickUp(w, "can-1")).toEqual({ ok: true });
+  expect(pour(w, "generator")).toEqual({ ok: false, why: "the generator is out of reach" });
+  walkWith(w, c, gen2.x, gen2.z + 1);
+  expect(pour(w, "generator")).toEqual({ ok: true });
+  expect(w.items.find((i) => i.key === "can-1")!.litres).toBe(0);
+  expect(pour(w, "generator")).toEqual({ ok: false, why: "the can is empty" });
+  expect(load(w, c)).toMatchObject({ litres: 24 });
   const s = score(w, c);
-  expect(s.houses!).toBeLessThanOrEqual(SPILL_LIMIT);
+  expect(s.fuel!.hours).toBeGreaterThan(DAY_HOURS);
   expect(s).toMatchObject({ hazards: 0, tripped: false, pass: true });
+
+  // The breeze picks up toward the road: it carries the highs a few dB further and the houses complain, so the fader
+  // has to come down again. Turned the other way it carries them off and the houses go quieter than calm.
+  blow(w, () => ({ toward: 0, speed: 5 }));
+  const downwind = score(w, c);
+  expect(downwind.houses! - s.houses!).toBeGreaterThan(2.5);
+  expect(downwind.houses!).toBeGreaterThan(SPILL_LIMIT);
+  // Pulling the fader 3 dB brings the houses back near the limit, but the back of the crowd loses it: a trade, not a fix.
+  master(w, -17);
+  const pulled = score(w, c);
+  expect(downwind.houses! - pulled.houses!).toBeGreaterThan(2.5);
+  expect(pulled.covered).toBeLessThan(downwind.covered);
+  master(w, -14);
+  blow(w, () => ({ toward: Math.PI, speed: 5 }));
+  expect(s.houses! - score(w, c).houses!).toBeGreaterThan(2.5);
+  blow(w, () => ({ toward: 0, speed: 0 }));
 
   // The band brings four amp racks and plugs them in: past the generator's 6.3 kW its breaker trips and the park goes quiet.
   const outs = [["generator", "power-out-2"], ["distro", "power-out-4"], ["distro", "power-out-5"], ["distro", "power-out-6"]] as const;
@@ -120,6 +156,17 @@ test("push the generator in, power the tent from it, ramp the path, keep the hou
     c.runs.push({ key: `band-${n}`, kind: "power", lengthM: 5, a: { plug: [owner, jack] }, b: { plug: [`rack-${n}`, "power-in"] }, rope: null });
   });
   expect(parkState(w, c)).toMatchObject({ generator: { watts: 6350, trips: true }, tripped: true, crowd: null, pass: false });
+});
+
+test("a run's breeze is seeded: the same seed blows the same, and it swings over the day", () => {
+  const a = windFor(7), b = windFor(7), other = windFor(8);
+  expect(a(0)).toEqual(b(0));
+  expect(other(0)).not.toEqual(a(0));
+  const day = [0, 120, 240, 360, 480, 600].map(a);
+  expect(Math.max(...day.map((x) => x.toward)) - Math.min(...day.map((x) => x.toward))).toBeGreaterThan(0.2);
+  for (const x of day) expect(x.speed).toBeGreaterThan(0);
+  expect(windText({ toward: 0.2, speed: 4 })).toBe("Wind 4 m/s toward the houses");
+  expect(windText({ toward: Math.PI, speed: 3 })).toBe("Wind 3 m/s away from the houses");
 });
 
 test("the dial: Cozy rolls the generator light and never trips it; Sim is a crawl and trips", () => {
