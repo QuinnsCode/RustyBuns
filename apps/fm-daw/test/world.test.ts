@@ -505,7 +505,8 @@ test("grants: the leader lets one play, another asks and is told No, an edit wit
   }
   const [leadId, amyId, boId] = ids;
   const lastGrants = (ws: Sock) => ws.sent.filter((m) => m.t === "grants").at(-1);
-  expect(lastGrants(bo)).toEqual({ t: "grants", grants: { who: {}, maker: leadId }, asks: {}, here: [leadId, amyId, boId], peers: { 1: leadId, 2: amyId, 3: boId } });
+  expect(lastGrants(bo)).toEqual({ t: "grants", grants: { who: {}, maker: leadId }, asks: {}, here: [leadId, amyId, boId], peers: expect.any(Object) });
+  expect(Object.values(lastGrants(bo).peers).sort()).toEqual([leadId, amyId, boId].sort());   // each live-line peer's person
   said(lead, { t: "init", project });
   said(lead, { t: "floor", state: "held" });                       // Hold: only the leader, until they grant
   await settle();
@@ -584,7 +585,8 @@ test("mute: Amy mutes Bo for herself and Cy still hears him; the leader mutes Bo
     }
   };
   const live = (p: typeof amy, e: object) => said(p.ws, { t: "live", e });
-  const peerOf = (p: typeof amy) => Number(Object.entries(amy.ws.sent.findLast((m) => m.t === "grants").peers).find(([, id]) => id === p.id)![0]);
+  const peers = Object.entries(amy.ws.sent.findLast((m) => m.t === "grants").peers);
+  const peerOf = (p: typeof amy) => Number(peers.find(([, id]) => id === p.id)![0]);
   const boPeer = peerOf(bo);
   for (const p of people) { p.ws.sent = []; live(p, { t: "wear", avatar: randomAvatar(mulberry32(1)), name: "x" }); }
   for (const p of people) read(p);
