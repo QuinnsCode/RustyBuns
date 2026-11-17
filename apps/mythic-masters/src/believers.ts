@@ -1,7 +1,9 @@
 // The believers (#4677): one crowd of friendly conspiracy folk per region, who help you where the Bog Witch used to.
 // The Hatters of Ong's Hat in the Pine Barrens (tin-foil hats), the Porchlight Vigil in the hollows (moth capes),
 // the Backwards Lodge in the north woods (mirrors on headbands), the Blurry Society on the Pacific coast (smeared
-// goggles). They are not a faction: no quest, no fights, no standing. Each one's camp is the first campfire on its
+// goggles), the Frog Watch on the Great Lakes (waders and torches), the Antler Choir in the desert (antlered hats),
+// the Thirteen Counters in the bayou (bead strings, jars of beans), the Howl-Back Club in the Ozarks (earmuffs, tin
+// cups). They are not a faction: no quest, no fights, no standing. Each one's camp is the first campfire on its
 // region's trail, so it is a rest stop like any fire (and you can travel back to it). Sit there and they say who they
 // are the first time, hint where a cryptid you don't hold yet roams on the trail ahead, and react to how many of the
 // region's twelve keepers you have beaten. Their words are content/believers.json (`bun run cms`). No DOM here:
@@ -14,7 +16,7 @@ import { POIS } from "./world/poi.ts";
 import raw from "../content/believers.json";
 
 /** The groups, each with its own look at its fire (rivals-view.ts draws them). */
-export const BELIEVER_IDS = ["hatters", "porchlight", "backwards", "blurry"] as const;
+export const BELIEVER_IDS = ["hatters", "porchlight", "backwards", "blurry", "frogwatch", "antlers", "counters", "howlback"] as const;
 export type BelieverId = (typeof BELIEVER_IDS)[number];
 
 const Visit = obj({ cleared: int(0, SECTIONS), first: str(400), again: str(400) });

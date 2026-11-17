@@ -9,6 +9,8 @@ import { creature } from "../src/roster.ts";
 
 describe("the believers at each region's first campfire", () => {
   test("every group has a camp you can walk up to and travel back to, named for them on the map", () => {
+    // one group in each of North America's eight playable regions
+    expect(BELIEVERS.groups.map((g) => g.n).sort((a, b) => a - b)).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
     expect(CAMPS.size).toBe(BELIEVERS.groups.length);
     const j = newJourney(["squonk", "hodag", "jackalope"])!;
     for (const g of BELIEVERS.groups) {
