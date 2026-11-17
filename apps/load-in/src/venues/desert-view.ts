@@ -48,8 +48,6 @@ export function desertView(scene: THREE.Scene, hud: HTMLElement, getWorld: () =>
     new THREE.EdgesGeometry(new THREE.BoxGeometry(f.x1 - f.x0, 0.001, f.z1 - f.z0)), new THREE.LineBasicMaterial({ color: 0xf2c230 }));
   edge.position.set((f.x0 + f.x1) / 2, 0.015, (f.z0 + f.z1) / 2);
   g.add(edge);
-  // The truck at the end of the track, its tail toward the wall.
-  slab(ZONES.truck, 0.3, 2.6, mat(0xe8e2d0));
   // The camp: a cluster of dome tents.
   const tentMat = mat(0x3f6f8f), loudMat = mat(0xd0503c), tents: THREE.Mesh[] = [];
   const c = ZONES.camp;

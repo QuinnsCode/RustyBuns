@@ -302,7 +302,7 @@ export function turnHeld(w: World, dir: number) {
 }
 
 /** Whether (x, z) on the floor lies under an item's footprint. */
-function over(o: Item, x: number, z: number): boolean {
+export function over(o: Item, x: number, z: number): boolean {
   const c = Math.cos(o.rot), s = Math.sin(o.rot), dx = x - o.x, dz = z - o.z, [w, , d] = dims(o);
   return Math.abs(dx * c - dz * s) <= w / 2 && Math.abs(dx * s + dz * c) <= d / 2;
 }
