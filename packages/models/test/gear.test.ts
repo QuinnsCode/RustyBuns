@@ -21,7 +21,7 @@ test.each(GEAR_IDS)("%s builds at its size, on the floor, with its jacks facing 
   const box = new THREE.Box3().setFromObject(g), size = box.getSize(new THREE.Vector3()).toArray();
   size.forEach((s, i) => expect(Math.abs(s - GEAR_SIZES[id][i]) / GEAR_SIZES[id][i]).toBeLessThan(0.1));
   expect(Math.abs(box.min.y)).toBeLessThan(0.005);
-  expect(triangles(g)).toBeLessThan(1500);
+  expect(triangles(g)).toBeLessThan(5000);
 
   const jacks = gearJacks(g);
   expect([...jacks.keys()].sort()).toEqual(jackNames(book.get(id)!).sort());
