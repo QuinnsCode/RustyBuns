@@ -5,6 +5,12 @@ import World, { CLOSE_FLOOD, CLOSE_FULL, MAX_SOCKETS, MAX_WRONG, type WorldEnv }
 import Lobby from "../src/lobby.ts";
 import { TRACKS } from "../src/engine/params.ts";
 import { TAKE_RATE, TakeInbox, toChunks } from "../src/take.ts";
+import { decodeServer } from "../src/project.ts";
+import { demoProject } from "../src/presets.ts";
+import { LIVE_ROOM } from "../src/studio/rooms/live.ts";
+import { body, gone, hear, keyNote, nearSpot, newJam, sit, snapshot, stand, walkTo } from "../src/studio/jam.ts";
+import { randomAvatar, type Avatar } from "@rustybuns/util/avatar";
+import { mulberry32 } from "@rustybuns/util";
 
 class Sock {
   readyState = 1; sent: any[] = []; closed: number | null = null; att: unknown;
@@ -429,4 +435,45 @@ test("studio: friends share one patch, two can't carry one amp, a held lead is i
   expect(JSON.parse(bucket.get("sesh/grand-amber-lynx.json")!).studio).toEqual(patch);
   const fresh = await setup(worldEnv, "grand-amber-lynx");
   expect((await fresh.join()).ws.sent).toContainEqual({ t: "studio-all", studio: { patch, held: {} } });
+});
+
+test("jam room: one walks up to the keys, sits and plays; the other sees them seated, gets the note, and can't take the seat", async () => {
+  const { world, join, leave } = await setup({}, "giddy-jade-otter");
+  const groove = demoProject();
+  const a = (await join()).ws, b = (await join()).ws;
+  world.webSocketMessage(a, JSON.stringify({ t: "init", project: groove }));
+  const amy = newJam(LIVE_ROOM), ben = newJam(LIVE_ROOM);
+  const from = (ws: Sock) => ws.sent.find((m) => m.t === "live")?.from;
+  // each page reads its socket the way the page does: decoded, then handed to the jam
+  const read = (ws: Sock, j: typeof amy) => { for (const m of ws.sent.splice(0)) { const d = decodeServer(m); if (d?.t === "live") hear(j, d.from, d.e); else if (d?.t === "gone") gone(j, d.from); } };
+  const live = (ws: Sock, e: object) => world.webSocketMessage(ws, JSON.stringify({ t: "live", e }));
+  a.sent = []; b.sent = [];
+  const me: Avatar = randomAvatar(mulberry32(7));
+  live(a, { t: "wear", avatar: me, name: "Amy" });
+  const keys = LIVE_ROOM.spots.find((s) => s.id === "keys")!;
+  expect(sit(amy, "keys")).toEqual({ ok: false, why: "Walk up to the keys first" });
+  walkTo(amy, keys.at[0], keys.at[1] + 1);
+  expect(nearSpot(amy)?.id).toBe("keys");
+  expect(sit(amy, "keys")).toEqual({ ok: true });
+  expect(amy.me.cam).toBe("first");
+  live(a, body(amy));
+  const note = keyNote(amy, groove, "KeyA")!;
+  expect(groove.tracks[note.track].name).toBe("Keys");
+  live(a, { t: "on", ...note, vel: 0.8 });
+  const peer = from(b);
+  read(b, ben);
+  expect(snapshot(ben, groove).others).toEqual([{ peer, name: "Amy", at: [keys.at[0], keys.at[1]], yaw: 0, seat: "keys", dressed: true, playing: [`${note.track}:${note.midi}`] }]);
+  // the keys are taken: Ben walks up and is told who's there
+  walkTo(ben, keys.at[0] + 0.8, keys.at[1] + 0.8);
+  expect(sit(ben, "keys")).toEqual({ ok: false, why: "Amy is at the keys" });
+  // Amy stands: back over the shoulder, and the seat is free for Ben
+  live(a, { t: "off", ...note });
+  stand(amy);
+  expect(amy.me.cam).toBe("shoulder");
+  live(a, body(amy));
+  read(b, ben);
+  expect(sit(ben, "keys")).toEqual({ ok: true });
+  leave(a);
+  read(b, ben);
+  expect(ben.others.size).toBe(0);
 });

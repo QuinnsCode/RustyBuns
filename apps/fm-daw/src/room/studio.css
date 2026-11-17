@@ -13,3 +13,4 @@ main { position: fixed; inset: 0; }
 #menu h1 { margin: 0 0 8px; font: 600 34px/1 "Barlow Condensed", sans-serif; letter-spacing: 0.02em; }
 #menu .keys { color: var(--dim); font-size: 13px; }
 #play { background: var(--hot); color: #1d1f23; border: 0; border-radius: 10px; padding: 10px 22px; font: 600 18px "Barlow Condensed", sans-serif; cursor: pointer; }
+#look { background: transparent; color: var(--ink); border: 1px solid #3a3e45; border-radius: 10px; padding: 9px 16px; font: 600 18px "Barlow Condensed", sans-serif; cursor: pointer; margin-left: 8px; }

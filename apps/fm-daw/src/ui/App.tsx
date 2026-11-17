@@ -33,6 +33,7 @@ import { saveBounce, reveal } from "../actions/files.ts";
 import type { FromWorklet, ToWorklet } from "../engine/messages.ts";
 import { MASTER, type RecordedMove } from "../engine/sequencer.ts";
 import { flatEq } from "../engine/eq.ts";
+import { loadMsg } from "./load.ts";
 import { LANE_BEND, LANE_STUTTER } from "../engine/params.ts";
 import "@fontsource/barlow-condensed/500.css";
 import "@fontsource/barlow-condensed/600.css";
@@ -59,15 +60,6 @@ function Pager(props: { page: number; pages: number; onPage(p: number): void }) 
 }
 const GROUP_MS = 800;
 const COUNT_IN = 4;
-
-/** Everything the worklet needs to mirror a project. */
-function loadMsg(p: Project): ToWorklet {
-  return {
-    t: "load", params: p.tracks.flatMap((t) => t.params), notes: p.tracks.map((t) => t.notes), auto: p.tracks.map((t) => t.auto ?? []),
-    bpm: p.bpm, swing: p.swing, loopBeats: loopBeats(p), audible: audible(p), space: p.space, squash: p.squash, eq: p.eq, eqAuto: p.eqAuto ?? [], eqLinear: !!p.eqLinear,
-    trackEq: p.tracks.map((t) => t.eq ?? flatEq()),
-  };
-}
 
 /** The smallest worklet update for an op that's already been applied. */
 function opMsg(op: Op, next: Project): ToWorklet {
