@@ -259,8 +259,8 @@ test("bias tremolo: a steady note swings at the LFO rate, and the power tubes cl
   // Through the whole amp: Depth 0 holds still, then the knob comes up and the level throbs at Rate's Hz.
   const clean = AMPS.find((a) => a.id === "clean")!;
   const knobs = { ...clean.knobs, noise: 0, rate: 5, depth: 0 };
-  const rig = new Rig(buildRig(clean, knobs), SR), note = sine(220, 1, 0.3), out = new Float32Array(note.length);
-  const levels = () => {
+  const rig = new Rig(buildRig(clean, knobs), SR), note = sine(200, 1, 0.3), out = new Float32Array(note.length);
+  const levels = () => { // 10 ms windows: two whole cycles of 200 Hz, so a still note reads still
     const w = SR / 100, ls: number[] = [];
     for (let i = 0; i < note.length; i += w) {
       rig.process(note.subarray(i, i + w), out.subarray(i, i + w), w);
