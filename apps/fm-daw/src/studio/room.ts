@@ -56,6 +56,8 @@ export interface StudioDef {
   spots: Spot[];
   /** Where you come in, and the way you face. */
   door: { at: [number, number]; yaw: number };
+  /** What fills it besides the seats: shelves, lamps, racks, a piano. */
+  props?: Prop[];
 }
 
 /** The spot's thing, as a box on the floor: its middle and half sizes, turned by the spot's yaw. */
@@ -75,3 +77,22 @@ export function wallPieces(w: Wall, thick = 0.12): { cx: number; cz: number; hw:
   if (from < len) runs.push([from, len]);
   return runs.map(([a, b]) => ({ cx: x0 + ux * (a + b) / 2, cz: z0 + uz * (a + b) / 2, hw: (b - a) / 2, hd: thick / 2, turn }));
 }
+
+/** Set dressing: what fills a room besides its seats. Drawn by src/studio/props.ts; it doesn't change how the room sounds. */
+export const PROP_KINDS = ["shelf", "lamp", "plant", "rug", "rack", "console", "monitor", "stairs", "balcony", "window", "piano", "micStand", "panel", "frames", "sampler", "table"] as const;
+export type PropKind = (typeof PROP_KINDS)[number];
+export interface Prop {
+  kind: PropKind;
+  /** Its middle on the floor (x, z in metres) and the way its front faces (yaw 0 faces -z, as a seat looks). */
+  at: [number, number];
+  yaw: number;
+  /** w across, d deep, h tall, standing `y` metres up (a panel on a wall, a speaker on a console). */
+  w: number; d: number; h: number; y?: number;
+  color: string;
+  /** What's on a shelf, in a rack or on a wall comes out of this seed. */
+  seed?: number;
+}
+/** Dressing you walk round: anything standing on the floor except what's flat or thin. */
+export const propBlocks = (p: Prop) => (p.y ?? 0) < 0.5 && !["rug", "panel", "frames", "window", "micStand", "lamp", "balcony"].includes(p.kind);
+/** A prop's footprint, as a box on the floor turned by its yaw. */
+export const propBox = (p: Prop) => ({ cx: p.at[0], cz: p.at[1], hw: p.w / 2, hd: p.d / 2, turn: p.yaw });

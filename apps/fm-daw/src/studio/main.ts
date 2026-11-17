@@ -34,6 +34,7 @@ import { lookBack, studioTools, syncRoom, type Player, type Rights } from "./age
 import { madeSpot } from "./instrument.ts";
 import { facing, muteRoom, mutePeer, noMutes, sounds } from "./mute.ts";
 import { isMuted, leaders } from "../grants.ts";
+import { prop } from "./props.ts";
 
 const CONTROLS = "qollab-studio:controls";
 const LOOK = "qollab-studio:avatar";
@@ -116,6 +117,7 @@ function buildRoom() {
     }
   }
   for (const s of def.spots) scene.add(thing(s));
+  for (const p of def.props ?? []) scene.add(prop(p));
 }
 /** A spot's instrument or furniture, and its seat. */
 function thing(s: Spot): THREE.Group {
