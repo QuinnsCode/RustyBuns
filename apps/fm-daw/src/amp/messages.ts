@@ -3,6 +3,11 @@ import type { Knobs } from "../circuit/amps.ts";
 import type { Swaps } from "../circuit/circuits.ts";
 import type { LoopSpec, Mic, Netlist } from "@rustybuns/gear/circuit";
 
+/** A pedal on a board: which (a PEDALS id, or "bench" with its netlist), and its one knob, 0 to 10. */
+export interface BoardPedal { pedal: string; drive: number; bench?: Netlist }
+/** Pedals one after another, or a split: its sides side by side (an empty side is dry), blended back by `mix`. */
+export type BoardStep = BoardPedal | { split: BoardPedal[][]; mix: number[] };
+
 /** The whole front panel, every time: the audio thread works out what changed. */
 export interface AmpSettings {
   amp: string;
@@ -23,6 +28,8 @@ export interface AmpSettings {
   oversample: 2 | 4;
   /** The machines switched on in the effects loop, in order (none if left out). */
   loop?: LoopSpec[];
+  /** Pedals in series and in parallel ahead of the amp: when set, it plays in place of `pedal`, `bench`, `drive` and `swaps`. */
+  board?: BoardStep[];
   /** No amp: the pedal and the loop straight into a desk insert's return, at line level (no power stage, no cab). */
   direct?: boolean;
 }

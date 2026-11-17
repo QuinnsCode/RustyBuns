@@ -13,6 +13,7 @@ export class WasmRig {
 
   constructor(private readonly x: Exports, spec: RigSpec, readonly sampleRate = 48000, readonly oversample = 4) {
     if ((spec.output?.trem?.depth ?? 0) > 0) throw new Error("the Rust power stage has no bias tremolo yet");
+    if (spec.blends?.length) throw new Error("the Rust rig runs its links one after another: no splits yet");
     this.h = x.fm_amp_new(sampleRate, oversample, spec.inputVolts, spec.power, spec.noise ?? 0);
     if (!this.h) throw new Error("rust amp rejected the sample rate or oversampling");
     const o = spec.output ?? DEFAULT_POWER;

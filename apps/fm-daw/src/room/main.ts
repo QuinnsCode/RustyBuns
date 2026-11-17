@@ -18,7 +18,7 @@ import { bench, type Bench, type BenchPedal } from "../circuit/bench.ts";
 import { sanitizePatch, type Patch } from "../studio.ts";
 import { check, obj, raw, rec, str, type Of } from "@rustybuns/util/guard";
 import { type Aim, type Answer, EYE, benchGear, furnish, benchIn, HALF_D, HALF_W, type Heard, type Room, WALL_H, aimed, drop, gearOf, hand, handAt, heldId, jackAt, knobValue, lead, listen, lookAt, newRoom, pickUp, placedNow, plug, putDown, sag, setKnob, snapshot, startPatch, step, turnHeld, unplug, use, walkTo } from "./room.ts";
-import { type GearModel, gearModel, rackModel, turnKnob } from "./models.ts";
+import { type GearModel, gearModel, pedalWallModel, rackModel, turnKnob } from "./models.ts";
 
 const KEY = "q-studio", CONTROLS = "q-studio.controls";
 const $ = (id: string) => { const el = document.getElementById(id); if (!el) throw new Error(`#${id} missing`); return el; };
@@ -101,7 +101,7 @@ scene.add(lamp);
   const rug = new THREE.Mesh(new THREE.CircleGeometry(1.3, 40), new THREE.MeshStandardMaterial({ color: 0x5a2a2e, roughness: 1 }));
   rug.rotation.x = -Math.PI / 2;
   rug.position.set(0.2, 0.003, 0.2);
-  scene.add(floor, walls, rug, rackModel());
+  scene.add(floor, walls, rug, rackModel(), pedalWallModel());
 }
 
 const models = new Map<string, GearModel>();
@@ -310,7 +310,9 @@ function frame(now: number) {
 
 /** The running amp's tubes glow with what each stage swings; the cab's cones push with the output. */
 function glow(h: Heard) {
-  const ampId = h.running.find((id) => { const p = room.studio.patch.placed.find((x) => x.id === id); return p && gearOf(p)?.kind === "amp"; }), offset = h.settings?.pedal ? 1 : 0;
+  const kindOf = (id: string) => { const p = room.studio.patch.placed.find((x) => x.id === id); return p && gearOf(p)?.kind; };
+  // The meter's levels: each pedal on the board first, then the amp's stages.
+  const ampId = h.running.find((id) => kindOf(id) === "amp"), offset = h.running.filter((id) => kindOf(id) === "pedal").length;
   const stages = speakersUp ? meter.levels.length - offset - 1 : 0;
   for (const [id, m] of models) {
     m.tubes.forEach((t, i) => {

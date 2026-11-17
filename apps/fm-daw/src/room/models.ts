@@ -4,7 +4,7 @@
 // at the origin, front +z), so a jack drawn here is where room.ts aims.
 import * as THREE from "three";
 import type { Face, GearDef, Vec3 } from "./room.ts";
-import { RACK } from "./room.ts";
+import { PEDAL_WALL, RACK } from "./room.ts";
 
 export interface GearModel {
   group: THREE.Group;
@@ -87,6 +87,10 @@ export function gearModel(g: GearDef): GearModel {
   } else if (g.kind === "pedal") {
     group.add(box(w, h, d, mat(PEDAL_COLOR[g.circuit ?? ""] ?? 0x777777, 0.55, 0.35)));
     group.add(onFace(0.013, 0.012, "top", [0, h + 0.006, d / 2 - 0.05], mat(0xc9ccd1, 0.9, 0.2)));
+  } else if (g.kind === "split") {
+    // Q Split: a brushed box with a seam down the lid, side A's jacks and side B's on its face.
+    group.add(box(w, h, d, mat(0x9aa1ab, 0.8, 0.3)), box(0.004, 0.002, d * 0.9, mat(0x1d1f23, 0, 0.9), h));
+    group.add(onFace(0.013, 0.012, "top", [0, h + 0.006, -0.05], mat(0x1d1f23, 0.5, 0.4)));
   } else if (g.kind === "machine") {
     group.add(box(w, h, d, mat(MACHINE_COLOR[g.loop ?? "tape"], 0.4, 0.45)));
     if (g.loop === "tape") {
@@ -144,6 +148,17 @@ export function gearModel(g: GearDef): GearModel {
     m.knobs.set(k.name, { mesh: cap, face: k.face });
   }
   return m;
+}
+
+/** The pedal wall: a pegboard on the left wall with a ledge at each of PEDAL_WALL's heights. */
+export function pedalWallModel(): THREE.Group {
+  const g = new THREE.Group(), d = PEDAL_WALL.x1 - PEDAL_WALL.x0, len = PEDAL_WALL.z1 - PEDAL_WALL.z0, top = PEDAL_WALL.shelves[PEDAL_WALL.shelves.length - 1];
+  const tall = top + 0.3 - 0.7, board = box(0.02, tall, len + 0.1, mat(0xb08a5e, 0, 0.85), 0.7 + tall / 2);
+  board.position.x = -d / 2 + 0.01;
+  g.add(board);
+  for (const y of PEDAL_WALL.shelves) g.add(box(d, 0.025, len, mat(0x30343a, 0.7, 0.4), y - 0.0125));
+  g.position.set((PEDAL_WALL.x0 + PEDAL_WALL.x1) / 2, 0, (PEDAL_WALL.z0 + PEDAL_WALL.z1) / 2);
+  return g;
 }
 
 /** The wall rack: two uprights and a shelf at each of RACK's heights. */
