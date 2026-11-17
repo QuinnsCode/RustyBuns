@@ -20,20 +20,44 @@ export const PARTS = {
   build: ["slim", "round", "tall", "short"],
 } as const;
 
-export type Avatar = { [K in keyof typeof PARTS]: string };
+/** The face maker's parts (#5009), added after the first saves: a save without one wears the first choice. */
+export const FACE = {
+  face: ["round", "oval", "square", "heart", "long"],
+  brows: ["soft", "thick", "arched", "flat", "worried", "none"],
+  nose: ["button", "round", "pointy", "wide", "none"],
+  beard: ["none", "stubble", "mustache", "goatee", "full", "sideburns"],
+  cheeks: ["none", "blush", "freckles"],
+} as const;
+
+/** The face maker's sliders: whole steps from -TUNE_STEPS to TUNE_STEPS, 0 in the middle (and for a save from before them). */
+export const TUNE = ["eyeSize", "eyeGap", "eyeHeight", "browHeight", "noseSize", "mouthSize", "mouthHeight", "height"] as const;
+export const TUNE_STEPS = 3;
+
+export type Avatar = { [K in keyof typeof PARTS]: string } & { [K in keyof typeof FACE]: string } & { [K in (typeof TUNE)[number]]: number };
 
 const COLORS = new Set<keyof typeof PARTS>(["skin", "hairColor", "topColor", "bottomColor"]);
 const HEX = /^#[0-9a-f]{6}$/i;
 
-/** A saved avatar as it should be: every part present and valid, or null when the input isn't one. Extra keys are dropped. */
+/** A saved avatar as it should be: every part present and valid, or null when the input isn't one. Extra keys are dropped.
+ *  The face maker's parts and sliders may be missing (a save from before them): those wear the first choice and 0. */
 export function cleanAvatar(x: unknown): Avatar | null {
   if (!x || typeof x !== "object") return null;
-  const fields = new Map<string, unknown>(Object.entries(x)), out: Record<string, string> = {};
+  const fields = new Map<string, unknown>(Object.entries(x)), out: Record<string, string | number> = {};
   for (const k of Object.keys(PARTS) as (keyof typeof PARTS)[]) {
     const v = fields.get(k);
     if (typeof v !== "string") return null;
     if (COLORS.has(k) ? !HEX.test(v) : !(PARTS[k] as readonly string[]).includes(v)) return null;
     out[k] = COLORS.has(k) ? v.toLowerCase() : v;
+  }
+  for (const k of Object.keys(FACE) as (keyof typeof FACE)[]) {
+    const v = fields.get(k) ?? FACE[k][0];
+    if (typeof v !== "string" || !(FACE[k] as readonly string[]).includes(v)) return null;
+    out[k] = v;
+  }
+  for (const k of TUNE) {
+    const v = fields.get(k) ?? 0;
+    if (typeof v !== "number" || !Number.isInteger(v) || Math.abs(v) > TUNE_STEPS) return null;
+    out[k] = v;
   }
   return out as Avatar;
 }
@@ -41,20 +65,25 @@ export function cleanAvatar(x: unknown): Avatar | null {
 /** The guard for an avatar off the wire (a PUT body, a reply): every part valid, or a 400's `Bad` naming what to send. */
 export const Avatar: Guard<Avatar> = (v) => {
   const a = cleanAvatar(v);
-  if (!a) throw new Bad(`an avatar: ${Object.keys(PARTS).join(", ")}, each one of PARTS (colours as #rrggbb)`);
+  if (!a) throw new Bad(`an avatar: ${Object.keys(PARTS).join(", ")}, each one of PARTS (colours as #rrggbb); optionally ${Object.keys(FACE).join(", ")} (one of FACE) and ${TUNE.join(", ")} (whole numbers -${TUNE_STEPS} to ${TUNE_STEPS})`);
   return a;
 };
 
 /** What eqosys's GET and PUT /me/avatar answer: the person's avatar, and whether they saved it (false: the default from their name). */
 export const AvatarReply = obj({ avatar: Avatar, saved: bool() });
 
-/** One at random from `r` (a 0..1 source), so a seeded one is the same for everyone. Hats and glasses are rarer. */
+/** One at random from `r` (a 0..1 source), so a seeded one is the same for everyone. Hats, glasses and beards are rarer.
+ *  The first parts are drawn in the order they always were, so a name's default from before the face maker keeps its clothes. */
 export function randomAvatar(r: () => number): Avatar {
   const pick = <T,>(xs: readonly T[]) => xs[Math.floor(r() * xs.length)]!;
-  const out: Record<string, string> = {};
+  const out: Record<string, string | number> = {};
   for (const k of Object.keys(PARTS) as (keyof typeof PARTS)[]) out[k] = pick(PARTS[k]);
   if (r() < 0.6) out.hat = "none";
   if (r() < 0.6) out.glasses = "none";
+  for (const k of Object.keys(FACE) as (keyof typeof FACE)[]) out[k] = pick(FACE[k]);
+  if (r() < 0.6) out.beard = "none";
+  // the sliders lean to the middle: two draws averaged, at most two steps out (the ends are yours to pick)
+  for (const k of TUNE) out[k] = Math.round(((r() + r()) / 2 * 2 - 1) * (TUNE_STEPS - 1)) + 0; // + 0: never -0, which JSON reads back as 0
   return out as Avatar;
 }
 
