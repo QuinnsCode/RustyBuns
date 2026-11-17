@@ -279,6 +279,24 @@ const HOME_CSS = `
 .home .card{padding:1.1rem 1.25rem;border-radius:20px;background:var(--paper);border:1px solid var(--rim);
  backdrop-filter:blur(22px) saturate(1.5);-webkit-backdrop-filter:blur(22px) saturate(1.5);box-shadow:0 18px 40px -26px rgba(0,0,0,.45),inset 0 1px 0 var(--edge)}
 .home .card+.card{margin-top:.6rem}
+.home .character{display:grid;gap:1rem;grid-template-columns:minmax(0,1fr)}
+@media(min-width:56rem){.home .character{grid-template-columns:minmax(0,1.1fr) minmax(0,1fr);align-items:start}}
+.home .character .ch-first{grid-column:1/-1;margin:0;padding-right:9rem;font:600 1.15rem Lexend,system-ui,sans-serif}
+.home .ch-stage{position:relative;aspect-ratio:1;max-height:70vh;width:100%;border-radius:16px;cursor:grab;touch-action:pan-y;
+ background:radial-gradient(circle at 50% 40%,color-mix(in oklab,var(--acc) 16%,transparent),transparent 70%)}
+.home .ch-stage:active{cursor:grabbing}.home .ch-stage canvas{display:block;width:100%;height:100%}
+.home .ch-side{display:grid;gap:.9rem;min-width:0}.home .ch-rows{display:grid;gap:.55rem;min-width:0}
+.home .ch-row{display:grid;grid-template-columns:6.5rem minmax(0,1fr);align-items:center;gap:.5rem;min-width:0}
+.home .ch-label{white-space:nowrap;font-weight:600;font-size:.9rem}
+.home .ch-choices{position:relative;display:flex;gap:.4rem;overflow-x:auto;padding:.2rem .1rem;scrollbar-width:thin;overscroll-behavior-x:contain}
+.home .ch-chip{flex:none;white-space:nowrap;font:inherit;font-size:.95rem;min-height:2.5rem;padding:.35rem .85rem;border-radius:999px;cursor:pointer;
+ color:var(--ink);background:var(--field);border:1px solid var(--rim)}
+.home .ch-chip[aria-pressed=true]{background:var(--acc);color:var(--onacc);border-color:var(--acc)}
+.home .ch-swatch{flex:none;width:2.5rem;height:2.5rem;border-radius:50%;cursor:pointer;border:2px solid var(--rim);box-shadow:inset 0 0 0 2px var(--paper)}
+.home .ch-swatch[aria-pressed=true]{border-color:var(--acc);box-shadow:inset 0 0 0 3px var(--paper),0 0 0 2px var(--acc)}
+.home .ch-bar{display:flex;flex-wrap:wrap;align-items:center;gap:.6rem}.home .ch-bar .ui-btn{display:inline-flex;align-items:center;gap:.45rem;white-space:nowrap;min-height:2.75rem}
+.home .ch-note{white-space:nowrap;color:var(--ink);opacity:.75;font-size:.9rem}
+@media(max-width:30rem){.home .ch-row{grid-template-columns:minmax(0,1fr)}.home .ch-stage{max-height:55vh}}
 .home .row input{flex:1;min-width:10rem}
 .home .link{display:grid;gap:.4rem;min-width:min(100%,16rem)}.home .link input{width:100%;font-family:ui-monospace,monospace;font-size:.82rem}
 .home .list>div{padding:.55rem 0}.home .list>div+div{border-top-color:var(--rim)}
@@ -716,6 +734,10 @@ export function Home({ apps = APPS, me, mine, hub, side, everyone, unlocks, coun
 
         {tab === "account" && (
           <>
+            <h2>Your character</h2>
+            {/* character.client.ts fills it: the figure, a row a part, Shuffle and Save (GET and PUT /me/avatar) */}
+            <section id="character" className="card character"><p className="mut">Loading your character…</p></section>
+            <script type="module" src="/src/app/character.client.ts"></script>
             <h2>Account</h2>
             <div className="card me"><i>{(me.name || me.email).slice(0, 1)}</i><div><b>{me.name || me.email}</b><span>{me.email} · came in through {nameOf(mine?.source ?? "eqosys")}</span></div></div>
             {ways && <Ways ways={ways} social={social} />}

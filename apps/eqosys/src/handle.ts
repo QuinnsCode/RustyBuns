@@ -30,6 +30,7 @@ import { dossierHeaders, regionAt, type Region } from "@rustybuns/util/privacy";
 import { exportFor, HOLDERS } from "./privacy.ts";
 import { regionFor, vaultFor } from "./vault.ts";
 import { beacon } from "./visitors.ts";
+import { avatarRoute } from "./avatar.ts";
 
 /** An app asking for someone: where to send them back, and the proof only the app can finish. */
 export interface Ask {
@@ -117,8 +118,8 @@ const field = (f: FormData, k: string) => String(f.get(k) ?? "");
 export const atHome = (me: Me): Who => ({ id: me.id, name: me.name, app: HOME });
 
 /** Signed in: on to the app with a fresh code, or home when nobody asked. A studio's game still in the making sends only its studio on. */
-async function onward(conf: Env, region: Region, userId: string, ask: Ask | null, from?: Response) {
-  if (!ask) { await link(conf, userId, null, region); return see("/", from); }
+async function onward(conf: Env, region: Region, userId: string, ask: Ask | null, from?: Response, home = "/") {
+  if (!ask) { await link(conf, userId, null, region); return see(home, from); }
   if (!(await mayUse(conf, ask.app, userId))) return see("/?e=making", from);
   const [code] = await Promise.all([mint(conf, userId, ask.app, ask.challenge, ask.back, ask.nonce), link(conf, userId, ask.app, region)]);
   const to = new URL(ask.back);
@@ -151,6 +152,9 @@ export async function handle(req: Request, conf: Env): Promise<Response | null> 
     const refresh = token && body.keep ? await mintRefresh(conf, traded.who.user.id, traded.who.app, Date.now(), true) : undefined;
     return json({ ...traded.who, token, ...(refresh ? { refresh } : {}) }, 200, await cors(req, conf));
   }
+
+  // Your character (avatar.ts): GET /me/avatar answers it, PUT saves one. The session cookie, or an app's token as a bearer.
+  if (pathname === "/me/avatar") return avatarRoute(req, conf);
 
   // Achievements (achievements.ts): POST /q/achieve { id } unlocks one of the token's app's, GET lists its whole catalog for the person.
   if (pathname === "/q/achieve") {
@@ -322,7 +326,8 @@ export async function handle(req: Request, conf: Env): Promise<Response | null> 
       ? auth.api.signUpEmail({ body: { email, password, name: field(form, "name").trim() || email.split("@")[0]! }, asResponse: true })
       : auth.api.signInEmail({ body: { email, password }, asResponse: true })).catch(() => null);
     const signed = res?.ok ? check(Signed, await res.clone().json().catch(() => null)) : null;
-    return signed ? onward(conf, regionAt(req), signed.user.id, ask, res!) : back(act === "signup" ? "taken" : "bad");
+    // Someone new who came to eqosys itself makes their character first (the picker on the Me tab); an app asked for keeps going.
+    return signed ? onward(conf, regionAt(req), signed.user.id, ask, res!, act === "signup" ? "/?tab=account&new=1" : "/") : back(act === "signup" ? "taken" : "bad");
   }
 
   if (act === "social") {
