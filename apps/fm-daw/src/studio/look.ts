@@ -1,10 +1,10 @@
 // How a Qollab Studio room looks (#5008): the light, what every surface is made of, and the camera's lens and film.
 // A room is data (room.ts); this turns its sizes and materials into something that should read as a photo of a real
 // small studio: tone mapped light, ceiling downlights set off the walls so they wash them (no two alike), the floor's warm
-// bounce lifting the tops of the walls, floor lamps in the free corners, soft shadows, contact shadows
+// bounce lifting the tops of the walls, floor lamps in the free corners throwing their hourglass on the walls, soft shadows, contact shadows
 // and shade in the corners baked once, reflections of the room itself,
 // textures painted in code (planks with grain, ceiling tiles on their grid, wedge foam, folded curtains, brick, carpet),
-// the room's absorbers and curtains hung where its data says, and on high a little bloom, a vignette and grain.
+// the room's absorbers (wedge foam cut as real ridges) and curtains hung where its data says, and on high a little bloom, a vignette and grain.
 // Two settings: `high` (shadows, post) and `low` (neither, for a weak laptop or a phone); ?quality= or Q picks one.
 // Other files build their meshes with `surface(name, color)` and mark a lamp or a screen with userData.glow.
 import * as THREE from "three";
@@ -245,6 +245,71 @@ function sideOf(def: StudioDef, side: Side) {
     : { cx: w / 2, cz: 0, len: d, turn: -Math.PI / 2 };
 }
 
+let wedgeGeo: THREE.BufferGeometry | null = null;
+/**
+ * A 58 cm absorber of wedge foam as geometry: a 2.5 cm base, then four by four squares of three ridges each, 3.5 cm
+ * tall, every square turned a quarter from its neighbours as the sheets come. Back at z = 0, facing +z. The colour
+ * on each corner is how much of the room it sees: the valleys between ridges are dark, the peaks light.
+ */
+export function wedges3d(size = 0.58, cells = 4, ridges = 3, base = 0.025, peak = 0.035): THREE.BufferGeometry {
+  if (wedgeGeo && size === 0.58) return wedgeGeo;
+  const pos: number[] = [], col: number[] = [], h = size / 2;
+  type P = [number, number, number];
+  // a triangle wound to face `out`
+  const tri = (a: P, b: P, c: P, k: [number, number, number], out: P) => {
+    const u = [b[0] - a[0], b[1] - a[1], b[2] - a[2]], v = [c[0] - a[0], c[1] - a[1], c[2] - a[2]];
+    const n = [u[1]! * v[2]! - u[2]! * v[1]!, u[2]! * v[0]! - u[0]! * v[2]!, u[0]! * v[1]! - u[1]! * v[0]!];
+    const [p1, p2, k1, k2] = n[0]! * out[0] + n[1]! * out[1] + n[2]! * out[2] >= 0 ? [b, c, k[1], k[2]] : [c, b, k[2], k[1]];
+    for (const [p, s] of [[a, k[0]], [p1, k1], [p2, k2]] as const) { pos.push(...p); col.push(s, s, s); }
+  };
+  const dark = 0.32, lit = 1;
+  const cell = size / cells, period = cell / ridges;
+  for (let i = 0; i < cells; i++) for (let j = 0; j < cells; j++) {
+    const x0 = -h + i * cell, y0 = -h + j * cell, alongY = (i + j) % 2 === 0;
+    // in the square's own frame: `a` across the ridges, `b` along them; to x, y
+    const at = (a: number, b: number, z: number): P => alongY ? [x0 + a, y0 + b, z] : [x0 + b, y0 + a, z];
+    const across: P = alongY ? [1, 0, 0] : [0, 1, 0], along: P = alongY ? [0, 1, 0] : [1, 0, 0];
+    for (let k = 0; k < ridges; k++) {
+      const a0 = k * period, am = a0 + period / 2, a1 = a0 + period, top = base + peak;
+      for (const [va, sgn] of [[a0, -1], [a1, 1]] as const) {
+        const out: P = [across[0] * sgn, across[1] * sgn, 1];
+        tri(at(va, 0, base), at(am, 0, top), at(am, cell, top), [dark, lit, lit], out);
+        tri(at(va, 0, base), at(am, cell, top), at(va, cell, base), [dark, lit, dark], out);
+      }
+      // the ridge's two ends, seen where the next square turns the other way
+      for (const [b, sgn] of [[0, -1], [cell, 1]] as const) {
+        tri(at(a0, b, base), at(am, b, top), at(a1, b, base), [dark, lit, dark], [along[0] * sgn, along[1] * sgn, 0]);
+      }
+    }
+  }
+  // the base's four sides
+  for (const [ax, sgn] of [[0, -1], [0, 1], [1, -1], [1, 1]] as const) {
+    const e = sgn * h, c = (t: number, z: number): P => ax === 0 ? [e, t, z] : [t, e, z];
+    const out: P = ax === 0 ? [sgn, 0, 0] : [0, sgn, 0], k: [number, number, number] = [0.55, 0.75, 0.75];
+    tri(c(-h, 0), c(-h, base), c(h, base), k, out);
+    tri(c(-h, 0), c(h, base), c(h, 0), [0.55, 0.75, 0.55], out);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute("color", new THREE.Float32BufferAttribute(col, 3));
+  g.computeVertexNormals(); // not indexed: each face keeps its own flat normal, as cut foam does
+  metreUV(g);
+  if (size === 0.58) wedgeGeo = g;
+  return g;
+}
+
+/** The wedges' material: the foam's colour with a fine open-cell grain, darkened into the valleys by the geometry's colours. */
+function foamMat(): THREE.MeshStandardMaterial {
+  const id = "foam:wedges", hit = mats.get(id);
+  if (hit) return hit;
+  const base = MATERIALS.foam.color, p = paint("fabric", new THREE.Color(base));
+  const m = new THREE.MeshStandardMaterial({ color: p ? 0xffffff : base, map: p?.map ?? null, bumpMap: p?.bump ?? null, bumpScale: 0.6, roughness: 1, vertexColors: true, envMapIntensity: 0.5 });
+  if (p) { const s = 1 / p.metres; for (const t of [p.map, p.bump]) t?.repeat.set(s, s); }
+  m.name = "foam-wedges";
+  mats.set(id, m);
+  return m;
+}
+
 /** The absorbers and curtains a room's `panels` list, hung on their walls; skirting along the floor. */
 function hang(def: StudioDef, group: THREE.Group) {
   const { h } = def.size;
@@ -270,11 +335,13 @@ function hang(def: StudioDef, group: THREE.Group) {
       } else {
         // absorbers: 60 cm squares, five centimetres proud of the wall, centred at ear height, in rows of two or three
         const n = Math.max(1, Math.round(p.m2 / 0.36)), rows = Math.min(3, Math.max(1, Math.round(Math.sqrt(n / 2)))), cols = Math.ceil(n / rows);
-        const tile = new THREE.BoxGeometry(0.58, 0.58, 0.05);
+        // foam is cut as real wedges, so the downlights rake across its ridges; anything else is a flat box
+        const foam = p.material === "foam", tile = foam ? wedges3d() : new THREE.BoxGeometry(0.58, 0.58, 0.05);
+        const mat = foam ? foamMat() : surface(p.material);
         const room = s.len / 2 - along - 0.3, cell = Math.min(0.64, room / Math.max(1, cols));
         for (let i = 0; i < n; i++) {
-          const c = i % cols, r = Math.floor(i / cols), m = new THREE.Mesh(metreUV(tile.clone()), surface(p.material));
-          m.position.set(along + 0.3 + c * cell, 1.45 + (r - (rows - 1) / 2) * 0.64, 0.085);
+          const c = i % cols, r = Math.floor(i / cols), m = new THREE.Mesh(foam ? tile : metreUV(tile.clone()), mat);
+          m.position.set(along + 0.3 + c * cell, 1.45 + (r - (rows - 1) / 2) * 0.64, foam ? 0.06 : 0.085);
           wall.add(m);
         }
         along += cols * cell + 0.5;
@@ -348,7 +415,7 @@ function shade(map: THREE.Texture, opacity: number) {
   return new THREE.MeshBasicMaterial({ color: 0x000000, map, transparent: true, opacity, depthWrite: false, toneMapped: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -8 });
 }
 
-let fade: THREE.CanvasTexture | null = null;
+let fade: THREE.CanvasTexture | null = null, shadeGlow: THREE.CanvasTexture | null = null;
 /**
  * The shade light doesn't reach into a room's corners: along the foot and the top of every outside wall, and up
  * each corner where two walls meet, a band that fades out over half a metre or so.
@@ -359,7 +426,7 @@ function corners(def: StudioDef, group: THREE.Group) {
     for (let y = 0; y < 64; y++) { const t = 1 - y / 63; g.fillStyle = `rgba(0,0,0,${(t * t * t).toFixed(3)})`; g.fillRect(0, 63 - y, 64, 1); }
   }, false);
   fade.wrapS = fade.wrapT = THREE.ClampToEdgeWrapping;
-  const { h } = def.size, mat = shade(fade, 0.55), top = shade(fade, 0.22); // the bounce off the floor lights the tops: only a hint of shade there
+  const { h } = def.size, mat = shade(fade, 0.55), top = shade(fade, 0.22), deep = shade(fade, 0.72); // the bounce off the floor lights the tops: only a hint of shade there
   for (const side of ["front", "back", "left", "right"] as const) {
     const s = sideOf(def, side), wall = new THREE.Group();
     wall.position.set(s.cx, 0, s.cz); wall.rotation.y = s.turn;
@@ -371,8 +438,8 @@ function corners(def: StudioDef, group: THREE.Group) {
     band(s.len, 0.7, 0, 0.35, 0); // the foot
     band(s.len, 0.6, 0, h - 0.3, Math.PI, top); // the top, dark side up
     // the corners, dark side toward each end: the plane turned on its side, so its "wide" runs up the wall
-    band(h, 0.6, -s.len / 2 + 0.36, h / 2, -Math.PI / 2);
-    band(h, 0.6, s.len / 2 - 0.36, h / 2, Math.PI / 2);
+    band(h, 0.9, -s.len / 2 + 0.51, h / 2, -Math.PI / 2, deep); // deeper and wider than the foot: two walls shade each other
+    band(h, 0.9, s.len / 2 - 0.51, h / 2, Math.PI / 2, deep);
   }
 }
 
@@ -450,7 +517,7 @@ export function dress(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera:
   const rnd = mulberry32([...def.id].reduce((a, ch) => (a * 31 + ch.charCodeAt(0)) | 0, 7));
   const warm = new THREE.Color(0xffd2a0), cool = new THREE.Color(0xffe8cc);
   for (const [x, z] of spots) {
-    const l = new THREE.SpotLight(warm.clone().lerp(cool, rnd()), power * (0.72 + rnd() * 0.45), 0, Math.PI * (0.28 + rnd() * 0.05), 0.85, 2);
+    const l = new THREE.SpotLight(warm.clone().lerp(cool, rnd()), power * (0.72 + rnd() * 0.45), 0, Math.PI * (0.28 + rnd() * 0.05), 0.5 + rnd() * 0.25, 2); // a real can throws a scallop with an edge, each its own
     l.position.set(x, h - 0.03, z);
     l.target.position.set(x, 0, z);
     group.add(l, l.target);
@@ -476,19 +543,30 @@ export function dress(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera:
   bounce.lookAt(0, h, 0);
   group.add(bounce);
 
-  // floor lamps in the free corners (practicals()): a pole, a fabric drum shade lit from inside, warm light at head height
-  const lampLights: THREE.PointLight[] = [];
-  const shadeMat = new THREE.MeshStandardMaterial({ color: "#f3dcb4", emissive: "#ffc98a", emissiveIntensity: 1.1, roughness: 0.9, side: THREE.DoubleSide });
+  // floor lamps in the free corners (practicals()): a pole, a fabric drum shade glowing from inside, darker at its
+  // middle where the cloth is thickest seen edge on; light spills out of its open top and bottom as two cones, the
+  // bright hourglass a shaded lamp throws on the wall behind it, and a little through the cloth all round
+  const lampLights: THREE.Light[] = [];
+  shadeGlow ??= canvasTex(64, (g) => {
+    for (let y = 0; y < 64; y++) { const t = Math.abs(y / 63 - 0.5) * 2, k = 0.55 + 0.45 * t * t; g.fillStyle = `rgb(${Math.round(255 * k)},${Math.round(236 * k)},${Math.round(206 * k)})`; g.fillRect(0, y, 64, 1); }
+  }, true);
+  const shadeMat = new THREE.MeshStandardMaterial({ color: "#8f7150", emissive: "#ff9e4a", emissiveMap: shadeGlow, emissiveIntensity: 0.6, roughness: 0.95, side: THREE.DoubleSide });
   const pole = surface("metal", "#2a2724");
   for (const [x, z] of practicals(def)) {
     const lamp = new THREE.Group(); lamp.name = "floor-lamp"; lamp.position.set(x, 0, z);
     const foot = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.17, 0.025, 24), pole); foot.position.y = 0.012;
     const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 1.45, 8), pole); stem.position.y = 0.74;
     const drum = new THREE.Mesh(new THREE.CylinderGeometry(0.19, 0.23, 0.3, 28, 1, true), shadeMat); drum.position.y = 1.55;
-    const p = new THREE.PointLight(0xffc68c, 3.2, 7, 2); p.position.y = 1.5;
-    lamp.add(foot, stem, drum, p);
+    const glow = new THREE.PointLight(0xffb878, 0.9, 4, 2); glow.position.y = 1.55;
+    lamp.add(foot, stem, drum, glow);
+    lampLights.push(glow);
+    for (const [dy, cd, cone] of [[0.16, 30, 0.9], [-0.16, 22, 0.8]] as const) {
+      const sp = new THREE.SpotLight(0xffc488, cd, 6, cone, 0.35, 2);
+      sp.position.set(0, 1.55 + dy * 0.2, 0); sp.target.position.set(0, dy > 0 ? 3 : 0, 0);
+      lamp.add(sp, sp.target);
+      lampLights.push(sp);
+    }
     group.add(lamp);
-    lampLights.push(p);
   }
 
   // baked once the room stands: the shade where things meet the floor, then the reflections, taken from this room

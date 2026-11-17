@@ -2,7 +2,7 @@
 // plank or a ceiling tile comes out the same size on a small wall and a big one.
 import { expect, test } from "bun:test";
 import * as THREE from "three";
-import { cans, metreUV, pickQuality, practicals, surface, useKit, type Quality } from "../src/studio/look.ts";
+import { cans, metreUV, pickQuality, practicals, surface, useKit, wedges3d, type Quality } from "../src/studio/look.ts";
 import { LIVE_ROOM } from "../src/studio/rooms/live.ts";
 import { SCORING_HALL } from "../src/studio/rooms/index.ts";
 
@@ -59,4 +59,18 @@ test("floor lamps stand in the corners nobody plays in, clear of the booths, and
     expect(x < -2.6 && z > 2.4).toBe(false); // not shut in the vocal booth's corner
   }
   expect(practicals(SCORING_HALL)).toEqual([]);
+});
+
+test("wedge foam is cut as geometry: every face looks out of the wall, and the valleys are darker than the peaks", () => {
+  const g = wedges3d(), p = g.getAttribute("position"), n = g.getAttribute("normal"), c = g.getAttribute("color");
+  const box = new THREE.Box3().setFromBufferAttribute(p as THREE.BufferAttribute);
+  expect(box.min.z).toBeCloseTo(0); expect(box.max.z).toBeCloseTo(0.06); // back on the wall, 6 cm deep
+  expect(box.max.x - box.min.x).toBeCloseTo(0.58);
+  const valley: number[] = [], peak: number[] = [];
+  for (let i = 0; i < p.count; i++) {
+    expect(n.getZ(i)).toBeGreaterThan(-1e-6); // none wound into the wall, where it would vanish from the room
+    if (p.getZ(i) > 0.059) peak.push(c.getX(i));
+    else if (Math.abs(p.getZ(i) - 0.025) < 1e-6 && n.getZ(i) > 0.1) valley.push(c.getX(i));
+  }
+  expect(Math.max(...valley)).toBeLessThan(Math.min(...peak));
 });
