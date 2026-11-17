@@ -8,7 +8,7 @@ import { expect, setDefaultTimeout, test } from "bun:test";
 import { dims, newWorld, pickUp, push, putDown, type World } from "../src/sim.ts";
 import { type Cables, grabEnd, newCables, plug, settle, takeCable, walkWith } from "../src/cables/cables.ts";
 import { aim, master } from "../src/venues/dive-bar.ts";
-import { CAMP_LIMIT, DANCE_FLOOR, DESERT, desertState, score, wrap } from "../src/venues/desert.ts";
+import { CAMP_LIMIT, DANCE_FLOOR, DESERT, GEN_QUIET, desertState, score, wrap } from "../src/venues/desert.ts";
 
 setDefaultTimeout(60_000);
 const DEG = Math.PI / 180;
@@ -117,6 +117,16 @@ test("cart the generator over the sand, stack the wall, keep the camp asleep, an
   // A jerry can carried down and set by the generator: the wall plays until the sun comes up.
   move(w, c, "can-1", -9, 5.2);
   expect(desertState(w, c)).toMatchObject({ fuel: { litres: 35, cans: 1 }, until: "06:00", sunrise: true, pass: true });
+
+  // The generator is heard on the floor too. Where the crew left it, it drones in every breakdown; 6 dB quieter for
+  // each doubling of the distance, so wheeled well back on the cart it drops out of earshot.
+  const near = desertState(w, c).generatorDb!;
+  expect(near).toBeGreaterThan(GEN_QUIET);
+  const gen = at(w, "generator"), cart = at(w, "cart"), edge = Math.hypot(gen.x - Math.max(-7, Math.min(7, gen.x)), gen.z - Math.max(6, Math.min(20, gen.z)));
+  expect(near).toBeCloseTo(74 - 20 * Math.log10(Math.max(1, edge) / 7), 0);
+  for (const i of [gen, cart]) i.x -= 40;
+  expect(desertState(w, c).generatorDb!).toBeLessThan(GEN_QUIET);
+  expect(desertState(w, c).generatorDb!).toBeLessThan(near - 10);
 });
 
 test.each([

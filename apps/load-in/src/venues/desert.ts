@@ -132,6 +132,20 @@ export function dusty(w: World, c: Cables): string[] {
   return [...out].sort();
 }
 
+/**
+ * The generator's own noise. A 7 kVA open-frame petrol set is about 74 dB(A) at 7 m (a sound power near 97 dB(A),
+ * typical of its class's spec sheets), and outdoors it falls 6 dB for each doubling of distance. Under GEN_QUIET at
+ * the dance floor it is lost under a crowd's talk between tracks; over it, it is the drone in every breakdown.
+ */
+export const GEN_DB_AT_7M = 74, GEN_QUIET = 60;
+/** The generator's level at the nearest edge of the dance floor, dB(A) (null with no generator, or when it is not running). */
+export function generatorAtFloor(w: World, c: Cables): number | null {
+  const gen = w.items.find((i) => catalog(i.gear).generator);
+  if (!gen || !(load(w, c)?.watts ?? 0)) return null;
+  const f = ZONES.floor, d = Math.hypot(gen.x - clamp(gen.x, f.x0, f.x1), gen.z - clamp(gen.z, f.z0, f.z1));
+  return Math.round((GEN_DB_AT_7M - 20 * Math.log10(Math.max(1, d) / 7)) * 10) / 10;
+}
+
 /** Tape every dusty joint within `reach` metres of where you stand (the G key, for gaffer tape); how many it wrapped. */
 export function wrapNear(w: World, c: Cables, reach = 2): number {
   const near = new Set(jacks(w).filter((j) => Math.hypot(j.at.x - w.you.x, j.at.z - w.you.z) <= reach).map((j) => `${j.owner} ${j.jack}`));
@@ -200,5 +214,7 @@ export function desertState(w: World, c: Cables) {
   const l = load(w, c);
   return { generator: l && { watts: Math.round(l.watts), limit: Math.round(l.limit), warn: l.warn, trips: l.trips }, fuel: fuel(w, c), campLimit: CAMP_LIMIT, ...score(w, c),
     /** People on the dance floor once the night has started (null before show time). */
-    crowd: crowdOf(w)?.people ?? null };
+    crowd: crowdOf(w)?.people ?? null,
+    /** The generator's own noise at the nearest edge of the dance floor, dB(A): keep it under GEN_QUIET. */
+    generatorDb: generatorAtFloor(w, c) };
 }

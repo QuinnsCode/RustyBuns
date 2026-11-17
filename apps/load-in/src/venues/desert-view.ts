@@ -8,7 +8,7 @@ import { type World } from "../sim.ts";
 import { type Cables } from "../cables/cables.ts";
 import { type Zone, master, rig } from "./dive-bar.ts";
 import { aimKey, heatColour } from "./dive-bar-view.ts";
-import { BASS, CAMP_LIMIT, GROUND, PASS, SPREAD, TARGET, ZONES, desertState, heat, score, show, wrapNear, DANCE_FLOOR, type Score, type Show } from "./desert.ts";
+import { BASS, CAMP_LIMIT, GROUND, PASS, SPREAD, TARGET, ZONES, desertState, heat, score, show, wrapNear, DANCE_FLOOR, GEN_QUIET, type Score, type Show } from "./desert.ts";
 import { playing } from "./park.ts";
 import { cellsIn, mean } from "./dive-bar.ts";
 import { crowdOf, letIn, regions } from "../crowd/crowd.ts";
@@ -179,6 +179,7 @@ export function desertView(scene: THREE.Scene, hud: HTMLElement, getWorld: () =>
         + `<span class="${s.bass < 1 ? "warn" : ""}">Bass ${Math.round(s.bass * 100)}% of the floor at ${BASS} dB</span>`
         + `<span class="${s.camp !== null && s.camp > CAMP_LIMIT ? "warn" : ""}">Camp ${db(s.camp)} (limit ${CAMP_LIMIT})</span>`
         + (s.dusty.length ? `<span class="warn">Dust: ${s.dusty.length} joint${s.dusty.length === 1 ? "" : "s"} on the sand (lift the gear or tape them: G)</span>` : getCables().runs.some((r) => "plug" in r.a || "plug" in r.b) ? "<span>Dust: every joint is off the sand or taped</span>" : "")
+        + (st.generatorDb !== null ? `<span class="${st.generatorDb > GEN_QUIET ? "warn" : ""}">Generator heard at ${st.generatorDb.toFixed(0)} dB on the floor (under ${GEN_QUIET} is out of earshot)</span>` : "")
         + (crowdOf(w) ? `<span>The floor: ${crowdOf(w)!.people} people</span>` : "")
         + `<span>Fader ${rig(w).master} dB</span>` + (opened
           ? `<span class="${opened.pass ? "pass" : ""}">${opened.sunrise ? "The sun came up on the wall" : `Silent at ${opened.until}, before sunrise`}: ${opened.score} / ${PASS}</span><span>Sound ${opened.sound}, crowd mood ${opened.mood}</span><span>Paid ${opened.pay} of ${opened.fee}</span>`
