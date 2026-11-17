@@ -2,7 +2,7 @@
 // back into the case (two loops the same way: two twists to work out at the next show), pack every piece into the truck
 // front to back, leave one with a gap in front of it (it slides), and shut the truck after curfew (the fine). The same
 // calls `window.loadIn` makes.
-import { expect, test } from "bun:test";
+import { afterEach, expect, test } from "bun:test";
 import { setDial } from "../src/assists.ts";
 import { LOOP_S, coil, loop, loopsFor, newCables, plug, settle, takeCable, unplug, walkWith, type Way } from "../src/cables/cables.ts";
 import { dims, newWorld, pickUp, putDown, type World } from "../src/sim.ts";
@@ -12,6 +12,9 @@ import { DESERT } from "../src/venues/desert.ts";
 import { ARENA, POINTS, fly, lower, send, wait } from "../src/venues/arena.ts";
 import { SMALL_ARENA } from "../src/venues/small-arena.ts";
 import { SHOW } from "../src/venues/show.ts";
+
+// The dial is shared by every test file in the run: leave it on Sim.
+afterEach(() => { setDial("sim"); });
 
 test("unplug and coil over-under, pack the truck front to back, shut it past curfew", () => {
   setDial("sim");
