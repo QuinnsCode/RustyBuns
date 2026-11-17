@@ -776,3 +776,26 @@ html .ui-house .gr-foot .gc-close:hover { background: linear-gradient(#34342f, #
   html .ui-house .gc-head h2 { font-size: 26px; }
   html .ui-house .gr-foot::after { content: "RETURN TO GR-04"; }
 }
+
+/* Round 15 (#4356): the sheets between the head and the foot are handled paper too. Each sheet is numbered on a typed
+   line with a redaction bar (a CSS counter), its paper is foxed at the edges, its foot is torn off the pad (torn.svg as
+   a mask, 0.4 KB) and it ends on a sign-off: a dotted line with an officer's initials in ballpoint (sign.svg, 0.6 KB)
+   and a CLEARED rubber stamp (stamp.svg as wear). Nothing sits over a row, so the list reads as before. */
+html .ui-house .gc-pane { counter-reset: gr-sheet; }
+html .ui-house .gc-sec { position: relative; counter-increment: gr-sheet; padding-bottom: 12px;
+  background: linear-gradient(#0000 calc(100% - 16px), #e9dcbc calc(100% - 13px)), radial-gradient(120% 90% at 50% 40%, #0000 62%, #c9a8601f 88%, #a9813a33),
+    url(/menu/slip.svg) 0 4px / 64px, #fffdf6;
+  -webkit-mask: linear-gradient(#000 0 0) top / 100% calc(100% - 11px) no-repeat, url(/menu/torn.svg) left bottom / 120px 12px repeat-x;
+  mask: linear-gradient(#000 0 0) top / 100% calc(100% - 11px) no-repeat, url(/menu/torn.svg) left bottom / 120px 12px repeat-x; }
+html .ui-house .gc-sec-b::before { content: "SHEET " counter(gr-sheet, decimal-leading-zero) "  \2022  REF GR-12/" counter(gr-sheet);
+  display: block; padding: 0 0 6px calc(38% + 10px); border-bottom: 1px dashed #14141455;
+  font: 700 10px/12px var(--mono); letter-spacing: 0.16em; color: #4f4d48; white-space: nowrap; overflow: hidden;
+  background: linear-gradient(100deg, #0000 2px, #141414 3px calc(100% - 3px), #0000 calc(100% - 2px)) left 0 top 1px / 38% 10px no-repeat; }
+/* The sign-off: initials over a dotted line, and the CLEARED stamp beside it, both below the last row. */
+html .ui-house .gc-sec-b::after { content: "ISSUING OFFICER"; justify-self: end; width: 140px; margin: 4px 124px 0 0; padding-top: 27px;
+  font: 700 9px/1 var(--mono); letter-spacing: 0.16em; color: #6f6d66;
+  background: url(/menu/sign.svg) 10px 0 / 96px 28px no-repeat, radial-gradient(circle, #14141499 0.8px, #0000 1.2px) 0 21px / 5px 4px repeat-x; }
+html .ui-house .gc-sec::after { content: "CLEARED"; position: absolute; right: 16px; bottom: 20px; padding: 5px 9px 3px; transform: rotate(-7deg);
+  font: 900 14px/1 var(--br-stencil); letter-spacing: 0.16em; color: #c2410c; border: 3px double #c2410c; border-radius: 4px; pointer-events: none;
+  -webkit-mask: url(/menu/stamp.svg) 0 0 / 150px 50px; mask: url(/menu/stamp.svg) 0 0 / 150px 50px; }
+html .ui-house .gc-sec.shut::after { content: none; }
