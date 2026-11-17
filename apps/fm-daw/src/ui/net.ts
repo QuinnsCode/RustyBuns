@@ -5,6 +5,7 @@
 import { connectSocket } from "@rustybuns/util/socket";
 import { seshFromPath } from "../sesh.ts";
 import { decodeServer, type ClientMsg, type Floor, type Full, type Live, type Op, type Project, type ServerMsg } from "../project.ts";
+import type { TakeBytes } from "../take.ts";
 import { decodeChatServer, type ChatClient, type ChatServer } from "../chat.ts";
 
 /** `locked`: the sesh is private (it has a code). */
@@ -22,6 +23,8 @@ export interface Net {
   chat(m: ChatClient): void;
   /** The maker only (the world ignores anyone else): free, held or closed. */
   floor(state: Floor): void;
+  /** A chunk of a take's sound, sent before the op that puts the take on a track. */
+  take(m: TakeBytes): void;
   /** The maker only: make the sesh private with this code, or public again with "". */
   lock(code: string): void;
   close(): void;
@@ -61,6 +64,8 @@ export function connect(opts: {
   onGone(from: number): void;
   onStatus(s: NetStatus): void;
   onChat(m: ChatServer): void;
+  /** A chunk of a take's sound (someone recorded one, or the room has it from before). */
+  onTakeBytes(m: TakeBytes): void;
   /** Who this is, said on every open so the room knows the chat's people. */
   hello(): { key: string; name: string };
 }): Net {
@@ -84,6 +89,7 @@ export function connect(opts: {
       else if (m.t === "peers") { peers = m.n; opts.onStatus({ state: "online", peers, floor, locked }); }
       else if (m.t === "floor") { floor = { state: m.state, host: m.host }; opts.onStatus({ state: "online", peers, floor, locked }); }
       else if (m.t === "full") full = m.why;
+      else if (m.t === "takeBytes") opts.onTakeBytes(m);
       else if (m.t === "lock") {
         // the maker changed it: keep the new one, or this tab's next reconnect is turned away
         if (m.code !== undefined) { saveCode(room, m.code); if (m.code) url.searchParams.set("code", m.code); else url.searchParams.delete("code"); }
@@ -108,6 +114,7 @@ export function connect(opts: {
     chat: (m) => { if (link.open) link.send(m); },
     floor: (state) => { link.send({ t: "floor", state }); },
     lock: (code) => { link.send({ t: "lock", code }); },
+    take: (m) => { link.send(m); },
     close: () => link.close(),
   };
 }

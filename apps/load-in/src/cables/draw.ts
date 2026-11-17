@@ -2,7 +2,7 @@
 import * as THREE from "three";
 import type { Cables } from "./cables.ts";
 
-const COLOR: Record<string, number> = { power: 0x1b1b1b, speaker: 0x2a3f8f, xlr: 0x3a3a3a, instrument: 0x8f2a2a };
+export const COLOR: Record<string, number> = { power: 0x1b1b1b, speaker: 0x2a3f8f, xlr: 0x3a3a3a, instrument: 0x8f2a2a };
 
 export function cableView(scene: THREE.Scene) {
   const tubes = new Map<string, THREE.Mesh<THREE.TubeGeometry, THREE.MeshStandardMaterial>>();

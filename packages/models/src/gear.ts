@@ -1,5 +1,5 @@
 // Load In's gear, grown in code: speakers, a sub, a wedge, stands, guitar amps, a rolling amp rack, cases, a cable
-// ramp, a generator, a distro box, a mixer, a mic stand, a guitar, a sand cart and a jerry can. Generic boxes named for what they are, at
+// ramp, a generator, a distro box, a mixer, a mic stand, a guitar, a DI box, a sand cart and a jerry can. Generic boxes named for what they are, at
 // the real sizes of #4849's table (width x height x depth = x, y, z, in metres), feet on the floor at y = 0,
 // centred on x and z, the front facing +z. Each app brings its own materials (`GearLook`, one per slot).
 //
@@ -37,7 +37,10 @@ export const GEAR_SIZES = {
   "mic-stand": [0.6, 1.6, 0.6],
   "sand-cart": [0.8, 0.45, 1.2],
   "jerry-can-20l": [0.35, 0.47, 0.17],
+  "line-array-box": [1.0, 0.32, 0.55],
+  "bar-cooler": [0.9, 0.9, 0.6],
   guitar: [0.33, 1.0, 0.05],
+  "di-box": [0.1, 0.05, 0.13],
 } as const satisfies Record<string, THREE.Vector3Tuple>;
 
 export const GEAR_IDS = Object.keys(GEAR_SIZES) as GearId[];
@@ -382,6 +385,31 @@ function guitar(): Build {
   return b;
 }
 
+/** A DI box: a steel brick, the instrument in and its thru on the back, the XLR on the front, a ground-lift switch on top. */
+function diBox(): Build {
+  const [w, h, d] = GEAR_SIZES["di-box"], b: Build = { pieces: [], marks: [] }, body = h - 0.004;
+  b.pieces.push(box("paint", [w, body, d - 0.012], [0, body / 2, 0], { bevel: 0.004 }));
+  b.pieces.push(box("chrome", [0.012, 0.004, 0.02], [w * 0.25, body + 0.002, -d * 0.2]));
+  jacks(b, ["inst-in", "line-out"], "back", [-w * 0.22, body * 0.5, -d / 2 + 0.006], [w * 0.44, 0, 0], 0.008);
+  jacks(b, ["xlr-out"], "front", [0, body * 0.5, d / 2 - 0.006], [0, 0, 0], 0.011);
+  mark(b, "grab", [0, body, 0]);
+  return b;
+}
+
+/** The venue's back-bar cooler: a cabinet with two glass doors lit from inside, its plug at the back. */
+function barCooler(): Build {
+  const [w, h, d] = GEAR_SIZES["bar-cooler"], b: Build = { pieces: [], marks: [] };
+  b.pieces.push(box("paint", [w, h - 0.02, d], [0, 0.01 + (h - 0.02) / 2, 0], { bevel: 0.01 }));
+  for (const x of [-1, 1]) {
+    b.pieces.push(box("light", [w / 2 - 0.06, h - 0.2, 0.01], [x * w / 4, h / 2 + 0.03, d / 2 + 0.002]));
+    b.pieces.push(box("metal", [0.02, 0.3, 0.02], [x * 0.04, h * 0.55, d / 2 + 0.015]));
+  }
+  for (const x of [-1, 1]) for (const z of [-1, 1]) b.pieces.push(disc("rubber", 0.02, 0.01, "y", [x * (w / 2 - 0.05), 0.005, z * (d / 2 - 0.05)], 6));
+  jacks(b, ["power-in"], "back", [w * 0.3, 0.15, -d / 2 - 0.004], [0, 0, 0], 0.02);
+  mark(b, "grab", [0, h, 0]);
+  return b;
+}
+
 const BUILDERS: Record<GearId, (height: number) => Build> = {
   "top-12-powered": () => speaker(GEAR_SIZES["top-12-powered"], ["power-in", "xlr-in", "xlr-out"], true),
   "top-15-passive": () => speaker(GEAR_SIZES["top-15-passive"], ["speaker-in", "speaker-out"], false),
@@ -399,7 +427,10 @@ const BUILDERS: Record<GearId, (height: number) => Build> = {
   "mic-stand": micStand,
   "sand-cart": sandCart,
   "jerry-can-20l": fuelCan,
+  "bar-cooler": barCooler,
+  "line-array-box": () => speaker(GEAR_SIZES["line-array-box"], ["power-in", "xlr-in", "xlr-out"], true),
   guitar,
+  "di-box": diBox,
 };
 
 type Built = { slots: [GearSlot, THREE.BufferGeometry][]; marks: Mark[] };
