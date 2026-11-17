@@ -1,0 +1,14 @@
+# Q Amp and the gear room split a heavy rig across worker threads through a SharedArrayBuffer (src/amp/ring.ts),
+# which a browser only hands to a cross-origin isolated page. `bun run dev` sends the same (vite.config.ts).
+/amp
+  Cross-Origin-Opener-Policy: same-origin
+  Cross-Origin-Embedder-Policy: require-corp
+/amp.html
+  Cross-Origin-Opener-Policy: same-origin
+  Cross-Origin-Embedder-Policy: require-corp
+/studio
+  Cross-Origin-Opener-Policy: same-origin
+  Cross-Origin-Embedder-Policy: require-corp
+/studio.html
+  Cross-Origin-Opener-Policy: same-origin
+  Cross-Origin-Embedder-Policy: require-corp

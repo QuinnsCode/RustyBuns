@@ -221,6 +221,9 @@ export class Circuit {
   misses = 0;
   /** Newton iterations taken, all samples together. */
   iterations = 0;
+  /** About how many multiply-adds its steps took, all together: what a rig split across threads is cut by. */
+  work = 0;
+  private flat = 0;
   private m: number;
   private nodes = new Map<string, number>();
   private baseDc: Float64Array;
@@ -419,6 +422,8 @@ export class Circuit {
     this.z = new Float64Array(m);
     this.v = new Float64Array(K); this.vNew = new Float64Array(K); this.iP = new Float64Array(K); this.p = new Float64Array(K);
     this.J = new Float64Array(K * K); this.F = new Float64Array(K); this.JF = new Float64Array(K * K); this.iNow = new Float64Array(K);
+    // A step adds a column of A⁻¹ per source and history current, then K port currents back; each Newton iteration is about K³.
+    this.flat = n * (1 + this.supplies.length + 2 * this.caps.length + 2 * this.inds.length + this.hiss.length + K);
   }
 
   /** The voltage on a named node after the last step (0 for ground or a name not in the circuit). */
@@ -676,6 +681,7 @@ export class Circuit {
         v.set(vNew);
       }
       this.iterations += it;
+      this.work += this.flat + it * K * K * (K + 1);
       if (!converged) { this.misses++; J.fill(0); this.currents(v, iP, J); F.fill(0); }
       // The currents at the final v: the last evaluation plus its slope times the last (tiny) step.
       for (let k = 0; k < K; k++) {
@@ -687,6 +693,7 @@ export class Circuit {
       }
     } else {
       this.iterations++;
+      this.work += this.flat;
     }
     for (const c of this.caps) { c.v = x[c.a] - x[c.b]; c.i = c.g * c.v - c.ieq; }
     for (const l of this.inds) { l.v = x[l.a] - x[l.b]; l.i = l.g * l.v + l.ieq; }

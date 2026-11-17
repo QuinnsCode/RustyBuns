@@ -3,8 +3,11 @@
 import { expect, setDefaultTimeout, test } from "bun:test";
 import { AMPS } from "../src/circuit/amps.ts";
 import { riff } from "../src/circuit/riff.ts";
-import { FULL_SCALE, applySettings, limit, type Live } from "../src/amp/live.ts";
-import type { AmpSettings } from "../src/amp/messages.ts";
+import { cutPoints, planCuts } from "@rustybuns/gear/circuit";
+import { FULL_SCALE, applySettings, limit, rigSpec, type Live } from "../src/amp/live.ts";
+import type { AmpSettings, ToPart } from "../src/amp/messages.ts";
+import { Head, Ring } from "../src/amp/ring.ts";
+import { partsFor } from "../src/amp/threads.ts";
 
 setDefaultTimeout(60_000);
 const SR = 48000, BLOCK = 128;
@@ -104,4 +107,67 @@ test("the Noise knob: silent at 0, a hiss through the tubes at 7", () => {
   };
   expect(floor(0)).toBeLessThan(1e-6);
   expect(floor(7)).toBeGreaterThan(0.01); // louder than −40 dBFS
+});
+
+test("a board over one thread's budget, split across workers: the one-thread sound, a block later per hop", async () => {
+  const dry = riff(SR);
+  // Q Drive and Q Fuzz into Q Lead 50 with the spring in its loop, 4×: over budget on one thread (#4948).
+  const board: AmpSettings = { amp: "lead", pedal: null, drive: 0, knobs: { ...AMPS[1].knobs }, bypass: false, oversample: 4, swaps: {}, mic: { at: 0.3, angle: 0 }, board: [{ pedal: "drive", drive: 5 }, { pedal: "fuzz", drive: 7 }], loop: [{ kind: "spring", dwell: 5, mix: 6 }] };
+  const turned: AmpSettings = { ...board, knobs: { ...board.knobs, gain: 9 }, board: [{ pedal: "drive", drive: 8 }, { pedal: "fuzz", drive: 7 }] };
+  const BLOCKS = 120, TURN = 60;
+  const block = (b: number) => dry.subarray(b * BLOCK, b * BLOCK + BLOCK);
+
+  // One thread: the reference, and each slot's work to cut by.
+  let one = applySettings(board, null, SR);
+  const ref: Float32Array[] = [];
+  for (let b = 0; b < BLOCKS; b++) {
+    if (b === TURN) one = applySettings(turned, one, SR);
+    const out = new Float32Array(BLOCK);
+    one.rig.process(block(b), out, BLOCK);
+    ref.push(out);
+  }
+  const measured = applySettings(board, null, SR).rig;
+  measured.process(dry.subarray(0, 48 * BLOCK), new Float32Array(48 * BLOCK));
+  const slots = measured.work(), total = slots.reduce((a, x) => a + x, 0);
+
+  for (const parts of [2, 3]) {
+    const cuts = planCuts(slots, parts, cutPoints(rigSpec(board).spec));
+    expect(cuts.length).toBe(parts - 1);
+    // The busiest part does well under the whole chain's work.
+    const edges = [0, ...cuts, slots.length - 1];
+    const shares = edges.slice(1).map((e, k) => slots.slice(edges[k], k === parts - 1 ? slots.length : e).reduce((a, x) => a + x, 0) / total);
+    expect(Math.max(...shares)).toBeLessThan(parts === 2 ? 0.75 : 0.55);
+
+    const rings = Array.from({ length: parts }, () => Ring.make().sab);
+    const workers = cuts.map((_, i) => {
+      const w = new Worker(new URL("../src/amp/part-worker.ts", import.meta.url).href);
+      const start: ToPart = { t: "start", rings, index: i + 1, sampleRate: SR };
+      w.postMessage(start);
+      return w;
+    });
+    const head = new Head(SR);
+    head.connect(rings);
+    const play = (settings: AmpSettings, v: number) => {
+      const m: ToPart = { t: "set", settings, v, cuts };
+      head.set(m);
+      for (const w of workers) w.postMessage(m);
+    };
+    play(board, 1);
+    const out = new Float32Array(BLOCK);
+    const heard: Float32Array[] = [];
+    try {
+      for (let b = 0; b < BLOCKS + cuts.length; b++) {
+        if (b === TURN) play(turned, 2); // a knob and a pedal's Drive mid-riff: every part changes on the same block
+        expect(head.block(b < BLOCKS ? block(b) : new Float32Array(BLOCK), out, BLOCK, 5000)).toBe(true);
+        heard.push(out.slice());
+      }
+    } finally {
+      for (const w of workers) w.terminate();
+    }
+    expect([parts, head.hops, head.late]).toEqual([parts, cuts.length, 0]);
+    for (let b = 0; b < cuts.length; b++) expect(heard[b].every((x) => x === 0)).toBe(true);
+    for (let b = 0; b < BLOCKS; b++) expect([parts, b, Array.from(heard[b + cuts.length])]).toEqual([parts, b, Array.from(ref[b])]);
+  }
+  expect(partsFor(0.5)).toBe(1);
+  expect(partsFor(1.28)).toBe(3);
 });

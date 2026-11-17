@@ -76,6 +76,14 @@ export interface RigSpec {
   loop?: LoopSpec[];
   /** Links run side by side instead of one after another (a splitter's sides), each blended back in (`Blend`). */
   blends?: Blend[];
+  /**
+   * Part of a rig cut at a link (`splitRig`), to run on another thread: `"in"` takes the oversampled volts a part
+   * before it hands over (`n × oversample` a block, resting at `inRest`) in place of the jack; `"out"` stops after its
+   * links and hands their oversampled volts on (no power stage, loop or cab). `"both"` is a part in the middle.
+   */
+  tap?: "in" | "out" | "both";
+  /** With `tap: "in"`: the volts the part ahead rests at when this one is built (its `outRest`). */
+  inRest?: number;
 }
 
 /**
@@ -131,10 +139,18 @@ export class Rig {
   // The return back up to the oversampled rate, so the power stage runs there as without a loop.
   private up2: Biquad[];
   private down2: Biquad[];
+  private tapIn: boolean;
+  private tapOut: boolean;
+  /** The volts the input rests at: 0 at the jack, or what the part ahead of this one rests at (`outRest`). */
+  inRest = 0;
+  private worked: Float64Array;
 
   constructor(spec: RigSpec, readonly sampleRate = 48000, readonly oversample = 4) {
     const hi = sampleRate * oversample;
     this.inputVolts = spec.inputVolts;
+    this.tapIn = spec.tap === "in" || spec.tap === "both";
+    this.tapOut = spec.tap === "out" || spec.tap === "both";
+    this.inRest = this.tapIn ? spec.inRest ?? 0 : 0;
     this.power = spec.power;
     this.gains = spec.links.map((l) => l.gain ?? 1);
     this.circuits = spec.links.map((l) => new Circuit(l.net, hi));
@@ -146,7 +162,9 @@ export class Rig {
     this.blends = (spec.blends ?? []).map((b) => ({ ...b }));
     this.blendAt = new Int32Array(n).fill(-1);
     this.feed = new Int32Array(n);
+    this.worked = new Float64Array(n);
     // Who feeds whom: one after another, except inside a blend, where each side starts from what fed the blend.
+    // -1 is the input (resting at `inRest`), -2 a blend's sum (0 V).
     for (let i = 0, prev = -1; i < n; ) {
       const b = this.blends.findIndex((x) => x.at === i);
       if (b < 0) { this.feed[i] = prev; prev = i++; continue; }
@@ -156,7 +174,7 @@ export class Rig {
       let j = i;
       for (const len of bl.lanes) for (let k = 0; k < len; k++, j++) this.feed[j] = k ? j - 1 : prev;
       if (j > n || j === i) throw new Error(`blend at link ${i} runs to link ${j} of ${n}`);
-      prev = -1;
+      prev = -2;
       i = j;
     }
     // Rest state, stage by stage: each one's input is what feeds it at rest.
@@ -212,7 +230,14 @@ export class Rig {
   }
 
   /** The voltage link `i`'s input rests at. */
-  private restIn(i: number): number { const f = this.feed[i]; return f < 0 ? 0 : this.rest[f]; }
+  private restIn(i: number): number { const f = this.feed[i]; return f === -1 ? this.inRest : f < 0 ? 0 : this.rest[f]; }
+
+  /** The volts the rig's last link rests at, what a part after it (`tap: "in"`) takes as its `inRest`. */
+  get outRest(): number {
+    const n = this.circuits.length;
+    if (!n) return this.inRest;
+    return this.blends.some((b) => b.at + b.lanes.reduce((a, l) => a + l, 0) === n) ? 0 : this.rest[n - 1];
+  }
 
   /** One oversampled step of link `i`: `x` in, resting at `r`, through its volume pot. */
   private stepLink(i: number, x: number, r: number): number {
@@ -235,9 +260,12 @@ export class Rig {
     });
   }
 
-  /** Mono `n` samples from `input` (full scale ±1) to `output` (volts at the speaker). */
-  process(input: Float32Array, output: Float32Array, n = input.length): void {
-    const { circuits, rest, up, down, up2, down2, amp, cab, oversample, mods, swing, sampleRate, loop, blendAt, blends } = this;
+/**
+   * Mono `n` samples from `input` (full scale ±1) to `output` (volts at the speaker). A part of a split rig
+   * (`tap`) takes and hands on `n × oversample` oversampled volts instead.
+   */
+  process(input: Float32Array | Float64Array, output: Float32Array | Float64Array, n = this.tapIn ? input.length / this.oversample : input.length): void {
+    const { circuits, rest, up, down, up2, down2, amp, cab, oversample, mods, swing, sampleRate, loop, blendAt, blends, tapIn, tapOut } = this;
     const looped = loop.length > 0;
     const count = circuits.length;
     for (let s = 0; s < n; s++) {
@@ -248,9 +276,9 @@ export class Rig {
       }
       for (let k = 0; k < oversample; k++) {
         // Zero-stuffed upsampling: the sample, then silence, smoothed by the low-pass (×oversample keeps the level).
-        let x = chain(up, k === 0 ? input[s] * this.inputVolts * oversample : 0);
+        let x = tapIn ? input[s * oversample + k] : chain(up, k === 0 ? input[s] * this.inputVolts * oversample : 0);
         // `xr` is the voltage `x` rests at: the last link's resting output, or 0 after a blend's sum.
-        let xr = 0;
+        let xr = this.inRest;
         for (let i = 0; i < count; ) {
           const b = blendAt[i];
           if (b < 0) { x = this.stepLink(i, x, xr); xr = rest[i++]; continue; }
@@ -263,10 +291,12 @@ export class Rig {
           }
           x = sum; xr = 0;
         }
+        if (tapOut) { output[s * oversample + k] = x; continue; }
         x -= xr;
         if (this.power > 0 && !looped) x = amp.step(x, this.power);
         acc = chain(down, x);
       }
+      if (tapOut) continue;
       if (looped) {
         let y = acc / LOOP_VOLTS;
         for (const m of loop) y = m.run(y);
@@ -281,7 +311,23 @@ export class Rig {
       output[s] = cab ? cab.run(acc) : acc;
     }
     this.steps += n * oversample * circuits.length;
+    if (!tapOut) this.backSamples += n;
   }
+
+  /**
+   * The work each link did since the last call, then cleared, in multiply-adds (a step's matrix work plus each
+   * Newton iteration's), and the power stage's, loop's and cab's after it as one more: what `splitRig` cuts by.
+   */
+  work(): number[] {
+    const out = this.circuits.map((c, i) => { const w = c.work - this.worked[i]; this.worked[i] = c.work; return w; });
+    const s = this.backSamples;
+    this.backSamples = 0;
+    // A butterworth pair is 4 biquads each way, the push-pull about as much again, then the cab's taps.
+    const os = this.oversample * (this.loop.length && this.power > 0 ? 2 : 1);
+    out.push(s * (os * (this.power > 0 ? 80 : 40) + (this.cab?.taps ?? 0) + 400 * this.loop.length));
+    return out;
+  }
+  private backSamples = 0;
 
   /** Each link's biggest swing (volts) since the last call, then cleared: what lights its tube. */
   levels(): number[] {
@@ -298,6 +344,48 @@ export class Rig {
   get bias(): number { return this.amp.bias; }
   get misses(): number { return this.circuits.reduce((s, c) => s + c.misses, 0) + this.loop.reduce((s, m) => s + m.misses, 0); }
   get iterationsPerStep(): number { return this.circuits.reduce((s, c) => s + c.iterations, 0) / Math.max(1, this.steps); }
+}
+
+/** Where a rig can be cut: before any link that isn't inside a blend's sides, and after the last one (`splitRig`). */
+export function cutPoints(spec: Pick<RigSpec, "links" | "blends">): number[] {
+  const inside = (c: number) => (spec.blends ?? []).some((b) => c > b.at && c < b.at + b.lanes.reduce((a, l) => a + l, 0));
+  return Array.from({ length: spec.links.length }, (_, i) => i + 1).filter((c) => !inside(c));
+}
+
+/**
+ * A rig cut into parts that run one after another on their own threads: part k has links `cuts[k-1]` up to
+ * `cuts[k]`, hands its oversampled volts to part k+1 (`tap`), and only the last has the power stage, loop and cab.
+ * Played block by block with each hand-over a block late, the last part's output is the whole rig's, that late.
+ */
+export function splitRig(spec: RigSpec, cuts: readonly number[]): RigSpec[] {
+  const ok = cutPoints(spec);
+  for (const c of cuts) if (!ok.includes(c)) throw new Error(`no cut at link ${c}: inside a blend or past the end`);
+  if (cuts.some((c, i) => i && c <= cuts[i - 1])) throw new Error("cuts out of order");
+  const edges = [0, ...cuts, spec.links.length];
+  return edges.slice(1).map((end, k): RigSpec => {
+    const from = edges[k], first = k === 0, last = k === edges.length - 2;
+    const blends = (spec.blends ?? []).filter((b) => b.at >= from && b.at < end).map((b) => ({ ...b, at: b.at - from }));
+    const tap = first ? (last ? undefined : "out") : last ? "in" : "both";
+    return { ...spec, links: spec.links.slice(from, end), blends, tap, ...(last ? {} : { cab: null, loop: [] }) };
+  });
+}
+
+/**
+ * Cuts that share `work` (each link's, then the back end's: `Rig.work`) out across `parts` threads with the
+ * busiest one as light as it can be, only at `cutPoints`. Fewer parts than asked when there aren't enough cuts.
+ */
+export function planCuts(work: readonly number[], parts: number, points: readonly number[]): number[] {
+  // work[i] for link i; the back end rides with the last part.
+  const n = work.length - 1;
+  const sum = (a: number, b: number) => { let s = 0; for (let i = a; i < b; i++) s += work[i]; return s + (b === n ? work[n] : 0); };
+  let best: number[] = [], bestMax = sum(0, n);
+  const walk = (from: number, left: number, cuts: number[], max: number) => {
+    if (max >= bestMax) return;
+    if (left === 0) { const m = Math.max(max, sum(from, n)); if (m < bestMax) { bestMax = m; best = cuts; } return; }
+    for (const c of points) if (c > from) walk(c, left - 1, [...cuts, c], Math.max(max, sum(from, c)));
+  };
+  for (let k = Math.min(parts, points.length + 1) - 1; k >= 1; k--) { walk(0, k, [], 0); if (best.length) break; }
+  return best;
 }
 
 /** Runs a mono buffer through a rig. Each call starts from the rig's resting state. */

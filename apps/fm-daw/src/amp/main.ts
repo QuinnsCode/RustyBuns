@@ -10,6 +10,7 @@ import "@fontsource/ibm-plex-sans/400.css";
 import "@fontsource/ibm-plex-mono/500.css";
 import "./amp.css";
 import workletUrl from "./worklet.ts?worker&url";
+import { AmpThreads, type Threads } from "./threads.ts";
 import { arr, check, num, nul, obj, oneOf, opt, or, rec, str } from "@rustybuns/util/guard";
 import { AMPS, PEDALS, type AmpDef, type Knobs } from "../circuit/amps.ts";
 import type { LoopSpec } from "@rustybuns/gear/circuit";
@@ -24,7 +25,7 @@ import { benchSlot } from "./bench-slot.ts";
 import { knob, type KnobEl } from "./knob.ts";
 import { startMidi } from "../ui/input.ts";
 import { MODES, Screen, topHz, hzLabel, type ScreenMode } from "./screens.ts";
-import type { AmpSettings, FromAmp, ToAmp } from "./messages.ts";
+import type { AmpSettings, FromAmp } from "./messages.ts";
 
 const KEY = "q-amp";
 const KNOB_NAMES: { key: keyof Knobs; label: string }[] = [
@@ -97,6 +98,8 @@ const ampOf = (id: string): AmpDef => AMPS.find((a) => a.id === id) ?? AMPS[0];
 // ---- audio ----
 let ctx: AudioContext | null = null;
 let node: AudioWorkletNode | null = null;
+/** The rig on the audio thread, and split onto workers when that thread is over budget (threads.ts). */
+let threads: AmpThreads | null = null;
 let out: GainNode | null = null;
 let analyser: AnalyserNode | null = null;
 let riffNode: AudioBufferSourceNode | null = null;
@@ -130,7 +133,7 @@ function setLevel() {
 }
 function send() {
   save();
-  if (node) { const m: ToAmp = { t: "set", settings: patched(settings()) }; node.port.postMessage(m); }
+  threads?.send(patched(settings()));
 }
 function setCables(cables: Cable[]) {
   S.cables = cables;
@@ -159,7 +162,10 @@ async function start() {
   await ctx.audioWorklet.addModule(workletUrl);
   node = new AudioWorkletNode(ctx, "q-amp", { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [2], channelCount: 1, channelCountMode: "explicit" });
   // With the pedalboard patched out, the rig has no pedal link: an empty first slot keeps each tube on its own stage.
-  node.port.onmessage = (e: MessageEvent<FromAmp>) => { meter = S.pedal && !sound.pedals ? { ...e.data, levels: [0, ...e.data.levels] } : e.data; watchLoad(meter); };
+  threads = new AmpThreads(node, ctx.sampleRate, () => new Worker(new URL("./part-worker.ts", import.meta.url), { type: "module" }), (m) => {
+    meter = S.pedal && !sound.pedals ? { ...m, levels: [0, ...m.levels] } : m;
+    watchLoad(meter);
+  });
   out = new GainNode(ctx, { gain: sound.audible ? dbToGain(S.level) : 0 });
   analyser = new AnalyserNode(ctx, { fftSize: 16384, smoothingTimeConstant: 0.6, minDecibels: -110, maxDecibels: -10 });
   node.connect(analyser);
@@ -212,6 +218,15 @@ async function listDevices(current?: string) {
   }));
 }
 
+/** The hop on the bar: how many threads, the latency they add, and (its tooltip) before which link the chain is cut. */
+function showHop(t: Threads | null) {
+  ui.hop.hidden = !t?.cuts.length;
+  if (!t?.cuts.length) return;
+  const text = ui.hop.lastElementChild;
+  if (text) text.textContent = `${t.cuts.length + 1} · +${t.hopMs.toFixed(1)} ms`;
+  ui.hop.title = `Split across ${t.cuts.length + 1} threads, cut before link${t.cuts.length > 1 ? "s" : ""} ${t.cuts.join(" and ")}: each hop adds a block (${(t.hopMs / t.cuts.length).toFixed(1)} ms). Loads ${t.loads.map((l) => `${Math.round(l * 100)}%`).join(" / ")}`;
+}
+
 function showLatency() {
   if (!ctx) return;
   ui.latency.textContent = `${Math.round(((ctx.outputLatency || 0) + ctx.baseLatency) * 1000)} ms out`;
@@ -240,6 +255,9 @@ function build() {
   load.title = "How much of the audio thread's time the amp uses. Click: 4× oversampling (cleanest) or 2× (Eco, half the work)";
   load.addEventListener("click", () => setQuality(S.quality === "hq" ? "eco" : "hq"));
   const latency = h("span", "chip dim");
+  // Where the chain is cut onto another thread, and the latency each hop adds (hidden on one thread).
+  const hop = h("span", "chip hop", icon("split", 14), h("span", "", ""));
+  hop.hidden = true;
   const boardBtn = iconButton("circuit-board", "Board view: the circuit you're playing. Click a diode or capacitor to swap it", () => { S.board = S.board ? 0 : 1; showBoard(); save(); });
   const layout = iconButton(S.layout === "split" ? "columns-2" : "rectangle-horizontal", "Screens: one wide or two half", () => {
     S.layout = S.layout === "split" ? "wide" : "split";
@@ -250,7 +268,7 @@ function build() {
   const bar = h("header", "bar",
     h("div", "brand", h("span", "q", "Q"), h("span", "", "AMP")),
     h("div", "group", ...sourceButtons, devices), bypass,
-    h("label", "group", icon("volume-2", 16), level), load, latency, h("span", "spacer"), boardBtn, layout);
+    h("label", "group", icon("volume-2", 16), level), load, hop, latency, h("span", "spacer"), boardBtn, layout);
 
   // Screens.
   const screens: Screen[] = [];
@@ -379,7 +397,7 @@ function build() {
     (() => { const b = h("button", "start", icon("power"), "Plug in"); b.type = "button"; b.addEventListener("click", () => void start().catch((e) => { note.textContent = String(e); })); return b; })());
   root.append(bar, note, screensEl, rig, floor, loopFloor, patchUi.el, board.el, sheet.el, startCard);
   document.body.append(root);
-  return { root, bar, boardBtn, board, sheet, sheetBtn, patch: patchUi, screens, screensEl, tubes, modelName, modelBlurb, models, knobs, cones, pedalEls, bench, loopEls, sourceButtons, devices, load, latency, note, startCard };
+  return { root, bar, boardBtn, board, sheet, sheetBtn, patch: patchUi, screens, screensEl, tubes, modelName, modelBlurb, models, knobs, cones, pedalEls, bench, loopEls, sourceButtons, devices, load, hop, latency, note, startCard };
 }
 
 const ui = build();
@@ -491,6 +509,7 @@ function frame() {
   if (loadText) loadText.textContent = `${ctx ? `${Math.round(meter.load * 100)}%` : "--"} · ${S.quality === "eco" ? "2×" : "4×"}`;
   ui.load.classList.toggle("warn", meter.load > 0.7);
   ui.load.classList.toggle("hot", meter.load > 1);
+  showHop(threads?.state() ?? null);
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
@@ -501,13 +520,15 @@ Object.assign(window, {
     state: () => ({
       started: !!ctx, running: ctx?.state === "running", amp: S.amp, name: ampOf(S.amp).name, knobs: S.knobs[S.amp], pedal: S.pedal,
       drive: S.pedal ? S.drive[S.pedal] : null, swaps: S.pedal ? { ...S.swaps[S.pedal] } : {}, board: S.board === 1, bypass: S.bypass === 1, quality: S.quality, source: S.source, layout: S.layout, modes: [...S.modes], mic: settings().mic,
-      load: meter.load, misses: meter.misses, out: meter.out, levels: meter.levels, bench: ui.bench.state(), loop: loopSpecs(), midi: { cc: S.cc, inputs: midiInputs },
+      load: meter.load, misses: meter.misses, out: meter.out, levels: meter.levels, threads: threads?.state() ?? null, bench: ui.bench.state(), loop: loopSpecs(), midi: { cc: S.cc, inputs: midiInputs },
       patch: { cables: S.cables, chains: compiled.chains, problems: compiled.problems, audible: sound.audible, pedals: sound.pedals },
     }),
     /** Puts a board (tscircuit circuit JSON) on the bench, as dropping its file does: the bench's verdict back. */
     bench: (json: unknown, name = "Bench pedal") => ui.bench.load(json, name),
     start,
     setAmp,
+    /** Cut the chain onto worker threads before these links ([] for one thread); the page does this itself when over budget. */
+    split: (cuts: number[]) => threads?.split(cuts),
     /** Pull out the cable in a jack, e.g. unplug("head", "speaker"). */
     unplug: (item: string, jack: string) => setCables(S.cables.filter((c) => !(c.from[0] === item && c.from[1] === jack) && !(c.to[0] === item && c.to[1] === jack))),
     /** Run a cable, out jack first: plug(["guitar", "out"], ["cab", "in"], "instrument"). */

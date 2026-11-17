@@ -34,7 +34,13 @@ export interface AmpSettings {
   direct?: boolean;
 }
 
-export type ToAmp = { t: "set"; settings: AmpSettings };
+/**
+ * Settings, and with `cuts` the rig split across threads there (ring.ts): `v` numbers them, so each part
+ * plays a frame with the settings the part before it played it with. `rings` hands the threads their rings.
+ */
+export type ToAmp = { t: "set"; settings: AmpSettings; v?: number; cuts?: number[] } | { t: "rings"; rings: SharedArrayBuffer[] | null };
+/** A worker playing part `index` of a split rig (part-worker.ts): its rings first, then the same settings as the audio thread. */
+export type ToPart = { t: "start"; rings: SharedArrayBuffer[]; index: number; sampleRate: number } | Extract<ToAmp, { t: "set" }> | { t: "stop" };
 
 export type FromAmp = {
   t: "meter";
@@ -45,4 +51,10 @@ export type FromAmp = {
   /** Share of the audio thread's time budget the rig used, 0 to 1 (and more when it can't keep up). */
   load: number;
   misses: number;
+  /** Each link's work since the last report, then the power stage's, loop's and cab's (`Rig.work`): what a split is cut by. */
+  work?: number[];
+  /** Blocks a split rig's last part didn't hand back in time. */
+  late?: number;
+  /** Which part of a split rig this thread plays (0, the audio thread, when left out). */
+  part?: number;
 };
