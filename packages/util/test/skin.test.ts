@@ -17,7 +17,7 @@ const looks = async (query: string, dark = false) => {
   const tab = await openTab(chrome!.cdp, { w: 1024, h: 700 });
   await tab.call("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: dark ? "dark" : "light" }] });
   await load(chrome!.cdp, tab, `http://127.0.0.1:${server.port}/${query}`, 300);
-  const got = await tab.eval<{ surfaces: Record<string, Look>; who: string; fits: { select: boolean; members: boolean; chip: boolean; lobby: boolean } }>(`(() => {
+  const got = await tab.eval<{ surfaces: Record<string, Look>; who: string; fits: { select: boolean; members: boolean; chip: boolean; stamp: boolean; lobby: boolean } }>(`(() => {
     const look = (sel) => { const s = getComputedStyle(document.querySelector(sel)); return { bg: s.backgroundColor, image: s.backgroundImage, border: s.borderTopColor, radius: s.borderTopLeftRadius, font: s.fontFamily }; };
     return { surfaces: { chip: look(".eq-chip"), form: look(".rb-report .eq-form"), toast: look(".eq-toast"), lobby: look(".rb-lobby"), spaces: look(".rb-spaces") }, who: getComputedStyle(document.querySelector(".eq-who")).textTransform,
       // A game page's own rules stop at the surfaces: the form's Kind is as wide as its other fields, and the member column's buttons stay inside the panel.
@@ -25,6 +25,8 @@ const looks = async (query: string, dark = false) => {
         members: [...document.querySelectorAll(".rb-spaces-online .eq-btn")].every((b) => b.getBoundingClientRect().right <= document.querySelector(".rb-spaces").getBoundingClientRect().right),
         // The chip is a tag the size of its name and button, lifted off the page like the panels, not a bar across the column.
         chip: (() => { const c = document.querySelector(".eq-chip.in"); return c.offsetWidth < c.parentElement.parentElement.clientWidth / 2 && getComputedStyle(c).boxShadow !== "none"; })(),
+        // Beside the name the chip carries a mark of the game (Two Fronts' rank chevrons, Mythic's wax seal, Skate's deck sticker).
+        stamp: getComputedStyle(document.querySelector(".eq-chip.in .eq-who"), "::before").backgroundImage !== "none",
         // The lobby reads "Party KRTZ: Ada (host), Grace ready" on one line, and Start, Copy link and Settings share the row under it.
         lobby: (() => { const who = document.querySelector(".rb-lobby-who"), rows = new Set([...document.querySelectorAll(".rb-lobby > .eq-btn")].map((b) => { const r = b.getBoundingClientRect(); return Math.round((r.top + r.bottom) / 2); }));
           return who.getClientRects().length === 1 && who.offsetHeight < 2 * parseFloat(getComputedStyle(who).lineHeight) && rows.size === 1; })() } };
@@ -55,7 +57,7 @@ test.skipIf(!chromePath())("each game's own paper and face land on the chip, rep
   ] as const;
   for (const [game, plain, face, chip] of games as readonly (readonly [string, string, string, string?])[]) {
     const got = await looks(`?game=${game}`);
-    expect({ game, ...got.fits }).toEqual({ game, select: true, members: true, chip: true, lobby: true });
+    expect({ game, ...got.fits }).toEqual({ game, select: true, members: true, chip: true, stamp: true, lobby: true });
     for (const [name, l] of Object.entries(got.surfaces)) {
       const paper = name === "chip" && chip ? chip : plain;
       expect({ game, name, paper: l.bg === paper || l.image.includes(paper), font: l.font }).toEqual({ game, name, paper: true, font: face });

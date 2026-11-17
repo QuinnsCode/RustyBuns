@@ -12,6 +12,7 @@ import { DEFAULTS, loadPad, mountControls, type Settings } from "@rustybuns/game
 import { clamp } from "@rustybuns/util";
 import workletUrl from "../amp/worklet.ts?worker&url";
 import type { FromAmp, ToAmp } from "../amp/messages.ts";
+import { DEFAULT_ROOM } from "../circuit/amps.ts";
 import { riff } from "../circuit/riff.ts";
 import { sanitizePatch } from "../studio.ts";
 import { type Aim, type Answer, EYE, HALF_D, HALF_W, type Heard, type Room, WALL_H, aimed, drop, gearOf, hand, handAt, heldId, jackAt, knobValue, lead, listen, lookAt, newRoom, pickUp, placedNow, plug, putDown, sag, setKnob, snapshot, startPatch, step, turnHeld, unplug, use, walkTo } from "./room.ts";
@@ -156,7 +157,7 @@ function sound(h: Heard) {
   heardKey = key;
   try { riffNode.disconnect(); } catch { /* wasn't connected */ }
   if (h.settings) riffNode.connect(node);
-  const m: ToAmp = { t: "set", settings: h.settings ?? { amp: "lead", pedal: null, drive: 0, knobs: { gain: 0, bass: 5, mid: 5, treble: 5, master: 0, noise: 0 }, bypass: true, oversample: 2 } };
+  const m: ToAmp = { t: "set", settings: h.settings ?? { amp: "lead", pedal: null, drive: 0, swaps: {}, knobs: { gain: 0, bass: 5, mid: 5, treble: 5, master: 0, noise: 0 }, mic: DEFAULT_ROOM.mic, bypass: true, oversample: 2 } };
   node.port.postMessage(m);
 }
 

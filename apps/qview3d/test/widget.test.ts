@@ -20,7 +20,7 @@ let app: Awaited<ReturnType<typeof local>>;
 let chrome: Awaited<ReturnType<typeof launchChrome>>;
 beforeAll(async () => {
   await build({ root, logLevel: "error", build: { outDir: join(dir, "client"), emptyOutDir: true } });
-  app = await local({ dir, assets: join(dir, "client") });
+  app = await local({ dir, assets: join(dir, "client"), standInSeconds: 0.3 });
   chrome = await launchChrome();
 });
 afterAll(() => { chrome?.stop(); app?.stop(); rmSync(dir, { recursive: true, force: true }); });
@@ -212,6 +212,32 @@ test("a shopper puts photos and a line of text on one shirt front, restacks them
   expect(plan.sheets.map((s) => [s.zone, s.unmade])).toEqual([["front", undefined]]);
   expect(plan.sheets[0]!.pictures.map((p) => [p.original.split("/").pop(), Math.round(p.at.u * 100), p.at.scale])).toEqual(
     stored.layers.map((l) => [l.original!.split("/").pop(), Math.round(l.u * 100), l.scale]));
+  expect(tab.noise).toEqual([]);
+  await tab.close();
+});
+
+// A shop's own model (a sample from its photos) takes several pictures too: each one lies on it as its own decal.
+test("two pictures on a shop's own model each show on it", async () => {
+  const admin = { authorization: `Bearer ${DEMO_ADMIN}`, "content-type": "application/json" };
+  const bytes = new Uint8Array([9, 8, 7]), sha = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", bytes)), (b) => b.toString(16).padStart(2, "0")).join("");
+  const signed = (await (await fetch(`${app.url}/api/orgs/demo/uploads`, { method: "POST", headers: admin, body: JSON.stringify({ kind: "photo", type: "image/jpeg", size: 3, sha256: sha }) })).json()) as { key: string; put: { url: string; headers: Record<string, string> } };
+  await fetch(signed.put.url, { method: "PUT", headers: signed.put.headers, body: bytes });
+  const started = (await (await fetch(`${app.url}/api/orgs/demo/models`, { method: "POST", headers: admin, body: JSON.stringify({ name: "Tumbler", photos: [signed.key] }) })).json()) as { id: string };
+  await until("the sample", async () => ((await (await fetch(`${app.url}/api/orgs/demo/models/${started.id}`, { headers: admin })).json()) as { status: string }).status === "ready");
+
+  const tab = await openTab(chrome.cdp, { w: 1280, h: 800 });
+  await load(chrome.cdp, tab, `${app.url}/`, 500);
+  await tab.eval(`${HAT}.removeAttribute("model"); ${HAT}.setAttribute("product", ${JSON.stringify(started.id)})`);
+  await until("the shop's model", () => tab.eval<boolean>(`${HAT}.model === "custom"`));
+  await tab.eval(`(async () => {
+    for (const fill of ["#1d4ed8", "#b91c1c"]) {
+      const c = new OffscreenCanvas(64, 64); c.getContext("2d").fillStyle = fill; c.getContext("2d").fillRect(0, 0, 64, 64);
+      await ${HAT}.addImage(await c.convertToBlob({ type: "image/png" }));
+    }
+  })()`);
+  // What the shopper sees: a decal on the model for each picture, not only the first.
+  const decals = `${HAT}.viewer.surface.group.children.filter((o) => o.isMesh && o.material?.polygonOffset).length`;
+  expect(await until("both decals", async () => (await tab.eval<number>(decals)) === 2 && 2)).toBe(2);
   expect(tab.noise).toEqual([]);
   await tab.close();
 });

@@ -3,7 +3,7 @@
 // sesh's own Studio (../studio.ts, the same ops friends' rooms apply); this file only adds the body and the hands.
 // What you hear is a walk back from the speaker cab along the cables: only the amp and pedal on that walk run
 // their circuits, and gear cabled into nothing costs nothing.
-import { AMPS, PEDALS, type Knobs } from "../circuit/amps.ts";
+import { AMPS, DEFAULT_ROOM, PEDALS, type Knobs } from "../circuit/amps.ts";
 import type { AmpSettings } from "../amp/messages.ts";
 import { applyStudio, emptyStudio, type End, type Patch, type Placed, type Studio, type StudioOp } from "../studio.ts";
 
@@ -436,7 +436,7 @@ export function listen(patch: Patch, oversample: 2 | 4 = 4): Heard {
       playing: true,
       chain: [at[0], ...pedals, src[0], cab.id],
       running: [...(ped ? [ped] : []), src[0]],
-      settings: { amp: ampDef.id, pedal: pedDef?.circuit ?? null, drive, knobs, bypass: false, oversample },
+      settings: { amp: ampDef.id, pedal: pedDef?.circuit ?? null, drive, swaps: {}, knobs, mic: DEFAULT_ROOM.mic, bypass: false, oversample },
       problems,
     };
   }

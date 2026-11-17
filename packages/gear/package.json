@@ -14,11 +14,12 @@
   "engines": {
     "bun": ">=1.4.0"
   },
-  "description": "Sound and power math for live-sound gear: a speaker catalog, level at a point with off-axis loss, power and coherent summing, coverage grids, amp loads, breakers, generators and speaker cable loss. No dependencies, plain TS.",
+  "description": "Sound and power math for live-sound gear: a speaker catalog, level at a point with off-axis loss, power and coherent summing, coverage grids, amp loads, breakers, generators and speaker cable loss. Plus an audio circuit solver for pedals and tube amps (`@rustybuns/gear/circuit`). No dependencies, plain TS.",
   "main": "./src/index.ts",
   "types": "./src/index.ts",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./circuit": "./src/circuit/index.ts"
   },
   "files": [
     "src"

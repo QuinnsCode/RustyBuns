@@ -8,7 +8,7 @@
 import { betterAuth } from "better-auth";
 import { genericOAuth } from "better-auth/plugins";
 import { check, obj, opt, str, bool } from "@rustybuns/util/guard";
-import { b64url, error, esc, json, NAME, readBody, sha256, type Env } from "./env.ts";
+import { b64url, error, esc, json, NAME, named, need, sha256, type Env } from "./env.ts";
 import type { Ctx } from "./orgs.ts";
 
 export interface User { id: string; email: string; name: string; /** Set when the request came in on an API key: the one org it opens. */ key?: { id: string; org_id: string } }
@@ -169,6 +169,9 @@ export const cookieOf = (headers: Headers) => (headers.getSetCookie?.() ?? [head
  *   DELETE /api/orgs/:org/keys/:id
  * Keys are made and revoked from a signed-in browser, never with another key.
  */
+/** POST /api/orgs/:org/keys: what the key is for. */
+const NewKey = obj({ name: named(80, "what this key is for") });
+
 export async function keyRoutes({ req, env, user, org, p, audit }: Ctx): Promise<Response | null> {
   if (p[0] !== "keys") return null;
   if (user.key) return error(403, "API keys can't manage keys: sign in on the site");
@@ -177,9 +180,9 @@ export async function keyRoutes({ req, env, user, org, p, audit }: Ctx): Promise
     return json(results);
   }
   if (!p[1] && req.method === "POST") {
-    const b = await readBody(req);
-    const name = typeof b?.name === "string" ? b.name.trim().slice(0, 80) : "";
-    if (!name) return error(400, "name: what this key is for");
+    const b = await need(req, NewKey);
+    if (b instanceof Response) return b;
+    const { name } = b;
     const secret = "qk_" + b64url(crypto.getRandomValues(new Uint8Array(24)));
     const key = { id: crypto.randomUUID(), name, prefix: secret.slice(0, 8), created_at: Date.now() };
     await env.DB.prepare("INSERT INTO api_keys (id, org_id, user_id, name, hash, prefix, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)")
