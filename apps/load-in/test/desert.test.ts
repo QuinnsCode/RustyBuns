@@ -8,7 +8,7 @@ import { expect, setDefaultTimeout, test } from "bun:test";
 import { dims, newWorld, pickUp, push, putDown, type World } from "../src/sim.ts";
 import { type Cables, grabEnd, newCables, plug, settle, takeCable, walkWith } from "../src/cables/cables.ts";
 import { aim, master } from "../src/venues/dive-bar.ts";
-import { CAMP_LIMIT, DESERT, desertState, score } from "../src/venues/desert.ts";
+import { CAMP_LIMIT, DESERT, desertState, score, wrap } from "../src/venues/desert.ts";
 
 setDefaultTimeout(60_000);
 const DEG = Math.PI / 180;
@@ -104,7 +104,15 @@ test("cart the generator over the sand, stack the wall, keep the camp asleep, an
   expect(dry.camp!).toBeLessThan(straight.camp! - 2);
   expect(dry.covered).toBeGreaterThan(0.9);
   expect(dry).toMatchObject({ fuel: { litres: 15, cans: 0, watts: 3030 }, until: "03:00", sunrise: false, pass: false });
-  expect(dry.sound).toBeGreaterThanOrEqual(85);
+  // The sound is right, but joints lie on the sand: by sunrise the dust is in them and they crackle, a few points each.
+  expect(dry.dusty.length).toBeGreaterThan(0);
+  expect(dry.sound).toBeLessThan(85);
+  expect(wrap(c, "mixer", "no-such-jack")).toEqual({ ok: false, why: "nothing is plugged into mixer no-such-jack" });
+  // A turn of tape round each one keeps it out.
+  for (const joint of dry.dusty) { const [owner, jack] = joint.split(" "); expect(wrap(c, owner!, jack!)).toEqual({ ok: true }); }
+  const taped = desertState(w, c);
+  expect(taped.dusty).toEqual([]);
+  expect(taped.sound).toBeGreaterThanOrEqual(85);
 
   // A jerry can carried down and set by the generator: the wall plays until the sun comes up.
   move(w, c, "can-1", -9, 5.2);

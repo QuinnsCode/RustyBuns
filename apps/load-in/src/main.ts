@@ -27,7 +27,7 @@ import * as amphi from "./venues/amphitheatre.ts";
 import { type AmphitheatreView, amphitheatreView } from "./venues/amphitheatre-view.ts";
 import { SHOW } from "./venues/show.ts";
 import { type ShowView, showView } from "./venues/show-view.ts";
-import { DESERT, desertState } from "./venues/desert.ts";
+import { DESERT, desertState, wrap } from "./venues/desert.ts";
 import { type DesertView, desertView } from "./venues/desert-view.ts";
 import * as fest from "./venues/festival.ts";
 import { type FestivalView, festivalView } from "./venues/festival-view.ts";
@@ -550,6 +550,8 @@ const harness = {
   push: (key: string): Answer => (cable.inHand(cables) ? { ok: false, why: "your hands are full" } : push(world, key)),
   /** Park and desert: holding a jerry can, pour it into the generator. */
   pour: (key: string): Answer => pour(world, key),
+  /** Desert: tape a plugged joint against the dust (or untape it); state().bar.dusty lists the joints the dust gets into. */
+  wrap: (owner: string, jack: string, on = true) => wrap(cables, owner, jack, on),
   pickUp: (key: string): Answer => (cable.inHand(cables) ? { ok: false, why: "your hands are full" } : lift(key)),
   putDown: () => place(),
   /** A cable out of the case (power, speaker, xlr, instrument), its `a` end in your hand and its roll left on the case. */

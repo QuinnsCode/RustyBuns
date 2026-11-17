@@ -9,7 +9,7 @@ import { clamp } from "@rustybuns/util";
 import { type Area, type Grid, coverage, gear as catalog, runHours } from "@rustybuns/gear";
 import { type Level, type World } from "../sim.ts";
 import { doors, showScore } from "../clock.ts";
-import { type Cables } from "../cables/cables.ts";
+import { type Cables, jacks } from "../cables/cables.ts";
 import { type Zone, cellsIn, mean, sources } from "./dive-bar.ts";
 import { load, playing, tripped } from "./park.ts";
 
@@ -88,6 +88,41 @@ export function fuel(w: World, c: Cables) {
   return { litres, cans: cans.length, watts: Math.round(watts), hours: Math.round(runHours(gen.gear, watts, litres) * 10) / 10 };
 }
 
+/** A connector this close to the sand (metres) fills with dust in a night of wind, and each one that does costs this much of the sound. */
+export const DUST_LOW = 0.2, DUST_COST = 4, DUST_MOST = 20;
+const wraps = new WeakMap<Cables, Set<string>>();
+/** Wrap a plugged joint against the dust (a turn of tape or a bag round it), or unwrap it: `owner` and its `jack`. */
+export function wrap(c: Cables, owner: string, jack: string, on = true): { ok: true } | { ok: false; why: string } {
+  if (!c.runs.some((r) => [r.a, r.b].some((e) => "plug" in e && e.plug[0] === owner && e.plug[1] === jack))) return { ok: false, why: `nothing is plugged into ${owner} ${jack}` };
+  const set = wraps.get(c) ?? new Set<string>();
+  wraps.set(c, set);
+  if (on) set.add(`${owner} ${jack}`); else set.delete(`${owner} ${jack}`);
+  return { ok: true };
+}
+/**
+ * The joints the dust gets into by sunrise: every plugged connector within DUST_LOW of the sand that is not wrapped.
+ * Each one crackles and drops out through the night. The cure is the crew's: lift the gear off the sand (stand it on a
+ * case, a bin or the cart) or wrap the joint.
+ */
+export function dusty(w: World, c: Cables): string[] {
+  const wrapped = wraps.get(c), at = new Map(jacks(w).map((j) => [`${j.owner} ${j.jack}`, j.at.y]));
+  const out = new Set<string>();
+  for (const r of c.runs) for (const e of [r.a, r.b]) {
+    if (!("plug" in e)) continue;
+    const name = `${e.plug[0]} ${e.plug[1]}`, y = at.get(name);
+    if (y !== undefined && y < DUST_LOW && !wrapped?.has(name)) out.add(name);
+  }
+  return [...out].sort();
+}
+
+/** Tape every dusty joint within `reach` metres of where you stand (the G key, for gaffer tape); how many it wrapped. */
+export function wrapNear(w: World, c: Cables, reach = 2): number {
+  const near = new Set(jacks(w).filter((j) => Math.hypot(j.at.x - w.you.x, j.at.z - w.you.z) <= reach).map((j) => `${j.owner} ${j.jack}`));
+  const todo = dusty(w, c).filter((name) => near.has(name));
+  for (const name of todo) { const cut = name.lastIndexOf(" "); wrap(c, name.slice(0, cut), name.slice(cut + 1)); }
+  return todo.length;
+}
+
 /** The clock at `hours` into the night, "05:38". */
 export const clockAt = (hours: number) => {
   const m = Math.round((DUSK + hours) * 60) % (24 * 60);
@@ -109,7 +144,9 @@ export type Score = {
   until: string;
   sunrise: boolean;
   tripped: boolean;
-  /** The sound: 40 for the floor at the target, 30 for the bass, 30 for a quiet camp. */
+  /** The plugged joints the dust gets into by sunrise (`owner jack`): each crackles through the night. */
+  dusty: string[];
+  /** The sound: 40 for the floor at the target, 30 for the bass, 30 for a quiet camp, less DUST_COST for each dusty joint. */
   sound: number;
   /** The sound times the share of the night it played. */
   score: number;
@@ -122,13 +159,14 @@ export function score(w: World, c: Cables, high: Grid = heat(w, c), low: Grid = 
   const covered = floor.filter((d) => Math.abs(d - TARGET) <= SPREAD).length / floor.length;
   const bass = bassCells.filter((d) => d >= BASS).length / bassCells.length;
   const loudest = Math.max(...camp), quiet = Number.isFinite(loudest) ? clamp(1 - (loudest - CAMP_LIMIT) / 3, 0, 1) : 1;
-  const sound = covered === 0 && bass === 0 ? 0 : Math.round(40 * covered + 30 * bass + 30 * quiet);
+  const grit = dusty(w, c);
+  const sound = covered === 0 && bass === 0 ? 0 : Math.max(0, Math.round(40 * covered + 30 * bass + 30 * quiet) - Math.min(DUST_MOST, DUST_COST * grit.length));
   const f = fuel(w, c), off = tripped(w, c), hours = off || !f ? 0 : Math.min(NIGHT_HOURS, f.hours), night = hours / NIGHT_HOURS;
   const s = Math.round(sound * night), r1 = (v: number) => (Number.isFinite(v) ? Math.round(v * 10) / 10 : null);
   return {
     covered: Math.round(covered * 100) / 100, bass: Math.round(bass * 100) / 100,
     floor: r1(mean(floor)), bassLow: Math.min(...bassCells) > 0 ? r1(Math.min(...bassCells)) : null, camp: r1(loudest),
-    hours: Math.round(hours * 10) / 10, until: clockAt(hours), sunrise: hours >= NIGHT_HOURS, tripped: off,
+    hours: Math.round(hours * 10) / 10, until: clockAt(hours), sunrise: hours >= NIGHT_HOURS, tripped: off, dusty: grit,
     sound, score: s, pass: s >= PASS && hours >= NIGHT_HOURS,
   };
 }

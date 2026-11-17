@@ -10,6 +10,8 @@ Until 2026-11-17 this was Load In; the folder, the `loadIn` handle and the deplo
 
 **A live set** (`src/crew/`, `src/audio/decks.ts`): in a crew room one player at a time has the DJ seat, and the decks are shared, so every page plays the same mix in step and each player hears it from where they stand. A late joiner lands in time; a handover does not restart the track.
 
+**Dust** (the desert, `src/venues/desert.ts`): a plugged joint lying within 20 cm of the sand fills with dust by sunrise and crackles. Stand the gear on a case or the cart, or tape the joint (G).
+
 ## Run it
 
 ```
