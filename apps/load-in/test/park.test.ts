@@ -5,10 +5,10 @@
 // day, and pass. Then the band's amp racks trip the generator. The same calls
 // `window.loadIn` makes.
 import { expect, setDefaultTimeout, test } from "bun:test";
-import { dims, newWorld, pickUp, putDown, type World } from "../src/sim.ts";
+import { dims, newWorld, pickUp, push, putDown, type World } from "../src/sim.ts";
 import { type Cables, grabEnd, linkRamp, newCables, plug, settle, takeCable, walkWith } from "../src/cables/cables.ts";
 import { aim, master, raise, settle as onStands } from "../src/venues/dive-bar.ts";
-import { DAY_HOURS, PARK, SPILL_LIMIT, blow, load, parkState, pour, push, score, windFor, windText } from "../src/venues/park.ts";
+import { DAY_HOURS, PARK, SPILL_LIMIT, blow, load, parkState, pour, score, windFor, windText } from "../src/venues/park.ts";
 import { setDial } from "../src/assists.ts";
 
 setDefaultTimeout(60_000);

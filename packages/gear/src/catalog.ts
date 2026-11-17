@@ -55,6 +55,8 @@ export type Gear = {
   generator?: { kva: number; powerFactor: number; tankL: number; idleLph: number; perKwh: number };
   /** A fuel can: the litres it holds full. */
   can?: { litres: number };
+  /** Gear that rolls instead of being lifted: small wheels sink in sand, balloon tyres ride over it. */
+  wheels?: "small" | "balloon";
 };
 
 const box = (w: number, h: number, d: number) => ({ w, h, d });
@@ -135,6 +137,7 @@ const list: Gear[] = [
     kg: 90,
     jacks: { "power-out": 4 },
     generator: { kva: 7, powerFactor: 0.9, tankL: 25, idleLph: 0.6, perKwh: 0.35 },
+    wheels: "small",
   },
   {
     id: "distro-box",
@@ -147,6 +150,8 @@ const list: Gear[] = [
   { id: "road-case-m", what: "road case on wheels", size: box(0.6, 0.5, 0.5), kg: 14, jacks: {} },
   { id: "stand-tripod", what: "speaker stand, 1.2 to 2.0 m", size: box(0.9, 1.2, 0.9), kg: 4, jacks: {} },
   { id: "mic-stand", what: "boom mic stand", size: box(0.6, 1.6, 0.6), kg: 3, jacks: {} },
+  // Out on sand: a beach cart on balloon tyres (a generator rides it).
+  { id: "sand-cart", what: "sand cart on balloon tyres", size: box(0.8, 0.45, 1.2), kg: 22, jacks: {}, wheels: "balloon" },
   // A DI box: an instrument in, a thru to the amp, a balanced XLR to the desk. Phantom-powered, so no mains.
   // Its ground lift (`lift` on the placed box) breaks pin 1 when the amp and the desk make a ground loop.
   { id: "di-box", what: "active DI box with a ground lift", size: box(0.1, 0.05, 0.13), kg: 0.6, jacks: { "inst-in": 1, "line-out": 1, "xlr-out": 1 } },

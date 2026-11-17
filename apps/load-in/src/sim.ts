@@ -40,6 +40,8 @@ export interface Level {
   items: Item[];
   /** Out of doors: no walls or ceiling, only the ground. */
   outdoor?: boolean;
+  /** Sand underfoot: every step is slower, and small wheels sink (only balloon tyres roll). */
+  ground?: "sand";
   /** What the road case holds here, if not the usual three (cables.ts CASE_LOAD). */
   caseLoad?: readonly { key: string; kind: CableKind; lengthM: number }[];
   /** The box truck the gear came in, parked outside with its back open: its bed, floor to roof. The back (the open end)
@@ -48,6 +50,8 @@ export interface Level {
 }
 export interface Truck { x0: number; x1: number; z0: number; z1: number; h: number }
 
+/** Gear riding on a cart you push: where it sits in the cart's own frame. */
+export interface Rider { key: string; dx: number; dy: number; dz: number; drot: number }
 /** A friend in your crew as the room last told you: where they stand and what is in their hands. */
 export interface Mate { id: string; name: string; x: number; z: number; yaw: number; crouch: boolean; holding: string | null }
 export interface Input { forward: number; right: number; turn: number; crouch: boolean }
@@ -56,8 +60,8 @@ export interface World {
   t: number;
   you: { x: number; z: number; yaw: number; pitch: number; crouch: boolean; speed: number };
   items: Item[];
-  /** What is in your hands: an item's key, and its turn relative to where you face. */
-  held: { key: string; rel: number; team?: { span: number } } | null;
+  /** What is in your hands: an item's key, its turn relative to where you face, what rides on it (a cart's load), and whether a friend has the other end. */
+  held: { key: string; rel: number; riders?: Rider[]; team?: { span: number } } | null;
   /** The friends in the room with you (none when you play alone). */
   crew: Mate[];
 }
@@ -105,8 +109,10 @@ export const heldItem = (w: World) => (w.held ? w.items.find((i) => i.key === w.
 
 /** How fast you walk carrying `kg` (as the dial feels it, so Cozy carries half): a 45 kg sub is a slow shuffle on Sim. */
 export const carrySpeed = (kg: number, crouch = false) => WALK * clamp(1 - feltKg(kg) / 55, 0.2, 1) * (crouch ? 0.5 : 1);
-/** Gear on wheels (a generator): pushed along the ground, never lifted. */
-export const wheeled = (gearId: string) => !!gear(gearId).generator;
+/** Gear on wheels (a generator, a sand cart): pushed along the ground, never lifted. */
+export const wheeled = (gearId: string) => !!gear(gearId).wheels;
+/** Sand slows every step to this share of the pace on a hard floor. */
+export const SAND = 0.7;
 /** How fast you push gear on wheels: a 90 kg generator is a crawl on Sim, and rolls light on Cozy. */
 export const pushSpeed = (kg: number) => WALK * clamp(1 - feltKg(kg) / 120, 0.2, 1);
 
@@ -167,9 +173,9 @@ export function seeCrew(w: World, crew: Mate[]): boolean {
 
 /** Push you out of the walls and the gear on the floor. */
 function collide(w: World) {
-  const { bounds: b } = w.level, you = w.you;
+  const { bounds: b } = w.level, you = w.you, riding = new Set(w.held?.riders?.map((r) => r.key));
   for (const i of w.items) {
-    if (i.key === w.held?.key || dims(i)[1] < LOW || (i.hung && i.y > EYE) || w.crew.some((m) => m.holding === i.key)) continue;
+    if (i.key === w.held?.key || riding.has(i.key) || dims(i)[1] < LOW || (i.hung && i.y > EYE) || w.crew.some((m) => m.holding === i.key)) continue;
     const [sw, , sd] = dims(i), c = Math.cos(i.rot), s = Math.sin(i.rot);
     const dx = you.x - i.x, dz = you.z - i.z;
     const lx = dx * c - dz * s, lz = dx * s + dz * c;
@@ -198,7 +204,8 @@ export function step(w: World, dt: number, input: Input) {
   you.crouch = input.crouch;
   you.yaw += input.turn;
   const mate = partner(w);
-  you.speed = i && wheeled(i.gear) ? pushSpeed(gearOf(i).kg) : carrySpeed(i ? gearOf(i).kg / (w.held?.team ? 2 : 1) : 0, you.crouch);
+  const kg = i ? gearOf(i).kg + (w.held?.riders ?? []).reduce((s, r) => s + gear(w.items.find((o) => o.key === r.key)!.gear).kg, 0) : 0;
+  you.speed = (i && wheeled(i.gear) ? pushSpeed(kg) : carrySpeed(kg / (w.held?.team ? 2 : 1), you.crouch)) * (w.level.ground === "sand" ? SAND : 1);
   const f = facing(you.yaw), len = Math.hypot(input.forward, input.right);
   if (len > 0) {
     const k = (you.speed * dt) / Math.max(1, len);
@@ -213,7 +220,45 @@ export function step(w: World, dt: number, input: Input) {
     if (d > r) { you.x = ax + (dx / d) * r; you.z = az + (dz / d) * r; }
   }
   collide(w);
+  carryRiders(w);
   w.t += dt;
+}
+
+/** Everything stacked on `base`, and on that, and so on: what rides along when it rolls. */
+function stackedOn(w: World, base: Item, out: Item[] = []): Item[] {
+  const top = base.y + dims(base)[1], fp = footprint(base);
+  for (const o of w.items) if (o !== base && !out.includes(o) && Math.abs(o.y - top) < 0.01 && overlap(fp, footprint(o))) out.push(o), stackedOn(w, o, out);
+  return out;
+}
+
+/** The riders sit where the cart now is, turned with it. */
+function carryRiders(w: World, at = holdPose(w)) {
+  if (!at || !w.held?.riders) return;
+  const c = Math.cos(at.rot), s = Math.sin(at.rot);
+  for (const r of w.held.riders) {
+    const o = w.items.find((i) => i.key === r.key)!;
+    Object.assign(o, { x: at.x + r.dx * c + r.dz * s, y: at.y + r.dy, z: at.z - r.dx * s + r.dz * c, rot: at.rot + r.drot });
+  }
+}
+
+/** Take the handle of gear on wheels (F on it) and push it: it rolls in front of you, with whatever is stacked on it.
+ * On sand only balloon tyres roll; small wheels dig in. F again (putDown) lets go. */
+export function push(w: World, key: string): Answer {
+  const i = w.items.find((x) => x.key === key);
+  if (!i) return { ok: false, why: `no ${key} here` };
+  const g = gearOf(i);
+  if (!g.wheels) return { ok: false, why: `${g.what} has no wheels` };
+  if (w.held) return { ok: false, why: "your hands are full" };
+  if (Math.hypot(i.x - w.you.x, i.z - w.you.z) > REACH) return { ok: false, why: `${g.what} is out of reach` };
+  if (w.level.ground === "sand" && g.wheels === "small") return { ok: false, why: `the ${g.what}'s small wheels dig into the sand: push the sand cart` };
+  if (i.y > 0.01) return { ok: false, why: `the ${g.what} is up on something: push what it sits on` };
+  const c = Math.cos(i.rot), s = Math.sin(i.rot);
+  const riders = stackedOn(w, i).map((o) => {
+    const dx = o.x - i.x, dz = o.z - i.z;
+    return { key: o.key, dx: dx * c - dz * s, dy: o.y - i.y, dz: dx * s + dz * c, drot: o.rot - i.rot };
+  });
+  w.held = { key, rel: i.rot - w.you.yaw, ...(riders.length ? { riders } : {}) };
+  return { ok: true };
 }
 
 /** The item you'd pick up now: the nearest one in reach, roughly where you look. */
@@ -256,17 +301,25 @@ export function turnHeld(w: World, dir: number) {
   if (w.held) w.held.rel -= dir * SNAP;
 }
 
-/** Set it down where it is held, square to a 15 degree step, on the floor or on top of whatever is under it. */
+/** Whether (x, z) on the floor lies under an item's footprint. */
+function over(o: Item, x: number, z: number): boolean {
+  const c = Math.cos(o.rot), s = Math.sin(o.rot), dx = x - o.x, dz = z - o.z, [w, , d] = dims(o);
+  return Math.abs(dx * c - dz * s) <= w / 2 && Math.abs(dx * s + dz * c) <= d / 2;
+}
+
+/** Set it down where it is held, square to a 15 degree step, on the floor or on top of whatever its middle is over (a box
+ * set shoulder to shoulder with another stands beside it, not on its edge). */
 export function putDown(w: World): Answer {
   const i = heldItem(w), p = holdPose(w);
   if (!i || !p) return { ok: false, why: "your hands are empty" };
   const [sw, , sd] = dims(i), r = w.level.room, half = Math.max(sw, sd) / 2;
   const rot = Math.round(p.rot / SNAP) * SNAP;
   const x = clamp(p.x, r.x0 + half, r.x1 - half), z = clamp(p.z, r.z0 + half, w.level.bounds.z1 + RADIUS - half);
-  const fp = corners(x, z, rot, sw, sd);
   let y = 0;
-  for (const o of w.items) if (o !== i && !o.hung && overlap(fp, footprint(o))) y = Math.max(y, o.y + dims(o)[1]);
+  const riding = new Set(w.held?.riders?.map((r) => r.key));
+  for (const o of w.items) if (o !== i && !o.hung && !riding.has(o.key) && over(o, x, z)) y = Math.max(y, o.y + dims(o)[1]);
   Object.assign(i, { x, y, z, rot });
+  carryRiders(w, i);
   w.held = null;
   collide(w);
   return { ok: true };

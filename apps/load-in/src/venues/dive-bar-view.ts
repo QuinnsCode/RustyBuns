@@ -10,10 +10,10 @@ import { FLOOR, PASS, STAND_MIN, TARGET, WINDOW, ZONES, type Zone, type Show, ai
 const STEP = Math.PI / 36, TILT = Math.PI / 60;
 
 /** dB to a colour against `target`: deep blue far under it, green on it, red over it; silence is clear. */
-export function heatColour(db: number, target = TARGET): [number, number, number, number] {
+export function heatColour(db: number, target = TARGET, window = WINDOW): [number, number, number, number] {
   if (!Number.isFinite(db)) return [0, 0, 0, 0];
-  const t = Math.max(-1, Math.min(1, (db - target) / (WINDOW * 3)));
-  if (Math.abs(db - target) <= WINDOW) return [60, 200, 90, 170];
+  const t = Math.max(-1, Math.min(1, (db - target) / (window * 3)));
+  if (Math.abs(db - target) <= window) return [60, 200, 90, 170];
   return t < 0 ? [40, 90 + 110 * (1 + t), 230, 150] : [235, 170 - 140 * t, 50, 170];
 }
 
@@ -21,7 +21,7 @@ export function heatColour(db: number, target = TARGET): [number, number, number
 export function aimKey(w: World, code: string): boolean {
   const at = aimed(w);
   if (!at) return false;
-  if (at.gear === "top-12-powered" || at.gear === "fill-8-powered") {
+  if (at.gear.startsWith("top-") || at.gear === "fill-8-powered") {
     if (code === "KeyQ" || code === "KeyE") return aim(w, at.key, { turn: code === "KeyQ" ? STEP : -STEP }).ok;
     if (code === "KeyR" || code === "KeyV") return aim(w, at.key, { tilt: code === "KeyR" ? TILT : -TILT }).ok;
   }

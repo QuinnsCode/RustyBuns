@@ -8,14 +8,14 @@ import { DEFAULTS, loadPad, mountControls, type Settings } from "@rustybuns/game
 import { clamp } from "@rustybuns/util";
 import { gear } from "@rustybuns/gear";
 import { gear as model, gearLook } from "@rustybuns/models/gear";
-import { EYE, EYE_CROUCH, GARAGE, type Answer, type Level, aimed, dims, heldItem, holdPose, newWorld, partner, pickUp, putDown, snapshot, step, turnHeld, type World, wheeled } from "./sim.ts";
+import { EYE, EYE_CROUCH, GARAGE, type Answer, type Level, aimed, dims, heldItem, holdPose, newWorld, partner, pickUp, push, putDown, snapshot, step, turnHeld, type World, wheeled } from "./sim.ts";
 import * as cable from "./cables/cables.ts";
 import { cableView } from "./cables/draw.ts";
 import { DIVE_BAR, aim, barState, master, raise, rig, settle, standHeight } from "./venues/dive-bar.ts";
 import { type BarView, barView } from "./venues/dive-bar-view.ts";
 import { BIGGER_BAR } from "./venues/bigger-bar.ts";
 import { type BiggerBarView, biggerBarView } from "./venues/bigger-bar-view.ts";
-import { PARK, parkState, pour, push } from "./venues/park.ts";
+import { PARK, parkState, pour } from "./venues/park.ts";
 import { type ParkView, parkView } from "./venues/park-view.ts";
 import { ARENA, type Leg, arenaState, fly, lower, rack, reserved, send, setHang, setLeg, setSub, unrack, wait as idle } from "./venues/arena.ts";
 import { type ArenaView, arenaView } from "./venues/arena-view.ts";
@@ -23,6 +23,8 @@ import * as arenaSim from "./venues/small-arena.ts";
 import { type ArenaView as SmallArenaView, arenaView as smallArenaView } from "./venues/small-arena-view.ts";
 import { SHOW } from "./venues/show.ts";
 import { type ShowView, showView } from "./venues/show-view.ts";
+import { DESERT, desertState } from "./venues/desert.ts";
+import { type DesertView, desertView } from "./venues/desert-view.ts";
 import { hasSwitch, hear, type Switches } from "./audio/hear.ts";
 import { soundSystem } from "./audio/play.ts";
 import { currentDial, setDial } from "./assists.ts";
@@ -43,7 +45,7 @@ const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as 
 const canvas = $<HTMLCanvasElement>("stage");
 const KEY = "load-in.controls";
 
-const LEVELS: Record<string, Level> = { garage: GARAGE, "dive-bar": DIVE_BAR, "bigger-bar": BIGGER_BAR, park: PARK, arena: ARENA, "small-arena": arenaSim.SMALL_ARENA, show: SHOW };
+const LEVELS: Record<string, Level> = { garage: GARAGE, "dive-bar": DIVE_BAR, "bigger-bar": BIGGER_BAR, park: PARK, arena: ARENA, "small-arena": arenaSim.SMALL_ARENA, show: SHOW, desert: DESERT };
 const levelFrom = (name: string | null) => LEVELS[name ?? ""] ?? GARAGE;
 /** The tour between nights; a page opened on ?level= plays that level and leaves the tour alone. */
 let tour: Tour = loadTour();
@@ -126,7 +128,7 @@ const meshes = new Map<string, THREE.Object3D>(), look = gearLook();
 readable(look);
 const highlight = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(1, 1, 1).translate(0, 0.5, 0)), new THREE.LineBasicMaterial({ color: 0x4cc9f0 }));
 scene.add(highlight);
-let bar: BarView | ParkView | null = null;
+let bar: BarView | ParkView | DesertView | null = null;
 let big: BiggerBarView | null = null;
 let ar: ArenaView | null = null;
 /** The small arena's view (`ar` is the big arena's). */
@@ -148,7 +150,9 @@ function buildItems() {
     scene.add(m);
   }
   bar?.dispose();
-  bar = world.level === DIVE_BAR ? barView(scene, $("hud"), () => world) : world.level === PARK ? parkView(scene, $("hud"), () => world, () => cables) : null;
+  bar = world.level === DIVE_BAR ? barView(scene, $("hud"), () => world)
+    : world.level === PARK ? parkView(scene, $("hud"), () => world, () => cables)
+    : world.level === DESERT ? desertView(scene, $("hud"), () => world, () => cables) : null;
   big?.dispose();
   big = world.level === BIGGER_BAR ? biggerBarView(scene, $("hud"), () => world, () => cables) : null;
   ar?.dispose();
@@ -282,7 +286,7 @@ addEventListener("blur", () => keys.clear());
 function grab(): Answer {
   const at = aimed(world), can = heldItem(world);
   if (ar && at && !world.held && !cable.inHand(cables) && reserved(world, at.key)) return (flash = { text: "the crew has that one", until: performance.now() + 1800 }), { ok: false, why: "the crew has that one" };
-  const r = cable.use(world, cables, at) ?? (can && at && wheeled(at.gear) && gear(can.gear).can ? pour(world, at.key) : world.held ? place() : at ? (wheeled(at.gear) ? push : pickUp)(world, at.key) : { ok: false as const, why: "nothing in reach" });
+  const r = cable.use(world, cables, at) ?? (can && at && gear(at.gear).generator && gear(can.gear).can ? pour(world, at.key) : world.held ? place() : at ? (wheeled(at.gear) ? push : pickUp)(world, at.key) : { ok: false as const, why: "nothing in reach" });
   if (r.ok && ar && world.held) unrack(world, world.held.key);
   return say(r);
 }
@@ -427,7 +431,7 @@ async function boot() {
 declare global { interface Window { loadIn: typeof harness } }
 /** The harness (scripts/probe.ts HANDLES): the level as data, and the moves a test or an agent makes without pointer lock. */
 const harness = {
-  state: () => ({ phase, tour: { cash: tour.cash, truck: tour.truck, booked: tour.booked, nights: tour.nights.length, settled }, next: nextStep(world, cables, switchedOn), dial: currentDial(), doors: doors(world.level.name, world.t), ...snapshot(world), ...cable.cableState(world, cables), sound: { up: sound.up, on: [...switchedOn], ...heard() }, ...(big ? { biggerBar: big.state() } : {}), ...(ar ? { arena: { ...arenaState(world), heat: ar.heatOn } } : {}), ...(arena ? { smallArena: { ...arenaSim.arenaState(world), heat: arena.heatOn } } : {}), ...(foh ? { show: foh.state() } : {}), strike: strikeState(world, cables), ...(bar ? { bar: { ...(world.level === PARK ? parkState(world, cables) : barState(world)), heat: bar.heatOn, ...("band" in bar ? { band: bar.band } : {}) } } : {}), signedIn: !!login(), party: crew.code ? { code: crew.code, members: crew.members.length, room: crew.room || null, seat: crew.seat >= 0 ? crew.seat : null } : null, crewRoom: online ? { room: online.room, status: online.status, note: online.note } : null }),
+  state: () => ({ phase, tour: { cash: tour.cash, truck: tour.truck, booked: tour.booked, nights: tour.nights.length, settled }, next: nextStep(world, cables, switchedOn), dial: currentDial(), doors: doors(world.level.name, world.t), ...snapshot(world), ...cable.cableState(world, cables), sound: { up: sound.up, on: [...switchedOn], ...heard() }, ...(big ? { biggerBar: big.state() } : {}), ...(ar ? { arena: { ...arenaState(world), heat: ar.heatOn } } : {}), ...(arena ? { smallArena: { ...arenaSim.arenaState(world), heat: arena.heatOn } } : {}), ...(foh ? { show: foh.state() } : {}), strike: strikeState(world, cables), ...(bar ? { bar: { ...(world.level === PARK ? parkState(world, cables) : world.level === DESERT ? desertState(world, cables) : barState(world)), heat: bar.heatOn, ...("band" in bar ? { band: bar.band } : {}) } } : {}), signedIn: !!login(), party: crew.code ? { code: crew.code, members: crew.members.length, room: crew.room || null, seat: crew.seat >= 0 ? crew.seat : null } : null, crewRoom: online ? { room: online.room, status: online.status, note: online.note } : null }),
   /** Join a crew room by code (what the party's Start does), on this level. */
   crew: (room: string) => crewRoom(room.toUpperCase()),
   /** Turn the cozy-to-sim dial: "cozy", "crew" or "sim". */
@@ -436,9 +440,9 @@ const harness = {
   start: () => { phase = "play"; menu(); },
   /** Walk to (x, z) at your carrying pace, cables dragging; the seconds it took. */
   walkTo: (x: number, z: number) => cable.walkWith(world, cables, x, z),
-  /** Park: take the generator's handle and push it on its wheels (put it down with putDown). */
+  /** Park and desert: take the handle of gear on wheels (the generator, the sand cart) and push it, with what rides on it (let go with putDown). */
   push: (key: string): Answer => (cable.inHand(cables) ? { ok: false, why: "your hands are full" } : push(world, key)),
-  /** Park: holding a jerry can, pour it into the generator. */
+  /** Park and desert: holding a jerry can, pour it into the generator. */
   pour: (key: string): Answer => pour(world, key),
   pickUp: (key: string): Answer => (cable.inHand(cables) ? { ok: false, why: "your hands are full" } : lift(key)),
   putDown: () => place(),
@@ -512,7 +516,7 @@ const harness = {
   /** Small arena, standing clear: run a point's motor to `trim` metres, or land it on the deck. */
   flyTo: (point: string, trim: number) => arenaSim.fly(world, point, trim),
   land: (point: string) => arenaSim.land(world, point),
-  /** Load a level by name (garage, dive-bar, bigger-bar, park, arena, small-arena, show). */
+  /** Load a level by name (garage, dive-bar, bigger-bar, park, desert, arena, small-arena, show). */
   level: (name: string) => load(levelFrom(name)),
   /** Turn what you hold a 15 degree step: -1 left, 1 right. */
   turn: (dir: number) => turnHeld(world, dir),

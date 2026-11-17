@@ -1,5 +1,5 @@
 // Load In's gear, grown in code: speakers, a sub, a wedge, stands, guitar amps, a rolling amp rack, cases, a cable
-// ramp, a generator, a distro box, a mixer, a mic stand, a guitar and a DI box. Generic boxes named for what they are, at
+// ramp, a generator, a distro box, a mixer, a mic stand, a guitar, a DI box, a sand cart and a jerry can. Generic boxes named for what they are, at
 // the real sizes of #4849's table (width x height x depth = x, y, z, in metres), feet on the floor at y = 0,
 // centred on x and z, the front facing +z. Each app brings its own materials (`GearLook`, one per slot).
 //
@@ -35,6 +35,8 @@ export const GEAR_SIZES = {
   "road-case-m": [0.6, 0.5, 0.5],
   "stand-tripod": [0.9, 1.2, 0.9],
   "mic-stand": [0.6, 1.6, 0.6],
+  "sand-cart": [0.8, 0.45, 1.2],
+  "jerry-can-20l": [0.35, 0.47, 0.17],
   "line-array-box": [1.0, 0.32, 0.55],
   "bar-cooler": [0.9, 0.9, 0.6],
   guitar: [0.33, 1.0, 0.05],
@@ -291,6 +293,32 @@ function cableRamp(): Build {
   return b;
 }
 
+/** A beach cart: a slatted tray on one axle of fat balloon tyres, a leg at the front, a T-handle at the back (-z). */
+function sandCart(): Build {
+  const [w, h] = GEAR_SIZES["sand-cart"], b: Build = { pieces: [], marks: [] }, tyre = 0.19, bed = 0.16, z0 = -0.45, z1 = 0.55;
+  b.pieces.push(box("paint", [w - 0.24, bed, z1 - z0], [0, h - bed / 2, (z0 + z1) / 2], { bevel: 0.01 }));
+  for (const x of [-1, 1]) {
+    b.pieces.push(disc("rubber", tyre, 0.12, "x", [x * (w / 2 - 0.06), tyre, 0.05], 12));
+    b.pieces.push(disc("metal", tyre * 0.4, 0.125, "x", [x * (w / 2 - 0.06), tyre, 0.05], 8));
+  }
+  b.pieces.push(rod("metal", [-(w / 2 - 0.06), tyre, 0.05], [w / 2 - 0.06, tyre, 0.05], 0.015));
+  b.pieces.push(rod("metal", [0, h - bed, z1 - 0.05], [0, 0, z1 - 0.05], 0.015));
+  b.pieces.push(rod("metal", [0, h - bed / 2, z0], [0, h - 0.02, -0.59], 0.015));
+  b.pieces.push(rod("rubber", [-0.18, h - 0.02, -0.59], [0.18, h - 0.02, -0.59], 0.018));
+  mark(b, "grab", [0, h - 0.02, -0.6], [0, 0, -1]);
+  return b;
+}
+
+/** A 20 litre jerry can: a tall flat can with a three-bar handle on top and a spout at one corner. */
+function fuelCan(): Build {
+  const [w, h, d] = GEAR_SIZES["jerry-can-20l"], b: Build = { pieces: [], marks: [] }, body = h - 0.05;
+  b.pieces.push(box("body", [w, body, d], [0, body / 2, 0], { bevel: 0.015 }));
+  b.pieces.push(...handle("metal", [-0.02, body, 0], "y", 0.16, 0.04));
+  b.pieces.push(disc("metal", 0.02, 0.03, "y", [w / 2 - 0.04, body + 0.015, 0], 8));
+  mark(b, "grab", [-0.02, body + 0.04, 0]);
+  return b;
+}
+
 function roadCase(): Build {
   const [w, h, d] = GEAR_SIZES["road-case-m"], b: Build = { pieces: [], marks: [] }, wheel = 0.035, floor = wheel * 2 + 0.005;
   const ch = h - floor, cy = floor + ch / 2;
@@ -397,6 +425,8 @@ const BUILDERS: Record<GearId, (height: number) => Build> = {
   "road-case-m": roadCase,
   "stand-tripod": stand,
   "mic-stand": micStand,
+  "sand-cart": sandCart,
+  "jerry-can-20l": fuelCan,
   "bar-cooler": barCooler,
   "line-array-box": () => speaker(GEAR_SIZES["line-array-box"], ["power-in", "xlr-in", "xlr-out"], true),
   guitar,
