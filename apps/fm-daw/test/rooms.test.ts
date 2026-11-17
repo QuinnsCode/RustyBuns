@@ -81,7 +81,7 @@ test("every room can be built, loads in /jam.html, and rings as it says", () => 
   // The room's middle, and the seat walled off from it.
   const rings: Record<string, [Acoustics["word"], string, Acoustics["word"]]> = {
     "live-room": ["tight", "booth", "dead"], "scoring-hall": ["big", "desk", "warm"], basement: ["warm", "drums", "dead"],
-    "stone-room": ["huge", "vocal", "huge"], barn: ["live", "vocal", "dead"], "desk-concert": ["tight", "vocal", "tight"],
+    "stone-room": ["huge", "vocal", "huge"], barn: ["live", "vocal", "dead"], "desk-concert": ["tight", "vocal", "tight"], "console-room": ["tight", "vocal", "tight"],
   };
   for (const r of ROOM_LIST) {
     expect({ id: r.id, problems: problems(r), loads: check(Studio, r) !== null }).toEqual({ id: r.id, problems: [], loads: true });
@@ -118,7 +118,7 @@ function walkUpTo(j: Jam, id: string) {
 
 test("the new studios: walk in at the door, round the furniture to every seat, sit and play", () => {
   const groove = demoProject();
-  for (const id of ["desk-concert"]) {
+  for (const id of ["desk-concert", "console-room"]) {
     const room = ROOMS[id], j = newJam(room);
     for (const s of room.spots) {
       expect({ id, seat: s.id, reached: walkUpTo(j, s.id) }).toEqual({ id, seat: s.id, reached: true });
