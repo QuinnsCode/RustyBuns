@@ -1,5 +1,7 @@
 // What a Qollab Studio room is: its size, its walls and floor, and the spots you sit at to play. A room is data
-// (src/studio/rooms/*.ts), so a new studio is a new file, not new code. Pure: no DOM, no three.js.
+// (src/studio/rooms/*.ts), so a new studio is a new file, not new code. What its surfaces are made of sets how it
+// sounds (sound.ts); the studio builder (builder.ts) edits one. Pure: no DOM, no three.js.
+import type { Material } from "./sound.ts";
 
 /** What a spot is for. `keys`, `bass` and `drums` play a track; `desk` and `couch` are a seat to listen from. */
 export type SpotKind = "keys" | "drums" | "bass" | "desk" | "booth" | "couch";
@@ -19,7 +21,20 @@ export interface Spot {
 }
 
 /** A wall from (x0, z0) to (x1, z1), floor to ceiling. `glass` is a window you see through but can't walk through; `gaps` are doorways, metres along it. */
-export interface Wall { from: [number, number]; to: [number, number]; glass?: boolean; gaps?: [number, number][] }
+export interface Wall {
+  from: [number, number]; to: [number, number]; glass?: boolean; gaps?: [number, number][];
+  /** What it is made of, for the sound (drywall when left out; a glass wall is glass). */
+  material?: Material;
+  /** The booth it is one side of, when the builder put it up: a booth's walls move and come down together. */
+  booth?: string;
+}
+
+/** The outside four walls are front (+z), back (-z), left (-x) and right (+x). */
+export type Side = "front" | "back" | "left" | "right";
+/** What the floor, ceiling and outside walls are made of. */
+export interface Materials { floor: Material; ceiling: Material; walls: Record<Side, Material> }
+/** A patch of something else on an outside wall: absorbers, a curtain. Its area comes off the wall's. */
+export interface Panel { wall: Side; material: Material; m2: number }
 
 export interface StudioDef {
   id: string;
@@ -27,6 +42,11 @@ export interface StudioDef {
   /** The floor from -w/2 to w/2 across and -d/2 to d/2 deep; the ceiling `h` up. */
   size: { w: number; d: number; h: number };
   colors: { floor: string; walls: string; ceiling: string; trim: string };
+  /** What it is made of and what hangs on its walls; a plain drywall room with a wooden floor when left out. */
+  materials?: Materials;
+  panels?: Panel[];
+  /** A line on what made it, for a room after a famous kind of studio. */
+  about?: string;
   /** Walls inside the room (the outside four come with the size). */
   walls: Wall[];
   spots: Spot[];
