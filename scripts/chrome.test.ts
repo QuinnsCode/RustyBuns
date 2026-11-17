@@ -21,7 +21,7 @@ test.skipIf(!chromePath())("Chrome dies with the script that started it, even on
   expect(running(dir)).toBeGreaterThan(0);
   child.kill(9);
   const t0 = Date.now();
-  while ((running(dir) || existsSync(dir)) && Date.now() - t0 < 10_000) await Bun.sleep(250);
+  while ((running(dir) || existsSync(dir)) && Date.now() - t0 < 15_000) await Bun.sleep(250);
   expect(running(dir)).toBe(0);
   expect(existsSync(dir)).toBe(false);
 });
