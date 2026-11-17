@@ -55,3 +55,20 @@ test("dragging laid feeder weighs on your hand, a mic cable hardly does, and a p
   expect(mic.peak).toBeLessThan(1);
   expect(feeder.peak).toBeGreaterThan(mic.peak * 3);
 });
+
+test("a roll held still keeps its cable, and a walk pays out about what you walk (#5085)", () => {
+  // The end is in a wall jack; you stand by it with the 10 m roll in your hand, then walk 4 m away at a carrying pace.
+  const r = newRoll("power", 10, { x: 0, z: 0 }), rnd = mulberry32(7), wall = { x: 0, y: 0.3, z: 0 };
+  r.state = "held"; r.tailIn = false;
+  Object.assign(r, { x: 0, y: 1, z: 0.4 });
+  for (let i = 0; i < 120; i++) stepRoll(r, DT, { a: wall }, [], rnd, "b");
+  // Two seconds standing: the cable hangs from the coil to the jack, and no more comes off.
+  expect(leftM(r)).toBeGreaterThan(8.5);
+  const before = leftM(r);
+  for (let i = 0; i < 240; i++) { r.z += 1 * DT; stepRoll(r, DT, { a: wall }, [], rnd, "b"); }
+  const paid = before - leftM(r);
+  expect(paid).toBeGreaterThan(3.4);
+  expect(paid).toBeLessThan(4.8);
+  // And it is all still cable: what is off the coil is as long as it should be, not stretched.
+  expect(pathLength(r.rope)).toBeLessThan((10 - leftM(r)) * 1.05 + 0.3);
+});

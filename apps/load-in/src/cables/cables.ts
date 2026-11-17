@@ -385,6 +385,8 @@ export function linkRamp(w: World, key: string): boolean {
 }
 
 /** Cables lying across a walkway with no ramp over them: trip hazards, one per cable per walkway. */
+/** A cable this low over a walkway trips people, lying on it or strung across it below the knee (metres). */
+const TRIP_M = 0.25;
 export function hazards(w: World, c: Cables): { cable: string; walkway: string; x: number; z: number }[] {
   const ramps = w.items.filter((i) => i.gear === "cable-ramp-2ch" && i.key !== w.held?.key && dims(i)[1] < LOW);
   const covered = (p: Vec) => ramps.some((r) => {
@@ -395,7 +397,7 @@ export function hazards(w: World, c: Cables): { cable: string; walkway: string; 
   for (const run of c.runs) {
     if (!run.rope) continue;
     for (const way of w.level.walkways ?? []) {
-      const on = run.rope.pts.filter((p) => p.y < 0.03 && p.x >= way.x0 && p.x <= way.x1 && p.z >= way.z0 && p.z <= way.z1 && !covered(p));
+      const on = run.rope.pts.filter((p) => p.y < TRIP_M && p.x >= way.x0 && p.x <= way.x1 && p.z >= way.z0 && p.z <= way.z1 && !covered(p));
       if (!on.length) continue;
       const m = on[Math.floor(on.length / 2)]!;
       out.push({ cable: run.key, walkway: way.name, x: cm(m.x), z: cm(m.z) });

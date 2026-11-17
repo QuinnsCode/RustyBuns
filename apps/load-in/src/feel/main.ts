@@ -126,7 +126,7 @@ function run(key: string, kind: CableKind, lengthM: number, x: number, z: number
 let runs: Run[] = [];
 function layOut() {
   for (const r of runs) scene.remove(r.tube, r.coil, r.plugA, r.plugB);
-  runs = [run("feeder", "power", 15, -4.4, 5.3), run("mic-cable", "xlr", 20, -3.7, 5.3), run("desk-cable", "xlr", 20, -3.0, 5.3), run("speaker-cable", "speaker", 15, -2.3, 5.3)];
+  runs = [run("feeder", "power", 15, -4.4, 5.3), run("mic-cable", "xlr", 15, -3.7, 5.3), run("desk-cable", "xlr", 15, -3.0, 5.3), run("speaker-cable", "speaker", 10, -2.3, 5.3)];
 }
 
 // ---- you ------------------------------------------------------------------------------------------------------
