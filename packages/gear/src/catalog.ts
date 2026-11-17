@@ -221,7 +221,7 @@ const list: Gear[] = [
     size: box(0.75, 0.75, 0.85),
     kg: 68,
     jacks: { "speaker-in": 1, "speaker-out": 1 },
-    speaker: { sensitivity: 106, maxSpl: 136, ratedWatts: 1000, ohms: 8, coverage: { h: 60, v: 40 }, lowCut: 60, highCut: 250, rearLoss: 14 },
+    speaker: { sensitivity: 106, maxSpl: 136, ratedWatts: 1000, ohms: 8, coverage: { h: 60, v: 40 }, lowCut: 75, highCut: 250, rearLoss: 14 }, // crossed to the bins near 100 Hz
   },
   {
     id: "horn-sub-21",
