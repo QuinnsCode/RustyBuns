@@ -32,6 +32,7 @@ import { addCommands } from "@rustybuns/util/commands";
 import { synth } from "@rustybuns/models/synth";
 import { lookBack, studioTools, syncRoom, type Player, type Rights } from "./agent.ts";
 import { madeSpot } from "./instrument.ts";
+import { prop } from "./props.ts";
 
 const CONTROLS = "qollab-studio:controls";
 const LOOK = "qollab-studio:avatar";
@@ -114,6 +115,7 @@ function buildRoom() {
     }
   }
   for (const s of def.spots) scene.add(thing(s));
+  for (const p of def.props ?? []) scene.add(prop(p));
 }
 /** A spot's instrument or furniture, and its seat. */
 function thing(s: Spot): THREE.Group {

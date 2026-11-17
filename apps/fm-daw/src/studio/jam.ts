@@ -5,7 +5,7 @@ import { clamp } from "@rustybuns/util";
 import type { Avatar } from "@rustybuns/util/avatar";
 import type { Live, Project } from "../project.ts";
 import { QWERTY } from "../ui/input.ts";
-import { thingBox, wallPieces, type Spot, type StudioDef } from "./room.ts";
+import { propBlocks, propBox, thingBox, wallPieces, type Spot, type StudioDef } from "./room.ts";
 import { pushOut as walkOut, type Rect } from "./walk.ts";
 
 export const WALK = 2.2;           // metres a second
@@ -36,7 +36,7 @@ export function sitter(j: Jam, id: string): "me" | number | null {
 }
 
 export function solids(def: StudioDef): Rect[] {
-  return [...def.walls.flatMap((w) => wallPieces(w)), ...def.spots.map(thingBox)];
+  return [...def.walls.flatMap((w) => wallPieces(w)), ...def.spots.map(thingBox), ...(def.props ?? []).filter(propBlocks).map(propBox)];
 }
 const pushOut = (def: StudioDef, p: { x: number; z: number }) => walkOut(p, solids(def), def.size.w / 2, def.size.d / 2, RADIUS);
 

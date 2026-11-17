@@ -3,13 +3,14 @@
 // out through a wall, a booth sticking out of the room. An edit is data (checked by `Edit`), so a sesh or an agent's
 // tool can send them like the room's other ops later.
 import { arr, Bad, bool, check, int, num, obj, oneOf, opt, str, type Guard } from "@rustybuns/util/guard";
-import type { Side, Spot, SpotKind, StudioDef, Wall } from "./room.ts";
+import { PROP_KINDS, type Side, type Spot, type SpotKind, type StudioDef, type Wall } from "./room.ts";
 import { MATERIAL_IDS, MATERIALS, type Material, PLAIN } from "./sound.ts";
 
 export const SIZE = { w: [2, 40], d: [2, 50], h: [2.2, 20] } as const;
 export const MAX_SPOTS = 16;
 export const MAX_WALLS = 32;
 export const MAX_PANELS = 12;
+export const MAX_PROPS = 160;
 /** How close two seats can be, and a seat to the outside walls, metres. */
 export const SEAT_ROOM = 0.8;
 export const WALL_ROOM = 0.3;
@@ -34,6 +35,9 @@ export const Studio: Guard<StudioDef> = obj({
     thing: obj({ w: num(0.05, 5), d: num(0.05, 5), h: num(0.05, 4), ahead: num(-3, 3), color: COLOR }), track: opt(str(40)),
   }), MAX_SPOTS),
   door: obj({ at: XZ, yaw: num(-7, 7) }),
+  props: opt(arr(obj({
+    kind: oneOf(PROP_KINDS), at: XZ, yaw: num(-7, 7), w: num(0.02, 40), d: num(0.01, 50), h: num(0.01, 20), y: opt(num(0, 20)), color: COLOR, seed: opt(int(0, 2 ** 31)),
+  }), MAX_PROPS)),
 });
 
 /** Where this browser keeps the studio you built: /rooms.html writes it, /jam.html?studio=yours walks into it. */
