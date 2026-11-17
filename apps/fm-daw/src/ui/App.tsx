@@ -135,9 +135,10 @@ export function App() {
   const chat = useChat();
   const floor = netStatus.state === "online" ? netStatus.floor : undefined;
   const [grants, setGrants] = useState<GrantServer | null>(null);
-  const may1 = (c: Can) => !floor || (grants ? may(grants.grants, floor.state, chat.view.you ?? undefined, floor.host, c) : floor.state === "free" || floor.host);
+  const may1 = (c: Can, track?: number) => !floor || (grants ? may(grants.grants, floor.state, chat.view.you ?? undefined, floor.host, c, track) : floor.state === "free" || floor.host);
   const allowed = { play: may1("play"), edit: may1("edit"), mix: may1("mix"), lead: may1("lead") };
-  const locked = !allowed.play;
+  // a grant of some tracks plays the selected track when it is one of them
+  const locked = !may1("play", selected);
   const live = useRef({ selected, octave, recording, gridIdx, strength, inputQ, transportOn, countIn, repeat, bend, locked, floor, allowed });
   live.current = { selected, octave, recording, gridIdx, strength, inputQ, transportOn, countIn, repeat, bend, locked, floor, allowed };
 

@@ -490,7 +490,7 @@ test("jam room: one walks up to the keys, sits and plays; the other sees them se
   expect(ben.others.size).toBe(0);
 });
 
-test("grants: the leader lets one play, another asks and is told No, an edit without a grant doesn't land, and a reset keeps them", async () => {
+test("grants: the leader lets one play, another plays one track only, another asks and is told No, an edit without a grant doesn't land, and a reset keeps them", async () => {
   const { bucket, worldEnv } = await edge();
   const room = "humble-jade-heron";
   const first = await setup(worldEnv, room);
@@ -522,6 +522,19 @@ test("grants: the leader lets one play, another asks and is told No, an edit wit
   said(bo, { t: "live", e: note });
   expect(bo.sent).toContainEqual({ t: "live", from: expect.any(Number), e: note });   // Amy is heard
   expect(amy.sent.some((m) => m.t === "live")).toBe(false);                          // Bo is not
+
+  // the leader lets Bo play track 3 only: his note there is heard, one on Amy's track 1 isn't; then back to the floor's
+  said(lead, { t: "grant", who: boId, can: [], tracks: [2] });
+  await settle();
+  expect(lastGrants(bo).grants.tracks).toEqual({ [boId]: [2] });
+  amy.sent = [];
+  said(bo, { t: "live", e: note });
+  said(bo, { t: "live", e: { ...note, track: 2 } });
+  expect(amy.sent.filter((m) => m.t === "live").map((m) => m.e.track)).toEqual([2]);
+  said(lead, { t: "grant", who: boId, can: null });
+  await settle();
+  expect(lastGrants(bo).grants.tracks).toBeUndefined();
+  amy.sent = []; bo.sent = [];
 
   // Bo raises a hand to edit; the leader sees it and says No
   said(bo, { t: "ask", can: "edit" });

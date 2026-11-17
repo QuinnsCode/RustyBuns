@@ -9,7 +9,7 @@ import { applyStudio, decodeStudioClient, emptyStudio, letGo, sanitizePatch, typ
 import { Sockets, type RoomCtx, type RoomSocket } from "@rustybuns/util/room";
 import { TokenBucket } from "@rustybuns/util/limits";
 import { arr, check, int, maybe, obj, oneOf, raw, rec, str } from "@rustybuns/util/guard";
-import { decodeGrantClient, grant, handOn, isMuted, may, mute, needs, noGrants, sanitizeGrants, type Can, type GrantClient, type Grants, type GrantServer } from "../../src/grants.ts";
+import { decodeGrantClient, grant, handOn, isMuted, may, mute, needs, noGrants, trackOf, sanitizeGrants, type Can, type GrantClient, type Grants, type GrantServer } from "../../src/grants.ts";
 import { MAX_CHUNKS, MAX_TAKES, TakeBytesGuard, type TakeBytes } from "../../src/take.ts";
 import { BackupLadder, LadderGuard, MINUTE, pick, thin, type Ladder, type Rung } from "../../src/rewind.ts";
 
@@ -258,7 +258,7 @@ export default class World {
     }
     const seat = this.sockets.who(ws);
     // every message is checked against what its sender may do, here and not only in the page
-    const allowed = this.may(seat, needs(msg));
+    const allowed = this.may(seat, needs(msg), trackOf(msg));
     if (msg.t === "floor") { if (allowed) void this.setFloor(msg.state); return; }
     if (msg.t === "lock") { if (allowed) void this.setLock(msg.code); return; }
     // a look back is for this page alone, so anyone in may ask, whatever their grants
@@ -467,10 +467,10 @@ export default class World {
     this.broadcastPeers();
   }
 
-  /** Whether this socket's person may do this now (src/grants.ts); null needs nothing. Turned away, nothing. */
-  private may(seat: Seat | null | undefined, can: Can | null): boolean {
+  /** Whether this socket's person may do this now (on this track, for a note: src/grants.ts); null needs nothing. Turned away, nothing. */
+  private may(seat: Seat | null | undefined, can: Can | null, track?: number): boolean {
     if (!seat?.peer) return false;
-    return can === null || may(this.grants, this.floor, seat.me, seat.host, can);
+    return can === null || may(this.grants, this.floor, seat.me, seat.host, can, track);
   }
 
   /** The leader grants, hands on the lead or answers a hand; anyone raises one. Each change reaches everyone. */
@@ -487,7 +487,7 @@ export default class World {
     if (!this.may(seat, "lead")) return;
     const { [m.who]: asked, ...rest } = this.asks;
     let next = this.grants;
-    if (m.t === "grant") next = grant(next, m.who, m.can);
+    if (m.t === "grant") next = grant(next, m.who, m.can, m.tracks);
     else if (m.t === "handOn") next = handOn(next, me, m.who);
     else if (m.t === "mute") next = mute(next, m.who, m.on);
     else if (asked && m.yes) {
