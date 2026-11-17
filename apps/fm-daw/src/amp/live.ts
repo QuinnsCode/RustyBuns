@@ -1,6 +1,6 @@
 // The amp's live chain, apart from the audio thread so a test can play it:
 // settings in, a rig out (rebuilding only what changed), and the speaker limiter.
-import { AMPS, DEFAULT_ROOM, PEDALS, buildRig, type PedalDef } from "../circuit/amps.ts";
+import { AMPS, DEFAULT_ROOM, PEDALS, buildRig, deskRig, type PedalDef } from "../circuit/amps.ts";
 import { POWER_VOLTS, Rig, type Mod, type Netlist } from "@rustybuns/gear/circuit";
 import type { AmpSettings } from "./messages.ts";
 
@@ -16,8 +16,11 @@ export function limit(x: number): number {
   return Math.sign(x) * (0.7 + (CEILING - 0.7) * Math.tanh((a - 0.7) / (CEILING - 0.7)));
 }
 
-/** The rig playing now, and what it was built from. */
-export interface Live { rig: Rig; chain: string; keys: string[]; mic: string }
+/** Volts out of a pedal or machine for full scale, when it goes straight into a desk (`direct`). */
+export const LINE_SCALE = 1;
+
+/** The rig playing now, what it was built from, and its volts for full scale. */
+export interface Live { rig: Rig; chain: string; keys: string[]; mic: string; scale: number }
 
 /** Each `Pot` part's turn, in netlist order (what `Rig.setPot` numbers them by). */
 const potTurns = (net: Netlist): number[] => net.parts.flatMap((p) => (p.kind === "Pot" ? [p.at ?? 0.5] : []));
@@ -35,11 +38,12 @@ export function applySettings(s: AmpSettings, live: Live | null, sampleRate: num
   const bench = s.bench;
   const def: PedalDef | undefined = s.pedal === "bench" && bench ? { id: "bench", name: "Bench", blurb: "", net: () => bench } : PEDALS.find((p) => p.id === s.pedal);
   // The loop's machines are switched and turned in place, never a new chain: a tape keeps its echoes.
-  const spec = { ...buildRig(amp, s.knobs, def && { def, drive: s.drive, swaps: s.swaps }, { ...DEFAULT_ROOM, mic: s.mic }), loop: s.loop ?? [] };
-  const chain = `${amp.id}|${def?.id ?? ""}|${s.oversample}`;
+  const pedal = def && { def, drive: s.drive, swaps: s.swaps };
+  const spec = { ...(s.direct ? deskRig(pedal) : buildRig(amp, s.knobs, pedal, { ...DEFAULT_ROOM, mic: s.mic })), loop: s.loop ?? [] };
+  const chain = `${s.direct ? "direct" : amp.id}|${def?.id ?? ""}|${s.oversample}`, scale = s.direct ? LINE_SCALE : FULL_SCALE;
   const keys = spec.links.map((l) => linkKey(l.net, l.mods)), mic = JSON.stringify(s.mic);
-  if (!live || live.chain !== chain) return { rig: new Rig(spec, sampleRate, s.oversample), chain, keys, mic };
-  if (mic !== live.mic) live.rig.setMic(s.mic);
+  if (!live || live.chain !== chain) return { rig: new Rig(spec, sampleRate, s.oversample), chain, keys, mic, scale };
+  if (mic !== live.mic && !s.direct) live.rig.setMic(s.mic);
   spec.links.forEach((l, i) => {
     if (keys[i] !== live.keys[i]) live.rig.setLink(i, l.net, l.mods);
     else potTurns(l.net).forEach((at, p) => live.rig.setPot(i, p, at));
@@ -49,5 +53,5 @@ export function applySettings(s: AmpSettings, live: Live | null, sampleRate: num
   live.rig.setTrem(spec.output?.trem);
   live.rig.setNoise(spec.noise ?? 0);
   live.rig.setLoop(spec.loop);
-  return { rig: live.rig, chain, keys, mic };
+  return { rig: live.rig, chain, keys, mic, scale };
 }
