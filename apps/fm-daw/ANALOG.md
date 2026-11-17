@@ -32,7 +32,7 @@ Today there is one pedal slot. A real board is a chain:
 - **Stereo** after the first stereo effect (chorus, delay, reverb), mono before it.
 - **A cost on every slot.** The audio thread is the budget (see [Speed](CIRCUITS.md#speed)): a pedal is 5 to 6× real time, an amp 2.3 to 3.3×. A full board will not fit at 4× oversampling in one thread, so:
   - Oversample only what clips. A phaser or a tone stack runs at 1×; only the diodes and tubes need 4×.
-  - Split the chain over worker threads with a `SharedArrayBuffer` ring, one audio block (2.7 ms at 48 kHz) of extra latency per hop.
+  - Split the chain over worker threads with a `SharedArrayBuffer` ring, one audio block (2.7 ms at 48 kHz) of extra latency per hop. Built (#4948, `src/amp/ring.ts`, `threads.ts`): a third of a second over budget, the chain is cut at the slot boundaries that share each link's work (`Rig.work`) out best, up to three threads; the cut parts hand their 4× oversampled volts on, so the sound is the one-thread rig's to the bit, a block later per hop. The bar shows the hop.
   - Show each slot's share of the load on the board, so players see what costs what, as on hardware DSP units.
 
 ## 3. Effects that are circuits

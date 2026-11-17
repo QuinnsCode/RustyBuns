@@ -17,7 +17,8 @@ import deskWorkletUrl from "./desk-worklet.ts?worker&url";
 import type { ToDesk } from "./desk-worklet.ts";
 import { Desk, deskFor, withChannel, withReturn, withSend, type Source } from "../mixer.ts";
 import { drawDesk } from "./desk.ts";
-import type { FromAmp, ToAmp } from "../amp/messages.ts";
+import type { AmpSettings, FromAmp } from "../amp/messages.ts";
+import { AmpThreads } from "../amp/threads.ts";
 import { DEFAULT_ROOM, PEDALS, type PedalDef } from "../circuit/amps.ts";
 import { BuildSheet, savedSwaps } from "../kit/sheet.ts";
 import { riff } from "../circuit/riff.ts";
@@ -174,6 +175,8 @@ function highlight(a: Aim | null) {
 // ---- sound: Q Amp's audio thread, fed only when the chain is whole ----
 let ctx: AudioContext | null = null;
 let node: AudioWorkletNode | null = null;
+/** The rig on the audio thread, split onto workers when a big board puts it over budget (src/amp/threads.ts). */
+let threads: AmpThreads | null = null;
 let deskNode: AudioWorkletNode | null = null;
 let riffNode: AudioBufferSourceNode | null = null;
 let panner: PannerNode | null = null;
@@ -191,7 +194,7 @@ async function speakers(up: boolean) {
     await ctx.audioWorklet.addModule(deskWorkletUrl);
     deskNode = new AudioWorkletNode(ctx, "q-desk", { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [2], channelCount: 1, channelCountMode: "explicit" });
     node = new AudioWorkletNode(ctx, "q-amp", { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [2], channelCount: 1, channelCountMode: "explicit" });
-    node.port.onmessage = (e: MessageEvent<FromAmp>) => { meter = e.data; };
+    threads = new AmpThreads(node, ctx.sampleRate, () => new Worker(new URL("../amp/part-worker.ts", import.meta.url), { type: "module" }), (m) => { meter = m; });
     panner = new PannerNode(ctx, { panningModel: "HRTF", distanceModel: "inverse", refDistance: 1, rolloffFactor: 0.8 });
     node.connect(deskNode).connect(panner).connect(new GainNode(ctx, { gain: 0.5 })).connect(ctx.destination);
     const data = riff(ctx.sampleRate), buf = ctx.createBuffer(1, data.length, ctx.sampleRate);
@@ -235,8 +238,8 @@ function sound(h: Heard) {
   heardKey = key;
   try { riffNode.disconnect(); } catch { /* wasn't connected */ }
   if (h.settings) riffNode.connect(node);
-  const m: ToAmp = { t: "set", settings: h.settings ?? { amp: "lead", pedal: null, drive: 0, swaps: {}, knobs: { gain: 0, bass: 5, mid: 5, treble: 5, master: 0, noise: 0, rate: 5, depth: 0 }, mic: DEFAULT_ROOM.mic, bypass: true, oversample: 2 } };
-  node.port.postMessage(m);
+  const s: AmpSettings = h.settings ?? { amp: "lead", pedal: null, drive: 0, swaps: {}, knobs: { gain: 0, bass: 5, mid: 5, treble: 5, master: 0, noise: 0, rate: 5, depth: 0 }, mic: DEFAULT_ROOM.mic, bypass: true, oversample: 2 };
+  threads?.send(s);
 }
 
 // ---- input ----
@@ -369,9 +372,16 @@ function frame(now: number) {
     l.forwardX.value = f.x; l.forwardY.value = f.y; l.forwardZ.value = f.z;
   }
   $("hint").textContent = now < flash.until ? flash.text : hint(a);
-  $("heard").textContent = heard.playing ? `Playing: ${heard.chain.map((id) => { const p = room.studio.patch.placed.find((x) => x.id === id); return (p && gearOf(p)?.name) ?? id; }).join(" > ")}${heard.problems.length ? `. ${heard.problems[0]}` : ""}` : `Silent: ${heard.problems[0] ?? ""}`;
+  $("heard").textContent = heard.playing ? `Playing: ${heard.chain.map((id) => { const p = room.studio.patch.placed.find((x) => x.id === id); return (p && gearOf(p)?.name) ?? id; }).join(" > ")}${hopText()}${heard.problems.length ? `. ${heard.problems[0]}` : ""}` : `Silent: ${heard.problems[0] ?? ""}`;
   renderer.render(scene, camera);
   requestAnimationFrame(frame);
+}
+
+/** Where a heavy board is cut onto another thread, and the latency the hop adds; nothing on one thread. */
+function hopText(): string {
+  const t = threads?.state();
+  if (!t?.cuts.length) return "";
+  return `. Split across ${t.cuts.length + 1} threads before link${t.cuts.length > 1 ? "s" : ""} ${t.cuts.join(" and ")}, +${t.hopMs.toFixed(1)} ms`;
 }
 
 /** The running amp's tubes glow with what each stage swings; the cab's cones push with the output. */
@@ -393,7 +403,7 @@ function glow(h: Heard) {
 declare global { interface Window { qstudio: typeof harness } }
 /** The harness (scripts/probe.ts HANDLES): the room as data, and a player's moves without pointer lock. */
 const harness = {
-  state: () => ({ phase, speakers: speakersUp, sheet: sheet.state(), ...snapshot(room), meter: { out: meter.out, load: meter.load }, desk, returns: listen(room.studio.patch).returns }),
+  state: () => ({ phase, speakers: speakersUp, sheet: sheet.state(), ...snapshot(room), meter: { out: meter.out, load: meter.load }, threads: threads?.state() ?? null, desk, returns: listen(room.studio.patch).returns }),
   /** A pedal's build sheet open (B on it), by pedal id: what it shows once its kit has loaded; null for no such pedal. */
   sheet: async (id: string) => { const p = PEDALS.find((x) => x.id === id); return p ? (await openSheet(p), sheet.state()) : null; },
   /** The open sheet's tab: "schematic", "pcb", "parts" or "files". */

@@ -1,7 +1,7 @@
 // The amp's live chain, apart from the audio thread so a test can play it:
 // settings in, a rig out (rebuilding only what changed), and the speaker limiter.
 import { AMPS, DEFAULT_ROOM, PEDALS, boardLinks, buildRig, deskRig, type PedalDef } from "../circuit/amps.ts";
-import { POWER_VOLTS, Rig, type Mod, type Netlist } from "@rustybuns/gear/circuit";
+import { POWER_VOLTS, Rig, splitRig, type Mod, type Netlist, type RigSpec } from "@rustybuns/gear/circuit";
 import type { AmpSettings } from "./messages.ts";
 
 /** Volts at the speaker for full scale: the power stage's ceiling plus the cabinet's bumps. */
@@ -22,6 +22,12 @@ export const LINE_SCALE = 1;
 /** The rig playing now, what it was built from, and its volts for full scale. */
 export interface Live { rig: Rig; chain: string; keys: string[]; mic: string; scale: number }
 
+/**
+ * One part of a rig split across threads (`splitRig`): which, of the parts these `cuts` make, and (built on a
+ * worker) the volts the part ahead rests at.
+ */
+export interface Part { cuts: number[]; index: number; inRest?: number }
+
 /** Each `Pot` part's turn, in netlist order (what `Rig.setPot` numbers them by). */
 const potTurns = (net: Netlist): number[] => net.parts.flatMap((p) => (p.kind === "Pot" ? [p.at ?? 0.5] : []));
 /** What a link is built from, its pots' turns left out: turning one (the wah's treadle, a bench board's knob) is a `setPot`, not a new circuit. */
@@ -32,8 +38,32 @@ const linkKey = (net: Netlist, mods: Mod[] = []) => JSON.stringify([{ ...net, pa
  * oversampling builds a new chain; otherwise only links whose parts changed are
  * rebuilt (a tone knob: the tone stack; the pedal's knob or a part swap: the pedal, an LFO keeping its phase),
  * a moved mic makes a new impulse response, and pots, the power stage and its bias tremolo are just set.
+ * With `part`, the same for just that part of the rig split across threads.
  */
-export function applySettings(s: AmpSettings, live: Live | null, sampleRate: number): Live {
+export function applySettings(s: AmpSettings, live: Live | null, sampleRate: number, part?: Part): Live {
+  const { spec: whole, shape, scale } = rigSpec(s);
+  const parts = part?.cuts.length ? splitRig(whole, part.cuts) : [whole];
+  const index = part?.cuts.length ? part.index : 0, last = index === parts.length - 1;
+  const spec: RigSpec = { ...parts[index], inRest: part?.inRest };
+  const chain = `${shape}|${s.oversample}|${parts.length > 1 ? `${part?.cuts.join(",")}#${index}` : ""}`;
+  const keys = spec.links.map((l) => linkKey(l.net, l.mods)), mic = JSON.stringify(s.mic);
+  if (!live || live.chain !== chain) return { rig: new Rig(spec, sampleRate, s.oversample), chain, keys, mic, scale };
+  if (last && mic !== live.mic && !s.direct) live.rig.setMic(s.mic);
+  spec.links.forEach((l, i) => {
+    if (keys[i] !== live.keys[i]) live.rig.setLink(i, l.net, l.mods);
+    else potTurns(l.net).forEach((at, p) => live.rig.setPot(i, p, at));
+    live.rig.setGain(i, l.gain ?? 1);
+  });
+  live.rig.setPower(spec.power);
+  live.rig.setTrem(spec.output?.trem);
+  live.rig.setNoise(spec.noise ?? 0);
+  if (last) live.rig.setLoop(spec.loop ?? []);
+  (spec.blends ?? []).forEach((b, i) => live.rig.setMix(i, b.mix));
+  return { rig: live.rig, chain, keys, mic, scale };
+}
+
+/** The whole rig these settings make, what decides whether a change needs a new chain, and its volts for full scale. */
+export function rigSpec(s: AmpSettings): { spec: RigSpec; shape: string; scale: number } {
   const amp = AMPS.find((a) => a.id === s.amp) ?? AMPS[0];
   const bench = s.bench;
   const def: PedalDef | undefined = s.pedal === "bench" && bench ? { id: "bench", name: "Bench", blurb: "", net: () => bench } : PEDALS.find((p) => p.id === s.pedal);
@@ -44,20 +74,6 @@ export function applySettings(s: AmpSettings, live: Live | null, sampleRate: num
   const base = s.direct ? deskRig(pedal) : buildRig(amp, s.knobs, pedal, { ...DEFAULT_ROOM, mic: s.mic });
   const spec = { ...base, ...(front ? { links: [...front.links, ...base.links], blends: front.blends } : {}), loop: s.loop ?? [] };
   // A new shape (how many links, which run side by side) is a new chain; a split's blend is just set.
-  const shape = front ? `${front.links.length}:${front.blends.map((b) => `${b.at}/${b.lanes.join(",")}`).join(";")}` : def?.id ?? "";
-  const chain = `${s.direct ? "direct" : amp.id}|${shape}|${s.oversample}`, scale = s.direct ? LINE_SCALE : FULL_SCALE;
-  const keys = spec.links.map((l) => linkKey(l.net, l.mods)), mic = JSON.stringify(s.mic);
-  if (!live || live.chain !== chain) return { rig: new Rig(spec, sampleRate, s.oversample), chain, keys, mic, scale };
-  if (mic !== live.mic && !s.direct) live.rig.setMic(s.mic);
-  spec.links.forEach((l, i) => {
-    if (keys[i] !== live.keys[i]) live.rig.setLink(i, l.net, l.mods);
-    else potTurns(l.net).forEach((at, p) => live.rig.setPot(i, p, at));
-    live.rig.setGain(i, l.gain ?? 1);
-  });
-  live.rig.setPower(spec.power);
-  live.rig.setTrem(spec.output?.trem);
-  live.rig.setNoise(spec.noise ?? 0);
-  live.rig.setLoop(spec.loop);
-  (spec.blends ?? []).forEach((b, i) => live.rig.setMix(i, b.mix));
-  return { rig: live.rig, chain, keys, mic, scale };
+  const shape = `${s.direct ? "direct" : amp.id}|${front ? `${front.links.length}:${front.blends.map((b) => `${b.at}/${b.lanes.join(",")}`).join(";")}` : def?.id ?? ""}`;
+  return { spec, shape, scale: s.direct ? LINE_SCALE : FULL_SCALE };
 }
