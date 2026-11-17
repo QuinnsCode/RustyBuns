@@ -45,6 +45,7 @@ A gamepad works too (left stick walk, right stick look, A grab, LB / RB turn, B 
 | `src/dial-view.ts` | the dial in the menu, the clock in the HUD (to doors, then to curfew), and the jack glow |
 | `src/strike.ts` | strike and load out: what's in the truck, the shove forward, what's braced and what slides or crushes, the curfew, and `shut`'s tally; over-under coiling is `coil` and `loop` in `src/cables/cables.ts` |
 | `src/strike-view.ts` | the truck on the page and the load-out card |
+| `src/faces.ts` | gear you can read from across the room: perforated grilles, the guitar cab's cloth, our own RUSTY badges, the case stencils (the cable case says CABLES), and each jack ringed and named when you look at its panel or aim a cable at it |
 | `src/venues/dive-bar.ts` | the dive bar: the room, the crowd and bar zones, aiming (turn, tilt, raise the stand), the master fader, and the score from `coverage()` in `packages/gear` |
 | `src/venues/park.ts` | the park: no outlets, the generator you push (`push`), the generator's load and the hours its fuel lasts (`load`), pouring a jerry can in (`pour`), the paths, and the score: the crowd, the houses' property line against its limit, clear paths |
 | `src/venues/desert.ts` | the desert: sand, the cart, the wall's gear, the fuel for the night (`fuel`), and the score: the floor, its bass at 63 Hz, the camp against its limit, times the share of the night the fuel lasts |
