@@ -1,8 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import { tierOf } from "../src/tiers.ts";
-import { bind, bindChance, call, heal, hpOf, MAULED, maul, wound, clearSection, cleared, gainXp, loadJourney, mythicOf, newJourney, nextUp, PARTY_MAX, rest, slots, SECTIONS, sections, STARTERS, TRAIL_REGIONS, BOOK_PAGE, bookSays } from "../src/journey.ts";
+import { bind, bindChance, call, heal, hpOf, MAULED, maul, wound, clearSection, cleared, gainXp, loadJourney, mythicOf, newJourney, nextUp, OWN_MAX, PARTY_MAX, release, rest, slots, SECTIONS, sections, STARTERS, TRAIL_REGIONS, BOOK_PAGE, bookSays } from "../src/journey.ts";
 import { REGIONS } from "../src/regions.ts";
-import { ROSTER } from "../src/roster.ts";
+import { creature, ROSTER } from "../src/roster.ts";
+import { denHolds as holdsOf, holds } from "../src/net/dens.ts";
+import { oppositeOf, preyOf, stir, stirOf } from "../src/released.ts";
 import { bandAt, newTrek, pointAt, trailhead, trailWilds, TRAILS, trek, type TrekEvent } from "../src/world/trail.ts";
 import { BAND, WORLD } from "../src/world/trail.ts";
 import { COLS, heightAt, OWNER, STEP } from "../src/world/world.ts";
@@ -78,7 +80,7 @@ describe("the journey", () => {
     expect(bindChance(0.05, true)).toBeCloseTo(bindChance(0.05 * (0.45 / 0.3), false) / 2, 5);
   });
 
-  test("the line-up holds three, a slot more per mythic beaten up to six, the journal the rest; a swap, a rest, the next one up", () => {
+  test("the line-up holds three, a slot more per mythic beaten up to five, the journal the rest; a swap, a rest, the next one up", () => {
     const j = newJourney(["hodag", "squonk", "jackalope"])!;
     expect(slots(j)).toBe(3);
     expect(bind(j, "mothman", 4)).toBe("journal");
@@ -116,6 +118,51 @@ describe("the journey", () => {
       expect(new Set(secs.map((s) => s.name)).size).toBe(SECTIONS);
       expect(secs.every((s) => s.lore.length > 40 && !s.lore.includes("Nothing is written"))).toBe(true);
     }
+  });
+});
+
+describe("the Book holds nine; a released one changes its country (#3031)", () => {
+  test("binds stop at nine until you release one; it is gone for good and remembered where it went; an old six-strong line-up keeps everyone", () => {
+    const j = newJourney(["hodag", "squonk", "jackalope"])!;
+    for (const id of ["mothman", "champ", "wampus-cat", "chupacabra", "sasquatch", "dover-demon"]) bind(j, id, 4);
+    expect(j.party.length + j.journal.length).toBe(OWN_MAX);
+    expect(bind(j, "snallygaster", 6)).toBe("full");
+    expect(j.journal.some((m) => m.id === "snallygaster")).toBe(false);
+    expect(j.seen).toContain("snallygaster"); // met, though the ink didn't take
+    expect(release(j, "journal", 0, 1, 1000)?.id).toBe("mothman");
+    expect(j.released).toEqual([{ id: "mothman", level: 4, n: 1, at: 1000 }]);
+    expect(bind(j, "snallygaster", 6)).toBe("journal");
+    while (release(j, "party", 0, 1));
+    expect(j.party).toHaveLength(1); // the line-up keeps one
+    // a save from before the cap: six in the line-up and twelve in all. The sixth rests, nobody is lost, and nothing more binds.
+    const old = newJourney(["hodag", "squonk", "jackalope"])!;
+    old.party.push(...["mothman", "champ", "wampus-cat"].map((id) => ({ id, level: 9, xp: 0 })));
+    old.journal.push(...["a", "b", "c", "d", "e", "f"].map((id) => ({ id, level: 9, xp: 0 })));
+    const back = loadJourney(JSON.stringify(old))!;
+    expect([back.party.length, back.journal.length, back.journal[0]!.id]).toEqual([PARTY_MAX, 7, "wampus-cat"]);
+    expect(bind(back, "champ", 3)).toBe("full");
+  });
+
+  test("a strong one let go in a weak region lifts its wild ones; a hunter thins out its prey, and the kind opposite it less", () => {
+    const kindOf = (id: string) => creature(id).archetype;
+    const flyer = ROSTER.find((c) => c.archetype === "flyer")!, prey = ROSTER.filter((c) => c.archetype === preyOf("flyer")), opp = ROSTER.filter((c) => c.archetype === oppositeOf("flyer"));
+    expect(stirOf([{ id: flyer.id, level: 30, n: 1, at: 0 }], 2, kindOf)).toEqual({ lift: 0, thin: {} }); // another region's
+    const s = stirOf([{ id: flyer.id, level: 30, n: 1, at: 0 }], 1, kindOf);
+    expect(s.lift).toBe(4);
+    expect(stirOf([{ id: flyer.id, level: 3, n: 1, at: 0 }], 1, kindOf).lift).toBe(0); // a weak one lifts nothing
+    // over many dens: about a third of the prey's stand empty, a fifth of the opposite kind's, none of the rest; the rest lift
+    const dens = Array.from({ length: 2000 }, (_, i) => `${i},${i * 7}`);
+    const empty = (ids: readonly { id: string }[]) => dens.filter((d, i) => !stir({ den: d, id: ids[i % ids.length]!.id, region: 1, level: 2 }, s, kindOf).id).length / dens.length;
+    expect(empty(prey)).toBeCloseTo(0.35, 1);
+    expect(empty(opp)).toBeCloseTo(0.2, 1);
+    expect(empty([flyer])).toBe(0);
+    expect(stir({ den: "3,4", id: flyer.id, region: 1, level: 2 }, s, kindOf).level).toBe(6);
+  });
+
+  test("the room believes a wild one lifted by a release, and only that far", () => {
+    const [den, id, lv] = (() => { for (let cx = 0; cx < 400; cx++) for (let cz = 0; cz < 400; cz++) {
+      const at = [...holdsOf(`${cx},${cz}`)][0]; if (at) { const [i, l] = at.split("@"); return [`${cx},${cz}`, i!, Number(l)] as const; } } throw new Error("no den"); })();
+    expect([holds(den, id, lv), holds(den, id, lv + 4), holds(den, id, lv + 5), holds(den, id, lv - 1)]).toEqual([true, true, false, false]);
   });
 });
 

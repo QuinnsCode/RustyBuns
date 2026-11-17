@@ -46,7 +46,7 @@ import { plantBudget, setPlantBudget } from "./world/flora.ts";
 import { pickQuality, QUALITY } from "@rustybuns/util/quality";
 import { tutorial } from "@rustybuns/util/tutorial";
 import { accountChip, achieve, achievements, canSignIn, finishSignIn, fresh, login, reportButton } from "./account.ts";
-import { asCreature, atLevel, bind, boundLine, PARTY_MAX, downed, heal, hpOf, wound, bindBelow, bindChance, clearSection, cleared, gainXp, INK, loadJourney, moveUp, mythicOf, newJourney, nextUp, call, owns, PICKS, rest, SAVE_KEY, SECTIONS, sections, see, slots, STARTERS, TRAIL_REGIONS, toNext, bookSays, type Journey, mend, maul, contacted } from "./journey.ts";
+import { asCreature, atLevel, bind, boundLine, PARTY_MAX, downed, heal, hpOf, wound, bindBelow, bindChance, clearSection, cleared, gainXp, INK, loadJourney, moveUp, mythicOf, newJourney, nextUp, call, owns, OWN_MAX, PICKS, release, rest, roomLeft, SAVE_KEY, SECTIONS, sections, see, slots, STARTERS, TRAIL_REGIONS, toNext, bookSays, type Journey, mend, maul, contacted } from "./journey.ts";
 import { LORE } from "./lore.ts";
 import { Bout, circleLineOf, handOf, knownOf, PAGE_INK, poolOf, ribbonsOf, summon, type Summoned } from "./grimoire.ts";
 import { deckDemandOf, demandOf, pageLineOf, reactionOf, settingsLineOf, SIGNATURE, thumbAt, worldLineOf, type Back, type Outcome } from "./demand.ts";
@@ -604,7 +604,11 @@ function faceUp(round = "") {
   director.play(faceoff(card(0), card(1), { x: (p.pos.x + q.pos.x) / 2, y: 0, z: (p.pos.z + q.pos.z) / 2 }, m.tick + (trip?.k ?? 0)));
 }
 /** How many different creatures the totem holds: the intros get louder with it (src/casefile.ts). */
-const boundCount = (j: Journey) => new Set([...j.party, ...j.journal].map((mm) => mm.id)).size;
+const boundCount = (j: Journey) => new Set([...j.party, ...j.journal, ...(j.released ?? [])].map((mm) => mm.id)).size;
+/** Where you sat down at a campfire last: the Compendium's resting ones are in reach while you stay by it (#3031). */
+let fireAt: { x: number; z: number } | null = null;
+const FIRE_NEAR = 15;
+const atFire = () => { if (!fireAt) return false; const h = world.here(); return Math.hypot(h.x - fireAt.x, h.z - fireAt.z) < FIRE_NEAR; };
 /** The intro's subject: creature `id` met in `region`. */
 function subject(id: string, region: Region, o: Pick<Subject, "kind" | "known" | "bound" | "place" | "sub">): Subject {
   const c = creature(id);
@@ -644,6 +648,7 @@ const world = worldView(scene, camera, {
   life: (e) => online?.life(e.k, e.id, e.k === "flush" ? e.h : 0),
   cleared: (n) => (journey ? cleared(journey, n) : 0),
   owns: (id) => !!journey && owns(journey, id),
+  released: () => journey?.released ?? [],
   rumours: () => (journey?.factions?.met ?? []).flatMap((f) => FACTION[f].rumours),
   firstNight: () => { if (!journey || journey.nights) return false; journey.nights = 1; saveJourney(); return true; },
   arrived: (g, fresh) => {
@@ -681,6 +686,7 @@ const world = worldView(scene, camera, {
         return (first ? "An old cabin. The door bars from inside, and nothing comes in after dark." : "The old cabin.") + night();
       }
       const fresh = lightFire(journey, p), mended = heal(journey); saveJourney();
+      fireAt = world.here();
       if (CAMPS.has(p.id)) sitAtCamp(p.id);
       else if (fresh) {
         // An island's fire is the island's (its pack id is the Book's region), not the port region the boat left from.
@@ -1129,6 +1135,13 @@ $("#setOut").addEventListener("click", () => begin(chosen));
 
 type Tab = "lineup" | "bestiary" | "regions" | "factions";
 let tab: Tab = "lineup", picked = -1, journalOpen = false;
+/** A release asked once and waiting for the second press that makes it so ("party:2", "journal:0"). */
+let letting: string | null = null;
+/** The mark that lets a cryptid go, for good: the first press asks, the second releases it where you stand. */
+const letGo = (from: "party" | "journal", i: number, can: boolean) => {
+  const asked = letting === `${from}:${i}`, say = asked ? "Press again to let it go for good" : "Release it into the wild here";
+  return `<button data-act="release" data-from="${from}" data-i="${i}" class="${asked ? "asked" : ""}" title="${say}" aria-label="${say}"${can ? "" : " disabled"}>${icon(asked ? "triangle-alert" : "feather")}</button>`;
+};
 /** The chapter the book's front matter (engraving, vine rule, the inscription) was printed over: only its first
  * opening has it (#3747); a turned page, a folio or a shut book ends it (null), and every page after starts on the
  * Book's demand in one line, so the chapter starts at the top of the leaf. */
@@ -1179,19 +1192,23 @@ function drawJournal(edit = true) {
       return `<li class="${picked === i ? "on" : ""}" data-pick="${i}">${pic ? `<span class="mini" aria-hidden="true"><img src="/${esc(pic.src)}" alt="" decoding="async"/></span>` : ""}<p class="entry"><b>${esc(c.name)}</b>${i ? "" : `<span class="gloss">it leads</span>`}
         <span class="prose">${aOrAn(c.archetype)} ${esc(c.archetype)} of ${c.fields.map(esc).join(" and ")}, at its ${ordinal(mm.level)} level${health}; <span class="xp" title="${mm.xp} / ${toNext(mm.level)} to the next level"><i style="width:${((mm.xp / toNext(mm.level)) * 100).toFixed(0)}%"></i><em>${mm.xp} of ${toNext(mm.level)}</em></span> drops of ink toward the ${ordinal(mm.level + 1)}.</span></p>
         <span class="marks"><button data-act="up" data-i="${i}" title="Move up (the top one leads)" aria-label="Move up"${i ? "" : " disabled"}>${icon("arrow-up")}</button>
-        <button data-act="rest" data-i="${i}" title="Rest it in the compendium" aria-label="Rest it in the compendium"${j.party.length > 1 ? "" : " disabled"}>${icon("book-open")}</button></span></li>`;
+        <button data-act="rest" data-i="${i}" title="Rest it in the compendium" aria-label="Rest it in the compendium"${j.party.length > 1 ? "" : " disabled"}>${icon("book-open")}</button>
+        ${letGo("party", i, j.party.length > 1)}</span></li>`;
     };
-    body.innerHTML = spread(`<h2>Line-up · ${j.party.length} of ${slots(j)}</h2><p class="dim">Beat a region's mythic for another slot, up to six.</p><ol class="lineup">${j.party.map(row).join("")}</ol>`,
+    const fire = atFire();
+    body.innerHTML = spread(`<h2>Line-up · ${j.party.length} of ${slots(j)}</h2><p class="dim">Beat a region's mythic for another slot, up to five. The Book holds ${j.party.length + j.journal.length} of ${OWN_MAX}: past that, release one to bind another, and the wild ones where you let it go answer to it.</p><ol class="lineup">${j.party.map(row).join("")}</ol>`,
       // the line-up drawn from life across the facing leaf (#3671 round 90): each in its thorn ring, one that is down struck through
       `<h2>Drawn from life</h2><div class="drawn">${j.party.map((mm) => `<div>${notePlate(creature(mm.id), hpOf(mm) <= 0)}<p>${esc(creature(mm.id).name)}</p></div>`).join("")}</div>`
-      + `<h2>Resting in these pages · ${j.journal.length}</h2>`
+      + `<h2>Resting in these pages · ${j.journal.length}</h2>${j.journal.length && !fire ? `<p class="dim">Sit at a lit campfire to call one up or let one go.</p>` : ""}`
       + (j.journal.length ? `<ul class="resting">${j.journal.map((mm, e) => { const c = creature(mm.id); return `<li><span class="who">${dots(c)}<b>${esc(c.name)}</b><small>Lv ${mm.level}</small></span>
-        <button data-act="call" data-e="${e}" title="${j.party.length < slots(j) ? "Call it into the line-up" : `Swap it with ${esc(creature(j.party[picked >= 0 ? picked : j.party.length - 1]!.id).name)}`}" aria-label="Call it into the line-up">${icon("arrow-left-right")}</button></li>`; }).join("")}</ul>`
+        <button data-act="call" data-e="${e}" title="${!fire ? "Only at a lit campfire" : j.party.length < slots(j) ? "Call it into the line-up" : `Swap it with ${esc(creature(j.party[picked >= 0 ? picked : j.party.length - 1]!.id).name)}`}" aria-label="Call it into the line-up"${fire ? "" : " disabled"}>${icon("arrow-left-right")}</button>
+        ${letGo("journal", e, fire)}</li>`; }).join("")}</ul>`
         : `<p class="dim">Nothing resting yet. Bind one when the line-up is full and the compendium keeps it.</p>`)
       // the Book's ledger on you, every note it has kept, newest first, in its own hand
       + (notesOf(j).length ? `<h2 class="of-you">What the Book has written of you</h2><ol class="book-notes">${[...notesOf(j)].reverse().map((n) => `<li>${esc(n)}</li>`).join("")}</ol>` : "")
       + `<i class="vignette rest" aria-hidden="true">${emblem("cauldron")}</i>`);
   } else if (tab === "bestiary") {
+    letting = null;
     const owned = new Set([...j.party, ...j.journal].map((mm) => mm.id));
     const groups = [...new Set(ROSTER.map((c) => c.region))].sort((a, b) => a - b);
     const known = (c: Creature): Known => knownOf(j, c.id, tierOf(c.id));
@@ -1355,7 +1372,14 @@ $("#journalBody").addEventListener("click", (e) => {
   const i = Number(b.dataset.i), ei = Number(b.dataset.e);
   if (b.dataset.act === "up") moveUp(j, i);
   if (b.dataset.act === "rest") rest(j, i);
-  if (b.dataset.act === "call") call(j, ei, picked >= 0 && picked < j.party.length ? picked : j.party.length - 1);
+  if (b.dataset.act === "call" && atFire()) call(j, ei, picked >= 0 && picked < j.party.length ? picked : j.party.length - 1);
+  if (b.dataset.act === "release") {
+    const from = b.dataset.from === "journal" ? "journal" : "party", key = `${from}:${i}`;
+    if (letting !== key) { letting = key; drawJournal(); return; }
+    letting = null;
+    const gone = (from === "party" || atFire()) && release(j, from, i, world.state().region);
+    if (gone) world.note(`${icon("feather")} ${esc(creature(gone.id).name)} goes off into ${esc(REGIONS[world.state().region - 1]?.name ?? "the wild")}. The wild ones there will know it.`);
+  } else letting = null;
   picked = -1; saveJourney(); drawJournal();
   world.show(j.party.map(asCreature));
 });
@@ -1374,10 +1398,13 @@ $("#openJournal").addEventListener("click", () => openJournal());
 
 // --- binding: the Book's ink, B in a fight ---------------------------------------------------------------------------
 let bindNote = "";
+/** Said over a bind tried with the Book full (#3031). */
+const FULL_NOTE = `The Book holds ${OWN_MAX}. Release one from the line-up page first.`;
 function tryBind() {
   if (inCoop()) { coopTry(); return; }
   if (!m || m.over || !trip || !journey || !bindable(trip) || trip.ink <= 0) return;
   const mythic = trip.kind === "mythic", f = m.f[1], chance = bindChance(f.hp / f.b.hp, mythic);
+  if (!roomLeft(journey)) { bindNote = FULL_NOTE; return; }
   if (chance <= 0) { bindNote = `Too strong to bind yet: wear it under ${Math.round(bindBelow(mythic) * 100)}%.`; return; }
   trip.ink--;
   if (Math.random() < chance) { m.over = true; m.winner = 0; ended(m, true); return; }
@@ -1389,6 +1416,7 @@ function tryBind() {
  *  it on the same tick (`coopRoll`). */
 function coopTry() {
   if (!m || m.over || coop.ink <= 0 || coop.press) return;
+  if (journey && !roomLeft(journey)) { bindNote = FULL_NOTE; return; }
   const f = bindFoe(m);
   if (bindChance(f.hp / f.b.hp, false) <= 0) { bindNote = `Too strong to bind yet: wear it under ${Math.round(bindBelow(false) * 100)}%.`; return; }
   coop.ink--; coop.press = true; bindNote = "";
@@ -1756,7 +1784,7 @@ function tripOver(m: Match, bound: boolean, how: string) {
   /** What you notice behind you once a section is cleared: a faction's next step now waits at that stone (src/factions/engine.ts). */
   let behindYou: string[] = [];
   /** Where a bind put the new creature: the line-up or the Compendium. */
-  let went: "party" | "journal" | null = null;
+  let went: "party" | "journal" | "full" | null = null;
   if (won) {
     tally(j, false);
     const ups = gainXp(me, t.foe.level), had = slots(j);
@@ -1829,8 +1857,8 @@ function tripOver(m: Match, bound: boolean, how: string) {
   if (loose) $("#result").dataset.verso = "This page stays empty.\nI only keep what you bind.\n\n\u2014\u00a0the Book";
   else delete $("#result").dataset.verso;
   $("#result").innerHTML = `<div class="note paper o-${outcome.kind}"${torn ? ` style="--tear: ${torn.clip}"` : ""}>${mark}<p class="leaf-head" aria-hidden="true">${loose ? "Field notes" : bookTitle()}<span></span></p>${plate}<h2>${title}</h2>${reaction(outcome)}${lines.map((l) => `<p>${l}</p>`).join("")}<div class="row"><button class="go" id="back">${go}</button>${again ? `<button id="flee">${icon("map")} Run back</button>` : ""}</div></div>`;
-  $("#result").classList.toggle("capture", !!went);
-  if (went) captured(foe, t.foe.level, went);
+  $("#result").classList.toggle("capture", !!went && went !== "full");
+  if (went && went !== "full") captured(foe, t.foe.level, went);
   pages.show($("#result"));
   const home = () => { trip = null; enterWorld(); world.afterFight(won); if (back) world.note(bookToast(back)); for (const line of behindYou) world.note(`${icon("footprints")}${esc(line)}`); };
   $("#back").onclick = again ?? home;

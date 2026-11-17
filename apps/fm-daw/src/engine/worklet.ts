@@ -10,6 +10,7 @@ import { Space } from "./space.ts";
 import { Squash } from "./squash.ts";
 import { TRACKS, NPARAMS } from "./params.ts";
 import { TakeCapture, TakeDeck } from "../take.ts";
+import { AmpInserts } from "../amp/insert.ts";
 import type { ToWorklet } from "./messages.ts";
 import type { Lane } from "../project.ts";
 
@@ -51,6 +52,9 @@ class FmProcessor extends AudioWorkletProcessor {
   /** The tracks' takes, played after the engine; and the input, recorded onto `armed` while recording. */
   private deck = new TakeDeck(TRACKS, sampleRate);
   private capture = new TakeCapture(sampleRate);
+  private amps = new AmpInserts(TRACKS, sampleRate);
+  /** The input heard through the armed track's amp: off until the player turns it on. */
+  private monitor = false;
   private armed = -1;
   private inLatency = 0;
   private capturing = false;
@@ -81,6 +85,7 @@ class FmProcessor extends AudioWorkletProcessor {
         this.setEq(m.eq, m.eqAuto);
         m.trackEq.forEach((d, t) => this.setTrackEq(t, d));
         this.setLinear(m.eqLinear);
+        m.amps.forEach((a, t) => this.amps.set(t, a));
         break;
       case "param":
         this.params[m.track * NPARAMS + m.i] = m.v;
@@ -101,7 +106,9 @@ class FmProcessor extends AudioWorkletProcessor {
       case "stop": this.endTake(); s.stop(); this.engine.allOff(); break;
       case "rec": s.recording = m.on; this.endTake(); this.passes = 0; if (!m.on) s.untouch(); break;
       case "take": this.deck.set(m.track, m.pcm, m.beat); break;
-      case "arm": this.endTake(); this.passes = 0; this.armed = m.track; this.inLatency = m.inLatency; break;
+      case "amp": this.amps.set(m.track, m.amp); break;
+      case "monitor": this.monitor = m.on; break;
+      case "arm": this.endTake(); this.passes = 0; this.monitor = false; this.armed = m.track; this.inLatency = m.inLatency; break;
       case "metro": s.metronome = m.on; break;
       case "latency": this.outLatency = m.seconds; this.setLatency(); break;
       case "on": s.liveOn(m.track, m.midi, m.vel, m.rec ?? true); break;
@@ -126,17 +133,23 @@ class FmProcessor extends AudioWorkletProcessor {
   /** The input onto the armed track: from the beat the player heard when it came in, one loop's pass at a time. */
   private record(input: Float32Array[] | undefined, frames: number, pos: number) {
     const s = this.seq, L = s.loopBeats;
-    if (this.mono.length < frames) this.mono = new Float32Array(frames);
-    const mono = this.mono;
-    mono.fill(0, 0, frames);
-    const chans = input?.length ?? 0;
-    for (let c = 0; c < chans; c++) { const x = input![c]; for (let f = 0; f < frames; f++) mono[f] += x[f] / chans; }
+    const mono = this.downmix(input, frames);
     if (!this.capturing) {
       this.capturing = true;
       const back = (s.latency + this.inLatency) * (s.bpm / 60);
       this.capture.beat = (((pos - back) % L) + L) % L;
     }
     if (this.capture.push(mono, frames, (L * 60) / s.bpm)) this.endTake(true);
+  }
+
+  /** The input's channels as one, in `mono`. */
+  private downmix(input: Float32Array[] | undefined, frames: number): Float32Array {
+    if (this.mono.length < frames) this.mono = new Float32Array(frames);
+    const mono = this.mono;
+    mono.fill(0, 0, frames);
+    const chans = input?.length ?? 0;
+    for (let c = 0; c < chans; c++) { const x = input![c]; for (let f = 0; f < frames; f++) mono[f] += x[f] / chans; }
+    return mono;
   }
 
   private setAudible(mask: boolean[]) {
@@ -219,7 +232,8 @@ class FmProcessor extends AudioWorkletProcessor {
     try {
       const pos = this.seq.pos, playing = this.seq.playing;
       this.seq.process(this.buf, frames, this.send);
-      if (playing && this.deck.any) this.deck.mix(this.buf, frames, pos, this.seq.bpm, this.seq.loopBeats, (t) => !this.muted[t], this.master);
+      const hear = this.monitor && this.armed >= 0 && this.amps.has(this.armed) ? { track: this.armed, input: this.downmix(inputs[0], frames) } : undefined;
+      this.amps.mix(this.deck, this.buf, frames, pos, this.seq.bpm, this.seq.loopBeats, (t) => !this.muted[t], this.master, playing, hear);
       if (playing && this.seq.recording && this.armed >= 0) this.record(inputs[0], frames, pos);
       this.eq.process(this.buf, frames);
       this.sendDelay?.process(this.send, frames);
@@ -238,7 +252,7 @@ class FmProcessor extends AudioWorkletProcessor {
       this.engine.meter(this.meter);
       this.port.postMessage({
         t: "tick", pos: this.seq.pos, playing: this.seq.playing, countIn: this.seq.countIn,
-        peakL: this.meter[0], peakR: this.meter[1], minGain: this.meter[2], nans: this.meter[3],
+        peakL: this.meter[0], peakR: this.meter[1], minGain: this.meter[2], nans: this.meter[3], ampMisses: this.amps.misses,
       });
     }
     return true;

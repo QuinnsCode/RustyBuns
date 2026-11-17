@@ -90,7 +90,7 @@ export function Browser({ scenes, dir, onBack }: { scenes: SceneSummary[]; dir: 
             <li key={s.id}>
               <button className={s.id === scene?.id ? "room is-on" : "room"} onClick={() => open(s.id)}>
                 <strong>{operation(s.id)}</strong>
-                <span className="room-serial">{s.id}</span>
+                <span className="room-serial"><b className="stencil">{serial(s.id)}</b> · {s.id}</span>
                 <span className="dim small">{s.kinds} kinds, {s.objects} objects, {s.hasSplats ? `${s.splatMb} MB` : "labels only"}</span>
                 <span className="dim small">{s.top.slice(0, 4).map(([k, n]) => `${k}×${n}`).join(", ")}</span>
               </button>

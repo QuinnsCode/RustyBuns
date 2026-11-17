@@ -10,6 +10,7 @@ import "@fontsource/ibm-plex-sans/400.css";
 import "@fontsource/ibm-plex-mono/500.css";
 import "./amp.css";
 import workletUrl from "./worklet.ts?worker&url";
+import { AmpThreads, type Threads } from "./threads.ts";
 import { arr, check, num, nul, obj, oneOf, opt, or, rec, str } from "@rustybuns/util/guard";
 import { AMPS, PEDALS, type AmpDef, type Knobs } from "../circuit/amps.ts";
 import type { LoopSpec } from "@rustybuns/gear/circuit";
@@ -24,7 +25,8 @@ import { benchSlot } from "./bench-slot.ts";
 import { knob, type KnobEl } from "./knob.ts";
 import { startMidi } from "../ui/input.ts";
 import { MODES, Screen, topHz, hzLabel, type ScreenMode } from "./screens.ts";
-import type { AmpSettings, FromAmp, ToAmp } from "./messages.ts";
+import type { AmpSettings, ChainSlot, FromAmp } from "./messages.ts";
+import { AMP_SLOT, freshOrder, grip, isMachine, loadChip, moveTo, tidyOrder, type MachineId } from "./pedalboard.ts";
 
 const KEY = "q-amp";
 const KNOB_NAMES: { key: keyof Knobs; label: string }[] = [
@@ -72,8 +74,12 @@ const Saved = obj({
   loop: opt(LoopGuard),
   /** The cables on the stage; left out (a page saved before the patch) is the stage as it comes. */
   cables: opt(arr(CableGuard, 16, { drop: true })),
+  /** The board's tiles in chain order, the amp one of them (pedalboard.ts); left out is a fresh board. */
+  order: opt(arr(str(20), 32, { drop: true })),
+  /** The pedals switched on, any number of them; left out is the one `pedal` of a page saved before the board. */
+  lit: opt(arr(str(20), 32, { drop: true })),
 });
-type State = Omit<ReturnType<typeof Saved>, "cables"> & { cables: Cable[] };
+type State = Omit<ReturnType<typeof Saved>, "cables" | "order" | "lit"> & { cables: Cable[]; order: string[]; lit: string[] };
 
 function loadState(): State {
   const fresh: State = {
@@ -81,11 +87,17 @@ function loadState(): State {
     drive: { drive: 3, dist: 5, fuzz: 7, germ: 4 }, bypass: 0, source: "riff", layout: "split", modes: ["analog", "focus"], level: -12, quality: "hq", board: 0, swaps: {}, micAt: 3, micAngle: 0, cc: 11,
     loop: freshLoop(),
     cables: [...STAGE.cables],
+    order: freshOrder(), lit: [],
   };
   try {
     const raw = localStorage.getItem(KEY);
     const saved = raw ? check(Saved, JSON.parse(raw)) : null;
-    if (saved) return { ...saved, knobs: { ...fresh.knobs, ...saved.knobs }, loop: saved.loop ?? fresh.loop, cables: saved.cables ?? fresh.cables };
+    if (saved) {
+      return {
+        ...saved, knobs: { ...fresh.knobs, ...saved.knobs }, loop: saved.loop ?? fresh.loop, cables: saved.cables ?? fresh.cables,
+        order: tidyOrder(saved.order ?? fresh.order), lit: saved.lit ?? (saved.pedal ? [saved.pedal] : []),
+      };
+    }
   } catch { /* private window or bad JSON: start fresh */ }
   return fresh;
 }
@@ -97,6 +109,8 @@ const ampOf = (id: string): AmpDef => AMPS.find((a) => a.id === id) ?? AMPS[0];
 // ---- audio ----
 let ctx: AudioContext | null = null;
 let node: AudioWorkletNode | null = null;
+/** The rig on the audio thread, and split onto workers when that thread is over budget (threads.ts). */
+let threads: AmpThreads | null = null;
 let out: GainNode | null = null;
 let analyser: AnalyserNode | null = null;
 let riffNode: AudioBufferSourceNode | null = null;
@@ -104,14 +118,42 @@ let mic: { stream: MediaStream; node: MediaStreamAudioSourceNode } | null = null
 let meter: FromAmp = { t: "meter", levels: [], out: 0, load: 0, misses: 0 };
 const dbToGain = (db: number) => (db <= -60 ? 0 : 10 ** (db / 20));
 
-/** The loop's machines that are on, in a real loop's order: modulation, then echo, then reverb. */
-function loopSpecs(): LoopSpec[] {
+/** A machine at its knobs, or null when it is switched off. */
+function machineSpec(kind: MachineId): LoopSpec | null {
   const l = loopOf();
-  const specs: LoopSpec[] = [];
-  if (l.bbd.on) specs.push({ kind: "bbd", mode: l.bbd.mode, rate: l.bbd.rate, depth: l.bbd.depth });
-  if (l.tape.on) specs.push({ kind: "tape", time: l.tape.time, repeats: l.tape.repeats, mix: l.tape.mix, heads: [1, 3] });
-  if (l.spring.on) specs.push({ kind: "spring", dwell: l.spring.dwell, mix: l.spring.mix });
-  return specs;
+  if (kind === "bbd") return l.bbd.on ? { kind: "bbd", mode: l.bbd.mode, rate: l.bbd.rate, depth: l.bbd.depth } : null;
+  if (kind === "tape") return l.tape.on ? { kind: "tape", time: l.tape.time, repeats: l.tape.repeats, mix: l.tape.mix, heads: [1, 3] } : null;
+  return l.spring.on ? { kind: "spring", dwell: l.spring.dwell, mix: l.spring.mix } : null;
+}
+/** The machines that are on, in board order. */
+const loopSpecs = (): LoopSpec[] => S.order.flatMap((id) => (isMachine(id) ? machineSpec(id) ?? [] : []));
+
+/** The board as the audio thread plays it, and each slot's tile id: pedals that are on, the amp, machines that are on. */
+function board(): { chain: ChainSlot[]; ids: string[] } {
+  const chain: ChainSlot[] = [], ids: string[] = [];
+  for (const id of S.order) {
+    let slot: ChainSlot | null = null;
+    if (id === AMP_SLOT) slot = { amp: true };
+    // Q Bucket is the stereo one: a second chip on the right, its LFO half a turn behind.
+    else if (isMachine(id)) { const sp = machineSpec(id); slot = sp ? { machine: sp, ...(id === "bbd" ? { stereo: true } : {}) } : null; }
+    // A pedalboard cabled out of the chain is out of the sound, whatever its switches say; the amp's loop stays.
+    else if (!S.lit.includes(id) || !sound.pedals) slot = null;
+    else if (id === "bench") { const net = ui.bench.net(); slot = net ? { pedal: "bench", drive: 0, bench: net } : null; }
+    else slot = { pedal: id, drive: S.drive[id] ?? 5, swaps: S.swaps[id] ?? {} };
+    if (slot) { chain.push(slot); ids.push(id); }
+  }
+  return { chain, ids };
+}
+/** Which tile each of the last report's slot loads is for. */
+let chainIds: string[] = [];
+/** Where tile `id`'s links start in the meter's levels, null when it isn't playing: a pedal is one link, the amp its tubes and tone stack, a machine none. */
+function linksAt(id: string): number | null {
+  let n = 0;
+  for (const c of chainIds) {
+    if (c === id) return n;
+    n += c === AMP_SLOT ? ampOf(S.amp).stages.length + 1 : isMachine(c) ? 0 : 1;
+  }
+  return null;
 }
 
 // The patch: what is cabled to what, and what that means for the speakers.
@@ -120,7 +162,7 @@ let compiled = compile(patch());
 let sound = heard(patch(), compiled);
 
 function settings(): AmpSettings {
-  return { amp: S.amp, pedal: S.pedal, bench: S.pedal === "bench" ? ui.bench.net() ?? undefined : undefined, drive: S.pedal ? S.drive[S.pedal] ?? 5 : 0, swaps: S.pedal ? S.swaps[S.pedal] ?? {} : {}, knobs: S.knobs[S.amp] ?? ampOf(S.amp).knobs, bypass: S.bypass === 1, oversample: S.quality === "eco" ? 2 : 4, mic: { at: S.micAt / 10, angle: S.micAngle * 9 }, loop: loopSpecs() };
+  return { amp: S.amp, pedal: S.pedal, bench: S.pedal === "bench" ? ui.bench.net() ?? undefined : undefined, drive: S.pedal ? S.drive[S.pedal] ?? 5 : 0, swaps: S.pedal ? S.swaps[S.pedal] ?? {} : {}, knobs: S.knobs[S.amp] ?? ampOf(S.amp).knobs, bypass: S.bypass === 1, oversample: S.quality === "eco" ? 2 : 4, mic: { at: S.micAt / 10, angle: S.micAngle * 9 }, loop: loopSpecs(), chain: board().chain };
 }
 /** A pedalboard cabled out of the chain is out of the sound, whatever its switch says. */
 const patched = (s: AmpSettings): AmpSettings => (sound.pedals ? s : { ...s, pedal: null, drive: 0 });
@@ -130,7 +172,8 @@ function setLevel() {
 }
 function send() {
   save();
-  if (node) { const m: ToAmp = { t: "set", settings: patched(settings()) }; node.port.postMessage(m); }
+  chainIds = board().ids;
+  threads?.send(patched(settings()));
 }
 function setCables(cables: Cable[]) {
   S.cables = cables;
@@ -148,7 +191,36 @@ function setCables(cables: Cable[]) {
 function rockWah(v: number) {
   S.drive.wah = Math.round(Math.min(10, Math.max(0, v)) * 100) / 100;
   ui.pedalEls.find((p) => p.id === "wah")?.knob.set(S.drive.wah);
-  if (S.pedal === "wah") send(); else save();
+  if (S.lit.includes("wah")) send(); else save();
+}
+
+/**
+ * A pedal's footswitch (or the bench's): any number can be on. The one switched on last is the one the board
+ * view, its sheet and its part swaps act on (`S.pedal`); switched off, that goes to the last one still on.
+ */
+function footswitch(id: string, isOn = !S.lit.includes(id)) {
+  if (id === "bench" && isOn && !ui.bench.state()?.ok) return;
+  S.lit = isOn ? [...S.lit.filter((x) => x !== id), id] : S.lit.filter((x) => x !== id);
+  if (isOn) S.pedal = id; else if (S.pedal === id) S.pedal = S.lit[S.lit.length - 1] ?? null;
+  showPedals();
+  send();
+}
+
+/** A tile moves to place `to` on the board: after the amp is in its loop, before it in front. */
+function moveSlot(id: string, to: number) {
+  S.order = moveTo(S.order, id, to);
+  layBoard();
+  send();
+}
+
+/** Each tile in its place on the board, and which ones sit in the amp's loop. */
+function layBoard() {
+  const amp = S.order.indexOf(AMP_SLOT);
+  for (const el of ui.floor.querySelectorAll<HTMLElement>("[data-slot]")) {
+    const i = S.order.indexOf(el.dataset.slot ?? "");
+    el.style.order = String(i);
+    el.classList.toggle("in-loop", i > amp);
+  }
 }
 let midiInputs: string[] = [];
 const noop = () => {};
@@ -158,8 +230,10 @@ async function start() {
   ctx = new AudioContext({ latencyHint: "interactive" });
   await ctx.audioWorklet.addModule(workletUrl);
   node = new AudioWorkletNode(ctx, "q-amp", { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [2], channelCount: 1, channelCountMode: "explicit" });
-  // With the pedalboard patched out, the rig has no pedal link: an empty first slot keeps each tube on its own stage.
-  node.port.onmessage = (e: MessageEvent<FromAmp>) => { meter = S.pedal && !sound.pedals ? { ...e.data, levels: [0, ...e.data.levels] } : e.data; watchLoad(meter); };
+  threads = new AmpThreads(node, ctx.sampleRate, () => new Worker(new URL("./part-worker.ts", import.meta.url), { type: "module" }), (m) => {
+    meter = m;
+    watchLoad(meter);
+  });
   out = new GainNode(ctx, { gain: sound.audible ? dbToGain(S.level) : 0 });
   analyser = new AnalyserNode(ctx, { fftSize: 16384, smoothingTimeConstant: 0.6, minDecibels: -110, maxDecibels: -10 });
   node.connect(analyser);
@@ -212,6 +286,15 @@ async function listDevices(current?: string) {
   }));
 }
 
+/** The hop on the bar: how many threads, the latency they add, and (its tooltip) before which link the chain is cut. */
+function showHop(t: Threads | null) {
+  ui.hop.hidden = !t?.cuts.length;
+  if (!t?.cuts.length) return;
+  const text = ui.hop.lastElementChild;
+  if (text) text.textContent = `${t.cuts.length + 1} · +${t.hopMs.toFixed(1)} ms`;
+  ui.hop.title = `Split across ${t.cuts.length + 1} threads, cut before link${t.cuts.length > 1 ? "s" : ""} ${t.cuts.join(" and ")}: each hop adds a block (${(t.hopMs / t.cuts.length).toFixed(1)} ms). Loads ${t.loads.map((l) => `${Math.round(l * 100)}%`).join(" / ")}`;
+}
+
 function showLatency() {
   if (!ctx) return;
   ui.latency.textContent = `${Math.round(((ctx.outputLatency || 0) + ctx.baseLatency) * 1000)} ms out`;
@@ -240,6 +323,9 @@ function build() {
   load.title = "How much of the audio thread's time the amp uses. Click: 4× oversampling (cleanest) or 2× (Eco, half the work)";
   load.addEventListener("click", () => setQuality(S.quality === "hq" ? "eco" : "hq"));
   const latency = h("span", "chip dim");
+  // Where the chain is cut onto another thread, and the latency each hop adds (hidden on one thread).
+  const hop = h("span", "chip hop", icon("split", 14), h("span", "", ""));
+  hop.hidden = true;
   const boardBtn = iconButton("circuit-board", "Board view: the circuit you're playing. Click a diode or capacitor to swap it", () => { S.board = S.board ? 0 : 1; showBoard(); save(); });
   const layout = iconButton(S.layout === "split" ? "columns-2" : "rectangle-horizontal", "Screens: one wide or two half", () => {
     S.layout = S.layout === "split" ? "wide" : "split";
@@ -250,7 +336,7 @@ function build() {
   const bar = h("header", "bar",
     h("div", "brand", h("span", "q", "Q"), h("span", "", "AMP")),
     h("div", "group", ...sourceButtons, devices), bypass,
-    h("label", "group", icon("volume-2", 16), level), load, latency, h("span", "spacer"), boardBtn, layout);
+    h("label", "group", icon("volume-2", 16), level), load, hop, latency, h("span", "spacer"), boardBtn, layout);
 
   // Screens.
   const screens: Screen[] = [];
@@ -307,31 +393,46 @@ function build() {
   const cab = h("div", "cab clear", ...cones.map((c) => h("div", "speaker", c)), micKnobs);
   const rig = h("div", "rig", head, cab, modelBlurb);
 
-  // Pedals on the floor: one on at a time (the chain has one slot).
+  // The pedalboard: every tile in one row in chain order, the amp one of them; what is after it is in its loop.
+  const floor = h("div", "floor");
+  floor.title = "The pedalboard: the signal runs left to right. Tiles after the amp are in its effects loop, between the preamp and the power tubes";
+  const loadEls = new Map<string, HTMLSpanElement>();
+  const slot = (id: string, name: string, tile: HTMLElement) => {
+    const chip = loadChip();
+    loadEls.set(id, chip);
+    const el = h("div", "slot", h("div", "slot-top", grip(id, name, floor, () => S.order, (to) => moveSlot(id, to)), chip), tile);
+    el.dataset.slot = id;
+    floor.append(el);
+  };
   const pedalEls = PEDALS.map((p) => {
     const led = h("span", "pedal-led");
-    const drive = knob(p.knob ?? "Drive", S.drive[p.id] ?? 5, 5, (v) => { S.drive[p.id] = v; if (S.pedal === p.id) send(); else save(); }, "small");
+    const drive = knob(p.knob ?? "Drive", S.drive[p.id] ?? 5, 5, (v) => { S.drive[p.id] = v; if (S.lit.includes(p.id)) send(); else save(); }, "small");
     const sw = h("button", "footswitch");
     sw.type = "button"; sw.title = `${p.name} on or off`; sw.setAttribute("aria-label", `${p.name} on or off`);
     const el = h("div", `pedal ${p.id}`, led, drive.el, h("span", "pedal-name", p.name), sw);
     el.title = p.blurb;
-    sw.addEventListener("click", () => { S.pedal = S.pedal === p.id ? null : p.id; showPedals(); send(); });
+    sw.addEventListener("click", () => footswitch(p.id));
+    slot(p.id, p.name, el);
     return { id: p.id, el, knob: drive };
   });
-  const floor = h("div", "floor", ...pedalEls.map((p) => p.el));
   // The bench: a board you drew becomes the fourth pedal (src/circuit/bench.ts).
   const bench = benchSlot(floor, {
-    toggle: () => { S.pedal = S.pedal === "bench" ? null : "bench"; showPedals(); send(); },
-    changed: (ok) => { if (!ok && S.pedal === "bench") { S.pedal = null; showPedals(); } send(); },
+    toggle: () => footswitch("bench"),
+    changed: (ok) => { if (!ok && S.lit.includes("bench")) footswitch("bench", false); else send(); },
   });
-  floor.append(bench.el);
+  slot("bench", "Bench", bench.el);
+  // The amp's own tile: it plays what is in front of it, and runs what is after it in its loop.
+  const ampName = h("span", "pedal-name");
+  const ampTile = h("div", "pedal wide amp-slot", icon("cpu", 22), ampName, h("span", "bench-hint", "loop after it"));
+  ampTile.title = "The amp: pedals in front of it go into its input; whatever sits after it runs in its effects loop, at line level, before the power tubes";
+  slot(AMP_SLOT, "the amp", ampTile);
 
   const board = new BoardView((socket, choice) => swapPart(socket, choice));
   // The pedal's build sheet: its parts with your swaps, the board files, and the kit as a zip (../kit/sheet.ts).
   const sheet = new BuildSheet(() => {});
   const sheetBtn = iconButton("download", "Build sheet: the parts with your swaps, the board files, and the kit to download", () => void openSheet());
   board.tool(sheetBtn);
-  // The effects loop: machines between the preamp and the power stage, any of them on at once.
+  // The machines: any of them on at once, anywhere on the board (after the amp, in its loop, is where they're made for).
   const L = loopOf();
   type LoopKnob = { label: string; get: () => number; put: (v: number) => void; dflt: number };
   const loopPedal = (kind: "spring" | "tape" | "bbd", name: string, blurb: string, knobsOf: LoopKnob[], extra: HTMLElement[] = []) => {
@@ -342,6 +443,7 @@ function build() {
     const el = h("div", `pedal wide ${kind}`, led, row, ...extra, h("span", "pedal-name", name), sw);
     el.title = blurb;
     sw.addEventListener("click", () => { L[kind].on = L[kind].on ? 0 : 1; showPedals(); send(); });
+    slot(kind, name, el);
     return { id: kind, el };
   };
   const bbdMode = h("button", "pill mode", L.bbd.mode);
@@ -353,7 +455,7 @@ function build() {
     send();
   });
   const loopEls = [
-    loopPedal("bbd", "Q Bucket", "A bucket-brigade chip: 1024 or 4096 capacitors passing the sound along, clocked by an LFO. Chorus, flanger, or a dark delay.", [
+    loopPedal("bbd", "Q Bucket", "A bucket-brigade chip: 1024 or 4096 capacitors passing the sound along, clocked by an LFO. Chorus, flanger, or a dark delay. Stereo: a second chip on the right, its LFO half a turn behind, and everything after it runs once per side.", [
       { label: "Rate", get: () => L.bbd.rate, put: (v) => { L.bbd.rate = v; }, dflt: 3 },
       { label: "Depth", get: () => L.bbd.depth, put: (v) => { L.bbd.depth = v; }, dflt: 5 },
     ], [bbdMode]),
@@ -367,8 +469,6 @@ function build() {
       { label: "Mix", get: () => L.spring.mix, put: (v) => { L.spring.mix = v; }, dflt: 4 },
     ]),
   ];
-  const loopFloor = h("div", "floor loop", ...loopEls.map((p) => p.el));
-  loopFloor.title = "The effects loop: after the preamp, before the power tubes";
 
   const patchUi = patchView(STAGE.placed, (cables) => setCables(cables));
 
@@ -377,9 +477,9 @@ function build() {
     h("h1", "", "Q Amp"),
     h("p", "", "Pedals and tube amps simulated part by part, live. Turn your speakers down first."),
     (() => { const b = h("button", "start", icon("power"), "Plug in"); b.type = "button"; b.addEventListener("click", () => void start().catch((e) => { note.textContent = String(e); })); return b; })());
-  root.append(bar, note, screensEl, rig, floor, loopFloor, patchUi.el, board.el, sheet.el, startCard);
+  root.append(bar, note, screensEl, rig, floor, patchUi.el, board.el, sheet.el, startCard);
   document.body.append(root);
-  return { root, bar, boardBtn, board, sheet, sheetBtn, patch: patchUi, screens, screensEl, tubes, modelName, modelBlurb, models, knobs, cones, pedalEls, bench, loopEls, sourceButtons, devices, load, latency, note, startCard };
+  return { root, bar, boardBtn, board, sheet, sheetBtn, patch: patchUi, screens, screensEl, tubes, modelName, modelBlurb, models, knobs, cones, pedalEls, bench, loopEls, floor, loadEls, ampName, sourceButtons, devices, load, hop, latency, note, startCard };
 }
 
 const ui = build();
@@ -398,22 +498,26 @@ function watchLoad(m: FromAmp) {
 }
 
 function showPedals() {
-  for (const p of ui.pedalEls) p.el.classList.toggle("lit", S.pedal === p.id);
+  for (const p of ui.pedalEls) p.el.classList.toggle("lit", S.lit.includes(p.id));
   const l = loopOf();
   for (const p of ui.loopEls) p.el.classList.toggle("lit", l[p.id].on === 1);
-  ui.bench.light(S.pedal === "bench");
+  ui.bench.light(S.lit.includes("bench"));
+  layBoard();
   showBoard();
 }
 
-/** The board view: the pedal that's on, with its sockets, or the amp's first tube stage. */
+/** The board view: the pedal that's on, with its sockets, a loop machine's circuit (the last one on), or the amp's first tube stage. */
 function showBoard() {
   ui.boardBtn.setAttribute("aria-pressed", String(S.board === 1));
   ui.board.el.hidden = S.board !== 1;
   if (S.board !== 1) return;
   const def = PEDALS.find((p) => p.id === S.pedal);
+  const l = loopOf();
   ui.sheetBtn.hidden = !def?.board;
   if (def?.board) ui.board.show(def.board, `${def.name} · your board`, S.swaps[def.id] ?? {});
   else if (S.pedal === "bench") ui.board.blank(`${ui.bench.state()?.name ?? "Bench"} · on the bench`, "a board dropped on the bench has no drawing here yet");
+  else if (l.spring.on) ui.board.show("spring", "Q Spring · the driver and recovery tubes around the tank", null);
+  else if (l.tape.on) ui.board.show("tape", "Q Tape · the record amp", null);
   else ui.board.show("triode", `${ampOf(S.amp).name} · V1, the first tube stage`, null);
 }
 
@@ -439,6 +543,7 @@ function setAmp(id: string) {
   S.amp = ampOf(id).id;
   const amp = ampOf(S.amp), k = S.knobs[amp.id] ?? amp.knobs;
   ui.modelName.textContent = amp.name;
+  ui.ampName.textContent = amp.name;
   ui.modelBlurb.textContent = amp.blurb;
   for (const b of ui.models.children) if (b instanceof HTMLElement) b.setAttribute("aria-pressed", String(b.dataset.amp === amp.id));
   for (const { key } of KNOB_NAMES) {
@@ -472,8 +577,7 @@ function frame() {
   const fr = { db, wave, sampleRate: ctx?.sampleRate ?? 48000 };
   for (const s of ui.screens) s.draw(fr);
   // A tube glows with its stage's swing (log scale, 150 V is full); power tubes with the output.
-  const pedalOn = S.pedal === "bench" ? !!ui.bench.state()?.ok : !!S.pedal;
-  const offset = pedalOn && !S.bypass ? 1 : 0, tubes = ui.tubes.querySelectorAll<HTMLElement>(".tube");
+  const offset = linksAt(AMP_SLOT) ?? 0, tubes = ui.tubes.querySelectorAll<HTMLElement>(".tube");
   let pre = 0;
   for (const t of tubes) {
     const swing = t.classList.contains("pre") ? meter.levels[offset + pre++] ?? 0 : meter.out * 150;
@@ -482,7 +586,7 @@ function frame() {
   }
   // The board glows with its link: the pedal's swing (4 V is full), or V1's (150 V).
   if (S.board === 1 && ctx) {
-    const v = S.bypass ? 0 : meter.levels[0] ?? 0, full = S.pedal ? 4 : 150;
+    const at = linksAt(S.pedal ?? AMP_SLOT), v = S.bypass || at === null ? 0 : meter.levels[at] ?? 0, full = S.pedal ? 4 : 150;
     ui.board.glow(Math.min(1, Math.log10(1 + (v * 150) / full) / Math.log10(151)));
   }
   push += (meter.out - push) * 0.35;
@@ -491,6 +595,13 @@ function frame() {
   if (loadText) loadText.textContent = `${ctx ? `${Math.round(meter.load * 100)}%` : "--"} · ${S.quality === "eco" ? "2×" : "4×"}`;
   ui.load.classList.toggle("warn", meter.load > 0.7);
   ui.load.classList.toggle("hot", meter.load > 1);
+  showHop(threads?.state() ?? null);
+  // Each slot's share of the audio thread, on its tile (split across threads, the hop says each thread's).
+  for (const [id, el] of ui.loadEls) {
+    const i = chainIds.indexOf(id), v = i < 0 || !ctx ? null : meter.slots?.[i] ?? null;
+    el.textContent = v === null ? "--" : `${Math.round(v * 100)}%`;
+    el.classList.toggle("warn", (v ?? 0) > 0.3);
+  }
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
@@ -501,20 +612,28 @@ Object.assign(window, {
     state: () => ({
       started: !!ctx, running: ctx?.state === "running", amp: S.amp, name: ampOf(S.amp).name, knobs: S.knobs[S.amp], pedal: S.pedal,
       drive: S.pedal ? S.drive[S.pedal] : null, swaps: S.pedal ? { ...S.swaps[S.pedal] } : {}, board: S.board === 1, bypass: S.bypass === 1, quality: S.quality, source: S.source, layout: S.layout, modes: [...S.modes], mic: settings().mic,
-      load: meter.load, misses: meter.misses, out: meter.out, levels: meter.levels, bench: ui.bench.state(), loop: loopSpecs(), midi: { cc: S.cc, inputs: midiInputs },
+      load: meter.load, misses: meter.misses, out: meter.out, levels: meter.levels, threads: threads?.state() ?? null, bench: ui.bench.state(), loop: loopSpecs(), order: [...S.order], lit: [...S.lit],
+      slots: S.order.map((id) => { const i = chainIds.indexOf(id); return { id, on: i >= 0, load: i < 0 ? null : meter.slots?.[i] ?? null }; }), midi: { cc: S.cc, inputs: midiInputs },
       patch: { cables: S.cables, chains: compiled.chains, problems: compiled.problems, audible: sound.audible, pedals: sound.pedals },
     }),
     /** Puts a board (tscircuit circuit JSON) on the bench, as dropping its file does: the bench's verdict back. */
     bench: (json: unknown, name = "Bench pedal") => ui.bench.load(json, name),
     start,
     setAmp,
+    /** Cut the chain onto worker threads before these links ([] for one thread); the page does this itself when over budget. */
+    split: (cuts: number[]) => threads?.split(cuts),
     /** Pull out the cable in a jack, e.g. unplug("head", "speaker"). */
     unplug: (item: string, jack: string) => setCables(S.cables.filter((c) => !(c.from[0] === item && c.from[1] === jack) && !(c.to[0] === item && c.to[1] === jack))),
     /** Run a cable, out jack first: plug(["guitar", "out"], ["cab", "in"], "instrument"). */
     plug: (from: End, to: End, kind: Cable["kind"]) => setCables([...S.cables, { from, to, kind }]),
     /** Back to guitar, pedalboard, amp, cabinet. */
     restage: () => setCables([...STAGE.cables]),
-    pedal: (id: string | null) => { S.pedal = PEDALS.some((p) => p.id === id) || (id === "bench" && ui.bench.state()?.ok) ? id : null; showPedals(); send(); },
+    /** That pedal on alone (null: every pedal off). */
+    pedal: (id: string | null) => { S.pedal = PEDALS.some((p) => p.id === id) || (id === "bench" && ui.bench.state()?.ok) ? id : null; S.lit = S.pedal ? [S.pedal] : []; showPedals(); send(); },
+    /** A pedal's (or the bench's) footswitch, on or off; the others stay as they are. */
+    footswitch: (id: string, isOn: boolean) => { if (PEDALS.some((p) => p.id === id) || id === "bench") footswitch(id, isOn); },
+    /** A tile ("drive", "amp", "tape"...) to place `to` on the board, as its grip does: after the amp is in the loop. */
+    move: (id: string, to: number) => moveSlot(id, to),
     /** Open or close the board view. */
     board: (open: boolean) => { S.board = open ? 1 : 0; showBoard(); save(); },
     /** The playing pedal's build sheet open: what it shows once its kit has loaded (null: no pedal with a board on). */

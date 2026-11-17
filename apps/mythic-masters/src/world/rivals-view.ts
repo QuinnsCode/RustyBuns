@@ -6,7 +6,9 @@
 // markup is written when its words change, not every frame.
 // The believers round their camp fires (believers.ts `campers`) are drawn by the same pool, in their own looks: the
 // Hatters in tin-foil hats, the Porchlight Vigil in moth-wing capes and dark glasses, the Backwards Lodge with mirrors
-// on headbands (sitting with their backs to the fire), the Blurry Society in smeared goggles with a camera at the chest.
+// on headbands (sitting with their backs to the fire), the Blurry Society in smeared goggles with a camera at the chest,
+// the Frog Watch in green waders with a torch in hand, the Antler Choir in antlered cowboy hats, the Thirteen Counters
+// with thirteen beads round the neck and a jar of beans, the Howl-Back Club in earmuffs with a tin cup at the mouth.
 import * as THREE from "three";
 import type { FactionId } from "../factions/model.ts";
 import type { Spot } from "./posts.ts";
@@ -28,6 +30,7 @@ export const TAG_R = 40;
 export const COAT_CSS: Record<Wear, string> = {
   office: "#7d828c", institute: "#e9ecee", lamplighters: "#b07a44",
   hatters: "#c9ccd1", porchlight: "#b8a888", backwards: "#c7d4dc", blurry: "#7d93a3",
+  frogwatch: "#6f9a4a", antlers: "#c49a6a", counters: "#a8846a", howlback: "#b06a6a",
 };
 
 /** The most figures drawn at once: three factions' posts in a region, their quest people and a camp's believers. */
@@ -35,13 +38,17 @@ const MAX = 36;
 const COAT: Record<Wear, number> = {
   office: 0x7d828c, institute: 0xe9ecee, lamplighters: 0x8a5a2e,
   hatters: 0x5b6b4a, porchlight: 0x4a4038, backwards: 0x7a3e30, blurry: 0x3d5566,
+  frogwatch: 0x5a6a58, antlers: 0x8a5a3a, counters: 0x4a5a48, howlback: 0x6a3a3a,
 };
 const SKIN = 0xc89a78, TIE = 0x22252b, LAMP = 0xffc46b;
 /** How much of its colour a resting figure keeps. */
 const DIM = 0.5;
 
 /** What a believer wears over the coat, each shown only for its group. */
-interface Kit { hat: THREE.Mesh; cape: THREE.Group; shades: THREE.Mesh; mirror: THREE.Mesh; goggles: THREE.Mesh; cam: THREE.Mesh }
+interface Kit {
+  hat: THREE.Mesh; cape: THREE.Group; shades: THREE.Mesh; mirror: THREE.Mesh; goggles: THREE.Mesh; cam: THREE.Mesh;
+  waders: THREE.Mesh; torch: THREE.Group; stetson: THREE.Group; beads: THREE.Group; jar: THREE.Mesh; muffs: THREE.Group; cup: THREE.Mesh;
+}
 interface Slot { group: THREE.Group; body: THREE.Mesh; head: THREE.Mesh; tie: THREE.Mesh; lamp: THREE.Mesh; mark: THREE.Mesh; kit: Kit; tag: HTMLElement; words: string }
 
 /** `tags` is the element the name tags go in (the world's HUD); `camera` the one that draws the world. */
@@ -70,6 +77,20 @@ export function rivalsView(scene: THREE.Scene, groundY: (x: number, z: number) =
   const darkMat = new THREE.MeshStandardMaterial({ color: 0x141518, roughness: 0.25 });
   const mirrorMat = new THREE.MeshStandardMaterial({ color: 0xe6eef2, metalness: 1, roughness: 0.05, side: THREE.DoubleSide });
   const smearMat = new THREE.MeshStandardMaterial({ color: 0x8c9a86, roughness: 0.9, transparent: true, opacity: 0.75 });
+  const wadersGeo = new THREE.CylinderGeometry(0.29, 0.29, 1.05, 10), rodGeo = new THREE.CylinderGeometry(0.035, 0.03, 0.22, 8);
+  const tipGeo = new THREE.SphereGeometry(0.045, 8, 6), brimGeo = new THREE.CylinderGeometry(0.32, 0.32, 0.025, 14);
+  const crownGeo = new THREE.CylinderGeometry(0.13, 0.16, 0.16, 10), antlerGeo = new THREE.ConeGeometry(0.025, 0.2, 5);
+  const beadGeo = new THREE.SphereGeometry(0.04, 8, 6), jarGeo = new THREE.CylinderGeometry(0.07, 0.07, 0.15, 10);
+  const muffGeo = new THREE.SphereGeometry(0.08, 10, 8), bandGeo = new THREE.TorusGeometry(0.19, 0.015, 6, 12, Math.PI);
+  const cupGeo = new THREE.CylinderGeometry(0.05, 0.04, 0.1, 10);
+  const rubberMat = new THREE.MeshStandardMaterial({ color: 0x3f6a2e, roughness: 0.5 });
+  const glowMat = new THREE.MeshBasicMaterial({ color: 0xfff2c4 });
+  const feltMat = new THREE.MeshStandardMaterial({ color: 0xb08a5a, roughness: 0.95 });
+  const hornMat = new THREE.MeshStandardMaterial({ color: 0xe8dcc0, roughness: 0.7 });
+  const beadMat = new THREE.MeshStandardMaterial({ color: 0xd8a040, roughness: 0.35 });
+  const glassMat = new THREE.MeshStandardMaterial({ color: 0xc8dcd0, roughness: 0.1, transparent: true, opacity: 0.55 });
+  const fluffMat = new THREE.MeshStandardMaterial({ color: 0xe8b0b8, roughness: 1 });
+  const tinMat = new THREE.MeshStandardMaterial({ color: 0xa8acb0, metalness: 0.8, roughness: 0.4 });
   function kit(g: THREE.Group): Kit {
     const hat = new THREE.Mesh(hatGeo, foilMat), shades = new THREE.Mesh(shadesGeo, darkMat), mirror = new THREE.Mesh(mirrorGeo, mirrorMat);
     const goggles = new THREE.Mesh(gogglesGeo, smearMat), cam = new THREE.Mesh(camGeo, darkMat), cape = new THREE.Group();
@@ -85,14 +106,50 @@ export function rivalsView(scene: THREE.Scene, groundY: (x: number, z: number) =
       w.position.set(side * 0.05, 1.2, -0.3);
       cape.add(w);
     }
-    g.add(hat, cape, shades, mirror, goggles, cam);
-    return { hat, cape, shades, mirror, goggles, cam };
+    // the Frog Watch: waders to the chest, a torch held out in front, lit
+    const waders = new THREE.Mesh(wadersGeo, rubberMat), torch = new THREE.Group();
+    waders.position.y = 0.55;
+    const rod = new THREE.Mesh(rodGeo, darkMat), tip = new THREE.Mesh(tipGeo, glowMat);
+    rod.rotation.x = Math.PI / 2; tip.position.z = 0.12;
+    torch.add(rod, tip); torch.position.set(0.3, 1.0, 0.3);
+    // the Antler Choir: a cowboy hat with two little antlers
+    const stetson = new THREE.Group(), brim = new THREE.Mesh(brimGeo, feltMat), crown = new THREE.Mesh(crownGeo, feltMat);
+    crown.position.y = 0.08;
+    stetson.add(brim, crown);
+    for (const side of [-1, 1]) {
+      const a = new THREE.Mesh(antlerGeo, hornMat);
+      a.position.set(side * 0.1, 0.22, 0); a.rotation.z = side * -0.5;
+      stetson.add(a);
+    }
+    stetson.position.y = 1.8;
+    // the Thirteen Counters: thirteen beads round the neck, a jar of beans held at the waist
+    const beads = new THREE.Group();
+    for (let i = 0; i < 13; i++) {
+      const b = new THREE.Mesh(beadGeo, beadMat), a = (i / 13) * Math.PI * 2;
+      b.position.set(Math.sin(a) * 0.2, -0.06 * Math.max(0, Math.cos(a)), Math.cos(a) * 0.2); // sagging at the front
+      beads.add(b);
+    }
+    beads.position.y = 1.42;
+    const jar = new THREE.Mesh(jarGeo, glassMat);
+    jar.position.set(0, 0.9, 0.32);
+    // the Howl-Back Club: earmuffs on a band over the head, a tin cup at the mouth
+    const muffs = new THREE.Group(), band = new THREE.Mesh(bandGeo, fluffMat);
+    for (const side of [-1, 1]) { const m = new THREE.Mesh(muffGeo, fluffMat); m.position.x = side * 0.19; muffs.add(m); }
+    muffs.add(band); muffs.position.y = 1.64;
+    const cup = new THREE.Mesh(cupGeo, tinMat);
+    cup.rotation.x = Math.PI / 2; cup.position.set(0, 1.58, 0.24);
+    g.add(hat, cape, shades, mirror, goggles, cam, waders, torch, stetson, beads, jar, muffs, cup);
+    return { hat, cape, shades, mirror, goggles, cam, waders, torch, stetson, beads, jar, muffs, cup };
   }
   function dress(k: Kit, f: Wear) {
     k.hat.visible = f === "hatters";
     k.cape.visible = k.shades.visible = f === "porchlight";
     k.mirror.visible = f === "backwards";
     k.goggles.visible = k.cam.visible = f === "blurry";
+    k.waders.visible = k.torch.visible = f === "frogwatch";
+    k.stetson.visible = f === "antlers";
+    k.beads.visible = k.jar.visible = f === "counters";
+    k.muffs.visible = k.cup.visible = f === "howlback";
   }
 
   const pool: Slot[] = [];

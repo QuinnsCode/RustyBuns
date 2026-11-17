@@ -88,21 +88,29 @@ export class TakeDeck {
   constructor(tracks: number, private sr: number) { this.slots = Array.from({ length: tracks }, () => null); }
   set(track: number, pcm: Float32Array | null, beat = 0) { if (track >= 0 && track < this.slots.length) this.slots[track] = pcm && pcm.length ? { pcm, beat } : null; }
   get any() { return this.slots.some((s) => s); }
+  has(track: number) { return !!this.slots[track]; }
 
   /** Add `frames` of the takes into interleaved stereo `out`, the transport at `pos` beats when the block starts. */
   mix(out: Float32Array, frames: number, pos: number, bpm: number, loopBeats: number, audible: (t: number) => boolean, gain: number) {
-    const beatsPerFrame = bpm / 60 / this.sr, takePerBeat = (60 / bpm) * TAKE_RATE;
-    for (let t = 0; t < this.slots.length; t++) {
-      const s = this.slots[t];
-      if (!s || !audible(t)) continue;
-      const { pcm } = s;
-      for (let f = 0; f < frames; f++) {
-        const since = (((pos + f * beatsPerFrame - s.beat) % loopBeats) + loopBeats) % loopBeats;
-        const x = since * takePerBeat, j = Math.floor(x);
-        if (j >= pcm.length) continue;
-        const a = pcm[j], v = (a + ((pcm[j + 1] ?? a) - a) * (x - j)) * gain;
-        out[f * 2] += v; out[f * 2 + 1] += v;
-      }
+    for (let t = 0; t < this.slots.length; t++) if (audible(t)) this.play(t, out, 2, frames, pos, bpm, loopBeats, gain);
+  }
+
+  /** Add `frames` of one track's take into mono `out` (its Amp insert plays it from there). */
+  one(track: number, out: Float32Array, frames: number, pos: number, bpm: number, loopBeats: number, gain: number) {
+    this.play(track, out, 1, frames, pos, bpm, loopBeats, gain);
+  }
+
+  private play(track: number, out: Float32Array, chans: 1 | 2, frames: number, pos: number, bpm: number, loopBeats: number, gain: number) {
+    const s = this.slots[track];
+    if (!s) return;
+    const beatsPerFrame = bpm / 60 / this.sr, takePerBeat = (60 / bpm) * TAKE_RATE, { pcm } = s;
+    for (let f = 0; f < frames; f++) {
+      const since = (((pos + f * beatsPerFrame - s.beat) % loopBeats) + loopBeats) % loopBeats;
+      const x = since * takePerBeat, j = Math.floor(x);
+      if (j >= pcm.length) continue;
+      const a = pcm[j], v = (a + ((pcm[j + 1] ?? a) - a) * (x - j)) * gain;
+      out[f * chans] += v;
+      if (chans === 2) out[f * 2 + 1] += v;
     }
   }
 }

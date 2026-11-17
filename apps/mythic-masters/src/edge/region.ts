@@ -7,8 +7,8 @@
 // flushed or a contract read): a move is fanned out the moment it arrives, and the latest pose of each player rides on
 // their socket's attachment, so the object can hibernate whenever the party stands still and wake with everyone where they were. The Worker (worker.ts) is the only place identity is decided; it vouches X-User-Id and X-User-Name.
 import { refuseSocket, Sockets, type RoomCtx, type RoomSocket } from "@rustybuns/util/room";
-import { denNear, holds, landing } from "../net/dens.ts";
-import { believeHurt, coopDen, huntNear, keepSeen, sharedDen, COOP_MS, NO_SEEN, seenEmpty, step, wildNear, worldClock, FIGHT, MAX_PLAYERS, parseDelta, parseEvent, plausible, REST_DM, restMs, WORLD_CYCLE, WORLD_EPOCH, type Anchor, type Delta, type MetAt, type Player, type Seen, type ServerMsg } from "../net/party.ts";
+import { denNear, holds, landing, signBelieved } from "../net/dens.ts";
+import { believeHurt, coopDen, keepSeen, sharedDen, COOP_MS, NO_SEEN, seenEmpty, step, wildNear, worldClock, FIGHT, MAX_PLAYERS, parseDelta, parseEvent, plausible, REST_DM, restMs, WORLD_CYCLE, WORLD_EPOCH, type Anchor, type Delta, type MetAt, type Player, type Seen, type ServerMsg } from "../net/party.ts";
 
 /** A pose delta is under 60 bytes and a page sends 5 a second, so 8 a second with a burst of 16 is room to spare. A
  *  newcomer's catch-up (`seen`, up to 30 of each kind) runs to about 4 KB: it fits, and costs a token per 512 bytes. */
@@ -197,10 +197,13 @@ export class Region {
       return;
     }
     if (ev?.e === "hunt") {
-      if (seat.loose || !huntNear(ev.h, seat.p)) return; // a board nowhere near them: no contract to tell the party about
-      this.sockets.broadcast({ t: "hunt", id: seat.id, h: ev.h, s: ev.s }, ws, others);
+      if (seat.loose) return;
+      // A board nowhere near them is no contract to tell the party about, and a sign counts only where it lies (#4165).
+      const s = signBelieved(ev.h, ev.s, seat.p, this.wilds().hunts?.find((k) => k.h === ev.h)?.s);
+      if (s === null) return;
+      this.sockets.broadcast({ t: "hunt", id: seat.id, h: ev.h, s }, ws, others);
       // and kept, so a friend who joins after they left can still follow it to the lair
-      this.keepWilds({ ...NO_SEEN, hunts: [{ h: ev.h, s: ev.s, n: seat.name.slice(0, 24) }] });
+      this.keepWilds({ ...NO_SEEN, hunts: [{ h: ev.h, s, n: seat.name.slice(0, 24) }] });
       return;
     }
     if (ev?.e === "fought") {

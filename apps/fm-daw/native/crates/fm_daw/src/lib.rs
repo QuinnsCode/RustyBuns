@@ -902,6 +902,9 @@ pub extern "C" fn fm_amp_set_noise(r: *mut circuit::Rig, noise: f64) { with!(r, 
 pub extern "C" fn fm_amp_set_output(r: *mut circuit::Rig, pairs: f64, sag: f64, load: f64) { with!(r, r.set_output(pairs, sag, load)) }
 #[no_mangle]
 pub extern "C" fn fm_amp_set_load(r: *mut circuit::Rig, load: f64) { with!(r, r.set_load(load)) }
+/// The power stage's bias tremolo: rate (Hz) and depth (0 to 1; 0 for none).
+#[no_mangle]
+pub extern "C" fn fm_amp_set_trem(r: *mut circuit::Rig, hz: f64, depth: f64) { with!(r, r.set_trem(hz, depth)) }
 /// The cabinet's impulse response (len 0 for none).
 /// # Safety
 /// `ir` must point to `len` f64s, or be null.

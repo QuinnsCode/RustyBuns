@@ -2,7 +2,7 @@
 //   RB_NO_BROWSER=1 RB_TOKEN=x bun run desktop:dev        (in apps/splat-rooms; it serves a built client, so rebuild after a change)
 //   bun scripts/shots.ts --url http://127.0.0.1:<port>/?token=x --out docs/shots-<date> --tag now [--room built_kitchen_3]
 // Writes <tag>-<screen>-<desk|phone>.jpg: menu, eqosys (signed in, report form open), rooms, howto, browser, hunt,
-// paused, win, controls. Scenes come from the desktop host, so the hunt and the browser need it running.
+// paused, win, toast (the eqosys achievement toast over the win), controls. Scenes come from the desktop host, so the hunt and the browser need it running.
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
@@ -32,6 +32,8 @@ try {
       console.log(file);
     };
     await load(chrome.cdp, tab, o.url, 2500);
+    // The first-hunt coach is the shared tutorial, not the lab's look, and the shots skip its pick step: mark it done.
+    await tab.eval(`localStorage.setItem("splat-rooms.tutorial", "done")`);
     await until(tab, `!!document.querySelector(".uplink") && !/searching/.test(document.querySelector(".uplink").textContent)`);
     await shot("menu");
 
@@ -67,6 +69,9 @@ try {
     await tab.eval(key("Escape"));
     await tab.eval(`splatHunt.find()`);
     await shot("win", 1500);
+    await tab.eval(`splatHunt.toast?.()`);
+    await shot("toast");
+    await tab.eval(`document.querySelectorAll(".eq-toast").forEach((t) => t.remove())`);
 
     await tab.eval(`document.querySelector(".gc-cog").click()`);
     await shot("controls");

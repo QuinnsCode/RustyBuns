@@ -14,6 +14,7 @@ import { PACE } from "../net/party.ts";
 import { Walker3d } from "./walker3d.ts";
 import { Bearer, HEIGHT, NO_ID } from "./bearer.ts";
 import { body, creature, ROSTER, type Creature } from "../roster.ts";
+import { stir, stirOf, type Released } from "../released.ts";
 import { REGIONS, type Biome, type Region } from "../regions.ts";
 import { SECTIONS, sections } from "../journey.ts";
 import { arenaOf, COLS, CELL, explore, explored, gateShut, setTravel, travelOf, pace, WADE_DEPTH, type Gait, FOG, FOG_W, isSeen, meet, NIGHT_MEET_R, newSeen, openRegions, opensRoadTo, OWNER, regionAt, riverAt, ROWS, sendHome, spawn, STEP, GROUND_N, surface, waterAt, wildsNear, heightAt, type Wild } from "./world.ts";
@@ -99,6 +100,8 @@ export interface WorldHooks {
   cleared(n: number): number;
   /** Whether creature `id` is bound already (the name tag marks the new ones). */
   owns(id: string): boolean;
+  /** The cryptids you let go: the wild ones where each was released answer to it (src/released.ts). */
+  released?(): readonly Released[];
   /** Stepped into region g, `fresh` the first time ever (src/director.ts sweeps round you then). */
   arrived?(g: Region, fresh: boolean): void;
   /** Walked into section k of region g's trail. */
@@ -821,9 +824,17 @@ export function worldView(scene: THREE.Scene, camera: THREE.PerspectiveCamera, h
     drawLamps();
     for (const [den, until] of calm) if (performance.now() > until) calm.delete(den);
     // A contract's creature waits at its lair once every sign is read, turning slowly where it stands.
+    const freed = hooks.released?.() ?? [], stirs = new Map<number, ReturnType<typeof stirOf>>(), kindOf = (id: string) => creature(id).archetype;
+    /** A den as the cryptids you released in its region leave it: hunted empty, or lifted (released.ts). */
+    const stirred = (c: Wild) => {
+      if (!freed.length) return c;
+      let s = stirs.get(c.region);
+      if (!s) stirs.set(c.region, s = stirOf(freed, c.region, kindOf));
+      return stir(c, s, kindOf);
+    };
     const lairs = waiting(hooks.places?.log() ?? null, open).filter((h) => Math.hypot(h.lair.x - me.x, h.lair.z - me.z) < 160)
       .map((h): Wild => ({ den: `hunt:${h.id}`, id: h.creature, region: h.n, level: h.level, x: h.lair.x, z: h.lair.z, heading: clock * 0.2 }));
-    const wilds = [...[...wildsNear(w, me.x, me.z, clock, open, 160, new Date(), dark), ...trailWilds(me.x, me.z, clock, 160).filter((c) => open.has(c.region))].map(onTrailDen).filter((c) => c.id), ...lairs, ...(stalker ? [stalker] : [])].map(keepOut), keep = new Set<string>();
+    const wilds = [...[...wildsNear(w, me.x, me.z, clock, open, 160, new Date(), dark), ...trailWilds(me.x, me.z, clock, 160).filter((c) => open.has(c.region))].map(onTrailDen).map(stirred).filter((c) => c.id), ...lairs, ...(stalker ? [stalker] : [])].map(keepOut), keep = new Set<string>();
     // The stalker, wherever it came from, is drawn closing in (once, though a den may be listed twice).
     const seenDen = new Set<string>();
     for (let i = wilds.length - 1; i >= 0; i--) { const c = wilds[i]!; if (seenDen.has(c.den)) wilds.splice(i, 1); else { seenDen.add(c.den); if (stalker && c.den === stalker.den) wilds[i] = closeIn(c); } }

@@ -66,7 +66,7 @@ export function RoomSelect({ scenes, records, onPick, onBack }: {
           return (
             <li key={s.id}>
               <button className="room-card" onClick={() => onPick(s.id)} disabled={!s.hasSplats}>
-                <span className="room-serial">{serial(s.id)} · {s.id}</span>
+                <span className="room-serial"><b className="stencil">{serial(s.id)}</b> · {s.id}</span>
                 <span className="room-id">{operation(s.id)}</span>
                 <span className="dim small">{s.kinds} kinds · {s.objects} objects</span>
                 <span className="dim small room-top">{s.top.map(([k]) => k).filter((k) => !STRUCTURAL.has(k)).slice(0, 4).join(", ")}</span>

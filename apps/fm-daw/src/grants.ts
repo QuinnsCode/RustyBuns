@@ -96,9 +96,9 @@ export function mute(g: Grants, who: string, on: boolean): Grants {
 }
 export const isMuted = (g: Grants, who: string | undefined) => !!who && !!g.muted?.includes(who);
 
-/** What an edit needs: the desk (mutes, solos, EQ, space and squash) is mix; the rest of the groove is edit. */
+/** What an edit needs: the desk (mutes, solos, EQ, amps, space and squash) is mix; the rest of the groove is edit. */
 export function opNeeds(op: Op): Can {
-  if (op.t === "track" || op.t === "eq" || op.t === "eqAuto" || op.t === "eqPhase") return "mix";
+  if (op.t === "track" || op.t === "eq" || op.t === "eqAuto" || op.t === "eqPhase" || op.t === "amp") return "mix";
   if (op.t === "global" && op.bpm === undefined && op.swing === undefined && op.bars === undefined) return "mix";
   return "edit";
 }

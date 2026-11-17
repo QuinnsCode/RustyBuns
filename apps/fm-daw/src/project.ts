@@ -3,6 +3,7 @@
 // may face the internet on the edge, so everything that arrives is sanitized.
 import { arr, Bad, bool, check, int, maybe, nul, num, obj, oneOf, opt, raw, str, type Guard } from "@rustybuns/util/guard";
 import { EQ_LANES, clampEqLane, eqLaneBand, sanitizeEq, type EqDoc } from "./engine/eq.ts";
+import { TrackAmp } from "./amp/track-amp.ts";
 import { MAX_TAKES, TakeBytesGuard, takeRef, type TakeBytes, type TakeRef } from "./take.ts";
 import { ROOM_M } from "./studio.ts";
 import { Instrument, MAX_MADE } from "./studio/made.ts";
@@ -30,6 +31,8 @@ export interface TrackDoc {
   eq?: EqDoc;
   /** Audio recorded onto this track (src/take.ts): its sound travels apart from the project, under the id. */
   take?: TakeRef;
+  /** An Amp insert (src/amp/insert.ts): the take and the live input through a Q Amp head; absent when off. */
+  amp?: TrackAmp;
   mute: boolean;
   solo: boolean;
 }
@@ -55,6 +58,8 @@ export type Op =
   | { t: "eqPhase"; linear: boolean }
   /** A recorded take onto a track (its chunks went first), or null to take it off. */
   | { t: "take"; track: number; take: TakeRef | null }
+  /** An Amp on a track, at these knobs, or null to take it off. */
+  | { t: "amp"; track: number; amp: TrackAmp | null }
   /** A new instrument in the jam room: its track gets this patch and its name, emptied of notes, and the room a seat at it. */
   | { t: "instrument"; inst: Instrument; params: number[]; root: number }
   | { t: "replace"; project: Project };
@@ -182,9 +187,9 @@ function fitTakes(tracks: TrackDoc[], beats?: number): TrackDoc[] {
 
 function track(v: unknown, ti: number, beats: number): TrackDoc {
   const t = obj({ name: str(24, { min: 0, dflt: `Track ${ti + 1}` }), kind: oneOf(["drum", "synth"], "drum"), root: int(0, 127, 60),
-    params: arr(raw, NPARAMS, { drop: true }), notes: raw, auto: raw, eq: raw, take: maybe(takeRef(beats)), mute: bool(false), solo: bool(false) })(typeof v === "object" && v ? v : {});
-  const { eq, take, ...rest } = t;
-  return withTrackEq({ ...rest, params: Array.from({ length: NPARAMS }, (_, i) => clampParam(i, Number(t.params[i]))), notes: sanitizeNotes(t.notes, beats), auto: sanitizeLanes(t.auto, beats), ...(take ? { take } : {}) }, sanitizeEq(eq));
+    params: arr(raw, NPARAMS, { drop: true }), notes: raw, auto: raw, eq: raw, take: maybe(takeRef(beats)), amp: maybe(TrackAmp), mute: bool(false), solo: bool(false) })(typeof v === "object" && v ? v : {});
+  const { eq, take, amp, ...rest } = t;
+  return withTrackEq({ ...rest, ...(amp ? { amp } : {}), params: Array.from({ length: NPARAMS }, (_, i) => clampParam(i, Number(t.params[i]))), notes: sanitizeNotes(t.notes, beats), auto: sanitizeLanes(t.auto, beats), ...(take ? { take } : {}) }, sanitizeEq(eq));
 }
 
 const tag = <T extends string>(t: T) => oneOf([t]);
@@ -201,6 +206,7 @@ const OPS: Guard<Op>[] = [
   obj({ t: tag("eqAuto"), lanes: (v: unknown) => sanitizeLanes(v, MAX_BARS * BEATS_PER_BAR, EQ_AUTO) }),
   obj({ t: tag("eqPhase"), linear: bool() }),
   obj({ t: tag("take"), track: TRACK, take: nul(takeRef(MAX_BARS * BEATS_PER_BAR)) }),
+  obj({ t: tag("amp"), track: TRACK, amp: nul(TrackAmp) }),
   obj({ t: tag("instrument"), inst: Instrument, params: arr(real, NPARAMS, { min: NPARAMS }), root: int(0, 127) }),
   obj({ t: tag("replace"), project: PROJ }),
 ];
@@ -345,10 +351,12 @@ export function apply(p: Project, op: Op): Project {
       if (op.take && p.tracks.filter((t, i) => t.take && i !== op.track).length >= MAX_TAKES) return p;
       return withTrack(p, op.track, (t) => { const { take: _, ...rest } = t; return op.take ? { ...rest, take: op.take } : rest; });
     }
+    case "amp":
+      return withTrack(p, op.track, (t) => { const { amp: _, ...rest } = t; return op.amp ? { ...rest, amp: op.amp } : rest; });
     case "instrument": {
       const { inst } = op;
       const was = (p.instruments ?? []).filter((x) => x.id !== inst.id && x.track !== inst.track);
-      const next = withTrack(p, inst.track, (t) => ({ name: inst.name, kind: "synth", root: op.root, params: op.params.map((v, i) => clampParam(i, v)), notes: [], auto: [], mute: false, solo: false, ...(t.eq ? { eq: t.eq } : {}) }));
+      const next = withTrack(p, inst.track, (t) => ({ name: inst.name, kind: "synth", root: op.root, params: op.params.map((v, i) => clampParam(i, v)), notes: [], auto: [], mute: false, solo: false, ...(t.eq ? { eq: t.eq } : {}), ...(t.amp ? { amp: t.amp } : {}) }));
       // the oldest goes when the room is full
       return { ...next, ...madeOf([...was, inst].slice(-MAX_MADE)) };
     }

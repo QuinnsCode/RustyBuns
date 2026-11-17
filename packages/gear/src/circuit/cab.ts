@@ -67,6 +67,8 @@ export class Convolver {
   private buf: Float64Array;
   private at = 0;
   constructor(private ir: Float64Array) { this.buf = new Float64Array(2 * ir.length); }
+  /** Multiply-adds a sample. */
+  get taps(): number { return this.ir.length; }
 
   /** A new response; the history carries over when it is the same length (a mic moving). */
   set(ir: Float64Array): void {

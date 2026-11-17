@@ -36,6 +36,7 @@ export interface Exports {
   fm_amp_set_noise(r: number, noise: number): void;
   fm_amp_set_output(r: number, pairs: number, sag: number, load: number): void;
   fm_amp_set_load(r: number, load: number): void;
+  fm_amp_set_trem(r: number, hz: number, depth: number): void;
   fm_amp_set_cab(r: number, ir: number, len: number): void;
   fm_amp_fault(r: number): number;
   fm_amp_supply(r: number): number;

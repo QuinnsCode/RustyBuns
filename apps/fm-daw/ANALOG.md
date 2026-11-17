@@ -32,7 +32,7 @@ Today there is one pedal slot. A real board is a chain:
 - **Stereo** after the first stereo effect (chorus, delay, reverb), mono before it.
 - **A cost on every slot.** The audio thread is the budget (see [Speed](CIRCUITS.md#speed)): a pedal is 5 to 6× real time, an amp 2.3 to 3.3×. A full board will not fit at 4× oversampling in one thread, so:
   - Oversample only what clips. A phaser or a tone stack runs at 1×; only the diodes and tubes need 4×.
-  - Split the chain over worker threads with a `SharedArrayBuffer` ring, one audio block (2.7 ms at 48 kHz) of extra latency per hop.
+  - Split the chain over worker threads with a `SharedArrayBuffer` ring, one audio block (2.7 ms at 48 kHz) of extra latency per hop. Built (#4948, `src/amp/ring.ts`, `threads.ts`): a third of a second over budget, the chain is cut at the slot boundaries that share each link's work (`Rig.work`) out best, up to three threads; the cut parts hand their 4× oversampled volts on, so the sound is the one-thread rig's to the bit, a block later per hop. The bar shows the hop.
   - Show each slot's share of the load on the board, so players see what costs what, as on hardware DSP units.
 
 ## 3. Effects that are circuits
@@ -69,7 +69,7 @@ Some classic effects are not only circuits. A tape echo is a motor, a tape and t
 - **Spring reverb.** A tube driver pushes a transformer into the spring tank, and a recovery tube reads it. The springs carry high notes faster than low ones, which makes the "boing" chirp. Model it with chains of all-pass filters inside a feedback delay (Välimäki, Parker & Abel, 2010). The driver and recovery stages are 12AX7 and 12AT7 circuits we already solve.
 - **Plate reverb** later (a steel plate's modes, more CPU), and only if spring is not enough.
 
-**Built** (`packages/gear/src/circuit/machines.ts`, on Q Amp as Q Bucket, Q Tape and Q Spring in a second row on the floor): all three, in the amp's effects loop after the tone stack and before the power stage, any of them on at once. The loop is fixed in order (modulation, echo, reverb) and mono until the pedalboard (#4827) makes it a chain you arrange. What is a stand-in for now:
+**Built** (`packages/gear/src/circuit/machines.ts`, on Q Amp as Q Bucket, Q Tape and Q Spring on the pedalboard): all three, any of them on at once, after the amp's tile in its effects loop (after the tone stack, before the power stage) or in front of it, in whatever order you drag them. Q Bucket is stereo: a second chip on the right, its LFO half a turn behind, and every slot after it runs once per side (#4827). What is a stand-in for now:
 
 - The spring's transformer is a high-pass and a soft ceiling: the solver has no inductor yet (#4826). The 12AT7 driver and the 12AX7 recovery are real tube circuits (the solver gained the 12AT7, TypeScript only; the Rust port still has only the 12AX7).
 - Tape's hysteresis uses Chowdhury's constants with his plugin's reversible share (c = 0.7), which keeps quiet notes linear the way AC bias does; there is no simulated bias tone. Head loss is the spacing and gap equations folded into a low-pass that follows the tape speed.
@@ -95,7 +95,9 @@ Profiling amps record a real amp and play back a copy of it. Ours can do somethi
 
 Honest limit: a topology we don't have only gets the closest one. That gap tells us which circuit to add next.
 
-**Built so far (offline):** `src/circuit/fit.ts` and `bun scripts/profile-amp.ts <amp>`. The script scrambles one of our own amps (each part up to ×/÷ 2), then fits the parts back from a render alone. The test signal is sines at three or four levels, a log sweep and a noise burst. The score is a log spectrum at three frame sizes plus each tone's first five harmonics, level and phase. The search is separable CMA-ES at 2× oversampling, then an E24 snap and a pass that tries one step either way. From a scrambled Q Brit 3, the cathode resistors, bypass caps, power drive and last coupling cap come back exactly. A coupling cap whose corner sits under 10 Hz is marked "can't hear". The tone stack's four parts still trade off against each other at one knob setting. That, and recording a real amp, is [#4943](https://github.com/QuinnsCode/RustyBuns/issues/4943).
+**Built so far (offline):** `src/circuit/fit.ts` and `bun scripts/profile-amp.ts <amp>`. The script scrambles one of our own amps (each part up to ×/÷ 2), then fits the parts back from a render alone. The test signal is sines at three or four levels, a log sweep and a noise burst. The score is a log spectrum at three frame sizes plus each tone's first five harmonics, level and phase. The search is separable CMA-ES at 2× oversampling, then an E24 snap and a pass that tries one step either way. From a scrambled Q Brit 3, the cathode resistors, bypass caps, power drive and last coupling cap come back exactly. A coupling cap whose corner sits under 10 Hz is marked "can't hear". At one knob setting the tone stack's four parts trade off against each other, so a profile now records three takes (#4943): the amp's own tone settings, then bass up and treble down, then treble up and bass down (`TONE_SETTINGS`). The player turns the knobs between takes. The fit scores the mean over the takes, then runs a second, smaller search over the tone stack and V1's coupling cap alone, with the gain staging held. `--tone-only` checks that second search by itself.
+
+**Capture:** `bun scripts/capture-amp.ts write|record|fit <dir>`. `write` makes the probe as a WAV and the knob sheet. `record` plays it out of the interface (afplay) and records the return (ffmpeg) once per take. `fit` lines each take up against a render of the amp it tries (`src/circuit/capture.ts`: one cross-correlation, so the amp's own delay cancels and only the interface's is left), ignores the recording's level, and fits each of our amps in turn. The closest one comes out as a voicing. The input level into the amp is not fitted yet: use a reamp box at guitar level.
 
 ## 7. The board is the source
 
@@ -149,7 +151,26 @@ PCBWay lists 10 bare boards at $5 and doesn't publish a through-hole rate per jo
 - **Kit:** board, parts, drilled box and a bag of the swap parts. Most of the work is buying, packing and posting things. About $20 to $25 of board, parts and box per kit, before packing and postage.
 - **Built:** the same board, assembled and tested. This is the one that needs compliance checks (a 9 V analog pedal is low risk, but it is still electronics we sell) and a test rig at our end.
 
-**The other way round, a DSP pedal:** the TypeScript solver runs Q Drive in about 1.2 µs per sample on one M1 Pro core (17× real time at 48 kHz, 5× at the rigs' 4× oversampling). A 480 MHz Cortex-M7 audio board has about 10,000 cycles per sample at 48 kHz and 2,500 at 192 kHz. So a single pedal in Rust may fit at 1× or 2× oversampling, a tube amp likely doesn't, and a Cortex-A board has room. That is an estimate from the TS figure, not a measurement on hardware (#4938).
+**The other way round, a DSP pedal:** the TypeScript solver runs Q Drive in about 1.2 µs per sample on one M1 Pro core (17× real time at 48 kHz, 5× at the rigs' 4× oversampling). A 480 MHz Cortex-M7 audio board has about 10,000 cycles per sample at 48 kHz and 2,500 at 192 kHz. So a single pedal in Rust may fit at 1× or 2× oversampling, a tube amp likely doesn't, and a Cortex-A board has room. That was an estimate from the TS figure. The Rust solver, timed, is in the next part (#4938).
+
+### A pedal on a DSP chip, timed (#4938)
+
+**On a Cortex-M7: no, not as the solver is now, even at 1×. On a Cortex-A board: yes, one pedal, even at 4×.** `bun scripts/pedal-bench.ts` runs each pedal's netlist in TypeScript and in native Rust (`native/crates/fm_daw/examples/pedal_bench.rs`, release build), knob at 10 and the riff at 0.5 V, and counts the Newton iterations per sample. On the builder (M1 Max, about 3.2 GHz):
+
+| Pedal | Unknowns, ports | TS ns / sample | Rust ns / sample | Newton iterations (mean, most) | Host cycles / sample |
+|---|---|---|---|---|---|
+| Q Drive | 9, 4 | 1,190 | 800 | 4.6, 18 | about 2,600 |
+| Q Dist | 10, 4 | 1,260 | 850 | 4.9, 18 | about 2,700 |
+| Q Germ | 11, 4 | 1,220 | 810 | 4.3, 18 | about 2,600 |
+| Q Fuzz | 10, 6 | 2,430 | 1,690 | 4.7, 20 | about 5,400 |
+
+Those are at 48 kHz; at 96 and 192 kHz the cost per sample stays within 10% (oversampling doesn't cut the iterations much, about 4.2 to 4.9 at every rate). The M7's budget is 10,000 cycles per sample at 48 kHz, 5,000 at 96 kHz and 2,500 at 192 kHz.
+
+- **Rust is only 1.5× the TypeScript.** Bun's JIT does well on this flat f64 loop; the cost is in the algorithm, not the language. Most of it is the Newton loop: for each iteration it builds the ports' Jacobian as a dense `ports³` product, though most entries are zero.
+- **Why the M7 misses:** the same f64 code on a 480 MHz M7 runs at about one instruction per cycle against the M1's four or more, its f64 unit is slower than its f32 one, and `exp` (every diode, every iteration) is in software. That is 3 to 6 times the M1's cycles: 8,000 to 15,000 for Q Drive at 48 kHz on average, and real time is set by the hard samples (18 iterations, about 4 times the mean). A board run would only confirm it, so we didn't build for `thumbv7em-none-eabihf` (the crate needs `std` today, and a board is the owner's to buy).
+- **A Cortex-A board fits:** a Pi-class Cortex-A72 at 1.5 GHz is about a third of an M1 core, so Q Drive at 4× (192 kHz) takes about 2.5 µs of its 5.2 µs, with room for one pedal but not a tube amp behind it.
+- **Not in Rust yet:** Q Phase, Q Vibe, Q Wah, Q Envelope and Q Octave (a rail-less op-amp), Q Trem and Q Squeeze (`VarR`). In TypeScript they cost 170 ns (Q Trem) to 2,430 ns (Q Octave) per sample.
+- **To fit an M7** (#5109): a sparse Jacobian, a cap on iterations per sample, an f32 build, then `no_std` and a cycle count on a board.
 
 **Owner decisions, listed, not answered:**
 

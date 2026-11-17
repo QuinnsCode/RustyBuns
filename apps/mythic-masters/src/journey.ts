@@ -1,7 +1,8 @@
 // The journey: the creature-collecting game around the fights. The Book holds five starters and you take three; each
 // playable region is twelve sections on a trail to its mythic (the Jersey Devil at Leeds Point first), wild cryptids
 // roam each section, and the ones you bind go into your line-up or, past that, the Eldritch Journal. The line-up holds
-// three to start and gains a slot for every region's mythic you beat, up to six.
+// three to start and gains a slot for every region's mythic you beat, up to five; the Book holds nine in all, and past
+// that you release one to bind another (src/released.ts says what a released one does to the country it is let go in).
 // No three.js and no DOM: main.ts draws it, src/world/trail.ts lays the sections on the ground, the tests play it.
 import { clamp } from "@rustybuns/util";
 import { arr, check, int, num, obj, oneOf, opt, rec, str, type Of } from "@rustybuns/util/guard";
@@ -9,6 +10,7 @@ import { REGIONS, type Region } from "./regions.ts";
 import { ARCHETYPES, creature, ROSTER, type Creature } from "./roster.ts";
 import { HAND } from "./sections.ts";
 import { Factions } from "./factions/model.ts";
+import { Released } from "./released.ts";
 import LANDING from "../content/landing.json";
 
 /** The five commons the Book caught long ago and offers you; you take three. Ember beats grove, tide beats ember, grove beats tide; the
@@ -19,8 +21,12 @@ export const PICKS = 3;
 /** What the Book says over each one the first time (content/landing.json, `bun run cms`); after that, `bookSays`. */
 const BOOK_SAYS: Record<(typeof STARTERS)[number], string> = LANDING.starters;
 
-/** The line-up: three to start, a slot more for each region's mythic beaten, six at most. */
-export const PARTY_FIRST = 3, PARTY_MAX = 6;
+/** The line-up: three to start, a slot more for each region's mythic beaten, five at most (#3031). */
+export const PARTY_FIRST = 3, PARTY_MAX = 5;
+/** Every cryptid you own, line-up and Compendium together: bind past it and you release one first (#3031). */
+export const OWN_MAX = 9;
+/** The line-up a save from before the cap could hold; `loadJourney` moves the extra into the Compendium. */
+const PARTY_OLD = 6;
 export const SECTIONS = 12; // the last is the region's mythic, at its arena
 
 export interface Section {
@@ -164,7 +170,7 @@ export function bindChance(hpFrac: number, mythic: boolean): number {
 export const Journey = obj({
   v: int(1, 1),
   starter: str(64),
-  party: arr(Member, PARTY_MAX, { min: 1 }),
+  party: arr(Member, PARTY_OLD, { min: 1 }),
   journal: arr(Member, 500, { drop: true }),
   seen: arr(str(64), 500, { drop: true }),
   /** Region number -> sections cleared (0 to SECTIONS). */
@@ -195,6 +201,8 @@ export const Journey = obj({
   /** The believers at each region's first campfire (src/believers.ts), by group id: how many of their region's
    * sections you had cleared when you last sat with them. Missing until you meet them. */
   believers: opt(rec(int(0, SECTIONS), 64)),
+  /** The cryptids you let go, where and at what level: the wild ones there answer to them (src/released.ts). */
+  released: opt(arr(Released, 200, { drop: true })),
 });
 export type Journey = Of<typeof Journey>;
 
@@ -231,6 +239,8 @@ export function loadJourney(text: string | null): Journey | null {
   try { j = check(Journey, JSON.parse(text)); } catch { return null; }
   // the five used to come from someone else's sheet: they were always the Book's
   for (const m of j ? [...j.party, ...j.journal] : []) if (m.caught?.where === OLD_PAGE) m.caught.where = BOOK_PAGE;
+  // the line-up shrank to five (#3031): the ones past it rest in the Compendium (a save over nine keeps them all, but binds nothing more)
+  if (j && j.party.length > PARTY_MAX) j.journal.unshift(...j.party.splice(PARTY_MAX));
   return j;
 }
 
@@ -238,12 +248,16 @@ export const cleared = (j: Journey, n: number) => j.cleared[n] ?? 0;
 /** How many the line-up holds now: a slot for every region whose mythic you've beaten (its trail all cleared). */
 export const slots = (j: Journey) => Math.min(PARTY_MAX, PARTY_FIRST + Object.values(j.cleared).filter((k) => k >= SECTIONS).length);
 export const owns = (j: Journey, id: string) => [...j.party, ...j.journal].some((m) => m.id === id);
+/** How many more the Book has room for before you must release one. */
+export const roomLeft = (j: Journey) => Math.max(0, OWN_MAX - j.party.length - j.journal.length);
 export function see(j: Journey, id: string) { if (!j.seen.includes(id)) j.seen.push(id); }
 
-/** A bound creature joins the line-up, or the journal when the line-up is full. Where it went. `where` is the place
- * the ink held (a section and its region), written into its ledger with the time. */
-export function bind(j: Journey, id: string, level: number, where = "", at = Date.now()): "party" | "journal" {
+/** A bound creature joins the line-up, or the journal when the line-up is full. Where it went: "full" when the Book
+ * already holds OWN_MAX, and nothing is added. `where` is the place the ink held (a section and its region), written
+ * into its ledger with the time. */
+export function bind(j: Journey, id: string, level: number, where = "", at = Date.now()): "party" | "journal" | "full" {
   see(j, id);
+  if (!roomLeft(j)) return "full";
   const m: Member = { id, level, xp: 0, caught: { at, where, level } };
   if (j.party.length < slots(j)) { j.party.push(m); return "party"; }
   j.journal.push(m);
@@ -251,8 +265,10 @@ export function bind(j: Journey, id: string, level: number, where = "", at = Dat
 }
 
 /** What a result note says after a bind: where the creature went. `name` is written as given (escape it for a page). */
-export const boundLine = (name: string, level: number, went: "party" | "journal") =>
-  went === "party" ? `${name} (level ${level}) joined your line-up.` : `Your line-up is full, so ${name} (level ${level}) went into the Compendium.`;
+export const boundLine = (name: string, level: number, went: "party" | "journal" | "full") =>
+  went === "party" ? `${name} (level ${level}) joined your line-up.`
+  : went === "journal" ? `Your line-up is full, so ${name} (level ${level}) went into the Compendium.`
+  : `The Book already holds ${OWN_MAX}, so the ink would not take ${name}. Release one to make room.`;
 
 /** Section k of region n cleared (in order: an earlier one can't be skipped). Writes its page. */
 export function clearSection(j: Journey, n: number, k: number) {
@@ -275,6 +291,15 @@ export function rest(j: Journey, i: number): boolean {
   delete m!.hp; // a rest in the journal heals
   j.journal.push(m!);
   return true;
+}
+/** Lets line-up slot i (`from` "party") or Compendium entry i ("journal") go, for good, in region `n`: the line-up
+ * keeps at least one. The wild ones there answer to it (src/released.ts). What was released, or null. */
+export function release(j: Journey, from: "party" | "journal", i: number, n: number, at = Date.now()): Member | null {
+  const list = from === "party" ? j.party : j.journal;
+  if (!list[i] || (from === "party" && j.party.length <= 1)) return null;
+  const [m] = list.splice(i, 1);
+  (j.released ??= []).push({ id: m!.id, level: m!.level, n, at });
+  return m!;
 }
 /** Calls journal entry e into the line-up: into a free slot, or swapped with slot `into` when it's full. */
 export function call(j: Journey, e: number, into = slots(j) - 1): boolean {

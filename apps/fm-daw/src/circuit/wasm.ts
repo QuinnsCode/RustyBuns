@@ -1,7 +1,7 @@
 // The circuit amp in Rust (native/crates/fm_daw/src/circuit.rs), compiled into
 // the same wasm as the engine, behind the same knobs as `Rig` in rig.ts.
 import type { Exports } from "../engine/wasm.ts";
-import { DEFAULT_POWER, cabIR, encodeNetlist, type Fault, type Mic, type Netlist, type RigSpec } from "@rustybuns/gear/circuit";
+import { DEFAULT_POWER, cabIR, encodeNetlist, type Fault, type Mic, type Netlist, type RigSpec, type Trem } from "@rustybuns/gear/circuit";
 
 const CHUNK = 512;
 
@@ -12,12 +12,12 @@ export class WasmRig {
   private readonly links: number;
 
   constructor(private readonly x: Exports, spec: RigSpec, readonly sampleRate = 48000, readonly oversample = 4) {
-    if ((spec.output?.trem?.depth ?? 0) > 0) throw new Error("the Rust power stage has no bias tremolo yet");
     if (spec.blends?.length) throw new Error("the Rust rig runs its links one after another: no splits yet");
     this.h = x.fm_amp_new(sampleRate, oversample, spec.inputVolts, spec.power, spec.noise ?? 0);
     if (!this.h) throw new Error("rust amp rejected the sample rate or oversampling");
     const o = spec.output ?? DEFAULT_POWER;
     x.fm_amp_set_output(this.h, o.pairs, o.sag, o.load);
+    this.setTrem(o.trem);
     if (spec.cab) this.setCab(cabIR(spec.cab, sampleRate));
     for (const l of spec.links) {
       if (this.send(l.net, (p, n) => x.fm_amp_push(this.h, p, n, l.gain ?? 1)) < 0) {
@@ -44,6 +44,7 @@ export class WasmRig {
   setPower(p: number): void { this.x.fm_amp_set_power(this.h, p); }
   setNoise(n: number): void { this.x.fm_amp_set_noise(this.h, n); }
   setLoad(ohms: number): void { this.x.fm_amp_set_load(this.h, ohms); }
+  setTrem(t?: Trem): void { this.x.fm_amp_set_trem(this.h, t?.hz ?? 0, t?.depth ?? 0); }
   /** The impulse response is made here (cab.ts) and handed over; Rust only convolves. */
   setMic(mic: Mic): void { this.setCab(cabIR(mic, this.sampleRate)); }
   setCab(ir: Float64Array): void { this.send(ir, (p, n) => { this.x.fm_amp_set_cab(this.h, p, n); return 0; }); }

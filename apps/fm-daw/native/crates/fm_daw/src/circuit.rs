@@ -484,6 +484,9 @@ impl Circuit {
     }
 
     /// Turns pot `i` (in netlist order) to `at`, 0 to 1 (mna.ts `setPot`): it glides there over about 10 ms.
+    /// How big the solve is: the unknowns (nodes and branch currents), and the nonlinear ports Newton iterates over.
+    pub fn shape(&self) -> (usize, usize) { (self.size, self.k) }
+
     pub fn set_pot(&mut self, i: usize, at: f64) {
         if let Some(p) = self.pots.get_mut(i) { p.to = at.clamp(0.0, 1.0); }
     }
@@ -687,6 +690,7 @@ const ZAA: f64 = 4300.0;
 const TAP: f64 = 8.0;
 const FLYBACK_AMPS: f64 = 0.1;
 const GRID: f64 = 0.9;
+const TREM_VOLTS: f64 = 8.0;
 
 #[inline]
 fn softplus_exact(x: f64) -> f64 { if x > 30.0 { x } else { x.exp().ln_1p() } }
@@ -700,6 +704,8 @@ fn plate(g: f64) -> f64 {
 pub struct PushPull {
     pairs: f64, sag: f64, load: f64, draw: f64, idle: f64,
     attack: f64, release: f64, hp_x: f64, hp_y: f64, lp: f64, hp_a: f64, lp_a: f64,
+    /// The bias tremolo: its rate (Hz), depth (0 to 1), and the LFO's phase (radians).
+    trem_hz: f64, trem_depth: f64, phase: f64, sample_rate: f64,
     pub supply: f64,
     /// 0 fine, 1 played through an open speaker jack.
     pub fault: u32,
@@ -713,16 +719,25 @@ impl PushPull {
             attack: 1.0 - (-1.0 / (0.015 * sample_rate)).exp(), release: 1.0 - (-1.0 / (0.12 * sample_rate)).exp(),
             hp_x: 0.0, hp_y: 0.0, lp: 0.0,
             hp_a: (-2.0 * PI * 35.0 / sample_rate).exp(), lp_a: (-2.0 * PI * 9000.0 / sample_rate).exp(),
+            trem_hz: 0.0, trem_depth: 0.0, phase: 0.0, sample_rate,
             supply: B_PLUS, fault: 0,
         }
     }
     pub fn set_load(&mut self, ohms: f64) { self.load = ohms; }
+    /// The bias tremolo's rate and depth; depth 0 holds the bias still. The LFO keeps its phase.
+    pub fn set_trem(&mut self, hz: f64, depth: f64) { self.trem_hz = hz.max(0.0); self.trem_depth = depth.clamp(0.0, 1.0); }
 
     #[inline]
     pub fn step(&mut self, x: f64, drive: f64) -> f64 {
         if self.fault != 0 { return 0.0; }
         let d = x * drive * GRID;
-        let (a, b) = (plate(BIAS + d), plate(BIAS - d));
+        let mut bias = BIAS;
+        if self.trem_depth > 0.0 {
+            bias -= self.trem_depth * TREM_VOLTS * (0.5 - 0.5 * self.phase.cos());
+            self.phase += (2.0 * PI * self.trem_hz) / self.sample_rate;
+            if self.phase > 2.0 * PI { self.phase -= 2.0 * PI; }
+        }
+        let (a, b) = (plate(bias + d), plate(bias - d));
         let n = self.pairs;
         let now = (a + b) * n;
         self.draw += (now - self.draw) * (if now > self.draw { self.attack } else { self.release });
@@ -829,6 +844,7 @@ impl Rig {
         self.amp = PushPull::new(pairs, sag, load, self.sample_rate * self.oversample as f64);
     }
     pub fn set_load(&mut self, ohms: f64) { self.amp.set_load(ohms); }
+    pub fn set_trem(&mut self, hz: f64, depth: f64) { self.amp.set_trem(hz, depth); }
     /// The cabinet's impulse response at the rig's sample rate; empty for no cab.
     pub fn set_cab(&mut self, ir: &[f64]) {
         match (&mut self.cab, ir.is_empty()) {

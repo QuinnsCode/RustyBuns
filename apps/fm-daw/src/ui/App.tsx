@@ -21,6 +21,7 @@ import { Keys } from "./Keys.tsx";
 import { Meter } from "./Meter.tsx";
 import { Bench } from "./Bench.tsx";
 import { Shape } from "./Shape.tsx";
+import { AmpPanel } from "./AmpPanel.tsx";
 import { Perform, STUTTERS } from "./Perform.tsx";
 import { loadSound } from "../sounds.ts";
 import { TakeInbox, encodeTake, newTakeId, toChunks } from "../take.ts";
@@ -78,6 +79,7 @@ function opMsg(op: Op, next: Project): ToWorklet {
     // falls through: the master
     case "eqAuto": return { t: "eq", bands: next.eq, lanes: next.eqAuto ?? [] };
     case "eqPhase": return { t: "eqPhase", linear: !!next.eqLinear };
+    case "amp": return { t: "amp", track: op.track, amp: next.tracks[op.track].amp ?? null };
     case "global":
       if (op.bpm === undefined && op.swing === undefined && op.bars === undefined) {
         if (op.space !== undefined && op.squash === undefined) return { t: "space", amount: next.space };
@@ -110,7 +112,7 @@ export function App() {
   const [held, setHeld] = useState<Set<number>>(() => new Set());
   const [midiDevices, setMidiDevices] = useState<string[]>([]);
   const [netStatus, setNetStatus] = useState<NetStatus>({ state: "connecting", peers: 0 });
-  const [view, setView] = useState<"pattern" | "shape" | "engines">("pattern");
+  const [view, setView] = useState<"pattern" | "shape" | "amp" | "engines">("pattern");
   /** Which Shape the tab shows: the master's (null) or a track's own insert. */
   const [shapeOn, setShapeOn] = useState<number | null>(null);
   const [page, setPage] = useState(0);
@@ -120,6 +122,9 @@ export function App() {
   /** The track the input records onto while recording, or null with the input off. */
   const [armed, setArmed] = useState<number | null>(null);
   const [inputNote, setInputNote] = useState<string | null>(null);
+  /** The input heard through the armed track's amp; off whenever the input comes on. */
+  const [monitor, setMonitor] = useState(false);
+  const ampMisses = useTick((t) => t.ampMisses);
   const transportOn = useTick((t) => t.playing || t.countIn > 0);
   const counting = useTick((t) => (t.countIn > 0 ? Math.ceil(t.countIn) : 0));
 
@@ -280,6 +285,7 @@ export function App() {
       for (const tr of input.current.stream.getTracks()) tr.stop();
       input.current = null;
       setArmed(null);
+      setMonitor(false);
       a.send({ t: "arm", track: -1, inLatency: 0 });
       return;
     }
@@ -291,6 +297,7 @@ export function App() {
       input.current = { stream, node };
       const track = live.current.selected;
       a.send({ t: "arm", track, inLatency: inLatency(a) });
+      setMonitor(false);
       setArmed(track);
     } catch (e) { setInputNote(`No input: ${(e as Error).message}`); }
   }
@@ -299,6 +306,7 @@ export function App() {
     const a = audioRef.current;
     if (armed === null || armed === selected || !a) return;
     setArmed(selected);
+    setMonitor(false);
     a.send({ t: "arm", track: selected, inLatency: inLatency(a) });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selected]);
@@ -694,6 +702,7 @@ export function App() {
             <div className="seg tabs">
               <button className={view === "pattern" ? "on" : ""} onClick={() => setView("pattern")}>Pattern</button>
               <button className={view === "shape" ? "on" : ""} onClick={() => setView("shape")} title="Shape: an EQ on the master or on any one track (cuts, shelves, bells, notch)">Shape</button>
+              <button className={view === "amp" ? "on" : ""} onClick={() => setView("amp")} title="Amp: play this track's take, or your guitar live, through a Q Amp head">Amp</button>
               <button className={view === "engines" ? "on" : ""} onClick={() => setView("engines")}>Engine race</button>
             </div>
             <label className="field inline"><span className="silk">Grid</span>
@@ -719,6 +728,12 @@ export function App() {
 
           {view === "engines" ? (
             <Bench project={project} wasm={fetchWasm} />
+          ) : view === "amp" ? (
+            <AmpPanel name={t.name} amp={t.amp} onChange={(amp, group) => commit({ t: "amp", track: selected, amp }, group ? { group } : {})}
+              armed={armed === selected} monitor={monitor && armed === selected}
+              onMonitor={(on) => { setMonitor(on); audio?.send({ t: "monitor", on }); }}
+              roundTripMs={audio && armed !== null ? (inLatency(audio) + (audio.ctx.outputLatency || 0)) * 1000 : null}
+              misses={ampMisses} />
           ) : view === "shape" ? (() => {
             // the master's Shape listens and automates; a track's is a plain insert for now
             const head = (

@@ -296,7 +296,7 @@ export function captureSheet(c: Creature, level: number, o: CaptureOpts): string
   const pick = o.vs.length > 1 ? `<p class="vs">Compare with ${o.vs.map((r, i) => `<button class="chip" data-vs="${i}" aria-pressed="${i === o.at}">${esc(r.name)}</button>`).join("")}</p>` : "";
   const room = o.went === "party"
     ? `It is in your line-up: ${o.used} of ${o.slots} places used.`
-    : `Your line-up is full (${o.slots} of ${o.slots}), so it is in the Compendium. Press Tab to swap it in.`;
+    : `Your line-up is full (${o.slots} of ${o.slots}), so it is in the Compendium. Call it up at a lit campfire.`;
   const grow = o.slots < o.max ? ` Beat a region boss for one more place (${o.max} at most).` : "";
   return `<p class="leaf-head" aria-hidden="true">New capture<span>level ${level}</span></p>
     <h2>${esc(c.name)}</h2><p class="kinds">${kinds}</p>${carry}<p class="room">${icon("users")}<span>${room}${grow}</span></p>

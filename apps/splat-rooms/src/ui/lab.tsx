@@ -41,6 +41,8 @@ export function Crest({ size = 64 }: { size?: number }) {
 
 /** The constructivist trim: a red wedge driven across cream hatching, with a stencilled serial. Edges and alerts wear it. ~0.6 KB. */
 export function Band({ label }: { label?: string }) {
+  // The red tab runs as long as its label (about 7 px a letter at the phone's 9 px), so the words never spill onto the hatch.
+  const w = Math.max(178, 22 + (label?.length ?? 0) * 7);
   return (
     <svg className="band" height="14" aria-hidden>
       <defs>
@@ -49,8 +51,8 @@ export function Band({ label }: { label?: string }) {
         </pattern>
       </defs>
       <rect width="100%" height="14" fill="url(#band-hatch)" opacity=".5" />
-      <path d="M0 0H178L164 14H0Z" className="band-red" />
-      <path d="M186 0H200L186 14H172Z" className="band-red" />
+      <path d={`M0 0H${w}L${w - 14} 14H0Z`} className="band-red" />
+      <path d={`M${w + 8} 0H${w + 22}L${w + 8} 14H${w - 6}Z`} className="band-red" />
       {label && <text x="10" y="10.2" className="band-text">{label}</text>}
     </svg>
   );
