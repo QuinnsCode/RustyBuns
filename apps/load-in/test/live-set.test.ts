@@ -16,7 +16,7 @@ function room() {
   const join = (name: string): Page => {
     const id = `guest-${name.toLowerCase()}`;
     crew.join(id, name);
-    const p: Page = { id, w: newWorld(DJ_BOOTH), s: synced(), booth: { decks: newDecks(), want: false, room: false, dj: null, note: "" } };
+    const p: Page = { id, w: newWorld(DJ_BOOTH), s: synced(), booth: { decks: newDecks(), want: false, room: false, dj: null, note: "", mood: 50, heardMood: null } };
     pages.push(p);
     return p;
   };
@@ -69,9 +69,13 @@ test("one DJ plays and the whole crew is in step: a second DJ is refused, a late
   expect(bea.booth.decks.deck[0]!.pitch).toBe(4);
   expect(apartMs(ada, bea)).toBeLessThan(50);
 
-  // Cy walks in half a minute into the track and is in time from the first view.
+  // Cy walks in half a minute into the track and is in time from the first view, with the room's mood, not a fresh one.
+  ada.booth.mood = 83;
+  setCross(ada.booth.decks, -0.2);
+  pump();
   const cy = join("Cy");
   pump();
+  expect(cy.booth.heardMood).toBe(83);
   expect(cy.booth.decks.deck[0]!.playing).toBe(true);
   expect(apartMs(ada, cy)).toBeLessThan(50);
 
