@@ -149,7 +149,26 @@ PCBWay lists 10 bare boards at $5 and doesn't publish a through-hole rate per jo
 - **Kit:** board, parts, drilled box and a bag of the swap parts. Most of the work is buying, packing and posting things. About $20 to $25 of board, parts and box per kit, before packing and postage.
 - **Built:** the same board, assembled and tested. This is the one that needs compliance checks (a 9 V analog pedal is low risk, but it is still electronics we sell) and a test rig at our end.
 
-**The other way round, a DSP pedal:** the TypeScript solver runs Q Drive in about 1.2 µs per sample on one M1 Pro core (17× real time at 48 kHz, 5× at the rigs' 4× oversampling). A 480 MHz Cortex-M7 audio board has about 10,000 cycles per sample at 48 kHz and 2,500 at 192 kHz. So a single pedal in Rust may fit at 1× or 2× oversampling, a tube amp likely doesn't, and a Cortex-A board has room. That is an estimate from the TS figure, not a measurement on hardware (#4938).
+**The other way round, a DSP pedal:** the TypeScript solver runs Q Drive in about 1.2 µs per sample on one M1 Pro core (17× real time at 48 kHz, 5× at the rigs' 4× oversampling). A 480 MHz Cortex-M7 audio board has about 10,000 cycles per sample at 48 kHz and 2,500 at 192 kHz. So a single pedal in Rust may fit at 1× or 2× oversampling, a tube amp likely doesn't, and a Cortex-A board has room. That was an estimate from the TS figure. The Rust solver, timed, is in the next part (#4938).
+
+### A pedal on a DSP chip, timed (#4938)
+
+**On a Cortex-M7: no, not as the solver is now, even at 1×. On a Cortex-A board: yes, one pedal, even at 4×.** `bun scripts/pedal-bench.ts` runs each pedal's netlist in TypeScript and in native Rust (`native/crates/fm_daw/examples/pedal_bench.rs`, release build), knob at 10 and the riff at 0.5 V, and counts the Newton iterations per sample. On the builder (M1 Max, about 3.2 GHz):
+
+| Pedal | Unknowns, ports | TS ns / sample | Rust ns / sample | Newton iterations (mean, most) | Host cycles / sample |
+|---|---|---|---|---|---|
+| Q Drive | 9, 4 | 1,190 | 800 | 4.6, 18 | about 2,600 |
+| Q Dist | 10, 4 | 1,260 | 850 | 4.9, 18 | about 2,700 |
+| Q Germ | 11, 4 | 1,220 | 810 | 4.3, 18 | about 2,600 |
+| Q Fuzz | 10, 6 | 2,430 | 1,690 | 4.7, 20 | about 5,400 |
+
+Those are at 48 kHz; at 96 and 192 kHz the cost per sample stays within 10% (oversampling doesn't cut the iterations much, about 4.2 to 4.9 at every rate). The M7's budget is 10,000 cycles per sample at 48 kHz, 5,000 at 96 kHz and 2,500 at 192 kHz.
+
+- **Rust is only 1.5× the TypeScript.** Bun's JIT does well on this flat f64 loop; the cost is in the algorithm, not the language. Most of it is the Newton loop: for each iteration it builds the ports' Jacobian as a dense `ports³` product, though most entries are zero.
+- **Why the M7 misses:** the same f64 code on a 480 MHz M7 runs at about one instruction per cycle against the M1's four or more, its f64 unit is slower than its f32 one, and `exp` (every diode, every iteration) is in software. That is 3 to 6 times the M1's cycles: 8,000 to 15,000 for Q Drive at 48 kHz on average, and real time is set by the hard samples (18 iterations, about 4 times the mean). A board run would only confirm it, so we didn't build for `thumbv7em-none-eabihf` (the crate needs `std` today, and a board is the owner's to buy).
+- **A Cortex-A board fits:** a Pi-class Cortex-A72 at 1.5 GHz is about a third of an M1 core, so Q Drive at 4× (192 kHz) takes about 2.5 µs of its 5.2 µs, with room for one pedal but not a tube amp behind it.
+- **Not in Rust yet:** Q Phase, Q Vibe, Q Wah, Q Envelope and Q Octave (a rail-less op-amp), Q Trem and Q Squeeze (`VarR`). In TypeScript they cost 170 ns (Q Trem) to 2,430 ns (Q Octave) per sample.
+- **To fit an M7** (#5109): a sparse Jacobian, a cap on iterations per sample, an f32 build, then `no_std` and a cycle count on a board.
 
 **Owner decisions, listed, not answered:**
 
