@@ -1,5 +1,5 @@
 // Load In's gear, grown in code: speakers, a sub, a wedge, stands, guitar amps, a rolling amp rack, cases, a cable
-// ramp, a generator, a distro box, a mixer, a mic stand, a guitar, a DI box, a hung line array box, a front fill, a sand cart and a jerry can. Generic boxes named for what they are, at
+// ramp, a generator, a distro box, a mixer, a mic stand, a guitar, a DI box, a hung line array box, a front fill, a sand cart, a jerry can, and a DJ booth's media player deck, direct-drive turntable and four-channel mixer. Generic boxes named for what they are, at
 // the real sizes of #4849's table (width x height x depth = x, y, z, in metres), feet on the floor at y = 0,
 // centred on x and z, the front facing +z. Each app brings its own materials (`GearLook`, one per slot).
 //
@@ -10,6 +10,13 @@
 //   pole-cup    the socket under a top, +z down
 //   link-a/b    a cable ramp's ends, +z out along the run, so ramps link end to end
 //   hinge-top/bottom  a hung line array box's front pins, +z along the pin (+x): a hang chains box to box at these
+//
+// What moves is a child group `part:<name>` (`gearParts`), its origin the pivot, a mesh per slot of its own. Its
+// built rotation carries any slope it sits on, so an app turns it by `rotation.y` only, or moves it by its position:
+//   turntable   platter (spins about +y), tonearm (swings about +y; userData.arm: rest, outer, inner groove angles)
+//   deck-media  jog (spins about +y), ring (the jog's light ring), screen (a quad with 0..1 UVs for a canvas, up is away from you)
+//   mixer-dj    meter-1..4 (the lit bar at full height along +y, front to back on the face: scale.y 0..1), fader-1..4 (caps at mid travel,
+//               slide along z: +z toward you is down; userData.faderTravel), cross (slides along x; userData.crossTravel)
 //
 // Geometry is built once per id (and stand height) and shared by every copy; each call makes new meshes only.
 import * as THREE from "three";
@@ -44,6 +51,11 @@ export const GEAR_SIZES = {
   "bar-cooler": [0.9, 0.9, 0.6],
   guitar: [0.33, 1.0, 0.05],
   "di-box": [0.1, 0.05, 0.13],
+  "mic-condenser": [0.05, 0.19, 0.05],
+  "wedge-12-passive": [0.6, 0.35, 0.42],
+  "deck-media": [0.329, 0.118, 0.453],
+  turntable: [0.453, 0.169, 0.353],
+  "mixer-dj": [0.333, 0.108, 0.414],
 } as const satisfies Record<string, THREE.Vector3Tuple>;
 
 export const GEAR_IDS = Object.keys(GEAR_SIZES) as GearId[];
@@ -64,7 +76,13 @@ export function gearLook(): GearLook {
 }
 
 type Mark = { name: string; at: THREE.Vector3Tuple; out: THREE.Vector3Tuple };
-type Build = { pieces: Piece[]; marks: Mark[] };
+/** A moving part: its pivot `at`, turned by `rot` (radians about x), its pieces in its own frame; `ownUv` keeps the
+ * pieces' UVs (a screen's 0..1) instead of laying metre UVs on. */
+type Part = { name: string; at: THREE.Vector3Tuple; rot?: number; pieces: Piece[]; ownUv?: boolean };
+/** What a model with moving parts says about them, on its group's userData: the tonearm's turns about its bearing
+ * (radians: at the rest, the outer groove, the inner groove) and the mixer's fader and crossfader throws, metres. */
+export type GearData = { arm?: { rest: number; outer: number; inner: number }; faderTravel?: number; crossTravel?: number };
+type Build = { pieces: Piece[]; marks: Mark[]; parts?: Part[]; data?: GearData };
 
 // ---- pieces ---------------------------------------------------------------------------------------------------
 
@@ -332,8 +350,8 @@ function sub(): Build {
 
 /** A floor monitor: a wedge whose long sloped face (the grille) looks up at the player, the woofer and the horn side
  * by side behind it, caps on its corners, a handle set into the back and the jack plate beside it. */
-function wedge(): Build {
-  const [w, h, d] = GEAR_SIZES["wedge-12"], b: Build = { pieces: [], marks: [] };
+function wedge(id: "wedge-12" | "wedge-12-passive" = "wedge-12"): Build {
+  const [w, h, d] = GEAR_SIZES[id], b: Build = { pieces: [], marks: [] };
   const lo = 0.08, backTop = -d / 2 + 0.07;
   b.pieces.push(prism("paint", [[-d / 2, 0.012], [d / 2, 0.012], [d / 2, lo], [backTop, h], [-d / 2, h]], w - 0.004, 0, 0.008));
   // the slope's own frame: x across, y up the slope from the front edge, z out of it
@@ -349,7 +367,8 @@ function wedge(): Build {
   }
   b.pieces.push(...pocket([0, h * 0.62, -d / 2], [0, 0, -1], 0.14, 0.05));
   plate(b, w * 0.3, h * 0.2, [w * 0.28, h * 0.25, -d / 2 - 0.004]);
-  jacks(b, ["power-in", "xlr-in", "xlr-out"], "back", [w * 0.2, h * 0.25, -d / 2 - 0.008], [w * 0.08, 0, 0]);
+  // powered: mains and a signal in and thru; passive: two speaker jacks, in and the link on
+  jacks(b, id === "wedge-12" ? ["power-in", "xlr-in", "xlr-out"] : ["speaker-in", "speaker-out"], "back", [w * 0.2, h * 0.25, -d / 2 - 0.008], [w * 0.08, 0, 0]);
   mark(b, "grab", [0, h * 0.62, -d / 2 - 0.02], [0, 0, -1]);
   return b;
 }
@@ -557,6 +576,18 @@ function micStand(): Build {
   return b;
 }
 
+/** A condenser vocal mic standing on its tail: a body tube, a ring, a ball of mesh on top, the XLR in its tail. */
+function micCondenser(): Build {
+  const [w, h] = GEAR_SIZES["mic-condenser"], b: Build = { pieces: [], marks: [] }, r = w / 2;
+  b.pieces.push(disc("metal", r * 0.62, h * 0.55, "y", [0, h * 0.275, 0], 16), disc("chrome", r * 0.72, 0.008, "y", [0, h * 0.56, 0], 16));
+  b.pieces.push(disc("grille", r, h * 0.36, "y", [0, h * 0.78, 0], 18), disc("chrome", r * 1.0, 0.006, "y", [0, h * 0.6, 0], 18));
+  b.pieces.push(disc("light", 0.002, 0.003, "z", [0, h * 0.45, r * 0.62], 6));
+  // the XLR in the tail, a plug comes up into it from below
+  b.marks.push({ name: "jack:xlr-out", at: [0, -0.008, 0], out: [0, -1, 0] });
+  mark(b, "grab", [0, h * 0.35, 0], [1, 0, 0]);
+  return b;
+}
+
 /** An electric guitar standing on its end: a double-bout body, a neck and a headstock. The front faces +z. */
 function guitar(): Build {
   const [w, h, d] = GEAR_SIZES.guitar, b: Build = { pieces: [], marks: [] }, lower = w / 2, mid = d / 2;
@@ -623,11 +654,192 @@ function lineArray(): Build {
   return b;
 }
 
+// ---- the DJ booth ---------------------------------------------------------------------------------------------
+
+/** Pieces built flat (y up) moved onto a sloped face: `m` places them. */
+const onto = (m: THREE.Matrix4, pieces: Piece[]) => pieces.map((p) => (p.geo.applyMatrix4(m), p));
+
+/** A direct-drive turntable: a heavy brushed plinth on damped feet, the platter (strobe dots round its rim, a slip mat
+ * and a record on it) to the left, an S-shaped tonearm on its gimbal at the right rear with the counterweight behind
+ * and the headshell in front, the pitch fader at the right front, start/stop and 33/45 at the left front. */
+function turntable(): Build {
+  const [w, , d] = GEAR_SIZES.turntable, b: Build = { pieces: [], marks: [], parts: [] }, foot = 0.03, top = 0.108;
+  b.pieces.push(rounded("rubber", { wf: w - 0.004, h: 0.012, d: d - 0.004, r: 0.012, e: 0.004, y0: foot - 0.002, detail: 1 }));
+  b.pieces.push(rounded("metal", { wf: w, h: top - foot - 0.01, d, r: 0.01, e: 0.004, y0: foot + 0.008, detail: 1 }));
+  for (const x of [-1, 1]) for (const z of [-1, 1]) {
+    const at: THREE.Vector3Tuple = [x * (w / 2 - 0.045), 0, z * (d / 2 - 0.045)];
+    b.pieces.push(loft("rubber", [R(0, 0.034), R(0.012, 0.036), R(0.022, 0.03), R(foot, 0.028)], { seg: 14, m: new THREE.Matrix4().makeTranslation(...at) }));
+  }
+  const cx = -0.055, cz = 0, platR = 0.166;
+  // the platter's well and the strobe light that lights its dots
+  b.pieces.push(disc("knob", platR + 0.004, 0.002, "y", [cx, top + 0.001, cz], 40));
+  b.pieces.push(disc("knob", 0.013, 0.02, "y", [cx - 0.135, top + 0.01, cz + 0.135], 10), disc("light", 0.009, 0.003, "z", [cx - 0.128, top + 0.012, cz + 0.142], 8));
+  // start/stop (a long flat key), 33 and 45, the power knob in the corner
+  b.pieces.push(box("knob", [0.052, 0.006, 0.03], [-w / 2 + 0.05, top + 0.003, d / 2 - 0.03], { bevel: 0.002 }));
+  for (const i of [0, 1]) b.pieces.push(box("knob", [0.02, 0.005, 0.014], [-w / 2 + 0.1 + i * 0.026, top + 0.0025, d / 2 - 0.025], { bevel: 0.0015 }));
+  b.pieces.push(disc("chrome", 0.012, 0.012, "y", [-w / 2 + 0.03, top + 0.006, d / 2 - 0.07], 12));
+  // the pitch fader: a slot, a scale and a cap, and the pop-up target light at the platter's edge
+  const px = w / 2 - 0.035;
+  b.pieces.push(box("knob", [0.006, 0.002, 0.11], [px, top + 0.001, d / 2 - 0.09]));
+  for (let i = 0; i < 9; i++) b.pieces.push(box("chrome", [0.008, 0.0012, 0.0012], [px - 0.012, top + 0.0006, d / 2 - 0.035 - i * 0.0137]));
+  b.pieces.push(box("knob", [0.024, 0.012, 0.016], [px, top + 0.006, d / 2 - 0.09], { bevel: 0.003 }));
+  b.pieces.push(disc("chrome", 0.006, 0.02, "y", [px - 0.02, top + 0.01, d / 2 - 0.02], 8), disc("light", 0.004, 0.004, "y", [px - 0.02, top + 0.021, d / 2 - 0.02], 6));
+
+  // the platter part: its rim with four rows of strobe dots, the slip mat, a record and its label, the spindle
+  const pl: Piece[] = [];
+  pl.push(disc("metal", platR, 0.02, "y", [0, 0.012, 0], 48));
+  for (let row = 0; row < 3; row++) for (let i = 0; i < 36; i++) {
+    const a = (i / 36) * Math.PI * 2 + (row % 2) * 0.044;
+    pl.push(box("chrome", [0.0032, 0.0028, 0.002], [Math.sin(a) * (platR + 0.0006), 0.0055 + row * 0.0045, Math.cos(a) * (platR + 0.0006)], { rot: [0, a, 0] }));
+  }
+  pl.push(disc("rubber", 0.152, 0.003, "y", [0, 0.0235, 0], 40));
+  pl.push(disc("knob", 0.1524, 0.0018, "y", [0, 0.026, 0], 48));
+  pl.push(disc("lid", 0.05, 0.0004, "y", [0, 0.0271, 0], 28), box("paint", [0.03, 0.0005, 0.008], [0.018, 0.0274, 0]));
+  pl.push(disc("chrome", 0.0036, 0.014, "y", [0, 0.032, 0], 8));
+  b.parts!.push({ name: "platter", at: [cx, top, cz], pieces: pl });
+
+  // the tonearm: its base and gimbal in the plinth, the arm a part that swings about the bearing
+  const ax = 0.16, az = -0.07, armY = 0.045, L = 0.235;
+  b.pieces.push(disc("metal", 0.034, 0.012, "y", [ax, top + 0.006, az], 24), disc("knob", 0.03, 0.004, "y", [ax, top + 0.014, az], 24));
+  // the arm rest and its clip, off the record to the right, where the arm lies at rest
+  b.pieces.push(rod("chrome", [ax, top, az + 0.17], [ax, top + armY - 0.005, az + 0.17], 0.004, 6), box("knob", [0.012, 0.006, 0.012], [ax, top + armY - 0.004, az + 0.17]));
+  // anti-skate and height dials beside the base
+  b.pieces.push(disc("chrome", 0.011, 0.012, "y", [ax + 0.042, top + 0.006, az - 0.02], 12), disc("knob", 0.016, 0.008, "y", [ax - 0.02, top + 0.004, az - 0.05], 12));
+  const arm: Piece[] = [];
+  arm.push(disc("chrome", 0.016, 0.03, "y", [0, armY - 0.016, 0], 12), disc("metal", 0.011, 0.024, "x", [0, armY, 0], 10));
+  // the S: a tube from the bearing, bowing right then left, to the headshell's collar
+  const S: THREE.Vector3Tuple[] = [[0, armY, -0.012], [0, armY, 0.04], [0.008, armY, 0.09], [0.004, armY, 0.13], [-0.014, armY, 0.175], [-0.022, armY - 0.002, 0.2]];
+  for (let i = 0; i + 1 < S.length; i++) arm.push(rod("chrome", S[i]!, S[i + 1]!, 0.004, 8));
+  // the headshell: a collar, a tapered shell turned in, a finger lift, and the cartridge with its stylus at (0, ., L)
+  arm.push(disc("chrome", 0.0055, 0.012, "z", [-0.022, armY - 0.002, 0.205], 8));
+  arm.push(box("metal", [0.018, 0.003, 0.034], [-0.013, armY - 0.003, 0.224], { rot: [0, -0.35, 0], bevel: 0.001 }));
+  arm.push(rod("chrome", [-0.003, armY - 0.002, 0.222], [0.014, armY + 0.002, 0.226], 0.0012, 4));
+  arm.push(box("knob", [0.014, 0.014, 0.022], [-0.004, armY - 0.011, L - 0.006], { rot: [0, -0.35, 0], bevel: 0.0015 }), box("light", [0.004, 0.003, 0.004], [0, armY - 0.019, L], {}));
+  // behind the bearing: the stub and the counterweight
+  arm.push(rod("chrome", [0, armY, -0.012], [0, armY, -0.08], 0.0045, 8));
+  arm.push(loft("metal", [R(-0.035, 0.019), R(-0.03, 0.021), R(0.0, 0.021), R(0.005, 0.017)], { seg: 20, m: along("z", [0, armY, -0.072]) }));
+  b.parts!.push({ name: "tonearm", at: [ax, top, az], pieces: arm });
+  // Where the stylus lands, as the arm's turn about the bearing: at angle a it sits at (ax + L sin a, az + L cos a).
+  const groove = (r: number) => {
+    let lo = -1.2, hi = 0;
+    for (let i = 0; i < 40; i++) { const m = (lo + hi) / 2, dist = Math.hypot(ax + L * Math.sin(m) - cx, az + L * Math.cos(m) - cz); if (dist > r) hi = m; else lo = m; }
+    return (lo + hi) / 2;
+  };
+  b.data = { arm: { rest: 0, outer: groove(0.146), inner: groove(0.06) } };
+
+  const back = -d / 2;
+  b.pieces.push(box("panel", [0.13, 0.04, 0.004], [w / 2 - 0.1, 0.07, back - 0.001]));
+  jacks(b, ["rca-out", "ground-out", "power-in"], "back", [w / 2 - 0.145, 0.07, back - 0.003], [0.04, 0, 0], 0.008);
+  mark(b, "grab", [-w / 2 - 0.01, 0.07, 0], [-1, 0, 0]);
+  return b;
+}
+
+/** A club media player deck: a sloped black top on a grey chassis, the colour screen near the back in a bezel with
+ * browse keys round it, the big jog wheel in the middle with its light ring, play and cue at the bottom left, the
+ * tempo fader up the right side. */
+function deckMedia(): Build {
+  const [w, h, d] = GEAR_SIZES["deck-media"], b: Build = { pieces: [], marks: [], parts: [] }, hf = 0.075;
+  const slope = Math.atan2(h - hf, d), yAt = (z: number) => hf + (d / 2 - z) * Math.tan(slope);
+  // the chassis, and the face plate on it in a darker finish
+  b.pieces.push(prism("panel", [[d / 2, 0.008], [d / 2, hf - 0.004], [-d / 2, h - 0.004], [-d / 2, 0.008]], w, 0, 0.004));
+  b.pieces.push(prism("paint", [[d / 2 + 0.0015, hf - 0.012], [d / 2 + 0.0015, hf + 0.0005], [-d / 2 + 0.008, h + 0.0005], [-d / 2 + 0.008, h - 0.006]], w - 0.006, 0, 0.002));
+  for (const x of [-1, 1]) for (const z of [-1, 1]) b.pieces.push(disc("rubber", 0.014, 0.008, "y", [x * (w / 2 - 0.03), 0.004, z * (d / 2 - 0.04)], 10));
+  /** A frame on the top face at (x, z): flat pieces built there with y up land on the slope. */
+  const at = (x: number, z: number) => new THREE.Matrix4().makeTranslation(x, yAt(z), z).multiply(new THREE.Matrix4().makeRotationX(slope));
+  const top = (x: number, z: number, pieces: Piece[]) => b.pieces.push(...onto(at(x, z), pieces));
+  // the jog: a recessed collar in the face; the platter and its ring are parts
+  const jz = 0.045;
+  top(0, jz, [disc("metal", 0.122, 0.003, "y", [0, 0.001, 0], 48), disc("knob", 0.11, 0.004, "y", [0, 0.0015, 0], 48)]);
+  const jog: Piece[] = [disc("metal", 0.1, 0.012, "y", [0, 0.01, 0], 48), disc("knob", 0.084, 0.003, "y", [0, 0.0172, 0], 40), disc("panel", 0.034, 0.002, "y", [0, 0.0192, 0], 24)];
+  for (let i = 0; i < 36; i++) { const a = (i / 36) * Math.PI * 2; jog.push(box("chrome", [0.0024, 0.0012, 0.008], [Math.sin(a) * 0.092, 0.0162, Math.cos(a) * 0.092], { rot: [0, a, 0] })); }
+  jog.push(box("light", [0.003, 0.0006, 0.022], [0, 0.0204, 0.012]));
+  b.parts!.push({ name: "jog", at: [0, yAt(jz), jz], rot: slope, pieces: jog });
+  b.parts!.push({ name: "ring", at: [0, yAt(jz), jz], rot: slope, pieces: [loft("light", [R(0.002, 0.107), R(0.009, 0.107), R(0.009, 0.1015), R(0.002, 0.1015)], { seg: 48, closed: true, caps: false })] });
+  // the screen in its bezel, browse knob and keys round it
+  const sz = -0.142, sw = 0.15, sh = 0.086;
+  top(0, sz, [box("knob", [sw + 0.016, 0.004, sh + 0.016], [0, 0.001, 0], { bevel: 0.0015 })]);
+  const quad = new THREE.PlaneGeometry(sw, sh).rotateX(-Math.PI / 2).translate(0, 0.0034, 0).toNonIndexed();
+  b.parts!.push({ name: "screen", at: [0, yAt(sz), sz], rot: slope, ownUv: true, pieces: [{ geo: quad, slot: "light" }] });
+  top(w / 2 - 0.035, sz + 0.02, [disc("knob", 0.013, 0.014, "y", [0, 0.007, 0], 16), disc("chrome", 0.0135, 0.002, "y", [0, 0.0005, 0], 16)]);
+  for (let i = 0; i < 4; i++) top(-w / 2 + 0.03, sz - 0.03 + i * 0.022, [box("knob", [0.022, 0.004, 0.012], [0, 0.002, 0], { bevel: 0.001 })]);
+  for (let i = 0; i < 5; i++) top(-0.06 + i * 0.03, sz + sh / 2 + 0.024, [box("knob", [0.022, 0.004, 0.01], [0, 0.002, 0], { bevel: 0.001 })]);
+  // play and cue at the bottom left, big round keys with lit rims; hot cues across the top of the jog
+  for (const [i, zz] of [[0, d / 2 - 0.03], [1, d / 2 - 0.075]] as const) top(-w / 2 + 0.035, zz, [disc("light", 0.0185, 0.003, "y", [0, 0.0015, 0], 20), disc("knob", 0.016, 0.006, "y", [0, 0.004, 0], 20), ...(i === 0 ? [box("chrome", [0.006, 0.0008, 0.006], [0, 0.0072, 0])] : [])]);
+  for (let i = 0; i < 4; i++) top(-0.07 + i * 0.047, jz - 0.135, [box("knob", [0.034, 0.004, 0.014], [0, 0.002, 0], { bevel: 0.0012 }), box("light", [0.028, 0.0008, 0.002], [0, 0.0042, 0.006])]);
+  // the tempo fader up the right side: a slot, its scale, the cap
+  const tz = 0.07;
+  top(w / 2 - 0.032, tz, [box("knob", [0.006, 0.002, 0.13], [0, 0.0008, 0])]);
+  for (let i = 0; i < 11; i++) top(w / 2 - 0.018, tz - 0.06 + i * 0.012, [box("chrome", [0.007, 0.0008, 0.0012], [0, 0.0004, 0])]);
+  top(w / 2 - 0.032, tz, [box("knob", [0.026, 0.012, 0.016], [0, 0.006, 0], { bevel: 0.003 }), box("chrome", [0.02, 0.0008, 0.002], [0, 0.0122, 0])]);
+  // the badge on the front lip: ours, a plain bar
+  b.pieces.push(box("chrome", [0.07, 0.008, 0.002], [0, hf - 0.03, d / 2 + 0.001], { bevel: 0.001 }));
+  // the slot for a stick and a disc on the front
+  b.pieces.push(box("knob", [0.13, 0.006, 0.003], [0.04, hf - 0.05, d / 2 + 0.0005]));
+  const back = -d / 2;
+  b.pieces.push(box("panel", [0.18, 0.05, 0.004], [0, 0.06, back - 0.001]));
+  jacks(b, ["rca-out", "digital-out", "power-in"], "back", [-0.06, 0.06, back - 0.003], [0.06, 0, 0], 0.009);
+  mark(b, "grab", [0, yAt(-d / 2 + 0.02), -d / 2 + 0.02]);
+  return b;
+}
+
+/** A four-channel DJ mixer: a steel box with a flat face, per channel a trim, three EQ knobs and a colour filter, a
+ * lit level meter and a long channel fader, the crossfader across the front, the master and headphone knobs down the
+ * left and the effects down the right; the inputs (phono and line per channel), the outs and the ground post behind. */
+function mixerDj(): Build {
+  const [w, h, d] = GEAR_SIZES["mixer-dj"], b: Build = { pieces: [], marks: [], parts: [] }, foot = 0.008, top = h - 0.008;
+  b.pieces.push(box("panel", [w, top - foot, d], [0, foot + (top - foot) / 2, 0], { bevel: 0.006 }));
+  b.pieces.push(box("paint", [w - 0.01, 0.0025, d - 0.01], [0, top + 0.0005, 0], { bevel: 0.001 }));
+  for (const x of [-1, 1]) for (const z of [-1, 1]) b.pieces.push(disc("rubber", 0.012, foot, "y", [x * (w / 2 - 0.03), foot / 2, z * (d / 2 - 0.035)], 6));
+  const face = top + 0.00175, CH = [-0.0825, -0.0275, 0.0275, 0.0825], fz = 0.11, travel = 0.06, mz = 0.03, mLen = 0.06;
+  const knob = (x: number, z: number, r: number, slot: GearSlot = "knob") => b.pieces.push(
+    loft(slot, [R(0, r * 1.15), R(0.003, r * 1.15), R(0.004, r), R(0.014, r * 0.92)], { seg: 8, m: new THREE.Matrix4().makeTranslation(x, face, z) }),
+    box("chrome", [0.0012, 0.0008, r * 0.8], [x, face + 0.0142, z - r * 0.45]));
+  CH.forEach((x, i) => {
+    knob(x, -0.165, 0.0085);
+    for (const z of [-0.13, -0.098, -0.066]) knob(x, z, 0.0095);
+    knob(x, -0.028, 0.011, "metal");
+    // the meter: a dark strip, the lit bar a part over it, filling from the front end back
+    b.pieces.push(box("knob", [0.008, 0.0008, mLen + 0.004], [x + 0.016, face + 0.0004, mz - mLen / 2]));
+    b.pieces.push(box("chrome", [0.03, 0.0006, 0.006], [x, face + 0.0003, mz + 0.012]));
+    b.parts!.push({ name: `meter-${i + 1}`, at: [x + 0.016, face + 0.0012, mz], rot: -Math.PI / 2, pieces: [box("light", [0.0055, mLen, 0.0008], [0, mLen / 2, 0])] });
+    // the channel fader's slot and scale, and its cap as a part at mid travel
+    b.pieces.push(box("knob", [0.004, 0.0012, travel + 0.012], [x, face + 0.0006, fz]));
+    for (let k = 0; k < 5; k++) b.pieces.push(box("chrome", [0.006, 0.0006, 0.001], [x - 0.011, face + 0.0003, fz - travel / 2 + k * (travel / 4)]));
+    b.parts!.push({ name: `fader-${i + 1}`, at: [x, face, fz], pieces: [box("knob", [0.014, 0.014, 0.02], [0, 0.007, 0], { bevel: 0.003 }), box("chrome", [0.012, 0.0008, 0.002], [0, 0.0142, 0])] });
+  });
+  // the crossfader across the front
+  const cz = d / 2 - 0.035, ct = 0.045;
+  b.pieces.push(box("knob", [ct + 0.014, 0.0012, 0.004], [0, face + 0.0006, cz]));
+  b.parts!.push({ name: "cross", at: [0, face, cz], pieces: [box("knob", [0.02, 0.014, 0.014], [0, 0.007, 0], { bevel: 0.003 }), box("chrome", [0.002, 0.0008, 0.012], [0, 0.0142, 0])] });
+  // master and headphones down the left, effects down the right, with their lit keys
+  for (let k = 0; k < 4; k++) knob(-w / 2 + 0.025, -0.16 + k * 0.05, 0.009);
+  for (let k = 0; k < 3; k++) knob(w / 2 - 0.025, -0.16 + k * 0.05, 0.009);
+  for (let k = 0; k < 3; k++) b.pieces.push(box("light", [0.014, 0.0012, 0.008], [w / 2 - 0.025, face + 0.0006, 0.0 + k * 0.03]));
+  b.pieces.push(box("chrome", [0.06, 0.001, 0.008], [0, face + 0.0005, -d / 2 + 0.012]));
+  // the front: the headphone sockets, the crossfader curve and reverse knobs, a strip of our own badge
+  const fr = d / 2 + 0.001;
+  b.pieces.push(disc("metal", 0.009, 0.004, "z", [-w / 2 + 0.04, 0.05, fr], 12), disc("knob", 0.0045, 0.005, "z", [-w / 2 + 0.04, 0.05, fr], 10));
+  b.pieces.push(disc("metal", 0.006, 0.004, "z", [-w / 2 + 0.065, 0.05, fr], 10), disc("knob", 0.003, 0.005, "z", [-w / 2 + 0.065, 0.05, fr], 8));
+  for (const x of [w / 2 - 0.07, w / 2 - 0.04]) b.pieces.push(disc("knob", 0.007, 0.01, "z", [x, 0.05, fr + 0.004], 10), box("chrome", [0.001, 0.005, 0.001], [x, 0.054, fr + 0.0095]));
+  b.pieces.push(box("chrome", [0.07, 0.007, 0.002], [0, 0.05, fr], { bevel: 0.001 }), box("knob", [w - 0.03, 0.003, 0.002], [0, 0.085, fr]));
+  const back = -d / 2;
+  jacks(b, numbered("phono-in", 4), "back", [-0.15, 0.078, back - 0.002], [0.026, 0, 0], 0.0065);
+  jacks(b, numbered("rca-in", 4), "back", [-0.15, 0.045, back - 0.002], [0.026, 0, 0], 0.0065);
+  jacks(b, numbered("xlr-out", 4), "back", [0.03, 0.06, back - 0.002], [0.03, 0, 0], 0.011);
+  // the ground post: one knurled nut, both lugs go under it
+  b.pieces.push(disc("chrome", 0.006, 0.014, "z", [-0.03, 0.078, back - 0.006], 10));
+  jacks(b, ["ground-in-1", "ground-in-2"], "back", [-0.03, 0.078, back - 0.012], [0, 0, 0], 0.004);
+  jacks(b, ["power-in"], "back", [-0.03, 0.035, back - 0.002], [0, 0, 0], 0.012);
+  b.data = { faderTravel: travel, crossTravel: ct };
+  mark(b, "grab", [0, h, 0]);
+  return b;
+}
+
 const BUILDERS: Record<GearId, (height: number) => Build> = {
   "top-12-powered": () => speaker(GEAR_SIZES["top-12-powered"], ["power-in", "xlr-in", "xlr-out"], true),
   "top-15-passive": () => speaker(GEAR_SIZES["top-15-passive"], ["speaker-in", "speaker-out"], false),
   "sub-18": sub,
-  "wedge-12": wedge,
+  "wedge-12": () => wedge(),
   "amp-head": ampHead,
   "cab-4x12": cab4x12,
   "amp-rack-4u": ampRack,
@@ -646,19 +858,27 @@ const BUILDERS: Record<GearId, (height: number) => Build> = {
   "fill-8-powered": () => speaker(GEAR_SIZES["fill-8-powered"], ["power-in", "xlr-in", "xlr-out"], true),
   guitar,
   "di-box": diBox,
+  "mic-condenser": micCondenser,
+  "wedge-12-passive": () => wedge("wedge-12-passive"),
+  "deck-media": deckMedia,
+  turntable,
+  "mixer-dj": mixerDj,
 };
 
-type Built = { slots: [GearSlot, THREE.BufferGeometry][]; marks: Mark[] };
+type Slots = [GearSlot, THREE.BufferGeometry][];
+type Built = { slots: Slots; marks: Mark[]; parts: { name: string; at: THREE.Vector3Tuple; rot: number; slots: Slots }[]; data: GearData };
+
+/** Pieces merged into a geometry per slot (metre UVs laid on unless they keep their own). */
+const merged = (pieces: Piece[], ownUv = false): Slots => SLOTS.filter((s) => pieces.some((p) => p.slot === s))
+  .map((s): [GearSlot, THREE.BufferGeometry] => [s, mergeVertices(mergeGeometries(pieces.filter((p) => p.slot === s).map((p) => (ownUv ? p.geo : metreUv(p.geo))))!)]);
 const cache = new Map<string, Built>();
 
 function built(id: GearId, height: number): Built {
   const key = id === "stand-tripod" ? `${id}@${height}` : id;
   let hit = cache.get(key);
   if (!hit) {
-    const { pieces, marks } = BUILDERS[id](height);
-    const slots = SLOTS.filter((s) => pieces.some((p) => p.slot === s))
-      .map((s): [GearSlot, THREE.BufferGeometry] => [s, mergeVertices(mergeGeometries(pieces.filter((p) => p.slot === s).map((p) => metreUv(p.geo)))!)]);
-    hit = { slots, marks };
+    const { pieces, marks, parts = [], data = {} } = BUILDERS[id](height);
+    hit = { slots: merged(pieces), marks, parts: parts.map((p) => ({ name: p.name, at: p.at, rot: p.rot ?? 0, slots: merged(p.pieces, p.ownUv) })), data };
     cache.set(key, hit);
   }
   return hit;
@@ -674,15 +894,26 @@ const Z = new THREE.Vector3(0, 0, 1);
 
 /** One piece of gear: a group named for its id, a mesh per material slot, and its jacks, grab and mounts. */
 export function gear(id: GearId, { look = gearLook(), height = 1.2 }: GearOptions = {}): THREE.Group {
-  const h = clamp(height, 1.2, 2.0), { slots, marks } = built(id, h);
+  const h = clamp(height, 1.2, 2.0), { slots, marks, parts, data } = built(id, h);
   const g = new THREE.Group();
   g.name = id;
-  g.userData = { gear: id, size: id === "stand-tripod" ? [0.9, h, 0.9] : [...GEAR_SIZES[id]] };
-  for (const [slot, geo] of slots) {
-    const mesh = new THREE.Mesh(geo, look[slot]);
-    mesh.name = `${id}-${slot}`;
-    mesh.castShadow = mesh.receiveShadow = true;
-    g.add(mesh);
+  g.userData = { gear: id, size: id === "stand-tripod" ? [0.9, h, 0.9] : [...GEAR_SIZES[id]], ...structuredClone(data) };
+  const meshes = (into: THREE.Object3D, from: Slots, stem: string) => {
+    for (const [slot, geo] of from) {
+      const mesh = new THREE.Mesh(geo, look[slot]);
+      mesh.name = `${stem}-${slot}`;
+      mesh.castShadow = mesh.receiveShadow = true;
+      into.add(mesh);
+    }
+  };
+  meshes(g, slots, id);
+  for (const p of parts) {
+    const part = new THREE.Group();
+    part.name = `part:${p.name}`;
+    part.position.set(...p.at);
+    part.rotation.x = p.rot;
+    meshes(part, p.slots, `${id}-${p.name}`);
+    g.add(part);
   }
   for (const { name, at, out } of marks) {
     const o = new THREE.Object3D();
@@ -692,6 +923,11 @@ export function gear(id: GearId, { look = gearLook(), height = 1.2 }: GearOption
     g.add(o);
   }
   return g;
+}
+
+/** A model's moving parts, by name (`platter`, `tonearm`, `jog`, `meter-2`, ...): each a group at its pivot. */
+export function gearParts(g: THREE.Object3D): Map<string, THREE.Object3D> {
+  return new Map(g.children.filter((c) => c.name.startsWith("part:")).map((c) => [c.name.slice(5), c]));
 }
 
 /** A model's jacks, by id (`power-in`, `xlr-in-3`, ...). */
