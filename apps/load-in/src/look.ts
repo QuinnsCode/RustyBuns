@@ -1,7 +1,7 @@
-// How a venue looks lit, and the player's own hands. Each room gets the lights the real one has: a garage's two
+// How a venue looks lit, and a light at your eyes. Each room gets the lights the real one has: a garage's two
 // fluorescent strips and a work light at the door, a bar's warm spots over the stage, a neon sign and the load-in work
-// light. A soft light rides with your eyes so whatever is in reach reads, and two hands hold what you carry (its sides)
-// or the cable end (a short lead from your fist down to where the rope starts). View only: the sim never reads it.
+// light. A soft light rides with your eyes so whatever is in reach reads. Your hands are
+// src/hands/. View only: the sim never reads it.
 import * as THREE from "three";
 import type { GearLook } from "@rustybuns/models/gear";
 import type { Level } from "./sim.ts";
@@ -103,77 +103,3 @@ export function eyeFill(camera: THREE.Camera) {
   return p;
 }
 
-const SKIN = 0xa8704f, SLEEVE = 0x2f3b4f;
-
-/** One hand: a sleeve, a palm and four fingers curled round an edge, pointing down -z in its own frame. */
-function hand(side: -1 | 1): THREE.Group {
-  const g = new THREE.Group(), skin = new THREE.MeshStandardMaterial({ color: SKIN, roughness: 0.7 });
-  const sleeve = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.05, 0.32, 10), new THREE.MeshStandardMaterial({ color: SLEEVE, roughness: 0.9 }));
-  sleeve.rotation.x = Math.PI / 2;
-  sleeve.position.z = 0.2;
-  const palm = new THREE.Mesh(new THREE.BoxGeometry(0.085, 0.03, 0.095), skin);
-  g.add(sleeve, palm);
-  for (let i = 0; i < 4; i++) {
-    const f = new THREE.Mesh(new THREE.BoxGeometry(0.018, 0.022, 0.06), skin);
-    f.position.set(-0.03 + i * 0.02, -0.012, -0.07);
-    f.rotation.x = -0.9;
-    g.add(f);
-  }
-  const thumb = new THREE.Mesh(new THREE.BoxGeometry(0.022, 0.022, 0.05), skin);
-  thumb.position.set(-side * 0.05, -0.01, -0.025);
-  thumb.rotation.y = side * 0.7;
-  g.add(thumb);
-  return g;
-}
-
-export type Grip =
-  | { kind: "free" }
-  | { kind: "gear"; x: number; y: number; z: number; rot: number; w: number; h: number; d: number }
-  | { kind: "cable"; at: { x: number; y: number; z: number }; color: number };
-
-/** Your two hands: at rest low in view, on the sides of what you carry, or one fist round the cable end. */
-export function handsView(scene: THREE.Scene, camera: THREE.Camera) {
-  const left = hand(-1), right = hand(1);
-  const lead = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 1, 6).translate(0, 0.5, 0), new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.6 }));
-  const plug = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.016, 0.07, 8), new THREE.MeshStandardMaterial({ color: 0x9aa0a8, metalness: 0.8, roughness: 0.3 }));
-  camera.add(left, right, plug);
-  scene.add(lead);
-  const v = new THREE.Vector3(), q = new THREE.Quaternion(), e = new THREE.Euler();
-  /** Put a hand at a point in the world, turned `yaw` there, as a child of the camera. */
-  const place = (h: THREE.Object3D, x: number, y: number, z: number, yaw: number, roll: number) => {
-    v.set(x, y, z);
-    camera.worldToLocal(v);
-    h.position.copy(v);
-    camera.getWorldQuaternion(q).invert();
-    h.quaternion.copy(q).multiply(new THREE.Quaternion().setFromEuler(e.set(0, yaw, roll)));
-  };
-  const rest = (h: THREE.Object3D, side: -1 | 1, t: number) => {
-    h.position.set(side * 0.26, -0.3 + Math.sin(t * 2 + side) * 0.004, -0.42);
-    h.rotation.set(0.35, side * -0.25, side * -0.2);
-  };
-  return {
-    update(g: Grip, t: number) {
-      camera.updateMatrixWorld();
-      lead.visible = plug.visible = g.kind === "cable";
-      if (g.kind === "gear") {
-        // Palms flat on each side near the top, fingers curled under the top edge.
-        const c = Math.cos(g.rot), s = Math.sin(g.rot), off = g.w / 2 + 0.03, y = g.y + g.h * 0.82;
-        place(left, g.x - c * off, y, g.z + s * off, g.rot, -Math.PI / 2);
-        place(right, g.x + c * off, y, g.z - s * off, g.rot, Math.PI / 2);
-        return;
-      }
-      rest(left, -1, t);
-      if (g.kind === "free") { rest(right, 1, t); return; }
-      // The cable end in your right fist, held up in view; the lead runs from it down to where the rope starts.
-      right.position.set(0.2, -0.22, -0.4);
-      right.rotation.set(0.6, -0.15, -0.3);
-      plug.position.set(0.2, -0.2, -0.48);
-      plug.rotation.set(-Math.PI / 2 + 0.6, 0, 0);
-      const from = right.getWorldPosition(new THREE.Vector3()), to = new THREE.Vector3(g.at.x, g.at.y, g.at.z), d = to.clone().sub(from);
-      lead.position.copy(from);
-      lead.scale.set(1, d.length(), 1);
-      lead.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), d.normalize());
-      (lead.material as THREE.MeshStandardMaterial).color.setHex(g.color);
-    },
-  };
-}

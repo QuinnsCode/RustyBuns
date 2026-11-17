@@ -20,6 +20,9 @@ export const DAMP = { settle: 0.1, strike: 0.001 } as const;
 const updateTree = (f: Link) => (f.updateMatrixWorld as (children?: boolean) => void).call(f, true);
 type Dof = Parameters<Joint["setDoFValue"]>[0];
 
+/** A joint's range about its x, y and z axes from the rest pose, in radians (Euler, the solver's order). */
+export type JointLimit = { min: readonly [number, number, number]; max: readonly [number, number, number] };
+
 export class IkRig {
   readonly links: Link[] = [];
   readonly joints: Joint[] = [];
@@ -31,8 +34,10 @@ export class IkRig {
   private claspGoal: { goal: Goal; a: number; b: number } | null = null;
   private solver: Solver;
 
-  /** `limit(j)` is how far joint j may turn about each axis from its rest pose, in radians (default 0.8 pi). */
-  constructor(pos: Float32Array, readonly parents: Int32Array, limit: (j: number) => number = () => LIMIT) {
+  /** `limit(j)` is how far joint j may turn about each axis from its rest pose, in radians (default 0.8 pi), or a
+   *  `JointLimit` with its own range per axis: a finger's knuckle that only curls one way, a hinge with one axis free
+   *  (an axis whose min and max are both 0 is not a degree of freedom at all). */
+  constructor(pos: Float32Array, readonly parents: Int32Array, limit: (j: number) => number | JointLimit = () => LIMIT) {
     const J = parents.length;
     const hasKids = new Array<boolean>(J).fill(false);
     for (const p of parents) if (p >= 0) hasKids[p] = true;
@@ -47,10 +52,17 @@ export class IkRig {
       } else {
         joint.setPosition(pos[j * 3] - pos[p * 3], pos[j * 3 + 1] - pos[p * 3 + 1], pos[j * 3 + 2] - pos[p * 3 + 2]);
         if (hasKids[j]) {
-          joint.setDoF(DOF.EX, DOF.EY, DOF.EZ);
           const lim = limit(j);
-          joint.setMinLimits(-lim, -lim, -lim);
-          joint.setMaxLimits(lim, lim, lim);
+          if (typeof lim === "number") {
+            joint.setDoF(DOF.EX, DOF.EY, DOF.EZ);
+            joint.setMinLimits(-lim, -lim, -lim);
+            joint.setMaxLimits(lim, lim, lim);
+          } else {
+            const axes = [0, 1, 2].filter((a) => lim.min[a] !== 0 || lim.max[a] !== 0);
+            joint.setDoF(...axes.map((a) => [DOF.EX, DOF.EY, DOF.EZ][a]));
+            joint.setMinLimits(...axes.map((a) => lim.min[a]));
+            joint.setMaxLimits(...axes.map((a) => lim.max[a]));
+          }
         } else {
           this.tips.push(j);
         }
@@ -164,6 +176,24 @@ export class IkRig {
     const s = this.solver.solve();
     updateTree(this.world);
     return s;
+  }
+
+  /** Turn joint j about one of its axes (0 x, 1 y, 2 z) to `radians` from rest, clamped to its range: a start for the
+   *  solver near the pose you want (a finger already curled). Call `update()` after the last one. */
+  setAngle(j: number, axis: 0 | 1 | 2, radians: number) {
+    const joint = this.joints[j], d = [DOF.EX, DOF.EY, DOF.EZ][axis];
+    if (!joint.dof.includes(d)) return;
+    joint.setDoFValue(d, radians);
+    joint.setMatrixDoFNeedsUpdate();
+  }
+
+  /** Bring the links' world matrices up to date after `setAngle`. */
+  update() { updateTree(this.world); }
+
+  /** Every joint inside its range, give or take `slack` radians. */
+  withinLimits(slack = 1e-4): boolean {
+    return this.joints.every((j) => (j.dof as unknown as Dof[]).every((d) =>
+      Number(j.getDoFValue(d)) >= Number(j.getMinLimit(d)) - slack && Number(j.getDoFValue(d)) <= Number(j.getMaxLimit(d)) + slack));
   }
 
   /** Back to the rest pose, goals and all. */

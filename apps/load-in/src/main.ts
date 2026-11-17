@@ -35,7 +35,9 @@ import { mountStrike, truckMesh } from "./strike-view.ts";
 import { type Tour, bookedRung, buy, record } from "./tour.ts";
 import { loadTour, mountTour, saveTour } from "./tour-view.ts";
 import { accountChip, canSignIn, finishSignIn, login, party, type PartyMember } from "./eqosys.ts";
-import { eyeFill, handsView, readable, venueLights, type Grip } from "./look.ts";
+import { eyeFill, readable, venueLights } from "./look.ts";
+import { CABLE_RADIUS, REST } from "./hands/grip.ts";
+import { handsView, type Hold } from "./hands/view.ts";
 import { dress, faceLook, type Dressed } from "./faces.ts";
 import { nextStep } from "./next.ts";
 import { COLOR } from "./cables/draw.ts";
@@ -95,6 +97,8 @@ scene.add(camera);
 scene.add(new THREE.HemisphereLight(0xc8d4e6, 0x2a2420, 0.85));
 eyeFill(camera);
 const hands = handsView(scene, camera);
+// Solve the grips the game uses while the menu is up, one a tick, so the first grab doesn't hitch.
+[REST, { kind: "flat" } as const, ...Object.values(CABLE_RADIUS).map((radius) => ({ kind: "cable", radius }) as const)].forEach((w, i) => setTimeout(() => hands.warm([w]), 200 + i * 60));
 let lights = venueLights(world.level);
 scene.add(lights);
 // The marker over what the Next line is about: a small cone pointing down, bobbing.
@@ -228,9 +232,7 @@ function draw() {
   glow.update(cable.glowing(world, cables), world.t);
   clock?.update(world.level.name, world.t, strikeState(world, cables)?.since ?? null);
   loadOut?.update(world, cables);
-  const grip: Grip = held && hp ? { kind: "gear", ...hp, ...whd(dims(held)) }
-    : end ? { kind: "cable", at: cable.handAt(world), color: COLOR[end.run.kind] ?? 0x222222 } : { kind: "free" };
-  hands.update(grip, world.t);
+  hands.update(holding(), world.t, stepSpeed());
   const next = phase === "play" ? nextStep(world, cables, switchedOn) : null, tgt = next?.key ? world.items.find((i) => i.key === next.key) : null;
   marker.visible = !!tgt;
   if (tgt) marker.position.set(tgt.x, tgt.y + dims(tgt)[1] + 0.25 + Math.sin(performance.now() / 260) * 0.05, tgt.z);
@@ -246,6 +248,26 @@ function draw() {
 }
 
 const whd = ([w, h, d]: [number, number, number]) => ({ w, h, d });
+
+/** Weight a metre of each cable, kg: what hangs off your fist from hand height to the floor. */
+const CABLE_KG_M: Record<string, number> = { power: 0.15, speaker: 0.21, xlr: 0.06, instrument: 0.06 };
+/** What your hands are doing: palms flat on a carried box's sides, a fist round a cable end, or nothing. */
+function holding(): Hold {
+  const held = heldItem(world), hp = holdPose(world), end = cable.inHand(cables);
+  if (held && hp) return { right: { kind: "flat" }, left: { kind: "flat" }, kg: gear(held.gear).kg / (world.held?.team ? 2 : 1), carry: { ...hp, ...whd(dims(held)) } };
+  if (end) {
+    const at = cable.handAt(world), kind = end.run.kind;
+    return { right: { kind: "cable", radius: CABLE_RADIUS[kind] }, left: REST, kg: (CABLE_KG_M[kind] ?? 0.1) * at.y, lead: { at: [at.x, at.y, at.z], color: COLOR[kind] ?? 0x222222 } };
+  }
+  return { right: REST, left: REST, kg: 0 };
+}
+/** How fast you're actually moving (m/s), for the bob of your steps. */
+let lastStep = { x: 0, z: 0, t: -1, v: 0 };
+function stepSpeed(): number {
+  const { x, z } = world.you, dt = world.t - lastStep.t;
+  if (dt > 0) lastStep = { x, z, t: world.t, v: lastStep.t < 0 || dt > 0.5 ? 0 : lastStep.v * 0.8 + (Math.hypot(x - lastStep.x, z - lastStep.z) / dt) * 0.2 };
+  return lastStep.v;
+}
 
 /** What F (or a click) would do now. */
 function hint(at: ReturnType<typeof aimed>, jack: ReturnType<typeof cable.aimedJack>): string {
@@ -452,7 +474,7 @@ async function boot() {
 declare global { interface Window { loadIn: typeof harness } }
 /** The harness (scripts/probe.ts HANDLES): the level as data, and the moves a test or an agent makes without pointer lock. */
 const harness = {
-  state: () => ({ phase, tour: { cash: tour.cash, truck: tour.truck, booked: tour.booked, nights: tour.nights.length, settled }, next: nextStep(world, cables, switchedOn), dial: currentDial(), doors: doors(world.level.name, world.t), ...snapshot(world), ...cable.cableState(world, cables), sound: { up: sound.up, on: [...switchedOn], ...heard() }, ...(big ? { biggerBar: big.state() } : {}), ...(ar ? { arena: { ...arenaState(world), heat: ar.heatOn } } : {}), ...(arena ? { smallArena: { ...arenaSim.arenaState(world), heat: arena.heatOn } } : {}), ...(foh ? { show: foh.state() } : {}), strike: strikeState(world, cables), ...(bar ? { bar: { ...(world.level === PARK ? parkState(world, cables) : world.level === DESERT ? desertState(world, cables) : barState(world)), heat: bar.heatOn, ...("band" in bar ? { band: bar.band } : {}) } } : {}), signedIn: !!login(), party: crew.code ? { code: crew.code, members: crew.members.length, room: crew.room || null, seat: crew.seat >= 0 ? crew.seat : null } : null, crewRoom: online ? { room: online.room, status: online.status, note: online.note } : null }),
+  state: () => ({ phase, tour: { cash: tour.cash, truck: tour.truck, booked: tour.booked, nights: tour.nights.length, settled }, next: nextStep(world, cables, switchedOn), dial: currentDial(), doors: doors(world.level.name, world.t), ...snapshot(world), ...cable.cableState(world, cables), sound: { up: sound.up, on: [...switchedOn], ...heard() }, ...(big ? { biggerBar: big.state() } : {}), ...(ar ? { arena: { ...arenaState(world), heat: ar.heatOn } } : {}), ...(arena ? { smallArena: { ...arenaSim.arenaState(world), heat: arena.heatOn } } : {}), ...(foh ? { show: foh.state() } : {}), strike: strikeState(world, cables), hands: hands.state(), ...(bar ? { bar: { ...(world.level === PARK ? parkState(world, cables) : world.level === DESERT ? desertState(world, cables) : barState(world)), heat: bar.heatOn, ...("band" in bar ? { band: bar.band } : {}) } } : {}), signedIn: !!login(), party: crew.code ? { code: crew.code, members: crew.members.length, room: crew.room || null, seat: crew.seat >= 0 ? crew.seat : null } : null, crewRoom: online ? { room: online.room, status: online.status, note: online.note } : null }),
   /** Join a crew room by code (what the party's Start does), on this level. */
   crew: (room: string) => crewRoom(room.toUpperCase()),
   /** Turn the cozy-to-sim dial: "cozy", "crew" or "sim". */
