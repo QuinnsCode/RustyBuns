@@ -8,7 +8,7 @@ import { TAKE_RATE, TakeInbox, toChunks } from "../src/take.ts";
 import { decodeServer } from "../src/project.ts";
 import { demoProject } from "../src/presets.ts";
 import { LIVE_ROOM } from "../src/studio/rooms/live.ts";
-import { BOOM, body, cameraPose, gone, hear, keyNote, nearSpot, newJam, sit, snapshot, stand, walkTo } from "../src/studio/jam.ts";
+import { BOOM, body, cameraPose, gone, hear, keyNote, nearSpot, newJam, sit, snapshot, stand, toggleCam, walkTo } from "../src/studio/jam.ts";
 import { randomAvatar, type Avatar } from "@rustybuns/util/avatar";
 import { mulberry32 } from "@rustybuns/util";
 import { remotePlayer, studioTools } from "../src/studio/agent.ts";
@@ -470,6 +470,14 @@ test("jam room: one walks up to the keys, sits and plays; the other sees them se
   expect(nearSpot(amy)?.id).toBe("keys");
   expect(sit(amy, "keys")).toEqual({ ok: true });
   expect(amy.me.cam).toBe("first");
+  // V, seated: the camera goes up beside her shoulder, not behind her head, and looks down at her hands on the keys
+  toggleCam(amy);
+  const over = cameraPose(amy), hands = [keys.at[0], 0.9, keys.at[1] - 0.5];
+  expect(Math.abs(over.at[0] - keys.at[0])).toBeGreaterThan(0.5);
+  const toHands = Math.atan2(hands[1] - over.at[1], Math.hypot(hands[0] - over.at[0], hands[2] - over.at[2]));
+  expect(Math.abs(over.pitch - toHands)).toBeLessThan(0.25);
+  expect(Math.abs(Math.atan2(-(hands[0] - over.at[0]), -(hands[2] - over.at[2])) - over.yaw)).toBeLessThan(0.3);
+  toggleCam(amy);
   live(a, body(amy));
   const note = keyNote(amy, groove, "KeyA")!;
   expect(groove.tracks[note.track].name).toBe("Keys");

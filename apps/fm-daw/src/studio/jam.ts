@@ -12,6 +12,9 @@ export const WALK = 2.2;           // metres a second
 export const RADIUS = 0.3;         // your body, for walls and furniture
 export const SIT_REACH = 1.4;      // how close to a seat you have to be to sit
 export const EYE_STAND = 1.65, EYE_SIT = 1.2;
+/** Where a seat's view starts: looking a little down at the instrument, and further down at the kit's drums round your knees. */
+export const SIT_PITCH = -0.25, KIT_PITCH = -0.5;
+const sitPitch = (s: Spot | null) => (s?.kind === "drums" ? KIT_PITCH : SIT_PITCH);
 /** How often your body goes on the live line, a second (others see you walk at this rate). */
 export const BODY_HZ = 10;
 
@@ -86,7 +89,7 @@ export function sit(j: Jam, id: string): Answer {
   if (who === "me") return { ok: true };
   if (who !== null) return { ok: false, why: `${j.others.get(who)?.name || "Someone"} is at ${s.label}` };
   if (Math.hypot(s.at[0] - j.me.x, s.at[1] - j.me.z) > SIT_REACH) return { ok: false, why: `Walk up to ${s.label} first` };
-  Object.assign(j.me, { x: s.at[0], z: s.at[1], yaw: s.yaw, pitch: -0.25, seat: id, cam: "first" });
+  Object.assign(j.me, { x: s.at[0], z: s.at[1], yaw: s.yaw, pitch: sitPitch(s), seat: id, cam: "first" });
   return { ok: true };
 }
 
@@ -105,7 +108,6 @@ export function stand(j: Jam) {
 /** V: over the shoulder or first person, standing or sitting. */
 export function toggleCam(j: Jam) { j.me.cam = j.me.cam === "first" ? "shoulder" : "first"; }
 
-/** Where the camera is and where it looks: your eyes in first person, behind your right shoulder otherwise. */
 /** Is (x, z) somewhere a camera can't be: outside the room, or inside a wall (glass too, or you'd see the room from the next one)? */
 function walled(def: StudioDef, x: number, z: number, pad = 0.15): boolean {
   if (Math.abs(x) > def.size.w / 2 - pad || Math.abs(z) > def.size.d / 2 - pad) return true;
@@ -117,6 +119,8 @@ function walled(def: StudioDef, x: number, z: number, pad = 0.15): boolean {
 
 /** The full over-the-shoulder boom, metres behind you. */
 export const BOOM = 2.1;
+/** Seated over the shoulder: the camera up beside your right shoulder (metres back, out to the side, above your eyes), looking down past it at a point this far in front of the seat. */
+export const SEAT_CAM = { back: 0.45, side: 0.75, up: 0.9, reach: 0.8, at: 0.7 };
 
 /**
  * Where the camera is. Over the shoulder, its boom shortens to stay in front of a wall behind you (a camera pinned
@@ -127,6 +131,18 @@ export function cameraPose(j: Jam): { at: [number, number, number]; yaw: number;
   const m = j.me, eye = m.seat ? EYE_SIT : EYE_STAND;
   if (m.cam === "first") return { at: [m.x, eye, m.z], yaw: m.yaw, pitch: m.pitch, boom: 0 };
   const fx = -Math.sin(m.yaw), fz = -Math.cos(m.yaw), side = 0.45 / BOOM;
+  if (m.seat) {
+    // seated: beside you, not behind your head, so your hands and the instrument are in view; it comes in toward you
+    // until it's clear of a wall
+    const c = SEAT_CAM;
+    for (let i = 10; i >= 3; i--) {
+      const k = i / 10, x = m.x - fx * c.back * k - fz * c.side * k, z = m.z - fz * c.back * k + fx * c.side * k;
+      if (i > 3 && walled(j.def, x, z)) continue;
+      const y = eye + c.up, tx = m.x + fx * c.reach, tz = m.z + fz * c.reach, dx = tx - x, dz = tz - z;
+      const pitch = clamp(Math.atan2(c.at - y, Math.hypot(dx, dz)) + m.pitch - sitPitch(spotOf(j, m.seat)), -1.4, 1.2);
+      return { at: [x, y, z], yaw: Math.atan2(-dx, -dz), pitch, boom: BOOM * k };
+    }
+  }
   // back along the boom from your head, a few centimetres at a time, until a wall is next
   let boom = 0;
   for (let b = 0.05; b <= BOOM + 1e-9; b += 0.05) {

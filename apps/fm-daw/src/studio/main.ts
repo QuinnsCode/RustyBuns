@@ -128,9 +128,12 @@ function thing(s: Spot): THREE.Group {
   const put = (o: THREE.Object3D, x: number, y: number, z: number) => { o.position.set(x, y, z); inFront.add(o); return o; };
   if (s.kind === "drums") {
     const shell = std(t.color, { roughness: 0.4 }), head = std("#ece6d8");
-    put(new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.28, 0.4, 20), shell), 0, 0.3, 0.1).rotation.x = Math.PI / 2;
-    for (const [x, y, r] of [[-0.45, 0.55, 0.17], [0.45, 0.6, 0.15], [-0.15, 0.72, 0.12], [0.18, 0.72, 0.12]]) put(new THREE.Mesh(new THREE.CylinderGeometry(r, r, 0.16, 18), head), x, y, 0.15);
-    for (const x of [-0.75, 0.75]) put(new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.22, 0.01, 20), std("#d8b04a", { metalness: 0.7, roughness: 0.3 })), x, 1.0, -0.1);
+    // laid out from the stool (+z here): the kick out past the drummer's feet, the snare over their left knee, the
+    // floor tom by their right, two toms over the kick and the cymbals up either side, every head tipped toward them
+    put(new THREE.Mesh(new THREE.CylinderGeometry(0.26, 0.26, 0.4, 20), shell), 0, 0.27, -0.2).rotation.x = Math.PI / 2;
+    for (const [x, y, z, r, tip] of [[-0.3, 0.62, 0.3, 0.17, 0.12], [0.5, 0.5, 0.25, 0.2, 0], [-0.17, 0.82, -0.05, 0.12, 0.35], [0.17, 0.82, -0.05, 0.12, 0.35]])
+      put(new THREE.Mesh(new THREE.CylinderGeometry(r, r, 0.16, 18), head), x, y, z).rotation.x = tip;
+    for (const [x, z] of [[-0.62, 0.05], [0.68, -0.15]]) put(new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.22, 0.01, 20), std("#d8b04a", { metalness: 0.7, roughness: 0.3 })), x, 1.08, z).rotation.x = 0.2;
   } else if (s.kind === "keys") {
     put(new THREE.Mesh(new THREE.BoxGeometry(t.w, 0.12, t.d), m), 0, t.h - 0.06, 0);
     // white keys with a gap between each, the black ones raised and set back, as a seated player sees them
