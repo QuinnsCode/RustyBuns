@@ -29,6 +29,7 @@ test("sending a worker home ends what runs in its worktree, subfolders too, and 
   const [dev, vite, theirs] = [leave(mine), leave(path.join(mine, "apps/x")), leave(other)];
   expect(await endIn(mine)).toBe(2);
   expect([alive(dev), alive(vite), alive(theirs)]).toEqual([false, false, true]);
+  process.kill(theirs, "SIGKILL"); // else it is a deskless orphan for the reaper below
 });
 
 test("the reaper ends orphans of gone and deskless worktrees, keeps a seated worker's, and says when swap is over 80%", async () => {
