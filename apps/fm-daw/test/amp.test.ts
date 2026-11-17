@@ -4,8 +4,8 @@ import { expect, setDefaultTimeout, test } from "bun:test";
 import { AMPS } from "../src/circuit/amps.ts";
 import { riff } from "../src/circuit/riff.ts";
 import { cutPoints, planCuts } from "@rustybuns/gear/circuit";
-import { FULL_SCALE, applySettings, limit, rigSpec, type Live } from "../src/amp/live.ts";
-import type { AmpSettings, ToPart } from "../src/amp/messages.ts";
+import { FULL_SCALE, applySettings, chainLoads, limit, rigSpec, type Live } from "../src/amp/live.ts";
+import type { AmpSettings, ChainSlot, ToPart } from "../src/amp/messages.ts";
 import { Head, Ring } from "../src/amp/ring.ts";
 import { partsFor } from "../src/amp/threads.ts";
 
@@ -170,4 +170,79 @@ test("a board over one thread's budget, split across workers: the one-thread sou
   }
   expect(partsFor(0.5)).toBe(1);
   expect(partsFor(1.28)).toBe(3);
+});
+
+test("the pedalboard: pedals stacked, reordered and moved into the loop while the riff plays; stereo after Q Bucket; a load per slot", () => {
+  const dry = riff(SR), quiet = new Float32Array(BLOCK);
+  const base: AmpSettings = { amp: "brit", pedal: null, drive: 0, knobs: { ...AMPS[0].knobs, noise: 0 }, bypass: false, oversample: 4, swaps: {}, mic: { at: 0.3, angle: 0 } };
+  const tape = { machine: { kind: "tape", time: 3, repeats: 5, mix: 5, heads: [1, 3] } } satisfies ChainSlot;
+  const bucket: ChainSlot = { machine: { kind: "bbd", mode: "chorus", rate: 4, depth: 8 }, stereo: true };
+  const drive = { pedal: "drive", drive: 3 } satisfies ChainSlot, fuzz: ChainSlot = { pedal: "fuzz", drive: 7 }, amp: ChainSlot = { amp: true };
+  let live: Live | null = null;
+  const L = new Float32Array(BLOCK), R = new Float32Array(BLOCK);
+  let at = 0, peak = 0;
+  const play = (blocks: number, src: "riff" | "quiet" = "riff") => {
+    let ss = 0, side = 0;
+    for (let b = 0; b < blocks; b++, at = (at + BLOCK) % (dry.length - BLOCK)) {
+      live?.rig.process(src === "riff" ? dry.subarray(at, at + BLOCK) : quiet, L, BLOCK, R);
+      for (let i = 0; i < BLOCK; i++) {
+        const l = limit(L[i] / FULL_SCALE), r = limit(R[i] / FULL_SCALE);
+        peak = Math.max(peak, Math.abs(l), Math.abs(r));
+        ss += l * l; side += (l - r) ** 2;
+      }
+    }
+    return { rms: Math.sqrt(ss / (blocks * BLOCK)), side: Math.sqrt(side / (blocks * BLOCK)) };
+  };
+  const lay = (chain: ChainSlot[]): Live => (live = applySettings({ ...base, chain }, live, SR));
+  const shares = (blocks: number) => (live ? chainLoads(live.rig.loads(), live.where ?? { at: [], amp: -1 }, (blocks * BLOCK * 1000) / SR) : []);
+
+  // The amp alone on a board sounds just as it does without one: its power stage runs inside its oversampling.
+  const one = applySettings(base, null, SR).rig, alone = applySettings({ ...base, chain: [amp] }, null, SR).rig;
+  const a = new Float32Array(2400), b = new Float32Array(2400);
+  one.process(dry.subarray(0, 2400), a);
+  alone.process(dry.subarray(0, 2400), b);
+  expect(Array.from(b)).toEqual(Array.from(a));
+
+  // Q Drive into Q Fuzz into the amp, Q Tape in its loop: mono, every slot timed.
+  const first = lay([drive, fuzz, amp, tape]);
+  expect(play(200).side).toBe(0);
+  expect(first.rig.misses).toBe(0);
+  const loads = shares(200);
+  expect(loads).toHaveLength(4);
+  for (const l of loads) expect(l).toBeGreaterThan(0);
+
+  // A knob turn and a part swap turn in place; a footswitch or a reorder is a new rig that keeps what it still has.
+  expect(lay([{ ...drive, drive: 8, swaps: { D1: "germanium" } }, fuzz, amp, { machine: { ...tape.machine, time: 6 } }]).rig).toBe(first.rig);
+  play(40);
+  const echoes = (chain: ChainSlot[]) => { const now = lay(chain); play(10, "quiet"); return { rms: play(60, "quiet").rms, rig: now.rig }; };
+  // The riff stops and Q Fuzz moves ahead of Q Drive at once: the tape's echoes ring on through the new rig...
+  const carried = echoes([fuzz, drive, amp, tape]);
+  expect(carried.rig).not.toBe(first.rig);
+  // ...where a rig built fresh with the same board is silent.
+  live = null;
+  expect(carried.rms).toBeGreaterThan(10 * echoes([fuzz, drive, amp, tape]).rms);
+
+  // Q Drive into the loop after the tape, and Q Bucket after it: from there on two sides, the right chip half a turn behind.
+  const wideRig = lay([fuzz, amp, tape, drive, bucket]).rig;
+  const wide = play(200);
+  expect(wideRig.stereo).toBe(true);
+  expect(wide.side).toBeGreaterThan(0.05 * wide.rms);
+  expect(wideRig.misses).toBe(0);
+  expect(shares(200)).toHaveLength(5);
+  expect(peak).toBeLessThanOrEqual(0.89);
+
+  // Over budget, the board splits across threads (#4948), only ahead of its loop: Q Drive in it stays with the
+  // last part. Cut inside the amp, the two parts played one after the other are the one-thread sound to the bit.
+  const split: AmpSettings = { ...base, chain: [fuzz, amp, tape, drive, bucket] };
+  expect(cutPoints(rigSpec(split).spec)).toEqual([1, 2, 3, 4, 5]);
+  const whole = applySettings(split, null, SR).rig, head = applySettings(split, null, SR, { cuts: [3], index: 0 }).rig;
+  const tail = applySettings(split, null, SR, { cuts: [3], index: 1, inRest: head.outRest }).rig;
+  const tap = new Float64Array(BLOCK * 4), wl = new Float32Array(BLOCK), wr = new Float32Array(BLOCK), pl = new Float32Array(BLOCK), pr = new Float32Array(BLOCK);
+  for (let k = 0; k < 40; k++) {
+    const blk = dry.subarray(k * BLOCK, (k + 1) * BLOCK);
+    whole.process(blk, wl, BLOCK, wr);
+    head.process(blk, tap, BLOCK);
+    tail.process(tap, pl, BLOCK, pr);
+    expect([k, Array.from(pl), Array.from(pr)]).toEqual([k, Array.from(wl), Array.from(wr)]);
+  }
 });
