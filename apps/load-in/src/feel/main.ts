@@ -126,7 +126,7 @@ function run(key: string, kind: CableKind, lengthM: number, x: number, z: number
 let runs: Run[] = [];
 function layOut() {
   for (const r of runs) scene.remove(r.tube, r.coil, r.plugA, r.plugB);
-  runs = [run("feeder", "power", 15, -4.4, 5.3), run("mic-cable", "xlr", 15, -3.7, 5.3), run("desk-cable", "xlr", 15, -3.0, 5.3), run("speaker-cable", "speaker", 10, -2.3, 5.3)];
+  runs = [run("feeder", "power", 15, -4.4, 5.3), run("mic-cable", "xlr", 20, -3.7, 5.3), run("desk-cable", "xlr", 20, -3.0, 5.3), run("speaker-cable", "speaker", 15, -2.3, 5.3)];
 }
 
 // ---- you ------------------------------------------------------------------------------------------------------
@@ -174,7 +174,7 @@ function use() {
     const r = hold.run, roll = r.roll, j = jackNear(roll.kind);
     if (hold.part === "roll") {
       if (j && roll.tailIn) { roll.tailIn = false; r.a = j; Object.assign(roll.rope.pts[0]!, j.at); click(); say(`End plugged into ${j.id}. Now bowl the roll: hold the mouse or Space, let go`); }
-      else if (j) { r.b = j; roll.state = "tied"; roll.x = j.at.x; roll.z = j.at.z + 0.25; roll.y = floorY(roll.x, roll.z) + CABLE[roll.kind].radius; hold = null; click(); thump(rollKg(roll) / 2); say(`Plugged into ${j.id}. The spare stays coiled under it`); }
+      else if (j) { r.b = j; roll.state = "tied"; { const d = Math.hypot(you.x - j.at.x, you.z - j.at.z) || 1; roll.x = j.at.x + ((you.x - j.at.x) / d) * 0.3; roll.z = j.at.z + ((you.z - j.at.z) / d) * 0.3; } roll.y = floorY(roll.x, roll.z) + CABLE[roll.kind].radius; hold = null; click(); thump(rollKg(roll) / 2); say(`Plugged into ${j.id}. The spare stays coiled under it`); }
       else { roll.state = "down"; roll.x = h.x; roll.z = h.z; roll.y = floorY(h.x, h.z) + CABLE[roll.kind].radius; hold = null; thump(rollKg(roll)); }
     } else {
       r[hold.part] = j ?? "loose";
