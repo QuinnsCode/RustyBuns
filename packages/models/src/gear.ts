@@ -35,6 +35,8 @@ export const GEAR_SIZES = {
   "road-case-m": [0.6, 0.5, 0.5],
   "stand-tripod": [0.9, 1.2, 0.9],
   "mic-stand": [0.6, 1.6, 0.6],
+  "line-array-box": [1.0, 0.32, 0.55],
+  "bar-cooler": [0.9, 0.9, 0.6],
   guitar: [0.33, 1.0, 0.05],
   "di-box": [0.1, 0.05, 0.13],
 } as const satisfies Record<string, THREE.Vector3Tuple>;
@@ -366,6 +368,20 @@ function diBox(): Build {
   return b;
 }
 
+/** The venue's back-bar cooler: a cabinet with two glass doors lit from inside, its plug at the back. */
+function barCooler(): Build {
+  const [w, h, d] = GEAR_SIZES["bar-cooler"], b: Build = { pieces: [], marks: [] };
+  b.pieces.push(box("paint", [w, h - 0.02, d], [0, 0.01 + (h - 0.02) / 2, 0], { bevel: 0.01 }));
+  for (const x of [-1, 1]) {
+    b.pieces.push(box("light", [w / 2 - 0.06, h - 0.2, 0.01], [x * w / 4, h / 2 + 0.03, d / 2 + 0.002]));
+    b.pieces.push(box("metal", [0.02, 0.3, 0.02], [x * 0.04, h * 0.55, d / 2 + 0.015]));
+  }
+  for (const x of [-1, 1]) for (const z of [-1, 1]) b.pieces.push(disc("rubber", 0.02, 0.01, "y", [x * (w / 2 - 0.05), 0.005, z * (d / 2 - 0.05)], 6));
+  jacks(b, ["power-in"], "back", [w * 0.3, 0.15, -d / 2 - 0.004], [0, 0, 0], 0.02);
+  mark(b, "grab", [0, h, 0]);
+  return b;
+}
+
 const BUILDERS: Record<GearId, (height: number) => Build> = {
   "top-12-powered": () => speaker(GEAR_SIZES["top-12-powered"], ["power-in", "xlr-in", "xlr-out"], true),
   "top-15-passive": () => speaker(GEAR_SIZES["top-15-passive"], ["speaker-in", "speaker-out"], false),
@@ -381,6 +397,8 @@ const BUILDERS: Record<GearId, (height: number) => Build> = {
   "road-case-m": roadCase,
   "stand-tripod": stand,
   "mic-stand": micStand,
+  "bar-cooler": barCooler,
+  "line-array-box": () => speaker(GEAR_SIZES["line-array-box"], ["power-in", "xlr-in", "xlr-out"], true),
   guitar,
   "di-box": diBox,
 };

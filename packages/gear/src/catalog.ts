@@ -150,6 +150,16 @@ const list: Gear[] = [
   // A DI box: an instrument in, a thru to the amp, a balanced XLR to the desk. Phantom-powered, so no mains.
   // Its ground lift (`lift` on the placed box) breaks pin 1 when the amp and the desk make a ground loop.
   { id: "di-box", what: "active DI box with a ground lift", size: box(0.1, 0.05, 0.13), kg: 0.6, jacks: { "inst-in": 1, "line-out": 1, "xlr-out": 1 } },
+  {
+    // Hung, not stood: one element of a flown line array, too heavy for one person (two carry it, or a crew).
+    id: "line-array-box",
+    what: "line array element, powered",
+    size: box(1.0, 0.32, 0.55),
+    kg: 75,
+    jacks: { "power-in": 1, "xlr-in": 1, "xlr-out": 1 },
+    speaker: { sensitivity: 100, maxSpl: 138, ratedWatts: 1000, ohms: null, coverage: { h: 100, v: 12 }, lowCut: 60, highCut: 18000, rearLoss: 25 },
+    draw: { idle: 40, loud: 500 },
+  },
   { id: "guitar", what: "electric guitar", size: box(0.33, 1.0, 0.05), kg: 3.5, jacks: { "line-out": 1 } },
   { id: "jerry-can-20l", what: "jerry can of fuel", size: box(0.35, 0.47, 0.17), kg: 18, jacks: {}, can: { litres: 20 } },
   // Not road gear: the venue's own back-bar cooler, a load on a wall circuit that is always on.

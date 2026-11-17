@@ -17,6 +17,8 @@ import { BIGGER_BAR } from "./venues/bigger-bar.ts";
 import { type BiggerBarView, biggerBarView } from "./venues/bigger-bar-view.ts";
 import { PARK, parkState, pour, push } from "./venues/park.ts";
 import { type ParkView, parkView } from "./venues/park-view.ts";
+import { ARENA, type Leg, arenaState, fly, lower, rack, reserved, send, setHang, setLeg, setSub, unrack, wait as idle } from "./venues/arena.ts";
+import { type ArenaView, arenaView } from "./venues/arena-view.ts";
 import { hasSwitch, hear, type Switches } from "./audio/hear.ts";
 import { soundSystem } from "./audio/play.ts";
 import { currentDial, setDial } from "./assists.ts";
@@ -33,7 +35,7 @@ const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as 
 const canvas = $<HTMLCanvasElement>("stage");
 const KEY = "load-in.controls";
 
-const LEVELS: Record<string, Level> = { garage: GARAGE, "dive-bar": DIVE_BAR, "bigger-bar": BIGGER_BAR, park: PARK };
+const LEVELS: Record<string, Level> = { garage: GARAGE, "dive-bar": DIVE_BAR, "bigger-bar": BIGGER_BAR, park: PARK, arena: ARENA };
 const levelFrom = (name: string | null) => LEVELS[name ?? ""] ?? GARAGE;
 let world: World = newWorld(levelFrom(new URLSearchParams(location.search).get("level")));
 let cables = cable.newCables(world);
@@ -67,7 +69,7 @@ renderer.toneMappingExposure = 1.1;
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x0d1420);
 scene.fog = new THREE.Fog(0x0d1420, 8, 22);
-const camera = new THREE.PerspectiveCamera(70, 1, 0.05, 60);
+const camera = new THREE.PerspectiveCamera(70, 1, 0.05, 150);
 camera.rotation.order = "YXZ";
 scene.add(camera);
 scene.add(new THREE.HemisphereLight(0xc8d4e6, 0x2a2420, 0.85));
@@ -111,6 +113,7 @@ const highlight = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGe
 scene.add(highlight);
 let bar: BarView | ParkView | null = null;
 let big: BiggerBarView | null = null;
+let ar: ArenaView | null = null;
 /** A piece's model (a stand at `height`), or a plain box at its catalog size if @rustybuns/models has none. */
 function modelOf(id: string, height?: number): THREE.Object3D {
   if (cable.hasModel(id)) return model(id, { look, height });
@@ -130,6 +133,8 @@ function buildItems() {
   bar = world.level === DIVE_BAR ? barView(scene, $("hud"), () => world) : world.level === PARK ? parkView(scene, $("hud"), () => world, () => cables) : null;
   big?.dispose();
   big = world.level === BIGGER_BAR ? biggerBarView(scene, $("hud"), () => world, () => cables) : null;
+  ar?.dispose();
+  ar = world.level === ARENA ? arenaView(scene, $("hud"), () => world) : null;
 }
 buildItems();
 const ropes = cableView(scene);
@@ -174,6 +179,7 @@ function draw() {
   highlight.visible = !!at && !held && !end && !jack;
   if (highlight.visible && at) { const [w, h, d] = dims(at); highlight.position.set(at.x, at.y, at.z); highlight.rotation.y = at.rot; highlight.scale.set(w + 0.04, h + 0.04, d + 0.04); }
   bar?.update();
+  ar?.update();
   ropes.update(cables);
   mates.update(world.crew);
   glow.update(cable.glowing(world, cables), world.t);
@@ -187,7 +193,7 @@ function draw() {
   $("next").textContent = next ? next.text : "";
   $("next").hidden = !next;
   const g = held ? gear(held.gear) : null;
-  $("hint").textContent = phase !== "play" ? "" : performance.now() < flash.until ? flash.text : (big?.hint() ?? hint(at, jack));
+  $("hint").textContent = phase !== "play" ? "" : performance.now() < flash.until ? flash.text : (big?.hint() ?? ar?.hint() ?? hint(at, jack));
   const team = world.held?.team ? partner(world) : null;
   $("carry").textContent = phase !== "play" ? "" : g && world.held?.team ? (team ? `${g.what} with ${team.name}, ${you.speed.toFixed(1)} m/s` : `One end of the ${g.what}: someone take the other`)
     : g ? `${g.what}, ${g.kg} kg, ${you.speed.toFixed(1)} m/s`
@@ -224,6 +230,7 @@ document.addEventListener("keydown", (e) => {
   keys.add(e.code);
   if (phase !== "play" || e.repeat) return;
   if (!world.held && !cable.inHand(cables) && bar?.key(e.code)) return;
+  if (!world.held && !cable.inHand(cables) && ar?.key(e.code)) return;
   if (big?.key(e.code)) return;
   if (e.code === "KeyF") grab();
   if (e.code === "KeyQ") turnHeld(world, -1);
@@ -238,15 +245,27 @@ addEventListener("blur", () => keys.clear());
  * else put down or pick up the gear. */
 function grab(): Answer {
   const at = aimed(world), can = heldItem(world);
+  if (ar && at && !world.held && !cable.inHand(cables) && reserved(world, at.key)) return (flash = { text: "the crew has that one", until: performance.now() + 1800 }), { ok: false, why: "the crew has that one" };
   const r = cable.use(world, cables, at) ?? (can && at && wheeled(at.gear) && gear(can.gear).can ? pour(world, at.key) : world.held ? place() : at ? (wheeled(at.gear) ? push : pickUp)(world, at.key) : { ok: false as const, why: "nothing in reach" });
+  if (r.ok && ar && world.held) unrack(world, world.held.key);
   if (!r.ok) flash = { text: r.why, until: performance.now() + 1800 };
   return r;
 }
 
-/** Put down, then let a top set on a stand find its pole, and a ramp line up end to end with one beside it. */
+/** Pick up (or push, if it rolls) what you look at; in the arena, not what the crew is carrying, and off a fly bar's stack. */
+function lift(key: string): Answer {
+  const item = world.items.find((i) => i.key === key);
+  if (ar && reserved(world, key)) return { ok: false, why: "the crew has that one" };
+  const r = (item && wheeled(item.gear) ? push : pickUp)(world, key);
+  if (r.ok && ar) unrack(world, key);
+  return r;
+}
+
+/** Put down, then let a top set on a stand find its pole, a box by a fly bar join its stack, and a ramp line up end to end with one beside it. */
 function place(): Answer {
   const key = world.held?.key, a = putDown(world);
   settle(world);
+  if (a.ok && key && ar) rack(world, key);
   if (a.ok && key) cable.linkRamp(world, key);
   return a;
 }
@@ -260,7 +279,7 @@ function flip() {
 
 /** What you hear now: in the dive bar, through its tilts and master fader. */
 /** What you hear: a speaker plays when it's switched on and, once a cable goes into it, when the patch feeds it. */
-const heard = () => hear(world, switchedOn, big ? big.fed() : cable.fedBy(world, cables), undefined, bar ? rig(world) : big?.rig());
+const heard = () => hear(world, switchedOn, ar ? ar.fed() : big ? big.fed() : cable.fedBy(world, cables), undefined, bar ? rig(world) : (ar ?? big)?.rig());
 
 function play() { phase = "play"; menu(); lock(); }
 
@@ -295,6 +314,7 @@ function frame(now: number) {
   }
   online?.tick(world, now);
   big?.tick();
+  ar?.tick();
   draw();
   sound.update(heard());
   requestAnimationFrame(frame);
@@ -346,7 +366,7 @@ async function boot() {
 declare global { interface Window { loadIn: typeof harness } }
 /** The harness (scripts/probe.ts HANDLES): the level as data, and the moves a test or an agent makes without pointer lock. */
 const harness = {
-  state: () => ({ phase, next: nextStep(world, cables, switchedOn), dial: currentDial(), doors: doors(world.level.name, world.t), ...snapshot(world), ...cable.cableState(world, cables), sound: { up: sound.up, on: [...switchedOn], ...heard() }, ...(big ? { biggerBar: big.state() } : {}), ...(bar ? { bar: { ...(world.level === PARK ? parkState(world, cables) : barState(world)), heat: bar.heatOn, ...("band" in bar ? { band: bar.band } : {}) } } : {}), signedIn: !!login(), party: crew.code ? { code: crew.code, members: crew.members.length, room: crew.room || null, seat: crew.seat >= 0 ? crew.seat : null } : null, crewRoom: online ? { room: online.room, status: online.status, note: online.note } : null }),
+  state: () => ({ phase, next: nextStep(world, cables, switchedOn), dial: currentDial(), doors: doors(world.level.name, world.t), ...snapshot(world), ...cable.cableState(world, cables), sound: { up: sound.up, on: [...switchedOn], ...heard() }, ...(big ? { biggerBar: big.state() } : {}), ...(ar ? { arena: { ...arenaState(world), heat: ar.heatOn } } : {}), ...(bar ? { bar: { ...(world.level === PARK ? parkState(world, cables) : barState(world)), heat: bar.heatOn, ...("band" in bar ? { band: bar.band } : {}) } } : {}), signedIn: !!login(), party: crew.code ? { code: crew.code, members: crew.members.length, room: crew.room || null, seat: crew.seat >= 0 ? crew.seat : null } : null, crewRoom: online ? { room: online.room, status: online.status, note: online.note } : null }),
   /** Join a crew room by code (what the party's Start does), on this level. */
   crew: (room: string) => crewRoom(room.toUpperCase()),
   /** Turn the cozy-to-sim dial: "cozy", "crew" or "sim". */
@@ -359,7 +379,7 @@ const harness = {
   push: (key: string): Answer => (cable.inHand(cables) ? { ok: false, why: "your hands are full" } : push(world, key)),
   /** Park: holding a jerry can, pour it into the generator. */
   pour: (key: string): Answer => pour(world, key),
-  pickUp: (key: string): Answer => (cable.inHand(cables) ? { ok: false, why: "your hands are full" } : pickUp(world, key)),
+  pickUp: (key: string): Answer => (cable.inHand(cables) ? { ok: false, why: "your hands are full" } : lift(key)),
   putDown: () => place(),
   /** A cable out of the case (power, speaker, xlr, instrument), its `a` end in your hand. */
   takeCable: (kind?: cable.Run["kind"]) => cable.takeCable(world, cables, kind),
@@ -370,6 +390,19 @@ const harness = {
   coil: (key: string) => cable.coil(world, cables, key),
   /** Stand still for `seconds` while the cables settle. */
   wait: (seconds = 2) => cable.settle(world, cables, seconds),
+  /** Arena: let `seconds` go by on the clock while the crew works. */
+  crewWait: (seconds: number) => idle(world, seconds),
+  /** Arena: send the crew to carry `key` to a rigging point's fly bar (its key) or to (x, z). */
+  send: (key: string, to: string | number, z?: number) => send(world, key, typeof to === "string" ? to : { x: to, z: z ?? 0 }),
+  /** Arena: fly a hang to trim, or lower it, at its motor controller. */
+  fly: (point: string) => fly(world, point),
+  lower: (point: string) => lower(world, point),
+  /** Arena: a hang's angle (degrees, down is negative; at its controller) and delay (ms). */
+  hang: (point: string, angle?: number, delay?: number) => setHang(world, point, { angle, delay }),
+  /** Arena: a sub's delay (ms) and polarity, standing by it. */
+  sub: (key: string, delay?: number, invert?: boolean) => setSub(world, key, { delay, invert }),
+  /** Arena: put a feed (a rigging point's key, or "subs") on a leg of the company switch, or null; at the switch. */
+  leg: (feed: string, leg: Leg | null) => setLeg(world, feed, leg),
   /** Dive bar: turn a placed speaker by degrees (positive toward +x) and tilt it (degrees up). */
   aim: (key: string, turn: number, tilt = 0) => aim(world, key, { turn: (turn * Math.PI) / 180, tilt: (tilt * Math.PI) / 180 }),
   /** Dive bar: a stand (and the top on it) to `height` metres. */
@@ -377,9 +410,13 @@ const harness = {
   /** Dive bar: the master fader, dB. */
   master: (db: number) => master(world, db),
   heat: (on: boolean, band?: "high" | "low") => (bar && "band" in bar ? bar.setHeat(on, band) : bar?.setHeat(on)),
+  /** Arena: the heat map on or off. */
+  arenaHeat: (on: boolean) => ar?.setHeat(on),
   /** Dive bar: open the doors; the final score. */
   doors: () => bar?.doors() ?? null,
-  /** Load a level by name (garage, dive-bar, bigger-bar, park). */
+  /** Arena: show time; the final score. */
+  arenaDoors: () => ar?.doors() ?? null,
+  /** Load a level by name (garage, dive-bar, bigger-bar, park, arena). */
   level: (name: string) => load(levelFrom(name)),
   /** Turn what you hold a 15 degree step: -1 left, 1 right. */
   turn: (dir: number) => turnHeld(world, dir),

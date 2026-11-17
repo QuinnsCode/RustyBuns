@@ -13,6 +13,6 @@ export default defineConfig({
   esbuild: { jsx: "automatic" },
   server: { headers: isolation },
   preview: { headers: isolation },
-  // Two pages: the DAW, and Q Amp (amp.html, the circuit amp live).
-  build: { target: "esnext", sourcemap: true, rollupOptions: { input: { main: resolve(__dirname, "index.html"), amp: resolve(__dirname, "amp.html") } } },
+  // Three pages: the DAW, Q Amp (amp.html, the circuit amp live) and Q Studio (studio.html, the live room).
+  build: { target: "esnext", sourcemap: true, rollupOptions: { input: { main: resolve(__dirname, "index.html"), amp: resolve(__dirname, "amp.html"), studio: resolve(__dirname, "studio.html") } } },
 });
