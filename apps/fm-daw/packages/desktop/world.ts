@@ -9,6 +9,7 @@ import { applyStudio, decodeStudioClient, emptyStudio, letGo, sanitizePatch, typ
 import { Sockets, type RoomCtx, type RoomSocket } from "@rustybuns/util/room";
 import { TokenBucket } from "@rustybuns/util/limits";
 import { arr, check, int, maybe, obj, oneOf, raw, rec, str } from "@rustybuns/util/guard";
+import { decodeGrantClient, grant, handOn, may, needs, noGrants, sanitizeGrants, type Can, type GrantClient, type Grants, type GrantServer } from "../../src/grants.ts";
 import { MAX_CHUNKS, MAX_TAKES, TakeBytesGuard, type TakeBytes } from "../../src/take.ts";
 
 const SAVE_AFTER_MS = 500;
@@ -42,8 +43,8 @@ interface Bucket {
 export const BACKUP_EVERY_MS = 5 * 60 * 1000;
 const backupKey = (room: string) => `sesh/${room}.json`;
 const HASH = str(64, { re: /^[0-9a-f]{64}$/ });
-/** The bucket copy: the groove, its maker's key hash, the floor, the room code's hash and the studio's patch. An older copy is the project alone. */
-const Backup = obj({ project: raw, host: maybe(HASH), floor: maybe(oneOf(["free", "held", "closed"])), lock: maybe(HASH), studio: raw });
+/** The bucket copy: the groove, its maker's key hash, the floor, the room code's hash, the studio's patch and who may do what. An older copy is the project alone. */
+const Backup = obj({ project: raw, host: maybe(HASH), floor: maybe(oneOf(["free", "held", "closed"])), lock: maybe(HASH), studio: raw, grants: raw });
 // Takes kept at once, used or not: the ones on tracks, plus what undo may bring back until the room empties.
 const MAX_STORED_TAKES = MAX_TAKES * 3;
 const takeKey = (id: string, i: number) => `take:${id}:${i}`;
@@ -80,7 +81,7 @@ interface Ctx extends RoomCtx {
 export default class World {
   private project: Project | null = null;
   private dirty = false;
-  private sockets: Sockets<Seat, ServerMsg | ChatServer | StudioServer>;
+  private sockets: Sockets<Seat, ServerMsg | ChatServer | StudioServer | GrantServer>;
   /** The studio in this sesh: its patch is saved with the groove, who holds what only lives while they're in. */
   private studio: Studio = emptyStudio();
   private studioDirty = false;
@@ -101,6 +102,9 @@ export default class World {
   /** The hash of the maker's key: the first visitor with a key claims the sesh. The desktop sends none, so it's always free. */
   private host = "";
   private floor: Floor = "free";
+  /** Who the leader let do what (src/grants.ts), kept beside the groove; the raised hands only live while their people are in. */
+  private grants: Grants = noGrants();
+  private asks: Record<string, Can> = {};
   /** The maker's room code, hashed: "" is a public sesh. */
   private lock = "";
   /** When each address last got the code wrong. */
@@ -126,6 +130,7 @@ export default class World {
       const floor = await ctx.storage.get("floor");
       if (floor === "held" || floor === "closed") this.floor = floor;
       this.lock = String((await ctx.storage.get("lock")) ?? "");
+      this.grants = sanitizeGrants(await ctx.storage.get("grants"));
       this.takes = check(TakeIndex, await ctx.storage.get("takes")) ?? {};
     });
   }
@@ -176,6 +181,7 @@ export default class World {
       if (b?.host && !this.host) { this.host = b.host; await this.ctx.storage.put("host", b.host); }
       if (b?.floor && b.floor !== "free") { this.floor = b.floor; await this.ctx.storage.put("floor", b.floor); }
       if (b?.lock && !this.lock) { this.lock = b.lock; await this.ctx.storage.put("lock", b.lock); }
+      if (b?.grants) { this.grants = sanitizeGrants(b.grants); await this.ctx.storage.put("grants", this.grants); }
     } catch { /* no copy, or a bad one: the room starts empty */ }
   }
 
@@ -228,22 +234,25 @@ export default class World {
     if (!msg) {
       const st = decodeStudioClient(frame.value);
       if (st) { this.onStudio(ws, st.op); return; }
+      const g = decodeGrantClient(frame.value);
+      if (g) { void this.onGrant(ws, g); return; }
       const c = decodeChatClient(frame.value);
       if (c) void this.onChat(ws, c);
       return;
     }
     const seat = this.sockets.who(ws);
-    if (msg.t === "floor") { if (seat?.host) void this.setFloor(msg.state); return; }
-    if (msg.t === "lock") { if (seat?.host) void this.setLock(msg.code); return; }
-    const guest = this.floor !== "free" && !seat?.host;
+    // every message is checked against what its sender may do, here and not only in the page
+    const allowed = this.may(seat, needs(msg));
+    if (msg.t === "floor") { if (allowed) void this.setFloor(msg.state); return; }
+    if (msg.t === "lock") { if (allowed) void this.setLock(msg.code); return; }
     if (msg.t === "live") {
-      // the live line: in the order it came, to everyone else, kept nowhere (a held room lets a guest only let go)
-      if (seat?.peer && !(guest && !lettingGo(msg.e))) this.broadcast({ t: "live", from: seat.peer, e: msg.e }, ws);
+      // the live line: in the order it came, to everyone else, kept nowhere (no play grant lets one only let go)
+      if (seat?.peer && (allowed || lettingGo(msg.e))) this.broadcast({ t: "live", from: seat.peer, e: msg.e }, ws);
       return;
     }
-    if (msg.t === "takeBytes") { if (!guest) this.onTakeBytes(ws, msg); return; }
-    if (guest) {
-      // the maker holds the floor: the edit goes nowhere, and the guest is put back in step
+    if (msg.t === "takeBytes") { if (allowed) this.onTakeBytes(ws, msg); return; }
+    if (!allowed) {
+      // no grant for it: the edit goes nowhere, and its sender is put back in step
       if (this.project) this.sockets.send(ws, { t: "snapshot", project: this.project });
       return;
     }
@@ -350,7 +359,7 @@ export default class World {
   private onStudio(ws: RoomSocket, op: StudioOp) {
     const seat = this.sockets.who(ws);
     if (!seat?.peer) return;                         // turned away: not in the room
-    const next = this.floor !== "free" && !seat.host ? this.studio : applyStudio(this.studio, seat.peer, op);
+    const next = this.may(seat, "play") ? applyStudio(this.studio, seat.peer, op) : this.studio;
     if (next === this.studio) { this.sockets.send(ws, { t: "studio-all", studio: this.studio }); return; }
     const saved = next.patch !== this.studio.patch;
     this.studio = next;
@@ -373,6 +382,9 @@ export default class World {
       const { lines, names } = this.chat;
       this.sockets.send(ws, { t: "chat", lines, names, you: me, host: seat.host });
       if (this.chat.names !== was.names) this.broadcast({ t: "named", who: me, name: this.chat.names[me] }, ws);
+      // the maker's key names the maker's person, who leads; everyone hears who may do what once they're named
+      if (seat.host && this.grants.maker !== me) await this.setGrants({ ...this.grants, maker: me });
+      else if (this.host) this.broadcast(this.grantsMsg());
     } else {
       if (m.t === "say") {
         const bucket = this.talk.get(ws) ?? new TokenBucket(CHAT_RATE, CHAT_BURST, Date.now());
@@ -384,7 +396,7 @@ export default class World {
         this.chat = rename(this.chat, me, m.name);
         if (this.chat !== was) this.broadcast({ t: "named", who: me, name: this.chat.names[me] });
       } else {
-        if (seat.host) this.chat = unsay(this.chat, m.id);
+        if (this.may(seat, "lead")) this.chat = unsay(this.chat, m.id);
         if (this.chat !== was) this.broadcast({ t: "unsaid", id: m.id });
       }
     }
@@ -407,6 +419,51 @@ export default class World {
     this.broadcastPeers();
   }
 
+  /** Whether this socket's person may do this now (src/grants.ts); null needs nothing. Turned away, nothing. */
+  private may(seat: Seat | null | undefined, can: Can | null): boolean {
+    if (!seat?.peer) return false;
+    return can === null || may(this.grants, this.floor, seat.me, seat.host, can);
+  }
+
+  /** The leader grants, hands on the lead or answers a hand; anyone raises one. Each change reaches everyone. */
+  private async onGrant(ws: RoomSocket, m: GrantClient) {
+    const seat = this.sockets.who(ws);
+    const me = seat?.me;
+    if (!me || !this.host) return;                   // named people in a sesh with a maker only
+    if (m.t === "ask") {
+      if (this.may(seat, m.can) || this.asks[me] === m.can) return;
+      this.asks = { ...this.asks, [me]: m.can };
+      this.broadcast(this.grantsMsg());
+      return;
+    }
+    if (!this.may(seat, "lead")) return;
+    const { [m.who]: asked, ...rest } = this.asks;
+    let next = this.grants;
+    if (m.t === "grant") next = grant(next, m.who, m.can);
+    else if (m.t === "handOn") next = handOn(next, me, m.who);
+    else if (asked && m.yes) {
+      const had = next.who[m.who] ?? (this.floor === "free" ? (["play", "edit", "mix"] as const) : []);
+      next = grant(next, m.who, [...had, asked]);
+    }
+    if (m.t !== "answer" || asked) this.asks = rest;
+    await this.setGrants(next);
+  }
+
+  private async setGrants(g: Grants) {
+    if (g !== this.grants) {
+      this.grants = g;
+      this.backupDirty = true;
+      await this.ctx.storage.put("grants", g);
+    }
+    this.broadcast(this.grantsMsg());
+  }
+
+  /** `gone`: a socket on its way out, not counted in. */
+  private grantsMsg(gone?: RoomSocket) {
+    const here = [...new Set(this.sockets.open().flatMap((w) => { const me = w !== gone && this.sockets.who(w)?.me; return me ? [me] : []; }))];
+    return { t: "grants" as const, grants: this.grants, asks: this.asks, here } satisfies GrantServer;
+  }
+
   webSocketClose(ws: RoomSocket) { this.left(ws); }
   webSocketError(ws: RoomSocket) { this.left(ws); }
 
@@ -414,6 +471,11 @@ export default class World {
     const seat = this.sockets.who(ws);
     if (!seat?.peer) return;                         // turned away: never counted in
     this.broadcast({ t: "gone", from: seat.peer }, ws);
+    // who's in changed, and a raised hand goes down with the last tab its person has in the room
+    if (seat.me && this.host) {
+      if (!this.sockets.open().some((w) => w !== ws && this.sockets.who(w)?.me === seat.me)) delete this.asks[seat.me];
+      this.broadcast(this.grantsMsg(ws), ws);
+    }
     // what they carried stays where it was; a lead they held falls out of their hand (the others drop it on "gone")
     this.studio = letGo(this.studio, seat.peer);
     this.broadcastPeers();
@@ -440,7 +502,7 @@ export default class World {
     if (this.bucket && this.room && (this.project || this.studioUsed()) && this.backupDirty && (lastOut || Date.now() - this.backedUpAt >= BACKUP_EVERY_MS)) {
       this.backupDirty = false;
       this.backedUpAt = Date.now();
-      try { await this.bucket.put(backupKey(this.room), JSON.stringify({ project: this.project, host: this.host, floor: this.floor, lock: this.lock || undefined, studio: this.studioUsed() ? this.studio.patch : undefined })); } catch { this.backupDirty = true; }
+      try { await this.bucket.put(backupKey(this.room), JSON.stringify({ project: this.project, host: this.host, floor: this.floor, lock: this.lock || undefined, studio: this.studioUsed() ? this.studio.patch : undefined, grants: this.grants })); } catch { this.backupDirty = true; }
     }
     // the last one out: undo goes with them, so only the takes on tracks are kept
     if (lastOut) await this.dropTakes(takeIds(this.project));
@@ -449,7 +511,7 @@ export default class World {
       // nobody came back: the room goes, groove and all
       await s.deleteAlarm();
       await this.dropTakes(new Set());
-      for (const k of ["project", "chat", "studio", "idleMs", "idleAt", "room", "host", "floor", "lock"]) await s.delete(k);
+      for (const k of ["project", "chat", "studio", "idleMs", "idleAt", "room", "host", "floor", "lock", "grants"]) await s.delete(k);
       if (this.bucket && this.room) await this.bucket.delete(backupKey(this.room)).catch(() => {});
       this.project = null;
       this.chat = empty();
@@ -458,6 +520,8 @@ export default class World {
       this.host = "";
       this.floor = "free";
       this.lock = "";
+      this.grants = noGrants();
+      this.asks = {};
       return;
     }
     if (!this.project && !this.studioUsed()) return; // nothing stored, nothing to clean up
@@ -489,7 +553,7 @@ export default class World {
     void this.ctx.storage.setAlarm(Date.now() + SAVE_AFTER_MS);
   }
 
-  private broadcast(m: ServerMsg | ChatServer | StudioServer, except?: RoomSocket) { this.sockets.broadcast(m, except); }
+  private broadcast(m: ServerMsg | ChatServer | StudioServer | GrantServer, except?: RoomSocket) { this.sockets.broadcast(m, except); }
 
   private broadcastPeers() {
     this.broadcast({ t: "peers", n: this.sockets.open().length });
