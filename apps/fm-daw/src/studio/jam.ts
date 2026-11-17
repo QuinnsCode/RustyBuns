@@ -12,8 +12,8 @@ export const WALK = 2.2;           // metres a second
 export const RADIUS = 0.3;         // your body, for walls and furniture
 export const SIT_REACH = 1.4;      // how close to a seat you have to be to sit
 export const EYE_STAND = 1.65, EYE_SIT = 1.2;
-/** Where a seat's view starts: looking a little down at the instrument, and further down at the kit's drums round your knees. */
-export const SIT_PITCH = -0.25, KIT_PITCH = -0.5;
+/** Where a seat's view starts: looking down at where your hands play on the instrument, and further down at the kit's drums round your knees. */
+export const SIT_PITCH = -0.45, KIT_PITCH = -0.5;
 const sitPitch = (s: Spot | null) => (s?.kind === "drums" ? KIT_PITCH : SIT_PITCH);
 /** How often your body goes on the live line, a second (others see you walk at this rate). */
 export const BODY_HZ = 10;
@@ -121,6 +121,8 @@ function walled(def: StudioDef, x: number, z: number, pad = 0.15): boolean {
 export const BOOM = 2.1;
 /** Seated over the shoulder: the camera up beside your right shoulder (metres back, out to the side, above your eyes), looking down past it at a point this far in front of the seat. */
 export const SEAT_CAM = { back: 0.3, side: 0.5, up: 0.45, reach: 0.7, at: 0.75 };
+/** First person, seated: your eyes this far (metres) back over the seat, so the instrument sits below you, not in your face. */
+export const SIT_BACK = 0.12;
 
 /**
  * Where the camera is. Over the shoulder, its boom shortens to stay in front of a wall behind you (a camera pinned
@@ -140,8 +142,9 @@ export const HEAD_FADE = { near: 1.3, far: 1.9, min: 0 };
 
 function pose(j: Jam): { at: [number, number, number]; yaw: number; pitch: number; boom: number } {
   const m = j.me, eye = m.seat ? EYE_SIT : EYE_STAND;
-  if (m.cam === "first") return { at: [m.x, eye, m.z], yaw: m.yaw, pitch: m.pitch, boom: 0 };
   const fx = -Math.sin(m.yaw), fz = -Math.cos(m.yaw), side = 0.45 / BOOM;
+  // first person, seated: your eyes sit back over the seat, not out over the instrument
+  if (m.cam === "first") { const b = m.seat ? SIT_BACK : 0; return { at: [m.x - fx * b, eye, m.z - fz * b], yaw: m.yaw, pitch: m.pitch, boom: 0 }; }
   if (m.seat) {
     // seated: beside you, not behind your head, so your hands and the instrument are in view; it comes in toward you
     // until it's clear of a wall
