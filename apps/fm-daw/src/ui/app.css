@@ -300,3 +300,12 @@ h2 { font: 600 1.2rem/1.1 var(--silk); margin: 0; }
 .shape-dots button { display: inline-flex; align-items: center; gap: 6px; padding: 3px 8px 3px 4px; border: 1px solid var(--edge); border-radius: 12px; background: var(--raised); font: 500 .75rem var(--mono); }
 .shape-dots button.on { border-color: var(--track); box-shadow: 0 0 0 1px var(--track); }
 @media (max-width: 640px) { .shape-hint { display: none; } }
+.people-wrap { position: relative; display: inline-flex; }
+.people-wrap > .ghost { display: inline-flex; align-items: center; gap: 4px; }
+.people-n { font-size: .75rem; }
+.people { position: absolute; bottom: calc(100% + 6px); left: 0; z-index: 20; display: grid; gap: 8px; min-width: 16em; max-width: calc(100vw - 32px); padding: 10px; background: var(--panel); border: 1px solid var(--edge); border-radius: 6px; }
+.person { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.person-name { display: inline-flex; align-items: center; gap: 4px; flex: 1 1 8em; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.person-cans, .person-ask { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.person-ask button { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+.person-cans .ms { width: auto; padding: 0 6px; display: inline-flex; align-items: center; }

@@ -3,7 +3,9 @@
 // cabled into the desk's track inserts (#4902).
 import { expect, test } from "bun:test";
 import { applySettings } from "../src/amp/live.ts";
-import { aimed, drop, item, lead, listen, lookAt, newRoom, plug, setKnob, snapshot, unplug, use, walkTo, type Room } from "../src/room/room.ts";
+import { aimed, benchIn, drop, gearOf, item, lead, listen, lookAt, newRoom, pickUp, plug, putDown, setKnob, snapshot, unplug, use, walkTo, type Room } from "../src/room/room.ts";
+import { bench } from "../src/circuit/bench.ts";
+import board from "../circuits/bench-drive.circuit.json";
 
 const click = (r: Room, id: string, part?: string) => { lookAt(r, id, part); return use(r); };
 
@@ -108,4 +110,38 @@ test("cable gear into the desk's track inserts: Q Tape on track 1, Q Squeeze int
   const open = listen(r.studio.patch);
   expect(open.playing).toBe(false);
   expect(open.inserts[1].problems).toEqual([expect.stringContaining("Q Lead 50's loop is open")]);
+});
+
+test("a board off the bench stands on the floor, its knobs turn, and cabled in it plays its netlist", () => {
+  const b = bench(board, { name: "Bench Drive" });
+  if (!b.ok) throw new Error(b.why.join("; "));
+  const r = newRoom();
+  // From the door, looking at the rack: it stands a step in front of you, on the floor, sized from its board.
+  const put = benchIn(r, b.pedal);
+  expect(put).toEqual({ ok: true, id: "bench-1" });
+  const p = item(r, "bench-1")!;
+  expect(p.at[1]).toBe(0);
+  expect(gearOf(p)).toMatchObject({ name: "Bench Drive", kind: "pedal", size: [0.072, 0.05, 0.057], knobs: [{ name: "drive" }, { name: "level" }] });
+
+  // Its knobs are on its lid within reach: look down at Drive and turn it up.
+  lookAt(r, "bench-1", "drive");
+  expect(aimed(r)).toEqual({ t: "knob", id: "bench-1", knob: "drive" });
+  expect(setKnob(r, "bench-1", "drive", 0.9)).toEqual({ ok: true });
+
+  // Guitar into the bench pedal, the pedal into the lead amp, the amp into the cab.
+  for (const [a, z] of [[["guitar", "out"], ["bench-1", "in"]], [["bench-1", "out"], ["lead", "in"]], [["lead", "speaker"], ["cab", "in"]]] as const) {
+    expect(lead(r, [...a])).toEqual({ ok: true });
+    expect(plug(r, [...z])).toEqual({ ok: true });
+  }
+  const heard = listen(r.studio.patch);
+  expect(heard).toMatchObject({ playing: true, chain: ["guitar", "bench-1", "lead", "cab"], running: ["bench-1", "lead"], problems: [] });
+  expect(heard.settings).toMatchObject({ pedal: "bench", drive: 0 });
+  // What the worklet runs is the board at the knobs as the room has them: Drive at 9, Level centred.
+  expect(heard.settings?.bench).toEqual(b.pedal.net({ DRIVE: 0.9, LEVEL: 0.5 }));
+
+  // Hands full, no second pedal; free again, a second one gets its own id.
+  expect(pickUp(r, "bench-1")).toEqual({ ok: true });
+  expect(benchIn(r, b.pedal)).toEqual({ ok: false, why: "your hands are full" });
+  putDown(r);
+  expect(benchIn(r, b.pedal)).toMatchObject({ ok: true, id: "bench-2" });
 });
