@@ -11,7 +11,13 @@ export type JackKind =
   | "line-out"
   | "inst-in"
   | "xlr-in"
-  | "xlr-out";
+  | "xlr-out"
+  | "rca-in"
+  | "rca-out"
+  | "phono-in"
+  | "digital-out"
+  | "ground-in"
+  | "ground-out";
 
 /** How a speaker sounds: the numbers on its spec sheet. */
 export type SpeakerSpec = {
@@ -59,6 +65,9 @@ export type Gear = {
   mic?: { phantom: boolean };
   /** Gear that rolls instead of being lifted: small wheels sink in sand, balloon tyres ride over it. */
   wheels?: "small" | "balloon";
+  /** A DJ deck: what level its RCA out is, a turntable's tiny phono signal (it wants a phono input and its ground wire on
+   * the mixer's post) or a media player's line level (a phono input overloads on it). */
+  deck?: { out: "phono" | "line" };
 };
 
 const box = (w: number, h: number, d: number) => ({ w, h, d });
@@ -200,6 +209,35 @@ const list: Gear[] = [
     speaker: { sensitivity: 97, maxSpl: 126, ratedWatts: 400, ohms: 8, coverage: { h: 60, v: 40 }, lowCut: 65, highCut: 20000, rearLoss: 20 },
   },
   { id: "jerry-can-20l", what: "jerry can of fuel", size: box(0.35, 0.47, 0.17), kg: 18, jacks: {}, can: { litres: 20 } },
+  // The DJ booth: two decks of one kind either side of a four-channel mixer. A turntable's cartridge puts out a few
+  // millivolts, so it goes into a phono input, and its ground wire goes on the mixer's post (two spade lugs fit under the
+  // one nut: `ground-in-1` and `-2`). Mixer outs: xlr-out-1 and -2 are the master, left and right; -3 and -4 the booth.
+  {
+    id: "deck-media",
+    what: "club media player deck",
+    size: box(0.329, 0.118, 0.453),
+    kg: 5.5,
+    jacks: { "power-in": 1, "rca-out": 1, "digital-out": 1 },
+    draw: { idle: 25, loud: 35 },
+    deck: { out: "line" },
+  },
+  {
+    id: "turntable",
+    what: "direct-drive turntable",
+    size: box(0.453, 0.169, 0.353),
+    kg: 11,
+    jacks: { "power-in": 1, "rca-out": 1, "ground-out": 1 },
+    draw: { idle: 5, loud: 15 },
+    deck: { out: "phono" },
+  },
+  {
+    id: "mixer-dj",
+    what: "4-channel DJ mixer",
+    size: box(0.333, 0.108, 0.414),
+    kg: 7,
+    jacks: { "power-in": 1, "phono-in": 4, "rca-in": 4, "xlr-out": 4, "ground-in": 2 },
+    draw: { idle: 30, loud: 40 },
+  },
   // Not road gear: the venue's own back-bar cooler, a load on a wall circuit that is always on.
   { id: "bar-cooler", what: "back-bar drinks cooler", size: box(0.9, 0.9, 0.6), kg: 70, jacks: { "power-in": 1 }, draw: { idle: 450, loud: 450 } },
   // ---- The festival's two systems (Sound Guy Simulator step 9, #5029), our own boxes in two well-known families. ----

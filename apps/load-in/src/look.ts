@@ -34,6 +34,14 @@ export function fixtures(l: Level): Fixture[] {
     { kind: "strip", x: cx, y: top, z: r.z0 + d * 0.72, color: 0xeef4ff, power: 7 },
     work,
   ];
+  // A club's DJ booth: one dim warm light over the decks (bright booth lights blind a DJ), coloured washes on the floor.
+  if (l.name.startsWith("dj-booth")) return [
+    { kind: "spot", x: cx, y: top, z: r.z0 + 2.6, color: 0xffd6a8, power: 6, to: [cx, 0.95, r.z0 + 1.5] },
+    { kind: "spot", x: cx - 1.8, y: top, z: r.z0 + 4.5, color: 0xa24cff, power: 30, to: [cx - 0.6, 0, r.z0 + 5.5] },
+    { kind: "spot", x: cx + 1.8, y: top, z: r.z0 + 4.5, color: 0x3fa8ff, power: 30, to: [cx + 0.6, 0, r.z0 + 5.5] },
+    { kind: "neon", x: r.x1 - 0.03, y: 1.9, z: r.z0 + d * 0.55, color: 0xff3fa4, power: 5 },
+    work,
+  ];
   // A bar: warm spots on the stage end, one over the room, a neon sign on the long wall, the work light by the door.
   return [
     { kind: "spot", x: cx - 1.2, y: top, z: r.z0 + 2.6, color: 0xffc47a, power: 40, to: [cx - 0.6, 0, r.z0 + 1.2] },

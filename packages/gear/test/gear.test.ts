@@ -66,7 +66,7 @@ test("the catalog has every shared id with its size, and jacks number from 1", (
   // Every id the models share; a level adds its own (the festival, the decks) without editing this list.
   expect(GEAR_IDS).toEqual(expect.arrayContaining([
     "top-12-powered", "top-15-passive", "sub-18", "wedge-12", "amp-head", "cab-4x12", "amp-rack-4u", "mixer-small",
-    "generator-7kva", "distro-box", "cable-ramp-2ch", "road-case-m", "stand-tripod", "mic-stand", "sand-cart", "di-box", "line-array-box", "guitar", "line-array-10", "fill-8-powered", "mic-condenser", "wedge-12-passive", "jerry-can-20l", "bar-cooler",
+    "generator-7kva", "distro-box", "cable-ramp-2ch", "road-case-m", "stand-tripod", "mic-stand", "sand-cart", "di-box", "line-array-box", "guitar", "line-array-10", "fill-8-powered", "mic-condenser", "wedge-12-passive", "jerry-can-20l", "deck-media", "turntable", "mixer-dj", "bar-cooler",
   ]));
   expect(gear("sub-18")).toMatchObject({ size: { w: 0.55, h: 0.7, d: 0.75 }, kg: 45 });
   expect(jackNames(gear("generator-7kva"))).toEqual(["power-out-1", "power-out-2", "power-out-3", "power-out-4"]);
