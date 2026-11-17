@@ -66,6 +66,16 @@ export function thingBox(s: Spot): { cx: number; cz: number; hw: number; hd: num
   return { cx: s.at[0] + fx * s.thing.ahead, cz: s.at[1] + fz * s.thing.ahead, hw: s.thing.w / 2, hd: s.thing.d / 2, turn: s.yaw };
 }
 
+/** Where a seated player's palms go: metres ahead of the seat, and up off the floor. */
+export interface Reach { ahead: number; up: number }
+/** Where a player's palms go at the stage synth the page draws for a keys spot (main.ts thing(), its keys' top at
+ *  thing.h and their near edge thing.d * 0.43 nearer than its middle): just over the near half of the white keys. */
+export function keysReach(s: Spot): Reach | null {
+  if (s.kind !== "keys" || s.made) return null;
+  const t = s.thing;
+  return { ahead: t.ahead - t.d * 0.43 + 0.07, up: t.h + 0.06 };
+}
+
 /** A wall as the solid pieces between its doorways, each a thin box. */
 export function wallPieces(w: Wall, thick = 0.12): { cx: number; cz: number; hw: number; hd: number; turn: number }[] {
   const [x0, z0] = w.from, [x1, z1] = w.to, len = Math.hypot(x1 - x0, z1 - z0);
