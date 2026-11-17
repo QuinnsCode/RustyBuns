@@ -49,10 +49,10 @@ These fit the solver as it is, once section 1's parts are in:
 | **Octave up** | A full-wave rectifier (diodes, or a transformer and diodes) after a fuzz | Folding the wave doubles its pitch |
 | **Boosts and fuzzes** | One- to three-transistor stages, germanium or silicon | Germanium's leakage changes with temperature: a "warm room" knob is honest here |
 
-On Q Amp's floor now (`src/circuit/circuits.ts`, a `PEDALS` row each, tested in `test/effects.test.ts`): Q Phase, Q Vibe,
+On Q Amp's floor now (`src/circuit/amps.ts`, a `PEDALS` row each, tested in `test/effects.test.ts`): Q Phase, Q Vibe,
 Q Trem (optical), Q Wah, Q Envelope (the wah on an envelope), Q Squeeze (optical), Q Octave and Q Germ (two germanium
 transistors, its one knob the room's temperature). What moves a `VarR` is a rig `Mod` (`rig.ts`): an LFO or the link's own
-output, through `[rise, fall]` lags that are the lamp heating and cooling and the LDR darkening and recovering. Each pedal has
+output, through `[rise, fall]` lags that are the lamp heating and cooling and the LDR darkening and recovering. Each is a board, `circuits/<pedal id>.tsx`, with its moving part drawn as the JFET, photocell, vactrol or pot it is (#4952), so the board view shows it. Each pedal has
 one knob until the pedalboard (section 2) gives them more. Bias tremolo is in the amp, not on the floor: an LFO on the power stage's bias supply, Q Clean T's Rate and Depth.
 
 ## 4. Effects that are machines

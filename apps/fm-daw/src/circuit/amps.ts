@@ -4,7 +4,7 @@
 // and what is on the speaker jack into a rig. Names are ours and
 // describe the circuit, never a product.
 import { fuzz, hardClip, overdrive, toneStack, triodeStage, type BoardId, type StageSpec, type Swaps, type ToneSpec } from "./circuits.ts";
-import { germaniumFuzz, octaveUp, opticalComp, opticalTremolo, phaser, vibe, wah } from "./effects.ts";
+import { envelopeWah, germaniumFuzz, octaveUp, opticalComp, opticalTremolo, phaser, vibe, wah } from "./effects.ts";
 import { DEFAULT_MIC, type Blend, type Link, type Mic, type Mod, type Netlist, type RigSpec } from "@rustybuns/gear/circuit";
 import type { BoardPedal, BoardStep } from "../amp/messages.ts";
 
@@ -62,8 +62,7 @@ export const AMPS: AmpDef[] = [
 
 /**
  * A pedal: its circuit at its one knob (0 to 10) with the player's part swaps, what the knob is called (Drive if not
- * said), what moves its `VarR`s, and its board (`circuits/<board>.tsx`), if it has one: a pedal dropped on the bench,
- * and the effects in effects.ts, don't.
+ * said), what moves its `VarR`s, and its board (`circuits/<board>.tsx`), if it has one: a pedal dropped on the bench doesn't.
  */
 export interface PedalDef { id: string; name: string; blurb: string; knob?: string; board?: BoardId; net: (k: number, swaps?: Swaps) => Netlist; mods?: (k: number) => Mod[] }
 
@@ -73,29 +72,29 @@ export const PEDALS: PedalDef[] = [
   { id: "dist", name: "Q Dist", blurb: "Op-amp gain into two diodes to ground: flat-topped, buzzy distortion.", board: "dist", net: (d, s) => hardClip(10e3 + (d / 10) * 190e3, s) },
   {
     id: "phase", name: "Q Phase", knob: "Rate", blurb: "Four all-pass stages, JFETs as their resistors, one LFO on the gates, some fed back: two notches sweeping.",
-    net: () => phaser(0.45), mods: (k) => [{ ctl: "gate", hz: 0.05 + (k / 10) ** 2 * 6 }],
+    board: "phase", net: (_, s) => phaser(s), mods: (k) => [{ ctl: "gate", hz: 0.05 + (k / 10) ** 2 * 6 }],
   },
   {
     id: "vibe", name: "Q Vibe", knob: "Speed", blurb: "Four phase stages, four LDRs, one lamp. The lamp heats faster than it cools, so the throb leans.",
-    net: vibe, mods: (k) => [{ ctl: "lamp", hz: 0.5 + (k / 10) * 9, pow: 2, lag: [[0.02, 0.07], [0.004, 0.05]] }],
+    board: "vibe", net: (_, s) => vibe(s), mods: (k) => [{ ctl: "lamp", hz: 0.5 + (k / 10) * 9, pow: 2, lag: [[0.02, 0.07], [0.004, 0.05]] }],
   },
   {
     id: "trem", name: "Q Trem", knob: "Rate", blurb: "An LED blinking on an LDR that shunts the signal to ground. The LDR recovers slowly, so each dip has a soft back.",
-    net: opticalTremolo, mods: (k) => [{ ctl: "led", hz: 1 + (k / 10) * 11, lag: [[0.002, 0.02]] }],
+    board: "trem", net: (_, s) => opticalTremolo(s), mods: (k) => [{ ctl: "led", hz: 1 + (k / 10) * 11, lag: [[0.002, 0.02]] }],
   },
-  { id: "wah", name: "Q Wah", knob: "Treadle", blurb: "An inductor and capacitor ringing; the treadle pot sets a Miller capacitor's size. Heel ~550 Hz, toe ~1.8 kHz. An expression pedal (MIDI CC 11) rocks it.", net: (k) => wah(k / 10) },
+  { id: "wah", name: "Q Wah", knob: "Treadle", blurb: "An inductor and capacitor ringing; the treadle pot sets a Miller capacitor's size. Heel ~550 Hz, toe ~1.8 kHz. An expression pedal (MIDI CC 11) rocks it.", board: "wah", net: (k, s) => wah(k / 10, s) },
   {
     id: "autowah", name: "Q Envelope", knob: "Sens", blurb: "The same wah, its treadle pushed by how hard you play: a quick attack, then it falls back to the heel.",
-    net: () => wah("foot"), mods: (k) => [{ ctl: "foot", sens: 0.5 + (k / 10) ** 2 * 10, lag: [[0.005, 0.15]] }],
+    board: "autowah", net: (_, s) => envelopeWah(s), mods: (k) => [{ ctl: "foot", sens: 0.5 + (k / 10) ** 2 * 10, lag: [[0.005, 0.15]] }],
   },
   {
     id: "comp", name: "Q Squeeze", knob: "Sustain", blurb: "Optical compressor: the output lights an LED that darkens an LDR ahead of the gain. The LDR's slow recovery is the smooth release.",
-    net: (k) => opticalComp(k / 10), mods: () => [{ ctl: "led", sens: 0.4, lag: [[0.01, 0.6]] }],
+    board: "comp", net: (k, s) => opticalComp(k / 10, s), mods: () => [{ ctl: "led", sens: 0.4, lag: [[0.01, 0.6]] }],
   },
-  { id: "octave", name: "Q Octave", knob: "Fuzz", blurb: "A fuzz, then two diodes keeping the higher of it and its mirror: the wave folds, the pitch doubles.", net: (k) => octaveUp(k / 10) },
+  { id: "octave", name: "Q Octave", knob: "Fuzz", blurb: "A fuzz, then two diodes keeping the higher of it and its mirror: the wave folds, the pitch doubles.", board: "octave", net: (k, s) => octaveUp(k / 10, s) },
   {
     id: "germ", name: "Q Germ", knob: "Warm", blurb: "Two germanium transistors. They leak more as the room warms, and the bias moves: cold is spitty, 25 °C at 4, hot is mush.",
-    net: (k) => germaniumFuzz(5 + k * 5),
+    board: "germ", net: (k, s) => germaniumFuzz(5 + k * 5, s),
   },
 ];
 

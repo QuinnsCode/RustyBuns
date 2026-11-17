@@ -11,7 +11,7 @@ import { AMPS, DEFAULT_ROOM, PEDALS, RIGS, buildRig, tremHz } from "../src/circu
 import { riff } from "../src/circuit/riff.ts";
 import { WasmRig } from "../src/circuit/wasm.ts";
 import { instantiateFm } from "../src/engine/wasm.ts";
-import { boardToNetlist } from "../src/circuit/tscircuit.ts";
+import { boardToNetlist, readBoard } from "../src/circuit/tscircuit.ts";
 import qDist from "../circuits/q-dist.circuit.json";
 import qDrive from "../circuits/q-drive.circuit.json";
 import qFuzz from "../circuits/q-fuzz.circuit.json";
@@ -74,7 +74,9 @@ test("every board plays like its voicing", () => {
     ["Q Fuzz: near square (crest factor)", crest(pedalOut(fuzz(0.7))), 1, 1.2],
     ["the tone stack's Middle knob (dB at 500 Hz, 10 over 0)", gainDb(toneStack({ bass: 5, mid: 10, treble: 5 }), 500) - gainDb(toneStack({ bass: 5, mid: 0, treble: 5 }), 500), 3, 30],
   ] as const) inRange(what, v, lo, hi);
-  for (const id of Object.keys(BOARDS)) expect([id, boardToNetlist(BOARDS[id as keyof typeof BOARDS]).parts.length > 5]).toEqual([id, true]);
+  // Every board reads (the effects need their moving parts named to play: test/effects.test.ts plays them).
+  for (const id of Object.keys(BOARDS)) expect([id, readBoard(BOARDS[id as keyof typeof BOARDS]).parts.length > 2]).toEqual([id, true]);
+  expect(() => boardToNetlist(BOARDS.vibe)).toThrow("LDR1: a photocell with nothing lighting it");
   expect(() => boardToNetlist(BOARDS.dist, { values: { R9: 1 } })).toThrow("no part R9");
   expect(() => boardToNetlist([{ type: "source_component", source_component_id: "x", ftype: "simple_crystal", name: "X1" }])).toThrow("X1: no model for simple_crystal");
 });
