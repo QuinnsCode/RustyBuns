@@ -8,7 +8,7 @@ import { TAKE_RATE, TakeInbox, toChunks } from "../src/take.ts";
 import { decodeServer } from "../src/project.ts";
 import { demoProject } from "../src/presets.ts";
 import { LIVE_ROOM } from "../src/studio/rooms/live.ts";
-import { body, gone, hear, keyNote, nearSpot, newJam, sit, snapshot, stand, walkTo } from "../src/studio/jam.ts";
+import { BOOM, body, cameraPose, gone, hear, keyNote, nearSpot, newJam, sit, snapshot, stand, walkTo } from "../src/studio/jam.ts";
 import { randomAvatar, type Avatar } from "@rustybuns/util/avatar";
 import { mulberry32 } from "@rustybuns/util";
 import { remotePlayer, studioTools } from "../src/studio/agent.ts";
@@ -455,6 +455,13 @@ test("jam room: one walks up to the keys, sits and plays; the other sees them se
   const me: Avatar = randomAvatar(mulberry32(7));
   live(a, { t: "wear", avatar: me, name: "Amy" });
   const keys = LIVE_ROOM.spots.find((s) => s.id === "keys")!;
+  // Amy walks in seeing herself from behind, and in the back corner the camera comes in off the wall, not through it
+  expect(cameraPose(amy).boom).toBeGreaterThan(1.5);
+  walkTo(amy, 4.2, 4.1);
+  amy.me.yaw = 0;   // facing into the room, the back wall right behind her
+  const corner = cameraPose(amy);
+  expect(corner.boom).toBeLessThan(BOOM);
+  expect(Math.max(Math.abs(corner.at[0]) - LIVE_ROOM.size.w / 2, Math.abs(corner.at[2]) - LIVE_ROOM.size.d / 2)).toBeLessThan(0);
   expect(sit(amy, "keys")).toEqual({ ok: false, why: "Walk up to the keys first" });
   walkTo(amy, keys.at[0], keys.at[1] + 1);
   expect(nearSpot(amy)?.id).toBe("keys");

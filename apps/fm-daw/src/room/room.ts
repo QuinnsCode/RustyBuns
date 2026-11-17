@@ -6,6 +6,7 @@
 // machines, and gear cabled into nothing costs nothing.
 import { AMPS, DEFAULT_ROOM, PEDALS, type Knobs } from "../circuit/amps.ts";
 import type { AmpSettings } from "../amp/messages.ts";
+import { pushOut, type Rect } from "../studio/walk.ts";
 import type { BbdMode, LoopSpec } from "@rustybuns/gear/circuit";
 import type { BenchPedal } from "../circuit/bench.ts";
 import { applyStudio, emptyStudio, MAX_KNOBS, type End, type Patch, type Placed, type Studio, type StudioOp } from "../studio.ts";
@@ -282,7 +283,6 @@ export function lookAt(r: Room, id: string, part?: string): boolean {
 
 export interface Input { forward: number; right: number; turn: number }
 
-type Rect = { cx: number; cz: number; hw: number; hd: number; turn: number };
 function solids(r: Room): Rect[] {
   const held = heldId(r);
   const gear = r.studio.patch.placed.filter((p) => p.id !== held && p.at[1] < 0.5).flatMap((p) => {
@@ -293,26 +293,7 @@ function solids(r: Room): Rect[] {
 }
 
 /** Push you out of the walls, the rack and the gear standing on the floor. */
-function collide(r: Room) {
-  const y = r.you;
-  for (const s of solids(r)) {
-    const c = Math.cos(s.turn), sn = Math.sin(s.turn), dx = y.x - s.cx, dz = y.z - s.cz;
-    const lx = dx * c - dz * sn, lz = dx * sn + dz * c;
-    const px = Math.max(-s.hw, Math.min(s.hw, lx)), pz = Math.max(-s.hd, Math.min(s.hd, lz));
-    let ox = lx - px, oz = lz - pz, dist = Math.hypot(ox, oz);
-    if (dist >= RADIUS) continue;
-    if (dist < 1e-6) { // inside: out the nearest side
-      const ex = s.hw - Math.abs(lx), ez = s.hd - Math.abs(lz);
-      [ox, oz] = ex < ez ? [Math.sign(lx) || 1, 0] : [0, Math.sign(lz) || 1];
-      dist = 0;
-    } else { ox /= dist; oz /= dist; }
-    const lx2 = px + ox * RADIUS, lz2 = pz + oz * RADIUS;
-    y.x = s.cx + lx2 * c + lz2 * sn;
-    y.z = s.cz - lx2 * sn + lz2 * c;
-  }
-  y.x = Math.max(-HALF_W + RADIUS, Math.min(HALF_W - RADIUS, y.x));
-  y.z = Math.max(-HALF_D + RADIUS, Math.min(HALF_D - RADIUS, y.z));
-}
+const collide = (r: Room) => pushOut(r.you, solids(r), HALF_W, HALF_D, RADIUS);
 
 /** One tick: turn and walk by the input. */
 export function step(r: Room, dt: number, i: Input) {

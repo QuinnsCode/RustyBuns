@@ -6,6 +6,7 @@ import type { Avatar } from "@rustybuns/util/avatar";
 import type { Live, Project } from "../project.ts";
 import { QWERTY } from "../ui/input.ts";
 import { thingBox, wallPieces, type Spot, type StudioDef } from "./room.ts";
+import { pushOut as walkOut, type Rect } from "./walk.ts";
 
 export const WALK = 2.2;           // metres a second
 export const RADIUS = 0.3;         // your body, for walls and furniture
@@ -34,32 +35,10 @@ export function sitter(j: Jam, id: string): "me" | number | null {
   return null;
 }
 
-type Box = ReturnType<typeof thingBox>;
-export function solids(def: StudioDef): Box[] {
+export function solids(def: StudioDef): Rect[] {
   return [...def.walls.flatMap((w) => wallPieces(w)), ...def.spots.map(thingBox)];
 }
-
-/** Push a body at (x, z) out of the walls and furniture and back inside the room. */
-function pushOut(def: StudioDef, p: { x: number; z: number }) {
-  for (const s of solids(def)) {
-    const c = Math.cos(s.turn), sn = Math.sin(s.turn), dx = p.x - s.cx, dz = p.z - s.cz;
-    const lx = dx * c - dz * sn, lz = dx * sn + dz * c;
-    const px = clamp(lx, -s.hw, s.hw), pz = clamp(lz, -s.hd, s.hd);
-    let ox = lx - px, oz = lz - pz;
-    const dist = Math.hypot(ox, oz);
-    if (dist >= RADIUS) continue;
-    if (dist < 1e-6) {
-      const ex = s.hw - Math.abs(lx), ez = s.hd - Math.abs(lz);
-      [ox, oz] = ex < ez ? [Math.sign(lx) || 1, 0] : [0, Math.sign(lz) || 1];
-    } else { ox /= dist; oz /= dist; }
-    const lx2 = px + ox * RADIUS, lz2 = pz + oz * RADIUS;
-    p.x = s.cx + lx2 * c + lz2 * sn;
-    p.z = s.cz - lx2 * sn + lz2 * c;
-  }
-  const hw = def.size.w / 2 - RADIUS, hd = def.size.d / 2 - RADIUS;
-  p.x = clamp(p.x, -hw, hw);
-  p.z = clamp(p.z, -hd, hd);
-}
+const pushOut = (def: StudioDef, p: { x: number; z: number }) => walkOut(p, solids(def), def.size.w / 2, def.size.d / 2, RADIUS);
 
 /** One tick of walking. Sitting, you only look around: stand up to walk. */
 export function step(j: Jam, dt: number, i: Input) {
@@ -127,14 +106,35 @@ export function stand(j: Jam) {
 export function toggleCam(j: Jam) { j.me.cam = j.me.cam === "first" ? "shoulder" : "first"; }
 
 /** Where the camera is and where it looks: your eyes in first person, behind your right shoulder otherwise. */
-export function cameraPose(j: Jam): { at: [number, number, number]; yaw: number; pitch: number } {
+/** Is (x, z) somewhere a camera can't be: outside the room, or inside a wall (glass too, or you'd see the room from the next one)? */
+function walled(def: StudioDef, x: number, z: number, pad = 0.15): boolean {
+  if (Math.abs(x) > def.size.w / 2 - pad || Math.abs(z) > def.size.d / 2 - pad) return true;
+  return def.walls.flatMap((w) => wallPieces(w)).some((s) => {
+    const c = Math.cos(s.turn), sn = Math.sin(s.turn), dx = x - s.cx, dz = z - s.cz;
+    return Math.abs(dx * c - dz * sn) < s.hw + pad && Math.abs(dx * sn + dz * c) < s.hd + pad;
+  });
+}
+
+/** The full over-the-shoulder boom, metres behind you. */
+export const BOOM = 2.1;
+
+/**
+ * Where the camera is. Over the shoulder, its boom shortens to stay in front of a wall behind you (a camera pinned
+ * to the wall would sit inside your head), and rises and looks down as it shortens so you see past yourself.
+ * `boom` is how long it came out: the page stops drawing you when it's too short to see past.
+ */
+export function cameraPose(j: Jam): { at: [number, number, number]; yaw: number; pitch: number; boom: number } {
   const m = j.me, eye = m.seat ? EYE_SIT : EYE_STAND;
-  if (m.cam === "first") return { at: [m.x, eye, m.z], yaw: m.yaw, pitch: m.pitch };
-  const fx = -Math.sin(m.yaw), fz = -Math.cos(m.yaw), back = 2.1, side = 0.45;
-  const p = { x: m.x - fx * back - fz * side, z: m.z - fz * back + fx * side };
-  // the camera stays in the room (it can see through glass, not through the outside walls)
-  const hw = j.def.size.w / 2 - 0.15, hd = j.def.size.d / 2 - 0.15;
-  return { at: [clamp(p.x, -hw, hw), eye + 0.35, clamp(p.z, -hd, hd)], yaw: m.yaw, pitch: m.pitch - 0.12 };
+  if (m.cam === "first") return { at: [m.x, eye, m.z], yaw: m.yaw, pitch: m.pitch, boom: 0 };
+  const fx = -Math.sin(m.yaw), fz = -Math.cos(m.yaw), side = 0.45 / BOOM;
+  // back along the boom from your head, a few centimetres at a time, until a wall is next
+  let boom = 0;
+  for (let b = 0.05; b <= BOOM + 1e-9; b += 0.05) {
+    if (walled(j.def, m.x - (fx + fz * side) * b, m.z - (fz - fx * side) * b)) break;
+    boom = b;
+  }
+  const short = 1 - boom / BOOM;
+  return { at: [m.x - (fx + fz * side) * boom, eye + 0.35 + short * 0.5, m.z - (fz - fx * side) * boom], yaw: m.yaw, pitch: m.pitch - 0.12 - short * 0.35, boom };
 }
 
 /** What goes on the live line about you. */
