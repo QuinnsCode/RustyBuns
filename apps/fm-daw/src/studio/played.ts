@@ -1,0 +1,120 @@
+// What playing looks like on the room's instruments: the key that sounds goes down and darkens, as a pressed key falls
+// into its own shadow, and the drum or cymbal that's hit flashes and gives (a head dips, a cymbal rocks). main.ts builds
+// the stage synth's keys from `layout` and hands each spot's sounding notes here every frame.
+import * as THREE from "three";
+
+/** The semitones above a keyboard's lowest C of each white key along it, and of each black key (in the order drawn), for
+ *  `n` white keys; `after` is the white key each black one sits just to the right of. */
+export function layout(n: number): { whites: number[]; blacks: number[]; after: number[] } {
+  const steps = [0, 2, 4, 5, 7, 9, 11], whites: number[] = [], blacks: number[] = [], after: number[] = [];
+  for (let i = 0; i < n; i++) {
+    whites.push(Math.floor(i / 7) * 12 + steps[i % 7]);
+    if ([0, 1, 3, 4, 5].includes(i % 7) && i < n - 1) { blacks.push(whites[i] + 1); after.push(i); }
+  }
+  return { whites, blacks, after };
+}
+
+/** The keyboard's lowest C for a track rooted at `root`: an octave under the root's own C, so the root sits in its second
+ *  octave and an octave down (Z) still lands on it. */
+export const lowC = (root: number) => Math.floor(root / 12) * 12 - 12;
+
+/** The key a note presses on a keyboard from `low` (a note past either end folds in by octaves, as the nearest key of its
+ *  name): a white key's index, or a black one's. */
+export function keyAt(midi: number, low: number, lay: ReturnType<typeof layout>): { black: boolean; i: number } {
+  const top = lay.whites[lay.whites.length - 1];
+  let off = midi - low;
+  while (off < 0) off += 12;
+  while (off > top) off -= 12;
+  const w = lay.whites.indexOf(off);
+  return w >= 0 ? { black: false, i: w } : { black: true, i: Math.max(0, lay.blacks.indexOf(off)) };
+}
+
+/** The drums and cymbals the room's kit draws. */
+export type Part = "kick" | "snare" | "tom" | "hat" | "crash";
+/** Which part of the kit a drum track plays, by its name: a clap or anything unnamed falls on the snare. */
+export function partOf(name: string): Part {
+  const n = name.toLowerCase();
+  if (/kick|bass ?drum|bd\b/.test(n)) return "kick";
+  if (/hat|hh\b/.test(n)) return "hat";
+  if (/crash|ride|cymbal|splash|china/.test(n)) return "crash";
+  if (/tom/.test(n)) return "tom";
+  return "snare";
+}
+
+/** How long (seconds) a hit's flash takes to fall to a third. */
+export const RING = 0.18;
+/** A pressed key's tip down this far (radians) about its back edge, and darkened to this share of its colour. */
+const DIP = 0.12, SHADE = 0.3;
+
+/** The stage synth's keys, pressed as notes sound. */
+export class Keys {
+  private last = "";
+  private readonly m = new THREE.Matrix4();
+  private readonly r = new THREE.Matrix4();
+  private readonly back = new THREE.Matrix4();
+  constructor(
+    private readonly white: THREE.InstancedMesh, private readonly whiteAt: [number, number, number][],
+    private readonly black: THREE.InstancedMesh, private readonly blackAt: [number, number, number][],
+    readonly lay: ReturnType<typeof layout>, private readonly whiteLen: number, private readonly blackLen: number,
+  ) {
+    for (const [mesh, at] of [[white, whiteAt], [black, blackAt]] as const) at.forEach((_, i) => mesh.setColorAt(i, new THREE.Color(1, 1, 1)));
+  }
+  /** Which keys are down now: white indices and black ones. */
+  down: { whites: number[]; blacks: number[] } = { whites: [], blacks: [] };
+  /** Press the keys of the notes sounding now (on a keyboard from `low`), and let the rest up. */
+  press(midis: Iterable<number>, low: number) {
+    const whites = new Set<number>(), blacks = new Set<number>();
+    for (const n of midis) { const k = keyAt(n, low, this.lay); (k.black ? blacks : whites).add(k.i); }
+    const key = `${[...whites].sort()}|${[...blacks].sort()}`;
+    if (key === this.last) return;
+    this.last = key;
+    this.down = { whites: [...whites], blacks: [...blacks] };
+    this.set(this.white, this.whiteAt, whites, this.whiteLen);
+    this.set(this.black, this.blackAt, blacks, this.blackLen);
+  }
+  private set(mesh: THREE.InstancedMesh, at: [number, number, number][], down: Set<number>, len: number) {
+    const c = new THREE.Color();
+    at.forEach(([x, y, z], i) => {
+      const d = down.has(i);
+      // turned about its back edge (-z, away from the player), so its near end goes down
+      this.m.makeTranslation(x, y, z - len / 2).multiply(this.r.makeRotationX(d ? DIP : 0)).multiply(this.back.makeTranslation(0, 0, len / 2));
+      mesh.setMatrixAt(i, this.m);
+      mesh.setColorAt(i, c.setScalar(d ? SHADE : 1));
+    });
+    mesh.instanceMatrix.needsUpdate = true;
+    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+  }
+}
+
+/** One drum or cymbal of the kit: what moves on a hit, the material that flashes, and how hard it rings now. */
+interface Piece { obj: THREE.Object3D; mat: THREE.MeshStandardMaterial; y: number; rz: number; k: number; cymbal: boolean }
+
+/** The kit's drums and cymbals, each flashing warm and giving when it's hit. */
+export class Kit {
+  private readonly parts = new Map<Part, Piece>();
+  private held = new Set<string>();
+  /** `obj` moves (a head dips, a cymbal rocks); `mat`, its own copy, glows. */
+  add(part: Part, obj: THREE.Object3D, mat: THREE.MeshStandardMaterial, cymbal = false) {
+    mat.emissive.set("#ffcf8a");
+    mat.emissiveIntensity = 0;
+    this.parts.set(part, { obj, mat, y: obj.position.y, rz: obj.rotation.z, k: 0, cymbal });
+  }
+  /** How hard each part rings now, 0 to 1. */
+  rings(): Record<string, number> { return Object.fromEntries([...this.parts].map(([p, x]) => [p, Math.round(x.k * 100) / 100])); }
+  /** The notes sounding now, as `track:midi` with the part each plays: a note that wasn't sounding last frame is a hit. */
+  hear(notes: Map<string, Part>) {
+    for (const [n, p] of notes) if (!this.held.has(n)) this.hit(p);
+    this.held = new Set(notes.keys());
+  }
+  hit(part: Part) { const p = this.parts.get(part); if (p) p.k = 1; }
+  /** Let each ring die away by `dt` seconds; `t` the page's clock, for a cymbal's rock. */
+  tick(dt: number, t: number) {
+    for (const p of this.parts.values()) {
+      if (p.k <= 0) continue;
+      p.k = p.k < 0.01 ? 0 : p.k * Math.exp(-dt / RING);
+      p.mat.emissiveIntensity = p.k * 0.9;
+      if (p.cymbal) p.obj.rotation.z = p.rz + Math.sin(t * 38) * p.k * 0.09;
+      else p.obj.position.y = p.y - p.k * 0.008;
+    }
+  }
+}

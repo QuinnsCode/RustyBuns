@@ -23,7 +23,7 @@ import { startMidi } from "../ui/input.ts";
 import { loadMsg } from "../ui/load.ts";
 import { connect, type Net, type NetStatus } from "../ui/net.ts";
 import { localMe, myKey } from "../ui/me.ts";
-import { type Answer, BODY_HZ, DRUM_KEYS, body, cameraPose, gone, hear, keyNote, nearSpot, newJam, sit, snapshot, spotOf, stand, step, toggleCam, walkTo } from "./jam.ts";
+import { type Answer, BODY_HZ, DRUM_KEYS, body, cameraPose, gone, hear, keyNote, nearSpot, newJam, sit, snapshot, spotOf, stand, step, toggleCam, trackFor, walkTo } from "./jam.ts";
 import { figure, handsOn, type Figure } from "./figure.ts";
 import { keysReach, thingBox, wallPieces, type Spot } from "./room.ts";
 import { ROOMS, LIVE_ROOM } from "./rooms/index.ts";
@@ -39,6 +39,7 @@ import { badge, dropBadge } from "./badge.ts";
 import { prop } from "./props.ts";
 import { dress, loadQuality, metreUV, saveQuality, surface, useKit, type Quality } from "./look.ts";
 import { gearKit } from "./gear-kit.ts";
+import { Keys, Kit, layout, lowC, partOf, type Part } from "./played.ts";
 
 const CONTROLS = "qollab-studio:controls";
 const LOOK = "qollab-studio:avatar";
@@ -119,6 +120,8 @@ function buildRoom() {
   for (const s of def.spots) scene.add(thing(s));
   for (const p of def.props ?? []) scene.add(prop(p, surface));
 }
+/** Each instrument's keys or drums, by spot id, to show what's played on them. */
+const played = new Map<string, { keys?: Keys; kit?: Kit }>();
 /** A spot's instrument or furniture, and its seat. */
 function thing(s: Spot): THREE.Group {
   const g = new THREE.Group(), b = thingBox(s), t = s.thing, m = std(t.color);
@@ -126,7 +129,7 @@ function thing(s: Spot): THREE.Group {
   const inFront = new THREE.Group();
   inFront.position.set(b.cx, 0, b.cz); inFront.rotation.y = b.turn;
   g.add(inFront);
-  const put = (o: THREE.Object3D, x: number, y: number, z: number) => { o.position.set(x, y, z); inFront.add(o); return o; };
+  const put = <T extends THREE.Object3D>(o: T, x: number, y: number, z: number): T => { o.position.set(x, y, z); inFront.add(o); return o; };
   // what the gear is made of comes from the photo-texture kit through look.ts (tolex, grille cloth, painted steel,
   // brushed metal, textured plastic, rubber); boxes get UVs in metres so the grain comes out its real size
   const box = (w: number, h: number, d: number, mat: THREE.Material, x: number, y: number, z: number, to: THREE.Object3D = inFront) => {
@@ -154,19 +157,23 @@ function thing(s: Spot): THREE.Group {
     // laid out from the stool (+z here): the kick out past the drummer's feet, the snare over their left knee, the
     // floor tom by their right, two toms over the kick and the cymbals up either side, every head tipped toward them
     put(new THREE.Mesh(new THREE.CylinderGeometry(0.26, 0.26, 0.4, 28), shell), 0, 0.27, -0.2).rotation.x = Math.PI / 2;
-    put(new THREE.Mesh(new THREE.CylinderGeometry(0.255, 0.255, 0.41, 28, 1, true), head), 0, 0.27, -0.2).rotation.x = Math.PI / 2;
+    // each drum and cymbal with its own copy of its head or brass, to flash when it's hit
+    const kit = new Kit(), own = (part: Part, o: THREE.Mesh<THREE.BufferGeometry, THREE.MeshStandardMaterial>, cymbal = false) => { o.material = o.material.clone(); kit.add(part, o, o.material, cymbal); return o; };
+    played.set(s.id, { kit });
+    own("kick", put(new THREE.Mesh(new THREE.CylinderGeometry(0.255, 0.255, 0.41, 28, 1, true), head), 0, 0.27, -0.2)).rotation.x = Math.PI / 2;
     for (const z of [-0.4, 0]) put(new THREE.Mesh(new THREE.TorusGeometry(0.262, 0.012, 6, 28), hoop), 0, 0.27, z - 0.2);
-    for (const [x, y, z, r, tip] of [[-0.3, 0.62, 0.3, 0.17, 0.12], [0.5, 0.5, 0.25, 0.2, 0], [-0.17, 0.82, -0.05, 0.12, 0.35], [0.17, 0.82, -0.05, 0.12, 0.35]] as const) {
+    for (const [x, y, z, r, tip, part] of [[-0.3, 0.62, 0.3, 0.17, 0.12, "snare"], [0.5, 0.5, 0.25, 0.2, 0, "tom"], [-0.17, 0.82, -0.05, 0.12, 0.35, null], [0.17, 0.82, -0.05, 0.12, 0.35, null]] as const) {
       const drum = put(new THREE.Group(), x, y, z);
       drum.rotation.x = tip;
       const face = new THREE.Mesh(new THREE.CircleGeometry(r * 0.98, 24).rotateX(-Math.PI / 2), head), ring = new THREE.Mesh(new THREE.TorusGeometry(r + 0.004, 0.008, 6, 24).rotateX(Math.PI / 2), hoop);
       face.position.y = 0.081; ring.position.y = 0.08;
+      if (part) own(part, face);
       drum.add(new THREE.Mesh(new THREE.CylinderGeometry(r, r, 0.16, 24), shell), face, ring);
       if (y < 0.7) tube(0.012, v(0, -0.08, 0), v(0, -y, 0), metal, drum); // the floor tom's and snare's legs
     }
     const brass = std("#c39a46", { metalness: 1, roughness: 0.32 });
-    for (const [x, z] of [[-0.62, 0.05], [0.68, -0.15]]) {
-      put(new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.23, 0.02, 32), brass), x, 1.08, z).rotation.x = 0.2;
+    for (const [x, z, part] of [[-0.62, 0.05, "hat"], [0.68, -0.15, "crash"]] as const) {
+      own(part, put(new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.23, 0.02, 32), brass), x, 1.08, z), true).rotation.x = 0.2;
       tube(0.011, v(x, 0.02, z), v(x, 1.06, z), metal);
       for (let k = 0; k < 3; k++) { const a = (k / 3) * Math.PI * 2; tube(0.009, v(x, 0.3, z), v(x + Math.cos(a) * 0.25, 0.01, z + Math.sin(a) * 0.25), metal); }
     }
@@ -208,13 +215,12 @@ function thing(s: Spot): THREE.Group {
     screen.userData.glow = 1;
     // white keys with a gap between each, the black ones raised and set back, as a seated player sees them
     const white = std("#e2ddd0", { roughness: 0.45 }), black = std("#0a0a0b", { roughness: 0.38, envMapIntensity: 0.4 });
-    const n = 29, kw = (t.w - 0.12) / n, x0 = -(t.w - 0.12) / 2 + kw / 2, z = t.d * 0.18, whites: [number, number, number][] = [], blacks: [number, number, number][] = [];
-    for (let i = 0; i < n; i++) {
-      whites.push([x0 + i * kw, top + 0.011, z]);
-      if ([0, 1, 3, 4, 5].includes(i % 7) && i < n - 1) blacks.push([x0 + (i + 0.5) * kw, top + 0.032, z - t.d * 0.1]);
-    }
-    many(new THREE.BoxGeometry(kw - 0.003, 0.022, t.d * 0.5), white, whites); // their near edge t.d * 0.43 in from the middle (room.ts keysReach)
-    many(new THREE.BoxGeometry(kw * 0.58, 0.022, t.d * 0.3), black, blacks);
+    const n = 29, lay = layout(n), kw = (t.w - 0.12) / n, x0 = -(t.w - 0.12) / 2 + kw / 2, z = t.d * 0.18;
+    const whites = lay.whites.map((_, i): [number, number, number] => [x0 + i * kw, top + 0.011, z]);
+    const blacks = lay.after.map((i): [number, number, number] => [x0 + (i + 0.5) * kw, top + 0.032, z - t.d * 0.1]);
+    const wk = many(new THREE.BoxGeometry(kw - 0.003, 0.022, t.d * 0.5), white, whites); // their near edge t.d * 0.43 in from the middle (room.ts keysReach)
+    const bk = many(new THREE.BoxGeometry(kw * 0.58, 0.022, t.d * 0.3), black, blacks);
+    played.set(s.id, { keys: new Keys(wk, whites, bk, blacks, lay, t.d * 0.5, t.d * 0.3) });
     const legH = top - 0.1;
     for (const zz of [-0.12, 0.12]) for (const sx of [-1, 1]) tube(0.016, v(-0.42 * sx, 0.02, zz), v(0.42 * sx, legH, zz), blackSteel);
     for (const x of [-0.42, 0.42]) for (const y of [0.02, legH]) tube(0.018, v(x, y, -0.22), v(x, y, 0.22), blackSteel);
@@ -642,6 +648,29 @@ function hint(): string {
   return near ? `Space or click: sit at ${near.label}` : "";
 }
 
+/** The notes sounding at a spot, as `track:midi`: whoever sits there holds them. */
+function soundingAt(id: string): string[] {
+  if (jam.me.seat === id) return [...holding.values()].map((n) => `${n.track}:${n.midi}`);
+  for (const o of jam.others.values()) if (o.seat === id) return [...o.held];
+  return [];
+}
+/** The keys that sound go down, the drums that are hit flash. */
+function showPlayed(dt: number, t: number) {
+  for (const s of def.spots) {
+    const p = played.get(s.id);
+    if (!p) continue;
+    const notes = soundingAt(s.id).map((k) => k.split(":").map(Number)).filter(([tr]) => project.tracks[tr]);
+    if (p.keys) {
+      const tr = trackFor(s, project);
+      p.keys.press(notes.filter(([n]) => n === tr).map(([, m]) => m), lowC(project.tracks[tr]?.root ?? 60));
+    }
+    if (p.kit) {
+      p.kit.hear(new Map(notes.filter(([tr]) => project.tracks[tr].kind === "drum").map(([tr, m]): [string, Part] => [`${tr}:${m}`, partOf(project.tracks[tr].name)])));
+      p.kit.tick(dt, t);
+    }
+  }
+}
+
 // ---- every frame ----
 let last = performance.now(), sentAt = 0, sentBody = "";
 function frame(now: number) {
@@ -678,6 +707,7 @@ function frame(now: number) {
     drawPerson(peer, o.avatar ?? defaultAvatar(o.name), o.name, o.at[0], o.at[1], seat ? seat.yaw : o.yaw, seat, o.held.size > 0, dt, t, false);
     markPerson(peer, marksOf(peerIds[peer]));
   }
+  showPlayed(dt, t);
   camera.position.set(...c.at);
   camera.rotation.set(c.pitch, c.yaw, 0);
   $("cross").hidden = jam.me.cam !== "first";
@@ -710,6 +740,10 @@ const harness = {
     return out;
   },
   cam: () => { toggleCam(jam); return jam.me.cam; },
+  /** What shows played: each instrument's keys down (white and black indices) and how hard each drum rings, 0 to 1. */
+  played: () => Object.fromEntries([...played].map(([id, p]) => [id, p.keys ? p.keys.down : p.kit?.rings()])),
+  /** Play a note at your seat, as a key would (A, S, ... ; the kit's home row), for `ms` milliseconds. */
+  play: (code: string, ms = 150) => { const n = keyNote(jam, project, code, octave); if (!n) return null; noteOn(`probe:${code}`, n, 0.8); setTimeout(() => noteOff(`probe:${code}`), ms); return n; },
   /** The picture quality, kept for next time: the page loads again with it. */
   quality: (q: Quality) => setQuality(q),
   /** Press (down true) or let go of a key: KeyA plays the seat's lowest note. */
