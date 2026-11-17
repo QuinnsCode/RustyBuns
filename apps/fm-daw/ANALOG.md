@@ -181,13 +181,13 @@ Those are at 48 kHz; at 96 and 192 kHz the cost per sample stays within 10% (ove
 
 ### Every pedal on the floor (#5057)
 
-**Q Drive, Q Fuzz and Q Dist each have fab files now.** The box they share (supply, bias, Level, LED, jack and footswitch pads) is `circuits/q-box.tsx`; each pedal file (`q-drive.tsx`, `q-fuzz.tsx`, `q-dist.tsx`) brings only its own circuit and Drive pot. `bun scripts/pcb.ts` renders all of them, `bun scripts/pcb.ts fuzz` one, into `circuits/q-<pedal>/` with the same file names as `q-drive/`. All three place, route and pass DRC with 0 errors on a 58 × 68 mm board.
+**Every pedal on the gear room's wall has fab files now: Q Drive, Q Fuzz, Q Dist and Q Squeeze.** The box they share (supply, bias, Level, LED, jack and footswitch pads) is `circuits/q-box.tsx`; each pedal file (`q-drive.tsx`, `q-fuzz.tsx`, `q-dist.tsx`, `q-squeeze.tsx`) brings only its own circuit and Drive pot. `bun scripts/pcb.ts` renders all of them, `bun scripts/pcb.ts fuzz` one, into `circuits/q-<pedal>/` with the same file names as `q-drive/`. All four place, route and pass DRC with 0 errors on a 58 × 68 mm board.
 
 - **The sim's names stay:** the box's parts take the first free numbers after the pedal's own, so D1, D3 or C4 on the board is the socket the app swaps. Q Drive's files came out the same as before, apart from timestamps.
 - **Diodes to ground, on 9 V:** Q Dist and Q Fuzz clip to ground in the sim. On a 9 V board the op-amp's output sits at the 4.5 V bias, so the board clips to the bias instead; to the signal it is the same node.
 - **Drive pots:** Q Dist is 10k plus a 200k pot (the app's knob tops out at 200k total), Q Fuzz 20k plus a 2M audio pot, whose turn comes out near the square the app uses. A 2M 16 mm pot is not a stock part at every shop. Both use a 500k Level, so it loads their 10k and 4.7k tone nodes by under 2%.
-- **Played like the voicing:** `test/circuit.test.ts` reads each board's netlist back and compares it with its voicing at three Drive turns, one table over the three pedals: each within 3%.
-- **Q Comp** waits for its circuit to become a board (#4952).
+- **Played like the voicing:** `test/circuit.test.ts` reads each board's netlist back and compares it with its voicing at three Drive turns, one table over the four pedals: each within 3%.
+- **Q Squeeze builds its own envelope follower.** In the sim a rig `Mod` lights the vactrol's LED; on the board, C2 and R5 take the output to a 2N3904 (Q1), D1 keeps the negative half off its base, and each peak past about 0.6 V sinks the LED's current through R6. Attack is as quick as the peaks, release is the LDR's own. Its Sustain is 10k plus a 250k audio pot (the sim turns 10k to 310k), R4 (1M) holds the op-amp's input at the bias while the LDR is dark, and its LDR goes to the bias instead of ground. The vactrol is one 4-leg part (an LED and an LDR sealed together); a bare LED and LDR in heat-shrink do the same job. The test leaves the driver out and plays the vactrol dark.
 
 Closing the loop (record a built board, compare it with the sim) waits for boards in hand.
 
