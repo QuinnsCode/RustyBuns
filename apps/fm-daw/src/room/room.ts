@@ -9,6 +9,7 @@ import type { AmpSettings, BoardPedal, BoardStep } from "../amp/messages.ts";
 import { pushOut, type Rect } from "../studio/walk.ts";
 import type { BbdMode, LoopSpec } from "@rustybuns/gear/circuit";
 import type { BenchPedal } from "../circuit/bench.ts";
+import { AUXES } from "../mixer.ts";
 import { applyStudio, emptyStudio, MAX_KNOBS, type End, type Patch, type Placed, type Studio, type StudioOp } from "../studio.ts";
 
 export type Vec3 = [number, number, number];
@@ -78,12 +79,17 @@ const SPLIT: GearDef = {
 
 /** How many tracks the desk's patch bay has inserts for: `send-1` out to the gear, back into `return-1`. */
 export const DESK_TRACKS = 4;
+/** The desk's aux sends and returns (src/mixer.ts): `aux-send-1` out to an effect, back into `aux-return-1`, on its own fader. */
+export const DESK_AUXES = AUXES;
 const DESK: GearDef = {
   id: "desk", name: "FM DAW desk", kind: "desk", size: [1.2, 0.85, 0.6], kg: 30,
   jacks: Array.from({ length: DESK_TRACKS }, (_, i): JackDef[] => [
     { name: `send-${i + 1}`, dir: "out", at: [-0.45 + i * 0.3, 0.85, -0.2], face: "top" },
     { name: `return-${i + 1}`, dir: "in", at: [-0.37 + i * 0.3, 0.85, -0.2], face: "top" },
-  ]).flat(),
+  ]).flat().concat(Array.from({ length: DESK_AUXES }, (_, i): JackDef[] => [
+    { name: `aux-send-${i + 1}`, dir: "out", at: [-0.45 + i * 0.3, 0.85, -0.27], face: "top" },
+    { name: `aux-return-${i + 1}`, dir: "in", at: [-0.37 + i * 0.3, 0.85, -0.27], face: "top" },
+  ]).flat()),
   knobs: [],
 };
 
@@ -516,6 +522,18 @@ export interface Heard {
   problems: string[];
   /** Each desk track with a cable in its send or return. The room plays the first whole one (the riff stands in for the track) when no cab is playing. */
   inserts: Insert[];
+  /** Each desk aux with a cable in its send or return: the effect cabled in, which the desk's return plays (src/mixer.ts `RigReturn`). */
+  returns: AuxReturn[];
+}
+
+/** A desk aux: the gear between its send and its return, in signal order, and what the rig plays for it when it is whole. */
+export interface AuxReturn {
+  aux: number;
+  chain: string[];
+  whole: boolean;
+  problems: string[];
+  settings: AmpSettings | null;
+  running: string[];
 }
 
 const BBD_MODES: BbdMode[] = ["chorus", "flanger", "delay"];
@@ -638,7 +656,7 @@ export function listen(patch: Patch, oversample: 2 | 4 = 4): Heard {
 
   const why: string[] = [];
   const fail = (w: string) => { if (!why.length) why.push(w); };
-  let found: Omit<Heard, "inserts"> | null = null;
+  let found: Omit<Heard, "inserts" | "returns"> | null = null;
   const cabs = patch.placed.filter((p) => kind(p.id)?.kind === "cab");
   for (const cab of cabs) {
     const src = other([cab.id, "in"]);
@@ -655,8 +673,17 @@ export function listen(patch: Patch, oversample: 2 | 4 = 4): Heard {
   }
   if (!cabs.length) fail("no speaker cab in the room");
 
-  const inserts: Insert[] = [];
+  const inserts: Insert[] = [], returns: AuxReturn[] = [];
   for (const desk of patch.placed.filter((p) => kind(p.id)?.kind === "desk")) {
+    for (let a = 1; a <= DESK_AUXES; a++) {
+      const ret: End = [desk.id, `aux-return-${a}`], send: End = [desk.id, `aux-send-${a}`];
+      if (!other(ret) && !other(send) || returns.some((x) => x.aux === a)) continue;
+      const w = walk(ret, (e) => same(e, send), true);
+      const loop = !w.why && w.amp ? ampLoop(w.amp) : null;
+      const problem = w.why ?? loop?.why ?? (w.items.length ? null : `aux ${a}'s send goes straight back into its return: no effect on it`);
+      const r = problem ? null : rig(w.amp, w.items, loop?.items ?? []);
+      returns.push({ aux: a, chain: r ? [desk.id, ...expand(w.items), ...(loop?.items ?? []), desk.id] : [], whole: !!r, problems: problem ? [problem] : r?.problems ?? [], settings: r?.settings ?? null, running: r?.running ?? [] });
+    }
     for (let t = 1; t <= DESK_TRACKS; t++) {
       const ret: End = [desk.id, `return-${t}`], send: End = [desk.id, `send-${t}`];
       if (!other(ret) && !other(send)) continue;
@@ -668,9 +695,9 @@ export function listen(patch: Patch, oversample: 2 | 4 = 4): Heard {
       if (!found && !problem) found = { playing: true, chain, ...rig(w.amp, w.items, loop?.items ?? []) };
     }
   }
-  if (found) return { ...found, inserts };
+  if (found) return { ...found, inserts, returns };
   const insertWhy = inserts.find((i) => !i.whole)?.problems[0];
-  return { playing: false, chain: [], running: [], settings: null, problems: [...(insertWhy ? [insertWhy] : []), ...why], inserts };
+  return { playing: false, chain: [], running: [], settings: null, problems: [...(insertWhy ? [insertWhy] : []), ...why], inserts, returns };
 }
 
 // ---- for probes and tests ----
