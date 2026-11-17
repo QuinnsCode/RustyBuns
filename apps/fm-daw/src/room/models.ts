@@ -1,4 +1,4 @@
-// Q Studio's gear in three.js, procedural: Q Amp's clear acrylic heads with tubes that glow with what each stage
+// Qollab Studio's gear room's gear in three.js, procedural: Q Amp's clear acrylic heads with tubes that glow with what each stage
 // does, a clear 2x12 cab with its cones, metal pedals with a Drive knob and a footswitch, a guitar on its stand,
 // and the wall rack. Each model is built at its STUDIO_GEAR size, its own frame as room.ts has it (bottom centre
 // at the origin, front +z), so a jack drawn here is where room.ts aims.

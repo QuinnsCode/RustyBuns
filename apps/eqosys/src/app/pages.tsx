@@ -592,6 +592,8 @@ const TABS = [
   ["account", "Me", ["M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20z", "M12 7a3 3 0 1 0 0 6 3 3 0 0 0 0-6z", "M7 20.662V19a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v1.662"]],
 ] as const;
 const ADMIN_TABS = new Set<string>(["people", "visitors", "scale"]);
+/** Qollab Studio's lobby (FM DAW's jam.html), the next step on from your character. */
+const STUDIO_DOOR = ourApp("fm-daw")?.returns?.find((r) => r.endsWith("/jam.html"));
 
 const KIND: Record<string, string> = { person: "browser", agent: "agent", bot: "bot" };
 const short = (t: number) => new Date(t).toISOString().slice(5, 10);
@@ -738,6 +740,7 @@ export function Home({ apps = APPS, me, mine, hub, side, everyone, unlocks, coun
             {/* character.client.ts fills it: the figure, a row a part, Shuffle and Save (GET and PUT /me/avatar) */}
             <section id="character" className="card character"><p className="mut">Loading your character…</p></section>
             <script type="module" src="/src/app/character.client.ts"></script>
+            {STUDIO_DOOR && <p><a className={btn(true)} href={STUDIO_DOOR}>Go to Qollab Studio</a> <span className="mut">· walk in wearing it, make a room and jam with friends</span></p>}
             <h2>Account</h2>
             <div className="card me"><i>{(me.name || me.email).slice(0, 1)}</i><div><b>{me.name || me.email}</b><span>{me.email} · came in through {nameOf(mine?.source ?? "eqosys")}</span></div></div>
             {ways && <Ways ways={ways} social={social} />}
