@@ -37,6 +37,7 @@ Taste is the owner's. A cut is a few numbers in `CUTS` (`src/widget/tops.ts`); t
   (#4643); a sleeved cut's shoulder rolls level into the sleeve, with no notch (#4653, #4642).
 - The hood went on in #4657: it lies back as a hood (#4658), drapes as slack fleece
   ([shots](../shots-2026-11-15-drape/README.md)), and its neck edge and cords lie down
-  ([shots](../shots-2026-11-16-cords/README.md)).
+  ([shots](../shots-2026-11-16-cords/README.md)), and its opening is a flat folded band, not a round tube
+  ([shots](../shots-2026-11-17-band/README.md)).
 - The hanger stays a spike, opt-in with `display="hanger"`. The owner's look at the five tops and the hanger is
   MANUAL RUN #4590.
