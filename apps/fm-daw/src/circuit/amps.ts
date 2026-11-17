@@ -168,4 +168,5 @@ export const RIGS = {
   brit: buildRig(amp("brit"), amp("brit").knobs),
   lead: buildRig(amp("lead"), amp("lead").knobs),
   triple: buildRig(amp("triple"), amp("triple").knobs),
+  clean: buildRig(amp("clean"), amp("clean").knobs),
 } satisfies Record<string, RigSpec>;
