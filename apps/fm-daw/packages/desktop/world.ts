@@ -11,7 +11,7 @@ import { TokenBucket } from "@rustybuns/util/limits";
 import { arr, check, int, maybe, obj, oneOf, raw, rec, str } from "@rustybuns/util/guard";
 import { decodeGrantClient, grant, handOn, isMuted, may, mute, needs, noGrants, sanitizeGrants, type Can, type GrantClient, type Grants, type GrantServer } from "../../src/grants.ts";
 import { MAX_CHUNKS, MAX_TAKES, TakeBytesGuard, type TakeBytes } from "../../src/take.ts";
-import { BackupLadder, LadderGuard, MINUTE, pick, thin, type Ladder, type Rung } from "../../src/rewind.ts";
+import { BackupLadder, LadderGuard, MAX_SNAPS, MINUTE, pick, thin, type Ladder, type Rung } from "../../src/rewind.ts";
 
 const SAVE_AFTER_MS = 500;
 // A room holds this many sockets (ROOM_SEATS online); past it a socket is told so and closed.
@@ -49,11 +49,12 @@ const Backup = obj({ project: raw, host: maybe(HASH), floor: maybe(oneOf(["free"
 /** One rung of the wind-back ladder in storage: the groove at the start of that minute (src/rewind.ts). */
 const snapKey = (minute: number) => `snap:${minute}`;
 // Takes kept at once, used or not: the ones on tracks, plus what undo may bring back until the room empties.
+// The ladder's takes come on top, so an old groove on it never stops a new recording.
 const MAX_STORED_TAKES = MAX_TAKES * 3;
 const takeKey = (id: string, i: number) => `take:${id}:${i}`;
 /** The take ids on a project's tracks. */
 const takeIds = (p: Project | null) => new Set((p?.tracks ?? []).flatMap((t) => (t.take ? [t.take.id] : [])));
-const TakeIndex = rec(int(1, MAX_CHUNKS), MAX_STORED_TAKES);
+const TakeIndex = rec(int(1, MAX_CHUNKS), MAX_STORED_TAKES + MAX_SNAPS * MAX_TAKES);
 /** A whole take in the bucket, written once (a take never changes): its chunks in order. */
 const bucketTakeKey = (room: string, id: string) => `sesh/${room}/take/${id}.json`;
 const BucketTake = arr(str(Math.ceil((MAX_CHUNKS * 96 * 1024 * 4) / 3), { min: 1 }), MAX_CHUNKS, { min: 1 });
@@ -118,6 +119,8 @@ export default class World {
   private arriving = new Map<string, { n: number; got: Set<number> }>();
   /** The wind-back ladder: which minutes' grooves are kept, and when the groove last changed. */
   private ladder: Ladder = { snaps: [], edited: 0 };
+  /** Takes kept for the ladder alone (on no track since the room last emptied): not counted against MAX_STORED_TAKES. */
+  private ladderTakes = new Set<string>();
 
   constructor(private ctx: Ctx, env: WorldEnv = {}) {
     this.sockets = new Sockets(ctx, LIMITS);
@@ -138,6 +141,7 @@ export default class World {
       this.grants = sanitizeGrants(await ctx.storage.get("grants"));
       this.takes = check(TakeIndex, await ctx.storage.get("takes")) ?? {};
       this.ladder = check(LadderGuard, await ctx.storage.get("ladder")) ?? this.ladder;
+      this.ladderTakes = this.offTracks(await this.ladderTakeIds());
     });
   }
 
@@ -197,6 +201,9 @@ export default class World {
         }
         this.ladder = { edited: ladder.edited, snaps: thin(snaps, Math.floor(Date.now() / MINUTE)) };
         await this.ctx.storage.put("ladder", this.ladder);
+        const kept = this.offTracks(await this.ladderTakeIds());
+        await this.restoreTakes(bucket, room, kept);
+        this.ladderTakes = kept;
       }
     } catch { /* no copy, or a bad one: the room starts empty */ }
   }
@@ -332,7 +339,7 @@ export default class World {
     if (this.takes[m.id]) return;                    // already whole
     let a = this.arriving.get(m.id);
     if (!a || a.n !== m.n) {
-      if (Object.keys(this.takes).length + this.arriving.size >= MAX_STORED_TAKES) return;
+      if (Object.keys(this.takes).filter((id) => !this.ladderTakes.has(id)).length + this.arriving.size >= MAX_STORED_TAKES) return;
       this.arriving.set(m.id, (a = { n: m.n, got: new Set() }));
     }
     a.got.add(m.i);
@@ -383,6 +390,19 @@ export default class World {
         for (const ws of to) this.sockets.send(ws, { t: "takeBytes", id, i, n, data });
       }
     }
+  }
+
+  /** The take ids on every groove the ladder holds. */
+  private async ladderTakeIds() {
+    const ids = new Set<string>();
+    for (const at of this.ladder.snaps) for (const id of takeIds(sanitize(await this.ctx.storage.get(snapKey(at))))) ids.add(id);
+    return ids;
+  }
+
+  /** These takes less the ones on the groove's tracks. */
+  private offTracks(ids: Set<string>) {
+    const on = takeIds(this.project);
+    return new Set([...ids].filter((id) => !on.has(id)));
   }
 
   /** Takes in storage that aren't in `keep` go. Chunks still arriving are dropped too: their sender left. */
@@ -561,13 +581,17 @@ export default class World {
         await this.bucket.put(backupKey(this.room), JSON.stringify({ project: this.project, host: this.host, floor: this.floor, lock: this.lock || undefined, studio: this.studioUsed() ? this.studio.patch : undefined, grants: this.grants, ladder }));
       } catch { this.backupDirty = true; }
     }
-    // the last one out: undo goes with them, so only the takes on tracks are kept
-    if (lastOut) await this.dropTakes(takeIds(this.project));
+    // the last one out: undo goes with them, so only the takes on tracks and on the ladder are kept
+    if (lastOut) {
+      this.ladderTakes = this.offTracks(await this.ladderTakeIds());
+      await this.dropTakes(new Set([...takeIds(this.project), ...this.ladderTakes]));
+    }
     if (!this.idleMs || this.sockets.open().length) return;
     if (!lastOut && this.idleAt && Date.now() >= this.idleAt) {
       // nobody came back: the room goes, groove and all
       await s.deleteAlarm();
       await this.dropTakes(new Set());
+      this.ladderTakes.clear();
       for (const k of ["project", "chat", "studio", "idleMs", "idleAt", "room", "host", "floor", "lock", "grants", "ladder", ...this.ladder.snaps.map(snapKey)]) await s.delete(k);
       this.ladder = { snaps: [], edited: 0 };
       if (this.bucket && this.room) await this.bucket.delete(backupKey(this.room)).catch(() => {});
