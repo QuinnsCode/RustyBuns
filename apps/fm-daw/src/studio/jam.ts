@@ -120,7 +120,7 @@ function walled(def: StudioDef, x: number, z: number, pad = 0.15): boolean {
 /** The full over-the-shoulder boom, metres behind you. */
 export const BOOM = 2.1;
 /** Seated over the shoulder: the camera up beside your right shoulder (metres back, out to the side, above your eyes), looking down past it at a point this far in front of the seat. */
-export const SEAT_CAM = { back: 0.45, side: 0.75, up: 0.9, reach: 0.8, at: 0.7 };
+export const SEAT_CAM = { back: 0.3, side: 0.5, up: 0.45, reach: 0.7, at: 0.75 };
 
 /**
  * Where the camera is. Over the shoulder, its boom shortens to stay in front of a wall behind you (a camera pinned
@@ -135,8 +135,8 @@ export function cameraPose(j: Jam): { at: [number, number, number]; yaw: number;
 
 /** How solid your head is drawn, the camera this far (metres) from it: solid out on the full boom, see-through up close. */
 export function headFade(d: number): number { return clamp((d - HEAD_FADE.near) / (HEAD_FADE.far - HEAD_FADE.near), HEAD_FADE.min, 1); }
-/** Nearer than `near` the head is `min` solid; past `far`, solid. The seated shoulder camera is about 1.25 m away, the full boom 2.2. */
-export const HEAD_FADE = { near: 1.3, far: 1.9, min: 0.2 };
+/** Nearer than `near` the head is `min` solid (0: not drawn, no haze over the keys); past `far`, solid. The seated shoulder camera is about 0.7 m away, the full boom 2.2. */
+export const HEAD_FADE = { near: 1.3, far: 1.9, min: 0 };
 
 function pose(j: Jam): { at: [number, number, number]; yaw: number; pitch: number; boom: number } {
   const m = j.me, eye = m.seat ? EYE_SIT : EYE_STAND;

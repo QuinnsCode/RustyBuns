@@ -61,7 +61,8 @@ export function figure(a: Avatar, name: string | null): Figure {
         });
       }
       // see-through, it writes no depth, or its far side would hide what's behind it
-      for (const m of faded) { m.opacity = k; m.depthWrite = k >= 1; }
+      // at 0 it's gone, not a faint haze over the keys
+      for (const m of faded) { m.opacity = k; m.depthWrite = k >= 1; m.visible = k > 0; }
     },
     dispose() {
       for (const m of faded ?? []) m.dispose();
