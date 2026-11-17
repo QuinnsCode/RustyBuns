@@ -1,6 +1,6 @@
 // The dive bar on the page: the counter, the stage and the crowd area marked on the floor, the coverage heat map
-// (painted only when something moved, not every frame; mids and highs or the sub's bass), the aim keys, the touch aim
-// pad and the score card. main.ts calls `barView`
+// (painted only when something moved, not every frame; mids and highs or the sub's bass), the aim keys and the score
+// card (touch.ts has the aim keys' touch pad). main.ts calls `barView`
 // once per world and then `keys` and `update`; everything else stays in here.
 import * as THREE from "three";
 import { aimed, type World } from "../sim.ts";
@@ -33,20 +33,6 @@ export function aimKey(w: World, code: string): boolean {
   }
   return false;
 }
-
-/** The touch aim pad: each button presses the key it stands for, so touch and keys share one path. */
-const PAD: { code: string; glyph: string; what: string }[] = [
-  { code: "KeyQ", glyph: "\u21B6", what: "Turn left" },
-  { code: "KeyE", glyph: "\u21B7", what: "Turn right" },
-  { code: "KeyR", glyph: "\u2191", what: "Tilt up" },
-  { code: "KeyV", glyph: "\u2193", what: "Tilt down" },
-  { code: "KeyZ", glyph: "\u2212", what: "Lower the stand" },
-  { code: "KeyX", glyph: "+", what: "Raise the stand" },
-  { code: "BracketLeft", glyph: "\u2212dB", what: "Fader down" },
-  { code: "BracketRight", glyph: "+dB", what: "Fader up" },
-  { code: "KeyH", glyph: "\u25A6", what: "Heat map: mids, bass, off" },
-  { code: "Enter", glyph: "\u2192|", what: "Open the doors" },
-];
 
 export type BarView = {
   /** A key while playing with hands free; true when the dive bar used it. */
@@ -99,17 +85,7 @@ export function barView(scene: THREE.Scene, hud: HTMLElement, getWorld: () => Wo
   card.className = "bar-card";
   hud.appendChild(card);
   const info = document.createElement("div");
-  const pad = document.createElement("div");
-  pad.className = "aim-pad";
-  for (const b of PAD) {
-    const btn = document.createElement("button");
-    Object.assign(btn, { type: "button", textContent: b.glyph, title: b.what });
-    btn.setAttribute("aria-label", b.what);
-    // pointerdown, not click: a held finger shouldn't wait for the lift, and preventDefault keeps the tap from zooming.
-    btn.addEventListener("pointerdown", (e) => { e.preventDefault(); view.key(b.code); });
-    pad.appendChild(btn);
-  }
-  card.append(info, pad);
+  card.append(info);
 
   let seen = "", last: Score | null = null, opened: Show | null = null;
   const signature = (w: World) => JSON.stringify([view.band, w.held?.key, w.items.map((i) => [i.x, i.y, i.z, i.rot]), rig(w)]);
