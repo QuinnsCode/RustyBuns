@@ -74,6 +74,11 @@ function jacksOf(gearId: string): Map<string, Vec> {
       const out = new Vector3(0, 0, 1).applyQuaternion(o.quaternion);
       m.set(name, { x: o.position.x + out.x * 0.03, y: o.position.y + out.y * 0.03, z: o.position.z + out.z * 0.03 });
     }
+    else {
+      // No model yet (a condenser mic, the passive wedge): the catalog's jacks in a row across the back, at mid-height.
+      const { w, h, d } = gear(gearId).size, names = jackNames(gear(gearId));
+      names.forEach((name, i) => m!.set(name, { x: names.length > 1 ? -w / 2 + (w * (i + 0.5)) / names.length : 0, y: h / 2, z: -d / 2 - 0.03 }));
+    }
     jackCache.set(gearId, m);
   }
   return m;

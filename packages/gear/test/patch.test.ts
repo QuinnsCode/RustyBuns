@@ -1,6 +1,6 @@
 // Patches a roadie actually lays out, each with what it should feed and what it should complain about.
 import { expect, test } from "bun:test";
-import { CIRCUIT_15A, CIRCUIT_20A, compile, type Cable, type CableKind, type Outlet, type Placed } from "../src/index.ts";
+import { CIRCUIT_15A, CIRCUIT_20A, compile, thumps, type Cable, type CableKind, type Outlet, type Placed } from "../src/index.ts";
 
 const c = (kind: CableKind, from: string, to: string): Cable => {
   const end = (s: string) => {
@@ -57,6 +57,16 @@ const stageCables = [
 ];
 const stageWall: Outlet = { ...wall(20), jacks: 3 };
 
+// The first gig: a condenser into the desk, the desk's aux to the amp rack, the rack to a passive wedge.
+const gig = (phantom: boolean): Placed[] => [{ id: "mic", gear: "mic-condenser" }, { id: "desk", gear: "mixer-small", phantom }, { id: "rack", gear: "amp-rack-4u" }, { id: "wedge", gear: "wedge-12-passive" }];
+const gigCables = [
+  c("power", "wall power-out-1", "rack power-in"),
+  c("power", "wall power-out-2", "desk power-in"),
+  c("xlr", "mic xlr-out", "desk xlr-in-1"),
+  c("xlr", "desk xlr-out-1", "rack xlr-in-1"),
+  c("speaker", "rack speaker-out-1", "wedge speaker-in"),
+];
+
 const cases: { name: string; placed: Placed[]; cables: Cable[]; outlets: Outlet[]; fed: Record<string, boolean>; problems: string[] }[] = [
   { name: "the garage: guitar, head, cab", placed: garage, cables: garageCables, outlets: [wall(15)], fed: { cab: true }, problems: [] },
   { name: "the garage with the head unplugged", placed: garage, cables: garageCables.slice(1), outlets: [wall(15)], fed: { cab: false }, problems: ["no-power head"] },
@@ -90,6 +100,8 @@ const cases: { name: string; placed: Placed[]; cables: Cable[]; outlets: Outlet[
   },
   { name: "the stage: a DI's thru to the amp and XLR to the desk hums", placed: stage(false), cables: stageCables, outlets: [stageWall], fed: { cab: true, topL: true }, problems: ["hum di,head,desk"] },
   { name: "the stage with the DI's ground lifted is quiet", placed: stage(true), cables: stageCables, outlets: [stageWall], fed: { cab: true, topL: true }, problems: [] },
+  { name: "the first gig: a condenser on 48 V through the desk and rack to a wedge", placed: gig(true), cables: gigCables, outlets: [wall(15)], fed: { wedge: true }, problems: [] },
+  { name: "the first gig with 48 V off: the condenser is silent, and so is the desk it is patched into", placed: gig(false), cables: gigCables, outlets: [wall(15)], fed: { wedge: false }, problems: ["no-phantom mic,desk"] },
   {
     name: "an outlet that isn't there, and a jack the box doesn't have",
     placed: garage,
@@ -118,4 +130,11 @@ test("a generator feeds the outdoor rig through a distro", () => {
   const got = compile(placed, cables);
   expect(Object.fromEntries(got.fed)).toEqual({ topL: true, topR: true });
   expect(got.problems).toEqual([]);
+});
+
+test("amps on last and off first: anything switched upstream of an amp that is on thumps", () => {
+  const right = [{ id: "desk", on: true }, { id: "rack", on: true }, { id: "rack", on: false }, { id: "desk", on: false }];
+  expect(thumps(gig(true), gigCables, right)).toEqual([]);
+  const wrong = [{ id: "rack", on: true }, { id: "desk", on: true }, { id: "desk", on: false }, { id: "rack", on: false }];
+  expect(thumps(gig(true), gigCables, wrong).map((p) => `${p.kind} ${p.items.join(",")}`)).toEqual(["thump desk,rack", "thump desk,rack"]);
 });
