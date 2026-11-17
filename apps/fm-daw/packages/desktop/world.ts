@@ -10,6 +10,7 @@ import { Sockets, type RoomCtx, type RoomSocket } from "@rustybuns/util/room";
 import { TokenBucket } from "@rustybuns/util/limits";
 import { arr, check, int, maybe, obj, oneOf, raw, rec, str } from "@rustybuns/util/guard";
 import { MAX_CHUNKS, MAX_TAKES, TakeBytesGuard, type TakeBytes } from "../../src/take.ts";
+import { BackupLadder, LadderGuard, MINUTE, pick, thin, type Ladder, type Rung } from "../../src/rewind.ts";
 
 const SAVE_AFTER_MS = 500;
 // A room holds this many sockets (ROOM_SEATS online); past it a socket is told so and closed.
@@ -42,8 +43,10 @@ interface Bucket {
 export const BACKUP_EVERY_MS = 5 * 60 * 1000;
 const backupKey = (room: string) => `sesh/${room}.json`;
 const HASH = str(64, { re: /^[0-9a-f]{64}$/ });
-/** The bucket copy: the groove, its maker's key hash, the floor, the room code's hash and the studio's patch. An older copy is the project alone. */
-const Backup = obj({ project: raw, host: maybe(HASH), floor: maybe(oneOf(["free", "held", "closed"])), lock: maybe(HASH), studio: raw });
+/** The bucket copy: the groove, its maker's key hash, the floor, the room code's hash, the studio's patch and the wind-back ladder. An older copy is the project alone. */
+const Backup = obj({ project: raw, host: maybe(HASH), floor: maybe(oneOf(["free", "held", "closed"])), lock: maybe(HASH), studio: raw, ladder: raw });
+/** One rung of the wind-back ladder in storage: the groove at the start of that minute (src/rewind.ts). */
+const snapKey = (minute: number) => `snap:${minute}`;
 // Takes kept at once, used or not: the ones on tracks, plus what undo may bring back until the room empties.
 const MAX_STORED_TAKES = MAX_TAKES * 3;
 const takeKey = (id: string, i: number) => `take:${id}:${i}`;
@@ -109,6 +112,8 @@ export default class World {
   private takes: Record<string, number> = {};
   /** Takes still coming in: the chunk numbers here so far. */
   private arriving = new Map<string, { n: number; got: Set<number> }>();
+  /** The wind-back ladder: which minutes' grooves are kept, and when the groove last changed. */
+  private ladder: Ladder = { snaps: [], edited: 0 };
 
   constructor(private ctx: Ctx, env: WorldEnv = {}) {
     this.sockets = new Sockets(ctx, LIMITS);
@@ -127,6 +132,7 @@ export default class World {
       if (floor === "held" || floor === "closed") this.floor = floor;
       this.lock = String((await ctx.storage.get("lock")) ?? "");
       this.takes = check(TakeIndex, await ctx.storage.get("takes")) ?? {};
+      this.ladder = check(LadderGuard, await ctx.storage.get("ladder")) ?? this.ladder;
     });
   }
 
@@ -176,6 +182,16 @@ export default class World {
       if (b?.host && !this.host) { this.host = b.host; await this.ctx.storage.put("host", b.host); }
       if (b?.floor && b.floor !== "free") { this.floor = b.floor; await this.ctx.storage.put("floor", b.floor); }
       if (b?.lock && !this.lock) { this.lock = b.lock; await this.ctx.storage.put("lock", b.lock); }
+      const ladder = check(BackupLadder, b?.ladder);
+      if (ladder) {
+        const snaps: number[] = [];
+        for (const { at, project } of ladder.snaps) {
+          const was = sanitize(project);
+          if (was) { await this.ctx.storage.put(snapKey(at), was); snaps.push(at); }
+        }
+        this.ladder = { edited: ladder.edited, snaps: thin(snaps, Math.floor(Date.now() / MINUTE)) };
+        await this.ctx.storage.put("ladder", this.ladder);
+      }
     } catch { /* no copy, or a bad one: the room starts empty */ }
   }
 
@@ -235,6 +251,8 @@ export default class World {
     const seat = this.sockets.who(ws);
     if (msg.t === "floor") { if (seat?.host) void this.setFloor(msg.state); return; }
     if (msg.t === "lock") { if (seat?.host) void this.setLock(msg.code); return; }
+    // a look back is for this page alone, so anyone in may ask, held floor or not
+    if (msg.t === "rewind") { if (seat?.peer) void this.rewind(ws, msg.ago); return; }
     const guest = this.floor !== "free" && !seat?.host;
     if (msg.t === "live") {
       // the live line: in the order it came, to everyone else, kept nowhere (a held room lets a guest only let go)
@@ -261,6 +279,7 @@ export default class World {
     const had = takeIds(this.project);
     const next = apply(this.project, msg.op);
     if (next === this.project) return;
+    this.capture(this.project);
     this.project = next;
     this.save();
     // rebroadcast the sanitized result for replace, the op itself otherwise
@@ -268,6 +287,33 @@ export default class World {
     // an undo can bring back a take the others never heard: its sound goes before the edit
     if (msg.op.t === "replace") void this.sendTakes(new Set([...takeIds(next)].filter((id) => !had.has(id))), this.sockets.open().filter((w) => w !== ws));
     this.broadcast({ t: "op", op }, ws);
+  }
+
+  /**
+   * The first edit of each minute puts the groove as it was before it on the ladder (as of that minute's start),
+   * and the ladder is thinned to its rungs. A minute nobody edits adds nothing: the groove was the one before.
+   */
+  private capture(was: Project) {
+    const m = Math.floor(Date.now() / MINUTE);
+    const last = this.ladder.snaps.at(-1);
+    if (last !== undefined && last >= m) return;
+    const kept = thin([...this.ladder.snaps, m], m);
+    const s = this.ctx.storage;
+    void s.put(snapKey(m), was);
+    for (const at of this.ladder.snaps) if (!kept.includes(at)) void s.delete(snapKey(at));
+    this.ladder = { ...this.ladder, snaps: kept };
+    void s.put("ladder", this.ladder);
+    this.backupDirty = true;
+  }
+
+  /** The groove `ago` minutes back, to this socket only, with the sound of any take on it the page hasn't had. */
+  private async rewind(ws: RoomSocket, ago: Rung) {
+    const now = Date.now(), got = pick(this.ladder, now, ago);
+    const project = got === "now" ? this.project : got === null ? null : sanitize(await this.ctx.storage.get(snapKey(got)));
+    const at = typeof got === "number" ? got * MINUTE : Math.max(0, now - ago * MINUTE);
+    this.sockets.send(ws, { t: "rewound", ago, at, project });
+    const have = takeIds(this.project);
+    if (project) await this.sendTakes(new Set([...takeIds(project)].filter((id) => !have.has(id))), [ws]);
   }
 
   /** A chunk of a take's sound: kept, and passed on so the others have it before the take lands on a track. */
@@ -428,6 +474,7 @@ export default class World {
     if (this.dirty && this.project) {
       this.dirty = false;
       await s.put("project", this.project);
+      await s.put("ladder", this.ladder);
     }
     if (this.chatDirty) {
       this.chatDirty = false;
@@ -440,7 +487,12 @@ export default class World {
     if (this.bucket && this.room && (this.project || this.studioUsed()) && this.backupDirty && (lastOut || Date.now() - this.backedUpAt >= BACKUP_EVERY_MS)) {
       this.backupDirty = false;
       this.backedUpAt = Date.now();
-      try { await this.bucket.put(backupKey(this.room), JSON.stringify({ project: this.project, host: this.host, floor: this.floor, lock: this.lock || undefined, studio: this.studioUsed() ? this.studio.patch : undefined })); } catch { this.backupDirty = true; }
+      try {
+        const snaps: { at: number; project: unknown }[] = [];
+        for (const at of this.ladder.snaps) { const p = await s.get(snapKey(at)); if (p) snaps.push({ at, project: p }); }
+        const ladder = snaps.length ? { edited: this.ladder.edited, snaps } : undefined;
+        await this.bucket.put(backupKey(this.room), JSON.stringify({ project: this.project, host: this.host, floor: this.floor, lock: this.lock || undefined, studio: this.studioUsed() ? this.studio.patch : undefined, ladder }));
+      } catch { this.backupDirty = true; }
     }
     // the last one out: undo goes with them, so only the takes on tracks are kept
     if (lastOut) await this.dropTakes(takeIds(this.project));
@@ -449,7 +501,8 @@ export default class World {
       // nobody came back: the room goes, groove and all
       await s.deleteAlarm();
       await this.dropTakes(new Set());
-      for (const k of ["project", "chat", "studio", "idleMs", "idleAt", "room", "host", "floor", "lock"]) await s.delete(k);
+      for (const k of ["project", "chat", "studio", "idleMs", "idleAt", "room", "host", "floor", "lock", "ladder", ...this.ladder.snaps.map(snapKey)]) await s.delete(k);
+      this.ladder = { snaps: [], edited: 0 };
       if (this.bucket && this.room) await this.bucket.delete(backupKey(this.room)).catch(() => {});
       this.project = null;
       this.chat = empty();
@@ -471,6 +524,7 @@ export default class World {
 
   private save() {
     this.backupDirty = true;
+    this.ladder = { ...this.ladder, edited: Date.now() };
     if (this.dirty) return;
     this.dirty = true;
     void this.ctx.storage.setAlarm(Date.now() + SAVE_AFTER_MS);
