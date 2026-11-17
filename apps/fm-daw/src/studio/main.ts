@@ -404,7 +404,7 @@ $("look").addEventListener("click", () => {
 });
 mountControls({
   key: CONTROLS, pad, parent: $("controls-host"), title: "Controls", skin: "house",
-  keys: [["WASD / left stick", "Walk"], ["Mouse / right stick", "Look"], ["Space / click", "Sit at a spot, stand up"], ["A to ' (seated)", "Play notes; Shift plays louder"], ["Z / X", "Octave down, up"], ["V", "Over the shoulder or first person"], ["Q (standing)", "Picture quality: high or low"], ["M", "Speakers up"], ["Esc", "Let go of the mouse"]],
+  keys: [["WASD / left stick", "Walk"], ["Mouse / right stick", "Look"], ["Space / click", "Sit at a spot, stand up"], ["A to ' (seated)", "Play notes; Shift plays louder"], ["Z / X", "Octave down, up"], ["V", "Over the shoulder or first person"], ["M", "Speakers up"], ["Esc", "Let go of the mouse"]],
   onChange: (s) => { ctl = s; },
   onToggle: (open) => { if (open) document.exitPointerLock?.(); },
 });
