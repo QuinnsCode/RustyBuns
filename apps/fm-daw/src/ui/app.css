@@ -307,4 +307,5 @@ h2 { font: 600 1.2rem/1.1 var(--silk); margin: 0; }
 .person { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .person-name { display: inline-flex; align-items: center; gap: 4px; flex: 1 1 8em; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .person-cans, .person-ask { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.person-ask button { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
 .person-cans .ms { width: auto; padding: 0 6px; display: inline-flex; align-items: center; }
