@@ -5,6 +5,8 @@ import { Cursors, dropAllCursors, dropCursor, moveCursor } from "./Cursors.tsx";
 import { FullCard } from "./Full.tsx";
 import { ChatDock, useChat } from "./Chat.tsx";
 import { LockButton } from "./Lock.tsx";
+import { People } from "./People.tsx";
+import { may, opNeeds, type Can, type GrantServer } from "../grants.ts";
 import { WindBack, type Rewound } from "./WindBack.tsx";
 import type { Rung } from "../rewind.ts";
 import { QWERTY, startMidi } from "./input.ts";
@@ -129,11 +131,15 @@ export function App() {
   const aside = useRef<Project | null>(null);
   const [rewound, setRewound] = useState<Rewound | null>(null);
   // the keyboard and MIDI handlers are registered once; they read these
-  // the sesh's floor: held or closed by its maker, a guest's edits and hands stay in their own page
+  // the sesh's floor and the leader's grants (src/grants.ts): what this page may send; the rest stays in it
+  const chat = useChat();
   const floor = netStatus.state === "online" ? netStatus.floor : undefined;
-  const locked = !!floor && floor.state !== "free" && !floor.host;
-  const live = useRef({ selected, octave, recording, gridIdx, strength, inputQ, transportOn, countIn, repeat, bend, locked, floor });
-  live.current = { selected, octave, recording, gridIdx, strength, inputQ, transportOn, countIn, repeat, bend, locked, floor };
+  const [grants, setGrants] = useState<GrantServer | null>(null);
+  const may1 = (c: Can) => !floor || (grants ? may(grants.grants, floor.state, chat.view.you ?? undefined, floor.host, c) : floor.state === "free" || floor.host);
+  const allowed = { play: may1("play"), edit: may1("edit"), mix: may1("mix"), lead: may1("lead") };
+  const locked = !allowed.play;
+  const live = useRef({ selected, octave, recording, gridIdx, strength, inputQ, transportOn, countIn, repeat, bend, locked, floor, allowed });
+  live.current = { selected, octave, recording, gridIdx, strength, inputQ, transportOn, countIn, repeat, bend, locked, floor, allowed };
 
   const send = (m: ToWorklet) => audioRef.current?.send(m);
 
@@ -143,7 +149,7 @@ export function App() {
       if (opts.remote) aside.current = apply(aside.current, op);
       return;
     }
-    if (!opts.remote && live.current.locked) return;
+    if (!opts.remote && !live.current.allowed[opNeeds(op)]) return;
     const prev = proj.current;
     const next = apply(prev, op);
     if (next === prev) return;
@@ -164,7 +170,7 @@ export function App() {
   function history(dir: "undo" | "redo") {
     const from = dir === "undo" ? undo.current : redo.current;
     const to = dir === "undo" ? redo.current : undo.current;
-    if (live.current.locked || aside.current) return;
+    if (!live.current.allowed.edit || aside.current) return;
     const p = from.pop();
     if (!p) return;
     to.push(proj.current);
@@ -251,7 +257,7 @@ export function App() {
     });
   }
   function landTake(track: number, beat: number, pcm: Float32Array, rate: number) {
-    if (live.current.locked) return;
+    if (!live.current.allowed.edit) return;
     const s16 = encodeTake(pcm, rate);
     if (!s16.length) return;
     const id = newTakeId();
@@ -317,7 +323,6 @@ export function App() {
 
   // ---- world ----
   const [attempt, setAttempt] = useState(0);
-  const chat = useChat();
   // solo: off the sesh, playing your own project; it's saved in this browser and never sent
   const [solo, setSolo] = useState(asked !== null);
   useEffect(() => {
@@ -333,6 +338,7 @@ export function App() {
       onGone,
       onStatus: setNetStatus,
       onChat: chat.onChat,
+      onGrants: setGrants,
       onTakeBytes(m) {
         const pcm = inbox.current.add(m);
         if (pcm) { takeSound.current.set(m.id, pcm); syncTakes(proj.current); }
@@ -791,7 +797,8 @@ export function App() {
         {roomName() && (solo
           ? <button className="ghost" onClick={backToSesh} title="Back to the shared groove; your solo project stays saved here">Back to the sesh</button>
           : <button className="ghost" onClick={goSolo} title="Play your own project, apart from the sesh: saved in this browser, never sent">Go solo</button>)}
-        {floor?.host && !solo && <>
+        {floor && grants && !solo && netStatus.state === "online" && <People grants={grants} floor={floor.state} chat={chat.view} maker={floor.host} onGrant={(m) => net.current?.grant(m)} />}
+        {allowed.lead && floor && !solo && <>
           {floor.state !== "closed" && <button className={floor.state === "held" ? "ghost on" : "ghost"} aria-pressed={floor.state === "held"}
             title={floor.state === "held" ? "Let everyone edit and play again" : "Only you edit and play into the room (Esc)"}
             onClick={() => net.current?.floor(floor.state === "held" ? "free" : "held")}>{floor.state === "held" ? "Freezone" : "Hold"}</button>}
@@ -799,8 +806,8 @@ export function App() {
             onClick={() => net.current?.floor(floor.state === "closed" ? "free" : "closed")}>{floor.state === "closed" ? "Reopen" : "Close out"}</button>
           {netStatus.state === "online" && <LockButton locked={!!netStatus.locked} onLock={(c) => net.current?.lock(c)} />}
         </>}
-        {locked && !solo && <span className="warn-text" role="status">The maker holds the floor: you're heard only here</span>}
-        {!solo && netStatus.state === "online" && <WindBack rewound={rewound} leads={!floor || floor.host} onAsk={(ago) => net.current?.rewind(ago)} onBack={() => endLook()} onBring={bringBack} />}
+        {locked && !solo && <span className="warn-text" role="status">You're listening: heard only here. Raise a hand to play</span>}
+        {!solo && netStatus.state === "online" && <WindBack rewound={rewound} leads={allowed.lead} onAsk={(ago) => net.current?.rewind(ago)} onBack={() => endLook()} onBring={bringBack} />}
         <span className="spacer" />
         {bounce.path && <span className="dim">{bounce.path}</span>}
         {bounce.saved && <button className="ghost" onClick={() => reveal(bounce.path!)}>Show</button>}
