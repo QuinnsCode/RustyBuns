@@ -22,6 +22,7 @@ import type { Ask } from "./replies.ts";
 export { writeCheck } from "../askfirst/ask.ts";
 // #3119: the hire and queue handlers ask what a task collides with before it starts
 export { clashMessage, flagOf, heldTasks, hireClash, holdTask, titleOf } from "./overlap.ts";
+export { swapHold } from "./reaper.ts";
 
 /** What AGENT_OFFICE_PEOPLE_ONLY can hold, by the endpoint's action (the path after /office/workers). */
 const ACTIONS: Record<string, string> = { "": "hire", "/home": "home", "/tell": "tell", "/pr": "pr", "/queue": "queue", "/outbound": "outbound", "/write": "write" };

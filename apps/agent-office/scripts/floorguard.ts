@@ -28,7 +28,8 @@ export function floorGuardHooks(js: string) {
   // A hired worker's first prompt is marked as from the agent that hired it, like a tell: hiring isn't a way round the mark.
   // #3119: a task on files an open PR or a queued task is changing is refused (anyway: true starts it, hold: true
   // waits for that work to merge); asked before ask-first, so a person isn't asked about a hire that won't happen
-  js = once(js, rel, hire, hire + clash("    ", "body") + ask("    ", "body") + "    ask.prompt = __rbGuard.fromWorker(who, ask.prompt);\n" +
+  // #4905: with swap over 80% the Mac is about to stall, so a hire waits (503) until something is sent home
+  js = once(js, rel, hire, hire + "    const __rbSwap = __rbGuard.swapHold();\n    if (__rbSwap) {\n        ctx.toastFloor(floor, __rbSwap, 'warn');\n        return send(res, 503, { error: __rbSwap });\n    }\n" + clash("    ", "body") + ask("    ", "body") + "    ask.prompt = __rbGuard.fromWorker(who, ask.prompt);\n" +
     held("    ", "{ by: who, owner: floor.workers.ownerOf(me.id), prompt: ask.prompt, title: __rbGuard.titleOf(body), issue: ask.issue }"));
   js = once(js, rel, "            const { note, error } = await floor.sendHome(w.id, ask.cleanup);\n",
     "            const __rbHeld = await __rbGuard.forcedHome(floor, w, ask.cleanup, __rbDescribeWork);\n" +

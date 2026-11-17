@@ -7,6 +7,7 @@ import { formatMemStats, type MemStats } from "@rustybuns/shell-bun/memwatch";
 import { formatHistory, type Run } from "@rustybuns/shell-bun/history";
 import { check, int, maybe, obj, str } from "@rustybuns/util/guard";
 import type { OfficeMem } from "../live/mem.ts";
+import type { ReaperStats } from "../live/reaper.ts";
 
 /** A triage tool's arguments: each one it reads, and a wrong one is left out rather than refusing the call. */
 const TriageArgs = obj({ seconds: maybe(int(1, 3600)), top: maybe(int(1, 1000)), runs: maybe(int(1, 1000)), id: maybe(str(200)) });
@@ -92,6 +93,12 @@ export const TRIAGE_NOTE =
 
 export const formatMem = (name: string, m: MemStats): string => `${name}: ${formatMemStats(m)}`;
 
+/** The swap gauge and the reaper's count (#4905). */
+export const formatReaper = (r: ReaperStats): string =>
+  `swap: ${r.swap ? `${r.swap.pct}% (${(r.swap.usedMb / 1024).toFixed(1)} of ${(r.swap.totalMb / 1024).toFixed(1)} GB)${r.hold !== null && r.swap.pct > r.hold ? `, over ${r.hold}%: hires wait` : ""}` : "none, or not read yet"}` +
+  ` · reaper: ended ${r.reaped} leftover process${r.reaped === 1 ? "" : "es"} since the office started` +
+  (r.lastReaped.length ? `\n  last: ${r.lastReaped.join("\n  last: ")}` : "");
+
 const files = (list: SavedFile[]) => list.map((f) => `  ${f.id}  ${f.at}  ${(f.bytes / 1e6).toFixed(1)} MB  ${f.file}`);
 
 function formatProfile(a: { id: string; file: string; seconds?: number; summary: ProfileSummary }) {
@@ -108,7 +115,7 @@ export async function runTriageTool(name: string, args: unknown, call: TriageCal
   };
   if (name === "mem_stats") {
     const m: OfficeMem = await ask("GET", "/__rb/mem");
-    return [formatMem("office", m.office), ...m.ptyHosts.map((h) => h.mem ? formatMem(`pty host (floor ${h.floor}, pid ${h.mem.pid})`, h.mem) : `pty host (floor ${h.floor}): no sample yet, or not running`)].join("\n");
+    return [formatMem("office", m.office), ...m.ptyHosts.map((h) => h.mem ? formatMem(`pty host (floor ${h.floor}, pid ${h.mem.pid})`, h.mem) : `pty host (floor ${h.floor}): no sample yet, or not running`), ...(m.reaper ? [formatReaper(m.reaper)] : [])].join("\n");
   }
   if (name === "take_cpu_profile") {
     return formatProfile(await ask("POST", `/__rb/prof?s=${a.seconds ?? 10}${a.top ? `&top=${a.top}` : ""}`));
