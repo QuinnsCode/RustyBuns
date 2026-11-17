@@ -1,12 +1,14 @@
 // A crew of two in the bigger bar, through the room's own Durable Object (edge/world.ts) on stand-in sockets: the 70 kg
 // cooler is too heavy for one, so Ada takes an end and waits, Bea takes the other, they can only walk it the same way,
-// and when Bea sets it down it lands in both their worlds. A wedge one of them has is the other's only to watch.
+// and when Bea sets it down it lands in both their worlds. A wedge one of them has is the other's only to watch. In the
+// garage they share a power run: one takes it out of the case to the wall, the other walks the far end to the speaker.
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { RoomMintGate } from "@rustybuns/util/limits";
 import type { RoomSocket } from "@rustybuns/util/room";
 import { seatDoor } from "@rustybuns/util/seats";
 import { BIGGER_BAR } from "../src/venues/bigger-bar.ts";
-import { newWorld, pickUp, putDown, snapshot, walkTo, type World } from "../src/sim.ts";
+import { newWorld, pickUp, putDown, snapshot, walkTo, type Level, type World } from "../src/sim.ts";
+import { cableState, dropEnd, grabEnd, newCables, plug, settle, takeCable, walkWith, type Cables } from "../src/cables/cables.ts";
 import { setDial } from "../src/assists.ts";
 import { World as Room } from "../src/edge/world.ts";
 import { readServer } from "../src/crew/room.ts";
@@ -27,26 +29,33 @@ let real: unknown;
 beforeAll(() => { real = Reflect.get(globalThis, "WebSocketPair"); Reflect.set(globalThis, "WebSocketPair", FakePair); });
 afterAll(() => { Reflect.set(globalThis, "WebSocketPair", real); });
 
-interface Page { name: string; w: World; s: Synced; ws: Sock }
+interface Page { name: string; w: World; c: Cables; s: Synced; ws: Sock }
 
-test("two carry the cooler together, walk it out the same way, and it lands where it was set down for both", async () => {
-  setDial("sim");
+/** A crew room on stand-in sockets, a page per friend who joins, and `pump`: one round of the wire, where each page
+ * sends its cable ends, grabs, drops and pose, and the room sends each its view. */
+function crewRoom(level: Level) {
   const socks: RoomSocket[] = [];
   const room = new Room({ acceptWebSocket: (s) => { socks.push(s); }, getWebSockets: () => socks }, {});
   const gate = new RoomMintGate();
   const join = async (name: string, uid: string): Promise<Page> => {
-    const req = new Request(`https://load-in.example/ws?room=CREW1&level=bigger-bar&uid=${uid}&name=${name}`, { headers: { Upgrade: "websocket", Origin: "https://load-in.example" } });
+    const req = new Request(`https://load-in.example/ws?room=CREW1&level=${level.name}&uid=${uid}&name=${name}`, { headers: { Upgrade: "websocket", Origin: "https://load-in.example" } });
     const seat = await seatDoor(req, { door: { app: APP, eqosys: "https://eqosys.example", fallbackName: "Roadie" }, room: /^[A-Z0-9]{4,12}$/, gate });
     if (seat instanceof Response) throw new Error(`refused ${seat.status}`);
     await room.fetch(seat.request);
-    return { name, w: newWorld(BIGGER_BAR), s: synced(), ws: socks.at(-1) as Sock };
+    const w = newWorld(level);
+    return { name, w, c: newCables(w), s: synced(), ws: socks.at(-1) as Sock };
   };
-  // One round of the wire: each page sends its grabs, drops and pose, the room sends each its view.
   const pump = (...pages: Page[]) => {
-    for (const p of pages) for (const m of [...outbox(p.w, p.s), poseOf(p.w)]) room.webSocketMessage(p.ws, JSON.stringify(m));
+    for (const p of pages) for (const m of [...outbox(p.w, p.s, p.c), poseOf(p.w)]) room.webSocketMessage(p.ws, JSON.stringify(m));
     room.flush();
-    for (const p of pages) for (const raw of p.ws.inbox.splice(0)) { const m = readServer(JSON.parse(raw)); if (m) hear(p.w, p.s, m); }
+    for (const p of pages) for (const raw of p.ws.inbox.splice(0)) { const m = readServer(JSON.parse(raw)); if (m) hear(p.w, p.s, m, p.c); }
   };
+  return { join, pump };
+}
+
+test("two carry the cooler together, walk it out the same way, and it lands where it was set down for both", async () => {
+  setDial("sim");
+  const { join, pump } = crewRoom(BIGGER_BAR);
   const cooler = (w: World) => snapshot(w).items.find((i) => i.key === "cooler")!;
 
   const ada = await join("Ada", "guest-ada-0001");
@@ -99,4 +108,64 @@ test("two carry the cooler together, walk it out the same way, and it lands wher
   expect(pickUp(ada.w, "wedge-1")).toEqual({ ok: true });
   pump(ada, bea);
   expect(pickUp(bea.w, "wedge-1")).toEqual({ ok: false, why: "Ada has the 12\" floor monitor" });
+});
+
+test("two run one power cable: Ada takes it to the wall, Bea walks the far end to the speaker, and both see it patched", async () => {
+  setDial("sim");
+  const { join, pump } = crewRoom(newWorld().level);
+  const ada = await join("Ada", "guest-ada-0002"), bea = await join("Bea", "guest-bea-0002");
+  const run = (p: Page, key = "power-10") => cableState(p.w, p.c).cables.find((r) => r.key === key)!;
+  // Each walks ten steps, the wire between every step, so the friend's end follows their hand. (Ten, not more: the room
+  // drops a socket's frames past a burst of 80, and the test sends them all in a moment.)
+  const walk = (p: Page, x: number, z: number, ...all: Page[]) => {
+    for (let k = 0; k < 10 && Math.hypot(p.w.you.x - x, p.w.you.z - z) > 0.05; k++) {
+      walkWith(p.w, p.c, p.w.you.x + (x - p.w.you.x) / (10 - k), p.w.you.z + (z - p.w.you.z) / (10 - k));
+      for (const o of all) if (o !== p) settle(o.w, o.c, 0.05);
+      pump(...all);
+    }
+  };
+
+  // Both by the case: Ada takes the power cable out, and on Bea's page it comes out in Ada's hand.
+  walk(ada, -1.6, 3.2, ada, bea); walk(bea, -1.2, 3.4, ada, bea);
+  expect(takeCable(ada.w, ada.c, "power")).toEqual({ ok: true });
+  pump(ada, bea);
+  expect(run(bea)).toMatchObject({ coiled: false, a: "Ada's hand", b: "case" });
+
+  // Bea takes the instrument cable: on Ada's page it is in Bea's hand, and Ada can't take it from her.
+  expect(takeCable(bea.w, bea.c, "instrument")).toEqual({ ok: true });
+  pump(bea, ada);
+  expect(run(ada, "inst-6").a).toBe("Bea's hand");
+  expect(grabEnd(ada.w, ada.c, "inst-6", "a")).toEqual({ ok: false, why: "Bea has that end" });
+
+  // Ada plugs hers into the wall.
+  walk(ada, -2.2, 0.6, ada, bea);
+  expect(plug(ada.w, ada.c, "outlet", "power-out-1")).toEqual({ ok: true });
+  pump(ada, bea);
+  expect(run(bea).a).toBe("outlet power-out-1");
+
+  // Bea puts the instrument cable down, and both reach for power's far end in the case at once: Ada's word is in first,
+  // so Bea's is taken back.
+  expect(dropEnd(bea.c)).toEqual({ ok: true });
+  walk(ada, -1.6, 3.0, ada, bea);
+  expect(grabEnd(ada.w, ada.c, "power-10", "b")).toEqual({ ok: true });
+  expect(grabEnd(bea.w, bea.c, "power-10", "b")).toEqual({ ok: true });
+  pump(ada, bea); pump(ada, bea);
+  expect([run(ada).b, run(bea).b]).toEqual(["hand", "Ada's hand"]);
+
+  // Ada hands it over: she lets go, Bea picks it up and walks it in to the speaker.
+  expect(dropEnd(ada.c)).toEqual({ ok: true });
+  pump(ada, bea); pump(ada, bea);
+  expect(run(bea).b).toBe("loose");
+  expect(grabEnd(bea.w, bea.c, "power-10", "b")).toEqual({ ok: true });
+  walk(bea, 2.0, 1.9, ada, bea);
+  expect(plug(bea.w, bea.c, "top", "xlr-in").ok).toBe(false);
+  expect(plug(bea.w, bea.c, "top", "power-in")).toEqual({ ok: true });
+  pump(ada, bea); pump(ada, bea);
+
+  // Plugged in at both ends, on both pages: the same patch, and the same hazard across the way in.
+  for (const p of [ada, bea]) settle(p.w, p.c, 3);
+  expect([run(ada), run(bea)].map((r) => [r.a, r.b])).toEqual([["outlet power-out-1", "top power-in"], ["outlet power-out-1", "top power-in"]]);
+  expect(cableState(ada.w, ada.c).fed).toEqual(cableState(bea.w, bea.c).fed);
+  const power = (p: Page) => cableState(p.w, p.c).hazards.filter((h) => h.cable === "power-10").map((h) => h.walkway);
+  expect([power(ada), power(bea)]).toEqual([["the way in"], ["the way in"]]);
 });

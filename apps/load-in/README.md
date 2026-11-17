@@ -94,8 +94,10 @@ Signed in, **Make a party** gives a code to hand out; friends type it in **Join*
 the same). You see each other, and gear one of you moves is moved for everyone. Anything 30 kg or more (a sub, the bar's
 cooler) takes two: F on it takes one end, and your friend's F on it takes the other. It comes up between you at
 the pace of half its weight, and neither of you can walk off from the other, so you walk it the same way. Over 50 kg one
-person can't lift it at all. Light gear someone holds is theirs until they set it down. Cables and switches are still
-each player's own for now.
+person can't lift it at all. Light gear someone holds is theirs until they set it down. Cables are shared too: one of
+you takes a cable out of the case to the wall while another walks its far end to the speaker and lays the ramp, and
+everyone sees the same patch. A cable end in a friend's hand is theirs until they let go of it. Switches are still each
+player's own for now.
 
 The crew room is a World Durable Object per level and code (`src/edge/`); `bun run edge:dev` runs it locally behind
 the built page. Plain `bun run dev` has no `/ws`, so a party plays alone there.

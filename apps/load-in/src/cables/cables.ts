@@ -5,12 +5,12 @@ import { assist } from "../assists.ts";
 import { CIRCUIT_15A, CIRCUIT_20A, cableFor, compile, gear, jackKind, jackNames, type Cable, type CableKind, type End, type Placed } from "@rustybuns/gear";
 import { GEAR_SIZES, gear as model, gearJacks, type GearId } from "@rustybuns/models/gear";
 import { Vector3 } from "three";
-import { EYE, EYE_CROUCH, LOW, REACH, dims, facing, holdPose, walkTo, type Answer, type Item, type World } from "../sim.ts";
+import { EYE, EYE_CROUCH, LOW, REACH, dims, facing, holdPose, walkTo, type Answer, type Item, type Mate, type World } from "../sim.ts";
 import { switchedOnIsFed, type Fed } from "../audio/hear.ts";
 import { THICK, newRope, pathLength, stepRope, type Rope, type Solid, type Vec } from "./rope.ts";
 
-/** Where a cable's end is: in a jack, in your hand, lying loose, or still coiled in the case. */
-export type EndAt = { plug: End } | { hand: true } | { loose: true } | { case: true };
+/** Where a cable's end is: in a jack, in your hand, in a friend's (crew/sync.ts), lying loose, or still coiled in the case. */
+export type EndAt = { plug: End } | { hand: true } | { mate: string } | { loose: true } | { case: true };
 export interface Run {
   key: string; kind: CableKind; lengthM: number; a: EndAt; b: EndAt; rope: Rope | null;
   /** Being coiled at the case: the loops so far, over or under, and when the last one went on. */
@@ -48,6 +48,8 @@ export function newCables(w: World): Cables {
 const isPlug = (e: EndAt): e is { plug: End } => "plug" in e;
 const isHand = (e: EndAt) => "hand" in e;
 const inCase = (e: EndAt) => "case" in e;
+const isMate = (e: EndAt): e is { mate: string } => "mate" in e;
+const mateOf = (w: World, e: { mate: string }) => w.crew.find((m) => m.id === e.mate);
 /** The run whose end is in your hand, and which end. */
 export function inHand(c: Cables): { run: Run; end: "a" | "b" } | null {
   for (const run of c.runs) {
@@ -92,9 +94,10 @@ export function jacks(w: World): { owner: string; jack: string; at: Vec }[] {
 const jackAt = (w: World, owner: string, jack: string) => jacks(w).find((j) => j.owner === owner && j.jack === jack)?.at ?? null;
 
 /** Where your hand holds a cable end. */
-export const handAt = (w: World): Vec => {
-  const f = facing(w.you.yaw);
-  return { x: w.you.x + f.x * 0.35, y: w.you.crouch ? 0.55 : 0.95, z: w.you.z + f.z * 0.35 };
+export const handAt = (w: World): Vec => handOf(w.you);
+const handOf = (p: Pick<Mate, "x" | "z" | "yaw" | "crouch">): Vec => {
+  const f = facing(p.yaw);
+  return { x: p.x + f.x * 0.35, y: p.crouch ? 0.55 : 0.95, z: p.z + f.z * 0.35 };
 };
 function caseTop(w: World, c: Cables): Vec | null {
   const i = w.items.find((x) => x.key === c.caseKey);
@@ -104,12 +107,13 @@ function caseTop(w: World, c: Cables): Vec | null {
 }
 function pinOf(w: World, c: Cables, e: EndAt): Vec | undefined {
   if (isHand(e)) return handAt(w);
+  if (isMate(e)) { const m = mateOf(w, e); return m && handOf(m); }
   if (inCase(e)) return caseTop(w, c) ?? undefined;
   if (isPlug(e)) return jackAt(w, e.plug[0], e.plug[1]) ?? undefined;
   return undefined;
 }
 /** Where an end is now: its pin, or the rope's last point if it lies loose. */
-function endAt(w: World, c: Cables, run: Run, end: "a" | "b"): Vec | null {
+export function endAt(w: World, c: Cables, run: Run, end: "a" | "b"): Vec | null {
   const pin = pinOf(w, c, run[end]);
   if (pin) return pin;
   const pts = run.rope?.pts;
@@ -164,6 +168,8 @@ export function takeCable(w: World, c: Cables, kind?: CableKind): Answer {
 export function grabEnd(w: World, c: Cables, key: string, end: "a" | "b"): Answer {
   const run = c.runs.find((r) => r.key === key);
   if (!run?.rope) return { ok: false, why: `no ${key} laid out` };
+  const e = run[end];
+  if (isMate(e)) return { ok: false, why: `${mateOf(w, e)?.name ?? "a friend"} has that end` };
   if (handsFull(w, c)) return { ok: false, why: "your hands are full" };
   const at = endAt(w, c, run, end);
   if (!at || !near(w, at)) return { ok: false, why: `that end of ${key} is out of reach` };
@@ -201,7 +207,7 @@ export function dropEnd(c: Cables): Answer {
   if (!h) return { ok: false, why: "no cable in your hand" };
   h.run[h.end] = { loose: true };
   delete h.run.coiling;
-  if (assist("autoCoil") && !isPlug(h.run.a) && !isPlug(h.run.b)) Object.assign(h.run, { rope: null, a: { case: true }, b: { case: true } });
+  if (assist("autoCoil") && ![h.run.a, h.run.b].some((e) => isPlug(e) || isMate(e))) Object.assign(h.run, { rope: null, a: { case: true }, b: { case: true } });
   return { ok: true };
 }
 
@@ -211,11 +217,30 @@ export function coil(w: World, c: Cables, key: string): Answer {
   const run = c.runs.find((r) => r.key === key), top = caseTop(w, c);
   if (!run?.rope) return { ok: false, why: `${key} is already coiled` };
   if (isPlug(run.a) || isPlug(run.b)) return { ok: false, why: `unplug ${key} first` };
+  const m = [run.a, run.b].find(isMate);
+  if (m) return { ok: false, why: `${mateOf(w, m)?.name ?? "a friend"} has the other end` };
   if (!top || !near(w, top)) return { ok: false, why: "the cable case is out of reach" };
   if (run.coiling) return { ok: false, why: "Q over, E under" };
   if (assist("autoCoil")) return stow(run, 0), { ok: true };
   run.coiling = { ways: [], at: -Infinity };
   return { ok: true };
+}
+
+/** The crew room's word on one end of a cable (crew/sync.ts): it comes out of the case as a rope, a loose end lands
+ * `at` where it was let go, and with both ends back in the case it is coiled, with the twists it went in with. */
+export function setEnd(w: World, c: Cables, key: string, end: "a" | "b", to: EndAt, at?: Vec, twists?: number) {
+  const run = c.runs.find((r) => r.key === key);
+  if (!run) return;
+  const was = run[end];
+  run[end] = to;
+  if (!isHand(run.a) && !isHand(run.b)) delete run.coiling;
+  if (inCase(run.a) && inCase(run.b)) return stow(run, twists ?? run.twists ?? 0);
+  run.rope ??= newRope(run.lengthM, caseTop(w, c) ?? at ?? { x: 0, y: 0, z: 0 });
+  if (at && "loose" in to && !("loose" in was)) {
+    const n = end === "a" ? 0 : run.rope.pts.length - 1;
+    run.rope.pts[n] = { ...at };
+    run.rope.prev[n] = { ...at };
+  }
 }
 
 function stow(run: Run, twists: number) {
@@ -352,13 +377,13 @@ export function use(w: World, c: Cables, aimedItem: Item | null): Answer | null 
 }
 
 const cm = (v: number) => Math.round(v * 100) / 100;
-const endName = (e: EndAt) => (isPlug(e) ? `${e.plug[0]} ${e.plug[1]}` : isHand(e) ? "hand" : inCase(e) ? "case" : "loose");
+const endName = (w: World, e: EndAt) => (isPlug(e) ? `${e.plug[0]} ${e.plug[1]}` : isHand(e) ? "hand" : isMate(e) ? `${mateOf(w, e)?.name ?? "a friend"}'s hand` : inCase(e) ? "case" : "loose");
 
 /** What `loadIn.state()` says about cables: each run's ends and slack, the hazards, and the patch. */
 export function cableState(w: World, c: Cables) {
   return {
     cables: c.runs.map((r) => ({
-      key: r.key, kind: r.kind, lengthM: r.lengthM, coiled: !r.rope, a: endName(r.a), b: endName(r.b), twists: r.twists ?? 0,
+      key: r.key, kind: r.kind, lengthM: r.lengthM, coiled: !r.rope, a: endName(w, r.a), b: endName(w, r.b), twists: r.twists ?? 0,
       ...(r.coiling ? { coiling: `${r.coiling.ways.length} of ${loopsFor(r)}` } : {}),
       slack: r.rope ? cm(r.lengthM - Math.hypot(...(["x", "y", "z"] as const).map((k) => r.rope!.pts[0]![k] - r.rope!.pts[r.rope!.pts.length - 1]![k]))) : null,
       laid: r.rope ? cm(pathLength(r.rope)) : 0,
