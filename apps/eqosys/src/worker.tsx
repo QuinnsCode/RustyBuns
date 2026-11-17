@@ -17,21 +17,6 @@ import { link, members } from "./members.ts";
 import { countsOf, unlocksOf } from "./achievements.ts";
 import { newKey } from "@rustybuns/util/token";
 import type { Env as AppEnv } from "./env.ts";
-import initSql from "../migrations/0001_init.sql?raw";
-import oauthSql from "../migrations/0002_oauth.sql?raw";
-import reportsSql from "../migrations/0003_reports.sql?raw";
-import savesSql from "../migrations/0004_saves.sql?raw";
-import seatsSql from "../migrations/0004_party_seats.sql?raw";
-import unlocksSql from "../migrations/0006_achievements.sql?raw";
-import spacesSql from "../migrations/0007_spaces.sql?raw";
-import privacySql from "../migrations/0008_privacy.sql?raw";
-import visitsSql from "../migrations/0009_visits.sql?raw";
-import studiosSql from "../migrations/20261106000000_studios.sql?raw";
-import deploysSql from "../migrations/20261107000000_deploys.sql?raw";
-import listingsSql from "../migrations/20261109000000_listings.sql?raw";
-import studioReportsSql from "../migrations/20261111000000_studio_reports.sql?raw";
-import studioSpacesSql from "../migrations/20261113000000_studio_spaces.sql?raw";
-import avatarsSql from "../migrations/20261116000000_avatars.sql?raw";
 import { house, studiosOf } from "./studios.ts";
 import { markStaff, tally, visitorsOf } from "./visitors.ts";
 import { loadOf } from "./scale.ts";
@@ -51,11 +36,13 @@ const e = (req?: Request): AppEnv => {
   };
 };
 
+/** Every migration, by file name: a new one is picked up without a line here (five were missed once, and sign-up broke). */
+const MIGRATIONS = import.meta.glob<string>("../migrations/*.sql", { query: "?raw", import: "default", eager: true });
 // vite dev's local D1 starts empty; the first request applies the migrations itself. Deploys run them through Alchemy.
 // One statement at a time, so a column added on an earlier run ("duplicate column") doesn't stop the rest.
 let migrated: Promise<unknown> | undefined;
 const devMigrate = (db: AppEnv["DB"]) => (migrated ??= (async () => {
-  for (const q of [initSql, oauthSql, reportsSql, savesSql, seatsSql, unlocksSql, spacesSql, privacySql, visitsSql, studiosSql, deploysSql, listingsSql, studioReportsSql, studioSpacesSql, avatarsSql].join("\n").split("\n").filter((l) => !l.trimStart().startsWith("--")).join("\n").split(/;\s*\n/)
+  for (const q of Object.entries(MIGRATIONS).sort(([a], [b]) => a.localeCompare(b)).map(([, sql]) => sql).join("\n").split("\n").filter((l) => !l.trimStart().startsWith("--")).join("\n").split(/;\s*\n/)
     .map((q) => q.trim().replace(/;$/, "")).filter(Boolean)
     .map((q) => q.replace(/^create (table|index|unique index) /i, "create $1 if not exists ")))
     await db.prepare(q).run().catch((err: unknown) => { if (!/duplicate column/i.test(String(err))) throw err; });
