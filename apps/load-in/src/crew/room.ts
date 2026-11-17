@@ -1,0 +1,117 @@
+// A crew's room: who is here, where each one stands, who holds what, and where gear was last set down. Pure, so the
+// Durable Object (edge/world.ts), the page (crew/online.ts) and the tests share the rules. Each player walks their own
+// body and the room relays it; what the room decides is the hands: one person a piece, or two on something heavy.
+import { arr, bool, check, int, nul, num, obj, oneOf, opt, str, type Of } from "@rustybuns/util/guard";
+
+/** Players in one crew. */
+export const MAX_CREW = 6;
+
+const at = num(-1000, 1000);
+const turn = num(-1e4, 1e4);
+const key = str(64);
+/** What a page sends: its pose (and where the piece it carries is drawn), a grab, or where it set a piece down. */
+export const PoseMsg = obj({ t: oneOf(["pose"]), x: at, z: at, yaw: turn, crouch: bool(false), carry: opt(obj({ key, ...placeShape() })) });
+export const GrabMsg = obj({ t: oneOf(["grab"]), key, team: bool(false) });
+export const DropMsg = obj({ t: oneOf(["drop"]), key, ...placeShape() });
+export type PoseMsg = Of<typeof PoseMsg>;
+export type GrabMsg = Of<typeof GrabMsg>;
+export type DropMsg = Of<typeof DropMsg>;
+export type Sent = PoseMsg | GrabMsg | DropMsg;
+function placeShape() { return { x: at, y: at, z: at, rot: turn }; }
+
+/** A message off the wire, or null if it isn't one. */
+export function readSent(raw: unknown): Sent | null {
+  const t = check(obj({ t: oneOf(["pose", "grab", "drop"]) }), raw)?.t;
+  return t === "pose" ? check(PoseMsg, raw) : t === "grab" ? check(GrabMsg, raw) : t === "drop" ? check(DropMsg, raw) : null;
+}
+
+export const Mate = obj({
+  id: str(200), name: str(200, { min: 0 }), slot: int(0, MAX_CREW),
+  x: at, z: at, yaw: turn, crouch: bool(false),
+  holding: nul(key),
+  carry: opt(obj({ key, ...placeShape() })),
+});
+export type Mate = Of<typeof Mate>;
+/** A piece someone set down, with a count that goes up each time, so a page only takes a newer word than it has. */
+export const Placed = obj({ key, n: int(1, 1e9), ...placeShape() });
+export type Placed = Of<typeof Placed>;
+
+const ViewMsg = obj({ t: oneOf(["view"]), you: str(200), mates: arr(Mate, MAX_CREW), placed: arr(Placed, 500) });
+const RefusedMsg = obj({ t: oneOf(["refused"]), key, why: str(200) });
+export type ServerMsg = Of<typeof ViewMsg> | Of<typeof RefusedMsg>;
+/** The room's message read on the page. */
+export function readServer(raw: unknown): ServerMsg | null {
+  const t = check(obj({ t: oneOf(["view", "refused"]) }), raw)?.t;
+  return t === "view" ? check(ViewMsg, raw) : t === "refused" ? check(RefusedMsg, raw) : null;
+}
+
+export class Crew {
+  private mates = new Map<string, Mate>();
+  /** Who holds each piece: one id, or two on a team carry. */
+  private hands = new Map<string, string[]>();
+  private placed = new Map<string, Placed>();
+
+  get size() { return this.mates.size; }
+
+  /** False if the crew is full (someone already in is always let back in). */
+  join(id: string, name: string): boolean {
+    const had = this.mates.get(id);
+    if (had) { had.name = name; return true; }
+    if (this.mates.size >= MAX_CREW) return false;
+    const taken = new Set([...this.mates.values()].map((m) => m.slot));
+    let slot = 0;
+    while (taken.has(slot)) slot++;
+    this.mates.set(id, { id, name, slot, x: 0, z: 0, yaw: 0, crouch: false, holding: null });
+    return true;
+  }
+
+  /** Gone: whatever they held is let go of where it is (the other end, on a team carry, stays in a friend's hands). */
+  leave(id: string) {
+    this.mates.delete(id);
+    for (const [k, ids] of this.hands) {
+      const rest = ids.filter((h) => h !== id);
+      if (rest.length) this.hands.set(k, rest); else this.hands.delete(k);
+    }
+  }
+
+  pose(id: string, p: PoseMsg) {
+    const m = this.mates.get(id);
+    if (!m) return;
+    Object.assign(m, { x: p.x, z: p.z, yaw: p.yaw, crouch: p.crouch, carry: p.carry && m.holding === p.carry.key ? p.carry : undefined });
+  }
+
+  /** Take a piece: free hands on it, or the second pair on a heavy one (`team`). The refusal names who has it. */
+  grab(id: string, g: GrabMsg): { ok: true } | { ok: false; why: string } {
+    const m = this.mates.get(id);
+    if (!m) return { ok: false, why: "not in the crew" };
+    const ids = this.hands.get(g.key) ?? [];
+    if (ids.includes(id)) return { ok: true };
+    const by = ids.map((h) => this.mates.get(h)?.name ?? "someone").join(" and ");
+    if (ids.length >= 2 || (ids.length === 1 && !g.team)) return { ok: false, why: `${by} has it` };
+    if (m.holding) this.letGo(id, m.holding);
+    this.hands.set(g.key, [...ids, id]);
+    m.holding = g.key;
+    return { ok: true };
+  }
+
+  /** Set a piece down: everyone holding it lets go, and the room keeps where it landed. Ignored from empty hands. */
+  drop(id: string, d: DropMsg): boolean {
+    const ids = this.hands.get(d.key);
+    if (!ids?.includes(id)) return false;
+    for (const h of ids) { const m = this.mates.get(h); if (m) { m.holding = null; m.carry = undefined; } }
+    this.hands.delete(d.key);
+    const n = (this.placed.get(d.key)?.n ?? 0) + 1;
+    this.placed.set(d.key, { key: d.key, n, x: d.x, y: d.y, z: d.z, rot: d.rot });
+    return true;
+  }
+
+  private letGo(id: string, k: string) {
+    const rest = (this.hands.get(k) ?? []).filter((h) => h !== id);
+    if (rest.length) this.hands.set(k, rest); else this.hands.delete(k);
+  }
+
+  /** The room as `id` sees it: everyone else, and every piece set down so far. */
+  view(id: string): Extract<ServerMsg, { t: "view" }> {
+    return { t: "view", you: id, mates: [...this.mates.values()].filter((m) => m.id !== id), placed: [...this.placed.values()] };
+  }
+}

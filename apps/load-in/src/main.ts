@@ -8,7 +8,7 @@ import { DEFAULTS, loadPad, mountControls, type Settings } from "@rustybuns/game
 import { clamp } from "@rustybuns/util";
 import { gear } from "@rustybuns/gear";
 import { gear as model, gearLook } from "@rustybuns/models/gear";
-import { EYE, EYE_CROUCH, GARAGE, type Answer, type Level, aimed, dims, heldItem, holdPose, newWorld, pickUp, putDown, snapshot, step, turnHeld, type World, wheeled } from "./sim.ts";
+import { EYE, EYE_CROUCH, GARAGE, type Answer, type Level, aimed, dims, heldItem, holdPose, newWorld, partner, pickUp, putDown, snapshot, step, turnHeld, type World, wheeled } from "./sim.ts";
 import * as cable from "./cables/cables.ts";
 import { cableView } from "./cables/draw.ts";
 import { DIVE_BAR, aim, barState, master, raise, rig, settle, standHeight } from "./venues/dive-bar.ts";
@@ -23,6 +23,8 @@ import { currentDial, setDial } from "./assists.ts";
 import { doors } from "./clock.ts";
 import { mountClock, mountDial, mountGlow, savedDial } from "./dial-view.ts";
 import { accountChip, canSignIn, finishSignIn, login, party, type PartyMember } from "./eqosys.ts";
+import { joinCrew, roomCode, type Online } from "./crew/online.ts";
+import { crewView } from "./crew/view.ts";
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const canvas = $<HTMLCanvasElement>("stage");
@@ -40,6 +42,12 @@ const keys = new Set<string>();
 const switchedOn: Switches = new Set();
 const sound = soundSystem($("speakers"));
 const crew = { code: "", members: [] as PartyMember[], room: "", seat: -1, note: "" };
+/** The crew room the party's Start (or `?room=CODE`) put you in: friends' bodies, and gear carried together. */
+let online: Online | null = null;
+function crewRoom(room: string) {
+  online?.close();
+  online = joinCrew(room, world.level.name, () => world, menu);
+}
 const pad = loadPad(KEY, [
   { id: "grab", label: "Pick up / put down / plug in", button: 0 },
   { id: "crouch", label: "Crouch", button: 1 },
@@ -113,6 +121,7 @@ function buildItems() {
 }
 buildItems();
 const ropes = cableView(scene);
+const mates = crewView(scene);
 
 /** A new level, or the same one as it began: the room, the gear and the case of cables. */
 const glow = mountGlow(scene);
@@ -124,6 +133,8 @@ function load(level: Level) {
   ropes.clear();
   scene.remove(roomGroup); roomGroup = room(world.level); scene.add(roomGroup);
   buildItems();
+  // A crew is a room on one level: another level is another room with the same code.
+  if (online) crewRoom(online.room);
 }
 
 function resize() {
@@ -151,11 +162,14 @@ function draw() {
   if (highlight.visible && at) { const [w, h, d] = dims(at); highlight.position.set(at.x, at.y, at.z); highlight.rotation.y = at.rot; highlight.scale.set(w + 0.04, h + 0.04, d + 0.04); }
   bar?.update();
   ropes.update(cables);
+  mates.update(world.crew);
   glow.update(cable.glowing(world, cables), world.t);
   clock?.update(world.level.name, world.t);
   const g = held ? gear(held.gear) : null;
   $("hint").textContent = phase !== "play" ? "" : performance.now() < flash.until ? flash.text : (big?.hint() ?? hint(at, jack));
-  $("carry").textContent = phase !== "play" ? "" : g ? `${g.what}, ${g.kg} kg, ${you.speed.toFixed(1)} m/s`
+  const team = world.held?.team ? partner(world) : null;
+  $("carry").textContent = phase !== "play" ? "" : g && world.held?.team ? (team ? `${g.what} with ${team.name}, ${you.speed.toFixed(1)} m/s` : `One end of the ${g.what}: someone take the other`)
+    : g ? `${g.what}, ${g.kg} kg, ${you.speed.toFixed(1)} m/s`
     : end ? `${end.run.lengthM} m ${end.run.kind} cable, ${you.speed.toFixed(1)} m/s` : `Hands free, ${you.speed.toFixed(1)} m/s`;
   renderer.render(scene, camera);
 }
@@ -231,7 +245,7 @@ function menu() {
   $("menu").hidden = phase === "play";
   $("crew").textContent = crew.members.map((m) => `${m.name}${m.host ? " (host)" : ""}`).join(", ");
   $("code").textContent = crew.code ? `Party ${crew.code}${crew.room ? `, seat ${crew.seat + 1}` : ""}` : "";
-  $("note").textContent = crew.note;
+  $("note").textContent = online?.note || crew.note;
   // Only the host's Start counts: the party answers anyone else's with a refusal, shown in the note.
   $("start").hidden = !crew.code || !!crew.room;
 }
@@ -256,6 +270,7 @@ function frame(now: number) {
     });
     cable.stepCables(world, cables, dt);
   }
+  online?.tick(world, now);
   big?.tick();
   draw();
   sound.update(heard());
@@ -266,7 +281,7 @@ function frame(now: number) {
 function wireParty() {
   const p = party();
   p.onMembers((m) => { crew.members = m; menu(); });
-  p.onStart((s) => { crew.room = s.room; crew.seat = s.seat; play(); });
+  p.onStart((s) => { crew.room = s.room; crew.seat = s.seat; crewRoom(s.room); play(); });
   p.onGone((why) => { crew.note = why; crew.code = ""; crew.members = []; menu(); });
   p.onRefused((why) => { crew.note = why; menu(); });
   $("make").addEventListener("click", async () => {
@@ -297,6 +312,8 @@ async function boot() {
     onToggle: (open) => { if (open) document.exitPointerLock?.(); },
   });
   wireParty();
+  const room = roomCode(location.search);
+  if (room) crewRoom(room);
   $("play").addEventListener("click", play);
   menu();
   resize();
@@ -306,7 +323,9 @@ async function boot() {
 declare global { interface Window { loadIn: typeof harness } }
 /** The harness (scripts/probe.ts HANDLES): the level as data, and the moves a test or an agent makes without pointer lock. */
 const harness = {
-  state: () => ({ phase, dial: currentDial(), doors: doors(world.level.name, world.t), ...snapshot(world), ...cable.cableState(world, cables), sound: { up: sound.up, on: [...switchedOn], ...heard() }, ...(big ? { biggerBar: big.state() } : {}), ...(bar ? { bar: { ...(world.level === PARK ? parkState(world, cables) : barState(world)), heat: bar.heatOn, ...("band" in bar ? { band: bar.band } : {}) } } : {}), signedIn: !!login(), party: crew.code ? { code: crew.code, members: crew.members.length, room: crew.room || null, seat: crew.seat >= 0 ? crew.seat : null } : null }),
+  state: () => ({ phase, dial: currentDial(), doors: doors(world.level.name, world.t), ...snapshot(world), ...cable.cableState(world, cables), sound: { up: sound.up, on: [...switchedOn], ...heard() }, ...(big ? { biggerBar: big.state() } : {}), ...(bar ? { bar: { ...(world.level === PARK ? parkState(world, cables) : barState(world)), heat: bar.heatOn, ...("band" in bar ? { band: bar.band } : {}) } } : {}), signedIn: !!login(), party: crew.code ? { code: crew.code, members: crew.members.length, room: crew.room || null, seat: crew.seat >= 0 ? crew.seat : null } : null, crewRoom: online ? { room: online.room, status: online.status, note: online.note } : null }),
+  /** Join a crew room by code (what the party's Start does), on this level. */
+  crew: (room: string) => crewRoom(room.toUpperCase()),
   /** Turn the cozy-to-sim dial: "cozy", "crew" or "sim". */
   dial: (d: string) => setDial(d),
   /** Into the level, without asking for the mouse. */
