@@ -15,6 +15,7 @@ import { BIGGER_BAR } from "./venues/bigger-bar.ts";
 import { PARK } from "./venues/park.ts";
 import { FIRST_GIG } from "./venues/first-gig.ts";
 import { DESERT } from "./venues/desert.ts";
+import { FESTIVAL } from "./venues/festival.ts";
 import { SMALL_ARENA } from "./venues/small-arena.ts";
 import { ARENA } from "./venues/arena.ts";
 import { AMPHITHEATRE } from "./venues/amphitheatre.ts";
@@ -39,6 +40,10 @@ export const RIGS: Readonly<Record<string, Rig>> = {
   // A desert night: a horn-loaded wall, four tops on four subs a side in the full rig (the level stacks one side's
   // worth), racks of amps on a generator that has to be fuelled through the night.
   desert: { people: 1500, tops: 8, subs: 8, wedges: 4, amps: 16, kw: 12, power: "a generator and its fuel", runs: 40, crew: 4 },
+  // A local festival: two stages (venues/festival.ts). The dance tent's two horn stacks (mid-high on mid-bass) on three
+  // 21" bins a side, the open stage's sculpted pairs on three arc subs a side, a 12-channel rack and four wedges a stage;
+  // both racks at about 5 kW each plus monitors and the desks, off a 100 kVA three-phase set.
+  festival: { people: 3000, tops: 8, subs: 12, wedges: 8, amps: 24, kw: 14, power: "a 100 kVA three-phase generator", runs: 64, crew: 6 },
   // A small arena: flown arrays from three points a side (main, side and a sub or out-fill hang), about ten boxes a
   // main hang; amp channels by the box, on a 200 A three-phase service (about 60 kW).
   "small-arena": { people: 4000, tops: 44, subs: 12, wedges: 8, amps: 56, kw: 60, power: "200 A three-phase", runs: 90, crew: 8 },
@@ -59,10 +64,10 @@ export const LADDER: readonly { level: Level; name: string }[] = [
   { level: BIGGER_BAR, name: "The bigger bar" },
   { level: PARK, name: "The community event" },
   { level: DESERT, name: "The desert night party" },
+  { level: FESTIVAL, name: "The local festival" },
   { level: SMALL_ARENA, name: "The small arena" },
   { level: ARENA, name: "The arena" },
   { level: AMPHITHEATRE, name: "The red-rock amphitheatre" },
-  // next rung: the local festival (step 9 of #5029) between the desert and the small arena.
 ];
 
 /** Who comes on your first night: friends. */

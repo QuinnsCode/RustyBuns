@@ -29,6 +29,8 @@ import { SHOW } from "./venues/show.ts";
 import { type ShowView, showView } from "./venues/show-view.ts";
 import { DESERT, desertState } from "./venues/desert.ts";
 import { type DesertView, desertView } from "./venues/desert-view.ts";
+import * as fest from "./venues/festival.ts";
+import { type FestivalView, festivalView } from "./venues/festival-view.ts";
 import { DJ_BOOTH, DJ_BOOTH_MEDIA } from "./venues/dj-booth.ts";
 import { type DjBoothView, djBoothView } from "./venues/dj-booth-view.ts";
 import { hasSwitch, hear, type Switches } from "./audio/hear.ts";
@@ -57,7 +59,7 @@ const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as 
 const canvas = $<HTMLCanvasElement>("stage");
 const KEY = "load-in.controls";
 
-const LEVELS: Record<string, Level> = { "first-gig": FIRST_GIG, garage: GARAGE, "dive-bar": DIVE_BAR, "bigger-bar": BIGGER_BAR, park: PARK, arena: ARENA, "small-arena": arenaSim.SMALL_ARENA, show: SHOW, desert: DESERT, "dj-booth": DJ_BOOTH, "dj-booth-media": DJ_BOOTH_MEDIA, amphitheatre: amphi.AMPHITHEATRE };
+const LEVELS: Record<string, Level> = { "first-gig": FIRST_GIG, garage: GARAGE, "dive-bar": DIVE_BAR, "bigger-bar": BIGGER_BAR, park: PARK, arena: ARENA, "small-arena": arenaSim.SMALL_ARENA, show: SHOW, desert: DESERT, "dj-booth": DJ_BOOTH, "dj-booth-media": DJ_BOOTH_MEDIA, amphitheatre: amphi.AMPHITHEATRE, festival: fest.FESTIVAL };
 const levelFrom = (name: string | null) => LEVELS[name ?? ""] ?? GARAGE;
 /** The tour between nights; a page opened on ?level= plays that level and leaves the tour alone. */
 let tour: Tour = loadTour();
@@ -149,6 +151,8 @@ let bar: BarView | ParkView | DesertView | null = null;
 let big: BiggerBarView | null = null;
 let gig: FirstGigView | null = null;
 let ar: ArenaView | null = null;
+/** The festival's view: two stages, the compound, the licence. */
+let festival: FestivalView | null = null;
 /** The small arena's view (`ar` is the big arena's). */
 let arena: SmallArenaView | null = null;
 let foh: ShowView | null = null;
@@ -189,6 +193,8 @@ function buildItems() {
   ar = world.level === ARENA ? arenaView(scene, $("hud"), () => world) : null;
   arena?.dispose();
   arena = world.level === arenaSim.SMALL_ARENA ? smallArenaView(scene, $("hud"), () => world) : null;
+  festival?.dispose();
+  festival = world.level === fest.FESTIVAL ? festivalView(scene, $("hud"), () => world) : null;
   amp?.dispose();
   amp = world.level === amphi.AMPHITHEATRE ? amphitheatreView(scene, $("hud"), () => world) : null;
   // The amphitheatre is 110 m deep under 90 m of rock: the camera sees that far there.
@@ -251,6 +257,7 @@ function draw() {
   bar?.update();
   ar?.update();
   arena?.update();
+  festival?.update();
   amp?.update();
   mates.update(world.crew);
   glow.update(cable.glowing(world, cables), world.t);
@@ -258,7 +265,7 @@ function draw() {
   loadOut?.update(world, cables);
   hands.update(holding(), world.t, stepSpeed());
   ropes.update(cables, { at: hands.gripAt(), yaw: world.you.yaw });
-  const next = phase === "play" ? nextStep(world, cables, switchedOn) : null, tgt = next?.key ? world.items.find((i) => i.key === next.key) : null;
+  const next = phase === "play" && !festival ? nextStep(world, cables, switchedOn) : null, tgt = next?.key ? world.items.find((i) => i.key === next.key) : null;
   marker.visible = !!tgt;
   if (tgt) marker.position.set(tgt.x, tgt.y + dims(tgt)[1] + 0.25 + Math.sin(performance.now() / 260) * 0.05, tgt.z);
   $("next").textContent = next ? next.text : "";
@@ -337,6 +344,7 @@ function press(code: string) {
   if (!cable.inHand(cables) && arena?.key(code, (why) => { flash = { text: why, until: performance.now() + 1800 }; })) return;
   if (!world.held && !cable.inHand(cables) && amp?.key(code, (why) => { flash = { text: why, until: performance.now() + 1800 }; })) return;
   if (!world.held && !cable.inHand(cables) && ar?.key(code)) return;
+  if (!world.held && !cable.inHand(cables) && festival?.key(code)) { if (festival.said) flash = { text: festival.said, until: performance.now() + 1800 }; return; }
   if (big?.key(code)) return;
   if (gig?.key(code)) return;
   if (foh?.key(code)) return;
@@ -519,7 +527,7 @@ async function boot() {
 declare global { interface Window { loadIn: typeof harness } }
 /** The harness (scripts/probe.ts HANDLES): the level as data, and the moves a test or an agent makes without pointer lock. */
 const harness = {
-  state: () => ({ phase, tour: { cash: tour.cash, truck: tour.truck, following: tour.following, booked: tour.booked, nights: tour.nights.length, settled }, next: nextStep(world, cables, switchedOn), dial: currentDial(), doors: doors(world.level.name, world.t), ...snapshot(world), ...cable.cableState(world, cables), sound: { up: sound.up, on: [...switchedOn], ...heard() }, ...(big ? { biggerBar: big.state() } : {}), ...(gig ? { firstGig: gigState(world, runsOf(world, cables), switchedOn) } : {}), ...(ar ? { arena: { ...arenaState(world), heat: ar.heatOn } } : {}), ...(arena ? { smallArena: { ...arenaSim.arenaState(world), heat: arena.heatOn } } : {}), ...(foh ? { show: foh.state() } : {}), ...(amp ? { amphitheatre: { ...amphi.amphitheatreState(world), heat: amp.heatOn } } : {}), ...(dj ? { decks: dj.state() } : {}), strike: strikeState(world, cables), hands: hands.state(), ...(world.level === DIVE_BAR ? { crowd: crowdState(world) } : {}), ...(bar ? { bar: { ...(world.level === PARK ? parkState(world, cables) : world.level === DESERT ? desertState(world, cables) : barState(world)), heat: bar.heatOn, ...("band" in bar ? { band: bar.band } : {}) } } : {}), signedIn: !!login(), party: crew.code ? { code: crew.code, members: crew.members.length, room: crew.room || null, seat: crew.seat >= 0 ? crew.seat : null } : null, crewRoom: online ? { room: online.room, status: online.status, note: online.note } : null }),
+  state: () => ({ phase, tour: { cash: tour.cash, truck: tour.truck, following: tour.following, booked: tour.booked, nights: tour.nights.length, settled }, next: nextStep(world, cables, switchedOn), dial: currentDial(), doors: doors(world.level.name, world.t), ...snapshot(world), ...cable.cableState(world, cables), sound: { up: sound.up, on: [...switchedOn], ...heard() }, ...(big ? { biggerBar: big.state() } : {}), ...(gig ? { firstGig: gigState(world, runsOf(world, cables), switchedOn) } : {}), ...(ar ? { arena: { ...arenaState(world), heat: ar.heatOn } } : {}), ...(arena ? { smallArena: { ...arenaSim.arenaState(world), heat: arena.heatOn } } : {}), ...(foh ? { show: foh.state() } : {}), ...(festival ? { festival: { ...fest.festivalState(world), heat: festival.heatOn } } : {}), ...(amp ? { amphitheatre: { ...amphi.amphitheatreState(world), heat: amp.heatOn } } : {}), ...(dj ? { decks: dj.state() } : {}), strike: strikeState(world, cables), hands: hands.state(), ...(world.level === DIVE_BAR ? { crowd: crowdState(world) } : {}), ...(bar ? { bar: { ...(world.level === PARK ? parkState(world, cables) : world.level === DESERT ? desertState(world, cables) : barState(world)), heat: bar.heatOn, ...("band" in bar ? { band: bar.band } : {}) } } : {}), signedIn: !!login(), party: crew.code ? { code: crew.code, members: crew.members.length, room: crew.room || null, seat: crew.seat >= 0 ? crew.seat : null } : null, crewRoom: online ? { room: online.room, status: online.status, note: online.note } : null }),
   /** Join a crew room by code (what the party's Start does), on this level. */
   crew: (room: string) => crewRoom(room.toUpperCase()),
   /** Turn the cozy-to-sim dial: "cozy", "crew" or "sim". */
@@ -629,7 +637,23 @@ const harness = {
   },
   /** First gig, at any distance: switch the desk's 48 V phantom. */
   phantom: (on: boolean) => (gig ? (gig.phantom(on), true) : false),
-  /** Load a level by name (first-gig, garage, dive-bar, bigger-bar, park, desert, arena, small-arena, show, dj-booth, dj-booth-media, amphitheatre). */
+  /** Festival: turn a stage ("tent" | "open") to face `deg` (0 north, 90 east), standing on it. */
+  festFace: (stage: fest.StageKey, deg: number) => fest.face(world, stage, deg),
+  /** Festival: build a stage's subs "omni" or "cardioid", standing by it. */
+  festSubs: (stage: fest.StageKey, mode: "omni" | "cardioid") => fest.subs(world, stage, mode),
+  /** Festival: a stage's master fader in dB, at its desk. */
+  festFader: (stage: fest.StageKey, db: number) => fest.master(world, stage, db),
+  /** Festival: put a load (tent-rack, open-lights, traders-2, ...) on "L1" | "L2" | "L3" or null, at the compound. */
+  festLeg: (feed: string, leg: fest.Leg | null) => fest.phase(world, feed, leg),
+  /** Festival: a stage's feeder size in AWG (10, 6, 2, -1 for 2/0), at the compound. */
+  festFeeder: (stage: fest.StageKey, awg: number) => fest.feeder(world, stage, awg),
+  /** Festival: run a stage's snake from its desk to its rack, standing at the desk. */
+  festSnake: (stage: fest.StageKey) => fest.snake(world, stage),
+  /** Festival: run the show `seconds` on (the 15-minute LAeq at each desk and the curfew are logged). */
+  festRun: (seconds: number) => fest.run(world, seconds),
+  /** Festival: the heat map on or off, mids and highs ("high") or 63 Hz ("low"). */
+  festHeat: (on: boolean, band: "high" | "low" = "high") => festival?.setHeat(on, band),
+  /** Load a level by name (first-gig, garage, dive-bar, bigger-bar, park, desert, arena, small-arena, show, dj-booth, dj-booth-media, amphitheatre, festival). */
   level: (name: string) => load(levelFrom(name)),
   /** Turn what you hold a 15 degree step: -1 left, 1 right. */
   turn: (dir: number) => turnHeld(world, dir),

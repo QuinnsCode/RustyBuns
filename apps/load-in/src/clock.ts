@@ -22,6 +22,8 @@ export const VENUES: Record<string, { window: number; fee: number; curfew: numbe
   show: { window: 120, fee: 300, curfew: 600, fine: 50 },
   // The desert: a 30 m walk over sand for every box, and a wall to stack; out by sunrise with it all back on the truck.
   desert: { window: 1200, fee: 600, curfew: 1500, fine: 100 },
+  // The festival: two stages 120 m apart, a rack to roll to each and feeders to run, so the crew needs its time.
+  festival: { window: 1800, fee: 1000, curfew: 2400, fine: 150 },
   // The red-rock amphitheatre: two hangs of thirteen, towers up the bowl, a big crew and an hour to doors; the curfew
   // there is the town's and it is hard (amphitheatre.ts cuts the set for every minute late).
   amphitheatre: { window: 3600, fee: 8000, curfew: 3000, fine: 400 },
