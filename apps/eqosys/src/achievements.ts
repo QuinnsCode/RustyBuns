@@ -4,7 +4,7 @@
 // Add a game's list in a PR, the same way it is added to APPS. Every game's list starts with the same ones (SHARED), so
 // "played" is number one everywhere, and each has its badge: a lucide icon, or a letter in the console font. A studio's own game
 // (listings.ts) has no list here: it gets the shared ones its maturity can unlock, until its studio can add its own.
-import { Armchair, Bandage, GraduationCap, Biohazard, Bird, Briefcase, Coins, Crown, Droplet, Earth, Feather, Flag, Flame, Footprints, Gamepad2, GlassWater, Globe, Hourglass, Landmark, Link, MapPin, Medal, Megaphone, Orbit, PiggyBank, PlaneLanding, Radio, Repeat, ScanEye, Search, Shield, ShieldCheck, Sparkles, Spline, SprayCan, Target, Tent, TrendingUp, Trophy, UserRound, Users, Waves, type IconNode } from "lucide";
+import { Armchair, Bandage, BookUser, GraduationCap, Biohazard, Bird, Briefcase, Coins, Crown, Droplet, Earth, Feather, Flag, Flame, Footprints, Gamepad2, GlassWater, Globe, Hourglass, Landmark, Link, MapPin, Medal, Megaphone, Orbit, PiggyBank, PlaneLanding, Radio, Repeat, ScanEye, Search, Shield, ShieldCheck, Sparkles, Spline, SprayCan, Target, Tent, TrendingUp, Trophy, UserRound, Users, Waves, type IconNode } from "lucide";
 import type { QApp } from "./apps.ts";
 import type { Env } from "./env.ts";
 import { appOf, isListing } from "./listings.ts";
@@ -69,6 +69,7 @@ export const ACHIEVEMENTS: Record<string, Achievement[]> = {
     { id: "first-fight", name: "Into the arena", blurb: "Finish a fight on the trail.", icon: Shield },
     { id: "first-win", name: "Folklore favoured", blurb: "Win a fight.", icon: Trophy },
     { id: "first-bind", name: "Bound", blurb: "Bind a beast.", icon: Link },
+    { id: "contacts", name: "Contacts", blurb: "Beat every trail's mythic.", secret: true, icon: BookUser },
   ],
   "park-hide-seek": [
     SHARED.played,

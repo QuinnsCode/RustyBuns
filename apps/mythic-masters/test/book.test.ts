@@ -4,7 +4,9 @@ import { answer, holdOf, LINES, Lines, lossBeats, momentFor, notesOf, spendInk, 
 import { bookParty, seatOf } from "../src/book-party.ts";
 import { demandOf } from "../src/demand.ts";
 import { approach, FACTION, factionsOf, reply as replyFaction, sectionCleared, standingOf, type Ctx as FactionCtx, type Scene } from "../src/factions/engine.ts";
-import { clearSection, loadJourney, newJourney, type Journey } from "../src/journey.ts";
+import { clearSection, contacted, loadJourney, mythicOf, newJourney, SECTIONS, TRAIL_REGIONS, type Journey } from "../src/journey.ts";
+import { friendsOf } from "../src/compendium.ts";
+import { creature } from "../src/roster.ts";
 
 setDefaultTimeout(20_000);
 
@@ -53,6 +55,30 @@ describe("the Book talks back", () => {
     expect(momentFor("mythic", j, { n: 6, regionId: "southwest-desert" })!.recall).toContain("In the north woods");
     // the last trail's mythic counts back to the first page, which was said in the pines
     expect(momentFor("mythic", j, { n: 8, regionId: "ozarks-and-the-southern-plains" })!.recall).toContain("Seven regions ago");
+  });
+
+  test("the contacts reveal: the Book monologues at each trail's mythic, and only the last one turns it into Contacts", () => {
+    const j = newJourney(["hodag", "squonk", "jackalope"])!;
+    const said: string[] = [];
+    for (const g of TRAIL_REGIONS) {
+      expect(contacted(j)).toBe(false);
+      const ctx = { n: g.n, regionId: g.id, region: g.name, mythic: mythicOf(g).name };
+      const mono = momentFor("leader", j, ctx)!; // reaching the last stone: this region's own monologue, a few pages long
+      expect(mono.lead.length).toBeGreaterThanOrEqual(2);
+      expect(mono.lead[0]).toContain(mythicOf(g).name);
+      said.push(mono.talk.id);
+      answer(j, mono, mono.talk.replies[0]!.id);
+      expect(momentFor("leader", j, ctx)).toBeNull(); // said once
+      for (let k = 0; k < SECTIONS; k++) clearSection(j, g.n, k);
+    }
+    expect(new Set(said).size).toBe(TRAIL_REGIONS.length);
+    expect(contacted(j)).toBe(true);
+    const flip = momentFor("contacts", j, { n: 8 })!;
+    expect(flip.lead.join(" ")).toContain("Contacts.");
+    // its pages name friends: a mythic knows the mythics either side of it, a beast the ones from its own legends
+    expect(friendsOf(creature("jersey-devil"))).toEqual(["Mothman"]);
+    expect(friendsOf(creature("mothman"))).toEqual(["Jersey Devil", "Hidebehind", "Wampus Cat"]);
+    expect(friendsOf(creature("hoop-snake"))).toEqual(["Ozark Howler"]);
   });
 
   test("a lost fight: streak before a member down, the whole line-up before the streak", () => {

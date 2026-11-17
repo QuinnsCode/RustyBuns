@@ -328,3 +328,5 @@ export function maul(j: Journey): number {
 
 /** Every playable region, for the journal's region pages. */
 export const TRAIL_REGIONS = REGIONS.filter(hasTrail);
+/** Every trail's mythic beaten (#3279): the Book's title reads "Contacts" from then on, and its pages name each beast's friends. */
+export const contacted = (j: Journey | null) => !!j && TRAIL_REGIONS.every((g) => cleared(j, g.n) >= SECTIONS);
