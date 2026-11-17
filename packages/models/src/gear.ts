@@ -1,5 +1,5 @@
 // Load In's gear, grown in code: speakers, a sub, a wedge, stands, guitar amps, a rolling amp rack, cases, a cable
-// ramp, a generator, a distro box, a mixer, a mic stand, a guitar, a DI box, a sand cart and a jerry can. Generic boxes named for what they are, at
+// ramp, a generator, a distro box, a mixer, a mic stand, a guitar, a DI box, a hung line array box, a front fill, a sand cart and a jerry can. Generic boxes named for what they are, at
 // the real sizes of #4849's table (width x height x depth = x, y, z, in metres), feet on the floor at y = 0,
 // centred on x and z, the front facing +z. Each app brings its own materials (`GearLook`, one per slot).
 //
@@ -9,6 +9,7 @@
 //   pole        the top of a stand or a sub's pole socket, +z up: a top's `pole-cup` sits on it
 //   pole-cup    the socket under a top, +z down
 //   link-a/b    a cable ramp's ends, +z out along the run, so ramps link end to end
+//   hinge-top/bottom  a hung line array box's front pins, +z along the pin (+x): a hang chains box to box at these
 //
 // Geometry is built once per id (and stand height) and shared by every copy; each call makes new meshes only.
 import * as THREE from "three";
@@ -38,6 +39,8 @@ export const GEAR_SIZES = {
   "sand-cart": [0.8, 0.45, 1.2],
   "jerry-can-20l": [0.35, 0.47, 0.17],
   "line-array-box": [1.0, 0.32, 0.55],
+  "line-array-10": [0.74, 0.3, 0.5],
+  "fill-8-powered": [0.28, 0.42, 0.25],
   "bar-cooler": [0.9, 0.9, 0.6],
   guitar: [0.33, 1.0, 0.05],
   "di-box": [0.1, 0.05, 0.13],
@@ -410,6 +413,33 @@ function barCooler(): Build {
   return b;
 }
 
+/**
+ * A hung line array box: a cabinet that tapers to the back (so the box below can splay down), a full-width grille
+ * over two 10" drivers and a horn, steel rigging plates on both sides. The front plates carry the hinge pins the hang
+ * turns on; the rear link bars hold the splay pins. The amp panel and its jacks are on the back.
+ */
+function lineArray(): Build {
+  const [w, h, d] = GEAR_SIZES["line-array-10"], b: Build = { pieces: [], marks: [] }, inner = w - 0.05, taper = 0.045;
+  const front = d / 2 - 0.012, back = -d / 2 + 0.01;
+  b.pieces.push(prism("paint", [[front, 0.004], [front, h - 0.004], [back, h - taper], [back, taper]], inner));
+  b.pieces.push(box("grille", [inner - 0.02, h - 0.03, 0.012], [0, h / 2, d / 2 - 0.006], { bevel: 0.003 }));
+  const pinY = [0.014, h - 0.014], plateZ = d / 2 - 0.045, linkZ = back + 0.04;
+  for (const s of [-1, 1]) {
+    const x = s * (w / 2 - 0.01);
+    b.pieces.push(box("metal", [0.02, h, 0.07], [x, h / 2, plateZ]));
+    b.pieces.push(box("metal", [0.02, h - 2 * taper, 0.05], [x, h / 2, linkZ]));
+    for (const y of pinY) b.pieces.push(disc("chrome", 0.009, 0.028, "x", [x, y, plateZ], 6), disc("chrome", 0.007, 0.026, "x", [x, h / 2 + (y - h / 2) * 0.6, linkZ], 6));
+  }
+  const py = h * 0.5;
+  b.pieces.push(box("panel", [w * 0.34, h * 0.5, 0.01], [-w * 0.3, py, back - 0.004]));
+  b.pieces.push(disc("light", 0.004, 0.006, "z", [-w * 0.18, py + h * 0.17, back - 0.01], 4));
+  jacks(b, ["power-in", "xlr-in", "xlr-out"], "back", [-w * 0.42, py - h * 0.06, back - 0.009], [w * 0.09, 0, 0]);
+  mark(b, "hinge-top", [0, pinY[1], plateZ], [1, 0, 0]);
+  mark(b, "hinge-bottom", [0, pinY[0], plateZ], [1, 0, 0]);
+  mark(b, "grab", [0, h, 0]);
+  return b;
+}
+
 const BUILDERS: Record<GearId, (height: number) => Build> = {
   "top-12-powered": () => speaker(GEAR_SIZES["top-12-powered"], ["power-in", "xlr-in", "xlr-out"], true),
   "top-15-passive": () => speaker(GEAR_SIZES["top-15-passive"], ["speaker-in", "speaker-out"], false),
@@ -429,6 +459,8 @@ const BUILDERS: Record<GearId, (height: number) => Build> = {
   "jerry-can-20l": fuelCan,
   "bar-cooler": barCooler,
   "line-array-box": () => speaker(GEAR_SIZES["line-array-box"], ["power-in", "xlr-in", "xlr-out"], true),
+  "line-array-10": lineArray,
+  "fill-8-powered": () => speaker(GEAR_SIZES["fill-8-powered"], ["power-in", "xlr-in", "xlr-out"], true),
   guitar,
   "di-box": diBox,
 };
