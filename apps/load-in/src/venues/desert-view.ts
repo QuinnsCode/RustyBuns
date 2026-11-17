@@ -167,7 +167,7 @@ export function desertView(scene: THREE.Scene, hud: HTMLElement, getWorld: () =>
         + `<span>Floor ${db(s.floor)} (target ${TARGET})</span>`
         + `<span class="${s.bass < 1 ? "warn" : ""}">Bass ${Math.round(s.bass * 100)}% of the floor at ${BASS} dB</span>`
         + `<span class="${s.camp !== null && s.camp > CAMP_LIMIT ? "warn" : ""}">Camp ${db(s.camp)} (limit ${CAMP_LIMIT})</span>`
-        + (s.dusty.length ? `<span class="warn">Dust: ${s.dusty.length} joint${s.dusty.length === 1 ? "" : "s"} on the sand (lift the gear or tape them: G)</span>` : "<span>Dust: every joint is off the sand or taped</span>")
+        + (s.dusty.length ? `<span class="warn">Dust: ${s.dusty.length} joint${s.dusty.length === 1 ? "" : "s"} on the sand (lift the gear or tape them: G)</span>` : getCables().runs.some((r) => "plug" in r.a || "plug" in r.b) ? "<span>Dust: every joint is off the sand or taped</span>" : "")
         + `<span>Fader ${rig(w).master} dB</span>` + (opened
           ? `<span class="${opened.pass ? "pass" : ""}">${opened.sunrise ? "The sun came up on the wall" : `Silent at ${opened.until}, before sunrise`}: ${opened.score} / ${PASS}</span><span>Sound ${opened.sound}, crowd mood ${opened.mood}</span><span>Paid ${opened.pay} of ${opened.fee}</span>`
           : `<span class="${s.pass ? "pass" : ""}">Score ${s.score} / ${PASS} to pass</span>`)
