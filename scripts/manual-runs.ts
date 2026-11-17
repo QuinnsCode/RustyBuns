@@ -3,13 +3,16 @@
 //
 //   bun run manual                 open http://localhost:4790 (a free port if that one is taken) and go down the queue (y / n on the keyboard)
 //   bun run manual --dry           print the gh writes instead of running them
-//   --port N, --issues file.json (instead of asking gh), --no-apps (start nothing)
-import { mkdirSync, openSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+//   --port N, --issues file.json (instead of asking gh), --tags file.json (instead of ~/.rustybuns/manual-tags.json), --no-apps (start nothing)
+//
+// The issues are read from gh once and kept; the page's refresh button reads them again. (Asking gh on every
+// 1.5 s status poll ran into GitHub's rate limit, and an empty reply crashed the queue.)
+import { existsSync, mkdirSync, openSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
+import { dirname, join } from "node:path";
 import type { Subprocess } from "bun";
-import { bool, int, obj, oneOf, str } from "../packages/util/src/guard.ts";
-import { APPS, Issues, answer, queue, type AppId } from "./manual-runs-lib.ts";
+import { arr, bool, int, obj, oneOf, str } from "../packages/util/src/guard.ts";
+import { APPS, Issues, Tags, answer, cleanTags, queue, type AppId, type Issue } from "./manual-runs-lib.ts";
 import { portArg } from "../packages/util/src/ports.ts";
 import { json } from "../packages/util/src/http.ts";
 
@@ -21,12 +24,38 @@ const root = join(import.meta.dir, "..");
 const logs = join(tmpdir(), "rustybuns-manual-runs");
 mkdirSync(logs, { recursive: true });
 
-async function openIssues() {
+async function readIssues(): Promise<Issue[]> {
   const file = value("--issues");
-  const text = file
-    ? await Bun.file(file).text()
-    : Bun.spawnSync(["gh", "issue", "list", "--label", "manual run", "--state", "open", "--limit", "200", "--json", "number,title,body,url"], { cwd: root }).stdout.toString();
-  return queue(Issues(JSON.parse(text)));
+  if (file) return Issues(JSON.parse(await Bun.file(file).text()));
+  const p = Bun.spawn(["gh", "issue", "list", "--label", "manual run", "--state", "open", "--limit", "500", "--json", "number,title,body,url,labels"], { cwd: root, stdout: "pipe", stderr: "pipe" });
+  const [out, err, code] = await Promise.all([new Response(p.stdout).text(), new Response(p.stderr).text(), p.exited]);
+  if (code !== 0 || !out.trim()) throw new Error(`gh issue list failed: ${err.trim() || `exit ${code}, no output`}`);
+  return Issues(JSON.parse(out));
+}
+/** The open issues, read once; `fresh` reads them again. A failed read isn't kept, so the next ask tries again. */
+let cached: Promise<Issue[]> | null = null;
+function openIssues(fresh = false) {
+  if (fresh || !cached) {
+    const read = readIssues();
+    cached = read;
+    read.catch(() => { if (cached === read) cached = null; });
+  }
+  return cached;
+}
+openIssues().catch(() => {});
+
+const tagsFile = value("--tags") ?? join(homedir(), ".rustybuns", "manual-tags.json");
+async function readTags(): Promise<Tags> {
+  if (!existsSync(tagsFile)) return {};
+  try { return Tags(JSON.parse(await Bun.file(tagsFile).text())); }
+  catch (e) { console.log(`${tagsFile} is unreadable (${e instanceof Error ? e.message : e}); starting with no tags.`); return {}; }
+}
+async function setTags(number: number, tags: string[]) {
+  const all = await readTags(), clean = cleanTags(tags);
+  if (clean.length) all[number] = clean; else delete all[number];
+  mkdirSync(dirname(tagsFile), { recursive: true });
+  await Bun.write(tagsFile, JSON.stringify(all, null, 2) + "\n");
+  return clean;
 }
 
 type Status = "off" | "starting" | "up" | "exited";
@@ -58,22 +87,29 @@ for (const s of ["SIGINT", "SIGTERM", "SIGHUP"] as const) process.on(s, () => { 
 
 const Answer = obj({ number: int(1, 1e7), yes: bool(), note: str(5000, { min: 0, dflt: "" }) });
 const Start = obj({ app: oneOf(Object.keys(APPS) as AppId[]) });
+const SetTags = obj({ number: int(1, 1e7), tags: arr(str(100), 30) });
+const appsNow = () => Object.fromEntries(Object.entries(APPS).map(([id, a]) => [id, { name: a.name, url: procs.get(id as AppId)?.url ?? "", status: status(id as AppId), log: join(logs, `${id}.log`) }]));
 const answered = new Map<number, boolean>();
 
 const listen = (port: number) => Bun.serve({
   port,
   async fetch(req) {
-    const { pathname } = new URL(req.url);
+    const { pathname, searchParams } = new URL(req.url);
     if (pathname === "/") return new Response(Bun.file(join(import.meta.dir, "manual-runs.html")));
     if (pathname === "/api/queue") {
-      const q = await openIssues();
-      const apps = Object.fromEntries(Object.entries(APPS).map(([id, a]) => [id, { name: a.name, url: procs.get(id as AppId)?.url ?? "", status: status(id as AppId), log: join(logs, `${id}.log`) }]));
-      return json({ ...q, apps, answered: Object.fromEntries(answered), dry });
+      try {
+        const q = queue(await openIssues(searchParams.has("refresh")), await readTags());
+        return json({ ...q, apps: appsNow(), answered: Object.fromEntries(answered), dry });
+      } catch (e) {
+        return json({ error: e instanceof Error ? e.message : String(e) }, 502);
+      }
     }
+    if (pathname === "/api/apps") return json({ apps: appsNow() });
     if (req.method !== "POST") return json({ error: "not found" }, 404);
     const body: unknown = await req.json().catch(() => null);
     try {
       if (pathname === "/api/start") { start(Start(body).app); return json({ ok: true }); }
+      if (pathname === "/api/tags") { const t = SetTags(body); return json({ ok: true, tags: await setTags(t.number, t.tags) }); }
       if (pathname === "/api/answer") {
         const a = Answer(body), cmds = answer(a.number, a.yes, a.note);
         for (const cmd of cmds) {

@@ -33,17 +33,31 @@
   textarea { width: 100%; min-height: 70px; font: inherit; background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 6px; padding: 8px; }
   .answer { display: flex; gap: 10px; margin-top: 10px; align-items: center; }
   .err { color: var(--no); }
+  .find { padding: 10px 16px; border-bottom: 1px solid var(--line); display: grid; gap: 8px; }
+  input { font: inherit; background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; width: 100%; }
+  .chips { display: flex; flex-wrap: wrap; gap: 4px; }
+  .chip { font-size: 12px; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--line); background: var(--card); color: var(--fg); cursor: pointer; display: inline-flex; gap: 4px; align-items: center; }
+  .chip.label { border-style: dashed; }
+  .chip.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .chip svg { width: 12px; height: 12px; }
+  .tags { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 0 0 12px; }
+  .tags input { width: 160px; padding: 2px 8px; font-size: 12px; border-radius: 999px; }
+  h1 button { padding: 2px 6px; }
   @media (max-width: 700px) { body { grid-template-columns: 1fr; height: auto; } aside { max-height: 40vh; border-right: 0; border-bottom: 1px solid var(--line); } main { padding: 16px; } }
 </style>
 </head>
 <body>
-<aside><h1><span>Manual runs</span><span id="count"></span></h1><div id="list"></div><div id="parked" class="group"></div></aside>
+<aside><h1><span>Manual runs</span><span><span id="count"></span> <button id="refresh" title="Read the issues from GitHub again"></button></span></h1>
+<div class="find"><input id="q" type="search" placeholder="Search: words, #tag, #1234  ( / )"><div class="chips" id="cloud"></div></div>
+<div id="list"></div><div id="parked" class="group"></div></aside>
 <main id="main">Loading the open MANUAL RUN issues…</main>
 <script>
 const I = {
   check: '<svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>',
   x: '<svg viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg>',
   ext: '<svg viewBox="0 0 24 24"><path d="M15 3h6v6M10 14 21 3M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>',
+  refresh: '<svg viewBox="0 0 24 24"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 16h5v5"/></svg>',
+  tag: '<svg viewBox="0 0 24 24"><path d="M12.6 2.6A2 2 0 0 0 11.2 2H4a2 2 0 0 0-2 2v7.2a2 2 0 0 0 .6 1.4l8.7 8.7a2.4 2.4 0 0 0 3.4 0l6.6-6.6a2.4 2.4 0 0 0 0-3.4z"/><circle cx="7.5" cy="7.5" r=".5"/></svg>',
   phone: '<svg viewBox="0 0 24 24"><rect x="5" y="2" width="14" height="20" rx="2"/><path d="M12 18h.01"/></svg>',
 };
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
@@ -54,31 +68,95 @@ const draft = {
   set: (n, v) => { try { v ? localStorage.setItem(`manual-note-${n}`, v) : localStorage.removeItem(`manual-note-${n}`); } catch {} },
 };
 
-async function load() {
-  q = await fetch("/api/queue").then((r) => r.json());
-  if (q.error) { document.getElementById("main").innerHTML = `<p class="err">${esc(q.error)}</p>`; return; }
-  const next = q.cards.findIndex((c) => !(c.number in q.answered));
+let polling = false;
+async function load(fresh) {
+  const btn = document.getElementById("refresh");
+  btn.disabled = true;
+  const r = await fetch(fresh ? "/api/queue?refresh=1" : "/api/queue").then((r) => r.json()).catch((e) => ({ error: String(e) }));
+  btn.disabled = false;
+  if (r.error) {
+    // a failed refresh keeps the queue already on screen
+    if (q) { flash(r.error); return; }
+    document.getElementById("main").innerHTML = `<p class="err">${esc(r.error)}</p><button onclick="load(true)">${I.refresh}Try again</button>`;
+    return;
+  }
+  const keep = q && q.cards[at] ? q.cards[at].number : null;
+  q = r;
+  const i = keep !== null ? q.cards.findIndex((c) => c.number === keep) : -1;
+  const next = i >= 0 ? i : q.cards.findIndex((c) => !(c.number in q.answered));
   show(next < 0 ? 0 : next);
-  setInterval(poll, 1500);
+  if (!polling) { polling = true; setInterval(poll, 1500); }
+}
+function flash(msg) { const s = document.getElementById("said"); if (s) { s.textContent = msg; s.className = "err"; } }
+
+// only the apps' status: the issues stay as read until refresh
+async function poll() {
+  const r = await fetch("/api/apps").then((r) => r.json()).catch(() => null);
+  if (r && r.apps) { q.apps = r.apps; list(); bar(); }
 }
 
-async function poll() {
-  const r = await fetch("/api/queue").then((r) => r.json()).catch(() => null);
-  if (r && !r.error) { q.apps = r.apps; list(); bar(); }
+// search: plain words must all show up in the number, title, body, app, labels or tags; #word must be a tag or label; #123 is that issue
+const find = {
+  get: () => { try { return localStorage.getItem("manual-search") ?? ""; } catch { return ""; } },
+  set: (v) => { try { localStorage.setItem("manual-search", v); } catch {} },
+};
+function matches(c, query) {
+  const hay = `#${c.number} ${c.title} ${c.body} ${c.app ? q.apps[c.app].name : "your hands"} ${c.labels.join(" ")} ${c.tags.join(" ")}`.toLowerCase();
+  const tags = [...c.labels, ...c.tags].map((t) => t.toLowerCase());
+  return query.toLowerCase().split(/\s+/).filter(Boolean).every((w) =>
+    /^#\d+$/.test(w) ? String(c.number) === w.slice(1) : w.startsWith("#") ? tags.includes(w.slice(1)) : hay.includes(w));
+}
+const shown = () => q.cards.map((c, i) => i).filter((i) => matches(q.cards[i], document.getElementById("q").value));
+function step() { const s = shown(), after = s.find((i) => i > at); show(after ?? s[0] ?? at); }
+function toggleTag(t) {
+  const box = document.getElementById("q"), w = "#" + t, words = box.value.split(/\s+/).filter(Boolean);
+  box.value = (words.includes(w) ? words.filter((x) => x !== w) : [...words, w]).join(" ");
+  find.set(box.value); list();
+}
+function cloud() {
+  const n = {}, label = {};
+  for (const c of q.cards) { for (const t of c.tags) n[t] = (n[t] || 0) + 1; for (const t of c.labels) { n[t] = (n[t] || 0) + 1; label[t] = true; } }
+  const on = document.getElementById("q").value.split(/\s+/);
+  document.getElementById("cloud").innerHTML = Object.keys(n).sort((a, b) => n[b] - n[a] || a.localeCompare(b))
+    .map((t) => `<span class="chip${label[t] ? " label" : ""}${on.includes("#" + t) ? " on" : ""}" data-t="${esc(t)}" title="${label[t] ? "GitHub label" : "Your tag"}">${esc(t)} ${n[t]}</span>`).join("");
+  document.querySelectorAll("#cloud .chip").forEach((el) => (el.onclick = () => toggleTag(el.dataset.t)));
+}
+
+async function saveTags(c, tags) {
+  const r = await fetch("/api/tags", { method: "POST", body: JSON.stringify({ number: c.number, tags }) }).then((r) => r.json()).catch((e) => ({ error: String(e) }));
+  if (r.error) { flash(r.error); return; }
+  c.tags = r.tags; tagRow(c); list();
+}
+function tagRow(c) {
+  const el = document.getElementById("tags");
+  if (!el) return;
+  el.innerHTML = I.tag + c.labels.map((t) => `<span class="chip label" title="GitHub label">${esc(t)}</span>`).join("")
+    + c.tags.map((t) => `<span class="chip" data-t="${esc(t)}" title="Remove this tag">${esc(t)}${I.x}</span>`).join("")
+    + `<input id="newtag" placeholder="Add a tag, Enter">`;
+  el.querySelectorAll(".chip[data-t]").forEach((x) => (x.onclick = () => saveTags(c, c.tags.filter((t) => t !== x.dataset.t))));
+  document.getElementById("newtag").onkeydown = (e) => {
+    if (e.key !== "Enter" || !e.target.value.trim()) return;
+    saveTags(c, [...c.tags, ...e.target.value.split(",")]).then(() => document.getElementById("newtag")?.focus());
+  };
 }
 
 function list() {
   let html = "", group = null;
+  const query = document.getElementById("q").value;
   q.cards.forEach((c, i) => {
+    if (!matches(c, query)) return;
     const g = c.app ? q.apps[c.app].name : "Your hands";
     if (g !== group) { html += `<div class="group">${esc(g)}</div>`; group = g; }
     const a = q.answered[c.number];
     const dot = c.app ? q.apps[c.app].status : "";
     html += `<div class="item${i === at ? " on" : ""}${a !== undefined ? " done" : ""}" data-i="${i}"><span class="dot ${dot}"></span><span class="t" title="${esc(c.title)}">#${c.number} ${esc(c.title.replace(/^MANUAL RUN:\s*/, ""))}</span>${a === undefined ? "" : a ? I.check : I.x}</div>`;
   });
-  document.getElementById("list").innerHTML = html;
   const left = q.cards.filter((c) => !(c.number in q.answered)).length;
-  document.getElementById("count").textContent = `${q.cards.length - left} of ${q.cards.length}`;
+  const seen = shown().length;
+  document.getElementById("count").textContent = `${q.cards.length - left} of ${q.cards.length}` + (seen < q.cards.length ? ` (${seen} shown)` : "");
+  if (!seen) html = `<div class="group">Nothing matches</div>`;
+  document.getElementById("list").innerHTML = html;
+  cloud();
   document.getElementById("parked").textContent = q.parked.length ? `Parked: ${q.parked.map((p) => `#${p.number} (${p.why})`).join(", ")}` : "";
   document.querySelectorAll(".item").forEach((el) => (el.onclick = () => show(Number(el.dataset.i))));
 }
@@ -104,6 +182,7 @@ function show(i) {
   main.innerHTML = `
     <h2>#${c.number} ${esc(c.title.replace(/^MANUAL RUN:\s*/, ""))}</h2>
     <div class="meta"><a href="${esc(c.url)}" target="_blank">Open the issue</a>${c.app ? `<span id="appbar"></span>` : "<span>Needs your hands: follow the steps below.</span>"}${q.dry ? "<span>(dry run)</span>" : ""}</div>
+    <div class="tags" id="tags"></div>
     ${c.links.length ? `<div class="links">${c.links.map((l, j) => `<button data-j="${j}" title="${esc(q.apps[c.app].url + l.path)}">${l.phone ? I.phone : I.ext}${esc(l.label)}</button>`).join("")}</div>` : ""}
     <pre>${esc(c.body)}</pre>
     <textarea id="note" placeholder="Note for the issue (what felt off, numbers, anything). Kept here as a draft; Yes or No posts it.">${esc(draft.get(c.number))}</textarea>
@@ -120,8 +199,8 @@ function show(i) {
   document.getElementById("note").oninput = (e) => draft.set(c.number, e.target.value);
   document.getElementById("yes").onclick = () => send(true);
   document.getElementById("no").onclick = () => send(false);
-  document.getElementById("skip").onclick = () => show((at + 1) % q.cards.length);
-  list(); bar();
+  document.getElementById("skip").onclick = step;
+  tagRow(c); list(); bar();
 }
 
 async function send(yes) {
@@ -132,14 +211,21 @@ async function send(yes) {
   if (r.error) { said.textContent = r.error; said.className = "err"; return; }
   q.answered[c.number] = yes;
   draft.set(c.number, "");
-  const next = q.cards.findIndex((x, j) => j > at && !(x.number in q.answered));
-  show(next < 0 ? at : next);
+  const next = shown().find((j) => j > at && !(q.cards[j].number in q.answered));
+  show(next ?? at);
 }
 
 document.addEventListener("keydown", (e) => {
-  if (e.target.tagName === "TEXTAREA" || e.metaKey || e.ctrlKey) return;
-  if (e.key === "y") send(true); else if (e.key === "n") send(false); else if (e.key === "s") show((at + 1) % q.cards.length);
+  if (["TEXTAREA", "INPUT"].includes(e.target.tagName) || e.metaKey || e.ctrlKey || e.altKey || !q) return;
+  if (e.key === "/") { e.preventDefault(); document.getElementById("q").focus(); }
+  else if (e.key === "y") send(true); else if (e.key === "n") send(false); else if (e.key === "s") step();
 });
+const box = document.getElementById("q");
+box.value = find.get();
+box.oninput = () => { find.set(box.value); if (q) list(); };
+box.onkeydown = (e) => { if (e.key === "Escape") { box.value = ""; box.oninput(); box.blur(); } else if (e.key === "Enter") { const s = shown(); if (s.length) show(s[0]); box.blur(); } };
+document.getElementById("refresh").innerHTML = I.refresh;
+document.getElementById("refresh").onclick = () => load(true);
 load();
 </script>
 </body>
