@@ -184,6 +184,9 @@ if (cmd === "drop") {
   out("apps", { include });
   out("any", names.length > 0);
   out("packages", changed.some((f) => f.startsWith("packages/")));
+  // The shared skin test (packages/util/test/skin.test.ts) reads three games' skins and stylesheets (its skin-server.ts
+  // GAMES), so a game PR that changes one runs it too: #4210 turned it red on main from an app-only PR.
+  out("skins", changed.some((f) => /^apps\/(two-fronts|mythic-masters|skate-tech-park)\/src\/(eqosys|account)\.ts$|^apps\/(two-fronts|skate-tech-park)\/src\/styles\.css$|^apps\/mythic-masters\/src\/tome\.css$/.test(f)));
   // bun test skips dot directories, so the agent guard hook's tests (.claude/hooks) get their own job.
   out("hooks", shared || changed.some((f) => f.startsWith(".claude/")));
   // The root scripts' own tests (preflight, pr, docs, ...): no app row covers them.

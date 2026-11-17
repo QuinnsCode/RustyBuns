@@ -82,6 +82,16 @@ export function circuitLoad(items: Plugged, circuit: Circuit, loud = true): Feed
   return feed(drawWatts(items, loud), circuit.volts * circuit.amps, circuit.volts);
 }
 
+/** Litres an hour a generator burns at `watts`: its idle rate plus so much per kWh, so more draw burns faster. */
+export function burnLph(gen: Gear | string, watts: number): number {
+  const g = typeof gen === "string" ? gear(gen) : gen;
+  if (!g.generator) throw new Error(`${g.id} is not a generator`);
+  return g.generator.idleLph + (g.generator.perKwh * watts) / 1000;
+}
+
+/** Hours a generator runs on `litres` at `watts`. */
+export const runHours = (gen: Gear | string, watts: number, litres: number) => Math.max(0, litres) / burnLph(gen, watts);
+
 /** A generator under load: its kVA times power factor is the watts it can run. */
 export function generatorLoad(gen: Gear | string, items: Plugged, loud = true, volts = 120): Feed {
   const g = typeof gen === "string" ? gear(gen) : gen;

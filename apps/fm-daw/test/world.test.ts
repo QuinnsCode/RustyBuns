@@ -376,3 +376,46 @@ test("a recorded take: its sound reaches the room in chunks before it lands on a
   await settle();
   expect([...store.keys()].filter((k) => k.startsWith("take"))).toEqual([]);
 });
+
+test("studio: friends share one patch, two can't carry one amp, a held lead is in its player's hand, and it's kept", async () => {
+  const { bucket, worldEnv } = await edge();
+  const { world, join, leave, store } = await setup(worldEnv, "grand-amber-lynx");
+  const a = (await join()).ws, b = (await join()).ws;
+  const act = (ws: Sock, op: object) => world.webSocketMessage(ws, JSON.stringify({ t: "studio", op }));
+  a.sent = []; b.sent = [];
+  act(a, { t: "bring", id: "amp-1", gear: "q-amp", at: [0, 0, 1], turn: 0 });
+  const from = b.sent[0]?.from;
+  expect(b.sent).toEqual([{ t: "studio-op", from, op: { t: "bring", id: "amp-1", gear: "q-amp", at: [0, 0, 1], turn: 0 } }]);
+  expect(a.sent).toEqual(b.sent);                                 // the world's word, to the one who did it too
+  b.sent = [];
+  act(b, { t: "pick", id: "amp-1" });                             // a has it: b is put back in step instead
+  expect(b.sent).toEqual([{ t: "studio-all", studio: { patch: { placed: [{ id: "amp-1", gear: "q-amp", at: [0, 0, 1], turn: 0 }], cables: [], knobs: {} }, held: { [from]: { item: "amp-1" } } } }]);
+  act(a, { t: "put", at: [2, 0, 3], turn: 1.5 });
+  act(a, { t: "bring", id: "fuzz-1", gear: "fuzz", at: [1, 0, 1], turn: 0 });
+  act(a, { t: "put", at: [1, 0, 1], turn: 0 });
+  // a pulls a cable out of the pedal and walks the free end over: b sees it in a's hand
+  b.sent = [];
+  act(a, { t: "lead", from: ["fuzz-1", "out"] });
+  world.webSocketMessage(a, JSON.stringify({ t: "live", e: { t: "body", at: [1.5, 1.7, 2], yaw: 0.3 } }));
+  expect(b.sent).toEqual([{ t: "studio-op", from, op: { t: "lead", from: ["fuzz-1", "out"] } }, { t: "live", from, e: { t: "body", at: [1.5, 1.7, 2], yaw: 0.3 } }]);
+  act(b, { t: "lead", from: ["fuzz-1", "out"] });                 // that jack's cable is in a's hand
+  expect(b.sent.at(-1).t).toBe("studio-all");
+  act(a, { t: "plug", to: ["amp-1", "in"] });
+  act(b, { t: "knob", id: "amp-1", knob: "gain", v: 0.8 });
+  act(b, { t: "knob", id: "amp-1", knob: "gain", v: 7 });         // off the dial: dropped
+  act(b, { t: "lead", from: ["amp-1", "speaker-out"] });
+  leave(b);                                                       // the lead falls out of b's hand
+  await settle();
+  const patch = {
+    placed: [{ id: "amp-1", gear: "q-amp", at: [2, 0, 3], turn: 1.5 }, { id: "fuzz-1", gear: "fuzz", at: [1, 0, 1], turn: 0 }],
+    cables: [{ from: ["fuzz-1", "out"], to: ["amp-1", "in"] }],
+    knobs: { "amp-1": { gain: 0.8 } },
+  };
+  leave(a);
+  await settle();
+  expect(store.get("studio")).toEqual(patch);
+  // the Durable Object is reset: the studio comes back from the bucket, nobody holding anything
+  expect(JSON.parse(bucket.get("sesh/grand-amber-lynx.json")!).studio).toEqual(patch);
+  const fresh = await setup(worldEnv, "grand-amber-lynx");
+  expect((await fresh.join()).ws.sent).toContainEqual({ t: "studio-all", studio: { patch, held: {} } });
+});

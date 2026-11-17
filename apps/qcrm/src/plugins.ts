@@ -21,7 +21,7 @@ import { unb64url } from "@rustybuns/util/bytes";
 import { arr, Bad, bool, check, obj, oneOf, opt, str, type Guard, type Of } from "@rustybuns/util/guard";
 import { createRow, getRow, updateRow } from "./crm.ts";
 import { demoRows, isDemo } from "./demo-snapshot.ts";
-import { b64url, error, json, parseJson, readBody, sha256, type Env, type Row } from "./env.ts";
+import { b64url, error, json, need, parseJson, sha256, type Env, type Row } from "./env.ts";
 import { orgRow, type Ctx } from "./orgs.ts";
 import { can } from "./rbac.ts";
 
@@ -120,11 +120,6 @@ const PutBody = obj({
 });
 const SmsBody = obj({ body: str(SMS_MAX), via: opt(oneOf(PHONE_KINDS)) });
 
-/** A guard's value, or the 400 it explains. */
-function read<T>(g: Guard<T>, v: unknown): T | Response {
-  try { return g(v); } catch (e) { if (e instanceof Bad) return error(400, e.message); throw e; }
-}
-
 const rowOf = (env: Env, org: string, kind: string) => env.DB.prepare("SELECT * FROM plugins WHERE org_id = ? AND kind = ?").bind(org, kind).first<PluginRow>();
 
 export async function pluginRoutes(ctx: Ctx): Promise<Response | null> {
@@ -150,7 +145,7 @@ export async function pluginRoutes(ctx: Ctx): Promise<Response | null> {
     const plan = (await orgRow(env, org))?.plan;
     if (plan === "demo" || plan === "scenario") return error(403, `${kind} is not in a trial org: texts cost money, so make your own org first`);
   }
-  const b = read(PutBody, (await readBody(req)) ?? {});
+  const b = await need(req, PutBody);
   if (b instanceof Response) return b;
   let config: Stored | Record<string, never> = {};
   if (kind !== "form") {
@@ -217,7 +212,7 @@ async function send(c: Phone, to: string, text: string): Promise<{ id: string } 
 
 async function sendSms({ req, env, org, role, user }: Ctx, contactId: string): Promise<Response> {
   if (!can(role, "sms")) return error(403, `a ${role} can't send texts`);
-  const b = read(SmsBody, await readBody(req));
+  const b = await need(req, SmsBody);
   if (b instanceof Response) return b;
   const contact = await getRow(env, org, "contacts", contactId);
   if (!contact) return error(404, "not found");

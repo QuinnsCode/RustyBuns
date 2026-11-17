@@ -1,6 +1,6 @@
 // Required Notice: Copyright (c) 2026 Ryan Quinn (QNTBR) (https://qntbr.com). PolyForm Noncommercial 1.0.0, see ../../LICENSE.
 //
-// A shop's own model (a sample from its photos) as a Surface: its picture projected on as a decal (surfaces.ts
+// A shop's own model (a sample from its photos) as a Surface: each layer projected on as a decal (surfaces.ts
 // says why). In a chunk of its own with the GLB loader, so a page with only hats never downloads either.
 import * as THREE from "three";
 import { DecalGeometry } from "three/examples/jsm/geometries/DecalGeometry.js";
@@ -19,8 +19,8 @@ export class ModelSurface implements Surface<SurfacePoint> {
   readonly group = new THREE.Group();
   readonly target: THREE.Vector3;
   private meshes: THREE.Mesh[] = [];
-  private decal: THREE.Mesh<DecalGeometry, THREE.MeshStandardMaterial> | null = null;
-  private art: { from: CanvasImageSource; tex: THREE.CanvasTexture } | null = null;
+  private decals: THREE.Mesh<DecalGeometry, THREE.MeshStandardMaterial>[] = [];
+  private art = new Map<CanvasImageSource, THREE.CanvasTexture>();
   private ray = new THREE.Raycaster();
   private outline: THREE.LineLoop | null = null;
   /** The print area's frame, in the group's space: its middle, and right, up and out along its facing. */
@@ -98,42 +98,53 @@ export class ModelSurface implements Surface<SurfacePoint> {
 
   draw(_color: string, pictures: Picture[], outline: string | null) {
     if (this.outline) this.outline.visible = outline !== null;
-    const picture = pictures[0];
-    if (this.decal) { this.group.remove(this.decal); this.decal.geometry.dispose(); }
-    if (!picture?.at.point) { this.decal = null; return; }
-    const { point, normal } = this.world(picture.at);
-    // The mesh under the spot: look back along the facing from just above it.
-    this.ray.set(point.clone().addScaledVector(normal, 0.5), normal.clone().negate());
-    const mesh = this.ray.intersectObjects(this.meshes, false)[0]?.object;
-    if (!(mesh instanceof THREE.Mesh)) { this.decal = null; return; }
-    const o = new THREE.Object3D();
-    o.position.copy(point);
-    o.lookAt(point.clone().add(normal));
-    o.rotateZ(picture.at.rotation);
-    const w = this.width(picture.at);
-    const geo = new DecalGeometry(mesh, point, o.rotation, new THREE.Vector3(w, w / picture.aspect, w));
-    geo.applyMatrix4(this.group.matrixWorld.clone().invert()); // decal geometry comes out in world space
-    if (this.art?.from !== picture.image) {
-      this.art?.tex.dispose();
+    for (const d of this.decals) { this.group.remove(d); d.geometry.dispose(); d.material.dispose(); }
+    this.decals = [];
+    const used = new Set<CanvasImageSource>();
+    // One decal a layer, bottom first: each a step further off the surface, so a later one lies on top.
+    for (const [i, picture] of pictures.entries()) {
+      if (!picture.at.point) continue;
+      const { point, normal } = this.world(picture.at);
+      // The mesh under the spot: look back along the facing from just above it.
+      this.ray.set(point.clone().addScaledVector(normal, 0.5), normal.clone().negate());
+      const mesh = this.ray.intersectObjects(this.meshes, false)[0]?.object;
+      if (!(mesh instanceof THREE.Mesh)) continue;
+      const o = new THREE.Object3D();
+      o.position.copy(point);
+      o.lookAt(point.clone().add(normal));
+      o.rotateZ(picture.at.rotation);
+      const w = this.width(picture.at);
+      const geo = new DecalGeometry(mesh, point, o.rotation, new THREE.Vector3(w, w / picture.aspect, w));
+      geo.applyMatrix4(this.group.matrixWorld.clone().invert()); // decal geometry comes out in world space
+      used.add(picture.image);
+      const mat = new THREE.MeshStandardMaterial({ map: this.texture(picture.image), transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4 - i, roughness: 0.8 });
+      mat.opacity = outline !== null ? 0.85 : 1;
+      const decal = new THREE.Mesh(geo, mat);
+      decal.renderOrder = i;
+      this.decals.push(decal);
+      this.group.add(decal);
+    }
+    for (const [image, tex] of this.art) if (!used.has(image)) { tex.dispose(); this.art.delete(image); }
+  }
+
+  /** A layer's picture as a texture, made once per picture. */
+  private texture(image: CanvasImageSource) {
+    let tex = this.art.get(image);
+    if (!tex) {
       const c = document.createElement("canvas");
-      const img = picture.image as ImageBitmap;
+      const img = image as ImageBitmap;
       c.width = img.width; c.height = img.height;
       c.getContext("2d")!.drawImage(img, 0, 0);
-      const tex = new THREE.CanvasTexture(c);
+      tex = new THREE.CanvasTexture(c);
       tex.colorSpace = THREE.SRGBColorSpace;
-      this.art = { from: picture.image, tex };
+      this.art.set(image, tex);
     }
-    const mat = this.decal?.material ?? new THREE.MeshStandardMaterial({ transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4, roughness: 0.8 });
-    mat.map = this.art.tex;
-    mat.opacity = outline !== null ? 0.85 : 1;
-    mat.needsUpdate = true;
-    this.decal = new THREE.Mesh(geo, mat);
-    this.group.add(this.decal);
+    return tex;
   }
 
   dispose() {
     disposeTree(this.group);
-    this.art?.tex.dispose();
+    for (const tex of this.art.values()) tex.dispose();
   }
 }
 
