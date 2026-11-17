@@ -2,7 +2,7 @@
 // wrong (48 V left off, the amp switched on before the desk, the rack carried to the desk with a long speaker run).
 import { expect, test } from "bun:test";
 import type { Cable, CableKind } from "@rustybuns/gear";
-import { FIRST_GIG, judge, jobs, phantom, show } from "../src/venues/first-gig.ts";
+import { CROWD, FIRST_GIG, ZONES, judge, jobs, phantom, show } from "../src/venues/first-gig.ts";
 import { type World, newWorld } from "../src/sim.ts";
 
 const c = (kind: CableKind, from: string, to: string, lengthM: number): Cable => {
@@ -89,4 +89,16 @@ test.each([
   expect(s.pass).toBe(pass);
   expect(s.sound).toBeLessThan(95);
   if (!fault) expect(j.damping!).toBeLessThan(25);
+});
+
+test("the first gig's crowd stands between the stage and the back wall, clear of the stage and the mix position", () => {
+  const f = CROWD.floor;
+  expect(CROWD.capacity).toBe(60);
+  expect(f.z0).toBeGreaterThanOrEqual(ZONES.stage.z1);
+  expect(f.z1).toBeLessThanOrEqual(FIRST_GIG.room.z1);
+  expect(f.x1).toBeLessThanOrEqual(ZONES.desk.x0);
+  // About one and a half people a square metre when everyone is in: a full small room, not a crush.
+  const perM2 = CROWD.capacity / ((f.x1 - f.x0) * (f.z1 - f.z0));
+  expect(perM2).toBeGreaterThan(1.5);
+  expect(perM2).toBeLessThan(2.5);
 });

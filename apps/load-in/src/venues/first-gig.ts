@@ -9,6 +9,7 @@
 // the cone (the damping factor: the load's ohms over the cable's). A long thin speaker run makes the wedge soft and
 // woolly. Short speaker run, long signal run. `judge` scores that with packages/gear's `ohmsPerMetre` and `cableLoss`.
 // Plain data, no DOM.
+import type { CrowdSpot } from "../crowd/crowd.ts";
 import { clamp } from "@rustybuns/util";
 import { type Cable, type Flick, type Placed, type Problem, cableLoss, compile, gear as catalog, jackNames, ohmsPerMetre, source, splAt, thumps } from "@rustybuns/gear";
 import { doors, showScore } from "../clock.ts";
@@ -54,6 +55,22 @@ export const FIRST_GIG: Level = {
 export const ZONES = {
   stage: { x0: -3.5, x1: 3.5, z0: 0, z1: 2.5 },
   desk: { x0: 1.5, x1: 3.5, z0: 7, z1: 9.5 },
+};
+
+/**
+ * Who comes: 60 friends and regulars, standing from the stage lip back and clear of the mix position. A 7 by 10 m room
+ * with a 3 m ceiling, bare walls and a hard floor (mean absorption about 0.12).
+ */
+export const CROWD: CrowdSpot = {
+  floor: { x0: -3.1, x1: 1.3, z0: ZONES.stage.z1 + 0.5, z1: 9.5, nx: 9, nz: 13 },
+  stageZ: ZONES.stage.z1,
+  capacity: 60,
+  room: { w: 7, d: 10, h: 3, alpha: 0.12 },
+  regions: [
+    { name: "front", zone: { x0: -3.1, x1: 1.3, z0: 3, z1: 5.2 } },
+    { name: "middle", zone: { x0: -3.1, x1: 1.3, z0: 5.2, z1: 7.4 } },
+    { name: "back", zone: { x0: -3.1, x1: 1.3, z0: 7.4, z1: 9.5 } },
+  ],
 };
 
 /** Speaker cable is 16 AWG. */

@@ -3,7 +3,9 @@
 // through first-gig.ts), and `fed` / `rig` for what you hear. V at the desk switches its 48 V phantom.
 import * as THREE from "three";
 import { esc } from "@rustybuns/util";
-import { PASS, TARGET, ZONES, type Judged, type Show, gig, jobs, judge, phantom, runsOf, show } from "./first-gig.ts";
+import { CROWD, PASS, TARGET, ZONES, type Judged, type Show, gig, jobs, judge, phantom, runsOf, show } from "./first-gig.ts";
+import { crowdOf, letIn } from "../crowd/crowd.ts";
+import { crowdView } from "../crowd/crowd-view.ts";
 import { REACH, type World } from "../sim.ts";
 import type { Cables } from "../cables/cables.ts";
 import type { Fed, Rig, Switches } from "../audio/hear.ts";
@@ -35,6 +37,8 @@ export function firstGigView(scene: THREE.Scene, hud: HTMLElement, getWorld: () 
   mark.position.set((d.x0 + d.x1) / 2, 0.004, (d.z0 + d.z1) / 2);
   group.add(stage, mark);
   scene.add(group);
+  // Who comes at doors.
+  const people = crowdView(scene);
 
   const card = document.createElement("div");
   card.className = "bar-card";
@@ -57,11 +61,13 @@ export function firstGigView(scene: THREE.Scene, hud: HTMLElement, getWorld: () 
     phantom: (on) => phantom(getWorld(), on),
     tick() {
       const w = getWorld(), r = runs();
+      people.update(w, crowdOf(w));
       j = judge(w, r, getOn());
       const list = jobs(w, r, getOn(), j);
       const lines = [
         `<b>${opened ? "Doors open" : "First gig"}</b>`,
         ...list.map((x) => `<span class="${x.done ? "pass" : ""}">${x.done ? "[x]" : "[ ]"} ${esc(x.job)}</span>`),
+        crowdOf(w) ? `${crowdOf(w)!.people} in the room` : "",
         j.atHead === null ? "" : `At the singer's head ${Math.round(j.atHead)} dB (wants ${TARGET})`,
         j.problems[0] ? `<small class="trip">${esc(j.problems[0].message)}</small>` : "",
         opened ? `<span class="${opened.pass ? "pass" : ""}">Show ${opened.score} / ${PASS} to pass, paid $${opened.pay} of $${opened.fee}</span>` : "<small>V 48 V at the desk, Enter doors</small>",
@@ -70,9 +76,15 @@ export function firstGigView(scene: THREE.Scene, hud: HTMLElement, getWorld: () 
       if (html !== last) card.innerHTML = last = html;
       return j;
     },
-    doors: () => (opened = show(getWorld(), runs(), getOn())),
+    doors: () => {
+      opened = show(getWorld(), runs(), getOn());
+      // Doors: the room fills, from the stage lip back.
+      if (!crowdOf(getWorld())) letIn(getWorld(), CROWD);
+      return opened;
+    },
     hint: () => (atDesk() ? `V 48 V phantom (${gig(getWorld()).phantom ? "on" : "off"})` : null),
     dispose() {
+      people.dispose();
       scene.remove(group);
       card.remove();
     },
