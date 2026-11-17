@@ -26,8 +26,8 @@ const join = (name: string, room = "WALK1", base = party.url, more: Pick<NonNull
   onLife: (k, id, _h, at) => heard.push(`${name}: ${k} ${id}${at === undefined ? "" : ` at ${at}`}`),
   onSeen: (s) => heard.push(`${name}: seen ${s.roost.map((r) => r.id).join()} busy ${s.busy.join()}`),
 });
-/** Walk a player a step east every SEND_MS-ish frame for `steps` frames, along the row of region 5's first keeper's stone. */
-const walk = (o: Online, region: number, x0: number, steps: number, lead = "hodag") => { for (let i = 0; i < steps; i++) o.update(region, x0 + i, 5600, 0, lead, performance.now() + i * 250); };
+/** Walk a player a step east every SEND_MS-ish frame for `steps` frames, by default along the row of region 5's first keeper's stone. */
+const walk = (o: Online, region: number, x0: number, steps: number, lead = "hodag", z = 5600) => { for (let i = 0; i < steps; i++) o.update(region, x0 + i, z, 0, lead, performance.now() + i * 250); };
 
 describe("two friends in one region", () => {
   test("see each other walk with their lead beast; one leaves and comes back; another region is another room", async () => {
@@ -58,11 +58,12 @@ describe("two friends in one region", () => {
       busy: ["5,5", ...cells(11, 7)],
     });
     await until(() => heard.includes("Bo: pick 41,-2 at 120") && heard.includes("Bo: flush 13,34 at 118") && heard.some((l) => l.startsWith("Bo: seen 14,34,") && l.includes("128,36") && l.includes("busy 5,5,")));
-    // Ada takes a contract and reads its first sign: Bo hears it and can follow the same signs.
+    // Ada takes a contract: Bo hears it and can follow the same signs. Its first sign isn't where she stands, so saying
+    // she read it gets no further than taking it (the room believes a sign only where it lies, #4165).
     ada.hunt("1.20002.6206", 0); // a board in another region, 20 km off: nothing to tell
     ada.hunt("5.13900.5600", 0); ada.hunt("5.13900.5600", 1); // the board beside her
-    await until(() => heard.includes("Bo: Ada hunt 5.13900.5600 1"));
-    expect(heard.some((l) => l.includes("1.20002.6206"))).toBe(false);
+    await until(() => heard.filter((l) => l === "Bo: Ada hunt 5.13900.5600 0").length === 2);
+    expect(heard.some((l) => l.includes("1.20002.6206") || l.includes("5.13900.5600 1"))).toBe(false);
     // Ada walks up to the first stone of her region's trail: Bo hears whose fight it is, so that den is quiet for him too.
     // Her report of the fight gets to Bo only when it fits the den she walked into: a fight longer than the time since is
     // dropped, and so is a den the world's seed doesn't put that creature in.
@@ -93,12 +94,13 @@ describe("two friends in one region", () => {
     await Bun.sleep(250); ada.update(5, 16800, 5600, 0, "hodag", performance.now());
     await until(() => [...bo.ghosts.values()][0]?.pose.x === 168000);
     await Bun.sleep(250); ada.update(5, 13800, 5550, 0, "hodag", performance.now()); // 50 m from the stone, not beside Bo
-    ada.met("keeper:5:0", "loveland-frogman", 34); ada.hunt("5.13900.5600", 2); ada.life("pick", "197,79");
+    const doubted = heard.length;
+    ada.met("keeper:5:0", "loveland-frogman", 34); ada.hunt("5.13900.5600", 0); ada.life("pick", "197,79");
     await Bun.sleep(1100); ada.update(5, 13422, 5527, 0, "hodag", performance.now()); // the campfire 386 m off
-    ada.hunt("5.13900.5600", 3);
-    await until(() => heard.includes("Bo: Ada hunt 5.13900.5600 3"));
+    expect(heard.slice(doubted).filter((l) => l.includes("hunt"))).toEqual([]);
+    ada.hunt("5.13900.5600", 0);
+    await until(() => heard.slice(doubted).includes("Bo: Ada hunt 5.13900.5600 0"));
     expect(heard.filter((l) => l.includes("keeper:5:0"))).toHaveLength(1);
-    expect(heard).not.toContain("Bo: Ada hunt 5.13900.5600 2");
     expect(heard).not.toContain("Bo: pick 197,79"); // nor the bush she picked while doubted
 
     // Ada closes the tab: Bo sees her go. She comes back and walks on, and Bo sees her again.
@@ -253,33 +255,34 @@ describe("two friends in one region", () => {
   });
 
   test("what a friend picked, flushed and tracked outlasts them: one who joins after they left still finds it, even after the room stood empty", async () => {
+    // Region 5's second contract (the Beast of Bray Road): Ada stands at its second sign, Bo 250 m back at its first.
     const ada = join("Ada", "KEEP1"), bo = join("Bo", "KEEP1");
-    ada.update(5, 13800, 5600, 0, "hodag", performance.now()); bo.update(5, 13810, 5600, 0, "hodag", performance.now());
+    ada.update(5, 9144.7, 2436.8, 0, "hodag", performance.now()); bo.update(5, 9162.7, 2186.1, 0, "hodag", performance.now());
     await until(() => ada.status === "in" && bo.status === "in");
-    walk(ada, 5, 13800, 4); walk(bo, 5, 13810, 4);
+    walk(ada, 5, 9144.7, 4, "hodag", 2436.8); walk(bo, 5, 9162.7, 4, "hodag", 2186.1);
     await until(() => [...ada.ghosts.values()].some((g) => g.pose.r === 5) && [...bo.ghosts.values()].some((g) => g.pose.r === 5));
-    ada.life("pick", "197,80"); ada.life("flush", "125,50", 1.5);
-    // Ada reads the second sign of the contract on the board beside her; Bo, behind her on the trail, the first after.
-    ada.hunt("5.13900.5600", 2);
-    await until(() => heard.includes("Bo: flush 125,50") && heard.includes("Bo: pick 197,80") && heard.includes("Bo: Ada hunt 5.13900.5600 2"));
-    bo.hunt("5.13900.5600", 1);
+    ada.life("pick", "130,34"); ada.life("flush", "83,22", 1.5);
+    // Ada reads the second sign; Bo, behind her on the trail, the first after.
+    ada.hunt("5.9206.2000", 2);
+    await until(() => heard.includes("Bo: flush 83,22") && heard.includes("Bo: pick 130,34") && heard.includes("Bo: Ada hunt 5.9206.2000 2"));
+    bo.hunt("5.9206.2000", 1);
     await Bun.sleep(100);
     ada.close();
     await Bun.sleep(300);
     const cy = join("Cy", "KEEP1");
     cy.update(5, 13820, 5600, 0, "hodag", performance.now());
     await until(() => cy.status === "in", 8000);
-    await until(() => heard.some((l) => l.startsWith("Cy: pick 197,80 at")) && heard.some((l) => l.startsWith("Cy: flush 125,50 at")));
+    await until(() => heard.some((l) => l.startsWith("Cy: pick 130,34 at")) && heard.some((l) => l.startsWith("Cy: flush 83,22 at")));
     // and the contract Ada was on, at the furthest sign anyone read, so Cy can follow it to the lair
-    await until(() => heard.includes("Cy: Ada hunt 5.13900.5600 2"));
-    expect(heard).not.toContain("Cy: Bo hunt 5.13900.5600 1");
+    await until(() => heard.includes("Cy: Ada hunt 5.9206.2000 2"));
+    expect(heard).not.toContain("Cy: Bo hunt 5.9206.2000 1");
     // Everyone goes home and the room stands empty; Di, walking in later, still finds the region as they left it.
     cy.close(); bo.close();
     await Bun.sleep(300);
     const di = join("Di", "KEEP1");
     di.update(5, 13820, 5600, 0, "hodag", performance.now());
     await until(() => di.status === "in", 8000);
-    await until(() => heard.some((l) => l.startsWith("Di: pick 197,80 at")) && heard.includes("Di: Ada hunt 5.13900.5600 2"));
+    await until(() => heard.some((l) => l.startsWith("Di: pick 130,34 at")) && heard.includes("Di: Ada hunt 5.9206.2000 2"));
     di.close();
   });
 

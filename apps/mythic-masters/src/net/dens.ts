@@ -6,13 +6,13 @@
 // draws its dens with.
 import { NIGHT, TIER_LEVEL, tierOf } from "../tiers.ts";
 import { DEN, DEN_SALT, hash, nightLevel, sectionPick, wildLevel } from "../world/seed.ts";
-import type { Delta } from "./party.ts";
+import { huntNear, type Delta } from "./party.ts";
 import table from "./dens.json";
 
 /** A creature at a level; a pool told as runs, `id[i]` `k[i]` times over; a trail section's wild ones (`w`) and keeper. */
 interface At { id: string; lv: number }
 interface Runs { id: string[]; k: number[] }
-const T: { cols: number; owner: number[][]; pools: Record<string, Runs[]>; trail: Record<string, (At & { w: string[] })[]>; mythic: Record<string, At>; hunts: Record<string, At>; places: Record<string, number[]>; land: number[] } = table;
+const T: { cols: number; owner: number[][]; pools: Record<string, Runs[]>; trail: Record<string, (At & { w: string[] })[]>; mythic: Record<string, At>; hunts: Record<string, At>; signs: Record<string, number[]>; places: Record<string, number[]>; land: number[] } = table;
 
 /** The playable region a wild den's cell `cx, cz` holds a creature for, or 0. */
 function ownerOf(cx: number, cz: number): number {
@@ -68,6 +68,28 @@ export function denNear(den: string, p: Delta): boolean {
   const at = T.places[den] ?? [], r = NEAR_M[den.split(":")[0]!] ?? 0;
   for (let i = 0; i < at.length; i += 2) if (Math.hypot(at[i]! - x, at[i + 1]! - z) < r) return true;
   return false;
+}
+
+/** How far off the way from a sign to the next (the last sign's, to the lair) a player who read it may stand: a sign is
+ *  read within 10 m (hunts.ts CLUE_R), a pose runs up to a send behind, and the spots are whole metres. Signs are about
+ *  220 m apart, so the sign before is well outside it (test/dens.test.ts checks every contract). */
+const SIGN_M = 40;
+/** Metres from (x, z) to the segment a-b. */
+function offSegment(x: number, z: number, ax: number, az: number, bx: number, bz: number): number {
+  const dx = bx - ax, dz = bz - az, t = Math.max(0, Math.min(1, ((x - ax) * dx + (z - az) * dz) / (dx * dx + dz * dz || 1)));
+  return Math.hypot(ax + dx * t - x, az + dz * t - z);
+}
+/** The furthest sign of contract `h` the room believes a player at pose `p` has read, when they say `s` and the room
+ *  already keeps `kept` for it (#4165), or null for a board nowhere near them (party.ts `huntNear`). Taking it (0) is
+ *  believed anywhere near the board; sign s only on the way on from it, toward the next sign or the lair. Said from
+ *  anywhere else (retold for a friend who just came, or a page claiming a sign it never walked to), no further than
+ *  the room already believes. */
+export function signBelieved(h: string, s: number, p: Delta, kept = 0): number | null {
+  if (!huntNear(h, p) || p.x === undefined || p.z === undefined) return null;
+  if (s === 0) return 0;
+  const at = T.signs[h], i = (s - 1) * 2;
+  if (at && at.length >= i + 4 && offSegment(p.x / 10, p.z / 10, at[i]!, at[i + 1]!, at[i + 2]!, at[i + 3]!) < SIGN_M) return s;
+  return Math.min(s, kept);
 }
 
 /** Travel lands you this close to an arena's doorstep or a campfire. */

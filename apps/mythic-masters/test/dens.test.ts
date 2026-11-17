@@ -3,7 +3,7 @@
 import { describe, expect, setDefaultTimeout, test } from "bun:test";
 import { mythicOf, sections, SECTIONS } from "../src/journey.ts";
 import { REGIONS } from "../src/regions.ts";
-import { denNear, holds, landing } from "../src/net/dens.ts";
+import { denNear, holds, landing, signBelieved } from "../src/net/dens.ts";
 import table from "../src/net/dens.json";
 import { denTable } from "../scripts/dens.ts";
 import { HUNTS } from "../src/world/hunts.ts";
@@ -84,6 +84,21 @@ describe("a den's creature and level, from the world's seed", () => {
     expect(holds("0,0", roaming.id, roaming.level)).toBe(false); // the sea off the north-west corner
     expect(holds("hunt:9.1.1", hunt.creature, hunt.level)).toBe(false);
     expect(holds(`keeper:${g.n}:40`, sec.keeper, sec.level)).toBe(false);
+  });
+
+  test("a contract's sign is believed read where it lies, on the way on from it, and not a sign before (#4165)", () => {
+    const pose = (n: number, q: { x: number; z: number }) => ({ r: n, x: Math.round(q.x * 10), z: Math.round(q.z * 10) });
+    for (const [id, h] of HUNTS) {
+      const before = [h.board, ...h.clues.map((c) => c.at)], next = [...h.clues.slice(1).map((c) => c.at), h.lair];
+      for (let s = 1; s <= h.clues.length; s++) {
+        const at = h.clues[s - 1]!.at, half = { x: (at.x + next[s - 1]!.x) / 2, z: (at.z + next[s - 1]!.z) / 2 };
+        expect([id, s, signBelieved(id, s, pose(h.n, at)), signBelieved(id, s, pose(h.n, half))]).toEqual([id, s, s, s]);
+        // one sign back (the board, for the first): only as far as the room already believes
+        expect([id, s, signBelieved(id, s, pose(h.n, before[s - 1]!)), signBelieved(id, s, pose(h.n, before[s - 1]!), s - 1)]).toEqual([id, s, 0, s - 1]);
+      }
+      expect(signBelieved(id, 0, pose(h.n, h.board))).toBe(0);
+      expect(signBelieved(id, 2, pose(h.n === 1 ? 2 : 1, h.clues[1]!.at))).toBeNull(); // another region: no contract at all
+    }
   });
 
   test("src/net/dens.json is the world's now (rerun bun scripts/dens.ts)", () => {
