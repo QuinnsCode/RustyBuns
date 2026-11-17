@@ -209,3 +209,31 @@ test.each(["yeti", "sasquatch", "hodag"])("the %s's feet stay flat on their legs
   }
   expect(sink).toBeLessThan(0.06 * b.sheet.height);   // the ankle stays over the toe (it sank 0.1-0.15 of the height under it)
 }, 30_000);
+
+// #4740 round 26: the Yeti and the Sasquatch took a blow standing upright with a few degrees of lean, so a hit didn't land
+// in a still. The whole body answers it now: the head is thrown back and aside within a tenth of a second and is still
+// out there a third of a second on, at the 30 fps a busy page drops to as well as at 60.
+test.each([["yeti", 60], ["sasquatch", 30]] as const)("a blow throws the %s's head back and holds it (%d fps)", async (id, fps) => {
+  const c = ROSTER.find((x) => x.id === id)!;
+  const b = await beast(c.id);
+  const p = new Puppet(b, body(c), c.archetype);
+  const f = newMatch(c, c).f[0];
+  f.pos = { x: 0, y: 0, z: 0 }; f.vel = { x: 0, y: 0, z: 0 }; f.yaw = 0; f.onGround = true;
+  const striker = { x: 3, y: 0, z: 0.6 }, dt = 1 / fps, h = b.sheet.height;
+  let tick = 0;
+  for (let i = 0; i < fps; i++) p.update(f, dt, tick++, striker);
+  // against where the body stands, so the knockback's slide doesn't count
+  const head = () => p.headWorld()[0]!.sub(p.group.position);
+  const rest = head(), moved: number[] = [];
+  f.state = "stun"; f.stun = 22;
+  for (let t = 0; t <= 0.36; t += dt) {
+    f.stun = Math.max(0, f.stun - 60 * dt); if (f.stun === 0) f.state = "free";
+    p.update(f, dt, tick++, striker);
+    moved.push(head().distanceTo(rest) / h);
+  }
+  const at = (s: number) => moved[Math.round(s * fps) - 1]!;
+  // the old lean moved it about 0.4 of the height at 0.12 s and 0.1 by 0.35 s; the recoil about 0.75 and 0.3
+  expect(at(0.12)).toBeGreaterThan(0.55);
+  expect(at(0.35)).toBeGreaterThan(0.2);
+  expect(Math.max(...moved)).toBeLessThan(1);   // thrown, not flung off the body (an unstable spring at 30 fps did)
+}, 30_000);

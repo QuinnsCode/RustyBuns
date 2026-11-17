@@ -385,6 +385,14 @@ export class Puppet {
   /** The whiplash: the head and chest thrown back off a blow, fast (it peaks on the next frame or two), before the slower curl folds the body over it. */
   private snap = 0;
   private snapV = 0;
+  /** The recoil (#4740 round 26): the whole body's answer to a blow, held long enough to read in a still. `recoilK` is
+   * the blow's size, easing off over the stun; `recoil` chases it on a fast spring (it lands in two or three frames) and
+   * throws the chest back, twists the body away on `recoilSide`, puts the weight on the far legs and whips the head. */
+  private recoil = 0;
+  private recoilV = 0;
+  private recoilK = 0;
+  private recoilSide = 1;
+  private hits = 0;
   private prevStun = 0;
   private stagger = 0;   // a big hit's shove back: 1 on a heavy blow, easing off while the body rocks away from it
   /** The knockback: a blow throws the body back off the striker (metres along `kbDir`) and it skids back to where the sim has it. */
@@ -679,6 +687,27 @@ export class Puppet {
       this.kbDir.set(dx / d, 0, dz / d); this.kbV = 3 + 5 * Math.min(1, (f.stun - this.prevStun) / 22);
       if (grounded && !hanging) this.reel = true;
     }
+    if (f.stun > this.prevStun + 1) {
+      // the side the body twists to: away from where the striker stands across it, or turn about when it's dead ahead
+      let side = this.hits++ % 2 ? -1 : 1;
+      if (look) {
+        const dx = look.x - f.pos.x, dz = look.z - f.pos.z, c = Math.cos(f.yaw), sn = Math.sin(f.yaw);
+        const lx = dx * c + dz * sn, lz = dz * c - dx * sn;   // the striker in the body's own frame (it faces +x)
+        if (Math.abs(lz) > 0.25 * Math.abs(lx)) side = lz > 0 ? -1 : 1;
+      }
+      this.recoilSide = side;
+      this.recoilK = Math.max(this.recoilK, 0.45 + 0.55 * Math.min(1, (f.stun - this.prevStun) / 22));
+    }
+    // held while the stun lasts (half gone in about 0.3 s), let go faster once the body is free
+    this.recoilK *= Math.exp(-(f.state === "stun" ? 2.2 : 6) * dt);
+    {
+      // stiff enough to land in two or three frames, so it steps in eighths of a frame to stay stable at 30 fps
+      const rk = 1400, rd = 2 * 0.65 * Math.sqrt(rk), n = 8, rdt = Math.min(dt, 1 / 30) / n;
+      for (let i = 0; i < n; i++) {
+        this.recoilV += (rk * (this.recoilK - this.recoil) - rd * this.recoilV) * rdt;
+        this.recoil = Math.max(0, this.recoil + this.recoilV * rdt);
+      }
+    }
     const kk = 55, bkdt = Math.min(dt, 1 / 30);
     this.kbV += (-kk * this.kb - 2 * 0.75 * Math.sqrt(kk) * this.kbV) * bkdt;
     this.kb = Math.max(0, this.kb + this.kbV * bkdt);
@@ -713,7 +742,11 @@ export class Puppet {
     this.leanV += (lk * (pitch - this.lean) - ld * this.leanV) * ldt;
     this.lean += this.leanV * ldt;
     // a roll is one full tumble forward on top of the lean
-    this.pivot.rotation.set(roll, twist, this.lean - curl * 0.32 + this.snap * 0.25 - (off?.kind === "roll" ? offE * Math.PI * 2 : 0));
+    // the recoil rides on top, raw: the chest thrown back, the body twisted away from the blow and tipped onto the far
+    // legs (an upright body further: a four-legged one keeps its feet under it)
+    const rc = this.recoil, rs = this.recoilSide * rc;
+    this.pivot.rotation.set(roll + rs * 0.16 * this.upright, twist + rs * (0.1 + 0.3 * this.upright),
+      this.lean - curl * 0.32 + this.snap * 0.25 + rc * (0.2 + 0.2 * this.upright) - (off?.kind === "roll" ? offE * Math.PI * 2 : 0));
     g.position.set(f.pos.x, f.pos.y, f.pos.z);
     // a real meet: the sim lands a melee blow up to a metre short of the other body, so the striker's whole body slides
     // the rest of the way on the strike and holds there while the move is live (the contact stop below then jars it),
@@ -845,7 +878,7 @@ export class Puppet {
     this.ksV += (400 * (kt - this.ks) - 2 * 0.35 * 20 * this.ksV) * kdt;
     this.ks += this.ksV * kdt;
     const past = Math.max(0, this.ks - kt);
-    let rx = (past * 0.18 + lunge * 0.14 + jab * 0.03 - rear * 0.06 - back * 0.08 - stunK * 0.07 - this.stagger * 0.12 - curl * 0.14) * h; // a hit knocks the hips back
+    let rx = (past * 0.18 + lunge * 0.14 + jab * 0.03 - rear * 0.06 - back * 0.08 - stunK * 0.07 - this.stagger * 0.12 - curl * 0.14 - this.recoil * 0.1) * h; // a hit knocks the hips back
     // contact: the bodies meet instead of passing through. Each keeps its front (snout, horns) outside the other's
     // body (taken as wide as its own); a lunge that would cross it stops there, and the stop jars the striker: a squash along
     // the blow, the same spring a hit rings. Already too close, the body leans back from the other, a little.
@@ -862,7 +895,7 @@ export class Puppet {
       } else this.blocked = false;
     }
     const bounce = mo === "drum" ? Math.sin(tick * 0.9) * 0.05 * wk : 0, arch = mo === "roll" ? mk * 0.04 : 0;
-    const ry = bodyY + bob + heave + (rear * 0.12 - lunge * 0.06 - dip + bounce + arch) * h;
+    const ry = bodyY + bob + heave + (rear * 0.12 - lunge * 0.06 - dip - this.recoil * 0.07 * this.upright + bounce + arch) * h;
     this.ik.moveRoot(this.rest.x + rx, this.rest.y + ry, this.rest.z);
     // a foot goal the leg can't reach (the hips lunged away, rose, or dropped) comes up off the floor to the leg's
     // full stretch instead of folding the leg in half chasing it
@@ -920,7 +953,9 @@ export class Puppet {
       // shake is the move itself, a deliberate fast swing, and stays raw
       const sf = this.soft;
       this.sec.follow(i, this.look.x, this.look.y, this.look.z + snake * 0.05 * h, dt, h, sf);
-      this.ik.moveGoal(t.tip, t.rest.x + rx + sf.x, t.rest.y + ry + sf.y, t.rest.z + sf.z + shake);
+      // the recoil's head whip goes straight to the solver, past the look's spring, so it lands with the blow
+      const rh = this.recoil * h;
+      this.ik.moveGoal(t.tip, t.rest.x + rx + sf.x - rh * 0.14, t.rest.y + ry + sf.y + rh * 0.08, t.rest.z + sf.z + shake + this.recoilSide * rh * 0.14);
     });
     // the tail is dragged: a point in the world that eases toward where the tail rests, held within reach;
     // a swinging move coils it to one side and whips it across, a wave slaps it down
