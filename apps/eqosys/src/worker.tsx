@@ -31,9 +31,11 @@ import deploysSql from "../migrations/20261107000000_deploys.sql?raw";
 import listingsSql from "../migrations/20261109000000_listings.sql?raw";
 import studioReportsSql from "../migrations/20261111000000_studio_reports.sql?raw";
 import studioSpacesSql from "../migrations/20261113000000_studio_spaces.sql?raw";
+import avatarsSql from "../migrations/20261117000000_avatars.sql?raw";
 import { house, studiosOf } from "./studios.ts";
 import { markStaff, tally, visitorsOf } from "./visitors.ts";
 import { loadOf } from "./scale.ts";
+import { firstVisit } from "./avatars.ts";
 import { regionAt } from "@rustybuns/util/privacy";
 import { pageCsp, spacesConnect } from "./csp.ts";
 
@@ -54,7 +56,7 @@ const e = (req?: Request): AppEnv => {
 // One statement at a time, so a column added on an earlier run ("duplicate column") doesn't stop the rest.
 let migrated: Promise<unknown> | undefined;
 const devMigrate = (db: AppEnv["DB"]) => (migrated ??= (async () => {
-  for (const q of [initSql, oauthSql, reportsSql, savesSql, seatsSql, unlocksSql, spacesSql, privacySql, visitsSql, studiosSql, deploysSql, listingsSql, studioReportsSql, studioSpacesSql].join("\n").split("\n").filter((l) => !l.trimStart().startsWith("--")).join("\n").split(/;\s*\n/)
+  for (const q of [initSql, oauthSql, reportsSql, savesSql, seatsSql, unlocksSql, spacesSql, privacySql, visitsSql, studiosSql, deploysSql, listingsSql, studioReportsSql, studioSpacesSql, avatarsSql].join("\n").split("\n").filter((l) => !l.trimStart().startsWith("--")).join("\n").split(/;\s*\n/)
     .map((q) => q.trim().replace(/;$/, "")).filter(Boolean)
     .map((q) => q.replace(/^create (table|index|unique index) /i, "create $1 if not exists ")))
     await db.prepare(q).run().catch((err: unknown) => { if (!/duplicate column/i.test(String(err))) throw err; });
@@ -94,7 +96,9 @@ const app = defineApp([
       if (!authOn(conf)) { response.status = 503; return <ErrorPage status={503} />; }
       const me = await meOf(request, conf);
       if (!me) return see("/login");
-      const tab = tabOf(new URL(request.url).searchParams.get("tab"));
+      const q = new URL(request.url).searchParams, tab = tabOf(q.get("tab"));
+      // A first sign-in opens on the character picker; Later (or any tab) goes on as usual.
+      if (!q.has("tab") && await firstVisit(conf, me.id)) return see("/?tab=account&first=1");
       // Everything the page shows, read at once. Your spaces and party sit beside the library alone.
       const [, [mine], hub, unlocks, everyone, , side] = await Promise.all([
         link(conf, me.id, null, regionAt(request)), members(conf, me.id), conf.HUB ? hubAsk(conf.HUB, atHome(me), { op: "state" }) : null,
@@ -109,7 +113,7 @@ const app = defineApp([
         everyone ? markStaff(conf, request).then(() => tab === "visitors" ? visitorsOf(conf, Number(new URL(request.url).searchParams.get("days")) || 7) : null) : null,
         tab === "studio" ? studiosOf(conf, me.id) : null, appsOf(conf)]);
       return <Home ways={ways} social={providers(conf)} invite={invite} origin={new URL(request.url).origin} apps={apps} visitors={visitors} counts={counts} t0={phaseAt(new URL(request.url).searchParams.get("at"))} me={me} mine={mine} hub={shown} side={side} everyone={everyone} unlocks={unlocks}
-        error={new URL(request.url).searchParams.get("e") ?? undefined} tab={tab} studios={studios}
+        error={new URL(request.url).searchParams.get("e") ?? undefined} tab={tab} first={tab === "account" && q.get("first") === "1"} studios={studios}
         scale={everyone && tab === "scale" ? loadOf(new URL(request.url).searchParams) : null} />;
     }),
     route("/spaces", async ({ request, response }) => {

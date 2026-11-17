@@ -252,7 +252,7 @@ export async function deleteAccount(conf: Env, userId: string, iss: string) {
   await conf.DB.batch([
     ...studioErase(conf, userId),
     ...owned.map((id) => conf.DB.prepare("DELETE FROM space_members WHERE space_id = ?").bind(id)), conf.DB.prepare("DELETE FROM spaces WHERE owner = ? AND studio_id IS NULL").bind(userId), gone("space_members"),
-    gone("codes"), gone("party_seats"), gone("saves"), gone("unlocks"), gone("refresh"), gone("reports"), gone("access"), gone("links"), gone("members"), gone("token_cuts"),
+    gone("codes"), gone("party_seats"), gone("saves"), gone("unlocks"), gone("refresh"), gone("reports"), gone("access"), gone("links"), gone("members"), gone("token_cuts"), gone("avatars"),
     gone('"session"', '"userId"'), gone('"account"', '"userId"'),
     conf.DB.prepare(`DELETE FROM "verification" WHERE identifier = ?`).bind(u.email),
     gone('"user"', "id"),

@@ -30,6 +30,7 @@ import { dossierHeaders, regionAt, type Region } from "@rustybuns/util/privacy";
 import { exportFor, HOLDERS } from "./privacy.ts";
 import { regionFor, vaultFor } from "./vault.ts";
 import { beacon } from "./visitors.ts";
+import { avatarRoute } from "./avatars.ts";
 
 /** An app asking for someone: where to send them back, and the proof only the app can finish. */
 export interface Ask {
@@ -178,6 +179,9 @@ export async function handle(req: Request, conf: Env): Promise<Response | null> 
     const token = await sign(conf, issuer(req, conf), { user: { id: me.id, email: me.email, name: me.name }, app: HOME, source: HOME, access: [] }, Date.now(), {}, HOME_LIFE);
     return token ? json({ token, name: me.name, life: HOME_LIFE }) : json({ error: "no signing key here" }, 503);
   }
+
+  // Your character (avatars.ts): GET or PUT, the session cookie or an app token as a bearer.
+  if (pathname === "/me/avatar") return avatarRoute(req, conf);
 
   // Privacy (privacy.ts): GET /api/privacy/export is everything eqosys holds about the person as one JSON file (GDPR's access and
   // portability); GET /api/privacy is what is kept, why and how long, plus their vault (region, consents, requests). The session

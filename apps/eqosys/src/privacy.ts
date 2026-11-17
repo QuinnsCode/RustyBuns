@@ -81,6 +81,10 @@ export const HOLDERS: Holder<Subject>[] = [
     export: ({ conf, me }) => rows(conf, "SELECT s.id, s.name, s.kind, m.role, m.at FROM studio_members m JOIN studios s ON s.id = m.studio_id WHERE m.user_id = ?", me.id),
   },
   {
+    id: "avatar", what: "The character you picked (its hair, clothes, colours and build)", why: "So you look the same in every Q app", basis: "contract", keep: UNTIL,
+    export: ({ conf, me }) => rows(conf, "SELECT look, at FROM avatars WHERE user_id = ?", me.id),
+  },
+  {
     id: "parties", what: "The party rooms you sat in", why: "So deleting your account can tell each one to forget you", basis: "contract", keep: "24 hours",
     export: ({ conf, me }) => rows(conf, "SELECT code, at FROM party_seats WHERE user_id = ?", me.id),
   },

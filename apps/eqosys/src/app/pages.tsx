@@ -650,11 +650,34 @@ function Visitors({ v }: { v: Counts }) {
 export type Tab = (typeof TABS)[number][0];
 export const tabOf = (v: unknown): Tab => TABS.find(([k]) => k === v)?.[0] ?? "library";
 
-export function Home({ apps = APPS, me, mine, hub, side, everyone, unlocks, counts, error, t0, tab, visitors, scale, studios, invite, origin = "", ways, social = [] }: { /** The Account tab: how they sign in now, and the providers switched on here. */ ways?: Way[] | null; social?: string[]; invite?: { id: string; name: string; game?: string | null } | null; origin?: string; apps?: QApp[]; side?: Side | null; visitors?: Counts | null; scale?: Load | null; studios?: Studio[] | null; counts: Map<string, number>; me: Me; mine: Member | undefined; hub: HubState | null; everyone: Member[] | null; unlocks: Unlocks; error?: string; t0: number; tab: Tab }) {
+/** The character picker (avatar.client.ts fills #avatar). Big and plain: the figure on the left (on top on a phone), a row a part. */
+const AVATAR_CSS = `
+.av-card{padding:1rem}.av-card h2{margin:0 0 .25rem}
+.av{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.15fr);gap:1rem;align-items:start}
+.av-left{position:sticky;top:1rem;display:grid;gap:.6rem}
+.av-stage{height:min(62vh,34rem);border-radius:12px;background:radial-gradient(ellipse at 50% 85%,color-mix(in srgb,var(--acc) 16%,transparent),transparent 65%),var(--bg);touch-action:pan-y;cursor:grab;overflow:hidden}
+.av-stage:active{cursor:grabbing}.av-canvas{display:block;width:100%;height:100%}
+.av-rows{display:grid;gap:.55rem}
+.av-row{display:grid;grid-template-columns:6.5rem minmax(0,1fr);gap:.6rem;align-items:center}
+.av-label{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.av-strip{display:flex;gap:.35rem;overflow-x:auto;scrollbar-width:thin;padding:.15rem 0 .3rem}
+.av-strip button{flex:none;white-space:nowrap;font:inherit;font-size:.9rem;color:var(--fg);background:var(--card);border:1.5px solid var(--line);border-radius:999px;padding:.35rem .8rem;cursor:pointer;min-height:2.5rem}
+.av-strip button:hover{border-color:var(--acc)}
+.av-strip button[aria-checked=true]{background:var(--acc);border-color:var(--acc);color:var(--bg)}
+.av-strip.swatches button{width:2.5rem;height:2.5rem;padding:0;background:var(--sw)}
+.av-strip.swatches button[aria-checked=true]{box-shadow:0 0 0 2px var(--card),0 0 0 4.5px var(--acc)}
+.av-poses{justify-content:safe center}
+.av-bar{display:flex;flex-wrap:wrap;gap:.6rem;align-items:center;margin-top:.9rem}
+.av-bar .ui-btn{display:inline-flex;gap:.4rem;align-items:center;white-space:nowrap;min-height:2.75rem}
+.av-note{font-size:.9rem}
+@media(max-width:46rem){.av{grid-template-columns:1fr}.av-left{position:static}.av-stage{height:min(52vh,26rem)}.av-row{grid-template-columns:1fr;gap:.2rem}}
+`;
+
+export function Home({ apps = APPS, me, mine, hub, side, everyone, unlocks, counts, error, t0, tab, visitors, scale, studios, invite, origin = "", ways, social = [], first = false }: { /** A first sign-in: the picker is the first thing they see. */ first?: boolean; /** The Account tab: how they sign in now, and the providers switched on here. */ ways?: Way[] | null; social?: string[]; invite?: { id: string; name: string; game?: string | null } | null; origin?: string; apps?: QApp[]; side?: Side | null; visitors?: Counts | null; scale?: Load | null; studios?: Studio[] | null; counts: Map<string, number>; me: Me; mine: Member | undefined; hub: HubState | null; everyone: Member[] | null; unlocks: Unlocks; error?: string; t0: number; tab: Tab }) {
     const tabs = TABS.filter(([k]) => !ADMIN_TABS.has(k) || everyone);
   const asked = hub?.incoming.length ?? 0;
   return (
-    <Glass t0={t0} css={HOME_CSS + SCALE_CSS + STUDIO_CSS}>
+    <Glass t0={t0} css={HOME_CSS + SCALE_CSS + STUDIO_CSS + AVATAR_CSS}>
       <div className="home">
         {/* The nav sits outside the glass pane: a blurred parent would pin a phone's fixed tab bar to itself instead of the screen. */}
         <div className="menu">
@@ -716,6 +739,11 @@ export function Home({ apps = APPS, me, mine, hub, side, everyone, unlocks, coun
 
         {tab === "account" && (
           <>
+            <section className="card av-card" aria-label="Your character">
+              <h2>{first ? "Make your character" : "Your character"}</h2>
+              <p className="mut">{first ? "You wear it in every Q app. Pick each part, or Shuffle, then Save. " : "You wear it in every Q app. Drag it to turn it round."}{first && <a href="/?tab=library">Later</a>}</p>
+              <div id="avatar" data-name={me.name || me.email} data-first={first ? "1" : undefined}><span className="mut">Loading your character.</span></div>
+            </section>
             <h2>Account</h2>
             <div className="card me"><i>{(me.name || me.email).slice(0, 1)}</i><div><b>{me.name || me.email}</b><span>{me.email} · came in through {nameOf(mine?.source ?? "eqosys")}</span></div></div>
             {ways && <Ways ways={ways} social={social} />}
