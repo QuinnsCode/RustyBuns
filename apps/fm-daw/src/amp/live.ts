@@ -23,7 +23,7 @@ export interface Live { rig: Rig; chain: string; keys: string[]; mic: string }
  * The rig for these settings. A different amp, a pedal in or out, or a new
  * oversampling builds a new chain; otherwise only links whose parts changed are
  * rebuilt (a tone knob: the tone stack; the pedal's knob or a part swap: the pedal, an LFO keeping its phase),
- * a moved mic makes a new impulse response, and pots and the power stage are just set.
+ * a moved mic makes a new impulse response, and pots, the power stage and its bias tremolo are just set.
  */
 export function applySettings(s: AmpSettings, live: Live | null, sampleRate: number): Live {
   const amp = AMPS.find((a) => a.id === s.amp) ?? AMPS[0];
@@ -40,6 +40,7 @@ export function applySettings(s: AmpSettings, live: Live | null, sampleRate: num
     live.rig.setGain(i, l.gain ?? 1);
   });
   live.rig.setPower(spec.power);
+  live.rig.setTrem(spec.output?.trem);
   live.rig.setNoise(spec.noise ?? 0);
   live.rig.setLoop(spec.loop);
   return { rig: live.rig, chain, keys, mic };

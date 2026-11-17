@@ -18,13 +18,15 @@ export type Kind = "guitar" | "pedal" | "amp" | "cab";
 export interface GearDef { id: string; name: string; kind: Kind; size: Vec3; kg: number; jacks: JackDef[]; knobs: KnobDef[]; circuit?: string }
 
 const AMP_KNOBS: (keyof Knobs)[] = ["gain", "bass", "mid", "treble", "master", "noise"];
-const LABEL: Record<keyof Knobs, string> = { gain: "Gain", bass: "Bass", mid: "Middle", treble: "Treble", master: "Master", noise: "Noise" };
+const LABEL: Record<keyof Knobs, string> = { gain: "Gain", bass: "Bass", mid: "Middle", treble: "Treble", master: "Master", noise: "Noise", rate: "Rate", depth: "Depth" };
 const PEDAL_DRIVE: Record<string, number> = { drive: 3, dist: 5, fuzz: 7 };
 
 const ampGear = (a: (typeof AMPS)[number]): GearDef => ({
   id: `amp-${a.id}`, name: a.name, kind: "amp", size: [0.62, 0.26, 0.26], kg: 15, circuit: a.id,
   jacks: [{ name: "in", dir: "in", at: [-0.26, 0.15, 0.13], face: "front" }, { name: "speaker", dir: "out", at: [0.22, 0.13, -0.13], face: "back" }],
-  knobs: AMP_KNOBS.map((k, i) => ({ name: k, label: LABEL[k], at: [-0.14 + i * 0.075, 0.15, 0.13], face: "front", dflt: a.knobs[k] / 10 })),
+  knobs: (a.trem ? [...AMP_KNOBS, "rate", "depth"] as const : AMP_KNOBS).map((k, i) => ({
+    name: k, label: LABEL[k], at: a.trem ? [-0.17 + i * 0.055, 0.15, 0.13] : [-0.14 + i * 0.075, 0.15, 0.13], face: "front", dflt: a.knobs[k] / 10,
+  })),
 });
 const pedalGear = (p: (typeof PEDALS)[number]): GearDef => ({
   id: `pedal-${p.id}`, name: p.name, kind: "pedal", size: [0.12, 0.06, 0.2], kg: 0.5, circuit: p.id,
@@ -428,7 +430,7 @@ export function listen(patch: Patch, oversample: 2 | 4 = 4): Heard {
     if (!whole) continue;
     const ampDef = AMPS.find((a) => a.id === amp.circuit) ?? AMPS[0];
     const turned = (k: keyof Knobs) => (patch.knobs[src[0]]?.[k] ?? ampDef.knobs[k] / 10) * 10;
-    const knobs: Knobs = { gain: turned("gain"), bass: turned("bass"), mid: turned("mid"), treble: turned("treble"), master: turned("master"), noise: turned("noise") };
+    const knobs: Knobs = { gain: turned("gain"), bass: turned("bass"), mid: turned("mid"), treble: turned("treble"), master: turned("master"), noise: turned("noise"), rate: turned("rate"), depth: turned("depth") };
     const ped = pedals[0], pedDef = ped ? kind(ped) : undefined;
     if (pedals.length > 1) problems.push(`the rig runs one pedal for now (#4827): ${pedals.slice(1).map(name).join(", ")} passed straight through`);
     const drive = ped && pedDef ? (patch.knobs[ped]?.drive ?? pedDef.knobs[0].dflt) * 10 : 0;

@@ -15,6 +15,10 @@
 //   less (16 ohms on the 8 ohm tap clips sooner); take it away and there is nothing to dump the energy into: the plate
 //   voltage flies up past the tubes' rating the first time you play, and the
 //   amp is broken (`fault`) and silent until it is rebuilt. Idle hiss alone won't do it.
+// - Bias tremolo: an LFO on the bias supply pulls both grids colder and back.
+//   Colder tubes pass less, so the level swings; they also sit further from the
+//   ceiling, so the dips clip less than the peaks, and near cutoff the crossover
+//   notch grows. That is the throb an optical trem on the floor doesn't have.
 //
 // native/crates/fm_daw/src/circuit.rs `PushPull` is this, step for step.
 
@@ -34,6 +38,8 @@ const ZAA = 4300, TAP = 8;
  * arcs over. Idle hiss is a few milliamps; a note played at all is hundreds.
  */
 export const FLYBACK_AMPS = 0.1;
+/** How much colder the bias goes at full Depth, volts: -36 at the top of the LFO, -44 (just short of cutoff) in the dip. */
+export const TREM_VOLTS = 8;
 /** Grid volts for one preamp volt at drive 1 (the old `tanh` stage's scale: 40 V at drive 1 is the grids at 0 V). */
 const GRID = 0.9;
 
@@ -44,7 +50,12 @@ export interface PowerSpec {
   sag: number;
   /** Ohms on the speaker jack; 0 is nothing plugged in. */
   load: number;
+  /** Bias tremolo, if the amp has it: the LFO's rate (Hz) and depth (0 to 1). */
+  trem?: Trem;
 }
+
+/** An LFO on the output tubes' bias supply. */
+export interface Trem { hz: number; depth: number }
 
 export const DEFAULT_POWER: PowerSpec = { pairs: 1, sag: 120, load: 8 };
 
@@ -72,12 +83,20 @@ export class PushPull {
   private lp = 0;
   private readonly hpA: number;
   private readonly lpA: number;
+  private readonly sampleRate: number;
+  private trem: Trem = { hz: 0, depth: 0 };
+  /** The trem LFO's phase, radians. */
+  phase = 0;
+  /** The grid bias now, volts: `-36` without trem, colder in each dip. */
+  bias = BIAS;
   /** The supply now, volts. */
   supply = B_PLUS;
   fault: Fault | null = null;
 
   constructor(spec: PowerSpec, sampleRate: number) {
     this.pairs = spec.pairs; this.sag = spec.sag; this.load = spec.load;
+    this.sampleRate = sampleRate;
+    this.setTrem(spec.trem);
     this.draw = 2 * IDLE * spec.pairs;
     this.attack = 1 - Math.exp(-1 / (0.015 * sampleRate));
     this.release = 1 - Math.exp(-1 / (0.12 * sampleRate));
@@ -88,11 +107,21 @@ export class PushPull {
   /** A speaker plugged in (ohms) or pulled out (0). Doesn't mend a blown amp. */
   setLoad(ohms: number): void { this.load = ohms; }
 
+  /** The bias tremolo's rate and depth; none (or depth 0) holds the bias still. The LFO keeps its phase. */
+  setTrem(t?: Trem): void { this.trem = t ? { hz: Math.max(0, t.hz), depth: Math.min(1, Math.max(0, t.depth)) } : { hz: 0, depth: 0 }; }
+
   /** Preamp volts in, `drive` the Master; volts across the speaker out. */
   step(x: number, drive: number): number {
     if (this.fault) return 0;
     const d = x * drive * GRID;
-    const a = plate(BIAS + d), b = plate(BIAS - d);
+    let bias = BIAS;
+    if (this.trem.depth > 0) {
+      bias -= this.trem.depth * TREM_VOLTS * (0.5 - 0.5 * Math.cos(this.phase));
+      this.phase += (2 * Math.PI * this.trem.hz) / this.sampleRate;
+      if (this.phase > 2 * Math.PI) this.phase -= 2 * Math.PI;
+    }
+    this.bias = bias;
+    const a = plate(bias + d), b = plate(bias - d);
     const n = this.pairs;
     // Sag: the supply follows its current, quickly down and slowly back.
     const now = (a + b) * n;

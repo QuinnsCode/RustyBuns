@@ -33,6 +33,8 @@ test("working the knobs while the riff plays: rebuilds only what moved, never pa
     ["its Drive up", { drive: 10 }, false],
     ["germanium in its clipper socket", { swaps: { D1: "germanium" } }, false],
     ["Q Triple", { amp: "triple", knobs: { ...AMPS[2].knobs } }, true],
+    ["Q Clean T", { amp: "clean", knobs: { ...AMPS[3].knobs } }, true],
+    ["its trem faster and deeper", { knobs: { ...AMPS[3].knobs, rate: 9, depth: 10 } }, false],
     ["Eco", { oversample: 2 }, true],
     ["Q Dist instead", { pedal: "dist" }, true],
   ];
