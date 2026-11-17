@@ -149,14 +149,19 @@ export function djBoothView(scene: THREE.Scene, hud: HTMLElement, getWorld: () =
     shared.want = true;
     return { ok: true };
   };
+  /** The booth monitors' own level, 0 to 1 (the mixer's booth knob): the DJ's alone, so it is not shared with the room. */
+  let boothLevel = 0.7;
   const view = {
     shared,
+    /** What the hearing takes off each booth monitor for the booth knob, dB: full up is the master's level, half is 6 dB under. */
+    rig: () => { const db = -20 * Math.log10(Math.max(0.05, boothLevel)); return { lossDb: { "mon-l": db, "mon-r": db } }; },
     /** Hand this to the sound system: the decks' sound, made once the page's audio has started. */
     audio: (ctx: AudioContext) => (sound?.stop(), (sound = deckSound(ctx)).node),
     /** At the decks: 1 and 2 start and stop a deck, Z and X move the crossfader. */
     key(code: string): boolean {
       if (!atBooth()) return false;
       if (code === "Digit1" || code === "Digit2") return say(view.decks.play(code === "Digit1" ? 1 : 2)), true;
+      if (code === "Comma" || code === "Period") return view.decks.booth(boothLevel + (code === "Comma" ? -0.1 : 0.1)), true;
       if (code === "KeyZ" || code === "KeyX") return view.decks.cross(decks.cross + (code === "KeyZ" ? -0.25 : 0.25)), true;
       return false;
     },
@@ -193,7 +198,7 @@ export function djBoothView(scene: THREE.Scene, hud: HTMLElement, getWorld: () =
         // In a crew room: who has the decks.
         ...(shared.room ? [shared.dj?.me ? '<span class="pass">You are on the decks</span>' : shared.dj ? `${esc(shared.dj.name || "Someone")} is on the decks` : "The decks are free: touch them to take them"] : []),
         `Crossfader ${decks.cross === 0 ? "centre" : decks.cross < 0 ? `${Math.round(-decks.cross * 100)}% to A` : `${Math.round(decks.cross * 100)}% to B`}, master ${j.live ? "to the speakers" : "goes nowhere yet"}`,
-        j.problems[0] ? `<small>${esc(j.problems[0].message)}</small>` : "<small>At the decks: 1 / 2 play, Z / X crossfader</small>",
+        j.problems[0] ? `<small>${esc(j.problems[0].message)}</small>` : "<small>At the decks: 1 / 2 play, Z / X crossfader, , / . booth monitors</small>",
       ];
       const html = lines.map((l) => `<div>${l}</div>`).join("");
       if (html !== last) card.innerHTML = last = html;
@@ -206,6 +211,8 @@ export function djBoothView(scene: THREE.Scene, hud: HTMLElement, getWorld: () =
       decks: decks.deck.map((k, i) => ({ deck: i + 1, track: TRACKS[i]!.name, playing: k.playing, pitch: k.pitch, bpm: Math.round(bpmOf(decks, i + 1) * 10) / 10, beat: Math.round(k.beat * 10) / 10, channel: j.routing[KEYS[i]!] ?? null })),
       /** In a crew room: who is on the decks (null when the seat is free), and whether that is you. */
       shared: shared.room, dj: shared.dj?.name ?? null, onDecks: !shared.room || !!shared.dj?.me, seatNote: shared.note,
+      /** The booth monitors' level, 0 to 1. */
+      booth: Math.round(boothLevel * 100) / 100,
       fader: [...decks.fader], cross: decks.cross, mix: m.gain, meter: m.meter, hum: j.hum, distort: j.distort, live: j.live,
       /** Whether the two decks together drive the master past its limiter (the mixer's red lights). */
       clip: sum(m) > HOT,
@@ -231,6 +238,8 @@ export function djBoothView(scene: THREE.Scene, hud: HTMLElement, getWorld: () =
       /** In a crew room: ask for the DJ seat, or give it up. */
       take: () => { shared.want = true; },
       leave: () => { shared.want = false; },
+      /** The booth monitors' level, 0 to 1: yours alone, apart from the master the room hears. */
+      booth: (v: number) => { boothLevel = Math.max(0, Math.min(1, v)); },
       range: PITCH_RANGE,
     },
     dispose() {
