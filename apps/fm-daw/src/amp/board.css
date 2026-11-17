@@ -1,0 +1,49 @@
+/* The board view (board.ts): tscircuit's schematic and PCB, restyled for a dark stage. Shared by Q Amp and the build sheet. */
+.board-view { --dim: #9aa1ab; --ink: #eceef1; --warn: #ffb000; --silk: "Barlow Condensed", "Arial Narrow", sans-serif; --mono: "IBM Plex Mono", ui-monospace, monospace; }
+.board-view {
+  --signal: 0; position: relative; width: min(940px, 100%); justify-self: center; border-radius: 12px; overflow: visible;
+  background: #05080a; border: 1px solid rgba(255, 255, 255, 0.1); box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
+}
+.board-top { display: flex; align-items: center; gap: 8px; padding: 6px 8px 6px 12px; color: var(--dim); background: rgba(255, 255, 255, 0.03); border-bottom: 1px solid rgba(255, 255, 255, 0.06); border-radius: 12px 12px 0 0; }
+.board-title { font: 600 0.82rem/1 var(--silk); letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink); white-space: nowrap; }
+.board-hint { flex: 1; min-width: 0; font: 500 11px/1.2 var(--mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.board-view .modes .icon-btn:disabled { opacity: 0.35; cursor: default; }
+.board-art { padding: 6px; }
+.board-art svg { display: block; width: 100%; height: clamp(220px, 42vh, 460px); }
+.board-art .boundary { fill: #05080a; }
+.board-art .sch-component-symbol-path, .board-art .component-pin, .board-art .sch-component-body, .board-art .sch-net-label-symbol-path { stroke: #aeb4bd; }
+.board-art .sch-component-body { fill: rgba(255, 255, 255, 0.04); }
+.board-art .sch-trace-path, .board-art .trace-junction { stroke: rgba(79, 209, 139, 0.75); }
+.board-art .trace-junction { fill: rgba(79, 209, 139, 0.75); }
+.board-art .sch-trace-crossing-outline { stroke: #05080a; }
+.board-art text { fill: var(--dim); stroke: none; font-family: var(--mono); }
+.board-art .sch-net-label { fill: #0b0f12; stroke: rgba(174, 180, 189, 0.5); }
+.board-art .sch-net-label-text { fill: #aeb4bd; }
+.board-art .sch-component-name { fill: var(--ink); }
+.board-art .schematic-port-hover, .board-art .sch-trace-hitbox, .board-art .component-overlay { opacity: 0; }
+.board-art[data-side="pcb"] .pcb-board { fill: #0d3b26; }
+.board-art[data-side="pcb"] .pcb-pad { fill: #c9a24a; }
+/* What bends the signal (diodes, the op-amp, the tube) glows with it; sockets take clicks. */
+.board-art .bends .sch-component-symbol-path, .board-art .bends .sch-component-body {
+  stroke: color-mix(in srgb, var(--warn) calc(var(--signal) * 100%), #aeb4bd);
+  filter: drop-shadow(0 0 calc(var(--signal) * 6px) rgba(255, 176, 0, calc(var(--signal) * 0.9)));
+}
+.board-art[data-side="pcb"] .pcb-pad.bends { fill: color-mix(in srgb, var(--warn) calc(var(--signal) * 100%), #c9a24a); }
+.board-art .socket { cursor: pointer; }
+.board-art .socket:hover .sch-component-symbol-path, .board-art .socket:hover text, .board-art[data-side="pcb"] .socket:hover { stroke: #fff; fill: #fff; }
+.board-art .swapped text { fill: var(--warn); }
+.board-art[data-side="pcb"] .swapped.pcb-pad, .board-art[data-side="pcb"] .swapped { stroke: var(--warn); stroke-width: 1.5px; }
+.board-art .empty .sch-component-symbol-path { stroke-dasharray: 3 3; opacity: 0.45; filter: none; }
+.socket-menu {
+  position: absolute; z-index: 5; min-width: 230px; padding: 6px; border-radius: 12px; background: #15181d;
+  border: 1px solid rgba(255, 255, 255, 0.16); box-shadow: 0 18px 40px rgba(0, 0, 0, 0.6); display: grid; gap: 2px;
+}
+.socket-head { padding: 4px 8px 6px; font: 600 0.78rem/1 var(--silk); letter-spacing: 0.08em; text-transform: uppercase; color: var(--dim); }
+.socket-item { display: grid; grid-template-columns: auto 1fr; align-items: baseline; gap: 10px; padding: 7px 8px; border: 0; border-radius: 8px; background: none; text-align: left; }
+.socket-item:hover, .socket-item:focus-visible { background: rgba(255, 255, 255, 0.08); }
+.socket-item[aria-checked="true"] { color: var(--warn); background: rgba(255, 176, 0, 0.1); }
+.socket-label { font-weight: 500; white-space: nowrap; }
+.socket-note { font: 500 11px/1.3 var(--mono); color: var(--dim); }
+@media (max-width: 560px) { .board-hint { display: none; } .socket-menu { min-width: 0; width: calc(100% - 16px); } }
+/* A page without a global [hidden] rule (the gear room) still hides these. */
+.board-view[hidden], .socket-menu[hidden] { display: none; }
