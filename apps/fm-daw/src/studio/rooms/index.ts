@@ -2,16 +2,11 @@
 // starts from one. Rooms after famous studios are described by what made them sound the way they do (a hall big
 // enough for an orchestra, a basement with a dead drum booth), never by a real studio's name, branding or
 // likeness: the same rule as the games.
-import { boothWalls, newSpot } from "../builder.ts";
-import type { Spot, SpotKind, StudioDef } from "../room.ts";
-import { MATERIALS, type Material } from "../sound.ts";
+import { boothWalls } from "../builder.ts";
+import type { StudioDef } from "../room.ts";
+import { DESK_CONCERT } from "./desk-concert.ts";
+import { all, colors, seat } from "./kit.ts";
 import { LIVE_ROOM } from "./live.ts";
-
-const all = (m: Material) => ({ front: m, back: m, left: m, right: m });
-const colors = (floor: Material, walls: Material, ceiling: Material) => ({ floor: MATERIALS[floor].color, walls: MATERIALS[walls].color, ceiling: MATERIALS[ceiling].color, trim: "#c8a46a" });
-/** A seat: a kind's instrument, with its own label, facing `yaw`, playing `track` when given. */
-const seat = (id: string, kind: SpotKind, at: [number, number], yaw: number, label?: string, track?: string): Spot =>
-  ({ ...newSpot(id, kind, at), yaw, ...(label ? { label } : {}), ...(track ? { track } : {}) });
 
 /** A scoring hall: room for a full orchestra, the sound blooming for two seconds. */
 export const SCORING_HALL: StudioDef = {
@@ -75,7 +70,7 @@ export const BARN: StudioDef = {
   door: { at: [-1, 6], yaw: 0 },
 };
 
-export const ROOM_LIST: StudioDef[] = [LIVE_ROOM, SCORING_HALL, BASEMENT, STONE_ROOM, BARN];
+export const ROOM_LIST: StudioDef[] = [LIVE_ROOM, SCORING_HALL, BASEMENT, STONE_ROOM, BARN, DESK_CONCERT];
 /** Every room, by id. */
 export const ROOMS: Record<string, StudioDef> = Object.fromEntries(ROOM_LIST.map((r) => [r.id, r]));
 export { LIVE_ROOM };
