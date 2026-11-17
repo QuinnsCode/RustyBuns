@@ -55,6 +55,10 @@ export const HOLDERS: Holder<Subject>[] = [
     },
   },
   {
+    id: "avatar", what: "Your character: the parts and colours you picked", why: "So you look the same in every Q app", basis: "contract", keep: UNTIL,
+    export: ({ conf, me }) => rows(conf, "SELECT data, at FROM avatars WHERE user_id = ?", me.id),
+  },
+  {
     id: "achievements", what: "Achievements you unlocked in each game, and when", why: "To show them to you and your friends", basis: "contract", keep: UNTIL,
     export: ({ conf, me }) => rows(conf, "SELECT app, achievement, at FROM unlocks WHERE user_id = ?", me.id),
   },
