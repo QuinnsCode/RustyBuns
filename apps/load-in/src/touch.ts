@@ -48,6 +48,7 @@ const VENUE: Record<string, string[]> = {
   park: ["KeyR", "KeyV", "KeyZ", "KeyX", "KeyH", "BracketLeft", "BracketRight", "Enter"],
   desert: ["KeyR", "KeyV", "KeyH", "KeyB", "BracketLeft", "BracketRight", "Enter"],
   "bigger-bar": ["KeyB", "Enter"],
+  amphitheatre: ["KeyU", "KeyJ", "KeyK", "KeyI", "KeyO", "Comma", "Period", "KeyN", "KeyB", "KeyG", "KeyV", "KeyH", "BracketLeft", "BracketRight", "Enter"],
   "small-arena": ["KeyG", "KeyK", "KeyI", "KeyO", "KeyU", "KeyJ", "KeyH", "BracketLeft", "BracketRight", "Enter"],
   arena: ["Digit1", "Digit2", "Digit3", "Digit4", "Digit5", "Digit6", "Digit7", "KeyK", "KeyU", "KeyR", "KeyV", "Comma", "Period", "KeyI", "KeyH", "Enter"],
   show: ["Digit1", "Digit2", "Digit3", "Digit4", "Digit5", "BracketLeft", "BracketRight", "Semicolon", "Quote", "Comma", "Period", "KeyJ", "KeyK", "KeyN", "Enter"],

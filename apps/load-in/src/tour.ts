@@ -17,10 +17,11 @@ import { FIRST_GIG } from "./venues/first-gig.ts";
 import { DESERT } from "./venues/desert.ts";
 import { SMALL_ARENA } from "./venues/small-arena.ts";
 import { ARENA } from "./venues/arena.ts";
+import { AMPHITHEATRE } from "./venues/amphitheatre.ts";
 
 /**
  * The real rig at each rung, as a crew would build it for that many people. The level you play is the part of it you
- * carry and wire yourself; these are the whole thing, shown on the tour card. No count shrinks from one rung to the next.
+ * carry and wire yourself; these are the whole thing, shown on the tour card. No count shrinks from one rung to the next, but the amphitheatre seats fewer than the arena.
  * - people: what the room holds. tops, subs, wedges: boxes. amps: amp channels, a powered box's own amp counts as one.
  * - kw: the mains the sound system can pull at show level. runs: cable runs (power, signal, speaker). crew: on sound.
  */
@@ -45,6 +46,10 @@ export const RIGS: Readonly<Record<string, Rig>> = {
   // fills; a sub line of 24 across the stage front (or a cardioid array); amp racks in the hundreds of kW on 400 A
   // three-phase services.
   arena: { people: 15000, tops: 76, subs: 24, wedges: 16, amps: 160, kw: 250, power: "400 A three-phase, twice", runs: 220, crew: 12 },
+  // The red-rock amphitheatre: about 9,500 seats, fewer heads than the arena but the top of the ladder for its rig and
+  // its throw. Main hangs of 13 to 16 a side, side hangs, two delay towers of 6 up the bowl, front fills; a cardioid
+  // sub line of 24 or more (the stage, the back rock and the valley); on two 400 A services and its own generators.
+  amphitheatre: { people: 9500, tops: 84, subs: 28, wedges: 16, amps: 176, kw: 260, power: "400 A three-phase, twice, and backup generators", runs: 240, crew: 14 },
 };
 
 /** The rungs you can play now, in order: a pass at one books the next. */
@@ -56,8 +61,8 @@ export const LADDER: readonly { level: Level; name: string }[] = [
   { level: DESERT, name: "The desert night party" },
   { level: SMALL_ARENA, name: "The small arena" },
   { level: ARENA, name: "The arena" },
-  // next rungs: the local festival (step 9 of #5029) between the desert and the small arena, and the red-rock
-  // amphitheatre (step 10) at the top.
+  { level: AMPHITHEATRE, name: "The red-rock amphitheatre" },
+  // next rung: the local festival (step 9 of #5029) between the desert and the small arena.
 ];
 
 /** Who comes on your first night: friends. */

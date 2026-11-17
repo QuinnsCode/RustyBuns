@@ -7,7 +7,7 @@ import { BIGGER_BAR } from "../src/venues/bigger-bar.ts";
 import { FIRST_GIG } from "../src/venues/first-gig.ts";
 import { FIRST_FOLLOWING, LADDER, RIGS, bookedRung, buy, crowd, newTour, readTour, ready, record } from "../src/tour.ts";
 
-test("from the first gig to the arena: each pass books the next rung, and the following and the pay climb", () => {
+test("from the first gig to the red-rock amphitheatre: each pass books the next rung, and the following and the pay climb", () => {
   let t = newTour();
   expect(bookedRung(t).level).toBe(FIRST_GIG);
   // The garage owns none of the first gig's kit: the desk, the rack, the wedge, the mic and its stand are rented.
@@ -24,15 +24,15 @@ test("from the first gig to the arena: each pass books the next rung, and the fo
     booked.push(night.booked);
     following.push(t.following);
   }
-  expect(booked).toEqual(["dive-bar", "bigger-bar", "park", "desert", "small-arena", "arena", "arena"]);
+  expect(booked).toEqual(["dive-bar", "bigger-bar", "park", "desert", "small-arena", "arena", "amphitheatre", "amphitheatre"]);
   for (let i = 1; i < LADDER.length; i++) {
     expect(following[i]!).toBeGreaterThan(following[i - 1]!);
     expect(pay[i]!).toBeGreaterThan(pay[i - 1]!);
   }
 
-  // A miss at the arena: booked back, and a share of the following stays home next time.
+  // A miss at the top, the amphitheatre: booked back, and a share of the following stays home next time.
   const miss = record(t, LADDER.at(-1)!.level, { score: 40, pay: 4000, pass: false });
-  expect(miss.booked).toBe("arena");
+  expect(miss.booked).toBe("amphitheatre");
   expect(miss.tour.following).toBeLessThan(t.following);
 });
 
@@ -40,9 +40,12 @@ test("every rung's rig is at least the one below it, count by count", () => {
   const rigs = LADDER.map((r) => RIGS[r.level.name]!);
   for (const [i, rig] of rigs.entries()) {
     if (i === 0) continue;
-    for (const k of ["people", "tops", "subs", "wedges", "amps", "kw", "runs", "crew"] as const) expect(rig[k]).toBeGreaterThanOrEqual(rigs[i - 1]![k]);
+    // The amphitheatre tops the ladder by its rig and its throw: its bowl seats fewer than the arena.
+    const counts = (["people", "tops", "subs", "wedges", "amps", "kw", "runs", "crew"] as const).filter((k) => !(k === "people" && LADDER[i]!.level.name === "amphitheatre"));
+    for (const k of counts) expect(rig[k]).toBeGreaterThanOrEqual(rigs[i - 1]![k]);
   }
-  expect(rigs.at(-1)).toMatchObject({ people: 15000 });
+  expect(rigs.at(-2)).toMatchObject({ people: 15000 });
+  expect(rigs.at(-1)).toMatchObject({ people: 9500 });
 });
 
 test("rent what you lack, a miss books you back, pay buys a distro and the van, and the rent drops", () => {
