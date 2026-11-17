@@ -1,6 +1,7 @@
 // How a Qollab Studio room looks (#5008): the light, what every surface is made of, and the camera's lens and film.
 // A room is data (room.ts); this turns its sizes and materials into something that should read as a photo of a real
-// small studio: tone mapped light, ceiling downlights set off the walls so they wash them, soft shadows, contact shadows
+// small studio: tone mapped light, ceiling downlights set off the walls so they wash them (no two alike), the floor's warm
+// bounce lifting the tops of the walls, floor lamps in the free corners, soft shadows, contact shadows
 // and shade in the corners baked once, reflections of the room itself,
 // textures painted in code (planks with grain, ceiling tiles on their grid, wedge foam, folded curtains, brick, carpet),
 // the room's absorbers and curtains hung where its data says, and on high a little bloom, a vignette and grain.
@@ -16,6 +17,7 @@ import { ShaderPass } from "three/examples/jsm/postprocessing/ShaderPass.js";
 import { FullScreenQuad } from "three/examples/jsm/postprocessing/Pass.js";
 import { HorizontalBlurShader } from "three/examples/jsm/shaders/HorizontalBlurShader.js";
 import { VerticalBlurShader } from "three/examples/jsm/shaders/VerticalBlurShader.js";
+import { RectAreaLightUniformsLib } from "three/examples/jsm/lights/RectAreaLightUniformsLib.js";
 import { mulberry32 } from "@rustybuns/util";
 import type { Side, StudioDef } from "./room.ts";
 import { MATERIALS } from "./sound.ts";
@@ -357,17 +359,17 @@ function corners(def: StudioDef, group: THREE.Group) {
     for (let y = 0; y < 64; y++) { const t = 1 - y / 63; g.fillStyle = `rgba(0,0,0,${(t * t * t).toFixed(3)})`; g.fillRect(0, 63 - y, 64, 1); }
   }, false);
   fade.wrapS = fade.wrapT = THREE.ClampToEdgeWrapping;
-  const { h } = def.size, mat = shade(fade, 0.55);
+  const { h } = def.size, mat = shade(fade, 0.55), top = shade(fade, 0.22); // the bounce off the floor lights the tops: only a hint of shade there
   for (const side of ["front", "back", "left", "right"] as const) {
     const s = sideOf(def, side), wall = new THREE.Group();
     wall.position.set(s.cx, 0, s.cz); wall.rotation.y = s.turn;
     group.add(wall);
-    const band = (wide: number, tall: number, x: number, y: number, turn: number) => {
-      const m = new THREE.Mesh(new THREE.PlaneGeometry(wide, tall), mat);
+    const band = (wide: number, tall: number, x: number, y: number, turn: number, m0 = mat) => {
+      const m = new THREE.Mesh(new THREE.PlaneGeometry(wide, tall), m0);
       m.position.set(x, y, 0.062); m.rotation.z = turn; m.name = "corner"; wall.add(m);
     };
     band(s.len, 0.7, 0, 0.35, 0); // the foot
-    band(s.len, 0.6, 0, h - 0.3, Math.PI); // the top, dark side up
+    band(s.len, 0.6, 0, h - 0.3, Math.PI, top); // the top, dark side up
     // the corners, dark side toward each end: the plane turned on its side, so its "wide" runs up the wall
     band(h, 0.6, -s.len / 2 + 0.36, h / 2, -Math.PI / 2);
     band(h, 0.6, s.len / 2 - 0.36, h / 2, Math.PI / 2);
@@ -386,6 +388,28 @@ export function cans(w: number, d: number): [number, number][] {
   };
   const xs = row(w), zs = row(d);
   return xs.flatMap((x) => zs.map((z): [number, number] => [x, z]));
+}
+
+/** How far a point is from the segment a to b, on the floor. */
+function toSegment(p: [number, number], a: [number, number], b: [number, number]) {
+  const dx = b[0] - a[0], dz = b[1] - a[1], len2 = dx * dx + dz * dz || 1;
+  const t = Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dz) / len2));
+  return Math.hypot(p[0] - a[0] - t * dx, p[1] - a[1] - t * dz);
+}
+
+/**
+ * Where a room's floor lamps stand: the corners nobody plays in, as a real room keeps a lamp or two out of the way
+ * for warm light at head height. A corner is free when no seat is within 1.4 m and no inner wall within half a
+ * metre; of those, the two farthest from any seat, at most. A hall too big for a lamp to tell gets none.
+ */
+export function practicals(def: StudioDef): [number, number][] {
+  const { w, d } = def.size;
+  if (w > 16 || d > 16) return [];
+  const inset = 0.45, near = (p: [number, number]) => Math.min(Infinity, ...def.spots.map((s) => Math.hypot(p[0] - s.at[0], p[1] - s.at[1])));
+  const free = ([[-1, -1], [1, -1], [-1, 1], [1, 1]] as const)
+    .map(([sx, sz]): [number, number] => [sx * (w / 2 - inset), sz * (d / 2 - inset)])
+    .filter((p) => near(p) > 1.4 && def.walls.every((wl) => toSegment(p, wl.from, wl.to) > 0.5));
+  return free.sort((a, b) => near(b) - near(a)).slice(0, 2);
 }
 
 export interface LookState { quality: Quality; lights: number; shadows: number; post: string[]; tone: string; exposure: number; drawCalls: number; triangles: number; fps: number; ground: number; env: "room" | "generated" }
@@ -422,8 +446,11 @@ export function dress(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera:
   const bulb = new THREE.MeshStandardMaterial({ color: "#000", emissive: "#ffe6c4", emissiveIntensity: 6 }), trim = surface("metal", "#d9d6d0");
   const lights: THREE.SpotLight[] = [];
   const per = (w * d) / spots.length, power = 16 * per * Math.max(1, h / 3.4); // candela, so a big room's few lights still light it
+  // no two cans alike, as in a real room: lamps of different ages, a touch warmer or brighter, the same every visit
+  const rnd = mulberry32([...def.id].reduce((a, ch) => (a * 31 + ch.charCodeAt(0)) | 0, 7));
+  const warm = new THREE.Color(0xffd2a0), cool = new THREE.Color(0xffe8cc);
   for (const [x, z] of spots) {
-    const l = new THREE.SpotLight(0xffe2c0, power, 0, Math.PI * 0.3, 0.7, 2);
+    const l = new THREE.SpotLight(warm.clone().lerp(cool, rnd()), power * (0.72 + rnd() * 0.45), 0, Math.PI * (0.28 + rnd() * 0.05), 0.85, 2);
     l.position.set(x, h - 0.03, z);
     l.target.position.set(x, 0, z);
     group.add(l, l.target);
@@ -438,6 +465,30 @@ export function dress(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera:
     l.shadow.mapSize.set(1024, 1024);
     l.shadow.bias = -0.0004; l.shadow.normalBias = 0.03; l.shadow.radius = 4;
     l.shadow.camera.near = 0.2; l.shadow.camera.far = h + 1;
+  }
+
+  // the bounce: light the floor throws back up, warm with the floor's colour, as a panel lying on it facing the
+  // ceiling. It lifts the tops of the walls and the ceiling's edges out of the black, the way a lit floor does.
+  RectAreaLightUniformsLib.init();
+  const floorTone = new THREE.Color(def.colors.floor).lerp(new THREE.Color(0xffe0bc), 0.55);
+  const bounce = new THREE.RectAreaLight(floorTone, 2.4 * Math.max(1, h / 3.4), w * 0.9, d * 0.9);
+  bounce.position.set(0, 0.05, 0);
+  bounce.lookAt(0, h, 0);
+  group.add(bounce);
+
+  // floor lamps in the free corners (practicals()): a pole, a fabric drum shade lit from inside, warm light at head height
+  const lampLights: THREE.PointLight[] = [];
+  const shadeMat = new THREE.MeshStandardMaterial({ color: "#f3dcb4", emissive: "#ffc98a", emissiveIntensity: 1.1, roughness: 0.9, side: THREE.DoubleSide });
+  const pole = surface("metal", "#2a2724");
+  for (const [x, z] of practicals(def)) {
+    const lamp = new THREE.Group(); lamp.name = "floor-lamp"; lamp.position.set(x, 0, z);
+    const foot = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.17, 0.025, 24), pole); foot.position.y = 0.012;
+    const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 1.45, 8), pole); stem.position.y = 0.74;
+    const drum = new THREE.Mesh(new THREE.CylinderGeometry(0.19, 0.23, 0.3, 28, 1, true), shadeMat); drum.position.y = 1.55;
+    const p = new THREE.PointLight(0xffc68c, 3.2, 7, 2); p.position.y = 1.5;
+    lamp.add(foot, stem, drum, p);
+    group.add(lamp);
+    lampLights.push(p);
   }
 
   // baked once the room stands: the shade where things meet the floor, then the reflections, taken from this room
@@ -516,6 +567,6 @@ export function dress(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera:
       renderer.setSize(wpx, hpx, false);
       if (composer) { composer.setPixelRatio(renderer.getPixelRatio()); composer.setSize(wpx, hpx); }
     },
-    state: () => ({ quality, lights: lights.length + lamps.length, shadows: shadowers.length, post, tone: "aces", exposure: renderer.toneMappingExposure, drawCalls: renderer.info.render.calls, triangles: renderer.info.render.triangles, fps, ground: bake, env: "room" }),
+    state: () => ({ quality, lights: lights.length + lamps.length + lampLights.length + 1, shadows: shadowers.length, post, tone: "aces", exposure: renderer.toneMappingExposure, drawCalls: renderer.info.render.calls, triangles: renderer.info.render.triangles, fps, ground: bake, env: "room" }),
   };
 }

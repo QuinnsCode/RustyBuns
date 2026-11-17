@@ -2,7 +2,9 @@
 // plank or a ceiling tile comes out the same size on a small wall and a big one.
 import { expect, test } from "bun:test";
 import * as THREE from "three";
-import { cans, metreUV, pickQuality, surface, useKit, type Quality } from "../src/studio/look.ts";
+import { cans, metreUV, pickQuality, practicals, surface, useKit, type Quality } from "../src/studio/look.ts";
+import { LIVE_ROOM } from "../src/studio/rooms/live.ts";
+import { SCORING_HALL } from "../src/studio/rooms/index.ts";
 
 test("the link picks the quality, then what this browser chose last, else high unless it's a phone", () => {
   const cases: [string, string | null, boolean, Quality][] = [
@@ -48,4 +50,13 @@ test("gear surfaces come from the photo-texture kit once it's set, and the room'
   expect(surface("tolex", "#1a1a1b")).toBe(surface("tolex", "#1a1a1b")); // one material per colour, asked for once
   expect(surface("rubber", "#1a1a1b").name).toBe("rubber"); // the kit hasn't got it: look.ts makes its own
   expect(asked).toEqual(["tolex #1a1a1b", "rubber #1a1a1b"]);
+});
+test("floor lamps stand in the corners nobody plays in, clear of the booths, and a hall gets none", () => {
+  const lamps = practicals(LIVE_ROOM);
+  expect(lamps.length).toBe(2);
+  for (const [x, z] of lamps) {
+    for (const s of LIVE_ROOM.spots) expect(Math.hypot(x - s.at[0], z - s.at[1])).toBeGreaterThan(1.4);
+    expect(x < -2.6 && z > 2.4).toBe(false); // not shut in the vocal booth's corner
+  }
+  expect(practicals(SCORING_HALL)).toEqual([]);
 });
