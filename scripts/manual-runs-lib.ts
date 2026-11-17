@@ -2,10 +2,10 @@
 // the owner meets them. scripts/manual-runs.ts serves it as one page with a Yes / No per issue.
 //
 // Commands run from this file, never from issue text: an issue body is shown, not executed.
-import { arr, int, obj, str, type Of } from "../packages/util/src/guard.ts";
+import { arr, int, obj, or, rec, str, type Of } from "../packages/util/src/guard.ts";
 import { SCENARIOS } from "../apps/agent-office/demo/scenarios.ts";
 
-export const Issue = obj({ number: int(1, 1e7), title: str(500), body: str(100_000, { min: 0 }), url: str(500) });
+export const Issue = obj({ number: int(1, 1e7), title: str(500), body: str(100_000, { min: 0 }), url: str(500), labels: or(arr(obj({ name: str(100) }), 50), []) });
 export type Issue = Of<typeof Issue>;
 export const Issues = arr(Issue, 500);
 
@@ -95,13 +95,28 @@ export const PARKED: Record<number, string> = {
   2356: "Delayed Reaction phone checks wait for its UI",
 };
 
-export interface Card extends Issue { app?: AppId; links: Link[] }
+/** The owner's own tags per issue number, kept in ~/.rustybuns/manual-tags.json so every checkout shares them. */
+export const Tags = rec(arr(str(40), 30, { drop: true }), 2000);
+export type Tags = Of<typeof Tags>;
+
+/** One tag as typed: lower case, spaces to dashes, a leading # dropped, at most 40 characters. */
+export const cleanTag = (t: string) => t.trim().toLowerCase().replace(/^#+/, "").replace(/\s+/g, "-").replace(/[^\p{L}\p{N}._-]/gu, "").slice(0, 40);
+
+/** The tags list stored for one issue: cleaned, no blanks or repeats, sorted. */
+export const cleanTags = (tags: string[]) => [...new Set(tags.map(cleanTag).filter(Boolean))].sort().slice(0, 30);
+
+/** `tags` holds the owner's tags; `labels` holds the issue's GitHub labels, without "manual run". */
+export interface Card extends Omit<Issue, "labels"> { app?: AppId; links: Link[]; labels: string[]; tags: string[] }
 
 /** Loadable issues first, grouped by app in APPS order, then the ones that need the owner's hands, newest first. */
-export function queue(issues: Issue[]): { cards: Card[]; parked: { number: number; why: string }[] } {
+export function queue(issues: Issue[], tags: Tags = {}): { cards: Card[]; parked: { number: number; why: string }[] } {
   const order = Object.keys(APPS);
   const live = issues.filter((i) => !(i.number in PARKED));
-  const cards: Card[] = live.map((i) => ({ ...i, ...RUNS[i.number] ?? { links: [] } }));
+  const cards: Card[] = live.map((i) => ({
+    ...i, ...RUNS[i.number] ?? { links: [] },
+    labels: i.labels.map((l) => l.name).filter((n) => n !== "manual run"),
+    tags: tags[i.number] ?? [],
+  }));
   const rank = (c: Card) => (c.app ? order.indexOf(c.app) : order.length);
   cards.sort((a, b) => rank(a) - rank(b) || b.number - a.number);
   return { cards, parked: issues.filter((i) => i.number in PARKED).map((i) => ({ number: i.number, why: PARKED[i.number]! })) };
