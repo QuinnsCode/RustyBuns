@@ -66,7 +66,7 @@ test("a guitar through a track's amp: muted until Monitor, bounded and converged
 });
 
 test("the project keeps a track's amp: picked, knobs clamped, taken off, a desk (mix) edit", () => {
-  expect([...AMP_IDS].sort()).toEqual(AMPS.map((a) => a.id).sort());
+  expect(AMPS.map((a) => a.id).sort()).toEqual([...AMP_IDS].sort());
   const p = sanitize({ v: 1, bpm: 120, bars: 1, tracks: Array.from({ length: TRACKS }, () => ({ params: [], notes: [] })) });
   if (!p) throw new Error("bad project");
   const op = decodeOp({ t: "amp", track: 1, amp: { ...brit, gain: 14, amp: "clean" } });
