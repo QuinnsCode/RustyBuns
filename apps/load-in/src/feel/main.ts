@@ -5,7 +5,7 @@
 import * as THREE from "three";
 import { mulberry32 } from "@rustybuns/util";
 import { GEAR_SIZES, gear, gearJacks, type GearId } from "@rustybuns/models/gear";
-import { bundleR } from "../cables/draw.ts";
+import { bundleR, coilGeometry, strapOn } from "../cables/draw.ts";
 import { REST } from "../hands/grip.ts";
 import { handsView, type Hold } from "../hands/view.ts";
 import { mountInk } from "../you/ink-view.ts";
@@ -111,7 +111,7 @@ const LINKS: { a: string; b: string; text: string }[] = [
 // ---- the cables -----------------------------------------------------------------------------------------------
 type End = "coil" | "hand" | "loose" | Jack;
 type Run = { key: string; roll: Roll; a: End; b: End; tube: THREE.Mesh; coil: THREE.Mesh; plugA: THREE.Mesh; plugB: THREE.Mesh; sum: number; mat: THREE.MeshStandardMaterial };
-const CABLE_COLOR: Record<CableKind, number> = { power: 0x161616, cord: 0x161616, speaker: 0x1d2f6e, xlr: 0x7a1f24, instrument: 0x7a1f24 };
+const CABLE_COLOR: Record<CableKind, number> = { power: 0x26262a, cord: 0x161616, speaker: 0x1d2f6e, xlr: 0x7a1f24, instrument: 0x7a1f24 };
 const rnd = mulberry32(11);
 function run(key: string, kind: CableKind, lengthM: number, x: number, z: number): Run {
   const mat = new THREE.MeshStandardMaterial({ color: CABLE_COLOR[kind], roughness: 0.55, emissive: 0x2bd96b, emissiveIntensity: 0 });
@@ -307,7 +307,8 @@ function draw() {
     const tube = bundleR(left, c.radius);
     if (Math.abs(tube - (r.coil.userData.tube ?? 0)) > tube * 0.08) {
       r.coil.geometry.dispose();
-      r.coil.geometry = new THREE.TorusGeometry(ROLL_R - 0.03, tube, 10, 32);
+      r.coil.geometry = coilGeometry(tube, c.radius);
+      strapOn(r.coil, tube);
       r.coil.userData.tube = tube;
     }
     r.plugA.position.copy(pts[0]!); r.plugB.position.copy(pts.at(-1)!);
