@@ -211,7 +211,7 @@ export class Rig {
           if (sw > peaks[i]) peaks[i] = sw;
           if (sw > swing[i]) swing[i] = sw;
         }
-        x -= rest[last];
+        if (last >= 0) x -= rest[last];
         if (this.power > 0 && !looped) x = amp.step(x, this.power);
         acc = chain(down, x);
       }

@@ -128,6 +128,11 @@ export function buildRig(amp: AmpDef, knobs: Knobs, pedal?: { def: PedalDef; dri
   };
 }
 
+/** A pedal (or nothing) straight into a desk: no amp, no power stage, no cab. The loop's machines go after it. */
+export function deskRig(pedal?: { def: PedalDef; drive: number; swaps?: Swaps }): RigSpec {
+  return { inputVolts: 0.5, links: pedal ? [{ net: pedal.def.net(pedal.drive, pedal.swaps), mods: pedal.def.mods?.(pedal.drive) }] : [], power: 0, cab: null };
+}
+
 const amp = (id: string) => {
   const a = AMPS.find((x) => x.id === id);
   if (!a) throw new Error(`no amp ${id}`);

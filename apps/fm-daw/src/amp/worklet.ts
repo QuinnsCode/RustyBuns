@@ -41,7 +41,7 @@ class AmpProcessor extends AudioWorkletProcessor {
     const rig = this.bypass ? null : this.live?.rig;
     if (rig) rig.process(this.input, this.output, n);
     for (let i = 0; i < n; i++) {
-      const y = limit(rig ? this.output[i] / FULL_SCALE : this.input[i]);
+      const y = limit(rig ? this.output[i] / (this.live?.scale ?? FULL_SCALE) : this.input[i]);
       left[i] = y;
       if (right) right[i] = y;
       if (Math.abs(y) > this.peak) this.peak = Math.abs(y);

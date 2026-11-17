@@ -33,7 +33,7 @@ test("one account across apps: sign up in a game, carry on into the suite, sourc
 
   // The super admin gives her beta in the game and takes play away; signing in again doesn't hand play back.
   const admin = await call("/do/signup", { form: { name: "Boss", email: ADMIN, password: PASSWORD } });
-  expect(admin.to).toBe("/");
+  expect(admin.to).toBe("/?tab=account&new=1"); // someone new on eqosys itself makes their character first
   expect((await call("/do/grant", { form: { email: "ada@example.com", for_app: "park-hide-seek", role: "beta" }, cookie: admin.cookie })).to).toBe("/?tab=people");
   expect((await call("/do/revoke", { form: { email: "ada@example.com", for_app: "park-hide-seek", role: "play" }, cookie: admin.cookie })).to).toBe("/?tab=people");
   const again = await asks("park-hide-seek", PARK);
