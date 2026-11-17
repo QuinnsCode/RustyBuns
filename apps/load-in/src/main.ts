@@ -423,7 +423,7 @@ function flip() {
 
 /** What you hear now: in the dive bar, through its tilts and master fader. */
 /** What you hear: a speaker plays when it's switched on and, once a cable goes into it, when the patch feeds it. */
-const heard = () => hear(world, switchedOn, arena ? arena.fed : ar ? ar.fed() : big ? big.fed() : gig ? gig.fed() : cable.fedBy(world, cables), undefined, bar || arena ? rig(world) : (ar ?? big ?? gig)?.rig());
+const heard = () => hear(world, switchedOn, arena ? arena.fed : ar ? ar.fed() : big ? big.fed() : gig ? gig.fed() : cable.fedBy(world, cables), undefined, dj ? dj.rig() : bar || arena ? rig(world) : (ar ?? big ?? gig)?.rig());
 
 function play() {
   // On tour, Play goes to the booked gig: a fresh load once last night is settled.
