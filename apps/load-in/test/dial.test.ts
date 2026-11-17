@@ -69,7 +69,8 @@ test("the same load-in on Cozy, Crew and Sim: the same layout, a different time 
   // Half weight carries quicker: the 45 kg sub alone is a shuffle on Sim.
   expect(runs.cozy!.work).toBeLessThan(runs.crew!.work);
   expect(runs.crew!.work).toBeLessThan(runs.sim!.work);
-  expect(runs.sim!.sound).toBe(runs.cozy!.sound);
+  // The same sound, to a point: a top set down a centimetre over puts one cell of the full room either side of the window.
+  expect(Math.abs(runs.sim!.sound - runs.cozy!.sound)).toBeLessThanOrEqual(1);
   // Cozy runs no clock, Crew's window and grace cover the chat, Sim's doors were five minutes in: late, the crowd sours.
   expect(runs.cozy).toMatchObject({ mood: 100, late: 0, pay: 150 });
   expect(runs.crew).toMatchObject({ mood: 100, late: 0, pay: 150 });
