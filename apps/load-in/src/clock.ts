@@ -11,6 +11,8 @@ export const VENUES: Record<string, { window: number; fee: number; curfew: numbe
   "bigger-bar": { window: 480, fee: 300, curfew: 540, fine: 50 },
   // The park: a long push from the truck and long runs, so a longer window.
   park: { window: 720, fee: 400, curfew: 900, fine: 75 },
+  // The arena: sixteen boxes off the truck and flown, so the crew needs its time. No load-out here yet (no truck in the level).
+  arena: { window: 1800, fee: 1500, curfew: null, fine: 0 },
 };
 const FALLBACK = { window: 300, fee: 0, curfew: null, fine: 0 };
 

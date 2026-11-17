@@ -4,6 +4,7 @@
 // show level, killing the cooler with it: walk to the panel, reset it, move the plug. `judge` runs the patch through
 // packages/gear's compile, trips what is over, and says what is fed. Plain data, no DOM.
 import { assist } from "../assists.ts";
+import { doors, showScore } from "../clock.ts";
 import { CIRCUIT_15A, CIRCUIT_20A, type Cable, type Compiled, type Outlet, type Placed, cableLoss, compile, gear as catalog } from "@rustybuns/gear";
 import { REACH, type Answer, type Level, type World } from "../sim.ts";
 import type { Fed } from "../audio/hear.ts";
@@ -119,4 +120,19 @@ export function resetBreaker(w: World, panel: Panel, circuit?: string): Answer {
   if (circuit) panel.tripped.delete(circuit);
   else panel.tripped.clear();
   return { ok: true };
+}
+
+/** The show passes at this score, as at the dive bar and the park. */
+export const PASS = 85;
+
+/**
+ * Doors at the bigger bar: the sound is the share of speakers the cables feed, less 30 if the bar's cooler is off
+ * (a tripped circuit 3 left the staff with warm drinks), scaled by the crowd's mood from the clock.
+ */
+export function show(w: World, j: Judged) {
+  const speakers = [...j.fed.values()], fed = speakers.filter(Boolean).length;
+  const coolerOff = j.circuits.some((c) => c.circuit === "3" && c.tripped);
+  const sound = Math.max(0, Math.round((100 * fed) / Math.max(1, speakers.length)) - (coolerOff ? 30 : 0));
+  const d = doors(w.level.name, w.t), total = showScore(sound, d.mood);
+  return { sound, mood: d.mood, late: Math.round(d.late), pay: d.pay, fee: d.fee, score: total, pass: total >= PASS, coolerOff };
 }

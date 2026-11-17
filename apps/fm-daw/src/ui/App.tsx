@@ -19,6 +19,7 @@ import { Bench } from "./Bench.tsx";
 import { Shape } from "./Shape.tsx";
 import { Perform, STUTTERS } from "./Perform.tsx";
 import { loadSound } from "../sounds.ts";
+import { TakeInbox, encodeTake, newTakeId, toChunks } from "../take.ts";
 import { apply, audible, lettingGo, loopBeats, punchLane, Take, BAR_CHOICES, BEATS_PER_BAR, type Live, type Note, type Op, type Project, type TrackDoc } from "../project.ts";
 import { demoProject, KIT, randomPatch } from "../presets.ts";
 import { GROOVES, KITS, applyGroove, applyKit } from "../drums.ts";
@@ -75,6 +76,8 @@ function opMsg(op: Op, next: Project): ToWorklet {
     case "notes": return { t: "notes", track: op.track, notes: next.tracks[op.track].notes };
     case "auto": return { t: "auto", track: op.track, lanes: next.tracks[op.track].auto ?? [] };
     case "track": return { t: "audible", mask: audible(next) };
+    // the take's sound itself goes by syncTakes once it's here
+    case "take": return { t: "audible", mask: audible(next) };
     case "eq": if (op.track !== undefined) return { t: "trackEq", track: op.track, bands: next.tracks[op.track].eq ?? flatEq() };
     // falls through: the master
     case "eqAuto": return { t: "eq", bands: next.eq, lanes: next.eqAuto ?? [] };
@@ -118,6 +121,9 @@ export function App() {
   const [repeat, setRepeatState] = useState(0);
   const [bend, setBendState] = useState(0);
   const [bounce, setBounce] = useState<{ busy: boolean; path?: string; saved?: boolean; error?: string }>({ busy: false });
+  /** The track the input records onto while recording, or null with the input off. */
+  const [armed, setArmed] = useState<number | null>(null);
+  const [inputNote, setInputNote] = useState<string | null>(null);
   const transportOn = useTick((t) => t.playing || t.countIn > 0);
   const counting = useTick((t) => (t.countIn > 0 ? Math.ceil(t.countIn) : 0));
 
@@ -150,6 +156,7 @@ export function App() {
     proj.current = next;
     setProject(next);
     send(opMsg(op, next));
+    syncTakes(next);
   }
 
   function history(dir: "undo" | "redo") {
@@ -163,6 +170,7 @@ export function App() {
     proj.current = p;
     setProject(p);
     send(loadMsg(p));
+    syncTakes(p);
     net.current?.send(op);
     lastGroup.current = { key: "", at: 0 };
   }
@@ -177,6 +185,7 @@ export function App() {
     }
     else if (m.t === "move") takeMove(m);
     else if (m.t === "engine") { setEngine(m.kind); setEngineNote(m.error ?? null); }
+    else if (m.t === "taken") landTake(m.track, m.beat, m.pcm, m.rate);
     else if (m.t === "rec") {
       const { gridIdx, strength, inputQ } = live.current;
       const L = loopBeats(proj.current);
@@ -195,6 +204,67 @@ export function App() {
       if (s.track === MASTER) commit({ t: "eqAuto", lanes: punchLane(proj.current.eqAuto ?? [], s.i, s.pts) }, { group: "rec" });
       else commit({ t: "auto", track: s.track, lanes: punchLane(proj.current.tracks[s.track].auto ?? [], s.i, s.pts) }, { group: "rec" });
   }
+  // ---- takes: the input recorded onto a track. Its sound goes to the sesh in chunks, then the edit that places it ----
+  const takeSound = useRef(new Map<string, Float32Array>());
+  const inbox = useRef(new TakeInbox());
+  /** What each track's take in the worklet is ("id@beat"), so only changes are sent. */
+  const takesSent = useRef<(string | null)[]>([]);
+  const input = useRef<{ stream: MediaStream; node: MediaStreamAudioSourceNode } | null>(null);
+  function syncTakes(p: Project) {
+    p.tracks.forEach((t, i) => {
+      const pcm = t.take ? takeSound.current.get(t.take.id) : undefined;
+      const key = t.take && pcm ? `${t.take.id}@${t.take.beat}` : null;
+      if (key === (takesSent.current[i] ?? null)) return;
+      takesSent.current[i] = key;
+      send({ t: "take", track: i, pcm: key ? pcm! : null, beat: t.take?.beat ?? 0 });
+    });
+  }
+  function landTake(track: number, beat: number, pcm: Float32Array, rate: number) {
+    if (live.current.locked) return;
+    const s16 = encodeTake(pcm, rate);
+    if (!s16.length) return;
+    const id = newTakeId();
+    // everyone, this page included, hears the 16-bit copy the sesh keeps
+    takeSound.current.set(id, Float32Array.from(s16, (v) => v / 32767));
+    for (const c of toChunks(id, s16)) net.current?.take(c);
+    commit({ t: "take", track, take: { id, beat, frames: s16.length } }, { group: "rec" });
+  }
+  const inLatency = (a: AudioOut) => {
+    const got: MediaTrackSettings & { latency?: number } = input.current?.stream.getAudioTracks()[0]?.getSettings() ?? {};
+    return (got.latency ?? 0) + a.ctx.baseLatency;
+  };
+  async function toggleInput() {
+    const a = audioRef.current;
+    if (!a) return;
+    setInputNote(null);
+    if (input.current) {
+      input.current.node.disconnect();
+      for (const tr of input.current.stream.getTracks()) tr.stop();
+      input.current = null;
+      setArmed(null);
+      a.send({ t: "arm", track: -1, inLatency: 0 });
+      return;
+    }
+    try {
+      // a guitar or the desk's out, as it is: no echo cancelling, gating or levelling
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
+      const node = a.ctx.createMediaStreamSource(stream);
+      node.connect(a.node);
+      input.current = { stream, node };
+      const track = live.current.selected;
+      a.send({ t: "arm", track, inLatency: inLatency(a) });
+      setArmed(track);
+    } catch (e) { setInputNote(`No input: ${(e as Error).message}`); }
+  }
+  // the armed track follows the one you pick
+  useEffect(() => {
+    const a = audioRef.current;
+    if (armed === null || armed === selected || !a) return;
+    setArmed(selected);
+    a.send({ t: "arm", track: selected, inLatency: inLatency(a) });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selected]);
+
   /** One of your Perform moves: heard now, and kept as automation if you're recording. */
   const move = (track: number, i: number, v: number, was: number) => send({ t: "move", track, i, v, was });
 
@@ -206,6 +276,8 @@ export function App() {
       a.send(loadMsg(proj.current));
       a.send({ t: "master", gain: dbToGain(masterDb) });
       a.send({ t: "metro", on: metro });
+      takesSent.current = [];
+      syncTakes(proj.current);
       setAudio(a);
     } catch (e) { setStartError((e as Error).message); }
   }
@@ -230,6 +302,10 @@ export function App() {
       onGone,
       onStatus: setNetStatus,
       onChat: chat.onChat,
+      onTakeBytes(m) {
+        const pcm = inbox.current.add(m);
+        if (pcm) { takeSound.current.set(m.id, pcm); syncTakes(proj.current); }
+      },
       hello: chat.hello,
     });
     net.current = n;
@@ -270,7 +346,7 @@ export function App() {
     else if (e.t === "repeat") { peer(from).repeat = e.beats > 0; setRepeatState(e.beats); send({ t: "repeat", beats: e.beats }); }
     else if (e.t === "play") send({ t: "play", countIn: 0 });
     else if (e.t === "stop") stopHere();
-    else moveCursor(from, e.x, e.y);
+    else if (e.t === "cursor") moveCursor(from, e.x, e.y);
   }
   function onGone(from: number) {
     for (const k of [...liveNotes.current.keys()]) if (k.startsWith(`net:${from}:`)) noteOff(k);
@@ -553,13 +629,14 @@ export function App() {
         </div>
       </header>
       {engineNote && <p className="note-bar" role="status">{engineNote}</p>}
+      {inputNote && <p className="note-bar" role="status">{inputNote}</p>}
 
       <div className="body">
         <nav className="tracks" aria-label="Tracks">
           {project.tracks.map((tr, i) => (
             <div key={i} className={i === selected ? "track sel" : "track"} style={{ "--track": TRACK_COLORS[i] } as React.CSSProperties}>
               <button className="track-name" onClick={() => { setSelected(i); }} onDoubleClick={() => audition(i)}>
-                {i < 10 && <kbd>{(i + 1) % 10}</kbd>} {tr.name}<span className="kind">{tr.kind}</span>
+                {i < 10 && <kbd>{(i + 1) % 10}</kbd>} {tr.name}{tr.take && <TakeMark />}<span className="kind">{tr.kind}</span>
               </button>
               <button className={tr.mute ? "ms on" : "ms"} aria-pressed={tr.mute} onClick={() => commit({ t: "track", track: i, mute: !tr.mute })} title="Mute">M</button>
               <button className={tr.solo ? "ms solo on" : "ms solo"} aria-pressed={tr.solo} onClick={() => commit({ t: "track", track: i, solo: !tr.solo })} title="Solo">S</button>
@@ -585,6 +662,11 @@ export function App() {
             <label className="check" title="Quantize notes as they're recorded"><input type="checkbox" checked={inputQ} onChange={(e) => setInputQ(e.currentTarget.checked)} /> Quantize input</label>
             <button className="ghost" onClick={() => commit({ t: "notes", track: selected, notes: quantize(t.notes, grid.beats, strength, L) })}>Quantize {t.name}</button>
             <button className="ghost" onClick={() => commit({ t: "notes", track: selected, notes: [] })}>Clear {t.name}</button>
+            <button className={armed !== null ? "ghost on" : "ghost"} onClick={toggleInput} disabled={!audio} aria-pressed={armed !== null}
+              title="Record the audio input (a guitar, the desk's out) onto this track: Rec takes one pass of the loop">
+              {armed !== null ? `Input on ${project.tracks[armed].name}` : "Input"}
+            </button>
+            {t.take && <button className="ghost" onClick={() => commit({ t: "take", track: selected, take: null })} title="Take the recorded audio off this track">Clear take</button>}
             <span className="spacer" />
             <button className="ghost" onClick={() => history("undo")} title="Undo (⌘Z)">Undo</button>
             <button className="ghost" onClick={() => history("redo")} title="Redo (⇧⌘Z)">Redo</button>
@@ -705,6 +787,16 @@ export function App() {
         </div>
       )}
     </div>
+  );
+}
+
+/** A track holding a recorded take: lucide's audio-waveform (ISC). */
+function TakeMark() {
+  return (
+    <svg className="take-mark" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" role="img" aria-label="Recorded take">
+      <title>Recorded take</title>
+      <path d="M2 13a2 2 0 0 0 2-2V7a2 2 0 0 1 4 0v13a2 2 0 0 0 4 0V4a2 2 0 0 1 4 0v13a2 2 0 0 0 4 0v-4a2 2 0 0 1 2-2" />
+    </svg>
   );
 }
 

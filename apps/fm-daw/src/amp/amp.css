@@ -135,7 +135,9 @@ button { cursor: pointer; }
 .knob.small .knob-value { display: none; }
 
 /* the cabinet */
-.cab { display: flex; justify-content: center; gap: clamp(16px, 6vw, 70px); padding: 22px; margin-top: 8px; border-radius: 12px 12px 6px 6px; }
+.cab { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: clamp(16px, 6vw, 70px); padding: 22px; margin-top: 8px; border-radius: 12px 12px 6px 6px; }
+.mic-knobs { display: flex; flex-direction: column; gap: 12px; }
+@media (max-width: 520px) { .mic-knobs { flex-direction: row; } }
 .speaker { width: clamp(120px, 24vw, 230px); aspect-ratio: 1; border-radius: 50%; display: grid; place-items: center; background: radial-gradient(circle, #1b1d21 60%, #2c2f35 62%, #111215 70%); box-shadow: inset 0 0 0 6px #0c0d0f; }
 .cone {
   --push: 0; width: 84%; aspect-ratio: 1; border-radius: 50%;
@@ -152,6 +154,30 @@ button { cursor: pointer; }
 .pedal.drive { background: linear-gradient(160deg, #3fbf7a, #1d7a4b); }
 .pedal.dist { background: linear-gradient(160deg, #f08a3a, #b4501a); }
 .pedal.fuzz { background: linear-gradient(160deg, #a35cf0, #5a2a9e); }
+/* the bench: a clear box like the amp, your board inside */
+.pedal.bench { width: auto; min-width: 132px; max-width: 260px; background: linear-gradient(160deg, rgba(190, 220, 255, 0.22), rgba(120, 150, 190, 0.12)); border: 1px solid rgba(255, 255, 255, 0.25); }
+.pedal.bench.empty, .pedal.bench.broken { border-style: dashed; align-content: center; }
+.pedal.bench.broken { border-color: var(--warn); }
+.pedal.bench.over { border-color: var(--warn); border-style: solid; }
+.bench-hint { font: 500 0.78rem/1.2 var(--mono); color: var(--dim); text-align: center; }
+.bench-why { margin: 0; padding-left: 16px; max-width: 230px; font: 500 0.74rem/1.3 var(--mono); color: var(--warn); }
+.bench-knobs { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px; }
+.bench-row { display: flex; align-items: center; gap: 10px; }
+.pedal.phase { background: linear-gradient(160deg, #3aa8f0, #1a5fb4); }
+.pedal.vibe { background: linear-gradient(160deg, #e0b84a, #8f6a12); }
+.pedal.trem { background: linear-gradient(160deg, #4ad0c0, #16786e); }
+.pedal.wah { background: linear-gradient(160deg, #5a5f66, #2a2d31); }
+.pedal.autowah { background: linear-gradient(160deg, #f05ab0, #9e2a6a); }
+.pedal.comp { background: linear-gradient(160deg, #8fa3b8, #4a5d70); }
+.pedal.octave { background: linear-gradient(160deg, #f0d23a, #b4901a); }
+.pedal.germ { background: linear-gradient(160deg, #c0503a, #6e2416); }
+.pedal.wide { width: auto; min-width: 132px; }
+.pedal.bbd { background: linear-gradient(160deg, #4fb3d9, #1f6a8e); }
+.pedal.tape { background: linear-gradient(160deg, #c9a36a, #7a5a2e); }
+.pedal.spring { background: linear-gradient(160deg, #8a95a3, #4a535e); }
+.pedal-knobs { display: flex; gap: 4px; }
+.pedal .mode { min-width: 74px; text-transform: capitalize; }
+.floor.loop { padding-top: 18px; }
 .pedal-led { width: 10px; height: 10px; border-radius: 50%; background: #3a0f0c; box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.6); }
 .pedal.lit .pedal-led { background: #ff3b2b; box-shadow: 0 0 10px #ff3b2b, 0 0 2px #fff inset; }
 .pedal-name { font: 700 1.05rem/1 var(--silk); letter-spacing: 0.08em; text-transform: uppercase; color: #fff; text-shadow: 0 1px 0 rgba(0, 0, 0, 0.35); }
@@ -160,6 +186,30 @@ button { cursor: pointer; }
   background: radial-gradient(circle at 40% 35%, #f2f3f5, #9aa0a8 55%, #5c6168); box-shadow: 0 4px 0 #3a3d42, 0 8px 14px rgba(0, 0, 0, 0.5);
 }
 .footswitch:active { transform: translateY(3px); box-shadow: 0 1px 0 #3a3d42, 0 3px 8px rgba(0, 0, 0, 0.5); }
+
+/* ---- the patch: gear, jacks, cables ---- */
+.patch { position: relative; display: grid; gap: 10px; padding: 14px 0 40px; touch-action: none; }
+.patch-row { display: flex; flex-wrap: wrap; justify-content: center; gap: 28px 44px; }
+.patch-gear {
+  display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 10px;
+  border: 1px solid var(--edge); background: var(--glass); user-select: none;
+}
+.patch-gear.bad { border-color: var(--hot); }
+.patch-name { font: 600 0.95rem/1 var(--silk); letter-spacing: 0.08em; text-transform: uppercase; white-space: nowrap; }
+.jack {
+  width: 26px; height: 26px; border-radius: 50%; padding: 0; cursor: grab;
+  border: 3px solid #5c6168; background: radial-gradient(circle, #050607 0 34%, #2a2d32 36%);
+}
+.jack.instrument { border-color: #b37c00; }
+.jack.speaker { border-color: #3d86b0; }
+.jack.plugged { background: radial-gradient(circle, #d8dbe0 0 30%, #2a2d32 34%); }
+.jack.bad { box-shadow: 0 0 0 3px var(--hot); }
+.patch-cables { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; }
+.patch-cables path { fill: none; stroke-width: 5; stroke-linecap: round; opacity: 0.9; }
+.patch-cables path.bad { stroke-dasharray: 10 6; }
+.patch-cables path.held { opacity: 0.6; }
+.patch-problems { list-style: none; margin: 0; padding: 0; display: grid; justify-items: center; gap: 4px; color: var(--hot); }
+.patch-problems:empty { display: none; }
 
 /* ---- plug in ---- */
 .start-card {
@@ -181,3 +231,50 @@ button { cursor: pointer; }
   .cab { padding: 14px; }
   .level { width: 80px; }
 }
+
+/* ---- the board view (board.ts): tscircuit's schematic and PCB, restyled for the stage ---- */
+.board-view {
+  --signal: 0; position: relative; width: min(940px, 100%); justify-self: center; border-radius: 12px; overflow: visible;
+  background: #05080a; border: 1px solid rgba(255, 255, 255, 0.1); box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
+}
+.board-top { display: flex; align-items: center; gap: 8px; padding: 6px 8px 6px 12px; color: var(--dim); background: rgba(255, 255, 255, 0.03); border-bottom: 1px solid rgba(255, 255, 255, 0.06); border-radius: 12px 12px 0 0; }
+.board-title { font: 600 0.82rem/1 var(--silk); letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink); white-space: nowrap; }
+.board-hint { flex: 1; min-width: 0; font: 500 11px/1.2 var(--mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.board-view .modes .icon-btn:disabled { opacity: 0.35; cursor: default; }
+.board-art { padding: 6px; }
+.board-art svg { display: block; width: 100%; height: clamp(220px, 42vh, 460px); }
+.board-art .boundary { fill: #05080a; }
+.board-art .sch-component-symbol-path, .board-art .component-pin, .board-art .sch-component-body, .board-art .sch-net-label-symbol-path { stroke: #aeb4bd; }
+.board-art .sch-component-body { fill: rgba(255, 255, 255, 0.04); }
+.board-art .sch-trace-path, .board-art .trace-junction { stroke: rgba(79, 209, 139, 0.75); }
+.board-art .trace-junction { fill: rgba(79, 209, 139, 0.75); }
+.board-art .sch-trace-crossing-outline { stroke: #05080a; }
+.board-art text { fill: var(--dim); stroke: none; font-family: var(--mono); }
+.board-art .sch-net-label { fill: #0b0f12; stroke: rgba(174, 180, 189, 0.5); }
+.board-art .sch-net-label-text { fill: #aeb4bd; }
+.board-art .sch-component-name { fill: var(--ink); }
+.board-art .schematic-port-hover, .board-art .sch-trace-hitbox, .board-art .component-overlay { opacity: 0; }
+.board-art[data-side="pcb"] .pcb-board { fill: #0d3b26; }
+.board-art[data-side="pcb"] .pcb-pad { fill: #c9a24a; }
+/* What bends the signal (diodes, the op-amp, the tube) glows with it; sockets take clicks. */
+.board-art .bends .sch-component-symbol-path, .board-art .bends .sch-component-body {
+  stroke: color-mix(in srgb, var(--warn) calc(var(--signal) * 100%), #aeb4bd);
+  filter: drop-shadow(0 0 calc(var(--signal) * 6px) rgba(255, 176, 0, calc(var(--signal) * 0.9)));
+}
+.board-art[data-side="pcb"] .pcb-pad.bends { fill: color-mix(in srgb, var(--warn) calc(var(--signal) * 100%), #c9a24a); }
+.board-art .socket { cursor: pointer; }
+.board-art .socket:hover .sch-component-symbol-path, .board-art .socket:hover text, .board-art[data-side="pcb"] .socket:hover { stroke: #fff; fill: #fff; }
+.board-art .swapped text { fill: var(--warn); }
+.board-art[data-side="pcb"] .swapped.pcb-pad, .board-art[data-side="pcb"] .swapped { stroke: var(--warn); stroke-width: 1.5px; }
+.board-art .empty .sch-component-symbol-path { stroke-dasharray: 3 3; opacity: 0.45; filter: none; }
+.socket-menu {
+  position: absolute; z-index: 5; min-width: 230px; padding: 6px; border-radius: 12px; background: #15181d;
+  border: 1px solid rgba(255, 255, 255, 0.16); box-shadow: 0 18px 40px rgba(0, 0, 0, 0.6); display: grid; gap: 2px;
+}
+.socket-head { padding: 4px 8px 6px; font: 600 0.78rem/1 var(--silk); letter-spacing: 0.08em; text-transform: uppercase; color: var(--dim); }
+.socket-item { display: grid; grid-template-columns: auto 1fr; align-items: baseline; gap: 10px; padding: 7px 8px; border: 0; border-radius: 8px; background: none; text-align: left; }
+.socket-item:hover, .socket-item:focus-visible { background: rgba(255, 255, 255, 0.08); }
+.socket-item[aria-checked="true"] { color: var(--warn); background: rgba(255, 176, 0, 0.1); }
+.socket-label { font-weight: 500; white-space: nowrap; }
+.socket-note { font: 500 11px/1.3 var(--mono); color: var(--dim); }
+@media (max-width: 560px) { .board-hint { display: none; } .socket-menu { min-width: 0; width: calc(100% - 16px); } }

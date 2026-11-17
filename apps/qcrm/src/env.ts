@@ -76,7 +76,7 @@ export { esc };
 export const NAME ="qCRM";
 export const VERSION = "0.1.4";
 
-import { arr, check, isRecord, obj, str, type Guard } from "@rustybuns/util/guard";
+import { arr, Bad, check, isRecord, obj, str, type Guard } from "@rustybuns/util/guard";
 /** A JSON response. Private by default: CRM rows never sit in a shared cache. */
 import { privateJson as json } from "@rustybuns/util/http";
 export { json };
@@ -101,7 +101,22 @@ export function parseJson<T>(s: unknown, fallback: T, g?: Guard<T>): unknown {
 /** A stored list of strings: a webhook's events, a row's tags, a client's redirect URIs. */
 export const Strings = arr(str(Infinity, { min: 0 }), 10_000);
 
-/** The request's JSON body when it is an object, its fields still to be checked by the route; null otherwise. */
+/** The request's JSON body when it is an object, its fields still to be checked (`need` below does both); null otherwise. */
 export const readBody = async (req: Request): Promise<Row | null> => {
   try { const v: unknown = await req.json(); return isRecord(v) ? v : null; } catch { return null; }
+};
+
+/** The request's JSON body through `g`, or the 400 that says what's wrong in the guard's words. A body that isn't a JSON object reads as `{}`, so the answer names the first field it needs. */
+export async function need<T>(req: Request, g: Guard<T>): Promise<T | Response> {
+  return needOf((await readBody(req)) ?? {}, g);
+}
+/** `v` through `g`, or the 400 it explains. */
+export function needOf<T>(v: unknown, g: Guard<T>): T | Response {
+  try { return g(v); } catch (e) { if (e instanceof Bad) return error(400, e.message); throw e; }
+}
+/** A name a person typed: trimmed, cut to `max`, and not blank; `why` is what the 400 says. */
+export const named = (max: number, why: string): Guard<string> => (v) => {
+  const s = typeof v === "string" ? v.trim().slice(0, max) : "";
+  if (!s) throw new Bad(why);
+  return s;
 };
