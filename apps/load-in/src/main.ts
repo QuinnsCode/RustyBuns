@@ -113,6 +113,8 @@ const hands = handsView(scene, camera);
 let showArms = false;
 window.addEventListener("keydown", (e) => { if (e.code === "KeyY") showArms = true; });
 window.addEventListener("keyup", (e) => { if (e.code === "KeyY") showArms = false; });
+$("arms").addEventListener("pointerdown", (e) => { e.stopPropagation(); showArms = true; });
+for (const up of ["pointerup", "pointercancel", "pointerleave"]) $("arms").addEventListener(up, () => { showArms = false; });
 const shoes = shoesView(scene);
 const ink = mountInk($("ink-host"), hands, () => tour.nights, shoes);
 // Solve the grips the game uses while the menu is up, one a tick, so the first grab doesn't hitch.
