@@ -18,6 +18,8 @@ export const denHead = (cx: number, cz: number): [number, number] => [(cx + 0.25
 
 /** How strong the wild ones of region n are: 1 in the Pine Barrens, climbing along the route, a few levels of spread. */
 export const wildLevel = (n: number, roll: number) => 1 + 2 * (n - 1) + Math.floor(roll * 3);
+/** The most levels the cryptids you released in a region lift its wild ones (src/released.ts, #3031). */
+export const LIFT_MAX = 4;
 
 /** On a trail, a den holds one of its section's own wild ones, picked by the den's name, at the section's level or one up. */
 export function sectionPick(den: string, wilds: readonly string[], level: number): { id: string; level: number } | undefined {

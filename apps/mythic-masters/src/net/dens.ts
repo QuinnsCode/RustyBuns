@@ -5,7 +5,7 @@
 // from scripts/dens.ts (src/net/dens.json, 9 KB gzipped), and the rolls from world/seed.ts, the same ones the page
 // draws its dens with.
 import { NIGHT, TIER_LEVEL, tierOf } from "../tiers.ts";
-import { DEN, DEN_SALT, hash, nightLevel, sectionPick, wildLevel } from "../world/seed.ts";
+import { DEN, DEN_SALT, hash, LIFT_MAX, nightLevel, sectionPick, wildLevel } from "../world/seed.ts";
 import { huntNear, type Delta } from "./party.ts";
 import table from "./dens.json";
 
@@ -104,5 +104,10 @@ export function landing(p: Delta, open: readonly number[]): boolean {
   return false;
 }
 
-/** Could den `den` hold creature `c` at level `lv`? */
-export const holds = (den: string, c: string, lv: number) => denHolds(den).has(`${c}@${lv}`);
+/** Could den `den` hold creature `c` at level `lv`? A wild one may stand up to LIFT_MAX over its own level: the
+ *  cryptids a player released there lifted it (src/released.ts), and the room doesn't know their journey. */
+export function holds(den: string, c: string, lv: number): boolean {
+  const all = denHolds(den), wild = /^(\d+,\d+|trail:.*)$/.test(den);
+  for (let up = 0; up <= (wild ? LIFT_MAX : 0); up++) if (all.has(`${c}@${lv - up}`)) return true;
+  return false;
+}
