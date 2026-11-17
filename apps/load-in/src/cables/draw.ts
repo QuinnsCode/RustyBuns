@@ -2,11 +2,12 @@
 // rebuilt each frame it moved, and its roll as a coil: hanging off your fingers, rolling on its edge, lying flat, or
 // tucked under the jack it is plugged into. Points still on the coil are drawn as the coil, not the tube.
 import * as THREE from "three";
+import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import type { Cables } from "./cables.ts";
 import { CABLE, ROLL_R, leftM } from "./roll.ts";
 import type { Vec } from "./rope.ts";
 
-export const COLOR: Record<string, number> = { power: 0x1b1b1b, speaker: 0x2a3f8f, xlr: 0x3a3a3a, instrument: 0x8f2a2a };
+export const COLOR: Record<string, number> = { power: 0x26262a, speaker: 0x2a3f8f, xlr: 0x3a3a3a, instrument: 0x8f2a2a };
 
 /** Where your hand holds a carried roll (world space) and which way you face: the coil hangs off it. */
 export type HeldAt = { at: THREE.Vector3; yaw: number };
@@ -16,14 +17,43 @@ export type HeldAt = { at: THREE.Vector3; yaw: number };
 const LOOP_R = ROLL_R - 0.03;
 export const bundleR = (leftM: number, radius: number) => Math.max(0.006, radius * Math.sqrt(leftM / (2 * Math.PI * LOOP_R) / 0.8));
 
+/**
+ * A coil as the loops it is: one ring of cable for each turn left on it (16 at most), packed into the bundle, each a
+ * little off the next, so light catches the strands and it reads as coiled cable and not as a tyre.
+ */
+export function coilGeometry(tube: number, cableR: number): THREE.BufferGeometry {
+  const n = Math.max(1, Math.min(16, Math.round((tube / cableR) ** 2 * 0.8)));
+  if (n === 1) return new THREE.TorusGeometry(LOOP_R, Math.max(tube, cableR), 6, 32);
+  const rings: THREE.BufferGeometry[] = [];
+  for (let i = 0; i < n; i++) {
+    // Sunflower packing across the bundle's cross-section.
+    const a = i * 2.39996, d = (tube - cableR) * Math.sqrt((i + 0.5) / n);
+    rings.push(new THREE.TorusGeometry(LOOP_R + Math.cos(a) * d, cableR, 6, 32).rotateX(Math.sin(i * 1.7) * 0.035).rotateZ(i * 0.9).translate(0, 0, Math.sin(a) * d));
+  }
+  const merged = mergeGeometries(rings);
+  for (const g of rings) g.dispose();
+  return merged;
+}
+
+const STRAP = new THREE.MeshStandardMaterial({ color: 0xe0611a, roughness: 0.9 });
+/** The tie round a coil: a strap of orange hook-and-loop, a third of the way round from the top. Call again when the bundle's thickness changes. */
+export function strapOn(coil: THREE.Mesh, tube: number) {
+  const old = coil.getObjectByName("strap");
+  if (old instanceof THREE.Mesh) { old.geometry.dispose(); coil.remove(old); }
+  const strap = new THREE.Mesh(new THREE.TorusGeometry(tube * 1.12, Math.max(0.003, tube * 0.14), 6, 16).scale(1, 1, 3).rotateY(Math.PI / 2).rotateZ((Math.PI * 3) / 4), STRAP);
+  strap.name = "strap";
+  strap.position.set(LOOP_R * Math.SQRT1_2, LOOP_R * Math.SQRT1_2, 0);
+  coil.add(strap);
+}
+
 export function cableView(scene: THREE.Scene) {
   const tubes = new Map<string, THREE.Mesh<THREE.TubeGeometry, THREE.MeshStandardMaterial>>();
-  const coils = new Map<string, THREE.Mesh<THREE.TorusGeometry, THREE.MeshStandardMaterial>>();
+  const coils = new Map<string, THREE.Mesh<THREE.BufferGeometry, THREE.MeshStandardMaterial>>();
   const sums = new Map<string, number>();
   const coilOf = (key: string, color: number) => {
     let m = coils.get(key);
     if (!m) {
-      m = new THREE.Mesh(new THREE.TorusGeometry(LOOP_R, 1, 10, 32), new THREE.MeshStandardMaterial({ color, roughness: 0.55 }));
+      m = new THREE.Mesh<THREE.BufferGeometry, THREE.MeshStandardMaterial>(new THREE.TorusGeometry(LOOP_R, 1, 10, 32), new THREE.MeshStandardMaterial({ color, roughness: 0.5 }));
       m.userData.tube = 1;
       m.rotation.order = "YXZ";
       coils.set(key, m);
@@ -48,7 +78,8 @@ export function cableView(scene: THREE.Scene) {
           // A new bundle thickness is a new torus (every few metres paid out, not every frame).
           if (Math.abs(tube - coil.userData.tube) > coil.userData.tube * 0.08) {
             coil.geometry.dispose();
-            coil.geometry = new THREE.TorusGeometry(LOOP_R, tube, 10, 32);
+            coil.geometry = coilGeometry(tube, CABLE[roll.kind].radius);
+            strapOn(coil, tube);
             coil.userData.tube = tube;
           }
           if (inHands) {
